@@ -37,7 +37,7 @@ import {
 	freeAgents,
 	season,
 } from "../core/index.ts";
-import { idb } from "../db/index.ts";
+import { idb, connectLeague } from "../db/index.ts";
 import {
 	achievement,
 	checkAccount,
@@ -62,8 +62,6 @@ import {
 	defaultInjuries,
 	defaultTragicDeaths,
 } from "../util/index.ts";
-import * as cloudSync from "../util/cloudSync.ts";
-import { setCloudIdForLeague, getCloudIdForLeague, removeCloudIdForLeague } from "../../common/cloudTypes.ts";
 import views from "../views/index.ts";
 import type {
 	Conditions,
@@ -5045,136 +5043,152 @@ const setScheduleFromEditor = async ({
 	await initUILocalGames();
 };
 
-// Cloud sync API functions
-const getCloudLeagues = async () => {
-	const userId = localStorage.getItem("cloudUserId");
-	if (!userId) {
-		return [];
+// ============================================
+// Cloud Sync API Functions
+// ============================================
+
+// Get all league data for cloud upload
+const getLeagueDataForCloud = async (): Promise<Record<string, any[]>> => {
+	// CRITICAL: Flush the cache first so all recent changes are written to IndexedDB
+	await idb.cache.flush();
+
+	const data: Record<string, any[]> = {};
+	const stores = [
+		"allStars", "awards", "draftLotteryResults", "draftPicks", "events",
+		"gameAttributes", "games", "headToHeads", "messages", "negotiations",
+		"playerFeats", "players", "playoffSeries", "releasedPlayers", "savedTrades",
+		"savedTradingBlock", "schedule", "scheduledEvents", "seasonLeaders",
+		"teamSeasons", "teamStats", "teams", "trade",
+	] as const;
+
+	// Read directly from IndexedDB (not cache) to get ALL data including historical records
+	for (const store of stores) {
+		// Use getAll on the IndexedDB store, which includes all historical data
+		const allFromDb = await idb.league.getAll(store);
+		data[store] = allFromDb;
 	}
-	return cloudSync.getCloudLeagues(userId);
+
+	return data;
 };
 
-const uploadLeagueToCloud = async ({
-	onProgress,
+// Apply changes received from cloud to local IndexedDB
+const applyCloudChanges = async ({
+	store,
+	changes,
 }: {
-	onProgress?: (store: string, current: number, total: number) => void;
-}) => {
-	const userId = localStorage.getItem("cloudUserId");
-	if (!userId) {
-		throw new Error("Not signed in to cloud");
+	store: string;
+	changes: Array<{ type: string; id: string; data: any }>;
+}): Promise<void> => {
+	const storeCache = (idb.cache as any)[store];
+	if (!storeCache) {
+		console.warn(`Store ${store} not found in cache`);
+		return;
 	}
 
-	const lid = g.get("lid");
-	if (lid === undefined) {
-		throw new Error("No league loaded");
-	}
-
-	// Check if already cloud-synced
-	const existingCloudId = getCloudIdForLeague(lid);
-	if (existingCloudId) {
-		throw new Error("This league is already synced to the cloud");
-	}
-
-	// Create cloud league
-	const leagueName = (await league.getName()) || `League ${lid}`;
-	const sport = process.env.SPORT as "basketball" | "football" | "baseball" | "hockey";
-	const cloudId = await cloudSync.createCloudLeague(leagueName, sport, userId);
-
-	// Get all data from cache to upload
-	const getAllData = async () => {
-		const data: Record<string, any[]> = {};
-		const stores = [
-			"allStars", "awards", "draftLotteryResults", "draftPicks", "events",
-			"gameAttributes", "games", "headToHeads", "messages", "negotiations",
-			"playerFeats", "players", "playoffSeries", "releasedPlayers", "savedTrades",
-			"savedTradingBlock", "schedule", "scheduledEvents", "seasonLeaders",
-			"teamSeasons", "teamStats", "teams", "trade",
-		];
-
-		for (const store of stores) {
-			data[store] = await (idb.cache as any)[store].getAll();
+	for (const change of changes) {
+		if (change.type === "removed") {
+			// Delete from local
+			const id = isNaN(Number(change.id)) ? change.id : Number(change.id);
+			await storeCache.delete(id);
+		} else {
+			// Add or update
+			await storeCache.put(change.data);
 		}
+	}
+};
 
-		return data;
+// Create a new local league from cloud data
+const createLeagueFromCloud = async ({
+	cloudId,
+	name,
+	data,
+	memberTeamId,
+}: {
+	cloudId: string;
+	name: string;
+	data: Record<string, any[]>;
+	memberTeamId?: number; // The team this user controls (from cloud membership)
+}): Promise<number> => {
+	// Get new league ID
+	const lid = await getNewLeagueLid();
+
+	// Extract info from gameAttributes
+	const gameAttributesArray = data.gameAttributes || [];
+	const gameAttributesObj: Record<string, any> = {};
+	for (const ga of gameAttributesArray) {
+		if (ga.key) {
+			gameAttributesObj[ga.key] = ga.value;
+		}
+	}
+
+	// Use member's assigned team if provided, otherwise fall back to league's userTid
+	const userTid = memberTeamId ?? gameAttributesObj.userTid ?? 0;
+	const teams = data.teams || [];
+	const userTeam = teams.find((t: any) => t.tid === userTid) || teams[0] || {};
+
+	// Update gameAttributes to reflect this user's team
+	if (memberTeamId !== undefined) {
+		// Update userTid and userTids in gameAttributes data
+		for (const ga of data.gameAttributes || []) {
+			if (ga.key === "userTid") {
+				ga.value = memberTeamId;
+			} else if (ga.key === "userTids") {
+				ga.value = [memberTeamId];
+			}
+		}
+	}
+
+	// Create league metadata entry
+	const leagueMeta: League = {
+		lid,
+		name,
+		tid: userTid,
+		phaseText: gameAttributesObj.phaseText || PHASE_TEXT[gameAttributesObj.phase as keyof typeof PHASE_TEXT] || "",
+		teamName: userTeam.name || "???",
+		teamRegion: userTeam.region || "???",
+		difficulty: gameAttributesObj.difficulty,
+		startingSeason: gameAttributesObj.startingSeason,
+		season: gameAttributesObj.season,
+		imgURL: userTeam.imgURLSmall || userTeam.imgURL,
+		created: new Date(),
+		lastPlayed: new Date(),
+		cloudId,
 	};
 
-	// Upload to cloud
-	await cloudSync.uploadLeagueToCloud(cloudId, getAllData, onProgress);
+	await idb.meta.add("leagues", leagueMeta);
 
-	// Save mapping
-	setCloudIdForLeague(lid, cloudId);
+	// Connect to the new league database
+	const db = await connectLeague(lid);
 
-	// Enable cloud sync
-	idb.cache.enableCloudSync();
+	try {
+		// Write all the data to each store
+		const stores = Object.keys(data) as (keyof typeof data)[];
 
-	// Connect to cloud for real-time sync
-	await cloudSync.connectToCloud(cloudId, userId);
+		for (const store of stores) {
+			const records = data[store];
+			if (!records || records.length === 0) continue;
 
-	// Update league metadata
-	await cloudSync.updateCloudLeagueMeta({
-		season: g.get("season"),
-		phase: g.get("phase"),
-		userTid: g.get("userTid"),
-	});
+			// Write in batches
+			const BATCH_SIZE = 1000;
+			for (let i = 0; i < records.length; i += BATCH_SIZE) {
+				const batchRecords = records.slice(i, i + BATCH_SIZE);
+				const tx = db.transaction(store as any, "readwrite");
 
-	// Update UI
-	toUI("updateLocal", [{
-		cloudSyncStatus: "synced",
-		cloudLeagueId: cloudId,
-	}]);
+				for (const record of batchRecords) {
+					tx.store.put(record);
+				}
 
-	return cloudId;
-};
-
-const joinCloudLeague = async (cloudId: string) => {
-	const userId = localStorage.getItem("cloudUserId");
-	if (!userId) {
-		throw new Error("Not signed in to cloud");
+				await tx.done;
+			}
+		}
+	} finally {
+		await db.close();
 	}
 
-	// Connect to the cloud league
-	const success = await cloudSync.connectToCloud(cloudId, userId);
-	if (!success) {
-		throw new Error("Failed to connect to cloud league");
-	}
+	// Trigger league list refresh
+	toUI("realtimeUpdate", [["leagues"]]);
 
-	// Update UI
-	toUI("updateLocal", [{
-		cloudSyncStatus: "synced",
-		cloudLeagueId: cloudId,
-	}]);
-};
-
-const deleteCloudLeague = async (cloudId: string) => {
-	const userId = localStorage.getItem("cloudUserId");
-	if (!userId) {
-		throw new Error("Not signed in to cloud");
-	}
-
-	const success = await cloudSync.deleteCloudLeague(cloudId, userId);
-	if (!success) {
-		throw new Error("Failed to delete cloud league");
-	}
-};
-
-const disconnectFromCloud = async () => {
-	await cloudSync.disconnectFromCloud();
-
-	const lid = g.get("lid");
-	if (lid !== undefined) {
-		removeCloudIdForLeague(lid);
-	}
-
-	idb.cache.disableCloudSync();
-
-	toUI("updateLocal", [{
-		cloudSyncStatus: "disconnected",
-		cloudLeagueId: undefined,
-	}]);
-};
-
-const getCloudSyncStatus = () => {
-	return cloudSync.getSyncStatus();
+	return lid;
 };
 
 export default {
@@ -5323,12 +5337,9 @@ export default {
 		validatePointsFormula,
 		validatePlayoffSettings,
 
-		// Cloud sync functions
-		getCloudLeagues,
-		uploadLeagueToCloud,
-		joinCloudLeague,
-		deleteCloudLeague,
-		disconnectFromCloud,
-		getCloudSyncStatus,
+		// Cloud sync API functions
+		getLeagueDataForCloud,
+		applyCloudChanges,
+		createLeagueFromCloud,
 	},
 };

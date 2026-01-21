@@ -1,8 +1,7 @@
 import { PLAYER, helpers } from "../../common/index.ts";
 import { idb } from "./index.ts";
 import cmp from "./cmp.ts";
-import { g, local, lock } from "../util/index.ts";
-// cloudSync is imported dynamically to avoid loading Firebase at worker startup
+import { g, local, lock, toUI } from "../util/index.ts";
 import type {
 	AllStars,
 	DraftLotteryResult,
@@ -228,10 +227,6 @@ class Cache {
 
 	_stopAutoFlush: boolean;
 
-	// Cloud sync state
-	_cloudSyncEnabled: boolean;
-	_cloudSyncPending: Map<Store, { records: any[]; deletedIds: (string | number)[] }>;
-
 	storeInfos: Record<
 		Store,
 		{
@@ -322,8 +317,6 @@ class Cache {
 		this._requestQueue = new Map();
 		this._requestInd = 0;
 		this._stopAutoFlush = false;
-		this._cloudSyncEnabled = false;
-		this._cloudSyncPending = new Map();
 		this.storeInfos = {
 			allStars: {
 				pk: "season",
@@ -821,33 +814,19 @@ class Cache {
 			return;
 		}
 
-		// Collect records for cloud sync before clearing dirty flags
-		const cloudSyncData: Map<Store, { records: any[]; deletedIds: (string | number)[] }> = new Map();
-		if (this._cloudSyncEnabled) {
-			for (const store of stores) {
-				const records: any[] = [];
-				const deletedIds: (string | number)[] = [];
-
-				for (const id of this._dirtyRecords[store]) {
-					const record = this._data[store][id];
-					if (record !== undefined) {
-						records.push(record);
-					}
-				}
-
-				for (const id of this._deletes[store]) {
-					deletedIds.push(id);
-				}
-
-				if (records.length > 0 || deletedIds.length > 0) {
-					cloudSyncData.set(store, { records, deletedIds });
-				}
-			}
-		}
+		// Capture changes for cloud sync BEFORE clearing them
+		const cloudSyncChanges: Array<{
+			store: Store;
+			records: any[];
+			deletedIds: (string | number)[];
+		}> = [];
 
 		const transaction = idb.league.transaction(stores, "readwrite");
 
 		for (const store of stores) {
+			// Capture deleted IDs for cloud sync
+			const deletedIds = Array.from(this._deletes[store]);
+
 			for (const id of this._deletes[store]) {
 				// This is synchronous to prevent any race condition
 				transaction.objectStore(store).delete(id);
@@ -855,6 +834,8 @@ class Cache {
 
 			this._deletes[store].clear();
 
+			// Capture modified records for cloud sync
+			const records: any[] = [];
 			for (const id of this._dirtyRecords[store]) {
 				const record = this._data[store][id];
 
@@ -862,10 +843,17 @@ class Cache {
 				if (record !== undefined) {
 					// This is synchronous to prevent any race condition
 					transaction.objectStore(store).put(record);
+					// Capture for cloud sync
+					records.push(record);
 				}
 			}
 
 			this._dirtyRecords[store].clear();
+
+			// Add to cloud sync changes if there are any changes
+			if (records.length > 0 || deletedIds.length > 0) {
+				cloudSyncChanges.push({ store, records, deletedIds });
+			}
 		}
 
 		await transaction.done;
@@ -879,41 +867,12 @@ class Cache {
 			});
 		}
 
-		// Sync to cloud if enabled (don't await to avoid blocking)
-		if (this._cloudSyncEnabled && cloudSyncData.size > 0) {
-			this._syncToCloud(cloudSyncData);
+		// Sync changes to cloud (non-blocking - don't await)
+		if (cloudSyncChanges.length > 0) {
+			toUI("syncCloudChanges", [cloudSyncChanges]).catch((error) => {
+				console.error("[CloudSync] Failed to sync changes:", error);
+			});
 		}
-	}
-
-	// Sync changes to Firestore (called after IndexedDB flush)
-	private async _syncToCloud(
-		data: Map<Store, { records: any[]; deletedIds: (string | number)[] }>,
-	) {
-		// Dynamic import to avoid loading Firebase at worker startup
-		const cloudSync = await import("../util/cloudSync.ts");
-		for (const [store, { records, deletedIds }] of data) {
-			try {
-				await cloudSync.syncChangesToCloud(store, records, deletedIds);
-			} catch (error) {
-				console.error(`Cloud sync failed for ${store}:`, error);
-			}
-		}
-	}
-
-	// Enable cloud sync for this cache
-	enableCloudSync() {
-		this._cloudSyncEnabled = true;
-	}
-
-	// Disable cloud sync for this cache
-	disableCloudSync() {
-		this._cloudSyncEnabled = false;
-		this._cloudSyncPending.clear();
-	}
-
-	// Check if cloud sync is enabled
-	isCloudSyncEnabled(): boolean {
-		return this._cloudSyncEnabled;
 	}
 
 	async _autoFlush() {
@@ -1093,6 +1052,48 @@ class Cache {
 
 	_put(store: Store, obj: any): Promise<number | string> {
 		return this._storeObj("put", store, obj);
+	}
+
+	// Put a record from a remote source (cloud sync) without marking it dirty
+	// This prevents feedback loops where remote changes get re-uploaded
+	async _putFromRemote(store: Store, obj: any): Promise<void> {
+		await this._waitForStatus("full");
+		const pk = this.storeInfos[store].pk;
+
+		if (!Object.hasOwn(obj, pk)) {
+			throw new Error(`Primary key field "${pk}" is required for remote update to "${store}"`);
+		}
+
+		// Update in-memory data
+		this._data[store][obj[pk]] = obj;
+
+		// Write directly to IndexedDB (not through the dirty record system)
+		if (idb.league) {
+			const tx = idb.league.transaction(store, "readwrite");
+			tx.store.put(obj);
+			await tx.done;
+		}
+
+		// Update indexes
+		this._markDirtyIndexes(store, obj);
+	}
+
+	// Delete a record from a remote source (cloud sync) without marking it dirty
+	async _deleteFromRemote(store: Store, id: number | string): Promise<void> {
+		await this._waitForStatus("full");
+
+		if (Object.hasOwn(this._data[store], id)) {
+			delete this._data[store][id];
+		}
+
+		// Write directly to IndexedDB
+		if (idb.league) {
+			const tx = idb.league.transaction(store, "readwrite");
+			tx.store.delete(id);
+			await tx.done;
+		}
+
+		this._markDirtyIndexes(store);
 	}
 
 	async _delete(store: Store, id: number | string) {

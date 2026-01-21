@@ -809,6 +809,7 @@ export type League = {
 	startingSeason?: number;
 	season?: number;
 	imgURL?: string; // Should contain imgURLSmall if it exists
+	cloudId?: string; // Cloud sync ID if this league is synced to cloud
 };
 
 export type Locks = {
@@ -1086,6 +1087,9 @@ export type LocalStateUI = {
 	cloudLeagueId?: string;
 	cloudLockHolder?: string | null;
 	cloudLockOperation?: string | null;
+	cloudSyncLastUpdate?: number; // Timestamp of last remote update received
+	cloudSyncPendingChanges?: boolean; // True if there are unapplied remote changes
+	cloudUploadProgress?: string | null; // Progress message during upload
 };
 
 export type PartialTopMenu = {

@@ -165,6 +165,10 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 		return;
 	}
 
+	if (loadingNewLid !== newLid) {
+		return;
+	}
+
 	local.leagueLoaded = true;
 
 	await updateStatus(undefined);
@@ -192,6 +196,7 @@ export const beforeNonLeague = async (conditions: Conditions) => {
 	if (!beforeNonLeagueRunning) {
 		try {
 			beforeNonLeagueRunning = true;
+
 			await league.close(false);
 			await toUI("resetLeague", [], conditions);
 
