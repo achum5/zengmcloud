@@ -847,6 +847,10 @@ const CloudSync = () => {
 			});
 			console.log("[CloudSync] Data upload complete");
 
+			// Save cloudId to local league so cloud icon shows on Dashboard
+			console.log("[CloudSync] Saving cloudId to local league...");
+			await toWorker("main", "setLeagueCloudId", { lid, cloudId });
+
 			setUploadProgress(null);
 			await loadCloudLeagues();
 

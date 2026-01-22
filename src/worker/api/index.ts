@@ -5356,6 +5356,24 @@ const cancelCloudLeagueDownload = async (): Promise<void> => {
 	}
 };
 
+/**
+ * Update a local league's cloudId after uploading to cloud.
+ * This links the local league to its cloud counterpart.
+ */
+const setLeagueCloudId = async ({
+	lid,
+	cloudId,
+}: {
+	lid: number;
+	cloudId: string;
+}): Promise<void> => {
+	const leagueMeta = await idb.meta.get("leagues", lid);
+	if (leagueMeta) {
+		leagueMeta.cloudId = cloudId;
+		await idb.meta.put("leagues", leagueMeta);
+	}
+};
+
 export default {
 	actions,
 	exhibitionGame,
@@ -5512,5 +5530,8 @@ export default {
 		writeCloudStoreBatch,
 		finalizeCloudLeagueDownload,
 		cancelCloudLeagueDownload,
+
+		// Cloud league management
+		setLeagueCloudId,
 	},
 };
