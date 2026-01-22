@@ -142,21 +142,29 @@ const syncCloudChanges = async (
 		deletedIds: (string | number)[];
 	}>,
 ): Promise<void> => {
+	const cloudId = getCurrentCloudId();
+
 	// Only sync if connected to a cloud league
-	if (!getCurrentCloudId()) {
+	if (!cloudId) {
+		console.log("[CloudSync] Not syncing - no active cloud league (currentCloudId is null)");
 		return;
 	}
+
+	console.log(`[CloudSync] Syncing ${changes.length} store(s) to cloud:`, cloudId);
 
 	// Sync each store's changes
 	for (const { store, records, deletedIds } of changes) {
 		if (records.length > 0 || deletedIds.length > 0) {
 			try {
+				console.log(`[CloudSync] Syncing ${store}: ${records.length} records, ${deletedIds.length} deletes`);
 				await syncLocalChanges(store, records, deletedIds);
 			} catch (error) {
 				console.error(`[CloudSync] Failed to sync ${store}:`, error);
 			}
 		}
 	}
+
+	console.log("[CloudSync] Sync complete");
 };
 
 const crossTabEmit = (
