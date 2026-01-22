@@ -16,11 +16,17 @@ import {
 	where,
 	writeBatch,
 	onSnapshot,
+	limit,
+	startAfter,
+	orderBy,
 	type Unsubscribe,
+	type QueryDocumentSnapshot,
+	type DocumentData,
+	type QuerySnapshot,
 } from "firebase/firestore";
 import { getFirebaseDb, getFirebaseAuth, getCurrentUserId, getUserDisplayName, getUserEmail } from "./firebase.ts";
 import type { Store, CloudLeague, CloudMember, CloudSyncStatus } from "../../common/cloudTypes.ts";
-import { toWorker, realtimeUpdate } from "./index.ts";
+import { toWorker } from "./index.ts";
 
 // All stores that need to be synced
 const ALL_STORES: Store[] = [
@@ -63,6 +69,28 @@ let currentCloudId: string | null = null;
 let syncStatus: CloudSyncStatus = "disconnected";
 let listeners: Map<string, Unsubscribe> = new Map();
 let statusCallback: ((status: CloudSyncStatus) => void) | null = null;
+
+// Pending updates state - for notification-based sync
+let pendingUpdateCallback: ((info: PendingUpdateInfo | null) => void) | null = null;
+let lastKnownUpdateTime: number = 0;
+
+export type PendingUpdateInfo = {
+	updatedAt: number;
+	updatedBy: string; // displayName of who made the change
+	message?: string;
+};
+
+// Set callback for pending update notifications
+export const onPendingUpdate = (callback: (info: PendingUpdateInfo | null) => void) => {
+	pendingUpdateCallback = callback;
+};
+
+// Notify UI of pending update
+const notifyPendingUpdate = (info: PendingUpdateInfo | null) => {
+	if (pendingUpdateCallback) {
+		pendingUpdateCallback(info);
+	}
+};
 
 // Remove undefined values (Firestore doesn't accept them)
 const removeUndefined = (obj: any): any => {
@@ -262,6 +290,124 @@ export const downloadLeagueData = async (
 };
 
 /**
+ * STREAMING download - Downloads league data from Firestore in small batches
+ * to avoid memory exhaustion on mobile devices.
+ *
+ * Instead of loading all data into memory at once, this function:
+ * 1. Creates the league database first
+ * 2. Streams each store from Firestore using pagination (500 docs at a time)
+ * 3. Immediately writes each batch to IndexedDB via worker
+ * 4. Finalizes the league after all data is downloaded
+ *
+ * This approach keeps memory usage low and works well on mobile devices.
+ */
+export const streamDownloadLeagueData = async (
+	cloudId: string,
+	leagueName: string,
+	memberTeamId: number | undefined,
+	onProgress?: (message: string, percent: number) => void,
+): Promise<number> => {
+	const db = getFirebaseDb();
+	setSyncStatus("syncing");
+
+	const BATCH_SIZE = 500; // Documents per Firestore query
+	const totalStores = ALL_STORES.length;
+
+	try {
+		onProgress?.("Initializing league...", 1);
+
+		// Initialize the league in worker (creates empty database)
+		const lid = await toWorker("main", "initCloudLeagueDownload", {
+			cloudId,
+			name: leagueName,
+		});
+
+		try {
+			// Stream each store
+			let storeIndex = 0;
+			for (const store of ALL_STORES) {
+				const storePercent = Math.round((storeIndex / totalStores) * 90) + 5;
+				onProgress?.(`Downloading ${store}...`, storePercent);
+
+				const collectionPath = `leagues/${cloudId}/stores/${store}/data`;
+				const collectionRef = collection(db, collectionPath);
+
+				// Use pagination to fetch in batches
+				let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+				let hasMore = true;
+				let batchCount = 0;
+
+				while (hasMore) {
+					// Build query with pagination
+					const baseQuery = query(collectionRef, orderBy("__name__"), limit(BATCH_SIZE));
+					const paginatedQuery = lastDoc
+						? query(collectionRef, orderBy("__name__"), startAfter(lastDoc), limit(BATCH_SIZE))
+						: baseQuery;
+
+					const snapshot: QuerySnapshot<DocumentData> = await getDocs(paginatedQuery);
+
+					if (snapshot.empty) {
+						hasMore = false;
+						break;
+					}
+
+					// Parse the batch
+					const records: any[] = [];
+					snapshot.forEach((docSnap: QueryDocumentSnapshot) => {
+						const docData = docSnap.data();
+						// Parse JSON back to original format
+						if (docData._json) {
+							records.push(JSON.parse(docData._json));
+						} else {
+							records.push(docData);
+						}
+					});
+
+					// Send batch to worker to write to IndexedDB
+					await toWorker("main", "writeCloudStoreBatch", {
+						store,
+						records,
+					});
+
+					batchCount++;
+
+					// Update progress within the store
+					const batchPercent = storePercent + Math.min(batchCount, 5);
+					onProgress?.(`Downloading ${store}... (batch ${batchCount})`, batchPercent);
+
+					// Check if there are more documents
+					if (snapshot.docs.length < BATCH_SIZE) {
+						hasMore = false;
+					} else {
+						lastDoc = snapshot.docs[snapshot.docs.length - 1] ?? null;
+					}
+				}
+
+				storeIndex++;
+			}
+
+			// Finalize the league (updates metadata from actual data)
+			onProgress?.("Finalizing league...", 97);
+			await toWorker("main", "finalizeCloudLeagueDownload", {
+				memberTeamId,
+			});
+
+			setSyncStatus("synced");
+			onProgress?.("Download complete!", 100);
+
+			return lid;
+		} catch (error) {
+			// Clean up partial download
+			await toWorker("main", "cancelCloudLeagueDownload", undefined);
+			throw error;
+		}
+	} catch (error) {
+		setSyncStatus("error");
+		throw error;
+	}
+};
+
+/**
  * Get list of cloud leagues user has access to
  */
 export const getCloudLeagues = async (): Promise<CloudLeague[]> => {
@@ -326,7 +472,12 @@ export const deleteCloudLeague = async (cloudId: string): Promise<void> => {
 };
 
 /**
- * Start real-time sync for a cloud league
+ * Start real-time sync for a cloud league.
+ *
+ * LIGHTWEIGHT APPROACH: Instead of 22 aggressive listeners that cause lag,
+ * we only listen to the league metadata document for updates.
+ * When another user makes changes, we show a notification and let the
+ * user choose when to refresh - just like BBGM's local file behavior.
  */
 export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 	const db = getFirebaseDb();
@@ -340,37 +491,47 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 	// Load current user's membership info for permission checks
 	await loadCurrentCloudMember();
 
+	// Get current update time as baseline
+	const league = await getCloudLeague(cloudId);
+	if (league) {
+		lastKnownUpdateTime = league.updatedAt || 0;
+	}
+
 	try {
-		// Listen for changes on each store
-		for (const store of ALL_STORES) {
-			const collectionPath = `leagues/${cloudId}/stores/${store}/data`;
-			const collectionRef = collection(db, collectionPath);
+		// LIGHTWEIGHT: Only listen to league metadata document, not all 22 stores!
+		// This single listener detects when ANY changes are made to the league.
+		const leagueDocRef = doc(db, "leagues", cloudId);
 
-			const unsubscribe = onSnapshot(collectionRef, (snapshot) => {
-				const changes: Array<{ type: string; id: string; data: any }> = [];
+		const unsubscribe = onSnapshot(leagueDocRef, (docSnapshot) => {
+			if (!docSnapshot.exists()) return;
 
-				snapshot.docChanges().forEach((change) => {
-					const docData = change.doc.data();
-					// Parse JSON back to original format
-					const data = docData._json ? JSON.parse(docData._json) : docData;
-					changes.push({
-						type: change.type,
-						id: change.doc.id,
-						data,
+			const data = docSnapshot.data() as CloudLeague;
+			const newUpdateTime = data.updatedAt || 0;
+
+			// If update time changed and it's newer than what we know
+			if (newUpdateTime > lastKnownUpdateTime) {
+				// Find who made the change (not us)
+				const userId = getCurrentUserId();
+				const updater = data.lastUpdatedBy || "Someone";
+
+				// Don't notify about our own changes
+				if (data.lastUpdatedByUserId !== userId) {
+					notifyPendingUpdate({
+						updatedAt: newUpdateTime,
+						updatedBy: updater,
+						message: data.lastUpdateMessage,
 					});
-				});
-
-				if (changes.length > 0) {
-					handleRemoteChanges(store, changes);
+				} else {
+					// Our own change - just update the baseline
+					lastKnownUpdateTime = newUpdateTime;
 				}
-			}, (error) => {
-				console.error(`Listener error for ${store}:`, error);
-				setSyncStatus("error");
-			});
+			}
+		}, (error) => {
+			console.error("League metadata listener error:", error);
+			setSyncStatus("error");
+		});
 
-			listeners.set(store, unsubscribe);
-		}
-
+		listeners.set("__metadata__", unsubscribe);
 		setSyncStatus("synced");
 	} catch (error) {
 		setSyncStatus("error");
@@ -388,27 +549,60 @@ export const stopRealtimeSync = () => {
 	listeners.clear();
 	currentCloudId = null;
 	currentCloudMember = null;
+	lastKnownUpdateTime = 0;
+	notifyPendingUpdate(null);
 	setSyncStatus("disconnected");
 };
 
 /**
- * Handle changes received from Firestore
+ * Refresh league data from cloud.
+ * Called when user clicks "Update Available" notification.
+ * Downloads fresh data and reloads the league.
  */
-const handleRemoteChanges = async (
-	store: Store,
-	changes: Array<{ type: string; id: string; data: any }>,
-) => {
-	console.log(`[CloudSync] Received ${changes.length} changes for ${store}`);
-
-	// Send changes to worker to apply to IndexedDB
-	try {
-		await toWorker("main", "applyCloudChanges", { store, changes });
-
-		// Trigger UI refresh
-		realtimeUpdate(["gameSim", "playerMovement"]);
-	} catch (error) {
-		console.error(`Failed to apply remote changes for ${store}:`, error);
+export const refreshFromCloud = async (): Promise<void> => {
+	if (!currentCloudId) {
+		throw new Error("Not connected to a cloud league");
 	}
+
+	const cloudId = currentCloudId;
+
+	// Get league info
+	const league = await getCloudLeague(cloudId);
+	if (!league) {
+		throw new Error("League not found");
+	}
+
+	// Update our baseline time
+	lastKnownUpdateTime = league.updatedAt || Date.now();
+
+	// Clear pending notification
+	notifyPendingUpdate(null);
+
+	// Reload the page to get fresh data
+	// This is the simplest approach - the league will re-download from cloud
+	window.location.reload();
+};
+
+/**
+ * Mark that we just made changes (updates the league metadata)
+ * Call this after syncing local changes to cloud.
+ */
+export const markLeagueUpdated = async (message?: string): Promise<void> => {
+	if (!currentCloudId) return;
+
+	const db = getFirebaseDb();
+	const userId = getCurrentUserId();
+	const displayName = getUserDisplayName() || "Unknown";
+
+	const now = Date.now();
+	lastKnownUpdateTime = now;
+
+	await setDoc(doc(db, "leagues", currentCloudId), {
+		updatedAt: now,
+		lastUpdatedBy: displayName,
+		lastUpdatedByUserId: userId,
+		lastUpdateMessage: message,
+	}, { merge: true });
 };
 
 /**
@@ -455,9 +649,17 @@ export const syncLocalChanges = async (
 		await batch.commit();
 	}
 
-	// Update league metadata
+	// Update league metadata with user info for notifications
+	const userId = getCurrentUserId();
+	const displayName = getUserDisplayName() || "Unknown";
+	const now = Date.now();
+	lastKnownUpdateTime = now; // Update our baseline so we don't notify ourselves
+
 	await setDoc(doc(db, "leagues", currentCloudId), {
-		updatedAt: Date.now(),
+		updatedAt: now,
+		lastUpdatedBy: displayName,
+		lastUpdatedByUserId: userId,
+		lastUpdateMessage: `Updated ${store}`,
 	}, { merge: true });
 };
 
