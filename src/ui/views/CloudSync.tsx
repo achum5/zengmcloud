@@ -37,6 +37,8 @@ import {
 	onSyncStatusChange,
 	joinCloudLeague,
 	getCloudLeagueTeams,
+	removeLeagueMember,
+	updateMemberTeam,
 	type CloudTeam,
 } from "../util/cloudSync.ts";
 import type { CloudLeague } from "../../common/cloudTypes.ts";
@@ -474,6 +476,258 @@ const JoinLeagueSection = ({
 	);
 };
 
+// Manage members section (commissioner only)
+const ManageMembersSection = ({
+	league,
+	onMemberUpdate,
+}: {
+	league: CloudLeague;
+	onMemberUpdate: () => void;
+}) => {
+	const [teams, setTeams] = useState<CloudTeam[]>([]);
+	const [loadingTeams, setLoadingTeams] = useState(false);
+	const [loading, setLoading] = useState<string | null>(null); // memberUserId being acted on
+	const [error, setError] = useState<string | null>(null);
+	const [success, setSuccess] = useState<string | null>(null);
+	const [expanded, setExpanded] = useState(false);
+	const [editingMember, setEditingMember] = useState<string | null>(null);
+	const [newTeamId, setNewTeamId] = useState<number | null>(null);
+
+	const currentUserId = getCurrentUserId();
+
+	const loadTeams = async () => {
+		if (teams.length > 0) return; // Already loaded
+		setLoadingTeams(true);
+		try {
+			const fetchedTeams = await getCloudLeagueTeams(league.cloudId);
+			setTeams(fetchedTeams);
+		} catch (err: any) {
+			console.error("Failed to load teams:", err);
+		} finally {
+			setLoadingTeams(false);
+		}
+	};
+
+	const handleExpand = () => {
+		if (!expanded) {
+			loadTeams();
+		}
+		setExpanded(!expanded);
+	};
+
+	const handleRemoveMember = async (memberUserId: string, displayName: string) => {
+		if (!confirm(`Are you sure you want to remove ${displayName} from the league?`)) {
+			return;
+		}
+
+		setError(null);
+		setSuccess(null);
+		setLoading(memberUserId);
+
+		try {
+			await removeLeagueMember(league.cloudId, memberUserId);
+			setSuccess(`${displayName} has been removed from the league`);
+			onMemberUpdate();
+		} catch (err: any) {
+			setError(err.message || "Failed to remove member");
+		} finally {
+			setLoading(null);
+		}
+	};
+
+	const handleStartReassign = (memberUserId: string, currentTeamId: number) => {
+		setEditingMember(memberUserId);
+		setNewTeamId(currentTeamId);
+	};
+
+	const handleCancelReassign = () => {
+		setEditingMember(null);
+		setNewTeamId(null);
+	};
+
+	const handleSaveReassign = async (memberUserId: string, displayName: string) => {
+		if (newTeamId === null) return;
+
+		setError(null);
+		setSuccess(null);
+		setLoading(memberUserId);
+
+		try {
+			await updateMemberTeam(league.cloudId, memberUserId, newTeamId);
+			setSuccess(`${displayName}'s team has been updated`);
+			setEditingMember(null);
+			setNewTeamId(null);
+			onMemberUpdate();
+			// Reload teams to refresh claimedBy info
+			setTeams([]);
+			await loadTeams();
+		} catch (err: any) {
+			setError(err.message || "Failed to reassign team");
+		} finally {
+			setLoading(null);
+		}
+	};
+
+	const getTeamName = (teamId: number) => {
+		const team = teams.find(t => t.tid === teamId);
+		return team ? `${team.region} ${team.name}` : `Team ${teamId}`;
+	};
+
+	return (
+		<div className="mb-3 border rounded p-2">
+			<div
+				className="d-flex justify-content-between align-items-center"
+				style={{ cursor: "pointer" }}
+				onClick={handleExpand}
+			>
+				<div>
+					<strong>{league.name}</strong>
+					<span className="text-muted ms-2">
+						({league.members.length} member{league.members.length !== 1 ? "s" : ""})
+					</span>
+				</div>
+				<span className="text-muted">
+					{expanded ? "▼" : "►"}
+				</span>
+			</div>
+
+			{expanded && (
+				<div className="mt-3">
+					{error && (
+						<div className="alert alert-danger py-2" role="alert">
+							{error}
+							<button
+								type="button"
+								className="btn-close float-end"
+								onClick={() => setError(null)}
+								style={{ fontSize: "0.75rem" }}
+							/>
+						</div>
+					)}
+
+					{success && (
+						<div className="alert alert-success py-2" role="alert">
+							{success}
+							<button
+								type="button"
+								className="btn-close float-end"
+								onClick={() => setSuccess(null)}
+								style={{ fontSize: "0.75rem" }}
+							/>
+						</div>
+					)}
+
+					{loadingTeams ? (
+						<div className="text-muted">Loading members...</div>
+					) : (
+						<div className="list-group list-group-flush">
+							{league.members.map((member) => {
+								const isCommissioner = member.role === "commissioner";
+								const isSelf = member.userId === currentUserId;
+								const isEditing = editingMember === member.userId;
+								const isLoading = loading === member.userId;
+
+								return (
+									<div
+										key={member.userId}
+										className="list-group-item px-0 d-flex justify-content-between align-items-center"
+									>
+										<div>
+											<span className="fw-medium">{member.displayName}</span>
+											{isCommissioner && (
+												<span className="badge bg-primary ms-2">Commissioner</span>
+											)}
+											{isSelf && (
+												<span className="badge bg-secondary ms-1">You</span>
+											)}
+											<br />
+											{isEditing ? (
+												<select
+													className="form-select form-select-sm mt-1"
+													style={{ width: "auto", display: "inline-block" }}
+													value={newTeamId ?? ""}
+													onChange={(e) => setNewTeamId(parseInt(e.target.value, 10))}
+													disabled={isLoading}
+												>
+													{teams.map((team) => {
+														const isTaken = !!team.claimedBy && team.tid !== member.teamId;
+														return (
+															<option
+																key={team.tid}
+																value={team.tid}
+																disabled={isTaken}
+															>
+																{team.region} {team.name}
+																{isTaken ? ` (${team.claimedBy})` : ""}
+															</option>
+														);
+													})}
+												</select>
+											) : (
+												<small className="text-muted">
+													{getTeamName(member.teamId)}
+												</small>
+											)}
+										</div>
+										<div>
+											{!isCommissioner && !isSelf && (
+												<>
+													{isEditing ? (
+														<>
+															<button
+																className="btn btn-sm btn-success me-1"
+																onClick={() => handleSaveReassign(member.userId, member.displayName)}
+																disabled={isLoading}
+															>
+																{isLoading ? "..." : "Save"}
+															</button>
+															<button
+																className="btn btn-sm btn-outline-secondary"
+																onClick={handleCancelReassign}
+																disabled={isLoading}
+															>
+																Cancel
+															</button>
+														</>
+													) : (
+														<>
+															<button
+																className="btn btn-sm btn-outline-primary me-1"
+																onClick={() => handleStartReassign(member.userId, member.teamId)}
+																disabled={!!loading}
+																title="Reassign team"
+															>
+																Reassign
+															</button>
+															<button
+																className="btn btn-sm btn-outline-danger"
+																onClick={() => handleRemoveMember(member.userId, member.displayName)}
+																disabled={!!loading}
+																title="Remove from league"
+															>
+																Remove
+															</button>
+														</>
+													)}
+												</>
+											)}
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					)}
+
+					<div className="mt-2 text-muted small">
+						<strong>League ID:</strong>{" "}
+						<code className="user-select-all">{league.cloudId}</code>
+					</div>
+				</div>
+			)}
+		</div>
+	);
+};
+
 // Main CloudSync view
 const CloudSync = () => {
 	useTitleBar({
@@ -761,6 +1015,30 @@ const CloudSync = () => {
 								</button>
 							</div>
 						</div>
+
+						{/* Manage Members (commissioner only) */}
+						{cloudLeagues.length > 0 && (
+							<div className="card mb-4">
+								<div className="card-body">
+									<h5 className="card-title">Manage League Members</h5>
+									<p className="text-muted">
+										Remove members or reassign their teams. Click a league to expand.
+									</p>
+
+									{loadingLeagues ? (
+										<div className="text-muted">Loading...</div>
+									) : (
+										cloudLeagues.map((league) => (
+											<ManageMembersSection
+												key={league.cloudId}
+												league={league}
+												onMemberUpdate={loadCloudLeagues}
+											/>
+										))
+									)}
+								</div>
+							</div>
+						)}
 
 						{/* Joined Leagues */}
 						<div className="card">
