@@ -517,10 +517,21 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 		const leagueDocRef = doc(db, "leagues", cloudId);
 
 		const unsubscribe = onSnapshot(leagueDocRef, (docSnapshot) => {
-			if (!docSnapshot.exists()) return;
+			if (!docSnapshot.exists()) {
+				console.log("[CloudSync] Listener: Document does not exist");
+				return;
+			}
 
 			const data = docSnapshot.data() as CloudLeague;
 			const newUpdateTime = data.updatedAt || 0;
+
+			console.log("[CloudSync] Listener triggered:", {
+				newUpdateTime,
+				lastKnownUpdateTime,
+				lastUpdatedBy: data.lastUpdatedBy,
+				lastUpdatedByUserId: data.lastUpdatedByUserId,
+				currentUserId: getCurrentUserId(),
+			});
 
 			// If update time changed and it's newer than what we know
 			if (newUpdateTime > lastKnownUpdateTime) {
@@ -530,6 +541,7 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 
 				// Don't notify about our own changes
 				if (data.lastUpdatedByUserId !== userId) {
+					console.log("[CloudSync] Notifying pending update from:", updater);
 					notifyPendingUpdate({
 						updatedAt: newUpdateTime,
 						updatedBy: updater,
@@ -537,8 +549,11 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 					});
 				} else {
 					// Our own change - just update the baseline
+					console.log("[CloudSync] Own change, updating baseline");
 					lastKnownUpdateTime = newUpdateTime;
 				}
+			} else {
+				console.log("[CloudSync] No new updates (newUpdateTime <= lastKnownUpdateTime)");
 			}
 		}, (error) => {
 			console.error("League metadata listener error:", error);
