@@ -735,11 +735,13 @@ export const refreshFromCloud = async (): Promise<void> => {
 		}
 
 		const BATCH_SIZE = 500;
+		const ATOMIC_THRESHOLD = 5000; // Use atomic replacement for stores under this size
 		const totalStores = storesToRefresh.length;
 		let storeIndex = 0;
 
-		// Download and atomically replace each store
-		// This is safe to interrupt - each store is either fully old or fully new
+		// Download and replace each store
+		// Small stores: atomic replacement (safe to interrupt)
+		// Large stores: batched writes (mobile-friendly, but less safe)
 		for (const store of storesToRefresh) {
 			const storePercent = Math.round((storeIndex / totalStores) * 90) + 5;
 			console.log(`[CloudSync] Refreshing store: ${store} (${storeIndex + 1}/${totalStores})`);
@@ -748,12 +750,12 @@ export const refreshFromCloud = async (): Promise<void> => {
 			const collectionPath = `leagues/${cloudId}/stores/${store}/data`;
 			const collectionRef = collection(db, collectionPath);
 
-			// Download ALL data for this store first (before writing anything)
-			// This prevents corruption if interrupted mid-download
+			// Download data for this store
 			const allRecords: any[] = [];
 			let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
 			let hasMore = true;
 			let batchCount = 0;
+			let useBatchedWrites = false; // Switch to batched mode if store is large
 
 			while (hasMore) {
 				const baseQuery = query(collectionRef, orderBy("__name__"), limit(BATCH_SIZE));
@@ -770,17 +772,38 @@ export const refreshFromCloud = async (): Promise<void> => {
 
 				batchCount++;
 
-				// Parse and accumulate the batch
+				// Parse the batch
+				const batchRecords: any[] = [];
 				snapshot.forEach((docSnap: QueryDocumentSnapshot) => {
 					const docData = docSnap.data();
 					if (docData._json) {
-						allRecords.push(JSON.parse(docData._json));
+						batchRecords.push(JSON.parse(docData._json));
 					} else {
-						allRecords.push(docData);
+						batchRecords.push(docData);
 					}
 				});
 
-				console.log(`[CloudSync] ${store}: downloaded batch ${batchCount}, total ${allRecords.length} records`);
+				// Check if we should switch to batched mode (for mobile memory)
+				if (!useBatchedWrites && allRecords.length + batchRecords.length > ATOMIC_THRESHOLD) {
+					console.log(`[CloudSync] ${store}: switching to batched writes (${allRecords.length + batchRecords.length} records exceeds threshold)`);
+					useBatchedWrites = true;
+
+					// Write accumulated records so far
+					if (allRecords.length > 0) {
+						await toWorker("main", "writeCloudRefreshBatch", { store, records: allRecords });
+						allRecords.length = 0; // Clear the array
+					}
+				}
+
+				if (useBatchedWrites) {
+					// Write this batch immediately (mobile-friendly)
+					await toWorker("main", "writeCloudRefreshBatch", { store, records: batchRecords });
+					console.log(`[CloudSync] ${store}: wrote batch ${batchCount}, ${batchRecords.length} records`);
+				} else {
+					// Accumulate for atomic replacement
+					allRecords.push(...batchRecords);
+					console.log(`[CloudSync] ${store}: downloaded batch ${batchCount}, total ${allRecords.length} records`);
+				}
 
 				if (snapshot.docs.length < BATCH_SIZE) {
 					hasMore = false;
@@ -789,11 +812,16 @@ export const refreshFromCloud = async (): Promise<void> => {
 				}
 			}
 
-			// Now atomically replace the store (clear + write in single transaction)
-			// This is safe - if interrupted, IndexedDB rolls back the transaction
-			console.log(`[CloudSync] ${store}: writing ${allRecords.length} records atomically`);
-			refreshProgressCallback?.(`Saving ${store}...`, storePercent + 2);
-			await toWorker("main", "atomicStoreReplace", { store, records: allRecords });
+			// Write remaining records
+			if (!useBatchedWrites && allRecords.length > 0) {
+				// Small store: atomic replacement (clear + write in single transaction)
+				console.log(`[CloudSync] ${store}: atomic replacement with ${allRecords.length} records`);
+				refreshProgressCallback?.(`Saving ${store}...`, storePercent + 2);
+				await toWorker("main", "atomicStoreReplace", { store, records: allRecords });
+			} else if (useBatchedWrites) {
+				// Large store: already written in batches
+				console.log(`[CloudSync] ${store}: batched writes complete`);
+			}
 
 			storeIndex++;
 		}
