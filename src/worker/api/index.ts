@@ -5393,7 +5393,7 @@ const initCloudLeagueRefresh = async (): Promise<void> => {
 		throw new Error("No league is currently loaded");
 	}
 
-	// Stop the cache auto-flush while we're clearing data
+	// Stop the cache auto-flush while we're refreshing
 	if (idb.cache) {
 		idb.cache.stopAutoFlush();
 	}
@@ -5406,20 +5406,9 @@ const initCloudLeagueRefresh = async (): Promise<void> => {
 	const db = await connectLeague(lid);
 	refreshingLeagueDb = db;
 
-	// Clear all data stores
-	const stores: Store[] = [
-		"allStars", "awards", "draftLotteryResults", "draftPicks", "events",
-		"gameAttributes", "games", "headToHeads", "messages", "negotiations",
-		"playerFeats", "players", "playoffSeries", "releasedPlayers", "savedTrades",
-		"savedTradingBlock", "schedule", "scheduledEvents", "seasonLeaders",
-		"teamSeasons", "teamStats", "teams", "trade",
-	];
-
-	for (const store of stores) {
-		const tx = db.transaction(store, "readwrite");
-		await tx.store.clear();
-		await tx.done;
-	}
+	// NOTE: We no longer clear stores here. Each store is cleared atomically
+	// when its new data is written via atomicStoreReplace. This prevents
+	// corruption if the user closes the browser mid-refresh.
 };
 
 /**
@@ -5436,9 +5425,9 @@ const initIncrementalRefresh = async ({
 		throw new Error("No league is currently loaded");
 	}
 
-	console.log(`[Worker] initIncrementalRefresh: clearing ${stores.length} stores:`, stores);
+	console.log(`[Worker] initIncrementalRefresh: preparing to refresh ${stores.length} stores:`, stores);
 
-	// Stop the cache auto-flush while we're clearing data
+	// Stop the cache auto-flush while we're refreshing
 	if (idb.cache) {
 		idb.cache.stopAutoFlush();
 	}
@@ -5451,12 +5440,9 @@ const initIncrementalRefresh = async ({
 	const db = await connectLeague(lid);
 	refreshingLeagueDb = db;
 
-	// Only clear the stores that changed
-	for (const store of stores) {
-		const tx = db.transaction(store as any, "readwrite");
-		await tx.store.clear();
-		await tx.done;
-	}
+	// NOTE: We no longer clear stores here. Each store is cleared atomically
+	// when its new data is written via atomicStoreReplace. This prevents
+	// corruption if the user closes the browser mid-refresh.
 };
 
 /**
@@ -5476,6 +5462,37 @@ const writeCloudRefreshBatch = async ({
 	if (records.length === 0) return;
 
 	const tx = refreshingLeagueDb.transaction(store as any, "readwrite");
+	for (const record of records) {
+		tx.store.put(record);
+	}
+	await tx.done;
+};
+
+/**
+ * Atomically replace all data in a store.
+ * This is safe to interrupt - either the old data or new data will be present,
+ * but never empty/corrupt.
+ *
+ * The clear and write happen in a single transaction, so if the user closes
+ * the browser mid-refresh, the store will still have valid data.
+ */
+const atomicStoreReplace = async ({
+	store,
+	records,
+}: {
+	store: string;
+	records: any[];
+}): Promise<void> => {
+	if (!refreshingLeagueDb) {
+		throw new Error("No refresh in progress. Call initCloudLeagueRefresh first.");
+	}
+
+	console.log(`[Worker] atomicStoreReplace: ${store} with ${records.length} records`);
+
+	// Single transaction: clear + write all records
+	// If interrupted, IndexedDB will rollback the entire transaction
+	const tx = refreshingLeagueDb.transaction(store as any, "readwrite");
+	await tx.store.clear();
 	for (const record of records) {
 		tx.store.put(record);
 	}
@@ -5722,6 +5739,7 @@ export default {
 		initCloudLeagueRefresh,
 		initIncrementalRefresh,
 		writeCloudRefreshBatch,
+		atomicStoreReplace,
 		finalizeCloudRefresh,
 	},
 };

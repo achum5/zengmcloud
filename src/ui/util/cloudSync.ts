@@ -738,7 +738,8 @@ export const refreshFromCloud = async (): Promise<void> => {
 		const totalStores = storesToRefresh.length;
 		let storeIndex = 0;
 
-		// Download only the stores that changed
+		// Download and atomically replace each store
+		// This is safe to interrupt - each store is either fully old or fully new
 		for (const store of storesToRefresh) {
 			const storePercent = Math.round((storeIndex / totalStores) * 90) + 5;
 			console.log(`[CloudSync] Refreshing store: ${store} (${storeIndex + 1}/${totalStores})`);
@@ -747,6 +748,9 @@ export const refreshFromCloud = async (): Promise<void> => {
 			const collectionPath = `leagues/${cloudId}/stores/${store}/data`;
 			const collectionRef = collection(db, collectionPath);
 
+			// Download ALL data for this store first (before writing anything)
+			// This prevents corruption if interrupted mid-download
+			const allRecords: any[] = [];
 			let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
 			let hasMore = true;
 			let batchCount = 0;
@@ -766,21 +770,17 @@ export const refreshFromCloud = async (): Promise<void> => {
 
 				batchCount++;
 
-				// Parse the batch
-				const records: any[] = [];
+				// Parse and accumulate the batch
 				snapshot.forEach((docSnap: QueryDocumentSnapshot) => {
 					const docData = docSnap.data();
 					if (docData._json) {
-						records.push(JSON.parse(docData._json));
+						allRecords.push(JSON.parse(docData._json));
 					} else {
-						records.push(docData);
+						allRecords.push(docData);
 					}
 				});
 
-				console.log(`[CloudSync] ${store}: batch ${batchCount}, ${records.length} records`);
-
-				// Write batch to IndexedDB
-				await toWorker("main", "writeCloudRefreshBatch", { store, records });
+				console.log(`[CloudSync] ${store}: downloaded batch ${batchCount}, total ${allRecords.length} records`);
 
 				if (snapshot.docs.length < BATCH_SIZE) {
 					hasMore = false;
@@ -788,6 +788,12 @@ export const refreshFromCloud = async (): Promise<void> => {
 					lastDoc = snapshot.docs[snapshot.docs.length - 1] ?? null;
 				}
 			}
+
+			// Now atomically replace the store (clear + write in single transaction)
+			// This is safe - if interrupted, IndexedDB rolls back the transaction
+			console.log(`[CloudSync] ${store}: writing ${allRecords.length} records atomically`);
+			refreshProgressCallback?.(`Saving ${store}...`, storePercent + 2);
+			await toWorker("main", "atomicStoreReplace", { store, records: allRecords });
 
 			storeIndex++;
 		}
