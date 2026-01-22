@@ -495,8 +495,8 @@ const ManageMembersSection = ({
 
 	const currentUserId = getCurrentUserId();
 
-	const loadTeams = async () => {
-		if (teams.length > 0) return; // Already loaded
+	const loadTeams = async (force = false) => {
+		if (!force && teams.length > 0) return; // Already loaded
 		setLoadingTeams(true);
 		try {
 			const fetchedTeams = await getCloudLeagueTeams(league.cloudId);
@@ -527,6 +527,8 @@ const ManageMembersSection = ({
 		try {
 			await removeLeagueMember(league.cloudId, memberUserId);
 			setSuccess(`${displayName} has been removed from the league`);
+			// Force refresh teams to update claimedBy info
+			await loadTeams(true);
 			onMemberUpdate();
 		} catch (err: any) {
 			setError(err.message || "Failed to remove member");
@@ -558,9 +560,8 @@ const ManageMembersSection = ({
 			setEditingMember(null);
 			setNewTeamId(null);
 			onMemberUpdate();
-			// Reload teams to refresh claimedBy info
-			setTeams([]);
-			await loadTeams();
+			// Force refresh teams to update claimedBy info
+			await loadTeams(true);
 		} catch (err: any) {
 			setError(err.message || "Failed to reassign team");
 		} finally {
@@ -670,44 +671,44 @@ const ManageMembersSection = ({
 											)}
 										</div>
 										<div>
-											{!isCommissioner && !isSelf && (
+											{isEditing ? (
 												<>
-													{isEditing ? (
-														<>
-															<button
-																className="btn btn-sm btn-success me-1"
-																onClick={() => handleSaveReassign(member.userId, member.displayName)}
-																disabled={isLoading}
-															>
-																{isLoading ? "..." : "Save"}
-															</button>
-															<button
-																className="btn btn-sm btn-outline-secondary"
-																onClick={handleCancelReassign}
-																disabled={isLoading}
-															>
-																Cancel
-															</button>
-														</>
-													) : (
-														<>
-															<button
-																className="btn btn-sm btn-outline-primary me-1"
-																onClick={() => handleStartReassign(member.userId, member.teamId)}
-																disabled={!!loading}
-																title="Reassign team"
-															>
-																Reassign
-															</button>
-															<button
-																className="btn btn-sm btn-outline-danger"
-																onClick={() => handleRemoveMember(member.userId, member.displayName)}
-																disabled={!!loading}
-																title="Remove from league"
-															>
-																Remove
-															</button>
-														</>
+													<button
+														className="btn btn-sm btn-success me-1"
+														onClick={() => handleSaveReassign(member.userId, member.displayName)}
+														disabled={isLoading}
+													>
+														{isLoading ? "..." : "Save"}
+													</button>
+													<button
+														className="btn btn-sm btn-outline-secondary"
+														onClick={handleCancelReassign}
+														disabled={isLoading}
+													>
+														Cancel
+													</button>
+												</>
+											) : (
+												<>
+													{/* Everyone can be reassigned (including commissioner) */}
+													<button
+														className="btn btn-sm btn-outline-primary me-1"
+														onClick={() => handleStartReassign(member.userId, member.teamId)}
+														disabled={!!loading}
+														title="Reassign team"
+													>
+														Reassign
+													</button>
+													{/* Only non-commissioners can be removed (can't remove yourself) */}
+													{!isCommissioner && !isSelf && (
+														<button
+															className="btn btn-sm btn-outline-danger"
+															onClick={() => handleRemoveMember(member.userId, member.displayName)}
+															disabled={!!loading}
+															title="Remove from league"
+														>
+															Remove
+														</button>
 													)}
 												</>
 											)}
