@@ -692,12 +692,22 @@ export const refreshFromCloud = async (): Promise<void> => {
 	const deviceLastSync = getDeviceLastSyncTime(cloudId);
 	const storeUpdates = league.storeUpdates || {};
 
+	console.log("[CloudSync] Incremental sync check:", {
+		deviceLastSync,
+		deviceLastSyncDate: deviceLastSync ? new Date(deviceLastSync).toISOString() : "never",
+		storeUpdatesCount: Object.keys(storeUpdates).length,
+		storeUpdatesKeys: Object.keys(storeUpdates).slice(0, 5), // First 5 keys for debugging
+	});
+
 	let storesToRefresh: Store[];
 	let isFullRefresh = false;
 
 	if (deviceLastSync === 0 || Object.keys(storeUpdates).length === 0) {
 		// First sync or no store tracking data - do full refresh
-		console.log("[CloudSync] Full refresh (deviceLastSync=0 or no storeUpdates)");
+		console.log("[CloudSync] Full refresh reason:", {
+			deviceLastSyncIsZero: deviceLastSync === 0,
+			storeUpdatesEmpty: Object.keys(storeUpdates).length === 0,
+		});
 		storesToRefresh = [...ALL_STORES];
 		isFullRefresh = true;
 	} else {
