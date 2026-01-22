@@ -219,3 +219,16 @@ export const getUserIdToken = async (): Promise<string | null> => {
 	}
 };
 
+// Get or create a unique device ID for this browser/device
+// This allows multi-device sync to work even for the same user
+export const getDeviceId = (): string => {
+	const DEVICE_ID_KEY = "cloudDeviceId";
+	let deviceId = localStorage.getItem(DEVICE_ID_KEY);
+	if (!deviceId) {
+		// Generate a unique ID for this device
+		deviceId = `device-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+		localStorage.setItem(DEVICE_ID_KEY, deviceId);
+	}
+	return deviceId;
+};
+

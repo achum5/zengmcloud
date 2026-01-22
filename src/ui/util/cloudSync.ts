@@ -24,7 +24,7 @@ import {
 	type DocumentData,
 	type QuerySnapshot,
 } from "firebase/firestore";
-import { getFirebaseDb, getFirebaseAuth, getCurrentUserId, getUserDisplayName, getUserEmail, waitForAuth } from "./firebase.ts";
+import { getFirebaseDb, getFirebaseAuth, getCurrentUserId, getUserDisplayName, getUserEmail, waitForAuth, getDeviceId } from "./firebase.ts";
 import type { Store, CloudLeague, CloudMember, CloudSyncStatus } from "../../common/cloudTypes.ts";
 import { toWorker } from "./index.ts";
 import { localActions } from "./local.ts";
@@ -543,25 +543,25 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 				return;
 			}
 
-			const data = docSnapshot.data() as CloudLeague;
+			const data = docSnapshot.data() as CloudLeague & { lastUpdatedByDeviceId?: string };
 			const newUpdateTime = data.updatedAt || 0;
+			const currentDeviceId = getDeviceId();
 
 			console.log("[CloudSync] Listener triggered:", {
 				newUpdateTime,
 				lastKnownUpdateTime,
 				lastUpdatedBy: data.lastUpdatedBy,
-				lastUpdatedByUserId: data.lastUpdatedByUserId,
-				currentUserId: getCurrentUserId(),
+				lastUpdatedByDeviceId: data.lastUpdatedByDeviceId,
+				currentDeviceId,
 			});
 
 			// If update time changed and it's newer than what we know
 			if (newUpdateTime > lastKnownUpdateTime) {
-				// Find who made the change (not us)
-				const userId = getCurrentUserId();
 				const updater = data.lastUpdatedBy || "Someone";
 
-				// Don't notify about our own changes
-				if (data.lastUpdatedByUserId !== userId) {
+				// Don't notify about changes from THIS DEVICE (same browser/device)
+				// This allows same user on different devices to see updates
+				if (data.lastUpdatedByDeviceId !== currentDeviceId) {
 					console.log("[CloudSync] Notifying pending update from:", updater);
 					notifyPendingUpdate({
 						updatedAt: newUpdateTime,
@@ -569,8 +569,8 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 						message: data.lastUpdateMessage,
 					});
 				} else {
-					// Our own change - just update the baseline
-					console.log("[CloudSync] Own change, updating baseline");
+					// Our own change from this device - just update the baseline
+					console.log("[CloudSync] Own device change, updating baseline");
 					lastKnownUpdateTime = newUpdateTime;
 				}
 			} else {
@@ -708,6 +708,7 @@ export const markLeagueUpdated = async (message?: string): Promise<void> => {
 	const db = getFirebaseDb();
 	const userId = getCurrentUserId();
 	const displayName = getUserDisplayName() || "Unknown";
+	const deviceId = getDeviceId();
 
 	const now = Date.now();
 	lastKnownUpdateTime = now;
@@ -716,6 +717,7 @@ export const markLeagueUpdated = async (message?: string): Promise<void> => {
 		updatedAt: now,
 		lastUpdatedBy: displayName,
 		lastUpdatedByUserId: userId,
+		lastUpdatedByDeviceId: deviceId,
 		lastUpdateMessage: message,
 	}, { merge: true });
 };
@@ -764,9 +766,10 @@ export const syncLocalChanges = async (
 		await batch.commit();
 	}
 
-	// Update league metadata with user info for notifications
+	// Update league metadata with user/device info for notifications
 	const userId = getCurrentUserId();
 	const displayName = getUserDisplayName() || "Unknown";
+	const deviceId = getDeviceId();
 	const now = Date.now();
 	lastKnownUpdateTime = now; // Update our baseline so we don't notify ourselves
 
@@ -774,6 +777,7 @@ export const syncLocalChanges = async (
 		updatedAt: now,
 		lastUpdatedBy: displayName,
 		lastUpdatedByUserId: userId,
+		lastUpdatedByDeviceId: deviceId,
 		lastUpdateMessage: `Updated ${store}`,
 	}, { merge: true });
 };
