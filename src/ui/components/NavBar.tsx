@@ -13,6 +13,7 @@ import LogoAndText from "./LogoAndText.tsx";
 import PlayMenu from "./PlayMenu.tsx";
 import {
 	onPendingUpdate,
+	onRefreshProgress,
 	refreshFromCloud,
 	type PendingUpdateInfo,
 } from "../util/cloudSync.ts";
@@ -22,6 +23,7 @@ const CloudSyncIndicator = () => {
 	const { cloudSyncStatus } = useLocalPartial(["cloudSyncStatus"]);
 	const [pendingUpdate, setPendingUpdate] = useState<PendingUpdateInfo | null>(null);
 	const [refreshing, setRefreshing] = useState(false);
+	const [refreshProgress, setRefreshProgress] = useState<{ message: string; percent: number } | null>(null);
 
 	// Subscribe to pending update notifications
 	useEffect(() => {
@@ -30,13 +32,29 @@ const CloudSyncIndicator = () => {
 		});
 	}, []);
 
+	// Subscribe to refresh progress
+	useEffect(() => {
+		onRefreshProgress((message, percent) => {
+			if (message) {
+				setRefreshProgress({ message, percent });
+			} else {
+				setRefreshProgress(null);
+			}
+		});
+		return () => {
+			onRefreshProgress(null);
+		};
+	}, []);
+
 	const handleRefresh = useCallback(async () => {
 		setRefreshing(true);
+		setRefreshProgress({ message: "Starting...", percent: 0 });
 		try {
 			await refreshFromCloud();
 		} catch (error) {
 			console.error("Failed to refresh from cloud:", error);
 			setRefreshing(false);
+			setRefreshProgress(null);
 		}
 		// Page will reload, so we don't need to reset refreshing
 	}, []);
@@ -59,10 +77,19 @@ const CloudSyncIndicator = () => {
 
 	if (refreshing) {
 		return (
-			<button className="btn btn-secondary btn-sm me-2" disabled>
-				<span className="glyphicon glyphicon-refresh" style={{ animation: "spin 1s linear infinite" }} />
-				<span className="d-none d-md-inline ms-1">Refreshing...</span>
-			</button>
+			<div className="d-flex align-items-center me-2">
+				<button className="btn btn-info btn-sm" disabled>
+					<span className="glyphicon glyphicon-refresh" style={{ animation: "spin 1s linear infinite" }} />
+					<span className="ms-1">
+						{refreshProgress ? `${refreshProgress.percent}%` : "..."}
+					</span>
+				</button>
+				{refreshProgress && (
+					<small className="text-body-secondary ms-2 d-none d-lg-inline" style={{ maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+						{refreshProgress.message}
+					</small>
+				)}
+			</div>
 		);
 	}
 

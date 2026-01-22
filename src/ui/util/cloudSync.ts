@@ -605,18 +605,29 @@ export const stopRealtimeSync = () => {
 	setSyncStatus("disconnected");
 };
 
+// Callback for refresh progress updates
+let refreshProgressCallback: ((message: string, percent: number) => void) | null = null;
+
+export const onRefreshProgress = (callback: ((message: string, percent: number) => void) | null) => {
+	refreshProgressCallback = callback;
+};
+
 /**
  * Refresh league data from cloud.
  * Called when user clicks "Update Available" notification.
  * Downloads fresh data and reloads the league.
  */
 export const refreshFromCloud = async (): Promise<void> => {
+	console.log("[CloudSync] refreshFromCloud starting...");
+
 	if (!currentCloudId) {
 		throw new Error("Not connected to a cloud league");
 	}
 
 	const cloudId = currentCloudId;
 	const db = getFirebaseDb();
+
+	refreshProgressCallback?.("Connecting to cloud...", 0);
 
 	// Get league info and user's team assignment
 	const league = await getCloudLeague(cloudId);
@@ -635,20 +646,29 @@ export const refreshFromCloud = async (): Promise<void> => {
 	notifyPendingUpdate(null);
 
 	setSyncStatus("syncing");
+	refreshProgressCallback?.("Preparing to refresh...", 2);
 
 	try {
 		// Initialize refresh (clears existing data)
+		console.log("[CloudSync] Initializing refresh...");
 		await toWorker("main", "initCloudLeagueRefresh", undefined);
 
 		const BATCH_SIZE = 500;
+		const totalStores = ALL_STORES.length;
+		let storeIndex = 0;
 
 		// Re-download all stores from cloud
 		for (const store of ALL_STORES) {
+			const storePercent = Math.round((storeIndex / totalStores) * 90) + 5;
+			console.log(`[CloudSync] Refreshing store: ${store} (${storePercent}%)`);
+			refreshProgressCallback?.(`Downloading ${store}...`, storePercent);
+
 			const collectionPath = `leagues/${cloudId}/stores/${store}/data`;
 			const collectionRef = collection(db, collectionPath);
 
 			let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
 			let hasMore = true;
+			let batchCount = 0;
 
 			while (hasMore) {
 				const baseQuery = query(collectionRef, orderBy("__name__"), limit(BATCH_SIZE));
@@ -663,6 +683,8 @@ export const refreshFromCloud = async (): Promise<void> => {
 					break;
 				}
 
+				batchCount++;
+
 				// Parse the batch
 				const records: any[] = [];
 				snapshot.forEach((docSnap: QueryDocumentSnapshot) => {
@@ -674,6 +696,8 @@ export const refreshFromCloud = async (): Promise<void> => {
 					}
 				});
 
+				console.log(`[CloudSync] ${store}: batch ${batchCount}, ${records.length} records`);
+
 				// Write batch to IndexedDB
 				await toWorker("main", "writeCloudRefreshBatch", { store, records });
 
@@ -683,16 +707,24 @@ export const refreshFromCloud = async (): Promise<void> => {
 					lastDoc = snapshot.docs[snapshot.docs.length - 1] ?? null;
 				}
 			}
+
+			storeIndex++;
 		}
 
 		// Finalize the refresh
+		console.log("[CloudSync] Finalizing refresh...");
+		refreshProgressCallback?.("Finalizing...", 97);
 		await toWorker("main", "finalizeCloudRefresh", { memberTeamId });
 
+		console.log("[CloudSync] Refresh complete!");
+		refreshProgressCallback?.("Done! Reloading...", 100);
 		setSyncStatus("synced");
 
 		// Reload the page to show the fresh data
 		window.location.reload();
 	} catch (error) {
+		console.error("[CloudSync] Refresh error:", error);
+		refreshProgressCallback?.(null as any, 0);
 		setSyncStatus("error");
 		throw error;
 	}
