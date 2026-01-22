@@ -845,6 +845,19 @@ export const refreshFromCloud = async (): Promise<void> => {
 		const now = Date.now();
 		setDeviceLastSyncTime(cloudId, now);
 
+		// If this was a full refresh and the cloud didn't have storeUpdates data,
+		// populate it now so future refreshes can be incremental.
+		if (isFullRefresh && Object.keys(storeUpdates).length === 0) {
+			console.log("[CloudSync] Populating storeUpdates in Firestore for future incremental syncs...");
+			const allStoreUpdates: Record<string, number> = {};
+			for (const store of ALL_STORES) {
+				allStoreUpdates[store] = now;
+			}
+			await setDoc(doc(db, "leagues", cloudId), {
+				storeUpdates: allStoreUpdates,
+			}, { merge: true });
+		}
+
 		console.log(`[CloudSync] Refresh complete! Updated ${storesToRefresh.length} stores`);
 		refreshProgressCallback?.("Done! Reloading...", 100);
 		setSyncStatus("synced");
