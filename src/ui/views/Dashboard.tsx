@@ -200,6 +200,7 @@ const LeagueName = ({
 	disabled,
 	onClick,
 	isCloud,
+	cloudId,
 }: {
 	lid: number;
 	children: string;
@@ -207,13 +208,14 @@ const LeagueName = ({
 	disabled: boolean;
 	onClick: () => void;
 	isCloud?: boolean;
+	cloudId?: string;
 }) => {
 	return (
 		<div className="d-flex align-items-center">
 			{isCloud && (
 				<span
 					className="glyphicon glyphicon-cloud text-primary me-2"
-					title="Cloud League - syncs with other players"
+					title={cloudId ? `Cloud ID: ${cloudId}` : "Cloud League - syncs with other players"}
 				/>
 			)}
 			<div className="me-1">
@@ -223,6 +225,11 @@ const LeagueName = ({
 					</a>
 				) : (
 					name
+				)}
+				{cloudId && (
+					<div className="text-body-secondary small" style={{ fontSize: "0.7em" }}>
+						{cloudId}
+					</div>
 				)}
 			</div>
 			<Star lid={lid} starred={starred} />
@@ -249,6 +256,7 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 	const [cloningLID, setCloningLID] = useState<number | undefined>();
 	const [cloudLeagues, setCloudLeagues] = useState<CloudLeague[]>([]);
 	const [downloadingCloudId, setDownloadingCloudId] = useState<string | undefined>();
+	const [downloadProgress, setDownloadProgress] = useState<{ message: string; percent: number } | null>(null);
 	useTitleBar();
 
 	// Fetch cloud leagues on mount (both owned and joined)
@@ -299,29 +307,24 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 
 		try {
 			setDownloadingCloudId(cloudLeague.cloudId);
-			logEvent({
-				type: "info",
-				text: `Downloading "${cloudLeague.name}"...`,
-				saveToDb: false,
-				showNotification: true,
-			});
+			setDownloadProgress({ message: "Connecting to cloud...", percent: 0 });
 
 			// Use streaming download to avoid memory exhaustion on mobile
 			const lid = await streamDownloadLeagueData(
 				cloudLeague.cloudId,
 				cloudLeague.name,
 				memberTeamId,
+				(message, percent) => {
+					setDownloadProgress({ message, percent });
+				},
 			);
+
+			setDownloadProgress({ message: "Starting sync...", percent: 99 });
 
 			// Start real-time sync listener
 			await startRealtimeSync(cloudLeague.cloudId);
 
-			logEvent({
-				type: "info",
-				text: `"${cloudLeague.name}" ready to play!`,
-				saveToDb: false,
-				showNotification: true,
-			});
+			setDownloadProgress({ message: "Done! Loading league...", percent: 100 });
 
 			// Navigate to the league
 			window.location.href = `/l/${lid}`;
@@ -334,6 +337,7 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 			});
 		} finally {
 			setDownloadingCloudId(undefined);
+			setDownloadProgress(null);
 		}
 	};
 
@@ -406,6 +410,7 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 						}
 					}}
 					isCloud={isCloud}
+					cloudId={league.cloudId}
 				>
 					{league.name}
 				</LeagueName>,
@@ -580,7 +585,14 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 							title="Cloud League - needs download"
 						/>
 						<span>{cloudLeague.name}</span>
-						<span className="badge bg-secondary ms-2">Not Downloaded</span>
+						{isDownloading ? (
+							<span className="badge bg-success ms-2">
+								<span className="spinner-border spinner-border-sm me-1" style={{ width: "0.7em", height: "0.7em" }} />
+								Downloading...
+							</span>
+						) : (
+							<span className="badge bg-secondary ms-2">Not Downloaded</span>
+						)}
 					</div>,
 					// Team - unknown until downloaded
 					{
@@ -633,6 +645,28 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 					<a href={`https://${WEBSITE_PLAY}/`}>the main site</a>.
 				</p>
 			) : null}
+
+			{/* Cloud download progress banner */}
+			{downloadProgress && (
+				<div className="alert alert-info mb-3" style={{ maxWidth: 600 }}>
+					<strong>
+						<span className="glyphicon glyphicon-cloud me-2" />
+						Downloading from Cloud...
+					</strong>
+					<div className="d-flex justify-content-between mt-2 mb-1">
+						<span>{downloadProgress.message}</span>
+						<span>{downloadProgress.percent}%</span>
+					</div>
+					<div className="progress">
+						<div
+							className="progress-bar progress-bar-striped progress-bar-animated"
+							role="progressbar"
+							style={{ width: `${downloadProgress.percent}%` }}
+						/>
+					</div>
+				</div>
+			)}
+
 			<div className="dashboard-top-wrapper">
 				{REAL_PLAYERS_INFO ? (
 					<>

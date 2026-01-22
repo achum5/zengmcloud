@@ -5358,6 +5358,13 @@ const cancelCloudLeagueDownload = async (): Promise<void> => {
 };
 
 /**
+ * Get league metadata for a specific league.
+ */
+const getLeagueMeta = async (lid: number) => {
+	return idb.meta.get("leagues", lid);
+};
+
+/**
  * Update a local league's cloudId after uploading to cloud.
  */
 const setLeagueCloudId = async ({
@@ -5671,6 +5678,7 @@ export default {
 		cancelCloudLeagueDownload,
 
 		// Cloud league management
+		getLeagueMeta,
 		setLeagueCloudId,
 
 		// Cloud refresh functions (for updating existing league)

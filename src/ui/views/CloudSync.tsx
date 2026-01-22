@@ -806,6 +806,36 @@ const CloudSync = () => {
 		}
 	}, [isAuthenticated, loadCloudLeagues]);
 
+	// Auto-link local league to cloud league if not already linked
+	// This handles leagues that were uploaded before setLeagueCloudId was added
+	useEffect(() => {
+		const autoLinkLeague = async () => {
+			if (!lid || !isAuthenticated) return;
+			if (cloudLeagues.length === 0 && joinedLeagues.length === 0) return;
+
+			// Get local league info
+			const localLeague = await toWorker("main", "getLeagueMeta", lid);
+			if (!localLeague || localLeague.cloudId) {
+				// Already linked or doesn't exist
+				return;
+			}
+
+			// Try to find matching cloud league by name
+			const leagueName = localLeague.name;
+			const allCloud = [...cloudLeagues, ...joinedLeagues];
+			const matchingCloud = allCloud.find(cl => cl.name === leagueName);
+
+			if (matchingCloud) {
+				console.log("[CloudSync] Auto-linking local league to cloud:", matchingCloud.cloudId);
+				await toWorker("main", "setLeagueCloudId", { lid, cloudId: matchingCloud.cloudId });
+				// Trigger dashboard refresh
+				await realtimeUpdate(["leagues"]);
+			}
+		};
+
+		autoLinkLeague();
+	}, [lid, isAuthenticated, cloudLeagues, joinedLeagues]);
+
 	const handleSignInSuccess = () => {
 		setIsAuthenticated(true);
 	};
