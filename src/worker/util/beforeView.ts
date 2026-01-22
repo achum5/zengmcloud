@@ -188,6 +188,12 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 	if (env.useSharedWorker) {
 		toUI("newLid", [g.get("lid")]);
 	}
+
+	// Auto-start cloud sync if this is a cloud league
+	const leagueMeta = await idb.meta.get("leagues", newLid);
+	if (leagueMeta?.cloudId) {
+		toUI("startCloudSync", [leagueMeta.cloudId]);
+	}
 };
 
 // beforeNonLeague runs when the user clicks a link back to the dashboard while in a league. beforeNonLeagueRunning is to handle extra realtimeUpdate request triggered by stopping gameSim in league.disconnect
