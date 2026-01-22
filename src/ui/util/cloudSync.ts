@@ -912,3 +912,86 @@ export const canSimulateGames = (): boolean => {
 	// Only commissioner can simulate
 	return currentCloudMember.role === "commissioner";
 };
+
+/**
+ * Remove a member from a cloud league (commissioner only)
+ */
+export const removeLeagueMember = async (
+	cloudId: string,
+	memberUserId: string,
+): Promise<void> => {
+	const db = getFirebaseDb();
+	const currentUserId = getCurrentUserId();
+	if (!currentUserId) throw new Error("Not signed in");
+
+	// Get the league
+	const league = await getCloudLeague(cloudId);
+	if (!league) throw new Error("League not found");
+
+	// Verify ownership
+	if (league.ownerId !== currentUserId) {
+		throw new Error("Only the commissioner can remove members");
+	}
+
+	// Can't remove yourself (the commissioner)
+	if (memberUserId === currentUserId) {
+		throw new Error("You cannot remove yourself from the league");
+	}
+
+	// Find and remove the member
+	const updatedMembers = league.members.filter(m => m.userId !== memberUserId);
+
+	if (updatedMembers.length === league.members.length) {
+		throw new Error("Member not found in league");
+	}
+
+	// Update the league
+	await setDoc(doc(db, "leagues", cloudId), {
+		members: updatedMembers,
+		updatedAt: Date.now(),
+	}, { merge: true });
+};
+
+/**
+ * Update a member's team assignment (commissioner only)
+ */
+export const updateMemberTeam = async (
+	cloudId: string,
+	memberUserId: string,
+	newTeamId: number,
+): Promise<void> => {
+	const db = getFirebaseDb();
+	const currentUserId = getCurrentUserId();
+	if (!currentUserId) throw new Error("Not signed in");
+
+	// Get the league
+	const league = await getCloudLeague(cloudId);
+	if (!league) throw new Error("League not found");
+
+	// Verify ownership
+	if (league.ownerId !== currentUserId) {
+		throw new Error("Only the commissioner can reassign teams");
+	}
+
+	// Check if the new team is already taken by someone else
+	const teamOwner = league.members.find(m => m.teamId === newTeamId && m.userId !== memberUserId);
+	if (teamOwner) {
+		throw new Error(`Team is already assigned to ${teamOwner.displayName}`);
+	}
+
+	// Find and update the member
+	const memberIndex = league.members.findIndex(m => m.userId === memberUserId);
+	if (memberIndex === -1) {
+		throw new Error("Member not found in league");
+	}
+
+	const updatedMembers = league.members.map((m, i) =>
+		i === memberIndex ? { ...m, teamId: newTeamId } : m
+	);
+
+	// Update the league
+	await setDoc(doc(db, "leagues", cloudId), {
+		members: updatedMembers,
+		updatedAt: Date.now(),
+	}, { merge: true });
+};
