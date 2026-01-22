@@ -18,7 +18,7 @@ import type {
 	GameAttributesLeague,
 } from "../../common/types.ts";
 import { crossTabEmitter } from "../util/crossTabEmitter.ts";
-import { syncLocalChanges, getCurrentCloudId } from "../util/cloudSync.ts";
+import { syncLocalChanges, getCurrentCloudId, startRealtimeSync } from "../util/cloudSync.ts";
 import type { Store } from "../../common/cloudTypes.ts";
 
 const initAds = (type: "accountChecked" | "uiRendered") => {
@@ -165,6 +165,16 @@ const crossTabEmit = (
 	crossTabEmitter.emit(...parameters);
 };
 
+// Start cloud sync for a cloud league (called from worker when entering a cloud league)
+const startCloudSync = async (cloudId: string) => {
+	try {
+		await startRealtimeSync(cloudId);
+		console.log("[CloudSync] Auto-started sync for cloud league:", cloudId);
+	} catch (error) {
+		console.error("[CloudSync] Failed to auto-start sync:", error);
+	}
+};
+
 export default {
 	analyticsEvent,
 	autoPlayDialog,
@@ -183,6 +193,7 @@ export default {
 	setGameAttributes,
 	showEvent: showEvent2,
 	showModal,
+	startCloudSync,
 	syncCloudChanges,
 	updateLocal,
 	updateTeamOvrs,

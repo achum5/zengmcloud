@@ -37,7 +37,8 @@ import {
 	freeAgents,
 	season,
 } from "../core/index.ts";
-import { idb, connectLeague } from "../db/index.ts";
+import { idb, connectLeague, Cache } from "../db/index.ts";
+import type { Store } from "../../common/cloudTypes.ts";
 import {
 	achievement,
 	checkAccount,
@@ -5358,7 +5359,6 @@ const cancelCloudLeagueDownload = async (): Promise<void> => {
 
 /**
  * Update a local league's cloudId after uploading to cloud.
- * This links the local league to its cloud counterpart.
  */
 const setLeagueCloudId = async ({
 	lid,
@@ -5372,6 +5372,145 @@ const setLeagueCloudId = async ({
 		leagueMeta.cloudId = cloudId;
 		await idb.meta.put("leagues", leagueMeta);
 	}
+};
+
+/**
+ * Prepare to refresh an existing league with fresh cloud data.
+ * Clears all data stores so they can be refilled.
+ */
+let refreshingLeagueDb: Awaited<ReturnType<typeof connectLeague>> | null = null;
+
+const initCloudLeagueRefresh = async (): Promise<void> => {
+	const lid = g.get("lid");
+	if (lid === undefined) {
+		throw new Error("No league is currently loaded");
+	}
+
+	// Stop the cache auto-flush while we're clearing data
+	if (idb.cache) {
+		idb.cache.stopAutoFlush();
+	}
+
+	// Close current connection and reconnect
+	if (idb.league) {
+		await idb.league.close();
+	}
+
+	const db = await connectLeague(lid);
+	refreshingLeagueDb = db;
+
+	// Clear all data stores
+	const stores: Store[] = [
+		"allStars", "awards", "draftLotteryResults", "draftPicks", "events",
+		"gameAttributes", "games", "headToHeads", "messages", "negotiations",
+		"playerFeats", "players", "playoffSeries", "releasedPlayers", "savedTrades",
+		"savedTradingBlock", "schedule", "scheduledEvents", "seasonLeaders",
+		"teamSeasons", "teamStats", "teams", "trade",
+	];
+
+	for (const store of stores) {
+		const tx = db.transaction(store, "readwrite");
+		await tx.store.clear();
+		await tx.done;
+	}
+};
+
+/**
+ * Write a batch of records during cloud refresh.
+ */
+const writeCloudRefreshBatch = async ({
+	store,
+	records,
+}: {
+	store: string;
+	records: any[];
+}): Promise<void> => {
+	if (!refreshingLeagueDb) {
+		throw new Error("No refresh in progress. Call initCloudLeagueRefresh first.");
+	}
+
+	if (records.length === 0) return;
+
+	const tx = refreshingLeagueDb.transaction(store as any, "readwrite");
+	for (const record of records) {
+		tx.store.put(record);
+	}
+	await tx.done;
+};
+
+/**
+ * Finalize cloud refresh - updates game state and restarts cache.
+ */
+const finalizeCloudRefresh = async ({
+	memberTeamId,
+}: {
+	memberTeamId?: number;
+}): Promise<void> => {
+	if (!refreshingLeagueDb) {
+		throw new Error("No refresh in progress.");
+	}
+
+	const db = refreshingLeagueDb;
+	const lid = g.get("lid")!;
+
+	// Read gameAttributes to update game state
+	const gameAttributesArray = await db.getAll("gameAttributes");
+	const gameAttributesObj: Record<string, any> = {};
+	for (const ga of gameAttributesArray) {
+		if (ga.key) {
+			gameAttributesObj[ga.key] = ga.value;
+		}
+	}
+
+	// Determine user's team
+	const userTid = memberTeamId ?? gameAttributesObj.userTid ?? 0;
+
+	// Update userTid/userTids in gameAttributes if member team specified
+	if (memberTeamId !== undefined) {
+		const userTidTx = db.transaction("gameAttributes", "readwrite");
+		const userTidRecord = await userTidTx.store.get("userTid");
+		if (userTidRecord) {
+			userTidRecord.value = memberTeamId;
+			await userTidTx.store.put(userTidRecord);
+		}
+		await userTidTx.done;
+
+		const userTidsTx = db.transaction("gameAttributes", "readwrite");
+		const userTidsRecord = await userTidsTx.store.get("userTids");
+		if (userTidsRecord) {
+			userTidsRecord.value = [memberTeamId];
+			await userTidsTx.store.put(userTidsRecord);
+		}
+		await userTidsTx.done;
+	}
+
+	// Get team info
+	const teams = await db.getAll("teams");
+	const userTeam = (teams.find((t: any) => t.tid === userTid) || teams[0] || {}) as any;
+
+	// Update league metadata
+	const leagueMeta = await idb.meta.get("leagues", lid);
+	if (leagueMeta) {
+		leagueMeta.tid = userTid;
+		leagueMeta.phaseText = gameAttributesObj.phaseText || PHASE_TEXT[gameAttributesObj.phase as keyof typeof PHASE_TEXT] || "";
+		leagueMeta.teamName = userTeam?.name || "???";
+		leagueMeta.teamRegion = userTeam?.region || "???";
+		leagueMeta.difficulty = gameAttributesObj.difficulty;
+		leagueMeta.startingSeason = gameAttributesObj.startingSeason;
+		leagueMeta.season = gameAttributesObj.season;
+		leagueMeta.imgURL = userTeam?.imgURLSmall || userTeam?.imgURL;
+		leagueMeta.lastPlayed = new Date();
+		await idb.meta.put("leagues", leagueMeta);
+	}
+
+	// Update idb.league reference
+	idb.league = db;
+	refreshingLeagueDb = null;
+
+	// Reinitialize cache with fresh data
+	idb.cache = new Cache();
+	await idb.cache.fill();
+	idb.cache.startAutoFlush();
 };
 
 export default {
@@ -5533,5 +5672,10 @@ export default {
 
 		// Cloud league management
 		setLeagueCloudId,
+
+		// Cloud refresh functions (for updating existing league)
+		initCloudLeagueRefresh,
+		writeCloudRefreshBatch,
+		finalizeCloudRefresh,
 	},
 };

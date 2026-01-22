@@ -27,6 +27,7 @@ import {
 import { getFirebaseDb, getFirebaseAuth, getCurrentUserId, getUserDisplayName, getUserEmail } from "./firebase.ts";
 import type { Store, CloudLeague, CloudMember, CloudSyncStatus } from "../../common/cloudTypes.ts";
 import { toWorker } from "./index.ts";
+import { localActions } from "./local.ts";
 
 // All stores that need to be synced
 const ALL_STORES: Store[] = [
@@ -116,6 +117,8 @@ export const onSyncStatusChange = (callback: (status: CloudSyncStatus) => void) 
 // Update sync status
 const setSyncStatus = (status: CloudSyncStatus) => {
 	syncStatus = status;
+	// Update global state so NavBar can show status
+	localActions.update({ cloudSyncStatus: status });
 	if (statusCallback) {
 		statusCallback(status);
 	}
@@ -233,9 +236,20 @@ export const uploadLeagueData = async (
 			}
 		}
 
-		// Update league metadata
+		// Extract season and phase from gameAttributes
+		const gameAttributesArray = allData.gameAttributes || [];
+		const gameAttributesObj: Record<string, any> = {};
+		for (const ga of gameAttributesArray) {
+			if (ga.key) {
+				gameAttributesObj[ga.key] = ga.value;
+			}
+		}
+
+		// Update league metadata with actual season/phase
 		await setDoc(doc(db, "leagues", cloudId), {
 			updatedAt: Date.now(),
+			season: gameAttributesObj.season || 0,
+			phase: gameAttributesObj.phase || 0,
 		}, { merge: true });
 
 		setSyncStatus("synced");
@@ -565,12 +579,17 @@ export const refreshFromCloud = async (): Promise<void> => {
 	}
 
 	const cloudId = currentCloudId;
+	const db = getFirebaseDb();
 
-	// Get league info
+	// Get league info and user's team assignment
 	const league = await getCloudLeague(cloudId);
 	if (!league) {
 		throw new Error("League not found");
 	}
+
+	const userId = getCurrentUserId();
+	const member = userId ? league.members.find(m => m.userId === userId) : undefined;
+	const memberTeamId = member?.teamId;
 
 	// Update our baseline time
 	lastKnownUpdateTime = league.updatedAt || Date.now();
@@ -578,9 +597,68 @@ export const refreshFromCloud = async (): Promise<void> => {
 	// Clear pending notification
 	notifyPendingUpdate(null);
 
-	// Reload the page to get fresh data
-	// This is the simplest approach - the league will re-download from cloud
-	window.location.reload();
+	setSyncStatus("syncing");
+
+	try {
+		// Initialize refresh (clears existing data)
+		await toWorker("main", "initCloudLeagueRefresh", undefined);
+
+		const BATCH_SIZE = 500;
+
+		// Re-download all stores from cloud
+		for (const store of ALL_STORES) {
+			const collectionPath = `leagues/${cloudId}/stores/${store}/data`;
+			const collectionRef = collection(db, collectionPath);
+
+			let lastDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+			let hasMore = true;
+
+			while (hasMore) {
+				const baseQuery = query(collectionRef, orderBy("__name__"), limit(BATCH_SIZE));
+				const paginatedQuery = lastDoc
+					? query(collectionRef, orderBy("__name__"), startAfter(lastDoc), limit(BATCH_SIZE))
+					: baseQuery;
+
+				const snapshot: QuerySnapshot<DocumentData> = await getDocs(paginatedQuery);
+
+				if (snapshot.empty) {
+					hasMore = false;
+					break;
+				}
+
+				// Parse the batch
+				const records: any[] = [];
+				snapshot.forEach((docSnap: QueryDocumentSnapshot) => {
+					const docData = docSnap.data();
+					if (docData._json) {
+						records.push(JSON.parse(docData._json));
+					} else {
+						records.push(docData);
+					}
+				});
+
+				// Write batch to IndexedDB
+				await toWorker("main", "writeCloudRefreshBatch", { store, records });
+
+				if (snapshot.docs.length < BATCH_SIZE) {
+					hasMore = false;
+				} else {
+					lastDoc = snapshot.docs[snapshot.docs.length - 1] ?? null;
+				}
+			}
+		}
+
+		// Finalize the refresh
+		await toWorker("main", "finalizeCloudRefresh", { memberTeamId });
+
+		setSyncStatus("synced");
+
+		// Reload the page to show the fresh data
+		window.location.reload();
+	} catch (error) {
+		setSyncStatus("error");
+		throw error;
+	}
 };
 
 /**
