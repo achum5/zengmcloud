@@ -5423,6 +5423,43 @@ const initCloudLeagueRefresh = async (): Promise<void> => {
 };
 
 /**
+ * Prepare for incremental refresh - only clears specific stores that changed.
+ * This is much faster than full refresh when only a few stores were updated.
+ */
+const initIncrementalRefresh = async ({
+	stores,
+}: {
+	stores: string[];
+}): Promise<void> => {
+	const lid = g.get("lid");
+	if (lid === undefined) {
+		throw new Error("No league is currently loaded");
+	}
+
+	console.log(`[Worker] initIncrementalRefresh: clearing ${stores.length} stores:`, stores);
+
+	// Stop the cache auto-flush while we're clearing data
+	if (idb.cache) {
+		idb.cache.stopAutoFlush();
+	}
+
+	// Close current connection and reconnect
+	if (idb.league) {
+		await idb.league.close();
+	}
+
+	const db = await connectLeague(lid);
+	refreshingLeagueDb = db;
+
+	// Only clear the stores that changed
+	for (const store of stores) {
+		const tx = db.transaction(store as any, "readwrite");
+		await tx.store.clear();
+		await tx.done;
+	}
+};
+
+/**
  * Write a batch of records during cloud refresh.
  */
 const writeCloudRefreshBatch = async ({
@@ -5683,6 +5720,7 @@ export default {
 
 		// Cloud refresh functions (for updating existing league)
 		initCloudLeagueRefresh,
+		initIncrementalRefresh,
 		writeCloudRefreshBatch,
 		finalizeCloudRefresh,
 	},

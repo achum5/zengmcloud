@@ -93,6 +93,21 @@ const notifyPendingUpdate = (info: PendingUpdateInfo | null) => {
 	}
 };
 
+// ====== Device Sync Time Tracking (for incremental sync) ======
+// Each device tracks when it last synced with cloud, so we can
+// determine which stores need to be downloaded on refresh.
+
+const getDeviceLastSyncTime = (cloudId: string): number => {
+	const key = `cloudLastSync_${cloudId}`;
+	const stored = localStorage.getItem(key);
+	return stored ? parseInt(stored, 10) : 0;
+};
+
+const setDeviceLastSyncTime = (cloudId: string, timestamp: number): void => {
+	const key = `cloudLastSync_${cloudId}`;
+	localStorage.setItem(key, String(timestamp));
+};
+
 // Remove undefined values (Firestore doesn't accept them)
 const removeUndefined = (obj: any): any => {
 	if (obj === null || obj === undefined) return null;
@@ -245,12 +260,24 @@ export const uploadLeagueData = async (
 			}
 		}
 
-		// Update league metadata with actual season/phase
+		// Build storeUpdates object with current timestamp for all stores
+		// This allows incremental sync to know when each store was last updated
+		const now = Date.now();
+		const storeUpdates: Record<string, number> = {};
+		for (const store of ALL_STORES) {
+			storeUpdates[store] = now;
+		}
+
+		// Update league metadata with actual season/phase and store update times
 		await setDoc(doc(db, "leagues", cloudId), {
-			updatedAt: Date.now(),
+			updatedAt: now,
 			season: gameAttributesObj.season || 0,
 			phase: gameAttributesObj.phase || 0,
+			storeUpdates,
 		}, { merge: true });
+
+		// Save device's last sync time (we just uploaded everything, so we're in sync)
+		setDeviceLastSyncTime(cloudId, now);
 
 		setSyncStatus("synced");
 		onProgress?.("Upload complete!", 100);
@@ -405,6 +432,9 @@ export const streamDownloadLeagueData = async (
 			await toWorker("main", "finalizeCloudLeagueDownload", {
 				memberTeamId,
 			});
+
+			// Save device's last sync time (we just downloaded everything)
+			setDeviceLastSyncTime(cloudId, Date.now());
 
 			setSyncStatus("synced");
 			onProgress?.("Download complete!", 100);
@@ -615,7 +645,9 @@ export const onRefreshProgress = (callback: ((message: string, percent: number) 
 /**
  * Refresh league data from cloud.
  * Called when user clicks "Update Available" notification.
- * Downloads fresh data and reloads the league.
+ *
+ * INCREMENTAL SYNC: Only downloads stores that changed since the device's
+ * last sync, making updates much faster (5 stores instead of 22 for a sim).
  */
 export const refreshFromCloud = async (): Promise<void> => {
 	console.log("[CloudSync] refreshFromCloud starting...");
@@ -630,7 +662,7 @@ export const refreshFromCloud = async (): Promise<void> => {
 	refreshProgressCallback?.("Connecting to cloud...", 0);
 
 	// Get league info and user's team assignment
-	const league = await getCloudLeague(cloudId);
+	const league = await getCloudLeague(cloudId) as (CloudLeague & { storeUpdates?: Record<string, number> }) | null;
 	if (!league) {
 		throw new Error("League not found");
 	}
@@ -646,21 +678,61 @@ export const refreshFromCloud = async (): Promise<void> => {
 	notifyPendingUpdate(null);
 
 	setSyncStatus("syncing");
-	refreshProgressCallback?.("Preparing to refresh...", 2);
+
+	// Determine which stores need to be refreshed (incremental sync)
+	const deviceLastSync = getDeviceLastSyncTime(cloudId);
+	const storeUpdates = league.storeUpdates || {};
+
+	let storesToRefresh: Store[];
+	let isFullRefresh = false;
+
+	if (deviceLastSync === 0 || Object.keys(storeUpdates).length === 0) {
+		// First sync or no store tracking data - do full refresh
+		console.log("[CloudSync] Full refresh (deviceLastSync=0 or no storeUpdates)");
+		storesToRefresh = [...ALL_STORES];
+		isFullRefresh = true;
+	} else {
+		// Incremental sync - only refresh stores that changed
+		storesToRefresh = ALL_STORES.filter(store => {
+			const storeUpdateTime = storeUpdates[store] || 0;
+			return storeUpdateTime > deviceLastSync;
+		});
+		console.log(`[CloudSync] Incremental refresh: ${storesToRefresh.length}/${ALL_STORES.length} stores changed since ${new Date(deviceLastSync).toISOString()}`);
+		console.log("[CloudSync] Stores to refresh:", storesToRefresh);
+	}
+
+	if (storesToRefresh.length === 0) {
+		console.log("[CloudSync] No stores need refreshing - already up to date");
+		refreshProgressCallback?.("Already up to date!", 100);
+		setSyncStatus("synced");
+		// Update device sync time anyway
+		setDeviceLastSyncTime(cloudId, Date.now());
+		// Small delay then reload to refresh UI
+		setTimeout(() => window.location.reload(), 500);
+		return;
+	}
+
+	refreshProgressCallback?.(`Refreshing ${storesToRefresh.length} store(s)...`, 2);
 
 	try {
-		// Initialize refresh (clears existing data)
-		console.log("[CloudSync] Initializing refresh...");
-		await toWorker("main", "initCloudLeagueRefresh", undefined);
+		// For full refresh, clear all data first
+		// For incremental, we'll just overwrite the changed stores
+		if (isFullRefresh) {
+			console.log("[CloudSync] Initializing full refresh (clearing all data)...");
+			await toWorker("main", "initCloudLeagueRefresh", undefined);
+		} else {
+			console.log("[CloudSync] Incremental refresh (clearing only changed stores)...");
+			await toWorker("main", "initIncrementalRefresh", { stores: storesToRefresh });
+		}
 
 		const BATCH_SIZE = 500;
-		const totalStores = ALL_STORES.length;
+		const totalStores = storesToRefresh.length;
 		let storeIndex = 0;
 
-		// Re-download all stores from cloud
-		for (const store of ALL_STORES) {
+		// Download only the stores that changed
+		for (const store of storesToRefresh) {
 			const storePercent = Math.round((storeIndex / totalStores) * 90) + 5;
-			console.log(`[CloudSync] Refreshing store: ${store} (${storePercent}%)`);
+			console.log(`[CloudSync] Refreshing store: ${store} (${storeIndex + 1}/${totalStores})`);
 			refreshProgressCallback?.(`Downloading ${store}...`, storePercent);
 
 			const collectionPath = `leagues/${cloudId}/stores/${store}/data`;
@@ -716,7 +788,11 @@ export const refreshFromCloud = async (): Promise<void> => {
 		refreshProgressCallback?.("Finalizing...", 97);
 		await toWorker("main", "finalizeCloudRefresh", { memberTeamId });
 
-		console.log("[CloudSync] Refresh complete!");
+		// Update device's last sync time
+		const now = Date.now();
+		setDeviceLastSyncTime(cloudId, now);
+
+		console.log(`[CloudSync] Refresh complete! Updated ${storesToRefresh.length} stores`);
 		refreshProgressCallback?.("Done! Reloading...", 100);
 		setSyncStatus("synced");
 
@@ -799,6 +875,7 @@ export const syncLocalChanges = async (
 	}
 
 	// Update league metadata with user/device info for notifications
+	// Also track this store's update time for incremental sync
 	const userId = getCurrentUserId();
 	const displayName = getUserDisplayName() || "Unknown";
 	const deviceId = getDeviceId();
@@ -811,6 +888,8 @@ export const syncLocalChanges = async (
 		lastUpdatedByUserId: userId,
 		lastUpdatedByDeviceId: deviceId,
 		lastUpdateMessage: `Updated ${store}`,
+		// Track when this specific store was updated (for incremental sync)
+		[`storeUpdates.${store}`]: now,
 	}, { merge: true });
 };
 
