@@ -557,6 +557,15 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 
 	if (league) {
 		lastKnownUpdateTime = league.updatedAt || 0;
+
+		// If this device doesn't have a lastSyncTime yet, set it now.
+		// This assumes the local data is current (since we already have the league).
+		// This prevents a full refresh on first use of incremental sync.
+		const existingLastSync = getDeviceLastSyncTime(cloudId);
+		if (existingLastSync === 0) {
+			console.log("[CloudSync] Setting initial lastSyncTime to:", lastKnownUpdateTime);
+			setDeviceLastSyncTime(cloudId, lastKnownUpdateTime);
+		}
 	} else {
 		console.warn("[CloudSync] League not found in Firestore! cloudId:", cloudId);
 	}
