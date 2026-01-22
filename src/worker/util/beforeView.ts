@@ -191,8 +191,16 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 
 	// Auto-start cloud sync if this is a cloud league
 	const leagueMeta = await idb.meta.get("leagues", newLid);
+	console.log("[CloudSync] Local league metadata:", leagueMeta ? {
+		lid: leagueMeta.lid,
+		name: leagueMeta.name,
+		cloudId: leagueMeta.cloudId,
+	} : null);
 	if (leagueMeta?.cloudId) {
+		console.log("[CloudSync] Auto-starting sync from beforeView for cloudId:", leagueMeta.cloudId);
 		toUI("startCloudSync", [leagueMeta.cloudId]);
+	} else {
+		console.log("[CloudSync] No cloudId in local league metadata, sync not started");
 	}
 };
 

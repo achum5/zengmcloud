@@ -494,7 +494,11 @@ export const deleteCloudLeague = async (cloudId: string): Promise<void> => {
  * user choose when to refresh - just like BBGM's local file behavior.
  */
 export const startRealtimeSync = async (cloudId: string): Promise<void> => {
+	console.log("[CloudSync] startRealtimeSync called with cloudId:", cloudId);
+
 	const db = getFirebaseDb();
+	const userId = getCurrentUserId();
+	console.log("[CloudSync] Current userId:", userId);
 
 	// Stop any existing sync
 	stopRealtimeSync();
@@ -504,12 +508,24 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 
 	// Load current user's membership info for permission checks
 	await loadCurrentCloudMember();
+	console.log("[CloudSync] Loaded cloud member:", currentCloudMember);
 
 	// Get current update time as baseline
 	const league = await getCloudLeague(cloudId);
+	console.log("[CloudSync] Fetched league from Firestore:", league ? {
+		cloudId: league.cloudId,
+		updatedAt: league.updatedAt,
+		lastUpdatedBy: league.lastUpdatedBy,
+		lastUpdatedByUserId: league.lastUpdatedByUserId,
+		memberCount: league.members?.length,
+	} : null);
+
 	if (league) {
 		lastKnownUpdateTime = league.updatedAt || 0;
+	} else {
+		console.warn("[CloudSync] League not found in Firestore! cloudId:", cloudId);
 	}
+	console.log("[CloudSync] Setting baseline lastKnownUpdateTime:", lastKnownUpdateTime);
 
 	try {
 		// LIGHTWEIGHT: Only listen to league metadata document, not all 22 stores!
@@ -561,6 +577,7 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 		});
 
 		listeners.set("__metadata__", unsubscribe);
+		console.log("[CloudSync] Listener successfully attached to:", `leagues/${cloudId}`);
 		setSyncStatus("synced");
 	} catch (error) {
 		setSyncStatus("error");
