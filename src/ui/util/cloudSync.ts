@@ -24,7 +24,7 @@ import {
 	type DocumentData,
 	type QuerySnapshot,
 } from "firebase/firestore";
-import { getFirebaseDb, getFirebaseAuth, getCurrentUserId, getUserDisplayName, getUserEmail } from "./firebase.ts";
+import { getFirebaseDb, getFirebaseAuth, getCurrentUserId, getUserDisplayName, getUserEmail, waitForAuth } from "./firebase.ts";
 import type { Store, CloudLeague, CloudMember, CloudSyncStatus } from "../../common/cloudTypes.ts";
 import { toWorker } from "./index.ts";
 import { localActions } from "./local.ts";
@@ -495,6 +495,11 @@ export const deleteCloudLeague = async (cloudId: string): Promise<void> => {
  */
 export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 	console.log("[CloudSync] startRealtimeSync called with cloudId:", cloudId);
+
+	// Wait for Firebase Auth to be ready before proceeding
+	// This ensures we have the correct userId for ownership checks
+	console.log("[CloudSync] Waiting for Firebase Auth...");
+	await waitForAuth();
 
 	const db = getFirebaseDb();
 	const userId = getCurrentUserId();
