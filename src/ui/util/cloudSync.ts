@@ -618,7 +618,19 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 	console.log("[CloudSync] Loaded cloud member:", currentCloudMember);
 
 	// Get current update time as baseline
-	const league = await getCloudLeague(cloudId);
+	// CRITICAL: Use getDocFromServer to bypass Firestore cache!
+	// We need accurate storeVersions for the comparison below.
+	// If we use cached data, we might miss updates made while this device was offline.
+	let league: CloudLeague | null = null;
+	try {
+		const leagueDocSnap = await getDocFromServer(doc(db, "leagues", cloudId));
+		if (leagueDocSnap.exists()) {
+			league = leagueDocSnap.data() as CloudLeague;
+		}
+	} catch (error) {
+		console.warn("[CloudSync] Failed to fetch from server, falling back to cache:", error);
+		league = await getCloudLeague(cloudId);
+	}
 	console.log("[CloudSync] Fetched league from Firestore:", league ? {
 		cloudId: league.cloudId,
 		updatedAt: league.updatedAt,
@@ -636,26 +648,59 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 			console.log("[CloudSync] League migrated to version numbers");
 		}
 
-		// If this device doesn't have store versions yet, initialize them.
-		// This assumes the local data is current (since we already have the league).
-		// This prevents a full refresh on first use of incremental sync.
+		// NOTE: We intentionally do NOT initialize device store versions here.
+		// If the device has no stored versions, we leave them empty/zero.
+		// This ensures that when a refresh is triggered, the comparison will see
+		// cloud versions > device versions (0), causing a full download.
+		//
+		// Previously, we assumed local IndexedDB data was current if the league
+		// existed locally. But this assumption breaks when:
+		// 1. Another device made changes while this device was offline
+		// 2. The user opens the league without refreshing
+		// In these cases, the local data is stale but versions would match cloud,
+		// causing refresh to skip downloading any data.
+		//
+		// Device versions are properly set AFTER data is actually downloaded:
+		// - After streamDownloadLeagueData() for new downloads
+		// - After refreshFromCloud() for refreshes
 		const existingVersions = getDeviceStoreVersions(cloudId);
-		if (Object.keys(existingVersions).length === 0) {
-			// After migration (or if already migrated), league should have storeVersions
-			// Re-fetch to get the potentially updated data
-			const updatedLeague = migrated ? await getCloudLeague(cloudId) : league;
-			if (updatedLeague?.storeVersions && Object.keys(updatedLeague.storeVersions).length > 0) {
-				console.log("[CloudSync] Setting initial store versions from cloud:", updatedLeague.storeVersions);
-				setDeviceStoreVersions(cloudId, updatedLeague.storeVersions);
-			} else {
-				// Fallback - set all to 1 as baseline
-				console.log("[CloudSync] Setting initial store versions to 1 (fallback)");
-				const defaultVersions: Record<string, number> = {};
-				for (const store of ALL_STORES) {
-					defaultVersions[store] = 1;
+		const cloudVersions = league.storeVersions || {};
+		const needsInitialSync = Object.keys(existingVersions).length === 0;
+
+		// Check if device is behind the cloud (changes made while offline)
+		let needsRefreshDueToVersions = false;
+		if (!needsInitialSync && Object.keys(cloudVersions).length > 0) {
+			// Compare versions to see if any cloud stores are ahead of device
+			for (const store of ALL_STORES) {
+				const deviceVersion = existingVersions[store] || 0;
+				const cloudVersion = cloudVersions[store] || 0;
+				if (cloudVersion > deviceVersion) {
+					console.log(`[CloudSync] Store ${store} is outdated: device=${deviceVersion}, cloud=${cloudVersion}`);
+					needsRefreshDueToVersions = true;
+					break;
 				}
-				setDeviceStoreVersions(cloudId, defaultVersions);
 			}
+		}
+
+		if (needsInitialSync) {
+			console.log("[CloudSync] Device has no stored versions - will require full refresh to sync");
+		}
+
+		if (needsInitialSync || needsRefreshDueToVersions) {
+			// Show a notification so the user knows to refresh
+			// This handles the case where changes were made while this device was offline
+			console.log("[CloudSync] Device is behind cloud - showing refresh notification");
+			// Capture values for the closure
+			const notificationInfo = {
+				updatedAt: league.updatedAt || Date.now(),
+				updatedBy: league.lastUpdatedBy || "Cloud",
+				message: needsInitialSync ? "Sync required to get latest data" : "Updates available from cloud",
+			};
+			setTimeout(() => {
+				notifyPendingUpdate(notificationInfo);
+			}, 1000); // Small delay to let UI fully initialize
+		} else {
+			console.log("[CloudSync] Device versions match cloud - no refresh needed on startup");
 		}
 		// Clean up legacy timestamp tracking
 		clearLegacyDeviceSyncTime(cloudId);
