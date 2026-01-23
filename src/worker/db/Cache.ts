@@ -736,6 +736,7 @@ class Cache {
 
 	// Load database from disk and save in cache, wiping out any prior values in cache
 	async fill(season?: number) {
+		console.log("[Cache] fill() starting...");
 		this._validateStatus("empty", "full");
 
 		this._setStatus("filling");
@@ -788,6 +789,23 @@ class Cache {
 
 		if (local.autoSave) {
 			this._dirty = false;
+		}
+
+		// DEBUG: Log what's in cache for draftPicks after fill
+		if (this._data.draftPicks) {
+			const draftPicksData = Object.values(this._data.draftPicks) as any[];
+			const picksWithPid = draftPicksData.filter(dp => dp.pid !== undefined && dp.pid !== null);
+			console.log(`[Cache] fill() complete: draftPicks loaded = ${draftPicksData.length}, with pid = ${picksWithPid.length}`);
+			if (picksWithPid.length > 0) {
+				console.log(`[Cache] DEBUG: sample made picks in cache:`, picksWithPid.slice(0, 3).map(dp => ({
+					dpid: dp.dpid,
+					pick: dp.pick,
+					round: dp.round,
+					season: dp.season,
+					pid: dp.pid,
+					tid: dp.tid,
+				})));
+			}
 		}
 
 		this._setStatus("full");
