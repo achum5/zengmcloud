@@ -680,6 +680,16 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 			sampleCloudVersions: Object.fromEntries(Object.entries(cloudVersions).slice(0, 5)),
 		});
 
+		// DEBUG: Log ALL versions for key stores to help debug sync issues
+		const keyStores = ["draftPicks", "players", "teams", "gameAttributes", "events"];
+		console.log("[CloudSync] DEBUG key store versions:", Object.fromEntries(
+			keyStores.map(store => [store, {
+				device: existingVersions[store] || 0,
+				cloud: cloudVersions[store] || 0,
+				match: (existingVersions[store] || 0) === (cloudVersions[store] || 0),
+			}])
+		));
+
 		// Check if device is behind the cloud (changes made while offline)
 		let needsRefreshDueToVersions = false;
 		if (!needsInitialSync && Object.keys(cloudVersions).length > 0) {
