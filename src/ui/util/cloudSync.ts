@@ -95,19 +95,75 @@ const notifyPendingUpdate = (info: PendingUpdateInfo | null) => {
 	}
 };
 
-// ====== Device Sync Time Tracking (for incremental sync) ======
-// Each device tracks when it last synced with cloud, so we can
+// ====== Device Version Tracking (for incremental sync) ======
+// Each device tracks the version of each store it last synced, so we can
 // determine which stores need to be downloaded on refresh.
+// Using version numbers instead of timestamps avoids clock skew issues.
 
-const getDeviceLastSyncTime = (cloudId: string): number => {
-	const key = `cloudLastSync_${cloudId}`;
+const getDeviceStoreVersions = (cloudId: string): Record<string, number> => {
+	const key = `cloudStoreVersions_${cloudId}`;
 	const stored = localStorage.getItem(key);
-	return stored ? parseInt(stored, 10) : 0;
+	if (!stored) return {};
+	try {
+		return JSON.parse(stored);
+	} catch {
+		return {};
+	}
 };
 
-const setDeviceLastSyncTime = (cloudId: string, timestamp: number): void => {
+const setDeviceStoreVersions = (cloudId: string, versions: Record<string, number>): void => {
+	const key = `cloudStoreVersions_${cloudId}`;
+	localStorage.setItem(key, JSON.stringify(versions));
+};
+
+const updateDeviceStoreVersions = (cloudId: string, updates: Record<string, number>): void => {
+	const current = getDeviceStoreVersions(cloudId);
+	setDeviceStoreVersions(cloudId, { ...current, ...updates });
+};
+
+// Legacy: Clean up old timestamp-based tracking
+const clearLegacyDeviceSyncTime = (cloudId: string): void => {
 	const key = `cloudLastSync_${cloudId}`;
-	localStorage.setItem(key, String(timestamp));
+	localStorage.removeItem(key);
+};
+
+/**
+ * Migrate a league from timestamp-based storeUpdates to version-based storeVersions.
+ * Called when entering a league to ensure it uses the new version system.
+ * Returns true if migration was performed.
+ */
+const migrateToVersionNumbers = async (cloudId: string, league: CloudLeague): Promise<boolean> => {
+	// Already has storeVersions - no migration needed
+	if (league.storeVersions && Object.keys(league.storeVersions).length > 0) {
+		return false;
+	}
+
+	// Check if it has legacy storeUpdates (timestamps)
+	const hasLegacyTimestamps = league.storeUpdates && Object.keys(league.storeUpdates).length > 0;
+
+	console.log("[CloudSync] Checking migration:", {
+		cloudId,
+		hasStoreVersions: !!(league.storeVersions && Object.keys(league.storeVersions).length > 0),
+		hasLegacyTimestamps,
+	});
+
+	// Migrate: set all stores to version 1
+	const db = getFirebaseDb();
+	const storeVersions: Record<string, number> = {};
+	for (const store of ALL_STORES) {
+		storeVersions[store] = 1;
+	}
+
+	console.log("[CloudSync] Migrating league to version numbers:", cloudId);
+	await setDoc(doc(db, "leagues", cloudId), {
+		storeVersions,
+	}, { merge: true });
+
+	// Also set device versions to 1 (assuming we're in sync)
+	setDeviceStoreVersions(cloudId, storeVersions);
+	clearLegacyDeviceSyncTime(cloudId);
+
+	return true;
 };
 
 // Remove undefined values (Firestore doesn't accept them)
@@ -262,24 +318,26 @@ export const uploadLeagueData = async (
 			}
 		}
 
-		// Build storeUpdates object with current timestamp for all stores
-		// This allows incremental sync to know when each store was last updated
+		// Build storeVersions object with version 1 for all stores (initial upload)
+		// Using version numbers instead of timestamps avoids clock skew issues
 		const now = Date.now();
-		const storeUpdates: Record<string, number> = {};
+		const storeVersions: Record<string, number> = {};
 		for (const store of ALL_STORES) {
-			storeUpdates[store] = now;
+			storeVersions[store] = 1;
 		}
 
-		// Update league metadata with actual season/phase and store update times
+		// Update league metadata with actual season/phase and store versions
 		await setDoc(doc(db, "leagues", cloudId), {
 			updatedAt: now,
 			season: gameAttributesObj.season || 0,
 			phase: gameAttributesObj.phase || 0,
-			storeUpdates,
+			storeVersions,
 		}, { merge: true });
 
-		// Save device's last sync time (we just uploaded everything, so we're in sync)
-		setDeviceLastSyncTime(cloudId, now);
+		// Save device's store versions (we just uploaded everything at version 1)
+		setDeviceStoreVersions(cloudId, storeVersions);
+		// Clean up any legacy timestamp tracking
+		clearLegacyDeviceSyncTime(cloudId);
 
 		setSyncStatus("synced");
 		onProgress?.("Upload complete!", 100);
@@ -435,8 +493,20 @@ export const streamDownloadLeagueData = async (
 				memberTeamId,
 			});
 
-			// Save device's last sync time (we just downloaded everything)
-			setDeviceLastSyncTime(cloudId, Date.now());
+			// Get league metadata to save store versions
+			const league = await getCloudLeague(cloudId);
+			if (league?.storeVersions) {
+				// Save the cloud's current store versions
+				setDeviceStoreVersions(cloudId, league.storeVersions);
+			} else {
+				// Legacy league without versions - set all to 1 as baseline
+				const defaultVersions: Record<string, number> = {};
+				for (const store of ALL_STORES) {
+					defaultVersions[store] = 1;
+				}
+				setDeviceStoreVersions(cloudId, defaultVersions);
+			}
+			clearLegacyDeviceSyncTime(cloudId);
 
 			setSyncStatus("synced");
 			onProgress?.("Download complete!", 100);
@@ -560,14 +630,35 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 	if (league) {
 		lastKnownUpdateTime = league.updatedAt || 0;
 
-		// If this device doesn't have a lastSyncTime yet, set it now.
+		// Migrate legacy leagues from timestamps to version numbers
+		const migrated = await migrateToVersionNumbers(cloudId, league);
+		if (migrated) {
+			console.log("[CloudSync] League migrated to version numbers");
+		}
+
+		// If this device doesn't have store versions yet, initialize them.
 		// This assumes the local data is current (since we already have the league).
 		// This prevents a full refresh on first use of incremental sync.
-		const existingLastSync = getDeviceLastSyncTime(cloudId);
-		if (existingLastSync === 0) {
-			console.log("[CloudSync] Setting initial lastSyncTime to:", lastKnownUpdateTime);
-			setDeviceLastSyncTime(cloudId, lastKnownUpdateTime);
+		const existingVersions = getDeviceStoreVersions(cloudId);
+		if (Object.keys(existingVersions).length === 0) {
+			// After migration (or if already migrated), league should have storeVersions
+			// Re-fetch to get the potentially updated data
+			const updatedLeague = migrated ? await getCloudLeague(cloudId) : league;
+			if (updatedLeague?.storeVersions && Object.keys(updatedLeague.storeVersions).length > 0) {
+				console.log("[CloudSync] Setting initial store versions from cloud:", updatedLeague.storeVersions);
+				setDeviceStoreVersions(cloudId, updatedLeague.storeVersions);
+			} else {
+				// Fallback - set all to 1 as baseline
+				console.log("[CloudSync] Setting initial store versions to 1 (fallback)");
+				const defaultVersions: Record<string, number> = {};
+				for (const store of ALL_STORES) {
+					defaultVersions[store] = 1;
+				}
+				setDeviceStoreVersions(cloudId, defaultVersions);
+			}
 		}
+		// Clean up legacy timestamp tracking
+		clearLegacyDeviceSyncTime(cloudId);
 	} else {
 		console.warn("[CloudSync] League not found in Firestore! cloudId:", cloudId);
 	}
@@ -680,7 +771,7 @@ export const refreshFromCloud = async (): Promise<void> => {
 	if (!leagueDocSnap.exists()) {
 		throw new Error("League not found");
 	}
-	const league = leagueDocSnap.data() as CloudLeague & { storeUpdates?: Record<string, number> };
+	const league = leagueDocSnap.data() as CloudLeague;
 
 	const userId = getCurrentUserId();
 	const member = userId ? league.members.find(m => m.userId === userId) : undefined;
@@ -694,44 +785,46 @@ export const refreshFromCloud = async (): Promise<void> => {
 
 	setSyncStatus("syncing");
 
-	// Determine which stores need to be refreshed (incremental sync)
-	const deviceLastSync = getDeviceLastSyncTime(cloudId);
-	const storeUpdates = league.storeUpdates || {};
+	// Determine which stores need to be refreshed (version-based incremental sync)
+	const deviceVersions = getDeviceStoreVersions(cloudId);
+	const cloudVersions = league.storeVersions || {};
 
-	console.log("[CloudSync] Incremental sync check:", {
-		deviceLastSync,
-		deviceLastSyncDate: deviceLastSync ? new Date(deviceLastSync).toISOString() : "never",
-		storeUpdatesCount: Object.keys(storeUpdates).length,
-		storeUpdatesKeys: Object.keys(storeUpdates).slice(0, 5), // First 5 keys for debugging
+	console.log("[CloudSync] Version-based incremental sync check:", {
+		deviceVersionsCount: Object.keys(deviceVersions).length,
+		cloudVersionsCount: Object.keys(cloudVersions).length,
+		sampleDeviceVersions: Object.fromEntries(Object.entries(deviceVersions).slice(0, 5)),
+		sampleCloudVersions: Object.fromEntries(Object.entries(cloudVersions).slice(0, 5)),
 	});
 
 	let storesToRefresh: Store[];
 	let isFullRefresh = false;
 
-	if (deviceLastSync === 0 || Object.keys(storeUpdates).length === 0) {
-		// First sync or no store tracking data - do full refresh
+	if (Object.keys(deviceVersions).length === 0 || Object.keys(cloudVersions).length === 0) {
+		// First sync or no version tracking data - do full refresh
 		console.log("[CloudSync] Full refresh reason:", {
-			deviceLastSyncIsZero: deviceLastSync === 0,
-			storeUpdatesEmpty: Object.keys(storeUpdates).length === 0,
+			deviceVersionsEmpty: Object.keys(deviceVersions).length === 0,
+			cloudVersionsEmpty: Object.keys(cloudVersions).length === 0,
 		});
 		storesToRefresh = [...ALL_STORES];
 		isFullRefresh = true;
 	} else {
-		// Incremental sync - only refresh stores that changed
-		// Log all store update times for debugging
-		console.log("[CloudSync] Store update times vs deviceLastSync:", {
-			deviceLastSync,
-			deviceLastSyncDate: new Date(deviceLastSync).toISOString(),
-			storeUpdates: Object.fromEntries(
-				Object.entries(storeUpdates).map(([k, v]) => [k, { time: v, date: new Date(v as number).toISOString(), needsRefresh: (v as number) > deviceLastSync }])
+		// Incremental sync - only refresh stores where cloud version > device version
+		console.log("[CloudSync] Store versions comparison:", {
+			stores: Object.fromEntries(
+				ALL_STORES.map(store => [store, {
+					device: deviceVersions[store] || 0,
+					cloud: cloudVersions[store] || 0,
+					needsRefresh: (cloudVersions[store] || 0) > (deviceVersions[store] || 0),
+				}])
 			),
 		});
 
 		storesToRefresh = ALL_STORES.filter(store => {
-			const storeUpdateTime = storeUpdates[store] || 0;
-			return storeUpdateTime > deviceLastSync;
+			const deviceVersion = deviceVersions[store] || 0;
+			const cloudVersion = cloudVersions[store] || 0;
+			return cloudVersion > deviceVersion;
 		});
-		console.log(`[CloudSync] Incremental refresh: ${storesToRefresh.length}/${ALL_STORES.length} stores changed since ${new Date(deviceLastSync).toISOString()}`);
+		console.log(`[CloudSync] Incremental refresh: ${storesToRefresh.length}/${ALL_STORES.length} stores have newer versions`);
 		console.log("[CloudSync] Stores to refresh:", storesToRefresh);
 	}
 
@@ -739,9 +832,10 @@ export const refreshFromCloud = async (): Promise<void> => {
 		console.log("[CloudSync] No stores need refreshing - already up to date");
 		refreshProgressCallback?.("Already up to date!", 100);
 		setSyncStatus("synced");
-		// Update device sync time to league's updatedAt (server timestamp)
-		// Using server timestamp avoids clock skew issues between devices
-		setDeviceLastSyncTime(cloudId, league.updatedAt || Date.now());
+		// Sync versions with cloud (in case there are any new stores)
+		if (Object.keys(cloudVersions).length > 0) {
+			setDeviceStoreVersions(cloudId, cloudVersions);
+		}
 		// Small delay then reload to refresh UI
 		setTimeout(() => window.location.reload(), 500);
 		return;
@@ -862,23 +956,34 @@ export const refreshFromCloud = async (): Promise<void> => {
 		refreshProgressCallback?.("Finalizing...", 97);
 		await toWorker("main", "finalizeCloudRefresh", { memberTeamId });
 
-		// Update device's last sync time to league's updatedAt (server timestamp)
-		// Using server timestamp avoids clock skew issues between devices
-		const serverSyncTime = league.updatedAt || Date.now();
-		setDeviceLastSyncTime(cloudId, serverSyncTime);
+		// Update device's store versions to match cloud
+		if (Object.keys(cloudVersions).length > 0) {
+			// Update device versions to match cloud for refreshed stores
+			const updatedVersions = { ...deviceVersions };
+			for (const store of storesToRefresh) {
+				updatedVersions[store] = cloudVersions[store] || 1;
+			}
+			setDeviceStoreVersions(cloudId, updatedVersions);
+			console.log("[CloudSync] Updated device store versions:", updatedVersions);
+		}
 
-		// If this was a full refresh and the cloud didn't have storeUpdates data,
-		// populate it now so future refreshes can be incremental.
-		if (isFullRefresh && Object.keys(storeUpdates).length === 0) {
-			console.log("[CloudSync] Populating storeUpdates in Firestore for future incremental syncs...");
-			const allStoreUpdates: Record<string, number> = {};
+		// If this was a full refresh and the cloud didn't have storeVersions data,
+		// populate them now so future refreshes can be incremental.
+		if (isFullRefresh && Object.keys(cloudVersions).length === 0) {
+			console.log("[CloudSync] Populating storeVersions in Firestore for future incremental syncs...");
+			const allStoreVersions: Record<string, number> = {};
 			for (const store of ALL_STORES) {
-				allStoreUpdates[store] = serverSyncTime;
+				allStoreVersions[store] = 1;
 			}
 			await setDoc(doc(db, "leagues", cloudId), {
-				storeUpdates: allStoreUpdates,
+				storeVersions: allStoreVersions,
 			}, { merge: true });
+			// Save these versions locally too
+			setDeviceStoreVersions(cloudId, allStoreVersions);
 		}
+
+		// Clean up legacy timestamp tracking
+		clearLegacyDeviceSyncTime(cloudId);
 
 		console.log(`[CloudSync] Refresh complete! Updated ${storesToRefresh.length} stores`);
 		refreshProgressCallback?.("Done! Reloading...", 100);
@@ -1008,7 +1113,7 @@ export const syncLocalChangesMultiple = async (
 
 /**
  * Update league metadata after syncing stores.
- * Updates all store timestamps atomically to prevent race conditions.
+ * Increments version numbers for all updated stores atomically.
  */
 const updateSyncMetadata = async (stores: Store[]): Promise<void> => {
 	if (!currentCloudId || stores.length === 0) return;
@@ -1020,7 +1125,11 @@ const updateSyncMetadata = async (stores: Store[]): Promise<void> => {
 	const now = Date.now();
 	lastKnownUpdateTime = now; // Update our baseline so we don't notify ourselves
 
-	// Build the update object with all store timestamps
+	// Get current versions from cloud to increment them
+	const league = await getCloudLeague(currentCloudId);
+	const currentVersions = league?.storeVersions || {};
+
+	// Build the update object with incremented versions
 	const updateData: Record<string, any> = {
 		updatedAt: now,
 		lastUpdatedBy: displayName,
@@ -1029,12 +1138,20 @@ const updateSyncMetadata = async (stores: Store[]): Promise<void> => {
 		lastUpdateMessage: `Updated ${stores.join(", ")}`,
 	};
 
-	// Add timestamp for each store
+	// Increment version for each updated store
+	const newVersions: Record<string, number> = {};
 	for (const store of stores) {
-		updateData[`storeUpdates.${store}`] = now;
+		const currentVersion = currentVersions[store] || 0;
+		const newVersion = currentVersion + 1;
+		updateData[`storeVersions.${store}`] = newVersion;
+		newVersions[store] = newVersion;
 	}
 
 	await setDoc(doc(db, "leagues", currentCloudId), updateData, { merge: true });
+
+	// Update local device versions to match
+	updateDeviceStoreVersions(currentCloudId, newVersions);
+	console.log("[CloudSync] Updated store versions:", newVersions);
 };
 
 /**

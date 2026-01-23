@@ -44,6 +44,12 @@ export type CloudLeague = {
 	lastUpdatedBy?: string; // displayName
 	lastUpdatedByUserId?: string;
 	lastUpdateMessage?: string;
+	// Per-store version numbers for incremental sync
+	// Each store gets an incrementing version (1, 2, 3, ...) on each update
+	// Avoids clock skew issues that can occur with timestamps
+	storeVersions?: Record<string, number>;
+	// Legacy: timestamp-based tracking (deprecated, kept for migration)
+	storeUpdates?: Record<string, number>;
 };
 
 // Member of a cloud league
