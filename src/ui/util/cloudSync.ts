@@ -912,9 +912,9 @@ export const markLeagueUpdated = async (message?: string): Promise<void> => {
 };
 
 /**
- * Sync local changes to Firestore
+ * Sync local changes to Firestore (data only, no metadata update)
  */
-export const syncLocalChanges = async (
+const syncLocalChangesData = async (
 	store: Store,
 	records: any[],
 	deletedIds: (string | number)[],
@@ -954,24 +954,80 @@ export const syncLocalChanges = async (
 
 		await batch.commit();
 	}
+};
 
-	// Update league metadata with user/device info for notifications
-	// Also track this store's update time for incremental sync
+/**
+ * Sync local changes to Firestore (single store, with metadata update)
+ * This is kept for backwards compatibility but syncLocalChangesMultiple is preferred.
+ */
+export const syncLocalChanges = async (
+	store: Store,
+	records: any[],
+	deletedIds: (string | number)[],
+): Promise<void> => {
+	await syncLocalChangesData(store, records, deletedIds);
+	await updateSyncMetadata([store]);
+};
+
+/**
+ * Sync multiple stores to Firestore, then update metadata atomically.
+ * This prevents race conditions where Device B refreshes between store syncs.
+ */
+export const syncLocalChangesMultiple = async (
+	changes: Array<{
+		store: Store;
+		records: any[];
+		deletedIds: (string | number)[];
+	}>,
+): Promise<void> => {
+	if (!currentCloudId) return;
+
+	const syncedStores: Store[] = [];
+
+	// First, sync all data for all stores
+	for (const { store, records, deletedIds } of changes) {
+		if (records.length > 0 || deletedIds.length > 0) {
+			console.log(`[CloudSync] Syncing data for ${store}: ${records.length} records, ${deletedIds.length} deletes`);
+			await syncLocalChangesData(store, records, deletedIds);
+			syncedStores.push(store);
+		}
+	}
+
+	// Then update metadata for ALL stores at once (atomic operation)
+	if (syncedStores.length > 0) {
+		await updateSyncMetadata(syncedStores);
+	}
+};
+
+/**
+ * Update league metadata after syncing stores.
+ * Updates all store timestamps atomically to prevent race conditions.
+ */
+const updateSyncMetadata = async (stores: Store[]): Promise<void> => {
+	if (!currentCloudId || stores.length === 0) return;
+
+	const db = getFirebaseDb();
 	const userId = getCurrentUserId();
 	const displayName = getUserDisplayName() || "Unknown";
 	const deviceId = getDeviceId();
 	const now = Date.now();
 	lastKnownUpdateTime = now; // Update our baseline so we don't notify ourselves
 
-	await setDoc(doc(db, "leagues", currentCloudId), {
+	// Build the update object with all store timestamps
+	const updateData: Record<string, any> = {
 		updatedAt: now,
 		lastUpdatedBy: displayName,
 		lastUpdatedByUserId: userId,
 		lastUpdatedByDeviceId: deviceId,
-		lastUpdateMessage: `Updated ${store}`,
-		// Track when this specific store was updated (for incremental sync)
-		[`storeUpdates.${store}`]: now,
-	}, { merge: true });
+		lastUpdateMessage: `Updated ${stores.join(", ")}`,
+	};
+
+	// Add timestamp for each store
+	for (const store of stores) {
+		updateData[`storeUpdates.${store}`] = now;
+	}
+
+	await setDoc(doc(db, "leagues", currentCloudId), updateData, { merge: true });
 };
 
 /**

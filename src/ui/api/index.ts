@@ -18,7 +18,7 @@ import type {
 	GameAttributesLeague,
 } from "../../common/types.ts";
 import { crossTabEmitter } from "../util/crossTabEmitter.ts";
-import { syncLocalChanges, getCurrentCloudId, startRealtimeSync } from "../util/cloudSync.ts";
+import { syncLocalChangesMultiple, getCurrentCloudId, startRealtimeSync } from "../util/cloudSync.ts";
 import type { Store } from "../../common/cloudTypes.ts";
 
 const initAds = (type: "accountChecked" | "uiRendered") => {
@@ -152,19 +152,14 @@ const syncCloudChanges = async (
 
 	console.log(`[CloudSync] Syncing ${changes.length} store(s) to cloud:`, cloudId);
 
-	// Sync each store's changes
-	for (const { store, records, deletedIds } of changes) {
-		if (records.length > 0 || deletedIds.length > 0) {
-			try {
-				console.log(`[CloudSync] Syncing ${store}: ${records.length} records, ${deletedIds.length} deletes`);
-				await syncLocalChanges(store, records, deletedIds);
-			} catch (error) {
-				console.error(`[CloudSync] Failed to sync ${store}:`, error);
-			}
-		}
+	// Sync all stores atomically (data first, then metadata update)
+	// This prevents race conditions where another device refreshes between store syncs
+	try {
+		await syncLocalChangesMultiple(changes);
+		console.log("[CloudSync] Sync complete");
+	} catch (error) {
+		console.error("[CloudSync] Failed to sync changes:", error);
 	}
-
-	console.log("[CloudSync] Sync complete");
 };
 
 const crossTabEmit = (
