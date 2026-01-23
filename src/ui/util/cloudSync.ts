@@ -1154,7 +1154,12 @@ export const syncLocalChangesMultiple = async (
 		deletedIds: (string | number)[];
 	}>,
 ): Promise<void> => {
-	if (!currentCloudId) return;
+	if (!currentCloudId) {
+		console.log("[CloudSync] syncLocalChangesMultiple: skipped - no currentCloudId");
+		return;
+	}
+
+	console.log(`[CloudSync] syncLocalChangesMultiple: processing ${changes.length} store changes for cloudId:`, currentCloudId);
 
 	const syncedStores: Store[] = [];
 
@@ -1169,7 +1174,10 @@ export const syncLocalChangesMultiple = async (
 
 	// Then update metadata for ALL stores at once (atomic operation)
 	if (syncedStores.length > 0) {
+		console.log(`[CloudSync] All data synced, now updating metadata for ${syncedStores.length} stores:`, syncedStores);
 		await updateSyncMetadata(syncedStores);
+	} else {
+		console.log("[CloudSync] syncLocalChangesMultiple: no stores had changes to sync");
 	}
 };
 
@@ -1187,9 +1195,23 @@ const updateSyncMetadata = async (stores: Store[]): Promise<void> => {
 	const now = Date.now();
 	lastKnownUpdateTime = now; // Update our baseline so we don't notify ourselves
 
-	// Get current versions from cloud to increment them
-	const league = await getCloudLeague(currentCloudId);
-	const currentVersions = league?.storeVersions || {};
+	// CRITICAL: Use getDocFromServer to bypass Firestore cache!
+	// Using cached data can cause version numbers to not increment properly
+	// if multiple syncs happen in quick succession.
+	console.log("[CloudSync] updateSyncMetadata: fetching current versions from server for stores:", stores);
+	let currentVersions: Record<string, number> = {};
+	try {
+		const leagueDocSnap = await getDocFromServer(doc(db, "leagues", currentCloudId));
+		if (leagueDocSnap.exists()) {
+			const league = leagueDocSnap.data() as CloudLeague;
+			currentVersions = league?.storeVersions || {};
+		}
+	} catch (error) {
+		console.warn("[CloudSync] Failed to fetch from server, falling back to cache:", error);
+		const league = await getCloudLeague(currentCloudId);
+		currentVersions = league?.storeVersions || {};
+	}
+	console.log("[CloudSync] updateSyncMetadata: current versions from cloud:", currentVersions);
 
 	// Build the update object with incremented versions
 	const updateData: Record<string, any> = {
@@ -1207,13 +1229,16 @@ const updateSyncMetadata = async (stores: Store[]): Promise<void> => {
 		const newVersion = currentVersion + 1;
 		updateData[`storeVersions.${store}`] = newVersion;
 		newVersions[store] = newVersion;
+		console.log(`[CloudSync] Incrementing ${store}: ${currentVersion} -> ${newVersion}`);
 	}
 
+	console.log("[CloudSync] Writing metadata update to Firestore...");
 	await setDoc(doc(db, "leagues", currentCloudId), updateData, { merge: true });
+	console.log("[CloudSync] Metadata update complete");
 
 	// Update local device versions to match
 	updateDeviceStoreVersions(currentCloudId, newVersions);
-	console.log("[CloudSync] Updated store versions:", newVersions);
+	console.log("[CloudSync] Updated device store versions:", newVersions);
 };
 
 /**

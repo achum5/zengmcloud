@@ -150,13 +150,18 @@ const syncCloudChanges = async (
 		return;
 	}
 
-	console.log(`[CloudSync] Syncing ${changes.length} store(s) to cloud:`, cloudId);
+	// Log details about what we're syncing
+	const totalRecords = changes.reduce((sum, c) => sum + c.records.length, 0);
+	const totalDeletes = changes.reduce((sum, c) => sum + c.deletedIds.length, 0);
+	const storeNames = changes.map(c => c.store).join(", ");
+	console.log(`[CloudSync] syncCloudChanges called: ${changes.length} store(s), ${totalRecords} records, ${totalDeletes} deletes`);
+	console.log(`[CloudSync] Stores: ${storeNames}`);
 
 	// Sync all stores atomically (data first, then metadata update)
 	// This prevents race conditions where another device refreshes between store syncs
 	try {
 		await syncLocalChangesMultiple(changes);
-		console.log("[CloudSync] Sync complete");
+		console.log("[CloudSync] Sync complete for stores:", storeNames);
 	} catch (error) {
 		console.error("[CloudSync] Failed to sync changes:", error);
 	}
