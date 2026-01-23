@@ -712,6 +712,15 @@ export const refreshFromCloud = async (): Promise<void> => {
 		isFullRefresh = true;
 	} else {
 		// Incremental sync - only refresh stores that changed
+		// Log all store update times for debugging
+		console.log("[CloudSync] Store update times vs deviceLastSync:", {
+			deviceLastSync,
+			deviceLastSyncDate: new Date(deviceLastSync).toISOString(),
+			storeUpdates: Object.fromEntries(
+				Object.entries(storeUpdates).map(([k, v]) => [k, { time: v, date: new Date(v as number).toISOString(), needsRefresh: (v as number) > deviceLastSync }])
+			),
+		});
+
 		storesToRefresh = ALL_STORES.filter(store => {
 			const storeUpdateTime = storeUpdates[store] || 0;
 			return storeUpdateTime > deviceLastSync;
@@ -724,8 +733,9 @@ export const refreshFromCloud = async (): Promise<void> => {
 		console.log("[CloudSync] No stores need refreshing - already up to date");
 		refreshProgressCallback?.("Already up to date!", 100);
 		setSyncStatus("synced");
-		// Update device sync time anyway
-		setDeviceLastSyncTime(cloudId, Date.now());
+		// Update device sync time to league's updatedAt (server timestamp)
+		// Using server timestamp avoids clock skew issues between devices
+		setDeviceLastSyncTime(cloudId, league.updatedAt || Date.now());
 		// Small delay then reload to refresh UI
 		setTimeout(() => window.location.reload(), 500);
 		return;
@@ -828,6 +838,10 @@ export const refreshFromCloud = async (): Promise<void> => {
 				console.log(`[CloudSync] ${store}: atomic replacement with ${allRecords.length} records`);
 				refreshProgressCallback?.(`Saving ${store}...`, storePercent + 2);
 				await toWorker("main", "atomicStoreReplace", { store, records: allRecords });
+			} else if (!useBatchedWrites && allRecords.length === 0) {
+				// Empty store in cloud - clear local store to match
+				console.log(`[CloudSync] ${store}: store is empty in cloud, clearing local store`);
+				await toWorker("main", "atomicStoreReplace", { store, records: [] });
 			} else if (useBatchedWrites) {
 				// Large store: already written in batches
 				console.log(`[CloudSync] ${store}: batched writes complete`);
@@ -841,9 +855,10 @@ export const refreshFromCloud = async (): Promise<void> => {
 		refreshProgressCallback?.("Finalizing...", 97);
 		await toWorker("main", "finalizeCloudRefresh", { memberTeamId });
 
-		// Update device's last sync time
-		const now = Date.now();
-		setDeviceLastSyncTime(cloudId, now);
+		// Update device's last sync time to league's updatedAt (server timestamp)
+		// Using server timestamp avoids clock skew issues between devices
+		const serverSyncTime = league.updatedAt || Date.now();
+		setDeviceLastSyncTime(cloudId, serverSyncTime);
 
 		// If this was a full refresh and the cloud didn't have storeUpdates data,
 		// populate it now so future refreshes can be incremental.
@@ -851,7 +866,7 @@ export const refreshFromCloud = async (): Promise<void> => {
 			console.log("[CloudSync] Populating storeUpdates in Firestore for future incremental syncs...");
 			const allStoreUpdates: Record<string, number> = {};
 			for (const store of ALL_STORES) {
-				allStoreUpdates[store] = now;
+				allStoreUpdates[store] = serverSyncTime;
 			}
 			await setDoc(doc(db, "leagues", cloudId), {
 				storeUpdates: allStoreUpdates,
