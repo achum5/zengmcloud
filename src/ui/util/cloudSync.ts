@@ -814,7 +814,7 @@ export const onRefreshProgress = (callback: ((message: string, percent: number) 
  * last sync, making updates much faster (5 stores instead of 22 for a sim).
  */
 export const refreshFromCloud = async (): Promise<void> => {
-	console.log("[CloudSync] refreshFromCloud starting...");
+	console.log("[CloudSync] ========== REFRESH FROM CLOUD STARTING ==========");
 
 	if (!currentCloudId) {
 		throw new Error("Not connected to a cloud league");
@@ -822,6 +822,9 @@ export const refreshFromCloud = async (): Promise<void> => {
 
 	const cloudId = currentCloudId;
 	const db = getFirebaseDb();
+
+	console.log("[CloudSync] REFRESH: cloudId =", cloudId);
+	console.log("[CloudSync] REFRESH: deviceId =", getDeviceId());
 
 	refreshProgressCallback?.("Connecting to cloud...", 0);
 
@@ -834,6 +837,13 @@ export const refreshFromCloud = async (): Promise<void> => {
 		throw new Error("League not found");
 	}
 	const league = leagueDocSnap.data() as CloudLeague;
+
+	console.log("[CloudSync] REFRESH: League from Firestore:", {
+		cloudId: league.cloudId,
+		updatedAt: league.updatedAt,
+		lastUpdatedBy: league.lastUpdatedBy,
+		lastUpdatedByDeviceId: league.lastUpdatedByDeviceId,
+	});
 
 	const userId = getCurrentUserId();
 	const member = userId ? league.members.find(m => m.userId === userId) : undefined;
@@ -1188,7 +1198,10 @@ export const syncLocalChangesMultiple = async (
 		return;
 	}
 
-	console.log(`[CloudSync] syncLocalChangesMultiple: processing ${changes.length} store changes for cloudId:`, currentCloudId);
+	console.log("[CloudSync] ========== UPLOADING CHANGES TO CLOUD ==========");
+	console.log("[CloudSync] UPLOAD: cloudId =", currentCloudId);
+	console.log("[CloudSync] UPLOAD: deviceId =", getDeviceId());
+	console.log(`[CloudSync] UPLOAD: processing ${changes.length} store changes`);
 
 	const syncedStores: Store[] = [];
 
