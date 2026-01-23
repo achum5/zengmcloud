@@ -822,9 +822,12 @@ export const onRefreshProgress = (callback: ((message: string, percent: number) 
  *
  * INCREMENTAL SYNC: Only downloads stores that changed since the device's
  * last sync, making updates much faster (5 stores instead of 22 for a sim).
+ *
+ * @param forceFullRefresh - If true, ignores version comparison and downloads all stores
  */
-export const refreshFromCloud = async (): Promise<void> => {
+export const refreshFromCloud = async (forceFullRefresh: boolean = false): Promise<void> => {
 	console.log("[CloudSync] ========== REFRESH FROM CLOUD STARTING ==========");
+	console.log("[CloudSync] forceFullRefresh =", forceFullRefresh);
 
 	if (!currentCloudId) {
 		throw new Error("Not connected to a cloud league");
@@ -881,7 +884,12 @@ export const refreshFromCloud = async (): Promise<void> => {
 	let storesToRefresh: Store[];
 	let isFullRefresh = false;
 
-	if (Object.keys(deviceVersions).length === 0 || Object.keys(cloudVersions).length === 0) {
+	if (forceFullRefresh) {
+		// User requested full refresh - bypass version comparison
+		console.log("[CloudSync] FORCED FULL REFRESH - ignoring version comparison");
+		storesToRefresh = [...ALL_STORES];
+		isFullRefresh = true;
+	} else if (Object.keys(deviceVersions).length === 0 || Object.keys(cloudVersions).length === 0) {
 		// First sync or no version tracking data - do full refresh
 		console.log("[CloudSync] Full refresh reason:", {
 			deviceVersionsEmpty: Object.keys(deviceVersions).length === 0,
@@ -910,7 +918,7 @@ export const refreshFromCloud = async (): Promise<void> => {
 		console.log("[CloudSync] Stores to refresh:", storesToRefresh);
 	}
 
-	if (storesToRefresh.length === 0) {
+	if (storesToRefresh.length === 0 && !forceFullRefresh) {
 		console.log("[CloudSync] No stores need refreshing - already up to date");
 		refreshProgressCallback?.("Already up to date!", 100);
 		setSyncStatus("synced");
@@ -1653,3 +1661,54 @@ export const updateMemberTeam = async (
 		updatedAt: Date.now(),
 	}, { merge: true });
 };
+
+// ==== Debug Utilities ====
+// These are exposed on window for debugging via browser console
+
+/**
+ * Force a full refresh from cloud, ignoring version comparison.
+ * Call from browser console: window.cloudSyncDebug.forceFullRefresh()
+ */
+export const forceFullRefresh = async (): Promise<void> => {
+	console.log("[CloudSync] DEBUG: Force full refresh triggered from console");
+	await refreshFromCloud(true);
+};
+
+/**
+ * Clear local device versions to force a full refresh on next sync.
+ * Call from browser console: window.cloudSyncDebug.clearLocalVersions()
+ */
+export const clearLocalVersions = (): void => {
+	if (!currentCloudId) {
+		console.error("[CloudSync] No cloud league connected");
+		return;
+	}
+	const key = `cloudStoreVersions_${currentCloudId}`;
+	localStorage.removeItem(key);
+	console.log(`[CloudSync] DEBUG: Cleared local versions for ${currentCloudId}. Reload page to trigger refresh notification.`);
+};
+
+/**
+ * Get current sync debug info
+ * Call from browser console: window.cloudSyncDebug.getInfo()
+ */
+export const getDebugInfo = (): object => {
+	const deviceVersions = currentCloudId ? getDeviceStoreVersions(currentCloudId) : {};
+	return {
+		currentCloudId,
+		syncStatus,
+		lastKnownUpdateTime,
+		deviceVersions,
+		currentCloudMember,
+	};
+};
+
+// Expose debug utilities on window for console access
+if (typeof window !== "undefined") {
+	(window as any).cloudSyncDebug = {
+		forceFullRefresh,
+		clearLocalVersions,
+		getInfo: getDebugInfo,
+		refreshFromCloud,
+	};
+}
