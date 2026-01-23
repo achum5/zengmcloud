@@ -130,12 +130,12 @@ const clearLegacyDeviceSyncTime = (cloudId: string): void => {
 /**
  * Migrate a league from timestamp-based storeUpdates to version-based storeVersions.
  * Called when entering a league to ensure it uses the new version system.
- * Returns true if migration was performed.
+ * Returns the new storeVersions if migration was performed, or null if no migration needed.
  */
-const migrateToVersionNumbers = async (cloudId: string, league: CloudLeague): Promise<boolean> => {
+const migrateToVersionNumbers = async (cloudId: string, league: CloudLeague): Promise<Record<string, number> | null> => {
 	// Already has storeVersions - no migration needed
 	if (league.storeVersions && Object.keys(league.storeVersions).length > 0) {
-		return false;
+		return null;
 	}
 
 	// Check if it has legacy storeUpdates (timestamps)
@@ -163,7 +163,8 @@ const migrateToVersionNumbers = async (cloudId: string, league: CloudLeague): Pr
 	setDeviceStoreVersions(cloudId, storeVersions);
 	clearLegacyDeviceSyncTime(cloudId);
 
-	return true;
+	// Return the new versions so caller can use them instead of stale in-memory data
+	return storeVersions;
 };
 
 // Remove undefined values (Firestore doesn't accept them)
@@ -637,14 +638,17 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 		lastUpdatedBy: league.lastUpdatedBy,
 		lastUpdatedByUserId: league.lastUpdatedByUserId,
 		memberCount: league.members?.length,
+		storeVersionsCount: league.storeVersions ? Object.keys(league.storeVersions).length : 0,
+		sampleStoreVersions: league.storeVersions ? Object.fromEntries(Object.entries(league.storeVersions).slice(0, 5)) : null,
 	} : null);
 
 	if (league) {
 		lastKnownUpdateTime = league.updatedAt || 0;
 
 		// Migrate legacy leagues from timestamps to version numbers
-		const migrated = await migrateToVersionNumbers(cloudId, league);
-		if (migrated) {
+		// Returns the new storeVersions if migration was performed
+		const migratedVersions = await migrateToVersionNumbers(cloudId, league);
+		if (migratedVersions) {
 			console.log("[CloudSync] League migrated to version numbers");
 		}
 
@@ -664,8 +668,17 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 		// - After streamDownloadLeagueData() for new downloads
 		// - After refreshFromCloud() for refreshes
 		const existingVersions = getDeviceStoreVersions(cloudId);
-		const cloudVersions = league.storeVersions || {};
+		// Use migrated versions if migration just happened (avoids stale in-memory data)
+		const cloudVersions = migratedVersions || league.storeVersions || {};
 		const needsInitialSync = Object.keys(existingVersions).length === 0;
+
+		console.log("[CloudSync] Version comparison on startup:", {
+			deviceVersionsCount: Object.keys(existingVersions).length,
+			cloudVersionsCount: Object.keys(cloudVersions).length,
+			needsInitialSync,
+			sampleDeviceVersions: Object.fromEntries(Object.entries(existingVersions).slice(0, 5)),
+			sampleCloudVersions: Object.fromEntries(Object.entries(cloudVersions).slice(0, 5)),
+		});
 
 		// Check if device is behind the cloud (changes made while offline)
 		let needsRefreshDueToVersions = false;
@@ -680,6 +693,10 @@ export const startRealtimeSync = async (cloudId: string): Promise<void> => {
 					break;
 				}
 			}
+		} else if (!needsInitialSync && Object.keys(cloudVersions).length === 0) {
+			// Edge case: Device has versions but cloud doesn't
+			// This shouldn't happen after migration, but if it does, log a warning
+			console.warn("[CloudSync] WARNING: Device has versions but cloud has none - this indicates a sync issue");
 		}
 
 		if (needsInitialSync) {
