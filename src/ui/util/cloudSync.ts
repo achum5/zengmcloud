@@ -9,7 +9,9 @@ import {
 	doc,
 	setDoc,
 	getDoc,
+	getDocFromServer,
 	getDocs,
+	getDocsFromServer,
 	deleteDoc,
 	collection,
 	query,
@@ -670,11 +672,15 @@ export const refreshFromCloud = async (): Promise<void> => {
 
 	refreshProgressCallback?.("Connecting to cloud...", 0);
 
-	// Get league info and user's team assignment
-	const league = await getCloudLeague(cloudId) as (CloudLeague & { storeUpdates?: Record<string, number> }) | null;
-	if (!league) {
+	// CRITICAL: Force server read to bypass Firestore cache!
+	// The real-time listener may have triggered the notification, but getDoc() could
+	// still return stale cached data. We MUST get fresh data from the server.
+	console.log("[CloudSync] Fetching fresh league metadata from server (bypassing cache)...");
+	const leagueDocSnap = await getDocFromServer(doc(db, "leagues", cloudId));
+	if (!leagueDocSnap.exists()) {
 		throw new Error("League not found");
 	}
+	const league = leagueDocSnap.data() as CloudLeague & { storeUpdates?: Record<string, number> };
 
 	const userId = getCurrentUserId();
 	const member = userId ? league.members.find(m => m.userId === userId) : undefined;
@@ -783,7 +789,8 @@ export const refreshFromCloud = async (): Promise<void> => {
 					? query(collectionRef, orderBy("__name__"), startAfter(lastDoc), limit(BATCH_SIZE))
 					: baseQuery;
 
-				const snapshot: QuerySnapshot<DocumentData> = await getDocs(paginatedQuery);
+				// CRITICAL: Force server read to bypass Firestore cache!
+				const snapshot: QuerySnapshot<DocumentData> = await getDocsFromServer(paginatedQuery);
 
 				if (snapshot.empty) {
 					hasMore = false;
