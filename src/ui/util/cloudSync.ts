@@ -999,6 +999,33 @@ export const refreshFromCloud = async (): Promise<void> => {
 			if (!useBatchedWrites && allRecords.length > 0) {
 				// Small store: atomic replacement (clear + write in single transaction)
 				console.log(`[CloudSync] ${store}: atomic replacement with ${allRecords.length} records`);
+				// DEBUG: Log sample downloaded data
+				const pk = STORE_PRIMARY_KEYS[store];
+				const sampleIds = allRecords.slice(0, 5).map(r => r[pk]);
+				console.log(`[CloudSync] DEBUG ${store} sample IDs downloaded:`, sampleIds);
+				// For draftPicks, log more detail
+				if (store === "draftPicks") {
+					console.log(`[CloudSync] DEBUG draftPicks downloaded sample:`, allRecords.slice(0, 3).map(r => ({
+						dpid: r.dpid,
+						pick: r.pick,
+						round: r.round,
+						season: r.season,
+						tid: r.tid,
+						originalTid: r.originalTid,
+						pid: r.pid,
+					})));
+				}
+				// For players, log relevant fields
+				if (store === "players") {
+					const recentDrafted = allRecords.filter(p => p.draft && p.draft.year >= 2025).slice(0, 3);
+					console.log(`[CloudSync] DEBUG players with recent draft:`, recentDrafted.map(r => ({
+						pid: r.pid,
+						firstName: r.firstName,
+						lastName: r.lastName,
+						tid: r.tid,
+						draft: r.draft,
+					})));
+				}
 				refreshProgressCallback?.(`Saving ${store}...`, storePercent + 2);
 				await toWorker("main", "atomicStoreReplace", { store, records: allRecords });
 			} else if (!useBatchedWrites && allRecords.length === 0) {
@@ -1099,6 +1126,8 @@ const syncLocalChangesData = async (
 	const pk = STORE_PRIMARY_KEYS[store];
 	const collectionPath = `leagues/${currentCloudId}/stores/${store}/data`;
 
+	console.log(`[CloudSync] syncLocalChangesData: uploading to ${collectionPath}`);
+
 	const BATCH_SIZE = 400;
 
 	// Process updates
@@ -1167,6 +1196,34 @@ export const syncLocalChangesMultiple = async (
 	for (const { store, records, deletedIds } of changes) {
 		if (records.length > 0 || deletedIds.length > 0) {
 			console.log(`[CloudSync] Syncing data for ${store}: ${records.length} records, ${deletedIds.length} deletes`);
+			// DEBUG: Log sample record data to verify what's being uploaded
+			if (records.length > 0) {
+				const pk = STORE_PRIMARY_KEYS[store];
+				const sampleIds = records.slice(0, 3).map(r => r[pk]);
+				console.log(`[CloudSync] DEBUG ${store} sample IDs being uploaded:`, sampleIds);
+				// For draftPicks specifically, log more detail
+				if (store === "draftPicks" && records.length > 0) {
+					console.log(`[CloudSync] DEBUG draftPicks sample data:`, records.slice(0, 2).map(r => ({
+						dpid: r.dpid,
+						pick: r.pick,
+						round: r.round,
+						season: r.season,
+						tid: r.tid,
+						originalTid: r.originalTid,
+						pid: r.pid, // Player ID if pick was made
+					})));
+				}
+				// For players, log relevant fields
+				if (store === "players" && records.length > 0) {
+					console.log(`[CloudSync] DEBUG players sample:`, records.slice(0, 2).map(r => ({
+						pid: r.pid,
+						firstName: r.firstName,
+						lastName: r.lastName,
+						tid: r.tid,
+						draft: r.draft ? { year: r.draft.year, pick: r.draft.pick, round: r.draft.round } : null,
+					})));
+				}
+			}
 			await syncLocalChangesData(store, records, deletedIds);
 			syncedStores.push(store);
 		}

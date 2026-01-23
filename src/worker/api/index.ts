@@ -5489,6 +5489,28 @@ const atomicStoreReplace = async ({
 
 	console.log(`[Worker] atomicStoreReplace: ${store} with ${records.length} records`);
 
+	// DEBUG: Log sample record IDs being written
+	if (records.length > 0) {
+		// Try to find primary key
+		const firstRecord = records[0];
+		const pkCandidates = ["pid", "dpid", "gid", "tid", "eid", "mid", "rid", "fid", "season", "key", "hash", "id"];
+		let pk = pkCandidates.find(k => firstRecord[k] !== undefined) || "unknown";
+		const sampleIds = records.slice(0, 5).map(r => r[pk]);
+		console.log(`[Worker] DEBUG ${store} sample IDs being written to IndexedDB:`, sampleIds);
+
+		// Special logging for draftPicks
+		if (store === "draftPicks") {
+			console.log(`[Worker] DEBUG draftPicks being written:`, records.slice(0, 3).map(r => ({
+				dpid: r.dpid,
+				pick: r.pick,
+				round: r.round,
+				season: r.season,
+				tid: r.tid,
+				pid: r.pid,
+			})));
+		}
+	}
+
 	// Single transaction: clear + write all records
 	// If interrupted, IndexedDB will rollback the entire transaction
 	const tx = refreshingLeagueDb.transaction(store as any, "readwrite");
@@ -5497,6 +5519,8 @@ const atomicStoreReplace = async ({
 		tx.store.put(record);
 	}
 	await tx.done;
+
+	console.log(`[Worker] atomicStoreReplace: ${store} transaction completed successfully`);
 };
 
 /**
@@ -5513,6 +5537,28 @@ const finalizeCloudRefresh = async ({
 
 	const db = refreshingLeagueDb;
 	const lid = g.get("lid")!;
+
+	console.log("[Worker] finalizeCloudRefresh starting...");
+
+	// DEBUG: Verify draftPicks data in database after refresh
+	try {
+		const draftPicks = await db.getAll("draftPicks");
+		console.log(`[Worker] DEBUG finalizeCloudRefresh: draftPicks count in DB: ${draftPicks.length}`);
+		const picksWithPid = draftPicks.filter((dp: any) => dp.pid !== undefined && dp.pid !== null);
+		console.log(`[Worker] DEBUG finalizeCloudRefresh: draftPicks with pid (made picks): ${picksWithPid.length}`);
+		if (picksWithPid.length > 0) {
+			console.log(`[Worker] DEBUG finalizeCloudRefresh: sample made picks:`, picksWithPid.slice(0, 3).map((dp: any) => ({
+				dpid: dp.dpid,
+				pick: dp.pick,
+				round: dp.round,
+				season: dp.season,
+				pid: dp.pid,
+				tid: dp.tid,
+			})));
+		}
+	} catch (e) {
+		console.error("[Worker] DEBUG failed to read draftPicks:", e);
+	}
 
 	// Read gameAttributes to update game state
 	const gameAttributesArray = await db.getAll("gameAttributes");
