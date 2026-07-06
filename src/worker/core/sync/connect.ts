@@ -4,7 +4,7 @@ import { ensureAnonymousAuth } from "./auth.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g } from "../../util/index.ts";
+import { g, toUI } from "../../util/index.ts";
 
 // This device's catch-up watermark for a league, stored in the durable meta DB
 // so it survives refreshes - so we only replay what we missed.
@@ -82,6 +82,9 @@ export const connectSharedLeague = async ({
 	changeTracker.enable();
 	changeTracker.reset();
 
+	// Let the UI hide single-player-only chrome (e.g. the multi-team switcher).
+	void toUI("updateLocal", [{ mpSyncActive: true }]);
+
 	return { connected: true, code: trimmed, isHost, clientId };
 };
 
@@ -93,6 +96,8 @@ export const disconnectSharedLeague = () => {
 	}
 	currentCode = undefined;
 	currentIsHost = false;
+
+	void toUI("updateLocal", [{ mpSyncActive: false }]);
 
 	// Leave the tracker enabled in dev (the console logger uses it); otherwise
 	// turn it back off so single-player has zero overhead.

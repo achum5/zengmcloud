@@ -19,6 +19,7 @@ const handleChange = async (event: ChangeEvent<HTMLSelectElement>) => {
 
 export const MultiTeamMenu = () => {
 	const state = useLocal([
+		"mpSyncActive",
 		"stickyFooterAd",
 		"stickyFormButtons",
 		"teamInfoCache",
@@ -26,8 +27,14 @@ export const MultiTeamMenu = () => {
 		"userTids",
 	]);
 
-	// Hide if not multi team or not loaded yet
-	if (state.userTids.length <= 1 || state.stickyFormButtons) {
+	// Hide if not multi team, not loaded yet, or in a multiplayer sync session
+	// (there you pick your one team on the Multiplayer Sync page, so this
+	// switcher would just be confusing).
+	if (
+		state.userTids.length <= 1 ||
+		state.stickyFormButtons ||
+		state.mpSyncActive
+	) {
 		return null;
 	}
 

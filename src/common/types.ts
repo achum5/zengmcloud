@@ -1045,6 +1045,9 @@ export type LocalStateUI = {
 	};
 	lid?: number;
 	liveGameInProgress: boolean;
+	// True while connected to a multiplayer sync session - used to hide the
+	// multi-team switcher so it feels like single-player.
+	mpSyncActive: boolean;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;
