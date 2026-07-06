@@ -7,6 +7,14 @@ import {
 	getStoredSync,
 	setStoredSync,
 } from "../util/autoReconnectSync.ts";
+import {
+	enablePushNotifications,
+	getPushPermission,
+	getStoredPushName,
+	pushConfigured,
+	pushSupported,
+	restorePushNotifications,
+} from "../util/pushNotifications.ts";
 
 type Status = "disconnected" | "connecting" | "connected";
 
@@ -25,6 +33,15 @@ const MultiplayerSync = () => {
 	>([]);
 	const [userTid, setUserTid] = useState<number | undefined>();
 	const [multiTeamMode, setMultiTeamMode] = useState(true);
+
+	// Phone push notifications.
+	const [pushName, setPushName] = useState(getStoredPushName());
+	const [pushSupport, setPushSupport] = useState(true);
+	const [pushPermission, setPushPermission] = useState<NotificationPermission>(
+		getPushPermission(),
+	);
+	const [pushBusy, setPushBusy] = useState(false);
+	const [pushError, setPushError] = useState<string | undefined>();
 
 	// On mount, reflect whatever the worker's sync engine is currently doing
 	// (it may already be connected from an auto-reconnect after refresh), and
@@ -59,9 +76,44 @@ const MultiplayerSync = () => {
 		};
 	}, [lid]);
 
+	// Detect push support once, and silently re-assert the token after a refresh
+	// if the user had already enabled it.
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			const supported = await pushSupported();
+			if (cancelled) {
+				return;
+			}
+			setPushSupport(supported);
+			if (supported) {
+				await restorePushNotifications();
+				if (!cancelled) {
+					setPushPermission(getPushPermission());
+				}
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
 	const switchTeam = async (tid: number) => {
 		await toWorker("main", "updateGameAttributes", { userTid: tid });
 		setUserTid(tid);
+	};
+
+	const enablePush = async () => {
+		setPushError(undefined);
+		setPushBusy(true);
+		try {
+			await enablePushNotifications(pushName.trim() || "A league-mate");
+			setPushPermission(getPushPermission());
+		} catch (err) {
+			setPushError((err as Error).message ?? String(err));
+		} finally {
+			setPushBusy(false);
+		}
 	};
 
 	const connect = async () => {
@@ -208,6 +260,74 @@ const MultiplayerSync = () => {
 					)}
 					{error ? (
 						<div className="alert alert-danger mt-3 mb-0">{error}</div>
+					) : null}
+				</div>
+			</div>
+
+			<div className="card mt-3" style={{ maxWidth: 500 }}>
+				<div className="card-body">
+					<h3 className="card-title h5">Phone notifications</h3>
+					<p className="text-body-secondary">
+						Get a push on your phone — even with ZenGM closed — when the host
+						sims, when a trade or roster move happens, or when the league reaches
+						a phase that needs you (like the draft).
+					</p>
+
+					{!pushConfigured() ? (
+						<div className="alert alert-warning mb-0">
+							Push notifications aren't set up on the server yet. See{" "}
+							<code>docs/PUSH_NOTIFICATIONS_SETUP.md</code>.
+						</div>
+					) : !pushSupport ? (
+						<div className="alert alert-warning mb-0">
+							This browser can't do push notifications. On iPhone, tap{" "}
+							<b>Share → Add to Home Screen</b>, then open ZenGM from the new
+							icon and come back here.
+						</div>
+					) : pushPermission === "granted" ? (
+						<p className="text-success mb-0">
+							Notifications are on for this device
+							{getStoredPushName() ? (
+								<>
+									{" "}
+									as <b>{getStoredPushName()}</b>
+								</>
+							) : null}
+							.
+						</p>
+					) : (
+						<>
+							<div className="mb-3">
+								<label className="form-label" htmlFor="push-name">
+									Your name (shown in notifications)
+								</label>
+								<input
+									id="push-name"
+									type="text"
+									className="form-control"
+									placeholder="e.g. Alex"
+									value={pushName}
+									onChange={(event) => setPushName(event.target.value)}
+								/>
+							</div>
+							<button
+								className="btn btn-primary"
+								disabled={pushBusy}
+								onClick={enablePush}
+							>
+								{pushBusy ? "Enabling…" : "Enable phone notifications"}
+							</button>
+							{pushPermission === "denied" ? (
+								<div className="form-text">
+									Notifications are blocked for this site. Enable them in your
+									browser settings, then try again.
+								</div>
+							) : null}
+						</>
+					)}
+
+					{pushError ? (
+						<div className="alert alert-danger mt-3 mb-0">{pushError}</div>
 					) : null}
 				</div>
 			</div>

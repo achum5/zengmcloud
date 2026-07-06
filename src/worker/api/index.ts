@@ -87,6 +87,7 @@ import { getScore } from "../core/player/checkJerseyNumberRetirement.ts";
 import {
 	connectSharedLeague,
 	disconnectSharedLeague,
+	getSyncEngine,
 	getSyncStatus,
 } from "../core/sync/index.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
@@ -5219,6 +5220,29 @@ const getSyncTeams = async () => {
 	};
 };
 
+// Register this device for phone push notifications. The FCM token is obtained
+// on the UI thread (Cloud Messaging can't run in a worker) and handed here so we
+// can store it - alongside this device's team and display name - in the room's
+// members list, which the Cloud Function reads to deliver pushes.
+const registerPushToken = async ({
+	token,
+	name,
+}: {
+	token: string;
+	name: string;
+}) => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		throw new Error("Connect to a shared league before enabling notifications.");
+	}
+	await engine.registerMember({
+		fcmToken: token,
+		name,
+		tid: g.get("userTid"),
+	});
+	return { ok: true };
+};
+
 export default {
 	actions,
 	eightyTwoZeroDraft,
@@ -5315,6 +5339,7 @@ export default {
 		realtimeUpdate,
 		regenerateDraftClass,
 		regenerateSchedule,
+		registerPushToken,
 		releasePlayer,
 		expandVote,
 		relocateVote,

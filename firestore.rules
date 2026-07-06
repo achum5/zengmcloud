@@ -16,6 +16,9 @@ rules_version = '2';
 //     someone else's authorId).
 //   - Access to a league room still requires knowing its code, so use a code
 //     that isn't easy to guess (it's the shared secret for your league).
+//   - Push notifications: each device may write only its own member entry (its
+//     phone token), and the notification queue is append-only and can only be
+//     written under your own account.
 //
 // These rules do NOT expire.
 
@@ -29,6 +32,25 @@ service cloud.firestore {
                     && request.resource.data.authorId == request.auth.uid;
 
       // The change log is append-only.
+      allow update, delete: if false;
+    }
+
+    // Push-notification registrations: one doc per device, keyed by its uid, so
+    // each account can only write (and clear) its own phone token.
+    match /leagues/{code}/members/{uid} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // The notification queue the Cloud Function drains. Append-only, and you can
+    // only enqueue notifications authored by your own account. (The function
+    // reads these via the Admin SDK, which bypasses these rules.)
+    match /leagues/{code}/notifications/{notificationId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+                    && request.resource.data.authorId == request.auth.uid;
+
       allow update, delete: if false;
     }
   }

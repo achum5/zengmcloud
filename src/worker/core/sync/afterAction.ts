@@ -2,6 +2,7 @@ import { captureChangeset } from "./changeset.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { logChangeset } from "./devChangesetLogger.ts";
 import { getSyncEngine } from "./engineHolder.ts";
+import { buildNotification } from "./notifications.ts";
 
 // Runs (fire-and-forget) after each user action that could mutate state. It
 // drains the change tracker ONCE and fans the resulting changeset out to both
@@ -28,6 +29,17 @@ export const afterAction = async (type: string, name: string) => {
 		const engine = getSyncEngine();
 		if (engine) {
 			await engine.onLocalChangeset(changeset, label);
+
+			// Fan a phone push out to the other devices in the room, if this change
+			// is noteworthy (a trade, a roster move, the host finishing a sim, or a
+			// phase that needs a human). Best-effort - never blocks gameplay.
+			const notification = buildNotification(label, changeset, {
+				isHost: engine.getIsHost(),
+				authorName: engine.localName,
+			});
+			if (notification) {
+				await engine.publishNotification(notification);
+			}
 		}
 	} catch {
 		// Sync/logging must never affect gameplay.

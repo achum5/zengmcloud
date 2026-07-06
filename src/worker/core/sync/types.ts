@@ -1,4 +1,16 @@
 import type { Changeset } from "./changeset.ts";
+import type { SyncNotification } from "./notifications.ts";
+
+// One device's push registration in a league room, stored at
+// leagues/{code}/members/{uid}. The Cloud Function reads these to know where to
+// send pushes (and which team each person manages, for targeting).
+export type SyncMember = {
+	fcmToken: string;
+	name: string;
+	// The team this device currently manages (its userTid), so notifications can
+	// be targeted to the people a change actually affects.
+	tid: number;
+};
 
 // One entry in the shared change log - a changeset one device produced, tagged
 // with who made it and its ordering position. This is what gets stored in
@@ -44,4 +56,12 @@ export interface SyncTransport {
 	// Subscribe to the ordered stream of entries after our watermark (including
 	// history we missed, then live updates). Returns an unsubscribe function.
 	subscribe(subscriber: SyncSubscriber): () => void;
+
+	// Push-notification support. Optional so the in-memory test transport can
+	// skip it. registerMember records this device's FCM token in the room;
+	// publishNotification enqueues a push for the Cloud Function to fan out.
+	registerMember?(uid: string, member: SyncMember): Promise<void>;
+	publishNotification?(
+		notification: SyncNotification & { authorId: string; authorName: string },
+	): Promise<void>;
 }

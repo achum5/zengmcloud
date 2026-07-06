@@ -1,7 +1,9 @@
 import {
 	getFirestore,
 	collection,
+	doc,
 	addDoc,
+	setDoc,
 	onSnapshot,
 	query,
 	orderBy,
@@ -9,10 +11,17 @@ import {
 	Timestamp,
 	serverTimestamp,
 	type CollectionReference,
+	type Firestore,
 } from "firebase/firestore";
 import { getFirebaseApp } from "./firebaseApp.ts";
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
-import type { ChangesetEntry, SyncSubscriber, SyncTransport } from "./types.ts";
+import type { SyncNotification } from "./notifications.ts";
+import type {
+	ChangesetEntry,
+	SyncMember,
+	SyncSubscriber,
+	SyncTransport,
+} from "./types.ts";
 
 // Firestore-backed transport. Each shared league is a room keyed by its code;
 // changes live in `leagues/{code}/changes`, ordered by server timestamp. The
@@ -20,6 +29,10 @@ import type { ChangesetEntry, SyncSubscriber, SyncTransport } from "./types.ts";
 // Infinity/NaN and avoid Firestore's nested-array restrictions.
 export class FirebaseTransport implements SyncTransport {
 	readonly clientId: string;
+
+	private db: Firestore;
+
+	private code: string;
 
 	private changesRef: CollectionReference;
 
@@ -34,8 +47,37 @@ export class FirebaseTransport implements SyncTransport {
 	) {
 		this.clientId = clientId;
 		this.sinceTs = options.sinceTs ?? 0;
-		const db = getFirestore(getFirebaseApp());
-		this.changesRef = collection(db, "leagues", code, "changes");
+		this.code = code;
+		this.db = getFirestore(getFirebaseApp());
+		this.changesRef = collection(this.db, "leagues", code, "changes");
+	}
+
+	// Record (or refresh) this device's push registration in the room, so the
+	// Cloud Function knows where to send notifications. Keyed by uid, so each
+	// device has exactly one entry that updates in place.
+	async registerMember(uid: string, member: SyncMember) {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "members", uid),
+			{ ...member, updatedAt: serverTimestamp() },
+			{ merge: true },
+		);
+	}
+
+	// Enqueue a push. The Cloud Function triggers on this doc, looks up member
+	// tokens, and delivers to everyone else's phones - so it works even when
+	// their app is fully closed.
+	async publishNotification(
+		notification: SyncNotification & { authorId: string; authorName: string },
+	) {
+		await addDoc(collection(this.db, "leagues", this.code, "notifications"), {
+			title: notification.title,
+			body: notification.body,
+			authorId: notification.authorId,
+			authorName: notification.authorName,
+			// Firestore rejects `undefined`; null means "everyone in the room".
+			targetTids: notification.targetTids ?? null,
+			ts: serverTimestamp(),
+		});
 	}
 
 	async publish(entry: Omit<ChangesetEntry, "seq">) {

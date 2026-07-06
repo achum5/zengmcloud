@@ -3,7 +3,8 @@ import {
 	type Changeset,
 	type SyncChange,
 } from "./changeset.ts";
-import type { ChangesetEntry, SyncTransport } from "./types.ts";
+import type { SyncNotification } from "./notifications.ts";
+import type { ChangesetEntry, SyncMember, SyncTransport } from "./types.ts";
 
 // Changesets larger than this are "bulk" (e.g. a simulation, which mutates
 // hundreds of records). They're only published by the host, and are split into
@@ -57,6 +58,10 @@ export class SyncEngine {
 
 	private isHost: boolean;
 
+	// This device's display name, used as the author of push notifications
+	// ("Alex completed a trade"). Set when push is enabled.
+	localName = "A league-mate";
+
 	private onWatermark: ((seq: number) => void) | undefined;
 
 	private unsubscribe: (() => void) | undefined;
@@ -94,6 +99,26 @@ export class SyncEngine {
 
 	get clientId(): string {
 		return this.transport.clientId;
+	}
+
+	getIsHost(): boolean {
+		return this.isHost;
+	}
+
+	// Register this device for push in the room (records its FCM token). No-op if
+	// the transport doesn't support push (e.g. the in-memory test transport).
+	async registerMember(member: SyncMember) {
+		this.localName = member.name || this.localName;
+		await this.transport.registerMember?.(this.transport.clientId, member);
+	}
+
+	// Enqueue a push notification for the other devices in the room.
+	async publishNotification(notification: SyncNotification) {
+		await this.transport.publishNotification?.({
+			...notification,
+			authorId: this.transport.clientId,
+			authorName: this.localName,
+		});
 	}
 
 	start() {
