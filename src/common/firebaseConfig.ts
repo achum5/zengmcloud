@@ -20,4 +20,5 @@ export const firebaseConfig = {
 // Paste the "Key pair" string here. Until it's set, the "Enable phone
 // notifications" button explains that push isn't configured yet - everything
 // else (league sync) works without it. This key is public and safe to commit.
-export const vapidKey = "";
+export const vapidKey: string =
+	"BDP84L_2qs_IMuq7IHkJIRAUM_Z4yx_HD-HmHaMcI0YzkYyJgF5wmDK2VJ6266v5bdjBj94Hf52dJKe7CbZkIoU";
