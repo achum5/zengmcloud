@@ -822,6 +822,13 @@ export type League = {
 	startingSeason?: number;
 	season?: number;
 	imgURL?: string; // Should contain imgURLSmall if it exists
+
+	// Multiplayer sync (per-league, per-device): the server-timestamp watermark
+	// of the last change we've applied from the shared log, so we only catch up
+	// on what we missed; and a stable id for this device so we skip our own
+	// changes across reconnects.
+	syncWatermark?: number;
+	syncClientId?: string;
 };
 
 export type Locks = {

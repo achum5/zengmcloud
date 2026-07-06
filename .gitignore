@@ -12,3 +12,5 @@
 /foo
 /.vscode
 /tools/names-groups-html
+# Local league save files (large game data, not source)
+/*.json.gz

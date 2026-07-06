@@ -771,6 +771,22 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			},
 			{
 				type: "link",
+				active: (pageID) => pageID === "autoPlaySchedule",
+				league: true,
+				commandPalette: true,
+				path: ["auto_play_schedule"],
+				text: "Auto Play Scheduler",
+			},
+			{
+				type: "link",
+				active: (pageID) => pageID === "multiplayerSync",
+				league: true,
+				commandPalette: true,
+				path: ["multiplayer_sync"],
+				text: "Multiplayer Sync",
+			},
+			{
+				type: "link",
 				active: (pageID) => pageID === "exportPlayers",
 				league: true,
 				commandPalette: true,

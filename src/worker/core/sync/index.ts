@@ -1,0 +1,17 @@
+export {
+	captureChangeset,
+	applyChangeset,
+	type Changeset,
+	type SyncChange,
+} from "./changeset.ts";
+export { changeTracker } from "../../db/changeTracker.ts";
+export { SyncEngine } from "./SyncEngine.ts";
+export { afterAction } from "./afterAction.ts";
+export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
+export {
+	connectSharedLeague,
+	disconnectSharedLeague,
+	getSyncStatus,
+} from "./connect.ts";
+export { FirebaseTransport } from "./FirebaseTransport.ts";
+export type { ChangesetEntry, SyncTransport } from "./types.ts";

@@ -5,6 +5,7 @@ import {
 import { helpers } from "../../common/helpers.ts";
 import { idb } from "./index.ts";
 import cmp from "./cmp.ts";
+import { changeTracker } from "./changeTracker.ts";
 import { g, local, lock } from "../util/index.ts";
 import type {
 	AllStars,
@@ -1014,6 +1015,8 @@ class Cache {
 
 		this._markDirtyIndexes(store, obj);
 
+		changeTracker.record(store, obj[pk], "put");
+
 		return obj[pk];
 	}
 
@@ -1043,6 +1046,8 @@ class Cache {
 		this._dirty = true;
 
 		this._markDirtyIndexes(store);
+
+		changeTracker.record(store, id, "delete");
 	}
 
 	async _clear(store: Store) {
@@ -1056,6 +1061,8 @@ class Cache {
 				this.storeInfos[store].pkType === "number" ? Number.parseInt(id) : id;
 
 			this._deletes[store].add(idParsed);
+
+			changeTracker.record(store, idParsed, "delete");
 		}
 
 		this._dirty = true;

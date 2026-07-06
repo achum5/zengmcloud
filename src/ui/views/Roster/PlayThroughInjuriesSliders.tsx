@@ -1,5 +1,5 @@
 import { AnimatePresence, m } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { timeBetweenGames } from "../../../common/timeBetweenGames.ts";
 import playThroughInjuriesFactor from "../../../common/playThroughInjuriesFactor.ts";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
@@ -20,6 +20,12 @@ const Slider = ({
 	tid: number;
 }) => {
 	const [value, setValue] = useState(initialValue);
+
+	// Reflect external changes to this setting (e.g. a teammate changing it in a
+	// synced multiplayer league) - local state alone would ignore the new prop.
+	useEffect(() => {
+		setValue(initialValue);
+	}, [initialValue]);
 
 	const id = `play-through-injury-${playoffs ? "playoffs" : "regular-season"}`;
 

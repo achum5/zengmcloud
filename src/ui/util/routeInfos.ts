@@ -129,6 +129,8 @@ export const routeInfos = {
 	"/l/:lid/upcoming_free_agents": "upcomingFreeAgents",
 	"/l/:lid/upcoming_free_agents/:season": "upcomingFreeAgents",
 	"/l/:lid/god_mode": "godMode",
+	"/l/:lid/auto_play_schedule": "autoPlaySchedule",
+	"/l/:lid/multiplayer_sync": "multiplayerSync",
 	"/l/:lid/power_rankings": "powerRankings",
 	"/l/:lid/power_rankings/:season": "powerRankings",
 	"/l/:lid/power_rankings/:season/:playoffs": "powerRankings",

@@ -141,6 +141,26 @@ const crossTabEmit = (
 	});
 };*/
 
+// Dev-only: the worker runs in a SharedWorker, whose console output is hidden
+// from the page console, so it forwards cloud-sync changeset logs here to be
+// printed in the normal DevTools console.
+const syncLog = (payload: {
+	label: string;
+	byStore: Record<string, number>;
+	changes?: unknown[];
+}) => {
+	const args: unknown[] = [
+		`%c[sync]%c ${payload.label}`,
+		"color:#0d6efd;font-weight:bold",
+		"",
+		payload.byStore,
+	];
+	if (payload.changes) {
+		args.push(payload.changes);
+	}
+	console.log(...args);
+};
+
 export default {
 	analyticsEvent,
 	autoPlayDialog,
@@ -159,6 +179,7 @@ export default {
 	setGameAttributes,
 	showEvent: showEvent2,
 	showModal,
+	syncLog,
 	updateLocal,
 	updateTeamOvrs,
 };

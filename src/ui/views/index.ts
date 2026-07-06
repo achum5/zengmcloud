@@ -8,6 +8,8 @@ export { default as AllStarHistory } from "./AllStarHistory.tsx";
 export { default as AllStarTeams } from "./AllStarTeams/index.tsx";
 export { default as AllStarThree } from "./AllStarThree.tsx";
 export { default as AutoExpand } from "./AutoExpand.tsx";
+export { default as AutoPlaySchedule } from "./AutoPlaySchedule.tsx";
+export { default as MultiplayerSync } from "./MultiplayerSync.tsx";
 export { default as AutoRelocate } from "./AutoRelocate.tsx";
 export { default as AwardRaces } from "./AwardRaces.tsx";
 export { default as AwardsRecords } from "./AwardsRecords.tsx";

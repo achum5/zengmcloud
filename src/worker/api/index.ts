@@ -84,6 +84,11 @@ import {
 	saveAwardsByPlayer,
 } from "../core/season/awards.ts";
 import { getScore } from "../core/player/checkJerseyNumberRetirement.ts";
+import {
+	connectSharedLeague,
+	disconnectSharedLeague,
+	getSyncStatus,
+} from "../core/sync/index.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
 import { PointsFormulaEvaluator } from "../core/team/evaluatePointsFormula.ts";
 import type { Settings } from "../views/settings.ts";
@@ -5197,6 +5202,23 @@ const setScheduleFromEditor = async ({
 	await initUILocalGames();
 };
 
+// For the Multiplayer Sync team picker: the teams under multi-team-mode control
+// (from userTids), which one this device is currently acting as, and whether
+// multi-team mode is even set up yet.
+const getSyncTeams = async () => {
+	const userTids = g.get("userTids");
+	const allTeams = await idb.cache.teams.getAll();
+	const teams = userTids
+		.map((tid) => allTeams.find((t) => t.tid === tid))
+		.filter((t) => t !== undefined)
+		.map((t) => ({ tid: t.tid, region: t.region, name: t.name }));
+	return {
+		teams,
+		userTid: g.get("userTid"),
+		multiTeamMode: userTids.length > 1,
+	};
+};
+
 export default {
 	actions,
 	eightyTwoZeroDraft,
@@ -5224,11 +5246,13 @@ export default {
 		clearNotes,
 		clearTrade,
 		clearWatchList,
+		connectSharedLeague,
 		countNegotiations,
 		createLeague,
 		createTrade,
 		deleteOldData,
 		deleteScheduledEvents,
+		disconnectSharedLeague,
 		discardUnsavedProgress,
 		draftLottery,
 		draftUser,
@@ -5270,6 +5294,8 @@ export default {
 		getRandomRatings,
 		getRandomTeams,
 		getSavedTrade,
+		getSyncStatus,
+		getSyncTeams,
 		getTeamGraphStat,
 		getTradingBlockOffers,
 		ping,
