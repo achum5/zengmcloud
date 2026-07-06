@@ -2,7 +2,7 @@ import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import type { Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
-import { toUI } from "../../util/index.ts";
+import { toUI, updatePhase, updatePlayMenu } from "../../util/index.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
 import type { UpdateEvents } from "../../../common/types.ts";
 
@@ -88,6 +88,7 @@ export const applyChangeset = async (
 	}
 
 	let touchedGameAttributes = false;
+	let touchedPhase = false;
 	let touchedGames = false;
 
 	await changeTracker.runSuppressed(async () => {
@@ -108,6 +109,9 @@ export const applyChangeset = async (
 
 			if (change.store === "gameAttributes") {
 				touchedGameAttributes = true;
+				if (change.id === "phase" || change.id === "nextPhase") {
+					touchedPhase = true;
+				}
 			} else if (change.store === "games" || change.store === "schedule") {
 				touchedGames = true;
 			}
@@ -118,6 +122,22 @@ export const applyChangeset = async (
 	// `g` object (and the UI's copy) is stale until we reload it from the cache.
 	if (touchedGameAttributes) {
 		await loadGameAttributes();
+	}
+
+	// A phase change is more than a data change: the phase text, the Play menu
+	// options, and phase-routed views all need refreshing. finalize() does this
+	// for the device that ran the phase change; the receiving device must do the
+	// same, or it applies the new phase to data but keeps showing the old phase
+	// until some later update happens to repaint it.
+	const updateEvents: UpdateEvents = [...APPLY_UPDATE_EVENTS];
+	if (touchedPhase) {
+		try {
+			await updatePhase();
+			await updatePlayMenu();
+		} catch (error) {
+			console.error("Failed to refresh phase after sync", error);
+		}
+		updateEvents.push("newPhase");
 	}
 
 	// The LeagueTopBar score ticker is fed by a separate UI-state channel, not by
@@ -132,6 +152,6 @@ export const applyChangeset = async (
 	}
 
 	if (refreshUI) {
-		await toUI("realtimeUpdate", [APPLY_UPDATE_EVENTS]);
+		await toUI("realtimeUpdate", [updateEvents]);
 	}
 };
