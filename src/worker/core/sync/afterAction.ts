@@ -31,10 +31,11 @@ export const afterAction = async (type: string, name: string) => {
 			// Publishing IS the sync - if it throws, this change never reaches the
 			// other devices, and the tracker was already drained so it won't be
 			// recaptured. Keep it in its own try so a failure is logged loudly
-			// (diagnosable) instead of being swallowed by the outer catch, and so a
-			// notification failure below can never prevent the publish.
+			// (diagnosable) instead of being swallowed by the outer catch.
+			let published = false;
 			try {
 				await engine.onLocalChangeset(changeset, label);
+				published = true;
 			} catch (error) {
 				console.error(
 					`[sync] Failed to publish "${label}" (${changeset.changes.length} records) - this change did NOT sync to other devices.`,
@@ -42,20 +43,23 @@ export const afterAction = async (type: string, name: string) => {
 				);
 			}
 
-			// Fan phone pushes out to the other devices in the room, if this change
-			// is noteworthy (a trade, a roster move, the host finishing a sim, or a
-			// phase that needs a human). A sim produces one detailed notification per
-			// team; everything else produces one. Best-effort - never blocks play.
-			try {
-				const notifications = await buildNotifications(label, changeset, {
-					isHost: engine.getIsHost(),
-					authorName: engine.localName,
-				});
-				for (const notification of notifications) {
-					await engine.publishNotification(notification);
+			// Fan phone pushes out ONLY once the change actually reached the room.
+			// Otherwise a push implies a sync that never happened - the confusing
+			// case where the sim device advances and pings phones, but nothing lands
+			// in the shared log. A sim produces one detailed notification per team;
+			// everything else produces one. Best-effort - never blocks play.
+			if (published) {
+				try {
+					const notifications = await buildNotifications(label, changeset, {
+						isHost: engine.getIsHost(),
+						authorName: engine.localName,
+					});
+					for (const notification of notifications) {
+						await engine.publishNotification(notification);
+					}
+				} catch (error) {
+					console.error("[sync] Failed to publish notifications", error);
 				}
-			} catch (error) {
-				console.error("[sync] Failed to publish notifications", error);
 			}
 		}
 	} catch {

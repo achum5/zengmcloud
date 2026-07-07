@@ -183,7 +183,7 @@ export class FirebaseTransport implements SyncTransport {
 	}
 
 	async publish(entry: Omit<ChangesetEntry, "seq">) {
-		await addDoc(this.changesRef, {
+		const doc = {
 			id: entry.id,
 			authorId: entry.authorId,
 			action: entry.action,
@@ -198,7 +198,26 @@ export class FirebaseTransport implements SyncTransport {
 					}
 				: {}),
 			ts: serverTimestamp(),
-		});
+		};
+
+		// Retry transient failures (a network blip, a brief Firestore hiccup). A
+		// dropped publish is unrecoverable - the change tracker was already drained,
+		// so catch-up/resync can't replay a change that never reached the log.
+		// Re-sending is safe: the entry carries a stable id (and batchId/chunkIndex),
+		// so the receiver dedups an accidental double-write. A permanent failure
+		// (e.g. a doc over Firestore's ~1 MB limit) exhausts the retries and throws,
+		// which afterAction logs.
+		let lastError: unknown;
+		for (let attempt = 0; attempt < 3; attempt++) {
+			try {
+				await addDoc(this.changesRef, doc);
+				return;
+			} catch (error) {
+				lastError = error;
+				await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** attempt));
+			}
+		}
+		throw lastError;
 	}
 
 	// Parse a stored change doc into a ChangesetEntry, or undefined if it has no
