@@ -71,9 +71,13 @@ export interface SyncTransport {
 	// Optional so the in-memory test transport can skip it.
 	fetchAllEntries?(): Promise<ChangesetEntry[]>;
 
-	// Upsert this room's registry doc so it's listable on the admin page.
-	// Optional so the in-memory test transport can skip it.
-	touchRoom?(): Promise<void>;
+	// Upsert this room's registry doc (listable on the admin page) and stamp the
+	// league fingerprint. Optional so the in-memory test transport can skip it.
+	touchRoom?(leagueId?: string): Promise<void>;
+
+	// Read this room's registry doc (its league fingerprint), if any. Optional so
+	// the in-memory test transport can skip it.
+	getRoomInfo?(): Promise<{ leagueId?: string } | undefined>;
 
 	// Push-notification support. Optional so the in-memory test transport can
 	// skip it. registerMember records this device's FCM token in the room;

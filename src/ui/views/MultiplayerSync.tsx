@@ -325,11 +325,6 @@ const MultiplayerSync = () => {
 
 	return (
 		<>
-			<p className="text-body-secondary">
-				Everyone loads the same league file and connects with the same code.
-				Only one device sims at a time — tap <b>Sim here</b> to move it.
-			</p>
-
 			<div className="row" style={{ maxWidth: 500 }}>
 				<div className="col-12 mb-3">
 					<label className="form-label" htmlFor="sync-team">

@@ -4,6 +4,7 @@ import {
 	doc,
 	addDoc,
 	setDoc,
+	getDoc,
 	getDocs,
 	onSnapshot,
 	query,
@@ -58,13 +59,32 @@ export class FirebaseTransport implements SyncTransport {
 		this.changesRef = collection(this.db, "leagues", code, "changes");
 	}
 
+	// Read the room's registry doc, if any. `leagueId` is the fingerprint of the
+	// league file this room belongs to (see connect.ts). Undefined if the room
+	// has no registry doc yet.
+	async getRoomInfo(): Promise<{ leagueId?: string } | undefined> {
+		const snap = await getDoc(doc(this.db, "leagues", this.code));
+		if (!snap.exists()) {
+			return undefined;
+		}
+		const data = snap.data();
+		return {
+			leagueId: typeof data.leagueId === "string" ? data.leagueId : undefined,
+		};
+	}
+
 	// Upsert the room's registry doc (leagues/{code}) so the admin page can list
-	// every code that's been used. Rooms are otherwise created implicitly by
-	// writing to subcollections, leaving no listable parent document.
-	async touchRoom() {
+	// every code that's been used, and stamp the league fingerprint so a device
+	// can refuse to connect a different league to this room. Rooms are otherwise
+	// created implicitly by writing to subcollections, leaving no listable parent.
+	async touchRoom(leagueId?: string) {
 		await setDoc(
 			doc(this.db, "leagues", this.code),
-			{ code: this.code, updatedAt: serverTimestamp() },
+			{
+				code: this.code,
+				updatedAt: serverTimestamp(),
+				...(leagueId ? { leagueId } : {}),
+			},
 			{ merge: true },
 		);
 	}
