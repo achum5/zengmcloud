@@ -122,6 +122,22 @@ const topScorer = (players: any[] | undefined): any => {
 	return best;
 };
 
+// The best N performers on a team in a game, by Game Score, best first. Skips
+// players who didn't play / have no usable box score.
+const topScorers = (players: any[] | undefined, n: number): any[] =>
+	(players ?? [])
+		.filter((p) => p && !(typeof p.min === "number" && p.min <= 0))
+		.map((p) => ({ p, score: helpers.gameScore(p) }))
+		.filter(({ score }) => typeof score === "number" && !Number.isNaN(score))
+		.sort((a, b) => b.score - a.score)
+		.slice(0, n)
+		.map(({ p }) => p);
+
+// ESPN-style short team name for a score headline ("Unicorns", "Massacre").
+const headlineName = (
+	team: { region?: string; name?: string; abbrev?: string } | undefined,
+): string => team?.name || team?.region || team?.abbrev || "Team";
+
 // "Jayson Tatum: 30 PTS, 8 REB, 11 AST", or undefined if we can't build one.
 const statLine = (p: any): string | undefined => {
 	if (!p || typeof p.pts !== "number") {
@@ -244,28 +260,39 @@ const buildSimNotifications = async (
 		let body: string;
 		let path = gameLogPath;
 		if (teamGames.length === 1) {
-			// Single game (a day sim): the W/L result IS the title; the top
-			// performer's stat line for each team is the body. Deep-link to the box
-			// score of that game.
-			const { result, statLines } = gameParts(
-				teamGames[0]!,
-				tid,
-				teamName,
-				teamById,
-				true,
-				seasonRecord,
-			);
-			title = result;
+			// Single game (a day sim): an ESPN-style final-score headline is the
+			// title (winner first), and the top TWO performers from each team - each
+			// tagged with its team abbrev - are the body. Deep-link to the box score.
+			const game = teamGames[0]!;
+			const winner = teamById.get(game.won.tid);
+			const loser = teamById.get(game.lost.tid);
+			title = `${headlineName(winner)} ${game.won.pts}, ${headlineName(loser)} ${game.lost.pts}`;
+
 			if (abbrev) {
-				path = `game_log/${abbrev}/${season}/${teamGames[0]!.gid}`;
+				path = `game_log/${abbrev}/${season}/${game.gid}`;
 			}
-			// Fall back to a plain title if there's no usable box score.
-			if (statLines.length > 0) {
-				body = statLines.join("\n");
-			} else {
-				title = "Sim complete";
-				body = result;
-			}
+
+			const winnerPlayers = game.teams.find(
+				(t: any) => t.tid === game.won.tid,
+			)?.players;
+			const loserPlayers = game.teams.find(
+				(t: any) => t.tid === game.lost.tid,
+			)?.players;
+			const labeled = (ab: string | undefined, p: any): string | undefined => {
+				const line = statLine(p);
+				return line ? (ab ? `${ab} ${line}` : line) : undefined;
+			};
+			const lines = [
+				...topScorers(winnerPlayers, 2).map((p) => labeled(winner?.abbrev, p)),
+				...topScorers(loserPlayers, 2).map((p) => labeled(loser?.abbrev, p)),
+			].filter((l): l is string => l !== undefined);
+
+			// Fall back to restating the score if there's no usable box score
+			// (e.g. a non-basketball league where Game Score doesn't apply).
+			body =
+				lines.length > 0
+					? lines.join("\n")
+					: `Final: ${headlineName(winner)} ${game.won.pts}, ${headlineName(loser)} ${game.lost.pts}.`;
 		} else {
 			// Multiple games: the record is the title; detailed blocks for the first
 			// few games are the body, then a count of any remainder.

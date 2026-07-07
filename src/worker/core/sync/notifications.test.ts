@@ -148,17 +148,20 @@ describe("buildNotifications", () => {
 		assert.ok(notifs[0]!.body.includes("L @ BOS 98-102"));
 	});
 
-	test("single game → W/L result is the title, stat lines are the body", async () => {
+	test("single game → ESPN-style final-score title, top 2 stat lines per team", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.day",
 			{ changes: [gameWithBoxScore()] },
 			opts,
 		);
-		assert.strictEqual(notifs[0]!.title, "LA Lakers W vs BOS 110-86");
+		// Winner first, team nicknames + final score.
+		assert.strictEqual(notifs[0]!.title, "Lakers 110, Celtics 86");
 		const body = notifs[0]!.body;
-		// Star Guy outscores Bench Guy on Game Score; REB = orb + drb = 8.
-		assert.ok(body.includes("Star Guy: 30 PTS, 8 REB, 11 AST"), body);
-		assert.ok(body.includes("Opp Ace: 25 PTS, 5 REB, 5 AST"), body);
+		// Winner's top two (Star Guy outscores Bench Guy on Game Score; REB = orb +
+		// drb = 8), then the loser's scorer - each tagged with the team abbrev.
+		assert.ok(body.includes("LAL Star Guy: 30 PTS, 8 REB, 11 AST"), body);
+		assert.ok(body.includes("LAL Bench Guy:"), body);
+		assert.ok(body.includes("BOS Opp Ace: 25 PTS, 5 REB, 5 AST"), body);
 	});
 
 	test("team with no game still gets a targeted 'league advanced' notice", async () => {
@@ -185,7 +188,9 @@ describe("buildNotifications", () => {
 			},
 			opts,
 		);
-		assert.strictEqual(notifs[0]!.title, "Sim complete");
+		// A boxscore-less game still reads as a sim (final-score headline), never a
+		// trade. targetTids proves it went through the per-team sim path.
+		assert.strictEqual(notifs[0]!.title, "Lakers 110, Celtics 105");
 		assert.deepEqual(notifs[0]!.targetTids, [0]);
 	});
 
