@@ -1,5 +1,3 @@
-import { initializeApp, getApps } from "firebase/app";
-import { getAuth, signInAnonymously } from "firebase/auth";
 import {
 	collection,
 	deleteDoc,
@@ -10,41 +8,29 @@ import {
 	query,
 	writeBatch,
 } from "firebase/firestore";
-import { firebaseConfig } from "../../common/firebaseConfig.ts";
+import { getFirebaseApp } from "./firebaseApp.ts";
+import { ensureAnonymousAuth } from "./auth.ts";
 
-// Admin tools for the shared-league rooms in Firestore: list every code that's
-// been used and delete rooms (all their changes/control/members/notifications
-// docs plus the registry doc). Runs in the UI thread.
-//
-// SECURITY NOTE: the password gate in the UI is cosmetic. The real boundary is
-// the Firestore rules, which allow any signed-in (anonymous) user to delete.
-// That's acceptable for a tiny private league with obscure codes; it is NOT a
-// hardened admin surface.
+// Room-admin Firestore ops, run in the WORKER (which already has a working,
+// authenticated Firebase). Doing this in the UI thread meant a second Firebase
+// app on the same origin, which fought the worker's over IndexedDB and threw
+// NoModificationAllowedError.
 
 export type SyncRoom = {
 	code: string;
 	updatedAt?: number;
 };
 
-const getApp = () =>
-	getApps().length > 0 ? getApps()[0]! : initializeApp(firebaseConfig);
-
 const getDb = async () => {
-	const app = getApp();
-	// Firestore rules require an authenticated request; sign in anonymously if we
-	// haven't already (this UI-thread app is separate from the worker's).
-	const auth = getAuth(app);
-	if (!auth.currentUser) {
-		await signInAnonymously(auth);
-	}
-	return getFirestore(app);
+	await ensureAnonymousAuth();
+	return getFirestore(getFirebaseApp());
 };
 
 // The subcollections a room accumulates. Deleting a room clears all of these,
 // then the registry doc itself.
 const SUBCOLLECTIONS = ["changes", "control", "members", "notifications"];
 
-export const listRooms = async (): Promise<SyncRoom[]> => {
+export const listSyncRooms = async (): Promise<SyncRoom[]> => {
 	const db = await getDb();
 	const snap = await getDocs(collection(db, "leagues"));
 	return snap.docs
@@ -61,7 +47,7 @@ export const listRooms = async (): Promise<SyncRoom[]> => {
 		.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 };
 
-export const deleteRoom = async (code: string): Promise<void> => {
+export const deleteSyncRoom = async (code: string): Promise<void> => {
 	const trimmed = code.trim();
 	if (!trimmed) {
 		return;
@@ -94,10 +80,10 @@ export const deleteRoom = async (code: string): Promise<void> => {
 };
 
 // Delete every listed room. Returns how many were deleted.
-export const deleteAllRooms = async (): Promise<number> => {
-	const rooms = await listRooms();
+export const deleteAllSyncRooms = async (): Promise<number> => {
+	const rooms = await listSyncRooms();
 	for (const room of rooms) {
-		await deleteRoom(room.code);
+		await deleteSyncRoom(room.code);
 	}
 	return rooms.length;
 };

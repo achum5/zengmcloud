@@ -7,6 +7,12 @@ export {
 export { changeTracker } from "../../db/changeTracker.ts";
 export { SyncEngine } from "./SyncEngine.ts";
 export { afterAction } from "./afterAction.ts";
+export {
+	listSyncRooms,
+	deleteSyncRoom,
+	deleteAllSyncRooms,
+	type SyncRoom,
+} from "./adminRooms.ts";
 export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 export {
 	claimSyncAuthority,

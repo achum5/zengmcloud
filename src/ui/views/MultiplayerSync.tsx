@@ -14,12 +14,7 @@ import {
 	pushSupported,
 	restorePushNotifications,
 } from "../util/pushNotifications.ts";
-import {
-	deleteAllRooms,
-	deleteRoom,
-	listRooms,
-	type SyncRoom,
-} from "../util/syncAdmin.ts";
+import type { SyncRoom } from "../../worker/core/sync/adminRooms.ts";
 
 // Cosmetic gate for the room-admin panel (real security is the Firestore rules).
 const ADMIN_PASSWORD = "abc123";
@@ -229,7 +224,7 @@ const MultiplayerSync = () => {
 		setAdminBusy(true);
 		setAdminMsg(undefined);
 		try {
-			setRooms(await listRooms());
+			setRooms(await toWorker("main", "listSyncRooms", undefined));
 		} catch (err) {
 			setAdminMsg((err as Error).message ?? String(err));
 		} finally {
@@ -251,7 +246,7 @@ const MultiplayerSync = () => {
 		setAdminBusy(true);
 		setAdminMsg(undefined);
 		try {
-			await deleteRoom(code);
+			await toWorker("main", "deleteSyncRoom", code);
 			setAdminMsg(`Deleted "${code}".`);
 			await refreshRooms();
 		} catch (err) {
@@ -265,7 +260,7 @@ const MultiplayerSync = () => {
 		setAdminBusy(true);
 		setAdminMsg(undefined);
 		try {
-			const n = await deleteAllRooms();
+			const n = await toWorker("main", "deleteAllSyncRooms", undefined);
 			setAdminMsg(`Deleted ${n} room${n === 1 ? "" : "s"}.`);
 			await refreshRooms();
 		} catch (err) {
