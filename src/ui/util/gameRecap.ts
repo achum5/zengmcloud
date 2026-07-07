@@ -41,10 +41,15 @@ const playerLine = (p: RecapPlayer): string => {
 	}
 	if (p.career && p.career.length > 0) {
 		const career = p.career
-			.map(
-				(c) =>
-					`${c.season}: ${c.pts}/${c.reb}/${c.ast}, ${c.fgp}% FG (${c.gp} G)`,
-			)
+			.map((c) => {
+				const tag = [
+					c.teams && c.teams.length > 0 ? c.teams.join("/") : undefined,
+					typeof c.age === "number" ? `age ${c.age}` : undefined,
+				]
+					.filter(Boolean)
+					.join(", ");
+				return `${c.season}${tag ? ` (${tag})` : ""}: ${c.pts}/${c.reb}/${c.ast}, ${c.fgp}% FG (${c.gp} G)`;
+			})
 			.join("; ");
 		lines.push(`    · Career by season: ${career}`);
 	}

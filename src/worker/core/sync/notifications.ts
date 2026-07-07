@@ -576,6 +576,13 @@ export const buildNotifications = async (
 	changeset: Changeset,
 	{ isHost }: { isHost: boolean; authorName: string },
 ): Promise<SyncNotification[]> => {
+	// Note edits (filing an AI game recap, player/game notes, etc.) rewrite whole
+	// game/player records, which would otherwise look like a sim. The note still
+	// syncs so everyone sees it - it just never triggers a push.
+	if (label === "main.setNote") {
+		return [];
+	}
+
 	// Detect a sim by CONTENT, not just the label: only simulating games writes
 	// `games` records, and sims arrive via several actions (playMenu.day, but also
 	// actions.simToGame, live games, etc.). Relying on the label alone let a sim

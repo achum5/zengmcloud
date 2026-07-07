@@ -219,6 +219,16 @@ describe("buildNotifications", () => {
 		assert.strictEqual(notifs[0]!.targetTids, null);
 	});
 
+	test("filing a game note (setNote) sends no notification", async () => {
+		// A recap/note write mutates the game record, which must not look like a sim.
+		const notifs = await buildNotifications(
+			"main.setNote",
+			{ changes: [gamePut(1, { tid: 0, pts: 110 }, { tid: 1, pts: 105 })] },
+			opts,
+		);
+		assert.deepEqual(notifs, []);
+	});
+
 	test("non-host never announces a sim", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.day",

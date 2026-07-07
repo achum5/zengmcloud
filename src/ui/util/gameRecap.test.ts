@@ -136,6 +136,8 @@ describe("buildRecapPrompt — rich context", () => {
 							career: [
 								{
 									season: 2025,
+									age: 27,
+									teams: ["BKN"],
 									gp: 70,
 									min: 34,
 									pts: 24,
@@ -169,6 +171,7 @@ describe("buildRecapPrompt — rich context", () => {
 		assert.ok(prompt.includes("Last 10 (1-0)"), prompt);
 		assert.ok(prompt.includes("Season avg:"), prompt);
 		assert.ok(prompt.includes("Career by season:"), prompt);
+		assert.ok(prompt.includes("2025 (BKN, age 27)"), prompt); // team + age
 		assert.ok(prompt.includes("Round 2 of 4"), prompt); // playoff series
 		assert.ok(prompt.includes("#8 seed"), prompt);
 	});

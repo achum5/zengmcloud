@@ -16,7 +16,18 @@ export type RecapAverages = {
 	ftp: number; // FT%
 };
 
-export type RecapCareerSeason = RecapAverages & { season: number };
+export type RecapCareerSeason = RecapAverages & {
+	season: number;
+	age?: number;
+	teams?: string[]; // team abbrev(s) that season (more than one if traded)
+};
+
+// Career entry before team abbrevs are resolved (worker-internal).
+type CareerRaw = RecapAverages & {
+	season: number;
+	age?: number;
+	tids: number[];
+};
 
 // One player's box-score line, trimmed to the stats worth narrating, plus the
 // broader context a real writer would have: season/playoff averages and, for key
@@ -162,13 +173,18 @@ const toAverages = (tot: Totals): RecapAverages => {
 };
 
 // Regular-season averages for a player, split into this season, career (season
-// by season), and this postseason. Career/playoffs are only requested for key
-// players, to keep the prompt from ballooning.
+// by season, with age and team[s]), and this postseason. Career/playoffs are
+// only requested for key players, to keep the prompt from ballooning. Career
+// teams are returned as raw tids; the caller resolves them to abbrevs.
 const playerContext = (
 	player: any,
 	season: number,
 	includeCareer: boolean,
-): Pick<RecapPlayer, "seasonAvg" | "playoffAvg" | "career"> => {
+): {
+	seasonAvg?: RecapAverages;
+	playoffAvg?: RecapAverages;
+	careerRaw?: CareerRaw[];
+} => {
 	const stats: any[] = Array.isArray(player?.stats) ? player.stats : [];
 	const regular = stats.filter((s) => !s.playoffs);
 
@@ -178,33 +194,48 @@ const playerContext = (
 			? toAverages(aggregate(thisSeasonRows))
 			: undefined;
 
-	const playoffRows = stats.filter(
-		(s) => s.playoffs && s.season === season,
-	);
+	const playoffRows = stats.filter((s) => s.playoffs && s.season === season);
 	const playoffAvg =
 		playoffRows.length > 0 && aggregate(playoffRows).gp > 0
 			? toAverages(aggregate(playoffRows))
 			: undefined;
 
-	let career: RecapCareerSeason[] | undefined;
+	let careerRaw: CareerRaw[] | undefined;
 	if (includeCareer) {
+		const bornYear =
+			typeof player?.born?.year === "number" ? player.born.year : undefined;
 		const bySeason = new Map<number, any[]>();
 		for (const row of regular) {
 			const arr = bySeason.get(row.season) ?? [];
 			arr.push(row);
 			bySeason.set(row.season, arr);
 		}
-		career = [...bySeason.entries()]
-			.map(([s, rows]) => ({ season: s, tot: aggregate(rows) }))
+		careerRaw = [...bySeason.entries()]
+			.map(([s, rows]) => ({
+				season: s,
+				tot: aggregate(rows),
+				tids: [
+					...new Set(
+						rows
+							.map((r) => r.tid)
+							.filter((t) => typeof t === "number" && t >= 0),
+					),
+				] as number[],
+			}))
 			.filter(({ tot }) => tot.gp > 0)
 			.sort((a, b) => a.season - b.season)
-			.map(({ season: s, tot }) => ({ season: s, ...toAverages(tot) }));
-		if (career.length === 0) {
-			career = undefined;
+			.map(({ season: s, tot, tids }) => ({
+				season: s,
+				age: bornYear !== undefined ? s - bornYear : undefined,
+				tids,
+				...toAverages(tot),
+			}));
+		if (careerRaw.length === 0) {
+			careerRaw = undefined;
 		}
 	}
 
-	return { seasonAvg, playoffAvg, career };
+	return { seasonAvg, playoffAvg, careerRaw };
 };
 
 // All completed games on a given day of a season, each with team names, every
@@ -236,6 +267,17 @@ export const getDayGamesForRecap = async ({
 		return teamInfoCache.get(tid);
 	};
 	const abbrevOf = async (tid: number) => (await teamInfo(tid))?.abbrev ?? "???";
+
+	// A team's abbrev in a SPECIFIC (historical) season, for career lines.
+	const abbrevSeasonCache = new Map<string, string>();
+	const abbrevBySeasonTid = async (tid: number, s: number): Promise<string> => {
+		const key = `${tid}:${s}`;
+		if (!abbrevSeasonCache.has(key)) {
+			const info = await getTeamInfoBySeason(tid, s);
+			abbrevSeasonCache.set(key, info?.abbrev ?? "???");
+		}
+		return abbrevSeasonCache.get(key)!;
+	};
 
 	// A team's last 10 completed games up to and including this day.
 	const last10For = async (
@@ -377,10 +419,22 @@ export const getDayGamesForRecap = async ({
 						? await idb.cache.players.get(p.pid)
 						: undefined;
 				if (full) {
-					Object.assign(
-						base,
-						playerContext(full, season, topByPts.has(p.pid)),
-					);
+					const ctx = playerContext(full, season, topByPts.has(p.pid));
+					base.seasonAvg = ctx.seasonAvg;
+					base.playoffAvg = ctx.playoffAvg;
+					if (ctx.careerRaw) {
+						const career: RecapCareerSeason[] = [];
+						for (const c of ctx.careerRaw) {
+							const teams: string[] = [];
+							for (const tid of c.tids) {
+								teams.push(await abbrevBySeasonTid(tid, c.season));
+							}
+							const { tids, ...rest } = c;
+							void tids;
+							career.push({ ...rest, teams });
+						}
+						base.career = career;
+					}
 				}
 				players.push(base);
 			}
