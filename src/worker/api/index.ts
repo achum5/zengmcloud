@@ -85,6 +85,7 @@ import {
 } from "../core/season/awards.ts";
 import { getScore } from "../core/player/checkJerseyNumberRetirement.ts";
 import {
+	claimSyncAuthority,
 	connectSharedLeague,
 	disconnectSharedLeague,
 	getSyncEngine,
@@ -5233,7 +5234,9 @@ const registerPushToken = async ({
 }) => {
 	const engine = getSyncEngine();
 	if (!engine) {
-		throw new Error("Connect to a shared league before enabling notifications.");
+		throw new Error(
+			"Connect to a shared league before enabling notifications.",
+		);
 	}
 	await engine.registerMember({
 		fcmToken: token,
@@ -5267,6 +5270,7 @@ export default {
 		checkParticipationAchievement,
 		clearInjuries,
 		clearSavedTrades,
+		claimSyncAuthority,
 		clearNotes,
 		clearTrade,
 		clearWatchList,

@@ -35,6 +35,20 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // The "wheel": which single device is currently allowed to advance the
+    // league (sim, draft, change phase). A room has exactly one such doc. Any
+    // signed-in member may claim it, but only FOR THEMSELVES - you set holderId
+    // to your own uid, never assign control to (or yank it from) someone else.
+    // Everyone watches this doc to agree on who's in control.
+    match /leagues/{code}/control/{docId} {
+      allow read: if request.auth != null;
+
+      allow write: if request.auth != null
+                   && request.resource.data.holderId == request.auth.uid;
+
+      allow delete: if false;
+    }
+
     // Push-notification registrations: one doc per device, keyed by its uid, so
     // each account can only write (and clear) its own phone token.
     match /leagues/{code}/members/{uid} {

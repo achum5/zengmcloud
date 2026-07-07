@@ -122,6 +122,9 @@ describe("SyncEngine", () => {
 	test("host chunks a bulk (sim) change; receiver reassembles and applies it", async () => {
 		const bus = new FakeBus();
 		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		// isHost now means "claim the wheel on start" - starting is what makes this
+		// device the advance-authority allowed to broadcast bulk sims.
+		host.start();
 		const receiver = new SyncEngine(new FakeTransport("R", bus));
 
 		resetG();

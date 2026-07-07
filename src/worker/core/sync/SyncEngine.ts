@@ -4,7 +4,12 @@ import {
 	type SyncChange,
 } from "./changeset.ts";
 import type { SyncNotification } from "./notifications.ts";
-import type { ChangesetEntry, SyncMember, SyncTransport } from "./types.ts";
+import type {
+	Authority,
+	ChangesetEntry,
+	SyncMember,
+	SyncTransport,
+} from "./types.ts";
 
 // Changesets larger than this are "bulk" (e.g. a simulation, which mutates
 // hundreds of records). They're only published by the host, and are split into
@@ -22,6 +27,23 @@ const makeId = (): string => {
 	}
 	// Fallback for environments without crypto.randomUUID.
 	return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+};
+
+// Draft actions are turn-based - the game only enables the pick for whoever is
+// on the clock - so their changesets may broadcast from ANY device, not just
+// the wheel-holder. (Everything else that mutates in bulk is a sim and stays
+// wheel-holder-only.) Matches an action label like "main.draftUser" or
+// "playMenu.untilYourNextPick".
+const isDraftAction = (action: string): boolean => {
+	const name = action.includes(".")
+		? action.slice(action.indexOf(".") + 1)
+		: action;
+	return (
+		name === "draftUser" ||
+		name === "onePick" ||
+		name === "untilYourNextPick" ||
+		name === "untilEnd"
+	);
 };
 
 const chunkChanges = (changes: SyncChange[]): SyncChange[][] => {
@@ -56,10 +78,23 @@ const chunkChanges = (changes: SyncChange[]): SyncChange[][] => {
 export class SyncEngine {
 	private transport: SyncTransport;
 
-	private isHost: boolean;
+	// Who currently holds "the wheel" (may advance the league). Kept in sync with
+	// the shared control doc via subscribeAuthority. Undefined until someone
+	// claims it. This device is the authority when authority.holderId === our id.
+	private authority: Authority | undefined;
+
+	// If the user chose "take the wheel" when connecting, claim it on start.
+	private claimOnStart: boolean;
+
+	private onAuthorityChange:
+		| ((authority: Authority | undefined) => void)
+		| undefined;
+
+	private authorityUnsubscribe: (() => void) | undefined;
 
 	// This device's display name, used as the author of push notifications
-	// ("Alex completed a trade"). Set when push is enabled.
+	// ("Alex completed a trade") and as the wheel-holder's name. Set when push is
+	// enabled.
 	localName = "A league-mate";
 
 	private onWatermark: ((seq: number) => void) | undefined;
@@ -88,11 +123,13 @@ export class SyncEngine {
 			isHost?: boolean;
 			initialWatermark?: number;
 			onWatermark?: (seq: number) => void;
+			onAuthorityChange?: (authority: Authority | undefined) => void;
 		} = {},
 	) {
 		this.transport = transport;
-		this.isHost = options.isHost ?? false;
+		this.claimOnStart = options.isHost ?? false;
 		this.onWatermark = options.onWatermark;
+		this.onAuthorityChange = options.onAuthorityChange;
 		this.maxSeq = options.initialWatermark ?? 0;
 		this.persistedSeq = options.initialWatermark ?? 0;
 	}
@@ -101,8 +138,35 @@ export class SyncEngine {
 		return this.transport.clientId;
 	}
 
+	// Does THIS device currently hold the wheel (i.e. may it advance the league)?
+	isAuthority(): boolean {
+		return (
+			this.authority !== undefined &&
+			this.authority.holderId === this.transport.clientId
+		);
+	}
+
+	getAuthority(): Authority | undefined {
+		return this.authority;
+	}
+
+	// Back-compat alias: "host" now means "current wheel-holder". Used by the
+	// notification builder to decide who narrates a sim.
 	getIsHost(): boolean {
-		return this.isHost;
+		return this.isAuthority();
+	}
+
+	// Claim the wheel for this device. Optimistically flips local state so
+	// advancing unlocks immediately; the shared-doc subscription then confirms
+	// (and would correct us if someone claimed at the same instant).
+	async claimAuthority(): Promise<void> {
+		const holder: Authority = {
+			holderId: this.transport.clientId,
+			holderName: this.localName,
+		};
+		this.authority = holder;
+		this.onAuthorityChange?.(holder);
+		await this.transport.claimAuthority?.(holder.holderId, holder.holderName);
 	}
 
 	// Register this device for push in the room (records its FCM token). No-op if
@@ -129,6 +193,19 @@ export class SyncEngine {
 			onEntry: (entry) => this.handleEntry(entry),
 			onBatchProcessed: () => this.advanceWatermark(),
 		});
+
+		// Watch who holds the wheel, so every device agrees on who may advance.
+		this.authorityUnsubscribe = this.transport.subscribeAuthority?.(
+			(authority) => {
+				this.authority = authority;
+				this.onAuthorityChange?.(authority);
+			},
+		);
+
+		// If the user chose to take the wheel on connect, claim it now.
+		if (this.claimOnStart) {
+			void this.claimAuthority();
+		}
 	}
 
 	// Persist the watermark only when there are no half-received bulk batches, so
@@ -147,6 +224,8 @@ export class SyncEngine {
 	stop() {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
+		this.authorityUnsubscribe?.();
+		this.authorityUnsubscribe = undefined;
 	}
 
 	// Publish a changeset produced by a local action.
@@ -167,10 +246,13 @@ export class SyncEngine {
 			return;
 		}
 
-		// Bulk change (e.g. a sim). Only the host broadcasts these.
-		if (!this.isHost) {
+		// Bulk change (e.g. a sim, or a big draft advance). Normally only the
+		// wheel-holder broadcasts these. Draft actions are exempt: whoever is on
+		// the clock drafts their own pick, so their (possibly large) draft
+		// changeset must sync from any device.
+		if (!this.isAuthority() && !isDraftAction(action)) {
 			console.warn(
-				`[sync] Skipping bulk change from "${action}" (${changeset.changes.length} records) - only the host broadcasts sims.`,
+				`[sync] Skipping bulk change from "${action}" (${changeset.changes.length} records) - only the wheel-holder broadcasts sims.`,
 			);
 			return;
 		}

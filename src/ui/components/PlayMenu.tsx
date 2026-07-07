@@ -11,6 +11,17 @@ import {
 } from "../util/keyboardShortcuts.ts";
 import { confirm } from "../util/confirm.tsx";
 
+// Play-menu items that stay available on a device that doesn't hold the wheel:
+// "stop"/"stopAuto" just halt, and the draft-advancement items are turn-based
+// (any user drafts their own team). Mirrors the guard in worker/index.ts.
+const PLAY_MENU_WHEEL_EXEMPT = new Set([
+	"stop",
+	"stopAuto",
+	"onePick",
+	"untilYourNextPick",
+	"untilEnd",
+]);
+
 const handleOptionClick = (option: Option, event: MouseEvent) => {
 	if (!option.url) {
 		event.preventDefault();
@@ -65,9 +76,21 @@ const PlayMenu = ({
 		),
 	});
 
-	const { keyboardShortcuts: keyboardShortcutsLocal } = useLocal([
+	const {
+		keyboardShortcuts: keyboardShortcutsLocal,
+		mpSyncActive,
+		mpSyncIsHost,
+		mpSyncHostName,
+	} = useLocal([
 		"keyboardShortcuts",
+		"mpSyncActive",
+		"mpSyncIsHost",
+		"mpSyncHostName",
 	]);
+
+	// While synced but not holding the wheel, season/phase advancement is locked
+	// to this device (the worker enforces it too). Draft items stay available.
+	const locked = mpSyncActive && !mpSyncIsHost;
 
 	if (lid === undefined) {
 		return null;
@@ -91,15 +114,29 @@ const PlayMenu = ({
 				Play
 			</Dropdown.Toggle>
 			<Dropdown.Menu>
+				{locked ? (
+					<Dropdown.Header>
+						🔒 {mpSyncHostName ?? "Another device"} has the wheel — take it on
+						Multiplayer Sync to sim here
+					</Dropdown.Header>
+				) : null}
 				{options.map((option, i) => {
+					const optionLocked =
+						locked && !PLAY_MENU_WHEEL_EXEMPT.has(option.id as string);
 					return (
 						<Dropdown.Item
 							key={i}
-							href={option.url}
+							href={optionLocked ? undefined : option.url}
+							disabled={optionLocked}
 							onClick={(event: MouseEvent<any>) =>
 								handleOptionClick(option, event)
 							}
 							className="kbd-parent"
+							title={
+								optionLocked
+									? `${mpSyncHostName ?? "Another device"} has the wheel. Take it on the Multiplayer Sync page to sim on this device.`
+									: undefined
+							}
 						>
 							{option.label}
 							{option.keyboardShortcut ? (

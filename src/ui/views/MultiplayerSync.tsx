@@ -21,12 +21,17 @@ type Status = "disconnected" | "connecting" | "connected";
 const MultiplayerSync = () => {
 	useTitleBar({ title: "Multiplayer Sync (Beta)" });
 
-	const { lid } = useLocal(["lid"]);
+	const { lid, mpSyncIsHost, mpSyncHostName } = useLocal([
+		"lid",
+		"mpSyncIsHost",
+		"mpSyncHostName",
+	]);
 
 	const [code, setCode] = useState("");
 	const [isHost, setIsHost] = useState(false);
 	const [status, setStatus] = useState<Status>("disconnected");
 	const [error, setError] = useState<string | undefined>();
+	const [takingWheel, setTakingWheel] = useState(false);
 
 	const [teams, setTeams] = useState<
 		{ tid: number; region: string; name: string }[]
@@ -37,9 +42,8 @@ const MultiplayerSync = () => {
 	// Phone push notifications.
 	const [pushName, setPushName] = useState(getStoredPushName());
 	const [pushSupport, setPushSupport] = useState(true);
-	const [pushPermission, setPushPermission] = useState<NotificationPermission>(
-		getPushPermission(),
-	);
+	const [pushPermission, setPushPermission] =
+		useState<NotificationPermission>(getPushPermission());
 	const [pushBusy, setPushBusy] = useState(false);
 	const [pushError, setPushError] = useState<string | undefined>();
 
@@ -140,6 +144,15 @@ const MultiplayerSync = () => {
 		setStatus("disconnected");
 	};
 
+	const takeWheel = async () => {
+		setTakingWheel(true);
+		try {
+			await toWorker("main", "claimSyncAuthority", undefined);
+		} finally {
+			setTakingWheel(false);
+		}
+	};
+
 	const connected = status === "connected";
 
 	return (
@@ -151,10 +164,13 @@ const MultiplayerSync = () => {
 				other's devices automatically.
 			</p>
 			<p className="text-body-secondary">
-				One person is the <b>host</b> and runs the simulations — their sim
-				results are broadcast to everyone. Everyone else should leave the host
-				box unchecked and not sim. Once connected, this league stays connected
-				across refreshes automatically.
+				At any moment, exactly one device holds <b>the wheel</b> — only it can
+				sim games or advance the league, so two people can never sim at once and
+				corrupt the save. The wheel can be <b>passed between devices</b>:
+				whoever wants to run the next sim taps <b>Take the wheel</b> below.
+				(During the draft, everyone can still pick their own team when they're
+				on the clock.) Once connected, this league stays connected across
+				refreshes automatically.
 			</p>
 
 			<div className="row" style={{ maxWidth: 500 }}>
@@ -224,8 +240,8 @@ const MultiplayerSync = () => {
 					onChange={(event) => setIsHost(event.target.checked)}
 				/>
 				<label className="form-check-label" htmlFor="sync-host">
-					I'm the host (I run the sims). Only one person in the league should
-					check this.
+					Take the wheel when I connect (I'll run the first sims). You can
+					always hand it off or take it back later.
 				</label>
 			</div>
 
@@ -249,10 +265,39 @@ const MultiplayerSync = () => {
 				<div className="card-body">
 					<h3 className="card-title h5">Status</h3>
 					{connected ? (
-						<p className="text-success mb-0">
-							Connected to <b>{code.trim()}</b>
-							{isHost ? " as host" : ""} — live changes are syncing.
-						</p>
+						<>
+							<p className="text-success mb-2">
+								Connected to <b>{code.trim()}</b> — live changes are syncing.
+							</p>
+							<div className="d-flex align-items-center gap-2 flex-wrap">
+								<span>
+									{mpSyncIsHost ? (
+										<span className="text-success">
+											🎮 <b>You have the wheel</b> — you can sim and advance the
+											league.
+										</span>
+									) : mpSyncHostName ? (
+										<span className="text-body-secondary">
+											🔒 <b>{mpSyncHostName}</b> has the wheel. Simming is
+											disabled here until you take it.
+										</span>
+									) : (
+										<span className="text-body-secondary">
+											Nobody has the wheel yet — take it to sim.
+										</span>
+									)}
+								</span>
+								{!mpSyncIsHost ? (
+									<button
+										className="btn btn-primary btn-sm"
+										disabled={takingWheel}
+										onClick={takeWheel}
+									>
+										{takingWheel ? "Taking…" : "Take the wheel"}
+									</button>
+								) : null}
+							</div>
+						</>
 					) : status === "connecting" ? (
 						<p className="mb-0">Connecting…</p>
 					) : (
@@ -269,8 +314,8 @@ const MultiplayerSync = () => {
 					<h3 className="card-title h5">Phone notifications</h3>
 					<p className="text-body-secondary">
 						Get a push on your phone — even with ZenGM closed — when the host
-						sims, when a trade or roster move happens, or when the league reaches
-						a phase that needs you (like the draft).
+						sims, when a trade or roster move happens, or when the league
+						reaches a phase that needs you (like the draft).
 					</p>
 
 					{!pushConfigured() ? (

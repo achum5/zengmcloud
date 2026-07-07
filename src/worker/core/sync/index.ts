@@ -9,9 +9,10 @@ export { SyncEngine } from "./SyncEngine.ts";
 export { afterAction } from "./afterAction.ts";
 export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 export {
+	claimSyncAuthority,
 	connectSharedLeague,
 	disconnectSharedLeague,
 	getSyncStatus,
 } from "./connect.ts";
 export { FirebaseTransport } from "./FirebaseTransport.ts";
-export type { ChangesetEntry, SyncTransport } from "./types.ts";
+export type { Authority, ChangesetEntry, SyncTransport } from "./types.ts";

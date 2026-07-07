@@ -35,6 +35,15 @@ export type ChangesetEntry = {
 	chunkCount?: number;
 };
 
+// Who currently holds "the wheel" - the one device allowed to advance the
+// league (sim/draft/phase change). Stored at leagues/{code}/control/authority
+// and watched by everyone, so all devices agree on who's in control. Undefined
+// means nobody has claimed it yet (a brand-new room).
+export type Authority = {
+	holderId: string;
+	holderName: string;
+};
+
 export interface SyncSubscriber {
 	// Handle one entry from the shared log. Returns whether it was applied.
 	onEntry(entry: ChangesetEntry): Promise<boolean> | boolean;
@@ -64,4 +73,13 @@ export interface SyncTransport {
 	publishNotification?(
 		notification: SyncNotification & { authorId: string; authorName: string },
 	): Promise<void>;
+
+	// "Wheel" (advance-authority) support. Optional so the in-memory test
+	// transport can skip it. claimAuthority makes this device the sole holder;
+	// subscribeAuthority watches who currently holds it (undefined until someone
+	// claims). Returns an unsubscribe function.
+	claimAuthority?(holderId: string, holderName: string): Promise<void>;
+	subscribeAuthority?(
+		onChange: (authority: Authority | undefined) => void,
+	): () => void;
 }

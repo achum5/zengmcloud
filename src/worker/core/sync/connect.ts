@@ -30,13 +30,32 @@ const saveWatermark = async (lid: number | undefined, ts: number) => {
 // The room we're currently connected to (if any), so the UI can reflect
 // connection state - including after an auto-reconnect it didn't drive.
 let currentCode: string | undefined;
-let currentIsHost = false;
+// Name of whoever currently holds the wheel (for display), from the shared doc.
+let currentHostName: string | undefined;
 
-export const getSyncStatus = () => ({
-	connected: getSyncEngine() !== undefined,
-	code: currentCode,
-	isHost: currentIsHost,
-});
+export const getSyncStatus = () => {
+	const engine = getSyncEngine();
+	return {
+		connected: engine !== undefined,
+		code: currentCode,
+		// "host" now means "current wheel-holder", read live from the engine.
+		isHost: engine?.isAuthority() ?? false,
+		hostName: currentHostName,
+	};
+};
+
+// Push the current wheel state into reactive UI local state so the Play menu,
+// draft, and sync page can reflect who's in control without polling.
+const pushAuthorityToUI = (isHost: boolean, hostName: string | undefined) => {
+	void toUI("updateLocal", [
+		{ mpSyncIsHost: isHost, mpSyncHostName: hostName },
+	]);
+};
+
+// Take the wheel on this device (become the one allowed to advance the league).
+export const claimSyncAuthority = async () => {
+	await getSyncEngine()?.claimAuthority();
+};
 
 // Join a shared-league sync room. All devices using the same `code` see each
 // other's changes. Everyone should already be on the same league file - on
@@ -72,18 +91,27 @@ export const connectSharedLeague = async ({
 		onWatermark: (seq) => {
 			void saveWatermark(lid, seq);
 		},
+		onAuthorityChange: (authority) => {
+			currentHostName = authority?.holderName;
+			pushAuthorityToUI(
+				authority?.holderId === clientId,
+				authority?.holderName,
+			);
+		},
 	});
 	engine.start();
 	setSyncEngine(engine);
 	currentCode = trimmed;
-	currentIsHost = isHost;
+	currentHostName = undefined;
 
 	// Turn on change capture so local actions get published to the room.
 	changeTracker.enable();
 	changeTracker.reset();
 
-	// Let the UI hide single-player-only chrome (e.g. the multi-team switcher).
+	// Let the UI hide single-player-only chrome (e.g. the multi-team switcher),
+	// and reset the wheel display until the control-doc subscription reports in.
 	void toUI("updateLocal", [{ mpSyncActive: true }]);
+	pushAuthorityToUI(false, undefined);
 
 	return { connected: true, code: trimmed, isHost, clientId };
 };
@@ -95,9 +123,10 @@ export const disconnectSharedLeague = () => {
 		setSyncEngine(undefined);
 	}
 	currentCode = undefined;
-	currentIsHost = false;
+	currentHostName = undefined;
 
 	void toUI("updateLocal", [{ mpSyncActive: false }]);
+	pushAuthorityToUI(false, undefined);
 
 	// Leave the tracker enabled in dev (the console logger uses it); otherwise
 	// turn it back off so single-player has zero overhead.

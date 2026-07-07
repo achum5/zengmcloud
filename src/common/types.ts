@@ -1048,6 +1048,11 @@ export type LocalStateUI = {
 	// True while connected to a multiplayer sync session - used to hide the
 	// multi-team switcher so it feels like single-player.
 	mpSyncActive: boolean;
+	// Does this device currently hold "the wheel" (may it advance the league)?
+	// Only meaningful while mpSyncActive. Drives the Play-menu / draft locks.
+	mpSyncIsHost: boolean;
+	// Display name of whoever currently holds the wheel (undefined = nobody yet).
+	mpSyncHostName: string | undefined;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;

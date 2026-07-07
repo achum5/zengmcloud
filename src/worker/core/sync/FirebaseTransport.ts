@@ -17,11 +17,15 @@ import { getFirebaseApp } from "./firebaseApp.ts";
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
 import type { SyncNotification } from "./notifications.ts";
 import type {
+	Authority,
 	ChangesetEntry,
 	SyncMember,
 	SyncSubscriber,
 	SyncTransport,
 } from "./types.ts";
+
+// A room has exactly one "wheel" doc recording who may advance the league.
+const AUTHORITY_DOC_ID = "authority";
 
 // Firestore-backed transport. Each shared league is a room keyed by its code;
 // changes live in `leagues/{code}/changes`, ordered by server timestamp. The
@@ -81,6 +85,36 @@ export class FirebaseTransport implements SyncTransport {
 			path: notification.path ?? "",
 			ts: serverTimestamp(),
 		});
+	}
+
+	// Claim the wheel: become the sole device allowed to advance the league. The
+	// security rules only permit writing holderId === your own uid, so you can
+	// only ever take the wheel for yourself, never assign it to someone else.
+	async claimAuthority(holderId: string, holderName: string) {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
+			{ holderId, holderName, updatedAt: serverTimestamp() },
+		);
+	}
+
+	// Watch who currently holds the wheel. Fires immediately with the current
+	// holder (or undefined if nobody has claimed it yet), then on every change.
+	subscribeAuthority(onChange: (authority: Authority | undefined) => void) {
+		return onSnapshot(
+			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
+			(snapshot) => {
+				const data = snapshot.data();
+				if (data && typeof data.holderId === "string") {
+					onChange({
+						holderId: data.holderId,
+						holderName:
+							typeof data.holderName === "string" ? data.holderName : "Someone",
+					});
+				} else {
+					onChange(undefined);
+				}
+			},
+		);
 	}
 
 	async publish(entry: Omit<ChangesetEntry, "seq">) {

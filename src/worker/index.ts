@@ -9,6 +9,7 @@ import { promiseWorker } from "./util/promiseWorker.ts";
 import { defaultGameAttributes } from "../common/defaultGameAttributes.ts";
 import { changeTracker } from "./db/changeTracker.ts";
 import { afterAction } from "./core/sync/afterAction.ts";
+import { getSyncEngine } from "./core/sync/engineHolder.ts";
 
 self.bbgm = {
 	...common,
@@ -41,6 +42,37 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getTradingBlockOffers",
 ]);
 
+// Multiplayer "wheel": while synced, only the device that holds the wheel may
+// advance the shared timeline. These sets classify which API calls count as
+// "advancing" so the guard below can block them on non-wheel devices.
+//
+// Play-menu items that DON'T need the wheel: "stop"/"stopAuto" just halt, and
+// the draft-advancement items are turn-based (the game only enables them for
+// whoever is on the clock), so any user may drive their own draft.
+const PLAY_MENU_WHEEL_EXEMPT = new Set([
+	"stop",
+	"stopAuto",
+	"onePick",
+	"untilYourNextPick",
+	"untilEnd",
+]);
+// "actions"-type calls that advance the season/live sim. (runDraft/untilPick in
+// actions.ts are draft helpers and stay exempt.)
+const ACTIONS_WHEEL_LOCKED = new Set(["simGame", "liveGame", "simToGame"]);
+// "main"-type calls that restructure/advance the league. A single on-the-clock
+// pick (draftUser) is deliberately NOT here - every user drafts their own team.
+const MAIN_WHEEL_LOCKED = new Set([
+	"draftLottery",
+	"startExpansionDraft",
+	"startFantasyDraft",
+]);
+
+// Does this API call advance the shared timeline (and so require the wheel)?
+const isWheelLockedCall = (type: string, name: string): boolean =>
+	(type === "playMenu" && !PLAY_MENU_WHEEL_EXEMPT.has(name)) ||
+	(type === "actions" && ACTIONS_WHEEL_LOCKED.has(name)) ||
+	(type === "main" && MAIN_WHEEL_LOCKED.has(name));
+
 export type WorkerAPICategory =
 	| "actions"
 	| "eightyTwoZeroDraft"
@@ -61,6 +93,29 @@ promiseWorker.register(([type, name, param], hostID) => {
 		throw new Error(
 			`API call to nonexistant worker function "${type}.${name}"`,
 		);
+	}
+
+	// Multiplayer wheel guard. While connected to a shared league, a device that
+	// doesn't hold the wheel may not advance the timeline. We block BEFORE the
+	// action runs (not just its broadcast), which is what stops a non-authority
+	// device from simming locally and diverging. Draft picks are exempt (handled
+	// by isWheelLockedCall), so everyone can still draft their own team.
+	const syncEngine = getSyncEngine();
+	if (
+		syncEngine &&
+		!syncEngine.isAuthority() &&
+		isWheelLockedCall(type, name)
+	) {
+		const holder = syncEngine.getAuthority()?.holderName ?? "Another device";
+		util.logEvent(
+			{
+				type: "error",
+				text: `${holder} has the wheel right now, so simming and advancing the league is disabled on this device. To control the league here, go to Multiplayer Sync (under Tools) and choose "Take the wheel".`,
+				persistent: true,
+			},
+			conditions,
+		);
+		return undefined;
 	}
 
 	// https://github.com/microsoft/TypeScript/issues/21732
