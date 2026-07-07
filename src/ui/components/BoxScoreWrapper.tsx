@@ -176,6 +176,13 @@ const TeamNameAndScore = ({
 			{shootout ? (
 				<div className="text-body-secondary">&nbsp;({t.sPts})</div>
 			) : null}
+			{t.won !== undefined && t.lost !== undefined ? (
+				// The record otherwise only shows under the big logo, which is hidden
+				// below the lg breakpoint - so surface it inline here on smaller screens.
+				<div className="text-body-secondary align-self-center ms-2 fs-6 d-lg-none">
+					{helpers.formatRecord(t)}
+				</div>
+			) : null}
 		</div>
 	);
 };
