@@ -142,20 +142,20 @@ describe("buildNotifications", () => {
 		);
 		assert.strictEqual(notifs.length, 1);
 		assert.deepEqual(notifs[0]!.targetTids, [0]);
-		assert.ok(notifs[0]!.body.includes("LA Lakers went 1-1 this week"));
-		// Home win vs BOS, away loss @ BOS.
+		// Multi-game: record is the title, per-game blocks are the body.
+		assert.ok(notifs[0]!.title.includes("LA Lakers went 1-1 this week"));
 		assert.ok(notifs[0]!.body.includes("W vs BOS 110-105"));
 		assert.ok(notifs[0]!.body.includes("L @ BOS 98-102"));
 	});
 
-	test("single game → team result line + top game-score stat line per team", async () => {
+	test("single game → W/L result is the title, stat lines are the body", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.day",
 			{ changes: [gameWithBoxScore()] },
 			opts,
 		);
+		assert.strictEqual(notifs[0]!.title, "LA Lakers W vs BOS 110-86");
 		const body = notifs[0]!.body;
-		assert.ok(body.includes("LA Lakers W vs BOS 110-86"), body);
 		// Star Guy outscores Bench Guy on Game Score; REB = orb + drb = 8.
 		assert.ok(body.includes("Star Guy: 30 PTS, 8 REB, 11 AST"), body);
 		assert.ok(body.includes("Opp Ace: 25 PTS, 5 REB, 5 AST"), body);
@@ -219,24 +219,118 @@ describe("buildNotifications", () => {
 		assert.deepEqual(notifs, []);
 	});
 
-	test("players moving to two teams → trade, to everyone", async () => {
-		const notifs = await buildNotifications(
-			"main.proposeTrade",
-			{ changes: [playerPut(1, 0), playerPut(2, 1)] },
-			opts,
-		);
-		assert.strictEqual(notifs[0]!.title, "Trade completed");
-		assert.strictEqual(notifs[0]!.targetTids, null);
-		assert.ok(notifs[0]!.body.includes("Alex"));
+	// A player record with ratings + contract, for trade/signing narration.
+	const namedPlayer = (
+		pid: number,
+		tid: number,
+		firstName: string,
+		lastName: string,
+		ovr: number,
+		extra: Record<string, unknown> = {},
+	): Changeset["changes"][number] => ({
+		store: "players",
+		id: pid,
+		type: "put",
+		value: {
+			pid,
+			tid,
+			firstName,
+			lastName,
+			ratings: [{ ovr, pot: ovr, pos: "PG" }],
+			...extra,
+		},
 	});
 
-	test("a single roster change → roster move", async () => {
+	test("two-team trade → Shams-style blurb naming both sides, to everyone", async () => {
 		const notifs = await buildNotifications(
-			"main.signFreeAgent",
-			{ changes: [playerPut(1, 0)] },
+			"main.proposeTrade",
+			{
+				changes: [
+					namedPlayer(1, 1, "Star", "Wing", 88), // now on Boston (tid 1)
+					namedPlayer(2, 0, "Role", "Player", 74), // now on LA (tid 0)
+					{
+						store: "draftPicks",
+						id: 9,
+						type: "put",
+						value: { dpid: 9, tid: 0, round: 1, season: 2027 },
+					},
+				],
+			},
 			opts,
 		);
-		assert.strictEqual(notifs[0]!.title, "Roster move");
+		assert.strictEqual(notifs.length, 1);
+		assert.strictEqual(notifs[0]!.title, "Trade");
+		assert.strictEqual(notifs[0]!.targetTids, null);
+		const body = notifs[0]!.body;
+		// Both sides named, both players and the pick described (direction follows
+		// changeset order, so assert on content, not which team is listed first).
+		assert.ok(body.includes("acquire"), body);
+		assert.ok(body.includes("LA Lakers"), body);
+		assert.ok(body.includes("Boston Celtics"), body);
+		assert.ok(body.includes("Role Player (74 ovr)"), body);
+		assert.ok(body.includes("Star Wing (88 ovr)"), body);
+		assert.ok(body.includes("2027 1st-round pick"), body);
+	});
+
+	test("single free-agent signing → contract terms", async () => {
+		// beforeEach sets season 2026; 2026..2028 = 3 years, 15000/yr (thousands)
+		// => $45M total.
+		const notifs = await buildNotifications(
+			"main.signFreeAgent",
+			{
+				changes: [
+					namedPlayer(1, 0, "New", "Guy", 80, {
+						contract: { amount: 15000, exp: 2028 },
+					}),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Signing");
+		assert.ok(
+			notifs[0]!.body.includes("LA Lakers sign New Guy (80 ovr, PG)"),
+			notifs[0]!.body,
+		);
+		assert.ok(notifs[0]!.body.includes("3-year, $45M"), notifs[0]!.body);
+	});
+
+	test("draft picks → 'With the Nth pick...' per selection", async () => {
+		g.setWithoutSavingToDB("phase", PHASE.DRAFT);
+		g.setWithoutSavingToDB("numActiveTeams", 30);
+		const notifs = await buildNotifications(
+			"main.draftUser",
+			{
+				changes: [
+					{
+						store: "players",
+						id: 7,
+						type: "put",
+						value: {
+							pid: 7,
+							tid: 0,
+							firstName: "Rook",
+							lastName: "Ie",
+							college: "Duke",
+							ratings: [{ ovr: 55, pot: 78, pos: "SF" }],
+							draft: {
+								round: 1,
+								pick: 3,
+								year: 2026,
+								tid: 0,
+								ovr: 55,
+								pot: 78,
+							},
+						},
+					},
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Draft pick");
+		assert.strictEqual(
+			notifs[0]!.body,
+			"With the 3rd pick in the 2026 draft, the LA Lakers select Rook Ie (55, 78), SF from Duke.",
+		);
 	});
 
 	test("a non-roster change → no notification", async () => {

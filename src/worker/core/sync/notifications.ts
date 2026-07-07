@@ -63,21 +63,6 @@ const newPhaseFromChangeset = (changeset: Changeset): number | undefined => {
 	return undefined;
 };
 
-// Distinct real teams (tid >= 0) that received a player in this changeset. Two
-// or more usually means a trade; one means a signing/claim.
-const receivingTeams = (changeset: Changeset): number[] => {
-	const tids = new Set<number>();
-	for (const change of changeset.changes) {
-		if (change.store === "players" && change.type === "put") {
-			const tid = (change.value as { tid?: unknown })?.tid;
-			if (typeof tid === "number" && tid >= 0) {
-				tids.add(tid);
-			}
-		}
-	}
-	return [...tids];
-};
-
 // True if the changeset touches roster state at all (signings, cuts, trades,
 // draft picks). Deliberately broad - for a friend group, an occasional extra
 // ping is better than a missed move.
@@ -132,20 +117,20 @@ const statLine = (p: any): string | undefined => {
 	return `${p.name}: ${p.pts} PTS, ${reb} REB, ${ast} AST`;
 };
 
-// One game from a team's perspective:
-//   "Boston Massacre W vs DET 110-86
-//    Jayson Tatum: 30 PTS, 8 REB, 11 AST
-//    Cade Cunningham: 28 PTS, 7 REB, 4 AST"
-// includeTeamName puts the team name on the result line (for a single-game body);
-// multi-game bodies carry the team name in a header instead.
-const gameBlock = (
+// One game from a team's perspective, split into the result line and the two
+// top-performer stat lines:
+//   result:    "Boston Massacre W vs DET 110-86"
+//   statLines: ["Jayson Tatum: 30 PTS, 8 REB, 11 AST",
+//               "Cade Cunningham: 28 PTS, 7 REB, 4 AST"]
+// includeTeamName puts the team name on the result line.
+const gameParts = (
 	game: Game,
 	tid: number,
 	teamName: string,
 	teamById: Map<number, { abbrev?: string }>,
 	includeTeamName: boolean,
 	resultSuffix = "",
-): string => {
+): { result: string; statLines: string[] } => {
 	const won = game.won.tid === tid;
 	const myPts = won ? game.won.pts : game.lost.pts;
 	const oppPts = won ? game.lost.pts : game.won.pts;
@@ -159,13 +144,23 @@ const gameBlock = (
 	const myTeam = game.teams.find((t: any) => t.tid === tid);
 	const oppTeam = game.teams.find((t: any) => t.tid === oppTid);
 
-	const lines = [
-		result,
+	const statLines = [
 		statLine(topScorer(myTeam?.players)),
 		statLine(topScorer(oppTeam?.players)),
 	].filter((line): line is string => line !== undefined);
 
-	return lines.join("\n");
+	return { result, statLines };
+};
+
+// The multi-game body block: result line followed by its stat lines.
+const gameBlock = (
+	game: Game,
+	tid: number,
+	teamName: string,
+	teamById: Map<number, { abbrev?: string }>,
+): string => {
+	const { result, statLines } = gameParts(game, tid, teamName, teamById, false);
+	return [result, ...statLines].join("\n");
 };
 
 // Show full stat-line detail for at most this many games, so a week/month sim
@@ -225,28 +220,238 @@ const buildSimNotifications = async (
 			// Ignore - the record is a nicety, not essential.
 		}
 
+		let title: string;
 		let body: string;
 		if (teamGames.length === 1) {
-			// Single game (a day sim): result on the team-named line, then the top
-			// performer's stat line for each team.
-			body = gameBlock(teamGames[0]!, tid, teamName, teamById, true, seasonRecord);
+			// Single game (a day sim): the W/L result IS the title; the top
+			// performer's stat line for each team is the body.
+			const { result, statLines } = gameParts(
+				teamGames[0]!,
+				tid,
+				teamName,
+				teamById,
+				true,
+				seasonRecord,
+			);
+			title = result;
+			// Fall back to a plain title if there's no usable box score.
+			if (statLines.length > 0) {
+				body = statLines.join("\n");
+			} else {
+				title = "Sim complete";
+				body = result;
+			}
 		} else {
-			// Multiple games: a record header, then detailed blocks for the first
-			// few, then a count of any remainder.
-			const header = `Your ${teamName} went ${wins}-${losses} ${period}${seasonRecord}:`;
+			// Multiple games: the record is the title; detailed blocks for the first
+			// few games are the body, then a count of any remainder.
+			title = `Your ${teamName} went ${wins}-${losses} ${period}${seasonRecord}`;
 			const blocks = teamGames
 				.slice(0, MAX_DETAILED_GAMES)
-				.map((game) => gameBlock(game, tid, teamName, teamById, false));
-			body = [header, ...blocks].join("\n");
+				.map((game) => gameBlock(game, tid, teamName, teamById));
+			body = blocks.join("\n\n");
 			if (teamGames.length > MAX_DETAILED_GAMES) {
 				body += `\n…and ${teamGames.length - MAX_DETAILED_GAMES} more.`;
 			}
 		}
 
-		notifications.push({ title: "Sim complete", body, targetTids: [tid] });
+		notifications.push({ title, body, targetTids: [tid] });
 	}
 
 	return notifications;
+};
+
+// ---- Transaction-style descriptions (trade / signing / draft) ----------------
+//
+// These read whole-record changesets to narrate a move like a news blurb. For a
+// standard 2-team trade the direction is recoverable: an asset's new tid is its
+// destination, and (there being two teams) it came from the other one.
+
+// At most this many individual draft-pick notifications from one changeset, so
+// a full-draft sim can't fire dozens of pushes.
+const MAX_DRAFT_PICK_NOTIFS = 10;
+
+type TeamInfo = { region: string; name: string; abbrev?: string };
+
+const teamsById = async (): Promise<Map<number, TeamInfo>> => {
+	const teams = await idb.cache.teams.getAll();
+	return new Map(teams.map((t) => [t.tid, t]));
+};
+
+const teamLabel = (teamById: Map<number, TeamInfo>, tid: number): string => {
+	const t = teamById.get(tid);
+	return t ? `${t.region} ${t.name}` : "a team";
+};
+
+const playerName = (p: any): string =>
+	`${p.firstName ?? ""} ${p.lastName ?? ""}`.trim() || "a player";
+
+const currentRating = (p: any): any =>
+	Array.isArray(p.ratings) ? p.ratings[p.ratings.length - 1] : undefined;
+
+const pickLabel = (dp: any): string => {
+	const round = typeof dp.round === "number" ? dp.round : 1;
+	const season = typeof dp.season === "number" ? dp.season : "future";
+	return `a ${season} ${helpers.ordinal(round)}-round pick`;
+};
+
+// "X", "X and Y", or "X, Y and Z".
+const joinAssets = (assets: string[]): string => {
+	if (assets.length === 0) {
+		return "cash considerations";
+	}
+	if (assets.length === 1) {
+		return assets[0]!;
+	}
+	return `${assets.slice(0, -1).join(", ")} and ${assets[assets.length - 1]}`;
+};
+
+const changesToValues = (changeset: Changeset, store: string): any[] =>
+	changeset.changes
+		.filter((change) => change.store === store && change.type === "put")
+		.map((change) => (change as { value: any }).value);
+
+// A Shams-style, two-directional trade blurb, or undefined if this isn't a
+// recoverable 2-team trade.
+const describeTrade = (
+	changeset: Changeset,
+	teamById: Map<number, TeamInfo>,
+): SyncNotification | undefined => {
+	const players = changesToValues(changeset, "players");
+	const picks = changesToValues(changeset, "draftPicks");
+
+	const tids = new Set<number>();
+	for (const p of players) {
+		if (typeof p.tid === "number" && p.tid >= 0) {
+			tids.add(p.tid);
+		}
+	}
+	for (const dp of picks) {
+		if (typeof dp.tid === "number" && dp.tid >= 0) {
+			tids.add(dp.tid);
+		}
+	}
+	const teamTids = [...tids];
+	if (teamTids.length !== 2) {
+		return undefined;
+	}
+
+	const [a, b] = teamTids as [number, number];
+	const assetsGoingTo = (tid: number): string[] => [
+		...players
+			.filter((p) => p.tid === tid)
+			.map((p) => {
+				const ovr = currentRating(p)?.ovr;
+				return typeof ovr === "number"
+					? `${playerName(p)} (${ovr} ovr)`
+					: playerName(p);
+			}),
+		...picks.filter((dp) => dp.tid === tid).map(pickLabel),
+	];
+
+	const aGets = assetsGoingTo(a);
+	const bGets = assetsGoingTo(b);
+	if (aGets.length === 0 && bGets.length === 0) {
+		return undefined;
+	}
+
+	let body: string;
+	if (aGets.length > 0 && bGets.length > 0) {
+		body = `The ${teamLabel(teamById, a)} acquire ${joinAssets(aGets)} from the ${teamLabel(teamById, b)} in exchange for ${joinAssets(bGets)}.`;
+	} else if (aGets.length > 0) {
+		body = `The ${teamLabel(teamById, a)} acquire ${joinAssets(aGets)} from the ${teamLabel(teamById, b)}.`;
+	} else {
+		body = `The ${teamLabel(teamById, b)} acquire ${joinAssets(bGets)} from the ${teamLabel(teamById, a)}.`;
+	}
+	return { title: "Trade", body, targetTids: null };
+};
+
+// A free-agent signing blurb with contract terms, or undefined if this isn't a
+// single player joining a single team.
+const describeSigning = (
+	changeset: Changeset,
+	teamById: Map<number, TeamInfo>,
+): SyncNotification | undefined => {
+	// Picks moving means it's trade territory, not a signing.
+	if (changesToValues(changeset, "draftPicks").length > 0) {
+		return undefined;
+	}
+
+	const joining = changesToValues(changeset, "players").filter(
+		(p) => typeof p.tid === "number" && p.tid >= 0,
+	);
+	if (joining.length !== 1) {
+		return undefined;
+	}
+
+	const p = joining[0];
+	if (!p.contract) {
+		return undefined;
+	}
+	const rating = currentRating(p);
+	const ovr = rating?.ovr;
+	const pos = rating?.pos;
+	const years = Math.max(
+		1,
+		(p.contract.exp ?? g.get("season")) - g.get("season") + 1,
+	);
+	const totalM = Math.round(((p.contract.amount ?? 0) * years) / 1000);
+	const who =
+		typeof ovr === "number"
+			? `${playerName(p)} (${ovr} ovr${pos ? `, ${pos}` : ""})`
+			: playerName(p);
+	const body = `The ${teamLabel(teamById, p.tid)} sign ${who} to a ${years}-year, $${totalM}M contract.`;
+	return { title: "Signing", body, targetTids: null };
+};
+
+// One notification per pick made in this changeset (during the draft).
+const buildDraftNotifications = (
+	changeset: Changeset,
+	teamById: Map<number, TeamInfo>,
+): SyncNotification[] => {
+	const season = g.get("season");
+	const numActiveTeams = g.get("numActiveTeams");
+
+	const picks = changesToValues(changeset, "players")
+		.filter(
+			(p) =>
+				p.draft &&
+				p.draft.year === season &&
+				p.draft.round >= 1 &&
+				p.draft.pick >= 1 &&
+				p.tid === p.draft.tid &&
+				p.tid >= 0,
+		)
+		.sort(
+			(a, b) => a.draft.round - b.draft.round || a.draft.pick - b.draft.pick,
+		);
+
+	const out: SyncNotification[] = [];
+	for (const p of picks.slice(0, MAX_DRAFT_PICK_NOTIFS)) {
+		const overall = (p.draft.round - 1) * numActiveTeams + p.draft.pick;
+		const rating = currentRating(p);
+		const ovr = p.draft.ovr ?? rating?.ovr;
+		const pot = p.draft.pot ?? rating?.pot;
+		const pos = rating?.pos;
+		const ratingPart =
+			typeof ovr === "number" && typeof pot === "number"
+				? ` (${ovr}, ${pot})`
+				: "";
+		const posPart = pos ? `, ${pos}` : "";
+		const collegePart = p.college ? ` from ${p.college}` : "";
+		out.push({
+			title: "Draft pick",
+			body: `With the ${helpers.ordinal(overall)} pick in the ${season} draft, the ${teamLabel(teamById, p.tid)} select ${playerName(p)}${ratingPart}${posPart}${collegePart}.`,
+			targetTids: null,
+		});
+	}
+	if (picks.length > MAX_DRAFT_PICK_NOTIFS) {
+		out.push({
+			title: "Draft",
+			body: `…and ${picks.length - MAX_DRAFT_PICK_NOTIFS} more picks.`,
+			targetTids: null,
+		});
+	}
+	return out;
 };
 
 // Turn a locally-produced changeset into push notifications for the room, or an
@@ -298,6 +503,18 @@ export const buildNotifications = async (
 		return buildSimNotifications(label, changeset);
 	}
 
+	// Draft picks made this changeset (announced like a broadcast). Checked before
+	// the phase-change branch so picks during the draft are narrated per pick.
+	if (g.get("phase") === PHASE.DRAFT) {
+		const draftNotifications = buildDraftNotifications(
+			changeset,
+			await teamsById(),
+		);
+		if (draftNotifications.length > 0) {
+			return draftNotifications;
+		}
+	}
+
 	// A manual phase advance (not via a sim) that reaches a human-decision phase.
 	if (enteredHumanPhase) {
 		return [
@@ -309,19 +526,20 @@ export const buildNotifications = async (
 		];
 	}
 
-	// Only classify small changesets as trades/roster moves. A bulk change with
-	// no games and no phase shift (e.g. end-of-season player progression) would
-	// otherwise trip the "players on 2+ teams" trade heuristic.
+	// Only classify small changesets as trades/signings/roster moves. A bulk
+	// change with no games and no phase shift (e.g. end-of-season player
+	// progression) would otherwise trip the "players on 2+ teams" heuristic.
 	if (changeset.changes.length <= MAX_ROSTER_MOVE_CHANGES) {
-		const teams = receivingTeams(changeset);
-		if (teams.length >= 2) {
-			return [
-				{
-					title: "Trade completed",
-					body: `${authorName} completed a trade.`,
-					targetTids: null,
-				},
-			];
+		const teamById = await teamsById();
+
+		const trade = describeTrade(changeset, teamById);
+		if (trade) {
+			return [trade];
+		}
+
+		const signing = describeSigning(changeset, teamById);
+		if (signing) {
+			return [signing];
 		}
 
 		if (isRosterChange(changeset)) {
