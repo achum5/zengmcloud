@@ -79,7 +79,16 @@ const DailySchedule = ({
 
 	return (
 		<>
-			<MoreLinks type="schedule" page="daily_schedule" />
+			<div className="d-flex flex-wrap align-items-center gap-3">
+				<MoreLinks type="schedule" page="daily_schedule" />
+				{completed.length > 0 ? (
+					<GameRecap
+						season={season}
+						day={day}
+						numCompleted={completed.length}
+					/>
+				) : null}
+			</div>
 
 			{noGamesMessage ? (
 				noGamesMessage
@@ -187,12 +196,6 @@ const DailySchedule = ({
 							{upcomingAndCompleted ? (
 								<h2 className="mt-3">Completed Games</h2>
 							) : null}
-
-							<GameRecap
-								season={season}
-								day={day}
-								numCompleted={completed.length}
-							/>
 
 							<div className="d-flex flex-wrap" style={{ gap: "1rem 2rem" }}>
 								{completed.map((game) => {

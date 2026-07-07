@@ -169,92 +169,88 @@ export const GameRecap = ({
 
 	const arrow = <span className="text-body-secondary">›</span>;
 	// Fixed width so swapping a label for a ✓ / spinner never resizes the button.
-	const btnStyle = { width: 76 } as const;
+	const btnStyle = { width: 62 } as const;
 
+	// Compact inline group meant to sit on the "More:" links row - no card, no
+	// extra vertical space beyond the small buttons themselves.
 	return (
-		<div className="card mb-3" style={{ maxWidth: 700 }}>
-			<div className="card-body">
-				<div className="d-flex flex-wrap align-items-center gap-2">
-					<button
-						className={`btn ${copied ? "btn-success" : "btn-primary"}`}
-						style={btnStyle}
-						disabled={busy}
-						onClick={copy}
-						title="Copy AI prompt"
-					>
-						{copied ? "✓" : "Copy"}
-					</button>
-					{arrow}
-					<a
-						className="btn btn-light-bordered"
-						style={btnStyle}
-						href="https://claude.ai/new"
-						target="_blank"
-						rel="noopener noreferrer"
-						onClick={openClaude}
-						title="Open Claude"
-					>
-						Claude
-					</a>
-					{arrow}
-					<button
-						className={`btn ${pasted ? "btn-success" : "btn-primary"}`}
-						style={btnStyle}
-						disabled={busy}
-						onClick={paste}
-						title="Paste AI reply"
-					>
-						{busy ? (
-							<span
-								className="spinner-border spinner-border-sm"
-								role="status"
-								aria-hidden="true"
-							/>
-						) : pasted ? (
-							"✓"
-						) : (
-							"Paste"
-						)}
-					</button>
-				</div>
-
-				{copyFallback !== undefined ? (
-					<div className="mt-3">
-						<textarea
-							className="form-control"
-							rows={4}
-							readOnly
-							value={copyFallback}
-							onFocus={(event) => event.target.select()}
+		<div className="d-inline-flex flex-column">
+			<div className="d-flex flex-wrap align-items-center gap-1">
+				<button
+					className={`btn btn-sm ${copied ? "btn-success" : "btn-primary"}`}
+					style={btnStyle}
+					disabled={busy}
+					onClick={copy}
+					title="Copy AI prompt"
+				>
+					{copied ? "✓" : "Copy"}
+				</button>
+				{arrow}
+				<a
+					className="btn btn-sm btn-light-bordered"
+					style={btnStyle}
+					href="https://claude.ai/new"
+					target="_blank"
+					rel="noopener noreferrer"
+					onClick={openClaude}
+					title="Open Claude"
+				>
+					Claude
+				</a>
+				{arrow}
+				<button
+					className={`btn btn-sm ${pasted ? "btn-success" : "btn-primary"}`}
+					style={btnStyle}
+					disabled={busy}
+					onClick={paste}
+					title="Paste AI reply"
+				>
+					{busy ? (
+						<span
+							className="spinner-border spinner-border-sm"
+							role="status"
+							aria-hidden="true"
 						/>
-					</div>
-				) : null}
-
-				{manual !== undefined ? (
-					<div className="mt-3">
-						<textarea
-							className="form-control"
-							rows={6}
-							placeholder="Paste the AI's reply here…"
-							value={manual}
-							onChange={(event) => setManual(event.target.value)}
-							onPaste={(event) => {
-								// File the moment content is pasted, so there's no extra tap.
-								const text = event.clipboardData.getData("text");
-								if (text && text.trim() !== "") {
-									void fileRecaps(text);
-								}
-							}}
-						/>
-					</div>
-				) : null}
-
-				{result ? (
-					<div className="alert alert-warning mt-3 mb-0 py-2 small">
-						{result}
-					</div>
-				) : null}
+					) : pasted ? (
+						"✓"
+					) : (
+						"Paste"
+					)}
+				</button>
 			</div>
+
+			{copyFallback !== undefined ? (
+				<textarea
+					className="form-control mt-2"
+					style={{ width: 340, maxWidth: "100%" }}
+					rows={4}
+					readOnly
+					value={copyFallback}
+					onFocus={(event) => event.target.select()}
+				/>
+			) : null}
+
+			{manual !== undefined ? (
+				<textarea
+					className="form-control mt-2"
+					style={{ width: 340, maxWidth: "100%" }}
+					rows={6}
+					placeholder="Paste the AI's reply here…"
+					value={manual}
+					onChange={(event) => setManual(event.target.value)}
+					onPaste={(event) => {
+						// File the moment content is pasted, so there's no extra tap.
+						const text = event.clipboardData.getData("text");
+						if (text && text.trim() !== "") {
+							void fileRecaps(text);
+						}
+					}}
+				/>
+			) : null}
+
+			{result ? (
+				<div className="alert alert-warning mt-2 mb-0 py-2 small">{result}</div>
+			) : null}
 		</div>
 	);
 };
