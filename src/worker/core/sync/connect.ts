@@ -205,6 +205,9 @@ export const connectSharedLeague = async ({
 	currentCode = trimmed;
 	currentHostName = undefined;
 
+	// Register the room so it shows up on the admin page. Best-effort.
+	void transport.touchRoom?.();
+
 	// Turn on change capture so local actions get published to the room.
 	changeTracker.enable();
 	changeTracker.reset();

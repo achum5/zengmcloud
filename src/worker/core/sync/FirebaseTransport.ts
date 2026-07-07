@@ -58,6 +58,17 @@ export class FirebaseTransport implements SyncTransport {
 		this.changesRef = collection(this.db, "leagues", code, "changes");
 	}
 
+	// Upsert the room's registry doc (leagues/{code}) so the admin page can list
+	// every code that's been used. Rooms are otherwise created implicitly by
+	// writing to subcollections, leaving no listable parent document.
+	async touchRoom() {
+		await setDoc(
+			doc(this.db, "leagues", this.code),
+			{ code: this.code, updatedAt: serverTimestamp() },
+			{ merge: true },
+		);
+	}
+
 	// Record (or refresh) this device's push registration in the room, so the
 	// Cloud Function knows where to send notifications. Keyed by uid, so each
 	// device has exactly one entry that updates in place.

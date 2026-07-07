@@ -14,6 +14,15 @@ import {
 	pushSupported,
 	restorePushNotifications,
 } from "../util/pushNotifications.ts";
+import {
+	deleteAllRooms,
+	deleteRoom,
+	listRooms,
+	type SyncRoom,
+} from "../util/syncAdmin.ts";
+
+// Cosmetic gate for the room-admin panel (real security is the Firestore rules).
+const ADMIN_PASSWORD = "abc123";
 
 type Status = "disconnected" | "connecting" | "connected";
 
@@ -107,6 +116,14 @@ const MultiplayerSync = () => {
 	const [resyncing, setResyncing] = useState(false);
 	const [resyncResult, setResyncResult] = useState<string | undefined>();
 
+	// Room admin (clear Firestore codes), gated by a cosmetic password.
+	const [adminInput, setAdminInput] = useState("");
+	const [adminUnlocked, setAdminUnlocked] = useState(false);
+	const [rooms, setRooms] = useState<SyncRoom[]>([]);
+	const [adminBusy, setAdminBusy] = useState(false);
+	const [adminMsg, setAdminMsg] = useState<string | undefined>();
+	const [deleteCode, setDeleteCode] = useState("");
+
 	// On mount, reflect whatever the worker's sync engine is currently doing
 	// (it may already be connected from an auto-reconnect after refresh), and
 	// load the multi-team-mode teams for the team picker.
@@ -199,7 +216,7 @@ const MultiplayerSync = () => {
 		}
 	};
 
-	// Load the activity log once we're connected (and whenever the wheel changes
+	// Load the activity log once we're connected (and whenever simming changes
 	// hands, a cheap signal that something happened).
 	useEffect(() => {
 		if (status === "connected") {
@@ -207,6 +224,56 @@ const MultiplayerSync = () => {
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [status, mpSyncIsHost, mpSyncHostName]);
+
+	const refreshRooms = async () => {
+		setAdminBusy(true);
+		setAdminMsg(undefined);
+		try {
+			setRooms(await listRooms());
+		} catch (err) {
+			setAdminMsg((err as Error).message ?? String(err));
+		} finally {
+			setAdminBusy(false);
+		}
+	};
+
+	const unlockAdmin = async () => {
+		if (adminInput !== ADMIN_PASSWORD) {
+			setAdminMsg("Wrong password.");
+			return;
+		}
+		setAdminUnlocked(true);
+		setAdminInput("");
+		await refreshRooms();
+	};
+
+	const removeRoom = async (code: string) => {
+		setAdminBusy(true);
+		setAdminMsg(undefined);
+		try {
+			await deleteRoom(code);
+			setAdminMsg(`Deleted "${code}".`);
+			await refreshRooms();
+		} catch (err) {
+			setAdminMsg((err as Error).message ?? String(err));
+		} finally {
+			setAdminBusy(false);
+		}
+	};
+
+	const removeAllRooms = async () => {
+		setAdminBusy(true);
+		setAdminMsg(undefined);
+		try {
+			const n = await deleteAllRooms();
+			setAdminMsg(`Deleted ${n} room${n === 1 ? "" : "s"}.`);
+			await refreshRooms();
+		} catch (err) {
+			setAdminMsg((err as Error).message ?? String(err));
+		} finally {
+			setAdminBusy(false);
+		}
+	};
 
 	const enablePush = async () => {
 		setPushError(undefined);
@@ -497,6 +564,108 @@ const MultiplayerSync = () => {
 					</div>
 				</div>
 			) : null}
+
+			<div className="card mt-3" style={{ maxWidth: 500 }}>
+				<div className="card-body">
+					<h3 className="card-title h5">Manage rooms</h3>
+
+					{!adminUnlocked ? (
+						<form
+							className="d-flex gap-2"
+							onSubmit={(event) => {
+								event.preventDefault();
+								void unlockAdmin();
+							}}
+						>
+							<input
+								type="password"
+								className="form-control"
+								placeholder="Password"
+								value={adminInput}
+								onChange={(event) => setAdminInput(event.target.value)}
+							/>
+							<button className="btn btn-secondary" type="submit">
+								Unlock
+							</button>
+						</form>
+					) : (
+						<>
+							<div className="d-flex gap-2 mb-3">
+								<input
+									type="text"
+									className="form-control"
+									placeholder="Delete a code…"
+									value={deleteCode}
+									onChange={(event) => setDeleteCode(event.target.value)}
+								/>
+								<button
+									className="btn btn-danger"
+									disabled={adminBusy || deleteCode.trim() === ""}
+									onClick={() => {
+										const code = deleteCode.trim();
+										setDeleteCode("");
+										void removeRoom(code);
+									}}
+								>
+									Delete
+								</button>
+							</div>
+
+							<div className="d-flex align-items-center gap-2 mb-2">
+								<button
+									className="btn btn-sm btn-light-bordered"
+									disabled={adminBusy}
+									onClick={() => void refreshRooms()}
+								>
+									{adminBusy ? "Working…" : "Refresh"}
+								</button>
+								{rooms.length > 0 ? (
+									<button
+										className="btn btn-sm btn-danger"
+										disabled={adminBusy}
+										onClick={() => void removeAllRooms()}
+									>
+										Delete all ({rooms.length})
+									</button>
+								) : null}
+							</div>
+
+							{rooms.length === 0 ? (
+								<p className="text-body-secondary mb-0">No rooms listed.</p>
+							) : (
+								<ul className="list-group list-group-flush">
+									{rooms.map((room) => (
+										<li
+											key={room.code}
+											className="list-group-item px-0 d-flex align-items-center gap-2"
+										>
+											<span className="flex-grow-1">
+												<b>{room.code}</b>
+												{room.updatedAt ? (
+													<span className="text-body-secondary d-block small">
+														{relativeTime(room.updatedAt)}
+													</span>
+												) : null}
+											</span>
+											<button
+												className="btn btn-sm btn-outline-danger"
+												disabled={adminBusy}
+												onClick={() => void removeRoom(room.code)}
+											>
+												Delete
+											</button>
+										</li>
+									))}
+								</ul>
+							)}
+						</>
+					)}
+
+					{adminMsg ? (
+						<div className="alert alert-info py-2 mt-3 mb-0">{adminMsg}</div>
+					) : null}
+				</div>
+			</div>
 		</>
 	);
 };

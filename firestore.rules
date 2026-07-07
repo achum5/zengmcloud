@@ -25,14 +25,23 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // Room registry doc (leagues/{code}), so the admin page can LIST every code
+    // that's been used. Any signed-in member may upsert it (on connect) and, for
+    // cleanup, delete it.
+    match /leagues/{code} {
+      allow read, write: if request.auth != null;
+    }
+
     match /leagues/{code}/changes/{changeId} {
       allow read: if request.auth != null;
 
       allow create: if request.auth != null
                     && request.resource.data.authorId == request.auth.uid;
 
-      // The change log is append-only.
-      allow update, delete: if false;
+      // The change log is append-only during play; deletes are allowed only so
+      // the admin page can clear out old rooms.
+      allow update: if false;
+      allow delete: if request.auth != null;
     }
 
     // The "wheel": which single device is currently allowed to advance the
@@ -46,14 +55,17 @@ service cloud.firestore {
       allow write: if request.auth != null
                    && request.resource.data.holderId == request.auth.uid;
 
-      allow delete: if false;
+      // Deletes allowed only for admin room cleanup.
+      allow delete: if request.auth != null;
     }
 
     // Push-notification registrations: one doc per device, keyed by its uid, so
-    // each account can only write (and clear) its own phone token.
+    // each account can only write its own phone token - but any member may
+    // delete entries for admin room cleanup.
     match /leagues/{code}/members/{uid} {
       allow read: if request.auth != null;
       allow write: if request.auth != null && request.auth.uid == uid;
+      allow delete: if request.auth != null;
     }
 
     // The notification queue the Cloud Function drains. Append-only, and you can
@@ -65,7 +77,9 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.resource.data.authorId == request.auth.uid;
 
-      allow update, delete: if false;
+      allow update: if false;
+      // Deletes allowed only for admin room cleanup.
+      allow delete: if request.auth != null;
     }
   }
 }

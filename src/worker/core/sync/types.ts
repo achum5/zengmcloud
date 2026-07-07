@@ -71,6 +71,10 @@ export interface SyncTransport {
 	// Optional so the in-memory test transport can skip it.
 	fetchAllEntries?(): Promise<ChangesetEntry[]>;
 
+	// Upsert this room's registry doc so it's listable on the admin page.
+	// Optional so the in-memory test transport can skip it.
+	touchRoom?(): Promise<void>;
+
 	// Push-notification support. Optional so the in-memory test transport can
 	// skip it. registerMember records this device's FCM token in the room;
 	// publishNotification enqueues a push for the Cloud Function to fan out.
