@@ -6,6 +6,7 @@ import { useViewData } from "../../util/viewManager.tsx";
 import DropdownLinks from "../DropdownLinks.tsx";
 import LogoAndText from "../LogoAndText.tsx";
 import PlayMenu from "../PlayMenu.tsx";
+import AutoPlayCountdown from "./AutoPlayCountdown.tsx";
 import { menuItems } from "../../util/menuItems.tsx";
 
 const PhaseStatusBlock = () => {
@@ -23,6 +24,7 @@ const PhaseStatusBlock = () => {
 			{liveGameInProgress ? "Live game" : phaseText}
 			<br />
 			{liveGameInProgress ? "in progress" : statusText}
+			{liveGameInProgress ? null : <AutoPlayCountdown />}
 		</>
 	);
 

@@ -127,17 +127,14 @@ const Note = (
 				className={"overflow-auto small-scrollbar"}
 				style={{ maxHeight: 300, maxWidth: MAX_WIDTH }}
 			>
-				{info.type === "game" ? (
-					// Game notes double as AI recaps (markdown). Auto-link team/player
-					// names to their pages, scoped to this game's two rosters. Applied
-					// only to the rendered view - the stored/edited text stays plain.
-					<Markdown>
-						{autoLink && autoLink.length > 0
-							? linkifyRecap(noteToShow, autoLink)
-							: noteToShow}
-					</Markdown>
+				{/* All notes render markdown (player / team-season / game notes double
+				    as AI writeups). Game notes also auto-link team/player names to
+				    their pages, scoped to that game's two rosters. Linking/rendering is
+				    applied only to the view - the stored/edited text stays plain. */}
+				{info.type === "game" && autoLink && autoLink.length > 0 ? (
+					<Markdown>{linkifyRecap(noteToShow, autoLink)}</Markdown>
 				) : (
-					<div style={{ whiteSpace: "pre-line" }}>{noteToShow}</div>
+					<Markdown>{noteToShow}</Markdown>
 				)}
 			</div>
 			<button
