@@ -331,6 +331,35 @@ describe("buildNotifications", () => {
 			notifs[0]!.body,
 			"With the 3rd pick in the 2026 draft, the LA Lakers select Rook Ie (55, 78), SF from Duke.",
 		);
+		// Deep-links to the drafted player's page.
+		assert.strictEqual(notifs[0]!.path, "player/7");
+	});
+
+	test("deep-link paths: trade → transactions, signing → player page", async () => {
+		const trade = await buildNotifications(
+			"main.proposeTrade",
+			{
+				changes: [
+					namedPlayer(1, 1, "Star", "Wing", 88),
+					namedPlayer(2, 0, "Role", "Player", 74),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(trade[0]!.path, "transactions/all/2026/trade");
+
+		const signing = await buildNotifications(
+			"main.signFreeAgent",
+			{
+				changes: [
+					namedPlayer(9, 0, "New", "Guy", 80, {
+						contract: { amount: 15000, exp: 2028 },
+					}),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(signing[0]!.path, "player/9");
 	});
 
 	test("a non-roster change → no notification", async () => {

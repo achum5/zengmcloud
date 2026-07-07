@@ -15,6 +15,28 @@ export type SyncNotification = {
 	// means everyone in the room. Sim summaries are per-team (each GM gets their
 	// own team's results); trades/roster moves/phase changes go to everyone.
 	targetTids: number[] | null;
+	// Where tapping the notification should go, as a league-RELATIVE path (no
+	// leading "/l/{lid}"), e.g. "player/123" or "trade". The recipient's device
+	// prepends its own lid, since lid differs per device. Omitted → the app root.
+	path?: string;
+};
+
+// The page a "your turn" notification for a given phase should open.
+const phasePath = (phase: number): string => {
+	switch (phase) {
+		case PHASE.DRAFT_LOTTERY:
+		case PHASE.DRAFT:
+		case PHASE.AFTER_DRAFT:
+			return "draft";
+		case PHASE.RESIGN_PLAYERS:
+			return "negotiation";
+		case PHASE.EXPANSION_DRAFT:
+			return "expansion_draft";
+		case PHASE.FANTASY_DRAFT:
+			return "fantasy_draft";
+		default:
+			return "standings";
+	}
 };
 
 // Phases that need a human to act (draft, re-signing, etc.) - the inverse of the
@@ -176,6 +198,12 @@ const buildSimNotifications = async (
 	for (const tid of userTids) {
 		const team = teamById.get(tid);
 		const teamName = team ? `${team.region} ${team.name}` : "your team";
+		const abbrev = team?.abbrev;
+		// The team's game log for this season (box score of a specific game is
+		// appended below when there's exactly one game).
+		const gameLogPath = abbrev
+			? `game_log/${abbrev}/${season}`
+			: "standings";
 
 		const teamGames = games
 			.filter((game) => game.won.tid === tid || game.lost.tid === tid)
@@ -188,6 +216,7 @@ const buildSimNotifications = async (
 				title: "Sim complete",
 				body: `The host advanced the league (${phaseText(phase)}). No game for your ${teamName} ${period}.`,
 				targetTids: [tid],
+				path: "standings",
 			});
 			continue;
 		}
@@ -211,9 +240,11 @@ const buildSimNotifications = async (
 
 		let title: string;
 		let body: string;
+		let path = gameLogPath;
 		if (teamGames.length === 1) {
 			// Single game (a day sim): the W/L result IS the title; the top
-			// performer's stat line for each team is the body.
+			// performer's stat line for each team is the body. Deep-link to the box
+			// score of that game.
 			const { result, statLines } = gameParts(
 				teamGames[0]!,
 				tid,
@@ -223,6 +254,9 @@ const buildSimNotifications = async (
 				seasonRecord,
 			);
 			title = result;
+			if (abbrev) {
+				path = `game_log/${abbrev}/${season}/${teamGames[0]!.gid}`;
+			}
 			// Fall back to a plain title if there's no usable box score.
 			if (statLines.length > 0) {
 				body = statLines.join("\n");
@@ -243,7 +277,7 @@ const buildSimNotifications = async (
 			}
 		}
 
-		notifications.push({ title, body, targetTids: [tid] });
+		notifications.push({ title, body, targetTids: [tid], path });
 	}
 
 	return notifications;
@@ -360,7 +394,12 @@ const describeTrade = (
 	} else {
 		body = `The ${teamLabel(teamById, b)} acquire ${joinAssets(bGets)} from the ${teamLabel(teamById, a)}.`;
 	}
-	return { title: "Trade", body, targetTids: null };
+	return {
+		title: "Trade",
+		body,
+		targetTids: null,
+		path: `transactions/all/${g.get("season")}/trade`,
+	};
 };
 
 // A free-agent signing blurb with contract terms, or undefined if this isn't a
@@ -403,7 +442,12 @@ const describeSigning = (
 	const parenParts = [ratingStr, pos].filter(Boolean).join(", ");
 	const who = parenParts ? `${playerName(p)} (${parenParts})` : playerName(p);
 	const body = `The ${teamLabel(teamById, p.tid)} sign ${who} to a ${years}-year, $${totalM}M contract.`;
-	return { title: "Signing", body, targetTids: null };
+	return {
+		title: "Signing",
+		body,
+		targetTids: null,
+		path: typeof p.pid === "number" ? `player/${p.pid}` : undefined,
+	};
 };
 
 // One notification per pick made in this changeset (during the draft).
@@ -445,6 +489,7 @@ const buildDraftNotifications = (
 			title: "Draft pick",
 			body: `With the ${helpers.ordinal(overall)} pick in the ${season} draft, the ${teamLabel(teamById, p.tid)} select ${playerName(p)}${ratingPart}${posPart}${collegePart}.`,
 			targetTids: null,
+			path: typeof p.pid === "number" ? `player/${p.pid}` : "draft",
 		});
 	}
 	if (picks.length > MAX_DRAFT_PICK_NOTIFS) {
@@ -500,6 +545,7 @@ export const buildNotifications = async (
 					title: "Your league needs you",
 					body: `The host reached ${phaseText(newPhase!)} — your input is needed.`,
 					targetTids: null,
+					path: phasePath(newPhase!),
 				},
 			];
 		}
@@ -525,6 +571,7 @@ export const buildNotifications = async (
 				title: "Your league needs you",
 				body: `New phase: ${phaseText(newPhase!)}.`,
 				targetTids: null,
+				path: phasePath(newPhase!),
 			},
 		];
 	}

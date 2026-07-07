@@ -76,6 +76,9 @@ export class FirebaseTransport implements SyncTransport {
 			authorName: notification.authorName,
 			// Firestore rejects `undefined`; null means "everyone in the room".
 			targetTids: notification.targetTids ?? null,
+			// League-relative deep-link path ("" = app root), resolved to the
+			// recipient's own lid on their device.
+			path: notification.path ?? "",
 			ts: serverTimestamp(),
 		});
 	}

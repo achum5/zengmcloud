@@ -2,6 +2,7 @@ import { LazyMotion } from "framer-motion";
 import { memo, useCallback, useEffect } from "react";
 import { localActions, useLocal } from "../../util/local.ts";
 import { autoReconnectSync } from "../../util/autoReconnectSync.ts";
+import { rememberLidForPush } from "../../util/pushLid.ts";
 import { CommandPalette } from "../CommandPalette/index.tsx";
 import { Footer } from "./Footer.tsx";
 import { Header } from "./Header.tsx";
@@ -58,10 +59,13 @@ export const Controller = () => {
 	]);
 
 	// If this league was left connected to a shared-league sync room, reconnect
-	// after a refresh (which tears down the worker's in-memory sync engine).
+	// after a refresh (which tears down the worker's in-memory sync engine). Also
+	// remember this device's lid so a tapped push notification can deep-link into
+	// the right league even when the app was fully closed.
 	useEffect(() => {
 		if (typeof lid === "number") {
 			void autoReconnectSync(lid);
+			rememberLidForPush(lid);
 		}
 	}, [lid]);
 

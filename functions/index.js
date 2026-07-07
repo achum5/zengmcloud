@@ -73,11 +73,13 @@ exports.sendLeagueNotification = onDocumentCreated(
 		// Data-only payload: the service worker (public/firebase-messaging-sw.js)
 		// reads this and shows the notification. Sending it as `data` (not
 		// `notification`) keeps display fully in our control and avoids duplicates.
+		// `path` is a league-relative deep link the SW resolves against the
+		// recipient's own lid.
 		const message = {
 			data: {
 				title: String(notification.title || "ZenGM"),
 				body: String(notification.body || ""),
-				url: "/",
+				path: String(notification.path || ""),
 			},
 			tokens,
 		};
