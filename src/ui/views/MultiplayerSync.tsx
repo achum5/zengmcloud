@@ -260,8 +260,7 @@ const MultiplayerSync = () => {
 		<>
 			<p className="text-body-secondary">
 				Everyone loads the same league file and connects with the same code.
-				Only the device holding <b>the wheel</b> can sim — tap{" "}
-				<b>Take the wheel</b> to move it here.
+				Only one device sims at a time — tap <b>Sim here</b> to move it.
 			</p>
 
 			<div className="row" style={{ maxWidth: 500 }}>
@@ -323,7 +322,7 @@ const MultiplayerSync = () => {
 					onChange={(event) => setIsHost(event.target.checked)}
 				/>
 				<label className="form-check-label" htmlFor="sync-host">
-					Take the wheel on connect
+					Sim here on connect
 				</label>
 			</div>
 
@@ -355,15 +354,15 @@ const MultiplayerSync = () => {
 								<span>
 									{mpSyncIsHost ? (
 										<span className="text-success">
-											🎮 <b>You have the wheel</b>
+											🎮 <b>You're simming</b>
 										</span>
 									) : mpSyncHostName ? (
 										<span className="text-body-secondary">
-											🔒 <b>{mpSyncHostName}</b> has the wheel
+											🔒 <b>{mpSyncHostName}</b> is simming
 										</span>
 									) : (
 										<span className="text-body-secondary">
-											Nobody has the wheel yet
+											Nobody simming yet
 										</span>
 									)}
 								</span>
@@ -373,7 +372,7 @@ const MultiplayerSync = () => {
 										disabled={takingWheel}
 										onClick={takeWheel}
 									>
-										{takingWheel ? "Taking…" : "Take the wheel"}
+										{takingWheel ? "Taking…" : "Sim here"}
 									</button>
 								) : null}
 							</div>
@@ -451,12 +450,6 @@ const MultiplayerSync = () => {
 								{activityLoading ? "Refreshing…" : "Refresh"}
 							</button>
 						</div>
-						<p className="text-body-secondary">
-							Every change in the league, newest first. A ✅ means this device has
-							applied it; a ⏳ means it hasn't caught up yet. This device
-							self-heals automatically if a change ever fails to apply — use{" "}
-							<b>Force full resync</b> only if something still looks out of date.
-						</p>
 
 						<button
 							className="btn btn-warning btn-sm mb-3"

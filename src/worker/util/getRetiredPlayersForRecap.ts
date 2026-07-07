@@ -1,30 +1,21 @@
 import { idb } from "../db/index.ts";
+import { g, helpers } from "./index.ts";
 import { processPlayersHallOfFame } from "./processPlayersHallOfFame.ts";
+import { getPlayoffsByConfBySeason } from "../views/frivolitiesTeamSeasons.ts";
 
-// A career per-game stat line (regular season or playoffs).
-export type RetiredCareerLine = {
-	gp: number;
-	min?: number;
-	pts: number;
-	trb: number;
-	ast: number;
-	stl?: number;
-	blk?: number;
-	fgp?: number;
-	tpp?: number;
-	ftp?: number;
-	per?: number;
-};
+// A full stat line (box score + advanced), per game where applicable. Only keys
+// with real values are present, so the UI can print whatever exists. Always has
+// gp. Kept as a flexible record because we bake the complete stat set - box and
+// advanced - into every season and career line.
+export type RetiredStatLine = { gp: number } & Record<string, number>;
 
+// One regular season the player played: the full stat line plus the team(s) he
+// suited up for that year and how each of those teams' seasons ended.
 export type RetiredSeasonLine = {
 	season: number;
-	abbrev?: string;
 	age?: number;
-	gp: number;
-	pts: number;
-	trb: number;
-	ast: number;
-	per?: number;
+	stats: RetiredStatLine;
+	teams: { abbrev: string; result: string }[];
 };
 
 export type RetiredPlayer = {
@@ -50,8 +41,8 @@ export type RetiredPlayer = {
 	totalGP: number;
 	neverPlayed: boolean;
 	peakOvr?: number;
-	career?: RetiredCareerLine;
-	playoffs?: RetiredCareerLine;
+	career?: RetiredStatLine;
+	playoffs?: RetiredStatLine;
 	// Every team the player suited up for, with the span and games played.
 	teams: { abbrev: string; from: number; to: number; gp: number }[];
 	// Regular-season line for each season the player actually played.
@@ -66,35 +57,69 @@ export type RetiredPlayersData = {
 	players: RetiredPlayer[];
 };
 
-const r1 = (x: number | undefined): number | undefined =>
-	typeof x === "number" ? Math.round(x * 10) / 10 : undefined;
+// Box-score + advanced stats to bake into every line, in display order.
+const STAT_KEYS = [
+	// Box (per game)
+	"min",
+	"pts",
+	"orb",
+	"drb",
+	"trb",
+	"ast",
+	"stl",
+	"blk",
+	"tov",
+	"pf",
+	"fg",
+	"fga",
+	"fgp",
+	"tp",
+	"tpa",
+	"tpp",
+	"ft",
+	"fta",
+	"ftp",
+	// Advanced
+	"per",
+	"tsp",
+	"usgp",
+	"ortg",
+	"drtg",
+	"ows",
+	"dws",
+	"ws",
+	"ws48",
+	"obpm",
+	"dbpm",
+	"bpm",
+	"vorp",
+	"ewa",
+	"pm",
+] as const;
 
-const careerLine = (stats: any): RetiredCareerLine | undefined => {
+const r = (x: number): number => Math.round(x * 1000) / 1000;
+
+const statLine = (stats: any): RetiredStatLine | undefined => {
 	if (!stats || !stats.gp) {
 		return undefined;
 	}
-	return {
-		gp: stats.gp,
-		min: r1(stats.min),
-		pts: r1(stats.pts) ?? 0,
-		trb: r1(stats.trb) ?? 0,
-		ast: r1(stats.ast) ?? 0,
-		stl: r1(stats.stl),
-		blk: r1(stats.blk),
-		fgp: r1(stats.fgp),
-		tpp: r1(stats.tpp),
-		ftp: r1(stats.ftp),
-		per: r1(stats.per),
-	};
+	const out: RetiredStatLine = { gp: stats.gp };
+	for (const key of STAT_KEYS) {
+		const value = stats[key];
+		if (typeof value === "number" && !Number.isNaN(value)) {
+			out[key] = r(value);
+		}
+	}
+	return out;
 };
 
 // Every player who retired in a given season, each with the full career context
 // a writer would need for a retirement piece: career and playoff lines, a
-// season-by-season log, every team, the franchise-agnostic biography (draft
-// slot, age, college/country, height), award tally, and rings. Depth scales
-// naturally with the player - a Hall of Famer carries decades of data, an
-// undrafted washout carries almost none, so the prompt lets the writeup length
-// follow the data.
+// season-by-season log (full box + advanced stats, with each season's team
+// result), every team, the biography (draft slot, age, college/country,
+// height), award tally, and rings. Depth scales naturally with the player - a
+// Hall of Famer carries decades of data, an undrafted washout carries almost
+// none - so the prompt lets the writeup length follow the data.
 export const getRetiredPlayersForRecap = async (
 	season: number,
 ): Promise<RetiredPlayersData> => {
@@ -117,35 +142,46 @@ export const getRetiredPlayersForRecap = async (
 				"hgt",
 				"jerseyNumber",
 			],
-			ratings: ["pos", "ovr", "season"],
-			stats: [
-				"season",
-				"tid",
-				"abbrev",
-				"age",
-				"gp",
-				"min",
-				"pts",
-				"trb",
-				"ast",
-				"stl",
-				"blk",
-				"fgp",
-				"tpp",
-				"ftp",
-				"per",
-			],
+			ratings: ["pos", "ovr", "pot"],
+			stats: ["season", "tid", "abbrev", "age", ...STAT_KEYS],
 			playoffs: true,
 			combined: false,
 			showNoStats: true,
 			showRookies: true,
 			fuzz: false,
-			// Keep BOTH the per-team rows and the season TOT row for traded seasons,
-			// so a well-traveled player's team list is complete AND per-season lines
+			// Keep BOTH per-team rows and the season TOT row for traded seasons, so a
+			// well-traveled player's team list is complete AND per-season lines
 			// aren't double-counted.
 			mergeStats: "totAndTeams",
 		}),
 	);
+
+	const playoffsByConfBySeason = await getPlayoffsByConfBySeason();
+
+	// A team's playoff result for a given season ("won finals", "missed
+	// playoffs", ...). teamSeasons are fetched once per team and memoized.
+	const teamResultsCache = new Map<number, Map<number, number>>();
+	const teamResult = async (tid: number, s: number): Promise<string> => {
+		let bySeason = teamResultsCache.get(tid);
+		if (!bySeason) {
+			bySeason = new Map();
+			const tss = await idb.getCopies.teamSeasons({ tid }, "noCopyCache");
+			for (const ts of tss) {
+				bySeason.set(ts.season, ts.playoffRoundsWon);
+			}
+			teamResultsCache.set(tid, bySeason);
+		}
+		const playoffRoundsWon = bySeason.get(s);
+		if (playoffRoundsWon === undefined) {
+			return "";
+		}
+		return helpers.roundsWonText({
+			playoffRoundsWon,
+			numPlayoffRounds: g.get("numGamesPlayoffSeries", s).length,
+			playoffsByConf: playoffsByConfBySeason.get(s),
+			showMissedPlayoffs: true,
+		});
+	};
 
 	const players: RetiredPlayer[] = [];
 	for (const p of processed) {
@@ -165,28 +201,28 @@ export const getRetiredPlayersForRecap = async (
 			bySeasonMap.set(s.season, entry);
 		}
 
-		// One line per season (TOT if traded that year), oldest first.
-		const bySeason: RetiredSeasonLine[] = [...bySeasonMap.entries()]
-			.sort((a, b) => a[0] - b[0])
-			.map(([season, entry]) => {
-				const row = entry.tot ?? entry.teamRows[0];
-				const abbrev = entry.tot
-					? entry.teamRows.map((r) => r.abbrev).join("/") || "TOT"
-					: entry.teamRows[0]?.abbrev;
-				return {
-					season,
-					abbrev,
-					age: row?.age,
-					gp: row?.gp ?? 0,
-					pts: r1(row?.pts) ?? 0,
-					trb: r1(row?.trb) ?? 0,
-					ast: r1(row?.ast) ?? 0,
-					per: r1(row?.per),
-				};
-			});
+		// One line per season (TOT stats if traded), oldest first, each carrying the
+		// full stat set and the result of every team the player played for.
+		const bySeason: RetiredSeasonLine[] = [];
+		for (const [s, entry] of [...bySeasonMap.entries()].sort(
+			(a, b) => a[0] - b[0],
+		)) {
+			const statsRow = entry.tot ?? entry.teamRows[0];
+			const stats = statLine(statsRow);
+			if (!stats) {
+				continue;
+			}
+			const teams: { abbrev: string; result: string }[] = [];
+			for (const tr of entry.teamRows) {
+				teams.push({
+					abbrev: tr.abbrev,
+					result: await teamResult(tr.tid, s),
+				});
+			}
+			bySeason.push({ season: s, age: statsRow?.age, stats, teams });
+		}
 
-		// Teams: span + games for each distinct franchise (from the per-team rows,
-		// never TOT, so every team a traded player suited up for is included).
+		// Teams: span + games for each distinct franchise (per-team rows, not TOT).
 		const teamMap = new Map<string, { from: number; to: number; gp: number }>();
 		for (const s of regular) {
 			if (!s.abbrev || s.abbrev === "TOT") {
@@ -229,8 +265,6 @@ export const getRetiredPlayersForRecap = async (
 
 		const bornYear = p.born?.year;
 		const draft = p.draft;
-
-		// Career GP from the authoritative career totals (avoids TOT double-count).
 		const totalGP = p.careerStats?.gp ?? 0;
 
 		players.push({
@@ -259,8 +293,8 @@ export const getRetiredPlayersForRecap = async (
 			totalGP,
 			neverPlayed: totalGP === 0,
 			peakOvr: p.peakOvr || undefined,
-			career: careerLine(p.careerStats),
-			playoffs: careerLine(p.careerStatsPlayoffs),
+			career: statLine(p.careerStats),
+			playoffs: statLine(p.careerStatsPlayoffs),
 			teams,
 			bySeason,
 			awards,

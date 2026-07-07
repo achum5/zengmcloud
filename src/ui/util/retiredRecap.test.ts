@@ -30,18 +30,34 @@ const data: RetiredPlayersData = {
 				ast: 6,
 				stl: 1.5,
 				blk: 0.6,
+				fg: 10,
+				fga: 20,
 				fgp: 50,
+				tp: 2,
+				tpa: 5.3,
 				tpp: 38,
+				ft: 5.4,
+				fta: 6.4,
 				ftp: 85,
 				per: 25,
+				tsp: 60,
+				usgp: 31,
+				ws: 12.5,
+				bpm: 6.2,
+				vorp: 5.5,
 			},
-			playoffs: { gp: 200, pts: 29, trb: 8, ast: 6.5 },
+			playoffs: { gp: 200, pts: 29, trb: 8, ast: 6.5, per: 26 },
 			teams: [
 				{ abbrev: "LAL", from: 2006, to: 2020, gp: 1100 },
 				{ abbrev: "BOS", from: 2021, to: 2026, gp: 400 },
 			],
 			bySeason: [
-				{ season: 2006, abbrev: "LAL", age: 19, gp: 78, pts: 18, trb: 5, ast: 4 },
+				{
+					season: 2006,
+					age: 19,
+					stats: { gp: 78, min: 30, pts: 18, trb: 5, ast: 4, per: 16, ws: 4.1 },
+					teams: [{ abbrev: "LAL", result: "made conf finals" }],
+				},
 			],
 			awards: [
 				{ type: "Won Championship", count: 4, seasons: [2010, 2012, 2018, 2020] },
@@ -86,6 +102,15 @@ describe("buildRetiredRecapPrompt", () => {
 		assert.ok(prompt.includes(`6'8"`), prompt);
 		// The length-scaling instruction is in the brief.
 		assert.ok(prompt.includes("scale the length to the career"), prompt);
+		// Full box + advanced stats in the career line.
+		assert.ok(prompt.includes("FG 10-20 (50%)"), prompt);
+		assert.ok(prompt.includes("TS% 60"), prompt);
+		assert.ok(prompt.includes("USG% 31"), prompt);
+		assert.ok(prompt.includes("WS 12.5"), prompt);
+		assert.ok(prompt.includes("VORP 5.5"), prompt);
+		// Per-season line carries the team's result and advanced stats.
+		assert.ok(prompt.includes("2006 LAL (made conf finals)"), prompt);
+		assert.ok(prompt.includes("PER 16"), prompt);
 	});
 
 	test("undrafted, never-played player is marked as such (short writeup expected)", () => {

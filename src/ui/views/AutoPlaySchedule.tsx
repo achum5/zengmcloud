@@ -116,7 +116,7 @@ const AutoPlaySchedule = () => {
 			</div>
 			{!eligible ? (
 				<div className="text-body-secondary small mb-3">
-					Requires cloud connection + the wheel.
+					Requires cloud connection + sim control.
 				</div>
 			) : null}
 

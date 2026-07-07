@@ -143,7 +143,7 @@ const PlayMenu = ({
 								optionLocked
 									? mpSyncReconnecting
 										? "Reconnecting to the league…"
-										: `${mpSyncHostName ?? "Another device"} has the wheel`
+										: `${mpSyncHostName ?? "Another device"} is simming`
 									: undefined
 							}
 						>

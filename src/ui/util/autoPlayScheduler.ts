@@ -215,10 +215,10 @@ class AutoPlayScheduler {
 
 	start() {
 		if (!this.eligible()) {
-			// Can't enable unless connected + holding the wheel (the button is also
-			// disabled in this state).
+			// Can't enable unless connected + this device is the simmer (the button
+			// is also disabled in this state).
 			this.state.pausedReason =
-				"Connect to the league and take the wheel to auto play.";
+				"Connect and sim here to auto play.";
 			this.emit();
 			return;
 		}
@@ -274,7 +274,7 @@ class AutoPlayScheduler {
 		if (!this.eligible()) {
 			this.state.running = false;
 			this.state.nextRunAt = undefined;
-			this.state.pausedReason = "Waiting for cloud connection + the wheel.";
+			this.state.pausedReason = "Waiting for cloud connection + sim control.";
 			this.releaseWakeLock();
 			this.emit();
 			this.timeoutID = setTimeout(() => this.onTimer(), RECHECK_MS);

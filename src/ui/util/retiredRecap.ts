@@ -1,7 +1,8 @@
 import type {
-	RetiredCareerLine,
 	RetiredPlayer,
 	RetiredPlayersData,
+	RetiredSeasonLine,
+	RetiredStatLine,
 } from "../../worker/util/getRetiredPlayersForRecap.ts";
 
 // Instructions for the retirement writeups. The key idea: length must follow
@@ -16,7 +17,7 @@ CRITICAL — scale the length to the career. Do not give everyone the same treat
 - Role players / journeymen: a short paragraph.
 - Players who barely played, and especially undrafted players who never logged a single game: one or two honest sentences. Do not invent a career that isn't there.
 
-Use the data provided: career and playoff averages, the season-by-season arc, every team, the draft slot, age, college/country, peak rating, awards and rings. Do NOT list the raw data back — write prose.
+Use the data provided: career and playoff stat lines (full box score and advanced metrics), the season-by-season arc with each season's team result, every team, the draft slot, age, college/country, peak rating, awards and rings. Lean on the advanced stats and team results to judge how good each season actually was. Do NOT list the raw data back — write prose.
 
 Follow these rules EXACTLY:
 - Reply in GitHub-flavored Markdown only. No preamble, no closing summary, no text outside the per-player writeups.
@@ -31,30 +32,95 @@ const heightText = (inches: number | undefined): string | undefined => {
 	return `${Math.floor(inches / 12)}'${inches % 12}"`;
 };
 
-const careerLineText = (
-	label: string,
-	line: RetiredCareerLine | undefined,
-): string | undefined => {
-	if (!line) {
-		return undefined;
+const has = (line: RetiredStatLine, key: string): boolean =>
+	typeof line[key] === "number";
+
+// The full box + advanced stat line as one compact string, skipping any stat
+// that isn't present.
+const fullStatText = (line: RetiredStatLine): string => {
+	const parts: string[] = [];
+
+	parts.push(`${line.pts ?? 0}/${line.trb ?? 0}/${line.ast ?? 0}`);
+
+	const usage: string[] = [];
+	if (has(line, "min")) {
+		usage.push(`${line.min} MPG`);
 	}
-	const shooting = [
-		typeof line.fgp === "number" ? `${line.fgp}% FG` : undefined,
-		typeof line.tpp === "number" ? `${line.tpp}% 3P` : undefined,
-		typeof line.ftp === "number" ? `${line.ftp}% FT` : undefined,
-	]
-		.filter(Boolean)
-		.join(", ");
-	const extras = [
-		typeof line.stl === "number" ? `${line.stl} STL` : undefined,
-		typeof line.blk === "number" ? `${line.blk} BLK` : undefined,
-		typeof line.per === "number" ? `${line.per} PER` : undefined,
-	]
-		.filter(Boolean)
-		.join(", ");
-	return `${label}: ${line.pts}/${line.trb}/${line.ast}${
-		shooting ? ` on ${shooting}` : ""
-	}${extras ? ` (${extras})` : ""} over ${line.gp} G`;
+	usage.push(`${line.gp} G`);
+	parts.push(usage.join(", "));
+
+	const shooting: string[] = [];
+	if (has(line, "fg")) {
+		shooting.push(
+			`FG ${line.fg}-${line.fga}${has(line, "fgp") ? ` (${line.fgp}%)` : ""}`,
+		);
+	}
+	if (has(line, "tp")) {
+		shooting.push(
+			`3P ${line.tp}-${line.tpa}${has(line, "tpp") ? ` (${line.tpp}%)` : ""}`,
+		);
+	}
+	if (has(line, "ft")) {
+		shooting.push(
+			`FT ${line.ft}-${line.fta}${has(line, "ftp") ? ` (${line.ftp}%)` : ""}`,
+		);
+	}
+	if (shooting.length > 0) {
+		parts.push(shooting.join(", "));
+	}
+
+	const box: string[] = [];
+	for (const [key, label] of [
+		["orb", "ORB"],
+		["drb", "DRB"],
+		["stl", "STL"],
+		["blk", "BLK"],
+		["tov", "TO"],
+		["pf", "PF"],
+	] as const) {
+		if (has(line, key)) {
+			box.push(`${label} ${line[key]}`);
+		}
+	}
+	if (box.length > 0) {
+		parts.push(box.join(" "));
+	}
+
+	const adv: string[] = [];
+	for (const [key, label] of [
+		["per", "PER"],
+		["tsp", "TS%"],
+		["usgp", "USG%"],
+		["ortg", "ORtg"],
+		["drtg", "DRtg"],
+		["ows", "OWS"],
+		["dws", "DWS"],
+		["ws", "WS"],
+		["ws48", "WS/48"],
+		["obpm", "OBPM"],
+		["dbpm", "DBPM"],
+		["bpm", "BPM"],
+		["vorp", "VORP"],
+		["ewa", "EWA"],
+		["pm", "+/-"],
+	] as const) {
+		if (has(line, key)) {
+			adv.push(`${label} ${line[key]}`);
+		}
+	}
+	if (adv.length > 0) {
+		parts.push(adv.join(", "));
+	}
+
+	return parts.join(" · ");
+};
+
+const seasonText = (s: RetiredSeasonLine): string => {
+	const teams = s.teams
+		.map((t) => (t.result ? `${t.abbrev} (${t.result})` : t.abbrev))
+		.join("/");
+	const age = typeof s.age === "number" ? `, age ${s.age}` : "";
+	return `${s.season} ${teams}${age}: ${fullStatText(s.stats)}`;
 };
 
 const draftText = (p: RetiredPlayer): string => {
@@ -99,13 +165,11 @@ const playerBlock = (p: RetiredPlayer): string => {
 					: ""
 			}${p.rings > 0 ? `, ${p.rings} championship${p.rings === 1 ? "" : "s"}` : ""}.`,
 		);
-		const career = careerLineText("Career per game", p.career);
-		if (career) {
-			lines.push(career);
+		if (p.career) {
+			lines.push(`Career per game: ${fullStatText(p.career)}`);
 		}
-		const playoffs = careerLineText("Playoffs per game", p.playoffs);
-		if (playoffs) {
-			lines.push(playoffs);
+		if (p.playoffs) {
+			lines.push(`Playoffs per game: ${fullStatText(p.playoffs)}`);
 		}
 		if (p.teams.length > 0) {
 			lines.push(
@@ -126,15 +190,10 @@ const playerBlock = (p: RetiredPlayer): string => {
 			);
 		}
 		if (p.bySeason.length > 0) {
-			const arc = p.bySeason
-				.map(
-					(s) =>
-						`${s.season} ${s.abbrev ?? ""} ${s.pts}/${s.trb}/${s.ast}${
-							typeof s.per === "number" ? ` (${s.per} PER)` : ""
-						} in ${s.gp} G`,
-				)
-				.join("; ");
-			lines.push(`Season by season: ${arc}`);
+			lines.push(
+				"Season by season:",
+				...p.bySeason.map((s) => `- ${seasonText(s)}`),
+			);
 		}
 	}
 
