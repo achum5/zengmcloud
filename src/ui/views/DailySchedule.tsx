@@ -3,6 +3,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
+import { useWheelLocked } from "../util/useWheelLocked.ts";
 import { DAILY_SCHEDULE } from "../../common/constants.ts";
 import { NoGamesMessage } from "./GameLog.tsx";
 import allowForceTie from "../../common/allowForceTie.ts";
@@ -40,6 +41,9 @@ const DailySchedule = ({
 		userTid,
 	} = useLocal(["gameSimInProgress", "phase", "season", "userTid"]);
 
+	// Can't sim/watch games from here unless this device holds the wheel.
+	const { locked: wheelLocked } = useWheelLocked();
+
 	let simToDay = null;
 	if (upcoming.length > 0 && !isToday) {
 		const minGid = Math.min(...upcoming.map((game) => game.gid));
@@ -47,7 +51,7 @@ const DailySchedule = ({
 			<div className="mb-3">
 				<button
 					className="btn btn-secondary"
-					disabled={gameSimInProgress}
+					disabled={gameSimInProgress || wheelLocked}
 					onClick={() => {
 						toWorker("actions", "simToGame", minGid);
 					}}
@@ -98,7 +102,7 @@ const DailySchedule = ({
 										isToday && !tradeDeadline
 											? [
 													{
-														disabled: gameSimInProgress,
+														disabled: gameSimInProgress || wheelLocked,
 														highlight:
 															game.teams[0].tid === userTid ||
 															game.teams[1].tid === userTid,
@@ -113,7 +117,7 @@ const DailySchedule = ({
 															toWorker("actions", "liveGame", game.gid),
 													},
 													{
-														disabled: gameSimInProgress,
+														disabled: gameSimInProgress || wheelLocked,
 														highlight:
 															game.teams[0].tid === userTid ||
 															game.teams[1].tid === userTid,

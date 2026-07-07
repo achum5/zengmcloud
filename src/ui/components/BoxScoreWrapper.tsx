@@ -19,6 +19,7 @@ import { TeamLogoInline } from "./TeamLogoInline.tsx";
 import { useKeyboardShortcuts } from "../util/keyboardShortcuts.ts";
 import { gradientStyleFactory } from "../util/gradientStyleFactory.ts";
 import { useLocal } from "../util/local.ts";
+import { useWheelLocked } from "../util/useWheelLocked.ts";
 import { isSport } from "../../common/sportFunctions.ts";
 
 const TeamNameLink = ({
@@ -685,6 +686,10 @@ const NextButton = ({
 		"season",
 	]);
 
+	// Same wheel lock as the Play menu: can't sim forward unless this device
+	// holds the wheel and is connected (the worker enforces it too).
+	const { locked: wheelLocked, reason: wheelReason } = useWheelLocked();
+
 	const canPlay = playMenuOptions.some(
 		(option) => option.id === "day" || option.id === "week",
 	);
@@ -698,8 +703,9 @@ const NextButton = ({
 			phase <= PHASE.PLAYOFFS ? (
 				<button
 					className="btn btn-light-bordered"
-					disabled={!canPlay}
+					disabled={!canPlay || wheelLocked}
 					onClick={simNext}
+					title={wheelReason}
 				>
 					Sim
 					<br />
