@@ -247,6 +247,9 @@ const updateBoxScore = async (
 ) => {
 	if (
 		updateEvents.includes("firstRun") ||
+		// A game note may have been added/edited (locally or synced from another
+		// device) - reload so the box score picks it up.
+		updateEvents.includes("notes") ||
 		!state.boxScore ||
 		gid !== state.boxScore.gid
 	) {

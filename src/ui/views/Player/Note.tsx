@@ -51,6 +51,18 @@ const Note = (
 	const [editing, setEditing] = useState(false);
 	const [editedNote, setEditedNote] = useState(initialNote ?? note ?? "");
 
+	// Keep the displayed note in sync when the underlying note changes out from
+	// under us - e.g. it was edited on another device and synced in, or the view
+	// reloaded with fresh data. Without this, `editedNote` is frozen at its first
+	// value (it only otherwise refreshes when the component is remounted via its
+	// `key`), so a synced note never appears. Never clobber an in-progress edit.
+	const externalNote = initialNote ?? note ?? "";
+	const [syncedNote, setSyncedNote] = useState(externalNote);
+	if (externalNote !== syncedNote && !editing) {
+		setSyncedNote(externalNote);
+		setEditedNote(externalNote);
+	}
+
 	if (editing) {
 		return (
 			<form

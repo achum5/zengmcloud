@@ -65,6 +65,9 @@ export type Changeset = {
 
 // Broad set of UI refresh signals - applying a remote changeset can touch
 // almost anything, and the views only re-render for events they care about.
+// "notes" is included because a synced change can be a game/player/team note
+// edit; without it, a note that just synced in never repaints the box score,
+// player page, etc. on the receiving device.
 const APPLY_UPDATE_EVENTS: UpdateEvents = [
 	"playerMovement",
 	"gameAttributes",
@@ -72,6 +75,7 @@ const APPLY_UPDATE_EVENTS: UpdateEvents = [
 	"teamFinances",
 	"playoffs",
 	"gameSim",
+	"notes",
 ];
 
 const storeAPI = (store: Store) => (idb.cache as any)[store];
