@@ -1,5 +1,5 @@
 import { idb } from "../../db/index.ts";
-import { changeTracker } from "../../db/changeTracker.ts";
+import { changeTracker, runExclusive } from "../../db/changeTracker.ts";
 import type { Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
 import {
@@ -92,6 +92,9 @@ export const applyChangeset = async (
 		return;
 	}
 
+	// Hold the sync lock for the whole apply, so a local action can't capture (or
+	// have its own writes eaten by the suppressed window) while we're mid-apply.
+	await runExclusive(async () => {
 	let touchedGameAttributes = false;
 	let touchedPhase = false;
 	let touchedGames = false;
@@ -180,4 +183,5 @@ export const applyChangeset = async (
 	if (refreshUI) {
 		await toUI("realtimeUpdate", [updateEvents]);
 	}
+	});
 };

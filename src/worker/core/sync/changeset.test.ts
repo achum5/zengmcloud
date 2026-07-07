@@ -4,7 +4,7 @@ import { player } from "../index.ts";
 import { g, helpers, local } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import { PHASE } from "../../../common/constants.ts";
-import { changeTracker } from "../../db/changeTracker.ts";
+import { changeTracker, runExclusive } from "../../db/changeTracker.ts";
 import { applyChangeset, captureChangeset } from "./changeset.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
 
@@ -129,6 +129,45 @@ describe("sync changeset", () => {
 		assert.strictEqual(g.get("daysLeft"), 28);
 		assert.strictEqual(local.statusText, helpers.daysLeft(true, 28));
 		assert.ok(local.statusText.includes("28"), local.statusText);
+	});
+
+	test("a local action's capture is NOT eaten by a concurrent remote apply", async () => {
+		// The bug: applyChangeset suppresses recording while it writes. If a local
+		// sim's writes land in that window, they're dropped from capture and never
+		// published (e.g. a sim right after taking the wheel while still catching
+		// up). The sync lock must serialize the two so this can't happen.
+		resetG();
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		changeTracker.enable();
+		changeTracker.reset();
+
+		const p0 = (await idb.cache.players.getAll()).find((p) => p.pid === 0)!;
+		const remote = {
+			changes: [
+				{
+					store: "players" as const,
+					id: 0,
+					type: "put" as const,
+					value: { ...p0, tid: 5 },
+				},
+			],
+		};
+
+		// Fire an apply and a "local action" (dispatch-style: write then capture
+		// under the lock) concurrently. Whichever wins the lock, they never
+		// interleave, so the local edit to pid 1 must survive in the capture.
+		const localAction = runExclusive(async () => {
+			const p1 = (await idb.cache.players.getAll()).find((p) => p.pid === 1)!;
+			p1.tid = 9;
+			await idb.cache.players.put(p1);
+			return captureChangeset();
+		});
+		const applyPromise = applyChangeset(remote, { refreshUI: false });
+
+		const [captured] = await Promise.all([localAction, applyPromise]);
+
+		const ids = captured.changes.map((c) => c.id);
+		assert.ok(ids.includes(1), JSON.stringify(captured.changes));
 	});
 
 	test("applying a changeset does not itself get recorded", async () => {

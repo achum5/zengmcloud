@@ -23,6 +23,28 @@ let enabled = false;
 let suppressed = false;
 const pending = new Map<string, PendingChange>();
 
+// Serializes the two things that must never interleave: a local action's write+
+// capture window, and a remote changeset being applied (which suppresses
+// recording). Without this, an apply running concurrently with a local sim would
+// flip `suppressed` on mid-sim and silently drop the sim's writes from capture -
+// so the sim would never be published (e.g. right after a device takes the wheel
+// while it's still catching up / auto-resyncing). A simple promise-chain mutex.
+let lockTail: Promise<void> = Promise.resolve();
+
+export const runExclusive = async <T>(fn: () => Promise<T> | T): Promise<T> => {
+	const prev = lockTail;
+	let release: () => void = () => {};
+	lockTail = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await prev;
+	try {
+		return await fn();
+	} finally {
+		release();
+	}
+};
+
 export const changeTracker = {
 	enable() {
 		enabled = true;

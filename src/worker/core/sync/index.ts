@@ -6,7 +6,11 @@ export {
 } from "./changeset.ts";
 export { changeTracker } from "../../db/changeTracker.ts";
 export { SyncEngine } from "./SyncEngine.ts";
-export { afterAction } from "./afterAction.ts";
+export {
+	captureAfterAction,
+	deliverAfterAction,
+	type CapturedAction,
+} from "./afterAction.ts";
 export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 export {
 	claimSyncAuthority,

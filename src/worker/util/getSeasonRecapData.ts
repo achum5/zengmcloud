@@ -4,7 +4,6 @@ import { PHASE } from "../../common/constants.ts";
 import { formatEventText } from "./formatEventText.ts";
 import { getHistoryTeam } from "../views/teamHistory.ts";
 import { getPlayoffsByConfBySeason } from "../views/frivolitiesTeamSeasons.ts";
-import type { TeamSeason } from "../../common/types.ts";
 
 // One player's season line for a team-season recap. Regular-season per-game
 // averages, plus the postseason line if they played in it.
@@ -215,18 +214,9 @@ export const getSeasonRecapData = async (
 		"noCopyCache",
 	);
 
-	// Franchise history needs every team's full teamSeasons history (up to this
-	// season) and the playoffs-by-conf map for the roundsWonText helper.
-	const allTeamSeasons = await idb.getCopies.teamSeasons(undefined, "noCopyCache");
-	const seasonsByTid = new Map<number, TeamSeason[]>();
-	for (const ts of allTeamSeasons) {
-		if (ts.season > season) {
-			continue;
-		}
-		const arr = seasonsByTid.get(ts.tid) ?? [];
-		arr.push(ts);
-		seasonsByTid.set(ts.tid, arr);
-	}
+	// Franchise history uses the playoffs-by-conf map for the roundsWonText helper.
+	// Each team's own teamSeasons history is fetched per-tid below (getCopies
+	// requires a tid or season - it can't fetch the whole store at once).
 	const playoffsByConfBySeason = await getPlayoffsByConfBySeason();
 
 	// Playoff seeds for this season (first-round matchups carry the seeds).
@@ -375,10 +365,12 @@ export const getSeasonRecapData = async (
 		players.sort((a, b) => b.min * b.gp - a.min * a.gp);
 		const topPlayers = players.slice(0, 10);
 
-		// Franchise history.
-		const teamSeasons = (seasonsByTid.get(tid) ?? []).sort(
-			(a, b) => a.season - b.season,
-		);
+		// Franchise history (this team's seasons up to and including this one).
+		const teamSeasons = (
+			await idb.getCopies.teamSeasons({ tid }, "noCopyCache")
+		)
+			.filter((ts) => ts.season <= season)
+			.sort((a, b) => a.season - b.season);
 		const fh = getHistoryTeam(teamSeasons, playoffsByConfBySeason);
 		const recent: RecapFranchiseSeason[] = fh.history
 			.filter((h) => h.season < season)

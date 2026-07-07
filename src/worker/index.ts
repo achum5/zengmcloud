@@ -7,8 +7,11 @@ import * as util from "./util/index.ts";
 import * as random from "../common/random.ts";
 import { promiseWorker } from "./util/promiseWorker.ts";
 import { defaultGameAttributes } from "../common/defaultGameAttributes.ts";
-import { changeTracker } from "./db/changeTracker.ts";
-import { afterAction } from "./core/sync/afterAction.ts";
+import { changeTracker, runExclusive } from "./db/changeTracker.ts";
+import {
+	captureAfterAction,
+	deliverAfterAction,
+} from "./core/sync/afterAction.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
 import { getSyncRequired } from "./core/sync/connect.ts";
 
@@ -145,16 +148,28 @@ promiseWorker.register(([type, name, param], hostID) => {
 	}
 
 	// Bulk/local-only calls (league import, AI trade-offer generation, read-only
-	// view fetches) are suppressed so they don't capture or accumulate.
+	// view fetches) are suppressed so they don't capture or accumulate. Held under
+	// the sync lock too, so their suppression can't eat a concurrent apply's/
+	// action's writes.
 	if (type === "leagueFileUpload" || SKIP_CHANGESET_CAPTURE.has(name)) {
-		return changeTracker.runSuppressed(() => Promise.resolve(call()));
+		return runExclusive(() =>
+			changeTracker.runSuppressed(() => Promise.resolve(call())),
+		);
 	}
 
-	return Promise.resolve(call()).then((value) => {
-		// Fire-and-forget: capture/log/push must never add latency to the
-		// action's response. (Safe ordering: this microtask drains before the
-		// next worker message is processed.)
-		void afterAction(type, name);
+	// Run the action and capture its changeset UNDER the sync lock, so a remote
+	// apply (catch-up / auto-resync) can't interleave and suppress the action's
+	// writes mid-flight (which would silently drop the change from the room). The
+	// actual publish + push happens AFTER the lock releases - it's network I/O and
+	// must not block applies or add latency to the action's response.
+	return runExclusive(async () => {
+		const value = await call();
+		const captured = await captureAfterAction(type, name);
+		return { value, captured };
+	}).then(({ value, captured }) => {
+		if (captured) {
+			void deliverAfterAction(captured);
+		}
 		return value;
 	});
 });
