@@ -36,7 +36,16 @@ const formatTime = (ts: number | undefined) =>
 const AutoPlaySchedule = () => {
 	useTitleBar({ title: "Auto Play Scheduler" });
 
-	const { lid, phaseText } = useLocal(["lid", "phaseText"]);
+	const { lid, phaseText, mpSyncActive, mpSyncIsHost } = useLocal([
+		"lid",
+		"phaseText",
+		"mpSyncActive",
+		"mpSyncIsHost",
+	]);
+
+	// Auto play advances the shared league, so it's only allowed when connected
+	// to the cloud AND holding the wheel.
+	const eligible = mpSyncActive && mpSyncIsHost;
 
 	const [settings, setSettings] = useState<AutoPlaySettings>(
 		autoPlayScheduler.settings,
@@ -80,8 +89,8 @@ const AutoPlaySchedule = () => {
 
 	return (
 		<>
-			<div className="d-flex gap-2 mb-3">
-				{state.running ? (
+			<div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+				{settings.enabled ? (
 					<button
 						className="btn btn-danger"
 						onClick={() => autoPlayScheduler.stop("Turned off")}
@@ -91,6 +100,7 @@ const AutoPlaySchedule = () => {
 				) : (
 					<button
 						className="btn btn-primary"
+						disabled={!eligible}
 						onClick={() => autoPlayScheduler.start()}
 					>
 						Start
@@ -98,11 +108,17 @@ const AutoPlaySchedule = () => {
 				)}
 				<button
 					className="btn btn-light-bordered"
+					disabled={!eligible}
 					onClick={() => void autoPlayScheduler.runNow("day")}
 				>
 					Sim day now
 				</button>
 			</div>
+			{!eligible ? (
+				<div className="text-body-secondary small mb-3">
+					Requires cloud connection + the wheel.
+				</div>
+			) : null}
 
 			<div className="form-check">
 				<input
@@ -295,8 +311,12 @@ const AutoPlaySchedule = () => {
 							<tr>
 								<th>State</th>
 								<td>
-									{state.running ? (
-										<span className="text-success">Running</span>
+									{settings.enabled ? (
+										state.running ? (
+											<span className="text-success">Running</span>
+										) : (
+											<span className="text-warning">Paused</span>
+										)
 									) : (
 										<span className="text-danger">Stopped</span>
 									)}

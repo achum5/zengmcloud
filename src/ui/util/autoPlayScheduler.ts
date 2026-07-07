@@ -163,8 +163,16 @@ class AutoPlayScheduler {
 		this.emit();
 
 		if (this.settings.enabled) {
-			this.start();
+			// Keep the persisted intent, but only actually run once eligible.
+			this.armTimer();
 		}
+	}
+
+	// Auto play advances the shared league, so it's only allowed when connected to
+	// the cloud AND holding the wheel. (The worker enforces the wheel too.)
+	private eligible(): boolean {
+		const s = local.getState();
+		return !!s.mpSyncActive && !!s.mpSyncIsHost;
 	}
 
 	subscribe(cb: (settings: AutoPlaySettings, state: AutoPlayState) => void) {
@@ -206,11 +214,17 @@ class AutoPlayScheduler {
 	}
 
 	start() {
+		if (!this.eligible()) {
+			// Can't enable unless connected + holding the wheel (the button is also
+			// disabled in this state).
+			this.state.pausedReason =
+				"Connect to the league and take the wheel to auto play.";
+			this.emit();
+			return;
+		}
 		this.settings.enabled = true;
-		this.state.running = true;
 		this.state.pausedReason = undefined;
 		this.persist();
-		this.requestWakeLock();
 		this.armTimer();
 		this.emit();
 	}
@@ -255,6 +269,22 @@ class AutoPlayScheduler {
 		if (!this.settings.enabled) {
 			return;
 		}
+		// Paused (still enabled) until we're connected + hold the wheel. Re-check
+		// so it resumes automatically once eligible (or pauses if the wheel moves).
+		if (!this.eligible()) {
+			this.state.running = false;
+			this.state.nextRunAt = undefined;
+			this.state.pausedReason = "Waiting for cloud connection + the wheel.";
+			this.releaseWakeLock();
+			this.emit();
+			this.timeoutID = setTimeout(() => this.onTimer(), RECHECK_MS);
+			return;
+		}
+		if (!this.state.running) {
+			this.state.running = true;
+			this.state.pausedReason = undefined;
+			this.requestWakeLock();
+		}
 		const next = this.computeNext();
 		if (!next) {
 			this.state.nextRunAt = undefined;
@@ -293,6 +323,10 @@ class AutoPlayScheduler {
 
 	private async tick(amount: AutoPlayAmount) {
 		if (this.ticking) {
+			return;
+		}
+		// Lost the connection or the wheel since we armed - skip; armTimer pauses.
+		if (!this.eligible()) {
 			return;
 		}
 		const state = local.getState();
