@@ -162,7 +162,11 @@ describe("buildNotifications", () => {
 	});
 
 	test("team with no game still gets a targeted 'league advanced' notice", async () => {
-		const notifs = await buildNotifications("playMenu.day", { changes: [] }, opts);
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{ changes: [] },
+			opts,
+		);
 		assert.strictEqual(notifs.length, 1);
 		assert.deepEqual(notifs[0]!.targetTids, [0]);
 		assert.ok(notifs[0]!.body.includes("No game for your LA Lakers"));
@@ -270,6 +274,35 @@ describe("buildNotifications", () => {
 		assert.ok(body.includes("Role Player (74/74)"), body);
 		assert.ok(body.includes("Star Wing (88/88)"), body);
 		assert.ok(body.includes("2027 1st-round pick"), body);
+	});
+
+	test("one-sided trade ('traded nothing for X') → Trade, not a Signing", async () => {
+		const notifs = await buildNotifications(
+			"main.proposeTrade",
+			{
+				changes: [
+					// Chaney Johnson moves to LA (tid 0); Boston (tid 1) gets nothing, so
+					// only one team's assets move - and he carries a contract, so without
+					// the trade event this reads exactly like a free-agent signing.
+					namedPlayer(1, 0, "Chaney", "Johnson", 51, {
+						contract: { amount: 1000, exp: 2026 },
+					}),
+					{
+						store: "events",
+						id: 100,
+						type: "put",
+						value: { eid: 100, type: "trade", tids: [0, 1] },
+					},
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Trade");
+		const body = notifs[0]!.body;
+		assert.ok(body.includes("acquire"), body);
+		assert.ok(body.includes("Chaney Johnson"), body);
+		assert.ok(body.includes("LA Lakers"), body);
+		assert.ok(body.includes("Boston Celtics"), body);
 	});
 
 	test("single free-agent signing → contract terms", async () => {

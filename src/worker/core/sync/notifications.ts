@@ -110,7 +110,11 @@ const topScorer = (players: any[] | undefined): any => {
 			continue;
 		}
 		const score = helpers.gameScore(p);
-		if (typeof score === "number" && !Number.isNaN(score) && score > bestScore) {
+		if (
+			typeof score === "number" &&
+			!Number.isNaN(score) &&
+			score > bestScore
+		) {
 			bestScore = score;
 			best = p;
 		}
@@ -201,9 +205,7 @@ const buildSimNotifications = async (
 		const abbrev = team?.abbrev;
 		// The team's game log for this season (box score of a specific game is
 		// appended below when there's exactly one game).
-		const gameLogPath = abbrev
-			? `game_log/${abbrev}/${season}`
-			: "standings";
+		const gameLogPath = abbrev ? `game_log/${abbrev}/${season}` : "standings";
 
 		const teamGames = games
 			.filter((game) => game.won.tid === tid || game.lost.tid === tid)
@@ -356,18 +358,37 @@ const describeTrade = (
 	const players = changesToValues(changeset, "players");
 	const picks = changesToValues(changeset, "draftPicks");
 
-	const tids = new Set<number>();
+	// Teams that RECEIVED a tracked asset (player/pick).
+	const assetTids = new Set<number>();
 	for (const p of players) {
 		if (typeof p.tid === "number" && p.tid >= 0) {
-			tids.add(p.tid);
+			assetTids.add(p.tid);
 		}
 	}
 	for (const dp of picks) {
 		if (typeof dp.tid === "number" && dp.tid >= 0) {
-			tids.add(dp.tid);
+			assetTids.add(dp.tid);
 		}
 	}
-	const teamTids = [...tids];
+
+	// A trade logs a "trade" event carrying BOTH teams' tids. That's the reliable
+	// signal this is a trade (vs a free-agent signing, which also just moves a
+	// player onto a team) and the only way to recover a team that gave/received
+	// NOTHING - e.g. a "traded nothing for Chaney Johnson" deal, where only one
+	// team's assets moved so asset tids alone would see just one team.
+	const tradeEvent = changesToValues(changeset, "events").find(
+		(e) => e && e.type === "trade",
+	);
+	const eventTids =
+		tradeEvent && Array.isArray(tradeEvent.tids)
+			? tradeEvent.tids.filter(
+					(t: unknown): t is number => typeof t === "number" && t >= 0,
+				)
+			: [];
+
+	// Prefer the event's team pair (it includes a "gave nothing" team); otherwise
+	// infer from the assets that moved. Only a clean 2-team deal is describable.
+	const teamTids = eventTids.length === 2 ? eventTids : [...assetTids];
 	if (teamTids.length !== 2) {
 		return undefined;
 	}
@@ -408,6 +429,15 @@ const describeSigning = (
 	changeset: Changeset,
 	teamById: Map<number, TeamInfo>,
 ): SyncNotification | undefined => {
+	// A trade also just moves a player onto a team, so a one-sided trade ("traded
+	// nothing for X") can look exactly like a signing. If the changeset carries a
+	// trade event, it's a trade - let describeTrade handle it, never a signing.
+	if (
+		changesToValues(changeset, "events").some((e) => e && e.type === "trade")
+	) {
+		return undefined;
+	}
+
 	// Picks moving means it's trade territory, not a signing.
 	if (changesToValues(changeset, "draftPicks").length > 0) {
 		return undefined;
@@ -530,7 +560,8 @@ export const buildNotifications = async (
 	const isSim = hasGames || label.startsWith("playMenu.");
 
 	const newPhase = newPhaseFromChangeset(changeset);
-	const enteredHumanPhase = newPhase !== undefined && HUMAN_PHASES.has(newPhase);
+	const enteredHumanPhase =
+		newPhase !== undefined && HUMAN_PHASES.has(newPhase);
 
 	if (isSim) {
 		// Non-host devices shouldn't be simming; if they somehow do, stay quiet so
