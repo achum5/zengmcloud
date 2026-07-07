@@ -175,6 +175,43 @@ describe("SyncEngine", () => {
 		assert.strictEqual(events.length, N);
 	});
 
+	test("chunks a changeset that's few records but too big for one Firestore doc", async () => {
+		const bus = new FakeBus();
+		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		host.start();
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+
+		resetG();
+		await resetCache({});
+
+		// Only 10 records - well under the record-count threshold - but each is
+		// large, so the whole changeset far exceeds Firestore's ~1 MB/doc limit.
+		// This is the shape of the free-agency phase advance that used to silently
+		// fail to publish (a single oversized doc throws).
+		const N = 10;
+		const big = "x".repeat(120_000);
+		const changes = Array.from({ length: N }, (_, i) => ({
+			store: "events" as const,
+			id: i + 1,
+			type: "put" as const,
+			value: { eid: i + 1, type: "test", text: big },
+		}));
+		await host.onLocalChangeset({ changes }, "playMenu.untilFreeAgency");
+
+		// It was split into multiple chunks (not published as one oversized doc).
+		assert.ok(bus.entries.length > 1, "should be chunked");
+		const batchId = bus.entries[0]!.batchId;
+		assert.ok(batchId);
+		assert.ok(bus.entries.every((entry) => entry.batchId === batchId));
+
+		// Receiver reassembles and applies every record.
+		for (const entry of bus.entries) {
+			await receiver.handleEntry(JSON.parse(JSON.stringify(entry)));
+		}
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, N);
+	});
+
 	test("advances the persisted watermark as it catches up", async () => {
 		const bus = new FakeBus();
 		const watermarks: number[] = [];

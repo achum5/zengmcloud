@@ -242,7 +242,18 @@ export class SyncEngine {
 			return;
 		}
 
-		if (changeset.changes.length <= MAX_SYNC_CHANGES) {
+		// Send as a single doc only if it fits in one Firestore doc by BOTH record
+		// count AND serialized size. A changeset can be <= MAX_SYNC_CHANGES records
+		// yet still blow past Firestore's ~1 MB/doc limit - e.g. advancing to free
+		// agency turns over many large player records at once. A single addDoc then
+		// throws and the change silently never reaches the room (while a phone push
+		// still goes out, so it *looks* like it synced). When it doesn't fit, fall
+		// through to the chunked bulk path, which byte-caps every chunk.
+		const fitsInOneDoc =
+			changeset.changes.length <= MAX_SYNC_CHANGES &&
+			JSON.stringify(changeset).length <= MAX_CHUNK_BYTES;
+
+		if (fitsInOneDoc) {
 			const id = makeId();
 			this.seen.add(id);
 			await this.transport.publish({
@@ -254,10 +265,10 @@ export class SyncEngine {
 			return;
 		}
 
-		// Bulk change (e.g. a sim, or a big draft advance). Normally only the
-		// wheel-holder broadcasts these. Draft actions are exempt: whoever is on
-		// the clock drafts their own pick, so their (possibly large) draft
-		// changeset must sync from any device.
+		// Bulk change (e.g. a sim, a phase advance, or a big draft advance).
+		// Normally only the wheel-holder broadcasts these. Draft actions are exempt:
+		// whoever is on the clock drafts their own pick, so their (possibly large)
+		// draft changeset must sync from any device.
 		if (!this.isAuthority() && !isDraftAction(action)) {
 			console.warn(
 				`[sync] Skipping bulk change from "${action}" (${changeset.changes.length} records) - only the wheel-holder broadcasts sims.`,
