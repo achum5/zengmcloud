@@ -82,6 +82,37 @@ describe("buildNotifications", () => {
 		assert.ok(notifs[0]!.body.includes("No game for your LA Lakers"));
 	});
 
+	test("sim via a non-playMenu action (e.g. simToGame) is still a sim, not a trade", async () => {
+		const notifs = await buildNotifications(
+			"actions.simToGame",
+			{
+				changes: [
+					gamePut(1, { tid: 0, pts: 110 }, { tid: 1, pts: 105 }),
+					// A sim re-writes players across teams - must NOT read as a trade.
+					playerPut(1, 0),
+					playerPut(2, 1),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Sim complete");
+		assert.deepEqual(notifs[0]!.targetTids, [0]);
+	});
+
+	test("a bulk player update with no games is not a trade", async () => {
+		// e.g. end-of-season progression touches every player across teams.
+		const changes = [];
+		for (let pid = 0; pid < 40; pid++) {
+			changes.push(playerPut(pid, pid % 2));
+		}
+		const notifs = await buildNotifications(
+			"main.newSchedule",
+			{ changes },
+			opts,
+		);
+		assert.deepEqual(notifs, []);
+	});
+
 	test("host sim that reaches a human phase → single 'your turn' to everyone", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.week",

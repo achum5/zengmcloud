@@ -193,12 +193,26 @@ const buildSimNotifications = async (
 //
 // Sims (host only) produce a detailed, per-team summary each. A sim that lands
 // on a human-decision phase is announced as "your turn" to everyone instead.
+// A discrete roster move (trade/signing/cut) touches only a handful of records.
+// Anything bigger is a bulk operation (a sim, season progression, a new draft
+// class, etc.) and must not be mistaken for a trade.
+const MAX_ROSTER_MOVE_CHANGES = 30;
+
 export const buildNotifications = async (
 	label: string,
 	changeset: Changeset,
 	{ isHost, authorName }: { isHost: boolean; authorName: string },
 ): Promise<SyncNotification[]> => {
-	const isSim = label.startsWith("playMenu.");
+	// Detect a sim by CONTENT, not just the label: only simulating games writes
+	// `games` records, and sims arrive via several actions (playMenu.day, but also
+	// actions.simToGame, live games, etc.). Relying on the label alone let a sim
+	// slip through to the trade check below - and since a sim re-writes players on
+	// every team, that mislabeled it "trade completed".
+	const hasGames = changeset.changes.some(
+		(change) => change.store === "games" && change.type === "put",
+	);
+	const isSim = hasGames || label.startsWith("playMenu.");
+
 	const newPhase = newPhaseFromChangeset(changeset);
 	const enteredHumanPhase = newPhase !== undefined && HUMAN_PHASES.has(newPhase);
 
@@ -232,25 +246,30 @@ export const buildNotifications = async (
 		];
 	}
 
-	const teams = receivingTeams(changeset);
-	if (teams.length >= 2) {
-		return [
-			{
-				title: "Trade completed",
-				body: `${authorName} completed a trade.`,
-				targetTids: null,
-			},
-		];
-	}
+	// Only classify small changesets as trades/roster moves. A bulk change with
+	// no games and no phase shift (e.g. end-of-season player progression) would
+	// otherwise trip the "players on 2+ teams" trade heuristic.
+	if (changeset.changes.length <= MAX_ROSTER_MOVE_CHANGES) {
+		const teams = receivingTeams(changeset);
+		if (teams.length >= 2) {
+			return [
+				{
+					title: "Trade completed",
+					body: `${authorName} completed a trade.`,
+					targetTids: null,
+				},
+			];
+		}
 
-	if (isRosterChange(changeset)) {
-		return [
-			{
-				title: "Roster move",
-				body: `${authorName} made a roster move.`,
-				targetTids: null,
-			},
-		];
+		if (isRosterChange(changeset)) {
+			return [
+				{
+					title: "Roster move",
+					body: `${authorName} made a roster move.`,
+					targetTids: null,
+				},
+			];
+		}
 	}
 
 	return [];
