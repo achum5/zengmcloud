@@ -33,10 +33,34 @@ let currentCode: string | undefined;
 // Name of whoever currently holds the wheel (for display), from the shared doc.
 let currentHostName: string | undefined;
 
+// Whether this device is *supposed* to be in a sync session. Stays true across
+// the async reconnect after a refresh, and even if that reconnect fails - so we
+// can gate simming until the connection is actually live, instead of letting
+// the device sim while offline and silently diverge from the league.
+let syncRequired = false;
+
+export const getSyncRequired = () => syncRequired;
+
+// True while we intend to be synced but aren't connected yet (reconnecting or
+// offline). The wheel guard uses this to pause simming; the UI shows it.
+export const isReconnecting = () =>
+	syncRequired && getSyncEngine() === undefined;
+
+// Called by the UI's auto-reconnect the instant it knows this league should be
+// synced - before the async connect finishes - so simming is gated during the
+// whole reconnect window, not just once it completes.
+export const markSyncRequired = () => {
+	syncRequired = true;
+	if (getSyncEngine() === undefined) {
+		void toUI("updateLocal", [{ mpSyncReconnecting: true }]);
+	}
+};
+
 export const getSyncStatus = () => {
 	const engine = getSyncEngine();
 	return {
 		connected: engine !== undefined,
+		reconnecting: isReconnecting(),
 		code: currentCode,
 		// "host" now means "current wheel-holder", read live from the engine.
 		isHost: engine?.isAuthority() ?? false,
@@ -76,6 +100,11 @@ export const connectSharedLeague = async ({
 	// Tear down any existing session first.
 	disconnectSharedLeague();
 
+	// From here on this device is committed to the session, so simming stays
+	// gated through the whole async connect (and if it throws) - never sim
+	// offline and diverge.
+	syncRequired = true;
+
 	// Authenticate - the uid is our stable, rule-enforceable sync identity.
 	const clientId = await ensureAnonymousAuth();
 
@@ -109,8 +138,9 @@ export const connectSharedLeague = async ({
 	changeTracker.reset();
 
 	// Let the UI hide single-player-only chrome (e.g. the multi-team switcher),
-	// and reset the wheel display until the control-doc subscription reports in.
-	void toUI("updateLocal", [{ mpSyncActive: true }]);
+	// clear the "reconnecting" state, and reset the wheel display until the
+	// control-doc subscription reports in.
+	void toUI("updateLocal", [{ mpSyncActive: true, mpSyncReconnecting: false }]);
 	pushAuthorityToUI(false, undefined);
 
 	return { connected: true, code: trimmed, isHost, clientId };
@@ -124,8 +154,12 @@ export const disconnectSharedLeague = () => {
 	}
 	currentCode = undefined;
 	currentHostName = undefined;
+	// Explicit disconnect clears the intent, so single-player simming works again.
+	syncRequired = false;
 
-	void toUI("updateLocal", [{ mpSyncActive: false }]);
+	void toUI("updateLocal", [
+		{ mpSyncActive: false, mpSyncReconnecting: false },
+	]);
 	pushAuthorityToUI(false, undefined);
 
 	// Leave the tracker enabled in dev (the console logger uses it); otherwise

@@ -12,7 +12,9 @@ export {
 	claimSyncAuthority,
 	connectSharedLeague,
 	disconnectSharedLeague,
+	getSyncRequired,
 	getSyncStatus,
+	markSyncRequired,
 } from "./connect.ts";
 export { FirebaseTransport } from "./FirebaseTransport.ts";
 export type { Authority, ChangesetEntry, SyncTransport } from "./types.ts";

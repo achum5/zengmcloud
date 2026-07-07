@@ -81,16 +81,19 @@ const PlayMenu = ({
 		mpSyncActive,
 		mpSyncIsHost,
 		mpSyncHostName,
+		mpSyncReconnecting,
 	} = useLocal([
 		"keyboardShortcuts",
 		"mpSyncActive",
 		"mpSyncIsHost",
 		"mpSyncHostName",
+		"mpSyncReconnecting",
 	]);
 
-	// While synced but not holding the wheel, season/phase advancement is locked
-	// to this device (the worker enforces it too). Draft items stay available.
-	const locked = mpSyncActive && !mpSyncIsHost;
+	// Season/phase advancement is locked when we're reconnecting/offline, or when
+	// we're synced but don't hold the wheel (the worker enforces both). Draft
+	// items stay available.
+	const locked = mpSyncReconnecting || (mpSyncActive && !mpSyncIsHost);
 
 	if (lid === undefined) {
 		return null;
@@ -116,7 +119,9 @@ const PlayMenu = ({
 			<Dropdown.Menu>
 				{locked ? (
 					<Dropdown.Header>
-						🔒 {mpSyncHostName ?? "Another device"} has the wheel
+						{mpSyncReconnecting
+							? "🔄 Reconnecting to the league…"
+							: `🔒 ${mpSyncHostName ?? "Another device"} has the wheel`}
 					</Dropdown.Header>
 				) : null}
 				{options.map((option, i) => {
@@ -133,7 +138,9 @@ const PlayMenu = ({
 							className="kbd-parent"
 							title={
 								optionLocked
-									? `${mpSyncHostName ?? "Another device"} has the wheel`
+									? mpSyncReconnecting
+										? "Reconnecting to the league…"
+										: `${mpSyncHostName ?? "Another device"} has the wheel`
 									: undefined
 							}
 						>

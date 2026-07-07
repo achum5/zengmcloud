@@ -21,10 +21,11 @@ type Status = "disconnected" | "connecting" | "connected";
 const MultiplayerSync = () => {
 	useTitleBar({ title: "Multiplayer Sync (Beta)" });
 
-	const { lid, mpSyncIsHost, mpSyncHostName } = useLocal([
+	const { lid, mpSyncIsHost, mpSyncHostName, mpSyncReconnecting } = useLocal([
 		"lid",
 		"mpSyncIsHost",
 		"mpSyncHostName",
+		"mpSyncReconnecting",
 	]);
 
 	const [code, setCode] = useState("");
@@ -279,6 +280,11 @@ const MultiplayerSync = () => {
 						</>
 					) : status === "connecting" ? (
 						<p className="mb-0">Connecting…</p>
+					) : mpSyncReconnecting ? (
+						<p className="text-body-secondary mb-0">
+							Reconnecting to the league… simming is paused until you're back
+							online.
+						</p>
 					) : (
 						<p className="text-body-secondary mb-0">Not connected.</p>
 					)}

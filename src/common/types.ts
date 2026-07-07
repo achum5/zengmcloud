@@ -1053,6 +1053,9 @@ export type LocalStateUI = {
 	mpSyncIsHost: boolean;
 	// Display name of whoever currently holds the wheel (undefined = nobody yet).
 	mpSyncHostName: string | undefined;
+	// True when we intend to be synced but aren't connected yet (reconnecting
+	// after a refresh, or offline). Simming is paused while this is true.
+	mpSyncReconnecting: boolean;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;

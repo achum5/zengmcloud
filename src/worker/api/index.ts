@@ -90,6 +90,7 @@ import {
 	disconnectSharedLeague,
 	getSyncEngine,
 	getSyncStatus,
+	markSyncRequired,
 } from "../core/sync/index.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
 import { PointsFormulaEvaluator } from "../core/team/evaluatePointsFormula.ts";
@@ -5336,6 +5337,7 @@ export default {
 		initGold,
 		loadRetiredPlayers,
 		lockSet,
+		markSyncRequired,
 		ovr,
 		proposeTrade,
 		ratingsStatsPopoverInfo,

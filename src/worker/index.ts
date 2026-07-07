@@ -10,6 +10,7 @@ import { defaultGameAttributes } from "../common/defaultGameAttributes.ts";
 import { changeTracker } from "./db/changeTracker.ts";
 import { afterAction } from "./core/sync/afterAction.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
+import { getSyncRequired } from "./core/sync/connect.ts";
 
 self.bbgm = {
 	...common,
@@ -95,27 +96,41 @@ promiseWorker.register(([type, name, param], hostID) => {
 		);
 	}
 
-	// Multiplayer wheel guard. While connected to a shared league, a device that
-	// doesn't hold the wheel may not advance the timeline. We block BEFORE the
-	// action runs (not just its broadcast), which is what stops a non-authority
-	// device from simming locally and diverging. Draft picks are exempt (handled
-	// by isWheelLockedCall), so everyone can still draft their own team.
-	const syncEngine = getSyncEngine();
-	if (
-		syncEngine &&
-		!syncEngine.isAuthority() &&
-		isWheelLockedCall(type, name)
-	) {
-		const holder = syncEngine.getAuthority()?.holderName ?? "Another device";
-		util.logEvent(
-			{
-				type: "error",
-				text: `${holder} has the wheel. Take it on the Multiplayer Sync page to sim here.`,
-				persistent: true,
-			},
-			conditions,
-		);
-		return undefined;
+	// Multiplayer wheel guard. In a shared league, advancing the timeline is only
+	// allowed on the device that holds the wheel AND is actually connected. We
+	// block BEFORE the action runs (not just its broadcast), which is what stops
+	// a device from simming locally and diverging. Draft picks are exempt
+	// (handled by isWheelLockedCall), so everyone can still draft their own team.
+	if (isWheelLockedCall(type, name)) {
+		const syncEngine = getSyncEngine();
+		if (syncEngine) {
+			if (!syncEngine.isAuthority()) {
+				const holder =
+					syncEngine.getAuthority()?.holderName ?? "Another device";
+				util.logEvent(
+					{
+						type: "error",
+						text: `${holder} has the wheel. Take it on the Multiplayer Sync page to sim here.`,
+						persistent: true,
+					},
+					conditions,
+				);
+				return undefined;
+			}
+		} else if (getSyncRequired()) {
+			// Meant to be synced but not connected (reconnecting after a refresh,
+			// or offline). Pause simming so this device can't advance while offline
+			// and diverge from everyone else.
+			util.logEvent(
+				{
+					type: "error",
+					text: `Reconnecting to the shared league — simming is paused until you're back online. To play offline instead, disconnect on the Multiplayer Sync page.`,
+					persistent: true,
+				},
+				conditions,
+			);
+			return undefined;
+		}
 	}
 
 	// https://github.com/microsoft/TypeScript/issues/21732
