@@ -1,4 +1,5 @@
 import type {
+	RecapAverages,
 	RecapGame,
 	RecapPlayer,
 	RecapTeam,
@@ -9,10 +10,12 @@ import type {
 // logic below.
 const INSTRUCTIONS = `You are an expert basketball beat writer. Write a lively, ESPN-style recap for EACH game listed below.
 
+You are given far more data than you need — box scores, season and career averages, team records, quarter-by-quarter scoring, each team's last 10 games, and (in the playoffs) the series and bracket state. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, playoff stakes and series context. Do NOT list the raw data back.
+
 Follow these rules EXACTLY:
 - Reply in GitHub-flavored Markdown only. No preamble, no closing summary, no text outside the per-game recaps.
 - Begin every recap with a line containing ONLY this marker: <!--game:ID--> (replace ID with that game's number, shown as "GAME <ID>" below). This is how each recap is filed to the correct game — never omit it, never change it.
-- After the marker, lead with a bold one-line headline, then 1–3 tight paragraphs (~60–120 words total).
+- After the marker, lead with a bold one-line headline, then 2–4 tight paragraphs.
 - Weave the notable numbers into the prose; do not paste a stat table. Bold standout players with **name**.
 - Put exactly one blank line between games.`;
 
@@ -23,14 +26,92 @@ const stripHtml = (s: string): string =>
 		.replace(/\s+/g, " ")
 		.trim();
 
-const playerLine = (p: RecapPlayer): string =>
-	`- ${p.name}: ${p.pts} PTS, ${p.reb} REB, ${p.ast} AST, ${p.stl} STL, ${p.blk} BLK, ${p.tov} TO (${p.fg}/${p.fga} FG, ${p.tp}/${p.tpa} 3P, ${p.ft}/${p.fta} FT, ${p.min} min)`;
+const avg = (a: RecapAverages): string =>
+	`${a.pts}/${a.reb}/${a.ast} on ${a.fgp}% FG, ${a.tpp}% 3P, ${a.ftp}% FT (${a.stl} STL, ${a.blk} BLK, ${a.tov} TO, ${a.min} MPG over ${a.gp} G)`;
 
-const teamBlock = (t: RecapTeam): string =>
-	[
-		`${t.abbrev} — ${t.region} ${t.name} (${t.pts} pts):`,
-		...t.players.map(playerLine),
-	].join("\n");
+const playerLine = (p: RecapPlayer): string => {
+	const lines = [
+		`- ${p.name}: ${p.pts} PTS, ${p.reb} REB, ${p.ast} AST, ${p.stl} STL, ${p.blk} BLK, ${p.tov} TO (${p.fg}/${p.fga} FG, ${p.tp}/${p.tpa} 3P, ${p.ft}/${p.fta} FT, ${p.min} min)`,
+	];
+	if (p.seasonAvg) {
+		lines.push(`    · Season avg: ${avg(p.seasonAvg)}`);
+	}
+	if (p.playoffAvg) {
+		lines.push(`    · Playoffs avg: ${avg(p.playoffAvg)}`);
+	}
+	if (p.career && p.career.length > 0) {
+		const career = p.career
+			.map(
+				(c) =>
+					`${c.season}: ${c.pts}/${c.reb}/${c.ast}, ${c.fgp}% FG (${c.gp} G)`,
+			)
+			.join("; ");
+		lines.push(`    · Career by season: ${career}`);
+	}
+	return lines.join("\n");
+};
+
+const last10Line = (t: RecapTeam): string | undefined => {
+	if (!t.last10 || t.last10.length === 0) {
+		return undefined;
+	}
+	let won = 0;
+	let lost = 0;
+	for (const g of t.last10) {
+		if (g.won) {
+			won += 1;
+		} else {
+			lost += 1;
+		}
+	}
+	const games = t.last10
+		.map(
+			(g) =>
+				`${g.won ? "W" : "L"} ${g.home ? "vs" : "@"} ${g.opp} ${g.pts}-${g.oppPts}`,
+		)
+		.join(", ");
+	return `Last 10 (${won}-${lost}): ${games}`;
+};
+
+const teamBlock = (t: RecapTeam): string => {
+	const header = [`${t.abbrev} — ${t.region} ${t.name} (${t.pts} pts`];
+	if (t.record) {
+		header.push(`, ${t.record.won}-${t.record.lost}`);
+	}
+	if (typeof t.seed === "number") {
+		header.push(`, #${t.seed} seed`);
+	}
+	header.push("):");
+
+	const lines = [header.join("")];
+	if (t.ptsQtrs && t.ptsQtrs.length > 0) {
+		lines.push(`By quarter: ${t.ptsQtrs.join(" | ")}`);
+	}
+	const l10 = last10Line(t);
+	if (l10) {
+		lines.push(l10);
+	}
+	lines.push(...t.players.map(playerLine));
+	return lines.join("\n");
+};
+
+const seriesLine = (game: RecapGame): string | undefined => {
+	const s = game.series;
+	if (!s) {
+		return undefined;
+	}
+	const leader =
+		s.homeWon === s.awayWon
+			? `series tied ${s.homeWon}-${s.awayWon}`
+			: s.homeWon > s.awayWon
+				? `${s.homeAbbrev} leads ${s.homeWon}-${s.awayWon}`
+				: `${s.awayAbbrev} leads ${s.awayWon}-${s.homeWon}`;
+	const seeds =
+		typeof s.homeSeed === "number" && typeof s.awaySeed === "number"
+			? ` — #${s.awaySeed} ${s.awayAbbrev} at #${s.homeSeed} ${s.homeAbbrev}`
+			: "";
+	return `Playoffs — Round ${s.round} of ${s.numRounds}${seeds} (before this game: ${leader})`;
+};
 
 const gameBlock = (game: RecapGame): string => {
 	// teams[0] is the home team in ZenGM; list the visitor first ("away @ home").
@@ -46,11 +127,14 @@ const gameBlock = (game: RecapGame): string => {
 		`Final: ${away.abbrev} ${away.pts}, ${home.abbrev} ${home.pts}${
 			winner ? ` — ${winner.region} ${winner.name} win` : ""
 		}`,
-		"",
-		teamBlock(away),
-		"",
-		teamBlock(home),
 	];
+
+	const series = seriesLine(game);
+	if (series) {
+		lines.push(series);
+	}
+
+	lines.push("", teamBlock(away), "", teamBlock(home));
 
 	if (game.clutchPlays.length > 0) {
 		lines.push(

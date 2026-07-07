@@ -2,12 +2,14 @@ import { assert, describe, test } from "vitest";
 import { buildRecapPrompt, parseRecaps } from "./gameRecap.ts";
 import type { RecapGame } from "../../worker/util/getDayGamesForRecap.ts";
 
+let nextPid = 1;
 const player = (
 	name: string,
 	pts: number,
 	extra: Record<string, number> = {},
 ) => ({
 	name,
+	pid: nextPid++,
 	min: 34,
 	pts,
 	reb: 8,
@@ -30,6 +32,7 @@ const game = (gid: number): RecapGame => ({
 	day: 7,
 	overtimes: 1,
 	winnerTid: 0,
+	playoffs: false,
 	teams: [
 		{
 			tid: 0,
@@ -65,6 +68,109 @@ describe("buildRecapPrompt", () => {
 		// Highlight, with the HTML link stripped to plain text.
 		assert.ok(prompt.includes("Star Guy hit the game-winner."), prompt);
 		assert.ok(!prompt.includes("<a href"), prompt);
+	});
+});
+
+describe("buildRecapPrompt — rich context", () => {
+	test("bakes in records, quarter scoring, last-10, averages, and playoff series", () => {
+		const rich: RecapGame = {
+			gid: 1,
+			day: 90,
+			overtimes: 0,
+			winnerTid: 0,
+			playoffs: true,
+			series: {
+				round: 2,
+				numRounds: 4,
+				homeAbbrev: "BOS",
+				awayAbbrev: "BKN",
+				homeSeed: 1,
+				awaySeed: 8,
+				homeWon: 2,
+				awayWon: 1,
+			},
+			teams: [
+				{
+					tid: 0,
+					region: "Brooklyn",
+					name: "Bagels",
+					abbrev: "BKN",
+					pts: 100,
+					record: { won: 50, lost: 32 },
+					ptsQtrs: [25, 20, 30, 25],
+					seed: 8,
+					last10: [
+						{ opp: "BOS", home: false, won: true, pts: 100, oppPts: 98 },
+					],
+					players: [
+						{
+							name: "Star",
+							pid: 1,
+							min: 38,
+							pts: 35,
+							reb: 10,
+							ast: 8,
+							stl: 2,
+							blk: 1,
+							tov: 3,
+							fg: 12,
+							fga: 22,
+							tp: 4,
+							tpa: 9,
+							ft: 7,
+							fta: 8,
+							pf: 2,
+							seasonAvg: {
+								gp: 80,
+								min: 36,
+								pts: 28,
+								reb: 8,
+								ast: 6,
+								stl: 1.5,
+								blk: 0.5,
+								tov: 2.5,
+								fgp: 47,
+								tpp: 38,
+								ftp: 85,
+							},
+							career: [
+								{
+									season: 2025,
+									gp: 70,
+									min: 34,
+									pts: 24,
+									reb: 7,
+									ast: 5,
+									stl: 1.4,
+									blk: 0.4,
+									tov: 2.3,
+									fgp: 45,
+									tpp: 36,
+									ftp: 83,
+								},
+							],
+						},
+					],
+				},
+				{
+					tid: 1,
+					region: "Boston",
+					name: "Massacre",
+					abbrev: "BOS",
+					pts: 98,
+					players: [],
+				},
+			],
+			clutchPlays: [],
+		};
+		const prompt = buildRecapPrompt([rich], "Day 90");
+		assert.ok(prompt.includes("50-32"), prompt); // season record
+		assert.ok(prompt.includes("By quarter: 25 | 20 | 30 | 25"), prompt);
+		assert.ok(prompt.includes("Last 10 (1-0)"), prompt);
+		assert.ok(prompt.includes("Season avg:"), prompt);
+		assert.ok(prompt.includes("Career by season:"), prompt);
+		assert.ok(prompt.includes("Round 2 of 4"), prompt); // playoff series
+		assert.ok(prompt.includes("#8 seed"), prompt);
 	});
 });
 

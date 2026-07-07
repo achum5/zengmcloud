@@ -25,6 +25,7 @@ export const GameRecap = ({
 	const [loadFailed, setLoadFailed] = useState(false);
 
 	const [copied, setCopied] = useState(false);
+	const [pasted, setPasted] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [result, setResult] = useState<string | undefined>();
 	const [manual, setManual] = useState<string | undefined>();
@@ -99,19 +100,17 @@ export const GameRecap = ({
 				);
 				return;
 			}
-			let placed = 0;
 			for (const [gid, note] of recaps) {
 				await toWorker("main", "setNote", {
 					type: "game",
 					gid,
 					editedNote: note,
 				});
-				placed += 1;
 			}
 			setManual(undefined);
-			setResult(
-				`Filed ${placed} recap${placed === 1 ? "" : "s"} — open a game's box score to read it.`,
-			);
+			// Confirm on the Paste button (no words), matching Copy.
+			setPasted(true);
+			globalThis.setTimeout(() => setPasted(false), 3000);
 		} catch (error) {
 			console.error("Failed to file recaps", error);
 			setResult("Something went wrong filing the recaps.");
@@ -169,40 +168,58 @@ export const GameRecap = ({
 	};
 
 	const arrow = <span className="text-body-secondary">›</span>;
+	// Fixed width so swapping a label for a ✓ / spinner never resizes the button.
+	const btnStyle = { width: 76 } as const;
 
 	return (
 		<div className="card mb-3" style={{ maxWidth: 700 }}>
 			<div className="card-body">
-				<h2 className="card-title h5">Game Recap</h2>
-				<p className="text-body-secondary small mb-3">
-					AI write-ups for every completed game on this day.
-				</p>
-
 				<div className="d-flex flex-wrap align-items-center gap-2">
-					<button className="btn btn-primary" disabled={busy} onClick={copy}>
-						{copied ? "✓ Copied" : "Copy"}
+					<button
+						className={`btn ${copied ? "btn-success" : "btn-primary"}`}
+						style={btnStyle}
+						disabled={busy}
+						onClick={copy}
+						title="Copy AI prompt"
+					>
+						{copied ? "✓" : "Copy"}
 					</button>
 					{arrow}
 					<a
 						className="btn btn-light-bordered"
+						style={btnStyle}
 						href="https://claude.ai/new"
 						target="_blank"
 						rel="noopener noreferrer"
 						onClick={openClaude}
+						title="Open Claude"
 					>
 						Claude
 					</a>
 					{arrow}
-					<button className="btn btn-primary" disabled={busy} onClick={paste}>
-						{busy ? "Pasting…" : "Paste"}
+					<button
+						className={`btn ${pasted ? "btn-success" : "btn-primary"}`}
+						style={btnStyle}
+						disabled={busy}
+						onClick={paste}
+						title="Paste AI reply"
+					>
+						{busy ? (
+							<span
+								className="spinner-border spinner-border-sm"
+								role="status"
+								aria-hidden="true"
+							/>
+						) : pasted ? (
+							"✓"
+						) : (
+							"Paste"
+						)}
 					</button>
 				</div>
 
 				{copyFallback !== undefined ? (
 					<div className="mt-3">
-						<div className="form-text mb-1">
-							Couldn't copy automatically — select all and copy this:
-						</div>
 						<textarea
 							className="form-control"
 							rows={4}
@@ -215,13 +232,10 @@ export const GameRecap = ({
 
 				{manual !== undefined ? (
 					<div className="mt-3">
-						<div className="form-text mb-1">
-							Paste the AI's reply here — it files automatically.
-						</div>
 						<textarea
 							className="form-control"
 							rows={6}
-							placeholder="Paste the AI's full reply here…"
+							placeholder="Paste the AI's reply here…"
 							value={manual}
 							onChange={(event) => setManual(event.target.value)}
 							onPaste={(event) => {
@@ -232,18 +246,13 @@ export const GameRecap = ({
 								}
 							}}
 						/>
-						<button
-							className="btn btn-primary btn-sm mt-2"
-							disabled={busy || manual.trim() === ""}
-							onClick={() => fileRecaps(manual)}
-						>
-							{busy ? "Filing…" : "File recaps"}
-						</button>
 					</div>
 				) : null}
 
 				{result ? (
-					<div className="alert alert-info mt-3 mb-0">{result}</div>
+					<div className="alert alert-warning mt-3 mb-0 py-2 small">
+						{result}
+					</div>
 				) : null}
 			</div>
 		</div>
