@@ -121,7 +121,7 @@ const buildPhaseChangeNotifications = async (
 			break;
 		case PHASE.REGULAR_SEASON:
 			title = `The ${season} season is underway!`;
-			body = "Games are being played.";
+			body = "";
 			break;
 		default:
 			body = "The league advanced.";
@@ -290,6 +290,22 @@ const buildSimNotifications = async (
 	const teams = await idb.cache.teams.getAll();
 	const teamById = new Map(teams.map((t) => [t.tid, t]));
 
+	// " (25-12)" - a team's season record (post-sim), or "" if unavailable.
+	const recordParen = async (recTid: number): Promise<string> => {
+		try {
+			const teamSeason = await idb.cache.teamSeasons.indexGet(
+				"teamSeasonsBySeasonTid",
+				[season, recTid],
+			);
+			if (teamSeason) {
+				return ` (${teamSeason.won}-${teamSeason.lost})`;
+			}
+		} catch {
+			// The record is a nicety, not essential.
+		}
+		return "";
+	};
+
 	const notifications: SyncNotification[] = [];
 	for (const tid of userTids) {
 		const team = teamById.get(tid);
@@ -346,7 +362,9 @@ const buildSimNotifications = async (
 			const game = teamGames[0]!;
 			const winner = teamById.get(game.won.tid);
 			const loser = teamById.get(game.lost.tid);
-			title = `${headlineName(winner)} ${game.won.pts}, ${headlineName(loser)} ${game.lost.pts}`;
+			const winnerRec = await recordParen(game.won.tid);
+			const loserRec = await recordParen(game.lost.tid);
+			title = `${headlineName(winner)}${winnerRec} ${game.won.pts}, ${headlineName(loser)}${loserRec} ${game.lost.pts}`;
 
 			if (abbrev) {
 				path = `game_log/${abbrev}/${season}/${game.gid}`;

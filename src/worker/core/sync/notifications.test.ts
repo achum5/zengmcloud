@@ -164,6 +164,25 @@ describe("buildNotifications", () => {
 		assert.ok(body.includes("BOS Opp Ace: 25 PTS, 5 REB, 5 AST"), body);
 	});
 
+	test("single-game headline shows each team's record in parentheses", async () => {
+		await resetCache({
+			teams: [
+				{ tid: 0, region: "LA", name: "Lakers", abbrev: "LAL" },
+				{ tid: 1, region: "Boston", name: "Celtics", abbrev: "BOS" },
+			],
+			teamSeasons: [
+				{ rid: 0, season: 2026, tid: 0, won: 5, lost: 2 },
+				{ rid: 1, season: 2026, tid: 1, won: 3, lost: 4 },
+			],
+		});
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{ changes: [gameWithBoxScore()] },
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Lakers (5-2) 110, Celtics (3-4) 86");
+	});
+
 	test("team with no game still gets a targeted 'league advanced' notice", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.day",
