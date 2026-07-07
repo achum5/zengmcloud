@@ -3,27 +3,35 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { useLocal } from "../util/local.ts";
 import {
 	autoPlayScheduler,
+	newRule,
 	type AutoPlayAmount,
 	type AutoPlaySettings,
 	type AutoPlayState,
+	type ScheduleRule,
 } from "../util/autoPlayScheduler.ts";
+
+const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 const formatCountdown = (ms: number) => {
 	if (ms <= 0) {
 		return "now";
 	}
-	const totalSeconds = Math.round(ms / 1000);
-	const m = Math.floor(totalSeconds / 60);
-	const s = totalSeconds % 60;
-	return `${m}:${s.toString().padStart(2, "0")}`;
+	const s = Math.round(ms / 1000);
+	const days = Math.floor(s / 86400);
+	const h = Math.floor((s % 86400) / 3600);
+	const m = Math.floor((s % 3600) / 60);
+	const sec = s % 60;
+	if (days > 0) {
+		return `${days}d ${h}h`;
+	}
+	if (h > 0) {
+		return `${h}h ${m}m`;
+	}
+	return `${m}:${sec.toString().padStart(2, "0")}`;
 };
 
-const formatTime = (ts: number | undefined) => {
-	if (ts === undefined) {
-		return "Never";
-	}
-	return new Date(ts).toLocaleTimeString();
-};
+const formatTime = (ts: number | undefined) =>
+	ts === undefined ? "-" : new Date(ts).toLocaleString();
 
 const AutoPlaySchedule = () => {
 	useTitleBar({ title: "Auto Play Scheduler" });
@@ -35,14 +43,12 @@ const AutoPlaySchedule = () => {
 	);
 	const [state, setState] = useState<AutoPlayState>(autoPlayScheduler.state);
 
-	// Load this league's saved settings and subscribe to scheduler updates.
 	useEffect(() => {
 		if (typeof lid === "number") {
 			autoPlayScheduler.loadForLeague(lid);
 		}
 		setSettings({ ...autoPlayScheduler.settings });
 		setState({ ...autoPlayScheduler.state });
-
 		const unsub = autoPlayScheduler.subscribe((s, st) => {
 			setSettings({ ...s });
 			setState({ ...st });
@@ -50,135 +56,241 @@ const AutoPlaySchedule = () => {
 		return unsub;
 	}, [lid]);
 
-	// Tick a local clock once per second so the countdown stays live.
+	// Live countdown clock.
 	const [, setNow] = useState(0);
 	useEffect(() => {
-		const id = setInterval(() => {
-			setNow((n) => n + 1);
-		}, 1000);
-		return () => {
-			clearInterval(id);
-		};
+		const id = setInterval(() => setNow((n) => n + 1), 1000);
+		return () => clearInterval(id);
 	}, []);
 
-	const update = (partial: Partial<AutoPlaySettings>) => {
+	const update = (partial: Partial<AutoPlaySettings>) =>
 		autoPlayScheduler.updateSettings(partial);
-	};
+
+	const setRule = (id: string, patch: Partial<ScheduleRule>) =>
+		autoPlayScheduler.setRules(
+			settings.rules.map((r) => (r.id === id ? { ...r, ...patch } : r)),
+		);
+	const addRule = () =>
+		autoPlayScheduler.setRules([...settings.rules, newRule()]);
+	const removeRule = (id: string) =>
+		autoPlayScheduler.setRules(settings.rules.filter((r) => r.id !== id));
 
 	const countdownMs =
 		state.nextRunAt !== undefined ? state.nextRunAt - Date.now() : undefined;
 
 	return (
 		<>
-			<p>
-				Automatically sim on a schedule - one step every so many minutes - so
-				your league keeps moving without anyone clicking Play. This runs in this
-				browser tab, so keep it open on a device that stays awake.
-			</p>
-
-			<div className="row" style={{ maxWidth: 700 }}>
-				<div className="col-sm-6 mb-3">
-					<label className="form-label" htmlFor="autoplay-interval">
-						Sim every (minutes)
-					</label>
-					<input
-						id="autoplay-interval"
-						type="number"
-						min={1}
-						className="form-control"
-						value={settings.intervalMinutes}
-						onChange={(event) => {
-							const value = Number.parseInt(event.target.value);
-							update({
-								intervalMinutes: Number.isNaN(value) || value < 1 ? 1 : value,
-							});
-						}}
-					/>
-				</div>
-
-				<div className="col-sm-6 mb-3">
-					<label className="form-label" htmlFor="autoplay-amount">
-						How much to sim each time
-					</label>
-					<select
-						id="autoplay-amount"
-						className="form-select"
-						value={settings.amount}
-						onChange={(event) => {
-							update({ amount: event.target.value as AutoPlayAmount });
-						}}
-					>
-						<option value="day">One day</option>
-						<option value="week">One week</option>
-						<option value="month">One month</option>
-					</select>
-				</div>
-			</div>
-
-			<div className="form-check mb-2">
-				<input
-					id="autoplay-pause-phase"
-					type="checkbox"
-					className="form-check-input"
-					checked={settings.pauseAtPhaseBoundaries}
-					onChange={(event) => {
-						update({ pauseAtPhaseBoundaries: event.target.checked });
-					}}
-				/>
-				<label className="form-check-label" htmlFor="autoplay-pause-phase">
-					Pause when a human decision is needed (draft, re-signing, etc.)
-				</label>
-			</div>
-
-			<div className="form-check mb-3">
-				<input
-					id="autoplay-keep-awake"
-					type="checkbox"
-					className="form-check-input"
-					checked={settings.keepAwake}
-					onChange={(event) => {
-						update({ keepAwake: event.target.checked });
-					}}
-				/>
-				<label className="form-check-label" htmlFor="autoplay-keep-awake">
-					Try to keep the screen awake while running
-				</label>
-			</div>
-
 			<div className="d-flex gap-2 mb-3">
 				{state.running ? (
 					<button
 						className="btn btn-danger"
-						onClick={() => {
-							autoPlayScheduler.stop("Turned off");
-						}}
+						onClick={() => autoPlayScheduler.stop("Turned off")}
 					>
-						Stop auto play
+						Stop
 					</button>
 				) : (
 					<button
 						className="btn btn-primary"
-						onClick={() => {
-							autoPlayScheduler.start();
-						}}
+						onClick={() => autoPlayScheduler.start()}
 					>
-						Start auto play
+						Start
 					</button>
 				)}
 				<button
 					className="btn btn-light-bordered"
-					onClick={() => {
-						void autoPlayScheduler.runNow();
-					}}
+					onClick={() => void autoPlayScheduler.runNow("day")}
 				>
-					Sim now
+					Sim day now
 				</button>
 			</div>
 
-			<div className="card" style={{ maxWidth: 700 }}>
-				<div className="card-body">
-					<h3 className="card-title h5">Status</h3>
-					<table className="table table-nonfluid mb-0">
+			<div className="form-check">
+				<input
+					id="ap-pause"
+					type="checkbox"
+					className="form-check-input"
+					checked={settings.pauseAtPhaseBoundaries}
+					onChange={(e) => update({ pauseAtPhaseBoundaries: e.target.checked })}
+				/>
+				<label className="form-check-label" htmlFor="ap-pause">
+					Pause at human-decision phases
+				</label>
+			</div>
+			<div className="form-check mb-3">
+				<input
+					id="ap-awake"
+					type="checkbox"
+					className="form-check-input"
+					checked={settings.keepAwake}
+					onChange={(e) => update({ keepAwake: e.target.checked })}
+				/>
+				<label className="form-check-label" htmlFor="ap-awake">
+					Keep screen awake
+				</label>
+			</div>
+
+			{settings.rules.map((rule) => (
+				<div
+					key={rule.id}
+					className="card mb-2"
+					style={{ maxWidth: 760 }}
+				>
+					<div className="card-body py-2">
+						<div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+							<div className="form-check mb-0">
+								<input
+									id={`en-${rule.id}`}
+									type="checkbox"
+									className="form-check-input"
+									checked={rule.enabled}
+									onChange={(e) => setRule(rule.id, { enabled: e.target.checked })}
+								/>
+								<label className="form-check-label" htmlFor={`en-${rule.id}`} />
+							</div>
+
+							<div className="btn-group btn-group-sm" role="group">
+								{DOW.map((label, d) => {
+									const on = rule.days.includes(d);
+									return (
+										<button
+											key={d}
+											type="button"
+											className={`btn ${on ? "btn-primary" : "btn-light-bordered"}`}
+											onClick={() =>
+												setRule(rule.id, {
+													days: on
+														? rule.days.filter((x) => x !== d)
+														: [...rule.days, d].sort((a, b) => a - b),
+												})
+											}
+										>
+											{label}
+										</button>
+									);
+								})}
+							</div>
+
+							<select
+								className="form-select form-select-sm"
+								style={{ width: "auto" }}
+								value={rule.mode}
+								onChange={(e) =>
+									setRule(rule.id, { mode: e.target.value as ScheduleRule["mode"] })
+								}
+							>
+								<option value="every">Every</option>
+								<option value="at">At times</option>
+							</select>
+
+							<select
+								className="form-select form-select-sm"
+								style={{ width: "auto" }}
+								value={rule.amount}
+								onChange={(e) =>
+									setRule(rule.id, { amount: e.target.value as AutoPlayAmount })
+								}
+							>
+								<option value="day">day</option>
+								<option value="week">week</option>
+								<option value="month">month</option>
+							</select>
+
+							<button
+								type="button"
+								className="btn btn-sm btn-light-bordered ms-auto"
+								onClick={() => removeRule(rule.id)}
+								title="Remove rule"
+							>
+								×
+							</button>
+						</div>
+
+						{rule.mode === "every" ? (
+							<div className="d-flex flex-wrap align-items-center gap-2">
+								<input
+									type="number"
+									min={1}
+									className="form-control form-control-sm"
+									style={{ width: 80 }}
+									value={rule.everyMinutes}
+									onChange={(e) => {
+										const v = Number.parseInt(e.target.value);
+										setRule(rule.id, {
+											everyMinutes: Number.isNaN(v) || v < 1 ? 1 : v,
+										});
+									}}
+								/>
+								<span className="text-body-secondary">min, between</span>
+								<input
+									type="time"
+									className="form-control form-control-sm"
+									style={{ width: "auto" }}
+									value={rule.start}
+									onChange={(e) => setRule(rule.id, { start: e.target.value })}
+								/>
+								<span className="text-body-secondary">and</span>
+								<input
+									type="time"
+									className="form-control form-control-sm"
+									style={{ width: "auto" }}
+									value={rule.end}
+									onChange={(e) => setRule(rule.id, { end: e.target.value })}
+								/>
+							</div>
+						) : (
+							<div className="d-flex flex-wrap align-items-center gap-2">
+								{rule.times.map((t, i) => (
+									<div
+										key={i}
+										className="d-flex align-items-center gap-1"
+									>
+										<input
+											type="time"
+											className="form-control form-control-sm"
+											style={{ width: "auto" }}
+											value={t}
+											onChange={(e) => {
+												const times = [...rule.times];
+												times[i] = e.target.value;
+												setRule(rule.id, { times });
+											}}
+										/>
+										<button
+											type="button"
+											className="btn btn-sm btn-light-bordered"
+											onClick={() =>
+												setRule(rule.id, {
+													times: rule.times.filter((_, x) => x !== i),
+												})
+											}
+											title="Remove time"
+										>
+											×
+										</button>
+									</div>
+								))}
+								<button
+									type="button"
+									className="btn btn-sm btn-light-bordered"
+									onClick={() =>
+										setRule(rule.id, { times: [...rule.times, "12:00"] })
+									}
+								>
+									+ time
+								</button>
+							</div>
+						)}
+					</div>
+				</div>
+			))}
+
+			<button className="btn btn-light-bordered btn-sm mb-3" onClick={addRule}>
+				+ Add rule
+			</button>
+
+			<div className="card" style={{ maxWidth: 760 }}>
+				<div className="card-body py-2">
+					<table className="table table-nonfluid table-sm mb-0">
 						<tbody>
 							<tr>
 								<th>State</th>
@@ -191,10 +303,14 @@ const AutoPlaySchedule = () => {
 								</td>
 							</tr>
 							<tr>
-								<th>Next sim in</th>
+								<th>Next sim</th>
 								<td>
-									{state.running && countdownMs !== undefined
-										? formatCountdown(countdownMs)
+									{state.running && state.nextRunAt !== undefined
+										? `${formatTime(state.nextRunAt)}${
+												countdownMs !== undefined
+													? ` (${formatCountdown(countdownMs)})`
+													: ""
+											}`
 										: "-"}
 								</td>
 							</tr>
@@ -207,13 +323,13 @@ const AutoPlaySchedule = () => {
 								<td>{state.runCount}</td>
 							</tr>
 							<tr>
-								<th>Current phase</th>
+								<th>Phase</th>
 								<td>{phaseText || "-"}</td>
 							</tr>
 						</tbody>
 					</table>
 					{state.pausedReason ? (
-						<div className="alert alert-warning mt-3 mb-0">
+						<div className="alert alert-warning mt-2 mb-0 py-2 small">
 							{state.pausedReason}
 						</div>
 					) : null}
