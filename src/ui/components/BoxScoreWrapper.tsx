@@ -154,6 +154,18 @@ const TeamNameAndScore = ({
 							{boxScore.exhibition ? t.abbrev : t.name}
 						</span>
 						<span className="d-inline d-sm-none">{t.abbrev}</span>
+						{t.won !== undefined && t.lost !== undefined ? (
+							// On desktop the record shows under the big logo (hidden below
+							// lg), so surface it here - directly under the team name, in
+							// small muted text with tight line height so it adds almost no
+							// vertical space.
+							<div
+								className="text-body-secondary fw-normal lh-1 d-lg-none"
+								style={{ fontSize: "0.75rem", marginTop: -2 }}
+							>
+								{helpers.formatRecord(t)}
+							</div>
+						) : null}
 					</div>
 				</TeamNameLink>
 				{t.timeouts !== undefined && STARTING_NUM_TIMEOUTS !== undefined ? (
@@ -175,13 +187,6 @@ const TeamNameAndScore = ({
 			<div>&nbsp;{t.pts}</div>
 			{shootout ? (
 				<div className="text-body-secondary">&nbsp;({t.sPts})</div>
-			) : null}
-			{t.won !== undefined && t.lost !== undefined ? (
-				// The record otherwise only shows under the big logo, which is hidden
-				// below the lg breakpoint - so surface it inline here on smaller screens.
-				<div className="text-body-secondary align-self-center ms-2 fs-6 d-lg-none">
-					{helpers.formatRecord(t)}
-				</div>
 			) : null}
 		</div>
 	);
