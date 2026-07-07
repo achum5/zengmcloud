@@ -181,12 +181,22 @@ export const GameRecap = ({
 
 				{manual !== undefined ? (
 					<div className="mt-3">
+						<div className="form-text mb-1">
+							Paste the AI's reply here — it files automatically.
+						</div>
 						<textarea
 							className="form-control"
 							rows={6}
 							placeholder="Paste the AI's full reply here…"
 							value={manual}
 							onChange={(event) => setManual(event.target.value)}
+							onPaste={(event) => {
+								// File the moment content is pasted, so there's no extra tap.
+								const text = event.clipboardData.getData("text");
+								if (text && text.trim() !== "") {
+									void fileRecaps(text);
+								}
+							}}
 						/>
 						<button
 							className="btn btn-primary btn-sm mt-2"
