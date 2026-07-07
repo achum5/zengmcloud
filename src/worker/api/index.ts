@@ -95,6 +95,7 @@ import {
 	resyncSharedLeague,
 } from "../core/sync/index.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
+import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
 import { PointsFormulaEvaluator } from "../core/team/evaluatePointsFormula.ts";
 import type { Settings } from "../views/settings.ts";
@@ -5327,6 +5328,7 @@ export default {
 		getRandomTeams,
 		getSavedTrade,
 		getDayGamesForRecap,
+		getSeasonRecapData,
 		getSyncActivity,
 		getSyncStatus,
 		getSyncTeams,

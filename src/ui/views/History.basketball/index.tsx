@@ -1,5 +1,6 @@
 import { MoreLinks } from "../../components/MoreLinks.tsx";
 import { RetiredPlayers } from "../../components/RetiredPlayers.tsx";
+import { SeasonRecap } from "../../components/SeasonRecap.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import AwardsAndChamp from "./AwardsAndChamp.tsx";
 import Team from "./Team.tsx";
@@ -84,6 +85,18 @@ const History = (props: View<"history">) => {
 						userTid={userTid}
 					/>
 				</div>
+			</div>
+
+			<div className="mt-1">
+				<h2 className="h5">Team Recaps (AI)</h2>
+				<p className="text-body-secondary mb-2">
+					Bake every team's {season} season — records, key players, franchise
+					history, and the moves that built each roster — into one AI prompt.
+					Paste the reply to file a recap on each team's{" "}
+					<b>{season} Team Note</b>. Best run right after the playoffs, before
+					the draft.
+				</p>
+				<SeasonRecap season={season} />
 			</div>
 		</>
 	);
