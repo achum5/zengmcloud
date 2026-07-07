@@ -53,6 +53,20 @@ export type RecapPlayer = {
 	seasonAvg?: RecapAverages;
 	playoffAvg?: RecapAverages;
 	career?: RecapCareerSeason[];
+	// Set when a player who PLAYED was hurt this game or played through an injury.
+	injury?: {
+		type: string;
+		gamesRemaining: number;
+		newThisGame?: boolean;
+		playingThrough?: boolean;
+	};
+};
+
+// A player who did NOT play because of injury (the game's inactives).
+export type RecapInjuryOut = {
+	name: string;
+	type: string;
+	gamesRemaining: number;
 };
 
 export type RecapLast10Game = {
@@ -76,6 +90,8 @@ export type RecapTeam = {
 	last10?: RecapLast10Game[];
 	// Win/loss streak AS OF this game (includes this game's result).
 	streak?: { won: boolean; count: number };
+	// Players held out of this game due to injury.
+	injuries?: RecapInjuryOut[];
 	seed?: number;
 };
 
@@ -414,9 +430,23 @@ export const getDayGamesForRecap = async ({
 				[season, t.tid],
 			);
 
+			const allPlayers = Array.isArray(t.players) ? t.players : [];
+
+			// Players who missed the game due to injury (the inactives).
+			const injuries: RecapInjuryOut[] = allPlayers
+				.filter(
+					(p: any) =>
+						(p?.min ?? 0) === 0 && p?.injury && p.injury.gamesRemaining > 0,
+				)
+				.map((p: any) => ({
+					name: String(p?.name ?? "Unknown"),
+					type: String(p.injury.type ?? "injury"),
+					gamesRemaining: p.injury.gamesRemaining ?? 0,
+				}));
+
 			// Rank players by scoring so we only pull full career context for the
 			// team's top handful (keeps the prompt rich but not enormous).
-			const played = (t.players ?? []).filter((p: any) => (p?.min ?? 0) > 0);
+			const played = allPlayers.filter((p: any) => (p?.min ?? 0) > 0);
 			const topByPts = new Set(
 				[...played]
 					.sort((a: any, b: any) => (b?.pts ?? 0) - (a?.pts ?? 0))
@@ -444,6 +474,15 @@ export const getDayGamesForRecap = async ({
 					fta: p?.fta ?? 0,
 					pf: p?.pf ?? 0,
 					pm: typeof p?.pm === "number" ? p.pm : undefined,
+					injury:
+						p?.injury && (p.injury.newThisGame || p.injury.playingThrough)
+							? {
+									type: String(p.injury.type ?? "injury"),
+									gamesRemaining: p.injury.gamesRemaining ?? 0,
+									newThisGame: !!p.injury.newThisGame,
+									playingThrough: !!p.injury.playingThrough,
+								}
+							: undefined,
 				};
 
 				const full =
@@ -484,6 +523,7 @@ export const getDayGamesForRecap = async ({
 				ptsQtrs: Array.isArray(t.ptsQtrs) ? t.ptsQtrs : undefined,
 				last10: await last10For(t.tid, game.day ?? day),
 				streak: streakFor(t.tid, game.day ?? day),
+				injuries: injuries.length > 0 ? injuries : undefined,
 				seed: playoffs ? seedOf(t.tid) : undefined,
 			});
 		}

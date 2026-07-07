@@ -10,7 +10,7 @@ import type {
 // logic below.
 const INSTRUCTIONS = `You are an expert basketball beat writer. Write a lively, ESPN-style recap for EACH game listed below.
 
-You are given far more data than you need — box scores, season and career averages, team records, quarter-by-quarter scoring, each team's last 10 games, and (in the playoffs) the series and bracket state. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, playoff stakes and series context. Do NOT list the raw data back.
+You are given far more data than you need — box scores, season and career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), and (in the playoffs) the series and bracket state. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. Do NOT list the raw data back.
 
 Follow these rules EXACTLY:
 - Reply in GitHub-flavored Markdown only. No preamble, no closing summary, no text outside the per-game recaps.
@@ -29,9 +29,22 @@ const stripHtml = (s: string): string =>
 const avg = (a: RecapAverages): string =>
 	`${a.pts}/${a.reb}/${a.ast} on ${a.fgp}% FG, ${a.tpp}% 3P, ${a.ftp}% FT (${a.stl} STL, ${a.blk} BLK, ${a.tov} TO, ${a.min} MPG over ${a.gp} G)`;
 
+const injuryTag = (p: RecapPlayer): string => {
+	if (!p.injury) {
+		return "";
+	}
+	if (p.injury.newThisGame) {
+		return ` [left injured: ${p.injury.type}, out ~${p.injury.gamesRemaining}]`;
+	}
+	if (p.injury.playingThrough) {
+		return ` [played through: ${p.injury.type}]`;
+	}
+	return "";
+};
+
 const playerLine = (p: RecapPlayer): string => {
 	const lines = [
-		`- ${p.name}: ${p.pts} PTS, ${p.reb} REB, ${p.ast} AST, ${p.stl} STL, ${p.blk} BLK, ${p.tov} TO (${p.fg}/${p.fga} FG, ${p.tp}/${p.tpa} 3P, ${p.ft}/${p.fta} FT, ${p.min} min)`,
+		`- ${p.name}: ${p.pts} PTS, ${p.reb} REB, ${p.ast} AST, ${p.stl} STL, ${p.blk} BLK, ${p.tov} TO (${p.fg}/${p.fga} FG, ${p.tp}/${p.tpa} 3P, ${p.ft}/${p.fta} FT, ${p.min} min)${injuryTag(p)}`,
 	];
 	if (p.seasonAvg) {
 		lines.push(`    · Season avg: ${avg(p.seasonAvg)}`);
@@ -98,6 +111,13 @@ const teamBlock = (t: RecapTeam): string => {
 	const l10 = last10Line(t);
 	if (l10) {
 		lines.push(l10);
+	}
+	if (t.injuries && t.injuries.length > 0) {
+		lines.push(
+			`Out (injury): ${t.injuries
+				.map((i) => `${i.name} (${i.type}, ~${i.gamesRemaining} out)`)
+				.join(", ")}`,
+		);
 	}
 	lines.push(...t.players.map(playerLine));
 	return lines.join("\n");

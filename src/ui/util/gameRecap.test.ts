@@ -99,6 +99,9 @@ describe("buildRecapPrompt — rich context", () => {
 					record: { won: 50, lost: 32 },
 					ptsQtrs: [25, 20, 30, 25],
 					streak: { won: true, count: 3 },
+					injuries: [
+						{ name: "Hurt Guy", type: "Sprained Ankle", gamesRemaining: 4 },
+					],
 					seed: 8,
 					last10: [
 						{ opp: "BOS", home: false, won: true, pts: 100, oppPts: 98 },
@@ -175,6 +178,7 @@ describe("buildRecapPrompt — rich context", () => {
 		assert.ok(prompt.includes("2025 (BKN, age 27)"), prompt); // team + age
 		assert.ok(prompt.includes("Round 2 of 4"), prompt); // playoff series
 		assert.ok(prompt.includes("#8 seed"), prompt);
+		assert.ok(prompt.includes("Out (injury): Hurt Guy"), prompt); // injuries
 	});
 });
 

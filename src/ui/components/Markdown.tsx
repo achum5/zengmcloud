@@ -21,12 +21,23 @@ const renderInline = (text: string, keyPrefix: string): ReactNode[] => {
 		re: RegExp;
 		node: (m: RegExpExecArray, key: string) => ReactNode;
 	}[] = [
-		{ re: /\*\*([^*]+)\*\*/, node: (m, k) => <strong key={k}>{m[1]}</strong> },
-		{ re: /__([^_]+)__/, node: (m, k) => <strong key={k}>{m[1]}</strong> },
-		{ re: /\*([^*]+)\*/, node: (m, k) => <em key={k}>{m[1]}</em> },
+		// Bold/italic recurse so nested formatting AND links (e.g. an auto-linked
+		// player name inside a **bold headline**) render, not as literal markup.
+		{
+			re: /\*\*([^*]+)\*\*/,
+			node: (m, k) => <strong key={k}>{renderInline(m[1]!, k)}</strong>,
+		},
+		{
+			re: /__([^_]+)__/,
+			node: (m, k) => <strong key={k}>{renderInline(m[1]!, k)}</strong>,
+		},
+		{
+			re: /\*([^*]+)\*/,
+			node: (m, k) => <em key={k}>{renderInline(m[1]!, k)}</em>,
+		},
 		{
 			re: /(?<![\dA-Za-z])_([^_]+)_(?![\dA-Za-z])/,
-			node: (m, k) => <em key={k}>{m[1]}</em>,
+			node: (m, k) => <em key={k}>{renderInline(m[1]!, k)}</em>,
 		},
 		{ re: /`([^`]+)`/, node: (m, k) => <code key={k}>{m[1]}</code> },
 		{

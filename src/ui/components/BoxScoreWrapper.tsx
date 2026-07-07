@@ -15,6 +15,7 @@ import { range } from "../../common/utils.ts";
 import getWinner from "../../common/getWinner.ts";
 import { OverlayTrigger, Popover } from "react-bootstrap";
 import Note from "../views/Player/Note.tsx";
+import { buildRecapLinks } from "../util/linkifyRecap.ts";
 import { TeamLogoInline } from "./TeamLogoInline.tsx";
 import { useKeyboardShortcuts } from "../util/keyboardShortcuts.ts";
 import { gradientStyleFactory } from "../util/gradientStyleFactory.ts";
@@ -1233,6 +1234,7 @@ export const BoxScoreWrapper = ({
 							gid: boxScore.gid,
 						}}
 						infoLink
+						autoLink={buildRecapLinks(boxScore)}
 					/>
 				</div>
 			)}

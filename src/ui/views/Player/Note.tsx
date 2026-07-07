@@ -3,6 +3,7 @@ import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import clsx from "clsx";
 import { Markdown } from "../../components/Markdown.tsx";
+import { linkifyRecap, type RecapLink } from "../../util/linkifyRecap.ts";
 
 const MAX_WIDTH = 600;
 
@@ -33,6 +34,8 @@ const Note = (
 				info: NoteInfo;
 				infoLink?: boolean;
 				xs?: boolean;
+				// For game notes (AI recaps): names to auto-link, scoped to the game.
+				autoLink?: RecapLink[];
 		  }
 		| {
 				initialNote?: undefined;
@@ -40,9 +43,10 @@ const Note = (
 				info: NoteInfo;
 				infoLink?: boolean;
 				xs?: boolean;
+				autoLink?: RecapLink[];
 		  },
 ) => {
-	const { initialNote, note, info, infoLink, xs } = props;
+	const { initialNote, note, info, infoLink, xs, autoLink } = props;
 
 	const [editing, setEditing] = useState(false);
 	const [editedNote, setEditedNote] = useState(initialNote ?? note ?? "");
@@ -124,8 +128,14 @@ const Note = (
 				style={{ maxHeight: 300, maxWidth: MAX_WIDTH }}
 			>
 				{info.type === "game" ? (
-					// Game notes double as AI recaps, which are written in markdown.
-					<Markdown>{noteToShow}</Markdown>
+					// Game notes double as AI recaps (markdown). Auto-link team/player
+					// names to their pages, scoped to this game's two rosters. Applied
+					// only to the rendered view - the stored/edited text stays plain.
+					<Markdown>
+						{autoLink && autoLink.length > 0
+							? linkifyRecap(noteToShow, autoLink)
+							: noteToShow}
+					</Markdown>
 				) : (
 					<div style={{ whiteSpace: "pre-line" }}>{noteToShow}</div>
 				)}
