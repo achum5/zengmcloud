@@ -209,7 +209,10 @@ export const getSeasonRecapData = async (
 			],
 			stats: ["pts", "oppPts", "gp"],
 			season,
-			addDummySeason: true,
+			// Do NOT add dummy seasons - that would include teams that weren't active
+			// this season (not yet expanded, contracted, disabled), each showing up
+			// with an empty 0-0 record. Only teams with a real teamSeason for this
+			// year are returned.
 		},
 		"noCopyCache",
 	);
@@ -263,6 +266,11 @@ export const getSeasonRecapData = async (
 
 	for (const t of teamsPlus) {
 		const sa = t.seasonAttrs;
+		// Guard: skip any team that wasn't actually active this season (no real
+		// season row, so no name/record to write about).
+		if (!sa || (sa.region === undefined && sa.name === undefined)) {
+			continue;
+		}
 		const tid = t.tid;
 		const teamInfo = {
 			tid,
