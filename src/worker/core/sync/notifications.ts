@@ -456,12 +456,18 @@ const describeSigning = (
 	changeset: Changeset,
 	teamById: Map<number, TeamInfo>,
 ): SyncNotification | undefined => {
-	// A trade also just moves a player onto a team, so a one-sided trade ("traded
-	// nothing for X") can look exactly like a signing. If the changeset carries a
-	// trade event, it's a trade - let describeTrade handle it, never a signing.
-	if (
-		changesToValues(changeset, "events").some((e) => e && e.type === "trade")
-	) {
+	// A genuine signing logs a freeAgent/reSigned event alongside the player
+	// write. Without one, a lone player record change is just an EDIT (God Mode,
+	// a ratings tweak, a face change, a note/watch toggle) - which must NOT push.
+	// This is also what separates a signing from a one-sided trade.
+	const events = changesToValues(changeset, "events");
+	if (events.some((e) => e && e.type === "trade")) {
+		return undefined;
+	}
+	const signed = events.some(
+		(e) => e && (e.type === "freeAgent" || e.type === "reSigned"),
+	);
+	if (!signed) {
 		return undefined;
 	}
 

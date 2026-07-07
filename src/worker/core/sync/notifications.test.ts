@@ -320,6 +320,13 @@ describe("buildNotifications", () => {
 		assert.ok(body.includes("Boston Celtics"), body);
 	});
 
+	const freeAgentEvent: Changeset["changes"][number] = {
+		store: "events",
+		id: 1,
+		type: "put",
+		value: { type: "freeAgent" },
+	};
+
 	test("single free-agent signing → contract terms", async () => {
 		// beforeEach sets season 2026; 2026..2028 = 3 years, 15000/yr (thousands)
 		// => $45M total.
@@ -327,6 +334,7 @@ describe("buildNotifications", () => {
 			"main.signFreeAgent",
 			{
 				changes: [
+					freeAgentEvent,
 					namedPlayer(1, 0, "New", "Guy", 80, {
 						contract: { amount: 15000, exp: 2028 },
 					}),
@@ -340,6 +348,23 @@ describe("buildNotifications", () => {
 			notifs[0]!.body,
 		);
 		assert.ok(notifs[0]!.body.includes("3-year, $45M"), notifs[0]!.body);
+	});
+
+	test("editing a player (no signing event) sends no notification", async () => {
+		// A God Mode edit rewrites the whole player record - same team, same
+		// contract - which must not read as a signing.
+		const notifs = await buildNotifications(
+			"main.upsertCustomizedPlayer",
+			{
+				changes: [
+					namedPlayer(1, 0, "Trey", "Murphy", 67, {
+						contract: { amount: 28000, exp: 2030 },
+					}),
+				],
+			},
+			opts,
+		);
+		assert.deepEqual(notifs, []);
 	});
 
 	test("draft picks → 'With the Nth pick...' per selection", async () => {
@@ -400,6 +425,7 @@ describe("buildNotifications", () => {
 			"main.signFreeAgent",
 			{
 				changes: [
+					freeAgentEvent,
 					namedPlayer(9, 0, "New", "Guy", 80, {
 						contract: { amount: 15000, exp: 2028 },
 					}),
