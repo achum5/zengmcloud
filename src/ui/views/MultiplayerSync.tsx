@@ -195,14 +195,22 @@ const MultiplayerSync = () => {
 		setResyncResult(undefined);
 		setResyncing(true);
 		try {
-			const { total, applied } = await toWorker(
+			const { total, applied, incomplete, failed } = await toWorker(
 				"main",
 				"resyncSharedLeague",
 				undefined,
 			);
-			setResyncResult(
-				`Re-applied ${applied} of ${total} change${total === 1 ? "" : "s"} from the league. Your file is now up to date.`,
-			);
+			if (incomplete > 0 || failed) {
+				setResyncResult(
+					`Re-applied ${applied} of ${total} changes, but couldn't fully catch up${
+						incomplete > 0 ? ` (${incomplete} change is missing part of its data in the cloud)` : ""
+					}. The reliable fix is to re-share the league file: export it from the device that's simming and import it here.`,
+				);
+			} else {
+				setResyncResult(
+					`Re-applied ${applied} of ${total} change${total === 1 ? "" : "s"}. Your file is up to date.`,
+				);
+			}
 			await refreshActivity();
 		} catch (err) {
 			setResyncResult((err as Error).message ?? String(err));

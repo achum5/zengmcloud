@@ -71,6 +71,10 @@ export interface SyncTransport {
 	// Optional so the in-memory test transport can skip it.
 	fetchAllEntries?(): Promise<ChangesetEntry[]>;
 
+	// One-shot read of entries after a server-timestamp, for a cheap targeted
+	// catch-up. Optional so the in-memory test transport can skip it.
+	fetchEntriesSince?(sinceMs: number): Promise<ChangesetEntry[]>;
+
 	// Upsert this room's registry doc (listable on the admin page) and stamp the
 	// league fingerprint. Optional so the in-memory test transport can skip it.
 	touchRoom?(leagueId?: string): Promise<void>;

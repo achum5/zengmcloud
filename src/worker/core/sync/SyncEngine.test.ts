@@ -53,6 +53,12 @@ class FakeTransport implements SyncTransport {
 		return this.bus.entries.map((e) => JSON.parse(JSON.stringify(e)));
 	}
 
+	async fetchEntriesSince(sinceMs: number): Promise<ChangesetEntry[]> {
+		return this.bus.entries
+			.filter((e) => e.seq > sinceMs)
+			.map((e) => JSON.parse(JSON.stringify(e)));
+	}
+
 	subscribe(subscriber: SyncSubscriber) {
 		return this.bus.subscribe((entry) => {
 			// Mimic the real transport: apply the entry, then signal the batch is
@@ -249,19 +255,16 @@ describe("SyncEngine", () => {
 		assert.strictEqual(watermarks.at(-1), afterGood);
 	});
 
-	test("an apply failure triggers a self-healing auto-resync", async () => {
+	test("catchUp fetches and applies entries past the watermark", async () => {
 		const bus = new FakeBus();
-		const transport = new FakeTransport("R", bus);
-		const receiver = new SyncEngine(transport);
-		receiver.start();
-
 		resetG();
 		await resetCache({});
 
+		// Two changes are in the log (from another device) but this receiver never
+		// subscribed - it must pick them up via a targeted catch-up.
 		const host = new FakeTransport("H", bus);
-		// A good entry, then one targeting a store that doesn't exist (apply throws).
 		await host.publish({
-			id: "good",
+			id: "a",
 			authorId: "H",
 			action: "x",
 			changeset: {
@@ -269,22 +272,23 @@ describe("SyncEngine", () => {
 			},
 		});
 		await host.publish({
-			id: "poison",
+			id: "b",
 			authorId: "H",
-			action: "x",
+			action: "y",
 			changeset: {
-				changes: [{ store: "nope" as any, id: 1, type: "put", value: {} }],
+				changes: [{ store: "events", id: 2, type: "put", value: { eid: 2 } }],
 			},
 		});
 
-		// Let the subscription apply, the failure fire, and the scheduled resync run.
-		await new Promise((resolve) => setTimeout(resolve, 10));
+		const watermarks: number[] = [];
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {
+			onWatermark: (seq) => watermarks.push(seq),
+		});
+		await receiver.catchUp();
 
-		// The failure kicked off a background full-log re-read (self-heal).
-		assert.ok(transport.fetchAllCount >= 1, "auto-resync should re-read the log");
-		// The good change is present and stable despite the poison entry.
 		const events = await idb.cache.events.getAll();
-		assert.strictEqual(events.length, 1);
+		assert.strictEqual(events.length, 2);
+		assert.strictEqual(watermarks.at(-1), bus.entries.at(-1)!.seq);
 	});
 
 	test("resyncAll re-reads the whole log and applies every entry from scratch", async () => {

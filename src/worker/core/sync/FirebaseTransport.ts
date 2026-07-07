@@ -204,6 +204,27 @@ export class FirebaseTransport implements SyncTransport {
 		return entries;
 	}
 
+	// One-shot read of just the entries after a given server-timestamp - a cheap
+	// targeted catch-up that doesn't wait on Firestore's (phone-throttled)
+	// real-time push.
+	async fetchEntriesSince(sinceMs: number): Promise<ChangesetEntry[]> {
+		const snapshot = await getDocs(
+			query(
+				this.changesRef,
+				where("ts", ">", Timestamp.fromMillis(sinceMs)),
+				orderBy("ts"),
+			),
+		);
+		const entries: ChangesetEntry[] = [];
+		for (const docSnap of snapshot.docs) {
+			const entry = this.parseEntry(docSnap);
+			if (entry) {
+				entries.push(entry);
+			}
+		}
+		return entries;
+	}
+
 	subscribe(subscriber: SyncSubscriber) {
 		// Only entries after our watermark - the initial snapshot is the catch-up
 		// (everything we missed), and later snapshots are live updates. Pending

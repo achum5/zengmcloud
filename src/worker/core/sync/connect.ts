@@ -39,6 +39,15 @@ let currentHostName: string | undefined;
 // the device sim while offline and silently diverge from the league.
 let syncRequired = false;
 
+// A low-frequency timer that force-fetches anything after our watermark, so a
+// device doesn't sit waiting on Firestore's real-time push (which stalls on a
+// throttled phone - a big change could otherwise take many minutes to arrive).
+// Worker timers are themselves throttled when the tab is backgrounded, so this
+// effectively runs while the app is in the foreground, which is exactly when we
+// want it. Undefined when not connected.
+let catchUpTimer: ReturnType<typeof setInterval> | undefined;
+const CATCH_UP_INTERVAL_MS = 15000;
+
 export const getSyncRequired = () => syncRequired;
 
 // True while we intend to be synced but aren't connected yet (reconnecting or
@@ -145,6 +154,8 @@ export const getSyncActivity = async (): Promise<{
 export const resyncSharedLeague = async (): Promise<{
 	total: number;
 	applied: number;
+	incomplete: number;
+	failed: boolean;
 }> => {
 	const engine = getSyncEngine();
 	if (!engine) {
@@ -209,6 +220,14 @@ export const connectSharedLeague = async ({
 	// Register the room so it shows up on the admin page. Best-effort.
 	void transport.touchRoom?.();
 
+	// Poll for anything the real-time subscription hasn't delivered yet.
+	if (catchUpTimer !== undefined) {
+		clearInterval(catchUpTimer);
+	}
+	catchUpTimer = setInterval(() => {
+		void getSyncEngine()?.catchUp();
+	}, CATCH_UP_INTERVAL_MS);
+
 	// Turn on change capture so local actions get published to the room.
 	changeTracker.enable();
 	changeTracker.reset();
@@ -223,6 +242,10 @@ export const connectSharedLeague = async ({
 };
 
 export const disconnectSharedLeague = () => {
+	if (catchUpTimer !== undefined) {
+		clearInterval(catchUpTimer);
+		catchUpTimer = undefined;
+	}
 	const engine = getSyncEngine();
 	if (engine) {
 		engine.stop();
