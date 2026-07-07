@@ -450,24 +450,48 @@ const describeTrade = (
 	};
 };
 
-// A free-agent signing blurb with contract terms, or undefined if this isn't a
-// single player joining a single team.
+// "The LA Lakers sign New Guy (80/85, PG) to a 3-year, $45M contract."
+const signingBody = (
+	p: any,
+	teamById: Map<number, TeamInfo>,
+	verb: string,
+): string => {
+	const rating = currentRating(p);
+	const ovr = rating?.ovr;
+	const pot = rating?.pot;
+	const pos = rating?.pos;
+	const years = Math.max(
+		1,
+		(p.contract?.exp ?? g.get("season")) - g.get("season") + 1,
+	);
+	const totalM = Math.round(((p.contract?.amount ?? 0) * years) / 1000);
+	const ratingStr =
+		typeof ovr === "number" && typeof pot === "number"
+			? `${ovr}/${pot}`
+			: typeof ovr === "number"
+				? `${ovr} ovr`
+				: "";
+	const parenParts = [ratingStr, pos].filter(Boolean).join(", ");
+	const who = parenParts ? `${playerName(p)} (${parenParts})` : playerName(p);
+	return `The ${teamLabel(teamById, p.tid)} ${verb} ${who} to a ${years}-year, $${totalM}M contract.`;
+};
+
+// A free-agent signing blurb (event type "freeAgent"), or undefined if this
+// isn't a single player joining a single team. Re-signings are handled
+// separately (describeReSignings) so we can gate them on potential.
 const describeSigning = (
 	changeset: Changeset,
 	teamById: Map<number, TeamInfo>,
 ): SyncNotification | undefined => {
-	// A genuine signing logs a freeAgent/reSigned event alongside the player
-	// write. Without one, a lone player record change is just an EDIT (God Mode,
-	// a ratings tweak, a face change, a note/watch toggle) - which must NOT push.
-	// This is also what separates a signing from a one-sided trade.
+	// A genuine signing logs a freeAgent event alongside the player write.
+	// Without one, a lone player record change is just an EDIT (God Mode, a
+	// ratings/face tweak, a note/watch toggle) - which must NOT push. Also
+	// separates a signing from a one-sided trade.
 	const events = changesToValues(changeset, "events");
 	if (events.some((e) => e && e.type === "trade")) {
 		return undefined;
 	}
-	const signed = events.some(
-		(e) => e && (e.type === "freeAgent" || e.type === "reSigned"),
-	);
-	if (!signed) {
+	if (!events.some((e) => e && e.type === "freeAgent")) {
 		return undefined;
 	}
 
@@ -487,30 +511,63 @@ const describeSigning = (
 	if (!p.contract) {
 		return undefined;
 	}
-	const rating = currentRating(p);
-	const ovr = rating?.ovr;
-	const pot = rating?.pot;
-	const pos = rating?.pos;
-	const years = Math.max(
-		1,
-		(p.contract.exp ?? g.get("season")) - g.get("season") + 1,
-	);
-	const totalM = Math.round(((p.contract.amount ?? 0) * years) / 1000);
-	const ratingStr =
-		typeof ovr === "number" && typeof pot === "number"
-			? `${ovr}/${pot}`
-			: typeof ovr === "number"
-				? `${ovr} ovr`
-				: "";
-	const parenParts = [ratingStr, pos].filter(Boolean).join(", ");
-	const who = parenParts ? `${playerName(p)} (${parenParts})` : playerName(p);
-	const body = `The ${teamLabel(teamById, p.tid)} sign ${who} to a ${years}-year, $${totalM}M contract.`;
 	return {
 		title: "Signing",
-		body,
+		body: signingBody(p, teamById, "sign"),
 		targetTids: null,
 		path: typeof p.pid === "number" ? `player/${p.pid}` : undefined,
 	};
+};
+
+// Only re-signings of players with real upside are worth a push.
+const RESIGN_MIN_POT = 60;
+
+// One notification per re-signed player with pot >= RESIGN_MIN_POT. Handles a
+// bulk "re-sign all" (each reSigned event names its player), and stays quiet for
+// low-upside re-signs so the phase doesn't spam everyone's phone.
+const describeReSignings = (
+	changeset: Changeset,
+	teamById: Map<number, TeamInfo>,
+): SyncNotification[] => {
+	const pids = new Set<number>();
+	for (const e of changesToValues(changeset, "events")) {
+		if (e && e.type === "reSigned" && Array.isArray(e.pids)) {
+			for (const pid of e.pids) {
+				if (typeof pid === "number") {
+					pids.add(pid);
+				}
+			}
+		}
+	}
+	if (pids.size === 0) {
+		return [];
+	}
+
+	const byPid = new Map<number, any>();
+	for (const p of changesToValues(changeset, "players")) {
+		if (typeof p?.pid === "number") {
+			byPid.set(p.pid, p);
+		}
+	}
+
+	const out: SyncNotification[] = [];
+	for (const pid of pids) {
+		const p = byPid.get(pid);
+		if (!p || typeof p.tid !== "number" || p.tid < 0 || !p.contract) {
+			continue;
+		}
+		const pot = currentRating(p)?.pot;
+		if (typeof pot !== "number" || pot < RESIGN_MIN_POT) {
+			continue;
+		}
+		out.push({
+			title: "Re-signing",
+			body: signingBody(p, teamById, "re-sign"),
+			targetTids: null,
+			path: `player/${pid}`,
+		});
+	}
+	return out;
 };
 
 // One notification per pick made in this changeset (during the draft).
@@ -645,6 +702,15 @@ export const buildNotifications = async (
 				path: phasePath(newPhase!),
 			},
 		];
+	}
+
+	// Re-signings (only notable players ping). Handled before the small-changeset
+	// block below because a "re-sign all" can be large; a re-sign event is a clear
+	// signal on its own. If it's re-signs but none clear the pot bar, stay silent.
+	if (
+		changesToValues(changeset, "events").some((e) => e && e.type === "reSigned")
+	) {
+		return describeReSignings(changeset, await teamsById());
 	}
 
 	// Only classify small changesets as trades/signings/roster moves. A bulk

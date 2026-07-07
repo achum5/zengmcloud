@@ -350,6 +350,69 @@ describe("buildNotifications", () => {
 		assert.ok(notifs[0]!.body.includes("3-year, $45M"), notifs[0]!.body);
 	});
 
+	const reSignEvent = (pids: number[]): Changeset["changes"][number] => ({
+		store: "events",
+		id: 1,
+		type: "put",
+		value: { type: "reSigned", pids },
+	});
+
+	test("re-signing a 60+ pot player notifies", async () => {
+		const notifs = await buildNotifications(
+			"main.reSign",
+			{
+				changes: [
+					reSignEvent([1]),
+					namedPlayer(1, 0, "Young", "Star", 72, {
+						contract: { amount: 20000, exp: 2030 },
+					}),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Re-signing");
+		assert.ok(notifs[0]!.body.includes("re-sign Young Star"), notifs[0]!.body);
+	});
+
+	test("re-signing a sub-60 pot player is silent", async () => {
+		const notifs = await buildNotifications(
+			"main.reSign",
+			{
+				changes: [
+					reSignEvent([1]),
+					namedPlayer(1, 0, "Bench", "Guy", 50, {
+						contract: { amount: 2000, exp: 2028 },
+					}),
+				],
+			},
+			opts,
+		);
+		assert.deepEqual(notifs, []);
+	});
+
+	test("bulk re-sign notifies only the 60+ pot players", async () => {
+		const notifs = await buildNotifications(
+			"main.reSignAll",
+			{
+				changes: [
+					reSignEvent([1, 2, 3]),
+					namedPlayer(1, 0, "Keeper", "One", 68, {
+						contract: { amount: 15000, exp: 2029 },
+					}),
+					namedPlayer(2, 0, "Scrub", "Two", 45, {
+						contract: { amount: 1500, exp: 2027 },
+					}),
+					namedPlayer(3, 0, "Keeper", "Three", 80, {
+						contract: { amount: 30000, exp: 2031 },
+					}),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs.length, 2);
+		assert.ok(notifs.every((n) => n.title === "Re-signing"));
+	});
+
 	test("editing a player (no signing event) sends no notification", async () => {
 		// A God Mode edit rewrites the whole player record - same team, same
 		// contract - which must not read as a signing.
