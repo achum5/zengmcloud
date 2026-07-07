@@ -58,7 +58,14 @@ let autoPlayUnsub: (() => void) | undefined;
 export const publishAutoPlayState = async (
 	state: import("../../../common/types.ts").SyncedAutoPlay,
 ) => {
-	await currentTransport?.publishAutoPlay?.(state);
+	try {
+		await currentTransport?.publishAutoPlay?.(state);
+	} catch (error) {
+		// The schedule ride-along on the authority doc requires holding the wheel;
+		// a stale writer (just lost the wheel) is denied - harmless, since claiming
+		// the wheel already cleared the old schedule.
+		console.error("publishAutoPlayState failed", error);
+	}
 };
 
 export const getSyncRequired = () => syncRequired;

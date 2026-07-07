@@ -60,24 +60,35 @@ export class FirebaseTransport implements SyncTransport {
 		this.changesRef = collection(this.db, "leagues", code, "changes");
 	}
 
-	// Publish the simmer's auto-play schedule into the room's registry doc, so
-	// every device can show the same schedule + countdown. The registry doc
-	// already allows authenticated writes, so no extra rules are needed.
+	// Publish the simmer's auto-play schedule so every device can show the same
+	// schedule + countdown. We ride it on the authority ("who's simming") doc,
+	// which every device already reads reliably - only the simmer can auto-play,
+	// and it already holds this doc, so the merge write passes the same rule that
+	// governs the wheel (holderId stays == our uid). This avoids depending on a
+	// separate read rule for the registry doc.
 	async publishAutoPlay(state: SyncedAutoPlay) {
 		await setDoc(
-			doc(this.db, "leagues", this.code),
-			{ code: this.code, autoPlay: state },
+			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
+			{ autoPlay: state },
 			{ merge: true },
 		);
 	}
 
-	// Watch the room's auto-play schedule. Fires with the current value, then on
-	// every change. Undefined when nobody is auto-playing.
+	// Watch the room's auto-play schedule (carried on the authority doc). Fires
+	// with the current value, then on every change. Undefined when nobody is
+	// auto-playing. An error handler surfaces permission problems instead of
+	// silently delivering nothing.
 	subscribeAutoPlay(onChange: (state: SyncedAutoPlay | undefined) => void) {
-		return onSnapshot(doc(this.db, "leagues", this.code), (snapshot) => {
-			const data = snapshot.data();
-			onChange((data?.autoPlay as SyncedAutoPlay | undefined) ?? undefined);
-		});
+		return onSnapshot(
+			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
+			(snapshot) => {
+				const data = snapshot.data();
+				onChange((data?.autoPlay as SyncedAutoPlay | undefined) ?? undefined);
+			},
+			(error) => {
+				console.error("Auto-play schedule subscription failed", error);
+			},
+		);
 	}
 
 	// Read the room's registry doc, if any. `leagueId` is the fingerprint of the
