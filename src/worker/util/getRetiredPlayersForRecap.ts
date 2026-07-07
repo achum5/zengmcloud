@@ -143,7 +143,7 @@ export const getRetiredPlayersForRecap = async (
 				"jerseyNumber",
 			],
 			ratings: ["pos", "ovr", "pot"],
-			stats: ["season", "tid", "abbrev", "age", ...STAT_KEYS],
+			stats: ["season", "tid", "abbrev", "age", "gp", ...STAT_KEYS],
 			playoffs: true,
 			combined: false,
 			showNoStats: true,
