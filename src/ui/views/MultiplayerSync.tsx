@@ -157,20 +157,10 @@ const MultiplayerSync = () => {
 
 	return (
 		<>
-			<p>
-				Sync this league live with friends. Everyone must already be on the{" "}
-				<b>same league file</b>, then connect with the <b>same league code</b>.
-				From then on, your trades, roster moves, and signings appear on each
-				other's devices automatically.
-			</p>
 			<p className="text-body-secondary">
-				At any moment, exactly one device holds <b>the wheel</b> — only it can
-				sim games or advance the league, so two people can never sim at once and
-				corrupt the save. The wheel can be <b>passed between devices</b>:
-				whoever wants to run the next sim taps <b>Take the wheel</b> below.
-				(During the draft, everyone can still pick their own team when they're
-				on the clock.) Once connected, this league stays connected across
-				refreshes automatically.
+				Everyone loads the same league file and connects with the same code.
+				Only the device holding <b>the wheel</b> can sim — tap{" "}
+				<b>Take the wheel</b> to move it here.
 			</p>
 
 			<div className="row" style={{ maxWidth: 500 }}>
@@ -194,16 +184,12 @@ const MultiplayerSync = () => {
 									</option>
 								))}
 							</select>
-							<div className="form-text">
-								Pick which of your league's teams you manage on this device.
-								Only affects this device.
-							</div>
+							<div className="form-text">Only affects this device.</div>
 						</>
 					) : (
 						<div className="alert alert-warning mb-0">
-							Set up <b>Multi Team Mode</b> (Tools → Multi Team Mode) with each
-							friend's team first, so everyone's team is human-controlled during
-							sims. Then come back here to pick yours.
+							Enable <b>Multi Team Mode</b> (Tools → Multi Team Mode) with each
+							team first, then pick yours here.
 						</div>
 					)}
 				</div>
@@ -223,10 +209,6 @@ const MultiplayerSync = () => {
 						disabled={connected || status === "connecting"}
 						onChange={(event) => setCode(event.target.value)}
 					/>
-					<div className="form-text">
-						Any shared word or phrase. Everyone in your league types the same
-						one.
-					</div>
 				</div>
 			</div>
 
@@ -240,8 +222,7 @@ const MultiplayerSync = () => {
 					onChange={(event) => setIsHost(event.target.checked)}
 				/>
 				<label className="form-check-label" htmlFor="sync-host">
-					Take the wheel when I connect (I'll run the first sims). You can
-					always hand it off or take it back later.
+					Take the wheel on connect
 				</label>
 			</div>
 
@@ -267,23 +248,21 @@ const MultiplayerSync = () => {
 					{connected ? (
 						<>
 							<p className="text-success mb-2">
-								Connected to <b>{code.trim()}</b> — live changes are syncing.
+								Connected to <b>{code.trim()}</b>.
 							</p>
 							<div className="d-flex align-items-center gap-2 flex-wrap">
 								<span>
 									{mpSyncIsHost ? (
 										<span className="text-success">
-											🎮 <b>You have the wheel</b> — you can sim and advance the
-											league.
+											🎮 <b>You have the wheel</b>
 										</span>
 									) : mpSyncHostName ? (
 										<span className="text-body-secondary">
-											🔒 <b>{mpSyncHostName}</b> has the wheel. Simming is
-											disabled here until you take it.
+											🔒 <b>{mpSyncHostName}</b> has the wheel
 										</span>
 									) : (
 										<span className="text-body-secondary">
-											Nobody has the wheel yet — take it to sim.
+											Nobody has the wheel yet
 										</span>
 									)}
 								</span>
@@ -313,9 +292,7 @@ const MultiplayerSync = () => {
 				<div className="card-body">
 					<h3 className="card-title h5">Phone notifications</h3>
 					<p className="text-body-secondary">
-						Get a push on your phone — even with ZenGM closed — when the host
-						sims, when a trade or roster move happens, or when the league
-						reaches a phase that needs you (like the draft).
+						Push alerts to your phone when the app is closed.
 					</p>
 
 					{!pushConfigured() ? (

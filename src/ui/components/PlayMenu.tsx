@@ -116,8 +116,7 @@ const PlayMenu = ({
 			<Dropdown.Menu>
 				{locked ? (
 					<Dropdown.Header>
-						🔒 {mpSyncHostName ?? "Another device"} has the wheel — take it on
-						Multiplayer Sync to sim here
+						🔒 {mpSyncHostName ?? "Another device"} has the wheel
 					</Dropdown.Header>
 				) : null}
 				{options.map((option, i) => {
@@ -134,7 +133,7 @@ const PlayMenu = ({
 							className="kbd-parent"
 							title={
 								optionLocked
-									? `${mpSyncHostName ?? "Another device"} has the wheel. Take it on the Multiplayer Sync page to sim on this device.`
+									? `${mpSyncHostName ?? "Another device"} has the wheel`
 									: undefined
 							}
 						>

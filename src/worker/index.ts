@@ -110,7 +110,7 @@ promiseWorker.register(([type, name, param], hostID) => {
 		util.logEvent(
 			{
 				type: "error",
-				text: `${holder} has the wheel right now, so simming and advancing the league is disabled on this device. To control the league here, go to Multiplayer Sync (under Tools) and choose "Take the wheel".`,
+				text: `${holder} has the wheel. Take it on the Multiplayer Sync page to sim here.`,
 				persistent: true,
 			},
 			conditions,
