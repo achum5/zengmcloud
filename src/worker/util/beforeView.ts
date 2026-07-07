@@ -1,5 +1,6 @@
 import { Cache, connectLeague, idb } from "../db/index.ts";
 import { league } from "../core/index.ts";
+import { disconnectSharedLeague } from "../core/sync/connect.ts";
 import {
 	g,
 	helpers,
@@ -90,6 +91,10 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 	const switchingDatabaseLid = newLid !== g.get("lid");
 
 	if (switchingDatabaseLid) {
+		// A cloud-sync session belongs to ONE league file. Switching to (or
+		// uploading) a different league must drop any active session so the
+		// connection never carries over from one file to the next on this device.
+		disconnectSharedLeague();
 		await league.close(true);
 	}
 
