@@ -9,6 +9,7 @@ import { NoGamesMessage } from "./GameLog.tsx";
 import allowForceTie from "../../common/allowForceTie.ts";
 import { ForceWin } from "../components/ForceWin.tsx";
 import { ScoreBox } from "../components/ScoreBox/index.tsx";
+import { GameRecap } from "../components/GameRecap.tsx";
 
 const DailySchedule = ({
 	cid,
@@ -186,6 +187,12 @@ const DailySchedule = ({
 							{upcomingAndCompleted ? (
 								<h2 className="mt-3">Completed Games</h2>
 							) : null}
+
+							<GameRecap
+								season={season}
+								day={day}
+								numCompleted={completed.length}
+							/>
 
 							<div className="d-flex flex-wrap" style={{ gap: "1rem 2rem" }}>
 								{completed.map((game) => {

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import clsx from "clsx";
+import { Markdown } from "../../components/Markdown.tsx";
 
 const MAX_WIDTH = 600;
 
@@ -120,9 +121,14 @@ const Note = (
 		<>
 			<div
 				className={"overflow-auto small-scrollbar"}
-				style={{ whiteSpace: "pre-line", maxHeight: 300, maxWidth: MAX_WIDTH }}
+				style={{ maxHeight: 300, maxWidth: MAX_WIDTH }}
 			>
-				{noteToShow}
+				{info.type === "game" ? (
+					// Game notes double as AI recaps, which are written in markdown.
+					<Markdown>{noteToShow}</Markdown>
+				) : (
+					<div style={{ whiteSpace: "pre-line" }}>{noteToShow}</div>
+				)}
 			</div>
 			<button
 				type="button"
