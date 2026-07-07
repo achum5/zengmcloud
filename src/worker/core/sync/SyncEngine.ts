@@ -16,6 +16,11 @@ import type {
 // chunks so each fits in one Firestore doc.
 const MAX_SYNC_CHANGES = 200;
 
+// How many times, in one session, an apply failure may trigger an automatic
+// self-healing resync. Capped so a genuinely unapplyable entry can't spin the
+// log forever; the counter resets whenever a resync applies everything cleanly.
+const MAX_AUTO_RESYNCS = 3;
+
 // Each chunk stays well under Firestore's 1 MB/doc limit - capped by record
 // count and by serialized size (whichever hits first).
 const MAX_CHUNK_RECORDS = 100;
@@ -122,6 +127,13 @@ export class SyncEngine {
 	// before the failure instead of skipping it forever. Cleared by a full
 	// resync, which re-applies the whole log from scratch.
 	private applyFailed = false;
+
+	// Guards the automatic self-healing resync: `resyncInFlight` dedups a burst of
+	// failures into one resync; `autoResyncCount` caps how many auto-resyncs a
+	// session will attempt.
+	private resyncInFlight = false;
+
+	private autoResyncCount = 0;
 
 	constructor(
 		transport: SyncTransport,
@@ -358,9 +370,35 @@ export class SyncEngine {
 		} catch (error) {
 			console.error("Failed to apply remote changeset", error);
 			this.applyFailed = true;
+			// A failed apply means we've diverged - self-heal in the background.
+			this.scheduleAutoResync();
 			return false;
 		}
 		return true;
+	}
+
+	// Kick off a background full resync to re-converge after an apply failure.
+	// No-op if one is already running or we've hit the per-session cap. `resyncAll`
+	// is idempotent, so a transient failure re-applies cleanly; a persistent one
+	// stops after the cap and leaves the watermark frozen (so a later reconnect
+	// still retries it) rather than looping. Runs off the current call stack so it
+	// never blocks the entry being processed, and is not awaited by callers.
+	private scheduleAutoResync() {
+		if (this.resyncInFlight || this.autoResyncCount >= MAX_AUTO_RESYNCS) {
+			return;
+		}
+		// Set synchronously so a burst of failures in one apply loop schedules once.
+		this.resyncInFlight = true;
+		this.autoResyncCount += 1;
+		void Promise.resolve().then(async () => {
+			try {
+				await this.resyncAll();
+			} catch (error) {
+				console.error("Auto-resync failed", error);
+			} finally {
+				this.resyncInFlight = false;
+			}
+		});
 	}
 
 	// The watermark we've durably caught up through (server-timestamp millis).
@@ -389,10 +427,10 @@ export class SyncEngine {
 		this.applyFailed = false;
 
 		let applied = 0;
-		let maxSeq = this.maxSeq;
+		let newMaxSeq = this.maxSeq;
 		for (const entry of entries) {
-			if (entry.seq > maxSeq) {
-				maxSeq = entry.seq;
+			if (entry.seq > newMaxSeq) {
+				newMaxSeq = entry.seq;
 			}
 			this.seen.add(entry.id);
 
@@ -412,14 +450,20 @@ export class SyncEngine {
 			}
 		}
 
-		// We've now re-applied everything the log holds, so the watermark can move
-		// to the newest entry regardless of the pre-resync state.
 		this.pendingBatches.clear();
-		this.maxSeq = maxSeq;
-		if (maxSeq > this.persistedSeq) {
-			this.persistedSeq = maxSeq;
+		this.maxSeq = Math.max(this.maxSeq, newMaxSeq);
+
+		// Only bank the watermark if EVERYTHING re-applied cleanly. If any entry
+		// still failed, leave it where it was so the next reconnect retries the
+		// unapplied change instead of skipping past it. A clean pass also resets the
+		// auto-resync budget, so a future failure can self-heal again.
+		if (!this.applyFailed) {
+			this.autoResyncCount = 0;
+			if (newMaxSeq > this.persistedSeq) {
+				this.persistedSeq = newMaxSeq;
+				this.onWatermark?.(this.persistedSeq);
+			}
 		}
-		this.onWatermark?.(this.persistedSeq);
 
 		return { total: entries.length, applied };
 	}

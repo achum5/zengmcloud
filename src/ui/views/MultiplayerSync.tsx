@@ -452,9 +452,10 @@ const MultiplayerSync = () => {
 							</button>
 						</div>
 						<p className="text-body-secondary">
-							Every change in the league, newest first. A ✓ means this device has
-							applied it; a ⏳ means it hasn't caught up yet. If something's
-							missing here or your file looks out of date, force a full resync.
+							Every change in the league, newest first. A ✅ means this device has
+							applied it; a ⏳ means it hasn't caught up yet. This device
+							self-heals automatically if a change ever fails to apply — use{" "}
+							<b>Force full resync</b> only if something still looks out of date.
 						</p>
 
 						<button

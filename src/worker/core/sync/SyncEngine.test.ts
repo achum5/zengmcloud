@@ -45,7 +45,10 @@ class FakeTransport implements SyncTransport {
 		this.bus.publish(entry);
 	}
 
+	fetchAllCount = 0;
+
 	async fetchAllEntries(): Promise<ChangesetEntry[]> {
+		this.fetchAllCount += 1;
 		// Over-the-wire copy, like the real transport (JSON round-trip).
 		return this.bus.entries.map((e) => JSON.parse(JSON.stringify(e)));
 	}
@@ -244,6 +247,44 @@ describe("SyncEngine", () => {
 		// The watermark must NOT have moved past the failed entry - otherwise a
 		// reconnect would skip it forever (the silent-divergence bug).
 		assert.strictEqual(watermarks.at(-1), afterGood);
+	});
+
+	test("an apply failure triggers a self-healing auto-resync", async () => {
+		const bus = new FakeBus();
+		const transport = new FakeTransport("R", bus);
+		const receiver = new SyncEngine(transport);
+		receiver.start();
+
+		resetG();
+		await resetCache({});
+
+		const host = new FakeTransport("H", bus);
+		// A good entry, then one targeting a store that doesn't exist (apply throws).
+		await host.publish({
+			id: "good",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+			},
+		});
+		await host.publish({
+			id: "poison",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "nope" as any, id: 1, type: "put", value: {} }],
+			},
+		});
+
+		// Let the subscription apply, the failure fire, and the scheduled resync run.
+		await new Promise((resolve) => setTimeout(resolve, 10));
+
+		// The failure kicked off a background full-log re-read (self-heal).
+		assert.ok(transport.fetchAllCount >= 1, "auto-resync should re-read the log");
+		// The good change is present and stable despite the poison entry.
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, 1);
 	});
 
 	test("resyncAll re-reads the whole log and applies every entry from scratch", async () => {
