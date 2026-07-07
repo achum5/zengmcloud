@@ -67,7 +67,7 @@ const registerToken = async (name: string): Promise<string> => {
 
 // Turn on push for this device: ask permission, get a token, register it with
 // the room. Throws a human-readable error the settings page can display.
-export const enablePushNotifications = async (name: string): Promise<void> => {
+export const enablePushNotifications = async (name = ""): Promise<void> => {
 	if (!pushConfigured()) {
 		throw new Error(
 			"Push notifications aren't set up on the server yet (missing VAPID key). See docs/PUSH_NOTIFICATIONS_SETUP.md.",

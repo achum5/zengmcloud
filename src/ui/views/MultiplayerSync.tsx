@@ -10,7 +10,6 @@ import {
 import {
 	enablePushNotifications,
 	getPushPermission,
-	getStoredPushName,
 	pushConfigured,
 	pushSupported,
 	restorePushNotifications,
@@ -41,7 +40,6 @@ const MultiplayerSync = () => {
 	const [multiTeamMode, setMultiTeamMode] = useState(true);
 
 	// Phone push notifications.
-	const [pushName, setPushName] = useState(getStoredPushName());
 	const [pushSupport, setPushSupport] = useState(true);
 	const [pushPermission, setPushPermission] =
 		useState<NotificationPermission>(getPushPermission());
@@ -112,7 +110,7 @@ const MultiplayerSync = () => {
 		setPushError(undefined);
 		setPushBusy(true);
 		try {
-			await enablePushNotifications(pushName.trim() || "A league-mate");
+			await enablePushNotifications();
 			setPushPermission(getPushPermission());
 		} catch (err) {
 			setPushError((err as Error).message ?? String(err));
@@ -313,31 +311,9 @@ const MultiplayerSync = () => {
 							icon and come back here.
 						</div>
 					) : pushPermission === "granted" ? (
-						<p className="text-success mb-0">
-							Notifications are on for this device
-							{getStoredPushName() ? (
-								<>
-									{" "}
-									as <b>{getStoredPushName()}</b>
-								</>
-							) : null}
-							.
-						</p>
+						<p className="text-success mb-0">Notifications are on for this device.</p>
 					) : (
 						<>
-							<div className="mb-3">
-								<label className="form-label" htmlFor="push-name">
-									Your name (shown in notifications)
-								</label>
-								<input
-									id="push-name"
-									type="text"
-									className="form-control"
-									placeholder="e.g. Alex"
-									value={pushName}
-									onChange={(event) => setPushName(event.target.value)}
-								/>
-							</div>
 							<button
 								className="btn btn-primary"
 								disabled={pushBusy}
