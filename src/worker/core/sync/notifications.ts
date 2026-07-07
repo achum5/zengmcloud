@@ -104,7 +104,9 @@ const buildPhaseChangeNotifications = async (
 			body = await topFreeAgentsText();
 			break;
 		case PHASE.DRAFT_LOTTERY:
-			body = "The lottery is set — see where the picks landed.";
+			// No body: advancing INTO the lottery hasn't decided anything yet, so
+			// don't imply the picks have landed. Just the "Advanced to ... Draft
+			// Lottery!" title.
 			break;
 		case PHASE.DRAFT:
 			body = "The draft is here — make your picks.";

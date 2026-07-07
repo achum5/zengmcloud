@@ -492,11 +492,18 @@ const NonLotteryHeader = ({ children }: { children: ReactNode }) => {
 };
 
 const DraftLotteryTable = (props: Props) => {
-	const { godMode, spectator, userTid } = useLocal([
+	const { godMode, spectator, userTid, mpSyncActive, mpSyncIsHost } = useLocal([
 		"godMode",
 		"spectator",
 		"userTid",
+		"mpSyncActive",
+		"mpSyncIsHost",
 	]);
+
+	// In a shared league, only the device that's simming may run the lottery
+	// (advancing the shared timeline). The worker blocks it too, but disable the
+	// buttons here so non-simmers can't click something that won't work.
+	const blockedBySync = mpSyncActive && !mpSyncIsHost;
 
 	const isMounted = useRef(true);
 	useEffect(() => {
@@ -799,6 +806,8 @@ const DraftLotteryTable = (props: Props) => {
 				{showStartButton ? (
 					<button
 						className="btn btn-large btn-success"
+						disabled={blockedBySync}
+						title={blockedBySync ? "Only the device simming can start it" : undefined}
 						onClick={() => startLottery()}
 					>
 						Start lottery
@@ -807,6 +816,8 @@ const DraftLotteryTable = (props: Props) => {
 				{showRigButton ? (
 					<button
 						className="btn btn-large btn-god-mode ms-2"
+						disabled={blockedBySync}
+						title={blockedBySync ? "Only the device simming can rig it" : undefined}
 						onClick={async () => {
 							await toWorker("main", "updateGameAttributes", {
 								riggedLottery: [],
