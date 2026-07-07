@@ -2,9 +2,11 @@ import { useState } from "react";
 import { toWorker } from "../util/toWorker.ts";
 import { buildRecapPrompt, parseRecaps } from "../util/gameRecap.ts";
 
-// The "Game Recap" workflow on the Daily Schedule: copy a prompt with every
-// completed game's box score, run it through an AI, then paste the AI's markdown
-// reply back to file a recap (stored as each game's note) onto each game.
+// The "Game Recap" workflow on the Daily Schedule, as three simple steps:
+//   Copy (a prompt with every completed game's box score) → Claude (claude.ai)
+//   → Paste (the AI's reply, filed as each game's note).
+// Deliberately NOT gated by the multiplayer "wheel": filing a recap is just a
+// game note, which any device may write.
 export const GameRecap = ({
 	season,
 	day,
@@ -14,47 +16,46 @@ export const GameRecap = ({
 	day: number;
 	numCompleted: number;
 }) => {
-	const [copyState, setCopyState] = useState<
-		"idle" | "copying" | "copied" | "error"
-	>("idle");
-	const [showPaste, setShowPaste] = useState(false);
-	const [pasteText, setPasteText] = useState("");
+	const [copied, setCopied] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [result, setResult] = useState<string | undefined>();
+	// When clipboard read isn't available, fall back to a manual paste box.
+	const [manual, setManual] = useState<string | undefined>();
 
 	if (numCompleted === 0) {
 		return null;
 	}
 
-	const copyPrompt = async () => {
-		setCopyState("copying");
+	const copy = async () => {
+		setResult(undefined);
 		try {
 			const games = await toWorker("main", "getDayGamesForRecap", {
 				season,
 				day,
 			});
 			if (!games || games.length === 0) {
-				setCopyState("error");
+				setResult("No completed games to recap on this day.");
 				return;
 			}
-			const prompt = buildRecapPrompt(games, `Day ${day}`);
-			await navigator.clipboard.writeText(prompt);
-			setCopyState("copied");
-			globalThis.setTimeout(() => setCopyState("idle"), 3000);
+			await navigator.clipboard.writeText(
+				buildRecapPrompt(games, `Day ${day}`),
+			);
+			setCopied(true);
+			globalThis.setTimeout(() => setCopied(false), 3000);
 		} catch (error) {
 			console.error("Failed to build/copy recap prompt", error);
-			setCopyState("error");
+			setResult("Couldn't copy the prompt.");
 		}
 	};
 
-	const placeRecaps = async () => {
+	const fileRecaps = async (text: string) => {
 		setBusy(true);
 		setResult(undefined);
 		try {
-			const recaps = parseRecaps(pasteText);
+			const recaps = parseRecaps(text);
 			if (recaps.size === 0) {
 				setResult(
-					"Couldn't find any recaps. Paste the AI's full reply — each recap has to keep its <!--game:…--> marker.",
+					"Couldn't find any recaps in what was pasted — paste the AI's full reply (each recap keeps its <!--game:…--> marker).",
 				);
 				return;
 			}
@@ -67,79 +68,82 @@ export const GameRecap = ({
 				});
 				placed += 1;
 			}
+			setManual(undefined);
 			setResult(
 				`Filed ${placed} recap${placed === 1 ? "" : "s"} — open a game's box score to read it.`,
 			);
-			setPasteText("");
 		} catch (error) {
-			console.error("Failed to place recaps", error);
+			console.error("Failed to file recaps", error);
 			setResult("Something went wrong filing the recaps.");
 		} finally {
 			setBusy(false);
 		}
 	};
 
+	const paste = async () => {
+		setResult(undefined);
+		try {
+			const text = await navigator.clipboard.readText();
+			if (text && text.trim() !== "") {
+				await fileRecaps(text);
+				return;
+			}
+		} catch {
+			// Clipboard read blocked/unsupported - fall through to the manual box.
+		}
+		setManual("");
+	};
+
+	const arrow = <span className="text-body-secondary">›</span>;
+
 	return (
 		<div className="card mb-3" style={{ maxWidth: 700 }}>
 			<div className="card-body">
 				<h2 className="card-title h5">Game Recap</h2>
 				<p className="text-body-secondary small mb-3">
-					Generate an AI write-up for every completed game on this day.
+					AI write-ups for every completed game on this day.
 				</p>
 
-				<div className="d-flex flex-wrap gap-2 align-items-center">
-					<button
-						className="btn btn-primary"
-						disabled={copyState === "copying"}
-						onClick={copyPrompt}
-					>
-						{copyState === "copying"
-							? "Building…"
-							: copyState === "copied"
-								? "✓ Prompt copied!"
-								: `1. Copy AI Prompt (${numCompleted} game${
-										numCompleted === 1 ? "" : "s"
-									})`}
+				<div className="d-flex flex-wrap align-items-center gap-2">
+					<button className="btn btn-primary" disabled={busy} onClick={copy}>
+						{copied ? "✓ Copied" : "Copy"}
 					</button>
-					<button
+					{arrow}
+					<a
 						className="btn btn-light-bordered"
-						onClick={() => setShowPaste((v) => !v)}
+						href="https://claude.ai"
+						target="_blank"
+						rel="noopener noreferrer"
 					>
-						2. Paste recaps back
+						Claude
+					</a>
+					{arrow}
+					<button className="btn btn-primary" disabled={busy} onClick={paste}>
+						{busy ? "Pasting…" : "Paste"}
 					</button>
 				</div>
 
-				<div className="form-text">
-					Copy the prompt, paste it into Claude (or any AI), then paste its
-					reply back here.
-				</div>
-
-				{copyState === "error" ? (
-					<div className="alert alert-danger mt-2 mb-0">
-						Couldn't build the prompt for this day.
-					</div>
-				) : null}
-
-				{showPaste ? (
+				{manual !== undefined ? (
 					<div className="mt-3">
 						<textarea
 							className="form-control"
 							rows={6}
-							placeholder="Paste the AI's full markdown reply here…"
-							value={pasteText}
-							onChange={(event) => setPasteText(event.target.value)}
+							placeholder="Paste the AI's full reply here…"
+							value={manual}
+							onChange={(event) => setManual(event.target.value)}
 						/>
 						<button
 							className="btn btn-primary btn-sm mt-2"
-							disabled={busy || pasteText.trim() === ""}
-							onClick={placeRecaps}
+							disabled={busy || manual.trim() === ""}
+							onClick={() => fileRecaps(manual)}
 						>
-							{busy ? "Filing…" : "File recaps to games"}
+							{busy ? "Filing…" : "File recaps"}
 						</button>
-						{result ? (
-							<div className="alert alert-info mt-2 mb-0">{result}</div>
-						) : null}
 					</div>
+				) : null}
+
+				{result ? (
+					<div className="alert alert-info mt-3 mb-0">{result}</div>
 				) : null}
 			</div>
 		</div>
