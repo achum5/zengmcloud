@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toWorker } from "../util/toWorker.ts";
 import { buildRecapPrompt, parseRecaps } from "../util/gameRecap.ts";
 
@@ -16,11 +16,50 @@ export const GameRecap = ({
 	day: number;
 	numCompleted: number;
 }) => {
+	// The prompt is built up-front (not on click) so the Copy tap can write to
+	// the clipboard SYNCHRONOUSLY. iOS Safari rejects a clipboard write that
+	// happens after an await - the user-gesture is considered gone by then, which
+	// is why copying worked on desktop but failed on mobile.
+	const [prompt, setPrompt] = useState<string | undefined>();
+	const [loadFailed, setLoadFailed] = useState(false);
+
 	const [copied, setCopied] = useState(false);
 	const [busy, setBusy] = useState(false);
 	const [result, setResult] = useState<string | undefined>();
-	// When clipboard read isn't available, fall back to a manual paste box.
 	const [manual, setManual] = useState<string | undefined>();
+	const [copyFallback, setCopyFallback] = useState<string | undefined>();
+
+	useEffect(() => {
+		if (numCompleted === 0) {
+			return;
+		}
+		let cancelled = false;
+		setLoadFailed(false);
+		(async () => {
+			try {
+				const games = await toWorker("main", "getDayGamesForRecap", {
+					season,
+					day,
+				});
+				if (cancelled) {
+					return;
+				}
+				setPrompt(
+					games && games.length > 0
+						? buildRecapPrompt(games, `Day ${day}`)
+						: undefined,
+				);
+			} catch (error) {
+				if (!cancelled) {
+					console.error("Failed to build recap prompt", error);
+					setLoadFailed(true);
+				}
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [season, day, numCompleted]);
 
 	if (numCompleted === 0) {
 		return null;
@@ -28,23 +67,23 @@ export const GameRecap = ({
 
 	const copy = async () => {
 		setResult(undefined);
-		try {
-			const games = await toWorker("main", "getDayGamesForRecap", {
-				season,
-				day,
-			});
-			if (!games || games.length === 0) {
-				setResult("No completed games to recap on this day.");
-				return;
-			}
-			await navigator.clipboard.writeText(
-				buildRecapPrompt(games, `Day ${day}`),
+		setCopyFallback(undefined);
+		if (loadFailed || !prompt) {
+			setResult(
+				"Couldn't prepare this day's games — reload the page and retry.",
 			);
+			return;
+		}
+		// writeText is the FIRST thing here (no await before it), so the tap's
+		// gesture is still valid on mobile.
+		try {
+			await navigator.clipboard.writeText(prompt);
 			setCopied(true);
 			globalThis.setTimeout(() => setCopied(false), 3000);
 		} catch (error) {
-			console.error("Failed to build/copy recap prompt", error);
-			setResult("Couldn't copy the prompt.");
+			console.error("Clipboard write failed", error);
+			// Last resort: show the prompt so it can be long-pressed / selected.
+			setCopyFallback(prompt);
 		}
 	};
 
@@ -82,6 +121,8 @@ export const GameRecap = ({
 
 	const paste = async () => {
 		setResult(undefined);
+		setCopyFallback(undefined);
+		// readText first, for the same gesture reason as copy.
 		try {
 			const text = await navigator.clipboard.readText();
 			if (text && text.trim() !== "") {
@@ -122,6 +163,21 @@ export const GameRecap = ({
 						{busy ? "Pasting…" : "Paste"}
 					</button>
 				</div>
+
+				{copyFallback !== undefined ? (
+					<div className="mt-3">
+						<div className="form-text mb-1">
+							Couldn't copy automatically — select all and copy this:
+						</div>
+						<textarea
+							className="form-control"
+							rows={4}
+							readOnly
+							value={copyFallback}
+							onFocus={(event) => event.target.select()}
+						/>
+					</div>
+				) : null}
 
 				{manual !== undefined ? (
 					<div className="mt-3">
