@@ -210,40 +210,44 @@ class AutoPlayScheduler {
 		this.publishToRoom();
 	}
 
-	// Dedup key for the last schedule we broadcast to the room.
+	// The last snapshot we broadcast, so we only send when it actually changes.
 	private lastPublished = "";
-	// True once we've published as the simmer, so we know to publish ONE "cleared"
-	// state if we later stop / lose sim control (and stop clobbering the room
-	// otherwise, since only the simmer should write the shared schedule).
+	// True once we've broadcast as the simmer, so when we stop / lose sim control
+	// we send exactly ONE "off" snapshot (and don't otherwise write the room while
+	// idle, since only the simmer owns the shared schedule).
 	private publishedAsSimmer = false;
 
-	// Broadcast this device's schedule + next-sim time to the room, so every
-	// device shows the same live schedule and countdown. Only the simmer writes.
+	// Broadcast a small snapshot of the schedule to the room whenever it changes
+	// (start / stop / edit / next-sim recomputed). The schedule itself lives
+	// locally on the simmer; this is just a read-only mirror for the other devices,
+	// which keep the last snapshot until the next one arrives. Only the simmer
+	// writes; followers never do.
 	private publishToRoom() {
-		if (this.eligible() && this.settings.enabled) {
-			const state = {
-				enabled: true,
-				nextRunAt: this.state.nextRunAt,
-				rules: this.settings.rules
-					.filter((r) => r.enabled)
-					.map((r) => summarizeRule(r)),
-			};
-			const serialized = JSON.stringify(state);
-			if (serialized !== this.lastPublished) {
-				this.lastPublished = serialized;
-				this.publishedAsSimmer = true;
-				void toWorker("main", "publishAutoPlayState", state);
-			}
-		} else if (this.publishedAsSimmer) {
-			// We were the simmer and just stopped / lost control - clear it once.
-			this.publishedAsSimmer = false;
-			this.lastPublished = "";
-			void toWorker("main", "publishAutoPlayState", {
-				enabled: false,
-				nextRunAt: undefined,
-				rules: [],
-			});
+		const simming = this.eligible() && this.settings.enabled;
+
+		// While not the simmer, stay silent - except for the single "off" snapshot
+		// right after we stop or hand off the wheel, so followers clear their view.
+		if (!simming && !this.publishedAsSimmer) {
+			return;
 		}
+
+		const snapshot = simming
+			? {
+					enabled: true,
+					nextRunAt: this.state.nextRunAt,
+					rules: this.settings.rules
+						.filter((r) => r.enabled)
+						.map((r) => summarizeRule(r)),
+				}
+			: { enabled: false, nextRunAt: undefined, rules: [] };
+
+		const serialized = JSON.stringify(snapshot);
+		if (serialized === this.lastPublished) {
+			return;
+		}
+		this.lastPublished = serialized;
+		this.publishedAsSimmer = simming;
+		void toWorker("main", "publishAutoPlayState", snapshot);
 	}
 
 	private persist() {

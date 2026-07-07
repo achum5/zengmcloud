@@ -13,21 +13,43 @@ const format = (ms: number): string => {
 };
 
 // Live countdown to the next scheduled auto-sim, shown in the header on EVERY
-// device in the room (the simmer broadcasts its schedule; all devices read it
-// from mpAutoPlay). Ticks off the device's local clock.
+// device in the room. The simmer reads it straight from its own local scheduler
+// (instant, always current); everyone else reads the small snapshot the simmer
+// broadcasts (mpAutoPlay). Ticks off the device's local clock.
 const AutoPlayCountdown = () => {
-	const { lid, mpAutoPlay } = useLocal(["lid", "mpAutoPlay"]);
+	const { lid, mpSyncActive, mpSyncIsHost, mpAutoPlay } = useLocal([
+		"lid",
+		"mpSyncActive",
+		"mpSyncIsHost",
+		"mpAutoPlay",
+	]);
 	const [, setNow] = useState(0);
 
-	// Keep this device's own scheduler loaded so the simmer runs (and publishes)
-	// without opening the Auto Play page first. No-op on non-simmer devices.
+	// Keep this device's own scheduler loaded so the simmer runs (and broadcasts)
+	// without opening the Auto Play page first, and so the simmer's countdown reads
+	// live local state. No-op on non-simmer devices beyond loading their (idle) one.
+	const [localNextRunAt, setLocalNextRunAt] = useState<number | undefined>(
+		undefined,
+	);
+	const [localEnabled, setLocalEnabled] = useState(false);
 	useEffect(() => {
 		if (typeof lid === "number") {
 			autoPlayScheduler.loadForLeague(lid);
 		}
+		setLocalEnabled(autoPlayScheduler.settings.enabled);
+		setLocalNextRunAt(autoPlayScheduler.state.nextRunAt);
+		return autoPlayScheduler.subscribe((s, st) => {
+			setLocalEnabled(s.enabled);
+			setLocalNextRunAt(st.nextRunAt);
+		});
 	}, [lid]);
 
-	const active = !!mpAutoPlay?.enabled && mpAutoPlay.nextRunAt !== undefined;
+	// Simmer: local scheduler is the source of truth. Everyone else: the broadcast.
+	const isSimmer = mpSyncActive && mpSyncIsHost;
+	const enabled = isSimmer ? localEnabled : !!mpAutoPlay?.enabled;
+	const nextRunAt = isSimmer ? localNextRunAt : mpAutoPlay?.nextRunAt;
+
+	const active = enabled && nextRunAt !== undefined;
 	useEffect(() => {
 		if (!active) {
 			return;
@@ -36,13 +58,13 @@ const AutoPlayCountdown = () => {
 		return () => clearInterval(id);
 	}, [active]);
 
-	if (!mpAutoPlay?.enabled || mpAutoPlay.nextRunAt === undefined) {
+	if (!enabled || nextRunAt === undefined) {
 		return null;
 	}
 	return (
 		<span className="text-warning">
 			{" · ⏱ "}
-			{format(mpAutoPlay.nextRunAt - Date.now())}
+			{format(nextRunAt - Date.now())}
 		</span>
 	);
 };

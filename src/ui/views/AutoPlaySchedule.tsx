@@ -90,12 +90,10 @@ const AutoPlaySchedule = () => {
 
 	return (
 		<>
-			{mpAutoPlay?.enabled ? (
+			{!eligible && mpAutoPlay?.enabled ? (
 				<div className="card mb-3" style={{ maxWidth: 520 }}>
 					<div className="card-body">
-						<h3 className="card-title h5">
-							Shared schedule{eligible ? " (you're simming)" : ""}
-						</h3>
+						<h3 className="card-title h5">Shared schedule</h3>
 						{mpAutoPlay.rules.length > 0 ? (
 							<ul className="mb-2">
 								{mpAutoPlay.rules.map((line, i) => (
@@ -111,11 +109,9 @@ const AutoPlaySchedule = () => {
 									: "paused"}
 							</b>
 						</div>
-						{!eligible ? (
-							<div className="form-text mb-0">
-								Set by whoever's simming. Take over simming to change it.
-							</div>
-						) : null}
+						<div className="form-text mb-0">
+							Set by whoever's simming. Take over simming to change it.
+						</div>
 					</div>
 				</div>
 			) : null}
