@@ -326,8 +326,8 @@ const buildSimNotifications = async (
 		if (teamGames.length === 0) {
 			if (GAME_PHASES.has(phase)) {
 				notifications.push({
-					title: "Sim complete",
-					body: `The host advanced the league (${phaseText(phase)}). No game for your ${teamName} ${period}.`,
+					title: "Sim!",
+					body: `No game for your ${team?.name ?? "team"} ${period}.`,
 					targetTids: [tid],
 					path: "standings",
 				});

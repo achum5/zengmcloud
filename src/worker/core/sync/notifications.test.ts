@@ -191,7 +191,8 @@ describe("buildNotifications", () => {
 		);
 		assert.strictEqual(notifs.length, 1);
 		assert.deepEqual(notifs[0]!.targetTids, [0]);
-		assert.ok(notifs[0]!.body.includes("No game for your LA Lakers"));
+		assert.strictEqual(notifs[0]!.title, "Sim!");
+		assert.ok(notifs[0]!.body.includes("No game for your Lakers"));
 	});
 
 	test("sim via a non-playMenu action (e.g. simToGame) is still a sim, not a trade", async () => {
