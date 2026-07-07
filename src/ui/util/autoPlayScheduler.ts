@@ -14,6 +14,32 @@ import {
 export { newRule, nextFireForRule } from "./scheduleTime.ts";
 export type { AutoPlayAmount, ScheduleRule } from "./scheduleTime.ts";
 
+const DAY_NAMES = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+// "09:00" → "9:00 AM"
+const to12h = (hhmm: string): string => {
+	const [hStr, m = "00"] = (hhmm ?? "").split(":");
+	const h = Number(hStr);
+	if (Number.isNaN(h)) {
+		return hhmm;
+	}
+	const ampm = h < 12 ? "AM" : "PM";
+	const h12 = h % 12 === 0 ? 12 : h % 12;
+	return `${h12}:${m} ${ampm}`;
+};
+
+// One human-readable line describing a rule, for the shared read-only view.
+const summarizeRule = (r: ScheduleRule): string => {
+	const days =
+		r.days.length === 0 || r.days.length === 7
+			? "every day"
+			: [...r.days].sort((a, b) => a - b).map((d) => DAY_NAMES[d]).join(",");
+	if (r.mode === "at") {
+		return `${days} at ${r.times.map(to12h).join(", ")} — sim ${r.amount}`;
+	}
+	return `${days}, every ${r.everyMinutes} min ${to12h(r.start)}–${to12h(r.end)} — sim ${r.amount}`;
+};
+
 // Scheduled auto-simmer. This is the in-browser ("Tier 1") host: a persistent,
 // route-independent timer that fires normal Play Menu sims on a real clock
 // schedule. It lives at module scope (not inside a React component) so it keeps
@@ -181,6 +207,43 @@ class AutoPlayScheduler {
 
 	private emit() {
 		this.emitter.emit("change", this.settings, this.state);
+		this.publishToRoom();
+	}
+
+	// Dedup key for the last schedule we broadcast to the room.
+	private lastPublished = "";
+	// True once we've published as the simmer, so we know to publish ONE "cleared"
+	// state if we later stop / lose sim control (and stop clobbering the room
+	// otherwise, since only the simmer should write the shared schedule).
+	private publishedAsSimmer = false;
+
+	// Broadcast this device's schedule + next-sim time to the room, so every
+	// device shows the same live schedule and countdown. Only the simmer writes.
+	private publishToRoom() {
+		if (this.eligible() && this.settings.enabled) {
+			const state = {
+				enabled: true,
+				nextRunAt: this.state.nextRunAt,
+				rules: this.settings.rules
+					.filter((r) => r.enabled)
+					.map((r) => summarizeRule(r)),
+			};
+			const serialized = JSON.stringify(state);
+			if (serialized !== this.lastPublished) {
+				this.lastPublished = serialized;
+				this.publishedAsSimmer = true;
+				void toWorker("main", "publishAutoPlayState", state);
+			}
+		} else if (this.publishedAsSimmer) {
+			// We were the simmer and just stopped / lost control - clear it once.
+			this.publishedAsSimmer = false;
+			this.lastPublished = "";
+			void toWorker("main", "publishAutoPlayState", {
+				enabled: false,
+				nextRunAt: undefined,
+				rules: [],
+			});
+		}
 	}
 
 	private persist() {

@@ -95,6 +95,7 @@ import {
 	getSyncStatus,
 	listSyncRooms,
 	markSyncRequired,
+	publishAutoPlayState,
 	resyncSharedLeague,
 } from "../core/sync/index.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
@@ -5340,6 +5341,7 @@ export default {
 		listSyncRooms,
 		deleteSyncRoom,
 		deleteAllSyncRooms,
+		publishAutoPlayState,
 		resyncSharedLeague,
 		getTeamGraphStat,
 		getTradingBlockOffers,

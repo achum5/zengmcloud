@@ -18,6 +18,7 @@ import {
 } from "firebase/firestore";
 import { getFirebaseApp } from "./firebaseApp.ts";
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
+import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
 import type {
 	Authority,
@@ -57,6 +58,26 @@ export class FirebaseTransport implements SyncTransport {
 		this.code = code;
 		this.db = getFirestore(getFirebaseApp());
 		this.changesRef = collection(this.db, "leagues", code, "changes");
+	}
+
+	// Publish the simmer's auto-play schedule into the room's registry doc, so
+	// every device can show the same schedule + countdown. The registry doc
+	// already allows authenticated writes, so no extra rules are needed.
+	async publishAutoPlay(state: SyncedAutoPlay) {
+		await setDoc(
+			doc(this.db, "leagues", this.code),
+			{ code: this.code, autoPlay: state },
+			{ merge: true },
+		);
+	}
+
+	// Watch the room's auto-play schedule. Fires with the current value, then on
+	// every change. Undefined when nobody is auto-playing.
+	subscribeAutoPlay(onChange: (state: SyncedAutoPlay | undefined) => void) {
+		return onSnapshot(doc(this.db, "leagues", this.code), (snapshot) => {
+			const data = snapshot.data();
+			onChange((data?.autoPlay as SyncedAutoPlay | undefined) ?? undefined);
+		});
 	}
 
 	// Read the room's registry doc, if any. `leagueId` is the fingerprint of the

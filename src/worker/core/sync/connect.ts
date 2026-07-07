@@ -48,6 +48,19 @@ let syncRequired = false;
 let catchUpTimer: ReturnType<typeof setInterval> | undefined;
 const CATCH_UP_INTERVAL_MS = 15000;
 
+// The live transport + auto-play subscription for the current room, so the
+// simmer can publish its schedule and every device can watch it.
+let currentTransport: FirebaseTransport | undefined;
+let autoPlayUnsub: (() => void) | undefined;
+
+// Called from the UI (on the simmer's device) whenever its auto-play schedule
+// changes, to broadcast it to the room. No-op if not connected.
+export const publishAutoPlayState = async (
+	state: import("../../../common/types.ts").SyncedAutoPlay,
+) => {
+	await currentTransport?.publishAutoPlay?.(state);
+};
+
 export const getSyncRequired = () => syncRequired;
 
 // True while we intend to be synced but aren't connected yet (reconnecting or
@@ -220,6 +233,13 @@ export const connectSharedLeague = async ({
 	// Register the room so it shows up on the admin page. Best-effort.
 	void transport.touchRoom?.();
 
+	// Watch the shared auto-play schedule so every device shows the same schedule
+	// + countdown, and keep a transport handle so the simmer can publish its own.
+	currentTransport = transport;
+	autoPlayUnsub = transport.subscribeAutoPlay?.((autoPlay) => {
+		void toUI("updateLocal", [{ mpAutoPlay: autoPlay }]);
+	});
+
 	// Poll for anything the real-time subscription hasn't delivered yet.
 	if (catchUpTimer !== undefined) {
 		clearInterval(catchUpTimer);
@@ -246,6 +266,10 @@ export const disconnectSharedLeague = () => {
 		clearInterval(catchUpTimer);
 		catchUpTimer = undefined;
 	}
+	autoPlayUnsub?.();
+	autoPlayUnsub = undefined;
+	currentTransport = undefined;
+	void toUI("updateLocal", [{ mpAutoPlay: undefined }]);
 	const engine = getSyncEngine();
 	if (engine) {
 		engine.stop();

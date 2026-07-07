@@ -22,6 +22,7 @@ export {
 	getSyncRequired,
 	getSyncStatus,
 	markSyncRequired,
+	publishAutoPlayState,
 	resyncSharedLeague,
 	type SyncActivityItem,
 } from "./connect.ts";

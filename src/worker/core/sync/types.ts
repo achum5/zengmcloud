@@ -1,4 +1,5 @@
 import type { Changeset } from "./changeset.ts";
+import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
 
 // One device's push registration in a league room, stored at
@@ -82,6 +83,13 @@ export interface SyncTransport {
 	// Read this room's registry doc (its league fingerprint), if any. Optional so
 	// the in-memory test transport can skip it.
 	getRoomInfo?(): Promise<{ leagueId?: string } | undefined>;
+
+	// Share / watch the simmer's auto-play schedule for the room. Optional so the
+	// in-memory test transport can skip them.
+	publishAutoPlay?(state: SyncedAutoPlay): Promise<void>;
+	subscribeAutoPlay?(
+		onChange: (state: SyncedAutoPlay | undefined) => void,
+	): () => void;
 
 	// Push-notification support. Optional so the in-memory test transport can
 	// skip it. registerMember records this device's FCM token in the room;

@@ -1019,6 +1019,16 @@ type LocalStateUIGameTeam = {
 );
 
 type GameAttributesSyncedToUi = (typeof gameAttributesSyncedToUi)[number];
+// The simmer's auto-play schedule, shared to the whole room for a live view +
+// countdown on every device.
+export type SyncedAutoPlay = {
+	enabled: boolean;
+	// Timestamp (ms) of the next scheduled sim, or undefined if paused/none.
+	nextRunAt: number | undefined;
+	// Human-readable schedule lines, for a read-only view on other devices.
+	rules: string[];
+};
+
 export type LocalStateUI = {
 	customMenu?: MenuItemHeader;
 	email?: string;
@@ -1056,6 +1066,10 @@ export type LocalStateUI = {
 	// True when we intend to be synced but aren't connected yet (reconnecting
 	// after a refresh, or offline). Simming is paused while this is true.
 	mpSyncReconnecting: boolean;
+	// The auto-play schedule the SIMMER is running, shared to every device in the
+	// room so all users see the same schedule + countdown. Undefined if nobody is
+	// auto-playing.
+	mpAutoPlay: SyncedAutoPlay | undefined;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;

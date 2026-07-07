@@ -36,11 +36,12 @@ const formatTime = (ts: number | undefined) =>
 const AutoPlaySchedule = () => {
 	useTitleBar({ title: "Auto Play Scheduler" });
 
-	const { lid, phaseText, mpSyncActive, mpSyncIsHost } = useLocal([
+	const { lid, phaseText, mpSyncActive, mpSyncIsHost, mpAutoPlay } = useLocal([
 		"lid",
 		"phaseText",
 		"mpSyncActive",
 		"mpSyncIsHost",
+		"mpAutoPlay",
 	]);
 
 	// Auto play advances the shared league, so it's only allowed when connected
@@ -89,6 +90,36 @@ const AutoPlaySchedule = () => {
 
 	return (
 		<>
+			{mpAutoPlay?.enabled ? (
+				<div className="card mb-3" style={{ maxWidth: 520 }}>
+					<div className="card-body">
+						<h3 className="card-title h5">
+							Shared schedule{eligible ? " (you're simming)" : ""}
+						</h3>
+						{mpAutoPlay.rules.length > 0 ? (
+							<ul className="mb-2">
+								{mpAutoPlay.rules.map((line, i) => (
+									<li key={i}>{line}</li>
+								))}
+							</ul>
+						) : null}
+						<div>
+							Next sim:{" "}
+							<b>
+								{mpAutoPlay.nextRunAt !== undefined
+									? `${new Date(mpAutoPlay.nextRunAt).toLocaleString()} (${formatCountdown(mpAutoPlay.nextRunAt - Date.now())})`
+									: "paused"}
+							</b>
+						</div>
+						{!eligible ? (
+							<div className="form-text mb-0">
+								Set by whoever's simming. Take over simming to change it.
+							</div>
+						) : null}
+					</div>
+				</div>
+			) : null}
+
 			<div className="d-flex flex-wrap align-items-center gap-2 mb-2">
 				{settings.enabled ? (
 					<button
