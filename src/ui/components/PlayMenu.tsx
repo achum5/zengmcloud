@@ -125,8 +125,13 @@ const PlayMenu = ({
 					</Dropdown.Header>
 				) : null}
 				{options.map((option, i) => {
+					// Only lock options that actually SIM. A url option just navigates
+					// (e.g. "One day (live)" → the daily schedule page, "View draft"),
+					// and the exempt ids are turn-based draft advances - never lock those.
 					const optionLocked =
-						locked && !PLAY_MENU_WHEEL_EXEMPT.has(option.id as string);
+						locked &&
+						!option.url &&
+						!PLAY_MENU_WHEEL_EXEMPT.has(option.id as string);
 					return (
 						<Dropdown.Item
 							key={i}
