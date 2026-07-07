@@ -1,8 +1,9 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { player } from "../index.ts";
-import { g } from "../../util/index.ts";
+import { g, helpers, local } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
+import { PHASE } from "../../../common/constants.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { applyChangeset, captureChangeset } from "./changeset.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
@@ -93,6 +94,41 @@ describe("sync changeset", () => {
 		// pC added
 		assert.strictEqual(byId.has(pCid as number), true);
 		assert.strictEqual(after.length, 2);
+	});
+
+	test("advancing daysLeft refreshes the free-agency status text on the receiver", async () => {
+		resetG();
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		await resetCache({});
+		// Receiver is currently on day 29 of free agency.
+		await idb.cache.gameAttributes.put({
+			key: "phase",
+			value: PHASE.FREE_AGENCY,
+		});
+		await idb.cache.gameAttributes.put({ key: "daysLeft", value: 29 });
+		local.statusText = helpers.daysLeft(true, 29);
+		assert.ok(local.statusText.includes("29"), local.statusText);
+
+		// The wheel device simmed a day and synced daysLeft → 28.
+		changeTracker.disable();
+		await applyChangeset(
+			{
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "daysLeft",
+						type: "put",
+						value: { key: "daysLeft", value: 28 },
+					},
+				],
+			},
+			{ refreshUI: false },
+		);
+
+		// g advanced AND the status line was recomputed (not frozen on 29).
+		assert.strictEqual(g.get("daysLeft"), 28);
+		assert.strictEqual(local.statusText, helpers.daysLeft(true, 28));
+		assert.ok(local.statusText.includes("28"), local.statusText);
 	});
 
 	test("applying a changeset does not itself get recorded", async () => {

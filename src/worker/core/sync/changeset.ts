@@ -2,7 +2,12 @@ import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import type { Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
-import { toUI, updatePhase, updatePlayMenu } from "../../util/index.ts";
+import {
+	toUI,
+	updatePhase,
+	updatePlayMenu,
+	updateStatus,
+} from "../../util/index.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
 import type { UpdateEvents } from "../../../common/types.ts";
 
@@ -90,6 +95,12 @@ export const applyChangeset = async (
 	let touchedGameAttributes = false;
 	let touchedPhase = false;
 	let touchedGames = false;
+	// The free-agency countdown ("28 days left") and the draft-progress text are
+	// driven by `local.statusText`, which only updates when someone calls
+	// updateStatus(). The simming device does that itself; a device that merely
+	// RECEIVES the daysLeft/phase change must refresh it too, or its status line
+	// stays frozen on the old day even though g.daysLeft advanced.
+	let touchedStatus = false;
 
 	await changeTracker.runSuppressed(async () => {
 		for (const change of changeset.changes) {
@@ -111,6 +122,9 @@ export const applyChangeset = async (
 				touchedGameAttributes = true;
 				if (change.id === "phase" || change.id === "nextPhase") {
 					touchedPhase = true;
+				}
+				if (change.id === "daysLeft") {
+					touchedStatus = true;
 				}
 			} else if (change.store === "games" || change.store === "schedule") {
 				touchedGames = true;
@@ -138,6 +152,18 @@ export const applyChangeset = async (
 			console.error("Failed to refresh phase after sync", error);
 		}
 		updateEvents.push("newPhase");
+	}
+
+	// Refresh the status line ("X days left in free agency", draft progress) on a
+	// receiving device. A phase change also moves the status (e.g. into/out of
+	// free agency), so recompute in either case. updateStatus() with no argument
+	// derives the right text from the just-updated g.
+	if (touchedStatus || touchedPhase) {
+		try {
+			await updateStatus();
+		} catch (error) {
+			console.error("Failed to refresh status after sync", error);
+		}
 	}
 
 	// The LeagueTopBar score ticker is fed by a separate UI-state channel, not by
