@@ -52,18 +52,13 @@ const AutoPlayCountdown = () => {
 		return () => clearInterval(id);
 	}, [active]);
 
-	if (!settings.enabled) {
+	if (!settings.enabled || state.nextRunAt === undefined) {
 		return null;
 	}
-	if (state.running) {
-		return <span className="text-warning"> · simming…</span>;
-	}
-	if (state.nextRunAt === undefined) {
-		return null;
-	}
+	// A plain count-down timer to the next scheduled sim ("⏱ 18:01").
 	return (
 		<span className="text-warning">
-			{" · sim in "}
+			{" · ⏱ "}
 			{format(state.nextRunAt - Date.now())}
 		</span>
 	);
