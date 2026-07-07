@@ -74,6 +74,8 @@ export type RecapTeam = {
 	record?: { won: number; lost: number };
 	ptsQtrs?: number[];
 	last10?: RecapLast10Game[];
+	// Win/loss streak AS OF this game (includes this game's result).
+	streak?: { won: boolean; count: number };
 	seed?: number;
 };
 
@@ -311,6 +313,36 @@ export const getDayGamesForRecap = async ({
 		return out;
 	};
 
+	// A team's win/loss streak as of a given day (counts back from its most
+	// recent completed game, which is the game being recapped).
+	const streakFor = (
+		tid: number,
+		upToDay: number,
+	): { won: boolean; count: number } | undefined => {
+		const teamGames = allGames
+			.filter(
+				(game) =>
+					game.won &&
+					game.lost &&
+					(game.day ?? 0) <= upToDay &&
+					(game.teams[0].tid === tid || game.teams[1].tid === tid),
+			)
+			.sort((a, b) => (b.day ?? 0) - (a.day ?? 0) || b.gid - a.gid);
+		if (teamGames.length === 0) {
+			return undefined;
+		}
+		const won = teamGames[0]!.won.tid === tid;
+		let count = 0;
+		for (const game of teamGames) {
+			if ((game.won.tid === tid) === won) {
+				count += 1;
+			} else {
+				break;
+			}
+		}
+		return { won, count };
+	};
+
 	// Playoff series lookup for the current postseason.
 	const playoffSeries = await idb.cache.playoffSeries.get(season);
 	const seriesForGame = async (
@@ -451,6 +483,7 @@ export const getDayGamesForRecap = async ({
 					: undefined,
 				ptsQtrs: Array.isArray(t.ptsQtrs) ? t.ptsQtrs : undefined,
 				last10: await last10For(t.tid, game.day ?? day),
+				streak: streakFor(t.tid, game.day ?? day),
 				seed: playoffs ? seedOf(t.tid) : undefined,
 			});
 		}

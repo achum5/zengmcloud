@@ -83,6 +83,9 @@ const teamBlock = (t: RecapTeam): string => {
 	if (t.record) {
 		header.push(`, ${t.record.won}-${t.record.lost}`);
 	}
+	if (t.streak && t.streak.count > 0) {
+		header.push(`, ${t.streak.won ? "W" : "L"}${t.streak.count}`);
+	}
 	if (typeof t.seed === "number") {
 		header.push(`, #${t.seed} seed`);
 	}

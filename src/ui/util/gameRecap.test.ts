@@ -98,6 +98,7 @@ describe("buildRecapPrompt — rich context", () => {
 					pts: 100,
 					record: { won: 50, lost: 32 },
 					ptsQtrs: [25, 20, 30, 25],
+					streak: { won: true, count: 3 },
 					seed: 8,
 					last10: [
 						{ opp: "BOS", home: false, won: true, pts: 100, oppPts: 98 },
@@ -166,7 +167,7 @@ describe("buildRecapPrompt — rich context", () => {
 			clutchPlays: [],
 		};
 		const prompt = buildRecapPrompt([rich], "Day 90");
-		assert.ok(prompt.includes("50-32"), prompt); // season record
+		assert.ok(prompt.includes("50-32, W3"), prompt); // record + streak
 		assert.ok(prompt.includes("By quarter: 25 | 20 | 30 | 25"), prompt);
 		assert.ok(prompt.includes("Last 10 (1-0)"), prompt);
 		assert.ok(prompt.includes("Season avg:"), prompt);
