@@ -77,7 +77,7 @@ const relativeTime = (ts: number): string => {
 };
 
 const MultiplayerSync = () => {
-	useTitleBar({ title: "Multiplayer Sync (Beta)" });
+	useTitleBar({ title: "Multiplayer Sync" });
 
 	const { lid, mpSyncIsHost, mpSyncHostName, mpSyncReconnecting } = useLocal([
 		"lid",
