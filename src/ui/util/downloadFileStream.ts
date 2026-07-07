@@ -10,37 +10,55 @@ const downloadFileStream = async (
 	filename: string,
 	gzip: boolean,
 ) => {
+	// Fall back to streamSaver's own download mechanism (a service-worker-backed
+	// download to the default folder). Used when the File System Access API isn't
+	// available, or when it fails on a restricted filesystem (see below).
+	const streamSaverFallback = () => {
+		// This is needed because we asynchronously load the stream polyfill
+		streamSaver.WritableStream = window.WritableStream;
+		return streamSaver.createWriteStream(filename);
+	};
+
 	if (stream) {
-		let fileStream: WritableStream;
 		if (HAS_FILE_SYSTEM_ACCESS_API) {
-			const fileHandle = await window.showSaveFilePicker({
-				suggestedName: filename,
-				types: [
-					gzip
-						? {
-								description: "Gzip Files",
-								accept: {
-									"application/gzip": [".gz"],
+			try {
+				const fileHandle = await window.showSaveFilePicker({
+					suggestedName: filename,
+					types: [
+						gzip
+							? {
+									description: "Gzip Files",
+									accept: {
+										"application/gzip": [".gz"],
+									},
+								}
+							: {
+									description: "JSON Files",
+									accept: {
+										"application/json": [".json"],
+									},
 								},
-							}
-						: {
-								description: "JSON Files",
-								accept: {
-									"application/json": [".json"],
-								},
-							},
-				],
-			});
+					],
+				});
 
-			fileStream = await fileHandle.createWritable();
-		} else {
-			// This is needed because we asynchronously load the stream polyfill
-			streamSaver.WritableStream = window.WritableStream;
-
-			fileStream = streamSaver.createWriteStream(filename);
+				return await fileHandle.createWritable();
+			} catch (error) {
+				// The user cancelled the save dialog - respect that, don't download.
+				if ((error as Error)?.name === "AbortError") {
+					throw error;
+				}
+				// Some environments (sandboxed/flatpak Chrome, certain filesystems)
+				// throw NoModificationAllowedError from createWritable. Rather than
+				// fail the whole export, fall back to the default-folder download.
+				console.warn(
+					"File System Access API save failed, falling back to a normal download",
+					error,
+				);
+				return streamSaverFallback();
+			}
 		}
 
-		return fileStream;
+		return streamSaverFallback();
 	}
 
 	const contents: Uint8Array<ArrayBuffer>[] = [];

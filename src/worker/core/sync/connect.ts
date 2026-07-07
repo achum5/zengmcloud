@@ -6,28 +6,6 @@ import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, toUI } from "../../util/index.ts";
 
-// Thrown internally when a room's league fingerprint doesn't match this file.
-class SyncMismatchError extends Error {}
-
-// This league file's stable fingerprint. Stored as a gameAttribute so it's
-// carried IN the file - every device that loads the same exported file shares
-// it. Generated once (lazily) if the file doesn't have one yet. This is what
-// lets a room refuse a different league than the one it was recorded against.
-const ensureLeagueId = async (): Promise<string> => {
-	const existing = await idb.cache.gameAttributes.get("syncLeagueId");
-	if (existing && typeof existing.value === "string") {
-		return existing.value;
-	}
-	const id =
-		typeof crypto !== "undefined" && crypto.randomUUID
-			? crypto.randomUUID()
-			: `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
-	await idb.cache.gameAttributes.put({ key: "syncLeagueId", value: id });
-	// @ts-expect-error - syncLeagueId isn't in the GameAttributesLeague type.
-	g.setWithoutSavingToDB("syncLeagueId", id);
-	return id;
-};
-
 // This device's catch-up watermark for a league, stored in the durable meta DB
 // so it survives refreshes - so we only replay what we missed.
 const loadWatermark = async (lid: number | undefined): Promise<number> => {
@@ -209,32 +187,6 @@ export const connectSharedLeague = async ({
 		sinceTs: watermark,
 	});
 
-	// League-identity guard. A room's change log is a stream of deltas that only
-	// makes sense on top of the SAME league file it was recorded against. Replaying
-	// it onto a DIFFERENT league corrupts the database (duplicate teamSeasons,
-	// etc.). So each room is stamped with a fingerprint of its league, and we
-	// refuse to connect a league whose fingerprint doesn't match.
-	const localLeagueId = await ensureLeagueId();
-	try {
-		const roomInfo = await transport.getRoomInfo?.();
-		if (roomInfo?.leagueId) {
-			if (roomInfo.leagueId !== localLeagueId) {
-				syncRequired = false;
-				void toUI("updateLocal", [{ mpSyncActive: false }]);
-				throw new SyncMismatchError();
-			}
-		}
-		// Fresh room (no fingerprint yet): stamp it with ours below.
-	} catch (error) {
-		if (error instanceof SyncMismatchError) {
-			throw new Error(
-				"This code belongs to a different league. Everyone must load the same league file. If you just updated the shared file, re-import the latest copy — otherwise use a new code.",
-			);
-		}
-		// A read failure (e.g. rules not published yet, offline) shouldn't block
-		// connecting; the guard simply can't run until the room is reachable.
-	}
-
 	const engine = new SyncEngine(transport, {
 		isHost,
 		initialWatermark: watermark,
@@ -254,9 +206,8 @@ export const connectSharedLeague = async ({
 	currentCode = trimmed;
 	currentHostName = undefined;
 
-	// Register the room (listable on the admin page) and stamp our league
-	// fingerprint so a mismatched league can be refused later. Best-effort.
-	void transport.touchRoom?.(localLeagueId);
+	// Register the room so it shows up on the admin page. Best-effort.
+	void transport.touchRoom?.();
 
 	// Turn on change capture so local actions get published to the room.
 	changeTracker.enable();
