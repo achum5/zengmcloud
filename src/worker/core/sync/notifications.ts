@@ -63,17 +63,6 @@ const newPhaseFromChangeset = (changeset: Changeset): number | undefined => {
 	return undefined;
 };
 
-// True if the changeset touches roster state at all (signings, cuts, trades,
-// draft picks). Deliberately broad - for a friend group, an occasional extra
-// ping is better than a missed move.
-const isRosterChange = (changeset: Changeset): boolean =>
-	changeset.changes.some(
-		(change) =>
-			change.store === "players" ||
-			change.store === "releasedPlayers" ||
-			change.store === "draftPicks",
-	);
-
 // The completed games this sim added, for the current season.
 const simGames = (changeset: Changeset, season: number): Game[] => {
 	const games: Game[] = [];
@@ -288,6 +277,20 @@ const playerName = (p: any): string =>
 const currentRating = (p: any): any =>
 	Array.isArray(p.ratings) ? p.ratings[p.ratings.length - 1] : undefined;
 
+// " (58/78)" (ovr/pot), or " (58 ovr)" if pot is missing, or "" if neither.
+const ratingParen = (p: any): string => {
+	const rating = currentRating(p);
+	const ovr = rating?.ovr;
+	const pot = rating?.pot;
+	if (typeof ovr === "number" && typeof pot === "number") {
+		return ` (${ovr}/${pot})`;
+	}
+	if (typeof ovr === "number") {
+		return ` (${ovr} ovr)`;
+	}
+	return "";
+};
+
 const pickLabel = (dp: any): string => {
 	const round = typeof dp.round === "number" ? dp.round : 1;
 	const season = typeof dp.season === "number" ? dp.season : "future";
@@ -339,12 +342,7 @@ const describeTrade = (
 	const assetsGoingTo = (tid: number): string[] => [
 		...players
 			.filter((p) => p.tid === tid)
-			.map((p) => {
-				const ovr = currentRating(p)?.ovr;
-				return typeof ovr === "number"
-					? `${playerName(p)} (${ovr} ovr)`
-					: playerName(p);
-			}),
+			.map((p) => `${playerName(p)}${ratingParen(p)}`),
 		...picks.filter((dp) => dp.tid === tid).map(pickLabel),
 	];
 
@@ -389,16 +387,21 @@ const describeSigning = (
 	}
 	const rating = currentRating(p);
 	const ovr = rating?.ovr;
+	const pot = rating?.pot;
 	const pos = rating?.pos;
 	const years = Math.max(
 		1,
 		(p.contract.exp ?? g.get("season")) - g.get("season") + 1,
 	);
 	const totalM = Math.round(((p.contract.amount ?? 0) * years) / 1000);
-	const who =
-		typeof ovr === "number"
-			? `${playerName(p)} (${ovr} ovr${pos ? `, ${pos}` : ""})`
-			: playerName(p);
+	const ratingStr =
+		typeof ovr === "number" && typeof pot === "number"
+			? `${ovr}/${pot}`
+			: typeof ovr === "number"
+				? `${ovr} ovr`
+				: "";
+	const parenParts = [ratingStr, pos].filter(Boolean).join(", ");
+	const who = parenParts ? `${playerName(p)} (${parenParts})` : playerName(p);
 	const body = `The ${teamLabel(teamById, p.tid)} sign ${who} to a ${years}-year, $${totalM}M contract.`;
 	return { title: "Signing", body, targetTids: null };
 };
@@ -469,7 +472,7 @@ const MAX_ROSTER_MOVE_CHANGES = 30;
 export const buildNotifications = async (
 	label: string,
 	changeset: Changeset,
-	{ isHost, authorName }: { isHost: boolean; authorName: string },
+	{ isHost }: { isHost: boolean; authorName: string },
 ): Promise<SyncNotification[]> => {
 	// Detect a sim by CONTENT, not just the label: only simulating games writes
 	// `games` records, and sims arrive via several actions (playMenu.day, but also
@@ -540,16 +543,6 @@ export const buildNotifications = async (
 		const signing = describeSigning(changeset, teamById);
 		if (signing) {
 			return [signing];
-		}
-
-		if (isRosterChange(changeset)) {
-			return [
-				{
-					title: "Roster move",
-					body: `${authorName} made a roster move.`,
-					targetTids: null,
-				},
-			];
 		}
 	}
 

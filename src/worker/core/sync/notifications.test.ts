@@ -267,8 +267,8 @@ describe("buildNotifications", () => {
 		assert.ok(body.includes("acquire"), body);
 		assert.ok(body.includes("LA Lakers"), body);
 		assert.ok(body.includes("Boston Celtics"), body);
-		assert.ok(body.includes("Role Player (74 ovr)"), body);
-		assert.ok(body.includes("Star Wing (88 ovr)"), body);
+		assert.ok(body.includes("Role Player (74/74)"), body);
+		assert.ok(body.includes("Star Wing (88/88)"), body);
 		assert.ok(body.includes("2027 1st-round pick"), body);
 	});
 
@@ -288,7 +288,7 @@ describe("buildNotifications", () => {
 		);
 		assert.strictEqual(notifs[0]!.title, "Signing");
 		assert.ok(
-			notifs[0]!.body.includes("LA Lakers sign New Guy (80 ovr, PG)"),
+			notifs[0]!.body.includes("LA Lakers sign New Guy (80/80, PG)"),
 			notifs[0]!.body,
 		);
 		assert.ok(notifs[0]!.body.includes("3-year, $45M"), notifs[0]!.body);
