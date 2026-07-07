@@ -28,6 +28,7 @@ type SyncActivityItem = {
 	records: number;
 	mine: boolean;
 	caughtUp: boolean;
+	attrs: string[];
 };
 
 // "main.signFreeAgent" → "Signing", "playMenu.day" → "Simmed a day", etc. Falls
@@ -554,6 +555,18 @@ const MultiplayerSync = () => {
 												{item.records} record{item.records === 1 ? "" : "s"} ·{" "}
 												{relativeTime(item.ts)}
 											</span>
+											{item.attrs.length > 0 ? (
+												<span className="d-block small">
+													{item.attrs.map((attr) => (
+														<span
+															key={attr}
+															className={`badge me-1 ${attr === "phase" ? "text-bg-warning" : "text-bg-light"}`}
+														>
+															{attr}
+														</span>
+													))}
+												</span>
+											) : null}
 										</span>
 									</li>
 								))}

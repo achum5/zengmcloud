@@ -123,6 +123,9 @@ export type SyncActivityItem = {
 	mine: boolean;
 	// Is it at or below our durable catch-up watermark (i.e. accounted for)?
 	caughtUp: boolean;
+	// Which gameAttributes keys this change carried (e.g. "phase", "daysLeft"), so
+	// the sync log makes it obvious whether a phase change actually shipped.
+	attrs: string[];
 };
 
 // Read the whole shared change log and report, per change, whether this device
@@ -142,6 +145,12 @@ export const getSyncActivity = async (): Promise<{
 	const clientId = engine.clientId;
 
 	// Collapse chunked bulk batches (which share a batchId) into a single row.
+	// gameAttributes keys carried by an entry (phase, daysLeft, etc.).
+	const attrsOf = (entry: (typeof entries)[number]): string[] =>
+		entry.changeset.changes
+			.filter((c) => c.store === "gameAttributes")
+			.map((c) => String(c.id));
+
 	const byKey = new Map<string, SyncActivityItem>();
 	for (const entry of entries) {
 		const key = entry.batchId ?? entry.id;
@@ -152,6 +161,11 @@ export const getSyncActivity = async (): Promise<{
 			existing.records += records;
 			existing.ts = Math.max(existing.ts, entry.seq);
 			existing.caughtUp = mine || existing.ts <= watermark;
+			for (const attr of attrsOf(entry)) {
+				if (!existing.attrs.includes(attr)) {
+					existing.attrs.push(attr);
+				}
+			}
 		} else {
 			byKey.set(key, {
 				key,
@@ -160,6 +174,7 @@ export const getSyncActivity = async (): Promise<{
 				records,
 				mine,
 				caughtUp: mine || entry.seq <= watermark,
+				attrs: attrsOf(entry),
 			});
 		}
 	}
