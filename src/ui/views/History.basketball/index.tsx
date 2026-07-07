@@ -91,24 +91,11 @@ const History = (props: View<"history">) => {
 			<div className="row">
 				<div className="col-md-6 mt-1">
 					<h2 className="h5">Team Recaps (AI)</h2>
-					<p className="text-body-secondary mb-2">
-						Bake every team's {season} season — records, key players, franchise
-						history, and the moves that built each roster — into one AI prompt.
-						Paste the reply to file a recap on each team's{" "}
-						<b>{season} Team Note</b>. Best run right after the playoffs, before
-						the draft.
-					</p>
 					<SeasonRecap season={season} />
 				</div>
 
 				<div className="col-md-6 mt-1">
 					<h2 className="h5">Retired Player Writeups (AI)</h2>
-					<p className="text-body-secondary mb-2">
-						Bake every player who retired after {season} — full career,
-						franchise stops, and accolades — into one AI prompt. Paste the reply
-						to file a career writeup on each player's <b>note</b>. Each writeup's
-						length follows the career, from Hall of Famers to the undrafted.
-					</p>
 					<RetiredRecap season={season} />
 				</div>
 			</div>
