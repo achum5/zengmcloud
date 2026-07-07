@@ -418,8 +418,9 @@ const buildSimNotifications = async (
 // standard 2-team trade the direction is recoverable: an asset's new tid is its
 // destination, and (there being two teams) it came from the other one.
 
-// At most this many individual draft-pick notifications from one changeset, so
-// a full-draft sim can't fire dozens of pushes.
+// Later-round picks only ping a team for its OWN picks; at most this many from
+// one changeset so a full-draft sim doesn't fire dozens of pushes. (Every
+// first-round pick is announced regardless - see buildDraftNotifications.)
 const MAX_DRAFT_PICK_NOTIFS = 10;
 
 type TeamInfo = { region: string; name: string; abbrev?: string };
@@ -677,8 +678,9 @@ const buildDraftNotifications = (
 ): SyncNotification[] => {
 	const season = g.get("season");
 	const numActiveTeams = g.get("numActiveTeams");
+	const userTids = g.get("userTids");
 
-	const picks = changesToValues(changeset, "players")
+	const allPicks = changesToValues(changeset, "players")
 		.filter(
 			(p) =>
 				p.draft &&
@@ -692,8 +694,19 @@ const buildDraftNotifications = (
 			(a, b) => a.draft.round - b.draft.round || a.draft.pick - b.draft.pick,
 		);
 
+	// Announce EVERY first-round pick to the whole room (the headline of the
+	// draft). In later rounds, only ping someone for their OWN picks, so a "sim to
+	// end" doesn't blast the room with 60+ pushes.
+	const picks = allPicks.filter(
+		(p) => p.draft.round === 1 || userTids.includes(p.tid),
+	);
+
+	// Allow a full first round through (all of it is worth announcing); the cap
+	// only trims a deluge of later-round picks.
+	const maxNotifs = Math.max(MAX_DRAFT_PICK_NOTIFS, numActiveTeams);
+
 	const out: SyncNotification[] = [];
-	for (const p of picks.slice(0, MAX_DRAFT_PICK_NOTIFS)) {
+	for (const p of picks.slice(0, maxNotifs)) {
 		const overall = (p.draft.round - 1) * numActiveTeams + p.draft.pick;
 		const rating = currentRating(p);
 		const ovr = p.draft.ovr ?? rating?.ovr;
@@ -712,10 +725,10 @@ const buildDraftNotifications = (
 			path: typeof p.pid === "number" ? `player/${p.pid}` : "draft",
 		});
 	}
-	if (picks.length > MAX_DRAFT_PICK_NOTIFS) {
+	if (picks.length > maxNotifs) {
 		out.push({
 			title: "Draft",
-			body: `…and ${picks.length - MAX_DRAFT_PICK_NOTIFS} more picks.`,
+			body: `…and ${picks.length - maxNotifs} more picks.`,
 			targetTids: null,
 		});
 	}
@@ -758,6 +771,33 @@ export const buildNotifications = async (
 
 	const newPhase = newPhaseFromChangeset(changeset);
 
+	// Draft picks made this changeset - announced per pick to the whole room.
+	// Checked FIRST, before the sim/phase branches, because the simmer advances
+	// CPU picks via playMenu.onePick / untilEnd (which look like sims), and the
+	// final pick lands in AFTER_DRAFT (a phase change) - in all those cases the
+	// picks themselves should still be narrated. Detected by content (players
+	// actually drafted this season), not by the current phase.
+	const draftSeason = g.get("season");
+	const hasDraftPicks = changeset.changes.some(
+		(c) =>
+			c.store === "players" &&
+			c.type === "put" &&
+			c.value?.draft?.year === draftSeason &&
+			c.value.draft.round >= 1 &&
+			c.value.draft.pick >= 1 &&
+			c.value.tid === c.value.draft.tid &&
+			c.value.tid >= 0,
+	);
+	if (hasDraftPicks) {
+		const draftNotifications = buildDraftNotifications(
+			changeset,
+			await teamsById(),
+		);
+		if (draftNotifications.length > 0) {
+			return draftNotifications;
+		}
+	}
+
 	if (isSim) {
 		// Non-host devices shouldn't be simming; if they somehow do, stay quiet so
 		// the room doesn't get duplicate sim announcements.
@@ -770,18 +810,6 @@ export const buildNotifications = async (
 			return buildPhaseChangeNotifications(newPhase);
 		}
 		return buildSimNotifications(label, changeset);
-	}
-
-	// Draft picks made this changeset (announced like a broadcast). Checked before
-	// the phase-change branch so picks during the draft are narrated per pick.
-	if (g.get("phase") === PHASE.DRAFT) {
-		const draftNotifications = buildDraftNotifications(
-			changeset,
-			await teamsById(),
-		);
-		if (draftNotifications.length > 0) {
-			return draftNotifications;
-		}
 	}
 
 	// A manual phase advance (not via a sim).

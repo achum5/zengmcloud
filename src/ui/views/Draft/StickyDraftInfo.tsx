@@ -160,6 +160,7 @@ export const StickyDraftInfo = ({
 	spectator,
 	userNextPickYear,
 	userTids,
+	mpBlocked,
 }: {
 	challengeNoRatings: boolean;
 	drafted: any[];
@@ -167,6 +168,7 @@ export const StickyDraftInfo = ({
 	spectator: boolean;
 	userNextPickYear: number;
 	userTids: number[];
+	mpBlocked: boolean;
 }) => {
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 
@@ -212,6 +214,7 @@ export const StickyDraftInfo = ({
 						spectator={spectator}
 						userRemaining={userRemaining}
 						usersTurn={usersTurn}
+						mpBlocked={mpBlocked}
 					/>
 				</div>
 				<div className="d-flex flex-grow-1 gap-1 py-1">
@@ -307,6 +310,7 @@ export const StickyDraftInfo = ({
 						spectator={spectator}
 						userRemaining={userRemaining}
 						usersTurn={usersTurn}
+						mpBlocked={mpBlocked}
 					/>
 				</div>
 			</div>

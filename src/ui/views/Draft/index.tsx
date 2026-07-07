@@ -44,6 +44,8 @@ const Draft = ({
 		teamInfoCache,
 		userTid,
 		userTids,
+		mpSyncActive,
+		mpSyncIsHost,
 	} = useLocal([
 		"challengeNoRatings",
 		"draftType",
@@ -54,7 +56,12 @@ const Draft = ({
 		"teamInfoCache",
 		"userTid",
 		"userTids",
+		"mpSyncActive",
+		"mpSyncIsHost",
 	]);
+
+	// Synced follower: can draft its own player, but the simmer drives advancing.
+	const mpBlocked = mpSyncActive && !mpSyncIsHost;
 	const expansionDraft = phase === PHASE.EXPANSION_DRAFT;
 
 	const [drafting, setDrafting] = useState(false);
@@ -475,6 +482,7 @@ const Draft = ({
 				spectator={spectator}
 				userNextPickYear={userNextPickYear}
 				userTids={userTids}
+				mpBlocked={mpBlocked}
 			/>
 			<div className="d-sm-flex gap-3">
 				{messages.length > 0 ? (

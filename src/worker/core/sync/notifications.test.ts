@@ -547,6 +547,48 @@ describe("buildNotifications", () => {
 		assert.strictEqual(notifs[0]!.path, "player/7");
 	});
 
+	test("every first-round pick is announced, even CPU picks the simmer advances", async () => {
+		// The simmer advances CPU picks via playMenu.onePick (a "sim"-looking label)
+		// and the pick can even land in AFTER_DRAFT. A first-round pick for a team
+		// that ISN'T the user's must still be narrated to the whole room.
+		g.setWithoutSavingToDB("phase", PHASE.AFTER_DRAFT);
+		g.setWithoutSavingToDB("numActiveTeams", 30);
+		const notifs = await buildNotifications(
+			"playMenu.onePick",
+			{
+				changes: [
+					{
+						store: "players",
+						id: 12,
+						type: "put",
+						value: {
+							pid: 12,
+							tid: 1, // Celtics - NOT the user's team (userTids = [0])
+							firstName: "Cpu",
+							lastName: "Prospect",
+							ratings: [{ ovr: 60, pot: 80, pos: "PG" }],
+							draft: {
+								round: 1,
+								pick: 5,
+								year: 2026,
+								tid: 1,
+								ovr: 60,
+								pot: 80,
+							},
+						},
+					},
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Draft pick");
+		assert.ok(
+			notifs[0]!.body.includes("Boston Celtics select Cpu Prospect"),
+			notifs[0]!.body,
+		);
+		assert.strictEqual(notifs[0]!.targetTids, null); // everyone
+	});
+
 	test("deep-link paths: trade → transactions, signing → player page", async () => {
 		const trade = await buildNotifications(
 			"main.proposeTrade",

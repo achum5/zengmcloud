@@ -47,16 +47,12 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 // advance the shared timeline. These sets classify which API calls count as
 // "advancing" so the guard below can block them on non-wheel devices.
 //
-// Play-menu items that DON'T need the wheel: "stop"/"stopAuto" just halt, and
-// the draft-advancement items are turn-based (the game only enables them for
-// whoever is on the clock), so any user may drive their own draft.
-const PLAY_MENU_WHEEL_EXEMPT = new Set([
-	"stop",
-	"stopAuto",
-	"onePick",
-	"untilYourNextPick",
-	"untilEnd",
-]);
+// Play-menu items that DON'T need the wheel: "stop"/"stopAuto" just halt.
+// Drafting your OWN player (main.draftUser) is a separate call that isn't
+// wheel-locked, so every user can still make their own pick - but the draft
+// ADVANCERS (sim one pick / to your next pick / to end) move the shared draft
+// past other teams' picks, so only the simmer may run them.
+const PLAY_MENU_WHEEL_EXEMPT = new Set(["stop", "stopAuto"]);
 // "actions"-type calls that advance the season/live sim. (runDraft/untilPick in
 // actions.ts are draft helpers and stay exempt.)
 const ACTIONS_WHEEL_LOCKED = new Set(["simGame", "liveGame", "simToGame"]);

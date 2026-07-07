@@ -12,15 +12,10 @@ import {
 import { confirm } from "../util/confirm.tsx";
 
 // Play-menu items that stay available on a device that doesn't hold the wheel:
-// "stop"/"stopAuto" just halt, and the draft-advancement items are turn-based
-// (any user drafts their own team). Mirrors the guard in worker/index.ts.
-const PLAY_MENU_WHEEL_EXEMPT = new Set([
-	"stop",
-	"stopAuto",
-	"onePick",
-	"untilYourNextPick",
-	"untilEnd",
-]);
+// "stop"/"stopAuto" just halt. Drafting your own player isn't a play-menu item
+// (you click a player), so the draft ADVANCERS here move the shared draft and
+// are locked for non-simmers. Mirrors the guard in worker/index.ts.
+const PLAY_MENU_WHEEL_EXEMPT = new Set(["stop", "stopAuto"]);
 
 const handleOptionClick = (option: Option, event: MouseEvent) => {
 	if (!option.url) {

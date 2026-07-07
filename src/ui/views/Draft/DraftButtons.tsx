@@ -6,13 +6,23 @@ export const DraftButtons = ({
 	spectator,
 	userRemaining,
 	usersTurn,
+	mpBlocked,
 }: {
 	spectator: boolean;
 	userRemaining: boolean;
 	usersTurn: boolean;
+	// Synced, but this device isn't the simmer: it may draft its own player but
+	// not advance the shared draft past other teams' picks.
+	mpBlocked: boolean;
 }) => {
 	// This doesn't capture everything, since things can be triggered from outside of this component, but it's something
 	const [running, setRunning] = useState(false);
+
+	// The simmer drives the draft; a follower's advance buttons would just error
+	// out against the wheel guard, so hide them entirely.
+	if (mpBlocked) {
+		return null;
+	}
 
 	return (
 		<div className="btn-group">
