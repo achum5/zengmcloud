@@ -56,7 +56,80 @@ describe("buildNotifications", () => {
 		});
 	});
 
-	test("host sim → detailed per-team summary targeted to that team", async () => {
+	// A completed game with box scores, so we can check top-performer stat lines.
+	const gameWithBoxScore = (): Changeset["changes"][number] => ({
+		store: "games",
+		id: 5,
+		type: "put",
+		value: {
+			gid: 5,
+			season: 2026,
+			teams: [
+				{
+					tid: 0,
+					players: [
+						{
+							name: "Star Guy",
+							min: 34,
+							pts: 30,
+							orb: 2,
+							drb: 6,
+							ast: 11,
+							fg: 11,
+							fga: 18,
+							ft: 6,
+							fta: 7,
+							stl: 2,
+							blk: 1,
+							pf: 2,
+							tov: 3,
+						},
+						{
+							name: "Bench Guy",
+							min: 12,
+							pts: 4,
+							orb: 0,
+							drb: 1,
+							ast: 0,
+							fg: 2,
+							fga: 5,
+							ft: 0,
+							fta: 0,
+							stl: 0,
+							blk: 0,
+							pf: 1,
+							tov: 1,
+						},
+					],
+				},
+				{
+					tid: 1,
+					players: [
+						{
+							name: "Opp Ace",
+							min: 33,
+							pts: 25,
+							orb: 1,
+							drb: 4,
+							ast: 5,
+							fg: 9,
+							fga: 20,
+							ft: 5,
+							fta: 6,
+							stl: 1,
+							blk: 0,
+							pf: 3,
+							tov: 2,
+						},
+					],
+				},
+			],
+			won: { tid: 0, pts: 110 },
+			lost: { tid: 1, pts: 86 },
+		},
+	});
+
+	test("host sim (multi-game) → per-team header + detailed blocks, targeted", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.week",
 			{
@@ -73,6 +146,19 @@ describe("buildNotifications", () => {
 		// Home win vs BOS, away loss @ BOS.
 		assert.ok(notifs[0]!.body.includes("W vs BOS 110-105"));
 		assert.ok(notifs[0]!.body.includes("L @ BOS 98-102"));
+	});
+
+	test("single game → team result line + top game-score stat line per team", async () => {
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{ changes: [gameWithBoxScore()] },
+			opts,
+		);
+		const body = notifs[0]!.body;
+		assert.ok(body.includes("LA Lakers W vs BOS 110-86"), body);
+		// Star Guy outscores Bench Guy on Game Score; REB = orb + drb = 8.
+		assert.ok(body.includes("Star Guy: 30 PTS, 8 REB, 11 AST"), body);
+		assert.ok(body.includes("Opp Ace: 25 PTS, 5 REB, 5 AST"), body);
 	});
 
 	test("team with no game still gets a targeted 'league advanced' notice", async () => {

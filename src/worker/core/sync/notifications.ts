@@ -1,4 +1,5 @@
 import { PHASE, PHASE_TEXT } from "../../../common/constants.ts";
+import { helpers } from "../../../common/helpers.ts";
 import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import type { Game } from "../../../common/types.ts";
@@ -102,11 +103,48 @@ const simGames = (changeset: Changeset, season: number): Game[] => {
 	return games;
 };
 
-// One game from a team's perspective, e.g. "W vs BOS 110-105" or "L @ GSW 98-102".
-const gameLine = (
+// The best performer on a team in a game, by Game Score. Skips players who
+// didn't play. Returns undefined if there's no usable box score (e.g. a
+// non-basketball league, where Game Score doesn't apply).
+const topScorer = (players: any[] | undefined): any => {
+	let best: any;
+	let bestScore = -Infinity;
+	for (const p of players ?? []) {
+		if (!p || (typeof p.min === "number" && p.min <= 0)) {
+			continue;
+		}
+		const score = helpers.gameScore(p);
+		if (typeof score === "number" && !Number.isNaN(score) && score > bestScore) {
+			bestScore = score;
+			best = p;
+		}
+	}
+	return best;
+};
+
+// "Jayson Tatum: 30 PTS, 8 REB, 11 AST", or undefined if we can't build one.
+const statLine = (p: any): string | undefined => {
+	if (!p || typeof p.pts !== "number") {
+		return undefined;
+	}
+	const reb = (p.orb ?? 0) + (p.drb ?? 0);
+	const ast = p.ast ?? 0;
+	return `${p.name}: ${p.pts} PTS, ${reb} REB, ${ast} AST`;
+};
+
+// One game from a team's perspective:
+//   "Boston Massacre W vs DET 110-86
+//    Jayson Tatum: 30 PTS, 8 REB, 11 AST
+//    Cade Cunningham: 28 PTS, 7 REB, 4 AST"
+// includeTeamName puts the team name on the result line (for a single-game body);
+// multi-game bodies carry the team name in a header instead.
+const gameBlock = (
 	game: Game,
 	tid: number,
+	teamName: string,
 	teamById: Map<number, { abbrev?: string }>,
+	includeTeamName: boolean,
+	resultSuffix = "",
 ): string => {
 	const won = game.won.tid === tid;
 	const myPts = won ? game.won.pts : game.lost.pts;
@@ -115,8 +153,24 @@ const gameLine = (
 	// teams[0] is the home team in ZenGM.
 	const home = game.teams[0]?.tid === tid;
 	const oppAbbrev = teamById.get(oppTid)?.abbrev ?? "OPP";
-	return `${won ? "W" : "L"} ${home ? "vs " : "@ "}${oppAbbrev} ${myPts}-${oppPts}`;
+
+	const result = `${includeTeamName ? `${teamName} ` : ""}${won ? "W" : "L"} ${home ? "vs" : "@"} ${oppAbbrev} ${myPts}-${oppPts}${resultSuffix}`;
+
+	const myTeam = game.teams.find((t: any) => t.tid === tid);
+	const oppTeam = game.teams.find((t: any) => t.tid === oppTid);
+
+	const lines = [
+		result,
+		statLine(topScorer(myTeam?.players)),
+		statLine(topScorer(oppTeam?.players)),
+	].filter((line): line is string => line !== undefined);
+
+	return lines.join("\n");
 };
+
+// Show full stat-line detail for at most this many games, so a week/month sim
+// doesn't produce an enormous notification.
+const MAX_DETAILED_GAMES = 3;
 
 // Build one detailed notification per managed team, each targeted so a GM only
 // gets their own team's results. Reads current cache state (post-sim truth) for
@@ -171,13 +225,22 @@ const buildSimNotifications = async (
 			// Ignore - the record is a nicety, not essential.
 		}
 
-		let body = `Your ${teamName} went ${wins}-${losses} ${period}${seasonRecord}`;
-		// Only list individual scores when there are few games, so the notification
-		// stays readable.
-		if (teamGames.length <= 5) {
-			body += `: ${teamGames.map((game) => gameLine(game, tid, teamById)).join(", ")}.`;
+		let body: string;
+		if (teamGames.length === 1) {
+			// Single game (a day sim): result on the team-named line, then the top
+			// performer's stat line for each team.
+			body = gameBlock(teamGames[0]!, tid, teamName, teamById, true, seasonRecord);
 		} else {
-			body += ".";
+			// Multiple games: a record header, then detailed blocks for the first
+			// few, then a count of any remainder.
+			const header = `Your ${teamName} went ${wins}-${losses} ${period}${seasonRecord}:`;
+			const blocks = teamGames
+				.slice(0, MAX_DETAILED_GAMES)
+				.map((game) => gameBlock(game, tid, teamName, teamById, false));
+			body = [header, ...blocks].join("\n");
+			if (teamGames.length > MAX_DETAILED_GAMES) {
+				body += `\n…and ${teamGames.length - MAX_DETAILED_GAMES} more.`;
+			}
 		}
 
 		notifications.push({ title: "Sim complete", body, targetTids: [tid] });
