@@ -70,6 +70,18 @@ const isWheelLockedCall = (type: string, name: string): boolean =>
 	(type === "actions" && ACTIONS_WHEEL_LOCKED.has(name)) ||
 	(type === "main" && MAIN_WHEEL_LOCKED.has(name));
 
+// "main"-type transactions that mutate the SHARED league (not the wheel, so any
+// connected member may do them, but they must actually reach the room). These
+// require a verified-live connection before running, so a transaction can't be
+// made locally while the app only looks connected and then silently not sync.
+const MAIN_CONNECTION_REQUIRED = new Set([
+	"proposeTrade",
+	"acceptContractNegotiation",
+	"reSignAll",
+	"releasePlayer",
+	"draftUser",
+]);
+
 export type WorkerAPICategory =
 	| "actions"
 	| "eightyTwoZeroDraft"
@@ -80,7 +92,7 @@ export type WorkerAPICategory =
 	| "toolsMenu";
 
 // API functions should have at most 2 arguments. First argument is passed here from toWorker. If you need to pass multiple variables, use an object/array. Second argument is Conditions.
-promiseWorker.register(([type, name, param], hostID) => {
+promiseWorker.register(async ([type, name, param], hostID) => {
 	const conditions = {
 		hostID,
 	};
@@ -92,15 +104,20 @@ promiseWorker.register(([type, name, param], hostID) => {
 		);
 	}
 
-	// Multiplayer wheel guard. In a shared league, advancing the timeline is only
-	// allowed on the device that holds the wheel AND is actually connected. We
-	// block BEFORE the action runs (not just its broadcast), which is what stops
-	// a device from simming locally and diverging. Draft picks are exempt
-	// (handled by isWheelLockedCall), so everyone can still draft their own team.
-	if (isWheelLockedCall(type, name)) {
+	// Multiplayer guard. Before advancing the timeline (sim/draft/phase) or making
+	// a transaction (trade/signing/cut/draft pick), require that this device (a)
+	// holds the wheel when the call advances the timeline, and (b) is ACTUALLY
+	// connected to the cloud - not just holding a stale engine object. Blocking
+	// here (before the action runs) is what stops a device from mutating locally
+	// and diverging when it only looks connected.
+	const wheelLocked = isWheelLockedCall(type, name);
+	const needsConnection =
+		wheelLocked || (type === "main" && MAIN_CONNECTION_REQUIRED.has(name));
+
+	if (needsConnection) {
 		const syncEngine = getSyncEngine();
 		if (syncEngine) {
-			if (!syncEngine.isAuthority()) {
+			if (wheelLocked && !syncEngine.isAuthority()) {
 				const holder =
 					syncEngine.getAuthority()?.holderName ?? "Another device";
 				util.logEvent(
@@ -113,14 +130,31 @@ promiseWorker.register(([type, name, param], hostID) => {
 				);
 				return undefined;
 			}
+
+			// Confirm the connection is GENUINELY live, so this change can actually
+			// reach the room. Cheap when we've had recent contact; a real, timed
+			// server round-trip otherwise. This is what catches "looked connected but
+			// wasn't" - a dropped listener, expired token, or resumed-from-suspend tab.
+			const live = await syncEngine.verifyConnection();
+			if (!live) {
+				util.logEvent(
+					{
+						type: "error",
+						text: `Not connected to the cloud right now, so this wasn't done — it wouldn't reach your league-mates. Check your connection and try again in a moment.`,
+						persistent: true,
+					},
+					conditions,
+				);
+				return undefined;
+			}
 		} else if (getSyncRequired()) {
 			// Meant to be synced but not connected (reconnecting after a refresh,
-			// or offline). Pause simming so this device can't advance while offline
-			// and diverge from everyone else.
+			// or offline). Pause so this device can't advance while offline and
+			// diverge from everyone else.
 			util.logEvent(
 				{
 					type: "error",
-					text: `Reconnecting to the shared league — simming is paused until you're back online. To play offline instead, disconnect on the Multiplayer Sync page.`,
+					text: `Reconnecting to the shared league — paused until you're back online. To play offline instead, disconnect on the Multiplayer Sync page.`,
 					persistent: true,
 				},
 				conditions,

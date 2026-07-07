@@ -264,6 +264,28 @@ describe("SyncEngine", () => {
 		assert.strictEqual(bus.entries[0]!.changeset.changes.length, 1);
 	});
 
+	test("verifyConnection delegates to the transport, defaulting to live", async () => {
+		const bus = new FakeBus();
+
+		// A transport with no probe (like the in-memory fake) is treated as live.
+		const live = new SyncEngine(new FakeTransport("A", bus));
+		assert.strictEqual(await live.verifyConnection(), true);
+
+		// A transport that reports a dead connection is respected → the guard blocks.
+		const deadTransport: SyncTransport = {
+			clientId: "D",
+			async publish() {},
+			subscribe() {
+				return () => {};
+			},
+			async verifyConnection() {
+				return false;
+			},
+		};
+		const dead = new SyncEngine(deadTransport);
+		assert.strictEqual(await dead.verifyConnection(), false);
+	});
+
 	test("advances the persisted watermark as it catches up", async () => {
 		const bus = new FakeBus();
 		const watermarks: number[] = [];

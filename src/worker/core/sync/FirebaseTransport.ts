@@ -5,6 +5,7 @@ import {
 	addDoc,
 	setDoc,
 	getDoc,
+	getDocFromServer,
 	getDocs,
 	onSnapshot,
 	query,
@@ -31,6 +32,28 @@ import type {
 // A room has exactly one "wheel" doc recording who may advance the league.
 const AUTHORITY_DOC_ID = "authority";
 
+// If we've had confirmed contact with Firestore within this window, treat the
+// connection as live without a round-trip; otherwise verifyConnection() probes.
+const CONNECTION_FRESH_MS = 8000;
+// A liveness probe that doesn't answer within this long counts as "not connected"
+// (a silently-dropped listener won't error, it just never responds).
+const CONNECTION_PROBE_TIMEOUT_MS = 6000;
+
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+	new Promise((resolve, reject) => {
+		const id = setTimeout(() => reject(new Error("timeout")), ms);
+		promise.then(
+			(value) => {
+				clearTimeout(id);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(id);
+				reject(error);
+			},
+		);
+	});
+
 // Firestore-backed transport. Each shared league is a room keyed by its code;
 // changes live in `leagues/{code}/changes`, ordered by server timestamp. The
 // changeset is stored as a serialized string (see serialize.ts) to preserve
@@ -48,6 +71,10 @@ export class FirebaseTransport implements SyncTransport {
 	// reconnecting device catches up on exactly what it missed.
 	private sinceTs: number;
 
+	// When we last confirmed a live round-trip to Firestore (any successful read,
+	// write, or real-time delivery). Powers verifyConnection().
+	private lastContactAt = Date.now();
+
 	constructor(
 		code: string,
 		clientId: string,
@@ -58,6 +85,34 @@ export class FirebaseTransport implements SyncTransport {
 		this.code = code;
 		this.db = getFirestore(getFirebaseApp());
 		this.changesRef = collection(this.db, "leagues", code, "changes");
+	}
+
+	private markContact() {
+		this.lastContactAt = Date.now();
+	}
+
+	// Is the cloud connection ACTUALLY live right now? Cheap when we've had recent
+	// confirmed contact; otherwise does a real, timed round-trip. This is what lets
+	// the sim/advance guard refuse to advance when the app only *looks* connected
+	// (a silently-dropped listener, an expired token, a resumed-from-suspend tab) -
+	// which would otherwise advance locally and never reach the shared log.
+	async verifyConnection(): Promise<boolean> {
+		if (Date.now() - this.lastContactAt < CONNECTION_FRESH_MS) {
+			return true;
+		}
+		try {
+			// getDocFromServer, not getDoc: a plain getDoc can be answered from
+			// Firestore's offline cache and falsely report "connected". We want a
+			// real server round-trip.
+			await withTimeout(
+				getDocFromServer(doc(this.db, "leagues", this.code)),
+				CONNECTION_PROBE_TIMEOUT_MS,
+			);
+			this.markContact();
+			return true;
+		} catch {
+			return false;
+		}
 	}
 
 	// Publish the simmer's auto-play schedule so every device can show the same
@@ -168,6 +223,7 @@ export class FirebaseTransport implements SyncTransport {
 		return onSnapshot(
 			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
 			(snapshot) => {
+				this.markContact();
 				const data = snapshot.data();
 				if (data && typeof data.holderId === "string") {
 					onChange({
@@ -211,6 +267,7 @@ export class FirebaseTransport implements SyncTransport {
 		for (let attempt = 0; attempt < 3; attempt++) {
 			try {
 				await addDoc(this.changesRef, doc);
+				this.markContact();
 				return;
 			} catch (error) {
 				lastError = error;
@@ -245,6 +302,7 @@ export class FirebaseTransport implements SyncTransport {
 	// full-resync recovery.
 	async fetchAllEntries(): Promise<ChangesetEntry[]> {
 		const snapshot = await getDocs(query(this.changesRef, orderBy("ts")));
+		this.markContact();
 		const entries: ChangesetEntry[] = [];
 		for (const docSnap of snapshot.docs) {
 			const entry = this.parseEntry(docSnap);
@@ -266,6 +324,7 @@ export class FirebaseTransport implements SyncTransport {
 				orderBy("ts"),
 			),
 		);
+		this.markContact();
 		const entries: ChangesetEntry[] = [];
 		for (const docSnap of snapshot.docs) {
 			const entry = this.parseEntry(docSnap);
@@ -291,6 +350,8 @@ export class FirebaseTransport implements SyncTransport {
 		let chain: Promise<void> = Promise.resolve();
 
 		const unsub = onSnapshot(q, (snapshot) => {
+			// Any delivery (even an empty one) means the listener is live.
+			this.markContact();
 			const entries: ChangesetEntry[] = [];
 			for (const change of snapshot.docChanges()) {
 				if (change.type !== "added") {

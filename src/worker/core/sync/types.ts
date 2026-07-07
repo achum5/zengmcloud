@@ -76,6 +76,12 @@ export interface SyncTransport {
 	// catch-up. Optional so the in-memory test transport can skip it.
 	fetchEntriesSince?(sinceMs: number): Promise<ChangesetEntry[]>;
 
+	// Is the connection ACTUALLY live right now (not just "we have a transport
+	// object")? Cheap on recent contact, else a real timed round-trip. The
+	// sim/advance/transaction guard uses this to refuse to mutate when the app
+	// only looks connected. Optional; absent transport ⇒ treated as live.
+	verifyConnection?(): Promise<boolean>;
+
 	// Upsert this room's registry doc (listable on the admin page) and stamp the
 	// league fingerprint. Optional so the in-memory test transport can skip it.
 	touchRoom?(leagueId?: string): Promise<void>;

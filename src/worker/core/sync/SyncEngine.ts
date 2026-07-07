@@ -471,6 +471,13 @@ export class SyncEngine {
 		this.advanceWatermark();
 	}
 
+	// Is the cloud connection actually live right now? The sim/advance/transaction
+	// guard calls this so we never mutate the shared league while only *looking*
+	// connected. A transport without the probe (the test fake) is treated as live.
+	async verifyConnection(): Promise<boolean> {
+		return (await this.transport.verifyConnection?.()) ?? true;
+	}
+
 	// The watermark we've durably caught up through (server-timestamp millis).
 	getPersistedSeq(): number {
 		return this.persistedSeq;
