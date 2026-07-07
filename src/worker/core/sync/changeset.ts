@@ -1,5 +1,5 @@
 import { idb } from "../../db/index.ts";
-import { changeTracker, runExclusive } from "../../db/changeTracker.ts";
+import { changeTracker } from "../../db/changeTracker.ts";
 import type { Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
 import {
@@ -92,9 +92,6 @@ export const applyChangeset = async (
 		return;
 	}
 
-	// Hold the sync lock for the whole apply, so a local action can't capture (or
-	// have its own writes eaten by the suppressed window) while we're mid-apply.
-	await runExclusive(async () => {
 	let touchedGameAttributes = false;
 	let touchedPhase = false;
 	let touchedGames = false;
@@ -105,35 +102,40 @@ export const applyChangeset = async (
 	// stays frozen on the old day even though g.daysLeft advanced.
 	let touchedStatus = false;
 
-	await changeTracker.runSuppressed(async () => {
-		for (const change of changeset.changes) {
-			// Never let a peer's "which team I control" overwrite ours (also
-			// protects catch-up replays of older, unfiltered history).
-			if (isDeviceLocal(change.store, change.id)) {
-				continue;
-			}
-
-			const api = storeAPI(change.store);
-
-			if (change.type === "delete") {
-				await api.delete(change.id);
-			} else {
-				await api.put(change.value);
-			}
-
-			if (change.store === "gameAttributes") {
-				touchedGameAttributes = true;
-				if (change.id === "phase" || change.id === "nextPhase") {
-					touchedPhase = true;
-				}
-				if (change.id === "daysLeft") {
-					touchedStatus = true;
-				}
-			} else if (change.store === "games" || change.store === "schedule") {
-				touchedGames = true;
-			}
+	// Apply each write, then IMMEDIATELY forget just that record from the change
+	// tracker. We deliberately do NOT globally suppress recording during the
+	// apply: a global flag would also swallow the writes of a local sim running
+	// at the same time (e.g. right after this device takes over simming while
+	// still catching up), leaving that sim unpublished. Forgetting only our own
+	// applied records keeps a concurrent local action's other writes intact.
+	for (const change of changeset.changes) {
+		// Never let a peer's "which team I control" overwrite ours (also
+		// protects catch-up replays of older, unfiltered history).
+		if (isDeviceLocal(change.store, change.id)) {
+			continue;
 		}
-	});
+
+		const api = storeAPI(change.store);
+
+		if (change.type === "delete") {
+			await api.delete(change.id);
+		} else {
+			await api.put(change.value);
+		}
+		changeTracker.forget(change.store, change.id);
+
+		if (change.store === "gameAttributes") {
+			touchedGameAttributes = true;
+			if (change.id === "phase" || change.id === "nextPhase") {
+				touchedPhase = true;
+			}
+			if (change.id === "daysLeft") {
+				touchedStatus = true;
+			}
+		} else if (change.store === "games" || change.store === "schedule") {
+			touchedGames = true;
+		}
+	}
 
 	// The cache store now holds the new gameAttributes rows, but the in-memory
 	// `g` object (and the UI's copy) is stale until we reload it from the cache.
@@ -183,5 +185,4 @@ export const applyChangeset = async (
 	if (refreshUI) {
 		await toUI("realtimeUpdate", [updateEvents]);
 	}
-	});
 };

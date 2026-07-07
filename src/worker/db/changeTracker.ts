@@ -23,28 +23,6 @@ let enabled = false;
 let suppressed = false;
 const pending = new Map<string, PendingChange>();
 
-// Serializes the two things that must never interleave: a local action's write+
-// capture window, and a remote changeset being applied (which suppresses
-// recording). Without this, an apply running concurrently with a local sim would
-// flip `suppressed` on mid-sim and silently drop the sim's writes from capture -
-// so the sim would never be published (e.g. right after a device takes the wheel
-// while it's still catching up / auto-resyncing). A simple promise-chain mutex.
-let lockTail: Promise<void> = Promise.resolve();
-
-export const runExclusive = async <T>(fn: () => Promise<T> | T): Promise<T> => {
-	const prev = lockTail;
-	let release: () => void = () => {};
-	lockTail = new Promise<void>((resolve) => {
-		release = resolve;
-	});
-	await prev;
-	try {
-		return await fn();
-	} finally {
-		release();
-	}
-};
-
 export const changeTracker = {
 	enable() {
 		enabled = true;
@@ -79,6 +57,16 @@ export const changeTracker = {
 		return pending.size;
 	},
 
+	// Drop a specific record from the pending set. Used right after APPLYING a
+	// remote change: we let the write record normally (so a concurrent local
+	// action's writes to OTHER records are never lost), then immediately forget
+	// just the record we applied so it isn't re-broadcast. This replaces the old
+	// global "suppressed" flag for applies, which could silently swallow a
+	// concurrent local sim's writes and leave it unpublished.
+	forget(store: string, id: number | string) {
+		pending.delete(key(store, id));
+	},
+
 	// Return all pending changes and clear the buffer.
 	drain(): PendingChange[] {
 		const out = [...pending.values()];
@@ -86,8 +74,8 @@ export const changeTracker = {
 		return out;
 	},
 
-	// Run fn with recording suppressed. Used while APPLYING a remote changeset
-	// so we don't re-capture (and then re-broadcast) changes we just received.
+	// Run fn with recording suppressed. Used for local-only/bulk calls (league
+	// import, read-only view fetches) that must not capture at all.
 	async runSuppressed<T>(fn: () => Promise<T>): Promise<T> {
 		const prev = suppressed;
 		suppressed = true;
