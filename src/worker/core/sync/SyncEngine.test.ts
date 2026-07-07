@@ -45,6 +45,11 @@ class FakeTransport implements SyncTransport {
 		this.bus.publish(entry);
 	}
 
+	async fetchAllEntries(): Promise<ChangesetEntry[]> {
+		// Over-the-wire copy, like the real transport (JSON round-trip).
+		return this.bus.entries.map((e) => JSON.parse(JSON.stringify(e)));
+	}
+
 	subscribe(subscriber: SyncSubscriber) {
 		return this.bus.subscribe((entry) => {
 			// Mimic the real transport: apply the entry, then signal the batch is
@@ -197,6 +202,89 @@ describe("SyncEngine", () => {
 		await nonHost.onLocalChangeset({ changes }, "playMenu.day");
 
 		assert.strictEqual(bus.entries.length, 0);
+	});
+
+	test("does NOT advance the watermark past a changeset that failed to apply", async () => {
+		const bus = new FakeBus();
+		const watermarks: number[] = [];
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {
+			onWatermark: (seq) => watermarks.push(seq),
+		});
+		receiver.start();
+
+		resetG();
+		await resetCache({});
+
+		const host = new FakeTransport("H", bus);
+
+		// A good entry: applies, watermark advances to its seq.
+		await host.publish({
+			id: "good",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+			},
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const afterGood = watermarks.at(-1);
+		assert.ok(afterGood !== undefined);
+
+		// A poison entry targeting a store that doesn't exist → apply throws.
+		await host.publish({
+			id: "poison",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "nope" as any, id: 1, type: "put", value: {} }],
+			},
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		// The watermark must NOT have moved past the failed entry - otherwise a
+		// reconnect would skip it forever (the silent-divergence bug).
+		assert.strictEqual(watermarks.at(-1), afterGood);
+	});
+
+	test("resyncAll re-reads the whole log and applies every entry from scratch", async () => {
+		const bus = new FakeBus();
+
+		resetG();
+		await resetCache({});
+
+		// Two changes land in the shared log (from another device) while we're not
+		// listening - simulating a device that fell behind.
+		const host = new FakeTransport("H", bus);
+		await host.publish({
+			id: "a",
+			authorId: "H",
+			action: "main.proposeTrade",
+			changeset: {
+				changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+			},
+		});
+		await host.publish({
+			id: "b",
+			authorId: "H",
+			action: "main.signFreeAgent",
+			changeset: {
+				changes: [{ store: "events", id: 2, type: "put", value: { eid: 2 } }],
+			},
+		});
+
+		// A fresh device that never subscribed forces a full resync.
+		const watermarks: number[] = [];
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {
+			onWatermark: (seq) => watermarks.push(seq),
+		});
+		const result = await receiver.resyncAll();
+
+		assert.strictEqual(result.total, 2);
+		assert.strictEqual(result.applied, 2);
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, 2);
+		// Watermark caught up to the newest entry.
+		assert.strictEqual(watermarks.at(-1), bus.entries.at(-1)!.seq);
 	});
 
 	test("skips self-authored and duplicate entries", async () => {

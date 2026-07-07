@@ -66,6 +66,11 @@ export interface SyncTransport {
 	// history we missed, then live updates). Returns an unsubscribe function.
 	subscribe(subscriber: SyncSubscriber): () => void;
 
+	// One-shot read of the ENTIRE change log, ordered oldest-first (not a live
+	// subscription). Powers the sync-activity view and full-resync recovery.
+	// Optional so the in-memory test transport can skip it.
+	fetchAllEntries?(): Promise<ChangesetEntry[]>;
+
 	// Push-notification support. Optional so the in-memory test transport can
 	// skip it. registerMember records this device's FCM token in the room;
 	// publishNotification enqueues a push for the Cloud Function to fan out.

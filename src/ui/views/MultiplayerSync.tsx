@@ -17,6 +17,61 @@ import {
 
 type Status = "disconnected" | "connecting" | "connected";
 
+type SyncActivityItem = {
+	key: string;
+	action: string;
+	ts: number;
+	records: number;
+	mine: boolean;
+	caughtUp: boolean;
+};
+
+// "main.signFreeAgent" → "Signing", "playMenu.day" → "Simmed a day", etc. Falls
+// back to the raw action name so nothing is ever hidden.
+const prettyAction = (action: string): string => {
+	const map: Record<string, string> = {
+		"playMenu.day": "Simmed a day",
+		"playMenu.week": "Simmed a week",
+		"playMenu.month": "Simmed a month",
+		"playMenu.untilPlayoffs": "Simmed to playoffs",
+		"playMenu.throughPlayoffs": "Simmed through playoffs",
+		"playMenu.untilDraft": "Simmed to draft",
+		"playMenu.untilFreeAgency": "Simmed to free agency",
+		"playMenu.untilRegularSeason": "Simmed to regular season",
+		"main.signFreeAgent": "Signed a free agent",
+		"main.proposeTrade": "Trade",
+		"main.reSign": "Re-signed a player",
+		"main.draftUser": "Draft pick",
+		"main.setNote": "Edited a note",
+	};
+	if (map[action]) {
+		return map[action];
+	}
+	const short = action.includes(".")
+		? action.slice(action.indexOf(".") + 1)
+		: action;
+	return short.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
+};
+
+const relativeTime = (ts: number): string => {
+	if (!ts) {
+		return "just now";
+	}
+	const secs = Math.max(0, Math.round((Date.now() - ts) / 1000));
+	if (secs < 60) {
+		return `${secs}s ago`;
+	}
+	const mins = Math.round(secs / 60);
+	if (mins < 60) {
+		return `${mins}m ago`;
+	}
+	const hours = Math.round(mins / 60);
+	if (hours < 24) {
+		return `${hours}h ago`;
+	}
+	return `${Math.round(hours / 24)}d ago`;
+};
+
 const MultiplayerSync = () => {
 	useTitleBar({ title: "Multiplayer Sync (Beta)" });
 
@@ -45,6 +100,12 @@ const MultiplayerSync = () => {
 		useState<NotificationPermission>(getPushPermission());
 	const [pushBusy, setPushBusy] = useState(false);
 	const [pushError, setPushError] = useState<string | undefined>();
+
+	// Sync activity log + manual recovery.
+	const [activity, setActivity] = useState<SyncActivityItem[]>([]);
+	const [activityLoading, setActivityLoading] = useState(false);
+	const [resyncing, setResyncing] = useState(false);
+	const [resyncResult, setResyncResult] = useState<string | undefined>();
 
 	// On mount, reflect whatever the worker's sync engine is currently doing
 	// (it may already be connected from an auto-reconnect after refresh), and
@@ -105,6 +166,47 @@ const MultiplayerSync = () => {
 		await toWorker("main", "updateGameAttributes", { userTid: tid });
 		setUserTid(tid);
 	};
+
+	const refreshActivity = async () => {
+		setActivityLoading(true);
+		try {
+			const result = await toWorker("main", "getSyncActivity", undefined);
+			setActivity(result.items);
+		} catch {
+			// Best-effort; leave whatever we had.
+		} finally {
+			setActivityLoading(false);
+		}
+	};
+
+	const forceResync = async () => {
+		setResyncResult(undefined);
+		setResyncing(true);
+		try {
+			const { total, applied } = await toWorker(
+				"main",
+				"resyncSharedLeague",
+				undefined,
+			);
+			setResyncResult(
+				`Re-applied ${applied} of ${total} change${total === 1 ? "" : "s"} from the league. Your file is now up to date.`,
+			);
+			await refreshActivity();
+		} catch (err) {
+			setResyncResult((err as Error).message ?? String(err));
+		} finally {
+			setResyncing(false);
+		}
+	};
+
+	// Load the activity log once we're connected (and whenever the wheel changes
+	// hands, a cheap signal that something happened).
+	useEffect(() => {
+		if (status === "connected") {
+			void refreshActivity();
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [status, mpSyncIsHost, mpSyncHostName]);
 
 	const enablePush = async () => {
 		setPushError(undefined);
@@ -335,6 +437,72 @@ const MultiplayerSync = () => {
 					) : null}
 				</div>
 			</div>
+
+			{connected ? (
+				<div className="card mt-3" style={{ maxWidth: 500 }}>
+					<div className="card-body">
+						<div className="d-flex align-items-center justify-content-between mb-2">
+							<h3 className="card-title h5 mb-0">Sync activity</h3>
+							<button
+								className="btn btn-link btn-sm p-0"
+								disabled={activityLoading}
+								onClick={() => void refreshActivity()}
+							>
+								{activityLoading ? "Refreshing…" : "Refresh"}
+							</button>
+						</div>
+						<p className="text-body-secondary">
+							Every change in the league, newest first. A ✓ means this device has
+							applied it; a ⏳ means it hasn't caught up yet. If something's
+							missing here or your file looks out of date, force a full resync.
+						</p>
+
+						<button
+							className="btn btn-warning btn-sm mb-3"
+							disabled={resyncing}
+							onClick={() => void forceResync()}
+						>
+							{resyncing ? "Resyncing…" : "Force full resync"}
+						</button>
+
+						{resyncResult ? (
+							<div className="alert alert-info py-2 mb-3">{resyncResult}</div>
+						) : null}
+
+						{activity.length === 0 ? (
+							<p className="text-body-secondary mb-0">
+								{activityLoading ? "Loading…" : "No changes in the log yet."}
+							</p>
+						) : (
+							<ul className="list-group list-group-flush">
+								{activity.map((item) => (
+									<li
+										key={item.key}
+										className="list-group-item px-0 d-flex align-items-center gap-2"
+									>
+										<span
+											title={item.caughtUp ? "Applied here" : "Not caught up yet"}
+											style={{ fontSize: "1.1em" }}
+										>
+											{item.caughtUp ? "✅" : "⏳"}
+										</span>
+										<span className="flex-grow-1">
+											{prettyAction(item.action)}
+											{item.mine ? (
+												<span className="badge text-bg-secondary ms-2">you</span>
+											) : null}
+											<span className="text-body-secondary d-block small">
+												{item.records} record{item.records === 1 ? "" : "s"} ·{" "}
+												{relativeTime(item.ts)}
+											</span>
+										</span>
+									</li>
+								))}
+							</ul>
+						)}
+					</div>
+				</div>
+			) : null}
 		</>
 	);
 };

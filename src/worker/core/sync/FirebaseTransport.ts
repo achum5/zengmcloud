@@ -4,6 +4,7 @@ import {
 	doc,
 	addDoc,
 	setDoc,
+	getDocs,
 	onSnapshot,
 	query,
 	orderBy,
@@ -12,6 +13,7 @@ import {
 	serverTimestamp,
 	type CollectionReference,
 	type Firestore,
+	type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { getFirebaseApp } from "./firebaseApp.ts";
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
@@ -136,6 +138,41 @@ export class FirebaseTransport implements SyncTransport {
 		});
 	}
 
+	// Parse a stored change doc into a ChangesetEntry, or undefined if it has no
+	// server timestamp yet (a pending local write not yet confirmed).
+	private parseEntry(
+		docSnap: QueryDocumentSnapshot,
+	): ChangesetEntry | undefined {
+		const data = docSnap.data();
+		if (!data.ts) {
+			return undefined;
+		}
+		return {
+			id: data.id,
+			authorId: data.authorId,
+			action: data.action,
+			seq: typeof data.ts.toMillis === "function" ? data.ts.toMillis() : 0,
+			changeset: deserializeChangeset(data.changeset),
+			batchId: data.batchId,
+			chunkIndex: data.chunkIndex,
+			chunkCount: data.chunkCount,
+		};
+	}
+
+	// One-shot read of the whole log, oldest-first, for the activity panel and
+	// full-resync recovery.
+	async fetchAllEntries(): Promise<ChangesetEntry[]> {
+		const snapshot = await getDocs(query(this.changesRef, orderBy("ts")));
+		const entries: ChangesetEntry[] = [];
+		for (const docSnap of snapshot.docs) {
+			const entry = this.parseEntry(docSnap);
+			if (entry) {
+				entries.push(entry);
+			}
+		}
+		return entries;
+	}
+
 	subscribe(subscriber: SyncSubscriber) {
 		// Only entries after our watermark - the initial snapshot is the catch-up
 		// (everything we missed), and later snapshots are live updates. Pending
@@ -156,20 +193,10 @@ export class FirebaseTransport implements SyncTransport {
 				if (change.type !== "added") {
 					continue;
 				}
-				const data = change.doc.data();
-				if (!data.ts) {
-					continue;
+				const entry = this.parseEntry(change.doc);
+				if (entry) {
+					entries.push(entry);
 				}
-				entries.push({
-					id: data.id,
-					authorId: data.authorId,
-					action: data.action,
-					seq: typeof data.ts.toMillis === "function" ? data.ts.toMillis() : 0,
-					changeset: deserializeChangeset(data.changeset),
-					batchId: data.batchId,
-					chunkIndex: data.chunkIndex,
-					chunkCount: data.chunkCount,
-				});
 			}
 
 			if (entries.length === 0) {

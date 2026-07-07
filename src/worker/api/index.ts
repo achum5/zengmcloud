@@ -88,9 +88,11 @@ import {
 	claimSyncAuthority,
 	connectSharedLeague,
 	disconnectSharedLeague,
+	getSyncActivity,
 	getSyncEngine,
 	getSyncStatus,
 	markSyncRequired,
+	resyncSharedLeague,
 } from "../core/sync/index.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
@@ -5325,8 +5327,10 @@ export default {
 		getRandomTeams,
 		getSavedTrade,
 		getDayGamesForRecap,
+		getSyncActivity,
 		getSyncStatus,
 		getSyncTeams,
+		resyncSharedLeague,
 		getTeamGraphStat,
 		getTradingBlockOffers,
 		ping,

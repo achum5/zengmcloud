@@ -81,6 +81,78 @@ export const claimSyncAuthority = async () => {
 	await getSyncEngine()?.claimAuthority();
 };
 
+// One row in the sync-activity view: a single change (or a whole bulk batch,
+// collapsed into one row), with whether THIS device has caught up through it.
+export type SyncActivityItem = {
+	key: string;
+	action: string;
+	// Server-timestamp millis (0 for a not-yet-confirmed write).
+	ts: number;
+	// How many records this change touched (summed across a bulk batch).
+	records: number;
+	// Did this device produce it?
+	mine: boolean;
+	// Is it at or below our durable catch-up watermark (i.e. accounted for)?
+	caughtUp: boolean;
+};
+
+// Read the whole shared change log and report, per change, whether this device
+// has applied/caught up through it. Bulk batches (sims) collapse to one row.
+export const getSyncActivity = async (): Promise<{
+	connected: boolean;
+	watermark: number;
+	items: SyncActivityItem[];
+}> => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		return { connected: false, watermark: 0, items: [] };
+	}
+
+	const entries = await engine.fetchLog();
+	const watermark = engine.getPersistedSeq();
+	const clientId = engine.clientId;
+
+	// Collapse chunked bulk batches (which share a batchId) into a single row.
+	const byKey = new Map<string, SyncActivityItem>();
+	for (const entry of entries) {
+		const key = entry.batchId ?? entry.id;
+		const records = entry.changeset.changes.length;
+		const mine = entry.authorId === clientId;
+		const existing = byKey.get(key);
+		if (existing) {
+			existing.records += records;
+			existing.ts = Math.max(existing.ts, entry.seq);
+			existing.caughtUp = mine || existing.ts <= watermark;
+		} else {
+			byKey.set(key, {
+				key,
+				action: entry.action,
+				ts: entry.seq,
+				records,
+				mine,
+				caughtUp: mine || entry.seq <= watermark,
+			});
+		}
+	}
+
+	// Newest first.
+	const items = [...byKey.values()].sort((a, b) => b.ts - a.ts);
+	return { connected: true, watermark, items };
+};
+
+// Force a full catch-up: re-read the entire log and re-apply it from scratch.
+// The one-click fix for a device that silently diverged.
+export const resyncSharedLeague = async (): Promise<{
+	total: number;
+	applied: number;
+}> => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		throw new Error("Not connected to a sync room.");
+	}
+	return engine.resyncAll();
+};
+
 // Join a shared-league sync room. All devices using the same `code` see each
 // other's changes. Everyone should already be on the same league file - on
 // connect we catch up on everything that happened since we were last synced,

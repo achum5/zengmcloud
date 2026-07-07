@@ -117,6 +117,12 @@ export class SyncEngine {
 
 	private persistedSeq: number;
 
+	// Set when a remote changeset failed to apply. While set, we STOP advancing
+	// the persisted watermark, so a reconnect re-fetches (and re-applies) from
+	// before the failure instead of skipping it forever. Cleared by a full
+	// resync, which re-applies the whole log from scratch.
+	private applyFailed = false;
+
 	constructor(
 		transport: SyncTransport,
 		options: {
@@ -212,7 +218,9 @@ export class SyncEngine {
 	// a reconnect never skips past chunks it hasn't fully applied. (Whole-record
 	// applies are idempotent, so re-fetching a bit on reconnect is harmless.)
 	private advanceWatermark() {
-		if (this.pendingBatches.size > 0) {
+		// Don't skip past a half-received bulk batch, or past a changeset that
+		// failed to apply - either would silently and permanently drop data.
+		if (this.pendingBatches.size > 0 || this.applyFailed) {
 			return;
 		}
 		if (this.maxSeq > this.persistedSeq) {
@@ -349,8 +357,70 @@ export class SyncEngine {
 			await applyChangeset(changeset);
 		} catch (error) {
 			console.error("Failed to apply remote changeset", error);
+			this.applyFailed = true;
 			return false;
 		}
 		return true;
+	}
+
+	// The watermark we've durably caught up through (server-timestamp millis).
+	getPersistedSeq(): number {
+		return this.persistedSeq;
+	}
+
+	// Read the entire shared change log once (not a live subscription), for the
+	// sync-activity panel and for a full resync. Empty if the transport can't.
+	async fetchLog(): Promise<ChangesetEntry[]> {
+		const entries = (await this.transport.fetchAllEntries?.()) ?? [];
+		return entries.sort((a, b) => a.seq - b.seq);
+	}
+
+	// Force a full catch-up: re-read the WHOLE log and re-apply every entry from
+	// the beginning, in order. Safe to run anytime because every change is a
+	// whole-record write (idempotent) - applying old-then-new in timestamp order
+	// always lands on the current shared state. This is the manual recovery for a
+	// device that silently diverged (e.g. an apply that failed and got skipped).
+	// Own entries are re-applied too; they just rewrite our own latest values.
+	async resyncAll(): Promise<{ total: number; applied: number }> {
+		const entries = await this.fetchLog();
+
+		// Start clean so nothing is deduped away and no half-batch lingers.
+		this.pendingBatches.clear();
+		this.applyFailed = false;
+
+		let applied = 0;
+		let maxSeq = this.maxSeq;
+		for (const entry of entries) {
+			if (entry.seq > maxSeq) {
+				maxSeq = entry.seq;
+			}
+			this.seen.add(entry.id);
+
+			const ok =
+				entry.batchId !== undefined &&
+				entry.chunkIndex !== undefined &&
+				entry.chunkCount !== undefined
+					? await this.handleChunk(
+							entry.batchId,
+							entry.chunkIndex,
+							entry.chunkCount,
+							entry.changeset,
+						)
+					: await this.apply(entry.changeset);
+			if (ok) {
+				applied++;
+			}
+		}
+
+		// We've now re-applied everything the log holds, so the watermark can move
+		// to the newest entry regardless of the pre-resync state.
+		this.pendingBatches.clear();
+		this.maxSeq = maxSeq;
+		if (maxSeq > this.persistedSeq) {
+			this.persistedSeq = maxSeq;
+		}
+		this.onWatermark?.(this.persistedSeq);
+
+		return { total: entries.length, applied };
 	}
 }
