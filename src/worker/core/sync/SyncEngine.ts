@@ -478,6 +478,14 @@ export class SyncEngine {
 		return (await this.transport.verifyConnection?.()) ?? true;
 	}
 
+	// Ms since last confirmed live contact with the cloud (undefined if untracked).
+	// Drives the header status dot - a soft signal kept fresh by the subscription/
+	// catch-up while healthy, going stale when the connection quietly dies.
+	contactAge(): number | undefined {
+		const at = this.transport.getLastContactAt?.();
+		return at === undefined ? undefined : Date.now() - at;
+	}
+
 	// The watermark we've durably caught up through (server-timestamp millis).
 	getPersistedSeq(): number {
 		return this.persistedSeq;

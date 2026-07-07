@@ -53,6 +53,23 @@ const CATCH_UP_INTERVAL_MS = 15000;
 // permanently-failed upload can't make the outbox grow without bound.
 const OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
+// The header status dot goes red if we haven't confirmed live cloud contact in
+// this long. Must exceed the catch-up interval so a HEALTHY connection (which
+// catch-up refreshes every 15s) stays green; a dead one goes red after this.
+const HEALTH_STALE_MS = 30000;
+const HEALTH_TICK_MS = 5000;
+let healthTimer: ReturnType<typeof setInterval> | undefined;
+let lastHealthPushed: boolean | undefined;
+
+const pushHealth = () => {
+	const age = getSyncEngine()?.contactAge();
+	const healthy = age !== undefined && age < HEALTH_STALE_MS;
+	if (healthy !== lastHealthPushed) {
+		lastHealthPushed = healthy;
+		void toUI("updateLocal", [{ mpSyncHealthy: healthy }]);
+	}
+};
+
 // The live transport + auto-play subscription for the current room, so the
 // simmer can publish its schedule and every device can watch it.
 let currentTransport: FirebaseTransport | undefined;
@@ -271,6 +288,14 @@ export const connectSharedLeague = async ({
 	void engine.flushOutbox();
 	void outbox.prune(OUTBOX_MAX_AGE_MS);
 
+	// Drive the header connection dot from confirmed live contact.
+	lastHealthPushed = undefined;
+	pushHealth();
+	if (healthTimer !== undefined) {
+		clearInterval(healthTimer);
+	}
+	healthTimer = setInterval(pushHealth, HEALTH_TICK_MS);
+
 	// Watch the shared auto-play schedule so every device shows the same schedule
 	// + countdown, and keep a transport handle so the simmer can publish its own.
 	currentTransport = transport;
@@ -308,10 +333,17 @@ export const disconnectSharedLeague = () => {
 		clearInterval(catchUpTimer);
 		catchUpTimer = undefined;
 	}
+	if (healthTimer !== undefined) {
+		clearInterval(healthTimer);
+		healthTimer = undefined;
+	}
+	lastHealthPushed = undefined;
 	autoPlayUnsub?.();
 	autoPlayUnsub = undefined;
 	currentTransport = undefined;
-	void toUI("updateLocal", [{ mpAutoPlay: undefined, mpSyncUpload: undefined }]);
+	void toUI("updateLocal", [
+		{ mpAutoPlay: undefined, mpSyncUpload: undefined, mpSyncHealthy: false },
+	]);
 	const engine = getSyncEngine();
 	if (engine) {
 		engine.stop();

@@ -82,6 +82,10 @@ export interface SyncTransport {
 	// only looks connected. Optional; absent transport ⇒ treated as live.
 	verifyConnection?(): Promise<boolean>;
 
+	// Epoch ms of last confirmed live contact. Powers the header status dot (a
+	// soft/passive signal; verifyConnection is the precise gate). Optional.
+	getLastContactAt?(): number;
+
 	// Upsert this room's registry doc (listable on the admin page) and stamp the
 	// league fingerprint. Optional so the in-memory test transport can skip it.
 	touchRoom?(leagueId?: string): Promise<void>;
