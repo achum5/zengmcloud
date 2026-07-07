@@ -119,9 +119,7 @@ const PlayMenu = ({
 			<Dropdown.Menu>
 				{locked ? (
 					<Dropdown.Header>
-						{mpSyncReconnecting
-							? "🔄 Reconnecting to the league…"
-							: `🔒 ${mpSyncHostName ?? "Another device"} has the wheel`}
+						{mpSyncReconnecting ? "🔄 Reconnecting to the league…" : "🔒"}
 					</Dropdown.Header>
 				) : null}
 				{options.map((option, i) => {
