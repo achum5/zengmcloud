@@ -3,10 +3,18 @@ import { resetCache, resetG } from "../../../test/helpers.ts";
 import { player } from "../index.ts";
 import { g, helpers, local } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
-import { PHASE } from "../../../common/constants.ts";
+import {
+	DEFAULT_PHASE_CHANGE_REDIRECTS,
+	PHASE,
+} from "../../../common/constants.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
-import { applyChangeset, captureChangeset } from "./changeset.ts";
+import {
+	applyChangeset,
+	captureChangeset,
+	phaseRedirectComponents,
+} from "./changeset.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
+import type { Phase } from "../../../common/types.ts";
 
 const genPlayer = () =>
 	player.generate(g.get("userTid"), 30, 2017, true, DEFAULT_LEVEL);
@@ -164,6 +172,96 @@ describe("sync changeset", () => {
 		assert.ok(ids.includes(1), JSON.stringify(captured.changes));
 		// The applied record (pid 0) was forgotten - not re-broadcast.
 		assert.ok(!ids.includes(0), JSON.stringify(captured.changes));
+	});
+
+	test("a synced phase change advances g.phase and refreshes on the receiver", async () => {
+		// Every phase transition ships as one gameAttributes:phase change (only
+		// finalize() writes it). The receiver must pick up the new phase in g - this
+		// is what lets the header/play-menu/redirect all flip. Regression guard for
+		// "follower stuck on the old phase".
+		resetG();
+		g.setWithoutSavingToDB("phase", PHASE.DRAFT_LOTTERY);
+		await resetCache({});
+		await idb.cache.gameAttributes.put({
+			key: "phase",
+			value: PHASE.DRAFT_LOTTERY,
+		});
+		assert.strictEqual(g.get("phase"), PHASE.DRAFT_LOTTERY);
+
+		// The simmer advanced to the draft and synced phase → DRAFT.
+		changeTracker.disable();
+		await applyChangeset(
+			{
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "phase",
+						type: "put",
+						value: { key: "phase", value: PHASE.DRAFT },
+					},
+				],
+			},
+			{ refreshUI: false },
+		);
+
+		assert.strictEqual(g.get("phase"), PHASE.DRAFT);
+	});
+
+	test("phaseRedirectComponents mirrors finalize for every phase", () => {
+		// The 6 phases whose newPhase* functions return a redirect - and which are
+		// exactly the default phaseChangeRedirects. Each must map to the SAME
+		// landing page finalize sends the simmer to.
+		const expected: Partial<Record<Phase, string[]>> = {
+			[PHASE.REGULAR_SEASON]: ["season_preview"],
+			[PHASE.PLAYOFFS]: ["playoffs"],
+			[PHASE.DRAFT_LOTTERY]: ["history"],
+			[PHASE.DRAFT]: ["draft"],
+			[PHASE.RESIGN_PLAYERS]: ["negotiation"],
+			[PHASE.FREE_AGENCY]: ["free_agents"],
+		};
+
+		// The redirecting phases and the default setting must be the same set.
+		assert.deepEqual(
+			[...DEFAULT_PHASE_CHANGE_REDIRECTS].sort((a, b) => a - b),
+			Object.keys(expected)
+				.map(Number)
+				.sort((a, b) => a - b),
+		);
+
+		for (const [phaseStr, components] of Object.entries(expected)) {
+			const phase = Number(phaseStr) as Phase;
+			assert.deepEqual(
+				phaseRedirectComponents(phase, DEFAULT_PHASE_CHANGE_REDIRECTS),
+				components,
+				`phase ${phase} should redirect to ${components.join("/")}`,
+			);
+		}
+
+		// Phases with no landing page never redirect (the receiver just refreshes
+		// in place, same as the simmer).
+		for (const phase of [
+			PHASE.PRESEASON,
+			PHASE.AFTER_TRADE_DEADLINE,
+			PHASE.AFTER_DRAFT,
+			PHASE.EXPANSION_DRAFT,
+			PHASE.FANTASY_DRAFT,
+		] as Phase[]) {
+			assert.strictEqual(
+				phaseRedirectComponents(phase, DEFAULT_PHASE_CHANGE_REDIRECTS),
+				undefined,
+				`phase ${phase} should not redirect`,
+			);
+		}
+
+		// A phase dropped from the user's setting is not redirected, even though it
+		// has a landing page (honors the opt-out, like finalize).
+		assert.strictEqual(
+			phaseRedirectComponents(
+				PHASE.DRAFT,
+				DEFAULT_PHASE_CHANGE_REDIRECTS.filter((p) => p !== PHASE.DRAFT),
+			),
+			undefined,
+		);
 	});
 
 	test("applying a changeset does not itself get recorded", async () => {

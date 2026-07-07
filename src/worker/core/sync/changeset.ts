@@ -16,9 +16,16 @@ import { initUILocalGames } from "../../util/initUILocalGames.ts";
 import type { Phase, UpdateEvents } from "../../../common/types.ts";
 
 // The landing page each phase redirects to, mirroring the redirect returned by
-// each core/phase/newPhase* function. A receiving device that applies a synced
-// phase change navigates here (if the phase is in the user's phaseChangeRedirects
-// setting), so followers "flip" to the new phase's page exactly like the simmer.
+// each core/phase/newPhase* function (the ONLY phases those functions redirect
+// for - the others intentionally have no redirect). A receiving device that
+// applies a synced phase change navigates here, so followers "flip" to the new
+// phase's page exactly like the simmer.
+//   REGULAR_SEASON  -> newPhaseRegularSeason  -> season_preview
+//   PLAYOFFS        -> newPhasePlayoffs       -> playoffs
+//   DRAFT_LOTTERY   -> newPhaseBeforeDraft    -> history (awards)
+//   DRAFT           -> newPhaseDraft          -> draft
+//   RESIGN_PLAYERS  -> newPhaseResignPlayers  -> negotiation
+//   FREE_AGENCY     -> newPhaseFreeAgency     -> free_agents
 const PHASE_REDIRECT_URL: Partial<Record<Phase, string[]>> = {
 	[PHASE.REGULAR_SEASON]: ["season_preview"],
 	[PHASE.PLAYOFFS]: ["playoffs"],
@@ -26,6 +33,22 @@ const PHASE_REDIRECT_URL: Partial<Record<Phase, string[]>> = {
 	[PHASE.DRAFT]: ["draft"],
 	[PHASE.RESIGN_PLAYERS]: ["negotiation"],
 	[PHASE.FREE_AGENCY]: ["free_agents"],
+};
+
+// The league-URL components a receiving device should navigate to for a synced
+// change INTO `phase`, or undefined to stay put. Mirrors finalize(): redirect
+// only when the phase has a landing page AND this device's phaseChangeRedirects
+// setting opts into it (so a user who turned redirects off is never yanked
+// around, whether they're simming or following).
+export const phaseRedirectComponents = (
+	phase: Phase,
+	phaseChangeRedirects: Phase[],
+): string[] | undefined => {
+	const components = PHASE_REDIRECT_URL[phase];
+	if (!components || !phaseChangeRedirects.includes(phase)) {
+		return undefined;
+	}
+	return components;
 };
 
 // A single changed cache record. Records are whole objects (a `put` replaces
@@ -192,12 +215,13 @@ export const applyChangeset = async (
 		// previous phase's page.
 		try {
 			const phase = g.get("phase") as Phase;
-			const components = PHASE_REDIRECT_URL[phase];
+			const globalSettings = await getGlobalSettings();
+			const components = phaseRedirectComponents(
+				phase,
+				globalSettings.phaseChangeRedirects,
+			);
 			if (components) {
-				const globalSettings = await getGlobalSettings();
-				if (globalSettings.phaseChangeRedirects.includes(phase)) {
-					redirectUrl = helpers.leagueUrl(components);
-				}
+				redirectUrl = helpers.leagueUrl(components);
 			}
 		} catch (error) {
 			console.error("Failed to compute phase redirect after sync", error);
