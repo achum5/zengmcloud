@@ -88,13 +88,21 @@ let loadingNewLid;
 export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 	// Make sure league template FOR THE CURRENT LEAGUE is showing
 	loadingNewLid = newLid;
-	const switchingDatabaseLid = newLid !== g.get("lid");
+	const previousLid = g.get("lid");
+	const switchingDatabaseLid = newLid !== previousLid;
 
 	if (switchingDatabaseLid) {
-		// A cloud-sync session belongs to ONE league file. Switching to (or
-		// uploading) a different league must drop any active session so the
+		// A cloud-sync session belongs to ONE league file. Switching AWAY from an
+		// already-open league to a DIFFERENT one must drop the session so the
 		// connection never carries over from one file to the next on this device.
-		disconnectSharedLeague();
+		//
+		// Crucially, do NOT do this on a fresh load/refresh (no previous lid - the
+		// worker just restarted): there's nothing to carry over, and auto-reconnect
+		// must be free to restore THIS league's session. Disconnecting here would
+		// race the reconnect and tear it down, leaving refresh stuck "disconnected".
+		if (typeof previousLid === "number") {
+			disconnectSharedLeague();
+		}
 		await league.close(true);
 	}
 

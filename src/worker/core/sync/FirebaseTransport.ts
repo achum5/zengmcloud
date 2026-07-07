@@ -91,6 +91,11 @@ export class FirebaseTransport implements SyncTransport {
 		this.lastContactAt = Date.now();
 	}
 
+	// When we last confirmed live contact (ms epoch). Powers the header status dot.
+	getLastContactAt(): number {
+		return this.lastContactAt;
+	}
+
 	// Is the cloud connection ACTUALLY live right now? Cheap when we've had recent
 	// confirmed contact; otherwise does a real, timed round-trip. This is what lets
 	// the sim/advance guard refuse to advance when the app only *looks* connected
