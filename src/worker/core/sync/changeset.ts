@@ -3,13 +3,30 @@ import { changeTracker } from "../../db/changeTracker.ts";
 import type { Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
 import {
+	g,
+	helpers,
 	toUI,
 	updatePhase,
 	updatePlayMenu,
 	updateStatus,
 } from "../../util/index.ts";
+import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
+import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
-import type { UpdateEvents } from "../../../common/types.ts";
+import type { Phase, UpdateEvents } from "../../../common/types.ts";
+
+// The landing page each phase redirects to, mirroring the redirect returned by
+// each core/phase/newPhase* function. A receiving device that applies a synced
+// phase change navigates here (if the phase is in the user's phaseChangeRedirects
+// setting), so followers "flip" to the new phase's page exactly like the simmer.
+const PHASE_REDIRECT_URL: Partial<Record<Phase, string[]>> = {
+	[PHASE.REGULAR_SEASON]: ["season_preview"],
+	[PHASE.PLAYOFFS]: ["playoffs"],
+	[PHASE.DRAFT_LOTTERY]: ["history"],
+	[PHASE.DRAFT]: ["draft"],
+	[PHASE.RESIGN_PLAYERS]: ["negotiation"],
+	[PHASE.FREE_AGENCY]: ["free_agents"],
+};
 
 // A single changed cache record. Records are whole objects (a `put` replaces
 // the entire record), which makes applying a changeset idempotent and safe to
@@ -144,19 +161,47 @@ export const applyChangeset = async (
 	}
 
 	// A phase change is more than a data change: the phase text, the Play menu
-	// options, and phase-routed views all need refreshing. finalize() does this
-	// for the device that ran the phase change; the receiving device must do the
-	// same, or it applies the new phase to data but keeps showing the old phase
-	// until some later update happens to repaint it.
+	// options, and phase-routed views all need refreshing - and the device should
+	// navigate to the new phase's page. finalize() does all of this for the device
+	// that ran the phase change; a receiving device must do the SAME, or it writes
+	// the new phase to data but keeps showing the old phase's page (e.g. stuck on
+	// Draft Lottery after the simmer advanced to the Draft).
+	//
+	// Each refresh runs in its own try/catch so one failing (e.g. updatePlayMenu
+	// reading half-synced data) can't skip the others - previously they shared a
+	// catch, so a throw in updatePhase left the header frozen on the old phase.
 	const updateEvents: UpdateEvents = [...APPLY_UPDATE_EVENTS];
+	let redirectUrl: string | undefined;
 	if (touchedPhase) {
+		updateEvents.push("newPhase");
+
 		try {
 			await updatePhase();
+		} catch (error) {
+			console.error("Failed to refresh phase text after sync", error);
+		}
+		try {
 			await updatePlayMenu();
 		} catch (error) {
-			console.error("Failed to refresh phase after sync", error);
+			console.error("Failed to refresh play menu after sync", error);
 		}
-		updateEvents.push("newPhase");
+
+		// Redirect to the new phase's landing page, honoring the user's
+		// phaseChangeRedirects setting (same gate finalize uses). This is what makes
+		// a follower actually "flip" to the new phase instead of sitting on the
+		// previous phase's page.
+		try {
+			const phase = g.get("phase") as Phase;
+			const components = PHASE_REDIRECT_URL[phase];
+			if (components) {
+				const globalSettings = await getGlobalSettings();
+				if (globalSettings.phaseChangeRedirects.includes(phase)) {
+					redirectUrl = helpers.leagueUrl(components);
+				}
+			}
+		} catch (error) {
+			console.error("Failed to compute phase redirect after sync", error);
+		}
 	}
 
 	// Refresh the status line ("X days left in free agency", draft progress) on a
@@ -183,6 +228,12 @@ export const applyChangeset = async (
 	}
 
 	if (refreshUI) {
-		await toUI("realtimeUpdate", [updateEvents]);
+		// Passing the URL makes the UI navigate (like finalize's redirect); without
+		// it, realtimeUpdate just refreshes the current page in place.
+		if (redirectUrl !== undefined) {
+			await toUI("realtimeUpdate", [updateEvents, redirectUrl]);
+		} else {
+			await toUI("realtimeUpdate", [updateEvents]);
+		}
 	}
 };
