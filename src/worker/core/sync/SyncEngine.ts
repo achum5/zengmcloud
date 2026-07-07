@@ -10,6 +10,7 @@ import type {
 	SyncMember,
 	SyncTransport,
 } from "./types.ts";
+import { outbox } from "./outbox.ts";
 
 // Changesets larger than this are "bulk" (e.g. a simulation, which mutates
 // hundreds of records). They're only published by the host, and are split into
@@ -123,6 +124,16 @@ export class SyncEngine {
 	// resync, which re-applies the whole log from scratch.
 	private applyFailed = false;
 
+	// The room code, used to scope the durable outbox (undefined = don't use the
+	// outbox, e.g. the in-memory test transport).
+	private code: string | undefined;
+
+	// Reports live upload progress while (re)publishing, so the UI can show a
+	// "keep the app open" indicator with a real count. undefined = idle.
+	private onUploadProgress:
+		| ((progress: { done: number; total: number } | undefined) => void)
+		| undefined;
+
 	constructor(
 		transport: SyncTransport,
 		options: {
@@ -130,6 +141,10 @@ export class SyncEngine {
 			initialWatermark?: number;
 			onWatermark?: (seq: number) => void;
 			onAuthorityChange?: (authority: Authority | undefined) => void;
+			code?: string;
+			onUploadProgress?: (
+				progress: { done: number; total: number } | undefined,
+			) => void;
 		} = {},
 	) {
 		this.transport = transport;
@@ -138,6 +153,8 @@ export class SyncEngine {
 		this.onAuthorityChange = options.onAuthorityChange;
 		this.maxSeq = options.initialWatermark ?? 0;
 		this.persistedSeq = options.initialWatermark ?? 0;
+		this.code = options.code;
+		this.onUploadProgress = options.onUploadProgress;
 	}
 
 	get clientId(): string {
@@ -256,7 +273,7 @@ export class SyncEngine {
 		if (fitsInOneDoc) {
 			const id = makeId();
 			this.seen.add(id);
-			await this.transport.publish({
+			await this.publishEntry({
 				id,
 				authorId: this.transport.clientId,
 				action,
@@ -283,18 +300,70 @@ export class SyncEngine {
 		const chunks = chunkChanges(changeset.changes);
 		const batchId = makeId();
 
-		for (let i = 0; i < chunks.length; i++) {
-			const id = makeId();
-			this.seen.add(id);
-			await this.transport.publish({
-				id,
-				authorId: this.transport.clientId,
-				action,
-				batchId,
-				chunkIndex: i,
-				chunkCount: chunks.length,
-				changeset: { changes: chunks[i]! },
-			});
+		this.onUploadProgress?.({ done: 0, total: chunks.length });
+		try {
+			for (let i = 0; i < chunks.length; i++) {
+				const id = makeId();
+				this.seen.add(id);
+				await this.publishEntry({
+					id,
+					authorId: this.transport.clientId,
+					action,
+					batchId,
+					chunkIndex: i,
+					chunkCount: chunks.length,
+					changeset: { changes: chunks[i]! },
+				});
+				this.onUploadProgress?.({ done: i + 1, total: chunks.length });
+			}
+		} finally {
+			this.onUploadProgress?.(undefined);
+		}
+	}
+
+	// Publish one entry through the durable outbox: record it first, so an upload
+	// interrupted by the tab closing mid-send is retried on the next launch, then
+	// remove it once Firestore confirms. Outbox ops are best-effort (they never
+	// break the publish); on the test transport (no code) they're skipped.
+	private async publishEntry(entry: Omit<ChangesetEntry, "seq">) {
+		if (this.code !== undefined) {
+			await outbox.add(this.code, entry);
+		}
+		await this.transport.publish(entry);
+		if (this.code !== undefined) {
+			await outbox.remove(entry.id);
+		}
+	}
+
+	// Re-send anything a previous session produced but never confirmed uploaded
+	// (interrupted mid-publish - e.g. the app was closed before a chunked season
+	// rollover finished). Called on connect so a stranded batch completes itself.
+	// Safe to re-send: entries carry a stable id (and chunk metadata), so the
+	// receiver dedups; we re-add to `seen` so we don't re-apply our own echo.
+	async flushOutbox() {
+		if (this.code === undefined) {
+			return;
+		}
+		const pending = await outbox.pending(this.code);
+		if (pending.length === 0) {
+			return;
+		}
+		this.onUploadProgress?.({ done: 0, total: pending.length });
+		try {
+			for (let i = 0; i < pending.length; i++) {
+				const entry = pending[i]!;
+				this.seen.add(entry.id);
+				try {
+					await this.transport.publish(entry);
+					await outbox.remove(entry.id);
+				} catch (error) {
+					// Leave it queued for the next flush rather than dropping it.
+					console.error("[sync] outbox flush: re-publish failed", error);
+				}
+				this.onUploadProgress?.({ done: i + 1, total: pending.length });
+			}
+		} finally {
+			this.onUploadProgress?.(undefined);
 		}
 	}
 

@@ -80,12 +80,14 @@ const relativeTime = (ts: number): string => {
 const MultiplayerSync = () => {
 	useTitleBar({ title: "Multiplayer Sync" });
 
-	const { lid, mpSyncIsHost, mpSyncHostName, mpSyncReconnecting } = useLocal([
-		"lid",
-		"mpSyncIsHost",
-		"mpSyncHostName",
-		"mpSyncReconnecting",
-	]);
+	const { lid, mpSyncIsHost, mpSyncHostName, mpSyncReconnecting, mpSyncUpload } =
+		useLocal([
+			"lid",
+			"mpSyncIsHost",
+			"mpSyncHostName",
+			"mpSyncReconnecting",
+			"mpSyncUpload",
+		]);
 
 	const [code, setCode] = useState("");
 	const [isHost, setIsHost] = useState(false);
@@ -442,6 +444,24 @@ const MultiplayerSync = () => {
 									</button>
 								) : null}
 							</div>
+							{mpSyncUpload && mpSyncUpload.total > 1 ? (
+								<div className="mt-3">
+									<div className="d-flex justify-content-between small mb-1">
+										<span>☁ Uploading to the cloud — keep the app open</span>
+										<span className="text-body-secondary">
+											{mpSyncUpload.done}/{mpSyncUpload.total}
+										</span>
+									</div>
+									<div className="progress" style={{ height: 6 }}>
+										<div
+											className="progress-bar bg-info"
+											style={{
+												width: `${Math.round((mpSyncUpload.done / mpSyncUpload.total) * 100)}%`,
+											}}
+										/>
+									</div>
+								</div>
+							) : null}
 						</>
 					) : status === "connecting" ? (
 						<p className="mb-0">Connecting…</p>

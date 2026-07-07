@@ -1070,6 +1070,9 @@ export type LocalStateUI = {
 	// room so all users see the same schedule + countdown. Undefined if nobody is
 	// auto-playing.
 	mpAutoPlay: SyncedAutoPlay | undefined;
+	// Live progress while this device is uploading a change to the cloud (chunks
+	// done / total). Undefined when idle. Drives the "keep the app open" indicator.
+	mpSyncUpload: { done: number; total: number } | undefined;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;

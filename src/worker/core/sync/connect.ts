@@ -1,5 +1,6 @@
 import { SyncEngine } from "./SyncEngine.ts";
 import { FirebaseTransport } from "./FirebaseTransport.ts";
+import { outbox } from "./outbox.ts";
 import { ensureAnonymousAuth } from "./auth.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
@@ -47,6 +48,10 @@ let syncRequired = false;
 // want it. Undefined when not connected.
 let catchUpTimer: ReturnType<typeof setInterval> | undefined;
 const CATCH_UP_INTERVAL_MS = 15000;
+
+// Drop outbox entries older than this (a room the user never returned to), so a
+// permanently-failed upload can't make the outbox grow without bound.
+const OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 // The live transport + auto-play subscription for the current room, so the
 // simmer can publish its schedule and every device can watch it.
@@ -236,6 +241,7 @@ export const connectSharedLeague = async ({
 	const engine = new SyncEngine(transport, {
 		isHost,
 		initialWatermark: watermark,
+		code: trimmed,
 		onWatermark: (seq) => {
 			void saveWatermark(lid, seq);
 		},
@@ -246,6 +252,11 @@ export const connectSharedLeague = async ({
 				authority?.holderName,
 			);
 		},
+		// Live upload progress → UI, so the sim device can show a "keep the app
+		// open" indicator with a real count while a big change uploads.
+		onUploadProgress: (progress) => {
+			void toUI("updateLocal", [{ mpSyncUpload: progress }]);
+		},
 	});
 	engine.start();
 	setSyncEngine(engine);
@@ -254,6 +265,11 @@ export const connectSharedLeague = async ({
 
 	// Register the room so it shows up on the admin page. Best-effort.
 	void transport.touchRoom?.();
+
+	// Finish any upload a previous session left unconfirmed (interrupted mid-send),
+	// and drop long-dead outbox entries. Best-effort - never blocks the connect.
+	void engine.flushOutbox();
+	void outbox.prune(OUTBOX_MAX_AGE_MS);
 
 	// Watch the shared auto-play schedule so every device shows the same schedule
 	// + countdown, and keep a transport handle so the simmer can publish its own.
@@ -267,7 +283,11 @@ export const connectSharedLeague = async ({
 		clearInterval(catchUpTimer);
 	}
 	catchUpTimer = setInterval(() => {
-		void getSyncEngine()?.catchUp();
+		const e = getSyncEngine();
+		void e?.catchUp();
+		// Also drain any upload the retry couldn't land this session (rare); the
+		// call is a no-op when the outbox is empty.
+		void e?.flushOutbox();
 	}, CATCH_UP_INTERVAL_MS);
 
 	// Turn on change capture so local actions get published to the room.
@@ -291,7 +311,7 @@ export const disconnectSharedLeague = () => {
 	autoPlayUnsub?.();
 	autoPlayUnsub = undefined;
 	currentTransport = undefined;
-	void toUI("updateLocal", [{ mpAutoPlay: undefined }]);
+	void toUI("updateLocal", [{ mpAutoPlay: undefined, mpSyncUpload: undefined }]);
 	const engine = getSyncEngine();
 	if (engine) {
 		engine.stop();

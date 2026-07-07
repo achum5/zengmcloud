@@ -1,3 +1,7 @@
+// The durable outbox opens its own IndexedDB via `openDB`; the node test env has
+// no IndexedDB globals (the league cache is mocked), so install fake ones. Must
+// come before other imports that might touch IndexedDB.
+import "fake-indexeddb/auto";
 import { assert, beforeEach, describe, test } from "vitest";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { player } from "../index.ts";
@@ -210,6 +214,54 @@ describe("SyncEngine", () => {
 		}
 		const events = await idb.cache.events.getAll();
 		assert.strictEqual(events.length, N);
+	});
+
+	test("an upload interrupted mid-publish is retried from the durable outbox", async () => {
+		const bus = new FakeBus();
+
+		// A transport that fails its first publish (like the tab closing / a dropped
+		// connection mid-send), then works.
+		let failOnce = true;
+		const flaky: SyncTransport = {
+			clientId: "H",
+			async publish(entry) {
+				if (failOnce) {
+					failOnce = false;
+					throw new Error("interrupted");
+				}
+				bus.publish(entry);
+			},
+			subscribe() {
+				return () => {};
+			},
+			async fetchAllEntries() {
+				return [];
+			},
+			async fetchEntriesSince() {
+				return [];
+			},
+		};
+
+		resetG();
+		await resetCache({});
+
+		// A unique code so this test's outbox entries never collide with others'.
+		const engine = new SyncEngine(flaky, { code: `test-outbox-${Date.now()}` });
+
+		// The publish fails - nothing reached the bus, but it's now sitting in the
+		// durable outbox instead of being lost.
+		await engine
+			.onLocalChangeset(
+				{ changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }] },
+				"main.proposeTrade",
+			)
+			.catch(() => {});
+		assert.strictEqual(bus.entries.length, 0, "failed publish reaches nobody");
+
+		// Next launch/reconnect flushes the outbox → the change finally lands.
+		await engine.flushOutbox();
+		assert.strictEqual(bus.entries.length, 1, "outbox retry delivers it");
+		assert.strictEqual(bus.entries[0]!.changeset.changes.length, 1);
 	});
 
 	test("advances the persisted watermark as it catches up", async () => {
