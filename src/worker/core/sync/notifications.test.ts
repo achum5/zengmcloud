@@ -208,15 +208,71 @@ describe("buildNotifications", () => {
 		assert.deepEqual(notifs, []);
 	});
 
-	test("host sim that reaches a human phase → single 'your turn' to everyone", async () => {
+	test("host sim that crosses into a new phase → single phase announcement to everyone", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.week",
 			{ changes: [phasePut(PHASE.DRAFT)] },
 			opts,
 		);
 		assert.strictEqual(notifs.length, 1);
-		assert.strictEqual(notifs[0]!.title, "Your league needs you");
+		assert.strictEqual(notifs[0]!.title, "Advanced to 2026 Draft!");
 		assert.strictEqual(notifs[0]!.targetTids, null);
+		assert.strictEqual(notifs[0]!.path, "draft");
+	});
+
+	test("advancing to free agency → top free agents with OVR/pot, to everyone", async () => {
+		await resetCache({
+			teams: [
+				{ tid: 0, region: "LA", name: "Lakers", abbrev: "LAL" },
+				{ tid: 1, region: "Boston", name: "Celtics", abbrev: "BOS" },
+			],
+			players: [
+				{
+					pid: 100,
+					tid: -1,
+					firstName: "Prime",
+					lastName: "Target",
+					ratings: [{ ovr: 82, pot: 84, pos: "SF" }],
+					draft: { year: 2020 },
+					retiredYear: Infinity,
+				},
+				{
+					pid: 101,
+					tid: -1,
+					firstName: "Solid",
+					lastName: "Starter",
+					ratings: [{ ovr: 74, pot: 76, pos: "PG" }],
+					draft: { year: 2018 },
+					retiredYear: Infinity,
+				},
+				{
+					pid: 102,
+					tid: -1,
+					firstName: "Deep",
+					lastName: "Bench",
+					ratings: [{ ovr: 61, pot: 62, pos: "C" }],
+					draft: { year: 2019 },
+					retiredYear: Infinity,
+				},
+			],
+		});
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{ changes: [phasePut(PHASE.FREE_AGENCY)] },
+			opts,
+		);
+		assert.strictEqual(notifs.length, 1);
+		assert.strictEqual(notifs[0]!.title, "Advanced to 2026 Free Agency!");
+		assert.strictEqual(notifs[0]!.targetTids, null);
+		const body = notifs[0]!.body;
+		// Ranked best-first, each with ovr/pot.
+		assert.ok(body.includes("Prime Target (82/84)"), body);
+		assert.ok(body.includes("Solid Starter (74/76)"), body);
+		assert.ok(body.includes("Deep Bench (61/62)"), body);
+		assert.ok(
+			body.indexOf("Prime Target") < body.indexOf("Solid Starter"),
+			body,
+		);
 	});
 
 	test("filing a game note (setNote) sends no notification", async () => {

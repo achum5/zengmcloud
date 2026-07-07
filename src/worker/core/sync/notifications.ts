@@ -1,4 +1,4 @@
-import { PHASE, PHASE_TEXT } from "../../../common/constants.ts";
+import { PHASE, PHASE_TEXT, PLAYER } from "../../../common/constants.ts";
 import { helpers } from "../../../common/helpers.ts";
 import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
@@ -39,20 +39,96 @@ const phasePath = (phase: number): string => {
 	}
 };
 
-// Phases that need a human to act (draft, re-signing, etc.) - the inverse of the
-// phases the auto-play scheduler can advance on its own. Reaching one of these
-// is the "it's your turn" signal.
-const HUMAN_PHASES = new Set<number>([
-	PHASE.DRAFT_LOTTERY,
-	PHASE.DRAFT,
-	PHASE.AFTER_DRAFT,
-	PHASE.RESIGN_PLAYERS,
-	PHASE.EXPANSION_DRAFT,
-	PHASE.FANTASY_DRAFT,
-]);
-
 const phaseText = (phase: number): string =>
 	(PHASE_TEXT as Record<string, string>)[String(phase)] ?? "a new phase";
+
+const titleCase = (s: string): string =>
+	s.replace(/\b\w/g, (c) => c.toUpperCase());
+
+// Phases where games are actually played - the only ones where a team having no
+// game in a sim is worth mentioning. In the offseason (free agency, preseason,
+// the draft, re-signing) nobody plays, so "no game for your team" is just noise.
+const GAME_PHASES = new Set<number>([
+	PHASE.REGULAR_SEASON,
+	PHASE.AFTER_TRADE_DEADLINE,
+	PHASE.PLAYOFFS,
+]);
+
+// Minor transitions not worth announcing on their own.
+const SKIP_PHASE_ANNOUNCE = new Set<number>([
+	PHASE.AFTER_DRAFT,
+	PHASE.AFTER_TRADE_DEADLINE,
+]);
+
+// The current best available free agents, as "Name (ovr/pot)" lines.
+const topFreeAgentsText = async (): Promise<string> => {
+	let fas: any[] = [];
+	try {
+		fas = await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT);
+	} catch {
+		fas = [];
+	}
+	const ranked = fas
+		.map((p) => {
+			const rating = currentRating(p);
+			return { name: playerName(p), ovr: rating?.ovr, pot: rating?.pot };
+		})
+		.filter((x) => typeof x.ovr === "number")
+		.sort((a, b) => b.ovr! - a.ovr! || (b.pot ?? 0) - (a.pot ?? 0))
+		.slice(0, 5);
+	if (ranked.length === 0) {
+		return "Free agency is open.";
+	}
+	return ranked.map((r) => `${r.name} (${r.ovr}/${r.pot})`).join("\n");
+};
+
+// A single broadcast notification announcing a phase transition. Free agency
+// lists the top available free agents; other phases get a fitting one-liner.
+// Returns [] for minor transitions we don't announce.
+const buildPhaseChangeNotifications = async (
+	phase: number,
+): Promise<SyncNotification[]> => {
+	if (SKIP_PHASE_ANNOUNCE.has(phase)) {
+		return [];
+	}
+	const season = g.get("season");
+	const name = titleCase(phaseText(phase));
+
+	let title = `Advanced to ${season} ${name}!`;
+	let body = "";
+	const path = phasePath(phase);
+
+	switch (phase) {
+		case PHASE.FREE_AGENCY:
+			title = `Advanced to ${season} Free Agency!`;
+			body = await topFreeAgentsText();
+			break;
+		case PHASE.DRAFT_LOTTERY:
+			body = "The lottery is set — see where the picks landed.";
+			break;
+		case PHASE.DRAFT:
+			body = "The draft is here — make your picks.";
+			break;
+		case PHASE.RESIGN_PLAYERS:
+			body = "Re-sign your players before free agency opens.";
+			break;
+		case PHASE.PLAYOFFS:
+			title = `The ${season} Playoffs are here!`;
+			body = "The bracket is set.";
+			break;
+		case PHASE.PRESEASON:
+			body = `The ${season} preseason has begun.`;
+			break;
+		case PHASE.REGULAR_SEASON:
+			title = `The ${season} season is underway!`;
+			body = "Games are being played.";
+			break;
+		default:
+			body = "The league advanced.";
+	}
+
+	return [{ title, body, targetTids: null, path }];
+};
 
 // How the sim was triggered maps to a human description of the span.
 const simPeriod = (label: string): string => {
@@ -227,15 +303,19 @@ const buildSimNotifications = async (
 			.filter((game) => game.won.tid === tid || game.lost.tid === tid)
 			.sort((a, b) => a.gid - b.gid);
 
-		// No game for this team in this span (e.g. an off day, or a sim through
-		// free agency) - still tell them the league moved.
+		// No game for this team in this span. Only worth mentioning during a
+		// game-playing phase (your team had an off day while others played); in the
+		// offseason nobody plays, so stay silent - the phase-change notification
+		// already covered the advance.
 		if (teamGames.length === 0) {
-			notifications.push({
-				title: "Sim complete",
-				body: `The host advanced the league (${phaseText(phase)}). No game for your ${teamName} ${period}.`,
-				targetTids: [tid],
-				path: "standings",
-			});
+			if (GAME_PHASES.has(phase)) {
+				notifications.push({
+					title: "Sim complete",
+					body: `The host advanced the league (${phaseText(phase)}). No game for your ${teamName} ${period}.`,
+					targetTids: [tid],
+					path: "standings",
+				});
+			}
 			continue;
 		}
 
@@ -657,8 +737,6 @@ export const buildNotifications = async (
 	const isSim = hasGames || label.startsWith("playMenu.");
 
 	const newPhase = newPhaseFromChangeset(changeset);
-	const enteredHumanPhase =
-		newPhase !== undefined && HUMAN_PHASES.has(newPhase);
 
 	if (isSim) {
 		// Non-host devices shouldn't be simming; if they somehow do, stay quiet so
@@ -666,16 +744,10 @@ export const buildNotifications = async (
 		if (!isHost) {
 			return [];
 		}
-		// Reaching the draft / re-signing is the salient thing - tell everyone.
-		if (enteredHumanPhase) {
-			return [
-				{
-					title: "Your league needs you",
-					body: `The host reached ${phaseText(newPhase!)} — your input is needed.`,
-					targetTids: null,
-					path: phasePath(newPhase!),
-				},
-			];
+		// Crossing into a new phase is the salient thing - announce it (free agency
+		// lists the top FAs, etc.) instead of per-team game summaries for this tick.
+		if (newPhase !== undefined) {
+			return buildPhaseChangeNotifications(newPhase);
 		}
 		return buildSimNotifications(label, changeset);
 	}
@@ -692,16 +764,9 @@ export const buildNotifications = async (
 		}
 	}
 
-	// A manual phase advance (not via a sim) that reaches a human-decision phase.
-	if (enteredHumanPhase) {
-		return [
-			{
-				title: "Your league needs you",
-				body: `New phase: ${phaseText(newPhase!)}.`,
-				targetTids: null,
-				path: phasePath(newPhase!),
-			},
-		];
+	// A manual phase advance (not via a sim).
+	if (newPhase !== undefined) {
+		return buildPhaseChangeNotifications(newPhase);
 	}
 
 	// Re-signings (only notable players ping). Handled before the small-changeset
