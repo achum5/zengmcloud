@@ -1073,6 +1073,9 @@ export type LocalStateUI = {
 	// Live progress while this device is uploading a change to the cloud (chunks
 	// done / total). Undefined when idle. Drives the "keep the app open" indicator.
 	mpSyncUpload: { done: number; total: number } | undefined;
+	// Monotonic counter bumped each time a local change is confirmed uploaded; the
+	// header flashes a brief "synced ✓" when it ticks.
+	mpSyncUploadOk: number;
 	// Whether the cloud connection is confirmed live (recent verified contact),
 	// vs. only nominally connected. Drives the header green/red status dot.
 	mpSyncHealthy: boolean;

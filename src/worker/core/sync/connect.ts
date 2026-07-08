@@ -61,6 +61,9 @@ const HEALTH_TICK_MS = 5000;
 let healthTimer: ReturnType<typeof setInterval> | undefined;
 let lastHealthPushed: boolean | undefined;
 
+// Monotonic count of confirmed uploads; the UI flashes a "synced ✓" when it ticks.
+let uploadOkCounter = 0;
+
 const pushHealth = () => {
 	const age = getSyncEngine()?.contactAge();
 	const healthy = age !== undefined && age < HEALTH_STALE_MS;
@@ -269,10 +272,15 @@ export const connectSharedLeague = async ({
 				authority?.holderName,
 			);
 		},
-		// Live upload progress → UI, so the sim device can show a "keep the app
-		// open" indicator with a real count while a big change uploads.
+		// Live upload progress → UI, so any device shows a cloud indicator (with a
+		// count for big changes) while a change uploads.
 		onUploadProgress: (progress) => {
 			void toUI("updateLocal", [{ mpSyncUpload: progress }]);
+		},
+		// A confirmed upload bumps a counter the UI watches to flash "synced ✓".
+		onUploadComplete: () => {
+			uploadOkCounter += 1;
+			void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
 		},
 	});
 	engine.start();

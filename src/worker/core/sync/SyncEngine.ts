@@ -134,6 +134,10 @@ export class SyncEngine {
 		| ((progress: { done: number; total: number } | undefined) => void)
 		| undefined;
 
+	// Fires once a local change is CONFIRMED uploaded, so the UI can flash a brief
+	// "synced ✓" - on any device, for any change (a trade/signing, not just a sim).
+	private onUploadComplete: (() => void) | undefined;
+
 	constructor(
 		transport: SyncTransport,
 		options: {
@@ -145,6 +149,7 @@ export class SyncEngine {
 			onUploadProgress?: (
 				progress: { done: number; total: number } | undefined,
 			) => void;
+			onUploadComplete?: () => void;
 		} = {},
 	) {
 		this.transport = transport;
@@ -155,6 +160,7 @@ export class SyncEngine {
 		this.persistedSeq = options.initialWatermark ?? 0;
 		this.code = options.code;
 		this.onUploadProgress = options.onUploadProgress;
+		this.onUploadComplete = options.onUploadComplete;
 	}
 
 	get clientId(): string {
@@ -273,12 +279,20 @@ export class SyncEngine {
 		if (fitsInOneDoc) {
 			const id = makeId();
 			this.seen.add(id);
-			await this.publishEntry({
-				id,
-				authorId: this.transport.clientId,
-				action,
-				changeset,
-			});
+			// Show the same cloud indicator as a sim (total 1), so a plain
+			// transaction on any device gets upload feedback + a confirm tick.
+			this.onUploadProgress?.({ done: 0, total: 1 });
+			try {
+				await this.publishEntry({
+					id,
+					authorId: this.transport.clientId,
+					action,
+					changeset,
+				});
+				this.onUploadComplete?.();
+			} finally {
+				this.onUploadProgress?.(undefined);
+			}
 			return;
 		}
 
@@ -316,6 +330,7 @@ export class SyncEngine {
 				});
 				this.onUploadProgress?.({ done: i + 1, total: chunks.length });
 			}
+			this.onUploadComplete?.();
 		} finally {
 			this.onUploadProgress?.(undefined);
 		}
