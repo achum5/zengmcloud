@@ -1,6 +1,5 @@
 import { csvFormat, csvFormatRows } from "d3-dsv";
 import type { FaceConfig } from "facesjs";
-import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
 import {
 	GAME_ACRONYM,
 	PHASE,
@@ -9,6 +8,7 @@ import {
 	PLAYER_STATS_TABLES,
 	RATINGS,
 	DEFAULT_JERSEY,
+	DEFAULT_TEAM_COLORS,
 	POSITIONS,
 	GRACE_PERIOD,
 	LEAGUE_DATABASE_VERSION,
@@ -1777,13 +1777,41 @@ const getPlayerFaces = async (
 		string,
 		{ colors: [string, string, string]; jersey?: string } | undefined
 	>();
+	// Inlined team-season colors/jersey lookup (rather than importing
+	// getTeamInfoBySeason). api/index.ts is loaded by the worker test harness, and
+	// pulling that module into its import graph perturbs a latent init-order cycle
+	// (player -> util helpers) that breaks the whole worker test suite. This uses
+	// only idb + constants, already imported here, so it adds no module edge.
 	const getTS = async (tid: number, season: number) => {
 		const k = `${tid}:${season}`;
 		if (tsCache.has(k)) {
 			return tsCache.get(k);
 		}
-		const ts = await getTeamInfoBySeason(tid, season);
-		const value = ts ? { colors: ts.colors, jersey: ts.jersey } : undefined;
+
+		let value: { colors: [string, string, string]; jersey?: string } | undefined;
+		if (tid >= 0) {
+			const index = idb.league
+				.transaction("teamSeasons")
+				.store.index("tid, season");
+			let ts = await index.get([tid, season]);
+			if (!ts) {
+				// No entry for that exact season - use the nearest one at or before it
+				// (else the oldest that exists).
+				for await (const cursor of index.iterate(
+					IDBKeyRange.bound([tid, -Infinity], [tid, Infinity]),
+				)) {
+					if (cursor.value.season > season && ts) {
+						break;
+					}
+					ts = cursor.value;
+				}
+			}
+			const t = ts ?? (await idb.cache.teams.get(tid));
+			if (t) {
+				value = { colors: t.colors ?? DEFAULT_TEAM_COLORS, jersey: t.jersey };
+			}
+		}
+
 		tsCache.set(k, value);
 		return value;
 	};
