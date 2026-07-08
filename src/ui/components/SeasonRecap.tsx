@@ -5,7 +5,7 @@ import { buildSeasonRecapPrompt, parseSeasonRecaps } from "../util/seasonRecap.t
 // A league-wide "Team Recaps" workflow for a whole season, mirroring the Game
 // Recap flow on the Daily Schedule:
 //   Copy (a prompt with every team's season, franchise history, and the moves
-//   that built it) → Claude (native app if installed, else claude.ai) → Paste
+//   that built it) → Claude (opens claude.ai in a new tab) → Paste
 //   (the AI's reply, filed as each team's Team Season note).
 // Best generated right after the playoffs finish, before the draft.
 export const SeasonRecap = ({ season }: { season: number }) => {
@@ -110,32 +110,6 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 		setManual("");
 	};
 
-	// Open the native Claude app if installed; otherwise claude.ai in the browser.
-	const openClaude = (event: { preventDefault: () => void }) => {
-		event.preventDefault();
-		const appUrl = "claude://claude.ai/new";
-		const webUrl = "https://claude.ai/new";
-
-		let cancelled = false;
-		const onVisibility = () => {
-			if (document.hidden) {
-				cancelled = true;
-				globalThis.clearTimeout(timer);
-				document.removeEventListener("visibilitychange", onVisibility);
-			}
-		};
-		document.addEventListener("visibilitychange", onVisibility);
-
-		const timer = globalThis.setTimeout(() => {
-			if (!cancelled) {
-				document.removeEventListener("visibilitychange", onVisibility);
-				window.location.href = webUrl;
-			}
-		}, 1200);
-
-		window.location.href = appUrl;
-	};
-
 	const arrow = <span className="text-body-secondary">›</span>;
 	const btnStyle = { width: 62 } as const;
 
@@ -158,8 +132,7 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 					href="https://claude.ai/new"
 					target="_blank"
 					rel="noopener noreferrer"
-					onClick={openClaude}
-					title="Open Claude"
+					title="Open Claude in a new tab"
 				>
 					Claude
 				</a>

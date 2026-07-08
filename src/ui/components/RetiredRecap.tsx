@@ -116,31 +116,6 @@ export const RetiredRecap = ({ season }: { season: number }) => {
 		setManual("");
 	};
 
-	const openClaude = (event: { preventDefault: () => void }) => {
-		event.preventDefault();
-		const appUrl = "claude://claude.ai/new";
-		const webUrl = "https://claude.ai/new";
-
-		let cancelled = false;
-		const onVisibility = () => {
-			if (document.hidden) {
-				cancelled = true;
-				globalThis.clearTimeout(timer);
-				document.removeEventListener("visibilitychange", onVisibility);
-			}
-		};
-		document.addEventListener("visibilitychange", onVisibility);
-
-		const timer = globalThis.setTimeout(() => {
-			if (!cancelled) {
-				document.removeEventListener("visibilitychange", onVisibility);
-				window.location.href = webUrl;
-			}
-		}, 1200);
-
-		window.location.href = appUrl;
-	};
-
 	if (empty) {
 		return (
 			<p className="text-body-secondary mb-0">
@@ -171,8 +146,7 @@ export const RetiredRecap = ({ season }: { season: number }) => {
 					href="https://claude.ai/new"
 					target="_blank"
 					rel="noopener noreferrer"
-					onClick={openClaude}
-					title="Open Claude"
+					title="Open Claude in a new tab"
 				>
 					Claude
 				</a>

@@ -3,9 +3,9 @@ import { toWorker } from "../util/toWorker.ts";
 import { buildRecapPrompt, parseRecaps } from "../util/gameRecap.ts";
 
 // The "Game Recap" workflow on the Daily Schedule, as three simple steps:
-//   Copy (a prompt with every completed game's box score) → Claude (the native
-//   app if installed, else claude.ai) → Paste (the AI's reply, filed as each
-//   game's note).
+//   Copy (a prompt with every completed game's box score) → Claude (opens
+//   claude.ai in a NEW tab, so it never navigates away from the game) → Paste
+//   (the AI's reply, filed as each game's note).
 // Deliberately NOT gated by the multiplayer "wheel": filing a recap is just a
 // game note, which any device may write.
 export const GameRecap = ({
@@ -135,38 +135,6 @@ export const GameRecap = ({
 		setManual("");
 	};
 
-	// Open the native Claude app (claude:// scheme, supported by the iOS/Android
-	// and desktop apps) if it's installed; otherwise fall back to claude.ai in the
-	// browser. When the app opens, this tab goes hidden and we cancel the web
-	// fallback; if nothing takes over the scheme, we navigate to the website.
-	const openClaude = (event: { preventDefault: () => void }) => {
-		event.preventDefault();
-		const appUrl = "claude://claude.ai/new";
-		const webUrl = "https://claude.ai/new";
-
-		let cancelled = false;
-		const onVisibility = () => {
-			if (document.hidden) {
-				cancelled = true;
-				globalThis.clearTimeout(timer);
-				document.removeEventListener("visibilitychange", onVisibility);
-			}
-		};
-		document.addEventListener("visibilitychange", onVisibility);
-
-		const timer = globalThis.setTimeout(() => {
-			if (!cancelled) {
-				document.removeEventListener("visibilitychange", onVisibility);
-				window.location.href = webUrl;
-			}
-		}, 1200);
-
-		// Attempting an unregistered scheme just fails quietly (the timeout then
-		// sends us to the website); when the app IS installed, the OS switches to
-		// it and the visibility handler cancels the fallback.
-		window.location.href = appUrl;
-	};
-
 	const arrow = <span className="text-body-secondary">›</span>;
 	// Fixed width so swapping a label for a ✓ / spinner never resizes the button.
 	const btnStyle = { width: 62 } as const;
@@ -192,8 +160,7 @@ export const GameRecap = ({
 					href="https://claude.ai/new"
 					target="_blank"
 					rel="noopener noreferrer"
-					onClick={openClaude}
-					title="Open Claude"
+					title="Open Claude in a new tab"
 				>
 					Claude
 				</a>
