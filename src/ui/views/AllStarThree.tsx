@@ -108,11 +108,19 @@ const AllStarThree = ({
 		throw new Error("Not implemented");
 	}
 
-	const { challengeNoRatings, godMode, userTid } = useLocal([
-		"challengeNoRatings",
-		"godMode",
-		"userTid",
-	]);
+	const { challengeNoRatings, godMode, userTid, mpSyncActive, mpSyncIsHost } =
+		useLocal([
+			"challengeNoRatings",
+			"godMode",
+			"userTid",
+			"mpSyncActive",
+			"mpSyncIsHost",
+		]);
+
+	// A synced follower just watches the contest sync in; only the device that's
+	// simming may run it (else opening this page would auto-advance the shared
+	// contest and race the simmer).
+	const mpBlocked = mpSyncActive && !mpSyncIsHost;
 
 	const [paused, setPaused] = useState(true);
 
@@ -123,7 +131,7 @@ const AllStarThree = ({
 		let timeoutId: number | undefined;
 
 		const run = async () => {
-			if (!paused) {
+			if (!paused && !mpBlocked) {
 				await new Promise<void>((resolve) => {
 					timeoutId = setTimeout(() => {
 						resolve();
@@ -141,7 +149,7 @@ const AllStarThree = ({
 			obsolete = true;
 			clearTimeout(timeoutId);
 		};
-	}, [paused, activityCount]);
+	}, [paused, activityCount, mpBlocked]);
 
 	useTitleBar({
 		title: "Three-Point Contest",
@@ -173,7 +181,7 @@ const AllStarThree = ({
 
 	return (
 		<>
-			{godMode && !started ? (
+			{godMode && !started && !mpBlocked ? (
 				<EditContestants
 					allPossibleContestants={allPossibleContestants}
 					contest="three"
@@ -199,7 +207,13 @@ const AllStarThree = ({
 				userTid={userTid}
 			/>
 
-			{three.winner === undefined ? (
+			{three.winner === undefined && mpBlocked ? (
+				<p className="text-body-secondary">
+					The device that's simming runs the contest.
+				</p>
+			) : null}
+
+			{three.winner === undefined && !mpBlocked ? (
 				<PlayPauseNext
 					className="mb-3"
 					fastForwards={[

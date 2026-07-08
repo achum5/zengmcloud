@@ -158,6 +158,8 @@ const AllStars = ({
 		season: currentSeason,
 		spectator,
 		userTids,
+		mpSyncActive,
+		mpSyncIsHost,
 	} = useLocal([
 		"challengeNoRatings",
 		"gender",
@@ -165,10 +167,18 @@ const AllStars = ({
 		"season",
 		"spectator",
 		"userTids",
+		"mpSyncActive",
+		"mpSyncIsHost",
 	]);
 	const isCurrentSeason = season === currentSeason;
 
+	// A synced follower just watches the All-Star draft sync in; only the device
+	// that's simming may run it. Force auto (non-interactive) so no pick/advance
+	// controls render, and hide the start/reset/edit buttons below.
+	const mpBlocked = mpSyncActive && !mpSyncIsHost;
+
 	const draftType =
+		!mpBlocked &&
 		!spectator &&
 		type === "draft" &&
 		teams.some((t) => userTids.includes(t[0].tid))
@@ -356,7 +366,12 @@ const AllStars = ({
 					</a>
 				</p>
 			) : null}
-			{!actuallyFinalized && !started && type === "draft" ? (
+			{mpBlocked && !actuallyFinalized && type === "draft" ? (
+				<p className="text-body-secondary">
+					The device that's simming runs the All-Star draft.
+				</p>
+			) : null}
+			{!mpBlocked && !actuallyFinalized && !started && type === "draft" ? (
 				<div className="mb-3">
 					<button className="btn btn-lg btn-success" onClick={startDraft}>
 						Start draft
@@ -373,7 +388,8 @@ const AllStars = ({
 					) : null}
 				</div>
 			) : null}
-			{godMode &&
+			{!mpBlocked &&
+			godMode &&
 			started &&
 			nextGameIsAllStar &&
 			isCurrentSeason &&
@@ -394,7 +410,11 @@ const AllStars = ({
 					</button>
 				</div>
 			) : null}
-			{godMode && nextGameIsAllStar && isCurrentSeason && type !== "draft" ? (
+			{!mpBlocked &&
+			godMode &&
+			nextGameIsAllStar &&
+			isCurrentSeason &&
+			type !== "draft" ? (
 				<div className="mb-3">
 					<button
 						className="btn btn-lg btn-god-mode"

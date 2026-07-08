@@ -56,12 +56,33 @@ const PLAY_MENU_WHEEL_EXEMPT = new Set(["stop", "stopAuto"]);
 // "actions"-type calls that advance the season/live sim. (runDraft/untilPick in
 // actions.ts are draft helpers and stay exempt.)
 const ACTIONS_WHEEL_LOCKED = new Set(["simGame", "liveGame", "simToGame"]);
+// The All-Star weekend is a single shared event (one dunk contest, one 3pt
+// contest, one All-Star draft) that the whole league watches - not something each
+// device runs its own copy of. So only the wheel-holder may advance or set it up;
+// otherwise a follower just opening the page (which auto-advances the contest on a
+// timer) would race the simmer and fork the shared state. Kept as its own set so
+// these can be wheel-locked WITHOUT driving the sim-busy lease (they fire every
+// ~1s, which would flicker the "simming" indicator and spam the control doc).
+const ALLSTAR_WHEEL_LOCKED = new Set([
+	"dunkSimNext",
+	"threeSimNext",
+	"dunkUser",
+	"dunkSetControlling",
+	"contestSetPlayers",
+	"allStarDraftAll",
+	"allStarDraftOne",
+	"allStarDraftUser",
+	"allStarDraftReset",
+	"allStarDraftSetPlayers",
+]);
+
 // "main"-type calls that restructure/advance the league. A single on-the-clock
 // pick (draftUser) is deliberately NOT here - every user drafts their own team.
 const MAIN_WHEEL_LOCKED = new Set([
 	"draftLottery",
 	"startExpansionDraft",
 	"startFantasyDraft",
+	...ALLSTAR_WHEEL_LOCKED,
 ]);
 
 // Does this API call advance the shared timeline (and so require the wheel)?
@@ -229,7 +250,13 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 	// followers hold off on colliding edits until the resulting changeset is
 	// published (in afterAction) - after which the caught-up check takes over.
 	const syncEngineForBusy = getSyncEngine();
-	const marksBusy = wheelLocked && !!syncEngineForBusy?.isAuthority();
+	// All-Star contest steps fire ~once a second and are tiny; wheel-lock them but
+	// don't drive the busy lease with them (it would flicker the follower's
+	// "simming" indicator and spam the control doc).
+	const marksBusy =
+		wheelLocked &&
+		!ALLSTAR_WHEEL_LOCKED.has(name) &&
+		!!syncEngineForBusy?.isAuthority();
 	if (marksBusy) {
 		syncEngineForBusy!.markRoomBusy();
 	}

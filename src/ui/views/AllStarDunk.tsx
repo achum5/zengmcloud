@@ -780,11 +780,19 @@ const AllStarDunk = ({
 		throw new Error("Not implemented");
 	}
 
-	const { challengeNoRatings, godMode, userTid } = useLocal([
-		"challengeNoRatings",
-		"godMode",
-		"userTid",
-	]);
+	const { challengeNoRatings, godMode, userTid, mpSyncActive, mpSyncIsHost } =
+		useLocal([
+			"challengeNoRatings",
+			"godMode",
+			"userTid",
+			"mpSyncActive",
+			"mpSyncIsHost",
+		]);
+
+	// A synced follower just watches the contest sync in; only the device that's
+	// simming may run it. Otherwise a follower opening this page would auto-advance
+	// the shared contest and race the simmer.
+	const mpBlocked = mpSyncActive && !mpSyncIsHost;
 
 	const [paused, setPaused] = useState(true);
 
@@ -793,7 +801,7 @@ const AllStarDunk = ({
 		let timeoutId: number | undefined;
 
 		const run = async () => {
-			if (!paused) {
+			if (!paused && !mpBlocked) {
 				if (awaitingUserDunkIndex !== undefined) {
 					setPaused(true);
 				} else {
@@ -815,7 +823,7 @@ const AllStarDunk = ({
 			obsolete = true;
 			clearTimeout(timeoutId);
 		};
-	}, [awaitingUserDunkIndex, log, paused]);
+	}, [awaitingUserDunkIndex, log, paused, mpBlocked]);
 
 	useTitleBar({
 		title: "Slam Dunk Contest",
@@ -828,7 +836,7 @@ const AllStarDunk = ({
 
 	return (
 		<>
-			{godMode && !started ? (
+			{godMode && !started && !mpBlocked ? (
 				<EditContestants
 					allPossibleContestants={allPossibleContestants}
 					contest="dunk"
@@ -853,7 +861,13 @@ const AllStarDunk = ({
 				userTid={userTid}
 			/>
 
-			{dunk.winner === undefined ? (
+			{dunk.winner === undefined && mpBlocked ? (
+				<p className="text-body-secondary">
+					The device that's simming runs the contest.
+				</p>
+			) : null}
+
+			{dunk.winner === undefined && !mpBlocked ? (
 				<PlayPauseNext
 					className="mb-3"
 					fastForwards={[
