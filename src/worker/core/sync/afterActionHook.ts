@@ -5,13 +5,29 @@
 // startup; game/play.ts calls runAfterActionHook when a multi-day sim finishes,
 // so its accumulated changes get drained + published even though the dispatched
 // action already returned (fire-and-forget "until playoffs"/etc.).
+//
+// options.silent still PUBLISHES the changeset (so sync stays sound) but skips
+// the phone push - used when simming a single game within a day, which
+// shouldn't ping anyone.
 
-let hook: ((type: string, name: string) => void) | undefined;
+export type AfterActionOptions = { silent?: boolean };
 
-export const setAfterActionHook = (fn: (type: string, name: string) => void) => {
+type AfterActionFn = (
+	type: string,
+	name: string,
+	options?: AfterActionOptions,
+) => void;
+
+let hook: AfterActionFn | undefined;
+
+export const setAfterActionHook = (fn: AfterActionFn) => {
 	hook = fn;
 };
 
-export const runAfterActionHook = (type: string, name: string) => {
-	hook?.(type, name);
+export const runAfterActionHook = (
+	type: string,
+	name: string,
+	options?: AfterActionOptions,
+) => {
+	hook?.(type, name, options);
 };

@@ -117,7 +117,12 @@ const play = async (
 		// game engine and the sync layer. Drain is atomic, so for a blocking
 		// day/week sim (whose dispatched afterAction also runs) this doesn't
 		// double-send.
-		runAfterActionHook("playMenu", "sim");
+		//
+		// A single-game sim (Sim one game / live game) publishes its results the
+		// same way - the room must stay in sync - but must NOT push a notification:
+		// you deliberately simmed just one game with the rest of the day still to
+		// play, so pinging phones with a "game done" would be noise.
+		runAfterActionHook("playMenu", "sim", { silent: gidOneGame !== undefined });
 	};
 
 	// Saves a vector of results objects for a day, as is output from cbSimGames

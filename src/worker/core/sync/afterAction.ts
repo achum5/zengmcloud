@@ -6,11 +6,27 @@ import { buildNotifications } from "./notifications.ts";
 import { idb } from "../../db/index.ts";
 import { local, lock } from "../../util/index.ts";
 
+// Actions that sim a SINGLE game within a day (Sim one game / live game), as
+// opposed to advancing whole days. Their results must still sync, but they must
+// never push a phone notification - you deliberately left the rest of the day
+// unplayed. The generic worker wrapper also fires afterAction for these labels
+// (and liveGame is fire-and-forget, so it can't rely on the play.ts silent
+// hook), so we detect them by label here too, belt-and-suspenders.
+const SILENT_SYNC_LABELS = new Set(["actions.simGame", "actions.liveGame"]);
+
 // Runs (fire-and-forget) after each user action that could mutate state. It
 // drains the change tracker ONCE and fans the resulting changeset out to both
 // the dev console logger and the cloud sync engine (if connected). Must never
 // throw - it piggybacks on the action's response and must not affect it.
-export const afterAction = async (type: string, name: string) => {
+//
+// options.silent: still publishes the changeset (sync stays sound) but skips the
+// phone-push notifications. Used for a single-game sim within a day - that
+// shouldn't ping anyone, even though its results must still reach other devices.
+export const afterAction = async (
+	type: string,
+	name: string,
+	options?: { silent?: boolean },
+) => {
 	try {
 		// Fast path: most actions change nothing.
 		if (changeTracker.size() === 0) {
@@ -23,6 +39,7 @@ export const afterAction = async (type: string, name: string) => {
 		}
 
 		const label = `${type}.${name}`;
+		const silent = !!options?.silent || SILENT_SYNC_LABELS.has(label);
 
 		if (process.env.NODE_ENV === "development") {
 			logChangeset(label, changeset);
@@ -73,7 +90,8 @@ export const afterAction = async (type: string, name: string) => {
 			// case where the sim device advances and pings phones, but nothing lands
 			// in the shared log. A sim produces one detailed notification per team;
 			// everything else produces one. Best-effort - never blocks play.
-			if (published) {
+			// Skipped entirely for a silent publish (e.g. a single-game sim).
+			if (published && !silent) {
 				try {
 					const notifications = await buildNotifications(label, changeset, {
 						isHost: engine.getIsHost(),
