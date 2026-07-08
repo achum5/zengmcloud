@@ -1,9 +1,5 @@
-import {
-	AD_DIVS,
-	MOBILE_AD_BOTTOM_MARGIN,
-	VIDEO_ADS,
-} from "../../common/constants.ts";
-import { local, localActions } from "./local.ts";
+import { AD_DIVS } from "../../common/constants.ts";
+import { localActions } from "./local.ts";
 
 const SKYSCAPER_WIDTH_CUTOFF = 1200 + 190;
 
@@ -65,135 +61,36 @@ class Skyscraper {
 type AdState = "none" | "gold" | "initializing" | "initialized";
 
 class Ads {
-	private accountChecked = false;
-	private uiRendered = false;
-	private initAfterLoadingDone = false;
 	skyscraper = new Skyscraper();
 	private state: AdState = "none";
 
-	setLoadingDone(type: "accountChecked" | "uiRendered") {
-		this[type] = true;
-		if (this.initAfterLoadingDone) {
-			this.init();
-		}
+	// Kept so the existing call sites (api.initAds) still work. With ads disabled,
+	// there's no load-order race to wait for - init() is idempotent, so just run it.
+	setLoadingDone(_type: "accountChecked" | "uiRendered") {
+		this.init();
 	}
 
 	init() {
-		// Prevent race condition by assuring we run this only after the account has been checked and the UI has been rendered, otherwise (especially when opening a 2nd tab) this was sometimes running before the UI was rendered, which resulted in no ads being displayed
 		if (this.state !== "none") {
 			// Must have already ran somehow?
 			return;
 		}
 
-		if (!this.accountChecked || !this.uiRendered) {
-			// We got the first pageview, but we're not done loading stuff, so render first ad after we finish loading
-			this.initAfterLoadingDone = true;
-			return;
-		}
-
-		this.state = "initializing";
-
-		const gold = local.getState().gold;
-
-		if (gold) {
-			this.state = "gold";
-		} else {
-			// _disabled names are to hide from Blockthrough, so it doesn't leak through for Gold subscribers. Run this regardless of window.freestar, so Blockthrough can still work for some users.
-			const divsAll = VIDEO_ADS
-				? [AD_DIVS.mobile, AD_DIVS.rail]
-				: [
-						AD_DIVS.mobile,
-						AD_DIVS.leaderboard,
-						AD_DIVS.rectangle1,
-						AD_DIVS.rectangle2,
-						AD_DIVS.rail,
-					];
-			for (const id of divsAll) {
-				const div = document.getElementById(`${id}_disabled`);
-				if (div) {
-					div.id = id;
-				}
-			}
-
-			window.freestar.queue.push(() => {
-				// Do moblie footer stuff before actually showing the ad, in case somehow `window.freestar.config.enabled_slots.push` causes an error that prevented subsequent code from running. Cause now 2 people have said the multi team menu is hiding behind ads on mobile, which must mean stickyFooterAd is not being set to true. Could somehow be Blockthrough (or whatever) running while Freestar code doesn't, but users say they aren't using an ad blocker...
-				if (window.mobile) {
-					localActions.update({
-						stickyFooterAd: true,
-					});
-
-					// Add margin to footer - do this manually rather than using stickyFooterAd so <Footer> does not have to re-render
-					const footer = document.getElementById("main-footer");
-					if (footer) {
-						footer.style.paddingBottom = `${MOBILE_AD_BOTTOM_MARGIN}px`;
-					}
-
-					// Disabled due to https://mail.google.com/mail/u/0/#inbox/FMfcgzQZSZHnVhMpncBXqpCxZMdgtcJL
-					// Hack to hopefully stop the Microsoft ad from breaking everything
-					// Maybe this is breaking country tracking in Freestar, and maybe for direct ads too?
-					/*window.googletag = window.googletag || {};
-					window.googletag.cmd = window.googletag.cmd || [];
-					window.googletag.cmd.push(() => {
-						window.googletag.pubads().setForceSafeFrame(true);
-						window.googletag.pubads().setSafeFrameConfig({
-							allowOverlayExpansion: false,
-							allowPushExpansion: false,
-							sandbox: true,
-						});
-					});*/
-				}
-
-				if (VIDEO_ADS && !window.mobile) {
-					window.freestar.newStickyFooter("football-gm_adhesion");
-				}
-
-				// Show hidden divs. skyscraper has its own code elsewhere to manage display.
-				const divsMobile = [AD_DIVS.mobile];
-				const divsDesktop = VIDEO_ADS
-					? []
-					: [AD_DIVS.leaderboard, AD_DIVS.rectangle1, AD_DIVS.rectangle2];
-				const divs = window.mobile ? divsMobile : divsDesktop;
-
-				for (const id of divs) {
-					const div = document.getElementById(id);
-
-					if (div) {
-						div.style.removeProperty("display");
-					}
-				}
-
-				// Special case for rail, to tell it there is no gold
-				const rail = document.getElementById(AD_DIVS.rail);
-				if (rail) {
-					delete rail.dataset.gold;
-					this.skyscraper.updateDislay(true);
-				}
-
-				for (const id of divs) {
-					window.freestar.config.enabled_slots.push({
-						placementName: id,
-						slotId: id,
-					});
-				}
-
-				if (!window.mobile && !VIDEO_ADS) {
-					// Show the logo too
-					const logo = document.getElementById("bbgm-ads-logo");
-
-					if (logo) {
-						logo.style.display = "flex";
-					}
-				}
-
-				window.freestar.newAdSlots(window.freestar.config.enabled_slots);
-
-				this.state = "initialized";
-			});
-		}
+		// Ads are disabled entirely in this build. Take the ad-free ("gold") path
+		// unconditionally: never request Freestar slots, never reveal the hidden ad
+		// divs, never add mobile footer padding, never touch window.freestar. Every
+		// other method keys off this.state, so setting it here keeps
+		// refreshAll()/skyscraper/etc. inert.
+		this.state = "gold";
 	}
 
 	// This does the opposite of initAds. To be called when a user subscribes to gold or logs in to an account with an active subscription
 	stop() {
+		// Ads are disabled, so they're never started - and window.freestar never
+		// loads. Nothing to tear down.
+		if (!window.freestar) {
+			return;
+		}
 		window.freestar.queue.push(() => {
 			const divsAll = [
 				AD_DIVS.mobile,
@@ -257,6 +154,10 @@ class Ads {
 	}
 
 	trackPageview(path: string) {
+		// Freestar pageview tracking; with ads disabled window.freestar never loads.
+		if (!window.freestar) {
+			return;
+		}
 		// https://freestarhelp.zendesk.com/hc/en-us/articles/34417159798804-Track-Page-Views
 		window.freestar.queue.push(() => {
 			window.freestar.trackPageview?.({ path });

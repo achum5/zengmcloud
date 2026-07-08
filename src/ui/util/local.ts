@@ -216,7 +216,9 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 				}
 
 				const email = obj.email;
-				if (email && !obj.gold) {
+				// Freestar hashed-email passthrough is ad targeting; with ads disabled
+				// window.freestar never loads, so guard against it to avoid throwing.
+				if (email && !obj.gold && window.freestar) {
 					window.freestar.queue.push(async () => {
 						// https://freestarhelp.zendesk.com/hc/en-us/articles/34498258990868-Hashed-Email-Passthrough
 						const freestarNormalizeEmail = (email: string) => {

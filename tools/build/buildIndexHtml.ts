@@ -82,7 +82,7 @@ export const buildIndexHtml = async ({
 		},
 		{
 			searchValue: "BANNER_ADS_CODE",
-			replaceValue: getBannerAdsCode(sport),
+			replaceValue: getBannerAdsCode(),
 		},
 		{
 			searchValue: "GOOGLE_ANALYTICS_ID",
