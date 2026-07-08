@@ -58,6 +58,15 @@ export type RecapSeasonTeam = {
 	seed?: number;
 	madePlayoffs: boolean;
 	playoffResult: string; // roundsWonText for THIS season
+	// This season's playoff series, round by round: opponent + games won/lost, so
+	// the recap states the ACTUAL series length instead of guessing it.
+	playoffSeriesResults: {
+		round: number;
+		opp: string;
+		won: number;
+		lost: number;
+		win: boolean;
+	}[];
 	players: RecapSeasonPlayer[];
 	franchise: {
 		championships: number;
@@ -235,8 +244,10 @@ export const getSeasonRecapData = async (
 	// requires a tid or season - it can't fetch the whole store at once).
 	const playoffsByConfBySeason = await getPlayoffsByConfBySeason();
 
-	// Playoff seeds for this season (first-round matchups carry the seeds).
-	const playoffSeries = await idb.cache.playoffSeries.get(season);
+	// Playoff seeds for this season (first-round matchups carry the seeds). Use
+	// getCopy so it works for PAST seasons too (the cache only holds the current
+	// one), which also feeds the per-team series results below.
+	const playoffSeries = await idb.getCopy.playoffSeries({ season });
 	const seedByTid = new Map<number, number>();
 	const firstRound = playoffSeries?.series?.[0];
 	if (Array.isArray(firstRound)) {
@@ -252,6 +263,61 @@ export const getSeasonRecapData = async (
 			}
 		}
 	}
+
+	// tid → this season's abbrev, for labeling playoff opponents.
+	const abbrevByTid = new Map<number, string>();
+	for (const t of teamsPlus) {
+		if (t.seasonAttrs?.abbrev) {
+			abbrevByTid.set(t.tid, t.seasonAttrs.abbrev);
+		}
+	}
+
+	// A team's playoff series this season, in order. Walks every round and records
+	// the series (opponent + games won/lost) wherever this team appears - handling
+	// byes (skipped early rounds) and early exits (only appears until eliminated).
+	const seriesResultsForTid = (
+		tid: number,
+	): RecapSeasonTeam["playoffSeriesResults"] => {
+		const out: RecapSeasonTeam["playoffSeriesResults"] = [];
+		const rounds = playoffSeries?.series;
+		if (!Array.isArray(rounds)) {
+			return out;
+		}
+		for (let r = 0; r < rounds.length; r++) {
+			const matchups = rounds[r];
+			if (!Array.isArray(matchups)) {
+				continue;
+			}
+			let me: any;
+			let opp: any;
+			for (const matchup of matchups) {
+				if (matchup?.home?.tid === tid) {
+					me = matchup.home;
+					opp = matchup.away;
+					break;
+				}
+				if (matchup?.away?.tid === tid) {
+					me = matchup.away;
+					opp = matchup.home;
+					break;
+				}
+			}
+			if (!me || !opp) {
+				// Not in this round (bye / already eliminated), or a bye matchup.
+				continue;
+			}
+			const meWon = me.won ?? 0;
+			const oppWon = opp.won ?? 0;
+			out.push({
+				round: r + 1,
+				opp: opp.abbrev ?? abbrevByTid.get(opp.tid) ?? "???",
+				won: meWon,
+				lost: oppWon,
+				win: meWon > oppWon,
+			});
+		}
+		return out;
+	};
 
 	const moves = await gatherMoves(season);
 
@@ -434,6 +500,7 @@ export const getSeasonRecapData = async (
 					playoffsByConf: playoffsByConfBySeason.get(season),
 					showMissedPlayoffs: true,
 				}),
+				playoffSeriesResults: seriesResultsForTid(tid),
 				players: topPlayers,
 				franchise: {
 					championships: fh.championships,

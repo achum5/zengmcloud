@@ -20,6 +20,10 @@ const data: RecapSeasonData = {
 			seed: 1,
 			madePlayoffs: true,
 			playoffResult: "league champs",
+			playoffSeriesResults: [
+				{ round: 1, opp: "BKN", won: 4, lost: 1, win: true },
+				{ round: 4, opp: "BOS", won: 4, lost: 2, win: true },
+			],
 			players: [
 				{
 					name: "Star Guy",
@@ -65,6 +69,7 @@ const data: RecapSeasonData = {
 			lost: 24,
 			madePlayoffs: true,
 			playoffResult: "made finals",
+			playoffSeriesResults: [],
 			players: [],
 			franchise: {
 				championships: 17,
@@ -116,6 +121,13 @@ describe("buildSeasonRecapPrompt", () => {
 		// in-season moves — the flow the recap should follow.
 		assert.ok(offseasonIdx < seasonIdx, prompt);
 		assert.ok(seasonIdx < inSeasonIdx, prompt);
+	});
+
+	test("includes exact playoff series results so the AI can't guess series length", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(prompt.includes("Playoff series:"), prompt);
+		assert.ok(prompt.includes("beat BKN 4-1"), prompt);
+		assert.ok(prompt.includes("beat BOS 4-2"), prompt);
 	});
 });
 

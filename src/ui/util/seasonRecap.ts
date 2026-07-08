@@ -9,7 +9,7 @@ import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 // brief can change without touching the data-baking below.
 const INSTRUCTIONS = `You are an expert basketball writer producing a league-wide season in review. Write a season recap for EACH team listed below.
 
-You are given a lot of data per team: the team's record and playoff result, its seed, its key players' season and postseason lines (with ages, ratings, and any awards), the franchise's history (championships, playoff appearances, recent seasons), and the transactions that shaped the team. Use whatever tells the best story — how the season met or defied expectations given the roster and moves, breakout or declining players, the franchise's arc, playoff runs or collapses, and how the offseason set the team up. Do NOT dump the raw data back.
+You are given a lot of data per team: the team's record and playoff result, its seed, its exact playoff series results (opponent and games won-lost each round — use these for how far a series went; never guess the number of games), its key players' season and postseason lines (with ages, ratings, and any awards), the franchise's history (championships, playoff appearances, recent seasons), and the transactions that shaped the team. Use whatever tells the best story — how the season met or defied expectations given the roster and moves, breakout or declining players, the franchise's arc, playoff runs or collapses, and how the offseason set the team up. Do NOT dump the raw data back.
 
 IMPORTANT — tell the story in chronological order, exactly how the data is laid out per team: (1) the OFFSEASON MOVES that BUILT this year's roster (the prior offseason — signings, re-signings, draft picks, trades made BEFORE the season), then (2) the SEASON itself — the regular-season record and how it played out, the IN-SEASON MOVES (trades/cuts made during the year), and (3) the PLAYOFFS. The offseason moves are last summer's build-up that set this team up; weave them in as the season's starting point.
 
@@ -103,6 +103,16 @@ const teamBlock = (t: RecapSeasonTeam): string => {
 		summary.push(`${t.ptsPerGame} PPG / ${t.oppPtsPerGame ?? "?"} allowed`);
 	}
 	lines.push("", `The season: ${summary.join(" · ")}`);
+
+	if (t.playoffSeriesResults.length > 0) {
+		const seriesStr = t.playoffSeriesResults
+			.map(
+				(s) =>
+					`Round ${s.round}: ${s.win ? "beat" : "lost to"} ${s.opp} ${s.won}-${s.lost}`,
+			)
+			.join("; ");
+		lines.push(`Playoff series: ${seriesStr}`);
+	}
 
 	if (t.inSeasonMoves.length > 0) {
 		lines.push("", "In-season moves:", ...t.inSeasonMoves.map((m) => `- ${m}`));
