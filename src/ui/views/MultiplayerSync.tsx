@@ -80,14 +80,21 @@ const relativeTime = (ts: number): string => {
 const MultiplayerSync = () => {
 	useTitleBar({ title: "Multiplayer Sync" });
 
-	const { lid, mpSyncIsHost, mpSyncHostName, mpSyncReconnecting, mpSyncUpload } =
-		useLocal([
-			"lid",
-			"mpSyncIsHost",
-			"mpSyncHostName",
-			"mpSyncReconnecting",
-			"mpSyncUpload",
-		]);
+	const {
+		lid,
+		mpSyncActive,
+		mpSyncIsHost,
+		mpSyncHostName,
+		mpSyncReconnecting,
+		mpSyncUpload,
+	} = useLocal([
+		"lid",
+		"mpSyncActive",
+		"mpSyncIsHost",
+		"mpSyncHostName",
+		"mpSyncReconnecting",
+		"mpSyncUpload",
+	]);
 
 	const [code, setCode] = useState("");
 	const [isHost, setIsHost] = useState(false);
@@ -327,7 +334,12 @@ const MultiplayerSync = () => {
 		}
 	};
 
-	const connected = status === "connected";
+	// Source of truth is the reactive worker state (mpSyncActive), NOT the local
+	// one-shot `status` fetched on mount - otherwise an auto-reconnect that lands
+	// AFTER the page mounted leaves it stuck showing "Not connected" while the
+	// device is really connected (and the header dot is green). `status` is kept
+	// only for the transient "connecting…" while a manual Connect is in flight.
+	const connected = mpSyncActive || status === "connected";
 
 	return (
 		<>
