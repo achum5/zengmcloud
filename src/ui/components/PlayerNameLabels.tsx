@@ -8,6 +8,8 @@ import { SeasonIcons } from "./SeasonIcons.tsx";
 import { CountryFlag } from "./CountryFlag.tsx";
 import { useEffect, useState } from "react";
 import { useLocal } from "../util/local.ts";
+import { usePlayerFace } from "../util/playerFaces.ts";
+import { PlayerPicture } from "./PlayerPicture.tsx";
 
 type Props = {
 	awards?: Player["awards"];
@@ -47,6 +49,10 @@ type Props = {
 
 	// Override the alwaysShowCountry feature to always be disabled, in the case where we know the country is displayed elsewhere nearby already
 	neverShowCountry?: boolean;
+
+	// Opt out of the small face shown before the name (for the rare spot where a
+	// face would look wrong, e.g. a name used inline in prose).
+	hideFace?: boolean;
 };
 
 const parseLegacyName = (name: string) => {
@@ -134,9 +140,34 @@ const CountryFlagPid = ({
 };
 
 export const PlayerNameLabels = (props: Props) => {
-	const localState = useLocal(["alwaysShowCountry", "fullNames"]);
+	const localState = useLocal(["alwaysShowCountry", "fullNames", "lid"]);
 	const alwaysShowCountry = localState.alwaysShowCountry;
 	const fullNames = localState.fullNames || props.fullNames;
+
+	// Small face next to the name, loaded on demand (batched + cached) so it works
+	// in every table without every view having to ship face data.
+	const faceData = usePlayerFace(
+		props.hideFace ? undefined : props.pid,
+		localState.lid,
+	);
+	const faceEl =
+		faceData && (faceData.face || faceData.imgURL) ? (
+			<span
+				className="d-inline-block"
+				style={{
+					height: "1.6em",
+					width: "1.07em",
+					marginRight: 4,
+					verticalAlign: "middle",
+				}}
+			>
+				<PlayerPicture
+					face={faceData.face}
+					imgURL={faceData.imgURL}
+					lazy
+				/>
+			</span>
+		) : null;
 
 	const {
 		abbrev,
@@ -211,6 +242,7 @@ export const PlayerNameLabels = (props: Props) => {
 
 	const nameLabelsBlock = (
 		<span style={style}>
+			{faceEl}
 			{Object.hasOwn(props, "jerseyNumber") ? (
 				<span
 					className={`text-body-secondary jersey-number-name text-start${

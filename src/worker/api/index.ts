@@ -1,4 +1,5 @@
 import { csvFormat, csvFormatRows } from "d3-dsv";
+import type { FaceConfig } from "facesjs";
 import {
 	GAME_ACRONYM,
 	PHASE,
@@ -1728,6 +1729,32 @@ const getBornLoc = async (pid: number) => {
 	if (p) {
 		return p.born.loc;
 	}
+};
+
+// Batch-fetch just the face (or image URL) + current team of a set of players, so
+// the UI can show a small face next to a name in any table without every view
+// having to bake face data into its rows. Keyed by pid; the UI caches per league.
+const getPlayerFaces = async (
+	pids: number[],
+): Promise<
+	Record<number, { face?: FaceConfig; imgURL?: string; tid?: number }>
+> => {
+	const result: Record<
+		number,
+		{ face?: FaceConfig; imgURL?: string; tid?: number }
+	> = {};
+	if (pids.length === 0) {
+		return result;
+	}
+	const players = await idb.getCopies.players({ pids }, "noCopyCache");
+	for (const p of players) {
+		result[p.pid] = {
+			face: p.face,
+			imgURL: p.imgURL === "" ? undefined : p.imgURL,
+			tid: p.tid,
+		};
+	}
+	return result;
 };
 
 const getDefaultInjuries = () => {
@@ -5307,6 +5334,7 @@ export default {
 		generateFace: generateFace2,
 		getAutoPos,
 		getBornLoc,
+		getPlayerFaces,
 		getDefaultInjuries,
 		getDefaultNewLeagueSettings,
 		getDefaultTragicDeaths,
