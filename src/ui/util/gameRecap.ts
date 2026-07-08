@@ -11,7 +11,7 @@ import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 // logic below.
 const INSTRUCTIONS = `You are an expert basketball beat writer. Write a lively, ESPN-style recap for EACH game listed below.
 
-You are given far more data than you need — box scores, season and career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), and (in the playoffs) the series and bracket state. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. Do NOT list the raw data back.
+You are given far more data than you need — box scores, season and career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). Do NOT list the raw data back.
 
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
@@ -143,6 +143,31 @@ const seriesLine = (game: RecapGame): string | undefined => {
 	return `Playoffs — Round ${s.round} of ${s.numRounds}${seeds} (before this game: ${leader})`;
 };
 
+// A one-line stakes description for a play-in tournament game. This is a
+// single win-or-go-home (or advance) game, NOT a series - spell out what each
+// team is playing for so the recap frames it as a play-in game.
+const playInLine = (game: RecapGame): string | undefined => {
+	const p = game.playIn;
+	if (!p) {
+		return undefined;
+	}
+	const seeds =
+		typeof p.homeSeed === "number" && typeof p.awaySeed === "number"
+			? ` — #${p.awaySeed} ${p.awayAbbrev} at #${p.homeSeed} ${p.homeAbbrev}`
+			: "";
+	const prize =
+		typeof p.prizeSeed === "number" ? `the #${p.prizeSeed} seed` : "a playoff spot";
+	let stakes: string;
+	if (p.kind === "seed7v8") {
+		stakes = `Win-and-in: the winner clinches ${prize}; the loser drops to the final play-in game (still alive).`;
+	} else if (p.kind === "seed9v10") {
+		stakes = `Win-or-go-home: the winner advances to the final play-in game; the loser is eliminated.`;
+	} else {
+		stakes = `Win-or-go-home for the last playoff spot: the winner clinches ${prize}; the loser is eliminated.`;
+	}
+	return `Play-In Tournament${seeds}. ${stakes}`;
+};
+
 const gameBlock = (game: RecapGame): string => {
 	// teams[0] is the home team in ZenGM; list the visitor first ("away @ home").
 	const [home, away] = game.teams;
@@ -162,6 +187,11 @@ const gameBlock = (game: RecapGame): string => {
 	const series = seriesLine(game);
 	if (series) {
 		lines.push(series);
+	}
+
+	const playIn = playInLine(game);
+	if (playIn) {
+		lines.push(playIn);
 	}
 
 	lines.push("", teamBlock(away), "", teamBlock(home));

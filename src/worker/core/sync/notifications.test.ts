@@ -224,6 +224,35 @@ describe("buildNotifications", () => {
 		assert.strictEqual(notifs[0]!.path, "playoffs");
 	});
 
+	test("during the play-in tournament, a team with no game gets that day's scoreboard", async () => {
+		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+		// currentRound === -1 marks the play-in tournament (games are single
+		// elimination, stored in playIns rather than series).
+		await idb.cache.playoffSeries.put({
+			season: 2026,
+			currentRound: -1,
+			series: [[]],
+			playIns: [],
+		} as any);
+
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			// Two play-in games the user's team (tid 0) isn't in.
+			{
+				changes: [
+					gamePut(10, { tid: 1, pts: 120 }, { tid: 2, pts: 114 }),
+					gamePut(11, { tid: 3, pts: 98 }, { tid: 4, pts: 105 }),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs.length, 1);
+		assert.deepEqual(notifs[0]!.targetTids, [0]);
+		assert.strictEqual(notifs[0]!.title, "Play-in scores");
+		assert.ok(notifs[0]!.body.includes("BOS 120-114"), notifs[0]!.body);
+		assert.strictEqual(notifs[0]!.path, "playoffs");
+	});
+
 	test("sim via a non-playMenu action (e.g. simToGame) is still a sim, not a trade", async () => {
 		const notifs = await buildNotifications(
 			"actions.simToGame",

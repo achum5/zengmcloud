@@ -108,6 +108,23 @@ export type RecapSeries = {
 	awayWon: number;
 };
 
+// A play-in tournament game's context. These are single elimination, NOT a
+// series, and carry different stakes than a normal playoff game:
+//   - "seed7v8": winner claims the higher (prizeSeed) playoff seed, loser lives
+//     on in the final play-in game
+//   - "seed9v10": winner advances to the final play-in game, loser is eliminated
+//   - "final": winner claims the last playoff seed (prizeSeed), loser eliminated
+export type RecapPlayIn = {
+	kind: "seed7v8" | "seed9v10" | "final";
+	homeAbbrev: string;
+	awayAbbrev: string;
+	homeSeed?: number;
+	awaySeed?: number;
+	// The playoff seed the winner clinches (undefined for the 9v10 game, whose
+	// winner only advances to the final).
+	prizeSeed?: number;
+};
+
 // Everything an AI needs to write a recap of one completed game.
 export type RecapGame = {
 	gid: number;
@@ -117,6 +134,8 @@ export type RecapGame = {
 	playoffs: boolean;
 	teams: [RecapTeam, RecapTeam];
 	series?: RecapSeries;
+	// Set instead of `series` when this is a play-in tournament game.
+	playIn?: RecapPlayIn;
 	// Narrative highlights ZenGM already generated (game-winners, milestones, ...).
 	clutchPlays: string[];
 };
@@ -400,6 +419,55 @@ export const getDayGamesForRecap = async ({
 		return undefined;
 	};
 
+	// Play-in tournament lookup. During the play-in, matchups live in
+	// playoffSeries.playIns (not .series), so a play-in game is otherwise
+	// indistinguishable from a normal playoff game - this classifies it.
+	const playInForGame = async (
+		game: any,
+	): Promise<RecapPlayIn | undefined> => {
+		const playIns = playoffSeries?.playIns;
+		if (!Array.isArray(playIns)) {
+			return undefined;
+		}
+		const [tidA, tidB] = [game.teams[0].tid, game.teams[1].tid];
+		for (const playIn of playIns) {
+			for (let j = 0; j < playIn.length; j++) {
+				const matchup: any = playIn[j];
+				const home = matchup?.home;
+				const away = matchup?.away;
+				if (!home || !away) {
+					continue;
+				}
+				const byGid = matchup.gids?.includes(game.gid);
+				const byTid =
+					(home.tid === tidA && away.tid === tidB) ||
+					(home.tid === tidB && away.tid === tidA);
+				if (byGid || byTid) {
+					const kind =
+						j === 0 ? "seed7v8" : j === 1 ? "seed9v10" : "final";
+					let prizeSeed: number | undefined;
+					if (kind === "seed7v8") {
+						// Winner takes the better (numerically lower) of the two seeds.
+						prizeSeed = Math.min(home.seed, away.seed);
+					} else if (kind === "final") {
+						// Winner takes the last playoff spot (the 8-seed slot from the
+						// group's 7-vs-8 game).
+						prizeSeed = playIn[0]?.away?.seed;
+					}
+					return {
+						kind,
+						homeAbbrev: home.abbrev ?? (await abbrevOf(home.tid)),
+						awayAbbrev: away.abbrev ?? (await abbrevOf(away.tid)),
+						homeSeed: home.seed,
+						awaySeed: away.seed,
+						prizeSeed,
+					};
+				}
+			}
+		}
+		return undefined;
+	};
+
 	const seedOf = (tid: number): number | undefined => {
 		if (!playoffSeries || !Array.isArray(playoffSeries.series)) {
 			return undefined;
@@ -528,6 +596,11 @@ export const getDayGamesForRecap = async ({
 			});
 		}
 
+		// A play-in game is a playoff game, but its matchup lives in playIns, not
+		// series - classify it first so we tag it as play-in rather than looking
+		// (and failing) to find it as a normal series game.
+		const playIn = playoffs ? await playInForGame(game) : undefined;
+
 		result.push({
 			gid: game.gid,
 			day: game.day ?? day,
@@ -535,7 +608,8 @@ export const getDayGamesForRecap = async ({
 			winnerTid: game.won.tid,
 			playoffs,
 			teams,
-			series: playoffs ? await seriesForGame(game) : undefined,
+			series: playoffs && !playIn ? await seriesForGame(game) : undefined,
+			playIn,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
 		});
 	}

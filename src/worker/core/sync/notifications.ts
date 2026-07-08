@@ -284,20 +284,10 @@ const MAX_DETAILED_GAMES = 3;
 //   DEN 3-0 LAL
 // Shown to a user whose team isn't playing, so they can follow the bracket.
 // Undefined if there are no series to show.
-const playoffSeriesScores = async (
-	season: number,
-	teamById: Map<number, { abbrev: string }>,
-): Promise<string | undefined> => {
-	let playoffSeries;
-	try {
-		playoffSeries = await idb.cache.playoffSeries.get(season);
-	} catch {
-		return undefined;
-	}
-	if (!playoffSeries) {
-		return undefined;
-	}
-
+const playoffSeriesScores = (
+	playoffSeries: { currentRound: number; series: any[][] },
+	teamById: Map<number, { abbrev?: string }>,
+): string | undefined => {
 	const round = playoffSeries.series[playoffSeries.currentRound];
 	if (!round || round.length === 0) {
 		return undefined;
@@ -318,6 +308,26 @@ const playoffSeriesScores = async (
 		lines.push(`${abbrevOf(a)} ${a.won}-${b.won} ${abbrevOf(b)}`);
 	}
 
+	return lines.length > 0 ? lines.join("\n") : undefined;
+};
+
+// The completed games from this sim as a simple scoreboard, winner first, e.g.
+//   ATL 120-114 CHA
+//   MIA 105-98 CHI
+// Shown during the play-in tournament (single-elimination, not series) to a
+// user whose team isn't playing that day. Undefined if there are no games.
+const dayGameScores = (
+	games: Game[],
+	teamById: Map<number, { abbrev?: string }>,
+): string | undefined => {
+	const abbrevOf = (tid: number): string => teamById.get(tid)?.abbrev ?? "???";
+	const lines = games
+		.slice()
+		.sort((a, b) => a.gid - b.gid)
+		.map(
+			(game) =>
+				`${abbrevOf(game.won.tid)} ${game.won.pts}-${game.lost.pts} ${abbrevOf(game.lost.tid)}`,
+		);
 	return lines.length > 0 ? lines.join("\n") : undefined;
 };
 
@@ -370,17 +380,39 @@ const buildSimNotifications = async (
 		if (teamGames.length === 0) {
 			if (phase === PHASE.PLAYOFFS) {
 				// Your team isn't playing (eliminated / didn't make it, or an off day).
-				// Instead of a bare "no game", show the current playoff series scores so
-				// you can still follow the bracket.
-				const seriesBody = await playoffSeriesScores(season, teamById);
-				if (seriesBody) {
-					notifications.push({
-						title: "Playoff scores",
-						body: seriesBody,
-						targetTids: [tid],
-						path: "playoffs",
-					});
-					continue;
+				// Instead of a bare "no game", show what's happening in the bracket.
+				let playoffSeries;
+				try {
+					playoffSeries = await idb.cache.playoffSeries.get(season);
+				} catch {
+					// Best effort - fall through to the plain "no game" notice.
+				}
+
+				// During the play-in tournament (currentRound === -1) the games are
+				// single-elimination, not series, so show that day's scoreboard.
+				// Otherwise show the current round's series scores.
+				if (playoffSeries?.currentRound === -1) {
+					const body = dayGameScores(games, teamById);
+					if (body) {
+						notifications.push({
+							title: "Play-in scores",
+							body,
+							targetTids: [tid],
+							path: "playoffs",
+						});
+						continue;
+					}
+				} else if (playoffSeries) {
+					const seriesBody = playoffSeriesScores(playoffSeries, teamById);
+					if (seriesBody) {
+						notifications.push({
+							title: "Playoff scores",
+							body: seriesBody,
+							targetTids: [tid],
+							path: "playoffs",
+						});
+						continue;
+					}
 				}
 			}
 			if (GAME_PHASES.has(phase)) {

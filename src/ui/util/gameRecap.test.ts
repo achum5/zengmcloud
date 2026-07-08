@@ -182,6 +182,79 @@ describe("buildRecapPrompt — rich context", () => {
 	});
 });
 
+describe("buildRecapPrompt — play-in games", () => {
+	const playInGame = (playIn: RecapGame["playIn"]): RecapGame => ({
+		gid: 5,
+		day: 88,
+		overtimes: 0,
+		winnerTid: 0,
+		playoffs: true,
+		playIn,
+		teams: [
+			{ tid: 0, region: "Brooklyn", name: "Bagels", abbrev: "BKN", pts: 110, players: [] },
+			{ tid: 1, region: "Boston", name: "Massacre", abbrev: "BOS", pts: 104, players: [] },
+		],
+		clutchPlays: [],
+	});
+
+	test("7-vs-8 game is framed as a play-in with the seed on the line, not a series", () => {
+		const prompt = buildRecapPrompt(
+			[
+				playInGame({
+					kind: "seed7v8",
+					homeAbbrev: "BKN",
+					awayAbbrev: "BOS",
+					homeSeed: 7,
+					awaySeed: 8,
+					prizeSeed: 7,
+				}),
+			],
+			"Day 88",
+		);
+		assert.ok(prompt.includes("Play-In Tournament"), prompt);
+		assert.ok(prompt.includes("#7 seed"), prompt);
+		assert.ok(prompt.includes("final play-in game"), prompt);
+		// Must NOT masquerade as a normal playoff series.
+		assert.ok(!prompt.includes("Playoffs — Round"), prompt);
+	});
+
+	test("9-vs-10 game frames elimination stakes", () => {
+		const prompt = buildRecapPrompt(
+			[
+				playInGame({
+					kind: "seed9v10",
+					homeAbbrev: "BKN",
+					awayAbbrev: "BOS",
+					homeSeed: 9,
+					awaySeed: 10,
+				}),
+			],
+			"Day 88",
+		);
+		assert.ok(prompt.includes("Play-In Tournament"), prompt);
+		assert.ok(prompt.includes("eliminated"), prompt);
+	});
+
+	test("final play-in game frames the last playoff spot", () => {
+		const prompt = buildRecapPrompt(
+			[
+				playInGame({
+					kind: "final",
+					homeAbbrev: "BKN",
+					awayAbbrev: "BOS",
+					homeSeed: 8,
+					awaySeed: 9,
+					prizeSeed: 8,
+				}),
+			],
+			"Day 88",
+		);
+		assert.ok(prompt.includes("Play-In Tournament"), prompt);
+		assert.ok(prompt.includes("last playoff spot"), prompt);
+		assert.ok(prompt.includes("#8 seed"), prompt);
+	});
+});
+
 describe("parseRecaps", () => {
 	test("files each recap to its game id, ignoring preamble", () => {
 		const text = `Here are your recaps!
