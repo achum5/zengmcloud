@@ -361,11 +361,14 @@ const handleLiveBroadcastMeta = async (
 		return;
 	}
 
-	// No live broadcast (ended, expired, or none): release any follow we had.
+	// No live broadcast (ended, expired, or none): release any follow we had, and
+	// unfreeze the header score ticker (liveGameInProgress) it was watching under.
 	if (!meta || !meta.active || meta.expiresAt < Date.now()) {
 		if (followedBroadcast) {
 			followedBroadcast = undefined;
-			void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
+			void toUI("updateLocal", [
+				{ mpLiveBroadcast: undefined, liveGameInProgress: false },
+			]);
 		}
 		return;
 	}
@@ -379,6 +382,11 @@ const handleLiveBroadcastMeta = async (
 			gid: meta.gid,
 			expiresAt: meta.expiresAt,
 		};
+		// Freeze the header score ticker right now - BEFORE the game result can sync
+		// in - exactly like the simmer, whose liveGameInProgress is set before the
+		// game is even written. The follower's own onLiveSimOver clears it at game
+		// over, revealing the final score in the header just as it does for the simmer.
+		void toUI("updateLocal", [{ liveGameInProgress: true }]);
 		try {
 			const serialized = await transport.fetchLiveBroadcastData?.(
 				meta.chunkCount,
@@ -436,7 +444,9 @@ const handleLiveBroadcastMeta = async (
 const checkLiveBroadcastLease = () => {
 	if (followedBroadcast && Date.now() > followedBroadcast.expiresAt) {
 		followedBroadcast = undefined;
-		void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
+		void toUI("updateLocal", [
+			{ mpLiveBroadcast: undefined, liveGameInProgress: false },
+		]);
 	}
 };
 
