@@ -1,6 +1,7 @@
 import { assert, beforeAll, describe, test } from "vitest";
 import {
 	buildRecapLinksForGame,
+	buildTeamSeasonRecapLinks,
 	linkifyRecap,
 	type RecapLink,
 } from "./linkifyRecap.ts";
@@ -109,5 +110,58 @@ describe("buildRecapLinksForGame", () => {
 		const star = links.find((l) => l.name === "Star Guy");
 		assert.ok(lakers!.href.includes("roster/LAL_0/2076"), lakers!.href);
 		assert.ok(star!.href.includes("player/10"), star!.href);
+	});
+});
+
+describe("buildTeamSeasonRecapLinks", () => {
+	// leagueUrl reads the current lid from local state.
+	beforeAll(() => {
+		local.setState({ lid: 1 });
+	});
+
+	const teamInfoCache = [
+		{ abbrev: "LAL", region: "LA", name: "Lakers" }, // tid 0
+		{ abbrev: "BOS", region: "Boston", name: "Celtics" }, // tid 1
+	];
+	const players = [
+		{ pid: 10, firstName: "Star", lastName: "Guy" },
+		{ pid: 20, firstName: "Role", lastName: "Player" },
+	];
+
+	test("links every league team and this season's roster players", () => {
+		const links = buildTeamSeasonRecapLinks({
+			season: 2026,
+			players,
+			teamInfoCache,
+		});
+		const names = links.map((l) => l.name);
+		assert.ok(names.includes("LA Lakers"));
+		assert.ok(names.includes("Lakers"));
+		assert.ok(names.includes("Boston Celtics"));
+		assert.ok(names.includes("Star Guy"));
+		assert.ok(names.includes("Role Player"));
+	});
+
+	test("team href points at the season roster; player href at the player", () => {
+		const links = buildTeamSeasonRecapLinks({
+			season: 2026,
+			players,
+			teamInfoCache,
+		});
+		const celtics = links.find((l) => l.name === "Boston Celtics");
+		const star = links.find((l) => l.name === "Star Guy");
+		assert.ok(celtics!.href.includes("roster/BOS_1/2026"), celtics!.href);
+		assert.ok(star!.href.includes("player/10"), star!.href);
+	});
+
+	test("skips empty team slots", () => {
+		const withGap = [{ abbrev: "LAL", region: "LA", name: "Lakers" }, undefined];
+		const links = buildTeamSeasonRecapLinks({
+			season: 2026,
+			players: [],
+			teamInfoCache: withGap as any,
+		});
+		assert.ok(links.every((l) => l.name !== "undefined"));
+		assert.ok(links.some((l) => l.name === "LA Lakers"));
 	});
 });

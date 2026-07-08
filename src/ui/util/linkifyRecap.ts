@@ -78,6 +78,58 @@ export const buildRecapLinksForGame = (
 	return entries;
 };
 
+// The name→link map for a TEAM-SEASON recap note (the AI season writeups). Links
+// every league team's name (to its roster) plus that season's roster players (to
+// their pages). Team names are unique so they can be league-wide; players are
+// scoped to this team's season roster to avoid mislinking a same-named player.
+export const buildTeamSeasonRecapLinks = ({
+	season,
+	players,
+	teamInfoCache,
+}: {
+	season: number;
+	players: { pid?: number; firstName?: string; lastName?: string }[];
+	teamInfoCache: {
+		abbrev?: string;
+		region?: string;
+		name?: string;
+		disabled?: boolean;
+	}[];
+}): RecapLink[] => {
+	const entries: RecapLink[] = [];
+
+	// teamInfoCache is indexed by tid.
+	for (let tid = 0; tid < teamInfoCache.length; tid++) {
+		const info = teamInfoCache[tid];
+		if (!info?.abbrev) {
+			continue;
+		}
+		const href = helpers.leagueUrl([
+			"roster",
+			`${info.abbrev}_${tid}`,
+			season,
+		]);
+		const region = info.region ?? "";
+		const name = info.name ?? "";
+		for (const label of [`${region} ${name}`, name, region]) {
+			if (label.trim() !== "") {
+				entries.push({ name: label.trim(), href });
+			}
+		}
+	}
+
+	for (const p of players ?? []) {
+		if (typeof p?.pid === "number" && p.pid >= 0) {
+			const full = `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim();
+			if (full) {
+				entries.push({ name: full, href: helpers.leagueUrl(["player", p.pid]) });
+			}
+		}
+	}
+
+	return entries;
+};
+
 const escapeRegex = (s: string): string =>
 	s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 

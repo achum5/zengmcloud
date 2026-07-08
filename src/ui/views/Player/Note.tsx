@@ -140,10 +140,12 @@ const Note = (
 				style={{ maxHeight: 300, maxWidth: MAX_WIDTH }}
 			>
 				{/* All notes render markdown (player / team-season / game notes double
-				    as AI writeups). Game notes also auto-link team/player names to
-				    their pages, scoped to that game's two rosters. Linking/rendering is
-				    applied only to the view - the stored/edited text stays plain. */}
-				{info.type === "game" && autoLink && autoLink.length > 0 ? (
+				    as AI writeups). When the caller supplies an autoLink map (game
+				    notes scoped to that game's rosters, team-season notes scoped to the
+				    league's teams + that season's roster), team/player names are linked
+				    to their pages. Linking/rendering is applied only to the view - the
+				    stored/edited text stays plain. */}
+				{autoLink && autoLink.length > 0 ? (
 					<Markdown>{linkifyRecap(noteToShow, autoLink)}</Markdown>
 				) : (
 					<Markdown>{noteToShow}</Markdown>

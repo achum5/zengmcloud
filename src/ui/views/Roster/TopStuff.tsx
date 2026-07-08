@@ -8,6 +8,7 @@ import PlayThroughInjurySliders from "./PlayThroughInjuriesSliders.tsx";
 import { type LocalStateUI, type View } from "../../../common/types.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import Note from "../Player/Note.tsx";
+import { buildTeamSeasonRecapLinks } from "../../util/linkifyRecap.ts";
 import { RosterComposition } from "../../components/RosterComposition.tsx";
 import { PlusMinus } from "../../components/PlusMinus.tsx";
 import { useLocal } from "../../util/local.ts";
@@ -180,6 +181,7 @@ const TopStuff = ({
 		minPayroll,
 		salaryCap,
 		salaryCapType,
+		teamInfoCache,
 		userTid,
 	} = useLocal([
 		"budget",
@@ -189,6 +191,7 @@ const TopStuff = ({
 		"minPayroll",
 		"salaryCap",
 		"salaryCapType",
+		"teamInfoCache",
 		"userTid",
 	]);
 
@@ -374,6 +377,11 @@ const TopStuff = ({
 						tid,
 						season,
 					}}
+					autoLink={buildTeamSeasonRecapLinks({
+						season,
+						players,
+						teamInfoCache,
+					})}
 				/>
 			</div>
 
