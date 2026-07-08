@@ -4,6 +4,8 @@ import {
 	buildRetiredRecapPrompt,
 	parseRetiredRecaps,
 } from "../util/retiredRecap.ts";
+import { useLocal } from "../util/local.ts";
+import { recapAIProvider } from "../util/recapAIProvider.ts";
 
 // A Copy/Claude/Paste workflow for every player who retired in a season. The
 // Copy button bakes each retiree's full career into one prompt; pasting the AI
@@ -20,6 +22,8 @@ export const RetiredRecap = ({ season }: { season: number }) => {
 	const [result, setResult] = useState<string | undefined>();
 	const [manual, setManual] = useState<string | undefined>();
 	const [copyFallback, setCopyFallback] = useState<string | undefined>();
+
+	const ai = recapAIProvider(useLocal(["recapAIProvider"]).recapAIProvider);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -143,12 +147,12 @@ export const RetiredRecap = ({ season }: { season: number }) => {
 				<a
 					className="btn btn-sm btn-light-bordered"
 					style={btnStyle}
-					href="https://claude.ai/new"
+					href={ai.url}
 					target="_blank"
 					rel="noopener noreferrer"
-					title="Open Claude in a new tab"
+					title={ai.title}
 				>
-					Claude
+					{ai.label}
 				</a>
 				{arrow}
 				<button

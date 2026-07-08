@@ -45,6 +45,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
+			recapAIProvider: props.recapAIProvider,
 			theme,
 			units,
 		};
@@ -82,6 +83,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				phaseChangeRedirects: state.phaseChangeRedirects,
 				realPlayerPhotos: state.realPlayerPhotos,
 				realTeamInfo: state.realTeamInfo,
+				recapAIProvider: state.recapAIProvider,
 				units,
 			});
 			logEvent({
@@ -169,6 +171,20 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 								Abbreviate first names and skills on small screens
 							</option>
 							<option value="always">Always show full names and skills</option>
+						</select>
+					</div>
+					<div className="col-sm-3 col-6 mb-3">
+						<label className="form-label" htmlFor="options-recapAIProvider">
+							AI Recap Button
+						</label>
+						<select
+							id="options-recapAIProvider"
+							className="form-select"
+							onChange={handleChange("recapAIProvider")}
+							value={state.recapAIProvider}
+						>
+							<option value="claude">Claude</option>
+							<option value="chatgpt">ChatGPT</option>
 						</select>
 					</div>
 					<div className="col-sm-3 col-6 mb-3">

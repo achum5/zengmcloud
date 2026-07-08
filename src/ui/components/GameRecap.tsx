@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { toWorker } from "../util/toWorker.ts";
 import { buildRecapPrompt, parseRecaps } from "../util/gameRecap.ts";
+import { useLocal } from "../util/local.ts";
+import { recapAIProvider } from "../util/recapAIProvider.ts";
 
 // The "Game Recap" workflow on the Daily Schedule, as three simple steps:
 //   Copy (a prompt with every completed game's box score) → Claude (opens
@@ -30,6 +32,8 @@ export const GameRecap = ({
 	const [result, setResult] = useState<string | undefined>();
 	const [manual, setManual] = useState<string | undefined>();
 	const [copyFallback, setCopyFallback] = useState<string | undefined>();
+
+	const ai = recapAIProvider(useLocal(["recapAIProvider"]).recapAIProvider);
 
 	useEffect(() => {
 		if (numCompleted === 0) {
@@ -157,12 +161,12 @@ export const GameRecap = ({
 				<a
 					className="btn btn-sm btn-light-bordered"
 					style={btnStyle}
-					href="https://claude.ai/new"
+					href={ai.url}
 					target="_blank"
 					rel="noopener noreferrer"
-					title="Open Claude in a new tab"
+					title={ai.title}
 				>
-					Claude
+					{ai.label}
 				</a>
 				{arrow}
 				<button

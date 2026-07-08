@@ -94,6 +94,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		phaseText: "",
 		playMenuOptions: [],
 		popup: window.location.search === "?w=popup",
+		recapAIProvider: "claude",
 		quarterLength: defaultGameAttributes.quarterLength,
 		salaryCap: defaultGameAttributes.salaryCap,
 		salaryCapType: defaultGameAttributes.salaryCapType,

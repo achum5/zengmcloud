@@ -993,9 +993,13 @@ export type Option = {
 	keyboardShortcut?: keyof KeyboardShortcuts["playMenu"];
 };
 
+// Which AI site the "Copy → [AI] → Paste" recap buttons open.
+export type RecapAIProvider = "claude" | "chatgpt";
+
 export type Options = {
 	fullNames?: boolean;
 	phaseChangeRedirects: Phase[];
+	recapAIProvider?: RecapAIProvider;
 	units?: "metric" | "us";
 };
 
@@ -1091,6 +1095,7 @@ export type LocalStateUI = {
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;
+	recapAIProvider: RecapAIProvider;
 	showLeagueTopBar: boolean;
 	showNagModal: boolean;
 	sidebarOpen: boolean;
