@@ -264,6 +264,83 @@ describe("sync changeset", () => {
 		);
 	});
 
+	test("heals a diverged-rid duplicate of a logically-keyed row (teamSeasons)", async () => {
+		// The receiver already holds the 2075 row for team 4 under ITS own rid (7).
+		// Another device created the SAME logical row under a different rid (99).
+		// Naively putting it would leave two rows for (tid 4, season 2075), which
+		// violates teamSeasons' unique index and aborts the next flush ("Index key
+		// is not unique"). Reconciliation must drop the stale rid so exactly one
+		// row - the author's - remains.
+		resetG();
+		await resetCache({
+			teamSeasons: [{ rid: 7, tid: 4, season: 2075, won: 1, lost: 0 }],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			{
+				changes: [
+					{
+						store: "teamSeasons",
+						id: 99,
+						type: "put",
+						value: { rid: 99, tid: 4, season: 2075, won: 5, lost: 2 },
+					},
+				],
+			},
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.teamSeasons.getAll();
+		const dupes = rows.filter((t) => t.tid === 4 && t.season === 2075);
+		assert.strictEqual(dupes.length, 1, JSON.stringify(rows));
+		assert.strictEqual(dupes[0]!.rid, 99);
+		assert.strictEqual(dupes[0]!.won, 5);
+	});
+
+	test("reconciliation leaves other team-seasons untouched", async () => {
+		// Only the row that shares the incoming logical identity is reconciled; a
+		// different team's (or season's) row must never be collateral damage.
+		resetG();
+		await resetCache({
+			teamSeasons: [
+				{ rid: 7, tid: 4, season: 2075, won: 1, lost: 0 },
+				{ rid: 8, tid: 5, season: 2075, won: 2, lost: 0 },
+				{ rid: 9, tid: 4, season: 2074, won: 3, lost: 0 },
+			],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			{
+				changes: [
+					{
+						store: "teamSeasons",
+						id: 99,
+						type: "put",
+						value: { rid: 99, tid: 4, season: 2075, won: 5, lost: 2 },
+					},
+				],
+			},
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.teamSeasons.getAll();
+		// team 5 / 2075 and team 4 / 2074 are different identities - keep their rids.
+		assert.strictEqual(
+			rows.find((t) => t.tid === 5 && t.season === 2075)!.rid,
+			8,
+		);
+		assert.strictEqual(
+			rows.find((t) => t.tid === 4 && t.season === 2074)!.rid,
+			9,
+		);
+		// team 4 / 2075 healed to a single row under the author's rid.
+		const healed = rows.filter((t) => t.tid === 4 && t.season === 2075);
+		assert.strictEqual(healed.length, 1);
+		assert.strictEqual(healed[0]!.rid, 99);
+	});
+
 	test("applying a changeset does not itself get recorded", async () => {
 		resetG();
 		await resetCache({ players: [genPlayer()] });

@@ -76,7 +76,7 @@ export type Store =
 	| "teamStats"
 	| "teams"
 	| "trade";
-type Index =
+export type Index =
 	| "draftPicksBySeason"
 	| "draftPicksByTid"
 	| "playersByDraftYearRetiredYear"

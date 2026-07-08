@@ -1,6 +1,6 @@
 import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
-import type { Store } from "../../db/Cache.ts";
+import type { Index, Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
 import {
 	g,
@@ -79,6 +79,73 @@ const APPLY_UPDATE_EVENTS: UpdateEvents = [
 ];
 
 const storeAPI = (store: Store) => (idb.cache as any)[store];
+
+// Some stores' TRUE identity is a logical key, not their autoincrement primary
+// key (`rid`). teamSeasons/teamStats rows are "the 2075 row for team 4" - but
+// each device assigns its own `rid` to that row. When two devices independently
+// create the same logical row (e.g. a season rollover that ran on more than one
+// device, or a device that diverged and re-created it), syncing both by `rid`
+// leaves the receiver holding TWO rows for one (tid, season). teamSeasons has a
+// UNIQUE index on (tid, season) in IndexedDB, so the next flush throws "Index
+// key is not unique" and ABORTS - taking every other pending write down with it,
+// exactly the failure a Force resync hit.
+//
+// So before applying a put to one of these stores, we drop any existing row that
+// shares the incoming row's logical identity but has a different `rid`. The
+// logical row is then updated in place, converging on the author's `rid`, and no
+// duplicate ever reaches the unique index. Replaying the whole log is
+// deterministic (last write for a given identity wins), so all devices land on
+// the same `rid`.
+const RECONCILE_BY_IDENTITY: Partial<
+	Record<
+		Store,
+		{
+			index: Index;
+			indexKey: (row: any) => (number | string | boolean)[];
+			sameIdentity: (a: any, b: any) => boolean;
+		}
+	>
+> = {
+	teamSeasons: {
+		index: "teamSeasonsByTidSeason",
+		indexKey: (row) => [row.tid, row.season],
+		sameIdentity: (a, b) => a.tid === b.tid && a.season === b.season,
+	},
+	teamStats: {
+		index: "teamStatsByPlayoffsTid",
+		indexKey: (row) => [row.playoffs, row.tid],
+		sameIdentity: (a, b) =>
+			a.tid === b.tid && a.season === b.season && a.playoffs === b.playoffs,
+	},
+};
+
+// Drop a stale duplicate of an incoming logically-keyed row (see
+// RECONCILE_BY_IDENTITY) so the put updates the row in place instead of creating
+// a second row that violates the store's unique index. Best-effort and local:
+// the removed `rid` is forgotten from the tracker so we don't broadcast it (every
+// device heals itself the same way when it applies the same authoritative row).
+const reconcileIdentity = async (store: Store, value: any) => {
+	const rule = RECONCILE_BY_IDENTITY[store];
+	if (!rule) {
+		return;
+	}
+	try {
+		const existing = await storeAPI(store).indexGet(
+			rule.index,
+			rule.indexKey(value),
+		);
+		if (
+			existing &&
+			existing.rid !== value.rid &&
+			rule.sameIdentity(existing, value)
+		) {
+			await storeAPI(store).delete(existing.rid);
+			changeTracker.forget(store, existing.rid);
+		}
+	} catch (error) {
+		console.error(`Failed to reconcile duplicate ${store} row before apply`, error);
+	}
+};
 
 // Which team THIS device is currently acting as. In the multiplayer model the
 // league is in multi-team mode with all the friends' teams in `userTids` (which
@@ -164,6 +231,9 @@ export const applyChangeset = async (
 		if (change.type === "delete") {
 			await api.delete(change.id);
 		} else {
+			// Heal any diverged-rid duplicate first, so a logically-keyed row (e.g.
+			// teamSeasons) updates in place instead of tripping its unique index.
+			await reconcileIdentity(change.store, change.value);
 			await api.put(change.value);
 		}
 		changeTracker.forget(change.store, change.id);
