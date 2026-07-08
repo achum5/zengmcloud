@@ -57,6 +57,17 @@ const saveWatermark = async (lid: number | undefined, ts: number) => {
 // The room we're currently connected to (if any), so the UI can reflect
 // connection state - including after an auto-reconnect it didn't drive.
 let currentCode: string | undefined;
+
+// Which league (lid) the current sync session belongs to. A sync room is tied to
+// ONE league file, so switching to a DIFFERENT league must drop the session. This
+// lets us disconnect precisely (connected-for-a-different-lid) instead of guessing
+// from "was a league previously open", which missed the case of loading a new
+// league straight from the New League page (where the previous lid was already
+// cleared, so the old connection leaked into the new file's sync page).
+let connectedLid: number | undefined;
+
+// The lid the live sync session belongs to (undefined when not connected).
+export const getConnectedLid = (): number | undefined => connectedLid;
 // Name of whoever currently holds the wheel (for display), from the shared doc.
 let currentHostName: string | undefined;
 
@@ -326,6 +337,7 @@ export const connectSharedLeague = async ({
 	const clientId = await ensureAnonymousAuth();
 
 	const lid = g.get("lid");
+	connectedLid = typeof lid === "number" ? lid : undefined;
 	const watermark = await loadWatermark(lid);
 
 	const transport = new FirebaseTransport(trimmed, clientId, {
@@ -461,6 +473,7 @@ export const disconnectSharedLeague = () => {
 		setSyncEngine(undefined);
 	}
 	currentCode = undefined;
+	connectedLid = undefined;
 	currentHostName = undefined;
 	// Explicit disconnect clears the intent, so single-player simming works again.
 	syncRequired = false;

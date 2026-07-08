@@ -1,6 +1,9 @@
 import { Cache, connectLeague, idb } from "../db/index.ts";
 import { league } from "../core/index.ts";
-import { disconnectSharedLeague } from "../core/sync/connect.ts";
+import {
+	disconnectSharedLeague,
+	getConnectedLid,
+} from "../core/sync/connect.ts";
 import {
 	g,
 	helpers,
@@ -92,15 +95,19 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 	const switchingDatabaseLid = newLid !== previousLid;
 
 	if (switchingDatabaseLid) {
-		// A cloud-sync session belongs to ONE league file. Switching AWAY from an
-		// already-open league to a DIFFERENT one must drop the session so the
-		// connection never carries over from one file to the next on this device.
+		// A cloud-sync session belongs to ONE league file. If the live session
+		// belongs to a DIFFERENT league than the one we're now loading, drop it so
+		// the connection never carries over from one file to the next on this device
+		// (e.g. loading a freshly uploaded league must NOT inherit the previous
+		// league's room in the sync page).
 		//
-		// Crucially, do NOT do this on a fresh load/refresh (no previous lid - the
-		// worker just restarted): there's nothing to carry over, and auto-reconnect
-		// must be free to restore THIS league's session. Disconnecting here would
-		// race the reconnect and tear it down, leaving refresh stuck "disconnected".
-		if (typeof previousLid === "number") {
+		// Keyed on the session's OWN lid, not "was a league previously open": on a
+		// fresh load/refresh the reconnect restores THIS league's session (connected
+		// for newLid), so we must leave it alone - disconnecting there would race the
+		// reconnect and leave refresh stuck "disconnected". A session for a different
+		// lid (or the just-uploaded new league, which has no session) is dropped.
+		const sessionLid = getConnectedLid();
+		if (sessionLid !== undefined && sessionLid !== newLid) {
 			disconnectSharedLeague();
 		}
 		await league.close(true);
