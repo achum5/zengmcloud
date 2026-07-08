@@ -1075,9 +1075,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 			{confetti.display ? <Confetti colors={confetti.colors} /> : null}
 
 			{isFollower ? (
-				<p className="text-danger fw-bold">
-					🔴 {mpLiveBroadcast?.byName ?? "Someone"} is simming — watching live
-				</p>
+				// Drop the tag once the game's finished - nothing left to watch live.
+				!mpLiveBroadcast?.gameOver ? (
+					<p className="text-danger fw-bold">🔴 Watching live</p>
+				) : null
 			) : isBroadcaster ? (
 				<p className="text-danger fw-bold">🔴 Simming live to your league</p>
 			) : showWarning ? (
