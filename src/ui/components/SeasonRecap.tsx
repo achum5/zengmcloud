@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { toWorker } from "../util/toWorker.ts";
 import { buildSeasonRecapPrompt, parseSeasonRecaps } from "../util/seasonRecap.ts";
-import { useLocal } from "../util/local.ts";
-import { recapAIProvider } from "../util/recapAIProvider.ts";
+import { RecapAIButton } from "./RecapAIButton.tsx";
 
 // A league-wide "Team Recaps" workflow for a whole season, mirroring the Game
 // Recap flow on the Daily Schedule:
@@ -22,8 +21,6 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 	const [result, setResult] = useState<string | undefined>();
 	const [manual, setManual] = useState<string | undefined>();
 	const [copyFallback, setCopyFallback] = useState<string | undefined>();
-
-	const ai = recapAIProvider(useLocal(["recapAIProvider"]).recapAIProvider);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -130,16 +127,7 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 					{copied ? "✓" : "Copy"}
 				</button>
 				{arrow}
-				<a
-					className="btn btn-sm btn-light-bordered"
-					style={btnStyle}
-					href={ai.url}
-					target="_blank"
-					rel="noopener noreferrer"
-					title={ai.title}
-				>
-					{ai.label}
-				</a>
+				<RecapAIButton style={btnStyle} />
 				{arrow}
 				<button
 					className={`btn btn-sm ${pasted ? "btn-success" : "btn-primary"}`}

@@ -4,8 +4,7 @@ import {
 	buildRetiredRecapPrompt,
 	parseRetiredRecaps,
 } from "../util/retiredRecap.ts";
-import { useLocal } from "../util/local.ts";
-import { recapAIProvider } from "../util/recapAIProvider.ts";
+import { RecapAIButton } from "./RecapAIButton.tsx";
 
 // A Copy/Claude/Paste workflow for every player who retired in a season. The
 // Copy button bakes each retiree's full career into one prompt; pasting the AI
@@ -22,8 +21,6 @@ export const RetiredRecap = ({ season }: { season: number }) => {
 	const [result, setResult] = useState<string | undefined>();
 	const [manual, setManual] = useState<string | undefined>();
 	const [copyFallback, setCopyFallback] = useState<string | undefined>();
-
-	const ai = recapAIProvider(useLocal(["recapAIProvider"]).recapAIProvider);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -144,16 +141,7 @@ export const RetiredRecap = ({ season }: { season: number }) => {
 					{copied ? "✓" : "Copy"}
 				</button>
 				{arrow}
-				<a
-					className="btn btn-sm btn-light-bordered"
-					style={btnStyle}
-					href={ai.url}
-					target="_blank"
-					rel="noopener noreferrer"
-					title={ai.title}
-				>
-					{ai.label}
-				</a>
+				<RecapAIButton style={btnStyle} />
 				{arrow}
 				<button
 					className={`btn btn-sm ${pasted ? "btn-success" : "btn-primary"}`}
