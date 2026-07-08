@@ -54,6 +54,11 @@ const playerLine = (p: RecapSeasonPlayer): string => {
 	if (p.awards && p.awards.length > 0) {
 		lines.push(`    · Awards: ${p.awards.join(", ")}`);
 	}
+	if (p.transactions && p.transactions.length > 0) {
+		for (const move of p.transactions) {
+			lines.push(`    · Move: ${move}`);
+		}
+	}
 	return lines.join("\n");
 };
 

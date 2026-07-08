@@ -46,6 +46,9 @@ const data: RecapSeasonData = {
 					per: 28.5,
 					playoff: { gp: 20, pts: 32, trb: 8, ast: 10 },
 					awards: ["Most Valuable Player"],
+					transactions: [
+						"Lakers re-signed Star Guy to a 4 yr, $180M contract",
+					],
 				},
 			],
 			franchise: {
@@ -128,6 +131,14 @@ describe("buildSeasonRecapPrompt", () => {
 		assert.ok(prompt.includes("Playoff series:"), prompt);
 		assert.ok(prompt.includes("beat BKN 4-1"), prompt);
 		assert.ok(prompt.includes("beat BOS 4-2"), prompt);
+	});
+
+	test("lists each player's own transactions in their block", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(
+			prompt.includes("Move: Lakers re-signed Star Guy"),
+			prompt,
+		);
 	});
 });
 

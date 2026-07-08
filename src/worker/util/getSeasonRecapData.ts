@@ -34,6 +34,9 @@ export type RecapSeasonPlayer = {
 	};
 	// This season's individual awards ("MVP", "First Team All-League", ...).
 	awards?: string[];
+	// This player's transactions in the recap window (the prior offseason that
+	// built the team + this season): drafted, signed, re-signed, traded, released.
+	transactions?: string[];
 };
 
 // A single prior season in a franchise's history, for context.
@@ -119,8 +122,14 @@ const stripTags = (s: string): string =>
 // season S's offseason. In-season moves are trades/cuts logged during season S.
 const gatherMoves = async (
 	season: number,
-): Promise<Map<number, { offseason: string[]; inSeason: string[] }>> => {
+): Promise<{
+	byTid: Map<number, { offseason: string[]; inSeason: string[] }>;
+	// Every transaction that involves a given player (draft, signing, trade, cut),
+	// in chronological order, for that player's block in the recap.
+	byPid: Map<number, string[]>;
+}> => {
 	const byTid = new Map<number, { offseason: string[]; inSeason: string[] }>();
+	const byPid = new Map<number, string[]>();
 	const push = (tid: number, key: "offseason" | "inSeason", line: string) => {
 		let entry = byTid.get(tid);
 		if (!entry) {
@@ -128,6 +137,11 @@ const gatherMoves = async (
 			byTid.set(tid, entry);
 		}
 		entry[key].push(line);
+	};
+	const pushPid = (pid: number, line: string) => {
+		const arr = byPid.get(pid) ?? [];
+		arr.push(line);
+		byPid.set(pid, arr);
 	};
 
 	const classify = async (
@@ -172,6 +186,15 @@ const gatherMoves = async (
 					push(tid, bucket, text);
 				}
 			}
+			// Same move, attributed to each player it involves.
+			const pids = Array.isArray((event as any).pids)
+				? (event as any).pids
+				: [];
+			for (const pid of pids) {
+				if (typeof pid === "number" && pid >= 0) {
+					pushPid(pid, text);
+				}
+			}
 		}
 	};
 
@@ -187,7 +210,12 @@ const gatherMoves = async (
 		entry.inSeason = entry.inSeason.slice(0, 40);
 	}
 
-	return byTid;
+	// Per player, keep chronological order (offseason build → in-season) and cap.
+	for (const [pid, lines] of byPid) {
+		byPid.set(pid, lines.slice(0, 12));
+	}
+
+	return { byTid, byPid };
 };
 
 // A player's individual awards for a given season, as short labels.
@@ -319,7 +347,7 @@ export const getSeasonRecapData = async (
 		return out;
 	};
 
-	const moves = await gatherMoves(season);
+	const { byTid: movesByTid, byPid: movesByPid } = await gatherMoves(season);
 
 	// League award winners this season.
 	const awardsRow = await idb.getCopy.awards({ season }, "noCopyCache");
@@ -450,6 +478,7 @@ export const getSeasonRecapData = async (
 							}
 						: undefined,
 					awards: awardsForSeason(p, season).slice(0, 4),
+				transactions: movesByPid.get(p.pid),
 				});
 			}
 			// Best players first (by minutes, a decent proxy for role), capped.
@@ -473,7 +502,7 @@ export const getSeasonRecapData = async (
 					result: h.roundsWonText,
 				}));
 
-			const teamMoves = moves.get(tid) ?? { offseason: [], inSeason: [] };
+			const teamMoves = movesByTid.get(tid) ?? { offseason: [], inSeason: [] };
 
 			teams.push({
 				tid,
