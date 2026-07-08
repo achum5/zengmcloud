@@ -3,6 +3,7 @@ import type {
 	RecapSeasonPlayer,
 	RecapSeasonTeam,
 } from "../../worker/util/getSeasonRecapData.ts";
+import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 
 // Instructions for the season-in-review. Kept as one editable constant so the
 // brief can change without touching the data-baking below.
@@ -13,7 +14,8 @@ You are given a lot of data per team: the team's record and playoff result, its 
 IMPORTANT — how to treat the transactions: each team lists "Offseason moves" and "In-season moves". The OFFSEASON MOVES are the signings, re-signings, draft picks, and trades that BUILT this season's roster — treat them as THIS season's offseason (they are what the team did to prepare for this year). The IN-SEASON MOVES are trades and cuts made during the season itself. Weave both into the narrative where they matter.
 
 Follow these rules EXACTLY:
-- Reply in GitHub-flavored Markdown only. No preamble, no closing summary, no text outside the per-team recaps.
+- Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
+- Inside the fence, write GitHub-flavored Markdown only, with no text outside the per-team recaps.
 - Begin every team's recap with a line containing ONLY this marker: <!--team:ID--> (replace ID with that team's number, shown as "TEAM <ID>" below). This is how each recap is filed to the correct team — never omit it, never change it.
 - After the marker, lead with a bold one-line headline, then 2–4 tight paragraphs.
 - Weave the notable numbers into the prose; do not paste a stat table. Bold standout players with **name**.
@@ -149,7 +151,8 @@ ${blocks}`;
 };
 
 // Split a pasted AI response into { tid → recap markdown } by its team markers.
-export const parseSeasonRecaps = (text: string): Map<number, string> => {
+export const parseSeasonRecaps = (rawText: string): Map<number, string> => {
+	const text = stripOuterCodeFence(rawText);
 	const result = new Map<number, string>();
 	const re = /<!--\s*team:\s*(\d+)\s*-->/g;
 	const markers = [...text.matchAll(re)];

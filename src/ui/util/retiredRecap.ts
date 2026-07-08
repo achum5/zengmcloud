@@ -4,6 +4,7 @@ import type {
 	RetiredSeasonLine,
 	RetiredStatLine,
 } from "../../worker/util/getRetiredPlayersForRecap.ts";
+import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 
 // Instructions for the retirement writeups. The key idea: length must follow
 // the career. A 20-year Hall of Famer earns a full retrospective; a fringe role
@@ -20,7 +21,8 @@ CRITICAL — scale the length to the career. Do not give everyone the same treat
 Use the data provided: career and playoff stat lines (full box score and advanced metrics), the season-by-season arc with each season's team result, every team, the draft slot, age, college/country, peak rating, awards and rings. Lean on the advanced stats and team results to judge how good each season actually was. Do NOT list the raw data back — write prose.
 
 Follow these rules EXACTLY:
-- Reply in GitHub-flavored Markdown only. No preamble, no closing summary, no text outside the per-player writeups.
+- Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the writeups, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
+- Inside the fence, write GitHub-flavored Markdown only, with no text outside the per-player writeups.
 - Begin every player's writeup with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each writeup is filed to the correct player — never omit it, never change it.
 - After the marker, lead with a bold one-line headline, then the writeup at the length the career warrants.
 - Bold the player's name on first mention. Put exactly one blank line between players.`;
@@ -215,7 +217,8 @@ ${blocks}`;
 };
 
 // Split a pasted AI response into { pid → writeup markdown } by its markers.
-export const parseRetiredRecaps = (text: string): Map<number, string> => {
+export const parseRetiredRecaps = (rawText: string): Map<number, string> => {
+	const text = stripOuterCodeFence(rawText);
 	const result = new Map<number, string>();
 	const re = /<!--\s*player:\s*(\d+)\s*-->/g;
 	const markers = [...text.matchAll(re)];

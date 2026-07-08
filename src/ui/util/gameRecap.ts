@@ -4,6 +4,7 @@ import type {
 	RecapPlayer,
 	RecapTeam,
 } from "../../worker/util/getDayGamesForRecap.ts";
+import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 
 // The instructions half of the prompt. Kept as a single editable constant so it
 // can be swapped for a different writing brief without touching the data-baking
@@ -13,7 +14,8 @@ const INSTRUCTIONS = `You are an expert basketball beat writer. Write a lively, 
 You are given far more data than you need — box scores, season and career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), and (in the playoffs) the series and bracket state. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. Do NOT list the raw data back.
 
 Follow these rules EXACTLY:
-- Reply in GitHub-flavored Markdown only. No preamble, no closing summary, no text outside the per-game recaps.
+- Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
+- Inside the fence, write GitHub-flavored Markdown only, with no text outside the per-game recaps.
 - Begin every recap with a line containing ONLY this marker: <!--game:ID--> (replace ID with that game's number, shown as "GAME <ID>" below). This is how each recap is filed to the correct game — never omit it, never change it.
 - After the marker, lead with a bold one-line headline, then 2–4 tight paragraphs.
 - Weave the notable numbers into the prose; do not paste a stat table. Bold standout players with **name**.
@@ -192,7 +194,8 @@ ${blocks}`;
 
 // Split a pasted AI response into { gid → recap markdown } by its game markers.
 // Everything between one marker and the next belongs to that game.
-export const parseRecaps = (text: string): Map<number, string> => {
+export const parseRecaps = (rawText: string): Map<number, string> => {
+	const text = stripOuterCodeFence(rawText);
 	const result = new Map<number, string>();
 	const re = /<!--\s*game:\s*(\d+)\s*-->/g;
 	const markers = [...text.matchAll(re)];

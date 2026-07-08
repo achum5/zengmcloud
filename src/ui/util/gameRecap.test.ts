@@ -216,4 +216,43 @@ Not close.`;
 		const map = parseRecaps("The AI forgot the markers entirely.");
 		assert.strictEqual(map.size, 0);
 	});
+
+	test("peels an outer ```markdown fence off a selected-all paste", () => {
+		const text = [
+			"```markdown",
+			"<!--game:42-->",
+			"**Bagels edge Massacre in OT**",
+			"",
+			"Brooklyn survived a thriller.",
+			"```",
+		].join("\n");
+		const map = parseRecaps(text);
+		assert.strictEqual(map.size, 1);
+		// The stray closing ``` must NOT end up in the stored recap.
+		assert.ok(!map.get(42)!.includes("`"), map.get(42));
+		assert.ok(map.get(42)!.startsWith("**Bagels edge Massacre in OT**"));
+		assert.ok(map.get(42)!.endsWith("Brooklyn survived a thriller."));
+	});
+});
+
+describe("buildRecapPrompt — fenced output", () => {
+	test("asks the AI to wrap the whole reply in one markdown fence", () => {
+		const prompt = buildRecapPrompt(
+			[
+				{
+					gid: 1,
+					teams: [
+						{ tid: 0, abbrev: "A", region: "A", name: "A", pts: 1, players: [] },
+						{ tid: 1, abbrev: "B", region: "B", name: "B", pts: 2, players: [] },
+					],
+					winnerTid: 1,
+					overtimes: 0,
+					clutchPlays: [],
+				},
+			] as any,
+			"Day 1",
+		);
+		assert.ok(prompt.includes("```markdown"), prompt);
+		assert.ok(prompt.includes("ONE fenced code block"), prompt);
+	});
 });
