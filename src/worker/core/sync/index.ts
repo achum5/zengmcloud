@@ -18,6 +18,7 @@ export {
 	claimSyncAuthority,
 	connectSharedLeague,
 	disconnectSharedLeague,
+	endLiveBroadcast,
 	getSyncActivity,
 	getSyncRequired,
 	getSyncStatus,
@@ -25,6 +26,8 @@ export {
 	publishAutoPlayState,
 	refreshSyncUIState,
 	resyncSharedLeague,
+	startLiveBroadcast,
+	updateLiveBroadcast,
 	type SyncActivityItem,
 } from "./connect.ts";
 export { FirebaseTransport } from "./FirebaseTransport.ts";

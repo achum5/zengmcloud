@@ -36,6 +36,51 @@ export type ChangesetEntry = {
 	chunkCount?: number;
 };
 
+// A live-sim broadcast in progress. When the wheel-holder live-sims a game, it
+// publishes the (immutable) play-by-play once, then heartbeats a moving cursor;
+// every follower device navigates to the live game and replays in lockstep,
+// seeing exactly what the simmer sees. Stored at leagues/{code}/control/
+// liveBroadcast (the cursor/meta) with the payload split across
+// control/liveBroadcastData{i} docs (see FirebaseTransport). `expiresAt` is a
+// lease so a simmer that crashes mid-broadcast can't lock followers forever.
+export type LiveBroadcastMeta = {
+	holderId: string;
+	active: boolean;
+	gid: number;
+	byName: string;
+	// Events the broadcaster has consumed so far - the lockstep position followers
+	// seek to. Always a deterministic pause boundary, so no drift.
+	cursor: number;
+	paused: boolean;
+	speed: number;
+	gameOver: boolean;
+	// Distinguishes one broadcast from the next (so followers know when to re-load
+	// the payload and re-navigate). The broadcaster's clock, ms.
+	startedAt: number;
+	// How many liveBroadcastData{i} docs make up the payload.
+	chunkCount: number;
+	// Server-relative ms (broadcaster's clock) until which this broadcast is
+	// considered live. Re-stamped on every heartbeat; once it passes with no
+	// update, followers treat the broadcast as ended (crash recovery).
+	expiresAt: number;
+};
+
+// The subset of LiveBroadcastMeta a single write sets. Every write merges onto
+// the shared doc and (in the transport) stamps holderId, so the security rule
+// (holderId == auth.uid) always passes and only the broadcaster can write.
+export type LiveBroadcastUpdate = {
+	active?: boolean;
+	gid?: number;
+	byName?: string;
+	cursor?: number;
+	paused?: boolean;
+	speed?: number;
+	gameOver?: boolean;
+	startedAt?: number;
+	chunkCount?: number;
+	expiresAt?: number;
+};
+
 // Who currently holds "the wheel" - the one device allowed to advance the
 // league (sim/draft/phase change). Stored at leagues/{code}/control/authority
 // and watched by everyone, so all devices agree on who's in control. Undefined
@@ -145,4 +190,22 @@ export interface SyncTransport {
 	// Stamp/clear the wheel-holder's "actively advancing" lease on the shared
 	// authority doc (see Authority.busyUntil). Pass 0 to clear.
 	publishBusy?(busyUntil: number): Promise<void>;
+
+	// Live-sim broadcast support (see LiveBroadcastMeta). Optional so the
+	// in-memory test transport can skip it.
+	//
+	// publishLiveBroadcastData writes the immutable play-by-play payload (a
+	// serialized string) split across as many docs as needed, and returns the
+	// chunk count. publishLiveBroadcast merges the cursor/meta doc (holderId
+	// stamped by the transport). subscribeLiveBroadcast watches that doc.
+	// fetchLiveBroadcastData reassembles the payload string from its chunks (or
+	// undefined if a chunk is missing). clearLiveBroadcast marks the broadcast
+	// ended and removes the payload docs.
+	publishLiveBroadcast?(update: LiveBroadcastUpdate): Promise<void>;
+	publishLiveBroadcastData?(gid: number, serialized: string): Promise<number>;
+	subscribeLiveBroadcast?(
+		onChange: (meta: LiveBroadcastMeta | undefined) => void,
+	): () => void;
+	fetchLiveBroadcastData?(chunkCount: number): Promise<string | undefined>;
+	clearLiveBroadcast?(chunkCount: number): Promise<void>;
 }

@@ -45,6 +45,7 @@ import {
 import { isSport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
 import { runAfterActionHook } from "../sync/afterActionHook.ts";
+import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 
 /**
  * Play one or more days of games.
@@ -349,6 +350,11 @@ const play = async (
 						playByPlay: result.playByPlay,
 					};
 					url = helpers.leagueUrl(["live_game"]);
+
+					// If this device is the wheel-holder in a sync room, broadcast this
+					// live sim to the room so every follower watches it in lockstep. A
+					// no-op in single-player or on a follower.
+					runLiveBroadcastStart(gidOneGame, result.playByPlay);
 				}
 			}
 

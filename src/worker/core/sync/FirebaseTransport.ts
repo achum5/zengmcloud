@@ -8,6 +8,7 @@ import {
 	getDocFromServer,
 	getCountFromServer,
 	getDocs,
+	deleteDoc,
 	limit,
 	onSnapshot,
 	query,
@@ -26,6 +27,8 @@ import type { SyncNotification } from "./notifications.ts";
 import type {
 	Authority,
 	ChangesetEntry,
+	LiveBroadcastMeta,
+	LiveBroadcastUpdate,
 	SyncMember,
 	SyncSubscriber,
 	SyncTransport,
@@ -33,6 +36,16 @@ import type {
 
 // A room has exactly one "wheel" doc recording who may advance the league.
 const AUTHORITY_DOC_ID = "authority";
+
+// The live-sim broadcast cursor/meta doc, and the prefix for its payload chunks
+// (control/liveBroadcastData0, ...1, ...). All under control/, so the generic
+// control-doc security rule (write requires holderId == auth.uid) already covers
+// them - no rules change needed.
+const LIVE_BROADCAST_DOC_ID = "liveBroadcast";
+const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
+
+// Keep each payload chunk well under Firestore's 1 MB/doc limit.
+const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
 
 // If we've had confirmed contact with Firestore within this window, treat the
 // connection as live without a round-trip; otherwise verifyConnection() probes.
@@ -257,6 +270,149 @@ export class FirebaseTransport implements SyncTransport {
 				}
 			},
 		);
+	}
+
+	// Merge the live-sim broadcast cursor/meta doc. Always stamps holderId (== our
+	// uid) so the control-doc rule passes, and strips undefined (Firestore rejects
+	// it). Called once to open the broadcast and then rapidly to heartbeat the
+	// cursor, so the payload is kept in SEPARATE docs (below) - this doc stays tiny.
+	async publishLiveBroadcast(update: LiveBroadcastUpdate) {
+		const clean: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(update)) {
+			if (value !== undefined) {
+				clean[key] = value;
+			}
+		}
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", LIVE_BROADCAST_DOC_ID),
+			{ ...clean, holderId: this.clientId, updatedAt: serverTimestamp() },
+			{ merge: true },
+		);
+		this.markContact();
+	}
+
+	// Write the immutable play-by-play payload (a serialized string) as one or
+	// more docs, each under Firestore's size limit. Written BEFORE the meta doc
+	// flips active, so a follower reacting to active:true can always read a
+	// complete payload. Returns the number of chunks (recorded in the meta doc).
+	async publishLiveBroadcastData(gid: number, serialized: string) {
+		const chunks: string[] = [];
+		for (let i = 0; i < serialized.length; i += LIVE_BROADCAST_CHUNK_BYTES) {
+			chunks.push(serialized.slice(i, i + LIVE_BROADCAST_CHUNK_BYTES));
+		}
+		if (chunks.length === 0) {
+			chunks.push("");
+		}
+		for (let i = 0; i < chunks.length; i++) {
+			await setDoc(
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					`${LIVE_BROADCAST_DATA_PREFIX}${i}`,
+				),
+				{
+					holderId: this.clientId,
+					gid,
+					data: chunks[i],
+					updatedAt: serverTimestamp(),
+				},
+			);
+		}
+		this.markContact();
+		return chunks.length;
+	}
+
+	// Watch the live-sim broadcast cursor/meta doc. Fires with the current value,
+	// then on every heartbeat. Undefined when no broadcast is active.
+	subscribeLiveBroadcast(
+		onChange: (meta: LiveBroadcastMeta | undefined) => void,
+	) {
+		return onSnapshot(
+			doc(this.db, "leagues", this.code, "control", LIVE_BROADCAST_DOC_ID),
+			(snapshot) => {
+				this.markContact();
+				const data = snapshot.data();
+				if (
+					data &&
+					data.active &&
+					typeof data.holderId === "string" &&
+					typeof data.gid === "number"
+				) {
+					onChange({
+						holderId: data.holderId,
+						active: true,
+						gid: data.gid,
+						byName: typeof data.byName === "string" ? data.byName : "Someone",
+						cursor: typeof data.cursor === "number" ? data.cursor : 0,
+						paused: !!data.paused,
+						speed: typeof data.speed === "number" ? data.speed : 7,
+						gameOver: !!data.gameOver,
+						startedAt: typeof data.startedAt === "number" ? data.startedAt : 0,
+						chunkCount:
+							typeof data.chunkCount === "number" ? data.chunkCount : 0,
+						expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : 0,
+					});
+				} else {
+					onChange(undefined);
+				}
+			},
+			(error) => {
+				console.error("Live broadcast subscription failed", error);
+			},
+		);
+	}
+
+	// Reassemble the play-by-play payload from its chunk docs, in order. Returns
+	// undefined if any chunk is missing (a broadcast that was cleared, or a
+	// partial write) so the caller can bail instead of playing a corrupt payload.
+	async fetchLiveBroadcastData(chunkCount: number) {
+		let out = "";
+		for (let i = 0; i < chunkCount; i++) {
+			const snap = await getDoc(
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					`${LIVE_BROADCAST_DATA_PREFIX}${i}`,
+				),
+			);
+			if (!snap.exists()) {
+				return undefined;
+			}
+			out += (snap.data().data as string | undefined) ?? "";
+		}
+		this.markContact();
+		return out;
+	}
+
+	// End the broadcast: flip the meta doc inactive (so followers unlock now) and
+	// delete the payload chunks. Best-effort on the deletes - the lease would
+	// expire them anyway if a delete fails.
+	async clearLiveBroadcast(chunkCount: number) {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", LIVE_BROADCAST_DOC_ID),
+			{ holderId: this.clientId, active: false, updatedAt: serverTimestamp() },
+			{ merge: true },
+		);
+		for (let i = 0; i < chunkCount; i++) {
+			try {
+				await deleteDoc(
+					doc(
+						this.db,
+						"leagues",
+						this.code,
+						"control",
+						`${LIVE_BROADCAST_DATA_PREFIX}${i}`,
+					),
+				);
+			} catch {
+				// Best-effort; the lease handles a leftover payload.
+			}
+		}
+		this.markContact();
 	}
 
 	async publish(entry: Omit<ChangesetEntry, "seq">) {

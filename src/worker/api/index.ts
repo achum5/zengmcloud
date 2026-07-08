@@ -91,6 +91,7 @@ import {
 	connectSharedLeague,
 	deleteAllSyncRooms,
 	deleteSyncRoom,
+	endLiveBroadcast,
 	disconnectSharedLeague,
 	getSyncActivity,
 	getSyncEngine,
@@ -100,6 +101,7 @@ import {
 	publishAutoPlayState,
 	refreshSyncUIState,
 	resyncSharedLeague,
+	updateLiveBroadcast,
 } from "../core/sync/index.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
@@ -5618,6 +5620,8 @@ export default {
 		toggleTradeDeadline,
 		tradeCounterOffer,
 		onLiveSimOver,
+		updateLiveBroadcast,
+		endLiveBroadcast,
 		updateAwards,
 		updateBudget,
 		updateConfsDivs,

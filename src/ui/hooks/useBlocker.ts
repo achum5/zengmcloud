@@ -7,20 +7,29 @@ export const useBlocker = ({
 	okText = "Navigate away",
 	cancelText = "Stay here",
 	initialDirty = false,
+	hardBlock = false,
 }: {
 	message?: string;
 	okText?: string;
 	cancelText?: string;
 	initialDirty?: boolean;
+	// When true, silently block ALL navigation (no confirm) - used to lock a
+	// multiplayer follower into a live-sim broadcast until the simmer ends it.
+	hardBlock?: boolean;
 } = {}) => {
 	const [dirty, setDirty] = useState(initialDirty);
 
 	useEffect(() => {
-		if (dirty) {
+		if (dirty || hardBlock) {
 			router.shouldBlock = async (refresh) => {
 				// This check is needed because realtimeUpdate triggers a refresh pageview through the router to trigger updating data, but we never consider that "navigating away" from a page. For example when clicking "Save" on League Settings
 				if (refresh) {
 					return false;
+				}
+
+				// A locked follower can't leave at all - no escape hatch, no dialog.
+				if (hardBlock) {
+					return true;
 				}
 
 				const proceed = await confirm(message, {
@@ -37,7 +46,7 @@ export const useBlocker = ({
 		} else {
 			router.shouldBlock = undefined;
 		}
-	}, [cancelText, dirty, message, okText]);
+	}, [cancelText, dirty, hardBlock, message, okText]);
 
 	return { dirty, setDirty };
 };

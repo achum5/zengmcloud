@@ -1033,6 +1033,27 @@ export type SyncedAutoPlay = {
 	rules: string[];
 };
 
+// A live-sim broadcast this device is part of, mirrored into UI local state so
+// the LiveGame view can drive it. On the broadcaster (isBroadcaster) the view
+// heartbeats the cursor; on a follower it locks the page and seeks playback to
+// `cursor` so it stays in lockstep with the simmer. Undefined when no broadcast.
+export type MpLiveBroadcast = {
+	active: boolean;
+	gid: number;
+	// Display name of whoever is simming (for the follower banner).
+	byName: string;
+	isBroadcaster: boolean;
+	// Which broadcast this is (the simmer's clock, ms). Changes for each new live
+	// sim, so a follower can remount for a fresh replay even if it was still
+	// sitting on the previous game's final box score.
+	startedAt: number;
+	// Events the simmer has played so far - a follower seeks its own playback to
+	// here. Ignored on the broadcaster (it drives its own playback normally).
+	cursor: number;
+	paused: boolean;
+	gameOver: boolean;
+};
+
 export type LocalStateUI = {
 	customMenu?: MenuItemHeader;
 	email?: string;
@@ -1092,6 +1113,9 @@ export type LocalStateUI = {
 	// (entries applied / total to apply). Undefined when caught up or the gap is
 	// trivial. Drives the header "catching up …%" progress indicator.
 	mpCatchUp: { done: number; total: number } | undefined;
+	// The live-sim broadcast this device is part of (simming to the room, or
+	// watching the simmer in lockstep). Undefined when none. See MpLiveBroadcast.
+	mpLiveBroadcast: MpLiveBroadcast | undefined;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;

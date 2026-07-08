@@ -10,12 +10,19 @@ import { defaultGameAttributes } from "../common/defaultGameAttributes.ts";
 import { changeTracker } from "./db/changeTracker.ts";
 import { afterAction } from "./core/sync/afterAction.ts";
 import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
+import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
-import { getSyncRequired } from "./core/sync/connect.ts";
+import { getSyncRequired, startLiveBroadcast } from "./core/sync/connect.ts";
 
 // Let the game engine trigger a publish when a multi-day (fire-and-forget) sim
 // finishes, without a static import cycle from game core into the sync layer.
 setAfterActionHook(afterAction);
+
+// Same pattern for starting a live-sim broadcast the instant a live single-game
+// sim's play-by-play is ready (a no-op unless connected and holding the wheel).
+setLiveBroadcastStartHook((gid, playByPlay) => {
+	void startLiveBroadcast(gid, playByPlay);
+});
 
 self.bbgm = {
 	...common,

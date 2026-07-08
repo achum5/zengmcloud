@@ -5,7 +5,9 @@ import { ensureAnonymousAuth } from "./auth.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g, local, lock, toUI } from "../../util/index.ts";
+import { g, helpers, local, lock, toUI } from "../../util/index.ts";
+import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
+import type { LiveBroadcastMeta } from "./types.ts";
 
 // This device's catch-up watermark for a league, stored in the durable meta DB
 // so it survives refreshes - so we only replay what we missed.
@@ -185,6 +187,258 @@ export const refreshSyncUIState = () => {
 // simmer can publish its schedule and every device can watch it.
 let currentTransport: FirebaseTransport | undefined;
 let autoPlayUnsub: (() => void) | undefined;
+
+// ---------------------------------------------------------------------------
+// Live-sim broadcast (Mode B: lockstep). When the wheel-holder live-sims a game,
+// it publishes the immutable play-by-play once and heartbeats a moving cursor;
+// every follower navigates to the live game and replays to that cursor, so all
+// devices see exactly what the simmer sees, live. See types.ts LiveBroadcastMeta.
+// ---------------------------------------------------------------------------
+
+// How long a broadcast stays "live" without a heartbeat before followers treat
+// it as ended (crash recovery). Generously above the ~400ms UI heartbeat.
+const LIVE_BROADCAST_LEASE_MS = 12_000;
+
+// The subscription every device keeps on the broadcast meta doc.
+let liveBroadcastUnsub: (() => void) | undefined;
+
+// Set on the BROADCASTER while it's broadcasting (for heartbeats + teardown).
+let activeBroadcast:
+	| { gid: number; startedAt: number; chunkCount: number; byName: string }
+	| undefined;
+
+// Set on a FOLLOWER while it's watching someone else's broadcast. Tracks which
+// broadcast (startedAt) we've already navigated to, and the lease expiry so a
+// crashed broadcaster unlocks us.
+let followedBroadcast:
+	| { startedAt: number; gid: number; expiresAt: number }
+	| undefined;
+
+// Start broadcasting a live sim to the room. No-op unless connected AND this
+// device holds the wheel (so single-player / followers never touch the cloud).
+// The play-by-play + a snapshot of the game record go out ONCE as payload
+// chunks; the moving cursor is heartbeated separately (updateLiveBroadcast).
+export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
+	const engine = getSyncEngine();
+	const transport = currentTransport;
+	if (
+		!engine ||
+		!transport ||
+		!engine.isAuthority() ||
+		!transport.publishLiveBroadcast ||
+		!transport.publishLiveBroadcastData
+	) {
+		return;
+	}
+
+	try {
+		// The follower rebuilds the live sim from this exact game record (the same
+		// one liveGame.ts would load from idb), so include it in the payload rather
+		// than depend on the separate changeset sync having landed the game row yet.
+		const boxScore = await idb.getCopy.games({ gid });
+		if (!boxScore) {
+			return;
+		}
+
+		const serialized = serializeChangeset({ boxScore, playByPlay });
+		const chunkCount = await transport.publishLiveBroadcastData(gid, serialized);
+
+		const startedAt = Date.now();
+		const byName = engine.localName;
+		activeBroadcast = { gid, startedAt, chunkCount, byName };
+
+		// Payload is written; now flip the meta doc active so followers react.
+		await transport.publishLiveBroadcast({
+			active: true,
+			gid,
+			byName,
+			cursor: 0,
+			paused: false,
+			speed: 7,
+			gameOver: false,
+			startedAt,
+			chunkCount,
+			expiresAt: Date.now() + LIVE_BROADCAST_LEASE_MS,
+		});
+
+		// Tell our own UI it's broadcasting, so the LiveGame view heartbeats the
+		// cursor and shows the "broadcasting" banner.
+		void toUI("updateLocal", [
+			{
+				mpLiveBroadcast: {
+					active: true,
+					gid,
+					byName,
+					isBroadcaster: true,
+					startedAt,
+					cursor: 0,
+					paused: false,
+					gameOver: false,
+				},
+			},
+		]);
+	} catch (error) {
+		console.error("startLiveBroadcast failed", error);
+	}
+};
+
+// Heartbeat the broadcaster's playback position to the room. Called ~every
+// 400ms from the LiveGame view while broadcasting. Cheap merge write; no-op if
+// we're not actually broadcasting.
+export const updateLiveBroadcast = async (update: {
+	cursor: number;
+	paused: boolean;
+	speed: number;
+	gameOver: boolean;
+}) => {
+	const transport = currentTransport;
+	const broadcast = activeBroadcast;
+	if (!transport || !broadcast || !transport.publishLiveBroadcast) {
+		return;
+	}
+
+	// Mirror to our own UI first (instant, can't fail), then push to the cloud.
+	void toUI("updateLocal", [
+		{
+			mpLiveBroadcast: {
+				active: true,
+				gid: broadcast.gid,
+				byName: broadcast.byName,
+				isBroadcaster: true,
+				startedAt: broadcast.startedAt,
+				cursor: update.cursor,
+				paused: update.paused,
+				gameOver: update.gameOver,
+			},
+		},
+	]);
+
+	try {
+		await transport.publishLiveBroadcast({
+			active: true,
+			cursor: update.cursor,
+			paused: update.paused,
+			speed: update.speed,
+			gameOver: update.gameOver,
+			expiresAt: Date.now() + LIVE_BROADCAST_LEASE_MS,
+		});
+	} catch {
+		// A dropped heartbeat is harmless - the next one re-stamps the lease.
+	}
+};
+
+// End the current broadcast (the simmer left the live game, or it's being torn
+// down). Unlocks followers immediately and removes the payload. Idempotent.
+export const endLiveBroadcast = async () => {
+	const transport = currentTransport;
+	const broadcast = activeBroadcast;
+	activeBroadcast = undefined;
+
+	void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
+
+	if (!transport || !broadcast || !transport.clearLiveBroadcast) {
+		return;
+	}
+	try {
+		await transport.clearLiveBroadcast(broadcast.chunkCount);
+	} catch (error) {
+		console.error("endLiveBroadcast failed", error);
+	}
+};
+
+// Handle one snapshot of the broadcast meta doc on a device that is NOT the
+// broadcaster - i.e. drive the follower experience: navigate to the live game
+// on a new broadcast, then keep the lockstep cursor flowing to the UI, and
+// unlock when it ends.
+const handleLiveBroadcastMeta = async (
+	meta: LiveBroadcastMeta | undefined,
+	clientId: string,
+	transport: FirebaseTransport,
+) => {
+	// Our own broadcast is driven locally (startLiveBroadcast / updateLiveBroadcast);
+	// ignore the echo so we don't treat ourselves as a follower.
+	if (meta && meta.holderId === clientId) {
+		return;
+	}
+
+	// No live broadcast (ended, expired, or none): release any follow we had.
+	if (!meta || !meta.active || meta.expiresAt < Date.now()) {
+		if (followedBroadcast) {
+			followedBroadcast = undefined;
+			void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
+		}
+		return;
+	}
+
+	// A new broadcast (or the first we've seen): load the payload and navigate
+	// this device into the live game. Guard on startedAt so the rapid cursor
+	// heartbeats that follow don't re-navigate.
+	if (!followedBroadcast || followedBroadcast.startedAt !== meta.startedAt) {
+		followedBroadcast = {
+			startedAt: meta.startedAt,
+			gid: meta.gid,
+			expiresAt: meta.expiresAt,
+		};
+		try {
+			const serialized = await transport.fetchLiveBroadcastData?.(
+				meta.chunkCount,
+			);
+			if (!serialized) {
+				// Payload not fully there (cleared or mid-write) - drop the follow so a
+				// later snapshot can retry.
+				followedBroadcast = undefined;
+				return;
+			}
+			const { boxScore, playByPlay } = deserializeChangeset(serialized);
+			// Same navigation the simmer's own live sim uses, so the exact same view
+			// path renders it. fromAction bypasses the deep-link guard; mpFollower
+			// tells the view to use the payload's game record.
+			await toUI("realtimeUpdate", [
+				["gameSim"],
+				helpers.leagueUrl(["live_game"]),
+				{
+					gidOneGame: meta.gid,
+					playByPlay,
+					boxScore,
+					fromAction: true,
+					mpFollower: true,
+				},
+			]);
+		} catch (error) {
+			console.error("Failed to start following live broadcast", error);
+			followedBroadcast = undefined;
+			return;
+		}
+	} else {
+		followedBroadcast.expiresAt = meta.expiresAt;
+	}
+
+	// Push the live cursor/state so the LiveGame view seeks to the simmer's spot.
+	void toUI("updateLocal", [
+		{
+			mpLiveBroadcast: {
+				active: true,
+				gid: meta.gid,
+				byName: meta.byName,
+				isBroadcaster: false,
+				startedAt: meta.startedAt,
+				cursor: meta.cursor,
+				paused: meta.paused,
+				gameOver: meta.gameOver,
+			},
+		},
+	]);
+};
+
+// A crashed broadcaster stops heartbeating but never writes active:false, and
+// onSnapshot won't fire again, so the follower must time the lease out itself.
+// Called from the health tick.
+const checkLiveBroadcastLease = () => {
+	if (followedBroadcast && Date.now() > followedBroadcast.expiresAt) {
+		followedBroadcast = undefined;
+		void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
+	}
+};
 
 // Drain the backlog page by page (resumable, bounded memory), then - once truly
 // caught up to the head - move the live subscription's watermark to the head and
@@ -455,6 +709,8 @@ export const connectSharedLeague = async ({
 		// drifted from the engine - stale "nobody simming", an unlocked Play menu -
 		// heals itself within a tick instead of needing a manual refresh.
 		pushSyncStateFull();
+		// Unlock a follower whose broadcaster went away without a clean end.
+		checkLiveBroadcastLease();
 	}, HEALTH_TICK_MS);
 
 	// Watch the shared auto-play schedule so every device shows the same schedule
@@ -462,6 +718,15 @@ export const connectSharedLeague = async ({
 	currentTransport = transport;
 	autoPlayUnsub = transport.subscribeAutoPlay?.((autoPlay) => {
 		void toUI("updateLocal", [{ mpAutoPlay: autoPlay }]);
+	});
+
+	// Watch for a live-sim broadcast. On a follower this navigates into the live
+	// game and drives lockstep playback; on the broadcaster its own echo is
+	// ignored (handled locally).
+	activeBroadcast = undefined;
+	followedBroadcast = undefined;
+	liveBroadcastUnsub = transport.subscribeLiveBroadcast?.((meta) => {
+		void handleLiveBroadcastMeta(meta, clientId, transport);
 	});
 
 	// Kick off the initial paginated backlog drain now (it also starts the live
@@ -507,6 +772,14 @@ export const disconnectSharedLeague = () => {
 	lastEditsPausedPushed = undefined;
 	autoPlayUnsub?.();
 	autoPlayUnsub = undefined;
+	liveBroadcastUnsub?.();
+	liveBroadcastUnsub = undefined;
+	// Best-effort: end our own broadcast so we don't leave the room locked.
+	if (activeBroadcast) {
+		void endLiveBroadcast();
+	}
+	activeBroadcast = undefined;
+	followedBroadcast = undefined;
 	currentTransport = undefined;
 	void toUI("updateLocal", [
 		{
@@ -515,6 +788,7 @@ export const disconnectSharedLeague = () => {
 			mpSyncHealthy: false,
 			mpEditsPaused: false,
 			mpCatchUp: undefined,
+			mpLiveBroadcast: undefined,
 		},
 	]);
 	const engine = getSyncEngine();

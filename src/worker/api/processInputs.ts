@@ -485,6 +485,11 @@ const liveGame = (params: Params, ctxBBGM: any) => {
 		fromAction: boolean;
 		gid?: number;
 		playByPlay?: any[];
+		// A multiplayer follower watching someone else's live sim: the game record
+		// travels in the payload (rather than being read from idb) so the view
+		// doesn't depend on the separate changeset sync having landed it yet.
+		boxScore?: any;
+		mpFollower?: boolean;
 	} = {
 		fromAction: !!ctxBBGM.fromAction,
 	};
@@ -492,6 +497,8 @@ const liveGame = (params: Params, ctxBBGM: any) => {
 	if (ctxBBGM.playByPlay !== undefined) {
 		obj.gid = ctxBBGM.gidOneGame;
 		obj.playByPlay = ctxBBGM.playByPlay;
+		obj.boxScore = ctxBBGM.boxScore;
+		obj.mpFollower = !!ctxBBGM.mpFollower;
 	}
 
 	return obj;

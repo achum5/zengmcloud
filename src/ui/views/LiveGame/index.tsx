@@ -15,6 +15,7 @@ import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
+import { useLocal } from "../../util/local.ts";
 import type { View } from "../../../common/types.ts";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import useLocalStorageState from "use-local-storage-state";
@@ -306,11 +307,27 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 	const playByPlayEntries = useRef<PlayByPlayEntryInfo[]>([]);
 
+	// Multiplayer live-sim broadcast. On a follower, playback is driven ENTIRELY by
+	// the simmer's cursor (no own timer) and the page is locked; on the broadcaster
+	// we additionally heartbeat our cursor to the room. In single-player both are
+	// false and nothing below changes.
+	const { mpLiveBroadcast } = useLocal(["mpLiveBroadcast"]);
+	const isFollower = !!mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster;
+	const isBroadcaster =
+		!!mpLiveBroadcast?.active && mpLiveBroadcast.isBroadcaster;
+	const followerRef = useRef(isFollower);
+	followerRef.current = isFollower;
+	// Number of events we started with, so cursor = initial - remaining tells us
+	// how far the simmer (or we) have played.
+	const initialEventCount = useRef(0);
+
 	const navigateWarning = getNavigateWarning(boxScore.current.exhibition);
 
 	const { setDirty } = useBlocker({
 		message: navigateWarning,
 		initialDirty: true,
+		// A follower is locked in until the simmer ends the broadcast.
+		hardBlock: isFollower,
 	});
 
 	// Make sure to call setPlayIndex after calling this! Can't be done inside because React is not always smart enough to batch renders
@@ -433,7 +450,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 			}
 
 			if (events.current && events.current.length > 0) {
-				if (!pausedRef.current) {
+				// A follower never self-schedules: its playback is stepped only by the
+				// simmer's cursor (see the follower effect below), so it can't run ahead.
+				if (!pausedRef.current && !followerRef.current) {
 					setTimeout(() => {
 						processToNextPause();
 						setPlayIndex((prev) => prev + 1);
@@ -485,7 +504,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 					}
 				}
 
-				if (!boxScore.current.exhibition) {
+				// Don't unlock a follower when the game ends - it stays locked on the
+				// final box score until the simmer actually ends the broadcast.
+				if (!boxScore.current.exhibition && !followerRef.current) {
 					setDirty(false);
 				}
 				onLiveSimOver();
@@ -523,10 +544,89 @@ export const LiveGame = (props: View<"liveGame">) => {
 	useEffect(() => {
 		if (props.events && !started) {
 			boxScore.current = props.initialBoxScore;
+			initialEventCount.current = props.events.length;
 			setStarted(true);
-			startLiveGame(props.events.slice());
+			if (followerRef.current) {
+				// Follower: load the events but DON'T start the local timer - the
+				// cursor effect below steps playback to match the simmer.
+				events.current = props.events.slice();
+			} else {
+				startLiveGame(props.events.slice());
+			}
 		}
 	}, [props.events, props.initialBoxScore, started, startLiveGame]);
+
+	// Follower lockstep: whenever the simmer's cursor advances, step our own
+	// playback forward to the same position (fast-forwarding through any gap, e.g.
+	// when we first join mid-game). Pure catch-up - it never runs ahead of the
+	// simmer, so we always show exactly what they've shown.
+	const followerCursor = isFollower ? (mpLiveBroadcast?.cursor ?? 0) : 0;
+	useEffect(() => {
+		if (!isFollower || !started || !events.current) {
+			return;
+		}
+		let steps = 0;
+		while (
+			events.current.length > 0 &&
+			initialEventCount.current - events.current.length < followerCursor
+		) {
+			processToNextPause(true);
+			steps += 1;
+		}
+		if (steps > 0) {
+			setPlayIndex((prev) => prev + steps);
+		}
+	}, [followerCursor, isFollower, started, processToNextPause]);
+
+	// Broadcaster heartbeat: report our playback position to the room so followers
+	// stay in lockstep, and end the broadcast when we leave the page. Writes only
+	// on a real change, plus a slow keep-alive so the follower lease never lapses
+	// while we sit paused / on the final box score.
+	const lastBroadcastSent = useRef<
+		{ cursor: number; paused: boolean; gameOver: boolean; at: number } | undefined
+	>(undefined);
+	useEffect(() => {
+		if (!isBroadcaster || !started) {
+			return;
+		}
+		const sendHeartbeat = () => {
+			if (!events.current) {
+				return;
+			}
+			const cursor = initialEventCount.current - events.current.length;
+			const paused = pausedRef.current;
+			const gameOver = !!boxScore.current.gameOver;
+			const last = lastBroadcastSent.current;
+			const now = Date.now();
+			const changed =
+				!last ||
+				last.cursor !== cursor ||
+				last.paused !== paused ||
+				last.gameOver !== gameOver;
+			// Re-stamp the lease at least every few seconds even when nothing moved.
+			const stale = !last || now - last.at > 4000;
+			if (!changed && !stale) {
+				return;
+			}
+			lastBroadcastSent.current = { cursor, paused, gameOver, at: now };
+			void toWorker("main", "updateLiveBroadcast", {
+				cursor,
+				paused,
+				speed: speedRef.current,
+				gameOver,
+			});
+		};
+
+		const interval = setInterval(sendHeartbeat, 400);
+		sendHeartbeat();
+
+		return () => {
+			clearInterval(interval);
+			lastBroadcastSent.current = undefined;
+			// Leaving the live game ends the broadcast, unlocking every follower.
+			void toWorker("main", "endLiveBroadcast", undefined);
+		};
+	}, [isBroadcaster, started]);
 
 	const handleSpeedChange = (event: ChangeEvent<HTMLInputElement>) => {
 		const speed = event.target.value;
@@ -974,7 +1074,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 		<div>
 			{confetti.display ? <Confetti colors={confetti.colors} /> : null}
 
-			{showWarning ? (
+			{isFollower ? (
+				<p className="text-danger fw-bold">
+					🔴 {mpLiveBroadcast?.byName ?? "Someone"} is simming — watching live
+				</p>
+			) : isBroadcaster ? (
+				<p className="text-danger fw-bold">🔴 Simming live to your league</p>
+			) : showWarning ? (
 				<p className="text-danger">
 					{navigateWarning}
 					<>
@@ -1006,33 +1112,35 @@ export const LiveGame = (props: View<"liveGame">) => {
 									boxScore={boxScore.current}
 									isStuck={isStuck}
 								/>
-								<div className="d-flex align-items-center d-md-none pt-2">
-									<PlayPauseNext
-										className="me-2"
-										disabled={boxScore.current.gameOver}
-										fastForwardAlignRight
-										fastForwards={fastForwardMenuItems}
-										onPlay={handlePlay}
-										onPause={handlePause}
-										onNext={handleNextPlay}
-										paused={paused}
-										titlePlay="Resume Simulation"
-										titlePause="Pause Simulation"
-										titleNext="Show Next Play"
-										// Since we have two PlayPauseNexts rendered, ignore shortcuts on one
-										ignoreKeyboardShortcuts
-									/>
-									<input
-										type="range"
-										className="form-range flex-grow-1"
-										min="1"
-										max="33"
-										step="1"
-										value={speed}
-										onChange={handleSpeedChange}
-										title="Speed"
-									/>
-								</div>
+								{!isFollower ? (
+									<div className="d-flex align-items-center d-md-none pt-2">
+										<PlayPauseNext
+											className="me-2"
+											disabled={boxScore.current.gameOver}
+											fastForwardAlignRight
+											fastForwards={fastForwardMenuItems}
+											onPlay={handlePlay}
+											onPause={handlePause}
+											onNext={handleNextPlay}
+											paused={paused}
+											titlePlay="Resume Simulation"
+											titlePause="Pause Simulation"
+											titleNext="Show Next Play"
+											// Since we have two PlayPauseNexts rendered, ignore shortcuts on one
+											ignoreKeyboardShortcuts
+										/>
+										<input
+											type="range"
+											className="form-range flex-grow-1"
+											min="1"
+											max="33"
+											step="1"
+											value={speed}
+											onChange={handleSpeedChange}
+											title="Speed"
+										/>
+									</div>
+								) : null}
 							</div>
 							<div className="d-flex d-md-none">
 								<div className="ms-auto btn-group">
@@ -1094,31 +1202,33 @@ export const LiveGame = (props: View<"liveGame">) => {
 				</div>
 				<div className="col-md-3">
 					<div className="live-game-affix">
-						<div className="d-none d-md-flex align-items-center mb-3 pt-md-2">
-							<PlayPauseNext
-								className="me-2"
-								disabled={boxScore.current.gameOver}
-								fastForwardAlignRight
-								fastForwards={fastForwardMenuItems}
-								onPlay={handlePlay}
-								onPause={handlePause}
-								onNext={handleNextPlay}
-								paused={paused}
-								titlePlay="Resume Simulation"
-								titlePause="Pause Simulation"
-								titleNext="Show Next Play"
-							/>
-							<input
-								type="range"
-								className="form-range flex-grow-1"
-								min="1"
-								max="33"
-								step="1"
-								value={speed}
-								onChange={handleSpeedChange}
-								title="Speed"
-							/>
-						</div>
+						{!isFollower ? (
+							<div className="d-none d-md-flex align-items-center mb-3 pt-md-2">
+								<PlayPauseNext
+									className="me-2"
+									disabled={boxScore.current.gameOver}
+									fastForwardAlignRight
+									fastForwards={fastForwardMenuItems}
+									onPlay={handlePlay}
+									onPause={handlePause}
+									onNext={handleNextPlay}
+									paused={paused}
+									titlePlay="Resume Simulation"
+									titlePause="Pause Simulation"
+									titleNext="Show Next Play"
+								/>
+								<input
+									type="range"
+									className="form-range flex-grow-1"
+									min="1"
+									max="33"
+									step="1"
+									value={speed}
+									onChange={handleSpeedChange}
+									title="Speed"
+								/>
+							</div>
+						) : null}
 						<PlayByPlay
 							boxScore={boxScore.current}
 							entries={playByPlayEntries.current}
@@ -1134,7 +1244,24 @@ export const LiveGame = (props: View<"liveGame">) => {
 const LiveGameWrapper = (props: View<"liveGame">) => {
 	useTitleBar({ title: "Live Game Simulation", hideNewWindow: true });
 
-	return <LiveGame {...props} />;
+	// When following a broadcast, remount LiveGame for each NEW live sim (so a
+	// follower still parked on the previous game's final box score gets a fresh
+	// replay). The counter only ever advances on a new broadcast and never reverts
+	// when one ends, so ending a broadcast doesn't remount (and restart) the
+	// finished game, and the broadcaster / single-player never remount at all.
+	const { mpLiveBroadcast } = useLocal(["mpLiveBroadcast"]);
+	const remountKey = useRef(0);
+	const lastFollowedStartedAt = useRef<number | undefined>(undefined);
+	if (
+		mpLiveBroadcast?.active &&
+		!mpLiveBroadcast.isBroadcaster &&
+		mpLiveBroadcast.startedAt !== lastFollowedStartedAt.current
+	) {
+		lastFollowedStartedAt.current = mpLiveBroadcast.startedAt;
+		remountKey.current += 1;
+	}
+
+	return <LiveGame key={remountKey.current} {...props} />;
 };
 
 export default LiveGameWrapper;
