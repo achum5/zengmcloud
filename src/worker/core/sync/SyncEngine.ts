@@ -17,6 +17,13 @@ import { outbox } from "./outbox.ts";
 // chunks so each fits in one Firestore doc.
 const MAX_SYNC_CHANGES = 200;
 
+// How long a "room is advancing" lease lasts. Generous enough to cover a single
+// day's sim + upload even on a slow phone; it's re-stamped when a bulk upload
+// starts and cleared as soon as the advance is published, so this only actually
+// matters as a crash-recovery ceiling (a simmer that dies mid-sim unblocks the
+// room after this).
+const ROOM_BUSY_LEASE_MS = 45_000;
+
 // Each chunk stays well under Firestore's 1 MB/doc limit - capped by record
 // count and by serialized size (whichever hits first).
 const MAX_CHUNK_RECORDS = 100;
@@ -179,6 +186,47 @@ export class SyncEngine {
 		return this.authority;
 	}
 
+	// Mark the room "actively advancing" for a lease window, so followers hold off
+	// on conflict-prone edits while a sim/phase/draft is running or still
+	// uploading (before it shows up in the change log). Only the wheel-holder may
+	// write this. Fire-and-forget - it must never add latency to a sim.
+	markRoomBusy(): void {
+		if (!this.isAuthority()) {
+			return;
+		}
+		void this.transport.publishBusy?.(Date.now() + ROOM_BUSY_LEASE_MS);
+	}
+
+	// Release the "actively advancing" lease once the advance has been published
+	// (its seq is now visible to followers, so the caught-up check takes over).
+	clearRoomBusy(): void {
+		if (!this.isAuthority()) {
+			return;
+		}
+		void this.transport.publishBusy?.(0);
+	}
+
+	// Is SOMEONE ELSE mid-advance right now? True only for followers - the
+	// wheel-holder is the one doing the advancing, so it never blocks itself.
+	isRoomBusy(): boolean {
+		if (this.isAuthority()) {
+			return false;
+		}
+		const busyUntil = this.authority?.busyUntil;
+		return busyUntil !== undefined && Date.now() < busyUntil;
+	}
+
+	// Has this device applied everything it has seen from the log? False while a
+	// bulk sim is mid-transfer, an apply failed, or newer entries haven't been
+	// applied yet - i.e. while acting now would be acting on a stale world.
+	isCaughtUp(): boolean {
+		return (
+			this.pendingBatches.size === 0 &&
+			!this.applyFailed &&
+			this.persistedSeq >= this.maxSeq
+		);
+	}
+
 	// Back-compat alias: "host" now means "current wheel-holder". Used by the
 	// notification builder to decide who narrates a sim.
 	getIsHost(): boolean {
@@ -313,6 +361,11 @@ export class SyncEngine {
 	private async publishBulk(changeset: Changeset, action: string) {
 		const chunks = chunkChanges(changeset.changes);
 		const batchId = makeId();
+
+		// Re-stamp the busy lease now that the (possibly long) upload is starting,
+		// so it can't expire mid-transfer and let a follower slip an edit into the
+		// tail of the upload window.
+		this.markRoomBusy();
 
 		this.onUploadProgress?.({ done: 0, total: chunks.length });
 		try {

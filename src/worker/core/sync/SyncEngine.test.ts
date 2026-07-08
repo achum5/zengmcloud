@@ -10,7 +10,12 @@ import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { captureChangeset } from "./changeset.ts";
 import { SyncEngine } from "./SyncEngine.ts";
-import type { ChangesetEntry, SyncSubscriber, SyncTransport } from "./types.ts";
+import type {
+	Authority,
+	ChangesetEntry,
+	SyncSubscriber,
+	SyncTransport,
+} from "./types.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
 
 // In-memory shared log that several transports connect to, like a Firestore
@@ -32,6 +37,25 @@ class FakeBus {
 		this.listeners.add(listener);
 		return () => {
 			this.listeners.delete(listener);
+		};
+	}
+
+	// Shared authority ("wheel") doc, like leagues/{code}/control/authority.
+	authority: Authority | undefined;
+	private authorityListeners = new Set<(a: Authority | undefined) => void>();
+
+	setAuthority(a: Authority | undefined) {
+		this.authority = a;
+		for (const listener of this.authorityListeners) {
+			listener(a);
+		}
+	}
+
+	subscribeAuthority(listener: (a: Authority | undefined) => void) {
+		this.authorityListeners.add(listener);
+		listener(this.authority);
+		return () => {
+			this.authorityListeners.delete(listener);
 		};
 	}
 }
@@ -72,6 +96,25 @@ class FakeTransport implements SyncTransport {
 				subscriber.onBatchProcessed?.();
 			})();
 		});
+	}
+
+	async claimAuthority(holderId: string, holderName: string) {
+		this.bus.setAuthority({
+			holderId,
+			holderName,
+			busyUntil: this.bus.authority?.busyUntil,
+		});
+	}
+
+	subscribeAuthority(onChange: (a: Authority | undefined) => void) {
+		return this.bus.subscribeAuthority(onChange);
+	}
+
+	async publishBusy(busyUntil: number) {
+		const a = this.bus.authority;
+		if (a) {
+			this.bus.setAuthority({ ...a, busyUntil });
+		}
 	}
 }
 
@@ -465,5 +508,46 @@ describe("SyncEngine", () => {
 		assert.strictEqual(await engineB.handleEntry(entry), true);
 		// ...but not a second time (dedup by id).
 		assert.strictEqual(await engineB.handleEntry(entry), false);
+	});
+
+	test("the busy lease gates followers but never the wheel-holder", async () => {
+		const bus = new FakeBus();
+		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		const follower = new SyncEngine(new FakeTransport("F", bus));
+		host.start();
+		follower.start();
+
+		await host.claimAuthority();
+		assert.strictEqual(host.isAuthority(), true);
+		assert.strictEqual(follower.isAuthority(), false);
+
+		// Idle: nobody advancing and the follower is caught up → free to act.
+		assert.strictEqual(follower.isRoomBusy(), false);
+		assert.strictEqual(follower.isCaughtUp(), true);
+
+		// Host starts advancing → marks the room busy; the follower sees it.
+		host.markRoomBusy();
+		assert.strictEqual(follower.isRoomBusy(), true);
+		// The holder is the one advancing, so it never blocks itself.
+		assert.strictEqual(host.isRoomBusy(), false);
+
+		// Host finishes publishing → clears the lease; the follower is free again.
+		host.clearRoomBusy();
+		assert.strictEqual(follower.isRoomBusy(), false);
+	});
+
+	test("only the wheel-holder can mark the room busy", async () => {
+		const bus = new FakeBus();
+		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		const follower = new SyncEngine(new FakeTransport("F", bus));
+		host.start();
+		follower.start();
+		await host.claimAuthority();
+
+		// A follower calling markRoomBusy is a no-op (it isn't the holder), so it
+		// can't lock everyone else out.
+		follower.markRoomBusy();
+		assert.strictEqual(bus.authority?.busyUntil ?? 0, 0);
+		assert.strictEqual(host.isRoomBusy(), false);
 	});
 });

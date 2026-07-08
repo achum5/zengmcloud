@@ -80,6 +80,26 @@ const MAIN_CONNECTION_REQUIRED = new Set([
 	"reSignAll",
 	"releasePlayer",
 	"draftUser",
+	// Roster/lineup edits also rewrite shared records (player.rosterOrder / a
+	// team's depth), so they must reach the room too.
+	"reorderRosterDrag",
+	"reorderDepthDrag",
+]);
+
+// Edits that rewrite shared game-state records (player rows, team-seasons) and so
+// would COLLIDE with a sim if made on a stale copy while a sim is in flight. On a
+// follower these are refused while the wheel-holder is advancing, or while this
+// device hasn't yet caught up, so a whole-record overwrite can't silently clobber
+// the sim's results (or vice versa). draftUser is intentionally excluded - making
+// your own on-the-clock pick is expected to happen during the (wheel-advanced)
+// draft and has its own turn logic.
+const SIM_CONFLICT_GATED = new Set([
+	"proposeTrade",
+	"acceptContractNegotiation",
+	"reSignAll",
+	"releasePlayer",
+	"reorderRosterDrag",
+	"reorderDepthDrag",
 ]);
 
 export type WorkerAPICategory =
@@ -163,6 +183,31 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 		}
 	}
 
+	// Concurrency gate: refuse a conflict-prone edit while the wheel-holder is
+	// mid-advance (a sim/phase/draft running or still uploading), or while this
+	// device hasn't caught up on what's already in the log. Both are windows where
+	// acting would author a whole-record write on a stale world and clobber the
+	// sim's results (or lose the edit) under last-write-wins. Skipped for the
+	// wheel-holder itself, which is the one doing the advancing.
+	if (type === "main" && SIM_CONFLICT_GATED.has(name)) {
+		const syncEngine = getSyncEngine();
+		if (
+			syncEngine &&
+			!syncEngine.isAuthority() &&
+			(syncEngine.isRoomBusy() || !syncEngine.isCaughtUp())
+		) {
+			util.logEvent(
+				{
+					type: "error",
+					text: `The league is simming right now, so this wasn't done — it would collide with the sim. Try again in a moment.`,
+					persistent: true,
+				},
+				conditions,
+			);
+			return undefined;
+		}
+	}
+
 	// https://github.com/microsoft/TypeScript/issues/21732
 	// @ts-expect-error
 	const call = () => api[type][name](param, conditions);
@@ -180,11 +225,34 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 		return changeTracker.runSuppressed(() => Promise.resolve(call()));
 	}
 
-	return Promise.resolve(call()).then((value) => {
-		// Fire-and-forget: capture/log/push must never add latency to the
-		// action's response. (Safe ordering: this microtask drains before the
-		// next worker message is processed.)
-		void afterAction(type, name);
-		return value;
-	});
+	// A wheel-locked advance by the current holder marks the room "busy", so
+	// followers hold off on colliding edits until the resulting changeset is
+	// published (in afterAction) - after which the caught-up check takes over.
+	const syncEngineForBusy = getSyncEngine();
+	const marksBusy = wheelLocked && !!syncEngineForBusy?.isAuthority();
+	if (marksBusy) {
+		syncEngineForBusy!.markRoomBusy();
+	}
+
+	return Promise.resolve(call()).then(
+		(value) => {
+			// Fire-and-forget: capture/log/push must never add latency to the
+			// action's response. (Safe ordering: this microtask drains before the
+			// next worker message is processed.)
+			const done = afterAction(type, name);
+			// Release the lease once the advance has actually been published.
+			if (marksBusy) {
+				void done.then(() => getSyncEngine()?.clearRoomBusy());
+			}
+			return value;
+		},
+		(error) => {
+			// The advance threw, so nothing will publish - drop the lease now rather
+			// than making followers wait it out.
+			if (marksBusy) {
+				getSyncEngine()?.clearRoomBusy();
+			}
+			throw error;
+		},
+	);
 });

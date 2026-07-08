@@ -43,6 +43,14 @@ export type ChangesetEntry = {
 export type Authority = {
 	holderId: string;
 	holderName: string;
+	// Server-relative ms (the holder's clock) until which the wheel-holder is
+	// actively advancing the league - a sim/phase/draft that's running or still
+	// uploading, and so not yet visible to followers via the change log. While
+	// this is in the future, followers refuse conflict-prone edits (trades,
+	// signings, roster/lineup changes) so a stale whole-record write can't clobber
+	// the sim's results. It's a lease, so a simmer that crashes mid-sim can't lock
+	// the room forever - it just expires.
+	busyUntil?: number;
 };
 
 export interface SyncSubscriber {
@@ -117,4 +125,8 @@ export interface SyncTransport {
 	subscribeAuthority?(
 		onChange: (authority: Authority | undefined) => void,
 	): () => void;
+
+	// Stamp/clear the wheel-holder's "actively advancing" lease on the shared
+	// authority doc (see Authority.busyUntil). Pass 0 to clear.
+	publishBusy?(busyUntil: number): Promise<void>;
 }

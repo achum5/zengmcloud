@@ -222,6 +222,18 @@ export class FirebaseTransport implements SyncTransport {
 		);
 	}
 
+	// Stamp (or clear, with 0) the "actively advancing" lease. Merges onto the
+	// authority doc the holder already owns, so it passes the same rule as the
+	// wheel itself. Followers read this to know a sim is in flight (see
+	// Authority.busyUntil).
+	async publishBusy(busyUntil: number) {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
+			{ busyUntil },
+			{ merge: true },
+		);
+	}
+
 	// Watch who currently holds the wheel. Fires immediately with the current
 	// holder (or undefined if nobody has claimed it yet), then on every change.
 	subscribeAuthority(onChange: (authority: Authority | undefined) => void) {
@@ -235,6 +247,8 @@ export class FirebaseTransport implements SyncTransport {
 						holderId: data.holderId,
 						holderName:
 							typeof data.holderName === "string" ? data.holderName : "Someone",
+						busyUntil:
+							typeof data.busyUntil === "number" ? data.busyUntil : undefined,
 					});
 				} else {
 					onChange(undefined);
