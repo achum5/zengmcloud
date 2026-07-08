@@ -1,5 +1,10 @@
-import { assert, describe, test } from "vitest";
-import { linkifyRecap, type RecapLink } from "./linkifyRecap.ts";
+import { assert, beforeAll, describe, test } from "vitest";
+import {
+	buildRecapLinksForGame,
+	linkifyRecap,
+	type RecapLink,
+} from "./linkifyRecap.ts";
+import { local } from "./local.ts";
 
 const P = (name: string, pid: number): RecapLink => ({
 	name,
@@ -47,5 +52,62 @@ describe("linkifyRecap", () => {
 		// "Cam" must not link inside "Camden".
 		const out = linkifyRecap("Camden and Cam played.", [P("Cam", 4)]);
 		assert.strictEqual(out, "Camden and [Cam](/l/1/player/4) played.");
+	});
+});
+
+describe("buildRecapLinksForGame", () => {
+	// leagueUrl reads the current lid from local state.
+	beforeAll(() => {
+		local.setState({ lid: 1 });
+	});
+
+	const names = (links: RecapLink[]) => links.map((l) => l.name);
+
+	const game = {
+		season: 2076,
+		teams: [
+			{
+				tid: 0,
+				// Past-season branding travels on the game (Daily Schedule sets this).
+				branding: { abbrev: "LAL", region: "LA", name: "Lakers" },
+				players: [{ pid: 10, name: "Star Guy" }],
+			},
+			{
+				tid: 1,
+				players: [{ pid: 20, name: "Role Guy" }],
+			},
+			// A placeholder team (e.g. an All-Star side) is skipped.
+			{ tid: -1, players: [{ pid: 30, name: "Ghost" }] },
+		],
+	};
+
+	const teamInfo = (tid: number) =>
+		tid === 1
+			? { abbrev: "BOS", region: "Boston", name: "Celtics" }
+			: undefined;
+
+	test("links both teams (branding or resolver) and their players", () => {
+		const out = names(buildRecapLinksForGame(game, teamInfo));
+		// Team 0 via its own branding, team 1 via the resolver.
+		assert.ok(out.includes("LA Lakers"));
+		assert.ok(out.includes("Lakers"));
+		assert.ok(out.includes("Boston Celtics"));
+		assert.ok(out.includes("Celtics"));
+		// Players from both real teams.
+		assert.ok(out.includes("Star Guy"));
+		assert.ok(out.includes("Role Guy"));
+	});
+
+	test("skips placeholder (negative-tid) teams and their players", () => {
+		const out = names(buildRecapLinksForGame(game, teamInfo));
+		assert.ok(!out.includes("Ghost"));
+	});
+
+	test("team href points at the season-correct roster; player href at the player", () => {
+		const links = buildRecapLinksForGame(game, teamInfo);
+		const lakers = links.find((l) => l.name === "LA Lakers");
+		const star = links.find((l) => l.name === "Star Guy");
+		assert.ok(lakers!.href.includes("roster/LAL_0/2076"), lakers!.href);
+		assert.ok(star!.href.includes("player/10"), star!.href);
 	});
 });

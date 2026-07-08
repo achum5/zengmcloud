@@ -19,6 +19,9 @@ const updateDailySchedule = async (
 		updateEvents.includes("firstRun") ||
 		(inputs.season === currentSeason && updateEvents.includes("gameSim")) ||
 		updateEvents.includes("newPhase") ||
+		// A game note was added/edited (e.g. an AI recap filed from this page), so
+		// the note under each game card needs to refresh.
+		updateEvents.includes("notes") ||
 		inputs.season !== state.season ||
 		inputs.day !== state.day ||
 		inputs.cid !== state.cid

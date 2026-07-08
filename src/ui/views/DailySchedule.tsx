@@ -10,6 +10,8 @@ import allowForceTie from "../../common/allowForceTie.ts";
 import { ForceWin } from "../components/ForceWin.tsx";
 import { ScoreBox } from "../components/ScoreBox/index.tsx";
 import { GameRecap } from "../components/GameRecap.tsx";
+import { GameNote } from "../components/GameNote.tsx";
+import { buildRecapLinksForGame } from "../util/linkifyRecap.ts";
 
 const DailySchedule = ({
 	cid,
@@ -39,8 +41,15 @@ const DailySchedule = ({
 		gameSimInProgress,
 		phase,
 		season: currentSeason,
+		teamInfoCache,
 		userTid,
-	} = useLocal(["gameSimInProgress", "phase", "season", "userTid"]);
+	} = useLocal([
+		"gameSimInProgress",
+		"phase",
+		"season",
+		"teamInfoCache",
+		"userTid",
+	]);
 
 	// Can't sim/watch games from here unless this device holds the wheel.
 	const { locked: wheelLocked } = useWheelLocked();
@@ -206,6 +215,15 @@ const DailySchedule = ({
 											style={{ maxWidth: 510 }}
 										>
 											<ScoreBox game={game} />
+											{game.note ? (
+												<GameNote
+													note={game.note}
+													links={buildRecapLinksForGame(
+														game,
+														(tid) => teamInfoCache[tid],
+													)}
+												/>
+											) : null}
 										</div>
 									);
 								})}

@@ -35,6 +35,49 @@ export const buildRecapLinks = (boxScore: any): RecapLink[] => {
 	return entries;
 };
 
+// Same name→link map as buildRecapLinks, but for a raw game record (e.g. on the
+// Daily Schedule) whose teams carry only tid + box-score players, not the
+// enriched region/name/abbrev the box-score page has. Team branding is resolved
+// via each team's per-season `branding` (set for past seasons) or the caller's
+// current-season lookup (teamInfoCache).
+export const buildRecapLinksForGame = (
+	game: { season: number; teams: any[] },
+	teamInfo: (
+		tid: number,
+	) => { abbrev?: string; region?: string; name?: string } | undefined,
+): RecapLink[] => {
+	const entries: RecapLink[] = [];
+	for (const t of Array.isArray(game?.teams) ? game.teams : []) {
+		if (typeof t?.tid !== "number" || t.tid < 0) {
+			continue;
+		}
+		const info = t.branding ?? teamInfo(t.tid);
+		if (info?.abbrev) {
+			const teamHref = helpers.leagueUrl([
+				"roster",
+				`${info.abbrev}_${t.tid}`,
+				game.season,
+			]);
+			const region = info.region ?? "";
+			const name = info.name ?? "";
+			for (const label of [`${region} ${name}`, name, region]) {
+				if (label.trim() !== "") {
+					entries.push({ name: label.trim(), href: teamHref });
+				}
+			}
+		}
+		for (const p of Array.isArray(t.players) ? t.players : []) {
+			if (typeof p?.pid === "number" && p.pid >= 0 && p.name) {
+				entries.push({
+					name: String(p.name),
+					href: helpers.leagueUrl(["player", p.pid]),
+				});
+			}
+		}
+	}
+	return entries;
+};
+
 const escapeRegex = (s: string): string =>
 	s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
