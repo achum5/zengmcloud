@@ -389,6 +389,7 @@ const ComparePlayers = ({
 												defaultWatch={p.watch}
 												firstName={p.firstName}
 												lastName={p.lastName}
+												hideFace
 											/>
 											{season === "career" ? "Career totals" : season}
 										</div>
