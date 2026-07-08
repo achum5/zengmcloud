@@ -5,7 +5,7 @@ import { ensureAnonymousAuth } from "./auth.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g, toUI } from "../../util/index.ts";
+import { g, local, lock, toUI } from "../../util/index.ts";
 
 // This device's catch-up watermark for a league, stored in the durable meta DB
 // so it survives refreshes - so we only replay what we missed.
@@ -21,6 +21,32 @@ const saveWatermark = async (lid: number | undefined, ts: number) => {
 	if (typeof lid !== "number") {
 		return;
 	}
+
+	// Never let the DURABLE watermark run ahead of the DURABLE league data. The
+	// watermark lives in idb.meta and is written immediately; the data it accounts
+	// for lives in the in-memory cache and only reaches idb.league on a flush. If
+	// the app is killed in between (e.g. iOS backgrounding the PWA), the watermark
+	// would claim "caught up" while the applied data was never saved - and since a
+	// device won't re-fetch anything at/below its watermark, that change is lost
+	// locally forever even though it's still in the cloud. So flush the cache FIRST,
+	// then record the watermark.
+	//
+	// Skip entirely while a local sim / phase change / autoplay is running: those
+	// batch their own flushes for speed, and a mid-sim flush here would both fight
+	// that batching and (worse) bank a watermark ahead of not-yet-flushed sim data.
+	// The periodic catch-up re-runs this once things settle, so nothing is skipped
+	// permanently - the in-memory watermark keeps advancing for dedup regardless.
+	if (lock.get("gameSim") || lock.get("newPhase") || local.autoPlayUntil) {
+		return;
+	}
+	try {
+		await idb.cache.flush();
+	} catch {
+		// A failed flush means the data isn't durable, so don't bank a watermark
+		// past it - just try again on the next tick.
+		return;
+	}
+
 	const league = await idb.meta.get("leagues", lid);
 	if (league && (league.syncWatermark ?? 0) < ts) {
 		league.syncWatermark = ts;

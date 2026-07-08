@@ -3,6 +3,8 @@ import { changeTracker } from "../../db/changeTracker.ts";
 import { logChangeset } from "./devChangesetLogger.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { buildNotifications } from "./notifications.ts";
+import { idb } from "../../db/index.ts";
+import { local, lock } from "../../util/index.ts";
 
 // Runs (fire-and-forget) after each user action that could mutate state. It
 // drains the change tracker ONCE and fans the resulting changeset out to both
@@ -41,6 +43,29 @@ export const afterAction = async (type: string, name: string) => {
 					`[sync] Failed to publish "${label}" (${changeset.changes.length} records) - this change did NOT sync to other devices.`,
 					error,
 				);
+			}
+
+			// Make the just-published change durable locally right away. Until the
+			// next periodic flush (every few seconds) it lives ONLY in the in-memory
+			// cache. If the app is killed before that flush - e.g. iOS backgrounding
+			// the PWA moments after a trade - the change is lost locally even though
+			// it reached the cloud, because a device skips re-applying its OWN entries
+			// on catch-up (its clientId matches, so the cloud copy can't restore it).
+			// Flushing now closes that window. Skip while a local sim / phase change /
+			// autoplay is running: those batch their own flushes for speed and persist
+			// as they go, so an extra flush here would just fight that batching.
+			if (published) {
+				try {
+					if (
+						!lock.get("gameSim") &&
+						!lock.get("newPhase") &&
+						!local.autoPlayUntil
+					) {
+						await idb.cache.flush();
+					}
+				} catch {
+					// Best-effort durability; the periodic flush still catches up.
+				}
 			}
 
 			// Fan phone pushes out ONLY once the change actually reached the room.
