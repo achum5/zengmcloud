@@ -1,5 +1,10 @@
 import { assert, describe, test } from "vitest";
-import { nextFires, projectFires, type PreviewDay } from "./autoPlayPreview.ts";
+import {
+	hasPassedStop,
+	nextFires,
+	projectFires,
+	type PreviewDay,
+} from "./autoPlayPreview.ts";
 import { newRule, type ScheduleRule } from "./scheduleTime.ts";
 
 const rule = (patch: Partial<ScheduleRule>): ScheduleRule => ({
@@ -97,5 +102,26 @@ describe("projectFires", () => {
 		assert.ok(p[0]!.events.includes("Trade deadline"));
 		assert.ok(p[0]!.events.includes("All-Star Game"));
 		assert.strictEqual(p[0]!.numGames, 10);
+	});
+});
+
+describe("hasPassedStop", () => {
+	const target = { season: 2026, day: 86 };
+
+	test("not passed while the next day is at or before the target", () => {
+		assert.strictEqual(hasPassedStop(target, 2026, 85), false);
+		assert.strictEqual(hasPassedStop(target, 2026, 86), false);
+	});
+
+	test("passed once the next day is beyond the target", () => {
+		assert.strictEqual(hasPassedStop(target, 2026, 87), true);
+	});
+
+	test("passed when the schedule has run dry (no next day)", () => {
+		assert.strictEqual(hasPassedStop(target, 2026, undefined), true);
+	});
+
+	test("passed once the season has moved on", () => {
+		assert.strictEqual(hasPassedStop(target, 2027, 1), true);
 	});
 });

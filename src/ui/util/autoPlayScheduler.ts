@@ -9,6 +9,7 @@ import {
 	type AutoPlayAmount,
 	type ScheduleRule,
 } from "./scheduleTime.ts";
+import { hasPassedStop } from "./autoPlayPreview.ts";
 
 // Re-exported so existing imports (UI, etc.) keep working from one place.
 export { newRule, nextFireForRule } from "./scheduleTime.ts";
@@ -60,6 +61,10 @@ export type AutoPlaySettings = {
 	// Best-effort screen wake lock so a dedicated always-on tab is less likely to
 	// get throttled/suspended by the browser.
 	keepAwake: boolean;
+	// If set, auto play stops once the league has been simmed THROUGH this day
+	// (scoped to a season, since day numbers restart each year). Set from the
+	// Upcoming-sims preview ("stop after this sim").
+	stopAfter?: { season: number; day: number };
 };
 
 export type AutoPlayState = {
@@ -150,6 +155,7 @@ class AutoPlayScheduler {
 				rules: loaded.rules.map((r: any) => ({ ...newRule(), ...r })),
 				pauseAtPhaseBoundaries: loaded.pauseAtPhaseBoundaries ?? true,
 				keepAwake: loaded.keepAwake ?? true,
+				stopAfter: loaded.stopAfter,
 			};
 		}
 		if (loaded && typeof loaded.intervalMinutes === "number") {
@@ -420,8 +426,34 @@ class AutoPlayScheduler {
 		} catch (error) {
 			console.error("Auto play sim failed", error);
 			this.stop("A sim failed - see console. Auto play stopped.");
+			return;
 		} finally {
 			this.ticking = false;
+		}
+
+		// Honor a "stop after Day X" set from the preview: stop once the league has
+		// been simmed through that day (the next day to play is past it, or the
+		// season/phase moved on).
+		await this.maybeStopAfter();
+	}
+
+	private async maybeStopAfter() {
+		const target = this.settings.stopAfter;
+		if (!this.settings.enabled || !target) {
+			return;
+		}
+		try {
+			const preview: any = await toWorker(
+				"main",
+				"getAutoPlayPreview",
+				undefined,
+			);
+			if (hasPassedStop(target, preview.season, preview.upcomingDays[0]?.day)) {
+				this.settings.stopAfter = undefined;
+				this.stop(`Stopped after Day ${target.day}, as scheduled.`);
+			}
+		} catch (error) {
+			console.error("Auto play stop-after check failed", error);
 		}
 	}
 

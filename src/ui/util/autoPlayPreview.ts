@@ -15,6 +15,7 @@ export type PreviewDay = {
 // What getAutoPlayPreview returns from the worker.
 export type AutoPlayPreviewData = {
 	phase: number;
+	season: number;
 	upcomingDays: PreviewDay[];
 	amountDays: Record<AutoPlayAmount, number>;
 	phaseEndNote?: string;
@@ -33,6 +34,19 @@ export type ProjectedFire = {
 	// phase's schedule runs out here).
 	endsPhase: boolean;
 };
+
+// Has the league been simmed THROUGH a "stop after" target? True once the season
+// has moved past the target's season, or (same season) the next day to play is
+// past the target day - including when the schedule has run dry (nextDay
+// undefined). Used to auto-stop after the selected sim.
+export const hasPassedStop = (
+	target: { season: number; day: number },
+	curSeason: number,
+	nextDay: number | undefined,
+): boolean =>
+	curSeason > target.season ||
+	(curSeason === target.season &&
+		(nextDay === undefined || nextDay > target.day));
 
 // The next `max` fire times across all enabled rules, in chronological order.
 // Walks the clock forward past each fire and re-asks every rule for its next

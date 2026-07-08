@@ -146,6 +146,23 @@ const AutoPlaySchedule = () => {
 
 	const hasEnabledRules = settings.rules.some((r) => r.enabled);
 
+	// Show the schedule preview when running, or on demand via "Show schedule".
+	const [showSchedule, setShowSchedule] = useState(false);
+	const showPreview =
+		eligible && hasEnabledRules && (settings.enabled || showSchedule);
+
+	// The active stop-after day, if it belongs to the season currently previewed.
+	const stopDay =
+		settings.stopAfter && preview && settings.stopAfter.season === preview.season
+			? settings.stopAfter.day
+			: undefined;
+	const setStopAfter = (day: number) => {
+		if (preview) {
+			update({ stopAfter: { season: preview.season, day } });
+		}
+	};
+	const clearStopAfter = () => update({ stopAfter: undefined });
+
 	return (
 		<>
 			{!eligible && mpAutoPlay?.enabled ? (
@@ -186,7 +203,10 @@ const AutoPlaySchedule = () => {
 					<button
 						className="btn btn-primary"
 						disabled={!eligible}
-						onClick={() => autoPlayScheduler.start()}
+						onClick={() => {
+							setShowSchedule(true);
+							autoPlayScheduler.start();
+						}}
 					>
 						Start
 					</button>
@@ -198,6 +218,14 @@ const AutoPlaySchedule = () => {
 				>
 					Sim day now
 				</button>
+				{eligible && hasEnabledRules && !settings.enabled ? (
+					<button
+						className="btn btn-light-bordered"
+						onClick={() => setShowSchedule((v) => !v)}
+					>
+						{showSchedule ? "Hide schedule" : "Show schedule"}
+					</button>
+				) : null}
 			</div>
 			{!eligible ? (
 				<div className="text-body-secondary small mb-3">
@@ -205,10 +233,26 @@ const AutoPlaySchedule = () => {
 				</div>
 			) : null}
 
-			{eligible && hasEnabledRules ? (
-				<div className="card mb-3" style={{ maxWidth: 760 }}>
+			{showPreview ? (
+				<div className="card mb-3" style={{ maxWidth: 820 }}>
 					<div className="card-body py-2">
 						<h3 className="card-title h6 mb-2">Upcoming sims</h3>
+
+						{stopDay !== undefined ? (
+							<div className="alert alert-info d-flex align-items-center gap-2 py-2 mb-2">
+								<div className="flex-grow-1">
+									Auto play will <b>stop after Day {stopDay}</b>.
+								</div>
+								<button
+									type="button"
+									className="btn btn-sm btn-light-bordered"
+									onClick={clearStopAfter}
+								>
+									Clear
+								</button>
+							</div>
+						) : null}
+
 						{projected.length === 0 ? (
 							<div className="text-body-secondary small mb-0">
 								{preview && preview.upcomingDays.length === 0
@@ -226,38 +270,73 @@ const AutoPlaySchedule = () => {
 												<th>League day</th>
 												<th className="text-end">Games</th>
 												<th>Notes</th>
+												<th />
 											</tr>
 										</thead>
 										<tbody>
-											{projected.slice(0, DISPLAY_FIRES).map((f, i) => (
-												<tr key={i}>
-													<td>
-														<div>{new Date(f.at).toLocaleString()}</div>
-														<div className="text-body-secondary small">
-															in {formatCountdown(f.at - now)}
-														</div>
-													</td>
-													<td className="text-nowrap">
-														{f.numDays === 1 ? "1 day" : `${f.numDays} days`}
-													</td>
-													<td className="text-nowrap">
-														{f.fromDay === f.toDay
-															? `Day ${f.fromDay}`
-															: `Days ${f.fromDay}–${f.toDay}`}
-													</td>
-													<td className="text-end">{f.numGames}</td>
-													<td className="small">
-														{f.events.map((e, j) => (
-															<span
-																key={j}
-																className="badge text-bg-secondary me-1"
-															>
-																{e}
-															</span>
-														))}
-													</td>
-												</tr>
-											))}
+											{projected.slice(0, DISPLAY_FIRES).map((f, i) => {
+												const isStop = stopDay !== undefined && f.toDay === stopDay;
+												const afterStop =
+													stopDay !== undefined && f.fromDay > stopDay;
+												return (
+													<tr
+														key={i}
+														className={afterStop ? "opacity-50" : undefined}
+													>
+														<td>
+															<div>{new Date(f.at).toLocaleString()}</div>
+															<div className="text-body-secondary small">
+																in {formatCountdown(f.at - now)}
+															</div>
+														</td>
+														<td className="text-nowrap">
+															{f.numDays === 1 ? "1 day" : `${f.numDays} days`}
+														</td>
+														<td className="text-nowrap">
+															{f.fromDay === f.toDay
+																? `Day ${f.fromDay}`
+																: `Days ${f.fromDay}–${f.toDay}`}
+														</td>
+														<td className="text-end">{f.numGames}</td>
+														<td className="small">
+															{f.events.map((e, j) => (
+																<span
+																	key={j}
+																	className="badge text-bg-secondary me-1"
+																>
+																	{e}
+																</span>
+															))}
+															{afterStop ? (
+																<span className="text-body-secondary">
+																	won't run
+																</span>
+															) : null}
+														</td>
+														<td className="text-end">
+															{isStop ? (
+																<button
+																	type="button"
+																	className="btn btn-sm btn-info text-nowrap"
+																	onClick={clearStopAfter}
+																	title="Don't stop here"
+																>
+																	Stops here
+																</button>
+															) : (
+																<button
+																	type="button"
+																	className="btn btn-sm btn-light-bordered text-nowrap"
+																	onClick={() => setStopAfter(f.toDay)}
+																	title="Stop auto play after this sim"
+																>
+																	Stop after
+																</button>
+															)}
+														</td>
+													</tr>
+												);
+											})}
 										</tbody>
 									</table>
 								</div>
@@ -503,6 +582,12 @@ const AutoPlaySchedule = () => {
 								<th>Phase</th>
 								<td>{phaseText || "-"}</td>
 							</tr>
+							{settings.stopAfter ? (
+								<tr>
+									<th>Stop after</th>
+									<td>Day {settings.stopAfter.day}</td>
+								</tr>
+							) : null}
 						</tbody>
 					</table>
 					{state.pausedReason ? (

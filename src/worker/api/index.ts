@@ -5430,7 +5430,7 @@ const getAutoPlayPreview = async () => {
 		phaseEndNote = "Playoffs end";
 	}
 
-	return { phase, upcomingDays, amountDays, phaseEndNote };
+	return { phase, season: g.get("season"), upcomingDays, amountDays, phaseEndNote };
 };
 
 // multi-team mode is even set up yet.
