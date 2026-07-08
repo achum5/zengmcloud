@@ -37,6 +37,9 @@ export type RecapSeasonPlayer = {
 	// This player's transactions in the recap window (the prior offseason that
 	// built the team + this season): drafted, signed, re-signed, traded, released.
 	transactions?: string[];
+	// Major injuries in this player's CAREER (50+ games missed), each with the
+	// season it happened - context for durability/injury storylines.
+	majorInjuries?: { type: string; games: number; season: number }[];
 };
 
 // A single prior season in a franchise's history, for context.
@@ -402,7 +405,7 @@ export const getSeasonRecapData = async (
 				"noCopyCache",
 			);
 			const playersPlus = await idb.getCopies.playersPlus(playersRaw, {
-				attrs: ["pid", "firstName", "lastName", "born", "awards"],
+				attrs: ["pid", "firstName", "lastName", "born", "awards", "injuries"],
 				ratings: ["pos", "ovr", "pot"],
 				stats: [
 					"gp",
@@ -479,6 +482,13 @@ export const getSeasonRecapData = async (
 						: undefined,
 					awards: awardsForSeason(p, season).slice(0, 4),
 				transactions: movesByPid.get(p.pid),
+				majorInjuries: (Array.isArray(p.injuries) ? p.injuries : [])
+					.filter((inj: any) => inj && (inj.games ?? 0) >= 50)
+					.map((inj: any) => ({
+						type: String(inj.type ?? "injury"),
+						games: inj.games,
+						season: inj.season,
+					})),
 				});
 			}
 			// Best players first (by minutes, a decent proxy for role), capped.

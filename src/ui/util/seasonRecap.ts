@@ -9,7 +9,7 @@ import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 // brief can change without touching the data-baking below.
 const INSTRUCTIONS = `You are an expert basketball writer producing a league-wide season in review. Write a season recap for EACH team listed below.
 
-You are given a lot of data per team: the team's record and playoff result, its seed, its exact playoff series results (opponent and games won-lost each round — use these for how far a series went; never guess the number of games), its key players' season and postseason lines (with ages, ratings, and any awards), the franchise's history (championships, playoff appearances, recent seasons), and the transactions that shaped the team. Use whatever tells the best story — how the season met or defied expectations given the roster and moves, breakout or declining players, the franchise's arc, playoff runs or collapses, and how the offseason set the team up. Do NOT dump the raw data back.
+You are given a lot of data per team: the team's record and playoff result, its seed, its exact playoff series results (opponent and games won-lost each round — use these for how far a series went; never guess the number of games), its key players' season and postseason lines (with ages, ratings, any awards, each player's transactions, and any major injury history — 50+ games missed, with the season), the franchise's history (championships, playoff appearances, recent seasons), and the transactions that shaped the team. Use whatever tells the best story — how the season met or defied expectations given the roster and moves, breakout or declining players, the franchise's arc, playoff runs or collapses, and how the offseason set the team up. Do NOT dump the raw data back.
 
 IMPORTANT — tell the story in chronological order, exactly how the data is laid out per team: (1) the OFFSEASON MOVES that BUILT this year's roster (the prior offseason — signings, re-signings, draft picks, trades made BEFORE the season), then (2) the SEASON itself — the regular-season record and how it played out, the IN-SEASON MOVES (trades/cuts made during the year), and (3) the PLAYOFFS. The offseason moves are last summer's build-up that set this team up; weave them in as the season's starting point.
 
@@ -57,6 +57,13 @@ const playerLine = (p: RecapSeasonPlayer): string => {
 	if (p.transactions && p.transactions.length > 0) {
 		for (const move of p.transactions) {
 			lines.push(`    · Move: ${move}`);
+		}
+	}
+	if (p.majorInjuries && p.majorInjuries.length > 0) {
+		for (const inj of p.majorInjuries) {
+			lines.push(
+				`    · Injury history: ${inj.type}, missed ${inj.games} games (${inj.season})`,
+			);
 		}
 	}
 	return lines.join("\n");
