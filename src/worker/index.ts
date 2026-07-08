@@ -53,6 +53,14 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// Generates AI trade offers and saves your personal shopping list
 	// (savedTradingBlock) - local-only, not something to sync live.
 	"getTradingBlockOffers",
+	// Live-sim broadcast control. These only write the cloud broadcast docs - they
+	// never mutate league state, so they must not run afterAction. Critically, the
+	// broadcaster heartbeats updateLiveBroadcast every ~400ms; without this, one
+	// landing in the window between a live sim writing its game and that sim's own
+	// SILENT drain would drain the game changeset under a non-silent label and push
+	// a "final score" notification - exactly what a live sim must never do.
+	"updateLiveBroadcast",
+	"endLiveBroadcast",
 ]);
 
 // Multiplayer "wheel": while synced, only the device that holds the wheel may
