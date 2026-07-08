@@ -2,11 +2,11 @@ import { type MouseEvent, useState } from "react";
 import { Markdown } from "./Markdown.tsx";
 import { linkifyRecap, type RecapLink } from "../util/linkifyRecap.ts";
 
-// A game's note (AI recap) shown under its card on the Daily Schedule. Collapsed
-// to just the headline (the note's first line) with a toggle arrow; expanded it
-// shows the whole note. Renders markdown and auto-links team/player names, the
-// same as the note on the box-score page. Read-only here - editing stays on the
-// box score.
+// A game's note (AI recap) shown attached to the bottom of its card on the Daily
+// Schedule. Collapsed to just the headline (the note's first line) with a toggle
+// arrow on the right; expanded it shows the whole note. Renders markdown and
+// auto-links team/player names, the same as the note on the box-score page.
+// Read-only here - editing stays on the box score.
 export const GameNote = ({
 	note,
 	links,
@@ -34,32 +34,30 @@ export const GameNote = ({
 		setExpanded((value) => !value);
 	};
 
+	const clickToExpand = hasMore && !expanded;
+
+	// border-top-0: sit flush under the card, continuing its border with no seam.
 	return (
-		<div className="border rounded p-2 mt-1">
+		<div className="game-note border-light border-top-0 px-2 py-1">
 			<div className="d-flex align-items-start gap-2">
-				<button
-					type="button"
-					className="btn btn-link p-0 text-decoration-none text-body-secondary"
-					style={{ lineHeight: 1.2 }}
-					onClick={() => setExpanded((value) => !value)}
-					title={expanded ? "Hide note" : "Show note"}
-					aria-expanded={expanded}
+				<div
+					className="flex-grow-1"
+					style={{ cursor: clickToExpand ? "pointer" : undefined }}
+					onClick={clickToExpand ? toggle : undefined}
 				>
-					{hasMore ? (expanded ? "▾" : "▸") : "•"}
-				</button>
-				{expanded ? (
-					<div className="flex-grow-1">
-						<Markdown>{linked}</Markdown>
-					</div>
-				) : (
-					<div
-						className="flex-grow-1"
-						style={{ cursor: hasMore ? "pointer" : undefined }}
-						onClick={hasMore ? toggle : undefined}
+					<Markdown>{expanded ? linked : headline}</Markdown>
+				</div>
+				{hasMore ? (
+					<button
+						type="button"
+						className="btn btn-link p-0 text-decoration-none text-body-secondary lh-1"
+						onClick={() => setExpanded((value) => !value)}
+						title={expanded ? "Hide note" : "Show note"}
+						aria-expanded={expanded}
 					>
-						<Markdown>{headline}</Markdown>
-					</div>
-				)}
+						{expanded ? "▾" : "▸"}
+					</button>
+				) : null}
 			</div>
 		</div>
 	);

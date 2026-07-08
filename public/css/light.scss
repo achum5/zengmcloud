@@ -1169,6 +1169,24 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	border-color: $gray-300 !important;
 }
 
+// Compact rendering for the game-note recap attached under a Daily Schedule
+// card: tighten the markdown block spacing and drop the trailing margin so the
+// collapsed headline is a single tight line and the expanded note isn't airy.
+.game-note {
+	.markdown p,
+	.markdown ul,
+	.markdown blockquote,
+	.markdown h4,
+	.markdown h5,
+	.markdown h6 {
+		margin-bottom: 0.25rem;
+	}
+
+	.markdown > :last-child {
+		margin-bottom: 0;
+	}
+}
+
 .form-check-input {
 	// Default does not do well with altered font-size-base
 	margin-top: 3px;
