@@ -92,6 +92,10 @@ class FakeTransport implements SyncTransport {
 		return pageLimit === undefined ? all : all.slice(0, pageLimit);
 	}
 
+	async countEntriesSince(sinceMs: number): Promise<number> {
+		return this.bus.entries.filter((e) => e.seq > sinceMs).length;
+	}
+
 	subscribe(subscriber: SyncSubscriber) {
 		return this.bus.subscribe((entry) => {
 			// Mimic the real transport: apply the entry, then signal the batch is
@@ -486,6 +490,74 @@ describe("SyncEngine", () => {
 		assert.ok(
 			watermarks.length > 1,
 			`expected multiple watermark advances, got ${watermarks.length}`,
+		);
+	});
+
+	test("catchUp reports drain progress and clears when caught up", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		const host = new FakeTransport("H", bus);
+		const N = 130;
+		for (let i = 1; i <= N; i++) {
+			await host.publish({
+				id: `e${i}`,
+				authorId: "H",
+				action: "x",
+				changeset: {
+					changes: [{ store: "events", id: i, type: "put", value: { eid: i } }],
+				},
+			});
+		}
+
+		const progress: ({ done: number; total: number } | undefined)[] = [];
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {
+			onCatchUpProgress: (p) => progress.push(p),
+		});
+		await receiver.catchUp();
+
+		const withTotal = progress.filter(Boolean) as {
+			done: number;
+			total: number;
+		}[];
+		// Reported a total equal to the backlog, advanced `done` across pages...
+		assert.ok(withTotal.length > 1);
+		assert.strictEqual(withTotal[0]!.total, N);
+		assert.ok(withTotal.some((p) => p.done > 0 && p.done < N));
+		assert.strictEqual(withTotal.at(-1)!.done, N);
+		// ...and cleared (undefined) once caught up.
+		assert.strictEqual(progress.at(-1), undefined);
+	});
+
+	test("catchUp shows no progress bar for a trivial gap", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		const host = new FakeTransport("H", bus);
+		// Only a couple entries behind - below the progress threshold.
+		for (let i = 1; i <= 3; i++) {
+			await host.publish({
+				id: `e${i}`,
+				authorId: "H",
+				action: "x",
+				changeset: {
+					changes: [{ store: "events", id: i, type: "put", value: { eid: i } }],
+				},
+			});
+		}
+
+		const progress: ({ done: number; total: number } | undefined)[] = [];
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {
+			onCatchUpProgress: (p) => progress.push(p),
+		});
+		await receiver.catchUp();
+
+		// Never surfaced a progress total for a tiny catch-up.
+		assert.strictEqual(
+			progress.some((p) => p !== undefined),
+			false,
 		);
 	});
 

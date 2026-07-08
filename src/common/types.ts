@@ -1084,6 +1084,10 @@ export type LocalStateUI = {
 	// device is still catching up. Drives the header "simming…" indicator so a
 	// blocked action reads as expected, not glitched.
 	mpEditsPaused: boolean;
+	// Progress while this device is draining a large backlog after being away
+	// (entries applied / total to apply). Undefined when caught up or the gap is
+	// trivial. Drives the header "catching up …%" progress indicator.
+	mpCatchUp: { done: number; total: number } | undefined;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;

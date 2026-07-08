@@ -84,6 +84,10 @@ export interface SyncTransport {
 	// never reads the whole log. Optional so the test transport can skip it.
 	fetchRecentEntries?(n: number): Promise<ChangesetEntry[]>;
 
+	// Count of entries still after a watermark (cheap server aggregate), for the
+	// catch-up progress total. Optional so the test transport can skip it.
+	countEntriesSince?(sinceMs: number): Promise<number>;
+
 	// Read entries after a server-timestamp, oldest-first. With `pageLimit`,
 	// returns just one bounded page so a large backlog can be drained page by page.
 	// Optional so the in-memory test transport can skip it.

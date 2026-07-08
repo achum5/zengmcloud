@@ -10,6 +10,7 @@ import AutoPlayCountdown from "./AutoPlayCountdown.tsx";
 import SyncUploadIndicator from "./SyncUploadIndicator.tsx";
 import SyncStatusDot from "./SyncStatusDot.tsx";
 import SyncPausedIndicator from "./SyncPausedIndicator.tsx";
+import SyncCatchUpIndicator from "./SyncCatchUpIndicator.tsx";
 import { menuItems } from "../../util/menuItems.tsx";
 
 const PhaseStatusBlock = () => {
@@ -139,6 +140,7 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 				) : null}
 				{inLeague ? <PhaseStatusBlock /> : null}
 				{inLeague ? <SyncStatusDot /> : null}
+				{inLeague ? <SyncCatchUpIndicator /> : null}
 				{inLeague ? <SyncPausedIndicator /> : null}
 				<div className="flex-grow-1" />
 				<div className="d-none d-sm-flex">

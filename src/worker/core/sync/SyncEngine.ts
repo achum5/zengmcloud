@@ -25,6 +25,11 @@ const MAX_SYNC_CHANGES = 200;
 const CATCH_UP_PAGE_SIZE = 25;
 const CATCH_UP_MAX_PAGES = 40;
 
+// Only surface the "catching up …%" indicator once the backlog is at least this
+// many entries behind - a handful of missed changes catches up near-instantly
+// and shouldn't flash a progress bar.
+const CATCH_UP_PROGRESS_MIN = 30;
+
 // How long a "room is advancing" lease lasts. Generous enough to cover a single
 // day's sim + upload even on a slow phone; it's re-stamped when a bulk upload
 // starts and cleared as soon as the advance is published, so this only actually
@@ -157,6 +162,18 @@ export class SyncEngine {
 	// "synced ✓" - on any device, for any change (a trade/signing, not just a sim).
 	private onUploadComplete: (() => void) | undefined;
 
+	// Reports backlog-drain progress while catching up after an absence (entries
+	// applied / total). undefined = caught up / trivial gap.
+	private onCatchUpProgress:
+		| ((progress: { done: number; total: number } | undefined) => void)
+		| undefined;
+
+	// Live drain progress: total entries to apply this drain (undefined = not
+	// showing progress), and how many we've applied so far. Persist across the
+	// multiple catchUp() calls a big drain spans.
+	private catchUpTotal: number | undefined;
+	private catchUpDone = 0;
+
 	constructor(
 		transport: SyncTransport,
 		options: {
@@ -169,6 +186,9 @@ export class SyncEngine {
 				progress: { done: number; total: number } | undefined,
 			) => void;
 			onUploadComplete?: () => void;
+			onCatchUpProgress?: (
+				progress: { done: number; total: number } | undefined,
+			) => void;
 		} = {},
 	) {
 		this.transport = transport;
@@ -180,6 +200,7 @@ export class SyncEngine {
 		this.code = options.code;
 		this.onUploadProgress = options.onUploadProgress;
 		this.onUploadComplete = options.onUploadComplete;
+		this.onCatchUpProgress = options.onCatchUpProgress;
 	}
 
 	get clientId(): string {
@@ -570,6 +591,23 @@ export class SyncEngine {
 		}
 		this.catchingUp = true;
 		try {
+			// On a fresh drain (not one already in progress), measure how far behind
+			// we are so the UI can show a real total + ETA. Cheap server-side count.
+			if (this.catchUpTotal === undefined && this.transport.countEntriesSince) {
+				try {
+					const remaining = await this.transport.countEntriesSince(
+						this.persistedSeq,
+					);
+					if (remaining >= CATCH_UP_PROGRESS_MIN) {
+						this.catchUpTotal = remaining;
+						this.catchUpDone = 0;
+						this.reportCatchUp();
+					}
+				} catch {
+					// A failed count just means no progress bar; the drain still runs.
+				}
+			}
+
 			let fetchCursor = this.persistedSeq;
 			// A bounded number of pages per call, so a single catchUp() can't spin
 			// forever if the head keeps moving; the next tick picks up where we left.
@@ -585,16 +623,19 @@ export class SyncEngine {
 				}
 				if (entries.length === 0) {
 					// Nothing after the cursor - we're at the head.
+					this.finishCatchUp();
 					return true;
 				}
 
 				for (const entry of entries.sort((a, b) => a.seq - b.seq)) {
 					await this.handleEntry(entry);
+					this.catchUpDone += 1;
 					if (entry.seq > fetchCursor) {
 						fetchCursor = entry.seq;
 					}
 				}
 				this.advanceWatermark();
+				this.reportCatchUp();
 
 				// A changeset failed to apply: the watermark is now pinned here and
 				// paging further just piles unusable entries into memory. Stop and let
@@ -606,6 +647,7 @@ export class SyncEngine {
 
 				// Short page → we've reached the head.
 				if (entries.length < CATCH_UP_PAGE_SIZE) {
+					this.finishCatchUp();
 					return true;
 				}
 			}
@@ -613,6 +655,27 @@ export class SyncEngine {
 			return false;
 		} finally {
 			this.catchingUp = false;
+		}
+	}
+
+	// Emit current drain progress (no-op unless a progress total is set - i.e. the
+	// gap was big enough to bother showing).
+	private reportCatchUp() {
+		if (this.catchUpTotal === undefined) {
+			return;
+		}
+		this.onCatchUpProgress?.({
+			done: Math.min(this.catchUpDone, this.catchUpTotal),
+			total: this.catchUpTotal,
+		});
+	}
+
+	// Clear the drain progress once we've reached the head.
+	private finishCatchUp() {
+		if (this.catchUpTotal !== undefined) {
+			this.catchUpTotal = undefined;
+			this.catchUpDone = 0;
+			this.onCatchUpProgress?.(undefined);
 		}
 	}
 

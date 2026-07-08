@@ -361,6 +361,11 @@ export const connectSharedLeague = async ({
 			uploadOkCounter += 1;
 			void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
 		},
+		// Backlog-drain progress → UI, so a device catching up after an absence
+		// shows how far along it is and roughly how much longer.
+		onCatchUpProgress: (progress) => {
+			void toUI("updateLocal", [{ mpCatchUp: progress }]);
+		},
 	});
 	engine.start();
 	setSyncEngine(engine);
@@ -447,6 +452,7 @@ export const disconnectSharedLeague = () => {
 			mpSyncUpload: undefined,
 			mpSyncHealthy: false,
 			mpEditsPaused: false,
+			mpCatchUp: undefined,
 		},
 	]);
 	const engine = getSyncEngine();

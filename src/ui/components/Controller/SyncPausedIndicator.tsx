@@ -6,9 +6,11 @@ import { useLocal } from "../../util/local.ts";
 // silently does nothing and reads as a glitch; this makes the pause visible and
 // expected. Hidden in single-player and whenever edits are free.
 const SyncPausedIndicator = () => {
-	const { mpEditsPaused } = useLocal(["mpEditsPaused"]);
+	const { mpEditsPaused, mpCatchUp } = useLocal(["mpEditsPaused", "mpCatchUp"]);
 
-	if (!mpEditsPaused) {
+	// While a big catch-up is in progress the dedicated "catching up …%" indicator
+	// already explains the pause with far more detail, so don't double up.
+	if (!mpEditsPaused || mpCatchUp) {
 		return null;
 	}
 

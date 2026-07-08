@@ -6,6 +6,7 @@ import {
 	setDoc,
 	getDoc,
 	getDocFromServer,
+	getCountFromServer,
 	getDocs,
 	limit,
 	onSnapshot,
@@ -366,6 +367,17 @@ export class FirebaseTransport implements SyncTransport {
 	// drained.
 	updateSince(ts: number) {
 		this.sinceTs = ts;
+	}
+
+	// How many entries are still after our watermark, via a cheap server-side
+	// aggregate count (no docs read). Powers the "catching up …%" progress total
+	// so a returning device can show how far it has to go.
+	async countEntriesSince(sinceMs: number): Promise<number> {
+		const snap = await getCountFromServer(
+			query(this.changesRef, where("ts", ">", Timestamp.fromMillis(sinceMs))),
+		);
+		this.markContact();
+		return snap.data().count;
 	}
 
 	// The most recent `n` entries (returned oldest-first, like fetchAllEntries).
