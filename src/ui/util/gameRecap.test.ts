@@ -255,6 +255,36 @@ describe("buildRecapPrompt — play-in games", () => {
 	});
 });
 
+describe("buildRecapPrompt — pregame spread", () => {
+	const withSpread = (spread: RecapGame["spread"]): RecapGame => ({
+		...game(9),
+		spread,
+	});
+
+	test("names the favorite and the number", () => {
+		const prompt = buildRecapPrompt(
+			[withSpread({ favTid: 1, points: 6.5 })],
+			"Day 7",
+		);
+		assert.ok(prompt.includes("Pregame line:"), prompt);
+		// tid 1 in game() is the Boston Massacre.
+		assert.ok(prompt.includes("Boston Massacre favored by 6.5"), prompt);
+	});
+
+	test("a pick'em is framed as evenly matched", () => {
+		const prompt = buildRecapPrompt(
+			[withSpread({ favTid: 0, points: 0 })],
+			"Day 7",
+		);
+		assert.ok(prompt.includes("pick'em"), prompt);
+	});
+
+	test("no spread line when the game has no spread", () => {
+		const prompt = buildRecapPrompt([game(9)], "Day 7");
+		assert.ok(!prompt.includes("Pregame line:"), prompt);
+	});
+});
+
 describe("parseRecaps", () => {
 	test("files each recap to its game id, ignoring preamble", () => {
 		const text = `Here are your recaps!

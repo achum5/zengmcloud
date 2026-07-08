@@ -4,16 +4,12 @@ import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import React, { memo, type ReactNode } from "react";
 import { TeamLogoInline } from "../TeamLogoInline.tsx";
-import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
+import { getGameSpread } from "../../../common/getGameSpread.ts";
 import { PlayerNameLabels } from "../PlayerNameLabels.tsx";
 import getWinner from "../../../common/getWinner.ts";
 import { getCol } from "../../../common/getCol.ts";
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
-
-const roundHalf = (x: number) => {
-	return Math.round(x * 2) / 2;
-};
 
 type Team = {
 	// pts/players are undefined for upcoming games. Others are undefined only for legacy objects
@@ -141,47 +137,21 @@ export const ScoreBox = memo(
 			game.teams[1].ovr !== undefined &&
 			(!small || !final)
 		) {
-			let actualHomeCourtAdvantage;
-			if (game.neutralSite) {
-				// Completed game at neutral site
-				actualHomeCourtAdvantage = 0;
-			} else if (neutralSite === "finals" && game.finals) {
-				// Upcoming game at neutral site
-				actualHomeCourtAdvantage = 0;
-			} else if (neutralSite === "playoffs" && phase === PHASE.PLAYOFFS) {
-				// Upcoming game at neutral site
-				actualHomeCourtAdvantage = 0;
-			} else {
-				// From @nicidob https://github.com/nicidob/bbgm/blob/master/team_win_testing.ipynb
-				// Default homeCourtAdvantage is 1
-				actualHomeCourtAdvantage =
-					bySport({
-						baseball: 1,
-						basketball: 3.3504,
-						football: 3,
-						hockey: 0.25,
-					}) * homeCourtAdvantage;
-			}
+			// Neutral site drops home-court advantage: a completed neutral game, or an
+			// upcoming finals/playoff game the settings mark neutral.
+			const neutralSiteResolved =
+				!!game.neutralSite ||
+				(neutralSite === "finals" && !!game.finals) ||
+				(neutralSite === "playoffs" && phase === PHASE.PLAYOFFS);
 
-			const ovr0 = game.teams[0].ovr;
-			const ovr1 = game.teams[1].ovr;
-			let spread = bySport({
-				baseball: () => (1 / 10) * (ovr0 - ovr1) + actualHomeCourtAdvantage,
-
-				basketball: () => (15 / 50) * (ovr0 - ovr1) + actualHomeCourtAdvantage,
-
-				football: () => (3 / 10) * (ovr0 - ovr1) + actualHomeCourtAdvantage,
-
-				hockey: () => (1.8 / 100) * (ovr0 - ovr1) + actualHomeCourtAdvantage,
-			})();
-
-			// Adjust for game length
-			spread *=
-				(numPeriods * quarterLength) /
-				(defaultGameAttributes.numPeriods *
-					defaultGameAttributes.quarterLength);
-
-			spread = roundHalf(spread);
+			const spread = getGameSpread({
+				ovr0: game.teams[0].ovr,
+				ovr1: game.teams[1].ovr,
+				homeCourtAdvantage,
+				neutralSite: neutralSiteResolved,
+				numPeriods,
+				quarterLength,
+			})!;
 
 			if (spread > 0) {
 				spreads = [

@@ -1,4 +1,6 @@
 import { idb } from "../db/index.ts";
+import { g } from "./index.ts";
+import { getGameSpread } from "../../common/getGameSpread.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 
 // Per-game averages we compute for a player (this season, career, playoffs).
@@ -138,6 +140,10 @@ export type RecapGame = {
 	series?: RecapSeries;
 	// Set instead of `series` when this is a play-in tournament game.
 	playIn?: RecapPlayIn;
+	// The pregame betting line: which team was favored and by how many points
+	// (points 0 = pick'em). Undefined when it can't be computed (legacy games with
+	// no stored OVRs). Lets the recap frame upsets/blowouts against expectations.
+	spread?: { favTid: number; points: number };
 	// Narrative highlights ZenGM already generated (game-winners, milestones, ...).
 	clutchPlays: string[];
 };
@@ -706,6 +712,25 @@ export const getDayGamesForRecap = async ({
 		// (and failing) to find it as a normal series game.
 		const playIn = playoffs ? await playInForGame(game) : undefined;
 
+		// The pregame spread (same calc ScoreBox shows), so the recap knows who was
+		// favored and can frame an upset/blowout against expectations.
+		let spread: RecapGame["spread"];
+		const rawSpread = getGameSpread({
+			ovr0: game.teams[0].ovr,
+			ovr1: game.teams[1].ovr,
+			homeCourtAdvantage: g.get("homeCourtAdvantage"),
+			neutralSite: !!game.neutralSite,
+			numPeriods: game.numPeriods ?? g.get("numPeriods"),
+			quarterLength: g.get("quarterLength"),
+		});
+		if (rawSpread !== undefined) {
+			// > 0 → home (teams[0]) favored; < 0 → away favored; 0 → pick'em.
+			spread =
+				rawSpread >= 0
+					? { favTid: game.teams[0].tid, points: rawSpread }
+					: { favTid: game.teams[1].tid, points: -rawSpread };
+		}
+
 		result.push({
 			gid: game.gid,
 			day: game.day ?? day,
@@ -715,6 +740,7 @@ export const getDayGamesForRecap = async ({
 			teams,
 			series: playoffs && !playIn ? await seriesForGame(game) : undefined,
 			playIn,
+			spread,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
 		});
 	}

@@ -11,7 +11,7 @@ import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 // logic below.
 const INSTRUCTIONS = `You are an expert basketball beat writer. Write a lively, ESPN-style recap for EACH game listed below.
 
-You are given far more data than you need — box scores, season and career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). Do NOT list the raw data back.
+You are given far more data than you need — box scores, season and career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), the pregame betting line (who was favored and by how many), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, whether the result beat or defied the pregame line (an upset, or the favorite covering), playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). Do NOT list the raw data back.
 
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
@@ -168,6 +168,23 @@ const playInLine = (game: RecapGame): string | undefined => {
 	return `Play-In Tournament${seeds}. ${stakes}`;
 };
 
+// The pregame betting line, so the recap can frame the result against
+// expectations (an upset, or chalk holding up). Undefined if we have no spread.
+const spreadLine = (game: RecapGame): string | undefined => {
+	const s = game.spread;
+	if (!s) {
+		return undefined;
+	}
+	if (s.points === 0) {
+		return "Pregame line: pick'em (evenly matched)";
+	}
+	const fav = game.teams.find((t) => t.tid === s.favTid);
+	const favName = fav
+		? `${fav.region} ${fav.name}`
+		: "the favorite";
+	return `Pregame line: ${favName} favored by ${s.points}`;
+};
+
 const gameBlock = (game: RecapGame): string => {
 	// teams[0] is the home team in ZenGM; list the visitor first ("away @ home").
 	const [home, away] = game.teams;
@@ -192,6 +209,11 @@ const gameBlock = (game: RecapGame): string => {
 	const playIn = playInLine(game);
 	if (playIn) {
 		lines.push(playIn);
+	}
+
+	const spread = spreadLine(game);
+	if (spread) {
+		lines.push(spread);
 	}
 
 	lines.push("", teamBlock(away), "", teamBlock(home));
