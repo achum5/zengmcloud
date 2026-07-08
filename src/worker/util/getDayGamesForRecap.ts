@@ -104,7 +104,9 @@ export type RecapSeries = {
 	awayAbbrev: string;
 	homeSeed?: number;
 	awaySeed?: number;
-	homeWon: number; // games won in the series
+	// Series wins each team had ENTERING this game (before it was played), so the
+	// recap can set the stakes and then narrate this game's result changing them.
+	homeWon: number;
 	awayWon: number;
 };
 
@@ -161,6 +163,107 @@ const STAT_KEYS = [
 const r1 = (x: number): number => Math.round(x * 10) / 10;
 const pct = (made: number, att: number): number =>
 	att > 0 ? Math.round((made / att) * 1000) / 10 : 0;
+
+// The minimal shape of a completed game these record helpers read.
+type RecapGameRow = {
+	gid: number;
+	day?: number;
+	playoffs?: boolean;
+	teams: { tid: number }[];
+	won?: { tid: number };
+	lost?: { tid: number };
+};
+
+// The series wins each team had ENTERING a given game (before it was played).
+// Counts completed playoff games between the two teams with a SMALLER gid; the
+// current game and any later ones are excluded. This reconstructs the pre-game
+// series score from the games themselves, because the live playoffSeries.won
+// totals reflect the state AFTER every game already played (including this one).
+// Prefers the series' own gids list when present; otherwise falls back to
+// head-to-head playoff games (two teams meet in exactly one series per
+// postseason, so this is unambiguous).
+export const seriesWinsBefore = (
+	currentGid: number,
+	homeTid: number,
+	awayTid: number,
+	gids: number[] | undefined,
+	games: RecapGameRow[],
+): { homeWon: number; awayWon: number } => {
+	const winnerByGid = new Map<number, number>();
+	for (const g of games) {
+		if (g.won && g.lost) {
+			winnerByGid.set(g.gid, g.won.tid);
+		}
+	}
+
+	let homeWon = 0;
+	let awayWon = 0;
+	const tally = (gid: number) => {
+		if (gid >= currentGid) {
+			return; // only games strictly before this one
+		}
+		const winner = winnerByGid.get(gid);
+		if (winner === homeTid) {
+			homeWon += 1;
+		} else if (winner === awayTid) {
+			awayWon += 1;
+		}
+	};
+
+	if (Array.isArray(gids) && gids.length > 0) {
+		for (const gid of gids) {
+			tally(gid);
+		}
+	} else {
+		for (const g of games) {
+			if (!g.playoffs || !g.won) {
+				continue;
+			}
+			const t0 = g.teams[0]?.tid;
+			const t1 = g.teams[1]?.tid;
+			const samePair =
+				(t0 === homeTid && t1 === awayTid) ||
+				(t0 === awayTid && t1 === homeTid);
+			if (samePair) {
+				tally(g.gid);
+			}
+		}
+	}
+
+	return { homeWon, awayWon };
+};
+
+// A team's regular-season record AS OF a given day (through and including that
+// day's games), reconstructed from the games rather than the live teamSeasons
+// row - which holds the CURRENT record and would be wrong when recapping a past
+// day. During the playoffs (upToDay past every regular-season day) this is the
+// full regular-season record. Playoff games are excluded so this stays the
+// regular-season record.
+export const regularSeasonRecordAsOf = (
+	tid: number,
+	upToDay: number,
+	games: RecapGameRow[],
+): { won: number; lost: number } => {
+	let won = 0;
+	let lost = 0;
+	for (const g of games) {
+		if (g.playoffs || !g.won || !g.lost) {
+			continue;
+		}
+		if ((g.day ?? 0) > upToDay) {
+			continue;
+		}
+		if (g.teams[0]?.tid !== tid && g.teams[1]?.tid !== tid) {
+			continue;
+		}
+		if (g.won.tid === tid) {
+			won += 1;
+		} else {
+			lost += 1;
+		}
+	}
+	return { won, lost };
+};
 
 type Totals = Record<(typeof STAT_KEYS)[number], number> & { gp: number };
 
@@ -403,6 +506,15 @@ export const getDayGamesForRecap = async ({
 					(home.tid === tidA && away.tid === tidB) ||
 					(home.tid === tidB && away.tid === tidA);
 				if (byGid || byTid) {
+					// Series record ENTERING this game, reconstructed from the games
+					// themselves - not home.won/away.won, which are the current totals.
+					const { homeWon, awayWon } = seriesWinsBefore(
+						game.gid,
+						home.tid,
+						away.tid,
+						matchup.gids,
+						allGames,
+					);
 					return {
 						round: round + 1,
 						numRounds: playoffSeries.series.length,
@@ -410,8 +522,8 @@ export const getDayGamesForRecap = async ({
 						awayAbbrev: away.abbrev ?? (await abbrevOf(away.tid)),
 						homeSeed: home.seed,
 						awaySeed: away.seed,
-						homeWon: home.won ?? 0,
-						awayWon: away.won ?? 0,
+						homeWon,
+						awayWon,
 					};
 				}
 			}
@@ -492,11 +604,6 @@ export const getDayGamesForRecap = async ({
 		const teams = [] as unknown as [RecapTeam, RecapTeam];
 		for (const t of game.teams) {
 			const info = await teamInfo(t.tid);
-
-			const teamSeason = await idb.cache.teamSeasons.indexGet(
-				"teamSeasonsBySeasonTid",
-				[season, t.tid],
-			);
 
 			const allPlayers = Array.isArray(t.players) ? t.players : [];
 
@@ -585,9 +692,7 @@ export const getDayGamesForRecap = async ({
 				abbrev: info?.abbrev ?? "???",
 				pts: t.pts,
 				players,
-				record: teamSeason
-					? { won: teamSeason.won, lost: teamSeason.lost }
-					: undefined,
+				record: regularSeasonRecordAsOf(t.tid, game.day ?? day, allGames),
 				ptsQtrs: Array.isArray(t.ptsQtrs) ? t.ptsQtrs : undefined,
 				last10: await last10For(t.tid, game.day ?? day),
 				streak: streakFor(t.tid, game.day ?? day),
