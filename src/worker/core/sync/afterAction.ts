@@ -2,6 +2,7 @@ import { captureChangeset } from "./changeset.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { logChangeset } from "./devChangesetLogger.ts";
 import { getSyncEngine } from "./engineHolder.ts";
+import { isSingleGameSimActive } from "./afterActionHook.ts";
 import { buildNotifications } from "./notifications.ts";
 import { idb } from "../../db/index.ts";
 import { local, lock } from "../../util/index.ts";
@@ -39,7 +40,14 @@ export const afterAction = async (
 		}
 
 		const label = `${type}.${name}`;
-		const silent = !!options?.silent || SILENT_SYNC_LABELS.has(label);
+		// Force silent for the whole single-game-sim window (live sim / "Sim one
+		// game"), whatever drains the changeset - a live sim's playback navigation
+		// spawns interleaved worker calls that can drain (and would otherwise notify
+		// on) the game result before the sim's own silent drain runs.
+		const silent =
+			!!options?.silent ||
+			SILENT_SYNC_LABELS.has(label) ||
+			isSingleGameSimActive();
 
 		if (process.env.NODE_ENV === "development") {
 			logChangeset(label, changeset);

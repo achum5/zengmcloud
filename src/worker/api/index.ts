@@ -103,6 +103,7 @@ import {
 	resyncSharedLeague,
 	updateLiveBroadcast,
 } from "../core/sync/index.ts";
+import { setSingleGameSimActive } from "../core/sync/afterActionHook.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
 import { getRetiredPlayersForRecap } from "../util/getRetiredPlayersForRecap.ts";
@@ -4066,6 +4067,11 @@ const switchTeam = async (tid: number, conditions: Conditions) => {
 
 const onLiveSimOver = async () => {
 	local.liveSimRatingsStatsPopoverPlayers = undefined;
+
+	// Backstop: guarantee the single-game-sim force-silent flag is cleared once the
+	// live game is done (normal clear is in play.ts). Prevents a stale flag from
+	// silencing later notifications if a live sim errored before its normal clear.
+	setSingleGameSimActive(false);
 
 	await toUI("updateLocal", [{ liveGameInProgress: false }]);
 };

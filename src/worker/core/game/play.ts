@@ -44,7 +44,10 @@ import {
 } from "../../util/recomputeLocalUITeamOvrs.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
-import { runAfterActionHook } from "../sync/afterActionHook.ts";
+import {
+	runAfterActionHook,
+	setSingleGameSimActive,
+} from "../sync/afterActionHook.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 
 /**
@@ -124,6 +127,12 @@ const play = async (
 		// you deliberately simmed just one game with the rest of the day still to
 		// play, so pinging phones with a "game done" would be noise.
 		runAfterActionHook("playMenu", "sim", { silent: gidOneGame !== undefined });
+
+		// The single-game-sim window is over (its changeset is drained). Clear the
+		// force-silent flag so the next full day/week sim notifies normally.
+		if (gidOneGame !== undefined) {
+			setSingleGameSimActive(false);
+		}
 	};
 
 	// Saves a vector of results objects for a day, as is output from cbSimGames
@@ -684,6 +693,13 @@ const play = async (
 	// If this is a request to start a new simulation... are we allowed to do
 	// that? If so, set the lock and update the play menu
 	if (start) {
+		// A single-game sim (gidOneGame set: a live sim or "Sim one game") must
+		// never push a phone notification - only a full day/week/month sim does.
+		// Flag the whole window up front (before any game is written or the live
+		// game navigates) so afterAction stays silent no matter what drains the
+		// changeset; a day sim (gidOneGame undefined) clears it so it notifies.
+		setSingleGameSimActive(gidOneGame !== undefined);
+
 		const canStartGames = lock.canStartGames();
 
 		if (canStartGames) {

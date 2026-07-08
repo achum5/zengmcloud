@@ -31,3 +31,19 @@ export const runAfterActionHook = (
 ) => {
 	hook?.(type, name, options);
 };
+
+// While a SINGLE-game sim (a live sim, or "Sim one game") is in flight, its game
+// result must never trigger a phone push - only a full day/week/month sim does.
+// The sim's OWN drain is already silent, but a live sim navigates to the live
+// game and animates playback, so an interleaved worker call can drain the game
+// changeset first under a non-silent label. And buildNotifications detects a sim
+// by CONTENT (it sees `games`), so it would fire regardless of the label. This
+// flag lets afterAction force silent for the ENTIRE single-game-sim window, no
+// matter what ends up draining the changeset. Set/cleared in game/play.ts.
+let singleGameSimActive = false;
+
+export const setSingleGameSimActive = (active: boolean) => {
+	singleGameSimActive = active;
+};
+
+export const isSingleGameSimActive = () => singleGameSimActive;
