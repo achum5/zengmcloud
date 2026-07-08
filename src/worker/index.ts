@@ -9,8 +9,13 @@ import { promiseWorker } from "./util/promiseWorker.ts";
 import { defaultGameAttributes } from "../common/defaultGameAttributes.ts";
 import { changeTracker } from "./db/changeTracker.ts";
 import { afterAction } from "./core/sync/afterAction.ts";
+import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
 import { getSyncRequired } from "./core/sync/connect.ts";
+
+// Let the game engine trigger a publish when a multi-day (fire-and-forget) sim
+// finishes, without a static import cycle from game core into the sync layer.
+setAfterActionHook(afterAction);
 
 self.bbgm = {
 	...common,

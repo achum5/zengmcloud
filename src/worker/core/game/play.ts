@@ -44,6 +44,7 @@ import {
 } from "../../util/recomputeLocalUITeamOvrs.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
+import { runAfterActionHook } from "../sync/afterActionHook.ts";
 
 /**
  * Play one or more days of games.
@@ -106,6 +107,17 @@ const play = async (
 		}
 
 		await updatePlayMenu();
+
+		// The sim has finished. Publish everything it changed to the cloud NOW.
+		// Multi-day sims ("week", "until playoffs", "until end of round", …) run
+		// game.play fire-and-forget, so the dispatched action already resolved and
+		// its afterAction ran with nothing to send - without this, the sim's changes
+		// sat unpublished until the next unrelated worker call happened to drain the
+		// tracker. Routed through a hook to avoid a static import cycle between the
+		// game engine and the sync layer. Drain is atomic, so for a blocking
+		// day/week sim (whose dispatched afterAction also runs) this doesn't
+		// double-send.
+		runAfterActionHook("playMenu", "sim");
 	};
 
 	// Saves a vector of results objects for a day, as is output from cbSimGames
