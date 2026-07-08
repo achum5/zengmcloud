@@ -21,6 +21,15 @@ const key = (store: string, id: number | string) => `${store}:${id}`;
 
 let enabled = false;
 let suppressed = false;
+// How many sims are currently capturing. A sim runs fire-and-forget, so its
+// writes interleave (across awaits) with any runSuppressed call that happens
+// concurrently - a read-only view load, a cloud-only broadcast heartbeat, etc.
+// Because `suppressed` is a GLOBAL flag that spans awaits, those interleaved sim
+// writes would be silently dropped and never published: the sim advances locally
+// but its delta never reaches the cloud, stranding every other device forever.
+// While this is > 0, runSuppressed becomes a pass-through so nothing can swallow
+// the sim's writes. Bracketed by game/play.ts around the sim.
+let simDepth = 0;
 const pending = new Map<string, PendingChange>();
 
 export const changeTracker = {
@@ -74,9 +83,28 @@ export const changeTracker = {
 		return out;
 	},
 
+	// Mark the start/end of a sim's capture window. While active, runSuppressed is
+	// a pass-through, so a concurrent runSuppressed call (a read-only view load,
+	// etc.) can't swallow the sim's interleaved writes. Counted, so nested/repeated
+	// sims are safe; game/play.ts brackets each sim with these.
+	beginSim() {
+		simDepth += 1;
+	},
+
+	endSim() {
+		simDepth = Math.max(0, simDepth - 1);
+	},
+
 	// Run fn with recording suppressed. Used for local-only/bulk calls (league
 	// import, read-only view fetches) that must not capture at all.
 	async runSuppressed<T>(fn: () => Promise<T>): Promise<T> {
+		// Never engage the global suppress flag while a sim is capturing - it would
+		// swallow the sim's concurrent, interleaved writes (see simDepth). The calls
+		// routed here during a sim are read-only view loads and cloud-only calls with
+		// no idb writes, so skipping suppression for them changes nothing they'd write.
+		if (simDepth > 0) {
+			return await fn();
+		}
 		const prev = suppressed;
 		suppressed = true;
 		try {

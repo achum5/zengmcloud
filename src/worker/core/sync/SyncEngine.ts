@@ -416,21 +416,41 @@ export class SyncEngine {
 		// tail of the upload window.
 		this.markRoomBusy();
 
-		this.onUploadProgress?.({ done: 0, total: chunks.length });
+		// Build every chunk entry and queue them ALL in the durable outbox BEFORE
+		// uploading any. This is what guarantees a sim's delta can never be half-sent
+		// or lost: if the upload is interrupted or fails partway (the connection
+		// drops mid-sim, the tab is closed, a chunk write errors), every
+		// not-yet-confirmed chunk still sits in the outbox, and flushOutbox re-sends
+		// it on the next tick / on reconnect. Entries carry stable ids + batchId +
+		// chunkIndex/chunkCount, so receivers dedup and reassemble the full batch.
+		// Previously each chunk was only queued right before its own upload, so a
+		// failure partway left the LATER chunks never queued - lost - which stranded
+		// every follower on an incomplete batch. (No-op without a room code - the
+		// in-memory test transport.)
+		const entries: Omit<ChangesetEntry, "seq">[] = chunks.map((chunk, i) => ({
+			id: makeId(),
+			authorId: this.transport.clientId,
+			action,
+			batchId,
+			chunkIndex: i,
+			chunkCount: chunks.length,
+			changeset: { changes: chunk },
+		}));
+		for (const entry of entries) {
+			this.seen.add(entry.id);
+			if (this.code !== undefined) {
+				await outbox.add(this.code, entry);
+			}
+		}
+
+		this.onUploadProgress?.({ done: 0, total: entries.length });
 		try {
-			for (let i = 0; i < chunks.length; i++) {
-				const id = makeId();
-				this.seen.add(id);
-				await this.publishEntry({
-					id,
-					authorId: this.transport.clientId,
-					action,
-					batchId,
-					chunkIndex: i,
-					chunkCount: chunks.length,
-					changeset: { changes: chunks[i]! },
-				});
-				this.onUploadProgress?.({ done: i + 1, total: chunks.length });
+			for (let i = 0; i < entries.length; i++) {
+				await this.transport.publish(entries[i]!);
+				if (this.code !== undefined) {
+					await outbox.remove(entries[i]!.id);
+				}
+				this.onUploadProgress?.({ done: i + 1, total: entries.length });
 			}
 			this.onUploadComplete?.();
 		} finally {
@@ -681,9 +701,11 @@ export class SyncEngine {
 
 	// Is the cloud connection actually live right now? The sim/advance/transaction
 	// guard calls this so we never mutate the shared league while only *looking*
-	// connected. A transport without the probe (the test fake) is treated as live.
-	async verifyConnection(): Promise<boolean> {
-		return (await this.transport.verifyConnection?.()) ?? true;
+	// connected. `force` demands a real round-trip (no recent-contact shortcut),
+	// used before a sim so a silently-dead socket can't slip a sim through and then
+	// fail to upload. A transport without the probe (the test fake) is treated as live.
+	async verifyConnection(force = false): Promise<boolean> {
+		return (await this.transport.verifyConnection?.(force)) ?? true;
 	}
 
 	// Ms since last confirmed live contact with the cloud (undefined if untracked).

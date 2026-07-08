@@ -193,10 +193,17 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 			}
 
 			// Confirm the connection is GENUINELY live, so this change can actually
-			// reach the room. Cheap when we've had recent contact; a real, timed
-			// server round-trip otherwise. This is what catches "looked connected but
-			// wasn't" - a dropped listener, expired token, or resumed-from-suspend tab.
-			const live = await syncEngine.verifyConnection();
+			// reach the room. This is what catches "looked connected but wasn't" - a
+			// dropped listener, expired token, or resumed-from-suspend tab. For a
+			// wheel-locked ADVANCE (a sim/draft/phase change), force a real server
+			// round-trip rather than trusting recent contact: a sim that runs on a
+			// silently-dead socket and then can't upload strands every other device,
+			// so the round-trip's latency is a worthwhile price to never let that
+			// happen. Transactions keep the cheap check (they're small and the outbox
+			// guarantees eventual delivery), and the rapid All-Star contest steps are
+			// excluded so they don't round-trip ~once a second.
+			const forceLiveCheck = wheelLocked && !ALLSTAR_WHEEL_LOCKED.has(name);
+			const live = await syncEngine.verifyConnection(forceLiveCheck);
 			if (!live) {
 				util.logEvent(
 					{

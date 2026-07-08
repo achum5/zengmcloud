@@ -116,8 +116,14 @@ export class FirebaseTransport implements SyncTransport {
 	// the sim/advance guard refuse to advance when the app only *looks* connected
 	// (a silently-dropped listener, an expired token, a resumed-from-suspend tab) -
 	// which would otherwise advance locally and never reach the shared log.
-	async verifyConnection(): Promise<boolean> {
-		if (Date.now() - this.lastContactAt < CONNECTION_FRESH_MS) {
+	//
+	// `force` skips the recent-contact shortcut and ALWAYS does the real round-trip.
+	// The sim/advance guard passes force, because "we heard from the server 5s ago"
+	// is not proof the connection is live NOW - a socket can die silently between a
+	// snapshot and the sim, and a sim that then fails to upload strands every other
+	// device. For a high-stakes, room-forking advance, the round-trip is worth it.
+	async verifyConnection(force = false): Promise<boolean> {
+		if (!force && Date.now() - this.lastContactAt < CONNECTION_FRESH_MS) {
 			return true;
 		}
 		try {

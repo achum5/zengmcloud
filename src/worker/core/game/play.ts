@@ -49,6 +49,7 @@ import {
 	setSingleGameSimActive,
 } from "../sync/afterActionHook.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
+import { changeTracker } from "../../db/changeTracker.ts";
 
 /**
  * Play one or more days of games.
@@ -703,7 +704,15 @@ const play = async (
 		const canStartGames = lock.canStartGames();
 
 		if (canStartGames) {
-			await cbRunDay();
+			// Bracket the whole sim (all days, including the recursive continuations
+			// nested inside cbRunDay) so a concurrent runSuppressed call can't swallow
+			// the sim's interleaved writes and leave its delta unpublished.
+			changeTracker.beginSim();
+			try {
+				await cbRunDay();
+			} finally {
+				changeTracker.endSim();
+			}
 		}
 	} else {
 		await cbRunDay();

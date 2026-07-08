@@ -148,8 +148,10 @@ export interface SyncTransport {
 	// Is the connection ACTUALLY live right now (not just "we have a transport
 	// object")? Cheap on recent contact, else a real timed round-trip. The
 	// sim/advance/transaction guard uses this to refuse to mutate when the app
-	// only looks connected. Optional; absent transport ⇒ treated as live.
-	verifyConnection?(): Promise<boolean>;
+	// only looks connected. `force` skips the recent-contact shortcut and always
+	// does the real round-trip (used before a sim, where a stale "recent contact"
+	// isn't proof the socket is live now). Optional; absent transport ⇒ treated as live.
+	verifyConnection?(force?: boolean): Promise<boolean>;
 
 	// Epoch ms of last confirmed live contact. Powers the header status dot (a
 	// soft/passive signal; verifyConnection is the precise gate). Optional.
