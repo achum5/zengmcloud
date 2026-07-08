@@ -2,6 +2,7 @@ import { assert, beforeEach, describe, test } from "vitest";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { g } from "../../util/index.ts";
+import { idb } from "../../db/index.ts";
 import { buildNotifications } from "./notifications.ts";
 import type { Changeset } from "./changeset.ts";
 
@@ -193,6 +194,34 @@ describe("buildNotifications", () => {
 		assert.deepEqual(notifs[0]!.targetTids, [0]);
 		assert.strictEqual(notifs[0]!.title, "Sim!");
 		assert.ok(notifs[0]!.body.includes("No game for your Lakers"));
+	});
+
+	test("in the playoffs, a team with no game gets all series scores instead of a blank notice", async () => {
+		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+		await idb.cache.playoffSeries.put({
+			season: 2026,
+			currentRound: 0,
+			currentPlayoffs: undefined,
+			series: [
+				[
+					{
+						home: { tid: 0, abbrev: "LAL", seed: 1, cid: 0, won: 3 },
+						away: { tid: 1, abbrev: "BOS", seed: 8, cid: 0, won: 1 },
+					},
+				],
+			],
+		} as any);
+
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{ changes: [] },
+			opts,
+		);
+		assert.strictEqual(notifs.length, 1);
+		assert.deepEqual(notifs[0]!.targetTids, [0]);
+		assert.strictEqual(notifs[0]!.title, "Playoff scores");
+		assert.ok(notifs[0]!.body.includes("LAL 3-1 BOS"));
+		assert.strictEqual(notifs[0]!.path, "playoffs");
 	});
 
 	test("sim via a non-playMenu action (e.g. simToGame) is still a sim, not a trade", async () => {

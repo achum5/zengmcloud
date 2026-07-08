@@ -279,6 +279,48 @@ const MAX_DETAILED_GAMES = 3;
 // Build one detailed notification per managed team, each targeted so a GM only
 // gets their own team's results. Reads current cache state (post-sim truth) for
 // team names and season records.
+// The current playoff round's series scores as one notification body, e.g.
+//   BOS 2-1 MIA
+//   DEN 3-0 LAL
+// Shown to a user whose team isn't playing, so they can follow the bracket.
+// Undefined if there are no series to show.
+const playoffSeriesScores = async (
+	season: number,
+	teamById: Map<number, { abbrev: string }>,
+): Promise<string | undefined> => {
+	let playoffSeries;
+	try {
+		playoffSeries = await idb.cache.playoffSeries.get(season);
+	} catch {
+		return undefined;
+	}
+	if (!playoffSeries) {
+		return undefined;
+	}
+
+	const round = playoffSeries.series[playoffSeries.currentRound];
+	if (!round || round.length === 0) {
+		return undefined;
+	}
+
+	const abbrevOf = (t: { tid: number; abbrev?: string }): string =>
+		t.abbrev ?? teamById.get(t.tid)?.abbrev ?? "???";
+
+	const lines: string[] = [];
+	for (const matchup of round) {
+		const { home, away } = matchup;
+		if (!away) {
+			// A bye (odd bracket) - nothing to score.
+			continue;
+		}
+		// Leader first for quick scanning; tie keeps home first.
+		const [a, b] = home.won >= away.won ? [home, away] : [away, home];
+		lines.push(`${abbrevOf(a)} ${a.won}-${b.won} ${abbrevOf(b)}`);
+	}
+
+	return lines.length > 0 ? lines.join("\n") : undefined;
+};
+
 const buildSimNotifications = async (
 	label: string,
 	changeset: Changeset,
@@ -326,6 +368,21 @@ const buildSimNotifications = async (
 		// offseason nobody plays, so stay silent - the phase-change notification
 		// already covered the advance.
 		if (teamGames.length === 0) {
+			if (phase === PHASE.PLAYOFFS) {
+				// Your team isn't playing (eliminated / didn't make it, or an off day).
+				// Instead of a bare "no game", show the current playoff series scores so
+				// you can still follow the bracket.
+				const seriesBody = await playoffSeriesScores(season, teamById);
+				if (seriesBody) {
+					notifications.push({
+						title: "Playoff scores",
+						body: seriesBody,
+						targetTids: [tid],
+						path: "playoffs",
+					});
+					continue;
+				}
+			}
 			if (GAME_PHASES.has(phase)) {
 				notifications.push({
 					title: "Sim!",
