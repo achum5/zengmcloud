@@ -149,6 +149,10 @@ const MultiplayerSync = () => {
 				setCode(workerStatus.code ?? "");
 				setIsHost(!!workerStatus.isHost);
 				setStatus("connected");
+				// Re-assert the shared sync state from the engine, in case this UI's
+				// local state drifted (e.g. a reset that fired after connect) and is
+				// showing a stale "nobody simming" / unlocked Play menu.
+				void toWorker("main", "refreshSyncUIState", undefined);
 			} else if (typeof lid === "number") {
 				const stored = getStoredSync(lid);
 				if (stored) {

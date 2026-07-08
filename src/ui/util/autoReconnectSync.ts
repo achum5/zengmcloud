@@ -62,6 +62,11 @@ export const autoReconnectSync = async (lid: number) => {
 		try {
 			const status = await toWorker("main", "getSyncStatus", undefined);
 			if (status.connected) {
+				// The worker's engine is already connected (e.g. it outlived this UI
+				// reload), so no connect runs to push sync state to the fresh UI. Ask
+				// the worker to re-assert it, or the UI would sit showing "nobody
+				// simming" with an unlocked Play menu while really following.
+				await toWorker("main", "refreshSyncUIState", undefined);
 				return;
 			}
 			await toWorker("main", "connectSharedLeague", {

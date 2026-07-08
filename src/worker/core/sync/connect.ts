@@ -133,6 +133,54 @@ const pushEditsPaused = () => {
 	}
 };
 
+// Unconditionally re-assert the FULL multiplayer-sync UI state from the engine's
+// actual state. The individual mpSync* fields are driven by several independent
+// updateLocal pushes, and the UI's own resetLeague() zeroes them; either can
+// leave the UI out of sync with a still-connected engine - e.g. showing "nobody
+// simming" with the Play menu unlocked while the worker is really connected and
+// following (the sim is correctly gated server-side, but the UI looks wrong
+// until a manual refresh). This reads the engine directly (not the clobberable
+// UI mirrors), so calling it heals any such drift. Called on every health tick
+// and whenever the UI asks to re-sync, so the fix is automatic. Deliberately NOT
+// deduped: the whole point is to overwrite a UI that has silently drifted, which
+// the worker can't detect. Redundant identical pushes don't re-render the UI
+// (selectors compare shallowly).
+const pushSyncStateFull = () => {
+	const engine = getSyncEngine();
+	const authority = engine?.getAuthority();
+	const age = engine?.contactAge();
+	const healthy = age !== undefined && age < HEALTH_STALE_MS;
+	const editsPaused =
+		engine !== undefined &&
+		!engine.isAuthority() &&
+		(engine.isRoomBusy() || !engine.isCaughtUp());
+
+	// Keep the dedup sentinels consistent so the event-driven pushers agree.
+	lastHealthPushed = healthy;
+	lastEditsPausedPushed = editsPaused;
+	currentHostName = authority?.holderName;
+
+	void toUI("updateLocal", [
+		{
+			mpSyncActive: engine !== undefined,
+			mpSyncReconnecting: isReconnecting(),
+			mpSyncIsHost: engine?.isAuthority() ?? false,
+			mpSyncHostName: authority?.holderName,
+			mpSyncHealthy: healthy,
+			mpEditsPaused: editsPaused,
+		},
+	]);
+};
+
+// Re-push the current sync state to the UI on demand. The UI calls this when it
+// may have drifted from the engine - notably when an auto-reconnect finds the
+// worker's engine ALREADY connected (so it does no connect that would push
+// state) but the UI local state was reset (e.g. the tab reloaded while a
+// persistent worker kept the engine alive).
+export const refreshSyncUIState = () => {
+	pushSyncStateFull();
+};
+
 // The live transport + auto-play subscription for the current room, so the
 // simmer can publish its schedule and every device can watch it.
 let currentTransport: FirebaseTransport | undefined;
@@ -403,8 +451,10 @@ export const connectSharedLeague = async ({
 		clearInterval(healthTimer);
 	}
 	healthTimer = setInterval(() => {
-		pushHealth();
-		pushEditsPaused();
+		// Re-assert the whole sync UI state (not just health/edits) so a UI that
+		// drifted from the engine - stale "nobody simming", an unlocked Play menu -
+		// heals itself within a tick instead of needing a manual refresh.
+		pushSyncStateFull();
 	}, HEALTH_TICK_MS);
 
 	// Watch the shared auto-play schedule so every device shows the same schedule

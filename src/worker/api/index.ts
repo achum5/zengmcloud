@@ -98,6 +98,7 @@ import {
 	listSyncRooms,
 	markSyncRequired,
 	publishAutoPlayState,
+	refreshSyncUIState,
 	resyncSharedLeague,
 } from "../core/sync/index.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
@@ -5518,6 +5519,7 @@ export default {
 		ratingsStatsPopoverInfo,
 		reSignAll,
 		realtimeUpdate,
+		refreshSyncUIState,
 		regenerateDraftClass,
 		regenerateSchedule,
 		registerPushToken,
