@@ -99,6 +99,25 @@ const pushHealth = () => {
 	}
 };
 
+// Whether conflict-prone edits are blocked right now (the wheel-holder is
+// mid-sim, or this device hasn't caught up). Pushed to the UI so the header can
+// show a "simming…" indicator - so a blocked trade/roster move reads as expected
+// rather than a glitch. Only meaningful on a follower; the wheel-holder is never
+// blocked. Pushed on change from the authority subscription, the watermark
+// advance, and the health tick (which also catches a lease that quietly expired).
+let lastEditsPausedPushed: boolean | undefined;
+const pushEditsPaused = () => {
+	const engine = getSyncEngine();
+	const paused =
+		engine !== undefined &&
+		!engine.isAuthority() &&
+		(engine.isRoomBusy() || !engine.isCaughtUp());
+	if (paused !== lastEditsPausedPushed) {
+		lastEditsPausedPushed = paused;
+		void toUI("updateLocal", [{ mpEditsPaused: paused }]);
+	}
+};
+
 // The live transport + auto-play subscription for the current room, so the
 // simmer can publish its schedule and every device can watch it.
 let currentTransport: FirebaseTransport | undefined;
@@ -290,6 +309,8 @@ export const connectSharedLeague = async ({
 		code: trimmed,
 		onWatermark: (seq) => {
 			void saveWatermark(lid, seq);
+			// Catching up may have just unblocked edits - refresh the indicator.
+			pushEditsPaused();
 		},
 		onAuthorityChange: (authority) => {
 			currentHostName = authority?.holderName;
@@ -297,6 +318,9 @@ export const connectSharedLeague = async ({
 				authority?.holderId === clientId,
 				authority?.holderName,
 			);
+			// The busy lease rides on this doc, so a flip here means edits just got
+			// blocked or unblocked - update the header indicator immediately.
+			pushEditsPaused();
 		},
 		// Live upload progress → UI, so any device shows a cloud indicator (with a
 		// count for big changes) while a change uploads.
@@ -322,13 +346,20 @@ export const connectSharedLeague = async ({
 	void engine.flushOutbox();
 	void outbox.prune(OUTBOX_MAX_AGE_MS);
 
-	// Drive the header connection dot from confirmed live contact.
+	// Drive the header connection dot from confirmed live contact, and the
+	// "simming…" edits-paused indicator (which also needs a tick to notice a busy
+	// lease expiring with no accompanying event).
 	lastHealthPushed = undefined;
+	lastEditsPausedPushed = undefined;
 	pushHealth();
+	pushEditsPaused();
 	if (healthTimer !== undefined) {
 		clearInterval(healthTimer);
 	}
-	healthTimer = setInterval(pushHealth, HEALTH_TICK_MS);
+	healthTimer = setInterval(() => {
+		pushHealth();
+		pushEditsPaused();
+	}, HEALTH_TICK_MS);
 
 	// Watch the shared auto-play schedule so every device shows the same schedule
 	// + countdown, and keep a transport handle so the simmer can publish its own.
@@ -372,11 +403,17 @@ export const disconnectSharedLeague = () => {
 		healthTimer = undefined;
 	}
 	lastHealthPushed = undefined;
+	lastEditsPausedPushed = undefined;
 	autoPlayUnsub?.();
 	autoPlayUnsub = undefined;
 	currentTransport = undefined;
 	void toUI("updateLocal", [
-		{ mpAutoPlay: undefined, mpSyncUpload: undefined, mpSyncHealthy: false },
+		{
+			mpAutoPlay: undefined,
+			mpSyncUpload: undefined,
+			mpSyncHealthy: false,
+			mpEditsPaused: false,
+		},
 	]);
 	const engine = getSyncEngine();
 	if (engine) {

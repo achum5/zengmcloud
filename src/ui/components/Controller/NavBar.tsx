@@ -9,6 +9,7 @@ import PlayMenu from "../PlayMenu.tsx";
 import AutoPlayCountdown from "./AutoPlayCountdown.tsx";
 import SyncUploadIndicator from "./SyncUploadIndicator.tsx";
 import SyncStatusDot from "./SyncStatusDot.tsx";
+import SyncPausedIndicator from "./SyncPausedIndicator.tsx";
 import { menuItems } from "../../util/menuItems.tsx";
 
 const PhaseStatusBlock = () => {
@@ -138,6 +139,7 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 				) : null}
 				{inLeague ? <PhaseStatusBlock /> : null}
 				{inLeague ? <SyncStatusDot /> : null}
+				{inLeague ? <SyncPausedIndicator /> : null}
 				<div className="flex-grow-1" />
 				<div className="d-none d-sm-flex">
 					<DropdownLinks

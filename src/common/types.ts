@@ -1079,6 +1079,11 @@ export type LocalStateUI = {
 	// Whether the cloud connection is confirmed live (recent verified contact),
 	// vs. only nominally connected. Drives the header green/red status dot.
 	mpSyncHealthy: boolean;
+	// Whether conflict-prone edits (trades, signings, roster/lineup moves) are
+	// currently blocked on THIS device because the wheel-holder is mid-sim or this
+	// device is still catching up. Drives the header "simming…" indicator so a
+	// blocked action reads as expected, not glitched.
+	mpEditsPaused: boolean;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;
