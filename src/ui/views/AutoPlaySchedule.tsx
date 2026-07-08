@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { useLocal } from "../util/local.ts";
+import { toWorker } from "../util/toWorker.ts";
 import {
 	autoPlayScheduler,
 	newRule,
@@ -9,6 +10,15 @@ import {
 	type AutoPlayState,
 	type ScheduleRule,
 } from "../util/autoPlayScheduler.ts";
+import {
+	nextFires,
+	projectFires,
+	type AutoPlayPreviewData,
+} from "../util/autoPlayPreview.ts";
+
+// How many upcoming sims to compute, and how many to show before summarizing.
+const MAX_FIRES = 250;
+const DISPLAY_FIRES = 12;
 
 const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -67,11 +77,57 @@ const AutoPlaySchedule = () => {
 	}, [lid]);
 
 	// Live countdown clock.
-	const [, setNow] = useState(0);
+	const [now, setNow] = useState(() => Date.now());
 	useEffect(() => {
-		const id = setInterval(() => setNow((n) => n + 1), 1000);
+		const id = setInterval(() => setNow(Date.now()), 1000);
 		return () => clearInterval(id);
 	}, []);
+
+	// The upcoming-season calendar, refetched after each sim (the schedule
+	// advances) and when eligibility changes.
+	const [preview, setPreview] = useState<AutoPlayPreviewData | undefined>();
+	useEffect(() => {
+		if (!eligible) {
+			setPreview(undefined);
+			return;
+		}
+		let cancelled = false;
+		(async () => {
+			try {
+				const data = (await toWorker(
+					"main",
+					"getAutoPlayPreview",
+					undefined,
+				)) as AutoPlayPreviewData;
+				if (!cancelled) {
+					setPreview(data);
+				}
+			} catch (error) {
+				console.error("Failed to load auto play preview", error);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [eligible, lid, state.runCount]);
+
+	// Overlay the real-clock fire schedule on the season calendar. Recomputed as
+	// rules/data change and roughly every 15s as fires pass (the per-second
+	// countdown is derived separately, below).
+	const nowBucket = Math.floor(now / 15000);
+	const projected = useMemo(() => {
+		if (!preview || preview.upcomingDays.length === 0) {
+			return [];
+		}
+		const fires = nextFires(settings.rules, new Date(), MAX_FIRES);
+		return projectFires(
+			fires,
+			preview.upcomingDays,
+			preview.amountDays,
+			preview.phaseEndNote,
+		);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [preview, settings.rules, nowBucket]);
 
 	const update = (partial: Partial<AutoPlaySettings>) =>
 		autoPlayScheduler.updateSettings(partial);
@@ -86,7 +142,9 @@ const AutoPlaySchedule = () => {
 		autoPlayScheduler.setRules(settings.rules.filter((r) => r.id !== id));
 
 	const countdownMs =
-		state.nextRunAt !== undefined ? state.nextRunAt - Date.now() : undefined;
+		state.nextRunAt !== undefined ? state.nextRunAt - now : undefined;
+
+	const hasEnabledRules = settings.rules.some((r) => r.enabled);
 
 	return (
 		<>
@@ -144,6 +202,78 @@ const AutoPlaySchedule = () => {
 			{!eligible ? (
 				<div className="text-body-secondary small mb-3">
 					Requires cloud connection + sim control.
+				</div>
+			) : null}
+
+			{eligible && hasEnabledRules ? (
+				<div className="card mb-3" style={{ maxWidth: 760 }}>
+					<div className="card-body py-2">
+						<h3 className="card-title h6 mb-2">Upcoming sims</h3>
+						{projected.length === 0 ? (
+							<div className="text-body-secondary small mb-0">
+								{preview && preview.upcomingDays.length === 0
+									? "No scheduled games to auto-sim in this phase."
+									: "No upcoming sims — check the schedule rules below."}
+							</div>
+						) : (
+							<>
+								<div className="table-responsive">
+									<table className="table table-sm mb-0 align-middle">
+										<thead>
+											<tr>
+												<th>When</th>
+												<th>Sims</th>
+												<th>League day</th>
+												<th className="text-end">Games</th>
+												<th>Notes</th>
+											</tr>
+										</thead>
+										<tbody>
+											{projected.slice(0, DISPLAY_FIRES).map((f, i) => (
+												<tr key={i}>
+													<td>
+														<div>{new Date(f.at).toLocaleString()}</div>
+														<div className="text-body-secondary small">
+															in {formatCountdown(f.at - now)}
+														</div>
+													</td>
+													<td className="text-nowrap">
+														{f.numDays === 1 ? "1 day" : `${f.numDays} days`}
+													</td>
+													<td className="text-nowrap">
+														{f.fromDay === f.toDay
+															? `Day ${f.fromDay}`
+															: `Days ${f.fromDay}–${f.toDay}`}
+													</td>
+													<td className="text-end">{f.numGames}</td>
+													<td className="small">
+														{f.events.map((e, j) => (
+															<span
+																key={j}
+																className="badge text-bg-secondary me-1"
+															>
+																{e}
+															</span>
+														))}
+													</td>
+												</tr>
+											))}
+										</tbody>
+									</table>
+								</div>
+								{projected.length > DISPLAY_FIRES ? (
+									<div className="text-body-secondary small mt-2">
+										…and {projected.length - DISPLAY_FIRES} more, through Day{" "}
+										{projected.at(-1)!.toDay}
+										{projected.at(-1)!.endsPhase && preview?.phaseEndNote
+											? ` (${preview.phaseEndNote.toLowerCase()})`
+											: ""}
+										.
+									</div>
+								) : null}
+							</>
+						)}
+					</div>
 				</div>
 			) : null}
 

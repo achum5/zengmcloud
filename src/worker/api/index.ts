@@ -5373,6 +5373,66 @@ const setScheduleFromEditor = async ({
 
 // For the Multiplayer Sync team picker: the teams under multi-team-mode control
 // (from userTids), which one this device is currently acting as, and whether
+// A preview of the upcoming season calendar for the Auto Play scheduler: one
+// entry per scheduled day (games on it, plus whether it's the trade deadline or
+// All-Star day), the game-days each "sim day/week/month" advances, and a note for
+// when the current phase's schedule runs out. The UI overlays the real-clock fire
+// schedule on this to show exactly which league days each auto-sim will cover.
+const getAutoPlayPreview = async () => {
+	const phase = g.get("phase");
+
+	const schedule = await season.getSchedule();
+	const byDay = new Map<
+		number,
+		{
+			day: number;
+			numGames: number;
+			tradeDeadline: boolean;
+			allStar: boolean;
+		}
+	>();
+	for (const item of schedule) {
+		if (item.day === undefined) {
+			continue;
+		}
+		let entry = byDay.get(item.day);
+		if (!entry) {
+			entry = {
+				day: item.day,
+				numGames: 0,
+				tradeDeadline: false,
+				allStar: false,
+			};
+			byDay.set(item.day, entry);
+		}
+		if (item.homeTid === -3 && item.awayTid === -3) {
+			entry.tradeDeadline = true;
+		} else if (item.homeTid === -1 && item.awayTid === -2) {
+			entry.allStar = true;
+		} else {
+			entry.numGames += 1;
+		}
+	}
+	const upcomingDays = [...byDay.values()].sort((a, b) => a.day - b.day);
+
+	// How many game-days each Play Menu amount advances (mirrors playAmount for the
+	// current, playable phase). The actual sim is still capped at the days left.
+	const amountDays = {
+		day: 1,
+		week: !isSport("football") ? 7 : 1,
+		month: bySport({ football: 4, default: 30 }),
+	};
+
+	let phaseEndNote: string | undefined;
+	if (phase === PHASE.REGULAR_SEASON || phase === PHASE.AFTER_TRADE_DEADLINE) {
+		phaseEndNote = "Regular season ends, playoffs begin";
+	} else if (phase === PHASE.PLAYOFFS) {
+		phaseEndNote = "Playoffs end";
+	}
+
+	return { phase, upcomingDays, amountDays, phaseEndNote };
+};
+
 // multi-team mode is even set up yet.
 const getSyncTeams = async () => {
 	const userTids = g.get("userTids");
@@ -5462,6 +5522,7 @@ export default {
 		exportPlayerAveragesCsv,
 		exportPlayerGamesCsv,
 		generateFace: generateFace2,
+		getAutoPlayPreview,
 		getAutoPos,
 		getBornLoc,
 		getPlayerFaces,
