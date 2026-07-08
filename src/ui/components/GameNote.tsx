@@ -1,4 +1,5 @@
 import { type MouseEvent, useState } from "react";
+import clsx from "clsx";
 import { Markdown } from "./Markdown.tsx";
 import { linkifyRecap, type RecapLink } from "../util/linkifyRecap.ts";
 import {
@@ -9,9 +10,11 @@ import {
 // A game's note (AI recap) attached to the bottom of its card on the Daily
 // Schedule. The headline (the note's first line) is always shown with a toggle
 // arrow on the right; clicking the headline (or the arrow) expands/collapses the
-// rest of the note. Renders markdown and auto-links team/player names, the same
-// as the note on the box-score page. Read-only here - editing stays on the box
-// score. Whether it's open is remembered across in-app navigation.
+// rest of the note. The expanded body drops down as an overlay banner - it sits
+// ON TOP of whatever is below instead of pushing the page down - and slides in.
+// Renders markdown and auto-links team/player names, the same as the note on the
+// box-score page. Read-only here; whether it's open is remembered across in-app
+// navigation.
 export const GameNote = ({
 	gid,
 	note,
@@ -40,6 +43,7 @@ export const GameNote = ({
 					.trim()
 			: "";
 	const hasMore = body !== "";
+	const open = expanded && hasMore;
 
 	const setExpanded = (value: boolean) => {
 		setExpandedState(value);
@@ -58,9 +62,9 @@ export const GameNote = ({
 	};
 
 	return (
-		<div className="game-note small px-2 py-1">
+		<div className={clsx("game-note small position-relative", { open })}>
 			<div
-				className="d-flex align-items-start gap-2"
+				className="game-note-header d-flex align-items-center gap-2"
 				style={{ cursor: hasMore ? "pointer" : undefined }}
 				onClick={onHeaderClick}
 			>
@@ -82,8 +86,8 @@ export const GameNote = ({
 					</button>
 				) : null}
 			</div>
-			{expanded && hasMore ? (
-				<div className="mt-1">
+			{hasMore ? (
+				<div className={clsx("game-note-body", { open })} aria-hidden={!open}>
 					<Markdown>{body}</Markdown>
 				</div>
 			) : null}
