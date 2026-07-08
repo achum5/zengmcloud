@@ -75,6 +75,10 @@ let syncRequired = false;
 let catchUpTimer: ReturnType<typeof setInterval> | undefined;
 const CATCH_UP_INTERVAL_MS = 15000;
 
+// How many recent log entries the activity panel reads. Bounded so it renders a
+// list instead of pulling a whole season's worth of change docs.
+const SYNC_ACTIVITY_LIMIT = 200;
+
 // Drop outbox entries older than this (a room the user never returned to), so a
 // permanently-failed upload can't make the outbox grow without bound.
 const OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -122,6 +126,29 @@ const pushEditsPaused = () => {
 // simmer can publish its schedule and every device can watch it.
 let currentTransport: FirebaseTransport | undefined;
 let autoPlayUnsub: (() => void) | undefined;
+
+// Drain the backlog page by page (resumable, bounded memory), then - once truly
+// caught up to the head - move the live subscription's watermark to the head and
+// start it. Deferring the real-time listener this way keeps its initial snapshot
+// to just the live tail, instead of re-loading the entire backlog we just
+// drained (which on a long absence would time out and wedge). Idempotent: the
+// subscription starts at most once; later calls just keep the tail drained.
+const driveCatchUp = async () => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		return;
+	}
+	const reachedHead = await engine.catchUp();
+	// Only go live once the drain has actually reached the head - otherwise the
+	// subscription's initial snapshot would re-load the still-undrained backlog.
+	// (A failed fetch returns false, so we don't prematurely go live either.)
+	if (reachedHead && !engine.hasChangesSubscription()) {
+		currentTransport?.updateSince(engine.getPersistedSeq());
+		engine.startChangesSubscription();
+	}
+	// Catching up may have just unblocked edits.
+	pushEditsPaused();
+};
 
 // Called from the UI (on the simmer's device) whenever its auto-play schedule
 // changes, to broadcast it to the room. No-op if not connected.
@@ -210,7 +237,9 @@ export const getSyncActivity = async (): Promise<{
 		return { connected: false, watermark: 0, items: [] };
 	}
 
-	const entries = await engine.fetchLog();
+	// Only the most recent activity - never read the whole log (which can be huge
+	// for a long-running league) just to render this list.
+	const entries = await engine.fetchRecentLog(SYNC_ACTIVITY_LIMIT);
 	const watermark = engine.getPersistedSeq();
 	const clientId = engine.clientId;
 
@@ -368,16 +397,21 @@ export const connectSharedLeague = async ({
 		void toUI("updateLocal", [{ mpAutoPlay: autoPlay }]);
 	});
 
-	// Poll for anything the real-time subscription hasn't delivered yet.
+	// Kick off the initial paginated backlog drain now (it also starts the live
+	// changes subscription once caught up). Runs in the background so connect
+	// doesn't block on a device that's been away a long time.
+	void driveCatchUp();
+
+	// Poll to keep draining / pick up anything the real-time subscription hasn't
+	// delivered yet (and to start that subscription once the initial drain lands).
 	if (catchUpTimer !== undefined) {
 		clearInterval(catchUpTimer);
 	}
 	catchUpTimer = setInterval(() => {
-		const e = getSyncEngine();
-		void e?.catchUp();
+		void driveCatchUp();
 		// Also drain any upload the retry couldn't land this session (rare); the
 		// call is a no-op when the outbox is empty.
-		void e?.flushOutbox();
+		void getSyncEngine()?.flushOutbox();
 	}, CATCH_UP_INTERVAL_MS);
 
 	// Turn on change capture so local actions get published to the room.

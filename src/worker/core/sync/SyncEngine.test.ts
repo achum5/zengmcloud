@@ -81,10 +81,15 @@ class FakeTransport implements SyncTransport {
 		return this.bus.entries.map((e) => JSON.parse(JSON.stringify(e)));
 	}
 
-	async fetchEntriesSince(sinceMs: number): Promise<ChangesetEntry[]> {
-		return this.bus.entries
+	async fetchEntriesSince(
+		sinceMs: number,
+		pageLimit?: number,
+	): Promise<ChangesetEntry[]> {
+		const all = this.bus.entries
 			.filter((e) => e.seq > sinceMs)
+			.sort((a, b) => a.seq - b.seq)
 			.map((e) => JSON.parse(JSON.stringify(e)));
+		return pageLimit === undefined ? all : all.slice(0, pageLimit);
 	}
 
 	subscribe(subscriber: SyncSubscriber) {
@@ -336,6 +341,7 @@ describe("SyncEngine", () => {
 			onWatermark: (seq) => watermarks.push(seq),
 		});
 		receiver.start();
+		receiver.startChangesSubscription();
 
 		resetG();
 		await resetCache({});
@@ -374,6 +380,7 @@ describe("SyncEngine", () => {
 			onWatermark: (seq) => watermarks.push(seq),
 		});
 		receiver.start();
+		receiver.startChangesSubscription();
 
 		resetG();
 		await resetCache({});
@@ -443,6 +450,43 @@ describe("SyncEngine", () => {
 		const events = await idb.cache.events.getAll();
 		assert.strictEqual(events.length, 2);
 		assert.strictEqual(watermarks.at(-1), bus.entries.at(-1)!.seq);
+	});
+
+	test("catchUp drains a large backlog page by page, banking progress", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		// A backlog far bigger than one page (like a device away for many sims).
+		const host = new FakeTransport("H", bus);
+		const N = 130; // > several CATCH_UP_PAGE_SIZE (25) pages
+		for (let i = 1; i <= N; i++) {
+			await host.publish({
+				id: `e${i}`,
+				authorId: "H",
+				action: "x",
+				changeset: {
+					changes: [{ store: "events", id: i, type: "put", value: { eid: i } }],
+				},
+			});
+		}
+
+		const watermarks: number[] = [];
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {
+			onWatermark: (seq) => watermarks.push(seq),
+		});
+		await receiver.catchUp();
+
+		// Every entry applied, and the watermark reached the head.
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, N);
+		assert.strictEqual(receiver.getPersistedSeq(), bus.entries.at(-1)!.seq);
+		assert.strictEqual(receiver.isCaughtUp(), true);
+		// Progress was banked incrementally (multiple pages), not just once at the end.
+		assert.ok(
+			watermarks.length > 1,
+			`expected multiple watermark advances, got ${watermarks.length}`,
+		);
 	});
 
 	test("resyncAll re-reads the whole log and applies every entry from scratch", async () => {

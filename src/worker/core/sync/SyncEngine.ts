@@ -17,6 +17,14 @@ import { outbox } from "./outbox.ts";
 // chunks so each fits in one Firestore doc.
 const MAX_SYNC_CHANGES = 200;
 
+// Backlog drain paging. Entries can be up to ~700 KB (a bulk-sim chunk), so a
+// page of this many is a few MB per fetch - enough to make real progress, small
+// enough not to time out / exhaust memory on a phone. MAX_PAGES bounds one
+// catchUp() call so it can't spin forever while the head keeps moving; the timer
+// resumes on the next tick from the banked watermark.
+const CATCH_UP_PAGE_SIZE = 25;
+const CATCH_UP_MAX_PAGES = 40;
+
 // How long a "room is advancing" lease lasts. Generous enough to cover a single
 // day's sim + upload even on a slow phone; it's re-stamped when a bulk upload
 // starts and cleared as soon as the advance is published, so this only actually
@@ -130,6 +138,10 @@ export class SyncEngine {
 	// before the failure instead of skipping it forever. Cleared by a full
 	// resync, which re-applies the whole log from scratch.
 	private applyFailed = false;
+
+	// Guards catchUp() against reentrancy, so the connect-time drain and the
+	// periodic timer can't fetch the same pages at once.
+	private catchingUp = false;
 
 	// The room code, used to scope the durable outbox (undefined = don't use the
 	// outbox, e.g. the in-memory test transport).
@@ -263,6 +275,30 @@ export class SyncEngine {
 	}
 
 	start() {
+		// Watch who holds the wheel, so every device agrees on who may advance.
+		// This is tiny (one doc) and needed immediately, so it always starts now -
+		// unlike the changes subscription, which waits until the backlog is drained
+		// (see startChangesSubscription) so its initial snapshot isn't the whole log.
+		if (this.authorityUnsubscribe === undefined) {
+			this.authorityUnsubscribe = this.transport.subscribeAuthority?.(
+				(authority) => {
+					this.authority = authority;
+					this.onAuthorityChange?.(authority);
+				},
+			);
+		}
+
+		// If the user chose to take the wheel on connect, claim it now.
+		if (this.claimOnStart) {
+			void this.claimAuthority();
+		}
+	}
+
+	// Start the live changes subscription. Deferred until the caller has drained
+	// the backlog via catchUp() and moved the transport watermark to the head, so
+	// the real-time listener's initial snapshot is just the live tail rather than
+	// a re-load of everything we just caught up on.
+	startChangesSubscription() {
 		if (this.unsubscribe) {
 			return;
 		}
@@ -270,19 +306,11 @@ export class SyncEngine {
 			onEntry: (entry) => this.handleEntry(entry),
 			onBatchProcessed: () => this.advanceWatermark(),
 		});
+	}
 
-		// Watch who holds the wheel, so every device agrees on who may advance.
-		this.authorityUnsubscribe = this.transport.subscribeAuthority?.(
-			(authority) => {
-				this.authority = authority;
-				this.onAuthorityChange?.(authority);
-			},
-		);
-
-		// If the user chose to take the wheel on connect, claim it now.
-		if (this.claimOnStart) {
-			void this.claimAuthority();
-		}
+	// Has the live changes subscription been started yet?
+	hasChangesSubscription(): boolean {
+		return this.unsubscribe !== undefined;
 	}
 
 	// Persist the watermark only when there are no half-received bulk batches, so
@@ -516,27 +544,76 @@ export class SyncEngine {
 		return true;
 	}
 
-	// A cheap, targeted catch-up: fetch only the entries AFTER our watermark and
-	// run them through the normal handler. Cheap because it's usually empty or a
-	// handful of entries (not the whole log), and it doesn't rely on Firestore's
-	// real-time push - which stalls badly on a throttled phone, so a big change
-	// could take many minutes to arrive on its own. Safe to call on a timer / when
-	// the app regains focus. Completes a batch that was still missing a chunk, and
-	// applies anything the live subscription hasn't delivered yet.
-	async catchUp(): Promise<void> {
-		if (!this.transport.fetchEntriesSince) {
-			return;
+	// Drain everything after our watermark, PAGE BY PAGE, and bank the durable
+	// watermark after each page. This is the workhorse that lets a device which has
+	// been away for weeks actually catch up: pulling the whole backlog in one query
+	// times out / runs out of memory on a phone and makes zero progress, so it
+	// never converges. Paging fixes both - bounded memory per fetch, and durable
+	// progress banked per page so an interruption resumes instead of restarting.
+	//
+	// A `fetchCursor` walks forward through the backlog independent of the durable
+	// watermark: whole-record bulk sims are chunked across many entries, so the
+	// durable watermark can't advance until a batch is fully assembled (which may
+	// straddle several pages), but we must keep fetching past it to gather the rest
+	// of the batch. The watermark still only advances over fully-applied,
+	// gap-free history (advanceWatermark guards that), so resume-after-interrupt
+	// stays correct.
+	//
+	// Reentrancy-guarded so the connect-time drain and the periodic timer don't
+	// double-fetch. Returns true when it has drained all the way to the head this
+	// pass (so the caller may safely start the live subscription from there);
+	// false if a fetch failed, an apply failed, or it stopped early with more to
+	// go - in which case the next tick resumes from the banked watermark.
+	async catchUp(): Promise<boolean> {
+		if (!this.transport.fetchEntriesSince || this.catchingUp) {
+			return false;
 		}
-		let entries: ChangesetEntry[];
+		this.catchingUp = true;
 		try {
-			entries = await this.transport.fetchEntriesSince(this.persistedSeq);
-		} catch {
-			return;
+			let fetchCursor = this.persistedSeq;
+			// A bounded number of pages per call, so a single catchUp() can't spin
+			// forever if the head keeps moving; the next tick picks up where we left.
+			for (let page = 0; page < CATCH_UP_MAX_PAGES; page++) {
+				let entries: ChangesetEntry[];
+				try {
+					entries = await this.transport.fetchEntriesSince(
+						fetchCursor,
+						CATCH_UP_PAGE_SIZE,
+					);
+				} catch {
+					return false;
+				}
+				if (entries.length === 0) {
+					// Nothing after the cursor - we're at the head.
+					return true;
+				}
+
+				for (const entry of entries.sort((a, b) => a.seq - b.seq)) {
+					await this.handleEntry(entry);
+					if (entry.seq > fetchCursor) {
+						fetchCursor = entry.seq;
+					}
+				}
+				this.advanceWatermark();
+
+				// A changeset failed to apply: the watermark is now pinned here and
+				// paging further just piles unusable entries into memory. Stop and let
+				// a resync / retry recover, rather than draining the whole log for
+				// nothing.
+				if (this.applyFailed) {
+					return false;
+				}
+
+				// Short page → we've reached the head.
+				if (entries.length < CATCH_UP_PAGE_SIZE) {
+					return true;
+				}
+			}
+			// Hit the per-call page cap with full pages still coming: more to drain.
+			return false;
+		} finally {
+			this.catchingUp = false;
 		}
-		for (const entry of entries.sort((a, b) => a.seq - b.seq)) {
-			await this.handleEntry(entry);
-		}
-		this.advanceWatermark();
 	}
 
 	// Is the cloud connection actually live right now? The sim/advance/transaction
@@ -559,10 +636,21 @@ export class SyncEngine {
 		return this.persistedSeq;
 	}
 
-	// Read the entire shared change log once (not a live subscription), for the
-	// sync-activity panel and for a full resync. Empty if the transport can't.
+	// Read the entire shared change log once (not a live subscription), for a full
+	// resync. Empty if the transport can't. Can be large - prefer fetchRecentLog
+	// for anything that only needs recent activity.
 	async fetchLog(): Promise<ChangesetEntry[]> {
 		const entries = (await this.transport.fetchAllEntries?.()) ?? [];
+		return entries.sort((a, b) => a.seq - b.seq);
+	}
+
+	// The most recent `n` entries, oldest-first, for the activity panel - so it
+	// renders a bounded list instead of pulling the whole log. Falls back to the
+	// full log for a transport without the paged read (the in-memory test fake).
+	async fetchRecentLog(n: number): Promise<ChangesetEntry[]> {
+		const entries = this.transport.fetchRecentEntries
+			? await this.transport.fetchRecentEntries(n)
+			: ((await this.transport.fetchAllEntries?.()) ?? []);
 		return entries.sort((a, b) => a.seq - b.seq);
 	}
 

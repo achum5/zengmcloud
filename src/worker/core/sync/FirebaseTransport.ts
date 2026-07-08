@@ -7,6 +7,7 @@ import {
 	getDoc,
 	getDocFromServer,
 	getDocs,
+	limit,
 	onSnapshot,
 	query,
 	orderBy,
@@ -332,17 +333,22 @@ export class FirebaseTransport implements SyncTransport {
 		return entries;
 	}
 
-	// One-shot read of just the entries after a given server-timestamp - a cheap
-	// targeted catch-up that doesn't wait on Firestore's (phone-throttled)
-	// real-time push.
-	async fetchEntriesSince(sinceMs: number): Promise<ChangesetEntry[]> {
-		const snapshot = await getDocs(
-			query(
-				this.changesRef,
-				where("ts", ">", Timestamp.fromMillis(sinceMs)),
-				orderBy("ts"),
-			),
-		);
+	// Read the entries after a given server-timestamp, oldest-first. With
+	// `pageLimit` this returns just ONE bounded page (the oldest that many),
+	// letting the engine drain a huge backlog page by page instead of pulling the
+	// whole thing in one query - which on a phone that's been away for weeks would
+	// time out / run out of memory and never complete. Without a limit it reads
+	// everything after `sinceMs` (used where the set is known to be small).
+	async fetchEntriesSince(
+		sinceMs: number,
+		pageLimit?: number,
+	): Promise<ChangesetEntry[]> {
+		const constraints = [
+			where("ts", ">", Timestamp.fromMillis(sinceMs)),
+			orderBy("ts"),
+			...(pageLimit !== undefined ? [limit(pageLimit)] : []),
+		];
+		const snapshot = await getDocs(query(this.changesRef, ...constraints));
 		this.markContact();
 		const entries: ChangesetEntry[] = [];
 		for (const docSnap of snapshot.docs) {
@@ -352,6 +358,33 @@ export class FirebaseTransport implements SyncTransport {
 			}
 		}
 		return entries;
+	}
+
+	// Move the watermark the live subscription starts from. Called after the
+	// paginated backlog drain so the real-time listener's INITIAL snapshot is
+	// small (just the live tail), instead of re-loading the whole backlog we just
+	// drained.
+	updateSince(ts: number) {
+		this.sinceTs = ts;
+	}
+
+	// The most recent `n` entries (returned oldest-first, like fetchAllEntries).
+	// The sync-activity panel only shows recent activity, so it must never read the
+	// whole (possibly enormous) log just to render a list - that's what left it
+	// stuck on "Loading…" for a device far behind.
+	async fetchRecentEntries(n: number): Promise<ChangesetEntry[]> {
+		const snapshot = await getDocs(
+			query(this.changesRef, orderBy("ts", "desc"), limit(n)),
+		);
+		this.markContact();
+		const entries: ChangesetEntry[] = [];
+		for (const docSnap of snapshot.docs) {
+			const entry = this.parseEntry(docSnap);
+			if (entry) {
+				entries.push(entry);
+			}
+		}
+		return entries.reverse();
 	}
 
 	subscribe(subscriber: SyncSubscriber) {
@@ -368,31 +401,40 @@ export class FirebaseTransport implements SyncTransport {
 		// Process snapshots one at a time, in order, since applying is async.
 		let chain: Promise<void> = Promise.resolve();
 
-		const unsub = onSnapshot(q, (snapshot) => {
-			// Any delivery (even an empty one) means the listener is live.
-			this.markContact();
-			const entries: ChangesetEntry[] = [];
-			for (const change of snapshot.docChanges()) {
-				if (change.type !== "added") {
-					continue;
+		const unsub = onSnapshot(
+			q,
+			(snapshot) => {
+				// Any delivery (even an empty one) means the listener is live.
+				this.markContact();
+				const entries: ChangesetEntry[] = [];
+				for (const change of snapshot.docChanges()) {
+					if (change.type !== "added") {
+						continue;
+					}
+					const entry = this.parseEntry(change.doc);
+					if (entry) {
+						entries.push(entry);
+					}
 				}
-				const entry = this.parseEntry(change.doc);
-				if (entry) {
-					entries.push(entry);
-				}
-			}
 
-			if (entries.length === 0) {
-				return;
-			}
-
-			chain = chain.then(async () => {
-				for (const entry of entries) {
-					await subscriber.onEntry(entry);
+				if (entries.length === 0) {
+					return;
 				}
-				subscriber.onBatchProcessed?.();
-			});
-		});
+
+				chain = chain.then(async () => {
+					for (const entry of entries) {
+						await subscriber.onEntry(entry);
+					}
+					subscriber.onBatchProcessed?.();
+				});
+			},
+			(error) => {
+				// A failed listener (e.g. it choked on a huge initial snapshot, or the
+				// token expired) must not silently kill sync: the paginated catch-up
+				// timer is the backstop that keeps draining regardless.
+				console.error("Changes subscription failed", error);
+			},
+		);
 
 		return unsub;
 	}

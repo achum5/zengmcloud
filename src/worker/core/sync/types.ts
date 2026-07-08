@@ -76,13 +76,25 @@ export interface SyncTransport {
 	subscribe(subscriber: SyncSubscriber): () => void;
 
 	// One-shot read of the ENTIRE change log, ordered oldest-first (not a live
-	// subscription). Powers the sync-activity view and full-resync recovery.
-	// Optional so the in-memory test transport can skip it.
+	// subscription). Powers full-resync recovery. Optional so the in-memory test
+	// transport can skip it.
 	fetchAllEntries?(): Promise<ChangesetEntry[]>;
 
-	// One-shot read of entries after a server-timestamp, for a cheap targeted
-	// catch-up. Optional so the in-memory test transport can skip it.
-	fetchEntriesSince?(sinceMs: number): Promise<ChangesetEntry[]>;
+	// The most recent `n` entries, oldest-first. For the activity panel, so it
+	// never reads the whole log. Optional so the test transport can skip it.
+	fetchRecentEntries?(n: number): Promise<ChangesetEntry[]>;
+
+	// Read entries after a server-timestamp, oldest-first. With `pageLimit`,
+	// returns just one bounded page so a large backlog can be drained page by page.
+	// Optional so the in-memory test transport can skip it.
+	fetchEntriesSince?(
+		sinceMs: number,
+		pageLimit?: number,
+	): Promise<ChangesetEntry[]>;
+
+	// Move the watermark the live subscription starts from (called after the
+	// backlog drain so the subscription's initial snapshot is just the live tail).
+	updateSince?(ts: number): void;
 
 	// Is the connection ACTUALLY live right now (not just "we have a transport
 	// object")? Cheap on recent contact, else a real timed round-trip. The
