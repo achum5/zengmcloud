@@ -70,6 +70,15 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// a "final score" notification - exactly what a live sim must never do.
 	"updateLiveBroadcast",
 	"endLiveBroadcast",
+	// The watch/star list is a PERSONAL preference (note these fan out via
+	// same-device crossTabEmit, not the league). It happens to live on the shared
+	// `players` record, so it can't be excluded at the store level like `trade` -
+	// but these actions only ever mutate the `watch` field, so suppressing their
+	// capture keeps a star toggle from spamming the room a whole-player changeset
+	// (and from forcing everyone else's UI to show your stars).
+	"updatePlayerWatch",
+	"updatePlayersWatch",
+	"clearWatchList",
 ]);
 
 // Multiplayer "wheel": while synced, only the device that holds the wheel may

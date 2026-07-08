@@ -153,10 +153,33 @@ const reconcileIdentity = async (store: Store, value: any) => {
 // team as human-controlled when the host sims). Only `userTid` - the one team
 // you're currently viewing/managing - is per-device, so friends don't yank each
 // other onto the same team.
-const DEVICE_LOCAL_GAME_ATTRIBUTES = new Set(["userTid"]);
+const DEVICE_LOCAL_GAME_ATTRIBUTES = new Set([
+	"userTid",
+	// The seed behind "show me a fresh set of AI trade proposals" on the Trade
+	// Proposals page - per-device UI state (each device browses proposals for its
+	// own team). Sharing it would reshuffle every league-mate's proposals.
+	"tradeProposalsSeed",
+]);
+
+// Whole stores that are per-device scratch / personal UI state, never shared
+// league data, so they must never be broadcast NOR applied from the log:
+//   - trade:             the in-progress Trade page selection (staged pids/tid).
+//                        Broadcasting it clobbers whatever trade a league-mate is
+//                        assembling on their own device.
+//   - savedTrades:       your personal saved/bookmarked trades.
+//   - savedTradingBlock: your personal saved trading-block shopping list.
+// Handled at the store level (not per-action) because even a legitimate action
+// like proposeTrade touches these incidentally (it clears the staged trade and
+// removes a saved trade) - so suppressing individual actions wouldn't be enough.
+const DEVICE_LOCAL_STORES = new Set<Store>([
+	"trade",
+	"savedTrades",
+	"savedTradingBlock",
+]);
 
 const isDeviceLocal = (store: Store, id: number | string) =>
-	store === "gameAttributes" && DEVICE_LOCAL_GAME_ATTRIBUTES.has(String(id));
+	DEVICE_LOCAL_STORES.has(store) ||
+	(store === "gameAttributes" && DEVICE_LOCAL_GAME_ATTRIBUTES.has(String(id)));
 
 // Drain everything the tracker has recorded since the last capture and turn it
 // into a self-contained changeset by reading the current value of each record.
@@ -168,7 +191,8 @@ export const captureChangeset = async (): Promise<Changeset> => {
 	for (const { store, id, type } of pending) {
 		const typedStore = store as Store;
 
-		// Never broadcast which team we control.
+		// Never broadcast per-device/personal state (which team we control, the
+		// in-progress/saved trade stores, etc. - see isDeviceLocal).
 		if (isDeviceLocal(typedStore, id)) {
 			continue;
 		}
@@ -220,8 +244,9 @@ export const applyChangeset = async (
 	// still catching up), leaving that sim unpublished. Forgetting only our own
 	// applied records keeps a concurrent local action's other writes intact.
 	for (const change of changeset.changes) {
-		// Never let a peer's "which team I control" overwrite ours (also
-		// protects catch-up replays of older, unfiltered history).
+		// Never let a peer's per-device/personal state (their controlled team,
+		// their in-progress/saved trades) overwrite ours - also protects catch-up
+		// replays of older, unfiltered history that predates this exclusion.
 		if (isDeviceLocal(change.store, change.id)) {
 			continue;
 		}
