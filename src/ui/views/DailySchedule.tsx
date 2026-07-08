@@ -12,6 +12,11 @@ import { ScoreBox } from "../components/ScoreBox/index.tsx";
 import { GameRecap } from "../components/GameRecap.tsx";
 import { GameNote } from "../components/GameNote.tsx";
 import { buildRecapLinksForGame } from "../util/linkifyRecap.ts";
+import {
+	getDailyScheduleScroll,
+	setDailyScheduleScroll,
+} from "../util/dailyScheduleUiState.ts";
+import { useEffect } from "react";
 
 const DailySchedule = ({
 	cid,
@@ -53,6 +58,26 @@ const DailySchedule = ({
 
 	// Can't sim/watch games from here unless this device holds the wheel.
 	const { locked: wheelLocked } = useWheelLocked();
+
+	// Remember the scroll position per day, so leaving the page (e.g. tapping a
+	// player link) and coming back lands you where you were rather than at the top.
+	// Restored on a macrotask so it runs after the router's firstRun scroll-to-top.
+	useEffect(() => {
+		const key = `${season}-${day}`;
+		const saved = getDailyScheduleScroll(key);
+		let restoreId: number | undefined;
+		if (saved !== undefined) {
+			restoreId = window.setTimeout(() => {
+				window.scrollTo(window.scrollX, saved);
+			}, 0);
+		}
+		return () => {
+			if (restoreId !== undefined) {
+				clearTimeout(restoreId);
+			}
+			setDailyScheduleScroll(key, window.scrollY);
+		};
+	}, [season, day]);
 
 	let simToDay = null;
 	if (upcoming.length > 0 && !isToday) {
@@ -214,16 +239,23 @@ const DailySchedule = ({
 											key={game.gid}
 											style={{ maxWidth: 510 }}
 										>
-											<ScoreBox game={game} />
-											{game.note ? (
-												<GameNote
-													note={game.note}
-													links={buildRecapLinksForGame(
-														game,
-														(tid) => teamInfoCache[tid],
-													)}
-												/>
-											) : null}
+											<div
+												className={
+													game.note ? "daily-game-with-note" : "daily-game"
+												}
+											>
+												<ScoreBox game={game} />
+												{game.note ? (
+													<GameNote
+														gid={game.gid}
+														note={game.note}
+														links={buildRecapLinksForGame(
+															game,
+															(tid) => teamInfoCache[tid],
+														)}
+													/>
+												) : null}
+											</div>
 										</div>
 									);
 								})}

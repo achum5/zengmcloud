@@ -1169,10 +1169,17 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	border-color: $gray-300 !important;
 }
 
-// Compact rendering for the game-note recap attached under a Daily Schedule
-// card: tighten the markdown block spacing and drop the trailing margin so the
-// collapsed headline is a single tight line and the expanded note isn't airy.
+// The game-note recap attached under a Daily Schedule card. It shares the card's
+// border (gray-300) with no top border, so it reads as one piece, and rounds its
+// bottom corners to match the card's rounded top. The markdown block spacing is
+// tightened (and the trailing margin dropped) so the collapsed headline is a
+// single compact line and the expanded note isn't airy.
 .game-note {
+	border: 1px solid $gray-300;
+	border-top: 0;
+	border-bottom-right-radius: var(--bs-border-radius);
+	border-bottom-left-radius: var(--bs-border-radius);
+
 	.markdown p,
 	.markdown ul,
 	.markdown blockquote,
@@ -1185,6 +1192,19 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	.markdown > :last-child {
 		margin-bottom: 0;
 	}
+}
+
+// Round the Daily Schedule score card so it looks like a rounded card: all four
+// corners when it stands alone, or just the top when a note is attached below
+// (the note rounds the matching bottom corners).
+.daily-game .border-light {
+	border-radius: var(--bs-border-radius);
+}
+.daily-game-with-note .border-light {
+	border-top-left-radius: var(--bs-border-radius);
+	border-top-right-radius: var(--bs-border-radius);
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
 }
 
 .form-check-input {
