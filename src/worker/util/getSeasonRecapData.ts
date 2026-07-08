@@ -146,7 +146,15 @@ const gatherMoves = async (
 			if (tids.length === 0) {
 				continue;
 			}
-			const text = stripTags(await formatEventText(event));
+			// formatEventText can throw on an old/odd event; skip it rather than
+			// failing the whole recap.
+			let text = "";
+			try {
+				text = stripTags(await formatEventText(event));
+			} catch (error) {
+				console.error("Skipping an event in the season recap", error);
+				continue;
+			}
 			if (!text) {
 				continue;
 			}
@@ -189,7 +197,12 @@ const awardsForSeason = (player: any, season: number): string[] => {
 export const getSeasonRecapData = async (
 	season: number,
 ): Promise<RecapSeasonData> => {
-	const numPlayoffRounds = g.get("numGamesPlayoffSeries", season).length;
+	let numPlayoffRounds = 4;
+	try {
+		numPlayoffRounds = g.get("numGamesPlayoffSeries", season).length;
+	} catch {
+		// Fall back to a sane default if this season's setting isn't available.
+	}
 
 	// Per-team season attrs + team points for/against.
 	const teamsPlus = await idb.getCopies.teamsPlus(
@@ -231,7 +244,10 @@ export const getSeasonRecapData = async (
 			if (matchup?.home?.tid !== undefined && matchup.home.seed !== undefined) {
 				seedByTid.set(matchup.home.tid, matchup.home.seed);
 			}
-			if (matchup?.away?.tid !== undefined && matchup.away?.seed !== undefined) {
+			if (
+				matchup?.away?.tid !== undefined &&
+				matchup.away?.seed !== undefined
+			) {
 				seedByTid.set(matchup.away.tid, matchup.away.seed);
 			}
 		}
@@ -265,179 +281,182 @@ export const getSeasonRecapData = async (
 	let runnerUp: RecapSeasonData["runnerUp"];
 
 	for (const t of teamsPlus) {
-		const sa = t.seasonAttrs;
-		// Guard: skip any team that wasn't actually active this season (no real
-		// season row, so no name/record to write about).
-		if (!sa || (sa.region === undefined && sa.name === undefined)) {
-			continue;
-		}
-		const tid = t.tid;
-		const teamInfo = {
-			tid,
-			region: sa.region,
-			name: sa.name,
-			abbrev: sa.abbrev,
-		};
-
-		if (sa.playoffRoundsWon === numPlayoffRounds) {
-			champ = teamInfo;
-		} else if (sa.playoffRoundsWon === numPlayoffRounds - 1) {
-			runnerUp = teamInfo;
-		}
-
-		// Roster: players who logged regular-season minutes for this team this year.
-		const playersRaw = await idb.getCopies.players(
-			{ statsTid: tid },
-			"noCopyCache",
-		);
-		const playersPlus = await idb.getCopies.playersPlus(playersRaw, {
-			attrs: ["pid", "firstName", "lastName", "born", "awards"],
-			ratings: ["pos", "ovr", "pot"],
-			stats: [
-				"gp",
-				"min",
-				"pts",
-				"trb",
-				"ast",
-				"stl",
-				"blk",
-				"tov",
-				"fgp",
-				"tpp",
-				"ftp",
-				"per",
-			],
-			season,
-			tid,
-			regularSeason: true,
-			fuzz: false,
-			mergeStats: "totOnly",
-		});
-
-		const playoffPlus = await idb.getCopies.playersPlus(playersRaw, {
-			attrs: ["pid"],
-			stats: ["gp", "pts", "trb", "ast"],
-			season,
-			tid,
-			playoffs: true,
-			regularSeason: false,
-			fuzz: false,
-			mergeStats: "totOnly",
-		});
-		const playoffByPid = new Map<number, any>();
-		for (const p of playoffPlus) {
-			if (p.stats && p.stats.gp > 0) {
-				playoffByPid.set(p.pid, p.stats);
-			}
-		}
-
-		const players: RecapSeasonPlayer[] = [];
-		for (const p of playersPlus) {
-			const st = p.stats;
-			if (!st || st.gp === 0) {
+		try {
+			const sa = t.seasonAttrs;
+			// Guard: skip any team that wasn't actually active this season (no real
+			// season row, so no name/record to write about).
+			if (!sa || (sa.region === undefined && sa.name === undefined)) {
 				continue;
 			}
-			const bornYear = p.born?.year;
-			const playoff = playoffByPid.get(p.pid);
-			players.push({
-				name: `${p.firstName} ${p.lastName}`.trim(),
-				pid: p.pid,
-				pos: p.ratings?.pos,
-				age: typeof bornYear === "number" ? season - bornYear : undefined,
-				ovr: p.ratings?.ovr,
-				pot: p.ratings?.pot,
-				gp: st.gp,
-				min: Math.round((st.min ?? 0) * 10) / 10,
-				pts: Math.round((st.pts ?? 0) * 10) / 10,
-				trb: Math.round((st.trb ?? 0) * 10) / 10,
-				ast: Math.round((st.ast ?? 0) * 10) / 10,
-				stl: Math.round((st.stl ?? 0) * 10) / 10,
-				blk: Math.round((st.blk ?? 0) * 10) / 10,
-				tov: Math.round((st.tov ?? 0) * 10) / 10,
-				fgp: Math.round((st.fgp ?? 0) * 10) / 10,
-				tpp: Math.round((st.tpp ?? 0) * 10) / 10,
-				ftp: Math.round((st.ftp ?? 0) * 10) / 10,
-				per: st.per !== undefined ? Math.round(st.per * 10) / 10 : undefined,
-				playoff: playoff
-					? {
-							gp: playoff.gp,
-							pts: Math.round((playoff.pts ?? 0) * 10) / 10,
-							trb: Math.round((playoff.trb ?? 0) * 10) / 10,
-							ast: Math.round((playoff.ast ?? 0) * 10) / 10,
-						}
-					: undefined,
-				awards: awardsForSeason(p, season).slice(0, 4),
+			const tid = t.tid;
+			const teamInfo = {
+				tid,
+				region: sa.region,
+				name: sa.name,
+				abbrev: sa.abbrev,
+			};
+
+			if (sa.playoffRoundsWon === numPlayoffRounds) {
+				champ = teamInfo;
+			} else if (sa.playoffRoundsWon === numPlayoffRounds - 1) {
+				runnerUp = teamInfo;
+			}
+
+			// Roster: players who logged regular-season minutes for this team this year.
+			const playersRaw = await idb.getCopies.players(
+				{ statsTid: tid },
+				"noCopyCache",
+			);
+			const playersPlus = await idb.getCopies.playersPlus(playersRaw, {
+				attrs: ["pid", "firstName", "lastName", "born", "awards"],
+				ratings: ["pos", "ovr", "pot"],
+				stats: [
+					"gp",
+					"min",
+					"pts",
+					"trb",
+					"ast",
+					"stl",
+					"blk",
+					"tov",
+					"fgp",
+					"tpp",
+					"ftp",
+					"per",
+				],
+				season,
+				tid,
+				regularSeason: true,
+				fuzz: false,
+				mergeStats: "totOnly",
 			});
+
+			const playoffPlus = await idb.getCopies.playersPlus(playersRaw, {
+				attrs: ["pid"],
+				stats: ["gp", "pts", "trb", "ast"],
+				season,
+				tid,
+				playoffs: true,
+				regularSeason: false,
+				fuzz: false,
+				mergeStats: "totOnly",
+			});
+			const playoffByPid = new Map<number, any>();
+			for (const p of playoffPlus) {
+				if (p.stats && p.stats.gp > 0) {
+					playoffByPid.set(p.pid, p.stats);
+				}
+			}
+
+			const players: RecapSeasonPlayer[] = [];
+			for (const p of playersPlus) {
+				const st = p.stats;
+				if (!st || st.gp === 0) {
+					continue;
+				}
+				const bornYear = p.born?.year;
+				const playoff = playoffByPid.get(p.pid);
+				players.push({
+					name: `${p.firstName} ${p.lastName}`.trim(),
+					pid: p.pid,
+					pos: p.ratings?.pos,
+					age: typeof bornYear === "number" ? season - bornYear : undefined,
+					ovr: p.ratings?.ovr,
+					pot: p.ratings?.pot,
+					gp: st.gp,
+					min: Math.round((st.min ?? 0) * 10) / 10,
+					pts: Math.round((st.pts ?? 0) * 10) / 10,
+					trb: Math.round((st.trb ?? 0) * 10) / 10,
+					ast: Math.round((st.ast ?? 0) * 10) / 10,
+					stl: Math.round((st.stl ?? 0) * 10) / 10,
+					blk: Math.round((st.blk ?? 0) * 10) / 10,
+					tov: Math.round((st.tov ?? 0) * 10) / 10,
+					fgp: Math.round((st.fgp ?? 0) * 10) / 10,
+					tpp: Math.round((st.tpp ?? 0) * 10) / 10,
+					ftp: Math.round((st.ftp ?? 0) * 10) / 10,
+					per: st.per !== undefined ? Math.round(st.per * 10) / 10 : undefined,
+					playoff: playoff
+						? {
+								gp: playoff.gp,
+								pts: Math.round((playoff.pts ?? 0) * 10) / 10,
+								trb: Math.round((playoff.trb ?? 0) * 10) / 10,
+								ast: Math.round((playoff.ast ?? 0) * 10) / 10,
+							}
+						: undefined,
+					awards: awardsForSeason(p, season).slice(0, 4),
+				});
+			}
+			// Best players first (by minutes, a decent proxy for role), capped.
+			players.sort((a, b) => b.min * b.gp - a.min * a.gp);
+			const topPlayers = players.slice(0, 10);
+
+			// Franchise history (this team's seasons up to and including this one).
+			const teamSeasons = (
+				await idb.getCopies.teamSeasons({ tid }, "noCopyCache")
+			)
+				.filter((ts) => ts.season <= season)
+				.sort((a, b) => a.season - b.season);
+			const fh = getHistoryTeam(teamSeasons, playoffsByConfBySeason);
+			const recent: RecapFranchiseSeason[] = fh.history
+				.filter((h) => h.season < season)
+				.slice(0, 6)
+				.map((h) => ({
+					season: h.season,
+					won: h.won,
+					lost: h.lost,
+					result: h.roundsWonText,
+				}));
+
+			const teamMoves = moves.get(tid) ?? { offseason: [], inSeason: [] };
+
+			teams.push({
+				tid,
+				region: sa.region,
+				name: sa.name,
+				abbrev: sa.abbrev,
+				won: sa.won,
+				lost: sa.lost,
+				otl: sa.otl || undefined,
+				tied: sa.tied || undefined,
+				ptsPerGame:
+					t.stats && t.stats.gp > 0
+						? Math.round((t.stats.pts ?? 0) * 10) / 10
+						: undefined,
+				oppPtsPerGame:
+					t.stats && t.stats.gp > 0
+						? Math.round((t.stats.oppPts ?? 0) * 10) / 10
+						: undefined,
+				seed: seedByTid.get(tid),
+				madePlayoffs: sa.playoffRoundsWon >= 0,
+				playoffResult: helpers.roundsWonText({
+					playoffRoundsWon: sa.playoffRoundsWon,
+					numPlayoffRounds,
+					playoffsByConf: playoffsByConfBySeason.get(season),
+					showMissedPlayoffs: true,
+				}),
+				players: topPlayers,
+				franchise: {
+					championships: fh.championships,
+					lastChampionship: fh.lastChampionship,
+					playoffAppearances: fh.playoffAppearances,
+					finalsAppearances: fh.finalsAppearances,
+					totalWon: fh.totalWon,
+					totalLost: fh.totalLost,
+					recent,
+				},
+				offseasonMoves: teamMoves.offseason,
+				inSeasonMoves: teamMoves.inSeason,
+			});
+		} catch (error) {
+			// One team's data going wrong shouldn't sink the whole league recap.
+			console.error(`Skipping team ${t.tid} in the season recap`, error);
 		}
-		// Best players first (by minutes, a decent proxy for role), capped.
-		players.sort((a, b) => b.min * b.gp - a.min * a.gp);
-		const topPlayers = players.slice(0, 10);
-
-		// Franchise history (this team's seasons up to and including this one).
-		const teamSeasons = (
-			await idb.getCopies.teamSeasons({ tid }, "noCopyCache")
-		)
-			.filter((ts) => ts.season <= season)
-			.sort((a, b) => a.season - b.season);
-		const fh = getHistoryTeam(teamSeasons, playoffsByConfBySeason);
-		const recent: RecapFranchiseSeason[] = fh.history
-			.filter((h) => h.season < season)
-			.slice(0, 6)
-			.map((h) => ({
-				season: h.season,
-				won: h.won,
-				lost: h.lost,
-				result: h.roundsWonText,
-			}));
-
-		const teamMoves = moves.get(tid) ?? { offseason: [], inSeason: [] };
-
-		teams.push({
-			tid,
-			region: sa.region,
-			name: sa.name,
-			abbrev: sa.abbrev,
-			won: sa.won,
-			lost: sa.lost,
-			otl: sa.otl || undefined,
-			tied: sa.tied || undefined,
-			ptsPerGame:
-				t.stats && t.stats.gp > 0
-					? Math.round((t.stats.pts ?? 0) * 10) / 10
-					: undefined,
-			oppPtsPerGame:
-				t.stats && t.stats.gp > 0
-					? Math.round((t.stats.oppPts ?? 0) * 10) / 10
-					: undefined,
-			seed: seedByTid.get(tid),
-			madePlayoffs: sa.playoffRoundsWon >= 0,
-			playoffResult: helpers.roundsWonText({
-				playoffRoundsWon: sa.playoffRoundsWon,
-				numPlayoffRounds,
-				playoffsByConf: playoffsByConfBySeason.get(season),
-				showMissedPlayoffs: true,
-			}),
-			players: topPlayers,
-			franchise: {
-				championships: fh.championships,
-				lastChampionship: fh.lastChampionship,
-				playoffAppearances: fh.playoffAppearances,
-				finalsAppearances: fh.finalsAppearances,
-				totalWon: fh.totalWon,
-				totalLost: fh.totalLost,
-				recent,
-			},
-			offseasonMoves: teamMoves.offseason,
-			inSeasonMoves: teamMoves.inSeason,
-		});
 	}
 
 	// Standings order: best record first.
 	teams.sort(
 		(a, b) =>
-			b.won - a.won ||
-			a.lost - b.lost ||
-			a.region.localeCompare(b.region),
+			b.won - a.won || a.lost - b.lost || a.region.localeCompare(b.region),
 	);
 
 	return { season, champ, runnerUp, awards, teams };

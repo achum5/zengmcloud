@@ -97,13 +97,25 @@ describe("buildSeasonRecapPrompt", () => {
 		// Player line + playoffs + awards.
 		assert.ok(prompt.includes("Star Guy"), prompt);
 		assert.ok(prompt.includes("Playoffs: 32/8/10"), prompt);
-		// The season-flip framing is present in the instructions and the labels.
+		// The season-flip framing is present in the labels.
 		assert.ok(
-			prompt.includes("Offseason moves (built this season's roster)"),
+			prompt.includes("Offseason moves that built this season's roster"),
 			prompt,
 		);
 		assert.ok(prompt.includes("signed Star Guy"), prompt);
 		assert.ok(prompt.includes("In-season moves:"), prompt);
+	});
+
+	test("lays the data out chronologically: prior offseason before the season", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		const offseasonIdx = prompt.indexOf("Offseason moves that built");
+		const seasonIdx = prompt.indexOf("The season:");
+		const inSeasonIdx = prompt.indexOf("In-season moves:");
+		assert.ok(offseasonIdx >= 0 && seasonIdx >= 0 && inSeasonIdx >= 0, prompt);
+		// Prior-offseason build comes before the season, which comes before the
+		// in-season moves — the flow the recap should follow.
+		assert.ok(offseasonIdx < seasonIdx, prompt);
+		assert.ok(seasonIdx < inSeasonIdx, prompt);
 	});
 });
 

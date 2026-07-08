@@ -11,7 +11,7 @@ const INSTRUCTIONS = `You are an expert basketball writer producing a league-wid
 
 You are given a lot of data per team: the team's record and playoff result, its seed, its key players' season and postseason lines (with ages, ratings, and any awards), the franchise's history (championships, playoff appearances, recent seasons), and the transactions that shaped the team. Use whatever tells the best story — how the season met or defied expectations given the roster and moves, breakout or declining players, the franchise's arc, playoff runs or collapses, and how the offseason set the team up. Do NOT dump the raw data back.
 
-IMPORTANT — how to treat the transactions: each team lists "Offseason moves" and "In-season moves". The OFFSEASON MOVES are the signings, re-signings, draft picks, and trades that BUILT this season's roster — treat them as THIS season's offseason (they are what the team did to prepare for this year). The IN-SEASON MOVES are trades and cuts made during the season itself. Weave both into the narrative where they matter.
+IMPORTANT — tell the story in chronological order, exactly how the data is laid out per team: (1) the OFFSEASON MOVES that BUILT this year's roster (the prior offseason — signings, re-signings, draft picks, trades made BEFORE the season), then (2) the SEASON itself — the regular-season record and how it played out, the IN-SEASON MOVES (trades/cuts made during the year), and (3) the PLAYOFFS. The offseason moves are last summer's build-up that set this team up; weave them in as the season's starting point.
 
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
@@ -77,28 +77,33 @@ const franchiseBlock = (t: RecapSeasonTeam): string => {
 };
 
 const teamBlock = (t: RecapSeasonTeam): string => {
-	const header = [`### TEAM ${t.tid}: ${t.region} ${t.name} (${t.abbrev})`];
+	// Laid out chronologically so the recap reads in order: who they are →
+	// the prior offseason that built this year's team → the season → the playoffs.
+	const lines = [
+		`### TEAM ${t.tid}: ${t.region} ${t.name} (${t.abbrev})`,
+		franchiseBlock(t),
+	];
 
+	// 1) The prior offseason — what built this year's roster (before the season).
+	if (t.offseasonMoves.length > 0) {
+		lines.push(
+			"",
+			"Offseason moves that built this season's roster (BEFORE the season):",
+			...t.offseasonMoves.map((m) => `- ${m}`),
+		);
+	}
+
+	// 2) The season itself, ending at the playoff result.
 	const summary = [`Record: ${record(t)}`];
 	if (typeof t.seed === "number") {
 		summary.push(`#${t.seed} seed`);
 	}
 	summary.push(t.madePlayoffs ? t.playoffResult : "missed playoffs");
 	if (typeof t.ptsPerGame === "number") {
-		summary.push(
-			`${t.ptsPerGame} PPG / ${t.oppPtsPerGame ?? "?"} allowed`,
-		);
+		summary.push(`${t.ptsPerGame} PPG / ${t.oppPtsPerGame ?? "?"} allowed`);
 	}
+	lines.push("", `The season: ${summary.join(" · ")}`);
 
-	const lines = [header[0]!, summary.join(" · "), franchiseBlock(t)];
-
-	if (t.offseasonMoves.length > 0) {
-		lines.push(
-			"",
-			"Offseason moves (built this season's roster):",
-			...t.offseasonMoves.map((m) => `- ${m}`),
-		);
-	}
 	if (t.inSeasonMoves.length > 0) {
 		lines.push("", "In-season moves:", ...t.inSeasonMoves.map((m) => `- ${m}`));
 	}
