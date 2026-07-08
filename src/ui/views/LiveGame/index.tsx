@@ -504,9 +504,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 					}
 				}
 
-				// Don't unlock a follower when the game ends - it stays locked on the
-				// final box score until the simmer actually ends the broadcast.
-				if (!boxScore.current.exhibition && !followerRef.current) {
+				// Clearing dirty is what "the game is over" means - it releases the
+				// navigation block (the silent follower trap included), same as a
+				// normal live sim. So a viewer is trapped only while the game is live.
+				if (!boxScore.current.exhibition) {
 					setDirty(false);
 				}
 				onLiveSimOver();

@@ -20,7 +20,10 @@ export const useBlocker = ({
 	const [dirty, setDirty] = useState(initialDirty);
 
 	useEffect(() => {
-		if (dirty || hardBlock) {
+		// `dirty` decides WHETHER we block (for the live sim it's true while the
+		// game is live and cleared when it ends); `hardBlock` decides HOW - a silent,
+		// genuine trap with no escape (a multiplayer viewer) vs. the usual confirm.
+		if (dirty) {
 			router.shouldBlock = async (refresh) => {
 				// This check is needed because realtimeUpdate triggers a refresh pageview through the router to trigger updating data, but we never consider that "navigating away" from a page. For example when clicking "Save" on League Settings
 				if (refresh) {
