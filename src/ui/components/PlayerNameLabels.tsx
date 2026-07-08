@@ -145,9 +145,11 @@ export const PlayerNameLabels = (props: Props) => {
 	const fullNames = localState.fullNames || props.fullNames;
 
 	// Small face next to the name, loaded on demand (batched + cached) so it works
-	// in every table without every view having to ship face data.
+	// in every table without every view having to ship face data. `season` picks
+	// the team uniform the player wore that year.
 	const faceData = usePlayerFace(
 		props.hideFace ? undefined : props.pid,
+		props.season,
 		localState.lid,
 	);
 	const faceEl =
@@ -155,15 +157,17 @@ export const PlayerNameLabels = (props: Props) => {
 			<span
 				className="d-inline-block"
 				style={{
-					height: "1.6em",
-					width: "1.07em",
-					marginRight: 4,
+					height: "2em",
+					width: "1.33em",
+					marginRight: 5,
 					verticalAlign: "middle",
 				}}
 			>
 				<PlayerPicture
 					face={faceData.face}
 					imgURL={faceData.imgURL}
+					colors={faceData.colors}
+					jersey={faceData.jersey}
 					lazy
 				/>
 			</span>

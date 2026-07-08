@@ -2,29 +2,33 @@ import { useEffect, useReducer } from "react";
 import type { FaceConfig } from "facesjs";
 import { toWorker } from "./toWorker.ts";
 
-// A tiny DataLoader for player faces: PlayerNameLabels asks for a pid's face, we
-// coalesce every pid requested in the same tick into ONE worker call, and cache
-// the result. This is what lets a small face appear next to a name in EVERY
-// player table without baking face data into every view's row payload.
+// A tiny DataLoader for player faces: PlayerNameLabels asks for a (pid, season)'s
+// face, we coalesce every one requested in the same tick into ONE worker call,
+// and cache the result. This is what lets a small, correctly-uniformed face
+// appear next to a name in EVERY player table without baking face data into
+// every view's row payload.
 //
-// The cache is keyed by pid, which is league-scoped, so it MUST be cleared when
-// the league (lid) changes - otherwise a new league's player #5 would show the
-// old league's player #5 face.
+// Keyed by "pid:season" (season picks the team the player wore that year), and
+// scoped to a league - the cache MUST be cleared when the league (lid) changes,
+// or a new league's player #5 would show the old league's player #5 face.
 
 export type PlayerFace = {
 	face?: FaceConfig;
 	imgURL?: string;
-	tid?: number;
+	colors?: [string, string, string];
+	jersey?: string;
 };
 
+const keyOf = (pid: number, season: number | undefined) => `${pid}:${season ?? ""}`;
+
 let cacheLid: number | undefined;
-const cache = new Map<number, PlayerFace | null>();
-const subscribers = new Map<number, Set<() => void>>();
-let pending = new Set<number>();
+const cache = new Map<string, PlayerFace | null>();
+const subscribers = new Map<string, Set<() => void>>();
+let pending = new Map<string, { pid: number; season?: number }>();
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 
-const notify = (pid: number) => {
-	const set = subscribers.get(pid);
+const notify = (key: string) => {
+	const set = subscribers.get(key);
 	if (set) {
 		for (const cb of set) {
 			cb();
@@ -34,18 +38,19 @@ const notify = (pid: number) => {
 
 const flush = async () => {
 	flushTimer = undefined;
-	const pids = [...pending];
-	pending = new Set();
-	if (pids.length === 0) {
+	const items = [...pending.values()];
+	const keys = [...pending.keys()];
+	pending = new Map();
+	if (items.length === 0) {
 		return;
 	}
 
 	const lidAtStart = cacheLid;
-	let result: Record<number, PlayerFace> = {};
+	let result: Record<string, PlayerFace> = {};
 	try {
-		result = await toWorker("main", "getPlayerFaces", pids);
+		result = await toWorker("main", "getPlayerFaces", items);
 	} catch {
-		// Best-effort - a failed fetch just leaves those pids uncached, so they'll
+		// Best-effort - a failed fetch just leaves those keys uncached, so they'll
 		// be retried the next time a row asks for them.
 		return;
 	}
@@ -55,9 +60,9 @@ const flush = async () => {
 	if (cacheLid !== lidAtStart) {
 		return;
 	}
-	for (const pid of pids) {
-		cache.set(pid, result[pid] ?? null);
-		notify(pid);
+	for (const key of keys) {
+		cache.set(key, result[key] ?? null);
+		notify(key);
 	}
 };
 
@@ -65,15 +70,15 @@ const ensureLid = (lid: number | undefined) => {
 	if (lid !== cacheLid) {
 		cacheLid = lid;
 		cache.clear();
-		pending = new Set();
+		pending = new Map();
 	}
 };
 
-const request = (pid: number) => {
-	if (cache.has(pid) || pending.has(pid)) {
+const request = (key: string, pid: number, season: number | undefined) => {
+	if (cache.has(key) || pending.has(key)) {
 		return;
 	}
-	pending.add(pid);
+	pending.set(key, { pid, season });
 	if (flushTimer === undefined) {
 		flushTimer = setTimeout(flush, 0);
 	}
@@ -83,6 +88,7 @@ const request = (pid: number) => {
 // still loading or no pid). Re-renders the caller when the data arrives.
 export const usePlayerFace = (
 	pid: number | undefined,
+	season: number | undefined,
 	lid: number | undefined,
 ): PlayerFace | null | undefined => {
 	const [, forceRender] = useReducer((x: number) => x + 1, 0);
@@ -92,12 +98,13 @@ export const usePlayerFace = (
 			return;
 		}
 		ensureLid(lid);
-		request(pid);
+		const key = keyOf(pid, season);
+		request(key, pid, season);
 
-		let set = subscribers.get(pid);
+		let set = subscribers.get(key);
 		if (!set) {
 			set = new Set();
-			subscribers.set(pid, set);
+			subscribers.set(key, set);
 		}
 		const cb = () => forceRender();
 		set.add(cb);
@@ -105,13 +112,13 @@ export const usePlayerFace = (
 		return () => {
 			set.delete(cb);
 			if (set.size === 0) {
-				subscribers.delete(pid);
+				subscribers.delete(key);
 			}
 		};
-	}, [pid, lid]);
+	}, [pid, season, lid]);
 
 	if (pid === undefined) {
 		return undefined;
 	}
-	return cache.get(pid);
+	return cache.get(keyOf(pid, season));
 };

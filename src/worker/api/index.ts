@@ -1,5 +1,6 @@
 import { csvFormat, csvFormatRows } from "d3-dsv";
 import type { FaceConfig } from "facesjs";
+import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
 import {
 	GAME_ACRONYM,
 	PHASE,
@@ -1731,27 +1732,115 @@ const getBornLoc = async (pid: number) => {
 	}
 };
 
-// Batch-fetch just the face (or image URL) + current team of a set of players, so
-// the UI can show a small face next to a name in any table without every view
-// having to bake face data into its rows. Keyed by pid; the UI caches per league.
+// Batch-fetch the face (or image URL) of a set of players PLUS the colors and
+// jersey of the team they wore in the applicable season, so the UI can show a
+// small, correctly-uniformed face next to a name in any table without every view
+// baking face data into its rows. Each item is (pid, season): season is used to
+// pick the team the player was actually on THAT year (teams change colors /
+// relocate over time, and a player changes teams), falling back to their current
+// team, then their last real team (for retirees). Keyed by "pid:season" so the
+// same player can be cached differently per season; the UI caches per league.
 const getPlayerFaces = async (
-	pids: number[],
+	items: { pid: number; season?: number }[],
 ): Promise<
-	Record<number, { face?: FaceConfig; imgURL?: string; tid?: number }>
+	Record<
+		string,
+		{
+			face?: FaceConfig;
+			imgURL?: string;
+			colors?: [string, string, string];
+			jersey?: string;
+		}
+	>
 > => {
 	const result: Record<
-		number,
-		{ face?: FaceConfig; imgURL?: string; tid?: number }
+		string,
+		{
+			face?: FaceConfig;
+			imgURL?: string;
+			colors?: [string, string, string];
+			jersey?: string;
+		}
 	> = {};
-	if (pids.length === 0) {
+	if (items.length === 0) {
 		return result;
 	}
+
+	const pids = Array.from(new Set(items.map((item) => item.pid)));
 	const players = await idb.getCopies.players({ pids }, "noCopyCache");
-	for (const p of players) {
-		result[p.pid] = {
+	const byPid = new Map(players.map((p) => [p.pid, p]));
+	const currentSeason = g.get("season");
+
+	// Memoize team-season lookups: a roster is all the same team+season, so this
+	// collapses ~30 lookups to 1.
+	const tsCache = new Map<
+		string,
+		{ colors: [string, string, string]; jersey?: string } | undefined
+	>();
+	const getTS = async (tid: number, season: number) => {
+		const k = `${tid}:${season}`;
+		if (tsCache.has(k)) {
+			return tsCache.get(k);
+		}
+		const ts = await getTeamInfoBySeason(tid, season);
+		const value = ts ? { colors: ts.colors, jersey: ts.jersey } : undefined;
+		tsCache.set(k, value);
+		return value;
+	};
+
+	for (const { pid, season } of items) {
+		const key = `${pid}:${season ?? ""}`;
+		if (result[key]) {
+			continue;
+		}
+		const p = byPid.get(pid);
+		if (!p) {
+			continue;
+		}
+
+		// Which team's uniform to draw: the team the player was on that season, else
+		// their current team, else (retired) their last real team.
+		let jerseyTid: number | undefined;
+		let jerseySeason: number | undefined;
+		if (season !== undefined) {
+			const row = p.stats.filter((ps) => ps.season === season && ps.tid >= 0).at(-1);
+			if (row) {
+				jerseyTid = row.tid;
+				jerseySeason = season;
+			}
+		}
+		if (jerseyTid === undefined) {
+			if (p.tid >= 0) {
+				jerseyTid = p.tid;
+				jerseySeason = currentSeason;
+			} else {
+				const row = p.stats.filter((ps) => ps.tid >= 0).at(-1);
+				if (row) {
+					jerseyTid = row.tid;
+					jerseySeason = row.season;
+				}
+			}
+		}
+
+		let colors: [string, string, string] | undefined;
+		let jersey: string | undefined;
+		if (jerseyTid !== undefined && jerseySeason !== undefined) {
+			try {
+				const ts = await getTS(jerseyTid, jerseySeason);
+				if (ts) {
+					colors = ts.colors;
+					jersey = ts.jersey;
+				}
+			} catch {
+				// Fall back to default colors/jersey (drawn by MyFace).
+			}
+		}
+
+		result[key] = {
 			face: p.face,
 			imgURL: p.imgURL === "" ? undefined : p.imgURL,
-			tid: p.tid,
+			colors,
+			jersey,
 		};
 	}
 	return result;
