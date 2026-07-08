@@ -48,6 +48,15 @@ if (process.env.NODE_ENV === "development") {
 // fetches that run on every navigation and produce no changes anyway.
 const SKIP_CHANGESET_CAPTURE = new Set([
 	"createStream",
+	// Creating/importing a league writes the WHOLE league (its entire baseline -
+	// ~1000+ records). That is never a delta to sync: every device gets the initial
+	// league by importing the same file, and the room only ever syncs changes made
+	// AFTER that. Without this, creating/importing while a session is active would
+	// publish the whole league to the room (spamming every follower) and fire a
+	// bogus notification (e.g. "the bracket is set", from the imported phase). All
+	// its writes are awaited inside the createLeague call, so suppressing the call
+	// suppresses the entire creation.
+	"createLeague",
 	"beforeView",
 	"runBefore",
 	// Generates AI trade offers and saves your personal shopping list
