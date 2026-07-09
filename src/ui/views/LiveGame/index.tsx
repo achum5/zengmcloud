@@ -312,7 +312,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// we additionally heartbeat our cursor to the room. In single-player both are
 	// false and nothing below changes.
 	const { mpLiveBroadcast } = useLocal(["mpLiveBroadcast"]);
-	const isFollower = !!mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster;
+	const isFollower =
+		!!mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster;
 	const isBroadcaster =
 		!!mpLiveBroadcast?.active && mpLiveBroadcast.isBroadcaster;
 	const followerRef = useRef(isFollower);
@@ -345,6 +346,21 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 			const shootout = !!boxScore.current.shootout;
 			const ptsKey = shootout ? "sPts" : "pts";
+			if (!Array.isArray(boxScore.current.teams)) {
+				console.error("[live-game-debug] missing boxScore teams", {
+					boxScore: boxScore.current,
+					boxScoreKeys:
+						boxScore.current && typeof boxScore.current === "object"
+							? Object.keys(boxScore.current)
+							: undefined,
+					eventCount: events.current.length,
+					nextEvent: events.current[0],
+					playIndex,
+					isFollower: followerRef.current,
+					mpLiveBroadcast,
+				});
+				return 0;
+			}
 
 			// Save here since it is mutated in processLiveGameEvents
 			const prevOuts = sportState.current?.outs;
@@ -584,7 +600,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// on a real change, plus a slow keep-alive so the follower lease never lapses
 	// while we sit paused / on the final box score.
 	const lastBroadcastSent = useRef<
-		{ cursor: number; paused: boolean; gameOver: boolean; at: number } | undefined
+		| { cursor: number; paused: boolean; gameOver: boolean; at: number }
+		| undefined
 	>(undefined);
 	useEffect(() => {
 		if (!isBroadcaster || !started) {

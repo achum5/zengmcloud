@@ -161,6 +161,16 @@ const syncLog = (payload: {
 	console.log(...args);
 };
 
+const syncDebugLog = (payload: Record<string, unknown>) => {
+	const event = typeof payload.event === "string" ? payload.event : "event";
+	console.log(
+		`%c[sync-debug]%c ${event}`,
+		"color:#d63384;font-weight:bold",
+		"",
+		payload,
+	);
+};
+
 export default {
 	analyticsEvent,
 	autoPlayDialog,
@@ -180,6 +190,7 @@ export default {
 	showEvent: showEvent2,
 	showModal,
 	syncLog,
+	syncDebugLog,
 	updateLocal,
 	updateTeamOvrs,
 };
