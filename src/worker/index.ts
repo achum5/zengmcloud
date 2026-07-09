@@ -12,7 +12,11 @@ import { afterAction } from "./core/sync/afterAction.ts";
 import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
-import { getSyncRequired, startLiveBroadcast } from "./core/sync/connect.ts";
+import {
+	getSyncRequired,
+	restoreSyncRequiredFromMeta,
+	startLiveBroadcast,
+} from "./core/sync/connect.ts";
 
 // Let the game engine trigger a publish when a multi-day (fire-and-forget) sim
 // finishes, without a static import cycle from game core into the sync layer.
@@ -206,8 +210,11 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 	// locally and diverging when it only looks connected.
 	const simAuthorityLocked = isSimAuthorityLockedCall(type, name);
 	const syncEngine = getSyncEngine();
-	const syncSessionIntended = syncEngine !== undefined || getSyncRequired();
 	const cloudTracked = isCloudTrackedCall(type, name);
+	if (cloudTracked) {
+		await restoreSyncRequiredFromMeta();
+	}
+	const syncSessionIntended = syncEngine !== undefined || getSyncRequired();
 	const needsConnection = syncSessionIntended && cloudTracked;
 
 	if (needsConnection) {
@@ -239,7 +246,7 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 			}
 
 			try {
-				await syncEngine.ensureReady();
+				await syncEngine.ensureReady(true);
 			} catch {
 				util.logEvent(
 					{
@@ -252,19 +259,11 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				return undefined;
 			}
 
-			// Confirm the connection is GENUINELY live, so this change can actually
-			// reach the room. This is what catches "looked connected but wasn't" - a
-			// dropped listener, expired token, or resumed-from-suspend tab. For a
-			// sim-authority-locked ADVANCE (a sim/draft/phase change), force a real server
-			// round-trip rather than trusting recent contact: a sim that runs on a
-			// silently-dead socket and then can't upload strands every other device,
-			// so the round-trip's latency is a worthwhile price to never let that
-			// happen. Transactions keep the cheap check (they're small and the outbox
-			// guarantees eventual delivery), and the rapid All-Star contest steps are
-			// excluded so they don't round-trip ~once a second.
-			const forceLiveCheck =
-				simAuthorityLocked && !ALLSTAR_SIM_AUTHORITY_LOCKED.has(name);
-			const live = await syncEngine.verifyConnection(forceLiveCheck);
+			// Confirm the connection is GENUINELY live with a real server round-trip
+			// before EVERY shared-league mutation. This is intentionally slower: a
+			// stale listener/expired token/resumed tab must fail before local state
+			// changes, not after a roster edit or sim already diverged.
+			const live = await syncEngine.verifyConnection(true);
 			if (!live) {
 				util.logEvent(
 					{

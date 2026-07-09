@@ -1,9 +1,6 @@
 import { Cache, connectLeague, idb } from "../db/index.ts";
 import { league } from "../core/index.ts";
-import {
-	disconnectSharedLeague,
-	getConnectedLid,
-} from "../core/sync/connect.ts";
+import { getConnectedLid, teardownSharedLeague } from "../core/sync/connect.ts";
 import {
 	g,
 	helpers,
@@ -108,7 +105,7 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 		// lid (or the just-uploaded new league, which has no session) is dropped.
 		const sessionLid = getConnectedLid();
 		if (sessionLid !== undefined && sessionLid !== newLid) {
-			disconnectSharedLeague();
+			await teardownSharedLeague({ clearPersisted: false });
 		}
 		await league.close(true);
 	}

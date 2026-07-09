@@ -19,6 +19,47 @@ const loadWatermark = async (lid: number | undefined): Promise<number> => {
 	return league?.syncWatermark ?? 0;
 };
 
+const loadPersistedSyncSession = async (
+	lid: number | undefined,
+): Promise<{ code: string; isHost: boolean } | undefined> => {
+	if (typeof lid !== "number") {
+		return undefined;
+	}
+	const league = await idb.meta.get("leagues", lid);
+	const code = league?.syncCode;
+	if (typeof code === "string" && code.trim() !== "") {
+		return { code: code.trim(), isHost: !!league?.syncIsHost };
+	}
+	return undefined;
+};
+
+const savePersistedSyncSession = async (
+	lid: number | undefined,
+	session: { code: string; isHost: boolean },
+) => {
+	if (typeof lid !== "number") {
+		return;
+	}
+	const league = await idb.meta.get("leagues", lid);
+	if (league) {
+		league.syncCode = session.code.trim();
+		league.syncIsHost = session.isHost;
+		await idb.meta.put("leagues", league);
+	}
+};
+
+const clearPersistedSyncSession = async (lid: number | undefined) => {
+	if (typeof lid !== "number") {
+		return;
+	}
+	const league = await idb.meta.get("leagues", lid);
+	if (league) {
+		delete league.syncCode;
+		delete league.syncIsHost;
+		await idb.meta.put("leagues", league);
+	}
+};
+
 const saveWatermark = async (lid: number | undefined, ts: number) => {
 	if (typeof lid !== "number") {
 		return;
@@ -495,6 +536,28 @@ export const publishAutoPlayState = async (
 
 export const getSyncRequired = () => syncRequired;
 
+// Called before cloud-tracked worker mutations. This is a worker-side backstop
+// for a missed/delayed UI auto-reconnect: if the league metadata says this file
+// belongs to a sync room, never let the worker treat it as a local-only league.
+export const restoreSyncRequiredFromMeta = async () => {
+	if (syncRequired || getSyncEngine() !== undefined) {
+		return syncRequired;
+	}
+	const lid = g.get("lid");
+	const session = await loadPersistedSyncSession(
+		typeof lid === "number" ? lid : undefined,
+	);
+	if (!session) {
+		return false;
+	}
+	syncRequired = true;
+	currentCode = session.code;
+	void toUI("updateLocal", [
+		{ mpSyncActive: true, mpSyncReady: false, mpSyncReconnecting: true },
+	]);
+	return true;
+};
+
 // True while we intend to be synced but aren't connected yet (reconnecting or
 // offline). The sim authority guard uses this to pause simming; the UI shows it.
 export const isReconnecting = () =>
@@ -503,11 +566,32 @@ export const isReconnecting = () =>
 // Called by the UI's auto-reconnect the instant it knows this league should be
 // synced - before the async connect finishes - so simming is gated during the
 // whole reconnect window, not just once it completes.
-export const markSyncRequired = () => {
+export const markSyncRequired = async (sessionFromUI?: {
+	code: string;
+	isHost?: boolean;
+}) => {
 	syncRequired = true;
+	const trimmedFromUI = sessionFromUI?.code?.trim();
+	const lid = g.get("lid");
+	const lidNumber = typeof lid === "number" ? lid : undefined;
+	if (trimmedFromUI) {
+		currentCode = trimmedFromUI;
+		await savePersistedSyncSession(lidNumber, {
+			code: trimmedFromUI,
+			isHost: !!sessionFromUI?.isHost,
+		});
+	}
+	const session = await loadPersistedSyncSession(lidNumber);
+	if (session) {
+		currentCode = session.code;
+	}
 	if (getSyncEngine() === undefined) {
 		void toUI("updateLocal", [
-			{ mpSyncReady: false, mpSyncReconnecting: true },
+			{
+				mpSyncActive: true,
+				mpSyncReady: false,
+				mpSyncReconnecting: true,
+			},
 		]);
 	}
 };
@@ -677,8 +761,9 @@ export const connectSharedLeague = async ({
 		throw new Error("A league code is required.");
 	}
 
-	// Tear down any existing session first.
-	disconnectSharedLeague();
+	// Tear down any existing live session first, but do not erase the persisted
+	// room intent while reconnecting/switching transports.
+	await teardownSharedLeague({ clearPersisted: false });
 
 	// From here on this device is committed to the session, so simming stays
 	// gated through the whole async connect (and if it throws) - never sim
@@ -746,9 +831,11 @@ export const connectSharedLeague = async ({
 			await engine.claimAuthority();
 		}
 	} catch (error) {
-		disconnectSharedLeague();
+		await teardownSharedLeague({ clearPersisted: false });
 		throw error;
 	}
+
+	await savePersistedSyncSession(lid, { code: trimmed, isHost });
 
 	// Register the room so it shows up on the admin page. Best-effort.
 	void transport.touchRoom?.();
@@ -827,7 +914,12 @@ export const connectSharedLeague = async ({
 	return { connected: true, code: trimmed, isHost, clientId };
 };
 
-export const disconnectSharedLeague = () => {
+export const teardownSharedLeague = async ({
+	clearPersisted = false,
+}: { clearPersisted?: boolean } = {}) => {
+	const lid = g.get("lid");
+	const lidToClear =
+		connectedLid ?? (typeof lid === "number" ? lid : undefined);
 	if (catchUpTimer !== undefined) {
 		clearInterval(catchUpTimer);
 		catchUpTimer = undefined;
@@ -868,6 +960,10 @@ export const disconnectSharedLeague = () => {
 	connectedLid = undefined;
 	currentHostName = undefined;
 	currentCloudReady = false;
+	if (clearPersisted) {
+		await clearPersistedSyncSession(lidToClear);
+	}
+
 	// Explicit disconnect clears the intent, so single-player simming works again.
 	syncRequired = false;
 
@@ -884,3 +980,6 @@ export const disconnectSharedLeague = () => {
 
 	return { connected: false };
 };
+
+export const disconnectSharedLeague = () =>
+	teardownSharedLeague({ clearPersisted: true });

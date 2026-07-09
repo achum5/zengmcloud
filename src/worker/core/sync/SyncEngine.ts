@@ -308,12 +308,12 @@ export class SyncEngine {
 		}
 	}
 
-	async ensureReady(): Promise<void> {
+	async ensureReady(force = false): Promise<void> {
 		if (!this.listenerHealthy || !this.authorityListenerHealthy) {
 			this.markNotReady();
 			throw new Error("Cloud sync listeners are not ready.");
 		}
-		if (Date.now() < this.readyUntil) {
+		if (!force && Date.now() < this.readyUntil) {
 			return;
 		}
 		if (this.readyProbe) {

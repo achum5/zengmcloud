@@ -27,6 +27,7 @@ export {
 	publishAutoPlayState,
 	refreshSyncUIState,
 	resyncSharedLeague,
+	restoreSyncRequiredFromMeta,
 	startLiveBroadcast,
 	updateLiveBroadcast,
 	type SyncActivityItem,

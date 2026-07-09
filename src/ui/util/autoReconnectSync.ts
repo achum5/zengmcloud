@@ -53,7 +53,7 @@ export const autoReconnectSync = async (lid: number) => {
 	// leave a window where this device sims offline and silently diverges from
 	// the league. The worker keeps sims paused until the connection is live.
 	try {
-		await toWorker("main", "markSyncRequired", undefined);
+		await toWorker("main", "markSyncRequired", session);
 	} catch {}
 
 	// Reconnect with a few backoff retries so a transient failure recovers on its

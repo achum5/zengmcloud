@@ -825,9 +825,11 @@ export type League = {
 
 	// Multiplayer sync (per-league, per-device): the server-timestamp watermark
 	// of the last change we've applied from the shared log, so we only catch up
-	// on what we missed; and a stable id for this device so we skip our own
-	// changes across reconnects.
+	// on what we missed; the room this league is expected to stay connected to;
+	// and a stable id for this device so we skip our own changes across reconnects.
 	syncWatermark?: number;
+	syncCode?: string;
+	syncIsHost?: boolean;
 	syncClientId?: string;
 };
 
