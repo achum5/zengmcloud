@@ -2,11 +2,12 @@ import { captureChangeset } from "./changeset.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { logChangeset } from "./devChangesetLogger.ts";
 import { getSyncEngine } from "./engineHolder.ts";
+import { getConnectedLid } from "./connect.ts";
 import { isSingleGameSimActive } from "./afterActionHook.ts";
 import { buildNotifications } from "./notifications.ts";
 import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
 import { idb } from "../../db/index.ts";
-import { local, lock } from "../../util/index.ts";
+import { g, local, lock } from "../../util/index.ts";
 
 // Actions that sim a SINGLE game within a day (Sim one game / live game), as
 // opposed to advancing whole days. Their results must still sync, but they must
@@ -109,7 +110,25 @@ export const afterAction = async (
 			});
 		}
 
-		const engine = getSyncEngine();
+		// Never publish changes captured from a league OTHER than the one this
+		// session is connected for (a session that outlived a league switch).
+		// Those changes belong to no room - publishing them would write another
+		// file's records into the shared log and corrupt it for everyone.
+		const connectedLid = getConnectedLid();
+		const wrongLeague =
+			connectedLid !== undefined && g.get("lid") !== connectedLid;
+		if (wrongLeague) {
+			console.error(
+				`[sync] Dropped changeset from "${label}": the loaded league is not the connected room's league.`,
+			);
+			syncDebugLog("afterAction:dropped-wrong-league", {
+				label,
+				connectedLid,
+				currentLid: g.get("lid"),
+			});
+		}
+
+		const engine = wrongLeague ? undefined : getSyncEngine();
 		let outcome: "confirmed" | "queued" = "confirmed";
 		if (engine) {
 			// Hand the changeset to the sync layer. onLocalChangeset persists it to

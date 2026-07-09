@@ -29,6 +29,7 @@ export {
 	resyncSharedLeague,
 	restoreSyncRequiredFromMeta,
 	startLiveBroadcast,
+	teardownSharedLeague,
 	updateLiveBroadcast,
 	type SyncActivityItem,
 } from "./connect.ts";

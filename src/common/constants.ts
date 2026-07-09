@@ -583,3 +583,5 @@ export const ERROR_MESSAGE_ONE_TAB =
 export const ERROR_MESSAGE_UNDEFINED_SEASON =
 	"Undefined season - an error may have occurred while creating this league";
 export const ERROR_MESSSAGE_LEAGUE_NOT_FOUND = "League not found.";
+export const ERROR_MESSAGE_SYNC_ROOM_MISMATCH =
+	"This room is linked to a different league file, so it wasn't joined.";

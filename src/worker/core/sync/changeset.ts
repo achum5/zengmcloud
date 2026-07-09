@@ -11,6 +11,7 @@ import {
 	updateStatus,
 } from "../../util/index.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
+import { checkApplyGuard } from "./applyGuard.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
 import type { Phase, UpdateEvents } from "../../../common/types.ts";
@@ -228,6 +229,16 @@ export const applyChangeset = async (
 ): Promise<void> => {
 	if (changeset.changes.length === 0) {
 		return;
+	}
+
+	// Refuse to write a remote changeset into a cache that doesn't belong to the
+	// connected league (e.g. a session that outlived a league switch). Throwing
+	// keeps the watermark pinned, so the entry re-applies once the right league
+	// is loaded instead of being lost.
+	if (!checkApplyGuard()) {
+		throw new Error(
+			"Refusing to apply a remote change: the loaded league is not the one this sync session belongs to.",
+		);
 	}
 
 	let touchedGameAttributes = false;

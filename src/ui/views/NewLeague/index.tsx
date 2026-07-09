@@ -50,6 +50,10 @@ import { PopText } from "../../components/PopText.tsx";
 import { NextPrevButtons } from "../../components/NextPrevButtons.tsx";
 import { confirm } from "../../util/confirm.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
+import {
+	clearStoredSync,
+	setStoredSync,
+} from "../../util/autoReconnectSync.ts";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { applyRealTeamInfo } from "../../../common/applyRealTeamInfo.ts";
 import { gameAttributesArrayToObject } from "../../../common/gameAttributesArrayToObject.ts";
@@ -678,6 +682,12 @@ const NewLeague = (props: View<"newLeague">) => {
 	const [startingSeason, setStartingSeason] = useState(
 		String(new Date().getFullYear()),
 	);
+	// Multiplayer room to join right after this league is created/imported.
+	// Blank = single-player. Deciding this HERE (rather than inheriting whatever
+	// session a previous file on this device had) is what keeps one device's
+	// multiple league files from ever cross-connecting to the wrong room.
+	const [roomCode, setRoomCode] = useState("");
+	const [roomIsHost, setRoomIsHost] = useState(false);
 	const [currentScreen, setCurrentScreen] = useState<
 		"default" | "teams" | "settings"
 	>("default");
@@ -889,6 +899,21 @@ const NewLeague = (props: View<"newLeague">) => {
 				},
 				leagueCreationID,
 			});
+
+			// This lid's sync destiny is decided HERE, explicitly. A room code joins
+			// that room once the league loads (pendingJoin marks it as an explicit,
+			// binding-capable join); blank scrubs any stored session a previous file
+			// with this (possibly recycled) lid left behind.
+			const roomCodeTrimmed = roomCode.trim();
+			if (roomCodeTrimmed) {
+				setStoredSync(lid, {
+					code: roomCodeTrimmed,
+					isHost: roomIsHost,
+					pendingJoin: true,
+				});
+			} else {
+				clearStoredSync(lid);
+			}
 
 			let type: string = state.customize;
 			if (type === "real") {
@@ -1260,6 +1285,42 @@ const NewLeague = (props: View<"newLeague">) => {
 										});
 									}}
 								/>
+							</div>
+
+							<div className="mb-3">
+								<label className="form-label" htmlFor="new-league-room-code">
+									Multiplayer room code
+								</label>
+								<input
+									id="new-league-room-code"
+									className="form-control"
+									type="text"
+									placeholder="None"
+									title="Join a multiplayer sync room when this league loads"
+									value={roomCode}
+									onChange={(event) => {
+										setRoomCode(event.target.value);
+									}}
+								/>
+								{roomCode.trim() ? (
+									<div className="form-check mt-2">
+										<input
+											id="new-league-room-host"
+											className="form-check-input"
+											type="checkbox"
+											checked={roomIsHost}
+											onChange={(event) => {
+												setRoomIsHost(event.target.checked);
+											}}
+										/>
+										<label
+											className="form-check-label"
+											htmlFor="new-league-room-host"
+										>
+											Sim here
+										</label>
+									</div>
+								) : null}
 							</div>
 
 							{state.customize === "default" ||

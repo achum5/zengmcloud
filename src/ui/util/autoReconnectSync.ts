@@ -1,5 +1,6 @@
 import { toWorker } from "./toWorker.ts";
 import { safeLocalStorage } from "./safeLocalStorage.ts";
+import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../common/constants.ts";
 
 // The intent to be connected to a shared-league room is persisted per-league in
 // localStorage, so a full page refresh (which tears down the worker and its
@@ -8,6 +9,11 @@ import { safeLocalStorage } from "./safeLocalStorage.ts";
 export type StoredSync = {
 	code: string;
 	isHost: boolean;
+	// One-shot marker set when the user chose this room by name (e.g. at league
+	// creation) but the connect happens later, after navigation. It makes that
+	// first connect count as an EXPLICIT join (allowed to bind the league file to
+	// the room); cleared once the connect succeeds.
+	pendingJoin?: boolean;
 };
 
 const key = (lid: number) => `syncSession-${lid}`;
@@ -20,7 +26,11 @@ export const getStoredSync = (lid: number): StoredSync | undefined => {
 	try {
 		const parsed = JSON.parse(raw);
 		if (typeof parsed?.code === "string" && parsed.code.trim() !== "") {
-			return { code: parsed.code, isHost: !!parsed.isHost };
+			return {
+				code: parsed.code,
+				isHost: !!parsed.isHost,
+				pendingJoin: !!parsed.pendingJoin,
+			};
 		}
 	} catch {}
 	return undefined;
@@ -29,7 +39,11 @@ export const getStoredSync = (lid: number): StoredSync | undefined => {
 export const setStoredSync = (lid: number, session: StoredSync) => {
 	safeLocalStorage.setItem(
 		key(lid),
-		JSON.stringify({ code: session.code.trim(), isHost: session.isHost }),
+		JSON.stringify({
+			code: session.code.trim(),
+			isHost: session.isHost,
+			...(session.pendingJoin ? { pendingJoin: true } : {}),
+		}),
 	);
 };
 
@@ -72,9 +86,26 @@ export const autoReconnectSync = async (lid: number) => {
 			await toWorker("main", "connectSharedLeague", {
 				code: session.code,
 				isHost: session.isHost,
+				// A join the user chose at league creation runs its actual connect
+				// here, post-navigation - it still counts as explicit, once.
+				explicit: !!session.pendingJoin,
 			});
+			if (session.pendingJoin) {
+				setStoredSync(lid, { code: session.code, isHost: session.isHost });
+			}
 			return;
 		} catch (error) {
+			// The room belongs to a different league file: this stored session is
+			// stale/wrong (e.g. a recycled lid). Drop it and stop retrying - the
+			// worker has already released the sim gate.
+			if (
+				error instanceof Error &&
+				error.message.includes(ERROR_MESSAGE_SYNC_ROOM_MISMATCH)
+			) {
+				clearStoredSync(lid);
+				reconnectingLid = undefined;
+				return;
+			}
 			console.warn(`Auto-reconnect attempt ${attempt + 1} failed`, error);
 			await delay(1000 * (attempt + 1));
 		}

@@ -15,6 +15,7 @@ import type { View } from "../../common/types.ts";
 import { choice } from "../../common/random.ts";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import { confirm } from "../util/confirm.tsx";
+import { clearStoredSync } from "../util/autoReconnectSync.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { relativeTime } from "../util/relativeTime.ts";
 
@@ -383,6 +384,10 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 									if (proceed) {
 										setDeletingLID(league.lid);
 										await toWorker("main", "removeLeague", league.lid);
+										// Lids get recycled (new lid = newest + 1), so a future
+										// league can inherit this lid - it must never inherit
+										// this league's sync room session.
+										clearStoredSync(league.lid);
 										setDeletingLID(undefined);
 									}
 								}}

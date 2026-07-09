@@ -831,6 +831,11 @@ export type League = {
 	syncCode?: string;
 	syncIsHost?: boolean;
 	syncClientId?: string;
+	// The room-binding fingerprint: a stable id shared by the room registry doc
+	// and every league file legitimately connected to that room. An automatic
+	// reconnect is only allowed when they match, so a stale stored session (e.g.
+	// a recycled lid) can never silently join a new file to an old room.
+	syncLeagueId?: string;
 };
 
 export type Locks = {

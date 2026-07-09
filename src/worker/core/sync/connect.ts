@@ -2,10 +2,12 @@ import { SyncEngine } from "./SyncEngine.ts";
 import { FirebaseTransport } from "./FirebaseTransport.ts";
 import { outbox } from "./outbox.ts";
 import { ensureAnonymousAuth } from "./auth.ts";
+import { setApplyGuard } from "./applyGuard.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, lock, toUI } from "../../util/index.ts";
+import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
 import type { LiveBroadcastMeta } from "./types.ts";
 
@@ -58,6 +60,37 @@ const clearPersistedSyncSession = async (lid: number | undefined) => {
 		delete league.syncIsHost;
 		await idb.meta.put("leagues", league);
 	}
+};
+
+// The league file's room-binding fingerprint (see League.syncLeagueId).
+const loadSyncLeagueId = async (
+	lid: number | undefined,
+): Promise<string | undefined> => {
+	if (typeof lid !== "number") {
+		return undefined;
+	}
+	const league = await idb.meta.get("leagues", lid);
+	return typeof league?.syncLeagueId === "string"
+		? league.syncLeagueId
+		: undefined;
+};
+
+const saveSyncLeagueId = async (lid: number | undefined, leagueId: string) => {
+	if (typeof lid !== "number") {
+		return;
+	}
+	const league = await idb.meta.get("leagues", lid);
+	if (league) {
+		league.syncLeagueId = leagueId;
+		await idb.meta.put("leagues", league);
+	}
+};
+
+const makeLeagueId = (): string => {
+	if (typeof crypto !== "undefined" && crypto.randomUUID) {
+		return crypto.randomUUID();
+	}
+	return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 };
 
 const saveWatermark = async (lid: number | undefined, ts: number) => {
@@ -588,10 +621,11 @@ export const markSyncRequired = async (sessionFromUI?: {
 	const lidNumber = typeof lid === "number" ? lid : undefined;
 	if (trimmedFromUI) {
 		currentCode = trimmedFromUI;
-		await savePersistedSyncSession(lidNumber, {
-			code: trimmedFromUI,
-			isHost: !!sessionFromUI?.isHost,
-		});
+		// Deliberately NOT persisted to the league meta here: only a VALIDATED
+		// connect (connectSharedLeague, after the room-binding check) may record a
+		// session on the league. Persisting the UI's stored session blindly let a
+		// stale localStorage entry (e.g. from a recycled lid) stamp a brand-new
+		// league file as belonging to an old room.
 	}
 	const session = await loadPersistedSyncSession(lidNumber);
 	if (session) {
@@ -761,12 +795,18 @@ export const resyncSharedLeague = async (): Promise<{
 // other's changes. Everyone should already be on the same league file - on
 // connect we catch up on everything that happened since we were last synced,
 // then stay live.
+// `explicit` marks a join the user asked for by name (typing the code on the
+// sync page, or choosing a room at league creation). Only an explicit join may
+// BIND a league file to a room; automatic reconnects merely resume a binding
+// that already exists.
 export const connectSharedLeague = async ({
 	code,
 	isHost = false,
+	explicit = false,
 }: {
 	code: string;
 	isHost?: boolean;
+	explicit?: boolean;
 }) => {
 	const trimmed = code.trim();
 	if (!trimmed) {
@@ -786,12 +826,57 @@ export const connectSharedLeague = async ({
 	const clientId = await ensureAnonymousAuth();
 
 	const lid = g.get("lid");
-	connectedLid = typeof lid === "number" ? lid : undefined;
+	const lidNumber = typeof lid === "number" ? lid : undefined;
+	connectedLid = lidNumber;
 	const watermark = await loadWatermark(lid);
 
 	const transport = new FirebaseTransport(trimmed, clientId, {
 		sinceTs: watermark,
 	});
+
+	// Room ↔ league-file binding check. Each room carries a fingerprint
+	// (leagueId) of the league file it belongs to, and each synced league stores
+	// the same fingerprint in its meta row. Without this, any stale session
+	// pointer could silently connect the WRONG file to a room and cross-pollute
+	// both. Rules:
+	//   - Fingerprints on both sides must match, always.
+	//   - An unbound league may bind to a room only on an EXPLICIT join (the
+	//     user typed/chose the code), or - legacy grandfather - when this league's
+	//     meta already carries a validated session for this exact room.
+	//   - Binding is recorded after connect succeeds (meta + room registry).
+	const metaLeagueId = await loadSyncLeagueId(lidNumber);
+	const priorSession = await loadPersistedSyncSession(lidNumber);
+	const roomLeagueId = (await transport.getRoomInfo())?.leagueId;
+	const refuse = async () => {
+		// Only scrub the persisted session if it pointed at the room being
+		// refused - a failed explicit join to some OTHER room must not erase the
+		// league's valid session.
+		if (priorSession?.code === trimmed) {
+			await clearPersistedSyncSession(lidNumber);
+		}
+		syncRequired = false;
+		currentCode = undefined;
+		connectedLid = undefined;
+		void toUI("updateLocal", [
+			{ mpSyncActive: false, mpSyncReady: false, mpSyncReconnecting: false },
+		]);
+		throw new Error(ERROR_MESSAGE_SYNC_ROOM_MISMATCH);
+	};
+	if (
+		metaLeagueId !== undefined &&
+		roomLeagueId !== undefined &&
+		metaLeagueId !== roomLeagueId
+	) {
+		await refuse();
+	}
+	if (
+		metaLeagueId === undefined &&
+		!explicit &&
+		priorSession?.code !== trimmed
+	) {
+		await refuse();
+	}
+	const boundLeagueId = metaLeagueId ?? roomLeagueId ?? makeLeagueId();
 
 	const engine = new SyncEngine(transport, {
 		isHost: false,
@@ -842,6 +927,15 @@ export const connectSharedLeague = async ({
 	currentHostName = undefined;
 	currentCloudReady = false;
 
+	// Hard write-boundary guard: remote changesets may only be applied while the
+	// loaded league is still the one this session was opened for. Protects the
+	// window where a session outlives a league switch (e.g. mid-import) even if
+	// a teardown call is missed.
+	setApplyGuard(() => {
+		const currentLid = g.get("lid");
+		return connectedLid === undefined || currentLid === connectedLid;
+	});
+
 	try {
 		await engine.ensureReady();
 		if (isHost) {
@@ -854,8 +948,14 @@ export const connectSharedLeague = async ({
 
 	await savePersistedSyncSession(lid, { code: trimmed, isHost });
 
-	// Register the room so it shows up on the admin page. Best-effort.
-	void transport.touchRoom?.();
+	// Record the room ↔ league binding on both sides: the fingerprint in this
+	// league's meta row, and (via the registry doc, which also makes the room
+	// listable on the admin page) on the room itself. Registry write is
+	// best-effort; the meta write is what future reconnect validation reads.
+	if (metaLeagueId === undefined) {
+		await saveSyncLeagueId(lidNumber, boundLeagueId);
+	}
+	void transport.touchRoom?.(boundLeagueId);
 
 	// Finish any upload a previous session left unconfirmed (interrupted mid-send
 	// or wedged before a refresh), drop long-dead outbox entries, and surface the
@@ -977,6 +1077,7 @@ export const teardownSharedLeague = async ({
 		engine.stop();
 		setSyncEngine(undefined);
 	}
+	setApplyGuard(undefined);
 	currentCode = undefined;
 	connectedLid = undefined;
 	currentHostName = undefined;

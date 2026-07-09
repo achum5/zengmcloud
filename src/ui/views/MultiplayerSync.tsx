@@ -317,7 +317,13 @@ const MultiplayerSync = () => {
 		setError(undefined);
 		setStatus("connecting");
 		try {
-			await toWorker("main", "connectSharedLeague", { code, isHost });
+			await toWorker("main", "connectSharedLeague", {
+				code,
+				isHost,
+				// Typed by the user on this page - an explicit join, allowed to bind
+				// this league file to the room.
+				explicit: true,
+			});
 			setStoredSync(lid, { code, isHost });
 			setStatus("connected");
 		} catch (error_) {

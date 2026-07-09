@@ -102,6 +102,7 @@ import {
 	publishAutoPlayState,
 	refreshSyncUIState,
 	resyncSharedLeague,
+	teardownSharedLeague,
 	updateLiveBroadcast,
 } from "../core/sync/index.ts";
 import { setSingleGameSimActive } from "../core/sync/afterActionHook.ts";
@@ -634,6 +635,13 @@ const createLeague = async (
 
 	setLeagueCreationStatus("Initializing...");
 
+	// A sync session belongs to ONE league file. Kill any live session BEFORE the
+	// import starts - not when the new league later loads - or the old room keeps
+	// applying its deltas into (and capturing changes from) the new file's cache
+	// for the whole (possibly long) import. The old league's persisted session is
+	// kept, so reopening it reconnects.
+	await teardownSharedLeague({ clearPersisted: false });
+
 	let actualTid = tid;
 	let stream: ReadableStream | undefined;
 	if (getLeagueOptions) {
@@ -731,6 +739,20 @@ const createLeague = async (
 	});
 
 	delete (self as any).stream0;
+
+	// A (re)created league is a NEW file: it must never inherit a previous file's
+	// room session, watermark, or room binding. This lid can carry stale sync
+	// state two ways - importing over an existing league (importLid keeps its
+	// meta row), and lid reuse (new lid = newest lid + 1, so deleting the newest
+	// league recycles its lid).
+	const metaLeague = await idb.meta.get("leagues", lid);
+	if (metaLeague) {
+		delete metaLeague.syncCode;
+		delete metaLeague.syncIsHost;
+		delete metaLeague.syncWatermark;
+		delete metaLeague.syncLeagueId;
+		await idb.meta.put("leagues", metaLeague);
+	}
 
 	if (settings.giveMeWorstRoster) {
 		await league.swapWorstRoster(false);
@@ -1793,7 +1815,9 @@ const getPlayerFaces = async (
 			return tsCache.get(k);
 		}
 
-		let value: { colors: [string, string, string]; jersey?: string } | undefined;
+		let value:
+			| { colors: [string, string, string]; jersey?: string }
+			| undefined;
 		if (tid >= 0) {
 			const index = idb.league
 				.transaction("teamSeasons")
@@ -1836,7 +1860,9 @@ const getPlayerFaces = async (
 		let jerseyTid: number | undefined;
 		let jerseySeason: number | undefined;
 		if (season !== undefined) {
-			const row = p.stats.filter((ps) => ps.season === season && ps.tid >= 0).at(-1);
+			const row = p.stats
+				.filter((ps) => ps.season === season && ps.tid >= 0)
+				.at(-1);
 			if (row) {
 				jerseyTid = row.tid;
 				jerseySeason = season;
@@ -5439,7 +5465,13 @@ const getAutoPlayPreview = async () => {
 		phaseEndNote = "Playoffs end";
 	}
 
-	return { phase, season: g.get("season"), upcomingDays, amountDays, phaseEndNote };
+	return {
+		phase,
+		season: g.get("season"),
+		upcomingDays,
+		amountDays,
+		phaseEndNote,
+	};
 };
 
 // multi-team mode is even set up yet.
