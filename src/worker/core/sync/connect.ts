@@ -70,7 +70,7 @@ let connectedLid: number | undefined;
 
 // The lid the live sync session belongs to (undefined when not connected).
 export const getConnectedLid = (): number | undefined => connectedLid;
-// Name of whoever currently holds the wheel (for display), from the shared doc.
+// Name of whoever currently is in charge of simming (for display), from the shared doc.
 let currentHostName: string | undefined;
 let currentCloudReady = false;
 
@@ -117,10 +117,10 @@ const pushHealth = () => {
 	}
 };
 
-// Whether conflict-prone edits are blocked right now (the wheel-holder is
+// Whether conflict-prone edits are blocked right now (the sim authority is
 // mid-sim, or this device hasn't caught up). Pushed to the UI so the header can
 // show a "simming…" indicator - so a blocked trade/roster move reads as expected
-// rather than a glitch. Only meaningful on a follower; the wheel-holder is never
+// rather than a glitch. Only meaningful on a follower; the sim authority is never
 // blocked. Pushed on change from the authority subscription, the watermark
 // advance, and the health tick (which also catches a lease that quietly expired).
 let lastEditsPausedPushed: boolean | undefined;
@@ -169,6 +169,7 @@ const pushSyncStateFull = () => {
 			mpSyncReconnecting: isReconnecting(),
 			mpSyncIsHost: engine?.isAuthority() ?? false,
 			mpSyncHostName: authority?.holderName,
+			mpSyncReady: engine !== undefined && currentCloudReady,
 			mpSyncHealthy: healthy,
 			mpEditsPaused: editsPaused,
 		},
@@ -190,7 +191,7 @@ let currentTransport: FirebaseTransport | undefined;
 let autoPlayUnsub: (() => void) | undefined;
 
 // ---------------------------------------------------------------------------
-// Live-sim broadcast (Mode B: lockstep). When the wheel-holder live-sims a game,
+// Live-sim broadcast (Mode B: lockstep). When the sim authority live-sims a game,
 // it publishes the immutable play-by-play once and heartbeats a moving cursor;
 // every follower navigates to the live game and replays to that cursor, so all
 // devices see exactly what the simmer sees, live. See types.ts LiveBroadcastMeta.
@@ -216,7 +217,7 @@ let followedBroadcast:
 	| undefined;
 
 // Start broadcasting a live sim to the room. No-op unless connected AND this
-// device holds the wheel (so single-player / followers never touch the cloud).
+// device is in charge of simming (so single-player / followers never touch the cloud).
 // The play-by-play + a snapshot of the game record go out ONCE as payload
 // chunks; the moving cursor is heartbeated separately (updateLiveBroadcast).
 export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
@@ -242,7 +243,10 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 		}
 
 		const serialized = serializeChangeset({ boxScore, playByPlay });
-		const chunkCount = await transport.publishLiveBroadcastData(gid, serialized);
+		const chunkCount = await transport.publishLiveBroadcastData(
+			gid,
+			serialized,
+		);
 
 		const startedAt = Date.now();
 		const byName = engine.localName;
@@ -482,9 +486,9 @@ export const publishAutoPlayState = async (
 	try {
 		await currentTransport?.publishAutoPlay?.(state);
 	} catch (error) {
-		// The schedule ride-along on the authority doc requires holding the wheel;
-		// a stale writer (just lost the wheel) is denied - harmless, since claiming
-		// the wheel already cleared the old schedule.
+		// The schedule ride-along on the authority doc requires being in charge of simming;
+		// a stale writer (just stopped being in charge of simming) is denied - harmless, since claiming
+		// sim authority already cleared the old schedule.
 		console.error("publishAutoPlayState failed", error);
 	}
 };
@@ -492,7 +496,7 @@ export const publishAutoPlayState = async (
 export const getSyncRequired = () => syncRequired;
 
 // True while we intend to be synced but aren't connected yet (reconnecting or
-// offline). The wheel guard uses this to pause simming; the UI shows it.
+// offline). The sim authority guard uses this to pause simming; the UI shows it.
 export const isReconnecting = () =>
 	syncRequired && getSyncEngine() === undefined;
 
@@ -510,8 +514,7 @@ export const markSyncRequired = () => {
 
 const pushReadyToUI = (ready: boolean) => {
 	currentCloudReady = ready;
-	const engine = getSyncEngine();
-	void toUI("updateLocal", [{ mpSyncReady: ready && !!engine?.isAuthority() }]);
+	void toUI("updateLocal", [{ mpSyncReady: ready }]);
 };
 
 const refreshReady = async () => {
@@ -525,7 +528,7 @@ const refreshReady = async () => {
 		await engine.ensureReady();
 		const cloudReady = engine.isReady();
 		pushReadyToUI(cloudReady);
-		return cloudReady && engine.isAuthority();
+		return cloudReady;
 	} catch {
 		pushReadyToUI(false);
 		return false;
@@ -544,25 +547,25 @@ export const getSyncStatus = async () => {
 		reconnecting: isReconnecting(),
 		ready,
 		code: currentCode,
-		// "host" now means "current wheel-holder", read live from the engine.
+		// "host" now means "current sim authority", read live from the engine.
 		isHost: engine?.isAuthority() ?? false,
 		hostName: currentHostName,
 	};
 };
 
-// Push the current wheel state into reactive UI local state so the Play menu,
+// Push the current sim authority state into reactive UI local state so the Play menu,
 // draft, and sync page can reflect who's in control without polling.
 const pushAuthorityToUI = (isHost: boolean, hostName: string | undefined) => {
 	void toUI("updateLocal", [
 		{
 			mpSyncIsHost: isHost,
 			mpSyncHostName: hostName,
-			mpSyncReady: currentCloudReady && isHost,
+			mpSyncReady: currentCloudReady,
 		},
 	]);
 };
 
-// Take the wheel on this device (become the one allowed to advance the league).
+// Sim here on this device (become the one allowed to advance the league).
 export const claimSyncAuthority = async () => {
 	await getSyncEngine()?.claimAuthority();
 };
@@ -816,7 +819,7 @@ export const connectSharedLeague = async ({
 	void toUI("updateLocal", [
 		{
 			mpSyncActive: true,
-			mpSyncReady: engine.isReady() && engine.isAuthority(),
+			mpSyncReady: engine.isReady(),
 			mpSyncReconnecting: false,
 		},
 	]);

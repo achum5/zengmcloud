@@ -10,7 +10,7 @@ import type {
 } from "./types.ts";
 
 // A minimal in-memory transport that records what got published and lets a test
-// drive the "wheel" (authority) doc, so we can check the engine's gating without
+// drive the "sim authority" (authority) doc, so we can check the engine's gating without
 // Firebase.
 class FakeTransport implements SyncTransport {
 	readonly clientId: string;
@@ -59,7 +59,7 @@ class FakeTransport implements SyncTransport {
 }
 
 // A "bulk" changeset - more than MAX_SYNC_CHANGES (200) records, so it takes the
-// wheel-holder-only broadcast path.
+// sim authority-only broadcast path.
 const bulkChangeset = (n = 201): Changeset => ({
 	changes: Array.from({ length: n }, (_, i) => ({
 		store: "players",
@@ -73,7 +73,7 @@ const smallChangeset = (): Changeset => ({
 	changes: [{ store: "players", id: 1, type: "put", value: { pid: 1 } }],
 });
 
-describe("SyncEngine wheel (advance authority)", () => {
+describe("SyncEngine sim authority (advance authority)", () => {
 	let transport: FakeTransport;
 	let engine: SyncEngine;
 
@@ -83,7 +83,7 @@ describe("SyncEngine wheel (advance authority)", () => {
 		engine.start();
 	});
 
-	test("starts without the wheel", () => {
+	test("starts without sim authority", () => {
 		assert.strictEqual(engine.isAuthority(), false);
 	});
 
@@ -110,7 +110,7 @@ describe("SyncEngine wheel (advance authority)", () => {
 		assert.strictEqual(transport.published.length, 1);
 	});
 
-	test("claiming the wheel unlocks bulk sim broadcast", async () => {
+	test("claiming sim authority unlocks bulk sim broadcast", async () => {
 		await engine.claimAuthority();
 		assert.strictEqual(engine.isAuthority(), true);
 
@@ -118,7 +118,7 @@ describe("SyncEngine wheel (advance authority)", () => {
 		assert.ok(transport.published.length > 0);
 	});
 
-	test("the wheel follows the shared doc (handoff)", () => {
+	test("sim authority follows the shared doc (handoff)", () => {
 		transport.setAuthority({ holderId: "me", holderName: "Me" });
 		assert.strictEqual(engine.isAuthority(), true);
 

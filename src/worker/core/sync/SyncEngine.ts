@@ -54,8 +54,8 @@ const makeId = (): string => {
 
 // Draft actions are turn-based - the game only enables the pick for whoever is
 // on the clock - so their changesets may broadcast from ANY device, not just
-// the wheel-holder. (Everything else that mutates in bulk is a sim and stays
-// wheel-holder-only.) Matches an action label like "main.draftUser" or
+// the sim authority. (Everything else that mutates in bulk is a sim and stays
+// sim authority-only.) Matches an action label like "main.draftUser" or
 // "playMenu.untilYourNextPick".
 const isDraftAction = (action: string): boolean => {
 	const name = action.includes(".")
@@ -101,12 +101,12 @@ const chunkChanges = (changes: SyncChange[]): SyncChange[][] => {
 export class SyncEngine {
 	private transport: SyncTransport;
 
-	// Who currently holds "the wheel" (may advance the league). Kept in sync with
+	// Who currently holds sim authority (may advance the league). Kept in sync with
 	// the shared control doc via subscribeAuthority. Undefined until someone
 	// claims it. This device is the authority when authority.holderId === our id.
 	private authority: Authority | undefined;
 
-	// If the user chose "take the wheel" when connecting, claim it on start.
+	// If the user chose "sim here" when connecting, claim it on start.
 	private claimOnStart: boolean;
 
 	private onAuthorityChange:
@@ -118,7 +118,7 @@ export class SyncEngine {
 	private authorityUnsubscribe: (() => void) | undefined;
 
 	// This device's display name, used as the author of push notifications
-	// ("Alex completed a trade") and as the wheel-holder's name. Set when push is
+	// ("Alex completed a trade") and as the sim authority's name. Set when push is
 	// enabled.
 	localName = "A league-mate";
 
@@ -221,7 +221,7 @@ export class SyncEngine {
 		return this.transport.clientId;
 	}
 
-	// Does THIS device currently hold the wheel (i.e. may it advance the league)?
+	// Is THIS device currently in charge of simming (i.e. may it advance the league)?
 	isAuthority(): boolean {
 		return (
 			this.authority !== undefined &&
@@ -235,7 +235,7 @@ export class SyncEngine {
 
 	// Mark the room "actively advancing" for a lease window, so followers hold off
 	// on conflict-prone edits while a sim/phase/draft is running or still
-	// uploading (before it shows up in the change log). Only the wheel-holder may
+	// uploading (before it shows up in the change log). Only the sim authority may
 	// write this. Fire-and-forget - it must never add latency to a sim.
 	markRoomBusy(): void {
 		if (!this.isAuthority()) {
@@ -254,7 +254,7 @@ export class SyncEngine {
 	}
 
 	// Is SOMEONE ELSE mid-advance right now? True only for followers - the
-	// wheel-holder is the one doing the advancing, so it never blocks itself.
+	// sim authority is the one doing the advancing, so it never blocks itself.
 	isRoomBusy(): boolean {
 		if (this.isAuthority()) {
 			return false;
@@ -341,13 +341,13 @@ export class SyncEngine {
 		return this.readyProbe;
 	}
 
-	// Back-compat alias: "host" now means "current wheel-holder". Used by the
+	// Back-compat alias: "host" now means "current sim authority". Used by the
 	// notification builder to decide who narrates a sim.
 	getIsHost(): boolean {
 		return this.isAuthority();
 	}
 
-	// Claim the wheel for this device. Optimistically flips local state so
+	// Claim sim authority for this device. Optimistically flips local state so
 	// advancing unlocks immediately; the shared-doc subscription then confirms
 	// (and would correct us if someone claimed at the same instant).
 	async claimAuthority(): Promise<void> {
@@ -383,7 +383,7 @@ export class SyncEngine {
 	}
 
 	start() {
-		// Watch who holds the wheel, so every device agrees on who may advance.
+		// Watch who is in charge of simming, so every device agrees on who may advance.
 		// This is tiny (one doc) and needed immediately, so it always starts now -
 		// unlike the changes subscription, which waits until the backlog is drained
 		// (see startChangesSubscription) so its initial snapshot isn't the whole log.
@@ -407,7 +407,7 @@ export class SyncEngine {
 			);
 		}
 
-		// If the user chose to take the wheel on connect, claim it now.
+		// If the user chose to sim here on connect, claim it now.
 		if (this.claimOnStart) {
 			void this.claimAuthority().catch(() => undefined);
 		}
@@ -509,12 +509,12 @@ export class SyncEngine {
 		}
 
 		// Bulk change (e.g. a sim, a phase advance, or a big draft advance).
-		// Normally only the wheel-holder broadcasts these. Draft actions are exempt:
+		// Normally only the sim authority broadcasts these. Draft actions are exempt:
 		// whoever is on the clock drafts their own pick, so their (possibly large)
 		// draft changeset must sync from any device.
 		if (!this.isAuthority() && !isDraftAction(action)) {
 			console.warn(
-				`[sync] Skipping bulk change from "${action}" (${changeset.changes.length} records) - only the wheel-holder broadcasts sims.`,
+				`[sync] Skipping bulk change from "${action}" (${changeset.changes.length} records) - only the sim authority broadcasts sims.`,
 			);
 			return;
 		}

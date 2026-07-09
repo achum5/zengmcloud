@@ -1,26 +1,25 @@
 import { useLocal } from "../../util/local.ts";
 
-// A small green/red dot in the header showing whether this device is TRULY
-// connected to the cloud - backed by confirmed live contact (mpSyncHealthy), not
-// just "we have a session object". Only shown while in (or reconnecting to) a
-// multiplayer session; hidden in single-player.
+// A small green/red dot in the header showing whether this device is ready to
+// upload a cloud-tracked change right now. Only shown while in (or reconnecting
+// to) a multiplayer session; hidden in single-player.
 const SyncStatusDot = () => {
-	const { mpSyncActive, mpSyncReconnecting, mpSyncHealthy } = useLocal([
+	const { mpSyncActive, mpSyncReady, mpSyncReconnecting } = useLocal([
 		"mpSyncActive",
+		"mpSyncReady",
 		"mpSyncReconnecting",
-		"mpSyncHealthy",
 	]);
 
 	if (!mpSyncActive && !mpSyncReconnecting) {
 		return null;
 	}
 
-	const live = mpSyncActive && mpSyncHealthy;
-	const title = live
-		? "Connected to the cloud"
+	const ready = mpSyncActive && mpSyncReady;
+	const title = ready
+		? "Ready to sync changes to the cloud"
 		: mpSyncReconnecting
 			? "Reconnecting to the cloud…"
-			: "Not connected to the cloud";
+			: "Not ready to sync changes to the cloud";
 
 	return (
 		<span
@@ -33,7 +32,7 @@ const SyncStatusDot = () => {
 				borderRadius: "50%",
 				marginLeft: 8,
 				verticalAlign: "middle",
-				backgroundColor: live ? "var(--bs-success)" : "var(--bs-danger)",
+				backgroundColor: ready ? "var(--bs-success)" : "var(--bs-danger)",
 			}}
 		/>
 	);

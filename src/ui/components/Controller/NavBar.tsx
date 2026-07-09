@@ -154,11 +154,6 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 					/>
 				</div>
 				<Nav id="top-user-block" navbar>
-					{inLeague ? (
-						<Nav.Item>
-							<SyncStatusDot />
-						</Nav.Item>
-					) : null}
 					<Nav.Item>{userBlock}</Nav.Item>
 				</Nav>
 			</div>

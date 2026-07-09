@@ -4,7 +4,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
-import { useWheelLocked } from "../util/useWheelLocked.ts";
+import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import allowForceTie from "../../common/allowForceTie.ts";
 import { Dropdown } from "react-bootstrap";
 import { ForceWin } from "../components/ForceWin.tsx";
@@ -34,8 +34,8 @@ const Schedule = ({
 		"userTid",
 	]);
 
-	// Can't sim/watch games from here unless this device holds the wheel.
-	const { locked: wheelLocked } = useWheelLocked();
+	// Can't sim/watch games from here unless this device is in charge of simming.
+	const { locked: simAuthorityLocked } = useSimAuthorityLocked();
 
 	const [forcingAll, setForcingAll] = useState(false);
 	const [forceWinKey, setForceWinKey] = useState(0);
@@ -97,7 +97,7 @@ const Schedule = ({
 									: [
 											canWatch
 												? {
-														disabled: gameSimInProgress || wheelLocked,
+														disabled: gameSimInProgress || simAuthorityLocked,
 														highlight:
 															tid !== userTid &&
 															(game.teams[0].tid === userTid ||
@@ -113,7 +113,7 @@ const Schedule = ({
 															toWorker("actions", "liveGame", game.gid),
 													}
 												: {
-														disabled: gameSimInProgress || wheelLocked,
+														disabled: gameSimInProgress || simAuthorityLocked,
 														highlight:
 															tid !== userTid &&
 															(game.teams[0].tid === userTid ||

@@ -34,7 +34,7 @@ import type {
 	SyncTransport,
 } from "./types.ts";
 
-// A room has exactly one "wheel" doc recording who may advance the league.
+// A room has exactly one "sim authority" doc recording who may advance the league.
 const AUTHORITY_DOC_ID = "authority";
 
 // The live-sim broadcast cursor/meta doc, and the prefix for its payload chunks
@@ -145,7 +145,7 @@ export class FirebaseTransport implements SyncTransport {
 	// schedule + countdown. We ride it on the authority ("who's simming") doc,
 	// which every device already reads reliably - only the simmer can auto-play,
 	// and it already holds this doc, so the merge write passes the same rule that
-	// governs the wheel (holderId stays == our uid). This avoids depending on a
+	// governs sim authority (holderId stays == our uid). This avoids depending on a
 	// separate read rule for the registry doc.
 	async publishAutoPlay(state: SyncedAutoPlay) {
 		await setDoc(
@@ -241,9 +241,9 @@ export class FirebaseTransport implements SyncTransport {
 		});
 	}
 
-	// Claim the wheel: become the sole device allowed to advance the league. The
+	// Claim sim authority: become the sole device allowed to advance the league. The
 	// security rules only permit writing holderId === your own uid, so you can
-	// only ever take the wheel for yourself, never assign it to someone else.
+	// only ever sim here for yourself, never assign it to someone else.
 	async claimAuthority(holderId: string, holderName: string) {
 		await setDoc(
 			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
@@ -253,7 +253,7 @@ export class FirebaseTransport implements SyncTransport {
 
 	// Stamp (or clear, with 0) the "actively advancing" lease. Merges onto the
 	// authority doc the holder already owns, so it passes the same rule as the
-	// wheel itself. Followers read this to know a sim is in flight (see
+	// sim authority itself. Followers read this to know a sim is in flight (see
 	// Authority.busyUntil).
 	async publishBusy(busyUntil: number) {
 		await setDoc(
@@ -263,7 +263,7 @@ export class FirebaseTransport implements SyncTransport {
 		);
 	}
 
-	// Watch who currently holds the wheel. Fires immediately with the current
+	// Watch who currently is in charge of simming. Fires immediately with the current
 	// holder (or undefined if nobody has claimed it yet), then on every change.
 	subscribeAuthority(
 		onChange: (authority: Authority | undefined) => void,

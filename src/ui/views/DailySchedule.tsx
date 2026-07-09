@@ -3,7 +3,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
-import { useWheelLocked } from "../util/useWheelLocked.ts";
+import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import { DAILY_SCHEDULE } from "../../common/constants.ts";
 import { NoGamesMessage } from "./GameLog.tsx";
 import allowForceTie from "../../common/allowForceTie.ts";
@@ -56,8 +56,8 @@ const DailySchedule = ({
 		"userTid",
 	]);
 
-	// Can't sim/watch games from here unless this device holds the wheel.
-	const { locked: wheelLocked } = useWheelLocked();
+	// Can't sim/watch games from here unless this device is in charge of simming.
+	const { locked: simAuthorityLocked } = useSimAuthorityLocked();
 
 	// Remember the scroll position per day, so leaving the page (e.g. tapping a
 	// player link) and coming back lands you where you were rather than at the top.
@@ -86,7 +86,7 @@ const DailySchedule = ({
 			<div className="mb-3">
 				<button
 					className="btn btn-secondary"
-					disabled={gameSimInProgress || wheelLocked}
+					disabled={gameSimInProgress || simAuthorityLocked}
 					onClick={() => {
 						toWorker("actions", "simToGame", minGid);
 					}}
@@ -146,7 +146,7 @@ const DailySchedule = ({
 										isToday && !tradeDeadline
 											? [
 													{
-														disabled: gameSimInProgress || wheelLocked,
+														disabled: gameSimInProgress || simAuthorityLocked,
 														highlight:
 															game.teams[0].tid === userTid ||
 															game.teams[1].tid === userTid,
@@ -161,7 +161,7 @@ const DailySchedule = ({
 															toWorker("actions", "liveGame", game.gid),
 													},
 													{
-														disabled: gameSimInProgress || wheelLocked,
+														disabled: gameSimInProgress || simAuthorityLocked,
 														highlight:
 															game.teams[0].tid === userTid ||
 															game.teams[1].tid === userTid,

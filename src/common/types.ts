@@ -1083,13 +1083,13 @@ export type LocalStateUI = {
 	// True while connected to a multiplayer sync session - used to hide the
 	// multi-team switcher so it feels like single-player.
 	mpSyncActive: boolean;
-	// Does this device currently hold "the wheel" (may it advance the league)?
+	// Does this device currently hold sim authority (may it advance the league)?
 	// Only meaningful while mpSyncActive. Drives the Play-menu / draft locks.
 	mpSyncIsHost: boolean;
-	// Display name of whoever currently holds the wheel (undefined = nobody yet).
+	// Display name of whoever currently is in charge of simming (undefined = nobody yet).
 	mpSyncHostName: string | undefined;
-	// True only when this device is connected, has the wheel, and has recently
-	// proven the cloud room is writable/listenable.
+	// True only when this device is connected and has recently proven the cloud
+	// room is writable/listenable.
 	mpSyncReady: boolean;
 	// True when we intend to be synced but aren't connected yet (reconnecting
 	// after a refresh, or offline). Simming is paused while this is true.
@@ -1105,10 +1105,10 @@ export type LocalStateUI = {
 	// header flashes a brief "synced ✓" when it ticks.
 	mpSyncUploadOk: number;
 	// Whether the cloud connection is confirmed live (recent verified contact),
-	// vs. only nominally connected. Drives the header green/red status dot.
+	// vs. only nominally connected.
 	mpSyncHealthy: boolean;
 	// Whether conflict-prone edits (trades, signings, roster/lineup moves) are
-	// currently blocked on THIS device because the wheel-holder is mid-sim or this
+	// currently blocked on THIS device because the sim authority is mid-sim or this
 	// device is still catching up. Drives the header "simming…" indicator so a
 	// blocked action reads as expected, not glitched.
 	mpEditsPaused: boolean;

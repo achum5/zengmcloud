@@ -7,7 +7,7 @@ import { RecapAIButton } from "./RecapAIButton.tsx";
 //   Copy (a prompt with every completed game's box score) → Claude (opens
 //   claude.ai in a NEW tab, so it never navigates away from the game) → Paste
 //   (the AI's reply, filed as each game's note).
-// Deliberately NOT gated by the multiplayer "wheel": filing a recap is just a
+// Deliberately NOT gated by the multiplayer "sim authority": filing a recap is just a
 // game note, which any device may write.
 export const GameRecap = ({
 	season,

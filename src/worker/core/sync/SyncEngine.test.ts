@@ -42,7 +42,7 @@ class FakeBus {
 		};
 	}
 
-	// Shared authority ("wheel") doc, like leagues/{code}/control/authority.
+	// Shared authority ("sim authority") doc, like leagues/{code}/control/authority.
 	authority: Authority | undefined;
 	private authorityListeners = new Set<(a: Authority | undefined) => void>();
 
@@ -319,7 +319,9 @@ describe("SyncEngine", () => {
 		// durable outbox instead of being lost.
 		await engine
 			.onLocalChangeset(
-				{ changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }] },
+				{
+					changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+				},
 				"main.proposeTrade",
 			)
 			.catch(() => {});
@@ -688,7 +690,7 @@ describe("SyncEngine", () => {
 		assert.strictEqual(await engineB.handleEntry(entry), false);
 	});
 
-	test("the busy lease gates followers but never the wheel-holder", async () => {
+	test("the busy lease gates followers but never the sim authority", async () => {
 		const bus = new FakeBus();
 		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
 		const follower = new SyncEngine(new FakeTransport("F", bus));
@@ -714,7 +716,7 @@ describe("SyncEngine", () => {
 		assert.strictEqual(follower.isRoomBusy(), false);
 	});
 
-	test("only the wheel-holder can mark the room busy", async () => {
+	test("only the sim authority can mark the room busy", async () => {
 		const bus = new FakeBus();
 		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
 		const follower = new SyncEngine(new FakeTransport("F", bus));

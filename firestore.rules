@@ -44,7 +44,7 @@ service cloud.firestore {
       allow delete: if request.auth != null;
     }
 
-    // The "wheel": which single device is currently allowed to advance the
+    // The "sim authority": which single device is currently allowed to advance the
     // league (sim, draft, change phase). A room has exactly one such doc. Any
     // signed-in member may claim it, but only FOR THEMSELVES - you set holderId
     // to your own uid, never assign control to (or yank it from) someone else.

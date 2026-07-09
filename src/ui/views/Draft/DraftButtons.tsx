@@ -19,7 +19,7 @@ export const DraftButtons = ({
 	const [running, setRunning] = useState(false);
 
 	// The simmer drives the draft; a follower's advance buttons would just error
-	// out against the wheel guard, so hide them entirely.
+	// out against the sim authority guard, so hide them entirely.
 	if (mpBlocked) {
 		return null;
 	}

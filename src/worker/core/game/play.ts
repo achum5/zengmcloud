@@ -361,7 +361,7 @@ const play = async (
 					};
 					url = helpers.leagueUrl(["live_game"]);
 
-					// If this device is the wheel-holder in a sync room, broadcast this
+					// If this device is the sim authority in a sync room, broadcast this
 					// live sim to the room so every follower watches it in lockstep. A
 					// no-op in single-player or on a follower.
 					runLiveBroadcastStart(gidOneGame, result.playByPlay);

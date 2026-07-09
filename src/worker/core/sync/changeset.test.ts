@@ -117,7 +117,7 @@ describe("sync changeset", () => {
 		local.statusText = helpers.daysLeft(true, 29);
 		assert.ok(local.statusText.includes("29"), local.statusText);
 
-		// The wheel device simmed a day and synced daysLeft → 28.
+		// Sim authority device simmed a day and synced daysLeft → 28.
 		changeTracker.disable();
 		await applyChangeset(
 			{

@@ -11,11 +11,11 @@ import {
 } from "../util/keyboardShortcuts.ts";
 import { confirm } from "../util/confirm.tsx";
 
-// Play-menu items that stay available on a device that doesn't hold the wheel:
+// Play-menu items that stay available on a device that is not in charge of simming:
 // "stop"/"stopAuto" just halt. Drafting your own player isn't a play-menu item
 // (you click a player), so the draft ADVANCERS here move the shared draft and
 // are locked for non-simmers. Mirrors the guard in worker/index.ts.
-const PLAY_MENU_WHEEL_EXEMPT = new Set(["stop", "stopAuto"]);
+const PLAY_MENU_SIM_AUTHORITY_EXEMPT = new Set(["stop", "stopAuto"]);
 
 const handleOptionClick = (option: Option, event: MouseEvent) => {
 	if (!option.url) {
@@ -88,7 +88,7 @@ const PlayMenu = ({
 	]);
 
 	// Season/phase advancement is locked when we're reconnecting/offline, or when
-	// we're synced but don't hold the wheel (the worker enforces both). Draft
+	// we're synced but not in charge of simming (the worker enforces both). Draft
 	// items stay available.
 	const locked =
 		mpSyncReconnecting || (mpSyncActive && (!mpSyncIsHost || !mpSyncReady));
@@ -120,7 +120,7 @@ const PlayMenu = ({
 						{mpSyncReconnecting
 							? "🔄 Reconnecting to the league…"
 							: !mpSyncIsHost
-								? `🔒 ${mpSyncHostName ?? "Another device"} has the wheel`
+								? `🔒 ${mpSyncHostName ?? "Another device"} is in charge of simming`
 								: "Cloud sync is not ready"}
 					</Dropdown.Header>
 				) : null}
@@ -131,7 +131,7 @@ const PlayMenu = ({
 					const optionLocked =
 						locked &&
 						!option.url &&
-						!PLAY_MENU_WHEEL_EXEMPT.has(option.id as string);
+						!PLAY_MENU_SIM_AUTHORITY_EXEMPT.has(option.id as string);
 					return (
 						<Dropdown.Item
 							key={i}
@@ -146,7 +146,7 @@ const PlayMenu = ({
 									? mpSyncReconnecting
 										? "Reconnecting to the league…"
 										: !mpSyncIsHost
-											? `${mpSyncHostName ?? "Another device"} has the wheel`
+											? `${mpSyncHostName ?? "Another device"} is in charge of simming`
 											: "Cloud sync is not ready"
 									: undefined
 							}

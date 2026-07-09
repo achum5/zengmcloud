@@ -55,7 +55,7 @@ const AutoPlaySchedule = () => {
 	]);
 
 	// Auto play advances the shared league, so it's only allowed when connected
-	// to the cloud AND holding the wheel.
+	// to the cloud AND being in charge of simming.
 	const eligible = mpSyncActive && mpSyncIsHost;
 
 	const [settings, setSettings] = useState<AutoPlaySettings>(
@@ -153,7 +153,9 @@ const AutoPlaySchedule = () => {
 
 	// The active stop-after day, if it belongs to the season currently previewed.
 	const stopDay =
-		settings.stopAfter && preview && settings.stopAfter.season === preview.season
+		settings.stopAfter &&
+		preview &&
+		settings.stopAfter.season === preview.season
 			? settings.stopAfter.day
 			: undefined;
 	const setStopAfter = (day: number) => {
@@ -275,7 +277,8 @@ const AutoPlaySchedule = () => {
 										</thead>
 										<tbody>
 											{projected.slice(0, DISPLAY_FIRES).map((f, i) => {
-												const isStop = stopDay !== undefined && f.toDay === stopDay;
+												const isStop =
+													stopDay !== undefined && f.toDay === stopDay;
 												const afterStop =
 													stopDay !== undefined && f.fromDay > stopDay;
 												return (
@@ -382,11 +385,7 @@ const AutoPlaySchedule = () => {
 			</div>
 
 			{settings.rules.map((rule) => (
-				<div
-					key={rule.id}
-					className="card mb-2"
-					style={{ maxWidth: 760 }}
-				>
+				<div key={rule.id} className="card mb-2" style={{ maxWidth: 760 }}>
 					<div className="card-body py-2">
 						<div className="d-flex flex-wrap align-items-center gap-2 mb-2">
 							<div className="form-check mb-0">
@@ -395,7 +394,9 @@ const AutoPlaySchedule = () => {
 									type="checkbox"
 									className="form-check-input"
 									checked={rule.enabled}
-									onChange={(e) => setRule(rule.id, { enabled: e.target.checked })}
+									onChange={(e) =>
+										setRule(rule.id, { enabled: e.target.checked })
+									}
 								/>
 								<label className="form-check-label" htmlFor={`en-${rule.id}`} />
 							</div>
@@ -427,7 +428,9 @@ const AutoPlaySchedule = () => {
 								style={{ width: "auto" }}
 								value={rule.mode}
 								onChange={(e) =>
-									setRule(rule.id, { mode: e.target.value as ScheduleRule["mode"] })
+									setRule(rule.id, {
+										mode: e.target.value as ScheduleRule["mode"],
+									})
 								}
 							>
 								<option value="every">Every</option>
@@ -492,10 +495,7 @@ const AutoPlaySchedule = () => {
 						) : (
 							<div className="d-flex flex-wrap align-items-center gap-2">
 								{rule.times.map((t, i) => (
-									<div
-										key={i}
-										className="d-flex align-items-center gap-1"
-									>
+									<div key={i} className="d-flex align-items-center gap-1">
 										<input
 											type="time"
 											className="form-control form-control-sm"

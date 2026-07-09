@@ -5,7 +5,7 @@
 // runLiveBroadcastStart the moment a live single-game sim's play-by-play is
 // ready, so followers navigate with minimal lag behind the simmer.
 //
-// The hook is a no-op unless this device is connected AND holds the wheel, so a
+// The hook is a no-op unless this device is connected AND is in charge of simming, so a
 // single-player live sim never touches the cloud.
 
 type LiveBroadcastStartFn = (gid: number, playByPlay: any[]) => void;

@@ -34,7 +34,10 @@ const summarizeRule = (r: ScheduleRule): string => {
 	const days =
 		r.days.length === 0 || r.days.length === 7
 			? "every day"
-			: [...r.days].sort((a, b) => a - b).map((d) => DAY_NAMES[d]).join(",");
+			: [...r.days]
+					.sort((a, b) => a - b)
+					.map((d) => DAY_NAMES[d])
+					.join(",");
 	if (r.mode === "at") {
 		return `${days} at ${r.times.map(to12h).join(", ")} — sim ${r.amount}`;
 	}
@@ -201,7 +204,7 @@ class AutoPlayScheduler {
 	}
 
 	// Auto play advances the shared league, so it's only allowed when connected to
-	// the cloud AND holding the wheel. (The worker enforces the wheel too.)
+	// the cloud AND being in charge of simming. (The worker enforces sim authority too.)
 	private eligible(): boolean {
 		const s = local.getState();
 		return !!s.mpSyncActive && !!s.mpSyncIsHost;
@@ -232,7 +235,7 @@ class AutoPlayScheduler {
 		const simming = this.eligible() && this.settings.enabled;
 
 		// While not the simmer, stay silent - except for the single "off" snapshot
-		// right after we stop or hand off the wheel, so followers clear their view.
+		// right after we stop or hand off sim authority, so followers clear their view.
 		if (!simming && !this.publishedAsSimmer) {
 			return;
 		}
@@ -290,8 +293,7 @@ class AutoPlayScheduler {
 		if (!this.eligible()) {
 			// Can't enable unless connected + this device is the simmer (the button
 			// is also disabled in this state).
-			this.state.pausedReason =
-				"Connect and sim here to auto play.";
+			this.state.pausedReason = "Connect and sim here to auto play.";
 			this.emit();
 			return;
 		}
@@ -342,8 +344,8 @@ class AutoPlayScheduler {
 		if (!this.settings.enabled) {
 			return;
 		}
-		// Paused (still enabled) until we're connected + hold the wheel. Re-check
-		// so it resumes automatically once eligible (or pauses if the wheel moves).
+		// Paused (still enabled) until we're connected + be in charge of simming. Re-check
+		// so it resumes automatically once eligible (or pauses if sim authority moves).
 		if (!this.eligible()) {
 			this.state.running = false;
 			this.state.nextRunAt = undefined;
@@ -398,7 +400,7 @@ class AutoPlayScheduler {
 		if (this.ticking) {
 			return;
 		}
-		// Lost the connection or the wheel since we armed - skip; armTimer pauses.
+		// Lost the connection or sim authority since we armed - skip; armTimer pauses.
 		if (!this.eligible()) {
 			return;
 		}

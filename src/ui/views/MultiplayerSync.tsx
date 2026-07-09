@@ -103,7 +103,7 @@ const MultiplayerSync = () => {
 	const [isHost, setIsHost] = useState(false);
 	const [status, setStatus] = useState<Status>("disconnected");
 	const [error, setError] = useState<string | undefined>();
-	const [takingWheel, setTakingWheel] = useState(false);
+	const [claimingSimAuthority, setClaimingSimAuthority] = useState(false);
 
 	const [teams, setTeams] = useState<
 		{ tid: number; region: string; name: string }[]
@@ -220,7 +220,9 @@ const MultiplayerSync = () => {
 			if (incomplete > 0 || failed) {
 				setResyncResult(
 					`Re-applied ${applied} of ${total} changes, but couldn't fully catch up${
-						incomplete > 0 ? ` (${incomplete} change is missing part of its data in the cloud)` : ""
+						incomplete > 0
+							? ` (${incomplete} change is missing part of its data in the cloud)`
+							: ""
 					}. The reliable fix is to re-share the league file: export it from the device that's simming and import it here.`,
 				);
 			} else {
@@ -332,12 +334,12 @@ const MultiplayerSync = () => {
 		setStatus("disconnected");
 	};
 
-	const takeWheel = async () => {
-		setTakingWheel(true);
+	const claimSimAuthority = async () => {
+		setClaimingSimAuthority(true);
 		try {
 			await toWorker("main", "claimSyncAuthority", undefined);
 		} finally {
-			setTakingWheel(false);
+			setClaimingSimAuthority(false);
 		}
 	};
 
@@ -463,11 +465,11 @@ const MultiplayerSync = () => {
 												mpSyncReady ? "text-success" : "text-body-secondary"
 											}
 										>
-											<b>You have the wheel</b>
+											<b>You're in charge of simming</b>
 										</span>
 									) : mpSyncHostName ? (
 										<span className="text-body-secondary">
-											<b>{mpSyncHostName}</b> has the wheel
+											<b>{mpSyncHostName}</b> is in charge of simming
 										</span>
 									) : (
 										<span className="text-body-secondary">
@@ -478,10 +480,10 @@ const MultiplayerSync = () => {
 								{!mpSyncIsHost ? (
 									<button
 										className="btn btn-primary btn-sm"
-										disabled={takingWheel}
-										onClick={takeWheel}
+										disabled={claimingSimAuthority}
+										onClick={claimSimAuthority}
 									>
-										{takingWheel ? "Taking…" : "Sim here"}
+										{claimingSimAuthority ? "Switching…" : "Sim here"}
 									</button>
 								) : null}
 							</div>
@@ -539,7 +541,9 @@ const MultiplayerSync = () => {
 							icon and come back here.
 						</div>
 					) : pushPermission === "granted" ? (
-						<p className="text-success mb-0">Notifications are on for this device.</p>
+						<p className="text-success mb-0">
+							Notifications are on for this device.
+						</p>
 					) : (
 						<>
 							<button
@@ -602,7 +606,9 @@ const MultiplayerSync = () => {
 										className="list-group-item px-0 d-flex align-items-center gap-2"
 									>
 										<span
-											title={item.caughtUp ? "Applied here" : "Not caught up yet"}
+											title={
+												item.caughtUp ? "Applied here" : "Not caught up yet"
+											}
 											style={{ fontSize: "1.1em" }}
 										>
 											{item.caughtUp ? "✅" : "⏳"}
@@ -610,7 +616,9 @@ const MultiplayerSync = () => {
 										<span className="flex-grow-1">
 											{prettyAction(item.action)}
 											{item.mine ? (
-												<span className="badge text-bg-secondary ms-2">you</span>
+												<span className="badge text-bg-secondary ms-2">
+													you
+												</span>
 											) : null}
 											<span className="text-body-secondary d-block small">
 												{item.records} record{item.records === 1 ? "" : "s"} ·{" "}

@@ -36,7 +36,7 @@ export type ChangesetEntry = {
 	chunkCount?: number;
 };
 
-// A live-sim broadcast in progress. When the wheel-holder live-sims a game, it
+// A live-sim broadcast in progress. When the sim authority live-sims a game, it
 // publishes the (immutable) play-by-play once, then heartbeats a moving cursor;
 // every follower device navigates to the live game and replays in lockstep,
 // seeing exactly what the simmer sees. Stored at leagues/{code}/control/
@@ -81,14 +81,14 @@ export type LiveBroadcastUpdate = {
 	expiresAt?: number;
 };
 
-// Who currently holds "the wheel" - the one device allowed to advance the
+// Who currently holds sim authority - the one device allowed to advance the
 // league (sim/draft/phase change). Stored at leagues/{code}/control/authority
 // and watched by everyone, so all devices agree on who's in control. Undefined
 // means nobody has claimed it yet (a brand-new room).
 export type Authority = {
 	holderId: string;
 	holderName: string;
-	// Server-relative ms (the holder's clock) until which the wheel-holder is
+	// Server-relative ms (the holder's clock) until which the sim authority is
 	// actively advancing the league - a sim/phase/draft that's running or still
 	// uploading, and so not yet visible to followers via the change log. While
 	// this is in the future, followers refuse conflict-prone edits (trades,
@@ -186,7 +186,7 @@ export interface SyncTransport {
 		notification: SyncNotification & { authorId: string; authorName: string },
 	): Promise<void>;
 
-	// "Wheel" (advance-authority) support. Optional so the in-memory test
+	// "Sim authority" (advance-authority) support. Optional so the in-memory test
 	// transport can skip it. claimAuthority makes this device the sole holder;
 	// subscribeAuthority watches who currently holds it (undefined until someone
 	// claims). Returns an unsubscribe function.
@@ -196,7 +196,7 @@ export interface SyncTransport {
 		onError?: (error: unknown) => void,
 	): () => void;
 
-	// Stamp/clear the wheel-holder's "actively advancing" lease on the shared
+	// Stamp/clear the sim authority's "actively advancing" lease on the shared
 	// authority doc (see Authority.busyUntil). Pass 0 to clear.
 	publishBusy?(busyUntil: number): Promise<void>;
 
