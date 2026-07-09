@@ -596,7 +596,17 @@ export class SyncEngine {
 		if (this.code === undefined) {
 			return;
 		}
-		const pending = await outbox.pending(this.code);
+		let pending: Omit<ChangesetEntry, "seq">[];
+		try {
+			pending = await outbox.pending(this.code);
+		} catch (error) {
+			this.markNotReady();
+			console.error(
+				"[sync] outbox flush: could not read pending uploads",
+				error,
+			);
+			return;
+		}
 		if (pending.length === 0) {
 			return;
 		}

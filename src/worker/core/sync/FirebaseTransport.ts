@@ -434,7 +434,7 @@ export class FirebaseTransport implements SyncTransport {
 	}
 
 	async publish(entry: Omit<ChangesetEntry, "seq">) {
-		const doc = {
+		const payload = {
 			id: entry.id,
 			authorId: entry.authorId,
 			action: entry.action,
@@ -461,7 +461,7 @@ export class FirebaseTransport implements SyncTransport {
 		let lastError: unknown;
 		for (let attempt = 0; attempt < 3; attempt++) {
 			try {
-				await addDoc(this.changesRef, doc);
+				await setDoc(doc(this.changesRef, entry.id), payload);
 				this.markContact();
 				return;
 			} catch (error) {

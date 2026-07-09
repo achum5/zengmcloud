@@ -127,7 +127,19 @@ const play = async (
 		// same way - the room must stay in sync - but must NOT push a notification:
 		// you deliberately simmed just one game with the rest of the day still to
 		// play, so pinging phones with a "game done" would be noise.
-		runAfterActionHook("playMenu", "sim", { silent: gidOneGame !== undefined });
+		const synced = await runAfterActionHook("playMenu", "sim", {
+			silent: gidOneGame !== undefined,
+		});
+		if (!synced) {
+			logEvent(
+				{
+					type: "error",
+					text: `Cloud sync did not finish uploading this sim. The sim is still queued locally and will be retried after your connection works again.`,
+					persistent: true,
+				},
+				conditions,
+			);
+		}
 
 		// The single-game-sim window is over (its changeset is drained). Clear the
 		// force-silent flag so the next full day/week sim notifies normally.

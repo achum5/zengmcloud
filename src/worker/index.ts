@@ -351,26 +351,24 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 
 	return Promise.resolve(call()).then(
 		async (value) => {
-			// For sim/advance actions, wait for the sync upload attempt so failures
-			// are visible and pending changes are retained for retry. Other actions
-			// stay fire-and-forget.
-			if (isSimAuthorityLockedCall(type, name)) {
-				const synced = await afterAction(type, name);
-				if (marksBusy) {
-					getSyncEngine()?.clearRoomBusy();
-				}
-				if (!synced) {
-					util.logEvent(
-						{
-							type: "error",
-							text: `Cloud sync did not finish uploading this change. The change is still queued locally and will be retried after your connection works again.`,
-							persistent: true,
-						},
-						conditions,
-					);
-				}
-			} else {
-				void afterAction(type, name);
+			// Wait for the sync handoff for every cloud-tracked mutation. The local
+			// action has already happened; before reporting success, make sure its
+			// changeset was either confirmed uploaded or durably retained for retry.
+			// Otherwise a plain roster/depth edit can vanish while the connection dot
+			// still looks green.
+			const synced = await afterAction(type, name);
+			if (marksBusy) {
+				getSyncEngine()?.clearRoomBusy();
+			}
+			if (!synced) {
+				util.logEvent(
+					{
+						type: "error",
+						text: `Cloud sync did not finish uploading this change. The change is still queued locally and will be retried after your connection works again.`,
+						persistent: true,
+					},
+					conditions,
+				);
 			}
 			return value;
 		},

@@ -16,7 +16,7 @@ type AfterActionFn = (
 	type: string,
 	name: string,
 	options?: AfterActionOptions,
-) => void;
+) => Promise<boolean>;
 
 let hook: AfterActionFn | undefined;
 
@@ -29,7 +29,7 @@ export const runAfterActionHook = (
 	name: string,
 	options?: AfterActionOptions,
 ) => {
-	hook?.(type, name, options);
+	return hook?.(type, name, options) ?? Promise.resolve(true);
 };
 
 // While a SINGLE-game sim (a live sim, or "Sim one game") is in flight, its game

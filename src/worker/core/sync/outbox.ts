@@ -13,8 +13,11 @@ import type { ChangesetEntry } from "./types.ts";
 // next launch instead of corrupting the room.
 //
 // This lives in its OWN IndexedDB database, isolated from the league and meta
-// DBs, so it can never affect existing data. Every operation is best-effort - a
-// failure here degrades to the old behavior; it never breaks a publish.
+// DBs, so it can never affect existing data. Adding an entry is a required part
+// of publishing in a synced room: if we can't durably record the upload intent,
+// the caller must treat the sync handoff as failed rather than pretending the
+// change is safely queued. Cleanup operations are allowed to be best-effort,
+// because a leftover entry simply retries idempotently later.
 
 const DB_NAME = "bbgm-sync-outbox";
 const STORE = "entries";
@@ -40,9 +43,7 @@ const getDB = () => {
 	return dbPromise;
 };
 
-// Never throw into the publish path - the outbox is a safety net, not a
-// dependency.
-const safe = async <T>(fn: () => Promise<T>): Promise<T | undefined> => {
+const bestEffort = async <T>(fn: () => Promise<T>): Promise<T | undefined> => {
 	try {
 		return await fn();
 	} catch (error) {
@@ -54,20 +55,18 @@ const safe = async <T>(fn: () => Promise<T>): Promise<T | undefined> => {
 export const outbox = {
 	// Record an entry as "trying to upload".
 	async add(code: string, entry: Omit<ChangesetEntry, "seq">) {
-		await safe(async () => {
-			const db = await getDB();
-			await db.put(STORE, {
-				key: entry.id,
-				code,
-				entry,
-				createdAt: Date.now(),
-			} satisfies OutboxRow);
-		});
+		const db = await getDB();
+		await db.put(STORE, {
+			key: entry.id,
+			code,
+			entry,
+			createdAt: Date.now(),
+		} satisfies OutboxRow);
 	},
 
 	// Mark an entry as confirmed uploaded.
 	async remove(id: string) {
-		await safe(async () => {
+		await bestEffort(async () => {
 			const db = await getDB();
 			await db.delete(STORE, id);
 		});
@@ -75,13 +74,8 @@ export const outbox = {
 
 	// Everything still pending for a room, oldest first (i.e. publish order).
 	async pending(code: string): Promise<Omit<ChangesetEntry, "seq">[]> {
-		const rows = await safe(async () => {
-			const db = await getDB();
-			return (await db.getAllFromIndex(STORE, "code", code)) as OutboxRow[];
-		});
-		if (!rows) {
-			return [];
-		}
+		const db = await getDB();
+		const rows = (await db.getAllFromIndex(STORE, "code", code)) as OutboxRow[];
 		rows.sort((a, b) => a.createdAt - b.createdAt);
 		return rows.map((r) => r.entry);
 	},
@@ -89,7 +83,7 @@ export const outbox = {
 	// Drop entries older than maxAgeMs (e.g. a room the user never came back to),
 	// so a permanently-failed upload can't make the outbox grow forever.
 	async prune(maxAgeMs: number) {
-		await safe(async () => {
+		await bestEffort(async () => {
 			const db = await getDB();
 			const cutoff = Date.now() - maxAgeMs;
 			const rows = (await db.getAll(STORE)) as OutboxRow[];
