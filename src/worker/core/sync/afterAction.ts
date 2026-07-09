@@ -4,6 +4,7 @@ import { logChangeset } from "./devChangesetLogger.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { isSingleGameSimActive } from "./afterActionHook.ts";
 import { buildNotifications } from "./notifications.ts";
+import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
 import { idb } from "../../db/index.ts";
 import { local, lock } from "../../util/index.ts";
 
@@ -49,21 +50,38 @@ export const afterAction = async (
 	name: string,
 	options?: { silent?: boolean },
 ) => {
+	const label = `${type}.${name}`;
 	let changeset: Awaited<ReturnType<typeof captureChangeset>> | undefined;
 	let published = false;
 
 	try {
 		// Fast path: most actions change nothing.
-		if (changeTracker.size() === 0) {
+		const pendingBeforeCapture = changeTracker.size();
+		const trace = shouldTraceSyncLabel(label) || pendingBeforeCapture > 0;
+		if (trace) {
+			syncDebugLog("afterAction:start", {
+				label,
+				pendingBeforeCapture,
+				silentOption: !!options?.silent,
+				singleGameSimActive: isSingleGameSimActive(),
+				hasEngine: !!getSyncEngine(),
+			});
+		}
+		if (pendingBeforeCapture === 0) {
+			if (trace) {
+				syncDebugLog("afterAction:no-pending-changes", { label });
+			}
 			return true;
 		}
 
 		changeset = await captureChangeset();
 		if (changeset.changes.length === 0) {
+			if (trace) {
+				syncDebugLog("afterAction:captured-empty", { label });
+			}
 			return true;
 		}
 
-		const label = `${type}.${name}`;
 		// Force silent for the whole single-game-sim window (live sim / "Sim one
 		// game"), whatever drains the changeset - a live sim's playback navigation
 		// spawns interleaved worker calls that can drain (and would otherwise notify
@@ -76,6 +94,14 @@ export const afterAction = async (
 		if (process.env.NODE_ENV === "development") {
 			logChangeset(label, changeset);
 		}
+		if (trace) {
+			syncDebugLog("afterAction:captured", {
+				label,
+				records: changeset.changes.length,
+				silent,
+				hasEngine: !!getSyncEngine(),
+			});
+		}
 
 		const engine = getSyncEngine();
 		if (engine) {
@@ -84,8 +110,20 @@ export const afterAction = async (
 			// recaptured. Re-throw after logging so the outer catch restores the
 			// pending changes and schedules a retry.
 			try {
+				if (trace) {
+					syncDebugLog("afterAction:publish-start", {
+						label,
+						records: changeset.changes.length,
+					});
+				}
 				await engine.onLocalChangeset(changeset, label);
 				published = true;
+				if (trace) {
+					syncDebugLog("afterAction:publish-confirmed", {
+						label,
+						records: changeset.changes.length,
+					});
+				}
 			} catch (error) {
 				console.error(
 					`[sync] Failed to publish "${label}" (${changeset.changes.length} records) - this change did NOT sync to other devices.`,
@@ -139,9 +177,15 @@ export const afterAction = async (
 		} else {
 			// No cloud target, so there is nothing to retry.
 			published = true;
+			if (trace) {
+				syncDebugLog("afterAction:no-engine", {
+					label,
+					records: changeset.changes.length,
+				});
+			}
 		}
 		return true;
-	} catch {
+	} catch (error) {
 		if (changeset && !published) {
 			changeTracker.restore(
 				changeset.changes.map((change) => ({
@@ -150,6 +194,11 @@ export const afterAction = async (
 					type: change.type,
 				})),
 			);
+			syncDebugLog("afterAction:publish-failed-restored-for-retry", {
+				label,
+				records: changeset.changes.length,
+				error,
+			});
 			scheduleRetry(type, name);
 			return false;
 		}

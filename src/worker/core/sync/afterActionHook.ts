@@ -1,3 +1,5 @@
+import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
+
 // A dependency-free indirection so the game engine can trigger a cloud-sync
 // publish WITHOUT statically importing the sync layer (which would create an
 // import cycle: game/play -> sync/afterAction -> league/loadGameAttributes ->
@@ -24,12 +26,40 @@ export const setAfterActionHook = (fn: AfterActionFn) => {
 	hook = fn;
 };
 
-export const runAfterActionHook = (
+export const runAfterActionHook = async (
 	type: string,
 	name: string,
 	options?: AfterActionOptions,
 ) => {
-	return hook?.(type, name, options) ?? Promise.resolve(true);
+	const label = `${type}.${name}`;
+	const trace = shouldTraceSyncLabel(label);
+	if (trace) {
+		syncDebugLog("afterActionHook:start", {
+			label,
+			hasHook: hook !== undefined,
+			silentOption: !!options?.silent,
+		});
+	}
+
+	if (!hook) {
+		if (trace) {
+			syncDebugLog("afterActionHook:missing", { label });
+		}
+		return true;
+	}
+
+	try {
+		const synced = await hook(type, name, options);
+		if (trace) {
+			syncDebugLog("afterActionHook:complete", { label, synced });
+		}
+		return synced;
+	} catch (error) {
+		if (trace) {
+			syncDebugLog("afterActionHook:failed", { label, error });
+		}
+		throw error;
+	}
 };
 
 // While a SINGLE-game sim (a live sim, or "Sim one game") is in flight, its game

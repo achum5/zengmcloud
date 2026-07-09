@@ -11,6 +11,7 @@ import type {
 	SyncTransport,
 } from "./types.ts";
 import { outbox } from "./outbox.ts";
+import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
 
 // Changesets larger than this are "bulk" (e.g. a simulation, which mutates
 // hundreds of records). They're only published by the host, and are split into
@@ -471,8 +472,33 @@ export class SyncEngine {
 		if (changeset.changes.length === 0) {
 			return;
 		}
+		const trace = shouldTraceSyncLabel(action);
+		if (trace) {
+			syncDebugLog("engine:onLocalChangeset-start", {
+				action,
+				records: changeset.changes.length,
+				isAuthority: this.isAuthority(),
+				authorityHolderId: this.authority?.holderId,
+				clientId: this.transport.clientId,
+				isCaughtUp: this.isCaughtUp(),
+				isReady: this.isReady(),
+			});
+		}
 
-		await this.ensureReady();
+		try {
+			await this.ensureReady();
+			if (trace) {
+				syncDebugLog("engine:ensureReady-ok", {
+					action,
+					isReady: this.isReady(),
+				});
+			}
+		} catch (error) {
+			if (trace) {
+				syncDebugLog("engine:ensureReady-failed", { action, error });
+			}
+			throw error;
+		}
 
 		// Send as a single doc only if it fits in one Firestore doc by BOTH record
 		// count AND serialized size. A changeset can be <= MAX_SYNC_CHANGES records
@@ -488,6 +514,13 @@ export class SyncEngine {
 		if (fitsInOneDoc) {
 			const id = makeId();
 			this.seen.add(id);
+			if (trace) {
+				syncDebugLog("engine:single-entry-publish-start", {
+					action,
+					id,
+					records: changeset.changes.length,
+				});
+			}
 			// Show the same cloud indicator as a sim (total 1), so a plain
 			// transaction on any device gets upload feedback + a confirm tick.
 			this.onUploadProgress?.({ done: 0, total: 1 });
@@ -499,8 +532,22 @@ export class SyncEngine {
 					changeset,
 				});
 				this.onUploadComplete?.();
+				if (trace) {
+					syncDebugLog("engine:single-entry-publish-confirmed", {
+						action,
+						id,
+						records: changeset.changes.length,
+					});
+				}
 			} catch (error) {
 				this.markNotReady();
+				if (trace) {
+					syncDebugLog("engine:single-entry-publish-failed", {
+						action,
+						id,
+						error,
+					});
+				}
 				throw error;
 			} finally {
 				this.onUploadProgress?.(undefined);
@@ -519,6 +566,12 @@ export class SyncEngine {
 			console.warn(
 				`[sync] Publishing bulk change from "${action}" (${changeset.changes.length} records) even though local sim authority is not currently confirmed.`,
 			);
+			syncDebugLog("engine:bulk-authority-not-confirmed", {
+				action,
+				records: changeset.changes.length,
+				authorityHolderId: this.authority?.holderId,
+				clientId: this.transport.clientId,
+			});
 		}
 
 		await this.publishBulk(changeset, action);
@@ -527,6 +580,16 @@ export class SyncEngine {
 	private async publishBulk(changeset: Changeset, action: string) {
 		const chunks = chunkChanges(changeset.changes);
 		const batchId = makeId();
+		const trace = shouldTraceSyncLabel(action);
+		if (trace) {
+			syncDebugLog("engine:bulk-publish-start", {
+				action,
+				batchId,
+				records: changeset.changes.length,
+				chunks: chunks.length,
+				isAuthority: this.isAuthority(),
+			});
+		}
 
 		// Re-stamp the busy lease now that the (possibly long) upload is starting,
 		// so it can't expire mid-transfer and let a follower slip an edit into the
@@ -559,16 +622,57 @@ export class SyncEngine {
 				await outbox.add(this.code, entry);
 			}
 		}
+		if (trace) {
+			syncDebugLog("engine:bulk-outbox-queued", {
+				action,
+				batchId,
+				chunks: entries.length,
+				hasOutbox: this.code !== undefined,
+			});
+		}
 
 		this.onUploadProgress?.({ done: 0, total: entries.length });
 		try {
 			for (let i = 0; i < entries.length; i++) {
+				if (trace) {
+					syncDebugLog("engine:bulk-chunk-publish-start", {
+						action,
+						batchId,
+						chunkIndex: i,
+						chunkCount: entries.length,
+						entryId: entries[i]!.id,
+						records: entries[i]!.changeset.changes.length,
+					});
+				}
 				await this.publishEntry(entries[i]!);
 				this.onUploadProgress?.({ done: i + 1, total: entries.length });
+				if (trace) {
+					syncDebugLog("engine:bulk-chunk-publish-confirmed", {
+						action,
+						batchId,
+						chunkIndex: i,
+						chunkCount: entries.length,
+						entryId: entries[i]!.id,
+					});
+				}
 			}
 			this.onUploadComplete?.();
+			if (trace) {
+				syncDebugLog("engine:bulk-publish-confirmed", {
+					action,
+					batchId,
+					chunks: entries.length,
+				});
+			}
 		} catch (error) {
 			this.markNotReady();
+			if (trace) {
+				syncDebugLog("engine:bulk-publish-failed", {
+					action,
+					batchId,
+					error,
+				});
+			}
 			throw error;
 		} finally {
 			this.onUploadProgress?.(undefined);
