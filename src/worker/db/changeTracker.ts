@@ -20,7 +20,15 @@ type PendingChange = {
 const key = (store: string, id: number | string) => `${store}:${id}`;
 
 let enabled = false;
-let suppressed = false;
+// How many runSuppressed calls are in flight. A COUNTER, not a boolean:
+// suppressed calls overlap constantly (a live-broadcast heartbeat every ~400ms,
+// beforeView/runBefore on every navigation), and the old save/restore boolean
+// had a fatal interleaving bug - call B captures prev=true while call A is
+// running; A finishes and restores false; B finishes and restores TRUE - leaving
+// recording off FOREVER. From then on every local change (sims included) was
+// silently invisible to sync until a page refresh, while playing felt normal.
+// A counter is symmetric under any interleaving: it always returns to 0.
+let suppressDepth = 0;
 // How many sims are currently capturing. A sim runs fire-and-forget, so its
 // writes interleave (across awaits) with any runSuppressed call that happens
 // concurrently - a read-only view load, a cloud-only broadcast heartbeat, etc.
@@ -56,10 +64,19 @@ export const changeTracker = {
 	// store+id so only the latest intent per record is kept - a put-then-delete
 	// collapses to a delete, matching whole-record last-write-wins semantics.
 	record(store: string, id: number | string, type: ChangeType) {
-		if (!enabled || suppressed) {
+		// While a sim is capturing, recording WINS over suppression: a suppressed
+		// call that started just before the sim (a slow view load spanning the sim
+		// start) must not swallow the sim's first writes. Suppressed calls are
+		// read-only during a sim window, so nothing extra gets recorded.
+		if (!enabled || (suppressDepth > 0 && simDepth === 0)) {
 			return;
 		}
 		pending.set(key(store, id), { store, id, type });
+	},
+
+	// For sync debug logs, so a capture wedge is diagnosable from the console.
+	debugState() {
+		return { enabled, suppressDepth, simDepth };
 	},
 
 	size() {
@@ -106,19 +123,19 @@ export const changeTracker = {
 	// Run fn with recording suppressed. Used for local-only/bulk calls (league
 	// import, read-only view fetches) that must not capture at all.
 	async runSuppressed<T>(fn: () => Promise<T>): Promise<T> {
-		// Never engage the global suppress flag while a sim is capturing - it would
-		// swallow the sim's concurrent, interleaved writes (see simDepth). The calls
-		// routed here during a sim are read-only view loads and cloud-only calls with
-		// no idb writes, so skipping suppression for them changes nothing they'd write.
+		// Never engage the global suppress counter while a sim is capturing - it
+		// would swallow the sim's concurrent, interleaved writes (see simDepth). The
+		// calls routed here during a sim are read-only view loads and cloud-only
+		// calls with no idb writes, so skipping suppression for them changes nothing
+		// they'd write.
 		if (simDepth > 0) {
 			return await fn();
 		}
-		const prev = suppressed;
-		suppressed = true;
+		suppressDepth += 1;
 		try {
 			return await fn();
 		} finally {
-			suppressed = prev;
+			suppressDepth = Math.max(0, suppressDepth - 1);
 		}
 	},
 };

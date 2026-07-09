@@ -69,7 +69,13 @@ export const afterAction = async (
 		}
 		if (pendingBeforeCapture === 0) {
 			if (trace) {
-				syncDebugLog("afterAction:no-pending-changes", { label });
+				// Include the tracker's internal state: a sim label with zero pending
+				// changes is the signature of a capture wedge (suppression stuck on),
+				// and this makes it diagnosable straight from the console.
+				syncDebugLog("afterAction:no-pending-changes", {
+					label,
+					tracker: changeTracker.debugState(),
+				});
 			}
 			return true;
 		}
