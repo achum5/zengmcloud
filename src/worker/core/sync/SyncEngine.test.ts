@@ -217,13 +217,14 @@ describe("SyncEngine", () => {
 		resetG();
 		await resetCache({});
 
-		// A bulk changeset (> the single-entry threshold), like a day's sim.
+		// A bulk changeset (> the single-entry threshold), like a day's sim. Each
+		// record is large enough that the serialized whole exceeds one part.
 		const N = 260;
 		const changes = Array.from({ length: N }, (_, i) => ({
 			store: "events" as const,
 			id: i + 1,
 			type: "put" as const,
-			value: { eid: i + 1, type: "test", text: "x".repeat(40) },
+			value: { eid: i + 1, type: "test", text: "x".repeat(2000) },
 		}));
 		await host.onLocalChangeset({ changes }, "playMenu.day");
 
@@ -283,6 +284,120 @@ describe("SyncEngine", () => {
 		}
 		const events = await idb.cache.events.getAll();
 		assert.strictEqual(events.length, N);
+	});
+
+	test("a single record larger than one Firestore doc still ships (string parts)", async () => {
+		const bus = new FakeBus();
+		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		host.start();
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+
+		resetG();
+		await resetCache({});
+
+		// ONE record whose serialized form far exceeds the per-doc part size. The
+		// old per-record chunking made this an unshippable chunk that Firestore
+		// rejected forever - and, at the head of the FIFO queue, it blocked every
+		// upload behind it permanently.
+		const huge = "x".repeat(800_000);
+		await host.onLocalChangeset(
+			{
+				changes: [
+					{
+						store: "events",
+						id: 1,
+						type: "put",
+						value: { eid: 1, text: huge },
+					},
+				],
+			},
+			"playMenu.day",
+		);
+
+		assert.ok(bus.entries.length > 1, "must be split across multiple docs");
+		assert.ok(bus.entries.every((e) => typeof e.payloadPart === "string"));
+
+		// Receiver reassembles the parts and applies the full record.
+		for (const entry of bus.entries) {
+			await receiver.handleEntry(structuredClone(entry));
+		}
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, 1);
+		assert.strictEqual((events[0] as any).text.length, huge.length);
+	});
+
+	test("an oversized legacy outbox entry is migrated instead of wedging the queue", async () => {
+		const bus = new FakeBus();
+		const transport = new FakeTransport("H", bus);
+		const engine = new SyncEngine(transport, { isHost: true });
+		engine.start();
+
+		resetG();
+		await resetCache({});
+
+		// A stuck legacy-format chunk (as produced before string chunking): chunk
+		// 1 of 2 of a batch whose sibling (chunk 0) already published. Too big for
+		// one doc, it could never publish and blocked the queue forever.
+		const huge = "y".repeat(800_000);
+		const legacy = {
+			id: "legacy-big",
+			authorId: "H",
+			action: "playMenu.sim",
+			batchId: "old-batch",
+			chunkIndex: 1,
+			chunkCount: 2,
+			changeset: {
+				changes: [
+					{
+						store: "events" as const,
+						id: 7,
+						type: "put" as const,
+						value: { eid: 7, text: huge },
+					},
+				],
+			},
+		};
+		// Inject it as a stranded queued upload (memory queue - no room code).
+		(engine as any).memoryQueue.push(legacy);
+
+		assert.strictEqual(await engine.drainOutbox(), true, "queue must drain");
+
+		// An empty stand-in completed the legacy batch position...
+		const standIn = bus.entries.find((e) => e.id === "legacy-big");
+		assert.ok(standIn);
+		assert.strictEqual(standIn!.changeset.changes.length, 0);
+		assert.strictEqual(standIn!.batchId, "old-batch");
+		assert.strictEqual(standIn!.chunkIndex, 1);
+		// ...and the actual content shipped as a new string-part batch.
+		const parts = bus.entries.filter((e) => e.payloadPart !== undefined);
+		assert.ok(parts.length >= 2);
+
+		// A receiver holding the batch's other chunk ends up with ALL the data.
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+		await receiver.handleEntry({
+			id: "legacy-small",
+			authorId: "H",
+			seq: 0.5,
+			action: "playMenu.sim",
+			batchId: "old-batch",
+			chunkIndex: 0,
+			chunkCount: 2,
+			changeset: {
+				changes: [{ store: "events", id: 6, type: "put", value: { eid: 6 } }],
+			},
+		});
+		for (const entry of bus.entries) {
+			await receiver.handleEntry(structuredClone(entry));
+		}
+		assert.strictEqual(
+			(receiver as any).pendingBatches.size,
+			0,
+			"no half-open batch left",
+		);
+		const events = await idb.cache.events.getAll();
+		const byId = new Map(events.map((e: any) => [e.eid, e]));
+		assert.ok(byId.has(6), "sibling chunk's record applied");
+		assert.strictEqual(byId.get(7)!.text.length, huge.length);
 	});
 
 	test("an upload interrupted mid-publish is retried from the durable outbox", async () => {

@@ -737,8 +737,10 @@ export const getSyncActivity = async (): Promise<{
 	const clientId = engine.clientId;
 
 	// Collapse chunked bulk batches (which share a batchId) into a single row.
-	// gameAttributes keys carried by an entry (phase, daysLeft, etc.).
+	// gameAttributes keys carried by an entry (phase, daysLeft, etc.). String-part
+	// entries aren't independently parseable, so they carry this as metadata.
 	const attrsOf = (entry: (typeof entries)[number]): string[] =>
+		entry.attrs ??
 		entry.changeset.changes
 			.filter((c) => c.store === "gameAttributes")
 			.map((c) => String(c.id));
@@ -746,11 +748,16 @@ export const getSyncActivity = async (): Promise<{
 	const byKey = new Map<string, SyncActivityItem>();
 	for (const entry of entries) {
 		const key = entry.batchId ?? entry.id;
-		const records = entry.changeset.changes.length;
+		const records = entry.records ?? entry.changeset.changes.length;
 		const mine = entry.authorId === clientId;
 		const existing = byKey.get(key);
 		if (existing) {
-			existing.records += records;
+			// String-part entries carry the WHOLE batch's record count as metadata
+			// (take the max); legacy chunks each carry their own slice (sum them).
+			existing.records =
+				entry.records !== undefined
+					? Math.max(existing.records, records)
+					: existing.records + records;
 			existing.ts = Math.max(existing.ts, entry.seq);
 			existing.caughtUp = mine || existing.ts <= watermark;
 			for (const attr of attrsOf(entry)) {

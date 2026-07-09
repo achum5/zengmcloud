@@ -454,6 +454,12 @@ export class FirebaseTransport implements SyncTransport {
 						chunkCount: entry.chunkCount,
 					}
 				: {}),
+			// String-part payload + display metadata (new-format bulk chunks).
+			...(entry.payloadPart !== undefined
+				? { payloadPart: entry.payloadPart }
+				: {}),
+			...(entry.records !== undefined ? { records: entry.records } : {}),
+			...(entry.attrs !== undefined ? { attrs: entry.attrs } : {}),
 			ts: serverTimestamp(),
 		};
 
@@ -499,6 +505,10 @@ export class FirebaseTransport implements SyncTransport {
 			batchId: data.batchId,
 			chunkIndex: data.chunkIndex,
 			chunkCount: data.chunkCount,
+			payloadPart:
+				typeof data.payloadPart === "string" ? data.payloadPart : undefined,
+			records: typeof data.records === "number" ? data.records : undefined,
+			attrs: Array.isArray(data.attrs) ? data.attrs : undefined,
 		};
 	}
 

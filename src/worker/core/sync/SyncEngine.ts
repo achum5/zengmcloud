@@ -3,6 +3,7 @@ import {
 	type Changeset,
 	type SyncChange,
 } from "./changeset.ts";
+import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
 import type { SyncNotification } from "./notifications.ts";
 import type {
 	Authority,
@@ -17,6 +18,34 @@ import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
 // hundreds of records). They're only published by the host, and are split into
 // chunks so each fits in one Firestore doc.
 const MAX_SYNC_CHANGES = 200;
+
+// Max characters of serialized changeset per Firestore doc. Deliberately
+// conservative: Firestore's ~1 MB limit counts UTF-8 BYTES, and a JS string
+// character can encode up to 3 bytes (accented/non-Latin names), so capping at
+// 300k chars keeps even a worst-case all-multibyte part safely under the doc
+// limit. Bulk changesets are split at the STRING level into parts of this
+// size, so a single record of any size is always shippable - the old
+// per-record chunking gave an oversized record its own over-limit chunk, which
+// Firestore rejected forever and which then blocked the FIFO upload queue
+// permanently.
+const MAX_PART_CHARS = 300_000;
+
+// Split a serialized changeset into parts of at most MAX_PART_CHARS, never
+// splitting a surrogate pair.
+const splitSerialized = (serialized: string): string[] => {
+	const parts: string[] = [];
+	let i = 0;
+	while (i < serialized.length) {
+		let end = Math.min(i + MAX_PART_CHARS, serialized.length);
+		const last = serialized.charCodeAt(end - 1);
+		if (end < serialized.length && last >= 0xd800 && last <= 0xdbff) {
+			end += 1;
+		}
+		parts.push(serialized.slice(i, end));
+		i = end;
+	}
+	return parts;
+};
 
 // Backlog drain paging. Entries can be up to ~700 KB (a bulk-sim chunk), so a
 // page of this many is a few MB per fetch - enough to make real progress, small
@@ -38,10 +67,6 @@ const CATCH_UP_PROGRESS_MIN = 30;
 // room after this).
 const ROOM_BUSY_LEASE_MS = 45_000;
 
-// Each chunk stays well under Firestore's 1 MB/doc limit - capped by record
-// count and by serialized size (whichever hits first).
-const MAX_CHUNK_RECORDS = 100;
-const MAX_CHUNK_BYTES = 700_000;
 const READY_TTL = 10_000;
 const READY_TIMEOUT = 5_000;
 
@@ -110,30 +135,6 @@ const isDraftAction = (action: string): boolean => {
 	);
 };
 
-const chunkChanges = (changes: SyncChange[]): SyncChange[][] => {
-	const chunks: SyncChange[][] = [];
-	let current: SyncChange[] = [];
-	let bytes = 0;
-
-	for (const change of changes) {
-		const size = JSON.stringify(change).length;
-		if (
-			current.length > 0 &&
-			(current.length >= MAX_CHUNK_RECORDS || bytes + size > MAX_CHUNK_BYTES)
-		) {
-			chunks.push(current);
-			current = [];
-			bytes = 0;
-		}
-		current.push(change);
-		bytes += size;
-	}
-	if (current.length > 0) {
-		chunks.push(current);
-	}
-	return chunks;
-};
-
 // Connects the local change-capture layer to a transport (Firebase or a fake).
 // - Local actions → onLocalChangeset() → publish to the shared log.
 // - Remote entries → handleEntry() → applyChangeset() into the local cache.
@@ -171,13 +172,19 @@ export class SyncEngine {
 	// re-broadcasting) the same change.
 	private seen = new Set<string>();
 
-	// Buffers incoming bulk chunks until a whole batch has arrived. entryIds
-	// remembers which log entries fed the batch, so a failed apply can remove them
-	// all from `seen` and the next catch-up genuinely re-processes them (instead of
-	// dedup silently skipping the data forever).
+	// Buffers incoming bulk chunks until a whole batch has arrived. A chunk is
+	// either a legacy record-level slice (SyncChange[]) or a new-format string
+	// part of the serialized whole changeset. entryIds remembers which log
+	// entries fed the batch, so a failed apply can remove them all from `seen`
+	// and the next catch-up genuinely re-processes them (instead of dedup
+	// silently skipping the data forever).
 	private pendingBatches = new Map<
 		string,
-		{ count: number; chunks: Map<number, SyncChange[]>; entryIds: string[] }
+		{
+			count: number;
+			chunks: Map<number, SyncChange[] | string>;
+			entryIds: string[];
+		}
 	>();
 
 	// Highest entry seq (server-timestamp) we've seen, and the highest we've
@@ -664,10 +671,12 @@ export class SyncEngine {
 		// count AND serialized size. A changeset can be <= MAX_SYNC_CHANGES records
 		// yet still blow past Firestore's ~1 MB/doc limit - e.g. advancing to free
 		// agency turns over many large player records at once. When it doesn't
-		// fit, chunk it, byte-capping every chunk.
+		// fit, split the SERIALIZED changeset into string parts - which handles a
+		// single record of any size.
+		const serialized = serializeChangeset(changeset);
 		const fitsInOneDoc =
 			changeset.changes.length <= MAX_SYNC_CHANGES &&
-			JSON.stringify(changeset).length <= MAX_CHUNK_BYTES;
+			serialized.length <= MAX_PART_CHARS;
 
 		let entries: Omit<ChangesetEntry, "seq">[];
 		if (fitsInOneDoc) {
@@ -702,17 +711,7 @@ export class SyncEngine {
 			// edit into the tail of the upload window.
 			this.markRoomBusy();
 
-			const chunks = chunkChanges(changeset.changes);
-			const batchId = makeId();
-			entries = chunks.map((chunk, i) => ({
-				id: makeId(),
-				authorId: this.transport.clientId,
-				action,
-				batchId,
-				chunkIndex: i,
-				chunkCount: chunks.length,
-				changeset: { changes: chunk },
-			}));
+			entries = this.buildPartEntries(serialized, changeset, action);
 		}
 
 		// Durability point. After this loop the delta can no longer be lost, only
@@ -733,6 +732,33 @@ export class SyncEngine {
 
 		const drainedAll = await this.drainOutbox();
 		return drainedAll ? "confirmed" : "queued";
+	}
+
+	// Split an already-serialized changeset into part entries (one Firestore doc
+	// each) sharing a fresh batchId. `records`/`attrs` ride along for the
+	// activity page, since a lone part isn't independently parseable.
+	private buildPartEntries(
+		serialized: string,
+		changeset: Changeset,
+		action: string,
+	): Omit<ChangesetEntry, "seq">[] {
+		const parts = splitSerialized(serialized);
+		const batchId = makeId();
+		const attrs = changeset.changes
+			.filter((c) => c.store === "gameAttributes")
+			.map((c) => String(c.id));
+		return parts.map((part, i) => ({
+			id: makeId(),
+			authorId: this.transport.clientId,
+			action,
+			batchId,
+			chunkIndex: i,
+			chunkCount: parts.length,
+			changeset: { changes: [] },
+			payloadPart: part,
+			records: changeset.changes.length,
+			attrs,
+		}));
 	}
 
 	// Add one entry to the upload queue: the durable outbox when we have a room
@@ -787,8 +813,22 @@ export class SyncEngine {
 	// failed or timed out - everything unconfirmed is still safely queued, a
 	// retry is scheduled with backoff, and the periodic catch-up timer provides a
 	// second independent kick.
+	//
+	// Coalesced: while one run is already queued and not yet started, further
+	// calls just share it - each run reads the whole outbox anyway, so chaining
+	// a run per caller only produced back-to-back retry churn against a failing
+	// entry (every timer/caller stacked another full attempt).
+	private drainQueued = false;
+
 	drainOutbox(): Promise<boolean> {
-		const run = this.drainChain.then(() => this.doDrain());
+		if (this.drainQueued) {
+			return this.drainChain;
+		}
+		this.drainQueued = true;
+		const run = this.drainChain.then(() => {
+			this.drainQueued = false;
+			return this.doDrain();
+		});
 		this.drainChain = run.catch(() => false);
 		return run;
 	}
@@ -822,6 +862,34 @@ export class SyncEngine {
 				// A stranded entry from a previous session isn't in `seen` yet; add it
 				// so our own echo isn't re-applied.
 				this.seen.add(entry.id);
+
+				// Self-heal a legacy-format entry too big for one Firestore doc. The
+				// old per-record chunking let an oversized record produce an
+				// unshippable chunk; Firestore rejected it forever and, being at the
+				// head of this FIFO queue, it blocked every upload behind it. Replace
+				// it with string parts (and, if it was one chunk of a batch, an empty
+				// stand-in so receivers can complete the batch's other chunks).
+				if (entry.payloadPart === undefined) {
+					const legacySerialized = serializeChangeset(entry.changeset);
+					if (legacySerialized.length > MAX_PART_CHARS) {
+						const parts = await this.migrateOversizedEntry(
+							entry,
+							legacySerialized,
+						);
+						if (!parts) {
+							this.markNotReady();
+							this.scheduleDrainRetry();
+							return false;
+						}
+						// The parts take the entry's place at the head of the queue, so
+						// nothing behind it can overtake its content.
+						pending.unshift(...parts);
+						total = done + pending.length;
+						this.onUploadProgress?.({ done, total });
+						continue;
+					}
+				}
+
 				try {
 					// Firestore's setDoc never rejects while offline (it buffers), so
 					// every attempt is timed. On timeout the entry stays queued; if the
@@ -870,6 +938,53 @@ export class SyncEngine {
 		}
 	}
 
+	// Replace a legacy-format entry too big for one Firestore doc. If it was a
+	// chunk of a batch (its siblings may already be in the log, with receivers
+	// waiting on this index), first publish an EMPTY chunk under the same id and
+	// chunk coordinates so the batch completes on receivers; then re-ship this
+	// entry's actual content as a fresh string-part batch. Whole-record applies
+	// are idempotent, so the two batches together land exactly the original
+	// data. Returns the part entries to publish next, or undefined if the
+	// stand-in publish failed (treated as a normal transient drain failure).
+	private async migrateOversizedEntry(
+		entry: Omit<ChangesetEntry, "seq">,
+		serialized: string,
+	): Promise<Omit<ChangesetEntry, "seq">[] | undefined> {
+		syncDebugLog("engine:migrating-oversized-entry", {
+			entryId: entry.id,
+			action: entry.action,
+			chars: serialized.length,
+			isChunk: entry.batchId !== undefined,
+		});
+		if (entry.batchId !== undefined) {
+			const replacement = { ...entry, changeset: { changes: [] } };
+			try {
+				await withTimeout(
+					this.transport.publish(replacement),
+					PUBLISH_ATTEMPT_TIMEOUT,
+				);
+			} catch (error) {
+				syncDebugLog("engine:migrate-stand-in-failed", {
+					entryId: entry.id,
+					error,
+				});
+				return undefined;
+			}
+		}
+		const parts = this.buildPartEntries(
+			serialized,
+			entry.changeset,
+			entry.action,
+		);
+		for (const part of parts) {
+			this.seen.add(part.id);
+			await this.enqueue(part);
+		}
+		await this.removePending(entry.id);
+		void this.reportPending();
+		return parts;
+	}
+
 	private scheduleDrainRetry() {
 		if (this.stopped || this.drainRetryTimer !== undefined) {
 			return;
@@ -914,33 +1029,25 @@ export class SyncEngine {
 			entry.chunkIndex !== undefined &&
 			entry.chunkCount !== undefined
 		) {
-			return this.handleChunk(
-				entry.id,
-				entry.batchId,
-				entry.chunkIndex,
-				entry.chunkCount,
-				entry.changeset,
-			);
+			return this.handleChunk(entry);
 		}
 
 		return this.apply(entry.changeset, [entry.id]);
 	}
 
-	private async handleChunk(
-		entryId: string,
-		batchId: string,
-		chunkIndex: number,
-		chunkCount: number,
-		changeset: Changeset,
-	): Promise<boolean> {
+	private async handleChunk(entry: ChangesetEntry): Promise<boolean> {
+		const batchId = entry.batchId!;
 		let batch = this.pendingBatches.get(batchId);
 		if (!batch) {
-			batch = { count: chunkCount, chunks: new Map(), entryIds: [] };
+			batch = { count: entry.chunkCount!, chunks: new Map(), entryIds: [] };
 			this.pendingBatches.set(batchId, batch);
 		}
-		batch.chunks.set(chunkIndex, changeset.changes);
-		if (!batch.entryIds.includes(entryId)) {
-			batch.entryIds.push(entryId);
+		batch.chunks.set(
+			entry.chunkIndex!,
+			entry.payloadPart ?? entry.changeset.changes,
+		);
+		if (!batch.entryIds.includes(entry.id)) {
+			batch.entryIds.push(entry.id);
 		}
 
 		if (batch.chunks.size < batch.count) {
@@ -950,12 +1057,35 @@ export class SyncEngine {
 
 		this.pendingBatches.delete(batchId);
 
-		const changes: SyncChange[] = [];
-		for (let i = 0; i < batch.count; i++) {
-			const chunk = batch.chunks.get(i);
-			if (chunk) {
-				changes.push(...chunk);
+		// Reassemble. New-format batches are string parts of ONE serialized
+		// changeset (joined then parsed - so a single record of any size works);
+		// legacy batches are per-chunk change arrays (concatenated). A parse
+		// failure routes through the same failed-apply path as an apply error, so
+		// the watermark stays pinned and the batch retries on a later catch-up.
+		let changes: SyncChange[];
+		try {
+			if (batch.chunks.size > 0 && typeof batch.chunks.get(0) === "string") {
+				let serialized = "";
+				for (let i = 0; i < batch.count; i++) {
+					serialized += (batch.chunks.get(i) as string | undefined) ?? "";
+				}
+				changes = (deserializeChangeset(serialized) as Changeset).changes;
+			} else {
+				changes = [];
+				for (let i = 0; i < batch.count; i++) {
+					const chunk = batch.chunks.get(i);
+					if (chunk && typeof chunk !== "string") {
+						changes.push(...chunk);
+					}
+				}
 			}
+		} catch (error) {
+			console.error("Failed to reassemble synced batch", error);
+			for (const id of batch.entryIds) {
+				this.failedApplies.add(id);
+				this.seen.delete(id);
+			}
+			return false;
 		}
 
 		// A failed apply un-sees the WHOLE batch, so the retry can rebuild it from
@@ -1184,13 +1314,7 @@ export class SyncEngine {
 				entry.batchId !== undefined &&
 				entry.chunkIndex !== undefined &&
 				entry.chunkCount !== undefined
-					? await this.handleChunk(
-							entry.id,
-							entry.batchId,
-							entry.chunkIndex,
-							entry.chunkCount,
-							entry.changeset,
-						)
+					? await this.handleChunk(entry)
 					: await this.apply(entry.changeset, [entry.id]);
 			if (ok) {
 				applied++;

@@ -25,15 +25,34 @@ export type ChangesetEntry = {
 	seq: number;
 	// e.g. "main.proposeTrade" - for debugging/inspection.
 	action: string;
+	// The changes themselves, for a single-doc entry. Empty ({ changes: [] }) on
+	// a payload-part entry (see payloadPart) - the real content is in the joined
+	// parts.
 	changeset: Changeset;
 
 	// Bulk changes (e.g. a simulation) are too big for one Firestore doc, so the
-	// host splits them into chunks that share a batchId. Receivers buffer chunks
-	// until all `chunkCount` have arrived, then apply the reassembled changeset.
-	// Absent on normal (single-doc) changes.
+	// author splits them into chunks that share a batchId. Receivers buffer
+	// chunks until all `chunkCount` have arrived, then apply the reassembled
+	// changeset. Absent on normal (single-doc) changes.
 	batchId?: string;
 	chunkIndex?: number;
 	chunkCount?: number;
+
+	// New-format bulk chunk: a slice of the SERIALIZED whole changeset, split at
+	// the string level. Unlike the legacy per-record chunking (which shipped
+	// each chunk as its own valid changeset), this can carry a record of ANY
+	// size - a single record bigger than one Firestore doc previously produced
+	// an unshippable chunk that wedged the upload queue forever. Receivers
+	// concatenate all parts of a batch in index order, then deserialize.
+	// Entries without this field are legacy record-level chunks and are still
+	// applied the old way.
+	payloadPart?: string;
+
+	// Display metadata for the sync-activity page, carried on payload-part
+	// entries because their content is not independently parseable: how many
+	// records the whole batch touches, and which gameAttributes keys it carries.
+	records?: number;
+	attrs?: string[];
 };
 
 // A live-sim broadcast in progress. When the sim authority live-sims a game, it
