@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { toWorker } from "../util/toWorker.ts";
-import { buildSeasonRecapPrompt, parseSeasonRecaps } from "../util/seasonRecap.ts";
+import {
+	buildSeasonRecapPrompt,
+	parseSeasonRecaps,
+} from "../util/seasonRecap.ts";
 import { RecapAIButton } from "./RecapAIButton.tsx";
 
 // A league-wide "Team Recaps" workflow for a whole season, mirroring the Game
@@ -53,7 +56,9 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 		setResult(undefined);
 		setCopyFallback(undefined);
 		if (loadFailed || !prompt) {
-			setResult("Couldn't prepare this season's data — reload the page and retry.");
+			setResult(
+				"Couldn't prepare this season's data — reload the page and retry.",
+			);
 			return;
 		}
 		try {

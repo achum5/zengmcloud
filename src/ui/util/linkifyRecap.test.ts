@@ -155,7 +155,10 @@ describe("buildTeamSeasonRecapLinks", () => {
 	});
 
 	test("skips empty team slots", () => {
-		const withGap = [{ abbrev: "LAL", region: "LA", name: "Lakers" }, undefined];
+		const withGap = [
+			{ abbrev: "LAL", region: "LA", name: "Lakers" },
+			undefined,
+		];
 		const links = buildTeamSeasonRecapLinks({
 			season: 2026,
 			players: [],

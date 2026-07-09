@@ -12,6 +12,8 @@ import {
 } from "../../util/index.ts";
 import type { Conditions } from "../../../common/types.ts";
 import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
+import { changeTracker } from "../../db/changeTracker.ts";
+import { runAfterActionHook } from "../sync/afterActionHook.ts";
 
 /**
  * Simulates one or more days of free agency.
@@ -80,7 +82,20 @@ async function play(
 
 		if (canStartGames) {
 			await updatePlayMenu();
-			await cbRunDay();
+			// Bracket the whole run (all days + any phase change it chains into) as
+			// a capture window, and publish at the end. This matters most for
+			// autoplay, which dispatches freeAgents.play WITHOUT awaiting it (to
+			// break the promise chain): the originating action has long since
+			// resolved, so without this the free-agency days and the season
+			// rollover they end in - the biggest changeset of the year - would sit
+			// unpublished until some later unrelated action.
+			changeTracker.beginSim();
+			try {
+				await cbRunDay();
+			} finally {
+				changeTracker.endSim();
+			}
+			await runAfterActionHook("playMenu", "day");
 		}
 	} else {
 		await cbRunDay();

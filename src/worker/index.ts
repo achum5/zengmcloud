@@ -123,12 +123,25 @@ const isCloudTrackedCall = (type: string, name: string): boolean =>
 // ADVANCERS (sim one pick / to your next pick / to end) move the shared draft
 // past other teams' picks, so only the simmer may run them.
 const PLAY_MENU_SIM_AUTHORITY_EXEMPT = new Set(["stop", "stopAuto"]);
-// "actions"-type calls that advance the season/live sim. (runDraft/untilPick in
-// actions.ts are draft helpers and stay exempt.)
+// "actions"-type calls that advance the season/live sim, or advance the shared
+// draft past other teams' picks (untilPick = "Sim to this pick", same class as
+// playMenu.onePick/untilYourNextPick).
 const ACTIONS_SIM_AUTHORITY_LOCKED = new Set([
 	"simGame",
 	"liveGame",
 	"simToGame",
+	"untilPick",
+]);
+
+// "toolsMenu"-type calls that advance the shared timeline (auto play, skip-to
+// phase jumps). Everything else in Tools (resetDb, dangerZone toggles) is
+// local-only and stays open.
+const TOOLS_MENU_SIM_AUTHORITY_LOCKED = new Set([
+	"autoPlaySeasons",
+	"skipToPlayoffs",
+	"skipToBeforeDraft",
+	"skipToAfterDraft",
+	"skipToPreseason",
 ]);
 // The All-Star weekend is a single shared event (one dunk contest, one 3pt
 // contest, one All-Star draft) that the whole league watches - not something each
@@ -152,10 +165,34 @@ const ALLSTAR_SIM_AUTHORITY_LOCKED = new Set([
 
 // "main"-type calls that restructure/advance the league. A single on-the-clock
 // pick (draftUser) is deliberately NOT here - every user drafts their own team.
+// Per-team expansion-draft protection (updateProtectedPlayers/autoProtect) is
+// also open: each user protects their own roster. Everything below is a
+// commissioner-class operation: it advances shared time, restructures the
+// league, predetermines results, or bulk-rewrites records - so only the device
+// in charge of simming may run it, or two devices editing at once would race
+// and fork.
 const MAIN_SIM_AUTHORITY_LOCKED = new Set([
 	"draftLottery",
 	"startExpansionDraft",
 	"startFantasyDraft",
+	"advanceToPlayerProtection",
+	"cancelExpansionDraft",
+	"updateExpansionDraftSetup",
+	"updateGameAttributes",
+	"updateGameAttributesGodMode",
+	"setScheduleFromEditor",
+	"toggleTradeDeadline",
+	"allStarGameNow",
+	"updatePlayoffTeams",
+	"setForceWin",
+	"setForceWinAll",
+	"addTeam",
+	"updateConfsDivs",
+	"regenerateDraftClass",
+	"importPlayers",
+	"removePlayers",
+	"clearInjuries",
+	"updateAwards",
 	...ALLSTAR_SIM_AUTHORITY_LOCKED,
 ]);
 
@@ -163,6 +200,7 @@ const MAIN_SIM_AUTHORITY_LOCKED = new Set([
 const isSimAuthorityLockedCall = (type: string, name: string): boolean =>
 	(type === "playMenu" && !PLAY_MENU_SIM_AUTHORITY_EXEMPT.has(name)) ||
 	(type === "actions" && ACTIONS_SIM_AUTHORITY_LOCKED.has(name)) ||
+	(type === "toolsMenu" && TOOLS_MENU_SIM_AUTHORITY_LOCKED.has(name)) ||
 	(type === "main" && MAIN_SIM_AUTHORITY_LOCKED.has(name));
 
 // Edits that rewrite shared game-state records (player rows, team-seasons) and so
@@ -328,7 +366,8 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 	}
 
 	// Bulk/local-only calls (league import, AI trade-offer generation, read-only
-	// view fetches) are suppressed so they don't capture or accumulate.
+	// view fetches) never open a capture window, so on their own they record
+	// nothing.
 	if (isChangesetSuppressedCall(type, name)) {
 		return changeTracker.runSuppressed(() => Promise.resolve(call()));
 	}
@@ -348,36 +387,43 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 		syncEngineForBusy!.markRoomBusy();
 	}
 
-	return Promise.resolve(call()).then(
-		async (value) => {
-			// Wait for the sync handoff for every cloud-tracked mutation. The local
-			// action has already happened; before reporting success, make sure its
-			// changeset was either confirmed uploaded or durably retained for retry.
-			// Otherwise a plain roster/depth edit can vanish while the connection dot
-			// still looks green.
-			const synced = await afterAction(type, name);
-			if (marksBusy) {
-				getSyncEngine()?.clearRoomBusy();
-			}
-			if (!synced) {
-				util.logEvent(
-					{
-						type: "error",
-						text: `This change is saved and queued for the cloud — it will upload automatically when the connection recovers.`,
-						persistent: true,
-					},
-					conditions,
-				);
-			}
-			return value;
-		},
-		(error) => {
-			// The advance threw, so nothing will publish - drop the lease now rather
-			// than making followers wait it out.
-			if (marksBusy) {
-				getSyncEngine()?.clearRoomBusy();
-			}
-			throw error;
-		},
-	);
+	// Cloud-tracked call: open a capture window for its whole duration, so its
+	// writes are recorded even while non-tracked calls (view loads, heartbeats)
+	// run concurrently. Fire-and-forget continuations that outlive the call
+	// (multi-day sims, autoplay, free agency) keep recording via their own
+	// beginSim/endSim brackets.
+	return changeTracker
+		.runCaptured(() => Promise.resolve(call()))
+		.then(
+			async (value) => {
+				// Wait for the sync handoff for every cloud-tracked mutation. The local
+				// action has already happened; before reporting success, make sure its
+				// changeset was either confirmed uploaded or durably retained for retry.
+				// Otherwise a plain roster/depth edit can vanish while the connection dot
+				// still looks green.
+				const synced = await afterAction(type, name);
+				if (marksBusy) {
+					getSyncEngine()?.clearRoomBusy();
+				}
+				if (!synced) {
+					util.logEvent(
+						{
+							type: "error",
+							text: `This change is saved and queued for the cloud — it will upload automatically when the connection recovers.`,
+							persistent: true,
+						},
+						conditions,
+					);
+				}
+				return value;
+			},
+			(error) => {
+				// The advance threw, so nothing will publish - drop the lease now rather
+				// than making followers wait it out.
+				if (marksBusy) {
+					getSyncEngine()?.clearRoomBusy();
+				}
+				throw error;
+			},
+		);
 });

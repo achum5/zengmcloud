@@ -191,8 +191,22 @@ describe("buildRecapPrompt — play-in games", () => {
 		playoffs: true,
 		playIn,
 		teams: [
-			{ tid: 0, region: "Brooklyn", name: "Bagels", abbrev: "BKN", pts: 110, players: [] },
-			{ tid: 1, region: "Boston", name: "Massacre", abbrev: "BOS", pts: 104, players: [] },
+			{
+				tid: 0,
+				region: "Brooklyn",
+				name: "Bagels",
+				abbrev: "BKN",
+				pts: 110,
+				players: [],
+			},
+			{
+				tid: 1,
+				region: "Boston",
+				name: "Massacre",
+				abbrev: "BOS",
+				pts: 104,
+				players: [],
+			},
 		],
 		clutchPlays: [],
 	});
@@ -345,8 +359,22 @@ describe("buildRecapPrompt — fenced output", () => {
 				{
 					gid: 1,
 					teams: [
-						{ tid: 0, abbrev: "A", region: "A", name: "A", pts: 1, players: [] },
-						{ tid: 1, abbrev: "B", region: "B", name: "B", pts: 2, players: [] },
+						{
+							tid: 0,
+							abbrev: "A",
+							region: "A",
+							name: "A",
+							pts: 1,
+							players: [],
+						},
+						{
+							tid: 1,
+							abbrev: "B",
+							region: "B",
+							name: "B",
+							pts: 2,
+							players: [],
+						},
 					],
 					winnerTid: 1,
 					overtimes: 0,

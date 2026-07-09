@@ -412,7 +412,8 @@ export const getDayGamesForRecap = async ({
 		}
 		return teamInfoCache.get(tid);
 	};
-	const abbrevOf = async (tid: number) => (await teamInfo(tid))?.abbrev ?? "???";
+	const abbrevOf = async (tid: number) =>
+		(await teamInfo(tid))?.abbrev ?? "???";
 
 	// A team's abbrev in a SPECIFIC (historical) season, for career lines.
 	const abbrevSeasonCache = new Map<string, string>();
@@ -489,9 +490,7 @@ export const getDayGamesForRecap = async ({
 
 	// Playoff series lookup for the current postseason.
 	const playoffSeries = await idb.cache.playoffSeries.get(season);
-	const seriesForGame = async (
-		game: any,
-	): Promise<RecapSeries | undefined> => {
+	const seriesForGame = async (game: any): Promise<RecapSeries | undefined> => {
 		if (!playoffSeries || !Array.isArray(playoffSeries.series)) {
 			return undefined;
 		}
@@ -540,9 +539,7 @@ export const getDayGamesForRecap = async ({
 	// Play-in tournament lookup. During the play-in, matchups live in
 	// playoffSeries.playIns (not .series), so a play-in game is otherwise
 	// indistinguishable from a normal playoff game - this classifies it.
-	const playInForGame = async (
-		game: any,
-	): Promise<RecapPlayIn | undefined> => {
+	const playInForGame = async (game: any): Promise<RecapPlayIn | undefined> => {
 		const playIns = playoffSeries?.playIns;
 		if (!Array.isArray(playIns)) {
 			return undefined;
@@ -561,8 +558,7 @@ export const getDayGamesForRecap = async ({
 					(home.tid === tidA && away.tid === tidB) ||
 					(home.tid === tidB && away.tid === tidA);
 				if (byGid || byTid) {
-					const kind =
-						j === 0 ? "seed7v8" : j === 1 ? "seed9v10" : "final";
+					const kind = j === 0 ? "seed7v8" : j === 1 ? "seed9v10" : "final";
 					let prizeSeed: number | undefined;
 					if (kind === "seed7v8") {
 						// Winner takes the better (numerically lower) of the two seeds.

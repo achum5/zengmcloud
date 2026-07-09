@@ -158,7 +158,9 @@ const playInLine = (game: RecapGame): string | undefined => {
 			? ` — #${p.awaySeed} ${p.awayAbbrev} at #${p.homeSeed} ${p.homeAbbrev}`
 			: "";
 	const prize =
-		typeof p.prizeSeed === "number" ? `the #${p.prizeSeed} seed` : "a playoff spot";
+		typeof p.prizeSeed === "number"
+			? `the #${p.prizeSeed} seed`
+			: "a playoff spot";
 	let stakes: string;
 	if (p.kind === "seed7v8") {
 		stakes = `Win-and-in: the winner clinches ${prize}; the loser drops to the final play-in game (still alive).`;
@@ -181,9 +183,7 @@ const spreadLine = (game: RecapGame): string | undefined => {
 		return "Pregame line: pick'em (evenly matched)";
 	}
 	const fav = game.teams.find((t) => t.tid === s.favTid);
-	const favName = fav
-		? `${fav.region} ${fav.name}`
-		: "the favorite";
+	const favName = fav ? `${fav.region} ${fav.name}` : "the favorite";
 	return `Pregame line: ${favName} favored by ${s.points}`;
 };
 

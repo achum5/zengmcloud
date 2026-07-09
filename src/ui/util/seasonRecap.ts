@@ -153,8 +153,7 @@ const leagueHeader = (data: RecapSeasonData): string => {
 		lines.push(
 			`Awards: ${data.awards
 				.map(
-					(a) =>
-						`${a.label} — ${a.player}${a.abbrev ? ` (${a.abbrev})` : ""}`,
+					(a) => `${a.label} — ${a.player}${a.abbrev ? ` (${a.abbrev})` : ""}`,
 				)
 				.join("; ")}`,
 		);

@@ -110,6 +110,9 @@ describe("regularSeasonRecordAsOf", () => {
 
 	test("never counts playoff games in the regular-season record", () => {
 		// Day 4 includes the playoff game, but the record stays at the day-3 total.
-		assert.deepEqual(regularSeasonRecordAsOf(0, 99, games), { won: 2, lost: 1 });
+		assert.deepEqual(regularSeasonRecordAsOf(0, 99, games), {
+			won: 2,
+			lost: 1,
+		});
 	});
 });

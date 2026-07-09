@@ -17,7 +17,13 @@ const amountDays = { day: 1, week: 7, month: 30 };
 describe("nextFires", () => {
 	test("returns fires in chronological order across rules", () => {
 		// Every 60 min all day, sim day.
-		const r = rule({ mode: "every", everyMinutes: 60, start: "00:00", end: "23:59", amount: "day" });
+		const r = rule({
+			mode: "every",
+			everyMinutes: 60,
+			start: "00:00",
+			end: "23:59",
+			amount: "day",
+		});
 		const from = new Date("2026-01-01T00:10:00");
 		const fires = nextFires([r], from, 3);
 		assert.strictEqual(fires.length, 3);
@@ -38,7 +44,10 @@ describe("nextFires", () => {
 
 	test("ignores disabled rules", () => {
 		const off = rule({ enabled: false, mode: "at", times: ["09:00"] });
-		assert.strictEqual(nextFires([off], new Date("2026-01-01T00:00:00"), 5).length, 0);
+		assert.strictEqual(
+			nextFires([off], new Date("2026-01-01T00:00:00"), 5).length,
+			0,
+		);
 	});
 });
 
@@ -66,7 +75,12 @@ describe("projectFires", () => {
 	});
 
 	test("consecutive fires advance the cursor without overlap", () => {
-		const p = projectFires([fire("day"), fire("day"), fire("week")], days(20), amountDays, undefined);
+		const p = projectFires(
+			[fire("day"), fire("day"), fire("week")],
+			days(20),
+			amountDays,
+			undefined,
+		);
 		assert.deepEqual(
 			p.map((f) => [f.fromDay, f.toDay]),
 			[
@@ -79,7 +93,12 @@ describe("projectFires", () => {
 
 	test("caps the last sim at the end of the schedule and flags the phase end", () => {
 		// 3 days left, a week sim should only cover those 3 and note the transition.
-		const p = projectFires([fire("week")], days(3), amountDays, "Regular season ends, playoffs begin");
+		const p = projectFires(
+			[fire("week")],
+			days(3),
+			amountDays,
+			"Regular season ends, playoffs begin",
+		);
 		assert.strictEqual(p.length, 1);
 		assert.strictEqual(p[0]!.numDays, 3);
 		assert.ok(p[0]!.endsPhase);
@@ -88,7 +107,12 @@ describe("projectFires", () => {
 
 	test("stops projecting once the schedule is exhausted", () => {
 		// Two day-sims but only one day left → only one projected fire.
-		const p = projectFires([fire("day"), fire("day")], days(1), amountDays, undefined);
+		const p = projectFires(
+			[fire("day"), fire("day")],
+			days(1),
+			amountDays,
+			undefined,
+		);
 		assert.strictEqual(p.length, 1);
 	});
 

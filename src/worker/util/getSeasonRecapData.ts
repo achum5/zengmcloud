@@ -481,14 +481,14 @@ export const getSeasonRecapData = async (
 							}
 						: undefined,
 					awards: awardsForSeason(p, season).slice(0, 4),
-				transactions: movesByPid.get(p.pid),
-				majorInjuries: (Array.isArray(p.injuries) ? p.injuries : [])
-					.filter((inj: any) => inj && (inj.games ?? 0) >= 50)
-					.map((inj: any) => ({
-						type: String(inj.type ?? "injury"),
-						games: inj.games,
-						season: inj.season,
-					})),
+					transactions: movesByPid.get(p.pid),
+					majorInjuries: (Array.isArray(p.injuries) ? p.injuries : [])
+						.filter((inj: any) => inj && (inj.games ?? 0) >= 50)
+						.map((inj: any) => ({
+							type: String(inj.type ?? "injury"),
+							games: inj.games,
+							season: inj.season,
+						})),
 				});
 			}
 			// Best players first (by minutes, a decent proxy for role), capped.

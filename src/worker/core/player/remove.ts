@@ -36,8 +36,13 @@ const remove = async (pids: number[]) => {
 			await idb.cache.players.put(p);
 		}
 	}
+	// Retired players mostly live only on disk, not in the cache. Collect the
+	// ones to fix with a read-only cursor, then write them back THROUGH the
+	// cache - a raw cursor.update would bypass the sync change tracker, so the
+	// relatives trim would apply on this device only and never reach the room.
+	const retiredToFix: Player[] = [];
 	for await (const cursor of idb.league
-		.transaction("players", "readwrite")
+		.transaction("players")
 		.store.index("tid")
 		.iterate(PLAYER.RETIRED)) {
 		const p = cursor.value;
@@ -45,9 +50,17 @@ const remove = async (pids: number[]) => {
 			continue;
 		}
 
-		if (hasRelativeAndMutate(p, pids)) {
-			await cursor.update(p);
+		// Skip anything the cache holds - the cache copy may be newer than disk
+		// and was already handled by the loop above.
+		if (
+			hasRelativeAndMutate(p, pids) &&
+			(await idb.cache.players.get(p.pid)) === undefined
+		) {
+			retiredToFix.push(p);
 		}
+	}
+	for (const p of retiredToFix) {
+		await idb.cache.players.put(p);
 	}
 };
 

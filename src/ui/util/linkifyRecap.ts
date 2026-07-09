@@ -104,11 +104,7 @@ export const buildTeamSeasonRecapLinks = ({
 		if (!info?.abbrev) {
 			continue;
 		}
-		const href = helpers.leagueUrl([
-			"roster",
-			`${info.abbrev}_${tid}`,
-			season,
-		]);
+		const href = helpers.leagueUrl(["roster", `${info.abbrev}_${tid}`, season]);
 		const region = info.region ?? "";
 		const name = info.name ?? "";
 		for (const label of [`${region} ${name}`, name, region]) {
@@ -122,7 +118,10 @@ export const buildTeamSeasonRecapLinks = ({
 		if (typeof p?.pid === "number" && p.pid >= 0) {
 			const full = `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim();
 			if (full) {
-				entries.push({ name: full, href: helpers.leagueUrl(["player", p.pid]) });
+				entries.push({
+					name: full,
+					href: helpers.leagueUrl(["player", p.pid]),
+				});
 			}
 		}
 	}

@@ -60,7 +60,11 @@ const data: RetiredPlayersData = {
 				},
 			],
 			awards: [
-				{ type: "Won Championship", count: 4, seasons: [2010, 2012, 2018, 2020] },
+				{
+					type: "Won Championship",
+					count: 4,
+					seasons: [2010, 2012, 2018, 2020],
+				},
 				{ type: "Most Valuable Player", count: 2, seasons: [2011, 2013] },
 			],
 			rings: 4,

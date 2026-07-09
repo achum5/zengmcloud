@@ -1,62 +1,86 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import { changeTracker } from "./changeTracker.ts";
 
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-describe("changeTracker suppression", () => {
+describe("changeTracker capture windows", () => {
 	beforeEach(() => {
 		changeTracker.disable();
 		changeTracker.reset();
 		changeTracker.enable();
 	});
 
-	test("overlapping runSuppressed calls can never leave recording off", async () => {
-		// The exact interleaving that used to permanently wedge sync: call B starts
-		// while call A is running, A finishes first, B finishes last. With the old
-		// boolean save/restore, B restored the "suppressed" it saw at start (true),
-		// so recording stayed off FOREVER - every later sim/trade was invisible to
-		// sync until a page refresh.
-		let releaseA!: () => void;
-		let releaseB!: () => void;
-		const a = changeTracker.runSuppressed(
-			() => new Promise<void>((resolve) => (releaseA = resolve)),
-		);
-		const b = changeTracker.runSuppressed(
-			() => new Promise<void>((resolve) => (releaseB = resolve)),
-		);
-
-		releaseA();
-		await a;
-		await flush();
-		releaseB();
-		await b;
-
+	test("writes record only while a capture or sim window is open", async () => {
+		// No window: a write from a non-tracked call (view load, import) records
+		// nothing.
 		changeTracker.record("players", 1, "put");
-		assert.strictEqual(changeTracker.size(), 1, "recording must be back on");
-	});
+		assert.strictEqual(changeTracker.size(), 0);
 
-	test("a suppressed call spanning a sim start cannot swallow sim writes", async () => {
-		let release!: () => void;
-		const suppressed = changeTracker.runSuppressed(
-			() => new Promise<void>((resolve) => (release = resolve)),
-		);
-
-		// The sim begins while the suppressed call is still in flight; its writes
-		// must be recorded anyway.
-		changeTracker.beginSim();
-		changeTracker.record("players", 1, "put");
-		changeTracker.endSim();
-
-		release();
-		await suppressed;
-
+		await changeTracker.runCaptured(async () => {
+			changeTracker.record("players", 1, "put");
+		});
 		assert.strictEqual(changeTracker.size(), 1);
 	});
 
-	test("runSuppressed still suppresses while active", async () => {
-		await changeTracker.runSuppressed(async () => {
+	test("a concurrent non-tracked call can never switch recording off", async () => {
+		// The old model suppressed recording globally around non-tracked calls, so
+		// an action's writes made while a view load was in flight were silently
+		// swallowed - and two overlapping suppressed calls could even leave
+		// recording off FOREVER (the wedge that killed sync until refresh). Under
+		// the opt-in model the action's own window keeps recording no matter what
+		// else is running.
+		let releaseSuppressed!: () => void;
+		const suppressed = changeTracker.runSuppressed(
+			() => new Promise<void>((resolve) => (releaseSuppressed = resolve)),
+		);
+
+		await changeTracker.runCaptured(async () => {
 			changeTracker.record("players", 1, "put");
 		});
-		assert.strictEqual(changeTracker.size(), 0);
+		assert.strictEqual(
+			changeTracker.size(),
+			1,
+			"capture wins over suppression",
+		);
+
+		releaseSuppressed();
+		await suppressed;
+
+		// And after everything settles, a new captured write still records.
+		await changeTracker.runCaptured(async () => {
+			changeTracker.record("players", 2, "put");
+		});
+		assert.strictEqual(changeTracker.size(), 2);
+	});
+
+	test("overlapping capture windows are counted, not toggled", async () => {
+		let releaseA!: () => void;
+		const a = changeTracker.runCaptured(
+			() => new Promise<void>((resolve) => (releaseA = resolve)),
+		);
+
+		// B opens and closes while A is still in flight; A's window must survive.
+		await changeTracker.runCaptured(async () => {});
+		changeTracker.record("players", 1, "put");
+		assert.strictEqual(changeTracker.size(), 1);
+
+		releaseA();
+		await a;
+
+		// All windows closed: recording is off again.
+		changeTracker.record("players", 2, "put");
+		assert.strictEqual(changeTracker.size(), 1);
+	});
+
+	test("a sim window records fire-and-forget writes after the action resolved", () => {
+		changeTracker.beginSim();
+		changeTracker.record("players", 1, "put");
+		changeTracker.endSim();
+		assert.strictEqual(changeTracker.size(), 1);
+
+		changeTracker.record("players", 2, "put");
+		assert.strictEqual(
+			changeTracker.size(),
+			1,
+			"closed sim window records nothing",
+		);
 	});
 });

@@ -187,9 +187,11 @@ describe("SyncEngine", () => {
 		await resetCache({ players: [genPlayer(), genPlayer()] });
 		changeTracker.enable();
 		changeTracker.reset();
-		const pA = (await idb.cache.players.getAll()).find((p) => p.pid === 0)!;
-		pA.tid = 7;
-		await idb.cache.players.put(pA);
+		await changeTracker.runCaptured(async () => {
+			const pA = (await idb.cache.players.getAll()).find((p) => p.pid === 0)!;
+			pA.tid = 7;
+			await idb.cache.players.put(pA);
+		});
 		const changeset = await captureChangeset();
 		await engineA.onLocalChangeset(changeset, "main.proposeTrade");
 
@@ -665,9 +667,11 @@ describe("SyncEngine", () => {
 		changeTracker.enable();
 		changeTracker.reset();
 
-		const p = (await idb.cache.players.getAll())[0]!;
-		p.tid = 7;
-		await idb.cache.players.put(p);
+		await changeTracker.runCaptured(async () => {
+			const p = (await idb.cache.players.getAll())[0]!;
+			p.tid = 7;
+			await idb.cache.players.put(p);
+		});
 
 		assert.strictEqual(changeTracker.size(), 1);
 		// Publish fails → afterAction reports "not confirmed"...

@@ -19,7 +19,8 @@ export type PlayerFace = {
 	jersey?: string;
 };
 
-const keyOf = (pid: number, season: number | undefined) => `${pid}:${season ?? ""}`;
+const keyOf = (pid: number, season: number | undefined) =>
+	`${pid}:${season ?? ""}`;
 
 let cacheLid: number | undefined;
 const cache = new Map<string, PlayerFace | null>();

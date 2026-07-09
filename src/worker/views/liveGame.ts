@@ -197,7 +197,8 @@ const updatePlayByPlay = async (
 		// A multiplayer follower gets the game record in the broadcast payload, so
 		// it doesn't have to wait for the separate changeset sync to land the game
 		// row before it can render the live sim. Everyone else reads it from idb.
-		const boxScore = inputs.boxScore ?? (await idb.getCopy.games({ gid: inputs.gid }));
+		const boxScore =
+			inputs.boxScore ?? (await idb.getCopy.games({ gid: inputs.gid }));
 
 		if (!boxScore) {
 			throw new Error("Invalid gid");

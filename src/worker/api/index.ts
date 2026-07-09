@@ -96,6 +96,7 @@ import {
 	disconnectSharedLeague,
 	getSyncActivity,
 	getSyncEngine,
+	getSyncRequired,
 	getSyncStatus,
 	listSyncRooms,
 	markSyncRequired,
@@ -781,6 +782,13 @@ const deleteOldData = async (options: {
 	playerStatsUnnotable: boolean;
 	playerStats: boolean;
 }) => {
+	// This prunes via raw IndexedDB transactions, which the sync change tracker
+	// cannot see - on a shared league the deletions would apply on this device
+	// only and permanently fork the room. Refuse rather than diverge.
+	if (getSyncRequired() || getSyncEngine() !== undefined) {
+		throw new Error("Delete Old Data is not available in a synced league.");
+	}
+
 	const transaction = idb.league.transaction(
 		[
 			"allStars",

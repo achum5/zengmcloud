@@ -48,17 +48,22 @@ describe("afterAction silent publishing", () => {
 		setSyncEngine(undefined);
 	});
 
-	// Record one finished game into the cache (with tracking on, so it lands in
-	// the change tracker just like a real sim would).
+	// Record one finished game into the cache (inside a sim capture window, so it
+	// lands in the change tracker just like a real sim would).
 	const seedOneGame = async () => {
-		await idb.cache.games.add({
-			gid: 0,
-			season: 2026,
-			day: 5,
-			teams: [{ tid: 0 }, { tid: 1 }],
-			won: { tid: 0, pts: 110 },
-			lost: { tid: 1, pts: 105 },
-		} as any);
+		changeTracker.beginSim();
+		try {
+			await idb.cache.games.add({
+				gid: 0,
+				season: 2026,
+				day: 5,
+				teams: [{ tid: 0 }, { tid: 1 }],
+				won: { tid: 0, pts: 110 },
+				lost: { tid: 1, pts: 105 },
+			} as any);
+		} finally {
+			changeTracker.endSim();
+		}
 	};
 
 	test("a normal sim publishes AND pushes a notification", async () => {

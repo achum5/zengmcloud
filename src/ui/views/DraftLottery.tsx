@@ -807,7 +807,9 @@ const DraftLotteryTable = (props: Props) => {
 					<button
 						className="btn btn-large btn-success"
 						disabled={blockedBySync}
-						title={blockedBySync ? "Only the device simming can start it" : undefined}
+						title={
+							blockedBySync ? "Only the device simming can start it" : undefined
+						}
 						onClick={() => startLottery()}
 					>
 						Start lottery
@@ -817,7 +819,9 @@ const DraftLotteryTable = (props: Props) => {
 					<button
 						className="btn btn-large btn-god-mode ms-2"
 						disabled={blockedBySync}
-						title={blockedBySync ? "Only the device simming can rig it" : undefined}
+						title={
+							blockedBySync ? "Only the device simming can rig it" : undefined
+						}
 						onClick={async () => {
 							await toWorker("main", "updateGameAttributes", {
 								riggedLottery: [],

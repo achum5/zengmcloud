@@ -46,12 +46,8 @@ const data: RecapSeasonData = {
 					per: 28.5,
 					playoff: { gp: 20, pts: 32, trb: 8, ast: 10 },
 					awards: ["Most Valuable Player"],
-					transactions: [
-						"Lakers re-signed Star Guy to a 4 yr, $180M contract",
-					],
-					majorInjuries: [
-						{ type: "Torn ACL", games: 62, season: 2023 },
-					],
+					transactions: ["Lakers re-signed Star Guy to a 4 yr, $180M contract"],
+					majorInjuries: [{ type: "Torn ACL", games: 62, season: 2023 }],
 				},
 			],
 			franchise: {
@@ -61,7 +57,9 @@ const data: RecapSeasonData = {
 				finalsAppearances: 32,
 				totalWon: 3500,
 				totalLost: 2600,
-				recent: [{ season: 2025, won: 52, lost: 30, result: "made conf finals" }],
+				recent: [
+					{ season: 2025, won: 52, lost: 30, result: "made conf finals" },
+				],
 			},
 			offseasonMoves: ["Lakers signed Star Guy to a 4 yr contract"],
 			inSeasonMoves: ["Lakers traded for a role player"],
@@ -138,10 +136,7 @@ describe("buildSeasonRecapPrompt", () => {
 
 	test("lists each player's own transactions in their block", () => {
 		const prompt = buildSeasonRecapPrompt(data);
-		assert.ok(
-			prompt.includes("Move: Lakers re-signed Star Guy"),
-			prompt,
-		);
+		assert.ok(prompt.includes("Move: Lakers re-signed Star Guy"), prompt);
 	});
 
 	test("lists a player's major (50+ game) injuries with when they happened", () => {

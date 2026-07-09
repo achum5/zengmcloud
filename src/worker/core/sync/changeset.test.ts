@@ -38,9 +38,13 @@ describe("sync changeset", () => {
 		changeTracker.enable();
 		assert.strictEqual(changeTracker.size(), 0);
 
-		const p = (await idb.cache.players.getAll())[0]!;
-		p.tid = 5;
-		await idb.cache.players.put(p);
+		// Writes record only inside a capture window (the worker wrapper opens one
+		// around every cloud-tracked action).
+		await changeTracker.runCaptured(async () => {
+			const p = (await idb.cache.players.getAll())[0]!;
+			p.tid = 5;
+			await idb.cache.players.put(p);
+		});
 
 		const changeset = await captureChangeset();
 		assert.strictEqual(changeset.changes.length, 1);
@@ -54,9 +58,11 @@ describe("sync changeset", () => {
 		changeTracker.enable();
 		changeTracker.reset();
 
-		await idb.cache.gameAttributes.put({ key: "userTid", value: 5 });
-		await idb.cache.gameAttributes.put({ key: "userTids", value: [5, 6, 7] });
-		await idb.cache.gameAttributes.put({ key: "salaryCap", value: 100000 });
+		await changeTracker.runCaptured(async () => {
+			await idb.cache.gameAttributes.put({ key: "userTid", value: 5 });
+			await idb.cache.gameAttributes.put({ key: "userTids", value: [5, 6, 7] });
+			await idb.cache.gameAttributes.put({ key: "salaryCap", value: 100000 });
+		});
 
 		const changeset = await captureChangeset();
 		const keys = changeset.changes.map((c) => c.id);
@@ -78,10 +84,13 @@ describe("sync changeset", () => {
 		const pB = players.find((p) => p.pid === 1)!;
 
 		// Modify pA, delete pB, add a brand new pC (gets pid 2).
-		pA.tid = 5;
-		await idb.cache.players.put(pA);
-		await idb.cache.players.delete(pB.pid);
-		const pCid = await idb.cache.players.add(genPlayer());
+		let pCid: unknown;
+		await changeTracker.runCaptured(async () => {
+			pA.tid = 5;
+			await idb.cache.players.put(pA);
+			await idb.cache.players.delete(pB.pid);
+			pCid = await idb.cache.players.add(genPlayer());
+		});
 
 		const changeset = overTheWire(await captureChangeset());
 		assert.strictEqual(changeset.changes.length, 3);
@@ -152,10 +161,12 @@ describe("sync changeset", () => {
 
 		const p0 = (await idb.cache.players.getAll()).find((p) => p.pid === 0)!;
 
-		// A local edit to pid 1 (as a sim would make).
+		// A local edit to pid 1 (as a sim would make - sims hold a capture window).
+		changeTracker.beginSim();
 		const p1 = (await idb.cache.players.getAll()).find((p) => p.pid === 1)!;
 		p1.tid = 9;
 		await idb.cache.players.put(p1);
+		changeTracker.endSim();
 
 		// Apply a remote change to pid 0. It must forget only pid 0, not pid 1.
 		await applyChangeset(

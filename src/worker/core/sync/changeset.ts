@@ -5,6 +5,7 @@ import loadGameAttributes from "../league/loadGameAttributes.ts";
 import {
 	g,
 	helpers,
+	local,
 	toUI,
 	updatePhase,
 	updatePlayMenu,
@@ -244,12 +245,21 @@ export const applyChangeset = async (
 	let touchedGameAttributes = false;
 	let touchedPhase = false;
 	let touchedGames = false;
+	// The season increment (rollover to preseason) needs special handling: the
+	// simmer re-fills its whole cache after it (finalize does idb.cache.fill()),
+	// because several stores are season-scoped. A receiver must do the same or
+	// its cache accumulates stale prior-season rows forever.
+	let touchedSeason = false;
 	// The free-agency countdown ("28 days left") and the draft-progress text are
 	// driven by `local.statusText`, which only updates when someone calls
 	// updateStatus(). The simming device does that itself; a device that merely
 	// RECEIVES the daysLeft/phase change must refresh it too, or its status line
 	// stays frozen on the old day even though g.daysLeft advanced.
 	let touchedStatus = false;
+	// Which stores this changeset touched, for view-refresh events that only some
+	// stores need (draft lottery, retired jerseys, All-Star contests, scheduled
+	// events) - so a follower sitting on those pages refreshes like the author.
+	const touchedStores = new Set<Store>();
 
 	// Apply each write, then IMMEDIATELY forget just that record from the change
 	// tracker. We deliberately do NOT globally suppress recording during the
@@ -276,11 +286,15 @@ export const applyChangeset = async (
 			await api.put(change.value);
 		}
 		changeTracker.forget(change.store, change.id);
+		touchedStores.add(change.store);
 
 		if (change.store === "gameAttributes") {
 			touchedGameAttributes = true;
 			if (change.id === "phase" || change.id === "nextPhase") {
 				touchedPhase = true;
+			}
+			if (change.id === "season") {
+				touchedSeason = true;
 			}
 			if (change.id === "daysLeft") {
 				touchedStatus = true;
@@ -290,10 +304,38 @@ export const applyChangeset = async (
 		}
 	}
 
+	// A synced season rollover: persist what was just applied, then re-fill the
+	// cache, exactly like finalize() does on the simmer for PRESEASON. The cache
+	// scopes several stores to the current season (games, teamStats,
+	// playoffSeries, allStars, headToHeads); without this a follower's cache
+	// keeps last season's rows in "current season" queries forever.
+	if (touchedSeason) {
+		try {
+			await idb.cache.flush();
+			await idb.cache.fill();
+		} catch (error) {
+			console.error("Failed to re-fill cache after synced rollover", error);
+		}
+	}
+
 	// The cache store now holds the new gameAttributes rows, but the in-memory
 	// `g` object (and the UI's copy) is stale until we reload it from the cache.
 	if (touchedGameAttributes) {
 		await loadGameAttributes();
+	}
+
+	// Invalidate worker-local derived caches exactly like the simmer does. The
+	// simmer invalidates these inside its own sim/phase code, which a receiver
+	// never runs - leaving stale means wrong leaders/mood/value math until this
+	// device happens to sim.
+	if (touchedGames || touchedStores.has("players")) {
+		local.seasonLeaders = undefined;
+		local.minFractionDiffs = undefined;
+	}
+	if (touchedSeason) {
+		local.playerOvrMeanStdStale = true;
+		local.seasonLeaders = undefined;
+		local.minFractionDiffs = undefined;
 	}
 
 	// A phase change is more than a data change: the phase text, the Play menu
@@ -307,6 +349,20 @@ export const applyChangeset = async (
 	// reading half-synced data) can't skip the others - previously they shared a
 	// catch, so a throw in updatePhase left the header frozen on the old phase.
 	const updateEvents: UpdateEvents = [...APPLY_UPDATE_EVENTS];
+	// Store-keyed refresh events the blanket set doesn't cover, so followers on
+	// those views live-update like the author's device.
+	if (touchedStores.has("draftLotteryResults")) {
+		updateEvents.push("draftLottery");
+	}
+	if (touchedStores.has("teams")) {
+		updateEvents.push("retiredJerseys");
+	}
+	if (touchedStores.has("allStars")) {
+		updateEvents.push("allStarDunk", "allStarThree");
+	}
+	if (touchedStores.has("scheduledEvents")) {
+		updateEvents.push("scheduledEvents");
+	}
 	let redirectUrl: string | undefined;
 	if (touchedPhase) {
 		updateEvents.push("newPhase");
@@ -320,6 +376,21 @@ export const applyChangeset = async (
 			await updatePlayMenu();
 		} catch (error) {
 			console.error("Failed to refresh play menu after sync", error);
+		}
+
+		// Reset the same worker-local flags the simmer's phase functions reset, so
+		// a follower's later behavior (live-sim stop points, fantasy draft results
+		// panel) doesn't run on state from a previous season's phases.
+		try {
+			const phase = g.get("phase") as Phase;
+			if (phase === PHASE.PLAYOFFS) {
+				local.playingUntilEndOfRound = false;
+			}
+			if (phase === PHASE.FANTASY_DRAFT || phase === PHASE.EXPANSION_DRAFT) {
+				local.fantasyDraftResults = [];
+			}
+		} catch (error) {
+			console.error("Failed to reset local phase flags after sync", error);
 		}
 
 		// Redirect to the new phase's landing page, honoring the user's

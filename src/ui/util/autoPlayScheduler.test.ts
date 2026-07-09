@@ -1,9 +1,5 @@
 import { assert, describe, test } from "vitest";
-import {
-	newRule,
-	nextFireForRule,
-	type ScheduleRule,
-} from "./scheduleTime.ts";
+import { newRule, nextFireForRule, type ScheduleRule } from "./scheduleTime.ts";
 
 const rule = (patch: Partial<ScheduleRule>): ScheduleRule => ({
 	...newRule(),
@@ -18,17 +14,11 @@ describe("nextFireForRule — at times", () => {
 	const r = rule({ mode: "at", times: ["08:00", "20:00"], days: [] });
 
 	test("later same-day time", () => {
-		assert.strictEqual(
-			nextFireForRule(r, at(5, 9, 0)),
-			at(5, 20, 0).getTime(),
-		);
+		assert.strictEqual(nextFireForRule(r, at(5, 9, 0)), at(5, 20, 0).getTime());
 	});
 
 	test("rolls to next day after the last time", () => {
-		assert.strictEqual(
-			nextFireForRule(r, at(5, 21, 0)),
-			at(6, 8, 0).getTime(),
-		);
+		assert.strictEqual(nextFireForRule(r, at(5, 21, 0)), at(6, 8, 0).getTime());
 	});
 
 	test("respects days-of-week (Saturdays only)", () => {
@@ -65,17 +55,11 @@ describe("nextFireForRule — every N within a window", () => {
 	});
 
 	test("before the window opens → fires at start", () => {
-		assert.strictEqual(
-			nextFireForRule(r, at(5, 7, 0)),
-			at(5, 9, 0).getTime(),
-		);
+		assert.strictEqual(nextFireForRule(r, at(5, 7, 0)), at(5, 9, 0).getTime());
 	});
 
 	test("after the window closes → next day's start", () => {
-		assert.strictEqual(
-			nextFireForRule(r, at(5, 18, 0)),
-			at(6, 9, 0).getTime(),
-		);
+		assert.strictEqual(nextFireForRule(r, at(5, 18, 0)), at(6, 9, 0).getTime());
 	});
 
 	test("end time is an inclusive slot", () => {
@@ -88,10 +72,7 @@ describe("nextFireForRule — every N within a window", () => {
 
 	test("at the final slot, rolls to the next day", () => {
 		// From 17:00 the next slot (17:30) exceeds the window → tomorrow 09:00.
-		assert.strictEqual(
-			nextFireForRule(r, at(5, 17, 0)),
-			at(6, 9, 0).getTime(),
-		);
+		assert.strictEqual(nextFireForRule(r, at(5, 17, 0)), at(6, 9, 0).getTime());
 	});
 });
 
