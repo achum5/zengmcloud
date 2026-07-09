@@ -15,6 +15,7 @@ import { SideBar } from "./SideBar.tsx";
 import { Skyscraper } from "./Skyscraper.tsx";
 import { TitleBar } from "./TitleBar.tsx";
 import { useViewData } from "../../util/viewManager.tsx";
+import { toWorker } from "../../util/toWorker.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import api from "../../api/index.ts";
 import { ErrorBoundary } from "../ErrorBoundary.tsx";
@@ -52,11 +53,14 @@ const KeepPreviousRenderWhileUpdating = memo(
 export const Controller = () => {
 	const state = useViewData();
 
-	const { lid, popup, showNagModal } = useLocal([
-		"lid",
-		"popup",
-		"showNagModal",
-	]);
+	const { lid, mpSyncActive, mpSyncReconnecting, popup, showNagModal } =
+		useLocal([
+			"lid",
+			"mpSyncActive",
+			"mpSyncReconnecting",
+			"popup",
+			"showNagModal",
+		]);
 
 	// If this league was left connected to a shared-league sync room, reconnect
 	// after a refresh (which tears down the worker's in-memory sync engine). Also
@@ -68,6 +72,34 @@ export const Controller = () => {
 			rememberLidForPush(lid);
 		}
 	}, [lid]);
+
+	useEffect(() => {
+		if (!mpSyncActive && !mpSyncReconnecting) {
+			return;
+		}
+
+		let cancelled = false;
+		const check = async () => {
+			try {
+				await toWorker("main", "checkSyncReady", undefined);
+			} catch {
+				// The worker updates local state on normal failures; if the worker
+				// itself is unavailable, the existing reconnect guard still blocks sim.
+			}
+		};
+
+		void check();
+		const intervalID = setInterval(() => {
+			if (!cancelled) {
+				void check();
+			}
+		}, 5000);
+
+		return () => {
+			cancelled = true;
+			clearInterval(intervalID);
+		};
+	}, [mpSyncActive, mpSyncReconnecting]);
 
 	const closeNagModal = useCallback(() => {
 		localActions.update({

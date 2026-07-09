@@ -69,6 +69,50 @@ const PhaseStatusBlock = () => {
 	);
 };
 
+const SyncStatusDot = () => {
+	const {
+		mpSyncActive,
+		mpSyncHostName,
+		mpSyncIsHost,
+		mpSyncReady,
+		mpSyncReconnecting,
+	} = useLocal([
+		"mpSyncActive",
+		"mpSyncHostName",
+		"mpSyncIsHost",
+		"mpSyncReady",
+		"mpSyncReconnecting",
+	]);
+
+	if (!mpSyncActive && !mpSyncReconnecting) {
+		return null;
+	}
+
+	const ready = mpSyncActive && mpSyncReady;
+	const title = ready
+		? "Cloud sync ready"
+		: mpSyncReconnecting
+			? "Cloud sync reconnecting"
+			: !mpSyncIsHost
+				? `${mpSyncHostName ?? "Another device"} has the wheel`
+				: "Cloud sync not ready";
+
+	return (
+		<Nav.Link href={helpers.leagueUrl(["multiplayer_sync"])} title={title}>
+			<span
+				aria-label={title}
+				style={{
+					backgroundColor: ready ? "var(--bs-success)" : "var(--bs-danger)",
+					borderRadius: "50%",
+					display: "inline-block",
+					height: 10,
+					width: 10,
+				}}
+			/>
+		</Nav.Link>
+	);
+};
+
 export const NavBar = ({ updating }: { updating: boolean }) => {
 	const {
 		lid,
@@ -154,6 +198,11 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 					/>
 				</div>
 				<Nav id="top-user-block" navbar>
+					{inLeague ? (
+						<Nav.Item>
+							<SyncStatusDot />
+						</Nav.Item>
+					) : null}
 					<Nav.Item>{userBlock}</Nav.Item>
 				</Nav>
 			</div>

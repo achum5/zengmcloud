@@ -102,6 +102,8 @@ export interface SyncSubscriber {
 	// Handle one entry from the shared log. Returns whether it was applied.
 	onEntry(entry: ChangesetEntry): Promise<boolean> | boolean;
 
+	onError?(error: unknown): void;
+
 	// Called after a batch of entries (e.g. a Firestore snapshot) has all been
 	// processed - a safe point to advance the persisted watermark.
 	onBatchProcessed?(): void;
@@ -111,6 +113,10 @@ export interface SyncSubscriber {
 // runs over an in-memory fake (tests) or Firebase (production).
 export interface SyncTransport {
 	readonly clientId: string;
+
+	// Lightweight write used as a liveness check before risky local actions. If
+	// this fails or times out, the caller should assume publishes are not safe.
+	ping?(): Promise<void>;
 
 	// Publish a locally-produced entry. The transport assigns `seq`, so callers
 	// pass everything except that.
@@ -187,6 +193,7 @@ export interface SyncTransport {
 	claimAuthority?(holderId: string, holderName: string): Promise<void>;
 	subscribeAuthority?(
 		onChange: (authority: Authority | undefined) => void,
+		onError?: (error: unknown) => void,
 	): () => void;
 
 	// Stamp/clear the wheel-holder's "actively advancing" lease on the shared

@@ -72,6 +72,7 @@ let connectedLid: number | undefined;
 export const getConnectedLid = (): number | undefined => connectedLid;
 // Name of whoever currently holds the wheel (for display), from the shared doc.
 let currentHostName: string | undefined;
+let currentCloudReady = false;
 
 // Whether this device is *supposed* to be in a sync session. Stays true across
 // the async reconnect after a refresh, and even if that reconnect fails - so we
@@ -501,15 +502,47 @@ export const isReconnecting = () =>
 export const markSyncRequired = () => {
 	syncRequired = true;
 	if (getSyncEngine() === undefined) {
-		void toUI("updateLocal", [{ mpSyncReconnecting: true }]);
+		void toUI("updateLocal", [
+			{ mpSyncReady: false, mpSyncReconnecting: true },
+		]);
 	}
 };
 
-export const getSyncStatus = () => {
+const pushReadyToUI = (ready: boolean) => {
+	currentCloudReady = ready;
 	const engine = getSyncEngine();
+	void toUI("updateLocal", [{ mpSyncReady: ready && !!engine?.isAuthority() }]);
+};
+
+const refreshReady = async () => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		pushReadyToUI(false);
+		return false;
+	}
+
+	try {
+		await engine.ensureReady();
+		const cloudReady = engine.isReady();
+		pushReadyToUI(cloudReady);
+		return cloudReady && engine.isAuthority();
+	} catch {
+		pushReadyToUI(false);
+		return false;
+	}
+};
+
+export const checkSyncReady = async () => {
+	return refreshReady();
+};
+
+export const getSyncStatus = async () => {
+	const engine = getSyncEngine();
+	const ready = await refreshReady();
 	return {
 		connected: engine !== undefined,
 		reconnecting: isReconnecting(),
+		ready,
 		code: currentCode,
 		// "host" now means "current wheel-holder", read live from the engine.
 		isHost: engine?.isAuthority() ?? false,
@@ -521,7 +554,11 @@ export const getSyncStatus = () => {
 // draft, and sync page can reflect who's in control without polling.
 const pushAuthorityToUI = (isHost: boolean, hostName: string | undefined) => {
 	void toUI("updateLocal", [
-		{ mpSyncIsHost: isHost, mpSyncHostName: hostName },
+		{
+			mpSyncIsHost: isHost,
+			mpSyncHostName: hostName,
+			mpSyncReady: currentCloudReady && isHost,
+		},
 	]);
 };
 
@@ -657,7 +694,7 @@ export const connectSharedLeague = async ({
 	});
 
 	const engine = new SyncEngine(transport, {
-		isHost,
+		isHost: false,
 		initialWatermark: watermark,
 		code: trimmed,
 		onWatermark: (seq) => {
@@ -690,11 +727,25 @@ export const connectSharedLeague = async ({
 		onCatchUpProgress: (progress) => {
 			void toUI("updateLocal", [{ mpCatchUp: progress }]);
 		},
+		onReadyChange: (ready) => {
+			pushReadyToUI(ready);
+		},
 	});
 	engine.start();
 	setSyncEngine(engine);
 	currentCode = trimmed;
 	currentHostName = undefined;
+	currentCloudReady = false;
+
+	try {
+		await engine.ensureReady();
+		if (isHost) {
+			await engine.claimAuthority();
+		}
+	} catch (error) {
+		disconnectSharedLeague();
+		throw error;
+	}
 
 	// Register the room so it shows up on the admin page. Best-effort.
 	void transport.touchRoom?.();
@@ -760,11 +811,15 @@ export const connectSharedLeague = async ({
 	changeTracker.enable();
 	changeTracker.reset();
 
-	// Let the UI hide single-player-only chrome (e.g. the multi-team switcher),
-	// clear the "reconnecting" state, and reset the wheel display until the
-	// control-doc subscription reports in.
-	void toUI("updateLocal", [{ mpSyncActive: true, mpSyncReconnecting: false }]);
-	pushAuthorityToUI(false, undefined);
+	// Let the UI hide single-player-only chrome (e.g. the multi-team switcher)
+	// and clear the "reconnecting" state.
+	void toUI("updateLocal", [
+		{
+			mpSyncActive: true,
+			mpSyncReady: engine.isReady() && engine.isAuthority(),
+			mpSyncReconnecting: false,
+		},
+	]);
 
 	return { connected: true, code: trimmed, isHost, clientId };
 };
@@ -809,11 +864,12 @@ export const disconnectSharedLeague = () => {
 	currentCode = undefined;
 	connectedLid = undefined;
 	currentHostName = undefined;
+	currentCloudReady = false;
 	// Explicit disconnect clears the intent, so single-player simming works again.
 	syncRequired = false;
 
 	void toUI("updateLocal", [
-		{ mpSyncActive: false, mpSyncReconnecting: false },
+		{ mpSyncActive: false, mpSyncReady: false, mpSyncReconnecting: false },
 	]);
 	pushAuthorityToUI(false, undefined);
 

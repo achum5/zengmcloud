@@ -17,6 +17,8 @@ import type {
 	SyncTransport,
 } from "./types.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
+import { afterAction } from "./afterAction.ts";
+import { setSyncEngine } from "./engineHolder.ts";
 
 // In-memory shared log that several transports connect to, like a Firestore
 // collection every client listens on. Assigns the ordering seq itself.
@@ -63,13 +65,26 @@ class FakeBus {
 class FakeTransport implements SyncTransport {
 	readonly clientId: string;
 	private bus: FakeBus;
+	failPing = false;
+	failPublish = false;
+	pingCount = 0;
 
 	constructor(clientId: string, bus: FakeBus) {
 		this.clientId = clientId;
 		this.bus = bus;
 	}
 
+	async ping() {
+		this.pingCount += 1;
+		if (this.failPing) {
+			throw new Error("not ready");
+		}
+	}
+
 	async publish(entry: Omit<ChangesetEntry, "seq">) {
+		if (this.failPublish) {
+			throw new Error("publish failed");
+		}
 		this.bus.publish(entry);
 	}
 
@@ -132,6 +147,7 @@ const genPlayer = () =>
 
 describe("SyncEngine", () => {
 	beforeEach(() => {
+		setSyncEngine(undefined);
 		changeTracker.disable();
 		changeTracker.reset();
 	});
@@ -147,6 +163,7 @@ describe("SyncEngine", () => {
 		});
 
 		const engineA = new SyncEngine(new FakeTransport("A", bus));
+		engineA.start();
 		await engineA.onLocalChangeset(
 			{ changes: [{ store: "trade", id: 0, type: "delete" }] },
 			"main.clearTrade",
@@ -162,6 +179,7 @@ describe("SyncEngine", () => {
 		const bus = new FakeBus();
 		const engineA = new SyncEngine(new FakeTransport("A", bus));
 		const engineB = new SyncEngine(new FakeTransport("B", bus));
+		engineA.start();
 
 		// Device A: two players (pids 0, 1). Move player 0 to another team and
 		// publish the resulting changeset.
@@ -179,9 +197,7 @@ describe("SyncEngine", () => {
 		// then receives A's entry over the (JSON-serialized) wire.
 		await resetCache({ players: [genPlayer(), genPlayer()] });
 		changeTracker.disable();
-		const wireEntry: ChangesetEntry = JSON.parse(
-			JSON.stringify(bus.entries[0]),
-		);
+		const wireEntry: ChangesetEntry = structuredClone(bus.entries[0]!);
 		const applied = await engineB.handleEntry(wireEntry);
 
 		assert.strictEqual(applied, true);
@@ -191,10 +207,9 @@ describe("SyncEngine", () => {
 
 	test("host chunks a bulk (sim) change; receiver reassembles and applies it", async () => {
 		const bus = new FakeBus();
-		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
-		// isHost now means "claim the wheel on start" - starting is what makes this
-		// device the advance-authority allowed to broadcast bulk sims.
+		const host = new SyncEngine(new FakeTransport("H", bus));
 		host.start();
+		await host.claimAuthority();
 		const receiver = new SyncEngine(new FakeTransport("R", bus));
 
 		resetG();
@@ -220,7 +235,7 @@ describe("SyncEngine", () => {
 		// Receiver applies only once the whole batch has arrived.
 		let appliedCount = 0;
 		for (const entry of bus.entries) {
-			const wire: ChangesetEntry = JSON.parse(JSON.stringify(entry));
+			const wire: ChangesetEntry = structuredClone(entry);
 			if (await receiver.handleEntry(wire)) {
 				appliedCount += 1;
 			}
@@ -350,7 +365,9 @@ describe("SyncEngine", () => {
 		resetG();
 		await resetCache({});
 
-		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		const host = new SyncEngine(new FakeTransport("H", bus));
+		host.start();
+		await host.claimAuthority();
 		await host.onLocalChangeset(
 			{ changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }] },
 			"main.proposeTrade",
@@ -365,6 +382,7 @@ describe("SyncEngine", () => {
 	test("a non-host does not broadcast bulk (sim) changes", async () => {
 		const bus = new FakeBus();
 		const nonHost = new SyncEngine(new FakeTransport("N", bus));
+		nonHost.start();
 
 		const changes = Array.from({ length: 260 }, (_, i) => ({
 			store: "events" as const,
@@ -600,6 +618,50 @@ describe("SyncEngine", () => {
 		assert.strictEqual(events.length, 2);
 		// Watermark caught up to the newest entry.
 		assert.strictEqual(watermarks.at(-1), bus.entries.at(-1)!.seq);
+	});
+
+	test("a failed readiness probe blocks publishing", async () => {
+		const bus = new FakeBus();
+		const transport = new FakeTransport("A", bus);
+		transport.failPing = true;
+		const engine = new SyncEngine(transport);
+		engine.start();
+
+		let rejected = false;
+		try {
+			await engine.onLocalChangeset(
+				{ changes: [{ store: "trade", id: 0, type: "delete" }] },
+				"main.clearTrade",
+			);
+		} catch {
+			rejected = true;
+		}
+		assert.strictEqual(rejected, true);
+		assert.strictEqual(transport.pingCount, 1);
+		assert.strictEqual(bus.entries.length, 0);
+	});
+
+	test("afterAction restores pending changes when publishing fails", async () => {
+		const bus = new FakeBus();
+		const transport = new FakeTransport("A", bus);
+		transport.failPublish = true;
+		const engine = new SyncEngine(transport);
+		engine.start();
+		setSyncEngine(engine);
+
+		resetG();
+		await resetCache({ players: [genPlayer()] });
+		changeTracker.enable();
+		changeTracker.reset();
+
+		const p = (await idb.cache.players.getAll())[0]!;
+		p.tid = 7;
+		await idb.cache.players.put(p);
+
+		assert.strictEqual(changeTracker.size(), 1);
+		assert.strictEqual(await afterAction("main", "proposeTrade"), false);
+		assert.strictEqual(bus.entries.length, 0);
+		assert.strictEqual(changeTracker.size(), 1);
 	});
 
 	test("skips self-authored and duplicate entries", async () => {

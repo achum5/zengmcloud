@@ -76,19 +76,22 @@ const PlayMenu = ({
 		mpSyncActive,
 		mpSyncIsHost,
 		mpSyncHostName,
+		mpSyncReady,
 		mpSyncReconnecting,
 	} = useLocal([
 		"keyboardShortcuts",
 		"mpSyncActive",
 		"mpSyncIsHost",
 		"mpSyncHostName",
+		"mpSyncReady",
 		"mpSyncReconnecting",
 	]);
 
 	// Season/phase advancement is locked when we're reconnecting/offline, or when
 	// we're synced but don't hold the wheel (the worker enforces both). Draft
 	// items stay available.
-	const locked = mpSyncReconnecting || (mpSyncActive && !mpSyncIsHost);
+	const locked =
+		mpSyncReconnecting || (mpSyncActive && (!mpSyncIsHost || !mpSyncReady));
 
 	if (lid === undefined) {
 		return null;
@@ -114,7 +117,11 @@ const PlayMenu = ({
 			<Dropdown.Menu>
 				{locked ? (
 					<Dropdown.Header>
-						{mpSyncReconnecting ? "🔄 Reconnecting to the league…" : "🔒"}
+						{mpSyncReconnecting
+							? "🔄 Reconnecting to the league…"
+							: !mpSyncIsHost
+								? `🔒 ${mpSyncHostName ?? "Another device"} has the wheel`
+								: "Cloud sync is not ready"}
 					</Dropdown.Header>
 				) : null}
 				{options.map((option, i) => {
@@ -138,7 +145,9 @@ const PlayMenu = ({
 								optionLocked
 									? mpSyncReconnecting
 										? "Reconnecting to the league…"
-										: `${mpSyncHostName ?? "Another device"} is simming`
+										: !mpSyncIsHost
+											? `${mpSyncHostName ?? "Another device"} has the wheel`
+											: "Cloud sync is not ready"
 									: undefined
 							}
 						>

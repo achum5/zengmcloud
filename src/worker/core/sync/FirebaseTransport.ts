@@ -213,6 +213,14 @@ export class FirebaseTransport implements SyncTransport {
 		);
 	}
 
+	async ping() {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "members", this.clientId),
+			{ lastPingAt: serverTimestamp() },
+			{ merge: true },
+		);
+	}
+
 	// Enqueue a push. The Cloud Function triggers on this doc, looks up member
 	// tokens, and delivers to everyone else's phones - so it works even when
 	// their app is fully closed.
@@ -257,7 +265,10 @@ export class FirebaseTransport implements SyncTransport {
 
 	// Watch who currently holds the wheel. Fires immediately with the current
 	// holder (or undefined if nobody has claimed it yet), then on every change.
-	subscribeAuthority(onChange: (authority: Authority | undefined) => void) {
+	subscribeAuthority(
+		onChange: (authority: Authority | undefined) => void,
+		onError?: (error: unknown) => void,
+	) {
 		return onSnapshot(
 			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
 			(snapshot) => {
@@ -275,6 +286,7 @@ export class FirebaseTransport implements SyncTransport {
 					onChange(undefined);
 				}
 			},
+			onError,
 		);
 	}
 
@@ -607,6 +619,7 @@ export class FirebaseTransport implements SyncTransport {
 				// token expired) must not silently kill sync: the paginated catch-up
 				// timer is the backstop that keeps draining regardless.
 				console.error("Changes subscription failed", error);
+				subscriber.onError?.(error);
 			},
 		);
 

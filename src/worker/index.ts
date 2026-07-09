@@ -210,6 +210,20 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				return undefined;
 			}
 
+			try {
+				await syncEngine.ensureReady();
+			} catch {
+				util.logEvent(
+					{
+						type: "error",
+						text: `Cloud sync is not ready right now, so this wasn't done. Check your connection and try again.`,
+						persistent: true,
+					},
+					conditions,
+				);
+				return undefined;
+			}
+
 			// Confirm the connection is GENUINELY live, so this change can actually
 			// reach the room. This is what catches "looked connected but wasn't" - a
 			// dropped listener, expired token, or resumed-from-suspend tab. For a
@@ -307,14 +321,27 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 	}
 
 	return Promise.resolve(call()).then(
-		(value) => {
-			// Fire-and-forget: capture/log/push must never add latency to the
-			// action's response. (Safe ordering: this microtask drains before the
-			// next worker message is processed.)
-			const done = afterAction(type, name);
-			// Release the lease once the advance has actually been published.
-			if (marksBusy) {
-				void done.then(() => getSyncEngine()?.clearRoomBusy());
+		async (value) => {
+			// For sim/advance actions, wait for the sync upload attempt so failures
+			// are visible and pending changes are retained for retry. Other actions
+			// stay fire-and-forget.
+			if (isWheelLockedCall(type, name)) {
+				const synced = await afterAction(type, name);
+				if (marksBusy) {
+					getSyncEngine()?.clearRoomBusy();
+				}
+				if (!synced) {
+					util.logEvent(
+						{
+							type: "error",
+							text: `Cloud sync did not finish uploading this change. The change is still queued locally and will be retried after your connection works again.`,
+							persistent: true,
+						},
+						conditions,
+					);
+				}
+			} else {
+				void afterAction(type, name);
 			}
 			return value;
 		},

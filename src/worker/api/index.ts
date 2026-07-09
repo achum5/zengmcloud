@@ -88,6 +88,7 @@ import {
 import { getScore } from "../core/player/checkJerseyNumberRetirement.ts";
 import {
 	claimSyncAuthority,
+	checkSyncReady,
 	connectSharedLeague,
 	deleteAllSyncRooms,
 	deleteSyncRoom,
@@ -5502,6 +5503,7 @@ export default {
 		beforeView,
 		cancelContractNegotiation,
 		checkAccount: checkAccount2,
+		checkSyncReady,
 		checkParticipationAchievement,
 		clearInjuries,
 		clearSavedTrades,

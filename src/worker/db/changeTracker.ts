@@ -95,6 +95,14 @@ export const changeTracker = {
 		simDepth = Math.max(0, simDepth - 1);
 	},
 
+	// Put changes back after a failed sync attempt, so they can be retried by a
+	// later capture rather than silently disappearing.
+	restore(changes: PendingChange[]) {
+		for (const change of changes) {
+			pending.set(key(change.store, change.id), change);
+		}
+	},
+
 	// Run fn with recording suppressed. Used for local-only/bulk calls (league
 	// import, read-only view fetches) that must not capture at all.
 	async runSuppressed<T>(fn: () => Promise<T>): Promise<T> {

@@ -20,6 +20,7 @@ import type { SyncRoom } from "../../worker/core/sync/adminRooms.ts";
 const ADMIN_PASSWORD = "abc123";
 
 type Status = "disconnected" | "connecting" | "connected";
+type PushPermission = "default" | "denied" | "granted";
 
 type SyncActivityItem = {
 	key: string;
@@ -85,6 +86,7 @@ const MultiplayerSync = () => {
 		mpSyncActive,
 		mpSyncIsHost,
 		mpSyncHostName,
+		mpSyncReady,
 		mpSyncReconnecting,
 		mpSyncUpload,
 	} = useLocal([
@@ -92,6 +94,7 @@ const MultiplayerSync = () => {
 		"mpSyncActive",
 		"mpSyncIsHost",
 		"mpSyncHostName",
+		"mpSyncReady",
 		"mpSyncReconnecting",
 		"mpSyncUpload",
 	]);
@@ -111,7 +114,7 @@ const MultiplayerSync = () => {
 	// Phone push notifications.
 	const [pushSupport, setPushSupport] = useState(true);
 	const [pushPermission, setPushPermission] =
-		useState<NotificationPermission>(getPushPermission());
+		useState<PushPermission>(getPushPermission());
 	const [pushBusy, setPushBusy] = useState(false);
 	const [pushError, setPushError] = useState<string | undefined>();
 
@@ -298,8 +301,8 @@ const MultiplayerSync = () => {
 		try {
 			await enablePushNotifications();
 			setPushPermission(getPushPermission());
-		} catch (err) {
-			setPushError((err as Error).message ?? String(err));
+		} catch (error_) {
+			setPushError((error_ as Error).message ?? String(error_));
 		} finally {
 			setPushBusy(false);
 		}
@@ -315,8 +318,8 @@ const MultiplayerSync = () => {
 			await toWorker("main", "connectSharedLeague", { code, isHost });
 			setStoredSync(lid, { code, isHost });
 			setStatus("connected");
-		} catch (err) {
-			setError((err as Error).message ?? String(err));
+		} catch (error_) {
+			setError((error_ as Error).message ?? String(error_));
 			setStatus("disconnected");
 		}
 	};
@@ -431,18 +434,40 @@ const MultiplayerSync = () => {
 					<h3 className="card-title h5">Status</h3>
 					{connected ? (
 						<>
-							<p className="text-success mb-2">
-								Connected to <b>{code.trim()}</b>.
+							<p
+								className={`${
+									mpSyncReady ? "text-success" : "text-danger"
+								} mb-2`}
+							>
+								<span
+									aria-hidden
+									style={{
+										backgroundColor: mpSyncReady
+											? "var(--bs-success)"
+											: "var(--bs-danger)",
+										borderRadius: "50%",
+										display: "inline-block",
+										height: 10,
+										marginRight: 6,
+										width: 10,
+									}}
+								/>
+								{mpSyncReady ? "Ready" : "Not ready"} for cloud upload to{" "}
+								<b>{code.trim()}</b>.
 							</p>
 							<div className="d-flex align-items-center gap-2 flex-wrap">
 								<span>
 									{mpSyncIsHost ? (
-										<span className="text-success">
-											🎮 <b>You're simming</b>
+										<span
+											className={
+												mpSyncReady ? "text-success" : "text-body-secondary"
+											}
+										>
+											<b>You have the wheel</b>
 										</span>
 									) : mpSyncHostName ? (
 										<span className="text-body-secondary">
-											🔒 <b>{mpSyncHostName}</b> is simming
+											<b>{mpSyncHostName}</b> has the wheel
 										</span>
 									) : (
 										<span className="text-body-secondary">

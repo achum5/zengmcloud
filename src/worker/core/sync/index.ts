@@ -16,6 +16,7 @@ export {
 export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 export {
 	claimSyncAuthority,
+	checkSyncReady,
 	connectSharedLeague,
 	disconnectSharedLeague,
 	endLiveBroadcast,

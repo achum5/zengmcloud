@@ -9,20 +9,29 @@ export const useWheelLocked = (): {
 	locked: boolean;
 	reason: string | undefined;
 } => {
-	const { mpSyncActive, mpSyncIsHost, mpSyncHostName, mpSyncReconnecting } =
-		useLocal([
-			"mpSyncActive",
-			"mpSyncIsHost",
-			"mpSyncHostName",
-			"mpSyncReconnecting",
-		]);
+	const {
+		mpSyncActive,
+		mpSyncIsHost,
+		mpSyncHostName,
+		mpSyncReady,
+		mpSyncReconnecting,
+	} = useLocal([
+		"mpSyncActive",
+		"mpSyncIsHost",
+		"mpSyncHostName",
+		"mpSyncReady",
+		"mpSyncReconnecting",
+	]);
 
-	const locked = mpSyncReconnecting || (mpSyncActive && !mpSyncIsHost);
+	const locked =
+		mpSyncReconnecting || (mpSyncActive && (!mpSyncIsHost || !mpSyncReady));
 	const reason = !locked
 		? undefined
 		: mpSyncReconnecting
 			? "Reconnecting to the league…"
-			: `${mpSyncHostName ?? "Another device"} is simming`;
+			: !mpSyncIsHost
+				? `${mpSyncHostName ?? "Another device"} has the wheel`
+				: "Cloud sync is not ready";
 
 	return { locked, reason };
 };

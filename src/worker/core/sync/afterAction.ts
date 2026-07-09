@@ -15,6 +15,27 @@ import { local, lock } from "../../util/index.ts";
 // hook), so we detect them by label here too, belt-and-suspenders.
 const SILENT_SYNC_LABELS = new Set(["actions.simGame", "actions.liveGame"]);
 
+let retryTimeoutID: ReturnType<typeof setTimeout> | undefined;
+
+const scheduleRetry = (type: string, name: string) => {
+	if (retryTimeoutID !== undefined) {
+		return;
+	}
+
+	retryTimeoutID = setTimeout(() => {
+		retryTimeoutID = undefined;
+		if (getSyncEngine()) {
+			void afterAction(type, name);
+		}
+	}, 5000);
+	const nodeTimeout = retryTimeoutID as unknown as
+		| { unref?: () => void }
+		| undefined;
+	if (typeof nodeTimeout?.unref === "function") {
+		nodeTimeout.unref();
+	}
+};
+
 // Runs (fire-and-forget) after each user action that could mutate state. It
 // drains the change tracker ONCE and fans the resulting changeset out to both
 // the dev console logger and the cloud sync engine (if connected). Must never
@@ -28,15 +49,18 @@ export const afterAction = async (
 	name: string,
 	options?: { silent?: boolean },
 ) => {
+	let changeset: Awaited<ReturnType<typeof captureChangeset>> | undefined;
+	let published = false;
+
 	try {
 		// Fast path: most actions change nothing.
 		if (changeTracker.size() === 0) {
-			return;
+			return true;
 		}
 
-		const changeset = await captureChangeset();
+		changeset = await captureChangeset();
 		if (changeset.changes.length === 0) {
-			return;
+			return true;
 		}
 
 		const label = `${type}.${name}`;
@@ -57,9 +81,8 @@ export const afterAction = async (
 		if (engine) {
 			// Publishing IS the sync - if it throws, this change never reaches the
 			// other devices, and the tracker was already drained so it won't be
-			// recaptured. Keep it in its own try so a failure is logged loudly
-			// (diagnosable) instead of being swallowed by the outer catch.
-			let published = false;
+			// recaptured. Re-throw after logging so the outer catch restores the
+			// pending changes and schedules a retry.
 			try {
 				await engine.onLocalChangeset(changeset, label);
 				published = true;
@@ -68,6 +91,7 @@ export const afterAction = async (
 					`[sync] Failed to publish "${label}" (${changeset.changes.length} records) - this change did NOT sync to other devices.`,
 					error,
 				);
+				throw error;
 			}
 
 			// Make the just-published change durable locally right away. Until the
@@ -112,8 +136,31 @@ export const afterAction = async (
 					console.error("[sync] Failed to publish notifications", error);
 				}
 			}
+		} else {
+			// No cloud target, so there is nothing to retry.
+			published = true;
 		}
+		return true;
 	} catch {
+		if (changeset && !published) {
+			changeTracker.restore(
+				changeset.changes.map((change) => ({
+					store: change.store,
+					id: change.id,
+					type: change.type,
+				})),
+			);
+			scheduleRetry(type, name);
+			return false;
+		}
+
+		try {
+			if (changeTracker.size() > 0) {
+				return false;
+			}
+		} catch {}
+
 		// Sync/logging must never affect gameplay.
+		return true;
 	}
 };

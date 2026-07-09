@@ -41,6 +41,8 @@ const ROOM_BUSY_LEASE_MS = 45_000;
 // count and by serialized size (whichever hits first).
 const MAX_CHUNK_RECORDS = 100;
 const MAX_CHUNK_BYTES = 700_000;
+const READY_TTL = 10_000;
+const READY_TIMEOUT = 5_000;
 
 const makeId = (): string => {
 	if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -111,6 +113,8 @@ export class SyncEngine {
 		| ((authority: Authority | undefined) => void)
 		| undefined;
 
+	private onReadyChange: ((ready: boolean) => void) | undefined;
+
 	private authorityUnsubscribe: (() => void) | undefined;
 
 	// This device's display name, used as the author of push notifications
@@ -174,6 +178,14 @@ export class SyncEngine {
 	private catchUpTotal: number | undefined;
 	private catchUpDone = 0;
 
+	private readyUntil = 0;
+
+	private readyProbe: Promise<void> | undefined;
+
+	private listenerHealthy = true;
+
+	private authorityListenerHealthy = true;
+
 	constructor(
 		transport: SyncTransport,
 		options: {
@@ -189,6 +201,7 @@ export class SyncEngine {
 			onCatchUpProgress?: (
 				progress: { done: number; total: number } | undefined,
 			) => void;
+			onReadyChange?: (ready: boolean) => void;
 		} = {},
 	) {
 		this.transport = transport;
@@ -201,6 +214,7 @@ export class SyncEngine {
 		this.onUploadProgress = options.onUploadProgress;
 		this.onUploadComplete = options.onUploadComplete;
 		this.onCatchUpProgress = options.onCatchUpProgress;
+		this.onReadyChange = options.onReadyChange;
 	}
 
 	get clientId(): string {
@@ -260,6 +274,73 @@ export class SyncEngine {
 		);
 	}
 
+	private markNotReady() {
+		const wasReady = this.isReady();
+		this.readyUntil = 0;
+		if (wasReady) {
+			this.onReadyChange?.(false);
+		}
+	}
+
+	isReady(): boolean {
+		return (
+			this.listenerHealthy &&
+			this.authorityListenerHealthy &&
+			Date.now() < this.readyUntil
+		);
+	}
+
+	private async withReadyTimeout(promise: Promise<void>) {
+		let timeoutID: ReturnType<typeof setTimeout> | undefined;
+		try {
+			await Promise.race([
+				promise,
+				new Promise<void>((_resolve, reject) => {
+					timeoutID = setTimeout(() => {
+						reject(new Error("Cloud sync readiness check timed out."));
+					}, READY_TIMEOUT);
+				}),
+			]);
+		} finally {
+			if (timeoutID !== undefined) {
+				clearTimeout(timeoutID);
+			}
+		}
+	}
+
+	async ensureReady(): Promise<void> {
+		if (!this.listenerHealthy || !this.authorityListenerHealthy) {
+			this.markNotReady();
+			throw new Error("Cloud sync listeners are not ready.");
+		}
+		if (Date.now() < this.readyUntil) {
+			return;
+		}
+		if (this.readyProbe) {
+			return this.readyProbe;
+		}
+
+		this.readyProbe = (async () => {
+			try {
+				if (this.transport.ping) {
+					await this.withReadyTimeout(this.transport.ping());
+				}
+				const wasReady = this.isReady();
+				this.readyUntil = Date.now() + READY_TTL;
+				if (!wasReady && this.isReady()) {
+					this.onReadyChange?.(true);
+				}
+			} catch (error) {
+				this.markNotReady();
+				throw error;
+			}
+		})().finally(() => {
+			this.readyProbe = undefined;
+		});
+
+		return this.readyProbe;
+	}
+
 	// Back-compat alias: "host" now means "current wheel-holder". Used by the
 	// notification builder to decide who narrates a sim.
 	getIsHost(): boolean {
@@ -274,9 +355,15 @@ export class SyncEngine {
 			holderId: this.transport.clientId,
 			holderName: this.localName,
 		};
+		await this.ensureReady();
+		try {
+			await this.transport.claimAuthority?.(holder.holderId, holder.holderName);
+		} catch (error) {
+			this.markNotReady();
+			throw error;
+		}
 		this.authority = holder;
 		this.onAuthorityChange?.(holder);
-		await this.transport.claimAuthority?.(holder.holderId, holder.holderName);
 	}
 
 	// Register this device for push in the room (records its FCM token). No-op if
@@ -304,14 +391,25 @@ export class SyncEngine {
 			this.authorityUnsubscribe = this.transport.subscribeAuthority?.(
 				(authority) => {
 					this.authority = authority;
+					this.authorityListenerHealthy = true;
 					this.onAuthorityChange?.(authority);
+				},
+				() => {
+					const wasReady = this.isReady();
+					this.authorityListenerHealthy = false;
+					this.authority = undefined;
+					this.readyUntil = 0;
+					this.onAuthorityChange?.(undefined);
+					if (wasReady) {
+						this.onReadyChange?.(false);
+					}
 				},
 			);
 		}
 
 		// If the user chose to take the wheel on connect, claim it now.
 		if (this.claimOnStart) {
-			void this.claimAuthority();
+			void this.claimAuthority().catch(() => undefined);
 		}
 	}
 
@@ -325,8 +423,17 @@ export class SyncEngine {
 		}
 		this.unsubscribe = this.transport.subscribe({
 			onEntry: (entry) => this.handleEntry(entry),
+			onError: () => {
+				const wasReady = this.isReady();
+				this.listenerHealthy = false;
+				this.readyUntil = 0;
+				if (wasReady) {
+					this.onReadyChange?.(false);
+				}
+			},
 			onBatchProcessed: () => this.advanceWatermark(),
 		});
+		this.listenerHealthy = true;
 	}
 
 	// Has the live changes subscription been started yet?
@@ -354,6 +461,9 @@ export class SyncEngine {
 		this.unsubscribe = undefined;
 		this.authorityUnsubscribe?.();
 		this.authorityUnsubscribe = undefined;
+		this.listenerHealthy = false;
+		this.authorityListenerHealthy = false;
+		this.markNotReady();
 	}
 
 	// Publish a changeset produced by a local action.
@@ -361,6 +471,8 @@ export class SyncEngine {
 		if (changeset.changes.length === 0) {
 			return;
 		}
+
+		await this.ensureReady();
 
 		// Send as a single doc only if it fits in one Firestore doc by BOTH record
 		// count AND serialized size. A changeset can be <= MAX_SYNC_CHANGES records
@@ -387,6 +499,9 @@ export class SyncEngine {
 					changeset,
 				});
 				this.onUploadComplete?.();
+			} catch (error) {
+				this.markNotReady();
+				throw error;
 			} finally {
 				this.onUploadProgress?.(undefined);
 			}
@@ -446,13 +561,13 @@ export class SyncEngine {
 		this.onUploadProgress?.({ done: 0, total: entries.length });
 		try {
 			for (let i = 0; i < entries.length; i++) {
-				await this.transport.publish(entries[i]!);
-				if (this.code !== undefined) {
-					await outbox.remove(entries[i]!.id);
-				}
+				await this.publishEntry(entries[i]!);
 				this.onUploadProgress?.({ done: i + 1, total: entries.length });
 			}
 			this.onUploadComplete?.();
+		} catch (error) {
+			this.markNotReady();
+			throw error;
 		} finally {
 			this.onUploadProgress?.(undefined);
 		}
@@ -495,6 +610,7 @@ export class SyncEngine {
 					await outbox.remove(entry.id);
 				} catch (error) {
 					// Leave it queued for the next flush rather than dropping it.
+					this.markNotReady();
 					console.error("[sync] outbox flush: re-publish failed", error);
 				}
 				this.onUploadProgress?.({ done: i + 1, total: pending.length });
