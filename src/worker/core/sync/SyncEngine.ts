@@ -509,14 +509,16 @@ export class SyncEngine {
 		}
 
 		// Bulk change (e.g. a sim, a phase advance, or a big draft advance).
-		// Normally only the sim authority broadcasts these. Draft actions are exempt:
-		// whoever is on the clock drafts their own pick, so their (possibly large)
-		// draft changeset must sync from any device.
+		// The worker action guard is responsible for preventing a follower from
+		// starting these. Once a local bulk mutation exists, we must publish it (or
+		// throw and restore it for retry) rather than silently dropping it. A transient
+		// authority-listener blip after a single/live game can otherwise make the
+		// next day sim look exactly like a local-only file: no upload progress, no
+		// cloud entry, and the drained changeset is gone.
 		if (!this.isAuthority() && !isDraftAction(action)) {
 			console.warn(
-				`[sync] Skipping bulk change from "${action}" (${changeset.changes.length} records) - only the sim authority broadcasts sims.`,
+				`[sync] Publishing bulk change from "${action}" (${changeset.changes.length} records) even though local sim authority is not currently confirmed.`,
 			);
-			return;
 		}
 
 		await this.publishBulk(changeset, action);

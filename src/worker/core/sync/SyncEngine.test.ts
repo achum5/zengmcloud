@@ -381,7 +381,7 @@ describe("SyncEngine", () => {
 		assert.strictEqual(watermarks.at(-1), bus.entries.at(-1)!.seq);
 	});
 
-	test("a non-host does not broadcast bulk (sim) changes", async () => {
+	test("does not silently drop a local bulk change if authority state drifted", async () => {
 		const bus = new FakeBus();
 		const nonHost = new SyncEngine(new FakeTransport("N", bus));
 		nonHost.start();
@@ -394,7 +394,8 @@ describe("SyncEngine", () => {
 		}));
 		await nonHost.onLocalChangeset({ changes }, "playMenu.day");
 
-		assert.strictEqual(bus.entries.length, 0);
+		assert.ok(bus.entries.length > 0);
+		assert.strictEqual(bus.entries[0]!.authorId, "N");
 	});
 
 	test("does NOT advance the watermark past a changeset that failed to apply", async () => {
