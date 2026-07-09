@@ -64,7 +64,10 @@ const SKIP_PHASE_ANNOUNCE = new Set<number>([
 const topFreeAgentsText = async (): Promise<string> => {
 	let fas: any[] = [];
 	try {
-		fas = await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT);
+		fas = await idb.cache.players.indexGetAll(
+			"playersByTid",
+			PLAYER.FREE_AGENT,
+		);
 	} catch {
 		fas = [];
 	}

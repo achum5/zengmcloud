@@ -15,6 +15,7 @@ const makeEngine = () => {
 	const engine = {
 		onLocalChangeset: async (changeset: any, label: string) => {
 			published.push({ label, count: changeset.changes.length });
+			return "confirmed" as const;
 		},
 		getIsHost: () => true,
 		localName: "Alex",

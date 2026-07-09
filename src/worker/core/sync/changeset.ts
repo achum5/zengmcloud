@@ -143,7 +143,10 @@ const reconcileIdentity = async (store: Store, value: any) => {
 			changeTracker.forget(store, existing.rid);
 		}
 	} catch (error) {
-		console.error(`Failed to reconcile duplicate ${store} row before apply`, error);
+		console.error(
+			`Failed to reconcile duplicate ${store} row before apply`,
+			error,
+		);
 	}
 };
 

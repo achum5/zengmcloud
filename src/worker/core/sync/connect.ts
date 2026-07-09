@@ -149,6 +149,17 @@ let lastHealthPushed: boolean | undefined;
 // Monotonic count of confirmed uploads; the UI flashes a "synced ✓" when it ticks.
 let uploadOkCounter = 0;
 
+// How many local deltas are queued (durably) but not yet confirmed in the
+// cloud. Mirrored to the UI so unuploaded changes are always visible instead of
+// silently waiting.
+let lastPendingUploads = 0;
+const pushPendingUploads = (count: number) => {
+	if (count !== lastPendingUploads) {
+		lastPendingUploads = count;
+		void toUI("updateLocal", [{ mpPendingUploads: count }]);
+	}
+};
+
 const pushHealth = () => {
 	const age = getSyncEngine()?.contactAge();
 	const healthy = age !== undefined && age < HEALTH_STALE_MS;
@@ -213,6 +224,7 @@ const pushSyncStateFull = () => {
 			mpSyncReady: engine !== undefined && currentCloudReady,
 			mpSyncHealthy: healthy,
 			mpEditsPaused: editsPaused,
+			mpPendingUploads: lastPendingUploads,
 		},
 	]);
 };
@@ -818,6 +830,11 @@ export const connectSharedLeague = async ({
 		onReadyChange: (ready) => {
 			pushReadyToUI(ready);
 		},
+		// Queued-but-unconfirmed upload count → UI, so a delta that hasn't reached
+		// the cloud is always visible in the header, never silently waiting.
+		onPendingChange: (count) => {
+			pushPendingUploads(count);
+		},
 	});
 	engine.start();
 	setSyncEngine(engine);
@@ -840,9 +857,11 @@ export const connectSharedLeague = async ({
 	// Register the room so it shows up on the admin page. Best-effort.
 	void transport.touchRoom?.();
 
-	// Finish any upload a previous session left unconfirmed (interrupted mid-send),
-	// and drop long-dead outbox entries. Best-effort - never blocks the connect.
-	void engine.flushOutbox();
+	// Finish any upload a previous session left unconfirmed (interrupted mid-send
+	// or wedged before a refresh), drop long-dead outbox entries, and surface the
+	// initial queued count. Never blocks the connect.
+	void engine.drainOutbox();
+	void engine.pendingUploadCount().then(pushPendingUploads, () => {});
 	void outbox.prune(OUTBOX_MAX_AGE_MS);
 
 	// Drive the header connection dot from confirmed live contact, and the
@@ -892,9 +911,9 @@ export const connectSharedLeague = async ({
 	}
 	catchUpTimer = setInterval(() => {
 		void driveCatchUp();
-		// Also drain any upload the retry couldn't land this session (rare); the
-		// call is a no-op when the outbox is empty.
-		void getSyncEngine()?.flushOutbox();
+		// Second, independent kick for the upload drain (it also self-retries with
+		// backoff after a failure); a no-op when the outbox is empty.
+		void getSyncEngine()?.drainOutbox();
 	}, CATCH_UP_INTERVAL_MS);
 
 	// Turn on change capture so local actions get published to the room.
@@ -941,6 +960,7 @@ export const teardownSharedLeague = async ({
 	activeBroadcast = undefined;
 	followedBroadcast = undefined;
 	currentTransport = undefined;
+	lastPendingUploads = 0;
 	void toUI("updateLocal", [
 		{
 			mpAutoPlay: undefined,
@@ -949,6 +969,7 @@ export const teardownSharedLeague = async ({
 			mpEditsPaused: false,
 			mpCatchUp: undefined,
 			mpLiveBroadcast: undefined,
+			mpPendingUploads: 0,
 		},
 	]);
 	const engine = getSyncEngine();

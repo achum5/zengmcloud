@@ -363,7 +363,7 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				util.logEvent(
 					{
 						type: "error",
-						text: `Cloud sync did not finish uploading this change. The change is still queued locally and will be retried after your connection works again.`,
+						text: `This change is saved and queued for the cloud — it will upload automatically when the connection recovers.`,
 						persistent: true,
 					},
 					conditions,

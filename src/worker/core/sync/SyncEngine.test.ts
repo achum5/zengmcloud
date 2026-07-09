@@ -623,28 +623,36 @@ describe("SyncEngine", () => {
 		assert.strictEqual(watermarks.at(-1), bus.entries.at(-1)!.seq);
 	});
 
-	test("a failed readiness probe blocks publishing", async () => {
+	test("a failed readiness probe blocks NEW actions (guard) but never a captured delta", async () => {
 		const bus = new FakeBus();
 		const transport = new FakeTransport("A", bus);
 		transport.failPing = true;
 		const engine = new SyncEngine(transport);
 		engine.start();
 
+		// The action guard's preflight fails, so a new action is refused before it
+		// mutates anything...
 		let rejected = false;
 		try {
-			await engine.onLocalChangeset(
-				{ changes: [{ store: "trade", id: 0, type: "delete" }] },
-				"main.clearTrade",
-			);
+			await engine.ensureReady(true);
 		} catch {
 			rejected = true;
 		}
 		assert.strictEqual(rejected, true);
 		assert.strictEqual(transport.pingCount, 1);
-		assert.strictEqual(bus.entries.length, 0);
+
+		// ...but a delta that already EXISTS (e.g. a sim that was mid-flight when
+		// the connection went bad) must still be handed off and published - the
+		// readiness probe must never sit between a local mutation and the log.
+		const outcome = await engine.onLocalChangeset(
+			{ changes: [{ store: "trade", id: 0, type: "delete" }] },
+			"main.clearTrade",
+		);
+		assert.strictEqual(outcome, "confirmed");
+		assert.strictEqual(bus.entries.length, 1);
 	});
 
-	test("afterAction restores pending changes when publishing fails", async () => {
+	test("afterAction keeps a change durably queued (not re-captured) when publishing fails, then delivers it", async () => {
 		const bus = new FakeBus();
 		const transport = new FakeTransport("A", bus);
 		transport.failPublish = true;
@@ -662,9 +670,137 @@ describe("SyncEngine", () => {
 		await idb.cache.players.put(p);
 
 		assert.strictEqual(changeTracker.size(), 1);
+		// Publish fails → afterAction reports "not confirmed"...
 		assert.strictEqual(await afterAction("main", "proposeTrade"), false);
 		assert.strictEqual(bus.entries.length, 0);
-		assert.strictEqual(changeTracker.size(), 1);
+		// ...but the delta now lives in the upload queue, NOT back in the tracker
+		// (the tracker copy was the in-memory buffer a refresh could destroy).
+		assert.strictEqual(changeTracker.size(), 0);
+		assert.strictEqual(await engine.pendingUploadCount(), 1);
+
+		// Connection recovers → the drain delivers the exact same delta.
+		transport.failPublish = false;
+		assert.strictEqual(await engine.drainOutbox(), true);
+		assert.strictEqual(bus.entries.length, 1);
+		assert.strictEqual(await engine.pendingUploadCount(), 0);
+	});
+
+	test("queued uploads drain strictly in order across failures", async () => {
+		const bus = new FakeBus();
+		const transport = new FakeTransport("A", bus);
+		const engine = new SyncEngine(transport);
+		engine.start();
+
+		// First change fails to upload and stays queued.
+		transport.failPublish = true;
+		assert.strictEqual(
+			await engine.onLocalChangeset(
+				{
+					changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+				},
+				"main.first",
+			),
+			"queued",
+		);
+
+		// A second change made while the connection is bad queues BEHIND it.
+		assert.strictEqual(
+			await engine.onLocalChangeset(
+				{
+					changes: [{ store: "events", id: 2, type: "put", value: { eid: 2 } }],
+				},
+				"main.second",
+			),
+			"queued",
+		);
+		assert.strictEqual(await engine.pendingUploadCount(), 2);
+
+		// Recovery publishes them oldest-first - never inverted, so an older value
+		// can't clobber a newer one under last-write-wins.
+		transport.failPublish = false;
+		assert.strictEqual(await engine.drainOutbox(), true);
+		assert.deepStrictEqual(
+			bus.entries.map((e) => e.action),
+			["main.first", "main.second"],
+		);
+	});
+
+	test("a dead changes listener is re-created by ensureReady instead of wedging forever", async () => {
+		const bus = new FakeBus();
+		let subscribeCount = 0;
+		let lastSubscriber: SyncSubscriber | undefined;
+		const transport: SyncTransport = {
+			clientId: "A",
+			async ping() {},
+			async publish(entry) {
+				bus.publish(entry);
+			},
+			subscribe(subscriber) {
+				subscribeCount += 1;
+				lastSubscriber = subscriber;
+				return () => {};
+			},
+		};
+		const engine = new SyncEngine(transport);
+		engine.start();
+		engine.startChangesSubscription();
+		assert.strictEqual(subscribeCount, 1);
+
+		// The Firestore listener dies (terminal - it will never fire again).
+		lastSubscriber!.onError?.(new Error("stream died"));
+		assert.strictEqual(engine.isReady(), false);
+
+		// The next readiness check re-creates the listener and recovers - this used
+		// to throw forever until a page refresh, permanently blocking all uploads.
+		await engine.ensureReady(true);
+		assert.strictEqual(subscribeCount, 2);
+		assert.strictEqual(engine.isReady(), true);
+
+		// And publishing works again.
+		const outcome = await engine.onLocalChangeset(
+			{ changes: [{ store: "trade", id: 0, type: "delete" }] },
+			"main.clearTrade",
+		);
+		assert.strictEqual(outcome, "confirmed");
+		assert.strictEqual(bus.entries.length, 1);
+
+		engine.stop();
+	});
+
+	test("a failed apply self-heals on a later catch-up instead of wedging until manual resync", async () => {
+		const bus = new FakeBus();
+
+		resetG();
+		await resetCache({});
+
+		// A poison entry (nonexistent store) is in the log; the first catch-up
+		// fails to apply it → not caught up, watermark pinned before it.
+		const host = new FakeTransport("H", bus);
+		await host.publish({
+			id: "p1",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "nope" as any, id: 1, type: "put", value: {} }],
+			},
+		});
+
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+		assert.strictEqual(await receiver.catchUp(), false);
+		assert.strictEqual(receiver.isCaughtUp(), false);
+		assert.strictEqual(receiver.getPersistedSeq(), 0);
+
+		// The transient cause clears (here: the entry becomes applicable). The next
+		// periodic catch-up re-fetches from the pinned watermark and must genuinely
+		// re-apply the SAME entry id - previously `seen` dedup skipped every retry,
+		// so one bad apply paused edits forever until a manual full resync.
+		bus.entries[0]!.changeset = {
+			changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+		};
+		assert.strictEqual(await receiver.catchUp(), true);
+		assert.strictEqual(receiver.isCaughtUp(), true);
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, 1);
 	});
 
 	test("skips self-authored and duplicate entries", async () => {

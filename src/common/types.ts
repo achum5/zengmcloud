@@ -1106,6 +1106,11 @@ export type LocalStateUI = {
 	// Monotonic counter bumped each time a local change is confirmed uploaded; the
 	// header flashes a brief "synced ✓" when it ticks.
 	mpSyncUploadOk: number;
+	// How many local deltas are durably queued but not yet confirmed in the
+	// cloud. Nonzero means "your change is safe locally and will upload
+	// automatically" - surfaced in the header so an unuploaded change is never
+	// invisible.
+	mpPendingUploads: number;
 	// Whether the cloud connection is confirmed live (recent verified contact),
 	// vs. only nominally connected.
 	mpSyncHealthy: boolean;

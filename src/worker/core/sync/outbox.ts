@@ -27,7 +27,23 @@ type OutboxRow = {
 	code: string; // room code, so we only ever flush the current room's backlog
 	entry: Omit<ChangesetEntry, "seq">;
 	createdAt: number;
+	// Strictly monotonic enqueue position. createdAt alone can collide within a
+	// millisecond (a chunked bulk enqueues many rows back to back), and the drain
+	// MUST publish in exact enqueue order - with whole-record last-write-wins, an
+	// older value published after a newer one would roll the room back.
+	order?: number;
 };
+
+// Monotonic order allocator: never goes backwards, even across sessions (a new
+// session starts from the current clock, which is past any previous order
+// unless the clock regressed - and then max() still keeps it monotonic).
+let lastOrder = 0;
+const nextOrder = () => {
+	lastOrder = Math.max(Date.now(), lastOrder + 1);
+	return lastOrder;
+};
+
+const rowOrder = (row: OutboxRow) => row.order ?? row.createdAt;
 
 let dbPromise: Promise<IDBPDatabase> | undefined;
 
@@ -53,7 +69,9 @@ const bestEffort = async <T>(fn: () => Promise<T>): Promise<T | undefined> => {
 };
 
 export const outbox = {
-	// Record an entry as "trying to upload".
+	// Record an entry as "trying to upload". NOT best-effort: if this throws, the
+	// caller must treat the change as not-yet-safe (and keep it for retry another
+	// way), because durability here is the whole guarantee.
 	async add(code: string, entry: Omit<ChangesetEntry, "seq">) {
 		const db = await getDB();
 		await db.put(STORE, {
@@ -61,6 +79,7 @@ export const outbox = {
 			code,
 			entry,
 			createdAt: Date.now(),
+			order: nextOrder(),
 		} satisfies OutboxRow);
 	},
 
@@ -72,12 +91,21 @@ export const outbox = {
 		});
 	},
 
-	// Everything still pending for a room, oldest first (i.e. publish order).
+	// Everything still pending for a room, in exact enqueue order (i.e. the order
+	// they MUST publish in).
 	async pending(code: string): Promise<Omit<ChangesetEntry, "seq">[]> {
 		const db = await getDB();
 		const rows = (await db.getAllFromIndex(STORE, "code", code)) as OutboxRow[];
-		rows.sort((a, b) => a.createdAt - b.createdAt);
+		rows.sort((a, b) => rowOrder(a) - rowOrder(b));
 		return rows.map((r) => r.entry);
+	},
+
+	// How many entries are still pending for a room (drives the header's
+	// "queued" indicator).
+	async count(code: string): Promise<number> {
+		const db = await getDB();
+		const rows = await db.getAllKeysFromIndex(STORE, "code", code);
+		return rows.length;
 	},
 
 	// Drop entries older than maxAgeMs (e.g. a room the user never came back to),

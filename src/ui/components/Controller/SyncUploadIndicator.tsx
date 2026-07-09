@@ -8,10 +8,15 @@ import { useLocal } from "../../util/local.ts";
 // "✓ synced" so you know it actually reached the cloud.
 const CHECK_MS = 1500;
 
+// Every change passes through the queue for an instant on its way to the cloud;
+// only show "queued" once it has actually lingered (i.e. the upload is stuck).
+const QUEUED_DELAY_MS = 4000;
+
 const SyncUploadIndicator = () => {
-	const { mpSyncUpload, mpSyncUploadOk } = useLocal([
+	const { mpSyncUpload, mpSyncUploadOk, mpPendingUploads } = useLocal([
 		"mpSyncUpload",
 		"mpSyncUploadOk",
+		"mpPendingUploads",
 	]);
 
 	const [showCheck, setShowCheck] = useState(false);
@@ -26,6 +31,17 @@ const SyncUploadIndicator = () => {
 		}
 	}, [mpSyncUploadOk]);
 
+	const hasQueued = mpPendingUploads > 0;
+	const [showQueued, setShowQueued] = useState(false);
+
+	useEffect(() => {
+		if (hasQueued) {
+			const id = setTimeout(() => setShowQueued(true), QUEUED_DELAY_MS);
+			return () => clearTimeout(id);
+		}
+		setShowQueued(false);
+	}, [hasQueued]);
+
 	if (mpSyncUpload) {
 		return (
 			<span
@@ -33,7 +49,20 @@ const SyncUploadIndicator = () => {
 				title="Uploading to the cloud — keep the app open until it finishes"
 			>
 				{" · ☁"}
-				{mpSyncUpload.total > 1 ? ` ${mpSyncUpload.done}/${mpSyncUpload.total}` : ""}
+				{mpSyncUpload.total > 1
+					? ` ${mpSyncUpload.done}/${mpSyncUpload.total}`
+					: ""}
+			</span>
+		);
+	}
+
+	if (showQueued && hasQueued) {
+		return (
+			<span
+				className="text-warning"
+				title="Saved locally, waiting to upload — retrying automatically"
+			>
+				{` · ☁ ${mpPendingUploads} queued`}
 			</span>
 		);
 	}

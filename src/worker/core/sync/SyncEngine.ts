@@ -45,6 +45,46 @@ const MAX_CHUNK_BYTES = 700_000;
 const READY_TTL = 10_000;
 const READY_TIMEOUT = 5_000;
 
+// One outbox-drain publish attempt may not hang longer than this. Firestore's
+// setDoc NEVER rejects while offline - it buffers the write and resolves only on
+// server ack - so without a timeout an offline drain would hang forever, wedging
+// every queued change behind it. On timeout the entry stays queued and the drain
+// retries later; if the buffered write eventually lands anyway, the re-publish
+// overwrites the same doc id, so nothing duplicates.
+const PUBLISH_ATTEMPT_TIMEOUT = 45_000;
+
+// Outbox-drain retry backoff after a failed publish: quick first retry, then
+// doubling to a cap, reset by any success. The periodic catch-up timer is a
+// second, independent kick, so a queued change never waits on just one timer.
+const DRAIN_RETRY_MIN_MS = 2_000;
+const DRAIN_RETRY_MAX_MS = 60_000;
+
+// Backoff for re-creating a dead Firestore listener. onSnapshot listeners are
+// TERMINAL on error - after the error callback fires they never fire again and
+// must be re-created. Without this, one transient stream error (token refresh
+// hiccup, backgrounded tab, dropped socket) permanently killed sync until a page
+// refresh: ensureReady() threw forever, so nothing ever uploaded again.
+const LISTENER_RESTART_MIN_MS = 1_000;
+const LISTENER_RESTART_MAX_MS = 30_000;
+
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+	new Promise((resolve, reject) => {
+		const id = setTimeout(
+			() => reject(new Error(`Timed out after ${ms}ms`)),
+			ms,
+		);
+		promise.then(
+			(value) => {
+				clearTimeout(id);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(id);
+				reject(error);
+			},
+		);
+	});
+
 const makeId = (): string => {
 	if (typeof crypto !== "undefined" && crypto.randomUUID) {
 		return crypto.randomUUID();
@@ -131,10 +171,13 @@ export class SyncEngine {
 	// re-broadcasting) the same change.
 	private seen = new Set<string>();
 
-	// Buffers incoming bulk chunks until a whole batch has arrived.
+	// Buffers incoming bulk chunks until a whole batch has arrived. entryIds
+	// remembers which log entries fed the batch, so a failed apply can remove them
+	// all from `seen` and the next catch-up genuinely re-processes them (instead of
+	// dedup silently skipping the data forever).
 	private pendingBatches = new Map<
 		string,
-		{ count: number; chunks: Map<number, SyncChange[]> }
+		{ count: number; chunks: Map<number, SyncChange[]>; entryIds: string[] }
 	>();
 
 	// Highest entry seq (server-timestamp) we've seen, and the highest we've
@@ -143,11 +186,19 @@ export class SyncEngine {
 
 	private persistedSeq: number;
 
-	// Set when a remote changeset failed to apply. While set, we STOP advancing
-	// the persisted watermark, so a reconnect re-fetches (and re-applies) from
-	// before the failure instead of skipping it forever. Cleared by a full
-	// resync, which re-applies the whole log from scratch.
-	private applyFailed = false;
+	// Entry ids whose changesets failed to apply. While non-empty, we STOP
+	// advancing the persisted watermark, so catch-up re-fetches (and re-applies)
+	// from before the failure instead of skipping it forever. Failed ids are also
+	// removed from `seen`, so the retry genuinely re-processes them - and a clean
+	// re-apply removes them here, unwedging everything automatically. (The old
+	// boolean version of this could never self-clear: the failed entry stayed in
+	// `seen`, so every "retry" was dedup-skipped and only a manual full resync
+	// recovered.)
+	private failedApplies = new Set<string>();
+
+	private get applyFailed(): boolean {
+		return this.failedApplies.size > 0;
+	}
 
 	// Guards catchUp() against reentrancy, so the connect-time drain and the
 	// periodic timer can't fetch the same pages at once.
@@ -187,6 +238,31 @@ export class SyncEngine {
 
 	private authorityListenerHealthy = true;
 
+	// True once stop() has run - blocks listener restarts and drain retries from
+	// resurrecting a torn-down engine.
+	private stopped = false;
+
+	// Fallback upload queue for engines without a room code (the in-memory test
+	// transport): same FIFO drain semantics, just not durable.
+	private memoryQueue: Omit<ChangesetEntry, "seq">[] = [];
+
+	// Single-flight drain: all drainOutbox() calls chain onto this so two drains
+	// can never interleave (which would reorder publishes).
+	private drainChain: Promise<boolean> = Promise.resolve(true);
+
+	private drainBackoffMs = 0;
+
+	private drainRetryTimer: ReturnType<typeof setTimeout> | undefined;
+
+	// Notifies the owner (connect.ts) whenever the number of queued-but-unconfirmed
+	// uploads changes, so the UI can show "N queued" instead of leaving the user
+	// in the dark about deltas that haven't reached the cloud yet.
+	private onPendingChange: ((count: number) => void) | undefined;
+
+	private listenerRestartBackoffMs = 0;
+
+	private listenerRestartTimer: ReturnType<typeof setTimeout> | undefined;
+
 	constructor(
 		transport: SyncTransport,
 		options: {
@@ -203,6 +279,7 @@ export class SyncEngine {
 				progress: { done: number; total: number } | undefined,
 			) => void;
 			onReadyChange?: (ready: boolean) => void;
+			onPendingChange?: (count: number) => void;
 		} = {},
 	) {
 		this.transport = transport;
@@ -216,6 +293,7 @@ export class SyncEngine {
 		this.onUploadComplete = options.onUploadComplete;
 		this.onCatchUpProgress = options.onCatchUpProgress;
 		this.onReadyChange = options.onReadyChange;
+		this.onPendingChange = options.onPendingChange;
 	}
 
 	get clientId(): string {
@@ -311,8 +389,15 @@ export class SyncEngine {
 
 	async ensureReady(force = false): Promise<void> {
 		if (!this.listenerHealthy || !this.authorityListenerHealthy) {
-			this.markNotReady();
-			throw new Error("Cloud sync listeners are not ready.");
+			// A dead listener is recoverable - re-create it right now rather than
+			// failing until the (backoff) restart timer gets around to it. This used
+			// to throw unconditionally with no recovery path, which permanently
+			// wedged the session after one listener error until a page refresh.
+			this.restartUnhealthyListeners();
+			if (!this.listenerHealthy || !this.authorityListenerHealthy) {
+				this.markNotReady();
+				throw new Error("Cloud sync listeners are not ready.");
+			}
 		}
 		if (!force && Date.now() < this.readyUntil) {
 			return;
@@ -388,29 +473,45 @@ export class SyncEngine {
 		// This is tiny (one doc) and needed immediately, so it always starts now -
 		// unlike the changes subscription, which waits until the backlog is drained
 		// (see startChangesSubscription) so its initial snapshot isn't the whole log.
-		if (this.authorityUnsubscribe === undefined) {
-			this.authorityUnsubscribe = this.transport.subscribeAuthority?.(
-				(authority) => {
-					this.authority = authority;
-					this.authorityListenerHealthy = true;
-					this.onAuthorityChange?.(authority);
-				},
-				() => {
-					const wasReady = this.isReady();
-					this.authorityListenerHealthy = false;
-					this.authority = undefined;
-					this.readyUntil = 0;
-					this.onAuthorityChange?.(undefined);
-					if (wasReady) {
-						this.onReadyChange?.(false);
-					}
-				},
-			);
-		}
+		this.startAuthoritySubscription();
 
 		// If the user chose to sim here on connect, claim it now.
 		if (this.claimOnStart) {
 			void this.claimAuthority().catch(() => undefined);
+		}
+	}
+
+	private startAuthoritySubscription() {
+		if (this.authorityUnsubscribe !== undefined || this.stopped) {
+			return;
+		}
+		this.authorityUnsubscribe = this.transport.subscribeAuthority?.(
+			(authority) => {
+				this.authority = authority;
+				this.authorityListenerHealthy = true;
+				this.listenerRestartBackoffMs = 0;
+				this.onAuthorityChange?.(authority);
+			},
+			(error) => {
+				// A Firestore listener is TERMINAL once its error callback fires - it
+				// never fires again and must be re-created. Tear it down and schedule
+				// a restart; nothing here is allowed to be permanent.
+				const wasReady = this.isReady();
+				this.authorityListenerHealthy = false;
+				this.authority = undefined;
+				this.readyUntil = 0;
+				this.authorityUnsubscribe?.();
+				this.authorityUnsubscribe = undefined;
+				this.onAuthorityChange?.(undefined);
+				if (wasReady) {
+					this.onReadyChange?.(false);
+				}
+				syncDebugLog("engine:authority-listener-died", { error });
+				this.scheduleListenerRestart();
+			},
+		);
+		if (this.authorityUnsubscribe !== undefined) {
+			this.authorityListenerHealthy = true;
 		}
 	}
 
@@ -419,22 +520,64 @@ export class SyncEngine {
 	// the real-time listener's initial snapshot is just the live tail rather than
 	// a re-load of everything we just caught up on.
 	startChangesSubscription() {
-		if (this.unsubscribe) {
+		if (this.unsubscribe || this.stopped) {
 			return;
 		}
 		this.unsubscribe = this.transport.subscribe({
 			onEntry: (entry) => this.handleEntry(entry),
-			onError: () => {
+			onError: (error) => {
+				// Terminal listener death (see startAuthoritySubscription). Re-create
+				// it from the durable watermark; until then the periodic catch-up
+				// keeps changes flowing, and queued uploads keep draining - a dead
+				// download listener must never block uploads.
 				const wasReady = this.isReady();
 				this.listenerHealthy = false;
 				this.readyUntil = 0;
+				this.unsubscribe?.();
+				this.unsubscribe = undefined;
 				if (wasReady) {
 					this.onReadyChange?.(false);
 				}
+				syncDebugLog("engine:changes-listener-died", { error });
+				this.scheduleListenerRestart();
 			},
 			onBatchProcessed: () => this.advanceWatermark(),
 		});
 		this.listenerHealthy = true;
+	}
+
+	// Re-create whichever listeners have died. Safe to call anytime: healthy
+	// listeners are left alone (their unsubscribe handles are still set).
+	private restartUnhealthyListeners() {
+		if (this.stopped) {
+			return;
+		}
+		if (this.authorityUnsubscribe === undefined) {
+			this.startAuthoritySubscription();
+		}
+		if (this.unsubscribe === undefined && !this.listenerHealthy) {
+			// Restart the live tail from what we've durably applied, so the new
+			// listener's initial snapshot is bounded and nothing is skipped.
+			this.transport.updateSince?.(this.persistedSeq);
+			this.startChangesSubscription();
+		}
+	}
+
+	private scheduleListenerRestart() {
+		if (this.stopped || this.listenerRestartTimer !== undefined) {
+			return;
+		}
+		this.listenerRestartBackoffMs = Math.min(
+			Math.max(this.listenerRestartBackoffMs * 2, LISTENER_RESTART_MIN_MS),
+			LISTENER_RESTART_MAX_MS,
+		);
+		this.listenerRestartTimer = setTimeout(() => {
+			this.listenerRestartTimer = undefined;
+			syncDebugLog("engine:listener-restart-attempt", {
+				backoffMs: this.listenerRestartBackoffMs,
+			});
+			this.restartUnhealthyListeners();
+		}, this.listenerRestartBackoffMs);
 	}
 
 	// Has the live changes subscription been started yet?
@@ -458,6 +601,15 @@ export class SyncEngine {
 	}
 
 	stop() {
+		this.stopped = true;
+		if (this.drainRetryTimer !== undefined) {
+			clearTimeout(this.drainRetryTimer);
+			this.drainRetryTimer = undefined;
+		}
+		if (this.listenerRestartTimer !== undefined) {
+			clearTimeout(this.listenerRestartTimer);
+			this.listenerRestartTimer = undefined;
+		}
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.authorityUnsubscribe?.();
@@ -467,10 +619,33 @@ export class SyncEngine {
 		this.markNotReady();
 	}
 
-	// Publish a changeset produced by a local action.
-	async onLocalChangeset(changeset: Changeset, action: string) {
+	// Hand a locally-produced changeset to the sync layer. This is the guarantee
+	// the whole multiplayer model rests on: once a local mutation exists, its
+	// delta MUST reach the shared log eventually, no matter what the connection
+	// does. So the handoff is durable-FIRST:
+	//
+	//   1. Build the entry (or chunked entries) immediately.
+	//   2. Persist ALL of them to the IndexedDB outbox BEFORE any network attempt
+	//      or readiness check. Once this step completes, the delta survives
+	//      anything - a dead connection, a killed tab, a page refresh.
+	//   3. Drain the outbox (strict FIFO, retried forever with backoff). The
+	//      drain is the ONLY path to the cloud, so ordering can never invert.
+	//
+	// Previously the readiness check ran FIRST, and a failure handed the changes
+	// back to the in-memory change tracker for retry - so a wedged connection
+	// followed by a page refresh silently lost the delta and forked the room
+	// forever. Now there is no network-dependent step before durability.
+	//
+	// Returns "confirmed" when everything queued (including this change) reached
+	// the cloud during this call, or "queued" when it is safely persisted and
+	// will upload automatically. Throws ONLY if the delta could not be made
+	// durable (step 2 failed) - the caller must then retain the changes itself.
+	async onLocalChangeset(
+		changeset: Changeset,
+		action: string,
+	): Promise<"confirmed" | "queued"> {
 		if (changeset.changes.length === 0) {
-			return;
+			return "confirmed";
 		}
 		const trace = shouldTraceSyncLabel(action);
 		if (trace) {
@@ -485,255 +660,235 @@ export class SyncEngine {
 			});
 		}
 
-		try {
-			await this.ensureReady();
-			if (trace) {
-				syncDebugLog("engine:ensureReady-ok", {
-					action,
-					isReady: this.isReady(),
-				});
-			}
-		} catch (error) {
-			if (trace) {
-				syncDebugLog("engine:ensureReady-failed", { action, error });
-			}
-			throw error;
-		}
-
 		// Send as a single doc only if it fits in one Firestore doc by BOTH record
 		// count AND serialized size. A changeset can be <= MAX_SYNC_CHANGES records
 		// yet still blow past Firestore's ~1 MB/doc limit - e.g. advancing to free
-		// agency turns over many large player records at once. A single addDoc then
-		// throws and the change silently never reaches the room (while a phone push
-		// still goes out, so it *looks* like it synced). When it doesn't fit, fall
-		// through to the chunked bulk path, which byte-caps every chunk.
+		// agency turns over many large player records at once. When it doesn't
+		// fit, chunk it, byte-capping every chunk.
 		const fitsInOneDoc =
 			changeset.changes.length <= MAX_SYNC_CHANGES &&
 			JSON.stringify(changeset).length <= MAX_CHUNK_BYTES;
 
+		let entries: Omit<ChangesetEntry, "seq">[];
 		if (fitsInOneDoc) {
-			const id = makeId();
-			this.seen.add(id);
-			if (trace) {
-				syncDebugLog("engine:single-entry-publish-start", {
-					action,
-					id,
-					records: changeset.changes.length,
-				});
-			}
-			// Show the same cloud indicator as a sim (total 1), so a plain
-			// transaction on any device gets upload feedback + a confirm tick.
-			this.onUploadProgress?.({ done: 0, total: 1 });
-			try {
-				await this.publishEntry({
-					id,
+			entries = [
+				{
+					id: makeId(),
 					authorId: this.transport.clientId,
 					action,
 					changeset,
+				},
+			];
+		} else {
+			// Bulk change (e.g. a sim, a phase advance, or a big draft advance).
+			// The worker action guard is responsible for preventing a follower from
+			// starting these. Once a local bulk mutation exists it gets queued and
+			// published regardless of what the authority listener currently claims -
+			// a transient listener blip must never turn a sim into a local-only fork.
+			if (!this.isAuthority() && !isDraftAction(action)) {
+				console.warn(
+					`[sync] Publishing bulk change from "${action}" (${changeset.changes.length} records) even though local sim authority is not currently confirmed.`,
+				);
+				syncDebugLog("engine:bulk-authority-not-confirmed", {
+					action,
+					records: changeset.changes.length,
+					authorityHolderId: this.authority?.holderId,
+					clientId: this.transport.clientId,
 				});
-				this.onUploadComplete?.();
-				if (trace) {
-					syncDebugLog("engine:single-entry-publish-confirmed", {
-						action,
-						id,
-						records: changeset.changes.length,
-					});
-				}
-			} catch (error) {
-				this.markNotReady();
-				if (trace) {
-					syncDebugLog("engine:single-entry-publish-failed", {
-						action,
-						id,
-						error,
-					});
-				}
-				throw error;
-			} finally {
-				this.onUploadProgress?.(undefined);
 			}
-			return;
-		}
 
-		// Bulk change (e.g. a sim, a phase advance, or a big draft advance).
-		// The worker action guard is responsible for preventing a follower from
-		// starting these. Once a local bulk mutation exists, we must publish it (or
-		// throw and restore it for retry) rather than silently dropping it. A transient
-		// authority-listener blip after a single/live game can otherwise make the
-		// next day sim look exactly like a local-only file: no upload progress, no
-		// cloud entry, and the drained changeset is gone.
-		if (!this.isAuthority() && !isDraftAction(action)) {
-			console.warn(
-				`[sync] Publishing bulk change from "${action}" (${changeset.changes.length} records) even though local sim authority is not currently confirmed.`,
-			);
-			syncDebugLog("engine:bulk-authority-not-confirmed", {
-				action,
-				records: changeset.changes.length,
-				authorityHolderId: this.authority?.holderId,
-				clientId: this.transport.clientId,
-			});
-		}
+			// Re-stamp the busy lease now that the (possibly long) upload is
+			// starting, so it can't expire mid-transfer and let a follower slip an
+			// edit into the tail of the upload window.
+			this.markRoomBusy();
 
-		await this.publishBulk(changeset, action);
-	}
-
-	private async publishBulk(changeset: Changeset, action: string) {
-		const chunks = chunkChanges(changeset.changes);
-		const batchId = makeId();
-		const trace = shouldTraceSyncLabel(action);
-		if (trace) {
-			syncDebugLog("engine:bulk-publish-start", {
+			const chunks = chunkChanges(changeset.changes);
+			const batchId = makeId();
+			entries = chunks.map((chunk, i) => ({
+				id: makeId(),
+				authorId: this.transport.clientId,
 				action,
 				batchId,
-				records: changeset.changes.length,
-				chunks: chunks.length,
-				isAuthority: this.isAuthority(),
-			});
+				chunkIndex: i,
+				chunkCount: chunks.length,
+				changeset: { changes: chunk },
+			}));
 		}
 
-		// Re-stamp the busy lease now that the (possibly long) upload is starting,
-		// so it can't expire mid-transfer and let a follower slip an edit into the
-		// tail of the upload window.
-		this.markRoomBusy();
-
-		// Build every chunk entry and queue them ALL in the durable outbox BEFORE
-		// uploading any. This is what guarantees a sim's delta can never be half-sent
-		// or lost: if the upload is interrupted or fails partway (the connection
-		// drops mid-sim, the tab is closed, a chunk write errors), every
-		// not-yet-confirmed chunk still sits in the outbox, and flushOutbox re-sends
-		// it on the next tick / on reconnect. Entries carry stable ids + batchId +
-		// chunkIndex/chunkCount, so receivers dedup and reassemble the full batch.
-		// Previously each chunk was only queued right before its own upload, so a
-		// failure partway left the LATER chunks never queued - lost - which stranded
-		// every follower on an incomplete batch. (No-op without a room code - the
-		// in-memory test transport.)
-		const entries: Omit<ChangesetEntry, "seq">[] = chunks.map((chunk, i) => ({
-			id: makeId(),
-			authorId: this.transport.clientId,
-			action,
-			batchId,
-			chunkIndex: i,
-			chunkCount: chunks.length,
-			changeset: { changes: chunk },
-		}));
+		// Durability point. After this loop the delta can no longer be lost, only
+		// delayed. `seen` keeps our own echo from being re-applied.
 		for (const entry of entries) {
 			this.seen.add(entry.id);
-			if (this.code !== undefined) {
-				await outbox.add(this.code, entry);
-			}
+			await this.enqueue(entry);
 		}
+		void this.reportPending();
 		if (trace) {
-			syncDebugLog("engine:bulk-outbox-queued", {
+			syncDebugLog("engine:enqueued", {
 				action,
-				batchId,
-				chunks: entries.length,
-				hasOutbox: this.code !== undefined,
+				entries: entries.length,
+				records: changeset.changes.length,
+				durable: this.code !== undefined,
 			});
 		}
 
-		this.onUploadProgress?.({ done: 0, total: entries.length });
-		try {
-			for (let i = 0; i < entries.length; i++) {
-				if (trace) {
-					syncDebugLog("engine:bulk-chunk-publish-start", {
-						action,
-						batchId,
-						chunkIndex: i,
-						chunkCount: entries.length,
-						entryId: entries[i]!.id,
-						records: entries[i]!.changeset.changes.length,
-					});
-				}
-				await this.publishEntry(entries[i]!);
-				this.onUploadProgress?.({ done: i + 1, total: entries.length });
-				if (trace) {
-					syncDebugLog("engine:bulk-chunk-publish-confirmed", {
-						action,
-						batchId,
-						chunkIndex: i,
-						chunkCount: entries.length,
-						entryId: entries[i]!.id,
-					});
-				}
-			}
-			this.onUploadComplete?.();
-			if (trace) {
-				syncDebugLog("engine:bulk-publish-confirmed", {
-					action,
-					batchId,
-					chunks: entries.length,
-				});
-			}
-		} catch (error) {
-			this.markNotReady();
-			if (trace) {
-				syncDebugLog("engine:bulk-publish-failed", {
-					action,
-					batchId,
-					error,
-				});
-			}
-			throw error;
-		} finally {
-			this.onUploadProgress?.(undefined);
-		}
+		const drainedAll = await this.drainOutbox();
+		return drainedAll ? "confirmed" : "queued";
 	}
 
-	// Publish one entry through the durable outbox: record it first, so an upload
-	// interrupted by the tab closing mid-send is retried on the next launch, then
-	// remove it once Firestore confirms. Outbox ops are best-effort (they never
-	// break the publish); on the test transport (no code) they're skipped.
-	private async publishEntry(entry: Omit<ChangesetEntry, "seq">) {
+	// Add one entry to the upload queue: the durable outbox when we have a room
+	// code, or the in-memory fallback (the test transport) otherwise.
+	private async enqueue(entry: Omit<ChangesetEntry, "seq">) {
 		if (this.code !== undefined) {
 			await outbox.add(this.code, entry);
-		}
-		await this.transport.publish(entry);
-		if (this.code !== undefined) {
-			await outbox.remove(entry.id);
+		} else {
+			this.memoryQueue.push(entry);
 		}
 	}
 
-	// Re-send anything a previous session produced but never confirmed uploaded
-	// (interrupted mid-publish - e.g. the app was closed before a chunked season
-	// rollover finished). Called on connect so a stranded batch completes itself.
-	// Safe to re-send: entries carry a stable id (and chunk metadata), so the
-	// receiver dedups; we re-add to `seen` so we don't re-apply our own echo.
-	async flushOutbox() {
+	private async pendingEntries(): Promise<Omit<ChangesetEntry, "seq">[]> {
 		if (this.code === undefined) {
+			return [...this.memoryQueue];
+		}
+		return outbox.pending(this.code);
+	}
+
+	private async removePending(id: string) {
+		if (this.code === undefined) {
+			this.memoryQueue = this.memoryQueue.filter((e) => e.id !== id);
 			return;
+		}
+		await outbox.remove(id);
+	}
+
+	// How many queued-but-unconfirmed uploads exist right now.
+	async pendingUploadCount(): Promise<number> {
+		if (this.code === undefined) {
+			return this.memoryQueue.length;
+		}
+		return outbox.count(this.code);
+	}
+
+	private async reportPending() {
+		if (!this.onPendingChange) {
+			return;
+		}
+		try {
+			this.onPendingChange(await this.pendingUploadCount());
+		} catch {
+			// Counting is display-only; never let it interfere with the drain.
+		}
+	}
+
+	// Push everything in the outbox to the cloud, strictly oldest-first,
+	// single-flight (concurrent calls chain, they never interleave - interleaving
+	// could publish an older record value AFTER a newer one and roll the room
+	// back under last-write-wins). Returns true when the queue fully drained
+	// (every queued delta confirmed in the shared log); false when a publish
+	// failed or timed out - everything unconfirmed is still safely queued, a
+	// retry is scheduled with backoff, and the periodic catch-up timer provides a
+	// second independent kick.
+	drainOutbox(): Promise<boolean> {
+		const run = this.drainChain.then(() => this.doDrain());
+		this.drainChain = run.catch(() => false);
+		return run;
+	}
+
+	private async doDrain(): Promise<boolean> {
+		if (this.stopped) {
+			return false;
 		}
 		let pending: Omit<ChangesetEntry, "seq">[];
 		try {
-			pending = await outbox.pending(this.code);
+			pending = await this.pendingEntries();
 		} catch (error) {
-			this.markNotReady();
 			console.error(
-				"[sync] outbox flush: could not read pending uploads",
+				"[sync] outbox drain: could not read pending uploads",
 				error,
 			);
-			return;
+			this.scheduleDrainRetry();
+			return false;
 		}
 		if (pending.length === 0) {
-			return;
+			return true;
 		}
-		this.onUploadProgress?.({ done: 0, total: pending.length });
+
+		syncDebugLog("engine:drain-start", { pending: pending.length });
+		let done = 0;
+		let total = pending.length;
+		this.onUploadProgress?.({ done, total });
 		try {
-			for (let i = 0; i < pending.length; i++) {
-				const entry = pending[i]!;
+			while (pending.length > 0) {
+				const entry = pending.shift()!;
+				// A stranded entry from a previous session isn't in `seen` yet; add it
+				// so our own echo isn't re-applied.
 				this.seen.add(entry.id);
 				try {
-					await this.transport.publish(entry);
-					await outbox.remove(entry.id);
+					// Firestore's setDoc never rejects while offline (it buffers), so
+					// every attempt is timed. On timeout the entry stays queued; if the
+					// buffered write lands later anyway, re-publishing overwrites the
+					// same doc id - no duplicate.
+					await withTimeout(
+						this.transport.publish(entry),
+						PUBLISH_ATTEMPT_TIMEOUT,
+					);
 				} catch (error) {
-					// Leave it queued for the next flush rather than dropping it.
 					this.markNotReady();
-					console.error("[sync] outbox flush: re-publish failed", error);
+					this.scheduleDrainRetry();
+					syncDebugLog("engine:drain-publish-failed", {
+						entryId: entry.id,
+						action: entry.action,
+						stillQueued: pending.length + 1,
+						error,
+					});
+					return false;
 				}
-				this.onUploadProgress?.({ done: i + 1, total: pending.length });
+				await this.removePending(entry.id);
+				done += 1;
+				this.onUploadProgress?.({ done, total });
+				if (shouldTraceSyncLabel(entry.action)) {
+					syncDebugLog("engine:drain-publish-confirmed", {
+						entryId: entry.id,
+						action: entry.action,
+						batchId: entry.batchId,
+						chunkIndex: entry.chunkIndex,
+					});
+				}
+				// Entries enqueued while we were draining go out in this same pass,
+				// still in enqueue order.
+				if (pending.length === 0) {
+					pending = await this.pendingEntries();
+					total = done + pending.length;
+				}
 			}
+			this.drainBackoffMs = 0;
+			this.onUploadComplete?.();
+			syncDebugLog("engine:drain-complete", { published: done });
+			return true;
 		} finally {
 			this.onUploadProgress?.(undefined);
+			void this.reportPending();
 		}
+	}
+
+	private scheduleDrainRetry() {
+		if (this.stopped || this.drainRetryTimer !== undefined) {
+			return;
+		}
+		this.drainBackoffMs = Math.min(
+			Math.max(this.drainBackoffMs * 2, DRAIN_RETRY_MIN_MS),
+			DRAIN_RETRY_MAX_MS,
+		);
+		this.drainRetryTimer = setTimeout(() => {
+			this.drainRetryTimer = undefined;
+			void this.drainOutbox();
+		}, this.drainBackoffMs);
+	}
+
+	// Back-compat name: the connect-time "finish what a previous session left
+	// stranded" call. The drain already handles that case (stranded entries are
+	// simply the oldest queued rows), so this just kicks it.
+	async flushOutbox() {
+		await this.drainOutbox();
 	}
 
 	// Apply an entry from the shared log. Returns whether it was applied (false
@@ -760,6 +915,7 @@ export class SyncEngine {
 			entry.chunkCount !== undefined
 		) {
 			return this.handleChunk(
+				entry.id,
 				entry.batchId,
 				entry.chunkIndex,
 				entry.chunkCount,
@@ -767,10 +923,11 @@ export class SyncEngine {
 			);
 		}
 
-		return this.apply(entry.changeset);
+		return this.apply(entry.changeset, [entry.id]);
 	}
 
 	private async handleChunk(
+		entryId: string,
 		batchId: string,
 		chunkIndex: number,
 		chunkCount: number,
@@ -778,10 +935,13 @@ export class SyncEngine {
 	): Promise<boolean> {
 		let batch = this.pendingBatches.get(batchId);
 		if (!batch) {
-			batch = { count: chunkCount, chunks: new Map() };
+			batch = { count: chunkCount, chunks: new Map(), entryIds: [] };
 			this.pendingBatches.set(batchId, batch);
 		}
 		batch.chunks.set(chunkIndex, changeset.changes);
+		if (!batch.entryIds.includes(entryId)) {
+			batch.entryIds.push(entryId);
+		}
 
 		if (batch.chunks.size < batch.count) {
 			// Still waiting for the rest of the batch.
@@ -798,21 +958,44 @@ export class SyncEngine {
 			}
 		}
 
-		return this.apply({ changes });
+		// A failed apply un-sees the WHOLE batch, so the retry can rebuild it from
+		// a clean re-fetch.
+		return this.apply({ changes }, batch.entryIds);
 	}
 
-	private async apply(changeset: Changeset): Promise<boolean> {
+	// Apply a changeset, attributing the outcome to the log entries that carried
+	// it. On failure those entries are marked failed (pinning the watermark below
+	// them) and removed from `seen` (so the next catch-up pass re-fetches and
+	// genuinely re-applies them - dedup would otherwise skip the "retry" forever).
+	// On success any earlier failure marks for them are cleared, which unpins the
+	// watermark automatically. We deliberately do NOT kick off a full-log resync
+	// on failure - re-applying the entire history on every hiccup is brutally
+	// slow on a phone; the pinned watermark + periodic catchUp() converge, and
+	// the manual "Force full resync" remains the big hammer.
+	private async apply(
+		changeset: Changeset,
+		entryIds?: string[],
+	): Promise<boolean> {
 		try {
 			await applyChangeset(changeset);
 		} catch (error) {
 			console.error("Failed to apply remote changeset", error);
-			// Blocks the watermark from advancing past this entry, so it's retried on
-			// the next reconnect instead of skipped. We deliberately do NOT kick off a
-			// full-log resync here - re-reading and re-applying the entire history on
-			// every hiccup is brutally slow on a phone. Recovery paths: the live
-			// subscription, the periodic catchUp(), or the manual "Force full resync".
-			this.applyFailed = true;
+			if (entryIds) {
+				for (const id of entryIds) {
+					this.failedApplies.add(id);
+					this.seen.delete(id);
+				}
+				syncDebugLog("engine:apply-failed", {
+					entries: entryIds.length,
+					error,
+				});
+			}
 			return false;
+		}
+		if (entryIds) {
+			for (const id of entryIds) {
+				this.failedApplies.delete(id);
+			}
 		}
 		return true;
 	}
@@ -987,7 +1170,7 @@ export class SyncEngine {
 
 		// Start clean so nothing is deduped away and no half-batch lingers.
 		this.pendingBatches.clear();
-		this.applyFailed = false;
+		this.failedApplies.clear();
 
 		let applied = 0;
 		let newMaxSeq = this.maxSeq;
@@ -1002,12 +1185,13 @@ export class SyncEngine {
 				entry.chunkIndex !== undefined &&
 				entry.chunkCount !== undefined
 					? await this.handleChunk(
+							entry.id,
 							entry.batchId,
 							entry.chunkIndex,
 							entry.chunkCount,
 							entry.changeset,
 						)
-					: await this.apply(entry.changeset);
+					: await this.apply(entry.changeset, [entry.id]);
 			if (ok) {
 				applied++;
 			}

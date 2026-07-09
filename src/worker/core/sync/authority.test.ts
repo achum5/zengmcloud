@@ -87,9 +87,13 @@ describe("SyncEngine sim authority (advance authority)", () => {
 		assert.strictEqual(engine.isAuthority(), false);
 	});
 
-	test("a non-holder does NOT broadcast a bulk sim", async () => {
+	test("a bulk sim publishes even if the authority listener drifted (never dropped)", async () => {
+		// The worker guard blocks a follower from STARTING a sim. But once a bulk
+		// mutation exists locally, dropping its delta would fork the room forever -
+		// so the engine publishes it regardless of what the (possibly stale)
+		// authority state claims, with a warning.
 		await engine.onLocalChangeset(bulkChangeset(), "playMenu.day");
-		assert.strictEqual(transport.published.length, 0);
+		assert.ok(transport.published.length > 0);
 	});
 
 	test("a non-holder DOES broadcast their own draft pick, even if bulk", async () => {

@@ -50,6 +50,12 @@ const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
 // If we've had confirmed contact with Firestore within this window, treat the
 // connection as live without a round-trip; otherwise verifyConnection() probes.
 const CONNECTION_FRESH_MS = 8000;
+// A publish attempt that the server hasn't acked within this long counts as
+// failed. Critical: while offline, Firestore's setDoc does NOT reject - it
+// buffers the write and resolves only on server ack - so an untimed publish
+// hangs forever and its retry loop never even gets to retry. If the buffered
+// write does land later, the retry overwrites the same doc id, so no duplicate.
+const PUBLISH_ACK_TIMEOUT_MS = 12_000;
 // A liveness probe that doesn't answer within this long counts as "not connected"
 // (a silently-dropped listener won't error, it just never responds).
 const CONNECTION_PROBE_TIMEOUT_MS = 6000;
@@ -461,7 +467,10 @@ export class FirebaseTransport implements SyncTransport {
 		let lastError: unknown;
 		for (let attempt = 0; attempt < 3; attempt++) {
 			try {
-				await setDoc(doc(this.changesRef, entry.id), payload);
+				await withTimeout(
+					setDoc(doc(this.changesRef, entry.id), payload),
+					PUBLISH_ACK_TIMEOUT_MS,
+				);
 				this.markContact();
 				return;
 			} catch (error) {

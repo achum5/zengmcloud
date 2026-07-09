@@ -104,11 +104,13 @@ export const afterAction = async (
 		}
 
 		const engine = getSyncEngine();
+		let outcome: "confirmed" | "queued" = "confirmed";
 		if (engine) {
-			// Publishing IS the sync - if it throws, this change never reaches the
-			// other devices, and the tracker was already drained so it won't be
-			// recaptured. Re-throw after logging so the outer catch restores the
-			// pending changes and schedules a retry.
+			// Hand the changeset to the sync layer. onLocalChangeset persists it to
+			// the durable outbox BEFORE any network attempt, so once it returns
+			// (confirmed OR queued) the delta can no longer be lost - only delayed.
+			// It throws ONLY if the delta could not be made durable, in which case
+			// the outer catch restores the pending changes and schedules a retry.
 			try {
 				if (trace) {
 					syncDebugLog("afterAction:publish-start", {
@@ -116,17 +118,22 @@ export const afterAction = async (
 						records: changeset.changes.length,
 					});
 				}
-				await engine.onLocalChangeset(changeset, label);
+				outcome = await engine.onLocalChangeset(changeset, label);
 				published = true;
 				if (trace) {
-					syncDebugLog("afterAction:publish-confirmed", {
-						label,
-						records: changeset.changes.length,
-					});
+					syncDebugLog(
+						outcome === "confirmed"
+							? "afterAction:publish-confirmed"
+							: "afterAction:publish-queued-durably",
+						{
+							label,
+							records: changeset.changes.length,
+						},
+					);
 				}
 			} catch (error) {
 				console.error(
-					`[sync] Failed to publish "${label}" (${changeset.changes.length} records) - this change did NOT sync to other devices.`,
+					`[sync] Could not durably queue "${label}" (${changeset.changes.length} records) - restoring it for retry.`,
 					error,
 				);
 				throw error;
@@ -155,13 +162,15 @@ export const afterAction = async (
 				}
 			}
 
-			// Fan phone pushes out ONLY once the change actually reached the room.
-			// Otherwise a push implies a sync that never happened - the confusing
-			// case where the sim device advances and pings phones, but nothing lands
-			// in the shared log. A sim produces one detailed notification per team;
-			// everything else produces one. Best-effort - never blocks play.
-			// Skipped entirely for a silent publish (e.g. a single-game sim).
-			if (published && !silent) {
+			// Fan phone pushes out ONLY once the change actually reached the room
+			// ("confirmed", not just queued). Otherwise a push implies a sync that
+			// hasn't happened yet - the confusing case where phones ping but nothing
+			// is in the shared log. A queued change syncs on its own later; its data
+			// arrives via the change log without a push, which is fine. A sim
+			// produces one detailed notification per team; everything else produces
+			// one. Best-effort - never blocks play. Skipped entirely for a silent
+			// publish (e.g. a single-game sim).
+			if (published && outcome === "confirmed" && !silent) {
 				try {
 					const notifications = await buildNotifications(label, changeset, {
 						isHost: engine.getIsHost(),
@@ -184,7 +193,9 @@ export const afterAction = async (
 				});
 			}
 		}
-		return true;
+		// false ⇒ the change is safely queued but hasn't reached the cloud yet;
+		// the caller may tell the user it will upload automatically.
+		return outcome === "confirmed";
 	} catch (error) {
 		if (changeset && !published) {
 			changeTracker.restore(
