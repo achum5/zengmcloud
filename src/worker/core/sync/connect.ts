@@ -182,6 +182,13 @@ let lastHealthPushed: boolean | undefined;
 // Monotonic count of confirmed uploads; the UI flashes a "synced ✓" when it ticks.
 let uploadOkCounter = 0;
 
+// The tid last written to this device's member doc. Targeted notifications are
+// delivered by matching the member doc's tid, which was previously stamped only
+// when push was first enabled - so switching teams silently un-targeted the
+// device (its sim results / playoff pings went to the old team). The health
+// tick re-stamps it whenever it drifts.
+let lastMemberTid: number | undefined;
+
 // How many local deltas are queued (durably) but not yet confirmed in the
 // cloud. Mirrored to the UI so unuploaded changes are always visible instead of
 // silently waiting.
@@ -981,6 +988,7 @@ export const connectSharedLeague = async ({
 	if (healthTimer !== undefined) {
 		clearInterval(healthTimer);
 	}
+	lastMemberTid = undefined;
 	healthTimer = setInterval(() => {
 		// Re-assert the whole sync UI state (not just health/edits) so a UI that
 		// drifted from the engine - stale "nobody simming", an unlocked Play menu -
@@ -988,6 +996,20 @@ export const connectSharedLeague = async ({
 		pushSyncStateFull();
 		// Unlock a follower whose broadcaster went away without a clean end.
 		checkLiveBroadcastLease();
+		// Keep this device's member doc pointing at the team it currently
+		// manages, so targeted notifications keep reaching it after a team switch.
+		try {
+			const tid = g.get("userTid");
+			if (typeof tid === "number" && tid !== lastMemberTid) {
+				lastMemberTid = tid;
+				void currentTransport?.registerMember?.(clientId, { tid }).catch(() => {
+					// Retry on a later tick.
+					lastMemberTid = undefined;
+				});
+			}
+		} catch {
+			// g may be mid-reload; try again next tick.
+		}
 	}, HEALTH_TICK_MS);
 
 	// Watch the shared auto-play schedule so every device shows the same schedule

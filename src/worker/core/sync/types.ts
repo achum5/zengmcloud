@@ -200,7 +200,9 @@ export interface SyncTransport {
 	// Push-notification support. Optional so the in-memory test transport can
 	// skip it. registerMember records this device's FCM token in the room;
 	// publishNotification enqueues a push for the Cloud Function to fan out.
-	registerMember?(uid: string, member: SyncMember): Promise<void>;
+	// Partial so a device can refresh single fields (e.g. its current tid after
+	// a team switch) without clobbering its stored FCM token.
+	registerMember?(uid: string, member: Partial<SyncMember>): Promise<void>;
 	publishNotification?(
 		notification: SyncNotification & { authorId: string; authorName: string },
 	): Promise<void>;

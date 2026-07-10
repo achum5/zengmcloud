@@ -715,15 +715,27 @@ const play = async (
 
 		const canStartGames = lock.canStartGames();
 
-		if (canStartGames) {
-			// Bracket the whole sim (all days, including the recursive continuations
-			// nested inside cbRunDay) so a concurrent runSuppressed call can't swallow
-			// the sim's interleaved writes and leave its delta unpublished.
-			changeTracker.beginSim();
-			try {
-				await cbRunDay();
-			} finally {
-				changeTracker.endSim();
+		try {
+			if (canStartGames) {
+				// Bracket the whole sim (all days, including the recursive continuations
+				// nested inside cbRunDay) so a concurrent runSuppressed call can't swallow
+				// the sim's interleaved writes and leave its delta unpublished.
+				changeTracker.beginSim();
+				try {
+					await cbRunDay();
+				} finally {
+					changeTracker.endSim();
+				}
+			}
+		} finally {
+			// The force-silent window must NEVER outlive this call. Its normal end
+			// is in cbNoGames (right after the sim's silent drain), but a refused
+			// start (canStartGames false) or an error before cbNoGames used to
+			// leave the flag stuck on - silencing EVERY notification from this
+			// device (phase changes included) until a page refresh, while sync
+			// itself kept working so nothing looked wrong.
+			if (gidOneGame !== undefined) {
+				setSingleGameSimActive(false);
 			}
 		}
 	} else {

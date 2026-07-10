@@ -364,6 +364,45 @@ const buildSimNotifications = async (
 	};
 
 	const notifications: SyncNotification[] = [];
+
+	// During the playoffs, EVERY device gets the bracket - eliminated teams and
+	// teams with an off day included, as ONE room-wide notification (not one
+	// copy per team, and not gated on being alive in the bracket). Teams that
+	// played also get their own detailed game result below.
+	if (phase === PHASE.PLAYOFFS) {
+		let playoffSeries;
+		try {
+			playoffSeries = await idb.cache.playoffSeries.get(season);
+		} catch {
+			// Best effort - the per-team results below still go out.
+		}
+
+		// During the play-in tournament (currentRound === -1) the games are
+		// single-elimination, not series, so show that day's scoreboard.
+		// Otherwise show the current round's series scores.
+		if (playoffSeries?.currentRound === -1) {
+			const body = dayGameScores(games, teamById);
+			if (body) {
+				notifications.push({
+					title: "Play-in scores",
+					body,
+					targetTids: null,
+					path: "playoffs",
+				});
+			}
+		} else if (playoffSeries) {
+			const seriesBody = playoffSeriesScores(playoffSeries, teamById);
+			if (seriesBody) {
+				notifications.push({
+					title: "Playoff scores",
+					body: seriesBody,
+					targetTids: null,
+					path: "playoffs",
+				});
+			}
+		}
+	}
+
 	for (const tid of userTids) {
 		const team = teamById.get(tid);
 		const teamName = team ? `${team.region} ${team.name}` : "your team";
@@ -377,48 +416,12 @@ const buildSimNotifications = async (
 			.sort((a, b) => a.gid - b.gid);
 
 		// No game for this team in this span. Only worth mentioning during a
-		// game-playing phase (your team had an off day while others played); in the
-		// offseason nobody plays, so stay silent - the phase-change notification
-		// already covered the advance.
+		// regular-season phase (your team had an off day while others played); in
+		// the playoffs the room-wide bracket above covers it, and in the offseason
+		// nobody plays, so stay silent - the phase-change notification already
+		// covered the advance.
 		if (teamGames.length === 0) {
-			if (phase === PHASE.PLAYOFFS) {
-				// Your team isn't playing (eliminated / didn't make it, or an off day).
-				// Instead of a bare "no game", show what's happening in the bracket.
-				let playoffSeries;
-				try {
-					playoffSeries = await idb.cache.playoffSeries.get(season);
-				} catch {
-					// Best effort - fall through to the plain "no game" notice.
-				}
-
-				// During the play-in tournament (currentRound === -1) the games are
-				// single-elimination, not series, so show that day's scoreboard.
-				// Otherwise show the current round's series scores.
-				if (playoffSeries?.currentRound === -1) {
-					const body = dayGameScores(games, teamById);
-					if (body) {
-						notifications.push({
-							title: "Play-in scores",
-							body,
-							targetTids: [tid],
-							path: "playoffs",
-						});
-						continue;
-					}
-				} else if (playoffSeries) {
-					const seriesBody = playoffSeriesScores(playoffSeries, teamById);
-					if (seriesBody) {
-						notifications.push({
-							title: "Playoff scores",
-							body: seriesBody,
-							targetTids: [tid],
-							path: "playoffs",
-						});
-						continue;
-					}
-				}
-			}
-			if (GAME_PHASES.has(phase)) {
+			if (phase !== PHASE.PLAYOFFS && GAME_PHASES.has(phase)) {
 				notifications.push({
 					title: "Sim!",
 					body: `No game for your ${team?.name ?? "team"} ${period}.`,

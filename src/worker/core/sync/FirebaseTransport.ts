@@ -210,8 +210,9 @@ export class FirebaseTransport implements SyncTransport {
 
 	// Record (or refresh) this device's push registration in the room, so the
 	// Cloud Function knows where to send notifications. Keyed by uid, so each
-	// device has exactly one entry that updates in place.
-	async registerMember(uid: string, member: SyncMember) {
+	// device has exactly one entry that updates in place; a partial member
+	// merges onto the stored one (e.g. refreshing just the tid).
+	async registerMember(uid: string, member: Partial<SyncMember>) {
 		await setDoc(
 			doc(this.db, "leagues", this.code, "members", uid),
 			{ ...member, updatedAt: serverTimestamp() },

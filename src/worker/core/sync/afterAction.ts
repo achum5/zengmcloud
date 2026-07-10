@@ -187,22 +187,29 @@ export const afterAction = async (
 				}
 			}
 
-			// Fan phone pushes out ONLY once the change actually reached the room
-			// ("confirmed", not just queued). Otherwise a push implies a sync that
-			// hasn't happened yet - the confusing case where phones ping but nothing
-			// is in the shared log. A queued change syncs on its own later; its data
-			// arrives via the change log without a push, which is fine. A sim
-			// produces one detailed notification per team; everything else produces
-			// one. Best-effort - never blocks play. Skipped entirely for a silent
+			// Fan phone pushes out once the change is durably on its way - confirmed
+			// in the log, or safely queued (the outbox retries until it lands, so
+			// the push never announces a sync that won't happen; at worst it's a
+			// little early). Skipping the queued case entirely meant a change that
+			// uploaded via retry never notified anyone at all. A sim produces one
+			// detailed notification per team; everything else produces one.
+			// Best-effort - never blocks play. Skipped entirely for a silent
 			// publish (e.g. a single-game sim).
-			if (published && outcome === "confirmed" && !silent) {
+			if (published && !silent) {
 				try {
 					const notifications = await buildNotifications(label, changeset, {
 						isHost: engine.getIsHost(),
 						authorName: engine.localName,
 					});
 					for (const notification of notifications) {
-						await engine.publishNotification(notification);
+						// Fire-and-forget: a Firestore write never rejects while offline
+						// (it buffers and sends on reconnect), so awaiting here could
+						// hang the action behind a dead connection. Buffered delivery is
+						// exactly right anyway - the push goes out when the queued delta
+						// does.
+						void engine.publishNotification(notification).catch((error) => {
+							console.error("[sync] Failed to publish notification", error);
+						});
 					}
 				} catch (error) {
 					console.error("[sync] Failed to publish notifications", error);

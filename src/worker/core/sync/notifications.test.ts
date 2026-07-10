@@ -196,7 +196,7 @@ describe("buildNotifications", () => {
 		assert.ok(notifs[0]!.body.includes("No game for your Lakers"));
 	});
 
-	test("in the playoffs, a team with no game gets all series scores instead of a blank notice", async () => {
+	test("in the playoffs, series scores go to the WHOLE room (eliminated teams too)", async () => {
 		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
 		await idb.cache.playoffSeries.put({
 			season: 2026,
@@ -218,13 +218,44 @@ describe("buildNotifications", () => {
 			opts,
 		);
 		assert.strictEqual(notifs.length, 1);
-		assert.deepEqual(notifs[0]!.targetTids, [0]);
+		// null = everyone in the room - a device whose team is eliminated (or was
+		// never in the bracket) must still get the playoff scores.
+		assert.strictEqual(notifs[0]!.targetTids, null);
 		assert.strictEqual(notifs[0]!.title, "Playoff scores");
 		assert.ok(notifs[0]!.body.includes("LAL 3-1 BOS"));
 		assert.strictEqual(notifs[0]!.path, "playoffs");
 	});
 
-	test("during the play-in tournament, a team with no game gets that day's scoreboard", async () => {
+	test("a playing team gets the room-wide bracket AND its own game result", async () => {
+		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+		await idb.cache.playoffSeries.put({
+			season: 2026,
+			currentRound: 0,
+			currentPlayoffs: undefined,
+			series: [
+				[
+					{
+						home: { tid: 0, abbrev: "LAL", seed: 1, cid: 0, won: 3 },
+						away: { tid: 1, abbrev: "BOS", seed: 8, cid: 0, won: 1 },
+					},
+				],
+			],
+		} as any);
+
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{ changes: [gameWithBoxScore()] },
+			opts,
+		);
+		const bracket = notifs.find((n) => n.title === "Playoff scores");
+		assert.ok(bracket);
+		assert.strictEqual(bracket!.targetTids, null);
+		const gameResult = notifs.find((n) => n.title.includes("Lakers"));
+		assert.ok(gameResult, JSON.stringify(notifs));
+		assert.deepEqual(gameResult!.targetTids, [0]);
+	});
+
+	test("during the play-in tournament, the day's scoreboard goes to the WHOLE room", async () => {
 		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
 		// currentRound === -1 marks the play-in tournament (games are single
 		// elimination, stored in playIns rather than series).
@@ -247,7 +278,7 @@ describe("buildNotifications", () => {
 			opts,
 		);
 		assert.strictEqual(notifs.length, 1);
-		assert.deepEqual(notifs[0]!.targetTids, [0]);
+		assert.strictEqual(notifs[0]!.targetTids, null);
 		assert.strictEqual(notifs[0]!.title, "Play-in scores");
 		assert.ok(notifs[0]!.body.includes("BOS 120-114"), notifs[0]!.body);
 		assert.strictEqual(notifs[0]!.path, "playoffs");
