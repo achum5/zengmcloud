@@ -59,6 +59,7 @@ const PhaseReadyControl = () => {
 				<Dropdown.Item
 					onClick={() => setReady(s.nextStep.number)}
 					disabled={busy}
+					active={s.myUntilStep === s.nextStep.number}
 				>
 					{s.options.length > 0
 						? `Ready for ${s.nextStep.label}`
@@ -69,6 +70,7 @@ const PhaseReadyControl = () => {
 						key={w.step}
 						onClick={() => setReady(w.step)}
 						disabled={busy}
+						active={s.myUntilStep === w.step}
 					>
 						{w.label}
 					</Dropdown.Item>
@@ -83,9 +85,9 @@ const PhaseReadyControl = () => {
 									key={o.step}
 									onClick={() => setReady(o.step)}
 									disabled={busy}
+									active={s.myUntilStep === o.step}
 								>
 									{o.label}
-									{o.mine ? " (my pick)" : ""}
 								</Dropdown.Item>
 							))}
 						</div>

@@ -1,5 +1,21 @@
 import { toUI } from "../../util/index.ts";
 
+// Sync debug logging is expensive at scale - every event is a console.log plus
+// a cross-thread message to mirror it into the page console - so it's OFF by
+// default and gated at runtime. To enable, run this in the browser console and
+// refresh:
+//   localStorage.setItem("syncDebugLog", "1")
+// (The UI reads that key on startup and flips this flag in the worker; setting
+// it to anything else, or removing it, turns logging back off.)
+let loggingEnabled = false;
+
+export const setSyncDebugLogging = (enabled: boolean) => {
+	loggingEnabled = enabled;
+	if (enabled) {
+		console.log("[sync-debug] logging enabled");
+	}
+};
+
 const TRACE_LABEL_PREFIXES = ["playMenu.", "actions.", "main.reorder"];
 
 const TRACE_LABELS = new Set([
@@ -11,14 +27,20 @@ const TRACE_LABELS = new Set([
 	"main.reorderDepthDrag",
 ]);
 
+// Callers use this to skip building trace payloads entirely when logging is
+// off, so disabled logging costs a single boolean check.
 export const shouldTraceSyncLabel = (label: string): boolean =>
-	TRACE_LABELS.has(label) ||
-	TRACE_LABEL_PREFIXES.some((prefix) => label.startsWith(prefix));
+	loggingEnabled &&
+	(TRACE_LABELS.has(label) ||
+		TRACE_LABEL_PREFIXES.some((prefix) => label.startsWith(prefix)));
 
 export const syncDebugLog = (
 	event: string,
 	data: Record<string, unknown> = {},
 ) => {
+	if (!loggingEnabled) {
+		return;
+	}
 	const payload = {
 		at: new Date().toISOString(),
 		event,

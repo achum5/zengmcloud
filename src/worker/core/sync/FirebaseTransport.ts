@@ -31,6 +31,8 @@ import type {
 	DraftReadyEntry,
 	LiveBroadcastMeta,
 	LiveBroadcastUpdate,
+	LotteryRevealMeta,
+	LotteryRevealUpdate,
 	SyncMember,
 	SyncSubscriber,
 	SyncTransport,
@@ -53,6 +55,12 @@ const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
 // atomic claim for who sims the next pick.
 const DRAFT_READY_DOC_ID = "draftReady";
 const DRAFT_ADVANCE_DOC_ID = "draftAdvance";
+
+// The live lottery-reveal cursor doc: whoever runs the lottery heartbeats how
+// many picks they've revealed, and every other device replays the reveal in
+// lockstep. The RESULT travels through the normal change log; this doc only
+// carries the reveal position.
+const LOTTERY_REVEAL_DOC_ID = "lotteryReveal";
 
 // Keep each payload chunk well under Firestore's 1 MB/doc limit.
 const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
@@ -317,6 +325,58 @@ export class FirebaseTransport implements SyncTransport {
 			},
 			(error) => {
 				console.error("Draft ready subscription failed", error);
+			},
+		);
+	}
+
+	// Merge the lottery-reveal cursor doc (see LOTTERY_REVEAL_DOC_ID). holderId
+	// is stamped so the control-doc rule passes.
+	async publishLotteryReveal(update: LotteryRevealUpdate) {
+		const clean: Record<string, unknown> = {};
+		for (const [key, value] of Object.entries(update)) {
+			if (value !== undefined) {
+				clean[key] = value;
+			}
+		}
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", LOTTERY_REVEAL_DOC_ID),
+			{ ...clean, holderId: this.clientId, updatedAt: serverTimestamp() },
+			{ merge: true },
+		);
+		this.markContact();
+	}
+
+	// Watch the lottery-reveal cursor. Fires with the current value, then on
+	// every heartbeat. Undefined when no reveal is being broadcast.
+	subscribeLotteryReveal(
+		onChange: (meta: LotteryRevealMeta | undefined) => void,
+	) {
+		return onSnapshot(
+			doc(this.db, "leagues", this.code, "control", LOTTERY_REVEAL_DOC_ID),
+			(snapshot) => {
+				this.markContact();
+				const data = snapshot.data();
+				if (
+					data &&
+					data.active &&
+					typeof data.holderId === "string" &&
+					typeof data.season === "number"
+				) {
+					onChange({
+						holderId: data.holderId,
+						active: true,
+						season: data.season,
+						revealed: typeof data.revealed === "number" ? data.revealed : -1,
+						byName: typeof data.byName === "string" ? data.byName : "Someone",
+						startedAt: typeof data.startedAt === "number" ? data.startedAt : 0,
+						expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : 0,
+					});
+				} else {
+					onChange(undefined);
+				}
+			},
+			(error) => {
+				console.error("Lottery reveal subscription failed", error);
 			},
 		);
 	}

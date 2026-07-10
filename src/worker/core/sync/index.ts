@@ -28,6 +28,7 @@ export {
 	publishAutoPlayState,
 	refreshSyncUIState,
 	resyncSharedLeague,
+	publishLotteryRevealState,
 	restoreSyncRequiredFromMeta,
 	startLiveBroadcast,
 	teardownSharedLeague,

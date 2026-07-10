@@ -127,7 +127,11 @@ const Draft = ({
 	});
 	const remainingPicks = draftedSorted.filter((p) => p.pid < 0);
 	const nextPick = remainingPicks[0];
-	const usersTurn = !!(nextPick && userTids.includes(nextPick.draft.tid));
+	// In a synced league each person drafts only for the team THEIR device
+	// manages, not any user team (multi-team mode's default). The worker enforces
+	// this too; here it drives the Draft buttons and pick highlighting.
+	const myTids = mpSyncActive ? [userTid] : userTids;
+	const myTurn = !!(nextPick && myTids.includes(nextPick.draft.tid));
 
 	const canEditDraftOrder = godMode && remainingPicks.length > 0;
 
@@ -179,7 +183,7 @@ const Draft = ({
 				>
 					<button
 						className="btn btn-xs btn-primary"
-						disabled={!usersTurn || drafting}
+						disabled={!myTurn || drafting}
 						onClick={() => draftUser(p.pid)}
 						title="Draft player"
 					>
@@ -187,7 +191,7 @@ const Draft = ({
 					</button>
 					<button
 						className="btn btn-xs btn-light-bordered"
-						disabled={!usersTurn || drafting}
+						disabled={!myTurn || drafting}
 						onClick={() => draftUser(p.pid, true)}
 						title="Draft player and sim to your next pick or end of draft"
 					>
@@ -391,7 +395,7 @@ const Draft = ({
 			data,
 			classNames: {
 				"table-info":
-					userTids.includes(p.draft.tid) || userTids.includes(p.prevTid),
+					myTids.includes(p.draft.tid) || myTids.includes(p.prevTid),
 			},
 		};
 	});
@@ -481,7 +485,7 @@ const Draft = ({
 				season={season}
 				spectator={spectator}
 				userNextPickYear={userNextPickYear}
-				userTids={userTids}
+				userTids={myTids}
 				mpBlocked={mpBlocked}
 			/>
 			<div className="d-sm-flex gap-3">

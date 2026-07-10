@@ -73,6 +73,16 @@ export const Controller = () => {
 		}
 	}, [lid]);
 
+	// Sync debug logging is off by default (it slows things down). Opt in from
+	// the browser console with: localStorage.setItem("syncDebugLog", "1")
+	useEffect(() => {
+		try {
+			if (localStorage.getItem("syncDebugLog") === "1") {
+				void toWorker("main", "setSyncDebugLogging", true);
+			}
+		} catch {}
+	}, []);
+
 	useEffect(() => {
 		if (!mpSyncActive && !mpSyncReconnecting) {
 			return;

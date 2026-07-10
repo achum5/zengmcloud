@@ -1082,7 +1082,7 @@ export type MpPhaseReady = {
 	waypoints: { step: number; label: string }[];
 	// The full "ready through…" list (every remaining pick / free-agency day).
 	// Empty for single-step stages.
-	options: { step: number; label: string; mine?: boolean }[];
+	options: { step: number; label: string }[];
 };
 
 export type LocalStateUI = {
@@ -1158,6 +1158,11 @@ export type LocalStateUI = {
 	// Ready-up state (undefined outside a synced gated stage). Drives the header
 	// ready control; gated steps only advance once every user team is ready.
 	mpPhaseReady: MpPhaseReady | undefined;
+	// A league-mate is revealing the draft lottery live; this device replays the
+	// reveal in lockstep (revealed = how many picks are shown so far).
+	mpLotteryReveal:
+		| { season: number; revealed: number; byName: string; startedAt: number }
+		| undefined;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;

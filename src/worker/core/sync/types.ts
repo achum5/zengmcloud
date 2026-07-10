@@ -100,6 +100,35 @@ export type LiveBroadcastUpdate = {
 	expiresAt?: number;
 };
 
+// A live draft-lottery reveal in progress. Whoever runs the lottery (the
+// simmer) heartbeats how many picks they've revealed so far; every other
+// device replays the reveal in lockstep on its own lottery page. The lottery
+// RESULT travels through the normal change log - this doc only carries the
+// reveal position. `expiresAt` is a lease so a broadcaster that disappears
+// mid-reveal can't hide the (already-synced) result from viewers forever.
+export type LotteryRevealMeta = {
+	holderId: string;
+	active: boolean;
+	season: number;
+	// How many picks have been revealed so far (-1 = none yet).
+	revealed: number;
+	byName: string;
+	// Distinguishes one reveal from the next (the broadcaster's clock, ms).
+	startedAt: number;
+	expiresAt: number;
+};
+
+// The subset of LotteryRevealMeta a single write sets (merged onto the doc;
+// the transport stamps holderId).
+export type LotteryRevealUpdate = {
+	active?: boolean;
+	season?: number;
+	revealed?: number;
+	byName?: string;
+	startedAt?: number;
+	expiresAt?: number;
+};
+
 // Who currently holds sim authority - the one device allowed to advance the
 // league (sim/draft/phase change). Stored at leagues/{code}/control/authority
 // and watched by everyone, so all devices agree on who's in control. Undefined
@@ -270,4 +299,11 @@ export interface SyncTransport {
 	): () => void;
 	fetchLiveBroadcastData?(chunkCount: number): Promise<string | undefined>;
 	clearLiveBroadcast?(chunkCount: number): Promise<void>;
+
+	// Live lottery-reveal broadcast (see LotteryRevealMeta). Optional so the
+	// in-memory test transport can skip it.
+	publishLotteryReveal?(update: LotteryRevealUpdate): Promise<void>;
+	subscribeLotteryReveal?(
+		onChange: (meta: LotteryRevealMeta | undefined) => void,
+	): () => void;
 }

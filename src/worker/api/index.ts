@@ -101,6 +101,7 @@ import {
 	listSyncRooms,
 	markSyncRequired,
 	publishAutoPlayState,
+	publishLotteryRevealState,
 	refreshSyncUIState,
 	resyncSharedLeague,
 	setDraftReady,
@@ -108,6 +109,7 @@ import {
 	updateLiveBroadcast,
 } from "../core/sync/index.ts";
 import { setSingleGameSimActive } from "../core/sync/afterActionHook.ts";
+import { setSyncDebugLogging } from "../core/sync/debugLog.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
 import { getRetiredPlayersForRecap } from "../util/getRetiredPlayersForRecap.ts";
@@ -1122,6 +1124,26 @@ const draftUser = async (pid: number, conditions: Conditions) => {
 
 	const draftPicks = await draft.getOrder();
 	const dp = draftPicks[0];
+
+	// In a synced league, each person drafts only for the team THEIR device
+	// manages - multi-team mode's "any user team" default would let one friend
+	// draft for another.
+	if (
+		dp &&
+		(getSyncRequired() || getSyncEngine() !== undefined) &&
+		g.get("userTids").includes(dp.tid) &&
+		dp.tid !== g.get("userTid")
+	) {
+		logEvent(
+			{
+				type: "error",
+				text: "This pick belongs to a league-mate's team.",
+				saveToDb: false,
+			},
+			conditions,
+		);
+		return;
+	}
 
 	if (dp && g.get("userTids").includes(dp.tid)) {
 		draftPicks.shift();
@@ -5505,6 +5527,25 @@ const draftSetReady = async (untilPick: number | null) => {
 	return { ok: true };
 };
 
+// Toggle worker-side sync debug logging (see debugLog.ts). Driven by the UI at
+// startup from the localStorage key "syncDebugLog".
+const setSyncDebugLoggingApi = async (enabled: boolean) => {
+	setSyncDebugLogging(!!enabled);
+	return { ok: true };
+};
+
+// Heartbeat this device's live lottery-reveal position to the room (it just
+// ran the lottery / revealed another pick). Cloud-only write.
+const lotteryRevealUpdate = async (update: {
+	active: boolean;
+	season?: number;
+	revealed?: number;
+	startedAt?: number;
+}) => {
+	await publishLotteryRevealState(update);
+	return { ok: true };
+};
+
 // Register this device for phone push notifications. The FCM token is obtained
 // on the UI thread (Cloud Messaging can't run in a worker) and handed here so we
 // can store it - alongside this device's team and display name - in the room's
@@ -5619,6 +5660,7 @@ export default {
 		listSyncRooms,
 		deleteSyncRoom,
 		deleteAllSyncRooms,
+		lotteryRevealUpdate,
 		publishAutoPlayState,
 		resyncSharedLeague,
 		getTeamGraphStat,
@@ -5663,6 +5705,7 @@ export default {
 		setNote,
 		setSavedTrade,
 		setScheduleFromEditor,
+		setSyncDebugLogging: setSyncDebugLoggingApi,
 		updateExpansionDraftSetup,
 		advanceToPlayerProtection,
 		autoProtect,

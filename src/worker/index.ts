@@ -84,6 +84,10 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// Draft ready-up: writes only the cloud ready doc, never the league DB. Must
 	// stay available while catching up so a device can ready up mid-draft.
 	"draftSetReady",
+	// Debug-log toggle: no league writes.
+	"setSyncDebugLogging",
+	// Live lottery-reveal heartbeat: cloud-only write, fires per revealed pick.
+	"lotteryRevealUpdate",
 	// Play-menu stop commands just halt local autoplay; they don't publish a
 	// shared league change and must remain available if sync is reconnecting.
 	"stop",

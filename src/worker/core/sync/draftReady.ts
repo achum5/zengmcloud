@@ -27,6 +27,7 @@
 
 import { PHASE } from "../../../common/constants.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
+import { idb } from "../../db/index.ts";
 import { g, local, toUI } from "../../util/index.ts";
 import getOrder from "../draft/getOrder.ts";
 import runPicks from "../draft/runPicks.ts";
@@ -140,13 +141,24 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 		const userTid = g.get("userTid");
 		const next = order[0]!;
 
+		// Team abbrevs so each pick in the list shows who owns it.
+		let abbrevByTid = new Map<number, string>();
+		try {
+			const teams = await idb.cache.teams.getAll();
+			abbrevByTid = new Map(teams.map((t) => [t.tid, t.abbrev]));
+		} catch {
+			// Labels just omit the team.
+		}
+
 		// EVERY remaining pick, so "ready through R1P16" works no matter how far
 		// out it is. The UI scrolls the list.
-		const options = order.map((dp) => ({
-			step: overallPickNumber(dp, numActiveTeams),
-			label: `R${dp.round}P${dp.pick}`,
-			mine: dp.tid === userTid,
-		}));
+		const options = order.map((dp) => {
+			const abbrev = abbrevByTid.get(dp.tid);
+			return {
+				step: overallPickNumber(dp, numActiveTeams),
+				label: `R${dp.round}P${dp.pick}${abbrev ? ` · ${abbrev}` : ""}`,
+			};
+		});
 		const myNext = order.find((dp) => dp.tid === userTid);
 		const lastInRound = [...order]
 			.filter((dp) => dp.round === next.round)

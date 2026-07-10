@@ -94,8 +94,34 @@ const makeLeagueId = (): string => {
 	return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 };
 
+// Minimum spacing between DURABLE watermark banks (cache flush + meta write).
+// During chained ready-up picks a watermark advance fires per pick; flushing
+// and writing meta every time hammered mobile browsers' IndexedDB ("meta
+// database error event" / transaction aborts on iOS under write pressure).
+// Skipping a bank is always safe: the in-memory watermark keeps advancing for
+// dedup, and on a crash the device just re-fetches a few already-applied
+// entries (idempotent whole-record writes).
+const WATERMARK_BANK_MIN_MS = 4000;
+let lastWatermarkBankAt = 0;
+let watermarkTrailingTimer: ReturnType<typeof setTimeout> | undefined;
+
 const saveWatermark = async (lid: number | undefined, ts: number) => {
 	if (typeof lid !== "number") {
+		return;
+	}
+
+	if (Date.now() - lastWatermarkBankAt < WATERMARK_BANK_MIN_MS) {
+		// Too soon after the last durable bank. Schedule a trailing bank of
+		// whatever the watermark is by then, so the tail of a burst still lands.
+		if (watermarkTrailingTimer === undefined) {
+			watermarkTrailingTimer = setTimeout(() => {
+				watermarkTrailingTimer = undefined;
+				const engine = getSyncEngine();
+				if (engine) {
+					void saveWatermark(lid, engine.getPersistedSeq());
+				}
+			}, WATERMARK_BANK_MIN_MS);
+		}
 		return;
 	}
 
@@ -129,6 +155,7 @@ const saveWatermark = async (lid: number | undefined, ts: number) => {
 		league.syncWatermark = ts;
 		await idb.meta.put("leagues", league);
 	}
+	lastWatermarkBankAt = Date.now();
 };
 
 // The room we're currently connected to (if any), so the UI can reflect
@@ -546,6 +573,100 @@ const checkLiveBroadcastLease = () => {
 		void toUI("updateLocal", [
 			{ mpLiveBroadcast: undefined, liveGameInProgress: false },
 		]);
+	}
+};
+
+// ---------------------------------------------------------------------------
+// Live lottery reveal. Whoever runs the draft lottery heartbeats how many
+// picks they've revealed; every other device navigates to the lottery page and
+// replays the reveal in lockstep. The result data arrives via the normal
+// change log - this only carries the reveal position.
+// ---------------------------------------------------------------------------
+
+let lotteryRevealUnsub: (() => void) | undefined;
+
+// The reveal this device is currently FOLLOWING (not its own), so a new
+// broadcast navigates exactly once and expiry can release it.
+let followedLotteryReveal: { startedAt: number; expiresAt: number } | undefined;
+
+// Publish this device's reveal state (it just ran the lottery / revealed
+// another pick). Called from the UI via the worker API. Best-effort.
+export const publishLotteryRevealState = async (update: {
+	active: boolean;
+	season?: number;
+	revealed?: number;
+	startedAt?: number;
+}) => {
+	const transport = currentTransport;
+	const engine = getSyncEngine();
+	if (!transport?.publishLotteryReveal || !engine) {
+		return;
+	}
+	try {
+		await transport.publishLotteryReveal({
+			...update,
+			byName: engine.localName,
+			expiresAt: Date.now() + LOTTERY_REVEAL_LEASE_MS,
+		});
+	} catch (error) {
+		console.error("publishLotteryRevealState failed", error);
+	}
+};
+
+// How long a reveal stays live without a heartbeat before viewers treat it as
+// over and just show the (already-synced) final result.
+const LOTTERY_REVEAL_LEASE_MS = 45_000;
+
+const handleLotteryRevealMeta = (
+	meta: import("./types.ts").LotteryRevealMeta | undefined,
+	clientId: string,
+) => {
+	// Our own reveal is driven locally; ignore the echo.
+	if (meta && meta.holderId === clientId) {
+		return;
+	}
+
+	if (!meta || !meta.active || meta.expiresAt < Date.now()) {
+		if (followedLotteryReveal) {
+			followedLotteryReveal = undefined;
+			void toUI("updateLocal", [{ mpLotteryReveal: undefined }]);
+		}
+		return;
+	}
+
+	// A new reveal: navigate this device to the lottery page so everyone
+	// watches the picks flip together.
+	if (
+		!followedLotteryReveal ||
+		followedLotteryReveal.startedAt !== meta.startedAt
+	) {
+		followedLotteryReveal = {
+			startedAt: meta.startedAt,
+			expiresAt: meta.expiresAt,
+		};
+		void toUI("realtimeUpdate", [[], helpers.leagueUrl(["draft_lottery"])]);
+	} else {
+		followedLotteryReveal.expiresAt = meta.expiresAt;
+	}
+
+	void toUI("updateLocal", [
+		{
+			mpLotteryReveal: {
+				season: meta.season,
+				revealed: meta.revealed,
+				byName: meta.byName,
+				startedAt: meta.startedAt,
+			},
+		},
+	]);
+};
+
+// Time out a reveal whose broadcaster vanished, so viewers fall back to the
+// synced final result instead of staring at a frozen board. Health tick.
+const checkLotteryRevealLease = () => {
+	if (followedLotteryReveal && Date.now() > followedLotteryReveal.expiresAt) {
+		followedLotteryReveal = undefined;
+		void toUI("updateLocal", [{ mpLotteryReveal: undefined }]);
 	}
 };
 
@@ -997,6 +1118,7 @@ export const connectSharedLeague = async ({
 		pushSyncStateFull();
 		// Unlock a follower whose broadcaster went away without a clean end.
 		checkLiveBroadcastLease();
+		checkLotteryRevealLease();
 		// Keep this device's member doc pointing at the team it currently
 		// manages, so targeted notifications keep reaching it after a team switch.
 		try {
@@ -1033,6 +1155,13 @@ export const connectSharedLeague = async ({
 	// once every user team has readied (see draftReady.ts). No-op outside the
 	// draft phase.
 	setupDraftReady(transport);
+
+	// Watch for a live lottery reveal (someone running the lottery while
+	// everyone watches the picks flip in lockstep).
+	followedLotteryReveal = undefined;
+	lotteryRevealUnsub = transport.subscribeLotteryReveal?.((meta) => {
+		handleLotteryRevealMeta(meta, clientId);
+	});
 
 	// Kick off the initial paginated backlog drain now (it also starts the live
 	// changes subscription once caught up). Runs in the background so connect
@@ -1082,12 +1211,19 @@ export const teardownSharedLeague = async ({
 		clearInterval(healthTimer);
 		healthTimer = undefined;
 	}
+	if (watermarkTrailingTimer !== undefined) {
+		clearTimeout(watermarkTrailingTimer);
+		watermarkTrailingTimer = undefined;
+	}
 	lastHealthPushed = undefined;
 	lastEditsPausedPushed = undefined;
 	autoPlayUnsub?.();
 	autoPlayUnsub = undefined;
 	liveBroadcastUnsub?.();
 	liveBroadcastUnsub = undefined;
+	lotteryRevealUnsub?.();
+	lotteryRevealUnsub = undefined;
+	followedLotteryReveal = undefined;
 	teardownDraftReady();
 	// Best-effort: end our own broadcast so we don't leave the room locked.
 	if (activeBroadcast) {
@@ -1105,6 +1241,7 @@ export const teardownSharedLeague = async ({
 			mpEditsPaused: false,
 			mpCatchUp: undefined,
 			mpLiveBroadcast: undefined,
+			mpLotteryReveal: undefined,
 			mpPendingUploads: 0,
 		},
 	]);

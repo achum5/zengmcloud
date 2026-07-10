@@ -492,12 +492,20 @@ const NonLotteryHeader = ({ children }: { children: ReactNode }) => {
 };
 
 const DraftLotteryTable = (props: Props) => {
-	const { godMode, spectator, userTid, mpSyncActive, mpSyncIsHost } = useLocal([
+	const {
+		godMode,
+		spectator,
+		userTid,
+		mpSyncActive,
+		mpSyncIsHost,
+		mpLotteryReveal,
+	} = useLocal([
 		"godMode",
 		"spectator",
 		"userTid",
 		"mpSyncActive",
 		"mpSyncIsHost",
+		"mpLotteryReveal",
 	]);
 
 	// In a shared league, only the device that's simming may run the lottery
@@ -511,6 +519,12 @@ const DraftLotteryTable = (props: Props) => {
 			isMounted.current = false;
 		};
 	}, []);
+
+	// Live reveal broadcasting: set while THIS device is revealing to the room
+	// (it clicked Start), so reveal progress heartbeats out.
+	const broadcastStartedAt = useRef<number | undefined>(undefined);
+	// Which league-mate's reveal this device is currently following.
+	const followingStartedAt = useRef<number | undefined>(undefined);
 
 	// This is redundant with state because of https://github.com/facebook/react/issues/14010
 	const numLeftToReveal = useRef(0); // Like indRevealed
@@ -534,6 +548,77 @@ const DraftLotteryTable = (props: Props) => {
 		(revealState.current === "init" &&
 			props.draftLotteryResult !== state.draftLotteryResult)
 	) {
+		numLeftToReveal.current = 0;
+		revealState.current = "init";
+		followingStartedAt.current = undefined;
+		dispatch({
+			type: "init",
+			props: {
+				draftLotteryResult: props.draftLotteryResult,
+				draftType: props.draftType,
+				season: props.season,
+			},
+		});
+	}
+
+	// ---- Live reveal: viewer side ----
+	// A league-mate is revealing the lottery. Replay it in lockstep: strip the
+	// picks from the (already-synced) result and reveal them as the broadcast
+	// cursor advances. Derived-state dispatches during render, so the full
+	// result never flashes before the reveal starts.
+	const viewerReveal =
+		mpLotteryReveal &&
+		broadcastStartedAt.current === undefined &&
+		mpLotteryReveal.season === props.season &&
+		props.draftLotteryResult
+			? mpLotteryReveal
+			: undefined;
+
+	if (viewerReveal && followingStartedAt.current !== viewerReveal.startedAt) {
+		followingStartedAt.current = viewerReveal.startedAt;
+
+		const stripped = {
+			...props.draftLotteryResult!,
+			result: props.draftLotteryResult!.result.map((row: any) => ({
+				...row,
+				pick: undefined,
+			})),
+		};
+		const toReveal: number[] = [];
+		for (const [i, row] of props.draftLotteryResult!.result.entries()) {
+			const pick = (row as any).pick;
+			if (pick !== undefined) {
+				toReveal[pick - 1] = i;
+			}
+		}
+		toReveal.reverse();
+
+		revealState.current = "running";
+		numLeftToReveal.current = toReveal.length;
+		dispatch({
+			type: "start",
+			draftType: props.draftType as DraftType,
+			draftLotteryResult: stripped as any,
+			toReveal,
+			indRevealed: -1,
+		});
+	} else if (
+		viewerReveal &&
+		followingStartedAt.current === viewerReveal.startedAt &&
+		state.indRevealed < viewerReveal.revealed &&
+		state.indRevealed < state.toReveal.length
+	) {
+		// Catch up one pick per render pass until we match the broadcaster.
+		numLeftToReveal.current -= 1;
+		dispatch({ type: "revealOne" });
+	} else if (
+		!viewerReveal &&
+		followingStartedAt.current !== undefined &&
+		state.revealState !== "done"
+	) {
+		// The broadcast ended (or its lease expired) before we saw every pick:
+		// fall back to the synced final result.
+		followingStartedAt.current = undefined;
 		numLeftToReveal.current = 0;
 		revealState.current = "init";
 		dispatch({
@@ -586,6 +671,19 @@ const DraftLotteryTable = (props: Props) => {
 
 			revealState.current = "running";
 			numLeftToReveal.current = toReveal.length;
+
+			// In a synced league, broadcast the reveal so every device watches the
+			// picks flip together (the result itself synced via the change log).
+			if (mpSyncActive) {
+				broadcastStartedAt.current = Date.now();
+				void toWorker("main", "lotteryRevealUpdate", {
+					active: true,
+					season: props.season,
+					revealed: -1,
+					startedAt: broadcastStartedAt.current,
+				});
+			}
+
 			dispatch({
 				type: "start",
 				draftType,
@@ -597,6 +695,41 @@ const DraftLotteryTable = (props: Props) => {
 			revealPickAuto();
 		}
 	};
+
+	// Broadcaster: heartbeat reveal progress to the room, and end the broadcast
+	// once every pick is shown (or this device leaves the page).
+	useEffect(() => {
+		if (broadcastStartedAt.current === undefined) {
+			return;
+		}
+		void toWorker("main", "lotteryRevealUpdate", {
+			active: state.revealState !== "done",
+			season: props.season,
+			revealed: state.indRevealed,
+			startedAt: broadcastStartedAt.current,
+		});
+		if (state.revealState === "done") {
+			broadcastStartedAt.current = undefined;
+		}
+	}, [state.indRevealed, state.revealState, props.season]);
+
+	useEffect(() => {
+		// Keep the lease alive during pauses/slow reveals; end the broadcast if
+		// the broadcaster navigates away mid-reveal (viewers then fall back to
+		// the synced final result).
+		const interval = setInterval(() => {
+			if (broadcastStartedAt.current !== undefined) {
+				void toWorker("main", "lotteryRevealUpdate", { active: true });
+			}
+		}, 15000);
+		return () => {
+			clearInterval(interval);
+			if (broadcastStartedAt.current !== undefined) {
+				void toWorker("main", "lotteryRevealUpdate", { active: false });
+				broadcastStartedAt.current = undefined;
+			}
+		};
+	}, []);
 
 	const handleResume = () => {
 		revealState.current = "running";
