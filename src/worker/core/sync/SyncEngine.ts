@@ -833,13 +833,22 @@ export class SyncEngine {
 		return run;
 	}
 
+	// IndexedDB ops inside the drain are timed: a hung outbox read/delete (seen
+	// under mobile storage pressure) must fail-and-retry, not silently freeze
+	// the whole upload queue forever (the drain is single-flight, so one hung
+	// run blocks every future run behind it).
+	private static OUTBOX_OP_TIMEOUT = 15_000;
+
 	private async doDrain(): Promise<boolean> {
 		if (this.stopped) {
 			return false;
 		}
 		let pending: Omit<ChangesetEntry, "seq">[];
 		try {
-			pending = await this.pendingEntries();
+			pending = await withTimeout(
+				this.pendingEntries(),
+				SyncEngine.OUTBOX_OP_TIMEOUT,
+			);
 		} catch (error) {
 			console.error(
 				"[sync] outbox drain: could not read pending uploads",
@@ -908,9 +917,21 @@ export class SyncEngine {
 						stillQueued: pending.length + 1,
 						error,
 					});
+					// Also to the plain console, so a stuck queue is diagnosable even
+					// with debug logging off.
+					console.error(
+						`[sync] upload failed (${pending.length + 1} still queued)`,
+						error,
+					);
 					return false;
 				}
-				await this.removePending(entry.id);
+				await withTimeout(
+					this.removePending(entry.id),
+					SyncEngine.OUTBOX_OP_TIMEOUT,
+				).catch(() => {
+					// The publish landed; a failed/hung removal just means this entry
+					// re-publishes later (same doc id - idempotent overwrite).
+				});
 				done += 1;
 				this.onUploadProgress?.({ done, total });
 				if (shouldTraceSyncLabel(entry.action)) {
@@ -924,7 +945,10 @@ export class SyncEngine {
 				// Entries enqueued while we were draining go out in this same pass,
 				// still in enqueue order.
 				if (pending.length === 0) {
-					pending = await this.pendingEntries();
+					pending = await withTimeout(
+						this.pendingEntries(),
+						SyncEngine.OUTBOX_OP_TIMEOUT,
+					).catch(() => [] as Omit<ChangesetEntry, "seq">[]);
 					total = done + pending.length;
 				}
 			}

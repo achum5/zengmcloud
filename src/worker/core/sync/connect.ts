@@ -1119,6 +1119,12 @@ export const connectSharedLeague = async ({
 		// Unlock a follower whose broadcaster went away without a clean end.
 		checkLiveBroadcastLease();
 		checkLotteryRevealLease();
+		// Keep kicking the upload drain while anything is queued - it self-retries
+		// with backoff, but a persistent tick guarantees a stalled queue can never
+		// sit idle (coalesced, so redundant kicks are nearly free).
+		if (lastPendingUploads > 0) {
+			void getSyncEngine()?.drainOutbox();
+		}
 		// Keep this device's member doc pointing at the team it currently
 		// manages, so targeted notifications keep reaching it after a team switch.
 		try {

@@ -163,7 +163,14 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 		const lastInRound = [...order]
 			.filter((dp) => dp.round === next.round)
 			.at(-1);
+		const endOfDraftStep = overallPickNumber(order.at(-1)!, numActiveTeams);
+		const endOfRoundStep = lastInRound
+			? overallPickNumber(lastInRound, numActiveTeams)
+			: undefined;
 
+		// One waypoint per distinct step: in the final round "through this round"
+		// IS "through end of draft", so only the latter shows (a duplicate step
+		// also duplicated React keys and rendered the same label twice).
 		const waypoints: { step: number; label: string }[] = [];
 		if (myNext) {
 			waypoints.push({
@@ -171,22 +178,24 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 				label: "Until my pick",
 			});
 		}
-		if (lastInRound) {
-			waypoints.push({
-				step: overallPickNumber(lastInRound, numActiveTeams),
-				label: "Through this round",
-			});
+		if (endOfRoundStep !== undefined && endOfRoundStep !== endOfDraftStep) {
+			waypoints.push({ step: endOfRoundStep, label: "Through this round" });
 		}
-		waypoints.push({
-			step: overallPickNumber(order.at(-1)!, numActiveTeams),
-			label: "Through end of draft",
+		waypoints.push({ step: endOfDraftStep, label: "Through end of draft" });
+		const seenSteps = new Set<number>();
+		const uniqueWaypoints = waypoints.filter((w) => {
+			if (seenSteps.has(w.step)) {
+				return false;
+			}
+			seenSteps.add(w.step);
+			return true;
 		});
 
 		return {
 			nextStep: overallPickNumber(next, numActiveTeams),
 			nextLabel: `R${next.round}P${next.pick}`,
 			onClockUser: userTids.includes(next.tid),
-			waypoints,
+			waypoints: uniqueWaypoints,
 			options,
 			advance: async () => {
 				changeTracker.beginSim();
@@ -233,7 +242,10 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 
 		return {
 			nextStep,
-			nextLabel: `Next day (${daysLeft} left)`,
+			// Label with the days left AFTER this day sims, so it reads continuously
+			// with the "ready through…" list below it (28 left, 27 left, …).
+			nextLabel:
+				daysLeft - 1 === 0 ? "Final day" : `Next day (${daysLeft - 1} left)`,
 			onClockUser: false,
 			waypoints: [],
 			options,
@@ -327,6 +339,21 @@ const evaluate = async () => {
 		!engine.isCaughtUp() ||
 		!transport.claimDraftAdvance
 	) {
+		return;
+	}
+
+	// Backpressure: never advance while this device still has uploads queued.
+	// Without this, a failing/slow connection let chained advances keep simming
+	// steps while entries piled up in the outbox by the hundreds - each step's
+	// data was safe (durable outbox), but the backlog grew unboundedly and the
+	// room fell far behind. Advancing only from a drained outbox paces the chain
+	// to what the connection can actually deliver.
+	try {
+		if ((await engine.pendingUploadCount()) > 0) {
+			void engine.drainOutbox();
+			return;
+		}
+	} catch {
 		return;
 	}
 

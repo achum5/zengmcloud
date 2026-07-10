@@ -766,10 +766,32 @@ const describeReSignings = (
 	return out;
 };
 
-// One notification per pick made in this changeset (during the draft).
+// Pids actually drafted IN this changeset, per its draft events. This is the
+// authoritative "a pick just happened" signal: a rookie's player RECORD keeps
+// matching draft-shaped predicates all offseason (draft.year === season, still
+// on the drafting team), so any later changeset that happens to carry the
+// record (a phase change, a free-agency day adjusting contracts) would
+// otherwise re-announce the pick - hours later, and once per changeset that
+// touched the record.
+export const draftedPidsFromEvents = (changeset: Changeset): Set<number> => {
+	const pids = new Set<number>();
+	for (const e of changesToValues(changeset, "events")) {
+		if (e && e.type === "draft" && Array.isArray(e.pids)) {
+			for (const pid of e.pids) {
+				if (typeof pid === "number") {
+					pids.add(pid);
+				}
+			}
+		}
+	}
+	return pids;
+};
+
+// One notification per pick made in this changeset (per its draft events).
 const buildDraftNotifications = (
 	changeset: Changeset,
 	teamById: Map<number, TeamInfo>,
+	draftedPids: Set<number>,
 ): SyncNotification[] => {
 	const season = g.get("season");
 	const numActiveTeams = g.get("numActiveTeams");
@@ -778,6 +800,7 @@ const buildDraftNotifications = (
 	const allPicks = changesToValues(changeset, "players")
 		.filter(
 			(p) =>
+				draftedPids.has(p.pid) &&
 				p.draft &&
 				p.draft.year === season &&
 				p.draft.round >= 1 &&
@@ -869,24 +892,17 @@ export const buildNotifications = async (
 	// Draft picks made this changeset - announced per pick to the whole room.
 	// Checked FIRST, before the sim/phase branches, because the simmer advances
 	// CPU picks via playMenu.onePick / untilEnd (which look like sims), and the
-	// final pick lands in AFTER_DRAFT (a phase change) - in all those cases the
-	// picks themselves should still be narrated. Detected by content (players
-	// actually drafted this season), not by the current phase.
-	const draftSeason = g.get("season");
-	const hasDraftPicks = changeset.changes.some(
-		(c) =>
-			c.store === "players" &&
-			c.type === "put" &&
-			c.value?.draft?.year === draftSeason &&
-			c.value.draft.round >= 1 &&
-			c.value.draft.pick >= 1 &&
-			c.value.tid === c.value.draft.tid &&
-			c.value.tid >= 0,
-	);
-	if (hasDraftPicks) {
+	// final pick lands in AFTER_DRAFT (a phase change). Detected by the DRAFT
+	// EVENTS in the changeset, not by player-record shape - a rookie's record
+	// keeps looking "just drafted" all offseason, and shape-detection made every
+	// later changeset touching it (phase changes, free-agency days) re-announce
+	// the pick.
+	const draftedPids = draftedPidsFromEvents(changeset);
+	if (draftedPids.size > 0) {
 		const draftNotifications = buildDraftNotifications(
 			changeset,
 			await teamsById(),
+			draftedPids,
 		);
 		if (draftNotifications.length > 0) {
 			return draftNotifications;

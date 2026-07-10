@@ -1,19 +1,17 @@
 import { toUI } from "../../util/index.ts";
 
-// Sync debug logging is expensive at scale - every event is a console.log plus
-// a cross-thread message to mirror it into the page console - so it's OFF by
-// default and gated at runtime. To enable, run this in the browser console and
-// refresh:
-//   localStorage.setItem("syncDebugLog", "1")
-// (The UI reads that key on startup and flips this flag in the worker; setting
-// it to anything else, or removing it, turns logging back off.)
-let loggingEnabled = false;
+// Sync debug logging is ON by default (it's how sync issues get diagnosed in
+// the field), but gated at runtime because every event is a console.log plus a
+// cross-thread message to mirror it into the page console. If it's slowing a
+// device down, opt out from the browser console and refresh:
+//   localStorage.setItem("syncDebugLog", "0")
+// (The UI reads that key on startup and flips this flag in the worker; remove
+// the key or set "1" to turn logging back on.)
+let loggingEnabled = true;
 
 export const setSyncDebugLogging = (enabled: boolean) => {
 	loggingEnabled = enabled;
-	if (enabled) {
-		console.log("[sync-debug] logging enabled");
-	}
+	console.log(`[sync-debug] logging ${enabled ? "enabled" : "disabled"}`);
 };
 
 const TRACE_LABEL_PREFIXES = ["playMenu.", "actions.", "main.reorder"];

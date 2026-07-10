@@ -73,12 +73,12 @@ export const Controller = () => {
 		}
 	}, [lid]);
 
-	// Sync debug logging is off by default (it slows things down). Opt in from
-	// the browser console with: localStorage.setItem("syncDebugLog", "1")
+	// Sync debug logging is on by default. If it slows a device down, opt out
+	// from the browser console with: localStorage.setItem("syncDebugLog", "0")
 	useEffect(() => {
 		try {
-			if (localStorage.getItem("syncDebugLog") === "1") {
-				void toWorker("main", "setSyncDebugLogging", true);
+			if (localStorage.getItem("syncDebugLog") === "0") {
+				void toWorker("main", "setSyncDebugLogging", false);
 			}
 		} catch {}
 	}, []);

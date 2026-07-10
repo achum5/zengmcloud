@@ -623,6 +623,13 @@ describe("buildNotifications", () => {
 							},
 						},
 					},
+					// The draft event is the authoritative "a pick just happened" signal.
+					{
+						store: "events",
+						id: 100,
+						type: "put",
+						value: { eid: 100, type: "draft", pids: [7], tids: [0] },
+					},
 				],
 			},
 			opts,
@@ -666,6 +673,12 @@ describe("buildNotifications", () => {
 							},
 						},
 					},
+					{
+						store: "events",
+						id: 101,
+						type: "put",
+						value: { eid: 101, type: "draft", pids: [12], tids: [1] },
+					},
 				],
 			},
 			opts,
@@ -676,6 +689,40 @@ describe("buildNotifications", () => {
 			notifs[0]!.body,
 		);
 		assert.strictEqual(notifs[0]!.targetTids, null); // everyone
+	});
+
+	test("a rookie's record WITHOUT a draft event never re-announces the pick", async () => {
+		// A rookie's player record keeps matching draft-shaped predicates all
+		// offseason (draft.year === season, still on the drafting team). Any later
+		// changeset carrying the record - a phase change, a free-agency day - used
+		// to re-fire "Draft pick" pushes hours after the draft, once per changeset.
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		g.setWithoutSavingToDB("numActiveTeams", 30);
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{
+				changes: [
+					{
+						store: "players",
+						id: 7,
+						type: "put",
+						value: {
+							pid: 7,
+							tid: 0,
+							firstName: "Rook",
+							lastName: "Ie",
+							ratings: [{ ovr: 55, pot: 78, pos: "SF" }],
+							draft: { round: 1, pick: 3, year: 2026, tid: 0 },
+						},
+					},
+				],
+			},
+			opts,
+		);
+		assert.ok(
+			!notifs.some((n) => n.title === "Draft pick"),
+			JSON.stringify(notifs),
+		);
 	});
 
 	test("deep-link paths: trade → transactions, signing → player page", async () => {
