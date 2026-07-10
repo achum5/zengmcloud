@@ -1125,6 +1125,7 @@ const WatchReplayButton = ({ gid }: { gid: number }) => {
 					gidOneGame: gid,
 					playByPlay,
 					replay: true,
+					fromAction: true,
 				});
 			}
 		} finally {
@@ -1139,7 +1140,7 @@ const WatchReplayButton = ({ gid }: { gid: number }) => {
 			onClick={watch}
 			disabled={loading}
 		>
-			▶ Watch replay
+			Watch replay
 		</button>
 	);
 };
