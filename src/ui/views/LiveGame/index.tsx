@@ -424,10 +424,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 					? lastFga.current
 					: undefined;
 			const zone = reuse?.zone ?? action.zone;
-			// Free throws always at the line, even if we lost the attempt spot.
+			// Free throws are ALWAYS taken from the line - never reuse the spot of
+			// the shot they were fouled on. Field goals reuse the attempt spot so
+			// the shooter doesn't teleport between attempt and result.
 			const spot =
 				zone === "ft"
-					? (reuse?.spot ?? synthShotSpot(shooterT, "ft"))
+					? synthShotSpot(shooterT, "ft")
 					: (reuse?.spot ?? synthShotSpot(shooterT, zone));
 
 			const actors: CourtActor[] = [
@@ -547,6 +549,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 					},
 				],
 				text,
+				// The ball comes off the rim into the rebounder's hands.
+				ballFrom: { x: rimXFor(rimT), y: 25 },
+				ballTo: spot,
 			});
 		} else if (type === "sub" && Array.isArray(event.pids)) {
 			// Subs check in at the scorer's table: a single cluster at center court
