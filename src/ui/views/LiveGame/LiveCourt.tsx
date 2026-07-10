@@ -37,8 +37,12 @@ export type CourtActor = {
 	// Court coordinates (x along the 94ft length, y across the 50ft width).
 	x: number;
 	y: number;
-	role: "main" | "defender" | "in" | "out";
+	role: "main" | "defender" | "victim" | "in" | "out";
 };
+
+// Default championship trophy shown at center court during a finals game (Larry
+// O'Brien style). Rendered behind the home logo. Overridable per team later.
+export const DEFAULT_TROPHY_URL = "https://i.imgur.com/c8cwwka.png";
 
 export type CourtSceneKind =
 	| "attempt"
@@ -139,10 +143,16 @@ export const synthPlaySpot = (t: 0 | 1): { x: number; y: number } =>
 export const synthReboundSpot = (rimT: 0 | 1): { x: number; y: number } =>
 	toCourt(rimT, rand(3, 9), 25 + rand(-8, 8));
 
-// Where subs stand while checking in: along the near sideline at midcourt, on
-// their team's side.
-export const benchSpot = (t: 0 | 1, i: number): { x: number; y: number } =>
-	toCourt(t, 40 - i * 4, 2.5);
+// Subs check in at the scorer's table: a single row centered at half court
+// along the near sideline, players side by side (ins and outs together).
+export const scorerTableRow = (n: number): { x: number; y: number }[] => {
+	const gap = 4;
+	const startX = COURT_W / 2 - ((n - 1) * gap) / 2;
+	return Array.from({ length: n }, (_, i) => ({
+		x: startX + i * gap,
+		y: 2.5,
+	}));
+};
 
 // Map a play-by-play event type to a shot descriptor, or undefined for
 // non-shot events (which the caller handles separately).
@@ -236,24 +246,58 @@ export type CourtTeam = {
 const FLIGHT_MS = 650;
 const OUTCOME_MS = 450;
 
-// One player standing on the floor: face above a name tag. Positioned in % of
-// the court box so it scales with the SVG; position changes glide.
+// Face-tag animation keyframes, injected once. The base resting transform is
+// translate(-50%,-115%) (face sits ABOVE its court point, like standing on it),
+// baked into every frame so the animation doesn't fight the positioning.
+const REST = "translate(-50%, -115%)";
+const FACE_ANIM_CSS = `
+@keyframes liveCourtShake {
+	0%,100% { transform: ${REST} rotate(0deg); }
+	15% { transform: ${REST} translateX(3px) rotate(7deg); }
+	30% { transform: ${REST} translateX(-3px) rotate(-7deg); }
+	45% { transform: ${REST} translateX(2px) rotate(5deg); }
+	60% { transform: ${REST} translateX(-2px) rotate(-4deg); }
+	75% { transform: ${REST} translateX(1px) rotate(2deg); }
+}
+@keyframes liveCourtSwipe {
+	0% { transform: ${REST} rotate(0deg); }
+	45% { transform: ${REST} translateX(-6px) rotate(-16deg); }
+	70% { transform: ${REST} translateX(2px) rotate(6deg); }
+	100% { transform: ${REST} rotate(0deg); }
+}`;
+
+// Keep a face's on-court display point inside the playing surface, so its name
+// tag never hangs off the edge (the true shot spot is still used for the dot).
+const clampX = (x: number) => Math.min(COURT_W - 8, Math.max(8, x));
+const clampY = (y: number) => Math.min(COURT_H - 6, Math.max(6, y));
+
+// One player standing on the floor: face above a small name tag. Positioned in
+// % of the court box so it scales with the SVG; position changes glide.
 const FaceOnCourt = ({
 	actor,
 	season,
 	lid,
 	color,
+	anim,
 	dim,
 }: {
 	actor: CourtActor;
 	season: number | undefined;
 	lid: number | undefined;
 	color: string;
+	anim?: "shake" | "swipe";
 	dim?: boolean;
 }) => {
 	const faceData = usePlayerFace(actor.pid, season, lid);
-	const left = ((actor.x + RAIL_W) / (COURT_W + 2 * RAIL_W)) * 100;
-	const top = ((actor.y + APRON) / (COURT_H + 2 * APRON)) * 100;
+	const left = ((clampX(actor.x) + RAIL_W) / (COURT_W + 2 * RAIL_W)) * 100;
+	const top = ((clampY(actor.y) + APRON) / (COURT_H + 2 * APRON)) * 100;
+
+	const animation =
+		anim === "shake"
+			? "liveCourtShake 0.5s ease"
+			: anim === "swipe"
+				? "liveCourtSwipe 0.5s ease"
+				: undefined;
 
 	return (
 		<div
@@ -261,14 +305,22 @@ const FaceOnCourt = ({
 			style={{
 				left: `${left}%`,
 				top: `${top}%`,
-				transform: "translate(-50%, -60%)",
-				transition: "left 0.4s ease, top 0.4s ease",
-				opacity: dim ? 0.75 : 1,
+				transform: REST,
+				transition: animation ? undefined : "left 0.4s ease, top 0.4s ease",
+				animation,
+				opacity: dim ? 0.8 : 1,
 				pointerEvents: "none",
-				zIndex: actor.role === "main" ? 3 : 2,
+				zIndex: actor.role === "main" ? 4 : 3,
 			}}
 		>
-			<div style={{ height: "2.6em", width: "1.8em", margin: "0 auto" }}>
+			<div
+				style={{
+					height: "2.2em",
+					width: "1.5em",
+					margin: "0 auto",
+					filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.4))",
+				}}
+			>
 				{faceData && (faceData.face || faceData.imgURL) ? (
 					<PlayerPicture
 						face={faceData.face}
@@ -279,14 +331,19 @@ const FaceOnCourt = ({
 				) : null}
 			</div>
 			<div
-				className="badge rounded-pill"
 				style={{
-					background: "var(--bs-body-bg)",
-					color: "var(--bs-body-color)",
-					border: `1.5px solid ${color}`,
-					fontSize: "0.65em",
-					padding: "0.1em 0.45em",
+					display: "inline-block",
+					marginTop: 1,
+					background: color,
+					color: "#fff",
+					borderRadius: 3,
+					fontSize: "0.6em",
+					fontWeight: 600,
+					lineHeight: 1.3,
+					padding: "0 4px",
 					whiteSpace: "nowrap",
+					textShadow: "0 1px 1px rgba(0,0,0,0.5)",
+					boxShadow: "0 1px 2px rgba(0,0,0,0.35)",
 				}}
 			>
 				{actor.role === "in" ? "▲ " : actor.role === "out" ? "▼ " : ""}
@@ -397,9 +454,12 @@ const LiveCourt = ({
 		const made = scene.kind === "make";
 		const blocked = scene.kind === "block";
 		const bounce = { x: to.x + rand(-4, 4), y: to.y + rand(-6, 6) };
+		// A block sends the ball sharply BACKWARD - away from the rim, past the
+		// shooter - not just to the side.
+		const backward = from.x < to.x ? -1 : 1;
 		const swat = {
-			x: from.x + (from.x < to.x ? -1 : 1) * rand(4, 10),
-			y: Math.min(46, Math.max(4, from.y + rand(-8, 8))),
+			x: Math.min(90, Math.max(4, from.x + backward * rand(10, 18))),
+			y: Math.min(46, Math.max(4, from.y + rand(-6, 6))),
 		};
 
 		if (ring) {
@@ -516,12 +576,16 @@ const LiveCourt = ({
 		);
 	};
 
-	// Vertical team name in a baseline rail.
-	const railText = (team: CourtTeam | undefined, left: boolean) => {
-		const label = (team?.name || team?.region || team?.abbrev || "")
-			.toUpperCase()
-			.slice(0, 14);
-		if (!label) {
+	// The court belongs to the HOME team - both baselines and rails carry the
+	// home branding, just like a real arena (unlike a football field split by
+	// team). The away color is used only to tint the away team's shot dots.
+	const homeRail = homeColor;
+	const homeText = teamColor(home, 1, "#ffffff");
+	const railLabel = (home?.name || home?.region || home?.abbrev || "")
+		.toUpperCase()
+		.slice(0, 14);
+	const railText = (left: boolean) => {
+		if (!railLabel) {
 			return null;
 		}
 		const x = left ? -RAIL_W / 2 : COURT_W + RAIL_W / 2;
@@ -535,20 +599,35 @@ const LiveCourt = ({
 				fontSize={3.2}
 				fontWeight={700}
 				letterSpacing={0.5}
-				fill={teamColor(team, 1, "#ffffff")}
+				fill={homeText}
 			>
-				{label}
+				{railLabel}
 			</text>
 		);
 	};
 
-	const mainActor = scene?.actors.find((a) => a.role === "main");
-	// The play text bubble sits toward the open side of the court from the
-	// main actor, so it never hangs off the edge.
-	const bubbleLeftSide = (mainActor?.x ?? 0) > COURT_W / 2;
+	const actorAnim = (actor: CourtActor): "shake" | "swipe" | undefined => {
+		if (!scene) {
+			return undefined;
+		}
+		if (scene.kind === "foul") {
+			return actor.role === "main"
+				? "swipe"
+				: actor.role === "victim"
+					? "shake"
+					: undefined;
+		}
+		if (scene.kind === "stl" && actor.role === "victim") {
+			return "shake";
+		}
+		return undefined;
+	};
+
+	const opposingColor = scene?.t === 0 ? homeColor : awayColor;
 
 	return (
 		<div className="mb-3 position-relative" style={{ userSelect: "none" }}>
+			<style>{FACE_ANIM_CSS}</style>
 			<svg viewBox={VIEW} style={{ width: "100%", display: "block" }}>
 				{/* Aprons + floor */}
 				<rect
@@ -573,48 +652,48 @@ const LiveCourt = ({
 					))}
 				</g>
 
-				{/* Team rails behind each baseline */}
+				{/* Home team rails behind BOTH baselines */}
 				<rect
 					x={-RAIL_W}
 					y={-APRON}
 					width={RAIL_W}
 					height={COURT_H + 2 * APRON}
-					fill={awayColor}
+					fill={homeRail}
 				/>
 				<rect
 					x={COURT_W}
 					y={-APRON}
 					width={RAIL_W}
 					height={COURT_H + 2 * APRON}
-					fill={homeColor}
+					fill={homeRail}
 				/>
-				{railText(away, true)}
-				{railText(home, false)}
+				{railText(true)}
+				{railText(false)}
 
-				{/* Center-court branding: trophy silhouette during the finals, then
-				    the home logo on top */}
+				{/* Center-court branding: championship trophy behind the home logo
+				    during a finals game */}
 				{finals ? (
-					<g transform={`translate(${COURT_W / 2} 25)`} opacity={0.3}>
-						<circle cx={0} cy={-6.5} r={3.2} fill="#d4af37" />
-						<path
-							d="M -2.6 -4 L 2.6 -4 L 1.1 4.5 L -1.1 4.5 Z"
-							fill="#d4af37"
-						/>
-						<rect x={-3.4} y={4.5} width={6.8} height={1.3} fill="#d4af37" />
-						<rect x={-4.4} y={5.8} width={8.8} height={1.2} fill="#b8962e" />
-					</g>
+					<image
+						href={DEFAULT_TROPHY_URL}
+						x={COURT_W / 2 - 9}
+						y={25 - 11}
+						width={18}
+						height={22}
+						opacity={0.9}
+						preserveAspectRatio="xMidYMid meet"
+					/>
 				) : null}
 				{home?.imgURL ? (
 					<image
 						href={home.imgURL}
 						x={COURT_W / 2 - 6}
-						y={25 - 6}
+						y={finals ? 25 - 3 : 25 - 6}
 						width={12}
 						height={12}
-						opacity={finals ? 0.75 : 0.55}
+						opacity={finals ? 0.95 : 0.5}
 						preserveAspectRatio="xMidYMid meet"
 					/>
-				) : (
+				) : !finals ? (
 					<text
 						x={COURT_W / 2}
 						y={26.5}
@@ -622,11 +701,11 @@ const LiveCourt = ({
 						fontSize={5}
 						fontWeight={700}
 						fill={homeColor}
-						opacity={0.45}
+						opacity={0.4}
 					>
 						{home?.abbrev ?? ""}
 					</text>
-				)}
+				) : null}
 
 				{/* Court lines */}
 				<g fill="none" stroke={lineColor} strokeWidth={0.25} opacity={0.9}>
@@ -688,37 +767,35 @@ const LiveCourt = ({
 							season={season}
 							lid={lid}
 							color={
-								actor.role === "defender"
-									? scene.t === 0
-										? homeColor
-										: awayColor
+								actor.role === "defender" || actor.role === "victim"
+									? opposingColor
 									: sceneColor
 							}
-							dim={actor.role === "defender"}
+							anim={actorAnim(actor)}
 						/>
 					))
 				: null}
 
-			{/* The play line, anchored near the action */}
-			{scene && mainActor ? (
+			{/* The play line as a broadcast lower-third, so it's always readable and
+			    never buried under the faces */}
+			{scene ? (
 				<div
-					className="position-absolute small rounded px-2 py-1"
+					className="position-absolute"
 					style={{
-						top: `${((mainActor.y + APRON) / (COURT_H + 2 * APRON)) * 100}%`,
-						...(bubbleLeftSide
-							? {
-									right: `${100 - ((mainActor.x + RAIL_W - 3) / (COURT_W + 2 * RAIL_W)) * 100}%`,
-								}
-							: {
-									left: `${((mainActor.x + RAIL_W + 3) / (COURT_W + 2 * RAIL_W)) * 100}%`,
-								}),
-						transform: "translateY(-50%)",
-						background: "var(--bs-body-bg)",
-						border: `1px solid ${sceneColor}`,
-						maxWidth: "38%",
-						opacity: 0.95,
+						left: "50%",
+						bottom: "3%",
+						transform: "translateX(-50%)",
+						maxWidth: "80%",
+						background: "rgba(0,0,0,0.78)",
+						color: "#fff",
+						borderLeft: `3px solid ${sceneColor}`,
+						borderRadius: 3,
+						padding: "2px 10px",
+						fontSize: "0.85em",
+						fontWeight: 500,
+						textAlign: "center",
 						pointerEvents: "none",
-						zIndex: 4,
+						zIndex: 5,
 					}}
 				>
 					{scene.text}
