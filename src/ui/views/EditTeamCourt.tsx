@@ -197,7 +197,9 @@ const EditTeamCourt = ({
 							}
 						>
 							<option value="hardwood">Hardwood planks</option>
-							<option value="parquet">Parquet</option>
+							<option value="parquet">Parquet (basketweave)</option>
+							<option value="diagonal">Diagonal planks</option>
+							<option value="chevron">Chevron</option>
 							<option value="solid">Solid</option>
 						</select>
 					</div>
@@ -279,6 +281,36 @@ const EditTeamCourt = ({
 							value={style.trophyURL ?? ""}
 							placeholder={DEFAULT_TROPHY_URL}
 							onChange={(e) => set("trophyURL", e.target.value)}
+						/>
+					</div>
+
+					<div className="mb-3">
+						<label className="form-label mb-1">
+							Secondary logo URL{" "}
+							<span className="text-body-secondary">(shown in each half)</span>
+						</label>
+						<input
+							type="text"
+							className="form-control"
+							value={style.secondaryLogoURL ?? ""}
+							placeholder="https://…"
+							onChange={(e) => set("secondaryLogoURL", e.target.value)}
+						/>
+					</div>
+
+					<div className="mb-3">
+						<label className="form-label mb-1">
+							Sideline image URL{" "}
+							<span className="text-body-secondary">
+								(runs along each sideline)
+							</span>
+						</label>
+						<input
+							type="text"
+							className="form-control"
+							value={style.sidelineImageURL ?? ""}
+							placeholder="https://… (wide banner)"
+							onChange={(e) => set("sidelineImageURL", e.target.value)}
 						/>
 					</div>
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
@@ -619,6 +619,171 @@ const LiveCourt = ({
 	const paintColor = court?.paint || undefined; // undefined = no painted key
 	const trophyURL = court?.trophyURL || DEFAULT_TROPHY_URL;
 	const centerLogoURL = court?.logoURL || home?.imgURL;
+	const secondaryLogoURL = court?.secondaryLogoURL || undefined;
+	const sidelineImageURL = court?.sidelineImageURL || undefined;
+
+	// Namespaced ids for the floor's SVG defs (grain filter + clip paths), so
+	// two courts on one page (e.g. the editor preview) don't collide.
+	const floorUid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+	const grainId = `${floorUid}-grain`;
+	const clipId = `${floorUid}-clip`;
+
+	// An oversized field of long maple planks running along the court length,
+	// with procedural grain. Drawn directly for "hardwood" and, rotated + clipped
+	// to the court, for "diagonal" / "chevron".
+	const plankField = (tag: string): ReactNode => {
+		const PH = 2.3; // plank height (across the court)
+		const x0 = -60;
+		const x1 = COURT_W + 60;
+		const w = x1 - x0;
+		const y0 = -60;
+		const y1 = COURT_H + 60;
+		const bands: ReactNode[] = [];
+		let idx = 0;
+		for (let y = y0; y < y1; y += PH, idx++) {
+			bands.push(
+				<rect
+					key={`${tag}p${idx}`}
+					x={x0}
+					y={y}
+					width={w}
+					height={PH}
+					fill={shade(woodFill, idx % 2 === 0 ? 0.045 : -0.045)}
+				/>,
+			);
+			bands.push(
+				<line
+					key={`${tag}s${idx}`}
+					x1={x0}
+					y1={y}
+					x2={x1}
+					y2={y}
+					stroke={woodLine}
+					strokeWidth={0.09}
+					opacity={0.55}
+				/>,
+			);
+		}
+		return (
+			<>
+				<rect x={x0} y={y0} width={w} height={y1 - y0} fill={woodFill} />
+				{bands}
+				<rect
+					x={x0}
+					y={y0}
+					width={w}
+					height={y1 - y0}
+					fill="#000"
+					filter={`url(#${grainId})`}
+					opacity={0.11}
+				/>
+			</>
+		);
+	};
+
+	// A basketweave parquet: a checkerboard of blocks whose wood grain alternates
+	// direction block to block, like the classic Boston Garden floor.
+	const parquetField = (): ReactNode => {
+		const B = 5.6; // block size
+		const strips = 5;
+		const sw = B / strips;
+		const nx = Math.ceil(COURT_W / B) + 1;
+		const ny = Math.ceil(COURT_H / B) + 1;
+		const out: ReactNode[] = [];
+		let bi = 0;
+		for (let ix = 0; ix < nx; ix++) {
+			for (let iy = 0; iy < ny; iy++) {
+				const x = ix * B;
+				const y = iy * B;
+				const horiz = (ix + iy) % 2 === 0;
+				out.push(
+					<rect
+						key={`pb${bi}`}
+						x={x}
+						y={y}
+						width={B}
+						height={B}
+						fill={shade(woodFill, horiz ? 0.05 : -0.05)}
+					/>,
+				);
+				for (let s = 1; s < strips; s++) {
+					out.push(
+						horiz ? (
+							<line
+								key={`pl${bi}-${s}`}
+								x1={x}
+								y1={y + s * sw}
+								x2={x + B}
+								y2={y + s * sw}
+								stroke={woodLine}
+								strokeWidth={0.06}
+								opacity={0.5}
+							/>
+						) : (
+							<line
+								key={`pl${bi}-${s}`}
+								x1={x + s * sw}
+								y1={y}
+								x2={x + s * sw}
+								y2={y + B}
+								stroke={woodLine}
+								strokeWidth={0.06}
+								opacity={0.5}
+							/>
+						),
+					);
+				}
+				out.push(
+					<rect
+						key={`pbd${bi}`}
+						x={x}
+						y={y}
+						width={B}
+						height={B}
+						fill="none"
+						stroke={woodLine}
+						strokeWidth={0.1}
+						opacity={0.6}
+					/>,
+				);
+				bi++;
+			}
+		}
+		return <>{out}</>;
+	};
+
+	// The floor detail (grain/planks) for the chosen pattern, always clipped to
+	// the court rectangle so it never paints over the rails/aprons.
+	const cx = COURT_W / 2;
+	const floorDetail = (): ReactNode => {
+		if (floorPattern === "solid") {
+			return null;
+		}
+		if (floorPattern === "parquet") {
+			return <g clipPath={`url(#${clipId})`}>{parquetField()}</g>;
+		}
+		if (floorPattern === "diagonal") {
+			return (
+				<g clipPath={`url(#${clipId})`}>
+					<g transform={`rotate(38 ${cx} 25)`}>{plankField("dg")}</g>
+				</g>
+			);
+		}
+		if (floorPattern === "chevron") {
+			// Two mirrored diagonal fields meeting at the center line -> a V weave.
+			return (
+				<>
+					<g clipPath={`url(#${clipId}-l)`}>
+						<g transform={`rotate(34 ${cx} 25)`}>{plankField("cl")}</g>
+					</g>
+					<g clipPath={`url(#${clipId}-r)`}>
+						<g transform={`rotate(-34 ${cx} 25)`}>{plankField("cr")}</g>
+					</g>
+				</>
+			);
+		}
+		return <g clipPath={`url(#${clipId})`}>{plankField("hw")}</g>;
+	};
 
 	// The painted key (NBA-style colored lane), drawn under the lines.
 	const paintFor = (mirror: boolean) => {
@@ -769,6 +934,33 @@ const LiveCourt = ({
 		>
 			<style>{FACE_ANIM_CSS}</style>
 			<svg viewBox={VIEW} style={{ width: "100%", display: "block" }}>
+				<defs>
+					{/* Wood grain: fine dark streaks running along the plank length. */}
+					<filter id={grainId} x="-5%" y="-5%" width="110%" height="110%">
+						<feTurbulence
+							type="fractalNoise"
+							baseFrequency="0.02 0.75"
+							numOctaves={4}
+							seed={11}
+							stitchTiles="stitch"
+							result="n"
+						/>
+						<feColorMatrix
+							in="n"
+							type="matrix"
+							values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.7 0 0 0 -0.28"
+						/>
+					</filter>
+					<clipPath id={clipId}>
+						<rect x={0} y={0} width={COURT_W} height={COURT_H} />
+					</clipPath>
+					<clipPath id={`${clipId}-l`}>
+						<rect x={0} y={0} width={cx} height={COURT_H} />
+					</clipPath>
+					<clipPath id={`${clipId}-r`}>
+						<rect x={cx} y={0} width={COURT_W - cx} height={COURT_H} />
+					</clipPath>
+				</defs>
 				{/* Colored apron frame (home team) around the whole floor - baselines
 				    AND sidelines */}
 				<rect
@@ -780,31 +972,30 @@ const LiveCourt = ({
 					fill={homeRail}
 				/>
 				<rect x={0} y={0} width={COURT_W} height={COURT_H} fill={woodFill} />
-				{/* Floor pattern: vertical planks (hardwood), a woven grid (parquet),
-				    or nothing (solid) */}
-				{floorPattern !== "solid" ? (
-					<g stroke={woodLine} strokeWidth={0.1} opacity={0.5}>
-						{Array.from({ length: 23 }, (_, i) => (
-							<line
-								key={`v${i}`}
-								x1={(i + 1) * 4}
-								y1={0}
-								x2={(i + 1) * 4}
-								y2={COURT_H}
-							/>
-						))}
-						{floorPattern === "parquet"
-							? Array.from({ length: 12 }, (_, i) => (
-									<line
-										key={`h${i}`}
-										x1={0}
-										y1={(i + 1) * 4}
-										x2={COURT_W}
-										y2={(i + 1) * 4}
-									/>
-								))
-							: null}
-					</g>
+				{/* Floor grain/planks for the chosen wood pattern */}
+				{floorDetail()}
+				{/* Sponsor images stretched lengthwise along each sideline apron */}
+				{sidelineImageURL ? (
+					<>
+						<image
+							href={sidelineImageURL}
+							x={0}
+							y={-APRON}
+							width={COURT_W}
+							height={APRON}
+							preserveAspectRatio="none"
+							opacity={0.97}
+						/>
+						<image
+							href={sidelineImageURL}
+							x={0}
+							y={COURT_H}
+							width={COURT_W}
+							height={APRON}
+							preserveAspectRatio="none"
+							opacity={0.97}
+						/>
+					</>
 				) : null}
 
 				{/* Painted key (drawn under the lines) */}
@@ -859,6 +1050,30 @@ const LiveCourt = ({
 					>
 						{home?.abbrev ?? ""}
 					</text>
+				) : null}
+
+				{/* Secondary logo, shown in each half-court (backcourt branding) */}
+				{secondaryLogoURL ? (
+					<>
+						<image
+							href={secondaryLogoURL}
+							x={COURT_W * 0.27 - 6.5}
+							y={25 - 6.5}
+							width={13}
+							height={13}
+							opacity={0.82}
+							preserveAspectRatio="xMidYMid meet"
+						/>
+						<image
+							href={secondaryLogoURL}
+							x={COURT_W * 0.73 - 6.5}
+							y={25 - 6.5}
+							width={13}
+							height={13}
+							opacity={0.82}
+							preserveAspectRatio="xMidYMid meet"
+						/>
+					</>
 				) : null}
 
 				{/* Accumulated shot chart; hover a dot for the details */}

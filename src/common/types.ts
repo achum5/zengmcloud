@@ -1780,13 +1780,15 @@ export type Team = {
 // team record (so it syncs to the whole room) and edited from Manage Teams.
 export type CourtStyle = {
 	floor?: string; // hardwood tone (hex)
-	floorPattern?: "hardwood" | "parquet" | "solid";
+	floorPattern?: "hardwood" | "parquet" | "diagonal" | "chevron" | "solid";
 	lines?: string; // court line color (hex)
 	paint?: string; // painted key fill (hex); "" / undefined = no paint fill
 	apron?: string; // sideline/baseline rail color (hex); default team color 0
 	apronText?: string; // rail team-name text color (hex); default team color 1
 	logoURL?: string; // center-court logo; default the team's imgURL
 	trophyURL?: string; // finals center-court trophy; default the league default
+	secondaryLogoURL?: string; // secondary logo shown in each half-court
+	sidelineImageURL?: string; // image stretched lengthwise along each sideline
 };
 
 export type TeamAttr = keyof Team;
