@@ -54,6 +54,7 @@ export type CourtSceneKind =
 	| "reb"
 	| "foul"
 	| "sub"
+	| "jump"
 	| "other";
 
 export type CourtScene = {
@@ -62,6 +63,9 @@ export type CourtScene = {
 	t: 0 | 1; // display team of the main actor (0 = away/left, 1 = home/right)
 	actors: CourtActor[];
 	text: ReactNode; // the play-by-play line, shown on the floor
+	// A scored basket's running score line (both logos flanking the score),
+	// shown centered under the play text.
+	score?: ReactNode;
 	// Ball flight. For shots: from the attempt spot (ballFrom) to the rim
 	// (rimX). For rebounds: from the rim (ballFrom) to the rebounder (ballTo).
 	ballFrom?: { x: number; y: number };
@@ -128,11 +132,17 @@ export const synthShotSpot = (
 		r = rand(11, 20);
 		theta = rand(18, 162);
 	} else {
-		if (Math.random() < 0.22) {
-			// Corner three, along the sideline (kept off the very edge so the
-			// shooter's face + name tag stay readable in bounds).
+		if (Math.random() < 0.3) {
+			// Corner three: BEHIND the corner line, which sits at y=3 near the top
+			// sideline and y=47 near the bottom. Placed in the y<3 / y>47 strip a
+			// short way up from the baseline, so the shooter is genuinely outside
+			// the arc instead of standing in front of it.
 			const nearSide = Math.random() < 0.5;
-			return toCourt(t, rand(4, 11), nearSide ? rand(4, 6) : rand(44, 46));
+			return toCourt(
+				t,
+				rand(3, 12),
+				nearSide ? rand(1.4, 2.7) : rand(47.3, 48.6),
+			);
 		}
 		r = rand(THREE_R + 1, THREE_R + 3.5);
 		theta = rand(32, 148);
@@ -148,6 +158,10 @@ export const synthShotSpot = (
 		Math.min(46, Math.max(4, across)),
 	);
 };
+
+// A last-second heave: way out from the rim, around or beyond half court.
+export const synthHeaveSpot = (t: 0 | 1): { x: number; y: number } =>
+	toCourt(t, rand(46, 58), 25 + rand(-14, 14));
 
 // A generic spot for non-shot plays (turnovers, fouls...) in team t's
 // frontcourt, away from the paint so faces don't sit on the rim.
@@ -434,8 +448,13 @@ const LiveCourt = ({
 		const isShot =
 			scene.kind === "make" || scene.kind === "miss" || scene.kind === "block";
 
-		// Rebound: the ball comes off the rim to the rebounder.
-		if (scene.kind === "reb" && scene.ballFrom && scene.ballTo) {
+		// Rebound / opening tip: the ball travels from one spot to another (off
+		// the rim to the rebounder, or tapped from center back behind the winner).
+		if (
+			(scene.kind === "reb" || scene.kind === "jump") &&
+			scene.ballFrom &&
+			scene.ballTo
+		) {
 			if (ring) {
 				ring.style.opacity = "0";
 			}
@@ -821,10 +840,10 @@ const LiveCourt = ({
 				{centerLogoURL ? (
 					<image
 						href={centerLogoURL}
-						x={COURT_W / 2 - (finals ? 7.5 : 15)}
-						y={finals ? 25 + 1 : 25 - 15}
-						width={finals ? 15 : 30}
-						height={finals ? 15 : 30}
+						x={COURT_W / 2 - (finals ? 13 : 15)}
+						y={25 - (finals ? 13 : 15)}
+						width={finals ? 26 : 30}
+						height={finals ? 26 : 30}
 						opacity={0.97}
 						preserveAspectRatio="xMidYMid meet"
 					/>
@@ -928,6 +947,11 @@ const LiveCourt = ({
 					}}
 				>
 					{scene.text}
+					{scene.score ? (
+						<div style={{ marginTop: 2, textAlign: "center" }}>
+							{scene.score}
+						</div>
+					) : null}
 				</div>
 			) : null}
 		</div>

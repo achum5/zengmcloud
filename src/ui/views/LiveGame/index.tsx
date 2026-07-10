@@ -39,6 +39,7 @@ import LiveCourt, {
 	courtActionFromEventType,
 	rimXFor,
 	scorerTableRow,
+	synthHeaveSpot,
 	synthPlaySpot,
 	synthReboundSpot,
 	synthShotSpot,
@@ -373,7 +374,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// who's involved, where they stand, what the ball does, and the play text
 	// right there on the floor. Locations are synthesized (the sim has no real
 	// coordinates), but every actor/outcome is the genuine play.
-	const handleCourtEvent = (event: any, text: ReactNode) => {
+	const handleCourtEvent = (event: any, text: ReactNode, scoreDiff = 0) => {
 		if (
 			!event ||
 			typeof event.type !== "string" ||
@@ -385,14 +386,54 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// Box score display order swaps the raw team index.
 		const displayT: 0 | 1 = rawT === 0 ? 1 : 0;
 
+		// A three put up with the clock nearly expired is a last-second heave -
+		// shown from way out (around half court) rather than a normal shot spot.
+		const isHeaveNow = () => getSeconds(boxScore.current.time) <= 1.5;
+
+		// A scored basket shows the running score under the play text, flanked by
+		// both team logos: [away] 102 - 99 [home].
+		let scoreNode: ReactNode | undefined;
+		if (scoreDiff > 0 && Array.isArray(boxScore.current.teams)) {
+			const a = boxScore.current.teams[0];
+			const h = boxScore.current.teams[1];
+			scoreNode = (
+				<div
+					style={{
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						gap: 5,
+					}}
+				>
+					<TeamLogoInline
+						imgURL={a?.imgURL}
+						imgURLSmall={a?.imgURLSmall}
+						includePlaceholderIfNoLogo
+						size={16}
+					/>
+					<span style={{ fontWeight: 700 }}>
+						{a?.pts ?? 0} - {h?.pts ?? 0}
+					</span>
+					<TeamLogoInline
+						imgURL={h?.imgURL}
+						imgURLSmall={h?.imgURLSmall}
+						includePlaceholderIfNoLogo
+						size={16}
+					/>
+				</div>
+			);
+		}
+
 		const action = courtActionFromEventType(event.type);
 		if (action) {
 			if (action.kind === "attempt") {
 				if (typeof event.pid !== "number") {
 					return;
 				}
-				// Free throws are shot from the line, not wherever the foul happened.
-				const spot = synthShotSpot(displayT, action.zone);
+				const spot =
+					action.zone === "three" && isHeaveNow()
+						? synthHeaveSpot(displayT)
+						: synthShotSpot(displayT, action.zone);
 				lastFga.current = {
 					pid: event.pid,
 					zone: action.zone,
@@ -431,14 +472,19 @@ export const LiveGame = (props: View<"liveGame">) => {
 				lastFga.current && lastFga.current.pid === shooterPid
 					? lastFga.current
 					: undefined;
-			const zone = reuse?.zone ?? action.zone;
-			// Free throws are ALWAYS taken from the line - never reuse the spot of
-			// the shot they were fouled on. Field goals reuse the attempt spot so
-			// the shooter doesn't teleport between attempt and result.
-			const spot =
-				zone === "ft"
-					? synthShotSpot(shooterT, "ft")
-					: (reuse?.spot ?? synthShotSpot(shooterT, zone));
+			// Free throws are ALWAYS taken from the line - keyed off THIS event's
+			// zone, never the reused field-goal zone (otherwise a made basket +
+			// and-one FT reused the drive's spot and the FT drifted off the line).
+			const isFt = action.zone === "ft";
+			const zone: CourtZone = isFt ? "ft" : (reuse?.zone ?? action.zone);
+			// Field goals reuse the attempt spot so the shooter doesn't teleport
+			// between attempt and result; free throws snap to the line.
+			const spot = isFt
+				? synthShotSpot(shooterT, "ft")
+				: (reuse?.spot ??
+					(zone === "three" && isHeaveNow()
+						? synthHeaveSpot(shooterT)
+						: synthShotSpot(shooterT, zone)));
 
 			const actors: CourtActor[] = [
 				{
@@ -466,6 +512,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				t: shooterT,
 				actors,
 				text,
+				score: scoreNode,
 				ballFrom: spot,
 				rimX: rimXFor(shooterT),
 			});
@@ -610,6 +657,39 @@ export const LiveGame = (props: View<"liveGame">) => {
 				role: "main",
 			});
 			pushScene({ kind: "foul", t: displayT, actors, text });
+		} else if (type === "jumpBall" && typeof event.pid === "number") {
+			// Opening tip: both jumpers rise at center court. event.pid is the
+			// winner (on displayT); event.pid2 the loser. The winner taps the ball
+			// back behind them - away from the rim they attack.
+			const winnerT = displayT;
+			const cx = (rimXFor(0) + rimXFor(1)) / 2;
+			const attackDir = rimXFor(winnerT) > cx ? 1 : -1;
+			const actors: CourtActor[] = [
+				{
+					pid: event.pid,
+					name: playerNameByPid(event.pid),
+					x: cx + attackDir * 2.5,
+					y: 25,
+					role: "main",
+				},
+			];
+			if (typeof event.pid2 === "number") {
+				actors.push({
+					pid: event.pid2,
+					name: playerNameByPid(event.pid2),
+					x: cx - attackDir * 2.5,
+					y: 25,
+					role: "defender",
+				});
+			}
+			pushScene({
+				kind: "jump",
+				t: winnerT,
+				actors,
+				text,
+				ballFrom: { x: cx, y: 24 },
+				ballTo: { x: cx - attackDir * 16, y: 25 },
+			});
 		} else if (type === "injury" && typeof event.pid === "number") {
 			const spot = synthPlaySpot(displayT);
 			pushScene({
@@ -707,7 +787,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			const scoreDiff = currentPts - prevPts;
 
 			if (isSport("basketball")) {
-				handleCourtEvent((output as any).event, text);
+				handleCourtEvent((output as any).event, text, scoreDiff);
 			}
 
 			overtimes.current = output.overtimes;
