@@ -747,6 +747,65 @@ describe("SyncEngine", () => {
 		assert.strictEqual(receiver.getPersistedSeq(), bus.entries.at(-1)!.seq);
 	});
 
+	test("a dead batch is abandoned once its author has published past it", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		// An orphaned batch: chunk 1 of 3 was never enqueued by the author (a
+		// partial-enqueue failure), and the author then MOVED ON - it re-published
+		// the data as a fresh complete batch and kept simming. FIFO means the
+		// missing chunk can never arrive.
+		const host = new FakeTransport("H", bus);
+		const chunk = (i: number) => ({
+			id: `dead${i}`,
+			authorId: "H",
+			action: "playMenu.sim",
+			batchId: "DEAD",
+			chunkIndex: i,
+			chunkCount: 3,
+			changeset: {
+				changes: [
+					{
+						store: "events" as const,
+						id: 100 + i,
+						type: "put" as const,
+						value: { eid: 100 + i },
+					},
+				],
+			},
+		});
+		await host.publish(chunk(0));
+		await host.publish(chunk(2));
+		// The author's later, healthy entry - proof it moved past the dead batch.
+		await host.publish({
+			id: "after",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+			},
+		});
+
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {});
+
+		// Enough head-reaching passes to burn through the reset limit and reach
+		// the abandonment decision. Before that point the watermark stays pinned.
+		for (let i = 0; i < 20; i++) {
+			assert.strictEqual(await receiver.catchUp(), true);
+			if (receiver.isCaughtUp()) {
+				break;
+			}
+		}
+
+		// The dead batch was abandoned: watermark advanced to the head, the
+		// healthy entry applied, and sync is no longer wedged.
+		assert.strictEqual(receiver.isCaughtUp(), true);
+		assert.strictEqual(receiver.getPersistedSeq(), bus.entries.at(-1)!.seq);
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, 1);
+	});
+
 	test("resyncAll re-reads the whole log and applies every entry from scratch", async () => {
 		const bus = new FakeBus();
 

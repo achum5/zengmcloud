@@ -185,8 +185,20 @@ export class SyncEngine {
 			chunks: Map<number, SyncChange[] | string>;
 			entryIds: string[];
 			action: string;
+			authorId: string;
+			// Highest seq among the chunks received so far - compared against the
+			// author's overall progress to prove a batch can never complete.
+			maxChunkSeq: number;
 		}
 	>();
+
+	// Highest entry seq seen per author, across ALL their entries. An author's
+	// outbox publishes in strict FIFO order, so once we've seen an entry from
+	// them BEYOND a stuck batch's chunks, the batch's missing chunks can never
+	// arrive - they would have had to publish first. That's the evidence that
+	// lets sweepStaleBatches abandon a dead batch instead of pinning the
+	// watermark forever.
+	private lastSeqByAuthor = new Map<string, number>();
 
 	// Self-heal for a bulk batch that never completes: batchId → how many chunks
 	// it had when a catch-up pass last reached the head of the log (meaning a
@@ -194,6 +206,14 @@ export class SyncEngine {
 	// been dropped and rebuilt from a clean re-fetch. See sweepStaleBatches.
 	private staleBatchHave = new Map<string, number>();
 	private batchResetCounts = new Map<string, number>();
+
+	// Batches that were just reset and are awaiting their re-fetch. A reset
+	// un-sees the batch's entries but also empties pendingBatches for it - so
+	// without this, an advanceWatermark from ANY source (a live entry landing,
+	// the next page) could bank the watermark PAST the un-seen entries before
+	// the re-fetch runs, silently skipping the batch forever. Treated exactly
+	// like a pending batch by advanceWatermark; cleared when the batch re-forms.
+	private rebuildingBatches = new Set<string>();
 
 	// Dedup key for the watermark-pinned debug log, so the live-subscription
 	// path logs when the blocked state CHANGES rather than on every snapshot.
@@ -608,9 +628,14 @@ export class SyncEngine {
 	// a reconnect never skips past chunks it hasn't fully applied. (Whole-record
 	// applies are idempotent, so re-fetching a bit on reconnect is harmless.)
 	private advanceWatermark() {
-		// Don't skip past a half-received bulk batch, or past a changeset that
-		// failed to apply - either would silently and permanently drop data.
-		if (this.pendingBatches.size > 0 || this.applyFailed) {
+		// Don't skip past a half-received bulk batch (including one that was just
+		// reset and is being re-fetched), or past a changeset that failed to
+		// apply - either would silently and permanently drop data.
+		if (
+			this.pendingBatches.size > 0 ||
+			this.rebuildingBatches.size > 0 ||
+			this.applyFailed
+		) {
 			if (this.maxSeq > this.persistedSeq) {
 				const pinKey = `${this.pendingBatches.size}|${this.failedApplies.size}`;
 				if (pinKey !== this.lastPinLogKey) {
@@ -760,11 +785,14 @@ export class SyncEngine {
 			entries = this.buildPartEntries(serialized, changeset, action);
 		}
 
-		// Durability point. After this loop the delta can no longer be lost, only
-		// delayed. `seen` keeps our own echo from being re-applied.
+		// Durability point. After this the delta can no longer be lost, only
+		// delayed. All entries are queued in ONE transaction (all-or-nothing): a
+		// partial enqueue of a chunked batch would publish an incompletable batch
+		// that pins every follower's watermark forever. `seen` keeps our own echo
+		// from being re-applied.
+		await this.enqueueAll(entries);
 		for (const entry of entries) {
 			this.seen.add(entry.id);
-			await this.enqueue(entry);
 		}
 		void this.reportPending();
 		if (trace) {
@@ -807,13 +835,15 @@ export class SyncEngine {
 		}));
 	}
 
-	// Add one entry to the upload queue: the durable outbox when we have a room
-	// code, or the in-memory fallback (the test transport) otherwise.
-	private async enqueue(entry: Omit<ChangesetEntry, "seq">) {
+	// Add a batch of entries to the upload queue atomically (all-or-nothing, so
+	// a failure partway can never strand a partial chunk batch): the durable
+	// outbox when we have a room code, or the in-memory fallback (the test
+	// transport) otherwise.
+	private async enqueueAll(entries: Omit<ChangesetEntry, "seq">[]) {
 		if (this.code !== undefined) {
-			await outbox.add(this.code, entry);
+			await outbox.addAll(this.code, entries);
 		} else {
-			this.memoryQueue.push(entry);
+			this.memoryQueue.push(...entries);
 		}
 	}
 
@@ -1046,9 +1076,9 @@ export class SyncEngine {
 			entry.changeset,
 			entry.action,
 		);
+		await this.enqueueAll(parts);
 		for (const part of parts) {
 			this.seen.add(part.id);
-			await this.enqueue(part);
 		}
 		await this.removePending(entry.id);
 		void this.reportPending();
@@ -1085,6 +1115,12 @@ export class SyncEngine {
 		if (entry.seq > this.maxSeq) {
 			this.maxSeq = entry.seq;
 		}
+		// Track each author's overall progress (even for skipped entries), as the
+		// evidence sweepStaleBatches uses to abandon a batch that can never
+		// complete.
+		if (entry.seq > (this.lastSeqByAuthor.get(entry.authorId) ?? 0)) {
+			this.lastSeqByAuthor.set(entry.authorId, entry.seq);
+		}
 
 		if (entry.authorId === this.transport.clientId) {
 			return false;
@@ -1114,14 +1150,22 @@ export class SyncEngine {
 				chunks: new Map(),
 				entryIds: [],
 				action: entry.action,
+				authorId: entry.authorId,
+				maxChunkSeq: 0,
 			};
 			this.pendingBatches.set(batchId, batch);
+			// If this batch was just reset, its re-fetch has begun - pendingBatches
+			// pins the watermark from here on.
+			this.rebuildingBatches.delete(batchId);
 			syncDebugLog("engine:batch-start", {
 				batchId,
 				action: entry.action,
 				need: batch.count,
 				seq: entry.seq,
 			});
+		}
+		if (entry.seq > batch.maxChunkSeq) {
+			batch.maxChunkSeq = entry.seq;
 		}
 		batch.chunks.set(
 			entry.chunkIndex!,
@@ -1404,6 +1448,30 @@ export class SyncEngine {
 				resets,
 			};
 			if (resets >= SyncEngine.BATCH_RESET_LIMIT) {
+				// The batch survived every rebuild: its missing chunks are not in the
+				// log. If the AUTHOR has published entries beyond it, they can never
+				// arrive either - a device's outbox is strict FIFO, so anything still
+				// queued there would have to publish before those later entries. That
+				// happens when the author's enqueue failed partway and it re-published
+				// the same changeset as a fresh (complete) batch - the orphan is a
+				// husk with no unique data. Abandon it (entries stay `seen`) so the
+				// watermark can move again, instead of wedging the room forever.
+				const authorProgress = this.lastSeqByAuthor.get(batch.authorId) ?? 0;
+				if (authorProgress > batch.maxChunkSeq) {
+					this.pendingBatches.delete(batchId);
+					this.batchResetCounts.delete(batchId);
+					this.rebuildingBatches.delete(batchId);
+					syncDebugLog("engine:batch-abandoned", {
+						...detail,
+						authorProgress,
+						maxChunkSeq: batch.maxChunkSeq,
+					});
+					console.error(
+						"[sync] Abandoned a bulk change whose remaining chunks can never arrive (its author has since published past it). If anything looks stale, use Force full resync.",
+						detail,
+					);
+					continue;
+				}
 				nowStale.set(batchId, batch.chunks.size);
 				syncDebugLog("engine:batch-permanently-incomplete", detail);
 				console.error(
@@ -1417,9 +1485,14 @@ export class SyncEngine {
 				this.seen.delete(id);
 			}
 			this.pendingBatches.delete(batchId);
+			// Keep the watermark pinned until the re-fetch re-forms this batch.
+			this.rebuildingBatches.add(batchId);
 			syncDebugLog("engine:batch-reset", detail);
 		}
 		this.staleBatchHave = nowStale;
+		// An abandoned batch may have just released the watermark - bank it now
+		// rather than waiting for the next entry to arrive.
+		this.advanceWatermark();
 	}
 
 	// Emit current drain progress (no-op unless a progress total is set - i.e. the

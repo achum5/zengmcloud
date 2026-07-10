@@ -83,6 +83,28 @@ export const outbox = {
 		} satisfies OutboxRow);
 	},
 
+	// Record a whole batch of entries in ONE IndexedDB transaction, so a chunked
+	// bulk change is durable all-or-nothing. Enqueueing chunks one by one left a
+	// window where a failure (or a killed tab) mid-loop stranded a PARTIAL batch
+	// in the outbox: its chunks published, but the batch could never complete on
+	// receivers - and an incomplete batch pins every follower's watermark. Same
+	// durability contract as add(): if this throws, NOTHING was queued and the
+	// caller must retain the changes for retry.
+	async addAll(code: string, entries: Omit<ChangesetEntry, "seq">[]) {
+		const db = await getDB();
+		const tx = db.transaction(STORE, "readwrite");
+		for (const entry of entries) {
+			void tx.store.put({
+				key: entry.id,
+				code,
+				entry,
+				createdAt: Date.now(),
+				order: nextOrder(),
+			} satisfies OutboxRow);
+		}
+		await tx.done;
+	},
+
 	// Mark an entry as confirmed uploaded.
 	async remove(id: string) {
 		await bestEffort(async () => {
