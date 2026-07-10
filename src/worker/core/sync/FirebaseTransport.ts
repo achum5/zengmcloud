@@ -13,6 +13,7 @@ import {
 	onSnapshot,
 	query,
 	orderBy,
+	runTransaction,
 	where,
 	Timestamp,
 	serverTimestamp,
@@ -27,6 +28,7 @@ import type { SyncNotification } from "./notifications.ts";
 import type {
 	Authority,
 	ChangesetEntry,
+	DraftReadyEntry,
 	LiveBroadcastMeta,
 	LiveBroadcastUpdate,
 	SyncMember,
@@ -43,6 +45,14 @@ const AUTHORITY_DOC_ID = "authority";
 // them - no rules change needed.
 const LIVE_BROADCAST_DOC_ID = "liveBroadcast";
 const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
+
+// Draft ready-up docs, also under control/ so the same holderId rule covers
+// them. draftReady holds everyone's ready entries (each device merges only its
+// own, keyed by uid - Firestore merge writes are per-field, so concurrent
+// merges by different devices never clobber each other); draftAdvance is the
+// atomic claim for who sims the next pick.
+const DRAFT_READY_DOC_ID = "draftReady";
+const DRAFT_ADVANCE_DOC_ID = "draftAdvance";
 
 // Keep each payload chunk well under Firestore's 1 MB/doc limit.
 const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
@@ -268,6 +278,90 @@ export class FirebaseTransport implements SyncTransport {
 			{ busyUntil },
 			{ merge: true },
 		);
+	}
+
+	// Merge THIS device's draft ready entry onto the shared ready doc (null
+	// clears it). Firestore merges are per-field, so devices writing their own
+	// uid-keyed entries never clobber each other; holderId is stamped to our own
+	// uid on every write so the control-doc rule passes.
+	async publishDraftReady(entry: DraftReadyEntry | null) {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", DRAFT_READY_DOC_ID),
+			{
+				holderId: this.clientId,
+				ready: { [this.clientId]: entry },
+				updatedAt: serverTimestamp(),
+			},
+			{ merge: true },
+		);
+		this.markContact();
+	}
+
+	// Watch everyone's draft ready entries. Fires with the current map, then on
+	// every change.
+	subscribeDraftReady(
+		onChange: (
+			ready: Record<string, DraftReadyEntry | null> | undefined,
+		) => void,
+	) {
+		return onSnapshot(
+			doc(this.db, "leagues", this.code, "control", DRAFT_READY_DOC_ID),
+			(snapshot) => {
+				this.markContact();
+				const data = snapshot.data();
+				onChange(
+					data && typeof data.ready === "object" && data.ready !== null
+						? (data.ready as Record<string, DraftReadyEntry | null>)
+						: undefined,
+				);
+			},
+			(error) => {
+				console.error("Draft ready subscription failed", error);
+			},
+		);
+	}
+
+	// Atomically claim the right to sim one specific pick. The transaction
+	// guarantees exactly one device per (draftKey, pick) wins within the lease
+	// window; the lease exists only so a claimant that crashes mid-advance
+	// unblocks the room.
+	async claimDraftAdvance(
+		draftKey: string,
+		pick: number,
+		leaseMs: number,
+	): Promise<boolean> {
+		const ref = doc(
+			this.db,
+			"leagues",
+			this.code,
+			"control",
+			DRAFT_ADVANCE_DOC_ID,
+		);
+		try {
+			await runTransaction(this.db, async (tx) => {
+				const snap = await tx.get(ref);
+				const data = snap.data();
+				if (
+					data &&
+					data.draftKey === draftKey &&
+					data.pick === pick &&
+					typeof data.at === "number" &&
+					Date.now() - data.at < leaseMs
+				) {
+					throw new Error("Another device is already advancing this pick.");
+				}
+				tx.set(ref, {
+					holderId: this.clientId,
+					draftKey,
+					pick,
+					at: Date.now(),
+				});
+			});
+			this.markContact();
+			return true;
+		} catch {
+			return false;
+		}
 	}
 
 	// Watch who currently is in charge of simming. Fires immediately with the current

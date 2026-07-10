@@ -103,6 +103,7 @@ import {
 	publishAutoPlayState,
 	refreshSyncUIState,
 	resyncSharedLeague,
+	setDraftReady,
 	teardownSharedLeague,
 	updateLiveBroadcast,
 } from "../core/sync/index.ts";
@@ -5497,6 +5498,13 @@ const getSyncTeams = async () => {
 	};
 };
 
+// Set this device's draft ready state: ready through overall pick `untilPick`,
+// or null to clear. Cloud-only write; the shared ready doc drives pick advance.
+const draftSetReady = async (untilPick: number | null) => {
+	await setDraftReady(untilPick);
+	return { ok: true };
+};
+
 // Register this device for phone push notifications. The FCM token is obtained
 // on the UI thread (Cloud Messaging can't run in a worker) and handed here so we
 // can store it - alongside this device's team and display name - in the room's
@@ -5560,6 +5568,7 @@ export default {
 		disconnectSharedLeague,
 		discardUnsavedProgress,
 		draftLottery,
+		draftSetReady,
 		draftUser,
 		dunkGetProjected,
 		dunkSetControlling,

@@ -81,6 +81,9 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"publishAutoPlayState",
 	"refreshSyncUIState",
 	"resyncSharedLeague",
+	// Draft ready-up: writes only the cloud ready doc, never the league DB. Must
+	// stay available while catching up so a device can ready up mid-draft.
+	"draftSetReady",
 	// Play-menu stop commands just halt local autoplay; they don't publish a
 	// shared league change and must remain available if sync is reconnecting.
 	"stop",

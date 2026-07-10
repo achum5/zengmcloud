@@ -117,6 +117,19 @@ export type Authority = {
 	busyUntil?: number;
 };
 
+// One device's draft ready state, stored under its uid in the shared
+// control/draftReady doc. `untilPick` is the OVERALL pick number (1-based
+// across the draft) this device is ready through; `draftKey` scopes it to one
+// specific draft ("{season}-{phase}") so stale entries from a previous season
+// never count; `tid` is the team this ready covers (readiness is counted per
+// user team, so multi-device users can't deadlock or double-count the room).
+export type DraftReadyEntry = {
+	untilPick: number;
+	draftKey: string;
+	tid: number;
+	name?: string;
+};
+
 export interface SyncSubscriber {
 	// Handle one entry from the shared log. Returns whether it was applied.
 	onEntry(entry: ChangesetEntry): Promise<boolean> | boolean;
@@ -220,6 +233,25 @@ export interface SyncTransport {
 	// Stamp/clear the sim authority's "actively advancing" lease on the shared
 	// authority doc (see Authority.busyUntil). Pass 0 to clear.
 	publishBusy?(busyUntil: number): Promise<void>;
+
+	// Draft ready-up support (see draftReady.ts). publishDraftReady merges THIS
+	// device's ready entry onto the shared doc (null clears it);
+	// subscribeDraftReady watches everyone's entries; claimDraftAdvance
+	// atomically claims the right to sim one specific pick - it returns true for
+	// exactly one caller per (draftKey, pick) per lease window, so two devices
+	// can never both sim the same pick. Optional so the in-memory test transport
+	// can skip them.
+	publishDraftReady?(entry: DraftReadyEntry | null): Promise<void>;
+	subscribeDraftReady?(
+		onChange: (
+			ready: Record<string, DraftReadyEntry | null> | undefined,
+		) => void,
+	): () => void;
+	claimDraftAdvance?(
+		draftKey: string,
+		pick: number,
+		leaseMs: number,
+	): Promise<boolean>;
 
 	// Live-sim broadcast support (see LiveBroadcastMeta). Optional so the
 	// in-memory test transport can skip it.

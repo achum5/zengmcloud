@@ -7,6 +7,7 @@ import DropdownLinks from "../DropdownLinks.tsx";
 import LogoAndText from "../LogoAndText.tsx";
 import PlayMenu from "../PlayMenu.tsx";
 import AutoPlayCountdown from "./AutoPlayCountdown.tsx";
+import DraftReadyControl from "./DraftReadyControl.tsx";
 import SyncUploadIndicator from "./SyncUploadIndicator.tsx";
 import SyncStatusDot from "./SyncStatusDot.tsx";
 import SyncPausedIndicator from "./SyncPausedIndicator.tsx";
@@ -143,6 +144,7 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 				{inLeague ? <SyncCatchUpIndicator /> : null}
 				{inLeague ? <SyncPausedIndicator /> : null}
 				<div className="flex-grow-1" />
+				{inLeague ? <DraftReadyControl /> : null}
 				<div className="d-none d-sm-flex">
 					<DropdownLinks
 						godMode={godMode}

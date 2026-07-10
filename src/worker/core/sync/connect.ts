@@ -3,6 +3,7 @@ import { FirebaseTransport } from "./FirebaseTransport.ts";
 import { outbox } from "./outbox.ts";
 import { ensureAnonymousAuth } from "./auth.ts";
 import { setApplyGuard } from "./applyGuard.ts";
+import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
@@ -1028,6 +1029,11 @@ export const connectSharedLeague = async ({
 		void handleLiveBroadcastMeta(meta, clientId, transport);
 	});
 
+	// Draft ready-up: watch everyone's ready state and auto-advance CPU picks
+	// once every user team has readied (see draftReady.ts). No-op outside the
+	// draft phase.
+	setupDraftReady(transport);
+
 	// Kick off the initial paginated backlog drain now (it also starts the live
 	// changes subscription once caught up). Runs in the background so connect
 	// doesn't block on a device that's been away a long time.
@@ -1082,6 +1088,7 @@ export const teardownSharedLeague = async ({
 	autoPlayUnsub = undefined;
 	liveBroadcastUnsub?.();
 	liveBroadcastUnsub = undefined;
+	teardownDraftReady();
 	// Best-effort: end our own broadcast so we don't leave the room locked.
 	if (activeBroadcast) {
 		void endLiveBroadcast();

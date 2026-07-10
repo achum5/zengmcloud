@@ -1061,6 +1061,27 @@ export type MpLiveBroadcast = {
 	gameOver: boolean;
 };
 
+// Draft ready-up state for the header control. Pick numbers are OVERALL
+// (1-based across the whole draft); a device is "ready through" a pick.
+export type MpDraftReady = {
+	// User teams covered by a ready device / total user teams.
+	readyTeams: number;
+	totalTeams: number;
+	// Is THIS device ready for (at least) the next pick?
+	ready: boolean;
+	// The overall pick this device is ready through, if ready.
+	myUntilPick: number | undefined;
+	nextPick: { number: number; label: string };
+	// The pick on the clock belongs to a user team (that user drafting is their
+	// "ready"; nothing auto-advances).
+	onClockUser: boolean;
+	// Waypoints for the "ready through…" options.
+	myPickNumber: number | undefined;
+	endOfRoundPick: number | undefined;
+	endOfDraftPick: number | undefined;
+	upcoming: { number: number; label: string; mine: boolean }[];
+};
+
 export type LocalStateUI = {
 	customMenu?: MenuItemHeader;
 	email?: string;
@@ -1131,6 +1152,9 @@ export type LocalStateUI = {
 	// The live-sim broadcast this device is part of (simming to the room, or
 	// watching the simmer in lockstep). Undefined when none. See MpLiveBroadcast.
 	mpLiveBroadcast: MpLiveBroadcast | undefined;
+	// Draft ready-up state (undefined outside a synced draft). Drives the header
+	// ready control; CPU picks only advance once every user team is ready.
+	mpDraftReady: MpDraftReady | undefined;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;

@@ -14,6 +14,7 @@ export {
 	type SyncRoom,
 } from "./adminRooms.ts";
 export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
+export { setDraftReady } from "./draftReady.ts";
 export {
 	claimSyncAuthority,
 	checkSyncReady,
