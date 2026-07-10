@@ -264,13 +264,18 @@ export interface SyncTransport {
 	publishBusy?(busyUntil: number): Promise<void>;
 
 	// Draft ready-up support (see draftReady.ts). publishDraftReady merges THIS
-	// device's ready entry onto the shared doc (null clears it);
+	// device's ready entry onto the shared doc (null clears it); clearUids also
+	// nulls the entries of the caller's own team's OTHER devices, so team-level
+	// readiness follows the team's latest action from any of its devices;
 	// subscribeDraftReady watches everyone's entries; claimDraftAdvance
 	// atomically claims the right to sim one specific pick - it returns true for
 	// exactly one caller per (draftKey, pick) per lease window, so two devices
 	// can never both sim the same pick. Optional so the in-memory test transport
 	// can skip them.
-	publishDraftReady?(entry: DraftReadyEntry | null): Promise<void>;
+	publishDraftReady?(
+		entry: DraftReadyEntry | null,
+		clearUids?: string[],
+	): Promise<void>;
 	subscribeDraftReady?(
 		onChange: (
 			ready: Record<string, DraftReadyEntry | null> | undefined,

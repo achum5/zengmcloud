@@ -293,12 +293,22 @@ export class FirebaseTransport implements SyncTransport {
 	// clears it). Firestore merges are per-field, so devices writing their own
 	// uid-keyed entries never clobber each other; holderId is stamped to our own
 	// uid on every write so the control-doc rule passes.
-	async publishDraftReady(entry: DraftReadyEntry | null) {
+	async publishDraftReady(entry: DraftReadyEntry | null, clearUids?: string[]) {
+		// Readiness is per TEAM, so a device may also clear the entries of its
+		// OWN team's other devices (clearUids) - otherwise "Not ready" on one
+		// device couldn't revoke a ready published from another. The control-doc
+		// rule only requires holderId to be our own uid.
+		const ready: Record<string, DraftReadyEntry | null> = {
+			[this.clientId]: entry,
+		};
+		for (const uid of clearUids ?? []) {
+			ready[uid] = null;
+		}
 		await setDoc(
 			doc(this.db, "leagues", this.code, "control", DRAFT_READY_DOC_ID),
 			{
 				holderId: this.clientId,
-				ready: { [this.clientId]: entry },
+				ready,
 				updatedAt: serverTimestamp(),
 			},
 			{ merge: true },

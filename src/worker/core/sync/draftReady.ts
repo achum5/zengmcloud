@@ -311,12 +311,24 @@ const evaluate = async () => {
 		stage.nextStep,
 	);
 
-	// This device's own ready-through step, if valid for this stage.
-	const mine = latestReady?.[engine.clientId];
-	const myUntilStep =
-		mine && mine.draftKey === stageKey && mine.untilPick >= stage.nextStep
-			? mine.untilPick
-			: undefined;
+	// Readiness is counted PER TEAM, so the button must reflect the TEAM's
+	// state, not just this device's own entry - with the same team open on two
+	// devices, readying up on one shows ready on both. The team's ready-through
+	// step is the furthest any of its devices committed to.
+	const myTid = g.get("userTid");
+	let myUntilStep: number | undefined;
+	for (const entry of Object.values(latestReady ?? {})) {
+		if (
+			entry &&
+			entry.draftKey === stageKey &&
+			entry.tid === myTid &&
+			typeof entry.untilPick === "number" &&
+			entry.untilPick >= stage.nextStep &&
+			(myUntilStep === undefined || entry.untilPick > myUntilStep)
+		) {
+			myUntilStep = entry.untilPick;
+		}
+	}
 
 	pushToUI({
 		phase,
@@ -419,17 +431,38 @@ export const setDraftReady = async (untilStep: number | null) => {
 		throw new Error("Connect to a shared league first.");
 	}
 
+	// Readiness is per TEAM, so this action supersedes anything the same team
+	// published from another device: the team's current coverage is the max of
+	// its devices' entries, and the write below clears those other entries so
+	// the team's LATEST action wins (otherwise "Not ready" on this device
+	// couldn't revoke a ready published from the phone).
+	const tid = g.get("userTid");
+	const stageKey = stageKeyNow();
+	let teamUntilStep: number | undefined;
+	const sameTeamUids: string[] = [];
+	for (const [uid, entry] of Object.entries(latestReady ?? {})) {
+		if (!entry || entry.draftKey !== stageKey || entry.tid !== tid) {
+			continue;
+		}
+		if (uid !== engine.clientId) {
+			sameTeamUids.push(uid);
+		}
+		if (
+			typeof entry.untilPick === "number" &&
+			(teamUntilStep === undefined || entry.untilPick > teamUntilStep)
+		) {
+			teamUntilStep = entry.untilPick;
+		}
+	}
+
 	// Readying UP is always allowed (even mid-catch-up - it only consents to
 	// future steps). But REVOKING or reducing readiness while this device is
 	// behind or the room is mid-advance is acting on a stale world: it can halt
 	// a chain of steps the rest of the room already agreed to, right while the
 	// authority is running them. Make the device see the current state first.
-	const mine = latestReady?.[engine.clientId];
 	const reducing =
 		untilStep === null ||
-		(mine != null &&
-			mine.draftKey === stageKeyNow() &&
-			untilStep < mine.untilPick);
+		(teamUntilStep !== undefined && untilStep < teamUntilStep);
 	if (reducing && (!engine.isCaughtUp() || engine.isRoomBusy())) {
 		throw new Error(
 			"Still catching up on league changes — try again in a moment.",
@@ -437,14 +470,17 @@ export const setDraftReady = async (untilStep: number | null) => {
 	}
 
 	if (untilStep === null) {
-		await transport.publishDraftReady(null);
+		await transport.publishDraftReady(null, sameTeamUids);
 	} else {
-		await transport.publishDraftReady({
-			untilPick: untilStep,
-			draftKey: stageKeyNow(),
-			tid: g.get("userTid"),
-			name: engine.localName,
-		});
+		await transport.publishDraftReady(
+			{
+				untilPick: untilStep,
+				draftKey: stageKey,
+				tid,
+				name: engine.localName,
+			},
+			sameTeamUids,
+		);
 	}
 	void evaluate();
 };

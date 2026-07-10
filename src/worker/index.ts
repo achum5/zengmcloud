@@ -131,6 +131,13 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getPlayersCommandPalette",
 	"getLeagueName",
 	"getExportFilename",
+	// Read-only sync-checkpoint lookup for league exports.
+	"getSyncCheckpoint",
+	// Persists the in-memory cache to disk (the export calls it first). It
+	// creates no new deltas, and it must neither steal a running sim's pending
+	// changes nor be refused mid-catch-up (which would silently export stale
+	// data).
+	"idbCacheFlush",
 ]);
 
 const isChangesetSuppressedCall = (type: string, name: string): boolean =>

@@ -94,6 +94,7 @@ import {
 	deleteSyncRoom,
 	endLiveBroadcast,
 	disconnectSharedLeague,
+	getConnectedLid,
 	getSyncActivity,
 	getSyncEngine,
 	getSyncRequired,
@@ -648,6 +649,34 @@ const createLeague = async (
 
 	let actualTid = tid;
 	let stream: ReadableStream | undefined;
+
+	// A file exported from a synced league carries a checkpoint in its meta
+	// object: the room fingerprint it belongs to plus the change-log position
+	// its data already includes. Sniff it (and which stores the file contains)
+	// while the stream parses, and apply it to the new league's meta row below -
+	// so re-importing an up-to-date export joins its room and catches up from
+	// the checkpoint instead of replaying the entire room history from zero.
+	let syncCheckpoint: { leagueId: string; watermark: number } | undefined;
+	const fileStoreKeys = new Set<string>();
+	const sniffSyncCheckpoint = new TransformStream<any, any>({
+		transform(chunk, controller) {
+			const key = chunk?.key;
+			if (key === "meta") {
+				const cp = chunk.value?.syncCheckpoint;
+				if (
+					cp &&
+					typeof cp.leagueId === "string" &&
+					typeof cp.watermark === "number"
+				) {
+					syncCheckpoint = { leagueId: cp.leagueId, watermark: cp.watermark };
+				}
+			} else if (typeof key === "string") {
+				fileStoreKeys.add(key);
+			}
+			controller.enqueue(chunk);
+		},
+	});
+
 	if (getLeagueOptions) {
 		const realLeague = await realRosters.getLeague(getLeagueOptions);
 
@@ -714,7 +743,8 @@ const createLeague = async (
 			)
 		)
 			.pipeThrough(new TextDecoderStream())
-			.pipeThrough(parseJSON());
+			.pipeThrough(parseJSON())
+			.pipeThrough(sniffSyncCheckpoint);
 	} else {
 		stream = createStreamFromLeagueObject({});
 	}
@@ -755,6 +785,30 @@ const createLeague = async (
 		delete metaLeague.syncIsHost;
 		delete metaLeague.syncWatermark;
 		delete metaLeague.syncLeagueId;
+
+		// If the file carried a sync checkpoint AND this import faithfully kept
+		// everything the file contains (no dropped stores, no roster shuffling),
+		// the new league IS the state that checkpoint describes - stamp the room
+		// fingerprint and watermark so joining the room catches up from there
+		// instead of replaying the whole history. Any deviation falls back to a
+		// full replay, which is slower but always converges (idempotent).
+		const keptEverything = [...fileStoreKeys].every(
+			(key) =>
+				key === "gameAttributes" ||
+				key === "startingSeason" ||
+				key === "version" ||
+				keys.has(key as any),
+		);
+		if (
+			syncCheckpoint &&
+			keptEverything &&
+			!shuffleRosters &&
+			!settings.giveMeWorstRoster
+		) {
+			metaLeague.syncLeagueId = syncCheckpoint.leagueId;
+			metaLeague.syncWatermark = syncCheckpoint.watermark;
+		}
+
 		await idb.meta.put("leagues", metaLeague);
 	}
 
@@ -5527,6 +5581,33 @@ const draftSetReady = async (untilPick: number | null) => {
 	return { ok: true };
 };
 
+// The current league's sync checkpoint, embedded in full league exports: the
+// room fingerprint this file belongs to plus the change-log position its data
+// already includes. A re-import that keeps everything can then join its room
+// and catch up from here, instead of replaying the entire room history.
+const getSyncCheckpoint = async (): Promise<
+	{ leagueId: string; watermark: number } | undefined
+> => {
+	const lid = g.get("lid");
+	if (typeof lid !== "number") {
+		return undefined;
+	}
+	const metaLeague = await idb.meta.get("leagues", lid);
+	if (!metaLeague?.syncLeagueId) {
+		return undefined;
+	}
+	// The live engine's position is fresher than the (debounced) meta row.
+	const engine = getSyncEngine();
+	const watermark = Math.max(
+		metaLeague.syncWatermark ?? 0,
+		getConnectedLid() === lid ? (engine?.getPersistedSeq() ?? 0) : 0,
+	);
+	if (watermark <= 0) {
+		return undefined;
+	}
+	return { leagueId: metaLeague.syncLeagueId, watermark };
+};
+
 // Toggle worker-side sync debug logging (see debugLog.ts). Driven by the UI at
 // startup from the localStorage key "syncDebugLog".
 const setSyncDebugLoggingApi = async (enabled: boolean) => {
@@ -5655,6 +5736,7 @@ export default {
 		getSeasonRecapData,
 		getRetiredPlayersForRecap,
 		getSyncActivity,
+		getSyncCheckpoint,
 		getSyncStatus,
 		getSyncTeams,
 		listSyncRooms,

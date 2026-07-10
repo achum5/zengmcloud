@@ -91,6 +91,23 @@ const makeExportStream = async (
 	// Always flush before export, so export is current!
 	await toWorker("main", "idbCacheFlush", undefined);
 
+	// A FULL export of a synced league gets a sync checkpoint in its meta: the
+	// room fingerprint plus the change-log position this file's data already
+	// includes. Re-importing it can then join the room and catch up from the
+	// checkpoint instead of replaying the whole room history. Partial exports
+	// must not claim it - their state is not what the checkpoint describes.
+	let syncCheckpoint: { leagueId: string; watermark: number } | undefined;
+	const isFullExport = Array.from(leagueDB.objectStoreNames).every((store) =>
+		(storesInput as string[]).includes(store),
+	);
+	if (isFullExport) {
+		try {
+			syncCheckpoint = await toWorker("main", "getSyncCheckpoint", undefined);
+		} catch {
+			// Not synced / worker refused - just export without a checkpoint.
+		}
+	}
+
 	const space = compressed ? "" : " ";
 	const tab = compressed ? "" : " ".repeat(NUM_SPACES_IN_TAB);
 	const newline = compressed ? "" : "\n";
@@ -160,9 +177,13 @@ const makeExportStream = async (
 					`{${newline}${tab}"version":${space}${LEAGUE_DATABASE_VERSION}`,
 				);
 
-				// If name is specified, include it in meta object. Currently this is only used when importing leagues, to set the name
-				if (name) {
-					await writeRootObject(controller, "meta", { name });
+				// The meta object is only read when importing: name sets the league
+				// name, syncCheckpoint fast-forwards the room catch-up (see above).
+				if (name || syncCheckpoint) {
+					await writeRootObject(controller, "meta", {
+						...(name ? { name } : {}),
+						...(syncCheckpoint ? { syncCheckpoint } : {}),
+					});
 				}
 			},
 

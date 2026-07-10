@@ -21,6 +21,7 @@ export {
 	connectSharedLeague,
 	disconnectSharedLeague,
 	endLiveBroadcast,
+	getConnectedLid,
 	getSyncActivity,
 	getSyncRequired,
 	getSyncStatus,
