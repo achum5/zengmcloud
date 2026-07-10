@@ -1061,25 +1061,28 @@ export type MpLiveBroadcast = {
 	gameOver: boolean;
 };
 
-// Draft ready-up state for the header control. Pick numbers are OVERALL
-// (1-based across the whole draft); a device is "ready through" a pick.
-export type MpDraftReady = {
+// Ready-up state for the header control, for whichever gated stage the league
+// is in (draft lottery, draft, re-sign period, free agency). A "step" is a
+// pick during the draft, a day during free agency, or a single phase advance;
+// a device is "ready through" a step.
+export type MpPhaseReady = {
+	phase: number;
 	// User teams covered by a ready device / total user teams.
 	readyTeams: number;
 	totalTeams: number;
-	// Is THIS device ready for (at least) the next pick?
+	// Is THIS device ready for (at least) the next step?
 	ready: boolean;
-	// The overall pick this device is ready through, if ready.
-	myUntilPick: number | undefined;
-	nextPick: { number: number; label: string };
-	// The pick on the clock belongs to a user team (that user drafting is their
-	// "ready"; nothing auto-advances).
+	// The step this device is ready through, if ready.
+	myUntilStep: number | undefined;
+	nextStep: { number: number; label: string };
+	// Draft only: the pick on the clock belongs to a user team (that user
+	// drafting is their "ready"; nothing auto-advances).
 	onClockUser: boolean;
-	// Waypoints for the "ready through…" options.
-	myPickNumber: number | undefined;
-	endOfRoundPick: number | undefined;
-	endOfDraftPick: number | undefined;
-	upcoming: { number: number; label: string; mine: boolean }[];
+	// Quick targets ("Until my pick", "Through this round", …).
+	waypoints: { step: number; label: string }[];
+	// The full "ready through…" list (every remaining pick / free-agency day).
+	// Empty for single-step stages.
+	options: { step: number; label: string; mine?: boolean }[];
 };
 
 export type LocalStateUI = {
@@ -1152,9 +1155,9 @@ export type LocalStateUI = {
 	// The live-sim broadcast this device is part of (simming to the room, or
 	// watching the simmer in lockstep). Undefined when none. See MpLiveBroadcast.
 	mpLiveBroadcast: MpLiveBroadcast | undefined;
-	// Draft ready-up state (undefined outside a synced draft). Drives the header
-	// ready control; CPU picks only advance once every user team is ready.
-	mpDraftReady: MpDraftReady | undefined;
+	// Ready-up state (undefined outside a synced gated stage). Drives the header
+	// ready control; gated steps only advance once every user team is ready.
+	mpPhaseReady: MpPhaseReady | undefined;
 	phaseText: string;
 	playMenuOptions: Option[];
 	popup: boolean;

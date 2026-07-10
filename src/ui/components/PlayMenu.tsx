@@ -17,11 +17,20 @@ import { confirm } from "../util/confirm.tsx";
 // are locked for non-simmers. Mirrors the guard in worker/index.ts.
 const PLAY_MENU_SIM_AUTHORITY_EXEMPT = new Set(["stop", "stopAuto"]);
 
-const handleOptionClick = (option: Option, event: MouseEvent) => {
-	if (!option.url) {
-		event.preventDefault();
-		toWorker("playMenu", option.id as any, undefined);
+// In a synced league, advancing the shared draft is irreversible for the whole
+// room - confirm so the simmer can't fat-finger past someone's pick.
+const DRAFT_ADVANCE_CONFIRM: Record<string, string> = {
+	onePick: "Sim one pick?",
+	untilYourNextPick: "Sim to your next pick?",
+	untilEnd: "Sim to the end of the draft?",
+};
+
+const confirmDraftAdvance = async (id: string): Promise<boolean> => {
+	const message = DRAFT_ADVANCE_CONFIRM[id];
+	if (message === undefined) {
+		return true;
 	}
+	return confirm(message, { okText: "Sim", cancelText: "Cancel" });
 };
 
 const PlayMenu = ({
@@ -64,12 +73,31 @@ const PlayMenu = ({
 				if (option.url) {
 					realtimeUpdate([], option.url);
 				} else {
+					if (
+						local.getState().mpSyncActive &&
+						!(await confirmDraftAdvance(option.id as string))
+					) {
+						return;
+					}
 					toWorker("playMenu", option.id as any, undefined);
 				}
 			},
 			[options],
 		),
 	});
+
+	const handleOptionClick = async (option: Option, event: MouseEvent) => {
+		if (!option.url) {
+			event.preventDefault();
+			if (
+				local.getState().mpSyncActive &&
+				!(await confirmDraftAdvance(option.id as string))
+			) {
+				return;
+			}
+			toWorker("playMenu", option.id as any, undefined);
+		}
+	};
 
 	const {
 		keyboardShortcuts: keyboardShortcutsLocal,
@@ -138,7 +166,7 @@ const PlayMenu = ({
 							href={optionLocked ? undefined : option.url}
 							disabled={optionLocked}
 							onClick={(event: MouseEvent<any>) =>
-								handleOptionClick(option, event)
+								void handleOptionClick(option, event)
 							}
 							className="kbd-parent"
 							title={

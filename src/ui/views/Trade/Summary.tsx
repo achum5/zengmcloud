@@ -72,6 +72,7 @@ export const MissingAssets = ({
 										pid={asset.pid}
 										legacyName={asset.name}
 										pos={asset.pos}
+										hideFace
 									/>
 									<div className="ms-2 text-danger">Not on roster</div>
 								</>
@@ -81,6 +82,7 @@ export const MissingAssets = ({
 										pid={asset.pid}
 										legacyName={asset.name}
 										pos={asset.pos}
+										hideFace
 									/>
 									<div className="ms-2 text-danger">Retired</div>
 								</>
@@ -90,6 +92,7 @@ export const MissingAssets = ({
 										pid={asset.pid}
 										legacyName={asset.name}
 										pos={asset.pos}
+										hideFace
 									/>
 									<div className="ms-2 text-danger">{asset.message}</div>
 								</>
@@ -159,6 +162,7 @@ export const SummaryTeam = ({
 									pos={p.ratings?.pos}
 									pid={p.pid}
 									legacyName={p.name}
+									hideFace
 								/>
 								<div className="ms-2">
 									<ContractAmount p={p} /> / <ContractExp p={p} />

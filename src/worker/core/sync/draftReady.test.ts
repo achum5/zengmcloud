@@ -43,6 +43,23 @@ describe("draft ready-up", () => {
 		assert.deepEqual(readyTeamTids(ready, userTids, key, 17), []);
 	});
 
+	test("free-agency steps: ready-through-days-left math", () => {
+		// daysLeft counts DOWN; steps count UP as days sim. With 30 days left the
+		// next day's step is 971 (1000 - 30 + 1); "ready until 25 left" is step
+		// 975, which covers exactly the next 5 day-sims.
+		const FA_STEP_BASE = 1000;
+		const stepFor = (daysLeft: number) => FA_STEP_BASE - daysLeft + 1;
+		const untilDaysLeft = (target: number) => FA_STEP_BASE - target;
+
+		const until25 = untilDaysLeft(25);
+		assert.ok(stepFor(30) <= until25, "day 30→29 covered");
+		assert.ok(stepFor(26) <= until25, "day 26→25 covered");
+		assert.ok(stepFor(25) > until25, "day 25→24 NOT covered");
+		// End of free agency covers every remaining day.
+		const untilEnd = untilDaysLeft(0);
+		assert.ok(stepFor(1) <= untilEnd);
+	});
+
 	test("stale entries from another draft or team never count", () => {
 		const userTids = [0, 5];
 

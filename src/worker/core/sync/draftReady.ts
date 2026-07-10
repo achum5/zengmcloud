@@ -1,65 +1,76 @@
-// Draft ready-up: during the draft, CPU picks only advance once EVERY
-// user-controlled team has readied up. Each device publishes its own ready
-// state ("ready through overall pick N") to a shared control doc; readiness is
-// counted PER TEAM (any of a user's devices covers their team), so someone
-// with the app open on two devices can't deadlock or double-count the room.
+// Phase ready-up: in a synced league, certain shared advances only happen once
+// EVERY user-controlled team has readied up. Each device publishes its own
+// ready state ("ready through step N of the current stage") to a shared
+// control doc; readiness is counted PER TEAM (any of a user's devices covers
+// their team), so someone with the app open on two devices can't deadlock or
+// double-count the room.
 //
-// When all teams are ready and the pick on the clock belongs to a CPU team,
-// every connected device races for an atomic claim (a Firestore transaction);
-// exactly one wins and sims exactly one pick. The winner re-verifies a live
-// connection and re-fetches the log head before claiming, so a device that
-// missed another device's advance can't re-sim the same pick, and the claim
-// carries a lease so a winner that crashes mid-advance unblocks the room. The
-// pick itself runs inside a capture window and publishes through the normal
-// afterAction pipeline - identical to any other sim.
+// Gated stages, each with its own notion of a "step":
+//   - DRAFT_LOTTERY: one step - advance past the lottery (the lottery itself
+//     still runs, inside the phase change if it wasn't revealed manually).
+//   - DRAFT: each pick is a step (overall pick number). A pick on the clock
+//     belonging to a HUMAN team never auto-advances - that user drafting IS
+//     their ready (runPicks pauses on user picks regardless, as a second line
+//     of defense).
+//   - RESIGN_PLAYERS: one step - start free agency.
+//   - FREE_AGENCY: each day is a step, so you can ready through "N days left"
+//     or the end of free agency (which rolls into the preseason on its own).
 //
-// A pick on the clock belonging to a HUMAN team never auto-advances: that
-// user drafting IS their ready (runPicks pauses on user picks regardless, as
-// a second line of defense).
+// When all teams are ready for the next step, every connected device races for
+// an atomic claim (a Firestore transaction); exactly one wins and runs exactly
+// one step. The winner re-verifies a live connection and re-fetches the log
+// head before claiming, so a device that missed another device's advance can't
+// re-run the same step, and the claim carries a lease so a winner that crashes
+// mid-advance unblocks the room. Every advance runs inside a capture window
+// and publishes through the normal afterAction pipeline - identical to the
+// simmer doing it by hand.
 
 import { PHASE } from "../../../common/constants.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { g, local, toUI } from "../../util/index.ts";
 import getOrder from "../draft/getOrder.ts";
 import runPicks from "../draft/runPicks.ts";
+import newPhase from "../phase/newPhase.ts";
+import freeAgentsPlay from "../freeAgents/play.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { runAfterActionHook } from "./afterActionHook.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import type { DraftReadyEntry, SyncTransport } from "./types.ts";
-import type { MpDraftReady } from "../../../common/types.ts";
+import type { MpPhaseReady, Phase } from "../../../common/types.ts";
 
 const EVALUATE_INTERVAL_MS = 2000;
 
-// How long an advance claim blocks other devices from claiming the same pick.
-// Generous vs a one-pick sim (a second or two) so it only matters as crash
+// How long an advance claim blocks other devices from claiming the same step.
+// Generous vs a single step (a second or two) so it only matters as crash
 // recovery for a claimant that died mid-advance.
 const CLAIM_LEASE_MS = 90_000;
 
-// How many upcoming picks the UI's "ready through…" list offers.
-const MAX_UPCOMING = 24;
+// Free-agency steps are derived from daysLeft (which counts DOWN) so they
+// increase as days sim; the base just keeps them positive.
+const FA_STEP_BASE = 1000;
 
 // The overall pick number (1-based across the whole draft) used as the
-// "ready through" comparator.
+// "ready through" comparator during the draft.
 export const overallPickNumber = (
 	dp: { round: number; pick: number },
 	numActiveTeams: number,
 ): number => (dp.round - 1) * numActiveTeams + dp.pick;
 
-// Which user teams are covered by a ready entry valid for this draft and the
-// current next pick. Exported for tests.
+// Which user teams are covered by a ready entry valid for this stage and the
+// next step. Exported for tests.
 export const readyTeamTids = (
 	ready: Record<string, DraftReadyEntry | null | undefined> | undefined,
 	userTids: number[],
-	draftKey: string,
-	nextOverall: number,
+	stageKey: string,
+	nextStep: number,
 ): number[] => {
 	const covered = new Set<number>();
 	for (const entry of Object.values(ready ?? {})) {
 		if (
 			entry &&
-			entry.draftKey === draftKey &&
+			entry.draftKey === stageKey &&
 			typeof entry.untilPick === "number" &&
-			entry.untilPick >= nextOverall &&
+			entry.untilPick >= nextStep &&
 			typeof entry.tid === "number" &&
 			userTids.includes(entry.tid)
 		) {
@@ -69,6 +80,159 @@ export const readyTeamTids = (
 	return [...covered].sort((a, b) => a - b);
 };
 
+// Everything the evaluator needs to know about the current gated stage:
+// UI state pieces plus how to run one step.
+type StageInfo = {
+	nextStep: number;
+	nextLabel: string;
+	onClockUser: boolean;
+	waypoints: { step: number; label: string }[];
+	options: { step: number; label: string; mine?: boolean }[];
+	advance: () => Promise<void>;
+};
+
+// The phase advance the draft lottery leads to - mirrors autoPlay's branching
+// for repeat-season leagues.
+const afterLotteryPhase = (): Phase => {
+	const type = g.get("repeatSeason")?.type;
+	if (type === "playersAndRosters" || g.get("forceHistoricalRosters")) {
+		return PHASE.PRESEASON;
+	}
+	if (type === "players") {
+		return PHASE.RESIGN_PLAYERS;
+	}
+	return PHASE.DRAFT;
+};
+
+// Run a phase change as a ready-up advance: captured + published like any
+// other bulk change.
+const advancePhase = async (phase: Phase) => {
+	changeTracker.beginSim();
+	try {
+		await newPhase(phase, {});
+	} finally {
+		changeTracker.endSim();
+	}
+	await runAfterActionHook("playMenu", "day");
+};
+
+const getStageInfo = async (): Promise<StageInfo | undefined> => {
+	const phase = g.get("phase");
+
+	if (phase === PHASE.DRAFT_LOTTERY) {
+		return {
+			nextStep: 1,
+			nextLabel: "Advance past the lottery",
+			onClockUser: false,
+			waypoints: [],
+			options: [],
+			advance: () => advancePhase(afterLotteryPhase()),
+		};
+	}
+
+	if (phase === PHASE.DRAFT) {
+		const order = await getOrder();
+		if (order.length === 0) {
+			return undefined;
+		}
+		const numActiveTeams = g.get("numActiveTeams");
+		const userTids = g.get("userTids");
+		const userTid = g.get("userTid");
+		const next = order[0]!;
+
+		// EVERY remaining pick, so "ready through R1P16" works no matter how far
+		// out it is. The UI scrolls the list.
+		const options = order.map((dp) => ({
+			step: overallPickNumber(dp, numActiveTeams),
+			label: `R${dp.round}P${dp.pick}`,
+			mine: dp.tid === userTid,
+		}));
+		const myNext = order.find((dp) => dp.tid === userTid);
+		const lastInRound = [...order]
+			.filter((dp) => dp.round === next.round)
+			.at(-1);
+
+		const waypoints: { step: number; label: string }[] = [];
+		if (myNext) {
+			waypoints.push({
+				step: overallPickNumber(myNext, numActiveTeams),
+				label: "Until my pick",
+			});
+		}
+		if (lastInRound) {
+			waypoints.push({
+				step: overallPickNumber(lastInRound, numActiveTeams),
+				label: "Through this round",
+			});
+		}
+		waypoints.push({
+			step: overallPickNumber(order.at(-1)!, numActiveTeams),
+			label: "Through end of draft",
+		});
+
+		return {
+			nextStep: overallPickNumber(next, numActiveTeams),
+			nextLabel: `R${next.round}P${next.pick}`,
+			onClockUser: userTids.includes(next.tid),
+			waypoints,
+			options,
+			advance: async () => {
+				changeTracker.beginSim();
+				try {
+					await runPicks({ type: "onePick" });
+				} finally {
+					changeTracker.endSim();
+				}
+				await runAfterActionHook("actions", "onePick");
+			},
+		};
+	}
+
+	if (phase === PHASE.RESIGN_PLAYERS) {
+		return {
+			nextStep: 1,
+			nextLabel: "Start free agency",
+			onClockUser: false,
+			waypoints: [],
+			options: [],
+			advance: () => advancePhase(PHASE.FREE_AGENCY),
+		};
+	}
+
+	if (phase === PHASE.FREE_AGENCY) {
+		const daysLeft = g.get("daysLeft");
+		if (typeof daysLeft !== "number" || daysLeft <= 0) {
+			return undefined;
+		}
+
+		// Step for simming the NEXT day. "Ready through X days left" = the step
+		// of the day whose sim lands on X.
+		const nextStep = FA_STEP_BASE - daysLeft + 1;
+		const options: { step: number; label: string }[] = [];
+		for (let target = daysLeft - 1; target >= 0; target--) {
+			options.push({
+				step: FA_STEP_BASE - target,
+				label:
+					target === 0
+						? "End of free agency"
+						: `${target} ${target === 1 ? "day" : "days"} left`,
+			});
+		}
+
+		return {
+			nextStep,
+			nextLabel: `Next day (${daysLeft} left)`,
+			onClockUser: false,
+			waypoints: [],
+			options,
+			// freeAgents.play brackets + publishes itself (same as the play menu).
+			advance: () => freeAgentsPlay(1, {}),
+		};
+	}
+
+	return undefined;
+};
+
 let currentTransport: SyncTransport | undefined;
 let unsubscribe: (() => void) | undefined;
 let evaluateTimer: ReturnType<typeof setInterval> | undefined;
@@ -76,19 +240,19 @@ let latestReady: Record<string, DraftReadyEntry | null> | undefined;
 let advancing = false;
 let lastPushed: string | undefined;
 
-const pushToUI = (state: MpDraftReady | undefined) => {
+const pushToUI = (state: MpPhaseReady | undefined) => {
 	const key = JSON.stringify(state ?? null);
 	if (key === lastPushed) {
 		return;
 	}
 	lastPushed = key;
-	void toUI("updateLocal", [{ mpDraftReady: state }]);
+	void toUI("updateLocal", [{ mpPhaseReady: state }]);
 };
 
-const draftKeyNow = (): string => `${g.get("season")}-${g.get("phase")}`;
+const stageKeyNow = (): string => `${g.get("season")}-${g.get("phase")}`;
 
 // One evaluation pass: refresh the UI state and, if everything lines up,
-// attempt to claim + run the next CPU pick.
+// attempt to claim + run the next step.
 const evaluate = async () => {
 	const engine = getSyncEngine();
 	const transport = currentTransport;
@@ -97,77 +261,55 @@ const evaluate = async () => {
 		return;
 	}
 
-	// Only the regular draft, with a league loaded.
-	let phase: number;
+	let stage: StageInfo | undefined;
 	try {
-		phase = g.get("phase");
+		if (!local.leagueLoaded) {
+			pushToUI(undefined);
+			return;
+		}
+		stage = await getStageInfo();
 	} catch {
 		return;
 	}
-	if (phase !== PHASE.DRAFT || !local.leagueLoaded) {
+	if (!stage) {
 		pushToUI(undefined);
 		return;
 	}
 
-	let order;
-	try {
-		order = await getOrder();
-	} catch {
-		return;
-	}
-	if (order.length === 0) {
-		pushToUI(undefined);
-		return;
-	}
-
-	const numActiveTeams = g.get("numActiveTeams");
 	const userTids = g.get("userTids");
-	const userTid = g.get("userTid");
-	const draftKey = draftKeyNow();
+	const stageKey = stageKeyNow();
+	const phase = g.get("phase");
 
-	const next = order[0]!;
-	const nextOverall = overallPickNumber(next, numActiveTeams);
-	const onClockUser = userTids.includes(next.tid);
+	const readyTids = readyTeamTids(
+		latestReady,
+		userTids,
+		stageKey,
+		stage.nextStep,
+	);
 
-	const readyTids = readyTeamTids(latestReady, userTids, draftKey, nextOverall);
-
-	// This device's own ready-through pick, if valid for this draft.
+	// This device's own ready-through step, if valid for this stage.
 	const mine = latestReady?.[engine.clientId];
-	const myUntilPick =
-		mine && mine.draftKey === draftKey && mine.untilPick >= nextOverall
+	const myUntilStep =
+		mine && mine.draftKey === stageKey && mine.untilPick >= stage.nextStep
 			? mine.untilPick
 			: undefined;
 
-	// Upcoming picks for the "ready through…" picker, plus useful waypoints.
-	const upcoming = order.slice(0, MAX_UPCOMING).map((dp) => ({
-		number: overallPickNumber(dp, numActiveTeams),
-		label: `R${dp.round}P${dp.pick}`,
-		mine: dp.tid === userTid,
-	}));
-	const myNext = order.find((dp) => dp.tid === userTid);
-	const lastInRound = [...order].filter((dp) => dp.round === next.round).at(-1);
-
 	pushToUI({
+		phase,
 		readyTeams: readyTids.length,
 		totalTeams: userTids.length,
-		ready: myUntilPick !== undefined,
-		myUntilPick,
-		nextPick: { number: nextOverall, label: `R${next.round}P${next.pick}` },
-		onClockUser,
-		myPickNumber: myNext
-			? overallPickNumber(myNext, numActiveTeams)
-			: undefined,
-		endOfRoundPick: lastInRound
-			? overallPickNumber(lastInRound, numActiveTeams)
-			: undefined,
-		endOfDraftPick: overallPickNumber(order.at(-1)!, numActiveTeams),
-		upcoming,
+		ready: myUntilStep !== undefined,
+		myUntilStep,
+		nextStep: { number: stage.nextStep, label: stage.nextLabel },
+		onClockUser: stage.onClockUser,
+		waypoints: stage.waypoints.filter((w) => w.step > stage.nextStep),
+		options: stage.options.filter((o) => o.step > stage.nextStep),
 	});
 
 	// ---- Advance? ----
 	if (
 		advancing ||
-		onClockUser ||
+		stage.onClockUser ||
 		userTids.length === 0 ||
 		readyTids.length < userTids.length ||
 		!engine.isCaughtUp() ||
@@ -188,15 +330,14 @@ const evaluate = async () => {
 		await engine.catchUp();
 
 		// Re-derive after the catch-up: someone else may have advanced already.
-		const order2 = await getOrder();
-		const next2 = order2[0];
+		const stage2 = await getStageInfo();
 		if (
-			g.get("phase") !== PHASE.DRAFT ||
-			!next2 ||
-			overallPickNumber(next2, numActiveTeams) !== nextOverall ||
-			g.get("userTids").includes(next2.tid) ||
+			!stage2 ||
+			g.get("phase") !== phase ||
+			stage2.nextStep !== stage.nextStep ||
+			stage2.onClockUser ||
 			!engine.isCaughtUp() ||
-			readyTeamTids(latestReady, g.get("userTids"), draftKey, nextOverall)
+			readyTeamTids(latestReady, g.get("userTids"), stageKey, stage.nextStep)
 				.length < g.get("userTids").length
 		) {
 			return;
@@ -204,53 +345,46 @@ const evaluate = async () => {
 
 		// Exactly one device wins this.
 		const claimed = await transport.claimDraftAdvance(
-			draftKey,
-			nextOverall,
+			stageKey,
+			stage.nextStep,
 			CLAIM_LEASE_MS,
 		);
 		if (!claimed) {
 			return;
 		}
 
-		syncDebugLog("draftReady:advance", {
-			pick: nextOverall,
-			label: `R${next2.round}P${next2.pick}`,
+		syncDebugLog("phaseReady:advance", {
+			stageKey,
+			step: stage.nextStep,
+			label: stage2.nextLabel,
 		});
 
-		// Run one pick inside a capture window and publish through the normal
-		// pipeline (the label is a draft action, so any device may author it).
-		changeTracker.beginSim();
-		try {
-			await runPicks({ type: "onePick" });
-		} finally {
-			changeTracker.endSim();
-		}
-		await runAfterActionHook("actions", "onePick");
+		await stage2.advance();
 	} catch (error) {
-		console.error("[sync] draft ready advance failed", error);
+		console.error("[sync] ready-up advance failed", error);
 	} finally {
 		advancing = false;
-		// Re-evaluate soon - with everyone still ready, the next CPU pick chains.
+		// Re-evaluate soon - with everyone still ready, the next step chains.
 		setTimeout(() => {
 			void evaluate();
 		}, 500);
 	}
 };
 
-// Publish this device's ready state: ready through overall pick `untilPick`,
-// or null to clear. Called from the UI via the worker API.
-export const setDraftReady = async (untilPick: number | null) => {
+// Publish this device's ready state: ready through step `untilStep` of the
+// current stage, or null to clear. Called from the UI via the worker API.
+export const setDraftReady = async (untilStep: number | null) => {
 	const engine = getSyncEngine();
 	const transport = currentTransport;
 	if (!engine || !transport?.publishDraftReady) {
 		throw new Error("Connect to a shared league first.");
 	}
-	if (untilPick === null) {
+	if (untilStep === null) {
 		await transport.publishDraftReady(null);
 	} else {
 		await transport.publishDraftReady({
-			untilPick,
-			draftKey: draftKeyNow(),
+			untilPick: untilStep,
+			draftKey: stageKeyNow(),
 			tid: g.get("userTid"),
 			name: engine.localName,
 		});
