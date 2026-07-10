@@ -144,14 +144,15 @@ export const synthPlaySpot = (t: 0 | 1): { x: number; y: number } =>
 export const synthReboundSpot = (rimT: 0 | 1): { x: number; y: number } =>
 	toCourt(rimT, rand(3, 9), 25 + rand(-8, 8));
 
-// Subs check in at the scorer's table: a single row centered at half court
-// along the near sideline, players side by side (ins and outs together).
+// Subs check in near half court: a single, well-spaced row so the faces +
+// name tags don't cram together, set a little in from the sideline (not jammed
+// against the very top edge).
 export const scorerTableRow = (n: number): { x: number; y: number }[] => {
-	const gap = 4;
+	const gap = Math.min(11, 62 / Math.max(1, n));
 	const startX = COURT_W / 2 - ((n - 1) * gap) / 2;
 	return Array.from({ length: n }, (_, i) => ({
 		x: startX + i * gap,
-		y: 2.5,
+		y: 11,
 	}));
 };
 
@@ -656,7 +657,6 @@ const LiveCourt = ({
 
 	const opposingColor = scene?.t === 0 ? homeColor : awayColor;
 
-	const mainActor = scene?.actors.find((a) => a.role === "main");
 	// Give each actor's name tag a placement that avoids colliding with a nearby
 	// player's tag: when two actors are within a few feet across the court, put
 	// the main actor's tag below and the other's above.
@@ -674,18 +674,39 @@ const LiveCourt = ({
 		return actor.y > COURT_H - 9;
 	};
 
-	// The play text sits just beside the main actor (toward center court so it
-	// doesn't run off the baseline), so you can read what's happening right where
-	// it happens. Anchored in court % and clamped inside the surface.
-	const textAnchor = mainActor ?? { x: COURT_W / 2, y: COURT_H - 6 };
-	const textLeftPct = ((textAnchor.x + RAIL_W) / (COURT_W + 2 * RAIL_W)) * 100;
-	const textTopPct = ((textAnchor.y + APRON) / (COURT_H + 2 * APRON)) * 100;
-	const textOnRight = textAnchor.x < COURT_W / 2; // place bubble toward center
+	// The play text sits BESIDE the action but must never cover a face. Anchor it
+	// just past the edge of the whole actor cluster, on whichever side faces
+	// center court, vertically centered on the cluster.
+	const actorsForText = scene?.actors ?? [];
+	const clusterMinX = actorsForText.length
+		? Math.min(...actorsForText.map((a) => a.x))
+		: COURT_W / 2;
+	const clusterMaxX = actorsForText.length
+		? Math.max(...actorsForText.map((a) => a.x))
+		: COURT_W / 2;
+	const clusterMidX = (clusterMinX + clusterMaxX) / 2;
+	const clusterMidY = actorsForText.length
+		? actorsForText.reduce((s, a) => s + a.y, 0) / actorsForText.length
+		: COURT_H - 6;
+	const bubbleGoesRight = clusterMidX < COURT_W / 2;
+	// Start past the last face on that side (+ a face-width gap) so nobody's
+	// covered.
+	const bubbleEdgeX = bubbleGoesRight ? clusterMaxX + 6 : clusterMinX - 6;
+	const bubbleEdgePct = ((bubbleEdgeX + RAIL_W) / (COURT_W + 2 * RAIL_W)) * 100;
+	const textTopPct = ((clusterMidY + APRON) / (COURT_H + 2 * APRON)) * 100;
 
 	return (
 		<div
 			className="mb-3 position-relative"
-			style={{ userSelect: "none", containerType: "inline-size" }}
+			style={{
+				userSelect: "none",
+				containerType: "inline-size",
+				// Own stacking context pinned at the base level, so real dropdown
+				// menus (Play menu, fast-forward) always paint ABOVE the court's
+				// absolutely-positioned faces/text instead of under them.
+				isolation: "isolate",
+				zIndex: 0,
+			}}
 		>
 			<style>{FACE_ANIM_CSS}</style>
 			<svg viewBox={VIEW} style={{ width: "100%", display: "block" }}>
@@ -725,27 +746,28 @@ const LiveCourt = ({
 				{halfMarkings(false)}
 				{halfMarkings(true)}
 
-				{/* Center-court branding OVER the lines: championship trophy behind a
-				    large home logo during a finals game, else a large home logo */}
+				{/* Center-court branding OVER the lines. During a finals game a big
+				    championship trophy dominates center court with the home logo in
+				    front of its base; otherwise a large home logo. */}
 				{finals ? (
 					<image
 						href={DEFAULT_TROPHY_URL}
-						x={COURT_W / 2 - 11}
-						y={25 - 13}
-						width={22}
-						height={26}
-						opacity={0.95}
+						x={COURT_W / 2 - 17}
+						y={25 - 21}
+						width={34}
+						height={42}
+						opacity={0.97}
 						preserveAspectRatio="xMidYMid meet"
 					/>
 				) : null}
 				{home?.imgURL ? (
 					<image
 						href={home.imgURL}
-						x={COURT_W / 2 - (finals ? 8 : 15)}
-						y={25 - (finals ? 8 : 15)}
-						width={finals ? 16 : 30}
-						height={finals ? 16 : 30}
-						opacity={0.95}
+						x={COURT_W / 2 - (finals ? 7.5 : 15)}
+						y={finals ? 25 + 1 : 25 - 15}
+						width={finals ? 15 : 30}
+						height={finals ? 15 : 30}
+						opacity={0.97}
 						preserveAspectRatio="xMidYMid meet"
 					/>
 				) : !finals ? (
@@ -823,24 +845,19 @@ const LiveCourt = ({
 					))
 				: null}
 
-			{/* The play line, right beside the action */}
+			{/* The play line, beside the action - placed past the edge of the whole
+			    player cluster so it never covers a face */}
 			{scene ? (
 				<div
 					className="position-absolute"
 					style={{
 						top: `${textTopPct}%`,
-						...(textOnRight
-							? {
-									left: `${textLeftPct}%`,
-									marginLeft: "clamp(14px, 3cqw, 40px)",
-								}
-							: {
-									right: `${100 - textLeftPct}%`,
-									marginRight: "clamp(14px, 3cqw, 40px)",
-								}),
+						...(bubbleGoesRight
+							? { left: `${bubbleEdgePct}%` }
+							: { right: `${100 - bubbleEdgePct}%` }),
 						transform: "translateY(-50%)",
-						maxWidth: "42%",
-						background: "rgba(0,0,0,0.8)",
+						maxWidth: "40%",
+						background: "rgba(0,0,0,0.82)",
 						color: "#fff",
 						borderLeft: `3px solid ${sceneColor}`,
 						borderRadius: 3,
@@ -849,7 +866,7 @@ const LiveCourt = ({
 						fontWeight: 500,
 						lineHeight: 1.25,
 						pointerEvents: "none",
-						zIndex: 6,
+						zIndex: 3,
 					}}
 				>
 					{scene.text}
