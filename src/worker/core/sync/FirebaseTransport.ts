@@ -68,7 +68,11 @@ const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
 
 // If we've had confirmed contact with Firestore within this window, treat the
 // connection as live without a round-trip; otherwise verifyConnection() probes.
-const CONNECTION_FRESH_MS = 8000;
+// Sized to comfortably cover the 15s background catch-up poll (which does a
+// real server read and refreshes contact), so a healthy connection answers
+// non-forced checks instantly - otherwise every interactive worker call in an
+// idle room would pay a blocking probe.
+const CONNECTION_FRESH_MS = 20_000;
 // A publish attempt that the server hasn't acked within this long counts as
 // failed. Critical: while offline, Firestore's setDoc does NOT reject - it
 // buffers the write and resolves only on server ack - so an untimed publish

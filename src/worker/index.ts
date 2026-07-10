@@ -9,6 +9,7 @@ import { promiseWorker } from "./util/promiseWorker.ts";
 import { defaultGameAttributes } from "../common/defaultGameAttributes.ts";
 import { changeTracker } from "./db/changeTracker.ts";
 import { afterAction } from "./core/sync/afterAction.ts";
+import { syncDebugLog } from "./core/sync/debugLog.ts";
 import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
@@ -288,6 +289,11 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 	const syncSessionIntended = syncEngine !== undefined || getSyncRequired();
 	const needsConnection = syncSessionIntended && cloudTracked;
 
+	// Cheap lag tripwire (only logs when sync debug logging is opted in): any
+	// call whose pre-action guard blocked noticeably gets named, so "the UI
+	// feels slow" is diagnosable from a console paste instead of guesswork.
+	const guardStart = Date.now();
+
 	if (needsConnection) {
 		if (syncEngine) {
 			if (simAuthorityLocked && !syncEngine.isAuthority()) {
@@ -316,8 +322,17 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				return undefined;
 			}
 
+			// Timeline advances (sims, phase changes, draft advancers) fork the room
+			// if they run on a half-dead connection, so they pay for FORCED probes:
+			// a fresh ping plus a genuine server round-trip, every time. Ordinary
+			// edits don't: their deltas are durable-first (queued in the outbox and
+			// guaranteed to upload), so they use the CACHED checks - instant while
+			// recent contact is confirmed, probing only once contact goes stale.
+			// Forcing both round-trips on every call made every interactive screen
+			// (each Trade click, roster toggle, etc.) block on the network for
+			// hundreds of ms and feel broken.
 			try {
-				await syncEngine.ensureReady(true);
+				await syncEngine.ensureReady(simAuthorityLocked);
 			} catch {
 				util.logEvent(
 					{
@@ -330,11 +345,7 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				return undefined;
 			}
 
-			// Confirm the connection is GENUINELY live with a real server round-trip
-			// before EVERY shared-league mutation. This is intentionally slower: a
-			// stale listener/expired token/resumed tab must fail before local state
-			// changes, not after a roster edit or sim already diverged.
-			const live = await syncEngine.verifyConnection(true);
+			const live = await syncEngine.verifyConnection(simAuthorityLocked);
 			if (!live) {
 				util.logEvent(
 					{
@@ -385,6 +396,11 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 			);
 			return undefined;
 		}
+	}
+
+	const guardMs = Date.now() - guardStart;
+	if (guardMs > 100) {
+		syncDebugLog("api:guard-slow", { type, name, guardMs });
 	}
 
 	// https://github.com/microsoft/TypeScript/issues/21732
