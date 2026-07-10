@@ -621,21 +621,41 @@ export class FirebaseTransport implements SyncTransport {
 		// Retry transient failures (a network blip, a brief Firestore hiccup). A
 		// dropped publish is unrecoverable - the change tracker was already drained,
 		// so catch-up/resync can't replay a change that never reached the log.
-		// Re-sending is safe: the entry carries a stable id (and batchId/chunkIndex),
-		// so the receiver dedups an accidental double-write. A permanent failure
-		// (e.g. a doc over Firestore's ~1 MB limit) exhausts the retries and throws,
-		// which afterAction logs.
+		// A permanent failure exhausts the retries and throws, which leaves the
+		// entry queued in the outbox for a later drain.
+		const ref = doc(this.changesRef, entry.id);
+
+		// Did a PREVIOUS attempt's buffered write actually land? The change log is
+		// append-only (rules: update = false), so once the doc exists, every
+		// re-send is rejected with permission-denied forever - even though OUR
+		// content is already there. Without this check, one ack timeout whose
+		// write later landed permanently wedged the FIFO upload queue behind an
+		// "unpublishable" entry. Entry ids are uuids only we generated, so an
+		// existing doc with our authorId IS this publish, delivered.
+		const alreadyDelivered = async (): Promise<boolean> => {
+			try {
+				const snap = await withTimeout(
+					getDocFromServer(ref),
+					PUBLISH_ACK_TIMEOUT_MS,
+				);
+				return snap.exists() && snap.data()?.authorId === this.clientId;
+			} catch {
+				return false;
+			}
+		};
+
 		let lastError: unknown;
 		for (let attempt = 0; attempt < 3; attempt++) {
 			try {
-				await withTimeout(
-					setDoc(doc(this.changesRef, entry.id), payload),
-					PUBLISH_ACK_TIMEOUT_MS,
-				);
+				await withTimeout(setDoc(ref, payload), PUBLISH_ACK_TIMEOUT_MS);
 				this.markContact();
 				return;
 			} catch (error) {
 				lastError = error;
+				if (await alreadyDelivered()) {
+					this.markContact();
+					return;
+				}
 				await new Promise((resolve) => setTimeout(resolve, 300 * 2 ** attempt));
 			}
 		}
