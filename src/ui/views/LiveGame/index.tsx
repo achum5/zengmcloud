@@ -35,6 +35,13 @@ import {
 import { Confetti } from "./Confetti.tsx";
 import { BoxScoreRow } from "../../components/BoxScoreRow.tsx";
 import { getPeriodName } from "../../../common/getPeriodName.ts";
+import LiveCourt, {
+	courtActionFromEventType,
+	synthShotSpot,
+	type CourtDot,
+	type CourtShot,
+	type CourtZone,
+} from "./LiveCourt.tsx";
 
 type PlayerRowProps = {
 	exhibition?: boolean;
@@ -307,6 +314,97 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 	const playByPlayEntries = useRef<PlayByPlayEntryInfo[]>([]);
 
+	// Live court graphic (basketball): the shot currently animating, the
+	// accumulated shot-chart dots, and the shooter of the in-flight attempt (a
+	// block event only names the blocker, so the attempt's shooter is remembered).
+	const courtShot = useRef<CourtShot | undefined>(undefined);
+	const courtDots = useRef<CourtDot[]>([]);
+	const courtShotCount = useRef(0);
+	const lastFga = useRef<{ pid: number; zone: CourtZone } | undefined>(
+		undefined,
+	);
+
+	const playerNameByPid = (pid: number): string => {
+		for (const t of boxScore.current.teams ?? []) {
+			for (const p of t.players ?? []) {
+				if (p.pid === pid) {
+					return p.name ?? "???";
+				}
+			}
+		}
+		return "???";
+	};
+
+	// Turn the play-by-play event behind the current line into a court
+	// animation + a shot-chart dot. Locations are synthesized from the shot's
+	// zone (the sim has no real coordinates).
+	const handleCourtEvent = (event: any) => {
+		if (!event || typeof event.type !== "string") {
+			return;
+		}
+		const action = courtActionFromEventType(event.type);
+		if (!action) {
+			return;
+		}
+
+		if (typeof event.t !== "number") {
+			return;
+		}
+
+		if (action.kind === "attempt") {
+			if (typeof event.pid === "number") {
+				lastFga.current = { pid: event.pid, zone: action.zone };
+			}
+			return;
+		}
+
+		// Box score display order swaps the raw team index. A block event's t is
+		// the BLOCKER's team, so the shooter's display index double-flips back.
+		const displayT: 0 | 1 = action.blocked
+			? event.t === 0
+				? 0
+				: 1
+			: event.t === 0
+				? 1
+				: 0;
+
+		// A block event's pid is the BLOCKER; the shooter comes from the attempt.
+		const shooterPid = action.blocked
+			? (lastFga.current?.pid ?? event.pid)
+			: event.pid;
+		if (typeof shooterPid !== "number") {
+			return;
+		}
+		const zone =
+			action.blocked && lastFga.current ? lastFga.current.zone : action.zone;
+
+		const { x, y } = synthShotSpot(zone);
+		courtShotCount.current += 1;
+		const shot: CourtShot = {
+			key: courtShotCount.current,
+			pid: shooterPid,
+			name: playerNameByPid(shooterPid),
+			t: displayT,
+			made: action.made,
+			blocked: action.blocked ?? false,
+			zone,
+			x,
+			y,
+		};
+		courtShot.current = shot;
+		// Free throws animate but stay off the shot chart (they'd bury it in
+		// identical dots at the line).
+		if (zone !== "ft") {
+			courtDots.current.push({
+				key: shot.key,
+				x,
+				y,
+				made: action.made,
+				t: displayT,
+			});
+		}
+	};
+
 	// Multiplayer live-sim broadcast. On a follower, playback is driven ENTIRELY by
 	// the simmer's cursor (no own timer) and the page is locked; on the broadcaster
 	// we additionally heartbeat our cursor to the room. In single-player both are
@@ -378,6 +476,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 			const currentPts =
 				boxScore.current.teams[0][ptsKey] + boxScore.current.teams[1][ptsKey];
 			const scoreDiff = currentPts - prevPts;
+
+			if (isSport("basketball")) {
+				handleCourtEvent((output as any).event);
+			}
 
 			overtimes.current = output.overtimes;
 			quarters.current = output.quarters;
@@ -1214,6 +1316,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 				</div>
 				<div className="col-md-3">
 					<div className="live-game-affix">
+						{isSport("basketball") && boxScore.current.gid >= 0 ? (
+							<LiveCourt
+								shot={courtShot.current}
+								dots={courtDots.current}
+								homeTid={boxScore.current.teams?.[1]?.tid}
+								season={boxScore.current.season}
+							/>
+						) : null}
 						{!isFollower ? (
 							<div className="d-none d-md-flex align-items-center mb-3 pt-md-2">
 								<PlayPauseNext

@@ -418,6 +418,9 @@ const processLiveGameEvents = ({
 	let text;
 	let t: 0 | 1 | undefined;
 	let textOnly = false;
+	// The raw event behind the current play-by-play line, so the live court
+	// graphic can animate shots without re-parsing display text.
+	let displayEvent: PlayByPlayEventOutput | undefined;
 
 	while (!stop && events.length > 0) {
 		const e = events.shift();
@@ -569,6 +572,7 @@ const processLiveGameEvents = ({
 						: 0;
 			}
 
+			displayEvent = e as PlayByPlayEventOutput;
 			stop = true;
 		}
 	}
@@ -579,6 +583,7 @@ const processLiveGameEvents = ({
 		t,
 		text,
 		textOnly,
+		event: displayEvent,
 	};
 };
 
