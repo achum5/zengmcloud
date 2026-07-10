@@ -1092,6 +1092,8 @@ export type MpPhaseReady = {
 	// The full "ready through…" list (every remaining pick / free-agency day).
 	// Empty for single-step stages.
 	options: { step: number; label: string }[];
+	// Per-user-team ready status, for the roster popover beside the button.
+	teams: { tid: number; name: string; ready: boolean; onClock: boolean }[];
 };
 
 export type LocalStateUI = {

@@ -87,6 +87,8 @@ type StageInfo = {
 	nextStep: number;
 	nextLabel: string;
 	onClockUser: boolean;
+	// Draft only: the tid of the team currently on the clock (may be an AI team).
+	onClockTid?: number;
 	waypoints: { step: number; label: string }[];
 	options: { step: number; label: string; mine?: boolean }[];
 	advance: () => Promise<void>;
@@ -195,6 +197,7 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 			nextStep: overallPickNumber(next, numActiveTeams),
 			nextLabel: `R${next.round}P${next.pick}`,
 			onClockUser: userTids.includes(next.tid),
+			onClockTid: next.tid,
 			waypoints: uniqueWaypoints,
 			options,
 			advance: async () => {
@@ -474,6 +477,25 @@ const evaluate = async () => {
 		}
 	}
 
+	// Per-team ready status for the roster popover next to the button.
+	const readySet = new Set(readyTids);
+	let teamsStatus: MpPhaseReady["teams"] = userTids.map((tid) => ({
+		tid,
+		name: `Team ${tid}`,
+		ready: readySet.has(tid),
+		onClock: stage.onClockTid === tid,
+	}));
+	try {
+		const allTeams = await idb.cache.teams.getAll();
+		const byTid = new Map(allTeams.map((t) => [t.tid, t]));
+		teamsStatus = teamsStatus.map((row) => {
+			const t = byTid.get(row.tid);
+			return t ? { ...row, name: `${t.region} ${t.name}` } : row;
+		});
+	} catch {
+		// Names are cosmetic; the tid fallback still shows ready/not-ready.
+	}
+
 	pushToUI({
 		phase,
 		readyTeams: readyTids.length,
@@ -484,6 +506,7 @@ const evaluate = async () => {
 		onClockUser: stage.onClockUser,
 		waypoints: stage.waypoints.filter((w) => w.step > stage.nextStep),
 		options: stage.options.filter((o) => o.step > stage.nextStep),
+		teams: teamsStatus,
 	});
 
 	// Nudge the SOLE remaining holdout (before the advance early-returns below, so

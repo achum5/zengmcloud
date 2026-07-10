@@ -1,7 +1,25 @@
-import { useState } from "react";
-import { Dropdown } from "react-bootstrap";
+import { forwardRef, useState } from "react";
+import { ButtonGroup, Dropdown } from "react-bootstrap";
 import { useLocal } from "../../util/local.ts";
 import { toWorker } from "../../util/toWorker.ts";
+
+// Toggle for the people-icon extension: a plain button with no caret, so it
+// reads as a single icon joined to the ready button.
+const PeopleToggle = forwardRef<
+	HTMLButtonElement,
+	{ onClick?: (e: React.MouseEvent) => void; variant: string }
+>(({ onClick, variant }, ref) => (
+	<button
+		ref={ref}
+		type="button"
+		className={`btn btn-${variant} btn-sm`}
+		onClick={onClick}
+		title="Ready-up status by team"
+		aria-label="Ready-up status by team"
+	>
+		👥
+	</button>
+));
 
 // Header ready-up control, shown while connected to a sync room during a gated
 // stage (draft lottery, draft, re-sign period, free agency). Gated steps only
@@ -49,75 +67,105 @@ const PhaseReadyControl = () => {
 				(s.waypoints.find((w) => w.step === s.myUntilStep)?.label || ""))
 			: "";
 
+	const variant = s.ready ? "success" : "danger";
+	const teams = s.teams ?? [];
+
 	return (
-		<Dropdown className="mx-2 flex-shrink-0" align="end">
-			<Dropdown.Toggle
-				variant={s.ready ? "success" : "danger"}
-				size="sm"
-				disabled={busy}
-				title={
-					s.onClockUser
-						? "A league-mate is on the clock"
-						: "Advances once every team is ready"
-				}
-			>
-				{s.ready ? "✓" : "Ready"} {s.readyTeams}/{s.totalTeams}
-				{thruLabel ? (
-					<span className="d-none d-lg-inline"> · {thruLabel}</span>
-				) : null}
-			</Dropdown.Toggle>
-			<Dropdown.Menu>
-				<Dropdown.Item
-					onClick={() => setReady(s.nextStep.number)}
-					disabled={itemDisabled(s.nextStep.number)}
-					active={s.myUntilStep === s.nextStep.number}
-				>
-					{s.options.length > 0
-						? `Ready for ${s.nextStep.label}`
-						: `Ready: ${s.nextStep.label}`}
-				</Dropdown.Item>
-				{s.waypoints.map((w) => (
-					<Dropdown.Item
-						key={w.step}
-						onClick={() => setReady(w.step)}
-						disabled={itemDisabled(w.step)}
-						active={s.myUntilStep === w.step}
-					>
-						{w.label}
-					</Dropdown.Item>
-				))}
-				{s.options.length > 0 ? (
-					<>
-						<Dropdown.Divider />
-						<Dropdown.Header>Ready through…</Dropdown.Header>
-						<div style={{ maxHeight: 240, overflowY: "auto" }}>
-							{s.options.map((o) => (
-								<Dropdown.Item
-									key={o.step}
-									onClick={() => setReady(o.step)}
-									disabled={itemDisabled(o.step)}
-									active={s.myUntilStep === o.step}
-								>
-									{o.label}
-								</Dropdown.Item>
-							))}
-						</div>
-					</>
-				) : null}
-				{s.ready ? (
-					<>
-						<Dropdown.Divider />
-						<Dropdown.Item
-							onClick={() => setReady(null)}
-							disabled={itemDisabled(null)}
-							title={paused ? "Catching up on league changes…" : undefined}
+		<ButtonGroup className="mx-2 flex-shrink-0">
+			<Dropdown as={ButtonGroup} align="end">
+				<Dropdown.Toggle as={PeopleToggle} variant={variant} />
+				<Dropdown.Menu>
+					<Dropdown.Header>Ready-up status</Dropdown.Header>
+					{teams.map((t) => (
+						<Dropdown.ItemText
+							key={t.tid}
+							className="d-flex justify-content-between gap-3"
 						>
-							Not ready
+							<span className="text-nowrap">{t.name}</span>
+							<span
+								className={`text-nowrap ${
+									t.ready
+										? "text-success"
+										: t.onClock
+											? "text-warning"
+											: "text-danger"
+								}`}
+							>
+								{t.ready ? "✓ Ready" : t.onClock ? "On the clock" : "Not ready"}
+							</span>
+						</Dropdown.ItemText>
+					))}
+				</Dropdown.Menu>
+			</Dropdown>
+			<Dropdown as={ButtonGroup} align="end">
+				<Dropdown.Toggle
+					variant={variant}
+					size="sm"
+					disabled={busy}
+					title={
+						s.onClockUser
+							? "A league-mate is on the clock"
+							: "Advances once every team is ready"
+					}
+				>
+					{s.ready ? "✓" : "Ready"} {s.readyTeams}/{s.totalTeams}
+					{thruLabel ? (
+						<span className="d-none d-lg-inline"> · {thruLabel}</span>
+					) : null}
+				</Dropdown.Toggle>
+				<Dropdown.Menu>
+					<Dropdown.Item
+						onClick={() => setReady(s.nextStep.number)}
+						disabled={itemDisabled(s.nextStep.number)}
+						active={s.myUntilStep === s.nextStep.number}
+					>
+						{s.options.length > 0
+							? `Ready for ${s.nextStep.label}`
+							: `Ready: ${s.nextStep.label}`}
+					</Dropdown.Item>
+					{s.waypoints.map((w) => (
+						<Dropdown.Item
+							key={w.step}
+							onClick={() => setReady(w.step)}
+							disabled={itemDisabled(w.step)}
+							active={s.myUntilStep === w.step}
+						>
+							{w.label}
 						</Dropdown.Item>
-					</>
-				) : null}
-			</Dropdown.Menu>
-		</Dropdown>
+					))}
+					{s.options.length > 0 ? (
+						<>
+							<Dropdown.Divider />
+							<Dropdown.Header>Ready through…</Dropdown.Header>
+							<div style={{ maxHeight: 240, overflowY: "auto" }}>
+								{s.options.map((o) => (
+									<Dropdown.Item
+										key={o.step}
+										onClick={() => setReady(o.step)}
+										disabled={itemDisabled(o.step)}
+										active={s.myUntilStep === o.step}
+									>
+										{o.label}
+									</Dropdown.Item>
+								))}
+							</div>
+						</>
+					) : null}
+					{s.ready ? (
+						<>
+							<Dropdown.Divider />
+							<Dropdown.Item
+								onClick={() => setReady(null)}
+								disabled={itemDisabled(null)}
+								title={paused ? "Catching up on league changes…" : undefined}
+							>
+								Not ready
+							</Dropdown.Item>
+						</>
+					) : null}
+				</Dropdown.Menu>
+			</Dropdown>
+		</ButtonGroup>
 	);
 };
 
