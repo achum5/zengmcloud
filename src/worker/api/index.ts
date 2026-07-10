@@ -76,6 +76,7 @@ import {
 	type League,
 	type View,
 	type NonEmptyArray,
+	type CourtStyle,
 	RealPlayerPhotosSchema,
 	RealTeamInfoSchema,
 } from "../../common/types.ts";
@@ -4834,6 +4835,29 @@ const updateTeamInfo = async ({
 	await league.updateMeta();
 };
 
+// Save (or clear) a team's custom basketball court style. Writes the whole-team
+// record through the cache, so the change is captured and synced to the room -
+// every device draws the same custom court.
+const updateTeamCourt = async ({
+	tid,
+	court,
+}: {
+	tid: number;
+	court: CourtStyle | undefined;
+}) => {
+	const t = await idb.cache.teams.get(tid);
+	if (!t) {
+		throw new Error(`Team not found for tid ${tid}`);
+	}
+	if (court === undefined || Object.keys(court).length === 0) {
+		delete t.court;
+	} else {
+		t.court = court;
+	}
+	await idb.cache.teams.put(t);
+	return { ok: true };
+};
+
 const updateConfsDivs = async ({
 	confs,
 	divs,
@@ -5820,6 +5844,7 @@ export default {
 		updatePlayersWatch,
 		updatePlayingTime,
 		updatePlayoffTeams,
+		updateTeamCourt,
 		updateTeamInfo,
 		updateTrade,
 		upgrade65,

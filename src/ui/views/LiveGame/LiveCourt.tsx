@@ -81,6 +81,20 @@ export type CourtDot = {
 const degToRad = (deg: number) => (deg * Math.PI) / 180;
 const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
 
+// Lighten (amount > 0) or darken (< 0) a hex color, for plank seam lines.
+const shade = (hex: string, amount: number): string => {
+	const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+	if (!m) {
+		return hex;
+	}
+	const n = Number.parseInt(m[1]!, 16);
+	const clamp = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+	const r = clamp(((n >> 16) & 0xff) * (1 + amount));
+	const g = clamp(((n >> 8) & 0xff) * (1 + amount));
+	const b = clamp((n & 0xff) * (1 + amount));
+	return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
+};
+
 // The rim each display team attacks (away left, home right).
 export const rimXFor = (t: 0 | 1): number =>
 	t === 0 ? RIM_INSET : COURT_W - RIM_INSET;
@@ -243,6 +257,7 @@ export type CourtTeam = {
 	name?: string;
 	colors?: [string, string, string];
 	imgURL?: string;
+	court?: import("../../../common/types.ts").CourtStyle;
 };
 
 const FLIGHT_MS = 650;
@@ -575,9 +590,34 @@ const LiveCourt = ({
 		};
 	}, [scene?.key]);
 
-	const lineColor = "#f8f5f0";
-	const woodFill = "#c9a165";
-	const woodLine = "#b3874e";
+	// Court styling comes from the home team's custom court (Manage Teams →
+	// Court), falling back to a neutral hardwood + the team's colors.
+	const court = home?.court;
+	const lineColor = court?.lines || "#f8f5f0";
+	const woodFill = court?.floor || "#c9a165";
+	const woodLine = shade(woodFill, -0.14);
+	const floorPattern = court?.floorPattern ?? "hardwood";
+	const paintColor = court?.paint || undefined; // undefined = no painted key
+	const trophyURL = court?.trophyURL || DEFAULT_TROPHY_URL;
+	const centerLogoURL = court?.logoURL || home?.imgURL;
+
+	// The painted key (NBA-style colored lane), drawn under the lines.
+	const paintFor = (mirror: boolean) => {
+		if (!paintColor) {
+			return null;
+		}
+		const tx = mirror ? `translate(${COURT_W} 0) scale(-1 1)` : undefined;
+		return (
+			<rect
+				transform={tx}
+				x={0}
+				y={17}
+				width={19}
+				height={16}
+				fill={paintColor}
+			/>
+		);
+	};
 
 	// Half-court markings for one side, mirrored for the other.
 	const halfMarkings = (mirror: boolean) => {
@@ -609,10 +649,10 @@ const LiveCourt = ({
 	};
 
 	// The court belongs to the HOME team - both baselines and rails carry the
-	// home branding, just like a real arena (unlike a football field split by
-	// team). The away color is used only to tint the away team's shot dots.
-	const homeRail = homeColor;
-	const homeText = teamColor(home, 1, "#ffffff");
+	// home branding, just like a real arena. Rail color/text come from the
+	// custom court (apron) or the team colors.
+	const homeRail = court?.apron || homeColor;
+	const homeText = court?.apronText || teamColor(home, 1, "#ffffff");
 	const railLabel = (home?.name || home?.region || home?.abbrev || "")
 		.toUpperCase()
 		.slice(0, 14);
@@ -721,18 +761,36 @@ const LiveCourt = ({
 					fill={homeRail}
 				/>
 				<rect x={0} y={0} width={COURT_W} height={COURT_H} fill={woodFill} />
-				{/* Plank seams */}
-				<g stroke={woodLine} strokeWidth={0.1} opacity={0.5}>
-					{Array.from({ length: 23 }, (_, i) => (
-						<line
-							key={i}
-							x1={(i + 1) * 4}
-							y1={0}
-							x2={(i + 1) * 4}
-							y2={COURT_H}
-						/>
-					))}
-				</g>
+				{/* Floor pattern: vertical planks (hardwood), a woven grid (parquet),
+				    or nothing (solid) */}
+				{floorPattern !== "solid" ? (
+					<g stroke={woodLine} strokeWidth={0.1} opacity={0.5}>
+						{Array.from({ length: 23 }, (_, i) => (
+							<line
+								key={`v${i}`}
+								x1={(i + 1) * 4}
+								y1={0}
+								x2={(i + 1) * 4}
+								y2={COURT_H}
+							/>
+						))}
+						{floorPattern === "parquet"
+							? Array.from({ length: 12 }, (_, i) => (
+									<line
+										key={`h${i}`}
+										x1={0}
+										y1={(i + 1) * 4}
+										x2={COURT_W}
+										y2={(i + 1) * 4}
+									/>
+								))
+							: null}
+					</g>
+				) : null}
+
+				{/* Painted key (drawn under the lines) */}
+				{paintFor(false)}
+				{paintFor(true)}
 
 				{railText(true)}
 				{railText(false)}
@@ -751,7 +809,7 @@ const LiveCourt = ({
 				    front of its base; otherwise a large home logo. */}
 				{finals ? (
 					<image
-						href={DEFAULT_TROPHY_URL}
+						href={trophyURL}
 						x={COURT_W / 2 - 17}
 						y={25 - 21}
 						width={34}
@@ -760,9 +818,9 @@ const LiveCourt = ({
 						preserveAspectRatio="xMidYMid meet"
 					/>
 				) : null}
-				{home?.imgURL ? (
+				{centerLogoURL ? (
 					<image
-						href={home.imgURL}
+						href={centerLogoURL}
 						x={COURT_W / 2 - (finals ? 7.5 : 15)}
 						y={finals ? 25 + 1 : 25 - 15}
 						width={finals ? 15 : 30}

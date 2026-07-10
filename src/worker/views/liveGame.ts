@@ -111,6 +111,16 @@ export const boxScoreToLiveSim = async ({
 			initialBoxScore,
 			teamSeasonOverrides?.[i],
 		);
+		// Attach the team's custom court style (basketball) so the live-game court
+		// graphic can draw the home team's court.
+		if (isSport("basketball") && t.tid >= 0) {
+			try {
+				const teamRecord = await idb.cache.teams.get(t.tid);
+				t.court = teamRecord?.court;
+			} catch {
+				// Court styling is cosmetic; fall back to defaults.
+			}
+		}
 		t.ptsQtrs = [];
 
 		for (const stat of resetStatsTeam) {

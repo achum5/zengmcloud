@@ -28,6 +28,7 @@ export { default as draftScouting } from "./draftScouting.ts";
 export { default as draftTeamHistory } from "./draftTeamHistory.ts";
 export { default as eightyTwoZeroDraft } from "./eightyTwoZeroDraft.ts";
 export { default as editAwards } from "./editAwards.ts";
+export { default as editTeamCourt } from "./editTeamCourt.ts";
 export { default as exhibition } from "./exhibition.ts";
 export { default as exhibitionGame } from "./exhibitionGame.ts";
 export { default as expansionDraft } from "./expansionDraft.ts";

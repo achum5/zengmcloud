@@ -34,6 +34,7 @@ export const routeInfos = {
 	"/l/:lid/hall_of_fame": "hallOfFame",
 	"/l/:lid/manage_confs": "manageConfs",
 	"/l/:lid/manage_teams": "manageTeams",
+	"/l/:lid/edit_team_court/:tid": "editTeamCourt",
 	"/l/:lid/roster": "roster",
 	"/l/:lid/roster/:abbrev": "roster",
 	"/l/:lid/roster/:abbrev/:season": "roster",

@@ -9,6 +9,7 @@ import { PHASE } from "../../../common/constants.ts";
 import TeamForm from "./TeamForm.tsx";
 import { useBlocker } from "../../hooks/useBlocker.ts";
 import { useLocal } from "../../util/local.ts";
+import { isSport } from "../../../common/sportFunctions.ts";
 
 export const nextSeasonWarning =
 	"Because the regular season is already over, changes will not be fully applied until next season.";
@@ -307,6 +308,16 @@ const ManageTeams = (props: View<"manageTeams">) => {
 								moveButton
 								t={t}
 							/>
+							{isSport("basketball") ? (
+								<div className="col-12 mb-1">
+									<a
+										className="btn btn-sm btn-light-bordered"
+										href={helpers.leagueUrl(["edit_team_court", t.tid])}
+									>
+										🏀 Customize court
+									</a>
+								</div>
+							) : null}
 							<div className="col-12 d-lg-none" style={{ marginTop: -12 }}>
 								<hr className="my-hr" />
 							</div>

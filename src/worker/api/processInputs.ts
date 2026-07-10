@@ -125,6 +125,17 @@ const customizePlayer = (params: Params) => {
 	};
 };
 
+const editTeamCourt = (params: Params) => {
+	const tid =
+		typeof params.tid === "string" ? Number.parseInt(params.tid) : Number.NaN;
+	if (Number.isNaN(tid) || tid < 0) {
+		return {
+			redirectUrl: helpers.leagueUrl(["manage_teams"]),
+		};
+	}
+	return { tid };
+};
+
 const depth = (params: Params) => {
 	// Fix broken links
 	if (params.abbrev === "FA" || params.abbrev === "FA_-1") {
@@ -1105,6 +1116,7 @@ export default {
 	draftPicks,
 	draftTeamHistory,
 	editAwards: validateSeasonOnly,
+	editTeamCourt,
 	exhibitionGame,
 	exportPlayers: validateSeasonOnly,
 	fantasyDraft,

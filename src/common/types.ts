@@ -1758,6 +1758,24 @@ export type Team = {
 				restricted1?: true; // True if team got the top pick last year
 				restricted5?: 1 | 2; // Number of prior seasons in a row that team got a top 5 pick (2 is max to track, undefined is 0)
 		  };
+
+	// Per-team court styling for the basketball live-game graphic. Optional (no
+	// upgrade); when absent the court falls back to the team's colors + logo. All
+	// fields optional so a partial customization is fine. See common/court.ts.
+	court?: CourtStyle;
+};
+
+// How a team's basketball court is drawn in the live-game view. Stored on the
+// team record (so it syncs to the whole room) and edited from Manage Teams.
+export type CourtStyle = {
+	floor?: string; // hardwood tone (hex)
+	floorPattern?: "hardwood" | "parquet" | "solid";
+	lines?: string; // court line color (hex)
+	paint?: string; // painted key fill (hex); "" / undefined = no paint fill
+	apron?: string; // sideline/baseline rail color (hex); default team color 0
+	apronText?: string; // rail team-name text color (hex); default team color 1
+	logoURL?: string; // center-court logo; default the team's imgURL
+	trophyURL?: string; // finals center-court trophy; default the league default
 };
 
 export type TeamAttr = keyof Team;
