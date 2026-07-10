@@ -73,12 +73,13 @@ export const Controller = () => {
 		}
 	}, [lid]);
 
-	// Sync debug logging is on by default. If it slows a device down, opt out
-	// from the browser console with: localStorage.setItem("syncDebugLog", "0")
+	// Sync debug logging is OFF by default (the log firehose lags the game). To
+	// diagnose a sync issue, opt in from the browser console and refresh:
+	//   localStorage.setItem("syncDebugLog", "1")
 	useEffect(() => {
 		try {
-			if (localStorage.getItem("syncDebugLog") === "0") {
-				void toWorker("main", "setSyncDebugLogging", false);
+			if (localStorage.getItem("syncDebugLog") === "1") {
+				void toWorker("main", "setSyncDebugLogging", true);
 			}
 		} catch {}
 	}, []);

@@ -1,13 +1,14 @@
 import { toUI } from "../../util/index.ts";
 
-// Sync debug logging is ON by default (it's how sync issues get diagnosed in
-// the field), but gated at runtime because every event is a console.log plus a
-// cross-thread message to mirror it into the page console. If it's slowing a
-// device down, opt out from the browser console and refresh:
-//   localStorage.setItem("syncDebugLog", "0")
-// (The UI reads that key on startup and flips this flag in the worker; remove
-// the key or set "1" to turn logging back on.)
-let loggingEnabled = true;
+// Sync debug logging is OFF by default: every event is a console.log PLUS a
+// cross-thread message to mirror it into the page console, and during a big
+// catch-up that firehose (hundreds/sec) noticeably lags the game. The logging
+// stays in the code so it can be switched back on the instant a sync issue
+// needs diagnosing - opt in from the browser console and refresh:
+//   localStorage.setItem("syncDebugLog", "1")
+// (The UI reads that key on startup and flips this flag on in the worker;
+// remove the key or set it to "0" to turn logging back off.)
+let loggingEnabled = false;
 
 export const setSyncDebugLogging = (enabled: boolean) => {
 	loggingEnabled = enabled;
