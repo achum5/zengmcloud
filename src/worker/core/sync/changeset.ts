@@ -209,8 +209,24 @@ export const captureChangeset = async (): Promise<Changeset> => {
 
 		const value = await storeAPI(typedStore).get(id);
 		if (value === undefined) {
-			// Put then deleted before we captured - treat as a delete.
-			changes.push({ store: typedStore, id, type: "delete" });
+			// Not in the in-memory cache. That does NOT mean it was deleted: the
+			// cache is season-scoped, so a rollover's re-fill EVICTS rows that are
+			// alive and well on disk. Shipping a blind delete here erased real
+			// records (e.g. teamSeasons) from every other device in the room. Only
+			// treat it as a delete if it's missing from disk too.
+			let diskValue: any;
+			try {
+				diskValue = await (idb.league as any).get(typedStore, id);
+			} catch {
+				// Store not in the league DB / read failed - fall through to delete,
+				// same as the old behavior.
+			}
+			if (diskValue !== undefined) {
+				changes.push({ store: typedStore, id, type: "put", value: diskValue });
+			} else {
+				// Put then deleted before we captured - genuinely gone.
+				changes.push({ store: typedStore, id, type: "delete" });
+			}
 		} else {
 			changes.push({ store: typedStore, id, type: "put", value });
 		}

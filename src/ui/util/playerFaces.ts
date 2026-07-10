@@ -47,12 +47,16 @@ const flush = async () => {
 	}
 
 	const lidAtStart = cacheLid;
-	let result: Record<string, PlayerFace> = {};
+	let result: Record<string, PlayerFace> | undefined;
 	try {
 		result = await toWorker("main", "getPlayerFaces", items);
 	} catch {
 		// Best-effort - a failed fetch just leaves those keys uncached, so they'll
 		// be retried the next time a row asks for them.
+		return;
+	}
+	if (!result) {
+		// The worker refused the call (e.g. a sync guard) - leave uncached to retry.
 		return;
 	}
 

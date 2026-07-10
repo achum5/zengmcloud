@@ -19,6 +19,7 @@ import {
 	updateStatus,
 	local,
 } from "../../util/index.ts";
+import { syncDebugLog } from "../sync/debugLog.ts";
 import type { Conditions, Phase } from "../../../common/types.ts";
 
 /**
@@ -98,6 +99,17 @@ const newPhase = async (phase: Phase, conditions: Conditions, extra?: any) => {
 		} catch (error) {
 			await lock.set("newPhase", false);
 			await updatePlayMenu();
+			// The toast only shows error.message; mirror the full stack into the
+			// page console (via the sync debug log) so a crash in the field is
+			// diagnosable from a pasted console log.
+			console.error("Critical error during phase change", error);
+			syncDebugLog("phase:critical-error", {
+				toPhase: phase,
+				fromPhase: g.get("phase"),
+				season: g.get("season"),
+				message: (error as Error).message,
+				stack: (error as Error).stack,
+			});
 			logEvent(
 				{
 					type: "error",

@@ -112,6 +112,25 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"updatePlayerWatch",
 	"updatePlayersWatch",
 	"clearWatchList",
+	// Read-only fetches the UI fires automatically while rendering (player faces
+	// and watch flags in every table, popover lookups, recap panels). Treating
+	// these as cloud-tracked mutations broke things two ways: the sync guard
+	// refused them mid-catch-up (they resolved undefined and crashed the UI's
+	// caches), and their capture window drained a CONCURRENT sim's pending
+	// changes - publishing giant mid-sim changesets under labels like
+	// "main.getPlayerWatch" while the sim was still running.
+	"getPlayerFaces",
+	"getPlayerWatch",
+	"getBornLoc",
+	"getDiamondInfo",
+	"getSavedTrade",
+	"getDayGamesForRecap",
+	"getSeasonRecapData",
+	"getLocal",
+	"getLeagues",
+	"getPlayersCommandPalette",
+	"getLeagueName",
+	"getExportFilename",
 ]);
 
 const isChangesetSuppressedCall = (type: string, name: string): boolean =>

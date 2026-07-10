@@ -144,13 +144,15 @@ const PlayMenu = ({
 			</Dropdown.Toggle>
 			<Dropdown.Menu>
 				{locked ? (
-					<Dropdown.Header>
-						{mpSyncReconnecting
-							? "🔄 Reconnecting to the league…"
-							: !mpSyncIsHost
-								? `🔒 ${mpSyncHostName ?? "Another device"} is in charge of simming`
-								: "Cloud sync is not ready"}
-					</Dropdown.Header>
+					<Dropdown.Item href={`/l/${lid}/multiplayer_sync`}>
+						<span className="text-body-secondary">
+							{mpSyncReconnecting
+								? "🔄 Reconnecting to the league…"
+								: !mpSyncIsHost
+									? `🔒 ${mpSyncHostName ?? "Another device"} is in charge of simming`
+									: "Cloud sync is not ready"}
+						</span>
+					</Dropdown.Item>
 				) : null}
 				{options.map((option, i) => {
 					// Only lock options that actually SIM. A url option just navigates
