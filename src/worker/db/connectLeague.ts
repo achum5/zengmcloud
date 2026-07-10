@@ -43,6 +43,7 @@ import type {
 	GameAttributesLeagueWithHistory,
 	SavedTrade,
 	SavedTradingBlock,
+	LiveGamePlayByPlay,
 } from "../../common/types.ts";
 import getInitialNumGamesConfDivSettings from "../core/season/getInitialNumGamesConfDivSettings.ts";
 import { amountToLevel } from "../../common/budgetLevels.ts";
@@ -97,6 +98,13 @@ export interface LeagueDB extends DBSchema {
 	headToHeads: {
 		key: number;
 		value: HeadToHead;
+	};
+	// Saved play-by-play of live-simmed games, so they can be re-watched later
+	// (keyed by gid). Synced like any other store, so every device in a room can
+	// rewatch a live game.
+	liveGamePlayByPlay: {
+		key: number;
+		value: LiveGamePlayByPlay;
 	};
 	messages: {
 		key: number;
@@ -656,6 +664,10 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 
 	db.createObjectStore("savedTradingBlock", {
 		keyPath: "rid",
+	});
+
+	db.createObjectStore("liveGamePlayByPlay", {
+		keyPath: "gid",
 	});
 };
 
@@ -1733,6 +1745,12 @@ const migrate = async ({
 				await cursor.update(t);
 			}
 		}
+	}
+
+	if (oldVersion < 73) {
+		db.createObjectStore("liveGamePlayByPlay", {
+			keyPath: "gid",
+		});
 	}
 
 	// Next update - do similar to `oldVersion < 71` above for numPlayoffRounds and draftType, from loadGameAttributes

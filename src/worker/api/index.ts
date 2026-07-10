@@ -5632,6 +5632,41 @@ const getSyncCheckpoint = async (): Promise<
 	return { leagueId: metaLeague.syncLeagueId, watermark };
 };
 
+// The saved play-by-play of a live-simmed game (for rewatching), or undefined
+// if none exists. Reads the cache first (a game live-simmed this session), then
+// disk (older games, or a replay synced in from another device).
+const getLiveGamePlayByPlay = async (gid: number) => {
+	if (typeof gid !== "number" || Number.isNaN(gid)) {
+		return undefined;
+	}
+	let row = await idb.cache.liveGamePlayByPlay.get(gid);
+	if (!row) {
+		try {
+			row = await (idb.league as any).get("liveGamePlayByPlay", gid);
+		} catch {
+			// Store missing / read failed - no replay.
+		}
+	}
+	return row?.playByPlay;
+};
+
+// Cheap existence check for a saved replay (used to decide whether to show the
+// "Watch replay" button) - avoids loading the whole play-by-play payload.
+const hasLiveGameReplay = async (gid: number) => {
+	if (typeof gid !== "number" || Number.isNaN(gid)) {
+		return false;
+	}
+	if (await idb.cache.liveGamePlayByPlay.get(gid)) {
+		return true;
+	}
+	try {
+		const key = await (idb.league as any).getKey("liveGamePlayByPlay", gid);
+		return key !== undefined;
+	} catch {
+		return false;
+	}
+};
+
 // Toggle worker-side sync debug logging (see debugLog.ts). Driven by the UI at
 // startup from the localStorage key "syncDebugLog".
 const setSyncDebugLoggingApi = async (enabled: boolean) => {
@@ -5739,6 +5774,8 @@ export default {
 		getLeagueInfo,
 		getLeagueName,
 		getLeagues,
+		getLiveGamePlayByPlay,
+		hasLiveGameReplay,
 		getNegotiationProps,
 		getNumPlayoffTeams,
 		getPlayerGraphStat,

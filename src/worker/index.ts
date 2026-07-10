@@ -132,6 +132,9 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getPlayersCommandPalette",
 	"getLeagueName",
 	"getExportFilename",
+	// Read-only lookup of a saved live-game replay.
+	"getLiveGamePlayByPlay",
+	"hasLiveGameReplay",
 	// Read-only sync-checkpoint lookup for league exports.
 	"getSyncCheckpoint",
 	// Persists the in-memory cache to disk (the export calls it first). It

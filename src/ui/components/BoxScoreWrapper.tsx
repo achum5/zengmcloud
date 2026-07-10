@@ -1087,6 +1087,63 @@ const PlayoffRecord = ({
 	);
 };
 
+// "Watch replay" for a completed game whose live play-by-play was saved when it
+// was first live-simmed. Shown only when a saved replay exists; clicking it
+// routes the stored play-by-play back through the live-game view (un-gated).
+const WatchReplayButton = ({ gid }: { gid: number }) => {
+	const [available, setAvailable] = useState(false);
+	const [loading, setLoading] = useState(false);
+
+	useEffect(() => {
+		let mounted = true;
+		setAvailable(false);
+		(async () => {
+			try {
+				const has = await toWorker("main", "hasLiveGameReplay", gid);
+				if (mounted) {
+					setAvailable(!!has);
+				}
+			} catch {
+				// No replay.
+			}
+		})();
+		return () => {
+			mounted = false;
+		};
+	}, [gid]);
+
+	if (!available) {
+		return null;
+	}
+
+	const watch = async () => {
+		setLoading(true);
+		try {
+			const playByPlay = await toWorker("main", "getLiveGamePlayByPlay", gid);
+			if (Array.isArray(playByPlay) && playByPlay.length > 0) {
+				await realtimeUpdate([], helpers.leagueUrl(["live_game"]), {
+					gidOneGame: gid,
+					playByPlay,
+					replay: true,
+				});
+			}
+		} finally {
+			setLoading(false);
+		}
+	};
+
+	return (
+		<button
+			type="button"
+			className="btn btn-secondary btn-sm mt-2"
+			onClick={watch}
+			disabled={loading}
+		>
+			▶ Watch replay
+		</button>
+	);
+};
+
 export const BoxScoreWrapper = ({
 	abbrev,
 	boxScore,
@@ -1220,6 +1277,15 @@ export const BoxScoreWrapper = ({
 							t1={t1}
 						/>
 					</div>
+					{!live &&
+					isSport("basketball") &&
+					!boxScore.exhibition &&
+					typeof boxScore.gid === "number" &&
+					boxScore.gid >= 0 ? (
+						<div className="text-center">
+							<WatchReplayButton gid={boxScore.gid} />
+						</div>
+					) : null}
 				</div>
 				<TeamLogo season={boxScore.season} t={t1} />
 			</div>

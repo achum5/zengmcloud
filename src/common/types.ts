@@ -401,6 +401,15 @@ export type Game = {
 	};
 };
 
+// The saved play-by-play stream of a live-simmed game, keyed by gid, so the
+// game can be re-watched later exactly as it was first simmed. Stored in its
+// own league-DB store and synced to the whole room.
+export type LiveGamePlayByPlay = {
+	gid: number;
+	season: number;
+	playByPlay: any[];
+};
+
 export type GamePlayer = any;
 
 export type GameResults = any;

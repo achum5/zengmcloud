@@ -282,7 +282,15 @@ const speedToMs = (speed: number) => {
 	return 4000 / 1.2 ** speed;
 };
 
-const getNavigateWarning = (exhibition: boolean | undefined) => {
+const getNavigateWarning = (
+	exhibition: boolean | undefined,
+	replay: boolean | undefined,
+) => {
+	if (replay) {
+		// A saved replay can always be re-watched, so there's nothing to lose by
+		// navigating away.
+		return "";
+	}
 	return exhibition
 		? "If you navigate away from this page, you won't be able to see this box score again."
 		: "If you navigate away from this page, you won't be able to see these play-by-play results again. The results of this game are already final, though.";
@@ -636,11 +644,16 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// how far the simmer (or we) have played.
 	const initialEventCount = useRef(0);
 
-	const navigateWarning = getNavigateWarning(boxScore.current.exhibition);
+	const isReplay = !!boxScore.current.replay;
+	const navigateWarning = getNavigateWarning(
+		boxScore.current.exhibition,
+		isReplay,
+	);
 
 	const { setDirty } = useBlocker({
 		message: navigateWarning,
-		initialDirty: true,
+		// A saved replay can be re-watched anytime, so don't block navigation.
+		initialDirty: !isReplay,
 		// A follower is locked in until the simmer ends the broadcast.
 		hardBlock: isFollower,
 	});
@@ -1438,6 +1451,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 					{boxScore.current.gid >= 0 ? (
 						<div className="live-game-sticky mb-3" ref={setLiveGameStickyDiv}>
 							<div className="pt-1 pt-md-0 live-game-score-wrapper">
+								{boxScore.current.replay ? (
+									<div className="text-center small text-body-secondary mb-1">
+										<span className="badge text-bg-secondary">▶ Replay</span>{" "}
+										{boxScore.current.replayLabel}
+									</div>
+								) : null}
 								<HeadlineScoreLive
 									boxScore={boxScore.current}
 									isStuck={isStuck}

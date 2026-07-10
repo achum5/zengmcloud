@@ -501,6 +501,9 @@ const liveGame = (params: Params, ctxBBGM: any) => {
 		// doesn't depend on the separate changeset sync having landed it yet.
 		boxScore?: any;
 		mpFollower?: boolean;
+		// A rewatch of a saved live game (not a fresh sim). Shows a "Replay" label
+		// and doesn't set the live-sim-in-progress lock.
+		replay?: boolean;
 	} = {
 		fromAction: !!ctxBBGM.fromAction,
 	};
@@ -510,6 +513,7 @@ const liveGame = (params: Params, ctxBBGM: any) => {
 		obj.playByPlay = ctxBBGM.playByPlay;
 		obj.boxScore = ctxBBGM.boxScore;
 		obj.mpFollower = !!ctxBBGM.mpFollower;
+		obj.replay = !!ctxBBGM.replay;
 	}
 
 	return obj;

@@ -267,6 +267,17 @@ const updatePlayByPlay = async (
 			playByPlay: inputs.playByPlay,
 		});
 		(out.initialBoxScore as any).finals = finals;
+
+		// A rewatch of a saved game: flag it and build a small "2026 Playoffs" /
+		// "2026 Regular Season" label for the header.
+		if (inputs.replay) {
+			(out.initialBoxScore as any).replay = true;
+			const label = boxScore.playoffs
+				? `${boxScore.season} Playoffs`
+				: `${boxScore.season} Regular Season`;
+			(out.initialBoxScore as any).replayLabel = label;
+		}
+
 		return out;
 	}
 };

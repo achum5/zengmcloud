@@ -16,6 +16,7 @@ import type {
 	Game,
 	GameAttribute,
 	HeadToHead,
+	LiveGamePlayByPlay,
 	Message,
 	MessageWithoutKey,
 	Negotiation,
@@ -61,6 +62,7 @@ export type Store =
 	| "gameAttributes"
 	| "games"
 	| "headToHeads"
+	| "liveGamePlayByPlay"
 	| "messages"
 	| "negotiations"
 	| "playerFeats"
@@ -96,6 +98,7 @@ export const STORES: Store[] = [
 	"gameAttributes",
 	"games",
 	"headToHeads",
+	"liveGamePlayByPlay",
 	"messages",
 	"negotiations",
 	"playerFeats",
@@ -269,6 +272,8 @@ class Cache {
 
 	headToHeads: StoreAPI<HeadToHead, HeadToHead, number>;
 
+	liveGamePlayByPlay: StoreAPI<LiveGamePlayByPlay, LiveGamePlayByPlay, number>;
+
 	messages: StoreAPI<MessageWithoutKey, Message, number>;
 
 	negotiations: StoreAPI<Negotiation, Negotiation, number>;
@@ -376,6 +381,13 @@ class Cache {
 				autoIncrement: false,
 				// Current season
 				getData: (tx, season) => tx.objectStore("headToHeads").getAll(season),
+			},
+			liveGamePlayByPlay: {
+				pk: "gid",
+				pkType: "number",
+				autoIncrement: false,
+				// No getData on purpose: these can be large and numerous, so they must
+				// never be bulk-loaded into memory. Reads hit disk directly.
 			},
 			messages: {
 				pk: "mid",
@@ -566,6 +578,7 @@ class Cache {
 		this.gameAttributes = new StoreAPI(this, "gameAttributes");
 		this.games = new StoreAPI(this, "games");
 		this.headToHeads = new StoreAPI(this, "headToHeads");
+		this.liveGamePlayByPlay = new StoreAPI(this, "liveGamePlayByPlay");
 		this.messages = new StoreAPI(this, "messages");
 		this.negotiations = new StoreAPI(this, "negotiations");
 		this.playerFeats = new StoreAPI(this, "playerFeats");

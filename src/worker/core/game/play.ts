@@ -377,6 +377,20 @@ const play = async (
 					// live sim to the room so every follower watches it in lockstep. A
 					// no-op in single-player or on a follower.
 					runLiveBroadcastStart(gidOneGame, result.playByPlay);
+
+					// Persist the play-by-play so this game can be re-watched later.
+					// Written through the cache inside the sim's capture window, so it's
+					// synced to the whole room like the game itself - every device can
+					// rewatch. Best-effort: a replay is a nicety, never fail the sim.
+					try {
+						await idb.cache.liveGamePlayByPlay.put({
+							gid: gidOneGame,
+							season: g.get("season"),
+							playByPlay: result.playByPlay,
+						});
+					} catch (error) {
+						console.error("Failed to save live game play-by-play", error);
+					}
 				}
 			}
 
