@@ -264,6 +264,150 @@ let latestReady: Record<string, DraftReadyEntry | null> | undefined;
 let advancing = false;
 let lastPushed: string | undefined;
 
+// The (stage, step, holdout) we last nudged, so the sole-holdout notification
+// fires ONCE per stuck-state instead of every 2s evaluate tick.
+let lastHoldoutNotifKey: string | undefined;
+
+// Decide whether THIS device should push a "you're the last one not readied
+// up" notification, and to which team. Returns the sole holdout's tid to
+// notify, or undefined when: there's no lone holdout, a human is on the clock
+// (that's a "make your pick" moment, not a "ready up" one), it's not a genuine
+// multi-team room, or this device isn't the designated single publisher.
+//
+// Single-publisher rule: the notification is sent only by the READY device
+// with the smallest client id. Every device runs this each tick, so without a
+// deterministic sole sender the room would fire one copy per ready device. The
+// holdout's own devices are never in the ready set, so they're never the
+// publisher (and the Cloud Function skips the author regardless). Pure and
+// exported for tests; the caller owns dedup + the actual push.
+export const lastHoldoutToNotify = ({
+	latestReady: ready,
+	userTids,
+	readyTids,
+	stageKey,
+	nextStep,
+	onClockUser,
+	clientId,
+}: {
+	latestReady: Record<string, DraftReadyEntry | null> | undefined;
+	userTids: number[];
+	readyTids: number[];
+	stageKey: string;
+	nextStep: number;
+	onClockUser: boolean;
+	clientId: string;
+}): number | undefined => {
+	if (onClockUser || userTids.length < 2) {
+		return undefined;
+	}
+	const holdouts = userTids.filter((tid) => !readyTids.includes(tid));
+	if (holdouts.length !== 1) {
+		return undefined;
+	}
+	const holdoutTid = holdouts[0]!;
+
+	let minReadyUid: string | undefined;
+	for (const [uid, entry] of Object.entries(ready ?? {})) {
+		if (
+			entry &&
+			entry.draftKey === stageKey &&
+			typeof entry.untilPick === "number" &&
+			entry.untilPick >= nextStep &&
+			typeof entry.tid === "number" &&
+			userTids.includes(entry.tid) &&
+			entry.tid !== holdoutTid &&
+			(minReadyUid === undefined || uid < minReadyUid)
+		) {
+			minReadyUid = uid;
+		}
+	}
+	if (minReadyUid === undefined || minReadyUid !== clientId) {
+		return undefined;
+	}
+	return holdoutTid;
+};
+
+// The page a holdout notification deep-links to for the current gated phase.
+const holdoutNotifPath = (phase: number): string => {
+	switch (phase) {
+		case PHASE.DRAFT_LOTTERY:
+			return "draft_lottery";
+		case PHASE.DRAFT:
+			return "draft";
+		case PHASE.RESIGN_PLAYERS:
+			return "negotiation";
+		case PHASE.FREE_AGENCY:
+			return "free_agents";
+		default:
+			return "";
+	}
+};
+
+// Push the sole-holdout nudge if this device is the designated publisher and
+// we haven't already nudged this exact stuck-state. Fire-and-forget on the
+// separate notifications channel - fully decoupled from the changeset/outbox
+// pipeline, so it can never affect sync.
+const maybeNotifyLastHoldout = async (
+	engine: NonNullable<ReturnType<typeof getSyncEngine>>,
+	stage: StageInfo,
+	stageKey: string,
+	userTids: number[],
+	readyTids: number[],
+) => {
+	// Don't nudge off a stale view of the world while still catching up.
+	if (!engine.isCaughtUp()) {
+		return;
+	}
+	const holdoutTid = lastHoldoutToNotify({
+		latestReady,
+		userTids,
+		readyTids,
+		stageKey,
+		nextStep: stage.nextStep,
+		onClockUser: stage.onClockUser,
+		clientId: engine.clientId,
+	});
+	if (holdoutTid === undefined) {
+		return;
+	}
+
+	// A holdout blocks the step from advancing, so (stage, step, holdout) is a
+	// stable key while the room is stuck - fire once, not every tick.
+	const key = `${stageKey}:${stage.nextStep}:${holdoutTid}`;
+	if (key === lastHoldoutNotifKey) {
+		return;
+	}
+	lastHoldoutNotifKey = key;
+
+	let teamName = "your team";
+	try {
+		const team = await idb.cache.teams.get(holdoutTid);
+		if (team) {
+			teamName = `${team.region} ${team.name}`;
+		}
+	} catch {
+		// The name is a nicety; a generic body still delivers the nudge.
+	}
+
+	try {
+		await engine.publishNotification({
+			title: "Everyone's ready but you",
+			body: `The league is waiting on the ${teamName} to ready up.`,
+			targetTids: [holdoutTid],
+			path: holdoutNotifPath(g.get("phase")),
+		});
+		syncDebugLog("phaseReady:holdout-notified", {
+			stageKey,
+			step: stage.nextStep,
+			holdoutTid,
+		});
+	} catch (error) {
+		// A failed push is harmless - clear the key so a later tick can retry.
+		lastHoldoutNotifKey = undefined;
+		syncDebugLog("phaseReady:holdout-notify-failed", { error });
+	}
+};
+
 const pushToUI = (state: MpPhaseReady | undefined) => {
 	const key = JSON.stringify(state ?? null);
 	if (key === lastPushed) {
@@ -341,6 +485,11 @@ const evaluate = async () => {
 		waypoints: stage.waypoints.filter((w) => w.step > stage.nextStep),
 		options: stage.options.filter((o) => o.step > stage.nextStep),
 	});
+
+	// Nudge the SOLE remaining holdout (before the advance early-returns below, so
+	// a queued-upload backpressure return can't skip it). Safe + spam-proof: see
+	// maybeNotifyLastHoldout.
+	void maybeNotifyLastHoldout(engine, stage, stageKey, userTids, readyTids);
 
 	// ---- Advance? ----
 	if (
@@ -489,6 +638,7 @@ export const setupDraftReady = (transport: SyncTransport) => {
 	teardownDraftReady();
 	currentTransport = transport;
 	latestReady = undefined;
+	lastHoldoutNotifKey = undefined;
 	unsubscribe = transport.subscribeDraftReady?.((ready) => {
 		latestReady = ready;
 		void evaluate();
@@ -507,5 +657,6 @@ export const teardownDraftReady = () => {
 	}
 	currentTransport = undefined;
 	latestReady = undefined;
+	lastHoldoutNotifKey = undefined;
 	pushToUI(undefined);
 };

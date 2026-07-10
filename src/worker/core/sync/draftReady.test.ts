@@ -1,5 +1,9 @@
 import { assert, describe, test } from "vitest";
-import { overallPickNumber, readyTeamTids } from "./draftReady.ts";
+import {
+	lastHoldoutToNotify,
+	overallPickNumber,
+	readyTeamTids,
+} from "./draftReady.ts";
 
 describe("draft ready-up", () => {
 	test("overall pick number spans rounds", () => {
@@ -72,5 +76,85 @@ describe("draft ready-up", () => {
 			uidCleared: null,
 		};
 		assert.deepEqual(readyTeamTids(ready, userTids, "2026-5", 1), []);
+	});
+
+	describe("last-holdout notification", () => {
+		const key = "2026-5";
+		const base = {
+			latestReady: {
+				uidA: { untilPick: 5, draftKey: key, tid: 0 },
+				uidB: { untilPick: 5, draftKey: key, tid: 5 },
+			} as Record<string, any>,
+			userTids: [0, 5, 9],
+			readyTids: [0, 5],
+			stageKey: key,
+			nextStep: 5,
+			onClockUser: false,
+		};
+
+		test("names the sole holdout, published by the smallest ready client id", () => {
+			// uidA < uidB, so only the device with client id "uidA" publishes.
+			assert.strictEqual(lastHoldoutToNotify({ ...base, clientId: "uidA" }), 9);
+		});
+
+		test("a non-designated ready device stays silent (no duplicate pushes)", () => {
+			assert.strictEqual(
+				lastHoldoutToNotify({ ...base, clientId: "uidB" }),
+				undefined,
+			);
+		});
+
+		test("the holdout's own device never publishes", () => {
+			// The holdout (team 9) has an open, connected device that just hasn't
+			// readied - it must not send itself the nudge.
+			assert.strictEqual(
+				lastHoldoutToNotify({ ...base, clientId: "uidHoldout9" }),
+				undefined,
+			);
+		});
+
+		test("no nudge when two or more teams are still out", () => {
+			assert.strictEqual(
+				lastHoldoutToNotify({
+					...base,
+					readyTids: [0],
+					clientId: "uidA",
+				}),
+				undefined,
+			);
+		});
+
+		test("no nudge when everyone is ready", () => {
+			assert.strictEqual(
+				lastHoldoutToNotify({
+					...base,
+					readyTids: [0, 5, 9],
+					clientId: "uidA",
+				}),
+				undefined,
+			);
+		});
+
+		test("no nudge while a human is on the clock", () => {
+			assert.strictEqual(
+				lastHoldoutToNotify({ ...base, onClockUser: true, clientId: "uidA" }),
+				undefined,
+			);
+		});
+
+		test("no nudge in a single-team room", () => {
+			assert.strictEqual(
+				lastHoldoutToNotify({
+					latestReady: {},
+					userTids: [0],
+					readyTids: [],
+					stageKey: key,
+					nextStep: 5,
+					onClockUser: false,
+					clientId: "uidA",
+				}),
+				undefined,
+			);
+		});
 	});
 });
