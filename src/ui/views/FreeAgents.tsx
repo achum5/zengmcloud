@@ -168,12 +168,14 @@ const FaBoardPanel = ({
 	board,
 	faBoard,
 	players,
+	canAfford,
 	onMove,
 	onRemove,
 }: {
 	board: number[];
 	faBoard: FaBoardProps;
 	players: any[];
+	canAfford: (p: any) => boolean;
 	onMove: (pid: number, dir: -1 | 1) => void;
 	onRemove: (pid: number) => void;
 }) => {
@@ -235,6 +237,8 @@ const FaBoardPanel = ({
 									) : null}
 									{p && !p.mood?.user?.willing ? (
 										<span className="badge text-bg-danger">Won't sign</span>
+									) : p && !canAfford(p) ? (
+										<span className="badge text-bg-danger">Can't afford</span>
 									) : null}
 									<button
 										type="button"
@@ -300,6 +304,13 @@ const FreeAgents = ({
 		setBoard(next);
 		void toWorker("main", "faBoardSet", next);
 	};
+
+	// Same affordability rule as the Sign button: under the cap (or it's a
+	// min contract, or the league has no cap). Amounts here are in millions.
+	const canAffordBoard = (p: any) =>
+		salaryCapType === "none" ||
+		p.contract.amount <= capSpace + 1 / 1000 ||
+		p.contract.amount <= (minContract + 1) / 1000;
 
 	useTitleBar({
 		title: "Free Agents",
@@ -473,7 +484,18 @@ const FreeAgents = ({
 									<button
 										type="button"
 										className="btn btn-sm btn-light-bordered"
-										disabled={board.length >= faBoard.numSlots}
+										disabled={
+											board.length >= faBoard.numSlots ||
+											!p.mood.user.willing ||
+											!canAffordBoard(p)
+										}
+										title={
+											!p.mood.user.willing
+												? "Refuses to sign with you"
+												: !canAffordBoard(p)
+													? "Can't afford"
+													: undefined
+										}
 										onClick={() => updateBoard([...board, p.pid])}
 									>
 										Board
@@ -543,6 +565,7 @@ const FreeAgents = ({
 					board={board}
 					faBoard={faBoard}
 					players={players}
+					canAfford={canAffordBoard}
 					onMove={(pid, dir) => {
 						const i = board.indexOf(pid);
 						const j = i + dir;

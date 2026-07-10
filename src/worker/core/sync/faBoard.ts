@@ -20,7 +20,7 @@
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g } from "../../util/index.ts";
+import { g, toUI } from "../../util/index.ts";
 import { player, team } from "../index.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { syncDebugLog } from "./debugLog.ts";
@@ -45,6 +45,10 @@ export const setupFaBoard = (transport: SyncTransport) => {
 	unsubscribe = transport.subscribeFaBoard?.((boards) => {
 		latestBoards = boards;
 	});
+	// A page rendered before the room finished connecting (every fresh mobile
+	// load) computed its view with no board. Re-run the current view now that
+	// the board is live, so the Free Agents page picks it up.
+	void toUI("realtimeUpdate", [[]]);
 };
 
 export const teardownFaBoard = () => {
