@@ -159,6 +159,17 @@ export type DraftReadyEntry = {
 	name?: string;
 };
 
+// One team's free-agency board: the ranked list of free agents (pids, best
+// first) it wants a shot at on the next FA day. Published per device; the
+// newest entry per team wins.
+export type FaBoardEntry = {
+	season: number;
+	tid: number;
+	pids: number[];
+	at: number; // client clock, newest-entry-per-team tiebreak
+	name?: string;
+};
+
 export interface SyncSubscriber {
 	// Handle one entry from the shared log. Returns whether it was applied.
 	onEntry(entry: ChangesetEntry): Promise<boolean> | boolean;
@@ -286,6 +297,15 @@ export interface SyncTransport {
 		pick: number,
 		leaseMs: number,
 	): Promise<boolean>;
+
+	// Free-agency board support (see faBoard.ts). Each device publishes its
+	// team's ranked free-agent list (null clears it); everyone subscribes but the
+	// UI keeps boards blind until the day resolves. Same per-uid merge semantics
+	// as publishDraftReady.
+	publishFaBoard?(entry: FaBoardEntry | null): Promise<void>;
+	subscribeFaBoard?(
+		onChange: (boards: Record<string, FaBoardEntry | null> | undefined) => void,
+	): () => void;
 
 	// Live-sim broadcast support (see LiveBroadcastMeta). Optional so the
 	// in-memory test transport can skip it.

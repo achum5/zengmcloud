@@ -2,6 +2,7 @@ import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { player } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, lock } from "../../util/index.ts";
+import { getSyncEngine } from "../sync/engineHolder.ts";
 
 /**
  * Start a new contract negotiation with a player.
@@ -27,6 +28,17 @@ const create = async (
 
 	if (lock.get("gameSim")) {
 		return "You cannot initiate a new negotiaion while game simulation is in progress.";
+	}
+
+	// In a synced multiplayer league, free agents during the free agency phase
+	// are signed through the board (waiver rolls), never by direct negotiation -
+	// otherwise a user could snipe a player the room is rolling for.
+	if (
+		!resigning &&
+		g.get("phase") === PHASE.FREE_AGENCY &&
+		getSyncEngine() !== undefined
+	) {
+		return "Free agents are signed through the free agency board in this league.";
 	}
 
 	if (g.get("phase") < 0) {

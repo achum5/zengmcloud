@@ -33,6 +33,7 @@ export const parseJSON = () => {
 		draftLotteryResults: undefined,
 		draftPicks: undefined,
 		events: undefined,
+		faDayResults: undefined,
 		games: undefined,
 		headToHeads: undefined,
 		liveGamePlayByPlay: undefined,

@@ -15,6 +15,7 @@ export {
 } from "./adminRooms.ts";
 export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 export { setDraftReady } from "./draftReady.ts";
+export { setFaBoard, getMyFaBoard, faBoardActive } from "./faBoard.ts";
 export {
 	claimSyncAuthority,
 	checkSyncReady,

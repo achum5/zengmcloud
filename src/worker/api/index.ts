@@ -107,6 +107,7 @@ import {
 	refreshSyncUIState,
 	resyncSharedLeague,
 	setDraftReady,
+	setFaBoard,
 	teardownSharedLeague,
 	updateLiveBroadcast,
 } from "../core/sync/index.ts";
@@ -5605,6 +5606,13 @@ const draftSetReady = async (untilPick: number | null) => {
 	return { ok: true };
 };
 
+// Publish this team's free-agency board (ranked FA pids). Cloud-only write;
+// boards resolve when the FA day advances (see faBoard.ts).
+const faBoardSet = async (pids: number[]) => {
+	await setFaBoard(pids);
+	return { ok: true };
+};
+
 // The current league's sync checkpoint, embedded in full league exports: the
 // room fingerprint this file belongs to plus the change-log position its data
 // already includes. A re-import that keeps everything can then join its room
@@ -5750,6 +5758,7 @@ export default {
 		discardUnsavedProgress,
 		draftLottery,
 		draftSetReady,
+		faBoardSet,
 		draftUser,
 		dunkGetProjected,
 		dunkSetControlling,

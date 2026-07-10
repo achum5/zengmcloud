@@ -4,6 +4,7 @@ import { outbox } from "./outbox.ts";
 import { ensureAnonymousAuth } from "./auth.ts";
 import { setApplyGuard } from "./applyGuard.ts";
 import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
+import { setupFaBoard, teardownFaBoard } from "./faBoard.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
@@ -1162,6 +1163,10 @@ export const connectSharedLeague = async ({
 	// draft phase.
 	setupDraftReady(transport);
 
+	// Free-agency boards: watch everyone's ranked FA lists so the day advance
+	// can resolve them (see faBoard.ts). No-op outside free agency.
+	setupFaBoard(transport);
+
 	// Watch for a live lottery reveal (someone running the lottery while
 	// everyone watches the picks flip in lockstep).
 	followedLotteryReveal = undefined;
@@ -1231,6 +1236,7 @@ export const teardownSharedLeague = async ({
 	lotteryRevealUnsub = undefined;
 	followedLotteryReveal = undefined;
 	teardownDraftReady();
+	teardownFaBoard();
 	// Best-effort: end our own broadcast so we don't leave the room locked.
 	if (activeBroadcast) {
 		void endLiveBroadcast();

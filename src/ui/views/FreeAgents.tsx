@@ -4,6 +4,7 @@ import { DataTable } from "../components/DataTable/index.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
+import { toWorker } from "../util/toWorker.ts";
 import { getCols } from "../../common/getCols.ts";
 import { useLocal } from "../util/local.ts";
 import type { Phase, View } from "../../common/types.ts";
@@ -105,9 +106,182 @@ const signedFreeAgentWrapped = (
 	};
 };
 
+// One resolved item in the FA day results panel. Contested signings show the
+// full roll: every team's mood, odds, and 1-100 band, plus where it landed.
+const FaResultItem = ({ item }: { item: FaDayResultItemType }) => {
+	if (item.type === "refused") {
+		return (
+			<div className="text-body-secondary">
+				{item.name} refused to negotiate with {item.abbrev}
+			</div>
+		);
+	}
+	if (item.type === "ineligible") {
+		return (
+			<div className="text-body-secondary">
+				{item.abbrev} couldn't afford {item.name}
+			</div>
+		);
+	}
+	if (item.type === "unopposed") {
+		return (
+			<div>
+				<a href={helpers.leagueUrl(["player", item.pid])}>{item.name}</a> →{" "}
+				{item.abbrev} unopposed,{" "}
+				{helpers.formatCurrency(item.amount / 1000, "M")} thru {item.exp}
+			</div>
+		);
+	}
+	return (
+		<div className="mb-2">
+			<div>
+				<a href={helpers.leagueUrl(["player", item.pid])}>{item.name}</a> →{" "}
+				<b>
+					{item.teams.find((t) => t.tid === item.winnerTid)?.abbrev ?? "???"}
+				</b>
+				, {helpers.formatCurrency(item.amount / 1000, "M")} thru {item.exp} ·
+				rolled <b>{item.roll}</b>
+			</div>
+			{item.teams.map((t) => (
+				<div
+					key={t.tid}
+					className={
+						t.tid === item.winnerTid ? "text-success" : "text-body-secondary"
+					}
+				>
+					{t.abbrev} · mood {t.mood >= 0 ? "+" : ""}
+					{t.mood} · {t.oddsPct}% · {t.lo}–{t.hi}
+					{t.tid === item.winnerTid ? " ✓" : ""}
+				</div>
+			))}
+		</div>
+	);
+};
+
+type FaBoardProps = NonNullable<View<"freeAgents">["faBoard"]>;
+type FaDayResultItemType = NonNullable<
+	FaBoardProps["results"]
+>["items"][number];
+
+// The team's ranked free-agent board plus the last day's transparent results.
+const FaBoardPanel = ({
+	board,
+	faBoard,
+	players,
+	onMove,
+	onRemove,
+}: {
+	board: number[];
+	faBoard: FaBoardProps;
+	players: any[];
+	onMove: (pid: number, dir: -1 | 1) => void;
+	onRemove: (pid: number) => void;
+}) => {
+	const playerByPid = new Map(players.map((p) => [p.pid, p]));
+	const results = faBoard.results;
+
+	return (
+		<div className="row mb-3">
+			<div className="col-md-6 mb-3 mb-md-0">
+				<h3>Board</h3>
+				{board.length === 0 ? (
+					<p className="text-body-secondary mb-0">
+						Rank up to {faBoard.numSlots} free agents. Boards resolve when
+						everyone readies up for the next day.
+					</p>
+				) : (
+					<ul className="list-unstyled mb-0">
+						{board.map((pid, i) => {
+							const p = playerByPid.get(pid);
+							return (
+								<li key={pid} className="d-flex align-items-center gap-2 mb-1">
+									<span
+										className="text-body-secondary text-end"
+										style={{ width: 22 }}
+									>
+										{i + 1}.
+									</span>
+									<div className="btn-group">
+										<button
+											type="button"
+											className="btn btn-xs btn-light-bordered"
+											disabled={i === 0}
+											onClick={() => onMove(pid, -1)}
+											title="Move up"
+										>
+											▲
+										</button>
+										<button
+											type="button"
+											className="btn btn-xs btn-light-bordered"
+											disabled={i === board.length - 1}
+											onClick={() => onMove(pid, 1)}
+											title="Move down"
+										>
+											▼
+										</button>
+									</div>
+									{p ? (
+										<a href={helpers.leagueUrl(["player", pid])}>
+											{p.firstName} {p.lastName}
+										</a>
+									) : (
+										<span className="text-body-secondary">Signed/gone</span>
+									)}
+									{p ? (
+										<span className="text-body-secondary">
+											{helpers.formatCurrency(p.contract.amount, "M")}
+										</span>
+									) : null}
+									{p && !p.mood?.user?.willing ? (
+										<span className="badge text-bg-danger">Won't sign</span>
+									) : null}
+									<button
+										type="button"
+										className="btn btn-xs btn-light-bordered"
+										onClick={() => onRemove(pid)}
+										title="Remove"
+									>
+										✕
+									</button>
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</div>
+			{results ? (
+				<div className="col-md-6">
+					<h3>
+						Last day results{" "}
+						<span className="text-body-secondary fs-6">
+							({results.daysLeft} days left)
+						</span>
+					</h3>
+					{results.items.length === 0 ? (
+						<p className="text-body-secondary mb-0">No board signings.</p>
+					) : (
+						results.items.map((item, i) => <FaResultItem key={i} item={item} />)
+					)}
+					<details className="mt-2">
+						<summary className="text-body-secondary">Boards</summary>
+						{results.boards.map((b) => (
+							<div key={b.tid}>
+								<b>{b.abbrev}:</b>{" "}
+								{b.pids.map((row) => row.name).join(", ") || "—"}
+							</div>
+						))}
+					</details>
+				</div>
+			) : null}
+		</div>
+	);
+};
+
 const FreeAgents = ({
 	capSpace,
 	challengeNoFreeAgents,
+	faBoard,
 	freeAgencySeason,
 	numRosterSpots,
 	payroll,
@@ -118,6 +292,14 @@ const FreeAgents = ({
 	userPlayers,
 }: View<"freeAgents">) => {
 	const seasonsFreeAgents = useSeasonsFreeAgents();
+	const [board, setBoard] = useState<number[]>(faBoard?.pids ?? []);
+
+	// Every board edit publishes to the room (fire-and-forget); the resolution
+	// reads whatever the room has when the day advances.
+	const updateBoard = (next: number[]) => {
+		setBoard(next);
+		void toWorker("main", "faBoardSet", next);
+	};
 
 	useTitleBar({
 		title: "Free Agents",
@@ -275,24 +457,50 @@ const FreeAgents = ({
 				wrappedContractAmount(p, p.contract.amount),
 				wrappedContractExp(p),
 				p.freeAgentType === "available"
-					? {
-							value: (
-								<NegotiateButtons
-									canGoOverCap={salaryCapType === "none"}
-									capSpace={capSpace}
-									disabled={gameSimInProgress}
-									minContract={minContract}
-									onNegotiate={async () => {
-										await negotiationModal.negotiate(p.pid);
-									}}
-									spectator={spectator}
-									p={p}
-									willingToNegotiate={p.mood.user.willing}
-								/>
-							),
-							classNames: "d-flex align-items-center gap-2",
-							searchValue: p.mood.user.willing ? "Negotiate Sign" : "Refuses!",
-						}
+					? faBoard
+						? {
+								value: board.includes(p.pid) ? (
+									<button
+										type="button"
+										className="btn btn-sm btn-secondary"
+										onClick={() =>
+											updateBoard(board.filter((pid) => pid !== p.pid))
+										}
+									>
+										#{board.indexOf(p.pid) + 1} ✕
+									</button>
+								) : (
+									<button
+										type="button"
+										className="btn btn-sm btn-light-bordered"
+										disabled={board.length >= faBoard.numSlots}
+										onClick={() => updateBoard([...board, p.pid])}
+									>
+										Board
+									</button>
+								),
+								searchValue: "Board",
+							}
+						: {
+								value: (
+									<NegotiateButtons
+										canGoOverCap={salaryCapType === "none"}
+										capSpace={capSpace}
+										disabled={gameSimInProgress}
+										minContract={minContract}
+										onNegotiate={async () => {
+											await negotiationModal.negotiate(p.pid);
+										}}
+										spectator={spectator}
+										p={p}
+										willingToNegotiate={p.mood.user.willing}
+									/>
+								),
+								classNames: "d-flex align-items-center gap-2",
+								searchValue: p.mood.user.willing
+									? "Negotiate Sign"
+									: "Refuses!",
+							}
 					: signedFreeAgentWrapped(
 							p.freeAgentTransaction,
 							freeAgencySeason,
@@ -328,6 +536,27 @@ const FreeAgents = ({
 						</button>
 					) : null}
 				</>
+			) : null}
+
+			{faBoard ? (
+				<FaBoardPanel
+					board={board}
+					faBoard={faBoard}
+					players={players}
+					onMove={(pid, dir) => {
+						const i = board.indexOf(pid);
+						const j = i + dir;
+						if (i === -1 || j < 0 || j >= board.length) {
+							return;
+						}
+						const next = [...board];
+						[next[i], next[j]] = [next[j]!, next[i]!];
+						updateBoard(next);
+					}}
+					onRemove={(pid) => {
+						updateBoard(board.filter((pid2) => pid2 !== pid));
+					}}
+				/>
 			) : null}
 
 			{gameSimInProgress && !spectator ? (

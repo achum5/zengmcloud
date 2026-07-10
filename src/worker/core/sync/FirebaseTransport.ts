@@ -30,6 +30,7 @@ import type {
 	Authority,
 	ChangesetEntry,
 	DraftReadyEntry,
+	FaBoardEntry,
 	LiveBroadcastMeta,
 	LiveBroadcastUpdate,
 	LotteryRevealMeta,
@@ -55,6 +56,7 @@ const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
 // merges by different devices never clobber each other); draftAdvance is the
 // atomic claim for who sims the next pick.
 const DRAFT_READY_DOC_ID = "draftReady";
+const FA_BOARD_DOC_ID = "faBoard";
 const DRAFT_ADVANCE_DOC_ID = "draftAdvance";
 
 // The live lottery-reveal cursor doc: whoever runs the lottery heartbeats how
@@ -318,6 +320,43 @@ export class FirebaseTransport implements SyncTransport {
 			{ merge: true },
 		);
 		this.markContact();
+	}
+
+	// Merge THIS device's free-agency board entry onto the shared board doc
+	// (null clears it). Same per-uid merge semantics as publishDraftReady.
+	async publishFaBoard(entry: FaBoardEntry | null) {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", FA_BOARD_DOC_ID),
+			{
+				holderId: this.clientId,
+				boards: { [this.clientId]: entry },
+				updatedAt: serverTimestamp(),
+			},
+			{ merge: true },
+		);
+		this.markContact();
+	}
+
+	// Watch everyone's free-agency board entries. Fires with the current map,
+	// then on every change.
+	subscribeFaBoard(
+		onChange: (boards: Record<string, FaBoardEntry | null> | undefined) => void,
+	) {
+		return onSnapshot(
+			doc(this.db, "leagues", this.code, "control", FA_BOARD_DOC_ID),
+			(snapshot) => {
+				this.markContact();
+				const data = snapshot.data();
+				onChange(
+					data && typeof data.boards === "object" && data.boards !== null
+						? (data.boards as Record<string, FaBoardEntry | null>)
+						: undefined,
+				);
+			},
+			(error) => {
+				console.error("FA board subscription failed", error);
+			},
+		);
 	}
 
 	// Watch everyone's draft ready entries. Fires with the current map, then on

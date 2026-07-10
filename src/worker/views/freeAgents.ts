@@ -1,5 +1,6 @@
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import type {
+	FaDayResults,
 	Phase,
 	Player,
 	UpdateEvents,
@@ -7,6 +8,7 @@ import type {
 } from "../../common/types.ts";
 import { orderBy } from "../../common/utils.ts";
 import { player, team } from "../core/index.ts";
+import { faBoardActive, getMyFaBoard } from "../core/sync/index.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
@@ -229,9 +231,40 @@ const updateFreeAgents = async (
 			showRookies: true,
 		});
 
+		// Multiplayer free-agency board: this team's current ranks plus the most
+		// recent day's resolution record (odds, rolls, winners).
+		const boardActive = season === "current" && faBoardActive();
+		let faBoard;
+		if (boardActive) {
+			let results: FaDayResults | undefined;
+			try {
+				const currentSeason = g.get("season");
+				const all = [
+					...(await idb.cache.faDayResults.getAll()),
+					...((await (idb.league as any).getAll("faDayResults")) ?? []),
+				] as FaDayResults[];
+				for (const row of all) {
+					if (
+						row.season === currentSeason &&
+						(!results || row.daysLeft < results.daysLeft)
+					) {
+						results = row;
+					}
+				}
+			} catch {
+				// No results yet.
+			}
+			faBoard = {
+				numSlots: g.get("userTids").length,
+				pids: getMyFaBoard(),
+				results,
+			};
+		}
+
 		return {
 			capSpace,
 			challengeNoFreeAgents: g.get("challengeNoFreeAgents"),
+			faBoard,
 			freeAgencySeason,
 			numRosterSpots: g.get("maxRosterSize") - userPlayers.length,
 			payroll: payroll / 1000,

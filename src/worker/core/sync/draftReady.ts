@@ -33,6 +33,7 @@ import getOrder from "../draft/getOrder.ts";
 import runPicks from "../draft/runPicks.ts";
 import newPhase from "../phase/newPhase.ts";
 import freeAgentsPlay from "../freeAgents/play.ts";
+import { resolveFaBoards } from "./faBoard.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { runAfterActionHook } from "./afterActionHook.ts";
 import { syncDebugLog } from "./debugLog.ts";
@@ -252,8 +253,13 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 			onClockUser: false,
 			waypoints: [],
 			options,
+			// Resolve everyone's free-agency boards (waiver-style claims + rolls)
+			// BEFORE the day sims, so users sign ahead of the AI teams. Then
 			// freeAgents.play brackets + publishes itself (same as the play menu).
-			advance: () => freeAgentsPlay(1, {}),
+			advance: async () => {
+				await resolveFaBoards();
+				await freeAgentsPlay(1, {});
+			},
 		};
 	}
 

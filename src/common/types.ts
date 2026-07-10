@@ -410,6 +410,71 @@ export type LiveGamePlayByPlay = {
 	playByPlay: any[];
 };
 
+// One team's line in a contested free-agency roll: its mood-derived odds and
+// its band on the 1-100 roll, kept so the result can be shown fully.
+export type FaRollTeam = {
+	tid: number;
+	abbrev: string;
+	mood: number; // summed mood components toward this team (the UI number)
+	oddsPct: number;
+	lo: number; // inclusive 1-100 band
+	hi: number;
+};
+
+export type FaDayResultItem =
+	| {
+			type: "contest";
+			pid: number;
+			name: string;
+			round: number;
+			teams: FaRollTeam[];
+			roll: number; // 1-100
+			winnerTid: number;
+			amount: number;
+			exp: number;
+	  }
+	| {
+			type: "unopposed";
+			pid: number;
+			name: string;
+			round: number;
+			tid: number;
+			abbrev: string;
+			amount: number;
+			exp: number;
+	  }
+	| {
+			// The player wouldn't negotiate with the team that ranked him.
+			type: "refused";
+			pid: number;
+			name: string;
+			tid: number;
+			abbrev: string;
+	  }
+	| {
+			// The team couldn't legally offer the asking price (cap rules).
+			type: "ineligible";
+			pid: number;
+			name: string;
+			tid: number;
+			abbrev: string;
+	  };
+
+// The full, transparent record of one multiplayer free-agency day: every
+// board as submitted, and how each claim resolved (odds, roll, winner).
+export type FaDayResults = {
+	key: string; // `${season}-${daysLeft}`
+	season: number;
+	daysLeft: number; // before this day simmed
+	items: FaDayResultItem[];
+	boards: {
+		tid: number;
+		abbrev: string;
+		pids: { pid: number; name: string }[];
+	}[];
+	at: number;
+};
+
 export type GamePlayer = any;
 
 export type GameResults = any;

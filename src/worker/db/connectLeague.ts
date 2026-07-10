@@ -44,6 +44,7 @@ import type {
 	SavedTrade,
 	SavedTradingBlock,
 	LiveGamePlayByPlay,
+	FaDayResults,
 } from "../../common/types.ts";
 import getInitialNumGamesConfDivSettings from "../core/season/getInitialNumGamesConfDivSettings.ts";
 import { amountToLevel } from "../../common/budgetLevels.ts";
@@ -105,6 +106,12 @@ export interface LeagueDB extends DBSchema {
 	liveGamePlayByPlay: {
 		key: number;
 		value: LiveGamePlayByPlay;
+	};
+	// Transparent results of multiplayer free-agency board days (keyed by
+	// `${season}-${daysLeft}`). Synced like any other store.
+	faDayResults: {
+		key: string;
+		value: FaDayResults;
 	};
 	messages: {
 		key: number;
@@ -668,6 +675,10 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 
 	db.createObjectStore("liveGamePlayByPlay", {
 		keyPath: "gid",
+	});
+
+	db.createObjectStore("faDayResults", {
+		keyPath: "key",
 	});
 };
 
@@ -1750,6 +1761,12 @@ const migrate = async ({
 	if (oldVersion < 73) {
 		db.createObjectStore("liveGamePlayByPlay", {
 			keyPath: "gid",
+		});
+	}
+
+	if (oldVersion < 74) {
+		db.createObjectStore("faDayResults", {
+			keyPath: "key",
 		});
 	}
 

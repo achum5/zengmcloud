@@ -137,6 +137,8 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"hasLiveGameReplay",
 	// Read-only sync-checkpoint lookup for league exports.
 	"getSyncCheckpoint",
+	// Cloud-only write of this team's free-agency board (no league data).
+	"faBoardSet",
 	// Persists the in-memory cache to disk (the export calls it first). It
 	// creates no new deltas, and it must neither steal a running sim's pending
 	// changes nor be refused mid-catch-up (which would silently export stale
