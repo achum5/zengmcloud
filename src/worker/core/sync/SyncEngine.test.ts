@@ -699,6 +699,54 @@ describe("SyncEngine", () => {
 		);
 	});
 
+	test("a bulk batch stuck missing a chunk is reset and rebuilds once the chunk exists", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		// A 3-chunk bulk batch with chunk 1 missing from the log (lost upload).
+		const host = new FakeTransport("H", bus);
+		const chunk = (i: number) => ({
+			id: `c${i}`,
+			authorId: "H",
+			action: "playMenu.sim",
+			batchId: "B",
+			chunkIndex: i,
+			chunkCount: 3,
+			changeset: {
+				changes: [
+					{
+						store: "events" as const,
+						id: i + 1,
+						type: "put" as const,
+						value: { eid: i + 1 },
+					},
+				],
+			},
+		});
+		await host.publish(chunk(0));
+		await host.publish(chunk(2));
+
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {});
+
+		// Two full walks to the head with the batch making no progress: the
+		// watermark stays pinned (incomplete batch), then the batch is reset so a
+		// later pass can rebuild it from a clean re-fetch.
+		assert.strictEqual(await receiver.catchUp(), true);
+		assert.strictEqual(receiver.isCaughtUp(), false);
+		assert.strictEqual(await receiver.catchUp(), true);
+
+		// The missing chunk finally lands in the log (e.g. the author's outbox
+		// recovered). The next pass re-fetches all three and applies the batch.
+		await host.publish(chunk(1));
+		assert.strictEqual(await receiver.catchUp(), true);
+
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, 3);
+		assert.strictEqual(receiver.isCaughtUp(), true);
+		assert.strictEqual(receiver.getPersistedSeq(), bus.entries.at(-1)!.seq);
+	});
+
 	test("resyncAll re-reads the whole log and applies every entry from scratch", async () => {
 		const bus = new FakeBus();
 

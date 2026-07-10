@@ -184,8 +184,20 @@ export class SyncEngine {
 			count: number;
 			chunks: Map<number, SyncChange[] | string>;
 			entryIds: string[];
+			action: string;
 		}
 	>();
+
+	// Self-heal for a bulk batch that never completes: batchId → how many chunks
+	// it had when a catch-up pass last reached the head of the log (meaning a
+	// FULL walk of the backlog didn't complete it), and how many times each has
+	// been dropped and rebuilt from a clean re-fetch. See sweepStaleBatches.
+	private staleBatchHave = new Map<string, number>();
+	private batchResetCounts = new Map<string, number>();
+
+	// Dedup key for the watermark-pinned debug log, so the live-subscription
+	// path logs when the blocked state CHANGES rather than on every snapshot.
+	private lastPinLogKey: string | undefined;
 
 	// Highest entry seq (server-timestamp) we've seen, and the highest we've
 	// persisted as the catch-up watermark.
@@ -599,12 +611,46 @@ export class SyncEngine {
 		// Don't skip past a half-received bulk batch, or past a changeset that
 		// failed to apply - either would silently and permanently drop data.
 		if (this.pendingBatches.size > 0 || this.applyFailed) {
+			if (this.maxSeq > this.persistedSeq) {
+				const pinKey = `${this.pendingBatches.size}|${this.failedApplies.size}`;
+				if (pinKey !== this.lastPinLogKey) {
+					this.lastPinLogKey = pinKey;
+					syncDebugLog("engine:watermark-pinned", {
+						persistedSeq: this.persistedSeq,
+						maxSeq: this.maxSeq,
+						pendingBatches: this.describePendingBatches(),
+						failedApplies: this.failedApplies.size,
+					});
+				}
+			}
 			return;
 		}
+		this.lastPinLogKey = undefined;
 		if (this.maxSeq > this.persistedSeq) {
 			this.persistedSeq = this.maxSeq;
 			this.onWatermark?.(this.maxSeq);
 		}
+	}
+
+	// Snapshot of every half-received bulk batch, for the catch-up diagnostics:
+	// which chunk indexes are still missing tells us whether the rest of a batch
+	// simply hasn't arrived yet or genuinely isn't in the log.
+	private describePendingBatches() {
+		return [...this.pendingBatches.entries()].map(([batchId, batch]) => {
+			const missing: number[] = [];
+			for (let i = 0; i < batch.count && missing.length < 20; i++) {
+				if (!batch.chunks.has(i)) {
+					missing.push(i);
+				}
+			}
+			return {
+				batchId,
+				action: batch.action,
+				have: batch.chunks.size,
+				need: batch.count,
+				missing,
+			};
+		});
 	}
 
 	stop() {
@@ -1063,8 +1109,19 @@ export class SyncEngine {
 		const batchId = entry.batchId!;
 		let batch = this.pendingBatches.get(batchId);
 		if (!batch) {
-			batch = { count: entry.chunkCount!, chunks: new Map(), entryIds: [] };
+			batch = {
+				count: entry.chunkCount!,
+				chunks: new Map(),
+				entryIds: [],
+				action: entry.action,
+			};
 			this.pendingBatches.set(batchId, batch);
+			syncDebugLog("engine:batch-start", {
+				batchId,
+				action: entry.action,
+				need: batch.count,
+				seq: entry.seq,
+			});
 		}
 		batch.chunks.set(
 			entry.chunkIndex!,
@@ -1080,6 +1137,13 @@ export class SyncEngine {
 		}
 
 		this.pendingBatches.delete(batchId);
+		this.staleBatchHave.delete(batchId);
+		this.batchResetCounts.delete(batchId);
+		syncDebugLog("engine:batch-complete", {
+			batchId,
+			action: batch.action,
+			chunks: batch.count,
+		});
 
 		// Reassemble. New-format batches are string parts of ONE serialized
 		// changeset (joined then parsed - so a single record of any size works);
@@ -1141,6 +1205,8 @@ export class SyncEngine {
 				}
 				syncDebugLog("engine:apply-failed", {
 					entries: entryIds.length,
+					entryIds: entryIds.slice(0, 5),
+					records: changeset.changes.length,
 					error,
 				});
 			}
@@ -1179,6 +1245,14 @@ export class SyncEngine {
 			return false;
 		}
 		this.catchingUp = true;
+		// Per-pass diagnostics: enough to see from a pasted console log exactly why
+		// a device that keeps "catching up" isn't converging (fetches failing,
+		// applies failing, a bulk batch missing chunks, or the watermark pinned).
+		const startSeq = this.persistedSeq;
+		let pages = 0;
+		let fetched = 0;
+		let applied = 0;
+		let outcome = "page-cap";
 		try {
 			// On a fresh drain (not one already in progress), measure how far behind
 			// we are so the UI can show a real total + ETA. Cheap server-side count.
@@ -1207,17 +1281,29 @@ export class SyncEngine {
 						fetchCursor,
 						CATCH_UP_PAGE_SIZE,
 					);
-				} catch {
+				} catch (error) {
+					outcome = "fetch-failed";
+					syncDebugLog("engine:catchup-fetch-failed", {
+						page,
+						fetchCursor,
+						error,
+					});
 					return false;
 				}
+				pages += 1;
 				if (entries.length === 0) {
 					// Nothing after the cursor - we're at the head.
+					outcome = "head";
+					this.sweepStaleBatches();
 					this.finishCatchUp();
 					return true;
 				}
 
+				fetched += entries.length;
 				for (const entry of entries.sort((a, b) => a.seq - b.seq)) {
-					await this.handleEntry(entry);
+					if (await this.handleEntry(entry)) {
+						applied += 1;
+					}
 					this.catchUpDone += 1;
 					if (entry.seq > fetchCursor) {
 						fetchCursor = entry.seq;
@@ -1225,17 +1311,30 @@ export class SyncEngine {
 				}
 				this.advanceWatermark();
 				this.reportCatchUp();
+				syncDebugLog("engine:catchup-page", {
+					page,
+					entries: entries.length,
+					firstSeq: entries[0]!.seq,
+					lastSeq: entries[entries.length - 1]!.seq,
+					appliedSoFar: applied,
+					persistedSeq: this.persistedSeq,
+					pendingBatches: this.pendingBatches.size,
+					failedApplies: this.failedApplies.size,
+				});
 
 				// A changeset failed to apply: the watermark is now pinned here and
 				// paging further just piles unusable entries into memory. Stop and let
 				// a resync / retry recover, rather than draining the whole log for
 				// nothing.
 				if (this.applyFailed) {
+					outcome = "apply-failed";
 					return false;
 				}
 
 				// Short page → we've reached the head.
 				if (entries.length < CATCH_UP_PAGE_SIZE) {
+					outcome = "head";
+					this.sweepStaleBatches();
 					this.finishCatchUp();
 					return true;
 				}
@@ -1244,7 +1343,83 @@ export class SyncEngine {
 			return false;
 		} finally {
 			this.catchingUp = false;
+			// One summary per pass that did work or hit a blocker; the every-15s
+			// idle no-op (0 entries fetched, nothing pinned) stays silent.
+			if (
+				fetched > 0 ||
+				outcome !== "head" ||
+				this.pendingBatches.size > 0 ||
+				this.applyFailed
+			) {
+				syncDebugLog("engine:catchup-pass", {
+					outcome,
+					pages,
+					fetched,
+					applied,
+					startSeq,
+					persistedSeq: this.persistedSeq,
+					maxSeq: this.maxSeq,
+					watermarkAdvanced: this.persistedSeq > startSeq,
+					pendingBatches: this.describePendingBatches(),
+					failedApplies: [...this.failedApplies].slice(0, 10),
+					progressDone: this.catchUpDone,
+					progressTotal: this.catchUpTotal,
+					liveSubscription: this.hasChangesSubscription(),
+				});
+			}
 		}
+	}
+
+	// Cap on how many times one bulk batch may be dropped and rebuilt before we
+	// leave it pinned and just keep logging - so a batch whose chunks genuinely
+	// never appear in the log can't churn forever.
+	private static BATCH_RESET_LIMIT = 5;
+
+	// Called whenever a catch-up pass reaches the head of the log. Any bulk batch
+	// STILL missing chunks at that point is suspect: a full walk of the backlog
+	// just happened, so its remaining chunks either weren't in the log or were
+	// somehow dropped on the way in. A batch that makes NO progress between two
+	// consecutive head-reaching passes gets reset - its entries are un-seen and
+	// the buffered chunks dropped - so the next pass re-fetches and rebuilds it
+	// from scratch. That's the same safe retry path a failed apply uses; if the
+	// chunks exist server-side the rebuild completes and the watermark unpins
+	// automatically. (A batch still receiving chunks - the simmer is mid-upload -
+	// keeps growing between passes and is left alone.)
+	private sweepStaleBatches() {
+		const nowStale = new Map<string, number>();
+		for (const [batchId, batch] of this.pendingBatches) {
+			const lastHave = this.staleBatchHave.get(batchId);
+			if (lastHave === undefined || batch.chunks.size > lastHave) {
+				// First sighting at the head, or it grew since last pass - still
+				// arriving. Check again next pass.
+				nowStale.set(batchId, batch.chunks.size);
+				continue;
+			}
+			const resets = this.batchResetCounts.get(batchId) ?? 0;
+			const detail = {
+				batchId,
+				action: batch.action,
+				have: batch.chunks.size,
+				need: batch.count,
+				resets,
+			};
+			if (resets >= SyncEngine.BATCH_RESET_LIMIT) {
+				nowStale.set(batchId, batch.chunks.size);
+				syncDebugLog("engine:batch-permanently-incomplete", detail);
+				console.error(
+					"[sync] A bulk change never fully arrived and keeps failing to rebuild; use Force full resync to recover.",
+					detail,
+				);
+				continue;
+			}
+			this.batchResetCounts.set(batchId, resets + 1);
+			for (const id of batch.entryIds) {
+				this.seen.delete(id);
+			}
+			this.pendingBatches.delete(batchId);
+			syncDebugLog("engine:batch-reset", detail);
+		}
+		this.staleBatchHave = nowStale;
 	}
 
 	// Emit current drain progress (no-op unless a progress total is set - i.e. the

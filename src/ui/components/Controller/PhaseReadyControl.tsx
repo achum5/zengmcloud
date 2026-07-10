@@ -9,9 +9,11 @@ import { toWorker } from "../../util/toWorker.ts";
 // (e.g. "2/3") and the menu offers ready-through targets so a stretch of picks
 // or free-agency days can run on its own.
 const PhaseReadyControl = () => {
-	const { mpPhaseReady, mpSyncActive } = useLocal([
+	const { mpPhaseReady, mpSyncActive, mpEditsPaused, mpCatchUp } = useLocal([
 		"mpPhaseReady",
 		"mpSyncActive",
+		"mpEditsPaused",
+		"mpCatchUp",
 	]);
 	const [busy, setBusy] = useState(false);
 
@@ -20,6 +22,15 @@ const PhaseReadyControl = () => {
 	}
 
 	const s = mpPhaseReady;
+
+	// While this device is behind (catching up) or the room is mid-advance,
+	// revoking/reducing readiness would act on a stale world - it could halt a
+	// chain of steps the room already agreed to. Readying UP stays allowed.
+	const paused = Boolean(mpEditsPaused) || mpCatchUp !== undefined;
+	const isReduction = (step: number | null) =>
+		step === null || (s.myUntilStep !== undefined && step < s.myUntilStep);
+	const itemDisabled = (step: number | null) =>
+		busy || (paused && isReduction(step));
 
 	const setReady = async (untilStep: number | null) => {
 		setBusy(true);
@@ -58,7 +69,7 @@ const PhaseReadyControl = () => {
 			<Dropdown.Menu>
 				<Dropdown.Item
 					onClick={() => setReady(s.nextStep.number)}
-					disabled={busy}
+					disabled={itemDisabled(s.nextStep.number)}
 					active={s.myUntilStep === s.nextStep.number}
 				>
 					{s.options.length > 0
@@ -69,7 +80,7 @@ const PhaseReadyControl = () => {
 					<Dropdown.Item
 						key={w.step}
 						onClick={() => setReady(w.step)}
-						disabled={busy}
+						disabled={itemDisabled(w.step)}
 						active={s.myUntilStep === w.step}
 					>
 						{w.label}
@@ -84,7 +95,7 @@ const PhaseReadyControl = () => {
 								<Dropdown.Item
 									key={o.step}
 									onClick={() => setReady(o.step)}
-									disabled={busy}
+									disabled={itemDisabled(o.step)}
 									active={s.myUntilStep === o.step}
 								>
 									{o.label}
@@ -96,7 +107,11 @@ const PhaseReadyControl = () => {
 				{s.ready ? (
 					<>
 						<Dropdown.Divider />
-						<Dropdown.Item onClick={() => setReady(null)} disabled={busy}>
+						<Dropdown.Item
+							onClick={() => setReady(null)}
+							disabled={itemDisabled(null)}
+							title={paused ? "Catching up on league changes…" : undefined}
+						>
 							Not ready
 						</Dropdown.Item>
 					</>

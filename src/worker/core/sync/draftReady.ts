@@ -418,6 +418,24 @@ export const setDraftReady = async (untilStep: number | null) => {
 	if (!engine || !transport?.publishDraftReady) {
 		throw new Error("Connect to a shared league first.");
 	}
+
+	// Readying UP is always allowed (even mid-catch-up - it only consents to
+	// future steps). But REVOKING or reducing readiness while this device is
+	// behind or the room is mid-advance is acting on a stale world: it can halt
+	// a chain of steps the rest of the room already agreed to, right while the
+	// authority is running them. Make the device see the current state first.
+	const mine = latestReady?.[engine.clientId];
+	const reducing =
+		untilStep === null ||
+		(mine != null &&
+			mine.draftKey === stageKeyNow() &&
+			untilStep < mine.untilPick);
+	if (reducing && (!engine.isCaughtUp() || engine.isRoomBusy())) {
+		throw new Error(
+			"Still catching up on league changes — try again in a moment.",
+		);
+	}
+
 	if (untilStep === null) {
 		await transport.publishDraftReady(null);
 	} else {

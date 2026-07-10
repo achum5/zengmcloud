@@ -22,6 +22,7 @@ import {
 	type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { getFirebaseApp } from "./firebaseApp.ts";
+import { syncDebugLog } from "./debugLog.ts";
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
@@ -800,6 +801,12 @@ export class FirebaseTransport implements SyncTransport {
 				if (entries.length === 0) {
 					return;
 				}
+
+				syncDebugLog("transport:changes-snapshot", {
+					added: entries.length,
+					firstSeq: entries[0]!.seq,
+					lastSeq: entries[entries.length - 1]!.seq,
+				});
 
 				chain = chain.then(async () => {
 					for (const entry of entries) {

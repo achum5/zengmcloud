@@ -277,13 +277,25 @@ export const applyChangeset = async (
 
 		const api = storeAPI(change.store);
 
-		if (change.type === "delete") {
-			await api.delete(change.id);
-		} else {
-			// Heal any diverged-rid duplicate first, so a logically-keyed row (e.g.
-			// teamSeasons) updates in place instead of tripping its unique index.
-			await reconcileIdentity(change.store, change.value);
-			await api.put(change.value);
+		try {
+			if (change.type === "delete") {
+				await api.delete(change.id);
+			} else {
+				// Heal any diverged-rid duplicate first, so a logically-keyed row (e.g.
+				// teamSeasons) updates in place instead of tripping its unique index.
+				await reconcileIdentity(change.store, change.value);
+				await api.put(change.value);
+			}
+		} catch (error) {
+			// Name the exact record that failed. A deterministic apply failure pins
+			// the watermark and retries forever; without this the retry loop logs an
+			// anonymous error and the poison record is undiagnosable from the field.
+			throw new Error(
+				`Apply failed at ${change.store}/${String(change.id)} (${change.type}): ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+				{ cause: error },
+			);
 		}
 		changeTracker.forget(change.store, change.id);
 		touchedStores.add(change.store);
