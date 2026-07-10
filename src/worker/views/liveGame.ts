@@ -217,6 +217,9 @@ const updatePlayByPlay = async (
 		}
 
 		let confetti = false;
+		// Is this game the championship series? Drives finals styling (the trophy
+		// at center court) in the live-game court graphic.
+		let finals = false;
 		if (
 			boxScore.playoffs &&
 			boxScore.numGamesToWinSeries !== undefined &&
@@ -233,6 +236,8 @@ const updatePlayByPlay = async (
 						(finalMatchup.home.tid === boxScore.teams[1].tid &&
 							finalMatchup.away?.tid === boxScore.teams[0].tid)
 					) {
+						finals =
+							playoffSeries.currentRound === playoffSeries.series.length - 1;
 						const maxWon = Math.max(
 							finalMatchup.home.won,
 							finalMatchup.away?.won ?? 0,
@@ -245,12 +250,14 @@ const updatePlayByPlay = async (
 			}
 		}
 
-		return boxScoreToLiveSim({
+		const out = await boxScoreToLiveSim({
 			allStars,
 			boxScore,
 			confetti,
 			playByPlay: inputs.playByPlay,
 		});
+		(out.initialBoxScore as any).finals = finals;
+		return out;
 	}
 };
 
