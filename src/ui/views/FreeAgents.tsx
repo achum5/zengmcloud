@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PHASE, PHASE_TEXT } from "../../common/constants.ts";
 import { DataTable } from "../components/DataTable/index.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
@@ -298,6 +298,14 @@ const FreeAgents = ({
 	const seasonsFreeAgents = useSeasonsFreeAgents();
 	const [board, setBoard] = useState<number[]>(faBoard?.pids ?? []);
 	const [hideRefusals, setHideRefusals] = useState(false);
+
+	// Re-sync the local board whenever the view delivers fresh pids (already
+	// pruned of signed players), so a day simming while this page is open drops
+	// dead entries instead of leaving them occupying slots.
+	const boardKey = JSON.stringify(faBoard?.pids ?? []);
+	useEffect(() => {
+		setBoard(JSON.parse(boardKey));
+	}, [boardKey]);
 
 	// Every board edit publishes to the room (fire-and-forget); the resolution
 	// reads whatever the room has when the day advances.

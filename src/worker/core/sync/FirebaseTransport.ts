@@ -179,9 +179,18 @@ export class FirebaseTransport implements SyncTransport {
 	// governs sim authority (holderId stays == our uid). This avoids depending on a
 	// separate read rule for the registry doc.
 	async publishAutoPlay(state: SyncedAutoPlay) {
+		// Firestore rejects ANY write containing `undefined`, and the "off"/paused
+		// snapshots carry nextRunAt: undefined - so they silently failed and
+		// followers kept a stale countdown forever. Store null instead.
 		await setDoc(
 			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
-			{ autoPlay: state },
+			{
+				autoPlay: {
+					enabled: state.enabled,
+					nextRunAt: state.nextRunAt ?? null,
+					rules: state.rules,
+				},
+			},
 			{ merge: true },
 		);
 	}
@@ -195,7 +204,18 @@ export class FirebaseTransport implements SyncTransport {
 			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
 			(snapshot) => {
 				const data = snapshot.data();
-				onChange((data?.autoPlay as SyncedAutoPlay | undefined) ?? undefined);
+				const raw = data?.autoPlay as any;
+				// nextRunAt is stored as null when paused/off (Firestore can't store
+				// undefined); normalize back for the UI.
+				onChange(
+					raw
+						? {
+								enabled: !!raw.enabled,
+								nextRunAt: raw.nextRunAt ?? undefined,
+								rules: Array.isArray(raw.rules) ? raw.rules : [],
+							}
+						: undefined,
+				);
 			},
 			(error) => {
 				console.error("Auto-play schedule subscription failed", error);

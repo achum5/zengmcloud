@@ -254,9 +254,19 @@ const updateFreeAgents = async (
 			} catch {
 				// No results yet.
 			}
+			// Drop board entries that are no longer free agents (signed yesterday,
+			// by us or anyone else), so a dead pid never occupies a slot.
+			const pids: number[] = [];
+			for (const pid of getMyFaBoard()) {
+				const boardP = await idb.cache.players.get(pid);
+				if (boardP && boardP.tid === PLAYER.FREE_AGENT) {
+					pids.push(pid);
+				}
+			}
+
 			faBoard = {
 				numSlots: g.get("userTids").length,
-				pids: getMyFaBoard(),
+				pids,
 				results,
 			};
 		}
