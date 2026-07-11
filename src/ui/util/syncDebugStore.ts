@@ -45,12 +45,34 @@ export const setSyncDebugEnabled = (enabled: boolean) => {
 	emitter.emit("change", entries);
 };
 
+// Rare one-shot events that are usually the whole point of a capture (they
+// fire once at import/connect time, then a busy catch-up floods the buffer and
+// evicts them before anyone can copy). Never evicted.
+const PINNED_EVENTS = new Set([
+	"export:checkpoint",
+	"import:checkpoint",
+	"connect:initial-watermark",
+	"engine:batch-abandoned",
+	"engine:batch-permanently-incomplete",
+]);
+
 export const pushSyncDebugEntry = (payload: Record<string, unknown>) => {
 	const event = typeof payload.event === "string" ? payload.event : "event";
 	const at =
 		typeof payload.at === "string" ? payload.at : new Date().toISOString();
 	seq += 1;
-	entries = [...entries.slice(-(MAX_ENTRIES - 1)), { seq, at, event, payload }];
+	const next = [...entries, { seq, at, event, payload }];
+	// Evict oldest NON-pinned lines first, so the one-shot connect/import lines
+	// survive an arbitrarily long catch-up flood.
+	while (next.length > MAX_ENTRIES) {
+		const i = next.findIndex((e) => !PINNED_EVENTS.has(e.event));
+		if (i === -1) {
+			next.shift();
+		} else {
+			next.splice(i, 1);
+		}
+	}
+	entries = next;
 	emitter.emit("change", entries);
 };
 
