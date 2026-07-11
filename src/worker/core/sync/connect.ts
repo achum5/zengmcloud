@@ -693,6 +693,13 @@ const driveCatchUp = async () => {
 	driveCatchUpTicks += 1;
 	const before = engine.getCatchUpDiagnostics();
 	const reachedHead = await engine.catchUp();
+	// A reconnect may have replaced the engine while the drain was in flight
+	// (catchUp() aborts once its engine is stopped). Everything below - starting
+	// the live subscription, moving the transport watermark - must act on the
+	// CURRENT session, not the torn-down one.
+	if (getSyncEngine() !== engine) {
+		return;
+	}
 	const after = engine.getCatchUpDiagnostics();
 
 	// One line per catch-up pass. The telling signals for an "infinitely
@@ -992,7 +999,31 @@ export const resyncSharedLeague = async (): Promise<{
 // sync page, or choosing a room at league creation). Only an explicit join may
 // BIND a league file to a room; automatic reconnects merely resume a binding
 // that already exists.
-export const connectSharedLeague = async ({
+let connectQueue: Promise<unknown> = Promise.resolve();
+
+export const connectSharedLeague = async (options: {
+	code: string;
+	isHost?: boolean;
+	explicit?: boolean;
+}) => {
+	// Serialize connects. Two connects racing (e.g. the UI auto-reconnect and an
+	// explicit join firing together) each tore down the other's half-built
+	// session and left TWO live engines draining the same log concurrently -
+	// interleaved catch-up passes with different watermarks churning forever.
+	// The second caller now waits for the first to finish, then (if it's a
+	// redundant reconnect to the same room) becomes a no-op inside doConnect.
+	const run = connectQueue.then(
+		() => doConnectSharedLeague(options),
+		() => doConnectSharedLeague(options),
+	);
+	connectQueue = run.then(
+		() => undefined,
+		() => undefined,
+	);
+	return run;
+};
+
+const doConnectSharedLeague = async ({
 	code,
 	isHost = false,
 	explicit = false,
@@ -1004,6 +1035,35 @@ export const connectSharedLeague = async ({
 	const trimmed = code.trim();
 	if (!trimmed) {
 		throw new Error("A league code is required.");
+	}
+
+	// An automatic reconnect that finds a live session for this exact room and
+	// league is redundant - reconnecting anyway would tear down a healthy engine
+	// and replay its catch-up. Only an EXPLICIT join (the user typed/chose the
+	// code) forces a fresh connect.
+	{
+		const existing = getSyncEngine();
+		const lidNow = g.get("lid");
+		if (
+			!explicit &&
+			existing !== undefined &&
+			currentCode === trimmed &&
+			connectedLid !== undefined &&
+			connectedLid === (typeof lidNow === "number" ? lidNow : undefined)
+		) {
+			syncDebugLog("connect:duplicate-skipped", {
+				code: trimmed,
+				lid: connectedLid,
+			});
+			syncRequired = true;
+			pushSyncStateFull();
+			return {
+				connected: true,
+				code: trimmed,
+				isHost,
+				clientId: existing.clientId,
+			};
+		}
 	}
 
 	// Tear down any existing live session first, but do not erase the persisted

@@ -789,14 +789,20 @@ describe("SyncEngine", () => {
 
 		const receiver = new SyncEngine(new FakeTransport("R", bus), {});
 
-		// Enough head-reaching passes to burn through the reset limit and reach
-		// the abandonment decision. Before that point the watermark stays pinned.
+		// Fast abandonment: pass 1 sights the stale batch, pass 2 resets it for
+		// one clean rebuild, pass 3 sees it STILL didn't complete despite proof it
+		// never can - abandoned. More passes than that means the old slow churn
+		// (5 rebuild cycles, each re-fetching the whole pinned tail with a visible
+		// progress bar) has crept back.
+		let passes = 0;
 		for (let i = 0; i < 20; i++) {
+			passes += 1;
 			assert.strictEqual(await receiver.catchUp(), true);
 			if (receiver.isCaughtUp()) {
 				break;
 			}
 		}
+		assert.ok(passes <= 3, `abandonment took ${passes} passes`);
 
 		// The dead batch was abandoned: watermark advanced to the head, the
 		// healthy entry applied, and sync is no longer wedged.
@@ -852,12 +858,15 @@ describe("SyncEngine", () => {
 		}
 
 		const receiver = new SyncEngine(new FakeTransport("R", bus), {});
+		let passes = 0;
 		for (let i = 0; i < 20; i++) {
+			passes += 1;
 			assert.strictEqual(await receiver.catchUp(), true);
 			if (receiver.isCaughtUp()) {
 				break;
 			}
 		}
+		assert.ok(passes <= 3, `abandonment took ${passes} passes`);
 
 		// The dead batch was abandoned via the log-moved-past rule: caught up to
 		// the head, X's five entries applied (H's orphaned data skipped).
@@ -865,6 +874,100 @@ describe("SyncEngine", () => {
 		assert.strictEqual(receiver.getPersistedSeq(), bus.entries.at(-1)!.seq);
 		const events = await idb.cache.events.getAll();
 		assert.strictEqual(events.length, 5);
+	});
+
+	test("a pinned incomplete batch doesn't re-show the catching-up bar on later passes", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		// An incomplete bulk batch (chunk 1 of 3 lost) pins the watermark...
+		const H = new FakeTransport("H", bus);
+		const chunk = (i: number) => ({
+			id: `pin${i}`,
+			authorId: "H",
+			action: "playMenu.day",
+			batchId: "PIN",
+			chunkIndex: i,
+			chunkCount: 3,
+			changeset: {
+				changes: [
+					{
+						store: "events" as const,
+						id: 300 + i,
+						type: "put" as const,
+						value: { eid: 300 + i },
+					},
+				],
+			},
+		});
+		await H.publish(chunk(0));
+		await H.publish(chunk(2));
+		// ...under a backlog big enough to surface the progress bar on pass 1.
+		for (let i = 0; i < 40; i++) {
+			await H.publish({
+				id: `e${i}`,
+				authorId: "H",
+				action: "x",
+				changeset: {
+					changes: [
+						{
+							store: "events" as const,
+							id: 1000 + i,
+							type: "put" as const,
+							value: { eid: 1000 + i },
+						},
+					],
+				},
+			});
+		}
+
+		const progressCalls: ({ done: number; total: number } | undefined)[] = [];
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {
+			onCatchUpProgress: (p) => progressCalls.push(p),
+		});
+
+		// Pass 1: a real drain - the bar shows, then clears at the head.
+		assert.strictEqual(await receiver.catchUp(), true);
+		assert.ok(progressCalls.length > 0);
+		assert.strictEqual(progressCalls.at(-1), undefined);
+
+		// The watermark is pinned behind the incomplete batch, so a count from the
+		// WATERMARK would see the whole already-fetched tail as "behind" again and
+		// flash the bar every 15s tick forever. Counting from the fetch frontier
+		// must keep the bar hidden while the reset/abandon cycle runs.
+		progressCalls.length = 0;
+		for (let i = 0; i < 5 && !receiver.isCaughtUp(); i++) {
+			assert.strictEqual(await receiver.catchUp(), true);
+		}
+		assert.deepStrictEqual(progressCalls, []);
+		// And the dead batch got abandoned along the way, so we ARE caught up.
+		assert.strictEqual(receiver.isCaughtUp(), true);
+	});
+
+	test("catchUp is a no-op on a stopped engine", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		const H = new FakeTransport("H", bus);
+		await H.publish({
+			id: "e1",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+			},
+		});
+
+		// A reconnect replaces the engine and stops the old one; any drain the old
+		// engine still runs (or has queued) must do nothing - two live drains were
+		// interleaving their catch-up passes and churning each other's state.
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {});
+		receiver.stop();
+		assert.strictEqual(await receiver.catchUp(), false);
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, 0);
 	});
 
 	test("resyncAll re-reads the whole log and applies every entry from scratch", async () => {

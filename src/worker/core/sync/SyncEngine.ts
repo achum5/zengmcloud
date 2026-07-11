@@ -265,9 +265,13 @@ export class SyncEngine {
 
 	// Live drain progress: total entries to apply this drain (undefined = not
 	// showing progress), and how many we've applied so far. Persist across the
-	// multiple catchUp() calls a big drain spans.
+	// multiple catchUp() calls a big drain spans. The baseline is the seq the
+	// total was counted FROM (the fetch frontier at count time): only entries
+	// beyond it count toward `done`, so re-fetching an already-seen pinned tail
+	// doesn't inflate the bar.
 	private catchUpTotal: number | undefined;
 	private catchUpDone = 0;
+	private catchUpBaseline = 0;
 
 	private readyUntil = 0;
 
@@ -1285,7 +1289,7 @@ export class SyncEngine {
 	// false if a fetch failed, an apply failed, or it stopped early with more to
 	// go - in which case the next tick resumes from the banked watermark.
 	async catchUp(): Promise<boolean> {
-		if (!this.transport.fetchEntriesSince || this.catchingUp) {
+		if (!this.transport.fetchEntriesSince || this.catchingUp || this.stopped) {
 			return false;
 		}
 		this.catchingUp = true;
@@ -1300,17 +1304,23 @@ export class SyncEngine {
 		try {
 			// On a fresh drain (not one already in progress), measure how far behind
 			// we are so the UI can show a real total + ETA. Cheap server-side count.
+			// Count from the FETCH FRONTIER (the highest seq we've already pulled),
+			// not the durable watermark: an incomplete bulk batch pins the watermark
+			// behind entries that were long since fetched and applied, and counting
+			// from the pinned spot made every 15s tick re-show a full "catching up"
+			// bar for a tail that contains zero new work. Only genuinely unfetched
+			// entries should surface the bar.
 			if (this.catchUpTotal === undefined && this.transport.countEntriesSince) {
+				const frontier = Math.max(this.persistedSeq, this.maxSeq);
 				try {
-					const remaining = await this.transport.countEntriesSince(
-						this.persistedSeq,
-					);
+					const remaining = await this.transport.countEntriesSince(frontier);
 					// A `remaining` that stays high while `behind` (maxSeq - persistedSeq)
 					// is ~0 means the count query and the watermark disagree - a classic
 					// cause of a stuck "catching up" bar (the total is set but the drain
 					// immediately hits head and never counts down). Logged so that shows up.
 					syncDebugLog("engine:catchup-count", {
 						remaining,
+						frontier,
 						persistedSeq: this.persistedSeq,
 						maxSeq: this.maxSeq,
 						behind: Math.max(0, this.maxSeq - this.persistedSeq),
@@ -1319,6 +1329,7 @@ export class SyncEngine {
 					if (remaining >= CATCH_UP_PROGRESS_MIN) {
 						this.catchUpTotal = remaining;
 						this.catchUpDone = 0;
+						this.catchUpBaseline = frontier;
 						this.reportCatchUp();
 					}
 				} catch (error) {
@@ -1331,6 +1342,14 @@ export class SyncEngine {
 			// A bounded number of pages per call, so a single catchUp() can't spin
 			// forever if the head keeps moving; the next tick picks up where we left.
 			for (let page = 0; page < CATCH_UP_MAX_PAGES; page++) {
+				// The engine was torn down mid-drain (a reconnect replaced it). Stop
+				// touching the cache immediately - a zombie drain from a replaced
+				// engine otherwise keeps paging concurrently with the new engine's
+				// drain, and the two interleaved passes churn each other's state.
+				if (this.stopped) {
+					outcome = "stopped";
+					return false;
+				}
 				let entries: ChangesetEntry[];
 				try {
 					entries = await this.transport.fetchEntriesSince(
@@ -1360,7 +1379,12 @@ export class SyncEngine {
 					if (await this.handleEntry(entry)) {
 						applied += 1;
 					}
-					this.catchUpDone += 1;
+					// Only entries past the counted baseline advance the bar - a
+					// re-fetched pinned tail (already seen, applies nothing) shouldn't
+					// eat into a total that never included it.
+					if (entry.seq > this.catchUpBaseline) {
+						this.catchUpDone += 1;
+					}
 					if (entry.seq > fetchCursor) {
 						fetchCursor = entry.seq;
 					}
@@ -1426,9 +1450,12 @@ export class SyncEngine {
 		}
 	}
 
-	// Cap on how many times one bulk batch may be dropped and rebuilt before we
-	// leave it pinned and just keep logging - so a batch whose chunks genuinely
-	// never appear in the log can't churn forever.
+	// Cap on how many times a stale batch AT THE HEAD of the log (its author may
+	// still be uploading) may be dropped and rebuilt before we leave it pinned
+	// and just keep logging. A batch the log has provably moved past doesn't get
+	// this patience - one failed rebuild is enough to abandon it (see
+	// sweepStaleBatches), since every extra cycle re-fetches the whole pinned
+	// tail and flashes the catching-up indicator for nothing.
 	private static BATCH_RESET_LIMIT = 5;
 
 	// Called whenever a catch-up pass reaches the head of the log. Any bulk batch
@@ -1459,42 +1486,48 @@ export class SyncEngine {
 				need: batch.count,
 				resets,
 			};
-			if (resets >= SyncEngine.BATCH_RESET_LIMIT) {
-				// The batch survived every rebuild without growing: its missing chunks
-				// are not in the durable log. Abandon it (entries stay `seen`) so the
-				// watermark can move again, instead of wedging the room forever, when
-				// EITHER:
-				//   - its AUTHOR has published entries beyond it (FIFO outbox: anything
-				//     still queued there would have to publish before those later
-				//     entries, so the missing chunks can never arrive), OR
-				//   - the LOG itself continues past the batch (maxSeq is beyond the
-				//     batch's last chunk, and sweepStaleBatches only runs once we've
-				//     drained to the head - so we've already seen every entry after it
-				//     and the chunks simply are not there). This second case is the one
-				//     that was wedging devices forever: a chunk lost during upload, with
-				//     the room's later activity coming from OTHER authors, left
-				//     authorProgress behind the batch even though the log had moved on
-				//     by tens of thousands of entries.
-				const authorProgress = this.lastSeqByAuthor.get(batch.authorId) ?? 0;
-				const logMovedPast = this.maxSeq > batch.maxChunkSeq;
-				if (authorProgress > batch.maxChunkSeq || logMovedPast) {
-					this.pendingBatches.delete(batchId);
-					this.batchResetCounts.delete(batchId);
-					this.rebuildingBatches.delete(batchId);
-					syncDebugLog("engine:batch-abandoned", {
-						...detail,
-						authorProgress,
-						maxChunkSeq: batch.maxChunkSeq,
-						maxSeq: this.maxSeq,
-						reason:
-							authorProgress > batch.maxChunkSeq ? "author-past" : "log-past",
-					});
-					console.error(
-						"[sync] Abandoned a bulk change whose missing chunks are not in the log (the log has moved past it). If anything looks stale, use Force full resync.",
-						detail,
-					);
-					continue;
-				}
+			// Is this batch PROVABLY dead - can its missing chunks ever still arrive?
+			// They can't when EITHER:
+			//   - its AUTHOR has published entries beyond it (FIFO outbox: anything
+			//     still queued there would have to publish before those later
+			//     entries, so the missing chunks can never arrive), OR
+			//   - the LOG itself continues past the batch (maxSeq is beyond the
+			//     batch's last chunk, and sweepStaleBatches only runs once we've
+			//     drained to the head - so we've already seen every entry after it
+			//     and the chunks simply are not there). This case is the one that
+			//     was wedging devices forever: a chunk lost during upload, with the
+			//     room's later activity coming from OTHER authors, left
+			//     authorProgress behind the batch even though the log had moved on
+			//     by tens of thousands of entries.
+			const authorProgress = this.lastSeqByAuthor.get(batch.authorId) ?? 0;
+			const logMovedPast = this.maxSeq > batch.maxChunkSeq;
+			const provablyDead =
+				authorProgress > batch.maxChunkSeq || logMovedPast;
+			if (provablyDead && resets >= 1) {
+				// One clean rebuild already re-fetched the whole tail and the chunks
+				// still weren't there, and the log has provably moved past the batch -
+				// so they are not in the durable log and never will be. Abandon it
+				// (entries stay `seen`) so the watermark can move again, NOW: every
+				// extra rebuild cycle re-fetched the entire pinned tail and flashed
+				// the catching-up indicator for a batch that was already proven dead.
+				this.pendingBatches.delete(batchId);
+				this.batchResetCounts.delete(batchId);
+				this.rebuildingBatches.delete(batchId);
+				syncDebugLog("engine:batch-abandoned", {
+					...detail,
+					authorProgress,
+					maxChunkSeq: batch.maxChunkSeq,
+					maxSeq: this.maxSeq,
+					reason:
+						authorProgress > batch.maxChunkSeq ? "author-past" : "log-past",
+				});
+				console.error(
+					"[sync] Abandoned a bulk change whose missing chunks are not in the log (the log has moved past it). If anything looks stale, use Force full resync.",
+					detail,
+				);
+				continue;
+			}
+			if (!provablyDead && resets >= SyncEngine.BATCH_RESET_LIMIT) {
 				// The incomplete batch IS the head of the log (nothing published after
 				// it yet) - its author may still be uploading the rest. Keep waiting.
 				nowStale.set(batchId, batch.chunks.size);
@@ -1541,6 +1574,7 @@ export class SyncEngine {
 		if (this.catchUpTotal !== undefined) {
 			this.catchUpTotal = undefined;
 			this.catchUpDone = 0;
+			this.catchUpBaseline = 0;
 			this.onCatchUpProgress?.(undefined);
 		}
 	}

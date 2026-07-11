@@ -53,6 +53,7 @@ const PINNED_EVENTS = new Set([
 	"export:full-check",
 	"import:checkpoint",
 	"connect:initial-watermark",
+	"connect:duplicate-skipped",
 	"engine:batch-abandoned",
 	"engine:batch-permanently-incomplete",
 ]);
