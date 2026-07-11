@@ -16,7 +16,9 @@ import {
 	type AutoPlayPreviewData,
 } from "../util/autoPlayPreview.ts";
 
-// How many upcoming sims to compute, and how many to show before summarizing.
+// How many upcoming sims to compute, and the minimum to show before
+// summarizing. Everything firing before local midnight is always shown, so the
+// list covers the rest of today and its last row is today's final sim.
 const MAX_FIRES = 250;
 const DISPLAY_FIRES = 12;
 
@@ -128,6 +130,18 @@ const AutoPlaySchedule = () => {
 		);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [preview, settings.rules, nowBucket]);
+
+	// Show at least DISPLAY_FIRES rows, and never cut off mid-day: every fire
+	// before local midnight stays visible.
+	const shownFires = useMemo(() => {
+		const endOfToday = new Date(now);
+		endOfToday.setHours(24, 0, 0, 0);
+		const todayCount = projected.filter(
+			(f) => f.at < endOfToday.getTime(),
+		).length;
+		return projected.slice(0, Math.max(DISPLAY_FIRES, todayCount));
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [projected, nowBucket]);
 
 	const update = (partial: Partial<AutoPlaySettings>) =>
 		autoPlayScheduler.updateSettings(partial);
@@ -276,7 +290,7 @@ const AutoPlaySchedule = () => {
 											</tr>
 										</thead>
 										<tbody>
-											{projected.slice(0, DISPLAY_FIRES).map((f, i) => {
+											{shownFires.map((f, i) => {
 												const isStop =
 													stopDay !== undefined && f.toDay === stopDay;
 												const afterStop =
@@ -343,9 +357,9 @@ const AutoPlaySchedule = () => {
 										</tbody>
 									</table>
 								</div>
-								{projected.length > DISPLAY_FIRES ? (
+								{projected.length > shownFires.length ? (
 									<div className="text-body-secondary small mt-2">
-										…and {projected.length - DISPLAY_FIRES} more, through Day{" "}
+										…and {projected.length - shownFires.length} more, through Day{" "}
 										{projected.at(-1)!.toDay}
 										{projected.at(-1)!.endsPhase && preview?.phaseEndNote
 											? ` (${preview.phaseEndNote.toLowerCase()})`
