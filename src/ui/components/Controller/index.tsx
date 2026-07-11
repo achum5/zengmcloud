@@ -11,6 +11,7 @@ import { MultiTeamMenu } from "./MultiTeamMenu.tsx";
 import { NagModal } from "./NagModal.tsx";
 import { NavBar } from "./NavBar.tsx";
 import { Notifications } from "./Notifications.tsx";
+import SyncDebugOverlay from "./SyncDebugOverlay.tsx";
 import { SideBar } from "./SideBar.tsx";
 import { Skyscraper } from "./Skyscraper.tsx";
 import { TitleBar } from "./TitleBar.tsx";
@@ -186,6 +187,7 @@ export const Controller = () => {
 				</div>
 			</div>
 			<Notifications />
+			<SyncDebugOverlay />
 		</LazyMotion>
 	);
 };

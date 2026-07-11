@@ -14,6 +14,10 @@ import {
 	pushSupported,
 	restorePushNotifications,
 } from "../util/pushNotifications.ts";
+import {
+	setSyncDebugEnabled,
+	syncDebugEnabled,
+} from "../util/syncDebugStore.ts";
 import type { SyncRoom } from "../../worker/core/sync/adminRooms.ts";
 
 // Cosmetic gate for the room-admin panel (real security is the Firestore rules).
@@ -127,6 +131,8 @@ const MultiplayerSync = () => {
 	// Room admin (clear Firestore codes), gated by a cosmetic password.
 	const [adminInput, setAdminInput] = useState("");
 	const [adminUnlocked, setAdminUnlocked] = useState(false);
+
+	const [syncDebug, setSyncDebug] = useState(syncDebugEnabled());
 	const [rooms, setRooms] = useState<SyncRoom[]>([]);
 	const [adminBusy, setAdminBusy] = useState(false);
 	const [adminMsg, setAdminMsg] = useState<string | undefined>();
@@ -571,6 +577,31 @@ const MultiplayerSync = () => {
 					{pushError ? (
 						<div className="alert alert-danger mt-3 mb-0">{pushError}</div>
 					) : null}
+				</div>
+			</div>
+
+			<div className="card mt-3" style={{ maxWidth: 500 }}>
+				<div className="card-body">
+					<h3 className="card-title h5">Debug logs</h3>
+					<div className="form-check">
+						<input
+							type="checkbox"
+							className="form-check-input"
+							id="sync-debug-toggle"
+							checked={syncDebug}
+							onChange={(e) => {
+								setSyncDebugEnabled(e.target.checked);
+								setSyncDebug(e.target.checked);
+							}}
+						/>
+						<label className="form-check-label" htmlFor="sync-debug-toggle">
+							Show sync debug logs on screen
+						</label>
+					</div>
+					<p className="text-body-secondary small mb-0 mt-1">
+						A panel appears at the bottom with live sync logs (catch-up,
+						uploads, etc). Use its Copy button to share them.
+					</p>
 				</div>
 			</div>
 

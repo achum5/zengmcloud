@@ -15,6 +15,7 @@ import { confirmDeleteAllLeagues } from "../util/confirmDeleteAllLeagues.tsx";
 import { requestPersistentStorage } from "../util/requestPersistentStorage.ts";
 import { confirm } from "../util/confirm.tsx";
 import { safeLocalStorage } from "../util/safeLocalStorage.ts";
+import { pushSyncDebugEntry } from "../util/syncDebugStore.ts";
 
 const initAds = (type: "accountChecked" | "uiRendered") => {
 	ads.setLoadingDone(type);
@@ -169,6 +170,8 @@ const syncDebugLog = (payload: Record<string, unknown>) => {
 		"",
 		payload,
 	);
+	// Also mirror into the in-app overlay, for phones with no reachable console.
+	pushSyncDebugEntry(payload);
 };
 
 export default {
