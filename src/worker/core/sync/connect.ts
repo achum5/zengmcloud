@@ -681,6 +681,9 @@ const checkLotteryRevealLease = () => {
 // Counts driveCatchUp ticks so the log can show how many passes a device has
 // spent stuck on the catching-up indicator without converging.
 let driveCatchUpTicks = 0;
+// Set while a productive-page-cap re-drive is already queued, so we don't stack
+// multiple immediate re-drives on top of the 15s poll timer.
+let driveCatchUpChained = false;
 
 const driveCatchUp = async () => {
 	const engine = getSyncEngine();
@@ -724,6 +727,27 @@ const driveCatchUp = async () => {
 	}
 	// Catching up may have just unblocked edits.
 	pushEditsPaused();
+
+	// A big backlog is drained in bounded chunks (catchUp() caps its pages so it
+	// can't spin forever), and there's no live subscription yet - so without this,
+	// each chunk would wait a full 15s poll for the next, and a large room crawls
+	// in (backlog / chunk) 15-second steps that look like "infinitely catching
+	// up". If we didn't reach the head but DID make real progress (the watermark
+	// advanced and nothing is pinned), keep draining right away instead of idling.
+	const madeProgress = after.persistedSeq > before.persistedSeq;
+	if (
+		!reachedHead &&
+		madeProgress &&
+		!after.applyFailed &&
+		!driveCatchUpChained &&
+		getSyncEngine() !== undefined
+	) {
+		driveCatchUpChained = true;
+		setTimeout(() => {
+			driveCatchUpChained = false;
+			void driveCatchUp();
+		}, 50);
+	}
 };
 
 // Called from the UI (on the simmer's device) whenever its auto-play schedule
