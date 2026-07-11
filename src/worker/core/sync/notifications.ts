@@ -365,6 +365,61 @@ const buildSimNotifications = async (
 
 	const notifications: SyncNotification[] = [];
 
+	// A simmed free agency day has no games, so it was silent - announce every
+	// day to the whole room: days remaining plus the day's biggest signings.
+	if (phase === PHASE.FREE_AGENCY && games.length === 0) {
+		const daysLeft = g.get("daysLeft");
+		const signingEvents = changesToValues(changeset, "events").filter(
+			(e) =>
+				e &&
+				e.type === "freeAgent" &&
+				e.contract &&
+				Array.isArray(e.pids) &&
+				Array.isArray(e.tids),
+		);
+		signingEvents.sort(
+			(a, b) => (b.contract?.amount ?? 0) - (a.contract?.amount ?? 0),
+		);
+
+		const lines: string[] = [];
+		for (const e of signingEvents) {
+			if (lines.length >= 3) {
+				break;
+			}
+			try {
+				const p = await idb.cache.players.get(e.pids[0]);
+				if (!p) {
+					continue;
+				}
+				const abbrev = teamById.get(e.tids[0])?.abbrev ?? "???";
+				lines.push(
+					`${p.firstName} ${p.lastName} → ${abbrev} ${helpers.formatCurrencyBase(
+						g.get("currencyFormat"),
+						e.contract.amount / 1000,
+						"M",
+					)}`,
+				);
+			} catch {
+				// Name lookup is a nicety; skip the line.
+			}
+		}
+		const more = signingEvents.length - lines.length;
+
+		const body = [
+			`${daysLeft} ${daysLeft === 1 ? "day" : "days"} of free agency left.`,
+			lines.length > 0 ? lines.join("\n") : "No signings today.",
+			...(more > 0 ? [`+${more} more signings`] : []),
+		].join("\n");
+
+		notifications.push({
+			title: "Free agency day simmed",
+			body,
+			targetTids: null,
+			path: "free_agents",
+		});
+		return notifications;
+	}
+
 	// During the playoffs, EVERY device gets the bracket - eliminated teams and
 	// teams with an off day included, as ONE room-wide notification (not one
 	// copy per team, and not gated on being alive in the bracket). Teams that
