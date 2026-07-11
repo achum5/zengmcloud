@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useLocal, localActions } from "../../util/local.ts";
-import { helpers } from "../../util/index.ts";
+import { helpers } from "../../util/helpers.ts";
 import { ScoreBox } from "../ScoreBox/index.tsx";
 import { emitter } from "../Modal.tsx";
 
