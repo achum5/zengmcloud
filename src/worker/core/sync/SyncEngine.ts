@@ -1460,16 +1460,24 @@ export class SyncEngine {
 				resets,
 			};
 			if (resets >= SyncEngine.BATCH_RESET_LIMIT) {
-				// The batch survived every rebuild: its missing chunks are not in the
-				// log. If the AUTHOR has published entries beyond it, they can never
-				// arrive either - a device's outbox is strict FIFO, so anything still
-				// queued there would have to publish before those later entries. That
-				// happens when the author's enqueue failed partway and it re-published
-				// the same changeset as a fresh (complete) batch - the orphan is a
-				// husk with no unique data. Abandon it (entries stay `seen`) so the
-				// watermark can move again, instead of wedging the room forever.
+				// The batch survived every rebuild without growing: its missing chunks
+				// are not in the durable log. Abandon it (entries stay `seen`) so the
+				// watermark can move again, instead of wedging the room forever, when
+				// EITHER:
+				//   - its AUTHOR has published entries beyond it (FIFO outbox: anything
+				//     still queued there would have to publish before those later
+				//     entries, so the missing chunks can never arrive), OR
+				//   - the LOG itself continues past the batch (maxSeq is beyond the
+				//     batch's last chunk, and sweepStaleBatches only runs once we've
+				//     drained to the head - so we've already seen every entry after it
+				//     and the chunks simply are not there). This second case is the one
+				//     that was wedging devices forever: a chunk lost during upload, with
+				//     the room's later activity coming from OTHER authors, left
+				//     authorProgress behind the batch even though the log had moved on
+				//     by tens of thousands of entries.
 				const authorProgress = this.lastSeqByAuthor.get(batch.authorId) ?? 0;
-				if (authorProgress > batch.maxChunkSeq) {
+				const logMovedPast = this.maxSeq > batch.maxChunkSeq;
+				if (authorProgress > batch.maxChunkSeq || logMovedPast) {
 					this.pendingBatches.delete(batchId);
 					this.batchResetCounts.delete(batchId);
 					this.rebuildingBatches.delete(batchId);
@@ -1477,17 +1485,22 @@ export class SyncEngine {
 						...detail,
 						authorProgress,
 						maxChunkSeq: batch.maxChunkSeq,
+						maxSeq: this.maxSeq,
+						reason:
+							authorProgress > batch.maxChunkSeq ? "author-past" : "log-past",
 					});
 					console.error(
-						"[sync] Abandoned a bulk change whose remaining chunks can never arrive (its author has since published past it). If anything looks stale, use Force full resync.",
+						"[sync] Abandoned a bulk change whose missing chunks are not in the log (the log has moved past it). If anything looks stale, use Force full resync.",
 						detail,
 					);
 					continue;
 				}
+				// The incomplete batch IS the head of the log (nothing published after
+				// it yet) - its author may still be uploading the rest. Keep waiting.
 				nowStale.set(batchId, batch.chunks.size);
 				syncDebugLog("engine:batch-permanently-incomplete", detail);
 				console.error(
-					"[sync] A bulk change never fully arrived and keeps failing to rebuild; use Force full resync to recover.",
+					"[sync] A bulk change at the head of the log never fully arrived; waiting for its author to finish uploading.",
 					detail,
 				);
 				continue;
@@ -1499,6 +1512,10 @@ export class SyncEngine {
 			this.pendingBatches.delete(batchId);
 			// Keep the watermark pinned until the re-fetch re-forms this batch.
 			this.rebuildingBatches.add(batchId);
+			// Track its size so a batch that stays stuck (never grows) counts toward
+			// the reset limit on EVERY pass - converging in ~LIMIT passes instead of
+			// alternating reset / first-sighting and taking twice as long.
+			nowStale.set(batchId, batch.chunks.size);
 			syncDebugLog("engine:batch-reset", detail);
 		}
 		this.staleBatchHave = nowStale;

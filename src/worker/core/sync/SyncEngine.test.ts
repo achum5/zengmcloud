@@ -806,6 +806,67 @@ describe("SyncEngine", () => {
 		assert.strictEqual(events.length, 1);
 	});
 
+	test("a dead batch is abandoned when the LOG moves past it, even if its own author never did", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		// The wedge from the field: author H uploaded chunk 0 and 2 of a 3-chunk
+		// batch (chunk 1 lost mid-upload), then H's session ENDED - H never
+		// published anything after. But the room kept going: a DIFFERENT device X
+		// published tens of entries past it. authorProgress(H) never exceeds the
+		// dead batch, so the old author-only rule pinned the watermark forever.
+		const H = new FakeTransport("H", bus);
+		const chunk = (i: number) => ({
+			id: `dead${i}`,
+			authorId: "H",
+			action: "playMenu.day",
+			batchId: "DEAD",
+			chunkIndex: i,
+			chunkCount: 3,
+			changeset: {
+				changes: [
+					{
+						store: "events" as const,
+						id: 200 + i,
+						type: "put" as const,
+						value: { eid: 200 + i },
+					},
+				],
+			},
+		});
+		await H.publish(chunk(0));
+		await H.publish(chunk(2));
+
+		// A different device's healthy entries land well past the dead batch.
+		const X = new FakeTransport("X", bus);
+		for (let i = 0; i < 5; i++) {
+			await X.publish({
+				id: `x${i}`,
+				authorId: "X",
+				action: "main.proposeTrade",
+				changeset: {
+					changes: [{ store: "events", id: i, type: "put", value: { eid: i } }],
+				},
+			});
+		}
+
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {});
+		for (let i = 0; i < 20; i++) {
+			assert.strictEqual(await receiver.catchUp(), true);
+			if (receiver.isCaughtUp()) {
+				break;
+			}
+		}
+
+		// The dead batch was abandoned via the log-moved-past rule: caught up to
+		// the head, X's five entries applied (H's orphaned data skipped).
+		assert.strictEqual(receiver.isCaughtUp(), true);
+		assert.strictEqual(receiver.getPersistedSeq(), bus.entries.at(-1)!.seq);
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, 5);
+	});
+
 	test("resyncAll re-reads the whole log and applies every entry from scratch", async () => {
 		const bus = new FakeBus();
 
