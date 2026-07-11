@@ -297,6 +297,7 @@ const FreeAgents = ({
 }: View<"freeAgents">) => {
 	const seasonsFreeAgents = useSeasonsFreeAgents();
 	const [board, setBoard] = useState<number[]>(faBoard?.pids ?? []);
+	const [hideRefusals, setHideRefusals] = useState(false);
 
 	// Every board edit publishes to the room (fire-and-forget); the resolution
 	// reads whatever the room has when the day advances.
@@ -432,7 +433,15 @@ const FreeAgents = ({
 		freeAgencySeason +
 		(season === "current" && phase < PHASE.FREE_AGENCY ? 1 : 0);
 
-	const rows: DataTableRow[] = players.map((p) => {
+	// "Hide refusals" filter: drop available free agents unwilling to sign with
+	// you (signed/historical rows have no refusal concept and always show).
+	const shownPlayers = hideRefusals
+		? players.filter(
+				(p) => p.freeAgentType !== "available" || p.mood?.user?.willing,
+			)
+		: players;
+
+	const rows: DataTableRow[] = shownPlayers.map((p) => {
 		return {
 			key: p.pid,
 			metadata: {
@@ -549,7 +558,7 @@ const FreeAgents = ({
 
 					{showShowPlayersAffordButton ? (
 						<button
-							className="btn btn-secondary mb-3"
+							className="btn btn-secondary mb-3 me-2"
 							onClick={toggleShowAfforablePlayers}
 						>
 							{showAffordablePlayersFilterApplied
@@ -557,6 +566,14 @@ const FreeAgents = ({
 								: "Show players you can afford now"}
 						</button>
 					) : null}
+					<button
+						className="btn btn-secondary mb-3"
+						onClick={() => setHideRefusals((prev) => !prev)}
+					>
+						{hideRefusals
+							? "Show players who refuse to sign"
+							: "Hide players who refuse to sign"}
+					</button>
 				</>
 			) : null}
 
