@@ -77,6 +77,15 @@ const updateDailySchedule = async (
 					day = 1;
 				}
 
+				if (inputs.yesterday) {
+					if (schedule[0]?.day !== undefined) {
+						day = Math.max(1, schedule[0].day - 1);
+					} else if (daysAndPlayoffs.size > 0) {
+						// Nothing left to play: "yesterday" is the last played day.
+						day = Math.max(...daysAndPlayoffs.keys());
+					}
+				}
+
 				const scheduleDay = schedule.filter((game) => game.day === day);
 				isToday = !!scheduleDay[0] && schedule[0]!.gid === scheduleDay[0].gid;
 

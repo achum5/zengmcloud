@@ -468,6 +468,16 @@ const dailySchedule = (params: Params) => {
 		};
 	}
 
+	// The most recently played day (current day - 1), resolved by the view.
+	if (params.season === "yesterday") {
+		return {
+			cid,
+			day: undefined,
+			season: g.get("season"),
+			yesterday: true,
+		};
+	}
+
 	const season = validateSeason(params.season);
 
 	let day =

@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { useLocal, localActions } from "../../util/local.ts";
+import { helpers } from "../../util/index.ts";
 import { ScoreBox } from "../ScoreBox/index.tsx";
 import { emitter } from "../Modal.tsx";
 
@@ -185,6 +186,16 @@ export const LeagueTopBar = memo(() => {
 						/>
 					))
 				: null}
+			{showLeagueTopBar && games2.length > 0 ? (
+				<a
+					className="btn btn-light-bordered d-flex align-items-center me-2 px-1"
+					style={{ height: 56 }}
+					href={helpers.leagueUrl(["daily_schedule", "yesterday"])}
+					title="Yesterday's games"
+				>
+					<span className="glyphicon glyphicon-menu-left" />
+				</a>
+			) : null}
 		</div>
 	);
 });
