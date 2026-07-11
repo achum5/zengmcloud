@@ -112,7 +112,7 @@ import {
 	updateLiveBroadcast,
 } from "../core/sync/index.ts";
 import { setSingleGameSimActive } from "../core/sync/afterActionHook.ts";
-import { setSyncDebugLogging } from "../core/sync/debugLog.ts";
+import { setSyncDebugLogging, syncDebugLog } from "../core/sync/debugLog.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
 import { getRetiredPlayersForRecap } from "../util/getRetiredPlayersForRecap.ts";
@@ -794,24 +794,47 @@ const createLeague = async (
 		// fingerprint and watermark so joining the room catches up from there
 		// instead of replaying the whole history. Any deviation falls back to a
 		// full replay, which is slower but always converges (idempotent).
-		const keptEverything = [...fileStoreKeys].every(
+		const missingStores = [...fileStoreKeys].filter(
 			(key) =>
-				key === "gameAttributes" ||
-				key === "startingSeason" ||
-				key === "version" ||
-				keys.has(key as any),
+				key !== "gameAttributes" &&
+				key !== "startingSeason" &&
+				key !== "version" &&
+				!keys.has(key as any),
 		);
-		if (
-			syncCheckpoint &&
+		const keptEverything = missingStores.length === 0;
+		const applied =
+			!!syncCheckpoint &&
 			keptEverything &&
 			!shuffleRosters &&
-			!settings.giveMeWorstRoster
-		) {
-			metaLeague.syncLeagueId = syncCheckpoint.leagueId;
-			metaLeague.syncWatermark = syncCheckpoint.watermark;
+			!settings.giveMeWorstRoster;
+		if (applied) {
+			metaLeague.syncLeagueId = syncCheckpoint!.leagueId;
+			metaLeague.syncWatermark = syncCheckpoint!.watermark;
 		}
 
+		// One-time line so a re-import that still catches up from zero shows
+		// exactly why the checkpoint fast-forward was (not) applied.
+		syncDebugLog("import:checkpoint", {
+			applied,
+			hasCheckpoint: !!syncCheckpoint,
+			checkpointWatermark: syncCheckpoint?.watermark,
+			keptEverything,
+			missingStores,
+			fileStores: [...fileStoreKeys],
+			shuffleRosters,
+			worstRoster: !!settings.giveMeWorstRoster,
+		});
+
 		await idb.meta.put("leagues", metaLeague);
+	} else {
+		// No meta row at this point means the checkpoint can't be stamped - the
+		// re-import would replay from zero. Logged so this case is distinguishable.
+		syncDebugLog("import:checkpoint", {
+			applied: false,
+			outcome: "no-meta-row",
+			hasCheckpoint: !!syncCheckpoint,
+			lid,
+		});
 	}
 
 	if (settings.giveMeWorstRoster) {
@@ -5622,21 +5645,42 @@ const getSyncCheckpoint = async (): Promise<
 > => {
 	const lid = g.get("lid");
 	if (typeof lid !== "number") {
+		syncDebugLog("export:checkpoint", { outcome: "no-lid" });
 		return undefined;
 	}
 	const metaLeague = await idb.meta.get("leagues", lid);
 	if (!metaLeague?.syncLeagueId) {
+		// The exporting league was never bound to a room, so there's no checkpoint
+		// to embed - a re-import will replay from zero. This is the usual reason an
+		// "already up to date" export still catches up from the beginning.
+		syncDebugLog("export:checkpoint", {
+			outcome: "no-syncLeagueId",
+			hasMeta: !!metaLeague,
+			syncWatermark: metaLeague?.syncWatermark ?? 0,
+		});
 		return undefined;
 	}
 	// The live engine's position is fresher than the (debounced) meta row.
 	const engine = getSyncEngine();
-	const watermark = Math.max(
-		metaLeague.syncWatermark ?? 0,
-		getConnectedLid() === lid ? (engine?.getPersistedSeq() ?? 0) : 0,
-	);
+	const connectedSeq =
+		getConnectedLid() === lid ? (engine?.getPersistedSeq() ?? 0) : 0;
+	const watermark = Math.max(metaLeague.syncWatermark ?? 0, connectedSeq);
 	if (watermark <= 0) {
+		syncDebugLog("export:checkpoint", {
+			outcome: "zero-watermark",
+			syncLeagueId: metaLeague.syncLeagueId,
+			metaWatermark: metaLeague.syncWatermark ?? 0,
+			connectedSeq,
+		});
 		return undefined;
 	}
+	syncDebugLog("export:checkpoint", {
+		outcome: "ok",
+		leagueId: metaLeague.syncLeagueId,
+		watermark,
+		metaWatermark: metaLeague.syncWatermark ?? 0,
+		connectedSeq,
+	});
 	return { leagueId: metaLeague.syncLeagueId, watermark };
 };
 

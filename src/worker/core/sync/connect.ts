@@ -1023,6 +1023,16 @@ export const connectSharedLeague = async ({
 	connectedLid = lidNumber;
 	const watermark = await loadWatermark(lid);
 
+	// The position this connect will start catching up FROM. If the file was a
+	// fresh, up-to-date export of this room, the import should have stamped a
+	// near-head watermark here; a 0 means the checkpoint wasn't applied and this
+	// device will replay the entire room history (see import:checkpoint).
+	syncDebugLog("connect:initial-watermark", {
+		lid: lidNumber,
+		watermark,
+		explicit,
+	});
+
 	const transport = new FirebaseTransport(trimmed, clientId, {
 		sinceTs: watermark,
 	});
