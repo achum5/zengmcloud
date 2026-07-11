@@ -1305,13 +1305,25 @@ export class SyncEngine {
 					const remaining = await this.transport.countEntriesSince(
 						this.persistedSeq,
 					);
+					// A `remaining` that stays high while `behind` (maxSeq - persistedSeq)
+					// is ~0 means the count query and the watermark disagree - a classic
+					// cause of a stuck "catching up" bar (the total is set but the drain
+					// immediately hits head and never counts down). Logged so that shows up.
+					syncDebugLog("engine:catchup-count", {
+						remaining,
+						persistedSeq: this.persistedSeq,
+						maxSeq: this.maxSeq,
+						behind: Math.max(0, this.maxSeq - this.persistedSeq),
+						willShowBar: remaining >= CATCH_UP_PROGRESS_MIN,
+					});
 					if (remaining >= CATCH_UP_PROGRESS_MIN) {
 						this.catchUpTotal = remaining;
 						this.catchUpDone = 0;
 						this.reportCatchUp();
 					}
-				} catch {
+				} catch (error) {
 					// A failed count just means no progress bar; the drain still runs.
+					syncDebugLog("engine:catchup-count-failed", { error });
 				}
 			}
 
@@ -1536,6 +1548,28 @@ export class SyncEngine {
 	// The watermark we've durably caught up through (server-timestamp millis).
 	getPersistedSeq(): number {
 		return this.persistedSeq;
+	}
+
+	// A snapshot of everything that decides whether we're "caught up", so a
+	// device stuck on the catching-up indicator can be diagnosed from a pasted
+	// console log: how far the watermark trails the head, whether a bulk batch is
+	// waiting on missing chunks, whether an apply is pinned, and the live progress
+	// counters that drive the UI indicator.
+	getCatchUpDiagnostics() {
+		return {
+			caughtUp: this.isCaughtUp(),
+			persistedSeq: this.persistedSeq,
+			maxSeq: this.maxSeq,
+			behind: Math.max(0, this.maxSeq - this.persistedSeq),
+			pendingBatches: this.pendingBatches.size,
+			pendingBatchDetail: this.describePendingBatches(),
+			applyFailed: this.applyFailed,
+			failedApplies: this.failedApplies.size,
+			catchingUp: this.catchingUp,
+			progressDone: this.catchUpDone,
+			progressTotal: this.catchUpTotal,
+			liveSubscription: this.hasChangesSubscription(),
+		};
 	}
 
 	// Read the entire shared change log once (not a live subscription), for a full

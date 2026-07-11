@@ -11,6 +11,7 @@ import { idb } from "../../db/index.ts";
 import { g, helpers, local, lock, toUI } from "../../util/index.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
+import { syncDebugLog } from "./debugLog.ts";
 import type { LiveBroadcastMeta } from "./types.ts";
 
 // This device's catch-up watermark for a league, stored in the durable meta DB
@@ -677,12 +678,43 @@ const checkLotteryRevealLease = () => {
 // to just the live tail, instead of re-loading the entire backlog we just
 // drained (which on a long absence would time out and wedge). Idempotent: the
 // subscription starts at most once; later calls just keep the tail drained.
+// Counts driveCatchUp ticks so the log can show how many passes a device has
+// spent stuck on the catching-up indicator without converging.
+let driveCatchUpTicks = 0;
+
 const driveCatchUp = async () => {
 	const engine = getSyncEngine();
 	if (!engine) {
 		return;
 	}
+	driveCatchUpTicks += 1;
+	const before = engine.getCatchUpDiagnostics();
 	const reachedHead = await engine.catchUp();
+	const after = engine.getCatchUpDiagnostics();
+
+	// One line per catch-up pass. The telling signals for an "infinitely
+	// catching up" device: reachedHead stays false while `behind` never reaches
+	// 0 (head moving faster than we drain, or fetches failing), or `behind` is 0
+	// yet the indicator persists because a bulk batch is stuck (pendingBatches)
+	// or an apply is pinned (applyFailed) - isCaughtUp() then never becomes true.
+	syncDebugLog("connect:drive-catchup", {
+		tick: driveCatchUpTicks,
+		reachedHead,
+		caughtUp: after.caughtUp,
+		behindBefore: before.behind,
+		behindAfter: after.behind,
+		persistedSeq: after.persistedSeq,
+		maxSeq: after.maxSeq,
+		watermarkAdvanced: after.persistedSeq > before.persistedSeq,
+		pendingBatches: after.pendingBatches,
+		pendingBatchDetail: after.pendingBatchDetail,
+		applyFailed: after.applyFailed,
+		failedApplies: after.failedApplies,
+		progressDone: after.progressDone,
+		progressTotal: after.progressTotal,
+		liveSubscription: after.liveSubscription,
+	});
+
 	// Only go live once the drain has actually reached the head - otherwise the
 	// subscription's initial snapshot would re-load the still-undrained backlog.
 	// (A failed fetch returns false, so we don't prematurely go live either.)
@@ -1047,6 +1079,14 @@ export const connectSharedLeague = async ({
 		// Backlog-drain progress → UI, so a device catching up after an absence
 		// shows how far along it is and roughly how much longer.
 		onCatchUpProgress: (progress) => {
+			// Log every set/clear of the indicator so an "infinitely catching up"
+			// device shows exactly when the bar appears and whether it's ever
+			// cleared (progress === undefined) between passes.
+			syncDebugLog("connect:catchup-indicator", {
+				showing: progress !== undefined,
+				done: progress?.done,
+				total: progress?.total,
+			});
 			void toUI("updateLocal", [{ mpCatchUp: progress }]);
 		},
 		onReadyChange: (ready) => {
