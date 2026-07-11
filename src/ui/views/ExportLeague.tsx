@@ -283,37 +283,51 @@ const loadGzip = (): boolean => {
 	return true;
 };
 
+const storesByKey = {
+	players: ["players", "releasedPlayers", "awards"],
+	teamsBasic: ["teams", "gameAttributes"],
+	teams: ["teamSeasons", "teamStats"],
+	headToHead: ["headToHeads"],
+	schedule: ["schedule", "playoffSeries"],
+	draftPicks: ["draftPicks"],
+	leagueSettings: ["gameAttributes"],
+	gameState: [
+		"gameAttributes",
+		"trade",
+		"negotiations",
+		"draftLotteryResults",
+		"messages",
+		"playerFeats",
+		"allStars",
+		"scheduledEvents",
+		"seasonLeaders",
+		"savedTrades",
+		"savedTradingBlock",
+		"faDayResults",
+	],
+	newsFeedTransactions: ["events"],
+	newsFeedOther: ["events"],
+	games: ["games", "liveGamePlayByPlay"],
+} satisfies Record<string, LeagueDBStoreNames[]>;
+
+// Compile-time guard: EVERY league store must be exportable via some category
+// above. A store missing here makes `isFullExport` in makeExportStream false
+// forever, which silently stops full exports from embedding the sync
+// checkpoint - and then every re-import replays the whole room history from
+// zero. If this line errors, add the named store to a category above.
+export const allStoresExportable: Record<
+	Exclude<
+		LeagueDBStoreNames,
+		(typeof storesByKey)[keyof typeof storesByKey][number]
+	>,
+	never
+> = {};
+
 const getExportInfo = (
 	stats: View<"exportLeague">["stats"],
 	checked: Record<ExportLeagueKey, boolean>,
 ) => {
 	const storesSet = new Set<LeagueDBStoreNames>();
-
-	const storesByKey = {
-		players: ["players", "releasedPlayers", "awards"],
-		teamsBasic: ["teams", "gameAttributes"],
-		teams: ["teamSeasons", "teamStats"],
-		headToHead: ["headToHeads"],
-		schedule: ["schedule", "playoffSeries"],
-		draftPicks: ["draftPicks"],
-		leagueSettings: ["gameAttributes"],
-		gameState: [
-			"gameAttributes",
-			"trade",
-			"negotiations",
-			"draftLotteryResults",
-			"messages",
-			"playerFeats",
-			"allStars",
-			"scheduledEvents",
-			"seasonLeaders",
-			"savedTrades",
-			"savedTradingBlock",
-		],
-		newsFeedTransactions: ["events"],
-		newsFeedOther: ["events"],
-		games: ["games"],
-	} satisfies Record<string, LeagueDBStoreNames[]>;
 
 	for (const key of helpers.keys(storesByKey)) {
 		if (checked[key]) {

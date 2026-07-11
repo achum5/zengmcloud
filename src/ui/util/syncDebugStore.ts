@@ -50,6 +50,7 @@ export const setSyncDebugEnabled = (enabled: boolean) => {
 // evicts them before anyone can copy). Never evicted.
 const PINNED_EVENTS = new Set([
 	"export:checkpoint",
+	"export:full-check",
 	"import:checkpoint",
 	"connect:initial-watermark",
 	"engine:batch-abandoned",

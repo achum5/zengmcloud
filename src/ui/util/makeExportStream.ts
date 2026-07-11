@@ -7,6 +7,7 @@ import {
 } from "../../common/defaultGameAttributes.ts";
 import { local } from "./local.ts";
 import { toWorker } from "./toWorker.ts";
+import { pushSyncDebugEntry } from "./syncDebugStore.ts";
 import type {
 	LeagueDB,
 	LeagueDBStoreNames,
@@ -97,9 +98,19 @@ const makeExportStream = async (
 	// checkpoint instead of replaying the whole room history. Partial exports
 	// must not claim it - their state is not what the checkpoint describes.
 	let syncCheckpoint: { leagueId: string; watermark: number } | undefined;
-	const isFullExport = Array.from(leagueDB.objectStoreNames).every((store) =>
-		(storesInput as string[]).includes(store),
+	const missingStores = Array.from(leagueDB.objectStoreNames).filter(
+		(store) => !(storesInput as string[]).includes(store),
 	);
+	const isFullExport = missingStores.length === 0;
+	// Mirrored to the sync debug overlay so a checkpoint-less export is never
+	// silent again (a store missing from the export = re-imports replay the
+	// whole room history from zero).
+	pushSyncDebugEntry({
+		at: new Date().toISOString(),
+		event: "export:full-check",
+		isFullExport,
+		missingStores,
+	});
 	if (isFullExport) {
 		try {
 			syncCheckpoint = await toWorker("main", "getSyncCheckpoint", undefined);
