@@ -1,7 +1,9 @@
 import { assert, describe, test } from "vitest";
 import {
+	enteringAverages,
 	regularSeasonRecordAsOf,
 	seriesWinsBefore,
+	type PlayerGameLine,
 } from "./getDayGamesForRecap.ts";
 
 // gid, day, playoffs, home tid+result. Winner is whoever has more pts.
@@ -114,5 +116,57 @@ describe("regularSeasonRecordAsOf", () => {
 			won: 2,
 			lost: 1,
 		});
+	});
+});
+
+describe("enteringAverages", () => {
+	const line = (
+		day: number,
+		gid: number,
+		pts: number,
+		playoffs = false,
+	): PlayerGameLine => ({
+		day,
+		gid,
+		playoffs,
+		row: { gp: 1, min: 30, pts, fg: 5, fga: 10, orb: 1, drb: 4, ast: 3 },
+	});
+
+	test("excludes the game being recapped: a 16 ppg scorer who drops 46 still shows 16", () => {
+		// Two games at 16, then this game (gid 3) is a 46-point eruption. The live
+		// season average is 26 - but he came IN averaging 16, and that's what the
+		// recap data must say.
+		const lines = [line(1, 1, 16), line(2, 2, 16), line(3, 3, 46)];
+		const before = enteringAverages(lines, 3, 3, false);
+		assert.strictEqual(before?.pts, 16);
+		assert.strictEqual(before?.gp, 2);
+	});
+
+	test("excludes games AFTER the recapped game (recapping a past day)", () => {
+		const lines = [line(1, 1, 10), line(2, 2, 20), line(3, 3, 30)];
+		// Recapping game 2: only game 1 counts.
+		const before = enteringAverages(lines, 2, 2, false);
+		assert.strictEqual(before?.pts, 10);
+		assert.strictEqual(before?.gp, 1);
+	});
+
+	test("a player's first game has no entering averages", () => {
+		assert.strictEqual(enteringAverages([line(1, 1, 25)], 1, 1, false), undefined);
+	});
+
+	test("playoff and regular-season lines don't mix", () => {
+		const lines = [line(1, 1, 10), line(2, 2, 12), line(50, 9, 30, true)];
+		const playoffBefore = enteringAverages(lines, 10, 51, true);
+		assert.strictEqual(playoffBefore?.pts, 30);
+		assert.strictEqual(playoffBefore?.gp, 1);
+		const regularEntering = enteringAverages(lines, 10, 51, false);
+		assert.strictEqual(regularEntering?.gp, 2);
+	});
+
+	test("same-day games are ordered by gid", () => {
+		const lines = [line(1, 1, 10), line(1, 2, 20)];
+		const before = enteringAverages(lines, 2, 1, false);
+		assert.strictEqual(before?.pts, 10);
+		assert.strictEqual(before?.gp, 1);
 	});
 });

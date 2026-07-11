@@ -173,8 +173,8 @@ describe("buildRecapPrompt — rich context", () => {
 		assert.ok(prompt.includes("50-32, W3"), prompt); // record + streak
 		assert.ok(prompt.includes("By quarter: 25 | 20 | 30 | 25"), prompt);
 		assert.ok(prompt.includes("Last 10 (1-0)"), prompt);
-		assert.ok(prompt.includes("Season avg:"), prompt);
-		assert.ok(prompt.includes("Career by season:"), prompt);
+		assert.ok(prompt.includes("Season avg entering this game:"), prompt);
+		assert.ok(prompt.includes("Career by season (past seasons):"), prompt);
 		assert.ok(prompt.includes("2025 (BKN, age 27)"), prompt); // team + age
 		assert.ok(prompt.includes("Round 2 of 4"), prompt); // playoff series
 		assert.ok(prompt.includes("#8 seed"), prompt);

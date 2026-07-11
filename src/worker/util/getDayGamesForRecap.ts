@@ -52,8 +52,11 @@ export type RecapPlayer = {
 	fta: number;
 	pf: number;
 	pm?: number;
+	// Averages ENTERING this game - the game itself (and anything after) is
+	// excluded, so "he came in averaging X" is always true of these numbers.
 	seasonAvg?: RecapAverages;
 	playoffAvg?: RecapAverages;
+	// Past seasons only (the current season is the seasonAvg above).
 	career?: RecapCareerSeason[];
 	// Set when a player who PLAYED was hurt this game or played through an injury.
 	injury?: {
@@ -318,70 +321,79 @@ const toAverages = (tot: Totals): RecapAverages => {
 	};
 };
 
-// Regular-season averages for a player, split into this season, career (season
-// by season, with age and team[s]), and this postseason. Career/playoffs are
-// only requested for key players, to keep the prompt from ballooning. Career
-// teams are returned as raw tids; the caller resolves them to abbrevs.
-const playerContext = (
-	player: any,
-	season: number,
-	includeCareer: boolean,
-): {
-	seasonAvg?: RecapAverages;
-	playoffAvg?: RecapAverages;
-	careerRaw?: CareerRaw[];
-} => {
+// Career context for a player: PAST seasons only, season by season, with age
+// and team[s]. The current season is deliberately excluded - its live totals
+// include the game being recapped (and any games after it), and a "this
+// season" number that already contains the game misreads as what the player
+// came in averaging. The current season is covered by the entering-this-game
+// averages instead. Only requested for key players, to keep the prompt from
+// ballooning. Teams are returned as raw tids; the caller resolves to abbrevs.
+const playerCareer = (player: any, season: number): CareerRaw[] | undefined => {
 	const stats: any[] = Array.isArray(player?.stats) ? player.stats : [];
-	const regular = stats.filter((s) => !s.playoffs);
+	const regular = stats.filter((s) => !s.playoffs && s.season !== season);
 
-	const thisSeasonRows = regular.filter((s) => s.season === season);
-	const seasonAvg =
-		thisSeasonRows.length > 0 && aggregate(thisSeasonRows).gp > 0
-			? toAverages(aggregate(thisSeasonRows))
-			: undefined;
-
-	const playoffRows = stats.filter((s) => s.playoffs && s.season === season);
-	const playoffAvg =
-		playoffRows.length > 0 && aggregate(playoffRows).gp > 0
-			? toAverages(aggregate(playoffRows))
-			: undefined;
-
-	let careerRaw: CareerRaw[] | undefined;
-	if (includeCareer) {
-		const bornYear =
-			typeof player?.born?.year === "number" ? player.born.year : undefined;
-		const bySeason = new Map<number, any[]>();
-		for (const row of regular) {
-			const arr = bySeason.get(row.season) ?? [];
-			arr.push(row);
-			bySeason.set(row.season, arr);
-		}
-		careerRaw = [...bySeason.entries()]
-			.map(([s, rows]) => ({
-				season: s,
-				tot: aggregate(rows),
-				tids: [
-					...new Set(
-						rows
-							.map((r) => r.tid)
-							.filter((t) => typeof t === "number" && t >= 0),
-					),
-				] as number[],
-			}))
-			.filter(({ tot }) => tot.gp > 0)
-			.sort((a, b) => a.season - b.season)
-			.map(({ season: s, tot, tids }) => ({
-				season: s,
-				age: bornYear !== undefined ? s - bornYear : undefined,
-				tids,
-				...toAverages(tot),
-			}));
-		if (careerRaw.length === 0) {
-			careerRaw = undefined;
-		}
+	const bornYear =
+		typeof player?.born?.year === "number" ? player.born.year : undefined;
+	const bySeason = new Map<number, any[]>();
+	for (const row of regular) {
+		const arr = bySeason.get(row.season) ?? [];
+		arr.push(row);
+		bySeason.set(row.season, arr);
 	}
+	const careerRaw = [...bySeason.entries()]
+		.map(([s, rows]) => ({
+			season: s,
+			tot: aggregate(rows),
+			tids: [
+				...new Set(
+					rows.map((r) => r.tid).filter((t) => typeof t === "number" && t >= 0),
+				),
+			] as number[],
+		}))
+		.filter(({ tot }) => tot.gp > 0)
+		.sort((a, b) => a.season - b.season)
+		.map(({ season: s, tot, tids }) => ({
+			season: s,
+			age: bornYear !== undefined ? s - bornYear : undefined,
+			tids,
+			...toAverages(tot),
+		}));
+	return careerRaw.length > 0 ? careerRaw : undefined;
+};
 
-	return { seasonAvg, playoffAvg, careerRaw };
+// One player's box line in one completed game, tagged so averages can be
+// computed AS OF a given game.
+export type PlayerGameLine = {
+	day: number;
+	gid: number;
+	playoffs: boolean;
+	row: Record<string, number>;
+};
+
+// A player's averages ENTERING a given game (strictly earlier games only).
+// Live season totals can't be used for this: they include the game being
+// recapped (and, when recapping a past day, every game after it too), and a
+// reader - human or AI - reads "season average" as the pregame number. E.g. a
+// 16 ppg scorer who erupts for 46 lifts his post-game average to 26; feeding
+// 26 produces "he came in averaging 26 and nearly doubled it".
+export const enteringAverages = (
+	lines: PlayerGameLine[],
+	beforeGid: number,
+	beforeDay: number,
+	playoffs: boolean,
+): RecapAverages | undefined => {
+	const rows = lines
+		.filter(
+			(l) =>
+				l.playoffs === playoffs &&
+				(l.day < beforeDay || (l.day === beforeDay && l.gid < beforeGid)),
+		)
+		.map((l) => l.row);
+	if (rows.length === 0) {
+		return undefined;
+	}
+	const tot = aggregate(rows);
+	return tot.gp > 0 ? toAverages(tot) : undefined;
 };
 
 // All completed games on a given day of a season, each with team names, every
@@ -400,6 +412,30 @@ export const getDayGamesForRecap = async ({
 	const games = allGames
 		.filter((game) => game.day === day && game.won && game.lost)
 		.sort((a, b) => a.gid - b.gid);
+
+	// Every player's box line from every completed game this season, so each
+	// recapped game can report what a player was averaging ENTERING it (see
+	// enteringAverages).
+	const linesByPid = new Map<number, PlayerGameLine[]>();
+	for (const game of allGames) {
+		if (!game.won || !game.lost) {
+			continue;
+		}
+		for (const t of game.teams) {
+			for (const p of (t as any).players ?? []) {
+				if ((p?.min ?? 0) > 0 && typeof p?.pid === "number") {
+					const arr = linesByPid.get(p.pid) ?? [];
+					arr.push({
+						day: game.day ?? 0,
+						gid: game.gid,
+						playoffs: !!game.playoffs,
+						row: { ...p, gp: 1 },
+					});
+					linesByPid.set(p.pid, arr);
+				}
+			}
+		}
+	}
 
 	// Team info memo so we resolve each team's name/abbrev at most once.
 	const teamInfoCache = new Map<
@@ -662,17 +698,33 @@ export const getDayGamesForRecap = async ({
 							: undefined,
 				};
 
+				if (typeof p?.pid === "number") {
+					const lines = linesByPid.get(p.pid) ?? [];
+					base.seasonAvg = enteringAverages(
+						lines,
+						game.gid,
+						game.day ?? day,
+						false,
+					);
+					if (playoffs) {
+						base.playoffAvg = enteringAverages(
+							lines,
+							game.gid,
+							game.day ?? day,
+							true,
+						);
+					}
+				}
+
 				const full =
-					typeof p?.pid === "number"
+					typeof p?.pid === "number" && topByPts.has(p.pid)
 						? await idb.cache.players.get(p.pid)
 						: undefined;
 				if (full) {
-					const ctx = playerContext(full, season, topByPts.has(p.pid));
-					base.seasonAvg = ctx.seasonAvg;
-					base.playoffAvg = ctx.playoffAvg;
-					if (ctx.careerRaw) {
+					const careerRaw = playerCareer(full, season);
+					if (careerRaw) {
 						const career: RecapCareerSeason[] = [];
-						for (const c of ctx.careerRaw) {
+						for (const c of careerRaw) {
 							const teams: string[] = [];
 							for (const tid of c.tids) {
 								teams.push(await abbrevBySeasonTid(tid, c.season));

@@ -11,7 +11,7 @@ import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 // logic below.
 const INSTRUCTIONS = `You are an expert basketball beat writer. Write a lively, ESPN-style recap for EACH game listed below.
 
-You are given far more data than you need — box scores, season and career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), the pregame betting line (who was favored and by how many), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). Do NOT list the raw data back.
+You are given far more data than you need — box scores, what each player was averaging ENTERING the game (this game not included), past-season career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), the pregame betting line (who was favored and by how many), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). Do NOT list the raw data back.
 
 The pregame betting line is CONTEXT ONLY — use it to judge how surprising the result was (a big underdog winning is an upset; a favorite rolling is chalk) and let that shape the tone. NEVER mention the spread, betting line, odds, "favored", "underdog", "pick'em", or "cover" in the recap itself. Convey the magnitude through the basketball, not the betting.
 
@@ -51,10 +51,10 @@ const playerLine = (p: RecapPlayer): string => {
 		`- ${p.name}: ${p.pts} PTS, ${p.reb} REB, ${p.ast} AST, ${p.stl} STL, ${p.blk} BLK, ${p.tov} TO (${p.fg}/${p.fga} FG, ${p.tp}/${p.tpa} 3P, ${p.ft}/${p.fta} FT, ${p.min} min)${injuryTag(p)}`,
 	];
 	if (p.seasonAvg) {
-		lines.push(`    · Season avg: ${avg(p.seasonAvg)}`);
+		lines.push(`    · Season avg entering this game: ${avg(p.seasonAvg)}`);
 	}
 	if (p.playoffAvg) {
-		lines.push(`    · Playoffs avg: ${avg(p.playoffAvg)}`);
+		lines.push(`    · Playoff avg entering this game: ${avg(p.playoffAvg)}`);
 	}
 	if (p.career && p.career.length > 0) {
 		const career = p.career
@@ -68,7 +68,7 @@ const playerLine = (p: RecapPlayer): string => {
 				return `${c.season}${tag ? ` (${tag})` : ""}: ${c.pts}/${c.reb}/${c.ast}, ${c.fgp}% FG (${c.gp} G)`;
 			})
 			.join("; ");
-		lines.push(`    · Career by season: ${career}`);
+		lines.push(`    · Career by season (past seasons): ${career}`);
 	}
 	return lines.join("\n");
 };
