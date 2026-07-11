@@ -6,6 +6,7 @@
 // double-count the room.
 //
 // Gated stages, each with its own notion of a "step":
+//   - PRESEASON: one step - start the regular season.
 //   - DRAFT_LOTTERY: one step - advance past the lottery (the lottery itself
 //     still runs, inside the phase change if it wasn't revealed manually).
 //   - DRAFT: each pick is a step (overall pick number). A pick on the clock
@@ -122,6 +123,17 @@ const advancePhase = async (phase: Phase) => {
 
 const getStageInfo = async (): Promise<StageInfo | undefined> => {
 	const phase = g.get("phase");
+
+	if (phase === PHASE.PRESEASON) {
+		return {
+			nextStep: 1,
+			nextLabel: "Start regular season",
+			onClockUser: false,
+			waypoints: [],
+			options: [],
+			advance: () => advancePhase(PHASE.REGULAR_SEASON),
+		};
+	}
 
 	if (phase === PHASE.DRAFT_LOTTERY) {
 		return {
@@ -339,6 +351,8 @@ export const lastHoldoutToNotify = ({
 // The page a holdout notification deep-links to for the current gated phase.
 const holdoutNotifPath = (phase: number): string => {
 	switch (phase) {
+		case PHASE.PRESEASON:
+			return "roster";
 		case PHASE.DRAFT_LOTTERY:
 			return "draft_lottery";
 		case PHASE.DRAFT:
