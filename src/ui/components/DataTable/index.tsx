@@ -153,6 +153,18 @@ export type Props = {
 	controlledSelectedRows?: SelectedRows;
 	alwaysShowBulkSelectRows?: boolean; // Often used along with controlledSelectedRows,
 	disableBulkSelectKeys?: Set<DataTableRow["key"]>;
+
+	// Opt-in "click a row to select it" via the normal row-highlight (the same
+	// yellow highlight useClickable gives), but CONTROLLED: the caller owns which
+	// keys are selected and gets a toggle when a row is clicked. Reuses the
+	// existing click guards (links/buttons never toggle). When set, rows use this
+	// instead of the ephemeral internal highlight.
+	rowSelect?: RowSelect;
+};
+
+export type RowSelect = {
+	selectedKeys: Set<DataTableRow["key"]>;
+	onToggle: (key: DataTableRow["key"]) => void;
 };
 
 export const DataTable = ({
@@ -177,6 +189,7 @@ export const DataTable = ({
 	rankCol,
 	ref,
 	rows,
+	rowSelect,
 	showRowLabels,
 	small,
 	sortableRows,
@@ -440,6 +453,7 @@ export const DataTable = ({
 		disableBulkSelectKeys,
 		isFiltered: processedRows.length !== rows.length,
 		highlightCols,
+		rowSelect,
 		selectedRows,
 		showRowLabels,
 		showBulkSelectCheckboxes,

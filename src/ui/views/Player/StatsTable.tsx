@@ -275,12 +275,15 @@ export const StatsTable = ({
 		}
 	}
 
-	// Let the user check season rows to subtotal them (see the footer above).
-	// Pointless with a single season, and n/a for the baseball fielding table
-	// (multiple position rows per season).
+	// Let the user click season rows (the normal row highlight) to subtotal them
+	// (see the footer above). Pointless with a single season, and n/a for the
+	// baseball fielding table (multiple position rows per season).
 	const selectableSeasons = new Set(playerStats.map((ps) => ps.season));
-	const showSelectionCheckboxes =
-		!isBaseballFielding && selectableSeasons.size >= 2;
+	const showSelection = !isBaseballFielding && selectableSeasons.size >= 2;
+
+	// Which season each selectable row belongs to, so a row highlight toggles
+	// that season (and every row of a selected season shows highlighted).
+	const rowKeyToSeason = new Map<number | string, number>();
 
 	const rows = [];
 
@@ -312,8 +315,9 @@ export const StatsTable = ({
 		prevSeason = ps.season;
 
 		const className = ps.hasTot ? "text-body-secondary" : undefined;
-		const selectedRow =
-			showSelectionCheckboxes && selection.selected.has(ps.season);
+		if (showSelection) {
+			rowKeyToSeason.set(i, ps.season);
+		}
 
 		rows.push({
 			key: i,
@@ -323,15 +327,6 @@ export const StatsTable = ({
 					sortValue: i,
 					value: (
 						<>
-							{showSelectionCheckboxes && !ps.hasTot ? (
-								<input
-									type="checkbox"
-									className="form-check-input me-1 align-middle"
-									checked={selection.selected.has(ps.season)}
-									onChange={() => selection.toggle(ps.season)}
-									title="Select for subtotal"
-								/>
-							) : null}
 							<SeasonLink
 								className={className}
 								pid={p.pid}
@@ -362,9 +357,31 @@ export const StatsTable = ({
 					</MaybeBold>
 				)),
 			],
-			classNames: clsx(className, { "table-primary": selectedRow }),
+			classNames: className,
 		});
 	}
+
+	// Row keys whose season is currently selected, so those rows show the
+	// highlight; clicking a row toggles its whole season.
+	const selectedRowKeys = new Set<number | string>();
+	if (showSelection) {
+		for (const [key, season] of rowKeyToSeason) {
+			if (selection.selected.has(season)) {
+				selectedRowKeys.add(key);
+			}
+		}
+	}
+	const rowSelect = showSelection
+		? {
+				selectedKeys: selectedRowKeys,
+				onToggle: (key: number | string) => {
+					const season = rowKeyToSeason.get(key);
+					if (season !== undefined) {
+						selection.toggle(season);
+					}
+				},
+			}
+		: undefined;
 
 	return (
 		<HideableSection
@@ -380,6 +397,7 @@ export const StatsTable = ({
 				hideAllControls
 				name={`Player:${name}`}
 				rows={rows}
+				rowSelect={rowSelect}
 				superCols={superCols}
 				title={
 					<ul className="nav nav-tabs border-bottom-0">

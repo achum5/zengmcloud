@@ -64,12 +64,23 @@ const Row = ({
 		clickable,
 		highlightCols,
 		isFiltered,
+		rowSelect,
 		showBulkSelectCheckboxes,
 		showRowLabels,
 		sortBys,
 	} = use(DataTableContext);
 
-	const { clicked, toggleClicked } = useClickable();
+	// When the table opts into controlled row-selection, the yellow highlight
+	// reflects the caller's selection and a click toggles it. Otherwise it's the
+	// usual ephemeral click-to-highlight.
+	const controlled = rowSelect
+		? {
+				selected: rowSelect.selectedKeys.has(row.key),
+				onToggle: () => rowSelect.onToggle(row.key),
+			}
+		: undefined;
+	const { clicked, toggleClicked } = useClickable(controlled);
+	const rowIsClickable = clickable || rowSelect !== undefined;
 
 	let classNames;
 	let disableSort;
@@ -97,13 +108,13 @@ const Row = ({
 	return (
 		<tr
 			className={clsx(classNames, {
-				"table-warning": clickable && clicked,
+				"table-warning": rowIsClickable && clicked,
 				"opacity-0":
 					sortableRows &&
 					!sortableRows.overlay &&
 					sortableRows.draggedIndex === sortableRows.index,
 			})}
-			onClick={clickable ? toggleClicked : undefined}
+			onClick={rowIsClickable ? toggleClicked : undefined}
 			// Not sure why this works to disable sorting for certain rows, but it seems to work!
 			ref={disableSort ? undefined : sortableRows?.setNodeRef}
 			style={sortableRows?.style}

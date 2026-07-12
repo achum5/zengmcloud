@@ -1,9 +1,22 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 const IGNORED_ELEMENTS = new Set(["A", "BUTTON", "INPUT", "SELECT"]);
 
-const useClickable = () => {
-	const [clicked, setClicked] = useState(false);
+// When `controlled` is passed, the highlight is owned by the caller (selected +
+// onToggle) instead of the ephemeral internal state - so the same click-to-
+// highlight gesture can drive a real selection. All the click guards
+// (links/buttons/data-no-row-highlight) are shared.
+const useClickable = (controlled?: {
+	selected: boolean;
+	onToggle: () => void;
+}) => {
+	const [clickedInternal, setClicked] = useState(false);
+
+	// Keep the latest controlled callbacks without rebuilding toggleClicked.
+	const controlledRef = useRef(controlled);
+	controlledRef.current = controlled;
+
+	const clicked = controlled ? controlled.selected : clickedInternal;
 
 	const toggleClicked = useCallback((event: any) => {
 		// Purposely using event.target instead of event.currentTarget because we do want check what internal element was clicked on, not the row itself
@@ -39,7 +52,11 @@ const useClickable = () => {
 			}
 		}
 
-		setClicked((prevClicked) => !prevClicked);
+		if (controlledRef.current) {
+			controlledRef.current.onToggle();
+		} else {
+			setClicked((prevClicked) => !prevClicked);
+		}
 	}, []);
 
 	return {
