@@ -1,6 +1,9 @@
 import { assert, describe, test } from "vitest";
 import { buildRecapPrompt, parseRecaps } from "./gameRecap.ts";
-import type { RecapGame } from "../../worker/util/getDayGamesForRecap.ts";
+import type {
+	RecapGame,
+	RecapPlayer,
+} from "../../worker/util/getDayGamesForRecap.ts";
 
 let nextPid = 1;
 const player = (
@@ -179,6 +182,104 @@ describe("buildRecapPrompt — rich context", () => {
 		assert.ok(prompt.includes("Round 2 of 4"), prompt); // playoff series
 		assert.ok(prompt.includes("#8 seed"), prompt);
 		assert.ok(prompt.includes("Out (injury): Hurt Guy"), prompt); // injuries
+		// 35 PTS, 10 REB → a double-double, tagged so the AI can't misread it.
+		assert.ok(prompt.includes("[double-double: PTS, REB]"), prompt);
+		// The accuracy guardrail must be present.
+		assert.ok(prompt.includes("ACCURACY IS THE TOP PRIORITY"), prompt);
+	});
+});
+
+describe("double-double milestone tags", () => {
+	const base = {
+		gid: 1,
+		day: 1,
+		overtimes: 0,
+		winnerTid: 0,
+		playoffs: false,
+		clutchPlays: [] as string[],
+	};
+	const mkPlayer = (stats: Partial<RecapPlayer> & { name: string }) => ({
+		pid: 1,
+		min: 34,
+		pts: 0,
+		reb: 0,
+		ast: 0,
+		stl: 0,
+		blk: 0,
+		tov: 0,
+		fg: 0,
+		fga: 0,
+		tp: 0,
+		tpa: 0,
+		ft: 0,
+		fta: 0,
+		pf: 0,
+		...stats,
+	});
+	// The player's own line in the prompt. Negative assertions must scope to this
+	// (not the whole prompt), since the accuracy instructions legitimately mention
+	// "triple-double", "quintuple-double", etc.
+	const lineFor = (p: { name: string }): string => {
+		const line = buildRecapPrompt(
+			[
+				{
+					...base,
+					teams: [
+						{
+							tid: 0,
+							region: "A",
+							name: "A",
+							abbrev: "AAA",
+							pts: 100,
+							players: [p],
+						},
+						{
+							tid: 1,
+							region: "B",
+							name: "B",
+							abbrev: "BBB",
+							pts: 90,
+							players: [],
+						},
+					],
+				} as any,
+			],
+			"Day 1",
+		)
+			.split("\n")
+			.find((l) => l.includes(`${p.name}:`));
+		assert.ok(line, "player line should exist");
+		return line!;
+	};
+
+	test("a true triple-double is tagged as such (Pryor case)", () => {
+		// 21/13/10 with 3 STL, 5 BLK — a triple-double, NOT near a quintuple-double.
+		const line = lineFor(
+			mkPlayer({ name: "Pryor", pts: 21, reb: 13, ast: 10, stl: 3, blk: 5 }),
+		);
+		assert.ok(line.includes("[triple-double: PTS, REB, AST]"), line);
+		assert.ok(!line.includes("quintuple"), line);
+	});
+
+	test("a double-double is not upgraded (Allen case)", () => {
+		// 19/3/14 — a double-double (PTS, AST), not triple-double-caliber.
+		const line = lineFor(mkPlayer({ name: "Allen", pts: 19, reb: 3, ast: 14 }));
+		assert.ok(line.includes("[double-double: PTS, AST]"), line);
+		assert.ok(!line.includes("triple"), line);
+	});
+
+	test("no tag when fewer than two categories reach 10", () => {
+		const line = lineFor(
+			mkPlayer({ name: "Role", pts: 9, reb: 9, ast: 9, stl: 9, blk: 9 }),
+		);
+		assert.ok(!line.includes("double"), line);
+	});
+
+	test("a genuine quintuple-double is labeled correctly", () => {
+		const line = lineFor(
+			mkPlayer({ name: "Unicorn", pts: 10, reb: 10, ast: 10, stl: 10, blk: 10 }),
+		);
+		assert.ok(line.includes("[quintuple-double: PTS, REB, AST, STL, BLK]"), line);
 	});
 });
 

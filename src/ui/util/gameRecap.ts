@@ -15,6 +15,12 @@ You are given far more data than you need — box scores, what each player was a
 
 The pregame betting line is CONTEXT ONLY — use it to judge how surprising the result was (a big underdog winning is an upset; a favorite rolling is chalk) and let that shape the tone. NEVER mention the spread, betting line, odds, "favored", "underdog", "pick'em", or "cover" in the recap itself. Convey the magnitude through the basketball, not the betting.
 
+ACCURACY IS THE TOP PRIORITY — a single wrong claim ruins the recap, so never trade it for a flashier line:
+- Every number, name, and event must be exactly what the data below says. Never round up, inflate, embellish, or invent players, teams, injuries, milestones, or moments that aren't in the data.
+- Statistical milestones ("double-double", "triple-double", etc.) are counted ONLY from points, rebounds, assists, steals, and blocks, and a category counts only at 10 or more. Two such categories at 10+ is a double-double; three is a triple-double; four a quadruple-double; five a quintuple-double (which essentially never happens). Each player line already states the milestone it qualifies for in brackets (e.g. "[triple-double: PTS, REB, AST]"); a line with no such tag did NOT record a double-double. Use exactly that — never upgrade it.
+- Do NOT describe a player as "near", "flirting with", "almost", "on the verge of", or "-caliber" for a milestone unless the numbers are genuinely one basket/rebound/etc. away in the missing category. A player with 3 steals and 5 blocks is nowhere near a quintuple-double; 21/13/10 with 3 steals and 5 blocks is simply a triple-double. 19 points, 14 assists and 3 rebounds is a double-double, not "triple-double-caliber".
+- When in doubt, state the line plainly and move on. An accurate, unglamorous sentence always beats an impressive false one.
+
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
 - Inside the fence, write GitHub-flavored Markdown only, with no text outside the per-game recaps.
@@ -46,9 +52,37 @@ const injuryTag = (p: RecapPlayer): string => {
 	return "";
 };
 
+// Precisely label the "double-double" family so the AI never has to count it
+// (and can't inflate it): a category counts ONLY at 10+, across the five
+// double-eligible stats. 2 categories → double-double, 3 → triple-double,
+// 4 → quadruple-double, 5 → quintuple-double. Nothing below 2 gets a tag, so a
+// line with no tag provably had no double-double - the AI can rely on that
+// instead of eyeballing "near a triple-double" from the raw numbers.
+const doubleTag = (p: RecapPlayer): string => {
+	const cats: [string, number][] = [
+		["PTS", p.pts],
+		["REB", p.reb],
+		["AST", p.ast],
+		["STL", p.stl],
+		["BLK", p.blk],
+	];
+	const hit = cats.filter(([, v]) => (v ?? 0) >= 10).map(([k]) => k);
+	const name =
+		hit.length >= 5
+			? "quintuple-double"
+			: hit.length === 4
+				? "quadruple-double"
+				: hit.length === 3
+					? "triple-double"
+					: hit.length === 2
+						? "double-double"
+						: undefined;
+	return name ? ` [${name}: ${hit.join(", ")}]` : "";
+};
+
 const playerLine = (p: RecapPlayer): string => {
 	const lines = [
-		`- ${p.name}: ${p.pts} PTS, ${p.reb} REB, ${p.ast} AST, ${p.stl} STL, ${p.blk} BLK, ${p.tov} TO (${p.fg}/${p.fga} FG, ${p.tp}/${p.tpa} 3P, ${p.ft}/${p.fta} FT, ${p.min} min)${injuryTag(p)}`,
+		`- ${p.name}: ${p.pts} PTS, ${p.reb} REB, ${p.ast} AST, ${p.stl} STL, ${p.blk} BLK, ${p.tov} TO (${p.fg}/${p.fga} FG, ${p.tp}/${p.tpa} 3P, ${p.ft}/${p.fta} FT, ${p.min} min)${doubleTag(p)}${injuryTag(p)}`,
 	];
 	if (p.seasonAvg) {
 		lines.push(`    · Season avg entering this game: ${avg(p.seasonAvg)}`);
