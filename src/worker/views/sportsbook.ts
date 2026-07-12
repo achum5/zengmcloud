@@ -2,6 +2,8 @@ import { g } from "../util/index.ts";
 import { idb } from "../db/index.ts";
 import type { UpdateEvents } from "../../common/types.ts";
 import { getLines } from "../core/sportsbook/getLines.ts";
+import { settleBets } from "../core/sportsbook/bets.ts";
+import { getSyncEngine } from "../core/sync/engineHolder.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../common/sportsbook.ts";
 
 const updateSportsbook = async (
@@ -17,31 +19,55 @@ const updateSportsbook = async (
 		// Bets placed/settled bump this so the wallet + open bets refresh.
 		updateEvents.includes("watchList")
 	) {
+		// Safety-net settlement: if this device is the one that may write (single
+		// player, or the sim authority in a room), catch up any bet whose outcome is
+		// already known but that a missed hook didn't settle. Idempotent + no-op
+		// when there's nothing to settle.
+		const engine = getSyncEngine();
+		if (engine === undefined || engine.isAuthority()) {
+			try {
+				await settleBets();
+			} catch (error) {
+				console.error("Sportsbook view settlement failed", error);
+			}
+		}
+
 		const board = await getLines();
 
-		const userTids = g.get("userTids");
+		const userTid = g.get("userTid");
 		const teams = await idb.cache.teams.getAll();
 
-		// One wallet per user-managed team. A team with no wallet yet (e.g. a
-		// league imported mid-season, before its first preseason grant) is shown
-		// as already holding the standard grant, so the book is usable right away;
-		// it's actually persisted the first time a bet is placed.
-		const wallets = userTids.map((tid) => {
+		const walletFor = (tid: number) => {
 			const t = teams.find((team) => team.tid === tid);
-			const sb = t?.sportsbook;
-			return {
-				tid,
-				balance: sb?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
-				initialized: sb !== undefined,
-				bets: sb?.bets ?? [],
-				history: (sb?.history ?? []).slice(0, 40),
-			};
-		});
+			return t?.sportsbook;
+		};
+
+		// The device's own team is the one that bets. A team with no wallet yet
+		// (e.g. a league imported mid-season, before its first preseason grant) is
+		// shown holding the standard grant; it's persisted the first time a bet is
+		// placed.
+		const sb = walletFor(userTid);
+		const wallet = {
+			tid: userTid,
+			balance: sb?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
+			bets: sb?.bets ?? [],
+			history: (sb?.history ?? []).slice(0, 40),
+		};
+
+		// Everyone else's balance, just for fun (a little leaderboard).
+		const balances = teams
+			.filter((t) => !t.disabled)
+			.map((t) => ({
+				tid: t.tid,
+				balance: t.sportsbook?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
+			}))
+			.sort((a, b) => b.balance - a.balance);
 
 		return {
 			board,
-			wallets,
-			userTid: g.get("userTid"),
+			wallet,
+			balances,
+			userTid,
 			phase: g.get("phase"),
 			season: g.get("season"),
 		};

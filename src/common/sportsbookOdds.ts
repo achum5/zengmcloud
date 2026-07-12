@@ -74,6 +74,35 @@ export const overProb = (expectedTotal: number, line: number): number => {
 export const toHalfPointLine = (projection: number): number =>
 	Math.round(projection - 0.5) + 0.5;
 
+// n-choose-k, for the series-win formula below (small n, no overflow concern).
+const choose = (n: number, k: number): number => {
+	if (k < 0 || k > n) {
+		return 0;
+	}
+	let r = 1;
+	for (let i = 0; i < k; i++) {
+		r = (r * (n - i)) / (i + 1);
+	}
+	return r;
+};
+
+// Probability of winning a best-of-`bestOf` series given a per-game win
+// probability. A series amplifies the favorite (0.6/game → ~0.71 in a best-of-7),
+// which is why a strong team's title odds shouldn't be a naive per-game number.
+export const seriesWinProb = (pGame: number, bestOf = 7): number => {
+	const p = Math.min(0.999, Math.max(0.001, pGame));
+	const winsNeeded = Math.ceil(bestOf / 2);
+	let prob = 0;
+	// Win the deciding game after conceding `losses` of the prior games.
+	for (let losses = 0; losses < winsNeeded; losses++) {
+		prob +=
+			choose(winsNeeded - 1 + losses, losses) *
+			p ** winsNeeded *
+			(1 - p) ** losses;
+	}
+	return prob;
+};
+
 // Convert a set of team "strengths" into probabilities via a tempered softmax.
 // Higher `power` concentrates probability on the strongest; used for
 // championship / conference / division futures. Returns probs in input order,

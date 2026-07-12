@@ -5,6 +5,7 @@ import {
 	marginToWinProb,
 	normalCdf,
 	overProb,
+	seriesWinProb,
 	strengthProbs,
 	toHalfPointLine,
 	winTotalOverProb,
@@ -111,6 +112,31 @@ describe("winTotalOverProb", () => {
 			winProb: 0.67,
 		});
 		assert.ok(p > 0.5);
+	});
+});
+
+describe("seriesWinProb", () => {
+	test("a coin flip is 50/50 over any series", () => {
+		assert.ok(Math.abs(seriesWinProb(0.5, 7) - 0.5) < 1e-9);
+		assert.ok(Math.abs(seriesWinProb(0.5, 1) - 0.5) < 1e-9);
+	});
+	test("a best-of-1 equals the single-game probability", () => {
+		assert.ok(Math.abs(seriesWinProb(0.62, 1) - 0.62) < 1e-9);
+	});
+	test("a series amplifies the favorite", () => {
+		assert.ok(seriesWinProb(0.6, 7) > 0.6);
+		assert.ok(seriesWinProb(0.7, 7) > 0.7);
+		// Known value: a 60% team wins a best-of-7 about 71% of the time.
+		assert.ok(Math.abs(seriesWinProb(0.6, 7) - 0.71) < 0.02);
+	});
+	test("stays a probability and is monotonic", () => {
+		let prev = 0;
+		for (let p = 0.05; p <= 0.95; p += 0.05) {
+			const s = seriesWinProb(p, 7);
+			assert.ok(s >= 0 && s <= 1);
+			assert.ok(s >= prev);
+			prev = s;
+		}
 	});
 });
 

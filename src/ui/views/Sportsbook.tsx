@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
@@ -14,7 +14,6 @@ import {
 	formatSportsbookMoney,
 } from "../../common/sportsbook.ts";
 
-// One selection sitting in the bet slip.
 type Pick = {
 	key: string;
 	market: SportsbookMarket;
@@ -23,65 +22,47 @@ type Pick = {
 	sub: string;
 };
 
-// A FanDuel-style odds cell: bordered blue box, line above the price, fills in
-// when it's in the slip. Uses Bootstrap's outline/solid button for hover + theme.
+// FanDuel-style odds cell: bordered box, line above the price, fills in when in
+// the slip. Fixed size so the SPREAD/MONEY/TOTAL grid lines up perfectly.
 const OddsCell = ({
 	line,
 	odds,
 	selected,
 	onClick,
-	disabled,
 }: {
 	line?: string;
 	odds: number;
 	selected: boolean;
 	onClick: () => void;
-	disabled?: boolean;
 }) => (
 	<button
 		type="button"
-		disabled={disabled}
 		onClick={onClick}
-		className={`btn btn-sm w-100 py-1 lh-sm ${selected ? "btn-primary" : "btn-outline-primary"}`}
-		style={{ minWidth: 66 }}
+		className={`btn btn-sm w-100 d-flex flex-column justify-content-center lh-1 ${selected ? "btn-primary" : "btn-outline-primary"}`}
+		style={{ height: 44, padding: "2px 4px" }}
 	>
 		{line !== undefined ? (
-			<div className="fw-medium" style={{ fontSize: "0.85em" }}>
-				{line}
-			</div>
+			<span style={{ fontSize: "0.72rem" }}>{line}</span>
 		) : null}
-		<div className="fw-bold">{formatAmerican(odds)}</div>
+		<span className="fw-bold">{formatAmerican(odds)}</span>
 	</button>
 );
 
-const ColHeads = () => (
-	<div className="d-flex text-body-secondary text-uppercase fw-bold px-2 mb-1" style={{ fontSize: "0.7rem", letterSpacing: "0.03em" }}>
-		<div className="flex-grow-1" />
-		<div className="text-center" style={{ width: 74 }}>
-			Spread
-		</div>
-		<div className="text-center ms-2" style={{ width: 74 }}>
-			Money
-		</div>
-		<div className="text-center ms-2" style={{ width: 74 }}>
-			Total
-		</div>
-	</div>
-);
-
-const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
+const Sportsbook = ({
+	board,
+	wallet,
+	balances,
+	season,
+}: View<"sportsbook">) => {
 	useTitleBar({ title: "Sportsbook" });
 
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 
 	const [tab, setTab] = useState<"games" | "futures" | "mybets">("games");
-	const [betTid, setBetTid] = useState<number>(wallets[0]?.tid ?? 0);
 	const [picks, setPicks] = useState<Pick[]>([]);
 	const [stakes, setStakes] = useState<Record<string, string>>({});
 	const [slipOpenMobile, setSlipOpenMobile] = useState(false);
 	const [placing, setPlacing] = useState(false);
-
-	const wallet = wallets.find((w) => w.tid === betTid) ?? wallets[0];
 
 	const teamName = (tid: number) => {
 		const t = teamInfoCache[tid];
@@ -102,12 +83,11 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 
 	const selectedKeys = new Set(picks.map((p) => p.key));
 	const togglePick = (pick: Pick) => {
-		setPicks((prev) => {
-			if (prev.some((p) => p.key === pick.key)) {
-				return prev.filter((p) => p.key !== pick.key);
-			}
-			return [...prev, pick];
-		});
+		setPicks((prev) =>
+			prev.some((p) => p.key === pick.key)
+				? prev.filter((p) => p.key !== pick.key)
+				: [...prev, pick],
+		);
 		setSlipOpenMobile(true);
 	};
 	const removePick = (key: string) =>
@@ -129,7 +109,7 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 	}, 0);
 
 	const placeBets = async () => {
-		if (!wallet || placing) {
+		if (placing) {
 			return;
 		}
 		const toPlace = picks.filter(
@@ -169,9 +149,6 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 	};
 
 	const cancelBet = async (betID: number) => {
-		if (!wallet) {
-			return;
-		}
 		try {
 			await toWorker("main", "sportsbookCancelBet", { tid: wallet.tid, betID });
 			await realtimeUpdate(["watchList"]);
@@ -184,7 +161,7 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 		}
 	};
 
-	// ---- Betslip panel ---------------------------------------------------
+	// ---- Bet slip --------------------------------------------------------
 	const betslip = (
 		<div className="card shadow-sm">
 			<div className="card-header d-flex justify-content-between align-items-center py-2">
@@ -259,10 +236,12 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 						</div>
 						<button
 							className="btn btn-primary w-100"
-							disabled={placing || totalStake <= 0 || totalStake > (wallet?.balance ?? 0)}
+							disabled={
+								placing || totalStake <= 0 || totalStake > wallet.balance
+							}
 							onClick={placeBets}
 						>
-							{totalStake > (wallet?.balance ?? 0)
+							{totalStake > wallet.balance
 								? "Not enough $"
 								: placing
 									? "Placing…"
@@ -274,161 +253,181 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 		</div>
 	);
 
-	// ---- Games -----------------------------------------------------------
-	const gamesTab = (
-		<>
-			{board.games.length === 0 ? (
-				<p className="text-body-secondary">No upcoming games to bet on right now.</p>
-			) : (
-				<div className="card">
-					<div className="card-body p-2">
-						<ColHeads />
-						{board.games.map((game, i) => {
-							const sub = `${teamAbbrev(game.away.tid)} @ ${teamAbbrev(game.home.tid)}`;
-							const rows = [
-								{ side: "away" as const, t: game.away, spreadLine: -game.spread.line, spreadOdds: game.spread.away, ml: game.moneyline.away },
-								{ side: "home" as const, t: game.home, spreadLine: game.spread.line, spreadOdds: game.spread.home, ml: game.moneyline.home },
-							];
-							return (
-								<div
-									key={game.gid}
-									className={`d-flex align-items-center py-2 ${i > 0 ? "border-top" : ""}`}
-								>
-									<div className="flex-grow-1 pe-2" style={{ minWidth: 0 }}>
-										{rows.map((r) => (
-											<div
-												key={r.side}
-												className="d-flex align-items-center gap-2 py-1"
-											>
-												<Logo tid={r.t.tid} />
-												<a
-													href={helpers.leagueUrl([
-														"roster",
-														`${r.t.abbrev}_${r.t.tid}`,
-													])}
-													className="text-truncate"
-												>
-													{r.t.region} {r.t.name}
-												</a>
-											</div>
-										))}
-									</div>
-									{/* Spread / Money / Total columns, two rows each */}
-									<div className="d-flex flex-column gap-1" style={{ width: 74 }}>
-										{rows.map((r) => (
-											<OddsCell
-												key={r.side}
-												line={`${signed(r.spreadLine)}`}
-												odds={r.spreadOdds}
-												selected={selectedKeys.has(`sp-${game.gid}-${r.t.tid}`)}
-												onClick={() =>
-													togglePick({
-														key: `sp-${game.gid}-${r.t.tid}`,
-														market: { type: "gameSpread", gid: game.gid, pickTid: r.t.tid, line: r.spreadLine },
-														odds: r.spreadOdds,
-														title: `${teamAbbrev(r.t.tid)} ${signed(r.spreadLine)}`,
-														sub,
-													})
-												}
-											/>
-										))}
-									</div>
-									<div className="d-flex flex-column gap-1 ms-2" style={{ width: 74 }}>
-										{rows.map((r) => (
-											<OddsCell
-												key={r.side}
-												odds={r.ml}
-												selected={selectedKeys.has(`ml-${game.gid}-${r.t.tid}`)}
-												onClick={() =>
-													togglePick({
-														key: `ml-${game.gid}-${r.t.tid}`,
-														market: { type: "gameMoneyline", gid: game.gid, pickTid: r.t.tid },
-														odds: r.ml,
-														title: `${teamAbbrev(r.t.tid)} ML`,
-														sub,
-													})
-												}
-											/>
-										))}
-									</div>
-									<div className="d-flex flex-column gap-1 ms-2" style={{ width: 74 }}>
-										{(["over", "under"] as const).map((sideKind) => {
-											const odds = sideKind === "over" ? game.total.over : game.total.under;
-											return (
-												<OddsCell
-													key={sideKind}
-													line={`${sideKind === "over" ? "O" : "U"} ${game.total.line}`}
-													odds={odds}
-													selected={selectedKeys.has(`tot-${game.gid}-${sideKind}`)}
-													onClick={() =>
-														togglePick({
-															key: `tot-${game.gid}-${sideKind}`,
-															market: { type: "gameTotal", gid: game.gid, side: sideKind, line: game.total.line },
-															odds,
-															title: `${sideKind === "over" ? "Over" : "Under"} ${game.total.line}`,
-															sub,
-														})
-													}
-												/>
-											);
-										})}
-									</div>
-								</div>
-							);
-						})}
+	// ---- Games (aligned grid) --------------------------------------------
+	const gridCols = "minmax(0, 1fr) 76px 76px 76px";
+	const gamesTab =
+		board.games.length === 0 ? (
+			<p className="text-body-secondary">No upcoming games to bet on right now.</p>
+		) : (
+			<div className="card">
+				<div className="card-body p-2">
+					<div
+						className="d-grid text-body-secondary text-uppercase fw-bold px-1 mb-1"
+						style={{
+							gridTemplateColumns: gridCols,
+							gap: 6,
+							fontSize: "0.68rem",
+							letterSpacing: "0.03em",
+						}}
+					>
+						<div />
+						<div className="text-center">Spread</div>
+						<div className="text-center">Money</div>
+						<div className="text-center">Total</div>
 					</div>
+
+					{board.games.map((game, i) => {
+						const sub = `${teamAbbrev(game.away.tid)} @ ${teamAbbrev(game.home.tid)}`;
+						const rows = [
+							{
+								t: game.away,
+								spreadLine: -game.spread.line,
+								spreadOdds: game.spread.away,
+								ml: game.moneyline.away,
+								totKind: "over" as const,
+								totOdds: game.total.over,
+							},
+							{
+								t: game.home,
+								spreadLine: game.spread.line,
+								spreadOdds: game.spread.home,
+								ml: game.moneyline.home,
+								totKind: "under" as const,
+								totOdds: game.total.under,
+							},
+						];
+						return (
+							<div
+								key={game.gid}
+								className={`d-grid align-items-center py-2 ${i > 0 ? "border-top" : ""}`}
+								style={{ gridTemplateColumns: gridCols, gap: 6, rowGap: 6 }}
+							>
+								{rows.map((r) => (
+									<Fragment key={r.t.tid}>
+										<div
+											className="d-flex align-items-center gap-2 text-truncate"
+										>
+											<Logo tid={r.t.tid} />
+											<a
+												href={helpers.leagueUrl([
+													"roster",
+													`${r.t.abbrev}_${r.t.tid}`,
+												])}
+												className="text-truncate"
+											>
+												{r.t.region} {r.t.name}
+											</a>
+										</div>
+										<OddsCell
+											line={signed(r.spreadLine)}
+											odds={r.spreadOdds}
+											selected={selectedKeys.has(`sp-${game.gid}-${r.t.tid}`)}
+											onClick={() =>
+												togglePick({
+													key: `sp-${game.gid}-${r.t.tid}`,
+													market: {
+														type: "gameSpread",
+														gid: game.gid,
+														pickTid: r.t.tid,
+														line: r.spreadLine,
+													},
+													odds: r.spreadOdds,
+													title: `${teamAbbrev(r.t.tid)} ${signed(r.spreadLine)}`,
+													sub,
+												})
+											}
+										/>
+										<OddsCell
+											odds={r.ml}
+											selected={selectedKeys.has(`ml-${game.gid}-${r.t.tid}`)}
+											onClick={() =>
+												togglePick({
+													key: `ml-${game.gid}-${r.t.tid}`,
+													market: {
+														type: "gameMoneyline",
+														gid: game.gid,
+														pickTid: r.t.tid,
+													},
+													odds: r.ml,
+													title: `${teamAbbrev(r.t.tid)} ML`,
+													sub,
+												})
+											}
+										/>
+										<OddsCell
+											line={`${r.totKind === "over" ? "O" : "U"} ${game.total.line}`}
+											odds={r.totOdds}
+											selected={selectedKeys.has(`tot-${game.gid}-${r.totKind}`)}
+											onClick={() =>
+												togglePick({
+													key: `tot-${game.gid}-${r.totKind}`,
+													market: {
+														type: "gameTotal",
+														gid: game.gid,
+														side: r.totKind,
+														line: game.total.line,
+													},
+													odds: r.totOdds,
+													title: `${r.totKind === "over" ? "Over" : "Under"} ${game.total.line}`,
+													sub,
+												})
+											}
+										/>
+									</Fragment>
+								))}
+							</div>
+						);
+					})}
 				</div>
-			)}
-		</>
-	);
+			</div>
+		);
 
 	// ---- Futures ---------------------------------------------------------
-	const futureRow = (
-		key: string,
-		market: SportsbookMarket,
-		odds: number,
-		title: string,
-		sub: string,
-		label: ReactNode,
-	) => (
-		<div
-			key={key}
-			className="d-flex justify-content-between align-items-center py-1 px-2 border-top"
-		>
-			<span className="text-truncate pe-2">{label}</span>
-			<div style={{ width: 74, flexShrink: 0 }}>
-				<OddsCell
-					odds={odds}
-					selected={selectedKeys.has(key)}
-					onClick={() => togglePick({ key, market, odds, title, sub })}
-				/>
-			</div>
-		</div>
-	);
-
 	const teamFuturesCard = (
 		heading: string,
 		subLabel: string,
-		rows: { tid: number; abbrev: string; region: string; name: string; americanOdds: number }[],
+		rows: {
+			tid: number;
+			abbrev: string;
+			region: string;
+			name: string;
+			americanOdds: number;
+		}[],
 		mk: (tid: number) => SportsbookMarket,
 		keyPrefix: string,
 	) => (
 		<div className="card mb-3">
 			<div className="card-header py-2 fw-bold">{heading}</div>
 			<div className="card-body p-0">
-				{rows.map((r) =>
-					futureRow(
-						`${keyPrefix}-${r.tid}`,
-						mk(r.tid),
-						r.americanOdds,
-						`${teamAbbrev(r.tid)} — ${subLabel}`,
-						heading,
-						<span className="d-flex align-items-center gap-2">
-							<Logo tid={r.tid} size={20} />
-							{r.region} {r.name}
-						</span>,
-					),
-				)}
+				{rows.map((r, i) => {
+					const key = `${keyPrefix}-${r.tid}`;
+					return (
+						<div
+							key={key}
+							className={`d-flex justify-content-between align-items-center py-1 px-2 ${i > 0 ? "border-top" : ""}`}
+						>
+							<span className="d-flex align-items-center gap-2 text-truncate pe-2">
+								<Logo tid={r.tid} size={20} />
+								{r.region} {r.name}
+							</span>
+							<div style={{ width: 84, flexShrink: 0 }}>
+								<OddsCell
+									odds={r.americanOdds}
+									selected={selectedKeys.has(key)}
+									onClick={() =>
+										togglePick({
+											key,
+											market: mk(r.tid),
+											odds: r.americanOdds,
+											title: `${teamAbbrev(r.tid)} — ${subLabel}`,
+											sub: heading,
+										})
+									}
+								/>
+							</div>
+						</div>
+					);
+				})}
 			</div>
 		</div>
 	);
@@ -446,7 +445,7 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 				{board.conferences.map((conf) =>
 					teamFuturesCard(
 						`${conf.name} Winner`,
-						`${conf.name}`,
+						conf.name,
 						conf.teams,
 						(tid) => ({ type: "conf", pickTid: tid, cid: conf.cid, season }),
 						`conf${conf.cid}`,
@@ -467,7 +466,7 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 									{teamAbbrev(t.tid)}
 									<span className="text-body-secondary small">{t.line}</span>
 								</span>
-								<div style={{ width: 74 }}>
+								<div style={{ width: 76 }}>
 									<OddsCell
 										line="Over"
 										odds={t.over}
@@ -475,7 +474,13 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 										onClick={() =>
 											togglePick({
 												key: `wto-${t.tid}`,
-												market: { type: "winTotal", pickTid: t.tid, side: "over", line: t.line, season },
+												market: {
+													type: "winTotal",
+													pickTid: t.tid,
+													side: "over",
+													line: t.line,
+													season,
+												},
 												odds: t.over,
 												title: `${teamAbbrev(t.tid)} Over ${t.line}`,
 												sub: "Season wins",
@@ -483,7 +488,7 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 										}
 									/>
 								</div>
-								<div style={{ width: 74 }} className="ms-2">
+								<div style={{ width: 76 }} className="ms-2">
 									<OddsCell
 										line="Under"
 										odds={t.under}
@@ -491,7 +496,13 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 										onClick={() =>
 											togglePick({
 												key: `wtu-${t.tid}`,
-												market: { type: "winTotal", pickTid: t.tid, side: "under", line: t.line, season },
+												market: {
+													type: "winTotal",
+													pickTid: t.tid,
+													side: "under",
+													line: t.line,
+													season,
+												},
 												odds: t.under,
 												title: `${teamAbbrev(t.tid)} Under ${t.line}`,
 												sub: "Season wins",
@@ -523,21 +534,45 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 							<div className="card h-100">
 								<div className="card-header py-2 fw-bold">{race.name}</div>
 								<div className="card-body p-0">
-									{race.candidates.map((c) =>
-										futureRow(
-											`aw-${race.award}-${c.pid}`,
-											{ type: "award", award: race.award, pid: c.pid, season },
-											c.americanOdds,
-											`${c.name} — ${race.name}`,
-											race.name,
-											<a href={helpers.leagueUrl(["player", c.pid])}>
-												{c.name}{" "}
-												<span className="text-body-secondary small">
-													{teamAbbrev(c.tid)}
-												</span>
-											</a>,
-										),
-									)}
+									{race.candidates.map((c, i) => {
+										const key = `aw-${race.award}-${c.pid}`;
+										return (
+											<div
+												key={key}
+												className={`d-flex justify-content-between align-items-center py-1 px-2 ${i > 0 ? "border-top" : ""}`}
+											>
+												<a
+													href={helpers.leagueUrl(["player", c.pid])}
+													className="text-truncate pe-2"
+												>
+													{c.name}{" "}
+													<span className="text-body-secondary small">
+														{teamAbbrev(c.tid)}
+													</span>
+												</a>
+												<div style={{ width: 84, flexShrink: 0 }}>
+													<OddsCell
+														odds={c.americanOdds}
+														selected={selectedKeys.has(key)}
+														onClick={() =>
+															togglePick({
+																key,
+																market: {
+																	type: "award",
+																	award: race.award,
+																	pid: c.pid,
+																	season,
+																},
+																odds: c.americanOdds,
+																title: `${c.name} — ${race.name}`,
+																sub: race.name,
+															})
+														}
+													/>
+												</div>
+											</div>
+										);
+									})}
 								</div>
 							</div>
 						</div>
@@ -562,7 +597,7 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 	const myBetsTab = (
 		<div style={{ maxWidth: 640 }}>
 			<h2 className="h6">Open Bets</h2>
-			{wallet && wallet.bets.length > 0 ? (
+			{wallet.bets.length > 0 ? (
 				<ul className="list-group mb-4">
 					{wallet.bets.map((bet) => (
 						<li key={bet.betID} className="list-group-item">
@@ -572,7 +607,8 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 							</div>
 							<div className="small text-body-secondary d-flex justify-content-between align-items-center">
 								<span>
-									{formatSportsbookMoney(bet.stake)} @ {formatAmerican(bet.americanOdds)} · to win{" "}
+									{formatSportsbookMoney(bet.stake)} @{" "}
+									{formatAmerican(bet.americanOdds)} · to win{" "}
 									{formatSportsbookMoney(bet.stake * (bet.decimalOdds - 1))}
 								</span>
 								<button
@@ -590,7 +626,7 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 			)}
 
 			<h2 className="h6">Settled</h2>
-			{wallet && wallet.history.length > 0 ? (
+			{wallet.history.length > 0 ? (
 				<ul className="list-group">
 					{wallet.history.map((bet) => (
 						<li key={bet.betID} className="list-group-item">
@@ -599,7 +635,8 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 								{resultBadge(bet.result)}
 							</div>
 							<div className="small text-body-secondary">
-								{formatSportsbookMoney(bet.stake)} @ {formatAmerican(bet.americanOdds)}
+								{formatSportsbookMoney(bet.stake)} @{" "}
+								{formatAmerican(bet.americanOdds)}
 								{bet.result === "won"
 									? ` · won ${formatSportsbookMoney(bet.stake * bet.decimalOdds)}`
 									: ""}
@@ -615,30 +652,30 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 
 	return (
 		<>
-			{/* Wallet header */}
-			<div className="d-flex flex-wrap align-items-center gap-3 mb-3">
-				<div>
-					<div className="text-body-secondary small">
-						{wallet ? teamName(wallet.tid) : ""} balance
-					</div>
-					<div className="h3 mb-0 text-success">
-						{formatSportsbookMoney(wallet?.balance ?? 0)}
-					</div>
+			{/* Wallet header + fun balances leaderboard */}
+			<div className="mb-3">
+				<div className="text-body-secondary small">
+					{teamName(wallet.tid)} balance
 				</div>
-				{wallets.length > 1 ? (
-					<select
-						className="form-select form-select-sm"
-						style={{ width: "auto" }}
-						value={betTid}
-						onChange={(e) => setBetTid(Number.parseInt(e.target.value))}
-					>
-						{wallets.map((w) => (
-							<option key={w.tid} value={w.tid}>
-								{teamName(w.tid)}
-							</option>
-						))}
-					</select>
-				) : null}
+				<div className="h3 mb-2 text-success">
+					{formatSportsbookMoney(wallet.balance)}
+				</div>
+				<div
+					className="d-flex gap-2 overflow-auto pb-1"
+					style={{ scrollbarWidth: "thin" }}
+				>
+					{balances.map((b) => (
+						<span
+							key={b.tid}
+							className={`badge d-inline-flex align-items-center gap-1 ${b.tid === wallet.tid ? "text-bg-success" : "text-bg-secondary"}`}
+							style={{ fontWeight: 400 }}
+							title={teamName(b.tid)}
+						>
+							<Logo tid={b.tid} size={14} />
+							{teamAbbrev(b.tid)} {formatSportsbookMoney(b.balance)}
+						</span>
+					))}
+				</div>
 			</div>
 
 			{/* Tabs */}
@@ -647,7 +684,10 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 					[
 						["games", "Games"],
 						["futures", "Futures"],
-						["mybets", `My Bets${wallet && wallet.bets.length > 0 ? ` (${wallet.bets.length})` : ""}`],
+						[
+							"mybets",
+							`My Bets${wallet.bets.length > 0 ? ` (${wallet.bets.length})` : ""}`,
+						],
 					] as const
 				).map(([key, label]) => (
 					<li className="nav-item" key={key}>
@@ -663,9 +703,12 @@ const Sportsbook = ({ board, wallets, season }: View<"sportsbook">) => {
 
 			<div className="row">
 				<div className="col-lg-8 col-xl-9">
-					{tab === "games" ? gamesTab : tab === "futures" ? futuresTab : myBetsTab}
+					{tab === "games"
+						? gamesTab
+						: tab === "futures"
+							? futuresTab
+							: myBetsTab}
 				</div>
-				{/* Desktop sticky betslip */}
 				<div className="col-lg-4 col-xl-3 d-none d-lg-block">
 					<div className="position-sticky" style={{ top: "1rem" }}>
 						{betslip}
