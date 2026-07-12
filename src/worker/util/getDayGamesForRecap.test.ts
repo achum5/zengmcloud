@@ -156,13 +156,14 @@ describe("selectRecapGames", () => {
 		);
 	});
 
-	test("the cap drops swept games, never the viewed day, and output stays chronological", () => {
+	test("the cap is strict FIFO: the OLDEST games keep their slots, even over the viewed day", () => {
 		const completed = [g(1, 1), g(2, 2), g(3, 3), g(4, 4), g(5, 4)];
 		const picked = selectRecapGames(completed, 4, 3);
-		// Day 4's two games survive; only one older game fits under the cap.
+		// Only 3 fit: the three oldest. The viewed day (4) waits for the next run,
+		// after the older backlog has been applied.
 		assert.deepEqual(
 			picked.map((x) => x.gid),
-			[1, 4, 5],
+			[1, 2, 3],
 		);
 	});
 

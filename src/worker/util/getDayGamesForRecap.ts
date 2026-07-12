@@ -406,8 +406,10 @@ const MAX_RECAP_GAMES = 45;
 // (recapped or not, so a day can be re-run to regenerate), plus a sweep of
 // every other completed game this season still missing a recap note - so days
 // that were simmed past get their recaps generated in the same run instead of
-// paging through them day by day. Chronological; the viewed day is never
-// dropped by the cap.
+// paging through them day by day. Strict FIFO: chronological order, and when
+// the cap bites, the OLDEST games keep their slots - a deep backlog is
+// cleared oldest-first across successive runs, never leapfrogged by newer
+// days.
 export const selectRecapGames = <
 	T extends { gid: number; day?: number; note?: unknown },
 >(
@@ -415,14 +417,10 @@ export const selectRecapGames = <
 	day: number,
 	maxGames: number,
 ): T[] => {
-	const chrono = [...completed].sort(
-		(a, b) => (a.day ?? 0) - (b.day ?? 0) || a.gid - b.gid,
-	);
-	const dayGames = chrono.filter((game) => game.day === day);
-	const missed = chrono.filter((game) => game.day !== day && !game.note);
-	return [...dayGames, ...missed]
-		.slice(0, Math.max(dayGames.length, maxGames))
-		.sort((a, b) => (a.day ?? 0) - (b.day ?? 0) || a.gid - b.gid);
+	return completed
+		.filter((game) => game.day === day || !game.note)
+		.sort((a, b) => (a.day ?? 0) - (b.day ?? 0) || a.gid - b.gid)
+		.slice(0, maxGames);
 };
 
 // Completed games for a recap run (see selectRecapGames), each with team
