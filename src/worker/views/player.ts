@@ -37,6 +37,9 @@ export const getPlayerProfileStats = () => {
 export const getPlayer = async (
 	pRaw: Player,
 	seasonRange?: [number, number],
+	// Restrict the aggregated careerStats to a single team (for per-team career
+	// totals). Filters the stat rows exactly like the rest of playersPlus does.
+	tid?: number,
 ) => {
 	type Stats = {
 		season: number;
@@ -150,6 +153,7 @@ export const getPlayer = async (
 		fuzz: true,
 		mergeStats: "totAndTeams",
 		seasonRange,
+		tid,
 	});
 
 	if (!p) {

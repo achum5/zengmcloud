@@ -2344,6 +2344,50 @@ const getPlayerRangeFooterStats = async ({
 	}
 };
 
+// Per-team career totals for a player (like the team rows basketball-reference
+// shows below a career line). Aggregates each team's seasons correctly in the
+// worker - rate stats are re-derived from raw totals, not averaged - so the
+// stat table can show a subtotal row per team. Returns nothing for a
+// single-team career (the caller then shows no per-team rows).
+const getPlayerTeamStats = async ({ pid }: { pid: number }) => {
+	const pRaw = await idb.getCopy.players({ pid }, "noCopyCache");
+	if (!pRaw) {
+		return;
+	}
+
+	const tids = Array.from(
+		new Set(
+			(pRaw.stats ?? [])
+				.filter((row: any) => (row.gp ?? 0) > 0)
+				.map((row: any) => row.tid)
+				.filter((tid: any) => typeof tid === "number" && tid >= 0),
+		),
+	) as number[];
+
+	if (tids.length <= 1) {
+		return [];
+	}
+
+	const result: {
+		tid: number;
+		careerStats: any;
+		careerStatsPlayoffs: any;
+		careerStatsCombined: any;
+	}[] = [];
+	for (const tid of tids) {
+		const p = await getPlayer(pRaw, undefined, tid);
+		if (p) {
+			result.push({
+				tid,
+				careerStats: p.careerStats,
+				careerStatsPlayoffs: p.careerStatsPlayoffs,
+				careerStatsCombined: p.careerStatsCombined,
+			});
+		}
+	}
+	return result;
+};
+
 const getPlayerWatch = async (pid: number) => {
 	if (Number.isNaN(pid)) {
 		return 0;
@@ -5836,6 +5880,7 @@ export default {
 		getLocal,
 		getPlayerBioInfoDefaults,
 		getPlayerRangeFooterStats,
+		getPlayerTeamStats,
 		getPlayerWatch,
 		getProjectedAttendance,
 		getRandomCollege,

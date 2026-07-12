@@ -14,6 +14,8 @@ import { useRangeFooter } from "./useRangeFooter.ts";
 import type { FooterRow } from "../../components/DataTable/Footer.tsx";
 import { wrappedTeamAbbrevLink } from "../../components/TeamAbbrevLink.tsx";
 import type { SuperCol } from "../../components/DataTable/index.tsx";
+import { formatSeasonRuns } from "../../util/formatSeasonRuns.ts";
+import type { PlayerTeamStats } from "./usePlayerTeamStats.ts";
 
 const hasStats = (
 	careerStats: View<"player">["player"]["careerStats"],
@@ -48,6 +50,7 @@ export const StatsTable = ({
 	stats,
 	superCols,
 	leaders,
+	teamStats,
 }: {
 	name: string;
 	onlyShowIf?: string[];
@@ -55,6 +58,7 @@ export const StatsTable = ({
 	stats: string[];
 	superCols?: SuperCol[];
 	leaders: View<"player">["leaders"];
+	teamStats?: PlayerTeamStats;
 }) => {
 	const hasRegularSeasonStats = hasStats(p.careerStats, onlyShowIf);
 	const hasPlayoffStats = hasStats(p.careerStatsPlayoffs, onlyShowIf);
@@ -145,6 +149,59 @@ export const StatsTable = ({
 				],
 			},
 		];
+
+		// Per-team career totals (like the team rows basketball-reference shows
+		// under a career line). Only when the player suited up for more than one
+		// team; each row aggregates that team's seasons in the current
+		// regular-season / playoffs / combined mode. Ordered oldest-team-first.
+		if (teamStats && teamStats.length > 1) {
+			const teamRows = teamStats
+				.map((entry) => {
+					const rowsForTeam = playerStats.filter((ps) => ps.tid === entry.tid);
+					if (rowsForTeam.length === 0) {
+						// This team has no rows in the current mode (e.g. never reached the
+						// playoffs while on it), so skip its subtotal here.
+						return undefined;
+					}
+					const seasons = rowsForTeam.map((ps) => ps.season);
+					const lastRow = rowsForTeam.at(-1)!;
+					const teamCareerStats =
+						playoffs === "combined"
+							? entry.careerStatsCombined
+							: playoffs
+								? entry.careerStatsPlayoffs
+								: entry.careerStats;
+					return {
+						firstSeason: Math.min(...seasons),
+						seasons,
+						abbrev: lastRow.abbrev,
+						tid: entry.tid,
+						lastSeason: Math.max(...seasons),
+						teamCareerStats,
+					};
+				})
+				.filter((row) => row !== undefined)
+				.sort((a, b) => a.firstSeason - b.firstSeason);
+
+			for (const row of teamRows) {
+				const runs = formatSeasonRuns(row.seasons);
+				footer.push({
+					classNames: "text-body-secondary",
+					data: [
+						runs.single ? runs.short : { value: <span title={runs.full}>{runs.short}</span> },
+						wrappedTeamAbbrevLink({
+							abbrev: row.abbrev,
+							season: row.lastSeason,
+							tid: row.tid,
+						}),
+						null,
+						...stats.map((stat) =>
+							formatStatGameHigh(row.teamCareerStats, stat),
+						),
+					],
+				});
+			}
+		}
 
 		const rangeFooterState = rangeFooter.state;
 		if (

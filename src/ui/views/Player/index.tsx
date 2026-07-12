@@ -9,6 +9,7 @@ import TopStuff from "./TopStuff.tsx";
 import { PLAYER } from "../../../common/constants.ts";
 import HideableSection from "../../components/HideableSection.tsx";
 import { StatsTable } from "./StatsTable.tsx";
+import { usePlayerTeamStats } from "./usePlayerTeamStats.ts";
 import { highlightLeaderText, MaybeBold, SeasonLink } from "./common.tsx";
 import { wrappedTeamAbbrevLink } from "../../components/TeamAbbrevLink.tsx";
 import { wrappedCurrency } from "../../components/wrappedCurrency.ts";
@@ -42,6 +43,10 @@ const Player2 = ({
 		"season",
 	]);
 	const showRatings = !challengeNoRatings || retired;
+
+	// Per-team career totals (bref-style team rows), fetched once and shared by
+	// every stat table below.
+	const teamStats = usePlayerTeamStats(player.pid, player.stats.length);
 
 	useTitleBar({
 		title: player.name,
@@ -109,6 +114,7 @@ const Player2 = ({
 					superCols={superCols}
 					p={player}
 					leaders={leaders}
+					teamStats={teamStats}
 				/>
 			))}
 
