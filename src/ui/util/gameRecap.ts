@@ -11,7 +11,7 @@ import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 // logic below.
 const INSTRUCTIONS = `You are an expert basketball beat writer. Write a lively, ESPN-style recap for EACH game listed below.
 
-You are given far more data than you need — box scores, what each player was averaging ENTERING the game (this game not included), past-season career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), the pregame betting line (who was favored and by how many), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). Do NOT list the raw data back.
+You are given far more data than you need — box scores, what each player was averaging ENTERING the game (this game not included), past-season career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), the pregame betting line (who was favored and by how many), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. The games may span several league days (each is labeled with its day) — treat each game's data as of the day it was played, and don't frame games from different days as one night's slate. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). Do NOT list the raw data back.
 
 The pregame betting line is CONTEXT ONLY — use it to judge how surprising the result was (a big underdog winning is an upset; a favorite rolling is chalk) and let that shape the tone. NEVER mention the spread, betting line, odds, "favored", "underdog", "pick'em", or "cover" in the recap itself. Convey the magnitude through the basketball, not the betting.
 
@@ -197,7 +197,7 @@ const gameBlock = (game: RecapGame): string => {
 			: "";
 
 	const lines = [
-		`### GAME ${game.gid}: ${away.region} ${away.name} @ ${home.region} ${home.name}${ot}`,
+		`### GAME ${game.gid} (League day ${game.day}): ${away.region} ${away.name} @ ${home.region} ${home.name}${ot}`,
 		`Final: ${away.abbrev} ${away.pts}, ${home.abbrev} ${home.pts}${
 			winner ? ` — ${winner.region} ${winner.name} win` : ""
 		}`,

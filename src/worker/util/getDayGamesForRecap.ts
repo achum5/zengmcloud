@@ -396,10 +396,40 @@ export const enteringAverages = (
 	return tot.gp > 0 ? toAverages(tot) : undefined;
 };
 
-// All completed games on a given day of a season, each with team names, every
-// box-score line, season/career/playoff averages, records, quarter scoring, a
-// last-10 game log, and (in the playoffs) the series/bracket state - the raw
-// material a "Copy AI Prompt" button bakes into a recap prompt.
+// One recap run's game budget. Each recap is several paragraphs of AI output,
+// so an unbounded sweep of a whole unrecapped season would blow past any
+// model's reply length; whatever doesn't fit stays note-less and the next
+// Copy sweeps it up.
+const MAX_RECAP_GAMES = 45;
+
+// Which completed games one recap run covers: ALL of the viewed day's games
+// (recapped or not, so a day can be re-run to regenerate), plus a sweep of
+// every other completed game this season still missing a recap note - so days
+// that were simmed past get their recaps generated in the same run instead of
+// paging through them day by day. Chronological; the viewed day is never
+// dropped by the cap.
+export const selectRecapGames = <
+	T extends { gid: number; day?: number; note?: unknown },
+>(
+	completed: T[],
+	day: number,
+	maxGames: number,
+): T[] => {
+	const chrono = [...completed].sort(
+		(a, b) => (a.day ?? 0) - (b.day ?? 0) || a.gid - b.gid,
+	);
+	const dayGames = chrono.filter((game) => game.day === day);
+	const missed = chrono.filter((game) => game.day !== day && !game.note);
+	return [...dayGames, ...missed]
+		.slice(0, Math.max(dayGames.length, maxGames))
+		.sort((a, b) => (a.day ?? 0) - (b.day ?? 0) || a.gid - b.gid);
+};
+
+// Completed games for a recap run (see selectRecapGames), each with team
+// names, every box-score line, season/career/playoff averages, records,
+// quarter scoring, a last-10 game log, and (in the playoffs) the
+// series/bracket state - the raw material a "Copy AI Prompt" button bakes
+// into a recap prompt.
 export const getDayGamesForRecap = async ({
 	season,
 	day,
@@ -409,9 +439,11 @@ export const getDayGamesForRecap = async ({
 }): Promise<RecapGame[]> => {
 	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
 
-	const games = allGames
-		.filter((game) => game.day === day && game.won && game.lost)
-		.sort((a, b) => a.gid - b.gid);
+	const games = selectRecapGames(
+		allGames.filter((game) => game.won && game.lost),
+		day,
+		MAX_RECAP_GAMES,
+	);
 
 	// Every player's box line from every completed game this season, so each
 	// recapped game can report what a player was averaging ENTERING it (see

@@ -47,9 +47,18 @@ export const GameRecap = ({
 				if (cancelled) {
 					return;
 				}
+				// The worker sweeps in unrecapped games from other days too, so the
+				// label reflects the actual span.
+				const gameDays = [
+					...new Set((games ?? []).map((game) => game.day)),
+				].sort((a, b) => a - b);
+				const label =
+					gameDays.length > 1
+						? `Days ${gameDays[0]}–${gameDays.at(-1)}`
+						: `Day ${day}`;
 				setPrompt(
 					games && games.length > 0
-						? buildRecapPrompt(games, `Day ${day}`)
+						? buildRecapPrompt(games, label)
 						: undefined,
 				);
 			} catch (error) {

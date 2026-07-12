@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	enteringAverages,
 	regularSeasonRecordAsOf,
+	selectRecapGames,
 	seriesWinsBefore,
 	type PlayerGameLine,
 } from "./getDayGamesForRecap.ts";
@@ -116,6 +117,62 @@ describe("regularSeasonRecordAsOf", () => {
 			won: 2,
 			lost: 1,
 		});
+	});
+});
+
+describe("selectRecapGames", () => {
+	const g = (gid: number, day: number, note?: string) => ({ gid, day, note });
+
+	test("sweeps in unrecapped games from missed days alongside the viewed day", () => {
+		const completed = [
+			g(1, 1, "recapped"),
+			g(2, 2), // missed
+			g(3, 3), // missed
+			g(4, 4),
+			g(5, 4),
+		];
+		const picked = selectRecapGames(completed, 4, 45);
+		assert.deepEqual(
+			picked.map((x) => x.gid),
+			[2, 3, 4, 5],
+		);
+	});
+
+	test("games that already have a note are not re-copied (except the viewed day)", () => {
+		const completed = [g(1, 1, "done"), g(2, 2, "done"), g(3, 3)];
+		const picked = selectRecapGames(completed, 3, 45);
+		assert.deepEqual(
+			picked.map((x) => x.gid),
+			[3],
+		);
+	});
+
+	test("the viewed day is always included in full, even if already recapped", () => {
+		const completed = [g(1, 2, "done"), g(2, 2)];
+		const picked = selectRecapGames(completed, 2, 45);
+		assert.deepEqual(
+			picked.map((x) => x.gid),
+			[1, 2],
+		);
+	});
+
+	test("the cap drops swept games, never the viewed day, and output stays chronological", () => {
+		const completed = [g(1, 1), g(2, 2), g(3, 3), g(4, 4), g(5, 4)];
+		const picked = selectRecapGames(completed, 4, 3);
+		// Day 4's two games survive; only one older game fits under the cap.
+		assert.deepEqual(
+			picked.map((x) => x.gid),
+			[1, 4, 5],
+		);
+	});
+
+	test("unrecapped games from days AFTER the viewed day are swept too", () => {
+		const completed = [g(1, 2), g(2, 3)];
+		const picked = selectRecapGames(completed, 2, 45);
+		assert.deepEqual(
+			picked.map((x) => x.gid),
+			[1, 2],
+		);
 	});
 });
 
