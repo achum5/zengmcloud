@@ -1120,6 +1120,7 @@ export default {
 	allStarThree: validateSeasonOnly,
 	awardRaces: validateSeasonOnly,
 	awardsRecords,
+	sportsbook: () => ({}),
 	customizePlayer,
 	comparePlayers,
 	dailySchedule,

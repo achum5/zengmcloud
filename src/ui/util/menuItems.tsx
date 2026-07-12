@@ -647,6 +647,14 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				path: ["award_races"],
 				text: "Award Races",
 			},
+			{
+				type: "link",
+				active: (pageID) => pageID === "sportsbook",
+				league: true,
+				commandPalette: true,
+				path: ["sportsbook"],
+				text: "Sportsbook",
+			},
 		],
 	},
 	{
