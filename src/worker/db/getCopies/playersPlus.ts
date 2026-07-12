@@ -17,11 +17,16 @@ import { last } from "../../../common/utils.ts";
 type PlayersPlusOptionsRequired = Required<
 	Omit<
 		PlayersPlusOptions,
-		"disableAbbrevsCacheDatabaseAccess" | "season" | "seasonRange" | "tid"
+		| "disableAbbrevsCacheDatabaseAccess"
+		| "season"
+		| "seasonRange"
+		| "seasons"
+		| "tid"
 	>
 > & {
 	season?: number;
 	seasonRange?: [number, number];
+	seasons?: number[];
 	tid?: number;
 };
 
@@ -1244,10 +1249,13 @@ const processPlayer = (
 		ratings,
 		season,
 		seasonRange,
+		seasons,
 		showNoStats,
 		showRetired,
 		showRookies,
 	} = options;
+
+	const seasonsSet = seasons ? new Set(seasons) : undefined;
 
 	const playerRatings =
 		seasonRange === undefined
@@ -1258,12 +1266,16 @@ const processPlayer = (
 	if (playerRatings.length === 0) {
 		return;
 	}
-	const playerStats =
+	let playerStats =
 		seasonRange === undefined
 			? p.stats
 			: p.stats.filter(
 					(r) => r.season >= seasonRange[0] && r.season <= seasonRange[1],
 				);
+	if (seasonsSet) {
+		// A selected-rows subtotal: keep only the chosen seasons.
+		playerStats = playerStats.filter((r) => seasonsSet.has(r.season));
+	}
 
 	const output: any = {};
 
@@ -1356,6 +1368,7 @@ const getCopies = async (
 	{
 		season,
 		seasonRange,
+		seasons,
 		tid,
 		attrs = [],
 		ratings = [],
@@ -1384,6 +1397,7 @@ const getCopies = async (
 	const options: PlayersPlusOptionsRequired = {
 		season,
 		seasonRange,
+		seasons,
 		tid,
 		attrs,
 		ratings,

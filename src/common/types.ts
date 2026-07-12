@@ -1488,6 +1488,10 @@ export type PlayerStatType = "per36" | "perGame" | "totals";
 export type PlayersPlusOptions = {
 	season?: number;
 	seasonRange?: [number, number];
+	// An arbitrary set of seasons to include (for a selected-rows subtotal). Like
+	// seasonRange but non-contiguous; applied to the stat rows that feed
+	// careerStats.
+	seasons?: number[];
 	tid?: number;
 	attrs?: string[];
 	ratings?: string[];

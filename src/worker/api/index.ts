@@ -2315,13 +2315,19 @@ const getLocal = async (name: keyof Local) => {
 
 const getPlayerBioInfoDefaults = initDefaults;
 
-const getPlayerRangeFooterStats = async ({
+// Aggregated career totals for an arbitrary set of a player's seasons, for the
+// "selected rows" subtotal on the stat tables. Correct rate stats (re-derived
+// from raw totals in playersPlus), for any non-contiguous selection.
+const getPlayerSelectedStats = async ({
 	pid,
-	seasonRange,
+	seasons,
 }: {
 	pid: number;
-	seasonRange: [number, number];
+	seasons: number[];
 }) => {
+	if (!seasons || seasons.length === 0) {
+		return;
+	}
 	const pRaw = await idb.getCopy.players(
 		{
 			pid,
@@ -2332,10 +2338,9 @@ const getPlayerRangeFooterStats = async ({
 		return;
 	}
 
-	const p = await getPlayer(pRaw, seasonRange);
+	const p = await getPlayer(pRaw, undefined, undefined, seasons);
 
 	if (p) {
-		// Would be nice to only return the one we need, but returning them all means tab changes are free
 		return {
 			careerStatsCombined: p.careerStatsCombined,
 			careerStatsPlayoffs: p.careerStatsPlayoffs,
@@ -5879,7 +5884,7 @@ export default {
 		getPlayersCommandPalette,
 		getLocal,
 		getPlayerBioInfoDefaults,
-		getPlayerRangeFooterStats,
+		getPlayerSelectedStats,
 		getPlayerTeamStats,
 		getPlayerWatch,
 		getProjectedAttendance,

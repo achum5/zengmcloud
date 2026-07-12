@@ -10,7 +10,7 @@ import { SeasonIcons } from "../../components/SeasonIcons.tsx";
 import HideableSection from "../../components/HideableSection.tsx";
 import { DataTable } from "../../components/DataTable/index.tsx";
 import clsx from "clsx";
-import { useRangeFooter } from "./useRangeFooter.ts";
+import { useSelectedSeasonsFooter } from "./useSelectedSeasonsFooter.ts";
 import type { FooterRow } from "../../components/DataTable/Footer.tsx";
 import { wrappedTeamAbbrevLink } from "../../components/TeamAbbrevLink.tsx";
 import type { SuperCol } from "../../components/DataTable/index.tsx";
@@ -78,7 +78,7 @@ export const StatsTable = ({
 
 	let playerStats = p.stats.filter((ps) => ps.playoffs === playoffs);
 
-	const rangeFooter = useRangeFooter(p.pid, playerStats);
+	const selection = useSelectedSeasonsFooter(p.pid);
 
 	if (!hasRegularSeasonStats && !hasPlayoffStats) {
 		return null;
@@ -203,77 +203,50 @@ export const StatsTable = ({
 			}
 		}
 
-		const rangeFooterState = rangeFooter.state;
-		if (
-			rangeFooterState.type === "open" ||
-			rangeFooterState.type === "loading" ||
-			rangeFooterState.type === "error"
-		) {
-			const rangeStatsValues: any[] = ([0, 1] as const).map((i) => {
-				return {
-					classNames: "p-0",
-					value: (
-						<select
-							key={i}
-							className={clsx(
-								"form-select form-select-sm rounded-0",
-								i === 0 ? "rounded-start-1" : "rounded-end-1",
-							)}
-							value={rangeFooterState.seasonRange[i]}
-							onChange={(event) => {
-								const value = Number.parseInt(event.target.value);
-								const newSeasonRange: [number, number] = [
-									...rangeFooterState.seasonRange,
-								];
-								newSeasonRange[i] = value;
-
-								if (i === 0 && newSeasonRange[1] < newSeasonRange[0]) {
-									newSeasonRange[1] = newSeasonRange[0];
-								} else if (i === 1 && newSeasonRange[1] < newSeasonRange[0]) {
-									newSeasonRange[0] = newSeasonRange[1];
-								}
-
-								rangeFooter.setSeasonRange(newSeasonRange);
-							}}
-						>
-							{rangeFooterState.seasons.map((season) => (
-								<option key={season} value={season}>
-									{season}
-								</option>
-							))}
-						</select>
-					),
-				};
-			});
-			rangeStatsValues.push(
-				rangeFooterState.type === "error" ? (
-					<span className="glyphicon glyphicon-exclamation-sign text-danger" />
-				) : null,
+		// Selected-rows subtotal: when the user has checked 2+ season rows, sum
+		// exactly those seasons (see the checkboxes added to each row below). One
+		// checked row is redundant with its own line, so we only show it at 2+.
+		if (selection.selected.size >= 2) {
+			const selectedSeasons = [...selection.selected];
+			const runs = formatSeasonRuns(selectedSeasons);
+			const label = (
+				<div className="d-flex align-items-center gap-1">
+					<button
+						type="button"
+						className="btn-close btn-close-sm"
+						style={{ fontSize: "0.6rem" }}
+						title="Clear selection"
+						onClick={selection.clear}
+					/>
+					<span title={runs.single ? undefined : runs.full}>
+						{runs.short}
+						{selection.status === "error" ? (
+							<span className="glyphicon glyphicon-exclamation-sign text-danger ms-1" />
+						) : null}
+					</span>
+				</div>
 			);
-			if (
-				(rangeFooterState.type === "open" ||
-					rangeFooterState.type === "loading" ||
-					rangeFooterState.type === "error") &&
-				rangeFooterState.p
-			) {
-				const rangeStats =
-					playoffs === "combined"
-						? rangeFooterState.p.careerStatsCombined
-						: playoffs
-							? rangeFooterState.p.careerStatsPlayoffs
-							: rangeFooterState.p.careerStats;
 
-				rangeStatsValues.push(
-					...stats.map((stat) => formatStatGameHigh(rangeStats, stat)),
-				);
-			}
+			const selectedStats = selection.data
+				? playoffs === "combined"
+					? selection.data.careerStatsCombined
+					: playoffs
+						? selection.data.careerStatsPlayoffs
+						: selection.data.careerStats
+				: undefined;
 
 			footer.push({
-				classNames:
-					rangeFooterState.type === "loading"
-						? "text-body-secondary"
-						: undefined,
-				data: rangeStatsValues,
+				classNames: clsx("table-primary", {
+					"text-body-secondary": selection.status === "loading" || !selectedStats,
+				}),
+				data: [
+					{ value: label },
+					null,
+					null,
+					...stats.map((stat) =>
+						selectedStats ? formatStatGameHigh(selectedStats, stat) : null,
+					),
+				],
 			});
 		}
 	}
@@ -301,6 +274,13 @@ export const StatsTable = ({
 			}
 		}
 	}
+
+	// Let the user check season rows to subtotal them (see the footer above).
+	// Pointless with a single season, and n/a for the baseball fielding table
+	// (multiple position rows per season).
+	const selectableSeasons = new Set(playerStats.map((ps) => ps.season));
+	const showSelectionCheckboxes =
+		!isBaseballFielding && selectableSeasons.size >= 2;
 
 	const rows = [];
 
@@ -332,6 +312,8 @@ export const StatsTable = ({
 		prevSeason = ps.season;
 
 		const className = ps.hasTot ? "text-body-secondary" : undefined;
+		const selectedRow =
+			showSelectionCheckboxes && selection.selected.has(ps.season);
 
 		rows.push({
 			key: i,
@@ -341,6 +323,15 @@ export const StatsTable = ({
 					sortValue: i,
 					value: (
 						<>
+							{showSelectionCheckboxes && !ps.hasTot ? (
+								<input
+									type="checkbox"
+									className="form-check-input me-1 align-middle"
+									checked={selection.selected.has(ps.season)}
+									onChange={() => selection.toggle(ps.season)}
+									title="Select for subtotal"
+								/>
+							) : null}
 							<SeasonLink
 								className={className}
 								pid={p.pid}
@@ -371,12 +362,9 @@ export const StatsTable = ({
 					</MaybeBold>
 				)),
 			],
-			classNames: className,
+			classNames: clsx(className, { "table-primary": selectedRow }),
 		});
 	}
-
-	const showSelectSeasonRangeButton =
-		rangeFooter.state.type === "closed" && !isBaseballFielding;
 
 	return (
 		<HideableSection
@@ -384,7 +372,7 @@ export const StatsTable = ({
 			description={hasLeader ? highlightLeaderText : null}
 		>
 			<DataTable
-				classNameWrapper={showSelectSeasonRangeButton ? "mb-2" : "mb-3"}
+				classNameWrapper="mb-3"
 				cols={cols}
 				defaultSort={[0, "asc"]}
 				defaultStickyCols={2}
@@ -443,14 +431,6 @@ export const StatsTable = ({
 					</ul>
 				}
 			/>
-			{showSelectSeasonRangeButton ? (
-				<button
-					className="btn btn-sm btn-secondary mb-3"
-					onClick={rangeFooter.onOpen}
-				>
-					Select season range
-				</button>
-			) : null}
 		</HideableSection>
 	);
 };

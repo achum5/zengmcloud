@@ -40,6 +40,8 @@ export const getPlayer = async (
 	// Restrict the aggregated careerStats to a single team (for per-team career
 	// totals). Filters the stat rows exactly like the rest of playersPlus does.
 	tid?: number,
+	// Restrict to an arbitrary set of seasons (for a selected-rows subtotal).
+	seasons?: number[],
 ) => {
 	type Stats = {
 		season: number;
@@ -153,6 +155,7 @@ export const getPlayer = async (
 		fuzz: true,
 		mergeStats: "totAndTeams",
 		seasonRange,
+		seasons,
 		tid,
 	});
 
