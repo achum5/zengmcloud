@@ -1843,7 +1843,65 @@ export type Team = {
 	// upgrade); when absent the court falls back to the team's colors + logo. All
 	// fields optional so a partial customization is fine. See common/court.ts.
 	court?: CourtStyle;
+
+	// Play-money sportsbook wallet for this team (see worker/core/sportsbook).
+	// Purely a fun side feature, completely separate from the real game economy:
+	// every preseason each team is granted more virtual "$", which rolls over
+	// year to year. Stored on the team record so it syncs to the whole room.
+	// Optional (no upgrade); absent means "not initialized yet" (treated as 0).
+	sportsbook?: {
+		// Current virtual-$ balance.
+		balance: number;
+		// Open (unsettled) bets. Settled bets move to `history`.
+		bets?: SportsbookBet[];
+		// Recently settled bets, newest first (bounded).
+		history?: SportsbookBet[];
+	};
 };
+
+// One placed bet in the play-money sportsbook. `stake` is debited when placed;
+// on a win the team is credited `stake * decimalOdds` (stake back + profit).
+export type SportsbookBet = {
+	betID: number;
+	// When placed: season + a real-clock timestamp for display/sorting.
+	season: number;
+	placedAt: number;
+	// American odds shown when the bet was placed, and the decimal multiplier
+	// used to pay it out (locked in at placement).
+	americanOdds: number;
+	decimalOdds: number;
+	stake: number;
+	// Human-readable description of what was bet ("Lakers to win the title",
+	// "Warriors -4.5 vs Suns", "LeBron James MVP").
+	label: string;
+	// What kind of market this is, so settlement knows how to resolve it.
+	market: SportsbookMarket;
+	// Filled in at settlement.
+	result?: "won" | "lost" | "push";
+	settledAt?: number;
+};
+
+// The market a bet belongs to, carrying just enough to settle it later.
+export type SportsbookMarket =
+	| { type: "gameMoneyline"; gid: number; pickTid: number }
+	| { type: "gameSpread"; gid: number; pickTid: number; line: number }
+	| { type: "gameTotal"; gid: number; side: "over" | "under"; line: number }
+	| { type: "champion"; pickTid: number; season: number }
+	| { type: "conf"; pickTid: number; cid: number; season: number }
+	| { type: "div"; pickTid: number; did: number; season: number }
+	| {
+			type: "winTotal";
+			pickTid: number;
+			side: "over" | "under";
+			line: number;
+			season: number;
+	  }
+	| {
+			type: "award";
+			award: "mvp" | "dpoy" | "roy" | "smoy" | "mip";
+			pid: number;
+			season: number;
+	  };
 
 // How a team's basketball court is drawn in the live-game view. Stored on the
 // team record (so it syncs to the whole room) and edited from Manage Teams.

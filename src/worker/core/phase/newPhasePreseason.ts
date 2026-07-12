@@ -24,6 +24,7 @@ import { applyRealTeamInfo } from "../../../common/applyRealTeamInfo.ts";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { choice, randInt, uniform } from "../../../common/random.ts";
 import { env } from "../../util/env.ts";
+import { SPORTSBOOK_PRESEASON_GRANT } from "../../../common/sportsbook.ts";
 
 const newPhasePreseason = async (
 	conditions: Conditions,
@@ -48,6 +49,21 @@ const newPhasePreseason = async (
 
 	const teams = await idb.cache.teams.getAll();
 	const teamsByTid = groupByUnique(teams, "tid");
+
+	// Play-money sportsbook: grant every active team its preseason allowance,
+	// rolling over whatever it already had. Purely a fun side feature (see
+	// common/sportsbook.ts); stored on the team record so it syncs to the room.
+	for (const t of teams) {
+		if (t.disabled) {
+			continue;
+		}
+		t.sportsbook = {
+			balance: (t.sportsbook?.balance ?? 0) + SPORTSBOOK_PRESEASON_GRANT,
+			bets: t.sportsbook?.bets ?? [],
+			history: t.sportsbook?.history ?? [],
+		};
+		await idb.cache.teams.put(t);
+	}
 
 	const realTeamInfo = (await idb.meta.get("attributes", "realTeamInfo")) as
 		| RealTeamInfo
