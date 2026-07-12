@@ -3,6 +3,8 @@ import type { UpdateEvents, ViewInput } from "../../common/types.ts";
 import { season } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
+import { awardProbsFromScores } from "../../common/sportsbookOdds.ts";
+import { probToAmerican } from "../../common/sportsbook.ts";
 
 const updateAwardRaces = async (
 	inputs: ViewInput<"awardRaces">,
@@ -18,10 +20,20 @@ const updateAwardRaces = async (
 	) {
 		const awardCandidates = (
 			await season.getAwardCandidates(inputs.season)
-		).map((row) => ({
-			...row,
-			players: addFirstNameShort(row.players),
-		}));
+		).map((row) => {
+			// Sportsbook-style live odds per candidate, from their current award-race
+			// position (same rank model the Sportsbook page uses).
+			const probs = awardProbsFromScores(
+				row.players.map((_: any, i: number) => row.players.length - i),
+			);
+			const players = addFirstNameShort(row.players).map(
+				(p: any, i: number) => ({
+					...p,
+					odds: probToAmerican(probs[i] ?? 0),
+				}),
+			);
+			return { ...row, players };
+		});
 
 		const teams = await idb.getCopies.teamsPlus(
 			{

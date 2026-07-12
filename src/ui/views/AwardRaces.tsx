@@ -10,6 +10,10 @@ import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { RatingWithChange } from "../components/RatingWithChange.tsx";
 import { StatWithChange } from "../components/StatWithChange.tsx";
 import { useLocal } from "../util/local.ts";
+import {
+	americanToImpliedProb,
+	formatAmerican,
+} from "../../common/sportsbook.ts";
 
 const AwardRaces = ({ awardCandidates, season, teams }: View<"awardRaces">) => {
 	useTitleBar({
@@ -38,8 +42,14 @@ const AwardRaces = ({ awardCandidates, season, teams }: View<"awardRaces">) => {
 					const mip = name === "Most Improved Player";
 					const roy = name === "Rookie of the Year";
 
+					const oddsCol = {
+						...getCols(["Odds"])[0],
+						desc: "Live betting odds, from the current race (see Sportsbook)",
+					};
+
 					const cols = [
 						...globalCols,
+						oddsCol,
 						...getCols([roy ? "Pick" : "Record", "Ovr"]),
 						...getCols(stats.map((stat) => `stat:${stat}`)),
 					];
@@ -97,6 +107,16 @@ const AwardRaces = ({ awardCandidates, season, teams }: View<"awardRaces">) => {
 									{abbrev}
 								</a>
 							</>,
+							typeof (p as any).odds === "number"
+								? {
+										value: (
+											<span className="fw-bold text-primary">
+												{formatAmerican((p as any).odds)}
+											</span>
+										),
+										sortValue: americanToImpliedProb((p as any).odds),
+									}
+								: undefined,
 							recordOrPick,
 						];
 
