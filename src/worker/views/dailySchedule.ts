@@ -203,6 +203,16 @@ const updateDailySchedule = async (
 				}
 			}
 
+			// Put the user's own team's game(s) at the top of each list, so you never
+			// have to hunt for yours. Stable: everything else keeps its order.
+			const userTids = new Set(g.get("userTids"));
+			const isMine = (game: { teams: { tid: number }[] }) =>
+				game.teams.some((t) => userTids.has(t.tid));
+			const userFirst = (a: any, b: any) =>
+				(isMine(b) ? 1 : 0) - (isMine(a) ? 1 : 0);
+			completed.sort(userFirst);
+			upcoming.sort(userFirst);
+
 			return {
 				cid,
 				cids,
