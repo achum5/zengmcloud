@@ -14,6 +14,7 @@ import {
 import type { Conditions, Phase, PhaseReturn } from "../../../common/types.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { processScheduledEvents } from "./processScheduledEvents.ts";
+import { settleBets } from "../sportsbook/bets.ts";
 
 /**
  * Common tasks run after a new phrase is set.
@@ -50,6 +51,15 @@ const finalize = async (
 	await updatePlayMenu();
 	await updateStatus();
 	updateEvents.push("newPhase");
+
+	// Settle any sportsbook futures whose outcome this phase change decided
+	// (division/win totals at playoffs, champion/conference after them, awards
+	// before the draft). No-op if nothing is bettable. See core/sportsbook.
+	try {
+		await settleBets(conditions);
+	} catch (error) {
+		console.error("Sportsbook settlement failed", error);
+	}
 
 	if (
 		phase === PHASE.PRESEASON ||

@@ -20,6 +20,7 @@ import {
 	clearRosterBlockNotice,
 	notifyRosterBlockedSim,
 } from "../sync/simBlockedNotify.ts";
+import { settleBets } from "../sportsbook/bets.ts";
 import { idb } from "../../db/index.ts";
 import {
 	advStats,
@@ -77,6 +78,15 @@ const play = async (
 	const cbNoGames = async (playoffsOver: boolean = false) => {
 		await updateStatus("Saving...");
 		await idb.cache.flush();
+
+		// Settle any sportsbook game bets whose games just finished (no-op if
+		// nothing is bet). Wallet changes ride the sim's sync window to the room.
+		try {
+			await settleBets(conditions);
+		} catch (error) {
+			console.error("Sportsbook settlement failed", error);
+		}
+
 		await updateStatus("Idle");
 		await lock.set("gameSim", false);
 

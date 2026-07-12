@@ -171,6 +171,11 @@ import { getStats } from "../../common/advancedPlayerSearch.ts";
 import type { LookingFor } from "../core/trade/makeItWork.ts";
 import type { LookingForState } from "../../ui/views/TradingBlock/useLookingForState.ts";
 import { getPlayer } from "../views/player.ts";
+import {
+	placeBet as sportsbookPlaceBetCore,
+	cancelBet as sportsbookCancelBetCore,
+} from "../core/sportsbook/bets.ts";
+import type { SportsbookMarket } from "../../common/types.ts";
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
 import { beforeLeague, beforeNonLeague } from "../util/beforeView.ts";
 import loadData from "../core/realRosters/loadData.basketball.ts";
@@ -2354,6 +2359,20 @@ const getPlayerSelectedStats = async ({
 // worker - rate stats are re-derived from raw totals, not averaged - so the
 // stat table can show a subtotal row per team. Returns nothing for a
 // single-team career (the caller then shows no per-team rows).
+const sportsbookPlaceBet = async (info: {
+	tid: number;
+	market: SportsbookMarket;
+	stake: number;
+	americanOdds: number;
+	label: string;
+}) => {
+	return sportsbookPlaceBetCore(info);
+};
+
+const sportsbookCancelBet = async (info: { tid: number; betID: number }) => {
+	return sportsbookCancelBetCore(info);
+};
+
 const getPlayerTeamStats = async ({ pid }: { pid: number }) => {
 	const pRaw = await idb.getCopy.players({ pid }, "noCopyCache");
 	if (!pRaw) {
@@ -5886,6 +5905,8 @@ export default {
 		getPlayerBioInfoDefaults,
 		getPlayerSelectedStats,
 		getPlayerTeamStats,
+		sportsbookPlaceBet,
+		sportsbookCancelBet,
 		getPlayerWatch,
 		getProjectedAttendance,
 		getRandomCollege,
