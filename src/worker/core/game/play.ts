@@ -16,6 +16,10 @@ import writePlayerStats, {
 	P_FATIGUE_DAILY_REDUCTION,
 } from "./writePlayerStats.ts";
 import writeTeamStats from "./writeTeamStats.ts";
+import {
+	clearRosterBlockNotice,
+	notifyRosterBlockedSim,
+} from "../sync/simBlockedNotify.ts";
 import { idb } from "../../db/index.ts";
 import {
 	advStats,
@@ -673,6 +677,9 @@ const play = async (
 		const userTeamSizeError = await team.checkRosterSizes("user");
 
 		if (!userTeamSizeError) {
+			// A sim ran (or is about to): reset the roster-block dedup so a future
+			// block - even the same team going over again - announces fresh.
+			clearRosterBlockNotice();
 			await updatePlayMenu();
 
 			if (numDays > 0) {
@@ -714,6 +721,10 @@ const play = async (
 				},
 				conditions,
 			);
+			// In a synced league the sim only runs on the simmer's device, so the
+			// error above is local to it - a follower just sees the timer come and
+			// go. Announce to the room why the sim was skipped (no-op offline).
+			void notifyRosterBlockedSim();
 		}
 	};
 
