@@ -484,8 +484,13 @@ const getTopPlayers = (
 		return bScore - aScore;
 	});
 
-	// If all players are filtered out above (like MIP initial year), then this will return an empty array
-	return players.slice(0, actualAmount);
+	// If all players are filtered out above (like MIP initial year), then this will return an empty array.
+	// Attach the raw award score so callers (e.g. the sportsbook / award-race
+	// odds) can price the race by the actual formula's margins, not just rank.
+	return players.slice(0, actualAmount).map((p) => ({
+		...p,
+		awardScore: cache.get(p.pid) ?? score(p),
+	}));
 };
 
 const saveAwardsByPlayer = async (

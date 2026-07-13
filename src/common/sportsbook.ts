@@ -56,6 +56,10 @@ export const formatAmerican = (american: number): string => {
 	return american > 0 ? `+${american}` : `${american}`;
 };
 
+// Full virtual-$ amount with separators: 1500000 → "$1,500,000".
+export const formatSportsbookMoneyFull = (amount: number): string =>
+	`${amount < 0 ? "-" : ""}$${Math.round(Math.abs(amount)).toLocaleString()}`;
+
 // Format a virtual-$ amount compactly: 1500000 → "$1.5M", 12500 → "$12.5K".
 export const formatSportsbookMoney = (amount: number): string => {
 	const sign = amount < 0 ? "-" : "";

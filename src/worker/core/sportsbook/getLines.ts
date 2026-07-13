@@ -8,7 +8,6 @@ import { RATINGS } from "../../../common/constants.ts";
 import { isSport, bySport } from "../../../common/sportFunctions.ts";
 import { probToAmerican } from "../../../common/sportsbook.ts";
 import {
-	awardProbsFromScores,
 	expectedGameTotal,
 	marginToWinProb,
 	overProb,
@@ -20,6 +19,8 @@ import {
 
 // How sharply the division market concentrates on the projected-best record.
 const POWER_DIV = 1.4;
+// How sharply award odds follow the formula's score gaps.
+const AWARD_POWER = 0.9;
 
 // Cap how many upcoming games get a line at once, so the board stays readable.
 const MAX_GAME_LINES = 24;
@@ -177,9 +178,22 @@ export const getLines = async () => {
 	const meanOvr =
 		activeTeams.reduce((s, t) => s + (ovrByTid.get(t.tid) ?? 50), 0) /
 		Math.max(1, activeTeams.length);
-	// Expected point margin vs an average team (same 0.6 scaling Power Rankings
-	// uses to turn an ovr gap into a margin).
-	const ratingOf = (tid: number) => ((ovrByTid.get(tid) ?? 50) - meanOvr) * 0.6;
+	// A team's strength as a point margin vs an average team, blending its RATING
+	// (ovr gap × 0.6, the Power Rankings scaling) with its actual season
+	// PERFORMANCE (real point differential). Rating is weighted heavily; the
+	// performance share grows with games played and tops out at ~0.45, so two
+	// equally-rated teams with different records aren't priced identically.
+	const ratingOf = (tid: number) => {
+		const estMOV = ((ovrByTid.get(tid) ?? 50) - meanOvr) * 0.6;
+		const t = teamByTid.get(tid);
+		const gp = t?.stats.gp ?? 0;
+		if (!t || gp <= 0) {
+			return estMOV;
+		}
+		const actualMOV = t.stats.pts - t.stats.oppPts; // per-game differential
+		const perfWeight = 0.45 * Math.min(1, gp / 15);
+		return estMOV * (1 - perfWeight) + actualMOV * perfWeight;
+	};
 
 	const rounds = g.get("numGamesPlayoffSeries").length;
 	const roundsToConf = Math.max(1, rounds - 1);
@@ -313,11 +327,17 @@ export const getLines = async () => {
 			if (!key) {
 				return undefined;
 			}
-			const players = race.players.slice(0, 8);
-			// Rank model: descending synthetic scores (we only have the order).
-			const probs = awardProbsFromScores(
-				players.map((_: any, i: number) => players.length - i),
+			// Price strictly off the award formula's own scores (a tempered softmax
+			// over the exact scores BBGM uses to pick the winner), so a runaway
+			// favorite is short and a tight race is bunched. Softmax over the whole
+			// field (then show the top 8) so these match the Award Races page odds.
+			const probs = strengthProbs(
+				race.players.map((p: any) =>
+					typeof p.awardScore === "number" ? p.awardScore : 0,
+				),
+				AWARD_POWER,
 			);
+			const players = race.players.slice(0, 8);
 			return {
 				award: key,
 				name: race.name,

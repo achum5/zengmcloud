@@ -12,6 +12,7 @@ import {
 	americanToDecimal,
 	formatAmerican,
 	formatSportsbookMoney,
+	formatSportsbookMoneyFull,
 } from "../../common/sportsbook.ts";
 
 type Pick = {
@@ -657,25 +658,25 @@ const Sportsbook = ({
 				<div className="text-body-secondary small">
 					{teamName(wallet.tid)} balance
 				</div>
-				<div className="h3 mb-2 text-success">
-					{formatSportsbookMoney(wallet.balance)}
-				</div>
-				<div
-					className="d-flex gap-2 overflow-auto pb-1"
-					style={{ scrollbarWidth: "thin" }}
-				>
-					{balances.map((b) => (
-						<span
-							key={b.tid}
-							className={`badge d-inline-flex align-items-center gap-1 ${b.tid === wallet.tid ? "text-bg-success" : "text-bg-secondary"}`}
-							style={{ fontWeight: 400 }}
-							title={teamName(b.tid)}
-						>
-							<Logo tid={b.tid} size={14} />
-							{teamAbbrev(b.tid)} {formatSportsbookMoney(b.balance)}
-						</span>
-					))}
-				</div>
+				<div className="h3 mb-2">{formatSportsbookMoneyFull(wallet.balance)}</div>
+				{balances.length > 1 ? (
+					<div
+						className="d-flex flex-wrap gap-2 pb-1"
+						style={{ scrollbarWidth: "thin" }}
+					>
+						{balances.map((b) => (
+							<span
+								key={b.tid}
+								className={`badge d-inline-flex align-items-center gap-1 ${b.tid === wallet.tid ? "text-bg-primary" : "text-bg-secondary"}`}
+								style={{ fontWeight: 400 }}
+								title={teamName(b.tid)}
+							>
+								<Logo tid={b.tid} size={14} />
+								{teamAbbrev(b.tid)} {formatSportsbookMoneyFull(b.balance)}
+							</span>
+						))}
+					</div>
+				) : null}
 			</div>
 
 			{/* Tabs */}

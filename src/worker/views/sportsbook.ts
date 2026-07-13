@@ -54,9 +54,10 @@ const updateSportsbook = async (
 			history: (sb?.history ?? []).slice(0, 40),
 		};
 
-		// Everyone else's balance, just for fun (a little leaderboard).
+		// The human-managed teams' balances, just for fun (a little leaderboard).
+		const userTids = new Set(g.get("userTids"));
 		const balances = teams
-			.filter((t) => !t.disabled)
+			.filter((t) => userTids.has(t.tid))
 			.map((t) => ({
 				tid: t.tid,
 				balance: t.sportsbook?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
