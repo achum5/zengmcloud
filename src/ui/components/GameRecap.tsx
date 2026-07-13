@@ -31,6 +31,11 @@ export const GameRecap = ({
 	const [result, setResult] = useState<string | undefined>();
 	const [manual, setManual] = useState<string | undefined>();
 	const [copyFallback, setCopyFallback] = useState<string | undefined>();
+	// Bumped after recaps are filed, to rebuild the prompt so a game that just
+	// got its note is dropped from the next Copy (the worker only ever includes
+	// note-less games, but the prompt is built up-front and would otherwise stay
+	// stale until the page reloads).
+	const [reloadKey, setReloadKey] = useState(0);
 
 	useEffect(() => {
 		if (numCompleted === 0) {
@@ -71,7 +76,7 @@ export const GameRecap = ({
 		return () => {
 			cancelled = true;
 		};
-	}, [season, day, numCompleted]);
+	}, [season, day, numCompleted, reloadKey]);
 
 	if (numCompleted === 0) {
 		return null;
@@ -118,6 +123,9 @@ export const GameRecap = ({
 				});
 			}
 			setManual(undefined);
+			// The just-filed games now have notes, so rebuild the prompt to drop
+			// them - otherwise the next Copy would re-include them.
+			setReloadKey((k) => k + 1);
 			// Confirm on the Paste button (no words), matching Copy.
 			setPasted(true);
 			globalThis.setTimeout(() => setPasted(false), 3000);
