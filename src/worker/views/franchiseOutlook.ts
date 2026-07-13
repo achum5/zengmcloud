@@ -58,10 +58,7 @@ const updateFranchiseOutlook = async (
 			Infinity,
 		]);
 		const playerById = new Map(allPlayers.map((p) => [p.pid, p]));
-		const nameOf = (pid: number) => {
-			const p = playerById.get(pid);
-			return p ? `${p.firstName} ${p.lastName}` : "?";
-		};
+		// pid → full player info (with value), for the diagnostic dump.
 		const infoOf = (pid: number) => {
 			const p = playerById.get(pid);
 			if (!p) {
@@ -72,9 +69,19 @@ const updateFranchiseOutlook = async (
 				pid,
 				name: `${p.firstName} ${p.lastName}`,
 				ovr: ratings?.ovr ?? 0,
+				pot: ratings?.pot ?? 0,
+				pos: ratings?.pos ?? "?",
 				age: season - p.born.year,
+				value: Math.round(p.value * 10) / 10,
+				contract: Math.round(p.contract.amount),
+				exp: p.contract.exp,
 			};
 		};
+		const resolve = (pids: number[], limit: number) =>
+			pids
+				.map(infoOf)
+				.filter((x): x is NonNullable<typeof x> => x !== undefined)
+				.slice(0, limit);
 
 		const rows = [];
 		for (const t of teams) {
@@ -84,6 +91,12 @@ const updateFranchiseOutlook = async (
 				"teamSeasonsBySeasonTid",
 				[season, t.tid],
 			);
+
+			// The team's best player by value, for judging star gap at a glance.
+			const roster = resolve(
+				(allPlayers.filter((p) => p.tid === t.tid) ?? []).map((p) => p.pid),
+				999,
+			).sort((a, b) => b.value - a.value);
 
 			rows.push({
 				tid: t.tid,
@@ -95,8 +108,14 @@ const updateFranchiseOutlook = async (
 				tier: posture.tier,
 				aggression: posture.aggression,
 				ovrRank: posture.ovrRank,
+				ovrRankPct: posture.ovrRankPct,
+				contention: posture.contention,
+				winp: posture.winp,
 				avgAge: posture.avgAge,
+				youngCoreCount: posture.youngCoreCount,
+				strategy: posture.strategy,
 				starGap: posture.starGap,
+				targetPos: posture.targetPos,
 				won: teamSeason?.won ?? 0,
 				lost: teamSeason?.lost ?? 0,
 				needs: posture.needs,
@@ -107,16 +126,17 @@ const updateFranchiseOutlook = async (
 					posture.needs,
 					posture.targetPos,
 				),
+				topPlayer: roster[0],
 				// The veterans this team should move before they waste away.
-				shopping: posture.shopVeteranPids
-					.map(infoOf)
-					.filter((x): x is NonNullable<typeof x> => x !== undefined)
-					.slice(0, 5),
-				buildingBlocks: posture.buildingBlockPids.map(nameOf).slice(0, 5),
+				shopping: resolve(posture.shopVeteranPids, 8),
+				buildingBlocks: resolve(posture.buildingBlockPids, 12),
 				buildingBlockCount: posture.buildingBlockPids.length,
 				cap: {
 					payroll: posture.cap.payroll,
+					capSpace: posture.cap.capSpace,
+					overCap: posture.cap.overCap,
 					overLuxury: posture.cap.overLuxury,
+					underFloor: posture.cap.underFloor,
 					wantsRelief: posture.cap.wantsRelief,
 					canAbsorb: posture.cap.canAbsorb,
 				},
@@ -133,6 +153,15 @@ const updateFranchiseOutlook = async (
 			season,
 			salaryCap: g.get("salaryCap"),
 			luxuryPayroll: g.get("luxuryPayroll"),
+			// League-wide reference points the postures were scored against.
+			context: {
+				numActiveTeams: context.numActiveTeams,
+				starterOvr: context.starterOvr,
+				rotationOvr: context.rotationOvr,
+				starValue: Math.round(context.starValue * 10) / 10,
+				coreValue: Math.round(context.coreValue * 10) / 10,
+				minPayroll: context.minPayroll,
+			},
 		};
 	}
 };

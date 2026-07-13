@@ -55,9 +55,14 @@ export type TradePosture = {
 	// 0..1 — how aggressively the team will deal (how far past dv=0 it will go
 	// and how many assets it will package). Consumed by a later phase.
 	aggression: number;
+	// The raw signals behind the tier, exposed for transparency / diagnostics.
 	winp: number;
 	ovrRank: number;
+	ovrRankPct: number;
+	contention: number;
 	avgAge: number;
+	youngCoreCount: number;
+	strategy: string;
 	// A would-be contender with no true star — the "we need our guy" flag.
 	starGap: boolean;
 	needs: PositionNeed[];
@@ -100,6 +105,27 @@ export const posBucket = (pos: string): PosBucket =>
 // buy/sell spectrum? Contention blends current record with team strength; the
 // franchise's established `strategy` nudges it, and roster age decides whether a
 // strong team is a win-now all-in or a patient buyer keeping its young core.
+// How "ready to win now" a team is, 0..1. Record is what really says "we're
+// contending"; team strength is a secondary signal (and the early-season
+// stand-in, blended in upstream). The franchise's committed strategy nudges it.
+export const contentionScore = ({
+	winp,
+	ovrRankPct,
+	strategy,
+}: {
+	winp: number;
+	ovrRankPct: number;
+	strategy: string;
+}): number => {
+	let contention = 0.75 * winp + 0.25 * (1 - ovrRankPct);
+	if (strategy === "contending") {
+		contention += 0.05;
+	} else if (strategy === "rebuilding") {
+		contention -= 0.05;
+	}
+	return contention;
+};
+
 export const classifyTier = ({
 	winp,
 	ovrRankPct,
@@ -113,17 +139,7 @@ export const classifyTier = ({
 	youngCoreCount: number;
 	strategy: string;
 }): TradeTier => {
-	// Record is what really says "we're contending"; team strength is a
-	// secondary signal (and the early-season stand-in, blended in upstream).
-	let contention = 0.75 * winp + 0.25 * (1 - ovrRankPct);
-
-	// Respect the direction the franchise has already committed to, but let a
-	// strong enough record/rating override it.
-	if (strategy === "contending") {
-		contention += 0.05;
-	} else if (strategy === "rebuilding") {
-		contention -= 0.05;
-	}
+	const contention = contentionScore({ winp, ovrRankPct, strategy });
 
 	// All-in is reserved for genuine title threats: a strong RECORD, not just a
 	// strong roster on paper. A win-now core (aging, or no young building blocks)
@@ -558,7 +574,11 @@ export const getTradePosture = async (
 		aggression: AGGRESSION[tier],
 		winp,
 		ovrRank: ovrRank + 1,
+		ovrRankPct,
+		contention: contentionScore({ winp, ovrRankPct, strategy }),
 		avgAge,
+		youngCoreCount,
+		strategy,
 		starGap,
 		needs,
 		surpluses,
