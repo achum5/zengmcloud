@@ -11,6 +11,13 @@ import type {
 import { getNumPicksPerRound } from "../trade/getPickValues.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { groupByUnique, last } from "../../../common/utils.ts";
+import {
+	getLeagueTradeContext,
+	getTradePosture,
+	tierToStrategy,
+	type LeagueTradeContext,
+	type TradeTier,
+} from "../trade/tradePosture.ts";
 
 type Asset =
 	| {
@@ -612,6 +619,46 @@ export class ValueChangeCalculator {
 		teams: "all",
 	};
 
+	// A team's valuation strategy is derived from its franchise TIER (our own
+	// posture), not BBGM's contending/rebuilding flag, so the pricing matches
+	// what the trade AI is actually trying to do. Resolved lazily and cached for
+	// this calculator's lifetime; callers that already know the tiers (the CPU
+	// trade loop) can seed them to avoid recomputing.
+	private providedTiers: Map<number, TradeTier> | undefined;
+	private postureContext: LeagueTradeContext | undefined;
+	private strategyCache = new Map<number, string>();
+
+	setPostureTiers(tiers: Map<number, TradeTier>) {
+		this.providedTiers = tiers;
+		this.strategyCache.clear();
+	}
+
+	private async strategyForTeam(
+		tid: number,
+		fallback: string,
+	): Promise<string> {
+		const cached = this.strategyCache.get(tid);
+		if (cached !== undefined) {
+			return cached;
+		}
+		let strategy = fallback;
+		try {
+			let tier = this.providedTiers?.get(tid);
+			if (tier === undefined) {
+				if (!this.postureContext) {
+					this.postureContext = await getLeagueTradeContext();
+				}
+				tier = (await getTradePosture(tid, this.postureContext)).tier;
+			}
+			strategy = tierToStrategy(tier);
+		} catch {
+			// If the posture can't be computed, fall back to BBGM's flag.
+			strategy = fallback;
+		}
+		this.strategyCache.set(tid, strategy);
+		return strategy;
+	}
+
 	private async init() {
 		await player.updateOvrMeanStd();
 		return this.getUpdatedCache();
@@ -735,7 +782,7 @@ export class ValueChangeCalculator {
 			throw new Error("Invalid team");
 		}
 
-		const strategy = t.strategy;
+		const strategy = await this.strategyForTeam(tid, t.strategy);
 
 		await getPlayers({
 			add,

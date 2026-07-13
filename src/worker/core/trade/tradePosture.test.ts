@@ -10,8 +10,19 @@ import {
 	posBucket,
 	selectBuildingBlocks,
 	selectShopVeterans,
+	tierToStrategy,
 	type PosturePlayer,
 } from "./tradePosture.ts";
+
+describe("tierToStrategy", () => {
+	test("maps our tiers onto the valuation's strategy buckets", () => {
+		assert.strictEqual(tierToStrategy("allIn"), "contending");
+		assert.strictEqual(tierToStrategy("buyer"), "contending");
+		assert.strictEqual(tierToStrategy("seller"), "rebuilding");
+		assert.strictEqual(tierToStrategy("teardown"), "rebuilding");
+		assert.strictEqual(tierToStrategy("fringe"), "");
+	});
+});
 
 describe("posBucket", () => {
 	test("maps fine positions to G/F/C slots (PF is a big, GF a wing)", () => {

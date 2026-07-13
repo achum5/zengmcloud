@@ -29,6 +29,20 @@ import type { LookingFor } from "./makeItWork.ts";
 // Where a franchise sits on the buy/sell spectrum.
 export type TradeTier = "allIn" | "buyer" | "fringe" | "seller" | "teardown";
 
+// Map our five-level franchise tier onto the trade-VALUATION's coarser notion
+// of strategy (contending discounts youth/picks; rebuilding boosts them + cap
+// relief; "" is neutral). This is what lets the pricing engine value assets from
+// our posture instead of BBGM's own contending/rebuilding flag.
+export const tierToStrategy = (tier: TradeTier): string => {
+	if (tier === "allIn" || tier === "buyer") {
+		return "contending";
+	}
+	if (tier === "seller" || tier === "teardown") {
+		return "rebuilding";
+	}
+	return ""; // fringe → neutral
+};
+
 // Basketball is bucketed into three broad slots. These strings are also what
 // makeItWork's LookingFor expects: it substring-matches player positions, so
 // "G" matches PG/SG/G/GF, "F" matches SF/PF/F, "C" matches C/FC.

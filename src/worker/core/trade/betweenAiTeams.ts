@@ -339,6 +339,12 @@ const betweenAiTeams = async () => {
 		return;
 	}
 
+	// Price trades from the SAME posture tiers that drive the seeding, so the
+	// valuation and the intent are consistent (no recompute inside the calculator).
+	valueChangeCalculator.setPostureTiers(
+		new Map([...postures].map(([tid, posture]) => [tid, posture.tier])),
+	);
+
 	const season = g.get("season");
 	for (let i = 0; i < numAttempts; i++) {
 		const tradeTids = await attempt({
