@@ -109,63 +109,47 @@ export const posBucket = (pos: string): PosBucket =>
 // strong team is a win-now all-in or a patient buyer keeping its young core.
 // How "ready to win now" a team is, 0..1. Record is what really says "we're
 // contending"; team strength is a secondary signal (and the early-season
-// stand-in, blended in upstream). The franchise's committed strategy nudges it.
+// stand-in, blended in upstream). This is derived ENTIRELY from our own signals
+// — BBGM's own "contending/rebuilding" flag is deliberately ignored, because it
+// lags reality (a 41-24 team flagged "rebuilding" is nonsense).
 export const contentionScore = ({
 	winp,
 	ovrRankPct,
-	strategy,
 }: {
 	winp: number;
 	ovrRankPct: number;
-	strategy: string;
-}): number => {
-	let contention = 0.75 * winp + 0.25 * (1 - ovrRankPct);
-	if (strategy === "contending") {
-		contention += 0.05;
-	} else if (strategy === "rebuilding") {
-		contention -= 0.05;
-	}
-	return contention;
-};
+}): number => 0.75 * winp + 0.25 * (1 - ovrRankPct);
 
 export const classifyTier = ({
 	winp,
 	ovrRankPct,
 	avgAge,
 	youngCoreCount,
-	strategy,
 }: {
 	winp: number; // 0..1
 	ovrRankPct: number; // 0 = best team, 1 = worst team
 	avgAge: number;
 	youngCoreCount: number;
-	strategy: string;
 }): TradeTier => {
-	const contention = contentionScore({ winp, ovrRankPct, strategy });
+	const contention = contentionScore({ winp, ovrRankPct });
 
 	// All-in is reserved for genuine title threats: a strong RECORD, not just a
 	// strong roster on paper. A win-now core (aging, or no young building blocks)
 	// goes all-in; a team this good but still young stays a buyer that protects
 	// its young core.
-	let tier: TradeTier;
 	if (contention >= 0.62 && winp >= 0.55) {
-		tier = avgAge >= 27 || youngCoreCount === 0 ? "allIn" : "buyer";
-	} else if (contention >= 0.5) {
-		tier = "buyer";
-	} else if (contention >= 0.4) {
-		tier = "fringe";
-	} else if (contention >= 0.28) {
-		tier = "seller";
-	} else {
-		tier = "teardown";
+		return avgAge >= 27 || youngCoreCount === 0 ? "allIn" : "buyer";
 	}
-
-	// A franchise that has committed to rebuilding won't mortgage its future to
-	// go all-in, even on a hot record — at most it opportunistically buys.
-	if (strategy === "rebuilding" && tier === "allIn") {
-		tier = "buyer";
+	if (contention >= 0.5) {
+		return "buyer";
 	}
-	return tier;
+	if (contention >= 0.4) {
+		return "fringe";
+	}
+	if (contention >= 0.28) {
+		return "seller";
+	}
+	return "teardown";
 };
 
 // Per-slot needs (best player there is below starter caliber) and surpluses
@@ -257,28 +241,27 @@ export const capPosture = ({
 export const selectBuildingBlocks = (
 	players: PosturePlayer[],
 	{
-		youngAge,
 		coreAge,
 		coreValue,
 		tier,
 	}: {
-		youngAge: number;
 		coreAge: number;
 		coreValue: number;
 		tier: TradeTier;
 	},
 ): number[] => {
 	const selling = tier === "seller" || tier === "teardown";
-	// A buyer/contender keeps all its quality players. A milder sell keeps its
-	// young-ish core (through its prime); a full teardown protects only genuine
-	// youth and lets everyone else go.
-	const protectAge = tier === "teardown" ? youngAge : coreAge;
+	// A buyer/contender keeps all its quality players. Any selling team — even a
+	// full teardown — keeps its young/prime cornerstones (through coreAge) and
+	// builds around them; it never trades its 26-year-old franchise piece. The
+	// difference from a mild sell is only HOW aggressively it shops everyone else
+	// (see selectShopVeterans).
 	const out: number[] = [];
 	for (const p of players) {
 		if (p.value < coreValue) {
 			continue;
 		}
-		if (!selling || p.age <= protectAge) {
+		if (!selling || p.age <= coreAge) {
 			out.push(p.pid);
 		}
 	}
@@ -540,13 +523,15 @@ export const getTradePosture = async (
 				: 25;
 
 	const YOUNG_AGE = 24; // genuine youth (drives the tier's young-core signal)
-	const CORE_AGE = 27; // a selling team still keeps quality up through its prime
+	const CORE_AGE = 27; // any selling team keeps quality up through its prime
 	const VET_AGE = 29; // a mild seller only cashes in clear veterans
 	const TEARDOWN_SHOP_AGE = 25; // a teardown moves anyone past his early 20s
 	const youngCoreCount = players.filter(
 		(p) => p.age <= YOUNG_AGE && p.value >= context.coreValue,
 	).length;
 
+	// BBGM's own strategy flag is read only for reference in the diagnostics — our
+	// classification deliberately ignores it (see contentionScore).
 	const strategy = (await idb.cache.teams.get(tid))?.strategy ?? "";
 
 	const tier = classifyTier({
@@ -554,7 +539,6 @@ export const getTradePosture = async (
 		ovrRankPct,
 		avgAge,
 		youngCoreCount,
-		strategy,
 	});
 
 	const { needs, surpluses, weakestPos } = isSport("basketball")
@@ -574,7 +558,6 @@ export const getTradePosture = async (
 		(tier === "allIn" || tier === "buyer") && bestOvr < context.starOvr;
 
 	const buildingBlockPids = selectBuildingBlocks(players, {
-		youngAge: YOUNG_AGE,
 		coreAge: CORE_AGE,
 		coreValue: context.coreValue,
 		tier,

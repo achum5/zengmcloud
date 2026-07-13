@@ -37,7 +37,6 @@ describe("classifyTier", () => {
 		ovrRankPct: 0.5,
 		avgAge: 26,
 		youngCoreCount: 0,
-		strategy: "",
 	};
 
 	test("strong + aging core → all-in", () => {
@@ -88,40 +87,15 @@ describe("classifyTier", () => {
 		);
 	});
 
-	test("the franchise's own strategy nudges borderline cases", () => {
-		const borderline = { ...base, winp: 0.42, ovrRankPct: 0.55 };
-		// Neutral lands on fringe; a committed rebuild tips it to selling.
-		assert.strictEqual(classifyTier(borderline), "fringe");
+	test("classification is self-contained — record + strength + core, no external flag", () => {
+		// A good record on a strong, aging roster is all-in regardless of any
+		// league 'strategy' label; a hot record on a young roster is a buyer.
 		assert.strictEqual(
-			classifyTier({ ...borderline, strategy: "rebuilding" }),
-			"seller",
-		);
-		// A contending commitment tips a good-but-aging buyer into all-in.
-		const goodAging = {
-			...base,
-			winp: 0.6,
-			ovrRankPct: 0.45,
-			avgAge: 29,
-		};
-		assert.strictEqual(classifyTier(goodAging), "buyer");
-		assert.strictEqual(
-			classifyTier({ ...goodAging, strategy: "contending" }),
+			classifyTier({ winp: 0.7, ovrRankPct: 0.05, avgAge: 28, youngCoreCount: 0 }),
 			"allIn",
 		);
-	});
-
-	test("a rebuilding franchise never goes all-in, even on a hot record", () => {
-		// Strong record + old core would be all-in — but a committed rebuild caps
-		// at buyer (it won't mortgage the future).
-		const strongOld = {
-			...base,
-			winp: 0.7,
-			ovrRankPct: 0.05,
-			avgAge: 28,
-		};
-		assert.strictEqual(classifyTier(strongOld), "allIn");
 		assert.strictEqual(
-			classifyTier({ ...strongOld, strategy: "rebuilding" }),
+			classifyTier({ winp: 0.7, ovrRankPct: 0.05, avgAge: 24, youngCoreCount: 3 }),
 			"buyer",
 		);
 	});
@@ -220,7 +194,7 @@ describe("selectBuildingBlocks", () => {
 		mkP(4, { age: 20, value: 50 }), // young but not good enough
 		mkP(5, { age: 26, value: 63 }), // quality prime player (not a graybeard)
 	];
-	const opts = { youngAge: 24, coreAge: 27, coreValue: 60 };
+	const opts = { coreAge: 27, coreValue: 60 };
 
 	test("a buyer protects every quality player regardless of age", () => {
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "buyer" });
@@ -233,10 +207,11 @@ describe("selectBuildingBlocks", () => {
 		assert.deepEqual(blocks.sort(), [1, 5]);
 	});
 
-	test("a full teardown protects only genuine youth", () => {
-		// Only 1 (22) is young enough; even the 26-year-old is available.
+	test("even a full teardown keeps its young/prime cornerstones", () => {
+		// 1 (22) and 5 (26) are the future to build around; only the 30-year-old
+		// is available. A teardown never trades its 26-year-old franchise piece.
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "teardown" });
-		assert.deepEqual(blocks, [1]);
+		assert.deepEqual(blocks.sort(), [1, 5]);
 	});
 });
 
