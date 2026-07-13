@@ -58,12 +58,18 @@ export const simulateFutures = ({
 	numGamesPlayoffSeries,
 	iterations = 4000,
 	seed = 1,
+	ratingUncertainty = 3.5,
 }: {
 	teams: FuturesTeam[];
 	// Best-of lengths per playoff round, first round first (e.g. [7,7,7,7]).
 	numGamesPlayoffSeries: number[];
 	iterations?: number;
 	seed?: number;
+	// How unsure the book is about each team's true strength, in points. Each
+	// simulation jitters every rating by Normal(0, this) - real books never
+	// treat strength as known exactly, which is why a solid 3rd-best team gets
+	// genuine title equity (+2500, not 99-1) and no tail collapses to zero.
+	ratingUncertainty?: number;
 }): FuturesResult => {
 	const rounds = Math.max(1, numGamesPlayoffSeries.length);
 	const cids = [...new Set(teams.map((t) => t.cid))];
@@ -74,7 +80,6 @@ export const simulateFutures = ({
 	);
 
 	const rand = mulberry32(seed);
-	const pGame = new Map(teams.map((t) => [t.tid, marginToWinProb(t.rating)]));
 
 	const titleCount = new Map<number, number>();
 	const confCount = new Map<number, number>();
@@ -119,10 +124,13 @@ export const simulateFutures = ({
 	};
 
 	for (let iter = 0; iter < iterations; iter++) {
-		// 1. Simulate the rest of the regular season (normal approximation of the
-		// binomial over remaining games), with a tiny jitter for tie-breaks.
+		// 1. Draw each team's TRUE strength for this simulated world (the book's
+		// rating is an estimate, not a fact), then simulate the rest of the
+		// regular season (normal approximation of the binomial over remaining
+		// games), with a tiny jitter for tie-breaks.
 		const simTeams: SimTeam[] = teams.map((t) => {
-			const p = pGame.get(t.tid)!;
+			const simRating = t.rating + normalSample(rand) * ratingUncertainty;
+			const p = marginToWinProb(simRating);
 			let wins = t.won;
 			if (t.gamesRemaining > 0) {
 				const mean = t.gamesRemaining * p;
@@ -133,7 +141,7 @@ export const simulateFutures = ({
 				wins += Math.min(t.gamesRemaining, Math.max(0, extra));
 			}
 			winsSamples.get(t.tid)!.push(wins);
-			return { ...t, simWins: wins + rand() * 0.5 };
+			return { ...t, rating: simRating, simWins: wins + rand() * 0.5 };
 		});
 
 		// 2. Division winners: best simulated record in each division.
@@ -175,17 +183,17 @@ export const simulateFutures = ({
 		}
 	}
 
-	// Win totals: line at the half point closest to fair around the median.
+	// Win totals: scan half-point lines around the median and take the one
+	// closest to a coin flip, so the juice stays near-balanced (-110/-110 style)
+	// instead of a lopsided +215/-265 market.
 	const winTotals = new Map<number, { line: number; pOver: number }>();
 	for (const t of teams) {
 		const samples = winsSamples.get(t.tid)!.sort((a, b) => a - b);
 		const median = samples[Math.floor(samples.length / 2)] ?? t.won;
-		const candidates = [
-			toHalfPointLine(median),
-			toHalfPointLine(median) - 1,
-		];
-		let best = { line: candidates[0]!, pOver: 0, dist: Infinity };
-		for (const line of candidates) {
+		const base = toHalfPointLine(median);
+		let best = { line: base, pOver: 0, dist: Infinity };
+		for (let offset = -3; offset <= 3; offset++) {
+			const line = base + offset;
 			const pOver =
 				samples.filter((w) => w > line).length / Math.max(1, samples.length);
 			const dist = Math.abs(pOver - 0.5);

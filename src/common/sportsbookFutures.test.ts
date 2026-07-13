@@ -22,10 +22,12 @@ const LEAGUE: FuturesTeam[] = [
 	team(7, 1, 3, 15, 33, -12),
 ];
 
+// 3 playoff rounds → 8 playoff teams → every team in this league qualifies,
+// so even the 3rd-best team has a bracket path.
 const run = (seed = 42) =>
 	simulateFutures({
 		teams: LEAGUE,
-		numGamesPlayoffSeries: [7, 7],
+		numGamesPlayoffSeries: [7, 7, 7],
 		iterations: 3000,
 		seed,
 	});
@@ -37,6 +39,16 @@ describe("simulateFutures", () => {
 		assert.ok(p > 0.5, `juggernaut title prob ${p}`);
 		// And clearly ahead of the strong rival.
 		assert.ok(p > 2 * r.titleProb.get(1)!);
+	});
+
+	test("a solid 3rd-best team keeps real title equity (never 99-1 territory)", () => {
+		const r = run();
+		// tid 2 is the clear 3rd-best team. Rating uncertainty must leave it with
+		// genuine long-shot equity, not a probability that collapses to ~0.
+		const p = r.titleProb.get(2)!;
+		assert.ok(p >= 0.002, `3rd-best title prob ${p}`);
+		// But still clearly behind the top two.
+		assert.ok(p < r.titleProb.get(1)!);
 	});
 
 	test("title probability never exceeds conference probability", () => {

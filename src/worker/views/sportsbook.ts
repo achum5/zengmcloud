@@ -1,4 +1,4 @@
-import { g } from "../util/index.ts";
+import { g, logEvent } from "../util/index.ts";
 import { idb } from "../db/index.ts";
 import type { UpdateEvents } from "../../common/types.ts";
 import { getLines } from "../core/sportsbook/getLines.ts";
@@ -32,7 +32,29 @@ const updateSportsbook = async (
 			}
 		}
 
-		const board = await getLines();
+		// The board must never take down the page - if the odds engine fails for
+		// any reason, render an empty book (wallet + bets still work).
+		let board: Awaited<ReturnType<typeof getLines>>;
+		try {
+			board = await getLines();
+		} catch (error) {
+			console.error("Sportsbook board failed to compute", error);
+			logEvent({
+				type: "error",
+				text: `Sportsbook lines unavailable: ${
+					error instanceof Error ? error.message : String(error)
+				}`,
+				saveToDb: false,
+			});
+			board = {
+				games: [],
+				championship: [],
+				conferences: [],
+				divisions: [],
+				winTotals: [],
+				awards: [],
+			};
+		}
 
 		const userTid = g.get("userTid");
 		const teams = await idb.cache.teams.getAll();

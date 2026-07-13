@@ -10,8 +10,10 @@ export const SPORTSBOOK_PRESEASON_GRANT = 1_000_000;
 // each outcome's probability before converting to a price.
 export const SPORTSBOOK_VIG = 0.045;
 
-// Clamp a probability away from 0/1 so odds stay finite and sane.
-const clampProb = (p: number): number => Math.min(0.99, Math.max(0.01, p));
+// Clamp a probability away from 0/1 so odds stay finite. The floor is deep
+// (0.2%) so genuine long shots differentiate (+2000 vs +20000) instead of
+// every non-favorite pancaking into one max price.
+const clampProb = (p: number): number => Math.min(0.99, Math.max(0.002, p));
 
 // Convert a true win probability to American odds, with the house vig applied.
 // Favorites come out negative (e.g. -150), underdogs positive (e.g. +130).

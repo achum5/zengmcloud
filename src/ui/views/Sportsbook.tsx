@@ -482,6 +482,8 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 					)}
 				</div>
 				<div className="col-md-6">
+					{board.winTotals.length === 0 ? null : (
+						<>
 					<h3 className="h5">Season Win Totals</h3>
 					<div className="table-responsive">
 						<table className={TABLE_CLASS} style={{ maxWidth: 440 }}>
@@ -539,6 +541,8 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 							</tbody>
 						</table>
 					</div>
+						</>
+					)}
 					{board.divisions.map((div) =>
 						teamFuturesTable(
 							`${div.name} Winner`,
@@ -551,7 +555,7 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 				</div>
 			</div>
 
-			<h2>Award Futures</h2>
+			{board.awards.length === 0 ? null : <h2>Award Futures</h2>}
 			<div className="row">
 				{board.awards.map((race) => (
 					<div key={race.award} className="col-lg-4 col-md-6">
