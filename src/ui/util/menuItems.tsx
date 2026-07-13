@@ -655,6 +655,14 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				path: ["sportsbook"],
 				text: "Sportsbook",
 			},
+			{
+				type: "link",
+				active: (pageID) => pageID === "franchiseOutlook",
+				league: true,
+				commandPalette: true,
+				path: ["franchise_outlook"],
+				text: "Franchise Outlook",
+			},
 		],
 	},
 	{

@@ -180,6 +180,7 @@ export const routeInfos = {
 	"/l/:lid/award_races": "awardRaces",
 	"/l/:lid/award_races/:season": "awardRaces",
 	"/l/:lid/sportsbook": "sportsbook",
+	"/l/:lid/franchise_outlook": "franchiseOutlook",
 	"/l/:lid/expansion_draft": "expansionDraft",
 	"/l/:lid/protect_players": "protectPlayers",
 	"/l/:lid/news": "news",
