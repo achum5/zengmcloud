@@ -1,4 +1,11 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+	useEffect,
+	useId,
+	useMemo,
+	useRef,
+	useState,
+	type ReactNode,
+} from "react";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
@@ -919,21 +926,16 @@ const LiveCourt = ({
 	const bubbleEdgePct = ((bubbleEdgeX + RAIL_W) / (COURT_W + 2 * RAIL_W)) * 100;
 	const textTopPct = ((clusterMidY + APRON) / (COURT_H + 2 * APRON)) * 100;
 
-	return (
-		<div
-			className="mb-3 position-relative"
-			style={{
-				userSelect: "none",
-				containerType: "inline-size",
-				// Own stacking context pinned at the base level, so real dropdown
-				// menus (Play menu, fast-forward) always paint ABOVE the court's
-				// absolutely-positioned faces/text instead of under them.
-				isolation: "isolate",
-				zIndex: 0,
-			}}
-		>
-			<style>{FACE_ANIM_CSS}</style>
-			<svg viewBox={VIEW} style={{ width: "100%", display: "block" }}>
+	// The court BACKGROUND - floor grain, painted key, lines, rails, and center
+	// branding - depends only on the home team's court style, not on the current
+	// play. The plank/parquet/chevron floors are hundreds (parquet: ~1000+) of
+	// SVG nodes; rebuilding and reconciling them on EVERY play is what made the
+	// live court lag, worst on mobile and on the fancy patterns. Memoizing it so
+	// it's built once (and only rebuilt when the court style actually changes)
+	// leaves only the ball, dots, faces, and text to update per play.
+	const courtBackground = useMemo(
+		() => (
+			<>
 				<defs>
 					{/* Wood grain: fine dark streaks running along the plank length. */}
 					<filter id={grainId} x="-5%" y="-5%" width="110%" height="110%">
@@ -1075,25 +1077,81 @@ const LiveCourt = ({
 						/>
 					</>
 				) : null}
+			</>
+		),
+		// Rebuild only when the court styling actually changes - never per play.
+		// The floorDetail/paintFor/halfMarkings/railText closures read exactly
+		// these values, so they're covered.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[
+			grainId,
+			clipId,
+			cx,
+			homeRail,
+			woodFill,
+			woodLine,
+			lineColor,
+			paintColor,
+			floorPattern,
+			sidelineImageURL,
+			secondaryLogoURL,
+			centerLogoURL,
+			trophyURL,
+			railLabel,
+			homeText,
+			homeColor,
+			finals,
+			home?.abbrev,
+		],
+	);
+
+	// The accumulated shot chart. `dots` is append-only and mutated in place, so
+	// its array identity is stable - key the memo on the count so it rebuilds
+	// only when a new shot lands, not on every non-shot play.
+	const dotsLayer = useMemo(
+		() => (
+			<g>
+				{dots.map((dot) => (
+					<circle
+						key={dot.key}
+						cx={dot.x}
+						cy={dot.y}
+						r={0.6}
+						fill={dot.made ? (dot.t === 0 ? awayColor : homeColor) : "none"}
+						stroke={dot.t === 0 ? awayColor : homeColor}
+						strokeWidth={0.25}
+						opacity={dot.made ? 0.9 : 0.6}
+						style={{ pointerEvents: "all" }}
+					>
+						<title>{dot.title}</title>
+					</circle>
+				))}
+			</g>
+		),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[dots, dots.length, awayColor, homeColor],
+	);
+
+	return (
+		<div
+			className="mb-3 position-relative"
+			style={{
+				userSelect: "none",
+				containerType: "inline-size",
+				// Own stacking context pinned at the base level, so real dropdown
+				// menus (Play menu, fast-forward) always paint ABOVE the court's
+				// absolutely-positioned faces/text instead of under them.
+				isolation: "isolate",
+				zIndex: 0,
+			}}
+		>
+			<style>{FACE_ANIM_CSS}</style>
+			<svg viewBox={VIEW} style={{ width: "100%", display: "block" }}>
+				{/* Static court (floor, lines, branding) - memoized, see above */}
+				{courtBackground}
 
 				{/* Accumulated shot chart; hover a dot for the details */}
-				<g>
-					{dots.map((dot) => (
-						<circle
-							key={dot.key}
-							cx={dot.x}
-							cy={dot.y}
-							r={0.6}
-							fill={dot.made ? (dot.t === 0 ? awayColor : homeColor) : "none"}
-							stroke={dot.t === 0 ? awayColor : homeColor}
-							strokeWidth={0.25}
-							opacity={dot.made ? 0.9 : 0.6}
-							style={{ pointerEvents: "all" }}
-						>
-							<title>{dot.title}</title>
-						</circle>
-					))}
-				</g>
+				{dotsLayer}
 
 				{/* Pulse ring (swish / turnover / foul) + the ball */}
 				<circle
