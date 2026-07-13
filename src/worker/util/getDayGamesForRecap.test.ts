@@ -138,7 +138,7 @@ describe("selectRecapGames", () => {
 		);
 	});
 
-	test("games that already have a note are not re-copied (except the viewed day)", () => {
+	test("games that already have a note are never re-copied", () => {
 		const completed = [g(1, 1, "done"), g(2, 2, "done"), g(3, 3)];
 		const picked = selectRecapGames(completed, 3, 45);
 		assert.deepEqual(
@@ -147,12 +147,12 @@ describe("selectRecapGames", () => {
 		);
 	});
 
-	test("the viewed day is always included in full, even if already recapped", () => {
+	test("an already-recapped game on the viewed day is skipped, not re-copied", () => {
 		const completed = [g(1, 2, "done"), g(2, 2)];
 		const picked = selectRecapGames(completed, 2, 45);
 		assert.deepEqual(
 			picked.map((x) => x.gid),
-			[1, 2],
+			[2],
 		);
 	});
 

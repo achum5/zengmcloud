@@ -402,14 +402,13 @@ export const enteringAverages = (
 // Copy sweeps it up.
 const MAX_RECAP_GAMES = 50;
 
-// Which completed games one recap run covers: ALL of the viewed day's games
-// (recapped or not, so a day can be re-run to regenerate), plus a sweep of
-// every other completed game this season still missing a recap note - so days
-// that were simmed past get their recaps generated in the same run instead of
-// paging through them day by day. Strict FIFO: chronological order, and when
-// the cap bites, the OLDEST games keep their slots - a deep backlog is
-// cleared oldest-first across successive runs, never leapfrogged by newer
-// days.
+// Which completed games one recap run covers: every completed game this season
+// still missing a recap note - so days that were simmed past get their recaps
+// generated in the same run instead of paging through them day by day. Games
+// that already have a note are skipped, so a recap is never overwritten. Strict
+// FIFO: chronological order, and when the cap bites, the OLDEST games keep
+// their slots - a deep backlog is cleared oldest-first across successive runs,
+// never leapfrogged by newer days.
 export const selectRecapGames = <
 	T extends { gid: number; day?: number; note?: unknown },
 >(
@@ -418,7 +417,7 @@ export const selectRecapGames = <
 	maxGames: number,
 ): T[] => {
 	return completed
-		.filter((game) => game.day === day || !game.note)
+		.filter((game) => !game.note)
 		.sort((a, b) => (a.day ?? 0) - (b.day ?? 0) || a.gid - b.gid)
 		.slice(0, maxGames);
 };
