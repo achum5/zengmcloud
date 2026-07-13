@@ -129,6 +129,26 @@ export const GameRecap = ({
 		}
 	};
 
+	// Fallback for when a giant paste won't go through the AI chat app: hand the
+	// same prompt over as a real .txt file to attach instead.
+	const downloadPrompt = () => {
+		if (loadFailed || !prompt) {
+			setResult(
+				"Couldn't prepare this day's games — reload the page and retry.",
+			);
+			return;
+		}
+		const blob = new Blob([prompt], { type: "text/plain" });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement("a");
+		a.href = url;
+		a.download = "recap-prompt.txt";
+		document.body.append(a);
+		a.click();
+		a.remove();
+		globalThis.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+	};
+
 	const paste = async () => {
 		setResult(undefined);
 		setCopyFallback(undefined);
@@ -154,15 +174,25 @@ export const GameRecap = ({
 	return (
 		<div className="d-inline-flex flex-column">
 			<div className="d-flex flex-wrap align-items-center gap-1">
-				<button
-					className={`btn btn-sm ${copied ? "btn-success" : "btn-primary"}`}
-					style={btnStyle}
-					disabled={busy}
-					onClick={copy}
-					title="Copy AI prompt"
-				>
-					{copied ? "✓" : "Copy"}
-				</button>
+				<div className="btn-group btn-group-sm">
+					<button
+						className={`btn ${copied ? "btn-success" : "btn-primary"}`}
+						style={btnStyle}
+						disabled={busy}
+						onClick={copy}
+						title="Copy AI prompt"
+					>
+						{copied ? "✓" : "Copy"}
+					</button>
+					<button
+						className="btn btn-light-bordered px-1"
+						disabled={busy}
+						onClick={downloadPrompt}
+						title="Download the prompt as a .txt file — attach it if pasting fails"
+					>
+						<span className="glyphicon glyphicon-download-alt" />
+					</button>
+				</div>
 				{arrow}
 				<RecapAIButton style={btnStyle} />
 				{arrow}
