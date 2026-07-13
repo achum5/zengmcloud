@@ -62,6 +62,8 @@ export type TradePosture = {
 	starGap: boolean;
 	needs: PositionNeed[];
 	surpluses: PositionSurplus[];
+	// The slot a buyer/contender should upgrade (needs first, else weakest slot).
+	targetPos?: PosBucket;
 	// Players this team will NOT trade (young cornerstones, and stars unless
 	// tearing down).
 	buildingBlockPids: number[];
@@ -111,7 +113,9 @@ export const classifyTier = ({
 	youngCoreCount: number;
 	strategy: string;
 }): TradeTier => {
-	let contention = 0.6 * winp + 0.4 * (1 - ovrRankPct);
+	// Record is what really says "we're contending"; team strength is a
+	// secondary signal (and the early-season stand-in, blended in upstream).
+	let contention = 0.75 * winp + 0.25 * (1 - ovrRankPct);
 
 	// Respect the direction the franchise has already committed to, but let a
 	// strong enough record/rating override it.
@@ -121,9 +125,11 @@ export const classifyTier = ({
 		contention -= 0.05;
 	}
 
-	if (contention >= 0.62) {
-		// A win-now team (aging or star-less-of-youth core) goes all-in; a team
-		// this good but still young stays a buyer and protects its young core.
+	// All-in is reserved for genuine title threats: a strong RECORD, not just a
+	// strong roster on paper. A win-now core (aging, or no young building blocks)
+	// goes all-in; a team this good but still young stays a buyer that protects
+	// its young core.
+	if (contention >= 0.62 && winp >= 0.55) {
 		return avgAge >= 27 || youngCoreCount === 0 ? "allIn" : "buyer";
 	}
 	if (contention >= 0.5) {
@@ -144,7 +150,13 @@ export const classifyTier = ({
 export const analyzePositions = (
 	players: { pos: string; ovr: number }[],
 	starterOvr: number,
-): { needs: PositionNeed[]; surpluses: PositionSurplus[] } => {
+): {
+	needs: PositionNeed[];
+	surpluses: PositionSurplus[];
+	// The relatively weakest slot (lowest best-player ovr) — a team's spot to
+	// UPGRADE even when it has no outright hole. This is what contenders shop.
+	weakestPos: PosBucket;
+} => {
 	const buckets: Record<PosBucket, number[]> = { G: [], F: [], C: [] };
 	for (const p of players) {
 		buckets[posBucket(p.pos)].push(p.ovr);
@@ -152,9 +164,16 @@ export const analyzePositions = (
 
 	const needs: PositionNeed[] = [];
 	const surpluses: PositionSurplus[] = [];
+	let weakestPos: PosBucket = "F";
+	let weakestBest = Infinity;
 	for (const pos of ["G", "F", "C"] as const) {
 		const ovrs = buckets[pos].sort((a, b) => b - a);
 		const best = ovrs[0] ?? 0;
+
+		if (best < weakestBest) {
+			weakestBest = best;
+			weakestPos = pos;
+		}
 
 		const severity = starterOvr - best;
 		if (severity > 0) {
@@ -169,7 +188,7 @@ export const analyzePositions = (
 
 	needs.sort((a, b) => b.severity - a.severity);
 	surpluses.sort((a, b) => b.depth - a.depth);
-	return { needs, surpluses };
+	return { needs, surpluses, weakestPos };
 };
 
 export const capPosture = ({
@@ -206,27 +225,28 @@ export const capPosture = ({
 	};
 };
 
-// Young cornerstones are always protected; true stars are protected unless the
-// team is tearing all the way down (where even a star can be cashed in).
+// Who a team won't trade. Young cornerstones are always protected. A team that
+// is NOT selling also keeps its quality players (its core rotation) — so a real
+// contender protects its best guys, not just its youth. A selling team leaves
+// its veterans available (only its young future pieces are off-limits), which
+// is exactly how it avoids letting a good vet waste away.
 export const selectBuildingBlocks = (
 	players: PosturePlayer[],
 	{
 		youngAge,
 		coreValue,
-		starValue,
 		tier,
 	}: {
 		youngAge: number;
 		coreValue: number;
-		starValue: number;
 		tier: TradeTier;
 	},
 ): number[] => {
+	const selling = tier === "seller" || tier === "teardown";
 	const out: number[] = [];
 	for (const p of players) {
 		const youngCore = p.age <= youngAge && p.value >= coreValue;
-		const star = p.value >= starValue;
-		if (youngCore || (star && tier !== "teardown")) {
+		if (youngCore || (!selling && p.value >= coreValue)) {
 			out.push(p.pid);
 		}
 	}
@@ -263,11 +283,13 @@ export const selectShopVeterans = (
 		.map((p) => p.pid);
 };
 
-// What the team is shopping FOR, in makeItWork's terms.
+// What the team is shopping FOR, in makeItWork's terms. targetPos is the slot to
+// upgrade when there's no outright hole, so a contender always has a direction.
 export const lookingForFromPosture = (
 	tier: TradeTier,
 	needs: PositionNeed[],
 	starGap: boolean,
+	targetPos?: PosBucket,
 ): LookingFor => {
 	// Sellers chase the future, position-agnostic: youth + picks.
 	if (tier === "seller" || tier === "teardown") {
@@ -291,10 +313,14 @@ export const lookingForFromPosture = (
 		};
 	}
 
-	// Otherwise, proven talent at the two most pressing positions of need.
+	// Proven talent at the biggest needs, or — failing an outright hole — at the
+	// weakest slot to upgrade.
 	const positions = new Set<string>();
 	for (const need of needs.slice(0, 2)) {
 		positions.add(need.pos);
+	}
+	if (positions.size === 0 && targetPos) {
+		positions.add(targetPos);
 	}
 	return {
 		positions,
@@ -487,12 +513,15 @@ export const getTradePosture = async (
 		strategy,
 	});
 
-	const { needs, surpluses } = isSport("basketball")
+	const { needs, surpluses, weakestPos } = isSport("basketball")
 		? analyzePositions(
 				players.map((p) => ({ pos: p.pos, ovr: p.ovr })),
 				context.starterOvr,
 			)
-		: { needs: [], surpluses: [] };
+		: { needs: [], surpluses: [], weakestPos: undefined };
+
+	// A buyer's target: an outright hole if it has one, else its weakest slot.
+	const targetPos = needs[0]?.pos ?? weakestPos;
 
 	const starGap =
 		(tier === "allIn" || tier === "buyer") &&
@@ -501,7 +530,6 @@ export const getTradePosture = async (
 	const buildingBlockPids = selectBuildingBlocks(players, {
 		youngAge: YOUNG_AGE,
 		coreValue: context.coreValue,
-		starValue: context.starValue,
 		tier,
 	});
 	const shopVeteranPids = selectShopVeterans(
@@ -534,10 +562,11 @@ export const getTradePosture = async (
 		starGap,
 		needs,
 		surpluses,
+		targetPos,
 		buildingBlockPids,
 		shopVeteranPids,
 		cap,
-		lookingFor: lookingForFromPosture(tier, needs, starGap),
+		lookingFor: lookingForFromPosture(tier, needs, starGap, targetPos),
 	};
 };
 

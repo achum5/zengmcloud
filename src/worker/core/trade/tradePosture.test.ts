@@ -113,7 +113,7 @@ describe("classifyTier", () => {
 
 describe("analyzePositions", () => {
 	test("flags weak/empty slots as needs and stacked slots as surpluses", () => {
-		const { needs, surpluses } = analyzePositions(
+		const { needs, surpluses, weakestPos } = analyzePositions(
 			[
 				{ pos: "PG", ovr: 60 }, // G
 				{ pos: "SG", ovr: 55 }, // G — second starter-caliber guard
@@ -130,19 +130,23 @@ describe("analyzePositions", () => {
 		]);
 		// Two starter-caliber guards → one surplus guard.
 		assert.deepEqual(surpluses, [{ pos: "G", depth: 1 }]);
+		// The empty center slot is the weakest.
+		assert.strictEqual(weakestPos, "C");
 	});
 
-	test("a balanced roster has no needs or surpluses", () => {
-		const { needs, surpluses } = analyzePositions(
+	test("a balanced roster has no needs but still names a weakest slot", () => {
+		const { needs, surpluses, weakestPos } = analyzePositions(
 			[
 				{ pos: "PG", ovr: 55 },
-				{ pos: "SF", ovr: 55 },
-				{ pos: "C", ovr: 55 },
+				{ pos: "SF", ovr: 58 },
+				{ pos: "C", ovr: 60 },
 			],
 			50,
 		);
 		assert.deepEqual(needs, []);
 		assert.deepEqual(surpluses, []);
+		// No hole, but the guard is the relatively weakest link to upgrade.
+		assert.strictEqual(weakestPos, "G");
 	});
 });
 
@@ -195,18 +199,23 @@ describe("capPosture", () => {
 describe("selectBuildingBlocks", () => {
 	const players: PosturePlayer[] = [
 		mkP(1, { age: 22, value: 65 }), // young core
-		mkP(2, { age: 30, value: 72 }), // veteran star
+		mkP(2, { age: 30, value: 72 }), // quality veteran
 		mkP(3, { age: 30, value: 55 }), // aging role player
 		mkP(4, { age: 20, value: 50 }), // young but not good enough
 	];
-	const opts = { youngAge: 24, coreValue: 60, starValue: 70 };
+	const opts = { youngAge: 24, coreValue: 60 };
 
-	test("protects young cornerstones and stars for a buyer", () => {
+	test("a buyer protects its young core AND its quality veterans", () => {
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "buyer" });
 		assert.deepEqual(blocks.sort(), [1, 2]);
 	});
 
-	test("a full teardown will even trade its star (young core still safe)", () => {
+	test("a seller keeps only its youth — good vets are left available", () => {
+		const blocks = selectBuildingBlocks(players, { ...opts, tier: "seller" });
+		assert.deepEqual(blocks, [1]);
+	});
+
+	test("a full teardown likewise protects only young cornerstones", () => {
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "teardown" });
 		assert.deepEqual(blocks, [1]);
 	});
@@ -267,6 +276,12 @@ describe("lookingForFromPosture", () => {
 		);
 		assert.strictEqual(lf.bestCurrentPlayers, true);
 		assert.deepEqual([...lf.positions].sort(), ["C", "G"]);
+	});
+
+	test("with no outright hole, a buyer still targets its weakest slot", () => {
+		const lf = lookingForFromPosture("buyer", [], false, "G");
+		assert.strictEqual(lf.bestCurrentPlayers, true);
+		assert.deepEqual([...lf.positions], ["G"]);
 	});
 });
 

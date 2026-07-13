@@ -12,6 +12,7 @@ const seekingText = (
 	tier: TradeTier,
 	starGap: boolean,
 	needs: { pos: string }[],
+	targetPos: string | undefined,
 ): string => {
 	if (tier === "seller" || tier === "teardown") {
 		return "Youth + draft picks";
@@ -19,11 +20,16 @@ const seekingText = (
 	if (tier === "allIn" && starGap) {
 		return "A star (any position)";
 	}
-	const positions = needs.slice(0, 2).map((n) => n.pos);
-	if (positions.length === 0) {
-		return "Depth / opportunistic";
+	if (needs.length > 0) {
+		return `Starter at ${needs
+			.slice(0, 2)
+			.map((n) => n.pos)
+			.join(" / ")}`;
 	}
-	return `Starter at ${positions.join(" / ")}`;
+	if (targetPos) {
+		return `Upgrade at ${targetPos}`;
+	}
+	return "Depth / opportunistic";
 };
 
 // Read-only "Franchise Outlook": every team's trade posture (buy/sell tier,
@@ -95,7 +101,12 @@ const updateFranchiseOutlook = async (
 				lost: teamSeason?.lost ?? 0,
 				needs: posture.needs,
 				surpluses: posture.surpluses,
-				seeking: seekingText(posture.tier, posture.starGap, posture.needs),
+				seeking: seekingText(
+					posture.tier,
+					posture.starGap,
+					posture.needs,
+					posture.targetPos,
+				),
 				// The veterans this team should move before they waste away.
 				shopping: posture.shopVeteranPids
 					.map(infoOf)
