@@ -464,51 +464,56 @@ const sumValues = (
 		// talent), and a contender pays picks/youth for present talent. The
 		// multiplier hits the value BEFORE the exponent below, so it swings hard.
 		if (strategy === "rebuilding") {
-			// Value young players and draft picks much more; heavily discount aging
-			// present talent — a good 28-year-old is worth far less than the picks he
-			// can fetch.
+			// Value young players and picks more, and TILT away from aging present
+			// talent — but not so hard that a good veteran becomes a giveaway; a
+			// rebuilder should still demand a real haul for him.
 			if (treatAsFutureDraftPick) {
-				playerValue *= 1.2;
+				playerValue *= 1.15;
 			} else if (p.age <= 19) {
-				playerValue *= 1.12;
-			} else if (p.age === 20) {
 				playerValue *= 1.1;
-			} else if (p.age === 21) {
+			} else if (p.age === 20) {
 				playerValue *= 1.08;
-			} else if (p.age === 22) {
+			} else if (p.age === 21) {
 				playerValue *= 1.06;
+			} else if (p.age === 22) {
+				playerValue *= 1.05;
 			} else if (p.age === 23) {
-				playerValue *= 1.04;
+				playerValue *= 1.03;
 			} else if (p.age === 24) {
-				playerValue *= 1.02;
+				playerValue *= 1.015;
 			} else if (p.age === 26) {
-				playerValue *= 0.96;
+				playerValue *= 0.98;
 			} else if (p.age === 27) {
-				playerValue *= 0.9;
+				playerValue *= 0.95;
 			} else if (p.age === 28) {
-				playerValue *= 0.85;
+				playerValue *= 0.91;
 			} else if (p.age === 29) {
-				playerValue *= 0.81;
-			} else if (p.age >= 30) {
-				playerValue *= 0.78;
+				playerValue *= 0.88;
+			} else if (p.age === 30) {
+				playerValue *= 0.85;
+			} else if (p.age === 31) {
+				playerValue *= 0.82;
+			} else if (p.age >= 32) {
+				playerValue *= 0.79;
 			}
 		} else if (strategy === "contending") {
-			// Present talent is full value; youth and picks are heavily discounted —
-			// a contender will gladly ship them for a win-now player.
+			// Present talent is full value; youth and picks are discounted — a
+			// contender will ship them for a win-now player, but doesn't treat them
+			// as worthless.
 			if (treatAsFutureDraftPick) {
-				playerValue *= 0.72;
-			} else if (p.age <= 19) {
-				playerValue *= 0.72;
-			} else if (p.age === 20) {
-				playerValue *= 0.75;
-			} else if (p.age === 21) {
 				playerValue *= 0.78;
+			} else if (p.age <= 19) {
+				playerValue *= 0.76;
+			} else if (p.age === 20) {
+				playerValue *= 0.79;
+			} else if (p.age === 21) {
+				playerValue *= 0.82;
 			} else if (p.age === 22) {
-				playerValue *= 0.83;
+				playerValue *= 0.86;
 			} else if (p.age === 23) {
-				playerValue *= 0.88;
+				playerValue *= 0.9;
 			} else if (p.age === 24) {
-				playerValue *= 0.92;
+				playerValue *= 0.93;
 			} else if (p.age === 25) {
 				playerValue *= 0.96;
 			}

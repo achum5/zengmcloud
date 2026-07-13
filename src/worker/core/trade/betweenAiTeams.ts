@@ -16,6 +16,7 @@ import {
 import {
 	deadlineRampMultiplier,
 	isBadRental,
+	isPureDowngrade,
 	isSelling,
 	MOTIVATED_DUMP_DV,
 	NORMAL_DV_TOLERANCE,
@@ -117,6 +118,58 @@ const buildSeed = async (
 		return undefined;
 	}
 	return { pids, dpids, motivatedDump: false };
+};
+
+// Total on-court value + value-weighted age of a set of players (given or
+// received in a trade).
+const talentAndAge = async (
+	pids: number[],
+	season: number,
+): Promise<{ value: number; age: number }> => {
+	let value = 0;
+	let ageNum = 0;
+	let ageDen = 0;
+	for (const pid of pids) {
+		const p = await idb.cache.players.get(pid);
+		if (!p) {
+			continue;
+		}
+		const v = Math.max(0, p.value);
+		const age = season - p.born.year;
+		value += v;
+		const w = Math.max(0.01, v);
+		ageNum += age * w;
+		ageDen += w;
+	}
+	return { value, age: ageDen > 0 ? ageNum / ageDen : 0 };
+};
+
+// Would this trade leave either side a pure downgrade (less talent, no younger,
+// no picks)? A backstop against the valuation being fooled into a bad deal.
+const anyPureDowngrade = async (
+	teams: TradeTeams,
+	season: number,
+): Promise<boolean> => {
+	const sides = [
+		{ given: teams[0].pids, recv: teams[1].pids, recvDpids: teams[1].dpids },
+		{ given: teams[1].pids, recv: teams[0].pids, recvDpids: teams[0].dpids },
+	];
+	for (const side of sides) {
+		const given = await talentAndAge(side.given, season);
+		const recv = await talentAndAge(side.recv, season);
+		if (
+			isPureDowngrade({
+				givenValue: given.value,
+				receivedValue: recv.value,
+				givenAge: given.age,
+				receivedAge: recv.age,
+				receivedPicks: side.recvDpids.length > 0,
+			})
+		) {
+			return true;
+		}
+	}
+	return false;
 };
 
 // Would this trade hand a team an expiring player it can't retain (a bad
@@ -250,6 +303,12 @@ const attempt = async (
 
 	// No bad rentals: nobody but an all-in contender takes a low-mood walk-year.
 	if (await hasBadRental(teams, postures, season)) {
+		return false;
+	}
+
+	// No pure downgrades: never let a team come out worse AND older with no picks
+	// to show for it (a backstop against a fooled valuation).
+	if (await anyPureDowngrade(teams, season)) {
 		return false;
 	}
 

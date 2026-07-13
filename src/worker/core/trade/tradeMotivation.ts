@@ -83,3 +83,35 @@ export const partnerWeight = (
 // Is this team a seller (would move present talent for the future)?
 export const isSelling = (tier: TradeTier): boolean =>
 	tier === "fringe" || tier === "seller" || tier === "teardown";
+
+// --- On-court sanity backstop ------------------------------------------------
+// The valuation can occasionally be fooled (compressed ratings, quantity of
+// mediocre players, an aggressive strategy tilt) into approving a deal that
+// simply makes a team worse. Independently of the value math, no team should
+// come out of a trade with LESS talent AND no younger — unless it got draft
+// picks back (a legitimate rebuild return). That's a pure downgrade.
+export const DOWNGRADE_TALENT_FLOOR = 0.9; // received < 90% of talent given
+export const DOWNGRADE_AGE_SLACK = 0.5; // and no younger (within half a year)
+
+export const isPureDowngrade = ({
+	givenValue,
+	receivedValue,
+	givenAge,
+	receivedAge,
+	receivedPicks,
+}: {
+	givenValue: number;
+	receivedValue: number;
+	givenAge: number;
+	receivedAge: number;
+	receivedPicks: boolean;
+}): boolean => {
+	if (receivedPicks) {
+		// Getting draft capital is a legitimate reason to take back less talent.
+		return false;
+	}
+	return (
+		receivedValue < givenValue * DOWNGRADE_TALENT_FLOOR &&
+		receivedAge >= givenAge - DOWNGRADE_AGE_SLACK
+	);
+};

@@ -3,6 +3,7 @@ import {
 	DEADLINE_WINDOW_DAYS,
 	deadlineRampMultiplier,
 	isBadRental,
+	isPureDowngrade,
 	isSelling,
 	partnerWeight,
 	shouldDumpExpiring,
@@ -115,5 +116,61 @@ describe("isSelling", () => {
 		assert.strictEqual(isSelling("fringe"), true);
 		assert.strictEqual(isSelling("buyer"), false);
 		assert.strictEqual(isSelling("allIn"), false);
+	});
+});
+
+describe("isPureDowngrade", () => {
+	test("the Denver deal: gave a 64-value star, got worse AND older, no picks", () => {
+		// Murray (v64, 30) + Holmes (v36, 25) out; Embiid (v56, 33) + Westbrook
+		// (v~0, 39) + Beauchamp (v41, 27) in — less talent, older, no picks.
+		assert.strictEqual(
+			isPureDowngrade({
+				givenValue: 100,
+				receivedValue: 60,
+				givenAge: 28,
+				receivedAge: 31,
+				receivedPicks: false,
+			}),
+			true,
+		);
+	});
+
+	test("less talent but YOUNGER is a fine rebuild-ish move", () => {
+		assert.strictEqual(
+			isPureDowngrade({
+				givenValue: 100,
+				receivedValue: 60,
+				givenAge: 31,
+				receivedAge: 24,
+				receivedPicks: false,
+			}),
+			false,
+		);
+	});
+
+	test("less talent but you got PICKS back is allowed", () => {
+		assert.strictEqual(
+			isPureDowngrade({
+				givenValue: 100,
+				receivedValue: 40,
+				givenAge: 28,
+				receivedAge: 33,
+				receivedPicks: true,
+			}),
+			false,
+		);
+	});
+
+	test("gaining talent (a contender loading up) is never a downgrade", () => {
+		assert.strictEqual(
+			isPureDowngrade({
+				givenValue: 60,
+				receivedValue: 100,
+				givenAge: 24,
+				receivedAge: 29,
+				receivedPicks: false,
+			}),
+			false,
+		);
 	});
 });
