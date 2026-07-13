@@ -29,6 +29,10 @@ const seekingText = (
 	if (targetPos) {
 		return `Upgrade at ${targetPos}`;
 	}
+	// No hole and no soft spot: a contender/buyer just wants the best upgrade.
+	if (tier === "allIn" || tier === "buyer") {
+		return "Best player available";
+	}
 	return "Depth / opportunistic";
 };
 

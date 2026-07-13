@@ -125,11 +125,14 @@ export const classifyTier = ({
 	ovrRankPct,
 	avgAge,
 	youngCoreCount,
+	hasFoundation,
 }: {
 	winp: number; // 0..1
 	ovrRankPct: number; // 0 = best team, 1 = worst team
 	avgAge: number;
 	youngCoreCount: number;
+	// Does the team have a young cornerstone (or young core) to build around?
+	hasFoundation: boolean;
 }): TradeTier => {
 	const contention = contentionScore({ winp, ovrRankPct });
 
@@ -146,24 +149,36 @@ export const classifyTier = ({
 	if (contention >= 0.4) {
 		return "fringe";
 	}
-	if (contention >= 0.28) {
-		return "seller";
+
+	// Not competitive → selling. A team with a young cornerstone RETOOLS around it
+	// (seller); only a genuinely hopeless team with nothing to build around fully
+	// tears down. So a 19-63 team with a franchise point guard is a seller, not a
+	// teardown — it keeps him and cashes in everyone else.
+	if (contention < 0.28 && !hasFoundation) {
+		return "teardown";
 	}
-	return "teardown";
+	return "seller";
 };
 
 // Per-slot needs (best player there is below starter caliber) and surpluses
 // (two+ starter-caliber players stacked at one slot). starterOvr is the
 // league-relative "replacement starter" bar.
+// A position whose best player is only a replacement-level starter (this far
+// above the starter bar or worse) is a soft spot worth upgrading. Above it, the
+// slot is solid and not worth chasing.
+const SOFT_UPGRADE_MARGIN = 6;
+
 export const analyzePositions = (
 	players: { pos: string; ovr: number }[],
 	starterOvr: number,
 ): {
 	needs: PositionNeed[];
 	surpluses: PositionSurplus[];
-	// The relatively weakest slot (lowest best-player ovr) — a team's spot to
-	// UPGRADE even when it has no outright hole. This is what contenders shop.
-	weakestPos: PosBucket;
+	// A slot to UPGRADE when there's no outright hole: the weakest NON-surplus
+	// position whose best player is only replacement-level. Undefined when the
+	// team is solid/deep everywhere (then it just wants the best player available,
+	// not a specific position).
+	upgradePos?: PosBucket;
 } => {
 	const buckets: Record<PosBucket, number[]> = { G: [], F: [], C: [] };
 	for (const p of players) {
@@ -172,16 +187,11 @@ export const analyzePositions = (
 
 	const needs: PositionNeed[] = [];
 	const surpluses: PositionSurplus[] = [];
-	let weakestPos: PosBucket = "F";
-	let weakestBest = Infinity;
+	const bestByPos: Record<PosBucket, number> = { G: 0, F: 0, C: 0 };
 	for (const pos of ["G", "F", "C"] as const) {
 		const ovrs = buckets[pos].sort((a, b) => b - a);
 		const best = ovrs[0] ?? 0;
-
-		if (best < weakestBest) {
-			weakestBest = best;
-			weakestPos = pos;
-		}
+		bestByPos[pos] = best;
 
 		const severity = starterOvr - best;
 		if (severity > 0) {
@@ -196,7 +206,24 @@ export const analyzePositions = (
 
 	needs.sort((a, b) => b.severity - a.severity);
 	surpluses.sort((a, b) => b.depth - a.depth);
-	return { needs, surpluses, weakestPos };
+
+	// The soft upgrade target: weakest slot that isn't already a surplus and isn't
+	// already solid. Never a position the team is deep at.
+	const surplusPositions = new Set(surpluses.map((s) => s.pos));
+	let upgradePos: PosBucket | undefined;
+	let upgradeBest = Infinity;
+	for (const pos of ["G", "F", "C"] as const) {
+		if (surplusPositions.has(pos)) {
+			continue;
+		}
+		const best = bestByPos[pos];
+		if (best < starterOvr + SOFT_UPGRADE_MARGIN && best < upgradeBest) {
+			upgradeBest = best;
+			upgradePos = pos;
+		}
+	}
+
+	return { needs, surpluses, upgradePos };
 };
 
 export const capPosture = ({
@@ -530,6 +557,13 @@ export const getTradePosture = async (
 		(p) => p.age <= YOUNG_AGE && p.value >= context.coreValue,
 	).length;
 
+	// A young cornerstone to build around: a young-and-good star, or a couple of
+	// young quality players. Decides retool (seller) vs full teardown for a bad
+	// team.
+	const hasFoundation =
+		youngCoreCount >= 2 ||
+		players.some((p) => p.age <= 26 && p.value >= context.starValue);
+
 	// BBGM's own strategy flag is read only for reference in the diagnostics — our
 	// classification deliberately ignores it (see contentionScore).
 	const strategy = (await idb.cache.teams.get(tid))?.strategy ?? "";
@@ -539,17 +573,19 @@ export const getTradePosture = async (
 		ovrRankPct,
 		avgAge,
 		youngCoreCount,
+		hasFoundation,
 	});
 
-	const { needs, surpluses, weakestPos } = isSport("basketball")
+	const { needs, surpluses, upgradePos } = isSport("basketball")
 		? analyzePositions(
 				players.map((p) => ({ pos: p.pos, ovr: p.ovr })),
 				context.starterOvr,
 			)
-		: { needs: [], surpluses: [], weakestPos: undefined };
+		: { needs: [], surpluses: [], upgradePos: undefined };
 
-	// A buyer's target: an outright hole if it has one, else its weakest slot.
-	const targetPos = needs[0]?.pos ?? weakestPos;
+	// A buyer's target: an outright hole if it has one, else a soft slot to
+	// upgrade (undefined when it's solid everywhere → best player available).
+	const targetPos = needs[0]?.pos ?? upgradePos;
 
 	// Star gap judged on OVR (value is too compressed to separate a genuine star
 	// from a good starter).

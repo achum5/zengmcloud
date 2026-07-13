@@ -37,6 +37,7 @@ describe("classifyTier", () => {
 		ovrRankPct: 0.5,
 		avgAge: 26,
 		youngCoreCount: 0,
+		hasFoundation: false,
 	};
 
 	test("strong + aging core → all-in", () => {
@@ -80,10 +81,24 @@ describe("classifyTier", () => {
 		);
 	});
 
-	test("bottom of the league → teardown", () => {
+	test("a hopeless team with no foundation → teardown", () => {
 		assert.strictEqual(
 			classifyTier({ ...base, winp: 0.15, ovrRankPct: 1 }),
 			"teardown",
+		);
+	});
+
+	test("an equally bad team WITH a young cornerstone retools (seller, not teardown)", () => {
+		// Same terrible record, but a foundation to build around → it keeps the
+		// kid and sells the rest rather than blowing everything up.
+		assert.strictEqual(
+			classifyTier({
+				...base,
+				winp: 0.15,
+				ovrRankPct: 1,
+				hasFoundation: true,
+			}),
+			"seller",
 		);
 	});
 
@@ -91,11 +106,23 @@ describe("classifyTier", () => {
 		// A good record on a strong, aging roster is all-in regardless of any
 		// league 'strategy' label; a hot record on a young roster is a buyer.
 		assert.strictEqual(
-			classifyTier({ winp: 0.7, ovrRankPct: 0.05, avgAge: 28, youngCoreCount: 0 }),
+			classifyTier({
+				winp: 0.7,
+				ovrRankPct: 0.05,
+				avgAge: 28,
+				youngCoreCount: 0,
+				hasFoundation: false,
+			}),
 			"allIn",
 		);
 		assert.strictEqual(
-			classifyTier({ winp: 0.7, ovrRankPct: 0.05, avgAge: 24, youngCoreCount: 3 }),
+			classifyTier({
+				winp: 0.7,
+				ovrRankPct: 0.05,
+				avgAge: 24,
+				youngCoreCount: 3,
+				hasFoundation: true,
+			}),
 			"buyer",
 		);
 	});
@@ -103,7 +130,7 @@ describe("classifyTier", () => {
 
 describe("analyzePositions", () => {
 	test("flags weak/empty slots as needs and stacked slots as surpluses", () => {
-		const { needs, surpluses, weakestPos } = analyzePositions(
+		const { needs, surpluses, upgradePos } = analyzePositions(
 			[
 				{ pos: "PG", ovr: 60 }, // G
 				{ pos: "SG", ovr: 55 }, // G — second starter-caliber guard
@@ -120,23 +147,37 @@ describe("analyzePositions", () => {
 		]);
 		// Two starter-caliber guards → one surplus guard.
 		assert.deepEqual(surpluses, [{ pos: "G", depth: 1 }]);
-		// The empty center slot is the weakest.
-		assert.strictEqual(weakestPos, "C");
+		// The upgrade slot is a soft, non-surplus spot — the empty center.
+		assert.strictEqual(upgradePos, "C");
 	});
 
-	test("a balanced roster has no needs but still names a weakest slot", () => {
-		const { needs, surpluses, weakestPos } = analyzePositions(
+	test("a solid, balanced roster names no upgrade slot (best available)", () => {
+		const { needs, surpluses, upgradePos } = analyzePositions(
 			[
-				{ pos: "PG", ovr: 55 },
-				{ pos: "SF", ovr: 58 },
-				{ pos: "C", ovr: 60 },
+				{ pos: "PG", ovr: 65 },
+				{ pos: "SF", ovr: 66 },
+				{ pos: "C", ovr: 67 },
 			],
 			50,
 		);
 		assert.deepEqual(needs, []);
 		assert.deepEqual(surpluses, []);
-		// No hole, but the guard is the relatively weakest link to upgrade.
-		assert.strictEqual(weakestPos, "G");
+		// Every slot's best is well above the 50+6 bar → no soft spot to chase.
+		assert.strictEqual(upgradePos, undefined);
+	});
+
+	test("a soft (replacement-level) non-surplus slot IS an upgrade target", () => {
+		const { upgradePos } = analyzePositions(
+			[
+				{ pos: "PG", ovr: 66 },
+				{ pos: "SG", ovr: 64 }, // guards are deep/solid (surplus)
+				{ pos: "SF", ovr: 53 }, // lone forward, only replacement-level
+				{ pos: "C", ovr: 66 },
+			],
+			50,
+		);
+		// G is a surplus, C is solid; the replacement-level forward is the target.
+		assert.strictEqual(upgradePos, "F");
 	});
 });
 
