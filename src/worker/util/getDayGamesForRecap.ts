@@ -400,7 +400,7 @@ export const enteringAverages = (
 // so an unbounded sweep of a whole unrecapped season would blow past any
 // model's reply length; whatever doesn't fit stays note-less and the next
 // Copy sweeps it up.
-const MAX_RECAP_GAMES = 150;
+const MAX_RECAP_GAMES = 50;
 
 // Which completed games one recap run covers: ALL of the viewed day's games
 // (recapped or not, so a day can be re-run to regenerate), plus a sweep of
