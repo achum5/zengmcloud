@@ -191,7 +191,21 @@ let syncRequired = false;
 // effectively runs while the app is in the foreground, which is exactly when we
 // want it. Undefined when not connected.
 let catchUpTimer: ReturnType<typeof setInterval> | undefined;
-const CATCH_UP_INTERVAL_MS = 15000;
+// The live changes listener delivers new deltas in real time for free; this
+// poll is only a BACKSTOP for a silently-dropped listener. So it runs
+// infrequently, and each tick skips its (billed) catch-up read when the listener
+// has proven itself alive by delivering within this window - which eliminates
+// the steady-state read cost in an active room. A quiet/idle room has no
+// deliveries, so it still probes once per interval to detect a dead listener.
+const CATCH_UP_INTERVAL_MS = 30000;
+
+// A real-time delivery this recently proves the listener is alive, so the poll
+// can skip its confirming read. Kept BELOW the poll interval on purpose: if this
+// window equalled the interval, an idle room's contact would age to ~the interval
+// at each tick and sometimes read as "fresh", skipping the probe - a beat that
+// fires only every other tick and lets the health dot go stale. Below the
+// interval, an idle room (no deliveries) reliably probes every tick.
+const LISTENER_FRESH_MS = 20000;
 
 // How many recent log entries the activity panel reads. Bounded so it renders a
 // list instead of pulling a whole season's worth of change docs.
@@ -202,9 +216,10 @@ const SYNC_ACTIVITY_LIMIT = 200;
 const OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 // The header status dot goes red if we haven't confirmed live cloud contact in
-// this long. Must exceed the catch-up interval so a HEALTHY connection (which
-// catch-up refreshes every 15s) stays green; a dead one goes red after this.
-const HEALTH_STALE_MS = 30000;
+// this long. Must exceed the catch-up interval so a HEALTHY but idle connection
+// (which the backstop poll refreshes once per CATCH_UP_INTERVAL_MS) stays green;
+// a genuinely dead one goes red after this.
+const HEALTH_STALE_MS = 45000;
 const HEALTH_TICK_MS = 5000;
 let healthTimer: ReturnType<typeof setInterval> | undefined;
 let lastHealthPushed: boolean | undefined;
@@ -1319,10 +1334,22 @@ const doConnectSharedLeague = async ({
 		clearInterval(catchUpTimer);
 	}
 	catchUpTimer = setInterval(() => {
-		void driveCatchUp();
+		const engine = getSyncEngine();
+		// Skip the billed catch-up read when the live listener is subscribed AND has
+		// delivered (or otherwise confirmed contact) within LISTENER_FRESH_MS - a
+		// recent delivery proves it's alive and we're caught up, so the poll would
+		// only re-confirm that at a cost. Still probe when contact is stale (idle room
+		// or a dropped listener) so a dead listener is detected. During the initial
+		// backlog drain (before the subscription exists) this always runs.
+		const lastContact = currentTransport?.getLastContactAt?.() ?? 0;
+		const contactFresh = Date.now() - lastContact < LISTENER_FRESH_MS;
+		const subscribed = engine?.hasChangesSubscription?.() ?? false;
+		if (!(subscribed && contactFresh)) {
+			void driveCatchUp();
+		}
 		// Second, independent kick for the upload drain (it also self-retries with
 		// backoff after a failure); a no-op when the outbox is empty.
-		void getSyncEngine()?.drainOutbox();
+		void engine?.drainOutbox();
 	}, CATCH_UP_INTERVAL_MS);
 
 	// Turn on change capture so local actions get published to the room.
