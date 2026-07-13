@@ -166,18 +166,73 @@ const newPhaseFromChangeset = (changeset: Changeset): number | undefined => {
 	return undefined;
 };
 
-// The completed games this sim added, for the current season.
+// The completed REGULAR games this sim added, for the current season. The
+// All-Star game (special tids -1/-2) is left out - it belongs to no user team
+// and is announced on its own (see simAllStars / allStarBody).
 const simGames = (changeset: Changeset, season: number): Game[] => {
 	const games: Game[] = [];
 	for (const change of changeset.changes) {
 		if (change.store === "games" && change.type === "put") {
 			const game = change.value as Game;
-			if (game && game.won && game.lost && game.season === season) {
+			if (
+				game &&
+				game.won &&
+				game.lost &&
+				game.season === season &&
+				game.won.tid >= 0 &&
+				game.lost.tid >= 0
+			) {
 				games.push(game);
 			}
 		}
 	}
 	return games;
+};
+
+// The All-Star record this sim finalized, if any: an allStars put for the
+// current season whose game was actually played (a score is present). Carries
+// everything the recap needs - team names + score, MVP, and the Slam Dunk /
+// Three-Point contest results - so no cache lookup is required.
+const simAllStars = (changeset: Changeset, season: number): any => {
+	for (const change of changeset.changes) {
+		if (
+			change.store === "allStars" &&
+			change.type === "put" &&
+			(change.value as any)?.season === season &&
+			Array.isArray((change.value as any)?.score)
+		) {
+			return change.value;
+		}
+	}
+	return undefined;
+};
+
+// The All-Star Weekend recap body: game score (winner first), MVP, and the
+// Slam Dunk / Three-Point contest winners - whichever of them took place.
+const allStarBody = (allStars: any): string => {
+	const names: [string, string] = allStars.teamNames ?? ["Team 1", "Team 2"];
+	const [s0, s1]: [number, number] = allStars.score ?? [0, 0];
+	const lines = [
+		s0 >= s1
+			? `${names[0]} ${s0}, ${names[1]} ${s1}`
+			: `${names[1]} ${s1}, ${names[0]} ${s0}`,
+	];
+	if (allStars.mvp?.name) {
+		lines.push(`MVP: ${allStars.mvp.name}`);
+	}
+	const winnerName = (contest: any): string | undefined =>
+		typeof contest?.winner === "number"
+			? contest.players?.[contest.winner]?.name
+			: undefined;
+	const dunkWinner = winnerName(allStars.dunk);
+	if (dunkWinner) {
+		lines.push(`Dunk contest: ${dunkWinner}`);
+	}
+	const threeWinner = winnerName(allStars.three);
+	if (threeWinner) {
+		lines.push(`3-point contest: ${threeWinner}`);
+	}
+	return lines.join("\n");
 };
 
 // The best performer on a team in a game, by Game Score. Skips players who
@@ -334,6 +389,42 @@ const dayGameScores = (
 	return lines.length > 0 ? lines.join("\n") : undefined;
 };
 
+// On a bye day, show at most this many of the league's games so the
+// notification stays compact.
+const MAX_BYE_DAY_GAMES = 5;
+
+// The span's most notable games, ranked by the best individual performance
+// (Game Score) in each, winner first: "ATL 120-114 CHA". Shown to a user whose
+// team had a bye, so they can see the day's headline results around the league.
+// Undefined if there are no games to show.
+const biggestGamesText = (
+	games: Game[],
+	teamById: Map<number, { abbrev?: string }>,
+	n: number,
+): string | undefined => {
+	const abbrevOf = (tid: number): string => teamById.get(tid)?.abbrev ?? "???";
+	const bestGameScore = (game: Game): number => {
+		let best = -Infinity;
+		for (const t of game.teams as any[]) {
+			const p = topScorer(t?.players);
+			const score = p ? helpers.gameScore(p) : undefined;
+			if (typeof score === "number" && !Number.isNaN(score) && score > best) {
+				best = score;
+			}
+		}
+		return best;
+	};
+	const lines = games
+		.map((game) => ({ game, score: bestGameScore(game) }))
+		.sort((a, b) => b.score - a.score || a.game.gid - b.game.gid)
+		.slice(0, n)
+		.map(
+			({ game }) =>
+				`${abbrevOf(game.won.tid)} ${game.won.pts}-${game.lost.pts} ${abbrevOf(game.lost.tid)}`,
+		);
+	return lines.length > 0 ? lines.join("\n") : undefined;
+};
+
 const buildSimNotifications = async (
 	label: string,
 	changeset: Changeset,
@@ -420,6 +511,21 @@ const buildSimNotifications = async (
 		return notifications;
 	}
 
+	// All-Star Weekend just wrapped: announce the game score plus the Slam Dunk
+	// / Three-Point winners to the WHOLE room. The All-Star game belongs to no
+	// user team, so without this everyone would just see a silent bye. When this
+	// fires, the per-team loop below skips its bye-day notices (isAllStarSim).
+	const allStars = simAllStars(changeset, season);
+	if (allStars) {
+		notifications.push({
+			title: "All-Star Weekend",
+			body: allStarBody(allStars),
+			targetTids: null,
+			path: "all_star/history",
+		});
+	}
+	const isAllStarSim = allStars !== undefined;
+
 	// During the playoffs, EVERY device gets the bracket - eliminated teams and
 	// teams with an off day included, as ONE room-wide notification (not one
 	// copy per team, and not gated on being alive in the bracket). Teams that
@@ -470,16 +576,18 @@ const buildSimNotifications = async (
 			.filter((game) => game.won.tid === tid || game.lost.tid === tid)
 			.sort((a, b) => a.gid - b.gid);
 
-		// No game for this team in this span. Only worth mentioning during a
-		// regular-season phase (your team had an off day while others played); in
+		// No game for this team in this span - a bye. Only worth mentioning during
+		// a regular-season phase (your team had an off day while others played); in
 		// the playoffs the room-wide bracket above covers it, and in the offseason
 		// nobody plays, so stay silent - the phase-change notification already
-		// covered the advance.
+		// covered the advance. During All-Star Weekend the room-wide All-Star
+		// notification above already covers everyone, so skip the bye notice.
 		if (teamGames.length === 0) {
-			if (phase !== PHASE.PLAYOFFS && GAME_PHASES.has(phase)) {
+			if (!isAllStarSim && phase !== PHASE.PLAYOFFS && GAME_PHASES.has(phase)) {
+				const around = biggestGamesText(games, teamById, MAX_BYE_DAY_GAMES);
 				notifications.push({
-					title: "Sim!",
-					body: `No game for your ${team?.name ?? "team"} ${period}.`,
+					title: `Bye day for the ${team?.name ?? "team"}`,
+					body: around ?? `No other games ${period}.`,
 					targetTids: [tid],
 					path: "standings",
 				});

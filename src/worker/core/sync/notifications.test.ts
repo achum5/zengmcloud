@@ -184,7 +184,26 @@ describe("buildNotifications", () => {
 		assert.strictEqual(notifs[0]!.title, "Lakers (5-2) 110, Celtics (3-4) 86");
 	});
 
-	test("team with no game still gets a targeted 'league advanced' notice", async () => {
+	test("team with a bye gets a targeted 'Bye day' notice listing the day's games", async () => {
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{
+				// The user's team (tid 0) didn't play; two other games did.
+				changes: [
+					gamePut(20, { tid: 1, pts: 120 }, { tid: 2, pts: 114 }),
+					gamePut(21, { tid: 3, pts: 99 }, { tid: 4, pts: 90 }),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs.length, 1);
+		assert.deepEqual(notifs[0]!.targetTids, [0]);
+		assert.strictEqual(notifs[0]!.title, "Bye day for the Lakers");
+		// The other games' results are listed, winner first.
+		assert.ok(notifs[0]!.body.includes("BOS 120-114"), notifs[0]!.body);
+	});
+
+	test("a bye with no other games falls back to a simple notice", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.day",
 			{ changes: [] },
@@ -192,8 +211,50 @@ describe("buildNotifications", () => {
 		);
 		assert.strictEqual(notifs.length, 1);
 		assert.deepEqual(notifs[0]!.targetTids, [0]);
-		assert.strictEqual(notifs[0]!.title, "Sim!");
-		assert.ok(notifs[0]!.body.includes("No game for your Lakers"));
+		assert.strictEqual(notifs[0]!.title, "Bye day for the Lakers");
+		assert.ok(notifs[0]!.body.includes("No other games"), notifs[0]!.body);
+	});
+
+	test("All-Star Weekend → room-wide recap with score, MVP, and contest winners", async () => {
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{
+				changes: [
+					{
+						store: "allStars",
+						id: 2026,
+						type: "put",
+						value: {
+							season: 2026,
+							teamNames: ["Team LeBron", "Team Curry"],
+							score: [148, 155],
+							mvp: { pid: 1, tid: 0, name: "Star Guy" },
+							dunk: {
+								players: [{ pid: 2, name: "High Flyer" }],
+								winner: 0,
+							},
+							three: {
+								players: [{ pid: 3, name: "Sharp Shooter" }],
+								winner: 0,
+							},
+						},
+					},
+					// The All-Star game itself is written with special tids -1/-2.
+					gamePut(30, { tid: -1, pts: 148 }, { tid: -2, pts: 155 }),
+				],
+			},
+			opts,
+		);
+		const allStar = notifs.find((n) => n.title === "All-Star Weekend");
+		assert.ok(allStar, JSON.stringify(notifs));
+		assert.strictEqual(allStar!.targetTids, null);
+		// Winner first.
+		assert.ok(allStar!.body.includes("Team Curry 155, Team LeBron 148"), allStar!.body);
+		assert.ok(allStar!.body.includes("MVP: Star Guy"), allStar!.body);
+		assert.ok(allStar!.body.includes("Dunk contest: High Flyer"), allStar!.body);
+		assert.ok(allStar!.body.includes("3-point contest: Sharp Shooter"), allStar!.body);
+		// No per-team "bye day" notice during the All-Star break.
+		assert.ok(!notifs.some((n) => n.title.startsWith("Bye day")), JSON.stringify(notifs));
 	});
 
 	test("in the playoffs, series scores go to the WHOLE room (eliminated teams too)", async () => {
