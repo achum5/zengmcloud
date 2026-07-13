@@ -1176,23 +1176,35 @@ const LiveCourt = ({
 				/>
 			</svg>
 
-			{/* Players on the floor, centered on their spot */}
+			{/* Players on the floor, centered on their spot. Keyed by player+role
+			    (NOT the scene key) so a player who appears in back-to-back scenes is
+			    REUSED and repositioned instead of being torn down and rebuilt - each
+			    rebuild regenerates the whole facesjs SVG, which was a big per-play
+			    cost on mobile. Only the rare animated actor (a foul swipe / steal
+			    shake) keeps the scene key, so its one-shot CSS animation retriggers. */}
 			{scene
-				? scene.actors.map((actor) => (
-						<FaceOnCourt
-							key={`${scene.key}-${actor.pid}-${actor.role}`}
-							actor={actor}
-							season={season}
-							lid={lid}
-							color={
-								actor.role === "defender" || actor.role === "victim"
-									? opposingColor
-									: sceneColor
-							}
-							anim={actorAnim(actor)}
-							nameAbove={nameAboveFor(actor)}
-						/>
-					))
+				? scene.actors.map((actor) => {
+						const anim = actorAnim(actor);
+						return (
+							<FaceOnCourt
+								key={
+									anim
+										? `a${scene.key}-${actor.pid}-${actor.role}`
+										: `${actor.pid}-${actor.role}`
+								}
+								actor={actor}
+								season={season}
+								lid={lid}
+								color={
+									actor.role === "defender" || actor.role === "victim"
+										? opposingColor
+										: sceneColor
+								}
+								anim={anim}
+								nameAbove={nameAboveFor(actor)}
+							/>
+						);
+					})
 				: null}
 
 			{/* The play line, beside the action - placed past the edge of the whole
