@@ -93,13 +93,15 @@ export type PosturePlayer = {
 
 // ---- Pure classification helpers (no DB — unit-tested directly) -------------
 
-const GUARD_POS = new Set(["PG", "SG", "G", "GF"]);
-const CENTER_POS = new Set(["C", "FC"]);
+const GUARD_POS = new Set(["PG", "SG", "G"]);
+const BIG_POS = new Set(["PF", "FC", "C"]);
 
-// Map a fine-grained position to a broad G/F/C slot. SF/PF/F and anything
-// unrecognized fall through to "F" (the forward slot is the safe default).
+// Map a fine-grained position to a broad G/F/C slot. Guards are PG/SG/G; bigs
+// (the "C" slot) are PF/FC/C — a power forward is a frontcourt body, so lumping
+// it with wings made every team look short a big. Wings (SF/F/GF) and anything
+// unrecognized fall through to "F".
 export const posBucket = (pos: string): PosBucket =>
-	GUARD_POS.has(pos) ? "G" : CENTER_POS.has(pos) ? "C" : "F";
+	GUARD_POS.has(pos) ? "G" : BIG_POS.has(pos) ? "C" : "F";
 
 // The heart of the "dynamic strategy": where does this team land on the
 // buy/sell spectrum? Contention blends current record with team strength; the
@@ -145,19 +147,25 @@ export const classifyTier = ({
 	// strong roster on paper. A win-now core (aging, or no young building blocks)
 	// goes all-in; a team this good but still young stays a buyer that protects
 	// its young core.
+	let tier: TradeTier;
 	if (contention >= 0.62 && winp >= 0.55) {
-		return avgAge >= 27 || youngCoreCount === 0 ? "allIn" : "buyer";
+		tier = avgAge >= 27 || youngCoreCount === 0 ? "allIn" : "buyer";
+	} else if (contention >= 0.5) {
+		tier = "buyer";
+	} else if (contention >= 0.4) {
+		tier = "fringe";
+	} else if (contention >= 0.28) {
+		tier = "seller";
+	} else {
+		tier = "teardown";
 	}
-	if (contention >= 0.5) {
-		return "buyer";
+
+	// A franchise that has committed to rebuilding won't mortgage its future to
+	// go all-in, even on a hot record — at most it opportunistically buys.
+	if (strategy === "rebuilding" && tier === "allIn") {
+		tier = "buyer";
 	}
-	if (contention >= 0.4) {
-		return "fringe";
-	}
-	if (contention >= 0.28) {
-		return "seller";
-	}
-	return "teardown";
+	return tier;
 };
 
 // Per-slot needs (best player there is below starter caliber) and surpluses
@@ -250,19 +258,27 @@ export const selectBuildingBlocks = (
 	players: PosturePlayer[],
 	{
 		youngAge,
+		coreAge,
 		coreValue,
 		tier,
 	}: {
 		youngAge: number;
+		coreAge: number;
 		coreValue: number;
 		tier: TradeTier;
 	},
 ): number[] => {
 	const selling = tier === "seller" || tier === "teardown";
+	// A buyer/contender keeps all its quality players. A milder sell keeps its
+	// young-ish core (through its prime); a full teardown protects only genuine
+	// youth and lets everyone else go.
+	const protectAge = tier === "teardown" ? youngAge : coreAge;
 	const out: number[] = [];
 	for (const p of players) {
-		const youngCore = p.age <= youngAge && p.value >= coreValue;
-		if (youngCore || (!selling && p.value >= coreValue)) {
+		if (p.value < coreValue) {
+			continue;
+		}
+		if (!selling || p.age <= protectAge) {
 			out.push(p.pid);
 		}
 	}
@@ -277,10 +293,12 @@ export const selectShopVeterans = (
 	buildingBlocks: Set<number>,
 	{
 		vetAge,
+		teardownAge,
 		minTradeValue,
 		tier,
 	}: {
 		vetAge: number;
+		teardownAge: number;
 		minTradeValue: number;
 		tier: TradeTier;
 	},
@@ -288,11 +306,14 @@ export const selectShopVeterans = (
 	if (tier !== "seller" && tier !== "teardown") {
 		return [];
 	}
+	// A full teardown moves anyone past his early 20s who isn't a building block
+	// (a genuine fire sale); a milder sell only cashes in clear veterans.
+	const minAge = tier === "teardown" ? teardownAge : vetAge;
 	return players
 		.filter(
 			(p) =>
 				!buildingBlocks.has(p.pid) &&
-				p.age >= vetAge &&
+				p.age >= minAge &&
 				p.value >= minTradeValue,
 		)
 		.sort((a, b) => b.value - a.value)
@@ -373,6 +394,9 @@ export type LeagueTradeContext = {
 	// League-relative bars, derived from every rostered player.
 	starterOvr: number;
 	rotationOvr: number;
+	// A genuine star's OVR — value is too compressed to tell stars apart, so the
+	// star gap is judged on OVR instead.
+	starOvr: number;
 	starValue: number;
 	coreValue: number;
 	// Team strength ranking (best first).
@@ -414,7 +438,8 @@ export const getLeagueTradeContext = async (): Promise<LeagueTradeContext> => {
 	// Replacement starter ≈ the (5 × teams)th best player; rotation ≈ 8th man.
 	const starterOvr = atRankDesc(ovrs, numActiveTeams * 5, 45);
 	const rotationOvr = atRankDesc(ovrs, numActiveTeams * 8, 40);
-	// Star ≈ the best player on an average team; "core" ≈ a quality starter.
+	// Star ≈ roughly the best player on an average team, by OVR.
+	const starOvr = atRankDesc(ovrs, numActiveTeams, 65);
 	const starValue = Math.max(60, atRankDesc(values, numActiveTeams, 65));
 	const coreValue = Math.max(52, atRankDesc(values, numActiveTeams * 3, 55));
 
@@ -441,6 +466,7 @@ export const getLeagueTradeContext = async (): Promise<LeagueTradeContext> => {
 		numActiveTeams,
 		starterOvr,
 		rotationOvr,
+		starOvr,
 		starValue,
 		coreValue,
 		teamOvrsSorted,
@@ -513,8 +539,10 @@ export const getTradePosture = async (
 				? plainAgeNum / players.length
 				: 25;
 
-	const YOUNG_AGE = 24;
-	const VET_AGE = 29;
+	const YOUNG_AGE = 24; // genuine youth (drives the tier's young-core signal)
+	const CORE_AGE = 27; // a selling team still keeps quality up through its prime
+	const VET_AGE = 29; // a mild seller only cashes in clear veterans
+	const TEARDOWN_SHOP_AGE = 25; // a teardown moves anyone past his early 20s
 	const youngCoreCount = players.filter(
 		(p) => p.age <= YOUNG_AGE && p.value >= context.coreValue,
 	).length;
@@ -539,12 +567,15 @@ export const getTradePosture = async (
 	// A buyer's target: an outright hole if it has one, else its weakest slot.
 	const targetPos = needs[0]?.pos ?? weakestPos;
 
+	// Star gap judged on OVR (value is too compressed to separate a genuine star
+	// from a good starter).
+	const bestOvr = players.reduce((max, p) => Math.max(max, p.ovr), 0);
 	const starGap =
-		(tier === "allIn" || tier === "buyer") &&
-		!players.some((p) => p.value >= context.starValue);
+		(tier === "allIn" || tier === "buyer") && bestOvr < context.starOvr;
 
 	const buildingBlockPids = selectBuildingBlocks(players, {
 		youngAge: YOUNG_AGE,
+		coreAge: CORE_AGE,
 		coreValue: context.coreValue,
 		tier,
 	});
@@ -553,6 +584,7 @@ export const getTradePosture = async (
 		new Set(buildingBlockPids),
 		{
 			vetAge: VET_AGE,
+			teardownAge: TEARDOWN_SHOP_AGE,
 			minTradeValue: context.rotationOvr, // "someone wants him" bar
 			tier,
 		},

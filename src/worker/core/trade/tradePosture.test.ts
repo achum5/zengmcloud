@@ -14,14 +14,14 @@ import {
 } from "./tradePosture.ts";
 
 describe("posBucket", () => {
-	test("maps fine positions to G/F/C slots", () => {
-		for (const pos of ["PG", "SG", "G", "GF"]) {
+	test("maps fine positions to G/F/C slots (PF is a big, GF a wing)", () => {
+		for (const pos of ["PG", "SG", "G"]) {
 			assert.strictEqual(posBucket(pos), "G", pos);
 		}
-		for (const pos of ["SF", "PF", "F"]) {
+		for (const pos of ["SF", "F", "GF"]) {
 			assert.strictEqual(posBucket(pos), "F", pos);
 		}
-		for (const pos of ["C", "FC"]) {
+		for (const pos of ["C", "FC", "PF"]) {
 			assert.strictEqual(posBucket(pos), "C", pos);
 		}
 	});
@@ -107,6 +107,22 @@ describe("classifyTier", () => {
 		assert.strictEqual(
 			classifyTier({ ...goodAging, strategy: "contending" }),
 			"allIn",
+		);
+	});
+
+	test("a rebuilding franchise never goes all-in, even on a hot record", () => {
+		// Strong record + old core would be all-in — but a committed rebuild caps
+		// at buyer (it won't mortgage the future).
+		const strongOld = {
+			...base,
+			winp: 0.7,
+			ovrRankPct: 0.05,
+			avgAge: 28,
+		};
+		assert.strictEqual(classifyTier(strongOld), "allIn");
+		assert.strictEqual(
+			classifyTier({ ...strongOld, strategy: "rebuilding" }),
+			"buyer",
 		);
 	});
 });
@@ -202,20 +218,23 @@ describe("selectBuildingBlocks", () => {
 		mkP(2, { age: 30, value: 72 }), // quality veteran
 		mkP(3, { age: 30, value: 55 }), // aging role player
 		mkP(4, { age: 20, value: 50 }), // young but not good enough
+		mkP(5, { age: 26, value: 63 }), // quality prime player (not a graybeard)
 	];
-	const opts = { youngAge: 24, coreValue: 60 };
+	const opts = { youngAge: 24, coreAge: 27, coreValue: 60 };
 
-	test("a buyer protects its young core AND its quality veterans", () => {
+	test("a buyer protects every quality player regardless of age", () => {
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "buyer" });
-		assert.deepEqual(blocks.sort(), [1, 2]);
+		assert.deepEqual(blocks.sort(), [1, 2, 5]);
 	});
 
-	test("a seller keeps only its youth — good vets are left available", () => {
+	test("a mild sell keeps its young-and-prime core, not its graybeards", () => {
+		// 1 (22) and 5 (26) are within the prime window; 2 (30) is a graybeard.
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "seller" });
-		assert.deepEqual(blocks, [1]);
+		assert.deepEqual(blocks.sort(), [1, 5]);
 	});
 
-	test("a full teardown likewise protects only young cornerstones", () => {
+	test("a full teardown protects only genuine youth", () => {
+		// Only 1 (22) is young enough; even the 26-year-old is available.
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "teardown" });
 		assert.deepEqual(blocks, [1]);
 	});
@@ -228,8 +247,9 @@ describe("selectShopVeterans", () => {
 		mkP(3, { age: 31, value: 40 }), // too little value for anyone to want
 		mkP(4, { age: 23, value: 60 }), // young, not a "wasting away" vet
 		mkP(5, { age: 32, value: 70 }), // a protected building block
+		mkP(6, { age: 26, value: 61 }), // prime, mid-career
 	];
-	const opts = { vetAge: 29, minTradeValue: 45 };
+	const opts = { vetAge: 29, teardownAge: 25, minTradeValue: 45 };
 
 	test("only selling teams shop veterans", () => {
 		assert.deepEqual(
@@ -238,13 +258,22 @@ describe("selectShopVeterans", () => {
 		);
 	});
 
-	test("shops valuable, ill-fitting veterans, most valuable first", () => {
+	test("a mild sell only cashes in clear veterans (29+)", () => {
 		const shop = selectShopVeterans(players, new Set([5]), {
 			...opts,
 			tier: "seller",
 		});
-		// 2 (value 66) before 1 (value 60); 3 too cheap, 4 too young, 5 protected.
+		// 2 (66) before 1 (60); 3 too cheap, 4 too young, 5 protected, 6 not a vet.
 		assert.deepEqual(shop, [2, 1]);
+	});
+
+	test("a full teardown also moves prime mid-career players (25+)", () => {
+		const shop = selectShopVeterans(players, new Set([5]), {
+			...opts,
+			tier: "teardown",
+		});
+		// Now 6 (26, value 61) is fair game too; still value-sorted; 4 (23) stays.
+		assert.deepEqual(shop, [2, 6, 1]);
 	});
 });
 
