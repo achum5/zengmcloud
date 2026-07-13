@@ -246,11 +246,18 @@ describe("selectBuildingBlocks", () => {
 		mkP(4, { age: 20, value: 50 }), // young but not good enough
 		mkP(5, { age: 26, value: 63 }), // quality prime player (not a graybeard)
 	];
-	const opts = { coreAge: 27, coreValue: 60 };
+	const opts = { coreAge: 27, coreValue: 60, starValue: 70 };
 
-	test("a buyer protects every quality player regardless of age", () => {
+	test("a buyer (young riser) protects every quality player, keeping its core", () => {
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "buyer" });
 		assert.deepEqual(blocks.sort(), [1, 2, 5]);
+	});
+
+	test("an all-in contender protects only stars — young talent is a trade chip", () => {
+		// Only 2 (value 72) clears the star bar; the good young players (65, 63)
+		// are available to package for a present-day upgrade.
+		const blocks = selectBuildingBlocks(players, { ...opts, tier: "allIn" });
+		assert.deepEqual(blocks, [2]);
 	});
 
 	test("a mild sell keeps its young-and-prime core, not its graybeards", () => {

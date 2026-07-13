@@ -284,25 +284,32 @@ export const selectBuildingBlocks = (
 	{
 		coreAge,
 		coreValue,
+		starValue,
 		tier,
 	}: {
 		coreAge: number;
 		coreValue: number;
+		starValue: number;
 		tier: TradeTier;
 	},
 ): number[] => {
-	const selling = tier === "seller" || tier === "teardown";
-	// A buyer/contender keeps all its quality players. Any selling team — even a
-	// full teardown — keeps its young/prime cornerstones (through coreAge) and
-	// builds around them; it never trades its 26-year-old franchise piece. The
-	// difference from a mild sell is only HOW aggressively it shops everyone else
-	// (see selectShopVeterans).
 	const out: number[] = [];
 	for (const p of players) {
-		if (p.value < coreValue) {
-			continue;
+		let protect: boolean;
+		if (tier === "allIn") {
+			// Win-now: only genuine stars are untouchable. Good young players are
+			// trade chips to package (with picks) for a present-day upgrade — an
+			// aging contender mortgages the future.
+			protect = p.value >= starValue;
+		} else if (tier === "seller" || tier === "teardown") {
+			// Rebuild: keep the young/prime core to build around, cash in the rest.
+			protect = p.value >= coreValue && p.age <= coreAge;
+		} else {
+			// buyer / fringe: keep every quality player. A young, rising team hoards
+			// its core and only adds complementary pieces.
+			protect = p.value >= coreValue;
 		}
-		if (!selling || p.age <= coreAge) {
+		if (protect) {
 			out.push(p.pid);
 		}
 	}
@@ -610,6 +617,7 @@ export const getTradePosture = async (
 	const buildingBlockPids = selectBuildingBlocks(players, {
 		coreAge: CORE_AGE,
 		coreValue: context.coreValue,
+		starValue: context.starValue,
 		tier,
 	});
 	const shopVeteranPids = selectShopVeterans(
