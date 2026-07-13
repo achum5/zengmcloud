@@ -11,14 +11,11 @@ import {
 	expectedGameTotal,
 	marginToWinProb,
 	overProb,
-	seriesWinProb,
 	strengthProbs,
 	toHalfPointLine,
-	winTotalOverProb,
 } from "../../../common/sportsbookOdds.ts";
+import { simulateFutures } from "../../../common/sportsbookFutures.ts";
 
-// How sharply the division market concentrates on the projected-best record.
-const POWER_DIV = 1.4;
 // How sharply award odds follow the formula's score gaps.
 const AWARD_POWER = 0.9;
 
@@ -98,11 +95,18 @@ export const getLines = async () => {
 			: bySport({ basketball: 220, football: 45, baseball: 9, hockey: 6 });
 
 	// teamsPlus returns PER-GAME stats by default, so pts/oppPts are already the
-	// per-game averages - don't divide by gp again.
+	// genuine per-game averages. Early in the season, regress toward the league
+	// mean (fully trusted after ~8 games) so a hot opening week doesn't swing
+	// totals wildly.
+	const halfLeague = leagueAvgTotal / 2;
+	const regress = (perGame: number, gp: number) => {
+		const w = Math.min(1, gp / 8);
+		return halfLeague + (perGame - halfLeague) * w;
+	};
 	const scoringFor = (t: (typeof activeTeams)[number]) =>
-		t.stats.gp > 0 ? t.stats.pts : undefined;
+		t.stats.gp > 0 ? regress(t.stats.pts, t.stats.gp) : undefined;
 	const scoringAgainst = (t: (typeof activeTeams)[number]) =>
-		t.stats.gp > 0 ? t.stats.oppPts : undefined;
+		t.stats.gp > 0 ? regress(t.stats.oppPts, t.stats.gp) : undefined;
 
 	// --- Game lines -------------------------------------------------------
 	const schedule = await getSchedule();
@@ -166,23 +170,18 @@ export const getLines = async () => {
 		}
 	}
 
-	// --- Futures ----------------------------------------------------------
-	// A single consistent model so the markets can't contradict each other (a
-	// team can't be likelier to win the title than its own conference):
-	//   1. Each team's strength → a rating in "points better than average".
-	//   2. Conference winner: probability of winning the (rounds-1) series it
-	//      takes to reach the finals, normalized within each conference.
-	//   3. Champion = P(win conference) × P(win the finals vs the other
-	//      conference's expected representative). Since the finals factor is ≤ 1,
-	//      champion odds are always longer than conference odds. ✓
+	// --- Futures: Monte Carlo of the season + playoffs ---------------------
+	// One simulation drives EVERY futures market (division, conference, title,
+	// win totals), so they can never contradict each other, and a dominant team
+	// prices like one because it actually plays through the bracket. See
+	// common/sportsbookFutures.ts.
 	const meanOvr =
 		activeTeams.reduce((s, t) => s + (ovrByTid.get(t.tid) ?? 50), 0) /
 		Math.max(1, activeTeams.length);
 	// A team's strength as a point margin vs an average team, blending its RATING
 	// (ovr gap × 0.6, the Power Rankings scaling) with its actual season
-	// PERFORMANCE (real point differential). Rating is weighted heavily; the
-	// performance share grows with games played and tops out at ~0.45, so two
-	// equally-rated teams with different records aren't priced identically.
+	// PERFORMANCE (real point differential). The performance share grows with
+	// games played, so a 46-3 team is priced off what it has actually done.
 	const ratingOf = (tid: number) => {
 		const estMOV = ((ovrByTid.get(tid) ?? 50) - meanOvr) * 0.6;
 		const t = teamByTid.get(tid);
@@ -191,55 +190,39 @@ export const getLines = async () => {
 			return estMOV;
 		}
 		const actualMOV = t.stats.pts - t.stats.oppPts; // per-game differential
-		const perfWeight = 0.45 * Math.min(1, gp / 15);
+		const perfWeight = 0.5 * Math.min(1, gp / 15);
 		return estMOV * (1 - perfWeight) + actualMOV * perfWeight;
 	};
 
-	const rounds = g.get("numGamesPlayoffSeries").length;
-	const roundsToConf = Math.max(1, rounds - 1);
+	const futuresTeams = activeTeams.map((t) => {
+		const gp =
+			t.seasonAttrs.won +
+			t.seasonAttrs.lost +
+			(t.seasonAttrs.tied ?? 0) +
+			(t.seasonAttrs.otl ?? 0);
+		return {
+			tid: t.tid,
+			cid: t.cid,
+			did: t.did,
+			won: t.seasonAttrs.won,
+			gamesRemaining: Math.max(0, numGames - gp),
+			rating: ratingOf(t.tid),
+		};
+	});
 
-	// Series-win probability vs an average team, then vs a specific rating.
-	const sSeriesVsAvg = (tid: number) => seriesWinProb(marginToWinProb(ratingOf(tid)));
-	const sSeriesVs = (tid: number, oppRating: number) =>
-		seriesWinProb(marginToWinProb(ratingOf(tid) - oppRating));
+	// Deterministic seed from league state: lines are stable between sims and
+	// the server re-derives the same board when validating a bet.
+	const totalWon = futuresTeams.reduce((s, t) => s + t.won, 0);
+	const totalRemaining = futuresTeams.reduce((s, t) => s + t.gamesRemaining, 0);
+	const seed =
+		(season * 9301 + totalRemaining * 49297 + totalWon * 233) % 2147483647;
 
-	// Conference winner probabilities (each conference sums to 1).
-	const confWinProb = new Map<number, number>();
-	for (const conf of confs) {
-		const list = activeTeams.filter((t) => t.cid === conf.cid);
-		const raw = list.map((t) => sSeriesVsAvg(t.tid) ** roundsToConf);
-		const sum = raw.reduce((a, b) => a + b, 0) || 1;
-		list.forEach((t, i) => confWinProb.set(t.tid, raw[i]! / sum));
-	}
-
-	// Each conference's expected finalist rating (for the finals matchup).
-	const confRepRating = new Map<number, number>();
-	for (const conf of confs) {
-		const list = activeTeams.filter((t) => t.cid === conf.cid);
-		confRepRating.set(
-			conf.cid,
-			list.reduce((s, t) => s + (confWinProb.get(t.tid) ?? 0) * ratingOf(t.tid), 0),
-		);
-	}
-	const meanRepRating =
-		confs.length > 0
-			? [...confRepRating.values()].reduce((a, b) => a + b, 0) / confs.length
-			: 0;
-
-	// Champion probability = conference win × finals win vs the OTHER conference's
-	// representative (or the average representative when not a 2-conference league).
-	const champWinProb = new Map<number, number>();
-	for (const t of activeTeams) {
-		const pConf = confWinProb.get(t.tid) ?? 0;
-		let oppRating: number;
-		if (confs.length === 2) {
-			const otherCid = confs.find((c) => c.cid !== t.cid)?.cid;
-			oppRating = otherCid !== undefined ? (confRepRating.get(otherCid) ?? 0) : meanRepRating;
-		} else {
-			oppRating = meanRepRating;
-		}
-		champWinProb.set(t.tid, pConf * sSeriesVs(t.tid, oppRating));
-	}
+	const sim = simulateFutures({
+		teams: futuresTeams,
+		numGamesPlayoffSeries: g.get("numGamesPlayoffSeries"),
+		iterations: 4000,
+		seed,
+	});
 
 	const teamRow = (t: (typeof activeTeams)[number], prob: number) => ({
 		tid: t.tid,
@@ -250,7 +233,7 @@ export const getLines = async () => {
 	});
 
 	const championship = activeTeams
-		.map((t) => teamRow(t, champWinProb.get(t.tid) ?? 0))
+		.map((t) => teamRow(t, sim.titleProb.get(t.tid) ?? 0))
 		.sort((a, b) => a.americanOdds - b.americanOdds);
 
 	const conferences = confs.map((conf) => ({
@@ -258,58 +241,39 @@ export const getLines = async () => {
 		name: conf.name,
 		teams: activeTeams
 			.filter((t) => t.cid === conf.cid)
-			.map((t) => teamRow(t, confWinProb.get(t.tid) ?? 0))
+			.map((t) => teamRow(t, sim.confProb.get(t.tid) ?? 0))
 			.sort((a, b) => a.americanOdds - b.americanOdds),
 	}));
 
-	// --- Win totals (over/under projected final wins) ---------------------
-	const projectedWinsByTid = new Map<number, number>();
+	const divisions = divs.map((div) => ({
+		did: div.did,
+		name: div.name,
+		teams: activeTeams
+			.filter((t) => t.did === div.did)
+			.map((t) => teamRow(t, sim.divProb.get(t.tid) ?? 0))
+			.sort((a, b) => a.americanOdds - b.americanOdds),
+	}));
+
+	// Win totals straight from the same simulated distributions. Only offered
+	// while a team still has games to play (a settled market is closed).
 	const winTotals = activeTeams
+		.filter((t) => {
+			const ft = futuresTeams.find((f) => f.tid === t.tid);
+			return (ft?.gamesRemaining ?? 0) > 0;
+		})
 		.map((t) => {
-			const gp =
-				t.seasonAttrs.won +
-				t.seasonAttrs.lost +
-				(t.seasonAttrs.tied ?? 0) +
-				(t.seasonAttrs.otl ?? 0);
-			const gamesRemaining = Math.max(0, numGames - gp);
-			const winProb = marginToWinProb(ratingOf(t.tid));
-			const projectedWins = t.seasonAttrs.won + gamesRemaining * winProb;
-			projectedWinsByTid.set(t.tid, projectedWins);
-			const line = toHalfPointLine(projectedWins);
-			const pOver = winTotalOverProb({
-				projectedWins,
-				line,
-				gamesTotal: numGames,
-				winProb,
-			});
+			const wt = sim.winTotals.get(t.tid)!;
 			return {
 				tid: t.tid,
 				abbrev: t.abbrev,
 				region: t.region,
 				name: t.name,
-				line,
-				over: priceOdds(pOver),
-				under: priceOdds(1 - pOver),
+				line: wt.line,
+				over: priceOdds(wt.pOver),
+				under: priceOdds(1 - wt.pOver),
 			};
 		})
 		.sort((a, b) => b.line - a.line);
-
-	// Division winner: about the best regular-season record, so price it off
-	// projected wins (softmax within each division), independent of the playoffs.
-	const divisions = divs.map((div) => {
-		const list = activeTeams.filter((t) => t.did === div.did);
-		const probs = strengthProbs(
-			list.map((t) => projectedWinsByTid.get(t.tid) ?? 0),
-			POWER_DIV,
-		);
-		return {
-			did: div.did,
-			name: div.name,
-			teams: list
-				.map((t, i) => teamRow(t, probs[i] ?? 0))
-				.sort((a, b) => a.americanOdds - b.americanOdds),
-		};
-	});
 
 	// --- Awards (by current award-race position) --------------------------
 	const awardCandidatesRaw = await getAwardCandidates(season);

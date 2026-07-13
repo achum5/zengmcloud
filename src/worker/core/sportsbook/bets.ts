@@ -6,6 +6,7 @@ import {
 	formatSportsbookMoney,
 	SPORTSBOOK_PRESEASON_GRANT,
 } from "../../../common/sportsbook.ts";
+import { getLines } from "./getLines.ts";
 import type {
 	Conditions,
 	SportsbookBet,
@@ -43,6 +44,136 @@ const nextBetID = (sb: { bets: SportsbookBet[]; history: SportsbookBet[] }) => {
 	return max + 1;
 };
 
+// The house never gives a better price than its current board, plus a tiny
+// tolerance for rounding. Any client-claimed odds materially better than the
+// live line are rejected - this closes the stale-line hole where a bet placed
+// after a game simmed (but before the page refreshed) would be free money.
+const ODDS_TOLERANCE = 1.02;
+
+const oddsOk = (claimed: number, board: number) =>
+	americanToDecimal(claimed) <=
+	americanToDecimal(board) * ODDS_TOLERANCE + 1e-9;
+
+const LINE_MOVED = "That line has moved — refresh the board and try again.";
+const LINE_GONE = "That market is no longer available.";
+
+// Validate a bet against the CURRENT board, server-side. The board is
+// deterministic for a given league state, so an honest client matches exactly;
+// anything that doesn't (stale page, simmed game, edited request) is refused.
+const validateAgainstBoard = async (
+	market: SportsbookMarket,
+	americanOdds: number,
+) => {
+	const board = await getLines();
+
+	if (
+		market.type === "gameMoneyline" ||
+		market.type === "gameSpread" ||
+		market.type === "gameTotal"
+	) {
+		const game = board.games.find((gm) => gm.gid === market.gid);
+		if (!game) {
+			throw new Error(LINE_GONE); // already played, or not on the board
+		}
+		if (market.type === "gameMoneyline") {
+			const boardOdds =
+				market.pickTid === game.home.tid
+					? game.moneyline.home
+					: market.pickTid === game.away.tid
+						? game.moneyline.away
+						: undefined;
+			if (boardOdds === undefined) {
+				throw new Error(LINE_GONE);
+			}
+			if (!oddsOk(americanOdds, boardOdds)) {
+				throw new Error(LINE_MOVED);
+			}
+			return;
+		}
+		if (market.type === "gameSpread") {
+			const isHome = market.pickTid === game.home.tid;
+			const isAway = market.pickTid === game.away.tid;
+			if (!isHome && !isAway) {
+				throw new Error(LINE_GONE);
+			}
+			const boardLine = isHome ? game.spread.line : -game.spread.line;
+			const boardOdds = isHome ? game.spread.home : game.spread.away;
+			if (market.line !== boardLine || !oddsOk(americanOdds, boardOdds)) {
+				throw new Error(LINE_MOVED);
+			}
+			return;
+		}
+		// gameTotal
+		const boardOdds =
+			market.side === "over" ? game.total.over : game.total.under;
+		if (market.line !== game.total.line || !oddsOk(americanOdds, boardOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	if (market.type === "champion") {
+		const row = board.championship.find((r) => r.tid === market.pickTid);
+		if (!row) {
+			throw new Error(LINE_GONE);
+		}
+		if (!oddsOk(americanOdds, row.americanOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	if (market.type === "conf") {
+		const row = board.conferences
+			.find((c) => c.cid === market.cid)
+			?.teams.find((r) => r.tid === market.pickTid);
+		if (!row) {
+			throw new Error(LINE_GONE);
+		}
+		if (!oddsOk(americanOdds, row.americanOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	if (market.type === "div") {
+		const row = board.divisions
+			.find((d) => d.did === market.did)
+			?.teams.find((r) => r.tid === market.pickTid);
+		if (!row) {
+			throw new Error(LINE_GONE);
+		}
+		if (!oddsOk(americanOdds, row.americanOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	if (market.type === "winTotal") {
+		const row = board.winTotals.find((r) => r.tid === market.pickTid);
+		if (!row) {
+			throw new Error(LINE_GONE);
+		}
+		const boardOdds = market.side === "over" ? row.over : row.under;
+		if (market.line !== row.line || !oddsOk(americanOdds, boardOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	if (market.type === "award") {
+		const row = board.awards
+			.find((race) => race.award === market.award)
+			?.candidates.find((c) => c.pid === market.pid);
+		if (!row) {
+			throw new Error(LINE_GONE);
+		}
+		if (!oddsOk(americanOdds, row.americanOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+	}
+};
+
 // Place a bet from a user team's wallet. Debits the stake immediately; the
 // payout (stake × decimal odds) lands on a win at settlement. Throws with a
 // user-facing message on any invalid bet.
@@ -65,6 +196,11 @@ export const placeBet = async ({
 	if (!Number.isFinite(stake) || stake <= 0) {
 		throw new Error("Enter a stake.");
 	}
+	// House rules: the bet must match a market currently on the board, at odds
+	// no better than the board's. Rejects stale lines (e.g. a game that simmed
+	// since the page loaded) before any money moves.
+	await validateAgainstBoard(market, americanOdds);
+
 	const t = await idb.cache.teams.get(tid);
 	if (!t) {
 		throw new Error("Team not found.");

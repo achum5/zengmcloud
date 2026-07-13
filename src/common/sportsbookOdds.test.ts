@@ -37,7 +37,7 @@ describe("marginToWinProb", () => {
 });
 
 describe("expectedGameTotal", () => {
-	test("blends each team's scoring for and against", () => {
+	test("additive matchup model from real points for/against", () => {
 		const t = expectedGameTotal({
 			homeFor: 115,
 			homeAgainst: 110,
@@ -45,8 +45,22 @@ describe("expectedGameTotal", () => {
 			awayAgainst: 108,
 			leagueAvgTotal: 220,
 		});
-		// homePts = (115 + 108)/2 = 111.5; awayPts = (105 + 110)/2 = 107.5 → 219.
-		assert.ok(Math.abs(t - 219) < 1e-6);
+		// homePts = 115 + 108 - 110 = 113; awayPts = 105 + 110 - 110 = 105 → 218.
+		assert.ok(Math.abs(t - 218) < 1e-6, `${t}`);
+	});
+
+	test("great offense vs bad defense projects ABOVE both season averages", () => {
+		// Home scores 118/gm; away allows 120/gm in a 110-average league. A naive
+		// blend would pull toward the middle; the additive model goes up.
+		const t = expectedGameTotal({
+			homeFor: 118,
+			homeAgainst: 110,
+			awayFor: 110,
+			awayAgainst: 120,
+			leagueAvgTotal: 220,
+		});
+		// homePts = 118 + 120 - 110 = 128 → total 238.
+		assert.ok(t > 230, `${t}`);
 	});
 	test("falls back to league average when a team has no data", () => {
 		const t = expectedGameTotal({ leagueAvgTotal: 220 });

@@ -39,9 +39,12 @@ export const marginToWinProb = (expectedMargin: number): number => {
 	return Math.min(0.995, Math.max(0.005, p));
 };
 
-// Expected total points for a game from each team's season scoring: blend how
-// many each side usually scores with how many each usually allows. Falls back
-// to the league-average total when a team has no scoring data yet.
+// Expected total points for a game from each team's GENUINE season scoring
+// (points scored and allowed per game). Additive matchup model - the standard
+// bookmaker approach: a side's expected score is its own offense plus how much
+// the opponent's defense gives up relative to league average, so a great
+// offense meeting a bad defense projects high instead of being averaged down.
+// Falls back to the league-average total when a team has no data yet.
 export const expectedGameTotal = ({
 	homeFor,
 	homeAgainst,
@@ -56,8 +59,10 @@ export const expectedGameTotal = ({
 	leagueAvgTotal: number;
 }): number => {
 	const halfLeague = leagueAvgTotal / 2;
-	const homePts = ((homeFor ?? halfLeague) + (awayAgainst ?? halfLeague)) / 2;
-	const awayPts = ((awayFor ?? halfLeague) + (homeAgainst ?? halfLeague)) / 2;
+	const homePts =
+		(homeFor ?? halfLeague) + (awayAgainst ?? halfLeague) - halfLeague;
+	const awayPts =
+		(awayFor ?? halfLeague) + (homeAgainst ?? halfLeague) - halfLeague;
 	return homePts + awayPts;
 };
 
