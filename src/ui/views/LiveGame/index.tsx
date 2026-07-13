@@ -386,6 +386,30 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// Box score display order swaps the raw team index.
 		const displayT: 0 | 1 = rawT === 0 ? 1 : 0;
 
+		// Prefix every play line with the game clock (quarter + time left) so it's
+		// easy to follow WHEN each play happened. Reassigning `text` here means all
+		// the pushScene branches below carry it automatically.
+		const clockLabel = `${boxScore.current.quarterShort ?? ""} ${
+			boxScore.current.time ?? ""
+		}`.trim();
+		if (clockLabel) {
+			text = (
+				<>
+					<span
+						style={{
+							opacity: 0.65,
+							fontWeight: 600,
+							marginRight: 6,
+							whiteSpace: "nowrap",
+						}}
+					>
+						{clockLabel}
+					</span>
+					{text}
+				</>
+			);
+		}
+
 		// A three put up with the clock nearly expired is a last-second heave -
 		// shown from way out (around half court) rather than a normal shot spot.
 		const isHeaveNow = () => getSeconds(boxScore.current.time) <= 1.5;
