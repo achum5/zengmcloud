@@ -21,6 +21,7 @@ import {
 	isPureDowngrade,
 	isSelling,
 	isStarAcquisition,
+	MAX_ASSETS_PER_SIDE,
 	MOTIVATED_DUMP_DV,
 	NORMAL_DV_TOLERANCE,
 	NORMAL_MAX_ASSETS,
@@ -468,6 +469,16 @@ const attempt = async (
 		return false;
 	}
 	if (teams[1].pids.length === 0 && teams[1].dpids.length === 0) {
+		return false;
+	}
+
+	// Realism cap on package size: sub-average players are ~free under the value
+	// curve, so without this a whole bench can ride along on one side of an
+	// otherwise-fair deal. Six pieces a side fits every legit blockbuster.
+	if (
+		teams[0].pids.length + teams[0].dpids.length > MAX_ASSETS_PER_SIDE ||
+		teams[1].pids.length + teams[1].dpids.length > MAX_ASSETS_PER_SIDE
+	) {
 		return false;
 	}
 

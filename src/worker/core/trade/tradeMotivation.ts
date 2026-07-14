@@ -165,6 +165,15 @@ export const contenderDowngradesBest = ({
 	bestGivenValue >= CONTENDER_BEST_GIVEN_BAR &&
 	bestReceivedValue < bestGivenValue - CONTENDER_BEST_SLACK;
 
+// --- Trade-shape realism --------------------------------------------------------
+// No side of a deal ships more than this many pieces (players + picks). Stock
+// BBGM's value curve (zscore ** 7) prices sub-average players at ~nothing, so
+// without a structural cap makeItWork can pile a whole bench onto one side of an
+// otherwise-fair deal (a 9-players-for-one-pick "trade" cleared the math once).
+// Real megadeals top out around six pieces a side — and the legit blockbusters
+// (star for picks+prospects hauls) land at exactly six, so they all still fit.
+export const MAX_ASSETS_PER_SIDE = 6;
+
 // --- Re-trade cooldown ---------------------------------------------------------
 // AI teams don't flip a player they just traded for — no same-season ping-pong
 // (a player bouncing across three rosters in one year reads as chaos, not
