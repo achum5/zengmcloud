@@ -14,15 +14,20 @@ import {
 	type TradePosture,
 } from "./tradePosture.ts";
 import {
+	BLOCKBUSTER_MAX_ASSETS,
 	deadlineRampMultiplier,
 	isBadRental,
 	isPureDowngrade,
 	isSelling,
+	isStarAcquisition,
 	MOTIVATED_DUMP_DV,
 	NORMAL_DV_TOLERANCE,
+	NORMAL_MAX_ASSETS,
 	partnerWeight,
 	shouldDumpExpiring,
+	STAR_PREMIUM_DV,
 } from "./tradeMotivation.ts";
+import { last } from "../../../common/utils.ts";
 import moodInfo from "../player/moodInfo.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 
@@ -55,6 +60,22 @@ type AttemptContext = {
 	valueChangeCalculator: ValueChangeCalculator;
 	aiTids: number[];
 	season: number;
+	// A genuine star's OVR bar (from the league context), so an acquisition can be
+	// recognized as a blockbuster.
+	starOvr: number;
+};
+
+// The best current OVR among a set of players (what a side is receiving), used to
+// tell whether a deal lands a genuine star.
+const maxOvr = async (pids: number[]): Promise<number> => {
+	let best = 0;
+	for (const pid of pids) {
+		const p = await idb.cache.players.get(pid);
+		if (p) {
+			best = Math.max(best, last(p.ratings).ovr);
+		}
+	}
+	return best;
 };
 
 // What the initiating team puts on the table, chosen from its posture:
@@ -208,7 +229,7 @@ const hasBadRental = async (
 const attempt = async (
 	ctx: AttemptContext,
 ): Promise<[number, number] | false> => {
-	const { postures, valueChangeCalculator, aiTids, season } = ctx;
+	const { postures, valueChangeCalculator, aiTids, season, starOvr } = ctx;
 	if (aiTids.length < 2) {
 		return false;
 	}
@@ -276,11 +297,22 @@ const attempt = async (
 		},
 	];
 
+	// A win-now contender hunting talent is allowed to assemble a much bigger
+	// package, so a genuine star (which takes a stack of first-rounders to pry
+	// loose) can actually come together instead of dying at the ceiling. Because
+	// makeItWork stops at the minimal deal that clears, this ONLY enlarges the deals
+	// that truly need it (stars) — ordinary deals still stop early.
+	const chasingTalent =
+		!isSelling(initPosture.tier) && initPosture.lookingFor.bestCurrentPlayers;
+	const maxAssetsToAdd = chasingTalent
+		? BLOCKBUSTER_MAX_ASSETS
+		: NORMAL_MAX_ASSETS;
+
 	// makeItWork fleshes out the deal until the PARTNER accepts (dv > 0 for it),
 	// pulling the assets the initiator's lookingFor describes.
 	const teams = await makeItWork(teams0, {
 		holdUserConstant: false,
-		maxAssetsToAdd: 6,
+		maxAssetsToAdd,
 		lookingFor: initPosture.lookingFor,
 		valueChangeCalculator,
 	});
@@ -323,7 +355,19 @@ const attempt = async (
 		dpidsRemove: teams[0].dpids,
 		tradingPartnerTid: undefined,
 	});
-	const lowerBound = seed.motivatedDump ? MOTIVATED_DUMP_DV : -NORMAL_DV_TOLERANCE;
+
+	// A win-now contender will overpay steeply to land a genuine star — the
+	// blockbuster premium — beyond the fairness bound it holds to on ordinary deals.
+	const landsStar = isStarAcquisition({
+		bestReceivedOvr: await maxOvr(teams[1].pids),
+		acquirerTier: initPosture.tier,
+		starOvr,
+	});
+	const lowerBound = landsStar
+		? STAR_PREMIUM_DV
+		: seed.motivatedDump
+			? MOTIVATED_DUMP_DV
+			: -NORMAL_DV_TOLERANCE;
 	if (dv2 > NORMAL_DV_TOLERANCE || dv2 < lowerBound) {
 		return false;
 	}
@@ -387,8 +431,10 @@ const betweenAiTeams = async () => {
 	// Every AI team's franchise posture, computed once for this batch of attempts.
 	// If this fails for any reason, skip trading this tick rather than deal blind.
 	let postures: Map<number, TradePosture>;
+	let starOvr: number;
 	try {
 		const context = await getLeagueTradeContext();
+		starOvr = context.starOvr;
 		postures = new Map();
 		for (const tid of aiTids) {
 			postures.set(tid, await getTradePosture(tid, context));
@@ -411,6 +457,7 @@ const betweenAiTeams = async () => {
 			valueChangeCalculator,
 			aiTids,
 			season,
+			starOvr,
 		});
 		if (tradeTids) {
 			// Don't need to recompute draft pick value.

@@ -69,6 +69,35 @@ export const isBadRental = ({
 export const NORMAL_DV_TOLERANCE = 15;
 export const MOTIVATED_DUMP_DV = -35;
 
+// --- Blockbusters: a contender empties the war chest for a genuine star ------
+// Prying a star loose takes far more than a role player — realistically a stack
+// of first-rounders plus salary filler. makeItWork only ever assembles the
+// MINIMAL package that clears (it stops the instant the other side says yes), so
+// a low ceiling doesn't shrink ordinary deals — it just kills the big ones before
+// they can come together. So the ceiling is raised only when a win-now contender
+// is hunting talent; everything else keeps the tight ceiling.
+export const NORMAL_MAX_ASSETS = 6;
+export const BLOCKBUSTER_MAX_ASSETS = 14;
+
+// A contender will pay a steep premium to land a genuine star — the marquee
+// "give up everything for the guy" deal. This is the most lopsided (against
+// itself) return it will swallow, well past the normal fairness bound and even
+// past a walk-year dump.
+export const STAR_PREMIUM_DV = -45;
+
+// Is this acquisition a genuine star landing on a win-now contender? Only then do
+// we open the package ceiling and allow the overpay premium — so blockbusters are
+// reserved for real stars going to teams built to win now, not routine deals.
+export const isStarAcquisition = ({
+	bestReceivedOvr,
+	acquirerTier,
+	starOvr,
+}: {
+	bestReceivedOvr: number;
+	acquirerTier: TradeTier;
+	starOvr: number;
+}): boolean => CONTENDER_TIERS.has(acquirerTier) && bestReceivedOvr >= starOvr;
+
 // Contenders and sellers are the most natural partners (win-now vets one way,
 // youth + picks the other), so weight those pairings up.
 export const partnerWeight = (
