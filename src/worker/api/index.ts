@@ -156,6 +156,7 @@ import {
 } from "../views/customizePlayer.ts";
 import { TOO_MANY_TEAMS_TOO_SLOW } from "../core/season/getInitialNumGamesConfDivSettings.ts";
 import { advancedPlayerSearch } from "./advancedPlayerSearch.ts";
+import { getTradeHistoryDump } from "./tradeHistoryDump.ts";
 import * as exhibitionGame from "./exhibitionGame.ts";
 import { getSummary } from "../views/trade.ts";
 import { statTypes } from "../views/playerGraphs.ts";
@@ -5917,6 +5918,7 @@ export default {
 		getRandomRatings,
 		getRandomTeams,
 		getSavedTrade,
+		getTradeHistoryDump,
 		getDayGamesForRecap,
 		getSeasonRecapData,
 		getRetiredPlayersForRecap,

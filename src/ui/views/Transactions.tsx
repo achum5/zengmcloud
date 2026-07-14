@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
+import { toWorker } from "../util/toWorker.ts";
 import type { View } from "../../common/types.ts";
 import { SafeHtml } from "../components/SafeHtml.tsx";
 
@@ -21,6 +23,24 @@ const Transactions = ({
 		},
 	});
 
+	const [copied, setCopied] = useState(false);
+	const [fallback, setFallback] = useState<string | undefined>();
+
+	// Dump every trade over the last 5 seasons (with records, trajectories, and
+	// realized win shares) so the CPU trade AI can be reviewed.
+	const copyTrades = async () => {
+		setFallback(undefined);
+		const dump = await toWorker("main", "getTradeHistoryDump", 5);
+		try {
+			await navigator.clipboard.writeText(dump);
+			setCopied(true);
+			globalThis.setTimeout(() => setCopied(false), 3000);
+		} catch {
+			// Clipboard blocked — show the text to select manually.
+			setFallback(dump);
+		}
+	};
+
 	const moreLinks =
 		abbrev !== "all" ? (
 			<MoreLinks
@@ -39,6 +59,27 @@ const Transactions = ({
 	return (
 		<>
 			{moreLinks}
+
+			<div className="mb-3">
+				<button
+					className={`btn btn-sm ${copied ? "btn-success" : "btn-light-bordered"}`}
+					onClick={copyTrades}
+					title="Copy every trade from the last 5 seasons, with full detail"
+				>
+					{copied ? "✓ Copied" : "Copy trades (5 seasons)"}
+				</button>
+			</div>
+
+			{fallback !== undefined ? (
+				<textarea
+					className="form-control mb-3"
+					style={{ fontFamily: "monospace", fontSize: 11 }}
+					rows={12}
+					readOnly
+					value={fallback}
+					onFocus={(event) => event.target.select()}
+				/>
+			) : null}
 
 			<ul className="list-group">
 				{events.map((e) => (
