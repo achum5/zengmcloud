@@ -168,10 +168,13 @@ export const classifyTier = ({
 	}
 
 	// Not competitive → selling. A team with a young cornerstone RETOOLS around it
-	// (seller); only a genuinely hopeless team with nothing to build around fully
-	// tears down. So a 19-63 team with a franchise point guard is a seller, not a
-	// teardown — it keeps him and cashes in everyone else.
-	if (contention < 0.28 && !hasFoundation) {
+	// (seller); a genuinely hopeless team with nothing to build around fully tears
+	// down — commits to the future and shops its whole win-now roster. So a 19-63
+	// team with a franchise point guard is a seller (keeps him, cashes in everyone
+	// else), but a truly bad team with no young foundation goes all the way. The
+	// bar (0.31, ≈ a 26-win-or-worse no-core team) captures the genuinely hopeless
+	// without dragging in the merely below-average, which stays a measured seller.
+	if (contention < 0.31 && !hasFoundation) {
 		return "teardown";
 	}
 	return "seller";
@@ -402,12 +405,19 @@ export const lookingForFromPosture = (
 	};
 };
 
+// How reliably a team takes its business to the market (initiation frequency).
+// The two poles are near-certain: a win-now contender is always shopping for the
+// upgrade that wins it a title, and a hopeless team is always shopping its
+// win-now pieces for the future. Buyers (young contenders) are firmly in the
+// market too. Only fringe teams are genuinely wishy-washy. NOTE: this is purely
+// how OFTEN a team engages — every resulting deal still clears the same fairness
+// bounds, so more conviction never means worse trades.
 const AGGRESSION: Record<TradeTier, number> = {
-	allIn: 0.9,
-	buyer: 0.6,
+	allIn: 0.95,
+	buyer: 0.78,
 	fringe: 0.35,
-	seller: 0.7,
-	teardown: 0.95,
+	seller: 0.75,
+	teardown: 0.98,
 };
 
 // A value at a given rank in a descending list, or a fallback when the league

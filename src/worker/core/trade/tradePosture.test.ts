@@ -99,6 +99,14 @@ describe("classifyTier", () => {
 		);
 	});
 
+	test("a truly bad, no-core team (≈26 wins) fully tears down, not a half-sell", () => {
+		// winp 0.30, worst-third roster, nothing young to build on → no half-measure.
+		assert.strictEqual(
+			classifyTier({ ...base, winp: 0.3, ovrRankPct: 0.85 }),
+			"teardown",
+		);
+	});
+
 	test("an equally bad team WITH a young cornerstone retools (seller, not teardown)", () => {
 		// Same terrible record, but a foundation to build around → it keeps the
 		// kid and sells the rest rather than blowing everything up.
