@@ -9,6 +9,7 @@ import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, lock, toUI } from "../../util/index.ts";
+import { env } from "../../util/env.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
 import { syncDebugLog } from "./debugLog.ts";
@@ -1000,6 +1001,10 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 	const engine = getSyncEngine();
 	const lines: string[] = [];
 	lines.push("=== MP SYNC SNAPSHOT ===");
+	// The build the WORKER is running. Compared against the UI's version in the
+	// copy header, this exposes a stale worker/service-worker cache instantly —
+	// the "your fix isn't actually running on my phone yet" case.
+	lines.push(`workerVersion=${env.bbgmVersion}`);
 	try {
 		lines.push(
 			`lid=${g.get("lid")} userTid=${g.get("userTid")} season=${g.get("season")} phase=${g.get("phase")}`,

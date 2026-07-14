@@ -58,12 +58,19 @@ const SyncDebugOverlay = () => {
 	const copyAll = async () => {
 		// Lead with a self-describing state snapshot (whose device, caught up or
 		// stuck, dead listener?) so the paste is diagnosable on its own, then the
-		// log lines. Snapshot is best-effort - never block the copy on it.
-		let snapshot = "";
+		// log lines. Snapshot is best-effort - never block the copy on it. The UI
+		// version here vs workerVersion inside the snapshot exposes a stale
+		// worker/service-worker cache (the "fix isn't actually running" case).
+		let header = `=== SYNC LOG CAPTURE (ui v${window.bbgmVersion}) ===\n`;
+		const unavailable =
+			"(worker snapshot unavailable - the app may still be running an older version; fully close the app and reopen it twice)\n";
 		try {
-			snapshot = `${await toWorker("main", "getSyncDebugSnapshot", undefined)}\n`;
-		} catch {}
-		const text = `${snapshot}${asText(shown)}`;
+			const snap = await toWorker("main", "getSyncDebugSnapshot", undefined);
+			header += typeof snap === "string" ? `${snap}\n` : unavailable;
+		} catch {
+			header += unavailable;
+		}
+		const text = `${header}${asText(shown)}`;
 		try {
 			await navigator.clipboard.writeText(text);
 			logEvent({ type: "success", text: "Sync logs copied.", saveToDb: false });
