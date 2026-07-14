@@ -19,6 +19,7 @@ import {
 	deadlineRampMultiplier,
 	isBadRental,
 	isPureDowngrade,
+	contenderDowngradesBestOvr,
 	isSelling,
 	isStarAcquisition,
 	MAX_ASSETS_PER_SIDE,
@@ -247,12 +248,14 @@ const violatesTimeline = async (
 		const tier = postures.get(side.tid)?.tier ?? "fringe";
 
 		let bestReceived = 0;
+		let bestReceivedOvr = 0;
 		for (const pid of side.incoming) {
 			const p = await idb.cache.players.get(pid);
 			if (!p) {
 				continue;
 			}
 			bestReceived = Math.max(bestReceived, p.value);
+			bestReceivedOvr = Math.max(bestReceivedOvr, last(p.ratings).ovr);
 			if (
 				sellerAcquiresVet({
 					acquirerTier: tier,
@@ -266,10 +269,12 @@ const violatesTimeline = async (
 		}
 
 		let bestGiven = 0;
+		let bestGivenOvr = 0;
 		for (const pid of side.outgoing) {
 			const p = await idb.cache.players.get(pid);
 			if (p) {
 				bestGiven = Math.max(bestGiven, p.value);
+				bestGivenOvr = Math.max(bestGivenOvr, last(p.ratings).ovr);
 			}
 		}
 		if (
@@ -277,6 +282,13 @@ const violatesTimeline = async (
 				acquirerTier: tier,
 				bestGivenValue: bestGiven,
 				bestReceivedValue: bestReceived,
+			}) ||
+			// The OVR check catches what the value math masks for an AGING star: a
+			// contender shipping its best on-court piece for a clearly worse one.
+			contenderDowngradesBestOvr({
+				acquirerTier: tier,
+				bestGivenOvr,
+				bestReceivedOvr,
 			})
 		) {
 			return true;

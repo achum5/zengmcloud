@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	contenderDowngradesBest,
+	contenderDowngradesBestOvr,
 	DEADLINE_WINDOW_DAYS,
 	deadlineRampMultiplier,
 	isBadRental,
@@ -232,6 +233,72 @@ describe("contenderDowngradesBest", () => {
 				acquirerTier: "seller",
 				bestGivenValue: 60,
 				bestReceivedValue: 30,
+			}),
+			false,
+		);
+	});
+});
+
+describe("contenderDowngradesBestOvr", () => {
+	test("the Gobert case: a contender ships its 63-ovr anchor for a 54-ovr guard", () => {
+		// The value math OK'd this (an aging star ages down close to a lesser
+		// player), but on the court a win-now team just got 9 OVR worse at the top.
+		assert.strictEqual(
+			contenderDowngradesBestOvr({
+				acquirerTier: "buyer",
+				bestGivenOvr: 63,
+				bestReceivedOvr: 54,
+			}),
+			true,
+		);
+	});
+
+	test("star-for-star and consolidations pass (best OVR in is not lower)", () => {
+		assert.strictEqual(
+			contenderDowngradesBestOvr({
+				acquirerTier: "allIn",
+				bestGivenOvr: 60,
+				bestReceivedOvr: 63,
+			}),
+			false,
+		);
+		// A small fit swap within the slack is fine.
+		assert.strictEqual(
+			contenderDowngradesBestOvr({
+				acquirerTier: "buyer",
+				bestGivenOvr: 60,
+				bestReceivedOvr: 56,
+			}),
+			false,
+		);
+	});
+
+	test("only a genuine core piece (≥ bar) leaving triggers it", () => {
+		// Shedding a 52-ovr role player for a 44 isn't touching the contender's core.
+		assert.strictEqual(
+			contenderDowngradesBestOvr({
+				acquirerTier: "buyer",
+				bestGivenOvr: 52,
+				bestReceivedOvr: 44,
+			}),
+			false,
+		);
+	});
+
+	test("non-contenders may downgrade their best OVR freely (rebuild/retool)", () => {
+		assert.strictEqual(
+			contenderDowngradesBestOvr({
+				acquirerTier: "seller",
+				bestGivenOvr: 63,
+				bestReceivedOvr: 45,
+			}),
+			false,
+		);
+		assert.strictEqual(
+			contenderDowngradesBestOvr({
+				acquirerTier: "teardown",
+				bestGivenOvr: 63,
+				bestReceivedOvr: 45,
 			}),
 			false,
 		);

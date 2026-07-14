@@ -165,6 +165,30 @@ export const contenderDowngradesBest = ({
 	bestGivenValue >= CONTENDER_BEST_GIVEN_BAR &&
 	bestReceivedValue < bestGivenValue - CONTENDER_BEST_SLACK;
 
+// The value-based check above ages a player down, so an OLD star's value can sit
+// close to a lesser player's — which let a contender ship its 35yo, 63-ovr anchor
+// for a 54-ovr guard of similar age/salary and clear the math (the deal was
+// "fair," it just made the win-now team worse right now). So a contender ALSO
+// won't drop its best ON-COURT player (by OVR, what actually wins games this
+// season) for a clearly worse one, regardless of the age-adjusted value. Only
+// bites when a genuine core piece leaves (OVR ≥ the bar) and nothing close comes
+// back — star-for-star swaps and consolidations (receiving the higher OVR) pass.
+export const CONTENDER_BEST_OVR_BAR = 56; // a real core piece, not a role player
+export const CONTENDER_OVR_SLACK = 6; // fit swaps within 6 OVR are fine
+
+export const contenderDowngradesBestOvr = ({
+	acquirerTier,
+	bestGivenOvr,
+	bestReceivedOvr,
+}: {
+	acquirerTier: TradeTier;
+	bestGivenOvr: number;
+	bestReceivedOvr: number;
+}): boolean =>
+	CONTENDER_TIERS.has(acquirerTier) &&
+	bestGivenOvr >= CONTENDER_BEST_OVR_BAR &&
+	bestReceivedOvr < bestGivenOvr - CONTENDER_OVR_SLACK;
+
 // --- Trade-shape realism --------------------------------------------------------
 // No side of a deal ships more than this many pieces (players + picks). Stock
 // BBGM's value curve (zscore ** 7) prices sub-average players at ~nothing, so
