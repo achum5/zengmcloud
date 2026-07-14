@@ -30,7 +30,14 @@ const Transactions = ({
 	// realized win shares) so the CPU trade AI can be reviewed.
 	const copyTrades = async () => {
 		setFallback(undefined);
-		const dump = await toWorker("main", "getTradeHistoryDump", 5);
+		let dump: string;
+		try {
+			dump = await toWorker("main", "getTradeHistoryDump", 5);
+		} catch (error) {
+			// Surface the failure instead of silently doing nothing.
+			setFallback(`Failed to build trade dump: ${(error as Error).message}`);
+			return;
+		}
 		try {
 			await navigator.clipboard.writeText(dump);
 			setCopied(true);

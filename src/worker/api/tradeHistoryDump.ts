@@ -40,6 +40,12 @@ const phaseLabel = (phase: Phase): string => {
 	}
 };
 
+// Team abbrev as of a given season (falls back to the current cache / "???").
+const getTeamAbbrev = async (tid: number, season: number): Promise<string> => {
+	const info = await getTeamInfoBySeason(tid, season);
+	return info?.abbrev ?? g.get("teamInfoCache")[tid]?.abbrev ?? "???";
+};
+
 // A team's record + win% for one season, or undefined if it didn't play then.
 const seasonRecord = async (tid: number, season: number) => {
 	const ts = await idb.getCopy.teamSeasons({ season, tid }, "noCopyCache");
@@ -166,6 +172,29 @@ export const getTradeHistoryDump = async (numSeasons = 5): Promise<string> => {
 	let n = 0;
 	for (const event of events) {
 		n += 1;
+		try {
+			await appendTrade(lines, event, n, userTid);
+		} catch (error) {
+			lines.push(`#${n} [${event.season}] (could not reconstruct: ${(error as Error).message})`);
+			lines.push("");
+		}
+	}
+
+	if (events.length === 0) {
+		lines.push("(No trades found in this window.)");
+	}
+
+	return lines.join("\n");
+};
+
+// Reconstruct one trade and append its block to `lines`.
+const appendTrade = async (
+	lines: string[],
+	event: TradeEvent,
+	n: number,
+	userTid: number,
+) => {
+	{
 		const [tidA, tidB] = event.tids as [number, number];
 		const phase = event.phase!;
 
@@ -202,12 +231,6 @@ export const getTradeHistoryDump = async (numSeasons = 5): Promise<string> => {
 		lines.push(`     └ ${sideSummary(assetsB)}`);
 		lines.push("");
 	}
-
-	if (events.length === 0) {
-		lines.push("(No trades found in this window.)");
-	}
-
-	return lines.join("\n");
 };
 
 export default getTradeHistoryDump;
