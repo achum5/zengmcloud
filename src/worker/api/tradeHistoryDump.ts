@@ -221,6 +221,14 @@ const appendTrade = async (
 			`#${n} [${event.season} ${phaseLabel(phase)}] ${infoA} (${recAStr}) ↔ ${infoB} (${recBStr})${flag}`,
 		);
 		lines.push(`   ${infoA} traj ${trajA} | ${infoB} traj ${trajB}`);
+		// The AI's own reasoning, stamped at the moment of the deal (newer trades).
+		if (event.aiTrade) {
+			const ai = event.aiTrade;
+			const initAbbrev = ai.initiatorTid === tidA ? infoA : infoB;
+			lines.push(
+				`   AI: ${infoA}=${ai.tiers[0]} ${infoB}=${ai.tiers[1]} init=${initAbbrev} dv=${ai.dv} why=${ai.motivation}`,
+			);
+		}
 		lines.push(
 			`   ${infoA} gets: ${assetsA.length ? assetsA.map(fmtAsset).join(" | ") : "nothing"}`,
 		);

@@ -49,7 +49,7 @@ const updateFranchiseOutlook = async (
 		updateEvents.includes("gameSim") ||
 		updateEvents.includes("newPhase") ||
 		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("g.userTids")
+		updateEvents.includes("gameAttributes")
 	) {
 		const season = g.get("season");
 		const context = await getLeagueTradeContext();

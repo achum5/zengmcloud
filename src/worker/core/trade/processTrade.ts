@@ -16,6 +16,14 @@ const processTrade = async (
 	tids: [number, number],
 	pids: [number[], number[]],
 	dpids: [number[], number[]],
+	// For AI-AI trades: the reasoning behind the deal, stamped onto the event so
+	// trade history can be audited against intent.
+	aiTrade?: {
+		initiatorTid: number;
+		tiers: [string, string];
+		dv: number;
+		motivation: string;
+	},
 ) => {
 	const teams: TradeEventTeams = [
 		{
@@ -151,6 +159,7 @@ const processTrade = async (
 		score: Math.round(helpers.bound(maxPlayerValue - 40, 0, Infinity)),
 		teams,
 		phase: g.get("phase"),
+		aiTrade,
 	});
 
 	// Can only do this now, after we know the eid

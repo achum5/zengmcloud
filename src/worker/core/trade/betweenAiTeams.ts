@@ -15,6 +15,7 @@ import {
 } from "./tradePosture.ts";
 import {
 	BLOCKBUSTER_MAX_ASSETS,
+	contenderDowngradesBest,
 	deadlineRampMultiplier,
 	isBadRental,
 	isPureDowngrade,
@@ -24,8 +25,10 @@ import {
 	NORMAL_DV_TOLERANCE,
 	NORMAL_MAX_ASSETS,
 	partnerWeight,
+	sellerAcquiresVet,
 	shouldDumpExpiring,
 	STAR_PREMIUM_DV,
+	wasTradedThisSeason,
 } from "./tradeMotivation.ts";
 import { last } from "../../../common/utils.ts";
 import moodInfo from "../player/moodInfo.ts";
@@ -193,6 +196,75 @@ const anyPureDowngrade = async (
 	return false;
 };
 
+// Does either side end up violating its TIMELINE? Two rules, independent of the
+// value math:
+//   • a rebuilder (seller/teardown) never acquires a real veteran unless it's
+//     being paid in draft capital to absorb him ("26-56 team trades for a 33yo
+//     on $60M" is never right);
+//   • a contender (allIn/buyer) never comes out with a clearly worse best player
+//     than it gave up — younger or picks-heavy returns don't excuse it, because
+//     contenders don't collect futures at the cost of the present.
+const violatesTimeline = async (
+	teams: TradeTeams,
+	postures: Map<number, TradePosture>,
+	season: number,
+): Promise<boolean> => {
+	const sides = [
+		{
+			tid: teams[0].tid,
+			incoming: teams[1].pids,
+			outgoing: teams[0].pids,
+			receivesPicks: teams[1].dpids.length > 0,
+		},
+		{
+			tid: teams[1].tid,
+			incoming: teams[0].pids,
+			outgoing: teams[1].pids,
+			receivesPicks: teams[0].dpids.length > 0,
+		},
+	];
+	for (const side of sides) {
+		const tier = postures.get(side.tid)?.tier ?? "fringe";
+
+		let bestReceived = 0;
+		for (const pid of side.incoming) {
+			const p = await idb.cache.players.get(pid);
+			if (!p) {
+				continue;
+			}
+			bestReceived = Math.max(bestReceived, p.value);
+			if (
+				sellerAcquiresVet({
+					acquirerTier: tier,
+					age: season - p.born.year,
+					value: p.value,
+					receivesPicks: side.receivesPicks,
+				})
+			) {
+				return true;
+			}
+		}
+
+		let bestGiven = 0;
+		for (const pid of side.outgoing) {
+			const p = await idb.cache.players.get(pid);
+			if (p) {
+				bestGiven = Math.max(bestGiven, p.value);
+			}
+		}
+		if (
+			contenderDowngradesBest({
+				acquirerTier: tier,
+				bestGivenValue: bestGiven,
+				bestReceivedValue: bestReceived,
+			})
+		) {
+			return true;
+		}
+	}
+	return false;
+};
+
 // Would this trade hand a team an expiring player it can't retain (a bad
 // rental)? Only a genuine win-now contender should take one on.
 const hasBadRental = async (
@@ -255,12 +327,28 @@ const attempt = async (
 	}
 	const partner = choice(others, (tid) => {
 		const pp = postures.get(tid);
-		return pp ? partnerWeight(initPosture.tier, pp.tier) : 1;
+		if (!pp) {
+			return 1;
+		}
+		let w = partnerWeight(initPosture.tier, pp.tier);
+		// A star-hunting contender seeks out the teams that actually have a star
+		// they'd move — that's where blockbusters come from.
+		if (initPosture.tier === "allIn" && initPosture.starGap && pp.shoppableStar) {
+			w *= 3;
+		}
+		return w;
 	});
 
-	const players = (
-		await idb.cache.players.indexGetAll("playersByTid", initiator)
-	).filter((p) => !isUntradable(p).untradable);
+	const allInitiatorPlayers = await idb.cache.players.indexGetAll(
+		"playersByTid",
+		initiator,
+	);
+	const players = allInitiatorPlayers.filter(
+		(p) =>
+			!isUntradable(p).untradable &&
+			// No same-season ping-pong: don't flip a player you just traded for.
+			!wasTradedThisSeason(p.transactions, season),
+	);
 	const draftPicks = await idb.cache.draftPicks.indexGetAll(
 		"draftPicksByTid",
 		initiator,
@@ -280,18 +368,44 @@ const attempt = async (
 		return false;
 	}
 
+	// Hard protection, applied to BOTH sides of the table. Building blocks were
+	// only ever respected when a team was picking its own offer — as the RESPONDER,
+	// makeItWork could strip a rebuilder's 24yo cornerstone as long as the value
+	// math cleared, which is exactly the trade a rebuild exists to refuse. Same-
+	// season ping-pong is excluded here too (makeItWork re-reads rosters from the
+	// DB, so pool filtering alone can't enforce either rule). A seeded pid stays
+	// tradable: seeding a protected expiring player IS the deliberate exception
+	// (dumping a walk-year guy who won't re-sign).
+	const partnerPosture = postures.get(partner);
+	const partnerPlayers = await idb.cache.players.indexGetAll(
+		"playersByTid",
+		partner,
+	);
+	const initiatorExcluded = [
+		...initPosture.buildingBlockPids,
+		...allInitiatorPlayers
+			.filter((p) => wasTradedThisSeason(p.transactions, season))
+			.map((p) => p.pid),
+	].filter((pid) => !seed.pids.includes(pid));
+	const partnerExcluded = [
+		...(partnerPosture?.buildingBlockPids ?? []),
+		...partnerPlayers
+			.filter((p) => wasTradedThisSeason(p.transactions, season))
+			.map((p) => p.pid),
+	];
+
 	const teams0: TradeTeams = [
 		{
 			tid: initiator,
 			pids: seed.pids,
-			pidsExcluded: [],
+			pidsExcluded: initiatorExcluded,
 			dpids: seed.dpids,
 			dpidsExcluded: [],
 		},
 		{
 			tid: partner,
 			pids: [],
-			pidsExcluded: [],
+			pidsExcluded: partnerExcluded,
 			dpids: [],
 			dpidsExcluded: [],
 		},
@@ -344,6 +458,12 @@ const attempt = async (
 		return false;
 	}
 
+	// Timeline fit: a rebuilder doesn't buy veterans (unless paid in picks to
+	// absorb them), a contender doesn't swap its best player for a worse one.
+	if (await violatesTimeline(teams, postures, season)) {
+		return false;
+	}
+
 	// The initiator must find the deal roughly fair to itself — unless it's
 	// dumping a walk-year player, in which case it will swallow a worse return
 	// rather than lose him for nothing.
@@ -373,10 +493,30 @@ const attempt = async (
 	}
 
 	const finalTids: [number, number] = [teams[0].tid, teams[1].tid];
+
+	// Record WHY this deal happened, so trade history can be audited against the
+	// AI's actual intent instead of reverse-engineered from records.
+	const motivation = seed.motivatedDump
+		? "dump-expiring"
+		: landsStar
+			? "star-hunt"
+			: isSelling(initPosture.tier)
+				? "sell"
+				: "buy";
+
 	await processTrade(
 		finalTids,
 		[teams[0].pids, teams[1].pids],
 		[teams[0].dpids, teams[1].dpids],
+		{
+			initiatorTid: initiator,
+			tiers: [
+				postures.get(teams[0].tid)?.tier ?? "?",
+				postures.get(teams[1].tid)?.tier ?? "?",
+			],
+			dv: Math.round(dv2 * 10) / 10,
+			motivation,
+		},
 	);
 	return finalTids;
 };
@@ -384,8 +524,10 @@ const attempt = async (
 const DEFAULT_NUM_TEAMS = 30;
 
 // A modest baseline bump so strategic deals actually materialize ("somewhat more
-// active"), on top of which the deadline ramp fires.
-const ACTIVITY_BUMP = 1.3;
+// active"), on top of which the deadline ramp fires. Raised when the timeline /
+// building-block guards landed: they reject a real share of attempts, so more
+// attempts are needed to keep the same volume of (now-coherent) trades.
+const ACTIVITY_BUMP = 1.6;
 
 const betweenAiTeams = async () => {
 	if (g.get("forceHistoricalRosters")) {

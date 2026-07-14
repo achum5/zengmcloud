@@ -15,7 +15,7 @@ const updateSportsbook = async (
 		updateEvents.includes("gameSim") ||
 		updateEvents.includes("newPhase") ||
 		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("g.userTids") ||
+		updateEvents.includes("gameAttributes") ||
 		// Bets placed/settled bump this so the wallet + open bets refresh.
 		updateEvents.includes("watchList")
 	) {

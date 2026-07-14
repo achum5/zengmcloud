@@ -323,6 +323,16 @@ export type EventBBGMWithoutKey =
 			phase?: Phase;
 			score?: number;
 			teams?: TradeEventTeams;
+
+			// For AI-AI trades: what the AI was thinking, recorded at the moment of
+			// the deal so trade history can be audited against intent (tiers match
+			// event.tids order).
+			aiTrade?: {
+				initiatorTid: number;
+				tiers: [string, string];
+				dv: number;
+				motivation: string;
+			};
 	  }
 	| {
 			type: "freeAgent" | "reSigned";

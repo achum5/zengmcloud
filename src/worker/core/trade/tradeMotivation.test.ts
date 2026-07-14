@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	contenderDowngradesBest,
 	DEADLINE_WINDOW_DAYS,
 	deadlineRampMultiplier,
 	isBadRental,
@@ -7,7 +8,9 @@ import {
 	isSelling,
 	isStarAcquisition,
 	partnerWeight,
+	sellerAcquiresVet,
 	shouldDumpExpiring,
+	wasTradedThisSeason,
 } from "./tradeMotivation.ts";
 
 describe("deadlineRampMultiplier", () => {
@@ -117,6 +120,158 @@ describe("isSelling", () => {
 		assert.strictEqual(isSelling("fringe"), true);
 		assert.strictEqual(isSelling("buyer"), false);
 		assert.strictEqual(isSelling("allIn"), false);
+	});
+});
+
+describe("sellerAcquiresVet", () => {
+	test("the Booker case: a teardown acquiring a 33yo star with no picks back", () => {
+		assert.strictEqual(
+			sellerAcquiresVet({
+				acquirerTier: "teardown",
+				age: 33,
+				value: 55,
+				receivesPicks: false,
+			}),
+			true,
+		);
+		assert.strictEqual(
+			sellerAcquiresVet({
+				acquirerTier: "seller",
+				age: 37,
+				value: 45,
+				receivesPicks: false,
+			}),
+			true,
+		);
+	});
+
+	test("getting PAID in picks to absorb a vet is a legitimate rebuild move", () => {
+		assert.strictEqual(
+			sellerAcquiresVet({
+				acquirerTier: "teardown",
+				age: 33,
+				value: 55,
+				receivesPicks: true,
+			}),
+			false,
+		);
+	});
+
+	test("cheap veteran filler is fine, and contenders may buy vets freely", () => {
+		assert.strictEqual(
+			sellerAcquiresVet({
+				acquirerTier: "seller",
+				age: 34,
+				value: 25,
+				receivesPicks: false,
+			}),
+			false,
+		);
+		assert.strictEqual(
+			sellerAcquiresVet({
+				acquirerTier: "allIn",
+				age: 33,
+				value: 60,
+				receivesPicks: false,
+			}),
+			false,
+		);
+	});
+
+	test("a young player is never a timeline violation for a rebuilder", () => {
+		assert.strictEqual(
+			sellerAcquiresVet({
+				acquirerTier: "teardown",
+				age: 23,
+				value: 60,
+				receivesPicks: false,
+			}),
+			false,
+		);
+	});
+});
+
+describe("contenderDowngradesBest", () => {
+	test("a contender swapping its best player for a clearly worse one is blocked", () => {
+		// The OKC case: 60-22 ships a 56ovr rotation piece for prospects.
+		assert.strictEqual(
+			contenderDowngradesBest({
+				acquirerTier: "allIn",
+				bestGivenValue: 58,
+				bestReceivedValue: 42,
+			}),
+			true,
+		);
+	});
+
+	test("consolidation and star hunts pass (best player improves)", () => {
+		assert.strictEqual(
+			contenderDowngradesBest({
+				acquirerTier: "allIn",
+				bestGivenValue: 52,
+				bestReceivedValue: 64,
+			}),
+			false,
+		);
+	});
+
+	test("spending picks/depth (nothing good leaves) passes", () => {
+		assert.strictEqual(
+			contenderDowngradesBest({
+				acquirerTier: "buyer",
+				bestGivenValue: 40,
+				bestReceivedValue: 0,
+			}),
+			false,
+		);
+	});
+
+	test("sellers are free to downgrade the present (that's the point)", () => {
+		assert.strictEqual(
+			contenderDowngradesBest({
+				acquirerTier: "seller",
+				bestGivenValue: 60,
+				bestReceivedValue: 30,
+			}),
+			false,
+		);
+	});
+});
+
+describe("wasTradedThisSeason", () => {
+	test("last transaction is a same-season trade → cooldown", () => {
+		assert.strictEqual(
+			wasTradedThisSeason(
+				[
+					{ type: "draft", season: 2027 },
+					{ type: "trade", season: 2029 },
+				],
+				2029,
+			),
+			true,
+		);
+	});
+
+	test("a trade in a PRIOR season doesn't block", () => {
+		assert.strictEqual(
+			wasTradedThisSeason([{ type: "trade", season: 2028 }], 2029),
+			false,
+		);
+	});
+
+	test("signed after the trade → free to move again; no history → free", () => {
+		assert.strictEqual(
+			wasTradedThisSeason(
+				[
+					{ type: "trade", season: 2029 },
+					{ type: "freeAgent", season: 2029 },
+				],
+				2029,
+			),
+			false,
+		);
+		assert.strictEqual(wasTradedThisSeason(undefined, 2029), false);
+		assert.strictEqual(wasTradedThisSeason([], 2029), false);
 	});
 });
 

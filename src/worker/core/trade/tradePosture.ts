@@ -88,6 +88,9 @@ export type TradePosture = {
 	buildingBlockPids: number[];
 	// Veterans a selling team should actively shop before they waste away.
 	shopVeteranPids: number[];
+	// Does this team have a genuine star it would actually part with (not a
+	// protected building block)? Star-hunting contenders seek these teams out.
+	shoppableStar: boolean;
 	cap: CapPosture;
 	// Expressed for makeItWork.
 	lookingFor: LookingFor;
@@ -631,6 +634,13 @@ export const getTradePosture = async (
 		},
 	);
 
+	// A star this team would actually move (usually an aging star on a seller) —
+	// the supply side of a blockbuster.
+	const blockSet = new Set(buildingBlockPids);
+	const shoppableStar = players.some(
+		(p) => !blockSet.has(p.pid) && p.ovr >= context.starOvr,
+	);
+
 	const payroll = await getPayroll(tid);
 	const cap = capPosture({
 		payroll,
@@ -648,7 +658,7 @@ export const getTradePosture = async (
 		winp,
 		ovrRank: ovrRank + 1,
 		ovrRankPct,
-		contention: contentionScore({ winp, ovrRankPct, strategy }),
+		contention: contentionScore({ winp, ovrRankPct }),
 		avgAge,
 		youngCoreCount,
 		strategy,
@@ -658,6 +668,7 @@ export const getTradePosture = async (
 		targetPos,
 		buildingBlockPids,
 		shopVeteranPids,
+		shoppableStar,
 		cap,
 		lookingFor: lookingForFromPosture(tier, needs, starGap, targetPos),
 	};

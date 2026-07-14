@@ -113,6 +113,64 @@ export const partnerWeight = (
 export const isSelling = (tier: TradeTier): boolean =>
 	tier === "fringe" || tier === "seller" || tier === "teardown";
 
+// --- Timeline coherence -------------------------------------------------------
+// A trade must fit BOTH teams' timelines, not just clear the value math.
+
+// A rebuilding team (seller/teardown) must never ACQUIRE a real veteran unless
+// it's being paid in draft capital to absorb him — that's the only reason a
+// bad team takes on age. Stops "26-56 team trades assets for a 33yo on $60M".
+export const TIMELINE_VET_AGE = 29;
+export const TIMELINE_VET_VALUE = 38; // good enough that acquiring him means something
+
+export const sellerAcquiresVet = ({
+	acquirerTier,
+	age,
+	value,
+	receivesPicks,
+}: {
+	acquirerTier: TradeTier;
+	age: number;
+	value: number;
+	receivesPicks: boolean;
+}): boolean =>
+	(acquirerTier === "seller" || acquirerTier === "teardown") &&
+	!receivesPicks &&
+	age >= TIMELINE_VET_AGE &&
+	value >= TIMELINE_VET_VALUE;
+
+// A win-now contender must never come out of a trade with a clearly worse best
+// player than it gave up — it doesn't matter that the return is younger or
+// includes picks; contenders don't collect futures at the cost of the present.
+// (Consolidation passes: giving two mid players for one better player IMPROVES
+// the best. Buying with picks/depth passes: nothing good is given up.)
+export const CONTENDER_BEST_GIVEN_BAR = 50; // only guard when a real player leaves
+export const CONTENDER_BEST_SLACK = 8;
+
+export const contenderDowngradesBest = ({
+	acquirerTier,
+	bestGivenValue,
+	bestReceivedValue,
+}: {
+	acquirerTier: TradeTier;
+	bestGivenValue: number;
+	bestReceivedValue: number;
+}): boolean =>
+	CONTENDER_TIERS.has(acquirerTier) &&
+	bestGivenValue >= CONTENDER_BEST_GIVEN_BAR &&
+	bestReceivedValue < bestGivenValue - CONTENDER_BEST_SLACK;
+
+// --- Re-trade cooldown ---------------------------------------------------------
+// AI teams don't flip a player they just traded for — no same-season ping-pong
+// (a player bouncing across three rosters in one year reads as chaos, not
+// strategy). Pure check on the player's transaction log.
+export const wasTradedThisSeason = (
+	transactions: { type: string; season: number }[] | undefined,
+	season: number,
+): boolean => {
+	const lastTransaction = transactions?.at(-1);
+	return lastTransaction?.type === "trade" && lastTransaction.season === season;
+};
+
 // --- On-court sanity backstop ------------------------------------------------
 // The valuation can occasionally be fooled (compressed ratings, quantity of
 // mediocre players, an aggressive strategy tilt) into approving a deal that
