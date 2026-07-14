@@ -992,6 +992,46 @@ export const getSyncActivity = async (): Promise<{
 	return { connected: true, watermark, items };
 };
 
+// A one-shot, self-describing snapshot of THIS device's sync state, for pasting
+// into a diagnosis. Prepended to the copied debug logs so a capture is useful on
+// its own - it identifies whose device it is and whether it's caught up, stuck,
+// or has a dead listener - even if the log buffer is thin.
+export const getSyncDebugSnapshot = async (): Promise<string> => {
+	const engine = getSyncEngine();
+	const lines: string[] = [];
+	lines.push("=== MP SYNC SNAPSHOT ===");
+	try {
+		lines.push(
+			`lid=${g.get("lid")} userTid=${g.get("userTid")} season=${g.get("season")} phase=${g.get("phase")}`,
+		);
+	} catch {
+		// g may be unavailable very early; not worth failing the snapshot.
+	}
+	lines.push(
+		`connected=${engine !== undefined} reconnecting=${isReconnecting()} room=${currentCode ?? "—"} inChargeOfSimming=${engine?.isAuthority() ?? false} simmer=${currentHostName ?? "—"}`,
+	);
+	if (engine) {
+		const d = engine.getCatchUpDiagnostics();
+		const contactAge = engine.contactAge();
+		const lastDelivery = engine.getLastChangesDeliveryAt();
+		lines.push(
+			`caughtUp=${d.caughtUp} behind=${d.behind} persistedSeq=${d.persistedSeq} maxSeq=${d.maxSeq}`,
+		);
+		lines.push(
+			`liveListener=${d.liveSubscription} lastChangesDeliveryMsAgo=${lastDelivery > 0 ? Date.now() - lastDelivery : "never"} contactAgeMs=${contactAge ?? "—"}`,
+		);
+		lines.push(
+			`catchingUp=${d.catchingUp} pendingBatches=${d.pendingBatches} applyFailed=${d.applyFailed} failedApplies=${d.failedApplies} progress=${d.progressDone}/${d.progressTotal}`,
+		);
+		if (d.pendingBatches > 0) {
+			lines.push(`pendingBatchDetail=${JSON.stringify(d.pendingBatchDetail)}`);
+		}
+	}
+	lines.push(`at=${new Date().toISOString()}`);
+	lines.push("=== LOG ===");
+	return lines.join("\n");
+};
+
 // Force a full catch-up: re-read the entire log and re-apply it from scratch.
 // The one-click fix for a device that silently diverged.
 export const resyncSharedLeague = async (): Promise<{

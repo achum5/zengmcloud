@@ -24,6 +24,7 @@ export {
 	endLiveBroadcast,
 	getConnectedLid,
 	getSyncActivity,
+	getSyncDebugSnapshot,
 	getSyncRequired,
 	getSyncStatus,
 	markSyncRequired,

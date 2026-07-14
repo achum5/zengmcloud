@@ -8,6 +8,7 @@ import {
 	type SyncDebugEntry,
 } from "../../util/syncDebugStore.ts";
 import { logEvent } from "../../util/logEvent.ts";
+import { toWorker } from "../../util/toWorker.ts";
 
 // A fixed on-screen panel that shows the sync debug logs, for diagnosing sync
 // issues on a device with no reachable console (a phone). Only present when sync
@@ -55,7 +56,14 @@ const SyncDebugOverlay = () => {
 		: entries;
 
 	const copyAll = async () => {
-		const text = asText(shown);
+		// Lead with a self-describing state snapshot (whose device, caught up or
+		// stuck, dead listener?) so the paste is diagnosable on its own, then the
+		// log lines. Snapshot is best-effort - never block the copy on it.
+		let snapshot = "";
+		try {
+			snapshot = `${await toWorker("main", "getSyncDebugSnapshot", undefined)}\n`;
+		} catch {}
+		const text = `${snapshot}${asText(shown)}`;
 		try {
 			await navigator.clipboard.writeText(text);
 			logEvent({ type: "success", text: "Sync logs copied.", saveToDb: false });
