@@ -1494,19 +1494,36 @@ export class SyncEngine {
 	// tail and flashes the catching-up indicator for nothing.
 	private static BATCH_RESET_LIMIT = 5;
 
-	// Called whenever a catch-up pass reaches the head of the log. Any bulk batch
-	// STILL missing chunks at that point is suspect: a full walk of the backlog
-	// just happened, so its remaining chunks either weren't in the log or were
-	// somehow dropped on the way in. A batch that makes NO progress between two
-	// consecutive head-reaching passes gets reset - its entries are un-seen and
-	// the buffered chunks dropped - so the next pass re-fetches and rebuilds it
-	// from scratch. That's the same safe retry path a failed apply uses; if the
-	// chunks exist server-side the rebuild completes and the watermark unpins
-	// automatically. (A batch still receiving chunks - the simmer is mid-upload -
-	// keeps growing between passes and is left alone.)
-	private sweepStaleBatches() {
+	// Called when a catch-up pass reaches the head of the log, OR hits its page
+	// cap (with throughSeq = how far it walked). Any bulk batch whose full seq
+	// range was walked and is STILL missing chunks is suspect: those chunks
+	// either weren't in the log or were somehow dropped on the way in. A batch
+	// that makes NO progress between two such passes gets reset - its entries
+	// are un-seen and the buffered chunks dropped - so the next pass re-fetches
+	// and rebuilds it from scratch. That's the same safe retry path a failed
+	// apply uses; if the chunks exist server-side the rebuild completes and the
+	// watermark unpins automatically. (A batch still receiving chunks - the
+	// simmer is mid-upload - keeps growing between passes and is left alone.)
+	//
+	// The page-cap invocation is what makes abandonment REACHABLE on a device
+	// far behind: sweeping only at the head, with every pass restarting from the
+	// PINNED watermark under a bounded page budget, meant a long-enough tail
+	// (an active room kept simming past the pin) made the head unreachable and
+	// a dead batch unabandonable - pinned forever, re-downloading the same tail
+	// every tick. throughSeq preserves the evidence requirement: only batches
+	// whose entire chunk range the pass provably re-fetched are judged.
+	private sweepStaleBatches(throughSeq = Infinity) {
 		const nowStale = new Map<string, number>();
 		for (const [batchId, batch] of this.pendingBatches) {
+			if (batch.maxChunkSeq > throughSeq) {
+				// This pass didn't walk the batch's full range - no evidence about
+				// its missing chunks either way. Preserve its stale-tracking state.
+				const prior = this.staleBatchHave.get(batchId);
+				if (prior !== undefined) {
+					nowStale.set(batchId, prior);
+				}
+				continue;
+			}
 			const lastHave = this.staleBatchHave.get(batchId);
 			if (lastHave === undefined || batch.chunks.size > lastHave) {
 				// First sighting at the head, or it grew since last pass - still
