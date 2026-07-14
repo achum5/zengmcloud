@@ -54,6 +54,12 @@ const splitSerialized = (serialized: string): string[] => {
 // resumes on the next tick from the banked watermark.
 const CATCH_UP_PAGE_SIZE = 25;
 const CATCH_UP_MAX_PAGES = 40;
+// Fallback page size when a full page fails to fetch. Entries can be ~700 KB
+// bulk-sim chunks, so a full page of them is ~15 MB in one query - which can
+// time out on a weak phone connection, and a drain that just retries the same
+// heavy page every tick is wedged in all but name. A few entries at a time
+// always gets through; the drain is slower but it MOVES.
+const CATCH_UP_SMALL_PAGE = 3;
 
 // Only surface the "catching up …%" indicator once the backlog is at least this
 // many entries behind - a handful of missed changes catches up near-instantly
@@ -1358,19 +1364,40 @@ export class SyncEngine {
 					return false;
 				}
 				let entries: ChangesetEntry[];
+				// Requested page size for THIS fetch - the head check below must compare
+				// against what was actually asked for, or a successful small-page retry
+				// would read as a short page and falsely declare the head reached.
+				let requested = CATCH_UP_PAGE_SIZE;
 				try {
 					entries = await this.transport.fetchEntriesSince(
 						fetchCursor,
-						CATCH_UP_PAGE_SIZE,
+						requested,
 					);
 				} catch (error) {
-					outcome = "fetch-failed";
-					syncDebugLog("engine:catchup-fetch-failed", {
+					// A full page of bulk-sim chunks can be ~15 MB and time out on a weak
+					// connection - the exact moment a behind device is trying to recover.
+					// Retry this page tiny before failing the pass; single chunks always
+					// get through.
+					syncDebugLog("engine:catchup-fetch-retry-small", {
 						page,
 						fetchCursor,
 						error,
 					});
-					return false;
+					requested = CATCH_UP_SMALL_PAGE;
+					try {
+						entries = await this.transport.fetchEntriesSince(
+							fetchCursor,
+							requested,
+						);
+					} catch (error2) {
+						outcome = "fetch-failed";
+						syncDebugLog("engine:catchup-fetch-failed", {
+							page,
+							fetchCursor,
+							error: error2,
+						});
+						return false;
+					}
 				}
 				pages += 1;
 				if (entries.length === 0) {
@@ -1418,8 +1445,10 @@ export class SyncEngine {
 					return false;
 				}
 
-				// Short page → we've reached the head.
-				if (entries.length < CATCH_UP_PAGE_SIZE) {
+				// Short page → we've reached the head. (Compared against the size THIS
+				// fetch requested - a small-page retry returning its full ask is not
+				// the head.)
+				if (entries.length < requested) {
 					outcome = "head";
 					this.sweepStaleBatches();
 					this.finishCatchUp();

@@ -754,11 +754,19 @@ const driveCatchUp = async () => {
 
 	// A big backlog is drained in bounded chunks (catchUp() caps its pages so it
 	// can't spin forever), and there's no live subscription yet - so without this,
-	// each chunk would wait a full 15s poll for the next, and a large room crawls
-	// in (backlog / chunk) 15-second steps that look like "infinitely catching
-	// up". If we didn't reach the head but DID make real progress (the watermark
-	// advanced and nothing is pinned), keep draining right away instead of idling.
-	const madeProgress = after.persistedSeq > before.persistedSeq;
+	// each chunk would wait a full poll interval for the next, and a large room
+	// crawls in (backlog / chunk) 30-second steps that look like "infinitely
+	// catching up". If we didn't reach the head but DID make real progress, keep
+	// draining right away instead of idling. Progress is NOT just the watermark:
+	// while a bulk batch is mid-assembly the watermark is pinned by design, but
+	// fetching further (maxSeq) or applying more entries (progressDone) is real
+	// forward motion and must keep the chain alive - otherwise wedge RECOVERY
+	// (re-fetching a pinned tail to rebuild a batch) is the exact flow that
+	// crawls.
+	const madeProgress =
+		after.persistedSeq > before.persistedSeq ||
+		after.maxSeq > before.maxSeq ||
+		after.progressDone > before.progressDone;
 	if (
 		!reachedHead &&
 		madeProgress &&

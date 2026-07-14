@@ -75,6 +75,11 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"deleteSyncRoom",
 	"disconnectSharedLeague",
 	"getSyncActivity",
+	// The debug snapshot is FOR diagnosing a broken device - it must never be
+	// eaten by the not-caught-up guard (which is the exact state being diagnosed).
+	"getSyncDebugSnapshot",
+	// Pure read (builds a text report); no league writes.
+	"getTradeHistoryDump",
 	"getSyncEngine",
 	"getSyncStatus",
 	"listSyncRooms",
