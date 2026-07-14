@@ -1678,6 +1678,14 @@ export class SyncEngine {
 	// console log: how far the watermark trails the head, whether a bulk batch is
 	// waiting on missing chunks, whether an apply is pinned, and the live progress
 	// counters that drive the UI indicator.
+	// A sweep just RESET a batch (tore it down for a clean re-fetch) and its
+	// rebuild pass hasn't re-formed it yet. The drain loop chains immediately
+	// while this is true - rebuild-and-abandon must complete in one continuous
+	// sequence, not across poll ticks a phone screen-lock can interrupt.
+	hasRebuildingBatches(): boolean {
+		return this.rebuildingBatches.size > 0;
+	}
+
 	getCatchUpDiagnostics() {
 		return {
 			caughtUp: this.isCaughtUp(),
@@ -1685,6 +1693,7 @@ export class SyncEngine {
 			maxSeq: this.maxSeq,
 			behind: Math.max(0, this.maxSeq - this.persistedSeq),
 			pendingBatches: this.pendingBatches.size,
+			rebuilding: this.rebuildingBatches.size,
 			pendingBatchDetail: this.describePendingBatches(),
 			applyFailed: this.applyFailed,
 			failedApplies: this.failedApplies.size,

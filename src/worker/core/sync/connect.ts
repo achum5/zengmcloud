@@ -767,9 +767,15 @@ const driveCatchUp = async () => {
 		after.persistedSeq > before.persistedSeq ||
 		after.maxSeq > before.maxSeq ||
 		after.progressDone > before.progressDone;
+	// A sweep that just RESET a dead batch owes an immediate rebuild pass: the
+	// reset exists only to confirm-by-refetch and then abandon, and pausing a
+	// full poll tick between those steps kept losing races against phone
+	// screen-lock (the app suspends, in-memory recovery state restarts, the
+	// abandon never runs). Bounded: each reset batch gets exactly one chained
+	// rebuild, after which it either completes or is abandoned.
+	const owesRebuild = engine.hasRebuildingBatches();
 	if (
-		!reachedHead &&
-		madeProgress &&
+		((!reachedHead && madeProgress) || (reachedHead && owesRebuild)) &&
 		!after.applyFailed &&
 		!driveCatchUpChained &&
 		getSyncEngine() !== undefined
@@ -1034,7 +1040,7 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 			`liveListener=${d.liveSubscription} lastChangesDeliveryMsAgo=${lastDelivery > 0 ? Date.now() - lastDelivery : "never"} contactAgeMs=${contactAge ?? "—"}`,
 		);
 		lines.push(
-			`catchingUp=${d.catchingUp} pendingBatches=${d.pendingBatches} applyFailed=${d.applyFailed} failedApplies=${d.failedApplies} progress=${d.progressDone}/${d.progressTotal}`,
+			`catchingUp=${d.catchingUp} pendingBatches=${d.pendingBatches} rebuilding=${d.rebuilding} applyFailed=${d.applyFailed} failedApplies=${d.failedApplies} progress=${d.progressDone}/${d.progressTotal}`,
 		);
 		if (d.pendingBatches > 0) {
 			lines.push(`pendingBatchDetail=${JSON.stringify(d.pendingBatchDetail)}`);
