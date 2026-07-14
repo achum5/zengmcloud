@@ -38,6 +38,8 @@ import { BoxScoreRow } from "../../components/BoxScoreRow.tsx";
 import { getPeriodName } from "../../../common/getPeriodName.ts";
 import LiveCourt, {
 	courtActionFromEventType,
+	defenseFormation,
+	offenseFormation,
 	rimXFor,
 	scorerTableRow,
 	synthHeaveSpot,
@@ -47,6 +49,7 @@ import LiveCourt, {
 	zoneLabel,
 	type CourtActor,
 	type CourtDot,
+	type CourtPlayer,
 	type CourtScene,
 	type CourtZone,
 } from "./LiveCourt.tsx";
@@ -347,6 +350,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 		| undefined
 	>(undefined);
 
+	// The full five-on-five on the floor (both teams), held between plays so the
+	// court reads as a live game rather than faces popping in and out. Rebuilt
+	// each play from the current lineup + which team has the ball.
+	const courtPlayers = useRef<CourtPlayer[]>([]);
+	// Which display team currently has the ball (drives the offensive set); kept
+	// across plays that don't clearly change possession (subs, injuries).
+	const possessionT = useRef<0 | 1 | undefined>(undefined);
+
 	const playerByPid = (pid: number): any => {
 		for (const t of boxScore.current.teams ?? []) {
 			for (const p of t.players ?? []) {
@@ -361,9 +372,182 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const playerNameByPid = (pid: number): string =>
 		playerByPid(pid)?.name ?? "???";
 
+	// Which display team a player is on right now (0 = away/left, 1 = home/right).
+	const teamOfPid = (pid: number): 0 | 1 | undefined => {
+		const teams = boxScore.current.teams ?? [];
+		for (let t = 0; t < teams.length && t < 2; t++) {
+			if ((teams[t]?.players ?? []).some((p: any) => p.pid === pid)) {
+				return t as 0 | 1;
+			}
+		}
+		return undefined;
+	};
+
+	// The five players on the floor for a display team, sorted guard->center so
+	// they drop cleanly onto the offensive-set slots. Falls back to the first
+	// five listed if the in-game flags aren't set (e.g. the very first frame).
+	const POS_RANK: Record<string, number> = {
+		PG: 0,
+		G: 0,
+		SG: 1,
+		GF: 2,
+		SF: 2,
+		F: 3,
+		PF: 3,
+		FC: 4,
+		C: 4,
+	};
+	const posRank = (p: any): number => POS_RANK[p?.pos as string] ?? 2;
+	const onCourt = (t: 0 | 1): any[] => {
+		const team = boxScore.current.teams?.[t];
+		const roster: any[] = Array.isArray(team?.players) ? team.players : [];
+		const inGame = roster.filter((p) => p.inGame);
+		const five = (inGame.length >= 5 ? inGame : roster).slice(0, 5);
+		return five.sort((a, b) => posRank(a) - posRank(b));
+	};
+
+	// Which team is on offense for a given scene - the one whose formation is set
+	// around the rim they attack. Most plays belong to the actor's team; a steal
+	// or a foul belongs to the OTHER team (the victim / the fouled), and a sub or
+	// injury keeps whoever had the ball.
+	const deriveOffenseT = (scene: CourtScene): 0 | 1 | undefined => {
+		const other = (t: 0 | 1): 0 | 1 => (t === 0 ? 1 : 0);
+		switch (scene.kind) {
+			case "stl":
+			case "foul":
+				return other(scene.t);
+			case "sub":
+			case "other":
+				return possessionT.current ?? scene.t;
+			default:
+				return scene.t;
+		}
+	};
+
+	// The shake/swipe for a player the current play animates (a fouler swipes, the
+	// fouled/robbed player gets rocked).
+	const animForActor = (
+		scene: CourtScene,
+		actor: CourtActor,
+	): "shake" | "swipe" | undefined => {
+		if (scene.kind === "foul") {
+			return actor.role === "main"
+				? "swipe"
+				: actor.role === "victim"
+					? "shake"
+					: undefined;
+		}
+		if (scene.kind === "stl" && actor.role === "victim") {
+			return "shake";
+		}
+		return undefined;
+	};
+
+	// Rebuild the ten-player floor for this scene: both teams' current fives at
+	// plausible offensive-set / defensive-matchup spots, then the play's own
+	// actors snapped onto their exact play spots (with a name tag + any anim).
+	const rebuildFormation = (scene: CourtScene) => {
+		const offenseT = deriveOffenseT(scene);
+		const players: CourtPlayer[] = [];
+
+		const addTeam = (
+			t: 0 | 1,
+			spots: { x: number; y: number }[],
+			roster: any[],
+		) => {
+			roster.forEach((p, i) => {
+				const spot = spots[i] ?? spots.at(-1) ?? { x: 47, y: 25 };
+				players.push({
+					pid: p.pid,
+					name: p.name ?? "???",
+					t,
+					x: spot.x,
+					y: spot.y,
+					active: false,
+					hasBall: false,
+				});
+			});
+		};
+
+		if (offenseT === undefined) {
+			// Neutral (pre-tip): both teams spread in their own halves.
+			addTeam(0, offenseFormation(0), onCourt(0));
+			addTeam(1, offenseFormation(1), onCourt(1));
+		} else {
+			const defenseT: 0 | 1 = offenseT === 0 ? 1 : 0;
+			const offSpots = offenseFormation(offenseT);
+			addTeam(offenseT, offSpots, onCourt(offenseT));
+			addTeam(defenseT, defenseFormation(offSpots, offenseT), onCourt(defenseT));
+		}
+
+		// Snap the play's actors onto their exact spots.
+		for (const actor of scene.actors) {
+			let token = players.find((p) => p.pid === actor.pid);
+			if (!token) {
+				token = {
+					pid: actor.pid,
+					name: actor.name,
+					t: teamOfPid(actor.pid) ?? scene.t,
+					x: actor.x,
+					y: actor.y,
+					active: true,
+					hasBall: false,
+				};
+				players.push(token);
+			}
+			token.x = actor.x;
+			token.y = actor.y;
+			token.active = true;
+			const anim = animForActor(scene, actor);
+			if (anim) {
+				token.anim = anim;
+			}
+		}
+
+		// The ball-handler (the play's main actor) holds the ball; on non-shot
+		// plays that's also where the ball comes to rest.
+		const main = scene.actors.find((a) => a.role === "main");
+		if (main) {
+			const token = players.find((p) => p.pid === main.pid);
+			if (token) {
+				token.hasBall = true;
+			}
+			scene.ballRest = { x: main.x, y: main.y };
+		}
+
+		courtPlayers.current = players;
+		if (scene.kind !== "sub" && scene.kind !== "other") {
+			possessionT.current = offenseT;
+		}
+	};
+
 	const pushScene = (scene: Omit<CourtScene, "key">) => {
 		courtSceneCount.current += 1;
-		courtScene.current = { key: courtSceneCount.current, ...scene };
+		const full = { key: courtSceneCount.current, ...scene };
+		courtScene.current = full;
+		rebuildFormation(full);
+	};
+
+	// Seed a neutral pre-tip formation so the floor isn't empty before the first
+	// play lands. Safe to call repeatedly; overwritten by the first real scene.
+	const seedFormation = () => {
+		const players: CourtPlayer[] = [];
+		for (const t of [0, 1] as const) {
+			const spots = offenseFormation(t);
+			onCourt(t).forEach((p, i) => {
+				const spot = spots[i] ?? spots.at(-1) ?? { x: 47, y: 25 };
+				players.push({
+					pid: p.pid,
+					name: p.name ?? "???",
+					t,
+					x: spot.x,
+					y: spot.y,
+					active: false,
+					hasBall: false,
+				});
+			});
+		}
+		courtPlayers.current = players;
 	};
 
 	const scoreLine = (): string => {
@@ -1001,6 +1185,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// a game on top of its own already-final box score doubles everything.
 			boxScore.current = helpers.deepCopy(props.initialBoxScore);
 			initialEventCount.current = props.events.length;
+			// Put both starting fives on the floor right away, so the court opens on
+			// a live scene instead of an empty hardwood waiting for the first play.
+			if (isSport("basketball")) {
+				seedFormation();
+			}
 			setStarted(true);
 			if (followerRef.current) {
 				// Follower: load the events but DON'T start the local timer - the
@@ -1687,6 +1876,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 							{isSport("basketball") ? (
 								<LiveCourt
 									scene={courtScene.current}
+									players={courtPlayers.current}
 									dots={courtDots.current}
 									teams={[
 										boxScore.current.teams?.[0],

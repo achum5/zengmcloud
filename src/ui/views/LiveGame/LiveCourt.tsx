@@ -79,6 +79,9 @@ export type CourtScene = {
 	ballFrom?: { x: number; y: number };
 	ballTo?: { x: number; y: number };
 	rimX?: number;
+	// Where the ball should come to rest on a non-shot play (the new
+	// ball-handler): the ball glides here and stays visible in their hands.
+	ballRest?: { x: number; y: number };
 };
 
 export type CourtDot = {
@@ -113,7 +116,7 @@ export const rimXFor = (t: 0 | 1): number =>
 
 // Convert a spot expressed as (depth from the attacked baseline, position
 // across the court) into full-court coordinates for team t.
-const toCourt = (t: 0 | 1, depth: number, across: number) => ({
+export const toCourt = (t: 0 | 1, depth: number, across: number) => ({
 	x: t === 0 ? depth : COURT_W - depth,
 	y: across,
 });
@@ -179,6 +182,59 @@ export const synthPlaySpot = (t: 0 | 1): { x: number; y: number } =>
 // Rebound spot: right around the rim the shot was at.
 export const synthReboundSpot = (rimT: 0 | 1): { x: number; y: number } =>
 	toCourt(rimT, rand(3, 9), 25 + rand(-8, 8));
+
+// One of the ten players on the floor. Unlike a CourtActor (which only exists
+// for the handful of players a given play names), a CourtPlayer persists for
+// the whole possession - all five-on-five are always on the court, gliding
+// between plays - so the sim reads as a live game rather than faces popping in
+// and out. `active` marks the ones the current play actually involves (they get
+// their exact play spot, a full name tag, and any shake/swipe animation); the
+// rest hold a plausible offensive-set / defensive-matchup spot.
+export type CourtPlayer = {
+	pid: number;
+	name: string;
+	t: 0 | 1; // display team (0 = away/left, 1 = home/right)
+	x: number;
+	y: number;
+	active: boolean;
+	hasBall: boolean;
+	anim?: "shake" | "swipe";
+};
+
+// A half-court offensive set for team t, oriented toward the rim t attacks:
+// point up top, two wings, a high-post/elbow, and a low post. Returned in
+// guard->center order so a caller can drop position-sorted players straight onto
+// the slots. Each slot is lightly jittered so no two possessions look identical
+// - that wander is what sells the "running around" feel between plays.
+const OFFENSE_SLOTS: { depth: number; across: number }[] = [
+	{ depth: 27, across: 25 }, // point, top of the key
+	{ depth: 22, across: 8 }, // wing
+	{ depth: 22, across: 42 }, // wing
+	{ depth: 14, across: 34 }, // high post / elbow
+	{ depth: 8, across: 18 }, // low post
+];
+
+export const offenseFormation = (t: 0 | 1): { x: number; y: number }[] =>
+	OFFENSE_SLOTS.map((s) =>
+		toCourt(
+			t,
+			Math.min(44, Math.max(5, s.depth + rand(-1.5, 1.5))),
+			Math.min(46, Math.max(4, s.across + rand(-2, 2))),
+		),
+	);
+
+// A defender a step off each offensive spot, toward the rim that player is
+// attacking (i.e. between the man and the basket), matched slot-for-slot.
+export const defenseFormation = (
+	offenseSpots: { x: number; y: number }[],
+	offenseT: 0 | 1,
+): { x: number; y: number }[] => {
+	const rimX = rimXFor(offenseT);
+	return offenseSpots.map((s) => ({
+		x: s.x + Math.sign(rimX - s.x) * 4 + rand(-0.8, 0.8),
+		y: Math.min(47, Math.max(3, s.y + rand(-1.5, 1.5))),
+	}));
+};
 
 // Subs check in near half court: a single, well-spaced row so the faces +
 // name tags don't cram together, set a little in from the sideline (not jammed
@@ -284,6 +340,13 @@ export type CourtTeam = {
 
 const FLIGHT_MS = 650;
 const OUTCOME_MS = 450;
+// A shot's lead-up: the ball leaving the last handler's hands into the
+// shooter's before it goes up (a real pass across the floor, not a teleport).
+const PASS_MS = 240;
+
+// Ease-in-out for the ball gliding between resting spots (passes, inbounds).
+const easeInOut = (p: number) =>
+	p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2;
 
 // Sizes are in container-query units (cqw = % of the court container width), so
 // faces and text scale WITH the court on any screen, mobile included - clamped
@@ -310,43 +373,72 @@ const FACE_ANIM_CSS = `
 	45% { transform: ${REST} translateX(-7px) rotate(-18deg); }
 	70% { transform: ${REST} translateX(2px) rotate(6deg); }
 	100% { transform: ${REST} rotate(0deg); }
+}
+@keyframes liveCourtIdle {
+	0%,100% { transform: ${REST} translateY(0); }
+	50% { transform: ${REST} translateY(-2px); }
 }`;
 
-// One player standing on the floor: face centered ON its court point (over the
-// shot dot), with a name tag placed above or below to avoid colliding with a
-// nearby player's tag. Moved with a compositor transform (translate3d in
-// measured px) rather than left/top - animating left/top forces layout+paint
-// on every transition frame for every face, which is what made the court chug
-// on mobile. Falls back to left/top % for the one paint before the container
-// is measured.
+// One of the players on the floor, centered ON its court point. Moved with a
+// compositor transform (translate3d in measured px) rather than left/top -
+// animating left/top forces layout+paint on every transition frame for every
+// face, which is what made the court chug on mobile. Falls back to left/top %
+// for the one paint before the container is measured.
+//
+// Persistent: the same token (keyed by pid) is reused play to play, so its
+// position TRANSITIONS smoothly (a real player jogging to a new spot) instead
+// of teleporting, and its facesjs SVG is generated once (memoized on the face
+// data) and merely translated after - never regenerated on a move, which keeps
+// ten faces cheap even on a phone.
 const FaceOnCourt = ({
-	actor,
+	player,
 	season,
 	lid,
 	color,
-	anim,
 	nameAbove,
 	size,
 }: {
-	actor: CourtActor;
+	player: CourtPlayer;
 	season: number | undefined;
 	lid: number | undefined;
 	color: string;
-	anim?: "shake" | "swipe";
 	nameAbove?: boolean;
 	// Measured px size of the court container (see LiveCourt's ResizeObserver).
 	size: { w: number; h: number } | undefined;
 }) => {
-	const faceData = usePlayerFace(actor.pid, season, lid);
-	const fx = (actor.x + RAIL_W) / (COURT_W + 2 * RAIL_W);
-	const fy = (actor.y + APRON) / (COURT_H + 2 * APRON);
+	const faceData = usePlayerFace(player.pid, season, lid);
+	const fx = (player.x + RAIL_W) / (COURT_W + 2 * RAIL_W);
+	const fy = (player.y + APRON) / (COURT_H + 2 * APRON);
 
-	const animation =
-		anim === "shake"
+	// Only the players a play names get the full name tag; the rest carry a
+	// small, dim last-name label so the floor stays readable with ten of them.
+	const active = player.active;
+	const lastName = player.name.includes(" ")
+		? player.name.slice(player.name.lastIndexOf(" ") + 1)
+		: player.name;
+
+	const animation = player.anim
+		? player.anim === "shake"
 			? "liveCourtShake 0.5s ease"
-			: anim === "swipe"
-				? "liveCourtSwipe 0.5s ease"
-				: undefined;
+			: "liveCourtSwipe 0.5s ease"
+		: // A gentle idle bob (desynced per player) so nobody stands frozen
+			// between plays. Actors skip it - their shake/swipe takes the slot.
+			`liveCourtIdle 3.4s ease-in-out ${(player.pid % 9) * 0.37}s infinite`;
+
+	// The face SVG depends only on the face data, so build it once and reuse it
+	// on every reposition (facesjs is not cheap to regenerate ten times a play).
+	const faceEl = useMemo(
+		() =>
+			faceData && (faceData.face || faceData.imgURL) ? (
+				<PlayerPicture
+					face={faceData.face}
+					imgURL={faceData.imgURL}
+					colors={faceData.colors}
+					jersey={faceData.jersey}
+				/>
+			) : null,
+		[faceData],
+	);
 
 	const nameTag = (
 		<div
@@ -358,31 +450,31 @@ const FaceOnCourt = ({
 				background: color,
 				color: "#fff",
 				borderRadius: 3,
-				fontSize: NAME_FONT,
+				fontSize: active ? NAME_FONT : `calc(${NAME_FONT} * 0.82)`,
 				fontWeight: 600,
 				lineHeight: 1.3,
-				padding: "0 4px",
+				padding: active ? "0 4px" : "0 3px",
 				whiteSpace: "nowrap",
 				textShadow: "0 1px 1px rgba(0,0,0,0.5)",
 				boxShadow: "0 1px 2px rgba(0,0,0,0.4)",
+				opacity: active ? 1 : 0.72,
 			}}
 		>
-			{actor.role === "in" ? "▲ " : actor.role === "out" ? "▼ " : ""}
-			{actor.name}
+			{active ? player.name : lastName}
 		</div>
 	);
 
 	// The OUTER div only places the point on the court (compositor-friendly
 	// translate3d, transitioned for the glide between plays). The INNER div
-	// carries the centering REST transform and the one-shot shake/swipe
-	// animations (whose keyframes bake REST in), so animating never fights the
+	// carries the centering REST transform and the one-shot shake/swipe (or idle
+	// bob) animations, whose keyframes bake REST in so animating never fights the
 	// positioning.
 	const positionStyle = size
 		? {
 				left: 0,
 				top: 0,
 				transform: `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`,
-				transition: "transform 0.4s ease",
+				transition: "transform 0.5s ease",
 				willChange: "transform",
 			}
 		: {
@@ -396,7 +488,8 @@ const FaceOnCourt = ({
 			style={{
 				...positionStyle,
 				pointerEvents: "none",
-				zIndex: actor.role === "main" ? 5 : 4,
+				// The ball-handler and the play's actors ride above their teammates.
+				zIndex: player.hasBall ? 6 : active ? 5 : 4,
 			}}
 		>
 			<div
@@ -406,17 +499,12 @@ const FaceOnCourt = ({
 					width: FACE_W,
 					transform: REST,
 					animation,
-					filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
+					filter: player.hasBall
+						? "drop-shadow(0 0 3px rgba(255,255,255,0.85)) drop-shadow(0 1px 2px rgba(0,0,0,0.5))"
+						: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
 				}}
 			>
-				{faceData && (faceData.face || faceData.imgURL) ? (
-					<PlayerPicture
-						face={faceData.face}
-						imgURL={faceData.imgURL}
-						colors={faceData.colors}
-						jersey={faceData.jersey}
-					/>
-				) : null}
+				{faceEl}
 				{nameTag}
 			</div>
 		</div>
@@ -428,12 +516,16 @@ const teamColor = (team: CourtTeam | undefined, i: number, fallback: string) =>
 
 const LiveCourt = ({
 	scene,
+	players = [],
 	dots,
 	teams,
 	finals,
 	season,
 }: {
 	scene: CourtScene | undefined;
+	// All ten players on the floor, held between plays so the court reads as a
+	// live game. Empty (e.g. the court editor preview) shows just the floor.
+	players?: CourtPlayer[];
 	dots: CourtDot[];
 	// Display order: [away (left rim), home (right rim)].
 	teams: [CourtTeam | undefined, CourtTeam | undefined];
@@ -445,6 +537,13 @@ const LiveCourt = ({
 	const ballRef = useRef<SVGCircleElement | null>(null);
 	const ringRef = useRef<SVGCircleElement | null>(null);
 	const rafRef = useRef<number | undefined>(undefined);
+	// Where the ball is resting right now (court feet), so the next play can
+	// animate it FROM here - a pass across the floor, a shot leaving the
+	// shooter's hands - instead of it teleporting. Starts at center court.
+	const ballPos = useRef<{ x: number; y: number }>({
+		x: COURT_W / 2,
+		y: COURT_H / 2,
+	});
 	const [, forceRender] = useState(0);
 
 	// Measured px size of the court container, so faces can be positioned with a
@@ -521,6 +620,8 @@ const LiveCourt = ({
 			}
 			const from = scene.ballFrom;
 			const to = scene.ballTo;
+			// The ball comes to rest in the rebounder's / tip-winner's hands.
+			ballPos.current = { x: to.x, y: to.y };
 			ball.style.opacity = "1";
 			const start = performance.now();
 			const step = (now: number) => {
@@ -529,11 +630,9 @@ const LiveCourt = ({
 				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
 				// A little hop off the rim, then settle into the rebounder's hands.
 				ball.setAttribute("r", String(0.9 + 0.45 * Math.sin(Math.PI * p)));
-				ball.style.opacity = p < 0.82 ? "1" : String(1 - (p - 0.82) / 0.18);
+				ball.style.opacity = "1";
 				if (p < 1) {
 					rafRef.current = requestAnimationFrame(step);
-				} else {
-					hideBall();
 				}
 			};
 			rafRef.current = requestAnimationFrame(step);
@@ -544,30 +643,47 @@ const LiveCourt = ({
 			};
 		}
 
-		// Other non-shot scenes: flash a colored pulse at the main actor (amber
-		// for a foul, red for a turnover/steal).
+		// Non-shot scenes (turnover, steal, foul, sub, dead ball): the ball glides
+		// from wherever it was into the new ball-handler's hands and RESTS there
+		// (visible), while turnovers/steals/fouls also flash a colored pulse.
 		if (!isShot) {
-			hideBall();
-			if (
-				ring &&
-				main &&
-				(scene.kind === "tov" || scene.kind === "stl" || scene.kind === "foul")
-			) {
-				const pulseColor = scene.kind === "foul" ? "#eab308" : "#dc3545";
+			const rest = scene.ballRest ??
+				(main ? { x: main.x, y: main.y } : ballPos.current);
+			const fromRest = { ...ballPos.current };
+			ballPos.current = { x: rest.x, y: rest.y };
+			ball.style.opacity = "1";
+			const doPulse =
+				!!ring &&
+				!!main &&
+				(scene.kind === "tov" || scene.kind === "stl" || scene.kind === "foul");
+			if (doPulse && ring && main) {
 				ring.setAttribute("cx", String(main.x));
 				ring.setAttribute("cy", String(main.y));
-				ring.setAttribute("stroke", pulseColor);
-				const start = performance.now();
-				const pulse = (now: number) => {
-					const p = Math.min(1, (now - start) / 600);
-					ring.setAttribute("r", String(1.5 + 4.5 * p));
-					ring.style.opacity = String(0.9 * (1 - p));
-					if (p < 1) {
-						rafRef.current = requestAnimationFrame(pulse);
-					}
-				};
-				rafRef.current = requestAnimationFrame(pulse);
+				ring.setAttribute(
+					"stroke",
+					scene.kind === "foul" ? "#eab308" : "#dc3545",
+				);
+			} else if (ring) {
+				ring.style.opacity = "0";
 			}
+			const start = performance.now();
+			const DUR = 640;
+			const step = (now: number) => {
+				const t = now - start;
+				const e = easeInOut(Math.min(1, t / 340));
+				ball.setAttribute("cx", String(fromRest.x + (rest.x - fromRest.x) * e));
+				ball.setAttribute("cy", String(fromRest.y + (rest.y - fromRest.y) * e));
+				ball.setAttribute("r", "0.85");
+				if (doPulse && ring) {
+					const pp = Math.min(1, t / 600);
+					ring.setAttribute("r", String(1.5 + 4.5 * pp));
+					ring.style.opacity = String(0.9 * (1 - pp));
+				}
+				if (t < DUR) {
+					rafRef.current = requestAnimationFrame(step);
+				}
+			};
+			rafRef.current = requestAnimationFrame(step);
 			return () => {
 				if (rafRef.current !== undefined) {
 					cancelAnimationFrame(rafRef.current);
@@ -575,7 +691,10 @@ const LiveCourt = ({
 			};
 		}
 
+		// A shot. First a quick pass from wherever the ball was into the shooter's
+		// hands (the lead-up), THEN the flight to the rim and the outcome.
 		const from = scene.ballFrom ?? { x: COURT_W / 2, y: COURT_H / 2 };
+		const passFrom = { ...ballPos.current };
 		const rimX = scene.rimX ?? rimXFor(scene.t);
 		const to = { x: rimX, y: COURT_H / 2 };
 		const made = scene.kind === "make";
@@ -588,6 +707,12 @@ const LiveCourt = ({
 			x: Math.min(90, Math.max(4, from.x + backward * rand(10, 18))),
 			y: Math.min(46, Math.max(4, from.y + rand(-6, 6))),
 		};
+		// Where the ball ends up (for the next play to start its glide from).
+		ballPos.current = made
+			? { x: to.x, y: to.y }
+			: blocked
+				? { x: swat.x, y: swat.y }
+				: { x: bounce.x, y: bounce.y };
 
 		if (ring) {
 			ring.setAttribute("cx", String(to.x));
@@ -599,7 +724,19 @@ const LiveCourt = ({
 
 		const start = performance.now();
 		const step = (now: number) => {
-			const elapsed = now - start;
+			const total = now - start;
+
+			// Lead-up pass into the shooter's hands.
+			if (total < PASS_MS) {
+				const p = total / PASS_MS;
+				ball.setAttribute("cx", String(passFrom.x + (from.x - passFrom.x) * p));
+				ball.setAttribute("cy", String(passFrom.y + (from.y - passFrom.y) * p));
+				ball.setAttribute("r", "0.8");
+				rafRef.current = requestAnimationFrame(step);
+				return;
+			}
+
+			const elapsed = total - PASS_MS;
 
 			if (blocked) {
 				const p = Math.min(1, elapsed / FLIGHT_MS);
@@ -923,40 +1060,18 @@ const LiveCourt = ({
 		);
 	};
 
-	const actorAnim = (actor: CourtActor): "shake" | "swipe" | undefined => {
-		if (!scene) {
-			return undefined;
-		}
-		if (scene.kind === "foul") {
-			return actor.role === "main"
-				? "swipe"
-				: actor.role === "victim"
-					? "shake"
-					: undefined;
-		}
-		if (scene.kind === "stl" && actor.role === "victim") {
-			return "shake";
-		}
-		return undefined;
-	};
-
-	const opposingColor = scene?.t === 0 ? homeColor : awayColor;
-
-	// Give each actor's name tag a placement that avoids colliding with a nearby
-	// player's tag: when two actors are within a few feet across the court, put
-	// the main actor's tag below and the other's above.
-	const nameAboveFor = (actor: CourtActor): boolean => {
-		if (!scene) {
-			return false;
-		}
-		const near = scene.actors.some(
-			(o) => o !== actor && Math.abs(o.x - actor.x) < 9,
+	// Give each player's name tag a placement that avoids colliding with a nearby
+	// player's tag: when two players are within a few feet across the court, nudge
+	// the ball-handler's tag below and the other's above. Also flip tags near the
+	// bottom edge so they stay on the court.
+	const nameAboveFor = (player: CourtPlayer): boolean => {
+		const near = players.some(
+			(o) => o !== player && Math.abs(o.x - player.x) < 8,
 		);
 		if (near) {
-			return actor.role !== "main";
+			return !player.hasBall;
 		}
-		// Otherwise flip tags near the bottom edge so they stay on the court.
-		return actor.y > COURT_H - 9;
+		return player.y > COURT_H - 9;
 	};
 
 	// The play text sits BESIDE the action but must never cover a face. Anchor it
@@ -1228,72 +1343,24 @@ const LiveCourt = ({
 				{dotsLayer}
 			</svg>
 
-			{/* Pulse ring (swish / turnover / foul) + the ball, on their own
-			    compositor layer (willChange) so per-frame mutation stays cheap. */}
-			<svg
-				viewBox={VIEW}
-				style={{
-					position: "absolute",
-					inset: 0,
-					width: "100%",
-					height: "100%",
-					pointerEvents: "none",
-					willChange: "transform",
-				}}
-			>
-				<circle
-					ref={ringRef}
-					cx={0}
-					cy={0}
-					r={1}
-					fill="none"
-					stroke={sceneColor}
-					strokeWidth={0.4}
-					style={{ opacity: 0, pointerEvents: "none" }}
+			{/* All ten players on the floor, each keyed by pid so the SAME token is
+			    reused play to play - it GLIDES to its new spot (a real player
+			    jogging) instead of being torn down and rebuilt, and its facesjs SVG
+			    is generated once instead of ten-times-a-play (the old per-play cost
+			    on mobile). A player the current play names gets its exact spot, a
+			    full name tag, and any shake/swipe; the rest hold a formation spot
+			    with a gentle idle bob. */}
+			{players.map((player) => (
+				<FaceOnCourt
+					key={player.pid}
+					player={player}
+					season={season}
+					lid={lid}
+					color={player.t === 0 ? awayColor : homeColor}
+					nameAbove={nameAboveFor(player)}
+					size={size}
 				/>
-				<circle
-					ref={ballRef}
-					cx={0}
-					cy={0}
-					r={0.9}
-					fill="#e8772e"
-					stroke="#7a3a12"
-					strokeWidth={0.15}
-					style={{ opacity: 0, pointerEvents: "none" }}
-				/>
-			</svg>
-
-			{/* Players on the floor, centered on their spot. Keyed by player+role
-			    (NOT the scene key) so a player who appears in back-to-back scenes is
-			    REUSED and repositioned instead of being torn down and rebuilt - each
-			    rebuild regenerates the whole facesjs SVG, which was a big per-play
-			    cost on mobile. Only the rare animated actor (a foul swipe / steal
-			    shake) keeps the scene key, so its one-shot CSS animation retriggers. */}
-			{scene
-				? scene.actors.map((actor) => {
-						const anim = actorAnim(actor);
-						return (
-							<FaceOnCourt
-								key={
-									anim
-										? `a${scene.key}-${actor.pid}-${actor.role}`
-										: `${actor.pid}-${actor.role}`
-								}
-								actor={actor}
-								season={season}
-								lid={lid}
-								color={
-									actor.role === "defender" || actor.role === "victim"
-										? opposingColor
-										: sceneColor
-								}
-								anim={anim}
-								nameAbove={nameAboveFor(actor)}
-								size={size}
-							/>
-						);
-					})
-				: null}
+			))}
 
 			{/* The play line, beside the action - placed past the edge of the whole
 			    player cluster so it never covers a face */}
@@ -1327,6 +1394,46 @@ const LiveCourt = ({
 					) : null}
 				</div>
 			) : null}
+
+			{/* Pulse ring (swish / turnover / foul) + the ball, on their own
+			    compositor layer (willChange) so per-frame mutation stays cheap.
+			    Rendered LAST so the ball rides above the players - you see it in the
+			    ball-handler's hands and arcing over everyone on a shot. It lives in
+			    its own tiny SVG (not the grain-filtered floor's) so a ball frame
+			    never repaints the floor - the mobile-lag fix. */}
+			<svg
+				viewBox={VIEW}
+				style={{
+					position: "absolute",
+					inset: 0,
+					width: "100%",
+					height: "100%",
+					pointerEvents: "none",
+					willChange: "transform",
+					zIndex: 7,
+				}}
+			>
+				<circle
+					ref={ringRef}
+					cx={0}
+					cy={0}
+					r={1}
+					fill="none"
+					stroke={sceneColor}
+					strokeWidth={0.4}
+					style={{ opacity: 0, pointerEvents: "none" }}
+				/>
+				<circle
+					ref={ballRef}
+					cx={0}
+					cy={0}
+					r={0.9}
+					fill="#e8772e"
+					stroke="#7a3a12"
+					strokeWidth={0.15}
+					style={{ opacity: 0, pointerEvents: "none" }}
+				/>
+			</svg>
 		</div>
 	);
 };
