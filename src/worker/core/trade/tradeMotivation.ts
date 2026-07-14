@@ -79,11 +79,17 @@ export const MOTIVATED_DUMP_DV = -35;
 export const NORMAL_MAX_ASSETS = 6;
 export const BLOCKBUSTER_MAX_ASSETS = 14;
 
-// A contender will pay a steep premium to land a genuine star — the marquee
-// "give up everything for the guy" deal. This is the most lopsided (against
-// itself) return it will swallow, well past the normal fairness bound and even
-// past a walk-year dump.
-export const STAR_PREMIUM_DV = -45;
+// A contender will pay a premium to land a genuine star — the marquee "give up
+// a lot for the guy" deal. This is the most lopsided (against itself) return it
+// will swallow, past the normal fairness bound. Measured in HONEST value units
+// (the valuation itself is stock BBGM — strategy must never warp what assets
+// are worth, only what deals a team is willing to make).
+export const STAR_PREMIUM_DV = -25;
+
+// A seller with a legit star deliberately works to move him to a win-now team —
+// it will take a somewhat-light (but never giveaway) return to get the deal
+// done rather than sit on an asset that doesn't fit its timeline.
+export const STAR_SALE_DV = -25;
 
 // Is this acquisition a genuine star landing on a win-now contender? Only then do
 // we open the package ceiling and allow the overpay premium — so blockbusters are

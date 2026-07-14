@@ -28,6 +28,7 @@ import {
 	sellerAcquiresVet,
 	shouldDumpExpiring,
 	STAR_PREMIUM_DV,
+	STAR_SALE_DV,
 	wasTradedThisSeason,
 } from "./tradeMotivation.ts";
 import { last } from "../../../common/utils.ts";
@@ -83,7 +84,9 @@ const maxOvr = async (pids: number[]): Promise<number> => {
 
 // What the initiating team puts on the table, chosen from its posture:
 //   • a walk-year player it should dump (highest priority — see shouldDumpExpiring)
-//   • a seller offers a veteran it's shopping
+//   • a seller offers a veteran it's shopping — and if a legit STAR is on the
+//     block, it deliberately shops him first (moving the star to a win-now team
+//     is the whole point of selling)
 //   • a buyer/contender offers future assets (a pick, or spare depth) to chase
 //     the win-now talent its lookingFor describes
 // Returns undefined if it has nothing sensible to offer.
@@ -93,9 +96,14 @@ const buildSeed = async (
 	players: Player[],
 	draftPicks: { dpid: number }[],
 	season: number,
-): Promise<{ pids: number[]; dpids: number[]; motivatedDump: boolean } | undefined> => {
+	starOvr: number,
+): Promise<
+	| { pids: number[]; dpids: number[]; motivatedDump: boolean; starSale: boolean }
+	| undefined
+> => {
 	const pids: number[] = [];
 	const dpids: number[] = [];
+	let starSale = false;
 
 	// 1) Move a walk-year player who won't re-sign, most valuable first. This is
 	//    the strongest motivation, so it wins over everything else.
@@ -111,7 +119,7 @@ const buildSeed = async (
 				tier: posture.tier,
 			})
 		) {
-			return { pids: [p.pid], dpids: [], motivatedDump: true };
+			return { pids: [p.pid], dpids: [], motivatedDump: true, starSale: false };
 		}
 	}
 
@@ -119,10 +127,21 @@ const buildSeed = async (
 	if (isSelling(posture.tier)) {
 		const shopSet = new Set(posture.shopVeteranPids);
 		const shopPlayers = players.filter((p) => shopSet.has(p.pid));
-		const pool = shopPlayers.length > 0 ? shopPlayers : players;
-		const p = choice(pool, (pp) => Math.max(0.01, pp.value));
+		// The star gets shopped FIRST most of the time — sellers actively work the
+		// phones to send him somewhere he helps, rather than waiting to be asked.
+		const starsOnBlock = shopPlayers
+			.filter((p) => last(p.ratings).ovr >= starOvr)
+			.sort((a, b) => b.value - a.value);
+		let p: Player | undefined;
+		if (starsOnBlock.length > 0 && Math.random() < 0.6) {
+			p = starsOnBlock[0];
+		} else {
+			const pool = shopPlayers.length > 0 ? shopPlayers : players;
+			p = choice(pool, (pp) => Math.max(0.01, pp.value));
+		}
 		if (p) {
 			pids.push(p.pid);
+			starSale = last(p.ratings).ovr >= starOvr;
 		}
 	} else if (draftPicks.length > 0 && Math.random() < 0.6) {
 		// A buyer prefers to spend future assets on present talent.
@@ -141,7 +160,7 @@ const buildSeed = async (
 	if (pids.length === 0 && dpids.length === 0) {
 		return undefined;
 	}
-	return { pids, dpids, motivatedDump: false };
+	return { pids, dpids, motivatedDump: false, starSale };
 };
 
 // Total on-court value + value-weighted age of a set of players (given or
@@ -336,6 +355,15 @@ const attempt = async (
 		if (initPosture.tier === "allIn" && initPosture.starGap && pp.shoppableStar) {
 			w *= 3;
 		}
+		// And a seller with a star on the block courts the win-now teams that
+		// want him — aggressive sellers sell to aggressive buyers.
+		if (
+			isSelling(initPosture.tier) &&
+			initPosture.shoppableStar &&
+			(pp.tier === "allIn" || pp.tier === "buyer")
+		) {
+			w *= 2;
+		}
 		return w;
 	});
 
@@ -363,6 +391,7 @@ const attempt = async (
 		players,
 		draftPicks,
 		season,
+		starOvr,
 	);
 	if (!seed) {
 		return false;
@@ -476,18 +505,27 @@ const attempt = async (
 		tradingPartnerTid: undefined,
 	});
 
-	// A win-now contender will overpay steeply to land a genuine star — the
-	// blockbuster premium — beyond the fairness bound it holds to on ordinary deals.
+	// How lopsided (against itself) a deal the initiator will accept. The
+	// valuation itself is stock BBGM — strategy expresses ONLY through these
+	// tolerances (and the seeding/partner/guards above), never by warping what
+	// assets are worth. Wider tolerance for: a contender paying a premium to
+	// land a genuine star, a seller working to move its star to a win-now team,
+	// and a walk-year dump (widest — he's gone for nothing otherwise).
 	const landsStar = isStarAcquisition({
 		bestReceivedOvr: await maxOvr(teams[1].pids),
 		acquirerTier: initPosture.tier,
 		starOvr,
 	});
-	const lowerBound = landsStar
-		? STAR_PREMIUM_DV
-		: seed.motivatedDump
-			? MOTIVATED_DUMP_DV
-			: -NORMAL_DV_TOLERANCE;
+	let lowerBound = -NORMAL_DV_TOLERANCE;
+	if (seed.motivatedDump) {
+		lowerBound = Math.min(lowerBound, MOTIVATED_DUMP_DV);
+	}
+	if (seed.starSale) {
+		lowerBound = Math.min(lowerBound, STAR_SALE_DV);
+	}
+	if (landsStar) {
+		lowerBound = Math.min(lowerBound, STAR_PREMIUM_DV);
+	}
 	if (dv2 > NORMAL_DV_TOLERANCE || dv2 < lowerBound) {
 		return false;
 	}
@@ -498,11 +536,13 @@ const attempt = async (
 	// AI's actual intent instead of reverse-engineered from records.
 	const motivation = seed.motivatedDump
 		? "dump-expiring"
-		: landsStar
-			? "star-hunt"
-			: isSelling(initPosture.tier)
-				? "sell"
-				: "buy";
+		: seed.starSale
+			? "star-sale"
+			: landsStar
+				? "star-hunt"
+				: isSelling(initPosture.tier)
+					? "sell"
+					: "buy";
 
 	await processTrade(
 		finalTids,
@@ -586,12 +626,9 @@ const betweenAiTeams = async () => {
 		return;
 	}
 
-	// Price trades from the SAME posture tiers that drive the seeding, so the
-	// valuation and the intent are consistent (no recompute inside the calculator).
-	valueChangeCalculator.setPostureTiers(
-		new Map([...postures].map(([tid, posture]) => [tid, posture.tier])),
-	);
-
+	// NOTE: the ValueChangeCalculator is deliberately stock BBGM — postures drive
+	// WHO trades, WHAT gets offered, and what tolerances/guards apply, but never
+	// what an asset is worth.
 	const season = g.get("season");
 	for (let i = 0; i < numAttempts; i++) {
 		const tradeTids = await attempt({

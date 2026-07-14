@@ -11,13 +11,6 @@ import type {
 import { getNumPicksPerRound } from "../trade/getPickValues.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { groupByUnique, last } from "../../../common/utils.ts";
-import {
-	getLeagueTradeContext,
-	getTradePosture,
-	tierToStrategy,
-	type LeagueTradeContext,
-	type TradeTier,
-} from "../trade/tradePosture.ts";
 
 type Asset =
 	| {
@@ -459,63 +452,43 @@ const sumValues = (
 			p.type === "pick" && (season !== p.draftYear || phase <= PHASE.PLAYOFFS);
 
 		// These factors don't make sense for negative value players!!!
-		// Deliberately stronger than vanilla BBGM so teams truly commit to a path:
-		// a rebuilder cashes in good VETERANS for picks/youth (it can't use present
-		// talent), and a contender pays picks/youth for present talent. The
-		// multiplier hits the value BEFORE the exponent below, so it swings hard.
 		if (strategy === "rebuilding") {
-			// Value young players and picks more, and TILT away from aging present
-			// talent — but not so hard that a good veteran becomes a giveaway; a
-			// rebuilder should still demand a real haul for him.
+			// Value young/cheap players and draft picks more. Penalize expensive/old players
 			if (treatAsFutureDraftPick) {
-				playerValue *= 1.15;
-			} else if (p.age <= 19) {
 				playerValue *= 1.1;
+			} else if (p.age <= 19) {
+				playerValue *= 1.075;
 			} else if (p.age === 20) {
-				playerValue *= 1.08;
-			} else if (p.age === 21) {
-				playerValue *= 1.06;
-			} else if (p.age === 22) {
 				playerValue *= 1.05;
+			} else if (p.age === 21) {
+				playerValue *= 1.0375;
+			} else if (p.age === 22) {
+				playerValue *= 1.025;
 			} else if (p.age === 23) {
-				playerValue *= 1.03;
-			} else if (p.age === 24) {
-				playerValue *= 1.015;
-			} else if (p.age === 26) {
-				playerValue *= 0.98;
+				playerValue *= 1.0125;
 			} else if (p.age === 27) {
-				playerValue *= 0.95;
+				playerValue *= 0.975;
 			} else if (p.age === 28) {
-				playerValue *= 0.91;
-			} else if (p.age === 29) {
-				playerValue *= 0.88;
-			} else if (p.age === 30) {
-				playerValue *= 0.85;
-			} else if (p.age === 31) {
-				playerValue *= 0.82;
-			} else if (p.age >= 32) {
-				playerValue *= 0.79;
+				playerValue *= 0.95;
+			} else if (p.age >= 29) {
+				playerValue *= 0.9;
 			}
 		} else if (strategy === "contending") {
-			// Present talent is full value; youth and picks are discounted — a
-			// contender will ship them for a win-now player, but doesn't treat them
-			// as worthless.
+			// Much of the value for these players comes from potential, which we don't really care about
 			if (treatAsFutureDraftPick) {
-				playerValue *= 0.78;
+				playerValue *= 0.825;
 			} else if (p.age <= 19) {
-				playerValue *= 0.76;
+				playerValue *= 0.8;
 			} else if (p.age === 20) {
-				playerValue *= 0.79;
+				playerValue *= 0.825;
 			} else if (p.age === 21) {
-				playerValue *= 0.82;
+				playerValue *= 0.85;
 			} else if (p.age === 22) {
-				playerValue *= 0.86;
+				playerValue *= 0.875;
 			} else if (p.age === 23) {
-				playerValue *= 0.9;
+				playerValue *= 0.925;
 			} else if (p.age === 24) {
-				playerValue *= 0.93;
-			} else if (p.age === 25) {
-				playerValue *= 0.96;
+				playerValue *= 0.95;
 			}
 		}
 
@@ -638,46 +611,6 @@ export class ValueChangeCalculator {
 		draft: true,
 		teams: "all",
 	};
-
-	// A team's valuation strategy is derived from its franchise TIER (our own
-	// posture), not BBGM's contending/rebuilding flag, so the pricing matches
-	// what the trade AI is actually trying to do. Resolved lazily and cached for
-	// this calculator's lifetime; callers that already know the tiers (the CPU
-	// trade loop) can seed them to avoid recomputing.
-	private providedTiers: Map<number, TradeTier> | undefined;
-	private postureContext: LeagueTradeContext | undefined;
-	private strategyCache = new Map<number, string>();
-
-	setPostureTiers(tiers: Map<number, TradeTier>) {
-		this.providedTiers = tiers;
-		this.strategyCache.clear();
-	}
-
-	private async strategyForTeam(
-		tid: number,
-		fallback: string,
-	): Promise<string> {
-		const cached = this.strategyCache.get(tid);
-		if (cached !== undefined) {
-			return cached;
-		}
-		let strategy = fallback;
-		try {
-			let tier = this.providedTiers?.get(tid);
-			if (tier === undefined) {
-				if (!this.postureContext) {
-					this.postureContext = await getLeagueTradeContext();
-				}
-				tier = (await getTradePosture(tid, this.postureContext)).tier;
-			}
-			strategy = tierToStrategy(tier);
-		} catch {
-			// If the posture can't be computed, fall back to BBGM's flag.
-			strategy = fallback;
-		}
-		this.strategyCache.set(tid, strategy);
-		return strategy;
-	}
 
 	private async init() {
 		await player.updateOvrMeanStd();
@@ -802,7 +735,7 @@ export class ValueChangeCalculator {
 			throw new Error("Invalid team");
 		}
 
-		const strategy = await this.strategyForTeam(tid, t.strategy);
+		const strategy = t.strategy;
 
 		await getPlayers({
 			add,
