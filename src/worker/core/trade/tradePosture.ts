@@ -69,6 +69,9 @@ export type TradePosture = {
 	// 0..1 — how aggressively the team will deal (how far past dv=0 it will go
 	// and how many assets it will package). Consumed by a later phase.
 	aggression: number;
+	// A top-of-the-league roster (within ELITE_OVR_GAP team-OVR of the best team):
+	// a guaranteed, uber-aggressive buyer that hunts a star every year.
+	elite: boolean;
 	// The raw signals behind the tier, exposed for transparency / diagnostics.
 	winp: number;
 	ovrRank: number;
@@ -136,6 +139,15 @@ export const contentionScore = ({
 	winp: number;
 	ovrRankPct: number;
 }): number => 0.75 * winp + 0.25 * (1 - ovrRankPct);
+
+// A roster within this many team-OVR points of the league's very best team is
+// "elite" — a guaranteed, uber-aggressive buyer that goes star-hunting every
+// year (see getTradePosture). Judged on roster strength, not record, so a loaded
+// team off to a slow start still buys hard.
+export const ELITE_OVR_GAP = 5;
+
+export const isEliteByOvr = (teamOvr: number, topTeamOvr: number): boolean =>
+	teamOvr >= topTeamOvr - ELITE_OVR_GAP;
 
 export const classifyTier = ({
 	winp,
@@ -602,13 +614,28 @@ export const getTradePosture = async (
 	// classification deliberately ignores it (see contentionScore).
 	const strategy = (await idb.cache.teams.get(tid))?.strategy ?? "";
 
-	const tier = classifyTier({
+	let tier = classifyTier({
 		winp,
 		ovrRankPct,
 		avgAge,
 		youngCoreCount,
 		hasFoundation,
 	});
+
+	// A roster right at the top of the league (within ELITE_OVR_GAP team-OVR of the
+	// very best team) is an UBER-aggressive buyer, guaranteed. A title-caliber team
+	// should go get a star every year — it's shocking if it doesn't. This overrides
+	// a soft, record-based read: a loaded roster off to a slow start still BUYS,
+	// never sells (that would be self-sabotage). Elite teams also initiate far more
+	// often (see betweenAiTeams) and, when already contending, keep their allIn
+	// urgency. Decision-making only — valuation is untouched.
+	const topTeamOvr = context.teamOvrsSorted[0]?.ovr ?? 0;
+	const teamOvr =
+		rankIdx >= 0 ? (context.teamOvrsSorted[rankIdx]?.ovr ?? 0) : 0;
+	const elite = rankIdx >= 0 && teamOvr >= topTeamOvr - ELITE_OVR_GAP;
+	if (elite && tier !== "allIn") {
+		tier = "buyer";
+	}
 
 	const { needs, surpluses, upgradePos } = isSport("basketball")
 		? analyzePositions(
@@ -664,7 +691,9 @@ export const getTradePosture = async (
 	return {
 		tid,
 		tier,
-		aggression: AGGRESSION[tier],
+		// Elite rosters are near-certain to engage; otherwise the tier baseline.
+		aggression: elite ? Math.max(AGGRESSION[tier], 0.97) : AGGRESSION[tier],
+		elite,
 		winp,
 		ovrRank: ovrRank + 1,
 		ovrRankPct,

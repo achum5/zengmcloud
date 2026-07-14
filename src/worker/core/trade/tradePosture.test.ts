@@ -6,6 +6,7 @@ import {
 	capPosture,
 	classifyTier,
 	getTradePostureReport,
+	isEliteByOvr,
 	lookingForFromPosture,
 	posBucket,
 	selectBuildingBlocks,
@@ -39,6 +40,18 @@ describe("posBucket", () => {
 
 	test("unrecognized positions fall through to forward", () => {
 		assert.strictEqual(posBucket("??"), "F");
+	});
+});
+
+describe("isEliteByOvr", () => {
+	test("within 5 team-OVR of the best team → elite", () => {
+		assert.strictEqual(isEliteByOvr(60, 62), true); // 2 back
+		assert.strictEqual(isEliteByOvr(57, 62), true); // exactly 5 back
+		assert.strictEqual(isEliteByOvr(62, 62), true); // the best team itself
+	});
+	test("more than 5 back → not elite", () => {
+		assert.strictEqual(isEliteByOvr(56, 62), false);
+		assert.strictEqual(isEliteByOvr(48, 62), false);
 	});
 });
 

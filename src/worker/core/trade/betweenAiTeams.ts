@@ -517,7 +517,13 @@ const attempt = async (
 		if (!p) {
 			return 0.3;
 		}
-		return p.aggression + (p.shopVeteranPids.length > 0 ? 0.5 : 0);
+		// An elite roster works the phones far harder than anyone — it should be
+		// shocking if a top-of-the-league team doesn't land an upgrade in a season.
+		return (
+			p.aggression +
+			(p.shopVeteranPids.length > 0 ? 0.5 : 0) +
+			(p.elite ? 1.5 : 0)
+		);
 	});
 	const initPosture = postures.get(initiator);
 	if (!initPosture) {
