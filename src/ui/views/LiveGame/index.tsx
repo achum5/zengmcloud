@@ -14,6 +14,7 @@ import {
 import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
+import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { useLocal } from "../../util/local.ts";
 import type { View } from "../../../common/types.ts";
@@ -995,7 +996,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 	useEffect(() => {
 		if (props.events && !started) {
-			boxScore.current = props.initialBoxScore;
+			// Copy, don't alias: playback mutates the box score in place, so props
+			// must stay pristine - a remount re-initializes from them, and replaying
+			// a game on top of its own already-final box score doubles everything.
+			boxScore.current = helpers.deepCopy(props.initialBoxScore);
 			initialEventCount.current = props.events.length;
 			setStarted(true);
 			if (followerRef.current) {
@@ -1008,6 +1012,31 @@ export const LiveGame = (props: View<"liveGame">) => {
 		}
 	}, [props.events, props.initialBoxScore, started, startLiveGame]);
 
+	// The game this view delivered vs the game being broadcast. They differ when
+	// the navigation carrying a new broadcast's payload was dropped (this device
+	// was already parked on this page), which used to leave the previous game on
+	// screen - and its events replaying into the wrong box score.
+	const propsGid = props.initialBoxScore?.gid;
+	const broadcastGid = isFollower ? mpLiveBroadcast?.gid : undefined;
+
+	// Recovery: while following a broadcast for a DIFFERENT game than the one on
+	// screen, keep asking the worker to refresh this view. It serves the cached
+	// broadcast payload, and the wrapper below remounts once the data lands.
+	useEffect(() => {
+		if (broadcastGid === undefined || broadcastGid === propsGid) {
+			return;
+		}
+		const interval = setInterval(() => {
+			void realtimeUpdate(
+				["mpLiveBroadcast"],
+				helpers.leagueUrl(["live_game"]),
+			);
+		}, 1500);
+		return () => {
+			clearInterval(interval);
+		};
+	}, [broadcastGid, propsGid]);
+
 	// Follower lockstep: whenever the simmer's cursor advances, step our own
 	// playback forward to the same position (fast-forwarding through any gap, e.g.
 	// when we first join mid-game). Pure catch-up - it never runs ahead of the
@@ -1015,6 +1044,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const followerCursor = isFollower ? (mpLiveBroadcast?.cursor ?? 0) : 0;
 	useEffect(() => {
 		if (!isFollower || !started || !events.current) {
+			return;
+		}
+		// The cursor belongs to the game being broadcast; never let it step
+		// playback of a different (previous) game still on screen.
+		if (broadcastGid !== undefined && broadcastGid !== propsGid) {
 			return;
 		}
 		let steps = 0;
@@ -1028,7 +1062,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 		if (steps > 0) {
 			setPlayIndex((prev) => prev + steps);
 		}
-	}, [followerCursor, isFollower, started, processToNextPause]);
+	}, [
+		broadcastGid,
+		followerCursor,
+		isFollower,
+		propsGid,
+		started,
+		processToNextPause,
+	]);
 
 	// Broadcaster heartbeat: report our playback position to the room so followers
 	// stay in lockstep, and end the broadcast when we leave the page. Writes only
@@ -1716,13 +1757,18 @@ const LiveGameWrapper = (props: View<"liveGame">) => {
 	// replay). The counter only ever advances on a new broadcast and never reverts
 	// when one ends, so ending a broadcast doesn't remount (and restart) the
 	// finished game, and the broadcaster / single-player never remount at all.
+	// Crucially, wait until the new game's data has actually ARRIVED (props gid
+	// matches the broadcast gid) - remounting with the previous game's props
+	// replays the old game, and LiveGame's own recovery effect keeps refreshing
+	// the view until the payload lands.
 	const { mpLiveBroadcast } = useLocal(["mpLiveBroadcast"]);
 	const remountKey = useRef(0);
 	const lastFollowedStartedAt = useRef<number | undefined>(undefined);
 	if (
 		mpLiveBroadcast?.active &&
 		!mpLiveBroadcast.isBroadcaster &&
-		mpLiveBroadcast.startedAt !== lastFollowedStartedAt.current
+		mpLiveBroadcast.startedAt !== lastFollowedStartedAt.current &&
+		props.initialBoxScore?.gid === mpLiveBroadcast.gid
 	) {
 		lastFollowedStartedAt.current = mpLiveBroadcast.startedAt;
 		remountKey.current += 1;

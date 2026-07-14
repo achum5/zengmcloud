@@ -2184,6 +2184,10 @@ export type UpdateEvents = (
 	| "teamFinances"
 	| "draftLottery"
 
+	// A follower asking the liveGame view to serve the cached multiplayer
+	// broadcast payload (recovery when the navigation carrying it was dropped).
+	| "mpLiveBroadcast"
+
 	// This should be used for things that do stuff like "select all players on watch list", not updating the watch property for individual players. crossTabEmit handles that automatically.
 	| "watchList"
 )[];

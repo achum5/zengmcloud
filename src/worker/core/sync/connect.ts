@@ -356,6 +356,19 @@ let followedBroadcast:
 	| { startedAt: number; gid: number; expiresAt: number }
 	| undefined;
 
+// The followed broadcast's game payload, kept for the liveGame view to serve on
+// ANY load of the page while the broadcast is live - the navigation that
+// delivers it through the router can be silently dropped when the follower is
+// already parked on the live game page (same-URL refreshes queue behind other
+// updates and a navigation clears the queue), and that stale-props remount once
+// produced a 206-point box score of two games merged. Cleared when the
+// broadcast ends.
+let followedBroadcastPayload:
+	| { startedAt: number; gid: number; playByPlay: any[]; boxScore: any }
+	| undefined;
+
+export const getFollowedBroadcastPayload = () => followedBroadcastPayload;
+
 // Start broadcasting a live sim to the room. No-op unless connected AND this
 // device is in charge of simming (so single-player / followers never touch the cloud).
 // The play-by-play + a snapshot of the game record go out ONCE as payload
@@ -511,6 +524,7 @@ const handleLiveBroadcastMeta = async (
 	if (!meta || !meta.active || meta.expiresAt < Date.now()) {
 		if (followedBroadcast) {
 			followedBroadcast = undefined;
+			followedBroadcastPayload = undefined;
 			void toUI("updateLocal", [
 				{ mpLiveBroadcast: undefined, liveGameInProgress: false },
 			]);
@@ -543,6 +557,12 @@ const handleLiveBroadcastMeta = async (
 				return;
 			}
 			const { boxScore, playByPlay } = deserializeChangeset(serialized);
+			followedBroadcastPayload = {
+				startedAt: meta.startedAt,
+				gid: meta.gid,
+				playByPlay,
+				boxScore,
+			};
 			// Same navigation the simmer's own live sim uses, so the exact same view
 			// path renders it. fromAction bypasses the deep-link guard; mpFollower
 			// tells the view to use the payload's game record.
@@ -589,6 +609,7 @@ const handleLiveBroadcastMeta = async (
 const checkLiveBroadcastLease = () => {
 	if (followedBroadcast && Date.now() > followedBroadcast.expiresAt) {
 		followedBroadcast = undefined;
+		followedBroadcastPayload = undefined;
 		void toUI("updateLocal", [
 			{ mpLiveBroadcast: undefined, liveGameInProgress: false },
 		]);
@@ -1474,6 +1495,7 @@ export const teardownSharedLeague = async ({
 	}
 	activeBroadcast = undefined;
 	followedBroadcast = undefined;
+	followedBroadcastPayload = undefined;
 	currentTransport = undefined;
 	lastPendingUploads = 0;
 	void toUI("updateLocal", [

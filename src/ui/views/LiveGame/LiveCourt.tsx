@@ -1,6 +1,7 @@
 import {
 	useEffect,
 	useId,
+	useLayoutEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -313,7 +314,11 @@ const FACE_ANIM_CSS = `
 
 // One player standing on the floor: face centered ON its court point (over the
 // shot dot), with a name tag placed above or below to avoid colliding with a
-// nearby player's tag. Positioned in % so it tracks the SVG as it scales.
+// nearby player's tag. Moved with a compositor transform (translate3d in
+// measured px) rather than left/top - animating left/top forces layout+paint
+// on every transition frame for every face, which is what made the court chug
+// on mobile. Falls back to left/top % for the one paint before the container
+// is measured.
 const FaceOnCourt = ({
 	actor,
 	season,
@@ -321,6 +326,7 @@ const FaceOnCourt = ({
 	color,
 	anim,
 	nameAbove,
+	size,
 }: {
 	actor: CourtActor;
 	season: number | undefined;
@@ -328,10 +334,12 @@ const FaceOnCourt = ({
 	color: string;
 	anim?: "shake" | "swipe";
 	nameAbove?: boolean;
+	// Measured px size of the court container (see LiveCourt's ResizeObserver).
+	size: { w: number; h: number } | undefined;
 }) => {
 	const faceData = usePlayerFace(actor.pid, season, lid);
-	const left = ((actor.x + RAIL_W) / (COURT_W + 2 * RAIL_W)) * 100;
-	const top = ((actor.y + APRON) / (COURT_H + 2 * APRON)) * 100;
+	const fx = (actor.x + RAIL_W) / (COURT_W + 2 * RAIL_W);
+	const fy = (actor.y + APRON) / (COURT_H + 2 * APRON);
 
 	const animation =
 		anim === "shake"
@@ -364,15 +372,29 @@ const FaceOnCourt = ({
 		</div>
 	);
 
+	// The OUTER div only places the point on the court (compositor-friendly
+	// translate3d, transitioned for the glide between plays). The INNER div
+	// carries the centering REST transform and the one-shot shake/swipe
+	// animations (whose keyframes bake REST in), so animating never fights the
+	// positioning.
+	const positionStyle = size
+		? {
+				left: 0,
+				top: 0,
+				transform: `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`,
+				transition: "transform 0.4s ease",
+				willChange: "transform",
+			}
+		: {
+				left: `${fx * 100}%`,
+				top: `${fy * 100}%`,
+			};
+
 	return (
 		<div
 			className="position-absolute"
 			style={{
-				left: `${left}%`,
-				top: `${top}%`,
-				transform: REST,
-				transition: animation ? undefined : "left 0.4s ease, top 0.4s ease",
-				animation,
+				...positionStyle,
 				pointerEvents: "none",
 				zIndex: actor.role === "main" ? 5 : 4,
 			}}
@@ -382,6 +404,8 @@ const FaceOnCourt = ({
 					position: "relative",
 					height: FACE_H,
 					width: FACE_W,
+					transform: REST,
+					animation,
 					filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
 				}}
 			>
@@ -422,6 +446,36 @@ const LiveCourt = ({
 	const ringRef = useRef<SVGCircleElement | null>(null);
 	const rafRef = useRef<number | undefined>(undefined);
 	const [, forceRender] = useState(0);
+
+	// Measured px size of the court container, so faces can be positioned with a
+	// compositor transform (translate3d) instead of layout-triggering left/top.
+	// useLayoutEffect measures before first paint; the ResizeObserver keeps it
+	// current through resizes/rotations.
+	const containerRef = useRef<HTMLDivElement | null>(null);
+	const [size, setSize] = useState<{ w: number; h: number } | undefined>(
+		undefined,
+	);
+	useLayoutEffect(() => {
+		const el = containerRef.current;
+		if (!el) {
+			return;
+		}
+		const measure = () => {
+			const w = el.clientWidth;
+			const h = el.clientHeight;
+			if (w > 0 && h > 0) {
+				setSize((prev) =>
+					prev && prev.w === w && prev.h === h ? prev : { w, h },
+				);
+			}
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(el);
+		return () => {
+			observer.disconnect();
+		};
+	}, []);
 
 	const away = teams[0];
 	const home = teams[1];
@@ -1134,6 +1188,7 @@ const LiveCourt = ({
 
 	return (
 		<div
+			ref={containerRef}
 			className="mb-3 position-relative"
 			style={{
 				userSelect: "none",
@@ -1146,14 +1201,46 @@ const LiveCourt = ({
 			}}
 		>
 			<style>{FACE_ANIM_CSS}</style>
+			{/* The court is THREE stacked same-viewBox SVGs, not one. The ball is
+			    animated by mutating attributes every animation frame, and when it
+			    lived in the same SVG as the grain-filtered floor, every frame
+			    repainted the whole filtered surface - unusably slow on mobile.
+			    Splitting the layers means a ball frame repaints only its own tiny
+			    overlay. */}
 			<svg viewBox={VIEW} style={{ width: "100%", display: "block" }}>
 				{/* Static court (floor, lines, branding) - memoized, see above */}
 				{courtBackground}
+			</svg>
 
-				{/* Accumulated shot chart; hover a dot for the details */}
+			{/* Accumulated shot chart; hover a dot for the details. The svg itself
+			    ignores the pointer so it never blocks the page; the dots opt back in
+			    for their tooltips. */}
+			<svg
+				viewBox={VIEW}
+				style={{
+					position: "absolute",
+					inset: 0,
+					width: "100%",
+					height: "100%",
+					pointerEvents: "none",
+				}}
+			>
 				{dotsLayer}
+			</svg>
 
-				{/* Pulse ring (swish / turnover / foul) + the ball */}
+			{/* Pulse ring (swish / turnover / foul) + the ball, on their own
+			    compositor layer (willChange) so per-frame mutation stays cheap. */}
+			<svg
+				viewBox={VIEW}
+				style={{
+					position: "absolute",
+					inset: 0,
+					width: "100%",
+					height: "100%",
+					pointerEvents: "none",
+					willChange: "transform",
+				}}
+			>
 				<circle
 					ref={ringRef}
 					cx={0}
@@ -1202,6 +1289,7 @@ const LiveCourt = ({
 								}
 								anim={anim}
 								nameAbove={nameAboveFor(actor)}
+								size={size}
 							/>
 						);
 					})

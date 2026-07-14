@@ -1,4 +1,5 @@
 import { player, team } from "../core/index.ts";
+import { getFollowedBroadcastPayload } from "../core/sync/connect.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import {
@@ -195,20 +196,42 @@ const updatePlayByPlay = async (
 		redirectUrl: helpers.leagueUrl(["daily_schedule"]),
 	};
 
-	if (updateEvents.includes("firstRun") && !inputs.fromAction) {
-		return redirectToMenu;
+	// A follower already parked on this page can miss the navigation that
+	// carries a new broadcast's payload (same-URL refreshes can be dropped by
+	// the view queue), leaving it replaying the PREVIOUS game's props. The sync
+	// layer caches the followed broadcast's payload, so a plain load of this
+	// page (or an explicit "mpLiveBroadcast" refresh from the recovery effect)
+	// can serve the current broadcast without the navigation.
+	let { gid, playByPlay } = inputs;
+	let inputBoxScore = inputs.boxScore;
+	if (
+		(playByPlay === undefined || playByPlay.length === 0) &&
+		(updateEvents.includes("firstRun") ||
+			updateEvents.includes("mpLiveBroadcast"))
+	) {
+		const payload = getFollowedBroadcastPayload();
+		if (payload) {
+			gid = payload.gid;
+			playByPlay = payload.playByPlay;
+			// boxScoreToLiveSim mutates the box score in place, so hand it a copy -
+			// a later load of this page needs the cached one pristine.
+			inputBoxScore = helpers.deepCopy(payload.boxScore);
+		}
 	}
 
 	if (
-		inputs.gid !== undefined &&
-		inputs.playByPlay !== undefined &&
-		inputs.playByPlay.length > 0
+		updateEvents.includes("firstRun") &&
+		!inputs.fromAction &&
+		(playByPlay === undefined || playByPlay.length === 0)
 	) {
+		return redirectToMenu;
+	}
+
+	if (gid !== undefined && playByPlay !== undefined && playByPlay.length > 0) {
 		// A multiplayer follower gets the game record in the broadcast payload, so
 		// it doesn't have to wait for the separate changeset sync to land the game
 		// row before it can render the live sim. Everyone else reads it from idb.
-		const boxScore =
-			inputs.boxScore ?? (await idb.getCopy.games({ gid: inputs.gid }));
+		const boxScore = inputBoxScore ?? (await idb.getCopy.games({ gid }));
 
 		if (!boxScore) {
 			throw new Error("Invalid gid");
@@ -264,7 +287,7 @@ const updatePlayByPlay = async (
 			allStars,
 			boxScore,
 			confetti,
-			playByPlay: inputs.playByPlay,
+			playByPlay,
 		});
 		(out.initialBoxScore as any).finals = finals;
 
