@@ -318,46 +318,27 @@ const hasBadRental = async (
 	return false;
 };
 
-const attempt = async (
-	ctx: AttemptContext,
-): Promise<[number, number] | false> => {
-	const { postures, valueChangeCalculator, aiTids, season, starOvr } = ctx;
-	if (aiTids.length < 2) {
-		return false;
-	}
+const MARKET_CANDIDATES = 5;
 
-	// Initiator: the more motivated a team is (aggressive posture, veterans to
-	// shop), the more likely it is to be the one making a move.
-	const initiator = choice(aiTids, (tid) => {
-		const p = postures.get(tid);
-		if (!p) {
-			return 0.3;
-		}
-		return p.aggression + (p.shopVeteranPids.length > 0 ? 0.5 : 0);
-	});
-	const initPosture = postures.get(initiator);
-	if (!initPosture) {
-		return false;
-	}
-
-	// Partner: drawn to the opposite end of the buy/sell spectrum.
-	const others = aiTids.filter((t) => t !== initiator);
-	if (others.length === 0) {
-		return false;
-	}
-	const partner = choice(others, (tid) => {
+// A weighted sample of up to `count` DISTINCT partners, favoring the tiers that
+// fit (a seller courts buyers, a star-hunter courts teams with a shoppable
+// star). This is the shortlist of teams the initiator "calls" this round - the
+// pool it feels out, not a single pre-chosen partner.
+const shortlistPartners = (
+	others: number[],
+	initPosture: TradePosture,
+	postures: Map<number, TradePosture>,
+	count: number,
+): number[] => {
+	const weight = (tid: number): number => {
 		const pp = postures.get(tid);
 		if (!pp) {
 			return 1;
 		}
 		let w = partnerWeight(initPosture.tier, pp.tier);
-		// A star-hunting contender seeks out the teams that actually have a star
-		// they'd move — that's where blockbusters come from.
 		if (initPosture.tier === "allIn" && initPosture.starGap && pp.shoppableStar) {
 			w *= 3;
 		}
-		// And a seller with a star on the block courts the win-now teams that
-		// want him — aggressive sellers sell to aggressive buyers.
 		if (
 			isSelling(initPosture.tier) &&
 			initPosture.shoppableStar &&
@@ -366,57 +347,45 @@ const attempt = async (
 			w *= 2;
 		}
 		return w;
-	});
-
-	const allInitiatorPlayers = await idb.cache.players.indexGetAll(
-		"playersByTid",
-		initiator,
-	);
-	const players = allInitiatorPlayers.filter(
-		(p) =>
-			!isUntradable(p).untradable &&
-			// No same-season ping-pong: don't flip a player you just traded for.
-			!wasTradedThisSeason(p.transactions, season),
-	);
-	const draftPicks = await idb.cache.draftPicks.indexGetAll(
-		"draftPicksByTid",
-		initiator,
-	);
-	if (players.length === 0 && draftPicks.length === 0) {
-		return false;
+	};
+	const pool = [...others];
+	const picked: number[] = [];
+	while (pool.length > 0 && picked.length < count) {
+		const t = choice(pool, weight);
+		picked.push(t);
+		pool.splice(pool.indexOf(t), 1);
 	}
+	return picked;
+};
 
-	const seed = await buildSeed(
-		initiator,
-		initPosture,
-		players,
-		draftPicks,
-		season,
-		starOvr,
-	);
-	if (!seed) {
-		return false;
-	}
+// One candidate partner's BEST offer for what the initiator is shopping, fully
+// guarded — or null if nothing clean clears. A single feeler in the market: the
+// partner (via makeItWork) assembles the cheapest package IT will accept, judged
+// by ITS OWN outlook (the value calc is stock BBGM, tilted by each team's
+// strategy). We return how good that offer is FOR THE INITIATOR (dv2), so the
+// caller can compare competing offers and take the best one.
+const buildOfferFromPartner = async (args: {
+	initiator: number;
+	initPosture: TradePosture;
+	seed: {
+		pids: number[];
+		dpids: number[];
+		motivatedDump: boolean;
+		starSale: boolean;
+	};
+	initiatorExcluded: number[];
+	partner: number;
+	ctx: AttemptContext;
+}): Promise<{ teams: TradeTeams; dv2: number; landsStar: boolean } | null> => {
+	const { initiator, initPosture, seed, initiatorExcluded, partner, ctx } = args;
+	const { postures, valueChangeCalculator, season, starOvr } = ctx;
 
-	// Hard protection, applied to BOTH sides of the table. Building blocks were
-	// only ever respected when a team was picking its own offer — as the RESPONDER,
-	// makeItWork could strip a rebuilder's 24yo cornerstone as long as the value
-	// math cleared, which is exactly the trade a rebuild exists to refuse. Same-
-	// season ping-pong is excluded here too (makeItWork re-reads rosters from the
-	// DB, so pool filtering alone can't enforce either rule). A seeded pid stays
-	// tradable: seeding a protected expiring player IS the deliberate exception
-	// (dumping a walk-year guy who won't re-sign).
+	// Both sides' building blocks (and just-traded players) are off the table.
 	const partnerPosture = postures.get(partner);
 	const partnerPlayers = await idb.cache.players.indexGetAll(
 		"playersByTid",
 		partner,
 	);
-	const initiatorExcluded = [
-		...initPosture.buildingBlockPids,
-		...allInitiatorPlayers
-			.filter((p) => wasTradedThisSeason(p.transactions, season))
-			.map((p) => p.pid),
-	].filter((pid) => !seed.pids.includes(pid));
 	const partnerExcluded = [
 		...(partnerPosture?.buildingBlockPids ?? []),
 		...partnerPlayers
@@ -441,19 +410,15 @@ const attempt = async (
 		},
 	];
 
-	// A win-now contender hunting talent is allowed to assemble a much bigger
-	// package, so a genuine star (which takes a stack of first-rounders to pry
-	// loose) can actually come together instead of dying at the ceiling. Because
-	// makeItWork stops at the minimal deal that clears, this ONLY enlarges the deals
-	// that truly need it (stars) — ordinary deals still stop early.
+	// A win-now contender hunting talent may assemble a much bigger package so a
+	// genuine star can actually come together; makeItWork stops at the minimal
+	// clearing deal, so this only enlarges the deals that truly need it.
 	const chasingTalent =
 		!isSelling(initPosture.tier) && initPosture.lookingFor.bestCurrentPlayers;
 	const maxAssetsToAdd = chasingTalent
 		? BLOCKBUSTER_MAX_ASSETS
 		: NORMAL_MAX_ASSETS;
 
-	// makeItWork fleshes out the deal until the PARTNER accepts (dv > 0 for it),
-	// pulling the assets the initiator's lookingFor describes.
 	const teams = await makeItWork(teams0, {
 		holdUserConstant: false,
 		maxAssetsToAdd,
@@ -461,52 +426,40 @@ const attempt = async (
 		valueChangeCalculator,
 	});
 	if (!teams) {
-		return false;
+		return null;
 	}
 
 	// Don't do trades of just picks, or where the partner gives nothing.
 	if (teams[0].pids.length === 0 && teams[1].pids.length === 0) {
-		return false;
+		return null;
 	}
 	if (teams[1].pids.length === 0 && teams[1].dpids.length === 0) {
-		return false;
+		return null;
 	}
 
-	// Realism cap on package size: sub-average players are ~free under the value
-	// curve, so without this a whole bench can ride along on one side of an
-	// otherwise-fair deal. Six pieces a side fits every legit blockbuster.
+	// Realism cap on package size (sub-average players are ~free under the curve).
 	if (
 		teams[0].pids.length + teams[0].dpids.length > MAX_ASSETS_PER_SIDE ||
 		teams[1].pids.length + teams[1].dpids.length > MAX_ASSETS_PER_SIDE
 	) {
-		return false;
+		return null;
 	}
 
 	const tradeSummary = await summary(teams);
 	if (tradeSummary.warning) {
-		return false;
+		return null;
 	}
-
-	// No bad rentals: nobody but an all-in contender takes a low-mood walk-year.
 	if (await hasBadRental(teams, postures, season)) {
-		return false;
+		return null;
 	}
-
-	// No pure downgrades: never let a team come out worse AND older with no picks
-	// to show for it (a backstop against a fooled valuation).
 	if (await anyPureDowngrade(teams, season)) {
-		return false;
+		return null;
 	}
-
-	// Timeline fit: a rebuilder doesn't buy veterans (unless paid in picks to
-	// absorb them), a contender doesn't swap its best player for a worse one.
 	if (await violatesTimeline(teams, postures, season)) {
-		return false;
+		return null;
 	}
 
-	// The initiator must find the deal roughly fair to itself — unless it's
-	// dumping a walk-year player, in which case it will swallow a worse return
-	// rather than lose him for nothing.
+	// How good is this offer for the INITIATOR? (Its own strategy-tilted value.)
 	const dv2 = await valueChangeCalculator.evaluate({
 		tid: teams[0].tid,
 		pidsAdd: teams[1].pids,
@@ -515,13 +468,6 @@ const attempt = async (
 		dpidsRemove: teams[0].dpids,
 		tradingPartnerTid: undefined,
 	});
-
-	// How lopsided (against itself) a deal the initiator will accept. The
-	// valuation itself is stock BBGM — strategy expresses ONLY through these
-	// tolerances (and the seeding/partner/guards above), never by warping what
-	// assets are worth. Wider tolerance for: a contender paying a premium to
-	// land a genuine star, a seller working to move its star to a win-now team,
-	// and a walk-year dump (widest — he's gone for nothing otherwise).
 	const landsStar = isStarAcquisition({
 		bestReceivedOvr: await maxOvr(teams[1].pids),
 		acquirerTier: initPosture.tier,
@@ -538,13 +484,114 @@ const attempt = async (
 		lowerBound = Math.min(lowerBound, STAR_PREMIUM_DV);
 	}
 	if (dv2 > NORMAL_DV_TOLERANCE || dv2 < lowerBound) {
+		return null;
+	}
+
+	return { teams, dv2, landsStar };
+};
+
+const attempt = async (
+	ctx: AttemptContext,
+): Promise<[number, number] | false> => {
+	const { postures, aiTids, season, starOvr } = ctx;
+	if (aiTids.length < 2) {
 		return false;
 	}
 
+	// Initiator: the more motivated a team is (aggressive posture, veterans to
+	// shop), the more likely it is to be the one taking its assets to the market.
+	const initiator = choice(aiTids, (tid) => {
+		const p = postures.get(tid);
+		if (!p) {
+			return 0.3;
+		}
+		return p.aggression + (p.shopVeteranPids.length > 0 ? 0.5 : 0);
+	});
+	const initPosture = postures.get(initiator);
+	if (!initPosture) {
+		return false;
+	}
+
+	const allInitiatorPlayers = await idb.cache.players.indexGetAll(
+		"playersByTid",
+		initiator,
+	);
+	const players = allInitiatorPlayers.filter(
+		(p) =>
+			!isUntradable(p).untradable &&
+			// No same-season ping-pong: don't flip a player you just traded for.
+			!wasTradedThisSeason(p.transactions, season),
+	);
+	const draftPicks = await idb.cache.draftPicks.indexGetAll(
+		"draftPicksByTid",
+		initiator,
+	);
+	if (players.length === 0 && draftPicks.length === 0) {
+		return false;
+	}
+
+	// What the initiator brings to market (a shopped vet/star, a walk-year dump,
+	// or a buyer's pick/spare depth chasing talent) - the SAME offer is floated to
+	// every candidate below.
+	const seed = await buildSeed(
+		initiator,
+		initPosture,
+		players,
+		draftPicks,
+		season,
+		starOvr,
+	);
+	if (!seed) {
+		return false;
+	}
+
+	// The initiator's OWN untouchables (building blocks + just-traded), minus
+	// anything it deliberately seeded (a walk-year dump can be a building block).
+	const initiatorExcluded = [
+		...initPosture.buildingBlockPids,
+		...allInitiatorPlayers
+			.filter((p) => wasTradedThisSeason(p.transactions, season))
+			.map((p) => p.pid),
+	].filter((pid) => !seed.pids.includes(pid));
+
+	const others = aiTids.filter((t) => t !== initiator);
+	if (others.length === 0) {
+		return false;
+	}
+
+	// Feel out the market: float the seed to a shortlist of fitting teams, collect
+	// each one's best offer, and take the one that helps US most (highest dv2
+	// within tolerance). This is the market clearing to the best bid - the asset
+	// goes to whoever values it most, not to whichever team we happened to call
+	// first. Every offer is a real evaluation by BOTH sides' outlooks.
+	const candidates = shortlistPartners(
+		others,
+		initPosture,
+		postures,
+		MARKET_CANDIDATES,
+	);
+	let best: { teams: TradeTeams; dv2: number; landsStar: boolean } | null = null;
+	for (const partner of candidates) {
+		const offer = await buildOfferFromPartner({
+			initiator,
+			initPosture,
+			seed,
+			initiatorExcluded,
+			partner,
+			ctx,
+		});
+		if (offer && (best === null || offer.dv2 > best.dv2)) {
+			best = offer;
+		}
+	}
+	if (!best) {
+		return false;
+	}
+
+	const { teams, dv2, landsStar } = best;
 	const finalTids: [number, number] = [teams[0].tid, teams[1].tid];
 
-	// Record WHY this deal happened, so trade history can be audited against the
-	// AI's actual intent instead of reverse-engineered from records.
+	// Record WHY this deal happened, for auditing intent against the trade log.
 	const motivation = seed.motivatedDump
 		? "dump-expiring"
 		: seed.starSale
