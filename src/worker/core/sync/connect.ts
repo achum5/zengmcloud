@@ -199,12 +199,13 @@ let catchUpTimer: ReturnType<typeof setInterval> | undefined;
 // deliveries, so it still probes once per interval to detect a dead listener.
 const CATCH_UP_INTERVAL_MS = 30000;
 
-// A real-time delivery this recently proves the listener is alive, so the poll
-// can skip its confirming read. Kept BELOW the poll interval on purpose: if this
-// window equalled the interval, an idle room's contact would age to ~the interval
-// at each tick and sometimes read as "fresh", skipping the probe - a beat that
-// fires only every other tick and lets the health dot go stale. Below the
-// interval, an idle room (no deliveries) reliably probes every tick.
+// A delivery from the live CHANGES listener this recently proves game data is
+// still flowing, so the poll can skip its confirming read (when also fully
+// caught up - see the catchUpTimer). Kept BELOW the poll interval on purpose:
+// if this window equalled the interval, a delivery's age would sit at ~the
+// interval at each tick and sometimes read as "fresh", skipping the probe - a
+// beat that fires only every other tick. Below the interval, a quiet listener
+// reliably probes every tick.
 const LISTENER_FRESH_MS = 20000;
 
 // How many recent log entries the activity panel reads. Bounded so it renders a
@@ -1335,16 +1336,26 @@ const doConnectSharedLeague = async ({
 	}
 	catchUpTimer = setInterval(() => {
 		const engine = getSyncEngine();
-		// Skip the billed catch-up read when the live listener is subscribed AND has
-		// delivered (or otherwise confirmed contact) within LISTENER_FRESH_MS - a
-		// recent delivery proves it's alive and we're caught up, so the poll would
-		// only re-confirm that at a cost. Still probe when contact is stale (idle room
-		// or a dropped listener) so a dead listener is detected. During the initial
-		// backlog drain (before the subscription exists) this always runs.
-		const lastContact = currentTransport?.getLastContactAt?.() ?? 0;
-		const contactFresh = Date.now() - lastContact < LISTENER_FRESH_MS;
+		// Skip the billed catch-up read ONLY when there is provably nothing to do:
+		// the live CHANGES listener delivered an entry within LISTENER_FRESH_MS and
+		// everything seen has been applied (isCaughtUp). Two hard-won subtleties:
+		//   - The freshness signal must be the changes listener SPECIFICALLY, never
+		//     the transport's global contact time: any listener refreshes that (the
+		//     authority doc heartbeats constantly during a sim), so a follower whose
+		//     changes listener silently died looked "fresh" while game data stopped
+		//     arriving - and the skipped backstop meant it could NEVER catch up
+		//     while the room was active (the exact time it most needed to).
+		//   - isCaughtUp alone is also not enough: it is relative to what this
+		//     device has SEEN, so a dead listener yields a confidently-wrong true.
+		// An idle room delivers nothing, so it still probes once per interval - the
+		// unavoidable price of detecting a dead listener. The saving lands in
+		// active rooms, where the old poll re-read a log the listener had already
+		// delivered. During the initial backlog drain this always runs.
+		const lastDelivery = engine?.getLastChangesDeliveryAt() ?? 0;
+		const changesFresh = Date.now() - lastDelivery < LISTENER_FRESH_MS;
 		const subscribed = engine?.hasChangesSubscription?.() ?? false;
-		if (!(subscribed && contactFresh)) {
+		const caughtUp = engine?.isCaughtUp() ?? false;
+		if (!(subscribed && changesFresh && caughtUp)) {
 			void driveCatchUp();
 		}
 		// Second, independent kick for the upload drain (it also self-retries with

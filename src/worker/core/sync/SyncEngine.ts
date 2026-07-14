@@ -567,7 +567,14 @@ export class SyncEngine {
 			return;
 		}
 		this.unsubscribe = this.transport.subscribe({
-			onEntry: (entry) => this.handleEntry(entry),
+			onEntry: (entry) => {
+				// Deliveries from the LIVE changes listener specifically (unlike the
+				// transport's global lastContactAt, which ANY listener refreshes - the
+				// authority doc heartbeats during a sim, so it proves nothing about
+				// whether GAME DATA is still arriving). The catch-up poll gates on this.
+				this.lastChangesDeliveryAt = Date.now();
+				return this.handleEntry(entry);
+			},
 			onError: (error) => {
 				// Terminal listener death (see startAuthoritySubscription). Re-create
 				// it from the durable watermark; until then the periodic catch-up
@@ -1586,6 +1593,15 @@ export class SyncEngine {
 	// fail to upload. A transport without the probe (the test fake) is treated as live.
 	async verifyConnection(force = false): Promise<boolean> {
 		return (await this.transport.verifyConnection?.(force)) ?? true;
+	}
+
+	// When the live changes subscription last delivered an entry (0 = never).
+	// See startChangesSubscription for why this is tracked separately from the
+	// transport's global contact time.
+	private lastChangesDeliveryAt = 0;
+
+	getLastChangesDeliveryAt(): number {
+		return this.lastChangesDeliveryAt;
 	}
 
 	// Ms since last confirmed live contact with the cloud (undefined if untracked).

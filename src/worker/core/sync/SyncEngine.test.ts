@@ -498,6 +498,33 @@ describe("SyncEngine", () => {
 		assert.strictEqual(watermarks.at(-1), bus.entries.at(-1)!.seq);
 	});
 
+	test("tracks live changes-listener deliveries for the catch-up poll gate", async () => {
+		const bus = new FakeBus();
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+		receiver.start();
+		receiver.startChangesSubscription();
+
+		resetG();
+		await resetCache({});
+
+		// No delivery yet - the poll must read this as stale and keep probing. The
+		// transport's GLOBAL contact time is not a substitute: any listener (e.g.
+		// the authority doc during a sim) refreshes that, so gating on it starved a
+		// behind follower of its backstop exactly while the room was active.
+		assert.strictEqual(receiver.getLastChangesDeliveryAt(), 0);
+
+		const host = new SyncEngine(new FakeTransport("H", bus));
+		host.start();
+		await host.claimAuthority();
+		await host.onLocalChangeset(
+			{ changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }] },
+			"main.proposeTrade",
+		);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		assert.ok(receiver.getLastChangesDeliveryAt() > 0);
+	});
+
 	test("does not silently drop a local bulk change if authority state drifted", async () => {
 		const bus = new FakeBus();
 		const nonHost = new SyncEngine(new FakeTransport("N", bus));
