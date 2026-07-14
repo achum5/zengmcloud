@@ -1524,10 +1524,37 @@ export class SyncEngine {
 				}
 				continue;
 			}
+			// Is this batch PROVABLY dead - can its missing chunks ever still arrive?
+			// They can't when EITHER:
+			//   - its AUTHOR has published entries beyond it (FIFO outbox: anything
+			//     still queued there would have to publish before those later
+			//     entries, so the missing chunks can never arrive), OR
+			//   - the LOG itself continues past the batch (maxSeq is beyond the
+			//     batch's last chunk, and the sweep only judges batches whose full
+			//     range this pass walked - so every entry around it was seen and
+			//     the chunks simply are not there). This case is the one that
+			//     was wedging devices forever: a chunk lost during upload, with the
+			//     room's later activity coming from OTHER authors, left
+			//     authorProgress behind the batch even though the log had moved on
+			//     by tens of thousands of entries.
+			const authorProgress = this.lastSeqByAuthor.get(batch.authorId) ?? 0;
+			const logMovedPast = this.maxSeq > batch.maxChunkSeq;
+			const provablyDead =
+				authorProgress > batch.maxChunkSeq || logMovedPast;
 			const lastHave = this.staleBatchHave.get(batchId);
-			if (lastHave === undefined || batch.chunks.size > lastHave) {
-				// First sighting at the head, or it grew since last pass - still
-				// arriving. Check again next pass.
+			if (
+				!provablyDead &&
+				(lastHave === undefined || batch.chunks.size > lastHave)
+			) {
+				// First sighting, or it grew since last pass - it may still be
+				// arriving, so check again next pass. Only batches that are NOT
+				// provably dead get this patience: a dead batch's chunks can never
+				// arrive (see above), and each extra confirmation pass costs a full
+				// cycle - on a phone that suspends the app after ~a minute of
+				// inactivity, these in-memory counters reset on every suspend, so a
+				// long dance never finished at all. Dead batches go straight to a
+				// reset on first sighting and are abandoned right after ONE clean
+				// rebuild still comes up short.
 				nowStale.set(batchId, batch.chunks.size);
 				continue;
 			}
@@ -1539,23 +1566,6 @@ export class SyncEngine {
 				need: batch.count,
 				resets,
 			};
-			// Is this batch PROVABLY dead - can its missing chunks ever still arrive?
-			// They can't when EITHER:
-			//   - its AUTHOR has published entries beyond it (FIFO outbox: anything
-			//     still queued there would have to publish before those later
-			//     entries, so the missing chunks can never arrive), OR
-			//   - the LOG itself continues past the batch (maxSeq is beyond the
-			//     batch's last chunk, and sweepStaleBatches only runs once we've
-			//     drained to the head - so we've already seen every entry after it
-			//     and the chunks simply are not there). This case is the one that
-			//     was wedging devices forever: a chunk lost during upload, with the
-			//     room's later activity coming from OTHER authors, left
-			//     authorProgress behind the batch even though the log had moved on
-			//     by tens of thousands of entries.
-			const authorProgress = this.lastSeqByAuthor.get(batch.authorId) ?? 0;
-			const logMovedPast = this.maxSeq > batch.maxChunkSeq;
-			const provablyDead =
-				authorProgress > batch.maxChunkSeq || logMovedPast;
 			if (provablyDead && resets >= 1) {
 				// One clean rebuild already re-fetched the whole tail and the chunks
 				// still weren't there, and the log has provably moved past the batch -
