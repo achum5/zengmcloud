@@ -7,7 +7,7 @@ import {
 	syncDebugEnabled,
 	type SyncDebugEntry,
 } from "../../util/syncDebugStore.ts";
-import { logEvent } from "../../util/logEvent.ts";
+import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 
 // A fixed on-screen panel that shows the sync debug logs, for diagnosing sync
@@ -73,7 +73,7 @@ const SyncDebugOverlay = () => {
 		const text = `${header}${asText(shown)}`;
 		try {
 			await navigator.clipboard.writeText(text);
-			logEvent({ type: "success", text: "Sync logs copied.", saveToDb: false });
+			showNotification({ type: "success", text: "Sync logs copied." });
 		} catch {
 			// Clipboard can be blocked; fall back to a selectable prompt.
 			window.prompt("Copy the sync logs:", text);

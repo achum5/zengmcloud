@@ -8,7 +8,7 @@ import {
 } from "../../common/constants.ts";
 import { DataTable } from "../components/DataTable/index.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
-import { logEvent } from "../util/logEvent.ts";
+import { showNotification } from "../util/showNotification.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { getCols } from "../../common/getCols.ts";
 import type { View } from "../../common/types.ts";
@@ -140,23 +140,25 @@ const Star = ({ lid, starred }: { lid: number; starred?: boolean }) => {
 
 	if (actuallyStarred) {
 		return (
-			<span
-				className="glyphicon glyphicon-star p-1 text-primary"
-				data-no-row-highlight="true"
+			<button
+				className="btn btn-link p-0 border-0"
 				onClick={toggle}
 				style={glyphiconStyle}
-			/>
+			>
+				<span className="glyphicon glyphicon-star p-1 text-primary" />
+			</button>
 		);
 	}
 
 	return (
-		<span
-			className="glyphicon glyphicon-star-empty p-1 text-body-secondary"
-			data-no-row-highlight="true"
+		<button
+			className="btn btn-link p-0 border-0"
 			onClick={toggle}
 			style={glyphiconStyle}
 			title="Star"
-		/>
+		>
+			<span className="glyphicon glyphicon-star-empty p-1 text-body-secondary" />
+		</button>
 	);
 };
 
@@ -296,16 +298,14 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 					className={window.mobile ? "dropdown-mobile" : undefined}
 				>
 					<Dropdown.Toggle
-						as="span"
 						bsPrefix="no-caret"
 						id={`dashboard-actions-${league.lid}`}
 						style={glyphiconStyle}
 						title="Actions"
+						variant="link"
+						className="p-0 border-0"
 					>
-						<span
-							className="glyphicon glyphicon-option-vertical text-body-secondary p-2"
-							data-no-row-highlight="true"
-						/>
+						<span className="glyphicon glyphicon-option-vertical text-body-secondary p-2" />
 					</Dropdown.Toggle>
 					{!disabled ? (
 						<Dropdown.Menu>
@@ -340,11 +340,9 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 							<Dropdown.Item
 								onClick={async () => {
 									try {
-										logEvent({
+										showNotification({
 											type: "info",
 											text: `Cloning league "${league.name}". This may take a little while if it's a large league.`,
-											saveToDb: false,
-											showNotification: true,
 										});
 
 										setCloningLID(league.lid);
@@ -355,17 +353,14 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 										);
 										setCloningLID(undefined);
 
-										logEvent({
+										showNotification({
 											type: "info",
 											text: `Clone complete! Your new league is named "${name}".`,
-											saveToDb: false,
-											showNotification: true,
 										});
 									} catch (error) {
-										logEvent({
+										showNotification({
 											type: "error",
 											text: error.message,
-											saveToDb: false,
 										});
 									}
 								}}

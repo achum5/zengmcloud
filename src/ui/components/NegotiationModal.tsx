@@ -2,7 +2,7 @@ import { Modal } from "./Modal.tsx";
 import clsx from "clsx";
 import { OverlayTrigger, Tooltip } from "react-bootstrap";
 import { helpers } from "../util/helpers.ts";
-import { logEvent } from "../util/logEvent.ts";
+import { showNotification } from "../util/showNotification.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
 import { HelpPopover } from "../components/HelpPopover.tsx";
@@ -11,6 +11,7 @@ import { Mood } from "../components/Mood.tsx";
 import { PlayerPicture } from "../components/PlayerPicture.tsx";
 import { useRef, useState } from "react";
 import type api from "../../worker/api/index.ts";
+import { showSignUndo } from "./NegotiateButtons.tsx";
 
 type NegotaitionModalProps = Exclude<
 	Awaited<ReturnType<typeof api.main.getNegotiationProps>>,
@@ -18,13 +19,13 @@ type NegotaitionModalProps = Exclude<
 >;
 
 const SignButton = ({
-	pid,
+	p,
 	amount,
 	exp,
 	disabledReason,
 	onSuccess,
 }: {
-	pid: number;
+	p: { name: string; pid: number };
 	amount: number;
 	exp: number;
 	disabledReason: string | undefined;
@@ -39,24 +40,24 @@ const SignButton = ({
 					"main",
 					"acceptContractNegotiation",
 					{
-						pid,
+						pid: p.pid,
 						amount: Math.round(amount * 1000),
 						exp,
 					},
 				);
 				if (errorMessage !== undefined) {
-					logEvent({
+					showNotification({
 						type: "error",
 						text: errorMessage,
-						saveToDb: false,
 					});
 				} else {
 					onSuccess();
+					showSignUndo(p);
 				}
 			}}
 		>
 			Sign
-			<span className="d-none d-sm-inline"> Contract</span>
+			<span className="d-none d-sm-inline"> contract</span>
 		</button>
 	);
 
@@ -208,7 +209,7 @@ const Negotiation = ({
 							</div>
 
 							<SignButton
-								pid={p.pid}
+								p={p}
 								amount={contract.amount}
 								exp={contract.exp}
 								disabledReason={contract.disabledReason}
@@ -302,10 +303,9 @@ export const useNegotiaionModal = () => {
 			}
 
 			if (typeof newProps === "string") {
-				logEvent({
+				showNotification({
 					type: "error",
 					text: newProps,
-					saveToDb: false,
 				});
 			} else {
 				setState({

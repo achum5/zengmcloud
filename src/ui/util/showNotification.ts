@@ -1,22 +1,25 @@
-import { createLogger } from "../../common/createLogger.ts";
+import type { ReactNode } from "react";
 import { local } from "./local.ts";
-import type { LogEventShowOptions } from "../../common/types.ts";
 import { notify } from "./notify.ts";
 import { toWorker } from "./toWorker.ts";
 
-const saveEvent = () => {
-	throw new Error("UI events should not be saved to DB");
+export type ShowNotificationOptions = {
+	extraClass?: string;
+	hideInLiveGame?: boolean;
+	onClose?: () => void;
+	persistent?: boolean;
+	text: ReactNode;
+	type: string;
 };
 
-export const showEvent = ({
+export const showNotification = ({
 	extraClass,
 	hideInLiveGame,
-	htmlIsSafe,
 	onClose,
 	persistent,
 	text,
 	type,
-}: LogEventShowOptions) => {
+}: ShowNotificationOptions) => {
 	let title;
 
 	if (type === "gameWon" || type === "gameLost" || type === "gameTied") {
@@ -55,7 +58,6 @@ export const showEvent = ({
 	if (showNotification) {
 		notify(text, title, {
 			extraClass,
-			htmlIsSafe,
 			onClose,
 			persistent,
 		});
@@ -70,5 +72,3 @@ export const showEvent = ({
 		}
 	}
 };
-
-export const logEvent = createLogger(saveEvent, showEvent);

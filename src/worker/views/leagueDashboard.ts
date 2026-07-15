@@ -2,7 +2,7 @@ import { PHASE, PLAYER } from "../../common/constants.ts";
 import { season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
-import type { UpdateEvents } from "../../common/types.ts";
+import type { Player, UpdateEvents } from "../../common/types.ts";
 import { processEvents } from "./news.ts";
 import { getMaxPlayoffSeed } from "./standings.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
@@ -296,6 +296,7 @@ const updatePlayers = async (inputs: unknown, updateEvents: UpdateEvents) => {
 						"injury",
 						"watch",
 						"jerseyNumber",
+						"awards",
 					],
 					ratings: ["ovr", "pot", "dovr", "dpot", "skills", "pos"],
 					stats: [...startersStats, ...leaderStats, "yearsWithTeam"],
@@ -307,6 +308,11 @@ const updatePlayers = async (inputs: unknown, updateEvents: UpdateEvents) => {
 				},
 			),
 		);
+		for (const p of userPlayers) {
+			p.awards = p.awards.filter(
+				(award: Player["awards"][number]) => award.season === g.get("season"),
+			);
+		}
 
 		// Team leaders
 		const teamLeaders: {

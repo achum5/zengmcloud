@@ -3,7 +3,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
-import { logEvent } from "../util/logEvent.ts";
+import { showNotification } from "../util/showNotification.ts";
 import type { View } from "../../common/types.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import { useLocal } from "../util/local.ts";
@@ -126,7 +126,7 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 			(p) => (Number.parseFloat(stakes[p.key] ?? "") || 0) > 0,
 		);
 		if (toPlace.length === 0) {
-			logEvent({ type: "error", text: "Enter a stake first.", saveToDb: false });
+			showNotification({ type: "error", text: "Enter a stake first." });
 			return;
 		}
 		setPlacing(true);
@@ -140,18 +140,16 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 					label: `${p.title} — ${p.sub}`,
 				});
 			}
-			logEvent({
+			showNotification({
 				type: "success",
 				text: `Placed ${toPlace.length} bet${toPlace.length === 1 ? "" : "s"}.`,
-				saveToDb: false,
 			});
 			clearSlip();
 			await realtimeUpdate(["watchList"]);
 		} catch (error) {
-			logEvent({
+			showNotification({
 				type: "error",
 				text: error instanceof Error ? error.message : "Could not place bet.",
-				saveToDb: false,
 			});
 		} finally {
 			setPlacing(false);
@@ -163,10 +161,9 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 			await toWorker("main", "sportsbookCancelBet", { tid: wallet.tid, betID });
 			await realtimeUpdate(["watchList"]);
 		} catch (error) {
-			logEvent({
+			showNotification({
 				type: "error",
 				text: error instanceof Error ? error.message : "Could not cancel.",
-				saveToDb: false,
 			});
 		}
 	};

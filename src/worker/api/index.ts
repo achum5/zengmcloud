@@ -225,14 +225,21 @@ const acceptContractNegotiation = async ({
 		return negotiation;
 	}
 
-	const result = await contractNegotiation.accept({ negotiation, amount, exp });
+	const response = await contractNegotiation.accept({
+		negotiation,
+		amount,
+		exp,
+	});
 
-	if (result === undefined) {
-		// Only do this if there was no error, and don't await because it makes the UI slow
-		void contractNegotiation.afterAccept(negotiation.tid);
+	// string response is an error message
+	if (typeof response === "string") {
+		return response;
 	}
 
-	return result;
+	// Only do this if there was no error, and don't await because it makes the UI slow
+	void contractNegotiation.afterAccept(negotiation.tid);
+
+	local.undoableActions[pid] = response;
 };
 
 const addTeam = async () => {
@@ -470,9 +477,14 @@ const beforeView = async (
 };
 
 const cancelContractNegotiation = async (pid: number) => {
-	const result = await contractNegotiation.cancel(pid);
+	await contractNegotiation.cancel(pid);
+
+	local.undoableActions[pid] = {
+		type: "release",
+		tid: g.get("userTid"),
+	};
+
 	await toUI("realtimeUpdate", [["playerMovement"]]);
-	return result;
 };
 
 const checkAccount2 = (param: unknown, conditions: Conditions) =>
@@ -4122,14 +4134,14 @@ const reSignAll = async (players: any[]) => {
 			const p = players.find((p) => p.pid === negotiation.pid);
 
 			if (p && p.mood.user.willing) {
-				const errorMsg = await contractNegotiation.accept({
+				const response = await contractNegotiation.accept({
 					negotiation,
 					amount: p.mood.user.contractAmount,
 					exp: p.contract.exp,
 				});
 
-				if (errorMsg !== undefined && errorMsg) {
-					return errorMsg;
+				if (typeof response === "string") {
+					return response;
 				}
 			}
 		}
@@ -5005,6 +5017,77 @@ const updateConfsDivs = async ({
 	await league.setGameAttributes({ confs: confs as any, divs: divs as any });
 
 	await updateTeamInfo({ teams, from: "manageConfs" });
+};
+
+const undoAction = async (
+	info: { type: "sign"; pid: number } | { type: "release"; pid: number },
+) => {
+	if (info.type === "sign") {
+		const pid = info.pid;
+
+		const undoInfo = local.undoableActions[pid];
+		if (!undoInfo || undoInfo.type !== "sign") {
+			return false;
+		}
+
+		const p = await idb.cache.players.get(pid);
+		if (!p) {
+			return false;
+		}
+
+		const phase = actualPhase();
+
+		if (phase !== undoInfo.phase || p.tid !== undoInfo.tid) {
+			return false;
+		}
+
+		p.numDaysFreeAgent = undoInfo.numDaysFreeAgent;
+		p.numPlayersTradedAwayNormalized = undoInfo.numPlayersTradedAwayNormalized;
+		p.jerseyNumber = undoInfo.jerseyNumber;
+		p.contract = undoInfo.contract;
+		p.salaries = undoInfo.salaries;
+		p.transactions = undoInfo.transactions;
+		p.tid = PLAYER.FREE_AGENT;
+
+		if (phase === PHASE.RESIGN_PLAYERS) {
+			await idb.cache.negotiations.add({
+				pid,
+				tid: undoInfo.tid,
+				resigning: true,
+			});
+		}
+
+		await idb.cache.players.put(p);
+
+		if (undoInfo.eid !== undefined) {
+			await idb.cache.events.delete(undoInfo.eid);
+		}
+
+		delete local.undoableActions[pid];
+		void toUI("realtimeUpdate", [["playerMovement"]]);
+
+		return true;
+	} else if (info.type === "release") {
+		const pid = info.pid;
+
+		const undoInfo = local.undoableActions[pid];
+		if (!undoInfo || undoInfo.type !== "release") {
+			return false;
+		}
+
+		await idb.cache.negotiations.add({
+			pid,
+			tid: undoInfo.tid,
+			resigning: true,
+		});
+
+		delete local.undoableActions[pid];
+		void toUI("realtimeUpdate", [["playerMovement"]]);
+
+		return true;
+	}
+
+	return false;
 };
 
 const updateAwards = async (
@@ -6004,6 +6087,7 @@ export default {
 		onLiveSimOver,
 		updateLiveBroadcast,
 		endLiveBroadcast,
+		undoAction,
 		updateAwards,
 		updateBudget,
 		updateConfsDivs,

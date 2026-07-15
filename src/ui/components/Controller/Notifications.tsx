@@ -12,7 +12,6 @@ const NOTIFICATION_TIMEOUT = 8000;
 
 const Notification = ({
 	extraClass,
-	htmlIsSafe,
 	message,
 	persistent,
 	title,
@@ -67,7 +66,8 @@ const Notification = ({
 					<br />
 				</>
 			) : null}
-			<SafeHtml dirty={message} htmlIsSafe={htmlIsSafe} />
+
+			{typeof message === "string" ? <SafeHtml dirty={message} /> : message}
 		</div>
 	);
 };

@@ -1,8 +1,8 @@
+import type { ShowNotificationOptions } from "../ui/util/showNotification.ts";
 import type {
 	Conditions,
 	EventBBGMWithoutKey,
 	LogEventSaveOptions,
-	LogEventShowOptions,
 	DistributiveOmit,
 } from "./types.ts";
 
@@ -10,7 +10,6 @@ import type {
 type LogEventOptions = {
 	extraClass?: string;
 	hideInLiveGame?: boolean;
-	htmlIsSafe?: boolean;
 	onClose?: () => void;
 	persistent?: boolean;
 	saveToDb?: boolean;
@@ -19,13 +18,12 @@ type LogEventOptions = {
 
 export const createLogger = (
 	saveEvent: (a: LogEventSaveOptions) => Promise<number | undefined>,
-	showEvent: (a: LogEventShowOptions, conditions?: Conditions) => void,
+	showEvent: (a: ShowNotificationOptions, conditions?: Conditions) => void,
 ) => {
 	const logEvent = async (
 		{
 			extraClass,
 			hideInLiveGame,
-			htmlIsSafe,
 			onClose,
 			persistent = false,
 			saveToDb = true,
@@ -48,7 +46,6 @@ export const createLogger = (
 				{
 					extraClass,
 					hideInLiveGame,
-					htmlIsSafe,
 					onClose,
 					persistent,
 					text: event.text,

@@ -986,16 +986,6 @@ export type LogEventSaveOptions = DistributiveOmit<
 	"season"
 >;
 
-export type LogEventShowOptions = {
-	extraClass?: string;
-	hideInLiveGame?: boolean;
-	htmlIsSafe?: boolean;
-	onClose?: () => void;
-	persistent: boolean;
-	text: string;
-	type: string;
-};
-
 export type OwnerMood = {
 	money: number;
 	playoffs: number;
@@ -1575,6 +1565,26 @@ export type PlayerBioInfoProcessed = {
 	frequencies: [string, number][];
 };
 
+export type UndoableAction =
+	| ({
+			type: "sign";
+			phase: Phase;
+			tid: number;
+			eid: number | undefined;
+	  } & Pick<
+			Player,
+			| "numDaysFreeAgent"
+			| "numPlayersTradedAwayNormalized"
+			| "jerseyNumber"
+			| "contract"
+			| "salaries"
+			| "transactions"
+	  >)
+	| {
+			type: "release";
+			tid: number;
+	  };
+
 export type Local = {
 	autoPlayUntil?: {
 		season: number;
@@ -1654,6 +1664,7 @@ export type Local = {
 		| undefined;
 	seasonLeaders: SeasonLeaders | undefined;
 	statusText: string;
+	undoableActions: Record<number, UndoableAction>;
 	unviewedSeasonSummary: boolean;
 	username: string | undefined;
 };

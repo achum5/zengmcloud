@@ -3,7 +3,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { helpers } from "../util/helpers.ts";
-import { logEvent } from "../util/logEvent.ts";
+import { showNotification } from "../util/showNotification.ts";
 import type { View, CourtStyle } from "../../common/types.ts";
 import LiveCourt, {
 	synthShotSpot,
@@ -125,17 +125,15 @@ const EditTeamCourt = ({
 				tid,
 				court: Object.keys(style).length > 0 ? style : undefined,
 			});
-			logEvent({
+			showNotification({
 				type: "success",
 				text: "Court saved.",
-				saveToDb: false,
 			});
 			realtimeUpdate([], helpers.leagueUrl(["manage_teams"]));
 		} catch (error) {
-			logEvent({
+			showNotification({
 				type: "error",
 				text: `Could not save court: ${(error as Error).message}`,
-				saveToDb: false,
 				persistent: true,
 			});
 		} finally {

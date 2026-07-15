@@ -1,9 +1,11 @@
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { local, localActions } from "../util/local.ts";
-import { showEvent } from "../util/logEvent.ts";
+import {
+	showNotification,
+	type ShowNotificationOptions,
+} from "../util/showNotification.ts";
 import type {
 	LocalStateUI,
-	LogEventShowOptions,
 	UpdateEvents,
 	GameAttributesLeague,
 } from "../../common/types.ts";
@@ -12,7 +14,7 @@ import { ads } from "../util/ads.ts";
 import { analyticsEvent } from "../util/analyticsEvent.ts";
 import { autoPlayDialog } from "../util/autoPlayDialog.tsx";
 import { confirmDeleteAllLeagues } from "../util/confirmDeleteAllLeagues.tsx";
-import { requestPersistentStorage } from "../util/requestPersistentStorage.ts";
+import { requestPersistentStorage } from "../util/requestPersistentStorage.tsx";
 import { confirm } from "../util/confirm.tsx";
 import { safeLocalStorage } from "../util/safeLocalStorage.ts";
 import { pushSyncDebugEntry } from "../util/syncDebugStore.ts";
@@ -66,8 +68,8 @@ const setGameAttributes = (
 	localActions.updateGameAttributes(gameAttributes, flagOverrides);
 };
 
-const showEvent2 = (options: LogEventShowOptions) => {
-	showEvent(options);
+const showNotification2 = (options: ShowNotificationOptions) => {
+	showNotification(options);
 };
 
 const showModal = () => {
@@ -190,7 +192,7 @@ export default {
 	requestPersistentStorage,
 	resetLeague,
 	setGameAttributes,
-	showEvent: showEvent2,
+	showNotification: showNotification2,
 	showModal,
 	syncLog,
 	syncDebugLog,
