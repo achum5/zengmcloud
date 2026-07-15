@@ -1,6 +1,6 @@
 import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
-import type { Index, Store } from "../../db/Cache.ts";
+import type { Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
 import {
 	g,
@@ -103,51 +103,72 @@ const storeAPI = (store: Store) => (idb.cache as any)[store];
 // duplicate ever reaches the unique index. Replaying the whole log is
 // deterministic (last write for a given identity wins), so all devices land on
 // the same `rid`.
-const RECONCILE_BY_IDENTITY: Partial<
-	Record<
-		Store,
-		{
-			index: Index;
-			indexKey: (row: any) => (number | string | boolean)[];
-			sameIdentity: (a: any, b: any) => boolean;
-		}
-	>
-> = {
+type IdentityRule = {
+	// Resolve the LOCAL row that shares the incoming row's logical identity.
+	// teamSeasons/teamStats use a unique IndexedDB index; draftPicks has no such
+	// index, so it scans just its season-scoped slice.
+	find: (api: any, value: any) => Promise<any | undefined>;
+	// The row's primary key, to delete/forget by (rid, or dpid for draftPicks).
+	pk: (row: any) => number;
+	sameIdentity: (a: any, b: any) => boolean;
+};
+const RECONCILE_BY_IDENTITY: Partial<Record<Store, IdentityRule>> = {
 	teamSeasons: {
-		index: "teamSeasonsByTidSeason",
-		indexKey: (row) => [row.tid, row.season],
+		find: (api, v) => api.indexGet("teamSeasonsByTidSeason", [v.tid, v.season]),
+		pk: (row) => row.rid,
 		sameIdentity: (a, b) => a.tid === b.tid && a.season === b.season,
 	},
 	teamStats: {
-		index: "teamStatsByPlayoffsTid",
-		indexKey: (row) => [row.playoffs, row.tid],
+		find: (api, v) => api.indexGet("teamStatsByPlayoffsTid", [v.playoffs, v.tid]),
+		pk: (row) => row.rid,
 		sameIdentity: (a, b) =>
 			a.tid === b.tid && a.season === b.season && a.playoffs === b.playoffs,
+	},
+	// Draft picks carry an autoincrement `dpid` that DIVERGES across devices too
+	// (a re-import re-numbers them). The lottery writes the current season's draft
+	// ORDER onto each pick and syncs it by the author's `dpid`; on a re-imported
+	// device that `dpid` addresses a DIFFERENT pick - often a FUTURE season's,
+	// since those exist as placeholders - so the order lands on next year's pick,
+	// making it look like the future lottery ran (and the current one is wrong).
+	// Pick deletes as players are drafted hit the wrong pick the same way. The
+	// pick's true identity is (season, round, originalTid); with no unique index
+	// for it, scan just that season's slice via the cache's season index.
+	draftPicks: {
+		find: async (api, v) => {
+			const all = await api.indexGetAll("draftPicksBySeason", v.season);
+			return all.find(
+				(row: any) =>
+					row.round === v.round && row.originalTid === v.originalTid,
+			);
+		},
+		pk: (row) => row.dpid,
+		sameIdentity: (a, b) =>
+			a.season === b.season &&
+			a.round === b.round &&
+			a.originalTid === b.originalTid,
 	},
 };
 
 // Drop a stale duplicate of an incoming logically-keyed row (see
 // RECONCILE_BY_IDENTITY) so the put updates the row in place instead of creating
-// a second row that violates the store's unique index. Best-effort and local:
-// the removed `rid` is forgotten from the tracker so we don't broadcast it (every
-// device heals itself the same way when it applies the same authoritative row).
+// a second row that violates the store's unique index (or, for draftPicks, a
+// second pick for one logical slot). Best-effort and local: the removed primary
+// key is forgotten from the tracker so we don't broadcast it (every device heals
+// itself the same way when it applies the same authoritative row).
 const reconcileIdentity = async (store: Store, value: any) => {
 	const rule = RECONCILE_BY_IDENTITY[store];
 	if (!rule) {
 		return;
 	}
 	try {
-		const existing = await storeAPI(store).indexGet(
-			rule.index,
-			rule.indexKey(value),
-		);
+		const existing = await rule.find(storeAPI(store), value);
 		if (
 			existing &&
-			existing.rid !== value.rid &&
+			rule.pk(existing) !== rule.pk(value) &&
 			rule.sameIdentity(existing, value)
 		) {
-			await storeAPI(store).delete(existing.rid);
-			changeTracker.forget(store, existing.rid);
+			await storeAPI(store).delete(rule.pk(existing));
+			changeTracker.forget(store, rule.pk(existing));
 		}
 	} catch (error) {
 		console.error(
@@ -321,13 +342,10 @@ export const applyChangeset = async (
 				// index; if no row matches, it's already gone - a safe no-op.
 				const rule = RECONCILE_BY_IDENTITY[change.store];
 				if (rule && change.value !== undefined) {
-					const existing = await api.indexGet(
-						rule.index,
-						rule.indexKey(change.value),
-					);
+					const existing = await rule.find(api, change.value);
 					if (existing) {
-						await api.delete(existing.rid);
-						changeTracker.forget(change.store, existing.rid);
+						await api.delete(rule.pk(existing));
+						changeTracker.forget(change.store, rule.pk(existing));
 					}
 				} else {
 					await api.delete(change.id);

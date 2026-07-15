@@ -468,6 +468,131 @@ describe("sync changeset", () => {
 		assert.strictEqual(del.value, undefined);
 	});
 
+	test("a synced draftPicks lottery put lands on the pick with matching identity, not the author's diverged dpid", async () => {
+		// THE "FUTURE LOTTERY" BUG. draftPicks `dpid` is autoincrement and diverges
+		// across devices. The lottery writes the current (2084) season's draft ORDER
+		// onto each pick and syncs it by the author's dpid (7 there). On this
+		// re-imported receiver dpid 7 is a FUTURE (2085) pick, and its own 2084 pick
+		// is dpid 9. A raw put-by-dpid set the 2085 pick's order (looked like next
+		// year's lottery ran) and left a duplicate 2084 pick. Identity reconcile must
+		// land the order on the one real (2084, R1, orig 4) pick.
+		resetG();
+		await resetCache({
+			draftPicks: [
+				{ dpid: 7, tid: 4, originalTid: 4, round: 1, pick: 0, season: 2085 },
+				{ dpid: 9, tid: 4, originalTid: 4, round: 1, pick: 0, season: 2084 },
+			],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "draftPicks",
+						id: 7, // the author's dpid for ITS (2084, R1, orig 4) pick
+						type: "put",
+						value: {
+							dpid: 7,
+							tid: 4,
+							originalTid: 4,
+							round: 1,
+							pick: 5,
+							season: 2084,
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const picks = await idb.cache.draftPicks.getAll();
+		// Exactly one 2084 R1 (orig 4) pick, carrying the lottery order.
+		const current = picks.filter(
+			(p) => p.season === 2084 && p.round === 1 && p.originalTid === 4,
+		);
+		assert.strictEqual(current.length, 1, JSON.stringify(picks));
+		assert.strictEqual(current[0]!.pick, 5);
+		// And no FUTURE (2085) pick was given the current lottery's order.
+		assert.strictEqual(
+			picks.find((p) => p.season === 2085 && p.pick === 5),
+			undefined,
+			JSON.stringify(picks),
+		);
+	});
+
+	test("a synced draftPicks delete removes the pick by identity, not the author's dpid", async () => {
+		resetG();
+		await resetCache({
+			draftPicks: [
+				{ dpid: 7, tid: 4, originalTid: 4, round: 1, pick: 0, season: 2085 },
+				{ dpid: 9, tid: 4, originalTid: 4, round: 1, pick: 0, season: 2084 },
+			],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "draftPicks",
+						id: 7, // the author's dpid for ITS (2084, R1, orig 4) pick
+						type: "delete",
+						value: {
+							dpid: 7,
+							tid: 4,
+							originalTid: 4,
+							round: 1,
+							pick: 3,
+							season: 2084,
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const picks = await idb.cache.draftPicks.getAll();
+		// The 2084 pick (the real identity match) is gone...
+		assert.strictEqual(
+			picks.find((p) => p.season === 2084 && p.round === 1 && p.originalTid === 4),
+			undefined,
+			JSON.stringify(picks),
+		);
+		// ...and the future 2085 pick that merely shared the author's dpid survives.
+		const survivor = picks.find(
+			(p) => p.season === 2085 && p.round === 1 && p.originalTid === 4,
+		);
+		assert.ok(survivor, JSON.stringify(picks));
+		assert.strictEqual(survivor!.dpid, 7);
+	});
+
+	test("captures a draftPicks delete with its identity snapshot", async () => {
+		resetG();
+		await resetCache({
+			draftPicks: [
+				{ dpid: 7, tid: 4, originalTid: 4, round: 1, pick: 0, season: 2084 },
+			],
+		});
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await changeTracker.runCaptured(async () => {
+			await idb.cache.draftPicks.delete(7);
+		});
+
+		const changeset = overTheWire(await captureChangeset());
+		const c = changeset.changes.find(
+			(x: any) => x.type === "delete" && x.store === "draftPicks",
+		)!;
+		assert.ok(c);
+		// The identity snapshot rides along so the receiver deletes by
+		// (season, round, originalTid).
+		assert.strictEqual(c.value.season, 2084);
+		assert.strictEqual(c.value.round, 1);
+		assert.strictEqual(c.value.originalTid, 4);
+	});
+
 	test("applying a changeset does not itself get recorded", async () => {
 		resetG();
 		await resetCache({ players: [genPlayer()] });

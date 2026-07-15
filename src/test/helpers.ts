@@ -109,6 +109,12 @@ export const resetCache = async (
 			await idb.cache.trade.add(obj);
 		}
 	}
+
+	if (data.draftPicks) {
+		for (const obj of data.draftPicks) {
+			await idb.cache.draftPicks.add(obj);
+		}
+	}
 };
 
 export const resetG = () => {
