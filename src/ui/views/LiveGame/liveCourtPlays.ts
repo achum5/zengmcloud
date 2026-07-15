@@ -1,17 +1,26 @@
 // ---------------------------------------------------------------------------
-// A library of hand-authored basketball "plays" for the live-game court. Each
-// template is a set of smooth keyframed paths (for the few players a play
-// involves) plus a ball script (held, passed, shot). The live court picks one
-// that matches the category of the play-by-play line about to happen, binds the
-// real players (shooter, assister, inferred defenders) onto the template's
-// roles, mirrors/flips it for variety, and plays the whole thing through to the
-// action. Authored motion (curved drives, cuts, kick-outs) reads far more like
-// real basketball than procedurally-computed straight-line glides.
+// The live-game court's basketball "play" engine. The sim only tells us a shot's
+// coarse zone (at rim / low post / mid-range / three) and who was involved; this
+// module turns that into a genuine-looking basketball possession: it synthesizes
+// a real shot LOCATION with a proper spread across the zone (threes fan across
+// the whole arc AND both corners, not three fixed spots), then GENERATES a play
+// - an iso drive, a pull-up, a catch-and-shoot off a cross-court swing, a pick-
+// and-roll, a dribble hand-off, a backdoor cut, a step-back, a transition
+// finish, a post-up - whose choreography flows into that exact spot. Each play
+// is a set of smooth keyframed paths (Catmull-Rom) for the handful of players it
+// involves, plus a ball script (held, passed, shot). The court binds the real
+// players onto the play's roles, mirrors it for the attacking team, and animates
+// the whole thing through to the shot the engine resolves (make / miss / block).
 //
-// CANONICAL FRAME: every template is authored for the offense attacking the
-// RIGHT rim (x = 88.75, y = 25), with play time t running 0 -> 1. The court is
-// 94 (length) x 50 (width). Placement mirrors x for a team attacking left, and
-// optionally flips y (top/bottom) so the same template yields many looks.
+// Because plays are built AROUND a freshly-synthesized spot rather than read off
+// a fixed template, the same play type yields infinitely many looks and the shot
+// chart comes out balanced - the way real basketball is spread across the floor.
+//
+// CANONICAL FRAME: everything here is authored for the offense attacking the
+// RIGHT rim (rim center x = 88.75, y = 25) with play time t running 0 -> 1. The
+// court is 94 (length) x 50 (width). Placement mirrors x for a team attacking
+// left. `side` (+1 = the spot is in the bottom half, -1 = top) orients each play
+// toward the correct sideline so it develops from a natural angle.
 // ---------------------------------------------------------------------------
 
 export type V = { x: number; y: number };
@@ -44,8 +53,8 @@ export type BallSeg =
 	| { kind: "hold"; role: PlayRole; t0: number; t1: number }
 	| { kind: "pass"; from: PlayRole; to: PlayRole; t0: number; t1: number }
 	// A shot RELEASE: the court engine takes over here for the flight to the rim
-	// and the make/miss/block outcome (from the real event), so a template works
-	// for a make, a miss, or a block alike.
+	// and the make/miss/block outcome (from the real event), so a play works for a
+	// make, a miss, or a block alike.
 	| { kind: "shot"; role: PlayRole; t: number }
 	// A loose ball (rebound off the rim, a steal popping free): travels from a
 	// fixed spot / role to another over [t0, t1].
@@ -61,423 +70,670 @@ export type BallSeg =
 	// The ball disappears (a turnover with no clear new handler) at t.
 	| { kind: "vanish"; t: number };
 
-// The bucket a play falls in. Shot categories carry the shot's release; the
-// non-shot ones are their own actions.
+// The shot category (coarse zone) or a non-shot action.
 export type ShotCat = "rim" | "post" | "mid" | "three" | "ft";
-export type PlayCat =
-	| ShotCat
-	| "steal"
-	| "tov"
-	| "orb"
-	| "drb"
-	| "foul"
-	| "jump";
+export type NonShotCat = "steal" | "tov" | "orb" | "drb" | "foul" | "jump";
+export type PlayCat = ShotCat | NonShotCat;
 
-export type PlayTemplate = {
-	id: string;
-	cat: PlayCat;
-	// Requires a real passer (an assist / entry feed) to be shown.
-	needsPasser: boolean;
-	// Ends in a shot the engine resolves (flight + make/miss/block).
-	hasShot: boolean;
-	// May this template be flipped top<->bottom for variety? (Off for plays that
-	// belong at a specific spot, e.g. free throws / jump ball.)
-	flippable: boolean;
-	tracks: Track[];
-	ball: BallSeg[];
+// A ready-to-place play: the paths its players run plus the ball script. Both are
+// in canonical coordinates; placement mirrors/jitters them onto the live court.
+export type BuiltPlay = { tracks: Track[]; ball: BallSeg[] };
+
+// ---- Canonical geometry (attacking the RIGHT rim) -------------------------
+const RIM_X = 88.75;
+const RIM_Y = 25;
+const RIM: V = { x: RIM_X, y: RIM_Y };
+const R3 = 23.75; // three-point radius from the rim
+const FT_X = 75; // free-throw line depth (canonical x)
+
+const clamp = (v: number, lo: number, hi: number) =>
+	Math.max(lo, Math.min(hi, v));
+const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
+const deg = (d: number) => (d * Math.PI) / 180;
+
+// Keep a spot a few feet off every edge so the face + name tag never clip the
+// sideline/baseline.
+const clampSpot = (p: V): V => ({
+	x: clamp(p.x, 5, 90),
+	y: clamp(p.y, 4, 46),
+});
+
+// A point at distance r from the rim, on a bearing a measured from the "straight
+// out toward half court" axis, positive rotating toward the BOTTOM (+y).
+const polar = (r: number, aDeg: number): V => {
+	const a = deg(aDeg);
+	return { x: RIM_X - r * Math.cos(a), y: RIM_Y + r * Math.sin(a) };
 };
 
-// ---- Canonical landmarks (attacking the RIGHT rim) ------------------------
-const RIM: V = { x: 87.5, y: 25 };
-// Handy authoring points.
-const TOP: V = { x: 66, y: 25 };
-const WING_T: V = { x: 70, y: 11 }; // "top" wing (small y)
-const WING_B: V = { x: 70, y: 39 };
-const CORNER_B: V = { x: 69, y: 46 };
-const ELBOW_B: V = { x: 76, y: 32 };
-const BLOCK_T: V = { x: 84, y: 19 };
-const BLOCK_B: V = { x: 84, y: 31 };
-const FT: V = { x: 75, y: 25 };
-
-const n = (t: number, p: V, dx = 0, dy = 0): PathNode => ({
-	t,
-	x: p.x + dx,
-	y: p.y + dy,
+const unit = (dx: number, dy: number): V => {
+	const d = Math.hypot(dx, dy) || 1;
+	return { x: dx / d, y: dy / d };
+};
+// Away from the rim (roughly toward half court) at a spot.
+const outward = (p: V): V => unit(p.x - RIM_X, p.y - RIM_Y);
+// A perpendicular ("across the floor") direction.
+const lateral = (u: V): V => ({ x: -u.y, y: u.x });
+// Move from p by k feet along unit vector u.
+const along = (p: V, u: V, k: number): V => ({
+	x: p.x + u.x * k,
+	y: p.y + u.y * k,
 });
+const A = (t: number, p: V): PathNode => ({ t, x: p.x, y: p.y });
 const track = (role: PlayRole, def: boolean, nodes: PathNode[]): Track => ({
 	role,
 	def,
 	nodes,
 });
 
-// A defender path a step off an offensive path, toward the rim (between man and
-// basket). Given the man's nodes, shift each toward the rim.
-const shadow = (nodes: PathNode[], off = 3): PathNode[] =>
+// ---- Shot-spot synthesis --------------------------------------------------
+// The heart of the "balanced shot chart" fix: a plausible release spot for a
+// zone, spread properly across the floor instead of clustering at a few points.
+export const synthCanonicalSpot = (cat: ShotCat): V => {
+	if (cat === "ft") {
+		return { x: FT_X, y: RIM_Y + rand(-0.4, 0.4) };
+	}
+	if (cat === "three") {
+		const u = Math.random();
+		if (u < 0.14) {
+			// Bottom corner: behind the corner line, a short way up from the baseline.
+			return { x: rand(80, 88), y: rand(47.1, 48.4) };
+		}
+		if (u > 0.86) {
+			// Top corner.
+			return { x: rand(80, 88), y: rand(1.6, 2.9) };
+		}
+		// Around the arc, wing to wing.
+		const a = lerp(-64, 64, (u - 0.14) / 0.72);
+		return clampSpot(polar(R3 + rand(0.4, 2.4), a));
+	}
+	if (cat === "mid") {
+		return clampSpot(polar(rand(10.5, 21), rand(-80, 80)));
+	}
+	if (cat === "post") {
+		const s = Math.random() < 0.5 ? 1 : -1;
+		return clampSpot(polar(rand(5, 10), s * rand(34, 74)));
+	}
+	// rim
+	return clampSpot(polar(rand(1.5, 4.8), rand(-105, 105)));
+};
+
+// A spread spot for a non-shot action (turnover / steal / foul), in the
+// offense's frontcourt but out of the immediate paint.
+const synthActionSpot = (): V => ({ x: rand(58, 80), y: rand(9, 41) });
+
+export const sideOf = (S: V): 1 | -1 => (S.y >= RIM_Y ? 1 : -1);
+
+// A defender who sags into help then CLOSES OUT, arriving a step inside the
+// shooter as the shot goes up (a real, slightly-late contest).
+const closeout = (end: V): PathNode[] => {
+	const help: V = { x: (end.x + RIM_X) / 2, y: (end.y + RIM_Y) / 2 };
+	const contest = along(end, outward(end), -2.2);
+	return [
+		A(0, help),
+		A(0.6, { x: (help.x + contest.x) / 2, y: (help.y + contest.y) / 2 }),
+		A(1, contest),
+	];
+};
+
+// A defender a step off the man toward the basket (between man and rim),
+// trailing his path.
+const trail = (nodes: PathNode[], off = 3): PathNode[] =>
 	nodes.map((p) => {
-		const dx = RIM.x - p.x;
-		const dy = RIM.y - p.y;
-		const d = Math.hypot(dx, dy) || 1;
-		return { t: p.t, x: p.x + (dx / d) * off, y: p.y + (dy / d) * off };
+		const u = unit(RIM_X - p.x, RIM_Y - p.y);
+		return { t: p.t, x: p.x + u.x * off, y: p.y + u.y * off };
 	});
 
-// ---- The library ----------------------------------------------------------
-export const PLAY_TEMPLATES: PlayTemplate[] = [
-	// ===== RIM =====
-	{
-		id: "rim-iso-wing",
-		cat: "rim",
-		needsPasser: false,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const s = [n(0, WING_B), n(0.5, { x: 79, y: 33 }), n(1, RIM, -1.5, 1)];
-			return [track("scorer", false, s), track("def1", true, shadow(s, 3.2))];
-		})(),
-		ball: [
-			{ kind: "hold", role: "scorer", t0: 0, t1: 0.9 },
-			{ kind: "shot", role: "scorer", t: 0.9 },
-		],
+// ---- Shot-play generators -------------------------------------------------
+// Each takes the synthesized spot S (+ its side) and returns the play. `passer`
+// generators depict a real assist (a pass immediately before the shot); the
+// others are self-created shots. The final ball segment is always the shot from
+// the scorer, which the court resolves to a make / miss / block.
+
+type ShotOpts = { S: V; side: 1 | -1 };
+type ShotGen = {
+	id: string;
+	needsPasser: boolean;
+	build: (o: ShotOpts) => BuiltPlay;
+};
+
+// Catch-and-shoot off a cross-court swing: the passer is across the floor and
+// swings it to the shooter, who lifts into the spot as the defender closes out.
+const catchAndShoot: ShotGen = {
+	id: "catch-shoot",
+	needsPasser: true,
+	build: ({ S, side }) => {
+		const out = outward(S);
+		const lat = lateral(out);
+		const s0 = along(along(S, lat, side * 8), out, -1);
+		const s1 = along(S, lat, side * 3);
+		const sc = [A(0, s0), A(0.55, s1), A(1, S)];
+		const pPos = clampSpot(along(along(S, lat, -side * 20), out, 3));
+		const pp = [A(0, pPos), A(1, along(pPos, lat, side * 1.5))];
+		return {
+			tracks: [
+				track("passer", false, pp),
+				track("scorer", false, sc),
+				track("def1", true, closeout(S)),
+				track("def2", true, trail(pp, 3)),
+			],
+			ball: [
+				{ kind: "hold", role: "passer", t0: 0, t1: 0.5 },
+				{ kind: "pass", from: "passer", to: "scorer", t0: 0.5, t1: 0.72 },
+				{ kind: "shot", role: "scorer", t: 0.9 },
+			],
+		};
 	},
-	{
-		id: "rim-cut-backdoor",
-		cat: "rim",
-		needsPasser: true,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const p = [n(0, TOP), n(1, TOP, -2, 0)];
-			const s = [n(0, WING_T, 0, 1), n(0.55, { x: 80, y: 18 }), n(1, RIM, -2, -1)];
-			return [
-				track("passer", false, p),
-				track("scorer", false, s),
-				track("def1", true, shadow(s, 3)),
-				track("def2", true, shadow(p, 3)),
-			];
-		})(),
-		ball: [
-			{ kind: "hold", role: "passer", t0: 0, t1: 0.52 },
-			{ kind: "pass", from: "passer", to: "scorer", t0: 0.52, t1: 0.72 },
-			{ kind: "shot", role: "scorer", t: 0.9 },
-		],
+};
+
+// Dribble hand-off: the handler dribbles up, the shooter curls tight off him and
+// takes the handoff into the shot.
+const handoff: ShotGen = {
+	id: "dho",
+	needsPasser: true,
+	build: ({ S, side }) => {
+		const out = outward(S);
+		const lat = lateral(out);
+		const top = along(S, out, 4);
+		const pp = [A(0, along(top, out, 3)), A(0.5, top), A(1, along(top, lat, side * 2.5))];
+		const sc = [
+			A(0, along(along(S, lat, side * 12), out, 1)),
+			A(0.5, along(top, lat, side * 4)),
+			A(1, S),
+		];
+		return {
+			tracks: [
+				track("passer", false, pp),
+				track("scorer", false, sc),
+				track("def1", true, trail(sc, 2.6)),
+				track("def2", true, trail(pp, 3)),
+			],
+			ball: [
+				{ kind: "hold", role: "passer", t0: 0, t1: 0.52 },
+				{ kind: "pass", from: "passer", to: "scorer", t0: 0.52, t1: 0.66 },
+				{ kind: "shot", role: "scorer", t: 0.9 },
+			],
+		};
 	},
-	{
-		id: "rim-pnr-roll",
-		cat: "rim",
-		needsPasser: true,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const p = [n(0, TOP, 2, 0), n(0.5, { x: 71, y: 22 }), n(1, { x: 68, y: 20 })];
-			const s = [n(0, ELBOW_B, 2, 0), n(0.55, { x: 82, y: 30 }), n(1, RIM, -1, 1)];
-			const scr = [n(0, { x: 72, y: 24 }), n(0.5, { x: 73, y: 24 }), n(1, { x: 74, y: 22 })];
-			return [
-				track("passer", false, p),
-				track("scorer", false, s),
+};
+
+// Pull-up off the dribble: the shooter dribbles in from beyond the spot at an
+// angle and rises, the defender trailing.
+const pullUp: ShotGen = {
+	id: "pull-up",
+	needsPasser: false,
+	build: ({ S, side }) => {
+		const out = outward(S);
+		const lat = lateral(out);
+		const s0 = along(along(S, out, 9), lat, side * 5);
+		const sc = [A(0, s0), A(0.5, along(S, out, 3.5)), A(1, S)];
+		return {
+			tracks: [
+				track("scorer", false, sc),
+				track("def1", true, trail(sc, 3.2)),
+			],
+			ball: [
+				{ kind: "hold", role: "scorer", t0: 0, t1: 0.85 },
+				{ kind: "shot", role: "scorer", t: 0.85 },
+			],
+		};
+	},
+};
+
+// Step-back: the shooter drives toward the rim, then steps back to the spot,
+// leaving the over-committing defender inside.
+const stepBack: ShotGen = {
+	id: "step-back",
+	needsPasser: false,
+	build: ({ S, side }) => {
+		const out = outward(S);
+		const lat = lateral(out);
+		const s0 = along(along(S, out, 6), lat, side * 3);
+		const inside = along(S, out, -2.5);
+		const sc = [A(0, s0), A(0.5, inside), A(1, S)];
+		const d1 = [
+			A(0, along(s0, out, -2)),
+			A(0.5, along(inside, out, -1.5)),
+			A(1, along(inside, out, -0.5)),
+		];
+		return {
+			tracks: [track("scorer", false, sc), track("def1", true, d1)],
+			ball: [
+				{ kind: "hold", role: "scorer", t0: 0, t1: 0.85 },
+				{ kind: "shot", role: "scorer", t: 0.85 },
+			],
+		};
+	},
+};
+
+// Iso drive: the scorer attacks from the wing on the spot's side and finishes,
+// the defender trailing on his hip.
+const driveIso: ShotGen = {
+	id: "drive-iso",
+	needsPasser: false,
+	build: ({ S, side }) => {
+		const w = polar(23, side * 40);
+		const sc = [A(0, w), A(0.5, polar(12, side * 30)), A(1, S)];
+		return {
+			tracks: [
+				track("scorer", false, sc),
+				track("def1", true, trail(sc, 3)),
+			],
+			ball: [
+				{ kind: "hold", role: "scorer", t0: 0, t1: 0.9 },
+				{ kind: "shot", role: "scorer", t: 0.9 },
+			],
+		};
+	},
+};
+
+// Pick-and-roll, ball-handler keeper: the handler (scorer) uses a teammate's
+// screen and turns the corner to finish; the defender gets hung on the screen
+// and recovers late. No pass needed - works for any self-created shot.
+const pnrHandler: ShotGen = {
+	id: "pnr-handler",
+	needsPasser: false,
+	build: ({ S, side }) => {
+		const out = outward(S);
+		const top = polar(22, side * 8);
+		const useAt = polar(15, side * 20);
+		const sc = [A(0, top), A(0.45, useAt), A(1, S)];
+		const scr = [
+			A(0, polar(14, side * 24)),
+			A(0.5, along(useAt, out, -1)),
+			A(1, polar(9, side * 30)),
+		];
+		const d1 = [
+			A(0, along(top, out, -2.5)),
+			A(0.5, polar(16, side * 26)),
+			A(1, along(S, out, -2)),
+		];
+		return {
+			tracks: [
+				track("scorer", false, sc),
 				track("screen", false, scr),
-				track("def1", true, shadow(s, 3)),
-			];
-		})(),
-		ball: [
-			{ kind: "hold", role: "passer", t0: 0, t1: 0.6 },
-			{ kind: "pass", from: "passer", to: "scorer", t0: 0.6, t1: 0.78 },
-			{ kind: "shot", role: "scorer", t: 0.92 },
-		],
+				track("def1", true, d1),
+			],
+			ball: [
+				{ kind: "hold", role: "scorer", t0: 0, t1: 0.9 },
+				{ kind: "shot", role: "scorer", t: 0.9 },
+			],
+		};
 	},
-	{
-		id: "rim-putback",
-		cat: "rim",
-		needsPasser: false,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const s = [n(0, BLOCK_B, 1, 0), n(0.6, RIM, -2, 1), n(1, RIM, -1, 0)];
-			return [track("scorer", false, s), track("def1", true, shadow(s, 2.5))];
-		})(),
-		ball: [
-			{ kind: "hold", role: "scorer", t0: 0, t1: 0.55 },
-			{ kind: "shot", role: "scorer", t: 0.55 },
-		],
-	},
+};
 
-	// ===== THREE =====
-	{
-		id: "three-catch-corner",
-		cat: "three",
-		needsPasser: true,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const p = [n(0, TOP), n(0.5, TOP, -1, -2), n(1, TOP, -2, -3)];
-			const s = [n(0, { x: 74, y: 42 }), n(0.55, CORNER_B, 1, -1), n(1, CORNER_B)];
-			return [
-				track("passer", false, p),
-				track("scorer", false, s),
-				track("def2", true, shadow(p, 3)),
-				track("def1", true, shadow(s, 2.6)),
-			];
-		})(),
-		ball: [
-			{ kind: "hold", role: "passer", t0: 0, t1: 0.48 },
-			{ kind: "pass", from: "passer", to: "scorer", t0: 0.48, t1: 0.7 },
-			{ kind: "shot", role: "scorer", t: 0.86 },
-		],
+// Pick-and-roll, roll man: the handler (passer) comes off the scorer's screen and
+// feeds the scorer rolling hard to the rim. A real assist.
+const pnrRoll: ShotGen = {
+	id: "pnr-roll",
+	needsPasser: true,
+	build: ({ S, side }) => {
+		const out = outward(S);
+		const top = polar(22, side * 8);
+		const pp = [A(0, top), A(0.5, polar(19, side * 4)), A(1, polar(20, side * 2))];
+		const setAt = polar(15, side * 20);
+		const sc = [A(0, setAt), A(0.4, polar(14, side * 14)), A(1, S)];
+		const d2 = [
+			A(0, along(top, out, -2.5)),
+			A(0.5, polar(16, side * 20)),
+			A(1, along(pp.at(-1)!, out, -2)),
+		];
+		return {
+			tracks: [
+				track("passer", false, pp),
+				track("scorer", false, sc),
+				track("def1", true, trail(sc, 3)),
+				track("def2", true, d2),
+			],
+			ball: [
+				{ kind: "hold", role: "passer", t0: 0, t1: 0.55 },
+				{ kind: "pass", from: "passer", to: "scorer", t0: 0.55, t1: 0.75 },
+				{ kind: "shot", role: "scorer", t: 0.9 },
+			],
+		};
 	},
-	{
-		id: "three-catch-wing",
-		cat: "three",
-		needsPasser: true,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const p = [n(0, ELBOW_B, 0, 2), n(1, { x: 72, y: 30 })];
-			const s = [n(0, TOP, 2, -4), n(0.5, WING_T, 1, 1), n(1, WING_T)];
-			return [
-				track("passer", false, p),
-				track("scorer", false, s),
-				track("def1", true, shadow(s, 2.6)),
-			];
-		})(),
-		ball: [
-			{ kind: "hold", role: "passer", t0: 0, t1: 0.46 },
-			{ kind: "pass", from: "passer", to: "scorer", t0: 0.46, t1: 0.68 },
-			{ kind: "shot", role: "scorer", t: 0.85 },
-		],
-	},
-	{
-		id: "three-pullup-top",
-		cat: "three",
-		needsPasser: false,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const s = [n(0, { x: 58, y: 22 }), n(0.6, { x: 64, y: 24 }), n(1, TOP, -1, 0)];
-			return [track("scorer", false, s), track("def1", true, shadow(s, 3))];
-		})(),
-		ball: [
-			{ kind: "hold", role: "scorer", t0: 0, t1: 0.86 },
-			{ kind: "shot", role: "scorer", t: 0.86 },
-		],
-	},
-	{
-		id: "three-stepback-wing",
-		cat: "three",
-		needsPasser: false,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const s = [n(0, { x: 76, y: 36 }), n(0.6, WING_B, 1, 1), n(1, WING_B, -2, 2)];
-			const d = [n(0, { x: 79, y: 34 }), n(0.6, { x: 74, y: 37 }), n(1, { x: 73, y: 37 })];
-			return [track("scorer", false, s), track("def1", true, d)];
-		})(),
-		ball: [
-			{ kind: "hold", role: "scorer", t0: 0, t1: 0.85 },
-			{ kind: "shot", role: "scorer", t: 0.85 },
-		],
-	},
+};
 
-	// ===== MID =====
-	{
-		id: "mid-pullup-elbow",
-		cat: "mid",
-		needsPasser: false,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const s = [n(0, { x: 69, y: 33 }), n(0.6, ELBOW_B, 0, 1), n(1, ELBOW_B)];
-			return [track("scorer", false, s), track("def1", true, shadow(s, 3))];
-		})(),
-		ball: [
-			{ kind: "hold", role: "scorer", t0: 0, t1: 0.82 },
-			{ kind: "shot", role: "scorer", t: 0.82 },
-		],
+// Backdoor cut: the passer surveys up top and slips a pass to the scorer cutting
+// backdoor to the rim behind an over-playing defender.
+const backdoor: ShotGen = {
+	id: "backdoor",
+	needsPasser: true,
+	build: ({ S, side }) => {
+		const lat = lateral(outward(S));
+		const top = polar(21, side * 6);
+		const pp = [A(0, top), A(1, along(top, lat, -side * 1.5))];
+		const w = polar(22, side * 38);
+		const sc = [A(0, w), A(0.45, polar(15, side * 34)), A(1, S)];
+		const d1 = [
+			A(0, along(w, outward(w), -2.5)),
+			A(0.5, polar(15, side * 30)),
+			A(1, along(S, outward(S), 2)),
+		];
+		return {
+			tracks: [
+				track("passer", false, pp),
+				track("scorer", false, sc),
+				track("def1", true, d1),
+				track("def2", true, trail(pp, 3)),
+			],
+			ball: [
+				{ kind: "hold", role: "passer", t0: 0, t1: 0.5 },
+				{ kind: "pass", from: "passer", to: "scorer", t0: 0.5, t1: 0.7 },
+				{ kind: "shot", role: "scorer", t: 0.88 },
+			],
+		};
 	},
-	{
-		id: "mid-floater",
-		cat: "mid",
-		needsPasser: false,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const s = [n(0, { x: 68, y: 22 }), n(0.6, { x: 77, y: 23 }), n(1, { x: 80, y: 24 })];
-			return [track("scorer", false, s), track("def1", true, shadow(s, 2.8))];
-		})(),
-		ball: [
-			{ kind: "hold", role: "scorer", t0: 0, t1: 0.84 },
-			{ kind: "shot", role: "scorer", t: 0.84 },
-		],
-	},
-	{
-		id: "mid-catch-elbow",
-		cat: "mid",
-		needsPasser: true,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const p = [n(0, WING_B), n(1, WING_B, -1, -1)];
-			const s = [n(0, TOP, 4, 4), n(0.5, ELBOW_B, -1, 0), n(1, ELBOW_B)];
-			return [
-				track("passer", false, p),
-				track("scorer", false, s),
-				track("def1", true, shadow(s, 2.8)),
-			];
-		})(),
-		ball: [
-			{ kind: "hold", role: "passer", t0: 0, t1: 0.46 },
-			{ kind: "pass", from: "passer", to: "scorer", t0: 0.46, t1: 0.66 },
-			{ kind: "shot", role: "scorer", t: 0.84 },
-		],
-	},
+};
 
-	// ===== POST =====
-	{
-		id: "post-up-solo",
-		cat: "post",
-		needsPasser: false,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const s = [n(0, BLOCK_B, 1, 1), n(0.6, BLOCK_B, 1, -1), n(1, { x: 85, y: 29 })];
-			const d = [n(0, BLOCK_B, 3, 1), n(1, { x: 87, y: 28 })];
-			return [track("scorer", false, s), track("def1", true, d)];
-		})(),
-		ball: [
-			{ kind: "hold", role: "scorer", t0: 0, t1: 0.86 },
-			{ kind: "shot", role: "scorer", t: 0.86 },
-		],
+// Transition, self-created: the scorer pushes the ball up the floor in the open
+// court and finishes, a defender chasing from behind.
+const transitionDrive: ShotGen = {
+	id: "transition-drive",
+	needsPasser: false,
+	build: ({ S, side }) => {
+		const start: V = { x: rand(30, 43), y: RIM_Y + side * rand(3, 11) };
+		const sc = [A(0, start), A(0.55, polar(16, side * 18)), A(1, S)];
+		return {
+			tracks: [
+				track("scorer", false, sc),
+				track("def1", true, [
+					A(0, { x: start.x - 5, y: start.y + side * 2 }),
+					A(0.55, along(polar(16, side * 18), outward(polar(16, side * 18)), 2)),
+					A(1, along(S, outward(S), 2.5)),
+				]),
+			],
+			ball: [
+				{ kind: "hold", role: "scorer", t0: 0, t1: 0.9 },
+				{ kind: "shot", role: "scorer", t: 0.9 },
+			],
+		};
 	},
-	{
-		id: "post-entry",
-		cat: "post",
-		needsPasser: true,
-		hasShot: true,
-		flippable: true,
-		tracks: (() => {
-			const p = [n(0, WING_B), n(1, { x: 72, y: 38 })];
-			const s = [n(0, BLOCK_B, 0, 1), n(0.6, BLOCK_B), n(1, { x: 85, y: 30 })];
-			return [
-				track("passer", false, p),
-				track("scorer", false, s),
-				track("def1", true, [n(0, BLOCK_B, 3, 0), n(1, { x: 87, y: 29 })]),
-			];
-		})(),
-		ball: [
-			{ kind: "hold", role: "passer", t0: 0, t1: 0.4 },
-			{ kind: "pass", from: "passer", to: "scorer", t0: 0.4, t1: 0.6 },
-			{ kind: "shot", role: "scorer", t: 0.88 },
-		],
-	},
+};
 
-	// ===== FREE THROW =====
-	{
-		id: "ft",
-		cat: "ft",
-		needsPasser: false,
-		hasShot: true,
-		flippable: false,
+// Transition, outlet: an outlet passer hits the scorer streaking ahead - a long
+// cross-court/court-length pass leading to the finish.
+const transitionOutlet: ShotGen = {
+	id: "transition-outlet",
+	needsPasser: true,
+	build: ({ S, side }) => {
+		const start: V = { x: rand(34, 46), y: RIM_Y + side * rand(4, 12) };
+		const sc = [A(0, start), A(0.5, polar(15, side * 16)), A(1, S)];
+		const pPos: V = { x: rand(22, 34), y: RIM_Y - side * rand(6, 14) };
+		const pp = [A(0, pPos), A(1, along(pPos, { x: 1, y: 0 }, 3))];
+		return {
+			tracks: [
+				track("passer", false, pp),
+				track("scorer", false, sc),
+				track("def1", true, [
+					A(0, { x: start.x - 4, y: start.y + side * 2 }),
+					A(1, along(S, outward(S), 2.5)),
+				]),
+			],
+			ball: [
+				{ kind: "hold", role: "passer", t0: 0, t1: 0.32 },
+				{ kind: "pass", from: "passer", to: "scorer", t0: 0.32, t1: 0.6 },
+				{ kind: "shot", role: "scorer", t: 0.9 },
+			],
+		};
+	},
+};
+
+// Put-back: the scorer crashes the glass and goes right back up. The ball comes
+// loose off the rim to him first.
+const putback: ShotGen = {
+	id: "putback",
+	needsPasser: false,
+	build: ({ S, side }) => {
+		const sc = [
+			A(0, polar(7, side * 32)),
+			A(0.5, polar(3.5, side * 16)),
+			A(1, S),
+		];
+		return {
+			tracks: [
+				track("scorer", false, sc),
+				track("def1", true, trail(sc, 2.4)),
+			],
+			ball: [
+				{ kind: "loose", t0: 0, t1: 0.45, from: RIM, toRole: "scorer" },
+				{ kind: "hold", role: "scorer", t0: 0.45, t1: 0.6 },
+				{ kind: "shot", role: "scorer", t: 0.6 },
+			],
+		};
+	},
+};
+
+// Post-up, solo: the scorer works on the block and finishes over a defender.
+const postSolo: ShotGen = {
+	id: "post-solo",
+	needsPasser: false,
+	build: ({ S, side }) => {
+		const out = outward(S);
+		const lat = lateral(out);
+		const sc = [
+			A(0, along(S, out, 2)),
+			A(0.55, along(S, lat, side * 1.5)),
+			A(1, S),
+		];
+		return {
+			tracks: [
+				track("scorer", false, sc),
+				track("def1", true, [
+					A(0, along(S, out, -1.5)),
+					A(1, along(S, out, -1)),
+				]),
+			],
+			ball: [
+				{ kind: "hold", role: "scorer", t0: 0, t1: 0.86 },
+				{ kind: "shot", role: "scorer", t: 0.86 },
+			],
+		};
+	},
+};
+
+// Post-up entry: a wing feeds the post, who finishes.
+const postEntry: ShotGen = {
+	id: "post-entry",
+	needsPasser: true,
+	build: ({ S, side }) => {
+		const out = outward(S);
+		const pp = [A(0, polar(20, side * 30)), A(1, polar(18, side * 34))];
+		const sc = [A(0, along(S, out, 1.5)), A(0.6, S), A(1, along(S, out, -0.5))];
+		return {
+			tracks: [
+				track("passer", false, pp),
+				track("scorer", false, sc),
+				track("def1", true, [
+					A(0, along(S, out, -1.5)),
+					A(1, along(S, out, -0.8)),
+				]),
+			],
+			ball: [
+				{ kind: "hold", role: "passer", t0: 0, t1: 0.4 },
+				{ kind: "pass", from: "passer", to: "scorer", t0: 0.4, t1: 0.6 },
+				{ kind: "shot", role: "scorer", t: 0.9 },
+			],
+		};
+	},
+};
+
+// Face-up: from the mid-post, jab and rise into a short jumper.
+const faceUp: ShotGen = {
+	id: "face-up",
+	needsPasser: false,
+	build: ({ S, side }) => {
+		const out = outward(S);
+		const lat = lateral(out);
+		const sc = [
+			A(0, along(S, out, 2.5)),
+			A(0.5, along(S, lat, side * 1.5)),
+			A(1, S),
+		];
+		return {
+			tracks: [
+				track("scorer", false, sc),
+				track("def1", true, trail(sc, 2.8)),
+			],
+			ball: [
+				{ kind: "hold", role: "scorer", t0: 0, t1: 0.84 },
+				{ kind: "shot", role: "scorer", t: 0.84 },
+			],
+		};
+	},
+};
+
+// The free-throw set: shooter at the line, two players lined along the lane.
+const freeThrow: ShotGen = {
+	id: "ft",
+	needsPasser: false,
+	build: ({ S }) => ({
 		tracks: [
-			track("scorer", false, [n(0, FT), n(1, FT)]),
-			track("def1", true, [n(0, BLOCK_T, 1, 0), n(1, BLOCK_T, 1, 0)]),
-			track("def2", true, [n(0, BLOCK_B, 1, 0), n(1, BLOCK_B, 1, 0)]),
+			track("scorer", false, [A(0, S), A(1, S)]),
+			track("def1", true, [A(0, { x: 84, y: 19 }), A(1, { x: 84, y: 19 })]),
+			track("def2", true, [A(0, { x: 84, y: 31 }), A(1, { x: 84, y: 31 })]),
 		],
 		ball: [
 			{ kind: "hold", role: "scorer", t0: 0, t1: 0.5 },
 			{ kind: "shot", role: "scorer", t: 0.5 },
 		],
-	},
+	}),
+};
 
-	// ===== STEAL =====
-	{
-		id: "steal",
-		cat: "steal",
-		needsPasser: false,
-		hasShot: false,
-		flippable: true,
-		tracks: [
-			track("victim", false, [n(0, { x: 68, y: 25 }), n(0.7, { x: 73, y: 25 }), n(1, { x: 74, y: 26 })]),
-			track("stealer", true, [n(0, { x: 79, y: 20 }), n(0.7, { x: 74, y: 24 }), n(1, { x: 76, y: 21 })]),
-		],
-		ball: [
-			{ kind: "hold", role: "victim", t0: 0, t1: 0.62 },
-			{ kind: "loose", t0: 0.62, t1: 0.82, fromRole: "victim", toRole: "stealer" },
-			{ kind: "hold", role: "stealer", t0: 0.82, t1: 1 },
-		],
-	},
+// The generator pools per zone. Assisted shots (a passer is available) draw from
+// the passer plays so a pass genuinely shows; self-created shots draw from the
+// rest. Every zone has both kinds so makes, misses and blocks all animate.
+const POOLS: Record<ShotCat, ShotGen[]> = {
+	three: [catchAndShoot, handoff, pullUp, stepBack, pnrHandler, transitionDrive, transitionOutlet],
+	mid: [catchAndShoot, handoff, pullUp, stepBack, pnrHandler, faceUp],
+	rim: [
+		driveIso,
+		pnrHandler,
+		putback,
+		transitionDrive,
+		pnrRoll,
+		backdoor,
+		transitionOutlet,
+	],
+	post: [postSolo, faceUp, postEntry],
+	ft: [freeThrow],
+};
 
-	// ===== TURNOVER =====
-	{
-		id: "tov",
-		cat: "tov",
-		needsPasser: false,
-		hasShot: false,
-		flippable: true,
-		tracks: [
-			track("scorer", false, [n(0, { x: 66, y: 22 }), n(0.6, { x: 72, y: 26 }), n(1, { x: 74, y: 28 })]),
-			track("def1", true, [n(0, { x: 74, y: 20 }), n(0.6, { x: 75, y: 25 }), n(1, { x: 76, y: 27 })]),
-		],
-		ball: [
-			{ kind: "hold", role: "scorer", t0: 0, t1: 0.62 },
-			{ kind: "vanish", t: 0.72 },
-		],
-	},
+// Build a shot play for a zone. When a passer is available we pick a play that
+// shows a pass; otherwise a self-created one. Returns the built play plus the
+// synthesized release spot (canonical) - the caller feeds that spot to placePlay
+// so the shot flight and the shot-chart dot land on the spread location.
+export const buildShotPlay = (
+	cat: ShotCat,
+	passer: boolean,
+): { built: BuiltPlay; spot: V } => {
+	const pool = POOLS[cat] ?? POOLS.mid;
+	const want = pool.filter((g) => (passer ? g.needsPasser : !g.needsPasser));
+	const list = want.length > 0 ? want : pool;
+	const gen = list[Math.floor(Math.random() * list.length)]!;
+	const spot = synthCanonicalSpot(cat);
+	return { built: gen.build({ S: spot, side: sideOf(spot) }), spot };
+};
 
-	// ===== OFFENSIVE / DEFENSIVE REBOUND =====
-	{
-		id: "orb",
-		cat: "orb",
-		needsPasser: false,
-		hasShot: false,
-		flippable: true,
+// ---- Non-shot plays -------------------------------------------------------
+export const buildNonShotPlay = (cat: NonShotCat): BuiltPlay => {
+	if (cat === "steal") {
+		const a = synthActionSpot();
+		return {
+			tracks: [
+				track("victim", false, [
+					A(0, along(a, { x: -1, y: 0 }, 4)),
+					A(0.7, a),
+					A(1, along(a, { x: 1, y: 0.4 }, 1)),
+				]),
+				track("stealer", true, [
+					A(0, along(a, { x: 1, y: -1 }, 6)),
+					A(0.7, along(a, { x: 0, y: -0.5 }, 1)),
+					A(1, along(a, { x: 1, y: -1 }, 3)),
+				]),
+			],
+			ball: [
+				{ kind: "hold", role: "victim", t0: 0, t1: 0.6 },
+				{ kind: "loose", t0: 0.6, t1: 0.82, fromRole: "victim", toRole: "stealer" },
+				{ kind: "hold", role: "stealer", t0: 0.82, t1: 1 },
+			],
+		};
+	}
+	if (cat === "tov") {
+		const a = synthActionSpot();
+		return {
+			tracks: [
+				track("scorer", false, [
+					A(0, along(a, { x: -1, y: -0.5 }, 5)),
+					A(0.6, a),
+					A(1, along(a, { x: 1, y: 0.6 }, 2)),
+				]),
+				track("def1", true, [
+					A(0, along(a, { x: 1, y: -0.6 }, 5)),
+					A(0.6, along(a, { x: 0.5, y: 0 }, 1)),
+					A(1, along(a, { x: 1, y: 0.4 }, 3)),
+				]),
+			],
+			ball: [
+				{ kind: "hold", role: "scorer", t0: 0, t1: 0.6 },
+				{ kind: "vanish", t: 0.72 },
+			],
+		};
+	}
+	if (cat === "orb" || cat === "drb") {
+		const def = cat === "drb";
+		const s: V = { x: rand(81, 86), y: RIM_Y + rand(-8, 8) };
+		return {
+			tracks: [
+				track("scorer", def, [
+					A(0, along(s, outward(s), 3)),
+					A(0.55, along(s, outward(s), -1)),
+					A(1, s),
+				]),
+			],
+			ball: [
+				{ kind: "loose", t0: 0, t1: 0.55, from: RIM, toRole: "scorer" },
+				{ kind: "hold", role: "scorer", t0: 0.55, t1: 1 },
+			],
+		};
+	}
+	if (cat === "foul") {
+		const a = synthActionSpot();
+		return {
+			tracks: [
+				track("victim", false, [A(0, a), A(1, along(a, { x: 1, y: 0 }, 1))]),
+				track("fouler", true, [
+					A(0, along(a, { x: 1, y: 0.4 }, 5)),
+					A(0.6, along(a, { x: 1, y: 0 }, 2)),
+					A(1, along(a, { x: 1, y: 0 }, 3)),
+				]),
+			],
+			ball: [{ kind: "hold", role: "victim", t0: 0, t1: 1 }],
+		};
+	}
+	// jump ball
+	return {
 		tracks: [
-			track("scorer", false, [n(0, { x: 80, y: 18 }), n(0.55, { x: 85, y: 23 }), n(1, { x: 84, y: 24 })]),
-		],
-		ball: [{ kind: "loose", t0: 0, t1: 0.55, from: RIM, toRole: "scorer" }, { kind: "hold", role: "scorer", t0: 0.55, t1: 1 }],
-	},
-	{
-		id: "drb",
-		cat: "drb",
-		needsPasser: false,
-		hasShot: false,
-		flippable: true,
-		tracks: [
-			track("scorer", true, [n(0, { x: 83, y: 30 }), n(0.55, { x: 86, y: 25 }), n(1, { x: 83, y: 24 })]),
-		],
-		ball: [{ kind: "loose", t0: 0, t1: 0.55, from: RIM, toRole: "scorer" }, { kind: "hold", role: "scorer", t0: 0.55, t1: 1 }],
-	},
-
-	// ===== FOUL =====
-	{
-		id: "foul",
-		cat: "foul",
-		needsPasser: false,
-		hasShot: false,
-		flippable: true,
-		tracks: [
-			track("victim", false, [n(0, { x: 76, y: 25 }), n(1, { x: 77, y: 25 })]),
-			track("fouler", true, [n(0, { x: 81, y: 26 }), n(0.6, { x: 78, y: 25 }), n(1, { x: 79, y: 25 })]),
-		],
-		ball: [{ kind: "hold", role: "victim", t0: 0, t1: 1 }],
-	},
-
-	// ===== JUMP BALL =====
-	{
-		id: "jump",
-		cat: "jump",
-		needsPasser: false,
-		hasShot: false,
-		flippable: false,
-		tracks: [
-			track("scorer", false, [n(0, { x: 45, y: 25 }), n(0.5, { x: 46.5, y: 24 }), n(1, { x: 44, y: 23 })]),
-			track("jumper2", true, [n(0, { x: 49, y: 25 }), n(0.5, { x: 47.5, y: 26 }), n(1, { x: 50, y: 27 })]),
+			track("scorer", false, [
+				A(0, { x: 45, y: 25 }),
+				A(0.5, { x: 46.5, y: 24 }),
+				A(1, { x: 44, y: 23 }),
+			]),
+			track("jumper2", true, [
+				A(0, { x: 49, y: 25 }),
+				A(0.5, { x: 47.5, y: 26 }),
+				A(1, { x: 50, y: 27 }),
+			]),
 		],
 		ball: [{ kind: "loose", t0: 0, t1: 0.6, from: { x: 47, y: 24 }, to: { x: 40, y: 22 } }],
-	},
-];
+	};
+};
+
+// The distinct roles a built play uses (for player binding).
+export const playRoles = (built: BuiltPlay): PlayRole[] =>
+	built.tracks.map((tr) => tr.role);
 
 // ---- Bound, placed play (what the court actually animates) ----------------
-// A template is authored in canonical coordinates with abstract roles; binding
-// fills each role with a real player and placement transforms the paths onto the
-// live court (mirrored for the attacking team, optionally flipped top/bottom).
-
 export type LivePlayer = {
 	pid: number;
 	name: string;
@@ -527,12 +783,15 @@ export type Binding = Map<PlayRole, { pid: number; name: string }>;
 export type PlaceOpts = {
 	key: number;
 	attackT: 0 | 1; // display team on offense (which rim they attack)
-	flipY: boolean; // mirror top<->bottom for variety
+	flipY: boolean; // mirror top<->bottom (non-shot plays only; shots are spread)
 	jitterX: number;
 	jitterY: number;
 	made: boolean;
 	blocked: boolean;
 	pulse?: "red" | "amber";
+	// The canonical shot spot to release from (so the dot + flight use the
+	// synthesized, spread location rather than a path endpoint). Optional.
+	shotSpot?: V;
 };
 
 // Transform a canonical point (offense attacking RIGHT) onto the live court for
@@ -542,17 +801,17 @@ const placePoint = (p: V, o: PlaceOpts): V => ({
 	y: (o.flipY ? COURT_H - p.y : p.y) + o.jitterY,
 });
 
-// Bind + place a template into a ready-to-animate PlayInstance. Roles with no
+// Bind + place a built play into a ready-to-animate PlayInstance. Roles with no
 // bound player are dropped (an optional screener / second defender that a given
-// play doesn't have); the ball segments referencing a missing role are skipped.
+// play doesn't have); ball segments referencing a missing role are skipped.
 export const placePlay = (
-	tpl: PlayTemplate,
+	built: BuiltPlay,
 	binding: Binding,
 	o: PlaceOpts,
 ): PlayInstance => {
 	const players: LivePlayer[] = [];
 	const rolePid = new Map<PlayRole, number>();
-	for (const tr of tpl.tracks) {
+	for (const tr of built.tracks) {
 		const bound = binding.get(tr.role);
 		if (!bound) {
 			continue;
@@ -571,7 +830,7 @@ export const placePlay = (
 
 	const rimX = rimXForTeam(o.attackT);
 	const ball: LiveBall[] = [];
-	for (const seg of tpl.ball) {
+	for (const seg of built.ball) {
 		if (seg.kind === "hold") {
 			const pid = rolePid.get(seg.role);
 			if (pid !== undefined) {
@@ -588,10 +847,13 @@ export const placePlay = (
 			const shooter = players.find((p) => p.pid === pid);
 			if (pid !== undefined && shooter) {
 				const last = shooter.nodes.at(-1) ?? { x: rimX, y: 25 };
+				const spot = o.shotSpot
+					? placePoint(o.shotSpot, o)
+					: { x: last.x, y: last.y };
 				ball.push({
 					kind: "shot",
 					pid,
-					spot: { x: last.x, y: last.y },
+					spot,
 					rimX,
 					made: o.made,
 					blocked: o.blocked,
@@ -649,25 +911,3 @@ export const samplePath = (nodes: PathNode[], g: number): V => {
 			(-a + 3 * b - 3 * c + d) * u3);
 	return { x: cr(p0.x, p1.x, p2.x, p3.x), y: cr(p0.y, p1.y, p2.y, p3.y) };
 };
-
-// Pick a template for a category. Respects whether a real passer is available
-// (templates that need one are excluded when there isn't). `rnd` in [0,1) picks
-// among the matches; falls back to any template in the category.
-export const pickTemplate = (
-	cat: PlayCat,
-	hasPasser: boolean,
-	rnd: number,
-): PlayTemplate | undefined => {
-	const all = PLAY_TEMPLATES.filter((p) => p.cat === cat);
-	if (all.length === 0) {
-		return undefined;
-	}
-	const ok = all.filter((p) => !p.needsPasser || hasPasser);
-	const pool = ok.length > 0 ? ok : all.filter((p) => !p.needsPasser);
-	const list = pool.length > 0 ? pool : all;
-	return list[Math.min(list.length - 1, Math.floor(rnd * list.length))];
-};
-
-// The distinct offensive/defensive roles a template uses (for player binding).
-export const templateRoles = (tpl: PlayTemplate): PlayRole[] =>
-	tpl.tracks.map((tr) => tr.role);

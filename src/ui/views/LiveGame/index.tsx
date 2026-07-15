@@ -38,18 +38,18 @@ import { BoxScoreRow } from "../../components/BoxScoreRow.tsx";
 import { getPeriodName } from "../../../common/getPeriodName.ts";
 import LiveCourt, {
 	courtActionFromEventType,
-	rimXFor,
 	type CourtDot,
 	type CourtZone,
 } from "./LiveCourt.tsx";
 import {
-	pickTemplate,
+	buildNonShotPlay,
+	buildShotPlay,
 	placePlay,
-	templateRoles,
+	playRoles,
 	type Binding,
-	type LiveBall,
+	type BuiltPlay,
+	type NonShotCat,
 	type PlayInstance,
-	type PlayTemplate,
 	type ShotCat,
 	type V,
 } from "./liveCourtPlays.ts";
@@ -338,25 +338,21 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// block event only names the blocker, so the shooter/spot are remembered
 	// from the attempt so the players don't teleport between the two).
 	// ---- Live court cinematic (basketball) --------------------------------
-	// Each play maps to a category, picks a hand-authored template from the
-	// library, binds the real players (shooter, assister, inferred defenders)
-	// onto its roles, mirrors/flips it for variety, and plays it through. A shot
-	// unfolds across its two events: the ATTEMPT beat runs the drive/creation,
-	// then the RESULT beat shoots from where it ended (one continuous play).
+	// A shot arrives as two events: an ATTEMPT (who shot, which zone) and then a
+	// RESULT (made / missed / blocked, and - on a make - the assister). We render
+	// the whole possession on the RESULT beat, where all of that is known: a fresh
+	// synthesized shot spot (spread across the zone), a generated play - iso,
+	// pull-up, catch-and-shoot off a swing, pick-and-roll, hand-off, backdoor,
+	// step-back, transition, post-up - flowing into that spot, and the ball's
+	// pass(es) and flight. The attempt beat only remembers the shooter so a block
+	// (which names only the blocker) can still credit the right man.
 	const courtPlay = useRef<PlayInstance | undefined>(undefined);
 	const courtText = useRef<ReactNode>(undefined);
 	const courtScore = useRef<ReactNode>(undefined);
 	const courtPlayCount = useRef(0);
 	const courtDots = useRef<CourtDot[]>([]);
-	// The drive beat still on the floor, so the shot result can resume from it.
-	const lastAttempt = useRef<
-		| {
-				shooterPid: number;
-				shooterT: 0 | 1;
-				instance: PlayInstance;
-				spot: V;
-		  }
-		| undefined
+	const lastShotAttempt = useRef<
+		{ pid: number; shooterT: 0 | 1; cat: ShotCat } | undefined
 	>(undefined);
 
 	const playerByPid = (pid: number): any => {
@@ -402,14 +398,15 @@ export const LiveGame = (props: View<"liveGame">) => {
 		return { pid: p.pid, name: p.name ?? "???" };
 	};
 
-	// Fill a template's defensive / screener roles with inferred players.
+	// Fill a play's defensive / screener roles with inferred players (the sim
+	// doesn't name them, so pick plausible on-court teammates / opponents).
 	const bindSupport = (
-		tpl: PlayTemplate,
+		built: BuiltPlay,
 		binding: Binding,
 		used: Set<number>,
 		offenseT: 0 | 1,
 	) => {
-		for (const role of templateRoles(tpl)) {
+		for (const role of playRoles(built)) {
 			if (binding.has(role)) {
 				continue;
 			}
@@ -427,25 +424,30 @@ export const LiveGame = (props: View<"liveGame">) => {
 	};
 
 	const place = (
-		tpl: PlayTemplate,
+		built: BuiltPlay,
 		binding: Binding,
 		opts: {
 			attackT: 0 | 1;
 			made: boolean;
 			blocked: boolean;
 			pulse?: "red" | "amber";
+			// The synthesized shot spot (canonical) so the flight + dot land there.
+			shotSpot?: V;
+			// Shots are already spread across the floor; only non-shot plays flip.
+			flipY?: boolean;
 		},
 	): PlayInstance => {
 		courtPlayCount.current += 1;
-		return placePlay(tpl, binding, {
+		return placePlay(built, binding, {
 			key: courtPlayCount.current,
 			attackT: opts.attackT,
-			flipY: Math.random() < 0.5,
-			jitterX: Math.random() * 3 - 1.5,
-			jitterY: Math.random() * 3 - 1.5,
+			flipY: opts.flipY ?? false,
+			jitterX: Math.random() * 2 - 1,
+			jitterY: Math.random() * 2 - 1,
 			made: opts.made,
 			blocked: opts.blocked,
 			pulse: opts.pulse,
+			shotSpot: opts.shotSpot,
 		});
 	};
 
@@ -473,41 +475,46 @@ export const LiveGame = (props: View<"liveGame">) => {
 		});
 	};
 
-	// The shot result reusing the drive beat: hold the players where the drive
-	// left them, then release the shot from that spot (flight + outcome).
-	const shootFromAttempt = (
-		att: {
-			shooterPid: number;
-			shooterT: 0 | 1;
-			instance: PlayInstance;
-			spot: V;
-		},
+	// Render a completed shot: build a play flowing into the synthesized spot,
+	// bind the real shooter + assister (+ inferred defenders/screener), and drop
+	// the shot-chart dot on the placed spot.
+	const showShot = (
+		cat: ShotCat,
+		shooterPid: number,
+		shooterT: 0 | 1,
 		made: boolean,
 		blocked: boolean,
-	): PlayInstance => {
-		courtPlayCount.current += 1;
-		const players = att.instance.players.map((p) => {
-			const last = p.nodes.at(-1) ?? { t: 1, x: 47, y: 25 };
-			return {
-				pid: p.pid,
-				name: p.name,
-				colorT: p.colorT,
-				nodes: [{ t: 0, x: last.x, y: last.y }],
-			};
+		passPid: number | undefined,
+		text: ReactNode,
+		score: ReactNode,
+	) => {
+		const passer = passPid !== undefined && passPid !== shooterPid;
+		const { built, spot } = buildShotPlay(cat, passer);
+		const binding: Binding = new Map();
+		binding.set("scorer", {
+			pid: shooterPid,
+			name: playerNameByPid(shooterPid),
 		});
-		const ball: LiveBall[] = [
-			{ kind: "hold", pid: att.shooterPid, t0: 0, t1: 0.12 },
-			{
-				kind: "shot",
-				pid: att.shooterPid,
-				spot: att.spot,
-				rimX: rimXFor(att.shooterT),
-				made,
-				blocked,
-				t: 0.12,
-			},
-		];
-		return { key: courtPlayCount.current, players, ball };
+		const used = new Set<number>([shooterPid]);
+		if (passer) {
+			binding.set("passer", {
+				pid: passPid,
+				name: playerNameByPid(passPid),
+			});
+			used.add(passPid);
+		}
+		bindSupport(built, binding, used, shooterT);
+		const inst = place(built, binding, {
+			attackT: shooterT,
+			made,
+			blocked,
+			shotSpot: spot,
+		});
+		showPlay(inst, text, score);
+		const shotSeg = inst.ball.find((b) => b.kind === "shot");
+		if (cat !== "ft" && shotSeg && shotSeg.kind === "shot") {
+			dropDot(shotSeg.spot, made, shooterT, playerNameByPid(shooterPid));
+		}
 	};
 
 	const handleCourtEvent = (event: any, text: ReactNode, scoreDiff = 0) => {
@@ -581,124 +588,76 @@ export const LiveGame = (props: View<"liveGame">) => {
 		const action = courtActionFromEventType(event.type);
 		if (action) {
 			if (action.kind === "attempt") {
-				if (typeof event.pid !== "number") {
-					return;
+				// Just remember the shooter + zone; the whole play renders on the
+				// result beat below (where the make/miss/block and assist are known).
+				if (typeof event.pid === "number") {
+					lastShotAttempt.current = {
+						pid: event.pid,
+						shooterT: displayT,
+						cat: shotCat(action.zone),
+					};
 				}
-				const tpl = pickTemplate(shotCat(action.zone), false, Math.random());
-				if (!tpl) {
-					lastAttempt.current = undefined;
-					return;
-				}
-				const binding: Binding = new Map();
-				binding.set("scorer", {
-					pid: event.pid,
-					name: playerNameByPid(event.pid),
-				});
-				const used = new Set<number>([event.pid]);
-				bindSupport(tpl, binding, used, displayT);
-				const inst = place(tpl, binding, {
-					attackT: displayT,
-					made: false,
-					blocked: false,
-				});
-				// Drive only: hold the ball to the shooter through the whole beat; the
-				// result event releases the shot.
-				inst.ball = [{ kind: "hold", pid: event.pid, t0: 0, t1: 1 }];
-				const shooter = inst.players.find((p) => p.pid === event.pid);
-				const last = shooter?.nodes.at(-1);
-				lastAttempt.current = {
-					shooterPid: event.pid,
-					shooterT: displayT,
-					instance: inst,
-					spot: last
-						? { x: last.x, y: last.y }
-						: { x: rimXFor(displayT), y: 25 },
-				};
-				showPlay(inst, text);
 				return;
 			}
 
-			// A result: make / miss / block. On a block, t/pid are the BLOCKER's; the
-			// shooter comes from the drive we remembered.
-			const shooterT: 0 | 1 = action.blocked ? rawT : displayT;
-			const shooterPid = action.blocked
-				? lastAttempt.current?.shooterPid
+			// A result: make / miss / block. On a block, t/pid are the BLOCKER's, so
+			// the shooter (and their team) come from the attempt we remembered.
+			const blocked = !!action.blocked;
+			const shooterT: 0 | 1 = blocked
+				? (lastShotAttempt.current?.shooterT ?? displayT)
+				: displayT;
+			const shooterPid = blocked
+				? lastShotAttempt.current?.pid
 				: event.pid;
 			if (typeof shooterPid !== "number") {
 				return;
 			}
-			const att = lastAttempt.current;
-			if (att && att.shooterPid === shooterPid) {
-				const inst = shootFromAttempt(att, action.made, !!action.blocked);
-				lastAttempt.current = undefined;
-				showPlay(inst, text, scoreNode);
-				if (action.zone !== "ft") {
-					dropDot(
-						att.spot,
-						action.made,
-						att.shooterT,
-						playerNameByPid(shooterPid),
-					);
-				}
-				return;
-			}
-
-			// No drive to resume (a free throw, a tip-in, a direct make): a fresh
-			// full play with the shot.
 			const cat = shotCat(action.zone);
+			// Only made shots carry an assist; a pass shows only then.
 			const passPid =
-				!action.blocked && action.made && typeof event.pidAst === "number"
+				!blocked && action.made && typeof event.pidAst === "number"
 					? (event.pidAst as number)
 					: undefined;
-			const tpl = pickTemplate(cat, passPid !== undefined, Math.random());
-			if (!tpl) {
-				return;
-			}
-			const binding: Binding = new Map();
-			binding.set("scorer", {
-				pid: shooterPid,
-				name: playerNameByPid(shooterPid),
-			});
-			const used = new Set<number>([shooterPid]);
-			if (passPid !== undefined && passPid !== shooterPid) {
-				binding.set("passer", {
-					pid: passPid,
-					name: playerNameByPid(passPid),
-				});
-				used.add(passPid);
-			}
-			bindSupport(tpl, binding, used, shooterT);
-			const inst = place(tpl, binding, {
-				attackT: shooterT,
-				made: action.made,
-				blocked: !!action.blocked,
-			});
-			showPlay(inst, text, scoreNode);
-			const shooter = inst.players.find((p) => p.pid === shooterPid);
-			const last = shooter?.nodes.at(-1);
-			if (last && cat !== "ft") {
-				dropDot(
-					{ x: last.x, y: last.y },
-					action.made,
-					shooterT,
-					playerNameByPid(shooterPid),
-				);
-			}
+			showShot(
+				cat,
+				shooterPid,
+				shooterT,
+				action.made,
+				blocked,
+				passPid,
+				text,
+				scoreNode,
+			);
+			lastShotAttempt.current = undefined;
 			return;
 		}
 
 		// Non-shot plays.
 		const type = event.type as string;
-		lastAttempt.current = undefined;
+		lastShotAttempt.current = undefined;
+		// Non-shot plays flip top/bottom for variety, since (unlike shots) they
+		// aren't anchored to a synthesized spot.
+		const flipY = Math.random() < 0.5;
+		const showNonShot = (
+			cat: NonShotCat,
+			binding: Binding,
+			attackT: 0 | 1,
+			offenseT: 0 | 1,
+			pulse?: "red" | "amber",
+		) => {
+			const built = buildNonShotPlay(cat);
+			const used = new Set<number>(
+				[...binding.values()].map((b) => b.pid),
+			);
+			bindSupport(built, binding, used, offenseT);
+			showPlay(place(built, binding, { attackT, made: false, blocked: false, pulse, flipY }), text);
+		};
+
 		if (
 			type === "stl" &&
 			typeof event.pid === "number" &&
 			typeof event.pidTov === "number"
 		) {
-			const tpl = pickTemplate("steal", false, Math.random());
-			if (!tpl) {
-				return;
-			}
 			const binding: Binding = new Map();
 			binding.set("victim", {
 				pid: event.pidTov,
@@ -708,62 +667,30 @@ export const LiveGame = (props: View<"liveGame">) => {
 				pid: event.pid,
 				name: playerNameByPid(event.pid),
 			});
-			showPlay(
-				place(tpl, binding, {
-					attackT: otherT(displayT),
-					made: false,
-					blocked: false,
-					pulse: "red",
-				}),
-				text,
-			);
+			showNonShot("steal", binding, otherT(displayT), otherT(displayT), "red");
 		} else if (type === "tov" && typeof event.pid === "number") {
-			const tpl = pickTemplate("tov", false, Math.random());
-			if (!tpl) {
-				return;
-			}
 			const binding: Binding = new Map();
 			binding.set("scorer", {
 				pid: event.pid,
 				name: playerNameByPid(event.pid),
 			});
-			const used = new Set<number>([event.pid]);
-			bindSupport(tpl, binding, used, displayT);
-			showPlay(
-				place(tpl, binding, {
-					attackT: displayT,
-					made: false,
-					blocked: false,
-					pulse: "red",
-				}),
-				text,
-			);
+			showNonShot("tov", binding, displayT, displayT, "red");
 		} else if (
 			(type === "orb" || type === "drb") &&
 			typeof event.pid === "number"
 		) {
-			const tpl = pickTemplate(type === "orb" ? "orb" : "drb", false, Math.random());
-			if (!tpl) {
-				return;
-			}
 			const binding: Binding = new Map();
 			binding.set("scorer", {
 				pid: event.pid,
 				name: playerNameByPid(event.pid),
 			});
-			showPlay(
-				place(tpl, binding, {
-					attackT: type === "orb" ? displayT : otherT(displayT),
-					made: false,
-					blocked: false,
-				}),
-				text,
+			showNonShot(
+				type === "orb" ? "orb" : "drb",
+				binding,
+				type === "orb" ? displayT : otherT(displayT),
+				displayT,
 			);
 		} else if (type.startsWith("pf") && typeof event.pid === "number") {
-			const tpl = pickTemplate("foul", false, Math.random());
-			if (!tpl) {
-				return;
-			}
 			const binding: Binding = new Map();
 			const victimPid =
 				typeof event.pidShooting === "number" ? event.pidShooting : undefined;
@@ -777,20 +704,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 				pid: event.pid,
 				name: playerNameByPid(event.pid),
 			});
-			showPlay(
-				place(tpl, binding, {
-					attackT: otherT(displayT),
-					made: false,
-					blocked: false,
-					pulse: "amber",
-				}),
-				text,
-			);
+			showNonShot("foul", binding, otherT(displayT), otherT(displayT), "amber");
 		} else if (type === "jumpBall" && typeof event.pid === "number") {
-			const tpl = pickTemplate("jump", false, Math.random());
-			if (!tpl) {
-				return;
-			}
 			const binding: Binding = new Map();
 			binding.set("scorer", {
 				pid: event.pid,
@@ -802,14 +717,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 					name: playerNameByPid(event.pid2),
 				});
 			}
-			showPlay(
-				place(tpl, binding, {
-					attackT: displayT,
-					made: false,
-					blocked: false,
-				}),
-				text,
-			);
+			showNonShot("jump", binding, displayT, displayT);
 		}
 	};
 
