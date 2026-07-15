@@ -713,12 +713,6 @@ const ratingParen = (p: any): string => {
 	return "";
 };
 
-const pickLabel = (dp: any): string => {
-	const round = typeof dp.round === "number" ? dp.round : 1;
-	const season = typeof dp.season === "number" ? dp.season : "future";
-	return `a ${season} ${helpers.ordinal(round)}-round pick`;
-};
-
 // "X", "X and Y", or "X, Y and Z".
 const joinAssets = (assets: string[]): string => {
 	if (assets.length === 0) {
@@ -734,80 +728,6 @@ const changesToValues = (changeset: Changeset, store: string): any[] =>
 	changeset.changes
 		.filter((change) => change.store === store && change.type === "put")
 		.map((change) => (change as { value: any }).value);
-
-// A Shams-style, two-directional trade blurb, or undefined if this isn't a
-// recoverable 2-team trade.
-const describeTrade = (
-	changeset: Changeset,
-	teamById: Map<number, TeamInfo>,
-): SyncNotification | undefined => {
-	const players = changesToValues(changeset, "players");
-	const picks = changesToValues(changeset, "draftPicks");
-
-	// Teams that RECEIVED a tracked asset (player/pick).
-	const assetTids = new Set<number>();
-	for (const p of players) {
-		if (typeof p.tid === "number" && p.tid >= 0) {
-			assetTids.add(p.tid);
-		}
-	}
-	for (const dp of picks) {
-		if (typeof dp.tid === "number" && dp.tid >= 0) {
-			assetTids.add(dp.tid);
-		}
-	}
-
-	// A trade logs a "trade" event carrying BOTH teams' tids. That's the reliable
-	// signal this is a trade (vs a free-agent signing, which also just moves a
-	// player onto a team) and the only way to recover a team that gave/received
-	// NOTHING - e.g. a "traded nothing for Chaney Johnson" deal, where only one
-	// team's assets moved so asset tids alone would see just one team.
-	const tradeEvent = changesToValues(changeset, "events").find(
-		(e) => e && e.type === "trade",
-	);
-	const eventTids =
-		tradeEvent && Array.isArray(tradeEvent.tids)
-			? tradeEvent.tids.filter(
-					(t: unknown): t is number => typeof t === "number" && t >= 0,
-				)
-			: [];
-
-	// Prefer the event's team pair (it includes a "gave nothing" team); otherwise
-	// infer from the assets that moved. Only a clean 2-team deal is describable.
-	const teamTids = eventTids.length === 2 ? eventTids : [...assetTids];
-	if (teamTids.length !== 2) {
-		return undefined;
-	}
-
-	const [a, b] = teamTids as [number, number];
-	const assetsGoingTo = (tid: number): string[] => [
-		...players
-			.filter((p) => p.tid === tid)
-			.map((p) => `${playerName(p)}${ratingParen(p)}`),
-		...picks.filter((dp) => dp.tid === tid).map(pickLabel),
-	];
-
-	const aGets = assetsGoingTo(a);
-	const bGets = assetsGoingTo(b);
-	if (aGets.length === 0 && bGets.length === 0) {
-		return undefined;
-	}
-
-	let body: string;
-	if (aGets.length > 0 && bGets.length > 0) {
-		body = `The ${teamLabel(teamById, a)} acquire ${joinAssets(aGets)} from the ${teamLabel(teamById, b)} in exchange for ${joinAssets(bGets)}.`;
-	} else if (aGets.length > 0) {
-		body = `The ${teamLabel(teamById, a)} acquire ${joinAssets(aGets)} from the ${teamLabel(teamById, b)}.`;
-	} else {
-		body = `The ${teamLabel(teamById, b)} acquire ${joinAssets(bGets)} from the ${teamLabel(teamById, a)}.`;
-	}
-	return {
-		title: "Trade",
-		body,
-		targetTids: null,
-		path: `transactions/all/${g.get("season")}/trade`,
-	};
-};
 
 // "The LA Lakers sign New Guy (80/85, PG) to a 3-year, $45M contract."
 const signingBody = (
@@ -1016,6 +936,126 @@ const buildDraftNotifications = (
 	return out;
 };
 
+// EVERY trade in this changeset, narrated from its trade EVENT (which carries
+// both teams and exactly what each RECEIVED). Event-based so it works for a
+// changeset with MULTIPLE trades and - crucially - for CPU-vs-CPU trades that
+// happen INSIDE a sim day, which the record-based path never reached because a
+// sim short-circuits to game summaries. Every trade gets a ping, human or not.
+const MAX_TRADE_NOTIFS = 6;
+const describeTradesFromEvents = (
+	changeset: Changeset,
+	teamById: Map<number, TeamInfo>,
+): SyncNotification[] => {
+	const events = changesToValues(changeset, "events").filter(
+		(e) =>
+			e &&
+			e.type === "trade" &&
+			Array.isArray(e.tids) &&
+			e.tids.length === 2 &&
+			Array.isArray(e.teams),
+	);
+	if (events.length === 0) {
+		return [];
+	}
+
+	// Traded players' records ride in the same changeset, so tag them with ovr/pot.
+	const playerByPid = new Map<number, any>();
+	for (const p of changesToValues(changeset, "players")) {
+		if (typeof p?.pid === "number") {
+			playerByPid.set(p.pid, p);
+		}
+	}
+	const assetLabel = (asset: any): string => {
+		if (typeof asset?.pid === "number") {
+			const p = playerByPid.get(asset.pid);
+			return `${asset.name ?? "a player"}${p ? ratingParen(p) : ""}`;
+		}
+		const round = typeof asset?.round === "number" ? asset.round : 1;
+		const season = typeof asset?.season === "number" ? asset.season : "future";
+		return `a ${season} ${helpers.ordinal(round)}-round pick`;
+	};
+
+	const out: SyncNotification[] = [];
+	let shown = 0;
+	for (const e of events) {
+		if (shown >= MAX_TRADE_NOTIFS) {
+			break;
+		}
+		const [a, b] = e.tids as [number, number];
+		// event.teams[i].assets = what team event.tids[i] RECEIVED (see processTrade).
+		const aGets = (e.teams[0]?.assets ?? []).map(assetLabel);
+		const bGets = (e.teams[1]?.assets ?? []).map(assetLabel);
+		if (aGets.length === 0 && bGets.length === 0) {
+			continue;
+		}
+		let body: string;
+		if (aGets.length > 0 && bGets.length > 0) {
+			body = `The ${teamLabel(teamById, a)} acquire ${joinAssets(aGets)} from the ${teamLabel(teamById, b)} in exchange for ${joinAssets(bGets)}.`;
+		} else if (aGets.length > 0) {
+			body = `The ${teamLabel(teamById, a)} acquire ${joinAssets(aGets)} from the ${teamLabel(teamById, b)}.`;
+		} else {
+			body = `The ${teamLabel(teamById, b)} acquire ${joinAssets(bGets)} from the ${teamLabel(teamById, a)}.`;
+		}
+		out.push({
+			title: "Trade",
+			body,
+			targetTids: null,
+			path: `transactions/all/${g.get("season")}/trade`,
+		});
+		shown += 1;
+	}
+	const more = events.length - shown;
+	if (more > 0) {
+		out.push({
+			title: "Trades",
+			body: `…and ${more} more ${more === 1 ? "trade" : "trades"}.`,
+			targetTids: null,
+			path: `transactions/all/${g.get("season")}/trade`,
+		});
+	}
+	return out;
+};
+
+// The draft lottery result, if this changeset landed one: the top of the order
+// (who won the #1 pick, then 2-4). Fires wherever the result is written -
+// advancing past the lottery, or a manual reveal.
+const describeLottery = (
+	changeset: Changeset,
+	teamById: Map<number, TeamInfo>,
+): SyncNotification[] => {
+	const result = changesToValues(changeset, "draftLotteryResults").find(
+		(r) =>
+			r &&
+			Array.isArray(r.result) &&
+			r.result.some((x: any) => typeof x?.pick === "number"),
+	);
+	if (!result) {
+		return [];
+	}
+	const ranked = [...result.result]
+		.filter((x: any) => typeof x.pick === "number")
+		.sort((a: any, b: any) => a.pick - b.pick)
+		.slice(0, 4);
+	if (ranked.length === 0) {
+		return [];
+	}
+	const winner = ranked[0];
+	const season = result.season ?? g.get("season");
+	const lines = ranked.map(
+		(x: any) => `${x.pick}. ${teamLabel(teamById, x.tid)}`,
+	);
+	return [
+		{
+			title: `${season} draft lottery results`,
+			body: [`The ${teamLabel(teamById, winner.tid)} won the #1 pick!`, ...lines].join(
+				"\n",
+			),
+			targetTids: null,
+			path: "draft_lottery",
+		},
+	];
+};
+
 // Turn a locally-produced changeset into push notifications for the room, or an
 // empty array if nothing is worth a ping. Called on the device that made the
 // change (its app is open), so `g` and the cache already reflect the post-action
@@ -1028,7 +1068,7 @@ const buildDraftNotifications = (
 // class, etc.) and must not be mistaken for a trade.
 const MAX_ROSTER_MOVE_CHANGES = 30;
 
-export const buildNotifications = async (
+const buildBaseNotifications = async (
 	label: string,
 	changeset: Changeset,
 	{ isHost }: { isHost: boolean; authorName: string },
@@ -1106,11 +1146,6 @@ export const buildNotifications = async (
 	if (changeset.changes.length <= MAX_ROSTER_MOVE_CHANGES) {
 		const teamById = await teamsById();
 
-		const trade = describeTrade(changeset, teamById);
-		if (trade) {
-			return [trade];
-		}
-
 		const signing = describeSigning(changeset, teamById);
 		if (signing) {
 			return [signing];
@@ -1118,4 +1153,38 @@ export const buildNotifications = async (
 	}
 
 	return [];
+};
+
+// Public entry: the base notifications PLUS the always-on ones that must fire
+// regardless of how the change arrived - every trade (human or CPU-vs-CPU, even
+// mid-sim) and the draft lottery result. These ride ALONGSIDE the base (an AI
+// trade inside a sim day still gets its own ping on top of the game summaries),
+// deduped by title+body.
+export const buildNotifications = async (
+	label: string,
+	changeset: Changeset,
+	opts: { isHost: boolean; authorName: string },
+): Promise<SyncNotification[]> => {
+	if (label === "main.setNote") {
+		return [];
+	}
+
+	const teamById = await teamsById();
+	const extras = [
+		...describeLottery(changeset, teamById),
+		...describeTradesFromEvents(changeset, teamById),
+	];
+
+	const base = await buildBaseNotifications(label, changeset, opts);
+
+	const merged = [...extras, ...base];
+	const seen = new Set<string>();
+	return merged.filter((n) => {
+		const key = `${n.title} ${n.body}`;
+		if (seen.has(key)) {
+			return false;
+		}
+		seen.add(key);
+		return true;
+	});
 };

@@ -486,6 +486,24 @@ describe("buildNotifications", () => {
 		},
 	});
 
+	// A real trade event: tids plus each team's RECEIVED assets, exactly as
+	// processTrade logs it. This (not the moved records) is what drives the trade
+	// notification now, so it works for CPU-vs-CPU trades inside a sim too.
+	const tradeEvent = (
+		tids: [number, number],
+		teamsAssets: [any[], any[]],
+	): Changeset["changes"][number] => ({
+		store: "events",
+		id: 100,
+		type: "put",
+		value: {
+			eid: 100,
+			type: "trade",
+			tids,
+			teams: [{ assets: teamsAssets[0] }, { assets: teamsAssets[1] }],
+		},
+	});
+
 	test("two-team trade → Shams-style blurb naming both sides, to everyone", async () => {
 		const notifs = await buildNotifications(
 			"main.proposeTrade",
@@ -499,6 +517,17 @@ describe("buildNotifications", () => {
 						type: "put",
 						value: { dpid: 9, tid: 0, round: 1, season: 2027 },
 					},
+					// LA (tid 0) gets Role Player + the pick; Boston (tid 1) gets Star Wing.
+					tradeEvent(
+						[0, 1],
+						[
+							[
+								{ pid: 2, name: "Role Player" },
+								{ dpid: 9, season: 2027, round: 1, originalTid: 0 },
+							],
+							[{ pid: 1, name: "Star Wing" }],
+						],
+					),
 				],
 			},
 			opts,
@@ -528,12 +557,8 @@ describe("buildNotifications", () => {
 					namedPlayer(1, 0, "Chaney", "Johnson", 51, {
 						contract: { amount: 1000, exp: 2026 },
 					}),
-					{
-						store: "events",
-						id: 100,
-						type: "put",
-						value: { eid: 100, type: "trade", tids: [0, 1] },
-					},
+					// LA (tid 0) gets Chaney; Boston (tid 1) gets nothing.
+					tradeEvent([0, 1], [[{ pid: 1, name: "Chaney Johnson" }], []]),
 				],
 			},
 			opts,
@@ -544,6 +569,64 @@ describe("buildNotifications", () => {
 		assert.ok(body.includes("Chaney Johnson"), body);
 		assert.ok(body.includes("LA Lakers"), body);
 		assert.ok(body.includes("Boston Celtics"), body);
+	});
+
+	test("a trade INSIDE a sim day is announced alongside the game results", async () => {
+		// A CPU trade that lands during a sim used to be swallowed - the sim
+		// short-circuits to game summaries. Now the trade event gets its own ping
+		// on top of the game notification.
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{
+				changes: [
+					gameWithBoxScore(),
+					tradeEvent(
+						[0, 1],
+						[[{ pid: 21, name: "Traded Guy" }], [{ pid: 22, name: "Other Guy" }]],
+					),
+				],
+			},
+			opts,
+		);
+		const trade = notifs.find((n) => n.title === "Trade");
+		assert.ok(trade, JSON.stringify(notifs));
+		assert.ok(trade!.body.includes("Traded Guy"), trade!.body);
+		assert.ok(trade!.body.includes("Other Guy"), trade!.body);
+		// The game summary is still there too.
+		assert.ok(
+			notifs.some((n) => n.title !== "Trade"),
+			JSON.stringify(notifs),
+		);
+	});
+
+	test("the draft lottery result is announced (who won the #1 pick)", async () => {
+		g.setWithoutSavingToDB("phase", PHASE.DRAFT_LOTTERY);
+		const notifs = await buildNotifications(
+			"main.draftLottery",
+			{
+				changes: [
+					{
+						store: "draftLotteryResults",
+						id: 2026,
+						type: "put",
+						value: {
+							season: 2026,
+							result: [
+								{ tid: 1, originalTid: 1, chances: 140, pick: 1, dpid: 10 },
+								{ tid: 0, originalTid: 0, chances: 120, pick: 2, dpid: 11 },
+							],
+						},
+					},
+				],
+			},
+			opts,
+		);
+		const lotto = notifs.find((n) => n.title.includes("draft lottery"));
+		assert.ok(lotto, JSON.stringify(notifs));
+		assert.ok(lotto!.body.includes("#1 pick"), lotto!.body);
+		// tid 1 (Boston) drew the top pick.
+		assert.ok(lotto!.body.includes("Boston Celtics"), lotto!.body);
+		assert.strictEqual(lotto!.path, "draft_lottery");
 	});
 
 	const freeAgentEvent: Changeset["changes"][number] = {
@@ -793,6 +876,10 @@ describe("buildNotifications", () => {
 				changes: [
 					namedPlayer(1, 1, "Star", "Wing", 88),
 					namedPlayer(2, 0, "Role", "Player", 74),
+					tradeEvent(
+						[0, 1],
+						[[{ pid: 2, name: "Role Player" }], [{ pid: 1, name: "Star Wing" }]],
+					),
 				],
 			},
 			opts,
