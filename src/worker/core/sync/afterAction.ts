@@ -235,6 +235,9 @@ export const afterAction = async (
 					store: change.store,
 					id: change.id,
 					type: change.type,
+					// Preserve the delete-time identity snapshot so a retried delete of
+					// a logically-keyed row still resolves by identity, not raw rid.
+					value: change.type === "delete" ? change.value : undefined,
 				})),
 			);
 			syncDebugLog("afterAction:publish-failed-restored-for-retry", {

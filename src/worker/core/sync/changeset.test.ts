@@ -352,6 +352,122 @@ describe("sync changeset", () => {
 		assert.strictEqual(healed[0]!.rid, 99);
 	});
 
+	test("a synced teamSeasons delete removes the row by identity, not the author's rid", async () => {
+		// THE WIPE THIS GUARDS AGAINST. teamSeasons `rid` is autoincrement and
+		// diverges across devices. The author deleted ITS (tid 4, 2075) row, which
+		// happened to be rid 7 there. On the receiver, rid 7 is a DIFFERENT, much
+		// older season (tid 4, 2052), and the receiver's own (tid 4, 2075) row is
+		// rid 500. A raw delete-by-rid would erase the wrong (2052) row - exactly
+		// the observed multi-season teamSeasons wipe. The identity snapshot must
+		// make the receiver delete (tid 4, 2075) and leave (tid 4, 2052) intact.
+		resetG();
+		await resetCache({
+			teamSeasons: [
+				{ rid: 7, tid: 4, season: 2052, won: 10, lost: 5 },
+				{ rid: 500, tid: 4, season: 2075, won: 1, lost: 0 },
+			],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "teamSeasons",
+						id: 7, // the author's rid for ITS (tid 4, 2075) row
+						type: "delete",
+						value: { rid: 7, tid: 4, season: 2075, won: 3, lost: 2 },
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.teamSeasons.getAll();
+		// The 2075 row (the real identity match) is gone...
+		assert.strictEqual(
+			rows.find((t) => t.tid === 4 && t.season === 2075),
+			undefined,
+			JSON.stringify(rows),
+		);
+		// ...and the unrelated 2052 row that merely shared the author's rid survives.
+		const survivor = rows.find((t) => t.tid === 4 && t.season === 2052);
+		assert.ok(survivor, JSON.stringify(rows));
+		assert.strictEqual(survivor!.rid, 7);
+	});
+
+	test("a teamSeasons delete for a missing identity is a safe no-op", async () => {
+		// The author deleted a row the receiver never had (or already removed). The
+		// identity lookup finds nothing, so nothing is deleted - and crucially no
+		// unrelated row sharing the author's rid is touched.
+		resetG();
+		await resetCache({
+			teamSeasons: [{ rid: 7, tid: 4, season: 2052, won: 10, lost: 5 }],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "teamSeasons",
+						id: 7,
+						type: "delete",
+						value: { rid: 7, tid: 9, season: 2075, won: 3, lost: 2 },
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.teamSeasons.getAll();
+		assert.strictEqual(rows.length, 1, JSON.stringify(rows));
+		assert.strictEqual(rows[0]!.tid, 4);
+		assert.strictEqual(rows[0]!.season, 2052);
+	});
+
+	test("captures a teamSeasons delete with its identity snapshot", async () => {
+		resetG();
+		await resetCache({
+			teamSeasons: [{ rid: 7, tid: 4, season: 2075, won: 1, lost: 0 }],
+		});
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await changeTracker.runCaptured(async () => {
+			const ts = await idb.cache.teamSeasons.indexGet(
+				"teamSeasonsByTidSeason",
+				[4, 2075],
+			);
+			await idb.cache.teamSeasons.delete(ts!.rid);
+		});
+
+		const changeset = overTheWire(await captureChangeset());
+		assert.strictEqual(changeset.changes.length, 1);
+		const c = changeset.changes[0]!;
+		assert.strictEqual(c.type, "delete");
+		assert.strictEqual(c.store, "teamSeasons");
+		// The identity snapshot rides along so the receiver deletes by (tid, season).
+		assert.strictEqual(c.value.tid, 4);
+		assert.strictEqual(c.value.season, 2075);
+	});
+
+	test("a players delete ships no identity snapshot (only logically-keyed stores need one)", async () => {
+		resetG();
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await changeTracker.runCaptured(async () => {
+			await idb.cache.players.delete(1);
+		});
+
+		const changeset = overTheWire(await captureChangeset());
+		const del = changeset.changes.find((c: any) => c.type === "delete")!;
+		assert.strictEqual(del.store, "players");
+		assert.strictEqual(del.value, undefined);
+	});
+
 	test("applying a changeset does not itself get recorded", async () => {
 		resetG();
 		await resetCache({ players: [genPlayer()] });

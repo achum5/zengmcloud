@@ -13,6 +13,14 @@ type PendingChange = {
 	store: string;
 	id: number | string;
 	type: ChangeType;
+	// For deletes only: a snapshot of the row as it existed at delete time. The
+	// sync layer needs it to ship an IDENTITY-based delete for logically-keyed
+	// stores (teamSeasons/teamStats), whose autoincrement `rid` diverges across
+	// devices - deleting by raw `rid` on a receiver removes whatever local row
+	// happens to hold that `rid`, wiping the wrong (often much older) season.
+	// Undefined for puts (captureChangeset reads the live value) and for deletes
+	// of rows that weren't in the cache.
+	value?: any;
 };
 
 // Store names are fixed lowercase identifiers with no colon, so a colon cleanly
@@ -69,11 +77,11 @@ export const changeTracker = {
 	// Called from Cache on every add/put ("put") and delete ("delete"). Keyed by
 	// store+id so only the latest intent per record is kept - a put-then-delete
 	// collapses to a delete, matching whole-record last-write-wins semantics.
-	record(store: string, id: number | string, type: ChangeType) {
+	record(store: string, id: number | string, type: ChangeType, value?: any) {
 		if (!enabled || (captureDepth === 0 && simDepth === 0)) {
 			return;
 		}
-		pending.set(key(store, id), { store, id, type });
+		pending.set(key(store, id), { store, id, type, value });
 	},
 
 	// For sync debug logs, so a capture wedge is diagnosable from the console.

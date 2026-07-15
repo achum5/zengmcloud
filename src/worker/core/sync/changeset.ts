@@ -58,7 +58,12 @@ export const phaseRedirectComponents = (
 // reorder across different records - the basis for last-write-wins sync.
 export type SyncChange =
 	| { store: Store; id: number | string; type: "put"; value: any }
-	| { store: Store; id: number | string; type: "delete" };
+	// `value` is a snapshot of the deleted row, carried ONLY for logically-keyed
+	// stores (teamSeasons/teamStats) so the receiver can delete the row matching
+	// the logical identity (tid, season[, playoffs]) instead of blindly deleting
+	// by `id` (the autoincrement `rid`, which points at a DIFFERENT row on a
+	// device whose rids diverged). Absent for every other store's delete.
+	| { store: Store; id: number | string; type: "delete"; value?: any };
 
 // A batch of changes, ready to be JSON-serialized and shipped to the cloud.
 export type Changeset = {
@@ -193,7 +198,7 @@ export const captureChangeset = async (): Promise<Changeset> => {
 	const pending = changeTracker.drain();
 	const changes: SyncChange[] = [];
 
-	for (const { store, id, type } of pending) {
+	for (const { store, id, type, value: deletedRow } of pending) {
 		const typedStore = store as Store;
 
 		// Never broadcast per-device/personal state (which team we control, the
@@ -203,7 +208,20 @@ export const captureChangeset = async (): Promise<Changeset> => {
 		}
 
 		if (type === "delete") {
-			changes.push({ store: typedStore, id, type: "delete" });
+			// For a logically-keyed store, carry the deleted row's identity so the
+			// receiver deletes by (tid, season[, playoffs]) rather than by our `rid`
+			// - which points at an unrelated row on a device whose rids diverged,
+			// silently wiping the wrong (often much older) season.
+			if (RECONCILE_BY_IDENTITY[typedStore] && deletedRow !== undefined) {
+				changes.push({
+					store: typedStore,
+					id,
+					type: "delete",
+					value: deletedRow,
+				});
+			} else {
+				changes.push({ store: typedStore, id, type: "delete" });
+			}
 			continue;
 		}
 
@@ -295,7 +313,25 @@ export const applyChangeset = async (
 
 		try {
 			if (change.type === "delete") {
-				await api.delete(change.id);
+				// Delete the row matching the incoming logical identity, not our own
+				// `rid`. For teamSeasons/teamStats the author's `rid` addresses a
+				// DIFFERENT row here (rids diverge across devices), so a raw
+				// delete-by-rid silently erased unrelated, much older seasons. When an
+				// identity snapshot is present, resolve the local `rid` via the unique
+				// index; if no row matches, it's already gone - a safe no-op.
+				const rule = RECONCILE_BY_IDENTITY[change.store];
+				if (rule && change.value !== undefined) {
+					const existing = await api.indexGet(
+						rule.index,
+						rule.indexKey(change.value),
+					);
+					if (existing) {
+						await api.delete(existing.rid);
+						changeTracker.forget(change.store, existing.rid);
+					}
+				} else {
+					await api.delete(change.id);
+				}
 			} else {
 				// Heal any diverged-rid duplicate first, so a logically-keyed row (e.g.
 				// teamSeasons) updates in place instead of tripping its unique index.

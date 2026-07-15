@@ -1055,6 +1055,11 @@ class Cache {
 	async _delete(store: Store, id: number | string) {
 		await this._waitForStatus("full");
 
+		// Snapshot the row BEFORE removing it, so the sync layer can ship an
+		// identity-based delete for logically-keyed stores (teamSeasons/teamStats)
+		// instead of a raw `rid` that means a different row on another device.
+		const deletedRow = this._data[store][id];
+
 		if (Object.hasOwn(this._data[store], id)) {
 			delete this._data[store][id];
 		}
@@ -1071,13 +1076,17 @@ class Cache {
 
 		this._markDirtyIndexes(store);
 
-		changeTracker.record(store, id, "delete");
+		changeTracker.record(store, id, "delete", deletedRow);
 	}
 
 	async _clear(store: Store) {
 		await this._waitForStatus("full");
 
 		for (const id of Object.keys(this._data[store])) {
+			// Snapshot before removal (see _delete) so an identity-keyed row still
+			// syncs a safe, identity-based delete.
+			const deletedRow = this._data[store][id];
+
 			delete this._data[store][id];
 
 			// Need to have the correct type here for IndexedDB
@@ -1086,7 +1095,7 @@ class Cache {
 
 			this._deletes[store].add(idParsed);
 
-			changeTracker.record(store, idParsed, "delete");
+			changeTracker.record(store, idParsed, "delete", deletedRow);
 		}
 
 		this._dirty = true;
