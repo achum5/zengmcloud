@@ -44,17 +44,12 @@ import LiveCourt, {
 	synthPlaySpot,
 	synthReboundSpot,
 	synthShotSpot,
-	toCourt,
-	type BallStep,
-	type Cinematic,
+	zoneLabel,
+	type CourtActor,
 	type CourtDot,
-	type CourtMotion,
+	type CourtScene,
 	type CourtZone,
 } from "./LiveCourt.tsx";
-
-// The shot chart was dropped from the live court (a focused 2v2 view), so no
-// dots are ever fed in during a live sim; a stable empty array avoids churn.
-const NO_COURT_DOTS: CourtDot[] = [];
 
 type PlayerRowProps = {
 	exhibition?: boolean;
@@ -335,15 +330,20 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 	const playByPlayEntries = useRef<PlayByPlayEntryInfo[]>([]);
 
-	// ---- Live court cinematic (basketball) --------------------------------
-	// Only the players a play involves are on the floor - a 2v2 at most (a passer
-	// and a scorer with their defenders), often just 1v1 - fluidly gliding through
-	// the lead-up to the action, paced by the speed slider. A block only names the
-	// blocker, so the shooter/spot are remembered from the shot attempt.
-	const courtCinematic = useRef<Cinematic | undefined>(undefined);
-	const courtCineCount = useRef(0);
+	// Live court graphic (basketball): the scene currently playing on the
+	// court, the accumulated shot-chart dots, and the in-flight attempt (a
+	// block event only names the blocker, so the shooter/spot are remembered
+	// from the attempt so the players don't teleport between the two).
+	const courtScene = useRef<CourtScene | undefined>(undefined);
+	const courtDots = useRef<CourtDot[]>([]);
+	const courtSceneCount = useRef(0);
 	const lastFga = useRef<
-		| { pid: number; zone: CourtZone; t: 0 | 1; spot: { x: number; y: number } }
+		| {
+				pid: number;
+				zone: CourtZone;
+				t: 0 | 1;
+				spot: { x: number; y: number };
+		  }
 		| undefined
 	>(undefined);
 
@@ -357,77 +357,24 @@ export const LiveGame = (props: View<"liveGame">) => {
 		}
 		return undefined;
 	};
+
 	const playerNameByPid = (pid: number): string =>
 		playerByPid(pid)?.name ?? "???";
 
-	// Stand-in defenders from the defending five for the offensive players a play
-	// names (the sim only names a defender on a block/steal/foul). Picks distinct
-	// on-court opponents, skipping anyone already in the play.
-	const pickDefenders = (
-		defenseT: 0 | 1,
-		count: number,
-		exclude: Set<number>,
-	): { pid: number; name: string }[] => {
-		const roster: any[] = boxScore.current.teams?.[defenseT]?.players ?? [];
-		const inGame = roster.filter((p) => p.inGame && !exclude.has(p.pid));
-		const anyone = roster.filter((p) => !exclude.has(p.pid));
-		const src = inGame.length >= count ? inGame : anyone;
-		return src
-			.slice(0, count)
-			.map((p) => ({ pid: p.pid, name: p.name ?? "???" }));
+	const pushScene = (scene: Omit<CourtScene, "key">) => {
+		courtSceneCount.current += 1;
+		courtScene.current = { key: courtSceneCount.current, ...scene };
 	};
 
-	const otherT = (t: 0 | 1): 0 | 1 => (t === 0 ? 1 : 0);
-	const clampX = (x: number) => Math.min(90, Math.max(4, x));
-	const clampY = (y: number) => Math.min(46, Math.max(4, y));
-
-	// A defender a step off an offensive spot, between the man and the rim he
-	// attacks.
-	const defenderSpot = (
-		spot: { x: number; y: number },
-		offenseT: 0 | 1,
-	): { x: number; y: number } => {
-		const rimX = rimXFor(offenseT);
-		return {
-			x: clampX(spot.x + Math.sign(rimX - spot.x) * 3.2),
-			y: clampY(spot.y + (spot.y < 25 ? 1 : -1)),
-		};
+	const scoreLine = (): string => {
+		const [a, h] = boxScore.current.teams ?? [];
+		return `${a?.abbrev ?? ""} ${a?.pts ?? 0}–${h?.pts ?? 0} ${h?.abbrev ?? ""}`;
 	};
 
-	// Where a shooter starts his drive/catch for a shot at `spot`: pulled back out
-	// toward the perimeter (a longer drive for rim/post shots).
-	const driveOrigin = (
-		spot: { x: number; y: number },
-		offenseT: 0 | 1,
-		zone: CourtZone,
-	): { x: number; y: number } => {
-		const rimX = rimXFor(offenseT);
-		const back = zone === "atRim" || zone === "lowPost" ? 11 : 5;
-		return {
-			x: clampX(spot.x - Math.sign(rimX - spot.x) * back),
-			y: clampY(spot.y + (spot.y < 25 ? 3 : -3)),
-		};
-	};
-
-	// A perimeter spot for a passer feeding a shooter at `spot` (up top / the
-	// opposite wing, so the two spread the floor).
-	const passerSpot = (
-		spot: { x: number; y: number },
-		offenseT: 0 | 1,
-	): { x: number; y: number } => {
-		const across = spot.y < 25 ? clampY(spot.y + 16) : clampY(spot.y - 16);
-		return toCourt(offenseT, 24, across);
-	};
-
-	const pushCinematic = (partial: Omit<Cinematic, "key">) => {
-		courtCineCount.current += 1;
-		courtCinematic.current = { key: courtCineCount.current, ...partial };
-	};
-
-	// Turn the play-by-play line into a court cinematic: who's involved, how they
-	// move into the action, and what the ball does. Positions are synthesized (the
-	// sim has no coordinates), but every actor/outcome is the genuine play; a
-	// defender the sim doesn't name is a plausible inferred opponent.
+	// Turn the play-by-play event behind the current line into a court scene:
+	// who's involved, where they stand, what the ball does, and the play text
+	// right there on the floor. Locations are synthesized (the sim has no real
+	// coordinates), but every actor/outcome is the genuine play.
 	const handleCourtEvent = (event: any, text: ReactNode, scoreDiff = 0) => {
 		if (
 			!event ||
@@ -441,7 +388,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 		const displayT: 0 | 1 = rawT === 0 ? 1 : 0;
 
 		// Prefix every play line with the game clock (quarter + time left) so it's
-		// easy to follow WHEN each play happened.
+		// easy to follow WHEN each play happened. Reassigning `text` here means all
+		// the pushScene branches below carry it automatically.
 		const clockLabel = `${boxScore.current.quarterShort ?? ""} ${
 			boxScore.current.time ?? ""
 		}`.trim();
@@ -517,48 +465,27 @@ export const LiveGame = (props: View<"liveGame">) => {
 					t: displayT,
 					spot,
 				};
-				// The drive/catch beat: the shooter works to his spot with the ball,
-				// his defender staying between him and the rim. The shot itself lands
-				// on the result event that follows this one.
-				const from = driveOrigin(spot, displayT, action.zone);
-				const players: CourtMotion[] = [
-					{
-						pid: event.pid,
-						name: playerNameByPid(event.pid),
-						t: displayT,
-						role: "scorer",
-						from,
-						to: spot,
-						hasBall: true,
-					},
-				];
-				const [dOnBall] = pickDefenders(
-					otherT(displayT),
-					1,
-					new Set([event.pid]),
-				);
-				if (dOnBall) {
-					players.push({
-						pid: dOnBall.pid,
-						name: dOnBall.name,
-						t: otherT(displayT),
-						role: "defender",
-						from: defenderSpot(from, displayT),
-						to: defenderSpot(spot, displayT),
-					});
-				}
-				pushCinematic({
+				// Just the shooter on an attempt - a defender only appears if the
+				// shot is actually blocked (handled on the result below).
+				pushScene({
+					kind: "attempt",
 					t: displayT,
-					players,
-					ball: { steps: [{ at: 0, pid: event.pid }] },
-					leadFrac: 0.85,
+					actors: [
+						{
+							pid: event.pid,
+							name: playerNameByPid(event.pid),
+							x: spot.x,
+							y: spot.y,
+							role: "main",
+						},
+					],
 					text,
 				});
 				return;
 			}
 
-			// A result: make / miss / block. On a block, t/pid are the BLOCKER's; the
-			// shooter comes from the attempt we remembered.
+			// Result. A block event's t/pid are the BLOCKER's; the shooter comes
+			// from the attempt we remembered.
 			const shooterT: 0 | 1 = action.blocked ? rawT : displayT;
 			const shooterPid = action.blocked
 				? (lastFga.current?.pid ?? undefined)
@@ -570,137 +497,67 @@ export const LiveGame = (props: View<"liveGame">) => {
 				lastFga.current && lastFga.current.pid === shooterPid
 					? lastFga.current
 					: undefined;
+			// Free throws are ALWAYS taken from the line - keyed off THIS event's
+			// zone, never the reused field-goal zone (otherwise a made basket +
+			// and-one FT reused the drive's spot and the FT drifted off the line).
 			const isFt = action.zone === "ft";
 			const zone: CourtZone = isFt ? "ft" : (reuse?.zone ?? action.zone);
+			// Field goals reuse the attempt spot so the shooter doesn't teleport
+			// between attempt and result; free throws snap to the line.
 			const spot = isFt
 				? synthShotSpot(shooterT, "ft")
 				: (reuse?.spot ??
 					(zone === "three" && isHeaveNow()
 						? synthHeaveSpot(shooterT)
 						: synthShotSpot(shooterT, zone)));
-			const rimX = rimXFor(shooterT);
 
-			const exclude = new Set<number>([shooterPid]);
-			const players: CourtMotion[] = [];
-			const ballSteps: BallStep[] = [];
-			let leadFrac = 0.4;
-
-			// The scorer gathers into his spot.
-			const gatherFrom = {
-				x: clampX(spot.x - Math.sign(rimX - spot.x) * 2.5),
-				y: clampY(spot.y + 1),
-			};
-			const scorer: CourtMotion = {
-				pid: shooterPid,
-				name: playerNameByPid(shooterPid),
-				t: shooterT,
-				role: "scorer",
-				from: gatherFrom,
-				to: spot,
-				hasBall: true,
-			};
-			players.push(scorer);
-
-			// An assisted make: show the passer feeding him - the potential assist
-			// and the potential scorer - with the ball swinging over before the shot.
-			const passPid =
-				!action.blocked && action.made && typeof event.pidAst === "number"
-					? (event.pidAst as number)
-					: undefined;
-			if (passPid !== undefined && passPid !== shooterPid) {
-				exclude.add(passPid);
-				const pSpot = passerSpot(spot, shooterT);
-				players.push({
-					pid: passPid,
-					name: playerNameByPid(passPid),
-					t: shooterT,
-					role: "passer",
-					from: { x: clampX(pSpot.x + 2), y: clampY(pSpot.y - 2) },
-					to: pSpot,
-					hasBall: false,
-				});
-				// Ball rests with the passer, then a pass into the shooter's hands.
-				ballSteps.push({ at: 0, pid: passPid });
-				ballSteps.push({ at: 0.34, pid: passPid });
-				ballSteps.push({ at: 0.5, pid: shooterPid });
-				leadFrac = 0.55;
-				// The scorer spots up a hair wider for the catch, no ball yet.
-				scorer.from = {
-					x: clampX(spot.x - Math.sign(rimX - spot.x) * 3),
-					y: clampY(spot.y + (spot.y < 25 ? 2 : -2)),
-				};
-				scorer.hasBall = false;
-			} else {
-				ballSteps.push({ at: 0, pid: shooterPid });
-			}
-
-			// The defender on the shooter: the named blocker on a block, else an
-			// inferred opponent contesting.
+			const actors: CourtActor[] = [
+				{
+					pid: shooterPid,
+					name: playerNameByPid(shooterPid),
+					x: spot.x,
+					y: spot.y,
+					role: "main",
+				},
+			];
 			if (action.blocked && typeof event.pid === "number") {
-				const dTo = {
-					x: clampX(spot.x + Math.sign(rimX - spot.x) * 2.4),
-					y: clampY(spot.y),
-				};
-				players.push({
+				// The blocker rises up next to the shooter, toward the rim.
+				const toward = rimXFor(shooterT) > spot.x ? 1 : -1;
+				actors.push({
 					pid: event.pid,
 					name: playerNameByPid(event.pid),
-					t: otherT(shooterT),
+					x: spot.x + toward * 3,
+					y: spot.y,
 					role: "defender",
-					from: {
-						x: clampX(dTo.x + Math.sign(rimX - spot.x) * 2),
-						y: clampY(dTo.y + 2),
-					},
-					to: dTo,
 				});
-				exclude.add(event.pid);
-			} else {
-				const [dScorer] = pickDefenders(otherT(shooterT), 1, exclude);
-				if (dScorer) {
-					players.push({
-						pid: dScorer.pid,
-						name: dScorer.name,
-						t: otherT(shooterT),
-						role: "defender",
-						from: defenderSpot(scorer.from, shooterT),
-						to: defenderSpot(spot, shooterT),
-					});
-					exclude.add(dScorer.pid);
-				}
 			}
 
-			// A passer gets a defender too (a true 2v2).
-			if (passPid !== undefined && passPid !== shooterPid) {
-				const [dPass] = pickDefenders(otherT(shooterT), 1, exclude);
-				if (dPass) {
-					const pSpot = passerSpot(spot, shooterT);
-					players.push({
-						pid: dPass.pid,
-						name: dPass.name,
-						t: otherT(shooterT),
-						role: "defender",
-						from: defenderSpot(pSpot, shooterT),
-						to: defenderSpot(pSpot, shooterT),
-					});
-				}
-			}
-
-			pushCinematic({
+			pushScene({
+				kind: action.blocked ? "block" : action.made ? "make" : "miss",
 				t: shooterT,
-				players,
-				ball: {
-					steps: ballSteps,
-					shot: {
-						at: leadFrac,
-						spot,
-						rimX,
-						made: action.made,
-						blocked: !!action.blocked,
-					},
-				},
-				leadFrac,
+				actors,
 				text,
 				score: scoreNode,
+				ballFrom: spot,
+				rimX: rimXFor(shooterT),
 			});
+
+			// Field goals leave a shot-chart dot; free throws would just bury the
+			// chart in identical dots at the line.
+			if (zone !== "ft") {
+				courtDots.current.push({
+					key: courtSceneCount.current,
+					x: spot.x,
+					y: spot.y,
+					made: action.made,
+					t: shooterT,
+					title: `${playerNameByPid(shooterPid)} — ${
+						action.blocked ? "blocked" : action.made ? "made" : "missed"
+					} ${zoneLabel(zone)} · ${boxScore.current.quarterShort ?? ""} ${
+						boxScore.current.time ?? ""
+					} · ${scoreLine()}`,
+				});
+			}
 			return;
 		}
 
@@ -708,34 +565,18 @@ export const LiveGame = (props: View<"liveGame">) => {
 		const type = event.type as string;
 		if (type === "tov" && typeof event.pid === "number") {
 			const spot = synthPlaySpot(displayT);
-			const from = driveOrigin(spot, displayT, "midRange");
-			const players: CourtMotion[] = [
-				{
-					pid: event.pid,
-					name: playerNameByPid(event.pid),
-					t: displayT,
-					role: "main",
-					from,
-					to: spot,
-					hasBall: true,
-				},
-			];
-			const [d] = pickDefenders(otherT(displayT), 1, new Set([event.pid]));
-			if (d) {
-				players.push({
-					pid: d.pid,
-					name: d.name,
-					t: otherT(displayT),
-					role: "defender",
-					from: defenderSpot(from, displayT),
-					to: defenderSpot(spot, displayT),
-				});
-			}
-			pushCinematic({
+			pushScene({
+				kind: "tov",
 				t: displayT,
-				players,
-				ball: { steps: [{ at: 0, pid: event.pid }], vanishAt: 0.72, pulse: "red" },
-				leadFrac: 0.7,
+				actors: [
+					{
+						pid: event.pid,
+						name: playerNameByPid(event.pid),
+						x: spot.x,
+						y: spot.y,
+						role: "main",
+					},
+				],
 				text,
 			});
 		} else if (
@@ -743,206 +584,151 @@ export const LiveGame = (props: View<"liveGame">) => {
 			typeof event.pid === "number" &&
 			typeof event.pidTov === "number"
 		) {
-			// The victim had the ball in his frontcourt; the stealer (named) lunges
-			// in and takes it away.
-			const victimT = otherT(displayT);
-			const vSpot = synthPlaySpot(victimT);
-			const sSpot = {
-				x: clampX(vSpot.x + (rimXFor(victimT) > vSpot.x ? -3.5 : 3.5)),
-				y: clampY(vSpot.y),
-			};
-			pushCinematic({
+			// The victim is on the OTHER team; the play happens in their frontcourt.
+			const victimT: 0 | 1 = displayT === 0 ? 1 : 0;
+			const spot = synthPlaySpot(victimT);
+			pushScene({
+				kind: "stl",
 				t: displayT,
-				players: [
-					{
-						pid: event.pidTov,
-						name: playerNameByPid(event.pidTov),
-						t: victimT,
-						role: "victim",
-						from: driveOrigin(vSpot, victimT, "midRange"),
-						to: vSpot,
-						hasBall: true,
-						anim: "shake",
-					},
+				actors: [
 					{
 						pid: event.pid,
 						name: playerNameByPid(event.pid),
-						t: displayT,
+						x: spot.x,
+						y: spot.y,
 						role: "main",
-						from: { x: clampX(sSpot.x + 3), y: clampY(sSpot.y + 2) },
-						to: sSpot,
+					},
+					{
+						pid: event.pidTov,
+						name: playerNameByPid(event.pidTov),
+						x: spot.x + (rimXFor(victimT) > spot.x ? -4 : 4),
+						y: spot.y,
+						role: "victim",
 					},
 				],
-				ball: {
-					steps: [
-						{ at: 0, pid: event.pidTov },
-						{ at: 0.55, pid: event.pidTov },
-						{ at: 0.78, pid: event.pid },
-					],
-					pulse: "red",
-				},
-				leadFrac: 0.6,
 				text,
 			});
 		} else if (
 			(type === "orb" || type === "drb") &&
 			typeof event.pid === "number"
 		) {
-			// Rebounds happen at the rim just shot at: the rebounder's own attacking
-			// rim for an offensive board, the opposite for a defensive one.
-			const rimT: 0 | 1 = type === "orb" ? displayT : otherT(displayT);
+			// Rebounds happen at the rim that was just shot at: the rebounder's own
+			// attacking rim for an offensive board, the opposite for a defensive one.
+			const rimT: 0 | 1 = type === "orb" ? displayT : displayT === 0 ? 1 : 0;
 			const spot = synthReboundSpot(rimT);
-			pushCinematic({
+			pushScene({
+				kind: "reb",
 				t: displayT,
-				players: [
+				actors: [
 					{
 						pid: event.pid,
 						name: playerNameByPid(event.pid),
-						t: displayT,
+						x: spot.x,
+						y: spot.y,
 						role: "main",
-						from: {
-							x: clampX(rimXFor(rimT) + (rimXFor(rimT) < 47 ? 3 : -3)),
-							y: 25,
-						},
-						to: spot,
 					},
 				],
-				ball: {
-					steps: [
-						{ at: 0, x: rimXFor(rimT), y: 25 },
-						{ at: 0.55, pid: event.pid },
-					],
-				},
-				leadFrac: 0.7,
 				text,
+				// The ball comes off the rim into the rebounder's hands.
+				ballFrom: { x: rimXFor(rimT), y: 25 },
+				ballTo: spot,
 			});
 		} else if (type === "sub" && Array.isArray(event.pids)) {
-			// A substitution: the incoming/outgoing players at the scorer's table.
-			const inPids = (event.pids as number[]).slice(0, 2);
-			const outPids = ((event.pidsOff as number[]) ?? []).slice(0, 2);
+			// Subs check in at the scorer's table: a single cluster at center court
+			// along the near sideline, ins and outs side by side.
+			const inPids = (event.pids as number[]).slice(0, 3);
+			const outPids = ((event.pidsOff as number[]) ?? []).slice(0, 3);
 			const all: { pid: number; role: "in" | "out" }[] = [
 				...inPids.map((pid) => ({ pid, role: "in" as const })),
 				...outPids.map((pid) => ({ pid, role: "out" as const })),
 			];
 			const spots = scorerTableRow(all.length);
-			const players: CourtMotion[] = all.map((a, i) => {
-				const to = spots[i] ?? { x: 47, y: 11 };
-				return {
-					pid: a.pid,
-					name: `${a.role === "in" ? "▲ " : "▼ "}${playerNameByPid(a.pid)}`,
-					t: displayT,
-					role: "main" as const,
-					from: { x: to.x, y: clampY(to.y - 5) },
-					to,
-				};
-			});
-			if (players.length > 0) {
-				pushCinematic({
-					t: displayT,
-					players,
-					ball: { steps: [] },
-					leadFrac: 0.6,
-					text,
-				});
+			const actors: CourtActor[] = all.map((a, i) => ({
+				pid: a.pid,
+				name: playerNameByPid(a.pid),
+				x: spots[i]!.x,
+				y: spots[i]!.y,
+				role: a.role,
+			}));
+			if (actors.length > 0) {
+				pushScene({ kind: "sub", t: displayT, actors, text });
 			}
 		} else if (type.startsWith("pf") && typeof event.pid === "number") {
-			// A foul: the fouler swipes at the fouled player, who gets rocked.
-			const offT = otherT(displayT);
+			// A foul: the fouler swipes at the fouled player, who gets rocked. The
+			// victim (pidShooting) is known for shooting fouls; otherwise use the
+			// last shooter as a stand-in so there's still someone to swipe at.
+			const offT: 0 | 1 = displayT === 0 ? 1 : 0;
 			const spot = lastFga.current?.spot ?? synthPlaySpot(offT);
 			const victimPid =
 				typeof event.pidShooting === "number"
 					? event.pidShooting
 					: lastFga.current?.pid;
 			const toward = rimXFor(offT) > spot.x ? -1 : 1;
-			const players: CourtMotion[] = [];
+			const actors: CourtActor[] = [];
 			if (typeof victimPid === "number") {
-				players.push({
+				actors.push({
 					pid: victimPid,
 					name: playerNameByPid(victimPid),
-					t: offT,
+					x: spot.x,
+					y: spot.y,
 					role: "victim",
-					from: spot,
-					to: spot,
-					anim: "shake",
-					hasBall: true,
 				});
 			}
-			players.push({
+			actors.push({
 				pid: event.pid,
 				name: playerNameByPid(event.pid),
-				t: displayT,
+				x: spot.x + toward * 3.5,
+				y: spot.y,
 				role: "main",
-				from: { x: clampX(spot.x + toward * 5), y: clampY(spot.y + 1) },
-				to: { x: clampX(spot.x + toward * 3.5), y: clampY(spot.y) },
-				anim: "swipe",
 			});
-			pushCinematic({
-				t: offT,
-				players,
-				ball: {
-					steps:
-						typeof victimPid === "number"
-							? [{ at: 0, pid: victimPid }]
-							: [{ at: 0, x: spot.x, y: spot.y }],
-					pulse: "amber",
-				},
-				leadFrac: 0.6,
-				text,
-			});
+			pushScene({ kind: "foul", t: displayT, actors, text });
 		} else if (type === "jumpBall" && typeof event.pid === "number") {
-			// Opening tip: both jumpers rise at center court; the winner (event.pid,
-			// on displayT) taps it back behind him, away from the rim he attacks.
+			// Opening tip: both jumpers rise at center court. event.pid is the
+			// winner (on displayT); event.pid2 the loser. The winner taps the ball
+			// back behind them - away from the rim they attack.
 			const winnerT = displayT;
-			const cx = 47;
+			const cx = (rimXFor(0) + rimXFor(1)) / 2;
 			const attackDir = rimXFor(winnerT) > cx ? 1 : -1;
-			const players: CourtMotion[] = [
+			const actors: CourtActor[] = [
 				{
 					pid: event.pid,
 					name: playerNameByPid(event.pid),
-					t: winnerT,
+					x: cx + attackDir * 2.5,
+					y: 25,
 					role: "main",
-					from: { x: cx + attackDir * 2.5, y: 25 },
-					to: { x: cx + attackDir * 2.5, y: 25 },
 				},
 			];
 			if (typeof event.pid2 === "number") {
-				players.push({
+				actors.push({
 					pid: event.pid2,
 					name: playerNameByPid(event.pid2),
-					t: otherT(winnerT),
+					x: cx - attackDir * 2.5,
+					y: 25,
 					role: "defender",
-					from: { x: cx - attackDir * 2.5, y: 25 },
-					to: { x: cx - attackDir * 2.5, y: 25 },
 				});
 			}
-			pushCinematic({
+			pushScene({
+				kind: "jump",
 				t: winnerT,
-				players,
-				ball: {
-					steps: [
-						{ at: 0, x: cx, y: 24 },
-						{ at: 0.6, x: cx - attackDir * 16, y: 25 },
-					],
-				},
-				leadFrac: 0.6,
+				actors,
 				text,
+				ballFrom: { x: cx, y: 24 },
+				ballTo: { x: cx - attackDir * 16, y: 25 },
 			});
 		} else if (type === "injury" && typeof event.pid === "number") {
 			const spot = synthPlaySpot(displayT);
-			pushCinematic({
+			pushScene({
+				kind: "other",
 				t: displayT,
-				players: [
+				actors: [
 					{
 						pid: event.pid,
 						name: playerNameByPid(event.pid),
-						t: displayT,
+						x: spot.x,
+						y: spot.y,
 						role: "main",
-						from: spot,
-						to: spot,
 					},
 				],
-				ball: { steps: [] },
-				leadFrac: 0.6,
 				text,
 			});
 		}
@@ -962,14 +748,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// Number of events we started with, so cursor = initial - remaining tells us
 	// how far the simmer (or we) have played.
 	const initialEventCount = useRef(0);
-
-	// How long each play's court choreography should take: the speed slider, so
-	// slower playback = slower, more deliberate movement. A follower has no local
-	// speed control (its playback is cursor-driven), so it uses a steady default.
-	const parsedSpeed = Number.parseInt(speed);
-	const courtDurationMs = isFollower
-		? 900
-		: speedToMs(Number.isFinite(parsedSpeed) ? parsedSpeed : DEFAULT_SPEED);
 
 	const isReplay = !!boxScore.current.replay;
 	const navigateWarning = getNavigateWarning(
@@ -1908,9 +1686,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 						<>
 							{isSport("basketball") ? (
 								<LiveCourt
-									cinematic={courtCinematic.current}
-									durationMs={courtDurationMs}
-									dots={NO_COURT_DOTS}
+									scene={courtScene.current}
+									dots={courtDots.current}
 									teams={[
 										boxScore.current.teams?.[0],
 										boxScore.current.teams?.[1],

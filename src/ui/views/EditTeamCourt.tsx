@@ -154,7 +154,7 @@ const EditTeamCourt = ({
 			<div className="row">
 				<div className="col-lg-7 mb-3">
 					<LiveCourt
-						cinematic={undefined}
+						scene={undefined}
 						dots={dots}
 						teams={[undefined, homeTeam]}
 						finals={previewFinals}

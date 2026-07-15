@@ -1,4 +1,5 @@
 import {
+	useEffect,
 	useId,
 	useLayoutEffect,
 	useMemo,
@@ -38,9 +39,47 @@ const CORNER_LEN = RIM_INSET + Math.sqrt(THREE_R ** 2 - CORNER_DIST ** 2);
 
 export type CourtZone = "atRim" | "lowPost" | "midRange" | "three" | "ft";
 
+export type CourtActor = {
+	pid: number;
+	name: string;
+	// Court coordinates (x along the 94ft length, y across the 50ft width).
+	x: number;
+	y: number;
+	role: "main" | "defender" | "victim" | "in" | "out";
+};
+
 // Default championship trophy shown at center court during a finals game (Larry
 // O'Brien style). Rendered behind the home logo. Overridable per team later.
 export const DEFAULT_TROPHY_URL = "https://i.imgur.com/c8cwwka.png";
+
+export type CourtSceneKind =
+	| "attempt"
+	| "make"
+	| "miss"
+	| "block"
+	| "tov"
+	| "stl"
+	| "reb"
+	| "foul"
+	| "sub"
+	| "jump"
+	| "other";
+
+export type CourtScene = {
+	key: number; // increments per scene, retriggers animations
+	kind: CourtSceneKind;
+	t: 0 | 1; // display team of the main actor (0 = away/left, 1 = home/right)
+	actors: CourtActor[];
+	text: ReactNode; // the play-by-play line, shown on the floor
+	// A scored basket's running score line (both logos flanking the score),
+	// shown centered under the play text.
+	score?: ReactNode;
+	// Ball flight. For shots: from the attempt spot (ballFrom) to the rim
+	// (rimX). For rebounds: from the rim (ballFrom) to the rebounder (ballTo).
+	ballFrom?: { x: number; y: number };
+	ballTo?: { x: number; y: number };
+	rimX?: number;
+};
 
 export type CourtDot = {
 	key: number;
@@ -74,7 +113,7 @@ export const rimXFor = (t: 0 | 1): number =>
 
 // Convert a spot expressed as (depth from the attacked baseline, position
 // across the court) into full-court coordinates for team t.
-export const toCourt = (t: 0 | 1, depth: number, across: number) => ({
+const toCourt = (t: 0 | 1, depth: number, across: number) => ({
 	x: t === 0 ? depth : COURT_W - depth,
 	y: across,
 });
@@ -140,90 +179,6 @@ export const synthPlaySpot = (t: 0 | 1): { x: number; y: number } =>
 // Rebound spot: right around the rim the shot was at.
 export const synthReboundSpot = (rimT: 0 | 1): { x: number; y: number } =>
 	toCourt(rimT, rand(3, 9), 25 + rand(-8, 8));
-
-// ---------------------------------------------------------------------------
-// A CINEMATIC is one play choreographed as fluid motion: only the players the
-// play involves (at most a passer + scorer and their two defenders - a 2v2,
-// often just 1v1) move across the floor over a lead-up window, then the action
-// lands (the shot goes up, the ball is stolen...). The whole thing is paced by
-// the speed slider, so slower = slower, more deliberate movement.
-//
-// Positions/paths are stylized (the sim has no coordinates) but every actor and
-// outcome is the genuine play; defenders the sim doesn't name are a plausible
-// inferred opponent.
-// ---------------------------------------------------------------------------
-
-// One player's movement through a play: a start point, an end point, and an
-// optional mid control-point so the path can curve (a cut, a drive). Motion runs
-// over the lead-up; after that the player holds at `to`.
-export type CourtMotion = {
-	pid: number;
-	name: string;
-	t: 0 | 1; // display team (0 = away/left, 1 = home/right)
-	role: "scorer" | "passer" | "defender" | "main" | "victim";
-	from: { x: number; y: number };
-	to: { x: number; y: number };
-	via?: { x: number; y: number };
-	// A one-shot reaction when the action lands (a fouler swipes, a robbed
-	// ball-handler gets rocked).
-	anim?: "shake" | "swipe";
-	// This player carries the ball at rest (the tag/glow marks the handler).
-	hasBall?: boolean;
-};
-
-// A waypoint on the ball's path through the lead-up, at fraction `at` of the
-// play. `pid` pins the ball to that player's LIVE position (in their hands as
-// they move); otherwise it sits at a fixed spot.
-export type BallStep = {
-	at: number;
-	pid?: number;
-	x?: number;
-	y?: number;
-};
-
-export type Cinematic = {
-	key: number;
-	// The team the play belongs to (colors the ball's ring, the text accent).
-	t: 0 | 1;
-	players: CourtMotion[];
-	// The ball's lead-up path (rest with the handler, a pass), then optionally a
-	// shot: at fraction `at` the ball leaves `spot` for the rim and resolves.
-	ball: {
-		steps: BallStep[];
-		shot?: {
-			at: number;
-			spot: { x: number; y: number };
-			rimX: number;
-			made: boolean;
-			blocked: boolean;
-		};
-		// A colored pulse at the action point (turnover/steal red, foul amber).
-		pulse?: "red" | "amber";
-		// Fade the ball out during the lead-up (a turnover with no new handler).
-		vanishAt?: number;
-	};
-	// Fraction of the play spent on the lead-up movement; the rest is the action.
-	leadFrac: number;
-	text: ReactNode;
-	score?: ReactNode;
-};
-
-// Quadratic bezier so a path can bow toward a control point (a curved cut).
-const bezier = (
-	from: { x: number; y: number },
-	to: { x: number; y: number },
-	via: { x: number; y: number } | undefined,
-	p: number,
-): { x: number; y: number } => {
-	if (!via) {
-		return { x: from.x + (to.x - from.x) * p, y: from.y + (to.y - from.y) * p };
-	}
-	const q = 1 - p;
-	return {
-		x: q * q * from.x + 2 * q * p * via.x + p * p * to.x,
-		y: q * q * from.y + 2 * q * p * via.y + p * p * to.y,
-	};
-};
 
 // Subs check in near half court: a single, well-spaced row so the faces +
 // name tags don't cram together, set a little in from the sideline (not jammed
@@ -327,9 +282,8 @@ export type CourtTeam = {
 	court?: import("../../../common/types.ts").CourtStyle;
 };
 
-// Ease-in-out for player glides and ball travel.
-const easeInOut = (p: number) =>
-	p < 0.5 ? 2 * p * p : 1 - (-2 * p + 2) ** 2 / 2;
+const FLIGHT_MS = 650;
+const OUTCOME_MS = 450;
 
 // Sizes are in container-query units (cqw = % of the court container width), so
 // faces and text scale WITH the court on any screen, mobile included - clamped
@@ -358,61 +312,41 @@ const FACE_ANIM_CSS = `
 	100% { transform: ${REST} rotate(0deg); }
 }`;
 
-// Convert a court point (feet) to container px, given the measured size.
-const courtToPx = (
-	x: number,
-	y: number,
-	size: { w: number; h: number },
-): { px: number; py: number } => ({
-	px: ((x + RAIL_W) / (COURT_W + 2 * RAIL_W)) * size.w,
-	py: ((y + APRON) / (COURT_H + 2 * APRON)) * size.h,
-});
-
-// One of the (few) players a play involves, centered ON its court point. React
-// paints it at its FINAL spot (`to`) - a correct static 2v2 even if the motion
-// timeline never runs - and registers its outer element so the play's rAF
-// timeline can drive it fluidly from `from` to `to` by mutating the transform
-// directly (no 60fps React re-render, and the facesjs SVG is generated once).
+// One player standing on the floor: face centered ON its court point (over the
+// shot dot), with a name tag placed above or below to avoid colliding with a
+// nearby player's tag. Moved with a compositor transform (translate3d in
+// measured px) rather than left/top - animating left/top forces layout+paint
+// on every transition frame for every face, which is what made the court chug
+// on mobile. Falls back to left/top % for the one paint before the container
+// is measured.
 const FaceOnCourt = ({
-	motion,
+	actor,
 	season,
 	lid,
 	color,
+	anim,
 	nameAbove,
 	size,
-	registerEl,
 }: {
-	motion: CourtMotion;
+	actor: CourtActor;
 	season: number | undefined;
 	lid: number | undefined;
 	color: string;
+	anim?: "shake" | "swipe";
 	nameAbove?: boolean;
 	// Measured px size of the court container (see LiveCourt's ResizeObserver).
 	size: { w: number; h: number } | undefined;
-	registerEl: (pid: number, el: HTMLDivElement | null) => void;
 }) => {
-	const faceData = usePlayerFace(motion.pid, season, lid);
+	const faceData = usePlayerFace(actor.pid, season, lid);
+	const fx = (actor.x + RAIL_W) / (COURT_W + 2 * RAIL_W);
+	const fy = (actor.y + APRON) / (COURT_H + 2 * APRON);
 
-	const animation = motion.anim
-		? motion.anim === "shake"
+	const animation =
+		anim === "shake"
 			? "liveCourtShake 0.5s ease"
-			: "liveCourtSwipe 0.5s ease"
-		: undefined;
-
-	// The face SVG depends only on the face data, so build it once and reuse it
-	// on every reposition (facesjs is not cheap to regenerate every play).
-	const faceEl = useMemo(
-		() =>
-			faceData && (faceData.face || faceData.imgURL) ? (
-				<PlayerPicture
-					face={faceData.face}
-					imgURL={faceData.imgURL}
-					colors={faceData.colors}
-					jersey={faceData.jersey}
-				/>
-			) : null,
-		[faceData],
-	);
+			: anim === "swipe"
+				? "liveCourtSwipe 0.5s ease"
+				: undefined;
 
 	const nameTag = (
 		<div
@@ -433,38 +367,36 @@ const FaceOnCourt = ({
 				boxShadow: "0 1px 2px rgba(0,0,0,0.4)",
 			}}
 		>
-			{motion.name}
+			{actor.role === "in" ? "▲ " : actor.role === "out" ? "▼ " : ""}
+			{actor.name}
 		</div>
 	);
 
-	// Final resting spot (`to`). The rAF timeline overrides this transform each
-	// frame while the play animates; because the prop value here is stable for
-	// the whole play, React never fights the imperative transform on a stray
-	// re-render (e.g. the face finishing loading).
+	// The OUTER div only places the point on the court (compositor-friendly
+	// translate3d, transitioned for the glide between plays). The INNER div
+	// carries the centering REST transform and the one-shot shake/swipe
+	// animations (whose keyframes bake REST in), so animating never fights the
+	// positioning.
 	const positionStyle = size
 		? {
 				left: 0,
 				top: 0,
-				transform: (() => {
-					const { px, py } = courtToPx(motion.to.x, motion.to.y, size);
-					return `translate3d(${px}px, ${py}px, 0)`;
-				})(),
+				transform: `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`,
+				transition: "transform 0.4s ease",
 				willChange: "transform",
 			}
 		: {
-				left: `${((motion.to.x + RAIL_W) / (COURT_W + 2 * RAIL_W)) * 100}%`,
-				top: `${((motion.to.y + APRON) / (COURT_H + 2 * APRON)) * 100}%`,
+				left: `${fx * 100}%`,
+				top: `${fy * 100}%`,
 			};
 
 	return (
 		<div
-			ref={(el) => registerEl(motion.pid, el)}
 			className="position-absolute"
 			style={{
 				...positionStyle,
 				pointerEvents: "none",
-				// The ball-handler rides above the others.
-				zIndex: motion.hasBall ? 6 : 5,
+				zIndex: actor.role === "main" ? 5 : 4,
 			}}
 		>
 			<div
@@ -474,12 +406,17 @@ const FaceOnCourt = ({
 					width: FACE_W,
 					transform: REST,
 					animation,
-					filter: motion.hasBall
-						? "drop-shadow(0 0 3px rgba(255,255,255,0.85)) drop-shadow(0 1px 2px rgba(0,0,0,0.5))"
-						: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
+					filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
 				}}
 			>
-				{faceEl}
+				{faceData && (faceData.face || faceData.imgURL) ? (
+					<PlayerPicture
+						face={faceData.face}
+						imgURL={faceData.imgURL}
+						colors={faceData.colors}
+						jersey={faceData.jersey}
+					/>
+				) : null}
 				{nameTag}
 			</div>
 		</div>
@@ -490,18 +427,13 @@ const teamColor = (team: CourtTeam | undefined, i: number, fallback: string) =>
 	team?.colors?.[i] ?? fallback;
 
 const LiveCourt = ({
-	cinematic,
-	durationMs = 1000,
+	scene,
 	dots,
 	teams,
 	finals,
 	season,
 }: {
-	// The play currently choreographed on the floor (undefined = just the court,
-	// e.g. the editor preview or before the first play).
-	cinematic?: Cinematic;
-	// How long the current play's motion should take (ms) - the speed slider.
-	durationMs?: number;
+	scene: CourtScene | undefined;
 	dots: CourtDot[];
 	// Display order: [away (left rim), home (right rim)].
 	teams: [CourtTeam | undefined, CourtTeam | undefined];
@@ -513,29 +445,16 @@ const LiveCourt = ({
 	const ballRef = useRef<SVGCircleElement | null>(null);
 	const ringRef = useRef<SVGCircleElement | null>(null);
 	const rafRef = useRef<number | undefined>(undefined);
-
-	// Live outer element of each on-court player's face, keyed by pid, so the
-	// play's rAF timeline can drive their transforms directly.
-	const faceEls = useRef<Map<number, HTMLDivElement>>(new Map());
-	const registerEl = (pid: number, el: HTMLDivElement | null) => {
-		if (el) {
-			faceEls.current.set(pid, el);
-		} else {
-			faceEls.current.delete(pid);
-		}
-	};
+	const [, forceRender] = useState(0);
 
 	// Measured px size of the court container, so faces can be positioned with a
 	// compositor transform (translate3d) instead of layout-triggering left/top.
 	// useLayoutEffect measures before first paint; the ResizeObserver keeps it
-	// current through resizes/rotations. A ref mirror lets the rAF read it.
+	// current through resizes/rotations.
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const [size, setSize] = useState<{ w: number; h: number } | undefined>(
 		undefined,
 	);
-	const sizeRef = useRef<{ w: number; h: number } | undefined>(undefined);
-	const durationRef = useRef(durationMs);
-	durationRef.current = durationMs;
 	useLayoutEffect(() => {
 		const el = containerRef.current;
 		if (!el) {
@@ -545,7 +464,6 @@ const LiveCourt = ({
 			const w = el.clientWidth;
 			const h = el.clientHeight;
 			if (w > 0 && h > 0) {
-				sizeRef.current = { w, h };
 				setSize((prev) =>
 					prev && prev.w === w && prev.h === h ? prev : { w, h },
 				);
@@ -563,226 +481,194 @@ const LiveCourt = ({
 	const home = teams[1];
 	const awayColor = teamColor(away, 0, "#fd7e14");
 	const homeColor = teamColor(home, 0, "#0d6efd");
-	const sceneColor = cinematic?.t === 0 ? awayColor : homeColor;
+	const sceneColor = scene?.t === 0 ? awayColor : homeColor;
 
-	// One rAF timeline for the whole play: move the (few) involved players from
-	// their start to their end over the lead-up, carry the ball along its path
-	// (resting in the handler's hands, a pass), then - on a shot - its flight to
-	// the rim and the outcome. Faces move by mutating their registered element's
-	// transform, the ball/ring by mutating SVG attributes: no React re-render per
-	// frame. A layout effect primes frame 0 (everyone at their start) before the
-	// browser paints, so nothing flashes at the wrong spot.
-	// eslint-disable-next-line react-hooks/exhaustive-deps
-	useLayoutEffect(() => {
-		const cin = cinematic;
-		if (!cin) {
+	// Ball + effect animation, driven imperatively on the SVG nodes (no React
+	// re-render per frame).
+	useEffect(() => {
+		if (!scene) {
 			return;
 		}
 		const ball = ballRef.current;
 		const ring = ringRef.current;
+		if (!ball) {
+			return;
+		}
 		if (rafRef.current !== undefined) {
 			cancelAnimationFrame(rafRef.current);
 		}
 
-		const measured = sizeRef.current;
-		const duration = Math.max(140, Math.min(3200, durationRef.current));
-		const leadFrac = Math.max(0.05, Math.min(0.95, cin.leadFrac));
-
-		// Each player's live position this frame; also drives the ball when it's
-		// pinned to a player (in their hands as they move).
-		const livePos = new Map<number, { x: number; y: number }>();
-		const setFace = (pid: number, pos: { x: number; y: number }) => {
-			livePos.set(pid, pos);
-			const el = faceEls.current.get(pid);
-			if (el && measured) {
-				const { px, py } = courtToPx(pos.x, pos.y, measured);
-				el.style.transform = `translate3d(${px}px, ${py}px, 0)`;
+		const hideBall = () => {
+			ball.style.opacity = "0";
+			if (ring) {
+				ring.style.opacity = "0";
 			}
 		};
 
-		const placeBall = (
-			pos: { x: number; y: number },
-			r: number,
-			opacity: number,
-		) => {
-			if (!ball) {
-				return;
-			}
-			ball.setAttribute("cx", String(pos.x));
-			ball.setAttribute("cy", String(pos.y));
-			ball.setAttribute("r", String(r));
-			ball.style.opacity = String(opacity);
-		};
+		const main = scene.actors.find((a) => a.role === "main");
+		const isShot =
+			scene.kind === "make" || scene.kind === "miss" || scene.kind === "block";
 
-		const stepPos = (s: BallStep): { x: number; y: number } => {
-			if (s.pid !== undefined) {
-				const live = livePos.get(s.pid);
-				if (live) {
-					return live;
+		// Rebound / opening tip: the ball travels from one spot to another (off
+		// the rim to the rebounder, or tapped from center back behind the winner).
+		if (
+			(scene.kind === "reb" || scene.kind === "jump") &&
+			scene.ballFrom &&
+			scene.ballTo
+		) {
+			if (ring) {
+				ring.style.opacity = "0";
+			}
+			const from = scene.ballFrom;
+			const to = scene.ballTo;
+			ball.style.opacity = "1";
+			const start = performance.now();
+			const step = (now: number) => {
+				const p = Math.min(1, (now - start) / 520);
+				ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
+				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
+				// A little hop off the rim, then settle into the rebounder's hands.
+				ball.setAttribute("r", String(0.9 + 0.45 * Math.sin(Math.PI * p)));
+				ball.style.opacity = p < 0.82 ? "1" : String(1 - (p - 0.82) / 0.18);
+				if (p < 1) {
+					rafRef.current = requestAnimationFrame(step);
+				} else {
+					hideBall();
 				}
-			}
-			return { x: s.x ?? COURT_W / 2, y: s.y ?? COURT_H / 2 };
-		};
-		const ballLeadPos = (f: number): { x: number; y: number } => {
-			const steps = cin.ball.steps;
-			if (steps.length === 0) {
-				return { x: COURT_W / 2, y: COURT_H / 2 };
-			}
-			if (f <= steps[0]!.at) {
-				return stepPos(steps[0]!);
-			}
-			for (let i = 0; i < steps.length - 1; i++) {
-				const a = steps[i]!;
-				const b = steps[i + 1]!;
-				if (f >= a.at && f < b.at) {
-					const seg = b.at - a.at;
-					const t = seg > 0 ? (f - a.at) / seg : 1;
-					const pa = stepPos(a);
-					const pb = stepPos(b);
-					return { x: pa.x + (pb.x - pa.x) * t, y: pa.y + (pb.y - pa.y) * t };
+			};
+			rafRef.current = requestAnimationFrame(step);
+			return () => {
+				if (rafRef.current !== undefined) {
+					cancelAnimationFrame(rafRef.current);
 				}
-			}
-			return stepPos(steps[steps.length - 1]!);
-		};
-
-		const shot = cin.ball.shot;
-		const rimX = shot?.rimX ?? rimXFor(cin.t);
-		const bounce = { x: rimX + rand(-4, 4), y: 25 + rand(-6, 6) };
-		const backward = shot && shot.spot.x < rimX ? -1 : 1;
-		const swat = shot
-			? {
-					x: Math.min(90, Math.max(4, shot.spot.x + backward * rand(10, 18))),
-					y: Math.min(46, Math.max(4, shot.spot.y + rand(-6, 6))),
-				}
-			: { x: 0, y: 0 };
-
-		if (ring) {
-			ring.style.opacity = "0";
-			ring.setAttribute(
-				"stroke",
-				cin.ball.pulse === "amber"
-					? "#eab308"
-					: cin.ball.pulse === "red"
-						? "#dc3545"
-						: sceneColor,
-			);
+			};
 		}
 
+		// Other non-shot scenes: flash a colored pulse at the main actor (amber
+		// for a foul, red for a turnover/steal).
+		if (!isShot) {
+			hideBall();
+			if (
+				ring &&
+				main &&
+				(scene.kind === "tov" || scene.kind === "stl" || scene.kind === "foul")
+			) {
+				const pulseColor = scene.kind === "foul" ? "#eab308" : "#dc3545";
+				ring.setAttribute("cx", String(main.x));
+				ring.setAttribute("cy", String(main.y));
+				ring.setAttribute("stroke", pulseColor);
+				const start = performance.now();
+				const pulse = (now: number) => {
+					const p = Math.min(1, (now - start) / 600);
+					ring.setAttribute("r", String(1.5 + 4.5 * p));
+					ring.style.opacity = String(0.9 * (1 - p));
+					if (p < 1) {
+						rafRef.current = requestAnimationFrame(pulse);
+					}
+				};
+				rafRef.current = requestAnimationFrame(pulse);
+			}
+			return () => {
+				if (rafRef.current !== undefined) {
+					cancelAnimationFrame(rafRef.current);
+				}
+			};
+		}
+
+		const from = scene.ballFrom ?? { x: COURT_W / 2, y: COURT_H / 2 };
+		const rimX = scene.rimX ?? rimXFor(scene.t);
+		const to = { x: rimX, y: COURT_H / 2 };
+		const made = scene.kind === "make";
+		const blocked = scene.kind === "block";
+		const bounce = { x: to.x + rand(-4, 4), y: to.y + rand(-6, 6) };
+		// A block sends the ball sharply BACKWARD - away from the rim, past the
+		// shooter - not just to the side.
+		const backward = from.x < to.x ? -1 : 1;
+		const swat = {
+			x: Math.min(90, Math.max(4, from.x + backward * rand(10, 18))),
+			y: Math.min(46, Math.max(4, from.y + rand(-6, 6))),
+		};
+
+		if (ring) {
+			ring.setAttribute("cx", String(to.x));
+			ring.setAttribute("cy", String(to.y));
+			ring.setAttribute("stroke", sceneColor);
+			ring.style.opacity = "0";
+		}
+		ball.style.opacity = "1";
+
 		const start = performance.now();
-		const frame = (now: number) => {
-			const tt = Math.min(1, (now - start) / duration);
+		const step = (now: number) => {
+			const elapsed = now - start;
 
-			// Players glide from -> (via) -> to over the lead-up, then hold.
-			const eased = easeInOut(leadFrac > 0 ? Math.min(1, tt / leadFrac) : 1);
-			for (const pl of cin.players) {
-				setFace(pl.pid, bezier(pl.from, pl.to, pl.via, eased));
-			}
-
-			if (ball) {
-				if (shot && tt >= shot.at) {
-					const denom = 1 - shot.at;
-					const st = denom > 0 ? (tt - shot.at) / denom : 1;
-					const flightEnd = 0.62;
-					if (shot.blocked) {
-						// Rises, then is swatted sharply backward past the shooter.
-						if (st < 0.4) {
-							const q = st / 0.4;
-							placeBall(
-								{
-									x: shot.spot.x + (rimX - shot.spot.x) * q * 0.3,
-									y: shot.spot.y + (25 - shot.spot.y) * q * 0.3,
-								},
-								0.9 + 0.5 * q,
-								1,
-							);
-						} else {
-							const q = (st - 0.4) / 0.6;
-							const bx = shot.spot.x + (rimX - shot.spot.x) * 0.105;
-							const by = shot.spot.y + (25 - shot.spot.y) * 0.105;
-							placeBall(
-								{ x: bx + (swat.x - bx) * q, y: by + (swat.y - by) * q },
-								1.4 - 0.6 * q,
-								1 - 0.7 * q,
-							);
-						}
-					} else if (st < flightEnd) {
-						// Flight to the rim; swells mid-arc to fake the height.
-						const q = st / flightEnd;
-						placeBall(
-							{
-								x: shot.spot.x + (rimX - shot.spot.x) * q,
-								y: shot.spot.y + (25 - shot.spot.y) * q,
-							},
-							0.9 + 0.9 * Math.sin(Math.PI * q),
-							1,
-						);
-					} else {
-						const q = (st - flightEnd) / (1 - flightEnd);
-						if (shot.made) {
-							// Swish: drops through, ring pulse.
-							placeBall(
-								{ x: rimX, y: 25 },
-								Math.max(0.05, 0.9 * (1 - q)),
-								1 - q * 0.6,
-							);
-							if (ring) {
-								ring.setAttribute("cx", String(rimX));
-								ring.setAttribute("cy", "25");
-								ring.setAttribute("r", String(1 + 3.5 * q));
-								ring.style.opacity = String(0.9 * (1 - q));
-							}
-						} else {
-							// Rim out: carom and fade.
-							placeBall(
-								{ x: rimX + (bounce.x - rimX) * q, y: 25 + (bounce.y - 25) * q },
-								0.9 - 0.4 * q,
-								1 - 0.8 * q,
-							);
-						}
-					}
+			if (blocked) {
+				const p = Math.min(1, elapsed / FLIGHT_MS);
+				if (p < 0.35) {
+					const q = p / 0.35;
+					ball.setAttribute("cx", String(from.x + (to.x - from.x) * q * 0.3));
+					ball.setAttribute("cy", String(from.y + (to.y - from.y) * q * 0.3));
+					ball.setAttribute("r", String(0.9 + 0.5 * q));
 				} else {
-					// Lead-up: the ball rides its path (rest with the handler, a pass).
-					// A play with no ball path (a substitution) shows no ball at all.
-					const pos = ballLeadPos(tt);
-					let opacity = cin.ball.steps.length === 0 ? 0 : 1;
-					if (cin.ball.vanishAt !== undefined && tt > cin.ball.vanishAt) {
-						const span = Math.max(0.001, 1 - cin.ball.vanishAt);
-						opacity = Math.max(0, 1 - (tt - cin.ball.vanishAt) / span);
-					}
-					placeBall(pos, 0.82, opacity);
-					// A late colored pulse at the action point (turnover/steal/foul).
-					if (ring && cin.ball.pulse && tt > leadFrac) {
-						const pp = Math.min(
-							1,
-							(tt - leadFrac) / Math.max(0.001, 1 - leadFrac),
-						);
-						ring.setAttribute("cx", String(pos.x));
-						ring.setAttribute("cy", String(pos.y));
-						ring.setAttribute("r", String(1.5 + 4.5 * pp));
-						ring.style.opacity = String(0.9 * (1 - pp));
-					}
+					const q = (p - 0.35) / 0.65;
+					const bx = from.x + (to.x - from.x) * 0.105;
+					const by = from.y + (to.y - from.y) * 0.105;
+					ball.setAttribute("cx", String(bx + (swat.x - bx) * q));
+					ball.setAttribute("cy", String(by + (swat.y - by) * q));
+					ball.setAttribute("r", String(1.4 - 0.6 * q));
+					ball.style.opacity = String(1 - 0.7 * q);
 				}
+				if (p < 1) {
+					rafRef.current = requestAnimationFrame(step);
+				} else {
+					hideBall();
+				}
+				return;
 			}
 
-			if (tt < 1) {
-				rafRef.current = requestAnimationFrame(frame);
-			} else if (ball && shot) {
-				// The shot is over; the ball is gone (through the net / off the rim).
-				ball.style.opacity = "0";
+			if (elapsed <= FLIGHT_MS) {
+				// Straight-line travel; the ball swells mid-flight to fake the arc.
+				const p = elapsed / FLIGHT_MS;
+				ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
+				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
+				ball.setAttribute("r", String(0.9 + 0.9 * Math.sin(Math.PI * p)));
+				rafRef.current = requestAnimationFrame(step);
+				return;
+			}
+
+			const p = Math.min(1, (elapsed - FLIGHT_MS) / OUTCOME_MS);
+			if (made) {
+				// Swish: drop into the rim, ring pulse.
+				ball.setAttribute("cx", String(to.x));
+				ball.setAttribute("cy", String(to.y));
+				ball.setAttribute("r", String(Math.max(0.05, 0.9 * (1 - p))));
+				ball.style.opacity = String(1 - p * 0.6);
 				if (ring) {
-					ring.style.opacity = "0";
+					ring.setAttribute("r", String(1 + 3.5 * p));
+					ring.style.opacity = String(0.9 * (1 - p));
 				}
+			} else {
+				// Rim out: carom and fade.
+				ball.setAttribute("cx", String(to.x + (bounce.x - to.x) * p));
+				ball.setAttribute("cy", String(to.y + (bounce.y - to.y) * p));
+				ball.setAttribute("r", String(0.9 - 0.4 * p));
+				ball.style.opacity = String(1 - 0.8 * p);
+			}
+			if (p < 1) {
+				rafRef.current = requestAnimationFrame(step);
+			} else {
+				hideBall();
+				// Settle the just-shot dot into the chart.
+				forceRender((n) => n + 1);
 			}
 		};
-		// Prime frame 0 synchronously (before paint) so everyone starts at `from`.
-		frame(start);
+		rafRef.current = requestAnimationFrame(step);
 
 		return () => {
 			if (rafRef.current !== undefined) {
 				cancelAnimationFrame(rafRef.current);
 			}
 		};
-	}, [cinematic?.key]);
+	}, [scene?.key]);
 
 	// Court styling comes from the home team's custom court (Manage Teams →
 	// Court), falling back to a neutral hardwood + the team's colors.
@@ -1037,33 +923,55 @@ const LiveCourt = ({
 		);
 	};
 
-	// Give each player's name tag a placement that avoids colliding with a nearby
-	// player's tag: when two players are within a few feet across the court, nudge
-	// the ball-handler's tag below and the other's above. Also flip tags near the
-	// bottom edge so they stay on the court. Keyed off the final (`to`) spots.
-	const cinPlayers = cinematic?.players ?? [];
-	const nameAboveFor = (player: CourtMotion): boolean => {
-		const near = cinPlayers.some(
-			(o) => o !== player && Math.abs(o.to.x - player.to.x) < 8,
+	const actorAnim = (actor: CourtActor): "shake" | "swipe" | undefined => {
+		if (!scene) {
+			return undefined;
+		}
+		if (scene.kind === "foul") {
+			return actor.role === "main"
+				? "swipe"
+				: actor.role === "victim"
+					? "shake"
+					: undefined;
+		}
+		if (scene.kind === "stl" && actor.role === "victim") {
+			return "shake";
+		}
+		return undefined;
+	};
+
+	const opposingColor = scene?.t === 0 ? homeColor : awayColor;
+
+	// Give each actor's name tag a placement that avoids colliding with a nearby
+	// player's tag: when two actors are within a few feet across the court, put
+	// the main actor's tag below and the other's above.
+	const nameAboveFor = (actor: CourtActor): boolean => {
+		if (!scene) {
+			return false;
+		}
+		const near = scene.actors.some(
+			(o) => o !== actor && Math.abs(o.x - actor.x) < 9,
 		);
 		if (near) {
-			return !player.hasBall;
+			return actor.role !== "main";
 		}
-		return player.to.y > COURT_H - 9;
+		// Otherwise flip tags near the bottom edge so they stay on the court.
+		return actor.y > COURT_H - 9;
 	};
 
 	// The play text sits BESIDE the action but must never cover a face. Anchor it
-	// just past the edge of the whole player cluster (final spots), on whichever
-	// side faces center court, vertically centered on the cluster.
-	const clusterMinX = cinPlayers.length
-		? Math.min(...cinPlayers.map((a) => a.to.x))
+	// just past the edge of the whole actor cluster, on whichever side faces
+	// center court, vertically centered on the cluster.
+	const actorsForText = scene?.actors ?? [];
+	const clusterMinX = actorsForText.length
+		? Math.min(...actorsForText.map((a) => a.x))
 		: COURT_W / 2;
-	const clusterMaxX = cinPlayers.length
-		? Math.max(...cinPlayers.map((a) => a.to.x))
+	const clusterMaxX = actorsForText.length
+		? Math.max(...actorsForText.map((a) => a.x))
 		: COURT_W / 2;
 	const clusterMidX = (clusterMinX + clusterMaxX) / 2;
-	const clusterMidY = cinPlayers.length
-		? cinPlayers.reduce((s, a) => s + a.to.y, 0) / cinPlayers.length
+	const clusterMidY = actorsForText.length
+		? actorsForText.reduce((s, a) => s + a.y, 0) / actorsForText.length
 		: COURT_H - 6;
 	const bubbleGoesRight = clusterMidX < COURT_W / 2;
 	// Start past the last face on that side (+ a face-width gap) so nobody's
@@ -1320,62 +1228,8 @@ const LiveCourt = ({
 				{dotsLayer}
 			</svg>
 
-			{/* Only the players this play involves (a 2v2 at most, often 1v1). Each
-			    is keyed by pid; React paints it at its final spot and the play's rAF
-			    timeline glides it there from its start. Its facesjs SVG is generated
-			    once and only translated after, so movement stays cheap on mobile. */}
-			{cinPlayers.map((player) => (
-				<FaceOnCourt
-					key={player.pid}
-					motion={player}
-					season={season}
-					lid={lid}
-					color={player.t === 0 ? awayColor : homeColor}
-					nameAbove={nameAboveFor(player)}
-					size={size}
-					registerEl={registerEl}
-				/>
-			))}
-
-			{/* The play line, beside the action - placed past the edge of the whole
-			    player cluster so it never covers a face */}
-			{cinematic ? (
-				<div
-					className="position-absolute"
-					style={{
-						top: `${textTopPct}%`,
-						...(bubbleGoesRight
-							? { left: `${bubbleEdgePct}%` }
-							: { right: `${100 - bubbleEdgePct}%` }),
-						transform: "translateY(-50%)",
-						maxWidth: "40%",
-						background: "rgba(0,0,0,0.82)",
-						color: "#fff",
-						borderLeft: `3px solid ${sceneColor}`,
-						borderRadius: 3,
-						padding: "2px 8px",
-						fontSize: "clamp(10px, 2cqw, 15px)",
-						fontWeight: 500,
-						lineHeight: 1.25,
-						pointerEvents: "none",
-						zIndex: 3,
-					}}
-				>
-					{cinematic.text}
-					{cinematic.score ? (
-						<div style={{ marginTop: 2, textAlign: "center" }}>
-							{cinematic.score}
-						</div>
-					) : null}
-				</div>
-			) : null}
-
 			{/* Pulse ring (swish / turnover / foul) + the ball, on their own
-			    compositor layer (willChange) so per-frame mutation stays cheap.
-			    Rendered LAST so the ball rides above the players - you see it in the
-			    ball-handler's hands and arcing over everyone on a shot. It lives in
-			    its own tiny SVG (not the grain-filtered floor's) so a ball frame
-			    never repaints the floor - the mobile-lag fix. */}
+			    compositor layer (willChange) so per-frame mutation stays cheap. */}
 			<svg
 				viewBox={VIEW}
 				style={{
@@ -1385,7 +1239,6 @@ const LiveCourt = ({
 					height: "100%",
 					pointerEvents: "none",
 					willChange: "transform",
-					zIndex: 7,
 				}}
 			>
 				<circle
@@ -1409,6 +1262,71 @@ const LiveCourt = ({
 					style={{ opacity: 0, pointerEvents: "none" }}
 				/>
 			</svg>
+
+			{/* Players on the floor, centered on their spot. Keyed by player+role
+			    (NOT the scene key) so a player who appears in back-to-back scenes is
+			    REUSED and repositioned instead of being torn down and rebuilt - each
+			    rebuild regenerates the whole facesjs SVG, which was a big per-play
+			    cost on mobile. Only the rare animated actor (a foul swipe / steal
+			    shake) keeps the scene key, so its one-shot CSS animation retriggers. */}
+			{scene
+				? scene.actors.map((actor) => {
+						const anim = actorAnim(actor);
+						return (
+							<FaceOnCourt
+								key={
+									anim
+										? `a${scene.key}-${actor.pid}-${actor.role}`
+										: `${actor.pid}-${actor.role}`
+								}
+								actor={actor}
+								season={season}
+								lid={lid}
+								color={
+									actor.role === "defender" || actor.role === "victim"
+										? opposingColor
+										: sceneColor
+								}
+								anim={anim}
+								nameAbove={nameAboveFor(actor)}
+								size={size}
+							/>
+						);
+					})
+				: null}
+
+			{/* The play line, beside the action - placed past the edge of the whole
+			    player cluster so it never covers a face */}
+			{scene ? (
+				<div
+					className="position-absolute"
+					style={{
+						top: `${textTopPct}%`,
+						...(bubbleGoesRight
+							? { left: `${bubbleEdgePct}%` }
+							: { right: `${100 - bubbleEdgePct}%` }),
+						transform: "translateY(-50%)",
+						maxWidth: "40%",
+						background: "rgba(0,0,0,0.82)",
+						color: "#fff",
+						borderLeft: `3px solid ${sceneColor}`,
+						borderRadius: 3,
+						padding: "2px 8px",
+						fontSize: "clamp(10px, 2cqw, 15px)",
+						fontWeight: 500,
+						lineHeight: 1.25,
+						pointerEvents: "none",
+						zIndex: 3,
+					}}
+				>
+					{scene.text}
+					{scene.score ? (
+						<div style={{ marginTop: 2, textAlign: "center" }}>
+							{scene.score}
+						</div>
+					) : null}
+				</div>
+			) : null}
 		</div>
 	);
 };
