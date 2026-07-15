@@ -198,7 +198,11 @@ const MultiplayerSync = () => {
 	}, []);
 
 	const switchTeam = async (tid: number) => {
-		await toWorker("main", "updateGameAttributes", { userTid: tid });
+		// Device-local team pick (userTid never syncs). Uses the dedicated,
+		// non-sim-authority-locked call so a league-mate can switch even while
+		// someone else is in charge of simming - updateGameAttributes would be
+		// blocked for them.
+		await toWorker("main", "setUserTidLocal", tid);
 		setUserTid(tid);
 	};
 

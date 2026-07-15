@@ -4343,6 +4343,16 @@ const updateGameAttributes = async (
 	await league.setGameAttributes(gameAttributes);
 	await toUI("realtimeUpdate", [["gameAttributes"]]);
 };
+
+// Switch which of this device's multi-team-mode teams it controls. userTid is
+// per-device and never synced, so this is deliberately SEPARATE from the general
+// (sim-authority-locked) updateGameAttributes: every league-mate can pick their
+// own team even while a league-mate is in charge of simming. See the
+// SKIP_CHANGESET_CAPTURE entry that keeps it out of the sync guard + changeset.
+const setUserTidLocal = async (userTid: number) => {
+	await league.setGameAttributes({ userTid });
+	await toUI("realtimeUpdate", [["firstRun"]]);
+};
 const updateGameAttributesGodMode = async (
 	settings: Settings,
 	conditions: Conditions,
@@ -5977,6 +5987,7 @@ export default {
 		setSavedTrade,
 		setScheduleFromEditor,
 		setSyncDebugLogging: setSyncDebugLoggingApi,
+		setUserTidLocal,
 		updateExpansionDraftSetup,
 		advanceToPlayerProtection,
 		autoProtect,

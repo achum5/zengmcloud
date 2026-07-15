@@ -144,6 +144,13 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getSyncCheckpoint",
 	// Cloud-only write of this team's free-agency board (no league data).
 	"faBoardSet",
+	// Which of this device's teams it controls (userTid). userTid is per-device
+	// and never synced (see the changeset NEVER_SYNC set), so - unlike the general
+	// updateGameAttributes, which is sim-authority-locked - every league-mate must
+	// be able to pick their own team even while someone else is in charge of
+	// simming or this device is still catching up. Suppressing capture keeps it
+	// out of both the authority guard and the changeset.
+	"setUserTidLocal",
 	// Persists the in-memory cache to disk (the export calls it first). It
 	// creates no new deltas, and it must neither steal a running sim's pending
 	// changes nor be refused mid-catch-up (which would silently export stale
