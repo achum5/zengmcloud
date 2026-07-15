@@ -356,6 +356,21 @@ let followedBroadcast:
 	| { startedAt: number; gid: number; expiresAt: number }
 	| undefined;
 
+// Whether WE (as a follower) froze the header score ticker (liveGameInProgress)
+// for a broadcast. Tracked separately from followedBroadcast so that if we bail
+// out of a follow attempt (payload not ready, error) - which clears
+// followedBroadcast - the freeze is still guaranteed to get released. Otherwise
+// the "Live game in progress" banner sticks on forever.
+let followerFroze = false;
+const unfreezeFollower = () => {
+	if (followerFroze) {
+		followerFroze = false;
+		void toUI("updateLocal", [
+			{ mpLiveBroadcast: undefined, liveGameInProgress: false },
+		]);
+	}
+};
+
 // The followed broadcast's game payload, kept for the liveGame view to serve on
 // ANY load of the page while the broadcast is live - the navigation that
 // delivers it through the router can be silently dropped when the follower is
@@ -521,10 +536,13 @@ const handleLiveBroadcastMeta = async (
 
 	// No live broadcast (ended, expired, or none): release any follow we had, and
 	// unfreeze the header score ticker (liveGameInProgress) it was watching under.
+	// Clear the freeze even if followedBroadcast is already gone (a bailed follow
+	// attempt) so the banner can never get stranded on.
 	if (!meta || !meta.active || meta.expiresAt < Date.now()) {
-		if (followedBroadcast) {
+		if (followedBroadcast || followerFroze) {
 			followedBroadcast = undefined;
 			followedBroadcastPayload = undefined;
+			followerFroze = false;
 			void toUI("updateLocal", [
 				{ mpLiveBroadcast: undefined, liveGameInProgress: false },
 			]);
@@ -546,14 +564,16 @@ const handleLiveBroadcastMeta = async (
 		// game is even written. The follower's own onLiveSimOver clears it at game
 		// over, revealing the final score in the header just as it does for the simmer.
 		void toUI("updateLocal", [{ liveGameInProgress: true }]);
+		followerFroze = true;
 		try {
 			const serialized = await transport.fetchLiveBroadcastData?.(
 				meta.chunkCount,
 			);
 			if (!serialized) {
 				// Payload not fully there (cleared or mid-write) - drop the follow so a
-				// later snapshot can retry.
+				// later snapshot can retry, and release the freeze we just set.
 				followedBroadcast = undefined;
+				unfreezeFollower();
 				return;
 			}
 			const { boxScore, playByPlay } = deserializeChangeset(serialized);
@@ -580,6 +600,7 @@ const handleLiveBroadcastMeta = async (
 		} catch (error) {
 			console.error("Failed to start following live broadcast", error);
 			followedBroadcast = undefined;
+			unfreezeFollower();
 			return;
 		}
 	} else {
@@ -610,6 +631,7 @@ const checkLiveBroadcastLease = () => {
 	if (followedBroadcast && Date.now() > followedBroadcast.expiresAt) {
 		followedBroadcast = undefined;
 		followedBroadcastPayload = undefined;
+		followerFroze = false;
 		void toUI("updateLocal", [
 			{ mpLiveBroadcast: undefined, liveGameInProgress: false },
 		]);
@@ -1384,6 +1406,7 @@ const doConnectSharedLeague = async ({
 	// ignored (handled locally).
 	activeBroadcast = undefined;
 	followedBroadcast = undefined;
+	followerFroze = false;
 	liveBroadcastUnsub = transport.subscribeLiveBroadcast?.((meta) => {
 		void handleLiveBroadcastMeta(meta, clientId, transport);
 	});
@@ -1496,6 +1519,7 @@ export const teardownSharedLeague = async ({
 	activeBroadcast = undefined;
 	followedBroadcast = undefined;
 	followedBroadcastPayload = undefined;
+	followerFroze = false;
 	currentTransport = undefined;
 	lastPendingUploads = 0;
 	void toUI("updateLocal", [
