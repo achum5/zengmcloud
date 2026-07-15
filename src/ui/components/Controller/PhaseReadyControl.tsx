@@ -27,15 +27,27 @@ const PeopleToggle = forwardRef<
 // (e.g. "2/3") and the menu offers ready-through targets so a stretch of picks
 // or free-agency days can run on its own.
 const PhaseReadyControl = () => {
-	const { mpPhaseReady, mpSyncActive, mpEditsPaused, mpCatchUp } = useLocal([
+	const {
+		mpPhaseReady,
+		mpSyncActive,
+		mpEditsPaused,
+		mpCatchUp,
+		liveGameInProgress,
+	} = useLocal([
 		"mpPhaseReady",
 		"mpSyncActive",
 		"mpEditsPaused",
 		"mpCatchUp",
+		"liveGameInProgress",
 	]);
 	const [busy, setBusy] = useState(false);
 
-	if (!mpSyncActive || !mpPhaseReady) {
+	// Hide the ready-up while a live sim is playing here: the game result (and the
+	// phase advance that surfaces this control) is written before the live
+	// playback finishes, so showing it now would spoil the outcome (e.g. an
+	// offseason ready-up popping up mid-way through Game 4 of the finals). It
+	// reappears once the live sim is over (liveGameInProgress clears).
+	if (!mpSyncActive || !mpPhaseReady || liveGameInProgress) {
 		return null;
 	}
 
