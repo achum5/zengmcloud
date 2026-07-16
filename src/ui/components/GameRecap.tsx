@@ -45,11 +45,8 @@ export const GameRecap = ({
 		setLoadFailed(false);
 		(async () => {
 			try {
-				const { games, dayRecapDays, daySlates } = await toWorker(
-					"main",
-					"getDayGamesForRecap",
-					{ season, day },
-				);
+				const { games, dayRecapDays, daySlates, standingsByDay } =
+					await toWorker("main", "getDayGamesForRecap", { season, day });
 				if (cancelled) {
 					return;
 				}
@@ -67,7 +64,13 @@ export const GameRecap = ({
 				// EITHER has work.
 				setPrompt(
 					games.length > 0 || dayRecapDays.length > 0
-						? buildRecapPrompt(games, label, dayRecapDays, daySlates)
+						? buildRecapPrompt(
+								games,
+								label,
+								dayRecapDays,
+								daySlates,
+								standingsByDay,
+							)
 						: undefined,
 				);
 			} catch (error) {

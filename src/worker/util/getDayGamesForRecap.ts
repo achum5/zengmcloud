@@ -424,6 +424,25 @@ export type RecapDaySlate = {
 	}[];
 };
 
+// The league standings AS OF a given league day, split by conference, so a day
+// recap can talk about the playoff picture accurately for that day (not the
+// current, later state). One per day recap needed.
+export type RecapDayStandings = {
+	day: number;
+	confs: {
+		name: string;
+		teams: {
+			rank: number;
+			abbrev: string;
+			region: string;
+			name: string;
+			won: number;
+			lost: number;
+			gb: number; // games back of the conference leader
+		}[];
+	}[];
+};
+
 // Which completed games one recap run covers: every completed game this season
 // still missing a recap note - so days that were simmed past get their recaps
 // generated in the same run instead of paging through them day by day. Games
@@ -459,6 +478,7 @@ export const getDayGamesForRecap = async ({
 	games: RecapGame[];
 	dayRecapDays: number[];
 	daySlates: RecapDaySlate[];
+	standingsByDay: RecapDayStandings[];
 }> => {
 	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
 
@@ -931,5 +951,47 @@ export const getDayGamesForRecap = async ({
 		daySlates.push({ day: d, games: slateGames });
 	}
 
-	return { games: result, dayRecapDays, daySlates };
+	// The full standings, split by conference, AS OF each day a recap is needed -
+	// so a day recap can talk about the playoff picture as it stood that day.
+	const allTeams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
+	const confs = g.get("confs", season);
+	const standingsByDay: RecapDayStandings[] = dayRecapDays.map((d) => ({
+		day: d,
+		confs: confs.map((conf) => {
+			const rows = allTeams
+				.filter((t) => t.cid === conf.cid)
+				.map((t) => {
+					const rec = regularSeasonRecordAsOf(t.tid, d, allGames);
+					return {
+						abbrev: t.abbrev,
+						region: t.region,
+						name: t.name,
+						won: rec.won,
+						lost: rec.lost,
+					};
+				})
+				.sort((a, b) => {
+					const wpA = a.won + a.lost > 0 ? a.won / (a.won + a.lost) : 0;
+					const wpB = b.won + b.lost > 0 ? b.won / (b.won + b.lost) : 0;
+					return wpB - wpA || b.won - a.won || a.abbrev.localeCompare(b.abbrev);
+				});
+			const leader = rows[0];
+			return {
+				name: conf.name,
+				teams: rows.map((t, i) => ({
+					rank: i + 1,
+					abbrev: t.abbrev,
+					region: t.region,
+					name: t.name,
+					won: t.won,
+					lost: t.lost,
+					gb: leader
+						? (leader.won - t.won + (t.lost - leader.lost)) / 2
+						: 0,
+				})),
+			};
+		}),
+	}));
+
+	return { games: result, dayRecapDays, daySlates, standingsByDay };
 };

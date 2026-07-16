@@ -561,6 +561,125 @@ describe("buildRecapPrompt — day recaps", () => {
 	});
 });
 
+describe("buildRecapPrompt — standings by conference", () => {
+	const game = {
+		gid: 1,
+		day: 4,
+		overtimes: 0,
+		winnerTid: 0,
+		playoffs: false,
+		clutchPlays: [],
+		teams: [
+			{ tid: 0, abbrev: "STL", region: "St. Louis", name: "Spirits", pts: 100, players: [] },
+			{ tid: 1, abbrev: "BKN", region: "Brooklyn", name: "Nets", pts: 90, players: [] },
+		],
+	} as any;
+
+	test("bakes in each day's standings, split by conference, with GB", () => {
+		const prompt = buildRecapPrompt([game], "Day 4", [4], [], [
+			{
+				day: 4,
+				confs: [
+					{
+						name: "Eastern Conference",
+						teams: [
+							{
+								rank: 1,
+								abbrev: "STL",
+								region: "St. Louis",
+								name: "Spirits",
+								won: 4,
+								lost: 0,
+								gb: 0,
+							},
+							{
+								rank: 2,
+								abbrev: "BKN",
+								region: "Brooklyn",
+								name: "Nets",
+								won: 2,
+								lost: 2,
+								gb: 2,
+							},
+						],
+					},
+					{
+						name: "Western Conference",
+						teams: [
+							{
+								rank: 1,
+								abbrev: "LAL",
+								region: "Los Angeles",
+								name: "Lakers",
+								won: 3,
+								lost: 1,
+								gb: 0,
+							},
+						],
+					},
+				],
+			},
+		]);
+		assert.ok(prompt.includes("LEAGUE STANDINGS by conference"), prompt);
+		assert.ok(prompt.includes("Standings as of league day 4:"), prompt);
+		assert.ok(prompt.includes("Eastern Conference:"), prompt);
+		assert.ok(prompt.includes("Western Conference:"), prompt);
+		// A ranked team line, with GB shown only when behind the leader.
+		assert.ok(
+			prompt.includes("1. St. Louis Spirits (STL) 4-0"),
+			prompt,
+		);
+		assert.ok(
+			prompt.includes("2. Brooklyn Nets (BKN) 2-2 — 2 GB"),
+			prompt,
+		);
+		// The leader's line has no "GB" suffix.
+		assert.ok(!prompt.includes("4-0 — 0 GB"), prompt);
+	});
+
+	test("shows a half-game back as a decimal", () => {
+		const prompt = buildRecapPrompt([game], "Day 4", [4], [], [
+			{
+				day: 4,
+				confs: [
+					{
+						name: "East",
+						teams: [
+							{
+								rank: 1,
+								abbrev: "AAA",
+								region: "A",
+								name: "A",
+								won: 3,
+								lost: 0,
+								gb: 0,
+							},
+							{
+								rank: 2,
+								abbrev: "BBB",
+								region: "B",
+								name: "B",
+								won: 2,
+								lost: 0,
+								gb: 0.5,
+							},
+						],
+					},
+				],
+			},
+		]);
+		assert.ok(prompt.includes("2. B B (BBB) 2-0 — 0.5 GB"), prompt);
+	});
+
+	test("no standings section when none provided", () => {
+		const prompt = buildRecapPrompt([game], "Day 4", [4]);
+		// The instructions mention "LEAGUE STANDINGS" in passing, so scope the
+		// negative assertion to the actual section header the data builds.
+		assert.ok(!prompt.includes("LEAGUE STANDINGS by conference"), prompt);
+		assert.ok(!prompt.includes("Standings as of league day"), prompt);
+	});
+});
+
 describe("buildRecapPrompt — fenced output", () => {
 	test("asks the AI to wrap the whole reply in one markdown fence", () => {
 		const prompt = buildRecapPrompt(

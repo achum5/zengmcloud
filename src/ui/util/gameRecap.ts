@@ -1,6 +1,7 @@
 import type {
 	RecapAverages,
 	RecapDaySlate,
+	RecapDayStandings,
 	RecapGame,
 	RecapPlayer,
 	RecapTeam,
@@ -25,7 +26,7 @@ ACCURACY IS THE TOP PRIORITY — a single wrong claim ruins the recap, so never 
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then the day recaps (if any) and all the game recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
 - Inside the fence, write GitHub-flavored Markdown only, with no text outside the day recaps and the per-game recaps.
-- FIRST, the DAY-IN-THE-LEAGUE recaps: if a "Day recaps needed" line below lists any league days, write one recap for EACH of those days, oldest first. For each, output a line containing ONLY the marker <!--day:DAY--> (replace DAY with that league day's number, exactly as listed), then a bold one-line headline, then a SHORT article of 2–3 tight paragraphs on THAT day's biggest stories across the league — the marquee results, the best individual performances, upsets, notable streaks, and any standings or playoff/series implications. It's the front page for that one day, high-level and punchy, NOT a game-by-game rundown, and it must draw ONLY on that day's data: its detailed game blocks below (each labeled with its league day) or, for a day whose games are not detailed below, the compact results listed for it under "Results for day recaps". Never omit or change a <!--day:DAY--> marker. If no days are listed, skip this and write only game recaps.
+- FIRST, the DAY-IN-THE-LEAGUE recaps: if a "Day recaps needed" line below lists any league days, write one recap for EACH of those days, oldest first. For each, output a line containing ONLY the marker <!--day:DAY--> (replace DAY with that league day's number, exactly as listed), then a bold one-line headline, then a SHORT article of 2–3 tight paragraphs on THAT day's biggest stories across the league — the marquee results, the best individual performances, upsets, notable streaks, and any standings or playoff/series implications. It's the front page for that one day, high-level and punchy, NOT a game-by-game rundown, and it must draw ONLY on that day's data: its detailed game blocks below (each labeled with its league day) or, for a day whose games are not detailed below, the compact results listed for it under "Results for day recaps". For playoff-race, seeding, and conference-lead context, use the LEAGUE STANDINGS provided for that same day (and ONLY that day's standings) - never state a record or standing that the data doesn't show. Never omit or change a <!--day:DAY--> marker. If no days are listed, skip this and write only game recaps.
 - THEN write the per-game recaps. Begin every game recap with a line containing ONLY this marker: <!--game:ID--> (replace ID with that game's number, shown as "GAME <ID>" below). This is how each recap is filed to the correct game — never omit it, never change it.
 - After a game's marker, lead with a bold one-line headline, then 2–4 tight paragraphs.
 - Weave the notable numbers into the prose; do not paste a stat table. Bold standout players with **name**.
@@ -287,16 +288,39 @@ const daySlateBlock = (slate: RecapDaySlate): string => {
 	return lines.join("\n");
 };
 
-// The full prompt: instructions + which days need a whole-day recap + every
-// game's data, ready for the clipboard. `dayRecapDays` are the league days this
-// run should backfill a "Day in the League" recap for (oldest first); empty means
-// game recaps only. `daySlates` give compact results for any of those days whose
-// games aren't in the detailed blocks (already game-recapped).
+const gbText = (gb: number): string =>
+	Number.isInteger(gb) ? String(gb) : gb.toFixed(1);
+
+// The full standings, split by conference, as of one day - so a day recap can
+// talk about that day's playoff picture accurately.
+const standingsBlock = (s: RecapDayStandings): string => {
+	const lines = [`Standings as of league day ${s.day}:`];
+	for (const conf of s.confs) {
+		lines.push("", `${conf.name}:`);
+		for (const t of conf.teams) {
+			lines.push(
+				`${t.rank}. ${t.region} ${t.name} (${t.abbrev}) ${t.won}-${t.lost}${
+					t.gb > 0 ? ` — ${gbText(t.gb)} GB` : ""
+				}`,
+			);
+		}
+	}
+	return lines.join("\n");
+};
+
+// The full prompt: instructions + which days need a whole-day recap + the
+// standings as of each of those days + every game's data, ready for the
+// clipboard. `dayRecapDays` are the league days this run should backfill a "Day
+// in the League" recap for (oldest first); empty means game recaps only.
+// `daySlates` give compact results for any of those days whose games aren't in
+// the detailed blocks (already game-recapped). `standingsByDay` is the
+// conference standings as of each day recap day.
 export const buildRecapPrompt = (
 	games: RecapGame[],
 	dayLabel: string,
 	dayRecapDays: number[] = [],
 	daySlates: RecapDaySlate[] = [],
+	standingsByDay: RecapDayStandings[] = [],
 ): string => {
 	const blocks = games.map(gameBlock).join("\n\n");
 	const dayLine =
@@ -309,11 +333,17 @@ export const buildRecapPrompt = (
 					.map(daySlateBlock)
 					.join("\n\n")}`
 			: "";
+	const standingsSection =
+		standingsByDay.length > 0
+			? `\n\nLEAGUE STANDINGS by conference, as of each day a recap is needed (use the matching day's standings for that day's recap):\n\n${standingsByDay
+					.map(standingsBlock)
+					.join("\n\n")}`
+			: "";
 	return `${INSTRUCTIONS}
 
 ---
 
-${dayLine}${slateSection}
+${dayLine}${slateSection}${standingsSection}
 
 ${games.length} game${games.length === 1 ? "" : "s"} to recap (${dayLabel}):
 
