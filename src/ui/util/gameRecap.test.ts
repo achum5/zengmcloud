@@ -431,11 +431,11 @@ Not close.`;
 	});
 
 	test("no markers → empty result (so the UI can warn)", () => {
-		const { dayRecap, games } = parseRecaps(
+		const { dayRecaps, games } = parseRecaps(
 			"The AI forgot the markers entirely.",
 		);
 		assert.strictEqual(games.size, 0);
-		assert.strictEqual(dayRecap, undefined);
+		assert.strictEqual(dayRecaps.size, 0);
 	});
 
 	test("peels an outer ```markdown fence off a selected-all paste", () => {
@@ -455,10 +455,10 @@ Not close.`;
 		assert.ok(map.get(42)!.endsWith("Brooklyn survived a thriller."));
 	});
 
-	test("extracts the <!--day--> recap alongside the game recaps", () => {
+	test("extracts a <!--day:DAY--> recap, keyed by its league day", () => {
 		const text = [
 			"```markdown",
-			"<!--day-->",
+			"<!--day:7-->",
 			"**A wild night across the league**",
 			"",
 			"Upsets everywhere as the standings shuffled.",
@@ -469,23 +469,68 @@ Not close.`;
 			"Brooklyn survived a thriller.",
 			"```",
 		].join("\n");
-		const { dayRecap, games } = parseRecaps(text);
-		assert.ok(dayRecap !== undefined);
-		assert.ok(dayRecap!.startsWith("**A wild night across the league**"));
-		assert.ok(dayRecap!.includes("standings shuffled."));
+		const { dayRecaps, games } = parseRecaps(text);
+		assert.strictEqual(dayRecaps.size, 1);
+		assert.ok(dayRecaps.get(7)!.startsWith("**A wild night across the league**"));
+		assert.ok(dayRecaps.get(7)!.includes("standings shuffled."));
 		// The day recap must NOT bleed into the game recap, or vice versa.
-		assert.ok(!dayRecap!.includes("Brooklyn"));
+		assert.ok(!dayRecaps.get(7)!.includes("Brooklyn"));
 		assert.strictEqual(games.size, 1);
 		assert.ok(games.get(42)!.startsWith("**Bagels edge Massacre in OT**"));
 		assert.ok(!games.get(42)!.includes("wild night"));
 	});
 
+	test("backfills MULTIPLE days in one paste, each filed to its own day", () => {
+		const text = [
+			"<!--day:5-->",
+			"**Day five**",
+			"",
+			"Slow start to the week.",
+			"",
+			"<!--day:6-->",
+			"**Day six**",
+			"",
+			"Things heated up.",
+		].join("\n");
+		const { dayRecaps } = parseRecaps(text);
+		assert.strictEqual(dayRecaps.size, 2);
+		assert.ok(dayRecaps.get(5)!.includes("Slow start"));
+		assert.ok(dayRecaps.get(6)!.includes("Things heated up"));
+		// No cross-contamination between the two days.
+		assert.ok(!dayRecaps.get(5)!.includes("heated up"));
+	});
+
 	test("a day recap with no game recaps still parses", () => {
-		const { dayRecap, games } = parseRecaps(
-			"<!--day-->\n**Quiet day**\n\nNot much happened.",
+		const { dayRecaps, games } = parseRecaps(
+			"<!--day:3-->\n**Quiet day**\n\nNot much happened.",
 		);
 		assert.strictEqual(games.size, 0);
-		assert.ok(dayRecap!.includes("Not much happened."));
+		assert.ok(dayRecaps.get(3)!.includes("Not much happened."));
+	});
+});
+
+describe("buildRecapPrompt — day recaps", () => {
+	const game = {
+		gid: 1,
+		day: 4,
+		overtimes: 0,
+		winnerTid: 0,
+		playoffs: false,
+		clutchPlays: [],
+		teams: [
+			{ tid: 0, abbrev: "A", region: "A", name: "A", pts: 100, players: [] },
+			{ tid: 1, abbrev: "B", region: "B", name: "B", pts: 90, players: [] },
+		],
+	} as any;
+
+	test("lists the days needing a recap so the AI files each to the right day", () => {
+		const prompt = buildRecapPrompt([game], "Days 4–6", [4, 5, 6]);
+		assert.ok(prompt.includes("Day recaps needed (oldest first): 4, 5, 6"));
+	});
+
+	test("says 'none' when no day recaps are needed", () => {
+		const prompt = buildRecapPrompt([game], "Day 4", []);
+		assert.ok(prompt.includes("Day recaps needed: none"));
 	});
 });
 

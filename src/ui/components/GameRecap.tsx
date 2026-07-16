@@ -45,25 +45,26 @@ export const GameRecap = ({
 		setLoadFailed(false);
 		(async () => {
 			try {
-				const games = await toWorker("main", "getDayGamesForRecap", {
-					season,
-					day,
-				});
+				const { games, dayRecapDays } = await toWorker(
+					"main",
+					"getDayGamesForRecap",
+					{ season, day },
+				);
 				if (cancelled) {
 					return;
 				}
 				// The worker sweeps in unrecapped games from other days too, so the
 				// label reflects the actual span.
-				const gameDays = [
-					...new Set((games ?? []).map((game) => game.day)),
-				].sort((a, b) => a - b);
+				const gameDays = [...new Set(games.map((game) => game.day))].sort(
+					(a, b) => a - b,
+				);
 				const label =
 					gameDays.length > 1
 						? `Days ${gameDays[0]}–${gameDays.at(-1)}`
 						: `Day ${day}`;
 				setPrompt(
-					games && games.length > 0
-						? buildRecapPrompt(games, label)
+					games.length > 0
+						? buildRecapPrompt(games, label, dayRecapDays)
 						: undefined,
 				);
 			} catch (error) {
@@ -108,10 +109,10 @@ export const GameRecap = ({
 		setBusy(true);
 		setResult(undefined);
 		try {
-			const { dayRecap, games } = parseRecaps(text);
-			if (games.size === 0 && dayRecap === undefined) {
+			const { dayRecaps, games } = parseRecaps(text);
+			if (games.size === 0 && dayRecaps.size === 0) {
 				setResult(
-					"Couldn't find any recaps in what was pasted — paste the AI's full reply (the day recap keeps its <!--day--> marker and each game keeps its <!--game:…--> marker).",
+					"Couldn't find any recaps in what was pasted — paste the AI's full reply (each day keeps its <!--day:…--> marker and each game keeps its <!--game:…--> marker).",
 				);
 				return;
 			}
@@ -122,13 +123,14 @@ export const GameRecap = ({
 					editedNote: note,
 				});
 			}
-			// The whole-day recap is filed against the day being viewed.
-			if (dayRecap !== undefined) {
+			// Each day recap is filed against ITS OWN league day (from the marker),
+			// not the day being viewed - so a single paste backfills every missed day.
+			for (const [recapDay, note] of dayRecaps) {
 				await toWorker("main", "setNote", {
 					type: "day",
 					season,
-					day,
-					editedNote: dayRecap,
+					day: recapDay,
+					editedNote: note,
 				});
 			}
 			setManual(undefined);

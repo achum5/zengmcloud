@@ -402,6 +402,11 @@ export const enteringAverages = (
 // Copy sweeps it up.
 const MAX_RECAP_GAMES = 20;
 
+// One recap run also backfills WHOLE-DAY recaps for up to this many days it
+// covers (oldest first, FIFO) - so the day recap is never tied to the day the
+// user happens to be viewing; it fills in whichever recent days are missing one.
+const MAX_RECAP_DAYS = 10;
+
 // Which completed games one recap run covers: every completed game this season
 // still missing a recap note - so days that were simmed past get their recaps
 // generated in the same run instead of paging through them day by day. Games
@@ -433,7 +438,7 @@ export const getDayGamesForRecap = async ({
 }: {
 	season: number;
 	day: number;
-}): Promise<RecapGame[]> => {
+}): Promise<{ games: RecapGame[]; dayRecapDays: number[] }> => {
 	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
 
 	const games = selectRecapGames(
@@ -822,5 +827,25 @@ export const getDayGamesForRecap = async ({
 		});
 	}
 
-	return result;
+	// Which of the days covered by this batch still need a WHOLE-DAY recap (the
+	// day's anchor game - lowest gid of the day - has no dayNote yet), oldest
+	// first and capped. This is what lets a paste backfill day recaps for every
+	// missed day it covers instead of only the day being viewed.
+	const daysInBatch = [...new Set(result.map((game) => game.day))].sort(
+		(a, b) => a - b,
+	);
+	const dayRecapDays = daysInBatch
+		.filter((d) => {
+			const dayGames = allGames.filter(
+				(game) => game.won && game.lost && (game.day ?? 0) === d,
+			);
+			if (dayGames.length === 0) {
+				return false;
+			}
+			const anchor = dayGames.reduce((a, b) => (a.gid <= b.gid ? a : b));
+			return anchor.dayNote === undefined;
+		})
+		.slice(0, MAX_RECAP_DAYS);
+
+	return { games: result, dayRecapDays };
 };
