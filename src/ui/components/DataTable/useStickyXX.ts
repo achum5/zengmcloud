@@ -61,25 +61,25 @@ const useStickyXX = (
 				lefts[i] = lefts[i - 1]! + row.cells[i - 1]!.offsetWidth;
 			}
 
-			if (
-				prevLefts.current &&
-				lefts.length === prevLefts.current.length &&
-				prevLefts.current.every((left, i) => left === lefts[i])
-			) {
-				// If left offsets did not change, then no point in updating the DOM
-				return;
-			}
-
 			if (!rows) {
 				rows = getRows();
 			}
 
 			const widths = lefts.map((left) => `${left}px`);
 
+			// Apply to every row, writing only the cells whose value actually
+			// differs. This skips redundant reflows like the old value-only
+			// short-circuit did, but - crucially - it can't skip a row that needs
+			// the offset. Changing the season (or any data swap) replaces every row
+			// with fresh, unstyled <td>s while the column widths stay identical; the
+			// old short-circuit saw the computed offset was unchanged and returned
+			// WITHOUT styling those new rows, so their sticky columns overlapped the
+			// ones before them (clipping the text). Diffing per cell re-applies the
+			// offset to the new rows no matter what.
 			for (const row of rows) {
 				for (let i = 1; i < widths.length; i++) {
 					const cell = row.cells[i];
-					if (cell) {
+					if (cell && cell.style.left !== widths[i]) {
 						cell.style.left = widths[i]!;
 					}
 				}
