@@ -1265,6 +1265,26 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	padding-bottom: 0.3rem;
 }
 
+// The Day-in-the-League headline reads like a real front-page banner: much
+// bigger and bolder than the small per-game note headlines, with a clear, obvious
+// tap-to-expand chevron so it's plainly a "click in and read" story.
+.game-note-flow .game-note-header {
+	padding: 0.45rem 0.7rem;
+}
+.game-note-flow .game-note-header .markdown,
+.game-note-flow .game-note-header .markdown p {
+	margin-bottom: 0;
+	font-size: clamp(1.3rem, 4.5vw, 1.6rem);
+	font-weight: 700;
+	line-height: 1.2;
+}
+.game-note-flow .game-note-header .btn {
+	font-size: 1.6rem;
+	line-height: 1;
+	color: var(--bs-body-color);
+	opacity: 0.85;
+}
+
 // Round the Daily Schedule score card so it looks like a rounded card: all four
 // corners when it stands alone, or just the top when a note is attached below
 // (the note rounds the matching bottom corners).
