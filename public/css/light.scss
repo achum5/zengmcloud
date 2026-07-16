@@ -1277,11 +1277,23 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	line-height: 1.15;
 	letter-spacing: -0.01em;
 }
+// No far-right chevron - it left an ugly blank gap between the (wrapping)
+// headline and the page edge. Hide it and put a small inline expand cue right
+// after the headline text instead, so the affordance flows with the words and
+// there's no dead space. The whole headline row stays tappable to toggle.
 .game-note-flow .game-note-header .btn {
-	font-size: 1.6rem;
-	line-height: 1;
-	color: var(--bs-body-color);
-	opacity: 0.7;
+	display: none;
+}
+.game-note-flow .game-note-header .markdown p::after {
+	content: " ▸";
+	font-size: 0.6em;
+	font-weight: 400;
+	opacity: 0.55;
+	vertical-align: 0.12em;
+	white-space: nowrap;
+}
+.game-note-flow.open .game-note-header .markdown p::after {
+	content: " ▾";
 }
 
 // The article flows on the page (no box), animating its height open/closed.
