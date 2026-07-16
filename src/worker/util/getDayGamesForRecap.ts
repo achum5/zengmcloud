@@ -404,8 +404,25 @@ const MAX_RECAP_GAMES = 20;
 
 // One recap run also backfills WHOLE-DAY recaps for up to this many days it
 // covers (oldest first, FIFO) - so the day recap is never tied to the day the
-// user happens to be viewing; it fills in whichever recent days are missing one.
+// user happens to be viewing; it fills in whichever days are missing one.
 const MAX_RECAP_DAYS = 10;
+
+// A compact one-day results slate, for a day that needs a recap but whose games
+// aren't in the detailed blocks (they were already game-recapped). Enough for the
+// AI to write that day's overview: final scores, winner, and each team's leading
+// scorer.
+export type RecapDaySlate = {
+	day: number;
+	games: {
+		away: string; // "Region Name"
+		home: string;
+		awayPts: number;
+		homePts: number;
+		winner: string; // "Region Name" of the winner
+		topAway?: { name: string; pts: number };
+		topHome?: { name: string; pts: number };
+	}[];
+};
 
 // Which completed games one recap run covers: every completed game this season
 // still missing a recap note - so days that were simmed past get their recaps
@@ -438,7 +455,11 @@ export const getDayGamesForRecap = async ({
 }: {
 	season: number;
 	day: number;
-}): Promise<{ games: RecapGame[]; dayRecapDays: number[] }> => {
+}): Promise<{
+	games: RecapGame[];
+	dayRecapDays: number[];
+	daySlates: RecapDaySlate[];
+}> => {
 	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
 
 	const games = selectRecapGames(
@@ -827,25 +848,88 @@ export const getDayGamesForRecap = async ({
 		});
 	}
 
-	// Which of the days covered by this batch still need a WHOLE-DAY recap (the
-	// day's anchor game - lowest gid of the day - has no dayNote yet), oldest
-	// first and capped. This is what lets a paste backfill day recaps for every
-	// missed day it covers instead of only the day being viewed.
-	const daysInBatch = [...new Set(result.map((game) => game.day))].sort(
-		(a, b) => a - b,
-	);
-	const dayRecapDays = daysInBatch
+	// Days (with completed games) still missing a WHOLE-DAY recap - the day's
+	// anchor game (lowest gid of the day) has no dayNote - oldest first (FIFO),
+	// capped. Computed over ALL completed days in the season, NOT just the ones
+	// with note-less games, so a day whose games are already all game-recapped
+	// (e.g. an early day recapped before its day recap existed) still gets its day
+	// recap backfilled.
+	const completedByDay = new Map<number, typeof allGames>();
+	for (const game of allGames) {
+		if (!game.won || !game.lost) {
+			continue;
+		}
+		const d = game.day ?? 0;
+		const arr = completedByDay.get(d) ?? [];
+		arr.push(game);
+		completedByDay.set(d, arr);
+	}
+	// The days whose full game data is in the detailed blocks this run.
+	const detailedDays = new Set(result.map((game) => game.day));
+	// Request a day recap for a missing-dayNote day only when we actually have its
+	// material: it's detailed above (write from full data), OR all its games are
+	// already game-recapped (a backfill day - write from the compact slate below).
+	// A day that's note-less but not yet detailed is DEFERRED - it'll be detailed
+	// and recapped on a later run, so we don't write it a thin recap now.
+	const dayRecapDays = [...completedByDay.keys()]
+		.sort((a, b) => a - b)
 		.filter((d) => {
-			const dayGames = allGames.filter(
-				(game) => game.won && game.lost && (game.day ?? 0) === d,
-			);
-			if (dayGames.length === 0) {
+			const dayGames = completedByDay.get(d)!;
+			const anchor = dayGames.reduce((a, b) => (a.gid <= b.gid ? a : b));
+			if (anchor.dayNote !== undefined) {
 				return false;
 			}
-			const anchor = dayGames.reduce((a, b) => (a.gid <= b.gid ? a : b));
-			return anchor.dayNote === undefined;
+			const fullyRecapped = dayGames.every(
+				(game) => (game as any).note !== undefined,
+			);
+			return detailedDays.has(d) || fullyRecapped;
 		})
 		.slice(0, MAX_RECAP_DAYS);
 
-	return { games: result, dayRecapDays };
+	// For any of those days whose games are NOT detailed above (the fully-recapped
+	// backfill days), hand the AI a compact results slate so it still has material.
+	const teamName = async (tid: number): Promise<string> => {
+		const info = await teamInfo(tid);
+		return info ? `${info.region} ${info.name}` : "???";
+	};
+	const topScorer = (team: any): { name: string; pts: number } | undefined => {
+		let best: { name: string; pts: number } | undefined;
+		for (const p of (team?.players ?? []) as any[]) {
+			if (
+				p &&
+				typeof p.pts === "number" &&
+				p.name &&
+				(!best || p.pts > best.pts)
+			) {
+				best = { name: String(p.name), pts: p.pts };
+			}
+		}
+		return best;
+	};
+	const daySlates: RecapDaySlate[] = [];
+	for (const d of dayRecapDays) {
+		if (detailedDays.has(d)) {
+			continue;
+		}
+		const dayGames = [...completedByDay.get(d)!].sort((a, b) => a.gid - b.gid);
+		const slateGames: RecapDaySlate["games"] = [];
+		for (const game of dayGames) {
+			const home = game.teams[0];
+			const away = game.teams[1];
+			const homeName = await teamName(home.tid);
+			const awayName = await teamName(away.tid);
+			slateGames.push({
+				away: awayName,
+				home: homeName,
+				awayPts: away.pts,
+				homePts: home.pts,
+				winner: game.won.tid === home.tid ? homeName : awayName,
+				topAway: topScorer(away),
+				topHome: topScorer(home),
+			});
+		}
+		daySlates.push({ day: d, games: slateGames });
+	}
+
+	return { games: result, dayRecapDays, daySlates };
 };

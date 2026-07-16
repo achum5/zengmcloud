@@ -532,6 +532,33 @@ describe("buildRecapPrompt — day recaps", () => {
 		const prompt = buildRecapPrompt([game], "Day 4", []);
 		assert.ok(prompt.includes("Day recaps needed: none"));
 	});
+
+	test("includes a compact results slate for a backfill day not detailed above", () => {
+		const prompt = buildRecapPrompt([game], "Day 4", [1, 4], [
+			{
+				day: 1,
+				games: [
+					{
+						away: "Brooklyn Nets",
+						home: "St. Louis Spirits",
+						awayPts: 79,
+						homePts: 111,
+						winner: "St. Louis Spirits",
+						topAway: { name: "J. Smith", pts: 20 },
+						topHome: { name: "R. Hosley", pts: 31 },
+					},
+				],
+			},
+		]);
+		assert.ok(prompt.includes("Day recaps needed (oldest first): 1, 4"));
+		assert.ok(prompt.includes("League day 1:"));
+		assert.ok(
+			prompt.includes(
+				"Brooklyn Nets 79 @ St. Louis Spirits 111 (St. Louis Spirits win)",
+			),
+		);
+		assert.ok(prompt.includes("R. Hosley 31"));
+	});
 });
 
 describe("buildRecapPrompt — fenced output", () => {

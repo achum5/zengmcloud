@@ -45,7 +45,7 @@ export const GameRecap = ({
 		setLoadFailed(false);
 		(async () => {
 			try {
-				const { games, dayRecapDays } = await toWorker(
+				const { games, dayRecapDays, daySlates } = await toWorker(
 					"main",
 					"getDayGamesForRecap",
 					{ season, day },
@@ -62,9 +62,12 @@ export const GameRecap = ({
 					gameDays.length > 1
 						? `Days ${gameDays[0]}–${gameDays.at(-1)}`
 						: `Day ${day}`;
+				// There may be nothing to game-recap yet still days needing a day recap
+				// (all their games already recapped), so build the prompt whenever
+				// EITHER has work.
 				setPrompt(
-					games.length > 0
-						? buildRecapPrompt(games, label, dayRecapDays)
+					games.length > 0 || dayRecapDays.length > 0
+						? buildRecapPrompt(games, label, dayRecapDays, daySlates)
 						: undefined,
 				);
 			} catch (error) {
