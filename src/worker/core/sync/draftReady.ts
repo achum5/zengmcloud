@@ -565,12 +565,22 @@ const evaluate = async () => {
 	try {
 		// The advance forks the room if it runs on a stale or half-connected
 		// device, so the same preflight as the worker guard: proven-live
-		// connection, then a fresh read of the log head.
+		// connection, then a fresh read of the log head. catchUp() returns true
+		// ONLY when this pass drained all the way to the head - false means a
+		// fetch failed, more pages remain, or (crucially) another pass was
+		// already in flight, which is exactly the state of a device that just
+		// rejoined and is still swallowing its backlog. Advancing then would
+		// re-derive the "next" step from stale local state and re-sim history
+		// that already ran, publishing regressed state on top of the room's
+		// real progress. Bail and let a later tick advance once genuinely
+		// caught up.
 		await engine.ensureReady();
 		if (!(await engine.verifyConnection(true))) {
 			return;
 		}
-		await engine.catchUp();
+		if (!(await engine.catchUp())) {
+			return;
+		}
 
 		// Re-derive after the catch-up: someone else may have advanced already.
 		const stage2 = await getStageInfo();
@@ -603,6 +613,12 @@ const evaluate = async () => {
 		});
 
 		await stage2.advance();
+
+		// Close this step's crash-recovery re-claim window (the advance ran to
+		// completion, so nobody should ever run it again).
+		if (transport.completeDraftAdvance) {
+			await transport.completeDraftAdvance(stageKey, stage.nextStep);
+		}
 	} catch (error) {
 		console.error("[sync] ready-up advance failed", error);
 	} finally {

@@ -22,6 +22,10 @@ import {
 	type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { getFirebaseApp } from "./firebaseApp.ts";
+import {
+	decideAdvanceClaim,
+	type AdvanceClaimDoc,
+} from "./advanceClaimPolicy.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
@@ -455,10 +459,12 @@ export class FirebaseTransport implements SyncTransport {
 		);
 	}
 
-	// Atomically claim the right to sim one specific pick. The transaction
-	// guarantees exactly one device per (draftKey, pick) wins within the lease
-	// window; the lease exists only so a claimant that crashes mid-advance
-	// unblocks the room.
+	// Atomically claim the right to sim one specific step. The transaction
+	// applies decideAdvanceClaim: exactly one device per (draftKey, step) wins
+	// within the lease window, AND a step at or below the stage's high-water mark
+	// can never be claimed again (except crash recovery of the newest,
+	// uncompleted step) - so a stale rejoining device can't re-sim finished
+	// steps and publish regressed state as new history.
 	async claimDraftAdvance(
 		draftKey: string,
 		pick: number,
@@ -474,27 +480,58 @@ export class FirebaseTransport implements SyncTransport {
 		try {
 			await runTransaction(this.db, async (tx) => {
 				const snap = await tx.get(ref);
-				const data = snap.data();
-				if (
-					data &&
-					data.draftKey === draftKey &&
-					data.pick === pick &&
-					typeof data.at === "number" &&
-					Date.now() - data.at < leaseMs
-				) {
-					throw new Error("Another device is already advancing this pick.");
+				const data = snap.data() as AdvanceClaimDoc | undefined;
+				const decision = decideAdvanceClaim(data, {
+					draftKey,
+					pick,
+					now: Date.now(),
+					leaseMs,
+				});
+				if (!decision.grant) {
+					throw new Error(`Advance claim rejected: ${decision.reason}`);
 				}
 				tx.set(ref, {
 					holderId: this.clientId,
 					draftKey,
 					pick,
 					at: Date.now(),
+					maxPick: decision.maxPick,
+					completed: false,
 				});
 			});
 			this.markContact();
 			return true;
 		} catch {
 			return false;
+		}
+	}
+
+	// Mark this device's claimed step as finished, closing its crash-recovery
+	// re-claim window. Best-effort: a failure just leaves the lease to expire.
+	async completeDraftAdvance(draftKey: string, pick: number): Promise<void> {
+		const ref = doc(
+			this.db,
+			"leagues",
+			this.code,
+			"control",
+			DRAFT_ADVANCE_DOC_ID,
+		);
+		try {
+			await runTransaction(this.db, async (tx) => {
+				const snap = await tx.get(ref);
+				const data = snap.data() as AdvanceClaimDoc | undefined;
+				if (
+					data &&
+					data.draftKey === draftKey &&
+					data.pick === pick &&
+					data.holderId === this.clientId
+				) {
+					tx.set(ref, { ...data, completed: true });
+				}
+			});
+			this.markContact();
+		} catch {
+			// Lease expiry covers it.
 		}
 	}
 

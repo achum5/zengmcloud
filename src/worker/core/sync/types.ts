@@ -297,6 +297,9 @@ export interface SyncTransport {
 		pick: number,
 		leaseMs: number,
 	): Promise<boolean>;
+	// Marks the caller's claimed step finished (closing its crash-recovery
+	// re-claim window; see advanceClaimPolicy.ts). Best-effort.
+	completeDraftAdvance?(draftKey: string, pick: number): Promise<void>;
 
 	// Free-agency board support (see faBoard.ts). Each device publishes its
 	// team's ranked free-agent list (null clears it); everyone subscribes but the
