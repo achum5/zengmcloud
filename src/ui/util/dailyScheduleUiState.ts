@@ -15,6 +15,25 @@ export const setGameNoteExpanded = (gid: number, value: boolean): void => {
 	}
 };
 
+// Same, for the whole-day "Day in the League" recap, keyed by (season, day).
+const expandedDayNotes = new Set<string>();
+const dayKey = (season: number, day: number) => `${season}-${day}`;
+
+export const isDayNoteExpanded = (season: number, day: number): boolean =>
+	expandedDayNotes.has(dayKey(season, day));
+
+export const setDayNoteExpanded = (
+	season: number,
+	day: number,
+	value: boolean,
+): void => {
+	if (value) {
+		expandedDayNotes.add(dayKey(season, day));
+	} else {
+		expandedDayNotes.delete(dayKey(season, day));
+	}
+};
+
 // Scroll position keyed by which day is showing (season + day), so each day
 // remembers its own spot.
 const scrollByKey = new Map<string, number>();

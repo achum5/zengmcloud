@@ -213,11 +213,24 @@ const updateDailySchedule = async (
 			completed.sort(userFirst);
 			upcoming.sort(userFirst);
 
+			// The day's "Day in the League" recap is stored on its anchor game (the
+			// lowest-gid game of the day - see Game.dayNote / setNote). Resolve the
+			// anchor from ALL of the day's games, NOT the possibly conference-filtered
+			// `completed`, so it matches the write side (which sees every game) no
+			// matter which conference is being viewed.
+			const dayGames = games.filter((game) => game.day === day);
+			const anchorGame =
+				dayGames.length > 0
+					? dayGames.reduce((a, b) => (a.gid <= b.gid ? a : b))
+					: undefined;
+			const dayNote = anchorGame?.dayNote;
+
 			return {
 				cid,
 				cids,
 				completed,
 				day,
+				dayNote,
 				days,
 				isToday,
 				upcoming,

@@ -1242,6 +1242,29 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 		transform 0.15s ease;
 }
 
+// Flow variant: the full-width "Day in the League" recap at the top of the Daily
+// Schedule opens IN FLOW (pushing the schedule down) rather than as an overlay -
+// there's nothing above it to briefly hide, and a multi-paragraph article reads
+// better expanding the page than covering the first game cards. Animate height.
+.game-note-flow .game-note-body {
+	position: static;
+	box-shadow: none;
+	transform: none;
+	max-height: 0;
+	overflow: hidden;
+	padding-top: 0;
+	padding-bottom: 0;
+	transition:
+		max-height 0.15s ease,
+		opacity 0.15s ease,
+		visibility 0s 0.15s;
+}
+.game-note-flow .game-note-body.open {
+	max-height: 60rem;
+	padding-top: 0.15rem;
+	padding-bottom: 0.3rem;
+}
+
 // Round the Daily Schedule score card so it looks like a rounded card: all four
 // corners when it stands alone, or just the top when a note is attached below
 // (the note rounds the matching bottom corners).

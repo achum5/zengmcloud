@@ -9,7 +9,7 @@ import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 // The instructions half of the prompt. Kept as a single editable constant so it
 // can be swapped for a different writing brief without touching the data-baking
 // logic below.
-const INSTRUCTIONS = `You are an expert basketball beat writer. Write a lively, ESPN-style recap for EACH game listed below.
+const INSTRUCTIONS = `You are an expert basketball beat writer. Write TWO things: (1) a short "Day in the League" front-page recap of the whole slate, and (2) a lively, ESPN-style recap for EACH game listed below.
 
 You are given far more data than you need — box scores, what each player was averaging ENTERING the game (this game not included), past-season career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), the pregame betting line (who was favored and by how many), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. The games may span several league days (each is labeled with its day) — treat each game's data as of the day it was played, and don't frame games from different days as one night's slate. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). Do NOT list the raw data back.
 
@@ -22,12 +22,13 @@ ACCURACY IS THE TOP PRIORITY — a single wrong claim ruins the recap, so never 
 - When in doubt, state the line plainly and move on. An accurate, unglamorous sentence always beats an impressive false one.
 
 Follow these rules EXACTLY:
-- Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
-- Inside the fence, write GitHub-flavored Markdown only, with no text outside the per-game recaps.
-- Begin every recap with a line containing ONLY this marker: <!--game:ID--> (replace ID with that game's number, shown as "GAME <ID>" below). This is how each recap is filed to the correct game — never omit it, never change it.
-- After the marker, lead with a bold one-line headline, then 2–4 tight paragraphs.
+- Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then the day recap and all the game recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
+- Inside the fence, write GitHub-flavored Markdown only, with no text outside the day recap and the per-game recaps.
+- START with the DAY-IN-THE-LEAGUE recap: a line containing ONLY the marker <!--day-->, then a bold one-line headline, then a SHORT article of 2–3 tight paragraphs recapping the day across the whole league — the marquee results, the best individual performances, upsets, notable streaks, and any standings or playoff/series implications. It's the front-page story of the day, high-level and punchy, NOT a game-by-game rundown. Draw only on the games below. Never omit or change the <!--day--> marker.
+- THEN write the per-game recaps. Begin every game recap with a line containing ONLY this marker: <!--game:ID--> (replace ID with that game's number, shown as "GAME <ID>" below). This is how each recap is filed to the correct game — never omit it, never change it.
+- After a game's marker, lead with a bold one-line headline, then 2–4 tight paragraphs.
 - Weave the notable numbers into the prose; do not paste a stat table. Bold standout players with **name**.
-- Put exactly one blank line between games.`;
+- Put exactly one blank line between the day recap and the first game, and between games.`;
 
 // Strip any HTML tags (ZenGM's clutch-play strings contain <a> links).
 const stripHtml = (s: string): string =>
@@ -280,24 +281,32 @@ ${games.length} game${games.length === 1 ? "" : "s"} to recap (${dayLabel}):
 ${blocks}`;
 };
 
-// Split a pasted AI response into { gid → recap markdown } by its game markers.
-// Everything between one marker and the next belongs to that game.
-export const parseRecaps = (rawText: string): Map<number, string> => {
+// Split a pasted AI response into the day recap plus { gid → recap markdown } by
+// its markers. Everything between one marker and the next belongs to it. Handles
+// both <!--day--> (the whole-day recap) and <!--game:ID--> markers, in any order.
+export const parseRecaps = (
+	rawText: string,
+): { dayRecap: string | undefined; games: Map<number, string> } => {
 	const text = stripOuterCodeFence(rawText);
-	const result = new Map<number, string>();
-	const re = /<!--\s*game:\s*(\d+)\s*-->/g;
+	const games = new Map<number, string>();
+	let dayRecap: string | undefined;
+	const re = /<!--\s*(?:game:\s*(\d+)|day)\s*-->/g;
 	const markers = [...text.matchAll(re)];
 
 	for (let i = 0; i < markers.length; i++) {
 		const marker = markers[i]!;
-		const gid = Number(marker[1]);
 		const start = marker.index + marker[0].length;
 		const end = i + 1 < markers.length ? markers[i + 1]!.index : text.length;
-		const recap = text.slice(start, end).trim();
-		if (recap) {
-			result.set(gid, recap);
+		const body = text.slice(start, end).trim();
+		if (!body) {
+			continue;
+		}
+		if (marker[1] !== undefined) {
+			games.set(Number(marker[1]), body);
+		} else {
+			dayRecap = body;
 		}
 	}
 
-	return result;
+	return { dayRecap, games };
 };

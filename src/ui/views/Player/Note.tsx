@@ -24,6 +24,13 @@ export type NoteInfo =
 			type: "teamSeason";
 			tid: number;
 			season: number;
+	  }
+	| {
+			// A whole-league-day recap. Stored on the day's anchor game (see
+			// Game.dayNote); addressed by (season, day).
+			type: "day";
+			season: number;
+			day: number;
 	  };
 
 const Note = (

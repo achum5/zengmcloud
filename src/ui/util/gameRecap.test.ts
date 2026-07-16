@@ -413,7 +413,7 @@ Brooklyn survived a thriller.
 **Blowout in Boston**
 
 Not close.`;
-		const map = parseRecaps(text);
+		const { games: map } = parseRecaps(text);
 		assert.strictEqual(map.size, 2);
 		assert.ok(
 			map.get(42)!.startsWith("**Bagels edge Massacre in OT**"),
@@ -426,13 +426,16 @@ Not close.`;
 	});
 
 	test("tolerates spacing variations in the marker", () => {
-		const map = parseRecaps("<!-- game: 7 -->\nRecap seven.");
+		const { games: map } = parseRecaps("<!-- game: 7 -->\nRecap seven.");
 		assert.strictEqual(map.get(7), "Recap seven.");
 	});
 
-	test("no markers → empty map (so the UI can warn)", () => {
-		const map = parseRecaps("The AI forgot the markers entirely.");
-		assert.strictEqual(map.size, 0);
+	test("no markers → empty result (so the UI can warn)", () => {
+		const { dayRecap, games } = parseRecaps(
+			"The AI forgot the markers entirely.",
+		);
+		assert.strictEqual(games.size, 0);
+		assert.strictEqual(dayRecap, undefined);
 	});
 
 	test("peels an outer ```markdown fence off a selected-all paste", () => {
@@ -444,12 +447,45 @@ Not close.`;
 			"Brooklyn survived a thriller.",
 			"```",
 		].join("\n");
-		const map = parseRecaps(text);
+		const { games: map } = parseRecaps(text);
 		assert.strictEqual(map.size, 1);
 		// The stray closing ``` must NOT end up in the stored recap.
 		assert.ok(!map.get(42)!.includes("`"), map.get(42));
 		assert.ok(map.get(42)!.startsWith("**Bagels edge Massacre in OT**"));
 		assert.ok(map.get(42)!.endsWith("Brooklyn survived a thriller."));
+	});
+
+	test("extracts the <!--day--> recap alongside the game recaps", () => {
+		const text = [
+			"```markdown",
+			"<!--day-->",
+			"**A wild night across the league**",
+			"",
+			"Upsets everywhere as the standings shuffled.",
+			"",
+			"<!--game:42-->",
+			"**Bagels edge Massacre in OT**",
+			"",
+			"Brooklyn survived a thriller.",
+			"```",
+		].join("\n");
+		const { dayRecap, games } = parseRecaps(text);
+		assert.ok(dayRecap !== undefined);
+		assert.ok(dayRecap!.startsWith("**A wild night across the league**"));
+		assert.ok(dayRecap!.includes("standings shuffled."));
+		// The day recap must NOT bleed into the game recap, or vice versa.
+		assert.ok(!dayRecap!.includes("Brooklyn"));
+		assert.strictEqual(games.size, 1);
+		assert.ok(games.get(42)!.startsWith("**Bagels edge Massacre in OT**"));
+		assert.ok(!games.get(42)!.includes("wild night"));
+	});
+
+	test("a day recap with no game recaps still parses", () => {
+		const { dayRecap, games } = parseRecaps(
+			"<!--day-->\n**Quiet day**\n\nNot much happened.",
+		);
+		assert.strictEqual(games.size, 0);
+		assert.ok(dayRecap!.includes("Not much happened."));
 	});
 });
 

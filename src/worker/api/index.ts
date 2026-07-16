@@ -543,9 +543,18 @@ const noteUpdateEvents: Record<NoteInfo["type"], UpdateEvents> = {
 	game: ["notes"],
 	player: ["notes", "playerMovement"],
 	teamSeason: ["notes", "team"],
+	// A day recap lives on a game record but shows on the Daily Schedule; "notes"
+	// is what that view refreshes on.
+	day: ["notes"],
 };
 
 const clearNotes = async (type: NoteInfo["type"]) => {
+	if (type === "day") {
+		// Day recaps live on game records (Game.dayNote), not their own store, and
+		// the Notes page never bulk-clears them, so there's nothing to sweep here.
+		// An individual day recap is cleared by re-filing an empty note via setNote.
+		return;
+	}
 	const storeName = `${type}s` as const;
 	const rows = await idb.getCopies[storeName](
 		{
@@ -4072,6 +4081,34 @@ const setLocal = async <T extends keyof Local>([key, value]: [T, Local[T]]) => {
 };
 
 const setNote = async (info: NoteInfo & { editedNote: string }) => {
+	// A whole-league-day recap has no per-day record, so it's stored on the day's
+	// ANCHOR game - the lowest-gid game of that (season, day) - which the Daily
+	// Schedule view reads back deterministically. Stored in its own dayNote field
+	// so it never collides with that game's own note.
+	if (info.type === "day") {
+		const seasonGames = await idb.getCopies.games(
+			{ season: info.season },
+			"noCopyCache",
+		);
+		const dayGames = seasonGames.filter(
+			(game) => (game.day ?? 0) === info.day,
+		);
+		if (dayGames.length === 0) {
+			throw new Error("No games on this league day to attach a recap to");
+		}
+		const anchor = dayGames.reduce((a, b) => (a.gid <= b.gid ? a : b));
+		if (info.editedNote === "") {
+			delete anchor.dayNote;
+			delete anchor.dayNoteBool;
+		} else {
+			anchor.dayNote = info.editedNote;
+			anchor.dayNoteBool = 1;
+		}
+		await idb.cache.games.put(anchor);
+		await toUI("realtimeUpdate", [noteUpdateEvents.day]);
+		return;
+	}
+
 	let cacheStore;
 	let object;
 	if (info.type === "draftPick") {

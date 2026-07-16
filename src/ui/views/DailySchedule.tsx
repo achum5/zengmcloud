@@ -11,6 +11,7 @@ import { ForceWin } from "../components/ForceWin.tsx";
 import { ScoreBox } from "../components/ScoreBox/index.tsx";
 import { GameRecap } from "../components/GameRecap.tsx";
 import { GameNote } from "../components/GameNote.tsx";
+import { DayRecap } from "../components/DayRecap.tsx";
 import { buildRecapLinksForGame } from "../util/linkifyRecap.ts";
 import {
 	getDailyScheduleScroll,
@@ -23,6 +24,7 @@ const DailySchedule = ({
 	cids,
 	completed,
 	day,
+	dayNote,
 	days,
 	elam,
 	elamASG,
@@ -115,14 +117,18 @@ const DailySchedule = ({
 		<>
 			<div className="d-flex flex-wrap align-items-center gap-3">
 				<MoreLinks type="schedule" page="daily_schedule" />
-				{completed.length > 0 ? (
-					<GameRecap
-						season={season}
-						day={day}
-						numCompleted={completed.length}
-					/>
-				) : null}
 			</div>
+
+			{dayNote ? (
+				<DayRecap
+					season={season}
+					day={day}
+					note={dayNote}
+					links={completed.flatMap((game) =>
+						buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
+					)}
+				/>
+			) : null}
 
 			{noGamesMessage ? (
 				noGamesMessage
@@ -261,6 +267,16 @@ const DailySchedule = ({
 								})}
 							</div>
 						</>
+					) : null}
+
+					{completed.length > 0 ? (
+						<div className="mt-3">
+							<GameRecap
+								season={season}
+								day={day}
+								numCompleted={completed.length}
+							/>
+						</div>
 					) : null}
 				</>
 			)}

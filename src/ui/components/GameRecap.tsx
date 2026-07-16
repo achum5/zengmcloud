@@ -108,18 +108,27 @@ export const GameRecap = ({
 		setBusy(true);
 		setResult(undefined);
 		try {
-			const recaps = parseRecaps(text);
-			if (recaps.size === 0) {
+			const { dayRecap, games } = parseRecaps(text);
+			if (games.size === 0 && dayRecap === undefined) {
 				setResult(
-					"Couldn't find any recaps in what was pasted — paste the AI's full reply (each recap keeps its <!--game:…--> marker).",
+					"Couldn't find any recaps in what was pasted — paste the AI's full reply (the day recap keeps its <!--day--> marker and each game keeps its <!--game:…--> marker).",
 				);
 				return;
 			}
-			for (const [gid, note] of recaps) {
+			for (const [gid, note] of games) {
 				await toWorker("main", "setNote", {
 					type: "game",
 					gid,
 					editedNote: note,
+				});
+			}
+			// The whole-day recap is filed against the day being viewed.
+			if (dayRecap !== undefined) {
+				await toWorker("main", "setNote", {
+					type: "day",
+					season,
+					day,
+					editedNote: dayRecap,
 				});
 			}
 			setManual(undefined);

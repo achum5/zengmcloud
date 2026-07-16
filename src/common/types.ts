@@ -396,6 +396,12 @@ export type Game = {
 	neutralSite?: boolean;
 	note?: string;
 	noteBool?: 1; // Keep in sync with note - for indexing
+	// A "Day in the League" AI recap for the whole league day. Stored on the
+	// day's ANCHOR game (the lowest-gid completed game of that season+day) so it
+	// has a home in the existing games store - there's no per-day record - and
+	// syncs/exports exactly like a game note. Read/written via setNote type:"day".
+	dayNote?: string;
+	dayNoteBool?: 1; // Keep in sync with dayNote
 	numGamesToWinSeries?: number;
 	numPeriods?: number; // Optional only for legacy, otherwise it's the number of periods in the game, defined at the start
 	numPlayersOnCourt?: number;
