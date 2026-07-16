@@ -109,8 +109,27 @@ const useStickyXX = (
 
 	useEffect(() => {
 		window.addEventListener("optimizedResize", updateStickyCols);
+
+		// Recompute when the table reflows from async content that does NOT trigger
+		// a React re-render or a window resize - most importantly player faces and
+		// team logos, which load after first paint and change column widths. Without
+		// this, the JS-computed `left` offset of the 2nd+ sticky columns stays stale,
+		// so a sticky column ends up overlapping the one before it (clipping its
+		// text) or floating away from it. This mirrors the ResizeObserver the sticky
+		// header already uses. Setting `left` on the sticky cells doesn't change the
+		// table's box size, so this can't loop.
+		const table = tableRef.current;
+		let resizeObserver: ResizeObserver | undefined;
+		if (table && typeof ResizeObserver !== "undefined") {
+			resizeObserver = new ResizeObserver(() => {
+				updateStickyCols();
+			});
+			resizeObserver.observe(table);
+		}
+
 		return () => {
 			window.removeEventListener("optimizedResize", updateStickyCols);
+			resizeObserver?.disconnect();
 		};
 	}, [updateStickyCols]);
 
