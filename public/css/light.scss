@@ -1242,47 +1242,60 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 		transform 0.15s ease;
 }
 
-// Flow variant: the full-width "Day in the League" recap at the top of the Daily
-// Schedule opens IN FLOW (pushing the schedule down) rather than as an overlay -
-// there's nothing above it to briefly hide, and a multi-paragraph article reads
-// better expanding the page than covering the first game cards. Animate height.
+// The "Day in the League" recap is NOT a boxed card like the per-game notes - it
+// reads as a genuine headline ON the page: a big bold title sitting directly on
+// the background under a thin section rule, with the article flowing beneath it
+// when expanded (pushing the schedule down, not overlaying it). So strip ALL the
+// card chrome the shared note component carries - borders, rounding, background,
+// shadow - on both the header and the body.
+.game-note-flow .game-note-header,
 .game-note-flow .game-note-body {
-	position: static;
+	border: 0;
+	border-radius: 0;
+	background: none;
 	box-shadow: none;
 	transform: none;
-	max-height: 0;
-	overflow: hidden;
-	padding-top: 0;
-	padding-bottom: 0;
-	transition:
-		max-height 0.15s ease,
-		opacity 0.15s ease,
-		visibility 0s 0.15s;
-}
-.game-note-flow .game-note-body.open {
-	max-height: 60rem;
-	padding-top: 0.15rem;
-	padding-bottom: 0.3rem;
 }
 
-// The Day-in-the-League headline reads like a real front-page banner: much
-// bigger and bolder than the small per-game note headlines, with a clear, obvious
-// tap-to-expand chevron so it's plainly a "click in and read" story.
+// The headline: large, bold, left-aligned to the page, with a rule beneath it
+// (the classic newspaper section divider) and a clear tap-to-expand chevron.
 .game-note-flow .game-note-header {
-	padding: 0.45rem 0.7rem;
+	padding: 0 0 0.5rem;
+	border-bottom: 2px solid var(--bs-border-color);
+}
+// Keep the rule even when open (it divides the headline from its article), unlike
+// a game note whose header connects flush to its dropdown.
+.game-note-flow.open .game-note-header {
+	border-bottom: 2px solid var(--bs-border-color);
+	border-radius: 0;
 }
 .game-note-flow .game-note-header .markdown,
 .game-note-flow .game-note-header .markdown p {
 	margin-bottom: 0;
-	font-size: clamp(1.3rem, 4.5vw, 1.6rem);
-	font-weight: 700;
-	line-height: 1.2;
+	font-size: clamp(1.45rem, 5.2vw, 2rem);
+	font-weight: 800;
+	line-height: 1.15;
+	letter-spacing: -0.01em;
 }
 .game-note-flow .game-note-header .btn {
 	font-size: 1.6rem;
 	line-height: 1;
 	color: var(--bs-body-color);
-	opacity: 0.85;
+	opacity: 0.7;
+}
+
+// The article flows on the page (no box), animating its height open/closed.
+.game-note-flow .game-note-body {
+	position: static;
+	max-height: 0;
+	overflow: hidden;
+	padding: 0;
+	font-size: 0.95rem;
+	transition: max-height 0.15s ease;
+}
+.game-note-flow .game-note-body.open {
+	max-height: 60rem;
+	padding: 0.6rem 0 0;
 }
 
 // Round the Daily Schedule score card so it looks like a rounded card: all four
