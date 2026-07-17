@@ -78,6 +78,8 @@ export type Key =
 	| "numDraftRounds"
 	| "tradeDeadline"
 	| "difficulty"
+	| "difficultyTrade"
+	| "difficultySigning"
 	| "stopOnInjuryGames"
 	| "stopOnInjury"
 	| "aiJerseyRetirement"

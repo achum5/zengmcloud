@@ -655,6 +655,8 @@ export type GameAttributesLeague = {
 	defaultStadiumCapacity: number;
 	dh: "all" | "none" | number[];
 	difficulty: number;
+	difficultyTrade: number | null;
+	difficultySigning: number | null;
 	divs: NonEmptyArray<Div>;
 	draftAges: [number, number];
 	draftPickAutoContract: boolean;

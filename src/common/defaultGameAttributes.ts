@@ -333,6 +333,8 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	numTeams: 0,
 	numActiveTeams: 0,
 	difficulty: 0, // See constants.DIFFICULTY for values
+	difficultyTrade: null, // trade-AI difficulty override; null = use `difficulty`
+	difficultySigning: null, // free-agent-signing difficulty override; null = use `difficulty`
 	lowestDifficulty: 0,
 	fantasyPoints: undefined,
 

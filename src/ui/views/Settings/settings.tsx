@@ -2588,6 +2588,35 @@ export const settings: Setting[] = (
 			],
 		},
 		{
+			category: "General",
+			key: "difficultyTrade",
+			name: "Trade Difficulty",
+			type: "floatOrNull",
+			descriptionLong: (
+				<>
+					Overrides difficulty for <b>trades only</b> — how the AI values your
+					players and draft picks. Leave blank to use the main Difficulty
+					above. Higher is harder: Easy <code>-0.25</code>, Normal{" "}
+					<code>0</code>, Hard <code>0.25</code>, Insane <code>1</code>.
+				</>
+			),
+		},
+		{
+			category: "General",
+			key: "difficultySigning",
+			name: "Signing Difficulty",
+			type: "floatOrNull",
+			descriptionLong: (
+				<>
+					Overrides difficulty for <b>free-agent signings only</b> — how willing
+					players are to sign with you and how much they demand. Leave blank to
+					use the main Difficulty above. Higher is harder: Easy{" "}
+					<code>-0.25</code>, Normal <code>0</code>, Hard <code>0.25</code>,
+					Insane <code>1</code>.
+				</>
+			),
+		},
+		{
 			category: "Injuries",
 			key: "stopOnInjuryGames",
 			name: "Stop On Injury",

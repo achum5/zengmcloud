@@ -8,6 +8,7 @@ import { getNegotiationPids } from "../../views/negotiationList.ts";
 import { getNumPlayersTradedAwayNormalized } from "./getNumPlayersTradedAwayNormalized.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
+import { signingDifficulty } from "../../util/difficulty.ts";
 
 const getMinFractionDiff = async (pid: number, tid: number) => {
 	if (!isSport("basketball")) {
@@ -328,10 +329,10 @@ const moodComponents = async (
 		}
 	}
 
-	// Apply difficulty modulation
+	// Apply difficulty modulation (signing-specific override, else overall difficulty)
 	const difficulty = g.get("spectator")
 		? defaultGameAttributes.difficulty
-		: g.get("difficulty");
+		: signingDifficulty();
 	if (g.get("userTids").includes(tid) && !g.get("spectator")) {
 		if (difficulty !== 0) {
 			for (const key of helpers.keys(components)) {

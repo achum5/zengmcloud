@@ -11,6 +11,7 @@ import type {
 import { getNumPicksPerRound } from "../trade/getPickValues.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { groupByUnique, last } from "../../../common/utils.ts";
+import { tradeDifficulty } from "../../util/difficulty.ts";
 
 type Asset =
 	| {
@@ -104,7 +105,7 @@ const getPlayers = async ({
 	const season = g.get("season");
 	const phase = g.get("phase");
 	const difficultyFudgeFactor = helpers.bound(
-		1 + 0.1 * g.get("difficulty"),
+		1 + 0.1 * tradeDifficulty(),
 		0,
 		Infinity,
 	); // 2.5% bonus for easy, 2.5% penalty for hard, 10% penalty for insane
@@ -224,7 +225,7 @@ const getPickNumber = async (
 		if (tradeWithUser && seasons > 0) {
 			if (usersPick) {
 				// Penalty for user draft picks
-				const difficultyFactor = 1 + 1.5 * g.get("difficulty");
+				const difficultyFactor = 1 + 1.5 * tradeDifficulty();
 				estPick = helpers.bound(
 					Math.round((estPick + numPicksPerRound / 3.5) * difficultyFactor),
 					1,

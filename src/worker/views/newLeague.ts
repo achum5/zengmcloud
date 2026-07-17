@@ -213,6 +213,14 @@ export const getDefaultSettings = () => {
 		),
 		tradeDeadline: unwrapGameAttribute(defaultGameAttributes, "tradeDeadline"),
 		difficulty: unwrapGameAttribute(defaultGameAttributes, "difficulty"),
+		difficultyTrade: unwrapGameAttribute(
+			defaultGameAttributes,
+			"difficultyTrade",
+		),
+		difficultySigning: unwrapGameAttribute(
+			defaultGameAttributes,
+			"difficultySigning",
+		),
 		stopOnInjury: unwrapGameAttribute(defaultGameAttributes, "stopOnInjury"),
 		stopOnInjuryGames: unwrapGameAttribute(
 			defaultGameAttributes,
