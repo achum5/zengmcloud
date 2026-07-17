@@ -24,7 +24,8 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { faceToSvgString, generate } from "facesjs";
+import { faceToSvgString } from "facesjs";
+import { specToFace } from "./specToFace.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const outDir = join(here, "out");
@@ -37,38 +38,9 @@ if (!specPath) {
 const spec = JSON.parse(readFileSync(resolve(specPath), "utf8"));
 const name = spec.name ?? "face";
 
-// Normalize a slot value: accept either "head7" (id only) or {id, angle, ...}.
-const asObj = (v) => (typeof v === "string" ? { id: v } : v);
-
-// Build the override object from the perception spec.
-const overrides = {};
-for (const [slot, v] of Object.entries(spec.slots ?? {})) {
-	overrides[slot] = asObj(v);
-}
-if (spec.colors?.skin) {
-	overrides.body = { ...(overrides.body ?? {}), color: spec.colors.skin };
-}
-if (spec.colors?.hair) {
-	overrides.hair = { ...(overrides.hair ?? {}), color: spec.colors.hair };
-}
-if (spec.colors?.shave !== undefined) {
-	overrides.head = { ...(overrides.head ?? {}), shave: spec.colors.shave };
-}
-if (spec.shape?.fatness !== undefined) {
-	overrides.fatness = spec.shape.fatness;
-}
-if (spec.shape?.nose !== undefined) {
-	overrides.nose = { ...(overrides.nose ?? {}), size: spec.shape.nose };
-}
-if (spec.shape?.ear !== undefined) {
-	overrides.ear = { ...(overrides.ear ?? {}), size: spec.shape.ear };
-}
-
-// generate() fills every unset slot with a coherent default; our overrides then
-// stamp in the identity we perceived. One call, deterministic given the spec.
-const face = generate(overrides, {
-	gender: spec.gender ?? "male",
-	race: spec.race ?? "white",
+// specToFace validates every id and fills unset slots coherently.
+const face = specToFace(spec, {
+	onWarn: (m) => console.warn(`  ! ${m}`),
 });
 
 const svg = faceToSvgString(face);

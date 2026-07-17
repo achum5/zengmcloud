@@ -1,2 +1,4 @@
-# Generated renders (regenerable via the scripts) — don't track.
+# Generated renders + kit (regenerable via the scripts) — don't track.
 out/
+prompt-kit/
+player-images/

@@ -1,0 +1,26 @@
+{
+	"name": "paul-pierce",
+	"gender": "male",
+	"race": "black",
+	"colors": {
+		"skin": "#6f4a2c",
+		"hair": "#141414",
+		"shave": "rgba(0,0,0,0.18)"
+	},
+	"shape": {
+		"fatness": 0.3,
+		"nose": 1.0,
+		"ear": 0.9
+	},
+	"slots": {
+		"head": "head7",
+		"hair": "short",
+		"facialHair": "goatee1",
+		"glasses": "none",
+		"accessories": "headband",
+		"eye": "eye8",
+		"eyebrow": "eyebrow3",
+		"nose": "nose5",
+		"mouth": "mouth"
+	}
+}
