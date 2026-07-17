@@ -23,16 +23,25 @@ const TeamRating = ({
 	ovr: number;
 	ovrCurrent: number;
 }) => {
+	const { hideRatingsOnesDigit } = useLocal(["hideRatingsOnesDigit"]);
 	const [showCurrent, setShowCurrent] = useState(true);
 
-	if (ovr === ovrCurrent) {
-		return `${ovr}/100`;
+	// Coarse ratings: floor the team rating to the tens digit and show it out of
+	// 10 to match how player ratings are displayed.
+	const coarse = (value: number) =>
+		hideRatingsOnesDigit ? Math.floor(value / 10) : value;
+	const denom = hideRatingsOnesDigit ? "10" : "100";
+	const ovrC = coarse(ovr);
+	const ovrCurrentC = coarse(ovrCurrent);
+
+	if (ovrC === ovrCurrentC) {
+		return `${ovrC}/${denom}`;
 	}
 
 	const title = showCurrent
 		? "Current rating, including injuries"
 		: "Rating when healthy";
-	const rating = showCurrent ? ovrCurrent : ovr;
+	const rating = showCurrent ? ovrCurrentC : ovrC;
 	const className = showCurrent ? "text-danger" : undefined;
 
 	return (
@@ -42,7 +51,7 @@ const TeamRating = ({
 				title={title}
 				onClick={() => setShowCurrent(!showCurrent)}
 			>
-				<span className={className}>{rating}</span>/100
+				<span className={className}>{rating}</span>/{denom}
 			</a>
 		</>
 	);

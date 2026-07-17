@@ -54,9 +54,19 @@ const PowerRankings = ({
 
 	const {
 		challengeNoRatings,
+		hideRatingsOnesDigit,
 		season: currentSeason,
 		userTid,
-	} = useLocal(["challengeNoRatings", "season", "userTid"]);
+	} = useLocal([
+		"challengeNoRatings",
+		"hideRatingsOnesDigit",
+		"season",
+		"userTid",
+	]);
+
+	// Coarse ratings: floor team ratings to the tens digit for display.
+	const coarseOvr = (value: number) =>
+		hideRatingsOnesDigit ? Math.floor(value / 10) : value;
 
 	const [showHealthy, setShowHealthy] = useState(true);
 	const actualShowHealthy = showHealthy || currentSeason !== season;
@@ -160,12 +170,14 @@ const PowerRankings = ({
 				div ? div.name : null,
 				!challengeNoRatings ? (
 					t.powerRankings.ovr !== t.powerRankings.ovrCurrent ? (
-						<span className="text-danger">{t.powerRankings.ovrCurrent}</span>
+						<span className="text-danger">
+							{coarseOvr(t.powerRankings.ovrCurrent)}
+						</span>
 					) : (
-						t.powerRankings.ovrCurrent
+						coarseOvr(t.powerRankings.ovrCurrent)
 					)
 				) : null,
-				!challengeNoRatings ? t.powerRankings.ovr : null,
+				!challengeNoRatings ? coarseOvr(t.powerRankings.ovr) : null,
 				t.seasonAttrs.won,
 				t.seasonAttrs.lost,
 				...(otl ? [t.seasonAttrs.otl] : []),
@@ -186,8 +198,8 @@ const PowerRankings = ({
 					value: (
 						<Other
 							actualShowHealthy={actualShowHealthy}
-							current={t.powerRankings.otherCurrent[key]!}
-							healthy={t.powerRankings.other[key]!}
+							current={coarseOvr(t.powerRankings.otherCurrent[key]!)}
+							healthy={coarseOvr(t.powerRankings.other[key]!)}
 						/>
 					),
 					searchValue: actualShowHealthy
