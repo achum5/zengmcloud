@@ -592,7 +592,7 @@ test("hideRatingsOnesDigit floors ratings to the tens digit (display only)", asy
 	const opts = {
 		ratings: ["season", "ovr", "pot", "stre"],
 		season: 2012,
-	} as const;
+	};
 
 	g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
 	const full = await idb.getCopy.playersPlus(p, opts);

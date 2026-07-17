@@ -4,7 +4,7 @@ import { draft } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers, local } from "../util/index.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
-import { minBy } from "../../common/utils.ts";
+import { last, minBy } from "../../common/utils.ts";
 import { getDraftTeamsByTid } from "./draftHistory.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 
@@ -67,10 +67,57 @@ const updateDraft = async (inputs: unknown, updateEvents: UpdateEvents) => {
 
 		let drafted: any[];
 
-		if (
-			fantasyDraft ||
-			(g.get("phase") === PHASE.EXPANSION_DRAFT &&
-				expansionDraft.phase === "draft")
+		if (fantasyDraft) {
+			// Fantasy draft results must be rebuilt from SYNCED player data, not the
+			// per-device local.fantasyDraftResults — a device that isn't the one
+			// simming never receives that local state, so completed picks would be
+			// invisible in multiplayer. A fantasy pick leaves the player's tid set
+			// plus a draft transaction whose pickNum encodes round/pick
+			// (pickNum = pick + (round - 1) * numActiveTeams), so invert it.
+			const season = g.get("season");
+			const numActiveTeams = g.get("numActiveTeams");
+			const rostered = await idb.cache.players.indexGetAll("playersByTid", [
+				0,
+				Infinity,
+			]);
+			drafted = [];
+			for (const p of rostered) {
+				const txn = p.transactions?.findLast(
+					(t) =>
+						t.type === "draft" &&
+						t.phase === PHASE.FANTASY_DRAFT &&
+						t.season === season,
+				);
+				if (!txn || txn.type !== "draft") {
+					continue;
+				}
+				const round = Math.floor((txn.pickNum - 1) / numActiveTeams) + 1;
+				const pick = ((txn.pickNum - 1) % numActiveTeams) + 1;
+				const { ovr, pot, skills } = last(p.ratings);
+				drafted.push({
+					...p,
+					draft: {
+						round,
+						pick,
+						tid: p.tid,
+						year: season,
+						originalTid: p.tid,
+						ovr,
+						pot,
+						skills,
+						dpid: txn.pickNum,
+					},
+				});
+			}
+			drafted.sort(
+				(a, b) =>
+					100 * a.draft.round +
+					a.draft.pick -
+					(100 * b.draft.round + b.draft.pick),
+			);
+		} else if (
+			g.get("phase") === PHASE.EXPANSION_DRAFT &&
+			expansionDraft.phase === "draft"
 		) {
 			drafted = local.fantasyDraftResults;
 		} else {
