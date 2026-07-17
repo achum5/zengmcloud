@@ -54,8 +54,10 @@ const accept = async ({
 		}
 
 		// Secondary hard cap: an absolute ceiling for bound teams that overrides
-		// even the soft-cap Bird exception. Only a minimum-salary signing needed
-		// to reach the minimum roster size may cross it.
+		// even the soft-cap Bird exception. Above it, only minimum-salary signings
+		// are allowed, and only until the roster is full — enough to field a bench,
+		// but the trade rule still stops those minimum guys being used to take on
+		// salary over the cap, so they can't be stockpiled as trade fodder.
 		if (Number.isFinite(hardCap) && payroll + amount - 1 > hardCap) {
 			const isMinContract = amount - 1 <= g.get("minContract");
 			let allowed = false;
@@ -64,13 +66,13 @@ const accept = async ({
 					"playersByTid",
 					g.get("userTid"),
 				);
-				allowed = roster.length < g.get("minRosterSize");
+				allowed = roster.length < g.get("maxRosterSize");
 			}
 			if (!allowed) {
 				return `This team is at its hard cap (${helpers.formatCurrency(
 					hardCap / 1000,
 					"M",
-				)}). You can only add minimum-salary players needed to reach the minimum roster size.`;
+				)}). You can only add minimum-salary players, and only until your roster is full.`;
 			}
 		}
 	}

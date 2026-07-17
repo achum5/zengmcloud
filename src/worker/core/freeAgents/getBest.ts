@@ -26,7 +26,6 @@ const getBest = <T extends PlayerWithoutKey>(
 	hardCap: number = Infinity,
 ): T | void => {
 	const maxRosterSize = g.get("maxRosterSize");
-	const minRosterSize = g.get("minRosterSize");
 	const minContract = g.get("minContract");
 	const salaryCap = g.get("salaryCap");
 	const salaryCapType = g.get("salaryCapType");
@@ -118,13 +117,14 @@ const getBest = <T extends PlayerWithoutKey>(
 			p.contract.amount + payroll <= salaryCap;
 
 		// Secondary hard cap: a bound team may only cross it with a minimum
-		// contract needed to reach the minimum roster size (no stockpiling).
+		// contract, and only until its roster is full (the trade rule prevents
+		// those minimum guys being stockpiled to take on salary over the cap).
 		const wouldExceedHardCap =
 			payroll !== undefined && p.contract.amount + payroll > hardCap;
 		const hardCapOk =
 			!wouldExceedHardCap ||
 			(p.contract.amount <= minContract &&
-				playersOnRoster.length < minRosterSize);
+				playersOnRoster.length < maxRosterSize);
 
 		// Don't sign minimum contract players to fill out the roster
 		const shouldAddPlayerNormal =
