@@ -584,6 +584,7 @@ const PayrollInfo = ({
 	const {
 		hardCapAmount,
 		hardCapTids,
+		hardCapUseLuxuryTax,
 		luxuryPayroll,
 		luxuryTax,
 		minContract,
@@ -593,6 +594,7 @@ const PayrollInfo = ({
 	} = useLocal([
 		"hardCapAmount",
 		"hardCapTids",
+		"hardCapUseLuxuryTax",
 		"luxuryPayroll",
 		"luxuryTax",
 		"minContract",
@@ -626,7 +628,12 @@ const PayrollInfo = ({
 		);
 	}
 
-	const hardCap = hardCapForTid(tid, hardCapAmount, hardCapTids);
+	const hardCap = hardCapForTid(tid, {
+		hardCapAmount,
+		hardCapTids,
+		hardCapUseLuxuryTax,
+		luxuryPayroll,
+	});
 	if (Number.isFinite(hardCap)) {
 		parts.push(
 			<>

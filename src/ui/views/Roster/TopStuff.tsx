@@ -180,6 +180,7 @@ const TopStuff = ({
 		godMode,
 		hardCapAmount,
 		hardCapTids,
+		hardCapUseLuxuryTax,
 		luxuryPayroll,
 		minPayroll,
 		salaryCap,
@@ -192,6 +193,7 @@ const TopStuff = ({
 		"godMode",
 		"hardCapAmount",
 		"hardCapTids",
+		"hardCapUseLuxuryTax",
 		"luxuryPayroll",
 		"minPayroll",
 		"salaryCap",
@@ -200,7 +202,12 @@ const TopStuff = ({
 		"userTid",
 	]);
 
-	const hardCap = hardCapForTid(tid, hardCapAmount, hardCapTids);
+	const hardCap = hardCapForTid(tid, {
+		hardCapAmount,
+		hardCapTids,
+		hardCapUseLuxuryTax,
+		luxuryPayroll,
+	});
 
 	const logoStyle: CSSProperties = {
 		margin: "0.25rem 1rem 0 0",

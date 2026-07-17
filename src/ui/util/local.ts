@@ -105,6 +105,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		salaryCapType: defaultGameAttributes.salaryCapType,
 		hardCapAmount: defaultGameAttributes.hardCapAmount,
 		hardCapTids: defaultGameAttributes.hardCapTids,
+		hardCapUseLuxuryTax: defaultGameAttributes.hardCapUseLuxuryTax,
 		season: 0,
 		showLeagueTopBar: initialShowLeagueTopBar,
 		showNagModal: false,

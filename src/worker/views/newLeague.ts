@@ -28,6 +28,10 @@ export const getDefaultSettings = () => {
 		salaryCap: unwrapGameAttribute(defaultGameAttributes, "salaryCap"),
 		hardCapAmount: unwrapGameAttribute(defaultGameAttributes, "hardCapAmount"),
 		hardCapTids: unwrapGameAttribute(defaultGameAttributes, "hardCapTids"),
+		hardCapUseLuxuryTax: unwrapGameAttribute(
+			defaultGameAttributes,
+			"hardCapUseLuxuryTax",
+		),
 		minPayroll: unwrapGameAttribute(defaultGameAttributes, "minPayroll"),
 		luxuryPayroll: unwrapGameAttribute(defaultGameAttributes, "luxuryPayroll"),
 		luxuryTax: unwrapGameAttribute(defaultGameAttributes, "luxuryTax"),

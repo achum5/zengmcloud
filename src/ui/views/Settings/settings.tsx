@@ -788,6 +788,21 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Finances",
+			key: "hardCapUseLuxuryTax",
+			name: "Hard Cap = Luxury Tax Line",
+			godModeRequired: "always",
+			type: "bool",
+			descriptionLong: (
+				<>
+					When on, the hard cap automatically equals the luxury tax line each
+					season instead of the fixed <b>Hard Cap</b> amount, so it scales as
+					the salary cap grows — set it once and forget it. Still only applies
+					to the teams in <b>Hard Cap Teams</b>.
+				</>
+			),
+		},
+		{
+			category: "Finances",
 			key: "minPayroll",
 			name: "Minimum Payroll",
 			godModeRequired: "always",

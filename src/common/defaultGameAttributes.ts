@@ -165,6 +165,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	salaryCap: 150000, // [thousands of dollars]
 	hardCapAmount: 0, // [thousands of dollars] a second, higher ceiling above salaryCap; 0 = off
 	hardCapTids: [], // teams the hard cap binds; empty = all teams (when hardCapAmount > 0)
+	hardCapUseLuxuryTax: false, // when true, the hard cap tracks luxuryPayroll each season instead of hardCapAmount
 	minPayroll: 95000, // [thousands of dollars]
 	luxuryPayroll: 168000, // [thousands of dollars]
 	luxuryTax: 1.5,

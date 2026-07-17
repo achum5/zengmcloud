@@ -23,6 +23,7 @@ type Key =
 	| "salaryCap"
 	| "hardCapAmount"
 	| "hardCapTids"
+	| "hardCapUseLuxuryTax"
 	| "minPayroll"
 	| "luxuryPayroll"
 	| "luxuryTax"
@@ -244,6 +245,7 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			salaryCap: g.get("salaryCap"),
 			hardCapAmount: g.get("hardCapAmount"),
 			hardCapTids: g.get("hardCapTids"),
+			hardCapUseLuxuryTax: g.get("hardCapUseLuxuryTax"),
 			minPayroll: g.get("minPayroll"),
 			luxuryPayroll: g.get("luxuryPayroll"),
 			luxuryTax: g.get("luxuryTax"),

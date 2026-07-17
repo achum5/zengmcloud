@@ -100,13 +100,21 @@ const NegotiationHeader = ({
 	| "salaryCapType"
 	| "t"
 >) => {
-	const { gender, userTid, hardCapAmount, hardCapTids } = useLocal([
-		"gender",
-		"userTid",
-		"hardCapAmount",
-		"hardCapTids",
-	]);
-	const hardCap = hardCapForTid(userTid, hardCapAmount, hardCapTids);
+	const { gender, userTid, hardCapAmount, hardCapTids, hardCapUseLuxuryTax, luxuryPayroll } =
+		useLocal([
+			"gender",
+			"userTid",
+			"hardCapAmount",
+			"hardCapTids",
+			"hardCapUseLuxuryTax",
+			"luxuryPayroll",
+		]);
+	const hardCap = hardCapForTid(userTid, {
+		hardCapAmount,
+		hardCapTids,
+		hardCapUseLuxuryTax,
+		luxuryPayroll,
+	});
 
 	let message;
 	if (salaryCapType === "soft") {

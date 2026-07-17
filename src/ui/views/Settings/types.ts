@@ -14,6 +14,7 @@ export type Key =
 	| "salaryCap"
 	| "hardCapAmount"
 	| "hardCapTids"
+	| "hardCapUseLuxuryTax"
 	| "minPayroll"
 	| "luxuryPayroll"
 	| "luxuryTax"
