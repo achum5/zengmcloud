@@ -1,0 +1,26 @@
+{
+	"name": "mike-miller",
+	"gender": "male",
+	"race": "white",
+	"colors": {
+		"skin": "#e7b489",
+		"hair": "#4a3626",
+		"shave": "rgba(0,0,0,0)"
+	},
+	"shape": {
+		"fatness": 0.25,
+		"nose": 0.95,
+		"ear": 0.9
+	},
+	"slots": {
+		"head": "head9",
+		"hair": "short",
+		"facialHair": "none",
+		"glasses": "none",
+		"accessories": "none",
+		"eye": "eye8",
+		"eyebrow": "eyebrow3",
+		"nose": "nose5",
+		"mouth": "smile-closed"
+	}
+}
