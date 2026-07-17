@@ -496,9 +496,14 @@ const processRatings = (
 				const prevRow = p.ratings.findLast((row) => row.season < pr.season);
 
 				if (prevRow) {
-					row[attr] =
-						player.fuzzRating(pr[cat], pr.fuzz) -
-						player.fuzzRating(prevRow[cat], prevRow.fuzz);
+					const cur = player.fuzzRating(pr[cat], pr.fuzz);
+					const prev = player.fuzzRating(prevRow[cat], prevRow.fuzz);
+					// In coarse mode the displayed rating is floored to the tens
+					// digit, so the change must be the difference of those floored
+					// values (else a 56->58 bump shows "5 (+2)" instead of no change).
+					row[attr] = coarseRatings
+						? coarsenRating(cur) - coarsenRating(prev)
+						: cur - prev;
 				} else {
 					row[attr] = 0;
 				}

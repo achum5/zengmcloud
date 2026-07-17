@@ -52,6 +52,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		alwaysShowCountry: false,
 		budget: defaultGameAttributes.budget,
 		challengeNoRatings: false,
+		hideRatingsOnesDigit: false,
 		challengeNoTrades: false,
 		currencyFormat: defaultGameAttributes.currencyFormat,
 		customMenu: undefined,
@@ -171,6 +172,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 				set({
 					alwaysShowCountry: false,
 					challengeNoRatings: false,
+					hideRatingsOnesDigit: false,
 					games: [],
 					godMode: false,
 					hideDisabledTeams: false,
