@@ -242,4 +242,10 @@ const setupRoutes = async () => {
 
 	const { initServiceWorker } = await import("./util/initServiceWorker.tsx");
 	await initServiceWorker();
+
+	// Keep this device's FCM push token alive: re-assert it on load and on every
+	// foreground resume, not just when the Multiplayer Sync page is opened, so a
+	// rotated token can't silently drop the device off the notification list.
+	const { keepPushTokenFresh } = await import("./util/keepPushTokenFresh.ts");
+	keepPushTokenFresh();
 })();

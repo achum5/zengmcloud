@@ -3,6 +3,7 @@ import { getMessaging, getToken, isSupported } from "firebase/messaging";
 import { firebaseConfig, vapidKey } from "../../common/firebaseConfig.ts";
 import { safeLocalStorage } from "./safeLocalStorage.ts";
 import { toWorker } from "./toWorker.ts";
+import { PUSH_ENABLED_KEY, PUSH_NAME_KEY } from "./pushNotificationsShared.ts";
 
 // Phone push notifications, driven from the UI thread. Firebase Cloud Messaging
 // can only run in a window context (it needs a service worker and the
@@ -21,8 +22,8 @@ const FCM_SW_SCOPE = "/firebase-cloud-messaging-push-scope";
 
 // Remember that the user turned push on (and under what name) so we can silently
 // re-register after a refresh, which rotates nothing but re-asserts the token.
-const ENABLED_KEY = "pushNotificationsEnabled";
-const NAME_KEY = "pushNotificationsName";
+const ENABLED_KEY = PUSH_ENABLED_KEY;
+const NAME_KEY = PUSH_NAME_KEY;
 
 const getApp = (): FirebaseApp =>
 	getApps().length > 0 ? getApps()[0]! : initializeApp(firebaseConfig);
@@ -92,23 +93,28 @@ export const enablePushNotifications = async (name = ""): Promise<void> => {
 	safeLocalStorage.setItem(NAME_KEY, name);
 };
 
-// Silently re-assert the token after a refresh, if push was previously enabled
-// and permission is still granted. Safe to call on every page load; does nothing
-// unless everything is already in place.
-export const restorePushNotifications = async (): Promise<void> => {
+// Silently re-assert the token, if push was previously enabled and permission is
+// still granted. Safe to call on every page load / foreground; does nothing
+// unless everything is already in place. Returns true only when the token was
+// actually re-registered with the room, so callers can retry (registration
+// throws until the sync engine is connected to a shared league).
+export const restorePushNotifications = async (): Promise<boolean> => {
 	if (
 		!pushConfigured() ||
 		safeLocalStorage.getItem(ENABLED_KEY) !== "1" ||
 		getPushPermission() !== "granted"
 	) {
-		return;
+		return false;
 	}
 	if (!(await pushSupported())) {
-		return;
+		return false;
 	}
 	try {
 		await registerToken(getStoredPushName() || "A league-mate");
+		return true;
 	} catch {
-		// Best-effort; the user can re-enable manually from the sync page.
+		// Best-effort; not connected to a shared league yet, or a transient
+		// failure. The caller may retry, and the user can re-enable manually.
+		return false;
 	}
 };
