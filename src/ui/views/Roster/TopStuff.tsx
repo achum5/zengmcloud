@@ -12,6 +12,7 @@ import { buildTeamSeasonRecapLinks } from "../../util/linkifyRecap.ts";
 import { RosterComposition } from "../../components/RosterComposition.tsx";
 import { PlusMinus } from "../../components/PlusMinus.tsx";
 import { useLocal } from "../../util/local.ts";
+import { hardCapForTid } from "../../../common/getHardCap.ts";
 
 const fontSizeLarger = { fontSize: "larger" };
 
@@ -177,6 +178,8 @@ const TopStuff = ({
 		budget,
 		challengeNoRatings,
 		godMode,
+		hardCapAmount,
+		hardCapTids,
 		luxuryPayroll,
 		minPayroll,
 		salaryCap,
@@ -187,6 +190,8 @@ const TopStuff = ({
 		"budget",
 		"challengeNoRatings",
 		"godMode",
+		"hardCapAmount",
+		"hardCapTids",
 		"luxuryPayroll",
 		"minPayroll",
 		"salaryCap",
@@ -194,6 +199,8 @@ const TopStuff = ({
 		"teamInfoCache",
 		"userTid",
 	]);
+
+	const hardCap = hardCapForTid(tid, hardCapAmount, hardCapTids);
 
 	const logoStyle: CSSProperties = {
 		margin: "0.25rem 1rem 0 0",
@@ -322,6 +329,11 @@ const TopStuff = ({
 						{isCurrentSeason && salaryCapType !== "none" ? (
 							<div>
 								Salary cap: {helpers.formatCurrency(salaryCap / 1000, "M")}
+							</div>
+						) : null}
+						{isCurrentSeason && Number.isFinite(hardCap) ? (
+							<div>
+								Hard cap: {helpers.formatCurrency(hardCap / 1000, "M")}
 							</div>
 						) : null}
 						{isCurrentSeason && budget ? (

@@ -14,6 +14,7 @@ import { last, orderBy } from "../../../common/utils.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTradedAwayNormalized.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import { getHardCap, hardCapEnabled } from "../../util/getHardCap.ts";
 
 export const FREE_AGENCY_DAYS = 30;
 
@@ -107,7 +108,8 @@ const newPhaseResignPlayers = async (
 
 	const payrollsByTid = new Map<number, number>();
 
-	if (g.get("salaryCapType") === "hard") {
+	// Payrolls are also needed to enforce the secondary hard cap on re-signings.
+	if (g.get("salaryCapType") === "hard" || hardCapEnabled()) {
 		for (let tid = 0; tid < g.get("numTeams"); tid++) {
 			const payroll = await team.getPayroll(tid);
 			const expiringPayroll = players
@@ -238,6 +240,19 @@ const newPhaseResignPlayers = async (
 				if (draftPick) {
 					reSignPlayer = true;
 				}
+			}
+
+			// Secondary hard cap: a bound team can't re-sign a player over it.
+			// Newly-drafted rookies are exempt, so a capped team never has to
+			// orphan its own draft picks (their rookie-scale deals are cheap).
+			const hardCap = getHardCap(p.tid);
+			if (
+				!draftPick &&
+				Number.isFinite(hardCap) &&
+				payroll !== undefined &&
+				contract.amount + payroll > hardCap
+			) {
+				reSignPlayer = false;
 			}
 
 			if (reSignPlayer) {

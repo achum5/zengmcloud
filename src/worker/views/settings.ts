@@ -21,6 +21,8 @@ type Key =
 	| "maxRosterSize"
 	| "minRosterSize"
 	| "salaryCap"
+	| "hardCapAmount"
+	| "hardCapTids"
 	| "minPayroll"
 	| "luxuryPayroll"
 	| "luxuryTax"
@@ -240,6 +242,8 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			maxRosterSize: g.get("maxRosterSize"),
 			minRosterSize: g.get("minRosterSize"),
 			salaryCap: g.get("salaryCap"),
+			hardCapAmount: g.get("hardCapAmount"),
+			hardCapTids: g.get("hardCapTids"),
 			minPayroll: g.get("minPayroll"),
 			luxuryPayroll: g.get("luxuryPayroll"),
 			luxuryTax: g.get("luxuryTax"),

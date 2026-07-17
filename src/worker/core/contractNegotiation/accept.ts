@@ -9,6 +9,7 @@ import type {
 } from "../../../common/types.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { actualPhase } from "../../util/actualPhase.ts";
+import { getHardCap } from "../../util/getHardCap.ts";
 
 /**
  * Accept the player's offer.
@@ -31,21 +32,46 @@ const accept = async ({
 	dryRun?: boolean;
 }) => {
 	const salaryCapType = g.get("salaryCapType");
+	const hardCap = getHardCap(g.get("userTid"));
 
-	if (salaryCapType !== "none") {
+	if (salaryCapType !== "none" || Number.isFinite(hardCap)) {
 		const payroll = await team.getPayroll(g.get("userTid"));
-		const birdException = negotiation.resigning && salaryCapType === "soft";
 
-		// If this contract brings team over the salary cap, it's not a minimum contract, and it's not re-signing a current
-		// player with the Bird exception, ERROR!
-		if (
-			!birdException &&
-			payroll + amount - 1 > g.get("salaryCap") &&
-			amount - 1 > g.get("minContract")
-		) {
-			return `You cannot go over the salary cap to sign ${
-				salaryCapType === "hard" ? "players" : "free agents"
-			} to contracts higher than the minimum salary.`;
+		if (salaryCapType !== "none") {
+			const birdException = negotiation.resigning && salaryCapType === "soft";
+
+			// If this contract brings team over the salary cap, it's not a minimum contract, and it's not re-signing a current
+			// player with the Bird exception, ERROR!
+			if (
+				!birdException &&
+				payroll + amount - 1 > g.get("salaryCap") &&
+				amount - 1 > g.get("minContract")
+			) {
+				return `You cannot go over the salary cap to sign ${
+					salaryCapType === "hard" ? "players" : "free agents"
+				} to contracts higher than the minimum salary.`;
+			}
+		}
+
+		// Secondary hard cap: an absolute ceiling for bound teams that overrides
+		// even the soft-cap Bird exception. Only a minimum-salary signing needed
+		// to reach the minimum roster size may cross it.
+		if (Number.isFinite(hardCap) && payroll + amount - 1 > hardCap) {
+			const isMinContract = amount - 1 <= g.get("minContract");
+			let allowed = false;
+			if (isMinContract) {
+				const roster = await idb.cache.players.indexGetAll(
+					"playersByTid",
+					g.get("userTid"),
+				);
+				allowed = roster.length < g.get("minRosterSize");
+			}
+			if (!allowed) {
+				return `This team is at its hard cap (${helpers.formatCurrency(
+					hardCap / 1000,
+					"M",
+				)}). You can only add minimum-salary players needed to reach the minimum roster size.`;
+			}
 		}
 	}
 

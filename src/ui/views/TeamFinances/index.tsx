@@ -14,6 +14,7 @@ import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { getCols } from "../../../common/getCols.ts";
 import { useLocal } from "../../util/local.ts";
+import { hardCapForTid } from "../../../common/getHardCap.ts";
 import type { View } from "../../../common/types.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { wrappedPlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
@@ -575,11 +576,14 @@ const PayrollInfo = ({
 	luxuryTaxAmount,
 	minPayrollAmount,
 	payroll,
+	tid,
 }: Pick<
 	View<"teamFinances">,
-	"luxuryTaxAmount" | "minPayrollAmount" | "payroll"
+	"luxuryTaxAmount" | "minPayrollAmount" | "payroll" | "tid"
 >) => {
 	const {
+		hardCapAmount,
+		hardCapTids,
 		luxuryPayroll,
 		luxuryTax,
 		minContract,
@@ -587,6 +591,8 @@ const PayrollInfo = ({
 		salaryCap,
 		salaryCapType,
 	} = useLocal([
+		"hardCapAmount",
+		"hardCapTids",
 		"luxuryPayroll",
 		"luxuryTax",
 		"minContract",
@@ -616,6 +622,16 @@ const PayrollInfo = ({
 			<>
 				{payroll > salaryCap / 1000 ? "above" : "below"} the salary cap (
 				<b>{helpers.formatCurrency(salaryCap / 1000, "M")}</b>)
+			</>,
+		);
+	}
+
+	const hardCap = hardCapForTid(tid, hardCapAmount, hardCapTids);
+	if (Number.isFinite(hardCap)) {
+		parts.push(
+			<>
+				{payroll > hardCap / 1000 ? "above" : "below"} the hard cap (
+				<b>{helpers.formatCurrency(hardCap / 1000, "M")}</b>)
 			</>,
 		);
 	}
@@ -853,6 +869,7 @@ const TeamFinances = ({
 				luxuryTaxAmount={luxuryTaxAmount}
 				minPayrollAmount={minPayrollAmount}
 				payroll={payroll}
+				tid={tid}
 			/>
 
 			{budget ? null : (

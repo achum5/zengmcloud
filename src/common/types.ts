@@ -765,6 +765,8 @@ export type GameAttributesLeague = {
 	rookiesCanRefuse: boolean;
 	salaryCap: number;
 	salaryCapType: "hard" | "none" | "soft";
+	hardCapAmount: number;
+	hardCapTids: number[];
 	saveOldBoxScores: {
 		pastSeasons: number | "all";
 		pastSeasonsType?: "your" | "all";

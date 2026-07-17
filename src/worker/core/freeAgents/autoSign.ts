@@ -3,6 +3,7 @@ import { player, team } from "../index.ts";
 import getBest from "./getBest.ts";
 import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
+import { getHardCap } from "../../util/getHardCap.ts";
 import { orderBy } from "../../../common/utils.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import { shuffle } from "../../../common/random.ts";
@@ -73,7 +74,12 @@ const autoSign = async () => {
 
 		// Ignore roster size, will drop bad player if necessary in checkRosterSizes, and getBest won't sign min contract player unless under the roster limit
 		const payroll = await team.getPayroll(t.tid);
-		const p = getBest(playersOnRoster, playersSorted, payroll);
+		const p = getBest(
+			playersOnRoster,
+			playersSorted,
+			payroll,
+			getHardCap(t.tid),
+		);
 		if (p) {
 			// Remove from list of free agents
 			playersSorted = playersSorted.filter((p2) => p2 !== p);

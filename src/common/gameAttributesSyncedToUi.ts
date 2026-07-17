@@ -9,6 +9,8 @@ export const gameAttributesSyncedToUi = [
 	"gameOver",
 	"gender",
 	"godMode",
+	"hardCapAmount",
+	"hardCapTids",
 	"hideDisabledTeams",
 	"homeCourtAdvantage",
 	"lid",

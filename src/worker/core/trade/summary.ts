@@ -8,6 +8,7 @@ import type {
 } from "../../../common/types.ts";
 import { orderBy } from "../../../common/utils.ts";
 import isUntradable from "./isUntradable.ts";
+import { getHardCap } from "../../util/getHardCap.ts";
 
 const getTeamOvr = async (playersRaw: Player[]) => {
 	const players = await idb.getCopies.playersPlus(playersRaw, {
@@ -157,7 +158,27 @@ const summary = async (teams: TradeTeams): Promise<TradeSummary> => {
 		g.get("salaryCapType") === "hard" &&
 		(overCapAndIncreasing(0) || overCapAndIncreasing(1));
 
-	if (softCapCondition) {
+	// Secondary hard cap: an absolute ceiling for bound teams. A trade is not
+	// allowed to LEAVE a bound team over its hard cap, even if the trade reduces
+	// that team's payroll (so min-salary ballast can't be shuffled to skirt it).
+	let hardCapCeiling: { j: 0 | 1; over: number } | undefined;
+	for (const j of [0, 1] as const) {
+		const ceiling = getHardCap(tids[j]) / 1000;
+		if (Number.isFinite(ceiling) && s.teams[j].payrollAfterTrade > ceiling) {
+			hardCapCeiling = { j, over: s.teams[j].payrollAfterTrade - ceiling };
+			break;
+		}
+	}
+
+	if (hardCapCeiling) {
+		s.warning = `This trade is not allowed because it would leave the ${
+			s.teams[hardCapCeiling.j].name
+		} over their hard cap by ${helpers.formatCurrency(
+			hardCapCeiling.over,
+			"M",
+		)}.`;
+		s.warningAmount = hardCapCeiling.over;
+	} else if (softCapCondition) {
 		// Which team is at fault?;
 		const j = ratios[0] > softCapTradeSalaryMatch ? 0 : 1;
 		s.warning = `The ${s.teams[j].name} are over the salary cap, so the players it receives must have a combined salary of less than ${softCapTradeSalaryMatch}% of the salaries of the players it trades away.  Currently, that value is ${ratios[j]}%.`;

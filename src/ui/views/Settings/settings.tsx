@@ -733,6 +733,61 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Finances",
+			key: "hardCapAmount",
+			name: "Hard Cap",
+			godModeRequired: "always",
+			type: "float1000",
+			decoration: "currency",
+			descriptionLong: (
+				<>
+					A second, hard ceiling above the normal salary cap. For the teams it
+					applies to, no signing, re-signing, or trade may push a team's
+					payroll over this number. The only exception is minimum-salary
+					signings needed to reach the minimum roster size. Set to{" "}
+					<code>0</code> to turn it off. Choose which teams it binds with{" "}
+					<b>Hard Cap Teams</b> below.
+				</>
+			),
+			validator: (value, output) => {
+				if (value < 0) {
+					throw new Error("Must be 0 (off) or a positive number");
+				}
+				if (
+					value > 0 &&
+					typeof output.salaryCap === "number" &&
+					value < output.salaryCap
+				) {
+					throw new Error("Hard cap must be at least the salary cap");
+				}
+			},
+		},
+		{
+			category: "Finances",
+			key: "hardCapTids",
+			name: "Hard Cap Teams",
+			godModeRequired: "always",
+			type: "jsonString",
+			descriptionLong: (
+				<>
+					Which teams the hard cap applies to, as a list of team IDs — for
+					example <code>[0, 5, 12]</code>. Leave it empty (<code>[]</code>) to
+					apply the hard cap to every team. Has no effect unless <b>Hard Cap</b>{" "}
+					above is set.
+				</>
+			),
+			validator: (value) => {
+				if (!Array.isArray(value)) {
+					throw new Error("Must be an array of team IDs, like [0, 5]");
+				}
+				for (const num of value) {
+					if (!Number.isInteger(num) || num < 0) {
+						throw new Error("Must contain only team ID numbers");
+					}
+				}
+			},
+		},
+		{
+			category: "Finances",
 			key: "minPayroll",
 			name: "Minimum Payroll",
 			godModeRequired: "always",

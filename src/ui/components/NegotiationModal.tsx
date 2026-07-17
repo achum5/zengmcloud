@@ -12,6 +12,7 @@ import { PlayerPicture } from "../components/PlayerPicture.tsx";
 import { useRef, useState } from "react";
 import type api from "../../worker/api/index.ts";
 import { showSignUndo } from "./NegotiateButtons.tsx";
+import { hardCapForTid } from "../../common/getHardCap.ts";
 
 type NegotaitionModalProps = Exclude<
 	Awaited<ReturnType<typeof api.main.getNegotiationProps>>,
@@ -99,7 +100,13 @@ const NegotiationHeader = ({
 	| "salaryCapType"
 	| "t"
 >) => {
-	const { gender } = useLocal(["gender"]);
+	const { gender, userTid, hardCapAmount, hardCapTids } = useLocal([
+		"gender",
+		"userTid",
+		"hardCapAmount",
+		"hardCapTids",
+	]);
+	const hardCap = hardCapForTid(userTid, hardCapAmount, hardCapTids);
 
 	let message;
 	if (salaryCapType === "soft") {
@@ -172,6 +179,11 @@ const NegotiationHeader = ({
 					{salaryCapType !== "none" ? (
 						<>
 							<div>Salary Cap: {helpers.formatCurrency(salaryCap, "M")}</div>
+							{Number.isFinite(hardCap) ? (
+								<div>
+									Hard Cap: {helpers.formatCurrency(hardCap / 1000, "M")}
+								</div>
+							) : null}
 							<div>Payroll: {helpers.formatCurrency(payroll, "M")}</div>
 							<div>Cap Space: {helpers.formatCurrency(capSpace, "M")}</div>
 						</>

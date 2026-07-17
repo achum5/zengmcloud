@@ -12,6 +12,8 @@ export type Key =
 	| "numSeasonsFutureDraftPicks"
 	| "draftAges"
 	| "salaryCap"
+	| "hardCapAmount"
+	| "hardCapTids"
 	| "minPayroll"
 	| "luxuryPayroll"
 	| "luxuryTax"
