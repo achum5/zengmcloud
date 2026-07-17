@@ -587,3 +587,27 @@ test("careerStats works when player has no stats rows", async () => {
 		careerStats: { gp: 0, playoffs: undefined, bpm: 0 },
 	});
 });
+
+test("hideRatingsOnesDigit floors ratings to the tens digit (display only)", async () => {
+	const opts = {
+		ratings: ["season", "ovr", "pot", "stre"],
+		season: 2012,
+	} as const;
+
+	g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+	const full = await idb.getCopy.playersPlus(p, opts);
+
+	g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+	const coarse = await idb.getCopy.playersPlus(p, opts);
+	g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+
+	if (!full || !coarse) {
+		throw new Error("Missing player");
+	}
+
+	// ovr/pot/attributes are floored to the tens digit; season is untouched.
+	assert.strictEqual(coarse.ratings.ovr, Math.floor(full.ratings.ovr / 10));
+	assert.strictEqual(coarse.ratings.pot, Math.floor(full.ratings.pot / 10));
+	assert.strictEqual(coarse.ratings.stre, Math.floor(full.ratings.stre / 10));
+	assert.strictEqual(coarse.ratings.season, 2012);
+});

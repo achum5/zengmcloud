@@ -70,6 +70,7 @@ type Key =
 	| "challengeNoTrades"
 	| "challengeLoseBestPlayer"
 	| "challengeNoRatings"
+	| "hideRatingsOnesDigit"
 	| "challengeFiredLuxuryTax"
 	| "challengeFiredMissPlayoffs"
 	| "challengeSisyphusMode"
@@ -294,6 +295,7 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			challengeNoTrades: g.get("challengeNoTrades"),
 			challengeLoseBestPlayer: g.get("challengeLoseBestPlayer"),
 			challengeNoRatings: g.get("challengeNoRatings"),
+			hideRatingsOnesDigit: g.get("hideRatingsOnesDigit"),
 			challengeFiredLuxuryTax: g.get("challengeFiredLuxuryTax"),
 			challengeFiredMissPlayoffs: g.get("challengeFiredMissPlayoffs"),
 			challengeSisyphusMode: g.get("challengeSisyphusMode"),

@@ -1405,6 +1405,14 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Challenge Modes",
+			key: "hideRatingsOnesDigit",
+			name: "Coarse Ratings (Tens Digit Only)",
+			type: "bool",
+			description:
+				"Display-only: shows every rating, overall, and potential floored to its tens digit, so a 56 appears as 5. A softer version of No Visible Player Ratings. Doesn't change any underlying data or the simulation.",
+		},
+		{
+			category: "Challenge Modes",
 			key: "challengeLoseBestPlayer",
 			name: "Lose Best Player",
 			type: "bool",

@@ -643,6 +643,7 @@ export type GameAttributesLeague = {
 	challengeNoDraftPicks: boolean;
 	challengeNoFreeAgents: boolean;
 	challengeNoRatings: boolean;
+	hideRatingsOnesDigit: boolean;
 	challengeNoTrades: boolean;
 	challengeLoseBestPlayer: boolean;
 	challengeFiredLuxuryTax: boolean;

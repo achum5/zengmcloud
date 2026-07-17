@@ -156,6 +156,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"challengeNoRatings",
 		),
+		hideRatingsOnesDigit: unwrapGameAttribute(
+			defaultGameAttributes,
+			"hideRatingsOnesDigit",
+		),
 		challengeFiredLuxuryTax: unwrapGameAttribute(
 			defaultGameAttributes,
 			"challengeFiredLuxuryTax",

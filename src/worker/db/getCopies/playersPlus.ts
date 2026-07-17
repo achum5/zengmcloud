@@ -206,6 +206,10 @@ const processAttrs = (
 					p.ratings[0].fuzz,
 				);
 			}
+			if (g.get("hideRatingsOnesDigit")) {
+				output.draft.ovr = coarsenRating(output.draft.ovr);
+				output.draft.pot = coarsenRating(output.draft.pot);
+			}
 
 			// Inject abbrevs
 			output.draft.abbrev =
@@ -398,6 +402,23 @@ const processAttrs = (
 	}
 };
 
+// Coarse-ratings display mode ("hide ones digit"): show only the tens digit,
+// e.g. 56 -> 5. Purely a display transform on the copied view output — it never
+// touches the stored ratings or anything the sim reads.
+const coarsenRating = (value: number): number => Math.floor(value / 10);
+
+// Rating attrs that are NOT 0-100 ratings and must be left alone (ages, seasons,
+// ids, and ovr/pot deltas). String/array attrs are skipped by the typeof check.
+const NO_COARSEN_RATINGS = new Set([
+	"season",
+	"age",
+	"tid",
+	"fuzz",
+	"injuryIndex",
+	"dovr",
+	"dpot",
+]);
+
 const processRatings = (
 	output: PlayerFiltered,
 	p: Player,
@@ -414,6 +435,8 @@ const processRatings = (
 	abbrevsCache: AbbrevsCache | undefined,
 ) => {
 	let playerRatings = playerRatingsInput;
+
+	const coarseRatings = g.get("hideRatingsOnesDigit");
 
 	if (
 		showDraftProspectRookieRatings &&
@@ -536,6 +559,14 @@ const processRatings = (
 				row[attr] = player.fuzzRating(pr[attr], pr.fuzz);
 			} else {
 				row[attr] = pr[attr];
+			}
+		}
+
+		if (coarseRatings) {
+			for (const attr of ratings) {
+				if (!NO_COARSEN_RATINGS.has(attr) && typeof row[attr] === "number") {
+					row[attr] = coarsenRating(row[attr]);
+				}
 			}
 		}
 
