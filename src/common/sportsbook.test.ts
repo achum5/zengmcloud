@@ -2,11 +2,15 @@ import { assert, describe, test } from "vitest";
 import {
 	americanToDecimal,
 	americanToImpliedProb,
+	combinedDecimalOdds,
+	decimalToAmerican,
 	formatAmerican,
 	formatSportsbookMoney,
+	parlayConflict,
 	probToAmerican,
 	SPORTSBOOK_VIG,
 } from "./sportsbook.ts";
+import type { SportsbookMarket } from "./types.ts";
 
 describe("probToAmerican", () => {
 	test("a coin-flip prices as a slight favorite once the vig is applied", () => {
@@ -58,6 +62,91 @@ describe("americanToDecimal", () => {
 		const payout = stake * americanToDecimal(-110);
 		// -110 → risk 110 to win 100 → $1000 returns ~$1909.
 		assert.ok(payout > 1900 && payout < 1920, `payout ${payout}`);
+	});
+});
+
+describe("parlay odds", () => {
+	test("decimalToAmerican inverts americanToDecimal (favorites and dogs)", () => {
+		for (const american of [-250, -150, -110, 120, 200, 500]) {
+			const back = decimalToAmerican(americanToDecimal(american));
+			assert.ok(
+				Math.abs(back - american) <= 5,
+				`${american} -> ${americanToDecimal(american)} -> ${back}`,
+			);
+		}
+	});
+
+	test("combinedDecimalOdds multiplies the legs", () => {
+		const d = combinedDecimalOdds([-110, -110]);
+		assert.ok(Math.abs(d - americanToDecimal(-110) ** 2) < 1e-9);
+		assert.ok(d > 3.6 && d < 3.7);
+	});
+
+	test("underdog legs compound into a big price (+150 & +200 -> +650)", () => {
+		const d = combinedDecimalOdds([150, 200]);
+		assert.strictEqual(d, 7.5);
+		assert.strictEqual(decimalToAmerican(d), 650);
+	});
+});
+
+describe("parlayConflict", () => {
+	const ml = (gid: number, pickTid: number): SportsbookMarket => ({
+		type: "gameMoneyline",
+		gid,
+		pickTid,
+	});
+	const spread = (gid: number, pickTid: number): SportsbookMarket => ({
+		type: "gameSpread",
+		gid,
+		pickTid,
+		line: -3.5,
+	});
+	const total = (gid: number, side: "over" | "under"): SportsbookMarket => ({
+		type: "gameTotal",
+		gid,
+		side,
+		line: 210.5,
+	});
+	const playerProp = (
+		gid: number,
+		pid: number,
+		side: "over" | "under",
+	): SportsbookMarket => ({
+		type: "playerProp",
+		gid,
+		pid,
+		stat: "pts",
+		side,
+		line: 24.5,
+	});
+
+	test("allows unrelated legs across different games", () => {
+		assert.strictEqual(parlayConflict([ml(1, 10), ml(2, 20)]), undefined);
+	});
+
+	test("allows correlated same-game legs that can all hit", () => {
+		assert.strictEqual(
+			parlayConflict([ml(1, 10), playerProp(1, 100, "over")]),
+			undefined,
+		);
+	});
+
+	test("blocks betting both teams of the same game (ML + opposite spread)", () => {
+		assert.ok(parlayConflict([ml(1, 20), spread(1, 10)]));
+	});
+
+	test("blocks over and under of the same total", () => {
+		assert.ok(parlayConflict([total(1, "over"), total(1, "under")]));
+	});
+
+	test("blocks over and under of the same player prop", () => {
+		assert.ok(
+			parlayConflict([playerProp(1, 100, "over"), playerProp(1, 100, "under")]),
+		);
+	});
+
+	test("blocks exact duplicate legs", () => {
+		assert.ok(parlayConflict([ml(1, 10), ml(1, 10)]));
 	});
 });
 

@@ -1,8 +1,11 @@
 import { g, logEvent } from "../util/index.ts";
 import { idb } from "../db/index.ts";
-import type { UpdateEvents } from "../../common/types.ts";
+import type { SportsbookBet, UpdateEvents } from "../../common/types.ts";
 import { getLines } from "../core/sportsbook/getLines.ts";
-import { SPORTSBOOK_PRESEASON_GRANT } from "../../common/sportsbook.ts";
+import {
+	marketGid,
+	SPORTSBOOK_PRESEASON_GRANT,
+} from "../../common/sportsbook.ts";
 
 const updateSportsbook = async (
 	inputs: unknown,
@@ -97,11 +100,59 @@ const updateSportsbook = async (
 			}))
 			.sort((a, b) => b.balance - a.balance);
 
+		// Every game any bet references (a straight game bet, or any leg of a
+		// parlay), resolved to what a box-score link needs: the game's season and
+		// a team anchor. Only games that have actually been played (so a box score
+		// exists) get an entry, so open bets on unplayed games simply don't link.
+		const gidsReferenced = new Set<number>();
+		const collectGids = (bet: SportsbookBet) => {
+			const one = marketGid(bet.market);
+			if (one !== undefined) {
+				gidsReferenced.add(one);
+			}
+			for (const leg of bet.legs ?? []) {
+				const g2 = marketGid(leg.market);
+				if (g2 !== undefined) {
+					gidsReferenced.add(g2);
+				}
+			}
+		};
+		for (const bet of wallet.bets) {
+			collectGids(bet);
+		}
+		for (const bet of wallet.history) {
+			collectGids(bet);
+		}
+		for (const teamBets of leagueBets) {
+			for (const bet of [...teamBets.open, ...teamBets.settled]) {
+				collectGids(bet);
+			}
+		}
+
+		const teamInfoCache = g.get("teamInfoCache");
+		const gameLinks: Record<
+			number,
+			{ abbrevTid: string; season: number }
+		> = {};
+		for (const gid of gidsReferenced) {
+			const game = await idb.getCopy.games({ gid }, "noCopyCache");
+			if (!game || !game.won || !game.lost) {
+				continue; // not played yet, or box score pruned - nothing to link to
+			}
+			const tid = game.teams[0].tid;
+			const abbrev = teamInfoCache[tid]?.abbrev ?? "";
+			gameLinks[gid] = {
+				abbrevTid: `${abbrev}_${tid}`,
+				season: game.season,
+			};
+		}
+
 		return {
 			board,
 			wallet,
 			balances,
 			leagueBets,
+			gameLinks,
 			userTid,
 			phase: g.get("phase"),
 			season: g.get("season"),

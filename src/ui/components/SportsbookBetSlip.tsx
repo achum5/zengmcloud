@@ -5,8 +5,11 @@ import { showNotification } from "../util/showNotification.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import {
 	americanToDecimal,
+	combinedDecimalOdds,
+	decimalToAmerican,
 	formatAmerican,
 	formatSportsbookMoney,
+	parlayConflict,
 } from "../../common/sportsbook.ts";
 
 // Shared bet-slip pieces used by both the main Sportsbook page and a single
@@ -60,6 +63,8 @@ export const OddsCell = ({
 export const useBetSlip = (tid: number) => {
 	const [picks, setPicks] = useState<Pick[]>([]);
 	const [stakes, setStakes] = useState<Record<string, string>>({});
+	const [parlay, setParlay] = useState(false);
+	const [parlayStake, setParlayStake] = useState("");
 	const [placing, setPlacing] = useState(false);
 
 	const selectedKeys = new Set(picks.map((p) => p.key));
@@ -76,8 +81,10 @@ export const useBetSlip = (tid: number) => {
 	const clearSlip = () => {
 		setPicks([]);
 		setStakes({});
+		setParlayStake("");
 	};
 
+	// Straight-bet totals (each pick staked separately).
 	const totalStake = picks.reduce(
 		(sum, p) => sum + (Number.parseFloat(stakes[p.key] ?? "") || 0),
 		0,
@@ -87,10 +94,54 @@ export const useBetSlip = (tid: number) => {
 		return sum + stake * americanToDecimal(p.odds);
 	}, 0);
 
-	const placeBets = async () => {
-		if (placing) {
+	// Parlay: the picks combine into one ticket, odds compound.
+	const parlayDecimal = combinedDecimalOdds(picks.map((p) => p.odds));
+	const parlayAmerican = decimalToAmerican(parlayDecimal);
+	const parlayStakeNum = Number.parseFloat(parlayStake) || 0;
+	const parlayPayout = parlayStakeNum * parlayDecimal;
+	// Only offer parlays for 2+ legs; block genuinely contradictory tickets.
+	const canParlay = picks.length >= 2;
+	const conflict = canParlay
+		? parlayConflict(picks.map((p) => p.market))
+		: undefined;
+	const parlayActive = parlay && canParlay;
+
+	const placeParlay = async () => {
+		if (conflict) {
+			showNotification({ type: "error", text: conflict });
 			return;
 		}
+		if (parlayStakeNum <= 0) {
+			showNotification({ type: "error", text: "Enter a stake first." });
+			return;
+		}
+		setPlacing(true);
+		try {
+			await toWorker("main", "sportsbookPlaceBetSlip", {
+				tid,
+				parlay: true,
+				stake: parlayStakeNum,
+				picks: picks.map((p) => ({
+					market: p.market,
+					stake: parlayStakeNum,
+					americanOdds: p.odds,
+					label: `${p.title} — ${p.sub}`,
+				})),
+			});
+			showNotification({ type: "success", text: "Parlay placed." });
+			clearSlip();
+			await realtimeUpdate(["watchList"]);
+		} catch (error) {
+			showNotification({
+				type: "error",
+				text: error instanceof Error ? error.message : "Could not place bet.",
+			});
+		} finally {
+			setPlacing(false);
+		}
+	};
+
+	const placeStraights = async () => {
 		const toPlace = picks.filter(
 			(p) => (Number.parseFloat(stakes[p.key] ?? "") || 0) > 0,
 		);
@@ -127,10 +178,31 @@ export const useBetSlip = (tid: number) => {
 		}
 	};
 
+	const placeBets = async () => {
+		if (placing) {
+			return;
+		}
+		if (parlayActive) {
+			await placeParlay();
+		} else {
+			await placeStraights();
+		}
+	};
+
 	return {
 		picks,
 		stakes,
 		setStakes,
+		parlay,
+		setParlay,
+		parlayActive,
+		canParlay,
+		parlayStake,
+		setParlayStake,
+		parlayDecimal,
+		parlayAmerican,
+		parlayPayout,
+		conflict,
 		placing,
 		selectedKeys,
 		togglePick,
@@ -175,6 +247,23 @@ export const BetSlipCard = ({
 				</div>
 			) : (
 				<>
+					{slip.canParlay ? (
+						<div className="btn-group btn-group-sm w-100 mb-2">
+							<button
+								className={`btn ${slip.parlay ? "btn-outline-primary" : "btn-primary"}`}
+								onClick={() => slip.setParlay(false)}
+							>
+								Singles
+							</button>
+							<button
+								className={`btn ${slip.parlay ? "btn-primary" : "btn-outline-primary"}`}
+								onClick={() => slip.setParlay(true)}
+							>
+								Parlay
+							</button>
+						</div>
+					) : null}
+
 					{slip.picks.map((p) => {
 						const stake = Number.parseFloat(slip.stakes[p.key] ?? "") || 0;
 						const toWin = stake * (americanToDecimal(p.odds) - 1);
@@ -192,51 +281,105 @@ export const BetSlipCard = ({
 								<div className="text-body-secondary small mb-1">
 									{p.sub} · {formatAmerican(p.odds)}
 								</div>
-								<div className="input-group input-group-sm">
-									<span className="input-group-text">$</span>
-									<input
-										type="number"
-										min={0}
-										className="form-control"
-										placeholder="Stake"
-										value={slip.stakes[p.key] ?? ""}
-										onChange={(e) =>
-											slip.setStakes((s) => ({
-												...s,
-												[p.key]: e.target.value,
-											}))
-										}
-									/>
-									<span className="input-group-text">
-										{toWin > 0 ? `+${formatSportsbookMoney(toWin)}` : "—"}
-									</span>
-								</div>
+								{slip.parlayActive ? null : (
+									<div className="input-group input-group-sm">
+										<span className="input-group-text">$</span>
+										<input
+											type="number"
+											min={0}
+											className="form-control"
+											placeholder="Stake"
+											value={slip.stakes[p.key] ?? ""}
+											onChange={(e) =>
+												slip.setStakes((s) => ({
+													...s,
+													[p.key]: e.target.value,
+												}))
+											}
+										/>
+										<span className="input-group-text">
+											{toWin > 0 ? `+${formatSportsbookMoney(toWin)}` : "—"}
+										</span>
+									</div>
+								)}
 							</div>
 						);
 					})}
-					<div className="d-flex justify-content-between small mb-1">
-						<span className="text-body-secondary">Total stake</span>
-						<span>{formatSportsbookMoney(slip.totalStake)}</span>
-					</div>
-					<div className="d-flex justify-content-between fw-bold mb-2">
-						<span>Potential payout</span>
-						<span>{formatSportsbookMoney(slip.totalPayout)}</span>
-					</div>
-					<button
-						className="btn btn-primary w-100"
-						disabled={
-							slip.placing ||
-							slip.totalStake <= 0 ||
-							slip.totalStake > balance
-						}
-						onClick={slip.placeBets}
-					>
-						{slip.totalStake > balance
-							? "Not enough $"
-							: slip.placing
-								? "Placing…"
-								: `Place ${slip.picks.length} bet${slip.picks.length === 1 ? "" : "s"}`}
-					</button>
+
+					{slip.parlayActive ? (
+						<>
+							{slip.conflict ? (
+								<div className="text-danger small mb-2">{slip.conflict}</div>
+							) : (
+								<div className="d-flex justify-content-between small mb-1">
+									<span className="text-body-secondary">
+										{slip.picks.length}-leg parlay odds
+									</span>
+									<span className="fw-bold">
+										{formatAmerican(slip.parlayAmerican)}
+									</span>
+								</div>
+							)}
+							<div className="input-group input-group-sm mb-2">
+								<span className="input-group-text">$</span>
+								<input
+									type="number"
+									min={0}
+									className="form-control"
+									placeholder="Stake"
+									value={slip.parlayStake}
+									onChange={(e) => slip.setParlayStake(e.target.value)}
+								/>
+								<span className="input-group-text">
+									{slip.parlayPayout > 0
+										? formatSportsbookMoney(slip.parlayPayout)
+										: "—"}
+								</span>
+							</div>
+							<button
+								className="btn btn-primary w-100"
+								disabled={
+									slip.placing ||
+									slip.conflict !== undefined ||
+									slip.parlayPayout <= 0 ||
+									Number.parseFloat(slip.parlayStake) > balance
+								}
+								onClick={slip.placeBets}
+							>
+								{Number.parseFloat(slip.parlayStake) > balance
+									? "Not enough $"
+									: slip.placing
+										? "Placing…"
+										: "Place parlay"}
+							</button>
+						</>
+					) : (
+						<>
+							<div className="d-flex justify-content-between small mb-1">
+								<span className="text-body-secondary">Total stake</span>
+								<span>{formatSportsbookMoney(slip.totalStake)}</span>
+							</div>
+							<div className="d-flex justify-content-between fw-bold mb-2">
+								<span>Potential payout</span>
+								<span>{formatSportsbookMoney(slip.totalPayout)}</span>
+							</div>
+							<button
+								className="btn btn-primary w-100"
+								disabled={
+									slip.placing ||
+									slip.totalStake <= 0 ||
+									slip.totalStake > balance
+								}
+								onClick={slip.placeBets}
+							>
+								{slip.totalStake > balance
+									? "Not enough $"
+									: slip.placing
+										? "Placing…"
+										: `Place ${slip.picks.length} bet${slip.picks.length === 1 ? "" : "s"}`}
+							</button>
+						</>
+					)}
 				</>
 			)}
 		</div>

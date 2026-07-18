@@ -2414,6 +2414,10 @@ const sportsbookPlaceBetSlip = async (info: {
 		americanOdds: number;
 		label: string;
 	}[];
+	// When true, the picks combine into one parlay staked `stake` (odds compound,
+	// all legs must win). Otherwise each pick is its own straight bet.
+	parlay?: boolean;
+	stake?: number;
 }) => {
 	return sportsbookPlaceBetSlipCore(info);
 };

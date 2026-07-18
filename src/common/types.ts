@@ -1907,8 +1907,16 @@ export type SportsbookBet = {
 	// Human-readable description of what was bet ("Lakers to win the title",
 	// "Warriors -4.5 vs Suns", "LeBron James MVP").
 	label: string;
-	// What kind of market this is, so settlement knows how to resolve it.
+	// What kind of market this is, so settlement knows how to resolve it. For a
+	// parlay (see `legs`) this is a copy of the first leg's market and is never
+	// used to settle - the legs are.
 	market: SportsbookMarket;
+	// A parlay: two or more legs combined into one ticket. All legs must win for
+	// the bet to win, and the payout compounds (top-level decimalOdds is the
+	// product of the legs'). A leg that pushes or voids drops out and the payout
+	// is recomputed from the surviving legs at settlement. Absent/empty for an
+	// ordinary single (straight) bet.
+	legs?: SportsbookBetLeg[];
 	// Filled in at settlement. "void" is an administrative refund (stake back,
 	// no win/loss either way) for a market that can no longer be resolved at
 	// all - e.g. its game's box score was deleted before settlement, or a
@@ -1917,6 +1925,16 @@ export type SportsbookBet = {
 	// landing exactly on the line) even though both refund the stake.
 	result?: "won" | "lost" | "push" | "void";
 	settledAt?: number;
+};
+
+// One leg of a parlay. Its own market + locked-in price; its per-leg outcome is
+// filled in at settlement so the UI can show which leg sank the ticket.
+export type SportsbookBetLeg = {
+	market: SportsbookMarket;
+	americanOdds: number;
+	decimalOdds: number;
+	label: string;
+	result?: "won" | "lost" | "push" | "void";
 };
 
 // The market a bet belongs to, carrying just enough to settle it later.

@@ -604,4 +604,100 @@ describe("sportsbook bets", () => {
 			assert.strictEqual(wallet.bets.length, 1);
 		});
 	});
+
+	describe("parlays", () => {
+		const seedGame = async (gid: number, wonTid: number, lostTid: number) => {
+			await idb.cache.games.add({
+				gid,
+				season: g.get("season"),
+				day: 5,
+				teams: [{ tid: wonTid }, { tid: lostTid }],
+				won: { tid: wonTid, pts: 110 },
+				lost: { tid: lostTid, pts: 100 },
+			} as any);
+		};
+
+		const leg = (gid: number, pickTid: number, decimalOdds = 2) => ({
+			market: { type: "gameMoneyline" as const, gid, pickTid },
+			americanOdds: 100,
+			decimalOdds,
+			label: `g${gid}`,
+		});
+
+		const parlayBet = (
+			legs: ReturnType<typeof leg>[],
+			overrides: Partial<SportsbookBet> = {},
+		): SportsbookBet => {
+			const decimalOdds = legs.reduce((d, l) => d * l.decimalOdds, 1);
+			return {
+				betID: 1,
+				season: g.get("season"),
+				placedAt: Date.now(),
+				americanOdds: 0,
+				decimalOdds,
+				stake: 100,
+				label: `${legs.length}-leg parlay`,
+				market: legs[0]!.market,
+				legs,
+				...overrides,
+			};
+		};
+
+		test("both legs win -> parlay wins and pays the compounded odds", async () => {
+			await seedGame(998, 0, 1);
+			await seedGame(999, 0, 1);
+			await setWallet(0, 1000, [parlayBet([leg(998, 0, 2), leg(999, 0, 2)])]);
+			await settleBets();
+			const wallet = await getWallet(0);
+			assert.strictEqual(wallet.history[0]!.result, "won");
+			// Combined decimal 2*2 = 4; payout 100*4 = 400 on top of the preset.
+			assert.strictEqual(wallet.balance, 1000 + 400);
+		});
+
+		test("one losing leg sinks the whole parlay", async () => {
+			await seedGame(998, 0, 1); // leg picks tid 0 -> win
+			await seedGame(999, 1, 0); // leg picks tid 0 -> lose
+			await setWallet(0, 1000, [parlayBet([leg(998, 0, 2), leg(999, 0, 2)])]);
+			await settleBets();
+			const wallet = await getWallet(0);
+			assert.strictEqual(wallet.history[0]!.result, "lost");
+			assert.strictEqual(wallet.balance, 1000);
+		});
+
+		test("stays open until every leg's game is decided", async () => {
+			await seedGame(998, 0, 1);
+			await idb.cache.schedule.add({
+				gid: 999,
+				homeTid: 0,
+				awayTid: 1,
+				day: 10,
+			} as any);
+			await setWallet(0, 1000, [parlayBet([leg(998, 0, 2), leg(999, 0, 2)])]);
+			const settled = await settleBets();
+			assert.strictEqual(settled, false);
+			const wallet = await getWallet(0);
+			assert.strictEqual(wallet.bets.length, 1);
+		});
+
+		test("a voided leg drops out; only surviving winners compound the payout", async () => {
+			await seedGame(998, 0, 1); // winning leg, decimal 2
+			// gid 999: no game row, no schedule row -> that leg voids.
+			await setWallet(0, 1000, [parlayBet([leg(998, 0, 2), leg(999, 0, 3)])]);
+			await settleBets();
+			const wallet = await getWallet(0);
+			assert.strictEqual(wallet.history[0]!.result, "won");
+			// Only the surviving winner's decimal (2) applies: 100*2 = 200.
+			assert.strictEqual(wallet.balance, 1000 + 200);
+			assert.strictEqual(wallet.history[0]!.decimalOdds, 2);
+		});
+
+		test("every leg voiding refunds the whole ticket", async () => {
+			// Both gids missing from games AND schedule -> both void.
+			await setWallet(0, 1000, [parlayBet([leg(998, 0, 2), leg(999, 0, 2)])]);
+			await settleBets();
+			const wallet = await getWallet(0);
+			assert.strictEqual(wallet.history[0]!.result, "push");
+			assert.strictEqual(wallet.balance, 1000 + 100);
+		});
+	});
 });

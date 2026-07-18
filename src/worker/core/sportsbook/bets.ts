@@ -3,7 +3,10 @@ import { g, local, lock, toUI, logEvent } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import {
 	americanToDecimal,
+	combinedDecimalOdds,
+	decimalToAmerican,
 	formatSportsbookMoney,
+	parlayConflict,
 	SPORTSBOOK_PRESEASON_GRANT,
 } from "../../../common/sportsbook.ts";
 import { getLines } from "./getLines.ts";
@@ -12,6 +15,7 @@ import { getSyncEngine } from "../sync/engineHolder.ts";
 import type {
 	Conditions,
 	SportsbookBet,
+	SportsbookBetLeg,
 	SportsbookMarket,
 } from "../../../common/types.ts";
 
@@ -329,20 +333,27 @@ type BetPick = {
 	label: string;
 };
 
-// Place an entire bet slip (one or more picks) from a user team's wallet, as
-// ONE atomic operation: every pick is validated against a single fresh board
-// snapshot and the total stake is checked against the balance BEFORE anything
-// is written, so a bad leg can never leave earlier legs already placed with
-// money already spent (which is what placing each leg in its own separate
-// call - the old UI behavior - allowed). Debits the total stake immediately;
-// each pick's payout lands on a win at settlement. Throws with a user-facing
-// message (and commits nothing) on any invalid pick.
+// Place a bet slip from a user team's wallet, as ONE atomic operation: every
+// pick is validated against a single fresh board snapshot and the stake is
+// checked against the balance BEFORE anything is written, so a bad leg can
+// never leave earlier legs already placed with money already spent. Throws with
+// a user-facing message (and commits nothing) on any invalid pick.
+//
+// Two modes:
+//   - Straight (default): each pick becomes its own bet, staked individually.
+//   - Parlay: all picks combine into ONE bet with one `stake`; the odds compound
+//     and every leg must win. Contradictory legs (both sides of a game/total/
+//     prop) are rejected.
 export const placeBetSlip = async ({
 	tid,
 	picks,
+	parlay,
+	stake,
 }: {
 	tid: number;
 	picks: BetPick[];
+	parlay?: boolean;
+	stake?: number;
 }) =>
 	withSportsbookLock(async () => {
 		if (!g.get("userTids").includes(tid)) {
@@ -351,37 +362,78 @@ export const placeBetSlip = async ({
 		if (picks.length === 0) {
 			throw new Error("Enter a stake.");
 		}
+
+		// Every pick must match a market currently on the board, at odds no better
+		// than the board's. Rejects stale lines (a game that simmed since the page
+		// loaded) before any money moves.
 		for (const pick of picks) {
-			if (!Number.isFinite(pick.stake) || pick.stake <= 0) {
-				throw new Error("Enter a stake.");
-			}
-			// House rules: every pick must match a market currently on the board,
-			// at odds no better than the board's. Rejects stale lines (e.g. a game
-			// that simmed since the page loaded) before any money moves.
 			await validateAgainstBoard(pick.market, pick.americanOdds);
 		}
-		const totalStake = picks.reduce((sum, p) => sum + p.stake, 0);
 
 		const t = await idb.cache.teams.get(tid);
 		if (!t) {
 			throw new Error("Team not found.");
 		}
 		const sb = ensureWallet(t);
+		let nextID = nextBetID(sb);
+		let placed: SportsbookBet[];
+		let totalStake: number;
+
+		if (parlay) {
+			if (picks.length < 2) {
+				throw new Error("A parlay needs at least 2 picks.");
+			}
+			const conflict = parlayConflict(picks.map((p) => p.market));
+			if (conflict) {
+				throw new Error(conflict);
+			}
+			if (!Number.isFinite(stake) || (stake ?? 0) <= 0) {
+				throw new Error("Enter a stake.");
+			}
+			totalStake = stake!;
+			const combined = combinedDecimalOdds(picks.map((p) => p.americanOdds));
+			const legs: SportsbookBetLeg[] = picks.map((p) => ({
+				market: p.market,
+				americanOdds: p.americanOdds,
+				decimalOdds: americanToDecimal(p.americanOdds),
+				label: p.label,
+			}));
+			placed = [
+				{
+					betID: nextID++,
+					season: g.get("season"),
+					placedAt: Date.now(),
+					americanOdds: decimalToAmerican(combined),
+					decimalOdds: combined,
+					stake: totalStake,
+					label: `${picks.length}-leg parlay`,
+					// Placeholder - a parlay settles via its legs, never this.
+					market: picks[0]!.market,
+					legs,
+				},
+			];
+		} else {
+			for (const pick of picks) {
+				if (!Number.isFinite(pick.stake) || pick.stake <= 0) {
+					throw new Error("Enter a stake.");
+				}
+			}
+			totalStake = picks.reduce((sum, p) => sum + p.stake, 0);
+			placed = picks.map((pick) => ({
+				betID: nextID++,
+				season: g.get("season"),
+				placedAt: Date.now(),
+				americanOdds: pick.americanOdds,
+				decimalOdds: americanToDecimal(pick.americanOdds),
+				stake: pick.stake,
+				label: pick.label,
+				market: pick.market,
+			}));
+		}
+
 		if (totalStake > sb.balance) {
 			throw new Error("Not enough $ for that stake.");
 		}
-
-		let nextID = nextBetID(sb);
-		const placed: SportsbookBet[] = picks.map((pick) => ({
-			betID: nextID++,
-			season: g.get("season"),
-			placedAt: Date.now(),
-			americanOdds: pick.americanOdds,
-			decimalOdds: americanToDecimal(pick.americanOdds),
-			stake: pick.stake,
-			label: pick.label,
-			market: pick.market,
-		}));
 
 		sb.balance -= totalStake;
 		sb.bets.push(...placed);
@@ -451,10 +503,9 @@ const playoffsDone = (season: number) =>
 // "void" means the market can no longer be resolved at all (its data is
 // gone, or ambiguous) - the stake is refunded, same as a push, but it's kept
 // as a distinct result so bet history is honest about why.
-const resolveBet = async (
-	bet: SportsbookBet,
+const resolveMarket = async (
+	m: SportsbookMarket,
 ): Promise<"won" | "lost" | "push" | "void" | undefined> => {
-	const m = bet.market;
 
 	if (
 		m.type === "gameMoneyline" ||
@@ -702,6 +753,50 @@ const resolveBet = async (
 	return undefined;
 };
 
+type BetResolution = {
+	// undefined = can't settle yet (a leg's game hasn't been played).
+	result: "won" | "lost" | "push" | "void" | undefined;
+	// For a parlay, the effective decimal multiplier after dropping pushed/voided
+	// legs; undefined for a straight bet (use bet.decimalOdds).
+	payoutDecimal?: number;
+	// Per-leg outcomes, for a parlay (so history/UI can show which leg missed).
+	legs?: SportsbookBetLeg[];
+};
+
+// Resolve a whole ticket. A straight bet resolves its one market. A parlay
+// resolves every leg: it stays open until all legs are decided, then loses if
+// ANY leg lost; otherwise pushed/voided legs drop out and the payout compounds
+// only the surviving winners (standard parlay "reduction"). If every leg
+// pushed/voided, the whole ticket is refunded.
+const resolveBet = async (bet: SportsbookBet): Promise<BetResolution> => {
+	if (!bet.legs || bet.legs.length === 0) {
+		return { result: await resolveMarket(bet.market) };
+	}
+
+	const legResults = [];
+	for (const leg of bet.legs) {
+		legResults.push(await resolveMarket(leg.market));
+	}
+	if (legResults.some((r) => r === undefined)) {
+		return { result: undefined };
+	}
+
+	const legs: SportsbookBetLeg[] = bet.legs.map((leg, i) => ({
+		...leg,
+		result: legResults[i] as "won" | "lost" | "push" | "void",
+	}));
+
+	if (legs.some((leg) => leg.result === "lost")) {
+		return { result: "lost", legs };
+	}
+	const survivors = legs.filter((leg) => leg.result === "won");
+	if (survivors.length === 0) {
+		return { result: "push", payoutDecimal: 1, legs };
+	}
+	const payoutDecimal = survivors.reduce((d, leg) => d * leg.decimalOdds, 1);
+	return { result: "won", payoutDecimal, legs };
+};
+
 // Settle every open bet whose outcome is now known, crediting winnings to the
 // team wallet and moving the bet to history. Idempotent - safe to call after
 // each day's games and on every phase change; unresolved bets are left open.
@@ -726,14 +821,25 @@ export const settleBets = async (conditions?: Conditions) =>
 			let netWinnings = 0;
 
 			for (const bet of sb.bets) {
-				const result = await resolveBet(bet);
+				const { result, payoutDecimal, legs } = await resolveBet(bet);
 				if (result === undefined) {
 					stillOpen.push(bet);
 					continue;
 				}
-				const done = { ...bet, result, settledAt: Date.now() };
+				// A reduced parlay pays a smaller multiplier than the ticket's
+				// original combined odds; store the effective one so the paid-out
+				// amount shown in history matches what was actually credited.
+				const effectiveDecimal = payoutDecimal ?? bet.decimalOdds;
+				const done = {
+					...bet,
+					...(legs ? { legs } : {}),
+					decimalOdds:
+						result === "won" ? effectiveDecimal : bet.decimalOdds,
+					result,
+					settledAt: Date.now(),
+				};
 				if (result === "won") {
-					const payout = bet.stake * bet.decimalOdds;
+					const payout = bet.stake * effectiveDecimal;
 					sb.balance += payout;
 					netWinnings += payout - bet.stake;
 					wonCount += 1;

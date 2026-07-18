@@ -18,6 +18,7 @@ import {
 	formatAmerican,
 	formatSportsbookMoney,
 	formatSportsbookMoneyFull,
+	marketGid,
 } from "../../common/sportsbook.ts";
 
 // The standard table look used across the app.
@@ -29,6 +30,7 @@ const Sportsbook = ({
 	wallet,
 	balances,
 	leagueBets,
+	gameLinks,
 	season,
 }: View<"sportsbook">) => {
 	useTitleBar({ title: "Sportsbook" });
@@ -596,6 +598,61 @@ const Sportsbook = ({
 			<span className="badge text-bg-warning">Open</span>
 		);
 
+	// A small per-leg outcome tag (nothing while the leg is still open).
+	const legBadge = (r?: string) =>
+		r === "won" ? (
+			<span className="badge text-bg-success">✓</span>
+		) : r === "lost" ? (
+			<span className="badge text-bg-danger">✗</span>
+		) : r === "push" || r === "void" ? (
+			<span className="badge text-bg-secondary">
+				{r === "push" ? "Push" : "Void"}
+			</span>
+		) : null;
+
+	// The box score of the game a market is about, when it's been played (the
+	// worker only sends links for played games, so open/future bets don't link).
+	const boxScoreHref = (gid?: number) => {
+		if (gid === undefined) {
+			return undefined;
+		}
+		const link = gameLinks[gid];
+		return link
+			? helpers.leagueUrl(["game_log", link.abbrevTid, link.season, gid])
+			: undefined;
+	};
+
+	// The "Bet" cell: a straight bet links to its game's box score; a parlay
+	// lists each leg, every leg linking to its own game and showing how it landed.
+	const BetCell = ({ bet }: { bet: (typeof wallet.bets)[number] }) => {
+		if (bet.legs && bet.legs.length > 0) {
+			return (
+				<div>
+					<div className="fw-medium">{bet.label}</div>
+					<div className="ps-2 mt-1 d-flex flex-column gap-1">
+						{bet.legs.map((leg, i) => {
+							const href = boxScoreHref(marketGid(leg.market));
+							return (
+								<div
+									key={i}
+									className="small d-flex align-items-center gap-1 flex-wrap"
+								>
+									<span className="text-body-secondary">
+										{formatAmerican(leg.americanOdds)}
+									</span>
+									{href ? <a href={href}>{leg.label}</a> : <span>{leg.label}</span>}
+									{legBadge(leg.result)}
+								</div>
+							);
+						})}
+					</div>
+				</div>
+			);
+		}
+		const href = boxScoreHref(marketGid(bet.market));
+		return href ? <a href={href}>{bet.label}</a> : <span>{bet.label}</span>;
+	};
+
 	const betsTable = (bets: typeof wallet.bets, open: boolean) => (
 		<div className="table-responsive">
 			<table className={TABLE_CLASS} style={{ maxWidth: 680 }}>
@@ -612,7 +669,9 @@ const Sportsbook = ({
 				<tbody>
 					{bets.map((bet) => (
 						<tr key={bet.betID}>
-							<td>{bet.label}</td>
+							<td>
+								<BetCell bet={bet} />
+							</td>
 							<td className="text-end">{formatAmerican(bet.americanOdds)}</td>
 							<td className="text-end">{formatSportsbookMoney(bet.stake)}</td>
 							<td className="text-end">
@@ -692,7 +751,9 @@ const Sportsbook = ({
 									<tbody>
 										{[...team.open, ...team.settled].map((bet) => (
 											<tr key={`${bet.betID}-${bet.result ?? "open"}`}>
-												<td>{bet.label}</td>
+												<td>
+													<BetCell bet={bet} />
+												</td>
 												<td className="text-end">
 													{formatAmerican(bet.americanOdds)}
 												</td>
