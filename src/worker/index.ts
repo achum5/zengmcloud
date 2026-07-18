@@ -142,6 +142,11 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"hasLiveGameReplay",
 	// Read-only sync-checkpoint lookup for league exports.
 	"getSyncCheckpoint",
+	// Trivia games: pure reads that generate a puzzle/round from league
+	// history. Never mutate the league, and must stay playable on a
+	// multiplayer follower device (mid-catch-up included).
+	"triviaNewGrid",
+	"triviaNewTeamRound",
 	// Cloud-only write of this team's free-agency board (no league data).
 	"faBoardSet",
 	// Which of this device's teams it controls (userTid). userTid is per-device

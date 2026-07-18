@@ -179,6 +179,8 @@ import {
 	cancelBet as sportsbookCancelBetCore,
 	settleBetsIfAuthority as sportsbookSettleCore,
 } from "../core/sportsbook/bets.ts";
+import { generateTriviaGrid } from "../core/trivia/grid.ts";
+import { generateTeamTriviaRound } from "../core/trivia/teamTrivia.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
 import { beforeLeague, beforeNonLeague } from "../util/beforeView.ts";
@@ -2412,6 +2414,15 @@ const sportsbookPlaceBetSlip = async (info: {
 
 const sportsbookCancelBet = async (info: { tid: number; betID: number }) => {
 	return sportsbookCancelBetCore(info);
+};
+
+// Trivia games: fresh puzzle/round on demand. Pure reads - no league writes.
+const triviaNewGrid = async () => {
+	return generateTriviaGrid();
+};
+
+const triviaNewTeamRound = async () => {
+	return generateTeamTriviaRound();
 };
 
 // Catch-up settlement, called when the Sportsbook page loads. A REAL captured
@@ -6069,6 +6080,8 @@ export default {
 		sportsbookPlaceBetSlip,
 		sportsbookCancelBet,
 		sportsbookSettle,
+		triviaNewGrid,
+		triviaNewTeamRound,
 		getPlayerWatch,
 		getProjectedAttendance,
 		getRandomCollege,
