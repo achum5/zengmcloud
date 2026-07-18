@@ -4,6 +4,7 @@ import { outbox } from "./outbox.ts";
 import { ensureAnonymousAuth } from "./auth.ts";
 import { setApplyGuard } from "./applyGuard.ts";
 import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
+import { setupSimDayFence, teardownSimDayFence } from "./simDayFence.ts";
 import { setupFaBoard, teardownFaBoard } from "./faBoard.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
@@ -1416,6 +1417,10 @@ const doConnectSharedLeague = async ({
 	// draft phase.
 	setupDraftReady(transport);
 
+	// Schedule-day sim fence: exactly one device per (season, day, games) may
+	// sim, no matter what the advisory authority doc says (see simDayFence.ts).
+	setupSimDayFence(transport);
+
 	// Free-agency boards: watch everyone's ranked FA lists so the day advance
 	// can resolve them (see faBoard.ts). No-op outside free agency.
 	setupFaBoard(transport);
@@ -1511,6 +1516,7 @@ export const teardownSharedLeague = async ({
 	lotteryRevealUnsub = undefined;
 	followedLotteryReveal = undefined;
 	teardownDraftReady();
+	teardownSimDayFence();
 	teardownFaBoard();
 	// Best-effort: end our own broadcast so we don't leave the room locked.
 	if (activeBroadcast) {

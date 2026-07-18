@@ -53,6 +53,10 @@ import {
 	runAfterActionHook,
 	setSingleGameSimActive,
 } from "../sync/afterActionHook.ts";
+import {
+	claimSimDayFence,
+	completeClaimedSimDayFence,
+} from "../sync/simDayFence.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 
@@ -144,6 +148,13 @@ const play = async (
 		const synced = await runAfterActionHook("playMenu", "sim", {
 			silent: gidOneGame !== undefined,
 		});
+		if (synced) {
+			// The sim's results are durably queued for the room, so the claimed
+			// day's crash-recovery window can close. On !synced the claim is left
+			// to its lease: completing it with unpublished results could fence the
+			// day forever while the room never receives it.
+			completeClaimedSimDayFence();
+		}
 		if (!synced) {
 			logEvent(
 				{
@@ -659,7 +670,36 @@ const play = async (
 			}
 		}
 
+		// Server-side fence: exactly one device per (season, day, games) may sim,
+		// no matter what the advisory authority doc says. Without this, an
+		// authority-handoff race lets two devices sim the same day - their game
+		// records collide by gid (one sim survives) while every incremental
+		// aggregate (team records, headToHeads, player stats) double-applies and
+		// permanently diverges from the game log. Claim BEFORE any timeline
+		// mutation; a rejection means someone else already simmed these games, so
+		// skip and catch up instead. No-op outside a sync room.
+		const claimDayOrBail = async (games: ScheduleGame[]) => {
+			const granted = await claimSimDayFence(
+				games[0]!.day,
+				games.map((game) => game.gid),
+			);
+			if (!granted) {
+				logEvent(
+					{
+						type: "error",
+						text: `Another device already simmed this day, so this sim was skipped. Catching up to the cloud now.`,
+						persistent: true,
+					},
+					conditions,
+				);
+			}
+			return granted;
+		};
+
 		if (schedule[0]?.homeTid === -3 && schedule[0].awayTid === -3) {
+			if (!(await claimDayOrBail(schedule))) {
+				return cbNoGames();
+			}
 			await idb.cache.schedule.delete(schedule[0].gid);
 			await phase.newPhase(PHASE.AFTER_TRADE_DEADLINE, conditions);
 			await toUI("deleteGames", [[schedule[0].gid]]);
@@ -678,6 +718,10 @@ const play = async (
 				// This works because there should always be games in the playoffs phase. The next phase will start before reaching this point when the playoffs are over.
 				await season.newSchedulePlayoffsDay();
 				schedule = await season.getSchedule(true);
+			}
+
+			if (schedule.length > 0 && !(await claimDayOrBail(schedule))) {
+				return cbNoGames();
 			}
 
 			for (const matchup of schedule) {

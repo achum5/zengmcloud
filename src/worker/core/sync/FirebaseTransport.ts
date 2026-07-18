@@ -26,6 +26,7 @@ import {
 	decideAdvanceClaim,
 	type AdvanceClaimDoc,
 } from "./advanceClaimPolicy.ts";
+import { decideSimDayClaim, type SimDayClaimDoc } from "./simDayClaimPolicy.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
@@ -62,6 +63,11 @@ const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
 const DRAFT_READY_DOC_ID = "draftReady";
 const FA_BOARD_DOC_ID = "faBoard";
 const DRAFT_ADVANCE_DOC_ID = "draftAdvance";
+
+// The per-season fence over schedule-day sims: which day (and which of its
+// games) has been claimed, ever. See simDayClaimPolicy.ts for why day sims
+// need a server-side fence in addition to the advisory authority doc.
+const SIM_DAY_DOC_ID = "simDay";
 
 // The live lottery-reveal cursor doc: whoever runs the lottery heartbeats how
 // many picks they've revealed, and every other device replays the reveal in
@@ -524,6 +530,76 @@ export class FirebaseTransport implements SyncTransport {
 					data &&
 					data.draftKey === draftKey &&
 					data.pick === pick &&
+					data.holderId === this.clientId
+				) {
+					tx.set(ref, { ...data, completed: true });
+				}
+			});
+			this.markContact();
+		} catch {
+			// Lease expiry covers it.
+		}
+	}
+
+	// Atomically claim the right to sim one slice of a schedule day (the whole
+	// day, or a single live-simmed game). The transaction applies
+	// decideSimDayClaim: a day below the season's high-water mark can never be
+	// claimed again, and within the newest day an already-claimed game can never
+	// be claimed again (except crash recovery of an uncompleted claim). This is
+	// what makes a concurrent double-sim of the same day - which doubles every
+	// read-modify-write aggregate while the game records collide by gid -
+	// impossible, no matter what the advisory authority doc says.
+	async claimSimDay(
+		stageKey: string,
+		day: number,
+		gids: number[],
+		leaseMs: number,
+	): Promise<boolean> {
+		const ref = doc(this.db, "leagues", this.code, "control", SIM_DAY_DOC_ID);
+		try {
+			await runTransaction(this.db, async (tx) => {
+				const snap = await tx.get(ref);
+				const data = snap.data() as SimDayClaimDoc | undefined;
+				const decision = decideSimDayClaim(data, {
+					stageKey,
+					day,
+					gids,
+					now: Date.now(),
+					leaseMs,
+				});
+				if (!decision.grant) {
+					throw new Error(`Sim day claim rejected: ${decision.reason}`);
+				}
+				tx.set(ref, {
+					holderId: this.clientId,
+					stageKey,
+					day: decision.day,
+					gids: decision.gids,
+					at: Date.now(),
+					maxDay: decision.maxDay,
+					completed: false,
+				});
+			});
+			this.markContact();
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	// Mark this device's claimed day-slice as finished, closing its
+	// crash-recovery re-claim window. Best-effort: a failure just leaves the
+	// lease to expire.
+	async completeSimDay(stageKey: string, day: number): Promise<void> {
+		const ref = doc(this.db, "leagues", this.code, "control", SIM_DAY_DOC_ID);
+		try {
+			await runTransaction(this.db, async (tx) => {
+				const snap = await tx.get(ref);
+				const data = snap.data() as SimDayClaimDoc | undefined;
+				if (
+					data &&
+					data.stageKey === stageKey &&
+					data.day === day &&
 					data.holderId === this.clientId
 				) {
 					tx.set(ref, { ...data, completed: true });

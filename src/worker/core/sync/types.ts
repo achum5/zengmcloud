@@ -301,6 +301,20 @@ export interface SyncTransport {
 	// re-claim window; see advanceClaimPolicy.ts). Best-effort.
 	completeDraftAdvance?(draftKey: string, pick: number): Promise<void>;
 
+	// Schedule-day sim fence (see simDayClaimPolicy.ts). claimSimDay atomically
+	// claims one slice of a schedule day (whole day or one live-simmed game) -
+	// it returns true for exactly one caller per (season, day, games), ever, so
+	// two devices can never both sim the same games and double-apply their
+	// aggregates. completeSimDay closes the claim's crash-recovery window.
+	// Optional so the in-memory test transport can skip them.
+	claimSimDay?(
+		stageKey: string,
+		day: number,
+		gids: number[],
+		leaseMs: number,
+	): Promise<boolean>;
+	completeSimDay?(stageKey: string, day: number): Promise<void>;
+
 	// Free-agency board support (see faBoard.ts). Each device publishes its
 	// team's ranked free-agent list (null clears it); everyone subscribes but the
 	// UI keeps boards blind until the day resolves. Same per-uid merge semantics
