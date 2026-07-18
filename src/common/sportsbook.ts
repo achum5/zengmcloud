@@ -111,6 +111,12 @@ const marketGamePickTid = (market: SportsbookMarket): number | undefined =>
 // are blocked.
 export const parlayConflict = (
 	markets: SportsbookMarket[],
+	opts?: {
+		// How many players make the All-Star team this season (both rosters), so
+		// parlaying more than that many "makes the All-Star team" legs is caught as
+		// impossible. Omitted (e.g. on a page with no futures) = don't cap it here.
+		allStarRosterSize?: number;
+	},
 ): string | undefined => {
 	// Exact duplicate legs.
 	const seen = new Set<string>();
@@ -120,6 +126,117 @@ export const parlayConflict = (
 			return "You can't put the same pick in a parlay twice.";
 		}
 		seen.add(k);
+	}
+
+	// --- Futures / awards: mutually-exclusive outcomes ---------------------
+	// Single-winner markets: only one team/player can actually win, so two
+	// different picks for the same title can never both hit.
+	const countByKey = (keyOf: (m: SportsbookMarket) => string | undefined) => {
+		const counts = new Map<string, number>();
+		for (const m of markets) {
+			const k = keyOf(m);
+			if (k !== undefined) {
+				counts.set(k, (counts.get(k) ?? 0) + 1);
+			}
+		}
+		return counts;
+	};
+
+	const anyOver = (
+		counts: Map<string, number>,
+		cap: number,
+		message: string,
+	) => {
+		for (const n of counts.values()) {
+			if (n > cap) {
+				return message;
+			}
+		}
+		return undefined;
+	};
+
+	// Exactly one champion / conference winner / division winner / award winner.
+	const single: [Map<string, number>, string][] = [
+		[
+			countByKey((m) => (m.type === "champion" ? `${m.season}` : undefined)),
+			"A parlay can't back two different teams to win the title.",
+		],
+		[
+			countByKey((m) =>
+				m.type === "conf" ? `${m.season}:${m.cid}` : undefined,
+			),
+			"A parlay can't back two different teams to win the same conference.",
+		],
+		[
+			countByKey((m) => (m.type === "div" ? `${m.season}:${m.did}` : undefined)),
+			"A parlay can't back two different teams to win the same division.",
+		],
+		[
+			countByKey((m) =>
+				m.type === "award" ? `${m.season}:${m.award}` : undefined,
+			),
+			"A parlay can't back two different players to win the same award.",
+		],
+	];
+	for (const [counts, message] of single) {
+		const conflict = anyOver(counts, 1, message);
+		if (conflict) {
+			return conflict;
+		}
+	}
+
+	// Over and under of the same team's win total.
+	const winTotalSides = new Map<string, Set<string>>();
+	for (const m of markets) {
+		if (m.type === "winTotal") {
+			const k = `${m.season}:${m.pickTid}`;
+			const set = winTotalSides.get(k) ?? new Set();
+			set.add(m.side);
+			winTotalSides.set(k, set);
+		}
+	}
+	for (const set of winTotalSides.values()) {
+		if (set.size > 1) {
+			return "A parlay can't take over and under on the same team's win total.";
+		}
+	}
+
+	// Award TEAMS have a fixed number of spots, so you can't parlay more players
+	// making one than actually fit (e.g. 6 different players all making the
+	// 5-man All-League First Team is impossible).
+	const teamCap = (
+		m: SportsbookMarket,
+	): { key: string; cap: number } | undefined => {
+		if (m.type === "allLeagueTeam") {
+			return { key: `all-league:${m.season}:${m.tier}`, cap: 5 };
+		}
+		if (m.type === "allDefensiveTeam") {
+			return { key: `all-defensive:${m.season}:${m.tier}`, cap: 5 };
+		}
+		if (m.type === "allRookieTeam") {
+			return { key: `all-rookie:${m.season}`, cap: 5 };
+		}
+		if (m.type === "allStarTeam") {
+			return {
+				key: `all-star:${m.season}`,
+				cap: opts?.allStarRosterSize ?? Number.POSITIVE_INFINITY,
+			};
+		}
+		return undefined;
+	};
+	const teamCounts = new Map<string, { n: number; cap: number }>();
+	for (const m of markets) {
+		const tc = teamCap(m);
+		if (tc) {
+			const cur = teamCounts.get(tc.key) ?? { n: 0, cap: tc.cap };
+			cur.n += 1;
+			teamCounts.set(tc.key, cur);
+		}
+	}
+	for (const { n, cap } of teamCounts.values()) {
+		if (n > cap) {
+			return `A parlay can't have more than ${cap} players making the same team — only ${cap} spots exist.`;
+		}
 	}
 
 	// Everything else only conflicts within a single game.

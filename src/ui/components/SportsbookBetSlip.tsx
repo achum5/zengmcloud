@@ -60,7 +60,10 @@ export const OddsCell = ({
 // Local slip state (picks + stakes) plus the atomic place-the-whole-slip
 // action. Each page that offers odds buttons gets its OWN slip instance -
 // there's no cross-page shared slip, so navigating away clears it.
-export const useBetSlip = (tid: number) => {
+export const useBetSlip = (
+	tid: number,
+	opts?: { allStarRosterSize?: number },
+) => {
 	const [picks, setPicks] = useState<Pick[]>([]);
 	const [stakes, setStakes] = useState<Record<string, string>>({});
 	const [parlay, setParlay] = useState(false);
@@ -102,7 +105,9 @@ export const useBetSlip = (tid: number) => {
 	// Only offer parlays for 2+ legs; block genuinely contradictory tickets.
 	const canParlay = picks.length >= 2;
 	const conflict = canParlay
-		? parlayConflict(picks.map((p) => p.market))
+		? parlayConflict(picks.map((p) => p.market), {
+				allStarRosterSize: opts?.allStarRosterSize,
+			})
 		: undefined;
 	const parlayActive = parlay && canParlay;
 

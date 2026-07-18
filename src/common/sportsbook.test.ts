@@ -148,6 +148,101 @@ describe("parlayConflict", () => {
 	test("blocks exact duplicate legs", () => {
 		assert.ok(parlayConflict([ml(1, 10), ml(1, 10)]));
 	});
+
+	// --- Futures / awards ---------------------------------------------------
+	const champion = (pickTid: number): SportsbookMarket => ({
+		type: "champion",
+		pickTid,
+		season: 2026,
+	});
+	const conf = (pickTid: number, cid: number): SportsbookMarket => ({
+		type: "conf",
+		pickTid,
+		cid,
+		season: 2026,
+	});
+	const award = (award: "mvp" | "dpoy", pid: number): SportsbookMarket => ({
+		type: "award",
+		award,
+		pid,
+		season: 2026,
+	});
+	const winTotal = (
+		pickTid: number,
+		side: "over" | "under",
+	): SportsbookMarket => ({
+		type: "winTotal",
+		pickTid,
+		side,
+		line: 41.5,
+		season: 2026,
+	});
+	const allLeague = (pid: number, tier: 1 | 2 | 3): SportsbookMarket => ({
+		type: "allLeagueTeam",
+		pid,
+		tier,
+		season: 2026,
+	});
+	const allStar = (pid: number): SportsbookMarket => ({
+		type: "allStarTeam",
+		pid,
+		season: 2026,
+	});
+
+	test("blocks backing two different champions", () => {
+		assert.ok(parlayConflict([champion(10), champion(20)]));
+	});
+
+	test("allows one champion pick alongside an unrelated leg", () => {
+		assert.strictEqual(
+			parlayConflict([champion(10), allStar(1)]),
+			undefined,
+		);
+	});
+
+	test("blocks two winners of the same conference, allows different confs", () => {
+		assert.ok(parlayConflict([conf(10, 0), conf(20, 0)]));
+		assert.strictEqual(parlayConflict([conf(10, 0), conf(20, 1)]), undefined);
+	});
+
+	test("blocks two different winners of the same award", () => {
+		assert.ok(parlayConflict([award("mvp", 1), award("mvp", 2)]));
+		// Different awards are fine.
+		assert.strictEqual(
+			parlayConflict([award("mvp", 1), award("dpoy", 2)]),
+			undefined,
+		);
+	});
+
+	test("blocks over and under of the same team's win total", () => {
+		assert.ok(parlayConflict([winTotal(10, "over"), winTotal(10, "under")]));
+	});
+
+	test("blocks more than 5 players making the same All-League tier", () => {
+		const six = [1, 2, 3, 4, 5, 6].map((pid) => allLeague(pid, 1));
+		assert.ok(parlayConflict(six));
+		// Exactly 5 is possible.
+		assert.strictEqual(parlayConflict(six.slice(0, 5)), undefined);
+		// 6 across two different tiers is fine (5 fit each).
+		assert.strictEqual(
+			parlayConflict([
+				...[1, 2, 3].map((pid) => allLeague(pid, 1)),
+				...[4, 5, 6].map((pid) => allLeague(pid, 2)),
+			]),
+			undefined,
+		);
+	});
+
+	test("caps All-Star legs at the roster size when provided", () => {
+		const legs = [1, 2, 3].map((pid) => allStar(pid));
+		assert.ok(parlayConflict(legs, { allStarRosterSize: 2 }));
+		assert.strictEqual(
+			parlayConflict(legs, { allStarRosterSize: 3 }),
+			undefined,
+		);
+		// Without a size, All-Star legs aren't capped here (worker still enforces).
+		assert.strictEqual(parlayConflict(legs), undefined);
+	});
 });
 
 describe("formatting", () => {

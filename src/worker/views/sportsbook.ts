@@ -55,6 +55,7 @@ const updateSportsbook = async (
 				allDefensive: [],
 				allRookie: [],
 				allStar: [],
+				allStarRosterSize: g.get("allStarNum") * 2,
 			};
 		}
 

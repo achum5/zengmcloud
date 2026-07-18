@@ -383,7 +383,10 @@ export const placeBetSlip = async ({
 			if (picks.length < 2) {
 				throw new Error("A parlay needs at least 2 picks.");
 			}
-			const conflict = parlayConflict(picks.map((p) => p.market));
+			const conflict = parlayConflict(
+				picks.map((p) => p.market),
+				{ allStarRosterSize: g.get("allStarNum") * 2 },
+			);
 			if (conflict) {
 				throw new Error(conflict);
 			}

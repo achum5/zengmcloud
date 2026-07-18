@@ -77,9 +77,14 @@ const buildTierBoard = (
 				americanOdds: priceOdds(probs[i]![tierIdx]!),
 			}))
 			.sort((a, b) => a.americanOdds - b.americanOdds)
-			.slice(0, 10),
+			.slice(0, TEAM_AWARD_BOARD_SIZE),
 	}));
 };
+
+// How many candidates to list per award-team tier. Generous so there are real
+// longshots to bet, not just the handful of locks - the UI keeps the list
+// scrollable so a long field doesn't take over the page.
+const TEAM_AWARD_BOARD_SIZE = 30;
 
 // How sharply award odds follow the formula's score gaps.
 const AWARD_POWER = 0.9;
@@ -459,7 +464,7 @@ export const getLines = async () => {
 					),
 					AWARD_POWER,
 				);
-				const players = race.players.slice(0, 8);
+				const players = race.players.slice(0, 20);
 				return {
 					award: key,
 					name: race.name,
@@ -577,5 +582,8 @@ export const getLines = async () => {
 		allDefensive,
 		allRookie,
 		allStar,
+		// How many players make the All-Star team (both rosters), so the UI can
+		// block parlaying more "makes the All-Star team" legs than fit.
+		allStarRosterSize: g.get("allStarNum") * 2,
 	};
 };

@@ -41,7 +41,9 @@ const Sportsbook = ({
 		"games" | "futures" | "awards" | "mybets" | "leaguebets"
 	>("games");
 	const [slipOpenMobile, setSlipOpenMobile] = useState(false);
-	const slip = useBetSlip(wallet.tid);
+	const slip = useBetSlip(wallet.tid, {
+		allStarRosterSize: board.allStarRosterSize,
+	});
 
 	// Catch up any bet whose outcome is already known but that a missed hook
 	// didn't settle (e.g. this device was offline when a phase change decided
@@ -278,7 +280,10 @@ const Sportsbook = ({
 		<div className="card mb-3" key={keyPrefix} style={{ maxWidth: 420 }}>
 			<div className="card-header py-2 fw-bold">{heading}</div>
 			<div className="card-body p-2">
-				<div className="table-responsive">
+				<div
+					className="table-responsive"
+					style={{ maxHeight: 360, overflowY: "auto" }}
+				>
 					<table className={TABLE_CLASS} style={{ marginBottom: 0 }}>
 						<tbody>
 							{rows.map((r) => {
@@ -435,40 +440,42 @@ const Sportsbook = ({
 					{candidates.length === 0 ? (
 						<p className="text-body-secondary small mb-0">No candidates.</p>
 					) : (
-						<table className={TABLE_CLASS} style={{ marginBottom: 0 }}>
-							<tbody>
-								{candidates.map((c) => {
-									const key = `${keyPrefix}-${c.pid}`;
-									return (
-										<tr key={key}>
-											<td>
-												<a href={helpers.leagueUrl(["player", c.pid])}>
-													{c.name}
-												</a>{" "}
-												<span className="text-body-secondary small">
-													{teamAbbrev(c.tid)}
-												</span>
-											</td>
-											<td className="text-end" style={{ width: 90 }}>
-												<OddsCell
-													odds={c.americanOdds}
-													selected={selectedKeys.has(key)}
-													onClick={() =>
-														togglePick({
-															key,
-															market: mk(c.pid),
-															odds: c.americanOdds,
-															title: `${c.name} — ${heading}`,
-															sub: heading,
-														})
-													}
-												/>
-											</td>
-										</tr>
-									);
-								})}
-							</tbody>
-						</table>
+						<div style={{ maxHeight: 360, overflowY: "auto" }}>
+							<table className={TABLE_CLASS} style={{ marginBottom: 0 }}>
+								<tbody>
+									{candidates.map((c) => {
+										const key = `${keyPrefix}-${c.pid}`;
+										return (
+											<tr key={key}>
+												<td>
+													<a href={helpers.leagueUrl(["player", c.pid])}>
+														{c.name}
+													</a>{" "}
+													<span className="text-body-secondary small">
+														{teamAbbrev(c.tid)}
+													</span>
+												</td>
+												<td className="text-end" style={{ width: 90 }}>
+													<OddsCell
+														odds={c.americanOdds}
+														selected={selectedKeys.has(key)}
+														onClick={() =>
+															togglePick({
+																key,
+																market: mk(c.pid),
+																odds: c.americanOdds,
+																title: `${c.name} — ${heading}`,
+																sub: heading,
+															})
+														}
+													/>
+												</td>
+											</tr>
+										);
+									})}
+								</tbody>
+							</table>
+						</div>
 					)}
 				</div>
 			</div>
