@@ -2874,7 +2874,6 @@ export const settings: Setting[] = (
 			category: "General",
 			key: "saveReplaysTids",
 			name: "Auto-Save Replays",
-			godModeRequired: "always",
 			type: "jsonString",
 			maxWidth: true,
 			descriptionLong: (
