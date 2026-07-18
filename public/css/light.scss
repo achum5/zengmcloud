@@ -782,6 +782,18 @@ tr.table-warning:hover > td {
 
 .navbar-border {
 	border-bottom: 1px solid $gray-200;
+
+	// Keep the fixed top bar pinned during momentum scrolling on iOS. A plain
+	// position:fixed header is repainted on the main thread every frame, so on
+	// content-heavy pages iOS Safari lets it lag behind - it visibly drifts up
+	// and "scrolls away" with the page until scrolling stops. Promoting it to its
+	// own GPU compositor layer (translateZ + backface-visibility) makes the
+	// browser keep it composited in place instead of repainting it each frame.
+	// The navbar has no position:fixed descendants (its dropdowns are absolute,
+	// positioned against their toggle), so the containing block this creates is
+	// harmless.
+	transform: translateZ(0);
+	backface-visibility: hidden;
 }
 
 .dropdown-links .nav-item,
