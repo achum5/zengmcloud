@@ -155,6 +155,18 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 						)}
 					/>
 				</div>
+				{inLeague ? (
+					<Nav navbar>
+						<Nav.Link
+							href={helpers.leagueUrl(["sportsbook"])}
+							aria-label="Sportsbook"
+							title="Sportsbook"
+							className="fw-bold"
+						>
+							$
+						</Nav.Link>
+					</Nav>
+				) : null}
 				<Nav id="top-user-block" navbar>
 					<Nav.Item>{userBlock}</Nav.Item>
 				</Nav>
