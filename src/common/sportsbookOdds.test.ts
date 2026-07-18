@@ -1,12 +1,19 @@
 import { assert, describe, test } from "vitest";
 import {
 	awardProbsFromScores,
+	combineIndependentSigmas,
 	expectedGameTotal,
 	marginToWinProb,
+	milestoneProb,
+	mulberry32,
 	normalCdf,
+	normalSample,
 	overProb,
+	overProbFromSigma,
+	probNear,
 	seriesWinProb,
 	strengthProbs,
+	tierMembershipProbs,
 	toHalfPointLine,
 	winTotalOverProb,
 } from "./sportsbookOdds.ts";
@@ -154,6 +161,97 @@ describe("seriesWinProb", () => {
 	});
 });
 
+describe("mulberry32 / normalSample", () => {
+	test("mulberry32 is deterministic per seed and stays in [0,1)", () => {
+		const a = mulberry32(42);
+		const b = mulberry32(42);
+		for (let i = 0; i < 20; i++) {
+			const x = a();
+			const y = b();
+			assert.strictEqual(x, y);
+			assert.ok(x >= 0 && x < 1);
+		}
+	});
+	test("different seeds diverge", () => {
+		const a = mulberry32(1);
+		const b = mulberry32(2);
+		const seqA = Array.from({ length: 5 }, () => a());
+		const seqB = Array.from({ length: 5 }, () => b());
+		assert.notDeepEqual(seqA, seqB);
+	});
+	test("normalSample is roughly standard-normal over many draws", () => {
+		const rand = mulberry32(7);
+		const n = 20000;
+		let sum = 0;
+		let sumSq = 0;
+		for (let i = 0; i < n; i++) {
+			const x = normalSample(rand);
+			sum += x;
+			sumSq += x * x;
+		}
+		const mean = sum / n;
+		const variance = sumSq / n - mean * mean;
+		assert.ok(Math.abs(mean) < 0.05, `mean=${mean}`);
+		assert.ok(Math.abs(variance - 1) < 0.1, `variance=${variance}`);
+	});
+});
+
+describe("tierMembershipProbs", () => {
+	test("each candidate's tier probabilities sum to at most 1 (rest is 'misses every tier')", () => {
+		const probs = tierMembershipProbs([90, 80, 70, 60, 50, 40], [2, 2], {
+			seed: 1,
+		});
+		for (const row of probs) {
+			const total = row.reduce((a, b) => a + b, 0);
+			assert.ok(total >= 0 && total <= 1 + 1e-9);
+		}
+	});
+	test("every simulated world assigns each tier slot to exactly one candidate (probabilities sum across the field to the tier size)", () => {
+		const scores = [90, 80, 70, 60, 50, 40];
+		const tierSizes = [2, 2];
+		const probs = tierMembershipProbs(scores, tierSizes, { seed: 3 });
+		for (let tier = 0; tier < tierSizes.length; tier++) {
+			const total = probs.reduce((sum, row) => sum + row[tier]!, 0);
+			assert.ok(
+				Math.abs(total - tierSizes[tier]!) < 1e-9,
+				`tier ${tier} total=${total}`,
+			);
+		}
+	});
+	test("a dominant leader is heavily favored for the top tier, a bottom-dweller is not", () => {
+		const probs = tierMembershipProbs(
+			[1000, 10, 9, 8, 7, 6],
+			[1, 1, 1],
+			{ seed: 5, iterations: 4000 },
+		);
+		assert.ok(probs[0]![0]! > 0.9, `leader P(tier1)=${probs[0]![0]}`);
+		assert.ok(probs.at(-1)![0]! < 0.1, `last P(tier1)=${probs.at(-1)![0]}`);
+	});
+	test("a tight, bunched field is genuinely competitive (no one is a lock)", () => {
+		const probs = tierMembershipProbs([61, 60, 59, 58], [1], {
+			seed: 9,
+			iterations: 4000,
+		});
+		// The nominal #1 should still lose the single spot a meaningful share of
+		// the time in a near-tied field - noise is scaled to the field's own
+		// spread, so tiny real gaps never collapse to a near-certain outcome.
+		assert.ok(
+			probs[0]![0]! < 0.95,
+			`nominal leader P(tier1)=${probs[0]![0]}`,
+		);
+	});
+	test("deterministic per seed", () => {
+		const a = tierMembershipProbs([50, 40, 30], [1, 1], { seed: 11 });
+		const b = tierMembershipProbs([50, 40, 30], [1, 1], { seed: 11 });
+		assert.deepStrictEqual(a, b);
+	});
+	test("empty field or no tiers returns all zeros, one row per candidate", () => {
+		assert.deepStrictEqual(tierMembershipProbs([], [1, 1]), []);
+		const probs = tierMembershipProbs([10, 20], []);
+		assert.deepStrictEqual(probs, [[], []]);
+	});
+});
+
 describe("awardProbsFromScores", () => {
 	test("sums to 1, favorite leads, long shots non-zero", () => {
 		const probs = awardProbsFromScores([100, 80, 70, 40, 20]);
@@ -165,5 +263,108 @@ describe("awardProbsFromScores", () => {
 		const probs = awardProbsFromScores([5, 4, 3, 2, 1]);
 		assert.ok(probs[0]! > probs[4]!);
 		assert.ok(Math.abs(sum(probs) - 1) < 1e-9);
+	});
+});
+
+describe("overProbFromSigma", () => {
+	test("at the mean it's a coin flip", () => {
+		assert.ok(Math.abs(overProbFromSigma(20, 20, 4) - 0.5) < 1e-6);
+	});
+	test("a lower line is more likely to go over; a higher line less likely", () => {
+		assert.ok(overProbFromSigma(20, 15, 4) > 0.5);
+		assert.ok(overProbFromSigma(20, 25, 4) < 0.5);
+	});
+	test("a tighter sigma makes the same line's probability more extreme", () => {
+		const wide = overProbFromSigma(20, 25, 8);
+		const tight = overProbFromSigma(20, 25, 2);
+		assert.ok(tight < wide, `tight=${tight} wide=${wide}`);
+	});
+	test("overProb(expectedTotal, line) matches its own 9%-of-mean sigma", () => {
+		const direct = overProb(220, 220);
+		const viaSigma = overProbFromSigma(220, 220, 220 * 0.09);
+		assert.ok(Math.abs(direct - viaSigma) < 1e-9);
+	});
+});
+
+describe("combineIndependentSigmas", () => {
+	test("combines via sqrt of sum of squares (never exceeds the naive sum)", () => {
+		const combined = combineIndependentSigmas([3, 4]);
+		assert.ok(Math.abs(combined - 5) < 1e-9); // 3-4-5 triangle
+		assert.ok(combined < 3 + 4);
+	});
+	test("a single sigma is unchanged", () => {
+		assert.ok(Math.abs(combineIndependentSigmas([7]) - 7) < 1e-9);
+	});
+	test("empty input is 0", () => {
+		assert.strictEqual(combineIndependentSigmas([]), 0);
+	});
+});
+
+describe("probNear", () => {
+	test("an even matchup (mean 0) has the highest near-zero density", () => {
+		const even = probNear(0, 13, 2);
+		const lopsided = probNear(20, 13, 2);
+		assert.ok(even > lopsided, `even=${even} lopsided=${lopsided}`);
+	});
+	test("a wider band always contains at least as much probability", () => {
+		const narrow = probNear(0, 13, 1);
+		const wide = probNear(0, 13, 5);
+		assert.ok(wide > narrow);
+	});
+	test("stays a valid probability", () => {
+		for (const mean of [-30, -5, 0, 5, 30]) {
+			const p = probNear(mean, 13, 2);
+			assert.ok(p >= 0 && p <= 1, `mean=${mean} p=${p}`);
+		}
+	});
+});
+
+describe("milestoneProb", () => {
+	test("a player projected well above the threshold in every category is a near-lock for the double-double", () => {
+		const cats = [
+			{ mean: 25, sigma: 5 },
+			{ mean: 12, sigma: 3 },
+			{ mean: 11, sigma: 3 },
+			{ mean: 1.5, sigma: 1 },
+			{ mean: 0.8, sigma: 0.6 },
+		];
+		const p = milestoneProb(cats, 10, 2, { seed: 1 });
+		assert.ok(p > 0.85, `p=${p}`);
+	});
+	test("a player nowhere near the threshold in any category is a near-zero for the double-double", () => {
+		const cats = [
+			{ mean: 8, sigma: 3 },
+			{ mean: 2, sigma: 1.2 },
+			{ mean: 3, sigma: 1.2 },
+			{ mean: 0.5, sigma: 0.6 },
+			{ mean: 0.3, sigma: 0.6 },
+		];
+		const p = milestoneProb(cats, 10, 2, { seed: 1 });
+		assert.ok(p < 0.1, `p=${p}`);
+	});
+	test("triple-double (need 3) is always <= double-double (need 2) probability for the same player", () => {
+		const cats = [
+			{ mean: 18, sigma: 5 },
+			{ mean: 10, sigma: 3 },
+			{ mean: 9, sigma: 3 },
+			{ mean: 1.5, sigma: 1 },
+			{ mean: 1, sigma: 0.8 },
+		];
+		const dd = milestoneProb(cats, 10, 2, { seed: 2 });
+		const td = milestoneProb(cats, 10, 3, { seed: 2 });
+		assert.ok(td <= dd, `dd=${dd} td=${td}`);
+	});
+	test("needing more categories than exist is impossible", () => {
+		const cats = [{ mean: 20, sigma: 3 }];
+		assert.strictEqual(milestoneProb(cats, 10, 2, { seed: 1 }), 0);
+	});
+	test("deterministic per seed", () => {
+		const cats = [
+			{ mean: 15, sigma: 4 },
+			{ mean: 8, sigma: 2 },
+		];
+		const a = milestoneProb(cats, 10, 2, { seed: 9 });
+		const b = milestoneProb(cats, 10, 2, { seed: 9 });
+		assert.strictEqual(a, b);
 	});
 });

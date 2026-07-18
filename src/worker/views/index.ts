@@ -11,6 +11,7 @@ export { default as autoExpand } from "./autoExpand.ts";
 export { default as autoRelocate } from "./autoRelocate.ts";
 export { default as awardRaces } from "./awardRaces.ts";
 export { default as sportsbook } from "./sportsbook.ts";
+export { default as sportsbookGame } from "./sportsbookGame.ts";
 export { default as franchiseOutlook } from "./franchiseOutlook.ts";
 export { default as awardsRecords } from "./awardsRecords.ts";
 export { default as colleges } from "./colleges.ts";

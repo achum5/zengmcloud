@@ -103,6 +103,7 @@ export { default as ScheduledEvents } from "./ScheduledEvents.tsx";
 export { default as SeasonPreview } from "./SeasonPreview.tsx";
 export { default as Settings } from "./Settings/index.tsx";
 export { default as Sportsbook } from "./Sportsbook.tsx";
+export { default as SportsbookGame } from "./SportsbookGame.tsx";
 export { default as FranchiseOutlook } from "./FranchiseOutlook.tsx";
 export { default as Standings } from "./Standings.tsx";
 export { default as TeamFinances } from "./TeamFinances/index.tsx";

@@ -1121,6 +1121,9 @@ export default {
 	awardRaces: validateSeasonOnly,
 	awardsRecords,
 	sportsbook: () => ({}),
+	sportsbookGame: (params: Params) => ({
+		gid: params.gid !== undefined ? Number.parseInt(params.gid) : -1,
+	}),
 	customizePlayer,
 	comparePlayers,
 	dailySchedule,

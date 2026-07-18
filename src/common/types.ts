@@ -1909,8 +1909,13 @@ export type SportsbookBet = {
 	label: string;
 	// What kind of market this is, so settlement knows how to resolve it.
 	market: SportsbookMarket;
-	// Filled in at settlement.
-	result?: "won" | "lost" | "push";
+	// Filled in at settlement. "void" is an administrative refund (stake back,
+	// no win/loss either way) for a market that can no longer be resolved at
+	// all - e.g. its game's box score was deleted before settlement, or a
+	// division/conference/champion couldn't be determined from the league's
+	// data. Distinct from "push" (a legitimate tied outcome, like a total
+	// landing exactly on the line) even though both refund the stake.
+	result?: "won" | "lost" | "push" | "void";
 	settledAt?: number;
 };
 
@@ -1934,6 +1939,68 @@ export type SportsbookMarket =
 			award: "mvp" | "dpoy" | "roy" | "smoy" | "mip";
 			pid: number;
 			season: number;
+	  }
+	| {
+			// Makes the All-Star Team (either roster, any role - captain,
+			// starter, reserve). See worker/core/allStar.
+			type: "allStarTeam";
+			pid: number;
+			season: number;
+	  }
+	| {
+			// Makes All-League Team `tier` (1 = First Team, 2 = Second, 3 = Third).
+			type: "allLeagueTeam";
+			pid: number;
+			tier: 1 | 2 | 3;
+			season: number;
+	  }
+	| {
+			// Makes All-Defensive Team `tier`. Basketball only.
+			type: "allDefensiveTeam";
+			pid: number;
+			tier: 1 | 2 | 3;
+			season: number;
+	  }
+	| {
+			// Makes the All-Rookie Team (a single unranked tier).
+			type: "allRookieTeam";
+			pid: number;
+			season: number;
+	  }
+	| {
+			// A single player's stat line in one specific game. "pra"/"pr"/"pa" are
+			// the standard combo props (points+rebounds+assists, points+rebounds,
+			// points+assists). See worker/core/sportsbook/getGameProps.ts.
+			type: "playerProp";
+			gid: number;
+			pid: number;
+			stat: "pts" | "trb" | "ast" | "stl" | "blk" | "tp" | "tov" | "pra" | "pr" | "pa";
+			side: "over" | "under";
+			line: number;
+	  }
+	| {
+			// Single-outcome "yes" prop: did this player record a double-double /
+			// triple-double in this specific game.
+			type: "playerMilestone";
+			gid: number;
+			pid: number;
+			milestone: "dd" | "td";
+	  }
+	| {
+			// A team's stat total in one specific game (as opposed to the
+			// whole-game combined `gameTotal` market above).
+			type: "teamGameProp";
+			gid: number;
+			tid: number;
+			stat: "pts" | "trb" | "ast" | "tp";
+			side: "over" | "under";
+			line: number;
+	  }
+	| {
+			// Single-outcome "yes" prop on the game itself.
+			type: "gameProp";
+			gid: number;
+			prop: "overtime";
 	  };
 
 // How a team's basketball court is drawn in the live-game view. Stored on the

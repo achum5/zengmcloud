@@ -7,6 +7,8 @@ import {
 	SPORTSBOOK_PRESEASON_GRANT,
 } from "../../../common/sportsbook.ts";
 import { getLines } from "./getLines.ts";
+import { getGameProps } from "./getGameProps.ts";
+import { getSyncEngine } from "../sync/engineHolder.ts";
 import type {
 	Conditions,
 	SportsbookBet,
@@ -14,6 +16,34 @@ import type {
 } from "../../../common/types.ts";
 
 const HISTORY_LIMIT = 60;
+
+// Every mutating sportsbook operation (place/cancel/settle) reads a team's
+// `sportsbook` object from idb.cache (a LIVE reference, not a copy - see
+// Cache._get/_getAll), mutates it, and does a whole-object overwrite at the
+// end. If two of these ever run concurrently on this worker - a nightly
+// settle firing at the same moment as a bet click, or a sim's settle
+// overlapping the Sportsbook page's own catch-up settle - they interleave
+// their reads and clobber each other's writes: a bet can be double-paid (both
+// calls credit it), or a payout can vanish (whichever call's stale snapshot
+// writes LAST wins outright, silently dropping the other's credit and putting
+// an already-settled bet back in `bets` as still-open). This was the root
+// cause of "payouts sometimes don't pay out" and "money resets".
+//
+// Fix: serialize every place/cancel/settle through one FIFO queue, so each
+// runs to completion (its full read-modify-write) before the next starts.
+// Nothing here calls back into another locked operation, so there's no
+// deadlock risk - just a queue.
+let sportsbookQueue: Promise<unknown> = Promise.resolve();
+const withSportsbookLock = <T>(fn: () => Promise<T>): Promise<T> => {
+	const run = sportsbookQueue.then(fn, fn);
+	// Keep the chain alive even if `fn` throws, so one failed bet can never
+	// wedge every later one.
+	sportsbookQueue = run.then(
+		() => undefined,
+		() => undefined,
+	);
+	return run;
+};
 
 // Bring a team's wallet into existence (a league imported mid-season, before
 // its first preseason grant, is treated as already holding the standard grant).
@@ -57,6 +87,78 @@ const oddsOk = (claimed: number, board: number) =>
 const LINE_MOVED = "That line has moved — refresh the board and try again.";
 const LINE_GONE = "That market is no longer available.";
 
+// Per-game prop markets are validated against getGameProps(gid), NOT the
+// whole-league getLines() board - computing every player/team prop for every
+// upcoming game on every bet placement would be needlessly expensive. Same
+// principle (a freshly re-derived, deterministic board an honest client
+// always matches), just scoped to one game.
+const validatePropAgainstBoard = async (
+	market: Extract<
+		SportsbookMarket,
+		{ type: "playerProp" | "playerMilestone" | "teamGameProp" | "gameProp" }
+	>,
+	americanOdds: number,
+) => {
+	const board = await getGameProps(market.gid);
+	if (!board) {
+		throw new Error(LINE_GONE);
+	}
+
+	const playerOf = (pid: number) =>
+		[...board.home.players, ...board.away.players].find(
+			(p) => p.pid === pid,
+		);
+
+	if (market.type === "playerProp") {
+		const player = playerOf(market.pid);
+		const row = player?.props.find((p) => p.stat === market.stat);
+		if (!player || !row) {
+			throw new Error(LINE_GONE);
+		}
+		const boardOdds = market.side === "over" ? row.over : row.under;
+		if (market.line !== row.line || !oddsOk(americanOdds, boardOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	if (market.type === "playerMilestone") {
+		const player = playerOf(market.pid);
+		if (!player) {
+			throw new Error(LINE_GONE);
+		}
+		const boardOdds =
+			market.milestone === "dd" ? player.doubleDouble : player.tripleDouble;
+		if (!oddsOk(americanOdds, boardOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	if (market.type === "teamGameProp") {
+		const teamProps =
+			market.tid === board.home.tid
+				? board.home.teamProps
+				: market.tid === board.away.tid
+					? board.away.teamProps
+					: undefined;
+		const row = teamProps?.find((p) => p.stat === market.stat);
+		if (!row) {
+			throw new Error(LINE_GONE);
+		}
+		const boardOdds = market.side === "over" ? row.over : row.under;
+		if (market.line !== row.line || !oddsOk(americanOdds, boardOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	// gameProp (overtime)
+	if (board.overtime === undefined || !oddsOk(americanOdds, board.overtime)) {
+		throw new Error(LINE_GONE);
+	}
+};
+
 // Validate a bet against the CURRENT board, server-side. The board is
 // deterministic for a given league state, so an honest client matches exactly;
 // anything that doesn't (stale page, simmed game, edited request) is refused.
@@ -64,6 +166,15 @@ const validateAgainstBoard = async (
 	market: SportsbookMarket,
 	americanOdds: number,
 ) => {
+	if (
+		market.type === "playerProp" ||
+		market.type === "playerMilestone" ||
+		market.type === "teamGameProp" ||
+		market.type === "gameProp"
+	) {
+		return validatePropAgainstBoard(market, americanOdds);
+	}
+
 	const board = await getLines();
 
 	if (
@@ -171,64 +282,119 @@ const validateAgainstBoard = async (
 		if (!oddsOk(americanOdds, row.americanOdds)) {
 			throw new Error(LINE_MOVED);
 		}
+		return;
+	}
+
+	if (market.type === "allStarTeam") {
+		const row = board.allStar.find((c) => c.pid === market.pid);
+		if (!row) {
+			throw new Error(LINE_GONE);
+		}
+		if (!oddsOk(americanOdds, row.americanOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	if (market.type === "allLeagueTeam" || market.type === "allDefensiveTeam") {
+		const tiers =
+			market.type === "allLeagueTeam" ? board.allLeague : board.allDefensive;
+		const row = tiers
+			.find((t) => t.tier === market.tier)
+			?.candidates.find((c) => c.pid === market.pid);
+		if (!row) {
+			throw new Error(LINE_GONE);
+		}
+		if (!oddsOk(americanOdds, row.americanOdds)) {
+			throw new Error(LINE_MOVED);
+		}
+		return;
+	}
+
+	if (market.type === "allRookieTeam") {
+		const row = board.allRookie.find((c) => c.pid === market.pid);
+		if (!row) {
+			throw new Error(LINE_GONE);
+		}
+		if (!oddsOk(americanOdds, row.americanOdds)) {
+			throw new Error(LINE_MOVED);
+		}
 	}
 };
 
-// Place a bet from a user team's wallet. Debits the stake immediately; the
-// payout (stake × decimal odds) lands on a win at settlement. Throws with a
-// user-facing message on any invalid bet.
-export const placeBet = async ({
-	tid,
-	market,
-	stake,
-	americanOdds,
-	label,
-}: {
-	tid: number;
+type BetPick = {
 	market: SportsbookMarket;
 	stake: number;
 	americanOdds: number;
 	label: string;
-}) => {
-	if (!g.get("userTids").includes(tid)) {
-		throw new Error("You can only bet from your own team.");
-	}
-	if (!Number.isFinite(stake) || stake <= 0) {
-		throw new Error("Enter a stake.");
-	}
-	// House rules: the bet must match a market currently on the board, at odds
-	// no better than the board's. Rejects stale lines (e.g. a game that simmed
-	// since the page loaded) before any money moves.
-	await validateAgainstBoard(market, americanOdds);
-
-	const t = await idb.cache.teams.get(tid);
-	if (!t) {
-		throw new Error("Team not found.");
-	}
-	const sb = ensureWallet(t);
-	if (stake > sb.balance) {
-		throw new Error("Not enough $ for that stake.");
-	}
-
-	const bet: SportsbookBet = {
-		betID: nextBetID(sb),
-		season: g.get("season"),
-		placedAt: Date.now(),
-		americanOdds,
-		decimalOdds: americanToDecimal(americanOdds),
-		stake,
-		label,
-		market,
-	};
-
-	sb.balance -= stake;
-	sb.bets.push(bet);
-	await idb.cache.teams.put(t);
-	return {
-		balance: sb.balance,
-		bets: sb.bets,
-	};
 };
+
+// Place an entire bet slip (one or more picks) from a user team's wallet, as
+// ONE atomic operation: every pick is validated against a single fresh board
+// snapshot and the total stake is checked against the balance BEFORE anything
+// is written, so a bad leg can never leave earlier legs already placed with
+// money already spent (which is what placing each leg in its own separate
+// call - the old UI behavior - allowed). Debits the total stake immediately;
+// each pick's payout lands on a win at settlement. Throws with a user-facing
+// message (and commits nothing) on any invalid pick.
+export const placeBetSlip = async ({
+	tid,
+	picks,
+}: {
+	tid: number;
+	picks: BetPick[];
+}) =>
+	withSportsbookLock(async () => {
+		if (!g.get("userTids").includes(tid)) {
+			throw new Error("You can only bet from your own team.");
+		}
+		if (picks.length === 0) {
+			throw new Error("Enter a stake.");
+		}
+		for (const pick of picks) {
+			if (!Number.isFinite(pick.stake) || pick.stake <= 0) {
+				throw new Error("Enter a stake.");
+			}
+			// House rules: every pick must match a market currently on the board,
+			// at odds no better than the board's. Rejects stale lines (e.g. a game
+			// that simmed since the page loaded) before any money moves.
+			await validateAgainstBoard(pick.market, pick.americanOdds);
+		}
+		const totalStake = picks.reduce((sum, p) => sum + p.stake, 0);
+
+		const t = await idb.cache.teams.get(tid);
+		if (!t) {
+			throw new Error("Team not found.");
+		}
+		const sb = ensureWallet(t);
+		if (totalStake > sb.balance) {
+			throw new Error("Not enough $ for that stake.");
+		}
+
+		let nextID = nextBetID(sb);
+		const placed: SportsbookBet[] = picks.map((pick) => ({
+			betID: nextID++,
+			season: g.get("season"),
+			placedAt: Date.now(),
+			americanOdds: pick.americanOdds,
+			decimalOdds: americanToDecimal(pick.americanOdds),
+			stake: pick.stake,
+			label: pick.label,
+			market: pick.market,
+		}));
+
+		sb.balance -= totalStake;
+		sb.bets.push(...placed);
+		await idb.cache.teams.put(t);
+		return {
+			balance: sb.balance,
+			bets: sb.bets,
+		};
+	});
+
+// Place a single bet. Thin wrapper around placeBetSlip for a one-pick slip.
+export const placeBet = async (pick: { tid: number } & BetPick) =>
+	placeBetSlip({ tid: pick.tid, picks: [pick] });
 
 // Cancel an open bet, refunding the stake. Only the placing user team may.
 export const cancelBet = async ({
@@ -237,24 +403,25 @@ export const cancelBet = async ({
 }: {
 	tid: number;
 	betID: number;
-}) => {
-	if (!g.get("userTids").includes(tid)) {
-		throw new Error("Not your team.");
-	}
-	const t = await idb.cache.teams.get(tid);
-	if (!t?.sportsbook) {
-		return;
-	}
-	const sb = t.sportsbook;
-	const bet = (sb.bets ?? []).find((b) => b.betID === betID);
-	if (!bet) {
-		return;
-	}
-	sb.bets = (sb.bets ?? []).filter((b) => b.betID !== betID);
-	sb.balance += bet.stake;
-	await idb.cache.teams.put(t);
-	return { balance: sb.balance, bets: sb.bets };
-};
+}) =>
+	withSportsbookLock(async () => {
+		if (!g.get("userTids").includes(tid)) {
+			throw new Error("Not your team.");
+		}
+		const t = await idb.cache.teams.get(tid);
+		if (!t?.sportsbook) {
+			return;
+		}
+		const sb = t.sportsbook;
+		const bet = (sb.bets ?? []).find((b) => b.betID === betID);
+		if (!bet) {
+			return;
+		}
+		sb.bets = (sb.bets ?? []).filter((b) => b.betID !== betID);
+		sb.balance += bet.stake;
+		await idb.cache.teams.put(t);
+		return { balance: sb.balance, bets: sb.bets };
+	});
 
 // The number of playoff rounds this league runs, so a champion = a team that
 // won them all.
@@ -273,9 +440,12 @@ const playoffsDone = (season: number) =>
 
 // Resolve a single bet against current league state. Returns the outcome, or
 // undefined if it can't be settled yet (game not played, season not over, …).
+// "void" means the market can no longer be resolved at all (its data is
+// gone, or ambiguous) - the stake is refunded, same as a push, but it's kept
+// as a distinct result so bet history is honest about why.
 const resolveBet = async (
 	bet: SportsbookBet,
-): Promise<"won" | "lost" | "push" | undefined> => {
+): Promise<"won" | "lost" | "push" | "void" | undefined> => {
 	const m = bet.market;
 
 	if (
@@ -285,7 +455,17 @@ const resolveBet = async (
 	) {
 		const game = await idb.getCopy.games({ gid: m.gid }, "noCopyCache");
 		if (!game || !game.won || !game.lost) {
-			return undefined; // not played yet
+			// Distinguish "hasn't been played yet" from "was played, but its box
+			// score is gone" (deleteOldBoxScores at season rollover, or a
+			// user-triggered Delete Old Data can prune the `games` store before
+			// settlement runs). A bet whose game record vanished can never resolve
+			// a true outcome from data alone - void it (refund) rather than hang
+			// forever with the stake frozen, or guess at a result.
+			const stillScheduled = await idb.cache.schedule.get(m.gid);
+			if (stillScheduled) {
+				return undefined; // genuinely hasn't been played yet
+			}
+			return "void";
 		}
 		const home = game.teams[0];
 		const away = game.teams[1];
@@ -319,7 +499,8 @@ const resolveBet = async (
 		);
 		const ts = teamSeasons.find((t) => t.tid === m.pickTid);
 		if (!ts) {
-			return "push";
+			// Team no longer exists (contracted) - can't be resolved either way.
+			return "void";
 		}
 		const wins = ts.seasonAttrs.won;
 		if (wins === m.line) {
@@ -342,7 +523,9 @@ const resolveBet = async (
 		);
 		const inDiv = teamSeasons.filter((t) => t.did === m.did);
 		if (inDiv.length === 0) {
-			return "lost";
+			// The division has no teams left in it (e.g. all contracted, or
+			// realigned away) - there's no winner to compare against.
+			return "void";
 		}
 		const winner = inDiv.reduce((best, t) =>
 			t.seasonAttrs.winp > best.seasonAttrs.winp ? t : best,
@@ -367,14 +550,22 @@ const resolveBet = async (
 			const champ = teamSeasons.find(
 				(t) => t.seasonAttrs.playoffRoundsWon === rounds,
 			);
-			return champ?.tid === m.pickTid ? "won" : "lost";
+			// No team completed every round (e.g. the playoff format changed
+			// mid-season) - the outcome the bet was on was never actually decided.
+			if (!champ) {
+				return "void";
+			}
+			return champ.tid === m.pickTid ? "won" : "lost";
 		}
 		// Conference winner = the team from that conference that reached the
 		// finals (won every round but possibly the last).
 		const confFinalist = teamSeasons.find(
 			(t) => t.cid === m.cid && t.seasonAttrs.playoffRoundsWon >= rounds - 1,
 		);
-		return confFinalist?.tid === m.pickTid ? "won" : "lost";
+		if (!confFinalist) {
+			return "void";
+		}
+		return confFinalist.tid === m.pickTid ? "won" : "lost";
 	}
 
 	if (m.type === "award") {
@@ -391,6 +582,115 @@ const resolveBet = async (
 		return winner.pid === m.pid ? "won" : "lost";
 	}
 
+	if (m.type === "allStarTeam") {
+		const allStars = await idb.getCopy.allStars({ season: m.season });
+		if (!allStars) {
+			return undefined; // roster not selected yet
+		}
+		const madeIt = [
+			...allStars.teams[0],
+			...allStars.teams[1],
+			...allStars.remaining,
+		].some((p) => p.pid === m.pid);
+		return madeIt ? "won" : "lost";
+	}
+
+	if (m.type === "allLeagueTeam" || m.type === "allDefensiveTeam") {
+		const awards = await idb.getCopy.awards({ season: m.season });
+		if (!awards) {
+			return undefined; // not decided yet
+		}
+		const teams =
+			m.type === "allLeagueTeam"
+				? (awards as any).allLeague
+				: (awards as any).allDefensive;
+		// This award category doesn't exist for this sport/season - can't resolve.
+		if (!teams) {
+			return "void";
+		}
+		const players = teams[m.tier - 1]?.players ?? [];
+		return players.some((p: any) => p.pid === m.pid) ? "won" : "lost";
+	}
+
+	if (m.type === "allRookieTeam") {
+		const awards = await idb.getCopy.awards({ season: m.season });
+		if (!awards) {
+			return undefined; // not decided yet
+		}
+		const players = (awards as any).allRookie ?? [];
+		return players.some((p: any) => p?.pid === m.pid) ? "won" : "lost";
+	}
+
+	if (
+		m.type === "playerProp" ||
+		m.type === "playerMilestone" ||
+		m.type === "teamGameProp" ||
+		m.type === "gameProp"
+	) {
+		const game = await idb.getCopy.games({ gid: m.gid }, "noCopyCache");
+		if (!game || !game.won || !game.lost) {
+			// Same "genuinely not played yet" vs "data is gone" distinction as the
+			// top-level game markets above.
+			const stillScheduled = await idb.cache.schedule.get(m.gid);
+			return stillScheduled ? undefined : "void";
+		}
+
+		if (m.type === "gameProp") {
+			// Only "overtime" exists today.
+			return (game.overtimes ?? 0) > 0 ? "won" : "lost";
+		}
+
+		// Teams (and players, below) don't carry a derived "trb" in the raw box
+		// score - it's always orb+drb, same as the projection side in
+		// getGameProps.ts.
+		const statOf = (row: any, stat: string): number =>
+			stat === "trb" ? (row.orb ?? 0) + (row.drb ?? 0) : (row[stat] ?? 0);
+
+		if (m.type === "teamGameProp") {
+			const team = game.teams.find((t: any) => t.tid === m.tid);
+			if (!team) {
+				return "void"; // team no longer exists (contracted)
+			}
+			const value = statOf(team, m.stat);
+			if (value === m.line) {
+				return "push";
+			}
+			return (value > m.line) === (m.side === "over") ? "won" : "lost";
+		}
+
+		// playerProp / playerMilestone: find this player's box-score row across
+		// both teams' rosters for the game.
+		const player = [...game.teams[0].players, ...game.teams[1].players].find(
+			(p: any) => p.pid === m.pid,
+		);
+		// Didn't play (DNP, inactive, traded away before the game) - there's no
+		// real outcome to grade, so refund rather than guess or auto-lose.
+		if (!player || !(player.min > 0)) {
+			return "void";
+		}
+
+		if (m.type === "playerMilestone") {
+			const hit = m.milestone === "dd" ? player.dd : player.td;
+			return hit ? "won" : "lost";
+		}
+
+		// playerProp - combo stats sum their components' real box-score values.
+		let value: number;
+		if (m.stat === "pra") {
+			value = statOf(player, "pts") + statOf(player, "trb") + statOf(player, "ast");
+		} else if (m.stat === "pr") {
+			value = statOf(player, "pts") + statOf(player, "trb");
+		} else if (m.stat === "pa") {
+			value = statOf(player, "pts") + statOf(player, "ast");
+		} else {
+			value = statOf(player, m.stat);
+		}
+		if (value === m.line) {
+			return "push";
+		}
+		return (value > m.line) === (m.side === "over") ? "won" : "lost";
+	}
+
 	return undefined;
 };
 
@@ -399,75 +699,101 @@ const resolveBet = async (
 // each day's games and on every phase change; unresolved bets are left open.
 // Runs on whoever is simming; wallet changes sync to the room via the team
 // record. Returns true if anything settled.
-export const settleBets = async (conditions?: Conditions) => {
-	const teams = await idb.cache.teams.getAll();
-	const userTids = new Set(g.get("userTids"));
-	let anySettled = false;
+export const settleBets = async (conditions?: Conditions) =>
+	withSportsbookLock(async () => {
+		const teams = await idb.cache.teams.getAll();
+		const userTids = new Set(g.get("userTids"));
+		let anySettled = false;
 
-	for (const t of teams) {
-		const sb = t.sportsbook;
-		if (!sb?.bets || sb.bets.length === 0) {
-			continue;
-		}
-
-		const stillOpen: SportsbookBet[] = [];
-		const settled: SportsbookBet[] = [];
-		let wonCount = 0;
-		let netWinnings = 0;
-
-		for (const bet of sb.bets) {
-			const result = await resolveBet(bet);
-			if (result === undefined) {
-				stillOpen.push(bet);
+		for (const t of teams) {
+			const sb = t.sportsbook;
+			if (!sb?.bets || sb.bets.length === 0) {
 				continue;
 			}
-			const done = { ...bet, result, settledAt: Date.now() };
-			if (result === "won") {
-				const payout = bet.stake * bet.decimalOdds;
-				sb.balance += payout;
-				netWinnings += payout - bet.stake;
-				wonCount += 1;
-			} else if (result === "push") {
-				sb.balance += bet.stake;
-			} else {
-				netWinnings -= bet.stake;
+
+			const stillOpen: SportsbookBet[] = [];
+			const settled: SportsbookBet[] = [];
+			let wonCount = 0;
+			let voidCount = 0;
+			let netWinnings = 0;
+
+			for (const bet of sb.bets) {
+				const result = await resolveBet(bet);
+				if (result === undefined) {
+					stillOpen.push(bet);
+					continue;
+				}
+				const done = { ...bet, result, settledAt: Date.now() };
+				if (result === "won") {
+					const payout = bet.stake * bet.decimalOdds;
+					sb.balance += payout;
+					netWinnings += payout - bet.stake;
+					wonCount += 1;
+				} else if (result === "push") {
+					sb.balance += bet.stake;
+				} else if (result === "void") {
+					// Administrative refund - not a real win or loss, so it must not
+					// move netWinnings (which is reported to the user as their P&L).
+					sb.balance += bet.stake;
+					voidCount += 1;
+				} else {
+					netWinnings -= bet.stake;
+				}
+				settled.push(done);
 			}
-			settled.push(done);
+
+			if (settled.length === 0) {
+				continue;
+			}
+
+			anySettled = true;
+			t.sportsbook = {
+				balance: sb.balance,
+				bets: stillOpen,
+				history: [...settled.reverse(), ...(sb.history ?? [])].slice(
+					0,
+					HISTORY_LIMIT,
+				),
+			};
+			await idb.cache.teams.put(t);
+
+			// Let the managing user know how their slips landed.
+			if (userTids.has(t.tid)) {
+				const net = netWinnings;
+				const voidPart =
+					voidCount > 0
+						? `, ${voidCount} voided (refunded)`
+						: "";
+				logEvent(
+					{
+						type: "info",
+						text: `Sportsbook: ${settled.length} bet${settled.length === 1 ? "" : "s"} settled (${wonCount} won${voidPart}), ${
+							net >= 0 ? "+" : ""
+						}${formatSportsbookMoney(net)}.`,
+						saveToDb: false,
+					},
+					conditions,
+				);
+			}
 		}
 
-		if (settled.length === 0) {
-			continue;
+		if (anySettled) {
+			void toUI("realtimeUpdate", [["watchList"]]);
 		}
+		return anySettled;
+	});
 
-		anySettled = true;
-		t.sportsbook = {
-			balance: sb.balance,
-			bets: stillOpen,
-			history: [...settled.reverse(), ...(sb.history ?? [])].slice(
-				0,
-				HISTORY_LIMIT,
-			),
-		};
-		await idb.cache.teams.put(t);
-
-		// Let the managing user know how their slips landed.
-		if (userTids.has(t.tid)) {
-			const net = netWinnings;
-			logEvent(
-				{
-					type: "info",
-					text: `Sportsbook: ${settled.length} bet${settled.length === 1 ? "" : "s"} settled (${wonCount} won), ${
-						net >= 0 ? "+" : ""
-					}${formatSportsbookMoney(net)}.`,
-					saveToDb: false,
-				},
-				conditions,
-			);
-		}
+// Settle bets only if this device is allowed to write shared state right now
+// (single player, or the sim authority in a synced room). Used by the
+// Sportsbook page's catch-up settle - a NON-authority device settling from its
+// own (possibly slightly stale) local cache would risk computing a wrong
+// result AND would race the authority device as a second writer to the same
+// team records. A skipped settle here is harmless: the authority device (or
+// the next phase change / sim) will settle it instead.
+export const settleBetsIfAuthority = async (conditions?: Conditions) => {
+	const engine = getSyncEngine();
+	if (engine !== undefined && !engine.isAuthority()) {
+		return false;
 	}
-
-	if (anySettled) {
-		void toUI("realtimeUpdate", [["watchList"]]);
-	}
-	return anySettled;
+	return settleBets(conditions);
 };

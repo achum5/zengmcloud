@@ -2,8 +2,6 @@ import { g, logEvent } from "../util/index.ts";
 import { idb } from "../db/index.ts";
 import type { UpdateEvents } from "../../common/types.ts";
 import { getLines } from "../core/sportsbook/getLines.ts";
-import { settleBets } from "../core/sportsbook/bets.ts";
-import { getSyncEngine } from "../core/sync/engineHolder.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../common/sportsbook.ts";
 
 const updateSportsbook = async (
@@ -19,19 +17,16 @@ const updateSportsbook = async (
 		// Bets placed/settled bump this so the wallet + open bets refresh.
 		updateEvents.includes("watchList")
 	) {
-		// Safety-net settlement: if this device is the one that may write (single
-		// player, or the sim authority in a room), catch up any bet whose outcome is
-		// already known but that a missed hook didn't settle. Idempotent + no-op
-		// when there's nothing to settle.
-		const engine = getSyncEngine();
-		if (engine === undefined || engine.isAuthority()) {
-			try {
-				await settleBets();
-			} catch (error) {
-				console.error("Sportsbook view settlement failed", error);
-			}
-		}
-
+		// Catch-up settlement (a bet whose outcome is already known but that a
+		// missed hook didn't settle) is NOT done here. This function runs as a
+		// view load, which is deliberately never cloud-tracked for sync (see
+		// SKIP_CHANGESET_CAPTURE in worker/index.ts) - settling here would apply
+		// the payout to this device's local cache only, and the NEXT time this
+		// device reconciles with the room's canonical state, that change would be
+		// silently reverted ("money resets"). The UI instead fires the real
+		// captured `main.sportsbookSettle` call when this page loads, which goes
+		// through the normal mutation pipeline and actually publishes to the room.
+		//
 		// The board must never take down the page - if the odds engine fails for
 		// any reason, render an empty book (wallet + bets still work).
 		let board: Awaited<ReturnType<typeof getLines>>;
@@ -53,6 +48,10 @@ const updateSportsbook = async (
 				divisions: [],
 				winTotals: [],
 				awards: [],
+				allLeague: [],
+				allDefensive: [],
+				allRookie: [],
+				allStar: [],
 			};
 		}
 

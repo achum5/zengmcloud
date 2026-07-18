@@ -1,4 +1,4 @@
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
@@ -9,47 +9,16 @@ import type { SportsbookMarket } from "../../common/types.ts";
 import { useLocal } from "../util/local.ts";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import {
-	americanToDecimal,
+	BetSlipCard,
+	OddsCell,
+	useBetSlip,
+	type Pick,
+} from "../components/SportsbookBetSlip.tsx";
+import {
 	formatAmerican,
 	formatSportsbookMoney,
 	formatSportsbookMoneyFull,
 } from "../../common/sportsbook.ts";
-
-type Pick = {
-	key: string;
-	market: SportsbookMarket;
-	odds: number;
-	title: string;
-	sub: string;
-};
-
-// An odds button: line above the price, fills in when it's in the slip. Fixed
-// size so every column of them lines up.
-const OddsCell = ({
-	line,
-	odds,
-	selected,
-	onClick,
-}: {
-	line?: string;
-	odds: number;
-	selected: boolean;
-	onClick: () => void;
-}) => (
-	<button
-		type="button"
-		onClick={onClick}
-		className={`btn btn-sm w-100 d-flex flex-column align-items-center justify-content-center lh-1 ${selected ? "btn-primary" : "btn-light-bordered"}`}
-		style={{ height: 42, padding: "2px 4px", minWidth: 72 }}
-	>
-		{line !== undefined ? (
-			<span className="text-body-secondary" style={{ fontSize: "0.72rem" }}>
-				{line}
-			</span>
-		) : null}
-		<span className="fw-bold">{formatAmerican(odds)}</span>
-	</button>
-);
 
 // The standard table look used across the app.
 const TABLE_CLASS =
@@ -60,11 +29,21 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 
-	const [tab, setTab] = useState<"games" | "futures" | "mybets">("games");
-	const [picks, setPicks] = useState<Pick[]>([]);
-	const [stakes, setStakes] = useState<Record<string, string>>({});
+	const [tab, setTab] = useState<"games" | "futures" | "awards" | "mybets">(
+		"games",
+	);
 	const [slipOpenMobile, setSlipOpenMobile] = useState(false);
-	const [placing, setPlacing] = useState(false);
+	const slip = useBetSlip(wallet.tid);
+
+	// Catch up any bet whose outcome is already known but that a missed hook
+	// didn't settle (e.g. this device was offline when a phase change decided
+	// an award). A real captured worker call - see worker/api/index.ts
+	// sportsbookSettle - so a payout it produces actually publishes to a
+	// synced room instead of only applying to this device's local cache.
+	useEffect(() => {
+		void toWorker("main", "sportsbookSettle", undefined);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	const teamName = (tid: number) => {
 		const t = teamInfoCache[tid];
@@ -91,70 +70,13 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 		</a>
 	);
 
-	const selectedKeys = new Set(picks.map((p) => p.key));
+	const selectedKeys = slip.selectedKeys;
 	const togglePick = (pick: Pick) => {
-		setPicks((prev) =>
-			prev.some((p) => p.key === pick.key)
-				? prev.filter((p) => p.key !== pick.key)
-				: [...prev, pick],
-		);
+		slip.togglePick(pick);
 		setSlipOpenMobile(true);
-	};
-	const removePick = (key: string) =>
-		setPicks((prev) => prev.filter((p) => p.key !== key));
-	const clearSlip = () => {
-		setPicks([]);
-		setStakes({});
 	};
 
 	const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
-
-	const totalStake = picks.reduce(
-		(sum, p) => sum + (Number.parseFloat(stakes[p.key] ?? "") || 0),
-		0,
-	);
-	const totalPayout = picks.reduce((sum, p) => {
-		const stake = Number.parseFloat(stakes[p.key] ?? "") || 0;
-		return sum + stake * americanToDecimal(p.odds);
-	}, 0);
-
-	const placeBets = async () => {
-		if (placing) {
-			return;
-		}
-		const toPlace = picks.filter(
-			(p) => (Number.parseFloat(stakes[p.key] ?? "") || 0) > 0,
-		);
-		if (toPlace.length === 0) {
-			showNotification({ type: "error", text: "Enter a stake first." });
-			return;
-		}
-		setPlacing(true);
-		try {
-			for (const p of toPlace) {
-				await toWorker("main", "sportsbookPlaceBet", {
-					tid: wallet.tid,
-					market: p.market,
-					stake: Number.parseFloat(stakes[p.key]!),
-					americanOdds: p.odds,
-					label: `${p.title} — ${p.sub}`,
-				});
-			}
-			showNotification({
-				type: "success",
-				text: `Placed ${toPlace.length} bet${toPlace.length === 1 ? "" : "s"}.`,
-			});
-			clearSlip();
-			await realtimeUpdate(["watchList"]);
-		} catch (error) {
-			showNotification({
-				type: "error",
-				text: error instanceof Error ? error.message : "Could not place bet.",
-			});
-		} finally {
-			setPlacing(false);
-		}
-	};
 
 	const cancelBet = async (betID: number) => {
 		try {
@@ -168,94 +90,7 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 		}
 	};
 
-	// ---- Bet slip --------------------------------------------------------
-	const betslip = (
-		<div className="card">
-			<div className="card-header d-flex justify-content-between align-items-center py-2">
-				<span className="fw-bold">
-					Bet Slip{" "}
-					{picks.length > 0 ? (
-						<span className="badge text-bg-primary ms-1">{picks.length}</span>
-					) : null}
-				</span>
-				{picks.length > 0 ? (
-					<button
-						className="btn btn-sm btn-link text-decoration-none p-0"
-						onClick={clearSlip}
-					>
-						Clear
-					</button>
-				) : null}
-			</div>
-			<div className="card-body py-2">
-				{picks.length === 0 ? (
-					<div className="text-body-secondary text-center py-4">
-						Tap any odds to start a bet slip.
-					</div>
-				) : (
-					<>
-						{picks.map((p) => {
-							const stake = Number.parseFloat(stakes[p.key] ?? "") || 0;
-							const toWin = stake * (americanToDecimal(p.odds) - 1);
-							return (
-								<div key={p.key} className="border-bottom pb-2 mb-2">
-									<div className="d-flex justify-content-between">
-										<div className="fw-medium">{p.title}</div>
-										<button
-											className="btn-close btn-close-sm"
-											style={{ fontSize: "0.6rem" }}
-											onClick={() => removePick(p.key)}
-											title="Remove"
-										/>
-									</div>
-									<div className="text-body-secondary small mb-1">
-										{p.sub} · {formatAmerican(p.odds)}
-									</div>
-									<div className="input-group input-group-sm">
-										<span className="input-group-text">$</span>
-										<input
-											type="number"
-											min={0}
-											className="form-control"
-											placeholder="Stake"
-											value={stakes[p.key] ?? ""}
-											onChange={(e) =>
-												setStakes((s) => ({ ...s, [p.key]: e.target.value }))
-											}
-										/>
-										<span className="input-group-text">
-											{toWin > 0 ? `+${formatSportsbookMoney(toWin)}` : "—"}
-										</span>
-									</div>
-								</div>
-							);
-						})}
-						<div className="d-flex justify-content-between small mb-1">
-							<span className="text-body-secondary">Total stake</span>
-							<span>{formatSportsbookMoney(totalStake)}</span>
-						</div>
-						<div className="d-flex justify-content-between fw-bold mb-2">
-							<span>Potential payout</span>
-							<span>{formatSportsbookMoney(totalPayout)}</span>
-						</div>
-						<button
-							className="btn btn-primary w-100"
-							disabled={
-								placing || totalStake <= 0 || totalStake > wallet.balance
-							}
-							onClick={placeBets}
-						>
-							{totalStake > wallet.balance
-								? "Not enough $"
-								: placing
-									? "Placing…"
-									: `Place ${picks.length} bet${picks.length === 1 ? "" : "s"}`}
-						</button>
-					</>
-				)}
-			</div>
-		</div>
-	);
+	const betslip = <BetSlipCard slip={slip} balance={wallet.balance} />;
 
 	// ---- Games -----------------------------------------------------------
 	const gamesTab =
@@ -265,7 +100,7 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 			</p>
 		) : (
 			<div className="table-responsive">
-				<table className={TABLE_CLASS} style={{ maxWidth: 640 }}>
+				<table className={TABLE_CLASS} style={{ maxWidth: 720 }}>
 					<thead>
 						<tr>
 							<th>Game</th>
@@ -278,6 +113,7 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 							<th className="text-center" style={{ width: 84 }}>
 								Total
 							</th>
+							<th style={{ width: 90 }} />
 						</tr>
 					</thead>
 					<tbody>
@@ -396,6 +232,14 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 											</div>
 										</td>
 									))}
+									<td className="text-end align-middle">
+										<a
+											className="btn btn-sm btn-light-bordered"
+											href={helpers.leagueUrl(["sportsbook", "game", game.gid])}
+										>
+											Props
+										</a>
+									</td>
 								</tr>
 							);
 						})}
@@ -458,9 +302,8 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 	);
 
 	const futuresTab = (
-		<>
-			<div className="row">
-				<div className="col-md-6">
+		<div className="row">
+			<div className="col-md-6">
 					{teamFuturesTable(
 						"Championship",
 						"Champion",
@@ -551,54 +394,172 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 					)}
 				</div>
 			</div>
+	);
 
-			{board.awards.length === 0 ? null : <h2>Award Futures</h2>}
-			<div className="row">
-				{board.awards.map((race) => (
-					<div key={race.award} className="col-lg-4 col-md-6">
-						<h3 className="h5">{race.name}</h3>
-						<table className={TABLE_CLASS} style={{ maxWidth: 380 }}>
-							<tbody>
-								{race.candidates.map((c) => {
-									const key = `aw-${race.award}-${c.pid}`;
-									return (
-										<tr key={key}>
-											<td>
-												<a href={helpers.leagueUrl(["player", c.pid])}>
-													{c.name}
-												</a>{" "}
-												<span className="text-body-secondary small">
-													{teamAbbrev(c.tid)}
-												</span>
-											</td>
-											<td className="text-end" style={{ width: 90 }}>
-												<OddsCell
-													odds={c.americanOdds}
-													selected={selectedKeys.has(key)}
-													onClick={() =>
-														togglePick({
-															key,
-															market: {
-																type: "award",
-																award: race.award,
-																pid: c.pid,
-																season,
-															},
-															odds: c.americanOdds,
-															title: `${c.name} — ${race.name}`,
-															sub: race.name,
-														})
-													}
-												/>
-											</td>
-										</tr>
-									);
-								})}
-							</tbody>
-						</table>
+	// ---- Awards ------------------------------------------------------------
+	// A player-vs-a-role market ("will X win the trophy" / "will X make the
+	// team"), as opposed to the team futures above. Shared table shape for all
+	// of them: single-winner races (MVP, etc.), the binary All-Star/All-Rookie
+	// "makes it" props, and each tier of All-League/All-Defensive.
+	const playerCandidateTable = (
+		heading: string,
+		candidates: {
+			pid: number;
+			name: string;
+			tid: number;
+			abbrev: string;
+			americanOdds: number;
+		}[],
+		mk: (pid: number) => SportsbookMarket,
+		keyPrefix: string,
+	) => (
+		<div key={keyPrefix} className="col-lg-4 col-md-6 mb-3">
+			<h3 className="h5">{heading}</h3>
+			{candidates.length === 0 ? (
+				<p className="text-body-secondary small">No candidates.</p>
+			) : (
+				<table className={TABLE_CLASS} style={{ maxWidth: 380 }}>
+					<tbody>
+						{candidates.map((c) => {
+							const key = `${keyPrefix}-${c.pid}`;
+							return (
+								<tr key={key}>
+									<td>
+										<a href={helpers.leagueUrl(["player", c.pid])}>
+											{c.name}
+										</a>{" "}
+										<span className="text-body-secondary small">
+											{teamAbbrev(c.tid)}
+										</span>
+									</td>
+									<td className="text-end" style={{ width: 90 }}>
+										<OddsCell
+											odds={c.americanOdds}
+											selected={selectedKeys.has(key)}
+											onClick={() =>
+												togglePick({
+													key,
+													market: mk(c.pid),
+													odds: c.americanOdds,
+													title: `${c.name} — ${heading}`,
+													sub: heading,
+												})
+											}
+										/>
+									</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			)}
+		</div>
+	);
+
+	const hasAnyAwardMarket =
+		board.awards.length > 0 ||
+		board.allStar.length > 0 ||
+		board.allLeague.some((t) => t.candidates.length > 0) ||
+		board.allDefensive.some((t) => t.candidates.length > 0) ||
+		board.allRookie.length > 0;
+
+	const awardsTab = !hasAnyAwardMarket ? (
+		<p className="text-body-secondary">
+			No award futures available right now — check back once the season's
+			underway.
+		</p>
+	) : (
+		<>
+			{board.awards.length > 0 ? (
+				<>
+					<h2 className="h4">Player Awards</h2>
+					<div className="row">
+						{board.awards.map((race) =>
+							playerCandidateTable(
+								race.name,
+								race.candidates,
+								(pid) => ({
+									type: "award",
+									award: race.award,
+									pid,
+									season,
+								}),
+								`aw-${race.award}`,
+							),
+						)}
 					</div>
-				))}
-			</div>
+				</>
+			) : null}
+
+			{board.allStar.length > 0 ? (
+				<>
+					<h2 className="h4 mt-2">All-Star Team</h2>
+					<div className="row">
+						{playerCandidateTable(
+							"Makes the All-Star Team",
+							board.allStar,
+							(pid) => ({ type: "allStarTeam", pid, season }),
+							"as",
+						)}
+					</div>
+				</>
+			) : null}
+
+			{board.allLeague.some((t) => t.candidates.length > 0) ? (
+				<>
+					<h2 className="h4 mt-2">All-League Team</h2>
+					<div className="row">
+						{board.allLeague.map((t) =>
+							playerCandidateTable(
+								t.title,
+								t.candidates,
+								(pid) => ({
+									type: "allLeagueTeam",
+									pid,
+									tier: t.tier as 1 | 2 | 3,
+									season,
+								}),
+								`al-${t.tier}`,
+							),
+						)}
+					</div>
+				</>
+			) : null}
+
+			{board.allDefensive.some((t) => t.candidates.length > 0) ? (
+				<>
+					<h2 className="h4 mt-2">All-Defensive Team</h2>
+					<div className="row">
+						{board.allDefensive.map((t) =>
+							playerCandidateTable(
+								t.title,
+								t.candidates,
+								(pid) => ({
+									type: "allDefensiveTeam",
+									pid,
+									tier: t.tier as 1 | 2 | 3,
+									season,
+								}),
+								`ad-${t.tier}`,
+							),
+						)}
+					</div>
+				</>
+			) : null}
+
+			{board.allRookie.length > 0 ? (
+				<>
+					<h2 className="h4 mt-2">All-Rookie Team</h2>
+					<div className="row">
+						{playerCandidateTable(
+							"Makes the All-Rookie Team",
+							board.allRookie,
+							(pid) => ({ type: "allRookieTeam", pid, season }),
+							"ar",
+						)}
+					</div>
+				</>
+			) : null}
 		</>
 	);
 
@@ -610,6 +571,10 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 			<span className="badge text-bg-danger">Lost</span>
 		) : r === "push" ? (
 			<span className="badge text-bg-secondary">Push</span>
+		) : r === "void" ? (
+			<span className="badge text-bg-secondary" title="Refunded — this market could no longer be resolved">
+				Void
+			</span>
 		) : (
 			<span className="badge text-bg-warning">Open</span>
 		);
@@ -638,7 +603,7 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 									? formatSportsbookMoney(bet.stake * (bet.decimalOdds - 1))
 									: bet.result === "won"
 										? formatSportsbookMoney(bet.stake * bet.decimalOdds)
-										: bet.result === "push"
+										: bet.result === "push" || bet.result === "void"
 											? formatSportsbookMoney(bet.stake)
 											: "—"}
 							</td>
@@ -706,6 +671,7 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 					[
 						["games", "Games"],
 						["futures", "Futures"],
+						["awards", "Awards"],
 						[
 							"mybets",
 							`My Bets${wallet.bets.length > 0 ? ` (${wallet.bets.length})` : ""}`,
@@ -729,7 +695,9 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 						? gamesTab
 						: tab === "futures"
 							? futuresTab
-							: myBetsTab}
+							: tab === "awards"
+								? awardsTab
+								: myBetsTab}
 				</div>
 				<div className="col-lg-4 col-xl-3 d-none d-lg-block">
 					<div className="position-sticky" style={{ top: "1rem" }}>
@@ -738,7 +706,7 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 				</div>
 			</div>
 
-			{picks.length > 0 ? (
+			{slip.picks.length > 0 ? (
 				<div
 					className="d-lg-none position-fixed start-0 end-0 bottom-0 p-2"
 					style={{ zIndex: 1030 }}
@@ -758,9 +726,9 @@ const Sportsbook = ({ board, wallet, balances, season }: View<"sportsbook">) => 
 							className="btn btn-primary w-100 shadow"
 							onClick={() => setSlipOpenMobile(true)}
 						>
-							Bet Slip ({picks.length}) ·{" "}
-							{totalStake > 0
-								? `${formatSportsbookMoney(totalStake)} to win ${formatSportsbookMoney(totalPayout - totalStake)}`
+							Bet Slip ({slip.picks.length}) ·{" "}
+							{slip.totalStake > 0
+								? `${formatSportsbookMoney(slip.totalStake)} to win ${formatSportsbookMoney(slip.totalPayout - slip.totalStake)}`
 								: "add stake"}
 						</button>
 					)}

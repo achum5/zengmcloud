@@ -175,7 +175,9 @@ import type { LookingForState } from "../../ui/views/TradingBlock/useLookingForS
 import { getPlayer } from "../views/player.ts";
 import {
 	placeBet as sportsbookPlaceBetCore,
+	placeBetSlip as sportsbookPlaceBetSlipCore,
 	cancelBet as sportsbookCancelBetCore,
+	settleBetsIfAuthority as sportsbookSettleCore,
 } from "../core/sportsbook/bets.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
@@ -2392,8 +2394,34 @@ const sportsbookPlaceBet = async (info: {
 	return sportsbookPlaceBetCore(info);
 };
 
+// Place an entire bet slip (1+ picks) as one atomic operation - either every
+// pick is placed, or (on any invalid pick) none are and no money moves. See
+// core/sportsbook/bets.ts placeBetSlip for why this replaced placing each
+// pick in its own separate call.
+const sportsbookPlaceBetSlip = async (info: {
+	tid: number;
+	picks: {
+		market: SportsbookMarket;
+		stake: number;
+		americanOdds: number;
+		label: string;
+	}[];
+}) => {
+	return sportsbookPlaceBetSlipCore(info);
+};
+
 const sportsbookCancelBet = async (info: { tid: number; betID: number }) => {
 	return sportsbookCancelBetCore(info);
+};
+
+// Catch-up settlement, called when the Sportsbook page loads. A REAL captured
+// `main` call (unlike the old in-view settle it replaced), so a payout
+// actually gets published to the room instead of silently applying only to
+// this device's local cache. No-op (and no error) on a device that isn't
+// allowed to write shared state right now (a synced follower) - the sim
+// authority's device settles instead.
+const sportsbookSettle = async () => {
+	return sportsbookSettleCore();
 };
 
 const getPlayerTeamStats = async ({ pid }: { pid: number }) => {
@@ -6038,7 +6066,9 @@ export default {
 		getPlayerSelectedStats,
 		getPlayerTeamStats,
 		sportsbookPlaceBet,
+		sportsbookPlaceBetSlip,
 		sportsbookCancelBet,
+		sportsbookSettle,
 		getPlayerWatch,
 		getProjectedAttendance,
 		getRandomCollege,
