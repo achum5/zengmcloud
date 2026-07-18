@@ -1,5 +1,5 @@
 import { PHASE } from "../../../common/constants.ts";
-import { g, toUI, logEvent } from "../../util/index.ts";
+import { g, local, lock, toUI, logEvent } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import {
 	americanToDecimal,
@@ -386,6 +386,11 @@ export const placeBetSlip = async ({
 		sb.balance -= totalStake;
 		sb.bets.push(...placed);
 		await idb.cache.teams.put(t);
+		// Money just moved - don't leave it sitting in the cache's 4-second
+		// auto-flush window where a reload would silently lose it.
+		try {
+			await idb.cache.flush();
+		} catch {}
 		return {
 			balance: sb.balance,
 			bets: sb.bets,
@@ -420,6 +425,9 @@ export const cancelBet = async ({
 		sb.bets = (sb.bets ?? []).filter((b) => b.betID !== betID);
 		sb.balance += bet.stake;
 		await idb.cache.teams.put(t);
+		try {
+			await idb.cache.flush();
+		} catch {}
 		return { balance: sb.balance, bets: sb.bets };
 	});
 
@@ -778,6 +786,17 @@ export const settleBets = async (conditions?: Conditions) =>
 		}
 
 		if (anySettled) {
+			// Payouts are money too - flush them, but not mid-sim/phase-change
+			// (flushing then is unsafe/wasteful; those paths flush when they end).
+			if (
+				!lock.get("gameSim") &&
+				!lock.get("newPhase") &&
+				!local.autoPlayUntil
+			) {
+				try {
+					await idb.cache.flush();
+				} catch {}
+			}
 			void toUI("realtimeUpdate", [["watchList"]]);
 		}
 		return anySettled;
