@@ -234,8 +234,22 @@ export const getLines = async () => {
 
 		games.push({
 			gid: matchup.gid,
-			home: { tid: home.tid, abbrev: home.abbrev, region: home.region, name: home.name },
-			away: { tid: away.tid, abbrev: away.abbrev, region: away.region, name: away.name },
+			home: {
+				tid: home.tid,
+				abbrev: home.abbrev,
+				region: home.region,
+				name: home.name,
+				won: home.seasonAttrs.won,
+				lost: home.seasonAttrs.lost,
+			},
+			away: {
+				tid: away.tid,
+				abbrev: away.abbrev,
+				region: away.region,
+				name: away.name,
+				won: away.seasonAttrs.won,
+				lost: away.seasonAttrs.lost,
+			},
 			moneyline: {
 				home: priceOdds(pHome),
 				away: priceOdds(1 - pHome),

@@ -85,10 +85,23 @@ const updateSportsbook = async (
 			}))
 			.sort((a, b) => b.balance - a.balance);
 
+		// Every user team's slips, so league-mates can sweat each other's bets.
+		// Bets live on the (synced) team record, so this is just a read.
+		const leagueBets = teams
+			.filter((t) => userTids.has(t.tid))
+			.map((t) => ({
+				tid: t.tid,
+				balance: t.sportsbook?.balance ?? SPORTSBOOK_PRESEASON_GRANT,
+				open: t.sportsbook?.bets ?? [],
+				settled: (t.sportsbook?.history ?? []).slice(0, 10),
+			}))
+			.sort((a, b) => b.balance - a.balance);
+
 		return {
 			board,
 			wallet,
 			balances,
+			leagueBets,
 			userTid,
 			phase: g.get("phase"),
 			season: g.get("season"),

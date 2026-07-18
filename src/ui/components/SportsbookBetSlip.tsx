@@ -37,15 +37,20 @@ export const OddsCell = ({
 	<button
 		type="button"
 		onClick={onClick}
-		className={`btn btn-sm w-100 d-flex flex-column align-items-center justify-content-center lh-1 ${selected ? "btn-primary" : "btn-light-bordered"}`}
-		style={{ height: 42, padding: "2px 4px", minWidth: 72 }}
+		className={`btn btn-sm w-100 d-flex flex-column align-items-center justify-content-center lh-1 rounded-2 ${selected ? "btn-primary" : "btn-light-bordered"}`}
+		style={{ height: 44, padding: "2px 4px", minWidth: 72 }}
 	>
 		{line !== undefined ? (
-			<span className="text-body-secondary" style={{ fontSize: "0.72rem" }}>
+			<span
+				className={selected ? "" : "text-body-secondary"}
+				style={{ fontSize: "0.72rem", opacity: selected ? 0.85 : undefined }}
+			>
 				{line}
 			</span>
 		) : null}
-		<span className="fw-bold">{formatAmerican(odds)}</span>
+		<span className={`fw-bold ${selected ? "" : "text-primary"}`}>
+			{formatAmerican(odds)}
+		</span>
 	</button>
 );
 

@@ -3,12 +3,15 @@ import { g } from "../../util/index.ts";
 import getSchedule from "../season/getSchedule.ts";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
 import { getTeamOvrs } from "./getLines.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
+import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { probToAmerican } from "../../../common/sportsbook.ts";
 import {
 	combineIndependentSigmas,
+	expectedGameTotal,
 	MARGIN_SIGMA,
+	marginToWinProb,
 	milestoneProb,
+	overProb,
 	overProbFromSigma,
 	probNear,
 	toHalfPointLine,
@@ -118,12 +121,15 @@ const buildPlayerField = async (
 		tid,
 	});
 
+	// No tid filter here, on purpose: the prior season is the player's track
+	// record WHEREVER it happened. Filtering by current team silently zeroed
+	// out every offseason acquisition's history, leaving their early-season
+	// lines priced off a tiny current sample.
 	const prior = await idb.getCopies.playersPlus(rawPlayers, {
 		attrs: ["pid"],
 		stats: statKeys,
 		season: season - 1,
 		showNoStats: true,
-		tid,
 	});
 	const priorByPid = new Map(prior.map((p: any) => [p.pid, p]));
 
@@ -195,10 +201,11 @@ export const getGameProps = async (gid: number) => {
 
 	// Teams don't have a derived "trb" stat the way players do (see
 	// playersPlus.ts) - fetch orb/drb raw and sum them ourselves below.
+	// oppPts is for the main total line (same additive model as getLines).
 	const teams = await idb.getCopies.teamsPlus(
 		{
 			attrs: ["tid", "abbrev", "region", "name", "disabled"],
-			stats: ["pts", "orb", "drb", "ast", "tp", "gp"],
+			stats: ["pts", "oppPts", "orb", "drb", "ast", "tp", "gp"],
 			season,
 			showNoStats: true,
 		},
@@ -299,6 +306,84 @@ export const getGameProps = async (gid: number) => {
 			? undefined
 			: Math.min(0.35, probNear(margin, MARGIN_SIGMA, otBand) * 1.8);
 
+	// --- Main lines (moneyline / spread / total) ---------------------------
+	// The exact same formulas AND inputs as getLines.ts's game-lines section,
+	// deliberately: a spread/ML/total bet placed from this page is validated by
+	// placeBet against the whole-league board, so any drift between the two
+	// computations would spuriously reject the bet as a moved line.
+	let main:
+		| {
+				moneyline: { home: number; away: number };
+				spread: { line: number; home: number; away: number };
+				total: { line: number; over: number; under: number };
+		  }
+		| undefined;
+	if (margin !== undefined) {
+		const ptsStats = (t: (typeof teams)[number]) => {
+			const s = t.stats as any;
+			return {
+				gp: s?.gp ?? 0,
+				pts: s?.pts ?? 0,
+				oppPts: s?.oppPts ?? 0,
+			};
+		};
+		let totalPtsPerGame = 0;
+		let n = 0;
+		for (const t of activeTeams) {
+			const s = ptsStats(t);
+			if (s.gp > 0) {
+				totalPtsPerGame += s.pts;
+				n += 1;
+			}
+		}
+		const leagueAvgTotal =
+			n > 0
+				? (2 * totalPtsPerGame) / n
+				: bySport({ basketball: 220, football: 45, baseball: 9, hockey: 6 });
+		const halfLeague = leagueAvgTotal / 2;
+		const regress = (perGame: number, gp: number) => {
+			const w = Math.min(1, gp / 8);
+			return halfLeague + (perGame - halfLeague) * w;
+		};
+		const scoringFor = (t: (typeof teams)[number]) => {
+			const s = ptsStats(t);
+			return s.gp > 0 ? regress(s.pts, s.gp) : undefined;
+		};
+		const scoringAgainst = (t: (typeof teams)[number]) => {
+			const s = ptsStats(t);
+			return s.gp > 0 ? regress(s.oppPts, s.gp) : undefined;
+		};
+
+		const pHome = marginToWinProb(margin);
+		const expectedTotal = expectedGameTotal({
+			homeFor: scoringFor(home),
+			homeAgainst: scoringAgainst(home),
+			awayFor: scoringFor(away),
+			awayAgainst: scoringAgainst(away),
+			leagueAvgTotal,
+		});
+		const totalLine = toHalfPointLine(expectedTotal);
+		const pOver = overProb(expectedTotal, totalLine);
+		const spreadLine =
+			toHalfPointLine(Math.abs(margin)) * (margin >= 0 ? -1 : 1);
+		main = {
+			moneyline: {
+				home: priceOdds(pHome),
+				away: priceOdds(1 - pHome),
+			},
+			spread: {
+				line: spreadLine,
+				home: priceOdds(0.5),
+				away: priceOdds(0.5),
+			},
+			total: {
+				line: totalLine,
+				over: priceOdds(pOver),
+				under: priceOdds(1 - pOver),
+			},
+		};
+	}
+
 	// --- Player props ----------------------------------------------------
 	const homeField = await buildPlayerField(home.tid, home.abbrev, season);
 	const awayField = await buildPlayerField(away.tid, away.abbrev, season);
@@ -363,5 +448,6 @@ export const getGameProps = async (gid: number) => {
 			teamProps: teamPropRows(away),
 		},
 		overtime: pOvertime === undefined ? undefined : priceOdds(pOvertime),
+		main,
 	};
 };
