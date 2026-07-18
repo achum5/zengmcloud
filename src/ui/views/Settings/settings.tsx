@@ -2896,8 +2896,9 @@ export const settings: Setting[] = (
 				if (!Array.isArray(value)) {
 					throw new Error("Must be a list of team IDs");
 				}
+				// -1 is the All-Star Game sentinel (its teams are tids -1/-2).
 				for (const num of value) {
-					if (!Number.isInteger(num) || num < 0) {
+					if (!Number.isInteger(num) || num < -1) {
 						throw new Error("Must contain only team ID numbers");
 					}
 				}

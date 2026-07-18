@@ -45,6 +45,10 @@ const SaveReplaysTeams = ({
 		);
 	};
 
+	// -1 is the All-Star Game (its rosters are tids -1/-2). Kept separate from the
+	// team list since it isn't a real franchise.
+	const ALL_STAR = -1;
+
 	return (
 		<div style={{ maxWidth: 420 }}>
 			<div className="d-flex gap-2 mb-2">
@@ -52,7 +56,12 @@ const SaveReplaysTeams = ({
 					type="button"
 					className="btn btn-secondary btn-sm"
 					disabled={disabled}
-					onClick={() => setTids(teams.map((t) => t.tid))}
+					onClick={() =>
+						setTids([
+							...(selectedSet.has(ALL_STAR) ? [ALL_STAR] : []),
+							...teams.map((t) => t.tid),
+						])
+					}
 				>
 					Select all
 				</button>
@@ -69,6 +78,20 @@ const SaveReplaysTeams = ({
 				className="d-flex flex-column gap-1 border rounded p-2"
 				style={{ maxHeight: 260, overflowY: "auto" }}
 			>
+				<div className="form-check mb-0">
+					<input
+						className="form-check-input"
+						type="checkbox"
+						id="saveReplays-allstar"
+						disabled={disabled}
+						checked={selectedSet.has(ALL_STAR)}
+						onChange={() => toggle(ALL_STAR)}
+					/>
+					<label className="form-check-label" htmlFor="saveReplays-allstar">
+						⭐ All-Star Game
+					</label>
+				</div>
+				<hr className="my-1" />
 				{teams.map((t) => (
 					<div key={t.tid} className="form-check mb-0">
 						<input
