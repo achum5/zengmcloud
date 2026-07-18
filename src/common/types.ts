@@ -781,6 +781,9 @@ export type GameAttributesLeague = {
 		clutchPlays?: "your" | "all";
 		allStar?: "all";
 	};
+	// Teams whose every game auto-saves a live-sim replay (rewatchable even
+	// though it was never live-simmed). Empty = no team auto-saves.
+	saveReplaysTids: number[];
 	season: number;
 	softCapTradeSalaryMatch: number;
 	sonRate: number;

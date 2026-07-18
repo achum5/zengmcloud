@@ -71,6 +71,9 @@ const deleteOldBoxScores = async () => {
 		// For performance, not sure how much it actually matters
 		const gameHasYourTeamCache = new GameHasYourTeamCache();
 
+		// Gids deleted this pass, so saved replays for them can be pruned too.
+		const deletedGids = new Set<number>();
+
 		const saveIfMeetsConditions = (
 			type: Exclude<keyof typeof saveOldBoxScores, "pastSeasons">,
 			game: Game,
@@ -132,6 +135,20 @@ const deleteOldBoxScores = async () => {
 
 			// If we made it this far, game is not to be saved
 			await idb.cache.games.delete(game.gid);
+			deletedGids.add(game.gid);
+		}
+
+		// Prune any saved live-sim replays whose box score was just deleted - a
+		// replay is only useful while its game exists. Iterate the (small) set of
+		// saved-replay gids and delete only those being removed, so we don't emit
+		// spurious deletes for the many games that never had a replay.
+		if (deletedGids.size > 0) {
+			const replayGids = await idb.league.getAllKeys("liveGamePlayByPlay");
+			for (const gid of replayGids) {
+				if (deletedGids.has(gid as number)) {
+					await idb.cache.liveGamePlayByPlay.delete(gid as number);
+				}
+			}
 		}
 	}
 };

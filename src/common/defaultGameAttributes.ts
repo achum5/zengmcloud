@@ -389,6 +389,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 		pastSeasonsType: "all",
 		note: "all",
 	},
+	saveReplaysTids: [], // teams whose games auto-save a rewatchable live-sim replay; empty = none
 	currencyFormat: ["$", ".", ""],
 	forceRetireRealPlayers: false,
 	forceHistoricalRosters: false,

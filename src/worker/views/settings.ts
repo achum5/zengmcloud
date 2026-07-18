@@ -180,6 +180,7 @@ type Key =
 	| "neutralSite"
 	| "rpdPot"
 	| "saveOldBoxScores"
+	| "saveReplaysTids"
 	| "currencyFormat"
 	| "overtimeLength"
 	| "overtimeLengthPlayoffs"
@@ -407,6 +408,7 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			neutralSite: g.get("neutralSite"),
 			rpdPot: g.get("rpdPot"),
 			saveOldBoxScores: g.get("saveOldBoxScores"),
+			saveReplaysTids: g.get("saveReplaysTids"),
 			currencyFormat: g.get("currencyFormat"),
 			overtimeLength: g.get("overtimeLength"),
 			overtimeLengthPlayoffs: g.get("overtimeLengthPlayoffs"),

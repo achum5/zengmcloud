@@ -169,6 +169,7 @@ export type Key =
 	| "neutralSite"
 	| "rpdPot"
 	| "saveOldBoxScores"
+	| "saveReplaysTids"
 	| "currencyFormat"
 	| "overtimeLength"
 	| "overtimeLengthPlayoffs"

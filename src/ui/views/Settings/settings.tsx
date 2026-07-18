@@ -19,6 +19,7 @@ import type { HandleChange, HandleChangeRaw } from "./SettingsFormOptions.tsx";
 import type { State } from "./SettingsForm.tsx";
 import RowsEditor from "./RowsEditor.tsx";
 import PlayerBioInfo2 from "./PlayerBioInfo.tsx";
+import SaveReplaysTeams from "./SaveReplaysTeams.tsx";
 import type { GameAttributesLeague } from "../../../common/types.ts";
 import { parseCurrencyFormat } from "../../util/parseCurrencyFormat.ts";
 import { getDraftTypeDescription } from "../DraftLottery.tsx";
@@ -2867,6 +2868,40 @@ export const settings: Setting[] = (
 					...value,
 					pastSeasons,
 				};
+			},
+		},
+		{
+			category: "General",
+			key: "saveReplaysTids",
+			name: "Auto-Save Replays",
+			godModeRequired: "always",
+			type: "jsonString",
+			maxWidth: true,
+			descriptionLong: (
+				<>
+					Every game these teams play saves a rewatchable live-sim replay, even
+					if you never live-simmed it. Replays are large — pick a few teams, not
+					the whole league. They're pruned along with old box scores.
+				</>
+			),
+			customForm: ({ disabled, handleChangeRaw, state }) => {
+				return (
+					<SaveReplaysTeams
+						disabled={disabled}
+						value={state.saveReplaysTids}
+						onChange={handleChangeRaw("saveReplaysTids")}
+					/>
+				);
+			},
+			validator: (value) => {
+				if (!Array.isArray(value)) {
+					throw new Error("Must be a list of team IDs");
+				}
+				for (const num of value) {
+					if (!Number.isInteger(num) || num < 0) {
+						throw new Error("Must contain only team ID numbers");
+					}
+				}
 			},
 		},
 		{

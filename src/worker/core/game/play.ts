@@ -377,35 +377,36 @@ const play = async (
 		let raw;
 		let url;
 
-		// If there was a play by play done for one of these games, get it
-		if (gidOneGame !== undefined && playByPlay) {
-			for (const result of results) {
-				if (result.playByPlay !== undefined) {
-					raw = {
-						gidOneGame,
+		// Persist a rewatchable replay for every game that generated play-by-play
+		// this batch - the one being live-watched, plus any game of a team flagged
+		// for auto-saved replays. Keyed by each game's own gid, written inside the
+		// sim's capture window so it syncs to the whole room like the game itself.
+		// Best-effort: a replay is a nicety, never fail the sim over it.
+		for (const result of results) {
+			if (result.playByPlay !== undefined) {
+				try {
+					await idb.cache.liveGamePlayByPlay.put({
+						gid: result.gid,
+						season: g.get("season"),
 						playByPlay: result.playByPlay,
-					};
-					url = helpers.leagueUrl(["live_game"]);
-
-					// If this device is the sim authority in a sync room, broadcast this
-					// live sim to the room so every follower watches it in lockstep. A
-					// no-op in single-player or on a follower.
-					runLiveBroadcastStart(gidOneGame, result.playByPlay);
-
-					// Persist the play-by-play so this game can be re-watched later.
-					// Written through the cache inside the sim's capture window, so it's
-					// synced to the whole room like the game itself - every device can
-					// rewatch. Best-effort: a replay is a nicety, never fail the sim.
-					try {
-						await idb.cache.liveGamePlayByPlay.put({
-							gid: gidOneGame,
-							season: g.get("season"),
-							playByPlay: result.playByPlay,
-						});
-					} catch (error) {
-						console.error("Failed to save live game play-by-play", error);
-					}
+					});
+				} catch (error) {
+					console.error("Failed to save game play-by-play", error);
 				}
+			}
+		}
+
+		// If this was a live sim, route the UI to the live game and (in a sync
+		// room) broadcast it so every follower watches in lockstep.
+		if (gidOneGame !== undefined && playByPlay) {
+			const liveResult = results.find((result) => result.gid === gidOneGame);
+			if (liveResult?.playByPlay !== undefined) {
+				raw = {
+					gidOneGame,
+					playByPlay: liveResult.playByPlay,
+				};
+				url = helpers.leagueUrl(["live_game"]);
+				runLiveBroadcastStart(gidOneGame, liveResult.playByPlay);
 			}
 
 			// This is not ideal... it means no event will be sent to other open tabs. But I don't have a way of saying "send this update to all tabs except X" currently
@@ -489,8 +490,16 @@ const play = async (
 	) => {
 		const results: any[] = [];
 
+		// Teams whose every game auto-saves a rewatchable replay. Generating
+		// play-by-play is extra work, so this is only done for the flagged teams'
+		// games (plus the one game being live-watched, as before).
+		const saveReplaysTids = new Set(g.get("saveReplaysTids"));
+
 		for (const game of schedule) {
-			const doPlayByPlay = gidOneGame === game.gid && playByPlay;
+			const doPlayByPlay =
+				(gidOneGame === game.gid && playByPlay) ||
+				saveReplaysTids.has(game.homeTid) ||
+				saveReplaysTids.has(game.awayTid);
 
 			const teamsInput = [teams[game.homeTid], teams[game.awayTid]] as any;
 
