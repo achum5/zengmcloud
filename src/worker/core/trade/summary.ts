@@ -181,7 +181,17 @@ const summary = async (teams: TradeTeams): Promise<TradeSummary> => {
 	} else if (softCapCondition) {
 		// Which team is at fault?;
 		const j = ratios[0] > softCapTradeSalaryMatch ? 0 : 1;
-		s.warning = `The ${s.teams[j].name} are over the salary cap, so the players it receives must have a combined salary of less than ${softCapTradeSalaryMatch}% of the salaries of the players it trades away.  Currently, that value is ${ratios[j]}%.`;
+		const k = j === 0 ? 1 : 0;
+		// The over-cap team receives `incoming` and sends `outgoing` (both in $M).
+		// To satisfy the match (receives <= match% of what it sends) the cheapest
+		// literal fix is to send out more salary; this is exactly how much more.
+		const incoming = s.teams[k].total;
+		const outgoing = s.teams[j].total;
+		const extraOutgoing = (100 * incoming) / softCapTradeSalaryMatch - outgoing;
+		s.warning = `The ${s.teams[j].name} are over the salary cap, so the players it receives must have a combined salary of less than ${softCapTradeSalaryMatch}% of the salaries of the players it trades away. Currently, that value is ${ratios[j]}%. They'd need to trade away about ${helpers.formatCurrency(
+			extraOutgoing,
+			"M",
+		)} more in salary to make it work.`;
 		s.warningAmount = ratios[j];
 	} else if (hardCapCondition) {
 		const j = overCapAndIncreasing(0) ? 0 : 1;
