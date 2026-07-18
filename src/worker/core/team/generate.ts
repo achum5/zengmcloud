@@ -108,6 +108,17 @@ const generate = (tm: any): Team => {
 		t.draftLottery = tm.draftLottery;
 	}
 
+	// Fork-added optional team fields. Preserve them on import/export - otherwise
+	// this whitelist silently drops them, losing a team's court customization and
+	// its whole sportsbook wallet + bet history on any export/re-import.
+	if (tm.court !== undefined) {
+		t.court = tm.court;
+	}
+
+	if (tm.sportsbook !== undefined) {
+		t.sportsbook = tm.sportsbook;
+	}
+
 	return t;
 };
 
