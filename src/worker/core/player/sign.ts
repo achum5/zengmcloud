@@ -58,6 +58,27 @@ const sign = async (
 			type: "freeAgent",
 			eid,
 		});
+
+		// Notify whenever a high-upside free agent (60+ potential) comes off the
+		// board, whichever team lands them - a heads-up for league-mates that a
+		// promising player just got signed. Notification only (saveToDb: false):
+		// the freeAgent event above is already the recorded transaction.
+		const pot = p.ratings.at(-1)?.pot ?? 0;
+		if (pot >= 60) {
+			const t = g.get("teamInfoCache")[tid];
+			logEvent({
+				type: "freeAgent",
+				text: `<a href="${helpers.leagueUrl(["player", p.pid])}">${
+					p.firstName
+				} ${p.lastName}</a> (${pot} pot) signed with the <a href="${helpers.leagueUrl(
+					["roster", `${t?.abbrev}_${tid}`, g.get("season")],
+				)}">${t ? `${t.region} ${t.name}` : "team"}</a>.`,
+				showNotification: true,
+				saveToDb: false,
+				pids: [p.pid],
+				tids: [tid],
+			});
+		}
 	}
 
 	return eid;
