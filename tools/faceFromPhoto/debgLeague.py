@@ -26,8 +26,11 @@ Notes
   Ctrl-C and resume.
 * A photo that can't be downloaded or cut out keeps its ORIGINAL url, so nothing
   is ever lost or blanked.
-* `birefnet-portrait` is the sharpest model for headshots; `isnet-general-use`
-  (default) is a robust all-rounder. First run downloads the model once.
+* `birefnet-portrait` (default) is the sharpest model for headshots;
+  `isnet-general-use` is a lighter all-rounder. First run downloads the model
+  once. Add --alpha-matting for cleaner edges (hair/outlines) at some speed cost.
+* Cutouts are compressed with pngquant if it's installed (apt-get install
+  pngquant) — roughly halves the file size with no visible loss at this scale.
 """
 
 import argparse
@@ -36,6 +39,8 @@ import hashlib
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -101,14 +106,43 @@ def download(url, retries=3):
 # --- background removal + framing -------------------------------------------
 
 
-def cutout(raw_bytes, model, size, margin):
+def compress_png(png_bytes):
+    """Shrink a transparent PNG with pngquant (palette + alpha) if it's on PATH;
+    otherwise return the original bytes. Typically cuts size 50-70%."""
+    if shutil.which("pngquant") is None:
+        return png_bytes
+    try:
+        proc = subprocess.run(
+            ["pngquant", "--quality=50-88", "--strip", "--force", "-"],
+            input=png_bytes,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return proc.stdout
+    except Exception:  # noqa: BLE001
+        pass
+    return png_bytes
+
+
+def cutout(raw_bytes, model, size, margin, alpha_matting):
     from rembg import remove
     from PIL import Image
 
     session = get_rembg_session(model)
+    # Alpha matting refines mask edges (hair, jersey outlines) at some cost in
+    # speed — the fix for "rough edges" on portraits.
+    kwargs = {}
+    if alpha_matting:
+        kwargs = dict(
+            alpha_matting=True,
+            alpha_matting_foreground_threshold=240,
+            alpha_matting_background_threshold=10,
+            alpha_matting_erode_size=10,
+        )
     # rembg is CPU/GPU bound; serialize inference, parallelize the I/O around it.
     with _rembg_lock:
-        out = remove(raw_bytes, session=session)
+        out = remove(raw_bytes, session=session, **kwargs)
 
     img = Image.open(io.BytesIO(out)).convert("RGBA")
 
@@ -128,7 +162,7 @@ def cutout(raw_bytes, model, size, margin):
 
     buf = io.BytesIO()
     canvas.save(buf, format="PNG", optimize=True)
-    return buf.getvalue()
+    return compress_png(buf.getvalue())
 
 
 # --- hosting -----------------------------------------------------------------
@@ -212,8 +246,13 @@ def main():
     ap.add_argument("--branch", default="master", help="repo branch (host=github)")
     ap.add_argument("--subdir", default="playerFaces", help="repo folder (host=github)")
     ap.add_argument("--map", default="url_map.json", help="resume/cache file")
-    ap.add_argument("--model", default="isnet-general-use")
-    ap.add_argument("--size", type=int, default=256, help="output square px")
+    ap.add_argument("--model", default="birefnet-portrait")
+    ap.add_argument(
+        "--alpha-matting",
+        action="store_true",
+        help="refine mask edges (cleaner hair/outlines, slower)",
+    )
+    ap.add_argument("--size", type=int, default=200, help="output square px")
     ap.add_argument("--margin", type=float, default=0.12, help="padding fraction")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--limit", type=int, default=0, help="process only N (testing)")
@@ -262,7 +301,7 @@ def main():
         def work(url):
             key = url_key(url)
             raw = download(url)
-            png = cutout(raw, args.model, args.size, args.margin)
+            png = cutout(raw, args.model, args.size, args.margin, args.alpha_matting)
             if args.host == "github":
                 hosted = save_github(
                     png, args.repo_dir, args.repo_slug, args.branch, args.subdir, key
