@@ -742,11 +742,10 @@ export const settings: Setting[] = (
 			descriptionLong: (
 				<>
 					A second, hard ceiling above the normal salary cap. For the teams it
-					applies to, no signing, re-signing, or trade may push a team's
-					payroll over this number. The only exception is minimum-salary
-					signings needed to reach the minimum roster size. Set to{" "}
-					<code>0</code> to turn it off. Choose which teams it binds with{" "}
-					<b>Hard Cap Teams</b> below.
+					applies to, no signing, re-signing, or trade may push a team's payroll
+					over this number. The only exception is minimum-salary signings needed
+					to reach the minimum roster size. Set to <code>0</code> to turn it
+					off. Choose which teams it binds with <b>Hard Cap Teams</b> below.
 				</>
 			),
 			validator: (value, output) => {
@@ -2604,9 +2603,9 @@ export const settings: Setting[] = (
 			descriptionLong: (
 				<>
 					Overrides difficulty for <b>trades only</b> — how the AI values your
-					players and draft picks. Leave blank to use the main Difficulty
-					above. Higher is harder: Easy <code>-0.25</code>, Normal{" "}
-					<code>0</code>, Hard <code>0.25</code>, Insane <code>1</code>.
+					players and draft picks. Leave blank to use the main Difficulty above.
+					Higher is harder: Easy <code>-0.25</code>, Normal <code>0</code>, Hard{" "}
+					<code>0.25</code>, Insane <code>1</code>.
 				</>
 			),
 		},
@@ -2879,8 +2878,9 @@ export const settings: Setting[] = (
 			descriptionLong: (
 				<>
 					Every game these teams play saves a rewatchable live-sim replay, even
-					if you never live-simmed it. Replays are large — pick a few teams, not
-					the whole league. They're pruned along with old box scores.
+					if you never live-simmed it. Or save every playoff game regardless of
+					team. Replays are large — pick a few teams, not the whole league.
+					They're pruned along with old box scores.
 				</>
 			),
 			customForm: ({ disabled, handleChangeRaw, state }) => {
@@ -2896,9 +2896,10 @@ export const settings: Setting[] = (
 				if (!Array.isArray(value)) {
 					throw new Error("Must be a list of team IDs");
 				}
-				// -1 is the All-Star Game sentinel (its teams are tids -1/-2).
+				// -1 is the All-Star Game sentinel, -2 is the "all playoff games"
+				// sentinel; everything else is a real team ID (>= 0).
 				for (const num of value) {
-					if (!Number.isInteger(num) || num < -1) {
+					if (!Number.isInteger(num) || num < -2) {
 						throw new Error("Must contain only team ID numbers");
 					}
 				}

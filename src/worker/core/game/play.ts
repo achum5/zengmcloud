@@ -503,12 +503,16 @@ const play = async (
 
 		// Teams whose every game auto-saves a rewatchable replay. Generating
 		// play-by-play is extra work, so this is only done for the flagged teams'
-		// games (plus the one game being live-watched, as before).
+		// games (plus the one game being live-watched, as before). The -2 sentinel
+		// means "every playoff game", regardless of team.
 		const saveReplaysTids = new Set(g.get("saveReplaysTids"));
+		const saveAllPlayoffGames =
+			saveReplaysTids.has(-2) && g.get("phase") === PHASE.PLAYOFFS;
 
 		for (const game of schedule) {
 			const doPlayByPlay =
 				(gidOneGame === game.gid && playByPlay) ||
+				saveAllPlayoffGames ||
 				saveReplaysTids.has(game.homeTid) ||
 				saveReplaysTids.has(game.awayTid);
 

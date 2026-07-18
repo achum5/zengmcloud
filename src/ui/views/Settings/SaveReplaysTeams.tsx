@@ -46,8 +46,10 @@ const SaveReplaysTeams = ({
 	};
 
 	// -1 is the All-Star Game (its rosters are tids -1/-2). Kept separate from the
-	// team list since it isn't a real franchise.
+	// team list since it isn't a real franchise. -2 is the "all playoff games"
+	// sentinel: save every playoff game regardless of team.
 	const ALL_STAR = -1;
+	const ALL_PLAYOFFS = -2;
 
 	return (
 		<div style={{ maxWidth: 420 }}>
@@ -59,6 +61,7 @@ const SaveReplaysTeams = ({
 					onClick={() =>
 						setTids([
 							...(selectedSet.has(ALL_STAR) ? [ALL_STAR] : []),
+							...(selectedSet.has(ALL_PLAYOFFS) ? [ALL_PLAYOFFS] : []),
 							...teams.map((t) => t.tid),
 						])
 					}
@@ -78,6 +81,19 @@ const SaveReplaysTeams = ({
 				className="d-flex flex-column gap-1 border rounded p-2"
 				style={{ maxHeight: 260, overflowY: "auto" }}
 			>
+				<div className="form-check mb-0">
+					<input
+						className="form-check-input"
+						type="checkbox"
+						id="saveReplays-allplayoffs"
+						disabled={disabled}
+						checked={selectedSet.has(ALL_PLAYOFFS)}
+						onChange={() => toggle(ALL_PLAYOFFS)}
+					/>
+					<label className="form-check-label" htmlFor="saveReplays-allplayoffs">
+						🏆 All playoff games
+					</label>
+				</div>
 				<div className="form-check mb-0">
 					<input
 						className="form-check-input"
@@ -102,7 +118,10 @@ const SaveReplaysTeams = ({
 							checked={selectedSet.has(t.tid)}
 							onChange={() => toggle(t.tid)}
 						/>
-						<label className="form-check-label" htmlFor={`saveReplays-${t.tid}`}>
+						<label
+							className="form-check-label"
+							htmlFor={`saveReplays-${t.tid}`}
+						>
 							{t.region} {t.name}
 						</label>
 					</div>
