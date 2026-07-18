@@ -450,15 +450,29 @@ export type RecapDayStandings = {
 // FIFO: chronological order, and when the cap bites, the OLDEST games keep
 // their slots - a deep backlog is cleared oldest-first across successive runs,
 // never leapfrogged by newer days.
+//
+// The sweep never crosses the regular-season/playoff boundary: a run stays
+// within the phase of the day the user clicked Copy on. So clicking Copy on the
+// first playoff day starts the playoffs fresh instead of dragging in a backlog
+// of un-recapped regular-season games (and vice versa).
 export const selectRecapGames = <
-	T extends { gid: number; day?: number; note?: unknown },
+	T extends { gid: number; day?: number; playoffs?: unknown; note?: unknown },
 >(
 	completed: T[],
 	day: number,
 	maxGames: number,
 ): T[] => {
+	// Phase of the clicked day: the games on that exact day settle it (a day is
+	// entirely regular season or entirely playoffs). If none are on that day,
+	// fall back to whether any playoff game has been played by then.
+	const gamesOnDay = completed.filter((game) => (game.day ?? 0) === day);
+	const isPlayoffs =
+		gamesOnDay.length > 0
+			? gamesOnDay.some((game) => !!game.playoffs)
+			: completed.some((game) => !!game.playoffs && (game.day ?? 0) <= day);
+
 	return completed
-		.filter((game) => !game.note)
+		.filter((game) => !game.note && !!game.playoffs === isPlayoffs)
 		.sort((a, b) => (a.day ?? 0) - (b.day ?? 0) || a.gid - b.gid)
 		.slice(0, maxGames);
 };
@@ -985,9 +999,7 @@ export const getDayGamesForRecap = async ({
 					name: t.name,
 					won: t.won,
 					lost: t.lost,
-					gb: leader
-						? (leader.won - t.won + (t.lost - leader.lost)) / 2
-						: 0,
+					gb: leader ? (leader.won - t.won + (t.lost - leader.lost)) / 2 : 0,
 				})),
 			};
 		}),

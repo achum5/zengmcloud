@@ -175,6 +175,49 @@ describe("selectRecapGames", () => {
 			[1, 2],
 		);
 	});
+
+	const gp = (gid: number, day: number, playoffs: boolean, note?: string) => ({
+		gid,
+		day,
+		playoffs,
+		note,
+	});
+
+	test("copying the first playoff day does not sweep in un-recapped regular-season games", () => {
+		const completed = [
+			gp(1, 1, false), // un-recapped regular season
+			gp(2, 2, false), // un-recapped regular season
+			gp(3, 5, true), // first playoff day
+			gp(4, 5, true),
+		];
+		const picked = selectRecapGames(completed, 5, 45);
+		assert.deepEqual(
+			picked.map((x) => x.gid),
+			[3, 4],
+		);
+	});
+
+	test("copying a regular-season day stays in the regular season, ignoring played playoff games", () => {
+		const completed = [gp(1, 1, false), gp(2, 2, false), gp(3, 5, true)];
+		const picked = selectRecapGames(completed, 2, 45);
+		assert.deepEqual(
+			picked.map((x) => x.gid),
+			[1, 2],
+		);
+	});
+
+	test("playoff phase is inferred when the clicked day has no games of its own", () => {
+		const completed = [
+			gp(1, 1, false),
+			gp(2, 5, true), // earlier playoff day already played
+		];
+		// Day 6 has no completed games yet, but the playoffs are underway.
+		const picked = selectRecapGames(completed, 6, 45);
+		assert.deepEqual(
+			picked.map((x) => x.gid),
+			[2],
+		);
+	});
 });
 
 describe("enteringAverages", () => {
@@ -209,7 +252,10 @@ describe("enteringAverages", () => {
 	});
 
 	test("a player's first game has no entering averages", () => {
-		assert.strictEqual(enteringAverages([line(1, 1, 25)], 1, 1, false), undefined);
+		assert.strictEqual(
+			enteringAverages([line(1, 1, 25)], 1, 1, false),
+			undefined,
+		);
 	});
 
 	test("playoff and regular-season lines don't mix", () => {
