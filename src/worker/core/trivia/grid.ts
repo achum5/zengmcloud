@@ -84,6 +84,14 @@ const LAYOUTS: number[][] = [
 	[2, 4, 5], // 3 achievements
 ];
 
+// Fallback layouts for young leagues. Every LAYOUTS grid contains Team×Team
+// cells, which need players who played for BOTH franchises - after only a
+// season or two almost nobody has, so those grids can never be filled. These
+// stages remove that requirement: first all-achievement columns (every cell
+// is Team×Achievement), then a pure achievement×achievement grid.
+const LAYOUT_ALL_ACH_COLS = [3, 4, 5];
+const LAYOUT_ALL_ACH = [0, 1, 2, 3, 4, 5];
+
 export const generateTriviaGrid = async (): Promise<
 	| {
 			grid: TriviaGridData;
@@ -156,7 +164,9 @@ export const generateTriviaGrid = async (): Promise<
 		}
 	}
 
-	if (teamCandidates.length < 5) {
+	// Need enough raw material for SOME stage: team-based grids want a few
+	// teams to choose from, the pure-achievement fallback wants six criteria.
+	if (teamCandidates.length < 5 && achievementCandidates.length < 6) {
 		return undefined; // brand-new or tiny league
 	}
 
@@ -186,11 +196,20 @@ export const generateTriviaGrid = async (): Promise<
 	};
 
 	// --- Assembly with retries ---------------------------------------------
-	const MAX_TRIES = 300;
+	// Staged: prefer team-heavy grids (the classic look), then grids with no
+	// Team×Team cells, then pure achievement grids - so young leagues still
+	// get a solvable puzzle instead of nothing.
+	const MAX_TRIES = 450;
 	for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
-		const minCell = attempt < 200 ? 3 : 1;
+		const minCell = attempt % 150 < 100 ? 3 : 1;
+		const layout =
+			attempt < 150
+				? choice(LAYOUTS)
+				: attempt < 300
+					? LAYOUT_ALL_ACH_COLS
+					: LAYOUT_ALL_ACH;
 		const achSlots = new Set(
-			achievementCandidates.length > 0 ? choice(LAYOUTS) : [],
+			achievementCandidates.length > 0 ? layout : [],
 		);
 
 		const picked: Candidate[] = [];
