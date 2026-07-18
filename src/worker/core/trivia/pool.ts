@@ -270,10 +270,19 @@ export const getTriviaPool = async (): Promise<TriviaPool> => {
 	return pool;
 };
 
-// The autocomplete list every game's guess input searches over.
-export const getSearchList = (pool: TriviaPool) =>
+// The autocomplete list every game's guess input searches over. With an
+// abbrevs map, each entry also carries position + franchise abbrevs so the
+// dropdown can distinguish same-named players at a glance.
+export const getSearchList = (pool: TriviaPool, abbrevs?: Map<number, string>) =>
 	pool.players.map((p) => ({
 		pid: p.pid,
 		name: p.name,
 		years: `${p.firstSeason}-${p.lastSeason}`,
+		pos: p.rows.at(-1)?.pos ?? "",
+		teams: abbrevs
+			? p.teamsPlayed
+					.map((tid) => abbrevs.get(tid))
+					.filter((a): a is string => a !== undefined)
+					.join(", ")
+			: "",
 	}));

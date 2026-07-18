@@ -146,6 +146,9 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// history. Never mutate the league, and must stay playable on a
 	// multiplayer follower device (mid-catch-up included).
 	"triviaNewGrid",
+	"triviaGridCatalog",
+	"triviaCustomGrid",
+	"triviaPlayerCard",
 	"triviaNewTeamRound",
 	// Cloud-only write of this team's free-agency board (no league data).
 	"faBoardSet",

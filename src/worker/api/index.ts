@@ -179,7 +179,13 @@ import {
 	cancelBet as sportsbookCancelBetCore,
 	settleBetsIfAuthority as sportsbookSettleCore,
 } from "../core/sportsbook/bets.ts";
-import { generateTriviaGrid } from "../core/trivia/grid.ts";
+import {
+	buildCustomGrid,
+	generateTriviaGrid,
+	getGridCatalog,
+	getTriviaPlayerCard,
+	type GridCriterionRef,
+} from "../core/trivia/grid.ts";
 import { generateTeamTriviaRound } from "../core/trivia/teamTrivia.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
@@ -2419,6 +2425,21 @@ const sportsbookCancelBet = async (info: { tid: number; betID: number }) => {
 // Trivia games: fresh puzzle/round on demand. Pure reads - no league writes.
 const triviaNewGrid = async () => {
 	return generateTriviaGrid();
+};
+
+const triviaGridCatalog = async () => {
+	return getGridCatalog();
+};
+
+const triviaCustomGrid = async (input: {
+	rows: GridCriterionRef[];
+	cols: GridCriterionRef[];
+}) => {
+	return buildCustomGrid(input);
+};
+
+const triviaPlayerCard = async ({ pid, tid }: { pid: number; tid?: number }) => {
+	return getTriviaPlayerCard(pid, tid);
 };
 
 const triviaNewTeamRound = async () => {
@@ -6081,6 +6102,9 @@ export default {
 		sportsbookCancelBet,
 		sportsbookSettle,
 		triviaNewGrid,
+		triviaGridCatalog,
+		triviaCustomGrid,
+		triviaPlayerCard,
 		triviaNewTeamRound,
 		getPlayerWatch,
 		getProjectedAttendance,

@@ -8,16 +8,20 @@ export type TriviaSearchPlayer = {
 	pid: number;
 	name: string;
 	years: string;
+	pos?: string;
+	teams?: string;
 };
 
 const TriviaPlayerSelect = ({
 	players,
 	onSelect,
 	disabled,
+	autoFocus,
 }: {
 	players: TriviaSearchPlayer[];
 	onSelect: (player: TriviaSearchPlayer) => void;
 	disabled?: boolean;
+	autoFocus?: boolean;
 }) => (
 	<SelectMultiple<TriviaSearchPlayer>
 		value={null}
@@ -27,10 +31,15 @@ const TriviaPlayerSelect = ({
 				onSelect(p);
 			}
 		}}
-		getOptionLabel={(p) => `${p.name} (${p.years})`}
+		getOptionLabel={(p) => {
+			const extra = [p.pos, p.teams].filter(Boolean).join(" · ");
+			return `${p.name} (${p.years})${extra ? ` — ${extra}` : ""}`;
+		}}
 		getOptionValue={(p) => String(p.pid)}
 		isClearable={false}
 		disabled={disabled}
+		autoFocus={autoFocus}
+		placeholder="Search players…"
 	/>
 );
 
