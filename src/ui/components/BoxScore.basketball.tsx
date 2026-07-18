@@ -52,18 +52,18 @@ const StatsTable = ({
 
 	const stats = [
 		"min",
+		"pts",
+		"trb",
+		"ast",
 		"fg",
 		"tp",
 		"ft",
 		"orb",
-		"trb",
-		"ast",
 		"tov",
 		"stl",
 		"blk",
 		"ba",
 		"pf",
-		"pts",
 		"pm",
 		"gmsc",
 	];
@@ -165,6 +165,9 @@ const StatsTable = ({
 						<th />
 						{typeof t.players[0].abbrev === "string" ? <th /> : null}
 						<th>{Number.isInteger(t.min) ? t.min : t.min.toFixed(1)}</th>
+						<th>{t.pts}</th>
+						<th>{t.drb + t.orb}</th>
+						<th>{t.ast}</th>
 						<th>
 							{t.fg}-{t.fga}
 						</th>
@@ -175,14 +178,11 @@ const StatsTable = ({
 							{t.ft}-{t.fta}
 						</th>
 						<th>{t.orb}</th>
-						<th>{t.drb + t.orb}</th>
-						<th>{t.ast}</th>
 						<th>{t.tov}</th>
 						<th>{t.stl}</th>
 						<th>{t.blk}</th>
 						<th>{t.ba}</th>
 						<th>{t.pf}</th>
-						<th>{t.pts}</th>
 						<th />
 						<th />
 					</tr>
@@ -191,12 +191,12 @@ const StatsTable = ({
 						<th />
 						{typeof t.players[0].abbrev === "string" ? <th /> : null}
 						<th />
+						<th />
+						<th />
+						<th />
 						<th>{helpers.roundStat((100 * t.fg) / t.fga, "fgp")}%</th>
 						<th>{helpers.roundStat((100 * t.tp) / t.tpa, "tpp")}%</th>
 						<th>{helpers.roundStat((100 * t.ft) / t.fta, "ftp")}%</th>
-						<th />
-						<th />
-						<th />
 						<th />
 						<th />
 						<th />

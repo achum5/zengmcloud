@@ -35,6 +35,9 @@ const BoxScoreRow = ({
 	) : (
 		<>
 			<td>{helpers.formatNumber(p.min, "minutes")}</td>
+			<td>{p.pts}</td>
+			<td>{p.drb + p.orb}</td>
+			<td>{p.ast}</td>
 			<td>
 				{p.fg}-{p.fga}
 			</td>
@@ -45,14 +48,11 @@ const BoxScoreRow = ({
 				{p.ft}-{p.fta}
 			</td>
 			<td>{p.orb}</td>
-			<td>{p.drb + p.orb}</td>
-			<td>{p.ast}</td>
 			<td>{p.tov}</td>
 			<td>{p.stl}</td>
 			<td>{p.blk}</td>
 			<td>{p.ba}</td>
 			<td>{p.pf}</td>
-			<td>{p.pts}</td>
 			<td>{helpers.plusMinus(p.pm, 0)}</td>
 			<td>{helpers.gameScore(p).toFixed(1)}</td>
 		</>
