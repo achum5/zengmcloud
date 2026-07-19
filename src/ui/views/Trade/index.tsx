@@ -3,6 +3,7 @@ import { PHASE } from "../../../common/constants.ts";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
+import { confirm } from "../../util/confirm.tsx";
 import { useLocal } from "../../util/local.ts";
 import AssetList from "./AssetList.tsx";
 import Buttons from "./Buttons.tsx";
@@ -222,7 +223,29 @@ const Trade = (props: View<"trade">) => {
 	};
 
 	const handleClickPropose = async () => {
-		const output = await toWorker("main", "proposeTrade", state.forceTrade);
+		// In multi-team mode, a trade with another human-controlled team is settled
+		// between the two GMs, not by the AI. Confirm the other GM agrees, then push
+		// it straight through (forceTrade) rather than run it past the AI valuation.
+		let forceTrade = state.forceTrade;
+		if (userTids.includes(props.otherTid)) {
+			const otherTeam = props.teams.find((t) => t.tid === props.otherTid);
+			const otherTeamName = otherTeam
+				? `${otherTeam.region} ${otherTeam.name}`
+				: "other team";
+			const proceed = await confirm(
+				`The ${otherTeamName} GM agrees to this trade?`,
+				{
+					okText: "Yes, propose trade",
+					cancelText: "No",
+				},
+			);
+			if (!proceed) {
+				return;
+			}
+			forceTrade = true;
+		}
+
+		const output = await toWorker("main", "proposeTrade", forceTrade);
 
 		if (output) {
 			const [accepted, message] = output;

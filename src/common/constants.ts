@@ -34,7 +34,7 @@ export const LEAGUE_DATABASE_VERSION = 75;
 // imgbb image-hosting API key, used by the in-app image uploader (see
 // src/ui/util/uploadToImgbb.ts). imgbb keys are client-side upload keys (like
 // the Imgur client-ID in takeScreenshotChunk.ts); paste yours here.
-export const IMGBB_API_KEY = "YOUR_IMGBB_API_KEY";
+export const IMGBB_API_KEY: string = "1369fa0365731b13c5330a26fedf569c";
 
 export const NO_LOTTERY_DRAFT_TYPES = new Set<DraftType>([
 	"freeAgents",
