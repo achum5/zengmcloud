@@ -1,6 +1,7 @@
 import clsx from "clsx";
 import { Fragment, useState } from "react";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
+import { scrollAppBy } from "../../util/scrollContainer.ts";
 import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { getCols } from "../../../common/getCols.ts";
@@ -531,7 +532,7 @@ const Draft = ({
 										target.scrollIntoView(true);
 
 										// Fixed navbar
-										window.scrollBy(0, -142);
+										scrollAppBy({ top: -142 });
 									}
 								}}
 							>
@@ -562,7 +563,7 @@ const Draft = ({
 										target.scrollIntoView(true);
 
 										// Fixed navbar
-										window.scrollBy(0, -142);
+										scrollAppBy({ top: -142 });
 									}
 								}}
 							>

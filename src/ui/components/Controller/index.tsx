@@ -19,6 +19,7 @@ import { useViewData } from "../../util/viewManager.tsx";
 import { toWorker } from "../../util/toWorker.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import api from "../../api/index.ts";
+import { getScrollEl } from "../../util/scrollContainer.ts";
 import { ErrorBoundary } from "../ErrorBoundary.tsx";
 
 const loadFramerMotionFeatures = () =>
@@ -148,19 +149,47 @@ export const Controller = () => {
 
 	const pathname = isSport("baseball") ? document.location.pathname : undefined;
 
-	// Scroll to top if this load came from user clicking a link to a new page
+	// Scroll to top if this load came from user clicking a link to a new page.
+	// The app scrolls inside #content, not the window (see scrollContainer.ts).
 	useEffect(() => {
 		if (scrollToTop) {
-			window.scrollTo(window.pageXOffset, 0);
+			getScrollEl().scrollTo(0, 0);
 		}
 	}, [idLoaded, scrollToTop]);
+
+	// When the PWA returns to the foreground (iOS especially), nudge the scroll
+	// container so WebKit re-lays-out the sticky header instead of leaving it
+	// mispositioned. Reading a layout property forces the reflow; the scrollTop
+	// write is a no-op that also prompts a recompute.
+	useEffect(() => {
+		const reflow = () => {
+			const el = getScrollEl();
+			// eslint-disable-next-line @typescript-eslint/no-unused-expressions
+			el.offsetHeight;
+			el.scrollTop = el.scrollTop;
+		};
+		const onVisible = () => {
+			if (document.visibilityState === "visible") {
+				reflow();
+			}
+		};
+		document.addEventListener("visibilitychange", onVisible);
+		window.addEventListener("pageshow", reflow);
+		window.addEventListener("focus", reflow);
+		return () => {
+			document.removeEventListener("visibilitychange", onVisible);
+			window.removeEventListener("pageshow", reflow);
+			window.removeEventListener("focus", reflow);
+		};
+	}, []);
 
 	return (
 		<LazyMotion strict features={loadFramerMotionFeatures}>
 			<NavBar updating={updating} />
-			{/* The header above is sticky (in flow), so the page fills the rest of
-			    #content via flex-grow rather than percentage heights - #content is
-			    min-height:100%, and h-100 chains don't resolve against that. */}
+			{/* #content is the app scroll container (see index.html): a fixed-height
+			    flex column that scrolls internally, so the sticky header lives in a
+			    real element scrollport and can't desync from the viewport on iOS.
+			    This row grows to fill it, and overflows (scrolls) when tall. */}
 			<div className="d-flex flex-grow-1">
 				<SideBar pageID={sidebarPageID} pathname={pathname} />
 				<div className="w-100 d-flex flex-column" style={minWidth0}>
