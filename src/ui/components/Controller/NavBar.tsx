@@ -115,7 +115,7 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 		<Navbar
 			bg="light"
 			expand="sm"
-			fixed="top"
+			sticky="top"
 			className="navbar-border flex-nowrap"
 		>
 			<div className="container-fluid">

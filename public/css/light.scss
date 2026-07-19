@@ -782,18 +782,31 @@ tr.table-warning:hover > td {
 
 .navbar-border {
 	border-bottom: 1px solid $gray-200;
+}
 
-	// Keep the fixed top bar pinned during momentum scrolling on iOS. A plain
-	// position:fixed header is repainted on the main thread every frame, so on
-	// content-heavy pages iOS Safari lets it lag behind - it visibly drifts up
-	// and "scrolls away" with the page until scrolling stops. Promoting it to its
-	// own GPU compositor layer (translateZ + backface-visibility) makes the
-	// browser keep it composited in place instead of repainting it each frame.
-	// The navbar has no position:fixed descendants (its dropdowns are absolute,
-	// positioned against their toggle), so the containing block this creates is
-	// harmless.
-	transform: translateZ(0);
-	backface-visibility: hidden;
+// The top header only (.navbar-border is shared with the title bar). It is
+// position:sticky, NOT position:fixed. In iOS standalone PWAs, WebKit's
+// compositor can permanently lose a fixed element's viewport attachment
+// (after backgrounding, dialogs, long sessions - a known, unresolved WebKit
+// bug), leaving the header scrolling with the page until the app is
+// relaunched. Sticky positioning is applied by the scroll tree on the
+// compositor thread itself, so it cannot desync from the scroll position.
+// z-index matches Bootstrap's old fixed-top (1030) to preserve stacking over
+// the league top bar and under the sidebar (1040) / modals (1050+).
+.navbar-border.sticky-top {
+	z-index: 1030;
+}
+
+// While the iOS modal scroll lock pins <body> in place (see Modal.tsx), the
+// page has no scroll container, so the sticky header would sit at the page's
+// flow top - off-screen by the locked scroll offset. Hold it to the viewport
+// for the duration: the page cannot scroll while pinned, so fixed cannot
+// desync, and flipping back to sticky on unpin rebuilds the compositor layer.
+body.ios-modal-pinned .navbar-border.sticky-top {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
 }
 
 .dropdown-links .nav-item,

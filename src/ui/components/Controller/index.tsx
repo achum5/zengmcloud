@@ -158,12 +158,15 @@ export const Controller = () => {
 	return (
 		<LazyMotion strict features={loadFramerMotionFeatures}>
 			<NavBar updating={updating} />
-			<div className="h-100 d-flex">
+			{/* The header above is sticky (in flow), so the page fills the rest of
+			    #content via flex-grow rather than percentage heights - #content is
+			    min-height:100%, and h-100 chains don't resolve against that. */}
+			<div className="d-flex flex-grow-1">
 				<SideBar pageID={sidebarPageID} pathname={pathname} />
-				<div className="h-100 w-100 d-flex flex-column" style={minWidth0}>
+				<div className="w-100 d-flex flex-column" style={minWidth0}>
 					{popup ? null : <LeagueTopBar />}
 					<TitleBar />
-					<div className="container-fluid position-relative mt-2 flex-grow-1 h-100">
+					<div className="container-fluid position-relative mt-2 flex-grow-1">
 						<div className="d-flex" style={minHeight100}>
 							<div className="w-100 d-flex flex-column" style={minWidth0}>
 								<Header />
