@@ -18,6 +18,7 @@ import type {
 	HeadToHead,
 	LiveGamePlayByPlay,
 	FaDayResults,
+	Image,
 	Message,
 	MessageWithoutKey,
 	Negotiation,
@@ -65,6 +66,7 @@ export type Store =
 	| "headToHeads"
 	| "liveGamePlayByPlay"
 	| "faDayResults"
+	| "images"
 	| "messages"
 	| "negotiations"
 	| "playerFeats"
@@ -102,6 +104,7 @@ export const STORES: Store[] = [
 	"headToHeads",
 	"liveGamePlayByPlay",
 	"faDayResults",
+	"images",
 	"messages",
 	"negotiations",
 	"playerFeats",
@@ -277,6 +280,7 @@ class Cache {
 
 	liveGamePlayByPlay: StoreAPI<LiveGamePlayByPlay, LiveGamePlayByPlay, number>;
 	faDayResults: StoreAPI<FaDayResults, FaDayResults, string>;
+	images: StoreAPI<Image, Image, string>;
 
 	messages: StoreAPI<MessageWithoutKey, Message, number>;
 
@@ -398,6 +402,15 @@ class Cache {
 				pkType: "string",
 				autoIncrement: false,
 				// No getData on purpose: read on demand (FA page), written rarely.
+			},
+			images: {
+				pk: "id",
+				pkType: "string",
+				autoIncrement: false,
+				// Fully loaded: galleries filter all images by tagged player/team in
+				// memory, and the sync capture path reads written rows back through
+				// the cache, so they must live there.
+				getData: (tx) => tx.objectStore("images").getAll(),
 			},
 			messages: {
 				pk: "mid",
@@ -590,6 +603,7 @@ class Cache {
 		this.headToHeads = new StoreAPI(this, "headToHeads");
 		this.liveGamePlayByPlay = new StoreAPI(this, "liveGamePlayByPlay");
 		this.faDayResults = new StoreAPI(this, "faDayResults");
+		this.images = new StoreAPI(this, "images");
 		this.messages = new StoreAPI(this, "messages");
 		this.negotiations = new StoreAPI(this, "negotiations");
 		this.playerFeats = new StoreAPI(this, "playerFeats");

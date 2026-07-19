@@ -304,6 +304,7 @@ const storesByKey = {
 		"savedTrades",
 		"savedTradingBlock",
 		"faDayResults",
+		"images",
 	],
 	newsFeedTransactions: ["events"],
 	newsFeedOther: ["events"],

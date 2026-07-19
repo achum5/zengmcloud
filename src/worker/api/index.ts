@@ -77,6 +77,7 @@ import {
 	type View,
 	type NonEmptyArray,
 	type CourtStyle,
+	type Image,
 	RealPlayerPhotosSchema,
 	RealTeamInfoSchema,
 } from "../../common/types.ts";
@@ -2453,7 +2454,13 @@ const triviaCustomGrid = async (input: {
 	return buildCustomGrid(input);
 };
 
-const triviaPlayerCard = async ({ pid, tid }: { pid: number; tid?: number }) => {
+const triviaPlayerCard = async ({
+	pid,
+	tid,
+}: {
+	pid: number;
+	tid?: number;
+}) => {
 	return getTriviaPlayerCard(pid, tid);
 };
 
@@ -4165,9 +4172,7 @@ const setNote = async (info: NoteInfo & { editedNote: string }) => {
 			{ season: info.season },
 			"noCopyCache",
 		);
-		const dayGames = seasonGames.filter(
-			(game) => (game.day ?? 0) === info.day,
-		);
+		const dayGames = seasonGames.filter((game) => (game.day ?? 0) === info.day);
 		if (dayGames.length === 0) {
 			throw new Error("No games on this league day to attach a recap to");
 		}
@@ -5911,6 +5916,111 @@ const faBoardSet = async (pids: number[]) => {
 	return { ok: true };
 };
 
+// User-attached images (see common/types.ts Image). Stored in the synced
+// `images` cache store; writes are captured and shared to every device in a
+// room automatically (the store has no sync-specific handling). A player's
+// gallery is every image tagging that pid; a team's is every image with its tid.
+const getImages = async (filter: {
+	pid?: number;
+	tid?: number;
+}): Promise<Image[]> => {
+	const all = await idb.cache.images.getAll();
+	const filtered = all.filter((image) => {
+		if (filter.pid !== undefined) {
+			return image.playerIds.includes(filter.pid);
+		}
+		if (filter.tid !== undefined) {
+			return image.tid === filter.tid;
+		}
+		return true;
+	});
+	// Newest first.
+	return filtered.sort((a, b) => b.at - a.at);
+};
+
+const upsertImage = async (image: Image) => {
+	await idb.cache.images.put(image);
+};
+
+const deleteImage = async (id: string) => {
+	await idb.cache.images.delete(id);
+};
+
+// Set a player's primary display image (imgURL) - e.g. "use this gallery image
+// as the profile picture". getCopy + cache.put works for retired players too
+// (they aren't held in the cache), mirroring updatePlayerWatch.
+const setPlayerImage = async ({
+	pid,
+	imgURL,
+}: {
+	pid: number;
+	imgURL: string;
+}) => {
+	const p = await idb.getCopy.players({ pid }, "noCopyCache");
+	if (!p) {
+		throw new Error("Invalid pid");
+	}
+	p.imgURL = helpers.stripBbcode(imgURL);
+	await idb.cache.players.put(p);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
+// Set a team's primary logo (imgURL or the small variant), mirroring how
+// updateTeamInfo propagates a logo change: onto the team, the current-season
+// row the roster page reads, and the teamInfoCache game attribute.
+const setTeamImage = async ({
+	tid,
+	imgURL,
+	small,
+}: {
+	tid: number;
+	imgURL: string;
+	small?: boolean;
+}) => {
+	const t = await idb.cache.teams.get(tid);
+	if (!t) {
+		throw new Error("Invalid tid");
+	}
+	const cleaned = helpers.stripBbcode(imgURL);
+	if (small) {
+		t.imgURLSmall = cleaned;
+	} else {
+		t.imgURL = cleaned;
+	}
+	await idb.cache.teams.put(t);
+
+	if (actualPhase() < PHASE.PLAYOFFS) {
+		const teamSeason = await idb.cache.teamSeasons.indexGet(
+			"teamSeasonsByTidSeason",
+			[tid, g.get("season")],
+		);
+		if (teamSeason && !t.disabled) {
+			if (small) {
+				teamSeason.imgURLSmall = t.imgURLSmall;
+			} else {
+				teamSeason.imgURL = t.imgURL;
+			}
+			if (teamSeason.imgURLSmall === "") {
+				delete teamSeason.imgURLSmall;
+			}
+			await idb.cache.teamSeasons.put(teamSeason);
+		}
+	}
+
+	const teams = await idb.cache.teams.getAll();
+	await league.setGameAttributes({
+		teamInfoCache: orderBy(teams, "tid").map((t2) => ({
+			abbrev: t2.abbrev,
+			disabled: t2.disabled,
+			imgURL: t2.imgURL,
+			imgURLSmall: t2.imgURLSmall === "" ? undefined : t2.imgURLSmall,
+			name: t2.name,
+			region: t2.region,
+		})),
+	});
+	await toUI("realtimeUpdate", [["team"]]);
+};
+
 // The current league's sync checkpoint, embedded in full league exports: the
 // room fingerprint this file belongs to plus the change-log position its data
 // already includes. A re-import that keeps everything can then join its room
@@ -6078,6 +6188,11 @@ export default {
 		draftLottery,
 		draftSetReady,
 		faBoardSet,
+		getImages,
+		upsertImage,
+		deleteImage,
+		setPlayerImage,
+		setTeamImage,
 		draftUser,
 		dunkGetProjected,
 		dunkSetControlling,

@@ -137,6 +137,8 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getPlayersCommandPalette",
 	"getLeagueName",
 	"getExportFilename",
+	// Read-only fetch of a player/team image gallery (see api getImages).
+	"getImages",
 	// Read-only lookup of a saved live-game replay.
 	"getLiveGamePlayByPlay",
 	"hasLiveGameReplay",

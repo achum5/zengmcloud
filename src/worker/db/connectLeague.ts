@@ -45,6 +45,7 @@ import type {
 	SavedTradingBlock,
 	LiveGamePlayByPlay,
 	FaDayResults,
+	Image,
 } from "../../common/types.ts";
 import getInitialNumGamesConfDivSettings from "../core/season/getInitialNumGamesConfDivSettings.ts";
 import { amountToLevel } from "../../common/budgetLevels.ts";
@@ -112,6 +113,13 @@ export interface LeagueDB extends DBSchema {
 	faDayResults: {
 		key: string;
 		value: FaDayResults;
+	};
+	// User-attached player/team images (uploaded to imgbb, referenced by URL).
+	// Keyed by a client-generated UUID so images added independently on
+	// different synced devices never collide. Synced like any other store.
+	images: {
+		key: string;
+		value: Image;
 	};
 	messages: {
 		key: number;
@@ -679,6 +687,10 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 
 	db.createObjectStore("faDayResults", {
 		keyPath: "key",
+	});
+
+	db.createObjectStore("images", {
+		keyPath: "id",
 	});
 };
 
@@ -1767,6 +1779,12 @@ const migrate = async ({
 	if (oldVersion < 74) {
 		db.createObjectStore("faDayResults", {
 			keyPath: "key",
+		});
+	}
+
+	if (oldVersion < 75) {
+		db.createObjectStore("images", {
+			keyPath: "id",
 		});
 	}
 

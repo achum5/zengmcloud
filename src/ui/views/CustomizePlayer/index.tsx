@@ -28,6 +28,8 @@ import { last, orderBy } from "../../../common/utils.ts";
 import CustomMoodItemsForm from "./CustomMoodItemsForm.tsx";
 import { roundContract } from "../../../common/roundContract.ts";
 import { Face } from "./Face.tsx";
+import ImageUploader from "../../components/ImageUploader.tsx";
+import PlayerImageGenerator from "../../components/PlayerImageGenerator.tsx";
 import { CurrencyInputGroup } from "../../components/CurrencyInputGroup.tsx";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
@@ -1171,17 +1173,21 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 								<label className="form-label">Image URL</label>
 								<input
 									type="text"
-									className="form-control"
+									className="form-control mb-2"
 									onChange={handleChange.bind(null, "root", "imgURL")}
 									value={p.imgURL}
 								/>
+								<ImageUploader
+									onUploaded={(url) => {
+										setState((prevState) => ({
+											...prevState,
+											p: { ...prevState.p, imgURL: url },
+										}));
+									}}
+								/>
 								<span className="text-body-secondary">
-									Your image must be hosted externally. If you need to upload an
-									image, try using{" "}
-									<a href="http://imgur.com/" target="_blank">
-										imgur
-									</a>
-									. For more details, see{" "}
+									Upload or paste an image above (hosted on imgbb for you), or
+									enter an externally-hosted URL. For more details, see{" "}
 									<a
 										href={`https://${WEBSITE_ROOT}/manual/customization/player-photos-team-logos/`}
 										target="_blank"
@@ -1192,6 +1198,21 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 								</span>
 							</div>
 						)}
+
+						<PlayerImageGenerator
+							ctx={{
+								name: `${p.firstName} ${p.lastName}`.trim() || "the player",
+								pos: p.pos ?? "player",
+								team: teams.find((t) => t.tid === p.tid)?.text ?? "their team",
+							}}
+							onImageUploaded={(url) => {
+								setState((prevState) => ({
+									...prevState,
+									appearanceOption: "Image URL",
+									p: { ...prevState.p, imgURL: url },
+								}));
+							}}
+						/>
 					</div>
 
 					<div className="col-md-5 mb-3">

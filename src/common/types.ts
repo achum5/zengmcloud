@@ -491,6 +491,22 @@ export type FaDayResults = {
 	at: number;
 };
 
+// A user-attached image (uploaded to imgbb, referenced by URL), shown in a
+// player's or team's image gallery. `id` is a client-generated UUID so images
+// added independently on different synced devices never collide (unlike an
+// autoincrement key). `playerIds` are the tagged players - an image can tag
+// several players and then appears in each of their galleries.
+export type Image = {
+	id: string;
+	url: string;
+	playerIds: number[];
+	tid?: number;
+	category: string; // e.g. "profile", "draft", "postgame", "other"
+	caption?: string;
+	season: number; // season the image relates to / was added in
+	at: number; // ms timestamp added, for ordering
+};
+
 export type GamePlayer = any;
 
 export type GameResults = any;
@@ -1995,7 +2011,17 @@ export type SportsbookMarket =
 			type: "playerProp";
 			gid: number;
 			pid: number;
-			stat: "pts" | "trb" | "ast" | "stl" | "blk" | "tp" | "tov" | "pra" | "pr" | "pa";
+			stat:
+				| "pts"
+				| "trb"
+				| "ast"
+				| "stl"
+				| "blk"
+				| "tp"
+				| "tov"
+				| "pra"
+				| "pr"
+				| "pa";
 			side: "over" | "under";
 			line: number;
 	  }

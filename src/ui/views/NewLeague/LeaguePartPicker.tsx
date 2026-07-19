@@ -22,6 +22,7 @@ const leaguePartDescriptions: Record<string, string> = {
 	seasonLeaders: "Season leaders cache",
 	savedTrades: "Saved trades",
 	savedTradingBlock: "Current trading block",
+	images: "Attached player and team images",
 };
 
 const LeaguePartPicker = ({

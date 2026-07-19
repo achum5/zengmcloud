@@ -36,6 +36,7 @@ export const parseJSON = () => {
 		faDayResults: undefined,
 		games: undefined,
 		headToHeads: undefined,
+		images: undefined,
 		liveGamePlayByPlay: undefined,
 		messages: undefined,
 		negotiations: undefined,
