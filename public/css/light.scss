@@ -1940,3 +1940,165 @@ tr.text-body-secondary {
 		border-top: 0;
 	}
 }
+
+// ---- Trivia arcade (Grids / Team Trivia / Higher or Lower) ------------------
+// Shared animation + layout language for the three trivia games. Dark theme
+// inherits all of this (dark.scss imports light.scss); colors come from
+// Bootstrap CSS vars so both themes read correctly.
+
+@keyframes trivia-pop {
+	0% {
+		transform: scale(0.55);
+		opacity: 0;
+	}
+	60% {
+		transform: scale(1.08);
+		opacity: 1;
+	}
+	100% {
+		transform: scale(1);
+	}
+}
+@keyframes trivia-shake {
+	10%,
+	90% {
+		transform: translateX(-2px);
+	}
+	20%,
+	80% {
+		transform: translateX(3px);
+	}
+	30%,
+	50%,
+	70% {
+		transform: translateX(-5px);
+	}
+	40%,
+	60% {
+		transform: translateX(5px);
+	}
+}
+@keyframes trivia-slide-in {
+	from {
+		transform: translateX(26px);
+		opacity: 0;
+	}
+	to {
+		transform: translateX(0);
+		opacity: 1;
+	}
+}
+@keyframes trivia-rise {
+	from {
+		transform: translateY(10px);
+		opacity: 0;
+	}
+	to {
+		transform: translateY(0);
+		opacity: 1;
+	}
+}
+@keyframes trivia-flash-green {
+	0% {
+		box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.65);
+	}
+	100% {
+		box-shadow: 0 0 0 14px rgba(25, 135, 84, 0);
+	}
+}
+
+.trivia-pop {
+	animation: trivia-pop 0.35s ease-out both;
+}
+.trivia-shake {
+	animation: trivia-shake 0.5s ease both;
+}
+.trivia-slide-in {
+	animation: trivia-slide-in 0.3s ease-out both;
+}
+.trivia-rise {
+	animation: trivia-rise 0.25s ease-out both;
+}
+.trivia-flash-green {
+	animation: trivia-flash-green 0.7s ease-out both;
+}
+
+// Scoreboard stat tile ("Score 120", "Streak 7", ...)
+.trivia-tile {
+	background: var(--bs-secondary-bg);
+	border-radius: 0.5rem;
+	padding: 0.35rem 0.85rem;
+	text-align: center;
+	min-width: 78px;
+}
+.trivia-tile-value {
+	font-size: 1.35rem;
+	font-weight: 700;
+	line-height: 1.25;
+}
+.trivia-tile-label {
+	font-size: 0.66rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--bs-secondary-color);
+}
+
+// Category tile buttons (pickers): lift on hover.
+.trivia-chip {
+	border: 1px solid var(--bs-border-color);
+	background: var(--bs-body-bg);
+	color: var(--bs-body-color);
+	border-radius: 0.6rem;
+	padding: 0.55rem 0.75rem;
+	text-align: left;
+	transition:
+		transform 0.12s ease,
+		box-shadow 0.12s ease,
+		border-color 0.12s ease;
+}
+.trivia-chip:hover:not(:disabled) {
+	transform: translateY(-2px);
+	box-shadow: 0 0.35rem 0.7rem rgba(0, 0, 0, 0.2);
+	border-color: var(--bs-primary);
+}
+.trivia-chip:disabled {
+	opacity: 0.45;
+}
+
+// Grid cells lift slightly on hover so the board feels tactile.
+.trivia-cell {
+	transition:
+		transform 0.1s ease,
+		box-shadow 0.1s ease;
+}
+.trivia-cell:hover {
+	transform: scale(1.03);
+	z-index: 1;
+	box-shadow: 0 0.25rem 0.6rem rgba(0, 0, 0, 0.25);
+}
+
+// Team Trivia stage rail.
+.trivia-step {
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--bs-secondary-color);
+	display: flex;
+	align-items: center;
+	gap: 0.3rem;
+	white-space: nowrap;
+}
+.trivia-step.active {
+	color: var(--bs-body-color);
+	font-weight: 700;
+}
+.trivia-step.done {
+	color: var(--bs-success);
+}
+
+// Final-grade letter on the Team Trivia results card.
+.trivia-grade {
+	font-size: 3.4rem;
+	font-weight: 800;
+	line-height: 1;
+}

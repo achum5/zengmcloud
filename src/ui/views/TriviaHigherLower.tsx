@@ -3,6 +3,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { safeLocalStorage } from "../util/safeLocalStorage.ts";
 import { PlayerPicture } from "../components/PlayerPicture.tsx";
+import { Confetti } from "./LiveGame/Confetti.tsx";
 import type { View } from "../../common/types.ts";
 
 // Higher or Lower: pick a stat category, then keep calling whether the mystery
@@ -111,6 +112,7 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 	const [cards, setCards] = useState<Record<number, PlayerCard>>({});
 	const [best, setBestState] = useState(0);
 	const [played, setPlayed] = useState(0);
+	const [newBest, setNewBest] = useState(false);
 
 	const valueOf = (p: HLPlayer): number => p.values[category!.key] as number;
 
@@ -147,6 +149,7 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 		setPool(rest);
 		setStreak(0);
 		setGameOver(false);
+		setNewBest(false);
 		setPhase("asking");
 		setGuessedHigher(undefined);
 		setWasCorrect(undefined);
@@ -193,6 +196,7 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 		if (category && finalStreak > getBest(category.key)) {
 			setBest(category.key, finalStreak);
 			setBestState(finalStreak);
+			setNewBest(finalStreak > 0);
 		}
 	};
 
@@ -235,6 +239,13 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 	// --- Category picker ----------------------------------------------------
 	if (!category) {
 		const groups = [...new Set(CATEGORIES.map((c) => c.group))];
+		const groupEmoji: Record<string, string> = {
+			"Career Totals": "📊",
+			"Career Averages": "📈",
+			"Season Bests": "🌟",
+			"Game Highs": "🔥",
+			Draft: "🎯",
+		};
 		return (
 			<>
 				<p className="text-body-secondary">
@@ -243,7 +254,9 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 				</p>
 				{groups.map((group) => (
 					<div key={group} className="mb-3">
-						<h3 className="h6 text-body-secondary">{group}</h3>
+						<h3 className="h6 text-body-secondary">
+							{groupEmoji[group] ?? ""} {group}
+						</h3>
 						<div className="d-flex flex-wrap gap-2">
 							{CATEGORIES.filter((c) => c.group === group).map((c) => {
 								const eligible = players.filter(
@@ -253,16 +266,20 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 								return (
 									<button
 										key={c.key}
-										className="btn btn-light-bordered"
+										className="trivia-chip"
+										style={{ minWidth: 150 }}
 										disabled={eligible < 5}
 										onClick={() => startGame(c)}
 									>
-										{c.label}
-										{b > 0 ? (
-											<span className="badge text-bg-warning ms-2">
-												best {b}
-											</span>
-										) : null}
+										<div className="fw-bold">{c.label}</div>
+										<div className="d-flex align-items-center gap-2 small text-body-secondary">
+											{eligible.toLocaleString()} players
+											{b > 0 ? (
+												<span className="badge text-bg-warning">
+													best {b}
+												</span>
+											) : null}
+										</div>
 									</button>
 								);
 							})}
@@ -294,27 +311,31 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 	};
 
 	const revealing = phase === "revealing";
+	const fire =
+		streak >= 15 ? "🔥🔥🔥" : streak >= 10 ? "🔥🔥" : streak >= 5 ? "🔥" : "";
 
 	return (
 		<>
-			<div className="d-flex flex-wrap align-items-center gap-3 mb-3">
-				<div>
-					<span className="text-body-secondary small">{category.label}</span>
-					<div className="h3 mb-0">
-						🔥 {streak}
-						{streak >= 5 && !gameOver ? (
-							<span className="badge text-bg-danger ms-2 align-middle">
-								hot
-							</span>
-						) : null}
+			<div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">
+						{streak}
+						{fire ? <span className="ms-1">{fire}</span> : null}
 					</div>
+					<div className="trivia-tile-label">Streak</div>
 				</div>
-				<div>
-					<span className="text-body-secondary small">Best</span>
-					<div className="h4 mb-0">{Math.max(best, streak)}</div>
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">{Math.max(best, streak)}</div>
+					<div className="trivia-tile-label">Best</div>
+				</div>
+				<div className="trivia-tile d-none d-sm-block">
+					<div className="trivia-tile-value" style={{ fontSize: "0.95rem" }}>
+						{category.label}
+					</div>
+					<div className="trivia-tile-label">Category</div>
 				</div>
 				<button
-					className="btn btn-light-bordered ms-auto"
+					className="btn btn-sm btn-light-bordered ms-auto"
 					onClick={() => setCategory(undefined)}
 				>
 					Change category
@@ -327,7 +348,7 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 					style={{ maxWidth: 560 }}
 				>
 					{/* Known player */}
-					<div className="card flex-fill">
+					<div className="card flex-fill" key={`l-${left.pid}`}>
 						<div className="card-body text-center p-2 p-md-3">
 							<Face p={left} />
 							<div className="fw-bold mt-2">{left.name}</div>
@@ -346,11 +367,12 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 
 					{/* Mystery player */}
 					<div
-						className={`card flex-fill ${
+						key={`r-${right.pid}`}
+						className={`card flex-fill trivia-slide-in ${
 							revealing || gameOver
 								? wasCorrect
-									? "border-success"
-									: "border-danger"
+									? "border-success trivia-flash-green"
+									: "border-danger trivia-shake"
 								: ""
 						}`}
 					>
@@ -367,8 +389,13 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 									>
 										{fmtValue(revealNum, category.fmt)}
 									</div>
-									<div className="text-body-secondary small">
-										{wasCorrect ? "✓ correct" : "✗ wrong"}
+									<div
+										className={`small fw-bold ${
+											wasCorrect ? "text-success" : "text-danger"
+										}`}
+									>
+										{wasCorrect ? "✓" : "✗"} You said{" "}
+										{guessedHigher ? "higher ▲" : "lower ▼"}
 									</div>
 								</>
 							) : (
@@ -399,35 +426,49 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 			) : null}
 
 			{gameOver ? (
-				<div className="mt-3" style={{ maxWidth: 560 }}>
-					<div className="alert alert-secondary">
-						<div className="fw-bold h5 mb-1">
-							Run over — streak of {streak}.
-							{streak >= best && streak > 0 ? " 🏆 New best!" : ""}
-						</div>
-						<div className="text-body-secondary small">
-							{guessedHigher !== undefined && right && left
-								? `You said ${guessedHigher ? "higher" : "lower"}: ${
-										right.name
-									} had ${fmtValue(valueOf(right), category.fmt)} vs ${
-										left.name
-									}'s ${fmtValue(valueOf(left), category.fmt)}.`
-								: null}
+				<>
+					{newBest ? <Confetti /> : null}
+					<div className="card trivia-rise mt-3" style={{ maxWidth: 560 }}>
+						<div className="card-body d-flex flex-wrap align-items-center gap-3">
+							<div className="trivia-tile">
+								<div className="trivia-tile-value">{streak}</div>
+								<div className="trivia-tile-label">Final streak</div>
+							</div>
+							<div className="flex-grow-1">
+								<div className="h5 mb-1">
+									{newBest
+										? "🏆 New best!"
+										: streak >= 10
+											? "Great run!"
+											: streak >= 5
+												? "Nice run."
+												: "Run over."}
+								</div>
+								<div className="text-body-secondary small">
+									{guessedHigher !== undefined && right && left
+										? `${right.name}: ${fmtValue(valueOf(right), category.fmt)} vs ${
+												left.name
+											}: ${fmtValue(valueOf(left), category.fmt)}.`
+										: null}
+								</div>
+							</div>
+							<div className="d-flex flex-column gap-2">
+								<button
+									className="btn btn-primary"
+									onClick={() => startGame(category)}
+								>
+									Play again
+								</button>
+								<button
+									className="btn btn-light-bordered"
+									onClick={() => setCategory(undefined)}
+								>
+									Categories
+								</button>
+							</div>
 						</div>
 					</div>
-					<button
-						className="btn btn-primary me-2"
-						onClick={() => startGame(category)}
-					>
-						Play again
-					</button>
-					<button
-						className="btn btn-light-bordered"
-						onClick={() => setCategory(undefined)}
-					>
-						Change category
-					</button>
-				</div>
+				</>
 			) : null}
 
 			{played > 0 ? (

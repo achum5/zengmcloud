@@ -9,6 +9,7 @@ import SelectMultiple from "../components/SelectMultiple/index.tsx";
 import TriviaPlayerSelect, {
 	type TriviaSearchPlayer,
 } from "../components/TriviaPlayerSelect.tsx";
+import { Confetti } from "./LiveGame/Confetti.tsx";
 import type { View } from "../../common/types.ts";
 
 // The Grids game (Immaculate Grid style): 9 cells, a shared pool of guesses,
@@ -77,6 +78,22 @@ const loadStats = (): Stats => {
 	return { played: 0, immaculate: 0, best: 0, totalScore: 0 };
 };
 
+// Rarity points (10-100, higher = more obscure) mapped to a display tier.
+const tierOf = (
+	points: number,
+): { label: string; badge: string } => {
+	if (points >= 90) {
+		return { label: "Legendary", badge: "text-bg-warning" };
+	}
+	if (points >= 65) {
+		return { label: "Rare", badge: "text-bg-info" };
+	}
+	if (points >= 35) {
+		return { label: "Solid", badge: "text-bg-success" };
+	}
+	return { label: "Common", badge: "text-bg-secondary" };
+};
+
 const loadGuessSetting = (): number => {
 	try {
 		const raw = localStorage.getItem(GUESS_SETTING_KEY);
@@ -104,6 +121,8 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	const [gameMaxGuesses, setGameMaxGuesses] = useState(loadGuessSetting);
 	const [activeCell, setActiveCell] = useState<number | undefined>();
 	const [wrongGuess, setWrongGuess] = useState<string | undefined>();
+	// Increments on each miss so the shake animation retriggers.
+	const [wrongKey, setWrongKey] = useState(0);
 	const [gaveUp, setGaveUp] = useState(false);
 	const [loadingNew, setLoadingNew] = useState(false);
 	const [cards, setCards] = useState<Record<number, PlayerCard>>({});
@@ -242,6 +261,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 			// Cell stays open - the burned guess is the price. Keep the modal up
 			// for another try unless that was the last guess.
 			setWrongGuess(guess.name);
+			setWrongKey((k) => k + 1);
 			if (gameMaxGuesses - (guessesUsed + 1) <= 0) {
 				setActiveCell(undefined);
 			}
@@ -430,48 +450,55 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 
 	return (
 		<>
-			<div className="d-flex flex-wrap align-items-center gap-3 mb-3">
-				<div>
-					<span className="text-body-secondary small">Score</span>
-					<div className="h4 mb-0">
-						{score}
-						{done && immaculate ? (
-							<span className="badge text-bg-warning ms-2 align-middle">
-								Immaculate!
-							</span>
-						) : null}
+			<div className="d-flex flex-wrap align-items-center gap-2 mb-3">
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">{score}</div>
+					<div className="trivia-tile-label">Score</div>
+				</div>
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">{correctCount}/9</div>
+					<div className="trivia-tile-label">Solved</div>
+				</div>
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">
+						{gameMaxGuesses === Infinity ? "∞" : Math.max(0, guessesLeft)}
 					</div>
+					<div className="trivia-tile-label">Guesses</div>
 				</div>
-				<div>
-					<span className="text-body-secondary small">Correct</span>
-					<div className="h4 mb-0">{correctCount}/9</div>
-				</div>
-				{!done ? (
-					<button className="btn btn-light-bordered" onClick={() => setGaveUp(true)}>
-						Give up
+				<div className="d-flex flex-wrap align-items-center gap-2 ms-auto">
+					{!done ? (
+						<button
+							className="btn btn-sm btn-light-bordered"
+							onClick={() => setGaveUp(true)}
+						>
+							Give up
+						</button>
+					) : null}
+					<button
+						className="btn btn-sm btn-primary"
+						disabled={loadingNew}
+						onClick={newGrid}
+					>
+						{loadingNew ? "Generating…" : "New grid"}
 					</button>
-				) : null}
-				<button
-					className="btn btn-primary"
-					disabled={loadingNew}
-					onClick={newGrid}
-				>
-					{loadingNew ? "Generating…" : "New grid"}
-				</button>
-				<button className="btn btn-light-bordered" onClick={openBuilder}>
-					Custom grid
-				</button>
-				<select
-					className="form-select form-select-sm w-auto"
-					title="Guesses per grid (applies to the next grid)"
-					value={String(guessSetting)}
-					onChange={(e) => setGuesses(e.target.value)}
-				>
-					<option value="6">6 guesses</option>
-					<option value="9">9 guesses</option>
-					<option value="12">12 guesses</option>
-					<option value="Infinity">Unlimited</option>
-				</select>
+					<button
+						className="btn btn-sm btn-light-bordered"
+						onClick={openBuilder}
+					>
+						Custom grid
+					</button>
+					<select
+						className="form-select form-select-sm w-auto"
+						title="Guesses per grid (applies to the next grid)"
+						value={String(guessSetting)}
+						onChange={(e) => setGuesses(e.target.value)}
+					>
+						<option value="6">6 guesses</option>
+						<option value="9">9 guesses</option>
+						<option value="12">12 guesses</option>
+						<option value="Infinity">Unlimited</option>
+					</select>
+				</div>
 			</div>
 
 			<div
@@ -508,10 +535,11 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							const solved = cell.pid !== undefined;
 							if (solved) {
 								const card = cards[cell.pid!];
+								const tier = tierOf(cell.points);
 								return (
 									<div
 										key={cIdx}
-										className="position-relative rounded overflow-hidden border border-success"
+										className="position-relative rounded overflow-hidden border border-success trivia-pop trivia-flash-green"
 										style={{ aspectRatio: "1 / 1", cursor: done ? "pointer" : undefined }}
 										onClick={done ? () => setRevealCell(i) : undefined}
 									>
@@ -532,8 +560,8 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 											) : null}
 										</div>
 										<span
-											className="badge text-bg-success position-absolute top-0 end-0 m-1"
-											title="Rarity points"
+											className={`badge ${tier.badge} position-absolute top-0 end-0 m-1`}
+											title={`${tier.label} pick`}
 										>
 											+{cell.points}
 										</span>
@@ -554,7 +582,13 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							return (
 								<button
 									key={cIdx}
-									className={`btn p-0 rounded ${activeCell === i ? "btn-primary" : "btn-light-bordered"}`}
+									className={`btn p-0 rounded trivia-cell ${
+										activeCell === i
+											? "btn-primary"
+											: done
+												? "btn-light-bordered border-danger"
+												: "btn-light-bordered"
+									}`}
 									style={{ aspectRatio: "1 / 1" }}
 									onClick={() => {
 										if (done) {
@@ -566,10 +600,15 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 									}}
 								>
 									{done ? (
-										<span className="text-body-secondary small">
-											{grid.cells[i]!.pids.length} answers
+										<span className="small">
+											<span className="d-block fw-bold">
+												{grid.cells[i]!.pids.length}
+											</span>
+											<span className="text-body-secondary">answers</span>
 										</span>
-									) : null}
+									) : (
+										<span className="text-body-secondary h4 mb-0">+</span>
+									)}
 								</button>
 							);
 						})}
@@ -578,9 +617,67 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 			</div>
 
 			{done ? (
-				<p className="text-body-secondary small mb-3">
-					Tap any cell to see its answers.
-				</p>
+				<>
+					{immaculate ? <Confetti /> : null}
+					<div
+						className="card trivia-rise mb-3"
+						style={{ maxWidth: 640 }}
+					>
+						<div className="card-body d-flex flex-wrap align-items-center gap-3">
+							<div style={{ fontSize: "1.3rem", lineHeight: 1.15 }}>
+								{[0, 1, 2].map((r) => (
+									<div key={r}>
+										{[0, 1, 2].map((c) =>
+											cells[r * 3 + c]!.pid !== undefined ? "🟩" : "⬛",
+										)}
+									</div>
+								))}
+							</div>
+							<div className="flex-grow-1">
+								<div className="h4 mb-1">
+									{immaculate
+										? "Immaculate! 🏆"
+										: correctCount >= 7
+											? "So close!"
+											: correctCount >= 4
+												? "Solid board."
+												: "Tough grid."}
+								</div>
+								<div className="mb-1">
+									<span className="fw-bold">{score}</span> points ·{" "}
+									{correctCount}/9 solved
+									{score > 0 && score >= stats.best ? (
+										<span className="badge text-bg-warning ms-2">
+											New best!
+										</span>
+									) : null}
+								</div>
+								<div className="d-flex flex-wrap gap-1">
+									{cells
+										.filter((c) => c.pid !== undefined)
+										.map((c, i) => {
+											const tier = tierOf(c.points);
+											return (
+												<span key={i} className={`badge ${tier.badge}`}>
+													{tier.label} +{c.points}
+												</span>
+											);
+										})}
+								</div>
+								<div className="text-body-secondary small mt-1">
+									Tap any cell to see its answers.
+								</div>
+							</div>
+							<button
+								className="btn btn-primary"
+								disabled={loadingNew}
+								onClick={newGrid}
+							>
+								{loadingNew ? "Generating…" : "Play again"}
+							</button>
+						</div>
+					</div>
+				</>
 			) : (
 				<p className="text-body-secondary small mb-3">
 					{searchList.length.toLocaleString()} players in the pool. Each player
@@ -588,10 +685,25 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 				</p>
 			)}
 
-			<div className="text-body-secondary small">
-				Played {stats.played} · Immaculate {stats.immaculate} · Best{" "}
-				{stats.best} · Avg{" "}
-				{stats.played > 0 ? Math.round(stats.totalScore / stats.played) : 0}
+			<div className="d-flex flex-wrap gap-2">
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">{stats.played}</div>
+					<div className="trivia-tile-label">Played</div>
+				</div>
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">{stats.immaculate}</div>
+					<div className="trivia-tile-label">Immaculate</div>
+				</div>
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">{stats.best}</div>
+					<div className="trivia-tile-label">Best</div>
+				</div>
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">
+						{stats.played > 0 ? Math.round(stats.totalScore / stats.played) : 0}
+					</div>
+					<div className="trivia-tile-label">Avg score</div>
+				</div>
 			</div>
 
 			{/* Guess modal */}
@@ -615,7 +727,10 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 						autoFocus
 					/>
 					{wrongGuess !== undefined ? (
-						<div className="text-danger small mt-2">
+						<div
+							key={wrongKey}
+							className="text-danger fw-bold small mt-2 trivia-shake"
+						>
 							✗ {wrongGuess} — not a match.
 						</div>
 					) : null}
@@ -667,7 +782,18 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 											) : null}
 										</td>
 										<td className="text-end">
-											{reveal?.rarity[pid] ?? "—"}
+											{(() => {
+												const pts = reveal?.rarity[pid];
+												if (pts === undefined) {
+													return "—";
+												}
+												const tier = tierOf(pts);
+												return (
+													<span className={`badge ${tier.badge}`}>
+														{tier.label} +{pts}
+													</span>
+												);
+											})()}
 										</td>
 									</tr>
 								);
