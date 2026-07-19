@@ -7,6 +7,32 @@ import type {
 import { WEBSITE_ROOT } from "../../common/constants.ts";
 import { logEvent } from "../util/index.ts";
 
+// A transient IndexedDB transaction hiccup: the transaction went INACTIVE
+// before one of its requests could run. WebKit does this under write pressure,
+// and iOS aggressively kills in-flight transactions when a PWA is backgrounded
+// mid-write ("Attempt to get a record from database without an in-progress
+// transaction"). The failed operation here is always best-effort and self-heals
+// on the next attempt - the per-second league heartbeat, the phase-text cache,
+// and the multiplayer sync watermark all re-run - so it must NOT be surfaced as
+// a persistent, scary error toast. Worse, rethrowing it (below) forces the
+// transaction to abort, which pops a SECOND toast. We detect these and keep them
+// console-only: no toast, no rethrow.
+export const isTransientTransactionError = (error: any): boolean => {
+	if (!error) {
+		return false;
+	}
+	if (
+		error.name === "TransactionInactiveError" ||
+		error.name === "InvalidStateError"
+	) {
+		return true;
+	}
+	const message = typeof error.message === "string" ? error.message : "";
+	return /in-progress transaction|transaction (is )?(not active|inactive|has finished|is finished)/i.test(
+		message,
+	);
+};
+
 // If duplicate message is sent multiple times in a row (like IndexedDB transaction abort with many open requests), only show one
 const debounceMessagesStore = new Map<string, number>();
 const stopBecauseDebounce = (text: string) => {
@@ -76,6 +102,12 @@ const connectIndexedDB = async <DBTypes>({
 	db.addEventListener("abort", (event: any) => {
 		console.log(`${name} database abort event`, event.target.error);
 
+		// A transaction that aborted because it went inactive under load self-heals
+		// on the next attempt; don't nag the user about it.
+		if (isTransientTransactionError(event.target.error)) {
+			return;
+		}
+
 		let text: string | undefined;
 		if (
 			event.target.error &&
@@ -101,6 +133,13 @@ const connectIndexedDB = async <DBTypes>({
 	});
 	db.addEventListener("error", (event: any) => {
 		console.log(`${name} database error event`, event.target.error);
+
+		// A transient inactive-transaction error self-heals on the next attempt.
+		// Rethrowing it here (below) would force the transaction to abort and pop a
+		// SECOND toast, so bail out entirely: console-only, no toast, no rethrow.
+		if (isTransientTransactionError(event.target.error)) {
+			return;
+		}
 
 		if (event.target.error) {
 			let text: string;
