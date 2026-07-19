@@ -12,6 +12,50 @@ const STYLE =
 
 const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
+// The jersey number the player wore in a given season (from that season's stats
+// row), falling back to their current number.
+const jerseyForSeason = (
+	p: PlayerWithoutKey,
+	season: number,
+): string | undefined => {
+	for (const s of (p.stats ?? []) as any[]) {
+		if (s.season === season && s.jerseyNumber) {
+			return s.jerseyNumber;
+		}
+	}
+	return p.jerseyNumber;
+};
+
+// "Name, a basketball PG (age 24, jersey #23, 6'6\", 215 lbs)" - the physical
+// details AS OF the given season, so a moment reads correctly for the player at
+// that point in their career (age and jersey change over time; height/weight are
+// fixed).
+export const describePlayerSubject = (
+	p: PlayerWithoutKey,
+	pos: string,
+	season: number,
+): string => {
+	const name = `${p.firstName} ${p.lastName}`.trim() || "the player";
+	const parts: string[] = [];
+	const bornYear = p.born?.year;
+	if (typeof bornYear === "number" && season >= bornYear) {
+		parts.push(`age ${season - bornYear}`);
+	}
+	const jersey = jerseyForSeason(p, season);
+	if (jersey) {
+		parts.push(`jersey #${jersey}`);
+	}
+	if (p.hgt) {
+		parts.push(`${Math.floor(p.hgt / 12)}'${p.hgt % 12}"`);
+	}
+	if (p.weight) {
+		parts.push(`${p.weight} lbs`);
+	}
+	return `${name}, a basketball ${pos}${
+		parts.length > 0 ? ` (${parts.join(", ")})` : ""
+	}`;
+};
+
 // Awards worth their own moment, mapped to how the prompt should describe the
 // scene. Anything not listed (All-League/All-Defensive teams, etc.) is skipped
 // to keep the list tight.
@@ -39,8 +83,6 @@ export const getPlayerImageMoments = async (
 	pos: string,
 	feats: { season?: number; text?: string }[],
 ): Promise<ImageMoment[]> => {
-	const name = `${p.firstName} ${p.lastName}`.trim() || "the player";
-	const subject = `${name}, a basketball ${pos}`;
 	const moments: ImageMoment[] = [];
 
 	const teamName = async (
@@ -61,7 +103,7 @@ export const getPlayerImageMoments = async (
 			moments.push({
 				key: `draft`,
 				label: `Draft night — R${p.draft.round} P${p.draft.pick}, ${team} (${p.draft.year})`,
-				prompt: `A cartoon illustration of ${subject}, on draft night: standing on stage smiling after being drafted in round ${p.draft.round} (pick ${p.draft.pick}) by the ${team} in ${p.draft.year}, wearing a ${team} draft cap and holding up a ${team} jersey. ${STYLE}`,
+				prompt: `A cartoon illustration of ${describePlayerSubject(p, pos, p.draft.year)}, on draft night: standing on stage smiling after being drafted in round ${p.draft.round} (pick ${p.draft.pick}) by the ${team} in ${p.draft.year}, wearing a ${team} draft cap and holding up a ${team} jersey. ${STYLE}`,
 			});
 		}
 	}
@@ -85,7 +127,7 @@ export const getPlayerImageMoments = async (
 				t.type === "trade"
 					? `Traded to ${team} (${t.season})`
 					: `Signed with ${team} (${t.season})`,
-			prompt: `A cartoon illustration of ${subject} at an introductory press conference ${how} in ${t.season}, smiling while holding up a ${team} jersey next to the team logo. ${STYLE}`,
+			prompt: `A cartoon illustration of ${describePlayerSubject(p, pos, t.season)} at an introductory press conference ${how} in ${t.season}, smiling while holding up a ${team} jersey next to the team logo. ${STYLE}`,
 		});
 	}
 
@@ -106,7 +148,7 @@ export const getPlayerImageMoments = async (
 		moments.push({
 			key: `award-${award.season}-${award.type}`,
 			label: `${award.type} (${award.season})`,
-			prompt: `A cartoon illustration of ${subject} ${scene(team)}, in ${award.season}. ${STYLE}`,
+			prompt: `A cartoon illustration of ${describePlayerSubject(p, pos, award.season)} ${scene(team)}, in ${award.season}. ${STYLE}`,
 		});
 	}
 
@@ -119,21 +161,22 @@ export const getPlayerImageMoments = async (
 		moments.push({
 			key: `feat-${feat.season}-${text.slice(0, 20)}`,
 			label: `Big game${feat.season ? ` (${feat.season})` : ""}`,
-			prompt: `A cartoon illustration of ${subject} in the middle of a standout game — ${text} — celebrating on the court. ${STYLE}`,
+			prompt: `A cartoon illustration of ${describePlayerSubject(p, pos, feat.season ?? 0)} in the middle of a standout game — ${text} — celebrating on the court. ${STYLE}`,
 		});
 	}
 
 	return moments;
 };
 
-// A starting prompt for the "Customize" option, already carrying the cartoon
-// style so a hand-written prompt still matches the game's art. The user edits
-// the middle to describe the scene.
+// A starting prompt for the "Customize" option, already carrying the player's
+// current physical details and the cartoon style so a hand-written prompt still
+// matches the game's art. The user edits the middle to describe the scene.
 export const customImagePromptSeed = (
-	name: string,
+	p: PlayerWithoutKey,
 	pos: string,
 	team: string | undefined,
+	season: number,
 ): string =>
-	`A cartoon illustration of ${name || "the player"}, a basketball ${pos}${
+	`A cartoon illustration of ${describePlayerSubject(p, pos, season)}${
 		team ? ` on the ${team}` : ""
 	}, . ${STYLE}`;

@@ -166,9 +166,10 @@ const updateCustomizePlayer = async (
 		const imageMoments = await getPlayerImageMoments(p, initialAutoPos, feats);
 		const currentTeamText = teams.find((t) => t.tid === p.tid)?.text;
 		const customImageSeed = customImagePromptSeed(
-			`${p.firstName} ${p.lastName}`.trim(),
+			p,
 			initialAutoPos,
 			currentTeamText,
+			g.get("season"),
 		);
 
 		faceCount += 1;
