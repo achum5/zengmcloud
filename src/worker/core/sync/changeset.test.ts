@@ -113,6 +113,45 @@ describe("sync changeset", () => {
 		assert.strictEqual(after.length, 2);
 	});
 
+	test("watch flags never cross devices: incoming watch is dropped, local watch survives", async () => {
+		// --- Source device: watches both players, then edits them ---
+		resetG();
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await changeTracker.runCaptured(async () => {
+			const players = await idb.cache.players.getAll();
+			for (const p of players) {
+				p.watch = 1;
+				p.tid = 5;
+				await idb.cache.players.put(p);
+			}
+		});
+		const changeset = overTheWire(await captureChangeset());
+		assert.strictEqual(changeset.changes.length, 2);
+		// The author's records DO carry its watch flags over the wire...
+		assert.ok(changeset.changes.every((c: any) => c.value.watch === 1));
+
+		// --- Target device: never watched pid 0, watches pid 1 with color 3 ---
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		const mine = await idb.cache.players.get(1);
+		mine!.watch = 3;
+		await idb.cache.players.put(mine!);
+		changeTracker.disable();
+
+		await applyChangeset(changeset, { refreshUI: false });
+
+		// ...but the receiver never imports them: pid 0 stays unwatched, pid 1
+		// keeps ITS OWN color, and the rest of the record still applied.
+		const p0 = await idb.cache.players.get(0);
+		const p1 = await idb.cache.players.get(1);
+		assert.strictEqual(p0!.watch, undefined);
+		assert.strictEqual(p1!.watch, 3);
+		assert.strictEqual(p0!.tid, 5);
+		assert.strictEqual(p1!.tid, 5);
+	});
+
 	test("advancing daysLeft refreshes the free-agency status text on the receiver", async () => {
 		resetG();
 		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);

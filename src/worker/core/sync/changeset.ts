@@ -178,6 +178,30 @@ const reconcileIdentity = async (store: Store, value: any) => {
 	}
 };
 
+// Replace an incoming player record's watch flag with this device's own, so
+// watch lists stay per-user instead of bleeding across the room (a Cavs
+// device's shortlist should only ever show on that device). The local value is
+// looked up in the cache first, then on disk (retired players and prospects
+// can be watched but may not be cached). If this device never watched the
+// player, the incoming flag is dropped entirely.
+const preserveLocalWatch = async (incoming: any) => {
+	try {
+		let localPlayer = await idb.cache.players.get(incoming.pid);
+		if (localPlayer === undefined && idb.league) {
+			localPlayer = await (idb.league as any).get("players", incoming.pid);
+		}
+		if (localPlayer?.watch !== undefined) {
+			incoming.watch = localPlayer.watch;
+		} else {
+			delete incoming.watch;
+		}
+	} catch {
+		// If the lookup fails, err on the side of NOT importing someone else's
+		// watch flag.
+		delete incoming.watch;
+	}
+};
+
 // Which team THIS device is currently acting as. In the multiplayer model the
 // league is in multi-team mode with all the friends' teams in `userTids` (which
 // DOES sync - it's what makes re-signing, the draft, etc. treat every friend's
@@ -351,6 +375,14 @@ export const applyChangeset = async (
 					await api.delete(change.id);
 				}
 			} else {
+				// Watch-list flags are personal: each user shortlists players for
+				// their own team, so a synced player record must never carry another
+				// device's watch color onto this one. Keep whatever watch THIS device
+				// has for the player (including none) before applying the record.
+				if (change.store === "players" && change.value) {
+					await preserveLocalWatch(change.value);
+				}
+
 				// Heal any diverged-rid duplicate first, so a logically-keyed row (e.g.
 				// teamSeasons) updates in place instead of tripping its unique index.
 				await reconcileIdentity(change.store, change.value);
