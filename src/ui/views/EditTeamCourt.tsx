@@ -55,6 +55,53 @@ const ColorField = ({
 	</div>
 );
 
+// A text input bound to one CourtStyle field, with an optional companion color
+// picker (for text-color fields shown only when the text is non-empty).
+const TextField = ({
+	label,
+	hint,
+	value,
+	placeholder,
+	onChange,
+	colorValue,
+	colorFallback,
+	onColorChange,
+}: {
+	label: string;
+	hint?: string;
+	value: string;
+	placeholder?: string;
+	onChange: (value: string) => void;
+	colorValue?: string;
+	colorFallback?: string;
+	onColorChange?: (value: string) => void;
+}) => (
+	<div className="mb-3">
+		<label className="form-label mb-1">
+			{label}{" "}
+			{hint ? <span className="text-body-secondary">{hint}</span> : null}
+		</label>
+		<div className="d-flex align-items-center gap-2">
+			<input
+				type="text"
+				className="form-control"
+				value={value}
+				placeholder={placeholder}
+				onChange={(e) => onChange(e.target.value)}
+			/>
+			{onColorChange && value ? (
+				<input
+					type="color"
+					className="form-control form-control-color flex-shrink-0"
+					title="Text color"
+					value={colorValue || colorFallback || "#ffffff"}
+					onChange={(e) => onColorChange(e.target.value)}
+				/>
+			) : null}
+		</div>
+	</div>
+);
+
 const EditTeamCourt = ({
 	tid,
 	abbrev,
@@ -311,6 +358,55 @@ const EditTeamCourt = ({
 							onChange={(e) => set("sidelineImageURL", e.target.value)}
 						/>
 					</div>
+
+					<hr />
+					<h3 className="h6 text-body-secondary">Arena-floor details</h3>
+
+					<TextField
+						label="Center-court script text"
+						hint="(above the logo, e.g. “The Finals”)"
+						value={style.centerText ?? ""}
+						placeholder="The Finals"
+						onChange={(v) => set("centerText", v)}
+						colorValue={style.centerTextColor}
+						colorFallback={style.apron ?? colors[0]}
+						onColorChange={(v) => set("centerTextColor", v)}
+					/>
+
+					<TextField
+						label="Baseline logo URL"
+						hint="(behind each baseline)"
+						value={style.baselineImageURL ?? ""}
+						placeholder="https://…"
+						onChange={(v) => set("baselineImageURL", v)}
+					/>
+
+					<TextField
+						label="Quarter-court logo URL"
+						hint="(repeated in the four corners)"
+						value={style.cornerLogoURL ?? ""}
+						placeholder="https://…"
+						onChange={(v) => set("cornerLogoURL", v)}
+					/>
+
+					<TextField
+						label="Bench banner image URL"
+						hint="(along the bench sideline only)"
+						value={style.benchImageURL ?? ""}
+						placeholder="https://… (wide banner)"
+						onChange={(v) => set("benchImageURL", v)}
+					/>
+
+					<TextField
+						label="Bench sponsor text"
+						hint="(e.g. “celtics.com”)"
+						value={style.benchText ?? ""}
+						placeholder="celtics.com"
+						onChange={(v) => set("benchText", v)}
+						colorValue={style.benchTextColor}
+						colorFallback={style.apronText ?? colors[1]}
+						onColorChange={(v) => set("benchTextColor", v)}
+					/>
 
 					<div className="d-flex gap-2 mt-3">
 						<button

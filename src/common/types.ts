@@ -2063,6 +2063,15 @@ export type CourtStyle = {
 	trophyURL?: string; // finals center-court trophy; default the league default
 	secondaryLogoURL?: string; // secondary logo shown in each half-court
 	sidelineImageURL?: string; // image stretched lengthwise along each sideline
+	// Deep-customization slots, so a court can match a real arena floor (quarter-
+	// court logos, baseline branding, bench sponsor text, center-court script):
+	centerText?: string; // script text above the center logo (e.g. "The Finals")
+	centerTextColor?: string; // center script color (hex); default rail color
+	baselineImageURL?: string; // logo/script in each backcourt, behind the baseline
+	cornerLogoURL?: string; // logo repeated in the four quarter-court corners
+	benchImageURL?: string; // banner along the bench (bottom) sideline only
+	benchText?: string; // sponsor text along the bench sideline (e.g. "celtics.com")
+	benchTextColor?: string; // bench text color (hex); default rail text color
 };
 
 export type TeamAttr = keyof Team;

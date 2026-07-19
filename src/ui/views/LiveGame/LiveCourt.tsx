@@ -798,6 +798,11 @@ const LiveCourt = ({
 	const centerLogoURL = court?.logoURL || home?.imgURL;
 	const secondaryLogoURL = court?.secondaryLogoURL || undefined;
 	const sidelineImageURL = court?.sidelineImageURL || undefined;
+	const baselineImageURL = court?.baselineImageURL || undefined;
+	const cornerLogoURL = court?.cornerLogoURL || undefined;
+	const benchImageURL = court?.benchImageURL || undefined;
+	const centerText = court?.centerText || undefined;
+	const benchText = court?.benchText || undefined;
 
 	// Namespaced ids for the floor's SVG defs (grain filter + clip paths), so
 	// two courts on one page (e.g. the editor preview) don't collide.
@@ -1014,6 +1019,8 @@ const LiveCourt = ({
 	// custom court (apron) or the team colors.
 	const homeRail = court?.apron || homeColor;
 	const homeText = court?.apronText || teamColor(home, 1, "#ffffff");
+	const centerTextColor = court?.centerTextColor || homeRail;
+	const benchTextColor = court?.benchTextColor || homeText;
 	const railLabel = (home?.name || home?.region || home?.abbrev || "")
 		.toUpperCase()
 		.slice(0, 14);
@@ -1170,6 +1177,69 @@ const LiveCourt = ({
 					</>
 				) : null}
 
+				{/* Bench-side sponsor banner: a wide image along the BOTTOM sideline
+				    apron only (the broadcast bench/scorer's-table side). */}
+				{benchImageURL ? (
+					<image
+						href={benchImageURL}
+						x={0}
+						y={COURT_H}
+						width={COURT_W}
+						height={APRON}
+						preserveAspectRatio="none"
+						opacity={0.97}
+					/>
+				) : null}
+
+				{/* Baseline branding: a logo/script in each backcourt behind the
+				    baseline (e.g. the "THE FINALS" script). Drawn on the floor under
+				    the lines so the key/arc stay visible on top. */}
+				{baselineImageURL ? (
+					<>
+						<image
+							href={baselineImageURL}
+							x={COURT_W * 0.11 - 9}
+							y={25 - 6}
+							width={18}
+							height={12}
+							opacity={0.9}
+							preserveAspectRatio="xMidYMid meet"
+						/>
+						<image
+							href={baselineImageURL}
+							x={COURT_W * 0.89 - 9}
+							y={25 - 6}
+							width={18}
+							height={12}
+							opacity={0.9}
+							preserveAspectRatio="xMidYMid meet"
+						/>
+					</>
+				) : null}
+
+				{/* Quarter-court logos: one in each of the four quadrant corners. */}
+				{cornerLogoURL
+					? (
+							[
+								[COURT_W * 0.25, 10],
+								[COURT_W * 0.25, COURT_H - 10],
+								[COURT_W * 0.75, 10],
+								[COURT_W * 0.75, COURT_H - 10],
+							] as const
+						).map(([qx, qy], i) => (
+							<image
+								key={`corner${i}`}
+								href={cornerLogoURL}
+								x={qx - 4.5}
+								y={qy - 4.5}
+								width={9}
+								height={9}
+								opacity={0.8}
+								preserveAspectRatio="xMidYMid meet"
+							/>
+						))
+					: null}
+
 				{/* Painted key (drawn under the lines) */}
 				{paintFor(false)}
 				{paintFor(true)}
@@ -1224,6 +1294,43 @@ const LiveCourt = ({
 					</text>
 				) : null}
 
+				{/* Center-court script text (e.g. "The Finals"), above the center
+				    logo near the top sideline so it stays clear of the logo. */}
+				{centerText ? (
+					<text
+						x={COURT_W / 2}
+						y={6}
+						textAnchor="middle"
+						dominantBaseline="central"
+						fontSize={3.4}
+						fontWeight={800}
+						fontStyle="italic"
+						letterSpacing={0.4}
+						fill={centerTextColor}
+						opacity={0.95}
+					>
+						{centerText.slice(0, 24)}
+					</text>
+				) : null}
+
+				{/* Bench-side sponsor text (e.g. "celtics.com"), running along the
+				    bottom sideline just inside the court. */}
+				{benchText ? (
+					<text
+						x={COURT_W / 2}
+						y={COURT_H - 1.9}
+						textAnchor="middle"
+						dominantBaseline="central"
+						fontSize={2.4}
+						fontWeight={700}
+						letterSpacing={0.8}
+						fill={benchTextColor}
+						opacity={0.95}
+					>
+						{benchText.slice(0, 30)}
+					</text>
+				) : null}
+
 				{/* Secondary logo, shown in each half-court (backcourt branding) */}
 				{secondaryLogoURL ? (
 					<>
@@ -1265,6 +1372,13 @@ const LiveCourt = ({
 			floorPattern,
 			sidelineImageURL,
 			secondaryLogoURL,
+			baselineImageURL,
+			cornerLogoURL,
+			benchImageURL,
+			centerText,
+			centerTextColor,
+			benchText,
+			benchTextColor,
 			centerLogoURL,
 			trophyURL,
 			railLabel,
