@@ -8,7 +8,7 @@ import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 export type ImageMoment = { key: string; label: string; prompt: string };
 
 const STYLE =
-	"Draw it in the clean, flat cartoon-avatar style of Basketball GM (faces.js): simple bold vector shapes, solid flat colors, minimal shading, front-facing and stylized. NOT photorealistic.";
+	"Draw it in the clean, flat cartoon-avatar style of Basketball GM (faces.js): simple bold vector shapes, solid flat colors, minimal shading, front-facing and stylized. NOT photorealistic. The age, height, weight, and jersey number are reference details ONLY, to guide how the player looks - do NOT render any text, captions, name plates, stat cards, info boxes, labels, or watermarks in the image (authentic team lettering and the jersey number on the uniform are fine).";
 
 const stripHtml = (s: string) => s.replace(/<[^>]*>/g, "").trim();
 
@@ -36,24 +36,16 @@ export const describePlayerSubject = (
 	season: number,
 ): string => {
 	const name = `${p.firstName} ${p.lastName}`.trim() || "the player";
-	const parts: string[] = [];
 	const bornYear = p.born?.year;
-	if (typeof bornYear === "number" && season >= bornYear) {
-		parts.push(`age ${season - bornYear}`);
-	}
+	const agePart =
+		typeof bornYear === "number" && season >= bornYear
+			? `${season - bornYear}-year-old `
+			: "";
+	const heightPart = p.hgt ? `${Math.floor(p.hgt / 12)}'${p.hgt % 12}" ` : "";
+	const weightPart = p.weight ? `, weighing ${p.weight} lbs` : "";
 	const jersey = jerseyForSeason(p, season);
-	if (jersey) {
-		parts.push(`jersey #${jersey}`);
-	}
-	if (p.hgt) {
-		parts.push(`${Math.floor(p.hgt / 12)}'${p.hgt % 12}"`);
-	}
-	if (p.weight) {
-		parts.push(`${p.weight} lbs`);
-	}
-	return `${name}, a basketball ${pos}${
-		parts.length > 0 ? ` (${parts.join(", ")})` : ""
-	}`;
+	const jerseyPart = jersey ? `, wearing jersey #${jersey}` : "";
+	return `${name}, a ${agePart}${heightPart}basketball ${pos}${weightPart}${jerseyPart}`;
 };
 
 // Awards worth their own moment, mapped to how the prompt should describe the
