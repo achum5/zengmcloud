@@ -253,6 +253,19 @@ export const captureChangeset = async (): Promise<Changeset> => {
 		}
 
 		if (type === "delete") {
+			// An `events` row is keyed by an autoincrement `eid` that diverges across
+			// devices (each generates its own), and events carry no stable logical
+			// identity to reconcile by. So a delete-by-eid would remove a DIFFERENT,
+			// unrelated event on every other device. The only synced-league path that
+			// deletes an event is the sign/release UNDO (deleteOldData is blocked on
+			// synced leagues), and there the substantive revert is the player put -
+			// which syncs correctly by pid. So keep event deletes LOCAL: the author's
+			// log is cleaned, and receivers simply keep the now-stale log entry rather
+			// than risk losing a real one. Event ADDs still broadcast normally.
+			if (typedStore === "events") {
+				continue;
+			}
+
 			// For a logically-keyed store, carry the deleted row's identity so the
 			// receiver deletes by (tid, season[, playoffs]) rather than by our `rid`
 			// - which points at an unrelated row on a device whose rids diverged,

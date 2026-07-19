@@ -113,6 +113,40 @@ describe("sync changeset", () => {
 		assert.strictEqual(after.length, 2);
 	});
 
+	test("an events delete stays local (eid diverges), but the player revert and event adds still sync", async () => {
+		// Mirrors the sign/release UNDO: it reverts the player (put, keyed by pid)
+		// and deletes the sign event (keyed by a diverging autoincrement eid).
+		resetG();
+		await resetCache({ players: [genPlayer()] });
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await changeTracker.runCaptured(async () => {
+			// A brand-new event, then a delete of an earlier event: the add must
+			// broadcast, the delete must NOT.
+			await idb.cache.events.add({ type: "reSigned", pids: [0] } as any);
+			await idb.cache.events.delete(7); // some earlier sign event's local eid
+			const p = (await idb.cache.players.getAll())[0]!;
+			p.tid = -1; // reverted to free agent
+			await idb.cache.players.put(p);
+		});
+
+		const changeset = overTheWire(await captureChangeset());
+		const eventDeletes = changeset.changes.filter(
+			(c: any) => c.store === "events" && c.type === "delete",
+		);
+		const eventPuts = changeset.changes.filter(
+			(c: any) => c.store === "events" && c.type === "put",
+		);
+		const playerPuts = changeset.changes.filter(
+			(c: any) => c.store === "players" && c.type === "put",
+		);
+		assert.strictEqual(eventDeletes.length, 0, "event delete must stay local");
+		assert.strictEqual(eventPuts.length, 1, "event add must still sync");
+		assert.strictEqual(playerPuts.length, 1, "player revert must still sync");
+		assert.strictEqual(playerPuts[0].value.tid, -1);
+	});
+
 	test("watch flags never cross devices: incoming watch is dropped, local watch survives", async () => {
 		// --- Source device: watches both players, then edits them ---
 		resetG();
