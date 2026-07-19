@@ -60,6 +60,45 @@ const SKIP_PHASE_ANNOUNCE = new Set<number>([
 	PHASE.AFTER_TRADE_DEADLINE,
 ]);
 
+// ---- Live draft-lottery reveal gating -------------------------------------
+//
+// When the host runs the lottery in a synced league, the result is written to
+// the DB (and would normally push "X won the #1 pick!") the instant the lottery
+// runs - but the reveal is still animating pick-by-pick on every device. Pushing
+// the winner now spoils it on everyone's phone. So while a reveal is active we
+// HOLD the lottery notification and release it once the reveal finishes.
+let lotteryRevealActiveUntil = 0;
+let heldLotteryNotifications: SyncNotification[] = [];
+
+// Safety cap: keep holding for at most this long without an explicit "reveal
+// done" signal, so a host that crashes / navigates away mid-reveal can't
+// permanently suppress the next lottery push.
+const LOTTERY_HOLD_MAX_MS = 3 * 60 * 1000;
+
+// Called on the host right when it runs the lottery, before that result's
+// changeset is turned into notifications.
+export const beginLotteryReveal = () => {
+	lotteryRevealActiveUntil = Date.now() + LOTTERY_HOLD_MAX_MS;
+	heldLotteryNotifications = [];
+};
+
+export const isLotteryRevealActive = (): boolean =>
+	Date.now() < lotteryRevealActiveUntil;
+
+const holdLotteryNotifications = (notifs: SyncNotification[]) => {
+	heldLotteryNotifications.push(...notifs);
+};
+
+// Called when the reveal finishes: stop holding and hand back whatever we held
+// so the caller can finally push it. Returns the held notifications regardless
+// of the (possibly already-expired) active flag, so nothing is ever dropped.
+export const endLotteryReveal = (): SyncNotification[] => {
+	lotteryRevealActiveUntil = 0;
+	const held = heldLotteryNotifications;
+	heldLotteryNotifications = [];
+	return held;
+};
+
 // The current best available free agents, as "Name (ovr/pot)" lines.
 const topFreeAgentsText = async (): Promise<string> => {
 	let fas: any[] = [];
@@ -1170,8 +1209,19 @@ export const buildNotifications = async (
 	}
 
 	const teamById = await teamsById();
+
+	// The draft lottery push is HELD while its reveal is animating (see
+	// beginLotteryReveal): firing "X won the #1 pick!" the instant the result is
+	// written would spoil the pick-by-pick reveal on everyone's phone. It's
+	// released once the reveal finishes (endLotteryReveal).
+	const lotteryNotifs = describeLottery(changeset, teamById);
+	const holdLottery = lotteryNotifs.length > 0 && isLotteryRevealActive();
+	if (holdLottery) {
+		holdLotteryNotifications(lotteryNotifs);
+	}
+
 	const extras = [
-		...describeLottery(changeset, teamById),
+		...(holdLottery ? [] : lotteryNotifs),
 		...describeTradesFromEvents(changeset, teamById),
 	];
 

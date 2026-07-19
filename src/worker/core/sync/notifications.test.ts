@@ -3,7 +3,11 @@ import { resetCache, resetG } from "../../../test/helpers.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
-import { buildNotifications } from "./notifications.ts";
+import {
+	beginLotteryReveal,
+	buildNotifications,
+	endLotteryReveal,
+} from "./notifications.ts";
 import type { Changeset } from "./changeset.ts";
 
 const opts = { isHost: true, authorName: "Alex" };
@@ -627,6 +631,48 @@ describe("buildNotifications", () => {
 		// tid 1 (Boston) drew the top pick.
 		assert.ok(lotto!.body.includes("Boston Celtics"), lotto!.body);
 		assert.strictEqual(lotto!.path, "draft_lottery");
+	});
+
+	test("a live lottery reveal HOLDS the result push, then endLotteryReveal releases it", async () => {
+		g.setWithoutSavingToDB("phase", PHASE.DRAFT_LOTTERY);
+		const changeset: Changeset = {
+			changes: [
+				{
+					store: "draftLotteryResults",
+					id: 2026,
+					type: "put",
+					value: {
+						season: 2026,
+						result: [
+							{ tid: 1, originalTid: 1, chances: 140, pick: 1, dpid: 10 },
+							{ tid: 0, originalTid: 0, chances: 120, pick: 2, dpid: 11 },
+						],
+					},
+				},
+			],
+		};
+
+		// A reveal is in progress: the lottery push must NOT go out yet.
+		beginLotteryReveal();
+		const duringReveal = await buildNotifications(
+			"main.draftLottery",
+			changeset,
+			opts,
+		);
+		assert.ok(
+			!duringReveal.some((n) => n.title.includes("draft lottery")),
+			JSON.stringify(duringReveal),
+		);
+
+		// When the reveal finishes, the held push is handed back so it can fire.
+		const released = endLotteryReveal();
+		const lotto = released.find((n) => n.title.includes("draft lottery"));
+		assert.ok(lotto, JSON.stringify(released));
+		assert.ok(lotto!.body.includes("Boston Celtics"), lotto!.body);
+		assert.strictEqual(lotto!.path, "draft_lottery");
+
+		// And the buffer is emptied - a second release yields nothing.
+		assert.strictEqual(endLotteryReveal().length, 0);
 	});
 
 	const freeAgentEvent: Changeset["changes"][number] = {

@@ -14,6 +14,7 @@ import { env } from "../../util/env.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
 import { syncDebugLog } from "./debugLog.ts";
+import { endLotteryReveal } from "./notifications.ts";
 import type { LiveBroadcastMeta } from "./types.ts";
 
 // This device's catch-up watermark for a league, stored in the durable meta DB
@@ -660,6 +661,25 @@ export const publishLotteryRevealState = async (update: {
 	revealed?: number;
 	startedAt?: number;
 }) => {
+	// The reveal just finished (host reached the last pick, or left the page):
+	// release the lottery push we held back so it wouldn't spoil the still-
+	// animating reveal. The result itself already synced via the change log, so
+	// this only fans out the (now safe) "#1 pick" notification.
+	if (update.active === false) {
+		const held = endLotteryReveal();
+		const releaseEngine = getSyncEngine();
+		if (releaseEngine) {
+			for (const notification of held) {
+				void releaseEngine.publishNotification(notification).catch((error) => {
+					console.error(
+						"[sync] Failed to publish held lottery notification",
+						error,
+					);
+				});
+			}
+		}
+	}
+
 	const transport = currentTransport;
 	const engine = getSyncEngine();
 	if (!transport?.publishLotteryReveal || !engine) {

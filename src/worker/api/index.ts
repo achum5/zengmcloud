@@ -101,6 +101,7 @@ import {
 	getSyncEngine,
 	getSyncRequired,
 	getSyncStatus,
+	beginLotteryReveal,
 	listSyncRooms,
 	markSyncRequired,
 	publishAutoPlayState,
@@ -1234,6 +1235,13 @@ const draftLottery = async () => {
 	const { draftLotteryResult } = (await draft.genOrder(
 		false,
 	)) as unknown as GenOrderResult<false>;
+	// In a synced league the result is revealed pick-by-pick on every device.
+	// Mark the reveal as starting so the lottery push (built from this same
+	// action's changeset) is held until the reveal finishes, rather than spoiling
+	// it the instant the result is written. Released in publishLotteryRevealState.
+	if (draftLotteryResult && getSyncEngine() !== undefined) {
+		beginLotteryReveal();
+	}
 	return draftLotteryResult;
 };
 
