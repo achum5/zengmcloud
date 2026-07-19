@@ -797,11 +797,16 @@ tr.table-warning:hover > td {
 	z-index: 1030;
 }
 
-// While the iOS modal scroll lock pins <body> in place (see Modal.tsx), the
-// page has no scroll container, so the sticky header would sit at the page's
-// flow top - off-screen by the locked scroll offset. Hold it to the viewport
-// for the duration: the page cannot scroll while pinned, so fixed cannot
-// desync, and flipping back to sticky on unpin rebuilds the compositor layer.
+// While the iOS modal scroll lock pins <body> in place (see Modal.tsx), hold the
+// header at the viewport top with position:fixed (robust regardless of how a
+// browser resolves a sticky element under a position:fixed ancestor). Switching
+// the header out of flow would collapse the 52px of space it occupied and jump
+// the whole background up the instant the modal opened - so restore exactly that
+// space with a matching padding-top on the body. Net: header stays put, nothing
+// shifts. 52px is the header height (see the top offsets elsewhere in this file).
+body.ios-modal-pinned {
+	padding-top: 52px;
+}
 body.ios-modal-pinned .navbar-border.sticky-top {
 	position: fixed;
 	top: 0;

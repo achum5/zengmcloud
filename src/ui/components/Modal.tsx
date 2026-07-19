@@ -55,8 +55,9 @@ class MyModalManager extends BootstrapModalManager {
 			style.left = "0";
 			style.right = "0";
 			style.width = "100%";
-			// Keeps the sticky header on-screen while the body is pinned (see
-			// .ios-modal-pinned in light.scss).
+			// Pins the sticky header to the viewport top and restores its layout
+			// space so the background doesn't jump (see .ios-modal-pinned in
+			// light.scss).
 			document.body.classList.add("ios-modal-pinned");
 		}
 
