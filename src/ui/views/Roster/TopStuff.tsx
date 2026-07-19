@@ -11,7 +11,6 @@ import Note from "../Player/Note.tsx";
 import { buildTeamSeasonRecapLinks } from "../../util/linkifyRecap.ts";
 import { RosterComposition } from "../../components/RosterComposition.tsx";
 import { PlusMinus } from "../../components/PlusMinus.tsx";
-import { ImagesModal, useImagesModal } from "../../components/ImagesModal.tsx";
 import { useLocal } from "../../util/local.ts";
 import { hardCapForTid } from "../../../common/getHardCap.ts";
 
@@ -219,8 +218,6 @@ const TopStuff = ({
 		luxuryPayroll,
 	});
 
-	const imagesModal = useImagesModal(currentSeason);
-
 	const logoStyle: CSSProperties = {
 		margin: "0.25rem 1rem 0 0",
 	};
@@ -281,25 +278,7 @@ const TopStuff = ({
 				}}
 			>
 				<div className="d-flex">
-					<div className="d-flex flex-column align-items-center">
-						<div className="team-picture" style={logoStyle} />
-						{editable ? (
-							<button
-								type="button"
-								className="btn btn-light-bordered btn-sm mt-1"
-								title="Images"
-								onClick={() =>
-									imagesModal.open({
-										type: "team",
-										tid,
-										name: `${t.seasonAttrs.region} ${t.seasonAttrs.name}`,
-									})
-								}
-							>
-								<span className="glyphicon glyphicon-picture" /> Images
-							</button>
-						) : null}
-					</div>
+					<div className="team-picture" style={logoStyle} />
 					<div>
 						<div>
 							<div style={fontSizeLarger}>{recordAndPlayoffs}</div>
@@ -446,7 +425,6 @@ const TopStuff = ({
 					<span className="text-danger">highlighted in red</span>.
 				</div>
 			) : null}
-			<ImagesModal {...imagesModal.props} />
 		</>
 	);
 };
