@@ -613,8 +613,11 @@ export const getDayGamesForRecap = async ({
 		return { won, count };
 	};
 
-	// Playoff series lookup for the current postseason.
+	// Playoff series lookup for the current postseason. numGamesPlayoffSeries is
+	// the best-of length PER ROUND (customizable, so not always 7); index it by
+	// the 0-based round to tell the recap how long each series actually is.
 	const playoffSeries = await idb.cache.playoffSeries.get(season);
+	const numGamesPlayoffSeries = g.get("numGamesPlayoffSeries", season);
 	const seriesForGame = async (game: any): Promise<RecapSeries | undefined> => {
 		if (!playoffSeries || !Array.isArray(playoffSeries.series)) {
 			return undefined;
@@ -648,6 +651,7 @@ export const getDayGamesForRecap = async ({
 					return {
 						round: round + 1,
 						numRounds: playoffSeries.series.length,
+						bestOf: numGamesPlayoffSeries?.[round],
 						homeAbbrev: home.abbrev ?? (await abbrevOf(home.tid)),
 						awayAbbrev: away.abbrev ?? (await abbrevOf(away.tid)),
 						homeSeed: home.seed,

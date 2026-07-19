@@ -181,7 +181,16 @@ const seriesLine = (game: RecapGame): string | undefined => {
 		typeof s.homeSeed === "number" && typeof s.awaySeed === "number"
 			? ` — #${s.awaySeed} ${s.awayAbbrev} at #${s.homeSeed} ${s.homeAbbrev}`
 			: "";
-	return `Playoffs — Round ${s.round} of ${s.numRounds}${seeds} (before this game: ${leader})`;
+	// The series length is customizable per round — state it explicitly (with how
+	// many wins clinch it) so the recap never assumes best-of-7.
+	let format = "";
+	if (typeof s.bestOf === "number" && s.bestOf > 0) {
+		format =
+			s.bestOf === 1
+				? " — single game"
+				: ` — best-of-${s.bestOf} (first to ${Math.floor(s.bestOf / 2) + 1} wins)`;
+	}
+	return `Playoffs — Round ${s.round} of ${s.numRounds}${format}${seeds} (before this game: ${leader})`;
 };
 
 // A one-line stakes description for a play-in tournament game. This is a
