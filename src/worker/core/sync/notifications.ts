@@ -2,6 +2,7 @@ import { PHASE, PHASE_TEXT, PLAYER } from "../../../common/constants.ts";
 import { helpers } from "../../../common/helpers.ts";
 import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
+import getOrder from "../draft/getOrder.ts";
 import type { Game } from "../../../common/types.ts";
 import type { Changeset } from "./changeset.ts";
 
@@ -1095,6 +1096,41 @@ const describeLottery = (
 	];
 };
 
+// If a user team is now on the clock in the draft, a targeted "you're up" ping
+// for that team. Evaluated AFTER the changeset applied, so getOrder() reflects
+// the post-pick state - the first remaining pick is whoever is up next. Only
+// called when this changeset made picks or started the draft, so a random
+// mid-draft change (a trade, a note) doesn't re-ping.
+const buildOnTheClockNotifications = async (
+	teamById: Map<number, TeamInfo>,
+): Promise<SyncNotification[]> => {
+	const phase = g.get("phase");
+	if (phase !== PHASE.DRAFT && phase !== PHASE.FANTASY_DRAFT) {
+		return [];
+	}
+
+	let order;
+	try {
+		order = await getOrder();
+	} catch {
+		return [];
+	}
+	const next = order[0];
+	if (!next || !g.get("userTids").includes(next.tid)) {
+		return [];
+	}
+
+	const overall = (next.round - 1) * g.get("numActiveTeams") + next.pick;
+	return [
+		{
+			title: "You're on the clock!",
+			body: `The ${teamLabel(teamById, next.tid)} are up with the ${helpers.ordinal(overall)} pick (round ${next.round}, pick ${next.pick}).`,
+			targetTids: [next.tid],
+			path: phase === PHASE.FANTASY_DRAFT ? "fantasy_draft" : "draft",
+		},
+	];
+};
+
 // Turn a locally-produced changeset into push notifications for the room, or an
 // empty array if nothing is worth a ping. Called on the device that made the
 // change (its app is open), so `g` and the cache already reflect the post-action
@@ -1224,6 +1260,17 @@ export const buildNotifications = async (
 		...(holdLottery ? [] : lotteryNotifs),
 		...describeTradesFromEvents(changeset, teamById),
 	];
+
+	// "You're on the clock" whenever picks were just made (the order advanced) or
+	// the draft just started (someone is up for the first time).
+	const newPhase = newPhaseFromChangeset(changeset);
+	if (
+		draftedPidsFromEvents(changeset).size > 0 ||
+		newPhase === PHASE.DRAFT ||
+		newPhase === PHASE.FANTASY_DRAFT
+	) {
+		extras.push(...(await buildOnTheClockNotifications(teamById)));
+	}
 
 	const base = await buildBaseNotifications(label, changeset, opts);
 

@@ -675,6 +675,117 @@ describe("buildNotifications", () => {
 		assert.strictEqual(endLotteryReveal().length, 0);
 	});
 
+	describe("you're on the clock", () => {
+		// A pick was just made in this changeset (its draft event), leaving the
+		// picks below still on the board.
+		const draftEvent: Changeset["changes"][number] = {
+			store: "events",
+			id: 1,
+			type: "put",
+			value: { type: "draft", pids: [999] },
+		};
+
+		const remainingPick = (dpid: number, tid: number, pick: number) => ({
+			dpid,
+			season: 2026,
+			round: 1,
+			pick,
+			tid,
+			originalTid: tid,
+		});
+
+		test("pings the user team now up after a pick", async () => {
+			g.setWithoutSavingToDB("phase", PHASE.DRAFT);
+			g.setWithoutSavingToDB("userTids", [0, 1]);
+			await resetCache({
+				teams: [
+					{ tid: 0, region: "LA", name: "Lakers", abbrev: "LAL" },
+					{ tid: 1, region: "Boston", name: "Celtics", abbrev: "BOS" },
+				],
+				draftPicks: [remainingPick(10, 1, 3), remainingPick(11, 0, 4)],
+			});
+
+			const notifs = await buildNotifications(
+				"playMenu.onePick",
+				{ changes: [draftEvent] },
+				opts,
+			);
+			const clock = notifs.find((n) => n.title === "You're on the clock!");
+			assert.ok(clock, JSON.stringify(notifs));
+			// Boston owns the first remaining pick, so only Boston is pinged.
+			assert.deepStrictEqual(clock!.targetTids, [1]);
+			assert.ok(clock!.body.includes("Boston Celtics"), clock!.body);
+			assert.strictEqual(clock!.path, "draft");
+		});
+
+		test("stays quiet when an AI team is up or nothing draft-related happened", async () => {
+			g.setWithoutSavingToDB("phase", PHASE.DRAFT);
+			g.setWithoutSavingToDB("userTids", [0]);
+			await resetCache({
+				teams: [
+					{ tid: 0, region: "LA", name: "Lakers", abbrev: "LAL" },
+					{ tid: 1, region: "Boston", name: "Celtics", abbrev: "BOS" },
+				],
+				// tid 1 is up next but is NOT a user team here.
+				draftPicks: [remainingPick(10, 1, 3), remainingPick(11, 0, 4)],
+			});
+
+			const afterPick = await buildNotifications(
+				"playMenu.onePick",
+				{ changes: [draftEvent] },
+				opts,
+			);
+			assert.ok(
+				!afterPick.some((n) => n.title === "You're on the clock!"),
+				JSON.stringify(afterPick),
+			);
+
+			// A draft-phase changeset with no picks made must not re-ping either,
+			// even though a user team is on the clock.
+			g.setWithoutSavingToDB("userTids", [0, 1]);
+			const noPicks = await buildNotifications(
+				"main.setNote2",
+				{ changes: [{ store: "players", id: 5, type: "put", value: { pid: 5 } }] },
+				opts,
+			);
+			assert.ok(
+				!noPicks.some((n) => n.title === "You're on the clock!"),
+				JSON.stringify(noPicks),
+			);
+		});
+
+		test("pings the first team up when the draft phase starts", async () => {
+			g.setWithoutSavingToDB("phase", PHASE.DRAFT);
+			g.setWithoutSavingToDB("userTids", [0]);
+			await resetCache({
+				teams: [
+					{ tid: 0, region: "LA", name: "Lakers", abbrev: "LAL" },
+					{ tid: 1, region: "Boston", name: "Celtics", abbrev: "BOS" },
+				],
+				draftPicks: [remainingPick(10, 0, 1), remainingPick(11, 1, 2)],
+			});
+
+			const notifs = await buildNotifications(
+				"playMenu.day",
+				{
+					changes: [
+						{
+							store: "gameAttributes",
+							id: "phase",
+							type: "put",
+							value: { key: "phase", value: PHASE.DRAFT },
+						},
+					],
+				},
+				opts,
+			);
+			const clock = notifs.find((n) => n.title === "You're on the clock!");
+			assert.ok(clock, JSON.stringify(notifs));
+			assert.deepStrictEqual(clock!.targetTids, [0]);
+			assert.ok(clock!.body.includes("1st pick"), clock!.body);
+		});
+	});
+
 	const freeAgentEvent: Changeset["changes"][number] = {
 		store: "events",
 		id: 1,
