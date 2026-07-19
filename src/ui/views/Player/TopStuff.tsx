@@ -31,7 +31,6 @@ import {
 	NegotiationModal,
 	useNegotiaionModal,
 } from "../../components/NegotiationModal.tsx";
-import { ImagesModal, useImagesModal } from "../../components/ImagesModal.tsx";
 import { useLocal } from "../../util/local.ts";
 
 const Relatives = ({
@@ -442,7 +441,6 @@ const TopStuff = ({
 		player.college && player.college !== "" ? player.college : "None";
 
 	const negotiationModal = useNegotiaionModal();
-	const imagesModal = useImagesModal(currentSeason);
 
 	const buttonsAvailableOutsideGodMode = (
 		<>
@@ -613,23 +611,6 @@ const TopStuff = ({
 						>
 							Edit
 						</a>
-						<button
-							type="button"
-							className={clsx(
-								"btn",
-								godMode ? "btn-outline-god-mode" : "btn-light-bordered",
-							)}
-							title="Images"
-							onClick={() =>
-								imagesModal.open({
-									type: "player",
-									pid: player.pid,
-									name: player.name,
-								})
-							}
-						>
-							<span className="glyphicon glyphicon-picture" />
-						</button>
 						{godMode ? (
 							<button
 								className="btn btn-outline-god-mode"
@@ -776,7 +757,6 @@ const TopStuff = ({
 			</div>
 
 			<NegotiationModal {...negotiationModal.props} />
-			<ImagesModal {...imagesModal.props} />
 		</div>
 	);
 };

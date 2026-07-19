@@ -10,6 +10,10 @@ import type {
 } from "../../common/types.ts";
 import { last, orderBy } from "../../common/utils.ts";
 import { upgradeFace } from "../util/face.ts";
+import {
+	getPlayerImageMoments,
+	customImagePromptSeed,
+} from "../util/getPlayerImageMoments.ts";
 
 export const formatPlayerRelativesList = (p: Player) => {
 	const firstSeason = p.ratings[0].season;
@@ -147,12 +151,34 @@ const updateCustomizePlayer = async (
 
 		const initialAutoPos = player.pos(last(p.ratings));
 
+		// Per-player AI-image "moments" (draft night, trades/signings, awards, big
+		// games), each a ready-to-copy cartoon-style prompt for the image generator.
+		let feats: { season?: number; text?: string }[] = [];
+		if (inputs.pid !== null && inputs.type !== "clone") {
+			const events = await idb.getCopies.events(
+				{ pid: inputs.pid },
+				"noCopyCache",
+			);
+			feats = events
+				.filter((event) => event.type === "playerFeat")
+				.map((event) => ({ season: event.season, text: event.text }));
+		}
+		const imageMoments = await getPlayerImageMoments(p, initialAutoPos, feats);
+		const currentTeamText = teams.find((t) => t.tid === p.tid)?.text;
+		const customImageSeed = customImagePromptSeed(
+			`${p.firstName} ${p.lastName}`.trim(),
+			initialAutoPos,
+			currentTeamText,
+		);
+
 		faceCount += 1;
 
 		return {
 			appearanceOption,
 			faceCount,
 			initialAutoPos,
+			imageMoments,
+			customImageSeed,
 			originalTid,
 			p,
 			playerMoodTraits: g.get("playerMoodTraits"),

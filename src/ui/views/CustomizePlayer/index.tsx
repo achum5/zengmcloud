@@ -532,6 +532,8 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 
 	const {
 		faceCount,
+		imageMoments,
+		customImageSeed,
 		originalTid,
 		playerMoodTraits,
 		playersRelativesList,
@@ -625,6 +627,20 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 			</p>
 
 			<form onSubmit={handleSubmit}>
+				<div className="mb-3" style={{ maxWidth: 520 }}>
+					<PlayerImageGenerator
+						moments={imageMoments}
+						customSeed={customImageSeed}
+						onImageUploaded={(url) => {
+							setState((prevState) => ({
+								...prevState,
+								appearanceOption: "Image URL",
+								p: { ...prevState.p, imgURL: url },
+							}));
+						}}
+					/>
+				</div>
+
 				<div className="row">
 					<div className="col-md-7 mb-3">
 						<h2>Attributes</h2>
@@ -1198,21 +1214,6 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 								</span>
 							</div>
 						)}
-
-						<PlayerImageGenerator
-							ctx={{
-								name: `${p.firstName} ${p.lastName}`.trim() || "the player",
-								pos: p.pos ?? "player",
-								team: teams.find((t) => t.tid === p.tid)?.text ?? "their team",
-							}}
-							onImageUploaded={(url) => {
-								setState((prevState) => ({
-									...prevState,
-									appearanceOption: "Image URL",
-									p: { ...prevState.p, imgURL: url },
-								}));
-							}}
-						/>
 					</div>
 
 					<div className="col-md-5 mb-3">
