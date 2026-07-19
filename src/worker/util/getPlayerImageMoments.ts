@@ -126,8 +126,9 @@ export const getPlayerImageMoments = async (
 	return moments;
 };
 
-// A blank-ish starting prompt for the "Customize" option, already in the right
-// cartoon style so the user only has to describe the scene.
+// A starting prompt for the "Customize" option, already carrying the cartoon
+// style so a hand-written prompt still matches the game's art. The user edits
+// the middle to describe the scene.
 export const customImagePromptSeed = (
 	name: string,
 	pos: string,
@@ -135,4 +136,4 @@ export const customImagePromptSeed = (
 ): string =>
 	`A cartoon illustration of ${name || "the player"}, a basketball ${pos}${
 		team ? ` on the ${team}` : ""
-	}: `;
+	}, . ${STYLE}`;
