@@ -2,6 +2,7 @@ import Dropdown from "../Dropdown.tsx";
 import DropdownLinks from "../DropdownLinks.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
+import { ImagesModal, useImagesModal } from "../ImagesModal.tsx";
 import type { MenuItemHeader } from "../../../common/types.ts";
 import { useCallback } from "react";
 
@@ -66,6 +67,7 @@ export const TitleBar = () => {
 		moreInfoAbbrev,
 		moreInfoSeason,
 		moreInfoTid,
+		titleBarImages,
 		lid,
 	} = useLocal([
 		"title",
@@ -80,8 +82,11 @@ export const TitleBar = () => {
 		"moreInfoAbbrev",
 		"moreInfoSeason",
 		"moreInfoTid",
+		"titleBarImages",
 		"lid",
 	]);
+
+	const imagesModal = useImagesModal(titleBarImages?.season ?? 0);
 
 	if (title === undefined) {
 		return null;
@@ -220,26 +225,40 @@ export const TitleBar = () => {
 	}
 
 	return (
-		<aside className="navbar navbar-border navbar-light justify-content-start title-bar flex-shrink-0  py-0">
-			<h1>
-				{title}
-				{!hideNewWindow ? <NewWindowLink /> : null}
-			</h1>
-			{dropdownView && dropdownFields ? (
-				<Dropdown
-					customURL={dropdownCustomURL}
-					customOptions={dropdownCustomOptions}
-					view={dropdownView}
-					fields={dropdownFields}
+		<>
+			<aside className="navbar navbar-border navbar-light justify-content-start title-bar flex-shrink-0  py-0">
+				<h1>
+					{title}
+					{!hideNewWindow ? <NewWindowLink /> : null}
+				</h1>
+				{dropdownView && dropdownFields ? (
+					<Dropdown
+						customURL={dropdownCustomURL}
+						customOptions={dropdownCustomOptions}
+						view={dropdownView}
+						fields={dropdownFields}
+					/>
+				) : null}
+				{titleBarImages ? (
+					<button
+						type="button"
+						className="btn btn-sm btn-light-bordered ms-auto my-1"
+						title="Photos"
+						onClick={() => imagesModal.open(titleBarImages.subject)}
+					>
+						<span className="glyphicon glyphicon-picture" />
+						<span className="d-none d-sm-inline ms-1">Photos</span>
+					</button>
+				) : null}
+				<DropdownLinks
+					className={`title-bar-right-links ${titleBarImages ? "" : "ms-auto"}`}
+					hideTitle
+					inLeague
+					lid={lid}
+					menuItems={menuItems}
 				/>
-			) : null}
-			<DropdownLinks
-				className="ms-auto title-bar-right-links"
-				hideTitle
-				inLeague
-				lid={lid}
-				menuItems={menuItems}
-			/>
-		</aside>
+			</aside>
+			<ImagesModal {...imagesModal.props} />
+		</>
 	);
 };

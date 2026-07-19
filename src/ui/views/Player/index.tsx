@@ -51,6 +51,10 @@ const Player2 = ({
 	useTitleBar({
 		title: player.name,
 		customMenu,
+		imagesSubject: {
+			subject: { type: "player", pid: player.pid, name: player.name },
+			season: currentSeason,
+		},
 		dropdownView: "player",
 		dropdownFields:
 			player.tid !== PLAYER.UNDRAFTED

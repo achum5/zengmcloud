@@ -1293,6 +1293,14 @@ export type LocalStateUI = {
 	moreInfoAbbrev?: string;
 	moreInfoSeason?: number;
 	moreInfoTid?: number;
+	// When set, the title bar shows a Photos button opening the images modal
+	// for this player/team (see useTitleBar's imagesSubject).
+	titleBarImages?: {
+		subject:
+			| { type: "player"; pid: number; name: string }
+			| { type: "team"; tid: number; name: string };
+		season: number;
+	};
 	stickyFooterAd: boolean;
 	stickyFormButtons: boolean;
 } & {

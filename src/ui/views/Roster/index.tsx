@@ -135,6 +135,14 @@ const Roster = ({
 		moreInfoAbbrev: abbrev,
 		moreInfoSeason: season,
 		moreInfoTid: tid,
+		imagesSubject: {
+			subject: {
+				type: "team",
+				tid,
+				name: `${t.seasonAttrs?.region ?? ""} ${t.seasonAttrs?.name ?? ""}`.trim(),
+			},
+			season: currentSeason,
+		},
 	});
 
 	if (players !== prevPlayers) {
