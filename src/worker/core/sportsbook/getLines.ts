@@ -235,7 +235,8 @@ export const getLines = async () => {
 		const totalLine = toHalfPointLine(expectedTotal);
 		const pOver = overProb(expectedTotal, totalLine);
 		// Home spread: home favored by `margin`, so the line is -margin.
-		const spreadLine = toHalfPointLine(Math.abs(margin)) * (margin >= 0 ? -1 : 1);
+		const spreadLine =
+			toHalfPointLine(Math.abs(margin)) * (margin >= 0 ? -1 : 1);
 
 		games.push({
 			gid: matchup.gid,
@@ -400,15 +401,13 @@ export const getLines = async () => {
 				.sort((a, b) => b.line - a.line);
 
 	// --- Awards (by current award-race position) --------------------------
-	// The instant this season's awards are actually decided (idb.cache.awards
-	// exists for it), the true winners/teams are public knowledge - the season
-	// NUMBER doesn't roll over until next preseason, so without this check the
-	// whole awards section (and the team-award/All-Star sections below) would
-	// stay bettable on an already-known result all the way through the draft
-	// lottery, draft, and free agency. Same principle as win totals/division
-	// odds closing once the regular season ends.
-	const awardsDecided =
-		(await idb.getCopy.awards({ season }, "noCopyCache")) !== undefined;
+	// Award futures (MVP, DPOY, ROY, SMOY, MIP, and the All-League/All-Defensive/
+	// All-Rookie team boards) close the moment the regular season ends. The
+	// awards are earned over the regular season, so once the playoffs begin the
+	// race is effectively settled - a real book stops taking bets rather than let
+	// them ride through the playoffs and offseason on a near-known outcome. Same
+	// principle as win totals/division odds closing at `regularSeasonOver`.
+	const awardsClosed = regularSeasonOver;
 
 	type AwardCandidateRow = {
 		pid: number;
@@ -426,12 +425,11 @@ export const getLines = async () => {
 	let allDefensive: ReturnType<typeof buildTierBoard> = [];
 	let allRookie: AwardCandidateRow[] = [];
 
-	if (!awardsDecided) {
+	if (!awardsClosed) {
 		// The award scorers read season stats and can throw in a league with none
 		// (e.g. one started directly in the playoffs). A failed awards section
 		// must never take down the whole board - it just isn't offered.
-		let awardCandidatesRaw: Awaited<ReturnType<typeof getAwardCandidates>> =
-			[];
+		let awardCandidatesRaw: Awaited<ReturnType<typeof getAwardCandidates>> = [];
 		try {
 			awardCandidatesRaw = await getAwardCandidates(season);
 		} catch (error) {
@@ -496,11 +494,7 @@ export const getLines = async () => {
 					{ amount: 40, score: mvpScore },
 					players,
 				) as unknown as TierCandidate[];
-				allLeague = buildTierBoard(
-					mvpField,
-					TEAM_AWARD_TIER_SIZES,
-					seed + 101,
-				);
+				allLeague = buildTierBoard(mvpField, TEAM_AWARD_TIER_SIZES, seed + 101);
 
 				const dpoyField = getTopPlayers(
 					{ amount: 40, score: dpoyScore },
@@ -527,7 +521,7 @@ export const getLines = async () => {
 	// --- All-Star Team futures ----------------------------------------------
 	// Decided earlier in the season than the year-end awards (whenever the
 	// roster is actually selected - see worker/core/allStar/create.ts), so
-	// gated on its OWN existence check, independent of awardsDecided above.
+	// gated on its OWN existence check, independent of the awards board above.
 	let allStar: AwardCandidateRow[] = [];
 	const allStarsDecided =
 		(await idb.getCopy.allStars({ season }, "noCopyCache")) !== undefined;
@@ -535,10 +529,10 @@ export const getLines = async () => {
 		try {
 			// Matches the real selection pool in worker/core/allStar/create.ts
 			// (includes free agents - a good unsigned player is eligible too).
-			const rawPlayers = await idb.cache.players.indexGetAll(
-				"playersByTid",
-				[PLAYER.FREE_AGENT, Infinity],
-			);
+			const rawPlayers = await idb.cache.players.indexGetAll("playersByTid", [
+				PLAYER.FREE_AGENT,
+				Infinity,
+			]);
 			const asPlayers = await idb.getCopies.playersPlus(rawPlayers, {
 				attrs: ["pid", "name", "tid", "abbrev", "injury"],
 				stats: ["ewa", "ws"],
@@ -564,8 +558,8 @@ export const getLines = async () => {
 				}));
 			const rosterSize = g.get("allStarNum") * 2;
 			allStar =
-				buildTierBoard(healthyField, [rosterSize], seed + 404)[0]
-					?.candidates ?? [];
+				buildTierBoard(healthyField, [rosterSize], seed + 404)[0]?.candidates ??
+				[];
 		} catch (error) {
 			console.error("Sportsbook All-Star odds unavailable", error);
 		}

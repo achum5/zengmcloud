@@ -6,6 +6,7 @@ import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { showNotification } from "../util/showNotification.ts";
 import type { View } from "../../common/types.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
+import { PHASE } from "../../common/constants.ts";
 import { useLocal } from "../util/local.ts";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import {
@@ -32,6 +33,7 @@ const Sportsbook = ({
 	leagueBets,
 	gameLinks,
 	season,
+	phase,
 }: View<"sportsbook">) => {
 	useTitleBar({ title: "Sportsbook" });
 
@@ -157,10 +159,7 @@ const Sportsbook = ({
 											>
 												<Logo tid={r.t.tid} />
 												<div className="lh-sm">
-													{teamLink(
-														r.t.tid,
-														`${r.t.region} ${r.t.name}`,
-													)}
+													{teamLink(r.t.tid, `${r.t.region} ${r.t.name}`)}
 													<div className="text-body-secondary small">
 														{r.t.won}-{r.t.lost}
 													</div>
@@ -324,96 +323,97 @@ const Sportsbook = ({
 	const futuresTab = (
 		<div className="row">
 			<div className="col-md-6">
-					{teamFuturesTable(
-						"Championship",
-						"Champion",
-						board.championship,
-						(tid) => ({ type: "champion", pickTid: tid, season }),
-						"champ",
-					)}
-					{board.conferences.map((conf) =>
-						teamFuturesTable(
-							`${conf.name} Winner`,
-							conf.name,
-							conf.teams,
-							(tid) => ({ type: "conf", pickTid: tid, cid: conf.cid, season }),
-							`conf${conf.cid}`,
-						),
-					)}
-				</div>
-				<div className="col-md-6">
-					{board.winTotals.length === 0 ? null : (
-						<>
-					<h3 className="h5">Season Win Totals</h3>
-					<div className="table-responsive">
-						<table className={TABLE_CLASS} style={{ maxWidth: 440 }}>
-							<thead>
-								<tr>
-									<th>Team</th>
-									<th className="text-end">Line</th>
-									<th className="text-center" style={{ width: 90 }}>
-										Over
-									</th>
-									<th className="text-center" style={{ width: 90 }}>
-										Under
-									</th>
-								</tr>
-							</thead>
-							<tbody>
-								{board.winTotals.map((t) => (
-									<tr key={t.tid}>
-										<td>
-											<div className="d-flex align-items-center gap-2">
-												<Logo tid={t.tid} />
-												{teamLink(t.tid, t.abbrev)}
-											</div>
-										</td>
-										<td className="text-end">{t.line}</td>
-										{(["over", "under"] as const).map((side) => {
-											const key = side === "over" ? `wto-${t.tid}` : `wtu-${t.tid}`;
-											const odds = side === "over" ? t.over : t.under;
-											return (
-												<td key={side}>
-													<OddsCell
-														odds={odds}
-														selected={selectedKeys.has(key)}
-														onClick={() =>
-															togglePick({
-																key,
-																market: {
-																	type: "winTotal",
-																	pickTid: t.tid,
-																	side,
-																	line: t.line,
-																	season,
-																},
-																odds,
-																title: `${teamAbbrev(t.tid)} ${side === "over" ? "Over" : "Under"} ${t.line}`,
-																sub: "Season wins",
-															})
-														}
-													/>
-												</td>
-											);
-										})}
-									</tr>
-								))}
-							</tbody>
-						</table>
-					</div>
-						</>
-					)}
-					{board.divisions.map((div) =>
-						teamFuturesTable(
-							`${div.name} Winner`,
-							div.name,
-							div.teams,
-							(tid) => ({ type: "div", pickTid: tid, did: div.did, season }),
-							`div${div.did}`,
-						),
-					)}
-				</div>
+				{teamFuturesTable(
+					"Championship",
+					"Champion",
+					board.championship,
+					(tid) => ({ type: "champion", pickTid: tid, season }),
+					"champ",
+				)}
+				{board.conferences.map((conf) =>
+					teamFuturesTable(
+						`${conf.name} Winner`,
+						conf.name,
+						conf.teams,
+						(tid) => ({ type: "conf", pickTid: tid, cid: conf.cid, season }),
+						`conf${conf.cid}`,
+					),
+				)}
 			</div>
+			<div className="col-md-6">
+				{board.winTotals.length === 0 ? null : (
+					<>
+						<h3 className="h5">Season Win Totals</h3>
+						<div className="table-responsive">
+							<table className={TABLE_CLASS} style={{ maxWidth: 440 }}>
+								<thead>
+									<tr>
+										<th>Team</th>
+										<th className="text-end">Line</th>
+										<th className="text-center" style={{ width: 90 }}>
+											Over
+										</th>
+										<th className="text-center" style={{ width: 90 }}>
+											Under
+										</th>
+									</tr>
+								</thead>
+								<tbody>
+									{board.winTotals.map((t) => (
+										<tr key={t.tid}>
+											<td>
+												<div className="d-flex align-items-center gap-2">
+													<Logo tid={t.tid} />
+													{teamLink(t.tid, t.abbrev)}
+												</div>
+											</td>
+											<td className="text-end">{t.line}</td>
+											{(["over", "under"] as const).map((side) => {
+												const key =
+													side === "over" ? `wto-${t.tid}` : `wtu-${t.tid}`;
+												const odds = side === "over" ? t.over : t.under;
+												return (
+													<td key={side}>
+														<OddsCell
+															odds={odds}
+															selected={selectedKeys.has(key)}
+															onClick={() =>
+																togglePick({
+																	key,
+																	market: {
+																		type: "winTotal",
+																		pickTid: t.tid,
+																		side,
+																		line: t.line,
+																		season,
+																	},
+																	odds,
+																	title: `${teamAbbrev(t.tid)} ${side === "over" ? "Over" : "Under"} ${t.line}`,
+																	sub: "Season wins",
+																})
+															}
+														/>
+													</td>
+												);
+											})}
+										</tr>
+									))}
+								</tbody>
+							</table>
+						</div>
+					</>
+				)}
+				{board.divisions.map((div) =>
+					teamFuturesTable(
+						`${div.name} Winner`,
+						div.name,
+						div.teams,
+						(tid) => ({ type: "div", pickTid: tid, did: div.did, season }),
+						`div${div.did}`,
+					),
+				)}
+			</div>
+		</div>
 	);
 
 	// ---- Awards ------------------------------------------------------------
@@ -491,8 +491,9 @@ const Sportsbook = ({
 
 	const awardsTab = !hasAnyAwardMarket ? (
 		<p className="text-body-secondary">
-			No award futures available right now — check back once the season's
-			underway.
+			{phase >= PHASE.PLAYOFFS
+				? "Award futures are closed for the season — they lock when the regular season ends."
+				: "No award futures available right now — check back once the season's underway."}
 		</p>
 	) : (
 		<>
@@ -598,7 +599,10 @@ const Sportsbook = ({
 		) : r === "push" ? (
 			<span className="badge text-bg-secondary">Push</span>
 		) : r === "void" ? (
-			<span className="badge text-bg-secondary" title="Refunded — this market could no longer be resolved">
+			<span
+				className="badge text-bg-secondary"
+				title="Refunded — this market could no longer be resolved"
+			>
 				Void
 			</span>
 		) : (
@@ -647,7 +651,11 @@ const Sportsbook = ({
 									<span className="text-body-secondary">
 										{formatAmerican(leg.americanOdds)}
 									</span>
-									{href ? <a href={href}>{leg.label}</a> : <span>{leg.label}</span>}
+									{href ? (
+										<a href={href}>{leg.label}</a>
+									) : (
+										<span>{leg.label}</span>
+									)}
 									{legBadge(leg.result)}
 								</div>
 							);
@@ -776,8 +784,7 @@ const Sportsbook = ({
 															? formatSportsbookMoney(
 																	bet.stake * bet.decimalOdds,
 																)
-															: bet.result === "push" ||
-																	bet.result === "void"
+															: bet.result === "push" || bet.result === "void"
 																? formatSportsbookMoney(bet.stake)
 																: "—"}
 												</td>
@@ -802,7 +809,9 @@ const Sportsbook = ({
 				<div className="text-body-secondary small">
 					{teamName(wallet.tid)} balance
 				</div>
-				<div className="h3 mb-2">{formatSportsbookMoneyFull(wallet.balance)}</div>
+				<div className="h3 mb-2">
+					{formatSportsbookMoneyFull(wallet.balance)}
+				</div>
 				{balances.length > 1 ? (
 					<div className="d-flex flex-wrap gap-2 pb-1">
 						{balances.map((b) => (
@@ -893,8 +902,8 @@ const Sportsbook = ({
 			) : null}
 
 			<p className="text-body-secondary small mt-2">
-				Play money — completely separate from the real game. Every preseason each
-				team gets {formatSportsbookMoney(1_000_000)} more.
+				Play money — completely separate from the real game. Every preseason
+				each team gets {formatSportsbookMoney(1_000_000)} more.
 			</p>
 		</>
 	);
