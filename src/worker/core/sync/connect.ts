@@ -2,6 +2,8 @@ import { SyncEngine } from "./SyncEngine.ts";
 import { FirebaseTransport } from "./FirebaseTransport.ts";
 import { outbox } from "./outbox.ts";
 import { ensureAnonymousAuth } from "./auth.ts";
+import { setActiveFirebaseConfig } from "./firebaseApp.ts";
+import type { FirebaseConfig } from "./firebaseConfig.ts";
 import { setApplyGuard } from "./applyGuard.ts";
 import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
 import { setupSimDayFence, teardownSimDayFence } from "./simDayFence.ts";
@@ -1144,6 +1146,9 @@ export const connectSharedLeague = async (options: {
 	code: string;
 	isHost?: boolean;
 	explicit?: boolean;
+	// A bring-your-own-Firestore project for this room. Omitted for ordinary
+	// rooms, which use the built-in default project.
+	firebaseConfig?: FirebaseConfig;
 }) => {
 	// Serialize connects. Two connects racing (e.g. the UI auto-reconnect and an
 	// explicit join firing together) each tore down the other's half-built
@@ -1166,10 +1171,12 @@ const doConnectSharedLeague = async ({
 	code,
 	isHost = false,
 	explicit = false,
+	firebaseConfig,
 }: {
 	code: string;
 	isHost?: boolean;
 	explicit?: boolean;
+	firebaseConfig?: FirebaseConfig;
 }) => {
 	const trimmed = code.trim();
 	if (!trimmed) {
@@ -1213,6 +1220,12 @@ const doConnectSharedLeague = async ({
 	// gated through the whole async connect (and if it throws) - never sim
 	// offline and diverge.
 	syncRequired = true;
+
+	// Point Firebase at this room's project - a bring-your-own-Firestore project
+	// when the caller supplied one, or the built-in default otherwise - BEFORE
+	// the first Firebase touch (auth) below. With no custom config this resets to
+	// the default project, so an ordinary room is unaffected.
+	setActiveFirebaseConfig(firebaseConfig);
 
 	// Authenticate - the uid is our stable, rule-enforceable sync identity.
 	const clientId = await ensureAnonymousAuth();
@@ -1572,6 +1585,11 @@ export const teardownSharedLeague = async ({
 	currentCloudReady = false;
 	if (clearPersisted) {
 		await clearPersistedSyncSession(lidToClear);
+		// An explicit disconnect also drops any bring-your-own-Firestore project,
+		// so a later default connect (or push) uses the built-in project. A plain
+		// reconnect/league-switch teardown keeps it, since the next connect sets it
+		// explicitly anyway.
+		setActiveFirebaseConfig(undefined);
 	}
 
 	// Explicit disconnect clears the intent, so single-player simming works again.

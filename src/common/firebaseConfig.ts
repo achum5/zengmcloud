@@ -5,7 +5,19 @@
 // this object. Lives in common/ because BOTH threads need it: the worker (for
 // Firestore sync) and the UI thread (for Firebase Cloud Messaging, which can
 // only run in a window context).
-export const firebaseConfig = {
+
+// The shape of a Firebase web config. Also the shape a user supplies when
+// bringing their own Firestore project (see syncInvite.ts).
+export type FirebaseConfig = {
+	apiKey: string;
+	authDomain: string;
+	projectId: string;
+	storageBucket: string;
+	messagingSenderId: string;
+	appId: string;
+};
+
+export const firebaseConfig: FirebaseConfig = {
 	apiKey: "AIzaSyCUvEh1yMuJ1aq-LfZHVI_ty7MOb64CXuE",
 	authDomain: "zengmcloud-4a454.firebaseapp.com",
 	projectId: "zengmcloud-4a454",

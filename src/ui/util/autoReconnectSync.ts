@@ -1,6 +1,8 @@
 import { toWorker } from "./toWorker.ts";
 import { safeLocalStorage } from "./safeLocalStorage.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../common/constants.ts";
+import { isValidFirebaseConfig } from "../../common/syncInvite.ts";
+import type { FirebaseConfig } from "../../common/firebaseConfig.ts";
 
 // The intent to be connected to a shared-league room is persisted per-league in
 // localStorage, so a full page refresh (which tears down the worker and its
@@ -14,6 +16,10 @@ export type StoredSync = {
 	// first connect count as an EXPLICIT join (allowed to bind the league file to
 	// the room); cleared once the connect succeeds.
 	pendingJoin?: boolean;
+	// A bring-your-own-Firestore project for this room, if the user joined via an
+	// invite. Absent for ordinary rooms, which use the built-in project. Persisted
+	// so an auto-reconnect after a refresh restores the same project.
+	firebaseConfig?: FirebaseConfig;
 };
 
 const key = (lid: number) => `syncSession-${lid}`;
@@ -30,6 +36,11 @@ export const getStoredSync = (lid: number): StoredSync | undefined => {
 				code: parsed.code,
 				isHost: !!parsed.isHost,
 				pendingJoin: !!parsed.pendingJoin,
+				// Only accept a well-formed config; anything else falls back to the
+				// default project rather than pointing sync at a broken one.
+				...(isValidFirebaseConfig(parsed.firebaseConfig)
+					? { firebaseConfig: parsed.firebaseConfig }
+					: {}),
 			};
 		}
 	} catch {}
@@ -43,6 +54,9 @@ export const setStoredSync = (lid: number, session: StoredSync) => {
 			code: session.code.trim(),
 			isHost: session.isHost,
 			...(session.pendingJoin ? { pendingJoin: true } : {}),
+			...(session.firebaseConfig
+				? { firebaseConfig: session.firebaseConfig }
+				: {}),
 		}),
 	);
 };
@@ -89,9 +103,14 @@ export const autoReconnectSync = async (lid: number) => {
 				// A join the user chose at league creation runs its actual connect
 				// here, post-navigation - it still counts as explicit, once.
 				explicit: !!session.pendingJoin,
+				firebaseConfig: session.firebaseConfig,
 			});
 			if (session.pendingJoin) {
-				setStoredSync(lid, { code: session.code, isHost: session.isHost });
+				setStoredSync(lid, {
+					code: session.code,
+					isHost: session.isHost,
+					firebaseConfig: session.firebaseConfig,
+				});
 			}
 			return;
 		} catch (error) {

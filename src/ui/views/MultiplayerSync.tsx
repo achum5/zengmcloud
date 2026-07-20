@@ -18,6 +18,17 @@ import {
 	setSyncDebugEnabled,
 	syncDebugEnabled,
 } from "../util/syncDebugStore.ts";
+import {
+	byoFirestoreEnabled,
+	setByoFirestoreEnabled,
+} from "../util/byoFirestore.ts";
+import {
+	decodeSyncInvite,
+	encodeSyncInvite,
+	isValidFirebaseConfig,
+	looksLikeSyncInvite,
+} from "../../common/syncInvite.ts";
+import type { FirebaseConfig } from "../../common/firebaseConfig.ts";
 import type { SyncRoom } from "../../worker/core/sync/adminRooms.ts";
 
 // Cosmetic gate for the room-admin panel (real security is the Firestore rules).
@@ -109,6 +120,13 @@ const MultiplayerSync = () => {
 	const [error, setError] = useState<string | undefined>();
 	const [claimingSimAuthority, setClaimingSimAuthority] = useState(false);
 
+	// Bring-your-own-Firestore (opt-in). `byoConfigText` is where a host pastes
+	// their Firebase config JSON; `invite` is the shareable token shown after a
+	// custom-project connect.
+	const [byoEnabled, setByoEnabled] = useState(byoFirestoreEnabled());
+	const [byoConfigText, setByoConfigText] = useState("");
+	const [invite, setInvite] = useState<string | undefined>();
+
 	const [teams, setTeams] = useState<
 		{ tid: number; region: string; name: string }[]
 	>([]);
@@ -158,6 +176,16 @@ const MultiplayerSync = () => {
 				setCode(workerStatus.code ?? "");
 				setIsHost(!!workerStatus.isHost);
 				setStatus("connected");
+				// Restore the shareable invite if this is a bring-your-own-Firestore
+				// room (the config is only kept in localStorage, not the worker).
+				if (typeof lid === "number") {
+					const stored = getStoredSync(lid);
+					if (stored?.firebaseConfig && workerStatus.code) {
+						setInvite(
+							encodeSyncInvite(workerStatus.code, stored.firebaseConfig),
+						);
+					}
+				}
 				// Re-assert the shared sync state from the engine, in case this UI's
 				// local state drifted (e.g. a reset that fired after connect) and is
 				// showing a stale "nobody simming" / unlocked Play menu.
@@ -327,14 +355,43 @@ const MultiplayerSync = () => {
 		setError(undefined);
 		setStatus("connecting");
 		try {
+			let innerCode = code.trim();
+			let config: FirebaseConfig | undefined;
+
+			if (byoEnabled) {
+				if (looksLikeSyncInvite(code)) {
+					// Joining via an invite: it carries the room code + project config.
+					const decoded = decodeSyncInvite(code);
+					innerCode = decoded.code;
+					config = decoded.config;
+				} else if (byoConfigText.trim() !== "") {
+					// Hosting on your own project: parse the pasted config.
+					let parsed: unknown;
+					try {
+						parsed = JSON.parse(byoConfigText);
+					} catch {
+						throw new Error("Firebase config must be valid JSON.");
+					}
+					if (!isValidFirebaseConfig(parsed)) {
+						throw new Error(
+							"Firebase config is missing required fields (apiKey, projectId, …).",
+						);
+					}
+					config = parsed;
+				}
+			}
+
 			await toWorker("main", "connectSharedLeague", {
-				code,
+				code: innerCode,
 				isHost,
 				// Typed by the user on this page - an explicit join, allowed to bind
 				// this league file to the room.
 				explicit: true,
+				firebaseConfig: config,
 			});
-			setStoredSync(lid, { code, isHost });
+			setCode(innerCode);
+			setStoredSync(lid, { code: innerCode, isHost, firebaseConfig: config });
+			setInvite(config ? encodeSyncInvite(innerCode, config) : undefined);
 			setStatus("connected");
 		} catch (error_) {
 			setError((error_ as Error).message ?? String(error_));
@@ -347,6 +404,7 @@ const MultiplayerSync = () => {
 		if (typeof lid === "number") {
 			clearStoredSync(lid);
 		}
+		setInvite(undefined);
 		setStatus("disconnected");
 	};
 
@@ -429,6 +487,72 @@ const MultiplayerSync = () => {
 				<label className="form-check-label" htmlFor="sync-host">
 					Sim here on connect
 				</label>
+			</div>
+
+			<div className="mb-3" style={{ maxWidth: 500 }}>
+				<div className="form-check">
+					<input
+						id="sync-byo"
+						type="checkbox"
+						className="form-check-input"
+						checked={byoEnabled}
+						disabled={connected || status === "connecting"}
+						onChange={(event) => {
+							setByoFirestoreEnabled(event.target.checked);
+							setByoEnabled(event.target.checked);
+						}}
+					/>
+					<label
+						className="form-check-label"
+						htmlFor="sync-byo"
+						title="Host the room on your own Firebase project instead of the built-in one"
+					>
+						Use your own Firestore
+					</label>
+				</div>
+
+				{byoEnabled && !connected ? (
+					<div className="mt-2">
+						<label className="form-label" htmlFor="sync-byo-config">
+							Firebase config (JSON)
+						</label>
+						<textarea
+							id="sync-byo-config"
+							className="form-control"
+							rows={5}
+							placeholder={
+								'{"apiKey":"…","authDomain":"…","projectId":"…","storageBucket":"…","messagingSenderId":"…","appId":"…"}'
+							}
+							value={byoConfigText}
+							onChange={(event) => setByoConfigText(event.target.value)}
+						/>
+					</div>
+				) : null}
+
+				{byoEnabled && connected && invite ? (
+					<div className="mt-2">
+						<label className="form-label" htmlFor="sync-invite">
+							Invite code
+						</label>
+						<textarea
+							id="sync-invite"
+							className="form-control"
+							rows={3}
+							readOnly
+							value={invite}
+							onFocus={(event) => event.target.select()}
+						/>
+						<button
+							type="button"
+							className="btn btn-light btn-sm mt-2"
+							onClick={() => {
+								void navigator.clipboard?.writeText(invite);
+							}}
+						>
+							Copy invite
+						</button>
+					</div>
+				) : null}
 			</div>
 
 			<div className="d-flex gap-2 mb-3">
