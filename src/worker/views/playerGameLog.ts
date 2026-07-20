@@ -53,6 +53,19 @@ const updatePlayerGameLog = async (
 
 		const games = await idb.getCopies.games({ season }, "noCopyCache");
 
+		// Which of these games have a saved live play-by-play, so the game log can
+		// offer a per-game "Highlights" reel (basketball only - the reel filters
+		// basketball play types). One durable-keys lookup, not a per-game probe.
+		let replayGids: Set<number> | undefined;
+		if (isSport("basketball")) {
+			try {
+				const keys = await idb.league.getAllKeys("liveGamePlayByPlay");
+				replayGids = new Set(keys as number[]);
+			} catch {
+				// Store missing / read failed - just no highlights buttons.
+			}
+		}
+
 		const abbrevsByTid: Record<number, string> = {};
 		const getAbbrev = async (tid: number) => {
 			if (tid === -1 || tid === -2) {
@@ -198,6 +211,7 @@ const updatePlayerGameLog = async (
 			gameLog.push({
 				gid: game.gid,
 				away: t0 === 1,
+				hasReplay: replayGids?.has(game.gid) ?? false,
 				tid,
 				abbrev,
 				oppTid,
