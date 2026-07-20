@@ -108,6 +108,8 @@ const PlayerStats = ({
 
 	let sortCol = cols.length - 1;
 	if (isSport("football")) {
+		// These absolute indices account for the leading Name/Pos/Age/YOE/Team
+		// columns; adjust here if that leading block changes.
 		if (statType === "passing") {
 			sortCol = 10;
 		} else if (statType === "rushing") {

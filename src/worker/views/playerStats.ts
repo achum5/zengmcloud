@@ -110,6 +110,30 @@ const updatePlayers = async (
 			}
 		}
 
+		// Seasons each player actually stepped on the floor (min > 0), so we can
+		// show years of experience per row - as of that row's season for a single
+		// season or "all", or career total for the career view. Mirrors the
+		// "experience" attr's min>0 definition so it matches the rest of the game.
+		const playedSeasonsByPid = new Map<number, number[]>();
+		for (const p of playersAll) {
+			const seasons = new Set<number>();
+			for (const row of (p.stats ?? []) as any[]) {
+				if (row.min > 0) {
+					seasons.add(row.season);
+				}
+			}
+			playedSeasonsByPid.set(p.pid, [...seasons]);
+		}
+		const experienceAsOf = (
+			pid: number,
+			season: number | undefined,
+		): number => {
+			const list = playedSeasonsByPid.get(pid) ?? [];
+			return season === undefined
+				? list.length
+				: list.filter((s) => s <= season).length;
+		};
+
 		let players = await idb.getCopies.playersPlus(playersAll, {
 			attrs: [
 				"pid",
@@ -209,6 +233,12 @@ const updatePlayers = async (
 		players = addFirstNameShort(players);
 
 		for (const p of players) {
+			// Years of experience for this row: as of the row's season (single
+			// season or "all"), or career total for the career view.
+			const rowSeason =
+				inputs.season === "career" ? undefined : p.stats?.season;
+			p.experience = experienceAsOf(p.pid, rowSeason);
+
 			if (inputs.season === "career") {
 				p.pos = getBestPos(p, tid);
 			} else if (Array.isArray(p.ratings) && p.ratings.length > 0) {
