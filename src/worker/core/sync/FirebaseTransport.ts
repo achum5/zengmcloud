@@ -889,6 +889,25 @@ export class FirebaseTransport implements SyncTransport {
 		return entries;
 	}
 
+	// Every chunk of one bulk batch, straight from the log by batchId - no seq
+	// range, no watermark, so it finds chunks a device's ordered fetches can no
+	// longer reach (below its watermark). Single-field equality query, so no
+	// composite index is needed; callers sort by chunkIndex themselves.
+	async fetchBatchEntries(batchId: string): Promise<ChangesetEntry[]> {
+		const snapshot = await getDocs(
+			query(this.changesRef, where("batchId", "==", batchId)),
+		);
+		this.markContact();
+		const entries: ChangesetEntry[] = [];
+		for (const docSnap of snapshot.docs) {
+			const entry = this.parseEntry(docSnap);
+			if (entry) {
+				entries.push(entry);
+			}
+		}
+		return entries;
+	}
+
 	// Read the entries after a given server-timestamp, oldest-first. With
 	// `pageLimit` this returns just ONE bounded page (the oldest that many),
 	// letting the engine drain a huge backlog page by page instead of pulling the

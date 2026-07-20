@@ -203,6 +203,12 @@ export interface SyncTransport {
 	// transport can skip it.
 	fetchAllEntries?(): Promise<ChangesetEntry[]>;
 
+	// Every chunk entry of one bulk batch, fetched DIRECTLY by batchId - no seq
+	// range, no watermark. This is the batch-rescue path: it can recover chunks
+	// that sit below a device's watermark (e.g. after an interrupted upload was
+	// finished much later), which a seq-ordered fetch can never see again.
+	fetchBatchEntries?(batchId: string): Promise<ChangesetEntry[]>;
+
 	// The most recent `n` entries, oldest-first. For the activity panel, so it
 	// never reads the whole log. Optional so the test transport can skip it.
 	fetchRecentEntries?(n: number): Promise<ChangesetEntry[]>;

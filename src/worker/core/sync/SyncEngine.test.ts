@@ -111,6 +111,14 @@ class FakeTransport implements SyncTransport {
 		return this.bus.entries.filter((e) => e.seq > sinceMs).length;
 	}
 
+	// By-batchId rescue fetch, like the real transport's Firestore equality
+	// query - no seq range, so it reaches chunks below any watermark.
+	async fetchBatchEntries(batchId: string): Promise<ChangesetEntry[]> {
+		return this.bus.entries
+			.filter((e) => e.batchId === batchId)
+			.map((e) => JSON.parse(JSON.stringify(e)));
+	}
+
 	subscribe(subscriber: SyncSubscriber) {
 		return this.bus.subscribe((entry) => {
 			// Mimic the real transport: apply the entry, then signal the batch is
@@ -324,6 +332,100 @@ describe("SyncEngine", () => {
 		const events = await idb.cache.events.getAll();
 		assert.strictEqual(events.length, 1);
 		assert.strictEqual((events[0] as any).text.length, huge.length);
+	});
+
+	test("a partially-received bulk batch is rescued by batchId instead of resetting/abandoning", async () => {
+		const bus = new FakeBus();
+		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		host.start();
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+
+		resetG();
+		await resetCache({});
+
+		// A bulk (sim-day-sized) changeset, fully uploaded to the log.
+		const N = 260;
+		const changes = Array.from({ length: N }, (_, i) => ({
+			store: "events" as const,
+			id: i + 1,
+			type: "put" as const,
+			value: { eid: i + 1, type: "test", text: "x".repeat(2000) },
+		}));
+		await host.onLocalChangeset({ changes }, "playMenu.day");
+		assert.ok(bus.entries.length > 1, "should be chunked");
+
+		// The receiver only ever RECEIVES the first chunk via ordered delivery
+		// (e.g. it restarted mid-batch and its watermark moved past the rest).
+		await receiver.handleEntry(structuredClone(bus.entries[0]!));
+
+		// Two sweep passes: first records the stale sighting, second rescues the
+		// batch by batchId - completing and applying it, with no reset cycles.
+		await (receiver as any).sweepStaleBatches();
+		await (receiver as any).sweepStaleBatches();
+
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, N, "rescue must apply the full batch");
+		assert.strictEqual((receiver as any).pendingBatches.size, 0);
+	});
+
+	test("late chunks after abandonment resurrect the batch and apply the missed day", async () => {
+		const bus = new FakeBus();
+		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		host.start();
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+
+		resetG();
+		await resetCache({});
+
+		const N = 260;
+		const changes = Array.from({ length: N }, (_, i) => ({
+			store: "events" as const,
+			id: i + 1,
+			type: "put" as const,
+			value: { eid: i + 1, type: "test", text: "x".repeat(2000) },
+		}));
+		await host.onLocalChangeset({ changes }, "playMenu.day");
+		const allChunks = [...bus.entries];
+		assert.ok(allChunks.length > 1, "should be chunked");
+		const batchId = allChunks[0]!.batchId!;
+
+		// The simmer was killed mid-upload: only the FIRST chunk made it to the
+		// log. (The rest sit in its outbox.)
+		bus.entries.length = 0;
+		bus.entries.push(allChunks[0]!);
+
+		// The receiver gets that chunk, then another author's entry lands - the
+		// log has "moved past" the half-uploaded batch.
+		await receiver.handleEntry(structuredClone(allChunks[0]!));
+		await receiver.handleEntry({
+			id: "other-1",
+			authorId: "X",
+			action: "main.sign",
+			seq: allChunks[allChunks.length - 1]!.seq + 10,
+			changeset: { changes: [{ store: "trade", id: 0, type: "delete" }] },
+		});
+
+		// Sweeps judge it provably dead (rescue confirms the chunks are NOT in
+		// the log), reset once, then abandon - remembering the batchId.
+		await (receiver as any).sweepStaleBatches();
+		await receiver.handleEntry(structuredClone(allChunks[0]!)); // reset refetch
+		await (receiver as any).sweepStaleBatches();
+		await (receiver as any).sweepStaleBatches();
+		assert.ok(
+			(receiver as any).abandonedBatches.has(batchId),
+			"batch should be abandoned with memory",
+		);
+		assert.strictEqual((await idb.cache.events.getAll()).length, 0);
+
+		// The simmer comes back and drains its outbox: the remaining chunks land
+		// in the log. Delivery of ONE of them must resurrect the whole batch via
+		// the by-batchId rescue - the missed day applies with no manual resync.
+		bus.entries.push(...allChunks.slice(1));
+		await receiver.handleEntry(structuredClone(allChunks[1]!));
+
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, N, "resurrected batch must fully apply");
+		assert.strictEqual((receiver as any).abandonedBatches.has(batchId), false);
 	});
 
 	test("an oversized legacy outbox entry is migrated instead of wedging the queue", async () => {

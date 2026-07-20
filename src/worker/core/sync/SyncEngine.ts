@@ -221,6 +221,19 @@ export class SyncEngine {
 	// like a pending batch by advanceWatermark; cleared when the batch re-forms.
 	private rebuildingBatches = new Set<string>();
 
+	// Batches this device gave up on (their chunks were provably not in the log
+	// at the time - e.g. the simmer was killed mid-upload). If a chunk for one of
+	// these ever arrives LATER (the author came back and drained its outbox), the
+	// batch is resurrected and rescued by batchId, so the skipped changeset - a
+	// whole simmed day! - still lands instead of being lost until a manual full
+	// resync. Bounded so it can't grow forever.
+	private abandonedBatches = new Set<string>();
+	private static ABANDONED_MEMORY_LIMIT = 50;
+
+	// Batch rescue (fetch every chunk directly by batchId) currently in flight,
+	// so concurrent sweeps/chunks don't double-fetch the same batch.
+	private rescueInFlight = new Set<string>();
+
 	// Dedup key for the watermark-pinned debug log, so the live-subscription
 	// path logs when the blocked state CHANGES rather than on every snapshot.
 	private lastPinLogKey: string | undefined;
@@ -1160,6 +1173,21 @@ export class SyncEngine {
 
 	private async handleChunk(entry: ChangesetEntry): Promise<boolean> {
 		const batchId = entry.batchId!;
+
+		// A chunk for a batch this device previously ABANDONED: the author came
+		// back and is uploading the missing pieces. The batch's earlier chunks
+		// are below our watermark now, so ordered fetches can't rebuild it -
+		// resurrect it via the by-batchId rescue instead. (The rescue ingests
+		// this chunk too, straight from the log.)
+		if (this.abandonedBatches.has(batchId)) {
+			this.abandonedBatches.delete(batchId);
+			syncDebugLog("engine:batch-resurrected", {
+				batchId,
+				chunkIndex: entry.chunkIndex,
+			});
+			return this.rescueBatch(batchId);
+		}
+
 		let batch = this.pendingBatches.get(batchId);
 		if (!batch) {
 			batch = {
@@ -1197,6 +1225,15 @@ export class SyncEngine {
 			return false;
 		}
 
+		return this.completeBatch(batchId, batch);
+	}
+
+	// A bulk batch has every chunk: reassemble and apply it. Shared by the
+	// normal in-order path (handleChunk) and the by-batchId rescue path.
+	private async completeBatch(
+		batchId: string,
+		batch: NonNullable<ReturnType<SyncEngine["pendingBatches"]["get"]>>,
+	): Promise<boolean> {
 		this.pendingBatches.delete(batchId);
 		this.staleBatchHave.delete(batchId);
 		this.batchResetCounts.delete(batchId);
@@ -1240,6 +1277,97 @@ export class SyncEngine {
 		// A failed apply un-sees the WHOLE batch, so the retry can rebuild it from
 		// a clean re-fetch.
 		return this.apply({ changes }, batch.entryIds);
+	}
+
+	// Batch rescue: fetch EVERY chunk of a bulk batch directly by batchId -
+	// bypassing the watermark and seq ordering entirely - and complete it if the
+	// durable log has all the pieces. This is what recovers an interrupted
+	// upload no matter WHEN the author finishes it: a seq-ordered fetch can
+	// never re-reach chunks below this device's watermark, but a by-id fetch
+	// always can. Returns true only if the batch completed AND applied.
+	private async rescueBatch(batchId: string): Promise<boolean> {
+		if (!this.transport.fetchBatchEntries || this.rescueInFlight.has(batchId)) {
+			return false;
+		}
+		this.rescueInFlight.add(batchId);
+		try {
+			let entries;
+			try {
+				entries = await this.transport.fetchBatchEntries(batchId);
+			} catch (error) {
+				// Network hiccup - no evidence either way. The next sweep retries.
+				syncDebugLog("engine:batch-rescue-fetch-failed", { batchId, error });
+				return false;
+			}
+			const chunks = entries.filter(
+				(entry) =>
+					entry.batchId === batchId &&
+					entry.chunkIndex !== undefined &&
+					entry.chunkCount !== undefined &&
+					entry.authorId !== this.transport.clientId,
+			);
+			if (chunks.length === 0) {
+				return false;
+			}
+
+			let batch = this.pendingBatches.get(batchId);
+			if (!batch) {
+				const first = chunks[0]!;
+				batch = {
+					count: first.chunkCount!,
+					chunks: new Map(),
+					entryIds: [],
+					action: first.action,
+					authorId: first.authorId,
+					maxChunkSeq: 0,
+				};
+				this.pendingBatches.set(batchId, batch);
+				this.rebuildingBatches.delete(batchId);
+			}
+			for (const entry of chunks) {
+				if (!batch.chunks.has(entry.chunkIndex!)) {
+					batch.chunks.set(
+						entry.chunkIndex!,
+						entry.payloadPart ?? entry.changeset.changes,
+					);
+					if (!batch.entryIds.includes(entry.id)) {
+						batch.entryIds.push(entry.id);
+					}
+					// Mark seen so a later ordered fetch of the same chunk is a no-op.
+					this.seen.add(entry.id);
+					if (entry.seq > batch.maxChunkSeq) {
+						batch.maxChunkSeq = entry.seq;
+					}
+				}
+			}
+
+			if (batch.chunks.size < batch.count) {
+				// The log genuinely lacks some chunks right now (e.g. they are still
+				// in the author's outbox). This is the ONLY sound evidence for
+				// judging a batch dead - and even then, abandonment is remembered so
+				// a later upload resurrects it (see handleChunk).
+				syncDebugLog("engine:batch-rescue-short", {
+					batchId,
+					have: batch.chunks.size,
+					need: batch.count,
+				});
+				return false;
+			}
+
+			syncDebugLog("engine:batch-rescued", {
+				batchId,
+				action: batch.action,
+				chunks: batch.count,
+			});
+			const ok = await this.completeBatch(batchId, batch);
+			if (ok) {
+				this.abandonedBatches.delete(batchId);
+				this.advanceWatermark();
+			}
+			return ok;
+		} finally {
+			this.rescueInFlight.delete(batchId);
+		}
 	}
 
 	// Apply a changeset, attributing the outcome to the log entries that carried
@@ -1403,7 +1531,7 @@ export class SyncEngine {
 				if (entries.length === 0) {
 					// Nothing after the cursor - we're at the head.
 					outcome = "head";
-					this.sweepStaleBatches();
+					await this.sweepStaleBatches();
 					this.finishCatchUp();
 					return true;
 				}
@@ -1450,7 +1578,7 @@ export class SyncEngine {
 				// the head.)
 				if (entries.length < requested) {
 					outcome = "head";
-					this.sweepStaleBatches();
+					await this.sweepStaleBatches();
 					this.finishCatchUp();
 					return true;
 				}
@@ -1512,7 +1640,7 @@ export class SyncEngine {
 	// a dead batch unabandonable - pinned forever, re-downloading the same tail
 	// every tick. throughSeq preserves the evidence requirement: only batches
 	// whose entire chunk range the pass provably re-fetched are judged.
-	private sweepStaleBatches(throughSeq = Infinity) {
+	private async sweepStaleBatches(throughSeq = Infinity) {
 		const nowStale = new Map<string, number>();
 		for (const [batchId, batch] of this.pendingBatches) {
 			if (batch.maxChunkSeq > throughSeq) {
@@ -1558,6 +1686,23 @@ export class SyncEngine {
 				nowStale.set(batchId, batch.chunks.size);
 				continue;
 			}
+
+			// Before ANY reset/abandon judgment, try to complete the batch by
+			// fetching its chunks directly by batchId. This finds chunks a
+			// seq-ordered re-fetch can never reach (below the watermark - e.g.
+			// after a restart mid-batch) and settles the question with evidence:
+			// if the rescue comes up short, the chunks truly are not in the log
+			// right now. A completed rescue applies in-order (the watermark is
+			// still pinned at this batch) and ends the story here.
+			if (await this.rescueBatch(batchId)) {
+				continue;
+			}
+			if (!this.pendingBatches.has(batchId)) {
+				// The rescue path removed it (e.g. reassembly failed into the
+				// failed-apply retry path) - nothing left to judge this pass.
+				continue;
+			}
+
 			const resets = this.batchResetCounts.get(batchId) ?? 0;
 			const detail = {
 				batchId,
@@ -1576,6 +1721,19 @@ export class SyncEngine {
 				this.pendingBatches.delete(batchId);
 				this.batchResetCounts.delete(batchId);
 				this.rebuildingBatches.delete(batchId);
+				// Remember it: if the author later drains its outbox and the missing
+				// chunks land in the log, handleChunk resurrects the batch and the
+				// rescue completes it - the skipped changeset still applies instead
+				// of needing a manual Force full resync.
+				this.abandonedBatches.add(batchId);
+				if (
+					this.abandonedBatches.size > SyncEngine.ABANDONED_MEMORY_LIMIT
+				) {
+					const oldest = this.abandonedBatches.values().next().value;
+					if (oldest !== undefined) {
+						this.abandonedBatches.delete(oldest);
+					}
+				}
 				syncDebugLog("engine:batch-abandoned", {
 					...detail,
 					authorProgress,
@@ -1585,7 +1743,7 @@ export class SyncEngine {
 						authorProgress > batch.maxChunkSeq ? "author-past" : "log-past",
 				});
 				console.error(
-					"[sync] Abandoned a bulk change whose missing chunks are not in the log (the log has moved past it). If anything looks stale, use Force full resync.",
+					"[sync] Skipped a bulk change whose chunks are not in the log yet; it will auto-recover if they ever upload. If anything looks stale, use Force full resync.",
 					detail,
 				);
 				continue;
