@@ -145,6 +145,17 @@ class AutoPlayScheduler {
 	// The amount to sim when the currently-armed fire lands.
 	private nextAmount: AutoPlayAmount = "day";
 
+	// Single-driver election across tabs. Two tabs of the same browser share one
+	// sim-authority identity (the Firebase anon uid persists across tabs), so
+	// without this BOTH tabs' schedulers would fire a sim on the same tick and the
+	// league would advance two days per tick instead of one. A per-league Web Lock
+	// makes exactly one tab the driver; others hold a pending request and never
+	// fire the AUTOMATIC sim (manual "run now" is exempt) until they take over.
+	private isLeader = false;
+	private driverLockRequested = false;
+	private driverLockRelease: (() => void) | undefined;
+	private driverLockAbort: AbortController | undefined;
+
 	private storageKey(lid: number) {
 		return `autoPlayScheduler-${lid}`;
 	}
@@ -320,6 +331,78 @@ class AutoPlayScheduler {
 			this.timeoutID = undefined;
 		}
 		this.releaseWakeLock();
+		// Stopped driving (turned off, or switching leagues) - give up leadership so
+		// another eligible tab can take over.
+		this.releaseDriverLock();
+	}
+
+	// Acquire the driver lock while this tab is a driver candidate (enabled +
+	// eligible for the current league), release it otherwise. Called from the arm
+	// and halt paths so leadership always tracks whether this tab wants to drive.
+	private updateDriverLock() {
+		const wantDrive =
+			this.lid !== undefined && this.settings.enabled && this.eligible();
+		if (wantDrive) {
+			this.requestDriverLock(this.lid);
+		} else {
+			this.releaseDriverLock();
+		}
+	}
+
+	private requestDriverLock(lid: number) {
+		if (this.driverLockRequested) {
+			return;
+		}
+		this.driverLockRequested = true;
+
+		const lockManager: any = (globalThis as any).navigator?.locks;
+		if (!lockManager?.request) {
+			// No Web Locks API: assume this is the only driver (pre-existing behavior).
+			this.isLeader = true;
+			return;
+		}
+
+		this.isLeader = false;
+		const abort = new AbortController();
+		this.driverLockAbort = abort;
+		// Blocking request: the FIRST tab to ask holds the lock and becomes the sole
+		// driver; a second tab's request stays pending (so it never fires an auto
+		// sim) until the holder closes or releases, then it takes over. Web Locks
+		// auto-release when the holding tab is closed.
+		lockManager
+			.request(
+				`autoPlayDriver-${lid}`,
+				{ signal: abort.signal },
+				() =>
+					new Promise<void>((resolve) => {
+						this.isLeader = true;
+						this.driverLockRelease = resolve;
+					}),
+			)
+			.catch(() => {
+				// Aborted (we released / switched leagues) or an unexpected error. On a
+				// real error - not our own abort - fall back to driving so auto play is
+				// never silently wedged by the lock.
+				if (!abort.signal.aborted) {
+					this.isLeader = true;
+				}
+			});
+	}
+
+	private releaseDriverLock() {
+		if (!this.driverLockRequested) {
+			return;
+		}
+		this.driverLockRequested = false;
+		this.isLeader = false;
+		if (this.driverLockRelease) {
+			this.driverLockRelease();
+			this.driverLockRelease = undefined;
+		}
+		if (this.driverLockAbort) {
+			this.driverLockAbort.abort();
+			this.driverLockAbort = undefined;
+		}
 	}
 
 	// Compute the earliest next fire across all rules, and remember its amount.
@@ -341,6 +424,8 @@ class AutoPlayScheduler {
 		if (this.timeoutID !== undefined) {
 			clearTimeout(this.timeoutID);
 		}
+		// Keep leadership in sync with whether this tab currently wants to drive.
+		this.updateDriverLock();
 		if (!this.settings.enabled) {
 			return;
 		}
@@ -383,7 +468,7 @@ class AutoPlayScheduler {
 			this.state.nextRunAt !== undefined &&
 			Date.now() >= this.state.nextRunAt - 250
 		) {
-			await this.tick(this.nextAmount);
+			await this.tick(this.nextAmount, { auto: true });
 		}
 		// Re-arm toward the next fire (unless a pause/stop turned us off).
 		if (this.settings.enabled) {
@@ -396,12 +481,21 @@ class AutoPlayScheduler {
 		await this.tick(amount);
 	}
 
-	private async tick(amount: AutoPlayAmount) {
+	private async tick(
+		amount: AutoPlayAmount,
+		{ auto = false }: { auto?: boolean } = {},
+	) {
 		if (this.ticking) {
 			return;
 		}
 		// Lost the connection or sim authority since we armed - skip; armTimer pauses.
 		if (!this.eligible()) {
+			return;
+		}
+		// Only the elected driver tab runs the AUTOMATIC schedule, so two open tabs
+		// (which share one sim-authority identity) can't each fire and advance the
+		// league two days per tick. A manual "run now" on this tab is exempt.
+		if (auto && !this.isLeader) {
 			return;
 		}
 		const state = local.getState();
