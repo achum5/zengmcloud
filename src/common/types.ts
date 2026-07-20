@@ -1112,6 +1112,8 @@ export type Options = {
 	fullNames?: boolean;
 	phaseChangeRedirects: Phase[];
 	recapAIProvider?: RecapAIProvider;
+	recapMaxGames?: number;
+	recapMaxDays?: number;
 	units?: "metric" | "us";
 };
 

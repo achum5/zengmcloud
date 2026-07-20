@@ -46,6 +46,8 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
 			recapAIProvider: props.recapAIProvider,
+			recapMaxGames: String(props.recapMaxGames),
+			recapMaxDays: String(props.recapMaxDays),
 			theme,
 			units,
 		};
@@ -55,7 +57,11 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 
 	const handleChange =
 		(name: string) =>
-		(event: ChangeEvent<HTMLSelectElement | HTMLTextAreaElement>) => {
+		(
+			event: ChangeEvent<
+				HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+			>,
+		) => {
 			const value = event.target.value;
 			setState((state2) => ({
 				...state2,
@@ -84,6 +90,8 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				realPlayerPhotos: state.realPlayerPhotos,
 				realTeamInfo: state.realTeamInfo,
 				recapAIProvider: state.recapAIProvider,
+				recapMaxGames: Number(state.recapMaxGames),
+				recapMaxDays: Number(state.recapMaxDays),
 				units,
 			});
 			showNotification({
@@ -184,6 +192,34 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							<option value="claude">Claude</option>
 							<option value="chatgpt">ChatGPT</option>
 						</select>
+					</div>
+					<div className="col-sm-3 col-6 mb-3">
+						<label className="form-label" htmlFor="options-recapMaxGames">
+							AI Recap Max Games
+						</label>
+						<input
+							id="options-recapMaxGames"
+							type="number"
+							min={1}
+							step={1}
+							className="form-control"
+							onChange={handleChange("recapMaxGames")}
+							value={state.recapMaxGames}
+						/>
+					</div>
+					<div className="col-sm-3 col-6 mb-3">
+						<label className="form-label" htmlFor="options-recapMaxDays">
+							AI Recap Max Days
+						</label>
+						<input
+							id="options-recapMaxDays"
+							type="number"
+							min={1}
+							step={1}
+							className="form-control"
+							onChange={handleChange("recapMaxDays")}
+							value={state.recapMaxDays}
+						/>
 					</div>
 					<div className="col-sm-3 col-6 mb-3">
 						<label className="form-label">

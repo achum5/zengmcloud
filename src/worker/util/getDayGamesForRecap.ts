@@ -2,6 +2,11 @@ import { idb } from "../db/index.ts";
 import { g } from "./index.ts";
 import { getGameSpread } from "../../common/getGameSpread.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
+import { getGlobalSettings } from "./getGlobalSettings.ts";
+import {
+	DEFAULT_RECAP_MAX_GAMES,
+	DEFAULT_RECAP_MAX_DAYS,
+} from "../../common/constants.ts";
 
 // Per-game averages we compute for a player (this season, career, playoffs).
 export type RecapAverages = {
@@ -396,16 +401,15 @@ export const enteringAverages = (
 	return tot.gp > 0 ? toAverages(tot) : undefined;
 };
 
-// One recap run's game budget. Each recap is several paragraphs of AI output,
-// so an unbounded sweep of a whole unrecapped season would blow past any
-// model's reply length; whatever doesn't fit stays note-less and the next
-// Copy sweeps it up.
-const MAX_RECAP_GAMES = 20;
-
-// One recap run also backfills WHOLE-DAY recaps for up to this many days it
-// covers (oldest first, FIFO) - so the day recap is never tied to the day the
-// user happens to be viewing; it fills in whichever days are missing one.
-const MAX_RECAP_DAYS = 10;
+// The game/day budgets for one recap run come from Global Settings
+// (recapMaxGames / recapMaxDays), falling back to these defaults:
+//
+// - Games: each recap is several paragraphs of AI output, so an unbounded
+//   sweep of a whole unrecapped season would blow past any model's reply
+//   length; whatever doesn't fit stays note-less and the next Copy sweeps it up.
+// - Days: one recap run also backfills WHOLE-DAY recaps for up to this many
+//   days it covers (oldest first, FIFO) - so the day recap is never tied to the
+//   day the user happens to be viewing; it fills in whichever days are missing one.
 
 // A compact one-day results slate, for a day that needs a recap but whose games
 // aren't in the detailed blocks (they were already game-recapped). Enough for the
@@ -494,12 +498,16 @@ export const getDayGamesForRecap = async ({
 	daySlates: RecapDaySlate[];
 	standingsByDay: RecapDayStandings[];
 }> => {
+	const globalSettings = await getGlobalSettings();
+	const maxRecapGames = globalSettings.recapMaxGames ?? DEFAULT_RECAP_MAX_GAMES;
+	const maxRecapDays = globalSettings.recapMaxDays ?? DEFAULT_RECAP_MAX_DAYS;
+
 	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
 
 	const games = selectRecapGames(
 		allGames.filter((game) => game.won && game.lost),
 		day,
-		MAX_RECAP_GAMES,
+		maxRecapGames,
 	);
 
 	// Every player's box line from every completed game this season, so each
@@ -922,7 +930,7 @@ export const getDayGamesForRecap = async ({
 			);
 			return detailedDays.has(d) || fullyRecapped;
 		})
-		.slice(0, MAX_RECAP_DAYS);
+		.slice(0, maxRecapDays);
 
 	// For any of those days whose games are NOT detailed above (the fully-recapped
 	// backfill days), hand the AI a compact results slate so it still has material.

@@ -24,6 +24,8 @@ const updateOptions = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			fullNames: !!options.fullNames,
 			phaseChangeRedirects: options.phaseChangeRedirects,
 			recapAIProvider: options.recapAIProvider ?? "claude",
+			recapMaxGames: options.recapMaxGames,
+			recapMaxDays: options.recapMaxDays,
 		};
 	}
 };

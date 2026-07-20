@@ -418,6 +418,11 @@ export const ALL_STAR_GAME_ONLY = bySport({
 
 export const DEFAULT_PHASE_CHANGE_REDIRECTS = [1, 3, 4, 5, 7, 8] as Phase[];
 
+// Defaults for how much history a single AI game-recap run bakes into its
+// prompt: how many games get a recap, and how many whole days get backfilled.
+export const DEFAULT_RECAP_MAX_GAMES = 20;
+export const DEFAULT_RECAP_MAX_DAYS = 10;
+
 export const EXHIBITION_GAME_SETTINGS = [
 	"maxOvertimes",
 	"shootoutRounds",

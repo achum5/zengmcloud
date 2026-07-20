@@ -13,6 +13,8 @@ import {
 	GRACE_PERIOD,
 	LEAGUE_DATABASE_VERSION,
 	REAL_PLAYERS_INFO,
+	DEFAULT_RECAP_MAX_GAMES,
+	DEFAULT_RECAP_MAX_DAYS,
 } from "../../common/constants.ts";
 import actions from "./actions.ts";
 import leagueFileUpload, {
@@ -4659,6 +4661,13 @@ const updateOptions = async (
 		}
 	}
 
+	// Recap caps must stay positive integers, or a recap run would bake in an
+	// empty/garbage history. Anything invalid falls back to the default.
+	const coerceRecapCap = (value: unknown, fallback: number) => {
+		const num = Math.floor(Number(value));
+		return Number.isFinite(num) && num >= 1 ? num : fallback;
+	};
+
 	const attributesStore = (
 		await idb.meta.transaction("attributes", "readwrite")
 	).store;
@@ -4668,6 +4677,14 @@ const updateOptions = async (
 			fullNames: options.fullNames,
 			phaseChangeRedirects: options.phaseChangeRedirects,
 			recapAIProvider: options.recapAIProvider,
+			recapMaxGames: coerceRecapCap(
+				options.recapMaxGames,
+				DEFAULT_RECAP_MAX_GAMES,
+			),
+			recapMaxDays: coerceRecapCap(
+				options.recapMaxDays,
+				DEFAULT_RECAP_MAX_DAYS,
+			),
 		},
 		"options",
 	);
