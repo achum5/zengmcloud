@@ -5,9 +5,11 @@
 // (init, per-stat box updates) and pausing only on a descriptive play event (see
 // processLiveGameEvents.basketball). So to show just one player's highlights we
 // keep every housekeeping event - the running box score stays correct and fast-
-// forwards between highlights - plus the quarter markers and the final, and drop
-// every descriptive play except that player's positive ones. The viewer then
-// rolls silently through the gaps and pauses on each highlight, untouched.
+// forwards between highlights - plus the quarter markers and the final, plus each
+// of the player's positive plays AND the plays that lead up to them within the
+// same possession (the drive before a make, the miss before a rebound). Every
+// other descriptive play is dropped. The viewer then rolls silently through the
+// gaps and plays each highlight through its build-up, untouched.
 //
 // Basketball only (the event types below are basketball's). Callers gate on sport.
 
@@ -71,11 +73,88 @@ export const isPositivePlayForPid = (event: any, pid: number): boolean => {
 export const countPlayerHighlights = (playByPlay: any[], pid: number): number =>
 	playByPlay.filter((event) => isPositivePlayForPid(event, pid)).length;
 
-// The filtered event array to hand to the live viewer. Order is preserved.
-export const filterPlayerHighlights = (playByPlay: any[], pid: number): any[] =>
-	playByPlay.filter((event) => {
-		if (ALWAYS_KEEP_TYPES.has(event?.type)) {
-			return true;
+// Event types that END a possession, so the next play belongs to a new one. Used
+// to group plays into possessions - a highlight's lead-in is kept only from its
+// OWN possession, so build-up never bleeds in from an unrelated sequence. A made
+// shot ends a possession (an and-one's bonus free throw is then its own short
+// possession, which is fine); a defensive rebound / steal / turnover flips it;
+// and quarter/stoppage markers reset it.
+const POSSESSION_ENDERS = new Set([
+	...MADE_SHOT_TYPES,
+	"drb",
+	"stl",
+	"tov",
+	"jumpBall",
+	"endOfPeriod",
+	"timeout",
+	"gameOver",
+	"period",
+	"overtime",
+]);
+
+// Descriptive events that are NOT plays, so they're never kept as a lead-in
+// (a substitution or injury notice isn't part of a highlight's build-up).
+const NON_PLAY_DESCRIPTIVE = new Set([
+	"sub",
+	"injury",
+	"foulOut",
+	"timeout",
+	"elamActive",
+	"shootoutStart",
+	"shootoutTie",
+	"shootoutTeam",
+]);
+
+// The filtered event array to hand to the live viewer. Keeps housekeeping (so the
+// running box score stays correct), every one of `pid`'s positive plays, AND the
+// plays that lead up to each of those within the same possession (the shot
+// attempt before a make, the miss before a rebound, the drive before a block) -
+// so each highlight plays through its build-up instead of just the literal line.
+// Order is preserved.
+export const filterPlayerHighlights = (
+	playByPlay: any[],
+	pid: number,
+): any[] => {
+	const n = playByPlay.length;
+
+	// Pass 1: assign each event a possession index and record, per possession, the
+	// index of the LAST highlight in it. Lead-in events (before that highlight) are
+	// kept; trailing events after the last highlight in a possession are dropped.
+	const possessionOf = new Array<number>(n);
+	const lastHighlightIndex = new Map<number, number>();
+	let possession = 0;
+	for (let i = 0; i < n; i++) {
+		const event = playByPlay[i];
+		possessionOf[i] = possession;
+		if (isPositivePlayForPid(event, pid)) {
+			lastHighlightIndex.set(possession, i);
 		}
-		return isPositivePlayForPid(event, pid);
-	});
+		if (POSSESSION_ENDERS.has(event?.type)) {
+			possession += 1;
+		}
+	}
+
+	// Pass 2: keep housekeeping, every highlight, and the lead-in plays.
+	const out: any[] = [];
+	for (let i = 0; i < n; i++) {
+		const event = playByPlay[i];
+		const type = event?.type;
+		if (ALWAYS_KEEP_TYPES.has(type)) {
+			out.push(event);
+			continue;
+		}
+		if (isPositivePlayForPid(event, pid)) {
+			out.push(event);
+			continue;
+		}
+		// A lead-in: a play (not a sub/injury/stoppage) that comes before a
+		// highlight within the same possession.
+		if (typeof type === "string" && !NON_PLAY_DESCRIPTIVE.has(type)) {
+			const lastHi = lastHighlightIndex.get(possessionOf[i]!);
+			if (lastHi !== undefined && lastHi > i) {
+				out.push(event);
+			}
+		}
+	}
+	return out;
+};
