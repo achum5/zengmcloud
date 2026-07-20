@@ -34,8 +34,7 @@ export const normalCdf = (z: number): number => {
 	const t = 1 / (1 + 0.3275911 * x);
 	const y =
 		1 -
-		((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t -
-			0.284496736) *
+		((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) *
 			t +
 			0.254829592) *
 			t *
@@ -144,12 +143,10 @@ export const seriesWinProb = (pGame: number, bestOf = 7): number => {
 
 // Convert a set of team "strengths" into probabilities via a tempered softmax.
 // Higher `power` concentrates probability on the strongest; used for
-// championship / conference / division futures. Returns probs in input order,
+// championship / conference / division futures and (with a season-progress-
+// scaled power) the single-winner award races. Returns probs in input order,
 // summing to 1.
-export const strengthProbs = (
-	strengths: number[],
-	power: number,
-): number[] => {
+export const strengthProbs = (strengths: number[], power: number): number[] => {
 	if (strengths.length === 0) {
 		return [];
 	}
@@ -220,7 +217,11 @@ export const awardProbsFromScores = (
 export const tierMembershipProbs = (
 	scores: number[],
 	tierSizes: number[],
-	{ iterations = 4000, seed = 1 }: { iterations?: number; seed?: number } = {},
+	{
+		iterations = 4000,
+		seed = 1,
+		noiseFactor = 0.6,
+	}: { iterations?: number; seed?: number; noiseFactor?: number } = {},
 ): number[][] => {
 	const n = scores.length;
 	const numTiers = tierSizes.length;
@@ -231,7 +232,10 @@ export const tierMembershipProbs = (
 	const mean = scores.reduce((a, b) => a + b, 0) / n;
 	const sd =
 		Math.sqrt(scores.reduce((a, b) => a + (b - mean) ** 2, 0) / n) || 1;
-	const noiseScale = sd * 0.6;
+	// A bigger factor jitters scores more, so the field is more competitive (used
+	// to widen odds early in a season, when scores mean less). Defaults to the
+	// long-standing 0.6.
+	const noiseScale = sd * noiseFactor;
 
 	const cutoffs: number[] = [];
 	{

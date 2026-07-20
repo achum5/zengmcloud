@@ -219,11 +219,10 @@ describe("tierMembershipProbs", () => {
 		}
 	});
 	test("a dominant leader is heavily favored for the top tier, a bottom-dweller is not", () => {
-		const probs = tierMembershipProbs(
-			[1000, 10, 9, 8, 7, 6],
-			[1, 1, 1],
-			{ seed: 5, iterations: 4000 },
-		);
+		const probs = tierMembershipProbs([1000, 10, 9, 8, 7, 6], [1, 1, 1], {
+			seed: 5,
+			iterations: 4000,
+		});
 		assert.ok(probs[0]![0]! > 0.9, `leader P(tier1)=${probs[0]![0]}`);
 		assert.ok(probs.at(-1)![0]! < 0.1, `last P(tier1)=${probs.at(-1)![0]}`);
 	});
@@ -235,15 +234,39 @@ describe("tierMembershipProbs", () => {
 		// The nominal #1 should still lose the single spot a meaningful share of
 		// the time in a near-tied field - noise is scaled to the field's own
 		// spread, so tiny real gaps never collapse to a near-certain outcome.
-		assert.ok(
-			probs[0]![0]! < 0.95,
-			`nominal leader P(tier1)=${probs[0]![0]}`,
-		);
+		assert.ok(probs[0]![0]! < 0.95, `nominal leader P(tier1)=${probs[0]![0]}`);
 	});
 	test("deterministic per seed", () => {
 		const a = tierMembershipProbs([50, 40, 30], [1, 1], { seed: 11 });
 		const b = tierMembershipProbs([50, 40, 30], [1, 1], { seed: 11 });
 		assert.deepStrictEqual(a, b);
+	});
+	test("a bigger noiseFactor makes the field more competitive (leader less certain)", () => {
+		const scores = [100, 80, 60, 40];
+		const low = tierMembershipProbs(scores, [1], {
+			seed: 7,
+			iterations: 4000,
+			noiseFactor: 0.6,
+		});
+		const high = tierMembershipProbs(scores, [1], {
+			seed: 7,
+			iterations: 4000,
+			noiseFactor: 1.4,
+		});
+		// More noise → the nominal leader wins the single spot less often.
+		assert.ok(
+			high[0]![0]! < low[0]![0]!,
+			`high=${high[0]![0]} should be < low=${low[0]![0]}`,
+		);
+	});
+	test("omitting noiseFactor matches the historical 0.6 default", () => {
+		const scores = [90, 70, 55, 30];
+		const withDefault = tierMembershipProbs(scores, [1, 1], { seed: 4 });
+		const explicit = tierMembershipProbs(scores, [1, 1], {
+			seed: 4,
+			noiseFactor: 0.6,
+		});
+		assert.deepStrictEqual(withDefault, explicit);
 	});
 	test("empty field or no tiers returns all zeros, one row per candidate", () => {
 		assert.deepStrictEqual(tierMembershipProbs([], [1, 1]), []);

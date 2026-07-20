@@ -45,6 +45,7 @@ const buildTierBoard = (
 	field: TierCandidate[],
 	tierSizes: number[],
 	seed: number,
+	noiseFactor?: number,
 ) => {
 	const titles = TEAM_AWARD_TIER_TITLES;
 	if (field.length === 0) {
@@ -64,6 +65,7 @@ const buildTierBoard = (
 	const probs = tierMembershipProbs(scores, tierSizes, {
 		iterations: 3000,
 		seed,
+		noiseFactor,
 	});
 	return tierSizes.map((_, tierIdx) => ({
 		tier: tierIdx + 1,
@@ -86,8 +88,17 @@ const buildTierBoard = (
 // scrollable so a long field doesn't take over the page.
 const TEAM_AWARD_BOARD_SIZE = 30;
 
-// How sharply award odds follow the formula's score gaps.
+// How sharply award odds follow the formula's score gaps, at season's end.
 const AWARD_POWER = 0.9;
+
+// Early in a season a handful of games barely hint at who'll win an award, so
+// award odds should start flatter (more uncertain) and sharpen as games are
+// played. These are the EARLY-season values; both ramp to their base
+// (AWARD_POWER / the tierMembershipProbs default) by season's end, so
+// late-season odds are unchanged.
+const AWARD_POWER_EARLY = 0.35; // flatter single-winner softmax early
+const TIER_NOISE_EARLY = 1.2; // more tier-board Monte-Carlo noise early
+const TIER_NOISE_LATE = 0.6; // matches tierMembershipProbs' default noiseFactor
 
 // Cap how many upcoming games get a line at once, so the board stays readable.
 const MAX_GAME_LINES = 24;
@@ -324,6 +335,22 @@ export const getLines = async () => {
 	const seed =
 		(season * 9301 + totalRemaining * 49297 + totalWon * 233) % 2147483647;
 
+	// How far through the regular season we are (0 at tip-off → 1 at the end),
+	// from the ACTUAL season length (numGames), not a default. Award and
+	// award-team odds use this to start uncertain and sharpen as games are
+	// played; futures already model games-remaining directly via simulateFutures.
+	// A season-progress fraction is derived deterministically, so the server
+	// re-derives identical odds when settling a bet.
+	const totalPossibleGames = futuresTeams.length * numGames;
+	const seasonProgress =
+		totalPossibleGames > 0
+			? Math.min(1, Math.max(0, 1 - totalRemaining / totalPossibleGames))
+			: 1;
+	const awardPower =
+		AWARD_POWER_EARLY + (AWARD_POWER - AWARD_POWER_EARLY) * seasonProgress;
+	const tierNoiseFactor =
+		TIER_NOISE_EARLY - (TIER_NOISE_EARLY - TIER_NOISE_LATE) * seasonProgress;
+
 	const sim = simulateFutures({
 		teams: futuresTeams,
 		numGamesPlayoffSeries: g.get("numGamesPlayoffSeries"),
@@ -460,7 +487,7 @@ export const getLines = async () => {
 					race.players.map((p: any) =>
 						typeof p.awardScore === "number" ? p.awardScore : 0,
 					),
-					AWARD_POWER,
+					awardPower,
 				);
 				const players = race.players.slice(0, 20);
 				return {
@@ -494,7 +521,12 @@ export const getLines = async () => {
 					{ amount: 40, score: mvpScore },
 					players,
 				) as unknown as TierCandidate[];
-				allLeague = buildTierBoard(mvpField, TEAM_AWARD_TIER_SIZES, seed + 101);
+				allLeague = buildTierBoard(
+					mvpField,
+					TEAM_AWARD_TIER_SIZES,
+					seed + 101,
+					tierNoiseFactor,
+				);
 
 				const dpoyField = getTopPlayers(
 					{ amount: 40, score: dpoyScore },
@@ -504,6 +536,7 @@ export const getLines = async () => {
 					dpoyField,
 					TEAM_AWARD_TIER_SIZES,
 					seed + 202,
+					tierNoiseFactor,
 				);
 
 				const royField = getTopPlayers(
@@ -511,7 +544,8 @@ export const getLines = async () => {
 					players,
 				) as unknown as TierCandidate[];
 				allRookie =
-					buildTierBoard(royField, [5], seed + 303)[0]?.candidates ?? [];
+					buildTierBoard(royField, [5], seed + 303, tierNoiseFactor)[0]
+						?.candidates ?? [];
 			} catch (error) {
 				console.error("Sportsbook team-award odds unavailable", error);
 			}
@@ -558,8 +592,12 @@ export const getLines = async () => {
 				}));
 			const rosterSize = g.get("allStarNum") * 2;
 			allStar =
-				buildTierBoard(healthyField, [rosterSize], seed + 404)[0]?.candidates ??
-				[];
+				buildTierBoard(
+					healthyField,
+					[rosterSize],
+					seed + 404,
+					tierNoiseFactor,
+				)[0]?.candidates ?? [];
 		} catch (error) {
 			console.error("Sportsbook All-Star odds unavailable", error);
 		}
