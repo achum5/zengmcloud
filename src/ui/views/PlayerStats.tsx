@@ -98,6 +98,7 @@ const PlayerStats = ({
 				: `stat:${stat.endsWith("Max") ? stat.replace("Max", "") : stat}`,
 		),
 	]);
+	cols[3]!.title = "YOE";
 
 	if (statType === "shotLocations") {
 		cols.at(-7)!.title = "M";
