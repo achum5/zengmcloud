@@ -68,9 +68,7 @@ export const simulateFutures = ({
 	const titleCount = new Map<number, number>();
 	const confCount = new Map<number, number>();
 	const divCount = new Map<number, number>();
-	const winsSamples = new Map<number, number[]>(
-		teams.map((t) => [t.tid, []]),
-	);
+	const winsSamples = new Map<number, number[]>(teams.map((t) => [t.tid, []]));
 	const bump = (m: Map<number, number>, tid: number) =>
 		m.set(tid, (m.get(tid) ?? 0) + 1);
 
@@ -118,9 +116,7 @@ export const simulateFutures = ({
 			let wins = t.won;
 			if (t.gamesRemaining > 0) {
 				const mean = t.gamesRemaining * p;
-				const sd = Math.sqrt(
-					Math.max(0.25, t.gamesRemaining * p * (1 - p)),
-				);
+				const sd = Math.sqrt(Math.max(0.25, t.gamesRemaining * p * (1 - p)));
 				const extra = Math.round(mean + normalSample(rand) * sd);
 				wins += Math.min(t.gamesRemaining, Math.max(0, extra));
 			}
@@ -150,9 +146,7 @@ export const simulateFutures = ({
 			if (confTeams.length === 0) {
 				continue;
 			}
-			const K = largestPowerOfTwoAtMost(
-				Math.min(perConfCap, confTeams.length),
-			);
+			const K = largestPowerOfTwoAtMost(Math.min(perConfCap, confTeams.length));
 			confChamps.push(runBracket(confTeams.slice(0, K), false));
 		}
 		for (const champ of confChamps) {
@@ -201,5 +195,169 @@ export const simulateFutures = ({
 		confProb: toProb(confCount),
 		divProb: toProb(divCount),
 		winTotals,
+	};
+};
+
+// --- In-playoffs futures: simulate the REAL bracket from its current state ---
+//
+// Once the playoffs start, the hypothetical simulateFutures bracket above is
+// wrong in the worst way: it keeps seeding a fantasy round-1 tournament from
+// regular-season records, so an already-ELIMINATED team with a great record
+// stays the title favorite and a team up 3-0 in a series gets no credit. This
+// simulator instead takes the actual bracket - who's still alive, each series'
+// current wins - and Monte Carlos only what's left to play.
+
+export type BracketTeam = {
+	tid: number;
+	cid: number;
+	// Series wins so far in the CURRENT round's matchup.
+	won: number;
+};
+
+export type BracketMatchup = {
+	home: BracketTeam;
+	// Missing away = a bye; home advances automatically.
+	away?: BracketTeam;
+};
+
+export type BracketFuturesResult = {
+	titleProb: Map<number, number>;
+	// P(reach the final series) - the "wins the conference" market in a standard
+	// two-conference bracket.
+	confProb: Map<number, number>;
+};
+
+export const simulatePlayoffBracket = ({
+	matchups,
+	startRound,
+	numGamesPlayoffSeries,
+	ratings,
+	iterations = 4000,
+	seed = 1,
+	ratingUncertainty = 3.5,
+}: {
+	// The in-progress round's matchups, in bracket order (winners of matchups
+	// 2i and 2i+1 meet next round - BBGM's fill order; with reseeding enabled the
+	// real pairings can differ, an acceptable pricing approximation).
+	matchups: BracketMatchup[];
+	// Index into numGamesPlayoffSeries for the in-progress round.
+	startRound: number;
+	numGamesPlayoffSeries: number[];
+	// Point margin vs an average team, per tid (same scale as FuturesTeam.rating).
+	ratings: Map<number, number>;
+	iterations?: number;
+	seed?: number;
+	ratingUncertainty?: number;
+}): BracketFuturesResult => {
+	const rand = mulberry32(seed);
+	const titleCount = new Map<number, number>();
+	const confCount = new Map<number, number>();
+	const bump = (m: Map<number, number>, tid: number) =>
+		m.set(tid, (m.get(tid) ?? 0) + 1);
+
+	// Every tid in the bracket, so the result maps cover eliminated-from-here
+	// teams with an explicit 0 only for participants; absent tids are simply not
+	// in the market.
+	const allTids: number[] = [];
+	for (const m of matchups) {
+		allTids.push(m.home.tid);
+		if (m.away) {
+			allTids.push(m.away.tid);
+		}
+	}
+
+	// Win the rest of a best-of series from the current score. The matchup's home
+	// side (the better seed) gets a flat ~1 point edge, matching the pre-playoffs
+	// simulator's convention.
+	const simSeries = (
+		homeRating: number,
+		awayRating: number,
+		bestOf: number,
+		homeWon: number,
+		awayWon: number,
+	): boolean => {
+		const winsNeeded = Math.ceil(bestOf / 2);
+		const pHome = marginToWinProb(homeRating - awayRating + 1);
+		let h = homeWon;
+		let a = awayWon;
+		while (h < winsNeeded && a < winsNeeded) {
+			if (rand() < pHome) {
+				h += 1;
+			} else {
+				a += 1;
+			}
+		}
+		return h >= winsNeeded;
+	};
+
+	for (let iter = 0; iter < iterations; iter++) {
+		// The book's ratings are estimates; jitter each team's true strength once
+		// per simulated world.
+		const simRating = new Map<number, number>();
+		for (const tid of allTids) {
+			simRating.set(
+				tid,
+				(ratings.get(tid) ?? 0) + normalSample(rand) * ratingUncertainty,
+			);
+		}
+
+		let field = matchups;
+		let round = startRound;
+		let finalists: BracketTeam[] = [];
+		while (field.length > 0) {
+			const bestOf = numGamesPlayoffSeries[round] ?? 7;
+			if (field.length === 1) {
+				const only = field[0]!;
+				finalists = only.away ? [only.home, only.away] : [only.home];
+			}
+			const winners: BracketTeam[] = [];
+			for (const m of field) {
+				if (!m.away) {
+					winners.push(m.home);
+					continue;
+				}
+				const homeWins = simSeries(
+					simRating.get(m.home.tid)!,
+					simRating.get(m.away.tid)!,
+					bestOf,
+					m.home.won,
+					m.away.won,
+				);
+				winners.push(homeWins ? m.home : m.away);
+			}
+			if (winners.length === 1) {
+				bump(titleCount, winners[0]!.tid);
+				break;
+			}
+			// Pair sequential winners for the next round; an odd leftover gets a bye.
+			const next: BracketMatchup[] = [];
+			for (let i = 0; i + 1 < winners.length; i += 2) {
+				next.push({
+					home: { ...winners[i]!, won: 0 },
+					away: { ...winners[i + 1]!, won: 0 },
+				});
+			}
+			if (winners.length % 2 === 1) {
+				next.push({ home: { ...winners.at(-1)!, won: 0 } });
+			}
+			field = next;
+			round += 1;
+		}
+		for (const t of finalists) {
+			bump(confCount, t.tid);
+		}
+	}
+
+	const toProb = (m: Map<number, number>) => {
+		const out = new Map<number, number>();
+		for (const tid of allTids) {
+			out.set(tid, (m.get(tid) ?? 0) / iterations);
+		}
+		return out;
+	};
+
+	return {
+		titleProb: toProb(titleCount),
+		confProb: toProb(confCount),
 	};
 };

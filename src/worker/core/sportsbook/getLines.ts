@@ -22,7 +22,11 @@ import {
 	tierMembershipProbs,
 	toHalfPointLine,
 } from "../../../common/sportsbookOdds.ts";
-import { simulateFutures } from "../../../common/sportsbookFutures.ts";
+import {
+	simulateFutures,
+	simulatePlayoffBracket,
+	type BracketMatchup,
+} from "../../../common/sportsbookFutures.ts";
 
 // The 3 tiers an All-League/All-Defensive Team splits into, 5 players each -
 // matches worker/core/season/doAwards.basketball.ts's makeTeams().
@@ -358,14 +362,6 @@ export const getLines = async () => {
 		seed,
 	});
 
-	const teamRow = (t: (typeof activeTeams)[number], prob: number) => ({
-		tid: t.tid,
-		abbrev: t.abbrev,
-		region: t.region,
-		name: t.name,
-		americanOdds: priceOdds(prob),
-	});
-
 	// Regular-season markets (division winners, win totals) are DECIDED once the
 	// playoffs start - a real book closes them, so we don't offer them at all.
 	const regularSeasonOver = g.get("phase") >= PHASE.PLAYOFFS;
@@ -376,10 +372,79 @@ export const getLines = async () => {
 	// draft lottery, draft, and free agency.
 	const playoffsOver = g.get("phase") > PHASE.PLAYOFFS;
 
+	// During the playoffs, price the title/conference markets from the ACTUAL
+	// bracket - who's alive and each series' current score - instead of the
+	// hypothetical seeded-by-record bracket above, which knows nothing about the
+	// real playoffs (it kept eliminated teams as favorites and gave a team up
+	// 3-0 no credit). Teams no longer in the bracket are delisted, like a real
+	// book. Falls back to the hypothetical sim if the bracket can't be read.
+	let bracketSim: ReturnType<typeof simulatePlayoffBracket> | undefined;
+	if (regularSeasonOver && !playoffsOver) {
+		try {
+			const playoffSeries = await idb.cache.playoffSeries.get(season);
+			// currentRound is -1 while the play-in runs; round 0's matchups exist
+			// then with provisional play-in slots, an acceptable approximation for
+			// the day or two it lasts.
+			const rnd = Math.max(0, playoffSeries?.currentRound ?? 0);
+			const roundMatchups = playoffSeries?.series[rnd] ?? [];
+			const matchups: BracketMatchup[] = roundMatchups.map((m) => ({
+				home: { tid: m.home.tid, cid: m.home.cid, won: m.home.won ?? 0 },
+				away: m.away
+					? { tid: m.away.tid, cid: m.away.cid, won: m.away.won ?? 0 }
+					: undefined,
+			}));
+			if (matchups.length > 0) {
+				// Fold the bracket state into the seed so lines are deterministic per
+				// state but move as series progress (the regular-season seed inputs
+				// are frozen once the playoffs start).
+				let bracketSeed = seed + rnd * 7919;
+				for (const [i, m] of matchups.entries()) {
+					bracketSeed +=
+						(i + 1) *
+						(m.home.won * 13 +
+							(m.away?.won ?? 0) * 29 +
+							m.home.tid * 3 +
+							(m.away?.tid ?? 0));
+				}
+				const ratings = new Map<number, number>();
+				for (const m of matchups) {
+					ratings.set(m.home.tid, ratingOf(m.home.tid));
+					if (m.away) {
+						ratings.set(m.away.tid, ratingOf(m.away.tid));
+					}
+				}
+				bracketSim = simulatePlayoffBracket({
+					matchups,
+					startRound: rnd,
+					numGamesPlayoffSeries: g.get("numGamesPlayoffSeries"),
+					ratings,
+					iterations: 4000,
+					seed: bracketSeed % 2147483647,
+				});
+			}
+		} catch (error) {
+			console.error("Sportsbook playoff bracket odds unavailable", error);
+		}
+	}
+
+	const teamRow = (t: (typeof activeTeams)[number], prob: number) => ({
+		tid: t.tid,
+		abbrev: t.abbrev,
+		region: t.region,
+		name: t.name,
+		americanOdds: priceOdds(prob),
+	});
+
 	const championship = playoffsOver
 		? []
 		: activeTeams
-				.map((t) => teamRow(t, sim.titleProb.get(t.tid) ?? 0))
+				.filter((t) => !bracketSim || bracketSim.titleProb.has(t.tid))
+				.map((t) =>
+					teamRow(
+						t,
+						(bracketSim ? bracketSim.titleProb : sim.titleProb).get(t.tid) ?? 0,
+					),
+				)
 				.sort((a, b) => a.americanOdds - b.americanOdds);
 
 	const conferences = playoffsOver
@@ -388,8 +453,17 @@ export const getLines = async () => {
 				cid: conf.cid,
 				name: conf.name,
 				teams: activeTeams
-					.filter((t) => t.cid === conf.cid)
-					.map((t) => teamRow(t, sim.confProb.get(t.tid) ?? 0))
+					.filter(
+						(t) =>
+							t.cid === conf.cid &&
+							(!bracketSim || bracketSim.confProb.has(t.tid)),
+					)
+					.map((t) =>
+						teamRow(
+							t,
+							(bracketSim ? bracketSim.confProb : sim.confProb).get(t.tid) ?? 0,
+						),
+					)
 					.sort((a, b) => a.americanOdds - b.americanOdds),
 			}));
 

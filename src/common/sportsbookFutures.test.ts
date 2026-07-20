@@ -1,5 +1,10 @@
 import { assert, describe, test } from "vitest";
-import { simulateFutures, type FuturesTeam } from "./sportsbookFutures.ts";
+import {
+	simulateFutures,
+	simulatePlayoffBracket,
+	type BracketMatchup,
+	type FuturesTeam,
+} from "./sportsbookFutures.ts";
 
 // A 2-conference, 8-team league: STL is a 46-3-style juggernaut in the East.
 const team = (
@@ -96,5 +101,135 @@ describe("simulateFutures", () => {
 		// gets floored by the odds clamp downstream. Probability itself may be 0
 		// in a finite simulation - that's fine, pricing clamps at +9900.
 		assert.ok(r.titleProb.get(7)! < 0.02);
+	});
+});
+
+describe("simulatePlayoffBracket", () => {
+	// Conference semifinals of a 2-round bracket: 4 teams alive; tids 90/91 were
+	// eliminated in the (already finished) earlier rounds and appear nowhere.
+	const semis = (): BracketMatchup[] => [
+		// East: 0 leads 1, three games to none.
+		{
+			home: { tid: 0, cid: 0, won: 3 },
+			away: { tid: 1, cid: 0, won: 0 },
+		},
+		// West: even series between evenly rated teams.
+		{
+			home: { tid: 4, cid: 1, won: 1 },
+			away: { tid: 5, cid: 1, won: 1 },
+		},
+	];
+	const ratings = new Map<number, number>([
+		[0, 5],
+		[1, 5],
+		[4, 3],
+		[5, 3],
+	]);
+	const run2 = (matchups = semis(), seed = 11) =>
+		simulatePlayoffBracket({
+			matchups,
+			startRound: 1,
+			numGamesPlayoffSeries: [7, 7, 7],
+			ratings,
+			iterations: 3000,
+			seed,
+		});
+
+	test("an eliminated team is not in the market at all", () => {
+		const r = run2();
+		assert.strictEqual(r.titleProb.has(90), false);
+		assert.strictEqual(r.confProb.has(91), false);
+		// Only the 4 alive teams are priced.
+		assert.strictEqual(r.titleProb.size, 4);
+	});
+
+	test("a 3-0 series lead prices as a massive favorite over an equal team", () => {
+		const r = run2();
+		// Equal ratings, but tid 0 needs 1 more win before tid 1 gets 4. Rating
+		// uncertainty keeps it from being a lock (the opponent might genuinely be
+		// better than rated), so ~90%, not ~95%.
+		assert.ok(
+			r.confProb.get(0)! > 0.85,
+			`3-0 leader conf prob ${r.confProb.get(0)}`,
+		);
+		assert.ok(
+			r.confProb.get(0)! > 5 * r.confProb.get(1)!,
+			"and dwarfs the trailer",
+		);
+		assert.ok(r.titleProb.get(0)! > 2 * r.titleProb.get(4)!);
+	});
+
+	test("title probabilities sum to 1; finalists (conf) sum to 2", () => {
+		const r = run2();
+		const sum = (m: Map<number, number>) =>
+			[...m.values()].reduce((s, p) => s + p, 0);
+		assert.ok(Math.abs(sum(r.titleProb) - 1) < 1e-9);
+		assert.ok(Math.abs(sum(r.confProb) - 2) < 1e-9);
+	});
+
+	test("an already-decided series always advances its winner", () => {
+		const decided: BracketMatchup[] = [
+			{
+				home: { tid: 0, cid: 0, won: 4 },
+				away: { tid: 1, cid: 0, won: 2 },
+			},
+			{
+				home: { tid: 4, cid: 1, won: 2 },
+				away: { tid: 5, cid: 1, won: 4 },
+			},
+		];
+		const r = run2(decided);
+		assert.strictEqual(r.titleProb.get(1), 0);
+		assert.strictEqual(r.titleProb.get(4), 0);
+		assert.ok(Math.abs(r.titleProb.get(0)! + r.titleProb.get(5)! - 1) < 1e-9);
+	});
+
+	test("a decided FINAL makes the champion a certainty", () => {
+		const final: BracketMatchup[] = [
+			{
+				home: { tid: 0, cid: 0, won: 4 },
+				away: { tid: 4, cid: 1, won: 1 },
+			},
+		];
+		const r = simulatePlayoffBracket({
+			matchups: final,
+			startRound: 2,
+			numGamesPlayoffSeries: [7, 7, 7],
+			ratings,
+			iterations: 500,
+			seed: 3,
+		});
+		assert.strictEqual(r.titleProb.get(0), 1);
+		assert.strictEqual(r.titleProb.get(4), 0);
+		// Both finalists "won their conference".
+		assert.strictEqual(r.confProb.get(0), 1);
+		assert.strictEqual(r.confProb.get(4), 1);
+	});
+
+	test("a bye advances automatically", () => {
+		const withBye: BracketMatchup[] = [
+			{ home: { tid: 0, cid: 0, won: 0 } }, // bye
+			{
+				home: { tid: 4, cid: 1, won: 0 },
+				away: { tid: 5, cid: 1, won: 0 },
+			},
+		];
+		const r = simulatePlayoffBracket({
+			matchups: withBye,
+			startRound: 1,
+			numGamesPlayoffSeries: [7, 7, 7],
+			ratings,
+			iterations: 1000,
+			seed: 5,
+		});
+		// tid 0 always reaches the final.
+		assert.strictEqual(r.confProb.get(0), 1);
+		assert.ok(r.titleProb.get(0)! > 0.5); // higher rated, plus rested
+	});
+
+	test("deterministic per seed", () => {
+		const a = run2(semis(), 21);
+		const b = run2(semis(), 21);
+		assert.strictEqual(a.titleProb.get(4), b.titleProb.get(4));
 	});
 });
