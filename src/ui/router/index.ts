@@ -1,3 +1,5 @@
+import { rewriteStaleLid } from "./rewriteStaleLid.ts";
+
 export interface Params {
 	[key: string]: string | undefined;
 }
@@ -190,6 +192,17 @@ class Router {
 			state?: { [key: string]: any };
 		} = {},
 	) {
+		// Repair a stale cross-league link. Content saved with an absolute
+		// /l/{lid}/... URL (game recaps like "X made a basket…", event/news
+		// links, feats) bakes in the lid from WHEN IT WAS WRITTEN. After an
+		// export + re-import the league gets a NEW lid, so every such link points
+		// at a league that no longer exists ("League not found"). While viewing
+		// league X, an in-app link to a DIFFERENT league Y is always one of these
+		// stale links - BBGM never cross-links between leagues from inside one -
+		// so rewrite Y → X. Legit league switching happens from the non-league
+		// dashboard, where there's no current lid, so this leaves it alone.
+		path = rewriteStaleLid(path);
+
 		const context: Context = {
 			params: {},
 			path,
