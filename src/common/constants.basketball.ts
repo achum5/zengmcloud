@@ -231,7 +231,7 @@ export const PLAYER_STATS_TABLES = {
 		superCols: [
 			{
 				title: "",
-				colspan: 7,
+				colspan: 8,
 			},
 			{
 				title: "At Rim",

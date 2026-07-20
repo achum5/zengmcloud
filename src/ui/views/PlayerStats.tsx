@@ -89,6 +89,7 @@ const PlayerStats = ({
 		"Name",
 		"Pos",
 		"Age",
+		"Experience",
 		"Team",
 		...(season === "all" ? ["Season"] : []),
 		...stats.map((stat) =>
@@ -107,15 +108,15 @@ const PlayerStats = ({
 	let sortCol = cols.length - 1;
 	if (isSport("football")) {
 		if (statType === "passing") {
-			sortCol = 9;
+			sortCol = 10;
 		} else if (statType === "rushing") {
 			sortCol = cols.length - 3;
 		} else if (statType === "defense") {
-			sortCol = 16;
+			sortCol = 17;
 		} else if (statType === "kicking") {
 			sortCol = cols.length - 11;
 		} else if (statType === "returns") {
-			sortCol = 12;
+			sortCol = 13;
 		}
 	}
 
@@ -201,6 +202,8 @@ const PlayerStats = ({
 				season === "career"
 					? wrappedAgeAtDeath(p.age, p.ageAtDeath)
 					: p.stats.season - p.born.year,
+
+				p.experience,
 
 				<a
 					href={helpers.leagueUrl([

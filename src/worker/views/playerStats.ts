@@ -118,6 +118,7 @@ const updatePlayers = async (
 				"age",
 				"born",
 				"ageAtDeath",
+				"experience",
 				"injury",
 				"tid",
 				"abbrev",
