@@ -797,6 +797,73 @@ describe("SyncEngine", () => {
 		assert.strictEqual(progress.at(-1), undefined);
 	});
 
+	test("a stop() mid-fetch stops a zombie pass re-showing the catch-up bar", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		const host = new FakeTransport("H", bus);
+		const N = 130; // big enough to page and surface the progress bar
+		for (let i = 1; i <= N; i++) {
+			await host.publish({
+				id: `e${i}`,
+				authorId: "H",
+				action: "x",
+				changeset: {
+					changes: [{ store: "events", id: i, type: "put", value: { eid: i } }],
+				},
+			});
+		}
+
+		// Gate the SECOND page fetch so we can stop() the engine while a fetch is
+		// in flight - the reconnect race where teardown replaces the engine and
+		// clears the pill, then this in-flight pass resolves and would re-push it.
+		let calls = 0;
+		let signalSecondFetch: () => void = () => {};
+		const secondFetchStarted = new Promise<void>((resolve) => {
+			signalSecondFetch = resolve;
+		});
+		let releaseSecondFetch: () => void = () => {};
+		const gate = new Promise<void>((resolve) => {
+			releaseSecondFetch = resolve;
+		});
+		class GatedTransport extends FakeTransport {
+			async fetchEntriesSince(sinceMs: number, pageLimit?: number) {
+				calls += 1;
+				if (calls === 2) {
+					signalSecondFetch();
+					await gate;
+				}
+				return super.fetchEntriesSince(sinceMs, pageLimit);
+			}
+		}
+
+		const progress: ({ done: number; total: number } | undefined)[] = [];
+		const receiver = new SyncEngine(new GatedTransport("R", bus), {
+			onCatchUpProgress: (p) => progress.push(p),
+		});
+
+		const drain = receiver.catchUp();
+		await secondFetchStarted; // page 1 applied + bar shown; page 2 fetch pending
+		assert.ok(
+			progress.some((p) => p !== undefined),
+			"the bar should have shown after page 1",
+		);
+
+		const pushesBeforeStop = progress.length;
+		receiver.stop();
+		releaseSecondFetch();
+		await drain;
+
+		// The stopped (zombie) pass must not push any more progress - otherwise it
+		// re-shows a bar the new session already cleared, leaving it stuck.
+		assert.strictEqual(
+			progress.length,
+			pushesBeforeStop,
+			`pushed after stop: ${JSON.stringify(progress.slice(pushesBeforeStop))}`,
+		);
+	});
+
 	test("catchUp shows no progress bar for a trivial gap", async () => {
 		const bus = new FakeBus();
 		resetG();

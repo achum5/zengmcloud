@@ -1527,6 +1527,15 @@ export class SyncEngine {
 						return false;
 					}
 				}
+				// A reconnect may have stopped this engine while the fetch was in
+				// flight (the top-of-loop check only covers stops between pages). Bail
+				// before applying entries or re-pushing progress, so a zombie pass from
+				// a replaced engine can't touch the new session's cache or re-show a
+				// catch-up bar that teardown already cleared.
+				if (this.stopped) {
+					outcome = "stopped";
+					return false;
+				}
 				pages += 1;
 				if (entries.length === 0) {
 					// Nothing after the cursor - we're at the head.
@@ -1667,8 +1676,7 @@ export class SyncEngine {
 			//     by tens of thousands of entries.
 			const authorProgress = this.lastSeqByAuthor.get(batch.authorId) ?? 0;
 			const logMovedPast = this.maxSeq > batch.maxChunkSeq;
-			const provablyDead =
-				authorProgress > batch.maxChunkSeq || logMovedPast;
+			const provablyDead = authorProgress > batch.maxChunkSeq || logMovedPast;
 			const lastHave = this.staleBatchHave.get(batchId);
 			if (
 				!provablyDead &&
@@ -1726,9 +1734,7 @@ export class SyncEngine {
 				// rescue completes it - the skipped changeset still applies instead
 				// of needing a manual Force full resync.
 				this.abandonedBatches.add(batchId);
-				if (
-					this.abandonedBatches.size > SyncEngine.ABANDONED_MEMORY_LIMIT
-				) {
+				if (this.abandonedBatches.size > SyncEngine.ABANDONED_MEMORY_LIMIT) {
 					const oldest = this.abandonedBatches.values().next().value;
 					if (oldest !== undefined) {
 						this.abandonedBatches.delete(oldest);
@@ -1779,9 +1785,11 @@ export class SyncEngine {
 	}
 
 	// Emit current drain progress (no-op unless a progress total is set - i.e. the
-	// gap was big enough to bother showing).
+	// gap was big enough to bother showing). A stopped (torn-down) engine never
+	// reports: it must not re-show a catch-up bar the new session's teardown
+	// already cleared.
 	private reportCatchUp() {
-		if (this.catchUpTotal === undefined) {
+		if (this.stopped || this.catchUpTotal === undefined) {
 			return;
 		}
 		this.onCatchUpProgress?.({

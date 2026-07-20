@@ -196,6 +196,10 @@ let syncRequired = false;
 // effectively runs while the app is in the foreground, which is exactly when we
 // want it. Undefined when not connected.
 let catchUpTimer: ReturnType<typeof setInterval> | undefined;
+// Whether the header catch-up pill is currently shown (a defined mpCatchUp was
+// pushed and not yet cleared). Lets a drive pass that ends fully caught up clear
+// a pill that was left showing without a matching clear (see driveCatchUp).
+let catchUpPillShowing = false;
 // The live changes listener delivers new deltas in real time for free; this
 // poll is only a BACKSTOP for a silently-dropped listener. So it runs
 // infrequently, and each tick skips its (billed) catch-up read when the listener
@@ -818,6 +822,22 @@ const driveCatchUp = async () => {
 	// Catching up may have just unblocked edits.
 	pushEditsPaused();
 
+	// Self-heal a stuck pill: if this pass reached the head and we're genuinely
+	// caught up (nothing pending) with no active progress total, but the pill is
+	// still showing, clear it. finishCatchUp only emits a clear when a progress
+	// TOTAL had been set, so a session that caught up without ever showing a total
+	// (e.g. a near-caught-up reconnect) wouldn't otherwise hide a pill left over
+	// from a prior engine. Only ever CLEARS, and only when provably done.
+	if (
+		reachedHead &&
+		after.caughtUp &&
+		after.progressTotal === undefined &&
+		catchUpPillShowing
+	) {
+		catchUpPillShowing = false;
+		void toUI("updateLocal", [{ mpCatchUp: undefined }]);
+	}
+
 	// A big backlog is drained in bounded chunks (catchUp() caps its pages so it
 	// can't spin forever), and there's no live subscription yet - so without this,
 	// each chunk would wait a full poll interval for the next, and a large room
@@ -1333,6 +1353,7 @@ const doConnectSharedLeague = async ({
 				done: progress?.done,
 				total: progress?.total,
 			});
+			catchUpPillShowing = progress !== undefined;
 			void toUI("updateLocal", [{ mpCatchUp: progress }]);
 		},
 		onReadyChange: (ready) => {
@@ -1561,6 +1582,7 @@ export const teardownSharedLeague = async ({
 	followerFroze = false;
 	currentTransport = undefined;
 	lastPendingUploads = 0;
+	catchUpPillShowing = false;
 	void toUI("updateLocal", [
 		{
 			mpAutoPlay: undefined,
