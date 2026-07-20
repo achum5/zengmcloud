@@ -15,7 +15,7 @@ const INSTRUCTIONS = `You are an expert basketball beat writer. Write a short "D
 
 THIS IS A FICTIONAL LEAGUE — USE ONLY THE DATA BELOW, NEVER REAL-WORLD KNOWLEDGE. Player and team names may coincide with real people and franchises, but they are NOT them and share no history. A player has no real-world team, hometown, college, draft position, championships, awards, signature moves, nicknames, rivalries, relationships, or reputation — only what the data below states. Do NOT reference or imply anything about a player or team from outside this data: e.g., do not associate Paul Pierce with the Celtics, assume a player's playing style or position, invoke a real-world rivalry, or call anyone the "real-life" anything. Every team a player has played for, every number, and every storyline must come solely from the data provided. Write as if these people and teams exist only within this league and nowhere else.
 
-You are given far more data than you need — box scores, what each player was averaging ENTERING the game (this game not included), past-season career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), the pregame betting line (who was favored and by how many), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. The games may span several league days (each is labeled with its day) — treat each game's data as of the day it was played, and don't frame games from different days as one night's slate. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). Do NOT list the raw data back.
+You are given far more data than you need — box scores, what each player was averaging ENTERING the game (this game not included), past-season career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), the pregame betting line (who was favored and by how many), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. The games may span several league days (each is labeled with its day) — treat each game's data as of the day it was played, and don't frame games from different days as one night's slate. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). If a game is labeled the ALL-STAR GAME, frame it as a fun midseason exhibition — no records, standings, or playoff stakes — and, using ONLY the data in that block, also cover the All-Star Game MVP and the Slam Dunk Contest and Three-Point Contest results (winner, and the contestants named) as part of that same recap. Do NOT list the raw data back.
 
 The pregame betting line is CONTEXT ONLY — use it to judge how surprising the result was (a big underdog winning is an upset; a favorite rolling is chalk) and let that shape the tone. NEVER mention the spread, betting line, odds, "favored", "underdog", "pick'em", or "cover" in the recap itself. Convey the magnitude through the basketball, not the betting.
 
@@ -235,7 +235,71 @@ const spreadLine = (game: RecapGame): string | undefined => {
 	return `Pregame line: ${favName} favored by ${s.points}`;
 };
 
+// The All-Star Game plus the weekend's contests, as one block. The game is a
+// fun exhibition (no records/streaks/spread - those are stripped upstream), so
+// this leads with that framing, then the box score, MVP, and the dunk and
+// three-point contest results.
+const allStarBlock = (game: RecapGame): string => {
+	const as = game.allStar!;
+	// teams[0] is home in ZenGM; both All-Star squads resolve to region
+	// "All-Stars" with name "1"/"2", so region+name is an unambiguous label.
+	const [home, away] = game.teams;
+	const winner = game.teams.find((t) => t.tid === game.winnerTid);
+	const ot =
+		game.overtimes > 0
+			? ` (${game.overtimes === 1 ? "OT" : `${game.overtimes}OT`})`
+			: "";
+
+	const lines = [
+		`### GAME ${game.gid} (League day ${game.day}): ALL-STAR GAME${ot}`,
+		"This is the ALL-STAR GAME — a fun midseason exhibition between two squads of All-Stars. There are NO standings, records, streaks, or playoff stakes; do not frame it as a competitive result.",
+		`Final: ${away.region} ${away.name} ${away.pts}, ${home.region} ${home.name} ${home.pts}${
+			winner ? ` — ${winner.region} ${winner.name} win` : ""
+		}`,
+	];
+
+	if (as.mvp) {
+		lines.push(`All-Star Game MVP: ${as.mvp}`);
+	}
+	if (as.dunk) {
+		lines.push(
+			`Slam Dunk Contest: ${as.dunk.winner ? `${as.dunk.winner} won` : "held"}${
+				as.dunk.players.length > 0
+					? ` (contestants: ${as.dunk.players.join(", ")})`
+					: ""
+			}`,
+		);
+	}
+	if (as.three) {
+		lines.push(
+			`Three-Point Contest: ${
+				as.three.winner ? `${as.three.winner} won` : "held"
+			}${
+				as.three.players.length > 0
+					? ` (contestants: ${as.three.players.join(", ")})`
+					: ""
+			}`,
+		);
+	}
+
+	lines.push("", teamBlock(away), "", teamBlock(home));
+
+	if (game.clutchPlays.length > 0) {
+		lines.push(
+			"",
+			"Notable plays:",
+			...game.clutchPlays.map((c) => `- ${stripHtml(c)}`),
+		);
+	}
+
+	return lines.join("\n");
+};
+
 const gameBlock = (game: RecapGame): string => {
+	if (game.allStar) {
+		return allStarBlock(game);
+	}
+
 	// teams[0] is the home team in ZenGM; list the visitor first ("away @ home").
 	const [home, away] = game.teams;
 	const winner = game.teams.find((t) => t.tid === game.winnerTid);

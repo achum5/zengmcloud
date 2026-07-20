@@ -154,6 +154,14 @@ export type RecapGame = {
 	spread?: { favTid: number; points: number };
 	// Narrative highlights ZenGM already generated (game-winners, milestones, ...).
 	clutchPlays: string[];
+	// Set ONLY for the All-Star Game. The game itself is still the normal box
+	// score in `teams`; this carries the weekend extras (MVP + the dunk and
+	// three-point contests) so the recap can cover the whole All-Star Weekend.
+	allStar?: {
+		mvp?: string;
+		dunk?: { winner?: string; players: string[] };
+		three?: { winner?: string; players: string[] };
+	};
 };
 
 const STAT_KEYS = [
@@ -504,6 +512,36 @@ export const getDayGamesForRecap = async ({
 
 	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
 
+	// The All-Star Game is a normal game record with sentinel team ids (-1 home,
+	// -2 away). Its MVP and the weekend contests live on the separate allStars
+	// object, which we fold into that game's recap below.
+	const allStars = await idb.getCopy.allStars({ season });
+	const isAllStarGame = (game: { teams: { tid: number }[] }): boolean =>
+		game.teams[0]?.tid === -1 && game.teams[1]?.tid === -2;
+
+	const allStarPayload = (): RecapGame["allStar"] => {
+		if (!allStars) {
+			return {};
+		}
+		const contest = (
+			c: { players: { name: string }[]; winner?: number } | undefined,
+		): { winner?: string; players: string[] } | undefined => {
+			if (!c) {
+				return undefined;
+			}
+			return {
+				winner:
+					typeof c.winner === "number" ? c.players[c.winner]?.name : undefined,
+				players: c.players.map((p) => p.name),
+			};
+		};
+		return {
+			mvp: allStars.mvp?.name,
+			dunk: contest(allStars.dunk),
+			three: contest(allStars.three),
+		};
+	};
+
 	const games = selectRecapGames(
 		allGames.filter((game) => game.won && game.lost),
 		day,
@@ -739,6 +777,7 @@ export const getDayGamesForRecap = async ({
 	const result: RecapGame[] = [];
 	for (const game of games) {
 		const playoffs = !!game.playoffs;
+		const allStar = isAllStarGame(game);
 
 		const teams = [] as unknown as [RecapTeam, RecapTeam];
 		for (const t of game.teams) {
@@ -847,10 +886,14 @@ export const getDayGamesForRecap = async ({
 				abbrev: info?.abbrev ?? "???",
 				pts: t.pts,
 				players,
-				record: regularSeasonRecordAsOf(t.tid, game.day ?? day, allGames),
+				// Records, streaks, last-10, and seeds are meaningless for the two
+				// one-off All-Star squads, so leave them off that game's blocks.
+				record: allStar
+					? undefined
+					: regularSeasonRecordAsOf(t.tid, game.day ?? day, allGames),
 				ptsQtrs: Array.isArray(t.ptsQtrs) ? t.ptsQtrs : undefined,
-				last10: await last10For(t.tid, game.day ?? day),
-				streak: streakFor(t.tid, game.day ?? day),
+				last10: allStar ? undefined : await last10For(t.tid, game.day ?? day),
+				streak: allStar ? undefined : streakFor(t.tid, game.day ?? day),
 				injuries: injuries.length > 0 ? injuries : undefined,
 				seed: playoffs ? seedOf(t.tid) : undefined,
 			});
@@ -889,8 +932,10 @@ export const getDayGamesForRecap = async ({
 			teams,
 			series: playoffs && !playIn ? await seriesForGame(game) : undefined,
 			playIn,
-			spread,
+			// No betting line for an exhibition; the All-Star payload replaces it.
+			spread: allStar ? undefined : spread,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
+			allStar: allStar ? allStarPayload() : undefined,
 		});
 	}
 

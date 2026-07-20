@@ -277,9 +277,19 @@ describe("double-double milestone tags", () => {
 
 	test("a genuine quintuple-double is labeled correctly", () => {
 		const line = lineFor(
-			mkPlayer({ name: "Unicorn", pts: 10, reb: 10, ast: 10, stl: 10, blk: 10 }),
+			mkPlayer({
+				name: "Unicorn",
+				pts: 10,
+				reb: 10,
+				ast: 10,
+				stl: 10,
+				blk: 10,
+			}),
 		);
-		assert.ok(line.includes("[quintuple-double: PTS, REB, AST, STL, BLK]"), line);
+		assert.ok(
+			line.includes("[quintuple-double: PTS, REB, AST, STL, BLK]"),
+			line,
+		);
 	});
 });
 
@@ -400,6 +410,68 @@ describe("buildRecapPrompt — pregame spread", () => {
 	});
 });
 
+describe("buildRecapPrompt — All-Star Game", () => {
+	const allStarGame = (): RecapGame => ({
+		gid: 500,
+		day: 120,
+		overtimes: 0,
+		winnerTid: -1,
+		playoffs: false,
+		teams: [
+			{
+				tid: -1,
+				region: "All-Stars",
+				name: "1",
+				abbrev: "ASG",
+				pts: 168,
+				players: [player("Home Star", 40)],
+			},
+			{
+				tid: -2,
+				region: "All-Stars",
+				name: "2",
+				abbrev: "ASG",
+				pts: 165,
+				players: [player("Away Star", 38)],
+			},
+		],
+		clutchPlays: [],
+		allStar: {
+			mvp: "Home Star",
+			dunk: { winner: "Dunk Champ", players: ["Dunk Champ", "Dunk Runner"] },
+			three: {
+				winner: "Splash King",
+				players: ["Splash King", "Cold Shooter"],
+			},
+		},
+	});
+
+	test("frames the game and includes MVP + both contests, filed under its gid", () => {
+		const prompt = buildRecapPrompt([allStarGame()], "Day 120");
+		assert.ok(prompt.includes("GAME 500"), prompt);
+		assert.ok(prompt.includes("ALL-STAR GAME"), prompt);
+		assert.ok(prompt.includes("All-Star Game MVP: Home Star"), prompt);
+		assert.ok(prompt.includes("Slam Dunk Contest: Dunk Champ won"), prompt);
+		assert.ok(prompt.includes("Dunk Runner"), prompt);
+		assert.ok(prompt.includes("Three-Point Contest: Splash King won"), prompt);
+		assert.ok(prompt.includes("Cold Shooter"), prompt);
+		// It's an exhibition — no betting line, and player lines still present.
+		assert.ok(!prompt.includes("Pregame line:"), prompt);
+		assert.ok(prompt.includes("Home Star: 40 PTS"), prompt);
+	});
+
+	test("omits a contest that wasn't held", () => {
+		const g = allStarGame();
+		g.allStar = { mvp: "Home Star", three: undefined, dunk: undefined };
+		const prompt = buildRecapPrompt([g], "Day 120");
+		assert.ok(prompt.includes("All-Star Game MVP: Home Star"), prompt);
+		// The colon form is the rendered block line (the instructions mention the
+		// contests without a colon, so match the block specifically).
+		assert.ok(!prompt.includes("Slam Dunk Contest:"), prompt);
+		assert.ok(!prompt.includes("Three-Point Contest:"), prompt);
+	});
+});
+
 describe("parseRecaps", () => {
 	test("files each recap to its game id, ignoring preamble", () => {
 		const text = `Here are your recaps!
@@ -471,7 +543,9 @@ Not close.`;
 		].join("\n");
 		const { dayRecaps, games } = parseRecaps(text);
 		assert.strictEqual(dayRecaps.size, 1);
-		assert.ok(dayRecaps.get(7)!.startsWith("**A wild night across the league**"));
+		assert.ok(
+			dayRecaps.get(7)!.startsWith("**A wild night across the league**"),
+		);
 		assert.ok(dayRecaps.get(7)!.includes("standings shuffled."));
 		// The day recap must NOT bleed into the game recap, or vice versa.
 		assert.ok(!dayRecaps.get(7)!.includes("Brooklyn"));
@@ -534,22 +608,27 @@ describe("buildRecapPrompt — day recaps", () => {
 	});
 
 	test("includes a compact results slate for a backfill day not detailed above", () => {
-		const prompt = buildRecapPrompt([game], "Day 4", [1, 4], [
-			{
-				day: 1,
-				games: [
-					{
-						away: "Brooklyn Nets",
-						home: "St. Louis Spirits",
-						awayPts: 79,
-						homePts: 111,
-						winner: "St. Louis Spirits",
-						topAway: { name: "J. Smith", pts: 20 },
-						topHome: { name: "R. Hosley", pts: 31 },
-					},
-				],
-			},
-		]);
+		const prompt = buildRecapPrompt(
+			[game],
+			"Day 4",
+			[1, 4],
+			[
+				{
+					day: 1,
+					games: [
+						{
+							away: "Brooklyn Nets",
+							home: "St. Louis Spirits",
+							awayPts: 79,
+							homePts: 111,
+							winner: "St. Louis Spirits",
+							topAway: { name: "J. Smith", pts: 20 },
+							topHome: { name: "R. Hosley", pts: 31 },
+						},
+					],
+				},
+			],
+		);
 		assert.ok(prompt.includes("Day recaps needed (oldest first): 1, 4"));
 		assert.ok(prompt.includes("League day 1:"));
 		assert.ok(
@@ -570,104 +649,124 @@ describe("buildRecapPrompt — standings by conference", () => {
 		playoffs: false,
 		clutchPlays: [],
 		teams: [
-			{ tid: 0, abbrev: "STL", region: "St. Louis", name: "Spirits", pts: 100, players: [] },
-			{ tid: 1, abbrev: "BKN", region: "Brooklyn", name: "Nets", pts: 90, players: [] },
+			{
+				tid: 0,
+				abbrev: "STL",
+				region: "St. Louis",
+				name: "Spirits",
+				pts: 100,
+				players: [],
+			},
+			{
+				tid: 1,
+				abbrev: "BKN",
+				region: "Brooklyn",
+				name: "Nets",
+				pts: 90,
+				players: [],
+			},
 		],
 	} as any;
 
 	test("bakes in each day's standings, split by conference, with GB", () => {
-		const prompt = buildRecapPrompt([game], "Day 4", [4], [], [
-			{
-				day: 4,
-				confs: [
-					{
-						name: "Eastern Conference",
-						teams: [
-							{
-								rank: 1,
-								abbrev: "STL",
-								region: "St. Louis",
-								name: "Spirits",
-								won: 4,
-								lost: 0,
-								gb: 0,
-							},
-							{
-								rank: 2,
-								abbrev: "BKN",
-								region: "Brooklyn",
-								name: "Nets",
-								won: 2,
-								lost: 2,
-								gb: 2,
-							},
-						],
-					},
-					{
-						name: "Western Conference",
-						teams: [
-							{
-								rank: 1,
-								abbrev: "LAL",
-								region: "Los Angeles",
-								name: "Lakers",
-								won: 3,
-								lost: 1,
-								gb: 0,
-							},
-						],
-					},
-				],
-			},
-		]);
+		const prompt = buildRecapPrompt(
+			[game],
+			"Day 4",
+			[4],
+			[],
+			[
+				{
+					day: 4,
+					confs: [
+						{
+							name: "Eastern Conference",
+							teams: [
+								{
+									rank: 1,
+									abbrev: "STL",
+									region: "St. Louis",
+									name: "Spirits",
+									won: 4,
+									lost: 0,
+									gb: 0,
+								},
+								{
+									rank: 2,
+									abbrev: "BKN",
+									region: "Brooklyn",
+									name: "Nets",
+									won: 2,
+									lost: 2,
+									gb: 2,
+								},
+							],
+						},
+						{
+							name: "Western Conference",
+							teams: [
+								{
+									rank: 1,
+									abbrev: "LAL",
+									region: "Los Angeles",
+									name: "Lakers",
+									won: 3,
+									lost: 1,
+									gb: 0,
+								},
+							],
+						},
+					],
+				},
+			],
+		);
 		assert.ok(prompt.includes("LEAGUE STANDINGS by conference"), prompt);
 		assert.ok(prompt.includes("Standings as of league day 4:"), prompt);
 		assert.ok(prompt.includes("Eastern Conference:"), prompt);
 		assert.ok(prompt.includes("Western Conference:"), prompt);
 		// A ranked team line, with GB shown only when behind the leader.
-		assert.ok(
-			prompt.includes("1. St. Louis Spirits (STL) 4-0"),
-			prompt,
-		);
-		assert.ok(
-			prompt.includes("2. Brooklyn Nets (BKN) 2-2 — 2 GB"),
-			prompt,
-		);
+		assert.ok(prompt.includes("1. St. Louis Spirits (STL) 4-0"), prompt);
+		assert.ok(prompt.includes("2. Brooklyn Nets (BKN) 2-2 — 2 GB"), prompt);
 		// The leader's line has no "GB" suffix.
 		assert.ok(!prompt.includes("4-0 — 0 GB"), prompt);
 	});
 
 	test("shows a half-game back as a decimal", () => {
-		const prompt = buildRecapPrompt([game], "Day 4", [4], [], [
-			{
-				day: 4,
-				confs: [
-					{
-						name: "East",
-						teams: [
-							{
-								rank: 1,
-								abbrev: "AAA",
-								region: "A",
-								name: "A",
-								won: 3,
-								lost: 0,
-								gb: 0,
-							},
-							{
-								rank: 2,
-								abbrev: "BBB",
-								region: "B",
-								name: "B",
-								won: 2,
-								lost: 0,
-								gb: 0.5,
-							},
-						],
-					},
-				],
-			},
-		]);
+		const prompt = buildRecapPrompt(
+			[game],
+			"Day 4",
+			[4],
+			[],
+			[
+				{
+					day: 4,
+					confs: [
+						{
+							name: "East",
+							teams: [
+								{
+									rank: 1,
+									abbrev: "AAA",
+									region: "A",
+									name: "A",
+									won: 3,
+									lost: 0,
+									gb: 0,
+								},
+								{
+									rank: 2,
+									abbrev: "BBB",
+									region: "B",
+									name: "B",
+									won: 2,
+									lost: 0,
+									gb: 0.5,
+								},
+							],
+						},
+					],
+				},
+			],
+		);
 		assert.ok(prompt.includes("2. B B (BBB) 2-0 — 0.5 GB"), prompt);
 	});
 
