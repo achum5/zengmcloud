@@ -30,6 +30,7 @@ import { roundContract } from "../../../common/roundContract.ts";
 import { Face } from "./Face.tsx";
 import ImageUploader from "../../components/ImageUploader.tsx";
 import PlayerImageGenerator from "../../components/PlayerImageGenerator.tsx";
+import PlayerVideoGenerator from "../../components/PlayerVideoGenerator.tsx";
 import { CurrencyInputGroup } from "../../components/CurrencyInputGroup.tsx";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
@@ -534,6 +535,8 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 		faceCount,
 		imageMoments,
 		customImageSeed,
+		videoMoments,
+		customVideoSeed,
 		originalTid,
 		playerMoodTraits,
 		playersRelativesList,
@@ -638,6 +641,13 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 								p: { ...prevState.p, imgURL: url },
 							}));
 						}}
+					/>
+				</div>
+
+				<div className="mb-3" style={{ maxWidth: 520 }}>
+					<PlayerVideoGenerator
+						moments={videoMoments}
+						customSeed={customVideoSeed}
 					/>
 				</div>
 

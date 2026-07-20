@@ -144,15 +144,20 @@ export const getPlayerImageMoments = async (
 		});
 	}
 
-	// 4. Notable games (playerFeat events) - most recent handful only.
-	for (const feat of feats.slice(-8)) {
+	// 4. Notable games (playerFeat events). Include them all (most recent first)
+	// so the dropdown exposes every opportunity, not just a handful.
+	for (const feat of [...feats].reverse()) {
 		const text = stripHtml(feat.text ?? "");
 		if (!text) {
 			continue;
 		}
+		const oppMatch = /(?:over the|to the|with the|against the) ([^.,]+?)[.,]?\s*$/i.exec(
+			text.replace(/\s+/g, " ").trim(),
+		);
+		const opp = oppMatch ? oppMatch[1]!.trim() : undefined;
 		moments.push({
 			key: `feat-${feat.season}-${text.slice(0, 20)}`,
-			label: `Big game${feat.season ? ` (${feat.season})` : ""}`,
+			label: `Big game${opp ? ` vs ${opp}` : ""}${feat.season ? ` (${feat.season})` : ""}`,
 			prompt: `A cartoon illustration of ${describePlayerSubject(p, pos, feat.season ?? 0)} in the middle of a standout game — ${text} — celebrating on the court. ${STYLE}`,
 		});
 	}

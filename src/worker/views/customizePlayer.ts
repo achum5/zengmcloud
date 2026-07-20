@@ -14,6 +14,10 @@ import {
 	getPlayerImageMoments,
 	customImagePromptSeed,
 } from "../util/getPlayerImageMoments.ts";
+import {
+	getPlayerVideoMoments,
+	customVideoPromptSeed,
+} from "../util/getPlayerVideoMoments.ts";
 
 export const formatPlayerRelativesList = (p: Player) => {
 	const firstSeason = p.ratings[0].season;
@@ -172,6 +176,32 @@ const updateCustomizePlayer = async (
 			g.get("season"),
 		);
 
+		// Per-player AI-VIDEO moments (clutch plays, statistical-feat highlight
+		// reels, award/championship tributes, career montage), each carrying the
+		// on-court context - teammates and opponents likely on the floor, with
+		// heights, weights, and jersey numbers. Needs every player's position, so
+		// build a pid->pos map from the active roster once.
+		const allPlayersForVideo = await idb.cache.players.getAll();
+		const posByPid = new Map<number, string>();
+		for (const other of allPlayersForVideo) {
+			if (other.ratings.length > 0) {
+				posByPid.set(other.pid, player.pos(last(other.ratings)));
+			}
+		}
+		const videoMoments = await getPlayerVideoMoments(
+			p,
+			initialAutoPos,
+			feats,
+			allPlayersForVideo,
+			(pid2) => posByPid.get(pid2),
+		);
+		const customVideoSeed = customVideoPromptSeed(
+			p,
+			initialAutoPos,
+			currentTeamText,
+			g.get("season"),
+		);
+
 		faceCount += 1;
 
 		return {
@@ -180,6 +210,8 @@ const updateCustomizePlayer = async (
 			initialAutoPos,
 			imageMoments,
 			customImageSeed,
+			videoMoments,
+			customVideoSeed,
 			originalTid,
 			p,
 			playerMoodTraits: g.get("playerMoodTraits"),
