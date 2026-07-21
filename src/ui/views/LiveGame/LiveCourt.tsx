@@ -45,7 +45,10 @@ export type CourtActor = {
 	// Court coordinates (x along the 94ft length, y across the 50ft width).
 	x: number;
 	y: number;
-	role: "main" | "defender" | "victim" | "in" | "out";
+	role: "main" | "defender" | "victim" | "in" | "out" | "onCourt";
+	// Display team (0 = away/left, 1 = home/right). Set for "onCourt" background
+	// players so they're colored by their own team rather than the scene's.
+	t?: 0 | 1;
 };
 
 // Default championship trophy shown at center court during a finals game (Larry
@@ -192,6 +195,94 @@ export const scorerTableRow = (n: number): { x: number; y: number }[] => {
 	}));
 };
 
+// Deterministic half-court formation spots (depth from the attacked baseline,
+// across the width), ordered roughly by position. Offense spaces the floor; the
+// defense sits a step closer to the rim it's protecting. BOTH clusters live in
+// the offense's frontcourt - the end the ball is at - so all ten faces read as
+// one 5-on-5 set, and the spots are fixed (not random) so players hold their
+// formation and only glide when the ball changes ends.
+const OFFENSE_SPOTS: { depth: number; across: number }[] = [
+	{ depth: 27, across: 25 }, // point, top of the key
+	{ depth: 22, across: 42 }, // wing
+	{ depth: 22, across: 8 }, // wing
+	{ depth: 10, across: 38 }, // short corner / elbow
+	{ depth: 7, across: 21 }, // low block
+];
+const DEFENSE_SPOTS: { depth: number; across: number }[] = [
+	{ depth: 22, across: 25 },
+	{ depth: 17, across: 39 },
+	{ depth: 17, across: 11 },
+	{ depth: 8, across: 31 },
+	{ depth: 6, across: 20 },
+];
+
+// Rank a lineup player by court position so the sorted order fills the formation
+// slots guard→wing→big, however the sim labels positions.
+const posRank = (pos: string | undefined): number => {
+	switch (pos) {
+		case "PG":
+			return 0;
+		case "G":
+			return 1;
+		case "SG":
+			return 2;
+		case "GF":
+			return 3;
+		case "SF":
+			return 4;
+		case "F":
+			return 5;
+		case "PF":
+			return 6;
+		case "FC":
+			return 7;
+		case "C":
+			return 8;
+		default:
+			return 4;
+	}
+};
+
+export type LineupPlayer = {
+	pid: number;
+	name: string;
+	pos?: string;
+	inGame?: boolean;
+};
+
+// Build the background 5-on-5: every on-floor player who ISN'T already an actor
+// in the play, placed at a fixed formation spot in the offense's frontcourt.
+// `teams` is display order [away, home]; `offenseT` is the display team with the
+// ball (both teams cluster at that team's attacking rim). Excluded pids (the
+// play's actors) are drawn separately at their action spots, so their slot is
+// simply left open.
+export const buildLineupActors = ({
+	teams,
+	offenseT,
+	excludePids,
+}: {
+	teams: [LineupPlayer[], LineupPlayer[]];
+	offenseT: 0 | 1;
+	excludePids: Set<number>;
+}): CourtActor[] => {
+	const out: CourtActor[] = [];
+	for (const t of [0, 1] as const) {
+		const spots = t === offenseT ? OFFENSE_SPOTS : DEFENSE_SPOTS;
+		const onFloor = (teams[t] ?? [])
+			.filter((p) => p.inGame && !excludePids.has(p.pid))
+			.sort((a, b) => posRank(a.pos) - posRank(b.pos))
+			.slice(0, spots.length);
+		for (const [i, p] of onFloor.entries()) {
+			const slot = spots[i]!;
+			// Everyone stands in the offense's frontcourt (toCourt is oriented to
+			// offenseT's attacked rim); offense and defense just use different depths.
+			const { x, y } = toCourt(offenseT, slot.depth, slot.across);
+			out.push({ pid: p.pid, name: p.name, x, y, role: "onCourt", t });
+		}
+	}
+	return out;
+};
+
 // Map a play-by-play event type to a shot descriptor, or undefined for
 // non-shot events (which the caller handles separately).
 export const courtActionFromEventType = (
@@ -332,11 +423,15 @@ const FaceOnCourt = ({
 	anim,
 	nameAbove,
 	size,
+	background,
 }: {
 	actor: CourtActor;
 	season: number | undefined;
 	lid: number | undefined;
 	color: string;
+	// A background 5-on-5 player (not part of the current play): dimmed, no name
+	// tag, and sat below the active actors and the play text.
+	background?: boolean;
 	anim?: "shake" | "swipe";
 	nameAbove?: boolean;
 	// Measured px size of the court container (see LiveCourt's ResizeObserver).
@@ -401,7 +496,8 @@ const FaceOnCourt = ({
 			style={{
 				...positionStyle,
 				pointerEvents: "none",
-				zIndex: actor.role === "main" ? 5 : 4,
+				zIndex: background ? 2 : actor.role === "main" ? 5 : 4,
+				opacity: background ? 0.72 : 1,
 			}}
 		>
 			<div
@@ -422,7 +518,7 @@ const FaceOnCourt = ({
 						jersey={faceData.jersey}
 					/>
 				) : null}
-				{nameTag}
+				{background ? null : nameTag}
 			</div>
 		</div>
 	);
@@ -570,7 +666,8 @@ const LiveCourt = ({
 			// stealer, red sparks bursting at the poke, a pulse on the stealer. (The
 			// victim's face also recoils via CSS.)
 			if (scene.kind === "stl") {
-				const from = scene.ballFrom ??
+				const from =
+					scene.ballFrom ??
 					(victim ? { x: victim.x, y: victim.y } : { x: COURT_W / 2, y: 25 });
 				const to = scene.ballTo ?? (main ? { x: main.x, y: main.y } : from);
 				const pokeDir = to.x >= from.x ? 1 : -1;
@@ -1072,8 +1169,9 @@ const LiveCourt = ({
 		if (!scene) {
 			return false;
 		}
+		// Only the play's actors have name tags, so only they can collide.
 		const near = scene.actors.some(
-			(o) => o !== actor && Math.abs(o.x - actor.x) < 9,
+			(o) => o !== actor && o.role !== "onCourt" && Math.abs(o.x - actor.x) < 9,
 		);
 		if (near) {
 			return actor.role !== "main";
@@ -1084,8 +1182,11 @@ const LiveCourt = ({
 
 	// The play text sits BESIDE the action but must never cover a face. Anchor it
 	// just past the edge of the whole actor cluster, on whichever side faces
-	// center court, vertically centered on the cluster.
-	const actorsForText = scene?.actors ?? [];
+	// center court, vertically centered on the cluster. Background 5-on-5 players
+	// are excluded - the text hugs the ACTIVE play, not the whole floor.
+	const actorsForText = (scene?.actors ?? []).filter(
+		(a) => a.role !== "onCourt",
+	);
 	const clusterMinX = actorsForText.length
 		? Math.min(...actorsForText.map((a) => a.x))
 		: COURT_W / 2;
@@ -1523,6 +1624,17 @@ const LiveCourt = ({
 			{scene
 				? scene.actors.map((actor) => {
 						const anim = actorAnim(actor);
+						const background = actor.role === "onCourt";
+						// Background players are colored by their OWN team; the play's
+						// actors by the scene team (or the opposing team for a
+						// defender/victim).
+						const color = background
+							? actor.t === 0
+								? awayColor
+								: homeColor
+							: actor.role === "defender" || actor.role === "victim"
+								? opposingColor
+								: sceneColor;
 						return (
 							<FaceOnCourt
 								key={
@@ -1533,14 +1645,11 @@ const LiveCourt = ({
 								actor={actor}
 								season={season}
 								lid={lid}
-								color={
-									actor.role === "defender" || actor.role === "victim"
-										? opposingColor
-										: sceneColor
-								}
+								color={color}
 								anim={anim}
 								nameAbove={nameAboveFor(actor)}
 								size={size}
+								background={background}
 							/>
 						);
 					})

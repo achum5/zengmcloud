@@ -37,6 +37,7 @@ import { Confetti } from "./Confetti.tsx";
 import { BoxScoreRow } from "../../components/BoxScoreRow.tsx";
 import { getPeriodName } from "../../../common/getPeriodName.ts";
 import LiveCourt, {
+	buildLineupActors,
 	courtActionFromEventType,
 	rimXFor,
 	scorerTableRow,
@@ -363,7 +364,32 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 	const pushScene = (scene: Omit<CourtScene, "key">) => {
 		courtSceneCount.current += 1;
-		courtScene.current = { key: courtSceneCount.current, ...scene };
+		// Populate the rest of the 5-on-5 as a background formation, so the court
+		// shows a full team instead of just the play's actors. Which end the ball
+		// is at anchors both teams' formations: prefer the shot's rim, else the
+		// average x of the play's actors. Away attacks left, home right (fixed), so
+		// a play on the right half means the home team is on offense.
+		const playActors = scene.actors;
+		let anchorX = scene.rimX;
+		if (anchorX === undefined && playActors.length > 0) {
+			anchorX = playActors.reduce((sum, a) => sum + a.x, 0) / playActors.length;
+		}
+		let actors = playActors;
+		if (anchorX !== undefined && Array.isArray(boxScore.current.teams)) {
+			// Midcourt = halfway between the two rims (away's left, home's right).
+			const midX = (rimXFor(0) + rimXFor(1)) / 2;
+			const offenseT: 0 | 1 = anchorX > midX ? 1 : 0;
+			const teams = boxScore.current.teams;
+			const background = buildLineupActors({
+				teams: [teams[0]?.players ?? [], teams[1]?.players ?? []],
+				offenseT,
+				excludePids: new Set(playActors.map((a) => a.pid)),
+			});
+			if (background.length > 0) {
+				actors = [...playActors, ...background];
+			}
+		}
+		courtScene.current = { key: courtSceneCount.current, ...scene, actors };
 	};
 
 	const scoreLine = (): string => {
