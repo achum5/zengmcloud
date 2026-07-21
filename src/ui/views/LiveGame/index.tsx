@@ -393,7 +393,18 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// a play on the right half means the home team is on offense. (Skipped for
 		// the opening tip - a half-court set around a center-court jump reads
 		// wrong.)
-		const playActors = scene.actors;
+		// Never let one player appear twice in a scene: the court keys every body
+		// by pid, so a duplicate (e.g. a foul whose stand-in victim is also the
+		// fouler) collides as a React key and strands a face on the floor. Keep the
+		// first occurrence (the more meaningful role comes first).
+		const seenPids = new Set<number>();
+		const playActors = scene.actors.filter((a) => {
+			if (seenPids.has(a.pid)) {
+				return false;
+			}
+			seenPids.add(a.pid);
+			return true;
+		});
 		let passFrom = scene.passFrom;
 		let anchorX = scene.rimX;
 		if (anchorX === undefined && playActors.length > 0) {
@@ -851,7 +862,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 					: lastFga.current?.pid;
 			const toward = rimXFor(offT) > spot.x ? -1 : 1;
 			const actors: CourtActor[] = [];
-			if (typeof victimPid === "number") {
+			// Skip the victim when the stand-in (last shooter) IS the fouler - a guy
+			// can't foul himself, and two actors sharing a pid would collide as
+			// duplicate React keys and leave a face stuck on the court.
+			if (typeof victimPid === "number" && victimPid !== event.pid) {
 				actors.push({
 					pid: victimPid,
 					name: playerNameByPid(victimPid),
