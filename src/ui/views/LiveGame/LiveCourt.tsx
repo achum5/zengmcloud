@@ -83,9 +83,17 @@ export type CourtScene = {
 	ballFrom?: { x: number; y: number };
 	ballTo?: { x: number; y: number };
 	rimX?: number;
-	// An assisted make: the ball first zips from the assister here to the
-	// shooter (ballFrom), THEN takes its shot flight to the rim.
+	// A pass that PRECEDES the play: on an attempt, the ball starts in the
+	// passer's hands here and is zipped to the shooter (the "main" actor) just as
+	// he arrives at his spot - so the assist reads BEFORE the shot, the way it
+	// actually happens. (On a shot-result scene it instead prefixes the flight.)
 	passFrom?: { x: number; y: number };
+	// The ball-handler's previous spot, so on an attempt the ball comes up the
+	// floor WITH him from there instead of beating him to the spot.
+	shooterFrom?: { x: number; y: number };
+	// How long (ms) the ball-handler takes to glide to his spot, so the ball's
+	// arrival (a dribble up, or the catch off a pass) lands exactly when he does.
+	arriveMs?: number;
 };
 
 const degToRad = (deg: number) => (deg * Math.PI) / 180;
@@ -871,33 +879,73 @@ const LiveCourt = ({
 			};
 		}
 
-		// A shot being lined up: the ball ARRIVES to the shooter from the
-		// backcourt with a couple of dribble hops, then stays live in his hands
-		// until the result scene takes over the flight.
+		// A shot being lined up. The ball reaches the shooter exactly as HE does
+		// (arriveMs = his glide), so it never beats him to the spot, then stays
+		// live in his hands until the result scene takes over the flight.
 		if (scene.kind === "attempt" && main) {
 			if (ring) {
 				ring.style.opacity = "0";
 			}
 			const to = { x: main.x, y: main.y };
-			// Backcourt is away from the attacked rim (away attacks left → its
-			// backcourt is to the right, and vice versa), pulled toward the middle
-			// like a point guard bringing it up.
+			const arriveMs =
+				scene.arriveMs && scene.arriveMs > 0 ? scene.arriveMs : 430;
+			ball.style.opacity = "1";
+			const start = performance.now();
+			const cleanupAttempt = () => {
+				if (rafRef.current !== undefined) {
+					cancelAnimationFrame(rafRef.current);
+				}
+			};
+
+			if (scene.passFrom) {
+				// A pass sets up the shot: the passer holds it, then zips it to the
+				// shooter just as he arrives, so the catch and his arrival line up.
+				const from = scene.passFrom;
+				const passMs = Math.min(PASS_MS, arriveMs);
+				const holdMs = Math.max(0, arriveMs - passMs);
+				ball.setAttribute("cx", String(from.x));
+				ball.setAttribute("cy", String(from.y));
+				const step = (now: number) => {
+					const e = now - start;
+					if (e < holdMs) {
+						ball.setAttribute(
+							"r",
+							String(0.78 + 0.07 * Math.abs(Math.sin(e / 130))),
+						);
+						rafRef.current = requestAnimationFrame(step);
+						return;
+					}
+					const p = Math.min(1, (e - holdMs) / passMs);
+					ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
+					ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
+					// Flat and quick - a pass, not a lob.
+					ball.setAttribute("r", String(0.72 + 0.16 * Math.sin(Math.PI * p)));
+					if (p < 1) {
+						rafRef.current = requestAnimationFrame(step);
+					} else {
+						restDribble(to.x, to.y);
+					}
+				};
+				rafRef.current = requestAnimationFrame(step);
+				return cleanupAttempt;
+			}
+
+			// No pass: the ball comes up the floor WITH the handler from his last
+			// spot (falling back to the backcourt if we don't know it), arriving as
+			// he does.
 			const dir = scene.t === 0 ? 1 : -1;
-			const from = {
+			const from = scene.shooterFrom ?? {
 				x: Math.min(90, Math.max(4, to.x + dir * 13)),
 				y: to.y + (25 - to.y) * 0.4,
 			};
-			ball.style.opacity = "1";
-			const start = performance.now();
-			const ARRIVE_MS = 430;
 			const step = (now: number) => {
-				const p = Math.min(1, (now - start) / ARRIVE_MS);
+				const p = Math.min(1, (now - start) / arriveMs);
 				ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
 				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
-				// Two dribble hops on the way in.
+				// Dribble hops on the way up.
 				ball.setAttribute(
 					"r",
-					String(0.76 + 0.3 * Math.abs(Math.sin(p * Math.PI * 2))),
+					String(0.76 + 0.26 * Math.abs(Math.sin(p * Math.PI * 3))),
 				);
 				if (p < 1) {
 					rafRef.current = requestAnimationFrame(step);
@@ -906,11 +954,7 @@ const LiveCourt = ({
 				}
 			};
 			rafRef.current = requestAnimationFrame(step);
-			return () => {
-				if (rafRef.current !== undefined) {
-					cancelAnimationFrame(rafRef.current);
-				}
-			};
+			return cleanupAttempt;
 		}
 
 		// Non-shot scenes get punchy, readable feedback (the small pulse-only

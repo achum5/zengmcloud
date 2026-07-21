@@ -335,6 +335,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// teleport between the two).
 	const courtScene = useRef<CourtScene | undefined>(undefined);
 	const courtSceneCount = useRef(0);
+	// Where every player last stood on the floor, so the ball can come up WITH
+	// the ball-handler from his previous spot instead of beating him to the shot.
+	const lastActorPos = useRef<Map<number, { x: number; y: number }>>(new Map());
 	const lastFga = useRef<
 		| {
 				pid: number;
@@ -454,6 +457,68 @@ export const LiveGame = (props: View<"liveGame">) => {
 			}
 		}
 		courtScene.current = { key: sceneKey, ...scene, actors, passFrom };
+		// Remember where everyone ended up, so the next scene's ball can travel
+		// with the handler from his real previous spot.
+		for (const a of actors) {
+			lastActorPos.current.set(a.pid, { x: a.x, y: a.y });
+		}
+	};
+
+	// The ball-handler's glide (mirrors LiveCourt's useGlideStyle) turned into ms,
+	// so the ball's arrival can be paced to land exactly when he does.
+	const glideMs = (
+		from: { x: number; y: number } | undefined,
+		to: { x: number; y: number },
+	): number => {
+		const d = from ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
+		return Math.min(1.35, 0.5 + d * 0.012) * 1000;
+	};
+
+	// Look ahead (without consuming) to this attempt's result, so we can decide -
+	// BEFORE the shot - whether to show a pass and who threw it. Returns the shot
+	// outcome and the real assister (if any).
+	const peekShotResult = ():
+		| { made: boolean; blocked: boolean; pidAst?: number }
+		| undefined => {
+		const evs = events.current;
+		if (!evs) {
+			return undefined;
+		}
+		for (let i = 0; i < evs.length && i < 10; i++) {
+			const e = evs[i];
+			if (!e || typeof e.type !== "string") {
+				continue;
+			}
+			const a = courtActionFromEventType(e.type);
+			if (!a) {
+				continue;
+			}
+			if (a.kind === "attempt") {
+				return undefined; // hit the next shot before any result - give up
+			}
+			return {
+				made: !!a.made,
+				blocked: !!a.blocked,
+				pidAst: typeof e.pidAst === "number" ? e.pidAst : undefined,
+			};
+		}
+		return undefined;
+	};
+
+	// A plausible teammate to credit a DECOY pass to (an on-floor teammate who
+	// isn't the shooter). Used so a pass doesn't only ever precede makes.
+	const pickPasser = (
+		teamDisplayT: 0 | 1,
+		excludePid: number,
+	): number | undefined => {
+		const players = boxScore.current.teams?.[teamDisplayT]?.players ?? [];
+		const cands = players.filter(
+			(p: any) => p.inGame && typeof p.pid === "number" && p.pid !== excludePid,
+		);
+		if (cands.length === 0) {
+			return undefined;
+		}
+		return cands[Math.floor(Math.random() * cands.length)].pid;
 	};
 
 	// Turn the play-by-play event behind the current line into a court scene:
@@ -550,6 +615,31 @@ export const LiveGame = (props: View<"liveGame">) => {
 					t: displayT,
 					spot,
 				};
+
+				// Decide - BEFORE the shot - whether a pass sets it up, and who threw
+				// it. A real assist is credited to its actual passer and always shown
+				// (so the assist reads the way it happens: passer first, then the
+				// shooter shoots). On a miss/block we sometimes show a DECOY pass from
+				// a teammate, so seeing a pass never gives away that a shot is going
+				// in. Free throws and heaves are never set up by a pass.
+				const outcome = peekShotResult();
+				let passerPid: number | undefined;
+				if (outcome?.made && typeof outcome.pidAst === "number") {
+					passerPid = outcome.pidAst;
+				} else if (
+					outcome &&
+					!outcome.made &&
+					action.zone !== "ft" &&
+					Math.random() < 0.5
+				) {
+					passerPid = pickPasser(displayT, event.pid);
+				}
+
+				// The ball comes up WITH the handler from his last spot, arriving as
+				// he does (arriveMs = his glide) so it never beats him to the spot.
+				const shooterFrom = lastActorPos.current.get(event.pid);
+				const arriveMs = glideMs(shooterFrom, spot);
+
 				// Just the shooter on an attempt - a defender only appears if the
 				// shot is actually blocked (handled on the result below) - but the
 				// nearest background defender steps up to contest.
@@ -567,8 +657,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 							},
 						],
 						text,
+						shooterFrom,
+						arriveMs,
 					},
-					{ contestSpot: spot },
+					{ contestSpot: spot, assistPid: passerPid },
 				);
 				return;
 			}
@@ -632,9 +724,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 					rimX: rimXFor(shooterT),
 				},
 				{
-					// Only made FGs carry pidAst; free throws never do.
-					assistPid:
-						typeof event.pidAst === "number" ? event.pidAst : undefined,
+					// The assist is shown as a pass on the ATTEMPT (before the shot),
+					// not here - so on the result the shooter simply lets it fly.
 					// Nobody contests a free throw, and on a block the blocker IS the
 					// contest.
 					contestSpot: isFt || action.blocked ? undefined : spot,
