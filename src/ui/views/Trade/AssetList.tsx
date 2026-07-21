@@ -13,7 +13,7 @@ import { range } from "../../../common/utils.ts";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 
 type HandleBulk = (
-	type: "check" | "clear",
+	type: "check" | "clear" | "checkUntouchable",
 	userOrOther: "other" | "user",
 	playerOrPick: "pick" | "player",
 	draftRoundOnly?: number,
@@ -137,6 +137,7 @@ const AssetList = ({
 	challengeNoRatings,
 	handleBulk,
 	handleToggle,
+	hasUntouchables,
 	numDraftRounds,
 	picks,
 	roster,
@@ -146,6 +147,7 @@ const AssetList = ({
 	challengeNoRatings: boolean;
 	handleBulk: HandleBulk;
 	handleToggle: HandleToggle;
+	hasUntouchables?: boolean;
 	numDraftRounds: number;
 	picks: Picks;
 	roster: Roster;
@@ -208,6 +210,15 @@ const AssetList = ({
 						>
 							Make all untradeable
 						</Dropdown.Item>
+						{userOrOther === "user" && hasUntouchables ? (
+							<Dropdown.Item
+								onClick={() => {
+									handleBulk("checkUntouchable", userOrOther, "player");
+								}}
+							>
+								Make untouchables untradeable
+							</Dropdown.Item>
+						) : null}
 						<Dropdown.Item
 							onClick={() => {
 								handleBulk("clear", userOrOther, "player");

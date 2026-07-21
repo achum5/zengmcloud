@@ -81,7 +81,7 @@ const Trade = (props: View<"trade">) => {
 	};
 
 	const handleBulk = async (
-		type: "check" | "clear",
+		type: "check" | "clear" | "checkUntouchable",
 		userOrOther: "other" | "user",
 		playerOrPick: "pick" | "player",
 		draftRoundOnly?: number,
@@ -101,6 +101,12 @@ const Trade = (props: View<"trade">) => {
 
 		if (type === "clear") {
 			ids[key] = [];
+		} else if (type === "checkUntouchable") {
+			// Add the user's untouchable players to the excluded set (union - keep
+			// any players already excluded).
+			ids[key] = Array.from(
+				new Set([...ids[key], ...props.userUntouchablePids]),
+			);
 		} else if (playerOrPick === "player") {
 			const players = userOrOther === "other" ? otherRoster : userRoster;
 			ids[key] = players.map((p) => p.pid);
@@ -438,6 +444,7 @@ const Trade = (props: View<"trade">) => {
 						challengeNoRatings={challengeNoRatings}
 						handleBulk={handleBulk}
 						handleToggle={handleChangeAsset}
+						hasUntouchables={props.userUntouchablePids.length > 0}
 						numDraftRounds={numDraftRounds}
 						picks={userPicks}
 						roster={userRoster}

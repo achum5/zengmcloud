@@ -92,6 +92,13 @@ const updateTrade = async () => {
 		"playersByTid",
 		g.get("userTid"),
 	);
+
+	// The user's "untouchable" players (protected on the roster), so the trade
+	// screen can bulk-exclude them from an offer in one click.
+	const userUntouchablePids = userRosterAll
+		.filter((p) => p.untouchableTid === g.get("userTid"))
+		.map((p) => p.pid);
+
 	const userPicks = await idb.getCopies.draftPicks(
 		{
 			tid: g.get("userTid"),
@@ -232,6 +239,7 @@ const updateTrade = async () => {
 		userPids: teams[0].pids,
 		userPidsExcluded: teams[0].pidsExcluded,
 		userRoster,
+		userUntouchablePids,
 		otherDpids: teams[1].dpids,
 		otherDpidsExcluded: teams[1].dpidsExcluded,
 		otherPicks: otherPicks2,
