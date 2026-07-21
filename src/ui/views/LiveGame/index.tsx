@@ -45,6 +45,7 @@ import LiveCourt, {
 	synthPlaySpot,
 	synthReboundSpot,
 	synthShotSpot,
+	glideSeconds,
 	type CourtActor,
 	type CourtScene,
 	type CourtZone,
@@ -464,14 +465,15 @@ export const LiveGame = (props: View<"liveGame">) => {
 		}
 	};
 
-	// The ball-handler's glide (mirrors LiveCourt's useGlideStyle) turned into ms,
-	// so the ball's arrival can be paced to land exactly when he does.
+	// The ball-handler's glide turned into ms (same speed-capped curve the players
+	// use), so the ball's arrival lands exactly when he does - at whatever
+	// playback speed the scene interval is running.
 	const glideMs = (
 		from: { x: number; y: number } | undefined,
 		to: { x: number; y: number },
 	): number => {
 		const d = from ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
-		return Math.min(1.35, 0.5 + d * 0.012) * 1000;
+		return glideSeconds(d, speedToMs(speedRef.current)) * 1000;
 	};
 
 	// Look ahead (without consuming) to this attempt's result, so we can decide -
@@ -1870,6 +1872,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 									]}
 									finals={!!boxScore.current.finals}
 									season={boxScore.current.season}
+									sceneMs={speedToMs(speedRef.current)}
 								/>
 							) : null}
 							<BoxScoreWrapper

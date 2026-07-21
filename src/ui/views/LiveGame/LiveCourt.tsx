@@ -460,13 +460,29 @@ const FACE_ANIM_CSS = `
 	100% { transform: ${REST} rotate(0deg) scale(1); }
 }`;
 
+// Glide duration (seconds) for a body moving `dist` feet, CAPPED so it always
+// finishes within the current scene interval `sceneMs`. Without the cap a
+// cross-court possession swing (the whole team running to the other end) took
+// longer than a scene lasts, so players were still sprinting down as the next
+// play - the shot - fired, which read as bodies popping in late (or the ball
+// beating them there). Capping to a bit under the interval makes the team land
+// before the next play, at any playback speed. Exported so the ball can be
+// paced to the exact same arrival.
+export const glideSeconds = (
+	dist: number,
+	sceneMs: number | undefined,
+): number => {
+	const cap = Math.min(0.9, ((sceneMs ?? 1100) / 1000) * 0.82);
+	return Math.min(cap, 0.3 + dist * 0.006);
+};
+
 // The compositor-friendly placement style for a body on the floor, shared by
 // faces and chips. Moved with a translate3d transform (in measured px) rather
 // than left/top - animating left/top forces layout+paint every frame for every
 // body, which is what made the court chug on mobile. The transform TRANSITIONS,
-// so a change of court point reads as a GLIDE: its duration scales with how far
-// the body is moving (a cross-court end swap RUNS the floor, ~3x a small cut,
-// instead of a same-speed teleport), and background bodies start on small
+// so a change of court point reads as a GLIDE whose duration scales with the
+// distance moved (a cross-court end swap RUNS the floor, a small cut barely
+// moves), capped to the scene interval; background bodies start on small
 // deterministic staggered delays so a team flows down-court instead of shifting
 // as one rigid block. Previous position is banked in an effect (post-commit),
 // so a double render can't zero out the measured distance. Falls back to
@@ -475,6 +491,7 @@ const useGlideStyle = (
 	actor: CourtActor,
 	size: { w: number; h: number } | undefined,
 	background: boolean,
+	sceneMs: number | undefined,
 ): CSSProperties => {
 	const fx = (actor.x + RAIL_W) / (COURT_W + 2 * RAIL_W);
 	const fy = (actor.y + APRON) / (COURT_H + 2 * APRON);
@@ -484,9 +501,9 @@ const useGlideStyle = (
 	useEffect(() => {
 		prevPos.current = { x: actor.x, y: actor.y };
 	}, [actor.x, actor.y]);
-	const glideDur = Math.min(1.35, 0.5 + moveDist * 0.012);
+	const glideDur = glideSeconds(moveDist, sceneMs);
 	const glideDelay = background
-		? (((actor.pid * 2654435761) >>> 0) % 5) * 0.05
+		? (((actor.pid * 2654435761) >>> 0) % 5) * 0.03
 		: 0;
 	return size
 		? {
@@ -525,6 +542,7 @@ const BodyOnCourt = ({
 	animKey,
 	nameAbove,
 	size,
+	sceneMs,
 }: {
 	actor: CourtActor;
 	season: number | undefined;
@@ -540,9 +558,11 @@ const BodyOnCourt = ({
 	nameAbove?: boolean;
 	// Measured px size of the court container (see LiveCourt's ResizeObserver).
 	size: { w: number; h: number } | undefined;
+	// Current scene interval (ms), so the glide never outlasts a play.
+	sceneMs: number | undefined;
 }) => {
 	const faceData = usePlayerFace(actor.pid, season, lid);
-	const glide = useGlideStyle(actor, size, background);
+	const glide = useGlideStyle(actor, size, background, sceneMs);
 	// Size this body by the player's real build (once his measurements load).
 	const { size: sizeScale, girth } = bodyScale(faceData?.hgt, faceData?.weight);
 
@@ -733,12 +753,16 @@ const LiveCourt = ({
 	teams,
 	finals,
 	season,
+	sceneMs,
 }: {
 	scene: CourtScene | undefined;
 	// Display order: [away (left rim), home (right rim)].
 	teams: [CourtTeam | undefined, CourtTeam | undefined];
 	finals: boolean;
 	season: number | undefined;
+	// How long each play stays on screen (playback speed), so a glide never
+	// outlasts the play it belongs to.
+	sceneMs: number | undefined;
 }) => {
 	const { lid } = useLocal(["lid"]);
 
@@ -1933,6 +1957,7 @@ const LiveCourt = ({
 								animKey={anim ? scene.key : undefined}
 								nameAbove={background ? undefined : nameAboveFor(actor)}
 								size={size}
+								sceneMs={sceneMs}
 							/>
 						);
 					})
