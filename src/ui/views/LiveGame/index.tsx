@@ -369,6 +369,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// Credit an assisted make: the assister is featured at his formation
 			// spot and the ball passes from him to the shooter before the shot.
 			assistPid?: number;
+			// A DECOY pass with no real assist: a random on-floor teammate is
+			// featured as the passer. Shown on some misses so a pass never reveals
+			// whether the shot is going in. Ignored if assistPid is set.
+			decoyAssist?: boolean;
 			// A live shot at this spot: the nearest defender steps up to contest.
 			contestSpot?: { x: number; y: number };
 		} = {},
@@ -417,6 +421,21 @@ export const LiveGame = (props: View<"liveGame">) => {
 					continue;
 				}
 				extras.push(entry);
+			}
+
+			// A decoy pass (no real assist): promote a random on-floor OFFENSE
+			// teammate to the passer, so a pass reads the same on a miss as it does
+			// on an assisted make and never gives the outcome away. Picked from the
+			// actual rendered lineup, so the passer's face always shows.
+			if (opts.decoyAssist && passFrom === undefined) {
+				const offCands = extras.filter(
+					(e) => e.role === "onCourt" && e.t === offenseT,
+				);
+				if (offCands.length > 0) {
+					const pick = offCands[Math.floor(Math.random() * offCands.length)]!;
+					pick.role = "assist";
+					passFrom = { x: pick.x, y: pick.y };
+				}
 			}
 
 			// The nearest defender slides over to contest a live shot (skipped for
@@ -505,22 +524,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 			};
 		}
 		return undefined;
-	};
-
-	// A plausible teammate to credit a DECOY pass to (an on-floor teammate who
-	// isn't the shooter). Used so a pass doesn't only ever precede makes.
-	const pickPasser = (
-		teamDisplayT: 0 | 1,
-		excludePid: number,
-	): number | undefined => {
-		const players = boxScore.current.teams?.[teamDisplayT]?.players ?? [];
-		const cands = players.filter(
-			(p: any) => p.inGame && typeof p.pid === "number" && p.pid !== excludePid,
-		);
-		if (cands.length === 0) {
-			return undefined;
-		}
-		return cands[Math.floor(Math.random() * cands.length)].pid;
 	};
 
 	// Turn the play-by-play event behind the current line into a court scene:
@@ -618,23 +621,20 @@ export const LiveGame = (props: View<"liveGame">) => {
 					spot,
 				};
 
-				// Decide - BEFORE the shot - whether a pass sets it up, and who threw
-				// it. A real assist is credited to its actual passer and always shown
-				// (so the assist reads the way it happens: passer first, then the
-				// shooter shoots). On a miss/block we sometimes show a DECOY pass from
-				// a teammate, so seeing a pass never gives away that a shot is going
-				// in. Free throws and heaves are never set up by a pass.
+				// Decide - BEFORE the shot - whether a pass sets it up. A real assist
+				// is credited to its actual passer and always shown (so the assist
+				// reads the way it happens: passer first, then the shooter shoots). On
+				// a miss/block we show a DECOY pass at about the same rate assists
+				// happen on makes, so a pass on the floor is just as likely before a
+				// miss as before a make and never gives the outcome away. Free throws
+				// and heaves are never set up by a pass.
 				const outcome = peekShotResult();
-				let passerPid: number | undefined;
+				let realAssist: number | undefined;
+				let decoyAssist = false;
 				if (outcome?.made && typeof outcome.pidAst === "number") {
-					passerPid = outcome.pidAst;
-				} else if (
-					outcome &&
-					!outcome.made &&
-					action.zone !== "ft" &&
-					Math.random() < 0.5
-				) {
-					passerPid = pickPasser(displayT, event.pid);
+					realAssist = outcome.pidAst;
+				} else if (outcome && !outcome.made && action.zone !== "ft") {
+					decoyAssist = Math.random() < 0.6;
 				}
 
 				// The ball comes up WITH the handler from his last spot, arriving as
@@ -662,7 +662,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 						shooterFrom,
 						arriveMs,
 					},
-					{ contestSpot: spot, assistPid: passerPid },
+					{ contestSpot: spot, assistPid: realAssist, decoyAssist },
 				);
 				return;
 			}
