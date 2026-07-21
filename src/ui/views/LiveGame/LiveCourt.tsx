@@ -395,8 +395,8 @@ const NAME_FONT = "clamp(8px, 1.4cqw, 13px)";
 // A background teammate reads as a small team-colored jersey CHIP (a numbered
 // disc) rather than a full face: clean, unmistakably "the other four guys", and
 // cheap to glide (no facesjs SVG per body). Only the play's actors get faces.
-const CHIP_SIZE = "clamp(15px, 2.6cqw, 32px)";
-const CHIP_FONT = "clamp(8px, 1.4cqw, 15px)";
+const CHIP_SIZE = "clamp(13px, 2.2cqw, 28px)";
+const CHIP_FONT = "clamp(8px, 1.3cqw, 14px)";
 
 // Turn a player's real build into on-court body scale, so a 7-footer visibly
 // TOWERS over a 6-foot guard and a bruiser reads BROADER than a wiry scorer.
@@ -572,7 +572,7 @@ const BodyOnCourt = ({
 							height: "100%",
 							borderRadius: "50%",
 							background: color,
-							border: "1.5px solid rgba(255,255,255,0.85)",
+							border: "1px solid rgba(255,255,255,0.7)",
 							boxShadow: "0 2px 3px rgba(0,0,0,0.4)",
 							color: "#fff",
 							display: "flex",
@@ -584,7 +584,7 @@ const BodyOnCourt = ({
 							textShadow: "0 1px 1px rgba(0,0,0,0.45)",
 						}}
 					>
-						{faceData?.jersey ?? ""}
+						{faceData?.jerseyNumber ?? ""}
 					</div>
 				</div>
 			</div>
@@ -622,6 +622,14 @@ const BodyOnCourt = ({
 		</div>
 	);
 
+	// A real player PHOTO is drawn as a clean circular avatar (team-colored ring,
+	// head cropped to fill) instead of a raw rectangular headshot floating on the
+	// hardwood - the rectangles were the worst of the clutter. A generated
+	// facesjs face already reads as a tidy head-and-jersey portrait, so it keeps
+	// that shape. Both are sized by the player's real build.
+	const hasPhoto = !!faceData?.imgURL;
+	const diameter = `calc(${FACE_H} * ${sizeScale})`;
+
 	// The OUTER div only places the point on the court (compositor-friendly
 	// translate3d, transitioned for the glide between plays). The INNER div
 	// carries the centering REST transform and the one-shot shake/swipe
@@ -639,16 +647,26 @@ const BodyOnCourt = ({
 		>
 			<div
 				key={anim ? `anim-${animKey}` : "static"}
-				style={{
-					position: "relative",
-					// Sized by the player's real build: height grows the whole body,
-					// weight adds a little width-only girth.
-					height: `calc(${FACE_H} * ${sizeScale})`,
-					width: `calc(${FACE_W} * ${sizeScale} * ${girth})`,
-					transform: REST,
-					animation,
-					filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
-				}}
+				style={
+					hasPhoto
+						? {
+								position: "relative",
+								width: diameter,
+								height: diameter,
+								transform: REST,
+								animation,
+							}
+						: {
+								position: "relative",
+								// Sized by the player's real build: height grows the whole
+								// body, weight adds a little width-only girth.
+								height: `calc(${FACE_H} * ${sizeScale})`,
+								width: `calc(${FACE_W} * ${sizeScale} * ${girth})`,
+								transform: REST,
+								animation,
+								filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
+							}
+				}
 			>
 				{/* Ground shadow at the body's feet, so he stands ON the floor. */}
 				<div
@@ -663,10 +681,32 @@ const BodyOnCourt = ({
 						pointerEvents: "none",
 					}}
 				/>
-				{faceData && (faceData.face || faceData.imgURL) ? (
+				{hasPhoto ? (
+					<div
+						style={{
+							position: "absolute",
+							inset: 0,
+							borderRadius: "50%",
+							overflow: "hidden",
+							border: `2px solid ${color}`,
+							background: "#20242b",
+							boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
+						}}
+					>
+						<img
+							alt=""
+							src={faceData?.imgURL}
+							style={{
+								width: "100%",
+								height: "100%",
+								objectFit: "cover",
+								objectPosition: "center 12%",
+							}}
+						/>
+					</div>
+				) : faceData?.face ? (
 					<PlayerPicture
 						face={faceData.face}
-						imgURL={faceData.imgURL}
 						colors={faceData.colors}
 						jersey={faceData.jersey}
 					/>

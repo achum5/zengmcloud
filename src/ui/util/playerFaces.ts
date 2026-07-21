@@ -16,7 +16,8 @@ export type PlayerFace = {
 	face?: FaceConfig;
 	imgURL?: string;
 	colors?: [string, string, string];
-	jersey?: string;
+	jersey?: string; // uniform STYLE id (for facesjs), not the number
+	jerseyNumber?: string; // the player's actual number, e.g. "3", "44"
 	// Real height (inches) and weight (lbs), for sizing a player by his build.
 	hgt?: number;
 	weight?: number;

@@ -1956,7 +1956,8 @@ const getPlayerFaces = async (
 			face?: FaceConfig;
 			imgURL?: string;
 			colors?: [string, string, string];
-			jersey?: string;
+			jersey?: string; // uniform STYLE id (for facesjs), not the number
+			jerseyNumber?: string; // the player's actual number, e.g. "3", "44"
 			// Real height (inches) and weight (lbs), so a viewer can size a player
 			// by his actual build - e.g. the live-game court scales each body.
 			hgt?: number;
@@ -1971,6 +1972,7 @@ const getPlayerFaces = async (
 			imgURL?: string;
 			colors?: [string, string, string];
 			jersey?: string;
+			jerseyNumber?: string;
 			hgt?: number;
 			weight?: number;
 		}
@@ -2042,9 +2044,12 @@ const getPlayerFaces = async (
 		}
 
 		// Which team's uniform to draw: the team the player was on that season, else
-		// their current team, else (retired) their last real team.
+		// their current team, else (retired) their last real team. The jersey
+		// NUMBER is season-accurate off the stats row where possible (a player can
+		// change numbers), falling back to his current number.
 		let jerseyTid: number | undefined;
 		let jerseySeason: number | undefined;
+		let jerseyNumber: string | undefined;
 		if (season !== undefined) {
 			const row = p.stats
 				.filter((ps) => ps.season === season && ps.tid >= 0)
@@ -2052,6 +2057,7 @@ const getPlayerFaces = async (
 			if (row) {
 				jerseyTid = row.tid;
 				jerseySeason = season;
+				jerseyNumber = row.jerseyNumber;
 			}
 		}
 		if (jerseyTid === undefined) {
@@ -2063,8 +2069,12 @@ const getPlayerFaces = async (
 				if (row) {
 					jerseyTid = row.tid;
 					jerseySeason = row.season;
+					jerseyNumber = row.jerseyNumber;
 				}
 			}
+		}
+		if (jerseyNumber === undefined) {
+			jerseyNumber = p.jerseyNumber;
 		}
 
 		let colors: [string, string, string] | undefined;
@@ -2086,6 +2096,7 @@ const getPlayerFaces = async (
 			imgURL: p.imgURL === "" ? undefined : p.imgURL,
 			colors,
 			jersey,
+			jerseyNumber,
 			hgt: p.hgt,
 			weight: p.weight,
 		};
