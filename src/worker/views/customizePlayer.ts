@@ -13,6 +13,7 @@ import { upgradeFace } from "../util/face.ts";
 import {
 	getPlayerImageMoments,
 	customImagePromptSeed,
+	mediaDayHeadshotMoment,
 } from "../util/getPlayerImageMoments.ts";
 import {
 	getPlayerVideoMoments,
@@ -167,7 +168,13 @@ const updateCustomizePlayer = async (
 				.filter((event) => event.type === "playerFeat")
 				.map((event) => ({ season: event.season, text: event.text }));
 		}
-		const imageMoments = await getPlayerImageMoments(p, initialAutoPos, feats);
+		// The media-day headshot preset leads the list - it's the one that
+		// produces an actual player photo (transparent background) rather than a
+		// career-moment cartoon.
+		const imageMoments = [
+			await mediaDayHeadshotMoment(p, initialAutoPos, g.get("season")),
+			...(await getPlayerImageMoments(p, initialAutoPos, feats)),
+		];
 		const currentTeamText = teams.find((t) => t.tid === p.tid)?.text;
 		const customImageSeed = customImagePromptSeed(
 			p,
