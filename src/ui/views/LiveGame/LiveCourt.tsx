@@ -239,12 +239,14 @@ export type LineupPlayer = {
 	inGame?: boolean;
 };
 
-// Small deterministic per-scene offset so players shift/cut a little every
-// play instead of standing statue-still - the faces' transform transition
-// turns each shift into a glide. Seeded by (sceneKey, pid) so both the live
-// render and any re-render of the same scene agree.
-const drift = (sceneKey: number, pid: number, salt: number): number => {
-	const h = Math.sin(sceneKey * 374761 + pid * 668265 + salt * 97) * 43758.5453;
+// A small deterministic offset off a player's formation slot, so the five don't
+// stand in a rigid geometric lattice. Seeded by (pid) ALONE - NOT the scene -
+// so a player keeps the SAME spot every play and simply holds his ground
+// between possessions instead of being reshuffled to a new random spot each
+// time (which read as everyone teleporting around). He only moves when the ball
+// changes ends or when he's the one featured in the play.
+const drift = (pid: number, salt: number): number => {
+	const h = Math.sin(pid * 668265 + salt * 97) * 43758.5453;
 	return (h - Math.floor(h) - 0.5) * 2.8; // ±1.4 ft
 };
 
@@ -256,11 +258,9 @@ const drift = (sceneKey: number, pid: number, salt: number): number => {
 export const buildLineupActors = ({
 	teams,
 	offenseT,
-	sceneKey,
 }: {
 	teams: [LineupPlayer[], LineupPlayer[]];
 	offenseT: 0 | 1;
-	sceneKey: number;
 }): CourtActor[] => {
 	const out: CourtActor[] = [];
 	for (const t of [0, 1] as const) {
@@ -279,8 +279,8 @@ export const buildLineupActors = ({
 			out.push({
 				pid: p.pid,
 				name: p.name,
-				x: Math.min(90, Math.max(4, x + drift(sceneKey, p.pid, 1))),
-				y: Math.min(46, Math.max(4, y + drift(sceneKey, p.pid, 2))),
+				x: Math.min(90, Math.max(4, x + drift(p.pid, 1))),
+				y: Math.min(46, Math.max(4, y + drift(p.pid, 2))),
 				role: "onCourt",
 				t,
 			});
@@ -476,7 +476,7 @@ const useGlideStyle = (
 	useEffect(() => {
 		prevPos.current = { x: actor.x, y: actor.y };
 	}, [actor.x, actor.y]);
-	const glideDur = Math.min(1.25, 0.4 + moveDist * 0.011);
+	const glideDur = Math.min(1.35, 0.5 + moveDist * 0.012);
 	const glideDelay = background
 		? (((actor.pid * 2654435761) >>> 0) % 5) * 0.05
 		: 0;

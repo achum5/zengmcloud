@@ -397,7 +397,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 			const lineup = buildLineupActors({
 				teams: [teams[0]?.players ?? [], teams[1]?.players ?? []],
 				offenseT,
-				sceneKey,
 			});
 
 			const playPids = new Set(playActors.map((a) => a.pid));
