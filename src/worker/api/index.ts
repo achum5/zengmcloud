@@ -697,6 +697,21 @@ const createLeague = async (
 	// kept, so reopening it reconnects.
 	await teardownSharedLeague({ clearPersisted: false });
 
+	// Close the currently open league (if any) BEFORE streaming the new one in.
+	// On a SharedWorker (desktop keeps ONE worker across every tab and league),
+	// leaving it open means its cache auto-flush, background view loads, and -
+	// when importing over the same league slot - the mid-import remove() all
+	// keep transacting on a handle that then gets closed underneath them, which
+	// surfaced as repeated "Failed to execute 'transaction' on 'IDBDatabase':
+	// The database connection is closing" failures that killed the import. The
+	// import ends by navigating to the new league anyway, so there is nothing
+	// the old league still needs to do; close it cleanly (flushes dirty cache)
+	// while it is still coherent.
+	if (g.get("lid") !== undefined) {
+		await league.close(true);
+		await toUI("resetLeague", []);
+	}
+
 	let actualTid = tid;
 	let stream: ReadableStream | undefined;
 

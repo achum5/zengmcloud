@@ -114,6 +114,22 @@ const addLeagueMeta = async ({
 		imgURL: t.imgURLSmall ?? t.imgURL,
 	};
 
+	// A PRIOR failed import can leave idb.league as a still-open handle to this
+	// same lid (the worker survives the failure on desktop's SharedWorker, and
+	// nothing else ever closes it). remove() below only closes the handle when
+	// the league is properly OPEN (g.lid matches), so a leaked handle would
+	// block deleteDB forever ("Please close any other open tabs" with no other
+	// tab open) or die mid-close. Close any dangling handle explicitly first.
+	if (idb.league !== undefined && g.get("lid") === undefined) {
+		try {
+			idb.league.close();
+		} catch {
+			// Already closed/terminated - all we wanted.
+		}
+		// @ts-expect-error
+		idb.league = undefined;
+	}
+
 	// In case we are importing over an old league
 	const oldLeague = await idb.meta.get("leagues", lid);
 	await remove(lid);
