@@ -783,7 +783,15 @@ const signingBody = (
 		1,
 		(p.contract?.exp ?? g.get("season")) - g.get("season") + 1,
 	);
-	const totalM = Math.round(((p.contract?.amount ?? 0) * years) / 1000);
+	// Total contract value, formatted so a sub-$1M deal reads as "$350k" instead
+	// of rounding down to "$0M". contract.amount is in thousands, so dividing by
+	// 1000 puts it in the millions that formatCurrencyBase expects.
+	const totalValueM = ((p.contract?.amount ?? 0) * years) / 1000;
+	const totalStr = helpers.formatCurrencyBase(
+		g.get("currencyFormat"),
+		totalValueM,
+		"M",
+	);
 	const ratingStr =
 		typeof ovr === "number" && typeof pot === "number"
 			? `${ovr}/${pot}`
@@ -792,7 +800,7 @@ const signingBody = (
 				: "";
 	const parenParts = [ratingStr, pos].filter(Boolean).join(", ");
 	const who = parenParts ? `${playerName(p)} (${parenParts})` : playerName(p);
-	return `The ${teamLabel(teamById, p.tid)} ${verb} ${who} to a ${years}-year, $${totalM}M contract.`;
+	return `The ${teamLabel(teamById, p.tid)} ${verb} ${who} to a ${years}-year, ${totalStr} contract.`;
 };
 
 // A free-agent signing blurb (event type "freeAgent"), or undefined if this
@@ -1087,9 +1095,10 @@ const describeLottery = (
 	return [
 		{
 			title: `${season} draft lottery results`,
-			body: [`The ${teamLabel(teamById, winner.tid)} won the #1 pick!`, ...lines].join(
-				"\n",
-			),
+			body: [
+				`The ${teamLabel(teamById, winner.tid)} won the #1 pick!`,
+				...lines,
+			].join("\n"),
 			targetTids: null,
 			path: "draft_lottery",
 		},

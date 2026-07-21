@@ -253,12 +253,24 @@ describe("buildNotifications", () => {
 		assert.ok(allStar, JSON.stringify(notifs));
 		assert.strictEqual(allStar!.targetTids, null);
 		// Winner first.
-		assert.ok(allStar!.body.includes("Team Curry 155, Team LeBron 148"), allStar!.body);
+		assert.ok(
+			allStar!.body.includes("Team Curry 155, Team LeBron 148"),
+			allStar!.body,
+		);
 		assert.ok(allStar!.body.includes("MVP: Star Guy"), allStar!.body);
-		assert.ok(allStar!.body.includes("Dunk contest: High Flyer"), allStar!.body);
-		assert.ok(allStar!.body.includes("3-point contest: Sharp Shooter"), allStar!.body);
+		assert.ok(
+			allStar!.body.includes("Dunk contest: High Flyer"),
+			allStar!.body,
+		);
+		assert.ok(
+			allStar!.body.includes("3-point contest: Sharp Shooter"),
+			allStar!.body,
+		);
 		// No per-team "bye day" notice during the All-Star break.
-		assert.ok(!notifs.some((n) => n.title.startsWith("Bye day")), JSON.stringify(notifs));
+		assert.ok(
+			!notifs.some((n) => n.title.startsWith("Bye day")),
+			JSON.stringify(notifs),
+		);
 	});
 
 	test("in the playoffs, series scores go to the WHOLE room (eliminated teams too)", async () => {
@@ -586,7 +598,10 @@ describe("buildNotifications", () => {
 					gameWithBoxScore(),
 					tradeEvent(
 						[0, 1],
-						[[{ pid: 21, name: "Traded Guy" }], [{ pid: 22, name: "Other Guy" }]],
+						[
+							[{ pid: 21, name: "Traded Guy" }],
+							[{ pid: 22, name: "Other Guy" }],
+						],
 					),
 				],
 			},
@@ -745,7 +760,11 @@ describe("buildNotifications", () => {
 			g.setWithoutSavingToDB("userTids", [0, 1]);
 			const noPicks = await buildNotifications(
 				"main.setNote2",
-				{ changes: [{ store: "players", id: 5, type: "put", value: { pid: 5 } }] },
+				{
+					changes: [
+						{ store: "players", id: 5, type: "put", value: { pid: 5 } },
+					],
+				},
 				opts,
 			);
 			assert.ok(
@@ -814,6 +833,25 @@ describe("buildNotifications", () => {
 			notifs[0]!.body,
 		);
 		assert.ok(notifs[0]!.body.includes("3-year, $45M"), notifs[0]!.body);
+	});
+
+	test("a sub-$1M signing reads as $350k, not $0M", async () => {
+		// season 2026, exp 2026 => 1 year at 350/yr (thousands) => $350k total.
+		// This used to round to "$0M".
+		const notifs = await buildNotifications(
+			"main.signFreeAgent",
+			{
+				changes: [
+					freeAgentEvent,
+					namedPlayer(1, 0, "Min", "Deal", 80, {
+						contract: { amount: 350, exp: 2026 },
+					}),
+				],
+			},
+			opts,
+		);
+		assert.ok(notifs[0]!.body.includes("1-year, $350k"), notifs[0]!.body);
+		assert.ok(!notifs[0]!.body.includes("$0M"), notifs[0]!.body);
 	});
 
 	const reSignEvent = (pids: number[]): Changeset["changes"][number] => ({
@@ -1035,7 +1073,10 @@ describe("buildNotifications", () => {
 					namedPlayer(2, 0, "Role", "Player", 74),
 					tradeEvent(
 						[0, 1],
-						[[{ pid: 2, name: "Role Player" }], [{ pid: 1, name: "Star Wing" }]],
+						[
+							[{ pid: 2, name: "Role Player" }],
+							[{ pid: 1, name: "Star Wing" }],
+						],
 					),
 				],
 			},
