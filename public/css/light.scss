@@ -715,8 +715,10 @@ tr.table-warning:hover > td {
 	position: sticky;
 	top: 52px;
 
-	// Puts it over sticky column headers
-	z-index: 1;
+	// Sit above the box score's sticky (frozen) first column, which is z-index 10
+	// (see $sticky-cols) - otherwise, when you scroll the box score, that pinned
+	// Name column bleeds up over the affixed court and play controls.
+	z-index: 11;
 }
 
 // Keep in sync with trade/index.tsx
