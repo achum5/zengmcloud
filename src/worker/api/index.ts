@@ -1957,6 +1957,10 @@ const getPlayerFaces = async (
 			imgURL?: string;
 			colors?: [string, string, string];
 			jersey?: string;
+			// Real height (inches) and weight (lbs), so a viewer can size a player
+			// by his actual build - e.g. the live-game court scales each body.
+			hgt?: number;
+			weight?: number;
 		}
 	>
 > => {
@@ -1967,6 +1971,8 @@ const getPlayerFaces = async (
 			imgURL?: string;
 			colors?: [string, string, string];
 			jersey?: string;
+			hgt?: number;
+			weight?: number;
 		}
 	> = {};
 	if (items.length === 0) {
@@ -2080,6 +2086,8 @@ const getPlayerFaces = async (
 			imgURL: p.imgURL === "" ? undefined : p.imgURL,
 			colors,
 			jersey,
+			hgt: p.hgt,
+			weight: p.weight,
 		};
 	}
 	return result;

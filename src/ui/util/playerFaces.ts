@@ -17,6 +17,9 @@ export type PlayerFace = {
 	imgURL?: string;
 	colors?: [string, string, string];
 	jersey?: string;
+	// Real height (inches) and weight (lbs), for sizing a player by his build.
+	hgt?: number;
+	weight?: number;
 };
 
 const keyOf = (pid: number, season: number | undefined) =>

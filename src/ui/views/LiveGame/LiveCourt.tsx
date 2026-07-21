@@ -398,6 +398,35 @@ const NAME_FONT = "clamp(8px, 1.4cqw, 13px)";
 const CHIP_SIZE = "clamp(15px, 2.6cqw, 32px)";
 const CHIP_FONT = "clamp(8px, 1.4cqw, 15px)";
 
+// Turn a player's real build into on-court body scale, so a 7-footer visibly
+// TOWERS over a 6-foot guard and a bruiser reads BROADER than a wiry scorer.
+// Height (inches) drives overall size; weight (lbs) adds width-only girth. Both
+// fall back to an average build (1) until the measurements load. Referenced off
+// a middle-of-the-roster wing (6'6", 215 lb).
+const REF_HGT = 78;
+const REF_WEIGHT = 215;
+const bodyScale = (
+	hgt: number | undefined,
+	weight: number | undefined,
+): { size: number; girth: number } => ({
+	size:
+		hgt === undefined
+			? 1
+			: Math.min(1.2, Math.max(0.85, 1 + ((hgt - REF_HGT) / REF_HGT) * 1.35)),
+	girth:
+		weight === undefined
+			? 1
+			: Math.min(
+					1.2,
+					Math.max(0.86, 1 + ((weight - REF_WEIGHT) / REF_WEIGHT) * 0.55),
+				),
+});
+
+// A soft ground shadow under a body, so it reads as standing ON the floor
+// (a light 2.5D cue) rather than floating flat on the hardwood.
+const GROUND_SHADOW =
+	"radial-gradient(ellipse at center, rgba(0,0,0,0.42), rgba(0,0,0,0) 70%)";
+
 // Face-tag animation keyframes, injected once. The resting transform centers
 // the whole tag ON its court point (face directly over the shot dot), baked
 // into every frame so the animation doesn't fight the positioning.
@@ -506,8 +535,11 @@ const BodyOnCourt = ({
 }) => {
 	const faceData = usePlayerFace(actor.pid, season, lid);
 	const glide = useGlideStyle(actor, size, background);
+	// Size this body by the player's real build (once his measurements load).
+	const { size: sizeScale, girth } = bodyScale(faceData?.hgt, faceData?.weight);
 
 	if (background) {
+		const chip = `calc(${CHIP_SIZE} * ${sizeScale})`;
 		return (
 			<div
 				className="position-absolute"
@@ -515,24 +547,45 @@ const BodyOnCourt = ({
 			>
 				<div
 					style={{
+						position: "relative",
+						width: chip,
+						height: chip,
 						transform: REST,
-						width: CHIP_SIZE,
-						height: CHIP_SIZE,
-						borderRadius: "50%",
-						background: color,
-						border: "1.5px solid rgba(255,255,255,0.85)",
-						boxShadow: "0 1px 2px rgba(0,0,0,0.45)",
-						color: "#fff",
-						display: "flex",
-						alignItems: "center",
-						justifyContent: "center",
-						fontSize: CHIP_FONT,
-						fontWeight: 700,
-						lineHeight: 1,
-						textShadow: "0 1px 1px rgba(0,0,0,0.45)",
 					}}
 				>
-					{faceData?.jersey ?? ""}
+					{/* A ground shadow under the chip so it stands ON the floor. */}
+					<div
+						style={{
+							position: "absolute",
+							left: "50%",
+							bottom: "-14%",
+							transform: "translateX(-50%)",
+							width: "92%",
+							height: "32%",
+							background: GROUND_SHADOW,
+							pointerEvents: "none",
+						}}
+					/>
+					<div
+						style={{
+							width: "100%",
+							height: "100%",
+							borderRadius: "50%",
+							background: color,
+							border: "1.5px solid rgba(255,255,255,0.85)",
+							boxShadow: "0 2px 3px rgba(0,0,0,0.4)",
+							color: "#fff",
+							display: "flex",
+							alignItems: "center",
+							justifyContent: "center",
+							fontSize: `calc(${CHIP_FONT} * ${sizeScale})`,
+							fontWeight: 700,
+							lineHeight: 1,
+							textShadow: "0 1px 1px rgba(0,0,0,0.45)",
+						}}
+					>
+						{faceData?.jersey ?? ""}
+					</div>
 				</div>
 			</div>
 		);
@@ -588,13 +641,28 @@ const BodyOnCourt = ({
 				key={anim ? `anim-${animKey}` : "static"}
 				style={{
 					position: "relative",
-					height: FACE_H,
-					width: FACE_W,
+					// Sized by the player's real build: height grows the whole body,
+					// weight adds a little width-only girth.
+					height: `calc(${FACE_H} * ${sizeScale})`,
+					width: `calc(${FACE_W} * ${sizeScale} * ${girth})`,
 					transform: REST,
 					animation,
 					filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
 				}}
 			>
+				{/* Ground shadow at the body's feet, so he stands ON the floor. */}
+				<div
+					style={{
+						position: "absolute",
+						left: "50%",
+						bottom: "-7%",
+						transform: "translateX(-50%)",
+						width: "78%",
+						height: "15%",
+						background: GROUND_SHADOW,
+						pointerEvents: "none",
+					}}
+				/>
 				{faceData && (faceData.face || faceData.imgURL) ? (
 					<PlayerPicture
 						face={faceData.face}
