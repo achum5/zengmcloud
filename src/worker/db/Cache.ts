@@ -977,7 +977,7 @@ class Cache {
 		}
 
 		const [min, max] = key;
-		let output: any[] = [];
+		const matches: { keyParsed: any; keyString: string }[] = [];
 
 		for (const keyString of Object.keys(this._indexes[index])) {
 			let keyParsed;
@@ -998,8 +998,25 @@ class Cache {
 			}
 
 			if (cmp(keyParsed, min) >= 0 && cmp(keyParsed, max) <= 0) {
-				output = output.concat(this._indexes[index][keyString]);
+				matches.push({ keyParsed, keyString });
 			}
+		}
+
+		// Real IndexedDB returns range queries sorted by index key, and callers
+		// rely on it - e.g. writeTeamStats takes `.at(-1)` of a [tid, season-2] →
+		// [tid, season] teamSeasons range to get the CURRENT season's row. This
+		// in-memory index iterates Object.keys in INSERTION order, which usually
+		// matches key order (rows enter in primary-key order and pks usually grow
+		// with season) but not always: a synced identity reconcile can re-create
+		// an old season's row under a fresh high pk, putting its index key AFTER
+		// the current season's. Unsorted, that once sent a whole game result
+		// (win, streak, revenue) to the PREVIOUS season's row. Sort to match the
+		// contract.
+		matches.sort((a, b) => cmp(a.keyParsed, b.keyParsed));
+
+		let output: any[] = [];
+		for (const match of matches) {
+			output = output.concat(this._indexes[index][match.keyString]);
 		}
 
 		return output;

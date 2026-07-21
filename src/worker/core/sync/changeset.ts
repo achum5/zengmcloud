@@ -306,30 +306,54 @@ const applyIdentityPut = async (
 	const authorPk = rule.pk(value);
 	const existing = await findByIdentity(rule, store, value);
 
+	let writtenPk: number | string;
 	if (existing !== undefined && rule.pk(existing) === authorPk) {
-		return api.put(value);
-	}
+		writtenPk = await api.put(value);
+	} else {
+		const occupant = await getOccupant(store, authorPk);
+		const occupiedByOtherRow =
+			occupant !== undefined && !rule.sameIdentity(occupant, value);
 
-	const occupant = await getOccupant(store, authorPk);
-	const occupiedByOtherRow =
-		occupant !== undefined && !rule.sameIdentity(occupant, value);
-
-	if (existing !== undefined) {
-		if (occupiedByOtherRow) {
-			return api.put({ ...value, [rule.pkField]: rule.pk(existing) });
+		if (existing !== undefined) {
+			if (occupiedByOtherRow) {
+				writtenPk = await api.put({
+					...value,
+					[rule.pkField]: rule.pk(existing),
+				});
+			} else {
+				await api.delete(rule.pk(existing));
+				changeTracker.forget(store, rule.pk(existing));
+				writtenPk = await api.put(value);
+			}
+		} else if (occupiedByOtherRow) {
+			const fresh = { ...value };
+			delete fresh[rule.pkField];
+			writtenPk = await api.add(fresh);
+		} else {
+			writtenPk = await api.put(value);
 		}
-		await api.delete(rule.pk(existing));
-		changeTracker.forget(store, rule.pk(existing));
-		return api.put(value);
 	}
 
-	if (occupiedByOtherRow) {
-		const fresh = { ...value };
-		delete fresh[rule.pkField];
-		return api.add(fresh);
+	// Sweep: exactly ONE local row may hold this logical identity. The unique
+	// cache index can only surface one row per identity, so if a duplicate ever
+	// sneaks in (a lookup that transiently missed, a partially-applied history),
+	// the identity find above can't see it - but the store scan here can. A
+	// lingering duplicate is poison: it violates the on-disk unique index
+	// (aborting flushes) or resurfaces under a fresh high pk where season-range
+	// consumers pick it up as the "latest" row.
+	try {
+		const all = await api.getAll();
+		for (const row of all) {
+			if (rule.pk(row) !== writtenPk && rule.sameIdentity(row, value)) {
+				await api.delete(rule.pk(row));
+				changeTracker.forget(store, rule.pk(row));
+			}
+		}
+	} catch (error) {
+		console.error(`Failed duplicate sweep for ${store}`, error);
 	}
 
-	return api.put(value);
+	return writtenPk;
 };
 
 // Replace an incoming player record's watch flag with this device's own, so

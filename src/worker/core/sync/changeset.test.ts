@@ -1020,6 +1020,46 @@ describe("sync changeset", () => {
 		assert.strictEqual(rows[0]!.rid, 7);
 	});
 
+	test("an identity put sweeps stray duplicate rows for the same logical identity", async () => {
+		// The cache's unique index can only surface ONE row per (tid, season), so
+		// if a duplicate ever sneaks into the store (a transiently-missed lookup,
+		// a partially-applied history), identity lookups can't see it - it
+		// lingers, violating the on-disk unique index or resurfacing under a
+		// fresh high rid where season-range consumers pick it up as the "latest"
+		// row (that misdirected a game result onto the previous season). Applying
+		// a put for the identity must leave exactly one row.
+		resetG();
+		await resetCache({
+			teamSeasons: [
+				{ rid: 18, tid: 8, season: 2001, won: 58, lost: 24 },
+				{ rid: 88, tid: 8, season: 2001, won: 58, lost: 24 },
+				{ rid: 67, tid: 8, season: 2002, won: 0, lost: 0 },
+			],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "teamSeasons",
+						id: 18,
+						type: "put",
+						value: { rid: 18, tid: 8, season: 2001, won: 58, lost: 25 },
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.teamSeasons.getAll();
+		const dupes = rows.filter((t) => t.tid === 8 && t.season === 2001);
+		assert.strictEqual(dupes.length, 1, JSON.stringify(rows));
+		assert.strictEqual(dupes[0]!.lost, 25);
+		// The unrelated 2002 row is untouched.
+		assert.ok(rows.some((t) => t.tid === 8 && t.season === 2002));
+	});
+
 	test("gameAttributes apply LAST, so an interrupted apply never leaves the season ahead of its data", async () => {
 		// A season rollover writes `season` BEFORE creating the new season's rows,
 		// so in capture order the season flip precedes the data. If the apply is
