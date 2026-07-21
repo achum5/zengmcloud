@@ -15,6 +15,7 @@ import {
 	smoyScore,
 } from "../season/doAwards.basketball.ts";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
+import { getActualPlayThroughInjuries } from "../game/loadTeams.ts";
 import { PHASE, PLAYER, RATINGS } from "../../../common/constants.ts";
 import { isSport, bySport } from "../../../common/sportFunctions.ts";
 import { probToAmerican } from "../../../common/sportsbook.ts";
@@ -187,7 +188,16 @@ export const getLines = async () => {
 
 	const teams = await idb.getCopies.teamsPlus(
 		{
-			attrs: ["tid", "cid", "did", "abbrev", "region", "name", "disabled"],
+			attrs: [
+				"tid",
+				"cid",
+				"did",
+				"abbrev",
+				"region",
+				"name",
+				"disabled",
+				"playThroughInjuries",
+			],
 			seasonAttrs: ["won", "lost", "tied", "otl"],
 			stats: ["pts", "oppPts", "gp"],
 			season,
@@ -250,6 +260,48 @@ export const getLines = async () => {
 
 	// --- Game lines -------------------------------------------------------
 	const schedule = await getSchedule();
+
+	// Price each game off the SAME team overall the Schedule/ScoreBox page shows
+	// next to it, so the sportsbook's spread and moneyline never diverge from the
+	// line displayed there. That means fuzzed ratings (fuzz: true), injuries
+	// healed forward to the game's day, the team's playThroughInjuries setting,
+	// and the playoff flag - not the flat, fuzz-free team ovr used for futures.
+	const todayDay = schedule[0]?.day ?? 0;
+	const linePlayersRaw = await idb.cache.players.indexGetAll("playersByTid", [
+		0, // Active players have tid >= 0
+		Infinity,
+	]);
+	const linePlayers = await idb.getCopies.playersPlus(linePlayersRaw, {
+		attrs: ["injury", "pid", "value", "tid"],
+		ratings: ["ovr", "pos", "ovrs"],
+		season,
+		fuzz: true,
+	});
+	const linePlayersByTid = Map.groupBy(linePlayers, (p) => p.tid);
+
+	const linePlayoffSeries = await idb.cache.playoffSeries.get(season);
+	const lineRoundSeries = linePlayoffSeries
+		? linePlayoffSeries.currentRound === -1 && linePlayoffSeries.playIns
+			? linePlayoffSeries.playIns.flat()
+			: linePlayoffSeries.series[linePlayoffSeries.currentRound]
+		: undefined;
+
+	const neutralSiteSetting = g.get("neutralSite");
+	const phase = g.get("phase");
+
+	// Team overall on a given day, mirroring worker/views/schedule.ts's getTeam.
+	const gameOvr = (
+		t: (typeof activeTeams)[number],
+		day: number,
+	): number | undefined =>
+		teamOvr(linePlayersByTid.get(t.tid) ?? [], {
+			accountForInjuredPlayers: {
+				numDaysInFuture: day - todayDay,
+				playThroughInjuries: getActualPlayThroughInjuries(t),
+			},
+			playoffs: !!lineRoundSeries,
+		});
+
 	const games = [];
 	for (const matchup of schedule) {
 		if (matchup.homeTid < 0 || matchup.awayTid < 0) {
@@ -261,11 +313,17 @@ export const getLines = async () => {
 			continue;
 		}
 
+		// Neutral site drops home-court advantage, matching ScoreBox: an upcoming
+		// finals/playoff game the settings mark neutral.
+		const neutralSiteResolved =
+			(neutralSiteSetting === "finals" && !!matchup.finals) ||
+			(neutralSiteSetting === "playoffs" && phase === PHASE.PLAYOFFS);
+
 		const margin = getGameSpread({
-			ovr0: ovrByTid.get(home.tid),
-			ovr1: ovrByTid.get(away.tid),
+			ovr0: gameOvr(home, matchup.day),
+			ovr1: gameOvr(away, matchup.day),
 			homeCourtAdvantage,
-			neutralSite: false,
+			neutralSite: neutralSiteResolved,
 			numPeriods,
 			quarterLength,
 		});
