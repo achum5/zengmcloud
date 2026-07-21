@@ -1,14 +1,8 @@
 import { g } from "../util/index.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
-import { season } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
-import { strengthProbs } from "../../common/sportsbookOdds.ts";
-import { probToAmerican } from "../../common/sportsbook.ts";
-
-// How sharply award odds follow the formula's score gaps (matches the
-// Sportsbook's award futures).
-const AWARD_POWER = 0.9;
+import getAwardRaceOdds from "../core/season/getAwardRaceOdds.ts";
 
 const updateAwardRaces = async (
 	inputs: ViewInput<"awardRaces">,
@@ -22,25 +16,15 @@ const updateAwardRaces = async (
 				updateEvents.includes("playerMovement"))) ||
 		inputs.season !== state.season
 	) {
-		const awardCandidates = (
-			await season.getAwardCandidates(inputs.season)
-		).map((row) => {
-			// Sportsbook-style live odds per candidate, priced off the actual award
-			// formula's scores (same model the Sportsbook page uses).
-			const probs = strengthProbs(
-				row.players.map((p: any) =>
-					typeof p.awardScore === "number" ? p.awardScore : 0,
-				),
-				AWARD_POWER,
-			);
-			const players = addFirstNameShort(row.players).map(
-				(p: any, i: number) => ({
-					...p,
-					odds: probToAmerican(probs[i] ?? 0),
-				}),
-			);
-			return { ...row, players };
-		});
+		// Live odds come from the shared award-race model (getAwardRaceOdds), the
+		// exact same source the Sportsbook prices its award futures from, so the two
+		// pages always agree.
+		const awardCandidates = (await getAwardRaceOdds(inputs.season)).map(
+			(row) => ({
+				...row,
+				players: addFirstNameShort(row.players),
+			}),
+		);
 
 		const teams = await idb.getCopies.teamsPlus(
 			{

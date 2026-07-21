@@ -2,17 +2,13 @@ import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import teamOvr from "../team/ovr.ts";
 import getSchedule from "../season/getSchedule.ts";
-import getAwardCandidates from "../season/getAwardCandidates.ts";
+import getAwardRaceOdds from "../season/getAwardRaceOdds.ts";
 import { getPlayers, getTopPlayers } from "../season/awards.ts";
 import {
 	dpoyScore,
-	getSmoyFilter,
-	mipFilter,
-	mipScore,
 	mvpScore,
 	royFilter,
 	royScore,
-	smoyScore,
 } from "../season/doAwards.basketball.ts";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
 import { getActualPlayThroughInjuries } from "../game/loadTeams.ts";
@@ -23,7 +19,6 @@ import {
 	expectedGameTotal,
 	marginToWinProb,
 	overProb,
-	strengthProbs,
 	tierMembershipProbs,
 	toHalfPointLine,
 } from "../../../common/sportsbookOdds.ts";
@@ -97,15 +92,10 @@ const buildTierBoard = (
 // scrollable so a long field doesn't take over the page.
 const TEAM_AWARD_BOARD_SIZE = 30;
 
-// How sharply award odds follow the formula's score gaps, at season's end.
-const AWARD_POWER = 0.9;
-
-// Early in a season a handful of games barely hint at who'll win an award, so
-// award odds should start flatter (more uncertain) and sharpen as games are
-// played. These are the EARLY-season values; both ramp to their base
-// (AWARD_POWER / the tierMembershipProbs default) by season's end, so
-// late-season odds are unchanged.
-const AWARD_POWER_EARLY = 0.35; // flatter single-winner softmax early
+// Early in a season a handful of games barely hint at who'll make an award
+// team, so the tier boards start noisier (more uncertain) and sharpen as games
+// are played. These are the EARLY-season values; they ramp to their base by
+// season's end, so late-season odds are unchanged.
 const TIER_NOISE_EARLY = 1.2; // more tier-board Monte-Carlo noise early
 const TIER_NOISE_LATE = 0.6; // matches tierMembershipProbs' default noiseFactor
 
@@ -442,8 +432,6 @@ export const getLines = async () => {
 		totalPossibleGames > 0
 			? Math.min(1, Math.max(0, 1 - totalRemaining / totalPossibleGames))
 			: 1;
-	const awardPower =
-		AWARD_POWER_EARLY + (AWARD_POWER - AWARD_POWER_EARLY) * seasonProgress;
 	const tierNoiseFactor =
 		TIER_NOISE_EARLY - (TIER_NOISE_EARLY - TIER_NOISE_LATE) * seasonProgress;
 
@@ -619,101 +607,56 @@ export const getLines = async () => {
 	let allRookie: AwardCandidateRow[] = [];
 
 	if (!awardsClosed) {
-		// How strongly the OVERALL projection leans in: full at tip-off, gone by
-		// season's end (see projectedScore). Award formulas peak around 1-2, so
-		// ovr/40 (~1-1.7) is a comparable early signal.
-		const earlyWeight = 1 - seasonProgress;
-		const AWARD_OVR_COEF = 1 / 40;
-
-		if (isSport("basketball")) {
-			// Reuses the EXACT ranking formulas the game itself uses to pick each
-			// award and team (see doAwards.basketball.ts's makeTeams/allRookie), so
-			// the odds are priced the way the outcome will actually be decided - just
-			// blended with an overall projection early, so a fresh season shows the
-			// best players as favorites instead of flat noise.
-			try {
-				const players = await getPlayers(season);
-
-				// The real Sixth Man filter needs games started to tell starters from
-				// the bench; before any games it excludes everyone. Fall back to a
-				// projected bench (anyone not among his team's top 5 by overall).
-				const smoyFilter = players.some(
-					(p: any) => (p.currentStats?.gs ?? 0) > 0,
-				)
-					? getSmoyFilter(players)
-					: (() => {
-							const starters = new Set<number>();
-							const byTeam = new Map<number, any[]>();
-							for (const p of players) {
-								const arr = byTeam.get(p.tid) ?? [];
-								arr.push(p);
-								byTeam.set(p.tid, arr);
-							}
-							for (const arr of byTeam.values()) {
-								arr.sort((a, b) => ovrOf(b) - ovrOf(a));
-								for (const p of arr.slice(0, 5)) {
-									starters.add(p.pid);
-								}
-							}
-							return (p: any) => !starters.has(p.pid);
-						})();
-
-				const raceDefs: {
-					award: "mvp" | "dpoy" | "roy" | "smoy" | "mip";
-					name: string;
-					score: (p: any) => number;
-					filter?: (p: any) => boolean;
-				}[] = [
-					{ award: "mvp", name: "Most Valuable Player", score: mvpScore },
-					{
-						award: "dpoy",
-						name: "Defensive Player of the Year",
-						score: dpoyScore,
-					},
-					{
-						award: "smoy",
-						name: "Sixth Man of the Year",
-						score: smoyScore,
-						filter: smoyFilter,
-					},
-					{
-						award: "roy",
-						name: "Rookie of the Year",
-						score: royScore,
-						filter: royFilter,
-					},
-					{
-						award: "mip",
-						name: "Most Improved Player",
-						score: mipScore,
-						filter: mipFilter,
-					},
-				];
-				awards = raceDefs.map((def) => {
-					const field = getTopPlayers(
-						{
-							amount: 20,
-							filter: def.filter,
-							score: projectedScore(def.score, earlyWeight, AWARD_OVR_COEF),
-						},
-						players,
-					);
-					const probs = strengthProbs(
-						field.map((p: any) => p.awardScore ?? 0),
-						awardPower,
-					);
+		// Single-winner award races (MVP, DPOY, ROY, SMOY, MIP) are priced off the
+		// EXACT same model the Award Races page shows - getAwardRaceOdds, the shared
+		// source of truth - so the Sportsbook and that page never disagree. (This
+		// replaced an older Sportsbook-only overall-blend model that ran badly
+		// inflated favorites vs. the award page.)
+		const awardKeyByName: Record<
+			string,
+			"mvp" | "dpoy" | "roy" | "smoy" | "mip"
+		> = {
+			"Most Valuable Player": "mvp",
+			"Defensive Player of the Year": "dpoy",
+			"Rookie of the Year": "roy",
+			"Sixth Man of the Year": "smoy",
+			"Most Improved Player": "mip",
+		};
+		try {
+			const raceOdds = await getAwardRaceOdds(season);
+			awards = raceOdds
+				.map((race) => {
+					const key = awardKeyByName[race.name];
+					if (!key) {
+						return undefined;
+					}
 					return {
-						award: def.award,
-						name: def.name,
-						candidates: field.map((p: any, i: number) => ({
+						award: key,
+						name: race.name,
+						candidates: race.players.slice(0, 20).map((p: any) => ({
 							pid: p.pid,
 							name: p.name,
 							tid: p.tid,
 							abbrev: p.abbrev,
-							americanOdds: priceOdds(probs[i]!),
+							americanOdds: p.odds,
 						})),
 					};
-				});
+				})
+				.filter((x) => x !== undefined);
+		} catch (error) {
+			console.error("Sportsbook award odds unavailable", error);
+		}
+
+		// The All-League / All-Defensive / All-Rookie TEAM boards have no Award
+		// Races equivalent to match, so they keep their own tier-membership model.
+		// It blends an overall projection early (earlyWeight) so a fresh season
+		// shows the best players as favorites instead of flat noise, then hands off
+		// to the real award formula as games are played.
+		if (isSport("basketball")) {
+			const earlyWeight = 1 - seasonProgress;
+			const AWARD_OVR_COEF = 1 / 40;
+			try {
+				const players = await getPlayers(season);
 
 				const mvpField = getTopPlayers(
 					{
@@ -755,55 +698,8 @@ export const getLines = async () => {
 					buildTierBoard(royField, [5], seed + 303, tierNoiseFactor)[0]
 						?.candidates ?? [];
 			} catch (error) {
-				console.error("Sportsbook award odds unavailable", error);
+				console.error("Sportsbook award-team odds unavailable", error);
 			}
-		} else {
-			// Other sports: price off the sport's own award-candidate list as-is.
-			// The overall blend and team boards above are basketball-specific (the
-			// score formulas are), so those sports just get the stat-based races.
-			let awardCandidatesRaw: Awaited<ReturnType<typeof getAwardCandidates>> =
-				[];
-			try {
-				awardCandidatesRaw = await getAwardCandidates(season);
-			} catch (error) {
-				console.error("Sportsbook award odds unavailable", error);
-			}
-			const awardKeyByName: Record<
-				string,
-				"mvp" | "dpoy" | "roy" | "smoy" | "mip"
-			> = {
-				"Most Valuable Player": "mvp",
-				"Defensive Player of the Year": "dpoy",
-				"Rookie of the Year": "roy",
-				"Sixth Man of the Year": "smoy",
-				"Most Improved Player": "mip",
-			};
-			awards = awardCandidatesRaw
-				.map((race) => {
-					const key = awardKeyByName[race.name];
-					if (!key) {
-						return undefined;
-					}
-					const probs = strengthProbs(
-						race.players.map((p: any) =>
-							typeof p.awardScore === "number" ? p.awardScore : 0,
-						),
-						awardPower,
-					);
-					const players = race.players.slice(0, 20);
-					return {
-						award: key,
-						name: race.name,
-						candidates: players.map((p: any, i: number) => ({
-							pid: p.pid,
-							name: p.name,
-							tid: p.tid,
-							abbrev: p.abbrev,
-							americanOdds: priceOdds(probs[i]!),
-						})),
-					};
-				})
-				.filter((x) => x !== undefined);
 		}
 	}
 
