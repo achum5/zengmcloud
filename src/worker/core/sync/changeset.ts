@@ -390,6 +390,29 @@ const isDeviceLocal = (store: Store, id: number | string) =>
 	DEVICE_LOCAL_STORES.has(store) ||
 	(store === "gameAttributes" && DEVICE_LOCAL_GAME_ATTRIBUTES.has(String(id)));
 
+// Apply gameAttributes LAST, keeping relative order otherwise (records are
+// whole-object last-write-wins, so reordering across different records is safe
+// by design - see SyncChange). gameAttributes act as the changeset's COMMIT
+// POINT: a season rollover writes `season` BEFORE it creates the new season's
+// teamSeasons/players rows, so applying in capture order means an interrupted
+// apply (a thrown record, a killed tab) can leave a receiver living in the new
+// season with the new season's data missing - every mood/standings/roster
+// computation then runs against a hole (this looked like "all my players'
+// moods reset" in the field). Data first, then the attributes that make the
+// app look at that data.
+export const orderChangesForApply = (changes: SyncChange[]): SyncChange[] => {
+	const data: SyncChange[] = [];
+	const gameAttributes: SyncChange[] = [];
+	for (const change of changes) {
+		if (change.store === "gameAttributes") {
+			gameAttributes.push(change);
+		} else {
+			data.push(change);
+		}
+	}
+	return [...data, ...gameAttributes];
+};
+
 // Drain everything the tracker has recorded since the last capture and turn it
 // into a self-contained changeset by reading the current value of each record.
 // Whole-record values mean the receiver needs no prior state to apply this.
@@ -522,7 +545,7 @@ export const applyChangeset = async (
 	// to be uncaptured - it does not suppress recording.
 	changeTracker.beginApply();
 	try {
-		for (const change of changeset.changes) {
+		for (const change of orderChangesForApply(changeset.changes)) {
 			// Never let a peer's per-device/personal state (their controlled team,
 			// their in-progress/saved trades) overwrite ours - also protects catch-up
 			// replays of older, unfiltered history that predates this exclusion.
@@ -657,11 +680,25 @@ export const applyChangeset = async (
 	// playoffSeries, allStars, headToHeads); without this a follower's cache
 	// keeps last season's rows in "current season" queries forever.
 	if (touchedSeason) {
+		// If this fails, the cache keeps serving the OLD season's scoped rows while
+		// g is about to say the new season - every view (moods, standings, rosters)
+		// then computes against missing data until something else happens to
+		// re-fill. Worth one immediate retry (the usual cause is a transient flush
+		// collision); a second failure is loud because there is no silent recovery.
 		try {
 			await idb.cache.flush();
 			await idb.cache.fill();
 		} catch (error) {
 			console.error("Failed to re-fill cache after synced rollover", error);
+			try {
+				await idb.cache.flush();
+				await idb.cache.fill();
+			} catch (error2) {
+				console.error(
+					"RETRY FAILED: cache is stale after a synced season rollover - the app may show wrong data until this league is closed and reopened",
+					error2,
+				);
+			}
 		}
 	}
 

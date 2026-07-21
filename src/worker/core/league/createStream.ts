@@ -206,6 +206,22 @@ export type PreProcessParams = {
 	version: number | undefined;
 };
 
+// Per-device/personal state that must not travel between league-mates through a
+// shared league file. A synced-league export includes the EXPORTING device's
+// staged trade, saved trades, and trading-block shopping list; importing it to
+// join the room would put a friend's personal state on this device (e.g. their
+// team's trading block showing up on yours). The stores are skipped entirely on
+// import - the app recreates pristine defaults where needed (the trade store's
+// row 0 is created for the CHOSEN team when absent). Non-synced imports keep the
+// old behavior: in single-player, restoring your own backup should restore
+// everything. Mirrors DEVICE_LOCAL_STORES in sync/changeset.ts.
+export const isDeviceLocalStoreForSyncedImport = (
+	key: string,
+	syncedLeagueFile: boolean,
+) =>
+	syncedLeagueFile &&
+	(key === "trade" || key === "savedTrades" || key === "savedTradingBlock");
+
 // These obejcts have auto incrementing primary keys that aren't referenced by anything else, so it's safe to delete them when importing, and also prevents any issues from people manually editing league files and accidentally repeating a primary key, resulting in the latest one overwriting any earlier ones
 const PRIMARY_KEYS_TO_DELETE: Record<string, string> = {
 	messages: "mid",
@@ -369,6 +385,18 @@ const getSaveToDB = async ({
 					// Currently skipped:
 					// - meta because it doesn't get written to DB
 					// - gameAttributes/startingSeason/version/teams because we already have it from basicInfo.
+					return;
+				}
+
+				// A synced-league file carries the EXPORTING device's per-device state
+				// (staged trade, saved trades, trading block) - never import someone
+				// else's onto this device.
+				if (
+					isDeviceLocalStoreForSyncedImport(
+						key,
+						preProcessParams.preserveAutoIncrementKeys,
+					)
+				) {
 					return;
 				}
 

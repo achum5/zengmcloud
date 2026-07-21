@@ -1,5 +1,34 @@
 import { assert, describe, test } from "vitest";
-import { applyTeamSeasonRidPolicy } from "./createStream.ts";
+import {
+	applyTeamSeasonRidPolicy,
+	isDeviceLocalStoreForSyncedImport,
+} from "./createStream.ts";
+
+describe("isDeviceLocalStoreForSyncedImport", () => {
+	test("a synced-league file's per-device stores are skipped on import", () => {
+		// The file carries the EXPORTING device's staged trade / saved trades /
+		// trading block; importing them would put a friend's personal state (e.g.
+		// their team's trading block) on this device.
+		for (const key of ["trade", "savedTrades", "savedTradingBlock"]) {
+			assert.strictEqual(isDeviceLocalStoreForSyncedImport(key, true), true);
+		}
+		// Shared stores still import.
+		assert.strictEqual(
+			isDeviceLocalStoreForSyncedImport("players", true),
+			false,
+		);
+		assert.strictEqual(
+			isDeviceLocalStoreForSyncedImport("teamSeasons", true),
+			false,
+		);
+	});
+
+	test("single-player imports keep everything (restoring your own backup)", () => {
+		for (const key of ["trade", "savedTrades", "savedTradingBlock"]) {
+			assert.strictEqual(isDeviceLocalStoreForSyncedImport(key, false), false);
+		}
+	});
+});
 
 describe("applyTeamSeasonRidPolicy", () => {
 	test("strips rids for a normal league file import", () => {

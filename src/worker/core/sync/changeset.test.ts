@@ -11,6 +11,7 @@ import { changeTracker } from "../../db/changeTracker.ts";
 import {
 	applyChangeset,
 	captureChangeset,
+	orderChangesForApply,
 	phaseRedirectComponents,
 } from "./changeset.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
@@ -1017,6 +1018,67 @@ describe("sync changeset", () => {
 		const rows = await idb.cache.teamSeasons.getAll();
 		assert.strictEqual(rows.length, 1, JSON.stringify(rows));
 		assert.strictEqual(rows[0]!.rid, 7);
+	});
+
+	test("gameAttributes apply LAST, so an interrupted apply never leaves the season ahead of its data", async () => {
+		// A season rollover writes `season` BEFORE creating the new season's rows,
+		// so in capture order the season flip precedes the data. If the apply is
+		// interrupted partway (a bad record, a killed tab), applying in capture
+		// order would leave this device living in the new season with the new
+		// season's teamSeasons/players missing - moods, standings, and rosters all
+		// compute against a hole. Ordering gameAttributes last makes them the
+		// commit point: the failed apply below must leave `season` untouched.
+		resetG();
+		await resetCache({});
+		await idb.cache.gameAttributes.put({ key: "season", value: 2001 });
+		changeTracker.disable();
+
+		let threw = false;
+		try {
+			await applyChangeset(
+				overTheWire({
+					changes: [
+						{
+							store: "gameAttributes",
+							id: "season",
+							type: "put",
+							value: { key: "season", value: 2002 },
+						},
+						// A poison data record: putting `undefined` throws in the cache.
+						{ store: "players", id: 99, type: "put", value: undefined },
+					],
+				}),
+				{ refreshUI: false },
+			);
+		} catch {
+			threw = true;
+		}
+
+		assert.ok(threw, "expected the poison record to fail the apply");
+		const season = await idb.cache.gameAttributes.get("season");
+		assert.strictEqual(
+			(season as any).value,
+			2001,
+			"season must NOT have advanced past its missing data",
+		);
+	});
+
+	test("orderChangesForApply moves gameAttributes last and keeps relative order", () => {
+		const ordered = orderChangesForApply([
+			{ store: "gameAttributes", id: "season", type: "put", value: 1 },
+			{ store: "teamSeasons", id: 1, type: "put", value: {} },
+			{ store: "gameAttributes", id: "phase", type: "put", value: 2 },
+			{ store: "players", id: 5, type: "put", value: {} },
+		] as any);
+		assert.deepEqual(
+			ordered.map((c) => `${c.store}:${c.id}`),
+			[
+				"teamSeasons:1",
+				"players:5",
+				"gameAttributes:season",
+				"gameAttributes:phase",
+			],
+		);
 	});
 
 	test("applying a changeset does not itself get recorded", async () => {
