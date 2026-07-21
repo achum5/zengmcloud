@@ -489,6 +489,23 @@ const FaceOnCourt = ({
 		</div>
 	);
 
+	// Glide duration scales with how far the player is moving, so a cross-court
+	// end swap reads as RUNNING the floor (~3x a small cut) instead of a
+	// same-speed teleport, and background players start on small staggered
+	// delays (deterministic per player) so a team flows down-court instead of
+	// moving as one rigid block. Previous position is banked in an effect
+	// (post-commit), so a double render can't zero out the measured distance.
+	const prevPos = useRef<{ x: number; y: number } | undefined>(undefined);
+	const prev = prevPos.current;
+	const moveDist = prev ? Math.hypot(actor.x - prev.x, actor.y - prev.y) : 0;
+	useEffect(() => {
+		prevPos.current = { x: actor.x, y: actor.y };
+	}, [actor.x, actor.y]);
+	const glideDur = Math.min(1.25, 0.4 + moveDist * 0.011);
+	const glideDelay = background
+		? (((actor.pid * 2654435761) >>> 0) % 5) * 0.05
+		: 0;
+
 	// The OUTER div only places the point on the court (compositor-friendly
 	// translate3d, transitioned for the glide between plays). The INNER div
 	// carries the centering REST transform and the one-shot shake/swipe
@@ -501,7 +518,7 @@ const FaceOnCourt = ({
 				transform: `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`,
 				// Position glides; opacity eases when a player moves between being a
 				// dimmed background body and the featured actor of a play.
-				transition: "transform 0.45s ease, opacity 0.3s ease",
+				transition: `transform ${glideDur}s ease ${glideDelay}s, opacity 0.3s ease`,
 				willChange: "transform",
 			}
 		: {
@@ -631,6 +648,30 @@ const LiveCourt = ({
 			}
 		};
 
+		// The ball resting LIVE with its handler: a soft dribble pulse (top-down
+		// view, so the bounce reads as the ball rising toward the camera). Bounded
+		// so a paused game isn't running an animation loop forever - after a few
+		// seconds the ball just sits visible in his hands.
+		const restDribble = (x: number, y: number) => {
+			ball.style.opacity = "1";
+			ball.setAttribute("cx", String(x));
+			ball.setAttribute("cy", String(y));
+			const restStart = performance.now();
+			const loop = (now: number) => {
+				const t = (now - restStart) / 1000;
+				if (t > 6) {
+					ball.setAttribute("r", "0.85");
+					return;
+				}
+				ball.setAttribute(
+					"r",
+					String(0.76 + 0.16 * Math.abs(Math.sin(t * 5.2))),
+				);
+				rafRef.current = requestAnimationFrame(loop);
+			};
+			rafRef.current = requestAnimationFrame(loop);
+		};
+
 		const main = scene.actors.find((a) => a.role === "main");
 		const isShot =
 			scene.kind === "make" || scene.kind === "miss" || scene.kind === "block";
@@ -647,6 +688,7 @@ const LiveCourt = ({
 			}
 			const from = scene.ballFrom;
 			const to = scene.ballTo;
+			const isReb = scene.kind === "reb";
 			ball.style.opacity = "1";
 			const start = performance.now();
 			const step = (now: number) => {
@@ -655,11 +697,58 @@ const LiveCourt = ({
 				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
 				// A little hop off the rim, then settle into the rebounder's hands.
 				ball.setAttribute("r", String(0.9 + 0.45 * Math.sin(Math.PI * p)));
-				ball.style.opacity = p < 0.82 ? "1" : String(1 - (p - 0.82) / 0.18);
+				// A rebound STAYS in the rebounder's hands (live ball); a tip fades.
+				if (!isReb) {
+					ball.style.opacity = p < 0.82 ? "1" : String(1 - (p - 0.82) / 0.18);
+				}
+				if (p < 1) {
+					rafRef.current = requestAnimationFrame(step);
+				} else if (isReb) {
+					restDribble(to.x, to.y);
+				} else {
+					hideBall();
+				}
+			};
+			rafRef.current = requestAnimationFrame(step);
+			return () => {
+				if (rafRef.current !== undefined) {
+					cancelAnimationFrame(rafRef.current);
+				}
+			};
+		}
+
+		// A shot being lined up: the ball ARRIVES to the shooter from the
+		// backcourt with a couple of dribble hops, then stays live in his hands
+		// until the result scene takes over the flight.
+		if (scene.kind === "attempt" && main) {
+			if (ring) {
+				ring.style.opacity = "0";
+			}
+			const to = { x: main.x, y: main.y };
+			// Backcourt is away from the attacked rim (away attacks left → its
+			// backcourt is to the right, and vice versa), pulled toward the middle
+			// like a point guard bringing it up.
+			const dir = scene.t === 0 ? 1 : -1;
+			const from = {
+				x: Math.min(90, Math.max(4, to.x + dir * 13)),
+				y: to.y + (25 - to.y) * 0.4,
+			};
+			ball.style.opacity = "1";
+			const start = performance.now();
+			const ARRIVE_MS = 430;
+			const step = (now: number) => {
+				const p = Math.min(1, (now - start) / ARRIVE_MS);
+				ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
+				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
+				// Two dribble hops on the way in.
+				ball.setAttribute(
+					"r",
+					String(0.76 + 0.3 * Math.abs(Math.sin(p * Math.PI * 2))),
+				);
 				if (p < 1) {
 					rafRef.current = requestAnimationFrame(step);
 				} else {
-					hideBall();
+					restDribble(to.x, to.y);
 				}
 			};
 			rafRef.current = requestAnimationFrame(step);
@@ -718,8 +807,8 @@ const LiveCourt = ({
 					ball.setAttribute("cx", String(bx));
 					ball.setAttribute("cy", String(by));
 					ball.setAttribute("r", "0.9");
-					ball.style.opacity =
-						p < 0.86 ? "1" : String(Math.max(0, 1 - (p - 0.86) / 0.14));
+					// The ball stays LIVE in the stealer's hands (restDribble below).
+					ball.style.opacity = "1";
 					if (burst) {
 						const bp = Math.min(1, p / 0.42);
 						burst.setAttribute(
@@ -735,10 +824,14 @@ const LiveCourt = ({
 					if (p < 1) {
 						rafRef.current = requestAnimationFrame(step);
 					} else {
-						hideBall();
+						if (ring) {
+							ring.style.opacity = "0";
+						}
 						if (burst) {
 							burst.style.opacity = "0";
 						}
+						// The stolen ball stays live in the stealer's hands.
+						restDribble(to.x, to.y);
 					}
 				};
 				rafRef.current = requestAnimationFrame(step);
