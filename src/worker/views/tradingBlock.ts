@@ -38,6 +38,7 @@ const updateUserRoster = async (
 					"injury",
 					"watch",
 					"untradable",
+					"untouchableTid",
 					"jerseyNumber",
 					"draft",
 				],

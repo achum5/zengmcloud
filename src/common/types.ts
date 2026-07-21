@@ -1510,6 +1510,10 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 	valueFuzz: number;
 	valueNoPotFuzz: number;
 	watch?: number;
+	// The tid this player is marked "untouchable" (protected from trade offers)
+	// for. Team-dependent: he counts as untouchable only while untouchableTid ===
+	// his current tid, so a trade to a new team automatically clears it.
+	untouchableTid?: number;
 	weight: number;
 	yearsFreeAgent: number;
 

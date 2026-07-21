@@ -4826,6 +4826,30 @@ const updatePlayerWatch = async ({
 	}
 };
 
+// Mark/unmark a player "untouchable" (protected from trade offers) for his
+// CURRENT team. Stamping the tid makes it team-dependent: a trade to a new team
+// leaves untouchableTid pointing at the old tid, so he's no longer untouchable
+// there (see PlayerWithoutKey.untouchableTid).
+const updatePlayerUntouchable = async ({
+	pid,
+	untouchable,
+}: {
+	pid: number;
+	untouchable: boolean;
+}) => {
+	const p = await idb.getCopy.players({ pid }, "noCopyCache");
+	if (!p) {
+		return;
+	}
+	if (untouchable) {
+		p.untouchableTid = p.tid;
+	} else {
+		delete p.untouchableTid;
+	}
+	await idb.cache.players.put(p);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
 const getPlayersNextWatch = (players: Player[]) => {
 	const watchCounts = new Map<number, number>();
 	for (const p of players) {
@@ -6403,6 +6427,7 @@ export default {
 		updateMultiTeamMode,
 		updateOptions,
 		updatePlayThroughInjuries,
+		updatePlayerUntouchable,
 		updatePlayerWatch,
 		updatePlayersWatch,
 		updatePlayingTime,

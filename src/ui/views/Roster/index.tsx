@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Dropdown } from "react-bootstrap";
 import { arrayMove } from "@dnd-kit/sortable";
 import { PLAYER, WEBSITE_ROOT } from "../../../common/constants.ts";
 import { DataTable } from "../../components/DataTable/index.tsx";
@@ -357,23 +358,71 @@ const Roster = ({
 							</button>,
 						]
 					: []),
-				...(showTradeFor || showTradingBlock
+				...(showTradeFor
 					? [
 							<button
 								className="btn btn-light-bordered btn-xs"
 								disabled={p.untradable}
 								onClick={() => {
-									if (showTradeFor) {
-										toWorker("actions", "tradeFor", { pid: p.pid });
-									} else {
-										toWorker("actions", "addToTradingBlock", {
-											pids: [p.pid],
-										});
-									}
+									toWorker("actions", "tradeFor", { pid: p.pid });
 								}}
 							>
-								{showTradeFor ? "Trade for" : "Trade away"}
+								Trade for
 							</button>,
+						]
+					: []),
+				...(showTradingBlock
+					? [
+							// "Trade away", with a dropdown caret to toggle "Untouchable"
+							// (protected from trade offers) for THIS team. Untouchable is
+							// team-dependent: p.untouchableTid only counts while it equals the
+							// current tid.
+							(() => {
+								const isUntouchable = p.untouchableTid === tid;
+								return (
+									<Dropdown as="span" className="btn-group">
+										<button
+											className="btn btn-light-bordered btn-xs"
+											disabled={p.untradable}
+											title={isUntouchable ? "Marked untouchable" : undefined}
+											onClick={() => {
+												toWorker("actions", "addToTradingBlock", {
+													pids: [p.pid],
+												});
+											}}
+										>
+											{isUntouchable ? (
+												<span className="glyphicon glyphicon-lock me-1" />
+											) : null}
+											Trade away
+										</button>
+										<Dropdown.Toggle
+											split
+											id={`roster-untouchable-${p.pid}`}
+											className="btn-light-bordered btn-xs"
+											variant={"no-class" as any}
+										/>
+										<Dropdown.Menu>
+											<Dropdown.Item
+												onClick={() => {
+													toWorker("main", "updatePlayerUntouchable", {
+														pid: p.pid,
+														untouchable: !isUntouchable,
+													});
+												}}
+											>
+												<span
+													className="glyphicon glyphicon-lock me-2"
+													style={{ opacity: isUntouchable ? 1 : 0.35 }}
+												/>
+												{isUntouchable
+													? "Remove untouchable"
+													: "Mark untouchable"}
+											</Dropdown.Item>
+										</Dropdown.Menu>
+									</Dropdown>
+								);
+							})(),
 						]
 					: []),
 				{

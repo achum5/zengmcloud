@@ -185,6 +185,7 @@ const updateRoster = async (
 			"ptModifier",
 			"watch",
 			"untradable",
+			"untouchableTid",
 			"hof",
 			"latestTransaction",
 			"mood",

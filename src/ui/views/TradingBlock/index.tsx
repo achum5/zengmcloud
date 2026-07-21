@@ -506,6 +506,7 @@ const TradingBlock = ({
 		salaryCapType,
 		spectator,
 		teamInfoCache,
+		userTid,
 	} = useLocal([
 		"challengeNoRatings",
 		"challengeNoTrades",
@@ -515,6 +516,7 @@ const TradingBlock = ({
 		"salaryCapType",
 		"spectator",
 		"teamInfoCache",
+		"userTid",
 	]);
 
 	const [state, setState] = useState<{
@@ -551,6 +553,36 @@ const TradingBlock = ({
 		};
 	});
 
+	// Players kept OUT of trade offers ("untouchable"). Seeded fresh every visit
+	// from the roster's untouchable flags (team-dependent: only counts while
+	// untouchableTid === this team), so protecting your best players carries over
+	// automatically - but it's a per-session choice here, so clearing one to shop
+	// him doesn't erase the roster mark, and it re-applies next time you're here.
+	const [keptPids, setKeptPids] = useState<Set<number>>(
+		() =>
+			new Set(
+				userRoster
+					.filter((p) => p.untouchableTid === userTid)
+					.map((p) => p.pid),
+			),
+	);
+	const toggleKept = (pid: number) => {
+		setKeptPids((prev) => {
+			const next = new Set(prev);
+			if (next.has(pid)) {
+				next.delete(pid);
+			} else {
+				next.add(pid);
+				// Keeping a player also pulls him off the block.
+				setState((prevState) => ({
+					...prevState,
+					pids: prevState.pids.filter((id) => id !== pid),
+				}));
+			}
+			return next;
+		});
+	};
+
 	const [lookingForState, setLookingForState, resetLookingForState] =
 		useLookingForState(savedTradingBlock?.lookingFor);
 
@@ -581,7 +613,8 @@ const TradingBlock = ({
 		}));
 
 		const offers = await toWorker("main", "getTradingBlockOffers", {
-			pids: state.pids,
+			// Never shop an untouchable, even if a saved block had him checked.
+			pids: state.pids.filter((pid) => !keptPids.has(pid)),
 			dpids: state.dpids,
 			lookingFor: lookingForState,
 		});
@@ -604,7 +637,7 @@ const TradingBlock = ({
 			otherPids,
 			tid,
 			userDpids: state.dpids,
-			userPids: state.pids,
+			userPids: state.pids.filter((pid) => !keptPids.has(pid)),
 		});
 	};
 
@@ -677,16 +710,17 @@ const TradingBlock = ({
 	}
 
 	const footer: FooterRow = { data: [] };
-	footer.data[1] = (
+	footer.data[2] = (
 		<div className="text-end">
 			Total ({state.pids.length} {helpers.plural("player", state.pids.length)})
 		</div>
 	);
-	footer.data[6] = helpers.formatCurrency(sumContracts, "M");
+	footer.data[7] = helpers.formatCurrency(sumContracts, "M");
 
 	const cols = getCols(
 		[
 			"",
+			"Untouchable",
 			"Name",
 			"Pos",
 			"Age",
@@ -702,20 +736,35 @@ const TradingBlock = ({
 				sortSequence: [],
 				width: "1%",
 			},
+			Untouchable: {
+				width: "1%",
+			},
 		},
 	);
 
 	const rows = userRoster.map((p) => {
+		const isKept = keptPids.has(p.pid);
 		return {
 			key: p.pid,
 			data: [
 				<input
 					className="form-check-input"
 					type="checkbox"
-					checked={state.pids.includes(p.pid)}
-					disabled={p.untradable}
+					checked={state.pids.includes(p.pid) && !isKept}
+					disabled={p.untradable || isKept}
 					onChange={() => handleChangeAsset("pids", p.pid)}
-					title={p.untradableMsg}
+					title={
+						isKept
+							? "Untouchable - clear the Keep box to offer him"
+							: p.untradableMsg
+					}
+				/>,
+				<input
+					className="form-check-input"
+					type="checkbox"
+					checked={isKept}
+					onChange={() => toggleKept(p.pid)}
+					title="Keep out of trade offers"
 				/>,
 				wrappedPlayerNameLabels({
 					pid: p.pid,

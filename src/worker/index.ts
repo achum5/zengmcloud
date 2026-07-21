@@ -109,15 +109,17 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// a "final score" notification - exactly what a live sim must never do.
 	"updateLiveBroadcast",
 	"endLiveBroadcast",
-	// The watch/star list is a PERSONAL preference (note these fan out via
-	// same-device crossTabEmit, not the league). It happens to live on the shared
-	// `players` record, so it can't be excluded at the store level like `trade` -
-	// but these actions only ever mutate the `watch` field, so suppressing their
-	// capture keeps a star toggle from spamming the room a whole-player changeset
-	// (and from forcing everyone else's UI to show your stars).
+	// The watch/star list and the "untouchable" trade flag are PERSONAL
+	// preferences (the watch ones fan out via same-device crossTabEmit, not the
+	// league). They happen to live on the shared `players` record, so they can't
+	// be excluded at the store level like `trade` - but these actions only ever
+	// mutate the `watch` / `untouchableTid` field, so suppressing their capture
+	// keeps a toggle from spamming the room a whole-player changeset (and from
+	// forcing everyone else's UI to show your stars / untouchables).
 	"updatePlayerWatch",
 	"updatePlayersWatch",
 	"clearWatchList",
+	"updatePlayerUntouchable",
 	// Read-only fetches the UI fires automatically while rendering (player faces
 	// and watch flags in every table, popover lookups, recap panels). Treating
 	// these as cloud-tracked mutations broke things two ways: the sync guard

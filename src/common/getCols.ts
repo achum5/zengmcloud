@@ -2945,6 +2945,12 @@ const cols: {
 	"": {
 		sortSequence: ["desc", "asc"],
 	},
+	Untouchable: {
+		desc: "Protect from trade offers. Auto-on for players marked untouchable on the roster; clear it here to offer one anyway.",
+		noSearch: true,
+		sortSequence: [],
+		title: "Keep",
+	},
 	"#": {},
 	"@": {
 		desc: "Home or Away",
