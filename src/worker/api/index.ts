@@ -651,6 +651,12 @@ const createLeague = async (
 		fromFile: {
 			gameAttributes: Record<string, unknown> | undefined;
 			hasRookieContracts: boolean;
+			// True when the file's meta carries a syncCheckpoint - a machine-generated
+			// export of a synced league. createStream then PRESERVES autoincrement
+			// primary keys instead of renumbering them, so this device addresses
+			// records by the same keys as the rest of the sync room (renumbering is
+			// what let synced writes land on - and overwrite - unrelated rows).
+			hasSyncCheckpoint?: boolean;
 			maxGid: number | undefined;
 			startingSeason: number | undefined;
 			teams: any[] | undefined;
@@ -1235,6 +1241,18 @@ const discardUnsavedProgress = async () => {
 };
 
 const draftLottery = async () => {
+	// The lottery is a once-per-season event with side effects that compound if
+	// repeated (COLA winners get their future chances penalized on EVERY run).
+	// Guard against a double trigger - a double-click, or two devices racing -
+	// by treating an existing result as authoritative.
+	const existing = await idb.getCopy.draftLotteryResults(
+		{ season: g.get("season") },
+		"noCopyCache",
+	);
+	if (existing) {
+		return existing as unknown as GenOrderResult<false>["draftLotteryResult"];
+	}
+
 	const { draftLotteryResult } = (await draft.genOrder(
 		false,
 	)) as unknown as GenOrderResult<false>;

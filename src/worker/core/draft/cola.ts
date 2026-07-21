@@ -64,8 +64,9 @@ export const updateColaAfterPlayoffs = async () => {
 	// Add this to playoffRoundsWon and we can index into PLAYOFF_FACTORS
 	const offset = numPlayoffRounds - PLAYOFF_FACTORS.length + 1;
 
+	const season = g.get("season");
 	const teamSeasons = await idb.getCopies.teamSeasons(
-		{ season: g.get("season") },
+		{ season },
 		"noCopyCache",
 	);
 	for (const row of teamSeasons) {
@@ -79,6 +80,15 @@ export const updateColaAfterPlayoffs = async () => {
 				chances: 0,
 			};
 		}
+
+		// Chance changes compound (+= alpha, *= playoff factor), so this update
+		// must run exactly once per team per season no matter how many times the
+		// surrounding phase change executes (replay, race, double-trigger).
+		if (t.draftLottery.updatedAfterPlayoffs === season) {
+			continue;
+		}
+		t.draftLottery.updatedAfterPlayoffs = season;
+
 		const before = t.draftLottery.chances;
 
 		const factor = PLAYOFF_FACTORS[row.playoffRoundsWon - offset];

@@ -104,22 +104,46 @@ const storeAPI = (store: Store) => (idb.cache as any)[store];
 // deterministic (last write for a given identity wins), so all devices land on
 // the same `rid`.
 type IdentityRule = {
+	// The primary key FIELD NAME, so apply can rewrite or strip it on a copy.
+	pkField: string;
 	// Resolve the LOCAL row that shares the incoming row's logical identity.
 	// teamSeasons/teamStats use a unique IndexedDB index; draftPicks has no such
 	// index, so it scans just its season-scoped slice.
 	find: (api: any, value: any) => Promise<any | undefined>;
+	// Disk-side identity lookup, for stores whose cache is season-scoped
+	// (teamSeasons: past 3 seasons; teamStats: current season). A catch-up replay
+	// can carry rows OLDER than the cache window; without checking disk, those
+	// rows would look brand-new and could land next to (or on top of) their real
+	// on-disk selves. Omit for fully-cached stores (draftPicks, releasedPlayers).
+	findDisk?: (value: any) => Promise<any | undefined>;
 	// The row's primary key, to delete/forget by (rid, or dpid for draftPicks).
 	pk: (row: any) => number;
 	sameIdentity: (a: any, b: any) => boolean;
 };
 const RECONCILE_BY_IDENTITY: Partial<Record<Store, IdentityRule>> = {
 	teamSeasons: {
+		pkField: "rid",
 		find: (api, v) => api.indexGet("teamSeasonsByTidSeason", [v.tid, v.season]),
+		findDisk: (v) =>
+			(idb.league as any).getFromIndex("teamSeasons", "tid, season", [
+				v.tid,
+				v.season,
+			]),
 		pk: (row) => row.rid,
 		sameIdentity: (a, b) => a.tid === b.tid && a.season === b.season,
 	},
 	teamStats: {
-		find: (api, v) => api.indexGet("teamStatsByPlayoffsTid", [v.playoffs, v.tid]),
+		pkField: "rid",
+		find: (api, v) =>
+			api.indexGet("teamStatsByPlayoffsTid", [v.playoffs, v.tid]),
+		findDisk: async (v) => {
+			const rows = await (idb.league as any).getAllFromIndex(
+				"teamStats",
+				"season, tid",
+				[v.season, v.tid],
+			);
+			return rows.find((row: any) => row.playoffs === v.playoffs);
+		},
 		pk: (row) => row.rid,
 		sameIdentity: (a, b) =>
 			a.tid === b.tid && a.season === b.season && a.playoffs === b.playoffs,
@@ -134,6 +158,7 @@ const RECONCILE_BY_IDENTITY: Partial<Record<Store, IdentityRule>> = {
 	// pick's true identity is (season, round, originalTid); with no unique index
 	// for it, scan just that season's slice via the cache's season index.
 	draftPicks: {
+		pkField: "dpid",
 		find: async (api, v) => {
 			const all = await api.indexGetAll("draftPicksBySeason", v.season);
 			return all.find(
@@ -147,35 +172,164 @@ const RECONCILE_BY_IDENTITY: Partial<Record<Store, IdentityRule>> = {
 			a.round === b.round &&
 			a.originalTid === b.originalTid,
 	},
+	// Released-contract rows are immutable once created and their autoincrement
+	// `rid` is renumbered by a league import (rows get deleted as contracts
+	// expire, so the sequence has gaps and the renumbering SHIFTS every key). A
+	// synced put/delete addressed by the author's `rid` would hit a different
+	// released contract here, silently corrupting the receiver's salary-cap math.
+	// The row's true identity is its content: which player, released by which
+	// team, under what contract. (Two identical releases of the same player by
+	// the same team with the same terms would be indistinguishable - matching
+	// either row is harmless precisely because they're identical.)
+	releasedPlayers: {
+		pkField: "rid",
+		find: async (api, v) => {
+			const all = await api.getAll();
+			return all.find(
+				(row: any) =>
+					row.pid === v.pid &&
+					row.tid === v.tid &&
+					row.contract?.amount === v.contract?.amount &&
+					row.contract?.exp === v.contract?.exp,
+			);
+		},
+		pk: (row) => row.rid,
+		sameIdentity: (a, b) =>
+			a.pid === b.pid &&
+			a.tid === b.tid &&
+			a.contract?.amount === b.contract?.amount &&
+			a.contract?.exp === b.contract?.exp,
+	},
 };
 
-// Drop a stale duplicate of an incoming logically-keyed row (see
-// RECONCILE_BY_IDENTITY) so the put updates the row in place instead of creating
-// a second row that violates the store's unique index (or, for draftPicks, a
-// second pick for one logical slot). Best-effort and local: the removed primary
-// key is forgotten from the tracker so we don't broadcast it (every device heals
-// itself the same way when it applies the same authoritative row).
-const reconcileIdentity = async (store: Store, value: any) => {
-	const rule = RECONCILE_BY_IDENTITY[store];
-	if (!rule) {
-		return;
+// Stores whose rows have NO stable logical key but are immutable in practice at
+// delete time, and whose autoincrement pk diverges across devices (renumbered by
+// import). Deletes for these carry a snapshot of the deleted row; the receiver
+// deletes the row whose CONTENT matches the snapshot, falling back to the raw id
+// only when nothing matches. scheduledEvents: processed events are deleted as
+// the sim advances - a delete by the author's `id` on a device whose ids shifted
+// would remove a DIFFERENT pending event (and leave a phantom one to fire).
+const DELETE_BY_CONTENT = new Set<Store>(["scheduledEvents"]);
+
+// Order-insensitive deep equality for plain JSON values (rows have been through
+// JSON serialization, so only objects/arrays/primitives appear).
+const deepEqual = (a: any, b: any): boolean => {
+	if (a === b) {
+		return true;
 	}
-	try {
-		const existing = await rule.find(storeAPI(store), value);
-		if (
-			existing &&
-			rule.pk(existing) !== rule.pk(value) &&
-			rule.sameIdentity(existing, value)
-		) {
-			await storeAPI(store).delete(rule.pk(existing));
-			changeTracker.forget(store, rule.pk(existing));
+	if (typeof a !== "object" || typeof b !== "object" || !a || !b) {
+		return false;
+	}
+	if (Array.isArray(a) !== Array.isArray(b)) {
+		return false;
+	}
+	const aKeys = Object.keys(a);
+	const bKeys = Object.keys(b);
+	if (aKeys.length !== bKeys.length) {
+		return false;
+	}
+	return aKeys.every(
+		(key) => Object.hasOwn(b, key) && deepEqual(a[key], b[key]),
+	);
+};
+
+const rowMatchesSnapshot = (row: any, snapshot: any, pkField: string) => {
+	const { [pkField]: _a, ...rowRest } = row;
+	const { [pkField]: _b, ...snapshotRest } = snapshot;
+	return deepEqual(rowRest, snapshotRest);
+};
+
+// Find the local row sharing the incoming row's logical identity, checking the
+// cache first and falling back to disk for cache-scoped stores. Returns
+// undefined when no local row has that identity.
+const findByIdentity = async (rule: IdentityRule, store: Store, value: any) => {
+	const existing = await rule.find(storeAPI(store), value);
+	if (existing !== undefined && rule.sameIdentity(existing, value)) {
+		return existing;
+	}
+	if (rule.findDisk && idb.league) {
+		try {
+			const diskRow = await rule.findDisk(value);
+			if (diskRow !== undefined && rule.sameIdentity(diskRow, value)) {
+				return diskRow;
+			}
+		} catch {
+			// Index missing / read failed - treat as not found; the occupant check
+			// below still prevents any clobbering.
 		}
-	} catch (error) {
-		console.error(
-			`Failed to reconcile duplicate ${store} row before apply`,
-			error,
-		);
 	}
+	return undefined;
+};
+
+// Whatever row currently sits at `pk` locally - cache first, then disk, because
+// the cache is season-scoped for some stores and an old-season row that only
+// lives on disk would otherwise look like a free slot (writing there is exactly
+// the historical-stats wipe this file guards against).
+const getOccupant = async (store: Store, pk: number) => {
+	const occupant = await storeAPI(store).get(pk);
+	if (occupant !== undefined) {
+		return occupant;
+	}
+	if (idb.league) {
+		try {
+			return await (idb.league as any).get(store, pk);
+		} catch {
+			// Store not in the league DB / read failed - treat as unoccupied; for
+			// fully-cached stores the cache lookup above was already authoritative.
+		}
+	}
+	return undefined;
+};
+
+// Apply a put to a logically-keyed store WITHOUT ever overwriting an unrelated
+// row. The author addresses the row by ITS autoincrement pk, but on a device
+// whose keys diverged (a league import renumbers them) that pk can point at a
+// different logical row - blindly putting there overwrote it (the observed
+// "teams lost a whole season of history" wipe: the author's current-season rids
+// landed on top of this device's prior-season rows). Rules, in order:
+//   1. A local row with the SAME identity at the author's pk - plain in-place put.
+//   2. Local identity row elsewhere + author's pk slot FREE - converge: move our
+//      row to the author's pk (deterministic replay lands all devices on the
+//      author's numbering, and a free slot makes the move safe).
+//   3. Local identity row elsewhere + author's pk OCCUPIED by an unrelated row -
+//      update our row in place under its LOCAL pk; never touch the occupant.
+//   4. No local identity row + author's pk free - put under the author's pk.
+//   5. No local identity row + author's pk occupied by an unrelated row - insert
+//      under a fresh local pk (autoincrement); never touch the occupant.
+// Returns the pk the row was actually written under.
+const applyIdentityPut = async (
+	store: Store,
+	rule: IdentityRule,
+	value: any,
+): Promise<number | string> => {
+	const api = storeAPI(store);
+	const authorPk = rule.pk(value);
+	const existing = await findByIdentity(rule, store, value);
+
+	if (existing !== undefined && rule.pk(existing) === authorPk) {
+		return api.put(value);
+	}
+
+	const occupant = await getOccupant(store, authorPk);
+	const occupiedByOtherRow =
+		occupant !== undefined && !rule.sameIdentity(occupant, value);
+
+	if (existing !== undefined) {
+		if (occupiedByOtherRow) {
+			return api.put({ ...value, [rule.pkField]: rule.pk(existing) });
+		}
+		await api.delete(rule.pk(existing));
+		changeTracker.forget(store, rule.pk(existing));
+		return api.put(value);
+	}
+
+	if (occupiedByOtherRow) {
+		const fresh = { ...value };
+		delete fresh[rule.pkField];
+		return api.add(fresh);
+	}
+
+	return api.put(value);
 };
 
 // Replace an incoming player record's watch flag with this device's own, so
@@ -269,8 +423,13 @@ export const captureChangeset = async (): Promise<Changeset> => {
 			// For a logically-keyed store, carry the deleted row's identity so the
 			// receiver deletes by (tid, season[, playoffs]) rather than by our `rid`
 			// - which points at an unrelated row on a device whose rids diverged,
-			// silently wiping the wrong (often much older) season.
-			if (RECONCILE_BY_IDENTITY[typedStore] && deletedRow !== undefined) {
+			// silently wiping the wrong (often much older) season. Content-matched
+			// stores (scheduledEvents) carry the snapshot for the same reason.
+			if (
+				(RECONCILE_BY_IDENTITY[typedStore] ||
+					DELETE_BY_CONTENT.has(typedStore)) &&
+				deletedRow !== undefined
+			) {
 				changes.push({
 					store: typedStore,
 					id,
@@ -359,76 +518,137 @@ export const applyChangeset = async (
 	// at the same time (e.g. right after this device takes over simming while
 	// still catching up), leaving that sim unpublished. Forgetting only our own
 	// applied records keeps a concurrent local action's other writes intact.
-	for (const change of changeset.changes) {
-		// Never let a peer's per-device/personal state (their controlled team,
-		// their in-progress/saved trades) overwrite ours - also protects catch-up
-		// replays of older, unfiltered history that predates this exclusion.
-		if (isDeviceLocal(change.store, change.id)) {
-			continue;
-		}
+	// beginApply only tells the invisible-write CANARY these writes are expected
+	// to be uncaptured - it does not suppress recording.
+	changeTracker.beginApply();
+	try {
+		for (const change of changeset.changes) {
+			// Never let a peer's per-device/personal state (their controlled team,
+			// their in-progress/saved trades) overwrite ours - also protects catch-up
+			// replays of older, unfiltered history that predates this exclusion.
+			if (isDeviceLocal(change.store, change.id)) {
+				continue;
+			}
 
-		const api = storeAPI(change.store);
+			const api = storeAPI(change.store);
 
-		try {
-			if (change.type === "delete") {
-				// Delete the row matching the incoming logical identity, not our own
-				// `rid`. For teamSeasons/teamStats the author's `rid` addresses a
-				// DIFFERENT row here (rids diverge across devices), so a raw
-				// delete-by-rid silently erased unrelated, much older seasons. When an
-				// identity snapshot is present, resolve the local `rid` via the unique
-				// index; if no row matches, it's already gone - a safe no-op.
-				const rule = RECONCILE_BY_IDENTITY[change.store];
-				if (rule && change.value !== undefined) {
-					const existing = await rule.find(api, change.value);
-					if (existing) {
-						await api.delete(rule.pk(existing));
-						changeTracker.forget(change.store, rule.pk(existing));
+			try {
+				if (change.type === "delete") {
+					// Delete the row matching the incoming logical identity, not our own
+					// `rid`. For teamSeasons/teamStats the author's `rid` addresses a
+					// DIFFERENT row here (rids diverge across devices), so a raw
+					// delete-by-rid silently erased unrelated, much older seasons. When an
+					// identity snapshot is present, resolve the local `rid` via the unique
+					// index; if no row matches, it's already gone - a safe no-op.
+					const rule = RECONCILE_BY_IDENTITY[change.store];
+					if (rule) {
+						if (change.value !== undefined) {
+							const existing = await findByIdentity(
+								rule,
+								change.store,
+								change.value,
+							);
+							if (existing !== undefined) {
+								await api.delete(rule.pk(existing));
+								changeTracker.forget(change.store, rule.pk(existing));
+							}
+						}
+						// No identity snapshot (the deleted row wasn't in the author's cache
+						// - rare): deleting by the raw autoincrement id could erase an
+						// UNRELATED row on a device whose keys diverged. A lingering stale
+						// row is recoverable; a wrong-row delete is not. Skip.
+					} else if (
+						DELETE_BY_CONTENT.has(change.store) &&
+						change.value !== undefined
+					) {
+						// No stable logical key, but the snapshot's CONTENT identifies the
+						// row: delete the local row that matches it, wherever its diverged
+						// autoincrement id put it. Check the cache first, then disk (the
+						// scheduledEvents cache only holds the current season's rows). Fall
+						// back to the raw id only when nothing matches (pre-snapshot history).
+						const pkField = (idb.cache as any).storeInfos[change.store].pk;
+						let match = (await api.getAll()).find((row: any) =>
+							rowMatchesSnapshot(row, change.value, pkField),
+						);
+						if (match === undefined && idb.league) {
+							try {
+								match = (await (idb.league as any).getAll(change.store)).find(
+									(row: any) => rowMatchesSnapshot(row, change.value, pkField),
+								);
+							} catch {
+								// Read failed - fall through to the raw-id fallback.
+							}
+						}
+						if (match !== undefined) {
+							await api.delete(match[pkField]);
+							changeTracker.forget(change.store, match[pkField]);
+						} else {
+							await api.delete(change.id);
+							changeTracker.forget(change.store, change.id);
+						}
+					} else {
+						await api.delete(change.id);
+						changeTracker.forget(change.store, change.id);
 					}
 				} else {
-					await api.delete(change.id);
-				}
-			} else {
-				// Watch-list flags are personal: each user shortlists players for
-				// their own team, so a synced player record must never carry another
-				// device's watch color onto this one. Keep whatever watch THIS device
-				// has for the player (including none) before applying the record.
-				if (change.store === "players" && change.value) {
-					await preserveLocalWatch(change.value);
-				}
+					// Watch-list flags are personal: each user shortlists players for
+					// their own team, so a synced player record must never carry another
+					// device's watch color onto this one. Keep whatever watch THIS device
+					// has for the player (including none) before applying the record.
+					if (change.store === "players" && change.value) {
+						await preserveLocalWatch(change.value);
+					}
 
-				// Heal any diverged-rid duplicate first, so a logically-keyed row (e.g.
-				// teamSeasons) updates in place instead of tripping its unique index.
-				await reconcileIdentity(change.store, change.value);
-				await api.put(change.value);
+					const rule = RECONCILE_BY_IDENTITY[change.store];
+					let writtenPk: number | string;
+					if (rule) {
+						// Logically-keyed row: land it on its identity, never on top of an
+						// unrelated row that happens to hold the author's diverged pk.
+						writtenPk = await applyIdentityPut(
+							change.store,
+							rule,
+							change.value,
+						);
+					} else {
+						writtenPk = await api.put(change.value);
+					}
+					// Forget the pk the row was ACTUALLY written under - it can differ from
+					// the author's `change.id` when keys diverged, and forgetting the raw
+					// `change.id` would both leave our own write pending (re-broadcast echo)
+					// and potentially swallow an unrelated concurrent local edit that
+					// happens to sit at the author's pk.
+					changeTracker.forget(change.store, writtenPk);
+				}
+			} catch (error) {
+				// Name the exact record that failed. A deterministic apply failure pins
+				// the watermark and retries forever; without this the retry loop logs an
+				// anonymous error and the poison record is undiagnosable from the field.
+				throw new Error(
+					`Apply failed at ${change.store}/${String(change.id)} (${change.type}): ${
+						error instanceof Error ? error.message : String(error)
+					}`,
+					{ cause: error },
+				);
 			}
-		} catch (error) {
-			// Name the exact record that failed. A deterministic apply failure pins
-			// the watermark and retries forever; without this the retry loop logs an
-			// anonymous error and the poison record is undiagnosable from the field.
-			throw new Error(
-				`Apply failed at ${change.store}/${String(change.id)} (${change.type}): ${
-					error instanceof Error ? error.message : String(error)
-				}`,
-				{ cause: error },
-			);
-		}
-		changeTracker.forget(change.store, change.id);
-		touchedStores.add(change.store);
+			touchedStores.add(change.store);
 
-		if (change.store === "gameAttributes") {
-			touchedGameAttributes = true;
-			if (change.id === "phase" || change.id === "nextPhase") {
-				touchedPhase = true;
+			if (change.store === "gameAttributes") {
+				touchedGameAttributes = true;
+				if (change.id === "phase" || change.id === "nextPhase") {
+					touchedPhase = true;
+				}
+				if (change.id === "season") {
+					touchedSeason = true;
+				}
+				if (change.id === "daysLeft") {
+					touchedStatus = true;
+				}
+			} else if (change.store === "games" || change.store === "schedule") {
+				touchedGames = true;
 			}
-			if (change.id === "season") {
-				touchedSeason = true;
-			}
-			if (change.id === "daysLeft") {
-				touchedStatus = true;
-			}
-		} else if (change.store === "games" || change.store === "schedule") {
-			touchedGames = true;
 		}
+	} finally {
+		changeTracker.endApply();
 	}
 
 	// A synced season rollover: persist what was just applied, then re-fill the

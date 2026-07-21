@@ -7,6 +7,7 @@ import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { last, minBy } from "../../common/utils.ts";
 import { getDraftTeamsByTid } from "./draftHistory.ts";
 import { bySport } from "../../common/sportFunctions.ts";
+import { getSyncEngine } from "../core/sync/engineHolder.ts";
 
 const getUserNextPickYear = async () => {
 	const userTids = g.get("userTids");
@@ -36,8 +37,17 @@ const updateDraft = async (inputs: unknown, updateEvents: UpdateEvents) => {
 
 		let draftPicks = await draft.getOrder();
 
+		// The two "dirty quick fix" mutations below repair corrupted single-player
+		// saves, but they must NEVER run in a synced league: a view load is not a
+		// cloud-tracked action, so their writes are invisible to the sync log -
+		// each device would silently repair (or, worse, run a whole draft lottery)
+		// on its own, forking the room. In a synced league the device in charge of
+		// simming produces this data through real, synced actions.
+		const canMutateFromView = getSyncEngine() === undefined;
+
 		// DIRTY QUICK FIX FOR sometimes there are twice as many draft picks as needed, and one set has all pick 0
 		if (
+			canMutateFromView &&
 			!fantasyDraft &&
 			g.get("phase") !== PHASE.EXPANSION_DRAFT &&
 			draftPicks.length > 2 * g.get("numActiveTeams")
@@ -57,7 +67,17 @@ const updateDraft = async (inputs: unknown, updateEvents: UpdateEvents) => {
 
 		// DIRTY QUICK FIX FOR https://github.com/zengm-games/zengm/issues/246
 		// Not sure why this is needed! Maybe related to lottery running before the phase change?
+		//
+		// Gated to phase >= DRAFT: during the DRAFT_LOTTERY phase, pick === 0 is
+		// the NORMAL state of every current-season pick (the lottery simply hasn't
+		// been held yet). Without the phase gate, merely LOADING this page ran the
+		// entire draft lottery silently - no reveal, no events - and in a synced
+		// league that run never reached other devices, forking the room (each
+		// device that visited this page held its own private lottery, compounding
+		// COLA penalties on every run).
 		if (
+			canMutateFromView &&
+			g.get("phase") >= PHASE.DRAFT &&
 			draftPicks.some((dp) => dp.pick === 0) &&
 			g.get("draftType") !== "freeAgents"
 		) {
@@ -228,14 +248,19 @@ const updateDraft = async (inputs: unknown, updateEvents: UpdateEvents) => {
 
 			// DIRTY QUICK FIX FOR v10 db upgrade bug - eventually remove
 			// This isn't just for v10 db upgrade! Needed the same fix for http://www.reddit.com/r/BasketballGM/comments/2tf5ya/draft_bug/cnz58m2?context=3 - draft class not always generated with the correct seasons
-			for (const p of undrafted) {
-				const season = p.ratings[0].season;
+			// Skipped in synced leagues: a view load is not a cloud-tracked action,
+			// so this player write would be invisible to the sync log and diverge
+			// this device from the room (see canMutateFromView above).
+			if (canMutateFromView) {
+				for (const p of undrafted) {
+					const season = p.ratings[0].season;
 
-				if (season !== g.get("season") && g.get("phase") === PHASE.DRAFT) {
-					console.log("FIXING MESSED UP DRAFT CLASS");
-					console.log(season);
-					p.ratings[0].season = g.get("season");
-					await idb.cache.players.put(p);
+					if (season !== g.get("season") && g.get("phase") === PHASE.DRAFT) {
+						console.log("FIXING MESSED UP DRAFT CLASS");
+						console.log(season);
+						p.ratings[0].season = g.get("season");
+						await idb.cache.players.put(p);
+					}
 				}
 			}
 		}

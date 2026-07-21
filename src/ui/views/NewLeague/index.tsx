@@ -893,6 +893,7 @@ const NewLeague = (props: View<"newLeague">) => {
 					gameAttributes: state.basicInfo?.gameAttributes,
 					maxGid: state.basicInfo?.maxGid,
 					hasRookieContracts,
+					hasSyncCheckpoint: !!state.basicInfo?.meta?.syncCheckpoint,
 					startingSeason: state.basicInfo?.startingSeason,
 					teams: state.basicInfo?.teams,
 					version: state.basicInfo?.version,

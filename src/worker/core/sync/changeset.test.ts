@@ -628,7 +628,9 @@ describe("sync changeset", () => {
 		const picks = await idb.cache.draftPicks.getAll();
 		// The 2084 pick (the real identity match) is gone...
 		assert.strictEqual(
-			picks.find((p) => p.season === 2084 && p.round === 1 && p.originalTid === 4),
+			picks.find(
+				(p) => p.season === 2084 && p.round === 1 && p.originalTid === 4,
+			),
 			undefined,
 			JSON.stringify(picks),
 		);
@@ -664,6 +666,357 @@ describe("sync changeset", () => {
 		assert.strictEqual(c.value.season, 2084);
 		assert.strictEqual(c.value.round, 1);
 		assert.strictEqual(c.value.originalTid, 4);
+	});
+
+	test("a put whose author rid points at an UNRELATED local row never clobbers it (the 2000-season wipe)", async () => {
+		// THE INCIDENT THIS GUARDS AGAINST. The receiver joined by importing an
+		// export, which renumbered its teamSeasons rids into per-team interleaved
+		// order: (tid 1, 2001) landed at rid 4 and (tid 15, 2000) at rid 31. The
+		// author (original device) has sequential numbering, where rid 31 is ITS
+		// (tid 1, 2001) row. When the author simmed 2001 games, its put arrived
+		// addressed to rid 31 - and used to blindly overwrite the receiver's
+		// (tid 15, 2000) row sitting there, wiping that team's 2000 history. The
+		// put must instead update (tid 1, 2001) in place under its LOCAL rid.
+		resetG();
+		await resetCache({
+			teamSeasons: [
+				{ rid: 4, tid: 1, season: 2001, won: 8, lost: 3 },
+				{ rid: 31, tid: 15, season: 2000, won: 40, lost: 42 },
+			],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "teamSeasons",
+						id: 31, // the author's rid for ITS (tid 1, 2001) row
+						type: "put",
+						value: { rid: 31, tid: 1, season: 2001, won: 9, lost: 3 },
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.teamSeasons.getAll();
+		assert.strictEqual(rows.length, 2, JSON.stringify(rows));
+		// The unrelated 2000-season row that merely held the author's rid survives.
+		const survivor = rows.find((t) => t.tid === 15 && t.season === 2000);
+		assert.ok(survivor, JSON.stringify(rows));
+		assert.strictEqual(survivor!.rid, 31);
+		assert.strictEqual(survivor!.won, 40);
+		// The incoming row updated ITS identity in place, under the LOCAL rid.
+		const updated = rows.find((t) => t.tid === 1 && t.season === 2001);
+		assert.ok(updated, JSON.stringify(rows));
+		assert.strictEqual(updated!.rid, 4);
+		assert.strictEqual(updated!.won, 9);
+	});
+
+	test("a brand-new row whose author rid is occupied lands under a fresh local rid", async () => {
+		// No local row shares the incoming identity, but the author's rid slot is
+		// taken by an unrelated row: the new row must be INSERTED (fresh local
+		// rid), not put on top of the occupant.
+		resetG();
+		await resetCache({
+			teamSeasons: [{ rid: 31, tid: 15, season: 2000, won: 40, lost: 42 }],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "teamSeasons",
+						id: 31,
+						type: "put",
+						value: { rid: 31, tid: 1, season: 2001, won: 9, lost: 3 },
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.teamSeasons.getAll();
+		assert.strictEqual(rows.length, 2, JSON.stringify(rows));
+		const occupant = rows.find((t) => t.tid === 15 && t.season === 2000);
+		assert.ok(occupant, JSON.stringify(rows));
+		assert.strictEqual(occupant!.rid, 31);
+		assert.strictEqual(occupant!.won, 40);
+		const added = rows.find((t) => t.tid === 1 && t.season === 2001);
+		assert.ok(added, JSON.stringify(rows));
+		assert.notStrictEqual(added!.rid, 31);
+		assert.strictEqual(added!.won, 9);
+	});
+
+	test("an in-place apply forgets the rid it wrote, not an unrelated pending edit at the author's rid", async () => {
+		// The receiver has a concurrent local edit pending for the row at rid 31
+		// (an unrelated 2000-season row). An incoming put addressed to rid 31 but
+		// belonging to (tid 1, 2001) applies in place at rid 4. Forgetting must
+		// target rid 4 (what we wrote) - forgetting the author's rid 31 would both
+		// swallow the local pending edit AND leave our own write pending.
+		resetG();
+		await resetCache({
+			teamSeasons: [
+				{ rid: 4, tid: 1, season: 2001, won: 8, lost: 3 },
+				{ rid: 31, tid: 15, season: 2000, won: 40, lost: 42 },
+			],
+		});
+		changeTracker.enable();
+		changeTracker.reset();
+
+		// A local edit to the rid-31 row, as a concurrent sim would make.
+		changeTracker.beginSim();
+		const local2000 = (await idb.cache.teamSeasons.getAll()).find(
+			(t) => t.rid === 31,
+		)!;
+		local2000.won = 41;
+		await idb.cache.teamSeasons.put(local2000);
+		changeTracker.endSim();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "teamSeasons",
+						id: 31,
+						type: "put",
+						value: { rid: 31, tid: 1, season: 2001, won: 9, lost: 3 },
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const captured = await captureChangeset();
+		const ids = captured.changes.map((c) => c.id);
+		// The local pending edit (rid 31) survives to broadcast...
+		assert.ok(ids.includes(31), JSON.stringify(captured.changes));
+		// ...and the applied write (landed at rid 4) is not re-broadcast.
+		assert.ok(!ids.includes(4), JSON.stringify(captured.changes));
+	});
+
+	test("a synced releasedPlayers delete removes the row matching the contract, not the author's rid", async () => {
+		// releasedPlayers rids are renumbered by import (expired contracts leave
+		// gaps), so the author's rid addresses a different released contract here.
+		// The delete must match by content (pid, tid, contract).
+		resetG();
+		await resetCache({
+			releasedPlayers: [
+				{ rid: 1, pid: 100, tid: 3, contract: { amount: 1000, exp: 2026 } },
+				{ rid: 2, pid: 200, tid: 4, contract: { amount: 2000, exp: 2027 } },
+			],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "releasedPlayers",
+						id: 1, // the author's rid for ITS (pid 200) row
+						type: "delete",
+						value: {
+							rid: 1,
+							pid: 200,
+							tid: 4,
+							contract: { amount: 2000, exp: 2027 },
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.releasedPlayers.getAll();
+		assert.strictEqual(rows.length, 1, JSON.stringify(rows));
+		// The pid-100 row that merely held the author's rid survives.
+		assert.strictEqual(rows[0]!.pid, 100);
+	});
+
+	test("a synced releasedPlayers put never clobbers a different released contract at the author's rid", async () => {
+		resetG();
+		await resetCache({
+			releasedPlayers: [
+				{ rid: 1, pid: 100, tid: 3, contract: { amount: 1000, exp: 2026 } },
+			],
+		});
+		changeTracker.disable();
+
+		// The author released pid 300; its row got rid 1 there.
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "releasedPlayers",
+						id: 1,
+						type: "put",
+						value: {
+							rid: 1,
+							pid: 300,
+							tid: 5,
+							contract: { amount: 3000, exp: 2028 },
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.releasedPlayers.getAll();
+		assert.strictEqual(rows.length, 2, JSON.stringify(rows));
+		const kept = rows.find((row) => row.pid === 100);
+		assert.ok(kept, JSON.stringify(rows));
+		assert.strictEqual(kept!.rid, 1);
+		const added = rows.find((row) => row.pid === 300);
+		assert.ok(added, JSON.stringify(rows));
+		assert.notStrictEqual(added!.rid, 1);
+	});
+
+	test("a synced scheduledEvents delete removes the row matching the snapshot's content, not the author's id", async () => {
+		// scheduledEvents ids are renumbered by import (processed events leave
+		// gaps). The author processed and deleted ITS id 5; on this device that
+		// content lives at id 6. The content match must delete id 6 and leave the
+		// unrelated event at id 5 (which would otherwise fire twice/never).
+		resetG();
+		await resetCache({
+			scheduledEvents: [
+				{
+					id: 5,
+					type: "gameAttributes",
+					season: 2031,
+					phase: 0,
+					info: { threePointers: true },
+				},
+				{
+					id: 6,
+					type: "gameAttributes",
+					season: 2030,
+					phase: 0,
+					info: { salaryCap: 50000 },
+				},
+			],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "scheduledEvents",
+						id: 5, // the author's id for ITS (2030, salaryCap) event
+						type: "delete",
+						value: {
+							id: 5,
+							type: "gameAttributes",
+							season: 2030,
+							phase: 0,
+							info: { salaryCap: 50000 },
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.scheduledEvents.getAll();
+		assert.strictEqual(rows.length, 1, JSON.stringify(rows));
+		assert.strictEqual(rows[0]!.id, 5);
+		assert.strictEqual(rows[0]!.season, 2031);
+	});
+
+	test("a scheduledEvents delete with no content match falls back to the raw id", async () => {
+		resetG();
+		await resetCache({
+			scheduledEvents: [
+				{
+					id: 5,
+					type: "gameAttributes",
+					season: 2031,
+					phase: 0,
+					info: { threePointers: true },
+				},
+			],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "scheduledEvents",
+						id: 5,
+						type: "delete",
+						value: {
+							id: 5,
+							type: "gameAttributes",
+							season: 2031,
+							phase: 0,
+							// Content drifted (edited after the receiver last synced), so no
+							// content match - same-id fallback still applies the delete.
+							info: { threePointers: false },
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.scheduledEvents.getAll();
+		assert.strictEqual(rows.length, 0, JSON.stringify(rows));
+	});
+
+	test("captures a scheduledEvents delete with its content snapshot", async () => {
+		resetG();
+		await resetCache({
+			scheduledEvents: [
+				{
+					id: 5,
+					type: "gameAttributes",
+					season: 2030,
+					phase: 0,
+					info: { salaryCap: 50000 },
+				},
+			],
+		});
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await changeTracker.runCaptured(async () => {
+			await idb.cache.scheduledEvents.delete(5);
+		});
+
+		const changeset = overTheWire(await captureChangeset());
+		assert.strictEqual(changeset.changes.length, 1);
+		const c = changeset.changes[0]!;
+		assert.strictEqual(c.type, "delete");
+		assert.strictEqual(c.store, "scheduledEvents");
+		// The content snapshot rides along so the receiver deletes by content.
+		assert.strictEqual(c.value.season, 2030);
+		assert.deepEqual(c.value.info, { salaryCap: 50000 });
+	});
+
+	test("a teamSeasons delete WITHOUT an identity snapshot is skipped, never applied by raw rid", async () => {
+		// If the snapshot is missing (the row wasn't in the author's cache), a raw
+		// delete-by-rid could erase an unrelated row on a diverged device. A stale
+		// leftover row is recoverable; a wrong-row delete is not.
+		resetG();
+		await resetCache({
+			teamSeasons: [{ rid: 7, tid: 4, season: 2052, won: 10, lost: 5 }],
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [{ store: "teamSeasons", id: 7, type: "delete" }],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.teamSeasons.getAll();
+		assert.strictEqual(rows.length, 1, JSON.stringify(rows));
+		assert.strictEqual(rows[0]!.rid, 7);
 	});
 
 	test("applying a changeset does not itself get recorded", async () => {

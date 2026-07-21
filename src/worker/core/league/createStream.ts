@@ -199,6 +199,7 @@ export type PreProcessParams = {
 	averagePopulation: number | undefined;
 	hasRookieContracts: boolean | undefined;
 	noStartingInjuries: boolean;
+	preserveAutoIncrementKeys: boolean;
 	realPlayerPhotos: RealPlayerPhotos | undefined;
 	realTeamInfo: RealTeamInfo | undefined;
 	scoutingLevel: number;
@@ -223,14 +224,23 @@ const preProcess = async (
 		averagePopulation,
 		hasRookieContracts,
 		noStartingInjuries,
+		preserveAutoIncrementKeys,
 		realPlayerPhotos,
 		realTeamInfo,
 		scoutingLevel,
 		version,
 	}: PreProcessParams,
 ) => {
+	// A file exported from a SYNCED league is machine-generated (consistent,
+	// unique keys) and its keys must survive the import: every device in a sync
+	// room addresses records by these autoincrement keys, so renumbering them
+	// here made the joining device's keys diverge from the rest of the room -
+	// after which a synced write landed on whatever unrelated row held the
+	// author's key, silently overwriting it (the "2000 season wiped for half the
+	// teams" corruption). For any other file, keep deleting them: hand-edited
+	// files can repeat a key, and renumbering is the safe default.
 	const primaryKeyToDelete = PRIMARY_KEYS_TO_DELETE[key];
-	if (primaryKeyToDelete !== undefined) {
+	if (primaryKeyToDelete !== undefined && !preserveAutoIncrementKeys) {
 		delete x[primaryKeyToDelete];
 	}
 
@@ -370,7 +380,17 @@ const getSaveToDB = async ({
 				}
 
 				// Overwrite schedule with known safe gid (higher than any game) in case it is somehow conflicting with games, because schedule gids are not referenced anywhere else but game gids are
-				if (key === "schedule" && keptKeys.has("schedule")) {
+				// Skipped for synced-league files (preserveAutoIncrementKeys): the room
+				// addresses schedule rows by these gids (games played delete their
+				// schedule row by gid), so renumbering them here would make every
+				// subsequent synced schedule delete hit the wrong row on this device.
+				// A machine-generated export can't have the games/schedule gid
+				// conflict this guards against anyway.
+				if (
+					key === "schedule" &&
+					keptKeys.has("schedule") &&
+					!preProcessParams.preserveAutoIncrementKeys
+				) {
 					currentScheduleGid += 1;
 					value.gid = currentScheduleGid;
 				}
@@ -674,8 +694,37 @@ const confirmSequential = (objs: any, key: string, objectName: string) => {
 	return values;
 };
 
+// Decide whether imported teamSeasons rows keep their `rid`s. Preservation is
+// all-or-nothing: it's only safe when EVERY row carries a unique numeric rid
+// (a machine-generated export always does). Any inconsistency - a missing rid,
+// a duplicate - falls back to stripping them all so IndexedDB renumbers, since
+// a partial preserve could silently drop rows (two rows, one key).
+export const applyTeamSeasonRidPolicy = (
+	teamSeasons: { rid?: unknown }[],
+	preserveAutoIncrementKeys: boolean,
+) => {
+	let preserve = preserveAutoIncrementKeys;
+	if (preserve) {
+		const rids = new Set();
+		for (const teamSeason of teamSeasons) {
+			if (typeof teamSeason.rid !== "number" || rids.has(teamSeason.rid)) {
+				preserve = false;
+				break;
+			}
+			rids.add(teamSeason.rid);
+		}
+	}
+
+	if (!preserve) {
+		for (const teamSeason of teamSeasons) {
+			delete teamSeason.rid;
+		}
+	}
+};
+
 const processTeamInfos = async ({
 	gameAttributes,
+	preserveAutoIncrementKeys,
 	realTeamInfo,
 	teamInfos,
 	userTid,
@@ -685,6 +734,7 @@ const processTeamInfos = async ({
 		salaryCap: number;
 		season: number;
 	};
+	preserveAutoIncrementKeys: boolean;
 	realTeamInfo: RealTeamInfo | undefined;
 	teamInfos: any[];
 	userTid: number;
@@ -959,8 +1009,11 @@ const processTeamInfos = async ({
 						: g.get("defaultStadiumCapacity");
 			}
 
-			// If this is specified in a league file, we can ignore it because they should all be in order, and sometimes people manually edit the file and include duplicates
-			delete teamSeason.rid;
+			// rid handling happens in applyTeamSeasonRidPolicy after all rows are
+			// collected: synced-league files keep their rids (the whole sync room
+			// addresses rows by them - renumbering here is what made a joining
+			// device's rids diverge and let synced writes overwrite unrelated
+			// seasons), other files get them stripped so IndexedDB renumbers.
 
 			// teamSeasons = teamSeasons.filter(ts2 => ts2.season !== teamSeason.season);
 			teamSeasons.push(teamSeason);
@@ -1018,6 +1071,8 @@ const processTeamInfos = async ({
 	if (scoutingLevel === undefined) {
 		throw new Error("scoutingLevel should be defined");
 	}
+
+	applyTeamSeasonRidPolicy(teamSeasons, preserveAutoIncrementKeys);
 
 	return {
 		scoutingLevel,
@@ -1131,6 +1186,12 @@ type CreateStreamProps = {
 	fromFile: {
 		gameAttributes: Record<string, unknown> | undefined;
 		hasRookieContracts: boolean;
+		// True when the file carries a sync checkpoint (meta.syncCheckpoint), i.e.
+		// it's a machine-generated export of a synced league being (re)imported to
+		// join its room. Autoincrement primary keys are then PRESERVED instead of
+		// renumbered, so this device addresses records by the same keys as every
+		// other device in the room.
+		hasSyncCheckpoint?: boolean;
 		maxGid: number | undefined;
 		startingSeason: number | undefined;
 		teams: any[] | undefined;
@@ -1291,6 +1352,7 @@ const beforeDBStream = async ({
 	const { scoutingLevel, teams, teamSeasons, teamStats } =
 		await processTeamInfos({
 			gameAttributes,
+			preserveAutoIncrementKeys: !!fromFile.hasSyncCheckpoint,
 			realTeamInfo,
 			teamInfos,
 			userTid: tid,
@@ -1856,6 +1918,7 @@ const createStream = async (
 			averagePopulation,
 			hasRookieContracts: fromFile.hasRookieContracts,
 			noStartingInjuries,
+			preserveAutoIncrementKeys: !!fromFile.hasSyncCheckpoint,
 			realPlayerPhotos,
 			realTeamInfo,
 			scoutingLevel,

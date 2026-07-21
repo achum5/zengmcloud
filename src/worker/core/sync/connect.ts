@@ -1528,6 +1528,9 @@ const doConnectSharedLeague = async ({
 	// Turn on change capture so local actions get published to the room.
 	changeTracker.enable();
 	changeTracker.reset();
+	// Arm the invisible-write canary: any write outside a capture/apply window
+	// while synced is a silent room fork in the making - report it loudly.
+	changeTracker.setCanary(true);
 
 	// Let the UI hide single-player-only chrome (e.g. the multi-team switcher)
 	// and clear the "reconnecting" state.
@@ -1623,7 +1626,9 @@ export const teardownSharedLeague = async ({
 	pushAuthorityToUI(false, undefined);
 
 	// Leave the tracker enabled in dev (the console logger uses it); otherwise
-	// turn it back off so single-player has zero overhead.
+	// turn it back off so single-player has zero overhead. The canary is always
+	// disarmed - uncaptured writes are normal outside a synced session.
+	changeTracker.setCanary(false);
 	if (process.env.NODE_ENV !== "development") {
 		changeTracker.disable();
 	}

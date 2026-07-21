@@ -115,6 +115,18 @@ export const resetCache = async (
 			await idb.cache.draftPicks.add(obj);
 		}
 	}
+
+	if (data.releasedPlayers) {
+		for (const obj of data.releasedPlayers) {
+			await idb.cache.releasedPlayers.add(obj);
+		}
+	}
+
+	if (data.scheduledEvents) {
+		for (const obj of data.scheduledEvents) {
+			await idb.cache.scheduledEvents.add(obj);
+		}
+	}
 };
 
 export const resetG = () => {

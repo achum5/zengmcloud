@@ -1894,6 +1894,11 @@ export type Team = {
 				type: "cola";
 				chances: number;
 				optOut?: true;
+				// Last season updateColaAfterPlayoffs processed this team, making the
+				// update idempotent: chance changes COMPOUND (+= alpha, or *= playoff
+				// factor), so a repeated run for the same season - a phase change
+				// replayed, raced, or otherwise applied twice - must be a no-op.
+				updatedAfterPlayoffs?: number;
 		  }
 		| {
 				type: "nba2027";

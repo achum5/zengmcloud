@@ -22,6 +22,8 @@ import { shuffle } from "../../../common/random.ts";
 import { simLottery } from "./draftLottery.ts";
 import { RESTRICTED_5_PICK, updateNba2027AfterLottery } from "./nba2027.ts";
 import { orderBy, range } from "../../../common/utils.ts";
+import { getSyncEngine } from "../sync/engineHolder.ts";
+import { changeTracker } from "../../db/changeTracker.ts";
 
 type MyDraftLotteryResult<Completed extends boolean> =
 	DraftLotteryResult<Completed> & {
@@ -247,8 +249,32 @@ const genOrder = async (
 	conditions?: Conditions,
 	draftTypeOverride?: DraftType,
 ): Promise<GenOrderResult<true>> => {
+	const syncedLeague = getSyncEngine() !== undefined;
+	const capturing = changeTracker.isCapturing();
+
+	// In a synced league, a REAL lottery run is a room-wide event: it writes the
+	// lottery result, every pick's draft position, and (for COLA) permanent
+	// penalty mutations to each winner's future chances. Those writes only reach
+	// the other devices if they happen inside a cloud-tracked capture window (a
+	// worker action or sim). Outside one - e.g. a view load - the run would be
+	// LOCAL ONLY: this device holds a private lottery the rest of the room never
+	// sees, and every stray re-trigger compounds the COLA penalties again. That
+	// exact failure shipped a scrambled lottery once; refuse loudly instead.
+	if (!mock && syncedLeague && !capturing) {
+		throw new Error(
+			"Refusing to run the draft lottery outside a synced action: the result would exist only on this device. Use the Sim Lottery button, or let the device in charge of simming advance the phase.",
+		);
+	}
+
 	// Sometimes picks just fail to generate or get lost. For example, if numSeasonsFutureDraftPicks is 0.
-	await genPicks();
+	// Repairing missing picks is also a write, so in a synced league it must not
+	// happen from an untracked context either (a mock projection from a view
+	// load would create picks with local-only dpids that diverge from the room).
+	// Mock projections can still run - genOrderGetPicks falls back to in-memory
+	// mock picks when the store is empty.
+	if (!syncedLeague || capturing) {
+		await genPicks();
+	}
 
 	const draftPicks = await genOrderGetPicks(mock);
 	const draftPicksIndexed: DraftPickWithoutKey[][] = [];

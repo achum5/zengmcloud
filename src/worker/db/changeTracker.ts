@@ -43,6 +43,50 @@ let enabled = false;
 // recording - over-capturing a record is harmless (whole-record idempotent
 // writes), losing one forks the league.
 let captureDepth = 0;
+// While > 0, writes are coming from applyChangeset (a remote change being
+// applied locally). Those are expected to be uncaptured - the author already
+// published them - so the invisible-write canary must not fire for them.
+let applyDepth = 0;
+// Canary: armed only while a shared-league sync session is CONNECTED (not for
+// dev-mode logging). While armed, a write that lands outside any capture/sim/
+// apply window is a write the rest of the room will never see - the device is
+// silently forking (this is exactly how a view load once ran a whole private
+// draft lottery). It is reported loudly but not blocked, since some local-only
+// writes are legitimate (see the skip lists below).
+let canaryArmed = false;
+// Per-device-BY-DESIGN stores, mirrored from sync/changeset.ts (this module is
+// deliberately dependency-free): trade/savedTrades/savedTradingBlock never
+// sync. `messages` is here for its `read` flag, which each device tracks
+// locally on purpose (rows are otherwise immutable).
+const CANARY_SKIP_STORES = new Set([
+	"trade",
+	"savedTrades",
+	"savedTradingBlock",
+	"messages",
+]);
+const CANARY_SKIP_GAME_ATTRIBUTES = new Set(["userTid", "tradeProposalsSeed"]);
+// One report per store per session - the first hit identifies the code path,
+// repeats would just spam.
+const canaryReported = new Set<string>();
+
+const canaryCheck = (store: string, id: number | string, type: ChangeType) => {
+	if (
+		!canaryArmed ||
+		applyDepth > 0 ||
+		CANARY_SKIP_STORES.has(store) ||
+		(store === "gameAttributes" &&
+			CANARY_SKIP_GAME_ATTRIBUTES.has(String(id))) ||
+		canaryReported.has(store)
+	) {
+		return;
+	}
+	canaryReported.add(store);
+	console.error(
+		`[sync] INVISIBLE WRITE: ${type} to "${store}" (id ${String(
+			id,
+		)}) happened outside any capture window in a synced league. This write will NEVER reach the other devices - the code path that made it must run as a cloud-tracked action instead of (e.g.) a view load. This device may now be diverged.`,
+	);
+};
 // How many sims are currently capturing. A sim runs fire-and-forget, so its
 // writes interleave (across awaits) with any runSuppressed call that happens
 // concurrently - a read-only view load, a cloud-only broadcast heartbeat, etc.
@@ -78,7 +122,11 @@ export const changeTracker = {
 	// store+id so only the latest intent per record is kept - a put-then-delete
 	// collapses to a delete, matching whole-record last-write-wins semantics.
 	record(store: string, id: number | string, type: ChangeType, value?: any) {
-		if (!enabled || (captureDepth === 0 && simDepth === 0)) {
+		if (!enabled) {
+			return;
+		}
+		if (captureDepth === 0 && simDepth === 0) {
+			canaryCheck(store, id, type);
 			return;
 		}
 		pending.set(key(store, id), { store, id, type, value });
@@ -87,6 +135,35 @@ export const changeTracker = {
 	// For sync debug logs, so a capture wedge is diagnosable from the console.
 	debugState() {
 		return { enabled, captureDepth, simDepth };
+	},
+
+	// Whether writes made right now would be recorded for sync (a cloud-tracked
+	// action or sim window is open). Lets room-forking mutations (e.g. running
+	// the draft lottery) refuse to execute from a context whose writes would
+	// stay invisible to the rest of a synced room.
+	isCapturing() {
+		return captureDepth > 0 || simDepth > 0;
+	},
+
+	// Arm/disarm the invisible-write canary. Armed by the sync layer while a
+	// shared-league session is connected; disarmed on teardown (the tracker
+	// itself may stay enabled for dev logging, where uncaptured writes are
+	// normal single-player behavior).
+	setCanary(armed: boolean) {
+		canaryArmed = armed;
+		if (!armed) {
+			canaryReported.clear();
+		}
+	},
+
+	// Bracket applyChangeset's writes: they are uncaptured on purpose (the
+	// author already published them), so the canary must ignore them.
+	beginApply() {
+		applyDepth += 1;
+	},
+
+	endApply() {
+		applyDepth = Math.max(0, applyDepth - 1);
 	},
 
 	size() {

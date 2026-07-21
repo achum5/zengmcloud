@@ -2751,6 +2751,9 @@ export const generateJsonSchema = (sport: Sport | "test") => {
 										optOut: {
 											type: "boolean",
 										},
+										updatedAfterPlayoffs: {
+											type: "number",
+										},
 									},
 									required: ["type", "chances"],
 								},
