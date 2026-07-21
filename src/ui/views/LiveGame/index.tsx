@@ -362,34 +362,102 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const playerNameByPid = (pid: number): string =>
 		playerByPid(pid)?.name ?? "???";
 
-	const pushScene = (scene: Omit<CourtScene, "key">) => {
+	const pushScene = (
+		scene: Omit<CourtScene, "key">,
+		opts: {
+			// Credit an assisted make: the assister is featured at his formation
+			// spot and the ball passes from him to the shooter before the shot.
+			assistPid?: number;
+			// A live shot at this spot: the nearest defender steps up to contest.
+			contestSpot?: { x: number; y: number };
+		} = {},
+	) => {
 		courtSceneCount.current += 1;
+		const sceneKey = courtSceneCount.current;
 		// Populate the rest of the 5-on-5 as a background formation, so the court
 		// shows a full team instead of just the play's actors. Which end the ball
 		// is at anchors both teams' formations: prefer the shot's rim, else the
 		// average x of the play's actors. Away attacks left, home right (fixed), so
-		// a play on the right half means the home team is on offense.
+		// a play on the right half means the home team is on offense. (Skipped for
+		// the opening tip - a half-court set around a center-court jump reads
+		// wrong.)
 		const playActors = scene.actors;
+		let passFrom = scene.passFrom;
 		let anchorX = scene.rimX;
 		if (anchorX === undefined && playActors.length > 0) {
 			anchorX = playActors.reduce((sum, a) => sum + a.x, 0) / playActors.length;
 		}
 		let actors = playActors;
-		if (anchorX !== undefined && Array.isArray(boxScore.current.teams)) {
+		if (
+			scene.kind !== "jump" &&
+			anchorX !== undefined &&
+			Array.isArray(boxScore.current.teams)
+		) {
 			// Midcourt = halfway between the two rims (away's left, home's right).
 			const midX = (rimXFor(0) + rimXFor(1)) / 2;
 			const offenseT: 0 | 1 = anchorX > midX ? 1 : 0;
 			const teams = boxScore.current.teams;
-			const background = buildLineupActors({
+			const lineup = buildLineupActors({
 				teams: [teams[0]?.players ?? [], teams[1]?.players ?? []],
 				offenseT,
-				excludePids: new Set(playActors.map((a) => a.pid)),
+				sceneKey,
 			});
-			if (background.length > 0) {
-				actors = [...playActors, ...background];
+
+			const playPids = new Set(playActors.map((a) => a.pid));
+			const extras: CourtActor[] = [];
+			for (const entry of lineup) {
+				if (playPids.has(entry.pid)) {
+					continue; // already featured at an action spot
+				}
+				if (opts.assistPid !== undefined && entry.pid === opts.assistPid) {
+					// The assister: featured (name tag, full strength) at his spot; the
+					// ball's pass leg starts here.
+					extras.push({ ...entry, role: "assist" });
+					passFrom = { x: entry.x, y: entry.y };
+					continue;
+				}
+				extras.push(entry);
+			}
+
+			// The nearest defender slides over to contest a live shot (skipped for
+			// free throws, and for blocks - the blocker IS the contest).
+			if (opts.contestSpot) {
+				const defT: 0 | 1 = offenseT === 0 ? 1 : 0;
+				let closest: CourtActor | undefined;
+				let closestDist = Infinity;
+				for (const e of extras) {
+					if (e.role !== "onCourt" || e.t !== defT) {
+						continue;
+					}
+					const d =
+						(e.x - opts.contestSpot.x) ** 2 + (e.y - opts.contestSpot.y) ** 2;
+					if (d < closestDist) {
+						closestDist = d;
+						closest = e;
+					}
+				}
+				if (closest) {
+					const toward = rimXFor(offenseT) > opts.contestSpot.x ? 1 : -1;
+					closest.x = Math.min(
+						90,
+						Math.max(4, opts.contestSpot.x + toward * 2.3),
+					);
+					closest.y = Math.min(
+						46,
+						Math.max(
+							4,
+							opts.contestSpot.y +
+								(closest.y >= opts.contestSpot.y ? 1.5 : -1.5),
+						),
+					);
+				}
+			}
+
+			if (extras.length > 0) {
+				actors = [...playActors, ...extras];
 			}
 		}
-		courtScene.current = { key: courtSceneCount.current, ...scene, actors };
+		courtScene.current = { key: sceneKey, ...scene, actors, passFrom };
 	};
 
 	const scoreLine = (): string => {
@@ -492,21 +560,25 @@ export const LiveGame = (props: View<"liveGame">) => {
 					spot,
 				};
 				// Just the shooter on an attempt - a defender only appears if the
-				// shot is actually blocked (handled on the result below).
-				pushScene({
-					kind: "attempt",
-					t: displayT,
-					actors: [
-						{
-							pid: event.pid,
-							name: playerNameByPid(event.pid),
-							x: spot.x,
-							y: spot.y,
-							role: "main",
-						},
-					],
-					text,
-				});
+				// shot is actually blocked (handled on the result below) - but the
+				// nearest background defender steps up to contest.
+				pushScene(
+					{
+						kind: "attempt",
+						t: displayT,
+						actors: [
+							{
+								pid: event.pid,
+								name: playerNameByPid(event.pid),
+								x: spot.x,
+								y: spot.y,
+								role: "main",
+							},
+						],
+						text,
+					},
+					{ contestSpot: spot },
+				);
 				return;
 			}
 
@@ -558,15 +630,25 @@ export const LiveGame = (props: View<"liveGame">) => {
 				});
 			}
 
-			pushScene({
-				kind: action.blocked ? "block" : action.made ? "make" : "miss",
-				t: shooterT,
-				actors,
-				text,
-				score: scoreNode,
-				ballFrom: spot,
-				rimX: rimXFor(shooterT),
-			});
+			pushScene(
+				{
+					kind: action.blocked ? "block" : action.made ? "make" : "miss",
+					t: shooterT,
+					actors,
+					text,
+					score: scoreNode,
+					ballFrom: spot,
+					rimX: rimXFor(shooterT),
+				},
+				{
+					// Only made FGs carry pidAst; free throws never do.
+					assistPid:
+						typeof event.pidAst === "number" ? event.pidAst : undefined,
+					// Nobody contests a free throw, and on a block the blocker IS the
+					// contest.
+					contestSpot: isFt || action.blocked ? undefined : spot,
+				},
+			);
 
 			// Field goals leave a shot-chart dot; free throws would just bury the
 			// chart in identical dots at the line.

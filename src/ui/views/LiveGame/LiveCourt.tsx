@@ -45,7 +45,7 @@ export type CourtActor = {
 	// Court coordinates (x along the 94ft length, y across the 50ft width).
 	x: number;
 	y: number;
-	role: "main" | "defender" | "victim" | "in" | "out" | "onCourt";
+	role: "main" | "defender" | "victim" | "in" | "out" | "assist" | "onCourt";
 	// Display team (0 = away/left, 1 = home/right). Set for "onCourt" background
 	// players so they're colored by their own team rather than the scene's.
 	t?: 0 | 1;
@@ -82,6 +82,9 @@ export type CourtScene = {
 	ballFrom?: { x: number; y: number };
 	ballTo?: { x: number; y: number };
 	rimX?: number;
+	// An assisted make: the ball first zips from the assister here to the
+	// shooter (ballFrom), THEN takes its shot flight to the rim.
+	passFrom?: { x: number; y: number };
 };
 
 export type CourtDot = {
@@ -195,25 +198,19 @@ export const scorerTableRow = (n: number): { x: number; y: number }[] => {
 	}));
 };
 
-// Deterministic half-court formation spots (depth from the attacked baseline,
-// across the width), ordered roughly by position. Offense spaces the floor; the
-// defense sits a step closer to the rim it's protecting. BOTH clusters live in
-// the offense's frontcourt - the end the ball is at - so all ten faces read as
-// one 5-on-5 set, and the spots are fixed (not random) so players hold their
-// formation and only glide when the ball changes ends.
+// Deterministic half-court formation slots (depth from the attacked baseline,
+// across the width), ordered guard→wing→big. Both clusters live in the
+// offense's frontcourt - the end the ball is at - so all ten faces read as one
+// 5-on-5 set. Slot assignment is stable (full lineup sorted by position, THEN
+// play actors skipped) so a player keeps his slot from scene to scene and just
+// glides; the defense man-marks by shadowing its counterpart's slot a step
+// closer to the rim.
 const OFFENSE_SPOTS: { depth: number; across: number }[] = [
-	{ depth: 27, across: 25 }, // point, top of the key
+	{ depth: 28, across: 25 }, // point, top of the key
 	{ depth: 22, across: 42 }, // wing
 	{ depth: 22, across: 8 }, // wing
-	{ depth: 10, across: 38 }, // short corner / elbow
-	{ depth: 7, across: 21 }, // low block
-];
-const DEFENSE_SPOTS: { depth: number; across: number }[] = [
-	{ depth: 22, across: 25 },
-	{ depth: 17, across: 39 },
-	{ depth: 17, across: 11 },
-	{ depth: 8, across: 31 },
-	{ depth: 6, across: 20 },
+	{ depth: 10, across: 39 }, // corner / short corner
+	{ depth: 7, across: 20 }, // low block
 ];
 
 // Rank a lineup player by court position so the sorted order fills the formation
@@ -250,34 +247,51 @@ export type LineupPlayer = {
 	inGame?: boolean;
 };
 
-// Build the background 5-on-5: every on-floor player who ISN'T already an actor
-// in the play, placed at a fixed formation spot in the offense's frontcourt.
-// `teams` is display order [away, home]; `offenseT` is the display team with the
-// ball (both teams cluster at that team's attacking rim). Excluded pids (the
-// play's actors) are drawn separately at their action spots, so their slot is
-// simply left open.
+// Small deterministic per-scene offset so players shift/cut a little every
+// play instead of standing statue-still - the faces' transform transition
+// turns each shift into a glide. Seeded by (sceneKey, pid) so both the live
+// render and any re-render of the same scene agree.
+const drift = (sceneKey: number, pid: number, salt: number): number => {
+	const h = Math.sin(sceneKey * 374761 + pid * 668265 + salt * 97) * 43758.5453;
+	return (h - Math.floor(h) - 0.5) * 2.8; // ±1.4 ft
+};
+
+// The full on-floor 5-on-5 as background actors at their formation spots.
+// Returns ALL ten (the caller drops any who are actors in the current play and
+// may promote/nudge others - e.g. the assister, or a defender stepping up to
+// contest). `teams` is display order [away, home]; `offenseT` is the display
+// team with the ball.
 export const buildLineupActors = ({
 	teams,
 	offenseT,
-	excludePids,
+	sceneKey,
 }: {
 	teams: [LineupPlayer[], LineupPlayer[]];
 	offenseT: 0 | 1;
-	excludePids: Set<number>;
+	sceneKey: number;
 }): CourtActor[] => {
 	const out: CourtActor[] = [];
 	for (const t of [0, 1] as const) {
-		const spots = t === offenseT ? OFFENSE_SPOTS : DEFENSE_SPOTS;
+		const isOffense = t === offenseT;
 		const onFloor = (teams[t] ?? [])
-			.filter((p) => p.inGame && !excludePids.has(p.pid))
+			.filter((p) => p.inGame)
 			.sort((a, b) => posRank(a.pos) - posRank(b.pos))
-			.slice(0, spots.length);
+			.slice(0, OFFENSE_SPOTS.length);
 		for (const [i, p] of onFloor.entries()) {
-			const slot = spots[i]!;
-			// Everyone stands in the offense's frontcourt (toCourt is oriented to
-			// offenseT's attacked rim); offense and defense just use different depths.
-			const { x, y } = toCourt(offenseT, slot.depth, slot.across);
-			out.push({ pid: p.pid, name: p.name, x, y, role: "onCourt", t });
+			const slot = OFFENSE_SPOTS[i]!;
+			// Defenders shadow their man's slot, a step closer to the rim and
+			// pinched toward the middle - a man-to-man look.
+			const depth = isOffense ? slot.depth : Math.max(4, slot.depth - 4.5);
+			const across = isOffense ? slot.across : 25 + (slot.across - 25) * 0.78;
+			const { x, y } = toCourt(offenseT, depth, across);
+			out.push({
+				pid: p.pid,
+				name: p.name,
+				x: Math.min(90, Math.max(4, x + drift(sceneKey, p.pid, 1))),
+				y: Math.min(46, Math.max(4, y + drift(sceneKey, p.pid, 2))),
+				role: "onCourt",
+				t,
+			});
 		}
 	}
 	return out;
@@ -375,6 +389,9 @@ export type CourtTeam = {
 
 const FLIGHT_MS = 650;
 const OUTCOME_MS = 450;
+// The assist pass leg (assister → shooter) shown before an assisted make's
+// shot flight: quick and flat, like a real kick-out or entry pass.
+const PASS_MS = 340;
 
 // Sizes are in container-query units (cqw = % of the court container width), so
 // faces and text scale WITH the court on any screen, mobile included - clamped
@@ -482,7 +499,9 @@ const FaceOnCourt = ({
 				left: 0,
 				top: 0,
 				transform: `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`,
-				transition: "transform 0.4s ease",
+				// Position glides; opacity eases when a player moves between being a
+				// dimmed background body and the featured actor of a play.
+				transition: "transform 0.45s ease, opacity 0.3s ease",
 				willChange: "transform",
 			}
 		: {
@@ -810,9 +829,26 @@ const LiveCourt = ({
 		}
 		ball.style.opacity = "1";
 
+		// An assisted make first shows the PASS: a quick, flat zip from the
+		// assister to the shooter, then the normal shot flight takes over.
+		const passFrom = scene.passFrom;
+		const passMs = passFrom && !blocked ? PASS_MS : 0;
+
 		const start = performance.now();
 		const step = (now: number) => {
-			const elapsed = now - start;
+			const rawElapsed = now - start;
+
+			if (passMs > 0 && passFrom && rawElapsed <= passMs) {
+				const p = rawElapsed / passMs;
+				ball.setAttribute("cx", String(passFrom.x + (from.x - passFrom.x) * p));
+				ball.setAttribute("cy", String(passFrom.y + (from.y - passFrom.y) * p));
+				// Flat and slightly small - a pass, not a shot arc.
+				ball.setAttribute("r", String(0.72 + 0.18 * Math.sin(Math.PI * p)));
+				rafRef.current = requestAnimationFrame(step);
+				return;
+			}
+
+			const elapsed = rawElapsed - passMs;
 
 			if (blocked) {
 				const p = Math.min(1, elapsed / FLIGHT_MS);
@@ -1615,12 +1651,14 @@ const LiveCourt = ({
 				/>
 			</svg>
 
-			{/* Players on the floor, centered on their spot. Keyed by player+role
-			    (NOT the scene key) so a player who appears in back-to-back scenes is
-			    REUSED and repositioned instead of being torn down and rebuilt - each
-			    rebuild regenerates the whole facesjs SVG, which was a big per-play
-			    cost on mobile. Only the rare animated actor (a foul swipe / steal
-			    shake) keeps the scene key, so its one-shot CSS animation retriggers. */}
+			{/* Players on the floor, centered on their spot. Keyed by PLAYER (not
+			    scene or role) so a player who's on the floor scene after scene is
+			    REUSED - he glides between his formation slot and his action spots
+			    instead of being torn down and rebuilt (each rebuild regenerates the
+			    whole facesjs SVG, a big per-play cost on mobile; the pid key also
+			    makes the shooter visibly RUN to his shot spot). Only the rare
+			    animated actor (a foul swipe / steal shake) keeps the scene key, so
+			    its one-shot CSS animation retriggers. */}
 			{scene
 				? scene.actors.map((actor) => {
 						const anim = actorAnim(actor);
@@ -1640,7 +1678,7 @@ const LiveCourt = ({
 								key={
 									anim
 										? `a${scene.key}-${actor.pid}-${actor.role}`
-										: `${actor.pid}-${actor.role}`
+										: `${actor.pid}`
 								}
 								actor={actor}
 								season={season}
