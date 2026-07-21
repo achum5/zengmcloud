@@ -48,13 +48,19 @@ export const describePlayerSubject = (
 	return `${name}, a ${agePart}${heightPart}basketball ${pos}${weightPart}${jerseyPart}`;
 };
 
-// The one photographic preset: a media-day style headshot in the player's
-// current team jersey, isolated on a TRANSPARENT background so it drops
-// straight into the game as a player photo. Uses the current team's real name
-// and colors; a free agent gets a plain jersey. ChatGPT's image generator
-// honors the transparent-PNG instruction; for generators that can't produce
-// real alpha, swap the background line for a flat chroma-key green and strip
-// it afterwards (see docs/PLAYER_HEADSHOT_PROMPT.md).
+// The headshot preset: a media-day style chest-up portrait in the player's
+// current team jersey, in the game's faces.js cartoon style, on a TRANSPARENT
+// background so it drops straight into the game as a player image. Uses the
+// current team's real name and colors; a free agent gets a plain jersey.
+//
+// Transparency phrasing is deliberate and SHORT. Image models (including
+// ChatGPT's) paint what you describe - a long "PNG with alpha channel, no
+// backdrop, no shadows" paragraph reliably produces a PAINTED checkerboard
+// instead of real alpha, especially on photorealistic prompts. What actually
+// works: a flat sticker/asset framing ("die-cut sticker") plus one plain
+// "transparent background" mention - which the cartoon style reinforces. If a
+// generator still can't do real alpha, fall back to a flat chroma-key green
+// background and strip it (see docs/PLAYER_HEADSHOT_PROMPT.md).
 export const mediaDayHeadshotMoment = async (
 	p: PlayerWithoutKey,
 	pos: string,
@@ -74,11 +80,11 @@ export const mediaDayHeadshotMoment = async (
 	return {
 		key: "headshot",
 		label: "Media day headshot (transparent background)",
-		prompt: `Professional NBA media day headshot photograph of ${describePlayerSubject(
+		prompt: `A media day headshot of ${describePlayerSubject(
 			p,
 			pos,
 			season,
-		)}, chest-up framing, facing the camera with a slight confident smile, wearing ${jerseyPart}. Studio lighting: soft key light, even exposure, sharp focus on the face, shallow depth of field. Shot on an 85mm lens. Photorealistic - NOT a cartoon. Isolated subject cut out on a fully transparent background, PNG with alpha channel, no backdrop, no shadows, no floor, no environment - nothing behind the player. Clean crisp edges around hair and shoulders. Do not render any text, captions, or watermarks other than the authentic jersey lettering and number.`,
+		)}: chest-up, facing the camera with a slight confident smile, wearing ${jerseyPart}. ${STYLE} Render it as a die-cut sticker style game asset: the player only, on a transparent background, with no border, no backdrop, and no shadow.`,
 	};
 };
 

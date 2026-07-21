@@ -1,42 +1,46 @@
-# AI player headshot prompt (media day, transparent background)
+# AI player headshot prompt (media day, faces.js cartoon, transparent background)
 
-The prompt template for generating player headshot photos (media-day style,
-subject only, transparent background) with an AI image generator.
+The in-app version of this prompt lives in the player editor: Player page →
+edit → "Generate a player image" → **Media day headshot (transparent
+background)** (built in `src/worker/util/getPlayerImageMoments.ts`, which
+fills in the player's details and their current team's name/colors
+automatically). This doc is the reference copy plus the background-removal
+notes.
 
-## The prompt
+## The prompt shape
 
-> Professional NBA media day headshot photograph of a basketball player,
-> chest-up framing, facing the camera with a slight confident smile. He is
-> wearing a [TEAM COLORS] basketball jersey with "[TEAM NAME]" across the
-> chest. Studio lighting: soft key light, even exposure, sharp focus on the
-> face, shallow depth of field. Shot on an 85mm lens. Isolated subject cut out
-> on a fully transparent background, PNG with alpha channel, no backdrop, no
-> shadows, no floor, no environment — nothing behind the player. Clean crisp
-> edges around hair and shoulders.
+> A media day headshot of [PLAYER DETAILS]: chest-up, facing the camera with a
+> slight confident smile, wearing the [TEAM] jersey (team colors [COLORS])
+> with authentic team lettering across the chest. Draw it in the clean, flat
+> cartoon-avatar style of Basketball GM (faces.js): simple bold vector shapes,
+> solid flat colors, minimal shading, front-facing and stylized. NOT
+> photorealistic. Render it as a die-cut sticker style game asset: the player
+> only, on a transparent background, with no border, no backdrop, and no
+> shadow.
 
-Fill in the placeholders per player:
+## Why the transparency phrasing looks like this (learned the hard way)
 
-- `[TEAM COLORS]` — e.g. "green and white Celtics"
-- `[TEAM NAME]` — e.g. "Celtics"
-- Optionally append character details for consistency:
-  `[SKIN TONE], [AGE]-year-old, [HAIR STYLE], [BUILD]`
+Asking ChatGPT for a photorealistic portrait "isolated on a fully transparent
+background, PNG with alpha channel, no backdrop, no shadows…" produces a
+**painted fake checkerboard**, not real transparency — image models paint what
+you describe, and photorealistic prompts almost never trigger the real alpha
+path. What actually works from the ChatGPT UI:
 
-## Transparency caveat — read before batch-generating
+1. **Flat/sticker/asset styling** — "die-cut sticker", icon, flat vector. The
+   cartoon style doubles as the transparency enabler.
+2. **One short "transparent background" mention** — not a paragraph about
+   alpha channels. Never mention checkerboards.
+3. Real transparency is still not guaranteed from the chat UI. To verify a
+   result: put a bright solid layer behind the PNG — if you see the color
+   through it, the alpha is real.
 
-Most image models (DALL·E, Midjourney, standard Stable Diffusion,
-Gemini/Imagen) **cannot output a true alpha channel** no matter what the
-prompt says — they paint a fake checkerboard or a plain backdrop instead.
-Two reliable routes:
+Guaranteed alternatives:
 
-1. **Native transparency support** — Recraft, Ideogram (background remover),
-   or SDXL with a transparency/LayerDiffuse pipeline. The prompt above works
-   as-is and yields a real PNG alpha.
-2. **Two-step (works with any generator)** — replace the last two sentences
-   with: _"isolated on a solid flat chroma-key green background (#00FF00),
-   no shadows, no gradient"_ — then strip the background with remove.bg,
-   Photoshop, or programmatically with `rembg` (Python). Solid-color plates
-   cut out much cleaner than trying to force "transparent" in the prompt.
-
-For batch generation across league rosters, route 2 with `rembg` scales best.
+- **OpenAI API** (`gpt-image-1`) has an actual `background: "transparent"`
+  parameter — real alpha every time.
+- **Chroma-key fallback for any generator**: replace the last sentence with
+  _"on a solid flat chroma-key green background (#00FF00), no shadows, no
+  gradient"_ and strip it afterwards with remove.bg, Photoshop, or `rembg`
+  (Python). This is the route that scales for batch-generating whole rosters.
 
 Generated headshots live in `playerFaces/`.
