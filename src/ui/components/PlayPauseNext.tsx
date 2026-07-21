@@ -22,6 +22,7 @@ export const PlayPauseNext = ({
 	disabled,
 	fastForwardAlignRight,
 	fastForwards,
+	rewinds,
 	onPlay,
 	onPause,
 	onNext,
@@ -35,6 +36,10 @@ export const PlayPauseNext = ({
 	disabled?: boolean;
 	fastForwardAlignRight?: boolean;
 	fastForwards?: FastForward[];
+	// Jump BACKWARD in playback (replays / single-player): back a minute, to the
+	// start of the quarter, to the start of the game. Omitted when rewinding isn't
+	// possible (e.g. a multiplayer follower, locked to the broadcaster).
+	rewinds?: FastForward[];
 	onPlay: () => void;
 	onPause: () => void;
 	onNext: () => void;
@@ -96,6 +101,25 @@ export const PlayPauseNext = ({
 
 	return (
 		<div className={clsx("btn-group", className)}>
+			{rewinds && rewinds.length > 0 ? (
+				<Dropdown>
+					<Dropdown.Toggle
+						id="rewind"
+						className="btn-light-bordered"
+						variant={"no-class" as any}
+						title="Rewind"
+					>
+						<span className="glyphicon glyphicon-fast-backward" />
+					</Dropdown.Toggle>
+					<Dropdown.Menu>
+						{rewinds.map((item, i) => (
+							<Dropdown.Item key={i} onClick={item.onClick}>
+								{item.label}
+							</Dropdown.Item>
+						))}
+					</Dropdown.Menu>
+				</Dropdown>
+			) : null}
 			{paused ? (
 				<button
 					className="btn btn-light-bordered"

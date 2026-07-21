@@ -330,6 +330,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 	const playByPlayEntries = useRef<PlayByPlayEntryInfo[]>([]);
 
+	// A checkpoint per shown play - the events consumed so far (cursor), the
+	// period, and the game clock - so the rewind controls can jump back to a point
+	// (a minute ago, the start of the quarter) by re-simming to that cursor.
+	const playHistory = useRef<{ cursor: number; q: string; clock: number }[]>(
+		[],
+	);
+
 	// Live court graphic (basketball): the scene currently playing on the
 	// court, and the in-flight attempt (a block event only names the blocker, so
 	// the shooter/spot are remembered from the attempt so the players don't
@@ -999,6 +1006,15 @@ export const LiveGame = (props: View<"liveGame">) => {
 			possessionChange.current = output.possessionChange;
 			sportState.current = output.sportState;
 
+			// Bank this play as a rewind checkpoint (cursor = events consumed so far).
+			if (events.current) {
+				playHistory.current.push({
+					cursor: initialEventCount.current - events.current.length,
+					q: String(boxScore.current.quarterShort ?? ""),
+					clock: getSeconds(boxScore.current.time),
+				});
+			}
+
 			if (text !== undefined) {
 				let outs;
 				if (isSport("baseball") && output.sportState.outs > prevOuts) {
@@ -1328,6 +1344,114 @@ export const LiveGame = (props: View<"liveGame">) => {
 		processToNextPause(true);
 		setPlayIndex((prev) => prev + 1);
 	}, [processToNextPause]);
+
+	// Jump playback to a given cursor (number of events consumed). Going forward
+	// just steps ahead; going back resets to the opening box score and re-sims up
+	// to the target - the same mechanism the multiplayer follower uses to catch up.
+	const seekTo = useCallback(
+		(targetCursor: number) => {
+			if (
+				!componentIsMounted.current ||
+				!props.events ||
+				props.initialBoxScore === undefined
+			) {
+				return;
+			}
+			// Seeking pauses playback at the landing point (like a video scrubber),
+			// which also stops the self-scheduling auto-play loop from firing a timer
+			// for every step we re-sim, and neutralizes any already-pending tick.
+			pausedRef.current = true;
+			setPaused(true);
+
+			const target = Math.max(
+				0,
+				Math.min(Math.round(targetCursor), initialEventCount.current),
+			);
+			const current = initialEventCount.current - (events.current?.length ?? 0);
+			if (target < current) {
+				// Rewind: rebuild playback state from the pristine opening, then replay
+				// forward to the target below.
+				boxScore.current = helpers.deepCopy(props.initialBoxScore);
+				events.current = props.events.slice();
+				overtimes.current = 0;
+				quarters.current = [];
+				possessionChange.current = undefined;
+				sportState.current = DEFAULT_SPORT_STATE
+					? { ...DEFAULT_SPORT_STATE }
+					: undefined;
+				playByPlayEntries.current = [];
+				playHistory.current = [];
+				courtScene.current = undefined;
+				courtSceneCount.current = 0;
+				lastActorPos.current = new Map();
+				lastFga.current = undefined;
+			}
+			while (
+				events.current &&
+				events.current.length > 0 &&
+				initialEventCount.current - events.current.length < target
+			) {
+				processToNextPause(true);
+			}
+			setPlayIndex((prev) => prev + 1);
+		},
+		[processToNextPause, props.events, props.initialBoxScore],
+	);
+
+	// The rewind menu: back roughly a game-minute, to the start of the current
+	// quarter, or to the tip-off. Targets are read from playHistory at click time
+	// (all refs), so this list is stable. Only offered when rewinding is possible
+	// (see the `rewinds` prop below) - never for a multiplayer follower.
+	const rewindMenuItems = useMemo<FastForward[]>(() => {
+		const startOfQuarterCursor = (): number => {
+			const hist = playHistory.current;
+			if (hist.length === 0) {
+				return 0;
+			}
+			const lastIdx = hist.length - 1;
+			const curQ = hist[lastIdx]!.q;
+			let firstIdx = lastIdx;
+			while (firstIdx > 0 && hist[firstIdx - 1]!.q === curQ) {
+				firstIdx -= 1;
+			}
+			// Already at the quarter's opening play? Then step back a whole quarter.
+			if (firstIdx === lastIdx && firstIdx > 0) {
+				const prevQ = hist[firstIdx - 1]!.q;
+				let pIdx = firstIdx - 1;
+				while (pIdx > 0 && hist[pIdx - 1]!.q === prevQ) {
+					pIdx -= 1;
+				}
+				firstIdx = pIdx;
+			}
+			return hist[firstIdx]!.cursor;
+		};
+		const backOneMinuteCursor = (): number => {
+			const hist = playHistory.current;
+			if (hist.length === 0) {
+				return 0;
+			}
+			const cur = hist.at(-1)!;
+			let targetIdx = hist.length - 1;
+			for (let i = hist.length - 1; i >= 0; i -= 1) {
+				if (hist[i]!.q !== cur.q) {
+					break; // don't cross a quarter boundary
+				}
+				targetIdx = i;
+				if (hist[i]!.clock >= cur.clock + 60) {
+					break;
+				}
+			}
+			return hist[targetIdx]!.cursor;
+		};
+		return [
+			{ label: "Back 1:00", onClick: () => seekTo(backOneMinuteCursor()) },
+			{
+				label: "Start of quarter",
+				onClick: () => seekTo(startOfQuarterCursor()),
+			},
+			{ label: "Restart game", onClick: () => seekTo(0) },
+		];
+	}, [seekTo]);
 
 	const fastForwardMenuItems = useMemo(() => {
 		// Plays up to `cutoffs` seconds, or until end of quarter
@@ -1792,6 +1916,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 											disabled={boxScore.current.gameOver}
 											fastForwardAlignRight
 											fastForwards={fastForwardMenuItems}
+											rewinds={
+												isFollower || isBroadcaster
+													? undefined
+													: rewindMenuItems
+											}
 											onPlay={handlePlay}
 											onPause={handlePause}
 											onNext={handleNextPlay}
@@ -1896,6 +2025,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 									disabled={boxScore.current.gameOver}
 									fastForwardAlignRight
 									fastForwards={fastForwardMenuItems}
+									rewinds={
+										isFollower || isBroadcaster ? undefined : rewindMenuItems
+									}
 									onPlay={handlePlay}
 									onPause={handlePause}
 									onNext={handleNextPlay}
