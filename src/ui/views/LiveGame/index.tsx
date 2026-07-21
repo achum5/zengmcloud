@@ -45,9 +45,7 @@ import LiveCourt, {
 	synthPlaySpot,
 	synthReboundSpot,
 	synthShotSpot,
-	zoneLabel,
 	type CourtActor,
-	type CourtDot,
 	type CourtScene,
 	type CourtZone,
 } from "./LiveCourt.tsx";
@@ -332,11 +330,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const playByPlayEntries = useRef<PlayByPlayEntryInfo[]>([]);
 
 	// Live court graphic (basketball): the scene currently playing on the
-	// court, the accumulated shot-chart dots, and the in-flight attempt (a
-	// block event only names the blocker, so the shooter/spot are remembered
-	// from the attempt so the players don't teleport between the two).
+	// court, and the in-flight attempt (a block event only names the blocker, so
+	// the shooter/spot are remembered from the attempt so the players don't
+	// teleport between the two).
 	const courtScene = useRef<CourtScene | undefined>(undefined);
-	const courtDots = useRef<CourtDot[]>([]);
 	const courtSceneCount = useRef(0);
 	const lastFga = useRef<
 		| {
@@ -458,11 +455,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 			}
 		}
 		courtScene.current = { key: sceneKey, ...scene, actors, passFrom };
-	};
-
-	const scoreLine = (): string => {
-		const [a, h] = boxScore.current.teams ?? [];
-		return `${a?.abbrev ?? ""} ${a?.pts ?? 0}–${h?.pts ?? 0} ${h?.abbrev ?? ""}`;
 	};
 
 	// Turn the play-by-play event behind the current line into a court scene:
@@ -649,23 +641,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 					contestSpot: isFt || action.blocked ? undefined : spot,
 				},
 			);
-
-			// Field goals leave a shot-chart dot; free throws would just bury the
-			// chart in identical dots at the line.
-			if (zone !== "ft") {
-				courtDots.current.push({
-					key: courtSceneCount.current,
-					x: spot.x,
-					y: spot.y,
-					made: action.made,
-					t: shooterT,
-					title: `${playerNameByPid(shooterPid)} — ${
-						action.blocked ? "blocked" : action.made ? "made" : "missed"
-					} ${zoneLabel(zone)} · ${boxScore.current.quarterShort ?? ""} ${
-						boxScore.current.time ?? ""
-					} · ${scoreLine()}`,
-				});
-			}
 			return;
 		}
 
@@ -1799,7 +1774,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 							{isSport("basketball") ? (
 								<LiveCourt
 									scene={courtScene.current}
-									dots={courtDots.current}
 									teams={[
 										boxScore.current.teams?.[0],
 										boxScore.current.teams?.[1],

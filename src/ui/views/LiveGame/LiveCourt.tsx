@@ -5,6 +5,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	type CSSProperties,
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../util/local.ts";
@@ -14,11 +15,11 @@ import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 // A full-court live-game graphic (FBGM-field style, but hardwood): team-colored
 // rails with the team names behind each baseline, the home team's logo at
 // center court (with the championship trophy behind it during the finals), and
-// a SCENE for every play - the players involved appear standing at a spot on
-// the floor with their face, name, and the exact play-by-play line, and the
-// ball animates the outcome (swish, rim-out, block, steal, turnover...). Every
-// field-goal attempt also leaves a dot behind (filled = made, hollow = miss),
-// building a live shot chart; hover a dot for the who/when/score of that shot.
+// a SCENE for every play. The full 5-on-5 stands on the floor - the players
+// involved in the play appear with their FACE, name, and the exact play-by-play
+// line, while their eight teammates read as small team-colored jersey-number
+// CHIPS (clean, uncluttered, and cheap to move). The ball animates every
+// outcome (swish, rim-out, block, steal, turnover...).
 //
 // Locations are stylized: the sim only knows coarse shot zones (at rim / low
 // post / mid-range / three), so spots are synthesized inside the right zone.
@@ -85,15 +86,6 @@ export type CourtScene = {
 	// An assisted make: the ball first zips from the assister here to the
 	// shooter (ballFrom), THEN takes its shot flight to the rim.
 	passFrom?: { x: number; y: number };
-};
-
-export type CourtDot = {
-	key: number;
-	x: number;
-	y: number;
-	made: boolean;
-	t: 0 | 1;
-	title: string; // hover tooltip: who/what/when/score
 };
 
 const degToRad = (deg: number) => (deg * Math.PI) / 180;
@@ -400,6 +392,12 @@ const FACE_W = "clamp(20px, 3.6cqw, 46px)";
 const FACE_H = "clamp(30px, 5.4cqw, 68px)";
 const NAME_FONT = "clamp(8px, 1.4cqw, 13px)";
 
+// A background teammate reads as a small team-colored jersey CHIP (a numbered
+// disc) rather than a full face: clean, unmistakably "the other four guys", and
+// cheap to glide (no facesjs SVG per body). Only the play's actors get faces.
+const CHIP_SIZE = "clamp(15px, 2.6cqw, 32px)";
+const CHIP_FONT = "clamp(8px, 1.4cqw, 15px)";
+
 // Face-tag animation keyframes, injected once. The resting transform centers
 // the whole tag ON its court point (face directly over the shot dot), baked
 // into every frame so the animation doesn't fight the positioning.
@@ -425,38 +423,120 @@ const FACE_ANIM_CSS = `
 	100% { transform: ${REST} rotate(0deg) scale(1); }
 }`;
 
-// One player standing on the floor: face centered ON its court point (over the
-// shot dot), with a name tag placed above or below to avoid colliding with a
-// nearby player's tag. Moved with a compositor transform (translate3d in
-// measured px) rather than left/top - animating left/top forces layout+paint
-// on every transition frame for every face, which is what made the court chug
-// on mobile. Falls back to left/top % for the one paint before the container
-// is measured.
-const FaceOnCourt = ({
+// The compositor-friendly placement style for a body on the floor, shared by
+// faces and chips. Moved with a translate3d transform (in measured px) rather
+// than left/top - animating left/top forces layout+paint every frame for every
+// body, which is what made the court chug on mobile. The transform TRANSITIONS,
+// so a change of court point reads as a GLIDE: its duration scales with how far
+// the body is moving (a cross-court end swap RUNS the floor, ~3x a small cut,
+// instead of a same-speed teleport), and background bodies start on small
+// deterministic staggered delays so a team flows down-court instead of shifting
+// as one rigid block. Previous position is banked in an effect (post-commit),
+// so a double render can't zero out the measured distance. Falls back to
+// left/top % for the one paint before the container is measured.
+const useGlideStyle = (
+	actor: CourtActor,
+	size: { w: number; h: number } | undefined,
+	background: boolean,
+): CSSProperties => {
+	const fx = (actor.x + RAIL_W) / (COURT_W + 2 * RAIL_W);
+	const fy = (actor.y + APRON) / (COURT_H + 2 * APRON);
+	const prevPos = useRef<{ x: number; y: number } | undefined>(undefined);
+	const prev = prevPos.current;
+	const moveDist = prev ? Math.hypot(actor.x - prev.x, actor.y - prev.y) : 0;
+	useEffect(() => {
+		prevPos.current = { x: actor.x, y: actor.y };
+	}, [actor.x, actor.y]);
+	const glideDur = Math.min(1.25, 0.4 + moveDist * 0.011);
+	const glideDelay = background
+		? (((actor.pid * 2654435761) >>> 0) % 5) * 0.05
+		: 0;
+	return size
+		? {
+				left: 0,
+				top: 0,
+				transform: `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`,
+				transition: `transform ${glideDur}s ease ${glideDelay}s, opacity 0.3s ease`,
+				willChange: "transform",
+			}
+		: {
+				left: `${fx * 100}%`,
+				top: `${fy * 100}%`,
+			};
+};
+
+// One body on the floor, centered ON its court point. Two looks, ONE component
+// (and ONE element), always keyed by pid at the call site:
+//   - a background teammate reads as a small team-colored jersey CHIP;
+//   - a player featured in the current play becomes his FACE, with a name tag.
+// Because both looks live in the same component and the outer positioning div is
+// identical, a teammate who steps into the play (or drops back out of it) keeps
+// the SAME element - so he GLIDES from his formation chip to his action face
+// (the shooter visibly runs to his spot) instead of one element vanishing and a
+// second popping in elsewhere. That single-element identity is what ended the
+// old duplicate-face / teleport glitch, and it also avoids tearing down and
+// regenerating the facesjs SVG every play. The one-shot shake/swipe recoil
+// retriggers via `animKey`: only the inner animated wrapper remounts on a fresh
+// foul/steal, so the face keeps gliding on its persistent outer element.
+const BodyOnCourt = ({
 	actor,
 	season,
 	lid,
 	color,
+	background,
 	anim,
+	animKey,
 	nameAbove,
 	size,
-	background,
 }: {
 	actor: CourtActor;
 	season: number | undefined;
 	lid: number | undefined;
 	color: string;
-	// A background 5-on-5 player (not part of the current play): dimmed, no name
-	// tag, and sat below the active actors and the play text.
-	background?: boolean;
+	// A background 5-on-5 teammate (not part of the current play): a jersey chip.
+	background: boolean;
 	anim?: "shake" | "swipe";
+	// The current scene key, passed only when `anim` is set, so the recoil
+	// animation retriggers on a fresh foul/steal without remounting the face on
+	// every ordinary play.
+	animKey?: number;
 	nameAbove?: boolean;
 	// Measured px size of the court container (see LiveCourt's ResizeObserver).
 	size: { w: number; h: number } | undefined;
 }) => {
 	const faceData = usePlayerFace(actor.pid, season, lid);
-	const fx = (actor.x + RAIL_W) / (COURT_W + 2 * RAIL_W);
-	const fy = (actor.y + APRON) / (COURT_H + 2 * APRON);
+	const glide = useGlideStyle(actor, size, background);
+
+	if (background) {
+		return (
+			<div
+				className="position-absolute"
+				style={{ ...glide, pointerEvents: "none", zIndex: 2 }}
+			>
+				<div
+					style={{
+						transform: REST,
+						width: CHIP_SIZE,
+						height: CHIP_SIZE,
+						borderRadius: "50%",
+						background: color,
+						border: "1.5px solid rgba(255,255,255,0.85)",
+						boxShadow: "0 1px 2px rgba(0,0,0,0.45)",
+						color: "#fff",
+						display: "flex",
+						alignItems: "center",
+						justifyContent: "center",
+						fontSize: CHIP_FONT,
+						fontWeight: 700,
+						lineHeight: 1,
+						textShadow: "0 1px 1px rgba(0,0,0,0.45)",
+					}}
+				>
+					{faceData?.jersey ?? ""}
+				</div>
+			</div>
+		);
+	}
 
 	const animation =
 		anim === "shake"
@@ -489,54 +569,23 @@ const FaceOnCourt = ({
 		</div>
 	);
 
-	// Glide duration scales with how far the player is moving, so a cross-court
-	// end swap reads as RUNNING the floor (~3x a small cut) instead of a
-	// same-speed teleport, and background players start on small staggered
-	// delays (deterministic per player) so a team flows down-court instead of
-	// moving as one rigid block. Previous position is banked in an effect
-	// (post-commit), so a double render can't zero out the measured distance.
-	const prevPos = useRef<{ x: number; y: number } | undefined>(undefined);
-	const prev = prevPos.current;
-	const moveDist = prev ? Math.hypot(actor.x - prev.x, actor.y - prev.y) : 0;
-	useEffect(() => {
-		prevPos.current = { x: actor.x, y: actor.y };
-	}, [actor.x, actor.y]);
-	const glideDur = Math.min(1.25, 0.4 + moveDist * 0.011);
-	const glideDelay = background
-		? (((actor.pid * 2654435761) >>> 0) % 5) * 0.05
-		: 0;
-
 	// The OUTER div only places the point on the court (compositor-friendly
 	// translate3d, transitioned for the glide between plays). The INNER div
 	// carries the centering REST transform and the one-shot shake/swipe
 	// animations (whose keyframes bake REST in), so animating never fights the
-	// positioning.
-	const positionStyle = size
-		? {
-				left: 0,
-				top: 0,
-				transform: `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`,
-				// Position glides; opacity eases when a player moves between being a
-				// dimmed background body and the featured actor of a play.
-				transition: `transform ${glideDur}s ease ${glideDelay}s, opacity 0.3s ease`,
-				willChange: "transform",
-			}
-		: {
-				left: `${fx * 100}%`,
-				top: `${fy * 100}%`,
-			};
-
+	// positioning. That inner div is keyed by the scene so its CSS animation
+	// replays each foul/steal; the outer div persists and keeps gliding.
 	return (
 		<div
 			className="position-absolute"
 			style={{
-				...positionStyle,
+				...glide,
 				pointerEvents: "none",
-				zIndex: background ? 2 : actor.role === "main" ? 5 : 4,
-				opacity: background ? 0.72 : 1,
+				zIndex: actor.role === "main" ? 5 : 4,
 			}}
 		>
 			<div
+				key={anim ? `anim-${animKey}` : "static"}
 				style={{
 					position: "relative",
 					height: FACE_H,
@@ -554,7 +603,7 @@ const FaceOnCourt = ({
 						jersey={faceData.jersey}
 					/>
 				) : null}
-				{background ? null : nameTag}
+				{nameTag}
 			</div>
 		</div>
 	);
@@ -565,13 +614,11 @@ const teamColor = (team: CourtTeam | undefined, i: number, fallback: string) =>
 
 const LiveCourt = ({
 	scene,
-	dots,
 	teams,
 	finals,
 	season,
 }: {
 	scene: CourtScene | undefined;
-	dots: CourtDot[];
 	// Display order: [away (left rim), home (right rim)].
 	teams: [CourtTeam | undefined, CourtTeam | undefined];
 	finals: boolean;
@@ -583,7 +630,6 @@ const LiveCourt = ({
 	const ringRef = useRef<SVGCircleElement | null>(null);
 	const burstRef = useRef<SVGGElement | null>(null);
 	const rafRef = useRef<number | undefined>(undefined);
-	const [, forceRender] = useState(0);
 
 	// Measured px size of the court container, so faces can be positioned with a
 	// compositor transform (translate3d) instead of layout-triggering left/top.
@@ -999,8 +1045,6 @@ const LiveCourt = ({
 				rafRef.current = requestAnimationFrame(step);
 			} else {
 				hideBall();
-				// Settle the just-shot dot into the chart.
-				forceRender((n) => n + 1);
 			}
 		};
 		rafRef.current = requestAnimationFrame(step);
@@ -1339,7 +1383,7 @@ const LiveCourt = ({
 	// SVG nodes; rebuilding and reconciling them on EVERY play is what made the
 	// live court lag, worst on mobile and on the fancy patterns. Memoizing it so
 	// it's built once (and only rebuilt when the court style actually changes)
-	// leaves only the ball, dots, faces, and text to update per play.
+	// leaves only the ball, bodies, and text to update per play.
 	const courtBackground = useMemo(
 		() => (
 			<>
@@ -1619,33 +1663,6 @@ const LiveCourt = ({
 		],
 	);
 
-	// The accumulated shot chart. `dots` is append-only and mutated in place, so
-	// its array identity is stable - key the memo on the count so it rebuilds
-	// only when a new shot lands, not on every non-shot play.
-	const dotsLayer = useMemo(
-		() => (
-			<g>
-				{dots.map((dot) => (
-					<circle
-						key={dot.key}
-						cx={dot.x}
-						cy={dot.y}
-						r={0.6}
-						fill={dot.made ? (dot.t === 0 ? awayColor : homeColor) : "none"}
-						stroke={dot.t === 0 ? awayColor : homeColor}
-						strokeWidth={0.25}
-						opacity={dot.made ? 0.9 : 0.6}
-						style={{ pointerEvents: "all" }}
-					>
-						<title>{dot.title}</title>
-					</circle>
-				))}
-			</g>
-		),
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[dots, dots.length, awayColor, homeColor],
-	);
-
 	return (
 		<div
 			ref={containerRef}
@@ -1661,7 +1678,7 @@ const LiveCourt = ({
 			}}
 		>
 			<style>{FACE_ANIM_CSS}</style>
-			{/* The court is THREE stacked same-viewBox SVGs, not one. The ball is
+			{/* The court is TWO stacked same-viewBox SVGs, not one. The ball is
 			    animated by mutating attributes every animation frame, and when it
 			    lived in the same SVG as the grain-filtered floor, every frame
 			    repainted the whole filtered surface - unusably slow on mobile.
@@ -1670,22 +1687,6 @@ const LiveCourt = ({
 			<svg viewBox={VIEW} style={{ width: "100%", display: "block" }}>
 				{/* Static court (floor, lines, branding) - memoized, see above */}
 				{courtBackground}
-			</svg>
-
-			{/* Accumulated shot chart; hover a dot for the details. The svg itself
-			    ignores the pointer so it never blocks the page; the dots opt back in
-			    for their tooltips. */}
-			<svg
-				viewBox={VIEW}
-				style={{
-					position: "absolute",
-					inset: 0,
-					width: "100%",
-					height: "100%",
-					pointerEvents: "none",
-				}}
-			>
-				{dotsLayer}
 			</svg>
 
 			{/* Pulse ring (swish / turnover / foul) + the ball, on their own
@@ -1744,21 +1745,23 @@ const LiveCourt = ({
 				/>
 			</svg>
 
-			{/* Players on the floor, centered on their spot. Keyed by PLAYER (not
-			    scene or role) so a player who's on the floor scene after scene is
-			    REUSED - he glides between his formation slot and his action spots
-			    instead of being torn down and rebuilt (each rebuild regenerates the
-			    whole facesjs SVG, a big per-play cost on mobile; the pid key also
-			    makes the shooter visibly RUN to his shot spot). Only the rare
-			    animated actor (a foul swipe / steal shake) keeps the scene key, so
-			    its one-shot CSS animation retriggers. */}
+			{/* Everyone on the floor, centered on their spot and ALWAYS keyed by
+			    PLAYER (never by scene or role). A background teammate renders as a
+			    small jersey CHIP; the moment he's featured in a play he becomes a
+			    FACE - but because the key is his pid either way, React reuses the
+			    same element, so he simply glides to his action spot (and the face's
+			    facesjs SVG isn't torn down and regenerated every play, a big mobile
+			    cost). The pid key is also what killed the old duplicate-face/teleport
+			    glitch: a foul/steal actor keeps his element instead of unmounting
+			    under a scene-specific key and popping up elsewhere. The recoil
+			    animation retriggers via animKey inside BodyOnCourt. */}
 			{scene
 				? scene.actors.map((actor) => {
-						const anim = actorAnim(actor);
 						const background = actor.role === "onCourt";
-						// Background players are colored by their OWN team; the play's
+						// Background teammates are colored by their OWN team; the play's
 						// actors by the scene team (or the opposing team for a
 						// defender/victim).
+						const anim = background ? undefined : actorAnim(actor);
 						const color = background
 							? actor.t === 0
 								? awayColor
@@ -1767,20 +1770,17 @@ const LiveCourt = ({
 								? opposingColor
 								: sceneColor;
 						return (
-							<FaceOnCourt
-								key={
-									anim
-										? `a${scene.key}-${actor.pid}-${actor.role}`
-										: `${actor.pid}`
-								}
+							<BodyOnCourt
+								key={actor.pid}
 								actor={actor}
 								season={season}
 								lid={lid}
 								color={color}
-								anim={anim}
-								nameAbove={nameAboveFor(actor)}
-								size={size}
 								background={background}
+								anim={anim}
+								animKey={anim ? scene.key : undefined}
+								nameAbove={background ? undefined : nameAboveFor(actor)}
+								size={size}
 							/>
 						);
 					})
