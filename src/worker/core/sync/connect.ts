@@ -1203,6 +1203,28 @@ const doConnectSharedLeague = async ({
 		throw new Error("A league code is required.");
 	}
 
+	// Never connect while the league itself is still loading (or an import is
+	// mid-flight). The UI's auto-reconnect fires as soon as it sees a lid, which
+	// on a SharedWorker (desktop) races the worker's own league switch: the
+	// connect flow then reads `g` inside the reset window ("Attempt to get
+	// g.userTid while it is not already set") or opens a transaction on the
+	// league DB while beforeLeague is closing the previous handle ("The database
+	// connection is closing"). Wait for the load to finish; if it doesn't within
+	// the deadline, report not-connected - the auto-reconnect retries with
+	// backoff, and the sim gate (markSyncRequired) is already holding sims.
+	{
+		const deadline = Date.now() + 30_000;
+		while (!local.leagueLoaded && Date.now() < deadline) {
+			await new Promise((resolve) => {
+				setTimeout(resolve, 250);
+			});
+		}
+		if (!local.leagueLoaded) {
+			syncDebugLog("connect:league-not-loaded", { code: trimmed });
+			return { connected: false };
+		}
+	}
+
 	// An automatic reconnect that finds a live session for this exact room and
 	// league is redundant - reconnecting anyway would tear down a healthy engine
 	// and replay its catch-up. Only an EXPLICIT join (the user typed/chose the

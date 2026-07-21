@@ -92,6 +92,15 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 	const switchingDatabaseLid = newLid !== previousLid;
 
 	if (switchingDatabaseLid) {
+		// Mark the league as not-loaded IMMEDIATELY, before the old one starts
+		// closing. Anything gated on local.leagueLoaded (e.g. a sync connect,
+		// which the UI's auto-reconnect can fire the moment it sees the new lid)
+		// must wait out the ENTIRE switch - starting one in the window between
+		// here and league.close() let it read `g` mid-reset ("Attempt to get
+		// g.userTid while it is not already set") or transact on the closing
+		// database handle ("The database connection is closing").
+		local.leagueLoaded = false;
+
 		// A cloud-sync session belongs to ONE league file. If the live session
 		// belongs to a DIFFERENT league than the one we're now loading, drop it so
 		// the connection never carries over from one file to the next on this device
