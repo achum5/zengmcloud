@@ -5,7 +5,6 @@ import {
 	TWITTER_HANDLE,
 } from "../../common/constants.ts";
 import { showNotification } from "./showNotification.ts";
-import { getScrollEl } from "./scrollContainer.ts";
 import { fetchWrapper } from "../../common/fetchWrapper.ts";
 import { isSport } from "../../common/sportFunctions.ts";
 
@@ -53,7 +52,7 @@ const takeScreenshotChunk = async () => {
 	}
 	contentEl.append(notifications);
 
-	getScrollEl().scrollTo(0, 0);
+	window.scrollTo(0, 0);
 
 	const cleanup = () => {
 		// Remove watermark

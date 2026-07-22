@@ -1,7 +1,6 @@
 import clsx from "clsx";
 import { Fragment, useEffect } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
-import { getScrollEl, scrollAppTo } from "../util/scrollContainer.ts";
 import { helpers } from "../util/helpers.ts";
 import { getCols } from "../../common/getCols.ts";
 import { useLocal } from "../util/local.ts";
@@ -338,10 +337,7 @@ const Achievements = ({ achievements }: View<"achievements">) => {
 				const achievementElement = document.getElementById(achievementId);
 				if (achievementElement) {
 					const { top } = achievementElement.getBoundingClientRect();
-					scrollAppTo({
-						top: getScrollEl().scrollTop + top - 60,
-						behavior: "smooth",
-					});
+					window.scroll({ top: top - 60, behavior: "smooth" });
 				}
 			}
 		}, 100);

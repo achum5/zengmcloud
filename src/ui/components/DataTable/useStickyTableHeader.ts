@@ -1,6 +1,5 @@
 import clsx from "clsx";
 import { useEffect, type RefObject } from "react";
-import { getScrollEl } from "../../util/scrollContainer.ts";
 
 // This mess is needed rather than `position: sticky` because https://github.com/w3c/csswg-drafts/issues/8286
 // See useManualSticky for a simpler version of this
@@ -91,11 +90,8 @@ export const useStickyTableHeader = ({
 		const resizeObserver = new ResizeObserver(syncWidths);
 		resizeObserver.observe(table);
 
-		// The page scrolls inside #content (see scrollContainer.ts), so the
-		// header's on-screen position tracks that element's scroll, not window's.
-		const scrollEl = getScrollEl();
 		container.addEventListener("scroll", syncScroll, { passive: true });
-		scrollEl.addEventListener("scroll", syncPosition, { passive: true });
+		window.addEventListener("scroll", syncPosition, { passive: true });
 		window.addEventListener("optimizedResize", syncWidths);
 
 		syncWidths(); // Also calls syncPosition
@@ -103,7 +99,7 @@ export const useStickyTableHeader = ({
 
 		return () => {
 			container.removeEventListener("scroll", syncScroll);
-			scrollEl.removeEventListener("scroll", syncPosition);
+			window.removeEventListener("scroll", syncPosition);
 			window.removeEventListener("optimizedResize", syncWidths);
 			resizeObserver.disconnect();
 			clone.remove();

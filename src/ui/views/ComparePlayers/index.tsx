@@ -1,7 +1,6 @@
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import type { SortType, View } from "../../../common/types.ts";
 import { PlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
-import { getScrollEl } from "../../util/scrollContainer.ts";
 import { PLAYER } from "../../../common/constants.ts";
 import { helpers } from "../../util/helpers.ts";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
@@ -219,11 +218,10 @@ const useManualSticky = (element: HTMLElement | null, top: number) => {
 			}
 		};
 
-		const scrollEl = getScrollEl();
-		scrollEl.addEventListener("scroll", onScroll, { passive: true });
+		window.addEventListener("scroll", onScroll, { passive: true });
 
 		return () => {
-			scrollEl.removeEventListener("scroll", onScroll);
+			window.removeEventListener("scroll", onScroll);
 		};
 	}, [element, top]);
 };

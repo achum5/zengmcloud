@@ -786,41 +786,42 @@ tr.table-warning:hover > td {
 	border-bottom: 1px solid $gray-200;
 }
 
-// App-shell scroll model: the WINDOW/document does not scroll; #content is the
-// single scroll container (see scrollContainer.ts + Controller). Keeping the
-// scroll inside a concrete element - rather than the document - is what makes
-// the header rock-solid on iOS: a document scroller gets desynced from the
-// visual viewport when the PWA is backgrounded and resumed (the header appears
-// to unstick and drift), but an element scroll container does not. body is
-// locked to the viewport; #content fills it and scrolls internally.
-body {
-	overflow: hidden;
-}
-#content {
-	overflow-y: auto;
-	overflow-x: hidden;
-	// Deliberately NOT `-webkit-overflow-scrolling: touch`. On iOS that promotes
-	// the scroller to its own GPU layer whose top strip intermittently fails to
-	// paint - it shows up black until an interaction forces a repaint (tap a
-	// hidden button and it "reveals" that region). Since #content wraps every
-	// page, `touch` reproduced that across the whole app. Modern iOS already does
-	// momentum scrolling without it, and the codebase opts out the same way for
-	// nested scrollers (see .table-responsive, Bootstrap #29313).
-	-webkit-overflow-scrolling: auto;
-	// Reserve the scrollbar gutter so opening a modal (which freezes #content's
-	// scroll) doesn't shift the layout on desktop.
-	scrollbar-gutter: stable;
-}
-
-// The top header sticks to the top of the #content scrollport. Because #content
-// is a real element scroll container, this sticky position is computed against
-// that element and can't desync from the viewport the way document-level
-// sticky/fixed does on iOS after backgrounding. z-index matches Bootstrap's old
-// fixed-top (1030) to preserve stacking over the league top bar and under the
-// sidebar (1040) / modals (1050+). (.navbar-border is shared with the title bar,
-// so this is scoped to the sticky one.)
+// The top header only (.navbar-border is shared with the title bar). It is
+// position:sticky, NOT position:fixed. In iOS standalone PWAs, WebKit's
+// compositor can permanently lose a fixed element's viewport attachment
+// (after backgrounding, dialogs, long sessions - a known, unresolved WebKit
+// bug), leaving the header scrolling with the page until the app is
+// relaunched. Sticky positioning is applied by the scroll tree on the
+// compositor thread itself, so it cannot desync from the scroll position.
+//
+// The document (window) is the scroll container - NOT an inner #content
+// overflow:auto element. An app-shell inner scroller was tried and reverted:
+// on iOS a tall inner overflow scroller tile-paints unreliably, leaving whole
+// regions rendered BLACK until an interaction forces a repaint (worst in dark
+// mode, across many pages). Native document scrolling repaints dependably, so
+// the header is sticky against the document instead.
+//
+// z-index matches Bootstrap's old fixed-top (1030) to preserve stacking over
+// the league top bar and under the sidebar (1040) / modals (1050+).
 .navbar-border.sticky-top {
 	z-index: 1030;
+}
+
+// While the iOS modal scroll lock pins <body> in place (see Modal.tsx), hold the
+// header at the viewport top with position:fixed (robust regardless of how a
+// browser resolves a sticky element under a position:fixed ancestor). Switching
+// the header out of flow would collapse the 52px of space it occupied and jump
+// the whole background up the instant the modal opened - so restore exactly that
+// space with a matching padding-top on the body. Net: header stays put, nothing
+// shifts. 52px is the header height (see the top offsets elsewhere in this file).
+body.ios-modal-pinned {
+	padding-top: 52px;
+}
+body.ios-modal-pinned .navbar-border.sticky-top {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
 }
 
 .dropdown-links .nav-item,

@@ -1,7 +1,6 @@
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
-import { getScrollEl, getScrollTop } from "../util/scrollContainer.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
 import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
@@ -71,14 +70,14 @@ const DailySchedule = ({
 		let restoreId: number | undefined;
 		if (saved !== undefined) {
 			restoreId = window.setTimeout(() => {
-				getScrollEl().scrollTo(0, saved);
+				window.scrollTo(window.scrollX, saved);
 			}, 0);
 		}
 		return () => {
 			if (restoreId !== undefined) {
 				clearTimeout(restoreId);
 			}
-			setDailyScheduleScroll(key, getScrollTop());
+			setDailyScheduleScroll(key, window.scrollY);
 		};
 	}, [season, day]);
 
