@@ -355,6 +355,15 @@ export const LiveGame = (props: View<"liveGame">) => {
 		  }
 		| undefined
 	>(undefined);
+	// A live fast break: set the moment a team gains the ball off a steal or a
+	// defensive rebound, so the shot that immediately follows is staged as a
+	// transition break (streaking offense, recovering defense) instead of a
+	// half-court set. `requireRim` gates it to a rim attempt for defensive boards
+	// (a walk-it-up jumper off a rebound isn't a break); a steal fires on any
+	// quick score. Cleared the instant the possession does anything but that shot.
+	const breakContext = useRef<{ t: 0 | 1; requireRim: boolean } | undefined>(
+		undefined,
+	);
 
 	const playerByPid = (pid: number): any => {
 		for (const t of boxScore.current.teams ?? []) {
@@ -382,6 +391,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 			decoyAssist?: boolean;
 			// A live shot at this spot: the nearest defender steps up to contest.
 			contestSpot?: { x: number; y: number };
+			// This possession is a fast break (off a steal / defensive board): the
+			// offense streaks the floor and the defense is caught recovering.
+			transition?: boolean;
 		} = {},
 	) => {
 		courtSceneCount.current += 1;
@@ -423,6 +435,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			const lineup = buildLineupActors({
 				teams: [teams[0]?.players ?? [], teams[1]?.players ?? []],
 				offenseT,
+				transition: opts.transition,
 			});
 
 			const playPids = new Set(playActors.map((a) => a.pid));
@@ -623,6 +636,40 @@ export const LiveGame = (props: View<"liveGame">) => {
 		}
 
 		const action = courtActionFromEventType(event.type);
+
+		// Is this the shot that finishes a fast break? A break is armed by the
+		// preceding steal / defensive board (breakContext). It stays armed through
+		// the attempt AND its result (so both stage as transition), then clears when
+		// the shot resolves - or the instant the possession does anything else.
+		let isTransition = false;
+		{
+			const bc = breakContext.current;
+			if (bc) {
+				const isShotByBreakTeam =
+					!!action && !action.blocked && displayT === bc.t;
+				if (
+					action?.kind === "attempt" &&
+					isShotByBreakTeam &&
+					(!bc.requireRim || action.zone === "atRim")
+				) {
+					// The break shot goes up: keep the context alive for the result.
+					isTransition = true;
+				} else if (
+					action?.kind === "result" &&
+					isShotByBreakTeam &&
+					(!bc.requireRim || action.zone === "atRim")
+				) {
+					// The break shot resolved: last transition scene, then stand down.
+					isTransition = true;
+					breakContext.current = undefined;
+				} else {
+					// Anything else (a pull-out jumper, the other team, a whistle) ends
+					// the break before it materialized.
+					breakContext.current = undefined;
+				}
+			}
+		}
+
 		if (action) {
 			if (action.kind === "attempt") {
 				if (typeof event.pid !== "number") {
@@ -680,7 +727,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 						shooterFrom,
 						arriveMs,
 					},
-					{ contestSpot: spot, assistPid: realAssist, decoyAssist },
+					{
+						contestSpot: spot,
+						assistPid: realAssist,
+						decoyAssist,
+						transition: isTransition,
+					},
 				);
 				return;
 			}
@@ -749,6 +801,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 					// Nobody contests a free throw, and on a block the blocker IS the
 					// contest.
 					contestSpot: isFt || action.blocked ? undefined : spot,
+					transition: isTransition,
 				},
 			);
 			return;
@@ -805,6 +858,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 				ballFrom: { x: victimX, y: spot.y },
 				ballTo: { x: spot.x, y: spot.y },
 			});
+			// Arm a fast break for the stealing team: whatever they score next is
+			// off the turnover, so stage it as a coast-to-coast break.
+			breakContext.current = { t: displayT, requireRim: false };
 		} else if (
 			(type === "orb" || type === "drb") &&
 			typeof event.pid === "number"
@@ -830,6 +886,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 				ballFrom: { x: rimXFor(rimT), y: 25 },
 				ballTo: spot,
 			});
+			// A defensive board can lead to a break - but only if they push it and
+			// finish at the rim (requireRim); walking it up into a jumper is not a
+			// break. An offensive board is a putback at the same rim, never a break.
+			if (type === "drb") {
+				breakContext.current = { t: displayT, requireRim: true };
+			} else {
+				breakContext.current = undefined;
+			}
 		} else if (type === "sub" && Array.isArray(event.pids)) {
 			// Subs check in at the scorer's table: a single cluster at center court
 			// along the near sideline, ins and outs side by side.
@@ -1399,6 +1463,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				courtSceneCount.current = 0;
 				lastActorPos.current = new Map();
 				lastFga.current = undefined;
+				breakContext.current = undefined;
 			}
 			while (
 				events.current &&

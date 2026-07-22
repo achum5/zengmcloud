@@ -213,6 +213,21 @@ const OFFENSE_SPOTS: { depth: number; across: number }[] = [
 	{ depth: 7, across: 20 }, // low block
 ];
 
+// A FAST-BREAK set: the offense is strung out toward the rim in wide lanes -
+// a lead attacker at the basket, both wings filling the lanes, a trailer, and a
+// deep safety - instead of a settled half-court spread. Ordered guard→big (see
+// posRank), so the guard leads the break and the big trails, the way it runs in
+// real life. Used for a possession that starts off a steal or a defensive board
+// (see buildLineupActors' `transition`), which is what makes a turnover into a
+// coast-to-coast break rather than another static set popping onto the floor.
+const TRANSITION_OFFENSE_SPOTS: { depth: number; across: number }[] = [
+	{ depth: 6, across: 25 }, // lead attacker, at the rim
+	{ depth: 13, across: 6 }, // left lane runner
+	{ depth: 13, across: 44 }, // right lane runner
+	{ depth: 23, across: 31 }, // trailer
+	{ depth: 31, across: 19 }, // deep safety / late trailer
+];
+
 // Rank a lineup player by court position so the sorted order fills the formation
 // slots guard→wing→big, however the sim labels positions.
 const posRank = (pos: string | undefined): number => {
@@ -266,23 +281,47 @@ const drift = (pid: number, salt: number): number => {
 export const buildLineupActors = ({
 	teams,
 	offenseT,
+	transition = false,
 }: {
 	teams: [LineupPlayer[], LineupPlayer[]];
 	offenseT: 0 | 1;
+	// A fast break: the offense streaks toward the rim (TRANSITION_OFFENSE_SPOTS)
+	// and the defense is caught RECOVERING - one man back protecting the rim, the
+	// rest trailing the play - instead of a set man-to-man. Turns a steal / defensive
+	// board into a real numbers-advantage break instead of another half-court set.
+	transition?: boolean;
 }): CourtActor[] => {
 	const out: CourtActor[] = [];
+	const offSpots = transition ? TRANSITION_OFFENSE_SPOTS : OFFENSE_SPOTS;
 	for (const t of [0, 1] as const) {
 		const isOffense = t === offenseT;
 		const onFloor = (teams[t] ?? [])
 			.filter((p) => p.inGame)
 			.sort((a, b) => posRank(a.pos) - posRank(b.pos))
-			.slice(0, OFFENSE_SPOTS.length);
+			.slice(0, offSpots.length);
 		for (const [i, p] of onFloor.entries()) {
-			const slot = OFFENSE_SPOTS[i]!;
-			// Defenders shadow their man's slot, a step closer to the rim and
-			// pinched toward the middle - a man-to-man look.
-			const depth = isOffense ? slot.depth : Math.max(4, slot.depth - 4.5);
-			const across = isOffense ? slot.across : 25 + (slot.across - 25) * 0.78;
+			const slot = offSpots[i]!;
+			let depth: number;
+			let across: number;
+			if (isOffense) {
+				depth = slot.depth;
+				across = slot.across;
+			} else if (transition) {
+				// Recovering defense: the first man sprints back to protect the rim;
+				// everyone else trails the break (a higher depth = further from the
+				// rim being attacked = behind the streaking offense), pinched middle.
+				if (i === 0) {
+					depth = 9;
+					across = 25 + (slot.across - 25) * 0.3;
+				} else {
+					depth = Math.min(42, slot.depth + 7);
+					across = 25 + (slot.across - 25) * 0.8;
+				}
+			} else {
+				// Half-court man-to-man: shadow the man a step toward the rim, pinched.
+				depth = Math.max(4, slot.depth - 4.5);
+				across = 25 + (slot.across - 25) * 0.78;
+			}
 			const { x, y } = toCourt(offenseT, depth, across);
 			out.push({
 				pid: p.pid,
