@@ -41,6 +41,7 @@ import LiveCourt, {
 	courtActionFromEventType,
 	rimXFor,
 	scorerTableRow,
+	setupBallPath,
 	synthHeaveSpot,
 	synthPlaySpot,
 	synthReboundSpot,
@@ -364,6 +365,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const breakContext = useRef<{ t: 0 | 1; requireRim: boolean } | undefined>(
 		undefined,
 	);
+	// True on the tick that is showing a synthetic SETUP beat (see the injection
+	// in processToNextPause), so the very next tick consumes the real event
+	// instead of injecting a second setup.
+	const injectedSetup = useRef(false);
 
 	const playerByPid = (pid: number): any => {
 		for (const t of boxScore.current.teams ?? []) {
@@ -513,6 +518,30 @@ export const LiveGame = (props: View<"liveGame">) => {
 		for (const a of actors) {
 			lastActorPos.current.set(a.pid, { x: a.x, y: a.y });
 		}
+	};
+
+	// A textless SETUP beat, shown for one interval BEFORE the first shot of a new
+	// possession: the offense (display team `offenseT`) brings the ball up and
+	// settles into its set - a fast break if `transition`, otherwise a half-court
+	// set - so the trip up the floor gets its own beat instead of the shot scene
+	// teleporting everyone across. No actors are passed, so pushScene fills the
+	// whole 5-on-5 as the background formation; the ball is animated up the floor
+	// (kind "advance"). Because everyone lands in this set, the shot scene that
+	// follows (built with the SAME transition flag) barely has to move them.
+	const pushSetupScene = (offenseT: 0 | 1, transition: boolean) => {
+		const { ballFrom, ballTo } = setupBallPath(offenseT, transition);
+		pushScene(
+			{
+				kind: "advance",
+				t: offenseT,
+				actors: [],
+				text: null,
+				rimX: rimXFor(offenseT),
+				ballFrom,
+				ballTo,
+			},
+			{ transition },
+		);
 	};
 
 	// The ball-handler's glide turned into ms (same speed-capped curve the players
@@ -1058,6 +1087,55 @@ export const LiveGame = (props: View<"liveGame">) => {
 				return 0;
 			}
 
+			// Between possessions, hold a display-only SETUP beat before the next
+			// possession's first SHOT: the ball is brought up and the five settle into
+			// their set (a fast break or a half-court set, decided by peeking at the
+			// shot that's coming), so the court DEVELOPS the possession over its own
+			// beat instead of teleporting everyone end-to-end and firing at once. It
+			// consumes no event, prints no play-by-play line, and moves no cursor - it
+			// just holds for one interval, then the next tick plays the real shot with
+			// everyone already in position. Real-time auto-play ONLY (never
+			// fast-forward, rewind, or a multiplayer follower - `!force` gates that),
+			// where an extra display beat is harmless.
+			if (
+				isSport("basketball") &&
+				!force &&
+				!injectedSetup.current &&
+				(possessionChange.current === true ||
+					breakContext.current !== undefined)
+			) {
+				const next = events.current[0];
+				const nextAction =
+					next && typeof next.type === "string"
+						? courtActionFromEventType(next.type)
+						: undefined;
+				if (
+					nextAction &&
+					nextAction.kind === "attempt" &&
+					typeof next.t === "number"
+				) {
+					// Box-score display order swaps the raw team index (see displayT).
+					const offenseT: 0 | 1 = next.t === 0 ? 1 : 0;
+					const bc = breakContext.current;
+					const transition =
+						!!bc &&
+						bc.t === offenseT &&
+						(!bc.requireRim || nextAction.zone === "atRim");
+					pushSetupScene(offenseT, transition);
+					injectedSetup.current = true;
+					// Hold this beat, then let the next tick consume the real event.
+					// Mirror the normal auto-play scheduler (only it reaches here).
+					if (!pausedRef.current && !followerRef.current) {
+						setTimeout(() => {
+							processToNextPause();
+							setPlayIndex((prev) => prev + 1);
+						}, speedToMs(speedRef.current));
+					}
+					return 0;
+				}
+			}
+			injectedSetup.current = false;
+
 			// Save here since it is mutated in processLiveGameEvents
 			const prevOuts = sportState.current?.outs;
 			const prevPts =
@@ -1464,6 +1542,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				lastActorPos.current = new Map();
 				lastFga.current = undefined;
 				breakContext.current = undefined;
+				injectedSetup.current = false;
 			}
 			while (
 				events.current &&

@@ -61,6 +61,11 @@ export type CourtSceneKind =
 	| "make"
 	| "miss"
 	| "block"
+	// A textless SETUP beat between possessions: the ball is brought up the floor
+	// and the five settle into their set (fast break or half-court, per what's
+	// coming) BEFORE the play that follows. This is what stops a possession from
+	// teleporting end-to-end - the trip up the court gets its own beat.
+	| "advance"
 	| "tov"
 	| "stl"
 	| "reb"
@@ -227,6 +232,22 @@ const TRANSITION_OFFENSE_SPOTS: { depth: number; across: number }[] = [
 	{ depth: 23, across: 31 }, // trailer
 	{ depth: 31, across: 19 }, // deep safety / late trailer
 ];
+
+// The ball's path for a setup beat: brought up from the FAR end (where the
+// possession was just won) to the ball-handler's spot in the set the team is
+// about to run - the lead attacker on a break, the top of the key in a
+// half-court set. Matches OFFENSE_SPOTS[0] / TRANSITION_OFFENSE_SPOTS[0] so the
+// ball settles right where a real handler stands.
+export const setupBallPath = (
+	offenseT: 0 | 1,
+	transition: boolean,
+): { ballFrom: { x: number; y: number }; ballTo: { x: number; y: number } } => {
+	const handler = transition ? TRANSITION_OFFENSE_SPOTS[0]! : OFFENSE_SPOTS[0]!;
+	return {
+		ballFrom: { x: rimXFor(offenseT === 0 ? 1 : 0), y: 25 },
+		ballTo: toCourt(offenseT, handler.depth, handler.across),
+	};
+};
 
 // Rank a lineup player by court position so the sorted order fills the formation
 // slots guard→wing→big, however the sim labels positions.
@@ -900,6 +921,47 @@ const LiveCourt = ({
 		const main = scene.actors.find((a) => a.role === "main");
 		const isShot =
 			scene.kind === "make" || scene.kind === "miss" || scene.kind === "block";
+
+		// A setup beat: bring the ball up the floor from the previous end to the
+		// handler's spot in the new set, then let it rest live in his hands. The
+		// five glide into formation on their own (the body glide), so by the time
+		// the actual play fires next beat, everyone is already in position - the
+		// possession develops instead of teleporting.
+		if (scene.kind === "advance" && scene.ballFrom && scene.ballTo) {
+			if (ring) {
+				ring.style.opacity = "0";
+			}
+			const from = scene.ballFrom;
+			const to = scene.ballTo;
+			ball.style.opacity = "1";
+			ball.setAttribute("cx", String(from.x));
+			ball.setAttribute("cy", String(from.y));
+			// Take most of the beat to bring it up, then settle - paced to the scene
+			// so it fills the beat at any speed.
+			const bringMs = Math.max(280, (sceneMs ?? 1100) * 0.68);
+			const start = performance.now();
+			const step = (now: number) => {
+				const p = Math.min(1, (now - start) / bringMs);
+				ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
+				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
+				// Dribble hops on the way up.
+				ball.setAttribute(
+					"r",
+					String(0.76 + 0.22 * Math.abs(Math.sin(p * Math.PI * 4))),
+				);
+				if (p < 1) {
+					rafRef.current = requestAnimationFrame(step);
+				} else {
+					restDribble(to.x, to.y);
+				}
+			};
+			rafRef.current = requestAnimationFrame(step);
+			return () => {
+				if (rafRef.current !== undefined) {
+					cancelAnimationFrame(rafRef.current);
+				}
+			};
+		}
 
 		// Rebound / opening tip: the ball travels from one spot to another (off
 		// the rim to the rebounder, or tapped from center back behind the winner).
@@ -2003,8 +2065,9 @@ const LiveCourt = ({
 				: null}
 
 			{/* The play line, beside the action - placed past the edge of the whole
-			    player cluster so it never covers a face */}
-			{scene ? (
+			    player cluster so it never covers a face. Skipped entirely on a
+			    textless setup beat (kind "advance"), which shows movement only. */}
+			{scene && scene.text ? (
 				<div
 					className="position-absolute"
 					style={{
