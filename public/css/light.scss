@@ -799,7 +799,14 @@ body {
 #content {
 	overflow-y: auto;
 	overflow-x: hidden;
-	-webkit-overflow-scrolling: touch;
+	// Deliberately NOT `-webkit-overflow-scrolling: touch`. On iOS that promotes
+	// the scroller to its own GPU layer whose top strip intermittently fails to
+	// paint - it shows up black until an interaction forces a repaint (tap a
+	// hidden button and it "reveals" that region). Since #content wraps every
+	// page, `touch` reproduced that across the whole app. Modern iOS already does
+	// momentum scrolling without it, and the codebase opts out the same way for
+	// nested scrollers (see .table-responsive, Bootstrap #29313).
+	-webkit-overflow-scrolling: auto;
 	// Reserve the scrollbar gutter so opening a modal (which freezes #content's
 	// scroll) doesn't shift the layout on desktop.
 	scrollbar-gutter: stable;
