@@ -308,7 +308,9 @@ describe("getAutoRecap", () => {
 });
 
 describe("getAutoRecap playoffs", () => {
-	const series = (over: Partial<RecapGame["series"]> = {}): RecapGame["series"] => ({
+	const series = (
+		over: Partial<RecapGame["series"]> = {},
+	): RecapGame["series"] => ({
 		round: 1,
 		numRounds: 4,
 		bestOf: 7,
@@ -394,6 +396,55 @@ describe("getAutoRecap playoffs", () => {
 		const recap = getAutoRecap(playoffGame(1, 3, true, { round: 1 }));
 		assert.ok(/elimination/.test(recap), recap);
 		assert.ok(recap.includes("3-2"), recap);
+	});
+
+	test("best-of-5 decider is Game 5, never Game 7", () => {
+		const boston = realisticTeam(
+			{
+				tid: 1,
+				region: "Boston",
+				name: "Celtics",
+				abbrev: "BOS",
+				pts: 94,
+				ptsQtrs: [20, 29, 23, 22],
+				seed: 2,
+			},
+			player({ name: "Paul Pierce", pts: 24, reb: 8 }),
+		);
+		const detroit = realisticTeam(
+			{
+				tid: 2,
+				region: "Detroit",
+				name: "Pistons",
+				abbrev: "DET",
+				pts: 73,
+				ptsQtrs: [18, 14, 20, 21],
+				seed: 3,
+			},
+			player({ name: "Antoine Walker", pts: 20, reb: 6 }),
+		);
+		// Series tied 2-2 in a best-of-5; Boston wins Game 5 to clinch.
+		const g = game({
+			gid: 6200,
+			teams: [boston, detroit],
+			winnerTid: 1,
+			playoffs: true,
+			series: {
+				round: 1,
+				numRounds: 4,
+				bestOf: 5,
+				homeAbbrev: "BOS",
+				awayAbbrev: "DET",
+				homeSeed: 2,
+				awaySeed: 3,
+				homeWon: 2,
+				awayWon: 2,
+			},
+		});
+		const recap = getAutoRecap(g);
+		assert.ok(!/Game 7/.test(recap), recap);
+		assert.ok(/Game 5/.test(recap), recap);
+		assert.ok(/closed out|advanced/.test(recap), recap);
 	});
 });
 
@@ -833,7 +884,9 @@ test("print sample recaps", () => {
 	});
 
 	console.log(
-		"\n===== SAMPLE DAY RECAP =====\n" + dayRecap + "\n============================\n",
+		"\n===== SAMPLE DAY RECAP =====\n" +
+			dayRecap +
+			"\n============================\n",
 	);
 	console.log(
 		"\n===== SAMPLE GAME RECAPS (rich + playoff) =====\n" +

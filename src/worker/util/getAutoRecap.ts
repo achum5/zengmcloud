@@ -475,16 +475,20 @@ const postseasonContext = (
 			? Math.floor(s.bestOf / 2) + 1
 			: undefined;
 	const facingElimination = need !== undefined && lBefore === need - 1;
-	const isGame7 =
-		typeof s.bestOf === "number" && gameNo === s.bestOf && s.bestOf > 1;
+	// The last possible game of the series (Game 5 of a best-of-5, Game 7 of a
+	// best-of-7) - a true winner-take-all. "Game 7" is only literal for a best-of-7.
+	const isDecider =
+		typeof s.bestOf === "number" && s.bestOf > 1 && gameNo === s.bestOf;
+	const deciderTag = s.bestOf === 7 ? "a Game 7" : `a decisive Game ${gameNo}`;
 
-	if (isGame7) {
-		out.headlineTag = "a Game 7";
+	if (isDecider) {
+		out.headlineTag = deciderTag;
 	} else if (facingElimination) {
 		out.headlineTag = "an elimination game";
 	}
 
-	// The clinching case: series won.
+	// The clinching case: series won. (When it's the decider, the headline tag
+	// already carries the winner-take-all framing, so the body stays clean.)
 	if (need !== undefined && wAfter >= need) {
 		if (s.round === s.numRounds) {
 			out.sentences.push(
@@ -499,10 +503,6 @@ const postseasonContext = (
 				`${cap(w)} closed out ${rnd} with ${how} and advanced.`,
 			);
 		}
-		if (facingElimination && lBefore > 0) {
-			// (Can't both clinch and have faced elimination unless it was a Game 7.)
-			out.sentences.push(`It came in a winner-take-all Game ${gameNo}.`);
-		}
 		return out;
 	}
 
@@ -513,20 +513,12 @@ const postseasonContext = (
 			`${cap(w)} evened ${rnd} at ${wAfter}-${wAfter} with the ${gameLabel} win.`,
 		);
 	} else if (wAfter > lBefore) {
-		const leadWord =
-			facingElimination && isGame7
-				? "forced a decisive"
-				: wBefore === 0 && lBefore === 0
-					? "drew first blood in"
-					: "took a";
 		out.sentences.push(
 			facingElimination
 				? `${cap(w)} staved off elimination to pull within ${lBefore}-${wAfter} in ${rnd}.`
-				: `${cap(w)} ${
-						leadWord === "took a"
-							? `took a ${wAfter}-${lBefore} lead in ${rnd}`
-							: `${leadWord} ${rnd}, ${wAfter}-${lBefore}`
-					}.`,
+				: wBefore === 0 && lBefore === 0
+					? `${cap(w)} drew first blood in ${rnd}, ${wAfter}-${lBefore}.`
+					: `${cap(w)} took a ${wAfter}-${lBefore} lead in ${rnd}.`,
 		);
 	} else {
 		// Winner still trails the series even after this win.
@@ -537,9 +529,6 @@ const postseasonContext = (
 		);
 	}
 
-	if (isGame7) {
-		out.sentences.push(`It was a winner-take-all Game 7.`);
-	}
 	void l;
 	return out;
 };
@@ -660,6 +649,21 @@ const buildHeadline = (
 		return pick(rng, [
 			`${winnerN} erase a ${shape.comebackFrom}-point hole to ${verb} the ${loserN}${tag}`,
 			`${star.name} rallies the ${winnerN} past the ${loserN}${tag}`,
+		]);
+	}
+
+	// A scoring duel when both stars go off.
+	const loserStar = bestOf(shape.loser.players);
+	if (
+		loserStar &&
+		star.pts >= 32 &&
+		loserStar.pts >= 30 &&
+		ddCount < 3 &&
+		shape.margin <= 12
+	) {
+		return pick(rng, [
+			`${star.name} outduels ${loserStar.name} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+			`${star.name}'s ${star.pts} edges ${loserStar.name}'s ${loserStar.pts} in the ${winnerN}' win${tag}`,
 		]);
 	}
 
@@ -842,6 +846,72 @@ const statNote = (shape: Shape, rng: () => number): string | undefined => {
 		return undefined;
 	}
 	return pick(rng, options);
+};
+
+// The halftime / second-half story, from the quarter scores.
+const secondHalfNote = (shape: Shape): string | undefined => {
+	const { wq, lq, regPeriods } = shape;
+	if (regPeriods < 4 || wq.length < regPeriods || lq.length < regPeriods) {
+		return undefined;
+	}
+	const half = Math.floor(regPeriods / 2);
+	let wFirst = 0;
+	let lFirst = 0;
+	let wSecond = 0;
+	let lSecond = 0;
+	for (let i = 0; i < regPeriods; i++) {
+		if (i < half) {
+			wFirst += wq[i] ?? 0;
+			lFirst += lq[i] ?? 0;
+		} else {
+			wSecond += wq[i] ?? 0;
+			lSecond += lq[i] ?? 0;
+		}
+	}
+	const halfMargin = wFirst - lFirst;
+	const secondMargin = wSecond - lSecond;
+	// A halftime-deficit comeback (only when the quarter-flow line didn't already
+	// lead with a bigger comeback).
+	if (halfMargin < 0 && shape.margin > 0 && shape.comebackFrom < 12) {
+		return `Down ${-halfMargin} at the break, ${theNick(
+			shape.winner,
+		)} outscored ${theNick(shape.loser)} ${wSecond}-${lSecond} in the second half.`;
+	}
+	if (secondMargin >= 12) {
+		return `${cap(theNick(shape.winner))} pulled away after halftime, taking the second half ${wSecond}-${lSecond}.`;
+	}
+	if (halfMargin >= 15) {
+		return `${cap(theNick(shape.winner))} led ${wFirst}-${lFirst} at halftime and never looked back.`;
+	}
+	return undefined;
+};
+
+// A player who controlled the game by plus-minus (when it's tracked and big).
+const plusMinusNote = (shape: Shape, star: RecapPlayer): string | undefined => {
+	let best: RecapPlayer | undefined;
+	for (const p of shape.winner.players) {
+		if (typeof p.pm === "number" && (!best || p.pm > (best.pm ?? -Infinity))) {
+			best = p;
+		}
+	}
+	if (!best || best === star || (best.pm ?? 0) < 18) {
+		return undefined;
+	}
+	return `${best.name} was a game-best +${best.pm} in ${best.min} minutes.`;
+};
+
+// The scoreboard's overall character: a shootout or a defensive grind.
+const combinedNote = (shape: Shape): string | undefined => {
+	const total = shape.winner.pts + shape.loser.pts;
+	if (shape.ot === 0 && shape.regPeriods >= 4) {
+		if (total >= 240) {
+			return `The teams combined for ${total} points in an up-and-down affair.`;
+		}
+		if (total <= 165) {
+			return `Neither offense got going in a ${total}-point defensive grind.`;
+		}
+	}
+	return undefined;
 };
 
 // The winner's supporting cast - the second (and maybe third) big contributor.
@@ -1067,14 +1137,17 @@ export const getAutoRecap = (game: RecapGame): string => {
 	if (loser) {
 		para2.push(loser);
 	}
-	// Fill out with a couple of the remaining angles, seed-ordered for variety.
+	// Fill out with the remaining angles, seed-ordered for variety.
 	const extras = shuffle(rng, [
 		post.sentences[1],
+		secondHalfNote(shape),
 		stakesSentence(game, shape, rng),
+		combinedNote(shape),
+		plusMinusNote(shape, star),
 		injurySentence(shape),
 	]).filter((s): s is string => !!s);
 	for (const e of extras) {
-		if (para2.length >= 4) {
+		if (para2.length >= 5) {
 			break;
 		}
 		para2.push(e);
@@ -1184,6 +1257,9 @@ const gameBlurb = (game: RecapGame, rng: () => number): string => {
 	return base;
 };
 
+const gbText = (gb: number): string =>
+	gb === 0.5 ? "half a game" : `${gb} game${gb === 1 ? "" : "s"}`;
+
 const conferencePictureSentence = (
 	standings: RecapDayStandings | undefined,
 ): string | undefined => {
@@ -1193,16 +1269,43 @@ const conferencePictureSentence = (
 	const bits: string[] = [];
 	for (const conf of standings.confs) {
 		const leader = conf.teams[0];
-		if (leader) {
-			bits.push(
-				`${leader.region} ${leader.name} (${leader.won}-${leader.lost}) atop the ${conf.name}`,
-			);
+		const second = conf.teams[1];
+		if (!leader) {
+			continue;
+		}
+		const who = `${leader.region} ${leader.name} (${leader.won}-${leader.lost})`;
+		if (second && second.gb >= 1) {
+			bits.push(`${who} lead the ${conf.name} by ${gbText(second.gb)}`);
+		} else if (second) {
+			bits.push(`${who} hold a narrow lead in the ${conf.name}`);
+		} else {
+			bits.push(`${who} sit atop the ${conf.name}`);
 		}
 	}
 	if (bits.length === 0) {
 		return undefined;
 	}
-	return `Around the standings: ${naturalList(bits)}.`;
+	return `In the standings, ${naturalList(bits)}.`;
+};
+
+// A team riding a notable win streak into the night.
+const teamStreakSentence = (games: RecapGame[]): string | undefined => {
+	let best: { team: RecapTeam; count: number } | undefined;
+	for (const game of games) {
+		if (game.allStar) {
+			continue;
+		}
+		const winner =
+			game.teams[0].tid === game.winnerTid ? game.teams[0] : game.teams[1];
+		const s = winner.streak;
+		if (s && s.won && s.count >= 6 && (!best || s.count > best.count)) {
+			best = { team: winner, count: s.count };
+		}
+	}
+	if (!best) {
+		return undefined;
+	}
+	return `${cap(theNick(best.team))} ran their win streak to ${best.count} games.`;
 };
 
 // The day's headline, driven by the single biggest thing that happened -
@@ -1243,8 +1346,18 @@ const dayHeadline = (
 				`${w} eliminate ${l}`,
 			]);
 		}
-		if (/Game 7/.test(joined) && /even|forced/.test(joined)) {
-			return `${w} force a winner-take-all Game 7 with ${l}`;
+		// A series-tying win that forces a winner-take-all next game.
+		const s = marquee.series;
+		if (s && typeof s.bestOf === "number" && s.bestOf > 1) {
+			const need = Math.floor(s.bestOf / 2) + 1;
+			const winnerIsHome = mShape.winner.abbrev === s.homeAbbrev;
+			const wBefore = winnerIsHome ? s.homeWon : s.awayWon;
+			const lBefore = winnerIsHome ? s.awayWon : s.homeWon;
+			if (wBefore + 1 === need - 1 && lBefore === need - 1) {
+				const decider =
+					s.bestOf === 7 ? "a Game 7" : `a decisive Game ${s.bestOf}`;
+				return `${w} force ${decider} with ${l}`;
+			}
 		}
 		if (/staved off elimination/.test(joined)) {
 			return pick(rng, [
@@ -1499,6 +1612,10 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 			para2.push(seriesBits.join(" "));
 		}
 	} else {
+		const streak = teamStreakSentence(games);
+		if (streak) {
+			para2.push(streak);
+		}
 		const picture = conferencePictureSentence(standings);
 		if (picture) {
 			para2.push(picture);
