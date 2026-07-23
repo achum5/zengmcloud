@@ -723,6 +723,46 @@ describe("SyncEngine", () => {
 		assert.strictEqual(watermarks.at(-1), bus.entries.at(-1)!.seq);
 	});
 
+	test("isCaughtUp is confidently-wrong after a missed delivery; the forced catchUp corrects it (mid-day sim-handoff guard)", async () => {
+		// This is the invariant the sim/advance guard relies on: because a silently
+		// stalled changes listener (socket live, deliveries stopped) leaves this
+		// device unaware of new entries, isCaughtUp() - which is relative to what the
+		// device has SEEN - reports a confidently-wrong "true". A timeline advance run
+		// on that stale state can clobber a result another device just recorded (the
+		// mid-day simmer-handoff hazard). The guard forces catchUp() before advancing;
+		// this proves that closes the window.
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		// A receiver that is "caught up" with nothing pending. (Not subscribed, which
+		// is behaviorally identical to a silently-dead listener for a missed entry.)
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+		assert.strictEqual(receiver.isCaughtUp(), true);
+
+		// Another device records a live-sim result and publishes it, but this device's
+		// listener never delivers it.
+		const other = new FakeTransport("A", bus);
+		await other.publish({
+			id: "s1",
+			authorId: "A",
+			action: "actions.liveGame",
+			changeset: {
+				changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+			},
+		});
+
+		// The trap: still reports caught-up, and the cache is stale.
+		assert.strictEqual(receiver.isCaughtUp(), true);
+		assert.strictEqual((await idb.cache.events.getAll()).length, 0);
+
+		// The guard's forced drain reaches the head, applies the missed result...
+		assert.strictEqual(await receiver.catchUp(), true);
+		// ...so an advance now runs on fresh state instead of clobbering it.
+		assert.strictEqual((await idb.cache.events.getAll()).length, 1);
+		assert.strictEqual(receiver.isCaughtUp(), true);
+	});
+
 	test("catchUp drains a large backlog page by page, banking progress", async () => {
 		const bus = new FakeBus();
 		resetG();

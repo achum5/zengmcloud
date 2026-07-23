@@ -386,6 +386,40 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				);
 				return undefined;
 			}
+
+			// A timeline advance must run on the room's LATEST state, not on the
+			// "seen-relative" caught-up flag checked above. isCaughtUp() is relative to
+			// what THIS device has seen, so a silently-stalled changes listener (the
+			// socket is live - verifyConnection passes - but the changes onSnapshot has
+			// quietly stopped delivering) reports caught-up while game data stops
+			// arriving. An advance run then reads a stale whole-record aggregate - most
+			// dangerously playoffSeries, a single per-season record rewritten wholesale
+			// on every game - and, under record-level last-write-wins, clobbers a result
+			// another device just recorded. That's the mid-day simmer-handoff hazard:
+			// device B takes over and live-sims ITS game off a playoffSeries that's
+			// missing the series win device A just recorded, then publishes the stale
+			// record over A's. So, exactly like the draft-advance preflight
+			// (core/sync/draftReady.ts), force a real change-log drain to the head here.
+			// catchUp() returns true ONLY when this pass reached the head; false means a
+			// fetch failed, more pages remain, or another drain is already in flight - in
+			// any of those the device isn't provably current, so refuse to advance and
+			// let the user retry once caught up (the backstop poll keeps draining). Only
+			// timeline advances pay this extra round-trip; ordinary edits are
+			// durable-first deltas that can't re-derive shared state from stale reads.
+			if (simAuthorityLocked) {
+				const drained = await syncEngine.catchUp();
+				if (!drained || !syncEngine.isCaughtUp()) {
+					util.logEvent(
+						{
+							type: "error",
+							text: `Still catching up to the cloud, so this wasn't done. Try again in a moment.`,
+							persistent: true,
+						},
+						conditions,
+					);
+					return undefined;
+				}
+			}
 		} else if (getSyncRequired()) {
 			// Meant to be synced but not connected (reconnecting after a refresh,
 			// or offline). Pause so this device can't advance while offline and
