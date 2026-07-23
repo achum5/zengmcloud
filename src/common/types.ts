@@ -951,6 +951,13 @@ export type League = {
 	// reconnect is only allowed when they match, so a stale stored session (e.g.
 	// a recycled lid) can never silently join a new file to an old room.
 	syncLeagueId?: string;
+	// Set when this device silently skipped a bulk change (a chunked batch
+	// abandoned with its chunks missing at the time, banking the watermark past
+	// it). Survives a reload - the in-memory recovery state does not - so the next
+	// connect can self-heal with a full-log resync instead of leaving the device
+	// stuck behind the room (e.g. stranded on the old phase after a ready-up
+	// advance). Cleared once a resync re-applies the whole log cleanly.
+	syncResyncNeeded?: boolean;
 };
 
 export type Locks = {

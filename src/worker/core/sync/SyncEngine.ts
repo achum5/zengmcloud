@@ -172,6 +172,11 @@ export class SyncEngine {
 
 	private onWatermark: ((seq: number) => void) | undefined;
 
+	// Fired when a bulk batch is abandoned (its chunks aren't in the log and the
+	// watermark is about to bank past it) - so the owner can persist a durable
+	// "needs resync" marker that survives a reload and self-heals on next connect.
+	private onResyncNeeded: (() => void) | undefined;
+
 	private unsubscribe: (() => void) | undefined;
 
 	// Entry ids we've produced or applied - prevents re-applying (and thus
@@ -342,11 +347,13 @@ export class SyncEngine {
 			) => void;
 			onReadyChange?: (ready: boolean) => void;
 			onPendingChange?: (count: number) => void;
+			onResyncNeeded?: () => void;
 		} = {},
 	) {
 		this.transport = transport;
 		this.claimOnStart = options.isHost ?? false;
 		this.onWatermark = options.onWatermark;
+		this.onResyncNeeded = options.onResyncNeeded;
 		this.onAuthorityChange = options.onAuthorityChange;
 		this.maxSeq = options.initialWatermark ?? 0;
 		this.persistedSeq = options.initialWatermark ?? 0;
@@ -1740,6 +1747,12 @@ export class SyncEngine {
 						this.abandonedBatches.delete(oldest);
 					}
 				}
+				// `abandonedBatches` is in-memory, so a reload loses the in-session
+				// resurrection path and the device would stay silently behind (this is
+				// how a ready-up phase advance stranded two follower devices on the old
+				// phase). Persist a durable marker so the next connect self-heals with a
+				// full-log resync instead of waiting for a manual Force full resync.
+				this.onResyncNeeded?.();
 				syncDebugLog("engine:batch-abandoned", {
 					...detail,
 					authorProgress,

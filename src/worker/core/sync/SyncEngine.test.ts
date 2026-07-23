@@ -1048,6 +1048,134 @@ describe("SyncEngine", () => {
 		assert.strictEqual(events.length, 1);
 	});
 
+	test("abandoning a batch fires onResyncNeeded so the skip can self-heal after a reload", async () => {
+		// The field failure: a follower never received all chunks of the ready-up
+		// phase-advance batch, abandoned it, and banked the watermark past it. The
+		// in-memory recovery is lost on reload, so the device stays behind (stuck on
+		// the old phase). onResyncNeeded is the hook that lets connect persist a
+		// durable marker and self-heal with a full resync next connect.
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		const host = new FakeTransport("H", bus);
+		const chunk = (i: number) => ({
+			id: `dead${i}`,
+			authorId: "H",
+			action: "playMenu.sim",
+			batchId: "DEAD",
+			chunkIndex: i,
+			chunkCount: 3,
+			changeset: {
+				changes: [
+					{
+						store: "events" as const,
+						id: 100 + i,
+						type: "put" as const,
+						value: { eid: 100 + i },
+					},
+				],
+			},
+		});
+		await host.publish(chunk(0));
+		await host.publish(chunk(2));
+		await host.publish({
+			id: "after",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+			},
+		});
+
+		let resyncNeeded = 0;
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {
+			onResyncNeeded: () => {
+				resyncNeeded += 1;
+			},
+		});
+		for (let i = 0; i < 20; i++) {
+			await receiver.catchUp();
+			if (receiver.isCaughtUp()) {
+				break;
+			}
+		}
+
+		assert.strictEqual(receiver.isCaughtUp(), true);
+		assert.ok(resyncNeeded >= 1, "onResyncNeeded should fire on abandonment");
+	});
+
+	test("resyncAll self-heals a batch this device abandoned, once its chunks are in the log", async () => {
+		// The recovery for the field failure: the author's phase-advance chunks ARE
+		// in the cloud (the simmer stayed correct), but this follower abandoned the
+		// batch on a timing hiccup and banked past it. A full resync re-reads the
+		// whole log - reaching the chunks below its watermark - and re-applies them.
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		const host = new FakeTransport("H", bus);
+		const chunk = (i: number) => ({
+			id: `dead${i}`,
+			authorId: "H",
+			action: "playMenu.sim",
+			batchId: "DEAD",
+			chunkIndex: i,
+			chunkCount: 3,
+			changeset: {
+				changes: [
+					{
+						store: "events" as const,
+						id: 100 + i,
+						type: "put" as const,
+						value: { eid: 100 + i },
+					},
+				],
+			},
+		});
+		await host.publish(chunk(0));
+		await host.publish(chunk(2));
+		await host.publish({
+			id: "after",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "events", id: 1, type: "put", value: { eid: 1 } }],
+			},
+		});
+
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {});
+		for (let i = 0; i < 20; i++) {
+			await receiver.catchUp();
+			if (receiver.isCaughtUp()) {
+				break;
+			}
+		}
+		// Abandoned: the batch's records are NOT applied (only the healthy entry is).
+		let events = await idb.cache.events.getAll();
+		assert.deepStrictEqual(
+			events.map((e: any) => e.eid).sort((a: number, b: number) => a - b),
+			[1],
+		);
+
+		// The missing chunk finally lands in the log (author finished uploading).
+		await host.publish(chunk(1));
+
+		// Reload + reconnect: a FRESH engine (no in-memory abandoned-batch state)
+		// runs the self-healing full resync, exactly as connect does when the
+		// durable syncResyncNeeded marker is set. It re-reads the whole log - all
+		// three chunks now present - and applies the skipped batch.
+		const reloaded = new SyncEngine(new FakeTransport("R", bus), {});
+		const result = await reloaded.resyncAll();
+		assert.strictEqual(result.failed, false);
+		assert.strictEqual(result.incomplete, 0);
+		events = await idb.cache.events.getAll();
+		assert.deepStrictEqual(
+			events.map((e: any) => e.eid).sort((a: number, b: number) => a - b),
+			[1, 100, 101, 102],
+		);
+	});
+
 	test("a dead batch is abandoned when the LOG moves past it, even if its own author never did", async () => {
 		const bus = new FakeBus();
 		resetG();

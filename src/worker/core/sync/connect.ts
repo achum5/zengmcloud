@@ -101,6 +101,35 @@ const makeLeagueId = (): string => {
 	return `${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 };
 
+// Durable "this device silently skipped a bulk change" marker (see
+// League.syncResyncNeeded). Set by the engine when it abandons a batch; read on
+// connect to trigger a self-healing full-log resync. Survives reloads, unlike the
+// engine's in-memory abandoned-batch set.
+const loadResyncNeeded = async (
+	lid: number | undefined,
+): Promise<boolean> => {
+	if (typeof lid !== "number") {
+		return false;
+	}
+	const league = await idb.meta.get("leagues", lid);
+	return !!league?.syncResyncNeeded;
+};
+
+const saveResyncNeeded = async (lid: number | undefined, value: boolean) => {
+	if (typeof lid !== "number") {
+		return;
+	}
+	const league = await idb.meta.get("leagues", lid);
+	if (league) {
+		if (value) {
+			league.syncResyncNeeded = true;
+		} else {
+			delete league.syncResyncNeeded;
+		}
+		await idb.meta.put("leagues", league);
+	}
+};
+
 // Minimum spacing between DURABLE watermark banks (cache flush + meta write).
 // During chained ready-up picks a watermark advance fires per pick; flushing
 // and writing meta every time hammered mobile browsers' IndexedDB ("meta
@@ -1386,6 +1415,12 @@ const doConnectSharedLeague = async ({
 		onPendingChange: (count) => {
 			pushPendingUploads(count);
 		},
+		// The engine just abandoned a bulk change whose chunks weren't in the log -
+		// it silently skipped shared state. Persist a durable marker so the next
+		// connect self-heals with a full resync even after a reload.
+		onResyncNeeded: () => {
+			void saveResyncNeeded(lid, true);
+		},
 	});
 	engine.start();
 	setSyncEngine(engine);
@@ -1429,6 +1464,33 @@ const doConnectSharedLeague = async ({
 	void engine.drainOutbox();
 	void engine.pendingUploadCount().then(pushPendingUploads, () => {});
 	void outbox.prune(OUTBOX_MAX_AGE_MS);
+
+	// Self-heal a device that silently skipped a bulk change in a prior session
+	// (a chunked batch abandoned with its chunks missing, banking the watermark
+	// past it - the failure that stranded two follower devices on the old phase
+	// after a ready-up advance). The gap is durable (syncResyncNeeded), so a
+	// normal catch-up won't re-fetch below the watermark; a full-log resync
+	// (idempotent, safe anytime - same as the manual "Force full resync") re-reads
+	// and re-applies the whole log in order to land on the room's real state.
+	// Clear the marker only after a resync that actually read the log AND applied
+	// it cleanly, so an offline/empty read or a still-missing chunk retries on the
+	// next connect instead of clearing the flag and staying stuck. Never blocks
+	// the connect.
+	void (async () => {
+		try {
+			if (!(await loadResyncNeeded(lid))) {
+				return;
+			}
+			syncDebugLog("connect:auto-resync-start", {});
+			const result = await engine.resyncAll();
+			syncDebugLog("connect:auto-resync-done", result);
+			if (result.total > 0 && !result.failed && result.incomplete === 0) {
+				await saveResyncNeeded(lid, false);
+			}
+		} catch (error) {
+			syncDebugLog("connect:auto-resync-failed", { error });
+		}
+	})();
 
 	// Drive the header connection dot from confirmed live contact, and the
 	// "simming…" edits-paused indicator (which also needs a tick to notice a busy
