@@ -37,6 +37,7 @@ import { Confetti } from "./Confetti.tsx";
 import { BoxScoreRow } from "../../components/BoxScoreRow.tsx";
 import { getPeriodName } from "../../../common/getPeriodName.ts";
 import LiveCourt, {
+	buildFreeThrowActors,
 	buildLineupActors,
 	courtActionFromEventType,
 	rimXFor,
@@ -399,6 +400,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// This possession is a fast break (off a steal / defensive board): the
 			// offense streaks the floor and the defense is caught recovering.
 			transition?: boolean;
+			// A free throw: line the other nine along the paint (3 defenders + 2
+			// offense on the lane, the rest behind the arc) instead of a normal set.
+			// The value is the shooter's pid, excluded from the lane.
+			freeThrowShooterPid?: number;
 		} = {},
 	) => {
 		courtSceneCount.current += 1;
@@ -437,79 +442,97 @@ export const LiveGame = (props: View<"liveGame">) => {
 			const midX = (rimXFor(0) + rimXFor(1)) / 2;
 			const offenseT: 0 | 1 = anchorX > midX ? 1 : 0;
 			const teams = boxScore.current.teams;
-			const lineup = buildLineupActors({
-				teams: [teams[0]?.players ?? [], teams[1]?.players ?? []],
-				offenseT,
-				transition: opts.transition,
-			});
-
 			const playPids = new Set(playActors.map((a) => a.pid));
-			const extras: CourtActor[] = [];
-			for (const entry of lineup) {
-				if (playPids.has(entry.pid)) {
-					continue; // already featured at an action spot
-				}
-				if (opts.assistPid !== undefined && entry.pid === opts.assistPid) {
-					// The assister: featured (name tag, full strength) at his spot; the
-					// ball's pass leg starts here.
-					extras.push({ ...entry, role: "assist" });
-					passFrom = { x: entry.x, y: entry.y };
-					continue;
-				}
-				extras.push(entry);
-			}
+			const teamLineups: [any[], any[]] = [
+				teams[0]?.players ?? [],
+				teams[1]?.players ?? [],
+			];
 
-			// A decoy pass (no real assist): promote a random on-floor OFFENSE
-			// teammate to the passer, so a pass reads the same on a miss as it does
-			// on an assisted make and never gives the outcome away. Picked from the
-			// actual rendered lineup, so the passer's face always shows.
-			if (opts.decoyAssist && passFrom === undefined) {
-				const offCands = extras.filter(
-					(e) => e.role === "onCourt" && e.t === offenseT,
-				);
-				if (offCands.length > 0) {
-					const pick = offCands[Math.floor(Math.random() * offCands.length)]!;
-					pick.role = "assist";
-					passFrom = { x: pick.x, y: pick.y };
+			if (opts.freeThrowShooterPid !== undefined) {
+				// Free throw: everyone lines the paint (see buildFreeThrowActors), the
+				// shooter stays at the line. No contest, no assist/decoy pass.
+				const ftActors = buildFreeThrowActors({
+					teams: teamLineups,
+					offenseT,
+					shooterPid: opts.freeThrowShooterPid,
+				}).filter((e) => !playPids.has(e.pid));
+				if (ftActors.length > 0) {
+					actors = [...playActors, ...ftActors];
 				}
-			}
+			} else {
+				const lineup = buildLineupActors({
+					teams: teamLineups,
+					offenseT,
+					transition: opts.transition,
+				});
 
-			// The nearest defender slides over to contest a live shot (skipped for
-			// free throws, and for blocks - the blocker IS the contest).
-			if (opts.contestSpot) {
-				const defT: 0 | 1 = offenseT === 0 ? 1 : 0;
-				let closest: CourtActor | undefined;
-				let closestDist = Infinity;
-				for (const e of extras) {
-					if (e.role !== "onCourt" || e.t !== defT) {
+				const extras: CourtActor[] = [];
+				for (const entry of lineup) {
+					if (playPids.has(entry.pid)) {
+						continue; // already featured at an action spot
+					}
+					if (opts.assistPid !== undefined && entry.pid === opts.assistPid) {
+						// The assister: featured (name tag, full strength) at his spot; the
+						// ball's pass leg starts here.
+						extras.push({ ...entry, role: "assist" });
+						passFrom = { x: entry.x, y: entry.y };
 						continue;
 					}
-					const d =
-						(e.x - opts.contestSpot.x) ** 2 + (e.y - opts.contestSpot.y) ** 2;
-					if (d < closestDist) {
-						closestDist = d;
-						closest = e;
+					extras.push(entry);
+				}
+
+				// A decoy pass (no real assist): promote a random on-floor OFFENSE
+				// teammate to the passer, so a pass reads the same on a miss as it does
+				// on an assisted make and never gives the outcome away. Picked from the
+				// actual rendered lineup, so the passer's face always shows.
+				if (opts.decoyAssist && passFrom === undefined) {
+					const offCands = extras.filter(
+						(e) => e.role === "onCourt" && e.t === offenseT,
+					);
+					if (offCands.length > 0) {
+						const pick = offCands[Math.floor(Math.random() * offCands.length)]!;
+						pick.role = "assist";
+						passFrom = { x: pick.x, y: pick.y };
 					}
 				}
-				if (closest) {
-					const toward = rimXFor(offenseT) > opts.contestSpot.x ? 1 : -1;
-					closest.x = Math.min(
-						90,
-						Math.max(4, opts.contestSpot.x + toward * 2.3),
-					);
-					closest.y = Math.min(
-						46,
-						Math.max(
-							4,
-							opts.contestSpot.y +
-								(closest.y >= opts.contestSpot.y ? 1.5 : -1.5),
-						),
-					);
-				}
-			}
 
-			if (extras.length > 0) {
-				actors = [...playActors, ...extras];
+				// The nearest defender slides over to contest a live shot (skipped for
+				// free throws, and for blocks - the blocker IS the contest).
+				if (opts.contestSpot) {
+					const defT: 0 | 1 = offenseT === 0 ? 1 : 0;
+					let closest: CourtActor | undefined;
+					let closestDist = Infinity;
+					for (const e of extras) {
+						if (e.role !== "onCourt" || e.t !== defT) {
+							continue;
+						}
+						const d =
+							(e.x - opts.contestSpot.x) ** 2 + (e.y - opts.contestSpot.y) ** 2;
+						if (d < closestDist) {
+							closestDist = d;
+							closest = e;
+						}
+					}
+					if (closest) {
+						const toward = rimXFor(offenseT) > opts.contestSpot.x ? 1 : -1;
+						closest.x = Math.min(
+							90,
+							Math.max(4, opts.contestSpot.x + toward * 2.3),
+						);
+						closest.y = Math.min(
+							46,
+							Math.max(
+								4,
+								opts.contestSpot.y +
+									(closest.y >= opts.contestSpot.y ? 1.5 : -1.5),
+							),
+						);
+					}
+				}
+
+				if (extras.length > 0) {
+					actors = [...playActors, ...extras];
+				}
 			}
 		}
 		courtScene.current = { key: sceneKey, ...scene, actors, passFrom };
@@ -818,6 +841,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 				{
 					kind: action.blocked ? "block" : action.made ? "make" : "miss",
 					t: shooterT,
+					// The shooter's animation keys off the zone (post move / layup / dunk
+					// / jumper / set free throw), so carry it on the scene.
+					zone,
 					actors,
 					text,
 					score: scoreNode,
@@ -831,6 +857,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 					// contest.
 					contestSpot: isFt || action.blocked ? undefined : spot,
 					transition: isTransition,
+					// A free throw lines everyone up along the paint (see pushScene).
+					freeThrowShooterPid: isFt ? shooterPid : undefined,
 				},
 			);
 			return;
@@ -924,22 +952,29 @@ export const LiveGame = (props: View<"liveGame">) => {
 				breakContext.current = undefined;
 			}
 		} else if (type === "sub" && Array.isArray(event.pids)) {
-			// Subs check in at the scorer's table: a single cluster at center court
-			// along the near sideline, ins and outs side by side.
-			const inPids = (event.pids as number[]).slice(0, 3);
-			const outPids = ((event.pidsOff as number[]) ?? []).slice(0, 3);
-			const all: { pid: number; role: "in" | "out" }[] = [
-				...inPids.map((pid) => ({ pid, role: "in" as const })),
-				...outPids.map((pid) => ({ pid, role: "out" as const })),
+			// Subs check in at the scorer's table in TWO rows near center court: the
+			// players LEAVING on the top row, the players COMING ON just below them,
+			// the way a real check-in lines up.
+			const inPids = (event.pids as number[]).slice(0, 4);
+			const outPids = ((event.pidsOff as number[]) ?? []).slice(0, 4);
+			const outSpots = scorerTableRow(outPids.length, 8);
+			const inSpots = scorerTableRow(inPids.length, 15);
+			const actors: CourtActor[] = [
+				...outPids.map((pid, i) => ({
+					pid,
+					name: playerNameByPid(pid),
+					x: outSpots[i]!.x,
+					y: outSpots[i]!.y,
+					role: "out" as const,
+				})),
+				...inPids.map((pid, i) => ({
+					pid,
+					name: playerNameByPid(pid),
+					x: inSpots[i]!.x,
+					y: inSpots[i]!.y,
+					role: "in" as const,
+				})),
 			];
-			const spots = scorerTableRow(all.length);
-			const actors: CourtActor[] = all.map((a, i) => ({
-				pid: a.pid,
-				name: playerNameByPid(a.pid),
-				x: spots[i]!.x,
-				y: spots[i]!.y,
-				role: a.role,
-			}));
 			if (actors.length > 0) {
 				pushScene({ kind: "sub", t: displayT, actors, text });
 			}

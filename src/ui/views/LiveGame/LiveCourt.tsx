@@ -78,6 +78,9 @@ export type CourtScene = {
 	key: number; // increments per scene, retriggers animations
 	kind: CourtSceneKind;
 	t: 0 | 1; // display team of the main actor (0 = away/left, 1 = home/right)
+	// The shot zone, on a make/miss/block - so the shooter's animation matches the
+	// shot (a dunk vs a layup vs a post move vs a jumper vs a set free throw).
+	zone?: CourtZone;
 	actors: CourtActor[];
 	text: ReactNode; // the play-by-play line, shown on the floor
 	// A scored basket's running score line (both logos flanking the score),
@@ -191,15 +194,19 @@ export const synthPlaySpot = (t: 0 | 1): { x: number; y: number } =>
 export const synthReboundSpot = (rimT: 0 | 1): { x: number; y: number } =>
 	toCourt(rimT, rand(3, 9), 25 + rand(-8, 8));
 
-// Subs check in near half court: a single, well-spaced row so the faces +
-// name tags don't cram together, set a little in from the sideline (not jammed
-// against the very top edge).
-export const scorerTableRow = (n: number): { x: number; y: number }[] => {
+// Subs check in near half court: a well-spaced row so the faces + name tags
+// don't cram together, set a little in from the sideline. `y` lets substitutions
+// stack the players LEAVING on a top row and the players COMING ON on a lower
+// one (see the sub handling), the way a real check-in looks.
+export const scorerTableRow = (
+	n: number,
+	y = 11,
+): { x: number; y: number }[] => {
 	const gap = Math.min(11, 62 / Math.max(1, n));
 	const startX = COURT_W / 2 - ((n - 1) * gap) / 2;
 	return Array.from({ length: n }, (_, i) => ({
 		x: startX + i * gap,
-		y: 11,
+		y,
 	}));
 };
 
@@ -354,6 +361,76 @@ export const buildLineupActors = ({
 			});
 		}
 	}
+	return out;
+};
+
+// Free-throw alignment (depth from the attacked baseline, across the width),
+// oriented to the shooting team's rim. Five players line the lane - the taller
+// ones nearest the basket for the rebound - with the defense taking the box
+// spots (3) and the offense between them (2); the remaining two-a-side wait
+// behind the arc, out of the play. Left lane line is at across≈17, right at ≈33.
+const FT_DEF_LANE: { depth: number; across: number }[] = [
+	{ depth: 7, across: 16.5 }, // left low block (nearest rim)
+	{ depth: 7, across: 33.5 }, // right low block
+	{ depth: 15, across: 16.5 }, // left high block
+];
+const FT_OFF_LANE: { depth: number; across: number }[] = [
+	{ depth: 11, across: 33.5 }, // right mid block
+	{ depth: 11, across: 16.5 }, // left mid block
+];
+const FT_OFF_BACK: { depth: number; across: number }[] = [
+	{ depth: 26, across: 13 },
+	{ depth: 26, across: 37 },
+];
+const FT_DEF_BACK: { depth: number; across: number }[] = [
+	{ depth: 31, across: 20 },
+	{ depth: 31, across: 30 },
+];
+
+// Line the other nine players up for a free throw: the offense (minus the
+// shooter) and the defense sorted TALLEST-first (position as the height proxy),
+// the biggest bodies taking the lane's rebound spots and the rest waiting behind
+// the arc. Oriented to the shooter's rim (offenseT).
+export const buildFreeThrowActors = ({
+	teams,
+	offenseT,
+	shooterPid,
+}: {
+	teams: [LineupPlayer[], LineupPlayer[]];
+	offenseT: 0 | 1;
+	shooterPid: number;
+}): CourtActor[] => {
+	const defT: 0 | 1 = offenseT === 0 ? 1 : 0;
+	// Tallest first (C/PF before guards), so the bigs get the rebound blocks.
+	const byHeight = (arr: LineupPlayer[]) =>
+		arr.filter((p) => p.inGame).sort((a, b) => posRank(b.pos) - posRank(a.pos));
+	const offense = byHeight(teams[offenseT] ?? [])
+		.filter((p) => p.pid !== shooterPid)
+		.slice(0, 4);
+	const defense = byHeight(teams[defT] ?? []).slice(0, 5);
+
+	const out: CourtActor[] = [];
+	const place = (p: LineupPlayer, t: 0 | 1, depth: number, across: number) => {
+		const { x, y } = toCourt(offenseT, depth, across);
+		out.push({
+			pid: p.pid,
+			name: p.name,
+			x: Math.min(90, Math.max(4, x)),
+			y: Math.min(46, Math.max(4, y)),
+			role: "onCourt",
+			t,
+		});
+	};
+	// Defense: 3 tallest on the lane blocks, the other 2 behind the arc.
+	defense.forEach((p, i) => {
+		const slot = i < 3 ? FT_DEF_LANE[i]! : FT_DEF_BACK[i - 3]!;
+		place(p, defT, slot.depth, slot.across);
+	});
+	// Offense (minus shooter): 2 tallest on the lane, the other 2 behind the arc.
+	offense.forEach((p, i) => {
+		const slot = i < 2 ? FT_OFF_LANE[i]! : FT_OFF_BACK[i - 2]!;
+		place(p, offenseT, slot.depth, slot.across);
+	});
 	return out;
 };
 
@@ -550,6 +627,27 @@ const FACE_ANIM_CSS = `
 	48% { transform: translate(-50%, -50%) scale(0.4); opacity: 0.35; }
 	86% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
 	100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+/* A layup: a quick gather and a soft, low finish off one foot - barely leaves
+   the floor, a lean toward the rim rather than a big leap. */
+@keyframes liveCourtLayup {
+	0% { transform: ${REST} translateY(0) scale(1); }
+	35% { transform: ${REST} translateY(-16%) scale(1.02); }
+	60% { transform: ${REST} translateY(-34%) scale(1.05); }
+	100% { transform: ${REST} translateY(0) scale(1); }
+}
+@keyframes liveCourtLayupShadow {
+	0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+	60% { transform: translate(-50%, -50%) scale(0.72); opacity: 0.6; }
+	100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+/* A low-post move: back it down, turn, and rise into a short shot/hook - a
+   power move with a body pivot, almost no air, NOT a jump shot. */
+@keyframes liveCourtPost {
+	0% { transform: ${REST} translateY(0) scale(1) rotate(0deg); }
+	28% { transform: ${REST} translateY(3%) scale(1.04) rotate(-5deg); }
+	58% { transform: ${REST} translateY(-16%) scale(1.06) rotate(4deg); }
+	100% { transform: ${REST} translateY(0) scale(1) rotate(0deg); }
 }`;
 
 // Glide duration (seconds) for a body moving `dist` feet, CAPPED so it always
@@ -642,7 +740,7 @@ const BodyOnCourt = ({
 	color: string;
 	// A background 5-on-5 teammate (not part of the current play): a jersey chip.
 	background: boolean;
-	anim?: "shake" | "swipe" | "jump" | "dunk";
+	anim?: "shake" | "swipe" | "jump" | "dunk" | "layup" | "post";
 	// The current scene key, passed only when `anim` is set, so the recoil
 	// animation retriggers on a fresh foul/steal without remounting the face on
 	// every ordinary play.
@@ -720,15 +818,22 @@ const BodyOnCourt = ({
 					? "liveCourtJump 0.7s ease"
 					: anim === "dunk"
 						? "liveCourtDunk 0.8s ease"
-						: undefined;
-	// A jump/dunk lifts the body off the floor; its feet-shadow shrinks and fades
-	// in sync so the leap reads as real height. Shake/swipe stay on the floor.
+						: anim === "layup"
+							? "liveCourtLayup 0.6s ease"
+							: anim === "post"
+								? "liveCourtPost 0.7s ease"
+								: undefined;
+	// A jump/dunk/layup lifts the body off the floor; its feet-shadow shrinks and
+	// fades in sync so the leap reads as real height. A post move and shake/swipe
+	// stay grounded, so their shadow holds.
 	const shadowAnim =
 		anim === "jump"
 			? "liveCourtJumpShadow 0.7s ease"
 			: anim === "dunk"
 				? "liveCourtDunkShadow 0.8s ease"
-				: undefined;
+				: anim === "layup"
+					? "liveCourtLayupShadow 0.6s ease"
+					: undefined;
 
 	const nameTag = (
 		<div
@@ -1691,7 +1796,7 @@ const LiveCourt = ({
 
 	const actorAnim = (
 		actor: CourtActor,
-	): "shake" | "swipe" | "jump" | "dunk" | undefined => {
+	): "shake" | "swipe" | "jump" | "dunk" | "layup" | "post" | undefined => {
 		if (!scene) {
 			return undefined;
 		}
@@ -1705,16 +1810,27 @@ const LiveCourt = ({
 		if (scene.kind === "stl" && actor.role === "victim") {
 			return "shake";
 		}
-		// Shooters and finishers ELEVATE. A make right at the rim reads as a
-		// dunk/finish (explosive rise); anything else is a jump shot. On a block the
-		// blocker goes UP hard to swat while the shooter still rises into it.
+		// The shooter's motion MATCHES the shot: a set free throw doesn't jump; a
+		// low-post shot is a grounded power move; a rim finish is a layup (soft, low)
+		// or a dunk (explosive) by how tight to the rim it is; everything out is a
+		// jump shot.
 		if (scene.kind === "make" || scene.kind === "miss") {
-			if (actor.role === "main") {
+			if (actor.role !== "main") {
+				return undefined;
+			}
+			if (scene.zone === "ft") {
+				return undefined; // a set shot at the line - no leap
+			}
+			if (scene.zone === "lowPost") {
+				return "post";
+			}
+			if (scene.zone === "atRim") {
 				const rimX = scene.rimX ?? rimXFor(scene.t);
 				const distToRim = Math.hypot(actor.x - rimX, actor.y - COURT_H / 2);
-				return scene.kind === "make" && distToRim < 6 ? "dunk" : "jump";
+				// Right on top of the rim + a make reads as a dunk; a step out is a layup.
+				return scene.kind === "make" && distToRim < 2.4 ? "dunk" : "layup";
 			}
-			return undefined;
+			return "jump"; // mid-range / three
 		}
 		if (scene.kind === "block") {
 			return actor.role === "defender"
