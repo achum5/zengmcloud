@@ -146,6 +146,8 @@ const supportingCast = (
 // categories worth mentioning (double-double stats always make the cut).
 const statPhrase = (p: RecapPlayer, maxExtras = 2): string => {
 	const dd = new Set(doubleCategories(p));
+	// [sortWeight, text]. Steals and blocks are rarer and more telling, so they're
+	// weighted up - a 6-block night should out-rank a 7-assist one when trimming.
 	const extras: [number, string][] = [];
 	if (p.reb >= 8 || dd.has("rebounds")) {
 		extras.push([p.reb, plural(p.reb, "rebound")]);
@@ -154,10 +156,10 @@ const statPhrase = (p: RecapPlayer, maxExtras = 2): string => {
 		extras.push([p.ast, plural(p.ast, "assist")]);
 	}
 	if (p.stl >= 4 || dd.has("steals")) {
-		extras.push([p.stl, plural(p.stl, "steal")]);
+		extras.push([p.stl * 1.7, plural(p.stl, "steal")]);
 	}
 	if (p.blk >= 4 || dd.has("blocks")) {
-		extras.push([p.blk, plural(p.blk, "block")]);
+		extras.push([p.blk * 1.7, plural(p.blk, "block")]);
 	}
 	extras.sort((a, b) => b[0] - a[0]);
 	const chosen = extras.slice(0, maxExtras).map((e) => e[1]);
@@ -444,16 +446,16 @@ const postseasonContext = (
 			out.sentences.push(
 				`The 9-vs-10 play-in win kept ${theNick(
 					shape.winner,
-				)} alive and sent them to the final play-in game; ${theNick(
-					shape.loser,
-				)}' season is over.`,
+				)} alive and sent them to the final play-in game; ${poss(
+					theNick(shape.loser),
+				)} season is over.`,
 			);
 		} else {
 			out.headlineTag = "a win-or-go-home game";
 			out.sentences.push(
 				`${cap(w)} grabbed the last playoff berth${
 					typeof p.prizeSeed === "number" ? ` as the #${p.prizeSeed} seed` : ""
-				}, ending ${theNick(shape.loser)}' season in the final play-in game.`,
+				}, ending ${poss(theNick(shape.loser))} season in the final play-in game.`,
 			);
 		}
 		return out;
@@ -663,7 +665,9 @@ const buildHeadline = (
 	) {
 		return pick(rng, [
 			`${star.name} outduels ${loserStar.name} as the ${winnerN} ${verb} the ${loserN}${tag}`,
-			`${star.name}'s ${star.pts} edges ${loserStar.name}'s ${loserStar.pts} in the ${winnerN}' win${tag}`,
+			`${star.name}'s ${star.pts} edges ${loserStar.name}'s ${loserStar.pts} in ${poss(
+				`the ${winnerN}`,
+			)} win${tag}`,
 		]);
 	}
 
@@ -671,7 +675,7 @@ const buildHeadline = (
 		return pick(rng, [
 			`${star.name} drops ${star.pts} as the ${winnerN} ${verb} the ${loserN}${tag}`,
 			`${star.name}'s ${star.pts} sink the ${loserN}${tag}`,
-			`${star.name} pours in ${star.pts} in the ${winnerN}' win${tag}`,
+			`${star.name} pours in ${star.pts} in ${poss(`the ${winnerN}`)} win${tag}`,
 		]);
 	}
 
@@ -735,7 +739,19 @@ const leadSentence = (
 
 	const statText = statPhrase(star);
 	const flourishText = flourish ? ` ${flourish}` : "";
-	return `${subject} ${scoredVerb(star, rng)} ${statText}${flourishText} as ${theNick(
+	// A triple-double (or bigger) deserves a strong verb even when the point total
+	// is modest - "chipped in 18, 12 and 12" undersells it.
+	const doubles = doubleCategories(star).length;
+	const actionVerb =
+		doubles >= 3
+			? pick(rng, [
+					"posted",
+					"recorded",
+					"produced",
+					"stuffed the stat sheet with",
+				])
+			: scoredVerb(star, rng);
+	return `${subject} ${actionVerb} ${statText}${flourishText} as ${theNick(
 		shape.winner,
 	)} ${verb} ${theNick(shape.loser)} ${scoreTag(shape)}.`;
 };
@@ -854,6 +870,10 @@ const secondHalfNote = (shape: Shape): string | undefined => {
 	if (regPeriods < 4 || wq.length < regPeriods || lq.length < regPeriods) {
 		return undefined;
 	}
+	// A wire-to-wire game is already summarized by the flow line; don't echo it.
+	if (shape.wireToWire) {
+		return undefined;
+	}
 	const half = Math.floor(regPeriods / 2);
 	let wFirst = 0;
 	let lFirst = 0;
@@ -949,11 +969,17 @@ const loserSentence = (shape: Shape, rng: () => number): string | undefined => {
 		return undefined;
 	}
 	const stats = teamStats(shape.loser);
+	// "reason" is appended after "...led the Loser", so it uses a pronoun rather
+	// than repeating the team name.
 	let reason = "";
 	if (stats.tov >= 18) {
-		reason = `, but ${stats.tov} turnovers doomed ${theNick(shape.loser)}`;
+		reason = pick(rng, [
+			`, but ${stats.tov} turnovers did them in`,
+			`, but they coughed it up ${stats.tov} times`,
+			`, but ${stats.tov} turnovers proved costly`,
+		]);
 	} else if (stats.fga >= 20 && stats.fgp <= 40) {
-		reason = `, but ${theNick(shape.loser)} shot just ${stats.fgp}% as a team`;
+		reason = `, but they shot just ${stats.fgp}% as a team`;
 	}
 
 	if (leader.pts >= 18 || doubleCategories(leader).length >= 2) {
@@ -964,8 +990,12 @@ const loserSentence = (shape: Shape, rng: () => number): string | undefined => {
 			: `${leader.name}'s ${statPhrase(leader)}`;
 		return `${leaderLine} ${verb} ${theNick(shape.loser)}${reason}.`;
 	}
-	if (reason) {
-		return `${cap(reason.replace(/^, but /, ""))}.`;
+	// No standout to hang it on - name the team directly.
+	if (stats.tov >= 18) {
+		return `${cap(theNick(shape.loser))} were undone by ${stats.tov} turnovers.`;
+	}
+	if (stats.fga >= 20 && stats.fgp <= 40) {
+		return `${cap(theNick(shape.loser))} shot just ${stats.fgp}% as a team.`;
 	}
 	return undefined;
 };
@@ -981,7 +1011,7 @@ const stakesSentence = (
 	const streak = shape.winner.streak;
 	if (streak && streak.won && streak.count >= 4) {
 		options.push(
-			`The win was ${theNick(shape.winner)}' ${ordinal(
+			`The win was ${poss(theNick(shape.winner))} ${ordinal(
 				streak.count,
 			)} in a row.`,
 		);
@@ -1001,7 +1031,7 @@ const stakesSentence = (
 		}
 		if (run >= 4) {
 			options.push(
-				`It snapped ${theNick(shape.loser)}' ${run}-game winning streak.`,
+				`It snapped ${poss(theNick(shape.loser))} ${run}-game winning streak.`,
 			);
 		}
 	}
@@ -1252,7 +1282,12 @@ const gameBlurb = (game: RecapGame, rng: () => number): string => {
 		return `${base} on ${shot.name}'s ${shot.shot}`;
 	}
 	if (star) {
-		return `${base} behind ${star.name}'s ${statPhrase(star, 1)}`;
+		// Give the marquee star his full line, calling out a triple-double.
+		const ddw = doubleWord(doubleCategories(star).length);
+		if (ddw && doubleCategories(star).length >= 3) {
+			return `${base} behind ${star.name}'s ${ddw} (${statPhrase(star)})`;
+		}
+		return `${base} behind ${star.name}'s ${statPhrase(star, 2)}`;
 	}
 	return base;
 };
@@ -1308,6 +1343,61 @@ const teamStreakSentence = (games: RecapGame[]): string | undefined => {
 	return `${cap(theNick(best.team))} ran their win streak to ${best.count} games.`;
 };
 
+// A compact, varied series-state clause for one playoff/play-in game, for the day
+// wrap's postseason roundup (lower-cased, no trailing period).
+const daySeriesPhrase = (
+	g: RecapGame,
+	rng: () => number,
+): string | undefined => {
+	const shape = analyzeShape(g);
+	const w = theNick(shape.winner);
+	const l = theNick(shape.loser);
+
+	if (g.playIn) {
+		const p = g.playIn;
+		if (p.kind === "seed7v8") {
+			return typeof p.prizeSeed === "number"
+				? `${w} grabbed the #${p.prizeSeed} seed`
+				: `${w} took the higher seed`;
+		}
+		if (p.kind === "seed9v10") {
+			return `${w} ended ${poss(l)} season in the play-in`;
+		}
+		return `${w} claimed the last playoff spot`;
+	}
+
+	const s = g.series;
+	if (!s) {
+		return undefined;
+	}
+	const rnd = roundName(s.round, s.numRounds);
+	const winnerIsHome = shape.winner.abbrev === s.homeAbbrev;
+	const wBefore = winnerIsHome ? s.homeWon : s.awayWon;
+	const lBefore = winnerIsHome ? s.awayWon : s.homeWon;
+	const wAfter = wBefore + 1;
+	const need =
+		typeof s.bestOf === "number" && s.bestOf > 0
+			? Math.floor(s.bestOf / 2) + 1
+			: undefined;
+
+	if (need !== undefined && wAfter >= need) {
+		return s.round === s.numRounds
+			? `${w} won the championship`
+			: `${w} advanced past ${l}`;
+	}
+	if (wAfter === lBefore) {
+		return `${w} pulled even with ${l} at ${wAfter}-${wAfter} in ${rnd}`;
+	}
+	if (wAfter > lBefore) {
+		return pick(rng, [
+			`${w} lead ${rnd} ${wAfter}-${lBefore}`,
+			`${w} are up ${wAfter}-${lBefore} in ${rnd}`,
+			`${w} grabbed a ${wAfter}-${lBefore} edge in ${rnd}`,
+		]);
+	}
+	return `${w} trail ${rnd} ${lBefore}-${wAfter} despite the win`;
+};
+
 // The day's headline, driven by the single biggest thing that happened -
 // a buzzer-beater, a 45-point night, a playoff clinch, an upset, a rout, a
 // thriller - rather than a fixed "N-game slate" template. Seeded variation keeps
@@ -1321,7 +1411,10 @@ const dayHeadline = (
 	playoffs: boolean,
 	rng: () => number,
 ): string => {
+	// `w` leads a headline (no article, "Heat stun Lakers"); `tw` sits mid-sentence
+	// as an object ("... powers the Heat past ...").
 	const w = nick(mShape.winner);
+	const tw = theNick(mShape.winner);
 	const l = theNick(mShape.loser);
 
 	// Postseason storylines lead everything.
@@ -1371,7 +1464,7 @@ const dayHeadline = (
 		}
 		if (mStar) {
 			return pick(rng, [
-				`${mStar.name}'s ${starHeadline(mStar)} powers ${w} past ${l}`,
+				`${mStar.name}'s ${starHeadline(mStar)} powers ${tw} past ${l}`,
 				`${w} take command against ${l}`,
 			]);
 		}
@@ -1397,15 +1490,15 @@ const dayHeadline = (
 
 	if (mStar && mStar.pts >= 45) {
 		return pick(rng, [
-			`${mStar.name} erupts for ${mStar.pts} to lead ${w} past ${l}`,
-			`${mStar.name} drops ${mStar.pts} in ${poss(w)} win`,
+			`${mStar.name} erupts for ${mStar.pts} to lead ${tw} past ${l}`,
+			`${mStar.name} drops ${mStar.pts} in ${poss(tw)} win`,
 		]);
 	}
 
 	if (mStar && doubleCategories(mStar).length >= 3) {
 		return pick(rng, [
-			`${mStar.name} triple-doubles to lead ${w} past ${l}`,
-			`${mStar.name}'s triple-double carries ${w} over ${l}`,
+			`${mStar.name} triple-doubles to lead ${tw} past ${l}`,
+			`${mStar.name}'s triple-double carries ${tw} over ${l}`,
 		]);
 	}
 
@@ -1444,7 +1537,7 @@ const dayHeadline = (
 
 	if (mStar) {
 		return pick(rng, [
-			`${mStar.name}'s ${starHeadline(mStar)} leads ${w} past ${l}`,
+			`${mStar.name}'s ${starHeadline(mStar)} leads ${tw} past ${l}`,
 			`${w} ${pick(rng, verbPool(marquee, mShape))} ${l} behind ${mStar.name}`,
 		]);
 	}
@@ -1508,10 +1601,20 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 		rng,
 	);
 
-	// Paragraph 1: the marquee game and the day's best individual nights.
+	// Paragraph 1: the marquee game and the day's best individual nights. The
+	// marquee star is already covered in the blurb, so the standouts that follow
+	// come from OTHER games and no player is named twice.
 	const para1: string[] = [];
 	para1.push(`${cap(gameBlurb(marquee, rng))}.`);
-	if (topScorer && topScorer.p.pts >= 30) {
+
+	const marqueeTids = new Set([mShape.winner.tid, mShape.loser.tid]);
+	const named = new Set<RecapPlayer>();
+	if (mStar) {
+		named.add(mStar);
+	}
+
+	// The day's leading scorer, when it isn't the marquee star already described.
+	if (topScorer && topScorer.p.pts >= 30 && !named.has(topScorer.p)) {
 		para1.push(
 			topScorer.won
 				? `${topScorer.p.name} led all scorers with ${statPhrase(
@@ -1525,12 +1628,14 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 						topScorer.opp,
 					)}.`,
 		);
+		named.add(topScorer.p);
 	}
-	// A second standout from a different game.
+
+	// A second standout from a different game entirely.
 	const secondPerf = performers.find(
 		(perf) =>
-			perf.team.tid !== topScorer?.team.tid &&
-			perf.p !== topScorer?.p &&
+			!named.has(perf.p) &&
+			!marqueeTids.has(perf.team.tid) &&
 			(perf.p.pts >= 25 || doubleCategories(perf.p).length >= 3),
 	);
 	if (secondPerf) {
@@ -1544,12 +1649,15 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 						secondPerf.team,
 					)}.`,
 		);
+		named.add(secondPerf.p);
 	}
 
 	// A league-wide triple-double gets a nod if it wasn't already the story.
-	const mentioned = new Set([topScorer?.p, secondPerf?.p, mStar]);
 	const tdPerf = performers.find(
-		(perf) => doubleCategories(perf.p).length >= 3 && !mentioned.has(perf.p),
+		(perf) =>
+			doubleCategories(perf.p).length >= 3 &&
+			!named.has(perf.p) &&
+			!marqueeTids.has(perf.team.tid),
 	);
 	if (tdPerf) {
 		para1.push(
@@ -1596,20 +1704,25 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	}
 
 	if (playoffs) {
-		// Series developments across the day.
+		// Series developments across the day, skipping the marquee game (already the
+		// story) and any duplicate phrasing.
 		const seriesBits: string[] = [];
+		const seen = new Set<string>();
 		for (const g of games) {
-			const shape = analyzeShape(g);
-			const post = postseasonContext(g, shape);
-			if (post.sentences.length > 0) {
-				seriesBits.push(post.sentences[0]!);
+			if (marqueeTids.has(g.teams[0].tid) && marqueeTids.has(g.teams[1].tid)) {
+				continue;
+			}
+			const phrase = daySeriesPhrase(g, rng);
+			if (phrase && !seen.has(phrase)) {
+				seen.add(phrase);
+				seriesBits.push(phrase);
 			}
 			if (seriesBits.length >= 3) {
 				break;
 			}
 		}
 		if (seriesBits.length > 0) {
-			para2.push(seriesBits.join(" "));
+			para2.push(`In the playoffs, ${naturalList(seriesBits)}.`);
 		}
 	} else {
 		const streak = teamStreakSentence(games);

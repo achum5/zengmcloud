@@ -701,6 +701,142 @@ describe("getAutoDayRecap", () => {
 	});
 });
 
+describe("regressions from real games", () => {
+	const finley = player({
+		name: "Michael Finley",
+		pts: 18,
+		reb: 12,
+		ast: 12,
+		fg: 7,
+		fga: 14,
+	});
+	const heat = realisticTeam(
+		{
+			tid: 50,
+			region: "Miami",
+			name: "Heat",
+			abbrev: "MIA",
+			pts: 105,
+			ptsQtrs: [26, 26, 27, 26],
+			seed: 2,
+			streak: { won: true, count: 5 },
+		},
+		finley,
+	);
+	const bulls = realisticTeam(
+		{
+			tid: 51,
+			region: "Chicago",
+			name: "Bulls",
+			abbrev: "CHI",
+			pts: 78,
+			ptsQtrs: [22, 26, 15, 15],
+			seed: 3,
+		},
+		player({ name: "Voshon Lenard", pts: 14, reb: 3, stl: 3 }),
+	);
+	const heatGame = game({
+		gid: 8001,
+		teams: [heat, bulls],
+		winnerTid: 50,
+		playoffs: true,
+		series: {
+			round: 3,
+			numRounds: 4,
+			bestOf: 7,
+			homeAbbrev: "MIA",
+			awayAbbrev: "CHI",
+			homeSeed: 2,
+			awaySeed: 3,
+			homeWon: 1,
+			awayWon: 0,
+		},
+	});
+
+	const shaq = player({
+		name: "Shaquille O'Neal",
+		pts: 27,
+		reb: 15,
+		ast: 7,
+		blk: 6,
+		fg: 12,
+		fga: 19,
+	});
+	const spurs = realisticTeam(
+		{
+			tid: 52,
+			region: "San Antonio",
+			name: "Spurs",
+			abbrev: "SAS",
+			pts: 93,
+			ptsQtrs: [28, 20, 23, 22],
+			seed: 2,
+		},
+		shaq,
+	);
+	const kings = realisticTeam(
+		{
+			tid: 53,
+			region: "Sacramento",
+			name: "Kings",
+			abbrev: "SAC",
+			pts: 79,
+			ptsQtrs: [16, 21, 21, 21],
+		},
+		player({ name: "Shareef Abdur-Rahim", pts: 24, reb: 20, blk: 3 }),
+	);
+	const spursGame = game({
+		gid: 8002,
+		teams: [spurs, kings],
+		winnerTid: 52,
+		playoffs: true,
+		series: {
+			round: 3,
+			numRounds: 4,
+			bestOf: 7,
+			homeAbbrev: "SAS",
+			awayAbbrev: "SAC",
+			homeSeed: 2,
+			awaySeed: 4,
+			homeWon: 1,
+			awayWon: 0,
+		},
+	});
+
+	test("team possessive reads right for a name not ending in s", () => {
+		const recap = getAutoRecap(heatGame);
+		assert.ok(recap.includes("the Heat's fifth in a row"), recap);
+		assert.ok(!/Heat' /.test(recap), recap);
+	});
+
+	test("a shot-blocker's signature stat survives into the body", () => {
+		const recap = getAutoRecap(spursGame);
+		// Headline is about blocks; the body line must include them too.
+		assert.ok(/blocks anchor/.test(recap), recap);
+		assert.ok(/6 blocks/.test(recap), recap);
+	});
+
+	test("day recap never names the marquee star twice or repeats a series line", () => {
+		const recap = getAutoDayRecap({
+			season: 2005,
+			day: 100,
+			playoffs: true,
+			games: [heatGame, spursGame],
+		});
+		const finleyCount = recap.split("Michael Finley").length - 1;
+		assert.ok(finleyCount <= 1, recap);
+		// The two 2-0 series must not read as the identical sentence twice.
+		assert.ok(
+			!/took a 2-0 lead in the Conference Finals\. .*took a 2-0 lead in the Conference Finals\./.test(
+				recap,
+			),
+			recap,
+		);
+		// Headline uses the article ("the Heat", not "Heat past").
+		assert.ok(!/powers Heat /.test(recap), recap);
+	});
+});
+
 // Printed samples so the output can be eyeballed.
 test("print sample recaps", () => {
 	const out: string[] = [];
