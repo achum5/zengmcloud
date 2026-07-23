@@ -664,7 +664,31 @@ const buildHeadline = (
 	}
 
 	if (star.pts >= 40) {
-		return `${star.name} drops ${star.pts} as the ${winnerN} ${verb} the ${loserN}${tag}`;
+		return pick(rng, [
+			`${star.name} drops ${star.pts} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+			`${star.name}'s ${star.pts} sink the ${loserN}${tag}`,
+			`${star.name} pours in ${star.pts} in the ${winnerN}' win${tag}`,
+		]);
+	}
+
+	// Two double-doubles from the winner, when no single scorer dominates.
+	const winnerDoubles = shape.winner.players
+		.filter((p) => doubleCategories(p).length >= 2 && p.pts >= 12)
+		.sort((a, b) => impact(b) - impact(a));
+	if (winnerDoubles.length >= 2 && star.pts < 30) {
+		const [a, b] = winnerDoubles;
+		return pick(rng, [
+			`${a!.name} and ${b!.name} lead the ${winnerN} past the ${loserN}${tag}`,
+			`Double-doubles from ${a!.name} and ${b!.name} carry the ${winnerN} past the ${loserN}${tag}`,
+		]);
+	}
+
+	// A defensive showcase.
+	if (star.blk >= 5) {
+		return `${star.name}'s ${star.blk} blocks anchor the ${winnerN} past the ${loserN}${tag}`;
+	}
+	if (star.stl >= 5 && star.pts >= 15) {
+		return `${star.name} takes over with ${star.pts} and ${star.stl} steals as the ${winnerN} ${verb} the ${loserN}${tag}`;
 	}
 
 	const starTemplates = [
@@ -675,6 +699,7 @@ const buildHeadline = (
 		`${winnerN} ${verb} the ${loserN} behind ${star.name}'s ${starHeadline(
 			star,
 		)}${tag}`,
+		`${star.name} leads the ${winnerN} over the ${loserN}${tag}`,
 	];
 	const resultTemplates = [
 		`${winnerN} ${verb} the ${loserN}, ${scoreTag(shape)}${tag}`,
@@ -792,6 +817,25 @@ const statNote = (shape: Shape, rng: () => number): string | undefined => {
 	if (w.ast >= 28) {
 		options.push(
 			`${cap(theNick(shape.winner))} piled up ${w.ast} assists on the night.`,
+		);
+	}
+	// A hot start: the winner's first-quarter margin.
+	if (
+		shape.bigRun &&
+		shape.bigRun.period === 1 &&
+		shape.bigRun.margin >= 10 &&
+		shape.wq.length > 0
+	) {
+		options.push(
+			`${cap(theNick(shape.winner))} jumped out to a ${shape.bigRun.wpts}-${shape.bigRun.lpts} first quarter.`,
+		);
+	}
+	// A big edge at the free-throw line.
+	if (w.ft >= 24 && w.ft - l.ft >= 10) {
+		options.push(
+			`${cap(theNick(shape.winner))} made ${w.ft} free throws to ${l.ft} for ${theNick(
+				shape.loser,
+			)}.`,
 		);
 	}
 	if (options.length === 0) {
@@ -1161,6 +1205,165 @@ const conferencePictureSentence = (
 	return `Around the standings: ${naturalList(bits)}.`;
 };
 
+// The day's headline, driven by the single biggest thing that happened -
+// a buzzer-beater, a 45-point night, a playoff clinch, an upset, a rout, a
+// thriller - rather than a fixed "N-game slate" template. Seeded variation keeps
+// two similar days from reading the same.
+const dayHeadline = (
+	marquee: RecapGame,
+	mShape: Shape,
+	mStar: RecapPlayer | undefined,
+	games: RecapGame[],
+	performers: LeaguePerformance[],
+	playoffs: boolean,
+	rng: () => number,
+): string => {
+	const w = nick(mShape.winner);
+	const l = theNick(mShape.loser);
+
+	// Postseason storylines lead everything.
+	if (playoffs && marquee.playoffs) {
+		const post = postseasonContext(marquee, mShape);
+		const joined = post.sentences.join(" ");
+		if (/are champions|win the title/.test(joined)) {
+			return pick(rng, [
+				`${w} are champions`,
+				`${w} win it all`,
+				`${w} capture the title`,
+			]);
+		}
+		if (/closed out|advanced/.test(joined)) {
+			const s = marquee.series;
+			const next = s
+				? roundName(Math.min(s.round + 1, s.numRounds), s.numRounds)
+				: "the next round";
+			return pick(rng, [
+				`${w} close out ${l} and reach ${next}`,
+				`${w} advance to ${next}`,
+				`${w} eliminate ${l}`,
+			]);
+		}
+		if (/Game 7/.test(joined) && /even|forced/.test(joined)) {
+			return `${w} force a winner-take-all Game 7 with ${l}`;
+		}
+		if (/staved off elimination/.test(joined)) {
+			return pick(rng, [
+				`${w} stave off elimination against ${l}`,
+				`${w} keep their season alive`,
+			]);
+		}
+		const shot = clutchShot(marquee);
+		if (shot && !shot.tying) {
+			return `${shot.name}'s ${shot.shot} decides a playoff thriller`;
+		}
+		if (mStar) {
+			return pick(rng, [
+				`${mStar.name}'s ${starHeadline(mStar)} powers ${w} past ${l}`,
+				`${w} take command against ${l}`,
+			]);
+		}
+		return `${w} ${pick(rng, verbPool(marquee, mShape))} ${l}`;
+	}
+
+	// A walk-off is the day's story.
+	const shot = clutchShot(marquee);
+	if (shot && !shot.tying) {
+		return pick(rng, [
+			`${shot.name} beats the buzzer to sink ${l}`,
+			`${shot.name}'s ${shot.shot} stuns ${l}`,
+			`${shot.name} walks it off against ${l}`,
+		]);
+	}
+
+	// Two or more 40-point nights across the league.
+	const fortyClub = performers.filter((perf) => perf.p.pts >= 40);
+	if (fortyClub.length >= 2) {
+		const [a, b] = fortyClub;
+		return `${a!.p.name}'s ${a!.p.pts} and ${b!.p.name}'s ${b!.p.pts} light up the night`;
+	}
+
+	if (mStar && mStar.pts >= 45) {
+		return pick(rng, [
+			`${mStar.name} erupts for ${mStar.pts} to lead ${w} past ${l}`,
+			`${mStar.name} drops ${mStar.pts} in ${poss(w)} win`,
+		]);
+	}
+
+	if (mStar && doubleCategories(mStar).length >= 3) {
+		return pick(rng, [
+			`${mStar.name} triple-doubles to lead ${w} past ${l}`,
+			`${mStar.name}'s triple-double carries ${w} over ${l}`,
+		]);
+	}
+
+	if (isUpset(marquee, mShape)) {
+		return pick(rng, [
+			`${w} stun ${l}`,
+			`${w} pull off the upset over ${l}`,
+			`${w} shock ${l}`,
+		]);
+	}
+
+	if (mShape.ot > 0) {
+		return pick(rng, [
+			`${w} outlast ${l} in overtime`,
+			`${w} survive ${l} in ${mShape.ot === 1 ? "OT" : `${mShape.ot} OTs`}`,
+		]);
+	}
+
+	if (mShape.comebackFrom >= 15) {
+		return `${w} storm back to beat ${l}`;
+	}
+
+	if (mShape.margin >= 25) {
+		return pick(rng, [
+			`${w} rout ${l} by ${mShape.margin}`,
+			`${w} blow out ${l}`,
+		]);
+	}
+
+	if (mShape.margin <= 3) {
+		return pick(rng, [
+			`${w} edge ${l} in a ${scoreTag(mShape)} thriller`,
+			`${w} hold off ${l} at the wire`,
+		]);
+	}
+
+	if (mStar) {
+		return pick(rng, [
+			`${mStar.name}'s ${starHeadline(mStar)} leads ${w} past ${l}`,
+			`${w} ${pick(rng, verbPool(marquee, mShape))} ${l} behind ${mStar.name}`,
+		]);
+	}
+	return `${w} ${pick(rng, verbPool(marquee, mShape))} ${l}`;
+};
+
+// How many of the day's games were decided by 5 or fewer.
+const closeGamesSentence = (games: RecapGame[]): string | undefined => {
+	const nonExhibition = games.filter((g) => !g.allStar);
+	if (nonExhibition.length < 4) {
+		return undefined;
+	}
+	let close = 0;
+	let ot = 0;
+	for (const g of nonExhibition) {
+		const shape = analyzeShape(g);
+		if (shape.margin <= 5) {
+			close += 1;
+		}
+		if (shape.ot > 0) {
+			ot += 1;
+		}
+	}
+	if (ot >= 2) {
+		return `${ot === nonExhibition.length ? "All" : ot} games went to overtime.`;
+	}
+	if (close >= 3) {
+		return `${close} of the ${nonExhibition.length} games were decided by five points or fewer.`;
+	}
+	return undefined;
+};
+
 export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	const { games, standings, day, playoffs } = input;
 	const rng = rngFromSeed((day + 1) * 40503 + games.length * 97);
@@ -1180,20 +1383,21 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	const performers = collectPerformances(games);
 	const topScorer = [...performers].sort((a, b) => b.p.pts - a.p.pts)[0];
 
-	// Headline: the day's biggest story.
 	const mShape = analyzeShape(marquee);
 	const mStar = bestOf(mShape.winner.players) ?? bestOf(mShape.loser.players);
-	const headline = playoffs
-		? `Playoff wrap: ${nick(mShape.winner)} ${pastTense(
-				pick(rng, verbPool(marquee, mShape)),
-			)} the ${nick(mShape.loser)}`
-		: mStar
-			? `${mStar.name} headlines a ${games.length}-game slate`
-			: `${games.length} games around the league`;
+	const headline = dayHeadline(
+		marquee,
+		mShape,
+		mStar,
+		games,
+		performers,
+		playoffs,
+		rng,
+	);
 
 	// Paragraph 1: the marquee game and the day's best individual nights.
 	const para1: string[] = [];
-	para1.push(`${gameBlurb(marquee, rng)}.`);
+	para1.push(`${cap(gameBlurb(marquee, rng))}.`);
 	if (topScorer && topScorer.p.pts >= 30) {
 		para1.push(
 			topScorer.won
@@ -1229,6 +1433,19 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 		);
 	}
 
+	// A league-wide triple-double gets a nod if it wasn't already the story.
+	const mentioned = new Set([topScorer?.p, secondPerf?.p, mStar]);
+	const tdPerf = performers.find(
+		(perf) => doubleCategories(perf.p).length >= 3 && !mentioned.has(perf.p),
+	);
+	if (tdPerf) {
+		para1.push(
+			`${tdPerf.p.name} put together a triple-double (${statPhrase(
+				tdPerf.p,
+			)}) for ${theNick(tdPerf.team)}.`,
+		);
+	}
+
 	// Paragraph 2: other notable results, then the league picture.
 	const para2: string[] = [];
 	const others = ranked.slice(1);
@@ -1258,6 +1475,11 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	}
 	if (notableBlurbs.length > 0) {
 		para2.push(`Elsewhere, ${naturalList(notableBlurbs)}.`);
+	}
+
+	const close = closeGamesSentence(games);
+	if (close) {
+		para2.push(close);
 	}
 
 	if (playoffs) {

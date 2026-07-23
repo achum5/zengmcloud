@@ -604,6 +604,50 @@ describe("getAutoDayRecap", () => {
 		// A couple of paragraphs of coverage.
 		assert.ok(recap.length > 200, recap);
 	});
+
+	test("headline reflects the day's biggest story, not a generic slate", () => {
+		// A day whose marquee is a walk-off buzzer-beater.
+		const buzzerDay = getAutoDayRecap({
+			season: 2005,
+			day: 90,
+			playoffs: false,
+			games: slate,
+		});
+		const buzzerHead = buzzerDay.split("\n")[0]!;
+		assert.ok(!/-game slate/.test(buzzerHead), buzzerHead);
+		assert.ok(buzzerHead.includes("Peja Stojakovic"), buzzerHead);
+
+		// A day whose only stories are lopsided results reads as a rout headline.
+		const routDay = getAutoDayRecap({
+			season: 2005,
+			day: 91,
+			playoffs: false,
+			games: [
+				mkGame(
+					4001,
+					"Spurs",
+					"Hawks",
+					120,
+					88,
+					true,
+					player({ name: "Tim Duncan", pts: 24, reb: 14 }),
+					player({ name: "Al Harrington", pts: 18 }),
+				),
+				mkGame(
+					4002,
+					"Suns",
+					"Bobcats",
+					118,
+					90,
+					true,
+					player({ name: "Steve Nash", pts: 19, ast: 15 }),
+					player({ name: "Gerald Wallace", pts: 20 }),
+				),
+			],
+		});
+		const routHead = routDay.split("\n")[0]!;
+		assert.ok(/rout|blow out/.test(routHead), routHead);
+	});
 });
 
 // Printed samples so the output can be eyeballed.
