@@ -168,9 +168,9 @@ const updateCustomizePlayer = async (
 				.filter((event) => event.type === "playerFeat")
 				.map((event) => ({ season: event.season, text: event.text }));
 		}
-		// The media-day headshot preset leads the list - it's the one that
-		// produces an actual player photo (transparent background) rather than a
-		// career-moment cartoon.
+		// The headshot preset leads the list - it's the one that produces a drop-in
+		// player image (a simple cartoon headshot on a transparent background)
+		// rather than a career-moment scene.
 		const imageMoments = [
 			await mediaDayHeadshotMoment(p, initialAutoPos, g.get("season")),
 			...(await getPlayerImageMoments(p, initialAutoPos, feats)),

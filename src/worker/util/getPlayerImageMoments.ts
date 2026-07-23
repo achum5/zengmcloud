@@ -4,7 +4,8 @@ import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 // A ready-to-copy AI image prompt for one real moment in a player's career, plus
 // a short label for the editor's dropdown. Career-moment prompts describe a
 // Basketball GM faces.js-style CARTOON illustration so generated images match
-// the game's art style; the media-day headshot is the one PHOTOGRAPHIC preset.
+// the game's art style; the headshot preset is a simple StatMuse-style cartoon
+// headshot on a transparent background.
 export type ImageMoment = { key: string; label: string; prompt: string };
 
 const STYLE =
@@ -48,10 +49,10 @@ export const describePlayerSubject = (
 	return `${name}, a ${agePart}${heightPart}basketball ${pos}${weightPart}${jerseyPart}`;
 };
 
-// The headshot preset: a media-day style chest-up portrait in the player's
-// current team jersey, in the game's faces.js cartoon style, on a TRANSPARENT
-// background so it drops straight into the game as a player image. Uses the
-// current team's real name and colors; a free agent gets a plain jersey.
+// The headshot preset: a simple StatMuse-style cartoon headshot in the player's
+// current team jersey, on a TRANSPARENT background so it drops straight into the
+// game as a player image. Uses the current team's real name and colors; a free
+// agent gets a plain jersey.
 //
 // Transparency phrasing is deliberate and SHORT. Image models (including
 // ChatGPT's) paint what you describe - a long "PNG with alpha channel, no
@@ -79,12 +80,12 @@ export const mediaDayHeadshotMoment = async (
 
 	return {
 		key: "headshot",
-		label: "Media day headshot (transparent background)",
-		prompt: `A media day headshot of ${describePlayerSubject(
+		label: "Cartoon headshot (transparent background)",
+		prompt: `A simple, StatMuse-style cartoon headshot of ${describePlayerSubject(
 			p,
 			pos,
 			season,
-		)}: chest-up, facing the camera with a slight confident smile, wearing ${jerseyPart}. ${STYLE} Render it as a die-cut sticker style game asset: the player only, on a transparent background, with no border, no backdrop, and no shadow.`,
+		)}, chest-up and facing forward, wearing ${jerseyPart}. Clean, flat cartoon style with no text, labels, or watermarks. Render it as a die-cut sticker: the player only, on a transparent background, with no border, no backdrop, and no shadow.`,
 	};
 };
 
