@@ -3,6 +3,7 @@ import { g } from "./index.ts";
 import { getGameSpread } from "../../common/getGameSpread.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
+import { getAutoRecap } from "./getAutoRecap.ts";
 import {
 	DEFAULT_RECAP_MAX_GAMES,
 	DEFAULT_RECAP_MAX_DAYS,
@@ -1063,4 +1064,319 @@ export const getDayGamesForRecap = async ({
 	}));
 
 	return { games: result, dayRecapDays, daySlates, standingsByDay };
+};
+
+// The procedural, always-on auto-recap for every completed game on a league day,
+// keyed by gid. These render automatically under each game card; the "Copy AI
+// Prompt" flow above stays the on-demand upgrade (it reads the real game.note,
+// which auto-recaps never touch, so a filed AI/human note always wins).
+//
+// Deliberately a LEANER RecapGame than getDayGamesForRecap builds: getAutoRecap
+// works off the box score plus records, streaks, spread, and (in the postseason)
+// series state - it never reads the entering-averages or career lines the AI
+// prompt needs, so those expensive per-player lookups are skipped here. This is
+// generated fresh on each view (getAutoRecap is deterministic per gid, so it's
+// stable) and never written to the database.
+export const getAutoRecapNotes = async ({
+	season,
+	day,
+}: {
+	season: number;
+	day: number;
+}): Promise<Record<number, string>> => {
+	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
+
+	const dayGames = allGames.filter(
+		(game) => (game.day ?? 0) === day && game.won && game.lost,
+	);
+	if (dayGames.length === 0) {
+		return {};
+	}
+
+	const allStars = await idb.getCopy.allStars({ season });
+	const isAllStarGame = (game: { teams: { tid: number }[] }): boolean =>
+		game.teams[0]?.tid === -1 && game.teams[1]?.tid === -2;
+	const allStarPayload = (): RecapGame["allStar"] => {
+		if (!allStars) {
+			return {};
+		}
+		const contest = (
+			c: { players: { name: string }[]; winner?: number } | undefined,
+		): { winner?: string; players: string[] } | undefined => {
+			if (!c) {
+				return undefined;
+			}
+			return {
+				winner:
+					typeof c.winner === "number" ? c.players[c.winner]?.name : undefined,
+				players: c.players.map((p) => p.name),
+			};
+		};
+		return {
+			mvp: allStars.mvp?.name,
+			dunk: contest(allStars.dunk),
+			three: contest(allStars.three),
+		};
+	};
+
+	const teamInfoCache = new Map<
+		number,
+		{ region: string; name: string; abbrev: string } | undefined
+	>();
+	const teamInfo = async (tid: number) => {
+		if (!teamInfoCache.has(tid)) {
+			teamInfoCache.set(tid, await getTeamInfoBySeason(tid, season));
+		}
+		return teamInfoCache.get(tid);
+	};
+	const abbrevOf = async (tid: number) =>
+		(await teamInfo(tid))?.abbrev ?? "???";
+
+	// A team's last 10 completed games up to and including this day (most recent
+	// first) - getAutoRecap reads the win/loss flags to spot a snapped streak.
+	const last10For = async (
+		tid: number,
+		upToDay: number,
+	): Promise<RecapLast10Game[]> => {
+		const teamGames = allGames
+			.filter(
+				(game) =>
+					game.won &&
+					game.lost &&
+					(game.day ?? 0) <= upToDay &&
+					(game.teams[0].tid === tid || game.teams[1].tid === tid),
+			)
+			.sort((a, b) => (b.day ?? 0) - (a.day ?? 0) || b.gid - a.gid)
+			.slice(0, 10);
+		const out: RecapLast10Game[] = [];
+		for (const game of teamGames) {
+			const home = game.teams[0].tid === tid;
+			const mine = home ? game.teams[0] : game.teams[1];
+			const opp = home ? game.teams[1] : game.teams[0];
+			out.push({
+				opp: await abbrevOf(opp.tid),
+				home,
+				won: game.won!.tid === tid,
+				pts: mine.pts,
+				oppPts: opp.pts,
+			});
+		}
+		return out;
+	};
+
+	const streakFor = (
+		tid: number,
+		upToDay: number,
+	): { won: boolean; count: number } | undefined => {
+		const teamGames = allGames
+			.filter(
+				(game) =>
+					game.won &&
+					game.lost &&
+					(game.day ?? 0) <= upToDay &&
+					(game.teams[0].tid === tid || game.teams[1].tid === tid),
+			)
+			.sort((a, b) => (b.day ?? 0) - (a.day ?? 0) || b.gid - a.gid);
+		if (teamGames.length === 0) {
+			return undefined;
+		}
+		const won = teamGames[0]!.won!.tid === tid;
+		let count = 0;
+		for (const game of teamGames) {
+			if ((game.won!.tid === tid) === won) {
+				count += 1;
+			} else {
+				break;
+			}
+		}
+		return { won, count };
+	};
+
+	// Postseason context (series / play-in / seed), mirroring getDayGamesForRecap.
+	const playoffSeries = await idb.cache.playoffSeries.get(season);
+	const numGamesPlayoffSeries = g.get("numGamesPlayoffSeries", season);
+	const seriesForGame = async (game: any): Promise<RecapSeries | undefined> => {
+		if (!playoffSeries || !Array.isArray(playoffSeries.series)) {
+			return undefined;
+		}
+		const [tidA, tidB] = [game.teams[0].tid, game.teams[1].tid];
+		for (let round = playoffSeries.series.length - 1; round >= 0; round--) {
+			const matchups = playoffSeries.series[round];
+			if (!matchups) {
+				continue;
+			}
+			for (const matchup of matchups) {
+				const home = matchup?.home;
+				const away = matchup?.away;
+				if (!home || !away) {
+					continue;
+				}
+				const byGid = matchup.gids?.includes(game.gid);
+				const byTid =
+					(home.tid === tidA && away.tid === tidB) ||
+					(home.tid === tidB && away.tid === tidA);
+				if (byGid || byTid) {
+					const { homeWon, awayWon } = seriesWinsBefore(
+						game.gid,
+						home.tid,
+						away.tid,
+						matchup.gids,
+						allGames,
+					);
+					return {
+						round: round + 1,
+						numRounds: playoffSeries.series.length,
+						bestOf: numGamesPlayoffSeries?.[round],
+						homeAbbrev: home.abbrev ?? (await abbrevOf(home.tid)),
+						awayAbbrev: away.abbrev ?? (await abbrevOf(away.tid)),
+						homeSeed: home.seed,
+						awaySeed: away.seed,
+						homeWon,
+						awayWon,
+					};
+				}
+			}
+		}
+		return undefined;
+	};
+	const playInForGame = async (game: any): Promise<RecapPlayIn | undefined> => {
+		const playIns = playoffSeries?.playIns;
+		if (!Array.isArray(playIns)) {
+			return undefined;
+		}
+		const [tidA, tidB] = [game.teams[0].tid, game.teams[1].tid];
+		for (const playIn of playIns) {
+			for (let j = 0; j < playIn.length; j++) {
+				const matchup: any = playIn[j];
+				const home = matchup?.home;
+				const away = matchup?.away;
+				if (!home || !away) {
+					continue;
+				}
+				const byGid = matchup.gids?.includes(game.gid);
+				const byTid =
+					(home.tid === tidA && away.tid === tidB) ||
+					(home.tid === tidB && away.tid === tidA);
+				if (byGid || byTid) {
+					const kind = j === 0 ? "seed7v8" : j === 1 ? "seed9v10" : "final";
+					let prizeSeed: number | undefined;
+					if (kind === "seed7v8") {
+						prizeSeed = Math.min(home.seed, away.seed);
+					} else if (kind === "final") {
+						prizeSeed = playIn[0]?.away?.seed;
+					}
+					return {
+						kind,
+						homeAbbrev: home.abbrev ?? (await abbrevOf(home.tid)),
+						awayAbbrev: away.abbrev ?? (await abbrevOf(away.tid)),
+						homeSeed: home.seed,
+						awaySeed: away.seed,
+						prizeSeed,
+					};
+				}
+			}
+		}
+		return undefined;
+	};
+	const seedOf = (tid: number): number | undefined => {
+		if (!playoffSeries || !Array.isArray(playoffSeries.series)) {
+			return undefined;
+		}
+		for (const matchups of playoffSeries.series) {
+			for (const matchup of matchups ?? []) {
+				if (matchup?.home?.tid === tid) {
+					return matchup.home.seed;
+				}
+				if (matchup?.away?.tid === tid) {
+					return matchup.away?.seed;
+				}
+			}
+		}
+		return undefined;
+	};
+
+	const out: Record<number, string> = {};
+	for (const game of dayGames) {
+		const playoffs = !!game.playoffs;
+		const allStar = isAllStarGame(game);
+
+		const teams = [] as unknown as [RecapTeam, RecapTeam];
+		for (const t of game.teams) {
+			const info = await teamInfo(t.tid);
+			const played = (Array.isArray(t.players) ? t.players : []).filter(
+				(p: any) => (p?.min ?? 0) > 0,
+			);
+			const players: RecapPlayer[] = played.map((p: any) => ({
+				name: String(p?.name ?? "Unknown"),
+				pid: p?.pid,
+				min: Math.round(p?.min ?? 0),
+				pts: p?.pts ?? 0,
+				reb: (p?.orb ?? 0) + (p?.drb ?? 0),
+				ast: p?.ast ?? 0,
+				stl: p?.stl ?? 0,
+				blk: p?.blk ?? 0,
+				tov: p?.tov ?? 0,
+				fg: p?.fg ?? 0,
+				fga: p?.fga ?? 0,
+				tp: p?.tp ?? 0,
+				tpa: p?.tpa ?? 0,
+				ft: p?.ft ?? 0,
+				fta: p?.fta ?? 0,
+				pf: p?.pf ?? 0,
+				pm: typeof p?.pm === "number" ? p.pm : undefined,
+			}));
+
+			teams.push({
+				tid: t.tid,
+				region: info?.region ?? "",
+				name: info?.name ?? "Team",
+				abbrev: info?.abbrev ?? "???",
+				pts: t.pts,
+				players,
+				record: allStar
+					? undefined
+					: regularSeasonRecordAsOf(t.tid, game.day ?? day, allGames),
+				ptsQtrs: Array.isArray(t.ptsQtrs) ? t.ptsQtrs : undefined,
+				last10: allStar ? undefined : await last10For(t.tid, game.day ?? day),
+				streak: allStar ? undefined : streakFor(t.tid, game.day ?? day),
+				seed: playoffs ? seedOf(t.tid) : undefined,
+			});
+		}
+
+		const playIn = playoffs ? await playInForGame(game) : undefined;
+
+		let spread: RecapGame["spread"];
+		const rawSpread = getGameSpread({
+			ovr0: game.teams[0].ovr,
+			ovr1: game.teams[1].ovr,
+			homeCourtAdvantage: g.get("homeCourtAdvantage"),
+			neutralSite: !!game.neutralSite,
+			numPeriods: game.numPeriods ?? g.get("numPeriods"),
+			quarterLength: g.get("quarterLength"),
+		});
+		if (rawSpread !== undefined) {
+			spread =
+				rawSpread >= 0
+					? { favTid: game.teams[0].tid, points: rawSpread }
+					: { favTid: game.teams[1].tid, points: -rawSpread };
+		}
+
+		const recapGame: RecapGame = {
+			gid: game.gid,
+			day: game.day ?? day,
+			overtimes: game.overtimes ?? 0,
+			winnerTid: game.won!.tid,
+			playoffs,
+			teams,
+			series: playoffs && !playIn ? await seriesForGame(game) : undefined,
+			playIn,
+			spread: allStar ? undefined : spread,
+			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
+			allStar: allStar ? allStarPayload() : undefined,
+		};
+
+		out[game.gid] = getAutoRecap(recapGame);
+	}
+
+	return out;
 };

@@ -3,6 +3,7 @@ import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
 import { getTopPlayers, getUpcoming } from "./schedule.ts";
+import { getAutoRecapNotes } from "../util/getDayGamesForRecap.ts";
 import { PHASE } from "../../common/constants.ts";
 import { makeResponsiveDropdownOption } from "../../common/makeResponsiveDropdownOption.tsx";
 import { env } from "../util/env.ts";
@@ -212,6 +213,24 @@ const updateDailySchedule = async (
 				(isMine(b) ? 1 : 0) - (isMine(a) ? 1 : 0);
 			completed.sort(userFirst);
 			upcoming.sort(userFirst);
+
+			// Every completed game gets an automatic, procedural recap (headline +
+			// a couple of fact-anchored sentences) shown under its card. It's
+			// generated fresh here (deterministic per gid, never stored) and only
+			// fills in where there's no real note - a filed AI/manual recap always
+			// wins. The "Copy AI Prompt" flow reads the database note, which these
+			// never touch, so it stays available as the on-demand upgrade.
+			if (completed.length > 0) {
+				const autoRecaps = await getAutoRecapNotes({
+					season: inputs.season,
+					day,
+				});
+				for (const [i, game] of completed.entries()) {
+					if (!game.note && autoRecaps[game.gid]) {
+						completed[i] = { ...game, note: autoRecaps[game.gid] };
+					}
+				}
+			}
 
 			// The day's "Day in the League" recap is stored on its anchor game (the
 			// lowest-gid game of the day - see Game.dayNote / setNote). Resolve the
