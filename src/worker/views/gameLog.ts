@@ -8,6 +8,7 @@ import type {
 } from "../../common/types.ts";
 import { DEFAULT_TEAM_COLORS, PHASE } from "../../common/constants.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
+import { getAutoRecapForGid } from "../util/getDayGamesForRecap.ts";
 
 export type TeamSeasonOverride = {
 	region?: string;
@@ -210,6 +211,19 @@ const boxScore = async (gid: number) => {
 			playoffs: game.teams[lostInd].playoffs,
 		},
 	};
+
+	// Fill in the automatic recap as this game's note when none has been filed,
+	// so clicking into a box score shows a recap too (a real AI/manual note still
+	// wins). Not persisted - the Note editor only writes on an explicit save.
+	if (!game2.note && !game.exhibition) {
+		const autoNote = await getAutoRecapForGid({
+			season: game.season,
+			gid: game.gid,
+		});
+		if (autoNote) {
+			game2.note = autoNote;
+		}
+	}
 
 	// Swap teams order, so home team is at bottom in box score
 	game2.teams.reverse();

@@ -3,7 +3,7 @@ import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
 import { getTopPlayers, getUpcoming } from "./schedule.ts";
-import { getAutoRecapNotes } from "../util/getDayGamesForRecap.ts";
+import { getAutoRecapsForDay } from "../util/getDayGamesForRecap.ts";
 import { PHASE } from "../../common/constants.ts";
 import { makeResponsiveDropdownOption } from "../../common/makeResponsiveDropdownOption.tsx";
 import { env } from "../util/env.ts";
@@ -215,19 +215,22 @@ const updateDailySchedule = async (
 			upcoming.sort(userFirst);
 
 			// Every completed game gets an automatic, procedural recap (headline +
-			// a couple of fact-anchored sentences) shown under its card. It's
-			// generated fresh here (deterministic per gid, never stored) and only
-			// fills in where there's no real note - a filed AI/manual recap always
-			// wins. The "Copy AI Prompt" flow reads the database note, which these
-			// never touch, so it stays available as the on-demand upgrade.
+			// a couple of fact-anchored paragraphs) shown under its card, and the
+			// whole day gets an auto day recap. Both are generated fresh here
+			// (deterministic, never stored) and only fill in where there's no real
+			// note - a filed AI/manual recap always wins. The "Copy AI Prompt" flow
+			// reads the database note/dayNote, which these never touch, so it stays
+			// available as the on-demand upgrade.
+			let autoDayRecap = "";
 			if (completed.length > 0) {
-				const autoRecaps = await getAutoRecapNotes({
+				const { notes, dayRecap } = await getAutoRecapsForDay({
 					season: inputs.season,
 					day,
 				});
+				autoDayRecap = dayRecap;
 				for (const [i, game] of completed.entries()) {
-					if (!game.note && autoRecaps[game.gid]) {
-						completed[i] = { ...game, note: autoRecaps[game.gid] };
+					if (!game.note && notes[game.gid]) {
+						completed[i] = { ...game, note: notes[game.gid] };
 					}
 				}
 			}
@@ -242,7 +245,9 @@ const updateDailySchedule = async (
 				dayGames.length > 0
 					? dayGames.reduce((a, b) => (a.gid <= b.gid ? a : b))
 					: undefined;
-			const dayNote = anchorGame?.dayNote;
+			// A filed "Day in the League" recap wins; otherwise fall back to the
+			// auto day recap (never persisted).
+			const dayNote = anchorGame?.dayNote ?? (autoDayRecap || undefined);
 
 			return {
 				cid,

@@ -3,7 +3,7 @@ import { g } from "./index.ts";
 import { getGameSpread } from "../../common/getGameSpread.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
-import { getAutoRecap } from "./getAutoRecap.ts";
+import { getAutoRecap, getAutoDayRecap } from "./getAutoRecap.ts";
 import {
 	DEFAULT_RECAP_MAX_GAMES,
 	DEFAULT_RECAP_MAX_DAYS,
@@ -1066,32 +1066,17 @@ export const getDayGamesForRecap = async ({
 	return { games: result, dayRecapDays, daySlates, standingsByDay };
 };
 
-// The procedural, always-on auto-recap for every completed game on a league day,
-// keyed by gid. These render automatically under each game card; the "Copy AI
-// Prompt" flow above stays the on-demand upgrade (it reads the real game.note,
-// which auto-recaps never touch, so a filed AI/human note always wins).
-//
-// Deliberately a LEANER RecapGame than getDayGamesForRecap builds: getAutoRecap
-// works off the box score plus records, streaks, spread, and (in the postseason)
-// series state - it never reads the entering-averages or career lines the AI
-// prompt needs, so those expensive per-player lookups are skipped here. This is
-// generated fresh on each view (getAutoRecap is deterministic per gid, so it's
-// stable) and never written to the database.
-export const getAutoRecapNotes = async ({
-	season,
-	day,
-}: {
-	season: number;
-	day: number;
-}): Promise<Record<number, string>> => {
+// Shared machinery for the always-on auto recaps. These build a RecapGame from a
+// completed game (box score + records, streaks, entering averages, injuries, and,
+// in the postseason, series/play-in state) and run it through getAutoRecap /
+// getAutoDayRecap. They render automatically under each game card and as the day
+// recap; the "Copy AI Prompt" flow above stays the on-demand upgrade (it reads the
+// real game.note/dayNote, which auto recaps never touch, so a filed AI/human note
+// always wins). Generated fresh on each view (deterministic, so stable) and never
+// written to the database. Career lines - which only the AI prompt uses - are
+// skipped to avoid the per-player lookups they'd cost.
+const createAutoRecapContext = async (season: number) => {
 	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
-
-	const dayGames = allGames.filter(
-		(game) => (game.day ?? 0) === day && game.won && game.lost,
-	);
-	if (dayGames.length === 0) {
-		return {};
-	}
 
 	const allStars = await idb.getCopy.allStars({ season });
 	const isAllStarGame = (game: { teams: { tid: number }[] }): boolean =>
@@ -1119,6 +1104,29 @@ export const getAutoRecapNotes = async ({
 		};
 	};
 
+	// Every player's box line from every completed game this season, for the
+	// entering-this-game averages (see enteringAverages).
+	const linesByPid = new Map<number, PlayerGameLine[]>();
+	for (const game of allGames) {
+		if (!game.won || !game.lost) {
+			continue;
+		}
+		for (const t of game.teams) {
+			for (const p of (t as any).players ?? []) {
+				if ((p?.min ?? 0) > 0 && typeof p?.pid === "number") {
+					const arr = linesByPid.get(p.pid) ?? [];
+					arr.push({
+						day: game.day ?? 0,
+						gid: game.gid,
+						playoffs: !!game.playoffs,
+						row: { ...p, gp: 1 },
+					});
+					linesByPid.set(p.pid, arr);
+				}
+			}
+		}
+	}
+
 	const teamInfoCache = new Map<
 		number,
 		{ region: string; name: string; abbrev: string } | undefined
@@ -1132,8 +1140,6 @@ export const getAutoRecapNotes = async ({
 	const abbrevOf = async (tid: number) =>
 		(await teamInfo(tid))?.abbrev ?? "???";
 
-	// A team's last 10 completed games up to and including this day (most recent
-	// first) - getAutoRecap reads the win/loss flags to spot a snapped streak.
 	const last10For = async (
 		tid: number,
 		upToDay: number,
@@ -1192,7 +1198,6 @@ export const getAutoRecapNotes = async ({
 		return { won, count };
 	};
 
-	// Postseason context (series / play-in / seed), mirroring getDayGamesForRecap.
 	const playoffSeries = await idb.cache.playoffSeries.get(season);
 	const numGamesPlayoffSeries = g.get("numGamesPlayoffSeries", season);
 	const seriesForGame = async (game: any): Promise<RecapSeries | undefined> => {
@@ -1295,36 +1300,79 @@ export const getAutoRecapNotes = async ({
 		return undefined;
 	};
 
-	const out: Record<number, string> = {};
-	for (const game of dayGames) {
+	const buildRecapGame = async (
+		game: any,
+		effectiveDay: number,
+	): Promise<RecapGame> => {
 		const playoffs = !!game.playoffs;
 		const allStar = isAllStarGame(game);
 
 		const teams = [] as unknown as [RecapTeam, RecapTeam];
 		for (const t of game.teams) {
 			const info = await teamInfo(t.tid);
-			const played = (Array.isArray(t.players) ? t.players : []).filter(
-				(p: any) => (p?.min ?? 0) > 0,
-			);
-			const players: RecapPlayer[] = played.map((p: any) => ({
-				name: String(p?.name ?? "Unknown"),
-				pid: p?.pid,
-				min: Math.round(p?.min ?? 0),
-				pts: p?.pts ?? 0,
-				reb: (p?.orb ?? 0) + (p?.drb ?? 0),
-				ast: p?.ast ?? 0,
-				stl: p?.stl ?? 0,
-				blk: p?.blk ?? 0,
-				tov: p?.tov ?? 0,
-				fg: p?.fg ?? 0,
-				fga: p?.fga ?? 0,
-				tp: p?.tp ?? 0,
-				tpa: p?.tpa ?? 0,
-				ft: p?.ft ?? 0,
-				fta: p?.fta ?? 0,
-				pf: p?.pf ?? 0,
-				pm: typeof p?.pm === "number" ? p.pm : undefined,
-			}));
+			const allPlayers = Array.isArray(t.players) ? t.players : [];
+
+			const injuries: RecapInjuryOut[] = allPlayers
+				.filter(
+					(p: any) =>
+						(p?.min ?? 0) === 0 && p?.injury && p.injury.gamesRemaining > 0,
+				)
+				.map((p: any) => ({
+					name: String(p?.name ?? "Unknown"),
+					type: String(p.injury.type ?? "injury"),
+					gamesRemaining: p.injury.gamesRemaining ?? 0,
+				}));
+
+			const played = allPlayers.filter((p: any) => (p?.min ?? 0) > 0);
+			const players: RecapPlayer[] = [];
+			for (const p of played) {
+				const base: RecapPlayer = {
+					name: String(p?.name ?? "Unknown"),
+					pid: p?.pid,
+					min: Math.round(p?.min ?? 0),
+					pts: p?.pts ?? 0,
+					reb: (p?.orb ?? 0) + (p?.drb ?? 0),
+					ast: p?.ast ?? 0,
+					stl: p?.stl ?? 0,
+					blk: p?.blk ?? 0,
+					tov: p?.tov ?? 0,
+					fg: p?.fg ?? 0,
+					fga: p?.fga ?? 0,
+					tp: p?.tp ?? 0,
+					tpa: p?.tpa ?? 0,
+					ft: p?.ft ?? 0,
+					fta: p?.fta ?? 0,
+					pf: p?.pf ?? 0,
+					pm: typeof p?.pm === "number" ? p.pm : undefined,
+					injury:
+						p?.injury && (p.injury.newThisGame || p.injury.playingThrough)
+							? {
+									type: String(p.injury.type ?? "injury"),
+									gamesRemaining: p.injury.gamesRemaining ?? 0,
+									newThisGame: !!p.injury.newThisGame,
+									playingThrough: !!p.injury.playingThrough,
+								}
+							: undefined,
+				};
+				if (typeof p?.pid === "number") {
+					const lines = linesByPid.get(p.pid) ?? [];
+					base.seasonAvg = enteringAverages(
+						lines,
+						game.gid,
+						game.day ?? effectiveDay,
+						false,
+					);
+					if (playoffs) {
+						base.playoffAvg = enteringAverages(
+							lines,
+							game.gid,
+							game.day ?? effectiveDay,
+							true,
+						);
+					}
+				}
+				players.push(base);
+			}
 
 			teams.push({
 				tid: t.tid,
@@ -1335,10 +1383,15 @@ export const getAutoRecapNotes = async ({
 				players,
 				record: allStar
 					? undefined
-					: regularSeasonRecordAsOf(t.tid, game.day ?? day, allGames),
+					: regularSeasonRecordAsOf(t.tid, game.day ?? effectiveDay, allGames),
 				ptsQtrs: Array.isArray(t.ptsQtrs) ? t.ptsQtrs : undefined,
-				last10: allStar ? undefined : await last10For(t.tid, game.day ?? day),
-				streak: allStar ? undefined : streakFor(t.tid, game.day ?? day),
+				last10: allStar
+					? undefined
+					: await last10For(t.tid, game.day ?? effectiveDay),
+				streak: allStar
+					? undefined
+					: streakFor(t.tid, game.day ?? effectiveDay),
+				injuries: injuries.length > 0 ? injuries : undefined,
 				seed: playoffs ? seedOf(t.tid) : undefined,
 			});
 		}
@@ -1361,11 +1414,11 @@ export const getAutoRecapNotes = async ({
 					: { favTid: game.teams[1].tid, points: -rawSpread };
 		}
 
-		const recapGame: RecapGame = {
+		return {
 			gid: game.gid,
-			day: game.day ?? day,
+			day: game.day ?? effectiveDay,
 			overtimes: game.overtimes ?? 0,
-			winnerTid: game.won!.tid,
+			winnerTid: game.won.tid,
 			playoffs,
 			teams,
 			series: playoffs && !playIn ? await seriesForGame(game) : undefined,
@@ -1374,9 +1427,105 @@ export const getAutoRecapNotes = async ({
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
 			allStar: allStar ? allStarPayload() : undefined,
 		};
+	};
 
-		out[game.gid] = getAutoRecap(recapGame);
+	return { allGames, buildRecapGame };
+};
+
+// The full standings, split by conference, AS OF a given day - the league context
+// a day recap needs. Mirrors the standings block in getDayGamesForRecap.
+const computeStandingsAsOf = async (
+	season: number,
+	day: number,
+	allGames: Awaited<ReturnType<typeof idb.getCopies.games>>,
+): Promise<RecapDayStandings> => {
+	const allTeams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
+	const confs = g.get("confs", season);
+	return {
+		day,
+		confs: confs.map((conf) => {
+			const rows = allTeams
+				.filter((t) => t.cid === conf.cid)
+				.map((t) => {
+					const rec = regularSeasonRecordAsOf(t.tid, day, allGames);
+					return {
+						abbrev: t.abbrev,
+						region: t.region,
+						name: t.name,
+						won: rec.won,
+						lost: rec.lost,
+					};
+				})
+				.sort((a, b) => {
+					const wpA = a.won + a.lost > 0 ? a.won / (a.won + a.lost) : 0;
+					const wpB = b.won + b.lost > 0 ? b.won / (b.won + b.lost) : 0;
+					return wpB - wpA || b.won - a.won || a.abbrev.localeCompare(b.abbrev);
+				});
+			const leader = rows[0];
+			return {
+				name: conf.name,
+				teams: rows.map((t, i) => ({
+					rank: i + 1,
+					abbrev: t.abbrev,
+					region: t.region,
+					name: t.name,
+					won: t.won,
+					lost: t.lost,
+					gb: leader ? (leader.won - t.won + (t.lost - leader.lost)) / 2 : 0,
+				})),
+			};
+		}),
+	};
+};
+
+// Every completed game on a league day, each with its auto recap (keyed by gid),
+// plus an auto recap for the whole day. Used by the Daily Schedule.
+export const getAutoRecapsForDay = async ({
+	season,
+	day,
+}: {
+	season: number;
+	day: number;
+}): Promise<{ notes: Record<number, string>; dayRecap: string }> => {
+	const ctx = await createAutoRecapContext(season);
+	const dayGames = ctx.allGames
+		.filter((game) => (game.day ?? 0) === day && game.won && game.lost)
+		.sort((a, b) => a.gid - b.gid);
+	if (dayGames.length === 0) {
+		return { notes: {}, dayRecap: "" };
 	}
 
-	return out;
+	const games: RecapGame[] = [];
+	for (const game of dayGames) {
+		games.push(await ctx.buildRecapGame(game, day));
+	}
+
+	const notes: Record<number, string> = {};
+	for (const recapGame of games) {
+		notes[recapGame.gid] = getAutoRecap(recapGame);
+	}
+
+	const playoffs = games.some((game) => game.playoffs);
+	const standings = playoffs
+		? undefined
+		: await computeStandingsAsOf(season, day, ctx.allGames);
+	const dayRecap = getAutoDayRecap({ season, day, playoffs, games, standings });
+
+	return { notes, dayRecap };
+};
+
+// The auto recap for a single completed game, for the box score page.
+export const getAutoRecapForGid = async ({
+	season,
+	gid,
+}: {
+	season: number;
+	gid: number;
+}): Promise<string | undefined> => {
+	const ctx = await createAutoRecapContext(season);
+	const game = ctx.allGames.find((g2) => g2.gid === gid && g2.won && g2.lost);
+	if (!game) {
+		return undefined;
+	}
+	return getAutoRecap(await ctx.buildRecapGame(game, game.day ?? 0));
 };
