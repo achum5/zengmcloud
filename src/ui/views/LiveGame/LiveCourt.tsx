@@ -518,6 +518,38 @@ const FACE_ANIM_CSS = `
 	55% { transform: ${REST} translateX(5px) rotate(12deg) scale(1.04); }
 	75% { transform: ${REST} translateX(-2px) rotate(-5deg) scale(1.01); }
 	100% { transform: ${REST} rotate(0deg) scale(1); }
+}
+/* A jump shot: a small gather, rise off the floor (translateY up = airborne),
+   hang, then land. translateY is a % of the body's own height, so it scales
+   with the court. The body grows a touch at the apex (closer to the camera). */
+@keyframes liveCourtJump {
+	0% { transform: ${REST} translateY(0) scale(1); }
+	18% { transform: ${REST} translateY(6%) scale(0.98); }
+	55% { transform: ${REST} translateY(-60%) scale(1.08); }
+	78% { transform: ${REST} translateY(-38%) scale(1.05); }
+	100% { transform: ${REST} translateY(0) scale(1); }
+}
+/* A dunk / block elevation: explosive, higher, with a hang and a hard landing. */
+@keyframes liveCourtDunk {
+	0% { transform: ${REST} translateY(0) scale(1); }
+	14% { transform: ${REST} translateY(7%) scale(0.95); }
+	48% { transform: ${REST} translateY(-96%) scale(1.15); }
+	68% { transform: ${REST} translateY(-74%) scale(1.13); }
+	86% { transform: ${REST} translateY(0) scale(1.02); }
+	100% { transform: ${REST} translateY(0) scale(1); }
+}
+/* The feet-shadow shrinks and fades while its owner is in the air, then returns
+   as he lands - the ground cue that makes the leap read as real height. */
+@keyframes liveCourtJumpShadow {
+	0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+	55% { transform: translate(-50%, -50%) scale(0.55); opacity: 0.45; }
+	100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+@keyframes liveCourtDunkShadow {
+	0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+	48% { transform: translate(-50%, -50%) scale(0.4); opacity: 0.35; }
+	86% { transform: translate(-50%, -50%) scale(1.08); opacity: 1; }
+	100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
 }`;
 
 // Glide duration (seconds) for a body moving `dist` feet, CAPPED so it always
@@ -610,7 +642,7 @@ const BodyOnCourt = ({
 	color: string;
 	// A background 5-on-5 teammate (not part of the current play): a jersey chip.
 	background: boolean;
-	anim?: "shake" | "swipe";
+	anim?: "shake" | "swipe" | "jump" | "dunk";
 	// The current scene key, passed only when `anim` is set, so the recoil
 	// animation retriggers on a fresh foul/steal without remounting the face on
 	// every ordinary play.
@@ -684,6 +716,18 @@ const BodyOnCourt = ({
 			? "liveCourtShake 0.62s ease"
 			: anim === "swipe"
 				? "liveCourtSwipe 0.6s ease"
+				: anim === "jump"
+					? "liveCourtJump 0.7s ease"
+					: anim === "dunk"
+						? "liveCourtDunk 0.8s ease"
+						: undefined;
+	// A jump/dunk lifts the body off the floor; its feet-shadow shrinks and fades
+	// in sync so the leap reads as real height. Shake/swipe stay on the floor.
+	const shadowAnim =
+		anim === "jump"
+			? "liveCourtJumpShadow 0.7s ease"
+			: anim === "dunk"
+				? "liveCourtDunkShadow 0.8s ease"
 				: undefined;
 
 	const nameTag = (
@@ -733,6 +777,25 @@ const BodyOnCourt = ({
 				zIndex: actor.role === "main" ? 5 : 4,
 			}}
 		>
+			{/* Feet shadow on the FLOOR - a sibling of the body (not a child), so when
+			    the body leaps (translateY up) the shadow stays down and instead
+			    shrinks/fades via shadowAnim. That separation is what reads as real
+			    elevation. Keyed so the shadow animation replays on each fresh jump. */}
+			<div
+				key={anim ? `sh-${animKey}` : "sh-static"}
+				style={{
+					position: "absolute",
+					left: 0,
+					top: `calc(${FACE_H} * ${sizeScale} * 0.48)`,
+					transform: "translate(-50%, -50%)",
+					width: `calc(${FACE_W} * ${sizeScale} * ${girth} * 0.95)`,
+					height: `calc(${FACE_H} * ${sizeScale} * 0.14)`,
+					background: GROUND_SHADOW,
+					borderRadius: "50%",
+					pointerEvents: "none",
+					animation: shadowAnim,
+				}}
+			/>
 			<div
 				key={anim ? `anim-${animKey}` : "static"}
 				style={
@@ -756,19 +819,6 @@ const BodyOnCourt = ({
 							}
 				}
 			>
-				{/* Ground shadow at the body's feet, so he stands ON the floor. */}
-				<div
-					style={{
-						position: "absolute",
-						left: "50%",
-						bottom: "-7%",
-						transform: "translateX(-50%)",
-						width: "78%",
-						height: "15%",
-						background: GROUND_SHADOW,
-						pointerEvents: "none",
-					}}
-				/>
 				{hasPhoto ? (
 					<div
 						style={{
@@ -827,6 +877,7 @@ const LiveCourt = ({
 	const { lid } = useLocal(["lid"]);
 
 	const ballRef = useRef<SVGCircleElement | null>(null);
+	const ballShadowRef = useRef<SVGEllipseElement | null>(null);
 	const ringRef = useRef<SVGCircleElement | null>(null);
 	const burstRef = useRef<SVGGElement | null>(null);
 	const rafRef = useRef<number | undefined>(undefined);
@@ -874,6 +925,7 @@ const LiveCourt = ({
 			return;
 		}
 		const ball = ballRef.current;
+		const ballShadow = ballShadowRef.current;
 		const ring = ringRef.current;
 		const burst = burstRef.current;
 		if (!ball) {
@@ -889,30 +941,51 @@ const LiveCourt = ({
 
 		const hideBall = () => {
 			ball.style.opacity = "0";
+			if (ballShadow) {
+				ballShadow.style.opacity = "0";
+			}
 			if (ring) {
 				ring.style.opacity = "0";
 			}
 		};
 
-		// The ball resting LIVE with its handler: a soft dribble pulse (top-down
-		// view, so the bounce reads as the ball rising toward the camera). Bounded
-		// so a paused game isn't running an animation loop forever - after a few
-		// seconds the ball just sits visible in his hands.
+		// Place the ball at a floor point (gx, gy) raised `h` feet into the air:
+		// the ball is drawn `h` above its ground spot and swells slightly (closer to
+		// the camera), while its shadow stays on the floor at (gx, gy) and shrinks +
+		// fades as the ball climbs. The gap between them is what sells height on a
+		// flat top-down floor - a real arc instead of a sliding dot. Height is
+		// clamped so a high arc near the top sideline never clips out of frame.
+		const BALL_R = 0.85;
+		const placeBall = (gx: number, gy: number, h: number) => {
+			const hh = h > 0 ? h : 0;
+			ball.setAttribute("cx", String(gx));
+			ball.setAttribute("cy", String(Math.max(-APRON + 0.3, gy - hh)));
+			ball.setAttribute("r", String(BALL_R * (1 + hh * 0.03)));
+			if (ballShadow) {
+				const ss = 1 / (1 + hh * 0.09);
+				ballShadow.setAttribute("cx", String(gx));
+				ballShadow.setAttribute("cy", String(gy));
+				ballShadow.setAttribute("rx", String(BALL_R * 0.95 * ss));
+				ballShadow.setAttribute("ry", String(BALL_R * 0.42 * ss));
+				ballShadow.style.opacity = String(0.32 * ss);
+			}
+		};
+
+		// The ball resting LIVE with its handler: a soft dribble bounce (the ball
+		// hops a few inches off the floor, shadow pulsing beneath it). Bounded so a
+		// paused game isn't running an animation loop forever - after a few seconds
+		// the ball just sits in his hands.
 		const restDribble = (x: number, y: number) => {
 			ball.style.opacity = "1";
-			ball.setAttribute("cx", String(x));
-			ball.setAttribute("cy", String(y));
+			placeBall(x, y, 0.5);
 			const restStart = performance.now();
 			const loop = (now: number) => {
 				const t = (now - restStart) / 1000;
 				if (t > 6) {
-					ball.setAttribute("r", "0.85");
+					placeBall(x, y, 0.35);
 					return;
 				}
-				ball.setAttribute(
-					"r",
-					String(0.76 + 0.16 * Math.abs(Math.sin(t * 5.2))),
-				);
+				placeBall(x, y, 0.5 * Math.abs(Math.sin(t * 5.2)));
 				rafRef.current = requestAnimationFrame(loop);
 			};
 			rafRef.current = requestAnimationFrame(loop);
@@ -942,12 +1015,11 @@ const LiveCourt = ({
 			const start = performance.now();
 			const step = (now: number) => {
 				const p = Math.min(1, (now - start) / bringMs);
-				ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
-				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
-				// Dribble hops on the way up.
-				ball.setAttribute(
-					"r",
-					String(0.76 + 0.22 * Math.abs(Math.sin(p * Math.PI * 4))),
+				// Dribble hops on the way up: low, repeated bounces off the floor.
+				placeBall(
+					from.x + (to.x - from.x) * p,
+					from.y + (to.y - from.y) * p,
+					0.6 * Math.abs(Math.sin(p * Math.PI * 4)),
 				);
 				if (p < 1) {
 					rafRef.current = requestAnimationFrame(step);
@@ -980,10 +1052,13 @@ const LiveCourt = ({
 			const start = performance.now();
 			const step = (now: number) => {
 				const p = Math.min(1, (now - start) / 520);
-				ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
-				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
-				// A little hop off the rim, then settle into the rebounder's hands.
-				ball.setAttribute("r", String(0.9 + 0.45 * Math.sin(Math.PI * p)));
+				// The board caroms UP off the rim and comes down into his hands: a
+				// real hop with air under it, not a dot sliding over.
+				placeBall(
+					from.x + (to.x - from.x) * p,
+					from.y + (to.y - from.y) * p,
+					2.6 * Math.sin(Math.PI * p),
+				);
 				// A rebound STAYS in the rebounder's hands (live ball); a tip fades.
 				if (!isReb) {
 					ball.style.opacity = p < 0.82 ? "1" : String(1 - (p - 0.82) / 0.18);
@@ -1028,23 +1103,22 @@ const LiveCourt = ({
 				const from = scene.passFrom;
 				const passMs = Math.min(PASS_MS, arriveMs);
 				const holdMs = Math.max(0, arriveMs - passMs);
-				ball.setAttribute("cx", String(from.x));
-				ball.setAttribute("cy", String(from.y));
+				placeBall(from.x, from.y, 0.4);
 				const step = (now: number) => {
 					const e = now - start;
 					if (e < holdMs) {
-						ball.setAttribute(
-							"r",
-							String(0.78 + 0.07 * Math.abs(Math.sin(e / 130))),
-						);
+						// Passer holds it, dribbling in place.
+						placeBall(from.x, from.y, 0.4 * Math.abs(Math.sin(e / 130)));
 						rafRef.current = requestAnimationFrame(step);
 						return;
 					}
 					const p = Math.min(1, (e - holdMs) / passMs);
-					ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
-					ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
-					// Flat and quick - a pass, not a lob.
-					ball.setAttribute("r", String(0.72 + 0.16 * Math.sin(Math.PI * p)));
+					// A flat, quick pass - a low arc, not a lob.
+					placeBall(
+						from.x + (to.x - from.x) * p,
+						from.y + (to.y - from.y) * p,
+						1.6 * Math.sin(Math.PI * p),
+					);
 					if (p < 1) {
 						rafRef.current = requestAnimationFrame(step);
 					} else {
@@ -1065,12 +1139,11 @@ const LiveCourt = ({
 			};
 			const step = (now: number) => {
 				const p = Math.min(1, (now - start) / arriveMs);
-				ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
-				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
-				// Dribble hops on the way up.
-				ball.setAttribute(
-					"r",
-					String(0.76 + 0.26 * Math.abs(Math.sin(p * Math.PI * 3))),
+				// Dribble hops on the way up the floor.
+				placeBall(
+					from.x + (to.x - from.x) * p,
+					from.y + (to.y - from.y) * p,
+					0.7 * Math.abs(Math.sin(p * Math.PI * 3)),
 				);
 				if (p < 1) {
 					rafRef.current = requestAnimationFrame(step);
@@ -1116,22 +1189,23 @@ const LiveCourt = ({
 					const p = Math.min(1, (now - start) / 640);
 					let bx: number;
 					let by: number;
+					let bh: number;
 					if (p < 0.32) {
-						// Knocked loose: the ball jitters around the victim.
+						// Knocked loose: the ball skitters low around the victim.
 						const q = p / 0.32;
 						bx = from.x + pokeDir * Math.sin(q * Math.PI * 3) * 1.6;
 						by = from.y + Math.cos(q * Math.PI * 2.5) * 1.2;
+						bh = 0.4 * Math.abs(Math.sin(q * Math.PI * 2));
 					} else {
-						// Then darts into the stealer's hands.
+						// Then darts into the stealer's hands on a quick, low skip.
 						const q = (p - 0.32) / 0.68;
 						bx = from.x + (to.x - from.x) * q;
-						by = from.y + (to.y - from.y) * q - Math.sin(Math.PI * q) * 1.2;
+						by = from.y + (to.y - from.y) * q;
+						bh = 1.1 * Math.sin(Math.PI * q);
 					}
-					ball.setAttribute("cx", String(bx));
-					ball.setAttribute("cy", String(by));
-					ball.setAttribute("r", "0.9");
 					// The ball stays LIVE in the stealer's hands (restDribble below).
 					ball.style.opacity = "1";
+					placeBall(bx, by, bh);
 					if (burst) {
 						const bp = Math.min(1, p / 0.42);
 						burst.setAttribute(
@@ -1229,6 +1303,12 @@ const LiveCourt = ({
 		const made = scene.kind === "make";
 		const blocked = scene.kind === "block";
 		const bounce = { x: to.x + rand(-4, 4), y: to.y + rand(-6, 6) };
+		// How high this shot arcs, from how far out it is: a deep jumper is a high,
+		// rainbow arc; a close finish barely leaves the floor. This is the height
+		// the ball climbs off its shadow mid-flight - the thing that makes a shot
+		// look like a shot from above instead of a dot sliding to the rim.
+		const shotDist = Math.hypot(to.x - from.x, to.y - from.y);
+		const arcPeak = Math.min(7.5, Math.max(3, shotDist * 0.34));
 		// A block sends the ball sharply BACKWARD - away from the rim, past the
 		// shooter - not just to the side.
 		const backward = from.x < to.x ? -1 : 1;
@@ -1256,10 +1336,12 @@ const LiveCourt = ({
 
 			if (passMs > 0 && passFrom && rawElapsed <= passMs) {
 				const p = rawElapsed / passMs;
-				ball.setAttribute("cx", String(passFrom.x + (from.x - passFrom.x) * p));
-				ball.setAttribute("cy", String(passFrom.y + (from.y - passFrom.y) * p));
-				// Flat and slightly small - a pass, not a shot arc.
-				ball.setAttribute("r", String(0.72 + 0.18 * Math.sin(Math.PI * p)));
+				// A flat, quick feed - a low arc, not a lob.
+				placeBall(
+					passFrom.x + (from.x - passFrom.x) * p,
+					passFrom.y + (from.y - passFrom.y) * p,
+					1.5 * Math.sin(Math.PI * p),
+				);
 				rafRef.current = requestAnimationFrame(step);
 				return;
 			}
@@ -1269,17 +1351,23 @@ const LiveCourt = ({
 			if (blocked) {
 				const p = Math.min(1, elapsed / FLIGHT_MS);
 				if (p < 0.35) {
+					// The shot rises off the shooter's hand...
 					const q = p / 0.35;
-					ball.setAttribute("cx", String(from.x + (to.x - from.x) * q * 0.3));
-					ball.setAttribute("cy", String(from.y + (to.y - from.y) * q * 0.3));
-					ball.setAttribute("r", String(0.9 + 0.5 * q));
+					placeBall(
+						from.x + (to.x - from.x) * q * 0.3,
+						from.y + (to.y - from.y) * q * 0.3,
+						3 * q,
+					);
 				} else {
+					// ...then it's SPIKED down and away, dropping to the floor as it goes.
 					const q = (p - 0.35) / 0.65;
 					const bx = from.x + (to.x - from.x) * 0.105;
 					const by = from.y + (to.y - from.y) * 0.105;
-					ball.setAttribute("cx", String(bx + (swat.x - bx) * q));
-					ball.setAttribute("cy", String(by + (swat.y - by) * q));
-					ball.setAttribute("r", String(1.4 - 0.6 * q));
+					placeBall(
+						bx + (swat.x - bx) * q,
+						by + (swat.y - by) * q,
+						3 * (1 - q),
+					);
 					ball.style.opacity = String(1 - 0.7 * q);
 				}
 				if (p < 1) {
@@ -1291,31 +1379,39 @@ const LiveCourt = ({
 			}
 
 			if (elapsed <= FLIGHT_MS) {
-				// Straight-line travel; the ball swells mid-flight to fake the arc.
+				// The real arc: the ball climbs off its shadow to a peak mid-flight and
+				// drops toward the rim - a genuine trajectory, seen from above.
 				const p = elapsed / FLIGHT_MS;
-				ball.setAttribute("cx", String(from.x + (to.x - from.x) * p));
-				ball.setAttribute("cy", String(from.y + (to.y - from.y) * p));
-				ball.setAttribute("r", String(0.9 + 0.9 * Math.sin(Math.PI * p)));
+				placeBall(
+					from.x + (to.x - from.x) * p,
+					from.y + (to.y - from.y) * p,
+					arcPeak * Math.sin(Math.PI * p),
+				);
 				rafRef.current = requestAnimationFrame(step);
 				return;
 			}
 
 			const p = Math.min(1, (elapsed - FLIGHT_MS) / OUTCOME_MS);
 			if (made) {
-				// Swish: drop into the rim, ring pulse.
+				// Swish: drop straight through the rim, ring pulse, shadow gone.
 				ball.setAttribute("cx", String(to.x));
 				ball.setAttribute("cy", String(to.y));
 				ball.setAttribute("r", String(Math.max(0.05, 0.9 * (1 - p))));
 				ball.style.opacity = String(1 - p * 0.6);
+				if (ballShadow) {
+					ballShadow.style.opacity = String(0.25 * (1 - p));
+				}
 				if (ring) {
 					ring.setAttribute("r", String(1 + 3.5 * p));
 					ring.style.opacity = String(0.9 * (1 - p));
 				}
 			} else {
-				// Rim out: carom and fade.
-				ball.setAttribute("cx", String(to.x + (bounce.x - to.x) * p));
-				ball.setAttribute("cy", String(to.y + (bounce.y - to.y) * p));
-				ball.setAttribute("r", String(0.9 - 0.4 * p));
+				// Rim out: carom off the iron and fade, a low bounce as it drops.
+				placeBall(
+					to.x + (bounce.x - to.x) * p,
+					to.y + (bounce.y - to.y) * p,
+					1.6 * (1 - p),
+				);
 				ball.style.opacity = String(1 - 0.8 * p);
 			}
 			if (p < 1) {
@@ -1593,7 +1689,9 @@ const LiveCourt = ({
 		);
 	};
 
-	const actorAnim = (actor: CourtActor): "shake" | "swipe" | undefined => {
+	const actorAnim = (
+		actor: CourtActor,
+	): "shake" | "swipe" | "jump" | "dunk" | undefined => {
 		if (!scene) {
 			return undefined;
 		}
@@ -1606,6 +1704,28 @@ const LiveCourt = ({
 		}
 		if (scene.kind === "stl" && actor.role === "victim") {
 			return "shake";
+		}
+		// Shooters and finishers ELEVATE. A make right at the rim reads as a
+		// dunk/finish (explosive rise); anything else is a jump shot. On a block the
+		// blocker goes UP hard to swat while the shooter still rises into it.
+		if (scene.kind === "make" || scene.kind === "miss") {
+			if (actor.role === "main") {
+				const rimX = scene.rimX ?? rimXFor(scene.t);
+				const distToRim = Math.hypot(actor.x - rimX, actor.y - COURT_H / 2);
+				return scene.kind === "make" && distToRim < 6 ? "dunk" : "jump";
+			}
+			return undefined;
+		}
+		if (scene.kind === "block") {
+			return actor.role === "defender"
+				? "dunk"
+				: actor.role === "main"
+					? "jump"
+					: undefined;
+		}
+		// The rebounder goes up to grab the board.
+		if (scene.kind === "reb" && actor.role === "main") {
+			return "jump";
 		}
 		return undefined;
 	};
@@ -2010,6 +2130,20 @@ const LiveCourt = ({
 						);
 					})}
 				</g>
+				{/* The ball's floor shadow. It stays pinned to the ball's GROUND
+				    position while the ball itself is drawn raised above it (see
+				    placeBall) - the gap between the two is what reads as height, so a
+				    shot/pass/lob shows a real arc off the hardwood instead of a flat
+				    dot. Drawn before the ball so the ball paints on top. */}
+				<ellipse
+					ref={ballShadowRef}
+					cx={0}
+					cy={0}
+					rx={0.8}
+					ry={0.4}
+					fill="rgba(0,0,0,0.35)"
+					style={{ opacity: 0, pointerEvents: "none" }}
+				/>
 				<circle
 					ref={ballRef}
 					cx={0}
