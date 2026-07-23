@@ -63,6 +63,23 @@ const stripHtml = (s: string): string =>
 const cap = (s: string): string =>
 	s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 
+// Soften back-to-back sentences that open with the same "The <Team>" subject by
+// turning the second one's subject into "They" - so "The Spurs led wire to wire.
+// The Spurs shot 54.7%." becomes "...The Spurs led wire to wire. They shot
+// 54.7%." The `[a-z]` guard means a two-word nickname ("The Trail Blazers ...")
+// is left alone rather than mangled.
+const dedupeSubjects = (sentences: string[]): string[] => {
+	const out = [...sentences];
+	for (let i = 1; i < out.length; i++) {
+		const prev = /^The (\w+) [a-z]/.exec(out[i - 1]!);
+		const cur = /^The (\w+) [a-z]/.exec(out[i]!);
+		if (prev && cur && prev[1] === cur[1]) {
+			out[i] = out[i]!.replace(/^The \w+ /, "They ");
+		}
+	}
+	return out;
+};
+
 const ORDINALS = [
 	"",
 	"first",
@@ -509,10 +526,9 @@ const postseasonContext = (
 	}
 
 	// The series continues - describe the new state and the stakes met.
-	const gameLabel = `Game ${gameNo} of ${rnd}`;
 	if (wAfter === lBefore) {
 		out.sentences.push(
-			`${cap(w)} evened ${rnd} at ${wAfter}-${wAfter} with the ${gameLabel} win.`,
+			`${cap(w)} evened ${rnd} at ${wAfter}-${wAfter} with a Game ${gameNo} win.`,
 		);
 	} else if (wAfter > lBefore) {
 		out.sentences.push(
@@ -917,7 +933,7 @@ const plusMinusNote = (shape: Shape, star: RecapPlayer): string | undefined => {
 	if (!best || best === star || (best.pm ?? 0) < 18) {
 		return undefined;
 	}
-	return `${best.name} was a game-best +${best.pm} in ${best.min} minutes.`;
+	return `${best.name} was a team-best +${best.pm} in ${best.min} minutes.`;
 };
 
 // The scoreboard's overall character: a shootout or a defensive grind.
@@ -950,7 +966,7 @@ const supportSentence = (
 	const ddw = doubleWord(doubleCategories(second).length);
 	const secondText = ddw
 		? `${second.name} added a ${ddw} with ${statPhrase(second)}`
-		: `${second.name} ${pick(rng, ["added", "chipped in", "backed him with"])} ${statPhrase(
+		: `${second.name} ${pick(rng, ["added", "chipped in", "contributed"])} ${statPhrase(
 				second,
 			)}`;
 
@@ -1183,9 +1199,9 @@ export const getAutoRecap = (game: RecapGame): string => {
 		para2.push(e);
 	}
 
-	const paragraphs = [para1.join(" ")];
+	const paragraphs = [dedupeSubjects(para1).join(" ")];
 	if (para2.length > 0) {
-		paragraphs.push(para2.join(" "));
+		paragraphs.push(dedupeSubjects(para2).join(" "));
 	}
 	return `**${headline}**\n\n${paragraphs.join("\n\n")}`;
 };
@@ -1735,9 +1751,9 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 		}
 	}
 
-	const paragraphs = [para1.join(" ")];
+	const paragraphs = [dedupeSubjects(para1).join(" ")];
 	if (para2.length > 0) {
-		paragraphs.push(para2.join(" "));
+		paragraphs.push(dedupeSubjects(para2).join(" "));
 	}
 	return `**${headline}**\n\n${paragraphs.join("\n\n")}`;
 };

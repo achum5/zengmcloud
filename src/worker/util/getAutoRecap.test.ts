@@ -823,6 +823,65 @@ describe("regressions from real games", () => {
 			playoffs: true,
 			games: [heatGame, spursGame],
 		});
+		// A full Spurs/Grizzlies fixture to eyeball blocks-in-body, no double
+		// "Conference Semifinals", subject dedupe, and suppressed halftime echo.
+		const spursFull = realisticTeam(
+			{
+				tid: 60,
+				region: "San Antonio",
+				name: "Spurs",
+				abbrev: "SAS",
+				pts: 113,
+				ptsQtrs: [30, 25, 29, 29],
+				seed: 2,
+			},
+			player({
+				name: "Shaquille O'Neal",
+				pts: 26,
+				reb: 15,
+				ast: 7,
+				blk: 6,
+				fg: 9,
+				fga: 12,
+			}),
+		);
+		const grizFull = realisticTeam(
+			{
+				tid: 61,
+				region: "Memphis",
+				name: "Grizzlies",
+				abbrev: "MEM",
+				pts: 93,
+				ptsQtrs: [20, 17, 28, 28],
+			},
+			player({ name: "David Robinson", pts: 19, reb: 7, blk: 4 }),
+		);
+		const spursFullGame = game({
+			gid: 8100,
+			teams: [spursFull, grizFull],
+			winnerTid: 60,
+			playoffs: true,
+			series: {
+				round: 2,
+				numRounds: 4,
+				bestOf: 7,
+				homeAbbrev: "SAS",
+				awayAbbrev: "MEM",
+				homeSeed: 2,
+				awaySeed: 6,
+				homeWon: 2,
+				awayWon: 1,
+			},
+		});
+		// Blocks (the headline stat) must reach the body; no doubled round name.
+		const spursRecap = getAutoRecap(spursFullGame);
+		assert.ok(/6 blocks/.test(spursRecap), spursRecap);
+		assert.ok(!/Conference Semifinals win/.test(spursRecap), spursRecap);
+		// Subject dedupe turns a repeated "The Spurs" into "They".
+		assert.ok(
+			!/The Spurs [a-z].*\. The Spurs [a-z]/.test(spursRecap),
+			spursRecap,
+		);
 		const finleyCount = recap.split("Michael Finley").length - 1;
 		assert.ok(finleyCount <= 1, recap);
 		// The two 2-0 series must not read as the identical sentence twice.
