@@ -49,43 +49,27 @@ export const describePlayerSubject = (
 	return `${name}, a ${agePart}${heightPart}basketball ${pos}${weightPart}${jerseyPart}`;
 };
 
-// The headshot preset: a simple StatMuse-style cartoon headshot in the player's
-// current team jersey, on a TRANSPARENT background so it drops straight into the
-// game as a player image. Uses the current team's real name and colors; a free
-// agent gets a plain jersey.
-//
-// Transparency phrasing is deliberate and SHORT. Image models (including
-// ChatGPT's) paint what you describe - a long "PNG with alpha channel, no
-// backdrop, no shadows" paragraph reliably produces a PAINTED checkerboard
-// instead of real alpha, especially on photorealistic prompts. What actually
-// works: a flat sticker/asset framing ("die-cut sticker") plus one plain
-// "transparent background" mention - which the cartoon style reinforces. If a
-// generator still can't do real alpha, fall back to a flat chroma-key green
-// background and strip it (see docs/PLAYER_HEADSHOT_PROMPT.md).
+// The headshot preset: a short, plain cartoon-headshot prompt in the player's
+// current team jersey. Uses the current team's name; a free agent gets a plain
+// basketball jersey.
 export const mediaDayHeadshotMoment = async (
 	p: PlayerWithoutKey,
 	pos: string,
 	season: number,
 ): Promise<ImageMoment> => {
-	let jerseyPart = "a plain basketball jersey";
+	void pos;
+	let team = "basketball";
 	if (typeof p.tid === "number" && p.tid >= 0) {
 		const info = await getTeamInfoBySeason(p.tid, season);
 		if (info) {
-			const colors = (info.colors ?? []).slice(0, 3).join(", ");
-			jerseyPart = `the ${info.region} ${info.name} jersey${
-				colors ? ` (team colors ${colors})` : ""
-			} with authentic team lettering across the chest`;
+			team = `${info.region} ${info.name}`;
 		}
 	}
 
 	return {
 		key: "headshot",
-		label: "Cartoon headshot (transparent background)",
-		prompt: `A simple, StatMuse-style cartoon headshot of ${describePlayerSubject(
-			p,
-			pos,
-			season,
-		)}, chest-up and facing forward, wearing ${jerseyPart}. Clean, flat cartoon style with no text, labels, or watermarks. Render it as a die-cut sticker: the player only, on a transparent background, with no border, no backdrop, and no shadow.`,
+		label: "Cartoon headshot",
+		prompt: `Generate a cartoon headshot of this player in a ${team} jersey on media day`,
 	};
 };
 
