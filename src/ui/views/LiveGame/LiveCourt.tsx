@@ -650,13 +650,6 @@ const FACE_ANIM_CSS = `
 	100% { transform: ${REST} translateY(0) scale(1) rotate(0deg); }
 }`;
 
-// A faint reflection of a body on the polished floor, mirrored below it and
-// strongest at the feet. Uses -webkit-box-reflect, so it's a free mirror of
-// whatever the element already renders (a face, a photo, a chip) on WebKit/Blink
-// - the iOS/Chrome target - and is simply ignored on browsers without it.
-const FLOOR_REFLECT =
-	"below 0px linear-gradient(rgba(0,0,0,0.3), transparent 66%)";
-
 // Glide duration (seconds) for a body moving `dist` feet, CAPPED so it always
 // finishes within the current scene interval `sceneMs`. Without the cap a
 // cross-court possession swing (the whole team running to the other end) took
@@ -807,7 +800,6 @@ const BodyOnCourt = ({
 							fontWeight: 700,
 							lineHeight: 1,
 							textShadow: "0 1px 1px rgba(0,0,0,0.45)",
-							WebkitBoxReflect: FLOOR_REFLECT,
 						}}
 					>
 						{faceData?.jerseyNumber ?? ""}
@@ -942,7 +934,6 @@ const BodyOnCourt = ({
 							border: `2px solid ${color}`,
 							background: "#20242b",
 							boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
-							WebkitBoxReflect: FLOOR_REFLECT,
 						}}
 					>
 						<img
@@ -957,15 +948,11 @@ const BodyOnCourt = ({
 						/>
 					</div>
 				) : faceData?.face ? (
-					// Wrapper carries the floor reflection so it mirrors the face art
-					// only - not the name tag below.
-					<div style={{ WebkitBoxReflect: FLOOR_REFLECT }}>
-						<PlayerPicture
-							face={faceData.face}
-							colors={faceData.colors}
-							jersey={faceData.jersey}
-						/>
-					</div>
+					<PlayerPicture
+						face={faceData.face}
+						colors={faceData.colors}
+						jersey={faceData.jersey}
+					/>
 				) : null}
 				{nameTag}
 			</div>
@@ -998,12 +985,6 @@ const LiveCourt = ({
 	const ballShadowRef = useRef<SVGEllipseElement | null>(null);
 	const ringRef = useRef<SVGCircleElement | null>(null);
 	const burstRef = useRef<SVGGElement | null>(null);
-	// The two nets (left rim, right rim), so a made basket can snap the net at the
-	// scored end.
-	const netRefs = useRef<[SVGGElement | null, SVGGElement | null]>([
-		null,
-		null,
-	]);
 	const rafRef = useRef<number | undefined>(undefined);
 
 	// Measured px size of the court container, so faces can be positioned with a
@@ -1052,7 +1033,6 @@ const LiveCourt = ({
 		const ballShadow = ballShadowRef.current;
 		const ring = ringRef.current;
 		const burst = burstRef.current;
-		const nets = netRefs.current;
 		if (!ball) {
 			return;
 		}
@@ -1062,13 +1042,6 @@ const LiveCourt = ({
 		// Clear any lingering impact burst from a previous scene.
 		if (burst) {
 			burst.style.opacity = "0";
-		}
-		// Reset both nets to rest (a scene may have interrupted a net snap mid-way).
-		for (const idx of [0, 1] as const) {
-			nets[idx]?.setAttribute(
-				"transform",
-				`translate(${rimXFor(idx)} 25) scale(1)`,
-			);
 		}
 
 		const hideBall = () => {
@@ -1537,13 +1510,6 @@ const LiveCourt = ({
 					ring.setAttribute("r", String(1 + 3.5 * p));
 					ring.style.opacity = String(0.9 * (1 - p));
 				}
-				// Snap the net at the scored rim: it billows out as the ball drops
-				// through, then settles.
-				const net = nets[to.x < COURT_W / 2 ? 0 : 1];
-				net?.setAttribute(
-					"transform",
-					`translate(${to.x} 25) scale(${1 + 0.5 * Math.sin(Math.PI * p)})`,
-				);
 			} else {
 				// Rim out: carom off the iron and fade, a low bounce as it drops.
 				placeBall(
@@ -1783,25 +1749,9 @@ const LiveCourt = ({
 				{/* Paint + free-throw circle */}
 				<rect x={0} y={17} width={19} height={16} />
 				<circle cx={19} cy={25} r={6} />
-				{/* Backboard (solid) with the shooter's square, then the rim as an
-				    orange ring - real hoop hardware instead of a line and a dot. */}
-				<rect
-					x={3.6}
-					y={21}
-					width={0.5}
-					height={8}
-					fill={lineColor}
-					stroke="none"
-					opacity={0.95}
-				/>
-				<rect x={4.3} y={23.4} width={1.3} height={3.2} strokeWidth={0.18} />
-				<circle
-					cx={RIM_INSET}
-					cy={25}
-					r={1}
-					stroke="#e8772e"
-					strokeWidth={0.5}
-				/>
+				{/* Backboard + rim */}
+				<line x1={4} y1={22} x2={4} y2={28} strokeWidth={0.4} />
+				<circle cx={RIM_INSET} cy={25} r={0.95} />
 				{/* Restricted area */}
 				<path d={`M ${RIM_INSET} 21 A 4 4 0 0 1 ${RIM_INSET} 29`} />
 				{/* Three-point line: corners + arc */}
@@ -2303,55 +2253,6 @@ const LiveCourt = ({
 					willChange: "transform",
 				}}
 			>
-				{/* The two nets, seen from straight overhead as a funnel of rings +
-				    strands. They rest still and SNAP (scale pulse) when a shot drops
-				    through at that end - see the make branch of the ball animation. */}
-				{([0, 1] as const).map((idx) => {
-					const rx = rimXFor(idx);
-					return (
-						<g
-							key={`net${idx}`}
-							ref={(el) => {
-								netRefs.current[idx] = el;
-							}}
-							transform={`translate(${rx} 25) scale(1)`}
-							style={{ pointerEvents: "none" }}
-						>
-							<circle
-								r={0.95}
-								fill="none"
-								stroke="rgba(255,255,255,0.72)"
-								strokeWidth={0.12}
-							/>
-							<circle
-								r={0.66}
-								fill="none"
-								stroke="rgba(255,255,255,0.55)"
-								strokeWidth={0.1}
-							/>
-							<circle
-								r={0.4}
-								fill="none"
-								stroke="rgba(255,255,255,0.4)"
-								strokeWidth={0.09}
-							/>
-							{Array.from({ length: 8 }, (_, i) => {
-								const a = (i / 8) * 2 * Math.PI;
-								return (
-									<line
-										key={i}
-										x1={Math.cos(a) * 0.95}
-										y1={Math.sin(a) * 0.95}
-										x2={Math.cos(a) * 0.34}
-										y2={Math.sin(a) * 0.34}
-										stroke="rgba(255,255,255,0.4)"
-										strokeWidth={0.06}
-									/>
-								);
-							})}
-						</g>
-					);
-				})}
 				<circle
 					ref={ringRef}
 					cx={0}
