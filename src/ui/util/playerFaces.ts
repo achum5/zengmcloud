@@ -93,6 +93,25 @@ const request = (key: string, pid: number, season: number | undefined) => {
 	}
 };
 
+export const updatePlayerFaceImage = (pid: number, imgURL: string) => {
+	const prefix = `${pid}:`;
+	const keys = new Set([...cache.keys(), ...subscribers.keys()]);
+
+	for (const key of keys) {
+		if (!key.startsWith(prefix)) {
+			continue;
+		}
+
+		const previous = cache.get(key);
+		cache.set(key, {
+			...(previous ?? {}),
+			face: undefined,
+			imgURL,
+		});
+		notify(key);
+	}
+};
+
 // Returns the player's face data once loaded (null = loaded, no face; undefined =
 // still loading or no pid). Re-renders the caller when the data arrives.
 export const usePlayerFace = (
