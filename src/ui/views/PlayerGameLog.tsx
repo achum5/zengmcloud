@@ -11,6 +11,10 @@ import clsx from "clsx";
 import { InjuryIcon } from "../components/InjuryIcon.tsx";
 import { useLocal } from "../util/local.ts";
 import { HighlightsButton } from "../components/HighlightsButton.tsx";
+import {
+	gameLogAveragesRow,
+	useGameLogSelection,
+} from "../util/gameLogAverages.tsx";
 
 type DecisionPlayer = {
 	w: number;
@@ -198,6 +202,11 @@ const PlayerGameLog = ({
 	]);
 	const showRatings = !challengeNoRatings || retired;
 
+	// Highlight game rows to see their per-game averages at the top of the table.
+	// Regular season and playoffs each keep their own selection.
+	const regularSeasonSelection = useGameLogSelection();
+	const playoffsSelection = useGameLogSelection();
+
 	const cols = getCols([
 		"#",
 		"Team",
@@ -288,12 +297,32 @@ const PlayerGameLog = ({
 		};
 	};
 
-	const rowsRegularSeason = gameLog
-		.filter((game) => !game.playoffs)
-		.map(makeRow);
+	const regularSeasonGames = gameLog.filter((game) => !game.playoffs);
+	const rowsRegularSeason = regularSeasonGames.map(makeRow);
 
 	const playoffGames = gameLog.filter((game) => game.playoffs);
 	const rowsPlayoffs = playoffGames.map(makeRow);
+
+	// The averages row (top of the table) covers whichever games are highlighted;
+	// row keys are the index into the corresponding filtered game list. Shown
+	// only at 2+ selected, since one game's "average" is just its own line.
+	const averagesLeadingRows = (
+		selection: ReturnType<typeof useGameLogSelection>,
+		games: typeof gameLog,
+	) => {
+		if (selection.selectedKeys.size < 2) {
+			return undefined;
+		}
+		const selectedGames = [...selection.selectedKeys]
+			.map((key) => games[key as number])
+			.filter((game) => game !== undefined);
+		return gameLogAveragesRow(
+			selectedGames as any,
+			stats,
+			cols.length,
+			selection.clear,
+		);
+	};
 
 	// Add separators to playoff series when there is one more than a single game
 	let striped;
@@ -360,8 +389,16 @@ const PlayerGameLog = ({
 							<DataTable
 								cols={cols}
 								defaultSort={[0, "asc"]}
+								leadingRows={averagesLeadingRows(
+									regularSeasonSelection,
+									regularSeasonGames,
+								)}
 								name="PlayerGameLog"
 								rows={rowsRegularSeason}
+								rowSelect={{
+									selectedKeys: regularSeasonSelection.selectedKeys,
+									onToggle: regularSeasonSelection.onToggle,
+								}}
 								superCols={superCols}
 							/>
 						</>
@@ -372,8 +409,16 @@ const PlayerGameLog = ({
 								className={rowsRegularSeason.length > 0 ? "mt-5" : undefined}
 								cols={cols}
 								defaultSort={[0, "asc"]}
+								leadingRows={averagesLeadingRows(
+									playoffsSelection,
+									playoffGames,
+								)}
 								name="PlayerGameLogPlayoffs"
 								rows={rowsPlayoffs}
+								rowSelect={{
+									selectedKeys: playoffsSelection.selectedKeys,
+									onToggle: playoffsSelection.onToggle,
+								}}
 								striped={striped}
 								superCols={superCols}
 								title={<h2>Playoffs</h2>}

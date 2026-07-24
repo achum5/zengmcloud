@@ -126,6 +126,10 @@ export type Props = {
 	defaultStickyCols?: StickyCols;
 	extraBulkActions?: BulkAction[];
 	footer?: FooterRow | FooterRow[];
+	// Summary row(s) rendered at the TOP of the table body (below the column
+	// headers), column-order aware like `footer`. Used for a selected-rows
+	// averages line that should sit above the data instead of at the bottom.
+	leadingRows?: FooterRow | FooterRow[];
 	hideAllControls?: boolean; // When ReactNode, display as a title above the table
 	hideHeader?: boolean;
 	hideMenuToo?: boolean;
@@ -180,6 +184,7 @@ export const DataTable = ({
 	disableSettingsCache,
 	extraBulkActions,
 	footer,
+	leadingRows,
 	hideAllControls,
 	hideHeader,
 	hideMenuToo,
@@ -510,6 +515,7 @@ export const DataTable = ({
 						superCols={superCols}
 					/>
 				)}
+				<Footer colOrder={colOrderFiltered} footer={leadingRows} tag="tbody" />
 				<tbody>
 					{processedRowsPage.map((row) => {
 						if (sortableRows) {

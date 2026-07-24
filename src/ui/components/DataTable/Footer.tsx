@@ -17,12 +17,17 @@ export type FooterRow = {
 const Footer = ({
 	colOrder,
 	footer,
+	// Render as a bottom <tfoot> (default) or, for leading summary rows, a top
+	// <tbody>. Either way the cells are column-order aware, so a summary row
+	// lines up with the visible/reordered columns exactly like the data rows.
+	tag: Tag = "tfoot",
 }: {
 	colOrder: {
 		colIndex: number;
 		hidden?: boolean;
 	}[];
 	footer?: FooterRow | FooterRow[];
+	tag?: "tfoot" | "tbody";
 }) => {
 	if (!footer) {
 		return null;
@@ -41,7 +46,7 @@ const Footer = ({
 	}
 
 	return (
-		<tfoot>
+		<Tag>
 			{footers.map((footer, i) => (
 				<tr key={i} className={clsx(footer.classNames)}>
 					{colOrder.map(({ colIndex }, j) => {
@@ -72,7 +77,7 @@ const Footer = ({
 					})}
 				</tr>
 			))}
-		</tfoot>
+		</Tag>
 	);
 };
 
