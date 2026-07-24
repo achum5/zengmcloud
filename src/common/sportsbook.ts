@@ -9,8 +9,20 @@ export const SPORTSBOOK_PRESEASON_GRANT = 1_000_000;
 
 // House edge baked into displayed odds, so a market's implied probabilities sum
 // to a bit over 100% like a real book (the "vig"/"juice"). Applied by inflating
-// each outcome's probability before converting to a price.
+// each outcome's probability before converting to a price. This is the base rate
+// for per-game lines.
 export const SPORTSBOOK_VIG = 0.045;
+
+// A heavier hold on FUTURES and AWARD bets. They resolve far in the future and
+// were too easy to grind a profit on, so they carry a bigger house edge than the
+// per-game lines.
+export const SPORTSBOOK_FUTURES_VIG = 0.12;
+
+// The longest price the book will offer on ANY bet: +30000 (300-to-1). Genuine
+// longshots that would otherwise show +49900 are capped here so no single bet
+// pays an absurd multiple. Favorites are NOT capped - a heavy favorite should
+// read like one (e.g. -3000).
+export const SPORTSBOOK_MAX_AMERICAN = 30000;
 
 // Clamp a probability away from 0/1 so odds stay finite. The floor is deep
 // (0.2%) so genuine long shots differentiate (+2000 vs +20000) instead of
@@ -19,18 +31,29 @@ const clampProb = (p: number): number => Math.min(0.99, Math.max(0.002, p));
 
 // Convert a true win probability to American odds, with the house vig applied.
 // Favorites come out negative (e.g. -150), underdogs positive (e.g. +130).
-export const probToAmerican = (probTrue: number): number => {
-	const p = clampProb(probTrue * (1 + SPORTSBOOK_VIG));
+// `opts.vig` overrides the base per-game vig (futures/awards pass a heavier one);
+// `opts.maxAmerican` caps the longest underdog price offered.
+export const probToAmerican = (
+	probTrue: number,
+	opts?: { vig?: number; maxAmerican?: number },
+): number => {
+	const vig = opts?.vig ?? SPORTSBOOK_VIG;
+	const p = clampProb(probTrue * (1 + vig));
 	const pClamped = Math.min(0.99, p);
 	const american =
 		pClamped >= 0.5
 			? -(pClamped / (1 - pClamped)) * 100
 			: ((1 - pClamped) / pClamped) * 100;
 	// Round to the nearest 5 for a clean, book-like look.
-	const rounded = Math.round(american / 5) * 5;
+	let rounded = Math.round(american / 5) * 5;
 	// Keep favorites <= -100 and underdogs >= +100 after rounding.
 	if (rounded > -100 && rounded < 100) {
-		return american <= 0 ? -100 : 100;
+		rounded = american <= 0 ? -100 : 100;
+	}
+	// Cap the longest underdog price (positive odds only; favorites stay as-is).
+	const maxA = opts?.maxAmerican;
+	if (maxA !== undefined && rounded > maxA) {
+		rounded = maxA;
 	}
 	return rounded;
 };
@@ -168,7 +191,9 @@ export const parlayConflict = (
 			"A parlay can't back two different teams to win the same conference.",
 		],
 		[
-			countByKey((m) => (m.type === "div" ? `${m.season}:${m.did}` : undefined)),
+			countByKey((m) =>
+				m.type === "div" ? `${m.season}:${m.did}` : undefined,
+			),
 			"A parlay can't back two different teams to win the same division.",
 		],
 		[

@@ -1,6 +1,10 @@
 import getAwardCandidates from "./getAwardCandidates.ts";
 import { strengthProbs } from "../../../common/sportsbookOdds.ts";
-import { probToAmerican } from "../../../common/sportsbook.ts";
+import {
+	probToAmerican,
+	SPORTSBOOK_FUTURES_VIG,
+	SPORTSBOOK_MAX_AMERICAN,
+} from "../../../common/sportsbook.ts";
 
 // How sharply award odds follow the formula's score gaps. Deliberately shared
 // by the Award Races page and the Sportsbook (via this one function) so the two
@@ -24,7 +28,13 @@ const getAwardRaceOdds = async (season: number) => {
 		);
 		const players = row.players.map((p: any, i: number) => ({
 			...p,
-			odds: probToAmerican(probs[i] ?? 0),
+			// Award bets carry the heavier futures hold and the same +30000 cap as
+			// every other bet. The Award Races page and the Sportsbook both read
+			// this, so they show identical (taxed) prices.
+			odds: probToAmerican(probs[i] ?? 0, {
+				vig: SPORTSBOOK_FUTURES_VIG,
+				maxAmerican: SPORTSBOOK_MAX_AMERICAN,
+			}),
 		}));
 		return { ...row, players };
 	});

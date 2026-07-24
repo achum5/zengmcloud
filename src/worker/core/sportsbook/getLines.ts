@@ -14,11 +14,16 @@ import { getGameSpread } from "../../../common/getGameSpread.ts";
 import { getActualPlayThroughInjuries } from "../game/loadTeams.ts";
 import { PHASE, PLAYER, RATINGS } from "../../../common/constants.ts";
 import { isSport, bySport } from "../../../common/sportFunctions.ts";
-import { probToAmerican } from "../../../common/sportsbook.ts";
+import {
+	probToAmerican,
+	SPORTSBOOK_FUTURES_VIG,
+	SPORTSBOOK_MAX_AMERICAN,
+} from "../../../common/sportsbook.ts";
 import {
 	expectedGameTotal,
 	marginToWinProb,
 	overProb,
+	strengthProbs,
 	tierMembershipProbs,
 	toHalfPointLine,
 } from "../../../common/sportsbookOdds.ts";
@@ -80,7 +85,7 @@ const buildTierBoard = (
 				name: p.name,
 				tid: p.tid,
 				abbrev: p.abbrev,
-				americanOdds: priceOdds(probs[i]![tierIdx]!),
+				americanOdds: priceFuture(probs[i]![tierIdx]!),
 			}))
 			.sort((a, b) => a.americanOdds - b.americanOdds)
 			.slice(0, TEAM_AWARD_BOARD_SIZE),
@@ -102,13 +107,35 @@ const TIER_NOISE_LATE = 0.6; // matches tierMembershipProbs' default noiseFactor
 // Cap how many upcoming games get a line at once, so the board stays readable.
 const MAX_GAME_LINES = 24;
 
-const priceOdds = (prob: number) => probToAmerican(prob);
+// Per-game lines: base vig, capped at +30000 like everything else.
+const priceOdds = (prob: number) =>
+	probToAmerican(prob, { maxAmerican: SPORTSBOOK_MAX_AMERICAN });
+
+// Futures + award bets: the heavier futures hold, same +30000 cap. Used for every
+// non-game market (title/conference/division/win totals, award boards, All-Star).
+const priceFuture = (prob: number) =>
+	probToAmerican(prob, {
+		vig: SPORTSBOOK_FUTURES_VIG,
+		maxAmerican: SPORTSBOOK_MAX_AMERICAN,
+	});
+
+// Power for the preseason overall-rating award projections (MVP/DPOY/ROY). Higher
+// than the in-season AWARD_POWER so the top-rated players are clear, heavy
+// favorites before any games separate the field.
+const PRESEASON_AWARD_POWER = 1.8;
 
 // A player's overall rating, from either an array of season ratings (getPlayers)
 // or a single season's ratings object (playersPlus with a fixed season).
 const ovrOf = (p: any): number => {
 	const r = Array.isArray(p.ratings) ? p.ratings.at(-1) : p.ratings;
 	return typeof r?.ovr === "number" ? r.ovr : 0;
+};
+
+// A single rating (e.g. "diq") off the same ratings object, for the preseason
+// DPOY defensive tilt.
+const ratingVal = (p: any, key: string): number => {
+	const r = Array.isArray(p.ratings) ? p.ratings.at(-1) : p.ratings;
+	return typeof r?.[key] === "number" ? r[key] : 0;
 };
 
 // Before (and early in) a season the award formulas read essentially no stats,
@@ -512,7 +539,7 @@ export const getLines = async () => {
 		abbrev: t.abbrev,
 		region: t.region,
 		name: t.name,
-		americanOdds: priceOdds(prob),
+		americanOdds: priceFuture(prob),
 	});
 
 	const championship = playoffsOver
@@ -575,8 +602,8 @@ export const getLines = async () => {
 						region: t.region,
 						name: t.name,
 						line: wt.line,
-						over: priceOdds(wt.pOver),
-						under: priceOdds(1 - wt.pOver),
+						over: priceFuture(wt.pOver),
+						under: priceFuture(1 - wt.pOver),
 					};
 				})
 				.sort((a, b) => b.line - a.line);
@@ -605,6 +632,58 @@ export const getLines = async () => {
 	let allLeague: ReturnType<typeof buildTierBoard> = [];
 	let allDefensive: ReturnType<typeof buildTierBoard> = [];
 	let allRookie: AwardCandidateRow[] = [];
+
+	// A shared preseason projection pool (basketball): every active + free-agent
+	// player with overall + a defensive rating (and ewa/ws for the All-Star
+	// board). Fetched at most once, lazily, since only the boards that need a
+	// preseason projection touch it.
+	let projectionPool: any[] | undefined;
+	const getProjectionPool = async (): Promise<any[]> => {
+		if (projectionPool === undefined) {
+			const rawPlayers = await idb.cache.players.indexGetAll("playersByTid", [
+				PLAYER.FREE_AGENT,
+				Infinity,
+			]);
+			projectionPool = await idb.getCopies.playersPlus(rawPlayers, {
+				attrs: ["pid", "name", "tid", "abbrev", "injury", "draft"],
+				ratings: ["ovr", "diq"],
+				stats: ["ewa", "ws"],
+				season,
+				mergeStats: "totOnly",
+				showNoStats: true,
+			});
+		}
+		return projectionPool;
+	};
+
+	// Turn an overall-projected field into a single-winner award board: the best
+	// player is a heavy favorite (PRESEASON_AWARD_POWER), priced with the futures
+	// hold + cap. Used only before games separate the field.
+	const projectedAwardBoard = (
+		field: {
+			pid: number;
+			name: string;
+			tid: number;
+			abbrev: string;
+			score: number;
+		}[],
+	): AwardCandidateRow[] => {
+		const top = [...field].sort((a, b) => b.score - a.score).slice(0, 20);
+		if (top.length === 0) {
+			return [];
+		}
+		const probs = strengthProbs(
+			top.map((p) => p.score),
+			PRESEASON_AWARD_POWER,
+		);
+		return top.map((p, i) => ({
+			pid: p.pid,
+			name: p.name,
+			tid: p.tid,
+			abbrev: p.abbrev,
+			americanOdds: priceFuture(probs[i] ?? 0),
+		}));
+	};
 
 	if (!awardsClosed) {
 		// Single-winner award races (MVP, DPOY, ROY, SMOY, MIP) are priced off the
@@ -645,6 +724,76 @@ export const getLines = async () => {
 				.filter((x) => x !== undefined);
 		} catch (error) {
 			console.error("Sportsbook award odds unavailable", error);
+		}
+
+		// Before any games are played the award-race formulas read no stats, so the
+		// races above come back empty ("No candidates"). Offer MVP / DPOY / ROY
+		// anyway, projected from overall rating so the top-rated players are heavy
+		// favorites - the whole point of a preseason board. SMOY and MIP depend on
+		// bench role / year-over-year improvement, which don't exist yet, so they
+		// stay closed until games decide them. Once the race formulas have data
+		// (games played) these fallbacks don't run and the boards match the Award
+		// Races page exactly.
+		if (isSport("basketball")) {
+			const emptyAward = (key: "mvp" | "dpoy" | "roy") =>
+				awards.find((a) => a.award === key)?.candidates.length === 0 ||
+				!awards.some((a) => a.award === key);
+			if (emptyAward("mvp") || emptyAward("dpoy") || emptyAward("roy")) {
+				try {
+					const pool = await getProjectionPool();
+					const healthy = pool.filter(
+						(p: any) => (p.injury?.gamesRemaining ?? 0) === 0,
+					);
+					const ids = (p: any) => ({
+						pid: p.pid,
+						name: p.name,
+						tid: p.tid,
+						abbrev: p.abbrev,
+					});
+					const boards: Record<"mvp" | "dpoy" | "roy", AwardCandidateRow[]> = {
+						mvp: projectedAwardBoard(
+							healthy.map((p: any) => ({ ...ids(p), score: ovrOf(p) })),
+						),
+						// Tilt DPOY toward defensive rating so it isn't an MVP clone.
+						dpoy: projectedAwardBoard(
+							healthy.map((p: any) => ({
+								...ids(p),
+								score: ovrOf(p) + 0.5 * ratingVal(p, "diq"),
+							})),
+						),
+						// Rookies only (drafted the prior offseason - see royFilter).
+						roy: projectedAwardBoard(
+							healthy
+								.filter((p: any) => p.draft?.year === season - 1)
+								.map((p: any) => ({ ...ids(p), score: ovrOf(p) })),
+						),
+					};
+					const names: Record<"mvp" | "dpoy" | "roy", string> = {
+						mvp: "Most Valuable Player",
+						dpoy: "Defensive Player of the Year",
+						roy: "Rookie of the Year",
+					};
+					for (const key of ["mvp", "dpoy", "roy"] as const) {
+						const existing = awards.find((a) => a.award === key);
+						if (existing) {
+							if (existing.candidates.length === 0) {
+								existing.candidates = boards[key];
+							}
+						} else {
+							awards.push({
+								award: key,
+								name: names[key],
+								candidates: boards[key],
+							});
+						}
+					}
+				} catch (error) {
+					console.error(
+						"Sportsbook preseason award projection unavailable",
+						error,
+					);
+				}
+			}
 		}
 
 		// The All-League / All-Defensive / All-Rookie TEAM boards have no Award
@@ -712,31 +861,19 @@ export const getLines = async () => {
 		(await idb.getCopy.allStars({ season }, "noCopyCache")) !== undefined;
 	if (!allStarsDecided && isSport("basketball")) {
 		try {
-			// Matches the real selection pool in worker/core/allStar/create.ts
-			// (includes free agents - a good unsigned player is eligible too).
-			const rawPlayers = await idb.cache.players.indexGetAll("playersByTid", [
-				PLAYER.FREE_AGENT,
-				Infinity,
-			]);
-			const asPlayers = await idb.getCopies.playersPlus(rawPlayers, {
-				attrs: ["pid", "name", "tid", "abbrev", "injury"],
-				ratings: ["ovr"],
-				stats: ["ewa", "ws"],
-				season,
-				mergeStats: "totOnly",
-				showNoStats: true,
-			});
-			// Mirrors worker/core/allStar/create.ts's basketball score formula, so
-			// the odds are priced the way the real selection decides it - blended
-			// with an overall projection early (the ewa/ws formula is ~0 before
-			// games, so without this the board would be flat noise). ewa+ws runs
-			// bigger than the year-end formulas, so a larger overall coefficient
-			// keeps the projection meaningful for the first stretch of games. A
-			// player with a game-ending injury is dropped from the field entirely
-			// (create.ts lists them marked injured, but they don't count toward a
-			// roster spot, and they'd be extreme long shots regardless).
+			// Same pool as the real selection (worker/core/allStar/create.ts) -
+			// includes free agents.
+			const pool = await getProjectionPool();
 			const allStarEarly = 1 - seasonProgress;
-			const healthyField = asPlayers
+			const rosterSize = g.get("allStarNum") * 2;
+
+			// The overall projection, on the same scale as the ewa/ws production it
+			// hands off to: a star projects like a star, and everyone below
+			// replacement level (~45 ovr) projects at 0, so the field spreads out
+			// instead of bunching. Blended with real ewa/ws, which take over as games
+			// are played.
+			const ovrProjection = (p: any) => Math.max(0, ovrOf(p) - 45) * 1.3;
+			const scored = pool
 				.filter((p: any) => (p.injury?.gamesRemaining ?? 0) === 0)
 				.map((p: any) => ({
 					pid: p.pid,
@@ -746,16 +883,22 @@ export const getLines = async () => {
 					awardScore:
 						2.5 * (p.stats?.ewa ?? 0) +
 						(p.stats?.ws ?? 0) +
-						allStarEarly * (ovrOf(p) / 8),
-				}));
-			const rosterSize = g.get("allStarNum") * 2;
+						allStarEarly * ovrProjection(p),
+				}))
+				// Restrict to the genuine contenders (the roster plus a buffer of
+				// bubble players). Feeding the whole ~400-player league to the
+				// tier-membership Monte Carlo inflated the score spread so much that
+				// the noise washed out the separation - leaving stars barely favored
+				// and role players near even. With a contender-sized field, the elite
+				// sit far above the cutoff and price like the locks they are.
+				.sort((a, b) => b.awardScore - a.awardScore)
+				.slice(0, rosterSize + 24);
+
+			// Low noise so the clear top players are heavy favorites (not coin flips)
+			// while the bubble spots stay competitive.
 			allStar =
-				buildTierBoard(
-					healthyField,
-					[rosterSize],
-					seed + 404,
-					tierNoiseFactor,
-				)[0]?.candidates ?? [];
+				buildTierBoard(scored, [rosterSize], seed + 404, 0.4)[0]?.candidates ??
+				[];
 		} catch (error) {
 			console.error("Sportsbook All-Star odds unavailable", error);
 		}

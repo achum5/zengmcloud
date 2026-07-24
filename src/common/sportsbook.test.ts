@@ -48,6 +48,34 @@ describe("probToAmerican", () => {
 		assert.ok(overround > 1, `expected overround > 1, got ${overround}`);
 		assert.ok(overround < 1 + 2 * SPORTSBOOK_VIG + 0.05);
 	});
+
+	test("maxAmerican caps a longshot's price but not a favorite's", () => {
+		// A tiny probability would price near +49900 uncapped.
+		const uncapped = probToAmerican(0.001);
+		assert.ok(uncapped > 30000, `expected a huge longshot, got ${uncapped}`);
+		const capped = probToAmerican(0.001, { maxAmerican: 30000 });
+		assert.strictEqual(capped, 30000);
+		// Favorites (negative) are never touched by the cap.
+		const fav = probToAmerican(0.95, { maxAmerican: 30000 });
+		assert.ok(fav < -100, `favorite should stay negative, got ${fav}`);
+	});
+
+	test("a heavier futures vig shortens the price (harder to profit)", () => {
+		const base = probToAmerican(0.6);
+		const juiced = probToAmerican(0.6, { vig: 0.12 });
+		// Shorter = more negative for a favorite.
+		assert.ok(
+			juiced < base,
+			`futures price ${juiced} should be shorter than base ${base}`,
+		);
+		// And an underdog's payout shrinks too.
+		const baseDog = probToAmerican(0.3);
+		const juicedDog = probToAmerican(0.3, { vig: 0.12 });
+		assert.ok(
+			juicedDog < baseDog,
+			`futures dog ${juicedDog} should pay less than base ${baseDog}`,
+		);
+	});
 });
 
 describe("americanToDecimal", () => {
