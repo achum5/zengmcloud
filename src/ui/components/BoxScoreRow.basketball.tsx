@@ -2,23 +2,28 @@ import clsx from "clsx";
 import type { MouseEvent } from "react";
 import { PlayerNameLabels } from "./PlayerNameLabels.tsx";
 import { helpers } from "../util/helpers.ts";
+import { HighlightsButton } from "./HighlightsButton.tsx";
 
 const BoxScoreRow = ({
 	className,
 	exhibition,
+	gid,
 	lastStarter,
 	liveGameInProgress,
 	onClick,
 	p,
 	season,
+	showHighlights,
 }: {
 	className?: string;
 	exhibition?: boolean;
+	gid?: number;
 	lastStarter?: boolean;
 	liveGameInProgress?: boolean;
 	onClick?: (event: MouseEvent<HTMLTableRowElement>) => void;
 	p: any;
 	season: number;
+	showHighlights?: boolean;
 }) => {
 	const showDNP =
 		p.min === 0 &&
@@ -85,6 +90,13 @@ const BoxScoreRow = ({
 			) : null}
 			<td>{p.pos}</td>
 			{statCols}
+			{showHighlights ? (
+				<td>
+					{gid !== undefined && p.min > 0 ? (
+						<HighlightsButton gid={gid} pid={p.pid} />
+					) : null}
+				</td>
+			) : null}
 		</tr>
 	);
 };

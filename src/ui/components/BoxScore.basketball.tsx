@@ -8,20 +8,24 @@ import type { SortBy } from "./DataTable/index.tsx";
 import updateSortBys from "./DataTable/updateSortBys.ts";
 
 const StatsTable = ({
+	gid,
 	Row,
 	exhibition,
 	forceRowUpdate,
 	liveGameInProgress,
 	numPlayersOnCourt,
 	season,
+	showHighlights,
 	t,
 }: {
+	gid?: number;
 	Row: any;
 	exhibition?: boolean;
 	forceRowUpdate: boolean;
 	liveGameInProgress: boolean;
 	numPlayersOnCourt: number;
 	season: number;
+	showHighlights?: boolean;
 	t: any;
 }) => {
 	const [sortBys, setSortBys] = useState<SortBy[]>([]);
@@ -143,6 +147,7 @@ const StatsTable = ({
 							sortBys={sortBys}
 							sortable={t.players.length > 1}
 						/>
+						{showHighlights ? <th title="Player highlights" /> : null}
 					</tr>
 				</thead>
 				<tbody>
@@ -151,11 +156,13 @@ const StatsTable = ({
 							allStarGame={allStarGame}
 							key={p.pid}
 							exhibition={exhibition}
+							gid={gid}
 							lastStarter={sortBys.length === 0 && i + 1 === numPlayersOnCourt}
 							liveGameInProgress={liveGameInProgress}
 							p={p}
 							forceUpdate={forceRowUpdate}
 							season={season}
+							showHighlights={showHighlights}
 						/>
 					))}
 				</tbody>
@@ -185,6 +192,7 @@ const StatsTable = ({
 						<th>{t.pf}</th>
 						<th />
 						<th />
+						{showHighlights ? <th /> : null}
 					</tr>
 					<tr>
 						<th>Percentages</th>
@@ -205,6 +213,7 @@ const StatsTable = ({
 						<th />
 						<th />
 						<th />
+						{showHighlights ? <th /> : null}
 					</tr>
 				</tfoot>
 			</table>
@@ -259,12 +268,14 @@ const BoxScore = ({
 							)}
 						</h2>
 						<StatsTable
+							gid={boxScore.gid}
 							Row={Row}
 							exhibition={boxScore.exhibition}
 							forceRowUpdate={forceRowUpdate}
 							liveGameInProgress={liveGameInProgress}
 							numPlayersOnCourt={boxScore.numPlayersOnCourt ?? 5}
 							season={boxScore.season}
+							showHighlights={!!boxScore.hasReplay}
 							t={t}
 						/>
 					</div>

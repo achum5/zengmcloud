@@ -6,11 +6,13 @@ import BoxScoreRowFootball from "./BoxScoreRow.football.tsx";
 export const BoxScoreRow = (props: {
 	className?: string;
 	exhibition?: boolean;
+	gid?: number;
 	lastStarter?: boolean;
 	liveGameInProgress?: boolean;
 	onClick?: (event: MouseEvent<HTMLTableRowElement>) => void;
 	p: any;
 	season: number;
+	showHighlights?: boolean;
 	stats?: string[];
 }) => {
 	return bySport({

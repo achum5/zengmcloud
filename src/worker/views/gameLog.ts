@@ -7,6 +7,7 @@ import type {
 	Game,
 } from "../../common/types.ts";
 import { DEFAULT_TEAM_COLORS, PHASE } from "../../common/constants.ts";
+import { isSport } from "../../common/sportFunctions.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
 import { getAutoRecapForGid } from "../util/getDayGamesForRecap.ts";
 
@@ -224,6 +225,26 @@ const boxScore = async (gid: number) => {
 			game2.note = autoNote;
 		}
 	}
+
+	// A saved live-sim replay lets the box score offer per-player highlight
+	// reels (basketball only, matching the player game log page). Cheap
+	// existence check - the actual play-by-play is only loaded when a button is
+	// clicked. Mirrors the worker's hasLiveGameReplay: cache first, then the
+	// persisted league store.
+	let hasReplay = false;
+	if (isSport("basketball") && !game.exhibition) {
+		if (await idb.cache.liveGamePlayByPlay.get(gid)) {
+			hasReplay = true;
+		} else {
+			try {
+				const key = await (idb.league as any).getKey("liveGamePlayByPlay", gid);
+				hasReplay = key !== undefined;
+			} catch {
+				// Store missing / read failed - no replay.
+			}
+		}
+	}
+	(game2 as any).hasReplay = hasReplay;
 
 	// Swap teams order, so home team is at bottom in box score
 	game2.teams.reverse();
