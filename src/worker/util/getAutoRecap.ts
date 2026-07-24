@@ -96,6 +96,12 @@ const ordinal = (n: number): string => ORDINALS[n] ?? `${n}th`;
 const plural = (n: number, word: string): string =>
 	`${n} ${word}${n === 1 ? "" : "s"}`;
 
+// "a 12-point hole" but "an 18-point hole" - the article follows the number's
+// SOUND. For the margins/deficits recaps deal in (single digits through the
+// 60s), the vowel-initial numbers are 8, 11, and 18.
+const aNum = (n: number): string =>
+	n === 8 || n === 11 || n === 18 ? `an ${n}` : `a ${n}`;
+
 // --- Player performance --------------------------------------------------------
 
 // The five double-double-eligible stats; a category counts only at 10+.
@@ -197,16 +203,27 @@ const shootingFlourish = (p: RecapPlayer): string | undefined => {
 	return undefined;
 };
 
-// A verb for how a player scored, scaled to how big the night was and varied by
-// seed so the same word doesn't lead every recap.
-const scoredVerb = (p: RecapPlayer, rng: () => number): string => {
+// The verb that carries the LEAD sentence, scaled to how big the star's night
+// was. Never a weak "added"/"chipped in" - those are for the supporting cast,
+// and they undersold the game's best player ("Pau Gasol added 22" as a lead).
+// "scored" only when the line is points-only ("scored 25 points and 6 assists"
+// is not English).
+const leadVerb = (
+	p: RecapPlayer,
+	hasExtras: boolean,
+	rng: () => number,
+): string => {
 	let pool: string[];
 	if (p.pts >= 35) {
 		pool = ["poured in", "erupted for", "exploded for", "piled up"];
 	} else if (p.pts >= 25) {
-		pool = ["scored", "posted", "put up", "finished with", "racked up"];
+		pool = hasExtras
+			? ["posted", "put up", "finished with", "racked up"]
+			: ["scored", "posted", "put up", "racked up"];
 	} else {
-		pool = ["finished with", "chipped in", "contributed", "added"];
+		pool = hasExtras
+			? ["posted", "put up", "finished with", "had"]
+			: ["scored", "finished with", "put up", "had"];
 	}
 	return pick(rng, pool);
 };
@@ -382,10 +399,20 @@ const isUpset = (game: RecapGame, shape: Shape): boolean => {
 };
 
 // A game-winning (or game-tying) shot from the clutch-play log, parsed into the
-// player and shot type so it can lead a headline.
+// player, shot type, and timing so it can lead a headline and get its own beat
+// in the body. `shot` is display-ready: the log's generic "basket" becomes
+// "buzzer-beater" / "game-winner", a real shot type ("three-pointer") is kept.
 const clutchShot = (
 	game: RecapGame,
-): { name: string; shot: string; tying: boolean } | undefined => {
+):
+	| {
+			name: string;
+			shot: string;
+			tying: boolean;
+			buzzer: boolean;
+			seconds?: number;
+	  }
+	| undefined => {
 	for (const raw of game.clutchPlays) {
 		const text = stripHtml(raw);
 		const m =
@@ -393,14 +420,48 @@ const clutchShot = (
 				text,
 			);
 		if (m) {
+			const buzzer = /at the buzzer|with no time on the clock/.test(text);
+			const secondsMatch = /with ([\d.:]+) seconds remaining/.exec(text);
+			const seconds = secondsMatch
+				? Number.parseFloat(secondsMatch[1]!.replace(":", "."))
+				: undefined;
+			const rawShot = m[3]!.trim();
+			const tying = m[2] === "game-tying";
+			const shot =
+				rawShot === "basket"
+					? buzzer && !tying
+						? "buzzer-beater"
+						: tying
+							? "game-tying basket"
+							: "game-winner"
+					: rawShot;
 			return {
 				name: m[1]!.trim(),
-				shot: m[3]!.trim(),
-				tying: m[2] === "game-tying",
+				shot,
+				tying,
+				buzzer,
+				seconds: Number.isFinite(seconds) ? seconds : undefined,
 			};
 		}
 	}
 	return undefined;
+};
+
+// The clutch shot's own beat in the body: who won it, with what, and when.
+const clutchSentence = (
+	shot: NonNullable<ReturnType<typeof clutchShot>>,
+): string => {
+	const timing = shot.buzzer
+		? " at the buzzer"
+		: shot.seconds !== undefined
+			? ` with ${shot.seconds} seconds left`
+			: "";
+	// Don't say "won it with a buzzer-beater at the buzzer".
+	const what =
+		shot.shot === "buzzer-beater"
+			? "a buzzer-beater"
+			: `a ${shot.shot}${timing}`;
+	return `${shot.name} won it with ${what}.`;
 };
 
 const scoreTag = (shape: Shape): string => {
@@ -642,8 +703,8 @@ const buildHeadline = (
 
 	if (shot && !shot.tying) {
 		return pick(rng, [
-			`${shot.name}'s ${shot.shot} sinks the ${loserN}${tag}`,
-			`${shot.name}'s ${shot.shot} lifts the ${winnerN} past the ${loserN}${tag}`,
+			`${poss(shot.name)} ${shot.shot} sinks the ${loserN}${tag}`,
+			`${poss(shot.name)} ${shot.shot} lifts the ${winnerN} past the ${loserN}${tag}`,
 			`${shot.name} beats the ${loserN} with a ${shot.shot}${tag}`,
 		]);
 	}
@@ -665,7 +726,7 @@ const buildHeadline = (
 
 	if (shape.comebackFrom >= 12) {
 		return pick(rng, [
-			`${winnerN} erase a ${shape.comebackFrom}-point hole to ${verb} the ${loserN}${tag}`,
+			`${winnerN} erase ${aNum(shape.comebackFrom)}-point hole to ${verb} the ${loserN}${tag}`,
 			`${star.name} rallies the ${winnerN} past the ${loserN}${tag}`,
 		]);
 	}
@@ -758,6 +819,7 @@ const leadSentence = (
 	// A triple-double (or bigger) deserves a strong verb even when the point total
 	// is modest - "chipped in 18, 12 and 12" undersells it.
 	const doubles = doubleCategories(star).length;
+	const hasExtras = statText !== plural(star.pts, "point");
 	const actionVerb =
 		doubles >= 3
 			? pick(rng, [
@@ -766,22 +828,50 @@ const leadSentence = (
 					"produced",
 					"stuffed the stat sheet with",
 				])
-			: scoredVerb(star, rng);
+			: leadVerb(star, hasExtras, rng);
 	return `${subject} ${actionVerb} ${statText}${flourishText} as ${theNick(
 		shape.winner,
 	)} ${verb} ${theNick(shape.loser)} ${scoreTag(shape)}.`;
 };
 
+// The winner's second-half scoring edge (winner pts - loser pts after halftime),
+// when the quarter data supports it. Shared by the comeback flow line and the
+// standalone second-half note.
+const secondHalfSplit = (
+	shape: Shape,
+): { w: number; l: number } | undefined => {
+	const { wq, lq, regPeriods } = shape;
+	if (regPeriods < 4 || wq.length < regPeriods || lq.length < regPeriods) {
+		return undefined;
+	}
+	const half = Math.floor(regPeriods / 2);
+	let w = 0;
+	let l = 0;
+	for (let i = half; i < regPeriods; i++) {
+		w += wq[i] ?? 0;
+		l += lq[i] ?? 0;
+	}
+	return { w, l };
+};
+
 // How the game unfolded, from the quarter-by-quarter scoring.
 const flowSentence = (shape: Shape, rng: () => number): string | undefined => {
 	if (shape.comebackFrom >= 12 && shape.comebackPeriod > 0) {
+		// One rich sentence that tells the whole comeback - deficit, when, and the
+		// second-half surge that erased it - instead of two half-sentences spread
+		// across the recap.
+		const half = secondHalfSplit(shape);
+		const surge =
+			half && half.w - half.l >= 8
+				? `, outscoring ${theNick(shape.loser)} ${half.w}-${half.l} after halftime`
+				: "";
 		return pick(rng, [
-			`The ${nick(shape.winner)} had trailed by ${
+			`The ${nick(shape.winner)} trailed by ${
 				shape.comebackFrom
-			} after the ${ordinal(shape.comebackPeriod)} before storming back.`,
-			`It was a ${shape.comebackFrom}-point comeback, with ${theNick(
-				shape.winner,
-			)} down that much after the ${ordinal(shape.comebackPeriod)}.`,
+			} after the ${ordinal(shape.comebackPeriod)} and stormed back${surge}.`,
+			`It was ${aNum(shape.comebackFrom)}-point comeback: down that much after the ${ordinal(
+				shape.comebackPeriod,
+			)}, ${theNick(shape.winner)} charged home${surge}.`,
 		]);
 	}
 	if (shape.wireToWire && shape.margin >= 8) {
@@ -890,6 +980,11 @@ const secondHalfNote = (shape: Shape): string | undefined => {
 	if (shape.wireToWire) {
 		return undefined;
 	}
+	// A double-digit comeback's flow line already carries the second-half surge
+	// (see flowSentence) - a trailing "pulled away after halftime" would repeat it.
+	if (shape.comebackFrom >= 12) {
+		return undefined;
+	}
 	const half = Math.floor(regPeriods / 2);
 	let wFirst = 0;
 	let lFirst = 0;
@@ -943,8 +1038,15 @@ const combinedNote = (shape: Shape): string | undefined => {
 		if (total >= 240) {
 			return `The teams combined for ${total} points in an up-and-down affair.`;
 		}
-		if (total <= 165) {
-			return `Neither offense got going in a ${total}-point defensive grind.`;
+		// "Neither offense got going" must be true of BOTH offenses. A 94-65
+		// blowout where the winner shot 50%+ is a defensive mauling of one team,
+		// not a grind - so the winner must also have scored low and shot poorly.
+		if (
+			total <= 165 &&
+			shape.winner.pts <= 90 &&
+			teamStats(shape.winner).fgp < 47
+		) {
+			return `Neither offense got going in a ${total}-point grind.`;
 		}
 	}
 	return undefined;
@@ -1141,7 +1243,21 @@ export const getAutoRecap = (game: RecapGame): string => {
 	}
 
 	const shape = analyzeShape(game);
-	const star = bestOf(shape.winner.players) ?? bestOf(shape.loser.players);
+	let star = bestOf(shape.winner.players) ?? bestOf(shape.loser.players);
+
+	// The impact score occasionally crowns a low-scoring stat-stuffer (a 9-point,
+	// 4-steal night) whose line reads absurd as the LEAD ("Nene chipped in 9
+	// points... as the Lakers won"). When the pick barely scored, hand the lead to
+	// the winner's best real scoring line instead - the impact pick still shows up
+	// in the supporting-cast sentence.
+	if (star && star.pts < 12 && shape.winner.players.includes(star)) {
+		const alt = supportingCast(shape.winner.players, star).find(
+			(p) => p.pts >= 15 || (p.pts >= 12 && doubleCategories(p).length >= 2),
+		);
+		if (alt) {
+			star = alt;
+		}
+	}
 
 	if (!star) {
 		const verb = pastTense(pick(rng, verbPool(game, shape)));
@@ -1158,14 +1274,21 @@ export const getAutoRecap = (game: RecapGame): string => {
 
 	const headline = buildHeadline(game, shape, star, post, rng);
 
-	// Paragraph 1: the result and how it happened.
+	// Paragraph 1: the result and how it happened. A game-winning shot is the
+	// game's defining moment, so it always gets its own beat right after the lead
+	// - previously the headline could tout a buzzer-beater the body never
+	// mentioned.
 	const para1: string[] = [leadSentence(game, shape, star, rng)];
+	const shot = clutchShot(game);
+	if (shot && !shot.tying) {
+		para1.push(clutchSentence(shot));
+	}
 	const flow = flowSentence(shape, rng);
 	if (flow) {
 		para1.push(flow);
 	}
 	const stat = statNote(shape, rng);
-	if (stat && para1.length < 3) {
+	if (stat && para1.length < 4) {
 		para1.push(stat);
 	}
 
@@ -1295,7 +1418,15 @@ const gameBlurb = (game: RecapGame, rng: () => number): string => {
 		shape.loser,
 	)} ${scoreTag(shape)}`;
 	if (shot && !shot.tying) {
-		return `${base} on ${shot.name}'s ${shot.shot}`;
+		const timing =
+			shot.shot === "buzzer-beater"
+				? ""
+				: shot.buzzer
+					? " at the buzzer"
+					: shot.seconds !== undefined
+						? ` with ${shot.seconds} seconds left`
+						: "";
+		return `${base} on ${poss(shot.name)} ${shot.shot}${timing}`;
 	}
 	if (star) {
 		// Give the marquee star his full line, calling out a triple-double.
@@ -1324,6 +1455,11 @@ const conferencePictureSentence = (
 		if (!leader) {
 			continue;
 		}
+		// "Hawks (1-0) lead the East" is noise, not news - the standings only mean
+		// something once a real sample exists.
+		if (leader.won + leader.lost < 5) {
+			continue;
+		}
 		const who = `${leader.region} ${leader.name} (${leader.won}-${leader.lost})`;
 		if (second && second.gb >= 1) {
 			bits.push(`${who} lead the ${conf.name} by ${gbText(second.gb)}`);
@@ -1337,6 +1473,36 @@ const conferencePictureSentence = (
 		return undefined;
 	}
 	return `In the standings, ${naturalList(bits)}.`;
+};
+
+// The night's injury news, worst first - a real league wrap covers who went
+// down, not just who went off.
+const injuryRoundup = (games: RecapGame[]): string | undefined => {
+	const bits: { text: string; severity: number }[] = [];
+	for (const game of games) {
+		if (game.allStar) {
+			continue;
+		}
+		for (const t of game.teams) {
+			for (const p of t.players) {
+				if (p.injury?.newThisGame && (p.injury.gamesRemaining ?? 0) >= 2) {
+					bits.push({
+						text: `${p.name} (${p.injury.type.toLowerCase()}, out ~${plural(
+							p.injury.gamesRemaining,
+							"game",
+						)})`,
+						severity: p.injury.gamesRemaining,
+					});
+				}
+			}
+		}
+	}
+	if (bits.length === 0) {
+		return undefined;
+	}
+	bits.sort((a, b) => b.severity - a.severity);
+	const top = bits.slice(0, 3).map((b) => b.text);
+	return `On the injury front, ${naturalList(top)} went down.`;
 };
 
 // A team riding a notable win streak into the night.
@@ -1476,7 +1642,7 @@ const dayHeadline = (
 		}
 		const shot = clutchShot(marquee);
 		if (shot && !shot.tying) {
-			return `${shot.name}'s ${shot.shot} decides a playoff thriller`;
+			return `${poss(shot.name)} ${shot.shot} decides a playoff thriller`;
 		}
 		if (mStar) {
 			return pick(rng, [
@@ -1487,13 +1653,28 @@ const dayHeadline = (
 		return `${w} ${pick(rng, verbPool(marquee, mShape))} ${l}`;
 	}
 
-	// A walk-off is the day's story.
+	// --- Regular season: a LEAGUE-scope headline. The marquee moment is framed
+	// against what the whole night looked like (upset count, a monster stat line,
+	// the score), so the headline reads like a league wrap, not one game's.
+	const facts = games
+		.filter((g) => !g.allStar)
+		.map((g) => ({ g, shape: analyzeShape(g) }));
+	const upsets = facts.filter(({ g, shape }) => isUpset(g, shape));
+	const topPts = [...performers].sort((a, b) => b.p.pts - a.p.pts)[0];
+
+	// A walk-off is the day's story - and when favorites fell all over the
+	// league, say both.
 	const shot = clutchShot(marquee);
 	if (shot && !shot.tying) {
+		if (upsets.length >= 2) {
+			return pick(rng, [
+				`${poss(shot.name)} ${shot.shot} caps a night of upsets`,
+				`${shot.name} sinks ${l} at the wire on a night ${upsets.length} favorites fall`,
+			]);
+		}
 		return pick(rng, [
-			`${shot.name} beats the buzzer to sink ${l}`,
-			`${shot.name}'s ${shot.shot} stuns ${l}`,
-			`${shot.name} walks it off against ${l}`,
+			`${poss(shot.name)} ${shot.shot} sinks ${l} ${scoreTag(mShape)}`,
+			`${shot.name} walks off ${l} ${scoreTag(mShape)}`,
 		]);
 	}
 
@@ -1501,7 +1682,7 @@ const dayHeadline = (
 	const fortyClub = performers.filter((perf) => perf.p.pts >= 40);
 	if (fortyClub.length >= 2) {
 		const [a, b] = fortyClub;
-		return `${a!.p.name}'s ${a!.p.pts} and ${b!.p.name}'s ${b!.p.pts} light up the night`;
+		return `${poss(a!.p.name)} ${a!.p.pts} and ${poss(b!.p.name)} ${b!.p.pts} light up the night`;
 	}
 
 	if (mStar && mStar.pts >= 45) {
@@ -1511,36 +1692,48 @@ const dayHeadline = (
 		]);
 	}
 
+	// Favorites fell league-wide: lead with the biggest shock and the count.
+	if (upsets.length >= 3) {
+		const biggest = [...upsets].sort(
+			(a, b) => (b.g.spread?.points ?? 0) - (a.g.spread?.points ?? 0),
+		)[0]!;
+		return `${nick(biggest.shape.winner)} stun ${theNick(
+			biggest.shape.loser,
+		)} on a night ${upsets.length} favorites fall`;
+	}
+
 	if (mStar && doubleCategories(mStar).length >= 3) {
 		return pick(rng, [
 			`${mStar.name} triple-doubles to lead ${tw} past ${l}`,
-			`${mStar.name}'s triple-double carries ${tw} over ${l}`,
+			`${poss(mStar.name)} triple-double carries ${tw} over ${l}`,
 		]);
 	}
 
 	if (isUpset(marquee, mShape)) {
+		const pts = marquee.spread?.points;
 		return pick(rng, [
-			`${w} stun ${l}`,
-			`${w} pull off the upset over ${l}`,
-			`${w} shock ${l}`,
+			pts !== undefined && pts >= 6
+				? `${w} stun ${l} as ${pts}-point underdogs`
+				: `${w} stun ${l} ${scoreTag(mShape)}`,
+			`${w} shock ${l} ${scoreTag(mShape)}`,
 		]);
 	}
 
 	if (mShape.ot > 0) {
 		return pick(rng, [
-			`${w} outlast ${l} in overtime`,
-			`${w} survive ${l} in ${mShape.ot === 1 ? "OT" : `${mShape.ot} OTs`}`,
+			`${w} outlast ${l} ${scoreTag(mShape)}`,
+			`${w} survive ${l} in ${mShape.ot === 1 ? "overtime" : `${mShape.ot} overtimes`}`,
 		]);
 	}
 
 	if (mShape.comebackFrom >= 15) {
-		return `${w} storm back to beat ${l}`;
+		return `${w} storm back from ${mShape.comebackFrom} down to beat ${l}`;
 	}
 
 	if (mShape.margin >= 25) {
 		return pick(rng, [
 			`${w} rout ${l} by ${mShape.margin}`,
-			`${w} blow out ${l}`,
+			`${w} blow out ${l} ${scoreTag(mShape)}`,
 		]);
 	}
 
@@ -1551,9 +1744,13 @@ const dayHeadline = (
 		]);
 	}
 
+	// Nothing dramatic anywhere: lead with the night's biggest individual line.
+	if (topPts && topPts.p.pts >= 32) {
+		return `${topPts.p.name} pours in ${topPts.p.pts} to headline the night`;
+	}
 	if (mStar) {
 		return pick(rng, [
-			`${mStar.name}'s ${starHeadline(mStar)} leads ${tw} past ${l}`,
+			`${poss(mStar.name)} ${starHeadline(mStar)} leads ${tw} past ${l}`,
 			`${w} ${pick(rng, verbPool(marquee, mShape))} ${l} behind ${mStar.name}`,
 		]);
 	}
@@ -1631,18 +1828,16 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 
 	// The day's leading scorer, when it isn't the marquee star already described.
 	if (topScorer && topScorer.p.pts >= 30 && !named.has(topScorer.p)) {
+		const flourish = shootingFlourish(topScorer.p);
+		const line = `${statPhrase(topScorer.p)}${flourish ? ` ${flourish}` : ""}`;
 		para1.push(
 			topScorer.won
-				? `${topScorer.p.name} led all scorers with ${statPhrase(
-						topScorer.p,
-					)} in ${poss(theNick(topScorer.team))} win over ${theNick(
-						topScorer.opp,
-					)}.`
-				: `${topScorer.p.name} led all scorers with ${statPhrase(
-						topScorer.p,
-					)} despite ${poss(theNick(topScorer.team))} loss to ${theNick(
-						topScorer.opp,
-					)}.`,
+				? `${topScorer.p.name} led all scorers with ${line} in ${poss(
+						theNick(topScorer.team),
+					)} win over ${theNick(topScorer.opp)}.`
+				: `${topScorer.p.name} led all scorers with ${line} despite ${poss(
+						theNick(topScorer.team),
+					)} loss to ${theNick(topScorer.opp)}.`,
 		);
 		named.add(topScorer.p);
 	}
@@ -1683,15 +1878,33 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 		);
 	}
 
-	// Paragraph 2: other notable results, then the league picture.
+	// Paragraph 2: other notable results, then the league picture. Upset verbs
+	// rotate so three upsets don't read "upset... upset... upset", the biggest
+	// shock carries its spread, and a monster comeback gets its own entry.
 	const para2: string[] = [];
 	const others = ranked.slice(1);
 	const notableBlurbs: string[] = [];
+	const upsetVerbs = ["stunned", "upset", "shocked", "toppled"];
+	let upsetIdx = 0;
 	for (const g of others) {
 		const shape = analyzeShape(g);
+		const shot2 = clutchShot(g);
 		if (isUpset(g, shape)) {
+			const verb = upsetVerbs[upsetIdx % upsetVerbs.length]!;
+			const spreadPts = g.spread?.points;
 			notableBlurbs.push(
-				`${theNick(shape.winner)} upset ${theNick(shape.loser)}`,
+				upsetIdx === 0 && spreadPts !== undefined && spreadPts >= 5
+					? `${theNick(shape.winner)} ${verb} ${theNick(
+							shape.loser,
+						)} as ${spreadPts}-point underdogs`
+					: `${theNick(shape.winner)} ${verb} ${theNick(shape.loser)}`,
+			);
+			upsetIdx += 1;
+		} else if (shape.comebackFrom >= 15) {
+			notableBlurbs.push(
+				`${theNick(shape.winner)} erased ${aNum(
+					shape.comebackFrom,
+				)}-point deficit to beat ${theNick(shape.loser)}`,
 			);
 		} else if (shape.ot > 0) {
 			notableBlurbs.push(
@@ -1701,12 +1914,12 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 			notableBlurbs.push(
 				`${theNick(shape.winner)} routed ${theNick(shape.loser)} by ${shape.margin}`,
 			);
-		} else if (clutchShot(g) && !clutchShot(g)!.tying) {
+		} else if (shot2 && !shot2.tying) {
 			notableBlurbs.push(
-				`${clutchShot(g)!.name} beat ${theNick(shape.loser)} at the wire`,
+				`${shot2.name} beat ${theNick(shape.loser)} at the wire`,
 			);
 		}
-		if (notableBlurbs.length >= 3) {
+		if (notableBlurbs.length >= 4) {
 			break;
 		}
 	}
@@ -1717,6 +1930,12 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	const close = closeGamesSentence(games);
 	if (close) {
 		para2.push(close);
+	}
+
+	// The night's injury news - who went down matters to the league picture.
+	const injuries = injuryRoundup(games);
+	if (injuries) {
+		para2.push(injuries);
 	}
 
 	if (playoffs) {

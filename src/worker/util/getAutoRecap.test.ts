@@ -307,6 +307,231 @@ describe("getAutoRecap", () => {
 	});
 });
 
+describe("recap quality (from real Day 1 output)", () => {
+	test("18-point comeback never reads 'a 18-point'", () => {
+		// Cumulative after Q2: winner 40, loser 58 - an 18-point hole.
+		const cavs = realisticTeam(
+			{
+				tid: 30,
+				region: "Cleveland",
+				name: "Cavaliers",
+				abbrev: "CLE",
+				pts: 105,
+				ptsQtrs: [20, 20, 35, 30],
+			},
+			player({ name: "Paul Pierce", pts: 23, blk: 4, fg: 9, fga: 17 }),
+		);
+		const pistons = realisticTeam(
+			{
+				tid: 31,
+				region: "Detroit",
+				name: "Pistons",
+				abbrev: "DET",
+				pts: 103,
+				ptsQtrs: [30, 28, 25, 20],
+			},
+			player({ name: "Jason Richardson", pts: 28, ast: 7 }),
+		);
+		// Sweep several seeds so both headline/flow variants get exercised.
+		for (const gid of [9001, 9002, 9003, 9004, 9005]) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [cavs, pistons], winnerTid: 30 }),
+			);
+			assert.ok(!/\ba 18-point/.test(recap), recap);
+			assert.ok(!/\ba 18 point/.test(recap), recap);
+		}
+	});
+
+	test("the lead sentence never undersells the star with a support verb", () => {
+		const raptors = realisticTeam(
+			{
+				tid: 32,
+				region: "Toronto",
+				name: "Raptors",
+				abbrev: "TOR",
+				pts: 94,
+				ptsQtrs: [24, 24, 23, 23],
+			},
+			player({ name: "Pau Gasol", pts: 22, reb: 9, fg: 9, fga: 16 }),
+		);
+		const warriors = realisticTeam(
+			{
+				tid: 33,
+				region: "Golden State",
+				name: "Warriors",
+				abbrev: "GSW",
+				pts: 65,
+				ptsQtrs: [16, 16, 17, 16],
+			},
+			player({ name: "Jason Richardson", pts: 14 }),
+		);
+		for (const gid of [9010, 9011, 9012, 9013, 9014]) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [raptors, warriors], winnerTid: 32 }),
+			);
+			const body = recap.split("\n\n")[1]!;
+			assert.ok(!/^Pau Gasol (added|chipped in|contributed)/.test(body), body);
+		}
+	});
+
+	test("an efficient 94-65 blowout is never called a defensive grind", () => {
+		const raptors = realisticTeam(
+			{
+				tid: 32,
+				region: "Toronto",
+				name: "Raptors",
+				abbrev: "TOR",
+				pts: 94,
+				ptsQtrs: [24, 24, 23, 23],
+			},
+			// High-efficiency star pushes team fgp well above the grind bar.
+			player({ name: "Pau Gasol", pts: 22, reb: 9, fg: 10, fga: 14 }),
+		);
+		const warriors = realisticTeam(
+			{
+				tid: 33,
+				region: "Golden State",
+				name: "Warriors",
+				abbrev: "GSW",
+				pts: 65,
+				ptsQtrs: [16, 16, 17, 16],
+			},
+			player({ name: "Jason Richardson", pts: 14 }),
+		);
+		for (const gid of [9020, 9021, 9022, 9023, 9024]) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [raptors, warriors], winnerTid: 32 }),
+			);
+			assert.ok(!/Neither offense got going/.test(recap), recap);
+		}
+	});
+
+	test("a game-winner always gets its own beat in the body, with timing", () => {
+		const kings = realisticTeam(
+			{
+				tid: 34,
+				region: "Sacramento",
+				name: "Kings",
+				abbrev: "SAC",
+				pts: 102,
+				ptsQtrs: [20, 25, 27, 30],
+			},
+			player({ name: "Shareef Abdur-Rahim", pts: 22, reb: 13, ast: 8 }),
+		);
+		const grizzlies = realisticTeam(
+			{
+				tid: 35,
+				region: "Memphis",
+				name: "Grizzlies",
+				abbrev: "MEM",
+				pts: 100,
+				ptsQtrs: [32, 25, 23, 20],
+			},
+			player({ name: "Troy Hudson", pts: 20, ast: 6 }),
+		);
+		const g = game({
+			gid: 9030,
+			teams: [kings, grizzlies],
+			winnerTid: 34,
+			clutchPlays: [
+				'<a href="#">Lindsey Hunter</a> made a game-winning basket with 2 seconds remaining.',
+			],
+		});
+		const recap = getAutoRecap(g);
+		// The generic "basket" reads as a real term, and the body describes the
+		// moment even though the lead is about a different player.
+		assert.ok(/game-winner/.test(recap), recap);
+		assert.ok(
+			recap.includes(
+				"Lindsey Hunter won it with a game-winner with 2 seconds left",
+			),
+			recap,
+		);
+	});
+
+	test("a true buzzer-beater is labeled one", () => {
+		const kings = realisticTeam(
+			{
+				tid: 34,
+				region: "Sacramento",
+				name: "Kings",
+				abbrev: "SAC",
+				pts: 102,
+				ptsQtrs: [25, 25, 26, 26],
+			},
+			player({ name: "Mike Bibby", pts: 24, ast: 7 }),
+		);
+		const grizzlies = realisticTeam(
+			{
+				tid: 35,
+				region: "Memphis",
+				name: "Grizzlies",
+				abbrev: "MEM",
+				pts: 100,
+				ptsQtrs: [26, 25, 25, 24],
+			},
+			player({ name: "Troy Hudson", pts: 20 }),
+		);
+		const g = game({
+			gid: 9031,
+			teams: [kings, grizzlies],
+			winnerTid: 34,
+			clutchPlays: [
+				'<a href="#">Mike Bibby</a> made a game-winning basket at the buzzer.',
+			],
+		});
+		const recap = getAutoRecap(g);
+		assert.ok(/buzzer-beater/.test(recap), recap);
+		// Never the redundant "buzzer-beater at the buzzer".
+		assert.ok(!/buzzer-beater at the buzzer/.test(recap), recap);
+	});
+
+	test("a 9-point stat-stuffer never carries the lead over a real scoring line", () => {
+		const lakers = team({
+			tid: 36,
+			region: "Los Angeles",
+			name: "Lakers",
+			abbrev: "LAL",
+			pts: 87,
+			ptsQtrs: [22, 22, 22, 21],
+			players: [
+				// Impact loves this line (steals, boards, low usage)...
+				player({ name: "Nene", pts: 9, reb: 11, stl: 4, fg: 4, fga: 6 }),
+				// ...but the lead should belong to a genuine scoring night.
+				player({
+					name: "Andre Miller",
+					pts: 15,
+					reb: 12,
+					ast: 6,
+					fg: 6,
+					fga: 12,
+				}),
+				player({ name: "Maurice Taylor", pts: 13, reb: 10, fg: 5, fga: 11 }),
+				player({ name: "Role Four", pts: 11, reb: 4, fg: 4, fga: 9 }),
+				player({ name: "Role Five", pts: 8, reb: 5, fg: 3, fga: 7 }),
+			],
+		});
+		const sixers = realisticTeam(
+			{
+				tid: 37,
+				region: "Philadelphia",
+				name: "76ers",
+				abbrev: "PHI",
+				pts: 76,
+				ptsQtrs: [19, 19, 19, 19],
+			},
+			player({ name: "Keith Van Horn", pts: 18, reb: 7 }),
+		);
+		for (const gid of [9040, 9041, 9042]) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [lakers, sixers], winnerTid: 36 }),
+			);
+			const lead = recap.split("\n\n")[1]!.split(". ")[0]!;
+			assert.ok(!lead.startsWith("Nene"), recap);
+		}
+	});
+});
+
 describe("getAutoRecap playoffs", () => {
 	const series = (
 		over: Partial<RecapGame["series"]> = {},
@@ -698,6 +923,133 @@ describe("getAutoDayRecap", () => {
 		});
 		const routHead = routDay.split("\n")[0]!;
 		assert.ok(/rout|blow out/.test(routHead), routHead);
+	});
+
+	test("a buzzer-beater on an upset-filled night gets a league-scope headline", () => {
+		// Marquee: an underdog wins at the buzzer. Two more upsets elsewhere.
+		const games = [
+			mkGame(
+				5001,
+				"Kings",
+				"Grizzlies",
+				102,
+				100,
+				true,
+				player({ name: "Shareef Abdur-Rahim", pts: 22, reb: 13, ast: 8 }),
+				player({ name: "Troy Hudson", pts: 20 }),
+				{
+					spread: { favTid: 5001 * 2 + 1, points: 5.5 },
+					clutchPlays: [
+						'<a href="#">Lindsey Hunter</a> made a game-winning basket at the buzzer.',
+					],
+				},
+			),
+			mkGame(
+				5002,
+				"Nuggets",
+				"Knicks",
+				85,
+				82,
+				true,
+				player({ name: "Rodney White", pts: 22, reb: 9 }),
+				player({ name: "Dion Glover", pts: 22 }),
+				{ spread: { favTid: 5002 * 2 + 1, points: 6 } },
+			),
+			mkGame(
+				5003,
+				"SuperSonics",
+				"Trail Blazers",
+				91,
+				84,
+				true,
+				player({ name: "Glenn Robinson", pts: 24, reb: 10 }),
+				player({ name: "Rasheed Wallace", pts: 21 }),
+				{ spread: { favTid: 5003 * 2 + 1, points: 7 } },
+			),
+		];
+		const recap = getAutoDayRecap({
+			season: 2003,
+			day: 1,
+			playoffs: false,
+			games,
+		});
+		const head = recap.split("\n")[0]!;
+		// The headline is about the league's night, not one game's box score.
+		assert.ok(/night of upsets|favorites fall/.test(head), head);
+		// The upsets roundup varies its verbs and carries the biggest spread.
+		assert.ok(!/upset .* upset/.test(recap), recap);
+	});
+
+	test("meaningless 1-0 standings are left out of the day recap", () => {
+		const games = [
+			mkGame(
+				5010,
+				"Hawks",
+				"Suns",
+				102,
+				86,
+				true,
+				player({ name: "Gary Payton", pts: 23, ast: 14, stl: 5 }),
+				player({ name: "Richard Jefferson", pts: 18 }),
+			),
+		];
+		const recap = getAutoDayRecap({
+			season: 2003,
+			day: 1,
+			playoffs: false,
+			games,
+			standings: {
+				day: 1,
+				confs: [
+					{
+						name: "Eastern Conference",
+						teams: [
+							{
+								rank: 1,
+								abbrev: "ATL",
+								region: "Atlanta",
+								name: "Hawks",
+								won: 1,
+								lost: 0,
+								gb: 0,
+							},
+						],
+					},
+				],
+			},
+		});
+		assert.ok(!/standings|narrow lead|atop the/.test(recap), recap);
+	});
+
+	test("the day recap covers the night's injuries", () => {
+		const hurtStar = player({
+			name: "Vince Carter",
+			pts: 12,
+			injury: { type: "Sprained Ankle", gamesRemaining: 5, newThisGame: true },
+		});
+		const games = [
+			mkGame(
+				5020,
+				"Raptors",
+				"Nets",
+				100,
+				90,
+				true,
+				player({ name: "Morris Peterson", pts: 24, reb: 6 }),
+				hurtStar,
+			),
+		];
+		const recap = getAutoDayRecap({
+			season: 2003,
+			day: 2,
+			playoffs: false,
+			games,
+		});
+		assert.ok(/On the injury front/.test(recap), recap);
+		assert.ok(
+			/Vince Carter \(sprained ankle, out ~5 games\)/.test(recap),
+			recap,
+		);
 	});
 });
 
