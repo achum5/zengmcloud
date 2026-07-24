@@ -97,7 +97,7 @@ const PowerRankings = ({
 		},
 		{
 			title: "",
-			colspan: 5 + (ties ? 1 : 0) + (otl ? 1 : 0),
+			colspan: 6 + (ties ? 1 : 0) + (otl ? 1 : 0),
 		},
 		{
 			title: (
@@ -133,6 +133,7 @@ const PowerRankings = ({
 		...(otl ? ["OTL"] : []),
 		...(ties ? ["T"] : []),
 		"L10",
+		"ATS",
 		`stat:${isSport("basketball") ? "mov" : "diff"}`,
 		"AvgAge",
 		...otherKeys.map((key) => `${otherKeysPrefix}:${key}`),
@@ -183,6 +184,7 @@ const PowerRankings = ({
 				...(otl ? [t.seasonAttrs.otl] : []),
 				...(ties ? [t.seasonAttrs.tied] : []),
 				t.seasonAttrs.lastTen,
+				t.ats,
 				wrappedMovOrDiff(
 					isSport("basketball")
 						? {

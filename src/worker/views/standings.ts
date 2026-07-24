@@ -3,6 +3,10 @@ import { g, helpers } from "../util/index.ts";
 import type { ByConf, UpdateEvents, ViewInput } from "../../common/types.ts";
 import { getTiebreakers, orderTeams } from "../util/orderTeams.ts";
 import { season } from "../core/index.ts";
+import {
+	formatAtsRecord,
+	getTeamAtsRecords,
+} from "../util/getTeamAtsRecords.ts";
 
 export const getMaxPlayoffSeed = async (
 	playoffSeason: number,
@@ -57,6 +61,8 @@ const updateStandings = async (
 		const pointsFormula = g.get("pointsFormula", inputs.season);
 		const usePts = pointsFormula !== "";
 
+		const atsRecords = await getTeamAtsRecords(inputs.season);
+
 		const teams = (
 			await idb.getCopies.teamsPlus(
 				{
@@ -104,6 +110,7 @@ const updateStandings = async (
 			)
 		).map((t) => ({
 			...t,
+			ats: formatAtsRecord(atsRecords.get(t.tid)),
 			gb: {
 				league: 0,
 				conf: 0,

@@ -11,6 +11,10 @@ import {
 	royScore,
 } from "../season/doAwards.basketball.ts";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
+import {
+	getTeamAtsRecords,
+	formatAtsRecord,
+} from "../../util/getTeamAtsRecords.ts";
 import { getActualPlayThroughInjuries } from "../game/loadTeams.ts";
 import { PHASE, PLAYER, RATINGS } from "../../../common/constants.ts";
 import { isSport, bySport } from "../../../common/sportFunctions.ts";
@@ -228,6 +232,9 @@ export const getLines = async () => {
 	const activeTeams = teams.filter((t) => !t.disabled);
 	const teamByTid = new Map(activeTeams.map((t) => [t.tid, t]));
 
+	// Each team's against-the-spread record, shown next to its W-L on every game.
+	const atsRecords = await getTeamAtsRecords(season);
+
 	const ovrByTid = await getTeamOvrs(activeTeams, season);
 
 	// League-average per-game total, for game totals when a team has no data.
@@ -371,6 +378,7 @@ export const getLines = async () => {
 				name: home.name,
 				won: home.seasonAttrs.won,
 				lost: home.seasonAttrs.lost,
+				ats: formatAtsRecord(atsRecords.get(home.tid)),
 			},
 			away: {
 				tid: away.tid,
@@ -379,6 +387,7 @@ export const getLines = async () => {
 				name: away.name,
 				won: away.seasonAttrs.won,
 				lost: away.seasonAttrs.lost,
+				ats: formatAtsRecord(atsRecords.get(away.tid)),
 			},
 			moneyline: {
 				home: priceOdds(pHome),

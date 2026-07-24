@@ -14,6 +14,10 @@ import {
 import hasTies from "../core/season/hasTies.ts";
 import { getActualPlayThroughInjuries } from "../core/game/loadTeams.ts";
 import { isSport } from "../../common/sportFunctions.ts";
+import {
+	formatAtsRecord,
+	getTeamAtsRecords,
+} from "../util/getTeamAtsRecords.ts";
 
 const otherToRanks = (
 	teams: {
@@ -226,6 +230,12 @@ const updatePowerRankings = async (
 			playoffs,
 		);
 
+		const atsRecords = await getTeamAtsRecords(season);
+		const teamsWithAts = teamsWithRankings.map((t) => ({
+			...t,
+			ats: formatAtsRecord(atsRecords.get(t.tid)),
+		}));
+
 		let ties = false;
 		let otl = false;
 		for (const t of teams) {
@@ -245,7 +255,7 @@ const updatePowerRankings = async (
 			divs: g.get("divs", season),
 			playoffs,
 			season,
-			teams: teamsWithRankings,
+			teams: teamsWithAts,
 			ties: hasTies(season) || ties,
 			otl: g.get("otl", season) || otl,
 		};

@@ -171,6 +171,7 @@ const GroupStandingsRow = ({
 			</td>
 			<td>{t.seasonAttrs.streak}</td>
 			<td>{t.seasonAttrs.lastTen}</td>
+			<td>{t.ats}</td>
 			<td>
 				{showTiebreakers && t.tiebreaker ? TIEBREAKERS[t.tiebreaker] : null}
 			</td>
@@ -271,6 +272,7 @@ const GroupStandings = ({
 						})}
 						<th>Streak</th>
 						<th>L10</th>
+						<th title="Against the Spread record">ATS</th>
 						<th style={{ minWidth: 191 }}>Tiebreaker</th>
 					</tr>
 				</thead>

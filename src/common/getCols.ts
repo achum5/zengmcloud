@@ -3232,6 +3232,11 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "lastTen",
 	},
+	ATS: {
+		desc: "Against The Spread record",
+		sortSequence: ["desc", "asc"],
+		sortType: "lastTen",
+	},
 	Last: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",

@@ -162,6 +162,7 @@ const Sportsbook = ({
 													{teamLink(r.t.tid, `${r.t.region} ${r.t.name}`)}
 													<div className="text-body-secondary small">
 														{r.t.won}-{r.t.lost}
+														{r.t.ats ? ` (${r.t.ats} ATS)` : ""}
 													</div>
 												</div>
 											</div>
