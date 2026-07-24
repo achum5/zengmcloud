@@ -438,15 +438,17 @@ describe("recap quality (from real Day 1 output)", () => {
 			],
 		});
 		const recap = getAutoRecap(g);
-		// The generic "basket" reads as a real term, and the body describes the
-		// moment even though the lead is about a different player.
+		// The generic "basket" reads as a real term in the headline, and the body
+		// describes the moment concretely - never the tautological "won it with a
+		// game-winner".
 		assert.ok(/game-winner/.test(recap), recap);
 		assert.ok(
 			recap.includes(
-				"Lindsey Hunter won it with a game-winner with 2 seconds left",
+				"Lindsey Hunter won it with a go-ahead basket with 2 seconds left",
 			),
 			recap,
 		);
+		assert.ok(!recap.includes("won it with a game-winner"), recap);
 	});
 
 	test("a true buzzer-beater is labeled one", () => {
@@ -669,6 +671,70 @@ describe("recap quality (from real Day 1 output)", () => {
 			assert.ok(!/Brad Miller'?s? 13/.test(head), head);
 			// The lead is a team sentence with the top line attached.
 			assert.ok(/^The Clippers /.test(body), body);
+		}
+	});
+
+	test("a losing record is never framed as an improvement", () => {
+		const warriors = realisticTeam(
+			{
+				tid: 50,
+				region: "Golden State",
+				name: "Warriors",
+				abbrev: "GSW",
+				pts: 93,
+				ptsQtrs: [24, 23, 23, 23],
+				record: { won: 2, lost: 8 },
+			},
+			player({ name: "Corliss Williamson", pts: 20, reb: 10 }),
+		);
+		const pacers = realisticTeam(
+			{
+				tid: 51,
+				region: "Indiana",
+				name: "Pacers",
+				abbrev: "IND",
+				pts: 85,
+				ptsQtrs: [22, 21, 21, 21],
+			},
+			player({ name: "Jason Terry", pts: 21, ast: 9 }),
+		);
+		for (const gid of [9100, 9101, 9102, 9103, 9104, 9105, 9106, 9107]) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [warriors, pacers], winnerTid: 50 }),
+			);
+			assert.ok(!/improved to 2-8|moved to 2-8|to 2-8\./.test(recap), recap);
+		}
+	});
+
+	test("a sub-15-point star never headlines a close game", () => {
+		const blazers = realisticTeam(
+			{
+				tid: 52,
+				region: "Portland",
+				name: "Trail Blazers",
+				abbrev: "POR",
+				pts: 97,
+				ptsQtrs: [24, 24, 25, 24],
+			},
+			player({ name: "Chris Webber", pts: 13, reb: 9, blk: 2, fg: 6, fga: 13 }),
+		);
+		const wizards = realisticTeam(
+			{
+				tid: 53,
+				region: "Washington",
+				name: "Wizards",
+				abbrev: "WAS",
+				pts: 94,
+				ptsQtrs: [25, 24, 23, 22],
+			},
+			player({ name: "Dirk Nowitzki", pts: 26, reb: 15, blk: 3 }),
+		);
+		for (const gid of [9110, 9111, 9112]) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [blazers, wizards], winnerTid: 52 }),
+			);
+			const head = recap.split("\n")[0]!;
+			assert.ok(!/Webber'?s? 13/.test(head), head);
 		}
 	});
 
@@ -1278,6 +1344,50 @@ describe("getAutoDayRecap", () => {
 		assert.ok(!/hold a narrow lead/.test(recap), recap);
 		// KG's 23-18-8 in a loss makes the wrap.
 		assert.ok(/Kevin Garnett'?s.*losing effort/.test(recap), recap);
+	});
+
+	test("a big scorer on a losing team is never phrased as a win contribution", () => {
+		const games = [
+			mkGame(
+				5040,
+				"Knicks",
+				"Mavericks",
+				98,
+				97,
+				true,
+				player({ name: "Quentin Richardson", pts: 20, reb: 7 }),
+				player({ name: "Ray Allen", pts: 22 }),
+				{
+					clutchPlays: [
+						'<a href="#">Stephon Marbury</a> made a game-winning basket with 3.6 seconds remaining.',
+					],
+				},
+			),
+			// The only 25+ line outside the marquee game comes in a LOSS.
+			mkGame(
+				5041,
+				"Hawks",
+				"Timberwolves",
+				98,
+				90,
+				true,
+				player({ name: "David Wesley", pts: 16 }),
+				player({ name: "Kenny Satterfield", pts: 31, ast: 7, reb: 10 }),
+			),
+		];
+		const recap = getAutoDayRecap({
+			season: 2003,
+			day: 11,
+			playoffs: false,
+			games,
+		});
+		assert.ok(
+			!/Kenny Satterfield added .* for the Timberwolves/.test(recap),
+			recap,
+		);
+		// The line still makes the wrap, framed honestly ("despite the
+		// Timberwolves' loss" / "in a losing effort").
+		assert.ok(/Kenny Satterfield.*(losing effort|loss)/.test(recap), recap);
 	});
 
 	test("the day recap covers the night's injuries", () => {

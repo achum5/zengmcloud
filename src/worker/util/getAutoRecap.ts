@@ -71,7 +71,14 @@ const cap = (s: string): string =>
 const dedupeSubjects = (sentences: string[]): string[] => {
 	const out = [...sentences];
 	for (let i = 1; i < out.length; i++) {
-		const prev = /^The (\w+) [a-z]/.exec(out[i - 1]!);
+		const prevSentence = out[i - 1]!;
+		// Never pronoun-ize after a sentence that also names the OTHER team (the
+		// two-team injury line "The Hawks were without X; the Timberwolves were
+		// without Y.") - "They" would read as the wrong team.
+		if (prevSentence.includes(";") || prevSentence.includes(" were without ")) {
+			continue;
+		}
+		const prev = /^The (\w+) [a-z]/.exec(prevSentence);
 		const cur = /^The (\w+) [a-z]/.exec(out[i]!);
 		if (prev && cur && prev[1] === cur[1]) {
 			out[i] = out[i]!.replace(/^The \w+ /, "They ");
@@ -471,10 +478,15 @@ const clutchWhat = (
 		: shot.seconds !== undefined
 			? ` with ${shot.seconds} seconds left`
 			: "";
-	// Don't say "won it with a buzzer-beater at the buzzer".
-	return shot.shot === "buzzer-beater"
-		? "a buzzer-beater"
-		: `a ${shot.shot}${timing}`;
+	// Don't say "won it with a buzzer-beater at the buzzer"...
+	if (shot.shot === "buzzer-beater") {
+		return "a buzzer-beater";
+	}
+	// ...and "won it with a game-winner" is a tautology - in this position the
+	// generic label becomes the concrete play.
+	const what =
+		shot.shot === "game-winner" ? "a go-ahead basket" : `a ${shot.shot}`;
+	return `${what}${timing}`;
 };
 
 // The clutch shot's own beat in the body: who won it, with what, and when.
@@ -841,7 +853,10 @@ const buildHeadline = (
 	];
 	// A big margin with a modest star line is a result story, always - a
 	// "Michael Doleac's 17 leads..." headline on a 22-point blowout misses it.
+	// And a sub-15-point "star" never headlines at all ("...behind Chris
+	// Webber's 13" on a 3-point game buried the actual game).
 	const useResult =
+		star.pts < 15 ||
 		(star.pts < 20 && shape.margin >= 15) ||
 		(shape.margin >= 18 && rng() < 0.5);
 	return pick(rng, useResult ? resultTemplates : starTemplates);
@@ -1017,7 +1032,11 @@ const statNote = (shape: Shape, rng: () => number): string | undefined => {
 	}
 	if (w.stl >= 10 && l.tov >= 16) {
 		options.push(
-			`${cap(theNick(shape.winner))} forced ${l.tov} turnovers and turned them into points.`,
+			pick(rng, [
+				`${cap(theNick(shape.winner))} forced ${l.tov} turnovers.`,
+				`${cap(theNick(shape.winner))} turned ${l.tov} ${nick(shape.loser)} turnovers into offense.`,
+				`${cap(theNick(shape.winner))} hounded ${theNick(shape.loser)} into ${l.tov} turnovers.`,
+			]),
 		);
 	}
 	if (w.ast >= 28) {
@@ -1082,8 +1101,9 @@ const secondHalfNote = (shape: Shape): string | undefined => {
 	const halfMargin = wFirst - lFirst;
 	const secondMargin = wSecond - lSecond;
 	// A halftime-deficit comeback (only when the quarter-flow line didn't already
-	// lead with a bigger comeback).
-	if (halfMargin < 0 && shape.margin > 0 && shape.comebackFrom < 12) {
+	// lead with a bigger comeback). Down 1-3 at the break is a coin flip, not a
+	// story - it takes a real deficit to be worth a sentence.
+	if (halfMargin <= -4 && shape.margin > 0 && shape.comebackFrom < 12) {
 		return `Down ${-halfMargin} at the break, ${theNick(
 			shape.winner,
 		)} outscored ${theNick(shape.loser)} ${wSecond}-${lSecond} in the second half.`;
@@ -1242,10 +1262,23 @@ const stakesSentence = (
 		);
 	}
 
+	// The record note earns its sentence only when the record is actually good
+	// ("The Warriors improved to 2-8" is not news), and even then only sometimes
+	// - it was showing up in nearly every recap on a full slate.
 	const rec = shape.winner.record;
-	if (rec && rec.won + rec.lost >= 10 && !game.playoffs) {
+	if (
+		rec &&
+		rec.won + rec.lost >= 10 &&
+		!game.playoffs &&
+		rec.won > rec.lost &&
+		rng() < 0.5
+	) {
 		options.push(
-			`${cap(theNick(shape.winner))} improved to ${rec.won}-${rec.lost}.`,
+			pick(rng, [
+				`${cap(theNick(shape.winner))} improved to ${rec.won}-${rec.lost}.`,
+				`${cap(theNick(shape.winner))} moved to ${rec.won}-${rec.lost}.`,
+				`The win pushed ${theNick(shape.winner)} to ${rec.won}-${rec.lost}.`,
+			]),
 		);
 	}
 
@@ -1948,11 +1981,14 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 		named.add(topScorer.p);
 	}
 
-	// A second standout from a different game entirely.
+	// A second standout from a different game entirely. Winners only - "added 31
+	// points for the Timberwolves" reads as a win contribution, and a big line on
+	// the losing side gets the dedicated "losing effort" sentence below instead.
 	const secondPerf = performers.find(
 		(perf) =>
 			!named.has(perf.p) &&
 			!marqueeTids.has(perf.team.tid) &&
+			perf.won &&
 			(perf.p.pts >= 25 || doubleCategories(perf.p).length >= 3),
 	);
 	if (secondPerf) {
@@ -1978,9 +2014,13 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	);
 	if (tdPerf) {
 		para1.push(
-			`${tdPerf.p.name} put together a triple-double (${statPhrase(
-				tdPerf.p,
-			)}) for ${theNick(tdPerf.team)}.`,
+			tdPerf.won
+				? `${tdPerf.p.name} put together a triple-double (${statPhrase(
+						tdPerf.p,
+					)}) for ${theNick(tdPerf.team)}.`
+				: `${tdPerf.p.name} put together a triple-double (${statPhrase(
+						tdPerf.p,
+					)}) in ${poss(theNick(tdPerf.team))} loss.`,
 		);
 		named.add(tdPerf.p);
 	}
