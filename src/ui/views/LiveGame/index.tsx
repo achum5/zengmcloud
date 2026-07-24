@@ -1012,17 +1012,21 @@ export const LiveGame = (props: View<"liveGame">) => {
 			pushScene({ kind: "foul", t: displayT, actors, text });
 		} else if (type === "jumpBall" && typeof event.pid === "number") {
 			// Opening tip: both jumpers rise at center court. event.pid is the
-			// winner (on displayT); event.pid2 the loser. The winner taps the ball
-			// back behind them - away from the rim they attack.
+			// winner (on displayT); event.pid2 the loser. Each jumper stands on the
+			// side of the line AWAY from the rim his team attacks, so he's squared up
+			// tipping TOWARD his own basket: the home team (right rim) lines up on the
+			// LEFT going right, the away team (left rim) on the RIGHT going left. The
+			// winner taps the ball back behind him, toward his backcourt.
 			const winnerT = displayT;
 			const cx = (rimXFor(0) + rimXFor(1)) / 2;
+			const cy = 25;
 			const attackDir = rimXFor(winnerT) > cx ? 1 : -1;
 			const actors: CourtActor[] = [
 				{
 					pid: event.pid,
 					name: playerNameByPid(event.pid),
-					x: cx + attackDir * 2.5,
-					y: 25,
+					x: cx - attackDir * 2.5,
+					y: cy,
 					role: "main",
 				},
 			];
@@ -1030,18 +1034,52 @@ export const LiveGame = (props: View<"liveGame">) => {
 				actors.push({
 					pid: event.pid2,
 					name: playerNameByPid(event.pid2),
-					x: cx - attackDir * 2.5,
-					y: 25,
+					x: cx + attackDir * 2.5,
+					y: cy,
 					role: "defender",
 				});
+			}
+			// The other eight players ring the center circle with their jersey
+			// numbers showing, the way both teams line up around the tip in real
+			// life. The two teams alternate around the ring (a real jump-ball
+			// formation interleaves opponents around the circle), just outside it.
+			const jumperPids = new Set(actors.map((a) => a.pid));
+			if (Array.isArray(boxScore.current.teams)) {
+				const teams = boxScore.current.teams;
+				const ringR = 9;
+				const ringTeams = ([0, 1] as const).map((t) =>
+					(teams[t]?.players ?? [])
+						.filter((p: any) => p.inGame && !jumperPids.has(p.pid))
+						.slice(0, 4),
+				) as [any[], any[]];
+				const nextIdx = [0, 0];
+				for (let s = 0; s < 8; s++) {
+					const t: 0 | 1 = s % 2 === 0 ? 0 : 1;
+					const p = ringTeams[t][nextIdx[t]!];
+					nextIdx[t]! += 1;
+					if (!p) {
+						continue;
+					}
+					// Eight evenly spaced slots offset by 22.5° so none sits due
+					// east/west where a jumper leans.
+					const ang = ((22.5 + s * 45) * Math.PI) / 180;
+					actors.push({
+						pid: p.pid,
+						name: playerNameByPid(p.pid),
+						x: cx + ringR * Math.cos(ang),
+						y: cy + ringR * Math.sin(ang),
+						role: "onCourt",
+						t,
+					});
+				}
 			}
 			pushScene({
 				kind: "jump",
 				t: winnerT,
 				actors,
 				text,
-				ballFrom: { x: cx, y: 24 },
-				ballTo: { x: cx - attackDir * 16, y: 25 },
+				ballFrom: { x: cx, y: cy - 1 },
+				ballTo: { x: cx - attackDir * 16, y: cy },
 			});
 		} else if (type === "injury" && typeof event.pid === "number") {
 			const spot = synthPlaySpot(displayT);
