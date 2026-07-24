@@ -3,9 +3,10 @@ import { toWorker } from "../util/toWorker.ts";
 import { showNotification } from "../util/showNotification.ts";
 import { updatePlayerFaceImage } from "../util/playerFaces.ts";
 
-// A tiny inline button that replaces a player's image from a pasted URL,
-// without leaving the page. Used next to names on list pages (Player Ratings,
-// Draft Scouting).
+// A tiny inline button that sets a player's image from the URL on the
+// clipboard in ONE click - no prompt, no dialog: copy a URL anywhere, then tap
+// the button on the player's row. Used next to names on list pages (Player
+// Ratings, Draft Scouting).
 export const PlayerImageLinkButton = ({
 	firstName,
 	lastName,
@@ -19,22 +20,38 @@ export const PlayerImageLinkButton = ({
 
 	return (
 		<button
-			aria-label={`Replace image for ${firstName} ${lastName}`}
+			aria-label={`Paste image URL for ${firstName} ${lastName}`}
 			className="btn btn-light-bordered btn-xs flex-shrink-0 ms-1"
 			disabled={saving}
 			onClick={async () => {
-				const imgURL = window.prompt(
-					`Paste a new image URL for ${firstName} ${lastName}:`,
-				);
-				if (imgURL === null) {
+				// The clipboard read is the FIRST thing here (no await before it) -
+				// iOS Safari treats a read after any other await as outside the tap's
+				// user-gesture and rejects it (same pattern as GameRecap's copy/paste).
+				let clipboardText: string;
+				try {
+					clipboardText = await navigator.clipboard.readText();
+				} catch {
+					showNotification({
+						type: "error",
+						text: "Couldn't read the clipboard — copy an image URL first.",
+					});
 					return;
 				}
 
-				const trimmedImgURL = imgURL.trim();
-				if (!trimmedImgURL) {
+				const imgURL = clipboardText.trim();
+				if (!imgURL) {
 					showNotification({
 						type: "error",
-						text: "Enter an image URL.",
+						text: "Clipboard is empty — copy an image URL first.",
+					});
+					return;
+				}
+				// With no confirmation step, guard against pasting whatever text
+				// happened to be on the clipboard as a "URL".
+				if (!/^(https?:\/\/|data:image\/)/i.test(imgURL)) {
+					showNotification({
+						type: "error",
+						text: "The clipboard doesn't contain an image URL.",
 					});
 					return;
 				}
@@ -43,7 +60,7 @@ export const PlayerImageLinkButton = ({
 				try {
 					const savedImgURL = await toWorker("main", "updatePlayerImage", {
 						pid,
-						imgURL: trimmedImgURL,
+						imgURL,
 					});
 					updatePlayerFaceImage(pid, savedImgURL);
 					showNotification({
@@ -60,7 +77,9 @@ export const PlayerImageLinkButton = ({
 				}
 			}}
 			title={
-				saving ? "Saving player image…" : "Replace player image from a URL"
+				saving
+					? "Saving player image…"
+					: "Paste image URL from clipboard as this player's image"
 			}
 			type="button"
 		>
