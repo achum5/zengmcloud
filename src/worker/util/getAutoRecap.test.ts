@@ -1133,6 +1133,131 @@ describe("getAutoDayRecap", () => {
 		assert.ok(recap.length > 200, recap);
 	});
 
+	test("headline carries a deck of MULTIPLE secondary storylines", () => {
+		const deckSlate: RecapGame[] = [
+			// Marquee: a walk-off that's also an upset.
+			mkGame(
+				6001,
+				"Bobcats",
+				"Lakers",
+				101,
+				100,
+				true,
+				player({ name: "Gerald Wallace", pts: 24, reb: 10 }),
+				player({ name: "Kobe Bryant", pts: 38 }),
+				{
+					clutchPlays: [
+						'<a href="#">Gerald Wallace</a> made a game-winning layup with 1 seconds remaining.',
+					],
+					spread: { favTid: 6001 * 2 + 1, points: 9 },
+				},
+			),
+			// A blowout.
+			mkGame(
+				6002,
+				"Spurs",
+				"Grizzlies",
+				120,
+				84,
+				true,
+				player({ name: "Tim Duncan", pts: 22, reb: 13 }),
+				player({ name: "Pau Gasol", pts: 18 }),
+				{ spread: { favTid: 6002 * 2, points: 10 } },
+			),
+			// A 46-point eruption.
+			mkGame(
+				6003,
+				"Wizards",
+				"Hawks",
+				118,
+				110,
+				true,
+				player({ name: "Gilbert Arenas", pts: 46, ast: 8 }),
+				player({ name: "Joe Johnson", pts: 25 }),
+			),
+		];
+		const recap = getAutoDayRecap({
+			season: 2007,
+			day: 5,
+			playoffs: false,
+			games: deckSlate,
+		});
+		const deckLine = recap.split("\n\n")[1] ?? "";
+		// The deck is an italic line with multiple storylines separated by " · ".
+		assert.ok(deckLine.startsWith("*") && deckLine.includes(" · "), recap);
+		// The secondary stories (the rout and the 46-point night) are surfaced.
+		assert.ok(/Spurs|Gilbert Arenas/.test(deckLine), recap);
+	});
+
+	test("an 'Around the league' sweep covers every remaining game", () => {
+		const sweepSlate: RecapGame[] = [
+			// Marquee upset.
+			mkGame(
+				7001,
+				"Nets",
+				"Raptors",
+				99,
+				80,
+				true,
+				player({ name: "Vince Carter", pts: 30, reb: 8 }),
+				player({ name: "Chris Bosh", pts: 20, reb: 10 }),
+				{ spread: { favTid: 7001 * 2 + 1, points: 8 } },
+			),
+			// Four ordinary wins that should still each get a mention.
+			mkGame(
+				7002,
+				"Heat",
+				"Bucks",
+				101,
+				95,
+				true,
+				player({ name: "Dwyane Wade", pts: 28 }),
+				player({ name: "Michael Redd", pts: 26 }),
+			),
+			mkGame(
+				7003,
+				"Suns",
+				"Kings",
+				110,
+				104,
+				true,
+				player({ name: "Steve Nash", pts: 19, ast: 15 }),
+				player({ name: "Mike Bibby", pts: 22 }),
+			),
+			mkGame(
+				7004,
+				"Jazz",
+				"Rockets",
+				97,
+				90,
+				true,
+				player({ name: "Deron Williams", pts: 21, ast: 10 }),
+				player({ name: "Tracy McGrady", pts: 25 }),
+			),
+			mkGame(
+				7005,
+				"Magic",
+				"Pacers",
+				100,
+				93,
+				true,
+				player({ name: "Dwight Howard", pts: 20, reb: 16 }),
+				player({ name: "Danny Granger", pts: 24 }),
+			),
+		];
+		const recap = getAutoDayRecap({
+			season: 2008,
+			day: 6,
+			playoffs: false,
+			games: sweepSlate,
+		});
+		assert.ok(recap.includes("Around the league"), recap);
+		// Every winner is named somewhere in the recap - you can feel caught up.
+		for (const w of ["Nets", "Heat", "Suns", "Jazz", "Magic"]) {
+			assert.ok(recap.includes(w), `${w} missing:\n${recap}`);
+		}
+	});
+
 	test("headline reflects the day's biggest story, not a generic slate", () => {
 		// A day whose marquee is a walk-off buzzer-beater.
 		const buzzerDay = getAutoDayRecap({

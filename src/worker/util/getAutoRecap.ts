@@ -1475,6 +1475,7 @@ type LeaguePerformance = {
 	team: RecapTeam;
 	opp: RecapTeam;
 	won: boolean;
+	game: RecapGame;
 };
 
 const collectPerformances = (games: RecapGame[]): LeaguePerformance[] => {
@@ -1489,7 +1490,7 @@ const collectPerformances = (games: RecapGame[]): LeaguePerformance[] => {
 			[away, home],
 		] as const) {
 			for (const p of team.players) {
-				out.push({ p, team, opp, won: team.tid === game.winnerTid });
+				out.push({ p, team, opp, won: team.tid === game.winnerTid, game });
 			}
 		}
 	}
@@ -1896,6 +1897,233 @@ const dayHeadline = (
 	return `${w} ${pick(rng, verbPool(marquee, mShape))} ${l}`;
 };
 
+// A headline-style storyline for the day's DECK - the secondary headlines that
+// run under the lead. Each is one big, self-contained thing that happened (a
+// monster line, a rout, a hot streak, another upset), so the deck reads like a
+// sports-page kicker covering the whole night rather than restating the marquee.
+type Storyline = {
+	score: number;
+	kind: string;
+	text: string; // headline-cased, no trailing period
+	tids: number[];
+	pid?: RecapPlayer;
+	// The game this storyline IS (for game-result kinds), so the body can skip a
+	// result the deck already headlined. Individual-performance storylines leave
+	// this undefined - their game's result can still show in the roundup.
+	game?: RecapGame;
+};
+
+const collectStorylines = (
+	games: RecapGame[],
+	performers: LeaguePerformance[],
+): Storyline[] => {
+	const out: Storyline[] = [];
+
+	for (const g of games) {
+		if (g.allStar) {
+			continue;
+		}
+		const shape = analyzeShape(g);
+		const w = nick(shape.winner);
+		const l = theNick(shape.loser);
+		const tids = [shape.winner.tid, shape.loser.tid];
+		const shot = clutchShot(g);
+
+		if (shot && !shot.tying) {
+			out.push({
+				score: 130 + notability(g),
+				kind: "walkoff",
+				text: `${poss(shot.name)} ${shot.shot} sinks ${l}`,
+				tids,
+				game: g,
+			});
+		}
+		if (isUpset(g, shape)) {
+			const pts = g.spread?.points ?? 0;
+			out.push({
+				score: 90 + pts * 3 + shape.ot * 10,
+				kind: "upset",
+				text:
+					pts >= 6
+						? `${w} stun ${l} as ${pts}-point underdogs`
+						: `${w} stun ${l}`,
+				tids,
+				game: g,
+			});
+		}
+		if (shape.comebackFrom >= 15) {
+			out.push({
+				score: 80 + shape.comebackFrom,
+				kind: "comeback",
+				text: `${w} rally from ${shape.comebackFrom} down past ${l}`,
+				tids,
+				game: g,
+			});
+		}
+		if (shape.margin >= 25) {
+			out.push({
+				score: 62 + shape.margin,
+				kind: "rout",
+				text: `${w} rout ${l} by ${shape.margin}`,
+				tids,
+				game: g,
+			});
+		}
+		if (shape.ot > 0) {
+			out.push({
+				score: 70 + shape.ot * 15,
+				kind: "ot",
+				text: `${w} outlast ${l} in ${shape.ot === 1 ? "OT" : `${shape.ot}OT`}`,
+				tids,
+				game: g,
+			});
+		}
+		if (shape.margin <= 3 && shape.ot === 0) {
+			out.push({
+				score: 55,
+				kind: "thriller",
+				text: `${w} edge ${l} ${scoreTag(shape)}`,
+				tids,
+				game: g,
+			});
+		}
+		// A team riding a real hot streak.
+		if (
+			shape.winner.streak?.won &&
+			shape.winner.streak.count >= 6 &&
+			!(shape.winner.record && shape.winner.record.lost === 0)
+		) {
+			out.push({
+				score: 66 + shape.winner.streak.count * 2,
+				kind: "streak",
+				text: `${w} make it ${shape.winner.streak.count} straight`,
+				tids,
+				game: g,
+			});
+		}
+		// A team still winless deep into the season - a storyline of its own.
+		if (
+			shape.loser.record &&
+			shape.loser.record.won === 0 &&
+			shape.loser.record.lost >= 8
+		) {
+			out.push({
+				score: 58 + shape.loser.record.lost,
+				kind: "winless",
+				text: `${w} drop ${l} to 0-${shape.loser.record.lost}`,
+				tids,
+				game: g,
+			});
+		}
+	}
+
+	// Individual masterpieces across the league. No `game` set: the deck may
+	// headline the player while the body still reports the game result.
+	for (const perf of performers) {
+		const p = perf.p;
+		const cats = doubleCategories(p).length;
+		if (p.pts >= 40) {
+			out.push({
+				score: 100 + p.pts,
+				kind: "scorer",
+				text: `${p.name} pours in ${p.pts}`,
+				tids: [perf.team.tid],
+				pid: p,
+			});
+		} else if (cats >= 3) {
+			out.push({
+				score: 96,
+				kind: "tripdub",
+				text: `${p.name} triple-doubles`,
+				tids: [perf.team.tid],
+				pid: p,
+			});
+		} else if (p.pts >= 33) {
+			out.push({
+				score: 60 + p.pts,
+				kind: "bigline",
+				text: `${p.name} goes for ${starHeadline(p)}`,
+				tids: [perf.team.tid],
+				pid: p,
+			});
+		}
+	}
+
+	return out.sort((a, b) => b.score - a.score);
+};
+
+// The deck: up to three secondary headlines under the lead, each a DIFFERENT
+// kind of story involving DIFFERENT teams than the marquee (and each other), so
+// the reader sees the night's biggest handful of stories at a glance instead of
+// just the one marquee game. Returns the games it headlined as results, so the
+// body can cover OTHER games instead of restating them verbatim.
+const dayDeck = (
+	storylines: Storyline[],
+	marquee: RecapGame,
+	mStar: RecapPlayer | undefined,
+): { text: string; games: RecapGame[] } | undefined => {
+	const usedTids = new Set<number>([
+		marquee.teams[0].tid,
+		marquee.teams[1].tid,
+	]);
+	const usedKinds = new Set<string>();
+	const picks: string[] = [];
+	const covered: RecapGame[] = [];
+	for (const s of storylines) {
+		if (s.tids.some((tid) => usedTids.has(tid))) {
+			continue; // don't reuse the marquee's teams or a team already in the deck
+		}
+		if (usedKinds.has(s.kind)) {
+			continue; // force variety - no two clauses of the same kind
+		}
+		if (mStar && s.pid === mStar) {
+			continue;
+		}
+		picks.push(s.text);
+		usedKinds.add(s.kind);
+		for (const tid of s.tids) {
+			usedTids.add(tid);
+		}
+		if (s.game) {
+			covered.push(s.game);
+		}
+		if (picks.length >= 3) {
+			break;
+		}
+	}
+	return picks.length > 0
+		? { text: picks.join(" · "), games: covered }
+		: undefined;
+};
+
+// A compact scoreboard-style clause for the "Around the league" sweep, with a
+// verb chosen to fit the margin (a blowout "routs", a nail-biter "edges"). `seq`
+// rotates the verb DETERMINISTICALLY through the bucket, so a long roundup reads
+// "beat ... downed ... got past ..." instead of "beat ... beat ... beat".
+const roundupClause = (shape: Shape, seq: number): string => {
+	const w = theNick(shape.winner);
+	const l = theNick(shape.loser);
+	let pool: string[];
+	if (shape.ot > 0) {
+		pool = ["outlasted", "survived", "edged"];
+	} else if (shape.margin >= 20) {
+		pool = ["routed", "blew out", "ran away from", "rolled past"];
+	} else if (shape.margin <= 4) {
+		pool = ["edged", "held off", "slipped past", "outlasted"];
+	} else {
+		pool = [
+			"beat",
+			"downed",
+			"got past",
+			"took down",
+			"handled",
+			"topped",
+			"knocked off",
+		];
+	}
+	return `${w} ${pool[seq % pool.length]} ${l} ${scoreTag(shape)}`;
+};
+
 // How many of the day's games were decided by 5 or fewer.
 const closeGamesSentence = (games: RecapGame[]): string | undefined => {
 	const nonExhibition = games.filter((g) => !g.allStar);
@@ -1913,11 +2141,14 @@ const closeGamesSentence = (games: RecapGame[]): string | undefined => {
 			ot += 1;
 		}
 	}
-	if (ot >= 2) {
-		return `${ot === nonExhibition.length ? "All" : ot} games went to overtime.`;
-	}
+	// OT games are already surfaced individually (in "Elsewhere" and the roundup's
+	// scores), so only call out an unusually OT-heavy night here; otherwise the
+	// close-game count is the more informative league note.
 	if (close >= 3) {
 		return `${close} of the ${nonExhibition.length} games were decided by five points or fewer.`;
+	}
+	if (ot >= 3) {
+		return `${ot === nonExhibition.length ? "All" : ot} games went to overtime.`;
 	}
 	return undefined;
 };
@@ -1953,6 +2184,24 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 		rng,
 	);
 
+	// The deck: two or three secondary headlines under the lead, so the reader
+	// sees the night's biggest handful of stories at a glance, not just the
+	// marquee. Skipped in the playoffs, where the marquee series IS the story.
+	const deckResult = playoffs
+		? undefined
+		: dayDeck(collectStorylines(games, performers), marquee, mStar);
+	const deck = deckResult?.text;
+
+	// Games already told in full (the marquee, a game the deck already headlined,
+	// a featured performance, a dramatic "Elsewhere" result) so the body doesn't
+	// restate them and the "Around the league" sweep mops up only what's left.
+	const coveredGames = new Set<RecapGame>([marquee]);
+	if (deckResult) {
+		for (const g of deckResult.games) {
+			coveredGames.add(g);
+		}
+	}
+
 	// Paragraph 1: the marquee game and the day's best individual nights. The
 	// marquee star is already covered in the blurb, so the standouts that follow
 	// come from OTHER games and no player is named twice.
@@ -1979,6 +2228,7 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 					)} loss to ${theNick(topScorer.opp)}.`,
 		);
 		named.add(topScorer.p);
+		coveredGames.add(topScorer.game);
 	}
 
 	// A second standout from a different game entirely. Winners only - "added 31
@@ -2003,6 +2253,7 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 					)}.`,
 		);
 		named.add(secondPerf.p);
+		coveredGames.add(secondPerf.game);
 	}
 
 	// A league-wide triple-double gets a nod if it wasn't already the story.
@@ -2023,6 +2274,7 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 					)}) in ${poss(theNick(tdPerf.team))} loss.`,
 		);
 		named.add(tdPerf.p);
+		coveredGames.add(tdPerf.game);
 	}
 
 	// A monster line wasted in a loss is a story of its own (a 23-18-8 night on
@@ -2042,67 +2294,108 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 					lossPerf.p,
 				)} came in a losing effort against ${theNick(lossPerf.opp)}.`,
 			);
+			coveredGames.add(lossPerf.game);
 		}
 	}
 
-	// Paragraph 2: other notable results, then the league picture. Upset verbs
-	// rotate so three upsets don't read "upset... upset... upset", the biggest
-	// shock carries its spread, and a monster comeback gets its own entry.
+	// Paragraph 2: the rest of the night's RESULTS. First the dramatic ones
+	// ("Elsewhere, ..." - upsets, comebacks, walk-offs, blowouts, thrillers) with
+	// rotating verbs so three upsets don't read "upset... upset... upset", then an
+	// "Around the league" sweep of every remaining game with its score, so you can
+	// actually feel caught up on the whole slate instead of just the top stories.
 	const para2: string[] = [];
 	const others = ranked.slice(1);
 	const notableBlurbs: string[] = [];
 	const upsetVerbs = ["stunned", "upset", "shocked", "toppled"];
 	let upsetIdx = 0;
 	for (const g of others) {
+		if (g.allStar || coveredGames.has(g)) {
+			continue;
+		}
 		const shape = analyzeShape(g);
 		const shot2 = clutchShot(g);
+		let blurb: string | undefined;
 		if (isUpset(g, shape)) {
 			const verb = upsetVerbs[upsetIdx % upsetVerbs.length]!;
 			const spreadPts = g.spread?.points;
-			notableBlurbs.push(
+			blurb =
 				upsetIdx === 0 && spreadPts !== undefined && spreadPts >= 5
 					? `${theNick(shape.winner)} ${verb} ${theNick(
 							shape.loser,
 						)} as ${spreadPts}-point underdogs`
-					: `${theNick(shape.winner)} ${verb} ${theNick(shape.loser)}`,
-			);
+					: `${theNick(shape.winner)} ${verb} ${theNick(shape.loser)}`;
 			upsetIdx += 1;
 		} else if (shape.comebackFrom >= 15) {
-			notableBlurbs.push(
-				`${theNick(shape.winner)} erased ${aNum(
-					shape.comebackFrom,
-				)}-point deficit to beat ${theNick(shape.loser)}`,
-			);
-		} else if (shape.ot > 0) {
-			notableBlurbs.push(
-				`${theNick(shape.winner)} outlasted ${theNick(shape.loser)} in overtime`,
-			);
-		} else if (shape.margin >= 25) {
-			notableBlurbs.push(
-				`${theNick(shape.winner)} routed ${theNick(shape.loser)} by ${shape.margin}`,
-			);
+			blurb = `${theNick(shape.winner)} erased ${aNum(
+				shape.comebackFrom,
+			)}-point deficit to beat ${theNick(shape.loser)}`;
 		} else if (shot2 && !shot2.tying) {
-			notableBlurbs.push(
-				`${shot2.name} beat ${theNick(shape.loser)} at the wire`,
-			);
+			blurb = `${shot2.name} beat ${theNick(shape.loser)} at the wire`;
+		} else if (shape.ot > 0) {
+			blurb = `${theNick(shape.winner)} outlasted ${theNick(
+				shape.loser,
+			)} in overtime`;
+		} else if (shape.margin >= 25) {
+			blurb = `${theNick(shape.winner)} routed ${theNick(shape.loser)} by ${
+				shape.margin
+			}`;
+		} else if (shape.margin <= 3) {
+			blurb = `${theNick(shape.winner)} edged ${theNick(shape.loser)} ${scoreTag(
+				shape,
+			)}`;
 		}
-		if (notableBlurbs.length >= 4) {
-			break;
+		if (blurb) {
+			notableBlurbs.push(blurb);
+			coveredGames.add(g);
+			if (notableBlurbs.length >= 5) {
+				break;
+			}
 		}
 	}
 	if (notableBlurbs.length > 0) {
 		para2.push(`Elsewhere, ${naturalList(notableBlurbs)}.`);
 	}
 
+	// Around the league: sweep up every game not already told, with its score, so
+	// nothing on the slate goes unmentioned. Ordered by notability so the more
+	// interesting leftovers lead; capped so a huge slate rolls the tail into "and
+	// N others" rather than an endless run-on.
+	const ROUNDUP_CAP = 8;
+	const roundupClauses: string[] = [];
+	let roundupExtra = 0;
+	for (const g of ranked) {
+		if (g.allStar || coveredGames.has(g)) {
+			continue;
+		}
+		if (roundupClauses.length < ROUNDUP_CAP) {
+			roundupClauses.push(
+				roundupClause(analyzeShape(g), roundupClauses.length),
+			);
+		} else {
+			roundupExtra += 1;
+		}
+	}
+	if (roundupClauses.length > 0) {
+		const items =
+			roundupExtra > 0
+				? [...roundupClauses, plural(roundupExtra, "other")]
+				: roundupClauses;
+		para2.push(`Around the league, ${naturalList(items)}.`);
+	}
+
+	// Paragraph 3: the league picture - close-game count, injury news, and then
+	// either the playoff series state or the streak/standings context.
+	const para3: string[] = [];
+
 	const close = closeGamesSentence(games);
 	if (close) {
-		para2.push(close);
+		para3.push(close);
 	}
 
 	// The night's injury news - who went down matters to the league picture.
 	const injuries = injuryRoundup(games);
 	if (injuries) {
-		para2.push(injuries);
+		para3.push(injuries);
 	}
 
 	if (playoffs) {
@@ -2119,21 +2412,21 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 				seen.add(phrase);
 				seriesBits.push(phrase);
 			}
-			if (seriesBits.length >= 3) {
+			if (seriesBits.length >= 4) {
 				break;
 			}
 		}
 		if (seriesBits.length > 0) {
-			para2.push(`In the playoffs, ${naturalList(seriesBits)}.`);
+			para3.push(`In the playoffs, ${naturalList(seriesBits)}.`);
 		}
 	} else {
 		const streak = teamStreakSentence(games);
 		if (streak) {
-			para2.push(streak);
+			para3.push(streak);
 		}
 		const picture = conferencePictureSentence(standings);
 		if (picture) {
-			para2.push(picture);
+			para3.push(picture);
 		}
 	}
 
@@ -2141,7 +2434,12 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	if (para2.length > 0) {
 		paragraphs.push(dedupeSubjects(para2).join(" "));
 	}
-	return `**${headline}**\n\n${paragraphs.join("\n\n")}`;
+	if (para3.length > 0) {
+		paragraphs.push(dedupeSubjects(para3).join(" "));
+	}
+
+	const head = deck ? `**${headline}**\n\n*${deck}*` : `**${headline}**`;
+	return `${head}\n\n${paragraphs.join("\n\n")}`;
 };
 
 export default getAutoRecap;
