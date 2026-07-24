@@ -851,6 +851,20 @@ const roster = (params: Params) => {
 	return { abbrev, playoffs: validateSeasonType(params.playoffs), season, tid };
 };
 
+const intrasquad = (params: Params) => {
+	const [tid, abbrev] = validateAbbrev(params.abbrev);
+	return { tid, abbrev };
+};
+
+const intrasquadGame = (params: Params, ctxBBGM: any) => {
+	return {
+		liveSim: ctxBBGM.liveSim as
+			| Awaited<ReturnType<typeof boxScoreToLiveSim>>
+			| undefined,
+		abbrev: ctxBBGM.abbrev as string | undefined,
+	};
+};
+
 const schedule = (params: Params) => {
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
 	return { abbrev, tid };
@@ -1151,6 +1165,8 @@ export default {
 	injuries,
 	leaders,
 	leadersProgressive: leadersYears,
+	intrasquad,
+	intrasquadGame,
 	leadersYears,
 	leagueFinances: validateSeasonOnly,
 	leagueStats,

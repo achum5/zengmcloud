@@ -130,6 +130,10 @@ export const MoreLinks = (
 						: ["news", `${abbrev}_${tid}`],
 				name: "News Feed",
 			},
+			{
+				url: ["intrasquad", `${abbrev}_${tid}`],
+				name: "Intrasquad",
+			},
 		];
 
 		if (

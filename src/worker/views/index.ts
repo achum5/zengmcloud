@@ -37,6 +37,8 @@ export { default as editAwards } from "./editAwards.ts";
 export { default as editTeamCourt } from "./editTeamCourt.ts";
 export { default as exhibition } from "./exhibition.ts";
 export { default as exhibitionGame } from "./exhibitionGame.ts";
+export { default as intrasquad } from "./intrasquad.ts";
+export { default as intrasquadGame } from "./intrasquadGame.ts";
 export { default as expansionDraft } from "./expansionDraft.ts";
 export { default as exportLeague } from "./exportLeague.ts";
 export { default as exportPlayers } from "./exportPlayers.ts";

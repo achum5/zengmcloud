@@ -164,6 +164,7 @@ import { TOO_MANY_TEAMS_TOO_SLOW } from "../core/season/getInitialNumGamesConfDi
 import { advancedPlayerSearch } from "./advancedPlayerSearch.ts";
 import { getTradeHistoryDump } from "./tradeHistoryDump.ts";
 import * as exhibitionGame from "./exhibitionGame.ts";
+import { simIntrasquadGame } from "./intrasquad.ts";
 import { getSummary } from "../views/trade.ts";
 import { statTypes } from "../views/playerGraphs.ts";
 import {
@@ -6443,6 +6444,7 @@ export default {
 		reorderDraftDrag,
 		reorderRosterDrag,
 		resetPlayingTime,
+		simIntrasquadGame,
 		retiredJerseyNumberDelete,
 		retiredJerseyNumberUpsert,
 		runBefore,
