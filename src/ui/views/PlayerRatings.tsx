@@ -13,73 +13,7 @@ import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { bySport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
-import { useState } from "react";
-import { toWorker } from "../util/toWorker.ts";
-import { showNotification } from "../util/showNotification.ts";
-import { updatePlayerFaceImage } from "../util/playerFaces.ts";
-
-const PlayerImageLinkButton = ({
-	firstName,
-	lastName,
-	pid,
-}: {
-	firstName: string;
-	lastName: string;
-	pid: number;
-}) => {
-	const [saving, setSaving] = useState(false);
-
-	return (
-		<button
-			aria-label={`Replace image for ${firstName} ${lastName}`}
-			className="btn btn-light-bordered btn-xs flex-shrink-0 ms-1"
-			disabled={saving}
-			onClick={async () => {
-				const imgURL = window.prompt(
-					`Paste a new image URL for ${firstName} ${lastName}:`,
-				);
-				if (imgURL === null) {
-					return;
-				}
-
-				const trimmedImgURL = imgURL.trim();
-				if (!trimmedImgURL) {
-					showNotification({
-						type: "error",
-						text: "Enter an image URL.",
-					});
-					return;
-				}
-
-				setSaving(true);
-				try {
-					const savedImgURL = await toWorker("main", "updatePlayerImage", {
-						pid,
-						imgURL: trimmedImgURL,
-					});
-					updatePlayerFaceImage(pid, savedImgURL);
-					showNotification({
-						type: "success",
-						text: `Image saved for ${firstName} ${lastName}.`,
-					});
-				} catch (error) {
-					showNotification({
-						type: "error",
-						text: error.message,
-					});
-				} finally {
-					setSaving(false);
-				}
-			}}
-			title={
-				saving ? "Saving player image…" : "Replace player image from a URL"
-			}
-			type="button"
-		>
-			<span className="glyphicon glyphicon-link" />
-		</button>
-	);
-};
+import { PlayerImageLinkButton } from "../components/PlayerImageLinkButton.tsx";
 
 const PlayerRatings = ({
 	abbrev,

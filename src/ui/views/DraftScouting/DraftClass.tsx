@@ -9,6 +9,7 @@ import { wrappedPlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
 import type { DataTableRow } from "../../components/DataTable/index.tsx";
 import { downloadFile } from "../../util/downloadFile.ts";
 import { LeagueFileUpload } from "../../components/LeagueFileUpload.tsx";
+import { PlayerImageLinkButton } from "../../components/PlayerImageLinkButton.tsx";
 
 const DraftClass = ({
 	challengeNoRatings,
@@ -31,6 +32,16 @@ const DraftClass = ({
 	const cols = getCols(["#", "Name", "Pos", "Age", "Ovr", "Pot"]);
 
 	const rows: DataTableRow[] = players.map((p) => {
+		const wrappedName = wrappedPlayerNameLabels({
+			pid: p.pid,
+			season,
+			skills: p.skills,
+			defaultWatch: p.watch,
+			firstName: p.firstNameShort,
+			firstNameShort: p.firstNameShort,
+			lastName: p.lastName,
+		});
+
 		return {
 			key: p.pid,
 			metadata: {
@@ -41,15 +52,19 @@ const DraftClass = ({
 			},
 			data: [
 				p.rank,
-				wrappedPlayerNameLabels({
-					pid: p.pid,
-					season,
-					skills: p.skills,
-					defaultWatch: p.watch,
-					firstName: p.firstNameShort,
-					firstNameShort: p.firstNameShort,
-					lastName: p.lastName,
-				}),
+				{
+					...wrappedName,
+					value: (
+						<div className="d-flex align-items-center">
+							<div className="flex-grow-1">{wrappedName.value}</div>
+							<PlayerImageLinkButton
+								firstName={p.firstName}
+								lastName={p.lastName}
+								pid={p.pid}
+							/>
+						</div>
+					),
+				},
 				p.pos,
 				p.age,
 				!challengeNoRatings ? p.ovr : null,
