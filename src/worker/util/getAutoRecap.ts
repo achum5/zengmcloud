@@ -102,6 +102,18 @@ const plural = (n: number, word: string): string =>
 const aNum = (n: number): string =>
 	n === 8 || n === 11 || n === 18 ? `an ${n}` : `a ${n}`;
 
+// "a sprained ankle" but "an Achilles injury".
+const aWord = (s: string): string =>
+	/^[aeiou]/i.test(s) ? `an ${s}` : `a ${s}`;
+
+// Injury types come capitalized ("Sprained Ankle"); prose wants "sprained
+// ankle" - but acronyms keep their caps ("Torn ACL" -> "torn ACL").
+const lowerInjury = (type: string): string =>
+	type
+		.split(" ")
+		.map((w) => (w.length >= 2 && w === w.toUpperCase() ? w : w.toLowerCase()))
+		.join(" ");
+
 // --- Player performance --------------------------------------------------------
 
 // The five double-double-eligible stats; a category counts only at 10+.
@@ -447,8 +459,11 @@ const clutchShot = (
 	return undefined;
 };
 
-// The clutch shot's own beat in the body: who won it, with what, and when.
-const clutchSentence = (
+// "a free throw with 0.5 seconds left" / "a buzzer-beater" - the winning shot
+// described, without the shooter. Shared by the standalone beat and the
+// merged-into-the-lead form (used when the shooter IS the lead star, so the
+// name isn't repeated in back-to-back sentences).
+const clutchWhat = (
 	shot: NonNullable<ReturnType<typeof clutchShot>>,
 ): string => {
 	const timing = shot.buzzer
@@ -457,12 +472,15 @@ const clutchSentence = (
 			? ` with ${shot.seconds} seconds left`
 			: "";
 	// Don't say "won it with a buzzer-beater at the buzzer".
-	const what =
-		shot.shot === "buzzer-beater"
-			? "a buzzer-beater"
-			: `a ${shot.shot}${timing}`;
-	return `${shot.name} won it with ${what}.`;
+	return shot.shot === "buzzer-beater"
+		? "a buzzer-beater"
+		: `a ${shot.shot}${timing}`;
 };
+
+// The clutch shot's own beat in the body: who won it, with what, and when.
+const clutchSentence = (
+	shot: NonNullable<ReturnType<typeof clutchShot>>,
+): string => `${shot.name} won it with ${clutchWhat(shot)}.`;
 
 const scoreTag = (shape: Shape): string => {
 	const ot =
@@ -686,6 +704,11 @@ const starHeadline = (p: RecapPlayer): string => {
 						: p.blk;
 		return `${p.pts} points and ${otherVal} ${other}`;
 	}
+	// A big-scoring double-double reads bigger than the bare number ("28-point
+	// double-double" over "28").
+	if (dd === "double-double") {
+		return `${p.pts}-point double-double`;
+	}
 	return `${p.pts}`;
 };
 
@@ -728,6 +751,30 @@ const buildHeadline = (
 		return pick(rng, [
 			`${winnerN} erase ${aNum(shape.comebackFrom)}-point hole to ${verb} the ${loserN}${tag}`,
 			`${star.name} rallies the ${winnerN} past the ${loserN}${tag}`,
+		]);
+	}
+
+	// A heavy favorite that barely escaped: the scare IS the story, not the
+	// favorite's underwhelming stat line ("Paul Pierce's 16 leads..." on a
+	// -11.5 favorite winning by 3 buried the real angle).
+	if (
+		game.spread &&
+		game.spread.favTid === shape.winner.tid &&
+		game.spread.points >= 8 &&
+		shape.margin <= 5
+	) {
+		return pick(rng, [
+			`${winnerN} survive a scare from the ${loserN}`,
+			`${winnerN} escape the ${loserN} ${scoreTag(shape)}`,
+			`${winnerN} hold off a feisty ${loserN} squad`,
+		]);
+	}
+
+	// A 20-20 game headlines itself - "scores 24" would bury the 22 rebounds.
+	if (star.pts >= 20 && star.reb >= 20) {
+		return pick(rng, [
+			`${star.name} dominates with ${star.pts} points and ${star.reb} rebounds as the ${winnerN} ${verb} the ${loserN}${tag}`,
+			`${poss(star.name)} ${star.pts}-point, ${star.reb}-rebound night carries the ${winnerN} past the ${loserN}${tag}`,
 		]);
 	}
 
@@ -777,11 +824,13 @@ const buildHeadline = (
 	}
 
 	const starTemplates = [
-		`${star.name}'s ${starHeadline(star)} ${
+		`${poss(star.name)} ${starHeadline(star)} ${
 			star.pts >= 25 ? "powers" : "leads"
 		} the ${winnerN} past the ${loserN}${tag}`,
-		`${star.name} scores ${star.pts} as the ${winnerN} ${verb} the ${loserN}${tag}`,
-		`${winnerN} ${verb} the ${loserN} behind ${star.name}'s ${starHeadline(
+		// "goes for" + the full stat phrase, so a 24-and-12 night isn't flattened
+		// into "scores 24".
+		`${star.name} goes for ${statPhrase(star, 1)} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+		`${winnerN} ${verb} the ${loserN} behind ${poss(star.name)} ${starHeadline(
 			star,
 		)}${tag}`,
 		`${star.name} leads the ${winnerN} over the ${loserN}${tag}`,
@@ -790,7 +839,11 @@ const buildHeadline = (
 		`${winnerN} ${verb} the ${loserN}, ${scoreTag(shape)}${tag}`,
 		`${winnerN} ${verb} the ${loserN} ${scoreTag(shape)}${tag}`,
 	];
-	const useResult = shape.margin >= 18 && rng() < 0.5;
+	// A big margin with a modest star line is a result story, always - a
+	// "Michael Doleac's 17 leads..." headline on a 22-point blowout misses it.
+	const useResult =
+		(star.pts < 20 && shape.margin >= 15) ||
+		(shape.margin >= 18 && rng() < 0.5);
 	return pick(rng, useResult ? resultTemplates : starTemplates);
 };
 
@@ -805,6 +858,15 @@ const leadSentence = (
 	rng: () => number,
 ): string => {
 	const verb = pastTense(pick(rng, verbPool(game, shape)));
+
+	// A big blowout with no standout line is a TEAM story - "Brad Miller had 13
+	// points as the Clippers won by 31" makes 13 points sound like the reason.
+	if (star.pts < 15 && shape.margin >= 20) {
+		return `${cap(theNick(shape.winner))} ${verb} ${theNick(
+			shape.loser,
+		)} ${scoreTag(shape)}, led by ${poss(star.name)} ${statPhrase(star)}.`;
+	}
+
 	const flourish = star.pts >= 25 ? shootingFlourish(star) : undefined;
 	const line = enteringLine(star, game.playoffs);
 
@@ -874,18 +936,34 @@ const flowSentence = (shape: Shape, rng: () => number): string | undefined => {
 			)}, ${theNick(shape.winner)} charged home${surge}.`,
 		]);
 	}
-	if (shape.wireToWire && shape.margin >= 8) {
-		return `${cap(theNick(shape.winner))} led wire to wire.`;
-	}
+	// A specific run that broke the game open beats the generic wire-to-wire
+	// note (which was showing up in most recaps on a chalky night).
 	if (
 		shape.bigRun &&
 		shape.bigRun.margin >= 9 &&
 		shape.margin >= 8 &&
-		shape.regPeriods >= 3
+		shape.regPeriods >= 3 &&
+		shape.bigRun.period > 1
 	) {
 		return `A ${shape.bigRun.wpts}-${shape.bigRun.lpts} ${ordinal(
 			shape.bigRun.period,
 		)} quarter broke it open.`;
+	}
+	if (shape.wireToWire && shape.margin >= 10) {
+		// Varied, and carrying the halftime score when the lead was already big.
+		const half = secondHalfSplit(shape);
+		const wFirst = half ? shape.winner.pts - half.w : undefined;
+		const lFirst = half ? shape.loser.pts - half.l : undefined;
+		const options = [
+			`${cap(theNick(shape.winner))} never trailed.`,
+			`${cap(theNick(shape.winner))} led from start to finish.`,
+		];
+		if (wFirst !== undefined && lFirst !== undefined && wFirst - lFirst >= 10) {
+			options.push(
+				`${cap(theNick(shape.winner))} were in control throughout, up ${wFirst}-${lFirst} at the half.`,
+			);
+		}
+		return pick(rng, options);
 	}
 	if (shape.ot > 0) {
 		return `Neither side could pull away in regulation, and it took ${
@@ -930,7 +1008,9 @@ const statNote = (shape: Shape, rng: () => number): string | undefined => {
 			`${cap(theNick(shape.winner))} won the glass ${w.reb}-${l.reb}.`,
 		);
 	}
-	if (w.dblFig >= 5) {
+	// Six-plus is a genuinely balanced night; five is routine and was showing up
+	// in half the recaps on a given day.
+	if (w.dblFig >= 6) {
 		options.push(
 			`${cap(theNick(shape.winner))} had ${w.dblFig} players score in double figures.`,
 		);
@@ -1025,7 +1105,9 @@ const plusMinusNote = (shape: Shape, star: RecapPlayer): string | undefined => {
 			best = p;
 		}
 	}
-	if (!best || best === star || (best.pm ?? 0) < 18) {
+	// +25 is a genuinely dominant shift; the old +18 bar fired in nearly every
+	// blowout and turned the note into filler.
+	if (!best || best === star || (best.pm ?? 0) < 25) {
 		return undefined;
 	}
 	return `${best.name} was a team-best +${best.pm} in ${best.min} minutes.`;
@@ -1179,10 +1261,15 @@ const injurySentence = (shape: Shape): string | undefined => {
 	for (const t of [shape.winner, shape.loser]) {
 		for (const p of t.players) {
 			if (p.injury?.playingThrough && p.pts >= 18) {
-				bits.push(`${p.name} played through a ${p.injury.type} for ${p.pts}`);
+				bits.push(
+					`${p.name} played through ${aWord(lowerInjury(p.injury.type))} for ${p.pts}`,
+				);
 			} else if (p.injury?.newThisGame && p.injury.gamesRemaining > 0) {
 				bits.push(
-					`${p.name} left with a ${p.injury.type} (out ~${p.injury.gamesRemaining})`,
+					`${p.name} left with ${aWord(lowerInjury(p.injury.type))} (out ~${plural(
+						p.injury.gamesRemaining,
+						"game",
+					)})`,
 				);
 			}
 		}
@@ -1190,7 +1277,9 @@ const injurySentence = (shape: Shape): string | undefined => {
 	// A key player held out entirely.
 	for (const t of [shape.winner, shape.loser]) {
 		for (const out of t.injuries ?? []) {
-			bits.push(`${theNick(t)} were without ${out.name} (${out.type})`);
+			bits.push(
+				`${theNick(t)} were without ${out.name} (${lowerInjury(out.type)})`,
+			);
 			break; // one per team is enough
 		}
 	}
@@ -1275,12 +1364,19 @@ export const getAutoRecap = (game: RecapGame): string => {
 	const headline = buildHeadline(game, shape, star, post, rng);
 
 	// Paragraph 1: the result and how it happened. A game-winning shot is the
-	// game's defining moment, so it always gets its own beat right after the lead
-	// - previously the headline could tout a buzzer-beater the body never
-	// mentioned.
-	const para1: string[] = [leadSentence(game, shape, star, rng)];
+	// game's defining moment, so it always gets a beat right after the lead -
+	// previously the headline could tout a buzzer-beater the body never
+	// mentioned. When the shooter IS the lead star, the beat merges into the
+	// lead sentence so the name isn't repeated back-to-back ("Hamilton finished
+	// with 20... Hamilton won it...").
+	let lead = leadSentence(game, shape, star, rng);
 	const shot = clutchShot(game);
-	if (shot && !shot.tying) {
+	const shooterIsStar = shot && !shot.tying && shot.name === star.name;
+	if (shooterIsStar) {
+		lead = `${lead.slice(0, -1)}, winning it with ${clutchWhat(shot)}.`;
+	}
+	const para1: string[] = [lead];
+	if (shot && !shot.tying && !shooterIsStar) {
 		para1.push(clutchSentence(shot));
 	}
 	const flow = flowSentence(shape, rng);
@@ -1461,7 +1557,12 @@ const conferencePictureSentence = (
 			continue;
 		}
 		const who = `${leader.region} ${leader.name} (${leader.won}-${leader.lost})`;
-		if (second && second.gb >= 1) {
+		// An unbeaten leader is the story itself, not a "narrow lead".
+		if (leader.lost === 0) {
+			bits.push(
+				`the ${leader.region} ${leader.name} are still perfect at ${leader.won}-0 atop the ${conf.name}`,
+			);
+		} else if (second && second.gb >= 1) {
 			bits.push(`${who} lead the ${conf.name} by ${gbText(second.gb)}`);
 		} else if (second) {
 			bits.push(`${who} hold a narrow lead in the ${conf.name}`);
@@ -1487,7 +1588,7 @@ const injuryRoundup = (games: RecapGame[]): string | undefined => {
 			for (const p of t.players) {
 				if (p.injury?.newThisGame && (p.injury.gamesRemaining ?? 0) >= 2) {
 					bits.push({
-						text: `${p.name} (${p.injury.type.toLowerCase()}, out ~${plural(
+						text: `${p.name} (${lowerInjury(p.injury.type)}, out ~${plural(
 							p.injury.gamesRemaining,
 							"game",
 						)})`,
@@ -1515,6 +1616,11 @@ const teamStreakSentence = (games: RecapGame[]): string | undefined => {
 		const winner =
 			game.teams[0].tid === game.winnerTid ? game.teams[0] : game.teams[1];
 		const s = winner.streak;
+		// An unbeaten team's streak IS its record - the standings line already
+		// says "still perfect", so don't repeat it as a streak note.
+		if (winner.record && winner.record.lost === 0) {
+			continue;
+		}
 		if (s && s.won && s.count >= 6 && (!best || s.count > best.count)) {
 			best = { team: winner, count: s.count };
 		}
@@ -1876,6 +1982,27 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 				tdPerf.p,
 			)}) for ${theNick(tdPerf.team)}.`,
 		);
+		named.add(tdPerf.p);
+	}
+
+	// A monster line wasted in a loss is a story of its own (a 23-18-8 night on
+	// the losing side shouldn't vanish from the league wrap).
+	if (para1.length < 5) {
+		const lossPerf = performers.find(
+			(perf) =>
+				!named.has(perf.p) &&
+				!perf.won &&
+				!marqueeTids.has(perf.team.tid) &&
+				((perf.p.pts >= 20 && doubleCategories(perf.p).length >= 2) ||
+					perf.p.pts >= 35),
+		);
+		if (lossPerf) {
+			para1.push(
+				`${poss(lossPerf.p.name)} ${statPhrase(
+					lossPerf.p,
+				)} came in a losing effort against ${theNick(lossPerf.opp)}.`,
+			);
+		}
 	}
 
 	// Paragraph 2: other notable results, then the league picture. Upset verbs

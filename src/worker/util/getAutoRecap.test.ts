@@ -486,6 +486,192 @@ describe("recap quality (from real Day 1 output)", () => {
 		assert.ok(!/buzzer-beater at the buzzer/.test(recap), recap);
 	});
 
+	test("a heavy favorite that barely escapes reads as a scare, not a weak stat line", () => {
+		// Cavs -11.5 win by 3 with a 16-point "star": the story is the scare.
+		const cavs = realisticTeam(
+			{
+				tid: 40,
+				region: "Cleveland",
+				name: "Cavaliers",
+				abbrev: "CLE",
+				pts: 98,
+				ptsQtrs: [25, 24, 25, 24],
+			},
+			player({ name: "Paul Pierce", pts: 16, reb: 8, ast: 6 }),
+		);
+		const grizzlies = realisticTeam(
+			{
+				tid: 41,
+				region: "Memphis",
+				name: "Grizzlies",
+				abbrev: "MEM",
+				pts: 95,
+				ptsQtrs: [24, 24, 24, 23],
+			},
+			player({ name: "Keith Van Horn", pts: 21, reb: 11, stl: 4 }),
+		);
+		for (const gid of [9050, 9051, 9052]) {
+			const recap = getAutoRecap(
+				game({
+					gid,
+					teams: [cavs, grizzlies],
+					winnerTid: 40,
+					spread: { favTid: 40, points: 11.5 },
+				}),
+			);
+			const head = recap.split("\n")[0]!;
+			assert.ok(/survive a scare|escape|hold off a feisty/.test(head), head);
+		}
+	});
+
+	test("a 20-20 game is never flattened to 'scores 24'", () => {
+		const bulls = realisticTeam(
+			{
+				tid: 42,
+				region: "Chicago",
+				name: "Bulls",
+				abbrev: "CHI",
+				pts: 98,
+				ptsQtrs: [25, 25, 24, 24],
+			},
+			player({ name: "Tyson Chandler", pts: 24, reb: 22, stl: 4 }),
+		);
+		const nuggets = realisticTeam(
+			{
+				tid: 43,
+				region: "Denver",
+				name: "Nuggets",
+				abbrev: "DEN",
+				pts: 84,
+				ptsQtrs: [21, 21, 21, 21],
+			},
+			player({ name: "Tracy McGrady", pts: 13, reb: 8 }),
+		);
+		for (const gid of [9060, 9061, 9062]) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [bulls, nuggets], winnerTid: 42 }),
+			);
+			const head = recap.split("\n")[0]!;
+			assert.ok(head.includes("22"), head);
+			assert.ok(!/scores 24 as/.test(head), head);
+		}
+	});
+
+	test("when the clutch shooter is the lead star, the name isn't repeated back-to-back", () => {
+		const magic = realisticTeam(
+			{
+				tid: 44,
+				region: "Orlando",
+				name: "Magic",
+				abbrev: "ORL",
+				pts: 100,
+				ptsQtrs: [25, 25, 24, 26],
+			},
+			player({ name: "Richard Hamilton", pts: 20, reb: 6, stl: 3 }),
+		);
+		const nets = realisticTeam(
+			{
+				tid: 45,
+				region: "New Jersey",
+				name: "Nets",
+				abbrev: "NJN",
+				pts: 99,
+				ptsQtrs: [25, 25, 25, 24],
+			},
+			player({ name: "Tim Duncan", pts: 28, reb: 11 }),
+		);
+		const recap = getAutoRecap(
+			game({
+				gid: 9070,
+				teams: [magic, nets],
+				winnerTid: 44,
+				clutchPlays: [
+					'<a href="#">Richard Hamilton</a> made a game-winning free throw with 0.5 seconds remaining.',
+				],
+			}),
+		);
+		// The winning shot merges into the lead sentence...
+		assert.ok(/, winning it with a free throw/.test(recap), recap);
+		// ...instead of a second sentence restarting with the same name.
+		assert.ok(!/\. Richard Hamilton won it/.test(recap), recap);
+	});
+
+	test("injury text is prose-cased with acronyms kept, and says 'games'", () => {
+		const spurs = realisticTeam(
+			{
+				tid: 46,
+				region: "San Antonio",
+				name: "Spurs",
+				abbrev: "SAS",
+				pts: 110,
+				ptsQtrs: [28, 28, 27, 27],
+			},
+			player({ name: "Shaquille O'Neal", pts: 28, reb: 14 }),
+		);
+		const hurtRockets = realisticTeam(
+			{
+				tid: 47,
+				region: "Houston",
+				name: "Rockets",
+				abbrev: "HOU",
+				pts: 90,
+				ptsQtrs: [23, 23, 22, 22],
+			},
+			player({
+				name: "Manu Ginobili",
+				pts: 18,
+				injury: { type: "Torn ACL", gamesRemaining: 40, newThisGame: true },
+			}),
+		);
+		const recap = getAutoRecap(
+			game({ gid: 9080, teams: [spurs, hurtRockets], winnerTid: 46 }),
+		);
+		assert.ok(recap.includes("a torn ACL"), recap);
+		assert.ok(recap.includes("out ~40 games"), recap);
+		assert.ok(!recap.includes("Torn ACL"), recap);
+	});
+
+	test("a weak-star blowout leads with the team and headlines the result", () => {
+		// Balanced 31-point blowout where 13/9 genuinely is the top line.
+		const clippers = team({
+			tid: 48,
+			region: "Los Angeles",
+			name: "Clippers",
+			abbrev: "LAC",
+			pts: 105,
+			ptsQtrs: [27, 26, 26, 26],
+			players: [
+				player({ name: "Brad Miller", pts: 13, reb: 9, fg: 5, fga: 9 }),
+				player({ name: "Michael Jordan", pts: 12, reb: 4, fg: 5, fga: 11 }),
+				player({ name: "Eddie Jones", pts: 11, reb: 3, fg: 4, fga: 9 }),
+				player({ name: "Matt Maloney", pts: 10, ast: 5, fg: 4, fga: 8 }),
+				player({ name: "Bench Clip", pts: 8, reb: 4, fg: 3, fga: 6 }),
+			],
+		});
+		const bucks = realisticTeam(
+			{
+				tid: 49,
+				region: "Milwaukee",
+				name: "Bucks",
+				abbrev: "MIL",
+				pts: 74,
+				ptsQtrs: [19, 19, 18, 18],
+			},
+			player({ name: "Peja Stojakovic", pts: 16, ast: 5 }),
+		);
+		for (const gid of [9090, 9091, 9092]) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [clippers, bucks], winnerTid: 48 }),
+			);
+			const head = recap.split("\n")[0]!;
+			const body = recap.split("\n\n")[1]!;
+			// Headline is the result, not "Brad Miller's 13 leads..."
+			assert.ok(!/Brad Miller'?s? 13/.test(head), head);
+			// The lead is a team sentence with the top line attached.
+			assert.ok(/^The Clippers /.test(body), body);
+		}
+	});
+
 	test("a 9-point stat-stuffer never carries the lead over a real scoring line", () => {
 		const lakers = team({
 			tid: 36,
@@ -1019,6 +1205,79 @@ describe("getAutoDayRecap", () => {
 			},
 		});
 		assert.ok(!/standings|narrow lead|atop the/.test(recap), recap);
+	});
+
+	test("an unbeaten leader reads 'still perfect', and a monster line in a loss is covered", () => {
+		const kg = player({
+			name: "Kevin Garnett",
+			pts: 23,
+			reb: 18,
+			ast: 8,
+			fg: 9,
+			fga: 18,
+		});
+		// The Heat game is the clear marquee (35-point night), so KG's line in a
+		// loss comes from the OTHER game and must still make the wrap.
+		const games = [
+			mkGame(
+				5030,
+				"Heat",
+				"Pacers",
+				94,
+				83,
+				true,
+				player({ name: "Michael Finley", pts: 35, reb: 8, fg: 13, fga: 22 }),
+				player({ name: "Role Pacer", pts: 12 }),
+			),
+			mkGame(
+				5031,
+				"Bucks",
+				"Hornets",
+				101,
+				90,
+				true,
+				player({ name: "Peja Stojakovic", pts: 26, tp: 5 }),
+				kg,
+			),
+		];
+		const recap = getAutoDayRecap({
+			season: 2003,
+			day: 6,
+			playoffs: false,
+			games,
+			standings: {
+				day: 6,
+				confs: [
+					{
+						name: "Eastern Conference",
+						teams: [
+							{
+								rank: 1,
+								abbrev: "MIA",
+								region: "Miami",
+								name: "Heat",
+								won: 6,
+								lost: 0,
+								gb: 0,
+							},
+							{
+								rank: 2,
+								abbrev: "ORL",
+								region: "Orlando",
+								name: "Magic",
+								won: 5,
+								lost: 1,
+								gb: 1,
+							},
+						],
+					},
+				],
+			},
+		});
+		assert.ok(/still perfect at 6-0/.test(recap), recap);
+		assert.ok(!/hold a narrow lead/.test(recap), recap);
+		// KG's 23-18-8 in a loss makes the wrap.
+		assert.ok(/Kevin Garnett'?s.*losing effort/.test(recap), recap);
 	});
 
 	test("the day recap covers the night's injuries", () => {
