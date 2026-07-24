@@ -68,6 +68,7 @@ import {
 	type ExpansionDraftSetupTeam,
 	type GetLeagueOptions,
 	type TeamSeasonWithoutKey,
+	type ScheduledEvent,
 	type ScheduledEventGameAttributes,
 	type ScheduledEventTeamInfo,
 	type ScheduleGameWithoutKey,
@@ -1246,6 +1247,37 @@ const deleteScheduledEvents = async (type: string) => {
 		}
 	}
 
+	await toUI("realtimeUpdate", [["scheduledEvents"]]);
+};
+
+// Edit one scheduled event in place (when it fires, and its payload). The id
+// must already exist. unretirePlayer's info is augmented with a name/skills for
+// display, so only the stored { pid } is persisted back.
+const updateScheduledEvent = async (event: ScheduledEvent) => {
+	const existing = await idb.cache.scheduledEvents.get(event.id);
+	if (!existing) {
+		throw new Error("Scheduled event not found");
+	}
+
+	if (typeof event.season !== "number" || !Number.isFinite(event.season)) {
+		throw new Error("Invalid season");
+	}
+	if (typeof event.phase !== "number" || !Number.isFinite(event.phase)) {
+		throw new Error("Invalid phase");
+	}
+
+	// Never let the type change out from under the info shape.
+	const toSave = { ...event, type: existing.type } as ScheduledEvent;
+	if (toSave.type === "unretirePlayer") {
+		toSave.info = { pid: (event.info as { pid: number }).pid };
+	}
+
+	await idb.cache.scheduledEvents.put(toSave);
+	await toUI("realtimeUpdate", [["scheduledEvents"]]);
+};
+
+const deleteScheduledEvent = async (id: number) => {
+	await idb.cache.scheduledEvents.delete(id);
 	await toUI("realtimeUpdate", [["scheduledEvents"]]);
 };
 
@@ -6275,6 +6307,7 @@ export default {
 		createLeague,
 		createTrade,
 		deleteOldData,
+		deleteScheduledEvent,
 		deleteScheduledEvents,
 		disconnectSharedLeague,
 		discardUnsavedProgress,
@@ -6432,6 +6465,7 @@ export default {
 		updatePlayersWatch,
 		updatePlayingTime,
 		updatePlayoffTeams,
+		updateScheduledEvent,
 		updateTeamCourt,
 		updateTeamInfo,
 		updateTrade,

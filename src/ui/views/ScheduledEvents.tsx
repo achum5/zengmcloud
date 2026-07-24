@@ -1,3 +1,4 @@
+import { useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View, LocalStateUI } from "../../common/types.ts";
 import { helpers } from "../util/helpers.ts";
@@ -7,6 +8,7 @@ import { DataTable } from "../components/DataTable/index.tsx";
 import { PHASE_TEXT } from "../../common/constants.ts";
 import { settings } from "./Settings/settings.tsx";
 import { Dropdown } from "react-bootstrap";
+import { Modal } from "../components/Modal.tsx";
 import { PlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import { useLocal } from "../util/local.ts";
 
@@ -274,12 +276,148 @@ const bulkDelete = (type: string) => async () => {
 	await toWorker("main", "deleteScheduledEvents", type);
 };
 
+// Edit one scheduled event: when it fires (season + phase) and its raw payload.
+// The payload is edited as JSON - the events page is already an advanced tool and
+// the payload shape differs by type, so a single JSON field covers every type
+// without a bespoke form each. The worker keeps the type fixed and sanitizes.
+const EditScheduledEventModal = ({
+	event,
+	onCancel,
+	onSaved,
+}: {
+	event: AugmentedScheduledEvent;
+	onCancel: () => void;
+	onSaved: () => void;
+}) => {
+	const [season, setSeason] = useState(String(event.season));
+	const [phase, setPhase] = useState(String(event.phase));
+	const [infoText, setInfoText] = useState(() => {
+		// unretirePlayer's info is augmented with a name/skills for display; only
+		// the stored { pid } is editable/saved.
+		const info =
+			event.type === "unretirePlayer"
+				? { pid: (event.info as { pid: number }).pid }
+				: event.info;
+		return JSON.stringify(info, undefined, 2);
+	});
+	const [error, setError] = useState<string | undefined>();
+	const [saving, setSaving] = useState(false);
+
+	const save = async () => {
+		setSaving(true);
+		setError(undefined);
+		try {
+			const seasonNum = Number.parseInt(season);
+			if (!Number.isFinite(seasonNum)) {
+				throw new Error("Season must be a number");
+			}
+			const phaseNum = Number.parseInt(phase);
+			if (!Number.isFinite(phaseNum)) {
+				throw new Error("Invalid phase");
+			}
+			let info;
+			try {
+				info = JSON.parse(infoText);
+			} catch {
+				throw new Error("Details must be valid JSON");
+			}
+			await toWorker("main", "updateScheduledEvent", {
+				id: event.id,
+				type: event.type,
+				season: seasonNum,
+				phase: phaseNum,
+				info,
+			} as any);
+			onSaved();
+		} catch (error_) {
+			setError((error_ as Error).message);
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<Modal show onHide={onCancel}>
+			<Modal.Header closeButton>
+				<Modal.Title>Edit scheduled event</Modal.Title>
+			</Modal.Header>
+			<Modal.Body>
+				<div className="mb-3" style={{ maxWidth: 150 }}>
+					<label className="form-label" htmlFor="se-season">
+						Season
+					</label>
+					<input
+						id="se-season"
+						type="number"
+						step={1}
+						className="form-control"
+						value={season}
+						onChange={(event2) => setSeason(event2.target.value)}
+					/>
+				</div>
+				<div className="mb-3" style={{ maxWidth: 250 }}>
+					<label className="form-label" htmlFor="se-phase">
+						Phase
+					</label>
+					<select
+						id="se-phase"
+						className="form-select"
+						value={phase}
+						onChange={(event2) => setPhase(event2.target.value)}
+					>
+						{Object.entries(PHASE_TEXT).map(([p, text]) => (
+							<option key={p} value={p}>
+								{helpers.upperCaseFirstLetter(text)}
+							</option>
+						))}
+					</select>
+				</div>
+				<div className="mb-1">
+					<label className="form-label" htmlFor="se-info">
+						Details (JSON)
+					</label>
+					<textarea
+						id="se-info"
+						className="form-control font-monospace"
+						rows={10}
+						value={infoText}
+						onChange={(event2) => setInfoText(event2.target.value)}
+					/>
+				</div>
+				{error ? (
+					<div className="alert alert-danger mt-2 mb-0">{error}</div>
+				) : null}
+			</Modal.Body>
+			<Modal.Footer>
+				<button
+					className="btn btn-secondary"
+					disabled={saving}
+					onClick={onCancel}
+				>
+					Cancel
+				</button>
+				<button className="btn btn-primary" disabled={saving} onClick={save}>
+					{saving ? "Saving…" : "Save"}
+				</button>
+			</Modal.Footer>
+		</Modal>
+	);
+};
+
 const ScheduledEvents = ({ scheduledEvents }: View<"scheduledEvents">) => {
 	useTitleBar({
 		title: "Scheduled Events",
 	});
 
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+
+	const [editing, setEditing] = useState<AugmentedScheduledEvent | undefined>();
+
+	const handleDelete = async (scheduledEvent: AugmentedScheduledEvent) => {
+		if (window.confirm("Delete this scheduled event?")) {
+			await toWorker("main", "deleteScheduledEvent", scheduledEvent.id);
+		}
+	};
 
 	if (scheduledEvents.length === 0) {
 		return (
@@ -309,11 +447,29 @@ const ScheduledEvents = ({ scheduledEvents }: View<"scheduledEvents">) => {
 					sortValue: `${scheduledEvent.season} ${scheduledEvent.phase} ${scheduledEvent.id}`,
 				},
 				formatType(scheduledEvent.type),
-				<ViewEvent
-					all={scheduledEvents}
-					current={scheduledEvent}
-					teamInfoCache={teamInfoCache}
-				/>,
+				<div className="d-flex align-items-start">
+					<div className="flex-grow-1">
+						<ViewEvent
+							all={scheduledEvents}
+							current={scheduledEvent}
+							teamInfoCache={teamInfoCache}
+						/>
+					</div>
+					<div className="ms-2 d-flex flex-column gap-1">
+						<button
+							className="btn btn-light-bordered btn-sm"
+							onClick={() => setEditing(scheduledEvent)}
+						>
+							Edit
+						</button>
+						<button
+							className="btn btn-danger btn-sm"
+							onClick={() => handleDelete(scheduledEvent)}
+						>
+							Delete
+						</button>
+					</div>
+				</div>,
 			],
 		};
 	});
@@ -321,10 +477,8 @@ const ScheduledEvents = ({ scheduledEvents }: View<"scheduledEvents">) => {
 	return (
 		<>
 			<p>
-				Eventually this will support creating, updating, and deleting individual
-				scheduled events. But for now, all you can do is view scheduled events
-				and apply some bulk operations, like removing all scheduled team
-				contractions.
+				Edit or delete any scheduled event below, or apply a bulk operation like
+				removing all scheduled team contractions.
 			</p>
 			<Dropdown>
 				<Dropdown.Toggle variant="danger" id="scheduled-events-bulk-delete">
@@ -366,6 +520,14 @@ const ScheduledEvents = ({ scheduledEvents }: View<"scheduledEvents">) => {
 				name="ScheduledEvents"
 				rows={rows}
 			/>
+			{editing ? (
+				<EditScheduledEventModal
+					key={editing.id}
+					event={editing}
+					onCancel={() => setEditing(undefined)}
+					onSaved={() => setEditing(undefined)}
+				/>
+			) : null}
 		</>
 	);
 };
