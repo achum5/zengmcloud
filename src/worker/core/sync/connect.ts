@@ -15,6 +15,7 @@ import { g, helpers, local, lock, toUI } from "../../util/index.ts";
 import { env } from "../../util/env.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
+import { sweepPhantomScheduleRows } from "./changeset.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import type { LiveBroadcastMeta } from "./types.ts";
@@ -105,9 +106,7 @@ const makeLeagueId = (): string => {
 // League.syncResyncNeeded). Set by the engine when it abandons a batch; read on
 // connect to trigger a self-healing full-log resync. Survives reloads, unlike the
 // engine's in-memory abandoned-batch set.
-const loadResyncNeeded = async (
-	lid: number | undefined,
-): Promise<boolean> => {
+const loadResyncNeeded = async (lid: number | undefined): Promise<boolean> => {
 	if (typeof lid !== "number") {
 		return false;
 	}
@@ -1489,6 +1488,22 @@ const doConnectSharedLeague = async ({
 			}
 		} catch (error) {
 			syncDebugLog("connect:auto-resync-failed", { error });
+		}
+	})();
+
+	// Played-game invariant sweep: drop any schedule row whose game already
+	// exists (a phantom "upcoming" copy of a played game, left by a partially
+	// applied or abandoned changeset in some prior session). Runs once per
+	// connect regardless of whether anything new syncs in, so a device carrying
+	// this corruption heals just by opening the league.
+	void (async () => {
+		try {
+			const removed = await sweepPhantomScheduleRows();
+			if (removed > 0) {
+				syncDebugLog("connect:phantom-schedule-swept", { removed });
+			}
+		} catch (error) {
+			syncDebugLog("connect:phantom-schedule-sweep-failed", { error });
 		}
 	})();
 

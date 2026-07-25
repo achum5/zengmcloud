@@ -13,6 +13,7 @@ import {
 	captureChangeset,
 	orderChangesForApply,
 	phaseRedirectComponents,
+	sweepPhantomScheduleRows,
 } from "./changeset.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
 import type { Phase } from "../../../common/types.ts";
@@ -1138,5 +1139,84 @@ describe("sync changeset", () => {
 		await applyChangeset(changeset, { refreshUI: false });
 
 		assert.strictEqual(changeTracker.size(), 0);
+	});
+
+	test("one poison record does not block the rest of the changeset (schedule deletes still land)", async () => {
+		// The field failure: a day's changeset carried game puts, a record that
+		// deterministically failed on ONE device, and the day's schedule deletes.
+		// Aborting at the failure left the games applied but the schedule rows
+		// alive forever - the day showed as both played and upcoming. Now every
+		// healthy record must apply, and the throw at the end still marks the
+		// changeset failed so the engine retries it.
+		resetG();
+		await resetCache({});
+		changeTracker.disable();
+
+		// The receiver's stale state: an unplayed schedule row for gid 500.
+		await idb.cache.schedule.add({ homeTid: 0, awayTid: 1, day: 38 } as any);
+		const scheduleRow = (await idb.cache.schedule.getAll())[0]!;
+
+		const changeset: any = {
+			changes: [
+				// The played game...
+				{
+					store: "games",
+					id: scheduleRow.gid,
+					type: "put",
+					value: { gid: scheduleRow.gid, season: 2003, teams: [] },
+				},
+				// ...a poison record (no primary key on a non-autoincrement store
+				// throws deterministically)...
+				{ store: "games", id: 999999, type: "put", value: {} },
+				// ...and the schedule delete that used to be held hostage behind it.
+				{ store: "schedule", id: scheduleRow.gid, type: "delete" },
+			],
+		};
+
+		let threw = false;
+		try {
+			await applyChangeset(changeset, { refreshUI: false });
+		} catch {
+			threw = true;
+		}
+
+		assert.ok(threw, "the aggregate failure must still throw (watermark pins)");
+		const games = await idb.cache.games.getAll();
+		assert.ok(
+			games.some((game) => game.gid === scheduleRow.gid),
+			"the game put before the poison record must have applied",
+		);
+		const schedule = await idb.cache.schedule.getAll();
+		assert.strictEqual(
+			schedule.length,
+			0,
+			"the schedule delete after the poison record must have applied",
+		);
+	});
+
+	test("sweepPhantomScheduleRows removes played games from the schedule, keeps future ones", async () => {
+		resetG();
+		await resetCache({});
+		changeTracker.disable();
+
+		// A played game whose schedule row survived (the corruption), plus a
+		// genuinely upcoming game that must be left alone.
+		await idb.cache.schedule.add({ homeTid: 0, awayTid: 1, day: 38 } as any);
+		await idb.cache.schedule.add({ homeTid: 2, awayTid: 3, day: 43 } as any);
+		const rows = await idb.cache.schedule.getAll();
+		const phantom = rows[0]!;
+		const future = rows[1]!;
+		await idb.cache.games.put({
+			gid: phantom.gid,
+			season: 2003,
+			teams: [],
+		} as any);
+
+		const removed = await sweepPhantomScheduleRows();
+
+		assert.strictEqual(removed, 1);
+		const after = await idb.cache.schedule.getAll();
+		assert.strictEqual(after.length, 1);
+		assert.strictEqual(after[0]!.gid, future.gid);
 	});
 });

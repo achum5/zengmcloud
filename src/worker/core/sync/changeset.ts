@@ -543,6 +543,16 @@ export const applyChangeset = async (
 	let touchedGameAttributes = false;
 	let touchedPhase = false;
 	let touchedGames = false;
+	// Per-record failures, collected instead of aborting the whole changeset at
+	// the first one. Aborting mid-changeset left PARTIAL state applied: everything
+	// before the bad record stuck (e.g. a day's game rows), everything after it
+	// never ran (that day's schedule deletes) - and when the failure was
+	// deterministic, every retry repeated the same split forever. That surfaced in
+	// the field as a whole day's games showing BOTH played (box scores, records)
+	// AND still unplayed in the schedule, on the one device where a record
+	// happened to fail. Now every healthy record lands, and the aggregate throw at
+	// the end still pins the watermark so the failed records retry.
+	const failures: string[] = [];
 	// The season increment (rollover to preseason) needs special handling: the
 	// simmer re-fills its whole cache after it (finalize does idb.cache.fill()),
 	// because several stores are season-scoped. A receiver must do the same or
@@ -574,6 +584,16 @@ export const applyChangeset = async (
 			// their in-progress/saved trades) overwrite ours - also protects catch-up
 			// replays of older, unfiltered history that predates this exclusion.
 			if (isDeviceLocal(change.store, change.id)) {
+				continue;
+			}
+
+			// gameAttributes are ordered last as the changeset's COMMIT POINT (see
+			// orderChangesForApply): a season/phase flip must never land while some
+			// of its data records failed, or the app looks at the new season/phase
+			// with holes in its data. Withhold them when anything failed - the
+			// aggregate throw below pins the watermark, and the retry applies them
+			// once the data goes through.
+			if (change.store === "gameAttributes" && failures.length > 0) {
 				continue;
 			}
 
@@ -667,15 +687,16 @@ export const applyChangeset = async (
 					changeTracker.forget(change.store, writtenPk);
 				}
 			} catch (error) {
-				// Name the exact record that failed. A deterministic apply failure pins
-				// the watermark and retries forever; without this the retry loop logs an
-				// anonymous error and the poison record is undiagnosable from the field.
-				throw new Error(
-					`Apply failed at ${change.store}/${String(change.id)} (${change.type}): ${
-						error instanceof Error ? error.message : String(error)
-					}`,
-					{ cause: error },
-				);
+				// Name the exact record that failed (a deterministic apply failure
+				// retries forever; an anonymous error would make the poison record
+				// undiagnosable from the field), but keep applying the REST of the
+				// changeset - see `failures` above.
+				const detail = `${change.store}/${String(change.id)} (${change.type}): ${
+					error instanceof Error ? error.message : String(error)
+				}`;
+				console.error(`Apply failed at ${detail}`, error);
+				failures.push(detail);
+				continue;
 			}
 			touchedStores.add(change.store);
 
@@ -832,6 +853,17 @@ export const applyChangeset = async (
 		}
 	}
 
+	// A game/schedule change just landed: enforce the played-game invariant (no
+	// schedule row may outlive its game) so any phantom left by an earlier
+	// partial apply heals as soon as the next sync touches games.
+	if (touchedGames) {
+		try {
+			await sweepPhantomScheduleRows();
+		} catch (error) {
+			console.error("Phantom schedule sweep failed", error);
+		}
+	}
+
 	// The LeagueTopBar score ticker is fed by a separate UI-state channel, not by
 	// the cache/realtimeUpdate path. When a synced sim adds games, rebuild it from
 	// the (now-updated) cache so the ticker reflects the new results.
@@ -852,4 +884,46 @@ export const applyChangeset = async (
 			await toUI("realtimeUpdate", [updateEvents]);
 		}
 	}
+
+	// Applied everything that could apply; NOW surface any per-record failures so
+	// the sync engine pins the watermark below this changeset's entries and
+	// retries them (idempotent re-apply). The healthy records above are already
+	// in - a retry just re-puts them.
+	if (failures.length > 0) {
+		throw new Error(
+			`Apply failed for ${failures.length} of ${changeset.changes.length} records: ${failures
+				.slice(0, 3)
+				.join("; ")}${failures.length > 3 ? "; …" : ""}`,
+		);
+	}
+};
+
+// The played-game invariant: a schedule row whose gid already has a game record
+// is a sync artifact - the game was simmed somewhere, so that schedule row
+// should be gone. (gids are league-unique forever and the cache keeps schedule
+// ids above game ids, so a gid collision can never be a legitimate future
+// game.) Normally the sim's own schedule delete handles this, but a partially
+// applied/abandoned changeset could leave the game row without its delete -
+// seen in the field as a whole day's games showing both played AND upcoming on
+// one device. Runs after game-touching applies and once per connect; deletes
+// through the cache so it's captured (a no-op on healthy devices) and flushed.
+export const sweepPhantomScheduleRows = async (): Promise<number> => {
+	const [scheduleRows, gameRows] = await Promise.all([
+		idb.cache.schedule.getAll(),
+		idb.cache.games.getAll(),
+	]);
+	const playedGids = new Set(gameRows.map((game) => game.gid));
+	let removed = 0;
+	for (const row of scheduleRows) {
+		if (playedGids.has(row.gid)) {
+			await idb.cache.schedule.delete(row.gid);
+			removed += 1;
+		}
+	}
+	if (removed > 0) {
+		console.log(
+			`Removed ${removed} already-played game(s) from the schedule (sync self-heal)`,
+		);
+	}
+	return removed;
 };
