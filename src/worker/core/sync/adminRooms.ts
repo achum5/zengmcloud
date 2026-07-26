@@ -8,6 +8,8 @@ import {
 	getFirestore,
 	limit,
 	query,
+	Timestamp,
+	where,
 	writeBatch,
 } from "firebase/firestore";
 import { getFirebaseApp } from "./firebaseApp.ts";
@@ -128,4 +130,69 @@ export const deleteAllSyncRooms = async (): Promise<number> => {
 		await deleteSyncRoom(room.code);
 	}
 	return rooms.length;
+};
+
+// Trim a room's change log back to a retention window.
+//
+// The TTL policy only reaches entries that carry a `ttlAt`, and every entry
+// written before that field existed has none - so a long-running room's real
+// storage bill is history the policy will never touch. This is the one-time
+// (or occasional) sweep that clears it, reusing the same adaptive batch
+// deleter as room deletion because change docs are big enough to blow
+// Firestore's ~10 MiB commit ceiling long before its 500-write one.
+//
+// Safe with respect to catch-up for the same reason retention is: entries this
+// old have been applied by every device that is keeping up, and a device that
+// ISN'T gets caught by the too-far-behind guard on connect rather than
+// silently diverging.
+export const pruneSyncRoomChanges = async (
+	code: string,
+	olderThanDays: number,
+): Promise<number> => {
+	const trimmed = code.trim();
+	if (!trimmed || !(olderThanDays > 0)) {
+		return 0;
+	}
+	const db = await getDb();
+	const cutoff = Timestamp.fromMillis(
+		Date.now() - olderThanDays * 24 * 60 * 60 * 1000,
+	);
+
+	let deleted = 0;
+	// Read a page, delete it, repeat. Deleting what we read means the next
+	// identical query returns the following page, so no cursor is needed. A
+	// single-field inequality, so no composite index either.
+	while (true) {
+		const snap = await getDocs(
+			query(
+				collection(db, "leagues", trimmed, "changes"),
+				where("ts", "<", cutoff),
+				limit(100),
+			),
+		);
+		if (snap.empty) {
+			break;
+		}
+		await commitDeletes(
+			db,
+			snap.docs.map((d) => d.ref),
+		);
+		deleted += snap.size;
+		if (snap.size < 100) {
+			break;
+		}
+	}
+	return deleted;
+};
+
+// Same sweep across every room. Returns how many change docs went.
+export const pruneAllSyncRoomChanges = async (
+	olderThanDays: number,
+): Promise<number> => {
+	const rooms = await listSyncRooms();
+	let deleted = 0;
+	for (const room of rooms) {
+		deleted += await pruneSyncRoomChanges(room.code, olderThanDays);
+	}
+	return deleted;
 };

@@ -18,6 +18,10 @@ import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
 import { sweepPhantomScheduleRows } from "./changeset.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { endLotteryReveal } from "./notifications.ts";
+import {
+	isTooFarBehind,
+	RETENTION_DAYS,
+} from "../../../common/syncRetention.ts";
 import type { LiveBroadcastMeta } from "./types.ts";
 
 // This device's catch-up watermark for a league, stored in the durable meta DB
@@ -1318,6 +1322,52 @@ const doConnectSharedLeague = async ({
 	const transport = new FirebaseTransport(trimmed, clientId, {
 		sinceTs: watermark,
 	});
+
+	// Retention gap check. Catch-up is a `ts >` range read, so a device whose
+	// watermark predates everything left in the log finds nothing missing and
+	// would declare itself current while holding stale records - silently, which
+	// is the worst way for this system to fail. Compare against the oldest entry
+	// that actually survives and refuse to connect rather than diverge.
+	//
+	// Only reachable once the log is being trimmed AND this device has been away
+	// longer than the retention window; a device inside the window sees its own
+	// already-applied entries as the oldest and passes.
+	{
+		let oldestSeq: number | undefined;
+		let probed = true;
+		try {
+			oldestSeq = await transport.fetchOldestEntrySeq();
+		} catch (error) {
+			// Never turn a flaky read into a lockout - if we can't see the log, fall
+			// through and let the normal catch-up machinery deal with it.
+			probed = false;
+			syncDebugLog("connect:oldest-entry-probe-failed", { error });
+		}
+		if (probed && isTooFarBehind(watermark, oldestSeq)) {
+			syncDebugLog("connect:too-far-behind", {
+				lid: lidNumber,
+				watermark,
+				oldestSeq,
+				retentionDays: RETENTION_DAYS,
+			});
+			// Same shape as the room-mismatch refusal below: drop the half-set
+			// session state and tell the UI we're not connected, then throw so an
+			// explicit join shows the reason.
+			//
+			// The persisted room binding is deliberately KEPT (unlike a mismatch
+			// refusal): the fix is to re-import this league, and once that lands a
+			// near-head watermark the next automatic reconnect just works, with no
+			// need to re-enter the code.
+			syncRequired = false;
+			connectedLid = undefined;
+			void toUI("updateLocal", [
+				{ mpSyncActive: false, mpSyncReady: false, mpSyncReconnecting: false },
+			]);
+			throw new Error(
+				`This device is too far behind to catch up. The league's change history only goes back ${RETENTION_DAYS} days, and this copy last synced before that. Ask whoever is in charge of simming to send you a fresh export of the league, then import it and rejoin.`,
+			);
+		}
+	}
 
 	// Room ↔ league-file binding check. Each room carries a fingerprint
 	// (leagueId) of the league file it belongs to, and each synced league stores

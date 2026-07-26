@@ -11,6 +11,8 @@ export {
 	listSyncRooms,
 	deleteSyncRoom,
 	deleteAllSyncRooms,
+	pruneSyncRoomChanges,
+	pruneAllSyncRoomChanges,
 	type SyncRoom,
 } from "./adminRooms.ts";
 export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";

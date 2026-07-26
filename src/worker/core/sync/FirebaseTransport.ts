@@ -22,6 +22,7 @@ import {
 	type QueryDocumentSnapshot,
 } from "firebase/firestore";
 import { getFirebaseApp } from "./firebaseApp.ts";
+import { ttlAtMsFor } from "../../../common/syncRetention.ts";
 import {
 	decideAdvanceClaim,
 	type AdvanceClaimDoc,
@@ -803,6 +804,11 @@ export class FirebaseTransport implements SyncTransport {
 			...(entry.records !== undefined ? { records: entry.records } : {}),
 			...(entry.attrs !== undefined ? { attrs: entry.attrs } : {}),
 			ts: serverTimestamp(),
+			// When this entry becomes eligible for deletion. Inert until the
+			// Firestore TTL policy on this field is enabled (see RETENTION.md), and
+			// ignored entirely by readers - a device that is too far behind is
+			// detected from the real contents of the log, not from this stamp.
+			ttlAt: Timestamp.fromMillis(ttlAtMsFor(Date.now())),
 		};
 
 		// Retry transient failures (a network blip, a brief Firestore hiccup). A
@@ -941,6 +947,23 @@ export class FirebaseTransport implements SyncTransport {
 	// drained.
 	updateSince(ts: number) {
 		this.sinceTs = ts;
+	}
+
+	// The seq (server-timestamp millis) of the OLDEST entry still in the log, or
+	// undefined if the log is empty. One doc read, used on connect to tell
+	// "behind" apart from "so far behind that the entries we need were deleted".
+	async fetchOldestEntrySeq(): Promise<number | undefined> {
+		const snapshot = await getDocs(
+			query(this.changesRef, orderBy("ts"), limit(1)),
+		);
+		this.markContact();
+		for (const docSnap of snapshot.docs) {
+			const entry = this.parseEntry(docSnap);
+			if (entry) {
+				return entry.seq;
+			}
+		}
+		return undefined;
 	}
 
 	// How many entries are still after our watermark, via a cheap server-side

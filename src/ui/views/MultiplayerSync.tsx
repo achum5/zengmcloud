@@ -1,4 +1,8 @@
 import { useEffect, useState } from "react";
+// In `common` (not with the sync code) precisely so the UI can read it: the
+// build blacklists worker imports from UI, and duplicating the number here
+// would let the admin default drift from the window actually being stamped.
+import { RETENTION_DAYS } from "../../common/syncRetention.ts";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { useLocal } from "../util/local.ts";
 import { toWorker } from "../util/toWorker.ts";
@@ -152,6 +156,7 @@ const MultiplayerSync = () => {
 
 	const [syncDebug, setSyncDebug] = useState(syncDebugEnabled());
 	const [rooms, setRooms] = useState<SyncRoom[]>([]);
+	const [pruneDays, setPruneDays] = useState(RETENTION_DAYS);
 	const [adminBusy, setAdminBusy] = useState(false);
 	const [adminMsg, setAdminMsg] = useState<string | undefined>();
 	const [deleteCode, setDeleteCode] = useState("");
@@ -330,6 +335,27 @@ const MultiplayerSync = () => {
 			await refreshRooms();
 		} catch (err) {
 			setAdminMsg((err as Error).message ?? String(err));
+		} finally {
+			setAdminBusy(false);
+		}
+	};
+
+	// Trim old changesets out of every room. This is what actually reclaims the
+	// storage a long-running league has piled up: the TTL policy only reaches
+	// entries written since `ttlAt` existed, so everything older needs a sweep.
+	const pruneRooms = async () => {
+		setAdminBusy(true);
+		setAdminMsg(undefined);
+		try {
+			const n = await toWorker("main", "pruneAllSyncRoomChangesApi", {
+				olderThanDays: pruneDays,
+			});
+			setAdminMsg(
+				`Deleted ${n.toLocaleString()} change${n === 1 ? "" : "s"} older than ${pruneDays} days.`,
+			);
+			await refreshRooms();
+		} catch (error) {
+			setAdminMsg((error as Error).message ?? String(error));
 		} finally {
 			setAdminBusy(false);
 		}
@@ -853,6 +879,29 @@ const MultiplayerSync = () => {
 									}}
 								>
 									Delete
+								</button>
+							</div>
+
+							<div className="d-flex align-items-center gap-2 mb-3">
+								<input
+									type="number"
+									className="form-control"
+									style={{ maxWidth: 90 }}
+									min={1}
+									value={pruneDays}
+									title="Keep this many days of change history"
+									onChange={(event) =>
+										setPruneDays(
+											Math.max(1, Number.parseInt(event.target.value) || 1),
+										)
+									}
+								/>
+								<button
+									className="btn btn-warning flex-grow-1"
+									disabled={adminBusy}
+									onClick={() => void pruneRooms()}
+								>
+									Trim history in all rooms
 								</button>
 							</div>
 

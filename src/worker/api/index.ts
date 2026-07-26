@@ -97,6 +97,8 @@ import {
 	connectSharedLeague,
 	deleteAllSyncRooms,
 	deleteSyncRoom,
+	pruneAllSyncRoomChanges,
+	pruneSyncRoomChanges,
 	endLiveBroadcast,
 	disconnectSharedLeague,
 	getConnectedLid,
@@ -2528,6 +2530,26 @@ const sportsbookCancelBet = async (info: { tid: number; betID: number }) => {
 // Trivia games: fresh puzzle/round on demand. Pure reads - no league writes.
 const triviaNewGrid = async () => {
 	return generateTriviaGrid();
+};
+
+// toWorker hands each api function exactly one argument, so the two-parameter
+// prune helpers get object-shaped wrappers.
+const pruneSyncRoomChangesApi = async ({
+	code,
+	olderThanDays,
+}: {
+	code: string;
+	olderThanDays: number;
+}) => {
+	return pruneSyncRoomChanges(code, olderThanDays);
+};
+
+const pruneAllSyncRoomChangesApi = async ({
+	olderThanDays,
+}: {
+	olderThanDays: number;
+}) => {
+	return pruneAllSyncRoomChanges(olderThanDays);
 };
 
 const triviaGridCatalog = async () => {
@@ -6409,6 +6431,8 @@ export default {
 		listSyncRooms,
 		deleteSyncRoom,
 		deleteAllSyncRooms,
+		pruneSyncRoomChangesApi,
+		pruneAllSyncRoomChangesApi,
 		lotteryRevealUpdate,
 		publishAutoPlayState,
 		resyncSharedLeague,
