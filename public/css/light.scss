@@ -2074,6 +2074,111 @@ tr.text-body-secondary {
 	filter: brightness(1.12) contrast(1.05);
 }
 
+// --- Edit mode -------------------------------------------------------------
+// A header tile is editable in place: same tile, but it reads as a control.
+// The dashed outline is the whole affordance - no separate builder screen, so
+// the board you are editing is literally the board you will play.
+.trivia-grid-head-edit {
+	background: var(--bs-secondary-bg);
+	border: 0;
+	border-radius: 0;
+	padding: 0;
+	width: 100%;
+	position: relative;
+	// Half-strength primary at rest: enough that every header reads as a
+	// control at a glance, not so much that six of them shout.
+	box-shadow: inset 0 0 0 2px
+		color-mix(in srgb, var(--bs-primary) 45%, transparent);
+	transition:
+		box-shadow 0.15s ease,
+		filter 0.15s ease;
+}
+.trivia-grid-head-edit:hover,
+.trivia-grid-head-edit:focus-visible {
+	box-shadow: inset 0 0 0 2px var(--bs-primary);
+	filter: brightness(1.1);
+	outline: none;
+	z-index: 1;
+}
+// An unfilled slot, so a half-built grid is obvious at a glance.
+.trivia-grid-head-edit.is-empty {
+	box-shadow: inset 0 0 0 2px var(--bs-danger);
+}
+
+// Corner pencil. The ring alone reads as decoration on a tile that already
+// had a border; the glyph is what actually says "this is editable".
+.trivia-edit-pencil {
+	position: absolute;
+	top: 2px;
+	right: 4px;
+	font-size: 0.7rem;
+	line-height: 1;
+	color: var(--bs-primary);
+	pointer-events: none;
+}
+
+// The live "N players qualify" readout in a cell while editing.
+.trivia-grid-count {
+	background: var(--bs-body-bg);
+	aspect-ratio: 1 / 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.1rem;
+}
+
+// --- Player search ---------------------------------------------------------
+.trivia-search-results {
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+	overflow: hidden;
+}
+
+.trivia-search-row {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	width: 100%;
+	padding: 0.3rem 0.5rem;
+	border: 0;
+	background: var(--bs-body-bg);
+	color: var(--bs-body-color);
+	text-align: left;
+	min-width: 0;
+}
+.trivia-search-row + .trivia-search-row {
+	border-top: 1px solid var(--bs-border-color);
+}
+// Hover and keyboard focus share one state, so a mouse and the arrow keys
+// never disagree about which row Enter would pick.
+.trivia-search-row.is-highlighted {
+	background: var(--bs-primary);
+	color: #fff;
+}
+.trivia-search-row.is-highlighted .text-body-secondary {
+	color: rgba(255, 255, 255, 0.75) !important;
+}
+
+// --- Answers list ----------------------------------------------------------
+.trivia-answer-row {
+	display: flex;
+	align-items: center;
+	gap: 0.6rem;
+	padding: 0.3rem 0.5rem;
+	min-width: 0;
+}
+.trivia-answer-row + .trivia-answer-row {
+	border-top: 1px solid var(--bs-border-color);
+}
+// Your own answer. Tinting toward success from whatever the body background
+// IS keeps the row readable in both themes - `--bs-success-bg-subtle` is a
+// LIGHT green in both, so on the dark palette it swallowed the player's name.
+.trivia-answer-row.is-mine {
+	background: color-mix(in srgb, var(--bs-success) 15%, var(--bs-body-bg));
+	box-shadow: inset 3px 0 0 var(--bs-success);
+}
+
 // Scoreboard stat tile ("Score 120", "Streak 7", ...)
 .trivia-tile {
 	background: var(--bs-secondary-bg);

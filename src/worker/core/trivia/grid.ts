@@ -56,7 +56,10 @@ const choice = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
 // Rarity points for a cell's eligible pool: rank by fame, the biggest name
 // scores the floor (10), the most obscure qualifier the ceiling, plus a bonus
 // when the pool itself is tiny (a hard cell deserves more even for its star).
-const rarityForPool = (pool: TriviaPool, pids: number[]): Record<number, number> => {
+const rarityForPool = (
+	pool: TriviaPool,
+	pids: number[],
+): Record<number, number> => {
 	const sorted = [...pids].sort(
 		(a, b) => pool.byPid.get(b)!.popularity - pool.byPid.get(a)!.popularity,
 	);
@@ -89,7 +92,6 @@ type Candidates = {
 	// All achievements with at least 1 qualifier (custom grids may use any);
 	// the random generator additionally requires MIN_QUALIFIERS.
 	achievementCandidates: Candidate[];
-	teamAbbrevs: Map<number, string>;
 };
 
 const MIN_QUALIFIERS = 8;
@@ -113,7 +115,6 @@ const buildCandidates = async (): Promise<Candidates> => {
 	}
 
 	const teams = await idb.cache.teams.getAll();
-	const teamAbbrevs = new Map(teams.map((t) => [t.tid, t.abbrev]));
 	const teamCandidates: Candidate[] = teams
 		.filter((t) => !t.disabled && (playersByTeam.get(t.tid)?.size ?? 0) >= 12)
 		.map((t) => ({
@@ -159,7 +160,7 @@ const buildCandidates = async (): Promise<Candidates> => {
 		}
 	}
 
-	return { pool, seasonIndex, teamCandidates, achievementCandidates, teamAbbrevs };
+	return { pool, seasonIndex, teamCandidates, achievementCandidates };
 };
 
 // The eligible players for one cell.
@@ -236,7 +237,7 @@ export const generateTriviaGrid = async (): Promise<
 	  }
 	| undefined
 > => {
-	const { pool, seasonIndex, teamCandidates, achievementCandidates, teamAbbrevs } =
+	const { pool, seasonIndex, teamCandidates, achievementCandidates } =
 		await buildCandidates();
 
 	// The random generator only draws from achievements with a healthy pool.
@@ -329,7 +330,9 @@ export const generateTriviaGrid = async (): Promise<
 
 		return {
 			grid: toGrid(pool, rows, cols, cellSets),
-			searchList: getSearchList(pool, teamAbbrevs),
+			// No team abbrevs: listing a player's teams in the guess box would
+			// hand over every team cell on the board.
+			searchList: getSearchList(pool),
 		};
 	}
 
@@ -379,15 +382,13 @@ export const buildCustomGrid = async (input: {
 	if (input.rows.length !== 3 || input.cols.length !== 3) {
 		return undefined;
 	}
-	const { pool, seasonIndex, teamCandidates, achievementCandidates, teamAbbrevs } =
+	const { pool, seasonIndex, teamCandidates, achievementCandidates } =
 		await buildCandidates();
 
 	const find = (ref: GridCriterionRef): Candidate | undefined =>
 		ref.kind === "team"
 			? teamCandidates.find((c) => c.kind === "team" && c.tid === ref.tid)
-			: achievementCandidates.find(
-					(c) => c.kind !== "team" && c.id === ref.id,
-				);
+			: achievementCandidates.find((c) => c.kind !== "team" && c.id === ref.id);
 
 	const rows: Candidate[] = [];
 	const cols: Candidate[] = [];
@@ -415,7 +416,7 @@ export const buildCustomGrid = async (input: {
 
 	return {
 		grid: toGrid(pool, rows, cols, cellSets),
-		searchList: getSearchList(pool, teamAbbrevs),
+		searchList: getSearchList(pool),
 	};
 };
 
