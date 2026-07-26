@@ -49,31 +49,49 @@ export const buildCareerAchievements = (
 			id: "career20kPoints",
 			label: "20,000+ Career Points",
 			test: (p) => p.tot.pts >= 20000,
+			// Shares a family with the generated thresholds for this stat, so a
+			// grid never pairs two different point/rebound/... cutoffs.
+			family: "careerPoints",
 		},
 		{
 			id: "career10kRebounds",
 			label: "10,000+ Career Rebounds",
 			test: (p) => p.tot.trb >= 10000,
+			// Shares a family with the generated thresholds for this stat, so a
+			// grid never pairs two different point/rebound/... cutoffs.
+			family: "careerRebounds",
 		},
 		{
 			id: "career5kAssists",
 			label: "5,000+ Career Assists",
 			test: (p) => p.tot.ast >= 5000,
+			// Shares a family with the generated thresholds for this stat, so a
+			// grid never pairs two different point/rebound/... cutoffs.
+			family: "careerAssists",
 		},
 		{
 			id: "career2kSteals",
 			label: "2,000+ Career Steals",
 			test: (p) => p.tot.stl >= 2000,
+			// Shares a family with the generated thresholds for this stat, so a
+			// grid never pairs two different point/rebound/... cutoffs.
+			family: "careerSteals",
 		},
 		{
 			id: "career1500Blocks",
 			label: "1,500+ Career Blocks",
 			test: (p) => p.tot.blk >= 1500,
+			// Shares a family with the generated thresholds for this stat, so a
+			// grid never pairs two different point/rebound/... cutoffs.
+			family: "careerBlocks",
 		},
 		{
 			id: "career2kThrees",
 			label: "2,000+ Career Threes",
 			test: (p) => p.tot.tp >= 2000,
+			// Shares a family with the generated thresholds for this stat, so a
+			// grid never pairs two different point/rebound/... cutoffs.
+			family: "careerThrees",
 		},
 		{
 			id: "played15PlusSeasons",
@@ -137,8 +155,7 @@ export const buildCareerAchievements = (
 		{
 			id: "draftedTeen",
 			label: "Drafted as a Teenager",
-			test: (p) =>
-				p.draft.round >= 1 && p.draft.year - p.bornYear <= 19,
+			test: (p) => p.draft.round >= 1 && p.draft.year - p.bornYear <= 19,
 			family: "draft",
 		},
 	];
@@ -179,7 +196,182 @@ export const buildCareerAchievements = (
 		});
 	}
 
+	list.push(...buildAdaptiveCareerAchievements(pool));
+
 	return list;
+};
+
+// ---------------------------------------------------------------------------
+// Adaptive statistical thresholds
+// ---------------------------------------------------------------------------
+//
+// A fixed threshold ("20,000+ Career Points") is a bad fit for an arbitrary
+// league: in a young or low-scoring one NOBODY qualifies, so the criterion is
+// dropped and the grid loses variety; in a 60-season league half the Hall of
+// Fame clears it, so it barely narrows anything. ZenGM Grids solves this by
+// defining a LADDER of thresholds per stat and picking the rungs that actually
+// discriminate in the league at hand. This does the same.
+//
+// For each stat we pick the rungs whose qualifier count lands in a target band -
+// selective enough to be interesting, common enough to be solvable - and keep at
+// most a couple per stat so one category can't flood the grid. Everything is
+// emitted in the normal CareerAchievement shape, so grid generation, the custom
+// grid builder, and rarity scoring all treat these like any other criterion.
+
+// How many players a generated threshold should match to be worth offering.
+// The floor is above the generator's MIN_QUALIFIERS so a chosen rung still has
+// room once it's intersected with a team.
+const ADAPTIVE_MIN_QUALIFIERS = 10;
+// Above this, a criterion is so common it stops being a real constraint. Scaled
+// against league size below rather than used raw.
+const ADAPTIVE_MAX_SHARE = 0.25;
+// At most this many rungs per stat, so (say) points can't supply six criteria.
+const ADAPTIVE_PER_STAT = 2;
+
+type Ladder = {
+	id: string;
+	family: string;
+	thresholds: number[];
+	label: (n: number) => string;
+	value: (p: TriviaPlayer) => number;
+};
+
+const CAREER_LADDERS: Ladder[] = [
+	{
+		id: "pts",
+		family: "careerPoints",
+		thresholds: [
+			3000, 5000, 7500, 10000, 12500, 15000, 17500, 20000, 22500, 25000, 30000,
+			35000, 40000,
+		],
+		label: (n) => `${n.toLocaleString()}+ Career Points`,
+		value: (p) => p.tot.pts,
+	},
+	{
+		id: "trb",
+		family: "careerRebounds",
+		thresholds: [
+			500, 1000, 1500, 2000, 3000, 4000, 5000, 6000, 7500, 10000, 12000,
+		],
+		label: (n) => `${n.toLocaleString()}+ Career Rebounds`,
+		value: (p) => p.tot.trb,
+	},
+	{
+		id: "ast",
+		family: "careerAssists",
+		thresholds: [500, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 7500],
+		label: (n) => `${n.toLocaleString()}+ Career Assists`,
+		value: (p) => p.tot.ast,
+	},
+	{
+		id: "stl",
+		family: "careerSteals",
+		thresholds: [200, 400, 600, 800, 1000, 1250, 1500, 2000],
+		label: (n) => `${n.toLocaleString()}+ Career Steals`,
+		value: (p) => p.tot.stl,
+	},
+	{
+		id: "blk",
+		family: "careerBlocks",
+		thresholds: [200, 400, 600, 800, 1000, 1250, 1500, 2000],
+		label: (n) => `${n.toLocaleString()}+ Career Blocks`,
+		value: (p) => p.tot.blk,
+	},
+	{
+		id: "tp",
+		family: "careerThrees",
+		thresholds: [100, 200, 300, 500, 750, 1000, 1250, 1500, 2000, 2500],
+		label: (n) => `${n.toLocaleString()}+ Career 3PM`,
+		value: (p) => p.tot.tp,
+	},
+];
+
+// Pick the rungs of one ladder that discriminate well in THIS league, spread
+// apart so the offered thresholds aren't near-duplicates of each other.
+const pickRungs = (
+	players: TriviaPlayer[],
+	ladder: Ladder,
+): { threshold: number; count: number }[] => {
+	// The ceiling must sit well ABOVE the floor or the target band collapses to
+	// nothing: in a small pool, share * count can land exactly on the minimum,
+	// and then no rung is ever viable. Keep a real window in every league size.
+	const maxQualifiers = Math.max(
+		ADAPTIVE_MIN_QUALIFIERS * 3,
+		Math.floor(players.length * ADAPTIVE_MAX_SHARE),
+	);
+
+	const viable: { threshold: number; count: number }[] = [];
+	for (const threshold of ladder.thresholds) {
+		let count = 0;
+		for (const p of players) {
+			if (ladder.value(p) >= threshold) {
+				count += 1;
+			}
+		}
+		// Thresholds only get harder, so once a rung is too sparse every rung
+		// above it is too.
+		if (count < ADAPTIVE_MIN_QUALIFIERS) {
+			break;
+		}
+		if (count <= maxQualifiers) {
+			viable.push({ threshold, count });
+		}
+	}
+	if (viable.length <= ADAPTIVE_PER_STAT) {
+		return viable;
+	}
+
+	// Spread the picks across the viable range (hardest, and one well below it)
+	// instead of taking adjacent rungs that match nearly the same players.
+	const picks: { threshold: number; count: number }[] = [];
+	for (let i = 0; i < ADAPTIVE_PER_STAT; i += 1) {
+		const idx = Math.round(
+			((viable.length - 1) * i) / (ADAPTIVE_PER_STAT - 1 || 1),
+		);
+		const pick = viable[idx]!;
+		if (!picks.some((existing) => existing.threshold === pick.threshold)) {
+			picks.push(pick);
+		}
+	}
+	return picks;
+};
+
+const buildAdaptiveCareerAchievements = (
+	pool: TriviaPool,
+): CareerAchievement[] => {
+	const players = pool.players;
+	if (players.length === 0) {
+		return [];
+	}
+
+	// The fixed criteria above already cover these exact numbers; skip a
+	// generated rung that would duplicate one of them verbatim.
+	const fixed = new Set([
+		"20000|careerPoints",
+		"10000|careerRebounds",
+		"5000|careerAssists",
+		"2000|careerSteals",
+		"1500|careerBlocks",
+		"2000|careerThrees",
+	]);
+
+	const out: CareerAchievement[] = [];
+	for (const ladder of CAREER_LADDERS) {
+		for (const { threshold } of pickRungs(players, ladder)) {
+			if (fixed.has(`${threshold}|${ladder.family}`)) {
+				continue;
+			}
+			out.push({
+				id: `adaptive_${ladder.id}_${threshold}`,
+				label: ladder.label(threshold),
+				test: (p) => ladder.value(p) >= threshold,
+				// Same family as the hand-written one, so a grid never pairs two
+				// different points thresholds against each other.
+				family: ladder.family,
+			});
+		}
+	}
+	return out;
 };
 
 // ---------------------------------------------------------------------------
@@ -243,9 +435,8 @@ export const mergedSeasons = (p: TriviaPlayer) => {
 	return bySeason;
 };
 
-type SeasonLine = ReturnType<typeof mergedSeasons> extends Map<number, infer V>
-	? V
-	: never;
+type SeasonLine =
+	ReturnType<typeof mergedSeasons> extends Map<number, infer V> ? V : never;
 
 const awardSeasons =
 	(match: (type: string) => boolean) =>
@@ -288,40 +479,175 @@ const leaderSeasons =
 
 export const SEASON_ACHIEVEMENTS: SeasonAchievement[] = [
 	// Awards, matched against BBGM's exact award-type strings.
-	{ id: "AllStar", label: "All-Star", seasons: awardSeasons((t) => t === "All-Star") },
-	{ id: "MVP", label: "MVP", seasons: awardSeasons((t) => t === "Most Valuable Player") },
-	{ id: "DPOY", label: "Defensive Player of the Year", seasons: awardSeasons((t) => t === "Defensive Player of the Year") },
-	{ id: "ROY", label: "Rookie of the Year", seasons: awardSeasons((t) => t === "Rookie of the Year") },
-	{ id: "SMOY", label: "Sixth Man of the Year", seasons: awardSeasons((t) => t === "Sixth Man of the Year") },
-	{ id: "MIP", label: "Most Improved Player", seasons: awardSeasons((t) => t === "Most Improved Player") },
-	{ id: "FinalsMVP", label: "Finals MVP", seasons: awardSeasons((t) => t === "Finals MVP") },
-	{ id: "AllLeagueAny", label: "All-League Team", seasons: awardSeasons((t) => t.includes("All-League")) },
-	{ id: "AllDefAny", label: "All-Defensive Team", seasons: awardSeasons((t) => t.includes("All-Defensive")) },
-	{ id: "AllRookieAny", label: "All-Rookie Team", seasons: awardSeasons((t) => t === "All-Rookie Team") },
-	{ id: "Champion", label: "Won a Championship", seasons: awardSeasons((t) => t === "Won Championship") },
-	{ id: "DunkWinner", label: "Dunk Contest Winner", seasons: awardSeasons((t) => t === "Slam Dunk Contest Winner") },
-	{ id: "ThreeWinner", label: "Three-Point Contest Winner", seasons: awardSeasons((t) => t === "Three-Point Contest Winner") },
+	{
+		id: "AllStar",
+		label: "All-Star",
+		seasons: awardSeasons((t) => t === "All-Star"),
+	},
+	{
+		id: "MVP",
+		label: "MVP",
+		seasons: awardSeasons((t) => t === "Most Valuable Player"),
+	},
+	{
+		id: "DPOY",
+		label: "Defensive Player of the Year",
+		seasons: awardSeasons((t) => t === "Defensive Player of the Year"),
+	},
+	{
+		id: "ROY",
+		label: "Rookie of the Year",
+		seasons: awardSeasons((t) => t === "Rookie of the Year"),
+	},
+	{
+		id: "SMOY",
+		label: "Sixth Man of the Year",
+		seasons: awardSeasons((t) => t === "Sixth Man of the Year"),
+	},
+	{
+		id: "MIP",
+		label: "Most Improved Player",
+		seasons: awardSeasons((t) => t === "Most Improved Player"),
+	},
+	{
+		id: "FinalsMVP",
+		label: "Finals MVP",
+		seasons: awardSeasons((t) => t === "Finals MVP"),
+	},
+	{
+		id: "AllLeagueAny",
+		label: "All-League Team",
+		seasons: awardSeasons((t) => t.includes("All-League")),
+	},
+	{
+		id: "AllDefAny",
+		label: "All-Defensive Team",
+		seasons: awardSeasons((t) => t.includes("All-Defensive")),
+	},
+	{
+		id: "AllRookieAny",
+		label: "All-Rookie Team",
+		seasons: awardSeasons((t) => t === "All-Rookie Team"),
+	},
+	{
+		id: "Champion",
+		label: "Won a Championship",
+		seasons: awardSeasons((t) => t === "Won Championship"),
+	},
+	{
+		id: "DunkWinner",
+		label: "Dunk Contest Winner",
+		seasons: awardSeasons((t) => t === "Slam Dunk Contest Winner"),
+	},
+	{
+		id: "ThreeWinner",
+		label: "Three-Point Contest Winner",
+		seasons: awardSeasons((t) => t === "Three-Point Contest Winner"),
+	},
 
 	// League leaders (computed - BBGM doesn't store these as awards).
-	{ id: "PointsLeader", label: "Led League in Scoring", seasons: leaderSeasons("PointsLeader"), family: "leader" },
-	{ id: "ReboundsLeader", label: "Led League in Rebounds", seasons: leaderSeasons("ReboundsLeader"), family: "leader" },
-	{ id: "AssistsLeader", label: "Led League in Assists", seasons: leaderSeasons("AssistsLeader"), family: "leader" },
-	{ id: "StealsLeader", label: "Led League in Steals", seasons: leaderSeasons("StealsLeader"), family: "leader" },
-	{ id: "BlocksLeader", label: "Led League in Blocks", seasons: leaderSeasons("BlocksLeader"), family: "leader" },
+	{
+		id: "PointsLeader",
+		label: "Led League in Scoring",
+		seasons: leaderSeasons("PointsLeader"),
+		family: "leader",
+	},
+	{
+		id: "ReboundsLeader",
+		label: "Led League in Rebounds",
+		seasons: leaderSeasons("ReboundsLeader"),
+		family: "leader",
+	},
+	{
+		id: "AssistsLeader",
+		label: "Led League in Assists",
+		seasons: leaderSeasons("AssistsLeader"),
+		family: "leader",
+	},
+	{
+		id: "StealsLeader",
+		label: "Led League in Steals",
+		seasons: leaderSeasons("StealsLeader"),
+		family: "leader",
+	},
+	{
+		id: "BlocksLeader",
+		label: "Led League in Blocks",
+		seasons: leaderSeasons("BlocksLeader"),
+		family: "leader",
+	},
 
 	// Single-season stat lines (thresholds from the original).
-	{ id: "Season30PPG", label: "Averaged 30+ PPG in a Season", seasons: statSeasons((s) => s.gp >= 50 && s.pts / s.gp >= 30), family: "scoring" },
-	{ id: "Season2000Points", label: "2,000+ Points in a Season", seasons: statSeasons((s) => s.pts >= 2000), family: "scoring" },
-	{ id: "Season200Threes", label: "200+ Threes in a Season", seasons: statSeasons((s) => s.tp >= 200) },
-	{ id: "Season12RPG", label: "Averaged 12+ RPG in a Season", seasons: statSeasons((s) => s.gp >= 50 && s.trb / s.gp >= 12), family: "rebounding" },
-	{ id: "Season10APG", label: "Averaged 10+ APG in a Season", seasons: statSeasons((s) => s.gp >= 50 && s.ast / s.gp >= 10), family: "assisting" },
-	{ id: "Season800Rebounds", label: "800+ Rebounds in a Season", seasons: statSeasons((s) => s.trb >= 800), family: "rebounding" },
-	{ id: "Season700Assists", label: "700+ Assists in a Season", seasons: statSeasons((s) => s.ast >= 700), family: "assisting" },
-	{ id: "Season2SPG", label: "Averaged 2+ SPG in a Season", seasons: statSeasons((s) => s.gp >= 50 && s.stl / s.gp >= 2), family: "steals" },
-	{ id: "Season2_5BPG", label: "Averaged 2.5+ BPG in a Season", seasons: statSeasons((s) => s.gp >= 50 && s.blk / s.gp >= 2.5), family: "blocks" },
-	{ id: "Season150Steals", label: "150+ Steals in a Season", seasons: statSeasons((s) => s.stl >= 150), family: "steals" },
-	{ id: "Season150Blocks", label: "150+ Blocks in a Season", seasons: statSeasons((s) => s.blk >= 150), family: "blocks" },
-	{ id: "Season200Stocks", label: "200+ Steals + Blocks in a Season", seasons: statSeasons((s) => s.stl + s.blk >= 200) },
+	{
+		id: "Season30PPG",
+		label: "Averaged 30+ PPG in a Season",
+		seasons: statSeasons((s) => s.gp >= 50 && s.pts / s.gp >= 30),
+		family: "scoring",
+	},
+	{
+		id: "Season2000Points",
+		label: "2,000+ Points in a Season",
+		seasons: statSeasons((s) => s.pts >= 2000),
+		family: "scoring",
+	},
+	{
+		id: "Season200Threes",
+		label: "200+ Threes in a Season",
+		seasons: statSeasons((s) => s.tp >= 200),
+	},
+	{
+		id: "Season12RPG",
+		label: "Averaged 12+ RPG in a Season",
+		seasons: statSeasons((s) => s.gp >= 50 && s.trb / s.gp >= 12),
+		family: "rebounding",
+	},
+	{
+		id: "Season10APG",
+		label: "Averaged 10+ APG in a Season",
+		seasons: statSeasons((s) => s.gp >= 50 && s.ast / s.gp >= 10),
+		family: "assisting",
+	},
+	{
+		id: "Season800Rebounds",
+		label: "800+ Rebounds in a Season",
+		seasons: statSeasons((s) => s.trb >= 800),
+		family: "rebounding",
+	},
+	{
+		id: "Season700Assists",
+		label: "700+ Assists in a Season",
+		seasons: statSeasons((s) => s.ast >= 700),
+		family: "assisting",
+	},
+	{
+		id: "Season2SPG",
+		label: "Averaged 2+ SPG in a Season",
+		seasons: statSeasons((s) => s.gp >= 50 && s.stl / s.gp >= 2),
+		family: "steals",
+	},
+	{
+		id: "Season2_5BPG",
+		label: "Averaged 2.5+ BPG in a Season",
+		seasons: statSeasons((s) => s.gp >= 50 && s.blk / s.gp >= 2.5),
+		family: "blocks",
+	},
+	{
+		id: "Season150Steals",
+		label: "150+ Steals in a Season",
+		seasons: statSeasons((s) => s.stl >= 150),
+		family: "steals",
+	},
+	{
+		id: "Season150Blocks",
+		label: "150+ Blocks in a Season",
+		seasons: statSeasons((s) => s.blk >= 150),
+		family: "blocks",
+	},
+	{
+		id: "Season200Stocks",
+		label: "200+ Steals + Blocks in a Season",
+		seasons: statSeasons((s) => s.stl + s.blk >= 200),
+	},
 	{
 		id: "Season50_40_90",
 		label: "50/40/90 Season",
@@ -354,8 +680,18 @@ export const SEASON_ACHIEVEMENTS: SeasonAchievement[] = [
 		seasons: statSeasons((s) => s.tpa >= 100 && s.tp / s.tpa >= 0.4),
 		family: "shooting",
 	},
-	{ id: "Season70Games", label: "Played 70+ Games in a Season", seasons: statSeasons((s) => s.gp >= 70), family: "durability" },
-	{ id: "Season36MPG", label: "Averaged 36+ MPG in a Season", seasons: statSeasons((s) => s.gp >= 50 && s.min / s.gp >= 36), family: "durability" },
+	{
+		id: "Season70Games",
+		label: "Played 70+ Games in a Season",
+		seasons: statSeasons((s) => s.gp >= 70),
+		family: "durability",
+	},
+	{
+		id: "Season36MPG",
+		label: "Averaged 36+ MPG in a Season",
+		seasons: statSeasons((s) => s.gp >= 50 && s.min / s.gp >= 36),
+		family: "durability",
+	},
 	{
 		id: "Season25_10",
 		label: "Averaged 25/10 in a Season",

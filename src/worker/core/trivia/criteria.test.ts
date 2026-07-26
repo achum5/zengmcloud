@@ -106,6 +106,85 @@ describe("career achievements", () => {
 		assert.ok(careerAch(pool, "career5kAssists").test(star));
 	});
 
+	test("stat thresholds adapt to the league instead of being fixed", () => {
+		// A modest league: nobody is anywhere near 20,000 career points, so the
+		// hand-written cutoff matches NOTHING and would just be dropped, costing
+		// the grid variety. The generated ladder has to find rungs that actually
+		// split this league's players.
+		const modest = makePool(
+			Array.from({ length: 40 }, (_, i) =>
+				makePlayer({
+					pid: i + 1,
+					tot: { ...makePlayer().tot, pts: 2000 + i * 250 },
+				}),
+			),
+		);
+		const modestPoints = buildCareerAchievements(modest).filter((a) =>
+			a.id.startsWith("adaptive_pts_"),
+		);
+		assert.ok(
+			modestPoints.length > 0,
+			"a modest league must still get points criteria",
+		);
+		// Every generated rung must actually match somebody here.
+		for (const ach of modestPoints) {
+			const n = modest.players.filter((p) => ach.test(p)).length;
+			assert.ok(n > 0, `${ach.label} matched nobody`);
+			assert.ok(
+				n < modest.players.length,
+				`${ach.label} matched everybody, so it constrains nothing`,
+			);
+		}
+
+		// A high-scoring, long-history league should land on HIGHER cutoffs than
+		// the modest one - that is the whole point of adapting.
+		const loaded = makePool(
+			Array.from({ length: 40 }, (_, i) =>
+				makePlayer({
+					pid: i + 1,
+					tot: { ...makePlayer().tot, pts: 12000 + i * 900 },
+				}),
+			),
+		);
+		const loadedPoints = buildCareerAchievements(loaded).filter((a) =>
+			a.id.startsWith("adaptive_pts_"),
+		);
+		assert.ok(loadedPoints.length > 0);
+
+		const topRung = (list: typeof modestPoints) =>
+			Math.max(...list.map((a) => Number(a.id.replace("adaptive_pts_", ""))));
+		assert.ok(
+			topRung(loadedPoints) > topRung(modestPoints),
+			`expected a higher cutoff in the high-scoring league (${topRung(
+				loadedPoints,
+			)} vs ${topRung(modestPoints)})`,
+		);
+	});
+
+	test("a generated threshold never pairs against its hand-written twin", () => {
+		// Both must share a family, or a grid could show "20,000+ Career Points"
+		// crossed with "12,500+ Career Points".
+		const pool = makePool(
+			Array.from({ length: 40 }, (_, i) =>
+				makePlayer({
+					pid: i + 1,
+					tot: { ...makePlayer().tot, pts: 5000 + i * 800 },
+				}),
+			),
+		);
+		const all = buildCareerAchievements(pool);
+		const fixed = all.find((a) => a.id === "career20kPoints")!;
+		for (const generated of all.filter((a) =>
+			a.id.startsWith("adaptive_pts_"),
+		)) {
+			assert.strictEqual(
+				generated.family,
+				fixed.family,
+				`${generated.label} must share a family with the fixed points criterion`,
+			);
+		}
+	});
+
 	test("draft achievements are mutually reasonable", () => {
 		const pool = makePool([makePlayer()]);
 		const first = makePlayer({ draft: { round: 1, pick: 1, year: 1999 } });
@@ -220,10 +299,7 @@ describe("season achievements", () => {
 			seasonAch("Season30PPG").seasons(qualifies, ctx).size,
 			1,
 		);
-		assert.strictEqual(
-			seasonAch("Season30PPG").seasons(lowGames, ctx).size,
-			0,
-		);
+		assert.strictEqual(seasonAch("Season30PPG").seasons(lowGames, ctx).size, 0);
 	});
 
 	test("50/40/90 season requires all three splits at volume", () => {
@@ -271,18 +347,12 @@ describe("season achievements", () => {
 			],
 		});
 		const ctx = { leaders: new Map() };
-		assert.deepStrictEqual(
-			[...seasonAch("MVP").seasons(p, ctx)],
-			[2003],
-		);
+		assert.deepStrictEqual([...seasonAch("MVP").seasons(p, ctx)], [2003]);
 		assert.deepStrictEqual(
 			[...seasonAch("AllLeagueAny").seasons(p, ctx)],
 			[2003],
 		);
-		assert.deepStrictEqual(
-			[...seasonAch("Champion").seasons(p, ctx)],
-			[2004],
-		);
+		assert.deepStrictEqual([...seasonAch("Champion").seasons(p, ctx)], [2004]);
 		assert.strictEqual(seasonAch("DPOY").seasons(p, ctx).size, 0);
 	});
 });
