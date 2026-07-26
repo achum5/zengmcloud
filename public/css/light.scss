@@ -2033,6 +2033,103 @@ tr.text-body-secondary {
 	animation: trivia-flash-green 0.7s ease-out both;
 }
 
+// --- Grids board -----------------------------------------------------------
+// The look from the standalone ZenGM Grids app: the whole 4x4 board sits inside
+// a slowly panning rainbow frame, the tiles are separated by hairline gaps
+// rather than spaced apart, and a solved cell is filled by a rarity-tier
+// gradient instead of a flat color - so a board reads as one object and how
+// obscure your answers were is visible at a glance.
+@keyframes trivia-pan-gradient {
+	0% {
+		background-position: 0% 50%;
+	}
+	100% {
+		background-position: 400% 50%;
+	}
+}
+
+.trivia-grid-board {
+	background: linear-gradient(
+		90deg,
+		#29ffc6,
+		#46a6ff,
+		#b721ff,
+		#46a6ff,
+		#29ffc6
+	);
+	background-size: 400% 400%;
+	animation: trivia-pan-gradient 60s linear infinite;
+	border-radius: 1rem;
+	padding: 3px;
+	overflow: hidden;
+}
+
+.trivia-grid-inner {
+	display: grid;
+	gap: 3px;
+	border-radius: calc(1rem - 3px);
+	overflow: hidden;
+}
+
+// Header + score tiles: the same slate gradient the Grids board uses.
+.trivia-grid-head {
+	background: linear-gradient(
+		180deg,
+		var(--bs-secondary-bg) 0%,
+		var(--bs-tertiary-bg) 100%
+	);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+}
+
+// An unsolved cell - plain surface, so the solved ones pop against it.
+.trivia-grid-cell {
+	background: var(--bs-body-bg);
+	aspect-ratio: 1 / 1;
+	transition:
+		filter 0.15s ease,
+		box-shadow 0.15s ease;
+}
+.trivia-grid-cell:hover:not(:disabled) {
+	filter: brightness(1.12) contrast(1.05);
+}
+
+// Rarity tiers, keyed off how rare the guessed player was (the cell's points).
+// Same palette as the Grids app so a screenshot from either reads identically.
+.trivia-rarity-common {
+	background: linear-gradient(135deg, #69c8ff 0%, #2a8ae0 100%);
+	color: #fff;
+}
+.trivia-rarity-uncommon {
+	background: linear-gradient(135deg, #3ef1b3 0%, #00a070 100%);
+	color: #fff;
+}
+.trivia-rarity-rare {
+	background: linear-gradient(135deg, #ffe875 0%, #e3b900 100%);
+	color: #000;
+}
+.trivia-rarity-epic {
+	background: linear-gradient(135deg, #ff9c40 0%, #e66000 100%);
+	color: #fff;
+}
+.trivia-rarity-legendary {
+	background: linear-gradient(135deg, #ff6d8c 0%, #d82a4f 100%);
+	color: #fff;
+}
+.trivia-rarity-mythic {
+	background: linear-gradient(135deg, #d178ff 0%, #8b1bd1 100%);
+	color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.trivia-grid-board {
+		animation: none;
+		background: linear-gradient(90deg, #46a6ff, #b721ff);
+	}
+}
+
 // Scoreboard stat tile ("Score 120", "Streak 7", ...)
 .trivia-tile {
 	background: var(--bs-secondary-bg);

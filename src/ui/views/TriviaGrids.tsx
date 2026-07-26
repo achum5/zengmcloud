@@ -79,19 +79,48 @@ const loadStats = (): Stats => {
 };
 
 // Rarity points (10-100, higher = more obscure) mapped to a display tier.
+// Rarity tiers, matching the standalone Grids app's six-tier palette. `points`
+// is how obscure the guessed player was (0-100), so a higher tier means a
+// gutsier answer - the cell is filled with that tier's gradient.
 const tierOf = (
 	points: number,
-): { label: string; badge: string } => {
+): { label: string; badge: string; cls: string } => {
 	if (points >= 90) {
-		return { label: "Legendary", badge: "text-bg-warning" };
+		return {
+			label: "Mythic",
+			badge: "text-bg-light",
+			cls: "trivia-rarity-mythic",
+		};
 	}
-	if (points >= 65) {
-		return { label: "Rare", badge: "text-bg-info" };
+	if (points >= 75) {
+		return {
+			label: "Legendary",
+			badge: "text-bg-light",
+			cls: "trivia-rarity-legendary",
+		};
 	}
-	if (points >= 35) {
-		return { label: "Solid", badge: "text-bg-success" };
+	if (points >= 60) {
+		return {
+			label: "Epic",
+			badge: "text-bg-light",
+			cls: "trivia-rarity-epic",
+		};
 	}
-	return { label: "Common", badge: "text-bg-secondary" };
+	if (points >= 40) {
+		return { label: "Rare", badge: "text-bg-dark", cls: "trivia-rarity-rare" };
+	}
+	if (points >= 20) {
+		return {
+			label: "Uncommon",
+			badge: "text-bg-light",
+			cls: "trivia-rarity-uncommon",
+		};
+	}
+	return {
+		label: "Common",
+		badge: "text-bg-light",
+		cls: "trivia-rarity-common",
+	};
 };
 
 const loadGuessSetting = (): number => {
@@ -438,8 +467,11 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	}
 
 	const activeRow =
-		activeCell !== undefined ? grid.rows[Math.floor(activeCell / 3)] : undefined;
-	const activeCol = activeCell !== undefined ? grid.cols[activeCell % 3] : undefined;
+		activeCell !== undefined
+			? grid.rows[Math.floor(activeCell / 3)]
+			: undefined;
+	const activeCol =
+		activeCell !== undefined ? grid.cols[activeCell % 3] : undefined;
 
 	const reveal = revealCell !== undefined ? grid.cells[revealCell] : undefined;
 	const revealSorted = reveal
@@ -501,128 +533,129 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 				</div>
 			</div>
 
-			<div
-				className="mb-2"
-				style={{
-					display: "grid",
-					gridTemplateColumns: "minmax(76px, 108px) repeat(3, minmax(92px, 150px))",
-					gap: 6,
-					maxWidth: 640,
-				}}
-			>
-				<div className="d-flex flex-column align-items-center justify-content-center rounded bg-body-secondary">
-					<div className="h3 mb-0">
-						{gameMaxGuesses === Infinity ? "∞" : Math.max(0, guessesLeft)}
-					</div>
-					<div className="text-body-secondary" style={{ fontSize: "0.7rem" }}>
-						guesses
-					</div>
-				</div>
-				{grid.cols.map((c, i) => (
-					<div key={i} className="rounded bg-body-secondary">
-						<CriterionHeader c={c} />
-					</div>
-				))}
-
-				{grid.rows.map((row, r) => (
-					<Fragment key={r}>
-						<div className="rounded bg-body-secondary">
-							<CriterionHeader c={row} />
+			<div className="trivia-grid-board mb-2" style={{ maxWidth: 640 }}>
+				<div
+					className="trivia-grid-inner"
+					style={{
+						// Fractional columns so the inner board always fills the
+						// rainbow frame - fixed max widths left a gradient gutter.
+						gridTemplateColumns: "minmax(76px, 108px) repeat(3, 1fr)",
+					}}
+				>
+					<div className="trivia-grid-head flex-column">
+						<div className="h3 mb-0">
+							{gameMaxGuesses === Infinity ? "∞" : Math.max(0, guessesLeft)}
 						</div>
-						{grid.cols.map((_, cIdx) => {
-							const i = r * 3 + cIdx;
-							const cell = cells[i]!;
-							const solved = cell.pid !== undefined;
-							if (solved) {
-								const card = cards[cell.pid!];
-								const tier = tierOf(cell.points);
-								return (
-									<div
-										key={cIdx}
-										className="position-relative rounded overflow-hidden border border-success trivia-pop trivia-flash-green"
-										style={{ aspectRatio: "1 / 1", cursor: done ? "pointer" : undefined }}
-										onClick={done ? () => setRevealCell(i) : undefined}
-									>
+						<div className="text-body-secondary" style={{ fontSize: "0.7rem" }}>
+							guesses
+						</div>
+					</div>
+					{grid.cols.map((c, i) => (
+						<div key={i} className="trivia-grid-head">
+							<CriterionHeader c={c} />
+						</div>
+					))}
+
+					{grid.rows.map((row, r) => (
+						<Fragment key={r}>
+							<div className="trivia-grid-head">
+								<CriterionHeader c={row} />
+							</div>
+							{grid.cols.map((_, cIdx) => {
+								const i = r * 3 + cIdx;
+								const cell = cells[i]!;
+								const solved = cell.pid !== undefined;
+								if (solved) {
+									const card = cards[cell.pid!];
+									const tier = tierOf(cell.points);
+									return (
 										<div
-											className="position-absolute d-flex justify-content-center"
-											style={{ inset: "0 0 18px 0" }}
-										>
-											{card ? (
-												<div style={{ height: "100%", aspectRatio: "2 / 3" }}>
-													<PlayerPicture
-														face={card.face}
-														imgURL={card.imgURL}
-														colors={card.colors}
-														jersey={card.jersey}
-														lazy
-													/>
-												</div>
-											) : null}
-										</div>
-										<span
-											className={`badge ${tier.badge} position-absolute top-0 end-0 m-1`}
-											title={`${tier.label} pick`}
-										>
-											+{cell.points}
-										</span>
-										<div
-											className="position-absolute bottom-0 start-0 end-0 text-center text-truncate px-1 text-white"
+											key={cIdx}
+											className={`position-relative overflow-hidden trivia-pop trivia-flash-green ${tier.cls}`}
 											style={{
-												background: "rgba(0,0,0,0.6)",
-												fontSize: "0.7rem",
-												lineHeight: "18px",
-												height: 18,
+												aspectRatio: "1 / 1",
+												cursor: done ? "pointer" : undefined,
 											}}
+											onClick={done ? () => setRevealCell(i) : undefined}
 										>
-											{cell.name}
-										</div>
-									</div>
-								);
-							}
-							return (
-								<button
-									key={cIdx}
-									className={`btn p-0 rounded trivia-cell ${
-										activeCell === i
-											? "btn-primary"
-											: done
-												? "btn-light-bordered border-danger"
-												: "btn-light-bordered"
-									}`}
-									style={{ aspectRatio: "1 / 1" }}
-									onClick={() => {
-										if (done) {
-											setRevealCell(i);
-										} else {
-											setActiveCell(i);
-											setWrongGuess(undefined);
-										}
-									}}
-								>
-									{done ? (
-										<span className="small">
-											<span className="d-block fw-bold">
-												{grid.cells[i]!.pids.length}
+											<div
+												className="position-absolute d-flex justify-content-center"
+												style={{ inset: "0 0 18px 0" }}
+											>
+												{card ? (
+													<div style={{ height: "100%", aspectRatio: "2 / 3" }}>
+														<PlayerPicture
+															face={card.face}
+															imgURL={card.imgURL}
+															colors={card.colors}
+															jersey={card.jersey}
+															lazy
+														/>
+													</div>
+												) : null}
+											</div>
+											<span
+												className={`badge ${tier.badge} position-absolute top-0 end-0 m-1`}
+												title={`${tier.label} pick`}
+											>
+												+{cell.points}
 											</span>
-											<span className="text-body-secondary">answers</span>
-										</span>
-									) : (
-										<span className="text-body-secondary h4 mb-0">+</span>
-									)}
-								</button>
-							);
-						})}
-					</Fragment>
-				))}
+											<div
+												className="position-absolute bottom-0 start-0 end-0 text-center text-truncate px-1 text-white"
+												style={{
+													background: "rgba(0,0,0,0.6)",
+													fontSize: "0.7rem",
+													lineHeight: "18px",
+													height: 18,
+												}}
+											>
+												{cell.name}
+											</div>
+										</div>
+									);
+								}
+								return (
+									<button
+										key={cIdx}
+										className={`btn p-0 trivia-cell trivia-grid-cell ${
+											activeCell === i
+												? "btn-primary"
+												: done
+													? "btn-light-bordered border-danger"
+													: "btn-light-bordered"
+										}`}
+										style={{ aspectRatio: "1 / 1" }}
+										onClick={() => {
+											if (done) {
+												setRevealCell(i);
+											} else {
+												setActiveCell(i);
+												setWrongGuess(undefined);
+											}
+										}}
+									>
+										{done ? (
+											<span className="small">
+												<span className="d-block fw-bold">
+													{grid.cells[i]!.pids.length}
+												</span>
+												<span className="text-body-secondary">answers</span>
+											</span>
+										) : (
+											<span className="text-body-secondary h4 mb-0">+</span>
+										)}
+									</button>
+								);
+							})}
+						</Fragment>
+					))}
+				</div>
 			</div>
 
 			{done ? (
 				<>
 					{immaculate ? <Confetti /> : null}
-					<div
-						className="card trivia-rise mb-3"
-						style={{ maxWidth: 640 }}
-					>
+					<div className="card trivia-rise mb-3" style={{ maxWidth: 640 }}>
 						<div className="card-body d-flex flex-wrap align-items-center gap-3">
 							<div style={{ fontSize: "1.3rem", lineHeight: 1.15 }}>
 								{[0, 1, 2].map((r) => (
@@ -743,7 +776,10 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 			</Modal>
 
 			{/* Answers reveal modal (after the game ends) */}
-			<Modal show={revealCell !== undefined} onHide={() => setRevealCell(undefined)}>
+			<Modal
+				show={revealCell !== undefined}
+				onHide={() => setRevealCell(undefined)}
+			>
 				<Modal.Header closeButton>
 					<Modal.Title className="fs-6">
 						{revealCell !== undefined

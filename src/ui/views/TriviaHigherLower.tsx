@@ -7,9 +7,9 @@ import { Confetti } from "./LiveGame/Confetti.tsx";
 import type { View } from "../../common/types.ts";
 
 // Higher or Lower: pick a stat category, then keep calling whether the mystery
-// player's number is higher or lower than the one on the board. One miss ends
-// the run; best streaks are kept per category on this device. Faces are pulled
-// on demand so each matchup shows the real player.
+// player's number is higher or lower than the one on the board. Three lives per
+// run; best streaks are kept per category on this device. Faces are pulled on
+// demand so each matchup shows the real player.
 
 type HLPlayer = View<"triviaHigherLower">["players"][number];
 
@@ -47,9 +47,24 @@ const CATEGORIES: Category[] = [
 	{ key: "fgPct", label: "Career FG%", group: "Career Averages", fmt: "pct" },
 	{ key: "ftPct", label: "Career FT%", group: "Career Averages", fmt: "pct" },
 	{ key: "tpPct", label: "Career 3P%", group: "Career Averages", fmt: "pct" },
-	{ key: "bestPpg", label: "Best Season PPG", group: "Season Bests", fmt: "rate" },
-	{ key: "bestRpg", label: "Best Season RPG", group: "Season Bests", fmt: "rate" },
-	{ key: "bestApg", label: "Best Season APG", group: "Season Bests", fmt: "rate" },
+	{
+		key: "bestPpg",
+		label: "Best Season PPG",
+		group: "Season Bests",
+		fmt: "rate",
+	},
+	{
+		key: "bestRpg",
+		label: "Best Season RPG",
+		group: "Season Bests",
+		fmt: "rate",
+	},
+	{
+		key: "bestApg",
+		label: "Best Season APG",
+		group: "Season Bests",
+		fmt: "rate",
+	},
 	{ key: "highPts", label: "Career-High Points", group: "Game Highs" },
 	{ key: "highTrb", label: "Career-High Rebounds", group: "Game Highs" },
 	{ key: "highAst", label: "Career-High Assists", group: "Game Highs" },
@@ -70,6 +85,72 @@ const fmtValue = (v: number, fmt?: Category["fmt"]) => {
 		return v.toFixed(1);
 	}
 	return Math.round(v).toLocaleString();
+};
+
+const draw = (from: HLPlayer[]): [HLPlayer, HLPlayer[]] => {
+	const i = Math.floor(Math.random() * from.length);
+	const picked = from[i]!;
+	const rest = from.slice(0, i).concat(from.slice(i + 1));
+	return [picked, rest];
+};
+
+// Pick the NEXT opponent with difficulty that scales to the current streak.
+// A purely random draw is what makes a higher/lower game boring: most pairs are
+// blowouts you answer without thinking, and the ones that end your run are
+// random rather than earned. Instead, the deeper the streak the tighter the gap
+// we aim for - early rounds stay forgiving, later ones become genuine coin-flips
+// you have to actually know the league to win.
+const drawOpponent = (
+	from: HLPlayer[],
+	against: HLPlayer,
+	atStreak: number,
+	value: (p: HLPlayer) => number,
+): [HLPlayer, HLPlayer[]] => {
+	if (from.length <= 1) {
+		return draw(from);
+	}
+	const anchor = value(against);
+	// Target gap as a share of the anchor value: ~60% at streak 0, tightening
+	// toward ~5% by streak 12 and holding there.
+	const t = Math.min(1, atStreak / 12);
+	const targetShare = 0.6 - 0.55 * t;
+	const target = Math.abs(anchor) * targetShare;
+
+	// Sample a bounded candidate set rather than sorting the whole pool every
+	// round - the pool can be thousands of players and this runs per guess.
+	const SAMPLE = 60;
+	let bestIdx = -1;
+	let bestScore = Infinity;
+	for (let n = 0; n < SAMPLE; n += 1) {
+		const idx = Math.floor(Math.random() * from.length);
+		const cand = from[idx]!;
+		const gap = Math.abs(value(cand) - anchor);
+		// Prefer the candidate whose gap is closest to the target gap. Ties in
+		// value are allowed (they count as correct either way), but a pile of
+		// exact ties would be dull, so nudge away from a literal 0 gap.
+		const score = Math.abs(gap - target) + (gap === 0 ? target * 0.5 : 0);
+		if (score < bestScore) {
+			bestScore = score;
+			bestIdx = idx;
+		}
+	}
+	if (bestIdx < 0) {
+		return draw(from);
+	}
+	const picked = from[bestIdx]!;
+	const rest = from.slice(0, bestIdx).concat(from.slice(bestIdx + 1));
+	return [picked, rest];
+};
+
+// Points for a correct call: a coin-flip margin is worth far more than an
+// obvious blowout, so score reflects how hard the read was rather than just how
+// many you have answered. Streak adds a rising multiplier on top.
+const pointsFor = (a: number, b: number, atStreak: number): number => {
+	const scale = Math.max(1, Math.abs(a), Math.abs(b));
+	const closeness = 1 - Math.min(1, Math.abs(a - b) / scale);
+	const base = 10 + Math.round(90 * closeness ** 2);
+	const multiplier = 1 + Math.min(2, atStreak * 0.1);
+	return Math.round(base * multiplier);
 };
 
 // A face + name card. `hiddenValue` masks the stat until the guess is revealed.
@@ -103,6 +184,16 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 	const [left, setLeft] = useState<HLPlayer | undefined>();
 	const [right, setRight] = useState<HLPlayer | undefined>();
 	const [streak, setStreak] = useState(0);
+	// Lives, so one unlucky coin-flip doesn't end an otherwise great run. This is
+	// the single biggest fun change: runs last long enough to build a streak, and
+	// losing feels like it took three real mistakes rather than one.
+	const [lives, setLives] = useState(3);
+	const [score, setScore] = useState(0);
+	const [lastPoints, setLastPoints] = useState(0);
+	// The tightest call survived this run, for the end-of-run summary.
+	const [closest, setClosest] = useState<
+		{ a: string; av: number; b: string; bv: number } | undefined
+	>();
 	const [gameOver, setGameOver] = useState(false);
 	// "asking" -> awaiting guess; "revealing" -> counting up the answer.
 	const [phase, setPhase] = useState<"asking" | "revealing">("asking");
@@ -123,13 +214,6 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 		}
 	};
 
-	const draw = (from: HLPlayer[]): [HLPlayer, HLPlayer[]] => {
-		const i = Math.floor(Math.random() * from.length);
-		const picked = from[i]!;
-		const rest = from.slice(0, i).concat(from.slice(i + 1));
-		return [picked, rest];
-	};
-
 	const startGame = (cat: Category) => {
 		const eligible = players.filter(
 			(p) => typeof p.values[cat.key] === "number",
@@ -148,6 +232,10 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 		setRight(b);
 		setPool(rest);
 		setStreak(0);
+		setLives(3);
+		setScore(0);
+		setLastPoints(0);
+		setClosest(undefined);
 		setGameOver(false);
 		setNewBest(false);
 		setPhase("asking");
@@ -213,19 +301,46 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 		setPhase("revealing");
 		runCountUp(rv);
 
+		// Track the tightest call of the run for the summary, whichever way it went.
+		const scale = Math.max(1, Math.abs(lv), Math.abs(rv));
+		if (
+			closest === undefined ||
+			Math.abs(rv - lv) / scale <
+				Math.abs(closest.bv - closest.av) /
+					Math.max(1, Math.abs(closest.av), Math.abs(closest.bv))
+		) {
+			setClosest({ a: left.name, av: lv, b: right.name, bv: rv });
+		}
+
+		const gained = correct ? pointsFor(lv, rv, streak) : 0;
+		setLastPoints(gained);
+		if (correct) {
+			setScore((v) => v + gained);
+		}
+
 		// Hold on the reveal, then advance or end.
 		window.setTimeout(() => {
+			// A miss costs a life instead of ending the run outright; the run only
+			// ends when they're all gone.
+			const livesLeft = correct ? lives : lives - 1;
 			if (!correct) {
-				finishRun(streak);
-				return;
+				setLives(livesLeft);
+				if (livesLeft <= 0) {
+					finishRun(streak);
+					return;
+				}
 			}
-			const newStreak = streak + 1;
+			// Only a correct call extends the streak - a survived miss keeps the run
+			// alive but resets the multiplier, so lives are a cushion, not a freebie.
+			const newStreak = correct ? streak + 1 : 0;
 			setStreak(newStreak);
 			if (pool.length === 0) {
 				finishRun(newStreak);
 				return;
 			}
-			const [next, rest] = draw(pool);
+			// The next opponent is chosen against the card that stays on screen, at
+			// the difficulty the new streak has earned.
+			const [next, rest] = drawOpponent(pool, right, newStreak, valueOf);
 			setLeft(right);
 			setRight(next);
 			setPool(rest);
@@ -250,7 +365,7 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 			<>
 				<p className="text-body-secondary">
 					Pick a category, then call whether the mystery player's number is
-					higher or lower. One miss ends the run.
+					higher or lower. Three lives per run, and closer calls score more.
 				</p>
 				{groups.map((group) => (
 					<div key={group} className="mb-3">
@@ -275,9 +390,7 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 										<div className="d-flex align-items-center gap-2 small text-body-secondary">
 											{eligible.toLocaleString()} players
 											{b > 0 ? (
-												<span className="badge text-bg-warning">
-													best {b}
-												</span>
+												<span className="badge text-bg-warning">best {b}</span>
 											) : null}
 										</div>
 									</button>
@@ -327,6 +440,27 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 				<div className="trivia-tile">
 					<div className="trivia-tile-value">{Math.max(best, streak)}</div>
 					<div className="trivia-tile-label">Best</div>
+				</div>
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">
+						{score.toLocaleString()}
+						{lastPoints > 0 && revealing ? (
+							<span
+								className="text-success ms-1"
+								style={{ fontSize: "0.8rem" }}
+							>
+								+{lastPoints}
+							</span>
+						) : null}
+					</div>
+					<div className="trivia-tile-label">Score</div>
+				</div>
+				<div className="trivia-tile">
+					<div className="trivia-tile-value">
+						{"♥".repeat(Math.max(0, lives))}
+						{"♡".repeat(Math.max(0, 3 - lives))}
+					</div>
+					<div className="trivia-tile-label">Lives</div>
 				</div>
 				<div className="trivia-tile d-none d-sm-block">
 					<div className="trivia-tile-value" style={{ fontSize: "0.95rem" }}>
@@ -434,6 +568,12 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 								<div className="trivia-tile-value">{streak}</div>
 								<div className="trivia-tile-label">Final streak</div>
 							</div>
+							<div className="trivia-tile">
+								<div className="trivia-tile-value">
+									{score.toLocaleString()}
+								</div>
+								<div className="trivia-tile-label">Score</div>
+							</div>
 							<div className="flex-grow-1">
 								<div className="h5 mb-1">
 									{newBest
@@ -451,6 +591,13 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 											}: ${fmtValue(valueOf(left), category.fmt)}.`
 										: null}
 								</div>
+								{closest ? (
+									<div className="text-body-secondary small mt-1">
+										Closest call: {closest.a}{" "}
+										{fmtValue(closest.av, category.fmt)} vs {closest.b}{" "}
+										{fmtValue(closest.bv, category.fmt)}
+									</div>
+								) : null}
 							</div>
 							<div className="d-flex flex-column gap-2">
 								<button
