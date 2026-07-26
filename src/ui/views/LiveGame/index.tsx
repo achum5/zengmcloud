@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { clearCourtRng, seedCourtRng } from "./courtRng.ts";
 import {
 	Component,
 	type ChangeEvent,
@@ -345,6 +346,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// teleport between the two).
 	const courtScene = useRef<CourtScene | undefined>(undefined);
 	const courtSceneCount = useRef(0);
+	// Seed for the play currently being turned into scenes.
+	const currentSceneSeed = useRef("");
 	// Where every player last stood on the floor, so the ball can come up WITH
 	// the ball-handler from his previous spot instead of beating him to the shot.
 	const lastActorPos = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -408,6 +411,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 	) => {
 		courtSceneCount.current += 1;
 		const sceneKey = courtSceneCount.current;
+		// Distinct per scene within a play (one event can push several beats), so
+		// two beats of the same play don't share identical jitter.
+		const sceneSeed = `${currentSceneSeed.current}|${sceneKey}`;
 		// Populate the rest of the 5-on-5 as a background formation, so the court
 		// shows a full team instead of just the play's actors. Which end the ball
 		// is at anchors both teams' formations: prefer the shot's rim, else the
@@ -535,7 +541,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 				}
 			}
 		}
-		courtScene.current = { key: sceneKey, ...scene, actors, passFrom };
+		courtScene.current = {
+			key: sceneKey,
+			...scene,
+			seed: sceneSeed,
+			actors,
+			passFrom,
+		};
 		// Remember where everyone ended up, so the next scene's ball can travel
 		// with the handler from his real previous spot.
 		for (const a of actors) {
@@ -621,6 +633,16 @@ export const LiveGame = (props: View<"liveGame">) => {
 		) {
 			return;
 		}
+		// Seed this play's invented geometry from (game, play index). That index
+		// is the SAME number the broadcaster publishes as its cursor and the
+		// follower steps to, and every device loads the identical events array -
+		// so two people watching one broadcast now see a shot taken from the same
+		// spot, and a saved replay looks the same every time it is watched. No
+		// extra data crosses the wire to achieve it.
+		const playIdx = initialEventCount.current - (events.current?.length ?? 0);
+		currentSceneSeed.current = `${props.initialBoxScore?.gid ?? 0}|${playIdx}`;
+		seedCourtRng(currentSceneSeed.current);
+
 		const rawT: 0 | 1 = event.t === 0 ? 0 : 1;
 		// Box score display order swaps the raw team index.
 		const displayT: 0 | 1 = rawT === 0 ? 1 : 0;
@@ -1403,6 +1425,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 		return () => {
 			componentIsMounted.current = false;
+			// Release the deterministic stream: it is module-global, and anything
+			// else that invents court positions (the team court editor's preview)
+			// wants ordinary randomness.
+			clearCourtRng();
 			onLiveSimOver();
 		};
 	}, []);

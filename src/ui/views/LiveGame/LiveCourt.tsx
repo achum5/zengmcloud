@@ -8,6 +8,7 @@ import {
 	type CSSProperties,
 	type ReactNode,
 } from "react";
+import { courtRandom, makeCourtRng } from "./courtRng.ts";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
@@ -76,6 +77,9 @@ export type CourtSceneKind =
 
 export type CourtScene = {
 	key: number; // increments per scene, retriggers animations
+	// Deterministic seed for this play, so the ball's flight jitter is identical
+	// on every device (and on every replay) rather than re-rolled per viewer.
+	seed?: string;
 	kind: CourtSceneKind;
 	t: 0 | 1; // display team of the main actor (0 = away/left, 1 = home/right)
 	// The shot zone, on a make/miss/block - so the shooter's animation matches the
@@ -105,7 +109,7 @@ export type CourtScene = {
 };
 
 const degToRad = (deg: number) => (deg * Math.PI) / 180;
-const rand = (lo: number, hi: number) => lo + Math.random() * (hi - lo);
+const rand = (lo: number, hi: number) => lo + courtRandom() * (hi - lo);
 
 // Lighten (amount > 0) or darken (< 0) a hex color, for plank seam lines.
 const shade = (hex: string, amount: number): string => {
@@ -154,12 +158,12 @@ export const synthShotSpot = (
 		r = rand(11, 20);
 		theta = rand(18, 162);
 	} else {
-		if (Math.random() < 0.3) {
+		if (courtRandom() < 0.3) {
 			// Corner three: BEHIND the corner line, which sits at y=3 near the top
 			// sideline and y=47 near the bottom. Placed in the y<3 / y>47 strip a
 			// short way up from the baseline, so the shooter is genuinely outside
 			// the arc instead of standing in front of it.
-			const nearSide = Math.random() < 0.5;
+			const nearSide = courtRandom() < 0.5;
 			return toCourt(
 				t,
 				rand(3, 12),
@@ -1376,7 +1380,15 @@ const LiveCourt = ({
 		const to = { x: rimX, y: COURT_H / 2 };
 		const made = scene.kind === "make";
 		const blocked = scene.kind === "block";
-		const bounce = { x: to.x + rand(-4, 4), y: to.y + rand(-6, 6) };
+		// A stream of this scene's own, not the module one: this effect runs after
+		// the event handler that seeded it, by which point the next play may
+		// already have re-seeded the shared stream.
+		const sceneRng = makeCourtRng(scene.seed ?? `k${scene.key}`);
+		const sceneRand = (lo: number, hi: number) => lo + sceneRng() * (hi - lo);
+		const bounce = {
+			x: to.x + sceneRand(-4, 4),
+			y: to.y + sceneRand(-6, 6),
+		};
 		// How high this shot arcs, from how far out it is: a deep jumper is a high,
 		// rainbow arc; a close finish barely leaves the floor. This is the height
 		// the ball climbs off its shadow mid-flight - the thing that makes a shot
@@ -1387,8 +1399,8 @@ const LiveCourt = ({
 		// shooter - not just to the side.
 		const backward = from.x < to.x ? -1 : 1;
 		const swat = {
-			x: Math.min(90, Math.max(4, from.x + backward * rand(10, 18))),
-			y: Math.min(46, Math.max(4, from.y + rand(-6, 6))),
+			x: Math.min(90, Math.max(4, from.x + backward * sceneRand(10, 18))),
+			y: Math.min(46, Math.max(4, from.y + sceneRand(-6, 6))),
 		};
 
 		if (ring) {
