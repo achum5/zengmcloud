@@ -117,7 +117,6 @@ const DailySchedule = ({
 		<>
 			<div className="d-flex flex-wrap align-items-center gap-3">
 				<MoreLinks type="schedule" page="daily_schedule" />
-				<SimHereButton />
 			</div>
 
 			{dayNote ? (
@@ -271,6 +270,12 @@ const DailySchedule = ({
 					) : null}
 				</>
 			)}
+
+			{/* Bottom of the page, where the AI-recap buttons used to sit. The
+			    margin rides on the button itself rather than a wrapper, since the
+			    component renders nothing at all when this device already holds
+			    sim authority - an empty wrapper would leave a gap. */}
+			<SimHereButton className="btn btn-primary btn-sm mt-3" />
 		</>
 	);
 };
