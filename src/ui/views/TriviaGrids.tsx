@@ -78,49 +78,32 @@ const loadStats = (): Stats => {
 	return { played: 0, immaculate: 0, best: 0, totalScore: 0 };
 };
 
-// Rarity points (10-100, higher = more obscure) mapped to a display tier.
-// Rarity tiers, matching the standalone Grids app's six-tier palette. `points`
-// is how obscure the guessed player was (0-100), so a higher tier means a
-// gutsier answer - the cell is filled with that tier's gradient.
-const tierOf = (
-	points: number,
-): { label: string; badge: string; cls: string } => {
+// Rarity points (0-100, higher = more obscure) mapped to a display tier. Six
+// tiers rather than four, so a lucky obvious answer and a genuinely deep cut
+// don't land on the same color.
+//
+// The colors are the app's own `text-bg-*` set, ordered by how they actually
+// render here rather than by Bootstrap's names: gray, cyan, green, yellow,
+// orange, red. Note `primary` is orange in this theme, so it belongs near the
+// hot end - putting it where its name suggests breaks the ramp.
+// `cls` fills the solved cell and is the badge color wherever a tier is named.
+const tierOf = (points: number): { label: string; cls: string } => {
 	if (points >= 90) {
-		return {
-			label: "Mythic",
-			badge: "text-bg-light",
-			cls: "trivia-rarity-mythic",
-		};
+		return { label: "Mythic", cls: "text-bg-danger" };
 	}
 	if (points >= 75) {
-		return {
-			label: "Legendary",
-			badge: "text-bg-light",
-			cls: "trivia-rarity-legendary",
-		};
+		return { label: "Legendary", cls: "text-bg-primary" };
 	}
 	if (points >= 60) {
-		return {
-			label: "Epic",
-			badge: "text-bg-light",
-			cls: "trivia-rarity-epic",
-		};
+		return { label: "Epic", cls: "text-bg-warning" };
 	}
 	if (points >= 40) {
-		return { label: "Rare", badge: "text-bg-dark", cls: "trivia-rarity-rare" };
+		return { label: "Rare", cls: "text-bg-success" };
 	}
 	if (points >= 20) {
-		return {
-			label: "Uncommon",
-			badge: "text-bg-light",
-			cls: "trivia-rarity-uncommon",
-		};
+		return { label: "Uncommon", cls: "text-bg-info" };
 	}
-	return {
-		label: "Common",
-		badge: "text-bg-light",
-		cls: "trivia-rarity-common",
-	};
+	return { label: "Common", cls: "text-bg-secondary" };
 };
 
 const loadGuessSetting = (): number => {
@@ -537,8 +520,8 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 				<div
 					className="trivia-grid-inner"
 					style={{
-						// Fractional columns so the inner board always fills the
-						// rainbow frame - fixed max widths left a gradient gutter.
+						// Fractional columns so the inner grid always fills the board -
+						// fixed max widths left a strip of the container showing.
 						gridTemplateColumns: "minmax(76px, 108px) repeat(3, 1fr)",
 					}}
 				>
@@ -595,7 +578,9 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 												) : null}
 											</div>
 											<span
-												className={`badge ${tier.badge} position-absolute top-0 end-0 m-1`}
+												// The chip sits on top of the tier-colored cell, so it
+												// needs its own neutral background for contrast.
+												className="badge text-bg-dark position-absolute top-0 end-0 m-1"
 												title={`${tier.label} pick`}
 											>
 												+{cell.points}
@@ -691,7 +676,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 										.map((c, i) => {
 											const tier = tierOf(c.points);
 											return (
-												<span key={i} className={`badge ${tier.badge}`}>
+												<span key={i} className={`badge ${tier.cls}`}>
 													{tier.label} +{c.points}
 												</span>
 											);
@@ -825,7 +810,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 												}
 												const tier = tierOf(pts);
 												return (
-													<span className={`badge ${tier.badge}`}>
+													<span className={`badge ${tier.cls}`}>
 														{tier.label} +{pts}
 													</span>
 												);
