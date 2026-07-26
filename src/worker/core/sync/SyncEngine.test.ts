@@ -22,6 +22,21 @@ import { setSyncEngine } from "./engineHolder.ts";
 
 // In-memory shared log that several transports connect to, like a Firestore
 // collection every client listens on. Assigns the ordering seq itself.
+// Incompressible filler. Bulk payloads are gzipped before chunking now, so
+// repeated characters ("x".repeat(n)) collapse to almost nothing and a payload
+// meant to span several Firestore docs would arrive as a single chunk - which
+// would quietly stop these tests from exercising the multi-chunk machinery at
+// all. Deterministic pseudo-random base36 keeps them genuinely large on the wire.
+const bulkText = (n: number, salt = 0): string => {
+	let out = "";
+	let seed = n + 1 + salt * 7919;
+	while (out.length < n) {
+		seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+		out += seed.toString(36);
+	}
+	return out.slice(0, n);
+};
+
 class FakeBus {
 	entries: ChangesetEntry[] = [];
 	private listeners = new Set<(entry: ChangesetEntry) => void>();
@@ -232,7 +247,7 @@ describe("SyncEngine", () => {
 			store: "events" as const,
 			id: i + 1,
 			type: "put" as const,
-			value: { eid: i + 1, type: "test", text: "x".repeat(2000) },
+			value: { eid: i + 1, type: "test", text: bulkText(2000, i) },
 		}));
 		await host.onLocalChangeset({ changes }, "playMenu.day");
 
@@ -257,6 +272,100 @@ describe("SyncEngine", () => {
 		assert.strictEqual(events.length, N);
 	});
 
+	test("bulk payloads go on the wire compressed, and shrink the doc count", async () => {
+		const bus = new FakeBus();
+		const host = new SyncEngine(new FakeTransport("H", bus));
+		host.start();
+		await host.claimAuthority();
+		resetG();
+		await resetCache({});
+
+		// Sim-shaped: many records that repeat the same KEYS (the real reason a
+		// sim day compresses well - every player record has identical field names).
+		const N = 400;
+		const changes = Array.from({ length: N }, (_, i) => ({
+			store: "events" as const,
+			id: i + 1,
+			type: "put" as const,
+			value: {
+				eid: i + 1,
+				type: "gameAttribute",
+				season: 2003,
+				text: `Player ${i} recorded a stat line in game ${i % 15}`,
+				pids: [i, i + 1, i + 2],
+				tids: [i % 30, (i + 1) % 30],
+			},
+		}));
+		const rawChars = JSON.stringify({ changes }).length;
+		await host.onLocalChangeset({ changes }, "playMenu.sim");
+
+		// Every chunk is a slice of ONE gzip payload, so the marker sits at the
+		// front of chunk 0.
+		assert.ok(bus.entries.length >= 1);
+		assert.ok(
+			bus.entries[0]!.payloadPart?.startsWith("GZ1:"),
+			"bulk payload must be gzipped on the wire",
+		);
+
+		const wireChars = bus.entries.reduce(
+			(sum, entry) => sum + (entry.payloadPart?.length ?? 0),
+			0,
+		);
+		assert.ok(
+			wireChars < rawChars / 2,
+			`expected >2x smaller on the wire, got ${rawChars} -> ${wireChars}`,
+		);
+
+		// And it still round-trips to exactly the same records.
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+		for (const entry of bus.entries) {
+			await receiver.handleEntry(structuredClone(entry));
+		}
+		assert.strictEqual((await idb.cache.events.getAll()).length, N);
+	});
+
+	test("a plain (uncompressed) batch from an older client still applies", async () => {
+		// Mixed-version room: entries already in the log predate compression, and
+		// a device that never got the update keeps publishing plain JSON. The
+		// payload is self-describing, so both must keep working forever.
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		const changes = Array.from({ length: 3 }, (_, i) => ({
+			store: "events" as const,
+			id: i + 1,
+			type: "put" as const,
+			value: { eid: i + 1 },
+		}));
+		const serialized = JSON.stringify({ changes });
+		const mid = Math.floor(serialized.length / 2);
+
+		const old = new FakeTransport("OLD", bus);
+		const batchId = "PLAINBATCH";
+		for (const [i, part] of [
+			serialized.slice(0, mid),
+			serialized.slice(mid),
+		].entries()) {
+			await old.publish({
+				id: `plain${i}`,
+				authorId: "OLD",
+				action: "playMenu.sim",
+				batchId,
+				chunkIndex: i,
+				chunkCount: 2,
+				changeset: { changes: [] },
+				payloadPart: part,
+			});
+		}
+
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+		for (const entry of bus.entries) {
+			await receiver.handleEntry(structuredClone(entry));
+		}
+		assert.strictEqual((await idb.cache.events.getAll()).length, 3);
+	});
+
 	test("chunks a changeset that's few records but too big for one Firestore doc", async () => {
 		const bus = new FakeBus();
 		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
@@ -271,7 +380,7 @@ describe("SyncEngine", () => {
 		// This is the shape of the free-agency phase advance that used to silently
 		// fail to publish (a single oversized doc throws).
 		const N = 10;
-		const big = "x".repeat(120_000);
+		const big = bulkText(120_000);
 		const changes = Array.from({ length: N }, (_, i) => ({
 			store: "events" as const,
 			id: i + 1,
@@ -307,7 +416,7 @@ describe("SyncEngine", () => {
 		// old per-record chunking made this an unshippable chunk that Firestore
 		// rejected forever - and, at the head of the FIFO queue, it blocked every
 		// upload behind it permanently.
-		const huge = "x".repeat(800_000);
+		const huge = bulkText(800_000);
 		await host.onLocalChangeset(
 			{
 				changes: [
@@ -349,7 +458,7 @@ describe("SyncEngine", () => {
 			store: "events" as const,
 			id: i + 1,
 			type: "put" as const,
-			value: { eid: i + 1, type: "test", text: "x".repeat(2000) },
+			value: { eid: i + 1, type: "test", text: bulkText(2000, i) },
 		}));
 		await host.onLocalChangeset({ changes }, "playMenu.day");
 		assert.ok(bus.entries.length > 1, "should be chunked");
@@ -382,7 +491,7 @@ describe("SyncEngine", () => {
 			store: "events" as const,
 			id: i + 1,
 			type: "put" as const,
-			value: { eid: i + 1, type: "test", text: "x".repeat(2000) },
+			value: { eid: i + 1, type: "test", text: bulkText(2000, i) },
 		}));
 		await host.onLocalChangeset({ changes }, "playMenu.day");
 		const allChunks = [...bus.entries];
@@ -440,7 +549,7 @@ describe("SyncEngine", () => {
 		// A stuck legacy-format chunk (as produced before string chunking): chunk
 		// 1 of 2 of a batch whose sibling (chunk 0) already published. Too big for
 		// one doc, it could never publish and blocked the queue forever.
-		const huge = "y".repeat(800_000);
+		const huge = bulkText(800_000);
 		const legacy = {
 			id: "legacy-big",
 			authorId: "H",

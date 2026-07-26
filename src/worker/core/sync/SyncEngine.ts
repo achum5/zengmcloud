@@ -3,7 +3,12 @@ import {
 	type Changeset,
 	type SyncChange,
 } from "./changeset.ts";
-import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
+import {
+	compressSerialized,
+	decompressSerialized,
+	deserializeChangeset,
+	serializeChangeset,
+} from "./serialize.ts";
 import type { SyncNotification } from "./notifications.ts";
 import type {
 	Authority,
@@ -819,7 +824,7 @@ export class SyncEngine {
 			// edit into the tail of the upload window.
 			this.markRoomBusy();
 
-			entries = this.buildPartEntries(serialized, changeset, action);
+			entries = await this.buildPartEntries(serialized, changeset, action);
 		}
 
 		// Durability point. After this the delta can no longer be lost, only
@@ -848,12 +853,25 @@ export class SyncEngine {
 	// Split an already-serialized changeset into part entries (one Firestore doc
 	// each) sharing a fresh batchId. `records`/`attrs` ride along for the
 	// activity page, since a lone part isn't independently parseable.
-	private buildPartEntries(
+	private async buildPartEntries(
 		serialized: string,
 		changeset: Changeset,
 		action: string,
-	): Omit<ChangesetEntry, "seq">[] {
-		const parts = splitSerialized(serialized);
+	): Promise<Omit<ChangesetEntry, "seq">[]> {
+		// Compress before splitting: a sim day's ~6 MB of JSON becomes a few
+		// hundred KB, so this cuts BOTH the bytes uploaded and the number of chunk
+		// docs a behind device has to page through (the thing that actually makes
+		// catch-up slow). Falls back to the plain string if unsupported/failed.
+		const payload = await compressSerialized(serialized);
+		if (payload !== serialized) {
+			syncDebugLog("engine:payload-compressed", {
+				action,
+				rawChars: serialized.length,
+				sentChars: payload.length,
+				ratio: Math.round((serialized.length / payload.length) * 10) / 10,
+			});
+		}
+		const parts = splitSerialized(payload);
 		const batchId = makeId();
 		const attrs = changeset.changes
 			.filter((c) => c.store === "gameAttributes")
@@ -1108,7 +1126,7 @@ export class SyncEngine {
 				return undefined;
 			}
 		}
-		const parts = this.buildPartEntries(
+		const parts = await this.buildPartEntries(
 			serialized,
 			entry.changeset,
 			entry.action,
@@ -1258,10 +1276,13 @@ export class SyncEngine {
 		let changes: SyncChange[];
 		try {
 			if (batch.chunks.size > 0 && typeof batch.chunks.get(0) === "string") {
-				let serialized = "";
+				let joined = "";
 				for (let i = 0; i < batch.count; i++) {
-					serialized += (batch.chunks.get(i) as string | undefined) ?? "";
+					joined += (batch.chunks.get(i) as string | undefined) ?? "";
 				}
+				// Compressed (GZ1:) or plain JSON - the payload says which, so a room
+				// whose devices are on different versions keeps working either way.
+				const serialized = await decompressSerialized(joined);
 				changes = (deserializeChangeset(serialized) as Changeset).changes;
 			} else {
 				changes = [];
