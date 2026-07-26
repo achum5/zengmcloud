@@ -1600,6 +1600,18 @@ export class SyncEngine {
 				}
 			}
 			// Hit the per-call page cap with full pages still coming: more to drain.
+			//
+			// Sweep BEFORE returning, bounded to how far this pass actually walked.
+			// This is the call sweepStaleBatches documents as essential, and without
+			// it a device far enough behind can never recover: the head is more than
+			// one page budget away, so the head-only sweeps above are unreachable;
+			// an incomplete bulk batch pins the watermark; and every pass therefore
+			// restarts from the same pinned seq, re-fetching the identical window,
+			// applying nothing (all entries already `seen`), and hitting this cap
+			// again - forever. Sweeping here is what lets the batch be rescued by
+			// batchId (or, if its chunks truly aren't in the log, abandoned) so the
+			// watermark can move and catch-up can finish.
+			await this.sweepStaleBatches(fetchCursor);
 			return false;
 		} finally {
 			this.catchingUp = false;

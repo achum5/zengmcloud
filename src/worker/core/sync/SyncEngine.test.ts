@@ -1240,6 +1240,80 @@ describe("SyncEngine", () => {
 		assert.strictEqual(events.length, 5);
 	});
 
+	test("a dead batch is still abandoned when the head is FURTHER than one page budget away", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		// The field wedge (2003 playoffs league): a device sat ~1300 entries behind
+		// with one bulk sim batch stuck at 14/21 chunks. The catch-up budget is 40
+		// pages x 25 = 1000 entries, so the head was UNREACHABLE in a single pass -
+		// and the stale-batch sweep only ran on the reached-head paths. With the
+		// watermark pinned by the incomplete batch, every pass restarted from the
+		// same pinned seq, re-fetched the identical 1000 entries, applied none of
+		// them (all already `seen`), hit the page cap, and returned - forever. The
+		// sweep that could rescue-or-abandon the batch could never run.
+		const H = new FakeTransport("H", bus);
+		const chunk = (i: number) => ({
+			id: `dead${i}`,
+			authorId: "H",
+			action: "playMenu.sim",
+			batchId: "DEAD",
+			chunkIndex: i,
+			chunkCount: 3,
+			changeset: {
+				changes: [
+					{
+						store: "events" as const,
+						id: 900_000 + i,
+						type: "put" as const,
+						value: { eid: 900_000 + i },
+					},
+				],
+			},
+		});
+		// Chunk 1 was lost mid-upload and is never in the log.
+		await H.publish(chunk(0));
+		await H.publish(chunk(2));
+
+		// The room kept playing well past it - more entries than ONE catch-up pass
+		// can walk (40 pages x 25 = 1000), which is what made the head unreachable.
+		const X = new FakeTransport("X", bus);
+		const N = 1100;
+		for (let i = 0; i < N; i++) {
+			await X.publish({
+				id: `x${i}`,
+				authorId: "X",
+				action: "main.proposeTrade",
+				changeset: {
+					changes: [{ store: "events", id: i, type: "put", value: { eid: i } }],
+				},
+			});
+		}
+
+		const receiver = new SyncEngine(new FakeTransport("R", bus), {});
+		// catchUp() returns true only on genuinely reaching the head - the check
+		// that matters here. (isCaughtUp() compares against the highest seq SEEN,
+		// which a page-capped pass satisfies while entries remain unfetched.)
+		let reachedHead = false;
+		for (let i = 0; i < 20; i++) {
+			if (await receiver.catchUp()) {
+				reachedHead = true;
+				break;
+			}
+		}
+
+		// Converges: the unrecoverable batch is abandoned, the watermark moves off
+		// the pin, and the rest of the room's history lands.
+		assert.ok(
+			reachedHead,
+			"catch-up must reach the head even when it is beyond one page budget",
+		);
+		assert.strictEqual(receiver.getPersistedSeq(), bus.entries.at(-1)!.seq);
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, N);
+	});
+
 	test("a pinned incomplete batch doesn't re-show the catching-up bar on later passes", async () => {
 		const bus = new FakeBus();
 		resetG();
