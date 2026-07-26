@@ -9,7 +9,7 @@ import { NoGamesMessage } from "./GameLog.tsx";
 import allowForceTie from "../../common/allowForceTie.ts";
 import { ForceWin } from "../components/ForceWin.tsx";
 import { ScoreBox } from "../components/ScoreBox/index.tsx";
-import { GameRecap } from "../components/GameRecap.tsx";
+import { SimHereButton } from "../components/SimHereButton.tsx";
 import { GameNote } from "../components/GameNote.tsx";
 import { DayRecap } from "../components/DayRecap.tsx";
 import { buildRecapLinksForGame } from "../util/linkifyRecap.ts";
@@ -117,6 +117,7 @@ const DailySchedule = ({
 		<>
 			<div className="d-flex flex-wrap align-items-center gap-3">
 				<MoreLinks type="schedule" page="daily_schedule" />
+				<SimHereButton />
 			</div>
 
 			{dayNote ? (
@@ -267,16 +268,6 @@ const DailySchedule = ({
 								})}
 							</div>
 						</>
-					) : null}
-
-					{completed.length > 0 ? (
-						<div className="mt-3">
-							<GameRecap
-								season={season}
-								day={day}
-								numCompleted={completed.length}
-							/>
-						</div>
 					) : null}
 				</>
 			)}

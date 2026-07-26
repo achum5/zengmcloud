@@ -864,8 +864,6 @@ const BodyOnCourt = ({
 	// hardwood - the rectangles were the worst of the clutter. A generated
 	// facesjs face already reads as a tidy head-and-jersey portrait, so it keeps
 	// that shape. Both are sized by the player's real build.
-	const hasPhoto = !!faceData?.imgURL;
-	const diameter = `calc(${FACE_H} * ${sizeScale})`;
 
 	// The OUTER div only places the point on the court (compositor-friendly
 	// translate3d, transitioned for the glide between plays). The INNER div
@@ -903,57 +901,28 @@ const BodyOnCourt = ({
 			/>
 			<div
 				key={anim ? `anim-${animKey}` : "static"}
-				style={
-					hasPhoto
-						? {
-								position: "relative",
-								width: diameter,
-								height: diameter,
-								transform: REST,
-								animation,
-							}
-						: {
-								position: "relative",
-								// Sized by the player's real build: height grows the whole
-								// body, weight adds a little width-only girth.
-								height: `calc(${FACE_H} * ${sizeScale})`,
-								width: `calc(${FACE_W} * ${sizeScale} * ${girth})`,
-								transform: REST,
-								animation,
-								filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
-							}
-				}
+				style={{
+					position: "relative",
+					// Sized by the player's real build: height grows the whole body,
+					// weight adds a little width-only girth. A photo uses the same box
+					// as a generated face, so the two look like the same game.
+					height: `calc(${FACE_H} * ${sizeScale})`,
+					width: `calc(${FACE_W} * ${sizeScale} * ${girth})`,
+					transform: REST,
+					animation,
+					filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.5))",
+				}}
 			>
-				{hasPhoto ? (
-					<div
-						style={{
-							position: "absolute",
-							inset: 0,
-							borderRadius: "50%",
-							overflow: "hidden",
-							border: `2px solid ${color}`,
-							background: "#20242b",
-							boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
-						}}
-					>
-						<img
-							alt=""
-							src={faceData?.imgURL}
-							style={{
-								width: "100%",
-								height: "100%",
-								objectFit: "cover",
-								objectPosition: "center 12%",
-							}}
-						/>
-					</div>
-				) : faceData?.face ? (
-					<PlayerPicture
-						face={faceData.face}
-						colors={faceData.colors}
-						jersey={faceData.jersey}
-					/>
-				) : null}
+				{/* PlayerPicture already handles both: a photo renders as a plain
+				    image, a generated face as the usual portrait. Going through it
+				    rather than a bespoke branch is what keeps a photo on the court
+				    looking like the same player everywhere else in the app. */}
+				<PlayerPicture
+					face={faceData?.face}
+					imgURL={faceData?.imgURL}
+					colors={faceData?.colors}
+					jersey={faceData?.jersey}
+				/>
 				{nameTag}
 			</div>
 		</div>

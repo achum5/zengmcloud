@@ -26,7 +26,7 @@ export const PlayerImageLinkButton = ({
 			onClick={async () => {
 				// The clipboard read is the FIRST thing here (no await before it) -
 				// iOS Safari treats a read after any other await as outside the tap's
-				// user-gesture and rejects it (same pattern as GameRecap's copy/paste).
+				// user-gesture and rejects it.
 				let clipboardText: string;
 				try {
 					clipboardText = await navigator.clipboard.readText();
