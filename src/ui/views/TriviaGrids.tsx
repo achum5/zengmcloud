@@ -13,6 +13,8 @@ import {
 	getCachedCard,
 	type TriviaPlayerCard,
 } from "../util/triviaPlayerCards.ts";
+import { buildHintOptions } from "../util/triviaHint.ts";
+import { decadeLabel, statLabel } from "../../common/triviaCriteriaLabels.ts";
 import { Confetti } from "./LiveGame/Confetti.tsx";
 import type { View } from "../../common/types.ts";
 
@@ -24,9 +26,27 @@ import type { View } from "../../common/types.ts";
 type GridData = NonNullable<View<"triviaGrids">["data"]>;
 type Criterion = GridData["grid"]["rows"][number];
 
+// `stat` and `decade` carry their own threshold, which is what lets a header be
+// edited to any number ("1+ PPG", "100+ PPG", "20 or fewer PPG") rather than
+// picked from a fixed list.
+type StatOp = "gte" | "lte";
+type DecadeMode = "debut" | "played";
+
 type CriterionRef =
 	| { kind: "team"; tid: number }
-	| { kind: "career" | "season"; id: string };
+	| { kind: "career" | "season"; id: string }
+	| { kind: "stat"; spec: string; op: StatOp; value: number }
+	| { kind: "decade"; mode: DecadeMode; decade: number };
+
+type StatSpec = {
+	id: string;
+	label: string;
+	unit: string;
+	scope: "career" | "season";
+	decimals: number;
+	defaultValue: number;
+	step: number;
+};
 
 type Catalog = {
 	teams: { tid: number; label: string; count: number }[];
@@ -36,6 +56,8 @@ type Catalog = {
 		label: string;
 		count: number;
 	}[];
+	statSpecs: StatSpec[];
+	decades: number[];
 };
 
 // A solved cell: the pid/name that filled it and the rarity points earned.
@@ -51,11 +73,12 @@ const emptyCells = (): CellState[] =>
 const GUESS_SETTING_KEY = "triviaGridsGuesses";
 const STATS_KEY = "triviaGridsStats";
 
-// Hints per grid, and what each successive hint on a cell costs that cell.
-// Level 1 narrows the field, level 2 all but names someone - so level 2 keeps
-// only a quarter of the points. Never zero: a hinted solve still beats a blank.
+// Hints per grid. A hint deals six faces, one of which fits the cell - so it
+// turns the cell into a multiple-choice question rather than describing an
+// answer. Solving from a hint is worth a quarter of the points (never zero: a
+// hinted solve still beats a blank cell).
 const HINTS_PER_GRID = 3;
-const HINT_MULTIPLIER = [1, 0.5, 0.25];
+const HINT_POINT_MULTIPLIER = 0.25;
 const MIN_HINTED_POINTS = 5;
 
 type Stats = {
@@ -123,8 +146,26 @@ const loadGuessSetting = (): number => {
 	return 9;
 };
 
-const refKey = (r: CriterionRef | undefined) =>
-	r === undefined ? "" : r.kind === "team" ? `team-${r.tid}` : `ach-${r.id}`;
+const refKey = (r: CriterionRef | undefined): string => {
+	if (r === undefined) {
+		return "";
+	}
+	switch (r.kind) {
+		case "team":
+			return `team-${r.tid}`;
+		case "stat":
+			return `stat-${r.spec}-${r.op}-${r.value}`;
+		case "decade":
+			return `decade-${r.mode}-${r.decade}`;
+		default:
+			return `ach-${r.id}`;
+	}
+};
+
+const fmtStatValue = (value: number, decimals: number) =>
+	decimals > 0
+		? String(Number(value.toFixed(decimals)))
+		: String(Math.round(value));
 
 const criterionToRef = (c: Criterion): CriterionRef =>
 	c.kind === "team" ? { kind: "team", tid: c.tid } : { kind: c.kind, id: c.id };
@@ -174,28 +215,161 @@ const CriterionLabel = ({
 	);
 };
 
+// A header while editing. For a plain criterion the whole tile opens the
+// picker; for a PARAMETRIC one (a stat threshold or a decade) the controls are
+// right here in the tile, so changing "30+ PPG" to "1+ PPG" is one keystroke
+// rather than a trip through a modal.
 const EditableHeader = ({
 	header,
+	criterionRef,
+	spec,
+	decades,
 	onClick,
+	onChange,
 }: {
 	header: { kind: string; tid?: number; label: string } | undefined;
+	criterionRef: CriterionRef | undefined;
+	spec: StatSpec | undefined;
+	decades: number[];
 	onClick: () => void;
-}) => (
-	<button
-		type="button"
-		className={`trivia-grid-head-edit ${header ? "" : "is-empty"}`}
-		onClick={onClick}
-	>
-		<span className="trivia-edit-pencil" aria-hidden="true">
-			✎
+	onChange: (ref: CriterionRef) => void;
+}) => {
+	if (criterionRef?.kind === "stat" && spec) {
+		return (
+			<div className="trivia-grid-head-edit is-inline">
+				<button
+					type="button"
+					className="trivia-edit-swap"
+					title="Change which stat this is"
+					onClick={onClick}
+				>
+					{spec.unit}
+					{spec.scope === "season" && spec.id !== "season-gp"
+						? " (Season)"
+						: ""}{" "}
+					✎
+				</button>
+				<div className="d-flex gap-1 px-1 pb-1">
+					<select
+						className="form-select form-select-sm trivia-edit-op"
+						title="Greater or fewer"
+						value={criterionRef.op}
+						onChange={(event) =>
+							onChange({
+								...criterionRef,
+								op: event.target.value as StatOp,
+							})
+						}
+					>
+						<option value="gte">≥</option>
+						<option value="lte">≤</option>
+					</select>
+					<input
+						type="number"
+						className="form-control form-control-sm trivia-edit-value"
+						// No max: an absurd threshold just makes a dead cell, which the
+						// board already reports, and capping it would rule out the
+						// deliberately silly grids that are half the fun.
+						min={0}
+						step={spec.step}
+						value={fmtStatValue(criterionRef.value, spec.decimals)}
+						onChange={(event) => {
+							const raw = Number.parseFloat(event.target.value);
+							onChange({
+								...criterionRef,
+								value: Number.isFinite(raw) && raw >= 0 ? raw : 0,
+							});
+						}}
+					/>
+				</div>
+			</div>
+		);
+	}
+
+	if (criterionRef?.kind === "decade") {
+		return (
+			<div className="trivia-grid-head-edit is-inline">
+				<button
+					type="button"
+					className="trivia-edit-swap"
+					title="Change this criterion"
+					onClick={onClick}
+				>
+					{criterionRef.mode === "debut" ? "Debuted in" : "Played in"} ✎
+				</button>
+				<div className="px-1 pb-1">
+					<select
+						className="form-select form-select-sm"
+						title="Decade"
+						value={String(criterionRef.decade)}
+						onChange={(event) =>
+							onChange({
+								...criterionRef,
+								decade: Number.parseInt(event.target.value),
+							})
+						}
+					>
+						{decades.map((d) => (
+							<option key={d} value={d}>
+								{d}s
+							</option>
+						))}
+					</select>
+				</div>
+			</div>
+		);
+	}
+
+	return (
+		<button
+			type="button"
+			className={`trivia-grid-head-edit ${header ? "" : "is-empty"}`}
+			onClick={onClick}
+		>
+			<span className="trivia-edit-pencil" aria-hidden="true">
+				✎
+			</span>
+			{header ? (
+				<CriterionLabel c={header} />
+			) : (
+				<div className="text-body-secondary small p-2">Pick one</div>
+			)}
+		</button>
+	);
+};
+
+const HintFace = ({ pid }: { pid: number }) => {
+	const [card, setCard] = useState<TriviaPlayerCard | undefined>(() =>
+		getCachedCard(pid),
+	);
+	useEffect(() => {
+		if (card) {
+			return;
+		}
+		let stale = false;
+		void fetchTriviaCard(pid).then((c) => {
+			if (c && !stale) {
+				setCard(c);
+			}
+		});
+		return () => {
+			stale = true;
+		};
+	}, [pid, card]);
+	return (
+		<span className="trivia-hint-face">
+			{card ? (
+				<PlayerPicture
+					face={card.face}
+					imgURL={card.imgURL}
+					colors={card.colors}
+					jersey={card.jersey}
+					lazy
+				/>
+			) : null}
 		</span>
-		{header ? (
-			<CriterionLabel c={header} />
-		) : (
-			<div className="text-body-secondary small p-2">Pick one</div>
-		)}
-	</button>
-);
+	);
+};
 
 const AnswerFace = ({ pid }: { pid: number }) => {
 	const [card, setCard] = useState<TriviaPlayerCard | undefined>(() =>
@@ -257,16 +431,18 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	const [revealLimit, setRevealLimit] = useState(24);
 	const [stats, setStats] = useState<Stats>(loadStats);
 
-	// Hints: a per-grid allowance, spent per cell, each level costing that cell
-	// points rather than a guess.
+	// Hints: a per-grid allowance, spent per cell. `hinted` records which cells
+	// were solved with help (so they score less), `hintShuffle` lets a cell be
+	// re-dealt, and `hintWrong` marks faces already ruled out on this deal.
 	const [hintsLeft, setHintsLeft] = useState(HINTS_PER_GRID);
-	// Per cell: how many hints have been spent, and WHICH player they describe.
-	// The pid is pinned when the hint is bought - recomputing it per render
-	// meant a hint could silently start describing someone else once its
-	// original subject got used up on another cell.
-	const [hints, setHints] = useState<
-		Record<number, { level: number; pid?: number }>
-	>({});
+	const [hinted, setHinted] = useState<Set<number>>(new Set());
+	const [hintCell, setHintCell] = useState<number | undefined>();
+	const [hintShuffle, setHintShuffle] = useState<Record<number, number>>({});
+	const [hintWrong, setHintWrong] = useState<Set<number>>(new Set());
+	// usedPids frozen at the moment the hand was dealt. Without this, a wrong
+	// pick lands in usedPids, the options recompute, and the whole hand re-deals
+	// under the cursor - so crossing an option out would be meaningless.
+	const [hintUsed, setHintUsed] = useState<Set<number>>(new Set());
 
 	// Inline editing: the board itself is the editor, seeded from whatever is
 	// on screen, so "edit" means "tweak this grid" instead of "start over".
@@ -334,7 +510,11 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		setCards({});
 		setRevealCell(undefined);
 		setHintsLeft(HINTS_PER_GRID);
-		setHints({});
+		setHinted(new Set());
+		setHintCell(undefined);
+		setHintShuffle({});
+		setHintWrong(new Set());
+		setHintUsed(new Set());
 		recordedRef.current = false;
 	};
 
@@ -384,7 +564,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		setGuessesUsed((prev) => prev + 1);
 		if (correct) {
 			// Hints are paid for out of the cell's score, not out of guesses.
-			const multiplier = HINT_MULTIPLIER[hints[cellIndex]?.level ?? 0] ?? 1;
+			const multiplier = hinted.has(cellIndex) ? HINT_POINT_MULTIPLIER : 1;
 			const base = cell.rarity[guess.pid] ?? 10;
 			const points =
 				multiplier === 1
@@ -420,68 +600,83 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 
 	// --- Hints ---------------------------------------------------------------
 
-	// The player a hint describes: the most common qualifying answer that is
-	// still available. Describing the EASIEST answer is the point - a hint
-	// should open the cell up, not send you hunting an obscure one.
-	const hintTargetPid = (cellIndex: number): number | undefined => {
-		if (!grid) {
-			return undefined;
+	const popByPid = useMemo(() => {
+		const m = new Map<number, number>();
+		for (const p of searchList) {
+			m.set(p.pid, p.pop ?? 0);
 		}
-		const cell = grid.cells[cellIndex]!;
-		let bestPid: number | undefined;
-		let bestRarity = Infinity;
-		for (const pid of cell.pids) {
-			if (usedPids.has(pid)) {
-				continue;
-			}
-			const r = cell.rarity[pid] ?? 100;
-			if (r < bestRarity) {
-				bestRarity = r;
-				bestPid = pid;
-			}
-		}
-		return bestPid;
-	};
+		return m;
+	}, [searchList]);
 
-	const useHint = () => {
-		if (activeCell === undefined || hintsLeft <= 0) {
-			return;
-		}
-		const existing = hints[activeCell];
-		const level = existing?.level ?? 0;
-		if (level >= HINT_MULTIPLIER.length - 1) {
-			return;
-		}
-		setHintsLeft((h) => h - 1);
-		setHints((prev) => ({
-			...prev,
-			[activeCell]: {
-				level: level + 1,
-				// Keep whoever the first hint picked, so levels stack on one player.
-				pid: existing?.pid ?? hintTargetPid(activeCell),
-			},
-		}));
-	};
-
-	const hintText = (cellIndex: number): string[] => {
-		const hint = hints[cellIndex];
-		if (!hint || hint.level === 0 || !grid) {
+	// The six faces for the open hint. Recomputed from the seed, so it survives
+	// re-renders and only changes when the cell or the shuffle count does.
+	const hintOptions = useMemo(() => {
+		if (hintCell === undefined || !grid) {
 			return [];
 		}
-		const cell = grid.cells[cellIndex]!;
-		const out = [
-			`${cell.pids.length} player${cell.pids.length === 1 ? "" : "s"} qualify.`,
-		];
-		const p = hint.pid !== undefined ? byPid.get(hint.pid) : undefined;
-		if (p) {
-			out.push(
-				`One of them is a ${p.pos ? `${p.pos} ` : ""}who played ${p.years}.`,
-			);
-			if (hint.level >= 2) {
-				out.push(`Their initials are ${initialsOf(p.name)}`);
-			}
+		const r = Math.floor(hintCell / 3);
+		const c = hintCell % 3;
+		return buildHintOptions({
+			cellPids: grid.cells[hintCell]!.pids,
+			rarity: grid.cells[hintCell]!.rarity,
+			rowPids: grid.rowPids?.[r] ?? [],
+			colPids: grid.colPids?.[c] ?? [],
+			usedPids: hintUsed,
+			popByPid,
+			seed: `${hintCell}|${hintShuffle[hintCell] ?? 0}|${searchList.length}`,
+		});
+	}, [hintCell, grid, hintUsed, popByPid, hintShuffle, searchList.length]);
+
+	const openHint = () => {
+		if (activeCell === undefined) {
+			return;
 		}
-		return out;
+		// Spending a hint on a cell is a one-time cost - reshuffling the same
+		// cell's faces afterwards is free.
+		if (!hinted.has(activeCell)) {
+			if (hintsLeft <= 0) {
+				return;
+			}
+			setHintsLeft((h) => h - 1);
+			setHinted((prev) => new Set(prev).add(activeCell));
+		}
+		setHintWrong(new Set());
+		setHintUsed(new Set(usedPids));
+		setHintCell(activeCell);
+	};
+
+	// Picking a face. A right answer fills the cell through the normal guess
+	// path (so it burns a guess and scores like any other); a wrong one is
+	// crossed out and costs a guess, same as typing it would have.
+	const pickHint = (pid: number, correct: boolean) => {
+		if (hintCell === undefined) {
+			return;
+		}
+		const p = byPid.get(pid);
+		if (!p) {
+			return;
+		}
+		if (correct) {
+			handleGuess(hintCell, p);
+			setHintCell(undefined);
+			return;
+		}
+		setHintWrong((prev) => new Set(prev).add(pid));
+		handleGuess(hintCell, p);
+	};
+
+	const reshuffleHint = () => {
+		if (hintCell === undefined) {
+			return;
+		}
+		setHintShuffle((prev) => ({
+			...prev,
+			[hintCell]: (prev[hintCell] ?? 0) + 1,
+		}));
+		setHintWrong(new Set());
+		// Re-deal against what is ACTUALLY used now, so a shuffle drops the
+		// players burned since the hand was dealt.
+		setHintUsed(new Set(usedPids));
 	};
 
 	// --- Inline editing ------------------------------------------------------
@@ -534,9 +729,21 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		return m;
 	}, [grid]);
 
+	const specById = (id: string) =>
+		catalog?.statSpecs.find((sp) => sp.id === id);
+
+	// Parametric refs format their own label from the live threshold, so the
+	// header updates as you type instead of waiting on the worker's response.
 	const labelForRef = (r: CriterionRef | undefined) => {
 		if (!r) {
 			return undefined;
+		}
+		if (r.kind === "stat") {
+			const spec = specById(r.spec);
+			return spec ? statLabel(spec, r.op, r.value) : undefined;
+		}
+		if (r.kind === "decade") {
+			return decadeLabel(r.mode, r.decade);
 		}
 		const key = refKey(r);
 		return refInfo.get(key)?.label ?? fallbackLabels.get(key);
@@ -570,6 +777,15 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [editing, editComplete, JSON.stringify(editRefs)]);
+
+	const specForSlot = (slot: number) => {
+		const r = editRefs[slot];
+		return r?.kind === "stat" ? specById(r.spec) : undefined;
+	};
+
+	const setSlotRef = (slot: number, ref: CriterionRef) => {
+		setEditRefs((prev) => prev.map((r, i) => (i === slot ? ref : r)));
+	};
 
 	const editPlayable =
 		editPreview !== undefined &&
@@ -646,9 +862,6 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 			: { kind: r.kind, label };
 	};
 
-	const activeHints = activeCell !== undefined ? hintText(activeCell) : [];
-	const activeHintLevel =
-		activeCell !== undefined ? (hints[activeCell]?.level ?? 0) : 0;
 	const activeMissed =
 		activeCell !== undefined ? (missedByCell[activeCell] ?? []) : [];
 
@@ -757,7 +970,11 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							<EditableHeader
 								key={i}
 								header={header}
+								criterionRef={editRefs[slot]}
+								spec={specForSlot(slot)}
+								decades={catalog?.decades ?? []}
 								onClick={() => setEditSlot(slot)}
+								onChange={(ref) => setSlotRef(slot, ref)}
 							/>
 						);
 					})}
@@ -767,7 +984,11 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							{editing ? (
 								<EditableHeader
 									header={headerFor(r)}
+									criterionRef={editRefs[r]}
+									spec={specForSlot(r)}
+									decades={catalog?.decades ?? []}
 									onClick={() => setEditSlot(r)}
+									onChange={(ref) => setSlotRef(r, ref)}
 								/>
 							) : (
 								<div className="trivia-grid-head">
@@ -894,7 +1115,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 												</span>
 												<span className="text-body-secondary">answers</span>
 											</span>
-										) : (hints[i]?.level ?? 0) > 0 ? (
+										) : hinted.has(i) ? (
 											<span
 												className="text-body-secondary h4 mb-0"
 												title="Hint used"
@@ -1067,13 +1288,6 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							✗ {wrongGuess} — not a match.
 						</div>
 					) : null}
-					{activeHints.length > 0 ? (
-						<div className="alert alert-secondary py-2 px-3 small mt-2 mb-0">
-							{activeHints.map((h, i) => (
-								<div key={i}>💡 {h}</div>
-							))}
-						</div>
-					) : null}
 					{activeMissed.length > 0 ? (
 						<div className="text-body-secondary small mt-2">
 							Already tried here: {activeMissed.join(", ")}
@@ -1083,13 +1297,15 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 						<button
 							className="btn btn-sm btn-light-bordered"
 							disabled={
-								hintsLeft <= 0 || activeHintLevel >= HINT_MULTIPLIER.length - 1
+								activeCell !== undefined &&
+								!hinted.has(activeCell) &&
+								hintsLeft <= 0
 							}
-							onClick={useHint}
+							onClick={openHint}
 							title={
-								activeHintLevel >= HINT_MULTIPLIER.length - 1
-									? "No more hints for this cell"
-									: `Costs this cell ${Math.round((1 - (HINT_MULTIPLIER[activeHintLevel + 1] ?? 0)) * 100)}% of its points`
+								activeCell !== undefined && hinted.has(activeCell)
+									? "Show this cell's six options again (free)"
+									: `Show six players, one of which fits. Worth ${Math.round(HINT_POINT_MULTIPLIER * 100)}% points`
 							}
 						>
 							💡 Hint ({hintsLeft})
@@ -1167,6 +1383,62 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 				</Modal.Body>
 			</Modal>
 
+			{/* Hint mode: six faces, one of which fits the cell */}
+			<Modal
+				show={hintCell !== undefined && !done}
+				onHide={() => setHintCell(undefined)}
+				size="lg"
+			>
+				<Modal.Header closeButton>
+					<Modal.Title className="fs-6">
+						{hintCell !== undefined
+							? `${grid.rows[Math.floor(hintCell / 3)]!.label} × ${grid.cols[hintCell % 3]!.label}`
+							: ""}
+					</Modal.Title>
+				</Modal.Header>
+				<Modal.Body>
+					{hintOptions.length === 0 ? (
+						<div className="text-body-secondary">
+							No players are left for this cell.
+						</div>
+					) : (
+						<>
+							<div className="trivia-hint-grid">
+								{hintOptions.map((option) => {
+									const p = byPid.get(option.pid);
+									const ruledOut = hintWrong.has(option.pid);
+									return (
+										<button
+											key={option.pid}
+											type="button"
+											className={`trivia-hint-option ${ruledOut ? "is-wrong" : ""}`}
+											disabled={ruledOut}
+											onClick={() => pickHint(option.pid, option.correct)}
+										>
+											<HintFace pid={option.pid} />
+											<span className="trivia-hint-name text-truncate">
+												{p?.name ?? "???"}
+											</span>
+										</button>
+									);
+								})}
+							</div>
+							<div className="d-flex align-items-center gap-2 mt-3">
+								<div className="text-body-secondary small">
+									One of these fits both criteria.
+								</div>
+								<button
+									className="btn btn-sm btn-light-bordered ms-auto"
+									onClick={reshuffleHint}
+								>
+									Shuffle
+								</button>
+							</div>
+						</>
+					)}
+				</Modal.Body>
+			</Modal>
+
 			{/* Criterion picker (inline edit) */}
 			<Modal
 				show={editSlot !== undefined}
@@ -1183,11 +1455,6 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 					<CriterionPicker
 						catalog={catalog}
 						current={editSlot !== undefined ? editRefs[editSlot] : undefined}
-						taken={
-							new Set(
-								editRefs.filter((_, i) => i !== editSlot).map((r) => refKey(r)),
-							)
-						}
 						onPick={(ref) => {
 							const slot = editSlot;
 							if (slot === undefined) {
@@ -1209,12 +1476,10 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 const CriterionPicker = ({
 	catalog,
 	current,
-	taken,
 	onPick,
 }: {
 	catalog: Catalog | undefined;
 	current: CriterionRef | undefined;
-	taken: Set<string>;
 	onPick: (ref: CriterionRef) => void;
 }) => {
 	const [query, setQuery] = useState("");
@@ -1252,8 +1517,34 @@ const CriterionPicker = ({
 				ref: { kind: a.kind, id: a.id },
 			});
 		}
+		// Parametric entries seed at their default threshold; the number is then
+		// edited in place on the board rather than here.
+		const stats: Option[] = catalog.statSpecs
+			.filter((sp) => match(sp.label))
+			.map((sp) => ({
+				key: `stat-${sp.id}`,
+				label: `${sp.label} (editable)`,
+				count: -1,
+				ref: { kind: "stat", spec: sp.id, op: "gte", value: sp.defaultValue },
+			}));
+		const decadeOptions: Option[] = [];
+		for (const mode of ["debut", "played"] as DecadeMode[]) {
+			for (const d of catalog.decades) {
+				const label = decadeLabel(mode, d);
+				if (match(label)) {
+					decadeOptions.push({
+						key: `decade-${mode}-${d}`,
+						label,
+						count: -1,
+						ref: { kind: "decade", mode, decade: d },
+					});
+				}
+			}
+		}
 		return [
 			{ label: "Teams", options: teams },
+			{ label: "Stat thresholds", options: stats },
+			{ label: "Decades", options: decadeOptions },
 			{ label: "Career", options: career },
 			{ label: "Season & awards", options: season },
 		].filter((g) => g.options.length > 0);
@@ -1286,8 +1577,9 @@ const CriterionPicker = ({
 						</div>
 						<div className="d-flex flex-wrap gap-1">
 							{g.options.map((o) => {
+								// Deliberately NOT disabled when already used elsewhere on the
+								// board - an all-Celtics grid is a perfectly good thing to want.
 								const isCurrent = o.key === currentKey;
-								const isTaken = taken.has(o.key);
 								return (
 									<button
 										key={o.key}
@@ -1295,16 +1587,17 @@ const CriterionPicker = ({
 										className={`btn btn-sm ${
 											isCurrent ? "btn-primary" : "btn-light-bordered"
 										}`}
-										disabled={isTaken}
 										title={
-											isTaken
-												? "Already used on this grid"
-												: `${o.count} qualifying players`
+											o.count >= 0
+												? `${o.count} qualifying players`
+												: "Set the number on the board"
 										}
 										onClick={() => onPick(o.ref)}
 									>
-										{o.label}{" "}
-										<span className="text-body-secondary">({o.count})</span>
+										{o.label}
+										{o.count >= 0 ? (
+											<span className="text-body-secondary"> ({o.count})</span>
+										) : null}
 									</button>
 								);
 							})}

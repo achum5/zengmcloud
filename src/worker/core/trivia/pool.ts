@@ -82,7 +82,10 @@ const num = (x: unknown): number => (typeof x === "number" ? x : 0);
 const maxVal = (x: unknown): number =>
 	Array.isArray(x) && typeof x[0] === "number" ? x[0] : 0;
 
-const buildPlayer = (p: Player, currentSeason: number): TriviaPlayer | undefined => {
+const buildPlayer = (
+	p: Player,
+	currentSeason: number,
+): TriviaPlayer | undefined => {
 	const rows: TriviaSeasonRow[] = [];
 	const teamsPlayed = new Set<number>();
 	const seasonsPlayed = new Set<number>();
@@ -273,12 +276,19 @@ export const getTriviaPool = async (): Promise<TriviaPool> => {
 // The autocomplete list every game's guess input searches over. With an
 // abbrevs map, each entry also carries position + franchise abbrevs so the
 // dropdown can distinguish same-named players at a glance.
-export const getSearchList = (pool: TriviaPool, abbrevs?: Map<number, string>) =>
+export const getSearchList = (
+	pool: TriviaPool,
+	abbrevs?: Map<number, string>,
+) =>
 	pool.players.map((p) => ({
 		pid: p.pid,
 		name: p.name,
 		years: `${p.firstSeason}-${p.lastSeason}`,
 		pos: p.rows.at(-1)?.pos ?? "",
+		// Fame, for hint mode: distractors are picked to be roughly as prominent
+		// as the correct answer, so the right one doesn't stand out as "the only
+		// name I recognise".
+		pop: p.popularity,
 		teams: abbrevs
 			? p.teamsPlayed
 					.map((tid) => abbrevs.get(tid))

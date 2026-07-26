@@ -93,8 +93,7 @@ export const generateTeamTriviaRound = async (): Promise<
 			continue;
 		}
 
-		const games =
-			ts.won + ts.lost + (ts.tied ?? 0) + ((ts as any).otl ?? 0);
+		const games = ts.won + ts.lost + (ts.tied ?? 0) + ((ts as any).otl ?? 0);
 		if (games <= 0) {
 			continue;
 		}
@@ -161,9 +160,7 @@ export const generateTeamTriviaRound = async (): Promise<
 			if (numRounds > 0) {
 				const options = ["Missed the playoffs"];
 				for (let i = 0; i < numRounds - 1; i++) {
-					options.push(
-						`Lost in ${helpers.ordinal(i + 1)} round`,
-					);
+					options.push(`Lost in ${helpers.ordinal(i + 1)} round`);
 				}
 				options.push("Lost in the Finals");
 				options.push("Won the championship");

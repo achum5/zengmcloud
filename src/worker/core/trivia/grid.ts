@@ -7,7 +7,25 @@ import {
 	type CareerAchievement,
 	type SeasonIndex,
 } from "./criteria.ts";
-import { getSearchList, getTriviaPool, type TriviaPool } from "./pool.ts";
+import {
+	getSearchList,
+	getTriviaPool,
+	type TriviaPlayer,
+	type TriviaPool,
+} from "./pool.ts";
+import {
+	availableDecades,
+	careerStatPasses,
+	debutedInDecade,
+	type DecadeMode,
+	decadeLabel,
+	seasonsInDecade,
+	statLabel,
+	statSeasonsFor,
+	statSpecById,
+	type StatOp,
+	STAT_SPECS,
+} from "./dynamicCriteria.ts";
 
 // The Grids game (Immaculate Grid style), ported from ZenGM Grids'
 // grid-generator.ts + intersection-cache.ts. Every generated grid is
@@ -22,9 +40,15 @@ export type GridCriterion =
 	| { kind: "career" | "season"; id: string; label: string };
 
 // What the UI sends to identify a criterion when building a custom grid.
+//
+// `stat` and `decade` are PARAMETRIC: they carry their threshold rather than
+// naming a preset, which is what lets the editor offer a number box and a
+// greater/less toggle instead of a fixed menu of achievements.
 export type GridCriterionRef =
 	| { kind: "team"; tid: number }
-	| { kind: "career" | "season"; id: string };
+	| { kind: "career" | "season"; id: string }
+	| { kind: "stat"; spec: string; op: StatOp; value: number }
+	| { kind: "decade"; mode: DecadeMode; decade: number };
 
 export type GridCell = {
 	// Eligible pids, and per-pid rarity points (10-100): the more obscure the
@@ -36,6 +60,9 @@ export type GridCell = {
 export type TriviaGridData = {
 	rows: GridCriterion[];
 	cols: GridCriterion[];
+	// Per-criterion qualifying pids (parallel to rows/cols), for hint mode.
+	rowPids: number[][];
+	colPids: number[][];
 	// Row-major: cells[r * 3 + c].
 	cells: GridCell[];
 };
@@ -81,6 +108,11 @@ type Candidate =
 			label: string;
 			family: string | undefined;
 			set: Set<number>;
+			// Only on PARAMETRIC season criteria. The prebuilt seasonIndex is keyed
+			// by the fixed achievement ids, so a threshold the user just typed
+			// isn't in it - this carries the qualifying seasons per player so a
+			// Team x Season cell can still demand it happened on that team.
+			seasonsByPid?: Map<number, Set<number>>;
 	  };
 
 // Everything both the random generator and the custom-grid builder need,
@@ -96,8 +128,17 @@ type Candidates = {
 
 const MIN_QUALIFIERS = 8;
 
+// Derived purely from the pool, which is itself cached per season/phase - so
+// this can be cached on identity. Matters because the grid editor revalidates
+// on every keystroke in the threshold box, and rebuilding every achievement and
+// the whole season index each time made that visibly laggy.
+let candidatesCache: { pool: TriviaPool; candidates: Candidates } | undefined;
+
 const buildCandidates = async (): Promise<Candidates> => {
 	const pool = await getTriviaPool();
+	if (candidatesCache?.pool === pool) {
+		return candidatesCache.candidates;
+	}
 	const ctx = buildSeasonContext(pool);
 	const seasonIndex: SeasonIndex = buildSeasonIndex(pool, ctx);
 	const careerAchievements: CareerAchievement[] = buildCareerAchievements(pool);
@@ -160,7 +201,14 @@ const buildCandidates = async (): Promise<Candidates> => {
 		}
 	}
 
-	return { pool, seasonIndex, teamCandidates, achievementCandidates };
+	const candidates: Candidates = {
+		pool,
+		seasonIndex,
+		teamCandidates,
+		achievementCandidates,
+	};
+	candidatesCache = { pool, candidates };
+	return candidates;
 };
 
 // The eligible players for one cell.
@@ -168,6 +216,7 @@ const cellPids = (
 	seasonIndex: SeasonIndex,
 	a: Candidate,
 	b: Candidate,
+	poolByPid: Map<number, TriviaPlayer> = new Map(),
 ): Set<number> => {
 	if (a.kind === "team" && b.kind === "team") {
 		return intersect(a.set, b.set);
@@ -187,6 +236,29 @@ const cellPids = (
 	>;
 	if (ach.kind === "season") {
 		// Season-aligned: the honor must have been earned ON this team.
+		if (ach.seasonsByPid) {
+			// Parametric criterion - not in the prebuilt index, so align it here:
+			// keep a player only if one of their qualifying seasons was played for
+			// this team.
+			const out = new Set<number>();
+			for (const pid of ach.set) {
+				const seasons = ach.seasonsByPid.get(pid);
+				if (!seasons) {
+					continue;
+				}
+				const p = poolByPid.get(pid);
+				if (!p) {
+					continue;
+				}
+				for (const row of p.rows) {
+					if (row.tid === team.tid && row.gp > 0 && seasons.has(row.season)) {
+						out.add(pid);
+						break;
+					}
+				}
+			}
+			return out;
+		}
 		return seasonIndex.get(team.tid)?.get(ach.id) ?? new Set();
 	}
 	return intersect(team.set, ach.set);
@@ -205,6 +277,12 @@ const toGrid = (
 ): TriviaGridData => ({
 	rows: rows.map(toCriterion),
 	cols: cols.map(toCriterion),
+	// Each criterion's own qualifying pids, independent of the intersections.
+	// Hint mode needs players who meet exactly ONE of a cell's two criteria -
+	// the plausible-looking wrong answers - and shipping these lets the UI build
+	// that set itself instead of a worker round-trip per hint.
+	rowPids: rows.map((c) => [...c.set]),
+	colPids: cols.map((c) => [...c.set]),
 	cells: cellSets.map((set) => {
 		const pids = [...set];
 		return { pids, rarity: rarityForPool(pool, pids) };
@@ -346,8 +424,21 @@ export const generateTriviaGrid = async (): Promise<
 // Every criterion the custom-grid builder can offer, with qualifier counts so
 // the picker can sort/filter sensibly.
 export const getGridCatalog = async () => {
-	const { teamCandidates, achievementCandidates } = await buildCandidates();
+	const { pool, teamCandidates, achievementCandidates } =
+		await buildCandidates();
 	return {
+		// Everything the editor needs to offer a number box, an operator toggle
+		// and a decade dropdown without hard-coding any of it in the UI.
+		statSpecs: STAT_SPECS.map((s) => ({
+			id: s.id,
+			label: s.label,
+			unit: s.unit,
+			scope: s.scope,
+			decimals: s.decimals,
+			defaultValue: s.defaultValue,
+			step: s.step,
+		})),
+		decades: availableDecades(pool),
 		teams: teamCandidates
 			.map((c) => ({
 				tid: (c as Extract<Candidate, { kind: "team" }>).tid,
@@ -364,6 +455,83 @@ export const getGridCatalog = async () => {
 			}))
 			.sort((a, b) => a.label.localeCompare(b.label)),
 	};
+};
+
+// Turn a criterion ref into a Candidate. Presets are looked up; parametric
+// stat/decade refs are COMPUTED here, which is what makes an arbitrary
+// threshold ("1+ PPG", "100+ PPG", "20 or fewer PPG") a first-class criterion
+// rather than something that has to exist in a list first.
+const resolveRef = (
+	ref: GridCriterionRef,
+	pool: TriviaPool,
+	teamCandidates: Candidate[],
+	achievementCandidates: Candidate[],
+): Candidate | undefined => {
+	if (ref.kind === "team") {
+		return teamCandidates.find((c) => c.kind === "team" && c.tid === ref.tid);
+	}
+	if (ref.kind === "career" || ref.kind === "season") {
+		return achievementCandidates.find(
+			(c) => c.kind !== "team" && c.id === ref.id,
+		);
+	}
+	if (ref.kind === "stat") {
+		const spec = statSpecById(ref.spec);
+		if (!spec || typeof ref.value !== "number" || !Number.isFinite(ref.value)) {
+			return undefined;
+		}
+		const label = statLabel(spec, ref.op, ref.value);
+		const id = `stat:${spec.id}:${ref.op}:${ref.value}`;
+		if (spec.scope === "career") {
+			const set = new Set<number>();
+			for (const p of pool.players) {
+				if (careerStatPasses(p, spec, ref.op, ref.value)) {
+					set.add(p.pid);
+				}
+			}
+			// Family keyed on the stat (not the threshold), so the random generator
+			// would never pair two cutoffs of the same stat.
+			return { kind: "career", id, label, family: spec.id, set };
+		}
+		const set = new Set<number>();
+		const seasonsByPid = new Map<number, Set<number>>();
+		for (const p of pool.players) {
+			const seasons = statSeasonsFor(p, spec, ref.op, ref.value);
+			if (seasons.size > 0) {
+				set.add(p.pid);
+				seasonsByPid.set(p.pid, seasons);
+			}
+		}
+		return { kind: "season", id, label, family: spec.id, set, seasonsByPid };
+	}
+	if (ref.kind === "decade") {
+		const label = decadeLabel(ref.mode, ref.decade);
+		const id = `decade:${ref.mode}:${ref.decade}`;
+		if (ref.mode === "debut") {
+			// A debut is a career fact - it has no "on which team" to align to.
+			const set = new Set<number>();
+			for (const p of pool.players) {
+				if (debutedInDecade(p, ref.decade)) {
+					set.add(p.pid);
+				}
+			}
+			return { kind: "career", id, label, family: "decade", set };
+		}
+		// "Played in the 1990s" IS season-aligned, so Team x Decade means they
+		// played for that team during the decade rather than merely both at
+		// some point.
+		const set = new Set<number>();
+		const seasonsByPid = new Map<number, Set<number>>();
+		for (const p of pool.players) {
+			const seasons = seasonsInDecade(p, ref.decade);
+			if (seasons.size > 0) {
+				set.add(p.pid);
+				seasonsByPid.set(p.pid, seasons);
+			}
+		}
+		return { kind: "season", id, label, family: "decade", set, seasonsByPid };
+	}
+	return undefined;
 };
 
 // Build a grid from user-picked criteria. No solvability guarantee - the
@@ -386,9 +554,7 @@ export const buildCustomGrid = async (input: {
 		await buildCandidates();
 
 	const find = (ref: GridCriterionRef): Candidate | undefined =>
-		ref.kind === "team"
-			? teamCandidates.find((c) => c.kind === "team" && c.tid === ref.tid)
-			: achievementCandidates.find((c) => c.kind !== "team" && c.id === ref.id);
+		resolveRef(ref, pool, teamCandidates, achievementCandidates);
 
 	const rows: Candidate[] = [];
 	const cols: Candidate[] = [];
@@ -410,7 +576,7 @@ export const buildCustomGrid = async (input: {
 	const cellSets: Set<number>[] = [];
 	for (const row of rows) {
 		for (const col of cols) {
-			cellSets.push(cellPids(seasonIndex, row, col));
+			cellSets.push(cellPids(seasonIndex, row, col, pool.byPid));
 		}
 	}
 
