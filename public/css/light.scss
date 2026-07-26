@@ -2263,6 +2263,64 @@ tr.text-body-secondary {
 	box-shadow: inset 3px 0 0 var(--bs-success);
 }
 
+// --- Sportsbook ------------------------------------------------------------
+// Bordered surfaces on the page background, rather than filled slabs floating
+// with their own shadows. Same hairline treatment the app's tables use, which
+// is what stops a betting page from reading as a generic dashboard.
+.sb-panel {
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+	overflow: hidden;
+}
+
+.sb-panel-head {
+	background: var(--bs-secondary-bg);
+	border-bottom: 1px solid var(--bs-border-color);
+	padding: 0.35rem 0.75rem;
+	font-size: 0.9em;
+}
+
+// A bet ledger: rows divided by a hairline, no per-row card.
+.sb-list {
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+	overflow: hidden;
+}
+
+.sb-bet-row {
+	padding: 0.5rem 0.75rem;
+}
+.sb-bet-row + .sb-bet-row,
+.sb-panel .sb-bet-row + .sb-bet-row {
+	border-top: 1px solid var(--bs-border-color);
+}
+
+// A bet's name is body text that happens to be clickable. As a normal link it
+// came out in the theme's orange, which put the loudest color in the palette on
+// every row and left nothing for the money to say.
+.sb-bet-title {
+	color: var(--bs-body-color);
+	font-weight: 500;
+}
+a.sb-bet-title:hover {
+	color: var(--bs-body-color);
+	text-decoration: underline;
+}
+
+// Prices line up in a column, so a list of odds can be compared down the page
+// instead of jittering with the digit widths.
+.sb-odds {
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+	min-width: 3.4rem;
+}
+
+.sb-section-title {
+	font-size: 1rem;
+	font-weight: 600;
+	margin-bottom: 0.5rem;
+}
+
 // Scoreboard stat tile ("Score 120", "Streak 7", ...)
 .trivia-tile {
 	background: var(--bs-secondary-bg);

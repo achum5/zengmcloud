@@ -25,30 +25,18 @@ import {
 // Surfaces: a raised panel for a bet/game, and a slightly stronger tone for the
 // header strip on top of it. Everything on this page is built from these two so
 // the board, the slips, and the futures cards read as one system.
-const PANEL = "var(--bs-tertiary-bg)";
-const PANEL_HEADER = "var(--bs-secondary-bg)";
 
-// How each bet outcome is presented: the badge, and the color of the stripe
-// down the left edge of its card (the thing that makes a long settled list
-// scannable at a glance instead of a wall of identical rows).
-const RESULT_META = {
-	won: { label: "Won", badge: "text-bg-success", stripe: "var(--bs-success)" },
-	lost: { label: "Lost", badge: "text-bg-danger", stripe: "var(--bs-danger)" },
-	push: {
-		label: "Push",
-		badge: "text-bg-secondary",
-		stripe: "var(--bs-secondary)",
-	},
-	void: {
-		label: "Void",
-		badge: "text-bg-secondary",
-		stripe: "var(--bs-secondary)",
-	},
-	open: {
-		label: "Open",
-		badge: "text-bg-warning",
-		stripe: "var(--bs-warning)",
-	},
+// How each bet outcome is presented. Deliberately ONE signal per bet: the
+// money is colored, and that is it. The previous version stated the result
+// three times over - a colored stripe down the card, a colored badge, AND
+// colored money - which is what made a list of bets read as a dashboard
+// someone generated rather than a betting slip.
+const RESULT_LABEL = {
+	won: "Won",
+	lost: "Lost",
+	push: "Push",
+	void: "Void",
+	open: "Open",
 } as const;
 
 // A bet's stored label is built as "<title> — <sub>". Bets placed before those
@@ -156,27 +144,13 @@ const Sportsbook = ({
 	const betslip = <BetSlipCard slip={slip} balance={wallet.balance} />;
 
 	const emptyState = (text: string) => (
-		<div
-			className="rounded-3 p-4 text-center text-body-secondary"
-			style={{ background: PANEL }}
-		>
-			{text}
-		</div>
+		<div className="sb-panel p-4 text-center text-body-secondary">{text}</div>
 	);
 
 	// A titled panel used by the futures and awards boards.
 	const boardCard = (title: ReactNode, body: ReactNode, key?: string) => (
-		<div
-			key={key}
-			className="rounded-3 overflow-hidden h-100"
-			style={{ background: PANEL }}
-		>
-			<div
-				className="px-3 py-2 fw-bold small text-uppercase"
-				style={{ background: PANEL_HEADER, letterSpacing: "0.03em" }}
-			>
-				{title}
-			</div>
+		<div key={key} className="sb-panel h-100">
+			<div className="sb-panel-head fw-bold">{title}</div>
 			<div className="p-2">{body}</div>
 		</div>
 	);
@@ -238,15 +212,8 @@ const Sportsbook = ({
 					];
 
 					return (
-						<div
-							key={game.gid}
-							className="rounded-3 overflow-hidden mb-2"
-							style={{ background: PANEL }}
-						>
-							<div
-								className="d-flex align-items-center gap-2 px-3 py-1"
-								style={{ background: PANEL_HEADER }}
-							>
+						<div key={game.gid} className="sb-panel mb-2">
+							<div className="sb-panel-head d-flex align-items-center gap-2">
 								<span className="small text-body-secondary text-truncate">
 									{sub}
 								</span>
@@ -708,104 +675,85 @@ const Sportsbook = ({
 			</span>
 		) : null;
 
-	// One bet as a self-contained card: what was bet and how it landed, with the
-	// money on its own line. Replaces the old six-column table, which ran off the
-	// side of a phone and clipped the stake and the cancel button.
-	const BetCard = ({
+	// One bet as a LIST ROW rather than a floating card. A settled slip is a
+	// ledger entry: label, price, outcome. Rows separated by a hairline (the
+	// same treatment the app's tables use) scan far better down a long history
+	// than a stack of rounded panels with their own drop shadows.
+	const BetRow = ({
 		bet,
 		canCancel,
 	}: {
 		bet: (typeof wallet.bets)[number];
 		canCancel: boolean;
 	}) => {
-		const result = (bet.result ?? "open") as keyof typeof RESULT_META;
-		const meta = RESULT_META[result] ?? RESULT_META.open;
+		const result = (bet.result ?? "open") as keyof typeof RESULT_LABEL;
 		const legs = bet.legs ?? [];
 		const href = boxScoreHref(marketGid(bet.market));
+		const title = cleanLabel(bet.label);
 
-		// The money line: what's at stake, and what it returned (or would).
+		// The one colored thing in the row. Everything else stays body-colored,
+		// so the eye goes to the money instead of to decoration.
 		let money: ReactNode;
 		if (result === "open") {
 			money = (
 				<>
 					{formatSportsbookMoney(bet.stake)} to win{" "}
-					<span className="text-body">
-						{formatSportsbookMoney(bet.stake * (bet.decimalOdds - 1))}
-					</span>
+					{formatSportsbookMoney(bet.stake * (bet.decimalOdds - 1))}
 				</>
 			);
 		} else if (result === "won") {
 			money = (
-				<>
-					{formatSportsbookMoney(bet.stake)} returned{" "}
-					<span className="text-success fw-bold">
-						{formatSportsbookMoney(bet.stake * bet.decimalOdds)}
-					</span>
-				</>
+				<span className="text-success">
+					+{formatSportsbookMoney(bet.stake * (bet.decimalOdds - 1))}
+				</span>
 			);
 		} else if (result === "lost") {
 			money = (
-				<span className="text-danger">
-					Lost {formatSportsbookMoney(bet.stake)}
-				</span>
+				<span className="text-danger">−{formatSportsbookMoney(bet.stake)}</span>
 			);
 		} else {
-			money = <>{formatSportsbookMoney(bet.stake)} refunded</>;
+			money = (
+				<span className="text-body-secondary">
+					{RESULT_LABEL[result]} · {formatSportsbookMoney(bet.stake)} refunded
+				</span>
+			);
 		}
 
 		return (
-			<div
-				className="rounded-2 mb-2 py-2 pe-2"
-				style={{
-					background: PANEL,
-					borderLeft: `4px solid ${meta.stripe}`,
-					paddingLeft: 12,
-				}}
-			>
-				<div className="d-flex align-items-start gap-2">
+			<div className="sb-bet-row">
+				<div className="d-flex align-items-baseline gap-2">
 					<div className="flex-grow-1" style={{ minWidth: 0 }}>
-						{legs.length > 0 ? (
-							<div className="fw-bold">{cleanLabel(bet.label)}</div>
-						) : href ? (
-							<a className="fw-medium" href={href}>
-								{cleanLabel(bet.label)}
+						{href && legs.length === 0 ? (
+							<a className="sb-bet-title" href={href}>
+								{title}
 							</a>
 						) : (
-							<span className="fw-medium">{cleanLabel(bet.label)}</span>
+							<span className="sb-bet-title">{title}</span>
 						)}
 					</div>
-					<div className="text-end flex-shrink-0">
-						<div className="fw-bold lh-1">
-							{formatAmerican(bet.americanOdds)}
-						</div>
-						<span
-							className={`badge ${meta.badge} mt-1`}
-							style={{ fontWeight: 500 }}
-						>
-							{meta.label}
-						</span>
+					<div className="sb-odds flex-shrink-0">
+						{formatAmerican(bet.americanOdds)}
 					</div>
 				</div>
 
 				{legs.length > 0 ? (
-					<div className="mt-2 d-flex flex-column gap-1">
+					<div className="mt-1">
 						{legs.map((leg, i) => {
 							const legHref = boxScoreHref(marketGid(leg.market));
 							return (
 								<div
 									key={i}
-									className="d-flex align-items-baseline gap-2 small"
+									className="d-flex align-items-baseline gap-2 small text-body-secondary"
 									style={{ minWidth: 0 }}
 								>
-									<span
-										className="text-body-secondary text-end flex-shrink-0"
-										style={{ width: 44 }}
-									>
+									<span className="sb-odds flex-shrink-0">
 										{formatAmerican(leg.americanOdds)}
 									</span>
 									<span className="flex-grow-1" style={{ minWidth: 0 }}>
 										{legHref ? (
-											<a href={legHref}>{cleanLabel(leg.label)}</a>
+											<a className="sb-bet-title" href={legHref}>
+												{cleanLabel(leg.label)}
+											</a>
 										) : (
 											cleanLabel(leg.label)
 										)}
@@ -817,11 +765,15 @@ const Sportsbook = ({
 					</div>
 				) : null}
 
-				<div className="d-flex align-items-center gap-2 mt-1 small text-body-secondary">
-					<span>{money}</span>
+				<div className="d-flex align-items-baseline gap-2 small mt-1">
+					<span className="text-body-secondary">
+						{formatSportsbookMoney(bet.stake)} at{" "}
+						{formatAmerican(bet.americanOdds)}
+					</span>
+					<span className="ms-auto fw-medium text-nowrap">{money}</span>
 					{canCancel && result === "open" ? (
 						<button
-							className="btn btn-sm btn-link text-danger text-decoration-none p-0 ms-auto"
+							className="btn btn-link btn-sm text-body-secondary text-decoration-none p-0 ms-2"
 							onClick={() => cancelBet(bet.betID)}
 						>
 							Cancel
@@ -840,9 +792,9 @@ const Sportsbook = ({
 		bets.length === 0 ? (
 			<p className="text-body-secondary">{empty}</p>
 		) : (
-			<div style={{ maxWidth: 680 }}>
+			<div className="sb-list" style={{ maxWidth: 680 }}>
 				{bets.map((bet) => (
-					<BetCard
+					<BetRow
 						key={`${bet.betID}-${bet.result ?? "open"}`}
 						bet={bet}
 						canCancel={canCancel}
@@ -853,15 +805,18 @@ const Sportsbook = ({
 
 	const myBetsTab = (
 		<>
-			<h2 className="h6 text-uppercase text-body-secondary mb-2">
-				Open Bets
-				{wallet.bets.length > 0 ? ` (${wallet.bets.length})` : ""}
+			<h2 className="sb-section-title">
+				Open bets
+				{wallet.bets.length > 0 ? (
+					<span className="text-body-secondary fw-normal">
+						{" "}
+						{wallet.bets.length}
+					</span>
+				) : null}
 			</h2>
 			{betList(wallet.bets, true, "No open bets.")}
 
-			<h2 className="h6 text-uppercase text-body-secondary mt-4 mb-2">
-				Settled
-			</h2>
+			<h2 className="sb-section-title mt-4">Settled</h2>
 			{betList(wallet.history, false, "Nothing settled yet.")}
 		</>
 	);
@@ -870,15 +825,8 @@ const Sportsbook = ({
 	const leagueBetsTab = (
 		<div style={{ maxWidth: 680 }}>
 			{leagueBets.map((team) => (
-				<div
-					key={team.tid}
-					className="rounded-3 overflow-hidden mb-3"
-					style={{ background: PANEL }}
-				>
-					<div
-						className="d-flex align-items-center gap-2 px-3 py-2"
-						style={{ background: PANEL_HEADER }}
-					>
+				<div key={team.tid} className="sb-panel mb-3">
+					<div className="sb-panel-head d-flex align-items-center gap-2">
 						<Logo tid={team.tid} size={20} />
 						<span className="fw-bold text-truncate">{teamName(team.tid)}</span>
 						{team.tid === wallet.tid ? (
@@ -888,21 +836,19 @@ const Sportsbook = ({
 							{formatSportsbookMoneyFull(team.balance)}
 						</span>
 					</div>
-					<div className="p-2">
-						{team.open.length === 0 && team.settled.length === 0 ? (
-							<p className="text-body-secondary small mb-0 px-1 py-2">
-								No bets yet.
-							</p>
-						) : (
-							[...team.open, ...team.settled].map((bet) => (
-								<BetCard
-									key={`${bet.betID}-${bet.result ?? "open"}`}
-									bet={bet}
-									canCancel={false}
-								/>
-							))
-						)}
-					</div>
+					{team.open.length === 0 && team.settled.length === 0 ? (
+						<p className="text-body-secondary small mb-0 px-3 py-2">
+							No bets yet.
+						</p>
+					) : (
+						[...team.open, ...team.settled].map((bet) => (
+							<BetRow
+								key={`${bet.betID}-${bet.result ?? "open"}`}
+								bet={bet}
+								canCancel={false}
+							/>
+						))
+					)}
 				</div>
 			))}
 		</div>
@@ -926,7 +872,7 @@ const Sportsbook = ({
 
 	return (
 		<>
-			<div className="rounded-3 p-3 mb-3" style={{ background: PANEL }}>
+			<div className="sb-panel p-3 mb-3">
 				<div className="d-flex align-items-center gap-3 flex-wrap">
 					<Logo tid={wallet.tid} size={32} />
 					<div style={{ minWidth: 0 }}>
