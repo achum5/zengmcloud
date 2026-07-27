@@ -236,9 +236,9 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 									Each player brings their whole career - stats and ratings for
 									every season, transactions, and feats - so a bigger number
 									means fewer copy/paste rounds but a much longer prompt, and
-									less room in the AI's reply for the last players in the
-									batch. Lower this if recaps come back truncated or if the
-									last few players get skipped.
+									less room in the AI's reply for the last players in the batch.
+									Lower this if recaps come back truncated or if the last few
+									players get skipped.
 								</p>
 							</HelpPopover>
 						</label>

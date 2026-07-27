@@ -155,6 +155,25 @@ export const upsertSeasonNote = (
 	return renderSeasonNote([...headed, ...freeform]);
 };
 
+// Drop one section, leaving everything else alone. Used to clear a retirement
+// writeup off a player who did not actually retire that year - the only way
+// that can happen is a misfiled paste, and it would otherwise sit in the note
+// forever, since re-running a season only ever replaces the SEASON section.
+export const removeSeasonNote = (
+	existingNote: string | undefined,
+	season: number,
+	kind: SeasonNoteKind,
+): string => {
+	const sections = parseSeasonNote(existingNote ?? "");
+	const kept = sections.filter(
+		(section) => !(section.season === season && section.kind === kind),
+	);
+	if (kept.length === sections.length) {
+		return existingNote ?? "";
+	}
+	return renderSeasonNote(kept);
+};
+
 // Does this note already have a section for the season? Used to report how much
 // of a season is already written.
 export const hasSeasonNote = (

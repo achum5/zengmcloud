@@ -436,7 +436,9 @@ const AGGRESSION: Record<TradeTier, number> = {
 // is too small to have that many players.
 const atRankDesc = (sortedDesc: number[], rank: number, fallback: number) => {
 	const idx = Math.min(rank, sortedDesc.length) - 1;
-	return idx >= 0 && sortedDesc[idx] !== undefined ? sortedDesc[idx]! : fallback;
+	return idx >= 0 && sortedDesc[idx] !== undefined
+		? sortedDesc[idx]!
+		: fallback;
 };
 
 // 0.25..0.75 estimated win% purely from team-strength rank (same shape the

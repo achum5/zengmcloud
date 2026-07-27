@@ -3,7 +3,11 @@ import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import { processAssets } from "../views/tradeSummary.ts";
 import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
-import type { DiscriminateUnion, EventBBGM, Phase } from "../../common/types.ts";
+import type {
+	DiscriminateUnion,
+	EventBBGM,
+	Phase,
+} from "../../common/types.ts";
 
 // A plain-text dump of every trade over the last N seasons, rich enough to judge
 // whether the CPU trade AI is behaving like real life: for each side it shows the
@@ -145,7 +149,10 @@ export const getTradeHistoryDump = async (numSeasons = 5): Promise<string> => {
 	// scanning the whole event log of a long-running league).
 	const events: TradeEvent[] = [];
 	for (let s = startSeason; s <= currentSeason; s++) {
-		const seasonEvents = await idb.getCopies.events({ season: s }, "noCopyCache");
+		const seasonEvents = await idb.getCopies.events(
+			{ season: s },
+			"noCopyCache",
+		);
 		for (const event of seasonEvents) {
 			if (
 				event.type === "trade" &&
@@ -175,7 +182,9 @@ export const getTradeHistoryDump = async (numSeasons = 5): Promise<string> => {
 		try {
 			await appendTrade(lines, event, n, userTid);
 		} catch (error) {
-			lines.push(`#${n} [${event.season}] (could not reconstruct: ${(error as Error).message})`);
+			lines.push(
+				`#${n} [${event.season}] (could not reconstruct: ${(error as Error).message})`,
+			);
 			lines.push("");
 		}
 	}

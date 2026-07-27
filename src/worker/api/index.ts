@@ -125,8 +125,7 @@ import { setSyncDebugLogging, syncDebugLog } from "../core/sync/debugLog.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
 import { getPlayerRecapData } from "../util/getPlayerRecapData.ts";
-import { upsertSeasonNote } from "../../common/seasonNote.ts";
-import { getRetiredPlayersForRecap } from "../util/getRetiredPlayersForRecap.ts";
+import { removeSeasonNote, upsertSeasonNote } from "../../common/seasonNote.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
 import { PointsFormulaEvaluator } from "../core/team/evaluatePointsFormula.ts";
 import type { Settings } from "../views/settings.ts";
@@ -4360,27 +4359,43 @@ const setNote = async (info: NoteInfo & { editedNote: string }) => {
 const filePlayerSeasonRecaps = async ({
 	season,
 	recaps,
-	kind = "season",
 }: {
 	season: number;
-	recaps: { pid: number; headline: string; text: string }[];
-	kind?: "season" | "retirement";
+	recaps: {
+		pid: number;
+		kind: "season" | "retirement";
+		headline: string;
+		text: string;
+	}[];
 }) => {
 	let filed = 0;
 	const missing: number[] = [];
+	const wrongKind: number[] = [];
 
-	for (const { pid, headline, text } of recaps) {
+	for (const { pid, kind, headline, text } of recaps) {
 		const p = await idb.getCopy.players({ pid }, "noCopyCache");
 		if (!p) {
 			missing.push(pid);
 			continue;
 		}
-		const merged = upsertSeasonNote(p.note, {
+
+		// A retirement writeup belongs only to the year a player actually retired.
+		// Anything else is a misfiled paste, and it would sit in the note forever,
+		// since re-running a season only ever replaces the SEASON section.
+		if (kind === "retirement" && p.retiredYear !== season) {
+			wrongKind.push(pid);
+			continue;
+		}
+
+		let merged = upsertSeasonNote(p.note, {
 			season,
 			kind,
 			headline,
 			body: text,
 		});
+		if (kind === "season" && p.retiredYear !== season) {
+			merged = removeSeasonNote(merged, season, "retirement");
+		}
 		if (merged === "") {
 			delete p.note;
 			delete p.noteBool;
@@ -4394,7 +4409,7 @@ const filePlayerSeasonRecaps = async ({
 
 	await toUI("realtimeUpdate", [noteUpdateEvents.player]);
 
-	return { filed, missing };
+	return { filed, missing, wrongKind };
 };
 
 const reSignAll = async (players: any[]) => {
@@ -6479,7 +6494,6 @@ export default {
 		getSeasonRecapData,
 		getPlayerRecapData,
 		filePlayerSeasonRecaps,
-		getRetiredPlayersForRecap,
 		getSyncActivity,
 		getSyncCheckpoint,
 		getSyncDebugSnapshot,

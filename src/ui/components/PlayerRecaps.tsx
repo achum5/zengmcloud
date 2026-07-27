@@ -82,7 +82,7 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 		setResult(undefined);
 		try {
 			const recaps = parsePlayerRecaps(text);
-			if (recaps.size === 0) {
+			if (recaps.length === 0) {
 				setResult(
 					"Couldn't find any recaps in what was pasted — paste the AI's full reply (each recap keeps its <!--player:…--> marker).",
 				);
@@ -91,8 +91,9 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 
 			const response = await toWorker("main", "filePlayerSeasonRecaps", {
 				season,
-				recaps: [...recaps].map(([pid, recap]) => ({
-					pid,
+				recaps: recaps.map((recap) => ({
+					pid: recap.pid,
+					kind: recap.kind,
 					headline: recap.headline,
 					text: recap.body,
 				})),
@@ -106,7 +107,14 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 			// advancing past them - a short reply is the main failure mode of a big
 			// batch, and it's invisible otherwise.
 			const expected = data?.players.length ?? 0;
-			if (expected > 0 && recaps.size < expected) {
+			const seasonRecaps = recaps.filter((x) => x.kind === "season").length;
+			if (response.wrongKind.length > 0) {
+				setResult(
+					`Filed ${response.filed}, but skipped ${response.wrongKind.length} retirement writeup${
+						response.wrongKind.length === 1 ? "" : "s"
+					} for players who didn't retire in ${season} — that reply was probably for a different season.`,
+				);
+			} else if (expected > 0 && seasonRecaps < expected) {
 				setResult(
 					`Filed ${response.filed} of ${expected} players — the AI's reply was short. Lower "AI Recap Max Players" in Global Settings, then re-copy this batch to fill the rest.`,
 				);

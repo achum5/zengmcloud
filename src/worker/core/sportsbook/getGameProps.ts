@@ -111,7 +111,17 @@ const buildPlayerField = async (
 	season: number,
 ): Promise<PlayerBase[]> => {
 	const rawPlayers = await idb.cache.players.indexGetAll("playersByTid", tid);
-	const statKeys = ["gp", "min", "pts", "trb", "ast", "stl", "blk", "tp", "tov"];
+	const statKeys = [
+		"gp",
+		"min",
+		"pts",
+		"trb",
+		"ast",
+		"stl",
+		"blk",
+		"tp",
+		"tov",
+	];
 
 	const current = await idb.getCopies.playersPlus(rawPlayers, {
 		attrs: ["pid", "name", "tid"],
@@ -221,10 +231,7 @@ export const getGameProps = async (gid: number) => {
 	// early in the season (same rationale as getLines.ts's leagueAvgTotal).
 	const activeTeams = teams.filter((t) => !t.disabled);
 	// Teams don't have a derived "trb" - read it as orb+drb everywhere below.
-	const teamStatValue = (
-		s: any,
-		stat: "pts" | "trb" | "ast" | "tp",
-	): number =>
+	const teamStatValue = (s: any, stat: "pts" | "trb" | "ast" | "tp"): number =>
 		stat === "trb" ? (s?.orb ?? 0) + (s?.drb ?? 0) : (s?.[stat] ?? 0);
 
 	const leagueAvg = { pts: 0, trb: 0, ast: 0, tp: 0 };
@@ -253,7 +260,10 @@ export const getGameProps = async (gid: number) => {
 		leagueAvg.tp = 12;
 	}
 
-	const teamMean = (t: (typeof teams)[number], stat: "pts" | "trb" | "ast" | "tp") => {
+	const teamMean = (
+		t: (typeof teams)[number],
+		stat: "pts" | "trb" | "ast" | "tp",
+	) => {
 		const s = t.stats as any;
 		const gp = s?.gp ?? 0;
 		const perGame = teamStatValue(s, stat);
@@ -389,7 +399,15 @@ export const getGameProps = async (gid: number) => {
 	const awayField = await buildPlayerField(away.tid, away.abbrev, season);
 
 	const playerRow = (p: PlayerBase) => {
-		const cats: CountingStat[] = ["pts", "trb", "ast", "stl", "blk", "tp", "tov"];
+		const cats: CountingStat[] = [
+			"pts",
+			"trb",
+			"ast",
+			"stl",
+			"blk",
+			"tp",
+			"tov",
+		];
 		const props = cats.map((stat) => {
 			const proj = projectStat(p[stat], stat);
 			return { ...ouRow(stat, proj.mean, proj.sigma) };

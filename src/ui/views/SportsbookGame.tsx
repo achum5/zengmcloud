@@ -48,7 +48,12 @@ const TEAM_PROP_LABELS: Record<string, string> = {
 
 const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
 
-const SportsbookGame = ({ gid, board, wallet, season }: View<"sportsbookGame">) => {
+const SportsbookGame = ({
+	gid,
+	board,
+	wallet,
+	season,
+}: View<"sportsbookGame">) => {
 	useTitleBar({ title: "Game Props" });
 
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
@@ -81,7 +86,10 @@ const SportsbookGame = ({ gid, board, wallet, season }: View<"sportsbookGame">) 
 
 	const selectedKeys = slip.selectedKeys;
 	const sub = `${board.away.abbrev} @ ${board.home.abbrev}`;
-	const allPlayers: PlayerRow[] = [...board.away.players, ...board.home.players];
+	const allPlayers: PlayerRow[] = [
+		...board.away.players,
+		...board.home.players,
+	];
 
 	const togglePick: typeof slip.togglePick = (pick) => {
 		slip.togglePick(pick);
@@ -109,26 +117,24 @@ const SportsbookGame = ({ gid, board, wallet, season }: View<"sportsbookGame">) 
 							</tr>
 						</thead>
 						<tbody>
-							{(
-								[
-									{
-										side: board.away,
-										spreadLine: -board.main.spread.line,
-										spreadOdds: board.main.spread.away,
-										totKind: "over" as const,
-										totOdds: board.main.total.over,
-										ml: board.main.moneyline.away,
-									},
-									{
-										side: board.home,
-										spreadLine: board.main.spread.line,
-										spreadOdds: board.main.spread.home,
-										totKind: "under" as const,
-										totOdds: board.main.total.under,
-										ml: board.main.moneyline.home,
-									},
-								]
-							).map((r) => (
+							{[
+								{
+									side: board.away,
+									spreadLine: -board.main.spread.line,
+									spreadOdds: board.main.spread.away,
+									totKind: "over" as const,
+									totOdds: board.main.total.over,
+									ml: board.main.moneyline.away,
+								},
+								{
+									side: board.home,
+									spreadLine: board.main.spread.line,
+									spreadOdds: board.main.spread.home,
+									totKind: "under" as const,
+									totOdds: board.main.total.under,
+									ml: board.main.moneyline.home,
+								},
+							].map((r) => (
 								<tr key={r.side.tid}>
 									<td>
 										<div className="d-flex align-items-center gap-2">
@@ -431,9 +437,7 @@ const SportsbookGame = ({ gid, board, wallet, season }: View<"sportsbookGame">) 
 											<td key={milestone}>
 												<OddsCell
 													odds={
-														milestone === "dd"
-															? p.doubleDouble
-															: p.tripleDouble
+														milestone === "dd" ? p.doubleDouble : p.tripleDouble
 													}
 													selected={selectedKeys.has(
 														milestone === "dd" ? ddKey : tdKey,

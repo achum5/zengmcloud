@@ -20,7 +20,8 @@ const TierBadge = ({ tier }: { tier: TierKey }) => {
 	return <span className={`badge ${meta.className}`}>{meta.label}</span>;
 };
 
-const TABLE_CLASS = "table table-striped table-borderless table-sm align-middle";
+const TABLE_CLASS =
+	"table table-striped table-borderless table-sm align-middle";
 
 // One player, compact: "Name o78 a26 v82.1 PG $35000/2031".
 const fmtPlayer = (p: {

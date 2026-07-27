@@ -8,6 +8,8 @@ const gradient = gradientStyleFactory(25, 45, 55, 75);
 // the middle of their decile (5 -> 55) before coloring — otherwise every rating
 // would fall below the low threshold and show up uniformly red.
 export const ratingsGradientStyle = (rating: number) => {
-	const value = local.getState().hideRatingsOnesDigit ? rating * 10 + 5 : rating;
+	const value = local.getState().hideRatingsOnesDigit
+		? rating * 10 + 5
+		: rating;
 	return gradient(value);
 };

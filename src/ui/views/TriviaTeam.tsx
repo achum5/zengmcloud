@@ -156,7 +156,10 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 	const t = teamInfoCache[round.team.tid];
 	const inLeaderPhase = typeof phase === "object";
 	const rosterVisible =
-		inLeaderPhase || phase === "wins" || phase === "playoffs" || phase === "done";
+		inLeaderPhase ||
+		phase === "wins" ||
+		phase === "playoffs" ||
+		phase === "done";
 	const stageIndex = stageIndexOf(phase);
 	const stages = round.playoffs
 		? STAGES
@@ -248,7 +251,8 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 						const shown = rosterVisible || revealed.has(p.pid);
 						const showHints = phase !== "guess" || revealed.has(p.pid);
 						const clickable =
-							inLeaderPhase && !leaderResult[(phase as { leader: number }).leader];
+							inLeaderPhase &&
+							!leaderResult[(phase as { leader: number }).leader];
 						const leaderIndex = inLeaderPhase
 							? (phase as { leader: number }).leader
 							: undefined;
@@ -381,7 +385,10 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 
 			{phase === "guess" || phase === "hint" ? (
 				<>
-					<div className="d-flex align-items-center gap-2 mb-2" style={{ maxWidth: 480 }}>
+					<div
+						className="d-flex align-items-center gap-2 mb-2"
+						style={{ maxWidth: 480 }}
+					>
 						<div className="progress flex-grow-1" style={{ height: 8 }}>
 							<div
 								className="progress-bar bg-success"
@@ -534,8 +541,8 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 								{winsResult ? "Correct!" : "Missed"}
 							</span>
 							They won{" "}
-							<WinsReveal actual={round.wins.actual} correct={winsResult} /> (you
-							said {winsGuess}).
+							<WinsReveal actual={round.wins.actual} correct={winsResult} />{" "}
+							(you said {winsGuess}).
 							<button
 								className="btn btn-primary ms-3"
 								onClick={() => setPhase(round.playoffs ? "playoffs" : "done")}
@@ -588,7 +595,9 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 					{grade.letter === "S" ? <Confetti /> : null}
 					<div className="card trivia-rise mb-3" style={{ maxWidth: 640 }}>
 						<div className="card-body d-flex flex-wrap align-items-center gap-4">
-							<div className={`trivia-grade ${grade.color}`}>{grade.letter}</div>
+							<div className={`trivia-grade ${grade.color}`}>
+								{grade.letter}
+							</div>
 							<div className="flex-grow-1">
 								<div className="h4 mb-1">
 									{score} / {maxScore} points

@@ -45,7 +45,9 @@ export const shouldDumpExpiring = ({
 	probWillingCurrent: number;
 	tier: TradeTier;
 }): boolean =>
-	isExpiring && probWillingCurrent < RESIGN_UNLIKELY && !CONTENDER_TIERS.has(tier);
+	isExpiring &&
+	probWillingCurrent < RESIGN_UNLIKELY &&
+	!CONTENDER_TIERS.has(tier);
 
 // Acquiring an expiring player who won't re-sign with you (low mood toward the
 // new team) is a RENTAL — only a genuine win-now contender (all-in) should take

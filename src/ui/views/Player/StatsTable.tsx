@@ -188,7 +188,9 @@ export const StatsTable = ({
 				footer.push({
 					classNames: "text-body-secondary",
 					data: [
-						runs.single ? runs.short : { value: <span title={runs.full}>{runs.short}</span> },
+						runs.single
+							? runs.short
+							: { value: <span title={runs.full}>{runs.short}</span> },
 						wrappedTeamAbbrevLink({
 							abbrev: row.abbrev,
 							season: row.lastSeason,
@@ -237,7 +239,8 @@ export const StatsTable = ({
 
 			footer.push({
 				classNames: clsx("table-primary", {
-					"text-body-secondary": selection.status === "loading" || !selectedStats,
+					"text-body-secondary":
+						selection.status === "loading" || !selectedStats,
 				}),
 				data: [
 					{ value: label },

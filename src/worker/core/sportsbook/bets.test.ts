@@ -32,7 +32,9 @@ const getWallet = async (tid: number) => {
 	};
 };
 
-const moneylineBet = (overrides: Partial<SportsbookBet> = {}): SportsbookBet => ({
+const moneylineBet = (
+	overrides: Partial<SportsbookBet> = {},
+): SportsbookBet => ({
 	betID: 1,
 	season: g.get("season"),
 	placedAt: Date.now(),
@@ -188,7 +190,10 @@ describe("sportsbook bets", () => {
 				gid: 999,
 				season: g.get("season"),
 				day: 5,
-				teams: [{ tid: 0, pts: 100 }, { tid: 1, pts: 100 }],
+				teams: [
+					{ tid: 0, pts: 100 },
+					{ tid: 1, pts: 100 },
+				],
 				won: { tid: 0, pts: 100 },
 				lost: { tid: 1, pts: 100 },
 			} as any);
@@ -216,7 +221,12 @@ describe("sportsbook bets", () => {
 					tid: 0,
 					picks: [
 						{
-							market: { type: "award", award: "mvp", pid: 12345, season: g.get("season") },
+							market: {
+								type: "award",
+								award: "mvp",
+								pid: 12345,
+								season: g.get("season"),
+							},
 							stake: 100,
 							americanOdds: 150,
 							label: "nonexistent candidate",
@@ -245,7 +255,12 @@ describe("sportsbook bets", () => {
 					tid: 1,
 					picks: [
 						{
-							market: { type: "award", award: "mvp", pid: 1, season: g.get("season") },
+							market: {
+								type: "award",
+								award: "mvp",
+								pid: 1,
+								season: g.get("season"),
+							},
 							stake: 100,
 							americanOdds: 150,
 							label: "x",

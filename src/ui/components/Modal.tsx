@@ -23,8 +23,7 @@ const animation = false;
 // "Macintosh" UA and is only distinguishable by having a touch screen) is
 // regression-tested.
 export const isIOSUserAgent = (ua: string, maxTouchPoints: number): boolean =>
-	/iP(hone|od|ad)/.test(ua) ||
-	(/Macintosh/.test(ua) && maxTouchPoints > 1);
+	/iP(hone|od|ad)/.test(ua) || (/Macintosh/.test(ua) && maxTouchPoints > 1);
 
 const IS_IOS =
 	typeof navigator !== "undefined" &&

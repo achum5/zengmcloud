@@ -97,6 +97,10 @@ export type RecapPlayer = {
 	feats: { season: number; text: string }[];
 	// Only for the season's draft class: where they went and what they joined.
 	draftInfo?: RecapDraftInfo;
+	// This is the season they retired after, so the batch asks for a career
+	// retrospective alongside the season recap. The whole career is already in
+	// the block above; this is the summary a retrospective actually leans on.
+	retiring?: RecapRetirement;
 	// Whether this player's note already has a section for the season being
 	// written, so the UI can report how much is already done.
 	alreadyWritten: boolean;
@@ -120,6 +124,24 @@ export type RecapRosterSpot = {
 	age: number;
 	ovr: number;
 	pot: number;
+};
+
+// What a career retrospective leans on: the totals, the span, where he spent
+// it. Everything here is derivable from the season rows, but a retrospective
+// that has to add up eighteen seasons itself gets them wrong.
+export type RecapRetirement = {
+	ageAtRetirement: number;
+	seasonsPlayed: number;
+	firstSeason?: number;
+	lastSeason?: number;
+	totalGP: number;
+	peakOvr: number;
+	// Per game across the whole career, regular season and playoffs.
+	career?: Record<string, number>;
+	playoffs?: Record<string, number>;
+	// Every team he suited up for, with the span and games.
+	teams: { abbrev: string; from: number; to: number; gp: number }[];
+	rings: number;
 };
 
 export type RecapDraftInfo = {
@@ -217,8 +239,14 @@ export const getPlayerRecapData = async ({
 
 	// Everyone who was in the league that season, in a STABLE order so batch N
 	// means the same thing between the Copy and the Paste (and across reloads).
+	// Anyone who retired after this season is included even if the ratings check
+	// misses them, since their retirement writeup is written from this batch and
+	// there is no second pass that would catch them.
 	const inSeason = playersAll
-		.filter((p: any) => ratingsForSeason(p, season) !== undefined)
+		.filter(
+			(p: any) =>
+				ratingsForSeason(p, season) !== undefined || p.retiredYear === season,
+		)
 		.sort((a: any, b: any) => (a.pid ?? 0) - (b.pid ?? 0));
 
 	const totalPlayers = inSeason.length;
@@ -365,6 +393,41 @@ export const getPlayerRecapData = async ({
 	const currentSeason = g.get("season");
 	const isCurrentSeason = season === currentSeason;
 
+	// Career per-game totals for a retiring player. The AI has every season row,
+	// but a retrospective that has to add up eighteen of them itself gets them
+	// wrong, so the sums are done here.
+	const PER_GAME = [
+		"min",
+		"pts",
+		"trb",
+		"ast",
+		"stl",
+		"blk",
+		"tov",
+		"fg",
+		"fga",
+		"tp",
+		"tpa",
+		"ft",
+		"fta",
+	] as const;
+
+	const careerLine = (rows: RecapPlayerSeasonStats[]) => {
+		const gp = rows.reduce((sum, row) => sum + row.gp, 0);
+		if (gp === 0) {
+			return undefined;
+		}
+		const out: Record<string, number> = { gp };
+		for (const key of PER_GAME) {
+			const total = rows.reduce((sum, row) => sum + row[key], 0);
+			out[key] = Math.round((total / gp) * 10) / 10;
+		}
+		out.fgp = out.fga! > 0 ? Math.round((out.fg! / out.fga!) * 1000) / 10 : 0;
+		out.tpp = out.tpa! > 0 ? Math.round((out.tp! / out.tpa!) * 1000) / 10 : 0;
+		out.ftp = out.fta! > 0 ? Math.round((out.ft! / out.fta!) * 1000) / 10 : 0;
+		return out;
+	};
+
 	const players: RecapPlayer[] = slice.map((p: any) => {
 		const seasonRatings = ratingsForSeason(p, season);
 		const bornYear = p.born?.year ?? season;
@@ -441,6 +504,46 @@ export const getPlayerRecapData = async ({
 				? p.retiredYear
 				: undefined;
 
+		let retiring: RecapRetirement | undefined;
+		if (p.retiredYear === season) {
+			const reg = statRows.filter((row) => !row.playoffs);
+			const post = statRows.filter((row) => row.playoffs);
+
+			const byTeam = new Map<
+				string,
+				{ abbrev: string; from: number; to: number; gp: number }
+			>();
+			for (const row of reg) {
+				const existing = byTeam.get(row.abbrev);
+				if (existing) {
+					existing.from = Math.min(existing.from, row.season);
+					existing.to = Math.max(existing.to, row.season);
+					existing.gp += row.gp;
+				} else {
+					byTeam.set(row.abbrev, {
+						abbrev: row.abbrev,
+						from: row.season,
+						to: row.season,
+						gp: row.gp,
+					});
+				}
+			}
+
+			retiring = {
+				ageAtRetirement: season - bornYear,
+				seasonsPlayed: new Set(reg.map((row) => row.season)).size,
+				firstSeason: reg[0]?.season,
+				lastSeason: reg.at(-1)?.season,
+				totalGP: reg.reduce((sum, row) => sum + row.gp, 0),
+				peakOvr: ratingRows.reduce((max, r) => Math.max(max, r.ovr), 0),
+				career: careerLine(reg),
+				playoffs: careerLine(post),
+				teams: [...byTeam.values()].sort((a, b) => a.from - b.from),
+				rings: awards.filter((a: any) => String(a.type) === "Won Championship")
+					.length,
+			};
+		}
+
 		return {
 			pid: p.pid,
 			name: `${p.firstName} ${p.lastName}`,
@@ -506,6 +609,7 @@ export const getPlayerRecapData = async ({
 								.slice(0, 10),
 						}
 					: undefined,
+			retiring,
 			alreadyWritten: hasSeasonNote(p.note, season),
 		};
 	});

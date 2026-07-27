@@ -1,6 +1,5 @@
 import { MoreLinks } from "../../components/MoreLinks.tsx";
 import { RetiredPlayers } from "../../components/RetiredPlayers.tsx";
-import { RetiredRecap } from "../../components/RetiredRecap.tsx";
 import { SeasonRecap } from "../../components/SeasonRecap.tsx";
 import { PlayerRecaps } from "../../components/PlayerRecaps.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
@@ -96,11 +95,6 @@ const History = (props: View<"history">) => {
 				</div>
 
 				<div className="col-md-6 mt-1">
-					<h2 className="h5">Retired Player Writeups (AI)</h2>
-					<RetiredRecap season={season} />
-				</div>
-
-				<div className="col-md-6 mt-3">
 					<h2 className="h5">Player Season Recaps (AI)</h2>
 					<PlayerRecaps season={season} />
 				</div>

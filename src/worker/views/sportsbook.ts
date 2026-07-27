@@ -131,10 +131,7 @@ const updateSportsbook = async (
 		}
 
 		const teamInfoCache = g.get("teamInfoCache");
-		const gameLinks: Record<
-			number,
-			{ abbrevTid: string; season: number }
-		> = {};
+		const gameLinks: Record<number, { abbrevTid: string; season: number }> = {};
 		for (const gid of gidsReferenced) {
 			const game = await idb.getCopy.games({ gid }, "noCopyCache");
 			if (!game || !game.won || !game.lost) {

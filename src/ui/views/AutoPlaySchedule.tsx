@@ -359,8 +359,8 @@ const AutoPlaySchedule = () => {
 								</div>
 								{projected.length > shownFires.length ? (
 									<div className="text-body-secondary small mt-2">
-										…and {projected.length - shownFires.length} more, through Day{" "}
-										{projected.at(-1)!.toDay}
+										…and {projected.length - shownFires.length} more, through
+										Day {projected.at(-1)!.toDay}
 										{projected.at(-1)!.endsPhase && preview?.phaseEndNote
 											? ` (${preview.phaseEndNote.toLowerCase()})`
 											: ""}

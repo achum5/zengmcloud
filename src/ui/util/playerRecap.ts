@@ -2,6 +2,7 @@ import type {
 	RecapDraftInfo,
 	RecapPlayer,
 	RecapPlayerBatch,
+	RecapRetirement,
 } from "../../worker/util/getPlayerRecapData.ts";
 import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
@@ -33,13 +34,20 @@ Players drafted this season have a DRAFTED block: where they went, how that team
 
 Write about them as people with careers. Do not dump the data back — weave the numbers that matter into the prose.
 
+RETIRING PLAYERS GET TWO PIECES. A player marked RETIRING AFTER THIS SEASON has just played his last season, and his block carries his career totals. Write his season recap exactly like everyone else's, and then a SECOND, separate piece: the retirement writeup, the kind of career retrospective published when a player hangs it up. Scale that one to the career, and do not give everyone the same treatment:
+- Hall of Famers and decorated stars: a full retrospective, several paragraphs — the arc, the peak, the signature seasons, the accolades, how he is remembered.
+- Solid long-tenured players: a couple of tight paragraphs.
+- Role players and journeymen: a short paragraph.
+- Players who barely played, and especially undrafted players who never logged a single game: one or two honest sentences. Do not invent a career that isn't there.
+
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no summary.
 - Begin every player's recap with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each recap is filed to the correct player — never omit it, never change it.
 - The line straight after the marker is the HEADING, in this exact form: [YEAR] followed by a short headline, e.g. "[2004] A leap in Sacramento". Use the LISTED SEASON as the year. The headline is a few words, title-style, no ending period, no bold. Make it specific to that player's year ("Hurt again", "The last dance") — never generic like "Season Recap".
 - Then a blank line, then the recap itself as plain prose. No stat table, no bullet lists.
+- For a RETIRING player only, add the retirement writeup straight after his season recap, in the same shape but with a DIFFERENT marker line: <!--retired:ID--> (same ID). Its heading is also [YEAR] followed by a short headline, but about how the CAREER is remembered ("The quiet exit", "Sixteen years, one team") rather than about this season.
 - Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
-- Put exactly one blank line between players.`;
+- Put exactly one blank line between pieces.`;
 
 const one = (x: number) => (Math.round(x * 10) / 10).toFixed(1);
 
@@ -98,6 +106,51 @@ const draftBlock = (d: RecapDraftInfo): string[] => {
 			);
 		}
 	}
+	return lines;
+};
+
+// The career totals a retrospective leans on. Summed in the worker, because an
+// AI asked to add up eighteen season rows itself gets them wrong.
+const retirementBlock = (r: RecapRetirement): string[] => {
+	const totals = (line: Record<string, number> | undefined) =>
+		line
+			? `${one(line.pts ?? 0)}p ${one(line.trb ?? 0)}r ${one(line.ast ?? 0)}a ${one(line.stl ?? 0)}s ${one(line.blk ?? 0)}b ${one(line.min ?? 0)}m fg${line.fgp ?? 0}% 3p${line.tpp ?? 0}% ft${line.ftp ?? 0}% over ${line.gp ?? 0}g`
+			: undefined;
+
+	const lines = [
+		`RETIRING AFTER THIS SEASON — age ${r.ageAtRetirement}, ${r.seasonsPlayed} season${
+			r.seasonsPlayed === 1 ? "" : "s"
+		}${
+			r.firstSeason !== undefined && r.lastSeason !== undefined
+				? ` (${r.firstSeason}-${r.lastSeason})`
+				: ""
+		}, ${r.totalGP} career games, peak ovr ${r.peakOvr}${
+			r.rings > 0 ? `, ${r.rings} championship${r.rings === 1 ? "" : "s"}` : ""
+		}`,
+	];
+
+	const career = totals(r.career);
+	if (career) {
+		lines.push(`  Career per game: ${career}`);
+	}
+	const playoffs = totals(r.playoffs);
+	if (playoffs) {
+		lines.push(`  Playoffs per game: ${playoffs}`);
+	}
+	if (r.teams.length > 0) {
+		lines.push(
+			`  Teams: ${r.teams
+				.map(
+					(t) =>
+						`${t.abbrev} (${t.from === t.to ? t.from : `${t.from}-${t.to}`}, ${t.gp}g)`,
+				)
+				.join(", ")}`,
+		);
+	}
+	if (r.totalGP === 0) {
+		lines.push("  Never played a game.");
+	}
+
 	return lines;
 };
 
@@ -203,6 +256,10 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 		lines.push(...draftBlock(p.draftInfo));
 	}
 
+	if (p.retiring) {
+		lines.push(...retirementBlock(p.retiring));
+	}
+
 	return lines.join("\n");
 };
 
@@ -254,10 +311,17 @@ export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
 	);
 };
 
-// Pull each player's recap out of the AI's reply, keyed by pid. Everything from
-// one marker up to the next belongs to that player: the first non-empty line is
-// the headline, the rest is the body.
+// Pull each piece out of the AI's reply. Everything from one marker up to the
+// next belongs to that piece: the first non-empty line is the headline, the
+// rest is the body.
+//
+// The marker also says WHICH section of the note it belongs in - a season recap
+// or a retirement writeup - so the two can never be filed as each other. They
+// used to share one marker, and a reply pasted into the wrong button filed
+// forty season recaps as retirement writeups with nothing to catch it.
 export type ParsedPlayerRecap = {
+	pid: number;
+	kind: "season" | "retirement";
 	headline: string;
 	body: string;
 };
@@ -275,18 +339,22 @@ const cleanHeadline = (line: string) =>
 		.replace(/[.:]\s*$/, "")
 		.trim();
 
-export const parsePlayerRecaps = (
-	rawText: string,
-): Map<number, ParsedPlayerRecap> => {
+export const parsePlayerRecaps = (rawText: string): ParsedPlayerRecap[] => {
 	const text = stripOuterCodeFence(rawText);
-	const out = new Map<number, ParsedPlayerRecap>();
+	const out: ParsedPlayerRecap[] = [];
 
-	const re = /<!--\s*player:\s*(\d+)\s*-->/g;
-	const markers: { pid: number; start: number; end: number }[] = [];
+	const re = /<!--\s*(player|retired):\s*(\d+)\s*-->/g;
+	const markers: {
+		pid: number;
+		kind: "season" | "retirement";
+		start: number;
+		end: number;
+	}[] = [];
 	let match = re.exec(text);
 	while (match !== null) {
 		markers.push({
-			pid: Number.parseInt(match[1]!),
+			pid: Number.parseInt(match[2]!),
+			kind: match[1] === "retired" ? "retirement" : "season",
 			start: match.index,
 			end: match.index + match[0].length,
 		});
@@ -306,10 +374,20 @@ export const parsePlayerRecaps = (
 
 		// If the AI ignored the headline instruction and went straight into prose,
 		// keep the whole thing as the body rather than eating its first line.
-		if (body === "" || headline.length > 80) {
-			out.set(marker.pid, { headline: "", body: chunk });
+		const parsed: ParsedPlayerRecap =
+			body === "" || headline.length > 80
+				? { pid: marker.pid, kind: marker.kind, headline: "", body: chunk }
+				: { pid: marker.pid, kind: marker.kind, headline, body };
+
+		// A repeated marker is the AI restating itself; last one wins, matching
+		// how re-running a season replaces rather than duplicates.
+		const existing = out.findIndex(
+			(x) => x.pid === parsed.pid && x.kind === parsed.kind,
+		);
+		if (existing >= 0) {
+			out[existing] = parsed;
 		} else {
-			out.set(marker.pid, { headline, body });
+			out.push(parsed);
 		}
 	}
 

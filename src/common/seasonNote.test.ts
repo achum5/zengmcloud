@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	hasSeasonNote,
 	parseSeasonNote,
+	removeSeasonNote,
 	upsertSeasonNote,
 } from "./seasonNote.ts";
 
@@ -132,6 +133,54 @@ describe("upsertSeasonNote", () => {
 			parseSeasonNote(note).map((x) => x.season),
 			[2006],
 		);
+	});
+});
+
+describe("removeSeasonNote", () => {
+	test("clears a misfiled retirement writeup and leaves the rest", () => {
+		// A season-recap reply pasted into the retirement button filed a whole
+		// batch of players as having retired. Re-running the season replaces only
+		// the SEASON section, so the bogus one has to be removed explicitly.
+		let note = season(undefined, 2000, "A good year", "He played well.");
+		note = upsertSeasonNote(note, {
+			season: 2000,
+			kind: "retirement",
+			headline: "Wrongly retired",
+			body: "This should not be here.",
+		});
+		note = season(note, 1999, "The year before", "Earlier.");
+
+		const cleaned = removeSeasonNote(note, 2000, "retirement");
+		assert.ok(!cleaned.includes("Retirement"));
+		assert.ok(cleaned.includes("[2000] A good year"));
+		assert.ok(cleaned.includes("[1999] The year before"));
+	});
+
+	test("removing something that isn't there changes nothing", () => {
+		const note = season(undefined, 2000, "A good year", "He played well.");
+		assert.strictEqual(removeSeasonNote(note, 2000, "retirement"), note);
+		assert.strictEqual(removeSeasonNote(undefined, 2000, "retirement"), "");
+	});
+
+	test("hand-written text survives the removal", () => {
+		// Freeform text sits at the bottom, below the OLDEST season, so removing a
+		// retirement writeup (which sorts to the top) never reaches it.
+		let note = season(
+			"My guy. Drafted him myself.",
+			1999,
+			"The year before",
+			"Earlier.",
+		);
+		note = upsertSeasonNote(note, {
+			season: 2000,
+			kind: "retirement",
+			headline: "Wrongly retired",
+			body: "Bogus.",
+		});
+		note = removeSeasonNote(note, 2000, "retirement");
+		assert.ok(note.includes("My guy. Drafted him myself."));
+		assert.ok(note.includes("[1999] The year before"));
+		assert.ok(!note.includes("Bogus."));
 	});
 });
 

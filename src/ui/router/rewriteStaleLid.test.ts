@@ -22,12 +22,18 @@ describe("rewriteStaleLid", () => {
 	test("does not touch links when not inside a league (dashboard cross-links)", () => {
 		// From the non-league dashboard, /l/2 legitimately opens league 2.
 		assert.strictEqual(rewriteStaleLid("/l/2", "/"), "/l/2");
-		assert.strictEqual(rewriteStaleLid("/l/2/roster", "/account"), "/l/2/roster");
+		assert.strictEqual(
+			rewriteStaleLid("/l/2/roster", "/account"),
+			"/l/2/roster",
+		);
 	});
 
 	test("ignores non-league target paths", () => {
 		assert.strictEqual(rewriteStaleLid("/account", "/l/8/roster"), "/account");
-		assert.strictEqual(rewriteStaleLid("/new_league", "/l/8/roster"), "/new_league");
+		assert.strictEqual(
+			rewriteStaleLid("/new_league", "/l/8/roster"),
+			"/new_league",
+		);
 	});
 
 	test("preserves query string and hash while rewriting the lid", () => {

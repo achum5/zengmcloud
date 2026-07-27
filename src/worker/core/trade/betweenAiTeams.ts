@@ -100,7 +100,12 @@ const buildSeed = async (
 	season: number,
 	starOvr: number,
 ): Promise<
-	| { pids: number[]; dpids: number[]; motivatedDump: boolean; starSale: boolean }
+	| {
+			pids: number[];
+			dpids: number[];
+			motivatedDump: boolean;
+			starSale: boolean;
+	  }
 	| undefined
 > => {
 	const pids: number[] = [];
@@ -348,7 +353,11 @@ const shortlistPartners = (
 			return 1;
 		}
 		let w = partnerWeight(initPosture.tier, pp.tier);
-		if (initPosture.tier === "allIn" && initPosture.starGap && pp.shoppableStar) {
+		if (
+			initPosture.tier === "allIn" &&
+			initPosture.starGap &&
+			pp.shoppableStar
+		) {
 			w *= 3;
 		}
 		if (
@@ -389,7 +398,8 @@ const buildOfferFromPartner = async (args: {
 	partner: number;
 	ctx: AttemptContext;
 }): Promise<{ teams: TradeTeams; dv2: number; landsStar: boolean } | null> => {
-	const { initiator, initPosture, seed, initiatorExcluded, partner, ctx } = args;
+	const { initiator, initPosture, seed, initiatorExcluded, partner, ctx } =
+		args;
 	const { postures, valueChangeCalculator, season, starOvr } = ctx;
 
 	// Both sides' building blocks (and just-traded players) are off the table.
@@ -588,7 +598,8 @@ const attempt = async (
 		postures,
 		MARKET_CANDIDATES,
 	);
-	let best: { teams: TradeTeams; dv2: number; landsStar: boolean } | null = null;
+	let best: { teams: TradeTeams; dv2: number; landsStar: boolean } | null =
+		null;
 	for (const partner of candidates) {
 		const offer = await buildOfferFromPartner({
 			initiator,

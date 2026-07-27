@@ -222,10 +222,7 @@ describe("parlayConflict", () => {
 	});
 
 	test("allows one champion pick alongside an unrelated leg", () => {
-		assert.strictEqual(
-			parlayConflict([champion(10), allStar(1)]),
-			undefined,
-		);
+		assert.strictEqual(parlayConflict([champion(10), allStar(1)]), undefined);
 	});
 
 	test("blocks two winners of the same conference, allows different confs", () => {

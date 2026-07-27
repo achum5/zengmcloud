@@ -109,9 +109,7 @@ const validatePropAgainstBoard = async (
 	}
 
 	const playerOf = (pid: number) =>
-		[...board.home.players, ...board.away.players].find(
-			(p) => p.pid === pid,
-		);
+		[...board.home.players, ...board.away.players].find((p) => p.pid === pid);
 
 	if (market.type === "playerProp") {
 		const player = playerOf(market.pid);
@@ -509,7 +507,6 @@ const playoffsDone = (season: number) =>
 const resolveMarket = async (
 	m: SportsbookMarket,
 ): Promise<"won" | "lost" | "push" | "void" | undefined> => {
-
 	if (
 		m.type === "gameMoneyline" ||
 		m.type === "gameSpread" ||
@@ -539,7 +536,7 @@ const resolveMarket = async (
 			if (total === m.line) {
 				return "push";
 			}
-			return (total > m.line) === (m.side === "over") ? "won" : "lost";
+			return total > m.line === (m.side === "over") ? "won" : "lost";
 		}
 		// gameSpread: pick covers if its margin + line > 0.
 		const pick = home.tid === m.pickTid ? home : away;
@@ -568,7 +565,7 @@ const resolveMarket = async (
 		if (wins === m.line) {
 			return "push";
 		}
-		return (wins > m.line) === (m.side === "over") ? "won" : "lost";
+		return wins > m.line === (m.side === "over") ? "won" : "lost";
 	}
 
 	if (m.type === "div") {
@@ -717,7 +714,7 @@ const resolveMarket = async (
 			if (value === m.line) {
 				return "push";
 			}
-			return (value > m.line) === (m.side === "over") ? "won" : "lost";
+			return value > m.line === (m.side === "over") ? "won" : "lost";
 		}
 
 		// playerProp / playerMilestone: find this player's box-score row across
@@ -739,7 +736,8 @@ const resolveMarket = async (
 		// playerProp - combo stats sum their components' real box-score values.
 		let value: number;
 		if (m.stat === "pra") {
-			value = statOf(player, "pts") + statOf(player, "trb") + statOf(player, "ast");
+			value =
+				statOf(player, "pts") + statOf(player, "trb") + statOf(player, "ast");
 		} else if (m.stat === "pr") {
 			value = statOf(player, "pts") + statOf(player, "trb");
 		} else if (m.stat === "pa") {
@@ -750,7 +748,7 @@ const resolveMarket = async (
 		if (value === m.line) {
 			return "push";
 		}
-		return (value > m.line) === (m.side === "over") ? "won" : "lost";
+		return value > m.line === (m.side === "over") ? "won" : "lost";
 	}
 
 	return undefined;
@@ -836,8 +834,7 @@ export const settleBets = async (conditions?: Conditions) =>
 				const done = {
 					...bet,
 					...(legs ? { legs } : {}),
-					decimalOdds:
-						result === "won" ? effectiveDecimal : bet.decimalOdds,
+					decimalOdds: result === "won" ? effectiveDecimal : bet.decimalOdds,
 					result,
 					settledAt: Date.now(),
 				};
@@ -878,9 +875,7 @@ export const settleBets = async (conditions?: Conditions) =>
 			if (userTids.has(t.tid)) {
 				const net = netWinnings;
 				const voidPart =
-					voidCount > 0
-						? `, ${voidCount} voided (refunded)`
-						: "";
+					voidCount > 0 ? `, ${voidCount} voided (refunded)` : "";
 				logEvent(
 					{
 						type: "info",

@@ -334,7 +334,11 @@ describe("selectShopVeterans", () => {
 
 describe("lookingForFromPosture", () => {
 	test("a seller chases youth + picks, position-agnostic", () => {
-		const lf = lookingForFromPosture("seller", [{ pos: "G", severity: 9 }], false);
+		const lf = lookingForFromPosture(
+			"seller",
+			[{ pos: "G", severity: 9 }],
+			false,
+		);
 		assert.strictEqual(lf.draftPicks, true);
 		assert.strictEqual(lf.prospects, true);
 		assert.strictEqual(lf.bestCurrentPlayers, false);
@@ -342,7 +346,11 @@ describe("lookingForFromPosture", () => {
 	});
 
 	test("an all-in team lacking a star hunts the best player anywhere", () => {
-		const lf = lookingForFromPosture("allIn", [{ pos: "C", severity: 8 }], true);
+		const lf = lookingForFromPosture(
+			"allIn",
+			[{ pos: "C", severity: 8 }],
+			true,
+		);
 		assert.strictEqual(lf.bestCurrentPlayers, true);
 		assert.strictEqual(lf.draftPicks, false);
 		assert.strictEqual(lf.positions.size, 0);
@@ -401,9 +409,21 @@ describe("getTradePostureReport (integration)", () => {
 
 	test("good+old → all-in, good+young → buyer, bad → sells its vets", async () => {
 		const teams = [
-			{ tid: 0, region: "A", name: "Aces", abbrev: "AAA", strategy: "contending" },
+			{
+				tid: 0,
+				region: "A",
+				name: "Aces",
+				abbrev: "AAA",
+				strategy: "contending",
+			},
 			{ tid: 1, region: "B", name: "Blues", abbrev: "BBB", strategy: "" },
-			{ tid: 2, region: "C", name: "Cubs", abbrev: "CCC", strategy: "rebuilding" },
+			{
+				tid: 2,
+				region: "C",
+				name: "Cubs",
+				abbrev: "CCC",
+				strategy: "rebuilding",
+			},
 		];
 		const players = [
 			// Team 0: strong, old veterans.
@@ -444,10 +464,7 @@ describe("getTradePostureReport (integration)", () => {
 });
 
 // Helper: a slim PosturePlayer with defaults.
-function mkP(
-	pid: number,
-	over: Partial<PosturePlayer>,
-): PosturePlayer {
+function mkP(pid: number, over: Partial<PosturePlayer>): PosturePlayer {
 	return {
 		pid,
 		ovr: 50,

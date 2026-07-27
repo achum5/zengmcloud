@@ -105,9 +105,12 @@ export const useBetSlip = (
 	// Only offer parlays for 2+ legs; block genuinely contradictory tickets.
 	const canParlay = picks.length >= 2;
 	const conflict = canParlay
-		? parlayConflict(picks.map((p) => p.market), {
-				allStarRosterSize: opts?.allStarRosterSize,
-			})
+		? parlayConflict(
+				picks.map((p) => p.market),
+				{
+					allStarRosterSize: opts?.allStarRosterSize,
+				},
+			)
 		: undefined;
 	const parlayActive = parlay && canParlay;
 

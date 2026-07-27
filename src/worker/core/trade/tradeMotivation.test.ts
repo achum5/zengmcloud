@@ -109,8 +109,12 @@ describe("isBadRental", () => {
 
 describe("partnerWeight", () => {
 	test("opposite ends of the spectrum are the strongest match", () => {
-		assert.ok(partnerWeight("allIn", "teardown") > partnerWeight("allIn", "buyer"));
-		assert.ok(partnerWeight("seller", "buyer") > partnerWeight("seller", "teardown"));
+		assert.ok(
+			partnerWeight("allIn", "teardown") > partnerWeight("allIn", "buyer"),
+		);
+		assert.ok(
+			partnerWeight("seller", "buyer") > partnerWeight("seller", "teardown"),
+		);
 	});
 });
 
@@ -347,11 +351,19 @@ describe("isStarAcquisition", () => {
 
 	test("a genuine star landing on a win-now contender is a blockbuster", () => {
 		assert.strictEqual(
-			isStarAcquisition({ bestReceivedOvr: 63, acquirerTier: "allIn", starOvr }),
+			isStarAcquisition({
+				bestReceivedOvr: 63,
+				acquirerTier: "allIn",
+				starOvr,
+			}),
 			true,
 		);
 		assert.strictEqual(
-			isStarAcquisition({ bestReceivedOvr: 61, acquirerTier: "buyer", starOvr }),
+			isStarAcquisition({
+				bestReceivedOvr: 61,
+				acquirerTier: "buyer",
+				starOvr,
+			}),
 			true,
 		);
 	});
@@ -359,22 +371,38 @@ describe("isStarAcquisition", () => {
 	test("a non-contender loading up on a star is NOT a blockbuster overpay", () => {
 		// A rebuilder/teardown should never empty its future for a win-now star.
 		assert.strictEqual(
-			isStarAcquisition({ bestReceivedOvr: 65, acquirerTier: "teardown", starOvr }),
+			isStarAcquisition({
+				bestReceivedOvr: 65,
+				acquirerTier: "teardown",
+				starOvr,
+			}),
 			false,
 		);
 		assert.strictEqual(
-			isStarAcquisition({ bestReceivedOvr: 65, acquirerTier: "seller", starOvr }),
+			isStarAcquisition({
+				bestReceivedOvr: 65,
+				acquirerTier: "seller",
+				starOvr,
+			}),
 			false,
 		);
 		assert.strictEqual(
-			isStarAcquisition({ bestReceivedOvr: 65, acquirerTier: "fringe", starOvr }),
+			isStarAcquisition({
+				bestReceivedOvr: 65,
+				acquirerTier: "fringe",
+				starOvr,
+			}),
 			false,
 		);
 	});
 
 	test("a merely-good player (below the star bar) is not a blockbuster", () => {
 		assert.strictEqual(
-			isStarAcquisition({ bestReceivedOvr: 58, acquirerTier: "allIn", starOvr }),
+			isStarAcquisition({
+				bestReceivedOvr: 58,
+				acquirerTier: "allIn",
+				starOvr,
+			}),
 			false,
 		);
 	});

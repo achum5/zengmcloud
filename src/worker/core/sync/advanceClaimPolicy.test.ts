@@ -17,7 +17,10 @@ const doc = (over: Partial<AdvanceClaimDoc> = {}): AdvanceClaimDoc => ({
 	...over,
 });
 
-const ask = (pick: number, over: Partial<{ draftKey: string; now: number }> = {}) => ({
+const ask = (
+	pick: number,
+	over: Partial<{ draftKey: string; now: number }> = {},
+) => ({
 	draftKey: over.draftKey ?? "2084-8",
 	pick,
 	now: over.now ?? NOW,

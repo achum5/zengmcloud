@@ -7,14 +7,16 @@ describe("isTransientTransactionError", () => {
 		assert.strictEqual(
 			isTransientTransactionError({
 				name: "TransactionInactiveError",
-				message: "Attempt to get a record from database without an in-progress transaction",
+				message:
+					"Attempt to get a record from database without an in-progress transaction",
 			}),
 			true,
 		);
 		assert.strictEqual(
 			isTransientTransactionError({
 				name: "UnknownError",
-				message: "Attempt to get a record from database without an in-progress transaction",
+				message:
+					"Attempt to get a record from database without an in-progress transaction",
 			}),
 			true,
 		);

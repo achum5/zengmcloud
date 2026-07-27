@@ -35,7 +35,14 @@ const jerseyForSeason = (
 // "Jayson Tatum (SF, 6'8", 210 lbs, #0)" - a compact, physical one-liner for any
 // player on the floor, using their details as of `season`.
 const describeOnCourt = (
-	p: { firstName?: string; lastName?: string; hgt?: number; weight?: number; stats?: any[]; jerseyNumber?: string },
+	p: {
+		firstName?: string;
+		lastName?: string;
+		hgt?: number;
+		weight?: number;
+		stats?: any[];
+		jerseyNumber?: string;
+	},
 	pos: string | undefined,
 	season: number,
 ): string => {
@@ -111,7 +118,8 @@ const AWARD_SCENES: Record<string, string> = {
 		"a bench-spark highlight reel ending with the Sixth Man of the Year trophy",
 	"Most Improved Player":
 		"a breakout-season highlight montage ending with the Most Improved Player trophy",
-	"All-Star": "an All-Star Game highlight reel of the player in an All-Star jersey",
+	"All-Star":
+		"an All-Star Game highlight reel of the player in an All-Star jersey",
 };
 
 export const getPlayerVideoMoments = async (
@@ -161,9 +169,7 @@ export const getPlayerVideoMoments = async (
 		ownTid: number | undefined,
 		oppText: string | undefined,
 	): Promise<string> => {
-		const lines: string[] = [
-			`The star: ${describeOnCourt(p, pos, season)}.`,
-		];
+		const lines: string[] = [`The star: ${describeOnCourt(p, pos, season)}.`];
 		if (ownTid !== undefined) {
 			const own = await teamName(ownTid, season);
 			const mates = rotationForSeasonTid(
@@ -185,14 +191,23 @@ export const getPlayerVideoMoments = async (
 			const oppTid = oppTidByName.get(oppName.toLowerCase());
 			const oppRoster =
 				oppTid !== undefined
-					? rotationForSeasonTid(allPlayers, oppTid, season, posOf, undefined, 7)
+					? rotationForSeasonTid(
+							allPlayers,
+							oppTid,
+							season,
+							posOf,
+							undefined,
+							7,
+						)
 					: [];
 			if (oppRoster.length > 0) {
 				lines.push(
 					`The opposing ${oppName} rotation on the floor: ${oppRoster.join("; ")}.`,
 				);
 			} else {
-				lines.push(`The opponent is the ${oppName}; depict their starting five.`);
+				lines.push(
+					`The opponent is the ${oppName}; depict their starting five.`,
+				);
 			}
 		}
 		return lines.join(" ");
