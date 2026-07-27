@@ -48,6 +48,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			recapAIProvider: props.recapAIProvider,
 			recapMaxGames: String(props.recapMaxGames),
 			recapMaxDays: String(props.recapMaxDays),
+			recapMaxPlayers: String(props.recapMaxPlayers),
 			theme,
 			units,
 		};
@@ -91,6 +92,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				realTeamInfo: state.realTeamInfo,
 				recapAIProvider: state.recapAIProvider,
 				recapMaxGames: Number(state.recapMaxGames),
+				recapMaxPlayers: Number(state.recapMaxPlayers),
 				recapMaxDays: Number(state.recapMaxDays),
 				units,
 			});
@@ -219,6 +221,35 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							className="form-control"
 							onChange={handleChange("recapMaxDays")}
 							value={state.recapMaxDays}
+						/>
+					</div>
+					<div className="col-sm-3 col-6 mb-3">
+						<label className="form-label" htmlFor="options-recapMaxPlayers">
+							AI Recap Max Players{" "}
+							<HelpPopover title="AI Recap Max Players">
+								<p>
+									How many players go into each prompt when writing season
+									recaps for every player in the league (History &gt; Player
+									Recaps).
+								</p>
+								<p>
+									Each player brings their whole career - stats and ratings for
+									every season, transactions, and feats - so a bigger number
+									means fewer copy/paste rounds but a much longer prompt, and
+									less room in the AI's reply for the last players in the
+									batch. Lower this if recaps come back truncated or if the
+									last few players get skipped.
+								</p>
+							</HelpPopover>
+						</label>
+						<input
+							id="options-recapMaxPlayers"
+							type="number"
+							min={1}
+							step={1}
+							className="form-control"
+							onChange={handleChange("recapMaxPlayers")}
+							value={state.recapMaxPlayers}
 						/>
 					</div>
 					<div className="col-sm-3 col-6 mb-3">

@@ -1120,6 +1120,7 @@ export type Options = {
 	phaseChangeRedirects: Phase[];
 	recapAIProvider?: RecapAIProvider;
 	recapMaxGames?: number;
+	recapMaxPlayers?: number;
 	recapMaxDays?: number;
 	units?: "metric" | "us";
 };

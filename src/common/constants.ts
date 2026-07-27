@@ -422,6 +422,11 @@ export const DEFAULT_PHASE_CHANGE_REDIRECTS = [1, 3, 4, 5, 7, 8] as Phase[];
 // prompt: how many games get a recap, and how many whole days get backfilled.
 export const DEFAULT_RECAP_MAX_GAMES = 20;
 export const DEFAULT_RECAP_MAX_DAYS = 10;
+// Players per AI prompt for the league-wide player season recaps. Every player
+// brings their whole career - stats, ratings by season, transactions, feats -
+// so this trades round trips against prompt size AND against how much reply
+// room the AI has left for the last players in a batch.
+export const DEFAULT_RECAP_MAX_PLAYERS = 40;
 
 export const EXHIBITION_GAME_SETTINGS = [
 	"maxOvertimes",

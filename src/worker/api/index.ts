@@ -15,6 +15,7 @@ import {
 	REAL_PLAYERS_INFO,
 	DEFAULT_RECAP_MAX_GAMES,
 	DEFAULT_RECAP_MAX_DAYS,
+	DEFAULT_RECAP_MAX_PLAYERS,
 } from "../../common/constants.ts";
 import actions from "./actions.ts";
 import leagueFileUpload, {
@@ -123,6 +124,8 @@ import { setSingleGameSimActive } from "../core/sync/afterActionHook.ts";
 import { setSyncDebugLogging, syncDebugLog } from "../core/sync/debugLog.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
+import { getPlayerRecapData } from "../util/getPlayerRecapData.ts";
+import { upsertSeasonNote } from "../../common/seasonNote.ts";
 import { getRetiredPlayersForRecap } from "../util/getRetiredPlayersForRecap.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
 import { PointsFormulaEvaluator } from "../core/team/evaluatePointsFormula.ts";
@@ -4346,6 +4349,47 @@ const setNote = async (info: NoteInfo & { editedNote: string }) => {
 	await toUI("realtimeUpdate", [noteUpdateEvents[info.type]]);
 };
 
+// File a batch of AI-written player season recaps. Merging happens HERE rather
+// than in the UI because the merge needs each player's existing note, and doing
+// it per-player from the UI would be one worker round trip per player (dozens
+// per batch, hundreds per season).
+//
+// Each recap goes under a [season] heading in that player's single note,
+// newest season on top, replacing any recap already written for that season.
+// The player's own hand-written text is preserved below the year sections.
+const filePlayerSeasonRecaps = async ({
+	season,
+	recaps,
+}: {
+	season: number;
+	recaps: { pid: number; text: string }[];
+}) => {
+	let filed = 0;
+	const missing: number[] = [];
+
+	for (const { pid, text } of recaps) {
+		const p = await idb.getCopy.players({ pid }, "noCopyCache");
+		if (!p) {
+			missing.push(pid);
+			continue;
+		}
+		const merged = upsertSeasonNote(p.note, season, text);
+		if (merged === "") {
+			delete p.note;
+			delete p.noteBool;
+		} else {
+			p.note = merged;
+			p.noteBool = 1;
+		}
+		await idb.cache.players.put(p);
+		filed += 1;
+	}
+
+	await toUI("realtimeUpdate", [noteUpdateEvents.player]);
+
+	return { filed, missing };
+};
+
 const reSignAll = async (players: any[]) => {
 	const userTid = g.get("userTid");
 	let negotiations = await idb.cache.negotiations.getAll();
@@ -4791,6 +4835,10 @@ const updateOptions = async (
 			recapMaxDays: coerceRecapCap(
 				options.recapMaxDays,
 				DEFAULT_RECAP_MAX_DAYS,
+			),
+			recapMaxPlayers: coerceRecapCap(
+				options.recapMaxPlayers,
+				DEFAULT_RECAP_MAX_PLAYERS,
 			),
 		},
 		"options",
@@ -6422,6 +6470,8 @@ export default {
 		getTradeHistoryDump,
 		getDayGamesForRecap,
 		getSeasonRecapData,
+		getPlayerRecapData,
+		filePlayerSeasonRecaps,
 		getRetiredPlayersForRecap,
 		getSyncActivity,
 		getSyncCheckpoint,
