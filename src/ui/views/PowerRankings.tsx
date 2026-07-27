@@ -9,24 +9,21 @@ import { wrappedMovOrDiff } from "../components/MovOrDiff.tsx";
 import { wrappedTeamLogoAndName } from "../components/TeamLogoAndName.tsx";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
-import {
-	gradeAgainst,
-	summarizeTeamRatings,
-} from "../../common/teamRatingGrade.ts";
+import { gradeFromRank } from "../../common/teamRatingGrade.ts";
 
 const Other = ({
 	actualShowHealthy,
 	current,
+	currentIsBetter,
 	healthy,
-	injuriesHurt,
 	same,
 }: {
 	actualShowHealthy: boolean;
 	current: ReactNode;
-	healthy: ReactNode;
-	// From the underlying ratings, not the rendered values - once these are
+	// Compared on the underlying RANKS, not on what is rendered - once these are
 	// letter grades, comparing them would be a string comparison.
-	injuriesHurt: boolean;
+	currentIsBetter: boolean;
+	healthy: ReactNode;
 	same: boolean;
 }) => {
 	if (actualShowHealthy || same) {
@@ -34,7 +31,7 @@ const Other = ({
 	}
 
 	return (
-		<span className={injuriesHurt ? "text-danger" : "text-success"}>
+		<span className={currentIsBetter ? "text-success" : "text-danger"}>
 			{current}
 		</span>
 	);
@@ -152,25 +149,6 @@ const PowerRankings = ({
 		...otherKeys.map((key) => `${otherKeysPrefix}:${key}`),
 	];
 
-	// One curve per category, computed across the whole league, so a grade means
-	// "where this team sits in this league this season". Healthy and current are
-	// curved separately - a league-wide injury wave shouldn't drag every grade
-	// down when you're looking at healthy ratings.
-	const curves: {
-		current: Record<string, { mean: number; stdDev: number }>;
-		healthy: Record<string, { mean: number; stdDev: number }>;
-	} = { current: {}, healthy: {} };
-	if (hideTeamRatings) {
-		for (const key of otherKeys) {
-			curves.current[key] = summarizeTeamRatings(
-				teams.map((t) => t.powerRankings.otherCurrent[key]!),
-			);
-			curves.healthy[key] = summarizeTeamRatings(
-				teams.map((t) => t.powerRankings.other[key]!),
-			);
-		}
-	}
-
 	const cols = getCols(colNames);
 
 	if (isSport("basketball")) {
@@ -231,44 +209,27 @@ const PowerRankings = ({
 				),
 				t.powerRankings.avgAge?.toFixed(1),
 				...otherKeys.map((key) => {
+					// Already this team's RANK in the category across the league (1 is
+					// best) - the view turns the real ratings into ranks before they get
+					// here. A rank IS a percentile position, so grading off it can never
+					// disagree with the order the column sorts by.
 					const current = t.powerRankings.otherCurrent[key]!;
 					const healthy = t.powerRankings.other[key]!;
+					const render = (rank: number) =>
+						hideTeamRatings ? gradeFromRank(rank, teams.length) : rank;
 					return {
 						value: (
 							<Other
 								actualShowHealthy={actualShowHealthy}
-								current={
-									hideTeamRatings
-										? gradeAgainst(current, curves.current[key]!)
-										: coarseOvr(current)
-								}
-								healthy={
-									hideTeamRatings
-										? gradeAgainst(healthy, curves.healthy[key]!)
-										: coarseOvr(healthy)
-								}
-								injuriesHurt={healthy > current}
-								same={
-									hideTeamRatings
-										? gradeAgainst(current, curves.current[key]!) ===
-											gradeAgainst(healthy, curves.healthy[key]!)
-										: coarseOvr(current) === coarseOvr(healthy)
-								}
+								current={render(current)}
+								currentIsBetter={current < healthy}
+								healthy={render(healthy)}
+								same={render(current) === render(healthy)}
 							/>
 						),
-						// Sorting and searching stay on the underlying number, so a column
-						// still orders the whole league rather than lumping every B
-						// together. The number itself is never displayed.
-						searchValue: hideTeamRatings
-							? gradeAgainst(
-									actualShowHealthy ? healthy : current,
-									actualShowHealthy
-										? curves.healthy[key]!
-										: curves.current[key]!,
-								)
-							: actualShowHealthy
-								? healthy
-								: current,
+						// Sorting stays on the rank, so a column still orders the whole
+						// league rather than lumping every B together.
+						searchValue: render(actualShowHealthy ? healthy : current),
 						sortValue: actualShowHealthy ? healthy : current,
 					};
 				}),
@@ -286,7 +247,7 @@ const PowerRankings = ({
 				victory, and team rating. Team rating is based only on the ratings of
 				players on each team.
 				{hideTeamRatings
-					? " Category grades are curved against the rest of the league this season."
+					? " Category grades are each team's percentile rank in that category, in even fifths across the league."
 					: ""}
 			</p>
 			{playoffs === "playoffs" && isSport("basketball") ? (
