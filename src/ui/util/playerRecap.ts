@@ -21,16 +21,15 @@ const INSTRUCTIONS = `You are a basketball writer producing per-player season re
 
 Length: judge it by how much there is to say. A deep-bench player who barely played might get one sentence. A star, or anyone with a real story that year (a breakout, a collapse, an injury, a trade, an award, a title run, a contract year, a rookie debut, a last season), can get up to two short paragraphs. Most players land in between. Never pad a nothing season into paragraphs.
 
-Each player's data includes their WHOLE career, not just this season: stats by season, full ratings by season (so you can see skills develop or erode), every transaction, awards, statistical feats, and injuries. Use the career to give the season meaning — a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Reference earlier and later seasons where it helps, but the recap is about the listed season.
+Each player's data is their career UP TO AND INCLUDING this season: stats by season, full ratings by season (so you can see skills develop or erode), transactions, awards, statistical feats, and injuries. Use that history to give the season meaning — a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Write as if the season has just ended and nobody knows what happens next.
 
 Write about them as people with careers. Do not dump the data back — weave the numbers that matter into the prose.
 
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no summary.
 - Begin every player's recap with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each recap is filed to the correct player — never omit it, never change it.
-- The line straight after the marker is a HEADLINE: a few words, title-style, no ending period, no bold, no brackets. Make it specific to that player's year ("A leap in Sacramento", "Hurt again", "The last dance") — never generic like "Season Recap".
+- The line straight after the marker is the HEADING, in this exact form: [YEAR] followed by a short headline, e.g. "[2004] A leap in Sacramento". Use the LISTED SEASON as the year. The headline is a few words, title-style, no ending period, no bold. Make it specific to that player's year ("Hurt again", "The last dance") — never generic like "Season Recap".
 - Then a blank line, then the recap itself as plain prose. No stat table, no bullet lists.
-- Do NOT write the season year anywhere in the headline — it is added automatically.
 - Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
 - Put exactly one blank line between players.`;
 
@@ -77,11 +76,7 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 	lines.push(`PLAYER <${p.pid}>`);
 
 	const where =
-		p.tid === -1
-			? "free agent"
-			: p.tid === -2
-				? "unsigned"
-				: (p.teamAbbrev ?? "unknown team");
+		p.teamAbbrevs.length > 0 ? p.teamAbbrevs.join(" / ") : "no team";
 	lines.push(`${p.name} — ${p.pos}, age ${p.age} in ${season}, ${where}`);
 
 	const bio: string[] = [];
@@ -97,7 +92,7 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 				: `undrafted (${p.draft.year})`,
 		);
 	}
-	if (Number.isFinite(p.retiredYear)) {
+	if (p.retiredYear !== undefined) {
 		bio.push(`retired ${p.retiredYear}`);
 	}
 	if (p.hof) {
@@ -201,10 +196,14 @@ export type ParsedPlayerRecap = {
 };
 
 // Strip the decoration an AI reaches for on a heading even when told not to.
+// The AI writes "[2004] A leap in Sacramento". The year is dropped here and
+// re-added from the season being written, so a wrong or missing year in the
+// reply can never end up in the note.
 const cleanHeadline = (line: string) =>
 	line
 		.replace(/^#+\s*/, "")
 		.replaceAll("**", "")
+		.replace(/^\s*\[\s*\d{4}\s*]\s*/, "")
 		.replace(/^\[|]$/g, "")
 		.replace(/[.:]\s*$/, "")
 		.trim();

@@ -1,4 +1,5 @@
 import { idb } from "../db/index.ts";
+import { g } from "./index.ts";
 import { PHASE_TEXT, RATINGS } from "../../common/constants.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
 import { hasSeasonNote } from "../../common/seasonNote.ts";
@@ -14,6 +15,16 @@ import { hasSeasonNote } from "../../common/seasonNote.ts";
 //
 // Delivered in BATCHES because that is far more than fits in one prompt. The
 // batch size is a global setting (recapMaxPlayers).
+//
+// EVERYTHING IS TRUNCATED AT THE SEASON BEING WRITTEN. Backfilling an old year
+// with the full record in hand produced recaps full of hindsight - "he'd hang on
+// one more year in Vancouver", "by the time he collected a ring in 2002" - which
+// reads as prophecy rather than a season recap. Rather than instructing the AI
+// not to look ahead (which it will do anyway, because the data is right there),
+// the future is simply absent: no later stats, ratings, awards, transactions,
+// feats or injuries, and no present-day facts either - the team, contract,
+// injury, retirement and Hall of Fame status a player has TODAY are all things
+// that had not happened yet.
 
 export type RecapPlayerSeasonStats = {
 	season: number;
@@ -64,11 +75,13 @@ export type RecapPlayer = {
 		originalTid: number;
 		abbrev?: string;
 	};
-	// Team this season (abbrev), and whether they were a free agent / unsigned.
-	teamAbbrev: string | undefined;
-	tid: number;
-	retiredYear: number;
+	// Team(s) they actually played for THAT season, from that season's stat rows
+	// - not p.tid, which is where they are today.
+	teamAbbrevs: string[];
+	// Only set when they had already retired / been inducted by then.
+	retiredYear: number | undefined;
 	hof: boolean;
+	// Present-day facts, included ONLY when writing the current season.
 	contract?: { amount: number; exp: number };
 	injury?: { type: string; gamesRemaining: number };
 	// Whole career, oldest first.
@@ -206,11 +219,19 @@ export const getPlayerRecapData = async ({
 		// Feats are a bonus; never fail the whole prompt over them.
 	}
 
+	// Anything that happened after the season being written must not reach the
+	// prompt - see the note at the top of this file.
+	const upTo = <T extends { season: number }>(rows: T[] | undefined) =>
+		(rows ?? []).filter((row) => row.season <= season);
+
+	const currentSeason = g.get("season");
+	const isCurrentSeason = season === currentSeason;
+
 	const players: RecapPlayer[] = slice.map((p: any) => {
 		const seasonRatings = ratingsForSeason(p, season);
 		const bornYear = p.born?.year ?? season;
 
-		const statRows: RecapPlayerSeasonStats[] = (p.stats ?? [])
+		const statRows: RecapPlayerSeasonStats[] = upTo(p.stats)
 			.filter((s: any) => s.gp > 0)
 			.map((s: any) => ({
 				season: s.season,
@@ -236,7 +257,7 @@ export const getPlayerRecapData = async ({
 				ewa: s.ewa,
 			}));
 
-		const ratingRows: RecapPlayerSeasonRatings[] = (p.ratings ?? []).map(
+		const ratingRows: RecapPlayerSeasonRatings[] = upTo(p.ratings).map(
 			(r: any) => {
 				const ratings: Record<string, number> = {};
 				for (const key of RATINGS) {
@@ -255,10 +276,31 @@ export const getPlayerRecapData = async ({
 			},
 		);
 
+		const awards = upTo(p.awards).map((a: any) => ({
+			season: a.season,
+			type: a.type,
+		}));
+
+		// Where they actually were that season, from that season's stat rows. A
+		// player with no games has no known team - p.tid is today's answer, not
+		// that year's.
+		const teamAbbrevs = [
+			...new Set(
+				statRows
+					.filter((row) => row.season === season)
+					.map((row) => row.abbrev),
+			),
+		];
+
+		const retiredYear =
+			typeof p.retiredYear === "number" && p.retiredYear <= season
+				? p.retiredYear
+				: undefined;
+
 		return {
 			pid: p.pid,
 			name: `${p.firstName} ${p.lastName}`,
-			pos: seasonRatings?.pos ?? p.ratings.at(-1)?.pos ?? "",
+			pos: seasonRatings?.pos ?? "",
 			age: season - bornYear,
 			born: { year: bornYear, loc: p.born?.loc ?? "" },
 			hgt: num(p.hgt),
@@ -270,15 +312,20 @@ export const getPlayerRecapData = async ({
 				originalTid: num(p.draft?.originalTid),
 				abbrev: abbrevByTid.get(p.draft?.tid),
 			},
-			teamAbbrev: abbrevByTid.get(p.tid),
-			tid: p.tid,
-			retiredYear: p.retiredYear ?? Infinity,
-			hof: !!p.hof,
-			contract: p.contract
-				? { amount: p.contract.amount, exp: p.contract.exp }
-				: undefined,
+			teamAbbrevs,
+			retiredYear,
+			// Induction is an event with a season, so it truncates like the rest -
+			// p.hof would announce a Hall of Fame career decades early.
+			hof: awards.some((a: any) => String(a.type).includes("Hall of Fame")),
+			contract:
+				isCurrentSeason && p.contract
+					? { amount: p.contract.amount, exp: p.contract.exp }
+					: undefined,
 			injury:
-				p.injury && p.injury.type && p.injury.type !== "Healthy"
+				isCurrentSeason &&
+				p.injury &&
+				p.injury.type &&
+				p.injury.type !== "Healthy"
 					? {
 							type: p.injury.type,
 							gamesRemaining: num(p.injury.gamesRemaining),
@@ -286,19 +333,16 @@ export const getPlayerRecapData = async ({
 					: undefined,
 			stats: statRows,
 			ratings: ratingRows,
-			awards: (p.awards ?? []).map((a: any) => ({
-				season: a.season,
-				type: a.type,
-			})),
-			transactions: (p.transactions ?? []).map((t: any) =>
+			awards,
+			transactions: upTo(p.transactions).map((t: any) =>
 				describeTransaction(t, abbrevByTid),
 			),
-			injuries: (p.injuries ?? []).map((i: any) => ({
+			injuries: upTo(p.injuries).map((i: any) => ({
 				season: i.season,
 				type: i.type,
 				games: num(i.games),
 			})),
-			feats: featsByPid.get(p.pid) ?? [],
+			feats: (featsByPid.get(p.pid) ?? []).filter((f) => f.season <= season),
 			alreadyWritten: hasSeasonNote(p.note, season),
 		};
 	});

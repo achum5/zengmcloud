@@ -35,9 +35,8 @@ const player = (pid: number, seasons: number) => ({
 		originalTid: 0,
 		abbrev: "CHI",
 	},
-	teamAbbrev: "BOS",
-	tid: 0,
-	retiredYear: Infinity,
+	teamAbbrevs: ["BOS"],
+	retiredYear: undefined,
 	hof: false,
 	contract: { amount: 12000, exp: 2009 },
 	injury: undefined,
@@ -93,10 +92,10 @@ describe("buildPlayerRecapPrompt", () => {
 		assert.ok(prompt.includes("PLAYER <7>"));
 		assert.ok(prompt.includes("PLAYER <9>"));
 		assert.ok(prompt.includes("<!--player:ID-->"));
-		assert.ok(prompt.includes("HEADLINE"));
+		assert.ok(prompt.includes("HEADING"));
 	});
 
-	test("carries the whole career, not just the listed season", () => {
+	test("carries the career up to the listed season", () => {
 		const prompt = buildPlayerRecapPrompt(batch([player(7, 6)]));
 		// Ratings for the first season AND the last must both be present - the
 		// career arc is the entire point of the feature.
@@ -149,6 +148,19 @@ describe("parsePlayerRecaps", () => {
 		assert.deepStrictEqual(recaps.get(9), {
 			headline: "The leap",
 			body: "First paragraph.\n\nSecond paragraph.",
+		});
+	});
+
+	test("the year is stripped from the heading and re-added when filing", () => {
+		// The AI writes "[2004] A leap". The year is dropped here and supplied
+		// from the season being written, so a wrong year in the reply - very easy
+		// when backfilling old seasons - can never reach the note.
+		const recaps = parsePlayerRecaps(
+			"<!--player:1-->\n[1997] A leap in Sacramento\n\nBody text.",
+		);
+		assert.deepStrictEqual(recaps.get(1), {
+			headline: "A leap in Sacramento",
+			body: "Body text.",
 		});
 	});
 
@@ -210,5 +222,51 @@ describe("prompt size", () => {
 		assert.ok(kb > 20, "suspiciously small - is the data actually included?");
 		// Measured: 141KB, about 36k tokens. Input is not the constraint here;
 		// the AI's REPLY room is, which is why the batch size is a setting.
+	});
+});
+
+describe("no future knowledge", () => {
+	// Backfilling an old season with the full record in hand produced recaps
+	// written with hindsight ("he'd hang on one more year in Vancouver"). The
+	// data is truncated at the season in the worker, so the prompt cannot
+	// contain a later year at all - this asserts the prompt honors that rather
+	// than reintroducing it.
+	test("a prompt built from truncated data mentions no later season", () => {
+		const p = player(7, 15);
+		// What the worker hands over for the 2005 recap: nothing after 2005.
+		const truncated = {
+			...p,
+			stats: p.stats.filter((s) => s.season <= 2005),
+			ratings: p.ratings.filter((r) => r.season <= 2005),
+			awards: p.awards.filter((a) => a.season <= 2005),
+			injuries: p.injuries.filter((i) => i.season <= 2005),
+			feats: p.feats.filter((f) => f.season <= 2005),
+		};
+		const prompt = buildPlayerRecapPrompt(batch([truncated]));
+		const body = prompt.slice(prompt.indexOf("=== PLAYERS ==="));
+		for (const year of [2006, 2007, 2010, 2015]) {
+			assert.ok(
+				!body.includes(String(year)),
+				`prompt leaked ${year} into a 2005 recap`,
+			);
+		}
+		// ...while the seasons up to and including 2005 are all still there.
+		for (const year of [2001, 2003, 2005]) {
+			assert.ok(body.includes(String(year)), `missing ${year}`);
+		}
+	});
+
+	test("a player's team comes from that season, not from today", () => {
+		// p.teamAbbrevs is built from the season's stat rows, so a player traded
+		// years later is not shown on his eventual team.
+		const p = { ...player(7, 5), teamAbbrevs: ["BOS", "CHI"] };
+		const prompt = buildPlayerRecapPrompt(batch([p]));
+		assert.ok(prompt.includes("BOS / CHI"));
+	});
+
+	test("a player with no games that season has no team listed", () => {
+		const p = { ...player(7, 0), teamAbbrevs: [] };
+		const prompt = buildPlayerRecapPrompt(batch([p]));
+		assert.ok(prompt.includes("no team"));
 	});
 });
