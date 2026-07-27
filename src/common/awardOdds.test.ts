@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	awardWinProbs,
+	cumulativeAwardStats,
 	projectedGamesPlayed,
 	talentWeight,
 } from "./awardOdds.ts";
@@ -224,5 +225,26 @@ describe("awardWinProbs", () => {
 			opts(0),
 		);
 		assert.ok(Math.abs(zeros.reduce((a, b) => a + b, 0) - 1) < 1e-9);
+	});
+});
+
+describe("cumulativeAwardStats", () => {
+	test("games started scales with games played", () => {
+		// The Sixth Man filter is `gs === 0 || gp / gs > 2`. Projecting gp to a
+		// full season while leaving gs alone made every starter look like a bench
+		// player - a 25-a-night starter at 15 games would read as gp 82 / gs 15,
+		// a ratio of 5.5, and sail through the filter. Both counters move together
+		// or neither does.
+		const cumulative = cumulativeAwardStats();
+		assert.ok(cumulative.has("gs"), "gs must scale with gp");
+	});
+
+	test("rate stats are left alone", () => {
+		// PER is already per-minute; multiplying it by a projection factor would
+		// invent production out of nothing.
+		const cumulative = cumulativeAwardStats();
+		for (const rate of ["per", "pts", "trb", "ast"]) {
+			assert.ok(!cumulative.has(rate), `${rate} must not be scaled`);
+		}
 	});
 });

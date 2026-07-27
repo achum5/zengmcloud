@@ -47,6 +47,11 @@ export const cumulativeAwardStats = (): ReadonlySet<string> =>
 	});
 
 const BASKETBALL_CUMULATIVE: ReadonlySet<string> = new Set([
+	// Games started has to scale with games played. The Sixth Man filter is
+	// `gs === 0 || gp / gs > 2`, so projecting gp to a full season while leaving
+	// gs at what a player has actually started turns every starter into a bench
+	// player and fills the race with 25-a-night starters.
+	"gs",
 	"ewa",
 	"vorp",
 	"ws",
@@ -60,6 +65,7 @@ const BASKETBALL_CUMULATIVE: ReadonlySet<string> = new Set([
 ]);
 
 const FOOTBALL_CUMULATIVE: ReadonlySet<string> = new Set([
+	"gs",
 	"av",
 	"krTD",
 	"krYds",
@@ -72,6 +78,8 @@ const FOOTBALL_CUMULATIVE: ReadonlySet<string> = new Set([
 ]);
 
 const HOCKEY_CUMULATIVE: ReadonlySet<string> = new Set([
+	"gs",
+	"gpGoalie",
 	"ps",
 	"ops",
 	"dps",
@@ -85,6 +93,9 @@ const HOCKEY_CUMULATIVE: ReadonlySet<string> = new Set([
 ]);
 
 const BASEBALL_CUMULATIVE: ReadonlySet<string> = new Set([
+	"gs",
+	"gpPit",
+	"gsPit",
 	"war",
 	"rbat",
 	"rbr",
