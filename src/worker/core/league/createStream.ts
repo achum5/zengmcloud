@@ -143,8 +143,35 @@ const addLeagueMeta = async ({
 	idb.league = await connectLeague(lid);
 };
 
+// Roughly how much memory one buffered row costs, in units of "a typical small
+// record" (a player, a game, an event).
+//
+// The buffer used to flush purely on ROW COUNT, which is fine while every row is
+// a few KB - and fatal for a store whose rows aren't. A saved replay is one
+// whole game's play-by-play, so 10,000 of them is gigabytes; a phone importing
+// a league with replays died on this store long before the buffer ever filled.
+// Weighting by content bounds the buffer in BYTES instead, which is what the
+// device actually cares about.
+export const importRowWeight = (
+	store: LeagueDBStoreNames,
+	value: any,
+): number => {
+	if (store === "liveGamePlayByPlay") {
+		// One weight unit per play-by-play event. A conservative default when the
+		// shape is unexpected: assume it's big, because for this store it is.
+		const events = value?.playByPlay;
+		return Array.isArray(events) && events.length > 0 ? events.length : 1000;
+	}
+	return 1;
+};
+
 class Buffer {
 	MAX_BUFFER_SIZE: number;
+	// Flush once the buffered rows are worth this much, whatever their count.
+	// Equal to MAX_BUFFER_SIZE so ordinary stores (weight 1 per row) behave
+	// exactly as before - this only ever bites on heavy rows.
+	MAX_BUFFER_WEIGHT: number;
+	weight: number;
 	keptKeys: Set<string>;
 	keys: Set<LeagueDBStoreNames>;
 	rows: [LeagueDBStoreNames, any][];
@@ -152,6 +179,8 @@ class Buffer {
 
 	constructor(keptKeys: Set<string>) {
 		this.MAX_BUFFER_SIZE = 10000;
+		this.MAX_BUFFER_WEIGHT = 10000;
+		this.weight = 0;
 		this.keptKeys = keptKeys;
 
 		this.keys = new Set();
@@ -167,15 +196,20 @@ class Buffer {
 
 		this.keys.add(key);
 		this.rows.push(row);
+		this.weight += importRowWeight(key, row[1]);
 	}
 
 	private clear() {
 		this.keys = new Set();
 		this.rows = [];
+		this.weight = 0;
 	}
 
 	isFull() {
-		return this.rows.length >= this.MAX_BUFFER_SIZE;
+		return (
+			this.rows.length >= this.MAX_BUFFER_SIZE ||
+			this.weight >= this.MAX_BUFFER_WEIGHT
+		);
 	}
 
 	// This is so flush does not have to wait for the writes to complete before we start filling the buffer again
