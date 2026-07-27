@@ -17,6 +17,7 @@ import type {
 	SyncTransport,
 } from "./types.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
+import { PHASE } from "../../../common/constants.ts";
 import { afterAction } from "./afterAction.ts";
 import { setSyncEngine } from "./engineHolder.ts";
 
@@ -535,6 +536,102 @@ describe("SyncEngine", () => {
 		const events = await idb.cache.events.getAll();
 		assert.strictEqual(events.length, N, "resurrected batch must fully apply");
 		assert.strictEqual((receiver as any).abandonedBatches.has(batchId), false);
+	});
+
+	test("a resurrected batch cannot drag the phase backward", async () => {
+		// The reported bug, end to end. A device sitting in RESIGN_PLAYERS snapped
+		// back to AFTER_DRAFT the moment it took an action: an old bulk batch from
+		// around the draft had been abandoned with chunks missing, the room moved
+		// on a phase, the author later uploaded the rest, and the by-batchId
+		// rescue (which bypasses the watermark by design) replayed that stale
+		// changeset - gameAttributes and all - over the newer phase.
+		const bus = new FakeBus();
+		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		host.start();
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+
+		resetG();
+		g.setWithoutSavingToDB("phase", PHASE.AFTER_DRAFT);
+		await resetCache({});
+		await idb.cache.gameAttributes.put({
+			key: "phase",
+			value: PHASE.AFTER_DRAFT,
+		});
+
+		// A big changeset from the draft era, carrying the phase of its moment.
+		const N = 260;
+		const changes = [
+			...Array.from({ length: N }, (_, i) => ({
+				store: "events" as const,
+				id: i + 1,
+				type: "put" as const,
+				value: { eid: i + 1, type: "test", text: bulkText(2000, i) },
+			})),
+			{
+				store: "gameAttributes" as const,
+				id: "phase",
+				type: "put" as const,
+				value: { key: "phase", value: PHASE.AFTER_DRAFT },
+			},
+		];
+		await host.onLocalChangeset({ changes }, "playMenu.untilResignPlayers");
+		const allChunks = [...bus.entries];
+		assert.ok(allChunks.length > 1, "should be chunked");
+		const batchId = allChunks[0]!.batchId!;
+
+		// The author died mid-upload: only chunk 0 reached the log.
+		bus.entries.length = 0;
+		bus.entries.push(allChunks[0]!);
+		await receiver.handleEntry(structuredClone(allChunks[0]!));
+
+		// The room moves on a phase, and the receiver applies THAT in order.
+		const advanceEntry: ChangesetEntry = {
+			id: "advance-1",
+			authorId: "X",
+			action: "playMenu.untilResignPlayers",
+			seq: allChunks.at(-1)!.seq + 10,
+			changeset: {
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "phase",
+						type: "put",
+						value: { key: "phase", value: PHASE.RESIGN_PLAYERS },
+					},
+				],
+			},
+		};
+		bus.entries.push(advanceEntry);
+		await receiver.handleEntry(structuredClone(advanceEntry));
+		assert.strictEqual(
+			g.get("phase"),
+			PHASE.RESIGN_PLAYERS,
+			"receiver should have advanced",
+		);
+
+		// The half-batch is judged dead, so the watermark moves past it.
+		await (receiver as any).sweepStaleBatches();
+		await receiver.handleEntry(structuredClone(allChunks[0]!));
+		await (receiver as any).sweepStaleBatches();
+		await (receiver as any).sweepStaleBatches();
+		assert.ok((receiver as any).abandonedBatches.has(batchId));
+
+		// The author comes back and drains its outbox. A late chunk resurrects
+		// the batch - which used to replay the old phase straight over the new.
+		bus.entries.push(...allChunks.slice(1));
+		await receiver.handleEntry(structuredClone(allChunks[1]!));
+
+		assert.strictEqual(
+			g.get("phase"),
+			PHASE.RESIGN_PLAYERS,
+			"a stale batch must never move the phase backward",
+		);
+		// And the batch's DATA is not lost - the ordered resync delivered it.
+		assert.strictEqual(
+			(await idb.cache.events.getAll()).length,
+			N,
+			"the missed data should still land, just in order",
+		);
 	});
 
 	test("an oversized legacy outbox entry is migrated instead of wedging the queue", async () => {

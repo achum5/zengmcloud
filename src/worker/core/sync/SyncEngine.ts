@@ -1302,6 +1302,51 @@ export class SyncEngine {
 			return false;
 		}
 
+		// OUT-OF-ORDER GUARD. A batch whose newest chunk predates our durable
+		// watermark is history: we have already applied entries that came AFTER
+		// it. Applying it in place would be a last-write-wins violation - it
+		// stomps whatever those newer entries set.
+		//
+		// This is not hypothetical. It is how a device sitting in RESIGN_PLAYERS
+		// snapped back to AFTER_DRAFT the moment it took an action: a bulk batch
+		// from around the draft had been abandoned with chunks missing, the room
+		// moved on a phase, the author later uploaded the rest, and the rescue
+		// path (which bypasses the watermark BY DESIGN, so it can reach chunks an
+		// ordered fetch no longer can) replayed that old changeset - gameAttributes
+		// and all - straight over the newer phase.
+		//
+		// The batch is NOT dropped. Every one of its chunks is in the durable log,
+		// so a full ordered resync replays them in sequence along with everything
+		// after them - the missed data still lands, it just can no longer land on
+		// top of newer state. Done inline (not scheduled) so the caller's "did it
+		// apply" answer stays truthful.
+		//
+		// The resync itself is exempt: it replays the WHOLE log, where every old
+		// batch legitimately sits below the watermark. Without that exemption it
+		// would decline its own replay and recurse.
+		if (
+			!this.resyncing &&
+			batch.maxChunkSeq > 0 &&
+			batch.maxChunkSeq < this.persistedSeq
+		) {
+			syncDebugLog("engine:batch-out-of-order", {
+				batchId,
+				action: batch.action,
+				maxChunkSeq: batch.maxChunkSeq,
+				persistedSeq: this.persistedSeq,
+			});
+			// Durable marker first, so a reload mid-resync still heals on connect.
+			this.onResyncNeeded?.();
+			try {
+				const result = await this.resyncAll();
+				syncDebugLog("engine:batch-out-of-order-resynced", result);
+				return !result.failed && result.incomplete === 0;
+			} catch (error) {
+				syncDebugLog("engine:batch-out-of-order-resync-failed", { error });
+				return false;
+			}
+		}
+
 		// A failed apply un-sees the WHOLE batch, so the retry can rebuild it from
 		// a clean re-fetch.
 		return this.apply({ changes }, batch.entryIds);
@@ -1951,7 +1996,22 @@ export class SyncEngine {
 		// Start clean so nothing is deduped away and no half-batch lingers.
 		this.pendingBatches.clear();
 		this.failedApplies.clear();
+		this.resyncing = true;
+		try {
+			return await this.resyncAllInner(entries);
+		} finally {
+			this.resyncing = false;
+		}
+	}
 
+	private async resyncAllInner(
+		entries: Awaited<ReturnType<SyncEngine["fetchLog"]>>,
+	): Promise<{
+		total: number;
+		applied: number;
+		incomplete: number;
+		failed: boolean;
+	}> {
 		let applied = 0;
 		let newMaxSeq = this.maxSeq;
 		for (const entry of entries) {
