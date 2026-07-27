@@ -33,6 +33,15 @@ const clampProb = (p: number): number => Math.min(0.99, Math.max(0.002, p));
 // Favorites come out negative (e.g. -150), underdogs positive (e.g. +130).
 // `opts.vig` overrides the base per-game vig (futures/awards pass a heavier one);
 // `opts.maxAmerican` caps the longest underdog price offered.
+// Favorite-longshot bias: real books hold far more on longshots than on
+// favorites. A flat multiplicative vig cannot shorten a 2% shot at all - 2%
+// times 1.12 is still 2%, still 40-1 - which is how the back half of every
+// award race became close to free money. This adds hold that grows as the
+// probability falls, steeply enough to matter in the tail and gently enough to
+// leave a favorite's price about where it was.
+export const longshotVig = (probTrue: number, baseVig: number): number =>
+	baseVig + 1.5 * (1 - Math.min(1, Math.max(0, probTrue))) ** 4;
+
 export const probToAmerican = (
 	probTrue: number,
 	opts?: { vig?: number; maxAmerican?: number },

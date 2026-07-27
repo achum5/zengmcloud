@@ -136,6 +136,33 @@ describe("awardWinProbs", () => {
 		assert.ok(late[0]! > 0.9);
 	});
 
+	test("the back of the field is never priced as impossible mid-season", () => {
+		// Betting the whole back half of every race used to be close to free money,
+		// because a candidate who never won a sample was priced at the +30000 cap.
+		const field = [10, 9.4, 8.6, 7.2, 6.5, 5.9, 5.1, 4.4].map((score, i) => ({
+			score,
+			talent: 60 - i,
+		}));
+		const probs = awardWinProbs(field, opts(0.4));
+		for (const [i, prob] of probs.entries()) {
+			assert.ok(prob > 0.01, `candidate ${i} priced at ${prob}`);
+		}
+	});
+
+	test("but by the end of the season a runaway leader is a lock", () => {
+		// The floor exists because the season can still turn. Once it can't, it has
+		// to get out of the way.
+		const probs = awardWinProbs(
+			[
+				{ score: 20, talent: 60 },
+				{ score: 5, talent: 55 },
+				{ score: 4, talent: 50 },
+			],
+			opts(0.99),
+		);
+		assert.ok(probs[0]! > 0.95, `leader at ${probs[0]}`);
+	});
+
 	test("a finished season gives the leader the award outright", () => {
 		const probs = awardWinProbs(
 			[

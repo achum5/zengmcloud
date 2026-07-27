@@ -9,6 +9,7 @@ import {
 	projectedGamesPlayed,
 } from "../../../common/awardOdds.ts";
 import {
+	longshotVig,
 	probToAmerican,
 	SPORTSBOOK_FUTURES_VIG,
 	SPORTSBOOK_MAX_AMERICAN,
@@ -146,7 +147,9 @@ const getAwardRaceOdds = async (season: number) => {
 			// other bet. The Award Races page and the Sportsbook both read this, so
 			// they show identical (taxed) prices.
 			odds: probToAmerican(probs[i] ?? 0, {
-				vig: SPORTSBOOK_FUTURES_VIG,
+				// Longshots carry the heavier hold, so backing the whole back half of
+				// a race is no longer close to free money.
+				vig: longshotVig(probs[i] ?? 0, SPORTSBOOK_FUTURES_VIG),
 				maxAmerican: SPORTSBOOK_MAX_AMERICAN,
 			}),
 		}));

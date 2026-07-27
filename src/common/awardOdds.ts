@@ -150,6 +150,19 @@ const gauss = (rng: () => number) => {
 	return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng());
 };
 
+// Award races have FAT tails. A normal distribution says the fourth-best
+// candidate essentially never wins, which prices him at 30-1 and makes betting
+// the back half of every race free money. In reality the favorite gets hurt, a
+// role player explodes, a contender collapses - the finish is upset far more
+// often than a bell curve allows. So the noise is a scale mixture: most
+// finishes are ordinary, and a minority are drawn from a much wider
+// distribution. That is what a real season looks like.
+const HEAVY_TAIL_SHARE = 0.2;
+const HEAVY_TAIL_SCALE = 3;
+
+const heavyTailed = (rng: () => number) =>
+	gauss(rng) * (rng() < HEAVY_TAIL_SHARE ? HEAVY_TAIL_SCALE : 1);
+
 const stdDev = (values: number[]) => {
 	if (values.length < 2) {
 		return 0;
@@ -240,7 +253,7 @@ export const awardWinProbs = (
 		let best = 0;
 		let bestValue = -Infinity;
 		for (let i = 0; i < n; i++) {
-			const value = blended[i]! + sigma * gauss(rng);
+			const value = blended[i]! + sigma * heavyTailed(rng);
 			if (value > bestValue) {
 				bestValue = value;
 				best = i;
@@ -249,5 +262,19 @@ export const awardWinProbs = (
 		wins[best] = (wins[best] ?? 0) + 1;
 	}
 
-	return wins.map((count) => count / samples);
+	// Nobody in a field this small is a 500-1 shot while games remain. With a
+	// couple of thousand samples a candidate who never happens to win reads as
+	// impossible, and pricing that literally is how the tail of every race became
+	// free money. Floor everyone, then renormalize so the book still adds to one.
+	//
+	// The floor is there because the season can still turn, so it fades out with
+	// the season - by April a runaway leader really is a lock and should be
+	// priced like one.
+	const floor = (MIN_PROB / n) * (1 - f);
+	const floored = wins.map((count) => Math.max(floor, count / samples));
+	const total = floored.reduce((sum, x) => sum + x, 0);
+	return floored.map((x) => x / total);
 };
+
+// As a share of an even split across the field.
+const MIN_PROB = 0.35;
