@@ -26,7 +26,7 @@ ${FICTIONAL_LEAGUE_NOTICE}
 
 Length: judge it by how much there is to say. A deep-bench player who barely played might get one sentence. A star, or anyone with a real story that year (a breakout, a collapse, an injury, a trade, an award, a title run, a contract year, a rookie debut, a last season), can get up to two short paragraphs. Most players land in between. Never pad a nothing season into paragraphs.
 
-Each player's data is their career UP TO AND INCLUDING this season: stats by season, full ratings by season (so you can see skills develop or erode), transactions, awards, statistical feats, and injuries. Use that history to give the season meaning — a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Write as if the season has just ended and nobody knows what happens next.
+Each player's data is their career UP TO AND INCLUDING this season: stats by season, full ratings by season (so you can see skills develop or erode), transactions, awards, statistical feats, and injuries. Anything he missed time with THIS season is listed separately as INJURIES THIS SEASON with the games lost — if it's there, it is part of the story, and a year cut short by injury should never read as a quiet decline. Use that history to give the season meaning — a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Write as if the season has just ended and nobody knows what happens next.
 
 Every stat line carries the team's record and how that team's year ended, and the league standings for this season are listed above the players. Use that context where it makes the recap better: 24 ppg on a 19-63 team is a different story from 24 ppg on a title winner, and a role player's year is often best told through what his team was chasing. Keep the focus on the PLAYER — team context is there to give his season stakes, not to become a team recap.
 
@@ -205,6 +205,20 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 		}
 	} else {
 		lines.push("THIS SEASON: did not play");
+	}
+
+	// Called out separately as well as in the career list below. For a
+	// fifteen-year veteran the year being written is three entries buried in
+	// thirty, and a season shaped by injuries is exactly the season most likely
+	// to be recapped as a quiet decline instead.
+	const injuriesThisSeason = p.injuries.filter((i) => i.season === season);
+	if (injuriesThisSeason.length > 0) {
+		const games = injuriesThisSeason.reduce((sum, i) => sum + i.games, 0);
+		lines.push(
+			`INJURIES THIS SEASON: ${injuriesThisSeason
+				.map((i) => `${i.type} (${i.games}g)`)
+				.join("; ")} — ${games} games missed`,
+		);
 	}
 
 	if (reg.length > 0) {

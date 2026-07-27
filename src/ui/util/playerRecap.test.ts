@@ -233,6 +233,39 @@ describe("buildPlayerRecapPrompt", () => {
 		assert.ok(prompt.includes("RETIRING PLAYERS GET TWO PIECES"));
 	});
 
+	test("the listed season's injuries are called out, not just buried in the history", () => {
+		// A fifteen-year veteran's INJURY HISTORY is thirty entries long; the three
+		// that shaped THIS season have to be findable.
+		const p = {
+			...player(7, 5),
+			injuries: [
+				{ season: 2002, type: "Sprained ankle", games: 4 },
+				{ season: 2005, type: "Torn meniscus", games: 31 },
+				{ season: 2005, type: "Sore back", games: 6 },
+			],
+		};
+		const prompt = buildPlayerRecapPrompt(batch([p]));
+		assert.ok(
+			prompt.includes(
+				"INJURIES THIS SEASON: Torn meniscus (31g); Sore back (6g) — 37 games missed",
+			),
+		);
+		// Still in the full history too.
+		assert.ok(prompt.includes("2002 Sprained ankle (4g)"));
+	});
+
+	test("a player healthy all season gets no injury callout", () => {
+		const p = {
+			...player(7, 5),
+			injuries: [{ season: 2002, type: "Sprained ankle", games: 4 }],
+		};
+		const prompt = buildPlayerRecapPrompt(batch([p]));
+		// The instructions describe the label, so only the data half counts.
+		const body = prompt.slice(prompt.indexOf("=== PLAYERS ==="));
+		assert.ok(!body.includes("INJURIES THIS SEASON"));
+		assert.ok(body.includes("INJURY HISTORY"));
+	});
+
 	test("a player who isn't retiring gets no retirement block", () => {
 		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
 		// The instructions describe the marker, so only the data half counts.
