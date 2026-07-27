@@ -79,6 +79,7 @@ const normalizeContractDemands = async ({
 	type,
 	pids,
 	nextSeason,
+	dryRun,
 }: {
 	type:
 		| "newLeague"
@@ -87,9 +88,17 @@ const normalizeContractDemands = async ({
 		| "dummyExpiringContracts";
 	pids?: number[];
 	nextSeason?: boolean;
-}) => {
+	// Run the auction and RETURN what it priced each player at, without touching
+	// any player record. Used to project asking prices on the Upcoming Free
+	// Agents page - that page used to show a raw genContract number, which in
+	// basketball is not the model the game actually prices free agents with (see
+	// numRounds below: basketball runs the bidding, and only the other sports
+	// fall back to the formula). So the page's projection disagreed with what
+	// players went on to actually sign for.
+	dryRun?: boolean;
+}): Promise<Map<number, number> | undefined> => {
 	if (pids && pids.length === 0) {
-		return;
+		return dryRun ? new Map() : undefined;
 	}
 
 	// Higher means more unequal salaries
@@ -292,6 +301,24 @@ const normalizeContractDemands = async ({
 	});
 
 	// Set contract amounts to final values, especially for numRounds=0
+	// A dry run stops here: the auction is already complete, and everything it
+	// produced lives on `playerInfos` rather than on the player records (they are
+	// only written in the loop below). So the prices can just be handed back.
+	if (dryRun) {
+		const out = new Map<number, number>();
+		for (const info of playerInfosToUpdate) {
+			out.set(
+				info.pid,
+				helpers.bound(
+					helpers.roundContract(info.contractAmount),
+					minContract,
+					maxContract,
+				),
+			);
+		}
+		return out;
+	}
+
 	for (const info of playerInfosToUpdate) {
 		const p = info.p;
 		if (rookieSalaries && p.draft.year === season) {
@@ -376,6 +403,24 @@ const normalizeContractDemands = async ({
 	const minNewContractExp =
 		g.get("season") + g.get("minContractLength") + offset;
 
+	// A dry run stops here: the auction is already complete, and everything it
+	// produced lives on `playerInfos` rather than on the player records (they are
+	// only written in the loop below). So the prices can just be handed back.
+	if (dryRun) {
+		const out = new Map<number, number>();
+		for (const info of playerInfosToUpdate) {
+			out.set(
+				info.pid,
+				helpers.bound(
+					helpers.roundContract(info.contractAmount),
+					minContract,
+					maxContract,
+				),
+			);
+		}
+		return out;
+	}
+
 	for (const info of playerInfosToUpdate) {
 		const p = info.p;
 
@@ -430,6 +475,8 @@ const normalizeContractDemands = async ({
 
 		await idb.cache.players.put(p);
 	}
+
+	return undefined;
 };
 
 export default normalizeContractDemands;
