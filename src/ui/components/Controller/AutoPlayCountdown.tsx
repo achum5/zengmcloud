@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocal } from "../../util/local.ts";
+import { helpers } from "../../util/helpers.ts";
 import { autoPlayScheduler } from "../../util/autoPlayScheduler.ts";
 
 const format = (ms: number): string => {
@@ -23,7 +24,7 @@ const AutoPlayCountdown = () => {
 		"mpSyncIsHost",
 		"mpAutoPlay",
 	]);
-	const [, setNow] = useState(0);
+	const [now, setNow] = useState(() => Date.now());
 
 	// Keep this device's own scheduler loaded so the simmer runs (and broadcasts)
 	// without opening the Auto Play page first, and so the simmer's countdown reads
@@ -54,7 +55,7 @@ const AutoPlayCountdown = () => {
 		if (!active) {
 			return;
 		}
-		const id = setInterval(() => setNow((n) => n + 1), 1000);
+		const id = setInterval(() => setNow(Date.now()), 1000);
 		return () => clearInterval(id);
 	}, [active]);
 
@@ -62,10 +63,17 @@ const AutoPlayCountdown = () => {
 		return null;
 	}
 	return (
-		<span className="text-warning">
-			{" · ⏱ "}
-			{format(nextRunAt - Date.now())}
-		</span>
+		<>
+			{" · "}
+			<a
+				className="text-warning text-decoration-none"
+				href={helpers.leagueUrl(["auto_play_schedule"])}
+				title="Auto Play Scheduler"
+			>
+				{"⏱ "}
+				{format(nextRunAt - now)}
+			</a>
+		</>
 	);
 };
 
