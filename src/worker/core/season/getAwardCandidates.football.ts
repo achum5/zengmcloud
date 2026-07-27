@@ -33,8 +33,11 @@ const filterRoy = (season: number) => (p: PlayerFiltered) => {
 	return true;
 };
 
-const getAwardCandidates = async (season: number) => {
-	const players = await getPlayers(season);
+// `playersOverride` lets the live-odds path pass PROJECTED players in, so the
+// field and its ordering come from where the season is heading rather than
+// from partial cumulative totals.
+const getAwardCandidates = async (season: number, playersOverride?: any[]) => {
+	const players = playersOverride ?? (await getPlayers(season));
 
 	const awardCandidates = [
 		{

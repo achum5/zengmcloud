@@ -46,9 +46,7 @@ export type ProjectedAmount = {
 	high: number;
 };
 
-let cache:
-	| { key: string; amounts: Map<number, ProjectedAmount> }
-	| undefined;
+let cache: { key: string; amounts: Map<number, ProjectedAmount> } | undefined;
 
 // Whoever is actually reaching the market at the end of this season: during
 // re-signing that is the free agent pool, before then it is everyone whose

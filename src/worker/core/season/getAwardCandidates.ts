@@ -6,6 +6,9 @@ import getAwardCandidatesHockey from "./getAwardCandidates.hockey.ts";
 
 const getAwardCandidates = (
 	season: number,
+	// Pass PROJECTED players to rank the field by where the season is heading
+	// rather than by partial cumulative totals. See getAwardRaceOdds.
+	playersOverride?: any[],
 ): Promise<
 	{
 		asterisk?: string;
@@ -15,10 +18,10 @@ const getAwardCandidates = (
 	}[]
 > => {
 	return bySport({
-		baseball: getAwardCandidatesBaseball(season),
-		basketball: getAwardCandidatesBasketball(season),
-		football: getAwardCandidatesFootball(season),
-		hockey: getAwardCandidatesHockey(season),
+		baseball: getAwardCandidatesBaseball(season, playersOverride),
+		basketball: getAwardCandidatesBasketball(season, playersOverride),
+		football: getAwardCandidatesFootball(season, playersOverride),
+		hockey: getAwardCandidatesHockey(season, playersOverride),
 	});
 };
 
