@@ -19,12 +19,36 @@ import type { Player } from "../../common/types.ts";
 // to sign for - badly at the top and bottom of the market, since bidding spreads
 // salaries much further than the formula does.
 //
-// Cached per league state, for two reasons: the auction is not cheap, and it is
-// stochastic, so a number that changes every time you open the page reads as
-// broken even when it is closer to the truth. One cache serves every page, so
-// the same player is never quoted two different prices in two places.
+// The auction is STOCHASTIC: teams are shuffled every round and each pick is a
+// softmax draw, so two runs on identical data disagree, sometimes wildly. One
+// run of it was being shown as a precise number. A player who happened to draw
+// no bids in the early rounds gets scaled down repeatedly and lands near the
+// minimum; the same player in the next run lands three times higher. That is the
+// single biggest source of error in the projection, and it is not a modelling
+// problem - it is sampling noise being reported as a point estimate.
+//
+// So the auction runs several times. The MEDIAN is the projection (robust to one
+// run collapsing), and the spread across runs is reported alongside it, because
+// a range is the honest shape of this answer: nobody goes into an offseason
+// knowing a player will command exactly $31.78M, only that he'll land somewhere
+// in a band.
 
-let cache: { key: string; amounts: Map<number, number> } | undefined;
+// Enough runs for a median to mean something and for the band to reflect real
+// spread, without making the page load cost several full auctions more than it
+// already does. Cached per league state, so this is paid once.
+const RUNS = 5;
+
+export type ProjectedAmount = {
+	// Median across runs - the number to show and sort by.
+	amount: number;
+	// Lowest and highest the auction priced him at.
+	low: number;
+	high: number;
+};
+
+let cache:
+	| { key: string; amounts: Map<number, ProjectedAmount> }
+	| undefined;
 
 // Whoever is actually reaching the market at the end of this season: during
 // re-signing that is the free agent pool, before then it is everyone whose
@@ -41,31 +65,57 @@ const getExpiringPids = async (): Promise<number[]> => {
 	return players.map((p) => p.pid);
 };
 
+const median = (sorted: number[]) => {
+	const mid = Math.floor(sorted.length / 2);
+	return sorted.length % 2 === 0
+		? Math.round((sorted[mid - 1]! + sorted[mid]!) / 2)
+		: sorted[mid]!;
+};
+
 export const getProjectedContractAmounts = async (): Promise<
-	Map<number, number>
+	Map<number, ProjectedAmount>
 > => {
 	const key = `${g.get("lid")}|${g.get("season")}|${g.get("phase")}`;
 	if (cache?.key === key) {
 		return cache.amounts;
 	}
 
+	const amounts = new Map<number, ProjectedAmount>();
 	try {
 		const pids = await getExpiringPids();
-		const amounts =
-			pids.length > 0
-				? await normalizeContractDemands({
-						type: "includeExpiringContracts",
-						pids,
-						dryRun: true,
-					})
-				: new Map<number, number>();
-		cache = { key, amounts: amounts ?? new Map() };
-		return cache.amounts;
+		if (pids.length > 0) {
+			const runs: Map<number, number>[] = [];
+			for (let i = 0; i < RUNS; i++) {
+				const result = await normalizeContractDemands({
+					type: "includeExpiringContracts",
+					pids,
+					dryRun: true,
+				});
+				if (result) {
+					runs.push(result);
+				}
+			}
+
+			for (const pid of pids) {
+				const values = runs
+					.map((run) => run.get(pid))
+					.filter((x): x is number => x !== undefined)
+					.sort((a, b) => a - b);
+				if (values.length > 0) {
+					amounts.set(pid, {
+						amount: median(values),
+						low: values[0]!,
+						high: values.at(-1)!,
+					});
+				}
+			}
+		}
+		cache = { key, amounts };
 	} catch (error) {
 		// A projection is a nicety - never break the page over it.
 		console.error("Failed to project contracts", error);
-		return new Map();
 	}
+	return amounts;
 };
 
 // The auction only prices players who are actually reaching the market this
@@ -75,9 +125,9 @@ export const getProjectedContractAmounts = async (): Promise<
 // numbers are marked as projections wherever they are shown.
 export const projectNextContract = (
 	p: Player,
-	amounts: Map<number, number>,
+	amounts: Map<number, ProjectedAmount>,
 ): { amount: number; years: number } => ({
-	amount: amounts.get(p.pid) ?? genContract(p, false).amount,
+	amount: amounts.get(p.pid)?.amount ?? genContract(p, false).amount,
 	years: getContractYears(p, {
 		season: Math.max(g.get("season"), p.contract.exp),
 	}),

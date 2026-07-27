@@ -125,6 +125,40 @@ const updateTeamFinances = async (
 			salariesSeasons.push(season + i);
 		}
 
+		// The cap moves. In a real-players league scheduled events step the salary
+		// cap, luxury tax and hard cap up every season, so measuring a 2030 column
+		// against today's cap is wrong by a lot by the time you get there.
+		// Processed events are deleted, so everything still in the store is in the
+		// future - walk them forward, season by season, to get the caps each
+		// column should actually be judged against.
+		const running = {
+			salaryCap: g.get("salaryCap"),
+			luxuryPayroll: g.get("luxuryPayroll"),
+			minPayroll: g.get("minPayroll"),
+			hardCapAmount: g.get("hardCapAmount"),
+			hardCapTids: g.get("hardCapTids"),
+			hardCapUseLuxuryTax: g.get("hardCapUseLuxuryTax"),
+		};
+		const gameAttributeEvents = (await idb.cache.scheduledEvents.getAll())
+			.filter((event) => event.type === "gameAttributes")
+			.sort((a, b) => a.season - b.season || a.phase - b.phase);
+		let eventIndex = 0;
+		const capsBySeason = salariesSeasons.map((yr) => {
+			while (
+				eventIndex < gameAttributeEvents.length &&
+				gameAttributeEvents[eventIndex]!.season <= yr
+			) {
+				const info = (gameAttributeEvents[eventIndex] as any).info ?? {};
+				for (const key of helpers.keys(running)) {
+					if (info[key] !== undefined) {
+						(running as any)[key] = info[key];
+					}
+				}
+				eventIndex += 1;
+			}
+			return { ...running };
+		});
+
 		const teamSeasons = await idb.getCopies.teamSeasons({
 			tid: inputs.tid,
 		});
@@ -277,6 +311,7 @@ const updateTeamFinances = async (
 			contracts,
 			contractTotals,
 			salariesSeasons,
+			capsBySeason,
 			otherTeamTicketPrices,
 		};
 	}

@@ -752,6 +752,7 @@ const TeamFinances = ({
 	otherTeamTicketPrices,
 	payroll,
 	salariesSeasons,
+	capsBySeason,
 	show,
 	t,
 	tid,
@@ -873,12 +874,27 @@ const TeamFinances = ({
 	);
 	const anyProjected = projectedTotals.some((amount) => amount > 0);
 
-	const hardCap = hardCapForTid(tid, {
-		hardCapAmount,
-		hardCapTids,
-		hardCapUseLuxuryTax,
-		luxuryPayroll,
-	});
+	// Each column is measured against ITS season's cap, not today's - scheduled
+	// events step the cap up every year in a real-players league, so a column
+	// five seasons out judged against the current cap is badly wrong.
+	const capsFor = (i: number) =>
+		capsBySeason?.[i] ?? {
+			salaryCap,
+			luxuryPayroll,
+			hardCapAmount,
+			hardCapTids,
+			hardCapUseLuxuryTax,
+		};
+	const hardCapFor = (i: number) => {
+		const caps = capsFor(i);
+		return hardCapForTid(tid, {
+			hardCapAmount: caps.hardCapAmount,
+			hardCapTids: caps.hardCapTids,
+			hardCapUseLuxuryTax: caps.hardCapUseLuxuryTax,
+			luxuryPayroll: caps.luxuryPayroll,
+		});
+	};
+	const anyHardCap = totals.some((_, i) => Number.isFinite(hardCapFor(i)));
 
 	const star = includeProjected ? "*" : "";
 
@@ -889,14 +905,17 @@ const TeamFinances = ({
 				totals.map((amount) => highlightZeroNegative(amount)),
 			),
 		},
-		...(Number.isFinite(hardCap)
+		...(anyHardCap
 			? [
 					{
 						data: ["", `Hard Cap Space${star}`, ""].concat(
 							// @ts-expect-error
-							totals.map((amount) =>
-								highlightZeroNegative(hardCap / 1000 - amount),
-							),
+							totals.map((amount, i) => {
+								const hardCap = hardCapFor(i);
+								return Number.isFinite(hardCap)
+									? highlightZeroNegative(hardCap / 1000 - amount)
+									: null;
+							}),
 						),
 					},
 				]
@@ -906,14 +925,14 @@ const TeamFinances = ({
 				salaryCapType === "none"
 					? ["", `Under Luxury Tax${star}`, ""].concat(
 							// @ts-expect-error
-							totals.map((amount) =>
-								highlightZeroNegative(luxuryPayroll / 1000 - amount),
+							totals.map((amount, i) =>
+								highlightZeroNegative(capsFor(i).luxuryPayroll / 1000 - amount),
 							),
 						)
 					: ["", `Free Cap Space${star}`, ""].concat(
 							// @ts-expect-error
-							totals.map((amount) =>
-								highlightZeroNegative(salaryCap / 1000 - amount),
+							totals.map((amount, i) =>
+								highlightZeroNegative(capsFor(i).salaryCap / 1000 - amount),
 							),
 						),
 		},
@@ -945,6 +964,40 @@ const TeamFinances = ({
 					<a href={helpers.leagueUrl(["god_mode"])}>God Mode</a>.
 				</p>
 			)}
+
+			<h2>Player Salaries</h2>
+
+			<p>
+				You can release players from{" "}
+				<a href={helpers.leagueUrl(["roster"])}>your roster</a>. Released
+				players who are still owed money are <i>shown in italics</i>. Salaries
+				marked <span className="text-body-secondary">*</span> are projected, not
+				signed.
+			</p>
+
+			{anyProjected ? (
+				<div className="form-check mb-2">
+					<input
+						id="tf-include-projected"
+						type="checkbox"
+						className="form-check-input"
+						checked={includeProjected}
+						onChange={(event) => setIncludeProjected(event.target.checked)}
+					/>
+					<label className="form-check-label" htmlFor="tf-include-projected">
+						Include projected salaries in totals
+					</label>
+				</div>
+			) : null}
+
+			<DataTable
+				cols={cols}
+				defaultSort={[3, "desc"]}
+				name="TeamFinances"
+				nonfluid
+				footer={footer}
+				rows={rows}
+			/>
 
 			<div className="row">
 				<div className="col-md-3 col-sm-2">
@@ -1110,40 +1163,6 @@ const TeamFinances = ({
 					</div>
 				) : null}
 			</div>
-
-			<h2>Player Salaries</h2>
-
-			<p>
-				You can release players from{" "}
-				<a href={helpers.leagueUrl(["roster"])}>your roster</a>. Released
-				players who are still owed money are <i>shown in italics</i>. Salaries
-				marked <span className="text-body-secondary">*</span> are projected, not
-				signed.
-			</p>
-
-			{anyProjected ? (
-				<div className="form-check mb-2">
-					<input
-						id="tf-include-projected"
-						type="checkbox"
-						className="form-check-input"
-						checked={includeProjected}
-						onChange={(event) => setIncludeProjected(event.target.checked)}
-					/>
-					<label className="form-check-label" htmlFor="tf-include-projected">
-						Include projected salaries in totals
-					</label>
-				</div>
-			) : null}
-
-			<DataTable
-				cols={cols}
-				defaultSort={[3, "desc"]}
-				name="TeamFinances"
-				nonfluid
-				footer={footer}
-				rows={rows}
-			/>
 		</>
 	);
 };

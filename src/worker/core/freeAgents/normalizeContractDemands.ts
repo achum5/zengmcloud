@@ -400,9 +400,19 @@ const normalizeContractDemands = async ({
 	// A dry run stops here: the auction is already complete, and everything it
 	// produced lives on `playerInfos` rather than on the player records (they are
 	// only written in the loop below). So the prices can just be handed back.
+	//
+	// Every non-dummy player is returned, not just playerInfosToUpdate. A player
+	// who drew exactly one bid every round never crosses either threshold, so he
+	// is absent from updatedPIDs - but the auction still has an answer for him
+	// (the amount he went in with, unchallenged). Leaving him out made the caller
+	// fall back to genContract, which is the formula this whole path exists to
+	// avoid.
 	if (dryRun) {
 		const out = new Map<number, number>();
-		for (const info of playerInfosToUpdate) {
+		for (const info of playerInfos) {
+			if (info.dummy) {
+				continue;
+			}
 			out.set(
 				info.pid,
 				helpers.bound(
