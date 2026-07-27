@@ -9,6 +9,10 @@ import type {
 } from "../../common/types.ts";
 import { getAutoTicketPriceByTid } from "../core/game/attendance.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
+import {
+	getProjectedContractAmounts,
+	projectNextContract,
+} from "../util/projectedContracts.ts";
 
 const updateTeamFinances = async (
 	inputs: ViewInput<"teamFinances">,
@@ -55,6 +59,20 @@ const updateTeamFinances = async (
 			maxContractExp - season + 1,
 		);
 
+		// What a player would cost to keep once his current deal runs out. The
+		// table otherwise just goes blank after a contract expires, which reads as
+		// "free" when it usually means "the biggest bill coming". These are
+		// projections, not commitments, so they are marked with an asterisk in the
+		// UI and deliberately left OUT of the totals and cap space rows below -
+		// those stay strictly what the team has actually committed.
+		const projectedAmounts = await getProjectedContractAmounts();
+		const rosterByPid = new Map(
+			(await idb.cache.players.indexGetAll("playersByTid", inputs.tid)).map(
+				(p) => [p.pid, p],
+			),
+		);
+		const lastSeasonShown = season + numSeasons - 1;
+
 		// Convert contract objects into table rows
 		const contractTotals = Array(numSeasons).fill(0);
 		const contracts = addFirstNameShort(
@@ -65,6 +83,23 @@ const updateTeamFinances = async (
 					amounts.push(contract.amount / 1000);
 					if (contractTotals[i - season] !== undefined) {
 						contractTotals[i - season] += contract.amount / 1000;
+					}
+				}
+
+				// Released players are gone - there is no next contract to project,
+				// only the dead money already in `amounts`.
+				const projected: (number | undefined)[] =
+					Array(numSeasons).fill(undefined);
+				const p = rosterByPid.get(contract.pid);
+				if (p && !contract.released && contract.exp < lastSeasonShown) {
+					const next = projectNextContract(p, projectedAmounts);
+					const start = Math.max(season, contract.exp + 1);
+					for (
+						let i = start;
+						i < start + next.years && i <= lastSeasonShown;
+						i++
+					) {
+						projected[i - season] = next.amount / 1000;
 					}
 				}
 
@@ -79,6 +114,7 @@ const updateTeamFinances = async (
 					watch: contract.watch,
 					released: contract.released,
 					amounts,
+					amountsProjected: projected,
 					capPct: (100 * contract.amount) / g.get("salaryCap"),
 				};
 			}),

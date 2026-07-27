@@ -825,7 +825,21 @@ const TeamFinances = ({
 					});
 				}
 			} else {
-				data.push(null);
+				// Past the end of his deal: what keeping him would cost. Muted and
+				// asterisked so it never reads as money already committed.
+				const projected = p.amountsProjected?.[j];
+				if (projected !== undefined) {
+					const formattedAmount = helpers.formatCurrency(projected, "M");
+					data.push({
+						classNames: "text-body-secondary",
+						value: `${formattedAmount}*`,
+						sortValue: projected,
+						searchValue: formattedAmount,
+						title: `Projected — ${p.firstName} ${p.lastName} is not under contract in ${salariesSeasons[j]}`,
+					});
+				} else {
+					data.push(null);
+				}
 			}
 		}
 
@@ -1057,7 +1071,9 @@ const TeamFinances = ({
 			<p>
 				You can release players from{" "}
 				<a href={helpers.leagueUrl(["roster"])}>your roster</a>. Released
-				players who are still owed money are <i>shown in italics</i>.
+				players who are still owed money are <i>shown in italics</i>. Salaries
+				marked <span className="text-body-secondary">*</span> are projected, not
+				signed.
 			</p>
 
 			<DataTable

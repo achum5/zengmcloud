@@ -12,15 +12,20 @@ const TEMP = 0.35;
 const LEARNING_RATE = 0.5;
 const DEFAULT_ROUNDS = 60;
 
-const getExpiration = (
-	p: Player,
-	randomizeExp: boolean,
-	nextSeason?: boolean,
+// How many years a player of this age and ability signs for. Exported because
+// the Team Finances page projects the LENGTH of a player's next contract as
+// well as its price, and it should use the same model the game does.
+export const getContractYears = (
+	p: Pick<Player, "ratings" | "born">,
+	{
+		season = g.get("season"),
+		randomize = false,
+	}: { season?: number; randomize?: boolean } = {},
 ) => {
 	const { ovr, pot } = last(p.ratings);
 
 	// pot is predictable via age+ovr with R^2=0.94, so skip it b/c wasn't in data
-	const age = g.get("season") - p.born.year;
+	const age = season - p.born.year;
 	let years =
 		1 +
 		0.001629 * (age * age) -
@@ -30,16 +35,23 @@ const getExpiration = (
 	years = Math.round(years);
 
 	// Randomize expiration for contracts generated at beginning of new game
-	if (randomizeExp) {
-		years = randInt(1, years);
-		years = helpers.bound(years, 1, g.get("maxContractLength"));
-	} else {
-		years = helpers.bound(
-			years,
-			g.get("minContractLength"),
-			g.get("maxContractLength"),
-		);
+	if (randomize) {
+		return helpers.bound(randInt(1, years), 1, g.get("maxContractLength"));
 	}
+
+	return helpers.bound(
+		years,
+		g.get("minContractLength"),
+		g.get("maxContractLength"),
+	);
+};
+
+const getExpiration = (
+	p: Player,
+	randomizeExp: boolean,
+	nextSeason?: boolean,
+) => {
+	const years = getContractYears(p, { randomize: randomizeExp });
 
 	let offset = g.get("phase") <= PHASE.PLAYOFFS ? -1 : 0;
 	if (nextSeason) {
@@ -301,24 +313,6 @@ const normalizeContractDemands = async ({
 	});
 
 	// Set contract amounts to final values, especially for numRounds=0
-	// A dry run stops here: the auction is already complete, and everything it
-	// produced lives on `playerInfos` rather than on the player records (they are
-	// only written in the loop below). So the prices can just be handed back.
-	if (dryRun) {
-		const out = new Map<number, number>();
-		for (const info of playerInfosToUpdate) {
-			out.set(
-				info.pid,
-				helpers.bound(
-					helpers.roundContract(info.contractAmount),
-					minContract,
-					maxContract,
-				),
-			);
-		}
-		return out;
-	}
-
 	for (const info of playerInfosToUpdate) {
 		const p = info.p;
 		if (rookieSalaries && p.draft.year === season) {
