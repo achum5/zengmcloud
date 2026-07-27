@@ -8,7 +8,7 @@ import {
 } from "../../common/sportsbook.ts";
 
 const updateSportsbook = async (
-	inputs: unknown,
+	inputs: { tab?: string },
 	updateEvents: UpdateEvents,
 ) => {
 	if (
@@ -154,6 +154,8 @@ const updateSportsbook = async (
 			userTid,
 			phase: g.get("phase"),
 			season: g.get("season"),
+			// Which tab the URL asked for - each one is its own route.
+			tab: inputs.tab ?? "games",
 		};
 	}
 };

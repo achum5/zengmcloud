@@ -3,6 +3,10 @@ import {
 	REMAINING_PLAYOFF_TEAMS_PHASES,
 } from "../../common/constants.ts";
 import { g, helpers } from "../util/index.ts";
+import {
+	SPORTSBOOK_TABS,
+	type SportsbookTab,
+} from "../../common/sportsbook.ts";
 import type { PlayerStatType } from "../../common/types.ts";
 import type { Params } from "../../ui/router/index.ts";
 import type { boxScoreToLiveSim } from "../views/liveGame.ts";
@@ -1134,7 +1138,13 @@ export default {
 	allStarThree: validateSeasonOnly,
 	awardRaces: validateSeasonOnly,
 	awardsRecords,
-	sportsbook: () => ({}),
+	sportsbook: (params: Params) => ({
+		// Each tab is its own URL, so the back button and a reload land where you
+		// left off instead of resetting to Games.
+		tab: SPORTSBOOK_TABS.includes(params.tab as any)
+			? (params.tab as SportsbookTab)
+			: "games",
+	}),
 	sportsbookGame: (params: Params) => ({
 		gid: params.gid !== undefined ? Number.parseInt(params.gid) : -1,
 	}),

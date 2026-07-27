@@ -1,3 +1,16 @@
+// The Sportsbook's tabs. Each is its own route, so the back button and a reload
+// land on the tab you were reading instead of resetting to Games. Shared so the
+// route validator and the tab bar can never disagree about what exists.
+export const SPORTSBOOK_TABS = [
+	"games",
+	"futures",
+	"awards",
+	"mybets",
+	"leaguebets",
+] as const;
+
+export type SportsbookTab = (typeof SPORTSBOOK_TABS)[number];
+
 import type { SportsbookMarket } from "./types.ts";
 
 // Shared play-money sportsbook helpers, used by the worker odds engine and the

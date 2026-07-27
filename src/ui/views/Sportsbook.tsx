@@ -5,6 +5,7 @@ import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { showNotification } from "../util/showNotification.ts";
 import type { View } from "../../common/types.ts";
+import type { SportsbookTab } from "../../common/sportsbook.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import { PHASE } from "../../common/constants.ts";
 import { useLocal } from "../util/local.ts";
@@ -85,14 +86,22 @@ const Sportsbook = ({
 	gameLinks,
 	season,
 	phase,
+	tab,
 }: View<"sportsbook">) => {
 	useTitleBar({ title: "Sportsbook" });
 
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 
-	const [tab, setTab] = useState<
-		"games" | "futures" | "awards" | "mybets" | "leaguebets"
-	>("games");
+	// The tab comes from the URL, not from component state, so the back button
+	// and a reload land where you left off rather than resetting to Games.
+	const setTab = (next: SportsbookTab) => {
+		realtimeUpdate(
+			[],
+			helpers.leagueUrl(
+				next === "games" ? ["sportsbook"] : ["sportsbook", "tab", next],
+			),
+		);
+	};
 	const [slipOpenMobile, setSlipOpenMobile] = useState(false);
 	const slip = useBetSlip(wallet.tid, {
 		allStarRosterSize: board.allStarRosterSize,
@@ -941,12 +950,18 @@ const Sportsbook = ({
 					] as const
 				).map(([key, label]) => (
 					<li className="nav-item" key={key}>
-						<button
+						<a
 							className={`nav-link text-nowrap ${tab === key ? "active" : ""}`}
-							onClick={() => setTab(key as typeof tab)}
+							href={helpers.leagueUrl(
+								key === "games" ? ["sportsbook"] : ["sportsbook", "tab", key],
+							)}
+							onClick={(event) => {
+								event.preventDefault();
+								setTab(key);
+							}}
 						>
 							{label}
-						</button>
+						</a>
 					</li>
 				))}
 			</ul>

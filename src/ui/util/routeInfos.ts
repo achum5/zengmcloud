@@ -182,6 +182,7 @@ export const routeInfos = {
 	"/l/:lid/award_races": "awardRaces",
 	"/l/:lid/award_races/:season": "awardRaces",
 	"/l/:lid/sportsbook": "sportsbook",
+	"/l/:lid/sportsbook/tab/:tab": "sportsbook",
 	"/l/:lid/sportsbook/game/:gid": "sportsbookGame",
 	"/l/:lid/trivia_grids": "triviaGrids",
 	"/l/:lid/team_trivia": "triviaTeam",
