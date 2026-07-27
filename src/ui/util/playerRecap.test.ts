@@ -1,4 +1,5 @@
 import { assert, describe, test } from "vitest";
+import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 import { buildPlayerRecapPrompt, parsePlayerRecaps } from "./playerRecap.ts";
 import type { RecapPlayerBatch } from "../../worker/util/getPlayerRecapData.ts";
 
@@ -350,5 +351,15 @@ describe("no future knowledge", () => {
 		const p = { ...player(7, 0), teamAbbrevs: [] };
 		const prompt = buildPlayerRecapPrompt(batch([p]));
 		assert.ok(prompt.includes("no team"));
+	});
+});
+
+describe("fictional league notice", () => {
+	// Names collide with real people by design, and without this the AI writes
+	// about the real person - a college, a hometown, a championship that never
+	// happened here. Every prompt must carry it.
+	test("the prompt says nothing may come from real-world knowledge", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes(FICTIONAL_LEAGUE_NOTICE), prompt.slice(0, 400));
 	});
 });

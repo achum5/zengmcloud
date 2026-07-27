@@ -4,10 +4,13 @@ import type {
 	RecapSeasonTeam,
 } from "../../worker/util/getSeasonRecapData.ts";
 import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
+import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 
 // Instructions for the season-in-review. Kept as one editable constant so the
 // brief can change without touching the data-baking below.
 const INSTRUCTIONS = `You are an expert basketball writer producing a league-wide season in review. Write a season recap for EACH team listed below.
+
+${FICTIONAL_LEAGUE_NOTICE}
 
 You are given a lot of data per team: the team's record and playoff result, its seed, its exact playoff series results (opponent and games won-lost each round — use these for how far a series went; never guess the number of games), its key players' season and postseason lines (with ages, ratings, any awards, each player's transactions, and any major injury history — 50+ games missed, with the season), the franchise's history (championships, playoff appearances, recent seasons), and the transactions that shaped the team. Use whatever tells the best story — how the season met or defied expectations given the roster and moves, breakout or declining players, the franchise's arc, playoff runs or collapses, and how the offseason set the team up. Do NOT dump the raw data back.
 

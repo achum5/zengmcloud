@@ -4,6 +4,7 @@ import type {
 	RecapPlayerBatch,
 } from "../../worker/util/getPlayerRecapData.ts";
 import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
+import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 
 // The league-wide PLAYER season recap: one short piece of writing per player
 // per season, filed into that player's own note under a [year] heading.
@@ -19,6 +20,8 @@ import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 // the last players in the batch.
 
 const INSTRUCTIONS = `You are a basketball writer producing per-player season recaps for a fictional league. Write a recap of the LISTED SEASON for EACH player below.
+
+${FICTIONAL_LEAGUE_NOTICE}
 
 Length: judge it by how much there is to say. A deep-bench player who barely played might get one sentence. A star, or anyone with a real story that year (a breakout, a collapse, an injury, a trade, an award, a title run, a contract year, a rookie debut, a last season), can get up to two short paragraphs. Most players land in between. Never pad a nothing season into paragraphs.
 

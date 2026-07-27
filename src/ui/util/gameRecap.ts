@@ -7,13 +7,14 @@ import type {
 	RecapTeam,
 } from "../../worker/util/getDayGamesForRecap.ts";
 import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
+import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 
 // The instructions half of the prompt. Kept as a single editable constant so it
 // can be swapped for a different writing brief without touching the data-baking
 // logic below.
 const INSTRUCTIONS = `You are an expert basketball beat writer. Write a short "Day in the League" front-page recap for EACH league day requested below, plus a lively, ESPN-style recap for EACH game listed below.
 
-THIS IS A FICTIONAL LEAGUE — USE ONLY THE DATA BELOW, NEVER REAL-WORLD KNOWLEDGE. Player and team names may coincide with real people and franchises, but they are NOT them and share no history. A player has no real-world team, hometown, college, draft position, championships, awards, signature moves, nicknames, rivalries, relationships, or reputation — only what the data below states. Do NOT reference or imply anything about a player or team from outside this data: e.g., do not associate Paul Pierce with the Celtics, assume a player's playing style or position, invoke a real-world rivalry, or call anyone the "real-life" anything. Every team a player has played for, every number, and every storyline must come solely from the data provided. Write as if these people and teams exist only within this league and nowhere else.
+${FICTIONAL_LEAGUE_NOTICE}
 
 You are given far more data than you need — box scores, what each player was averaging ENTERING the game (this game not included), past-season career averages, team records and streaks, quarter-by-quarter scoring, each team's last 10 games, injuries (who's out and who got hurt), the pregame betting line (who was favored and by how many), and (in the playoffs) the series and bracket state, or (in the play-in tournament) the play-in stakes. The games may span several league days (each is labeled with its day) — treat each game's data as of the day it was played, and don't frame games from different days as one night's slate. Use whatever makes the best story: momentum swings by quarter, how a performance compares to a player's norms, records and streaks, injury impact, playoff stakes and series context. If a game is labeled a Play-In Tournament game, frame it as one — it is a single win-or-go-home (or win-and-in) game, not a playoff series, so lean into the stated stakes (a playoff berth on the line, elimination looming). If a game is labeled the ALL-STAR GAME, frame it as a fun midseason exhibition — no records, standings, or playoff stakes — and, using ONLY the data in that block, also cover the All-Star Game MVP and the Slam Dunk Contest and Three-Point Contest results (winner, and the contestants named) as part of that same recap. Do NOT list the raw data back.
 

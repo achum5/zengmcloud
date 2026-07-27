@@ -5,12 +5,15 @@ import type {
 	RetiredStatLine,
 } from "../../worker/util/getRetiredPlayersForRecap.ts";
 import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
+import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 
 // Instructions for the retirement writeups. The key idea: length must follow
 // the career. A 20-year Hall of Famer earns a full retrospective; a fringe role
 // player gets a paragraph; an undrafted player who never logged a game gets a
 // sentence or two. The AI is told this explicitly.
 const INSTRUCTIONS = `You are an expert basketball writer. Write a retirement writeup for EACH player listed below — the kind of career retrospective published when a player hangs it up.
+
+${FICTIONAL_LEAGUE_NOTICE}
 
 CRITICAL — scale the length to the career. Do not give everyone the same treatment:
 - Hall of Famers and decorated stars: a full retrospective (several paragraphs) — the arc of the career, peak, signature seasons, accolades, legacy, where they rank.

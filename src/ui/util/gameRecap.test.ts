@@ -1,4 +1,5 @@
 import { assert, describe, test } from "vitest";
+import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 import { buildRecapPrompt, parseRecaps } from "./gameRecap.ts";
 import type {
 	RecapGame,
@@ -812,5 +813,15 @@ describe("buildRecapPrompt — fenced output", () => {
 		);
 		assert.ok(prompt.includes("```markdown"), prompt);
 		assert.ok(prompt.includes("ONE fenced code block"), prompt);
+	});
+});
+
+describe("fictional league notice", () => {
+	// Names collide with real people by design, and without this the AI writes
+	// about the real person - a college, a hometown, a championship that never
+	// happened here. Every prompt must carry it.
+	test("the prompt says nothing may come from real-world knowledge", () => {
+		const prompt = buildRecapPrompt([game(42)], "Day 7");
+		assert.ok(prompt.includes(FICTIONAL_LEAGUE_NOTICE), prompt.slice(0, 400));
 	});
 });

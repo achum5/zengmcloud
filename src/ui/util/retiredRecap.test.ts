@@ -1,4 +1,5 @@
 import { assert, describe, test } from "vitest";
+import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 import { buildRetiredRecapPrompt, parseRetiredRecaps } from "./retiredRecap.ts";
 import type { RetiredPlayersData } from "../../worker/util/getRetiredPlayersForRecap.ts";
 
@@ -139,5 +140,15 @@ Never suited up.`;
 		assert.strictEqual(map.size, 2);
 		assert.ok(map.get(1)!.startsWith("**A legend walks away**"));
 		assert.ok(map.get(2)!.includes("Never suited up."));
+	});
+});
+
+describe("fictional league notice", () => {
+	// Names collide with real people by design, and without this the AI writes
+	// about the real person - a college, a hometown, a championship that never
+	// happened here. Every prompt must carry it.
+	test("the prompt says nothing may come from real-world knowledge", () => {
+		const prompt = buildRetiredRecapPrompt(data);
+		assert.ok(prompt.includes(FICTIONAL_LEAGUE_NOTICE), prompt.slice(0, 400));
 	});
 });
