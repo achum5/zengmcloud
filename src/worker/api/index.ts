@@ -4360,20 +4360,27 @@ const setNote = async (info: NoteInfo & { editedNote: string }) => {
 const filePlayerSeasonRecaps = async ({
 	season,
 	recaps,
+	kind = "season",
 }: {
 	season: number;
-	recaps: { pid: number; text: string }[];
+	recaps: { pid: number; headline: string; text: string }[];
+	kind?: "season" | "retirement";
 }) => {
 	let filed = 0;
 	const missing: number[] = [];
 
-	for (const { pid, text } of recaps) {
+	for (const { pid, headline, text } of recaps) {
 		const p = await idb.getCopy.players({ pid }, "noCopyCache");
 		if (!p) {
 			missing.push(pid);
 			continue;
 		}
-		const merged = upsertSeasonNote(p.note, season, text);
+		const merged = upsertSeasonNote(p.note, {
+			season,
+			kind,
+			headline,
+			body: text,
+		});
 		if (merged === "") {
 			delete p.note;
 			delete p.noteBool;

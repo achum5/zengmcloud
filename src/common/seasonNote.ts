@@ -1,49 +1,81 @@
-// A player has exactly ONE note, but season recaps are written every year. So
-// the note is kept as a stack of year-headed sections, newest first:
+// A player has exactly ONE note, but writeups are produced every season and
+// again when they retire. So the note is a stack of headed sections, newest
+// first - the most recent thing that happened to them is what you see when the
+// note is collapsed, and reading down is reading backwards through the career:
 //
-//   [2007]
-//   His third straight All-Star year...
+//   [2012] Retirement — The quiet exit
+//   After fourteen seasons...
 //
-//   [2006]
-//   A breakout...
+//   [2012] A farewell tour
+//   His last year in Boston...
 //
-// Writing a year that is already present REPLACES that year's section and
-// leaves every other year alone, so a batch can be safely re-run. Anything the
-// user typed themselves that isn't under a year header is preserved, pushed
-// below the year sections rather than thrown away.
+//   [2011] Still the anchor
+//   ...
+//
+// Writing a section that already exists REPLACES it and leaves every other
+// section alone, so a batch is safe to re-run after a bad reply. A retirement
+// writeup and that same year's season recap are DIFFERENT sections, because a
+// player usually retires in a year he also played.
+//
+// Anything the user typed themselves - text under no header - is preserved and
+// kept at the bottom. It is the one thing here that cannot be regenerated.
 
-// A line that is exactly a bracketed 4-digit year, e.g. "[2007]".
-const YEAR_HEADER = /^\s*\[(\d{4})]\s*$/;
+export type SeasonNoteKind = "season" | "retirement";
 
-export const seasonNoteHeader = (season: number) => `[${season}]`;
+// "[2007]" or "[2007] Some headline", optionally marked as the retirement
+// writeup. An em dash or a plain hyphen both work, since an AI may emit either.
+const HEADER = /^\s*\[(\d{4})]\s*(.*)$/;
+const RETIREMENT_PREFIX = /^Retirement\s*[—-]\s*/;
 
 export type SeasonNoteSection = {
-	// undefined for text that came before any year header (hand-written notes).
+	// undefined for text that came before any header (hand-written notes).
 	season: number | undefined;
+	kind: SeasonNoteKind | undefined;
+	headline: string;
 	body: string;
 };
 
-// Split a note into its year sections, in the order they appear.
+export const renderSectionHeader = (
+	season: number,
+	kind: SeasonNoteKind,
+	headline: string,
+): string => {
+	const label =
+		kind === "retirement"
+			? `Retirement${headline ? ` — ${headline}` : ""}`
+			: headline;
+	return label ? `[${season}] ${label}` : `[${season}]`;
+};
+
 export const parseSeasonNote = (note: string): SeasonNoteSection[] => {
 	const sections: SeasonNoteSection[] = [];
 	let current: SeasonNoteSection | undefined;
 
 	for (const line of note.split("\n")) {
-		const match = YEAR_HEADER.exec(line);
+		const match = HEADER.exec(line);
 		if (match) {
 			if (current) {
 				sections.push(current);
 			}
-			current = { season: Number.parseInt(match[1]!), body: "" };
+			const rest = (match[2] ?? "").trim();
+			const isRetirement = RETIREMENT_PREFIX.test(rest);
+			current = {
+				season: Number.parseInt(match[1]!),
+				kind: isRetirement ? "retirement" : "season",
+				headline: isRetirement ? rest.replace(RETIREMENT_PREFIX, "") : rest,
+				body: "",
+			};
 		} else if (current) {
 			current.body += (current.body === "" ? "" : "\n") + line;
+		} else if (sections.length === 0) {
+			sections.push({
+				season: undefined,
+				kind: undefined,
+				headline: "",
+				body: line,
+			});
 		} else {
-			// Preamble: text with no year header above it.
-			if (sections.length === 0) {
-				sections.push({ season: undefined, body: line });
-			} else {
-				sections[0]!.body += `\n${line}`;
-			}
+			sections[0]!.body += `\n${line}`;
 		}
 	}
 	if (current) {
@@ -58,49 +90,79 @@ export const parseSeasonNote = (note: string): SeasonNoteSection[] => {
 
 export const renderSeasonNote = (sections: SeasonNoteSection[]): string =>
 	sections
-		.filter((section) => section.body !== "" || section.season !== undefined)
+		.filter((section) => section.body !== "" || section.headline !== "")
 		.map((section) =>
-			section.season === undefined
+			section.season === undefined || section.kind === undefined
 				? section.body
-				: `${seasonNoteHeader(section.season)}\n${section.body}`,
+				: [
+						renderSectionHeader(section.season, section.kind, section.headline),
+						section.body,
+					]
+						.filter(Boolean)
+						.join("\n"),
 		)
 		.join("\n\n")
 		.trim();
 
-// Add (or replace) one season's recap in a player's note.
-//
-// Year sections sort newest-first so the most recent season is what you see
-// when the note is collapsed. Free-form text the user wrote keeps its place at
-// the BOTTOM - it is theirs, and it is not about any particular season.
-export const upsertSeasonNote = (
-	existingNote: string | undefined,
-	season: number,
-	recap: string,
-): string => {
-	const body = recap.trim();
-	const sections = parseSeasonNote(existingNote ?? "");
-
-	const freeform = sections.filter((section) => section.season === undefined);
-	const years = sections.filter((section) => section.season !== undefined);
-
-	const index = years.findIndex((section) => section.season === season);
-	if (index >= 0) {
-		years[index] = { season, body };
-	} else {
-		years.push({ season, body });
+// Newest first. Within one year the retirement writeup sits above that year's
+// season recap, because retiring is the last thing that happened.
+const orderSections = (a: SeasonNoteSection, b: SeasonNoteSection) => {
+	const seasonDiff = (b.season ?? 0) - (a.season ?? 0);
+	if (seasonDiff !== 0) {
+		return seasonDiff;
 	}
-
-	years.sort((a, b) => (b.season ?? 0) - (a.season ?? 0));
-
-	return renderSeasonNote([...years, ...freeform]);
+	const rank = (s: SeasonNoteSection) => (s.kind === "retirement" ? 0 : 1);
+	return rank(a) - rank(b);
 };
 
-// Does this note already have a recap for the season? Used to skip work and to
-// report how much of a season is already written.
+// Add (or replace) one section of a player's note.
+export const upsertSeasonNote = (
+	existingNote: string | undefined,
+	{
+		season,
+		kind = "season",
+		headline = "",
+		body,
+	}: {
+		season: number;
+		kind?: SeasonNoteKind;
+		headline?: string;
+		body: string;
+	},
+): string => {
+	const sections = parseSeasonNote(existingNote ?? "");
+	const freeform = sections.filter((section) => section.season === undefined);
+	const headed = sections.filter((section) => section.season !== undefined);
+
+	const next: SeasonNoteSection = {
+		season,
+		kind,
+		headline: headline.trim(),
+		body: body.trim(),
+	};
+
+	const index = headed.findIndex(
+		(section) => section.season === season && section.kind === kind,
+	);
+	if (index >= 0) {
+		headed[index] = next;
+	} else {
+		headed.push(next);
+	}
+
+	headed.sort(orderSections);
+
+	return renderSeasonNote([...headed, ...freeform]);
+};
+
+// Does this note already have a section for the season? Used to report how much
+// of a season is already written.
 export const hasSeasonNote = (
 	existingNote: string | undefined,
 	season: number,
+	kind: SeasonNoteKind = "season",
 ): boolean =>
 	parseSeasonNote(existingNote ?? "").some(
-		(section) => section.season === season && section.body !== "",
+		(section) =>
+			section.season === season && section.kind === kind && section.body !== "",
 	);

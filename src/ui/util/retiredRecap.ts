@@ -24,7 +24,8 @@ Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the writeups, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
 - Inside the fence, write GitHub-flavored Markdown only, with no text outside the per-player writeups.
 - Begin every player's writeup with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each writeup is filed to the correct player — never omit it, never change it.
-- After the marker, lead with a bold one-line headline, then the writeup at the length the career warrants.
+- The line straight after the marker is a HEADLINE: a few words, title-style, no ending period, no bold, no brackets, and no year (the year is added automatically). Make it about how this career is remembered ("The quiet exit", "Sixteen years, one team").
+- Then a blank line, then the writeup at the length the career warrants.
 - Bold the player's name on first mention. Put exactly one blank line between players.`;
 
 const heightText = (inches: number | undefined): string | undefined => {

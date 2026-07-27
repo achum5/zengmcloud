@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { toWorker } from "../util/toWorker.ts";
-import {
-	buildRetiredRecapPrompt,
-	parseRetiredRecaps,
-} from "../util/retiredRecap.ts";
+import { buildRetiredRecapPrompt } from "../util/retiredRecap.ts";
 import { RecapAIButton } from "./RecapAIButton.tsx";
+import { parsePlayerRecaps } from "../util/playerRecap.ts";
 
 // A Copy/Claude/Paste workflow for every player who retired in a season. The
 // Copy button bakes each retiree's full career into one prompt; pasting the AI
-// reply files a writeup onto each player's own note. Length of each writeup
+// reply PREPENDS a retirement section to each player's own note, above every
+// season recap already written for them. Length of each writeup
 // scales with the career (Hall of Famer vs. undrafted never-played).
 export const RetiredRecap = ({ season }: { season: number }) => {
 	const [prompt, setPrompt] = useState<string | undefined>();
@@ -77,20 +76,25 @@ export const RetiredRecap = ({ season }: { season: number }) => {
 		setBusy(true);
 		setResult(undefined);
 		try {
-			const recaps = parseRetiredRecaps(text);
+			const recaps = parsePlayerRecaps(text);
 			if (recaps.size === 0) {
 				setResult(
 					"Couldn't find any writeups in what was pasted — paste the AI's full reply (each keeps its <!--player:…--> marker).",
 				);
 				return;
 			}
-			for (const [pid, note] of recaps) {
-				await toWorker("main", "setNote", {
-					type: "player",
+			// Prepended as a retirement section rather than replacing the note, so
+			// a player keeps every season recap already written for them and the
+			// writeup lands on top as the last thing that happened.
+			await toWorker("main", "filePlayerSeasonRecaps", {
+				season,
+				kind: "retirement",
+				recaps: [...recaps].map(([pid, recap]) => ({
 					pid,
-					editedNote: note,
-				});
-			}
+					headline: recap.headline,
+					text: recap.body,
+				})),
+			});
 			setManual(undefined);
 			setPasted(true);
 			globalThis.setTimeout(() => setPasted(false), 3000);

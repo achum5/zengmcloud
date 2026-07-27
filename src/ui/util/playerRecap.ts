@@ -28,8 +28,9 @@ Write about them as people with careers. Do not dump the data back — weave the
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no summary.
 - Begin every player's recap with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each recap is filed to the correct player — never omit it, never change it.
-- After the marker, write the recap as plain prose. No headline, no stat table, no bullet lists.
-- Do NOT write the season year as a heading — it is added automatically.
+- The line straight after the marker is a HEADLINE: a few words, title-style, no ending period, no bold, no brackets. Make it specific to that player's year ("A leap in Sacramento", "Hurt again", "The last dance") — never generic like "Season Recap".
+- Then a blank line, then the recap itself as plain prose. No stat table, no bullet lists.
+- Do NOT write the season year anywhere in the headline — it is added automatically.
 - Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
 - Put exactly one blank line between players.`;
 
@@ -191,12 +192,28 @@ export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
 	);
 };
 
-// Pull each player's recap out of the AI's reply, keyed by pid. Same shape as
-// parseSeasonRecaps: everything from one marker up to the next belongs to that
-// player.
-export const parsePlayerRecaps = (rawText: string): Map<number, string> => {
+// Pull each player's recap out of the AI's reply, keyed by pid. Everything from
+// one marker up to the next belongs to that player: the first non-empty line is
+// the headline, the rest is the body.
+export type ParsedPlayerRecap = {
+	headline: string;
+	body: string;
+};
+
+// Strip the decoration an AI reaches for on a heading even when told not to.
+const cleanHeadline = (line: string) =>
+	line
+		.replace(/^#+\s*/, "")
+		.replaceAll("**", "")
+		.replace(/^\[|]$/g, "")
+		.replace(/[.:]\s*$/, "")
+		.trim();
+
+export const parsePlayerRecaps = (
+	rawText: string,
+): Map<number, ParsedPlayerRecap> => {
 	const text = stripOuterCodeFence(rawText);
-	const out = new Map<number, string>();
+	const out = new Map<number, ParsedPlayerRecap>();
 
 	const re = /<!--\s*player:\s*(\d+)\s*-->/g;
 	const markers: { pid: number; start: number; end: number }[] = [];
@@ -212,9 +229,21 @@ export const parsePlayerRecaps = (rawText: string): Map<number, string> => {
 
 	for (const [i, marker] of markers.entries()) {
 		const bodyEnd = markers[i + 1]?.start ?? text.length;
-		const body = text.slice(marker.end, bodyEnd).trim();
-		if (body !== "") {
-			out.set(marker.pid, body);
+		const chunk = text.slice(marker.end, bodyEnd).trim();
+		if (chunk === "") {
+			continue;
+		}
+
+		const lines = chunk.split("\n");
+		const headline = cleanHeadline(lines[0] ?? "");
+		const body = lines.slice(1).join("\n").trim();
+
+		// If the AI ignored the headline instruction and went straight into prose,
+		// keep the whole thing as the body rather than eating its first line.
+		if (body === "" || headline.length > 80) {
+			out.set(marker.pid, { headline: "", body: chunk });
+		} else {
+			out.set(marker.pid, { headline, body });
 		}
 	}
 

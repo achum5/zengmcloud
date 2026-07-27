@@ -91,7 +91,11 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 
 			const response = await toWorker("main", "filePlayerSeasonRecaps", {
 				season,
-				recaps: [...recaps].map(([pid, note]) => ({ pid, text: note })),
+				recaps: [...recaps].map(([pid, recap]) => ({
+					pid,
+					headline: recap.headline,
+					text: recap.body,
+				})),
 			});
 
 			setManual(undefined);

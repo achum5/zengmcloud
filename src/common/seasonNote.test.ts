@@ -5,90 +5,131 @@ import {
 	upsertSeasonNote,
 } from "./seasonNote.ts";
 
+const season = (
+	note: string | undefined,
+	yr: number,
+	headline: string,
+	body: string,
+) => upsertSeasonNote(note, { season: yr, headline, body });
+
 describe("upsertSeasonNote", () => {
-	test("writes the first season into an empty note", () => {
+	test("writes a headed section into an empty note", () => {
 		assert.strictEqual(
-			upsertSeasonNote(undefined, 2005, "A rookie year."),
+			season(undefined, 2005, "The rookie who could", "A rookie year."),
+			"[2005] The rookie who could\nA rookie year.",
+		);
+	});
+
+	test("a headline is optional", () => {
+		assert.strictEqual(
+			season(undefined, 2005, "", "A rookie year."),
 			"[2005]\nA rookie year.",
 		);
+	});
+
+	test("newest season goes on top", () => {
+		const note = season(
+			season(undefined, 2005, "Rookie", "First."),
+			2006,
+			"Leap",
+			"Second.",
+		);
+		assert.strictEqual(note, "[2006] Leap\nSecond.\n\n[2005] Rookie\nFirst.");
+	});
+
+	test("an older season backfills into place, not on top", () => {
+		const note = season(
+			season(undefined, 2006, "Leap", "Second."),
+			2005,
+			"Rookie",
+			"First.",
+		);
+		assert.strictEqual(note, "[2006] Leap\nSecond.\n\n[2005] Rookie\nFirst.");
+	});
+
+	test("re-running a season replaces it and leaves the others", () => {
+		let note = season(undefined, 2005, "A", "First.");
+		note = season(note, 2006, "B", "Second.");
+		note = season(note, 2007, "C", "Third.");
+		note = season(note, 2006, "B2", "Second, rewritten.");
 		assert.strictEqual(
-			upsertSeasonNote("", 2005, "A rookie year."),
-			"[2005]\nA rookie year.",
+			note,
+			"[2007] C\nThird.\n\n[2006] B2\nSecond, rewritten.\n\n[2005] A\nFirst.",
 		);
 	});
 
-	test("a newer season goes on top", () => {
-		const note = upsertSeasonNote("[2005]\nRookie year.", 2006, "Sophomore.");
-		assert.strictEqual(note, "[2006]\nSophomore.\n\n[2005]\nRookie year.");
+	test("re-running never duplicates a year", () => {
+		let note = season(undefined, 2005, "A", "One.");
+		note = season(note, 2005, "B", "Two.");
+		note = season(note, 2005, "C", "Three.");
+		assert.strictEqual(note, "[2005] C\nThree.");
 	});
 
-	test("an older season slots into place, not on top", () => {
-		// Recaps can be run out of order (e.g. backfilling an old season).
-		const note = upsertSeasonNote("[2006]\nSophomore.", 2005, "Rookie year.");
-		assert.strictEqual(note, "[2006]\nSophomore.\n\n[2005]\nRookie year.");
-	});
-
-	test("re-running a season replaces that year and leaves the others", () => {
-		const before = "[2007]\nThird.\n\n[2006]\nSecond.\n\n[2005]\nFirst.";
-		const after = upsertSeasonNote(before, 2006, "Second, rewritten.");
+	test("a retirement writeup sits above that same year's season recap", () => {
+		// A player normally retires in a year he also played, so these must be
+		// separate sections rather than one overwriting the other.
+		let note = season(undefined, 2012, "Farewell tour", "His last year.");
+		note = upsertSeasonNote(note, {
+			season: 2012,
+			kind: "retirement",
+			headline: "The quiet exit",
+			body: "After fourteen seasons...",
+		});
 		assert.strictEqual(
-			after,
-			"[2007]\nThird.\n\n[2006]\nSecond, rewritten.\n\n[2005]\nFirst.",
+			note,
+			"[2012] Retirement — The quiet exit\nAfter fourteen seasons...\n\n[2012] Farewell tour\nHis last year.",
 		);
 	});
 
-	test("re-running does not duplicate the year", () => {
-		let note = upsertSeasonNote(undefined, 2005, "One.");
-		note = upsertSeasonNote(note, 2005, "Two.");
-		note = upsertSeasonNote(note, 2005, "Three.");
-		assert.strictEqual(note, "[2005]\nThree.");
+	test("a retirement writeup can itself be re-run", () => {
+		let note = upsertSeasonNote(undefined, {
+			season: 2012,
+			kind: "retirement",
+			headline: "First take",
+			body: "One.",
+		});
+		note = upsertSeasonNote(note, {
+			season: 2012,
+			kind: "retirement",
+			headline: "Second take",
+			body: "Two.",
+		});
+		assert.strictEqual(note, "[2012] Retirement — Second take\nTwo.");
 	});
 
-	test("hand-written text is preserved, below the year sections", () => {
-		// Someone's own note about a player must never be destroyed by a recap.
+	test("hand-written text is preserved, below the headed sections", () => {
 		const before = "My favorite player. Traded for him in a heist.";
-		const after = upsertSeasonNote(before, 2005, "A rookie year.");
+		const after = season(before, 2005, "Rookie", "A rookie year.");
 		assert.strictEqual(
 			after,
-			"[2005]\nA rookie year.\n\nMy favorite player. Traded for him in a heist.",
+			"[2005] Rookie\nA rookie year.\n\nMy favorite player. Traded for him in a heist.",
 		);
-		// And it survives a second season being written.
-		const after2 = upsertSeasonNote(after, 2006, "Sophomore.");
+		const after2 = season(after, 2006, "Leap", "Sophomore.");
 		assert.ok(after2.includes("Traded for him in a heist."));
 		assert.ok(after2.indexOf("[2006]") < after2.indexOf("[2005]"));
 	});
 
-	test("multi-paragraph recaps keep their paragraphs", () => {
-		const recap = "First paragraph.\n\nSecond paragraph.";
-		const note = upsertSeasonNote(undefined, 2005, recap);
-		assert.strictEqual(note, "[2005]\nFirst paragraph.\n\nSecond paragraph.");
-		// And the year sections still parse back apart correctly.
-		const sections = parseSeasonNote(upsertSeasonNote(note, 2006, "Next."));
+	test("multi-paragraph bodies keep their paragraphs", () => {
+		const body = "First paragraph.\n\nSecond paragraph.";
+		const note = season(undefined, 2005, "Big year", body);
+		const sections = parseSeasonNote(season(note, 2006, "Next", "Next."));
 		assert.deepStrictEqual(
-			sections.map((s) => s.season),
+			sections.map((x) => x.season),
 			[2006, 2005],
 		);
-		assert.strictEqual(sections[1]!.body, recap);
-	});
-
-	test("surrounding whitespace is normalized away", () => {
-		assert.strictEqual(
-			upsertSeasonNote(undefined, 2005, "\n\n  Padded.  \n\n"),
-			"[2005]\nPadded.",
-		);
+		assert.strictEqual(sections[1]!.body, body);
+		assert.strictEqual(sections[1]!.headline, "Big year");
 	});
 
 	test("a bracketed year inside prose is not treated as a header", () => {
-		// Only a line that is EXACTLY a year header splits a section, so a recap
-		// mentioning "[2005]" mid-sentence can't corrupt the structure.
-		const note = upsertSeasonNote(
+		const note = season(
 			undefined,
 			2006,
+			"Fading",
 			"He never matched his [2005] peak.",
 		);
-		assert.strictEqual(note, "[2006]\nHe never matched his [2005] peak.");
 		assert.deepStrictEqual(
-			parseSeasonNote(note).map((s) => s.season),
+			parseSeasonNote(note).map((x) => x.season),
 			[2006],
 		);
 	});
@@ -96,18 +137,30 @@ describe("upsertSeasonNote", () => {
 
 describe("hasSeasonNote", () => {
 	test("finds a season that has been written", () => {
-		const note = "[2006]\nSecond.\n\n[2005]\nFirst.";
+		const note = season(
+			season(undefined, 2005, "A", "First."),
+			2006,
+			"B",
+			"Second.",
+		);
 		assert.strictEqual(hasSeasonNote(note, 2006), true);
 		assert.strictEqual(hasSeasonNote(note, 2005), true);
 		assert.strictEqual(hasSeasonNote(note, 2004), false);
 	});
 
+	test("a retirement writeup doesn't count as that year's season recap", () => {
+		const note = upsertSeasonNote(undefined, {
+			season: 2012,
+			kind: "retirement",
+			headline: "Exit",
+			body: "Done.",
+		});
+		assert.strictEqual(hasSeasonNote(note, 2012), false);
+		assert.strictEqual(hasSeasonNote(note, 2012, "retirement"), true);
+	});
+
 	test("an empty note has nothing", () => {
 		assert.strictEqual(hasSeasonNote(undefined, 2005), false);
 		assert.strictEqual(hasSeasonNote("", 2005), false);
-	});
-
-	test("a header with no body doesn't count as written", () => {
-		assert.strictEqual(hasSeasonNote("[2005]\n", 2005), false);
 	});
 });

@@ -93,6 +93,7 @@ describe("buildPlayerRecapPrompt", () => {
 		assert.ok(prompt.includes("PLAYER <7>"));
 		assert.ok(prompt.includes("PLAYER <9>"));
 		assert.ok(prompt.includes("<!--player:ID-->"));
+		assert.ok(prompt.includes("HEADLINE"));
 	});
 
 	test("carries the whole career, not just the listed season", () => {
@@ -123,13 +124,17 @@ describe("buildPlayerRecapPrompt", () => {
 });
 
 describe("parsePlayerRecaps", () => {
-	test("splits a reply into one recap per player", () => {
+	test("splits a reply into a headline and body per player", () => {
 		const reply = [
 			"```markdown",
 			"<!--player:7-->",
-			"A quiet year off the bench.",
+			"A quiet year on the bench",
+			"",
+			"He barely played.",
 			"",
 			"<!--player:9-->",
+			"The leap",
+			"",
 			"First paragraph.",
 			"",
 			"Second paragraph.",
@@ -137,24 +142,51 @@ describe("parsePlayerRecaps", () => {
 		].join("\n");
 		const recaps = parsePlayerRecaps(reply);
 		assert.strictEqual(recaps.size, 2);
-		assert.strictEqual(recaps.get(7), "A quiet year off the bench.");
-		assert.strictEqual(recaps.get(9), "First paragraph.\n\nSecond paragraph.");
+		assert.deepStrictEqual(recaps.get(7), {
+			headline: "A quiet year on the bench",
+			body: "He barely played.",
+		});
+		assert.deepStrictEqual(recaps.get(9), {
+			headline: "The leap",
+			body: "First paragraph.\n\nSecond paragraph.",
+		});
 	});
 
-	test("works without a code fence", () => {
+	test("strips decoration the AI adds to a headline anyway", () => {
+		// Told "no bold, no heading marks" - but they show up regardless, and a
+		// stray "**" in the note header would look broken.
+		const recaps = parsePlayerRecaps(
+			"<!--player:1-->\n## **The leap.**\n\nBody text.",
+		);
+		assert.strictEqual(recaps.get(1)!.headline, "The leap");
+	});
+
+	test("a recap with no headline keeps its whole text as the body", () => {
+		// Rather than silently eating the first sentence as a headline.
 		const recaps = parsePlayerRecaps("<!--player:4-->\nSolid rotation year.");
-		assert.strictEqual(recaps.get(4), "Solid rotation year.");
+		assert.deepStrictEqual(recaps.get(4), {
+			headline: "",
+			body: "Solid rotation year.",
+		});
+	});
+
+	test("a long first line is treated as prose, not a headline", () => {
+		const long =
+			"He came into the season with something to prove after a difficult year, and by the All-Star break he had proved it.";
+		const recaps = parsePlayerRecaps(`<!--player:5-->\n${long}\n\nMore text.`);
+		assert.strictEqual(recaps.get(5)!.headline, "");
+		assert.ok(recaps.get(5)!.body.startsWith("He came into"));
 	});
 
 	test("tolerates whitespace inside the marker", () => {
-		const recaps = parsePlayerRecaps("<!-- player: 12 -->\nText.");
-		assert.strictEqual(recaps.get(12), "Text.");
+		const recaps = parsePlayerRecaps("<!-- player: 12 -->\nHeadline\n\nText.");
+		assert.strictEqual(recaps.get(12)!.body, "Text.");
 	});
 
 	test("a marker with no body is dropped rather than filed empty", () => {
-		// Otherwise a truncated reply would wipe that player's season section.
+		// Otherwise a truncated reply would wipe that player's section.
 		const recaps = parsePlayerRecaps(
-			"<!--player:1-->\nReal text.\n\n<!--player:2-->\n",
+			"<!--player:1-->\nHeadline\n\nReal text.\n\n<!--player:2-->\n",
 		);
 		assert.strictEqual(recaps.size, 1);
 		assert.strictEqual(recaps.has(2), false);
