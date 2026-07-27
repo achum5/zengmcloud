@@ -103,21 +103,7 @@ const UpcomingFreeAgents = ({
 				...(phase === PHASE.RESIGN_PLAYERS
 					? []
 					: [wrappedCurrency(p.contract.amount, "M")]),
-				{
-					value: (
-						<>
-							{helpers.formatCurrency(p.contractDesired.amount, "M")}
-							{p.contractDesiredLow !== undefined ? (
-								<div className="text-body-secondary small text-nowrap">
-									{helpers.formatCurrency(p.contractDesiredLow, "M")}–
-									{helpers.formatCurrency(p.contractDesiredHigh, "M")}
-								</div>
-							) : null}
-						</>
-					),
-					sortValue: p.contractDesired.amount,
-					searchValue: helpers.formatCurrency(p.contractDesired.amount, "M"),
-				},
+				wrappedCurrency(p.contractDesired.amount, "M"),
 			],
 			classNames: {
 				"table-info": p.tid === userTid,
@@ -145,11 +131,6 @@ const UpcomingFreeAgents = ({
 				</p>
 			) : null}
 
-			<p>
-				The projection is the middle of several runs of the same bidding the
-				game uses to price free agents; the smaller number below it is the range
-				those runs landed in.
-			</p>
 			<p>
 				"Projected mood" is based on projected salary demands, not on projected
 				future team performance or any other factors.

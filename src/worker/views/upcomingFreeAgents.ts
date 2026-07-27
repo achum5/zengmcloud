@@ -51,7 +51,7 @@ const updateUpcomingFreeAgents = async (
 		p.contractDesired = player.genContract(p, false); // No randomization
 		const projected = auctionAmounts?.get(p.pid);
 		if (projected !== undefined) {
-			p.contractDesired.amount = projected.amount;
+			p.contractDesired.amount = projected;
 		}
 		p.contractDesired.exp += inputs.season - g.get("season");
 
@@ -85,19 +85,9 @@ const updateUpcomingFreeAgents = async (
 		}),
 	);
 
-	// Apply mood. The band is scaled by the same factor rather than re-running
-	// moodInfos for each end of it - mood is a multiplier on the asking price, so
-	// scaling keeps the range consistent with the number it brackets at a third
-	// of the cost.
+	// Apply mood.
 	for (const p of players) {
 		p.contractDesired.amount = p.mood.user.contractAmount / 1000;
-
-		const projected = auctionAmounts?.get(p.pid);
-		if (projected && projected.amount > 0 && projected.low !== projected.high) {
-			const multiplier = p.mood.user.contractAmount / projected.amount;
-			p.contractDesiredLow = (projected.low * multiplier) / 1000;
-			p.contractDesiredHigh = (projected.high * multiplier) / 1000;
-		}
 	}
 
 	const projectedPayroll = await team.getPayroll(
