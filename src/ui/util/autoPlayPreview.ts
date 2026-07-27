@@ -12,28 +12,50 @@ export type PreviewDay = {
 	allStar?: boolean;
 };
 
+// How many league days each Play Menu preset advances. "days" isn't here - it
+// carries its own count on the rule.
+export type AmountDays = Record<"day" | "week" | "month", number>;
+
 // What getAutoPlayPreview returns from the worker.
 export type AutoPlayPreviewData = {
 	phase: number;
 	season: number;
 	upcomingDays: PreviewDay[];
-	amountDays: Record<AutoPlayAmount, number>;
+	amountDays: AmountDays;
 	phaseEndNote?: string;
 };
 
-// A scheduled fire on the real clock, with the league days it will cover.
-export type ProjectedFire = {
+// One fire, resolved to the number of league days it will try to advance.
+export type Fire = {
 	at: number;
 	amount: AutoPlayAmount;
+	// Only meaningful when amount is "days".
+	numDays: number;
+	ruleId: string;
+	label?: string;
+};
+
+// A scheduled fire on the real clock, with the league days it will cover.
+export type ProjectedFire = Fire & {
 	fromDay: number;
 	toDay: number;
-	numDays: number;
+	numLeagueDays: number;
 	numGames: number;
 	events: string[];
 	// True when this fire consumes the last known scheduled day (the current
 	// phase's schedule runs out here).
 	endsPhase: boolean;
 };
+
+// League days one fire advances. A preset asks the worker how long it is; a
+// custom "N days" rule already knows.
+export const stepDays = (
+	fire: { amount: AutoPlayAmount; numDays: number },
+	amountDays: AmountDays,
+): number =>
+	fire.amount === "days"
+		? Math.max(1, Math.round(fire.numDays))
+		: Math.max(1, amountDays[fire.amount] ?? 1);
 
 // Has the league been simmed THROUGH a "stop after" target? True once the season
 // has moved past the target's season, or (same season) the next day to play is
@@ -55,16 +77,22 @@ export const nextFires = (
 	rules: ScheduleRule[],
 	from: Date,
 	max: number,
-): { at: number; amount: AutoPlayAmount }[] => {
+): Fire[] => {
 	const enabled = rules.filter((rule) => rule.enabled);
-	const out: { at: number; amount: AutoPlayAmount }[] = [];
+	const out: Fire[] = [];
 	let cursor = from.getTime();
 	for (let i = 0; i < max; i++) {
-		let best: { at: number; amount: AutoPlayAmount } | undefined;
+		let best: Fire | undefined;
 		for (const rule of enabled) {
 			const at = nextFireForRule(rule, new Date(cursor));
 			if (at !== undefined && (best === undefined || at < best.at)) {
-				best = { at, amount: rule.amount };
+				best = {
+					at,
+					amount: rule.amount,
+					numDays: rule.numDays,
+					ruleId: rule.id,
+					label: rule.label,
+				};
 			}
 		}
 		if (!best) {
@@ -78,13 +106,13 @@ export const nextFires = (
 };
 
 // Map each real-clock fire onto the league days it will advance, walking a cursor
-// through the scheduled days. A fire advances up to amountDays[amount] scheduled
-// days, but no further than the schedule reaches (BBGM caps a sim at the days
-// left in the phase). Stops once the schedule is exhausted.
+// through the scheduled days. A fire advances up to its own step, but no further
+// than the schedule reaches (BBGM caps a sim at the days left in the phase).
+// Stops once the schedule is exhausted.
 export const projectFires = (
-	fires: { at: number; amount: AutoPlayAmount }[],
+	fires: Fire[],
 	upcomingDays: PreviewDay[],
-	amountDays: Record<AutoPlayAmount, number>,
+	amountDays: AmountDays,
 	phaseEndNote: string | undefined,
 ): ProjectedFire[] => {
 	const out: ProjectedFire[] = [];
@@ -93,7 +121,7 @@ export const projectFires = (
 		if (cursor >= upcomingDays.length) {
 			break;
 		}
-		const step = Math.max(1, amountDays[fire.amount] ?? 1);
+		const step = stepDays(fire, amountDays);
 		const end = Math.min(cursor + step, upcomingDays.length);
 		const slice = upcomingDays.slice(cursor, end);
 		const numGames = slice.reduce((sum, day) => sum + day.numGames, 0);
@@ -113,11 +141,10 @@ export const projectFires = (
 		}
 
 		out.push({
-			at: fire.at,
-			amount: fire.amount,
+			...fire,
 			fromDay: slice[0]!.day,
-			toDay: slice[slice.length - 1]!.day,
-			numDays: slice.length,
+			toDay: slice.at(-1)!.day,
+			numLeagueDays: slice.length,
 			numGames,
 			events,
 			endsPhase,

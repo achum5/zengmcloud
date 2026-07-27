@@ -5,7 +5,11 @@ import {
 	projectFires,
 	type PreviewDay,
 } from "./autoPlayPreview.ts";
-import { newRule, type ScheduleRule } from "./scheduleTime.ts";
+import {
+	newRule,
+	type AutoPlayAmount,
+	type ScheduleRule,
+} from "./scheduleTime.ts";
 
 const rule = (patch: Partial<ScheduleRule>): ScheduleRule => ({
 	...newRule(),
@@ -42,6 +46,21 @@ describe("nextFires", () => {
 		assert.strictEqual(fires[1]!.amount, "day"); // then 9pm
 	});
 
+	test("carries each rule's custom day count and id", () => {
+		const custom = rule({
+			mode: "at",
+			times: ["09:00"],
+			amount: "days",
+			numDays: 5,
+			label: "Morning burst",
+		});
+		const fires = nextFires([custom], new Date("2026-01-01T06:00:00"), 1);
+		assert.strictEqual(fires[0]!.amount, "days");
+		assert.strictEqual(fires[0]!.numDays, 5);
+		assert.strictEqual(fires[0]!.ruleId, custom.id);
+		assert.strictEqual(fires[0]!.label, "Morning burst");
+	});
+
 	test("ignores disabled rules", () => {
 		const off = rule({ enabled: false, mode: "at", times: ["09:00"] });
 		assert.strictEqual(
@@ -52,7 +71,12 @@ describe("nextFires", () => {
 });
 
 describe("projectFires", () => {
-	const fire = (amount: "day" | "week" | "month", at = 0) => ({ at, amount });
+	const fire = (amount: AutoPlayAmount, at = 0, numDays = 1) => ({
+		at,
+		amount,
+		numDays,
+		ruleId: "r",
+	});
 
 	const days = (n: number, from = 1): PreviewDay[] =>
 		Array.from({ length: n }, (_, i) => ({ day: from + i, numGames: 5 }));
@@ -62,7 +86,7 @@ describe("projectFires", () => {
 		assert.strictEqual(p.length, 1);
 		assert.strictEqual(p[0]!.fromDay, 1);
 		assert.strictEqual(p[0]!.toDay, 1);
-		assert.strictEqual(p[0]!.numDays, 1);
+		assert.strictEqual(p[0]!.numLeagueDays, 1);
 		assert.strictEqual(p[0]!.numGames, 5);
 	});
 
@@ -70,7 +94,7 @@ describe("projectFires", () => {
 		const p = projectFires([fire("week")], days(10), amountDays, undefined);
 		assert.strictEqual(p[0]!.fromDay, 1);
 		assert.strictEqual(p[0]!.toDay, 7);
-		assert.strictEqual(p[0]!.numDays, 7);
+		assert.strictEqual(p[0]!.numLeagueDays, 7);
 		assert.strictEqual(p[0]!.numGames, 35);
 	});
 
@@ -100,9 +124,38 @@ describe("projectFires", () => {
 			"Regular season ends, playoffs begin",
 		);
 		assert.strictEqual(p.length, 1);
-		assert.strictEqual(p[0]!.numDays, 3);
+		assert.strictEqual(p[0]!.numLeagueDays, 3);
 		assert.ok(p[0]!.endsPhase);
 		assert.ok(p[0]!.events.includes("Regular season ends, playoffs begin"));
+	});
+
+	test("a custom N-day sim covers exactly N league days", () => {
+		// The whole point of "sim N days": a rule can pick any length, not just
+		// the three Play Menu presets.
+		const p = projectFires(
+			[fire("days", 0, 3), fire("days", 1, 3)],
+			days(10),
+			amountDays,
+			undefined,
+		);
+		assert.deepEqual(
+			p.map((f) => [f.fromDay, f.toDay]),
+			[
+				[1, 3],
+				[4, 6],
+			],
+		);
+		assert.strictEqual(p[0]!.numGames, 15);
+	});
+
+	test("a custom count below 1 still advances one day", () => {
+		const p = projectFires(
+			[fire("days", 0, 0)],
+			days(5),
+			amountDays,
+			undefined,
+		);
+		assert.strictEqual(p[0]!.numLeagueDays, 1);
 	});
 
 	test("stops projecting once the schedule is exhausted", () => {

@@ -102,8 +102,11 @@ const getNumDaysPlayoffs = async () => {
 	);
 };
 
+// `amount` may also be an explicit number of league days, which is how the Auto
+// Play scheduler runs a rule set to "sim N days" - the presets are just the
+// three the Play Menu offers, and there is nothing special about them.
 const playAmount = async (
-	amount: "day" | "week" | "month" | "untilPreseason",
+	amount: "day" | "week" | "month" | "untilPreseason" | number,
 	conditions: Conditions,
 ) => {
 	if (lock.get("gameSim")) {
@@ -112,7 +115,9 @@ const playAmount = async (
 
 	let numDays;
 
-	if (amount === "day") {
+	if (typeof amount === "number") {
+		numDays = Math.max(1, Math.round(amount));
+	} else if (amount === "day") {
 		numDays = 1;
 	} else if (amount === "week") {
 		numDays =
@@ -175,6 +180,11 @@ const playMenu = {
 	},
 	day: async (param: unknown, conditions: Conditions) => {
 		await playAmount("day", conditions);
+	},
+	// An arbitrary number of league days, for Auto Play's custom-length rules.
+	days: async (param: unknown, conditions: Conditions) => {
+		const numDays = typeof param === "number" ? param : 1;
+		await playAmount(numDays, conditions);
 	},
 	week: async (param: unknown, conditions: Conditions) => {
 		await playAmount("week", conditions);

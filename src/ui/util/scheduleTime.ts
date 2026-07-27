@@ -2,21 +2,29 @@
 // of any worker/DOM imports so it can be unit-tested in isolation (the scheduler
 // itself pulls in toWorker, which instantiates a real Worker).
 
-export type AutoPlayAmount = "day" | "week" | "month";
+// "days" carries its own count in `numDays`, so a rule can sim any number of
+// league days rather than only the three Play Menu presets.
+export type AutoPlayAmount = "day" | "week" | "month" | "days";
 
 export type ScheduleRule = {
 	id: string;
 	enabled: boolean;
+	// Optional name, so a list of rules is readable at a glance.
+	label?: string;
 	// Days of week this rule runs, 0=Sun … 6=Sat. Empty = every day.
 	days: number[];
 	mode: "at" | "every";
 	// mode "at": fire once at each of these "HH:MM" times.
 	times: string[];
-	// mode "every": fire every `everyMinutes` within the [start, end] window.
+	// mode "every": fire every `everyMinutes` within the [start, end] window. An
+	// end EARLIER than the start means the window runs overnight into the next
+	// day, which is the normal shape for an unattended sim.
 	start: string; // "HH:MM"
 	end: string; // "HH:MM"
 	everyMinutes: number;
 	amount: AutoPlayAmount;
+	// Only meaningful when amount is "days".
+	numDays: number;
 };
 
 const makeId = (): string => {
@@ -36,7 +44,52 @@ export const newRule = (): ScheduleRule => ({
 	end: "23:59",
 	everyMinutes: 30,
 	amount: "day",
+	numDays: 3,
 });
+
+export const DAY_NAMES = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+// "09:00" → "9:00 AM"
+export const to12h = (hhmm: string): string => {
+	const [hStr, m = "00"] = (hhmm ?? "").split(":");
+	const h = Number(hStr);
+	if (Number.isNaN(h)) {
+		return hhmm;
+	}
+	const ampm = h < 12 ? "AM" : "PM";
+	const h12 = h % 12 === 0 ? 12 : h % 12;
+	return `${h12}:${m} ${ampm}`;
+};
+
+// What one fire of this rule advances, in words.
+export const describeAmount = (rule: {
+	amount: AutoPlayAmount;
+	numDays: number;
+}): string => {
+	if (rule.amount === "days") {
+		const n = Math.max(1, Math.round(rule.numDays));
+		return n === 1 ? "1 day" : `${n} days`;
+	}
+	return rule.amount;
+};
+
+// One human-readable line describing a rule. Shown on the rule itself and
+// broadcast to the other devices in the room, so both read the same way.
+export const summarizeRule = (rule: ScheduleRule): string => {
+	const days =
+		rule.days.length === 0 || rule.days.length === 7
+			? "every day"
+			: [...rule.days]
+					.sort((a, b) => a - b)
+					.map((d) => DAY_NAMES[d])
+					.join(",");
+	const amount = `sim ${describeAmount(rule)}`;
+	if (rule.mode === "at") {
+		return `${days} at ${rule.times.map(to12h).join(", ")} — ${amount}`;
+	}
+	const overnight = crossesMidnight(rule.start, rule.end) ? " (overnight)" : "";
+	return `${days}, every ${rule.everyMinutes} min ${to12h(rule.start)}–${to12h(rule.end)}${overnight} — ${amount}`;
+};
 
 const parseHHMM = (s: string): { h: number; m: number } | undefined => {
 	const match = /^(\d{1,2}):(\d{2})$/.exec((s ?? "").trim());
@@ -49,6 +102,16 @@ const parseHHMM = (s: string): { h: number; m: number } | undefined => {
 		return undefined;
 	}
 	return { h, m };
+};
+
+// An end time earlier than the start means the window runs past midnight.
+export const crossesMidnight = (start: string, end: string): boolean => {
+	const s = parseHHMM(start);
+	const e = parseHHMM(end);
+	if (!s || !e) {
+		return false;
+	}
+	return e.h * 60 + e.m < s.h * 60 + s.m;
 };
 
 const atOffset = (
@@ -109,14 +172,16 @@ export const nextFireForRule = (
 	if (!start || !end) {
 		return undefined;
 	}
+	const overnight = end.h * 60 + end.m < start.h * 60 + start.m;
 	const everyMs = Math.max(1, rule.everyMinutes) * 60_000;
-	for (let offset = 0; offset <= 7; offset++) {
+
+	// Start at -1 so an overnight window opened YESTERDAY and still running is
+	// found. The day-of-week test is against the day the window OPENS.
+	for (let offset = -1; offset <= 7; offset++) {
 		const dayStart = atOffset(now, offset, start.h, start.m);
-		const dayEnd = atOffset(now, offset, end.h, end.m);
-		if (dayEnd < dayStart) {
-			// We don't support windows that cross midnight; skip.
-			continue;
-		}
+		const dayEnd = overnight
+			? atOffset(now, offset + 1, end.h, end.m)
+			: atOffset(now, offset, end.h, end.m);
 		const dow = new Date(dayStart).getDay();
 		if (!dayMatches(rule.days, dow)) {
 			continue;
@@ -130,7 +195,7 @@ export const nextFireForRule = (
 			if (next <= dayEnd) {
 				return next;
 			}
-			// No more slots today; fall through to the next matching day.
+			// No more slots in this window; fall through to the next matching day.
 		}
 	}
 	return undefined;
