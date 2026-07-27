@@ -25,7 +25,14 @@ export type SeasonNoteKind = "season" | "retirement";
 // "[2007]" or "[2007] Some headline", optionally marked as the retirement
 // writeup. An em dash or a plain hyphen both work, since an AI may emit either.
 const HEADER = /^\s*\[(\d{4})]\s*(.*)$/;
-const RETIREMENT_PREFIX = /^Retirement\s*[—-]\s*/;
+
+// "Retirement — Some headline", or bare "Retirement" when there is no headline.
+// The bare form has to match: without it a headline-less retirement section
+// round-tripped as a SEASON section named "Retirement", so the next write
+// couldn't find it and appended a second block for the same year. Requiring a
+// dash OR end-of-string keeps a real headline like "Retirement day" from being
+// mistaken for the marker.
+const RETIREMENT_PREFIX = /^Retirement(?:\s*[—-]\s*|$)/;
 
 export type SeasonNoteSection = {
 	// undefined for text that came before any header (hand-written notes).

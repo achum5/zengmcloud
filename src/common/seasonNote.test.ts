@@ -136,6 +136,65 @@ describe("upsertSeasonNote", () => {
 	});
 });
 
+describe("a retirement writeup with no headline", () => {
+	// This round-tripped as a SEASON section literally named "Retirement",
+	// because the marker was only recognized with a dash after it. Re-running
+	// then couldn't find its own section and appended a second block, so the
+	// player's note ended up with the same year twice.
+	const write = (note: string | undefined, headline: string) =>
+		upsertSeasonNote(note, {
+			season: 2012,
+			kind: "retirement",
+			headline,
+			body: "After fourteen seasons...",
+		});
+
+	test("is parsed back as a retirement, not as a season named Retirement", () => {
+		const sections = parseSeasonNote(write(undefined, ""));
+		assert.strictEqual(sections.length, 1);
+		assert.strictEqual(sections[0]!.kind, "retirement");
+		assert.strictEqual(sections[0]!.headline, "");
+	});
+
+	test("re-running it replaces rather than duplicating the year", () => {
+		let note = write(undefined, "");
+		note = write(note, "");
+		note = write(note, "");
+		assert.strictEqual(note.split("[2012]").length - 1, 1);
+	});
+
+	test("adding a headline later still replaces the same section", () => {
+		const note = write(write(undefined, ""), "The quiet exit");
+		assert.strictEqual(note.split("[2012]").length - 1, 1);
+		assert.ok(note.includes("[2012] Retirement — The quiet exit"));
+	});
+
+	test("it still doesn't collide with that year's season recap", () => {
+		let note = season(undefined, 2012, "", "His last year.");
+		note = write(note, "");
+		const sections = parseSeasonNote(note);
+		assert.deepStrictEqual(
+			sections.map((x) => x.kind),
+			["retirement", "season"],
+		);
+	});
+
+	test("hasSeasonNote still tells the two apart", () => {
+		const note = write(undefined, "");
+		assert.strictEqual(hasSeasonNote(note, 2012, "retirement"), true);
+		assert.strictEqual(hasSeasonNote(note, 2012), false);
+	});
+
+	test("a season headline that merely starts with Retirement is left alone", () => {
+		// "Retirement" only marks the section when it stands alone or is followed
+		// by a dash, so this stays an ordinary season recap.
+		const note = season(undefined, 2012, "Retirement day", "He went out.");
+		const sections = parseSeasonNote(note);
+		assert.strictEqual(sections[0]!.kind, "season");
+		assert.strictEqual(sections[0]!.headline, "Retirement day");
+	});
+});
+
 describe("removeSeasonNote", () => {
 	test("clears a misfiled retirement writeup and leaves the rest", () => {
 		// A season-recap reply pasted into the retirement button filed a whole

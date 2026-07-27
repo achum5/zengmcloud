@@ -312,11 +312,13 @@ describe("parsePlayerRecaps", () => {
 		assert.deepStrictEqual(byPid(recaps, 7), {
 			pid: 7,
 			kind: "season",
+			headline: "",
 			body: "He barely played.",
 		});
 		assert.deepStrictEqual(byPid(recaps, 9), {
 			pid: 9,
 			kind: "season",
+			headline: "",
 			body: "First paragraph.\n\nSecond paragraph.",
 		});
 	});
@@ -330,15 +332,26 @@ describe("parsePlayerRecaps", () => {
 			"He gave them 11 a night.",
 			"",
 			"<!--retired:7-->",
+			"Sixteen years, one team",
+			"",
 			"He never played anywhere else.",
 		].join("\n");
 		const recaps = parsePlayerRecaps(reply);
 		assert.strictEqual(recaps.length, 2);
-		assert.strictEqual(byPid(recaps, 7)!.body, "He gave them 11 a night.");
-		assert.strictEqual(
-			byPid(recaps, 7, "retirement")!.body,
-			"He never played anywhere else.",
-		);
+		// The season recap is headed by its year alone...
+		assert.deepStrictEqual(byPid(recaps, 7), {
+			pid: 7,
+			kind: "season",
+			headline: "",
+			body: "He gave them 11 a night.",
+		});
+		// ...while the career retrospective keeps a title.
+		assert.deepStrictEqual(byPid(recaps, 7, "retirement"), {
+			pid: 7,
+			kind: "retirement",
+			headline: "Sixteen years, one team",
+			body: "He never played anywhere else.",
+		});
 	});
 
 	test("a heading the AI wrote anyway is dropped, not left in the prose", () => {
@@ -354,7 +367,7 @@ describe("parsePlayerRecaps", () => {
 			);
 			assert.deepStrictEqual(
 				byPid(recaps, 1),
-				{ pid: 1, kind: "season", body: "Body text." },
+				{ pid: 1, kind: "season", headline: "", body: "Body text." },
 				heading,
 			);
 		}
@@ -377,6 +390,7 @@ describe("parsePlayerRecaps", () => {
 		assert.deepStrictEqual(byPid(recaps, 4), {
 			pid: 4,
 			kind: "season",
+			headline: "",
 			body: "Solid rotation year.",
 		});
 	});

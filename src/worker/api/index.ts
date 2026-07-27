@@ -4364,6 +4364,8 @@ const filePlayerSeasonRecaps = async ({
 	recaps: {
 		pid: number;
 		kind: "season" | "retirement";
+		// Only retirement writeups carry one; a season recap is headed by its year.
+		headline?: string;
 		text: string;
 	}[];
 }) => {
@@ -4371,7 +4373,7 @@ const filePlayerSeasonRecaps = async ({
 	const missing: number[] = [];
 	const wrongKind: number[] = [];
 
-	for (const { pid, kind, text } of recaps) {
+	for (const { pid, kind, headline, text } of recaps) {
 		const p = await idb.getCopy.players({ pid }, "noCopyCache");
 		if (!p) {
 			missing.push(pid);
@@ -4389,6 +4391,7 @@ const filePlayerSeasonRecaps = async ({
 		let merged = upsertSeasonNote(p.note, {
 			season,
 			kind,
+			headline: kind === "retirement" ? headline : "",
 			body: text,
 		});
 		if (kind === "season" && p.retiredYear !== season) {

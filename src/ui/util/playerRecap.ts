@@ -43,8 +43,8 @@ RETIRING PLAYERS GET TWO PIECES. A player marked RETIRING AFTER THIS SEASON has 
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no summary.
 - Begin every player's recap with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each recap is filed to the correct player — never omit it, never change it.
-- Straight after the marker, write the recap as plain prose. NO headline, NO title, NO heading line, no bold lead-in, no year — start with the first sentence of the recap itself. No stat table, no bullet lists.
-- For a RETIRING player only, add the retirement writeup straight after his season recap, in the same shape but with a DIFFERENT marker line: <!--retired:ID--> (same ID). Same rule — prose only, no headline.
+- Straight after a <!--player:ID--> marker, write the season recap as plain prose. NO headline, NO title, NO heading line, no bold lead-in, no year — start with the first sentence of the recap itself. No stat table, no bullet lists.
+- For a RETIRING player only, add the retirement writeup after his season recap under a DIFFERENT marker line: <!--retired:ID--> (same ID). This one DOES get a headline: the line straight after the marker is a few words, title-style, no ending period, no bold, no brackets and no year, about how the CAREER is remembered ("The quiet exit", "Sixteen years, one team"). Then a blank line, then the writeup.
 - Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
 - Put exactly one blank line between pieces.`;
 
@@ -336,12 +336,30 @@ export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
 export type ParsedPlayerRecap = {
 	pid: number;
 	kind: "season" | "retirement";
+	// Only retirement writeups get one. A season recap is headed by its year
+	// alone - an AI headline on every season is the most conspicuously
+	// machine-made thing in a note - but a career retrospective is the one piece
+	// that reads like an article and wants a title.
+	headline: string;
 	body: string;
 };
 
-// Told not to write a heading, an AI still sometimes writes one. Drop a leading
-// line that is clearly a title - a bracketed year, a markdown heading, or a
-// short bolded line - rather than letting it open the prose.
+// Strip the decoration an AI reaches for on a heading even when told not to,
+// and drop any year it puts there - the year is supplied from the season being
+// written, so a wrong one in the reply can never reach the note.
+const cleanHeadline = (line: string) =>
+	line
+		.replace(/^#+\s*/, "")
+		.replaceAll("**", "")
+		.replace(/^\s*\[\s*\d{4}\s*]\s*/, "")
+		.replace(/^\[|]$/g, "")
+		.replace(/[.:]\s*$/, "")
+		.trim();
+
+// For SEASON recaps, told not to write a heading, an AI still sometimes writes
+// one. Drop a leading line that is clearly a title - a bracketed year, a
+// markdown heading, or a short bolded line - rather than letting it open the
+// prose.
 const HEADING_LINE = /^\s*(?:#{1,6}\s+|\[\s*\d{4}\s*]|\*\*[^*]{1,80}\*\*\s*$)/;
 
 const stripHeadingLine = (chunk: string): string => {
@@ -382,13 +400,30 @@ export const parsePlayerRecaps = (rawText: string): ParsedPlayerRecap[] => {
 			continue;
 		}
 
-		const body = stripHeadingLine(chunk);
+		let headline = "";
+		let body: string;
+		if (marker.kind === "retirement") {
+			const lines = chunk.split("\n");
+			const first = cleanHeadline(lines[0] ?? "");
+			const rest = lines.slice(1).join("\n").trim();
+			// If it ignored the instruction and went straight into prose, keep the
+			// whole thing rather than eating its first sentence.
+			if (rest === "" || first.length > 80) {
+				body = chunk;
+			} else {
+				headline = first;
+				body = rest;
+			}
+		} else {
+			body = stripHeadingLine(chunk);
+		}
 		if (body === "") {
 			continue;
 		}
 		const parsed: ParsedPlayerRecap = {
 			pid: marker.pid,
 			kind: marker.kind,
+			headline,
 			body,
 		};
 

@@ -765,6 +765,9 @@ const TeamFinances = ({
 	const {
 		budget,
 		gameSimInProgress,
+		hardCapAmount,
+		hardCapTids,
+		hardCapUseLuxuryTax,
 		luxuryPayroll,
 		numGames,
 		salaryCap,
@@ -772,11 +775,19 @@ const TeamFinances = ({
 	} = useLocal([
 		"budget",
 		"gameSimInProgress",
+		"hardCapAmount",
+		"hardCapTids",
+		"hardCapUseLuxuryTax",
 		"luxuryPayroll",
 		"numGames",
 		"salaryCap",
 		"salaryCapType",
 	]);
+
+	// Off by default: the totals are what the team has actually committed, and
+	// that has to stay the plain reading of the table. Turning it on answers the
+	// other question - what the books look like if you keep this group together.
+	const [includeProjected, setIncludeProjected] = useState(false);
 
 	const cols = getCols(["Pos", "Name", "Cap%"]).concat(
 		salariesSeasons.map((season) => {
@@ -849,25 +860,59 @@ const TeamFinances = ({
 		};
 	});
 
+	// Projected salaries live alongside the committed ones rather than replacing
+	// them, so the toggle can show either without recomputing the table.
+	const projectedTotals = salariesSeasons.map((_, i) =>
+		contracts.reduce(
+			(sum, p) => sum + (p.released ? 0 : (p.amountsProjected?.[i] ?? 0)),
+			0,
+		),
+	);
+	const totals = contractTotals.map(
+		(amount, i) => amount + (includeProjected ? (projectedTotals[i] ?? 0) : 0),
+	);
+	const anyProjected = projectedTotals.some((amount) => amount > 0);
+
+	const hardCap = hardCapForTid(tid, {
+		hardCapAmount,
+		hardCapTids,
+		hardCapUseLuxuryTax,
+		luxuryPayroll,
+	});
+
+	const star = includeProjected ? "*" : "";
+
 	const footer = [
 		{
-			data: ["", "Totals", ""].concat(
+			data: ["", `Totals${star}`, ""].concat(
 				// @ts-expect-error
-				contractTotals.map((amount) => highlightZeroNegative(amount)),
+				totals.map((amount) => highlightZeroNegative(amount)),
 			),
 		},
+		...(Number.isFinite(hardCap)
+			? [
+					{
+						data: ["", `Hard Cap Space${star}`, ""].concat(
+							// @ts-expect-error
+							totals.map((amount) =>
+								highlightZeroNegative(hardCap / 1000 - amount),
+							),
+						),
+					},
+				]
+			: []),
 		{
 			data:
 				salaryCapType === "none"
-					? ["", "Under Luxury Tax", ""].concat(
+					? ["", `Under Luxury Tax${star}`, ""].concat(
 							// @ts-expect-error
-							contractTotals.map((amount) =>
+							totals.map((amount) =>
 								highlightZeroNegative(luxuryPayroll / 1000 - amount),
 							),
 						)
-					: ["", "Free Cap Space", ""].concat(
+					: ["", `Free Cap Space${star}`, ""].concat(
 							// @ts-expect-error
-							contractTotals.map((amount) =>
+							totals.map((amount) =>
 								highlightZeroNegative(salaryCap / 1000 - amount),
 							),
 						),
@@ -1075,6 +1120,21 @@ const TeamFinances = ({
 				marked <span className="text-body-secondary">*</span> are projected, not
 				signed.
 			</p>
+
+			{anyProjected ? (
+				<div className="form-check mb-2">
+					<input
+						id="tf-include-projected"
+						type="checkbox"
+						className="form-check-input"
+						checked={includeProjected}
+						onChange={(event) => setIncludeProjected(event.target.checked)}
+					/>
+					<label className="form-check-label" htmlFor="tf-include-projected">
+						Include projected salaries in totals
+					</label>
+				</div>
+			) : null}
 
 			<DataTable
 				cols={cols}
