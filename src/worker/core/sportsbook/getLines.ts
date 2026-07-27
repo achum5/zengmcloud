@@ -2,6 +2,7 @@ import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import teamOvr from "../team/ovr.ts";
 import getSchedule from "../season/getSchedule.ts";
+import { buildGameLinePricer } from "./gameLines.ts";
 import getAwardRaceOdds from "../season/getAwardRaceOdds.ts";
 import { getPlayers, getTopPlayers } from "../season/awards.ts";
 import {
@@ -10,26 +11,20 @@ import {
 	royFilter,
 	royScore,
 } from "../season/doAwards.basketball.ts";
-import { getGameSpread } from "../../../common/getGameSpread.ts";
 import {
 	getTeamAtsRecords,
 	formatAtsRecord,
 } from "../../util/getTeamAtsRecords.ts";
-import { getActualPlayThroughInjuries } from "../game/loadTeams.ts";
 import { PHASE, PLAYER, RATINGS } from "../../../common/constants.ts";
-import { isSport, bySport } from "../../../common/sportFunctions.ts";
+import { isSport } from "../../../common/sportFunctions.ts";
 import {
 	probToAmerican,
 	SPORTSBOOK_FUTURES_VIG,
 	SPORTSBOOK_MAX_AMERICAN,
 } from "../../../common/sportsbook.ts";
 import {
-	expectedGameTotal,
-	marginToWinProb,
-	overProb,
 	strengthProbs,
 	tierMembershipProbs,
-	toHalfPointLine,
 } from "../../../common/sportsbookOdds.ts";
 import {
 	simulateFutures,
@@ -110,10 +105,6 @@ const TIER_NOISE_LATE = 0.6; // matches tierMembershipProbs' default noiseFactor
 
 // Cap how many upcoming games get a line at once, so the board stays readable.
 const MAX_GAME_LINES = 24;
-
-// Per-game lines: base vig, capped at +30000 like everything else.
-const priceOdds = (prob: number) =>
-	probToAmerican(prob, { maxAmerican: SPORTSBOOK_MAX_AMERICAN });
 
 // Futures + award bets: the heavier futures hold, same +30000 cap. Used for every
 // non-game market (title/conference/division/win totals, award boards, All-Star).
@@ -201,9 +192,6 @@ export const getTeamOvrs = async (
 export const getLines = async () => {
 	const season = g.get("season");
 	const numGames = g.get("numGames");
-	const homeCourtAdvantage = g.get("homeCourtAdvantage");
-	const numPeriods = g.get("numPeriods");
-	const quarterLength = g.get("quarterLength");
 	const confs = g.get("confs");
 	const divs = g.get("divs");
 
@@ -237,9 +225,9 @@ export const getLines = async () => {
 
 	const ovrByTid = await getTeamOvrs(activeTeams, season);
 
-	// League-average per-game total, for game totals when a team has no data.
-	// t.stats can be missing entirely in a league with no games played (e.g.
-	// started directly in the playoffs), so never assume it exists.
+	// A team's per-game scoring, for the futures strength model below. t.stats can
+	// be missing entirely in a league with no games played (e.g. started directly
+	// in the playoffs), so never assume it exists.
 	const statsOf = (t: (typeof activeTeams)[number] | undefined) => {
 		const s = t?.stats as
 			| { gp?: number; pts?: number; oppPts?: number }
@@ -250,81 +238,16 @@ export const getLines = async () => {
 			oppPts: s?.oppPts ?? 0,
 		};
 	};
-	let totalPtsPerGame = 0;
-	let teamsWithGames = 0;
-	for (const t of activeTeams) {
-		const s = statsOf(t);
-		if (s.gp > 0) {
-			totalPtsPerGame += s.pts;
-			teamsWithGames += 1;
-		}
-	}
-	const leagueAvgTotal =
-		teamsWithGames > 0
-			? (2 * totalPtsPerGame) / teamsWithGames
-			: bySport({ basketball: 220, football: 45, baseball: 9, hockey: 6 });
-
-	// teamsPlus returns PER-GAME stats by default, so pts/oppPts are already the
-	// genuine per-game averages. Early in the season, regress toward the league
-	// mean (fully trusted after ~8 games) so a hot opening week doesn't swing
-	// totals wildly.
-	const halfLeague = leagueAvgTotal / 2;
-	const regress = (perGame: number, gp: number) => {
-		const w = Math.min(1, gp / 8);
-		return halfLeague + (perGame - halfLeague) * w;
-	};
-	const scoringFor = (t: (typeof activeTeams)[number]) => {
-		const s = statsOf(t);
-		return s.gp > 0 ? regress(s.pts, s.gp) : undefined;
-	};
-	const scoringAgainst = (t: (typeof activeTeams)[number]) => {
-		const s = statsOf(t);
-		return s.gp > 0 ? regress(s.oppPts, s.gp) : undefined;
-	};
-
 	// --- Game lines -------------------------------------------------------
 	const schedule = await getSchedule();
 
-	// Price each game off the SAME team overall the Schedule/ScoreBox page shows
-	// next to it, so the sportsbook's spread and moneyline never diverge from the
-	// line displayed there. That means fuzzed ratings (fuzz: true), injuries
-	// healed forward to the game's day, the team's playThroughInjuries setting,
-	// and the playoff flag - not the flat, fuzz-free team ovr used for futures.
-	const todayDay = schedule[0]?.day ?? 0;
-	const linePlayersRaw = await idb.cache.players.indexGetAll("playersByTid", [
-		0, // Active players have tid >= 0
-		Infinity,
-	]);
-	const linePlayers = await idb.getCopies.playersPlus(linePlayersRaw, {
-		attrs: ["injury", "pid", "value", "tid"],
-		ratings: ["ovr", "pos", "ovrs"],
+	// Shared with the per-game prop board, so a spread/moneyline/total quoted on
+	// a game's page is the same number this board carries - see gameLines.ts.
+	const pricer = await buildGameLinePricer({
+		activeTeams,
 		season,
-		fuzz: true,
+		todayDay: schedule[0]?.day ?? 0,
 	});
-	const linePlayersByTid = Map.groupBy(linePlayers, (p) => p.tid);
-
-	const linePlayoffSeries = await idb.cache.playoffSeries.get(season);
-	const lineRoundSeries = linePlayoffSeries
-		? linePlayoffSeries.currentRound === -1 && linePlayoffSeries.playIns
-			? linePlayoffSeries.playIns.flat()
-			: linePlayoffSeries.series[linePlayoffSeries.currentRound]
-		: undefined;
-
-	const neutralSiteSetting = g.get("neutralSite");
-	const phase = g.get("phase");
-
-	// Team overall on a given day, mirroring worker/views/schedule.ts's getTeam.
-	const gameOvr = (
-		t: (typeof activeTeams)[number],
-		day: number,
-	): number | undefined =>
-		teamOvr(linePlayersByTid.get(t.tid) ?? [], {
-			accountForInjuredPlayers: {
-				numDaysInFuture: day - todayDay,
-				playThroughInjuries: getActualPlayThroughInjuries(t),
-			},
-			playoffs: !!lineRoundSeries,
-		});
 
 	const games = [];
 	for (const matchup of schedule) {
@@ -337,37 +260,10 @@ export const getLines = async () => {
 			continue;
 		}
 
-		// Neutral site drops home-court advantage, matching ScoreBox: an upcoming
-		// finals/playoff game the settings mark neutral.
-		const neutralSiteResolved =
-			(neutralSiteSetting === "finals" && !!matchup.finals) ||
-			(neutralSiteSetting === "playoffs" && phase === PHASE.PLAYOFFS);
-
-		const margin = getGameSpread({
-			ovr0: gameOvr(home, matchup.day),
-			ovr1: gameOvr(away, matchup.day),
-			homeCourtAdvantage,
-			neutralSite: neutralSiteResolved,
-			numPeriods,
-			quarterLength,
-		});
-		if (margin === undefined) {
+		const line = pricer.priceGame(matchup);
+		if (!line) {
 			continue;
 		}
-
-		const pHome = marginToWinProb(margin);
-		const expectedTotal = expectedGameTotal({
-			homeFor: scoringFor(home),
-			homeAgainst: scoringAgainst(home),
-			awayFor: scoringFor(away),
-			awayAgainst: scoringAgainst(away),
-			leagueAvgTotal,
-		});
-		const totalLine = toHalfPointLine(expectedTotal);
-		const pOver = overProb(expectedTotal, totalLine);
-		// Home spread: home favored by `margin`, so the line is -margin.
-		const spreadLine =
-			toHalfPointLine(Math.abs(margin)) * (margin >= 0 ? -1 : 1);
 
 		games.push({
 			gid: matchup.gid,
@@ -389,20 +285,9 @@ export const getLines = async () => {
 				lost: away.seasonAttrs.lost,
 				ats: formatAtsRecord(atsRecords.get(away.tid)),
 			},
-			moneyline: {
-				home: priceOdds(pHome),
-				away: priceOdds(1 - pHome),
-			},
-			spread: {
-				line: spreadLine,
-				home: priceOdds(0.5),
-				away: priceOdds(0.5),
-			},
-			total: {
-				line: totalLine,
-				over: priceOdds(pOver),
-				under: priceOdds(1 - pOver),
-			},
+			moneyline: line.moneyline,
+			spread: line.spread,
+			total: line.total,
 		});
 		if (games.length >= MAX_GAME_LINES) {
 			break;

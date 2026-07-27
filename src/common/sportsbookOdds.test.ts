@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	awardProbsFromScores,
 	combineIndependentSigmas,
+	eventProb,
 	expectedGameTotal,
 	marginToWinProb,
 	milestoneProb,
@@ -11,7 +12,10 @@ import {
 	overProb,
 	overProbFromSigma,
 	probNear,
+	sampleMean,
+	sampleStdDev,
 	seriesWinProb,
+	smoothedOverProb,
 	strengthProbs,
 	tierMembershipProbs,
 	toHalfPointLine,
@@ -389,5 +393,71 @@ describe("milestoneProb", () => {
 		const a = milestoneProb(cats, 10, 2, { seed: 9 });
 		const b = milestoneProb(cats, 10, 2, { seed: 9 });
 		assert.strictEqual(a, b);
+	});
+});
+
+describe("pricing off simulated games", () => {
+	// A stand-in for the sim's output: a stable, lumpy, integer-valued set of
+	// box-score lines rather than draws from a curve.
+	const samples = (mean: number, spread: number, n = 400) => {
+		const rand = mulberry32(42);
+		return Array.from({ length: n }, () =>
+			Math.max(0, Math.round(mean + normalSample(rand) * spread)),
+		);
+	};
+
+	test("mean and standard deviation come back out", () => {
+		const xs = samples(24, 8);
+		assert.ok(Math.abs(sampleMean(xs) - 24) < 1);
+		assert.ok(Math.abs(sampleStdDev(xs) - 8) < 1);
+		assert.strictEqual(sampleMean([]), 0);
+		assert.strictEqual(sampleStdDev([5]), 0);
+	});
+
+	test("a line at the mean is close to a coin flip", () => {
+		const xs = samples(24, 8);
+		const line = toHalfPointLine(sampleMean(xs));
+		const p = smoothedOverProb(xs, line);
+		assert.ok(Math.abs(p - 0.5) < 0.06, `over at ${p}`);
+	});
+
+	test("the odds move the right way as the line moves", () => {
+		const xs = samples(24, 8);
+		assert.ok(smoothedOverProb(xs, 14.5) > smoothedOverProb(xs, 24.5));
+		assert.ok(smoothedOverProb(xs, 24.5) > smoothedOverProb(xs, 34.5));
+		assert.ok(smoothedOverProb(xs, 200.5) < 0.01);
+		assert.ok(smoothedOverProb(xs, -0.5) > 0.99);
+	});
+
+	// The point of smoothing: with whole-number box scores the raw empirical CDF
+	// steps a chunk at a time, so two lines a hair apart can price very
+	// differently for no reason a bettor would recognize.
+	test("smoothing tracks the samples without stepping", () => {
+		const xs = samples(6, 2);
+		const empirical = (line: number) =>
+			xs.filter((x) => x > line).length / xs.length;
+		for (const line of [3.5, 5.5, 6.5, 7.5, 9.5]) {
+			assert.ok(
+				Math.abs(smoothedOverProb(xs, line) - empirical(line)) < 0.06,
+				`line ${line}: ${smoothedOverProb(xs, line)} vs ${empirical(line)}`,
+			);
+		}
+	});
+
+	test("degenerate sample sets don't produce nonsense", () => {
+		assert.strictEqual(smoothedOverProb([], 10.5), 0.5);
+		assert.strictEqual(smoothedOverProb([4, 4, 4], 3.5), 1);
+		assert.strictEqual(smoothedOverProb([4, 4, 4], 4.5), 0);
+	});
+
+	test("something that never happened is unlikely, not impossible", () => {
+		// A triple-double that didn't turn up in 500 simulated games is a longshot,
+		// not a market the house should refuse to lose.
+		const never = eventProb(0, 500);
+		assert.ok(never > 0 && never < 0.005, `${never}`);
+		// And something that always happened is not a certainty either.
+		assert.ok(eventProb(500, 500) < 1);
+		assert.ok(Math.abs(eventProb(250, 500) - 0.5) < 0.01);
+		assert.strictEqual(eventProb(0, 0), 0.5);
 	});
 });

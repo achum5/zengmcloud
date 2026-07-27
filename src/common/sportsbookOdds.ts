@@ -329,3 +329,65 @@ export const milestoneProb = (
 	}
 	return hits / iterations;
 };
+
+// --- Pricing off simulated games -----------------------------------------
+//
+// Player and team props come from running the league's own engine on the actual
+// matchup a few hundred times (worker/core/sportsbook/simGameOutcomes.ts), so
+// the answer is already in the samples - there is no curve to fit. What's left
+// is turning a pile of simulated box scores into a line and a price.
+//
+// The line goes at the mean, which converges fast: a few hundred samples pin a
+// scorer's average to a few tenths of a point. The price is how often the
+// samples cleared it. That count is noisier, and because the samples are whole
+// numbers the raw empirical CDF also steps in visible jumps. Smoothing it with
+// a narrow Gaussian kernel - bandwidth scaled to the spread of the samples,
+// Silverman-style - takes out the jitter without pulling the probability off
+// the shape the sim actually produced.
+
+export const sampleMean = (samples: number[]): number =>
+	samples.length === 0
+		? 0
+		: samples.reduce((sum, x) => sum + x, 0) / samples.length;
+
+export const sampleStdDev = (samples: number[]): number => {
+	const n = samples.length;
+	if (n < 2) {
+		return 0;
+	}
+	const mean = sampleMean(samples);
+	return Math.sqrt(
+		samples.reduce((sum, x) => sum + (x - mean) ** 2, 0) / (n - 1),
+	);
+};
+
+// Deliberately narrower than Silverman's rule-of-thumb bandwidth, which is tuned
+// for drawing a smooth density rather than for reading a probability off one
+// point of the CDF. At this width the smoothing is worth a fraction of a
+// simulated game, so it settles the jitter without moving the answer.
+const KERNEL_BANDWIDTH_FACTOR = 0.6;
+
+export const smoothedOverProb = (samples: number[], line: number): number => {
+	const n = samples.length;
+	if (n === 0) {
+		return 0.5;
+	}
+	const h = KERNEL_BANDWIDTH_FACTOR * sampleStdDev(samples) * n ** (-1 / 5);
+	if (h <= 0) {
+		// Every simulated game came out identical - nothing to smooth.
+		return samples[0]! > line ? 1 : 0;
+	}
+	let total = 0;
+	for (const x of samples) {
+		total += normalCdf((x - line) / h);
+	}
+	return total / n;
+};
+
+// A yes/no outcome (double-double, overtime) priced from the count of simulated
+// games it happened in. Zero out of a few hundred is not proof that something
+// can't happen, so the count carries half a game of prior either way - the same
+// reason the award boards floor their longshots instead of pricing them at
+// infinity.
+export const eventProb = (successes: number, n: number): number =>
+	n <= 0 ? 0.5 : (successes + 0.5) / (n + 1);
