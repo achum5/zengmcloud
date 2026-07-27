@@ -41,6 +41,8 @@ export type ExhibitionTeam = {
 	ovr: number;
 	// The league this team came from hides team ratings, so this one does too.
 	hideOvr?: boolean;
+	// The league this team came from shows ratings to the tens digit only.
+	coarseRatings?: boolean;
 } & Pick<
 	Team,
 	| "abbrev"
@@ -413,7 +415,9 @@ const SelectTeam = ({
 								season={season}
 							/>{" "}
 							<span className="text-body-secondary">-</span> {ratings.pos}{" "}
-							<span className="text-body-secondary">-</span> {ratings.ovr} ovr
+							<span className="text-body-secondary">-</span>{" "}
+							{t?.coarseRatings ? Math.floor(ratings.ovr / 10) : ratings.ovr}{" "}
+							ovr
 							<div className="exhibition-stats text-body-secondary">
 								<PlayerStatsSummary stats={stats} />
 							</div>

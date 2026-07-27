@@ -101,6 +101,10 @@ const getSeasonInfoLeague = async ({
 		(await getGameAttribute("hideTeamRatings")) ||
 		(await getGameAttribute("challengeNoRatings"));
 
+	// Same idea for Coarse Ratings: a league that shows ratings to the tens digit
+	// shouldn't have the exact numbers readable through Exhibition.
+	const coarseRatings = await getGameAttribute("hideRatingsOnesDigit");
+
 	const numGamesPlayoffSeries = await getGameAttribute("numGamesPlayoffSeries");
 	const currentSeason = await getGameAttribute("season");
 	const currentPhase = await getGameAttribute("phase");
@@ -275,6 +279,7 @@ const getSeasonInfoLeague = async ({
 				},
 				ovr: 0,
 				hideOvr,
+				coarseRatings,
 				players: teamPlayers,
 
 				// If current season, use current depth. Otherwise, auto generate later.
