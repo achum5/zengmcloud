@@ -94,7 +94,6 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 				recaps: recaps.map((recap) => ({
 					pid: recap.pid,
 					kind: recap.kind,
-					headline: recap.headline,
 					text: recap.body,
 				})),
 			});

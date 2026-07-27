@@ -43,9 +43,8 @@ RETIRING PLAYERS GET TWO PIECES. A player marked RETIRING AFTER THIS SEASON has 
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no summary.
 - Begin every player's recap with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each recap is filed to the correct player — never omit it, never change it.
-- The line straight after the marker is the HEADING, in this exact form: [YEAR] followed by a short headline, e.g. "[2004] A leap in Sacramento". Use the LISTED SEASON as the year. The headline is a few words, title-style, no ending period, no bold. Make it specific to that player's year ("Hurt again", "The last dance") — never generic like "Season Recap".
-- Then a blank line, then the recap itself as plain prose. No stat table, no bullet lists.
-- For a RETIRING player only, add the retirement writeup straight after his season recap, in the same shape but with a DIFFERENT marker line: <!--retired:ID--> (same ID). Its heading is also [YEAR] followed by a short headline, but about how the CAREER is remembered ("The quiet exit", "Sixteen years, one team") rather than about this season.
+- Straight after the marker, write the recap as plain prose. NO headline, NO title, NO heading line, no bold lead-in, no year — start with the first sentence of the recap itself. No stat table, no bullet lists.
+- For a RETIRING player only, add the retirement writeup straight after his season recap, in the same shape but with a DIFFERENT marker line: <!--retired:ID--> (same ID). Same rule — prose only, no headline.
 - Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
 - Put exactly one blank line between pieces.`;
 
@@ -312,8 +311,9 @@ export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
 };
 
 // Pull each piece out of the AI's reply. Everything from one marker up to the
-// next belongs to that piece: the first non-empty line is the headline, the
-// rest is the body.
+// next is that piece's prose. There is no headline - the section is identified
+// by its year alone, because an AI-written headline on top of every season is
+// the most conspicuously machine-made thing in the note.
 //
 // The marker also says WHICH section of the note it belongs in - a season recap
 // or a retirement writeup - so the two can never be filed as each other. They
@@ -322,22 +322,22 @@ export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
 export type ParsedPlayerRecap = {
 	pid: number;
 	kind: "season" | "retirement";
-	headline: string;
 	body: string;
 };
 
-// Strip the decoration an AI reaches for on a heading even when told not to.
-// The AI writes "[2004] A leap in Sacramento". The year is dropped here and
-// re-added from the season being written, so a wrong or missing year in the
-// reply can never end up in the note.
-const cleanHeadline = (line: string) =>
-	line
-		.replace(/^#+\s*/, "")
-		.replaceAll("**", "")
-		.replace(/^\s*\[\s*\d{4}\s*]\s*/, "")
-		.replace(/^\[|]$/g, "")
-		.replace(/[.:]\s*$/, "")
-		.trim();
+// Told not to write a heading, an AI still sometimes writes one. Drop a leading
+// line that is clearly a title - a bracketed year, a markdown heading, or a
+// short bolded line - rather than letting it open the prose.
+const HEADING_LINE = /^\s*(?:#{1,6}\s+|\[\s*\d{4}\s*]|\*\*[^*]{1,80}\*\*\s*$)/;
+
+const stripHeadingLine = (chunk: string): string => {
+	const lines = chunk.split("\n");
+	const first = lines[0] ?? "";
+	if (lines.length > 1 && HEADING_LINE.test(first)) {
+		return lines.slice(1).join("\n").trim();
+	}
+	return chunk;
+};
 
 export const parsePlayerRecaps = (rawText: string): ParsedPlayerRecap[] => {
 	const text = stripOuterCodeFence(rawText);
@@ -368,16 +368,15 @@ export const parsePlayerRecaps = (rawText: string): ParsedPlayerRecap[] => {
 			continue;
 		}
 
-		const lines = chunk.split("\n");
-		const headline = cleanHeadline(lines[0] ?? "");
-		const body = lines.slice(1).join("\n").trim();
-
-		// If the AI ignored the headline instruction and went straight into prose,
-		// keep the whole thing as the body rather than eating its first line.
-		const parsed: ParsedPlayerRecap =
-			body === "" || headline.length > 80
-				? { pid: marker.pid, kind: marker.kind, headline: "", body: chunk }
-				: { pid: marker.pid, kind: marker.kind, headline, body };
+		const body = stripHeadingLine(chunk);
+		if (body === "") {
+			continue;
+		}
+		const parsed: ParsedPlayerRecap = {
+			pid: marker.pid,
+			kind: marker.kind,
+			body,
+		};
 
 		// A repeated marker is the AI restating itself; last one wins, matching
 		// how re-running a season replaces rather than duplicates.
