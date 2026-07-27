@@ -32,6 +32,8 @@ Every stat line carries the team's record and how that team's year ended, and th
 
 Players drafted this season have a DRAFTED block: where they went, how that team just finished, and the roster they are joining. For those rookies, say something about the landing spot — the role waiting for them, who they sit behind or alongside, whether the fit is natural or awkward, what the team appears to need. Judge it from the roster given; do not invent teammates.
 
+Ratings are scouting information for YOU, not material for the page. Never print a rating number and never refer to one — no "a 78 three-point rating", no "his overall climbed to 71", no "peaked at 84", no grades or tiers derived from them. Read them to know what a player is good at, what he cannot do, and how that changed year to year, then say it the way a writer would: an elite finisher, no handle to speak of, a jumper that finally came around, legs that went at 33. The same goes for any teammate's or draft pick's ratings.
+
 Write about them as people with careers. Do not dump the data back — weave the numbers that matter into the prose.
 
 RETIRING PLAYERS GET TWO PIECES. A player marked RETIRING AFTER THIS SEASON has just played his last season, and his block carries his career totals. Write his season recap exactly like everyone else's, and then a SECOND, separate piece: the retirement writeup, the kind of career retrospective published when a player hangs it up. Scale that one to the career, and do not give everyone the same treatment:
@@ -45,6 +47,7 @@ Follow these rules EXACTLY:
 - Begin every player's recap with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each recap is filed to the correct player — never omit it, never change it.
 - Straight after a <!--player:ID--> marker, write the season recap as plain prose. NO headline, NO title, NO heading line, no bold lead-in, no year — start with the first sentence of the recap itself. No stat table, no bullet lists.
 - For a RETIRING player only, add the retirement writeup after his season recap under a DIFFERENT marker line: <!--retired:ID--> (same ID). This one DOES get a headline: the line straight after the marker is a few words, title-style, no ending period, no bold, no brackets and no year, about how the CAREER is remembered ("The quiet exit", "Sixteen years, one team"). Then a blank line, then the writeup.
+- Never state a rating number. Statistics (points, rebounds, percentages, records) are fine to quote; ratings are not.
 - Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
 - Put exactly one blank line between pieces.`;
 

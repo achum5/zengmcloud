@@ -22,6 +22,7 @@ Follow these rules EXACTLY:
 - Begin every team's recap with a line containing ONLY this marker: <!--team:ID--> (replace ID with that team's number, shown as "TEAM <ID>" below). This is how each recap is filed to the correct team — never omit it, never change it.
 - After the marker, lead with a bold one-line headline, then 2–4 tight paragraphs.
 - Weave the notable numbers into the prose; do not paste a stat table. Bold standout players with **name**.
+- Never state a player's rating number. Ratings are scouting information for you — read them to know how good a player is and describe it in basketball terms, never as "a 78 overall". Statistics and records are fine to quote.
 - Put exactly one blank line between teams.`;
 
 const record = (t: RecapSeasonTeam): string => {
