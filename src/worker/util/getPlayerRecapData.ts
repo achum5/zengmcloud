@@ -1,5 +1,6 @@
 import { idb } from "../db/index.ts";
-import { g } from "./index.ts";
+import { g, helpers } from "./index.ts";
+import { getPlayoffsByConfBySeason } from "../views/frivolitiesTeamSeasons.ts";
 import { PHASE_TEXT, RATINGS } from "../../common/constants.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
 import { hasSeasonNote } from "../../common/seasonNote.ts";
@@ -30,6 +31,9 @@ export type RecapPlayerSeasonStats = {
 	season: number;
 	age: number;
 	abbrev: string;
+	// How that team did that year ("45-37, lost in the first round"), so reading
+	// a career top to bottom shows what he was playing FOR each season.
+	teamResult?: string;
 	playoffs: boolean;
 	gp: number;
 	gs?: number;
@@ -91,13 +95,48 @@ export type RecapPlayer = {
 	transactions: string[];
 	injuries: { season: number; type: string; games: number }[];
 	feats: { season: number; text: string }[];
+	// Only for the season's draft class: where they went and what they joined.
+	draftInfo?: RecapDraftInfo;
 	// Whether this player's note already has a section for the season being
 	// written, so the UI can report how much is already done.
 	alreadyWritten: boolean;
 };
 
+// The league picture for the season being written: every team's record and how
+// their year ended. Sent once per prompt rather than per player.
+export type RecapLeagueTeam = {
+	abbrev: string;
+	won: number;
+	lost: number;
+	result: string;
+	conf?: string;
+};
+
+// A teammate on the roster a rookie landed on, so the AI can talk about fit
+// rather than guessing at it.
+export type RecapRosterSpot = {
+	name: string;
+	pos: string;
+	age: number;
+	ovr: number;
+	pot: number;
+};
+
+export type RecapDraftInfo = {
+	round: number;
+	pick: number;
+	overall?: number;
+	abbrev: string;
+	// The drafting team's season, and the roster the rookie is joining.
+	teamResult?: string;
+	roster: RecapRosterSpot[];
+};
+
 export type RecapPlayerBatch = {
 	season: number;
+	// Standings + playoff results for the season being written.
+	leagueTeams: RecapLeagueTeam[];
+	champion?: string;
 	batchIndex: number;
 	batchCount: number;
 	batchSize: number;
@@ -198,6 +237,105 @@ export const getPlayerRecapData = async ({
 		hasSeasonNote(p.note, season),
 	).length;
 
+	// --- Team context -------------------------------------------------------
+	// What each team was doing in each season the batch touches, so a career
+	// reads with the stakes attached ("45-37, lost in the first round") rather
+	// than as a column of numbers. Fetched by SEASON (all teams at once) rather
+	// than per team-season, and only back as far as the batch's oldest career.
+	let earliestSeason = season;
+	for (const p of slice) {
+		for (const row of (p as any).stats ?? []) {
+			if (row.season < earliestSeason && row.gp > 0) {
+				earliestSeason = row.season;
+			}
+		}
+	}
+
+	const playoffsByConfBySeason = await getPlayoffsByConfBySeason();
+	const confNameByCid = new Map<number, string>();
+	try {
+		for (const conf of g.get("confs", season)) {
+			confNameByCid.set(conf.cid, conf.name);
+		}
+	} catch {
+		// Conference names are decoration; the standings still work without them.
+	}
+	const teamResultByKey = new Map<string, string>();
+	const teamAbbrevByKey = new Map<string, string>();
+	const leagueTeams: RecapLeagueTeam[] = [];
+	let champion: string | undefined;
+
+	for (let yr = earliestSeason; yr <= season; yr += 1) {
+		let rows: any[];
+		try {
+			rows = await idb.getCopies.teamSeasons({ season: yr }, "noCopyCache");
+		} catch {
+			continue;
+		}
+
+		let numPlayoffRounds = 4;
+		try {
+			numPlayoffRounds = g.get("numGamesPlayoffSeries", yr).length;
+		} catch {
+			// Fall back if that season's setting isn't available.
+		}
+
+		for (const ts of rows) {
+			const result = helpers.roundsWonText({
+				playoffRoundsWon: ts.playoffRoundsWon,
+				numPlayoffRounds,
+				playoffsByConf: playoffsByConfBySeason.get(yr),
+				showMissedPlayoffs: true,
+			});
+			const key = `${yr}|${ts.tid}`;
+			teamResultByKey.set(key, `${ts.won}-${ts.lost}, ${result}`);
+			teamAbbrevByKey.set(key, ts.abbrev ?? `T${ts.tid}`);
+
+			if (yr === season) {
+				leagueTeams.push({
+					abbrev: ts.abbrev ?? `T${ts.tid}`,
+					won: ts.won,
+					lost: ts.lost,
+					result,
+					conf: confNameByCid.get(ts.cid),
+				});
+				if (ts.playoffRoundsWon >= numPlayoffRounds) {
+					champion = ts.abbrev ?? `T${ts.tid}`;
+				}
+			}
+		}
+	}
+	leagueTeams.sort((a, b) => b.won - a.won || a.lost - b.lost);
+
+	// Rosters for the season being written, so a rookie's block can show the
+	// team he actually landed on. Built from the players already in memory.
+	const rosterByTid = new Map<number, RecapRosterSpot[]>();
+	for (const p of playersAll as any[]) {
+		const r = ratingsForSeason(p, season);
+		if (!r) {
+			continue;
+		}
+		const tids = new Set(
+			(p.stats ?? [])
+				.filter((row: any) => row.season === season && row.gp > 0)
+				.map((row: any) => row.tid),
+		);
+		for (const tid of tids) {
+			const list = rosterByTid.get(tid as number) ?? [];
+			list.push({
+				name: `${p.firstName} ${p.lastName}`,
+				pos: r.pos ?? "",
+				age: season - (p.born?.year ?? season),
+				ovr: num(r.ovr),
+				pot: num(r.pot),
+			});
+			rosterByTid.set(tid as number, list);
+		}
+	}
+	for (const list of rosterByTid.values()) {
+		list.sort((a, b) => b.ovr - a.ovr);
+	}
+
 	// Statistical feats, indexed by pid. One fetch for the whole store rather
 	// than per player.
 	const featsByPid = new Map<number, { season: number; text: string }[]>();
@@ -236,7 +374,13 @@ export const getPlayerRecapData = async ({
 			.map((s: any) => ({
 				season: s.season,
 				age: s.season - bornYear,
-				abbrev: abbrevByTid.get(s.tid) ?? `T${s.tid}`,
+				abbrev:
+					teamAbbrevByKey.get(`${s.season}|${s.tid}`) ??
+					abbrevByTid.get(s.tid) ??
+					`T${s.tid}`,
+				teamResult: s.playoffs
+					? undefined
+					: teamResultByKey.get(`${s.season}|${s.tid}`),
 				playoffs: !!s.playoffs,
 				gp: num(s.gp),
 				gs: s.gs,
@@ -343,12 +487,33 @@ export const getPlayerRecapData = async ({
 				games: num(i.games),
 			})),
 			feats: (featsByPid.get(p.pid) ?? []).filter((f) => f.season <= season),
+			draftInfo:
+				p.draft?.year === season && p.draft?.round > 0
+					? {
+							round: num(p.draft.round),
+							pick: num(p.draft.pick),
+							overall:
+								num(p.draft.round) > 0
+									? (num(p.draft.round) - 1) * g.get("numActiveTeams") +
+										num(p.draft.pick)
+									: undefined,
+							abbrev: abbrevByTid.get(p.draft.tid) ?? "?",
+							teamResult: teamResultByKey.get(`${season}|${p.draft.tid}`),
+							// Who he is joining. Capped: the top of the roster is what
+							// shapes a rookie's role; the 14th man does not.
+							roster: (rosterByTid.get(p.draft.tid) ?? [])
+								.filter((spot) => spot.name !== `${p.firstName} ${p.lastName}`)
+								.slice(0, 10),
+						}
+					: undefined,
 			alreadyWritten: hasSeasonNote(p.note, season),
 		};
 	});
 
 	return {
 		season,
+		leagueTeams,
+		champion,
 		batchIndex: clampedIndex,
 		batchCount,
 		batchSize,

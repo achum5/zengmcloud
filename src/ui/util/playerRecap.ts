@@ -1,4 +1,5 @@
 import type {
+	RecapDraftInfo,
 	RecapPlayer,
 	RecapPlayerBatch,
 } from "../../worker/util/getPlayerRecapData.ts";
@@ -22,6 +23,10 @@ const INSTRUCTIONS = `You are a basketball writer producing per-player season re
 Length: judge it by how much there is to say. A deep-bench player who barely played might get one sentence. A star, or anyone with a real story that year (a breakout, a collapse, an injury, a trade, an award, a title run, a contract year, a rookie debut, a last season), can get up to two short paragraphs. Most players land in between. Never pad a nothing season into paragraphs.
 
 Each player's data is their career UP TO AND INCLUDING this season: stats by season, full ratings by season (so you can see skills develop or erode), transactions, awards, statistical feats, and injuries. Use that history to give the season meaning — a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Write as if the season has just ended and nobody knows what happens next.
+
+Every stat line carries the team's record and how that team's year ended, and the league standings for this season are listed above the players. Use that context where it makes the recap better: 24 ppg on a 19-63 team is a different story from 24 ppg on a title winner, and a role player's year is often best told through what his team was chasing. Keep the focus on the PLAYER — team context is there to give his season stakes, not to become a team recap.
+
+Players drafted this season have a DRAFTED block: where they went, how that team just finished, and the roster they are joining. For those rookies, say something about the landing spot — the role waiting for them, who they sit behind or alongside, whether the fit is natural or awkward, what the team appears to need. Judge it from the roster given; do not invent teammates.
 
 Write about them as people with careers. Do not dump the data back — weave the numbers that matter into the prose.
 
@@ -57,6 +62,8 @@ const statLine = (s: RecapPlayer["stats"][number]) => {
 		`3p${pct(s.tp, s.tpa)}`,
 		`ft${pct(s.ft, s.fta)}`,
 		s.per !== undefined ? `per${one(s.per)}` : undefined,
+		// What the team did that year, so the career reads with stakes attached.
+		s.teamResult ? `[${s.teamResult}]` : undefined,
 	]
 		.filter(Boolean)
 		.join(" ");
@@ -69,6 +76,26 @@ const ratingLine = (r: RecapPlayer["ratings"][number]) => {
 	return `${r.season} age${r.age} ${r.pos} ovr${r.ovr} pot${r.pot}${
 		subs ? ` | ${subs}` : ""
 	}`;
+};
+
+// Where a rookie landed and what he walked into. Only present for the season's
+// own draft class, so it costs nothing for everyone else.
+const draftBlock = (d: RecapDraftInfo): string[] => {
+	const lines: string[] = [];
+	lines.push(
+		`DRAFTED: rd${d.round} pk${d.pick}${
+			d.overall !== undefined ? ` (#${d.overall} overall)` : ""
+		} by ${d.abbrev}${d.teamResult ? ` — ${d.abbrev} were ${d.teamResult}` : ""}`,
+	);
+	if (d.roster.length > 0) {
+		lines.push(`  Roster joining (best first):`);
+		for (const spot of d.roster) {
+			lines.push(
+				`    ${spot.name} ${spot.pos} age${spot.age} ovr${spot.ovr} pot${spot.pot}`,
+			);
+		}
+	}
+	return lines;
 };
 
 const playerBlock = (p: RecapPlayer, season: number): string => {
@@ -169,7 +196,42 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 		);
 	}
 
+	if (p.draftInfo) {
+		lines.push(...draftBlock(p.draftInfo));
+	}
+
 	return lines.join("\n");
+};
+
+// The league picture for the season being written. Sent ONCE for the whole
+// batch rather than repeated per player, which is what makes it affordable.
+const leagueBlock = (data: RecapPlayerBatch): string[] => {
+	const teams = data.leagueTeams ?? [];
+	if (teams.length === 0) {
+		return [];
+	}
+
+	const lines = [`=== LEAGUE ${data.season} ===`];
+	if (data.champion) {
+		lines.push(`Champion: ${data.champion}`);
+	}
+
+	const byConf = new Map<string, typeof teams>();
+	for (const team of teams) {
+		const key = team.conf ?? "";
+		byConf.set(key, [...(byConf.get(key) ?? []), team]);
+	}
+
+	for (const [conf, group] of byConf) {
+		if (conf) {
+			lines.push(conf);
+		}
+		for (const team of group) {
+			lines.push(`  ${team.abbrev} ${team.won}-${team.lost}, ${team.result}`);
+		}
+	}
+
+	return lines;
 };
 
 export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
@@ -178,6 +240,8 @@ export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
 		"",
 		`LISTED SEASON: ${data.season}`,
 		`This is batch ${data.batchIndex + 1} of ${data.batchCount} for this season (${data.players.length} players in this batch, ${data.totalPlayers} in the league).`,
+		"",
+		...leagueBlock(data),
 		"",
 		"=== PLAYERS ===",
 	].join("\n");

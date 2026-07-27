@@ -44,6 +44,7 @@ const player = (pid: number, seasons: number) => ({
 		season: 2001 + i,
 		age: 21 + i,
 		abbrev: "BOS",
+		teamResult: `${40 + i}-${42 - i}, lost in the first round`,
 		playoffs: false,
 		gp: 82,
 		min: 2800,
@@ -76,14 +77,35 @@ const player = (pid: number, seasons: number) => ({
 	alreadyWritten: false,
 });
 
-const batch = (players: any[]): RecapPlayerBatch => ({
+const batch = (
+	players: any[],
+	extra: Partial<RecapPlayerBatch> = {},
+): RecapPlayerBatch => ({
 	season: 2005,
+	leagueTeams: [
+		{
+			abbrev: "BOS",
+			won: 62,
+			lost: 20,
+			result: "won championship",
+			conf: "Eastern Conference",
+		},
+		{
+			abbrev: "CHI",
+			won: 19,
+			lost: 63,
+			result: "missed playoffs",
+			conf: "Eastern Conference",
+		},
+	],
+	champion: "BOS",
 	batchIndex: 0,
 	batchCount: 3,
 	batchSize: 40,
 	totalPlayers: 100,
 	alreadyWrittenTotal: 0,
 	players,
+	...extra,
 });
 
 describe("buildPlayerRecapPrompt", () => {
@@ -112,6 +134,66 @@ describe("buildPlayerRecapPrompt", () => {
 		const prompt = buildPlayerRecapPrompt(batch([player(1, 2)]));
 		assert.ok(prompt.includes("LISTED SEASON: 2005"));
 		assert.ok(prompt.includes("batch 1 of 3"));
+	});
+
+	test("the season's standings and champion are sent once, not per player", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(1, 2), player(2, 2)]));
+		assert.ok(prompt.includes("=== LEAGUE 2005 ==="));
+		assert.ok(prompt.includes("Champion: BOS"));
+		assert.ok(prompt.includes("BOS 62-20, won championship"));
+		assert.ok(prompt.includes("CHI 19-63, missed playoffs"));
+		assert.ok(prompt.includes("Eastern Conference"));
+		// One standings table for the batch, however many players are in it.
+		assert.strictEqual(prompt.split("=== LEAGUE 2005 ===").length - 1, 1);
+	});
+
+	test("a league with no team data just omits the standings", () => {
+		// Older leagues, or a season with no teamSeasons rows, must not produce an
+		// empty heading.
+		const prompt = buildPlayerRecapPrompt(
+			batch([player(1, 2)], { leagueTeams: [], champion: undefined }),
+		);
+		assert.ok(!prompt.includes("=== LEAGUE"));
+		assert.ok(prompt.includes("=== PLAYERS ==="));
+	});
+
+	test("each season's stat line carries what that team did", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("[40-42, lost in the first round]"));
+		assert.ok(prompt.includes("[44-38, lost in the first round]"));
+	});
+
+	test("a player drafted this season gets his landing spot and roster", () => {
+		const p = {
+			...player(11, 1),
+			draftInfo: {
+				round: 1,
+				pick: 3,
+				overall: 3,
+				abbrev: "CHI",
+				teamResult: "19-63, missed playoffs",
+				roster: [
+					{ name: "Vet Guard", pos: "PG", age: 31, ovr: 62, pot: 62 },
+					{ name: "Young Big", pos: "C", age: 23, ovr: 55, pot: 70 },
+				],
+			},
+		};
+		const prompt = buildPlayerRecapPrompt(batch([p]));
+		assert.ok(prompt.includes("DRAFTED: rd1 pk3 (#3 overall) by CHI"));
+		assert.ok(prompt.includes("CHI were 19-63, missed playoffs"));
+		assert.ok(prompt.includes("Vet Guard PG age31 ovr62 pot62"));
+		assert.ok(prompt.includes("Young Big C age23 ovr55 pot70"));
+	});
+
+	test("a veteran gets no draft block", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(!prompt.includes("DRAFTED:"));
+	});
+
+	test("the instructions ask for team context and rookie fit", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("Keep the focus on the PLAYER"));
+		assert.ok(prompt.includes("do not invent teammates"));
 	});
 
 	test("a player who didn't play is marked as such rather than omitted", () => {
