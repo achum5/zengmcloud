@@ -819,6 +819,8 @@ export type GameAttributesLeague = {
 	tradeDeadline: number;
 	tradeProposalsSeed: number;
 	tragicDeathRate: number;
+	easterEggPlayers: boolean;
+	fakeAges: boolean;
 	tragicDeaths?: TragicDeaths;
 	userTid: number;
 	userTids: number[];

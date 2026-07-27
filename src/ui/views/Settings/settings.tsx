@@ -1082,6 +1082,24 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Events",
+			key: "easterEggPlayers",
+			name: "Easter Egg Players",
+			godModeRequired: "always",
+			type: "bool",
+			description:
+				"Very rarely, a joke player shows up in a draft class. Disable this to keep draft classes entirely normal.",
+		},
+		{
+			category: "Events",
+			key: "fakeAges",
+			name: "Fake Ages",
+			godModeRequired: "always",
+			type: "bool",
+			description:
+				"Occasionally a player turns out to have been lying about his age, and gets older. Disable this to keep every player's age as generated.",
+		},
+		{
+			category: "Events",
 			key: "tragicDeathRate",
 			name: "Tragic Death Rate",
 			godModeRequired: "always",

@@ -37,6 +37,8 @@ type Key =
 	| "rookieContractLengths"
 	| "rookiesCanRefuse"
 	| "tragicDeathRate"
+	| "easterEggPlayers"
+	| "fakeAges"
 	| "brotherRate"
 	| "sonRate"
 	| "forceRetireAge"
@@ -264,6 +266,8 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			rookieContractLengths: g.get("rookieContractLengths"),
 			rookiesCanRefuse: g.get("rookiesCanRefuse"),
 			tragicDeathRate: g.get("tragicDeathRate"),
+			easterEggPlayers: g.get("easterEggPlayers"),
+			fakeAges: g.get("fakeAges"),
 			brotherRate: g.get("brotherRate"),
 			sonRate: g.get("sonRate"),
 			forceRetireAge: g.get("forceRetireAge"),

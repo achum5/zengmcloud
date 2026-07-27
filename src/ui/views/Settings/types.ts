@@ -28,6 +28,8 @@ export type Key =
 	| "playersRefuseToNegotiate"
 	| "injuryRate"
 	| "tragicDeathRate"
+	| "easterEggPlayers"
+	| "fakeAges"
 	| "brotherRate"
 	| "sonRate"
 	| "forceRetireAge"
