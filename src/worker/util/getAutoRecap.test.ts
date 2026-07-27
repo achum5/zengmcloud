@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
-import { getAutoRecap, getAutoDayRecap } from "./getAutoRecap.ts";
+import {
+	beginRecapBatch,
+	endRecapBatch,
+	getAutoDayRecap,
+	getAutoRecap,
+	pick,
+} from "./getAutoRecap.ts";
 import type {
 	RecapAverages,
 	RecapGame,
@@ -1935,4 +1941,49 @@ test("print sample recaps", () => {
 			"\n===============================================\n",
 	);
 	assert.ok(true);
+});
+
+describe("phrasing variety across a night", () => {
+	// Fourteen independent games reliably produced "the Bucks routed the Suns,
+	// the Hornets routed the Pacers, the Nets routed the Heat" and five straight
+	// "got past"es, because every game picked its phrasing independently.
+	test("a batch rotates through a pool instead of repeating", () => {
+		const pool = ["routed", "blew out", "ran away from", "cruised past"];
+		const rng = () => 0; // Always picks the first available option.
+
+		beginRecapBatch();
+		const picks = [pick(rng, pool), pick(rng, pool), pick(rng, pool)];
+		endRecapBatch();
+
+		assert.strictEqual(new Set(picks).size, 3, picks.join(", "));
+	});
+
+	test("an exhausted pool starts over rather than running dry", () => {
+		const pool = ["edged", "held off"];
+		const rng = () => 0;
+
+		beginRecapBatch();
+		const picks = [pick(rng, pool), pick(rng, pool), pick(rng, pool)];
+		endRecapBatch();
+
+		assert.strictEqual(picks[2], picks[0]);
+	});
+
+	test("the memory doesn't leak between batches", () => {
+		// Each night starts fresh, so day 2 isn't shaped by what day 1 happened to
+		// use. (A single recap generated on its own is covered by the determinism
+		// test above, which resets on entry to getAutoRecap.)
+		const pool = ["routed", "blew out", "ran away from"];
+		const rng = () => 0;
+
+		beginRecapBatch();
+		const first = pick(rng, pool);
+		endRecapBatch();
+
+		beginRecapBatch();
+		const second = pick(rng, pool);
+		endRecapBatch();
+
+		assert.strictEqual(first, second);
+	});
 });

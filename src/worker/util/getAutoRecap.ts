@@ -26,8 +26,58 @@ const rngFromSeed = (seed: number): (() => number) => {
 	};
 };
 
-const pick = <T>(rng: () => number, arr: T[]): T =>
-	arr[Math.floor(rng() * arr.length)]!;
+// Phrasing memory, so a night of recaps doesn't say the same thing over and
+// over. Every game seeds its own rng from its gid, which makes each game
+// reproducible but leaves the choices independent - across fourteen games that
+// reliably produced "the Bucks routed the Suns, the Hornets routed the Pacers,
+// the Nets routed the Heat" and five straight "got past"es.
+//
+// So pick() remembers what a batch has already used from each pool and prefers
+// something else until the pool is exhausted. Keyed by the pool itself, so
+// unrelated pools never interfere, and reset per day by beginRecapBatch. A
+// single game generated on its own (the box score page) just starts empty,
+// which is the right behavior there.
+const phraseMemory = new Map<string, Set<string>>();
+
+// Outside a batch, one game is one batch. That keeps a single recap
+// reproducible - generating the same game twice has to give the same text - so
+// the memory only spans calls when something explicitly opens a batch.
+let inBatch = false;
+
+export const beginRecapBatch = () => {
+	phraseMemory.clear();
+	inBatch = true;
+};
+
+export const endRecapBatch = () => {
+	inBatch = false;
+	phraseMemory.clear();
+};
+
+export const pick = <T>(rng: () => number, arr: T[]): T => {
+	if (arr.length <= 1) {
+		return arr[0]!;
+	}
+
+	const key = arr.map(String).join("\u0000");
+	let used = phraseMemory.get(key);
+	if (!used) {
+		used = new Set<string>();
+		phraseMemory.set(key, used);
+	}
+
+	let fresh = arr.filter((x) => !used!.has(String(x)));
+	if (fresh.length === 0) {
+		// Everything has been used once; start the rotation over rather than
+		// refusing to say anything.
+		used.clear();
+		fresh = arr;
+	}
+
+	const chosen = fresh[Math.floor(rng() * fresh.length)]!;
+	used.add(String(chosen));
+	return chosen;
+};
 
 // Fisher-Yates using the seeded rng, so ordering is deterministic per game.
 const shuffle = <T>(rng: () => number, arr: T[]): T[] => {
@@ -1358,6 +1408,9 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 // --- Entry point: one game -----------------------------------------------------
 
 export const getAutoRecap = (game: RecapGame): string => {
+	if (!inBatch) {
+		phraseMemory.clear();
+	}
 	const rng = rngFromSeed((game.gid + 1) * 2654435761);
 
 	if (game.allStar) {
@@ -2155,6 +2208,10 @@ const closeGamesSentence = (games: RecapGame[]): string | undefined => {
 
 export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	const { games, standings, day, playoffs } = input;
+
+	// One night, one pool of phrasing - see pick().
+	beginRecapBatch();
+
 	const rng = rngFromSeed((day + 1) * 40503 + games.length * 97);
 
 	if (games.length === 0) {

@@ -3,7 +3,12 @@ import { g } from "./index.ts";
 import { getGameSpread } from "../../common/getGameSpread.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
-import { getAutoRecap, getAutoDayRecap } from "./getAutoRecap.ts";
+import {
+	beginRecapBatch,
+	endRecapBatch,
+	getAutoDayRecap,
+	getAutoRecap,
+} from "./getAutoRecap.ts";
 import {
 	DEFAULT_RECAP_MAX_GAMES,
 	DEFAULT_RECAP_MAX_DAYS,
@@ -1500,9 +1505,17 @@ export const getAutoRecapsForDay = async ({
 		games.push(await ctx.buildRecapGame(game, day));
 	}
 
+	// One night, one pool of phrasing. Each game seeds its own rng, so without
+	// this the fourteen recaps pick independently and land on the same verbs over
+	// and over - five "got past"es and four "routed"s in a single night.
 	const notes: Record<number, string> = {};
-	for (const recapGame of games) {
-		notes[recapGame.gid] = getAutoRecap(recapGame);
+	beginRecapBatch();
+	try {
+		for (const recapGame of games) {
+			notes[recapGame.gid] = getAutoRecap(recapGame);
+		}
+	} finally {
+		endRecapBatch();
 	}
 
 	const playoffs = games.some((game) => game.playoffs);
