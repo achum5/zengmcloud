@@ -128,6 +128,12 @@ const categories: Category[] = [
 		desc: "Box scores take up tons of space, but by default only three seasons are saved.",
 		default: false,
 	},
+	{
+		name: "replays",
+		title: "Saved replays",
+		desc: "Rewatchable live-sim play-by-play. By far the largest thing in a league, and never pruned - leave this off unless you specifically want to keep replays, especially if the file is going to a phone.",
+		default: false,
+	},
 ];
 
 const getCurrentSelected = (checked: Checked): BulkType | undefined => {
@@ -308,7 +314,12 @@ const storesByKey = {
 	],
 	newsFeedTransactions: ["events"],
 	newsFeedOther: ["events"],
-	games: ["games", "liveGamePlayByPlay"],
+	games: ["games"],
+	// Split out from box scores: a saved replay is the full play-by-play of a
+	// game, they are written for every auto-replay team's games and never
+	// pruned, and they dwarf everything else in the file. A 45 MB handoff that
+	// crashed a phone on import was almost entirely this.
+	replays: ["liveGamePlayByPlay"],
 } satisfies Record<string, LeagueDBStoreNames[]>;
 
 // Compile-time guard: EVERY league store must be exportable via some category

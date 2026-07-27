@@ -98,8 +98,18 @@ const makeExportStream = async (
 	// checkpoint instead of replaying the whole room history. Partial exports
 	// must not claim it - their state is not what the checkpoint describes.
 	let syncCheckpoint: { leagueId: string; watermark: number } | undefined;
+	// Saved replays are exempt from the completeness test. A replay is a
+	// rewatchable recording of a game, not league STATE - the checkpoint
+	// describes where this file's data sits in the room's history, and leaving
+	// the recordings out doesn't make that claim any less true. They are also
+	// far and away the largest thing in a league and never pruned, so counting
+	// them would force anyone making a handoff file to choose between a sync
+	// checkpoint and a file small enough to import on a phone.
+	const CHECKPOINT_OPTIONAL_STORES = new Set(["liveGamePlayByPlay"]);
 	const missingStores = Array.from(leagueDB.objectStoreNames).filter(
-		(store) => !(storesInput as string[]).includes(store),
+		(store) =>
+			!(storesInput as string[]).includes(store) &&
+			!CHECKPOINT_OPTIONAL_STORES.has(store),
 	);
 	const isFullExport = missingStores.length === 0;
 	// Mirrored to the sync debug overlay so a checkpoint-less export is never
