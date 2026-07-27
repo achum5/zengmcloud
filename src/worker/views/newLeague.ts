@@ -160,6 +160,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"hideRatingsOnesDigit",
 		),
+		hideTeamRatings: unwrapGameAttribute(
+			defaultGameAttributes,
+			"hideTeamRatings",
+		),
 		challengeFiredLuxuryTax: unwrapGameAttribute(
 			defaultGameAttributes,
 			"challengeFiredLuxuryTax",

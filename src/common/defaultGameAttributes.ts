@@ -251,6 +251,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	challengeNoFreeAgents: false,
 	challengeNoRatings: false,
 	hideRatingsOnesDigit: false, // display-only: show ratings floored to the tens digit (56 -> 5)
+	hideTeamRatings: false, // display-only: hide team overall ratings (trades show the change instead)
 	challengeNoTrades: false,
 	challengeLoseBestPlayer: false,
 	challengeFiredLuxuryTax: false,

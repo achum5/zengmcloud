@@ -118,6 +118,8 @@ const TeamList = ({
 	season: number;
 	userTid: number;
 }) => {
+	const { hideTeamRatings } = useLocal(["hideTeamRatings"]);
+
 	if (teams.length === 0) {
 		return <p>None</p>;
 	}
@@ -149,7 +151,7 @@ const TeamList = ({
 						>
 							{t.region} {t.name}
 						</a>
-						{!challengeNoRatings ? (
+						{!challengeNoRatings && !hideTeamRatings ? (
 							<>
 								, <RatingWithChange change={t.dovr}>{t.ovr}</RatingWithChange>{" "}
 								ovr

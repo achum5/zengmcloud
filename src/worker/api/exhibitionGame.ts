@@ -94,6 +94,13 @@ const getSeasonInfoLeague = async ({
 		gameAttributes[key] = value as any;
 	}
 
+	// This league hides team ratings, so the teams it exports carry that with
+	// them - otherwise Exhibition would be a way to look up any team's rating in
+	// a league where the setting is on.
+	const hideOvr =
+		(await getGameAttribute("hideTeamRatings")) ||
+		(await getGameAttribute("challengeNoRatings"));
+
 	const numGamesPlayoffSeries = await getGameAttribute("numGamesPlayoffSeries");
 	const currentSeason = await getGameAttribute("season");
 	const currentPhase = await getGameAttribute("phase");
@@ -267,6 +274,7 @@ const getSeasonInfoLeague = async ({
 					roundsWonText,
 				},
 				ovr: 0,
+				hideOvr,
 				players: teamPlayers,
 
 				// If current season, use current depth. Otherwise, auto generate later.

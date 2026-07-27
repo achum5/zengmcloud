@@ -100,7 +100,9 @@ export const getStats = (statTypePlus: string, seasons: [number, number]) => {
 	} else if (statTypePlus === "powerRankings") {
 		const stats = ["avgAge", "rank"];
 
-		if (!g.get("challengeNoRatings")) {
+		// rank_* below are RANKS, not ratings, so they stay - only the raw team
+		// rating is hidden.
+		if (!g.get("challengeNoRatings") && !g.get("hideTeamRatings")) {
 			stats.push("ovr", "ovrCurrent");
 		}
 

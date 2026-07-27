@@ -39,6 +39,8 @@ export type ExhibitionTeam = {
 	};
 	players: Player[];
 	ovr: number;
+	// The league this team came from hides team ratings, so this one does too.
+	hideOvr?: boolean;
 } & Pick<
 	Team,
 	| "abbrev"
@@ -344,7 +346,8 @@ const SelectTeam = ({
 					>
 						{teams.map((t) => (
 							<option key={t.tid} value={t.tid}>
-								{t.region} {t.name} ({t.ovr} ovr)
+								{t.region} {t.name}
+								{t.hideOvr ? "" : ` (${t.ovr} ovr)`}
 							</option>
 						))}
 						{teams.length === 0 ? (
@@ -380,7 +383,7 @@ const SelectTeam = ({
 				</div>
 				{t ? (
 					<div className="ms-2" style={{ marginTop: 22 }}>
-						<h2>{t.ovr} ovr</h2>
+						{t.hideOvr ? null : <h2>{t.ovr} ovr</h2>}
 						{t.seasonInfo ? (
 							<>
 								<h2 className="mb-0">{record}</h2>

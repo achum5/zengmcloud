@@ -98,6 +98,7 @@ export const ScoreBox = memo(
 	}) => {
 		const {
 			challengeNoRatings,
+			hideTeamRatings,
 			homeCourtAdvantage,
 			neutralSite,
 			numPeriods,
@@ -108,6 +109,7 @@ export const ScoreBox = memo(
 			userTid,
 		} = useLocal([
 			"challengeNoRatings",
+			"hideTeamRatings",
 			"homeCourtAdvantage",
 			"neutralSite",
 			"numPeriods",
@@ -125,6 +127,7 @@ export const ScoreBox = memo(
 		const hasOvrs =
 			!small &&
 			!challengeNoRatings &&
+			!hideTeamRatings &&
 			game.teams[0].ovr !== undefined &&
 			game.teams[1].ovr !== undefined;
 

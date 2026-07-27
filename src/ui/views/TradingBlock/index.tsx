@@ -164,7 +164,7 @@ export const Offer = (props: OfferProps) => {
 	const salaryCapOrPayrollText =
 		salaryCapType === "none" ? "payroll" : "cap space";
 
-	const { userTid } = useLocal(["userTid"]);
+	const { hideTeamRatings, userTid } = useLocal(["hideTeamRatings", "userTid"]);
 
 	if (!teamInfo) {
 		return null;
@@ -214,14 +214,14 @@ export const Offer = (props: OfferProps) => {
 				{!challengeNoRatings && !hideTopTeamOvrs ? (
 					<>
 						<div>
-							Your ovr:{" "}
+							Your ovr{hideTeamRatings ? " change" : ""}:{" "}
 							<OvrChange
 								before={summary.teams[1].ovrBefore}
 								after={summary.teams[1].ovrAfter}
 							/>
 						</div>
 						<div>
-							{teamInfo.abbrev} ovr:{" "}
+							{teamInfo.abbrev} ovr{hideTeamRatings ? " change" : ""}:{" "}
 							<OvrChange
 								before={summary.teams[0].ovrBefore}
 								after={summary.teams[0].ovrAfter}
@@ -310,7 +310,11 @@ export const OfferTable = ({
 	handleRemove?: (i: number) => void;
 	offers: OfferType[];
 } & Pick<LocalStateUI, "salaryCap" | "salaryCapType">) => {
-	const { teamInfoCache, userTid } = useLocal(["teamInfoCache", "userTid"]);
+	const { hideTeamRatings, teamInfoCache, userTid } = useLocal([
+		"hideTeamRatings",
+		"teamInfoCache",
+		"userTid",
+	]);
 
 	const offerCols = getCols(
 		[
@@ -334,11 +338,31 @@ export const OfferTable = ({
 			},
 		},
 	);
-	offerCols[4]!.title = "Your Ovr";
+	offerCols[4]!.title = hideTeamRatings ? "Your Δ" : "Your Ovr";
 	offerCols[4]!.desc = "Your team's change in ovr rating";
-	offerCols[5]!.title = "Other Ovr";
+	offerCols[5]!.title = hideTeamRatings ? "Other Δ" : "Other Ovr";
 	offerCols[5]!.desc = "Other team's change in ovr rating";
 	offerCols.splice(6, 0, ...assetCols);
+
+	// Sort by the CHANGE when ratings are hidden, so the column stays useful for
+	// "which of these offers helps me most" - sorting by the resulting rating
+	// would rank by how good the team already is, which is the hidden part.
+	const ovrCell = ({
+		ovrBefore,
+		ovrAfter,
+	}: {
+		ovrBefore: number;
+		ovrAfter: number;
+	}) => {
+		const diff = ovrAfter - ovrBefore;
+		return {
+			value: <OvrChange before={ovrBefore} after={ovrAfter} />,
+			sortValue: hideTeamRatings ? diff : ovrAfter,
+			searchValue: hideTeamRatings
+				? `${diff > 0 ? "+" : ""}${diff}`
+				: `${ovrBefore} ${ovrAfter}`,
+		};
+	};
 
 	const offerRows = offers.map((offer, i) => {
 		const salaryCapOrPayroll =
@@ -374,30 +398,8 @@ export const OfferTable = ({
 				</a>,
 				helpers.formatRecord(offer),
 				offer.strategy,
-				!challengeNoRatings
-					? {
-							value: (
-								<OvrChange
-									before={offer.summary.teams[1].ovrBefore}
-									after={offer.summary.teams[1].ovrAfter}
-								/>
-							),
-							sortValue: offer.summary.teams[1].ovrAfter,
-							searchValue: `${offer.summary.teams[1].ovrBefore} ${offer.summary.teams[1].ovrAfter}`,
-						}
-					: null,
-				!challengeNoRatings
-					? {
-							value: (
-								<OvrChange
-									before={offer.summary.teams[0].ovrBefore}
-									after={offer.summary.teams[0].ovrAfter}
-								/>
-							),
-							sortValue: offer.summary.teams[0].ovrAfter,
-							searchValue: `${offer.summary.teams[0].ovrBefore} ${offer.summary.teams[0].ovrAfter}`,
-						}
-					: null,
+				!challengeNoRatings ? ovrCell(offer.summary.teams[1]) : null,
+				!challengeNoRatings ? ovrCell(offer.summary.teams[0]) : null,
 				...getAssetColContents(offer),
 				wrappedCurrency(salaryCapOrPayroll / 1000, "M"),
 				{

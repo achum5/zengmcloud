@@ -102,15 +102,23 @@ const NewTeam = ({
 	otherTeamsWantToHire,
 	teams,
 }: View<"newTeam">) => {
-	const { challengeNoRatings, gameOver, godMode, phase, season, userTid } =
-		useLocal([
-			"challengeNoRatings",
-			"gameOver",
-			"godMode",
-			"phase",
-			"season",
-			"userTid",
-		]);
+	const {
+		challengeNoRatings,
+		gameOver,
+		godMode,
+		hideTeamRatings,
+		phase,
+		season,
+		userTid,
+	} = useLocal([
+		"challengeNoRatings",
+		"hideTeamRatings",
+		"gameOver",
+		"godMode",
+		"phase",
+		"season",
+		"userTid",
+	]);
 
 	const [tid, setTid] = useState(teams?.[0]?.tid ?? undefined);
 	const [submitting, setSubmitting] = useState(false);
@@ -328,7 +336,7 @@ const NewTeam = ({
 									won={t.seasonAttrs.won}
 									roundsWonText={t.roundsWonText}
 								/>
-								{!challengeNoRatings ? (
+								{!challengeNoRatings && !hideTeamRatings ? (
 									<>
 										<br />
 										Team rating: {t.ovr}/100

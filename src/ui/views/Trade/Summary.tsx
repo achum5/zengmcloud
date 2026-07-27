@@ -28,6 +28,9 @@ export const arrow = (
 	</svg>
 );
 
+// How a trade moves a team's rating. With team ratings hidden this shows only
+// the CHANGE - the whole point of the setting is that you don't know how good a
+// team is, but you should still be able to tell whether a deal helps you.
 export const OvrChange = ({
 	after,
 	before,
@@ -35,17 +38,26 @@ export const OvrChange = ({
 	after: number;
 	before: number;
 }) => {
+	const { hideTeamRatings } = useLocal(["hideTeamRatings"]);
+
+	const className = clsx({
+		"text-success": after > before,
+		"text-danger": before > after,
+	});
+
+	if (hideTeamRatings) {
+		const diff = after - before;
+		return (
+			<span className={className}>
+				{diff > 0 ? "+" : ""}
+				{diff}
+			</span>
+		);
+	}
+
 	return (
 		<>
-			{before} {arrow}{" "}
-			<span
-				className={clsx({
-					"text-success": after > before,
-					"text-danger": before > after,
-				})}
-			>
-				{after}
-			</span>
+			{before} {arrow} <span className={className}>{after}</span>
 		</>
 	);
 };

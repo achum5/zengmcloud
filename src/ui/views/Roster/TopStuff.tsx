@@ -187,6 +187,7 @@ const TopStuff = ({
 		budget,
 		challengeNoRatings,
 		godMode,
+		hideTeamRatings,
 		hardCapAmount,
 		hardCapTids,
 		hardCapUseLuxuryTax,
@@ -200,6 +201,7 @@ const TopStuff = ({
 		"budget",
 		"challengeNoRatings",
 		"godMode",
+		"hideTeamRatings",
 		"hardCapAmount",
 		"hardCapTids",
 		"hardCapUseLuxuryTax",
@@ -298,7 +300,7 @@ const TopStuff = ({
 									) : null}
 								</div>
 							) : null}
-							{!challengeNoRatings ? (
+							{!challengeNoRatings && !hideTeamRatings ? (
 								<div>
 									Team rating:{" "}
 									<TeamRating ovr={t.ovr} ovrCurrent={t.ovrCurrent} />

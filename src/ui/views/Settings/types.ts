@@ -55,6 +55,7 @@ export type Key =
 	| "challengeNoFreeAgents"
 	| "challengeNoRatings"
 	| "hideRatingsOnesDigit"
+	| "hideTeamRatings"
 	| "challengeNoTrades"
 	| "challengeLoseBestPlayer"
 	| "challengeFiredLuxuryTax"

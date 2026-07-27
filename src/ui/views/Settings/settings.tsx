@@ -1405,6 +1405,14 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Challenge Modes",
+			key: "hideTeamRatings",
+			name: "No Visible Team Ratings",
+			type: "bool",
+			description:
+				"Display-only: hides every team's overall rating. Trades and the trading block show how much the rating would change instead of what it is, and Power Rankings category ratings become letter grades curved against the league.",
+		},
+		{
+			category: "Challenge Modes",
 			key: "hideRatingsOnesDigit",
 			name: "Coarse Ratings (Tens Digit Only)",
 			type: "bool",
