@@ -10,6 +10,7 @@ import {
 const updateSportsbook = async (
 	inputs: { tab?: string },
 	updateEvents: UpdateEvents,
+	state: any,
 ) => {
 	if (
 		updateEvents.includes("firstRun") ||
@@ -18,7 +19,11 @@ const updateSportsbook = async (
 		updateEvents.includes("playerMovement") ||
 		updateEvents.includes("gameAttributes") ||
 		// Bets placed/settled bump this so the wallet + open bets refresh.
-		updateEvents.includes("watchList")
+		updateEvents.includes("watchList") ||
+		// Switching tabs changes only the URL, so without this the view returns
+		// undefined, the UI keeps the props it already had, and the page stays on
+		// whatever tab it first rendered.
+		inputs.tab !== state.tab
 	) {
 		// Catch-up settlement (a bet whose outcome is already known but that a
 		// missed hook didn't settle) is NOT done here. This function runs as a
