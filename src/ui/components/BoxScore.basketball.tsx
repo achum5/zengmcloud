@@ -55,6 +55,9 @@ const StatsTable = ({
 	};
 
 	const stats = [
+		// Game score leads, ahead of minutes: it's the one-number summary of the
+		// line that follows, so it reads better at the front than tacked on the end.
+		"gmsc",
 		"min",
 		"pts",
 		"trb",
@@ -69,7 +72,6 @@ const StatsTable = ({
 		"ba",
 		"pf",
 		"pm",
-		"gmsc",
 	];
 	const cols = getCols(
 		stats.map((stat) => `stat:${stat}`),
@@ -171,6 +173,7 @@ const StatsTable = ({
 						<th>Total</th>
 						<th />
 						{typeof t.players[0].abbrev === "string" ? <th /> : null}
+						<th />
 						<th>{Number.isInteger(t.min) ? t.min : t.min.toFixed(1)}</th>
 						<th>{t.pts}</th>
 						<th>{t.drb + t.orb}</th>
@@ -191,10 +194,10 @@ const StatsTable = ({
 						<th>{t.ba}</th>
 						<th>{t.pf}</th>
 						<th />
-						<th />
 						{showHighlights ? <th /> : null}
 					</tr>
 					<tr>
+						{/* Pos, game score, minutes, points, rebounds, assists */}
 						<th>Percentages</th>
 						<th />
 						{typeof t.players[0].abbrev === "string" ? <th /> : null}
@@ -202,10 +205,11 @@ const StatsTable = ({
 						<th />
 						<th />
 						<th />
+						<th />
 						<th>{helpers.roundStat((100 * t.fg) / t.fga, "fgp")}%</th>
 						<th>{helpers.roundStat((100 * t.tp) / t.tpa, "tpp")}%</th>
 						<th>{helpers.roundStat((100 * t.ft) / t.fta, "ftp")}%</th>
-						<th />
+						{/* Offensive rebounds through plus/minus */}
 						<th />
 						<th />
 						<th />

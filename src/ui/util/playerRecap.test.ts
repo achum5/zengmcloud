@@ -692,3 +692,55 @@ describe("markdown and linkable names", () => {
 		assert.ok(prompt.includes("never the abbreviation"));
 	});
 });
+
+describe("next season's draft class", () => {
+	// Prospects are in the batch but have never played, so they get a scouting
+	// report rather than a recap - filed under the season being written, since
+	// that is when it's being scouted.
+	const prospect = () => ({
+		...player(21, 0),
+		prospect: {
+			draftYear: 2006,
+			age: 19,
+			pos: "C",
+			hgt: 84,
+			weight: 240,
+			college: "State",
+			country: "USA",
+			ovr: 44,
+			pot: 71,
+			ratings: { hgt: 90, stre: 55, ins: 60, tp: 20, oiq: 35 },
+		},
+	});
+
+	test("the scouting profile is in the block", () => {
+		const prompt = buildPlayerRecapPrompt(batch([prospect()]));
+		assert.ok(
+			prompt.includes(
+				"PROSPECT — eligible for the 2006 draft, held at the end of the 2006 season",
+			),
+			prompt,
+		);
+		assert.ok(prompt.includes(`age 19 in 2005, C, 7'0", 240 lbs, State, USA`));
+		assert.ok(prompt.includes("ovr44 pot71 | hgt90 stre55 ins60 tp20 oiq35"));
+	});
+
+	test("a prospect isn't written up as having missed the season", () => {
+		const prompt = buildPlayerRecapPrompt(batch([prospect()]));
+		assert.ok(!prompt.includes("THIS SEASON: did not play"));
+		assert.ok(
+			prompt.includes(
+				"THIS SEASON: not in the league — eligible for the 2006 draft",
+			),
+		);
+	});
+
+	test("the instructions demand a long report built only from the ratings", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("PROSPECTS GET A FULL SCOUTING REPORT"));
+		assert.ok(prompt.includes("A short report is a failure here"));
+		assert.ok(
+			prompt.includes("Never print or refer to a rating in the report"),
+		);
+	});
+});

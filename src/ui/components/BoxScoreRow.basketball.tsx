@@ -39,6 +39,7 @@ const BoxScoreRow = ({
 		</td>
 	) : (
 		<>
+			<td>{helpers.gameScore(p).toFixed(1)}</td>
 			<td>{helpers.formatNumber(p.min, "minutes")}</td>
 			<td>{p.pts}</td>
 			<td>{p.drb + p.orb}</td>
@@ -59,7 +60,6 @@ const BoxScoreRow = ({
 			<td>{p.ba}</td>
 			<td>{p.pf}</td>
 			<td>{helpers.plusMinus(p.pm, 0)}</td>
-			<td>{helpers.gameScore(p).toFixed(1)}</td>
 		</>
 	);
 

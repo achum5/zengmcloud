@@ -103,6 +103,8 @@ export type RecapPlayer = {
 	feats: { season: number; text: string }[];
 	// Only for the season's draft class: where they went and what they joined.
 	draftInfo?: RecapDraftInfo;
+	// Only for NEXT season's draft class: the scouting profile to write from.
+	prospect?: RecapProspect;
 	// This is the season they retired after, so the batch asks for a career
 	// retrospective alongside the season recap. The whole career is already in
 	// the block above; this is the summary a retrospective actually leans on.
@@ -168,6 +170,23 @@ export type RecapRetirement = {
 	// Every team he suited up for, with the span and games.
 	teams: { abbrev: string; from: number; to: number; gp: number }[];
 	rings: number;
+};
+
+// A player in NEXT season's draft class, written up as a scouting report rather
+// than a season recap - he hasn't played a game in this league and has no stats
+// to recap. The ratings are the whole basis for the report, which is why the
+// full set is here.
+export type RecapProspect = {
+	draftYear: number;
+	age: number;
+	pos: string;
+	hgt: number;
+	weight: number;
+	college: string;
+	country: string;
+	ovr: number;
+	pot: number;
+	ratings: Record<string, number>;
 };
 
 export type RecapDraftInfo = {
@@ -357,6 +376,21 @@ const buildLeaders = (
 const ratingsForSeason = (p: any, season: number) =>
 	p.ratings.find((r: any) => r.season === season);
 
+// The class that will be drafted at the end of NEXT season. Writing 2002, that
+// is everyone with draft year 2003 - players nobody in the league has seen play
+// a game yet, which is exactly what a scouting report is for.
+const isNextDraftClass = (p: any, season: number) =>
+	p.draft?.year === season + 1;
+
+// The scouting profile to write from: the newest ratings at or before the draft
+// he's eligible for. For a live prospect that is the only row he has; for a
+// season being backfilled it is what he looked like going into the draft rather
+// than what he became afterward.
+const prospectRatings = (p: any, season: number) => {
+	const eligible = (p.ratings ?? []).filter((r: any) => r.season <= season + 1);
+	return eligible.at(-1) ?? p.ratings?.[0];
+};
+
 // Award finishes, reconstructed by running the same ranking the game itself uses
 // to hand out the awards. BBGM stores winners, not ballots, so this is the only
 // way to know a player was fourth in MVP - and being fourth in MVP is a season's
@@ -415,6 +449,38 @@ const getAwardRaces = async (
 // during the 2002 season, which leaves the AI unable to explain how a player
 // got to the team he's playing for - or dating the move a year early.
 const takesEffectNextSeason = (phase: number) => phase >= PHASE.DRAFT_LOTTERY;
+
+const prospectFor = (
+	p: any,
+	season: number,
+	bornYear: number,
+): RecapProspect | undefined => {
+	if (!isNextDraftClass(p, season)) {
+		return undefined;
+	}
+	const r = prospectRatings(p, season);
+	if (!r) {
+		return undefined;
+	}
+	const ratings: Record<string, number> = {};
+	for (const key of RATINGS) {
+		if (typeof r[key] === "number") {
+			ratings[key] = r[key];
+		}
+	}
+	return {
+		draftYear: num(p.draft?.year),
+		age: season - bornYear,
+		pos: r.pos ?? "",
+		hgt: num(p.hgt),
+		weight: num(p.weight),
+		college: p.college ?? "",
+		country: p.born?.loc ?? "",
+		ovr: num(r.ovr),
+		pot: num(r.pot),
+		ratings,
+	};
+};
 
 export const describeTransaction = (
 	t: any,
@@ -486,7 +552,12 @@ export const getPlayerRecapData = async ({
 	const inSeason = playersAll
 		.filter(
 			(p: any) =>
-				ratingsForSeason(p, season) !== undefined || p.retiredYear === season,
+				ratingsForSeason(p, season) !== undefined ||
+				p.retiredYear === season ||
+				// Next year's draft class. They aren't in the league yet, so nothing
+				// above catches them, but they are the story of the coming offseason
+				// and get a scouting report filed under this season.
+				isNextDraftClass(p, season),
 		)
 		.sort((a: any, b: any) => (a.pid ?? 0) - (b.pid ?? 0));
 
@@ -906,6 +977,7 @@ export const getPlayerRecapData = async ({
 								.slice(0, 10),
 						}
 					: undefined,
+			prospect: prospectFor(p, season, bornYear),
 			retiring,
 			alreadyWritten: hasSeasonNote(p.note, season),
 		};
