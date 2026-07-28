@@ -18,7 +18,7 @@ import { hardCapForTid } from "../../../common/getHardCap.ts";
 import type { View } from "../../../common/types.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { wrappedPlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
-import type { DataTableRow } from "../../components/DataTable/index.tsx";
+import type { Col, DataTableRow } from "../../components/DataTable/index.tsx";
 import {
 	DEFAULT_LEVEL,
 	MAX_LEVEL,
@@ -785,23 +785,91 @@ const TeamFinances = ({
 		"salaryCapType",
 	]);
 
-	// Off by default: the totals are what the team has actually committed, and
-	// that has to stay the plain reading of the table. Turning it on answers the
-	// other question - what the books look like if you keep this group together.
-	const [includeProjected, setIncludeProjected] = useState(false);
+	// Which players' projected salaries count toward the totals, by row key.
+	//
+	// Empty by default: the totals are what the team has actually committed, and
+	// that has to stay the plain reading of the table. Checking players answers
+	// the other question - and one player at a time, because "keep everyone"
+	// is rarely the plan. The real question is usually about two or three
+	// specific guys, and an all-or-nothing toggle can't ask it.
+	const [projectedKeys, setProjectedKeys] = useState<ReadonlySet<number>>(
+		new Set(),
+	);
 
-	const cols = getCols(["Pos", "Name", "Cap%"]).concat(
-		salariesSeasons.map((season) => {
-			return {
+	// Who even has a projection to include - a player signed through the last
+	// column has nothing to check.
+	const projectableKeys = contracts
+		.map((p, i) => ({ p, i }))
+		.filter(
+			({ p }) =>
+				!p.released && (p.amountsProjected ?? []).some((x) => x !== undefined),
+		)
+		.map(({ i }) => i);
+
+	const allProjected =
+		projectableKeys.length > 0 &&
+		projectableKeys.every((key) => projectedKeys.has(key));
+
+	const toggleAll = () => {
+		setProjectedKeys(allProjected ? new Set() : new Set(projectableKeys));
+	};
+
+	const toggleOne = (key: number) => {
+		const next = new Set(projectedKeys);
+		if (next.has(key)) {
+			next.delete(key);
+		} else {
+			next.add(key);
+		}
+		setProjectedKeys(next);
+	};
+
+	const cols: Col[] = [
+		{
+			title: "",
+			desc: "Count this player's projected salary in the totals",
+			noSearch: true,
+			sortSequence: [],
+			width: "1%",
+			titleReact: (
+				<input
+					type="checkbox"
+					className="form-check-input m-0"
+					checked={allProjected}
+					disabled={projectableKeys.length === 0}
+					title="Include every projected salary"
+					onChange={toggleAll}
+				/>
+			),
+		},
+		...getCols(["Pos", "Name", "Cap%"]),
+		...salariesSeasons.map(
+			(season): Col => ({
 				title: String(season),
 				sortSequence: ["desc", "asc"],
 				sortType: "number",
-			};
-		}),
-	);
+			}),
+		),
+	];
 
 	const rows = contracts.map((p, i) => {
+		const projectable = projectableKeys.includes(i);
 		const data: DataTableRow["data"] = [
+			projectable
+				? {
+						value: (
+							<input
+								type="checkbox"
+								className="form-check-input m-0"
+								checked={projectedKeys.has(i)}
+								title={`Count ${p.firstName} ${p.lastName}'s projected salary in the totals`}
+								onChange={() => toggleOne(i)}
+							/>
+						),
+						sortValue: projectedKeys.has(i) ? 1 : 0,
+						searchValue: "",
+					}
+				: null,
 			p.pos,
 			wrappedPlayerNameLabels({
 				injury: p.injury,
@@ -862,17 +930,21 @@ const TeamFinances = ({
 	});
 
 	// Projected salaries live alongside the committed ones rather than replacing
-	// them, so the toggle can show either without recomputing the table.
+	// them, so checking a player adds his to the totals without the table having
+	// to be rebuilt.
 	const projectedTotals = salariesSeasons.map((_, i) =>
 		contracts.reduce(
-			(sum, p) => sum + (p.released ? 0 : (p.amountsProjected?.[i] ?? 0)),
+			(sum, p, key) =>
+				sum +
+				(p.released || !projectedKeys.has(key)
+					? 0
+					: (p.amountsProjected?.[i] ?? 0)),
 			0,
 		),
 	);
 	const totals = contractTotals.map(
-		(amount, i) => amount + (includeProjected ? (projectedTotals[i] ?? 0) : 0),
+		(amount, i) => amount + (projectedTotals[i] ?? 0),
 	);
-	const anyProjected = projectedTotals.some((amount) => amount > 0);
 
 	// Each column is measured against ITS season's cap, not today's - scheduled
 	// events step the cap up every year in a real-players league, so a column
@@ -896,11 +968,12 @@ const TeamFinances = ({
 	};
 	const anyHardCap = totals.some((_, i) => Number.isFinite(hardCapFor(i)));
 
-	const star = includeProjected ? "*" : "";
+	// Marks the totals as carrying money nobody has signed for.
+	const star = projectedKeys.size > 0 ? "*" : "";
 
 	const footer = [
 		{
-			data: ["", `Totals${star}`, ""].concat(
+			data: ["", "", `Totals${star}`, ""].concat(
 				// @ts-expect-error
 				totals.map((amount) => highlightZeroNegative(amount)),
 			),
@@ -908,7 +981,7 @@ const TeamFinances = ({
 		...(anyHardCap
 			? [
 					{
-						data: ["", `Hard Cap Space${star}`, ""].concat(
+						data: ["", "", `Hard Cap Space${star}`, ""].concat(
 							// @ts-expect-error
 							totals.map((amount, i) => {
 								const hardCap = hardCapFor(i);
@@ -923,13 +996,13 @@ const TeamFinances = ({
 		{
 			data:
 				salaryCapType === "none"
-					? ["", `Under Luxury Tax${star}`, ""].concat(
+					? ["", "", `Under Luxury Tax${star}`, ""].concat(
 							// @ts-expect-error
 							totals.map((amount, i) =>
 								highlightZeroNegative(capsFor(i).luxuryPayroll / 1000 - amount),
 							),
 						)
-					: ["", `Free Cap Space${star}`, ""].concat(
+					: ["", "", `Free Cap Space${star}`, ""].concat(
 							// @ts-expect-error
 							totals.map((amount, i) =>
 								highlightZeroNegative(capsFor(i).salaryCap / 1000 - amount),
@@ -972,27 +1045,12 @@ const TeamFinances = ({
 				<a href={helpers.leagueUrl(["roster"])}>your roster</a>. Released
 				players who are still owed money are <i>shown in italics</i>. Salaries
 				marked <span className="text-body-secondary">*</span> are projected, not
-				signed.
+				signed. Check a player to count his projection in the totals.
 			</p>
-
-			{anyProjected ? (
-				<div className="form-check mb-2">
-					<input
-						id="tf-include-projected"
-						type="checkbox"
-						className="form-check-input"
-						checked={includeProjected}
-						onChange={(event) => setIncludeProjected(event.target.checked)}
-					/>
-					<label className="form-check-label" htmlFor="tf-include-projected">
-						Include projected salaries in totals
-					</label>
-				</div>
-			) : null}
 
 			<DataTable
 				cols={cols}
-				defaultSort={[3, "desc"]}
+				defaultSort={[4, "desc"]}
 				name="TeamFinances"
 				nonfluid
 				footer={footer}
