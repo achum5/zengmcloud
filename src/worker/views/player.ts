@@ -7,6 +7,10 @@ import {
 } from "../../common/constants.ts";
 import { player } from "../core/index.ts";
 import { idb } from "../db/index.ts";
+import {
+	coarsenRating,
+	exemptFromCoarseRatings,
+} from "../../common/coarsenRating.ts";
 import { g, helpers } from "../util/index.ts";
 import type {
 	MenuItemHeader,
@@ -382,10 +386,21 @@ export const getCommon = async (
 			let description = `${age}yo`;
 
 			if (!g.get("challengeNoRatings")) {
-				const ovr = player.fuzzRating(ratings.ovr, ratings.fuzz);
-				const pot = player.fuzzRating(ratings.pot, ratings.fuzz);
+				// Assembled here rather than through playersPlus, so the coarse
+				// rounding has to be applied by hand or this dropdown quietly shows
+				// exact ratings in a league that hides them.
+				const show = (value: number) => {
+					const fuzzed = player.fuzzRating(value, ratings.fuzz);
+					return g.get("hideRatingsOnesDigit") &&
+						!exemptFromCoarseRatings(
+							p2.tid,
+							g.get("hideRatingsOnesDigitExceptProspects"),
+						)
+						? coarsenRating(fuzzed)
+						: fuzzed;
+				};
 
-				description += `, ${ovr}/${pot}`;
+				description += `, ${show(ratings.ovr)}/${show(ratings.pot)}`;
 			}
 
 			const path = [view, p2.pid];

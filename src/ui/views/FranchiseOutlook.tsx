@@ -23,17 +23,21 @@ const TierBadge = ({ tier }: { tier: TierKey }) => {
 const TABLE_CLASS =
 	"table table-striped table-borderless table-sm align-middle";
 
-// One player, compact: "Name o78 a26 v82.1 PG $35000/2031".
+// One player, compact: "Name o78 a26 v82.1 PG $35000/2031". Ratings come back
+// undefined in a league that hides them, and print as "?" rather than leaking.
+const num = (value: number | undefined) => value ?? "?";
 const fmtPlayer = (p: {
 	name: string;
-	ovr: number;
+	ovr: number | undefined;
 	age: number;
-	value: number;
+	value: number | undefined;
 	pos: string;
 	contract: number;
 	exp: number;
 }) =>
-	`${p.name} o${p.ovr} a${p.age} v${p.value} ${p.pos} $${p.contract}/${p.exp}`;
+	`${p.name} o${num(p.ovr)} a${p.age} v${num(p.value)} ${p.pos} $${
+		p.contract
+	}/${p.exp}`;
 
 // Build the full plain-text diagnostic dump of every team's posture + the raw
 // signals behind it, for pasting into a review.
@@ -202,7 +206,7 @@ const FranchiseOutlook = (view: View<"franchiseOutlook">) => {
 														{p.name}
 													</a>{" "}
 													<span className="text-body-secondary">
-														({p.ovr}, {p.age})
+														({num(p.ovr)}, {p.age})
 													</span>
 												</span>
 											))

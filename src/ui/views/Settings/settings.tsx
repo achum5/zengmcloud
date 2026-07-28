@@ -1436,14 +1436,60 @@ export const settings: Setting[] = (
 			type: "bool",
 			description:
 				"Display-only: shows every rating, overall, and potential floored to its tens digit, so a 56 appears as 5. A softer version of No Visible Player Ratings. Doesn't change any underlying data or the simulation.",
+			// The prospect exemption only means anything when this is on, so it
+			// lives in the same box rather than as a second entry in the list.
+			customForm: ({ disabled, handleChange, id, inputStyle, state }) => {
+				const on = state.hideRatingsOnesDigit === "true";
+				return (
+					<div style={inputStyle}>
+						<div
+							className="form-check form-switch"
+							title={on ? "Enabled" : "Disabled"}
+						>
+							<input
+								type="checkbox"
+								className="form-check-input"
+								checked={on}
+								disabled={disabled}
+								onChange={handleChange("hideRatingsOnesDigit", "bool")}
+								id={id}
+								value={state.hideRatingsOnesDigit}
+							/>
+							<label className="form-check-label" htmlFor={id} />
+						</div>
+						<div className="form-check mt-1">
+							<input
+								type="checkbox"
+								className="form-check-input"
+								checked={state.hideRatingsOnesDigitExceptProspects === "true"}
+								disabled={disabled || !on}
+								onChange={handleChange(
+									"hideRatingsOnesDigitExceptProspects",
+									"bool",
+								)}
+								id={`${id}-prospects`}
+								value={state.hideRatingsOnesDigitExceptProspects}
+							/>
+							<label
+								className="form-check-label text-nowrap"
+								htmlFor={`${id}-prospects`}
+							>
+								Draft prospects exempt
+							</label>
+						</div>
+					</div>
+				);
+			},
+			partners: ["hideRatingsOnesDigitExceptProspects"],
 		},
 		{
 			category: "Challenge Modes",
 			key: "hideRatingsOnesDigitExceptProspects",
 			name: "Coarse Ratings: Prospects Exempt",
 			type: "bool",
+			hidden: true,
 			description:
-				"Undrafted prospects keep their exact ratings, so scouting a draft class still means something. The moment a prospect is drafted onto a team, his ratings go coarse like everyone else's. Only applies when Coarse Ratings is on.",
+				"Undrafted prospects keep their exact ratings, so scouting a draft class still means something. The moment a prospect is drafted onto a team, his ratings go coarse like everyone else's.",
 		},
 		{
 			category: "Challenge Modes",

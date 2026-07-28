@@ -1,5 +1,7 @@
 import { g } from "../util/index.ts";
 import { idb } from "../db/index.ts";
+import { player } from "../core/index.ts";
+import { coarsenRating } from "../../common/coarsenRating.ts";
 import type { UpdateEvents } from "../../common/types.ts";
 import {
 	getLeagueTradeContext,
@@ -52,6 +54,8 @@ const updateFranchiseOutlook = async (
 		updateEvents.includes("gameAttributes")
 	) {
 		const season = g.get("season");
+		const hideRatings = g.get("challengeNoRatings");
+		const coarse = g.get("hideRatingsOnesDigit");
 		const context = await getLeagueTradeContext();
 
 		const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
@@ -69,16 +73,35 @@ const updateFranchiseOutlook = async (
 				return undefined;
 			}
 			const ratings = p.ratings.at(-1);
+			// This page reads players straight out of the cache rather than through
+			// playersPlus, so nothing has fuzzed or rounded these yet. Do both here
+			// or the diagnostics window becomes a hole in every ratings setting the
+			// league has turned on.
+			const show = (value: number | undefined) => {
+				if (value === undefined || hideRatings) {
+					return undefined;
+				}
+				const fuzzed = player.fuzzRating(value, ratings?.fuzz ?? 0);
+				return coarse ? coarsenRating(fuzzed) : fuzzed;
+			};
 			return {
 				pid,
 				name: `${p.firstName} ${p.lastName}`,
-				ovr: ratings?.ovr ?? 0,
-				pot: ratings?.pot ?? 0,
+				ovr: show(ratings?.ovr),
+				pot: show(ratings?.pot),
 				pos: ratings?.pos ?? "?",
 				age: season - p.born.year,
-				value: Math.round(p.value * 10) / 10,
+				// Value is talent on the same 0-100 scale and is never fuzzed, so
+				// left alone it hands back what the ratings above just hid.
+				value: hideRatings
+					? undefined
+					: coarse
+						? coarsenRating(p.value)
+						: Math.round(p.value * 10) / 10,
 				contract: Math.round(p.contract.amount),
 				exp: p.contract.exp,
+				// Ordering only - never rendered, so it stays exact.
+				sortValue: p.value,
 			};
 		};
 		const resolve = (pids: number[], limit: number) =>
@@ -100,7 +123,7 @@ const updateFranchiseOutlook = async (
 			const roster = resolve(
 				(allPlayers.filter((p) => p.tid === t.tid) ?? []).map((p) => p.pid),
 				999,
-			).sort((a, b) => b.value - a.value);
+			).sort((a, b) => b.sortValue - a.sortValue);
 
 			rows.push({
 				tid: t.tid,

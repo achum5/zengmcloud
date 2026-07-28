@@ -4,6 +4,7 @@ import {
 	coarsenRating,
 	coarsenRatingChange,
 	coarsenRatingsRow,
+	coarsenRatingValue,
 	exemptFromCoarseRatings,
 } from "./coarsenRating.ts";
 
@@ -176,5 +177,42 @@ describe("coarsenPlayerForDisplay honours the exemption", () => {
 	test("without the option, a prospect is rounded like anyone else", () => {
 		const out = coarsenPlayerForDisplay(prospect, ["ovr", "pot"]);
 		assert.strictEqual(out.ratings.ovr, 7);
+	});
+});
+
+// Found by auditing the mode end to end: ovrs/pots are per-position MAPS, not
+// numbers, so a plain typeof check walked straight past them and they reached
+// the Depth chart and the ratings CSV at full resolution.
+describe("coarsenRatingValue", () => {
+	test("rounds a plain rating", () => {
+		assert.strictEqual(coarsenRatingValue(56), 5);
+	});
+
+	test("rounds every rating inside a per-position map", () => {
+		assert.deepStrictEqual(coarsenRatingValue({ C: 55, PG: 41, SF: 68 }), {
+			C: 5,
+			PG: 4,
+			SF: 6,
+		});
+	});
+
+	test("leaves non-numbers in the map alone", () => {
+		assert.deepStrictEqual(coarsenRatingValue({ pos: "PG", ovr: 74 }), {
+			pos: "PG",
+			ovr: 7,
+		});
+	});
+
+	test("leaves strings, arrays and nullish values untouched", () => {
+		assert.strictEqual(coarsenRatingValue("PG"), "PG");
+		assert.deepStrictEqual(coarsenRatingValue(["3", "Dp"]), ["3", "Dp"]);
+		assert.strictEqual(coarsenRatingValue(undefined), undefined);
+		assert.strictEqual(coarsenRatingValue(null), null);
+	});
+
+	test("does not mutate the map it was given", () => {
+		const ovrs = { C: 55 };
+		coarsenRatingValue(ovrs);
+		assert.strictEqual(ovrs.C, 55);
 	});
 });

@@ -40,6 +40,7 @@ import {
 	season,
 } from "../core/index.ts";
 import { idb } from "../db/index.ts";
+import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
 import {
 	achievement,
 	g,
@@ -2287,12 +2288,26 @@ const getNegotiationProps = async (pid: number) => {
 	let p;
 	if (p2) {
 		p = await idb.getCopy.playersPlus(p2, {
-			attrs: ["pid", "name", "age", "contract", "face", "imgURL", "watch"],
+			attrs: [
+				"pid",
+				"tid",
+				"name",
+				"age",
+				"contract",
+				"face",
+				"imgURL",
+				"watch",
+			],
 			ratings: ["ovr", "pot"],
 			season: g.get("season"),
 			showNoStats: true,
 			showRookies: true,
 			fuzz: true,
+			// The contract options below are computed from this overall, and the
+			// formula reads its ones digit - a display-rounded 5 would negotiate a
+			// 58-overall player as though he were a 5. Rounded for display just
+			// before it's returned.
+			coarsenRatings: false,
 		});
 	}
 
@@ -2312,6 +2327,16 @@ const getNegotiationProps = async (pid: number) => {
 		},
 		p.ratings.ovr,
 	);
+
+	// Now that the arithmetic is done, show what this league shows.
+	if (g.get("hideRatingsOnesDigit")) {
+		p = coarsenPlayerForDisplay(
+			p,
+			["ovr", "pot"],
+			g.get("hideRatingsOnesDigitExceptProspects"),
+		);
+	}
+
 	if (contractOptions.length === 0 && g.get("phase") === PHASE.RESIGN_PLAYERS) {
 		const t = await idb.cache.teams.get(userTid);
 		if (

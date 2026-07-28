@@ -706,3 +706,34 @@ describe("hideRatingsOnesDigitExceptProspects", () => {
 		assert.strictEqual(prospect.ratings.ovr, Math.floor(full.ovr / 10));
 	});
 });
+
+// ovrs/pots come out of fuzzOvrs as a per-position map, and the coarsening loop
+// used to skip anything that wasn't a plain number - so these went to the UI
+// (the Depth chart, the ratings CSV) at full resolution.
+test("hideRatingsOnesDigit rounds per-position ratings maps too", async () => {
+	const opts = { ratings: ["ovr", "ovrs"], season: 2012 };
+
+	g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+	const full = await idb.getCopy.playersPlus(p, opts);
+
+	g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+	const coarse = await idb.getCopy.playersPlus(p, opts);
+	g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+
+	if (!full || !coarse) {
+		throw new Error("Missing player");
+	}
+
+	// Only meaningful in a sport that has them; where it doesn't, this just
+	// asserts nothing blew up.
+	if (full.ratings.ovrs) {
+		for (const pos of Object.keys(full.ratings.ovrs)) {
+			assert.strictEqual(
+				coarse.ratings.ovrs[pos],
+				Math.floor(full.ratings.ovrs[pos] / 10),
+				`ovrs.${pos} was not rounded`,
+			);
+		}
+	}
+	assert.strictEqual(coarse.ratings.ovr, Math.floor(full.ratings.ovr / 10));
+});

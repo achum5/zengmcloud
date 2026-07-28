@@ -25,6 +25,24 @@ export const exemptFromCoarseRatings = (
 export const coarsenRatingChange = (current: number, change: number): number =>
 	coarsenRating(current) - coarsenRating(current - change);
 
+// ovrs/pots are per-position maps ({ C: 55, PG: 41 }), not plain numbers, so a
+// bare typeof check walks straight past them and they reach the screen at full
+// resolution (the Depth chart and the ratings CSV both read them). Anything that
+// isn't a number is returned untouched.
+export const coarsenRatingValue = (value: unknown): unknown => {
+	if (typeof value === "number") {
+		return coarsenRating(value);
+	}
+	if (value && typeof value === "object" && !Array.isArray(value)) {
+		const out: Record<string, unknown> = {};
+		for (const [key, inner] of Object.entries(value)) {
+			out[key] = typeof inner === "number" ? coarsenRating(inner) : inner;
+		}
+		return out;
+	}
+	return value;
+};
+
 // Rating attrs that are NOT 0-100 ratings and must be left alone (ages, seasons,
 // ids). String/array/object attrs are skipped by the typeof check instead.
 export const NO_COARSEN_RATINGS = new Set([
@@ -55,8 +73,8 @@ export const coarsenRatingsRow = <T extends Record<string, any>>(
 			if (typeof row[attr] === "number" && typeof row[base] === "number") {
 				out[attr] = coarsenRatingChange(row[base], row[attr]);
 			}
-		} else if (!NO_COARSEN_RATINGS.has(attr) && typeof row[attr] === "number") {
-			out[attr] = coarsenRating(row[attr]);
+		} else if (!NO_COARSEN_RATINGS.has(attr)) {
+			out[attr] = coarsenRatingValue(row[attr]);
 		}
 	}
 	return out as T;

@@ -16,6 +16,10 @@ import { player, team } from "../core/index.ts";
 import getPlayoffsByConf from "../core/season/getPlayoffsByConf.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
+import {
+	coarsenRating,
+	exemptFromCoarseRatings,
+} from "../../common/coarsenRating.ts";
 import { assetIsPlayer, getPlayerFromPick } from "../util/formatEventText.ts";
 import { getRoundsWonText } from "./frivolitiesTeamSeasons.ts";
 import { bySport } from "../../common/sportFunctions.ts";
@@ -62,6 +66,19 @@ type StatSumsBySeason = Record<
 	}
 >;
 type StatSumsBySeasons = [StatSumsBySeason, StatSumsBySeason];
+
+// A rating as this league displays it. The trade history is a rare player-facing
+// page that assembles ratings itself instead of going through playersPlus, so
+// the coarse-ratings rounding would otherwise pass it by.
+const showRating = (value: number, tid: number): number => {
+	if (
+		!g.get("hideRatingsOnesDigit") ||
+		exemptFromCoarseRatings(tid, g.get("hideRatingsOnesDigitExceptProspects"))
+	) {
+		return value;
+	}
+	return coarsenRating(value);
+};
 
 const findStatSum = (
 	allStats: PlayerStats[],
@@ -288,8 +305,10 @@ const getActualPlayerInfo = async (
 		name: `${p.firstName} ${p.lastName}`,
 		age: (draftPick ? p.draft.year : season) - p.born.year,
 		pos: ratings.pos,
-		ovr: player.fuzzRating(ratings.ovr, ratings.fuzz),
-		pot: player.fuzzRating(ratings.pot, ratings.fuzz),
+		// Hand-rolled rather than fetched through playersPlus, so the coarse-ratings
+		// rounding has to be applied here too.
+		ovr: showRating(player.fuzzRating(ratings.ovr, ratings.fuzz), p.tid),
+		pot: showRating(player.fuzzRating(ratings.pot, ratings.fuzz), p.tid),
 		retiredYear: p.retiredYear,
 		skills: ratings.skills,
 		stat,

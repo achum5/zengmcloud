@@ -18,6 +18,7 @@ import { last } from "../../../common/utils.ts";
 // when the result feeds a calculation.
 import {
 	coarsenRating,
+	coarsenRatingValue,
 	exemptFromCoarseRatings,
 	NO_COARSEN_RATINGS,
 } from "../../../common/coarsenRating.ts";
@@ -578,8 +579,10 @@ const processRatings = (
 
 		if (coarseRatings) {
 			for (const attr of ratings) {
-				if (!NO_COARSEN_RATINGS.has(attr) && typeof row[attr] === "number") {
-					row[attr] = coarsenRating(row[attr]);
+				if (!NO_COARSEN_RATINGS.has(attr)) {
+					// coarsenRatingValue, not coarsenRating: ovrs/pots are maps of
+					// per-position ratings and a plain number check skips them.
+					row[attr] = coarsenRatingValue(row[attr]);
 				}
 			}
 		}
