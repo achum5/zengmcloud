@@ -2370,6 +2370,10 @@ export type UpdateEvents = (
 	// broadcast payload (recovery when the navigation carrying it was dropped).
 	| "mpLiveBroadcast"
 
+	// Background-simulated game spreads landed, so the sportsbook can re-render
+	// with the refined lines (see core/sportsbook/simSpreads.ts).
+	| "sportsbookLines"
+
 	// This should be used for things that do stuff like "select all players on watch list", not updating the watch property for individual players. crossTabEmit handles that automatically.
 	| "watchList"
 )[];

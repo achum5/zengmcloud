@@ -2,6 +2,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import getSchedule from "../season/getSchedule.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
+import { warmSimMargins } from "./simSpreads.ts";
 import {
 	simGameOutcomes,
 	type SimmedGame,
@@ -181,6 +182,13 @@ export const getGameProps = async (gid: number) => {
 		todayDay,
 	});
 	const main = pricer.priceGame(matchup);
+
+	// If this game's spread isn't simulated yet, get it going - same background
+	// path the main board uses, so both end up on the identical number.
+	const pendingSims = pricer.pendingSims();
+	if (pendingSims.length > 0) {
+		void warmSimMargins(pendingSims);
+	}
 
 	let simmed: SimmedGame | undefined;
 	try {

@@ -18,6 +18,7 @@ const updateSportsbook = async (
 		updateEvents.includes("newPhase") ||
 		updateEvents.includes("playerMovement") ||
 		updateEvents.includes("gameAttributes") ||
+		updateEvents.includes("sportsbookLines") ||
 		// Bets placed/settled bump this so the wallet + open bets refresh.
 		updateEvents.includes("watchList") ||
 		// Switching tabs changes only the URL, so without this the view returns

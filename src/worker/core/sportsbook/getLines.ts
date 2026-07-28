@@ -3,6 +3,7 @@ import { idb } from "../../db/index.ts";
 import teamOvr from "../team/ovr.ts";
 import getSchedule from "../season/getSchedule.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
+import { warmSimMargins } from "./simSpreads.ts";
 import getAwardRaceOdds from "../season/getAwardRaceOdds.ts";
 import { getPlayers, getTopPlayers } from "../season/awards.ts";
 import {
@@ -188,6 +189,9 @@ export const getTeamOvrs = async (
 			showNoStats: true,
 			showRookies: true,
 			fuzz: false,
+			// Feeds team.ovr, so it needs the real ratings - the display rounding
+			// would put the whole league in a handful of ties.
+			coarsenRatings: false,
 			tid: t.tid,
 		});
 		ovrByTid.set(t.tid, teamOvr(teamPlayers as any, {}));
@@ -299,6 +303,14 @@ export const getLines = async () => {
 		if (games.length >= MAX_GAME_LINES) {
 			break;
 		}
+	}
+
+	// Any game still priced off the formula gets simulated in the background, and
+	// the board re-renders when they land. Deliberately not awaited: this is the
+	// work the peek-only pricing path exists to keep off the page load.
+	const pendingSims = pricer.pendingSims();
+	if (pendingSims.length > 0) {
+		void warmSimMargins(pendingSims);
 	}
 
 	// --- Futures: Monte Carlo of the season + playoffs ---------------------
