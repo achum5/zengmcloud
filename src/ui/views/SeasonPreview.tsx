@@ -8,6 +8,10 @@ import { RatingWithChange } from "../components/RatingWithChange.tsx";
 import { RecordAndPlayoffs } from "../components/RecordAndPlayoffs.tsx";
 import { PlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import { useLocal } from "../util/local.ts";
+import {
+	coarsenRating,
+	coarsenRatingChange,
+} from "../../common/coarsenRating.ts";
 
 const PlayerList = ({
 	challengeNoRatings,
@@ -118,7 +122,10 @@ const TeamList = ({
 	season: number;
 	userTid: number;
 }) => {
-	const { hideTeamRatings } = useLocal(["hideTeamRatings"]);
+	const { hideRatingsOnesDigit, hideTeamRatings } = useLocal([
+		"hideRatingsOnesDigit",
+		"hideTeamRatings",
+	]);
 
 	if (teams.length === 0) {
 		return <p>None</p>;
@@ -153,7 +160,16 @@ const TeamList = ({
 						</a>
 						{!challengeNoRatings && !hideTeamRatings ? (
 							<>
-								, <RatingWithChange change={t.dovr}>{t.ovr}</RatingWithChange>{" "}
+								,{" "}
+								<RatingWithChange
+									change={
+										hideRatingsOnesDigit
+											? coarsenRatingChange(t.ovr, t.dovr)
+											: t.dovr
+									}
+								>
+									{hideRatingsOnesDigit ? coarsenRating(t.ovr) : t.ovr}
+								</RatingWithChange>{" "}
 								ovr
 							</>
 						) : null}
@@ -218,10 +234,15 @@ const SeasonPreview = ({
 			seasons: season,
 		},
 	});
-	const { challengeNoRatings, userTid } = useLocal([
+	const { challengeNoRatings, hideTeamRatings, userTid } = useLocal([
 		"challengeNoRatings",
+		"hideTeamRatings",
 		"userTid",
 	]);
+
+	// Ordering the league's teams by strength is the one thing a league that
+	// hides team ratings is hiding.
+	const showTeamLists = !hideTeamRatings && !challengeNoRatings;
 
 	return (
 		<>
@@ -265,33 +286,37 @@ const SeasonPreview = ({
 							showDraftPick
 						/>
 					</div>
-					<div className="col-sm-6 col-md-4 col-lg-3">
-						<h2>Top Teams</h2>
-						<TeamList
-							challengeNoRatings={challengeNoRatings}
-							teams={teamsTop}
-							season={season}
-							userTid={userTid}
-						/>
-					</div>
-					<div className="col-sm-6 col-md-4 col-lg-3">
-						<h2>Improving Teams</h2>
-						<TeamList
-							challengeNoRatings={challengeNoRatings}
-							teams={teamsImproving}
-							season={season}
-							userTid={userTid}
-						/>
-					</div>
-					<div className="col-sm-6 col-md-4 col-lg-3">
-						<h2>Declining Teams</h2>
-						<TeamList
-							challengeNoRatings={challengeNoRatings}
-							teams={teamsDeclining}
-							season={season}
-							userTid={userTid}
-						/>
-					</div>
+					{showTeamLists ? (
+						<>
+							<div className="col-sm-6 col-md-4 col-lg-3">
+								<h2>Top Teams</h2>
+								<TeamList
+									challengeNoRatings={challengeNoRatings}
+									teams={teamsTop}
+									season={season}
+									userTid={userTid}
+								/>
+							</div>
+							<div className="col-sm-6 col-md-4 col-lg-3">
+								<h2>Improving Teams</h2>
+								<TeamList
+									challengeNoRatings={challengeNoRatings}
+									teams={teamsImproving}
+									season={season}
+									userTid={userTid}
+								/>
+							</div>
+							<div className="col-sm-6 col-md-4 col-lg-3">
+								<h2>Declining Teams</h2>
+								<TeamList
+									challengeNoRatings={challengeNoRatings}
+									teams={teamsDeclining}
+									season={season}
+									userTid={userTid}
+								/>
+							</div>
+						</>
+					) : null}
 					<div className="col-sm-6 col-md-4 col-lg-3">
 						<h2>Top Players on New Teams</h2>
 						<PlayerList

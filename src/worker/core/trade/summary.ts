@@ -16,6 +16,8 @@ const getTeamOvr = async (playersRaw: Player[]) => {
 		fuzz: true,
 		ratings: ["ovr", "pos", "ovrs"],
 		season: g.get("season"),
+		// Feeds team.ovr, never a screen.
+		coarsenRatings: false,
 	});
 
 	return team.ovr(players);

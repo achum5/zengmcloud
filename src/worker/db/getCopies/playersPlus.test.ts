@@ -611,3 +611,29 @@ test("hideRatingsOnesDigit floors ratings to the tens digit (display only)", asy
 	assert.strictEqual(coarse.ratings.stre, Math.floor(full.ratings.stre / 10));
 	assert.strictEqual(coarse.ratings.season, 2012);
 });
+
+// The rounding is for screens. Team overalls, league-wide ranks and any other
+// arithmetic have to see the real ratings - a team ovr built from 0-10 inputs is
+// meaningless, and ranking on them puts a third of the league in a tie.
+test("coarsenRatings: false opts out of the display rounding", async () => {
+	const opts = {
+		ratings: ["season", "ovr", "pot", "stre"],
+		season: 2012,
+	};
+
+	g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+	const full = await idb.getCopy.playersPlus(p, opts);
+
+	g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+	const optedOut = await idb.getCopy.playersPlus(p, {
+		...opts,
+		coarsenRatings: false,
+	});
+	g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+
+	if (!full || !optedOut) {
+		throw new Error("Missing player");
+	}
+
+	assert.deepStrictEqual(optedOut.ratings, full.ratings);
+});

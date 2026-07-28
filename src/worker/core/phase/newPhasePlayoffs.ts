@@ -96,6 +96,8 @@ const newPhasePlayoffs = async (
 			ratings: ["ovr", "pos", "ovrs"],
 			season: g.get("season"),
 			tid: teamSeason.tid,
+			// Stored on the team season, so it must be the real number.
+			coarsenRatings: false,
 		});
 		teamSeason.avgAge = team.avgAge(players);
 		teamSeason.ovrEnd = team.ovr(players);

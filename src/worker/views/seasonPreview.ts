@@ -6,6 +6,7 @@ import { orderBy } from "../../common/utils.ts";
 import { PHASE } from "../../common/constants.ts";
 import { loadAbbrevs } from "./gameLog.ts";
 import getPlayoffsByConf from "../core/season/getPlayoffsByConf.ts";
+import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
 
 const updateSeasonPreview = async (
 	{ season }: ViewInput<"seasonPreview">,
@@ -51,6 +52,8 @@ const updateSeasonPreview = async (
 			}
 		}
 
+		const RATINGS = ["ovr", "pot", "dovr", "dpot", "pos", "skills", "ovrs"];
+
 		const players = await idb.getCopies.playersPlus(playersRaw, {
 			attrs: [
 				"pid",
@@ -64,10 +67,16 @@ const updateSeasonPreview = async (
 				"draft",
 				"injury",
 			],
-			ratings: ["ovr", "pot", "dovr", "dpot", "pos", "skills", "ovrs"],
+			ratings: RATINGS,
 			season,
 			fuzz: true,
 			showNoStats: true,
+			// Every list on this page is chosen BY rating, and the team ratings are
+			// built from these too. Ranking on the display-rounded 0-10 values would
+			// make "Top Players" an arbitrary ten of everyone in the same decade, and
+			// leave "Improving Players" blind to anyone who didn't happen to cross a
+			// boundary. Coarsened for display on the way out instead.
+			coarsenRatings: false,
 		});
 
 		const playersTopAll = orderBy(players, (p) => p.ratings.ovr, "desc");
@@ -168,31 +177,50 @@ const updateSeasonPreview = async (
 			};
 		});
 
-		const teamsTop = orderBy(teamSeasons, "ovr", "desc").slice(
-			0,
-			NUM_TEAMS_TO_SHOW,
-		);
-		const teamsImproving = orderBy(
-			teamSeasons.filter((t) => t.dovr > 0),
-			"dovr",
-			"desc",
-		).slice(0, NUM_TEAMS_TO_SHOW);
-		const teamsDeclining = orderBy(
-			teamSeasons.filter((t) => t.dovr < 0),
-			"dovr",
-			"asc",
-		).slice(0, NUM_TEAMS_TO_SHOW);
+		// Ranking the league's teams by strength is exactly what a league that
+		// hides team ratings is hiding - the names alone, in order, give the whole
+		// thing away. So these boards don't exist there.
+		const hideTeamStrength =
+			g.get("hideTeamRatings") || g.get("challengeNoRatings");
+
+		const teamsTop = hideTeamStrength
+			? []
+			: orderBy(teamSeasons, "ovr", "desc").slice(0, NUM_TEAMS_TO_SHOW);
+		const teamsImproving = hideTeamStrength
+			? []
+			: orderBy(
+					teamSeasons.filter((t) => t.dovr > 0),
+					"dovr",
+					"desc",
+				).slice(0, NUM_TEAMS_TO_SHOW);
+		const teamsDeclining = hideTeamStrength
+			? []
+			: orderBy(
+					teamSeasons.filter((t) => t.dovr < 0),
+					"dovr",
+					"asc",
+				).slice(0, NUM_TEAMS_TO_SHOW);
+
+		// Everything above ranked on the true ratings; from here on they're only
+		// looked at, so round them the way the league displays them.
+		const coarse = g.get("hideRatingsOnesDigit");
+		const forDisplay = <T extends { ratings: any }>(list: T[]): T[] =>
+			coarse ? list.map((p) => coarsenPlayerForDisplay(p, RATINGS)) : list;
+		const teamsForDisplay = <T extends { players: any[] }>(list: T[]): T[] =>
+			coarse
+				? list.map((t) => ({ ...t, players: forDisplay(t.players) }))
+				: list;
 
 		return {
-			playersDeclining,
-			playersImproving,
-			playersNewTeam,
-			playersTop,
-			playersTopRookies,
+			playersDeclining: forDisplay(playersDeclining),
+			playersImproving: forDisplay(playersImproving),
+			playersNewTeam: forDisplay(playersNewTeam),
+			playersTop: forDisplay(playersTop),
+			playersTopRookies: forDisplay(playersTopRookies),
 			season,
-			teamsDeclining,
-			teamsImproving,
-			teamsTop,
+			teamsDeclining: teamsForDisplay(teamsDeclining),
+			teamsImproving: teamsForDisplay(teamsImproving),
+			teamsTop: teamsForDisplay(teamsTop),
 		};
 	}
 };

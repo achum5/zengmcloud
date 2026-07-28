@@ -90,6 +90,11 @@ export const addPowerRankingsStuffToTeams = async <
 				showNoStats: g.get("season") === season,
 				showRookies: g.get("season") === season,
 				fuzz: true,
+				// Everything below is arithmetic on these ratings - team overall, and
+				// the per-category league ranks. Handing it the display-rounded 0-10
+				// values would put the whole league in a handful of ties. The UI floors
+				// what it shows.
+				coarsenRatings: false,
 				tid: t.tid,
 			});
 

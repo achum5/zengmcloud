@@ -1560,6 +1560,12 @@ export type PlayersPlusOptions = {
 	showDraftProspectRookieRatings?: boolean;
 	showRetired?: boolean;
 	fuzz?: boolean;
+	// The "hide the ones digit" display mode floors every rating to its tens
+	// digit. Set false when the ratings feed a CALCULATION rather than a screen -
+	// a team ovr built from 0-10 inputs is meaningless, and ranking players by a
+	// number with a tenth of the resolution turns any ordering into a coin flip
+	// among everyone in the same decade. Coarsen at the point of display instead.
+	coarsenRatings?: boolean;
 	oldStats?: boolean;
 	numGamesRemaining?: number;
 	statType?: PlayerStatType;

@@ -13,6 +13,7 @@ import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { getActualPlayThroughInjuries } from "../core/game/loadTeams.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { orderTeams } from "../util/orderTeams.ts";
+import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
 
 const sortByPos = (p: {
 	ratings: {
@@ -233,6 +234,9 @@ const updateRoster = async (
 				showNoStats: true,
 				showRookies: true,
 				fuzz: true,
+				// The team overall below is built from these, so they have to be the
+				// real numbers. Coarsened for display on the way out.
+				coarsenRatings: false,
 				numGamesRemaining,
 			});
 
@@ -281,6 +285,7 @@ const updateRoster = async (
 				season: inputs.season,
 				tid: inputs.tid,
 				fuzz: true,
+				coarsenRatings: false,
 			});
 
 			if (isSport("basketball")) {
@@ -353,7 +358,11 @@ const updateRoster = async (
 			payroll,
 			playoffs: inputs.playoffs,
 			playoffsByConf,
-			players: addFirstNameShort(players),
+			players: addFirstNameShort(
+				g.get("hideRatingsOnesDigit")
+					? players.map((p) => coarsenPlayerForDisplay(p, ratings))
+					: players,
+			),
 			season: inputs.season,
 			showSpectatorWarning:
 				inputs.season === g.get("season") &&

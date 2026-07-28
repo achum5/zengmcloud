@@ -13,6 +13,13 @@ import { idb } from "../index.ts";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { actualPhase } from "../../util/actualPhase.ts";
 import { last } from "../../../common/utils.ts";
+// Purely a display transform on the copied view output - it never touches the
+// stored ratings or anything the sim reads. Opt out with `coarsenRatings: false`
+// when the result feeds a calculation.
+import {
+	coarsenRating,
+	NO_COARSEN_RATINGS,
+} from "../../../common/coarsenRating.ts";
 
 type PlayersPlusOptionsRequired = Required<
 	Omit<
@@ -154,6 +161,7 @@ const processAttrs = (
 	p: Player,
 	{
 		attrs,
+		coarsenRatings,
 		fuzz,
 		numGamesRemaining,
 		season,
@@ -206,7 +214,7 @@ const processAttrs = (
 					p.ratings[0].fuzz,
 				);
 			}
-			if (g.get("hideRatingsOnesDigit")) {
+			if (coarsenRatings && g.get("hideRatingsOnesDigit")) {
 				output.draft.ovr = coarsenRating(output.draft.ovr);
 				output.draft.pot = coarsenRating(output.draft.pot);
 			}
@@ -402,28 +410,12 @@ const processAttrs = (
 	}
 };
 
-// Coarse-ratings display mode ("hide ones digit"): show only the tens digit,
-// e.g. 56 -> 5. Purely a display transform on the copied view output — it never
-// touches the stored ratings or anything the sim reads.
-const coarsenRating = (value: number): number => Math.floor(value / 10);
-
-// Rating attrs that are NOT 0-100 ratings and must be left alone (ages, seasons,
-// ids, and ovr/pot deltas). String/array attrs are skipped by the typeof check.
-const NO_COARSEN_RATINGS = new Set([
-	"season",
-	"age",
-	"tid",
-	"fuzz",
-	"injuryIndex",
-	"dovr",
-	"dpot",
-]);
-
 const processRatings = (
 	output: PlayerFiltered,
 	p: Player,
 	playerRatingsInput: any[],
 	{
+		coarsenRatings,
 		fuzz,
 		ratings,
 		showDraftProspectRookieRatings,
@@ -436,7 +428,7 @@ const processRatings = (
 ) => {
 	let playerRatings = playerRatingsInput;
 
-	const coarseRatings = g.get("hideRatingsOnesDigit");
+	const coarseRatings = coarsenRatings && g.get("hideRatingsOnesDigit");
 
 	if (
 		showDraftProspectRookieRatings &&
@@ -1417,6 +1409,7 @@ const getCopies = async (
 		showRetired = false,
 		showDraftProspectRookieRatings = false,
 		fuzz = false,
+		coarsenRatings = true,
 		oldStats = false,
 		numGamesRemaining = 0,
 		statType = "perGame",
@@ -1446,6 +1439,7 @@ const getCopies = async (
 		showDraftProspectRookieRatings,
 		showRetired,
 		fuzz,
+		coarsenRatings,
 		oldStats,
 		numGamesRemaining,
 		statType,

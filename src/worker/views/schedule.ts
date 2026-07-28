@@ -106,6 +106,8 @@ export const getUpcoming = async ({
 		ratings: ["ovr", "pos", "ovrs"],
 		season: g.get("season"),
 		fuzz: true,
+		// Only ever fed to team.ovr below.
+		coarsenRatings: false,
 	});
 	const playersByTid = Map.groupBy(players, (t) => t.tid);
 

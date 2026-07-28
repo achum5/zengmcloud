@@ -17,6 +17,8 @@ export const getTeamOvr = async (tid: number) => {
 		showNoStats: true,
 		showRookies: true,
 		fuzz: true,
+		// Feeds team.ovr, never a screen.
+		coarsenRatings: false,
 	});
 	return team.ovr(players);
 };

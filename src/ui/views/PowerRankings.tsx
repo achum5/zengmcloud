@@ -79,6 +79,13 @@ const PowerRankings = ({
 	// "no visible player ratings" one (a team rating is just its players').
 	const showTeamRatings = !challengeNoRatings && !hideTeamRatings;
 
+	// With no games played there is nothing in a power ranking but the rosters,
+	// so every number on the page - the rank, the category grades - is a
+	// projection of how good each team is. In a league that hides team ratings
+	// that's the whole secret, printed in order. It opens with the season.
+	const noGamesYet = teams.every((t) => t.stats.gp === 0);
+	const closed = !showTeamRatings && noGamesYet;
+
 	const [showHealthy, setShowHealthy] = useState(true);
 	const actualShowHealthy = showHealthy || currentSeason !== season;
 
@@ -239,6 +246,10 @@ const PowerRankings = ({
 			},
 		};
 	});
+
+	if (closed) {
+		return <p>Power rankings open once games have been played.</p>;
+	}
 
 	return (
 		<>

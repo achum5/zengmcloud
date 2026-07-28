@@ -37,6 +37,14 @@ import {
 const TEAM_AWARD_TIER_SIZES = [5, 5, 5];
 const TEAM_AWARD_TIER_TITLES = ["First Team", "Second Team", "Third Team"];
 
+// Order a board the way a book prints one: shortest price at the top. American
+// odds already sort that way numerically - the bigger the favorite the more
+// negative, the longer the shot the more positive - so ascending is descending
+// by chance of winning.
+export const sortedByPrice = <T extends { americanOdds: number }>(
+	rows: T[],
+): T[] => [...rows].sort((a, b) => a.americanOdds - b.americanOdds);
+
 type TierCandidate = {
 	pid: number;
 	name: string;
@@ -78,16 +86,15 @@ const buildTierBoard = (
 	return tierSizes.map((_, tierIdx) => ({
 		tier: tierIdx + 1,
 		title: titles[tierIdx] ?? `Tier ${tierIdx + 1}`,
-		candidates: field
-			.map((p, i) => ({
+		candidates: sortedByPrice(
+			field.map((p, i) => ({
 				pid: p.pid,
 				name: p.name,
 				tid: p.tid,
 				abbrev: p.abbrev,
 				americanOdds: priceFuture(probs[i]![tierIdx]!),
-			}))
-			.sort((a, b) => a.americanOdds - b.americanOdds)
-			.slice(0, TEAM_AWARD_BOARD_SIZE),
+			})),
+		).slice(0, TEAM_AWARD_BOARD_SIZE),
 	}));
 };
 
@@ -570,13 +577,15 @@ export const getLines = async () => {
 			top.map((p) => p.score),
 			PRESEASON_AWARD_POWER,
 		);
-		return top.map((p, i) => ({
-			pid: p.pid,
-			name: p.name,
-			tid: p.tid,
-			abbrev: p.abbrev,
-			americanOdds: priceFuture(probs[i] ?? 0),
-		}));
+		return sortedByPrice(
+			top.map((p, i) => ({
+				pid: p.pid,
+				name: p.name,
+				tid: p.tid,
+				abbrev: p.abbrev,
+				americanOdds: priceFuture(probs[i] ?? 0),
+			})),
+		);
 	};
 
 	if (!awardsClosed) {
@@ -606,13 +615,22 @@ export const getLines = async () => {
 					return {
 						award: key,
 						name: race.name,
-						candidates: race.players.slice(0, 20).map((p: any) => ({
-							pid: p.pid,
-							name: p.name,
-							tid: p.tid,
-							abbrev: p.abbrev,
-							americanOdds: p.odds,
-						})),
+						// A price board reads down from the favorite. The award race
+						// hands its candidates over ranked by award score, which is close
+						// to but not the same as ranked by price - the win-probability
+						// model also weighs talent, and it settles the field by
+						// simulation, so two candidates a hair apart can come back a few
+						// hundredths of a percent the other way. Sort on the price that's
+						// actually shown, and take the twenty shortest.
+						candidates: sortedByPrice(
+							race.players.map((p: any) => ({
+								pid: p.pid,
+								name: p.name,
+								tid: p.tid,
+								abbrev: p.abbrev,
+								americanOdds: p.odds,
+							})),
+						).slice(0, 20),
 					};
 				})
 				.filter((x) => x !== undefined);
