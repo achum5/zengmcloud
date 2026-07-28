@@ -7,6 +7,7 @@ import {
 	formatAtsRecord,
 	getTeamAtsRecords,
 } from "../util/getTeamAtsRecords.ts";
+import { getStrengthOfSchedule } from "../util/getStrengthOfSchedule.ts";
 
 export const getMaxPlayoffSeed = async (
 	playoffSeason: number,
@@ -62,6 +63,7 @@ const updateStandings = async (
 		const usePts = pointsFormula !== "";
 
 		const atsRecords = await getTeamAtsRecords(inputs.season);
+		const sosByTid = await getStrengthOfSchedule(inputs.season);
 
 		const teams = (
 			await idb.getCopies.teamsPlus(
@@ -111,6 +113,7 @@ const updateStandings = async (
 		).map((t) => ({
 			...t,
 			ats: formatAtsRecord(atsRecords.get(t.tid)),
+			sos: sosByTid.get(t.tid),
 			gb: {
 				league: 0,
 				conf: 0,

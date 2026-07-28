@@ -103,6 +103,13 @@ export const TeamColumn = ({
 	);
 };
 
+// The row tooltip says what the number is over, since "how hard" only means
+// something alongside "how many left".
+const sosTitle = (sos: StandingsTeam["sos"]) =>
+	sos
+		? `${sos.gamesRemaining} game${sos.gamesRemaining === 1 ? "" : "s"} left, average opponent ${helpers.roundWinp(sos.sos)}`
+		: undefined;
+
 const GroupStandingsRow = ({
 	maxRank,
 	season,
@@ -172,6 +179,9 @@ const GroupStandingsRow = ({
 			<td>{t.seasonAttrs.streak}</td>
 			<td>{t.seasonAttrs.lastTen}</td>
 			<td>{t.ats}</td>
+			<td title={sosTitle(t.sos)}>
+				{t.sos ? helpers.roundWinp(t.sos.sos) : null}
+			</td>
 			<td>
 				{showTiebreakers && t.tiebreaker ? TIEBREAKERS[t.tiebreaker] : null}
 			</td>
@@ -273,6 +283,9 @@ const GroupStandings = ({
 						<th>Streak</th>
 						<th>L10</th>
 						<th title="Against the Spread record">ATS</th>
+						<th title="Strength of remaining schedule: the average winning percentage of the opponents still to play, weighted by how often each is played. Higher is harder.">
+							SOS
+						</th>
 						<th style={{ minWidth: 191 }}>Tiebreaker</th>
 					</tr>
 				</thead>
