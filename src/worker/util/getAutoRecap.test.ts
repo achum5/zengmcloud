@@ -1987,3 +1987,362 @@ describe("phrasing variety across a night", () => {
 		assert.strictEqual(first, second);
 	});
 });
+
+// Everything below is a defect found by reading a real day's page of recaps
+// stacked on top of each other, which is how they're actually consumed. Each
+// one read fine in isolation and badly in a column.
+describe("a page of recaps doesn't repeat itself", () => {
+	const twoSided = (
+		winnerStar: RecapPlayer,
+		loserStar: RecapPlayer,
+		opts: {
+			wPts?: number;
+			lPts?: number;
+			wq?: number[];
+			lq?: number[];
+			wExtra?: RecapPlayer[];
+			lExtra?: RecapPlayer[];
+		} = {},
+	) => {
+		const wPts = opts.wPts ?? 115;
+		const lPts = opts.lPts ?? 105;
+		const home = realisticTeam(
+			{
+				tid: 1,
+				region: "Boston",
+				name: "Celtics",
+				abbrev: "BOS",
+				pts: wPts,
+				ptsQtrs: opts.wq ?? [30, 28, 29, 28],
+			},
+			winnerStar,
+		);
+		if (opts.wExtra) {
+			home.players.splice(1, 0, ...opts.wExtra);
+		}
+		const away = realisticTeam(
+			{
+				tid: 2,
+				region: "Memphis",
+				name: "Grizzlies",
+				abbrev: "MEM",
+				pts: lPts,
+				ptsQtrs: opts.lq ?? [25, 26, 27, 27],
+			},
+			loserStar,
+		);
+		if (opts.lExtra) {
+			away.players.splice(1, 0, ...opts.lExtra);
+		}
+		return game({ teams: [home, away], winnerTid: 1 });
+	};
+
+	const parts = (recap: string) => {
+		const [headline, ...rest] = recap.split("\n\n");
+		return { headline: headline!, body: rest.join("\n\n") };
+	};
+
+	// The defect: "Bagaric goes for 26 points as the Celtics beat the Grizzlies"
+	// followed immediately by "Bagaric scored 26 points as the Celtics topped the
+	// Grizzlies 115-105." The same sentence with the verbs swapped.
+	test("when the headline spends the star, the body opens on the result", () => {
+		const recap = getAutoRecap(
+			twoSided(
+				player({ name: "Dalibor Bagaric", pts: 26, reb: 7, fg: 11, fga: 17 }),
+				player({ name: "Ruben Patterson", pts: 22, reb: 7, fg: 9, fga: 19 }),
+			),
+		);
+		const { headline, body } = parts(recap);
+		assert.ok(headline.includes("Bagaric"), recap);
+		const firstSentence = body.split(". ")[0]!;
+		assert.ok(
+			!firstSentence.includes("Bagaric"),
+			`body restates the headline: ${recap}`,
+		);
+		// But he still gets his line, somewhere.
+		assert.ok(body.includes("Bagaric"), recap);
+	});
+
+	test("a result headline still gets a star-led body", () => {
+		// Nobody scored enough to headline, so the headline is the result - and
+		// then the body SHOULD lead with a player.
+		const recap = getAutoRecap(
+			twoSided(
+				player({ name: "Quiet Star", pts: 13, reb: 5, fg: 5, fga: 12 }),
+				player({ name: "Other Guy", pts: 12, reb: 4, fg: 5, fga: 13 }),
+				{ wPts: 120, lPts: 92, wq: [32, 30, 29, 29], lq: [22, 24, 23, 23] },
+			),
+		);
+		const { headline, body } = parts(recap);
+		// No individual line big enough to headline, so the headline is the result
+		// and the body is free to open on a player.
+		assert.ok(!/\d+ points/.test(headline), recap);
+		assert.ok(!body.startsWith("The Celtics"), recap);
+	});
+
+	// "Zach Randolph's 24 points and 11 rebounds LEADS the Cavaliers past..."
+	test("a plural stat phrase takes a plural verb", () => {
+		for (const pts of [20, 24, 26, 31]) {
+			const recap = getAutoRecap(
+				twoSided(
+					player({ name: "Zach Randolph", pts, reb: 11, fg: 10, fga: 18 }),
+					player({ name: "Chris Bosh", pts: 18, reb: 5, fg: 7, fga: 20 }),
+				),
+			);
+			assert.ok(
+				!/rebounds (leads|powers)\b/.test(recap),
+				`subject-verb disagreement: ${recap}`,
+			);
+		}
+	});
+
+	// "Elton Brand and Mike Miller lead the Raptors past the Suns" - and then the
+	// recap never mentioned Mike Miller again.
+	test("every player named in the headline appears in the body", () => {
+		const recap = getAutoRecap(
+			twoSided(
+				player({
+					name: "Marko Jaric",
+					pts: 23,
+					reb: 4,
+					ast: 8,
+					fg: 9,
+					fga: 18,
+				}),
+				player({
+					name: "LeBron James",
+					pts: 22,
+					reb: 5,
+					ast: 10,
+					fg: 8,
+					fga: 22,
+				}),
+				{
+					wPts: 89,
+					lPts: 80,
+					wq: [22, 21, 24, 22],
+					lq: [20, 19, 20, 21],
+					wExtra: [
+						player({ name: "Elton Brand", pts: 14, reb: 11, fg: 6, fga: 12 }),
+						player({ name: "Mike Miller", pts: 12, reb: 10, fg: 5, fga: 12 }),
+					],
+				},
+			),
+		);
+		const { headline, body } = parts(recap);
+		for (const name of ["Marko Jaric", "Elton Brand", "Mike Miller"]) {
+			if (headline.includes(name)) {
+				assert.ok(body.includes(name), `${name} headlined but never appears`);
+			}
+		}
+	});
+
+	// "The Nets turned 19 Magic turnovers into offense. ... The Magic were undone
+	// by 19 turnovers."
+	test("a turnover count is spent once, not twice", () => {
+		const recap = getAutoRecap(
+			twoSided(
+				player({
+					name: "Damon Jones",
+					pts: 17,
+					reb: 3,
+					ast: 8,
+					stl: 4,
+					fg: 6,
+					fga: 13,
+				}),
+				player({ name: "Leon Smith", pts: 9, reb: 5, tov: 5, fg: 4, fga: 11 }),
+				{ wPts: 101, lPts: 78, wq: [26, 25, 30, 20], lq: [22, 20, 20, 16] },
+			),
+		);
+		const turnoverMentions = recap.match(/turnovers|coughed it up/g) ?? [];
+		assert.ok(
+			turnoverMentions.length <= 1,
+			`turnovers mentioned ${turnoverMentions.length} times: ${recap}`,
+		);
+	});
+
+	// "Hornets get past the Clippers, 123-108" - a 15-point win.
+	test("the verb matches the scoreboard", () => {
+		const recap = getAutoRecap(
+			twoSided(
+				player({
+					name: "Khalid El-Amin",
+					pts: 18,
+					reb: 3,
+					ast: 8,
+					fg: 7,
+					fga: 14,
+				}),
+				player({
+					name: "Brad Miller",
+					pts: 21,
+					reb: 4,
+					ast: 3,
+					fg: 9,
+					fga: 18,
+				}),
+				{ wPts: 123, lPts: 108, wq: [30, 26, 34, 33], lq: [28, 16, 32, 32] },
+			),
+		);
+		for (const weak of [
+			"get past",
+			"got past",
+			"slip past",
+			"slipped past",
+			"survive",
+			"escape",
+		]) {
+			assert.ok(
+				!recap.includes(weak),
+				`"${weak}" for a 15-point win: ${recap}`,
+			);
+		}
+	});
+
+	test("a three-point win never reads as a rout", () => {
+		const recap = getAutoRecap(
+			twoSided(
+				player({ name: "Close Winner", pts: 24, reb: 6, fg: 9, fga: 18 }),
+				player({ name: "Close Loser", pts: 22, reb: 5, fg: 9, fga: 19 }),
+				{ wPts: 98, lPts: 95, wq: [24, 25, 24, 25], lq: [25, 23, 24, 23] },
+			),
+		);
+		for (const strong of [
+			"rout",
+			"blew out",
+			"ran away",
+			"cruise",
+			"rolled past",
+		]) {
+			assert.ok(
+				!recap.includes(strong),
+				`"${strong}" for a 3-point win: ${recap}`,
+			);
+		}
+	});
+
+	// The best player on the floor lost, and the recap crowned the winner's
+	// 15-point leading scorer instead.
+	test("a losing star who outplayed everyone gets the headline, once", () => {
+		const recap = getAutoRecap(
+			twoSided(
+				player({
+					name: "Tracy McGrady",
+					pts: 15,
+					reb: 5,
+					ast: 4,
+					fg: 6,
+					fga: 17,
+				}),
+				player({
+					name: "Antoine Walker",
+					pts: 27,
+					reb: 10,
+					blk: 3,
+					fg: 11,
+					fga: 26,
+				}),
+				{ wPts: 81, lPts: 72, wq: [18, 17, 24, 22], lq: [20, 18, 17, 17] },
+			),
+		);
+		const { headline, body } = parts(recap);
+		assert.ok(headline.includes("Walker"), recap);
+		// Named in the headline, so the losing-side sentence must not print the
+		// same line again.
+		assert.ok(!body.includes("Walker"), `Walker's line stated twice: ${recap}`);
+	});
+
+	// A 19-rebound night was being flattened into "(19 points and 19 rebounds)".
+	test("a monster rebounding night is called out, not listed", () => {
+		const recap = getAutoRecap(
+			twoSided(
+				player({ name: "Rashard Lewis", pts: 21, reb: 12, fg: 8, fga: 17 }),
+				player({ name: "Robert Traylor", pts: 19, reb: 19, fg: 8, fga: 15 }),
+				{ wPts: 108, lPts: 102, wq: [24, 26, 25, 22], lq: [26, 24, 25, 22] },
+			),
+		);
+		assert.ok(recap.includes("19 rebounds"), recap);
+		assert.ok(
+			/glass|everywhere/.test(recap),
+			`a 19-rebound night read as routine: ${recap}`,
+		);
+	});
+});
+
+describe("a day wrap reads as one night, not one game", () => {
+	const oneGame = (
+		tids: [number, number],
+		names: [string, string],
+		pts: [number, number],
+		star: RecapPlayer,
+		gid: number,
+	) =>
+		game({
+			gid,
+			teams: [
+				realisticTeam(
+					{
+						tid: tids[0],
+						name: names[0],
+						abbrev: names[0].slice(0, 3).toUpperCase(),
+						pts: pts[0],
+						ptsQtrs: [pts[0] / 4, pts[0] / 4, pts[0] / 4, pts[0] / 4],
+					},
+					star,
+				),
+				realisticTeam(
+					{
+						tid: tids[1],
+						name: names[1],
+						abbrev: names[1].slice(0, 3).toUpperCase(),
+						pts: pts[1],
+						ptsQtrs: [pts[1] / 4, pts[1] / 4, pts[1] / 4, pts[1] / 4],
+					},
+					player({ name: `${names[1]} Guy`, pts: 14, reb: 5, fg: 5, fga: 12 }),
+				),
+			],
+			winnerTid: tids[0],
+		});
+
+	// "Dirk Nowitzki ADDED 29 points and 10 rebounds for the Wizards" - tacked
+	// onto a sentence about a completely different game, which read as though
+	// he'd been on the floor for it.
+	test("a performance from another game names its opponent", () => {
+		const games = [
+			oneGame(
+				[1, 2],
+				["Hawks", "Mavericks"],
+				[108, 102],
+				player({ name: "Rashard Lewis", pts: 21, reb: 12, fg: 8, fga: 17 }),
+				1,
+			),
+			oneGame(
+				[3, 4],
+				["Wizards", "Warriors"],
+				[105, 84],
+				player({ name: "Dirk Nowitzki", pts: 29, reb: 10, fg: 11, fga: 20 }),
+				2,
+			),
+		];
+		const recap = getAutoDayRecap({
+			season: 2004,
+			day: 70,
+			playoffs: false,
+			games,
+		});
+		if (recap.includes("Nowitzki")) {
+			const sentence = recap
+				.split(". ")
+				.find((line) => line.includes("Nowitzki"))!;
+			assert.ok(
+				!/^Dirk Nowitzki added/.test(sentence),
+				`reads as the same game: ${sentence}`,
+			);
+			assert.ok(
+				sentence.includes("Warriors"),
+				`no opponent, so which game was it? ${sentence}`,
+			);
+		}
+	});
+});
