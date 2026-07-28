@@ -7,8 +7,9 @@
 // keep every housekeeping event - the running box score stays correct and fast-
 // forwards between highlights - plus the quarter markers and the final, plus each
 // of the player's positive plays AND the plays that lead up to them within the
-// same possession (the drive before a make, the miss before a rebound). Every
-// other descriptive play is dropped. The viewer then rolls silently through the
+// same possession (the drive before a make, the miss before a rebound).
+// Substitutions are kept too, but marked `silent` so they're applied without
+// pausing (see below). Every other descriptive play is dropped. The viewer then rolls silently through the
 // gaps and plays each highlight through its build-up, untouched.
 //
 // Basketball only (the event types below are basketball's). Callers gate on sport.
@@ -93,9 +94,9 @@ const POSSESSION_ENDERS = new Set([
 ]);
 
 // Descriptive events that are NOT plays, so they're never kept as a lead-in
-// (a substitution or injury notice isn't part of a highlight's build-up).
+// (an injury notice isn't part of a highlight's build-up). Substitutions are
+// handled separately below - they're always kept, but silently.
 const NON_PLAY_DESCRIPTIVE = new Set([
-	"sub",
 	"injury",
 	"foulOut",
 	"timeout",
@@ -141,6 +142,17 @@ export const filterPlayerHighlights = (
 		const type = event?.type;
 		if (ALWAYS_KEEP_TYPES.has(type)) {
 			out.push(event);
+			continue;
+		}
+		if (type === "sub") {
+			// Who is on the floor is housekeeping too: plus/minus is credited to the
+			// five in the game, and the live box score only redraws a player's row
+			// while he's on the court. Dropping substitutions therefore froze the
+			// whole bench at an empty stat line even though the numbers underneath
+			// were right. Marked silent so the viewer applies it without stopping to
+			// read out a substitution - nobody wants a highlight reel paused on
+			// "On: ... Off: ...".
+			out.push({ ...event, silent: true });
 			continue;
 		}
 		if (isPositivePlayForPid(event, pid)) {

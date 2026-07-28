@@ -521,6 +521,16 @@ const processLiveGameEvents = ({
 			// Reversed for actualT
 			boxScore.teams[0].timeouts = e.timeouts[1];
 			boxScore.teams[1].timeouts = e.timeouts[0];
+		} else if (e.type === "sub" && (e as any).silent) {
+			// A highlight reel keeps every substitution so the box score knows who is
+			// on the floor - plus/minus and the live row updates both depend on it -
+			// but skips over them the same way it skips the plays between highlights.
+			for (const pid of e.pids) {
+				playersByPid[pid]!.inGame = true;
+			}
+			for (const pid of e.pidsOff) {
+				playersByPid[pid]!.inGame = false;
+			}
 		} else if (e.type !== "init") {
 			text = getText(e, boxScore);
 			t = actualT;

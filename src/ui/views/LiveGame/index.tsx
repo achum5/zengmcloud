@@ -65,15 +65,22 @@ type PlayerRowProps = {
 
 class PlayerRow extends Component<PlayerRowProps> {
 	prevInGame: boolean | undefined;
+	prevMin: number | undefined;
 
 	// Can't just switch to hooks and React.memo because p is mutated, so there is no way to access the previous value of inGame in the memo callback function
 	override shouldComponentUpdate(nextProps: PlayerRowProps) {
 		return bySport({
 			baseball: true,
+			// The minutes check covers a whole stint passing between two renders: a
+			// highlight reel plays one clip and silently fast-forwards over
+			// everything in between, so a player can check in and back out without
+			// ever being on the floor when a row is drawn. Minutes only accrue on the
+			// court, so "his minutes moved" is exactly "his line changed".
 			basketball: !!(
 				this.prevInGame ||
 				nextProps.p.inGame ||
-				nextProps.forceUpdate
+				nextProps.forceUpdate ||
+				nextProps.p.min !== this.prevMin
 			),
 			football: true,
 			hockey: !!(
@@ -90,6 +97,7 @@ class PlayerRow extends Component<PlayerRowProps> {
 
 		// Needed for shouldComponentUpdate because state is mutated so we need to explicitly store the last value
 		this.prevInGame = p.inGame;
+		this.prevMin = p.min;
 
 		const classes = bySport({
 			baseball: undefined,

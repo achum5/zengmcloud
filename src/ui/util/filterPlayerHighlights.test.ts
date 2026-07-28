@@ -36,13 +36,19 @@ const sample = () => [
 	{ type: "fgaAtRim", t: 1, pid: 7, clock: 620 },
 	{ type: "tov", t: 1, pid: 7, clock: 619 },
 
+	// A substitution in a stretch with no highlight at all.
+	{ type: "sub", t: 1, pids: [11], pidsOff: [7], clock: 618 },
+	{ type: "stat", t: 1, pid: 11, s: "min", amt: 3 },
+
 	{ type: "gameOver" },
 ];
 
+// The events the reel actually stops on. Housekeeping is applied silently, and
+// so are substitutions (kept for the box score, never read out).
 const DESCRIPTIVE = (e: any) =>
 	!["init", "stat", "timeouts", "period", "overtime", "gameOver"].includes(
 		e.type,
-	);
+	) && !e.silent;
 
 describe("isPositivePlayForPid", () => {
 	test("counts a make, an assist, a steal, a rebound, and a block", () => {
@@ -113,10 +119,31 @@ describe("filterPlayerHighlights", () => {
 	test("keeps all housekeeping so the box score stays correct", () => {
 		const out = filterPlayerHighlights(sample(), 7);
 		const types = out.map((e) => e.type);
-		assert.strictEqual(out.filter((e) => e.type === "stat").length, 2);
+		assert.strictEqual(out.filter((e) => e.type === "stat").length, 3);
 		assert.ok(types.includes("init"));
 		assert.ok(types.includes("period"));
 		assert.ok(types.includes("gameOver"));
+	});
+
+	// Every bench player's line used to sit at zero for the whole reel: who is on
+	// the floor drives plus/minus and whether the live box score bothers to redraw
+	// a row, and the substitutions that say so were being thrown away.
+	test("keeps every substitution, silently", () => {
+		const out = filterPlayerHighlights(sample(), 7);
+		const subs = out.filter((e) => e.type === "sub");
+		assert.strictEqual(subs.length, 1);
+		assert.strictEqual(subs[0].silent, true);
+		assert.deepStrictEqual(subs[0].pids, [11]);
+		assert.deepStrictEqual(subs[0].pidsOff, [7]);
+	});
+
+	// Marking it silent must not mutate the stored replay - it's read straight
+	// out of the database and re-filtered for the next player.
+	test("does not touch the stored events", () => {
+		const input = sample();
+		const original = input.find((e) => e.type === "sub") as any;
+		filterPlayerHighlights(input, 7);
+		assert.strictEqual(original.silent, undefined);
 	});
 
 	test("drops pid 9's own scoring possession entirely", () => {
