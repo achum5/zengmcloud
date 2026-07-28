@@ -603,3 +603,50 @@ describe("season stamp", () => {
 		);
 	});
 });
+
+describe("the draft class", () => {
+	// The draft is held after the season ends, so a player in that class has
+	// never played a game. Left to "did not play this season" the AI wrote it up
+	// as though the year had gone wrong for him.
+	const rookie = () => ({
+		...player(11, 0),
+		draftInfo: {
+			round: 1,
+			pick: 2,
+			overall: 2,
+			abbrev: "TOR",
+			teamResult: "48-34, lost in the first round",
+			roster: [{ name: "Elton Brand", pos: "PF", age: 22, ovr: 62, pot: 75 }],
+		},
+	});
+
+	test("a draftee isn't described as having missed the season", () => {
+		const prompt = buildPlayerRecapPrompt(batch([rookie()]));
+		assert.ok(!prompt.includes("THIS SEASON: did not play"));
+		assert.ok(
+			prompt.includes(
+				"THIS SEASON: not in the league yet — drafted at the end of 2005, first season is 2006",
+			),
+		);
+	});
+
+	test("the block spells out when he actually starts", () => {
+		const prompt = buildPlayerRecapPrompt(batch([rookie()]));
+		assert.ok(
+			prompt.includes(
+				"the 2005 draft is held after the 2005 season ends, so his first season is 2006",
+			),
+		);
+	});
+
+	test("the instructions say the same thing", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("THE DRAFT IS HELD AFTER THE SEASON ENDS"));
+		assert.ok(prompt.includes("his first season is the one AFTER it"));
+	});
+
+	test("someone who simply didn't play still reads that way", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(3, 0)]));
+		assert.ok(prompt.includes("THIS SEASON: did not play"));
+	});
+});

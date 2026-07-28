@@ -33,7 +33,9 @@ The LEAGUE block above the players carries this season's standings, each team's 
 
 Every stat line carries the team's record and how that team's year ended, and the league standings for this season are listed above the players. Use that context where it makes the recap better: 24 ppg on a 19-63 team is a different story from 24 ppg on a title winner, and a role player's year is often best told through what his team was chasing. Keep the focus on the PLAYER — team context is there to give his season stakes, not to become a team recap.
 
-Players drafted this season have a DRAFTED block: where they went, how that team just finished, and the roster they are joining. For those rookies, say something about the landing spot — the role waiting for them, who they sit behind or alongside, whether the fit is natural or awkward, what the team appears to need. Judge it from the roster given; do not invent teammates.
+THE DRAFT IS HELD AFTER THE SEASON ENDS. A player with a DRAFTED block was picked at the END of the listed season, so he has never played a game in this league and his first season is the one AFTER it. He has not missed anything and nothing has gone wrong — do not write that he "did not play this season", and do not treat the absence of stats as a fact about him at all. His piece is entirely forward-looking: where he went, what he is walking into, and what the first season ahead of him looks like from here.
+
+The DRAFTED block gives the drafting team's just-finished season and the roster he is joining. Say something about the landing spot — the role waiting for him, who he sits behind or alongside, whether the fit is natural or awkward, what the team appears to need. Judge it from the roster given; do not invent teammates.
 
 Ratings are scouting information for YOU, not material for the page. Never print a rating number and never refer to one — no "a 78 three-point rating", no "his overall climbed to 71", no "peaked at 84", no grades or tiers derived from them. Read them to know what a player is good at, what he cannot do, and how that changed year to year, then say it the way a writer would: an elite finisher, no handle to speak of, a jumper that finally came around, legs that went at 33. The same goes for any teammate's or draft pick's ratings.
 
@@ -111,12 +113,13 @@ const ratingLine = (r: RecapPlayer["ratings"][number]) => {
 
 // Where a rookie landed and what he walked into. Only present for the season's
 // own draft class, so it costs nothing for everyone else.
-const draftBlock = (d: RecapDraftInfo): string[] => {
+const draftBlock = (d: RecapDraftInfo, season: number): string[] => {
 	const lines: string[] = [];
 	lines.push(
 		`DRAFTED: rd${d.round} pk${d.pick}${
 			d.overall !== undefined ? ` (#${d.overall} overall)` : ""
 		} by ${d.abbrev}${d.teamResult ? ` — ${d.abbrev} were ${d.teamResult}` : ""}`,
+		`  Not yet played: the ${season} draft is held after the ${season} season ends, so his first season is ${season + 1}.`,
 	);
 	if (d.roster.length > 0) {
 		lines.push(`  Roster joining (best first):`);
@@ -230,6 +233,13 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 		for (const s of post.filter((x) => x.season === season)) {
 			lines.push(`  ${statLine(s)}`);
 		}
+	} else if (p.draftInfo) {
+		// He was drafted at the END of this season, so there is no season to have
+		// missed. Saying "did not play" here invited the AI to write it up as
+		// something that went wrong.
+		lines.push(
+			`THIS SEASON: not in the league yet — drafted at the end of ${season}, first season is ${season + 1}`,
+		);
 	} else {
 		lines.push("THIS SEASON: did not play");
 	}
@@ -310,7 +320,7 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 	}
 
 	if (p.draftInfo) {
-		lines.push(...draftBlock(p.draftInfo));
+		lines.push(...draftBlock(p.draftInfo, season));
 	}
 
 	if (p.retiring) {
