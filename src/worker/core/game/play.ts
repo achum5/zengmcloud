@@ -20,6 +20,12 @@ import {
 	clearRosterBlockNotice,
 	notifyRosterBlockedSim,
 } from "../sync/simBlockedNotify.ts";
+import {
+	isTradeDeadlineGame,
+	isTradeDeadlineGateActive,
+	notifyTradeDeadlineArrived,
+	shouldStopAtTradeDeadline,
+} from "../sync/tradeDeadlineGate.ts";
 import { settleBets } from "../sportsbook/bets.ts";
 import { idb } from "../../db/index.ts";
 import {
@@ -700,13 +706,43 @@ const play = async (
 			return granted;
 		};
 
-		if (schedule[0]?.homeTid === -3 && schedule[0].awayTid === -3) {
+		if (isTradeDeadlineGame(schedule[0])) {
+			// The deadline is the one phase change a sim used to run straight
+			// through. Stop on it instead - alone that costs one extra press, and
+			// in a shared league it is the ready-up gate: the evaluator crosses
+			// once every team is done trading, so simming harder can't skip the
+			// room. Checked BEFORE claiming the day, so bailing leaves the day
+			// unconsumed and the sentinel in place for whoever does cross it.
+			if (shouldStopAtTradeDeadline(start)) {
+				// Say why, or a press of Sim Day looks like it did nothing.
+				if (isTradeDeadlineGateActive()) {
+					void notifyTradeDeadlineArrived();
+					logEvent(
+						{
+							type: "info",
+							text: "Trade deadline. The league sims on once every team has readied up.",
+							saveToDb: false,
+						},
+						conditions,
+					);
+				} else {
+					logEvent(
+						{
+							type: "info",
+							text: "Trade deadline. Make your moves — simming again crosses it.",
+							saveToDb: false,
+						},
+						conditions,
+					);
+				}
+				return cbNoGames();
+			}
 			if (!(await claimDayOrBail(schedule))) {
 				return cbNoGames();
 			}
-			await idb.cache.schedule.delete(schedule[0].gid);
+			await idb.cache.schedule.delete(schedule[0]!.gid);
 			await phase.newPhase(PHASE.AFTER_TRADE_DEADLINE, conditions);
-			await toUI("deleteGames", [[schedule[0].gid]]);
+			await toUI("deleteGames", [[schedule[0]!.gid]]);
 			await play(numDays - 1, conditions, false);
 		} else {
 			// This should also call cbNoGames after the playoffs end, because g.get("phase") will have been incremented by season.newSchedulePlayoffsDay after the previous day's games

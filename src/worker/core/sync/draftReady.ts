@@ -13,6 +13,10 @@
 //     belonging to a HUMAN team never auto-advances - that user drafting IS
 //     their ready (runPicks pauses on user picks regardless, as a second line
 //     of defense).
+//   - REGULAR_SEASON: not gated in general - only at the TRADE DEADLINE, whose
+//     sentinel sitting at the head of the schedule is what makes the stage
+//     exist. One step: cross it. See tradeDeadlineGate.ts for why the ordinary
+//     sim path refuses to cross while this is live.
 //   - RESIGN_PLAYERS: one step - start free agency.
 //   - FREE_AGENCY: each day is a step, so you can ready through "N days left"
 //     or the end of free agency (which rolls into the preseason on its own).
@@ -38,6 +42,10 @@ import { resolveFaBoards } from "./faBoard.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { runAfterActionHook } from "./afterActionHook.ts";
 import { syncDebugLog } from "./debugLog.ts";
+import {
+	getTradeDeadlineGame,
+	setTradeDeadlineGateActive,
+} from "./tradeDeadlineGate.ts";
 import type { DraftReadyEntry, SyncTransport } from "./types.ts";
 import type { MpPhaseReady, Phase } from "../../../common/types.ts";
 
@@ -132,6 +140,46 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 			waypoints: [],
 			options: [],
 			advance: () => advancePhase(PHASE.REGULAR_SEASON),
+		};
+	}
+
+	if (phase === PHASE.REGULAR_SEASON) {
+		// The regular season is not a gated stage in general - it becomes one for
+		// exactly as long as the deadline sentinel is the next thing on the
+		// schedule. Reading the schedule is a cache hit, so this is cheap enough
+		// for the 2s evaluate tick.
+		const deadline = await getTradeDeadlineGame();
+		if (!deadline) {
+			return undefined;
+		}
+		const gid = deadline.gid;
+		return {
+			nextStep: 1,
+			nextLabel: "Cross the trade deadline",
+			onClockUser: false,
+			waypoints: [],
+			options: [],
+			advance: async () => {
+				// Re-read rather than trusting the gid captured above: between the
+				// claim and here, a catch-up may have applied another device's
+				// crossing, and deleting a gid that has been reused would take a real
+				// game out of the schedule.
+				const stillThere = await getTradeDeadlineGame();
+				if (!stillThere || stillThere.gid !== gid) {
+					return;
+				}
+				// Same order as the sim path in play.ts: drop the sentinel, then
+				// change phase, then tell the UI.
+				changeTracker.beginSim();
+				try {
+					await idb.cache.schedule.delete(gid);
+					await newPhase(PHASE.AFTER_TRADE_DEADLINE, {});
+				} finally {
+					changeTracker.endSim();
+				}
+				await toUI("deleteGames", [[gid]]);
+				await runAfterActionHook("playMenu", "day");
+			},
 		};
 	}
 
@@ -353,6 +401,9 @@ const holdoutNotifPath = (phase: number): string => {
 	switch (phase) {
 		case PHASE.PRESEASON:
 			return "roster";
+		// The only gated moment in the regular season is the trade deadline.
+		case PHASE.REGULAR_SEASON:
+			return "trade";
 		case PHASE.DRAFT_LOTTERY:
 			return "draft_lottery";
 		case PHASE.DRAFT:
@@ -696,6 +747,13 @@ export const setDraftReady = async (untilStep: number | null) => {
 export const setupDraftReady = (transport: SyncTransport) => {
 	teardownDraftReady();
 	currentTransport = transport;
+	// Arm the deadline gate from the same lifecycle that runs the evaluator, and
+	// only when this transport can actually run a step. Gating means the ordinary
+	// sim path refuses to cross, so an armed gate with nothing able to open it
+	// would wedge the league.
+	setTradeDeadlineGateActive(
+		Boolean(transport.claimDraftAdvance && transport.publishDraftReady),
+	);
 	latestReady = undefined;
 	lastHoldoutNotifKey = undefined;
 	unsubscribe = transport.subscribeDraftReady?.((ready) => {
@@ -708,6 +766,7 @@ export const setupDraftReady = (transport: SyncTransport) => {
 };
 
 export const teardownDraftReady = () => {
+	setTradeDeadlineGateActive(false);
 	unsubscribe?.();
 	unsubscribe = undefined;
 	if (evaluateTimer !== undefined) {

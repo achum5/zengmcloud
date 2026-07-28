@@ -599,6 +599,35 @@ class AutoPlayScheduler {
 		// Read the calendar either side of the sim so the log can say where the
 		// league actually went, not just which button was pressed.
 		const before = await this.fetchPreview();
+
+		// The trade deadline is a decision, and an unattended timer is the worst
+		// thing to have make it. The sim stops there on its own (see
+		// tradeDeadlineGate.ts), so firing anyway would either accomplish nothing
+		// or - alone, where the next press is what crosses it - cross the deadline
+		// with nobody watching. Stop here instead, before the sim is asked to run.
+		if (before?.upcomingDays[0]?.tradeDeadline) {
+			this.ticking = false;
+			if (state.mpSyncActive) {
+				// Shared league: the room crosses it by readying up, and auto play
+				// should be waiting to carry on the moment it does - so this PAUSES
+				// (stays enabled, keeps re-arming) rather than stopping.
+				//
+				// armTimer FIRST: it clears pausedReason when it transitions the
+				// scheduler back to running, which would wipe the reason set here.
+				if (this.settings.enabled) {
+					this.armTimer();
+				}
+				this.state.pausedReason =
+					"Trade deadline - waiting for every team to ready up.";
+				this.emit();
+			} else {
+				this.stop(
+					"Trade deadline reached - make your moves, then re-enable auto play.",
+				);
+			}
+			return;
+		}
+
 		try {
 			if (fire.amount === "days") {
 				await toWorker(
