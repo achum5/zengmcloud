@@ -35,9 +35,13 @@ Every stat line carries the team's record and how that team's year ended, and th
 
 THE DRAFT IS HELD AFTER THE SEASON ENDS. A player with a DRAFTED block was picked at the END of the listed season, so he has never played a game in this league and his first season is the one AFTER it. He has not missed anything and nothing has gone wrong — do not write that he "did not play this season", and do not treat the absence of stats as a fact about him at all. His piece is entirely forward-looking: where he went, what he is walking into, and what the first season ahead of him looks like from here.
 
+EVERY TRANSACTION IS DATED THE SAME WAY, so you always know exactly when a player changed teams. A move marked "(for YYYY)" was made in the offseason and takes effect that year: "2002 free agency (for 2003): signed with LAL" is a player who spent the whole of 2002 elsewhere and pulls on a Los Angeles jersey for the first time in 2003. Everything else — a trade in the regular season, a signing at the deadline — happened inside the season it is dated to, and his stat lines will show both teams that year. That is how a player got to the team he is playing for, and it is one of the most useful things you have.
+
 The DRAFTED block gives the drafting team's just-finished season and the roster he is joining. Say something about the landing spot — the role waiting for him, who he sits behind or alongside, whether the fit is natural or awkward, what the team appears to need. Judge it from the roster given; do not invent teammates.
 
 Ratings are scouting information for YOU, not material for the page. Never print a rating number and never refer to one — no "a 78 three-point rating", no "his overall climbed to 71", no "peaked at 84", no grades or tiers derived from them. Read them to know what a player is good at, what he cannot do, and how that changed year to year, then say it the way a writer would: an elite finisher, no handle to speak of, a jumper that finally came around, legs that went at 33. The same goes for any teammate's or draft pick's ratings.
+
+Write like someone who watched these seasons happen. Everything in front of you is settled fact — what he averaged, when he was hurt, the night he went for 51, which team he was on and how he got there — so state it plainly and with confidence. Never hedge about it: no "appears to have", no "presumably", no "it seems he was traded at some point". If something genuinely isn't in the data, leave it out; a recap is never improved by guessing out loud.
 
 Write about them as people with careers. Do not dump the data back — weave the numbers that matter into the prose.
 

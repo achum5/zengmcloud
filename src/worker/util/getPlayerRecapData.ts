@@ -2,7 +2,7 @@ import { idb } from "../db/index.ts";
 import { g, helpers } from "./index.ts";
 import { getPlayoffsByConfBySeason } from "../views/frivolitiesTeamSeasons.ts";
 import getAwardCandidates from "../core/season/getAwardCandidates.ts";
-import { PHASE_TEXT, RATINGS } from "../../common/constants.ts";
+import { PHASE, PHASE_TEXT, RATINGS } from "../../common/constants.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
 import { hasSeasonNote } from "../../common/seasonNote.ts";
 
@@ -403,13 +403,23 @@ const getAwardRaces = async (
 	return awardRaceCache;
 };
 
-const describeTransaction = (
+// From the draft lottery onward, the phase is the offseason that FOLLOWS the
+// season it's dated to, so a move made then is for the NEXT year: a player who
+// signs in 2002 free agency plays his first game for that team in 2003. Dated
+// as bare "2002 free agency" there is no way to tell that from a move made
+// during the 2002 season, which leaves the AI unable to explain how a player
+// got to the team he's playing for - or dating the move a year early.
+const takesEffectNextSeason = (phase: number) => phase >= PHASE.DRAFT_LOTTERY;
+
+export const describeTransaction = (
 	t: any,
 	abbrevByTid: Map<number, string>,
 ): string => {
 	const team = abbrevByTid.get(t.tid) ?? `team ${t.tid}`;
-	const when =
-		`${t.season} ${PHASE_TEXT[t.phase as keyof typeof PHASE_TEXT] ?? ""}`.trim();
+	const phaseText = PHASE_TEXT[t.phase as keyof typeof PHASE_TEXT] ?? "";
+	const when = `${t.season} ${phaseText}${
+		takesEffectNextSeason(t.phase) ? ` (for ${t.season + 1})` : ""
+	}`.trim();
 	switch (t.type) {
 		case "draft":
 			return `${when}: drafted by ${team}${

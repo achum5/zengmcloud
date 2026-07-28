@@ -650,3 +650,24 @@ describe("the draft class", () => {
 		assert.ok(prompt.includes("THIS SEASON: did not play"));
 	});
 });
+
+describe("offseason timing in the prompt", () => {
+	test("the instructions explain the (for YYYY) mark on a transaction", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("EVERY TRANSACTION IS DATED THE SAME WAY"));
+		assert.ok(prompt.includes('"(for YYYY)"'));
+		assert.ok(
+			prompt.includes("was made in the offseason and takes effect that year"),
+		);
+	});
+
+	// A recap that hedges about when a player changed teams reads like someone
+	// working it out from a spreadsheet, not someone who watched the season.
+	test("the instructions ask for settled fact, not guesswork", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(
+			prompt.includes("Write like someone who watched these seasons happen"),
+		);
+		assert.ok(prompt.includes("Never hedge"));
+	});
+});
