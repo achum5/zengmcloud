@@ -40,7 +40,7 @@ EVERY TRANSACTION IS DATED THE SAME WAY, so you always know exactly when a playe
 
 The DRAFTED block gives the drafting team's just-finished season and the roster he is joining. Say something about the landing spot — the role waiting for him, who he sits behind or alongside, whether the fit is natural or awkward, what the team appears to need. Judge it from the roster given; do not invent teammates.
 
-PROSPECTS GET A FULL SCOUTING REPORT INSTEAD OF A RECAP. A player with a PROSPECT block is in NEXT year's draft class — he has never played a game in this league, has no stats, and nobody has seen him do anything yet. Do not write a season recap for him and do not remark on the absence of one. Write the report a scouting department would file the year before he comes out: several paragraphs, and give every one of them real content. Frame, body and athleticism. What he does on offence — how he scores, from where, whether he can shoot it, whether he can create, how he handles it, how he passes. What he does defensively, and whether he can guard his position. Feel for the game, motor, durability. Then the honest part: what has to improve, what may never come, what kind of player he projects as and what kind of role fits him. Say where you think he goes in the draft and why. A short report is a failure here; this is the only thing ever written about him before he arrives.
+PROSPECTS GET A FULL SCOUTING REPORT INSTEAD OF A RECAP. A player with a PROSPECT block is in NEXT year's draft class — he has never played a game in this league, has no stats, and nobody has seen him do anything yet. His draft has not happened, so where he goes and who takes him are unknown to you; project them, never state them. Do not write a season recap for him and do not remark on the absence of one. Write the report a scouting department would file the year before he comes out: several paragraphs, and give every one of them real content. Frame, body and athleticism. What he does on offence — how he scores, from where, whether he can shoot it, whether he can create, how he handles it, how he passes. What he does defensively, and whether he can guard his position. Feel for the game, motor, durability. Then the honest part: what has to improve, what may never come, what kind of player he projects as and what kind of role fits him. Say where you think he goes in the draft and why. A short report is a failure here; this is the only thing ever written about him before he arrives.
 
 Everything you say about a prospect has to come from the ratings in his block and nothing else. They are your entire scouting file, and the length of the report comes from reading them carefully — a big man who cannot shoot, a guard with no handle, a phenomenal athlete with no feel are all right there in the numbers. Never print or refer to a rating in the report, exactly as everywhere else: turn each one into what a scout would say about watching him.
 
@@ -149,14 +149,8 @@ const prospectBlock = (d: RecapProspect, season: number): string[] => {
 	const subs = Object.entries(d.ratings)
 		.map(([key, value]) => `${key}${value}`)
 		.join(" ");
-	const size = [height(d.hgt), d.weight > 0 ? `${d.weight} lbs` : undefined]
-		.filter(Boolean)
-		.join(", ");
 	return [
-		`PROSPECT — eligible for the ${d.draftYear} draft, held at the end of the ${d.draftYear} season. Has never played in this league.`,
-		`  age ${d.age} in ${season}, ${d.pos}${size ? `, ${size}` : ""}${
-			d.college ? `, ${d.college}` : ""
-		}${d.country ? `, ${d.country}` : ""}`,
+		`PROSPECT — eligible for the ${d.draftYear} draft, which is held at the end of the ${d.draftYear} season. It is ${season} and he has never played in this league; nobody knows yet where he will go.`,
 		`  scouting: ovr${d.ovr} pot${d.pot}${subs ? ` | ${subs}` : ""}`,
 	];
 };
@@ -210,9 +204,15 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 	const lines: string[] = [];
 	lines.push(`PLAYER <${p.pid}>`);
 
-	const where =
-		p.teamAbbrevs.length > 0 ? p.teamAbbrevs.join(" / ") : "no team";
-	lines.push(`${p.name} — ${p.pos}, age ${p.age} in ${season}, ${where}`);
+	// A prospect has no team and no ratings row for this season, so the usual
+	// header came out as "Name — , age 20 in 2000, no team".
+	const where = p.prospect
+		? `${p.prospect.draftYear} draft class`
+		: p.teamAbbrevs.length > 0
+			? p.teamAbbrevs.join(" / ")
+			: "no team";
+	const pos = p.prospect ? p.prospect.pos : p.pos;
+	lines.push(`${p.name} — ${pos}, age ${p.age} in ${season}, ${where}`);
 
 	const bio: string[] = [];
 	const size = [height(p.hgt), p.weight > 0 ? `${p.weight} lbs` : undefined]
@@ -224,7 +224,15 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 	if (p.born.loc) {
 		bio.push(`from ${p.born.loc}`);
 	}
-	if (p.draft.year) {
+	if (p.prospect) {
+		// Where he actually went is a fact from the future - the report is written
+		// the season BEFORE his draft. Backfilling an old year, that pick is
+		// already in the database, and printing it turns a scouting report into a
+		// summary of what happened.
+		if (p.prospect.college) {
+			bio.push(p.prospect.college);
+		}
+	} else if (p.draft.year) {
 		bio.push(
 			p.draft.round > 0
 				? `drafted ${p.draft.year} rd${p.draft.round} pk${p.draft.pick}${

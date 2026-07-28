@@ -699,14 +699,19 @@ describe("next season's draft class", () => {
 	// that is when it's being scouted.
 	const prospect = () => ({
 		...player(21, 0),
+		// The pick he actually landed is in the database once the draft has been
+		// played, which is exactly the case when catching up on old seasons.
+		draft: {
+			year: 2006,
+			round: 2,
+			pick: 2,
+			originalTid: 0,
+			abbrev: "DEN",
+		},
 		prospect: {
 			draftYear: 2006,
-			age: 19,
 			pos: "C",
-			hgt: 84,
-			weight: 240,
 			college: "State",
-			country: "USA",
 			ovr: 44,
 			pot: 71,
 			ratings: { hgt: 90, stre: 55, ins: 60, tp: 20, oiq: 35 },
@@ -717,12 +722,33 @@ describe("next season's draft class", () => {
 		const prompt = buildPlayerRecapPrompt(batch([prospect()]));
 		assert.ok(
 			prompt.includes(
-				"PROSPECT — eligible for the 2006 draft, held at the end of the 2006 season",
+				"PROSPECT — eligible for the 2006 draft, which is held at the end of the 2006 season",
 			),
 			prompt,
 		);
-		assert.ok(prompt.includes(`age 19 in 2005, C, 7'0", 240 lbs, State, USA`));
 		assert.ok(prompt.includes("ovr44 pot71 | hgt90 stre55 ins60 tp20 oiq35"));
+	});
+
+	// Backfilling an old season, the draft has already been played and the result
+	// is sitting in the database. Printing it turns a scouting report into a
+	// summary of what happened.
+	test("where he actually got drafted is nowhere in the prompt", () => {
+		const prompt = buildPlayerRecapPrompt(batch([prospect()]));
+		const body = prompt.slice(prompt.indexOf("PLAYER <21>"));
+		assert.ok(!body.includes("DEN"), body);
+		assert.ok(!body.includes("rd2"), body);
+		assert.ok(!body.includes("undrafted"), body);
+		assert.ok(body.includes("nobody knows yet where he will go"));
+	});
+
+	test("he is headed by his class and position, not as a man with no team", () => {
+		const prompt = buildPlayerRecapPrompt(batch([prospect()]));
+		assert.ok(
+			prompt.includes("Player 21 — C, age 25 in 2005, 2006 draft class"),
+		);
+		assert.ok(!prompt.includes("Player 21 — , "));
+		const body = prompt.slice(prompt.indexOf("PLAYER <21>"));
+		assert.ok(!body.includes("no team"), body);
 	});
 
 	test("a prospect isn't written up as having missed the season", () => {

@@ -178,12 +178,10 @@ export type RecapRetirement = {
 // full set is here.
 export type RecapProspect = {
 	draftYear: number;
-	age: number;
+	// From his own ratings row - a prospect has none for the season being
+	// written, so the usual position lookup comes back empty.
 	pos: string;
-	hgt: number;
-	weight: number;
 	college: string;
-	country: string;
 	ovr: number;
 	pot: number;
 	ratings: Record<string, number>;
@@ -382,13 +380,19 @@ const ratingsForSeason = (p: any, season: number) =>
 const isNextDraftClass = (p: any, season: number) =>
 	p.draft?.year === season + 1;
 
-// The scouting profile to write from: the newest ratings at or before the draft
-// he's eligible for. For a live prospect that is the only row he has; for a
-// season being backfilled it is what he looked like going into the draft rather
-// than what he became afterward.
+// The scouting profile to write from: what he looks like NOW, in the season the
+// report is being written, which is the year before his draft. A prospect
+// generated for next year's class often has no row until his draft season, so
+// that is the fallback - but never anything later, or a report backfilled years
+// afterward would describe the player he turned into instead of the one being
+// scouted.
 const prospectRatings = (p: any, season: number) => {
-	const eligible = (p.ratings ?? []).filter((r: any) => r.season <= season + 1);
-	return eligible.at(-1) ?? p.ratings?.[0];
+	const rows = p.ratings ?? [];
+	return (
+		rows.find((r: any) => r.season === season) ??
+		rows.filter((r: any) => r.season <= season + 1).at(-1) ??
+		rows[0]
+	);
 };
 
 // Award finishes, reconstructed by running the same ranking the game itself uses
@@ -450,11 +454,7 @@ const getAwardRaces = async (
 // got to the team he's playing for - or dating the move a year early.
 const takesEffectNextSeason = (phase: number) => phase >= PHASE.DRAFT_LOTTERY;
 
-const prospectFor = (
-	p: any,
-	season: number,
-	bornYear: number,
-): RecapProspect | undefined => {
+const prospectFor = (p: any, season: number): RecapProspect | undefined => {
 	if (!isNextDraftClass(p, season)) {
 		return undefined;
 	}
@@ -470,12 +470,8 @@ const prospectFor = (
 	}
 	return {
 		draftYear: num(p.draft?.year),
-		age: season - bornYear,
 		pos: r.pos ?? "",
-		hgt: num(p.hgt),
-		weight: num(p.weight),
 		college: p.college ?? "",
-		country: p.born?.loc ?? "",
 		ovr: num(r.ovr),
 		pot: num(r.pot),
 		ratings,
@@ -986,7 +982,7 @@ export const getPlayerRecapData = async ({
 								.slice(0, 10),
 						}
 					: undefined,
-			prospect: prospectFor(p, season, bornYear),
+			prospect: prospectFor(p, season),
 			retiring,
 			alreadyWritten: hasSeasonNote(p.note, season),
 		};
