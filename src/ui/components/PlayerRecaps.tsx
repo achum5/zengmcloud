@@ -6,7 +6,10 @@ import {
 	parseRecapSeason,
 } from "../util/playerRecap.ts";
 import { RecapAIButton } from "./RecapAIButton.tsx";
-import type { RecapPlayerBatch } from "../../worker/util/getPlayerRecapData.ts";
+import type {
+	RecapFilter,
+	RecapPlayerBatch,
+} from "../../worker/util/getPlayerRecapData.ts";
 
 // League-wide per-player season recaps, mirroring the Team Recaps flow on the
 // same page: Copy → AI → Paste, filed into each player's own note under a
@@ -16,8 +19,22 @@ import type { RecapPlayerBatch } from "../../worker/util/getPlayerRecapData.ts";
 // more than one prompt can hold, so it walks through BATCHES. The batch advances
 // itself after a successful paste, so the loop is just Copy → AI → Paste,
 // repeat, and the counter tells you how far along the season is.
-export const PlayerRecaps = ({ season }: { season: number }) => {
+export const PlayerRecaps = ({
+	season,
+	filter = "all",
+	heading,
+}: {
+	season: number;
+	// "unwrittenProspects" is the top-up pass: only next year's draft class, only
+	// the ones with nothing written yet. A season recapped before prospects
+	// existed can be filled in without regenerating everything already filed.
+	filter?: RecapFilter;
+	heading: string;
+}) => {
 	const [batchIndex, setBatchIndex] = useState(0);
+	// Bumped after filing, to re-derive a batch whose membership depends on what
+	// is already written.
+	const [reload, setReload] = useState(0);
 	const [data, setData] = useState<RecapPlayerBatch | undefined>();
 	const [prompt, setPrompt] = useState<string | undefined>();
 	const [loadFailed, setLoadFailed] = useState(false);
@@ -39,6 +56,7 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 				const batch = await toWorker("main", "getPlayerRecapData", {
 					season,
 					batchIndex,
+					filter,
 				});
 				if (cancelled) {
 					return;
@@ -59,7 +77,7 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 		return () => {
 			cancelled = true;
 		};
-	}, [season, batchIndex]);
+	}, [season, batchIndex, filter, reload]);
 
 	const copy = async () => {
 		setResult(undefined);
@@ -136,6 +154,13 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 				setResult(
 					`Filed ${response.filed} of ${expected} players — the AI's reply was short. Lower "AI Recap Max Players" in Global Settings, then re-copy this batch to fill the rest.`,
 				);
+			} else if (filter === "unwrittenProspects") {
+				// The batch is defined as "whoever is still unwritten", so the ones
+				// just filed drop out of it. Advancing the index would skip past the
+				// players who shuffled down into their place - re-derive from the top
+				// instead, and the section disappears once nothing is left.
+				setBatchIndex(0);
+				setReload((x) => x + 1);
 			} else if (data && batchIndex + 1 < data.batchCount) {
 				setBatchIndex(batchIndex + 1);
 			}
@@ -165,8 +190,15 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 	const arrow = <span className="text-body-secondary">›</span>;
 	const btnStyle = { width: 62 } as const;
 
+	// The top-up pass only exists when there is something left to top up, so it
+	// stays out of the way entirely once the class is written.
+	if (filter === "unwrittenProspects" && (!data || data.players.length === 0)) {
+		return null;
+	}
+
 	return (
 		<div className="d-inline-flex flex-column">
+			<h2 className="h5">{heading}</h2>
 			<div className="d-flex flex-wrap align-items-center gap-1">
 				<button
 					className={`btn btn-sm ${copied ? "btn-success" : "btn-primary"}`}
@@ -213,7 +245,8 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 					</button>
 					<span>
 						Batch {data.batchIndex + 1}/{data.batchCount} ·{" "}
-						{data.players.length} players
+						{data.players.length}{" "}
+						{filter === "unwrittenProspects" ? "prospects" : "players"}
 					</span>
 					<button
 						className="btn btn-sm btn-link p-0 text-decoration-none"
@@ -224,7 +257,9 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 						›
 					</button>
 					<span>
-						· {data.alreadyWrittenTotal}/{data.totalPlayers} written
+						{filter === "unwrittenProspects"
+							? `· ${data.totalPlayers} left`
+							: `· ${data.alreadyWrittenTotal}/${data.totalPlayers} written`}
 					</span>
 				</div>
 			) : null}

@@ -515,12 +515,20 @@ export const describeTransaction = (
 	}
 };
 
+// "all" is the normal league-wide pass. "unwrittenProspects" narrows the batch
+// to next year's draft class minus anyone already written, so a season that was
+// recapped before prospects existed can be topped up without regenerating forty
+// recaps that are already filed.
+export type RecapFilter = "all" | "unwrittenProspects";
+
 export const getPlayerRecapData = async ({
 	season,
 	batchIndex = 0,
+	filter = "all",
 }: {
 	season: number;
 	batchIndex?: number;
+	filter?: RecapFilter;
 }): Promise<RecapPlayerBatch | undefined> => {
 	const globalSettings = await getGlobalSettings();
 	const batchSize = Math.max(1, globalSettings.recapMaxPlayers ?? 40);
@@ -550,14 +558,15 @@ export const getPlayerRecapData = async ({
 	// misses them, since their retirement writeup is written from this batch and
 	// there is no second pass that would catch them.
 	const inSeason = playersAll
-		.filter(
-			(p: any) =>
-				ratingsForSeason(p, season) !== undefined ||
-				p.retiredYear === season ||
-				// Next year's draft class. They aren't in the league yet, so nothing
-				// above catches them, but they are the story of the coming offseason
-				// and get a scouting report filed under this season.
-				isNextDraftClass(p, season),
+		.filter((p: any) =>
+			filter === "unwrittenProspects"
+				? isNextDraftClass(p, season) && !hasSeasonNote(p.note, season)
+				: ratingsForSeason(p, season) !== undefined ||
+					p.retiredYear === season ||
+					// Next year's draft class. They aren't in the league yet, so nothing
+					// above catches them, but they are the story of the coming offseason
+					// and get a scouting report filed under this season.
+					isNextDraftClass(p, season),
 		)
 		.sort((a: any, b: any) => (a.pid ?? 0) - (b.pid ?? 0));
 
