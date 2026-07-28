@@ -7,7 +7,18 @@ import { toWorker } from "../../util/toWorker.ts";
 import { ResponsivePopover } from "../ResponsivePopover.tsx";
 import { PLAYER } from "../../../common/constants.ts";
 import { crossTabEmitter } from "../../util/crossTabEmitter.ts";
+import { Markdown } from "../Markdown.tsx";
+import { useLocal } from "../../util/local.ts";
+import {
+	buildPlayerNoteLinks,
+	linkifySeasonNote,
+} from "../../util/linkifyRecap.ts";
 
+// Notes are markdown everywhere else they're shown, and a player note is mostly
+// AI writeups - so rendering it raw here put literal **asterisks** in the one
+// place the note is read most often. Same treatment as the player page: each
+// [year] section is linked against its own season, so a team named in the 2003
+// section points at that team in 2003.
 const PlayerNote = ({
 	className,
 	note,
@@ -15,18 +26,20 @@ const PlayerNote = ({
 	className?: string;
 	note: string;
 }) => {
+	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+
 	return (
-		<>
-			<div
-				className={clsx("text-wrap", className)}
-				style={{
-					maxHeight: "7em",
-					overflowY: "auto",
-				}}
-			>
-				{note}
-			</div>
-		</>
+		<div
+			className={clsx("text-wrap player-note-compact", className)}
+			style={{
+				maxHeight: "7em",
+				overflowY: "auto",
+			}}
+		>
+			<Markdown>
+				{linkifySeasonNote(note, buildPlayerNoteLinks(teamInfoCache))}
+			</Markdown>
+		</div>
 	);
 };
 
