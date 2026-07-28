@@ -3,6 +3,7 @@ import type {
 	RecapPlayer,
 	RecapPlayerBatch,
 	RecapRetirement,
+	RecapTeamPlayer,
 } from "../../worker/util/getPlayerRecapData.ts";
 import { stripOuterCodeFence } from "./stripOuterCodeFence.ts";
 import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
@@ -28,6 +29,8 @@ Length: judge it by how much there is to say. A deep-bench player who barely pla
 
 Each player's data is their career UP TO AND INCLUDING this season: stats by season, full ratings by season (so you can see skills develop or erode), transactions, awards, statistical feats, and injuries. Anything he missed time with THIS season is listed separately as INJURIES THIS SEASON with the games lost — if it's there, it is part of the story, and a year cut short by injury should never read as a quiet decline. Use that history to give the season meaning — a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Write as if the season has just ended and nobody knows what happens next.
 
+The LEAGUE block above the players carries this season's standings, each team's rotation (so you know who a player's teammates were and where he sat in the pecking order), the league leaders and league-average per game in every major category (so you can say where a season actually ranked instead of guessing), and the award races in finishing order. Use them. "Second in the league in rebounding", "the only other man on the roster averaging double figures", "finished fourth in MVP voting" are the sentences that make a recap worth reading, and they are all checkable from that block — so never invent one. A player's own block also lists his AWARD FINISH where he placed in a race, and SEASON HIGHS, his best single game in each category that year.
+
 Every stat line carries the team's record and how that team's year ended, and the league standings for this season are listed above the players. Use that context where it makes the recap better: 24 ppg on a 19-63 team is a different story from 24 ppg on a title winner, and a role player's year is often best told through what his team was chasing. Keep the focus on the PLAYER — team context is there to give his season stakes, not to become a team recap.
 
 Players drafted this season have a DRAFTED block: where they went, how that team just finished, and the roster they are joining. For those rookies, say something about the landing spot — the role waiting for them, who they sit behind or alongside, whether the fit is natural or awkward, what the team appears to need. Judge it from the roster given; do not invent teammates.
@@ -44,17 +47,30 @@ RETIRING PLAYERS GET TWO PIECES. A player marked RETIRING AFTER THIS SEASON has 
 
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no summary.
+- The FIRST line inside the fence must be the season stamp given below, copied exactly. It is how the reply is checked against the season it was written for; without it nothing can be filed.
 - Begin every player's recap with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each recap is filed to the correct player — never omit it, never change it.
 - Straight after a <!--player:ID--> marker, write the season recap as plain prose. NO headline, NO title, NO heading line, no bold lead-in, no year — start with the first sentence of the recap itself. No stat table, no bullet lists.
 - For a RETIRING player only, add the retirement writeup after his season recap under a DIFFERENT marker line: <!--retired:ID--> (same ID). This one DOES get a headline: the line straight after the marker is a few words, title-style, no ending period, no bold, no brackets and no year, about how the CAREER is remembered ("The quiet exit", "Sixteen years, one team"). Then a blank line, then the writeup.
-- Never state a rating number. Statistics (points, rebounds, percentages, records) are fine to quote; ratings are not.
+- Never state a rating number. Statistics (points, rebounds, percentages, records, league ranks, award finishes) are fine to quote; ratings are not.
 - Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
 - Put exactly one blank line between pieces.`;
 
 const one = (x: number) => (Math.round(x * 10) / 10).toFixed(1);
 
+const ordinal = (n: number) => {
+	const rem100 = n % 100;
+	if (rem100 >= 11 && rem100 <= 13) {
+		return `${n}th`;
+	}
+	return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+};
+
 const pct = (made: number, attempted: number) =>
 	attempted > 0 ? `${Math.round((made / attempted) * 1000) / 10}%` : "-";
+
+// Height in inches to the way anyone would write it.
+const height = (inches: number) =>
+	inches > 0 ? `${Math.floor(inches / 12)}'${inches % 12}"` : undefined;
 
 // A season's stat line, per game, in a fixed compact order.
 const statLine = (s: RecapPlayer["stats"][number]) => {
@@ -63,7 +79,9 @@ const statLine = (s: RecapPlayer["stats"][number]) => {
 		`${s.season}${s.playoffs ? "p" : ""}`,
 		s.abbrev,
 		`age${s.age}`,
-		`${s.gp}g`,
+		// Games started alongside games played, because moving into (or out of) a
+		// starting lineup is one of the most common shapes a season has.
+		s.gs === undefined ? `${s.gp}g` : `${s.gp}g/${s.gs}gs`,
 		`${perGame(s.min)}m`,
 		`${perGame(s.pts)}p`,
 		`${perGame(s.trb)}r`,
@@ -165,6 +183,12 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 	lines.push(`${p.name} — ${p.pos}, age ${p.age} in ${season}, ${where}`);
 
 	const bio: string[] = [];
+	const size = [height(p.hgt), p.weight > 0 ? `${p.weight} lbs` : undefined]
+		.filter(Boolean)
+		.join(", ");
+	if (size) {
+		bio.push(size);
+	}
 	if (p.born.loc) {
 		bio.push(`from ${p.born.loc}`);
 	}
@@ -208,6 +232,23 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 		}
 	} else {
 		lines.push("THIS SEASON: did not play");
+	}
+
+	if (p.seasonHighs) {
+		const highs = Object.entries(p.seasonHighs)
+			.map(([stat, value]) => `${value}${stat}`)
+			.join(" ");
+		if (highs) {
+			lines.push(`SEASON HIGHS (single game): ${highs}`);
+		}
+	}
+
+	if (p.awardFinishes.length > 0) {
+		lines.push(
+			`AWARD FINISH: ${p.awardFinishes
+				.map((a) => `${a.name} ${ordinal(a.rank)}`)
+				.join("; ")}`,
+		);
 	}
 
 	// Called out separately as well as in the career list below. For a
@@ -304,15 +345,59 @@ const leagueBlock = (data: RecapPlayerBatch): string[] => {
 		}
 		for (const team of group) {
 			lines.push(`  ${team.abbrev} ${team.won}-${team.lost}, ${team.result}`);
+			for (const spot of team.roster) {
+				lines.push(`    ${rosterLine(spot)}`);
+			}
+		}
+	}
+
+	if (data.leaders.length > 0) {
+		lines.push("", "LEAGUE LEADERS (per game, qualified players):");
+		for (const row of data.leaders) {
+			const board = row.players
+				.map((p, i) => `${i + 1}. ${p.name} ${p.abbrev} ${one(p.value)}`)
+				.join(", ");
+			lines.push(`  ${row.label} (avg ${one(row.leagueAvg)}): ${board}`);
+		}
+	}
+
+	if (data.awardRaces.length > 0) {
+		lines.push("", "AWARD RACES (finishing order):");
+		for (const race of data.awardRaces) {
+			lines.push(
+				`  ${race.name}: ${race.players
+					.map((p, i) => `${i + 1}. ${p.name} ${p.abbrev}`)
+					.join(", ")}`,
+			);
 		}
 	}
 
 	return lines;
 };
 
+// A teammate as the writer needs him: enough to see who the team leaned on.
+const rosterLine = (p: RecapTeamPlayer) =>
+	`${p.name} ${p.pos} age${p.age} ${p.gp}g ${one(p.min)}m ${one(p.pts)}p ${one(p.trb)}r ${one(p.ast)}a`;
+
+// Stamped into the reply so a batch written for one season can't be filed into
+// another. Every player carries the same pid whatever year it is, so nothing
+// about a 2000 reply looks wrong when it lands in 2001 - the recaps just quietly
+// attach to the wrong year on forty players' pages, and there is no way to tell
+// afterward which ones came from where.
+export const seasonStamp = (season: number) => `<!--season:${season}-->`;
+
+const SEASON_STAMP_RE = /<!--\s*season:\s*(\d{4})\s*-->/;
+
+export const parseRecapSeason = (rawText: string): number | undefined => {
+	const match = SEASON_STAMP_RE.exec(stripOuterCodeFence(rawText));
+	return match ? Number.parseInt(match[1]!) : undefined;
+};
+
 export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
 	const header = [
 		INSTRUCTIONS,
+		"",
+		`SEASON STAMP (copy as the first line inside the fence): ${seasonStamp(data.season)}`,
 		"",
 		`LISTED SEASON: ${data.season}`,
 		`This is batch ${data.batchIndex + 1} of ${data.batchCount} for this season (${data.players.length} players in this batch, ${data.totalPlayers} in the league).`,

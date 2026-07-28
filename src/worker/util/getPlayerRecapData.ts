@@ -1,6 +1,7 @@
 import { idb } from "../db/index.ts";
 import { g, helpers } from "./index.ts";
 import { getPlayoffsByConfBySeason } from "../views/frivolitiesTeamSeasons.ts";
+import getAwardCandidates from "../core/season/getAwardCandidates.ts";
 import { PHASE_TEXT, RATINGS } from "../../common/constants.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
 import { hasSeasonNote } from "../../common/seasonNote.ts";
@@ -91,6 +92,11 @@ export type RecapPlayer = {
 	// Whole career, oldest first.
 	stats: RecapPlayerSeasonStats[];
 	ratings: RecapPlayerSeasonRatings[];
+	// His best single game in each category this season - the concrete detail
+	// that makes a recap read like writing instead of a summary.
+	seasonHighs?: Record<string, number>;
+	// Where he finished in each award race this season, when he was in it at all.
+	awardFinishes: { name: string; rank: number }[];
 	awards: { season: number; type: string }[];
 	transactions: string[];
 	injuries: { season: number; type: string; games: number }[];
@@ -106,14 +112,29 @@ export type RecapPlayer = {
 	alreadyWritten: boolean;
 };
 
-// The league picture for the season being written: every team's record and how
-// their year ended. Sent once per prompt rather than per player.
+// Who a player actually played WITH. Without this the AI can't say a word about
+// a player's role - whether he was the first option, who he was deferring to,
+// who went down and left him carrying it - which is most of what a season recap
+// is about. Sent once per team for the whole batch rather than per player.
+export type RecapTeamPlayer = {
+	name: string;
+	pos: string;
+	age: number;
+	gp: number;
+	min: number;
+	pts: number;
+	trb: number;
+	ast: number;
+};
+
 export type RecapLeagueTeam = {
 	abbrev: string;
 	won: number;
 	lost: number;
 	result: string;
 	conf?: string;
+	// Top of the rotation by minutes, so a player's block has a supporting cast.
+	roster: RecapTeamPlayer[];
 };
 
 // A teammate on the roster a rookie landed on, so the AI can talk about fit
@@ -154,11 +175,33 @@ export type RecapDraftInfo = {
 	roster: RecapRosterSpot[];
 };
 
+// Players go out in batches, so on its own a block gives the AI no way to know
+// whether 24 a night led the league or was thirtieth. Without that it either
+// avoids the strongest sentence available or guesses at it. Sent once for the
+// batch.
+export type RecapStatLeaders = {
+	stat: string;
+	label: string;
+	// Per-game average across everyone who qualified, so the era reads right: 24
+	// a night means something different in a league averaging 9.
+	leagueAvg: number;
+	players: { name: string; abbrev: string; value: number }[];
+};
+
+// BBGM doesn't keep ballots - the award formulas ARE the vote - so the order is
+// reconstructed by running the same ranking the game used to pick the winner.
+export type RecapAwardRace = {
+	name: string;
+	players: { name: string; abbrev: string }[];
+};
+
 export type RecapPlayerBatch = {
 	season: number;
 	// Standings + playoff results for the season being written.
 	leagueTeams: RecapLeagueTeam[];
 	champion?: string;
+	leaders: RecapStatLeaders[];
+	awardRaces: RecapAwardRace[];
 	batchIndex: number;
 	batchCount: number;
 	batchSize: number;
@@ -170,12 +213,195 @@ export type RecapPlayerBatch = {
 
 const num = (x: unknown): number => (typeof x === "number" ? x : 0);
 
+// Max stats are stored as [value, gid].
+const maxValue = (x: unknown): number | undefined =>
+	Array.isArray(x) && typeof x[0] === "number" ? x[0] : undefined;
+
+const LEADER_STATS = [
+	{ stat: "pts", label: "points" },
+	{ stat: "trb", label: "rebounds" },
+	{ stat: "ast", label: "assists" },
+	{ stat: "stl", label: "steals" },
+	{ stat: "blk", label: "blocks" },
+	{ stat: "tp", label: "three-pointers" },
+	{ stat: "min", label: "minutes" },
+] as const;
+
+const LEADER_BOARD_SIZE = 5;
+
+// The best single game a player had in each category this season. Kept to the
+// categories anyone writes about - "dropped 51 in March" is the kind of detail
+// that makes a recap read like writing, and it is nowhere in a season average.
+const HIGH_STATS = ["pts", "trb", "ast", "stl", "blk", "tp"] as const;
+
+const seasonHighsFor = (p: any, season: number) => {
+	const out: Record<string, number> = {};
+	for (const row of p.stats ?? []) {
+		if (row.season !== season || row.playoffs) {
+			continue;
+		}
+		for (const stat of HIGH_STATS) {
+			const value = maxValue(row[`${stat}Max`]);
+			// A player traded mid-season has a row per team, so take the better.
+			if (value !== undefined && value > (out[stat] ?? -1)) {
+				out[stat] = value;
+			}
+		}
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+};
+
+// A player has to have played a real share of the year to lead it. Taken from
+// the longest season anyone actually played rather than from the numGames
+// setting, so it works for a season in progress and for any league length.
+const QUALIFY_SHARE = 0.4;
+
+// Every player's combined regular-season line for one season. Combined, because
+// a player traded in February has a row per team and neither one is his year.
+const seasonTotalsByPid = (
+	playersAll: any[],
+	season: number,
+	abbrevFor: (row: any) => string,
+) => {
+	const out = new Map<
+		number,
+		{ name: string; abbrev: string; gp: number; totals: Record<string, number> }
+	>();
+	for (const p of playersAll) {
+		let entry:
+			| {
+					name: string;
+					abbrev: string;
+					gp: number;
+					totals: Record<string, number>;
+			  }
+			| undefined;
+		for (const row of p.stats ?? []) {
+			if (row.season !== season || row.playoffs || num(row.gp) <= 0) {
+				continue;
+			}
+			if (!entry) {
+				entry = {
+					name: `${p.firstName} ${p.lastName}`,
+					abbrev: abbrevFor(row),
+					gp: 0,
+					totals: {},
+				};
+			}
+			entry.gp += num(row.gp);
+			for (const { stat } of LEADER_STATS) {
+				const value =
+					stat === "trb"
+						? num(row.trb) || num(row.orb) + num(row.drb)
+						: num(row[stat]);
+				entry.totals[stat] = (entry.totals[stat] ?? 0) + value;
+			}
+			// Whoever he finished the year with is the team to name him under.
+			entry.abbrev = abbrevFor(row);
+		}
+		if (entry) {
+			out.set(p.pid, entry);
+		}
+	}
+	return out;
+};
+
+const buildLeaders = (
+	totalsByPid: Map<
+		number,
+		{ name: string; abbrev: string; gp: number; totals: Record<string, number> }
+	>,
+): RecapStatLeaders[] => {
+	const rows = [...totalsByPid.values()];
+	if (rows.length === 0) {
+		return [];
+	}
+	const maxGp = rows.reduce((max, row) => Math.max(max, row.gp), 0);
+	const minGp = Math.max(1, Math.round(maxGp * QUALIFY_SHARE));
+	const qualified = rows.filter((row) => row.gp >= minGp);
+	if (qualified.length === 0) {
+		return [];
+	}
+
+	return LEADER_STATS.map(({ stat, label }) => {
+		const perGame = qualified.map((row) => ({
+			name: row.name,
+			abbrev: row.abbrev,
+			value: Math.round(((row.totals[stat] ?? 0) / row.gp) * 10) / 10,
+		}));
+		const leagueAvg =
+			Math.round(
+				(perGame.reduce((sum, row) => sum + row.value, 0) / perGame.length) *
+					10,
+			) / 10;
+		return {
+			stat,
+			label,
+			leagueAvg,
+			players: perGame
+				.sort((a, b) => b.value - a.value)
+				.slice(0, LEADER_BOARD_SIZE),
+		};
+	});
+};
+
 // A player belongs to a season if the league had ratings for them that year -
 // which covers everyone who was in the league at all, including players who
 // never got off the bench and unsigned free agents. (Stats alone would miss
 // them, and the ask was explicitly every player in the league.)
 const ratingsForSeason = (p: any, season: number) =>
 	p.ratings.find((r: any) => r.season === season);
+
+// Award finishes, reconstructed by running the same ranking the game itself uses
+// to hand out the awards. BBGM stores winners, not ballots, so this is the only
+// way to know a player was fourth in MVP - and being fourth in MVP is a season's
+// whole story for the player it happened to.
+//
+// Cached per season because the batches for one season all want the same answer
+// and it walks every player in the league to get it.
+const AWARD_RACE_DEPTH = 10;
+let awardRaceCache:
+	| { key: string; races: RecapAwardRace[]; ranks: Map<number, string[]> }
+	| undefined;
+
+const getAwardRaces = async (
+	season: number,
+	abbrevByTid: Map<number, string>,
+) => {
+	const key = `${g.get("lid")}|${season}|${g.get("phase")}`;
+	if (awardRaceCache?.key === key) {
+		return awardRaceCache;
+	}
+
+	const races: RecapAwardRace[] = [];
+	const ranks = new Map<number, string[]>();
+	try {
+		const candidates = await getAwardCandidates(season);
+		for (const race of candidates) {
+			const players = race.players.slice(0, AWARD_RACE_DEPTH);
+			if (players.length === 0) {
+				continue;
+			}
+			races.push({
+				name: race.name,
+				players: players.map((p: any) => ({
+					name: p.name,
+					abbrev: p.abbrev ?? abbrevByTid.get(p.tid) ?? "",
+				})),
+			});
+			for (const [i, p] of players.entries()) {
+				const list = ranks.get((p as any).pid) ?? [];
+				list.push(`${race.name}|${i + 1}`);
+				ranks.set((p as any).pid, list);
+			}
+		}
+	} catch {
+		// A season with no stats has no races. Never fail the prompt over it.
+	}
+
+	awardRaceCache = { key, races, ranks };
+	return awardRaceCache;
+};
 
 const describeTransaction = (
 	t: any,
@@ -326,6 +552,7 @@ export const getPlayerRecapData = async ({
 					lost: ts.lost,
 					result,
 					conf: confNameByCid.get(ts.cid),
+					roster: [],
 				});
 				if (ts.playoffRoundsWon >= numPlayoffRounds) {
 					champion = ts.abbrev ?? `T${ts.tid}`;
@@ -362,6 +589,54 @@ export const getPlayerRecapData = async ({
 	}
 	for (const list of rosterByTid.values()) {
 		list.sort((a, b) => b.ovr - a.ovr);
+	}
+
+	// --- League context, sent once for the whole batch -----------------------
+	const abbrevForStatRow = (row: any) =>
+		teamAbbrevByKey.get(`${row.season}|${row.tid}`) ??
+		abbrevByTid.get(row.tid) ??
+		`T${row.tid}`;
+
+	const leaders = buildLeaders(
+		seasonTotalsByPid(playersAll as any[], season, abbrevForStatRow),
+	);
+
+	const { races: awardRaces, ranks: awardRanks } = await getAwardRaces(
+		season,
+		abbrevByTid,
+	);
+
+	// Who each team actually played, by minutes. This is what lets a recap say
+	// anything about a player's ROLE rather than just his numbers.
+	const TEAMMATES_SHOWN = 8;
+	const seasonRosterByAbbrev = new Map<string, RecapTeamPlayer[]>();
+	for (const p of playersAll as any[]) {
+		const r = ratingsForSeason(p, season);
+		for (const row of p.stats ?? []) {
+			if (row.season !== season || row.playoffs || num(row.gp) <= 0) {
+				continue;
+			}
+			const abbrev = abbrevForStatRow(row);
+			const gp = num(row.gp);
+			const perGame = (v: number) => Math.round((v / gp) * 10) / 10;
+			const list = seasonRosterByAbbrev.get(abbrev) ?? [];
+			list.push({
+				name: `${p.firstName} ${p.lastName}`,
+				pos: r?.pos ?? "",
+				age: season - (p.born?.year ?? season),
+				gp,
+				min: perGame(num(row.min)),
+				pts: perGame(num(row.pts)),
+				trb: perGame(num(row.trb) || num(row.orb) + num(row.drb)),
+				ast: perGame(num(row.ast)),
+			});
+			seasonRosterByAbbrev.set(abbrev, list);
+		}
+	}
+	for (const team of leagueTeams) {
+		team.roster = (seasonRosterByAbbrev.get(team.abbrev) ?? [])
+			.sort((a, b) => b.min - a.min)
+			.slice(0, TEAMMATES_SHOWN);
 	}
 
 	// Statistical feats, indexed by pid. One fetch for the whole store rather
@@ -580,6 +855,11 @@ export const getPlayerRecapData = async ({
 					: undefined,
 			stats: statRows,
 			ratings: ratingRows,
+			seasonHighs: seasonHighsFor(p, season),
+			awardFinishes: (awardRanks.get(p.pid) ?? []).map((entry) => {
+				const [name, rank] = entry.split("|");
+				return { name: name!, rank: Number(rank) };
+			}),
 			awards,
 			transactions: upTo(p.transactions).map((t: any) =>
 				describeTransaction(t, abbrevByTid),
@@ -618,6 +898,8 @@ export const getPlayerRecapData = async ({
 		season,
 		leagueTeams,
 		champion,
+		leaders,
+		awardRaces,
 		batchIndex: clampedIndex,
 		batchCount,
 		batchSize,

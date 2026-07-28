@@ -1,6 +1,11 @@
 import { assert, describe, test } from "vitest";
 import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
-import { buildPlayerRecapPrompt, parsePlayerRecaps } from "./playerRecap.ts";
+import {
+	buildPlayerRecapPrompt,
+	parsePlayerRecaps,
+	parseRecapSeason,
+	seasonStamp,
+} from "./playerRecap.ts";
 import type { RecapPlayerBatch } from "../../worker/util/getPlayerRecapData.ts";
 
 const RATING_KEYS = [
@@ -75,6 +80,8 @@ const player = (pid: number, seasons: number) => ({
 	transactions: ["2001 draft: drafted by CHI (pick 5)"],
 	injuries: [{ season: 2004, type: "Sprained ankle", games: 12 }],
 	feats: [{ season: 2005, text: "52 pts, 11 reb, 4 ast (win)" }],
+	seasonHighs: { pts: 52, trb: 14, ast: 9 },
+	awardFinishes: [{ name: "Most Valuable Player", rank: 4 }],
 	alreadyWritten: false,
 });
 
@@ -90,6 +97,18 @@ const batch = (
 			lost: 20,
 			result: "won championship",
 			conf: "Eastern Conference",
+			roster: [
+				{
+					name: "Player 7",
+					pos: "SF",
+					age: 25,
+					gp: 82,
+					min: 34.1,
+					pts: 19.5,
+					trb: 6.1,
+					ast: 4.9,
+				},
+			],
 		},
 		{
 			abbrev: "CHI",
@@ -97,9 +116,27 @@ const batch = (
 			lost: 63,
 			result: "missed playoffs",
 			conf: "Eastern Conference",
+			roster: [],
 		},
 	],
 	champion: "BOS",
+	leaders: [
+		{
+			stat: "pts",
+			label: "points",
+			leagueAvg: 11.2,
+			players: [{ name: "Player 7", abbrev: "BOS", value: 19.5 }],
+		},
+	],
+	awardRaces: [
+		{
+			name: "Most Valuable Player",
+			players: [
+				{ name: "Someone Else", abbrev: "CHI" },
+				{ name: "Player 7", abbrev: "BOS" },
+			],
+		},
+	],
 	batchIndex: 0,
 	batchCount: 3,
 	batchSize: 40,
@@ -483,5 +520,86 @@ describe("fictional league notice", () => {
 	test("the prompt says nothing may come from real-world knowledge", () => {
 		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
 		assert.ok(prompt.includes(FICTIONAL_LEAGUE_NOTICE), prompt.slice(0, 400));
+	});
+});
+
+describe("league context", () => {
+	// The batch is one slice of the league, so on its own a player's block gives
+	// no way to know whether his 19.5 led the league or was thirtieth. Without
+	// this the AI either skips the strongest sentence available or invents it.
+	test("the leaders board and the league average are in the prompt", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("LEAGUE LEADERS"));
+		assert.ok(prompt.includes("points (avg 11.2)"));
+		assert.ok(prompt.includes("1. Player 7 BOS 19.5"));
+	});
+
+	test("award races arrive in finishing order, and a player carries his own", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("AWARD RACES"));
+		assert.ok(prompt.includes("1. Someone Else CHI, 2. Player 7 BOS"));
+		assert.ok(prompt.includes("AWARD FINISH: Most Valuable Player 4th"));
+	});
+
+	test("each team carries its rotation, so a player has teammates", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("BOS 62-20, won championship"));
+		assert.ok(
+			prompt.includes("Player 7 SF age25 82g 34.1m 19.5p 6.1r 4.9a"),
+			prompt.slice(
+				prompt.indexOf("=== LEAGUE"),
+				prompt.indexOf("LEAGUE LEADERS"),
+			),
+		);
+	});
+
+	test("season highs, height and weight, and games started all make it in", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("SEASON HIGHS (single game): 52pts 14trb 9ast"));
+		assert.ok(prompt.includes(`6'7", 220 lbs`));
+		// gs is optional - a season row without it still reads as plain games.
+		assert.ok(prompt.includes("82g "));
+	});
+});
+
+describe("season stamp", () => {
+	// A reply written for one season looks completely normal when pasted into
+	// another: every player keeps the same pid, so forty recaps quietly attach to
+	// the wrong year and there is no way to tell afterward.
+	test("the prompt asks for the stamp and says why it matters", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes(seasonStamp(2005)));
+		assert.ok(prompt.includes("season stamp"));
+	});
+
+	test("the season is read back out of a reply", () => {
+		const reply = [
+			"```markdown",
+			seasonStamp(2005),
+			"<!--player:7-->",
+			"x",
+			"```",
+		].join("\n");
+		assert.strictEqual(parseRecapSeason(reply), 2005);
+		// And the recaps still parse with the stamp sitting above them.
+		assert.strictEqual(parsePlayerRecaps(reply).length, 1);
+	});
+
+	test("a reply for another season is identifiable as such", () => {
+		const reply = [
+			"```markdown",
+			seasonStamp(2000),
+			"<!--player:7-->",
+			"x",
+			"```",
+		].join("\n");
+		assert.strictEqual(parseRecapSeason(reply), 2000);
+	});
+
+	test("an unstamped reply reads as unknown rather than as this season", () => {
+		assert.strictEqual(
+			parseRecapSeason("```markdown\n<!--player:7-->\nx\n```"),
+			undefined,
+		);
 	});
 });

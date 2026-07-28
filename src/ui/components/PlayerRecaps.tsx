@@ -3,6 +3,7 @@ import { toWorker } from "../util/toWorker.ts";
 import {
 	buildPlayerRecapPrompt,
 	parsePlayerRecaps,
+	parseRecapSeason,
 } from "../util/playerRecap.ts";
 import { RecapAIButton } from "./RecapAIButton.tsx";
 import type { RecapPlayerBatch } from "../../worker/util/getPlayerRecapData.ts";
@@ -85,6 +86,23 @@ export const PlayerRecaps = ({ season }: { season: number }) => {
 			if (recaps.length === 0) {
 				setResult(
 					"Couldn't find any recaps in what was pasted — paste the AI's full reply (each recap keeps its <!--player:…--> marker).",
+				);
+				return;
+			}
+
+			// Nothing about a reply written for another season looks wrong once it's
+			// filed - it just attaches to the wrong year on every player in the
+			// batch. So the season is stamped into the prompt and checked here.
+			const stamped = parseRecapSeason(text);
+			if (stamped === undefined) {
+				setResult(
+					`That reply has no season stamp, so it can't be checked against ${season}. Re-copy the prompt and run it again.`,
+				);
+				return;
+			}
+			if (stamped !== season) {
+				setResult(
+					`That reply was written for ${stamped}, not ${season}. Nothing was filed — go to the ${stamped} page to file it, or re-copy this season's prompt.`,
 				);
 				return;
 			}
