@@ -153,7 +153,6 @@ export const Offer = (props: OfferProps) => {
 		pidsUser,
 		salaryCap,
 		salaryCapType,
-		strategy,
 		summary,
 		tid,
 		teamInfo,
@@ -207,7 +206,7 @@ export const Offer = (props: OfferProps) => {
 				style={{ maxWidth: 500 }}
 			>
 				<div>
-					{helpers.formatRecord(props)}, {strategy},{" "}
+					{helpers.formatRecord(props)},{" "}
 					{helpers.formatCurrency(salaryCapOrPayroll / 1000, "M")}{" "}
 					{salaryCapOrPayrollText}
 				</div>
@@ -321,7 +320,6 @@ export const OfferTable = ({
 			"",
 			"Team",
 			"Record",
-			"Strategy",
 			"Ovr",
 			"Ovr",
 			salaryCapType === "none" ? "Payroll" : "Cap Space",
@@ -338,11 +336,11 @@ export const OfferTable = ({
 			},
 		},
 	);
-	offerCols[4]!.title = hideTeamRatings ? "Your Δ" : "Your Ovr";
-	offerCols[4]!.desc = "Your team's change in ovr rating";
-	offerCols[5]!.title = hideTeamRatings ? "Other Δ" : "Other Ovr";
-	offerCols[5]!.desc = "Other team's change in ovr rating";
-	offerCols.splice(6, 0, ...assetCols);
+	offerCols[3]!.title = hideTeamRatings ? "Your Δ" : "Your Ovr";
+	offerCols[3]!.desc = "Your team's change in ovr rating";
+	offerCols[4]!.title = hideTeamRatings ? "Other Δ" : "Other Ovr";
+	offerCols[4]!.desc = "Other team's change in ovr rating";
+	offerCols.splice(5, 0, ...assetCols);
 
 	// Sort by the CHANGE when ratings are hidden, so the column stays useful for
 	// "which of these offers helps me most" - sorting by the resulting rating
@@ -397,7 +395,6 @@ export const OfferTable = ({
 					{t.abbrev}
 				</a>,
 				helpers.formatRecord(offer),
-				offer.strategy,
 				!challengeNoRatings ? ovrCell(offer.summary.teams[1]) : null,
 				!challengeNoRatings ? ovrCell(offer.summary.teams[0]) : null,
 				...getAssetColContents(offer),

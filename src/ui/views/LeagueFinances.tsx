@@ -62,7 +62,6 @@ const LeagueFinances = ({ season, teams }: View<"leagueFinances">) => {
 				"Payroll",
 				...capSpaceColNames,
 				"Roster Spots",
-				"Strategy",
 				"Trade",
 				"Scouting",
 				"Coaching",
@@ -76,7 +75,6 @@ const LeagueFinances = ({ season, teams }: View<"leagueFinances">) => {
 				"Payroll",
 				...capSpaceColNames,
 				"Roster Spots",
-				"Strategy",
 				"Trade",
 			]);
 
@@ -110,12 +108,12 @@ const LeagueFinances = ({ season, teams }: View<"leagueFinances">) => {
 			if (showCapSpaceForReal) {
 				data.push(wrappedCurrency(salaryCap / 1000 - payroll, "M"));
 			}
-			data.push(t.rosterSpots, helpers.upperCaseFirstLetter(t.strategy));
+			data.push(t.rosterSpots);
 		} else {
 			if (showCapSpaceForReal) {
 				data.push(null);
 			}
-			data.push(null, null);
+			data.push(null);
 		}
 
 		data.push(

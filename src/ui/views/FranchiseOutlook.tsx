@@ -59,7 +59,7 @@ const buildDiagnostics = (view: View<"franchiseOutlook">): string => {
 			`[${String(t.ovrRank).padStart(2)}] ${t.abbrev}  tier=${meta.label}  aggr=${t.aggression.toFixed(2)}`,
 		);
 		lines.push(
-			`     record=${t.won}-${t.lost} winp=${t.winp.toFixed(3)} rankPct=${t.ovrRankPct.toFixed(2)} contention=${t.contention.toFixed(3)} | avgAge=${t.avgAge.toFixed(1)} youngCore=${t.youngCoreCount} strat=${t.strategy || "—"}`,
+			`     record=${t.won}-${t.lost} winp=${t.winp.toFixed(3)} rankPct=${t.ovrRankPct.toFixed(2)} contention=${t.contention.toFixed(3)} | avgAge=${t.avgAge.toFixed(1)} youngCore=${t.youngCoreCount}`,
 		);
 		lines.push(
 			`     seeking="${t.seeking}" starGap=${t.starGap} targetPos=${t.targetPos ?? "—"}`,

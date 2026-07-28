@@ -117,7 +117,6 @@ const updateFranchiseOutlook = async (
 				winp: posture.winp,
 				avgAge: posture.avgAge,
 				youngCoreCount: posture.youngCoreCount,
-				strategy: posture.strategy,
 				starGap: posture.starGap,
 				targetPos: posture.targetPos,
 				won: teamSeason?.won ?? 0,

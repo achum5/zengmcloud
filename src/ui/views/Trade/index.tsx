@@ -275,7 +275,6 @@ const Trade = (props: View<"trade">) => {
 		otl,
 		summary,
 		stats,
-		strategy,
 		teams,
 		tied,
 		userPicks,
@@ -410,7 +409,7 @@ const Trade = (props: View<"trade">) => {
 						<div className="text-nowrap me-2">
 							{won}-{lost}
 							{otl > 0 ? <>-{otl}</> : null}
-							{tied > 0 ? <>-{tied}</> : null}, {strategy}
+							{tied > 0 ? <>-{tied}</> : null}
 						</div>
 						<SaveTrade
 							className="ms-auto"

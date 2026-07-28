@@ -168,7 +168,6 @@ const updateTrade = async () => {
 		{
 			tid: otherTid,
 			season: g.get("season"),
-			attrs: ["strategy"],
 			seasonAttrs: ["won", "lost", "tied", "otl"],
 			addDummySeason: true,
 		},
@@ -248,7 +247,6 @@ const updateTrade = async () => {
 		otherRoster,
 		otherTid,
 		stats,
-		strategy: t.strategy,
 		summary,
 		won: t.seasonAttrs.won,
 		lost: t.seasonAttrs.lost,

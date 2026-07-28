@@ -151,7 +151,6 @@ const updateRoster = async (
 				tid: inputs.tid,
 				attrs: [
 					"tid",
-					"strategy",
 					"region",
 					"name",
 					"keepRosterSorted",

@@ -79,7 +79,6 @@ export type TradePosture = {
 	contention: number;
 	avgAge: number;
 	youngCoreCount: number;
-	strategy: string;
 	// A would-be contender with no true star — the "we need our guy" flag.
 	starGap: boolean;
 	needs: PositionNeed[];
@@ -612,10 +611,6 @@ export const getTradePosture = async (
 		youngCoreCount >= 2 ||
 		players.some((p) => p.age <= 26 && p.value >= context.starValue);
 
-	// BBGM's own strategy flag is read only for reference in the diagnostics — our
-	// classification deliberately ignores it (see contentionScore).
-	const strategy = (await idb.cache.teams.get(tid))?.strategy ?? "";
-
 	let tier = classifyTier({
 		winp,
 		ovrRankPct,
@@ -702,7 +697,6 @@ export const getTradePosture = async (
 		contention: contentionScore({ winp, ovrRankPct }),
 		avgAge,
 		youngCoreCount,
-		strategy,
 		starGap,
 		needs,
 		surpluses,

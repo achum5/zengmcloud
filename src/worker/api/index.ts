@@ -2877,7 +2877,7 @@ export const augmentOffers = async (offers: TradeTeams[]) => {
 	}
 
 	const teams = await idb.getCopies.teamsPlus({
-		attrs: ["abbrev", "region", "name", "strategy", "tid"],
+		attrs: ["abbrev", "region", "name", "tid"],
 		seasonAttrs: ["won", "lost", "tied", "otl"],
 		season: g.get("season"),
 		addDummySeason: true,
@@ -2952,7 +2952,6 @@ export const augmentOffers = async (offers: TradeTeams[]) => {
 			const payroll = await team.getPayroll(tid);
 			return {
 				tid,
-				strategy: t.strategy,
 				won: t.seasonAttrs.won,
 				lost: t.seasonAttrs.lost,
 				tied: t.seasonAttrs.tied,
