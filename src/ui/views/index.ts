@@ -106,6 +106,7 @@ export { default as SeasonPreview } from "./SeasonPreview.tsx";
 export { default as Settings } from "./Settings/index.tsx";
 export { default as Sportsbook } from "./Sportsbook.tsx";
 export { default as SportsbookGame } from "./SportsbookGame.tsx";
+export { default as Trivia82 } from "./Trivia82.tsx";
 export { default as TriviaGrids } from "./TriviaGrids.tsx";
 export { default as TriviaTeam } from "./TriviaTeam.tsx";
 export { default as TriviaHigherLower } from "./TriviaHigherLower.tsx";

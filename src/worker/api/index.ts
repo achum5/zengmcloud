@@ -196,6 +196,12 @@ import {
 	getTriviaPlayerCard,
 	type GridCriterionRef,
 } from "../core/trivia/grid.ts";
+import {
+	getOptions,
+	getPoolAndTeams,
+	type EightyTwoZeroPosition,
+} from "../core/trivia/eightyTwoZero.ts";
+import { simulateEightyTwoZeroSeason } from "../core/trivia/eightyTwoZeroSim.ts";
 import { generateTeamTriviaRound } from "../core/trivia/teamTrivia.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
@@ -2532,6 +2538,32 @@ const sportsbookCancelBet = async (info: { tid: number; betID: number }) => {
 // Trivia games: fresh puzzle/round on demand. Pure reads - no league writes.
 const triviaNewGrid = async () => {
 	return generateTriviaGrid();
+};
+
+// 82-0: the players one rolled round can offer. Fetched a round at a time
+// because every franchise-era combination at once is most of the league's
+// history in one payload.
+const trivia82Options = async ({
+	tid,
+	eraStart,
+	position,
+	excludePids,
+}: {
+	tid: number;
+	eraStart: number;
+	position: EightyTwoZeroPosition;
+	excludePids: number[];
+}) => {
+	const { pool, eras } = await getPoolAndTeams();
+	const era = eras.find((row) => row.start === eraStart);
+	if (!era) {
+		return [];
+	}
+	return getOptions(pool, tid, era, position, new Set(excludePids));
+};
+
+const trivia82Simulate = async (picks: { pid: number; season: number }[]) => {
+	return simulateEightyTwoZeroSeason(picks);
 };
 
 // toWorker hands each api function exactly one argument, so the two-parameter
@@ -6475,6 +6507,8 @@ export default {
 		sportsbookPlaceBetSlip,
 		sportsbookCancelBet,
 		sportsbookSettle,
+		trivia82Options,
+		trivia82Simulate,
 		triviaNewGrid,
 		triviaGridCatalog,
 		triviaCustomGrid,

@@ -696,6 +696,14 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				path: ["higher_lower"],
 				text: "Higher or Lower",
 			},
+			{
+				type: "link",
+				active: (pageID) => pageID === "trivia82",
+				league: true,
+				commandPalette: true,
+				path: ["82_0"],
+				text: "82-0",
+			},
 		],
 	},
 	{
