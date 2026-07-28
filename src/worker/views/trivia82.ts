@@ -15,6 +15,15 @@ import {
 // of players a given round can actually offer, is fetched per round via the
 // trivia82Options API rather than shipped up front: every combination at once
 // would be most of the league's history serialized into one payload.
+//
+// Nothing here, and nothing behind the two API calls, writes to the league.
+// 82-0 is a game about your file, not a change to it - no roster moves, no
+// stats, no events, not even a stored high score.
+//
+// It also never shows a rating. Every number it puts on screen is a box score:
+// what a player actually did that season. That is not an accident of the
+// display - ratings are simply not in the payload, so a league that hides them
+// has nothing to hide here (see eightyTwoZero.test.ts, which holds this).
 
 export type Trivia82Team = {
 	tid: number;
@@ -60,7 +69,6 @@ const updateTrivia82 = async (inputs: unknown, updateEvents: UpdateEvents) => {
 		return {
 			data,
 			season: g.get("season"),
-			godMode: g.get("godMode"),
 		};
 	}
 };

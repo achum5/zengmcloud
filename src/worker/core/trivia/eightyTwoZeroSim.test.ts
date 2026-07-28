@@ -161,3 +161,38 @@ describe("simulateEightyTwoZeroSeason", () => {
 		assert.strictEqual(await simulateEightyTwoZeroSeason([]), undefined);
 	});
 });
+
+describe("82-0 leaves the league alone", () => {
+	// It's a game about your file, not a change to it. The season it plays runs
+	// on copies: no roster moves, no stats written, no injuries carried over,
+	// nobody's age or ratings edited. The picks are rebuilt as the players they
+	// were that year, and that rebuilding must not touch the stored player.
+	test("nothing in the database moves", async () => {
+		const before = JSON.stringify(
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity]),
+		);
+		const beforeTeams = JSON.stringify(await idb.cache.teams.getAll());
+		const beforeSeasons = JSON.stringify(await idb.cache.teamSeasons.getAll());
+
+		const result = await simulateEightyTwoZeroSeason(picks());
+		assert.ok(result, "the season didn't run, so this proves nothing");
+
+		assert.strictEqual(
+			JSON.stringify(
+				await idb.cache.players.indexGetAll("playersByTid", [0, Infinity]),
+			),
+			before,
+			"a player was modified",
+		);
+		assert.strictEqual(
+			JSON.stringify(await idb.cache.teams.getAll()),
+			beforeTeams,
+			"a team was modified",
+		);
+		assert.strictEqual(
+			JSON.stringify(await idb.cache.teamSeasons.getAll()),
+			beforeSeasons,
+			"a team season was modified",
+		);
+	});
+});

@@ -230,3 +230,59 @@ describe("buildMatchups", () => {
 		assert.deepStrictEqual(a.C, b.C);
 	});
 });
+
+describe("82-0 shows no ratings", () => {
+	// The game is scored on box scores, never on ratings, so a league that hides
+	// player ratings has nothing to hide here. That is a property of the payload
+	// rather than of the display, and this is what keeps it one: if a rating ever
+	// gets added to what a round offers, it fails here rather than quietly
+	// leaking onto the screen of a no-ratings league.
+	const RATING_KEYS = [
+		"ovr",
+		"pot",
+		"hgt",
+		"stre",
+		"spd",
+		"jmp",
+		"endu",
+		"ins",
+		"dnk",
+		"ft",
+		"fg",
+		"tp",
+		"oiq",
+		"diq",
+		"drb",
+		"pss",
+		"reb",
+		"ratings",
+		"skills",
+		"value",
+		"valueNoPot",
+	];
+
+	test("nothing a round offers is a rating", () => {
+		const pool = {
+			players: [player(1, [row(2004, 0, "SF")])],
+		};
+		const [option] = getOptions(pool, 0, ERA_2000S, "SF", new Set());
+		const keys = Object.keys(option!);
+		for (const key of RATING_KEYS) {
+			// "fg", "tp" and "ft" are box score counts here, not the shooting
+			// ratings of the same name - everything else must be absent outright.
+			if (["fg", "tp", "ft", "reb", "drb"].includes(key)) {
+				continue;
+			}
+			assert.ok(!keys.includes(key), `${key} is in the payload`);
+		}
+	});
+
+	test("the matchup board is teams and years, nothing else", () => {
+		const eras = buildEras(2000, 2019);
+		const pool = { players: [player(1, [row(2004, 0, "PG")])] };
+		const matchups = buildMatchups(pool, [0], eras);
+		for (const m of matchups.PG) {
+			assert.deepStrictEqual(Object.keys(m).sort(), ["eraStart", "tid"]);
+		}
+	});
+});
