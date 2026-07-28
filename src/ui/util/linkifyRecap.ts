@@ -239,10 +239,25 @@ export const linkifySeasonNote = (
 	return out.join("\n");
 };
 
-// Season-aware team links for a player's note. Built once per note and memoized
-// per season, since a long career has a section for every year and they mostly
-// repeat the same teams.
-export const buildPlayerNoteLinks = (teamInfoCache: TeamInfoCache) => {
+// Season-aware links for a player's note: every team, plus the people he
+// actually played with that year. Teammates are scoped per season rather than
+// looked up league-wide, so a common name can't link to the wrong player - the
+// same rule the game and team-season recaps follow.
+//
+// Built once per note and memoized per season, since a long career has a
+// section for every year and they mostly repeat the same names.
+export const buildPlayerNoteLinks = (
+	teamInfoCache: TeamInfoCache,
+	teammatesBySeason?: {
+		season: number;
+		players: { pid: number; name: string }[];
+	}[],
+) => {
+	const bySeason = new Map<number, { pid: number; name: string }[]>();
+	for (const row of teammatesBySeason ?? []) {
+		bySeason.set(row.season, row.players);
+	}
+
 	const cache = new Map<number | undefined, RecapLink[]>();
 	return (season: number | undefined): RecapLink[] => {
 		const existing = cache.get(season);
@@ -250,6 +265,16 @@ export const buildPlayerNoteLinks = (teamInfoCache: TeamInfoCache) => {
 			return existing;
 		}
 		const entries = teamLinks(teamInfoCache, season);
+		if (season !== undefined) {
+			for (const { pid, name } of bySeason.get(season) ?? []) {
+				if (name.trim() !== "") {
+					entries.push({
+						name: name.trim(),
+						href: helpers.leagueUrl(["player", pid]),
+					});
+				}
+			}
+		}
 		cache.set(season, entries);
 		return entries;
 	};

@@ -155,6 +155,7 @@ const PlayerGameLog = ({
 	bestPos,
 	customMenu,
 	jerseyNumberInfos,
+	noteTeammates,
 	numGamesPlayoffSeires,
 	player,
 	randomDebutsForeverPids,
@@ -367,6 +368,7 @@ const PlayerGameLog = ({
 				bestPos={bestPos}
 				currentSeason={currentSeason}
 				jerseyNumberInfos={jerseyNumberInfos}
+				noteTeammates={noteTeammates}
 				player={player}
 				randomDebutsForeverPids={randomDebutsForeverPids}
 				retired={retired}

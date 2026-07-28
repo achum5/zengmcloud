@@ -283,6 +283,7 @@ const TopStuff = ({
 	bestPos,
 	currentSeason,
 	jerseyNumberInfos,
+	noteTeammates,
 	player,
 	randomDebutsForeverPids,
 	retired,
@@ -298,6 +299,7 @@ const TopStuff = ({
 	View<"player">,
 	| "bestPos"
 	| "jerseyNumberInfos"
+	| "noteTeammates"
 	| "player"
 	| "randomDebutsForeverPids"
 	| "retired"
@@ -759,7 +761,7 @@ const TopStuff = ({
 					// A career note is a stack of "[YYYY]" sections, so a team named in
 					// the 2001 section links to that team's 2001 page rather than to
 					// whatever it looks like today.
-					autoLinkBySeason={buildPlayerNoteLinks(teamInfoCache)}
+					autoLinkBySeason={buildPlayerNoteLinks(teamInfoCache, noteTeammates)}
 				/>
 			</div>
 

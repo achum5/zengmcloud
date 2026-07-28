@@ -227,3 +227,60 @@ describe("linkifySeasonNote", () => {
 		);
 	});
 });
+
+describe("linking teammates in a player note", () => {
+	beforeAll(() => {
+		local.setState({ lid: 1 });
+	});
+
+	const teamInfoCache = [{ abbrev: "BOS", region: "Boston", name: "Celtics" }];
+	const teammates = [
+		{ season: 2003, players: [{ pid: 9, name: "Paul Pierce" }] },
+		{ season: 2001, players: [{ pid: 12, name: "Antoine Walker" }] },
+	];
+
+	test("a teammate named in a season's section links to his page", () => {
+		const out = linkifySeasonNote(
+			"[2003]\nHe and Paul Pierce carried it.",
+			buildPlayerNoteLinks(teamInfoCache, teammates),
+		);
+		assert.ok(out.includes("[Paul Pierce](/l/1/player/9)"), out);
+	});
+
+	// Scoping is the whole point: a name is only linked in the years the two
+	// actually played together, so a common name can't be resolved to whichever
+	// player happened to be found first.
+	test("a name is not linked in a season they didn't share", () => {
+		const out = linkifySeasonNote(
+			"[2001]\nHe and Paul Pierce carried it.",
+			buildPlayerNoteLinks(teamInfoCache, teammates),
+		);
+		assert.ok(!out.includes("/l/1/player/9"), out);
+		assert.ok(out.includes("Paul Pierce"));
+	});
+
+	test("teammates and teams are linked in the same pass", () => {
+		const out = linkifySeasonNote(
+			"[2001]\nAntoine Walker led Boston.",
+			buildPlayerNoteLinks(teamInfoCache, teammates),
+		);
+		assert.ok(out.includes("[Antoine Walker](/l/1/player/12)"), out);
+		assert.ok(out.includes("[Boston](/l/1/roster/BOS_0/2001)"), out);
+	});
+
+	test("a bolded teammate keeps its bold", () => {
+		const out = linkifySeasonNote(
+			"[2003]\n**Paul Pierce** did the rest.",
+			buildPlayerNoteLinks(teamInfoCache, teammates),
+		);
+		assert.ok(out.includes("**[Paul Pierce](/l/1/player/9)**"), out);
+	});
+
+	test("no teammate data still links teams", () => {
+		const out = linkifySeasonNote(
+			"[2001]\nHe led Boston.",
+			buildPlayerNoteLinks(teamInfoCache),
+		);
+		assert.ok(out.includes("[Boston](/l/1/roster/BOS_0/2001)"), out);
+	});
+});

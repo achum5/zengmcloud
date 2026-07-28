@@ -24,6 +24,7 @@ import { choice } from "../../common/random.ts";
 import { getTeamColors } from "../util/getTeamColors.ts";
 import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
 import { processPlayersHallOfFame } from "../util/processPlayersHallOfFame.ts";
+import { getNoteTeammates } from "../util/getNoteTeammates.ts";
 
 export const getPlayerProfileStats = () => {
 	const stats = [];
@@ -490,11 +491,16 @@ export const getCommon = async (
 		}
 	}
 
+	// Names the note can link, scoped per season - only computed when there IS a
+	// note, so an ordinary player page pays nothing for it.
+	const noteTeammates = await getNoteTeammates(pRaw);
+
 	return {
 		type: "normal" as const,
 		bestPos,
 		customMenu,
 		jerseyNumberInfos,
+		noteTeammates,
 		pRaw,
 		pid, // Needed for state.pid check
 		player: p,

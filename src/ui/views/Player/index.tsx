@@ -26,6 +26,7 @@ const Player2 = ({
 	feats,
 	jerseyNumberInfos,
 	leaders,
+	noteTeammates,
 	player,
 	randomDebutsForeverPids,
 	ratings,
@@ -97,6 +98,7 @@ const Player2 = ({
 				bestPos={bestPos}
 				currentSeason={currentSeason}
 				jerseyNumberInfos={jerseyNumberInfos}
+				noteTeammates={noteTeammates}
 				player={player}
 				randomDebutsForeverPids={randomDebutsForeverPids}
 				retired={retired}
