@@ -1,4 +1,4 @@
-import { assert, beforeAll, test } from "vitest";
+import { assert, beforeAll, describe, test } from "vitest";
 import { PLAYER } from "../../../common/constants.ts";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { player } from "../../core/index.ts";
@@ -636,4 +636,73 @@ test("coarsenRatings: false opts out of the display rounding", async () => {
 	}
 
 	assert.deepStrictEqual(optedOut.ratings, full.ratings);
+});
+
+// Scouting a draft class is the one place the tens digit really matters, so
+// there's an option to let prospects keep their exact ratings. It ends the
+// moment they're drafted - the exemption is keyed on the player's CURRENT tid,
+// not on whether he was a prospect at the time.
+describe("hideRatingsOnesDigitExceptProspects", () => {
+	const opts = {
+		ratings: ["season", "ovr", "pot", "stre"],
+		season: 2012,
+	};
+
+	const readBack = async (tid: number, exceptProspects: boolean) => {
+		const original = p.tid;
+		p.tid = tid;
+		g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+		g.setWithoutSavingToDB(
+			"hideRatingsOnesDigitExceptProspects",
+			exceptProspects,
+		);
+		const out = await idb.getCopy.playersPlus(p, opts);
+		g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+		g.setWithoutSavingToDB("hideRatingsOnesDigitExceptProspects", false);
+		p.tid = original;
+		if (!out) {
+			throw new Error("Missing player");
+		}
+		return out;
+	};
+
+	const trueRatings = async () => {
+		g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+		const out = await idb.getCopy.playersPlus(p, opts);
+		if (!out) {
+			throw new Error("Missing player");
+		}
+		return out.ratings;
+	};
+
+	test("an undrafted prospect keeps his exact ratings", async () => {
+		const full = await trueRatings();
+		const prospect = await readBack(PLAYER.UNDRAFTED, true);
+		assert.deepStrictEqual(prospect.ratings, full);
+	});
+
+	test("the same player on a team does not", async () => {
+		const full = await trueRatings();
+		const drafted = await readBack(4, true);
+		assert.strictEqual(drafted.ratings.ovr, Math.floor(full.ovr / 10));
+	});
+
+	test("a free agent is not a prospect", async () => {
+		const full = await trueRatings();
+		const freeAgent = await readBack(PLAYER.FREE_AGENT, true);
+		assert.strictEqual(freeAgent.ratings.ovr, Math.floor(full.ovr / 10));
+	});
+
+	test("a retired player is not a prospect", async () => {
+		const full = await trueRatings();
+		const retired = await readBack(PLAYER.RETIRED, true);
+		assert.strictEqual(retired.ratings.ovr, Math.floor(full.ovr / 10));
+	});
+
+	// With the option off, coarse ratings mean coarse ratings for everyone.
+	test("the option off leaves prospects coarse", async () => {
+		const full = await trueRatings();
+		const prospect = await readBack(PLAYER.UNDRAFTED, false);
+		assert.strictEqual(prospect.ratings.ovr, Math.floor(full.ovr / 10));
+	});
 });

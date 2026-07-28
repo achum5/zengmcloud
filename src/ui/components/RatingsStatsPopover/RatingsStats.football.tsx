@@ -13,9 +13,19 @@ type Props = {
 	stats: any;
 	type?: "career" | "current" | "draft" | number;
 	challengeNoRatings: boolean;
+	// Whether these particular ratings are the coarse, tens-digit kind.
+	coarseRatings: boolean;
 };
 
-const RatingsStats = ({ challengeNoRatings, ratings, stats, type }: Props) => {
+const RatingsStats = ({
+	challengeNoRatings,
+	coarseRatings,
+	ratings,
+	stats,
+	type,
+}: Props) => {
+	const gradient = (rating: number) =>
+		ratingsGradientStyle(rating, coarseRatings);
 	const seasonPrefix =
 		typeof type === "number" ? `${type} ` : type === "career" ? "Peak " : "";
 	const seasonPrefix2 =
@@ -32,29 +42,29 @@ const RatingsStats = ({ challengeNoRatings, ratings, stats, type }: Props) => {
 			<div className="row">
 				<div className="col-4">
 					<div className="fw-bold mb-1">{seasonPrefix}Ratings</div>
-					<span style={ratingsGradientStyle(ratings.ovr)}>
+					<span style={gradient(ratings.ovr)}>
 						<span title="Overall">Ovr</span>: {ratings.ovr}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.pot)}>
+					<span style={gradient(ratings.pot)}>
 						<span title="Potential">Pot</span>: {Math.round(ratings.pot)}
 					</span>
 				</div>
 				<div className="col-4 mt-1">
 					<br />
-					<span style={ratingsGradientStyle(ratings.hgt)}>
+					<span style={gradient(ratings.hgt)}>
 						<span title="Height">Hgt</span>: {ratings.hgt}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.stre)}>
+					<span style={gradient(ratings.stre)}>
 						<span title="Strength">Str</span>: {ratings.stre}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.spd)}>
+					<span style={gradient(ratings.spd)}>
 						<span title="Speed">Spd</span>: {ratings.spd}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.endu)}>
+					<span style={gradient(ratings.endu)}>
 						<span title="Endurance">End</span>: {ratings.endu}
 					</span>
 				</div>
@@ -62,7 +72,7 @@ const RatingsStats = ({ challengeNoRatings, ratings, stats, type }: Props) => {
 					{extraRatings.map((rating, i) => (
 						<Fragment key={rating}>
 							<br />
-							<span style={ratingsGradientStyle(ratings[rating])}>
+							<span style={gradient(ratings[rating])}>
 								<span title={cols[i]!.desc}>{cols[i]!.title}</span>:{" "}
 								{ratings[rating]}
 							</span>

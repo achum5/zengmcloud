@@ -10,9 +10,19 @@ type Props = {
 	stats: any;
 	type?: "career" | "current" | "draft" | number;
 	challengeNoRatings: boolean;
+	// Whether these particular ratings are the coarse, tens-digit kind.
+	coarseRatings: boolean;
 };
 
-const RatingsStats = ({ challengeNoRatings, ratings, stats, type }: Props) => {
+const RatingsStats = ({
+	challengeNoRatings,
+	coarseRatings,
+	ratings,
+	stats,
+	type,
+}: Props) => {
+	const gradient = (rating: number) =>
+		ratingsGradientStyle(rating, coarseRatings);
 	const seasonPrefix =
 		typeof type === "number" ? `${type} ` : type === "career" ? "Peak " : "";
 	const seasonPrefix2 =
@@ -28,71 +38,41 @@ const RatingsStats = ({ challengeNoRatings, ratings, stats, type }: Props) => {
 				<div className="col-4">
 					<b>{seasonPrefix}Ratings</b>
 					<br />
-					<span style={ratingsGradientStyle(ratings.hgt)}>
-						Hgt: {ratings.hgt}
-					</span>
+					<span style={gradient(ratings.hgt)}>Hgt: {ratings.hgt}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.stre)}>
-						Str: {ratings.stre}
-					</span>
+					<span style={gradient(ratings.stre)}>Str: {ratings.stre}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.spd)}>
-						Spd: {ratings.spd}
-					</span>
+					<span style={gradient(ratings.spd)}>Spd: {ratings.spd}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.endu)}>
-						End: {ratings.endu}
-					</span>
+					<span style={gradient(ratings.endu)}>End: {ratings.endu}</span>
 				</div>
 				<div className="col-4">
-					<span style={ratingsGradientStyle(ratings.ovr)}>
-						Ovr: {ratings.ovr}
-					</span>
+					<span style={gradient(ratings.ovr)}>Ovr: {ratings.ovr}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.oiq)}>
-						oIQ: {ratings.oiq}
-					</span>
+					<span style={gradient(ratings.oiq)}>oIQ: {ratings.oiq}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.pss)}>
-						Pss: {ratings.pss}
-					</span>
+					<span style={gradient(ratings.pss)}>Pss: {ratings.pss}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.wst)}>
-						Wst: {ratings.wst}
-					</span>
+					<span style={gradient(ratings.wst)}>Wst: {ratings.wst}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.sst)}>
-						Sst: {ratings.sst}
-					</span>
+					<span style={gradient(ratings.sst)}>Sst: {ratings.sst}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.stk)}>
-						Stk: {ratings.stk}
-					</span>
+					<span style={gradient(ratings.stk)}>Stk: {ratings.stk}</span>
 				</div>
 				<div className="col-4">
-					<span style={ratingsGradientStyle(ratings.pot)}>
+					<span style={gradient(ratings.pot)}>
 						Pot: {Math.round(ratings.pot)}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.diq)}>
-						dIQ: {ratings.diq}
-					</span>
+					<span style={gradient(ratings.diq)}>dIQ: {ratings.diq}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.chk)}>
-						Chk: {ratings.chk}
-					</span>
+					<span style={gradient(ratings.chk)}>Chk: {ratings.chk}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.blk)}>
-						Blk: {ratings.blk}
-					</span>
+					<span style={gradient(ratings.blk)}>Blk: {ratings.blk}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.fcf)}>
-						Fcf: {ratings.fcf}
-					</span>
+					<span style={gradient(ratings.fcf)}>Fcf: {ratings.fcf}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.glk)}>
-						Glk: {ratings.glk}
-					</span>
+					<span style={gradient(ratings.glk)}>Glk: {ratings.glk}</span>
 				</div>
 			</div>
 		);

@@ -11,9 +11,19 @@ type Props = {
 	stats: any;
 	type?: "career" | "current" | "draft" | number;
 	challengeNoRatings: boolean;
+	// Whether these particular ratings are the coarse, tens-digit kind.
+	coarseRatings: boolean;
 };
 
-const RatingsStats = ({ challengeNoRatings, ratings, stats, type }: Props) => {
+const RatingsStats = ({
+	challengeNoRatings,
+	coarseRatings,
+	ratings,
+	stats,
+	type,
+}: Props) => {
+	const gradient = (rating: number) =>
+		ratingsGradientStyle(rating, coarseRatings);
 	const seasonPrefix =
 		typeof type === "number" ? `${type} ` : type === "career" ? "Peak " : "";
 	const seasonPrefix2 =
@@ -29,73 +39,43 @@ const RatingsStats = ({ challengeNoRatings, ratings, stats, type }: Props) => {
 				<div className="col-4">
 					<b>{seasonPrefix}Ratings</b>
 					<br />
-					<span style={ratingsGradientStyle(ratings.hgt)}>
-						Hgt: {ratings.hgt}
-					</span>
+					<span style={gradient(ratings.hgt)}>Hgt: {ratings.hgt}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.stre)}>
-						Str: {ratings.stre}
-					</span>
+					<span style={gradient(ratings.stre)}>Str: {ratings.stre}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.spd)}>
-						Spd: {ratings.spd}
-					</span>
+					<span style={gradient(ratings.spd)}>Spd: {ratings.spd}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.jmp)}>
-						Jmp: {ratings.jmp}
-					</span>
+					<span style={gradient(ratings.jmp)}>Jmp: {ratings.jmp}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.endu)}>
-						End: {ratings.endu}
-					</span>
+					<span style={gradient(ratings.endu)}>End: {ratings.endu}</span>
 				</div>
 				<div className="col-4">
-					<span style={ratingsGradientStyle(ratings.ovr)}>
-						Ovr: {ratings.ovr}
-					</span>
+					<span style={gradient(ratings.ovr)}>Ovr: {ratings.ovr}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.ins)}>
-						Ins: {ratings.ins}
-					</span>
+					<span style={gradient(ratings.ins)}>Ins: {ratings.ins}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.dnk)}>
-						Dnk: {ratings.dnk}
-					</span>
+					<span style={gradient(ratings.dnk)}>Dnk: {ratings.dnk}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.ft)}>Ft: {ratings.ft}</span>
+					<span style={gradient(ratings.ft)}>Ft: {ratings.ft}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.fg)}>
-						2Pt: {ratings.fg}
-					</span>
+					<span style={gradient(ratings.fg)}>2Pt: {ratings.fg}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.tp)}>
-						3Pt: {ratings.tp}
-					</span>
+					<span style={gradient(ratings.tp)}>3Pt: {ratings.tp}</span>
 				</div>
 				<div className="col-4">
-					<span style={ratingsGradientStyle(ratings.pot)}>
+					<span style={gradient(ratings.pot)}>
 						Pot: {Math.round(ratings.pot)}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.oiq)}>
-						oIQ: {ratings.oiq}
-					</span>
+					<span style={gradient(ratings.oiq)}>oIQ: {ratings.oiq}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.diq)}>
-						dIQ: {ratings.diq}
-					</span>
+					<span style={gradient(ratings.diq)}>dIQ: {ratings.diq}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.drb)}>
-						Drb: {ratings.drb}
-					</span>
+					<span style={gradient(ratings.drb)}>Drb: {ratings.drb}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.pss)}>
-						Pss: {ratings.pss}
-					</span>
+					<span style={gradient(ratings.pss)}>Pss: {ratings.pss}</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.reb)}>
-						Reb: {ratings.reb}
-					</span>
+					<span style={gradient(ratings.reb)}>Reb: {ratings.reb}</span>
 				</div>
 			</div>
 		);

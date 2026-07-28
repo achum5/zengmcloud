@@ -359,7 +359,13 @@ const updateRoster = async (
 			playoffsByConf,
 			players: addFirstNameShort(
 				g.get("hideRatingsOnesDigit")
-					? players.map((p) => coarsenPlayerForDisplay(p, ratings))
+					? players.map((p) =>
+							coarsenPlayerForDisplay(
+								p,
+								ratings,
+								g.get("hideRatingsOnesDigitExceptProspects"),
+							),
+						)
 					: players,
 			),
 			season: inputs.season,

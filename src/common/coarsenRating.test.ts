@@ -4,6 +4,7 @@ import {
 	coarsenRating,
 	coarsenRatingChange,
 	coarsenRatingsRow,
+	exemptFromCoarseRatings,
 } from "./coarsenRating.ts";
 
 describe("coarsenRating", () => {
@@ -122,5 +123,58 @@ describe("coarsenPlayerForDisplay", () => {
 		coarsenPlayerForDisplay(p, ["ovr"]);
 		assert.strictEqual(p.ratings.ovr, 74);
 		assert.strictEqual(p.draft.ovr, 47);
+	});
+});
+
+describe("exemptFromCoarseRatings", () => {
+	// Scouting a draft class is the one place the tens digit really matters, so
+	// prospects can be spared. That ends the moment they're drafted.
+	test("an undrafted prospect is exempt", () => {
+		assert.strictEqual(exemptFromCoarseRatings(-2, true), true);
+	});
+
+	test("so are the legacy future draft classes", () => {
+		assert.strictEqual(exemptFromCoarseRatings(-4, true), true);
+		assert.strictEqual(exemptFromCoarseRatings(-5, true), true);
+	});
+
+	test("a player on a team is not, however good he was as a prospect", () => {
+		for (const tid of [0, 1, 29]) {
+			assert.strictEqual(exemptFromCoarseRatings(tid, true), false);
+		}
+	});
+
+	test("free agents and retirees are not prospects", () => {
+		assert.strictEqual(exemptFromCoarseRatings(-1, true), false);
+		assert.strictEqual(exemptFromCoarseRatings(-3, true), false);
+	});
+
+	test("nothing is exempt with the option off", () => {
+		assert.strictEqual(exemptFromCoarseRatings(-2, false), false);
+	});
+
+	test("an unknown team is not exempt", () => {
+		assert.strictEqual(exemptFromCoarseRatings(undefined, true), false);
+	});
+});
+
+describe("coarsenPlayerForDisplay honours the exemption", () => {
+	const prospect = { tid: -2, ratings: { ovr: 74, pot: 81 } };
+	const drafted = { tid: 3, ratings: { ovr: 74, pot: 81 } };
+
+	test("a prospect comes back untouched", () => {
+		const out = coarsenPlayerForDisplay(prospect, ["ovr", "pot"], true);
+		assert.strictEqual(out.ratings.ovr, 74);
+		assert.strictEqual(out.ratings.pot, 81);
+	});
+
+	test("a drafted player is still rounded", () => {
+		const out = coarsenPlayerForDisplay(drafted, ["ovr", "pot"], true);
+		assert.strictEqual(out.ratings.ovr, 7);
+	});
+
+	test("without the option, a prospect is rounded like anyone else", () => {
+		const out = coarsenPlayerForDisplay(prospect, ["ovr", "pot"]);
+		assert.strictEqual(out.ratings.ovr, 7);
 	});
 });

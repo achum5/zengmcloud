@@ -224,7 +224,7 @@ export const RatingsStatsPopover = ({
 	const modalHeader = nameBlock;
 	const modalBody = (
 		<>
-			<RatingsStats ratings={ratings} stats={stats} type={type} />
+			<RatingsStats ratings={ratings} stats={stats} type={type} tid={tid} />
 			{note ? <PlayerNote className="mt-2" note={note} /> : null}
 		</>
 	);
@@ -237,7 +237,7 @@ export const RatingsStatsPopover = ({
 			}}
 		>
 			<div className="mb-2">{nameBlock}</div>
-			<RatingsStats ratings={ratings} stats={stats} type={type} />
+			<RatingsStats ratings={ratings} stats={stats} type={type} tid={tid} />
 			{note ? <PlayerNote className="mt-2" note={note} /> : null}
 		</div>
 	);

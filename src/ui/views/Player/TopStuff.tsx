@@ -686,7 +686,11 @@ const TopStuff = ({
 
 				<div className="mt-3 mt-sm-0 text-nowrap overflow-auto small-scrollbar">
 					{showRatingsOverview ? (
-						<RatingsOverview ratings={player.ratings} season={season} />
+						<RatingsOverview
+							ratings={player.ratings}
+							season={season}
+							tid={player.tid}
+						/>
 					) : null}
 					{jerseyNumberInfos.length > 0 ? (
 						<div

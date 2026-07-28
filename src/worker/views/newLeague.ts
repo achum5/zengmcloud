@@ -165,6 +165,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"hideRatingsOnesDigit",
 		),
+		hideRatingsOnesDigitExceptProspects: unwrapGameAttribute(
+			defaultGameAttributes,
+			"hideRatingsOnesDigitExceptProspects",
+		),
 		hideTeamRatings: unwrapGameAttribute(
 			defaultGameAttributes,
 			"hideTeamRatings",

@@ -205,7 +205,15 @@ const updateSeasonPreview = async (
 		// looked at, so round them the way the league displays them.
 		const coarse = g.get("hideRatingsOnesDigit");
 		const forDisplay = <T extends { ratings: any }>(list: T[]): T[] =>
-			coarse ? list.map((p) => coarsenPlayerForDisplay(p, RATINGS)) : list;
+			coarse
+				? list.map((p) =>
+						coarsenPlayerForDisplay(
+							p,
+							RATINGS,
+							g.get("hideRatingsOnesDigitExceptProspects"),
+						),
+					)
+				: list;
 		const teamsForDisplay = <T extends { players: any[] }>(list: T[]): T[] =>
 			coarse
 				? list.map((t) => ({ ...t, players: forDisplay(t.players) }))

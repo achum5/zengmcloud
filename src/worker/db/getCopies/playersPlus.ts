@@ -18,6 +18,7 @@ import { last } from "../../../common/utils.ts";
 // when the result feeds a calculation.
 import {
 	coarsenRating,
+	exemptFromCoarseRatings,
 	NO_COARSEN_RATINGS,
 } from "../../../common/coarsenRating.ts";
 
@@ -214,7 +215,14 @@ const processAttrs = (
 					p.ratings[0].fuzz,
 				);
 			}
-			if (coarsenRatings && g.get("hideRatingsOnesDigit")) {
+			if (
+				coarsenRatings &&
+				g.get("hideRatingsOnesDigit") &&
+				!exemptFromCoarseRatings(
+					p.tid,
+					g.get("hideRatingsOnesDigitExceptProspects"),
+				)
+			) {
 				output.draft.ovr = coarsenRating(output.draft.ovr);
 				output.draft.pot = coarsenRating(output.draft.pot);
 			}
@@ -428,7 +436,16 @@ const processRatings = (
 ) => {
 	let playerRatings = playerRatingsInput;
 
-	const coarseRatings = coarsenRatings && g.get("hideRatingsOnesDigit");
+	// An undrafted prospect can be exempted, so a draft class is still scoutable
+	// in a league that otherwise shows only the tens digit. Keyed on his CURRENT
+	// tid, so the day he's drafted his whole history goes coarse with him.
+	const coarseRatings =
+		coarsenRatings &&
+		g.get("hideRatingsOnesDigit") &&
+		!exemptFromCoarseRatings(
+			p.tid,
+			g.get("hideRatingsOnesDigitExceptProspects"),
+		);
 
 	if (
 		showDraftProspectRookieRatings &&

@@ -1439,6 +1439,14 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Challenge Modes",
+			key: "hideRatingsOnesDigitExceptProspects",
+			name: "Coarse Ratings: Prospects Exempt",
+			type: "bool",
+			description:
+				"Undrafted prospects keep their exact ratings, so scouting a draft class still means something. The moment a prospect is drafted onto a team, his ratings go coarse like everyone else's. Only applies when Coarse Ratings is on.",
+		},
+		{
+			category: "Challenge Modes",
 			key: "challengeLoseBestPlayer",
 			name: "Lose Best Player",
 			type: "bool",

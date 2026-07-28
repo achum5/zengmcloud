@@ -10,9 +10,19 @@ type Props = {
 	stats: any;
 	type?: "career" | "current" | "draft" | number;
 	challengeNoRatings: boolean;
+	// Whether these particular ratings are the coarse, tens-digit kind.
+	coarseRatings: boolean;
 };
 
-const RatingsStats = ({ challengeNoRatings, ratings, stats, type }: Props) => {
+const RatingsStats = ({
+	challengeNoRatings,
+	coarseRatings,
+	ratings,
+	stats,
+	type,
+}: Props) => {
+	const gradient = (rating: number) =>
+		ratingsGradientStyle(rating, coarseRatings);
 	const seasonPrefix =
 		typeof type === "number" ? `${type} ` : type === "career" ? "Peak " : "";
 	const seasonPrefix2 =
@@ -28,65 +38,65 @@ const RatingsStats = ({ challengeNoRatings, ratings, stats, type }: Props) => {
 				<div className="col-4">
 					<b>{seasonPrefix}Ratings</b>
 					<br />
-					<span style={ratingsGradientStyle(ratings.hgt)}>
+					<span style={gradient(ratings.hgt)}>
 						<span title="Height">Hgt:</span> {ratings.hgt}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.spd)}>
+					<span style={gradient(ratings.spd)}>
 						<span title="Speed">Spd:</span> {ratings.spd}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.hpw)}>
+					<span style={gradient(ratings.hpw)}>
 						<span title="Power">HPw:</span> {ratings.hpw}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.con)}>
+					<span style={gradient(ratings.con)}>
 						<span title="Contact">Con:</span> {ratings.con}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.eye)}>
+					<span style={gradient(ratings.eye)}>
 						<span title="Eye">Eye:</span> {ratings.eye}
 					</span>
 				</div>
 				<div className="col-4">
-					<span style={ratingsGradientStyle(ratings.ovr)}>
+					<span style={gradient(ratings.ovr)}>
 						<span title="Overall">Ovr:</span> {ratings.ovr}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.gnd)}>
+					<span style={gradient(ratings.gnd)}>
 						<span title="Ground Ball Fielding">Gnd:</span> {ratings.gnd}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.fly)}>
+					<span style={gradient(ratings.fly)}>
 						<span title="Fly Ball Fielding">Fly:</span> {ratings.fly}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.thr)}>
+					<span style={gradient(ratings.thr)}>
 						<span title="Throwing">Thr:</span> {ratings.thr}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.cat)}>
+					<span style={gradient(ratings.cat)}>
 						<span title="Catcher Defense">Cat:</span> {ratings.cat}
 					</span>
 				</div>
 				<div className="col-4">
-					<span style={ratingsGradientStyle(ratings.pot)}>
+					<span style={gradient(ratings.pot)}>
 						<span title="Potential">Pot:</span> {Math.round(ratings.pot)}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.ppw)}>
+					<span style={gradient(ratings.ppw)}>
 						<span title="Pitching Power">PPw:</span> {ratings.ppw}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.ctl)}>
+					<span style={gradient(ratings.ctl)}>
 						<span title="Control">Ctl:</span> {ratings.ctl}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.mov)}>
+					<span style={gradient(ratings.mov)}>
 						<span title="Movement">Mov:</span> {ratings.mov}
 					</span>
 					<br />
-					<span style={ratingsGradientStyle(ratings.endu)}>
+					<span style={gradient(ratings.endu)}>
 						<span title="Endurance">Endu:</span> {ratings.endu}
 					</span>
 				</div>

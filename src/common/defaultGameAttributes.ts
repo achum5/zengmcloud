@@ -253,6 +253,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	challengeNoFreeAgents: false,
 	challengeNoRatings: false,
 	hideRatingsOnesDigit: false, // display-only: show ratings floored to the tens digit (56 -> 5)
+	hideRatingsOnesDigitExceptProspects: false, // display-only: undrafted prospects keep their exact ratings
 	hideTeamRatings: false, // display-only: hide team overall ratings (trades show the change instead)
 	challengeNoTrades: false,
 	challengeLoseBestPlayer: false,

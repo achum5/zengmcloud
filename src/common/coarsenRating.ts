@@ -9,6 +9,17 @@
 // output through `coarsenPlayerForDisplay` on the way to the UI.
 export const coarsenRating = (value: number): number => Math.floor(value / 10);
 
+// Tids that mean "hasn't been drafted yet". The prospect exemption is about
+// scouting a draft class, so it ends the moment a player lands on a roster.
+const UNDRAFTED_TIDS = new Set([-2, -4, -5]);
+
+// Does the "prospects exempt" option spare this player? Only an undrafted
+// prospect, and only when the option is on.
+export const exemptFromCoarseRatings = (
+	tid: number | undefined,
+	exceptProspects: boolean,
+): boolean => exceptProspects && tid !== undefined && UNDRAFTED_TIDS.has(tid);
+
 // The change to show alongside a coarsened rating. It has to be the difference
 // of the two DISPLAYED values, or a 56 -> 58 bump reads as "5 (+2)".
 export const coarsenRatingChange = (current: number, change: number): number =>
@@ -56,7 +67,12 @@ export const coarsenRatingsRow = <T extends Record<string, any>>(
 export const coarsenPlayerForDisplay = <T extends Record<string, any>>(
 	p: T,
 	ratings: string[],
+	// The "prospects exempt" option. Requires `tid` to have been requested.
+	exceptProspects = false,
 ): T => {
+	if (exemptFromCoarseRatings(p.tid, exceptProspects)) {
+		return p;
+	}
 	const out: Record<string, any> = { ...p };
 
 	if (Array.isArray(p.ratings)) {

@@ -1,17 +1,25 @@
 import { FATIGUE_POS } from "../../../common/constants.football.ts";
 import { posRatings } from "../../../common/posRatings.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
-import { ratingsGradientStyle } from "../../components/RatingsStatsPopover/ratingsGradientStyle.ts";
+import {
+	ratingsAreCoarse,
+	ratingsGradientStyle,
+} from "../../components/RatingsStatsPopover/ratingsGradientStyle.ts";
 import { RatingWithChange } from "../../components/RatingWithChange.tsx";
 import { type ReactNode } from "react";
 
 export const RatingsOverview = ({
 	ratings,
 	season,
+	tid,
 }: {
 	ratings: any[];
 	season?: number;
+	// The player's current team. An undrafted prospect can be exempt from coarse
+	// ratings, and his true 0-100 numbers need the true 0-100 colour scale.
+	tid?: number;
 }) => {
+	const coarse = ratingsAreCoarse(tid);
 	let currentSeason;
 	if (season === undefined) {
 		// Use latest season
@@ -522,7 +530,7 @@ export const RatingsOverview = ({
 									<tbody>
 										{categories.map(({ label, rating }, j) => {
 											const highlightStyle = toHighlight.has(rating)
-												? ratingsGradientStyle(currentSeason[rating])
+												? ratingsGradientStyle(currentSeason[rating], coarse)
 												: undefined;
 											const current = currentSeason[rating];
 											const paddingTop = { paddingTop: 2 };
