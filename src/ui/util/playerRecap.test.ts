@@ -93,6 +93,8 @@ const batch = (
 	leagueTeams: [
 		{
 			abbrev: "BOS",
+			region: "Boston",
+			name: "Celtics",
 			won: 62,
 			lost: 20,
 			result: "won championship",
@@ -112,6 +114,8 @@ const batch = (
 		},
 		{
 			abbrev: "CHI",
+			region: "Chicago",
+			name: "Bulls",
 			won: 19,
 			lost: 63,
 			result: "missed playoffs",
@@ -178,8 +182,8 @@ describe("buildPlayerRecapPrompt", () => {
 		const prompt = buildPlayerRecapPrompt(batch([player(1, 2), player(2, 2)]));
 		assert.ok(prompt.includes("=== LEAGUE 2005 ==="));
 		assert.ok(prompt.includes("Champion: BOS"));
-		assert.ok(prompt.includes("BOS 62-20, won championship"));
-		assert.ok(prompt.includes("CHI 19-63, missed playoffs"));
+		assert.ok(prompt.includes("BOS = Boston Celtics 62-20, won championship"));
+		assert.ok(prompt.includes("CHI = Chicago Bulls 19-63, missed playoffs"));
 		assert.ok(prompt.includes("Eastern Conference"));
 		// One standings table for the batch, however many players are in it.
 		assert.strictEqual(prompt.split("=== LEAGUE 2005 ===").length - 1, 1);
@@ -543,7 +547,7 @@ describe("league context", () => {
 
 	test("each team carries its rotation, so a player has teammates", () => {
 		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
-		assert.ok(prompt.includes("BOS 62-20, won championship"));
+		assert.ok(prompt.includes("BOS = Boston Celtics 62-20, won championship"));
 		assert.ok(
 			prompt.includes("Player 7 SF age25 82g 34.1m 19.5p 6.1r 4.9a"),
 			prompt.slice(
@@ -669,5 +673,22 @@ describe("offseason timing in the prompt", () => {
 			prompt.includes("Write like someone who watched these seasons happen"),
 		);
 		assert.ok(prompt.includes("Never hedge"));
+	});
+});
+
+describe("markdown and linkable names", () => {
+	// Notes render as markdown, and team names in the text are turned into links
+	// to that season's page - which only works if the AI writes the name rather
+	// than the three-letter abbreviation the stat lines use.
+	test("the league block maps each abbreviation to a full team name", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("BOS = Boston Celtics"));
+		assert.ok(prompt.includes("CHI = Chicago Bulls"));
+	});
+
+	test("the instructions ask for markdown and for full team names", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(prompt.includes("rendered as Markdown"));
+		assert.ok(prompt.includes("never the abbreviation"));
 	});
 });

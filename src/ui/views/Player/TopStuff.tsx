@@ -32,6 +32,7 @@ import {
 	useNegotiaionModal,
 } from "../../components/NegotiationModal.tsx";
 import { useLocal } from "../../util/local.ts";
+import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 
 const Relatives = ({
 	gender,
@@ -311,13 +312,15 @@ const TopStuff = ({
 	season?: number;
 	showRatings: boolean;
 }) => {
-	const { gender, godMode, phase, spectator, userTid } = useLocal([
-		"gender",
-		"godMode",
-		"phase",
-		"spectator",
-		"userTid",
-	]);
+	const { gender, godMode, phase, spectator, teamInfoCache, userTid } =
+		useLocal([
+			"gender",
+			"godMode",
+			"phase",
+			"spectator",
+			"teamInfoCache",
+			"userTid",
+		]);
 
 	const freeAgent = player.tid === PLAYER.FREE_AGENT;
 	const injured = player.injury.gamesRemaining > 0;
@@ -753,6 +756,10 @@ const TopStuff = ({
 						type: "player",
 						pid: player.pid,
 					}}
+					// A career note is a stack of "[YYYY]" sections, so a team named in
+					// the 2001 section links to that team's 2001 page rather than to
+					// whatever it looks like today.
+					autoLinkBySeason={buildPlayerNoteLinks(teamInfoCache)}
 				/>
 			</div>
 

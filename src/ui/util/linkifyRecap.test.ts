@@ -1,8 +1,10 @@
 import { assert, beforeAll, describe, test } from "vitest";
 import {
 	buildRecapLinksForGame,
+	buildPlayerNoteLinks,
 	buildTeamSeasonRecapLinks,
 	linkifyRecap,
+	linkifySeasonNote,
 	type RecapLink,
 } from "./linkifyRecap.ts";
 import { local } from "./local.ts";
@@ -166,5 +168,62 @@ describe("buildTeamSeasonRecapLinks", () => {
 		});
 		assert.ok(links.every((l) => l.name !== "undefined"));
 		assert.ok(links.some((l) => l.name === "LA Lakers"));
+	});
+});
+
+describe("linkifySeasonNote", () => {
+	beforeAll(() => {
+		local.setState({ lid: 1 });
+	});
+
+	const teamInfoCache = [
+		{ abbrev: "BOS", region: "Boston", name: "Celtics" },
+		{ abbrev: "LAL", region: "Los Angeles", name: "Lakers" },
+	];
+
+	const note = [
+		"[2003] Still the anchor",
+		"He carried the Boston Celtics again.",
+		"",
+		"[2001]",
+		"A quiet first year in Boston.",
+	].join("\n");
+
+	// The whole point: a career note spans many years, and a team named in the
+	// 2001 section means that team in 2001. Linking the note against one year
+	// would send every mention to the wrong page.
+	test("each section links to its own season", () => {
+		const out = linkifySeasonNote(note, buildPlayerNoteLinks(teamInfoCache));
+		assert.ok(out.includes("[Boston Celtics](/l/1/roster/BOS_0/2003)"), out);
+		assert.ok(out.includes("[Boston](/l/1/roster/BOS_0/2001)"), out);
+	});
+
+	test("the year headers are left alone", () => {
+		const out = linkifySeasonNote(note, buildPlayerNoteLinks(teamInfoCache));
+		assert.ok(out.includes("[2003] Still the anchor"));
+		assert.ok(out.includes("\n[2001]\n"));
+	});
+
+	test("text written before any year header still links, without a season", () => {
+		const out = linkifySeasonNote(
+			"Hand-typed by me about Boston.\n\n[2001]\nRookie year.",
+			buildPlayerNoteLinks(teamInfoCache),
+		);
+		assert.ok(out.includes("[Boston](/l/1/roster/BOS_0)"), out);
+	});
+
+	test("a note with no year headers is linked as one piece", () => {
+		const out = linkifySeasonNote(
+			"Traded to the Los Angeles Lakers.",
+			buildPlayerNoteLinks(teamInfoCache),
+		);
+		assert.ok(out.includes("[Los Angeles Lakers](/l/1/roster/LAL_1)"), out);
+	});
+
+	test("an empty note is left as is", () => {
+		assert.strictEqual(
+			linkifySeasonNote("", buildPlayerNoteLinks(teamInfoCache)),
+			"",
+		);
 	});
 });

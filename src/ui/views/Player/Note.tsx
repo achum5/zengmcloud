@@ -3,7 +3,11 @@ import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import clsx from "clsx";
 import { Markdown } from "../../components/Markdown.tsx";
-import { linkifyRecap, type RecapLink } from "../../util/linkifyRecap.ts";
+import {
+	linkifyRecap,
+	linkifySeasonNote,
+	type RecapLink,
+} from "../../util/linkifyRecap.ts";
 
 const MAX_WIDTH = 600;
 
@@ -43,6 +47,7 @@ const Note = (
 				xs?: boolean;
 				// For game notes (AI recaps): names to auto-link, scoped to the game.
 				autoLink?: RecapLink[];
+				autoLinkBySeason?: (season: number | undefined) => RecapLink[];
 		  }
 		| {
 				initialNote?: undefined;
@@ -51,9 +56,11 @@ const Note = (
 				infoLink?: boolean;
 				xs?: boolean;
 				autoLink?: RecapLink[];
+				autoLinkBySeason?: (season: number | undefined) => RecapLink[];
 		  },
 ) => {
-	const { initialNote, note, info, infoLink, xs, autoLink } = props;
+	const { initialNote, note, info, infoLink, xs, autoLink, autoLinkBySeason } =
+		props;
 
 	const [editing, setEditing] = useState(false);
 	const [editedNote, setEditedNote] = useState(initialNote ?? note ?? "");
@@ -150,9 +157,13 @@ const Note = (
 				    as AI writeups). When the caller supplies an autoLink map (game
 				    notes scoped to that game's rosters, team-season notes scoped to the
 				    league's teams + that season's roster), team/player names are linked
-				    to their pages. Linking/rendering is applied only to the view - the
-				    stored/edited text stays plain. */}
-				{autoLink && autoLink.length > 0 ? (
+				    to their pages. A PLAYER note is a stack of "[YYYY]" sections rather
+				    than one piece of writing, so it passes autoLinkBySeason instead and
+				    each section is linked against its own year. Linking/rendering is
+				    applied only to the view - the stored/edited text stays plain. */}
+				{autoLinkBySeason ? (
+					<Markdown>{linkifySeasonNote(noteToShow, autoLinkBySeason)}</Markdown>
+				) : autoLink && autoLink.length > 0 ? (
 					<Markdown>{linkifyRecap(noteToShow, autoLink)}</Markdown>
 				) : (
 					<Markdown>{noteToShow}</Markdown>

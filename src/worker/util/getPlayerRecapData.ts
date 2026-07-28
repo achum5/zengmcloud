@@ -129,6 +129,11 @@ export type RecapTeamPlayer = {
 
 export type RecapLeagueTeam = {
 	abbrev: string;
+	// The full name that season, so the AI writes "the Toronto Raptors" rather
+	// than guessing a city from an abbreviation - and so the name matches when
+	// the note is turned into links.
+	region?: string;
+	name?: string;
 	won: number;
 	lost: number;
 	result: string;
@@ -558,6 +563,8 @@ export const getPlayerRecapData = async ({
 			if (yr === season) {
 				leagueTeams.push({
 					abbrev: ts.abbrev ?? `T${ts.tid}`,
+					region: ts.region,
+					name: ts.name,
 					won: ts.won,
 					lost: ts.lost,
 					result,

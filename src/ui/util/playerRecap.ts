@@ -45,6 +45,8 @@ Write like someone who watched these seasons happen. Everything in front of you 
 
 Write about them as people with careers. Do not dump the data back — weave the numbers that matter into the prose.
 
+These are rendered as Markdown, so use it where it earns its place: **bold** a player's name the first time it appears and bold the numbers a reader should take away from the piece, *italics* for the occasional bit of emphasis. Name teams in full the way a writer would — "the Toronto Raptors", "Toronto" — using the region and nickname given in the LEAGUE block, never the abbreviation, because names get turned into links to that season's team page and "TOR" does not. Keep it light: a paragraph with everything bolded reads worse than one with nothing bolded.
+
 RETIRING PLAYERS GET TWO PIECES. A player marked RETIRING AFTER THIS SEASON has just played his last season, and his block carries his career totals. Write his season recap exactly like everyone else's, and then a SECOND, separate piece: the retirement writeup, the kind of career retrospective published when a player hangs it up. Scale that one to the career, and do not give everyone the same treatment:
 - Hall of Famers and decorated stars: a full retrospective, several paragraphs — the arc, the peak, the signature seasons, the accolades, how he is remembered.
 - Solid long-tenured players: a couple of tight paragraphs.
@@ -358,7 +360,13 @@ const leagueBlock = (data: RecapPlayerBatch): string[] => {
 			lines.push(conf);
 		}
 		for (const team of group) {
-			lines.push(`  ${team.abbrev} ${team.won}-${team.lost}, ${team.result}`);
+			// Full name alongside the abbreviation the stat lines use, so a recap can
+			// name the team the way a writer would instead of inferring a city from
+			// three letters.
+			const label = [team.region, team.name].filter(Boolean).join(" ");
+			lines.push(
+				`  ${team.abbrev}${label ? ` = ${label}` : ""} ${team.won}-${team.lost}, ${team.result}`,
+			);
 			for (const spot of team.roster) {
 				lines.push(`    ${rosterLine(spot)}`);
 			}

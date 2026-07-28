@@ -78,6 +78,44 @@ export const buildRecapLinksForGame = (
 	return entries;
 };
 
+export type TeamInfoCache = {
+	abbrev?: string;
+	region?: string;
+	name?: string;
+	disabled?: boolean;
+}[];
+
+// Every league team's name pointing at its roster for one season. The tid is in
+// the URL, so a franchise that has since been renamed still resolves - only the
+// name being matched in the text has to be current.
+const teamLinks = (
+	teamInfoCache: TeamInfoCache,
+	season: number | undefined,
+): RecapLink[] => {
+	const entries: RecapLink[] = [];
+	// teamInfoCache is indexed by tid.
+	for (let tid = 0; tid < teamInfoCache.length; tid++) {
+		const info = teamInfoCache[tid];
+		if (!info?.abbrev) {
+			continue;
+		}
+		const href = helpers.leagueUrl(
+			season === undefined
+				? ["roster", `${info.abbrev}_${tid}`]
+				: ["roster", `${info.abbrev}_${tid}`, season],
+		);
+		const region = info.region ?? "";
+		const name = info.name ?? "";
+		// Full "Region Name" first (longest), then the nickname and region alone.
+		for (const label of [`${region} ${name}`, name, region]) {
+			if (label.trim() !== "") {
+				entries.push({ name: label.trim(), href });
+			}
+		}
+	}
+	return entries;
+};
+
 // The name→link map for a TEAM-SEASON recap note (the AI season writeups). Links
 // every league team's name (to its roster) plus that season's roster players (to
 // their pages). Team names are unique so they can be league-wide; players are
@@ -89,30 +127,9 @@ export const buildTeamSeasonRecapLinks = ({
 }: {
 	season: number;
 	players: { pid?: number; firstName?: string; lastName?: string }[];
-	teamInfoCache: {
-		abbrev?: string;
-		region?: string;
-		name?: string;
-		disabled?: boolean;
-	}[];
+	teamInfoCache: TeamInfoCache;
 }): RecapLink[] => {
-	const entries: RecapLink[] = [];
-
-	// teamInfoCache is indexed by tid.
-	for (let tid = 0; tid < teamInfoCache.length; tid++) {
-		const info = teamInfoCache[tid];
-		if (!info?.abbrev) {
-			continue;
-		}
-		const href = helpers.leagueUrl(["roster", `${info.abbrev}_${tid}`, season]);
-		const region = info.region ?? "";
-		const name = info.name ?? "";
-		for (const label of [`${region} ${name}`, name, region]) {
-			if (label.trim() !== "") {
-				entries.push({ name: label.trim(), href });
-			}
-		}
-	}
+	const entries: RecapLink[] = teamLinks(teamInfoCache, season);
 
 	for (const p of players ?? []) {
 		if (typeof p?.pid === "number" && p.pid >= 0) {
@@ -177,4 +194,63 @@ export const linkifyRecap = (text: string, entries: RecapLink[]): string => {
 		new RegExp(`${TOKEN_OPEN}(\\d+)${TOKEN_CLOSE}`, "g"),
 		(_, i) => placeholders[Number(i)]!,
 	);
+};
+
+// A PLAYER note is not one piece of writing - it's a stack of "[YYYY]" sections,
+// one per season of a career. A team named in the 2001 section means that team
+// in 2001, so linking the whole note against a single year would send every
+// mention to the wrong page. Each section is linked against its own year
+// instead, and the links land on that season's pages.
+const SECTION_HEADER = /^\s*\[(\d{4})]/;
+
+export const linkifySeasonNote = (
+	text: string,
+	linksFor: (season: number | undefined) => RecapLink[],
+): string => {
+	if (!text) {
+		return text;
+	}
+
+	const out: string[] = [];
+	let season: number | undefined;
+	let chunk: string[] = [];
+
+	const flush = () => {
+		if (chunk.length > 0) {
+			out.push(linkifyRecap(chunk.join("\n"), linksFor(season)));
+			chunk = [];
+		}
+	};
+
+	for (const line of text.split("\n")) {
+		const match = SECTION_HEADER.exec(line);
+		if (match) {
+			flush();
+			season = Number.parseInt(match[1]!);
+			// The header is the year label, not prose - left alone so a link never
+			// ends up inside it.
+			out.push(line);
+		} else {
+			chunk.push(line);
+		}
+	}
+	flush();
+
+	return out.join("\n");
+};
+
+// Season-aware team links for a player's note. Built once per note and memoized
+// per season, since a long career has a section for every year and they mostly
+// repeat the same teams.
+export const buildPlayerNoteLinks = (teamInfoCache: TeamInfoCache) => {
+	const cache = new Map<number | undefined, RecapLink[]>();
+	return (season: number | undefined): RecapLink[] => {
+		const existing = cache.get(season);
+		if (existing) {
+			return existing;
+		}
+		const entries = teamLinks(teamInfoCache, season);
+		cache.set(season, entries);
+		return entries;
+	};
 };
