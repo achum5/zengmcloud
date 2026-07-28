@@ -543,10 +543,23 @@ export const getPlayerRecapData = async ({
 		abbrevByTid.set(t.tid, (t.seasonAttrs as any)?.abbrev ?? `T${t.tid}`);
 	}
 
-	const playersAll = await idb.getCopies.players(
-		{ activeAndRetired: true },
-		"noCopyCache",
-	);
+	// activeAndRetired is "all except draft prospects", so on its own it leaves
+	// out the very players the scouting reports are about: a class that hasn't
+	// been drafted yet is still sitting at PLAYER.UNDRAFTED and is invisible to
+	// it. Next season's class is fetched separately and merged in - and by draft
+	// year rather than by tid, so it works the same whether the draft has
+	// happened yet or the season is being backfilled years later.
+	const [activeAndRetired, prospects] = await Promise.all([
+		idb.getCopies.players({ activeAndRetired: true }, "noCopyCache"),
+		idb.getCopies.players({ draftYear: season + 1 }, "noCopyCache"),
+	]);
+	const byPid = new Map(activeAndRetired.map((p) => [p.pid, p]));
+	for (const p of prospects) {
+		if (!byPid.has(p.pid)) {
+			byPid.set(p.pid, p);
+		}
+	}
+	const playersAll = [...byPid.values()];
 
 	// Everyone who was in the league that season, in a STABLE order so batch N
 	// means the same thing between the Copy and the Paste (and across reloads).
