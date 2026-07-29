@@ -71,25 +71,16 @@ const PhaseStatusBlock = () => {
 };
 
 export const NavBar = ({ updating }: { updating: boolean }) => {
-	const {
-		lid,
-		godMode,
-		gold,
-		sidebarOpen,
-		spectator,
-		playMenuOptions,
-		popup,
-		username,
-	} = useLocal([
-		"lid",
-		"godMode",
-		"gold",
-		"sidebarOpen",
-		"spectator",
-		"playMenuOptions",
-		"popup",
-		"username",
-	]);
+	const { lid, godMode, gold, sidebarOpen, spectator, playMenuOptions, popup } =
+		useLocal([
+			"lid",
+			"godMode",
+			"gold",
+			"sidebarOpen",
+			"spectator",
+			"playMenuOptions",
+			"popup",
+		]);
 	const viewInfo = useViewData();
 
 	// Checking lid too helps with some flicker
@@ -98,18 +89,6 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 	if (popup) {
 		return <div />;
 	}
-
-	const userBlock = username ? (
-		<Nav.Link href="/account" aria-label="Account">
-			<span className="glyphicon glyphicon-user" />{" "}
-			<span className="d-none d-lg-inline">{username}</span>
-		</Nav.Link>
-	) : (
-		<Nav.Link href="/account/login_or_register" aria-label="Login/Register">
-			<span className="glyphicon glyphicon-user" />{" "}
-			<span className="d-none d-lg-inline">Login/Register</span>
-		</Nav.Link>
-	);
 
 	return (
 		<Navbar
@@ -167,9 +146,6 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 						</Nav.Link>
 					</Nav>
 				) : null}
-				<Nav id="top-user-block" navbar>
-					<Nav.Item>{userBlock}</Nav.Item>
-				</Nav>
 			</div>
 		</Navbar>
 	);

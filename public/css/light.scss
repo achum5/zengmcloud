@@ -825,7 +825,6 @@ body.ios-modal-pinned .navbar-border.sticky-top {
 }
 
 .dropdown-links .nav-item,
-#top-user-block .nav-item,
 .play-button-wrapper {
 	margin: -8px 0;
 	height: 51px;
@@ -848,15 +847,6 @@ body.ios-modal-pinned .navbar-border.sticky-top {
 @include media-breakpoint-up(xl) {
 	.dropdown-links .nav-link {
 		padding: 16px;
-	}
-}
-
-#top-user-block .nav-link {
-	padding: 16px 0 16px 8px;
-}
-@include media-breakpoint-up(xl) {
-	#top-user-block .nav-link {
-		padding: 16px 0 16px 16px;
 	}
 }
 
