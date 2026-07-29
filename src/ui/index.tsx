@@ -248,4 +248,10 @@ const setupRoutes = async () => {
 	// rotated token can't silently drop the device off the notification list.
 	const { keepPushTokenFresh } = await import("./util/keepPushTokenFresh.ts");
 	keepPushTokenFresh();
+
+	// The sticky header can come back from an iOS background unstuck, and stays
+	// that way until the app is force-quit. Detect and rebuild it on resume.
+	const { initStickyHeaderWatchdog } =
+		await import("./util/stickyHeaderWatchdog.ts");
+	initStickyHeaderWatchdog();
 })();
