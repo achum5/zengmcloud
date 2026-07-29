@@ -514,15 +514,25 @@ export const describeTransaction = (
 	}
 };
 
-// Two separate passes, never one merged batch.
+// Three separate passes, never one merged batch, because they are three
+// different pieces of writing:
 //
-// "players" is everyone who was actually in the league that season. "prospects"
-// is next year's draft class, who were never in it - no stats, no team, no
-// season to recap. Mixing them meant a scouting report and a one-sentence recap
-// for a deep-bench player came out of the same prompt under the same length
-// rules, and every prospect carried the league standings block it has no use
-// for. They are different jobs and they get different prompts.
-export type RecapFilter = "players" | "prospects";
+//   players    - everyone who actually played that season. A season recap.
+//   draftPicks - that season's draft class, taken at the END of it. They have
+//                no season to recap; the piece is entirely forward-looking.
+//   prospects  - NEXT season's class, who nobody has seen at all. A scouting
+//                report written off the ratings.
+//
+// Mixed into one prompt, each of the three had to carve out an exception for
+// the other two, and the length rules pulled against each other - a one-
+// sentence recap for a deep-bench player and a multi-paragraph scouting report
+// under the same instructions.
+export type RecapFilter = "players" | "draftPicks" | "prospects";
+
+// The draft class of a given season - taken at the END of it, so they have not
+// played a game in the league yet. Undrafted members of the class are included:
+// going unpicked is part of that draft's story too.
+const isThisDraftClass = (p: any, season: number) => p.draft?.year === season;
 
 export const getPlayerRecapData = async ({
 	season,
@@ -551,17 +561,18 @@ export const getPlayerRecapData = async ({
 	}
 
 	// activeAndRetired is "all except draft prospects", so on its own it leaves
-	// out the very players the scouting reports are about: a class that hasn't
+	// out the very players two of the three passes are about: a class that hasn't
 	// been drafted yet is still sitting at PLAYER.UNDRAFTED and is invisible to
-	// it. Next season's class is fetched separately and merged in - and by draft
+	// it. Both draft classes are fetched separately and merged in - and by draft
 	// year rather than by tid, so it works the same whether the draft has
 	// happened yet or the season is being backfilled years later.
-	const [activeAndRetired, prospects] = await Promise.all([
+	const [activeAndRetired, thisClass, nextClass] = await Promise.all([
 		idb.getCopies.players({ activeAndRetired: true }, "noCopyCache"),
+		idb.getCopies.players({ draftYear: season }, "noCopyCache"),
 		idb.getCopies.players({ draftYear: season + 1 }, "noCopyCache"),
 	]);
 	const byPid = new Map(activeAndRetired.map((p) => [p.pid, p]));
-	for (const p of prospects) {
+	for (const p of [...thisClass, ...nextClass]) {
 		if (!byPid.has(p.pid)) {
 			byPid.set(p.pid, p);
 		}
@@ -570,15 +581,25 @@ export const getPlayerRecapData = async ({
 
 	// The pass's players, in a STABLE order so batch N means the same thing
 	// between the Copy and the Paste (and across reloads).
+	// One player, one pass. The two draft classes are checked FIRST and are
+	// mutually exclusive with the season recaps, so nobody can land in two
+	// batches or fall between them.
+	//
+	// The draft passes list only what's still unwritten: they exist as a reminder
+	// that a class hasn't been done, and they disappear off the page once it has.
+	// The season pass keeps everyone, so a recap can be regenerated.
 	const inSeason = playersAll
 		.filter((p: any) => {
-			// Next year's draft class is its own pass. Checked first and both ways,
-			// so a player can never land in both batches or fall between them.
 			const prospect = isNextDraftClass(p, season);
+			const drafted = isThisDraftClass(p, season);
+
 			if (filter === "prospects") {
-				return prospect;
+				return prospect && !hasSeasonNote(p.note, season);
 			}
-			if (prospect) {
+			if (filter === "draftPicks") {
+				return drafted && !hasSeasonNote(p.note, season);
+			}
+			if (prospect || drafted) {
 				return false;
 			}
 			// Anyone who retired after this season is included even if the ratings

@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import { DataTable } from "../components/DataTable/index.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
+import { PlayerRecaps } from "../components/PlayerRecaps.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
@@ -222,11 +223,18 @@ const DraftHistory = ({
 	summaryStat,
 	teamsByTid,
 }: View<"draftHistory">) => {
-	const { challengeNoRatings, draftType, userTid, teamInfoCache } = useLocal([
+	const {
+		challengeNoRatings,
+		draftType,
+		userTid,
+		teamInfoCache,
+		startingSeason,
+	} = useLocal([
 		"challengeNoRatings",
 		"draftType",
 		"userTid",
 		"teamInfoCache",
+		"startingSeason",
 	]);
 
 	const noDraft = draftType === "freeAgents";
@@ -361,6 +369,21 @@ const DraftHistory = ({
 				draftType={draftType}
 				season={season}
 			/>
+
+			{/* The nag lives here as well as on League History, because this is the
+			    page you're on when you're thinking about the class. It removes
+			    itself the moment every member of it has a note. Skipped for the
+			    fake draft classes generated before the league started, which have
+			    nothing worth writing up. */}
+			{season >= startingSeason ? (
+				<div className="mb-3">
+					<PlayerRecaps
+						season={season}
+						filter="draftPicks"
+						heading="Draft Class Writeups (AI)"
+					/>
+				</div>
+			) : null}
 
 			<Summary key={season} players={players} summaryStat={summaryStat} />
 

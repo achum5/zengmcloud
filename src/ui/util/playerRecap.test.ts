@@ -316,10 +316,9 @@ describe("buildPlayerRecapPrompt", () => {
 		assert.ok(!body.includes("Career per game:"));
 	});
 
-	test("the instructions ask for team context and rookie fit", () => {
+	test("the instructions ask for team context", () => {
 		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
 		assert.ok(prompt.includes("Keep the focus on the PLAYER"));
-		assert.ok(prompt.includes("do not invent teammates"));
 	});
 
 	test("a player who didn't play is marked as such rather than omitted", () => {
@@ -610,6 +609,12 @@ describe("season stamp", () => {
 });
 
 describe("the draft class", () => {
+	// This season's own draft class is its own pass, for the same reason the
+	// prospects are: nobody in it has played a game, so there is no season to
+	// recap and every rule in the recap prompt is an exception for them.
+	const draftBatch = (players: any[]) =>
+		batch(players, { filter: "draftPicks" });
+
 	// The draft is held after the season ends, so a player in that class has
 	// never played a game. Left to "did not play this season" the AI wrote it up
 	// as though the year had gone wrong for him.
@@ -625,8 +630,22 @@ describe("the draft class", () => {
 		},
 	});
 
+	// Going unpicked is part of the draft's story too, so the class includes him
+	// - and "did not play" would read as a season that went wrong for a man who
+	// never had one.
+	const undrafted = () => ({
+		...player(12, 0),
+		draft: {
+			year: 2005,
+			round: 0,
+			pick: 0,
+			originalTid: 0,
+			abbrev: undefined,
+		},
+	});
+
 	test("a draftee isn't described as having missed the season", () => {
-		const prompt = buildPlayerRecapPrompt(batch([rookie()]));
+		const prompt = buildPlayerRecapPrompt(draftBatch([rookie()]));
 		assert.ok(!prompt.includes("THIS SEASON: did not play"));
 		assert.ok(
 			prompt.includes(
@@ -636,7 +655,7 @@ describe("the draft class", () => {
 	});
 
 	test("the block spells out when he actually starts", () => {
-		const prompt = buildPlayerRecapPrompt(batch([rookie()]));
+		const prompt = buildPlayerRecapPrompt(draftBatch([rookie()]));
 		assert.ok(
 			prompt.includes(
 				"the 2005 draft is held after the 2005 season ends, so his first season is 2006",
@@ -644,10 +663,42 @@ describe("the draft class", () => {
 		);
 	});
 
+	test("an unpicked member of the class is marked undrafted, not absent", () => {
+		const prompt = buildPlayerRecapPrompt(draftBatch([undrafted()]));
+		assert.ok(!prompt.includes("THIS SEASON: did not play"));
+		assert.ok(prompt.includes("went UNDRAFTED in the 2005 draft"));
+		assert.ok(
+			prompt.includes("Player 12 — SF, age 25 in 2005, 2005 draft class"),
+		);
+	});
+
 	test("the instructions say the same thing", () => {
-		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		const prompt = buildPlayerRecapPrompt(draftBatch([rookie()]));
 		assert.ok(prompt.includes("THE DRAFT IS HELD AFTER THE SEASON ENDS"));
-		assert.ok(prompt.includes("his first season is the one AFTER it"));
+		assert.ok(
+			prompt.includes("his first season in the league is the one AFTER"),
+		);
+		assert.ok(prompt.includes("never invent teammates"));
+		assert.ok(prompt.includes("=== 2005 DRAFT CLASS ==="));
+	});
+
+	// The landing spot is the whole story of a pick, so unlike the prospects
+	// pass this one keeps the league block to name teams from.
+	test("the draft pass keeps the league block", () => {
+		const prompt = buildPlayerRecapPrompt(draftBatch([rookie()]));
+		assert.ok(prompt.includes("=== LEAGUE 2005 ==="));
+		assert.ok(prompt.includes("BOS = Boston Celtics"));
+	});
+
+	// Each of the three prompts asks for exactly one thing.
+	test("the passes don't leak into each other", () => {
+		const draft = buildPlayerRecapPrompt(draftBatch([rookie()]));
+		assert.ok(!draft.includes("RETIRING PLAYERS GET TWO PIECES"));
+		assert.ok(!draft.includes("A short report is a failure here"));
+
+		const recap = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(!recap.includes("THE DRAFT IS HELD AFTER THE SEASON ENDS"));
+		assert.ok(!recap.includes("A player with a DRAFTED block"));
 	});
 
 	test("someone who simply didn't play still reads that way", () => {

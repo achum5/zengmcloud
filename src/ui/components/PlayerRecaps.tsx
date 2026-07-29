@@ -25,13 +25,21 @@ export const PlayerRecaps = ({
 	heading,
 }: {
 	season: number;
-	// Which pass. "players" is season recaps for everyone who was in the league;
-	// "prospects" is scouting reports on next year's draft class. Two separate
+	// Which pass. "players" is season recaps for everyone who was in the league,
+	// "draftPicks" is this season's own draft class written up after the draft,
+	// and "prospects" is scouting reports on next year's class. Three separate
 	// runs with their own prompts, because they are different jobs.
 	filter?: RecapFilter;
 	heading: string;
 }) => {
+	// The two draft passes are fed only the players who have NOT been written
+	// yet, so the batch list shrinks as it is worked through and the section
+	// disappears once the class is done. That means the batches have to be
+	// re-derived after every successful paste instead of stepping forward.
+	const unwrittenOnly = filter !== "players";
+
 	const [batchIndex, setBatchIndex] = useState(0);
+	const [reload, setReload] = useState(0);
 	const [data, setData] = useState<RecapPlayerBatch | undefined>();
 	const [prompt, setPrompt] = useState<string | undefined>();
 	const [loadFailed, setLoadFailed] = useState(false);
@@ -74,7 +82,7 @@ export const PlayerRecaps = ({
 		return () => {
 			cancelled = true;
 		};
-	}, [season, batchIndex, filter]);
+	}, [season, batchIndex, filter, reload]);
 
 	const copy = async () => {
 		setResult(undefined);
@@ -151,6 +159,12 @@ export const PlayerRecaps = ({
 				setResult(
 					`Filed ${response.filed} of ${expected} players — the AI's reply was short. Lower "AI Recap Max Players" in Global Settings, then re-copy this batch to fill the rest.`,
 				);
+			} else if (unwrittenOnly) {
+				// Everyone just filed drops out of the pass, so batch 2 of 5 is now
+				// batch 1 of 4. Go back to the top and re-derive rather than stepping
+				// forward onto players who have moved.
+				setBatchIndex(0);
+				setReload((prev) => prev + 1);
 			} else if (data && batchIndex + 1 < data.batchCount) {
 				setBatchIndex(batchIndex + 1);
 			}
@@ -180,9 +194,17 @@ export const PlayerRecaps = ({
 	const arrow = <span className="text-body-secondary">›</span>;
 	const btnStyle = { width: 62 } as const;
 
-	// A season with no draft class behind it (the last one generated, say) has
-	// nothing to scout, so that pass stays off the page entirely.
-	if (filter === "prospects" && (!data || data.players.length === 0)) {
+	const noun =
+		filter === "prospects"
+			? "prospects"
+			: filter === "draftPicks"
+				? "draft picks"
+				: "players";
+
+	// Once every member of the class has a note the pass has nothing left to do,
+	// so it comes off the page — that's the reminder switching itself off. Same
+	// for a season with no draft class behind it at all.
+	if (unwrittenOnly && (!data || data.players.length === 0)) {
 		return null;
 	}
 
@@ -235,8 +257,7 @@ export const PlayerRecaps = ({
 					</button>
 					<span>
 						Batch {data.batchIndex + 1}/{data.batchCount} ·{" "}
-						{data.players.length}{" "}
-						{filter === "prospects" ? "prospects" : "players"}
+						{data.players.length} {noun}
 					</span>
 					<button
 						className="btn btn-sm btn-link p-0 text-decoration-none"
@@ -247,7 +268,9 @@ export const PlayerRecaps = ({
 						›
 					</button>
 					<span>
-						· {data.alreadyWrittenTotal}/{data.totalPlayers} written
+						{unwrittenOnly
+							? `· ${data.totalPlayers} left`
+							: `· ${data.alreadyWrittenTotal}/${data.totalPlayers} written`}
 					</span>
 				</div>
 			) : null}

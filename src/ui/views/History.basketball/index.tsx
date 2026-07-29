@@ -105,6 +105,18 @@ const History = (props: View<"history">) => {
 
 			<div className="row">
 				<div className="col-md-6 mt-1">
+					{/* This season's own draft class, written after the draft. Its own
+					    pass because none of these players has played a game, so a
+					    season recap has nothing to recap. Disappears once every member
+					    of the class has been written. */}
+					<PlayerRecaps
+						season={season}
+						filter="draftPicks"
+						heading="Draft Class Writeups (AI)"
+					/>
+				</div>
+
+				<div className="col-md-6 mt-1">
 					{/* Next year's draft class, run separately: no stats, no season to
 					    recap, and a scouting report is a different piece of writing
 					    from a season recap. Absent when there's no class to scout. */}

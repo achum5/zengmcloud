@@ -34,11 +34,7 @@ The LEAGUE block above the players carries this season's standings, each team's 
 
 Every stat line carries the team's record and how that team's year ended, and the league standings for this season are listed above the players. Use that context where it makes the recap better: 24 ppg on a 19-63 team is a different story from 24 ppg on a title winner, and a role player's year is often best told through what his team was chasing. Keep the focus on the PLAYER — team context is there to give his season stakes, not to become a team recap.
 
-THE DRAFT IS HELD AFTER THE SEASON ENDS. A player with a DRAFTED block was picked at the END of the listed season, so he has never played a game in this league and his first season is the one AFTER it. He has not missed anything and nothing has gone wrong — do not write that he "did not play this season", and do not treat the absence of stats as a fact about him at all. His piece is entirely forward-looking: where he went, what he is walking into, and what the first season ahead of him looks like from here.
-
 EVERY TRANSACTION IS DATED THE SAME WAY, so you always know exactly when a player changed teams. A move marked "(for YYYY)" was made in the offseason and takes effect that year: "2002 free agency (for 2003): signed with LAL" is a player who spent the whole of 2002 elsewhere and pulls on a Los Angeles jersey for the first time in 2003. Everything else — a trade in the regular season, a signing at the deadline — happened inside the season it is dated to, and his stat lines will show both teams that year. That is how a player got to the team he is playing for, and it is one of the most useful things you have.
-
-The DRAFTED block gives the drafting team's just-finished season and the roster he is joining. Say something about the landing spot — the role waiting for him, who he sits behind or alongside, whether the fit is natural or awkward, what the team appears to need. Judge it from the roster given; do not invent teammates.
 
 Ratings are scouting information for YOU, not material for the page. Never print a rating number and never refer to one — no "a 78 three-point rating", no "his overall climbed to 71", no "peaked at 84", no grades or tiers derived from them. Read them to know what a player is good at, what he cannot do, and how that changed year to year, then say it the way a writer would: an elite finisher, no handle to speak of, a jumper that finally came around, legs that went at 33. The same goes for any teammate's or draft pick's ratings.
 
@@ -201,12 +197,16 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 	lines.push(`PLAYER <${p.pid}>`);
 
 	// A prospect has no team and no ratings row for this season, so the usual
-	// header came out as "Name — , age 20 in 2000, no team".
+	// header came out as "Name — , age 20 in 2000, no team". A member of this
+	// season's own draft class hasn't played either, so "no team" is wrong for
+	// him too even when he has just been picked.
 	const where = p.prospect
 		? `${p.prospect.draftYear} draft class`
-		: p.teamAbbrevs.length > 0
-			? p.teamAbbrevs.join(" / ")
-			: "no team";
+		: p.draft.year === season
+			? `${season} draft class`
+			: p.teamAbbrevs.length > 0
+				? p.teamAbbrevs.join(" / ")
+				: "no team";
 	const pos = p.prospect ? p.prospect.pos : p.pos;
 	lines.push(`${p.name} — ${pos}, age ${p.age} in ${season}, ${where}`);
 
@@ -278,6 +278,12 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 		// something that went wrong.
 		lines.push(
 			`THIS SEASON: not in the league yet — drafted at the end of ${season}, first season is ${season + 1}`,
+		);
+	} else if (p.draft.year === season) {
+		// Same class, nobody called his name. He is still part of this draft's
+		// story, and "did not play" would read as a season that went wrong.
+		lines.push(
+			`THIS SEASON: not in the league — went UNDRAFTED in the ${season} draft, held at the end of the ${season} season. No team has him.`,
 		);
 	} else {
 		lines.push("THIS SEASON: did not play");
@@ -485,25 +491,77 @@ Follow these rules EXACTLY:
 - Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
 - Put exactly one blank line between reports.`;
 
+// This season's own draft class, written after the draft has been held. Also
+// its own prompt rather than a corner of the season recap: every one of these
+// players has zero stats and zero league history, so the recap prompt's whole
+// apparatus - stat lines, league leaders, "how did his year go" - applies to
+// none of them, and the two DRAFTED paragraphs it needed were an exception
+// carved out for a group that was never going to fit.
+//
+// Unlike the prospects pass this one KEEPS the league block: where a pick
+// landed is the story, and naming the team properly and knowing what kind of
+// season it just had are what make the piece worth reading.
+const DRAFT_PICK_INSTRUCTIONS = `You are a basketball writer covering the draft for a fictional league. Write a piece on EACH member of the listed season's draft class below.
+
+${FICTIONAL_LEAGUE_NOTICE}
+
+THE DRAFT IS HELD AFTER THE SEASON ENDS. Every player below belongs to the LISTED SEASON's draft class, which means the draft has just taken place and his first season in the league is the one AFTER the listed season. He has never played a game here. He has not missed anything and nothing has gone wrong — never write that he "did not play this season", never treat the absence of stats as a fact about him, and never recap a season for him. Every piece is forward-looking.
+
+DRAFTED PLAYERS. A player with a DRAFTED block was picked, and that block gives his round and pick, the drafting team, that team's just-finished season and the roster he is joining. Write where he went and what he is walking into: the role waiting for him, who he sits behind or alongside, whether the fit is natural or awkward, what the team appears to need, whether the pick was value where it came or a reach. Judge it from the roster given; never invent teammates. Then what he projects as — the player he could become, what has to improve, what may never come.
+
+UNDRAFTED PLAYERS. A player marked UNDRAFTED went unpicked, and that is part of this draft's story too. Say honestly why nobody called his name and what, if anything, is worth a look — a skill that plays, a body that doesn't, an age problem. Keep these short: a paragraph, often less. Do not manufacture a prospect out of a player nobody wanted.
+
+Length: scale it to the pick. A top selection can carry two or three paragraphs. A late first-rounder gets one solid one. Second-rounders and undrafted players get a paragraph or less. Never pad.
+
+Ratings are scouting information for YOU, not material for the page. Never print a rating number and never refer to one — no "a 78 three-point rating", no "his overall is 71", no grades or tiers derived from them. Read them to know what he can and cannot do, then say it the way a writer would: an elite finisher, no handle to speak of, a jumper that needs rebuilding, feet that will struggle on the perimeter. The same goes for the ratings of anyone already on the roster he is joining.
+
+The LEAGUE block above carries this season's standings and every team's rotation, so you know exactly what kind of team just spent a pick on him. Use it. Where you are uncertain, be uncertain about the PROJECTION — how good he gets, whether the fit works — not about the facts in front of you.
+
+These are rendered as Markdown, so use it where it earns its place: **bold** his name the first time it appears, *italics* for the occasional bit of emphasis. Name teams in full the way a writer would — "the Toronto Raptors", "Toronto" — using the region and nickname given in the LEAGUE block, never the abbreviation, because names get turned into links to that season's team page and "TOR" does not. Keep it light.
+
+Follow these rules EXACTLY:
+- Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the pieces, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no summary.
+- The FIRST line inside the fence must be the season stamp given below, copied exactly. It is how the reply is checked against the season it was written for; without it nothing can be filed.
+- Begin every piece with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each piece is filed to the correct player — never omit it, never change it.
+- Straight after the marker, write the piece as plain prose. NO headline, NO title, NO heading line, no bold lead-in, no year — start with the first sentence. No bullet lists, no ratings table.
+- Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
+- Put exactly one blank line between pieces.`;
+
 export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
 	// A prospect batch has no league to describe: no standings, no leaders, no
 	// award races, and no teams to name. Sending them the league block would be
-	// pure token cost taken off the reports.
+	// pure token cost taken off the reports. The draft-pick batch is the
+	// opposite - the landing spot is the entire point - so it keeps it.
 	const prospects = data.filter === "prospects";
+	const draftPicks = data.filter === "draftPicks";
+
+	const instructions = prospects
+		? PROSPECT_INSTRUCTIONS
+		: draftPicks
+			? DRAFT_PICK_INSTRUCTIONS
+			: INSTRUCTIONS;
+
+	const scope = prospects
+		? `This is batch ${data.batchIndex + 1} of ${data.batchCount} of the ${data.season + 1} draft class (${data.players.length} prospects in this batch, ${data.totalPlayers} in the class).`
+		: draftPicks
+			? `This is batch ${data.batchIndex + 1} of ${data.batchCount} of the ${data.season} draft class (${data.players.length} players in this batch, ${data.totalPlayers} in the class).`
+			: `This is batch ${data.batchIndex + 1} of ${data.batchCount} for this season (${data.players.length} players in this batch, ${data.totalPlayers} in the league).`;
 
 	const header = [
-		prospects ? PROSPECT_INSTRUCTIONS : INSTRUCTIONS,
+		instructions,
 		"",
 		`SEASON STAMP (copy as the first line inside the fence): ${seasonStamp(data.season)}`,
 		"",
 		`LISTED SEASON: ${data.season}`,
-		prospects
-			? `This is batch ${data.batchIndex + 1} of ${data.batchCount} of the ${data.season + 1} draft class (${data.players.length} prospects in this batch, ${data.totalPlayers} in the class).`
-			: `This is batch ${data.batchIndex + 1} of ${data.batchCount} for this season (${data.players.length} players in this batch, ${data.totalPlayers} in the league).`,
+		scope,
 		"",
 		...(prospects ? [] : leagueBlock(data)),
 		"",
-		prospects ? "=== PROSPECTS ===" : "=== PLAYERS ===",
+		prospects
+			? "=== PROSPECTS ==="
+			: draftPicks
+				? `=== ${data.season} DRAFT CLASS ===`
+				: "=== PLAYERS ===",
 	].join("\n");
 
 	return [header, ...data.players.map((p) => playerBlock(p, data.season))].join(

@@ -3,15 +3,17 @@ import DraftClass from "./DraftClass.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import type { View } from "../../../common/types.ts";
 import { MoreLinks } from "../../components/MoreLinks.tsx";
+import { PlayerRecaps } from "../../components/PlayerRecaps.tsx";
 import { useLocal } from "../../util/local.ts";
 
 const PAGE_SIZE = 3;
 
 const DraftScouting = ({ fantasyDraft, seasons }: View<"draftScouting">) => {
-	const { challengeNoRatings, draftType, godMode } = useLocal([
+	const { challengeNoRatings, draftType, godMode, season } = useLocal([
 		"challengeNoRatings",
 		"draftType",
 		"godMode",
+		"season",
 	]);
 
 	const noDraft = draftType === "freeAgents";
@@ -47,6 +49,18 @@ const DraftScouting = ({ fantasyDraft, seasons }: View<"draftScouting">) => {
 				ratings will be when they enter the {!noDraft ? "draft" : "league"}. The
 				further in the future, the more uncertainty there is in their estimates.
 			</p>
+
+			{/* Only the class one year out, filed under the current season. The
+			    further-out classes on this page are still churning as scouting
+			    improves, so a report written on one now would be about a player
+			    who no longer exists. Removes itself once the class is written. */}
+			<div className="mb-3">
+				<PlayerRecaps
+					season={season}
+					filter="prospects"
+					heading="Draft Prospect Reports (AI)"
+				/>
+			</div>
 
 			{pagination ? (
 				<div className="d-flex flex-row-reverse">
