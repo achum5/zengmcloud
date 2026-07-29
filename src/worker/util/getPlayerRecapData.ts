@@ -230,8 +230,11 @@ export type RecapPlayerBatch = {
 	batchIndex: number;
 	batchCount: number;
 	batchSize: number;
+	// Everyone this pass covers for the season, written or not. The BATCHES are
+	// cut from whoever is still unwritten, so this is bigger than
+	// batchCount * batchSize once the season is part-way done.
 	totalPlayers: number;
-	// How many of the WHOLE season's players already have this year written.
+	// How many of those already have this year written.
 	alreadyWrittenTotal: number;
 	players: RecapPlayer[];
 };
@@ -579,25 +582,22 @@ export const getPlayerRecapData = async ({
 	}
 	const playersAll = [...byPid.values()];
 
-	// The pass's players, in a STABLE order so batch N means the same thing
-	// between the Copy and the Paste (and across reloads).
+	// Everyone this pass covers for the season, written or not, in a STABLE pid
+	// order.
+	//
 	// One player, one pass. The two draft classes are checked FIRST and are
 	// mutually exclusive with the season recaps, so nobody can land in two
 	// batches or fall between them.
-	//
-	// The draft passes list only what's still unwritten: they exist as a reminder
-	// that a class hasn't been done, and they disappear off the page once it has.
-	// The season pass keeps everyone, so a recap can be regenerated.
-	const inSeason = playersAll
+	const pool = playersAll
 		.filter((p: any) => {
 			const prospect = isNextDraftClass(p, season);
 			const drafted = isThisDraftClass(p, season);
 
 			if (filter === "prospects") {
-				return prospect && !hasSeasonNote(p.note, season);
+				return prospect;
 			}
 			if (filter === "draftPicks") {
-				return drafted && !hasSeasonNote(p.note, season);
+				return drafted;
 			}
 			if (prospect || drafted) {
 				return false;
@@ -609,35 +609,35 @@ export const getPlayerRecapData = async ({
 				ratingsForSeason(p, season) !== undefined || p.retiredYear === season
 			);
 		})
-		// Anyone with nothing written for this season sorts first, so a batch is
-		// always the work that is actually left. A long reply that quietly drops
-		// forty players used to leave them scattered through batches already
-		// marked done, with no way to find them again; now the next batch IS
-		// those forty.
-		.sort((a: any, b: any) => {
-			const aWritten = hasSeasonNote(a.note, season) ? 1 : 0;
-			const bWritten = hasSeasonNote(b.note, season) ? 1 : 0;
-			if (aWritten !== bWritten) {
-				return aWritten - bWritten;
-			}
-			return (a.pid ?? 0) - (b.pid ?? 0);
-		});
+		.sort((a: any, b: any) => (a.pid ?? 0) - (b.pid ?? 0));
 
-	const totalPlayers = inSeason.length;
+	const totalPlayers = pool.length;
 	if (totalPlayers === 0) {
 		return undefined;
 	}
 
-	const batchCount = Math.ceil(totalPlayers / batchSize);
+	const unwritten = pool.filter((p: any) => !hasSeasonNote(p.note, season));
+	const alreadyWrittenTotal = totalPlayers - unwritten.length;
+
+	// The draft passes exist as a reminder that a class hasn't been written, so
+	// they come off the page the moment it has been.
+	if (filter !== "players" && unwritten.length === 0) {
+		return undefined;
+	}
+
+	// The batches are cut from WHAT IS LEFT, not from everyone. With six players
+	// still missing a recap out of five hundred, the prompt is those six - not
+	// two hundred of whom a hundred and ninety-four are already done. Only once
+	// the season is complete does the pass reopen to everyone, so a recap can
+	// still be regenerated.
+	const inSeason = unwritten.length > 0 ? unwritten : pool;
+
+	const batchCount = Math.ceil(inSeason.length / batchSize);
 	const clampedIndex = Math.min(Math.max(0, batchIndex), batchCount - 1);
 	const slice = inSeason.slice(
 		clampedIndex * batchSize,
 		(clampedIndex + 1) * batchSize,
 	);
-
-	const alreadyWrittenTotal = inSeason.filter((p: any) =>
-		hasSeasonNote(p.note, season),
-	).length;
 
 	// --- Team context -------------------------------------------------------
 	// What each team was doing in each season the batch touches, so a career

@@ -26,9 +26,10 @@ const nameList = (players: { name: string }[]) => {
 // heading.
 //
 // The difference is scale: this covers every player in the league, which is far
-// more than one prompt can hold, so it walks through BATCHES. The batch advances
-// itself after a successful paste, so the loop is just Copy → AI → Paste,
-// repeat, and the counter tells you how far along the season is.
+// more than one prompt can hold, so it walks through BATCHES cut from whoever
+// still has nothing written for the season. The batch rebuilds itself after
+// every paste, so the loop is just Copy → AI → Paste until the counter reads
+// N/N, and a reply that drops players simply hands them to the next batch.
 export const PlayerRecaps = ({
 	season,
 	filter = "players",
@@ -42,12 +43,11 @@ export const PlayerRecaps = ({
 	filter?: RecapFilter;
 	heading: string;
 }) => {
-	// The two draft passes are fed only the players who have NOT been written
-	// yet, so the batch list shrinks as it is worked through and the section
-	// disappears once the class is done. That means the batches have to be
-	// re-derived after every successful paste instead of stepping forward.
-	const unwrittenOnly = filter !== "players";
-
+	// Batches are cut from whoever is still unwritten, so the list shrinks as it
+	// is worked through and every batch is real work. That means re-deriving
+	// after each successful paste rather than stepping forward. The two draft
+	// passes go further and take themselves off the page once their class is
+	// done - they are there as a reminder.
 	const [batchIndex, setBatchIndex] = useState(0);
 	const [reload, setReload] = useState(0);
 	const [data, setData] = useState<RecapPlayerBatch | undefined>();
@@ -164,9 +164,11 @@ export const PlayerRecaps = ({
 			);
 			const skipped = batchPlayers.filter((p) => !written.has(p.pid));
 
-			// Whoever is left is sorted to the front of the pass by the worker, so
-			// re-deriving from the top rebuilds the batch out of exactly the players
-			// still missing a recap - including the ones this reply dropped.
+			// The worker cuts batches from whoever is still unwritten, so re-deriving
+			// from the top rebuilds the batch out of exactly the players still
+			// missing a recap - including the ones this reply dropped. Once nobody
+			// is left the pass covers everyone again for regeneration, and stepping
+			// forward is the right move instead.
 			const stillUnwritten =
 				(data?.totalPlayers ?? 0) -
 				(data?.alreadyWrittenTotal ?? 0) -
@@ -174,6 +176,8 @@ export const PlayerRecaps = ({
 					.length;
 			if (stillUnwritten > 0) {
 				setBatchIndex(0);
+			} else if (data && batchIndex + 1 < data.batchCount) {
+				setBatchIndex(batchIndex + 1);
 			}
 			setReload((prev) => prev + 1);
 
@@ -185,7 +189,7 @@ export const PlayerRecaps = ({
 				);
 			} else if (skipped.length > 0) {
 				setResult(
-					`The reply stopped ${skipped.length} short of the batch — no recap for ${nameList(skipped)}. They're at the front of the queue now, so this batch is just what's left. If it keeps happening, lower "AI Recap Max Players" in Global Settings.`,
+					`The reply stopped ${skipped.length} short of the batch — no recap for ${nameList(skipped)}. This batch is now just the players still missing one. If it keeps happening, lower "AI Recap Max Players" in Global Settings.`,
 				);
 			}
 		} catch (error) {
@@ -221,10 +225,10 @@ export const PlayerRecaps = ({
 				? "draft picks"
 				: "players";
 
-	// Once every member of the class has a note the pass has nothing left to do,
-	// so it comes off the page — that's the reminder switching itself off. Same
-	// for a season with no draft class behind it at all.
-	if (unwrittenOnly && (!data || data.players.length === 0)) {
+	// Once every member of the class has a note the worker returns nothing, and
+	// the pass comes off the page — that's the reminder switching itself off.
+	// Same for a season with no draft class behind it at all.
+	if (filter !== "players" && (!data || data.players.length === 0)) {
 		return null;
 	}
 
@@ -288,9 +292,7 @@ export const PlayerRecaps = ({
 						›
 					</button>
 					<span>
-						{unwrittenOnly
-							? `· ${data.totalPlayers} left`
-							: `· ${data.alreadyWrittenTotal}/${data.totalPlayers} written`}
+						· {data.alreadyWrittenTotal}/{data.totalPlayers} written
 					</span>
 				</div>
 			) : null}
