@@ -90,6 +90,7 @@ const batch = (
 	extra: Partial<RecapPlayerBatch> = {},
 ): RecapPlayerBatch => ({
 	season: 2005,
+	filter: "players",
 	leagueTeams: [
 		{
 			abbrev: "BOS",
@@ -694,9 +695,12 @@ describe("markdown and linkable names", () => {
 });
 
 describe("next season's draft class", () => {
-	// Prospects are in the batch but have never played, so they get a scouting
-	// report rather than a recap - filed under the season being written, since
-	// that is when it's being scouted.
+	// Prospects are their own pass, with their own prompt. They have never
+	// played, so a scouting report is a different piece of writing from a season
+	// recap - it's filed under the season being written, since that is when it's
+	// being scouted.
+	const scoutingBatch = (players: any[]) =>
+		batch(players, { filter: "prospects" });
 	const prospect = () => ({
 		...player(21, 0),
 		// The pick he actually landed is in the database once the draft has been
@@ -719,7 +723,7 @@ describe("next season's draft class", () => {
 	});
 
 	test("the scouting profile is in the block", () => {
-		const prompt = buildPlayerRecapPrompt(batch([prospect()]));
+		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
 		assert.ok(
 			prompt.includes(
 				"PROSPECT — eligible for the 2006 draft, which is held at the end of the 2006 season",
@@ -733,7 +737,7 @@ describe("next season's draft class", () => {
 	// is sitting in the database. Printing it turns a scouting report into a
 	// summary of what happened.
 	test("where he actually got drafted is nowhere in the prompt", () => {
-		const prompt = buildPlayerRecapPrompt(batch([prospect()]));
+		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
 		const body = prompt.slice(prompt.indexOf("PLAYER <21>"));
 		assert.ok(!body.includes("DEN"), body);
 		assert.ok(!body.includes("rd2"), body);
@@ -742,7 +746,7 @@ describe("next season's draft class", () => {
 	});
 
 	test("he is headed by his class and position, not as a man with no team", () => {
-		const prompt = buildPlayerRecapPrompt(batch([prospect()]));
+		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
 		assert.ok(
 			prompt.includes("Player 21 — C, age 25 in 2005, 2006 draft class"),
 		);
@@ -752,7 +756,7 @@ describe("next season's draft class", () => {
 	});
 
 	test("a prospect isn't written up as having missed the season", () => {
-		const prompt = buildPlayerRecapPrompt(batch([prospect()]));
+		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
 		assert.ok(!prompt.includes("THIS SEASON: did not play"));
 		assert.ok(
 			prompt.includes(
@@ -762,11 +766,53 @@ describe("next season's draft class", () => {
 	});
 
 	test("the instructions demand a long report built only from the ratings", () => {
-		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
-		assert.ok(prompt.includes("PROSPECTS GET A FULL SCOUTING REPORT"));
+		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
 		assert.ok(prompt.includes("A short report is a failure here"));
 		assert.ok(
-			prompt.includes("Never print or refer to a rating in the report"),
+			prompt.includes(
+				"Everything you say has to come from the ratings in his block",
+			),
 		);
+		assert.ok(prompt.includes("Never print a rating number"));
+	});
+
+	// The whole point of splitting the passes: each prompt asks for one thing.
+	// Sharing one meant the recap rules and the scouting rules each had to carve
+	// out an exception for the other.
+	test("the scouting prompt says nothing about season recaps", () => {
+		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
+		assert.ok(!prompt.includes("per-player season recaps"));
+		assert.ok(!prompt.includes("RETIRING PLAYERS GET TWO PIECES"));
+		assert.ok(!prompt.includes("A player with a DRAFTED block"));
+	});
+
+	test("the recap prompt says nothing about scouting reports", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(!prompt.includes("PROSPECT"));
+		assert.ok(!prompt.includes("A short report is a failure here"));
+	});
+
+	// A prospect has no standings, no leaders and no award races. Sending the
+	// league block anyway was pure token cost taken off the reports.
+	test("the scouting prompt leaves out the league block", () => {
+		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
+		assert.ok(!prompt.includes("=== LEAGUE 2005 ==="));
+		assert.ok(prompt.includes("=== PROSPECTS ==="));
+		// And the recap prompt still carries it.
+		assert.ok(
+			buildPlayerRecapPrompt(batch([player(7, 5)])).includes(
+				"=== LEAGUE 2005 ===",
+			),
+		);
+	});
+
+	test("both passes still stamp the season the same way", () => {
+		for (const prompt of [
+			buildPlayerRecapPrompt(scoutingBatch([prospect()])),
+			buildPlayerRecapPrompt(batch([player(7, 5)])),
+		]) {
+			assert.ok(prompt.includes("SEASON STAMP"));
+			assert.ok(prompt.includes("<!--player:ID-->"));
+		}
 	});
 });

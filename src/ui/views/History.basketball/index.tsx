@@ -95,18 +95,22 @@ const History = (props: View<"history">) => {
 				</div>
 
 				<div className="col-md-6 mt-1">
-					<PlayerRecaps season={season} heading="Player Season Recaps (AI)" />
+					<PlayerRecaps
+						season={season}
+						filter="players"
+						heading="Player Season Recaps (AI)"
+					/>
 				</div>
 			</div>
 
 			<div className="row">
 				<div className="col-md-6 mt-1">
-					{/* Only appears when next year's draft class still has players with
-					    nothing written - a season recapped before scouting reports
-					    existed can be topped up without redoing the whole year. */}
+					{/* Next year's draft class, run separately: no stats, no season to
+					    recap, and a scouting report is a different piece of writing
+					    from a season recap. Absent when there's no class to scout. */}
 					<PlayerRecaps
 						season={season}
-						filter="unwrittenProspects"
+						filter="prospects"
 						heading="Draft Prospect Reports (AI)"
 					/>
 				</div>

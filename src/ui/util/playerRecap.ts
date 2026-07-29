@@ -26,7 +26,7 @@ const INSTRUCTIONS = `You are a basketball writer producing per-player season re
 
 ${FICTIONAL_LEAGUE_NOTICE}
 
-Length: judge it by how much there is to say. A deep-bench player who barely played might get one sentence. A star, or anyone with a real story that year (a breakout, a collapse, an injury, a trade, an award, a title run, a contract year, a rookie debut, a last season), can get up to two short paragraphs. Most players land in between. Never pad a nothing season into paragraphs. Players with a PROSPECT block are the exception and are covered separately below — they get a long report no matter what.
+Length: judge it by how much there is to say. A deep-bench player who barely played might get one sentence. A star, or anyone with a real story that year (a breakout, a collapse, an injury, a trade, an award, a title run, a contract year, a rookie debut, a last season), can get up to two short paragraphs. Most players land in between. Never pad a nothing season into paragraphs.
 
 Each player's data is their career UP TO AND INCLUDING this season: stats by season, full ratings by season (so you can see skills develop or erode), transactions, awards, statistical feats, and injuries. Anything he missed time with THIS season is listed separately as INJURIES THIS SEASON with the games lost — if it's there, it is part of the story, and a year cut short by injury should never read as a quiet decline. Use that history to give the season meaning — a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Write as if the season has just ended and nobody knows what happens next.
 
@@ -39,10 +39,6 @@ THE DRAFT IS HELD AFTER THE SEASON ENDS. A player with a DRAFTED block was picke
 EVERY TRANSACTION IS DATED THE SAME WAY, so you always know exactly when a player changed teams. A move marked "(for YYYY)" was made in the offseason and takes effect that year: "2002 free agency (for 2003): signed with LAL" is a player who spent the whole of 2002 elsewhere and pulls on a Los Angeles jersey for the first time in 2003. Everything else — a trade in the regular season, a signing at the deadline — happened inside the season it is dated to, and his stat lines will show both teams that year. That is how a player got to the team he is playing for, and it is one of the most useful things you have.
 
 The DRAFTED block gives the drafting team's just-finished season and the roster he is joining. Say something about the landing spot — the role waiting for him, who he sits behind or alongside, whether the fit is natural or awkward, what the team appears to need. Judge it from the roster given; do not invent teammates.
-
-PROSPECTS GET A FULL SCOUTING REPORT INSTEAD OF A RECAP. A player with a PROSPECT block is in NEXT year's draft class — he has never played a game in this league, has no stats, and nobody has seen him do anything yet. His draft has not happened, so where he goes and who takes him are unknown to you; project them, never state them. Do not write a season recap for him and do not remark on the absence of one. Write the report a scouting department would file the year before he comes out: several paragraphs, and give every one of them real content. Frame, body and athleticism. What he does on offence — how he scores, from where, whether he can shoot it, whether he can create, how he handles it, how he passes. What he does defensively, and whether he can guard his position. Feel for the game, motor, durability. Then the honest part: what has to improve, what may never come, what kind of player he projects as and what kind of role fits him. Say where you think he goes in the draft and why. A short report is a failure here; this is the only thing ever written about him before he arrives.
-
-Everything you say about a prospect has to come from the ratings in his block and nothing else. They are your entire scouting file, and the length of the report comes from reading them carefully — a big man who cannot shoot, a guard with no handle, a phenomenal athlete with no feel are all right there in the numbers. Never print or refer to a rating in the report, exactly as everywhere else: turn each one into what a scout would say about watching him.
 
 Ratings are scouting information for YOU, not material for the page. Never print a rating number and never refer to one — no "a 78 three-point rating", no "his overall climbed to 71", no "peaked at 84", no grades or tiers derived from them. Read them to know what a player is good at, what he cannot do, and how that changed year to year, then say it the way a writer would: an elite finisher, no handle to speak of, a jumper that finally came around, legs that went at 33. The same goes for any teammate's or draft pick's ratings.
 
@@ -456,18 +452,58 @@ export const parseRecapSeason = (rawText: string): number | undefined => {
 	return match ? Number.parseInt(match[1]!) : undefined;
 };
 
+// Next year's draft class gets its own prompt, not a paragraph inside the
+// season-recap one.
+//
+// They are a different job: no stats, no team, no season to recap, and a
+// scouting report is long where a recap for a deep-bench player is one
+// sentence. Sharing a prompt meant the recap rules and the scouting rules each
+// had to carve out an exception for the other, and every prospect carried the
+// whole league standings block it has no use for. Separating them makes each
+// prompt say one thing, and leaves the reply room for the reports.
+const PROSPECT_INSTRUCTIONS = `You are a scout filing reports on next year's draft class for a fictional basketball league.
+
+${FICTIONAL_LEAGUE_NOTICE}
+
+Every player below is in NEXT year's draft class. He has never played a game in this league, has no stats, and nobody has seen him do anything yet. His draft has not happened, so where he goes and who takes him are unknown to you; project them, never state them. There is no season to recap and no absence of one to remark on.
+
+Write the report a scouting department would file the year before he comes out: several paragraphs, and give every one of them real content. Frame, body and athleticism. What he does on offence — how he scores, from where, whether he can shoot it, whether he can create, how he handles it, how he passes. What he does defensively, and whether he can guard his position. Feel for the game, motor, durability. Then the honest part: what has to improve, what may never come, what kind of player he projects as and what kind of role fits him. Say where you think he goes in the draft and why. A short report is a failure here; this is the only thing ever written about him before he arrives.
+
+Everything you say has to come from the ratings in his block and nothing else. They are your entire scouting file, and the length of the report comes from reading them carefully — a big man who cannot shoot, a guard with no handle, a phenomenal athlete with no feel are all right there in the numbers.
+
+Never print a rating number and never refer to one — no "a 78 three-point rating", no "his overall is 71", no grades or tiers derived from them. Read them to know what he can and cannot do, then say it the way a scout would: an elite finisher, no handle to speak of, a jumper that needs rebuilding, feet that will struggle on the perimeter.
+
+Write with the confidence of someone who has watched him play, and without hedging about what the file says. Where you are uncertain, be uncertain about the PROJECTION — how high his ceiling is, whether the shot comes around — not about the facts in front of you.
+
+These are rendered as Markdown, so use it where it earns its place: **bold** his name the first time it appears, *italics* for the occasional bit of emphasis. Keep it light.
+
+Follow these rules EXACTLY:
+- Put your ENTIRE reply inside ONE fenced code block: open with a line of exactly \`\`\`markdown, then all the reports, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no summary.
+- The FIRST line inside the fence must be the season stamp given below, copied exactly. It is how the reply is checked against the season it was written for; without it nothing can be filed.
+- Begin every report with a line containing ONLY this marker: <!--player:ID--> (replace ID with that player's number, shown as "PLAYER <ID>" below). This is how each report is filed to the correct player — never omit it, never change it.
+- Straight after the marker, write the report as plain prose. NO headline, NO title, NO heading line, no bold lead-in, no year — start with the first sentence. No bullet lists, no ratings table.
+- Include EVERY player listed, in the order given. Do not skip anyone, and do not merge players.
+- Put exactly one blank line between reports.`;
+
 export const buildPlayerRecapPrompt = (data: RecapPlayerBatch): string => {
+	// A prospect batch has no league to describe: no standings, no leaders, no
+	// award races, and no teams to name. Sending them the league block would be
+	// pure token cost taken off the reports.
+	const prospects = data.filter === "prospects";
+
 	const header = [
-		INSTRUCTIONS,
+		prospects ? PROSPECT_INSTRUCTIONS : INSTRUCTIONS,
 		"",
 		`SEASON STAMP (copy as the first line inside the fence): ${seasonStamp(data.season)}`,
 		"",
 		`LISTED SEASON: ${data.season}`,
-		`This is batch ${data.batchIndex + 1} of ${data.batchCount} for this season (${data.players.length} players in this batch, ${data.totalPlayers} in the league).`,
+		prospects
+			? `This is batch ${data.batchIndex + 1} of ${data.batchCount} of the ${data.season + 1} draft class (${data.players.length} prospects in this batch, ${data.totalPlayers} in the class).`
+			: `This is batch ${data.batchIndex + 1} of ${data.batchCount} for this season (${data.players.length} players in this batch, ${data.totalPlayers} in the league).`,
 		"",
-		...leagueBlock(data),
+		...(prospects ? [] : leagueBlock(data)),
 		"",
-		"=== PLAYERS ===",
+		prospects ? "=== PROSPECTS ===" : "=== PLAYERS ===",
 	].join("\n");
 
 	return [header, ...data.players.map((p) => playerBlock(p, data.season))].join(

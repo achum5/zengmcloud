@@ -219,6 +219,9 @@ export type RecapAwardRace = {
 
 export type RecapPlayerBatch = {
 	season: number;
+	// Which pass this batch belongs to, so the prompt builder knows whether it's
+	// writing season recaps or scouting reports.
+	filter: RecapFilter;
 	// Standings + playoff results for the season being written.
 	leagueTeams: RecapLeagueTeam[];
 	champion?: string;
@@ -511,16 +514,20 @@ export const describeTransaction = (
 	}
 };
 
-// "all" is the normal league-wide pass. "unwrittenProspects" narrows the batch
-// to next year's draft class minus anyone already written, so a season that was
-// recapped before prospects existed can be topped up without regenerating forty
-// recaps that are already filed.
-export type RecapFilter = "all" | "unwrittenProspects";
+// Two separate passes, never one merged batch.
+//
+// "players" is everyone who was actually in the league that season. "prospects"
+// is next year's draft class, who were never in it - no stats, no team, no
+// season to recap. Mixing them meant a scouting report and a one-sentence recap
+// for a deep-bench player came out of the same prompt under the same length
+// rules, and every prospect carried the league standings block it has no use
+// for. They are different jobs and they get different prompts.
+export type RecapFilter = "players" | "prospects";
 
 export const getPlayerRecapData = async ({
 	season,
 	batchIndex = 0,
-	filter = "all",
+	filter = "players",
 }: {
 	season: number;
 	batchIndex?: number;
@@ -561,22 +568,26 @@ export const getPlayerRecapData = async ({
 	}
 	const playersAll = [...byPid.values()];
 
-	// Everyone who was in the league that season, in a STABLE order so batch N
-	// means the same thing between the Copy and the Paste (and across reloads).
-	// Anyone who retired after this season is included even if the ratings check
-	// misses them, since their retirement writeup is written from this batch and
-	// there is no second pass that would catch them.
+	// The pass's players, in a STABLE order so batch N means the same thing
+	// between the Copy and the Paste (and across reloads).
 	const inSeason = playersAll
-		.filter((p: any) =>
-			filter === "unwrittenProspects"
-				? isNextDraftClass(p, season) && !hasSeasonNote(p.note, season)
-				: ratingsForSeason(p, season) !== undefined ||
-					p.retiredYear === season ||
-					// Next year's draft class. They aren't in the league yet, so nothing
-					// above catches them, but they are the story of the coming offseason
-					// and get a scouting report filed under this season.
-					isNextDraftClass(p, season),
-		)
+		.filter((p: any) => {
+			// Next year's draft class is its own pass. Checked first and both ways,
+			// so a player can never land in both batches or fall between them.
+			const prospect = isNextDraftClass(p, season);
+			if (filter === "prospects") {
+				return prospect;
+			}
+			if (prospect) {
+				return false;
+			}
+			// Anyone who retired after this season is included even if the ratings
+			// check misses them, since their retirement writeup is written from this
+			// batch and there is no second pass that would catch them.
+			return (
+				ratingsForSeason(p, season) !== undefined || p.retiredYear === season
+			);
+		})
 		.sort((a: any, b: any) => (a.pid ?? 0) - (b.pid ?? 0));
 
 	const totalPlayers = inSeason.length;
@@ -1003,6 +1014,7 @@ export const getPlayerRecapData = async ({
 
 	return {
 		season,
+		filter,
 		leagueTeams,
 		champion,
 		leaders,

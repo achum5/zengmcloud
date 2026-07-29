@@ -11,9 +11,9 @@ import type {
 	RecapPlayerBatch,
 } from "../../worker/util/getPlayerRecapData.ts";
 
-// League-wide per-player season recaps, mirroring the Team Recaps flow on the
-// same page: Copy → AI → Paste, filed into each player's own note under a
-// [season] heading.
+// League-wide per-player writeups, mirroring the Team Recaps flow on the same
+// page: Copy → AI → Paste, filed into each player's own note under a [season]
+// heading.
 //
 // The difference is scale: this covers every player in the league, which is far
 // more than one prompt can hold, so it walks through BATCHES. The batch advances
@@ -21,20 +21,17 @@ import type {
 // repeat, and the counter tells you how far along the season is.
 export const PlayerRecaps = ({
 	season,
-	filter = "all",
+	filter = "players",
 	heading,
 }: {
 	season: number;
-	// "unwrittenProspects" is the top-up pass: only next year's draft class, only
-	// the ones with nothing written yet. A season recapped before prospects
-	// existed can be filled in without regenerating everything already filed.
+	// Which pass. "players" is season recaps for everyone who was in the league;
+	// "prospects" is scouting reports on next year's draft class. Two separate
+	// runs with their own prompts, because they are different jobs.
 	filter?: RecapFilter;
 	heading: string;
 }) => {
 	const [batchIndex, setBatchIndex] = useState(0);
-	// Bumped after filing, to re-derive a batch whose membership depends on what
-	// is already written.
-	const [reload, setReload] = useState(0);
 	const [data, setData] = useState<RecapPlayerBatch | undefined>();
 	const [prompt, setPrompt] = useState<string | undefined>();
 	const [loadFailed, setLoadFailed] = useState(false);
@@ -77,7 +74,7 @@ export const PlayerRecaps = ({
 		return () => {
 			cancelled = true;
 		};
-	}, [season, batchIndex, filter, reload]);
+	}, [season, batchIndex, filter]);
 
 	const copy = async () => {
 		setResult(undefined);
@@ -154,13 +151,6 @@ export const PlayerRecaps = ({
 				setResult(
 					`Filed ${response.filed} of ${expected} players — the AI's reply was short. Lower "AI Recap Max Players" in Global Settings, then re-copy this batch to fill the rest.`,
 				);
-			} else if (filter === "unwrittenProspects") {
-				// The batch is defined as "whoever is still unwritten", so the ones
-				// just filed drop out of it. Advancing the index would skip past the
-				// players who shuffled down into their place - re-derive from the top
-				// instead, and the section disappears once nothing is left.
-				setBatchIndex(0);
-				setReload((x) => x + 1);
 			} else if (data && batchIndex + 1 < data.batchCount) {
 				setBatchIndex(batchIndex + 1);
 			}
@@ -190,9 +180,9 @@ export const PlayerRecaps = ({
 	const arrow = <span className="text-body-secondary">›</span>;
 	const btnStyle = { width: 62 } as const;
 
-	// The top-up pass only exists when there is something left to top up, so it
-	// stays out of the way entirely once the class is written.
-	if (filter === "unwrittenProspects" && (!data || data.players.length === 0)) {
+	// A season with no draft class behind it (the last one generated, say) has
+	// nothing to scout, so that pass stays off the page entirely.
+	if (filter === "prospects" && (!data || data.players.length === 0)) {
 		return null;
 	}
 
@@ -246,7 +236,7 @@ export const PlayerRecaps = ({
 					<span>
 						Batch {data.batchIndex + 1}/{data.batchCount} ·{" "}
 						{data.players.length}{" "}
-						{filter === "unwrittenProspects" ? "prospects" : "players"}
+						{filter === "prospects" ? "prospects" : "players"}
 					</span>
 					<button
 						className="btn btn-sm btn-link p-0 text-decoration-none"
@@ -257,9 +247,7 @@ export const PlayerRecaps = ({
 						›
 					</button>
 					<span>
-						{filter === "unwrittenProspects"
-							? `· ${data.totalPlayers} left`
-							: `· ${data.alreadyWrittenTotal}/${data.totalPlayers} written`}
+						· {data.alreadyWrittenTotal}/{data.totalPlayers} written
 					</span>
 				</div>
 			) : null}
