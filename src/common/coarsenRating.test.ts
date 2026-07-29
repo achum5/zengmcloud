@@ -6,6 +6,7 @@ import {
 	coarsenRatingsRow,
 	coarsenRatingValue,
 	exemptFromCoarseRatings,
+	prospectRatingsSeason,
 } from "./coarsenRating.ts";
 
 describe("coarsenRating", () => {
@@ -214,5 +215,42 @@ describe("coarsenRatingValue", () => {
 		const ovrs = { C: 55 };
 		coarsenRatingValue(ovrs);
 		assert.strictEqual(ovrs.C, 55);
+	});
+});
+
+// The exemption is about the scouting report you were shown while a player was
+// in a draft class. That report doesn't stop having been true the day he's
+// drafted, so opening his draft year still shows exact ratings while every
+// season after it is coarsened.
+describe("prospectRatingsSeason", () => {
+	test("the draft year itself is a prospect season", () => {
+		assert.strictEqual(prospectRatingsSeason(2020, 2020, true), true);
+	});
+
+	// A multi-year draft class develops its players each preseason, and those
+	// rows sit below the year they actually go in the draft.
+	test("so are the seasons before it", () => {
+		assert.strictEqual(prospectRatingsSeason(2020, 2019, true), true);
+		assert.strictEqual(prospectRatingsSeason(2020, 2018, true), true);
+	});
+
+	test("his rookie season and everything after are not", () => {
+		assert.strictEqual(prospectRatingsSeason(2020, 2021, true), false);
+		assert.strictEqual(prospectRatingsSeason(2020, 2030, true), false);
+	});
+
+	test("nothing is spared with the option off", () => {
+		assert.strictEqual(prospectRatingsSeason(2020, 2020, false), false);
+		assert.strictEqual(prospectRatingsSeason(2020, 2019, false), false);
+	});
+
+	// Real-players leagues and imports can arrive without either number.
+	test("a missing season or draft year claims nothing", () => {
+		assert.strictEqual(prospectRatingsSeason(undefined, 2020, true), false);
+		assert.strictEqual(prospectRatingsSeason(2020, undefined, true), false);
+		assert.strictEqual(
+			prospectRatingsSeason(undefined, undefined, true),
+			false,
+		);
 	});
 });

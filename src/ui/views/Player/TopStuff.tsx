@@ -690,6 +690,7 @@ const TopStuff = ({
 							ratings={player.ratings}
 							season={season}
 							tid={player.tid}
+							draftYear={player.draft?.year}
 						/>
 					) : null}
 					{jerseyNumberInfos.length > 0 ? (

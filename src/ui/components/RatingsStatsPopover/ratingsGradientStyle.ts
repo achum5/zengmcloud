@@ -1,19 +1,38 @@
 import { gradientStyleFactory } from "../../util/gradientStyleFactory.ts";
 import { local } from "../../util/local.ts";
-import { exemptFromCoarseRatings } from "../../../common/coarsenRating.ts";
+import {
+	exemptFromCoarseRatings,
+	prospectRatingsSeason,
+} from "../../../common/coarsenRating.ts";
 
 const gradient = gradientStyleFactory(25, 45, 55, 75);
 
 // Are the ratings on screen for this player coarse (floored to the tens digit)?
-// Not simply "is coarse mode on": an undrafted prospect can be exempt from it,
-// and colouring his true 0-100 ratings on the 0-10 scale would paint every one
-// of them bright green.
-export const ratingsAreCoarse = (tid?: number): boolean => {
+// Not simply "is coarse mode on": a draft class can be exempt from it, and
+// colouring true 0-100 ratings on the 0-10 scale would paint every one of them
+// bright green.
+//
+// The exemption is per SEASON as well as per player, so this has to be asked
+// about the row being drawn: a player's draft-class year stays exact after he's
+// drafted, while the seasons that follow are coarsened.
+export const ratingsAreCoarse = (
+	tid?: number,
+	// The row's season and the player's draft year. Both are needed to tell a
+	// prospect-era row from a later one; omitting them just falls back to the
+	// per-player answer.
+	season?: number,
+	draftYear?: number,
+): boolean => {
 	const { hideRatingsOnesDigit, hideRatingsOnesDigitExceptProspects } =
 		local.getState();
 	return (
 		hideRatingsOnesDigit &&
-		!exemptFromCoarseRatings(tid, hideRatingsOnesDigitExceptProspects)
+		!exemptFromCoarseRatings(tid, hideRatingsOnesDigitExceptProspects) &&
+		!prospectRatingsSeason(
+			draftYear,
+			season,
+			hideRatingsOnesDigitExceptProspects,
+		)
 	);
 };
 

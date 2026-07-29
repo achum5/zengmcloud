@@ -20,6 +20,7 @@ import {
 	coarsenRating,
 	coarsenRatingValue,
 	exemptFromCoarseRatings,
+	prospectRatingsSeason,
 	NO_COARSEN_RATINGS,
 } from "../../../common/coarsenRating.ts";
 
@@ -164,6 +165,7 @@ const processAttrs = (
 	{
 		attrs,
 		coarsenRatings,
+		prospectSeasonsExact,
 		fuzz,
 		numGamesRemaining,
 		season,
@@ -216,9 +218,15 @@ const processAttrs = (
 					p.ratings[0].fuzz,
 				);
 			}
+			// draft.ovr/pot ARE the scouting report from his draft class, so where
+			// prospect seasons are shown exact these go with them, not just while
+			// he's still undrafted.
 			if (
 				coarsenRatings &&
 				g.get("hideRatingsOnesDigit") &&
+				!(
+					prospectSeasonsExact && g.get("hideRatingsOnesDigitExceptProspects")
+				) &&
 				!exemptFromCoarseRatings(
 					p.tid,
 					g.get("hideRatingsOnesDigitExceptProspects"),
@@ -425,6 +433,7 @@ const processRatings = (
 	playerRatingsInput: any[],
 	{
 		coarsenRatings,
+		prospectSeasonsExact,
 		fuzz,
 		ratings,
 		showDraftProspectRookieRatings,
@@ -438,14 +447,24 @@ const processRatings = (
 	let playerRatings = playerRatingsInput;
 
 	// An undrafted prospect can be exempted, so a draft class is still scoutable
-	// in a league that otherwise shows only the tens digit. Keyed on his CURRENT
-	// tid, so the day he's drafted his whole history goes coarse with him.
-	const coarseRatings =
-		coarsenRatings &&
-		g.get("hideRatingsOnesDigit") &&
-		!exemptFromCoarseRatings(
-			p.tid,
-			g.get("hideRatingsOnesDigitExceptProspects"),
+	// in a league that otherwise shows only the tens digit.
+	//
+	// The exemption is per SEASON, not per player. It's about the scouting
+	// report you were shown while he was in the draft class, and that report
+	// doesn't stop having been true the day he's drafted - so opening his
+	// prospect year still shows exact ratings, while every season from his
+	// first on a roster is coarsened as usual.
+	const exceptProspects = g.get("hideRatingsOnesDigitExceptProspects");
+	const hideOnesDigit = coarsenRatings && g.get("hideRatingsOnesDigit");
+	// Kept alongside the season rule for the legacy future-draft-class tids,
+	// whose rows aren't guaranteed to sit at or below the draft year.
+	const playerExempt = exemptFromCoarseRatings(p.tid, exceptProspects);
+	const rowIsCoarse = (rowSeason: number | undefined) =>
+		hideOnesDigit &&
+		!playerExempt &&
+		!(
+			prospectSeasonsExact &&
+			prospectRatingsSeason(p.draft.year, rowSeason, exceptProspects)
 		);
 
 	if (
@@ -508,12 +527,20 @@ const processRatings = (
 				if (prevRow) {
 					const cur = player.fuzzRating(pr[cat], pr.fuzz);
 					const prev = player.fuzzRating(prevRow[cat], prevRow.fuzz);
-					// In coarse mode the displayed rating is floored to the tens
-					// digit, so the change must be the difference of those floored
-					// values (else a 56->58 bump shows "5 (+2)" instead of no change).
-					row[attr] = coarseRatings
-						? coarsenRating(cur) - coarsenRating(prev)
-						: cur - prev;
+					const curCoarse = rowIsCoarse(pr.season);
+					if (curCoarse !== rowIsCoarse(prevRow.season)) {
+						// One row is exact and the other is floored to the tens digit -
+						// the prospect-year boundary. Subtracting across those scales
+						// would report a 47-point collapse where nothing happened.
+						row[attr] = 0;
+					} else if (curCoarse) {
+						// The displayed rating is floored to the tens digit, so the
+						// change must be the difference of those floored values (else a
+						// 56->58 bump shows "5 (+2)" instead of no change).
+						row[attr] = coarsenRating(cur) - coarsenRating(prev);
+					} else {
+						row[attr] = cur - prev;
+					}
 				} else {
 					row[attr] = 0;
 				}
@@ -577,7 +604,7 @@ const processRatings = (
 			}
 		}
 
-		if (coarseRatings) {
+		if (rowIsCoarse(pr.season)) {
 			for (const attr of ratings) {
 				if (!NO_COARSEN_RATINGS.has(attr)) {
 					// coarsenRatingValue, not coarsenRating: ovrs/pots are maps of
@@ -1430,6 +1457,7 @@ const getCopies = async (
 		showDraftProspectRookieRatings = false,
 		fuzz = false,
 		coarsenRatings = true,
+		prospectSeasonsExact = false,
 		oldStats = false,
 		numGamesRemaining = 0,
 		statType = "perGame",
@@ -1460,6 +1488,7 @@ const getCopies = async (
 		showRetired,
 		fuzz,
 		coarsenRatings,
+		prospectSeasonsExact,
 		oldStats,
 		numGamesRemaining,
 		statType,

@@ -158,6 +158,11 @@ export const getPlayer = async (
 		combined: true,
 		showRookies: true,
 		fuzz: true,
+		// The player page is where a career is read season by season, so a draft
+		// class exempted from coarse ratings stays exempt here even after he's
+		// drafted - opening his prospect year still shows the scouting report you
+		// were given at the time.
+		prospectSeasonsExact: true,
 		mergeStats: "totAndTeams",
 		seasonRange,
 		seasons,

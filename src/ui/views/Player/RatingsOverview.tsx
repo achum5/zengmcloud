@@ -12,14 +12,17 @@ export const RatingsOverview = ({
 	ratings,
 	season,
 	tid,
+	draftYear,
 }: {
 	ratings: any[];
 	season?: number;
-	// The player's current team. An undrafted prospect can be exempt from coarse
-	// ratings, and his true 0-100 numbers need the true 0-100 colour scale.
+	// The player's current team. A draft class can be exempt from coarse
+	// ratings, and true 0-100 numbers need the true 0-100 colour scale.
 	tid?: number;
+	// Which of his seasons were prospect seasons. The exemption survives being
+	// drafted, so it's the ROW on screen that decides, not the player.
+	draftYear?: number;
 }) => {
-	const coarse = ratingsAreCoarse(tid);
 	let currentSeason;
 	if (season === undefined) {
 		// Use latest season
@@ -29,9 +32,21 @@ export const RatingsOverview = ({
 			ratings.findLast((row) => row.season === season) ?? ratings.at(-1);
 	}
 
+	const coarse = ratingsAreCoarse(tid, currentSeason?.season, draftYear);
+
+	// The year-over-year change is only meaningful when both rows are on the
+	// same scale. A prospect year is exact and the rookie year that follows it
+	// is floored to the tens digit, so subtracting one from the other would
+	// report a 47-point collapse where nothing happened. Falling back to the
+	// current row makes the change zero, which renders as no change at all.
+	const previous = ratings.findLast(
+		(row) => row.season === currentSeason.season - 1,
+	);
 	const lastSeason =
-		ratings.findLast((row) => row.season === currentSeason.season - 1) ??
-		currentSeason;
+		previous !== undefined &&
+		ratingsAreCoarse(tid, previous.season, draftYear) === coarse
+			? previous
+			: currentSeason;
 
 	const columns = bySport<
 		Record<

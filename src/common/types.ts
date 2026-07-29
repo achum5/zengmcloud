@@ -1567,6 +1567,12 @@ export type PlayersPlusOptions = {
 	// number with a tenth of the resolution turns any ordering into a coin flip
 	// among everyone in the same decade. Coarsen at the point of display instead.
 	coarsenRatings?: boolean;
+	// Show a player's DRAFT-CLASS seasons at full resolution even after he's been
+	// drafted, when the "prospects exempt" option is on. Off by default and
+	// opted into only by the player page, because a view that aggregates across
+	// a player's whole ratings history (a peak-ovr column, say) would otherwise
+	// mix a 0-100 prospect row with 0-10 rows and always report the prospect one.
+	prospectSeasonsExact?: boolean;
 	oldStats?: boolean;
 	numGamesRemaining?: number;
 	statType?: PlayerStatType;

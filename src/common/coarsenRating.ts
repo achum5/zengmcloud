@@ -13,12 +13,31 @@ export const coarsenRating = (value: number): number => Math.floor(value / 10);
 // scouting a draft class, so it ends the moment a player lands on a roster.
 const UNDRAFTED_TIDS = new Set([-2, -4, -5]);
 
-// Does the "prospects exempt" option spare this player? Only an undrafted
-// prospect, and only when the option is on.
+// Does the "prospects exempt" option spare this player RIGHT NOW? Only an
+// undrafted prospect, and only when the option is on.
 export const exemptFromCoarseRatings = (
 	tid: number | undefined,
 	exceptProspects: boolean,
 ): boolean => exceptProspects && tid !== undefined && UNDRAFTED_TIDS.has(tid);
+
+// Does it spare one SEASON of a player's history? The exemption is really about
+// the scouting report you were shown while he was in a draft class, and that
+// report doesn't stop having been true the day he's drafted - so his prospect
+// seasons stay exact forever while everything from his first roster season on
+// is coarsened as usual.
+//
+// Any ratings row up to and including the draft year is a prospect season: a
+// multi-year draft class develops its players each preseason, and those rows
+// all sit below the year they go in the draft.
+export const prospectRatingsSeason = (
+	draftYear: number | undefined,
+	season: number | undefined,
+	exceptProspects: boolean,
+): boolean =>
+	exceptProspects &&
+	draftYear !== undefined &&
+	season !== undefined &&
+	season <= draftYear;
 
 // The change to show alongside a coarsened rating. It has to be the difference
 // of the two DISPLAYED values, or a 56 -> 58 bump reads as "5 (+2)".
