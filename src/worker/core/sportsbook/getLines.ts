@@ -28,6 +28,7 @@ import {
 	tierMembershipProbs,
 } from "../../../common/sportsbookOdds.ts";
 import {
+	bracketMarketsOpen,
 	simulateFutures,
 	simulatePlayoffBracket,
 	type BracketMatchup,
@@ -399,6 +400,9 @@ export const getLines = async () => {
 	// 3-0 no credit). Teams no longer in the bracket are delisted, like a real
 	// book. Falls back to the hypothetical sim if the bracket can't be read.
 	let bracketSim: ReturnType<typeof simulatePlayoffBracket> | undefined;
+	// Which of those markets the bracket still leaves undecided. Undefined until
+	// the playoffs start, when everything is open.
+	let marketsOpen: ReturnType<typeof bracketMarketsOpen> | undefined;
 	if (regularSeasonOver && !playoffsOver) {
 		try {
 			const playoffSeries = await idb.cache.playoffSeries.get(season);
@@ -414,6 +418,10 @@ export const getLines = async () => {
 					: undefined,
 			}));
 			if (matchups.length > 0) {
+				marketsOpen = bracketMarketsOpen({
+					matchups,
+					bestOf: g.get("numGamesPlayoffSeries")[rnd] ?? 7,
+				});
 				// Fold the bracket state into the seed so lines are deterministic per
 				// state but move as series progress (the regular-season seed inputs
 				// are frozen once the playoffs start).
@@ -455,37 +463,49 @@ export const getLines = async () => {
 		americanOdds: priceFuture(prob),
 	});
 
-	const championship = playoffsOver
-		? []
-		: activeTeams
-				.filter((t) => !bracketSim || bracketSim.titleProb.has(t.tid))
-				.map((t) =>
-					teamRow(
-						t,
-						(bracketSim ? bracketSim.titleProb : sim.titleProb).get(t.tid) ?? 0,
-					),
-				)
-				.sort((a, b) => a.americanOdds - b.americanOdds);
-
-	const conferences = playoffsOver
-		? []
-		: confs.map((conf) => ({
-				cid: conf.cid,
-				name: conf.name,
-				teams: activeTeams
-					.filter(
-						(t) =>
-							t.cid === conf.cid &&
-							(!bracketSim || bracketSim.confProb.has(t.tid)),
-					)
+	const championship =
+		playoffsOver || marketsOpen?.title === false
+			? []
+			: activeTeams
+					.filter((t) => !bracketSim || bracketSim.titleProb.has(t.tid))
 					.map((t) =>
 						teamRow(
 							t,
-							(bracketSim ? bracketSim.confProb : sim.confProb).get(t.tid) ?? 0,
+							(bracketSim ? bracketSim.titleProb : sim.titleProb).get(t.tid) ??
+								0,
 						),
 					)
-					.sort((a, b) => a.americanOdds - b.americanOdds),
-			}));
+					.sort((a, b) => a.americanOdds - b.americanOdds);
+
+	// A conference comes off the board as soon as its winner is knowable: once
+	// the final series is set, both conference champions are already decided, and
+	// leaving the market up made either finalist a guaranteed payout.
+	const conferences = playoffsOver
+		? []
+		: confs
+				.filter(
+					(conf) =>
+						marketsOpen === undefined ||
+						marketsOpen.conferenceCids.has(conf.cid),
+				)
+				.map((conf) => ({
+					cid: conf.cid,
+					name: conf.name,
+					teams: activeTeams
+						.filter(
+							(t) =>
+								t.cid === conf.cid &&
+								(!bracketSim || bracketSim.confProb.has(t.tid)),
+						)
+						.map((t) =>
+							teamRow(
+								t,
+								(bracketSim ? bracketSim.confProb : sim.confProb).get(t.tid) ??
+									0,
+							),
+						)
+						.sort((a, b) => a.americanOdds - b.americanOdds),
+				}));
 
 	const divisions = regularSeasonOver
 		? []

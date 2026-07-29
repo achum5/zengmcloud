@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	bracketMarketsOpen,
 	simulateFutures,
 	simulatePlayoffBracket,
 	type BracketMatchup,
@@ -231,5 +232,114 @@ describe("simulatePlayoffBracket", () => {
 		const a = run2(semis(), 21);
 		const b = run2(semis(), 21);
 		assert.strictEqual(a.titleProb.get(4), b.titleProb.get(4));
+	});
+});
+
+// The bug this exists for: the Conference Winner market stayed on the board
+// through the Finals, by which point both conference champions are known and
+// `confProb` (P reaches the final series) is 1.0 for each finalist - so either
+// one was a guaranteed payout on a publicly known result.
+describe("bracketMarketsOpen", () => {
+	const confFinals = (eastWon = [2, 1], westWon = [1, 1]): BracketMatchup[] => [
+		{
+			home: { tid: 0, cid: 0, won: eastWon[0]! },
+			away: { tid: 1, cid: 0, won: eastWon[1]! },
+		},
+		{
+			home: { tid: 4, cid: 1, won: westWon[0]! },
+			away: { tid: 5, cid: 1, won: westWon[1]! },
+		},
+	];
+	const finals = (homeWon = 1, awayWon = 1): BracketMatchup[] => [
+		{
+			home: { tid: 0, cid: 0, won: homeWon },
+			away: { tid: 4, cid: 1, won: awayWon },
+		},
+	];
+
+	test("both conferences are live while their finals are being played", () => {
+		const open = bracketMarketsOpen({ matchups: confFinals(), bestOf: 7 });
+		assert.deepStrictEqual([...open.conferenceCids].sort(), [0, 1]);
+		assert.strictEqual(open.title, true);
+	});
+
+	test("no conference market survives into the Finals", () => {
+		const open = bracketMarketsOpen({ matchups: finals(), bestOf: 7 });
+		assert.strictEqual(open.conferenceCids.size, 0);
+		// The championship is still a live question, though.
+		assert.strictEqual(open.title, true);
+	});
+
+	// Conference finals rarely end on the same day, so the settled one has to
+	// come down on its own rather than waiting for the round to turn over.
+	test("a conference closes the moment its own series is clinched", () => {
+		const open = bracketMarketsOpen({
+			matchups: confFinals([4, 1], [2, 2]),
+			bestOf: 7,
+		});
+		assert.deepStrictEqual([...open.conferenceCids], [1]);
+	});
+
+	test("either side clinching closes it, not just the home side", () => {
+		const open = bracketMarketsOpen({
+			matchups: confFinals([1, 4], [2, 2]),
+			bestOf: 7,
+		});
+		assert.deepStrictEqual([...open.conferenceCids], [1]);
+	});
+
+	test("the series length decides what counts as clinched", () => {
+		// 3 wins takes a best-of-5 but not a best-of-7.
+		assert.strictEqual(
+			bracketMarketsOpen({ matchups: confFinals([3, 1]), bestOf: 5 })
+				.conferenceCids.size,
+			1,
+		);
+		assert.strictEqual(
+			bracketMarketsOpen({ matchups: confFinals([3, 1]), bestOf: 7 })
+				.conferenceCids.size,
+			2,
+		);
+	});
+
+	test("the title comes down once the last series is decided", () => {
+		assert.strictEqual(
+			bracketMarketsOpen({ matchups: finals(4, 2), bestOf: 7 }).title,
+			false,
+		);
+		assert.strictEqual(
+			bracketMarketsOpen({ matchups: finals(2, 4), bestOf: 7 }).title,
+			false,
+		);
+	});
+
+	// An earlier round with a clinched series is not the end of anything.
+	test("a clinched series in an earlier round leaves the title alone", () => {
+		assert.strictEqual(
+			bracketMarketsOpen({ matchups: confFinals([4, 0], [4, 0]), bestOf: 7 })
+				.title,
+			true,
+		);
+	});
+
+	test("a bye advances its team without deciding a conference", () => {
+		const open = bracketMarketsOpen({
+			matchups: [
+				{ home: { tid: 0, cid: 0, won: 0 } },
+				{
+					home: { tid: 1, cid: 0, won: 0 },
+					away: { tid: 2, cid: 0, won: 0 },
+				},
+			],
+			bestOf: 7,
+		});
+		// Three East teams are still alive behind one bye and one live series.
+		assert.deepStrictEqual([...open.conferenceCids], [0]);
+	});
+
+	test("an empty bracket claims nothing is open", () => {
+		const open = bracketMarketsOpen({ matchups: [], bestOf: 7 });
+		assert.strictEqual(open.conferenceCids.size, 0);
+		assert.strictEqual(open.title, false);
 	});
 });

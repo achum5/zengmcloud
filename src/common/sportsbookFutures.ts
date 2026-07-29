@@ -227,6 +227,67 @@ export type BracketFuturesResult = {
 	confProb: Map<number, number>;
 };
 
+// Which futures markets a bracket still leaves open.
+//
+// A real book takes a market down the moment its outcome is knowable, and
+// `confProb` here means "reaches the final series" - which is settled as soon
+// as the final series exists. Without this the Conference Winner market stayed
+// up through the Finals with both finalists priced at a certainty, so either
+// one was a guaranteed payout on a publicly known result.
+//
+// Two ways a conference gets settled:
+//   - The final series is set, so both participants have already reached it.
+//   - Only one of that conference's teams is still alive in the round being
+//     played. Conference finals rarely end on the same day, so this closes the
+//     first one as it finishes rather than waiting for the round to turn over.
+export const bracketMarketsOpen = ({
+	matchups,
+	bestOf,
+}: {
+	// The in-progress round's matchups.
+	matchups: BracketMatchup[];
+	// Games in that round's series.
+	bestOf: number;
+}): { conferenceCids: Set<number>; title: boolean } => {
+	const winsNeeded = Math.ceil(bestOf / 2);
+
+	// Who can still win their current series.
+	const alive: BracketTeam[] = [];
+	let anyUndecided = false;
+	for (const m of matchups) {
+		if (!m.away) {
+			alive.push(m.home);
+			continue;
+		}
+		if (m.home.won >= winsNeeded) {
+			alive.push(m.home);
+		} else if (m.away.won >= winsNeeded) {
+			alive.push(m.away);
+		} else {
+			alive.push(m.home, m.away);
+			anyUndecided = true;
+		}
+	}
+
+	// One matchup left is the final series, so every conference's representative
+	// is already known - whoever wins it, both got there.
+	const conferenceCids = new Set<number>();
+	if (matchups.length > 1) {
+		const perConf = new Map<number, number>();
+		for (const t of alive) {
+			perConf.set(t.cid, (perConf.get(t.cid) ?? 0) + 1);
+		}
+		for (const [cid, count] of perConf) {
+			if (count > 1) {
+				conferenceCids.add(cid);
+			}
+		}
+	}
+
+	// The title is settled once the last series left has a winner.
+	return { conferenceCids, title: anyUndecided || matchups.length > 1 };
+};
+
 export const simulatePlayoffBracket = ({
 	matchups,
 	startRound,
