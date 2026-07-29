@@ -609,7 +609,19 @@ export const getPlayerRecapData = async ({
 				ratingsForSeason(p, season) !== undefined || p.retiredYear === season
 			);
 		})
-		.sort((a: any, b: any) => (a.pid ?? 0) - (b.pid ?? 0));
+		// Anyone with nothing written for this season sorts first, so a batch is
+		// always the work that is actually left. A long reply that quietly drops
+		// forty players used to leave them scattered through batches already
+		// marked done, with no way to find them again; now the next batch IS
+		// those forty.
+		.sort((a: any, b: any) => {
+			const aWritten = hasSeasonNote(a.note, season) ? 1 : 0;
+			const bWritten = hasSeasonNote(b.note, season) ? 1 : 0;
+			if (aWritten !== bWritten) {
+				return aWritten - bWritten;
+			}
+			return (a.pid ?? 0) - (b.pid ?? 0);
+		});
 
 	const totalPlayers = inSeason.length;
 	if (totalPlayers === 0) {

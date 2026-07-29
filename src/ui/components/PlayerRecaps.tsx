@@ -11,6 +11,16 @@ import type {
 	RecapPlayerBatch,
 } from "../../worker/util/getPlayerRecapData.ts";
 
+// Naming the players a reply dropped is the whole point of the message, so the
+// list is generous before it gives up and counts.
+const nameList = (players: { name: string }[]) => {
+	const names = players.map((p) => p.name);
+	if (names.length <= 8) {
+		return names.join(", ");
+	}
+	return `${names.slice(0, 8).join(", ")} and ${names.length - 8} more`;
+};
+
 // League-wide per-player writeups, mirroring the Team Recaps flow on the same
 // page: Copy → AI → Paste, filed into each player's own note under a [season]
 // heading.
@@ -144,29 +154,39 @@ export const PlayerRecaps = ({
 			setPasted(true);
 			globalThis.setTimeout(() => setPasted(false), 3000);
 
-			// Tell the user when the AI skipped players, rather than silently
-			// advancing past them - a short reply is the main failure mode of a big
-			// batch, and it's invisible otherwise.
-			const expected = data?.players.length ?? 0;
-			const seasonRecaps = recaps.filter((x) => x.kind === "season").length;
+			// A long reply that quietly stops forty players short is the main
+			// failure mode of a big batch, and it used to be invisible: the count
+			// mixed season recaps in with retirement writeups (so it could read
+			// "filed 223 of 200"), and it never said WHO was missed.
+			const batchPlayers = data?.players ?? [];
+			const written = new Set(
+				recaps.filter((x) => x.kind === "season").map((x) => x.pid),
+			);
+			const skipped = batchPlayers.filter((p) => !written.has(p.pid));
+
+			// Whoever is left is sorted to the front of the pass by the worker, so
+			// re-deriving from the top rebuilds the batch out of exactly the players
+			// still missing a recap - including the ones this reply dropped.
+			const stillUnwritten =
+				(data?.totalPlayers ?? 0) -
+				(data?.alreadyWrittenTotal ?? 0) -
+				batchPlayers.filter((p) => !p.alreadyWritten && written.has(p.pid))
+					.length;
+			if (stillUnwritten > 0) {
+				setBatchIndex(0);
+			}
+			setReload((prev) => prev + 1);
+
 			if (response.wrongKind.length > 0) {
 				setResult(
 					`Filed ${response.filed}, but skipped ${response.wrongKind.length} retirement writeup${
 						response.wrongKind.length === 1 ? "" : "s"
 					} for players who didn't retire in ${season} — that reply was probably for a different season.`,
 				);
-			} else if (expected > 0 && seasonRecaps < expected) {
+			} else if (skipped.length > 0) {
 				setResult(
-					`Filed ${response.filed} of ${expected} players — the AI's reply was short. Lower "AI Recap Max Players" in Global Settings, then re-copy this batch to fill the rest.`,
+					`The reply stopped ${skipped.length} short of the batch — no recap for ${nameList(skipped)}. They're at the front of the queue now, so this batch is just what's left. If it keeps happening, lower "AI Recap Max Players" in Global Settings.`,
 				);
-			} else if (unwrittenOnly) {
-				// Everyone just filed drops out of the pass, so batch 2 of 5 is now
-				// batch 1 of 4. Go back to the top and re-derive rather than stepping
-				// forward onto players who have moved.
-				setBatchIndex(0);
-				setReload((prev) => prev + 1);
-			} else if (data && batchIndex + 1 < data.batchCount) {
-				setBatchIndex(batchIndex + 1);
 			}
 		} catch (error) {
 			console.error("Failed to file player recaps", error);
