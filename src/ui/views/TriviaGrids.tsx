@@ -26,6 +26,7 @@ import {
 } from "../util/triviaHistory.ts";
 import { shareHistory } from "../util/triviaHistorySync.ts";
 import { shareOrCopy } from "../util/triviaShare.ts";
+import { loadProgress, saveProgress } from "../util/triviaProgress.ts";
 import { tierOf } from "../util/triviaTiers.ts";
 import {
 	decodeGridCode,
@@ -87,6 +88,30 @@ type CellState = {
 
 const emptyCells = (): CellState[] =>
 	Array.from({ length: 9 }, () => ({ points: 0 }));
+
+// A grid in progress, as it survives a reload. The board itself is stored
+// rather than re-derived from a code: rebuilding it would mean an async worker
+// round trip before anything could be drawn, and the grid the player was
+// looking at would flash in late.
+type SavedGrid = {
+	grid: GridData["grid"];
+	cells: CellState[];
+	usedPids: number[];
+	guessesUsed: number;
+	gameMaxGuesses: number | "Infinity";
+	missedByCell: Record<number, string[]>;
+	gaveUp: boolean;
+	hinted: number[];
+};
+
+// Was a restored board already over? A finished game has already been written
+// to the history, so resuming one must not record it a second time.
+const savedIsDone = (saved: SavedGrid): boolean => {
+	const solved = saved.cells.filter((c) => c.pid !== undefined).length;
+	const max =
+		saved.gameMaxGuesses === "Infinity" ? Infinity : saved.gameMaxGuesses;
+	return saved.gaveUp || solved === 9 || max - saved.guessesUsed <= 0;
+};
 
 const GUESS_SETTING_KEY = "triviaGridsGuesses";
 const HINT_SETTING_KEY = "triviaGridsHintMode";
@@ -374,21 +399,48 @@ const AnswerFace = ({ pid }: { pid: number }) => {
 const TriviaGrids = (props: View<"triviaGrids">) => {
 	useTitleBar({ title: "Grids" });
 
-	const [data, setData] = useState(props.data);
-	const [cells, setCells] = useState<CellState[]>(emptyCells);
-	const [usedPids, setUsedPids] = useState<Set<number>>(new Set());
-	const [guessesUsed, setGuessesUsed] = useState(0);
+	const { lid } = useLocal(["lid"]);
+
+	// An unfinished board from a previous visit. Read once, before any state
+	// exists, so the restore seeds the initial state instead of racing the fresh
+	// random grid the view always loads.
+	const [restored] = useState(() => loadProgress<SavedGrid>("grids", lid));
+
+	const [data, setData] = useState(() =>
+		restored && props.data
+			? // The saved board with the CURRENT search list: it's the same league
+				// either way, and the pool is far too big to be worth storing.
+				{ grid: restored.grid, searchList: props.data.searchList }
+			: props.data,
+	);
+	const [cells, setCells] = useState<CellState[]>(
+		() => restored?.cells ?? emptyCells(),
+	);
+	const [usedPids, setUsedPids] = useState<Set<number>>(
+		() => new Set(restored?.usedPids ?? []),
+	);
+	const [guessesUsed, setGuessesUsed] = useState(
+		() => restored?.guessesUsed ?? 0,
+	);
 	const [guessSetting, setGuessSetting] = useState(loadGuessSetting);
-	const [gameMaxGuesses, setGameMaxGuesses] = useState(loadGuessSetting);
+	const [gameMaxGuesses, setGameMaxGuesses] = useState(() => {
+		if (restored === undefined) {
+			return loadGuessSetting();
+		}
+		// Infinity does not survive JSON, so it travels as a sentinel.
+		return restored.gameMaxGuesses === "Infinity"
+			? Infinity
+			: restored.gameMaxGuesses;
+	});
 	const [activeCell, setActiveCell] = useState<number | undefined>();
 	const [wrongGuess, setWrongGuess] = useState<string | undefined>();
 	// Increments on each miss so the shake animation retriggers.
 	const [wrongKey, setWrongKey] = useState(0);
 	// Names already burned on each cell, so the same miss isn't repeated.
 	const [missedByCell, setMissedByCell] = useState<Record<number, string[]>>(
-		{},
+		() => restored?.missedByCell ?? {},
 	);
-	const [gaveUp, setGaveUp] = useState(false);
+	const [gaveUp, setGaveUp] = useState(() => restored?.gaveUp ?? false);
 	const [loadingNew, setLoadingNew] = useState(false);
 	const [cards, setCards] = useState<Record<number, TriviaPlayerCard>>({});
 	const [revealCell, setRevealCell] = useState<number | undefined>();
@@ -406,7 +458,9 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	// score less), `hintShuffle` lets a cell be re-dealt, and `hintWrong` marks
 	// faces already ruled out on this deal.
 	const [hintMode, setHintMode] = useState(loadHintMode);
-	const [hinted, setHinted] = useState<Set<number>>(new Set());
+	const [hinted, setHinted] = useState<Set<number>>(
+		() => new Set(restored?.hinted ?? []),
+	);
 	const [hintCell, setHintCell] = useState<number | undefined>();
 	const [hintShuffle, setHintShuffle] = useState<Record<number, number>>({});
 	const [hintWrong, setHintWrong] = useState<Set<number>>(new Set());
@@ -464,10 +518,57 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		[grid],
 	);
 
+	// Persist the board on every move. Cheap enough to do on each change (one
+	// JSON write of a board), and it means a reload, an accidental tap through
+	// to another page, or iOS reclaiming the tab all come back to the same grid.
+	useEffect(() => {
+		if (!grid) {
+			return;
+		}
+		saveProgress("grids", lid, {
+			grid,
+			cells,
+			usedPids: [...usedPids],
+			guessesUsed,
+			gameMaxGuesses: gameMaxGuesses === Infinity ? "Infinity" : gameMaxGuesses,
+			missedByCell,
+			gaveUp,
+			hinted: [...hinted],
+		} satisfies SavedGrid);
+	}, [
+		grid,
+		lid,
+		cells,
+		usedPids,
+		guessesUsed,
+		gameMaxGuesses,
+		missedByCell,
+		gaveUp,
+		hinted,
+	]);
+
+	// Faces for a restored board. handleGuess fetches these as cells are solved,
+	// so without this a resumed grid comes back with empty picture frames.
+	useEffect(() => {
+		for (const cell of cells) {
+			if (cell.pid !== undefined && !cards[cell.pid]) {
+				const pid = cell.pid;
+				void fetchTriviaCard(pid).then((card) => {
+					if (card) {
+						setCards((prev) => (prev[pid] ? prev : { ...prev, [pid]: card }));
+					}
+				});
+			}
+		}
+		// Only when the solved set changes - `cards` is what this fills in, and
+		// depending on it would re-run the effect on every fetch it completes.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [cells]);
+
 	// Record each finished game into the history exactly once. The label is the
 	// board itself, so the history search finds "every grid with the Knicks on
 	// it" - which is the thing you'd actually want to look up.
-	const recordedRef = useRef(false);
+	const recordedRef = useRef(restored !== undefined && savedIsDone(restored));
 	useEffect(() => {
 		if (!done || recordedRef.current || !grid) {
 			return;

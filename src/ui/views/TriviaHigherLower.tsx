@@ -4,6 +4,12 @@ import { toWorker } from "../util/toWorker.ts";
 import { safeLocalStorage } from "../util/safeLocalStorage.ts";
 import { PlayerPicture } from "../components/PlayerPicture.tsx";
 import { TriviaPlayerModal } from "../components/TriviaPlayerModal.tsx";
+import { useLocal } from "../util/local.ts";
+import {
+	clearProgress,
+	loadProgress,
+	saveProgress,
+} from "../util/triviaProgress.ts";
 import { Confetti } from "./LiveGame/Confetti.tsx";
 import type { View } from "../../common/types.ts";
 
@@ -177,36 +183,132 @@ const fetchCard = (pid: number): Promise<PlayerCard | undefined> => {
 	return p;
 };
 
+// A run in progress. Players are stored as pids and looked back up in the
+// pool, which is the same league data either way and far smaller to write.
+type SavedRun = {
+	categoryKey: string;
+	poolPids: number[];
+	leftPid?: number;
+	rightPid?: number;
+	streak: number;
+	lives: number;
+	score: number;
+	closest?: { a: string; av: number; b: string; bv: number };
+	gameOver: boolean;
+	guessedHigher?: boolean;
+	wasCorrect?: boolean;
+	revealNum: number;
+};
+
 const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 	useTitleBar({ title: "Higher or Lower" });
 
-	const [category, setCategory] = useState<Category | undefined>();
-	const [pool, setPool] = useState<HLPlayer[]>([]);
-	const [left, setLeft] = useState<HLPlayer | undefined>();
-	const [right, setRight] = useState<HLPlayer | undefined>();
-	const [streak, setStreak] = useState(0);
+	const { lid } = useLocal(["lid"]);
+	const [restored] = useState(() => loadProgress<SavedRun>("higherLower", lid));
+	// Resolving pids back to players needs the pool, so this is done once here
+	// rather than inside a dozen separate initializers.
+	const [seed] = useState(() => {
+		if (!restored) {
+			return undefined;
+		}
+		const cat = CATEGORIES.find((c) => c.key === restored.categoryKey);
+		if (!cat) {
+			return undefined;
+		}
+		const byPid = new Map(players.map((p) => [p.pid, p]));
+		const left = restored.leftPid ? byPid.get(restored.leftPid) : undefined;
+		const right = restored.rightPid ? byPid.get(restored.rightPid) : undefined;
+		// A run whose two players are gone is not resumable - the whole question
+		// on screen was those two.
+		if (!left || !right) {
+			return undefined;
+		}
+		return {
+			...restored,
+			category: cat,
+			pool: restored.poolPids
+				.map((pid) => byPid.get(pid))
+				.filter((p): p is HLPlayer => p !== undefined),
+			left,
+			right,
+		};
+	});
+
+	const [category, setCategory] = useState<Category | undefined>(
+		() => seed?.category,
+	);
+	const [pool, setPool] = useState<HLPlayer[]>(() => seed?.pool ?? []);
+	const [left, setLeft] = useState<HLPlayer | undefined>(() => seed?.left);
+	const [right, setRight] = useState<HLPlayer | undefined>(() => seed?.right);
+	const [streak, setStreak] = useState(() => seed?.streak ?? 0);
 	// Lives, so one unlucky coin-flip doesn't end an otherwise great run. This is
 	// the single biggest fun change: runs last long enough to build a streak, and
 	// losing feels like it took three real mistakes rather than one.
-	const [lives, setLives] = useState(3);
-	const [score, setScore] = useState(0);
+	const [lives, setLives] = useState(() => seed?.lives ?? 3);
+	const [score, setScore] = useState(() => seed?.score ?? 0);
 	const [lastPoints, setLastPoints] = useState(0);
 	// The tightest call survived this run, for the end-of-run summary.
 	const [closest, setClosest] = useState<
 		{ a: string; av: number; b: string; bv: number } | undefined
-	>();
-	const [gameOver, setGameOver] = useState(false);
+	>(() => seed?.closest);
+	const [gameOver, setGameOver] = useState(() => seed?.gameOver ?? false);
 	// "asking" -> awaiting guess; "revealing" -> counting up the answer.
 	const [phase, setPhase] = useState<"asking" | "revealing">("asking");
 	// Both players on screen are named, so either one opens their card.
 	const [profilePid, setProfilePid] = useState<number | undefined>();
-	const [guessedHigher, setGuessedHigher] = useState<boolean | undefined>();
-	const [wasCorrect, setWasCorrect] = useState<boolean | undefined>();
-	const [revealNum, setRevealNum] = useState(0);
+	const [guessedHigher, setGuessedHigher] = useState<boolean | undefined>(
+		() => seed?.guessedHigher,
+	);
+	const [wasCorrect, setWasCorrect] = useState<boolean | undefined>(
+		() => seed?.wasCorrect,
+	);
+	const [revealNum, setRevealNum] = useState(() => seed?.revealNum ?? 0);
 	const [cards, setCards] = useState<Record<number, PlayerCard>>({});
 	const [best, setBestState] = useState(0);
 	const [played, setPlayed] = useState(0);
 	const [newBest, setNewBest] = useState(false);
+
+	// Persist between questions, not during one. The reveal advances on a timer
+	// that a reload would never fire, so a run saved mid-reveal would resume
+	// stuck; saving only while awaiting an answer costs at most the one question
+	// you were part-way through.
+	useEffect(() => {
+		if (!category || !left || !right) {
+			return;
+		}
+		if (phase !== "asking" && !gameOver) {
+			return;
+		}
+		saveProgress("higherLower", lid, {
+			categoryKey: category.key,
+			poolPids: pool.map((p) => p.pid),
+			leftPid: left.pid,
+			rightPid: right.pid,
+			streak,
+			lives,
+			score,
+			closest,
+			gameOver,
+			guessedHigher,
+			wasCorrect,
+			revealNum,
+		} satisfies SavedRun);
+	}, [
+		lid,
+		category,
+		pool,
+		left,
+		right,
+		streak,
+		lives,
+		score,
+		closest,
+		gameOver,
+		phase,
+		guessedHigher,
+		wasCorrect,
+		revealNum,
+	]);
 
 	const valueOf = (p: HLPlayer): number => p.values[category!.key] as number;
 
@@ -216,6 +318,17 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 			setCards((prev) => (prev[pid] ? prev : { ...prev, [pid]: card }));
 		}
 	};
+
+	// Faces for a resumed pair - they're normally fetched as each player is
+	// dealt, so a restored run would come back with empty frames.
+	useEffect(() => {
+		if (seed) {
+			void rememberCard(seed.left.pid);
+			void rememberCard(seed.right.pid);
+		}
+		// Once, on mount.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	const startGame = (cat: Category) => {
 		const eligible = players.filter(
@@ -460,7 +573,10 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 				</div>
 				<button
 					className="btn btn-sm btn-light-bordered ms-auto"
-					onClick={() => setCategory(undefined)}
+					onClick={() => {
+						clearProgress("higherLower");
+						setCategory(undefined);
+					}}
 				>
 					Change category
 				</button>

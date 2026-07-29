@@ -1,5 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { View } from "../../common/types.ts";
+import { useLocal } from "../util/local.ts";
+import {
+	clearProgress,
+	loadProgress,
+	saveProgress,
+} from "../util/triviaProgress.ts";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
@@ -82,18 +88,84 @@ const hashString = (value: string) => {
 const perGame = (total: number, gp: number) =>
 	gp > 0 ? (Math.round((10 * total) / gp) / 10).toFixed(1) : "0.0";
 
+// A draft in progress. The rolled matchup is stored but its player list is
+// not: that list is a pure function of (matchup, position, already-drafted),
+// so it's re-fetched on resume rather than written out on every pick.
+type SavedDraft = {
+	mode: Mode;
+	picks: Pick[];
+	matchup?: EightyTwoZeroMatchup;
+	rerollsLeft: number;
+	result?: EightyTwoZeroResult;
+};
+
 const Trivia82 = ({ data, season }: View<"trivia82">) => {
 	useTitleBar({ title: "82-0" });
 
-	const [mode, setMode] = useState<Mode | undefined>();
-	const [picks, setPicks] = useState<Pick[]>([]);
-	const [matchup, setMatchup] = useState<EightyTwoZeroMatchup | undefined>();
+	const { lid } = useLocal(["lid"]);
+	const [restored] = useState(() =>
+		loadProgress<SavedDraft>("eightyTwoZero", lid),
+	);
+
+	const [mode, setMode] = useState<Mode | undefined>(() => restored?.mode);
+	const [picks, setPicks] = useState<Pick[]>(() => restored?.picks ?? []);
+	const [matchup, setMatchup] = useState<EightyTwoZeroMatchup | undefined>(
+		() => restored?.matchup,
+	);
 	const [options, setOptions] = useState<EightyTwoZeroOption[] | undefined>();
-	const [rerollsLeft, setRerollsLeft] = useState(REROLLS);
+	const [rerollsLeft, setRerollsLeft] = useState(
+		() => restored?.rerollsLeft ?? REROLLS,
+	);
 	const [rolling, setRolling] = useState(false);
 	const [simulating, setSimulating] = useState(false);
-	const [result, setResult] = useState<EightyTwoZeroResult | undefined>();
+	const [result, setResult] = useState<EightyTwoZeroResult | undefined>(
+		() => restored?.result,
+	);
 	const [error, setError] = useState<string | undefined>();
+
+	// Re-deal the round that was on screen. Cheap, and it keeps the saved blob
+	// to five picks and a matchup instead of a player list per round. Written
+	// out longhand rather than through loadOptions because hooks have to run
+	// above the "no league history" early return.
+	useEffect(() => {
+		const m = restored?.matchup;
+		const pos = POSITIONS[restored?.picks.length ?? 0];
+		if (!m || restored?.result || !pos) {
+			return;
+		}
+		let stale = false;
+		void (async () => {
+			const rows = await toWorker("main", "trivia82Options", {
+				tid: m.tid,
+				eraStart: m.eraStart,
+				position: pos,
+				excludePids: (restored?.picks ?? []).map((pick) => pick.option.pid),
+			});
+			if (!stale) {
+				setOptions(rows);
+			}
+		})();
+		return () => {
+			stale = true;
+		};
+		// Once, on mount.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	// Persist after every roll, pick and sim.
+	useEffect(() => {
+		if (mode === undefined) {
+			clearProgress("eightyTwoZero");
+			return;
+		}
+		saveProgress("eightyTwoZero", lid, {
+			mode,
+			picks,
+			matchup,
+			rerollsLeft,
+			result,
+		} satisfies SavedDraft);
+	}, [lid, mode, picks, matchup, rerollsLeft, result]);
 
 	if (!data) {
 		return (

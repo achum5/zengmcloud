@@ -23,6 +23,7 @@ import {
 	type TriviaReplay,
 } from "../util/triviaHistory.ts";
 import { shareHistory } from "../util/triviaHistorySync.ts";
+import { loadProgress, saveProgress } from "../util/triviaProgress.ts";
 import { Confetti } from "./LiveGame/Confetti.tsx";
 import { DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
 import type { View } from "../../common/types.ts";
@@ -98,6 +99,21 @@ const gradeFor = (pct: number): { letter: string; color: string } => {
 		return { letter: "D", color: "text-danger" };
 	}
 	return { letter: "F", color: "text-danger" };
+};
+
+// A quiz in progress, as it survives a reload. Only the team-season is stored,
+// not the roster: (season, tid) names exactly one candidate, so the round is
+// rebuilt identically from two numbers rather than a payload.
+type SavedTeam = {
+	season: number;
+	tid: number;
+	phase: Phase;
+	revealed: number[];
+	score: number;
+	leaderResult: Record<number, { pickedPid: number; correct: boolean }>;
+	winsGuess: number;
+	winsResult?: boolean;
+	playoffPick?: number;
 };
 
 const SETTINGS_KEY = "triviaTeamSettings";
@@ -291,13 +307,27 @@ const SettingsModal = ({
 const TriviaTeam = (props: View<"triviaTeam">) => {
 	useTitleBar({ title: "Team Trivia" });
 
-	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+	const { teamInfoCache, lid } = useLocal(["teamInfoCache", "lid"]);
+
+	// An unfinished quiz from a previous visit. Read before any state exists so
+	// it seeds the initial values rather than racing the random round the view
+	// always loads.
+	const [restored] = useState(() => loadProgress<SavedTeam>("team", lid));
+	const needsRound =
+		restored !== undefined &&
+		(restored.season !== props.round?.season ||
+			restored.tid !== props.round?.team.tid);
 
 	const [round, setRound] = useState(props.round);
+	// The random round the view loaded is the wrong team; hold the page until
+	// the saved one arrives rather than flashing someone else's logo.
+	const [restoring, setRestoring] = useState(needsRound);
 	const [catalog, setCatalog] = useState(props.catalog);
-	const [phase, setPhase] = useState<Phase>("guess");
-	const [revealed, setRevealed] = useState<Set<number>>(new Set());
-	const [score, setScore] = useState(0);
+	const [phase, setPhase] = useState<Phase>(() => restored?.phase ?? "guess");
+	const [revealed, setRevealed] = useState<Set<number>>(
+		() => new Set(restored?.revealed ?? []),
+	);
+	const [score, setScore] = useState(() => restored?.score ?? 0);
 	const [lastGain, setLastGain] = useState<
 		{ key: number; amount: number } | undefined
 	>();
@@ -305,10 +335,14 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 	const [miss, setMiss] = useState<string | undefined>();
 	const [leaderResult, setLeaderResult] = useState<
 		Record<number, { pickedPid: number; correct: boolean }>
-	>({});
-	const [winsGuess, setWinsGuess] = useState(0);
-	const [winsResult, setWinsResult] = useState<boolean | undefined>();
-	const [playoffPick, setPlayoffPick] = useState<number | undefined>();
+	>(() => restored?.leaderResult ?? {});
+	const [winsGuess, setWinsGuess] = useState(() => restored?.winsGuess ?? 0);
+	const [winsResult, setWinsResult] = useState<boolean | undefined>(
+		() => restored?.winsResult,
+	);
+	const [playoffPick, setPlayoffPick] = useState<number | undefined>(
+		() => restored?.playoffPick,
+	);
 	const [loadingNew, setLoadingNew] = useState(false);
 	const [cards, setCards] = useState<Record<number, TriviaPlayerCard>>({});
 	const [settings, setSettings] = useState<Settings>(loadSettings);
@@ -329,6 +363,68 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 			localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
 		} catch {}
 	};
+
+	// Fetch the saved team-season. (season, tid) narrows to exactly one
+	// candidate, so this rebuilds the identical round.
+	useEffect(() => {
+		if (!restoring || !restored) {
+			return;
+		}
+		let stale = false;
+		// Awaited rather than chained: toWorker's declared return nests one
+		// promise deeper than it resolves, so `.then` hands back a Promise-typed
+		// value while `await` collapses it.
+		void (async () => {
+			try {
+				const fresh = await toWorker("main", "triviaNewTeamRound", {
+					season: restored.season,
+					tid: restored.tid,
+				});
+				if (!stale && fresh) {
+					setRound(fresh);
+				}
+			} finally {
+				if (!stale) {
+					setRestoring(false);
+				}
+			}
+		})();
+		return () => {
+			stale = true;
+		};
+		// Once, on mount - `restored` never changes.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	// Persist on every move, so a reload or a trip to another page comes back to
+	// the same quiz at the same stage.
+	useEffect(() => {
+		if (!round || restoring) {
+			return;
+		}
+		saveProgress("team", lid, {
+			season: round.season,
+			tid: round.team.tid,
+			phase,
+			revealed: [...revealed],
+			score,
+			leaderResult,
+			winsGuess,
+			winsResult,
+			playoffPick,
+		} satisfies SavedTeam);
+	}, [
+		round,
+		restoring,
+		lid,
+		phase,
+		revealed,
+		score,
+		leaderResult,
+		winsGuess,
+		winsResult,
+		playoffPick,
+	]);
 
 	// Faces for the whole roster in one call, dressed in this team's colors.
 	useEffect(() => {
@@ -383,7 +479,7 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 	};
 
 	// Record the finished game exactly once, when the results stage is reached.
-	const recordedRef = useRef(false);
+	const recordedRef = useRef(restored?.phase === "done");
 	useEffect(() => {
 		if (phase !== "done") {
 			recordedRef.current = false;
@@ -453,6 +549,10 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 			}))
 			.sort((a, b) => a.label.localeCompare(b.label));
 	}, [catalog, round, teamInfoCache]);
+
+	if (restoring) {
+		return <p className="text-body-secondary">Loading</p>;
+	}
 
 	if (!round) {
 		return (
