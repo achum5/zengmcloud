@@ -194,6 +194,7 @@ import {
 	buildCustomGrid,
 	generateTriviaGrid,
 	getGridCatalog,
+	getTriviaFaces,
 	getTriviaPlayerCard,
 	type GridCriterionRef,
 } from "../core/trivia/grid.ts";
@@ -203,7 +204,11 @@ import {
 	type EightyTwoZeroPosition,
 } from "../core/trivia/eightyTwoZero.ts";
 import { simulateEightyTwoZeroSeason } from "../core/trivia/eightyTwoZeroSim.ts";
-import { generateTeamTriviaRound } from "../core/trivia/teamTrivia.ts";
+import {
+	generateTeamTriviaRound,
+	getTeamTriviaCatalog,
+	type TeamTriviaOptions,
+} from "../core/trivia/teamTrivia.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
 import { beforeLeague, beforeNonLeague } from "../util/beforeView.ts";
@@ -2632,8 +2637,18 @@ const triviaPlayerCard = async ({
 	return getTriviaPlayerCard(pid, tid);
 };
 
-const triviaNewTeamRound = async () => {
-	return generateTeamTriviaRound();
+const triviaNewTeamRound = async (options: TeamTriviaOptions | undefined) => {
+	return generateTeamTriviaRound(options ?? {});
+};
+
+// The quizzable team-seasons, for the season and team dropdowns. Fetched once
+// per visit and cached in the UI - it only moves when a season finishes.
+const triviaTeamCatalog = async () => {
+	return getTeamTriviaCatalog();
+};
+
+const triviaFaces = async ({ pids }: { pids: number[] }) => {
+	return getTriviaFaces(pids);
 };
 
 // Catch-up settlement, called when the Sportsbook page loads. A REAL captured
@@ -6537,7 +6552,9 @@ export default {
 		triviaGridCatalog,
 		triviaCustomGrid,
 		triviaPlayerCard,
+		triviaFaces,
 		triviaNewTeamRound,
+		triviaTeamCatalog,
 		getPlayerWatch,
 		getProjectedAttendance,
 		getRandomCollege,

@@ -1,18 +1,40 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
 import { useCountUp } from "../util/useCountUp.ts";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
+import { PlayerPicture } from "../components/PlayerPicture.tsx";
+import { Modal } from "../components/Modal.tsx";
 import TriviaPlayerSelect, {
 	type TriviaSearchPlayer,
 } from "../components/TriviaPlayerSelect.tsx";
+import { TriviaHistoryModal } from "../components/TriviaHistoryModal.tsx";
+import {
+	primeTriviaFaces,
+	type TriviaPlayerCard,
+} from "../util/triviaPlayerCards.ts";
+import {
+	addHistoryEntry,
+	loadHistory,
+	summarize,
+	type TriviaHistoryEntry,
+} from "../util/triviaHistory.ts";
 import { Confetti } from "./LiveGame/Confetti.tsx";
 import type { View } from "../../common/types.ts";
 
-// Team Trivia: a random team-season - name the roster (bonus points without
-// hints), pick the team's stat leaders, guess the win total, and how their
-// season ended. Flows through staged rounds with a graded finale.
+// Team Trivia: pick a team-season - or take a random one - and name the roster
+// off a grid of face cards, then pick the stat leaders, guess the win total,
+// and call how the season ended.
+//
+// The naming round is the game: every card shows the position and jersey number
+// its player wore, and nothing else, so you are recognising a squad rather than
+// reading a list. Names are never in the DOM until they're earned - a redacted
+// bar stands in - because a blurred name is still a name to anyone who selects
+// the page.
+
+type Round = NonNullable<View<"triviaTeam">["round"]>;
+type Catalog = NonNullable<View<"triviaTeam">["catalog"]>;
 
 const LEADER_STATS = [
 	["pts", "points", "ppg", "PPG"],
@@ -74,6 +96,40 @@ const gradeFor = (pct: number): { letter: string; color: string } => {
 	return { letter: "F", color: "text-danger" };
 };
 
+const SETTINGS_KEY = "triviaTeamSettings";
+
+type Settings = {
+	minSeason?: number;
+	maxSeason?: number;
+	// Restrict random draws to one franchise.
+	tid?: number;
+};
+
+const loadSettings = (): Settings => {
+	try {
+		const raw = localStorage.getItem(SETTINGS_KEY);
+		if (raw) {
+			const s = JSON.parse(raw);
+			return {
+				minSeason: typeof s.minSeason === "number" ? s.minSeason : undefined,
+				maxSeason: typeof s.maxSeason === "number" ? s.maxSeason : undefined,
+				tid: typeof s.tid === "number" ? s.tid : undefined,
+			};
+		}
+	} catch {}
+	return {};
+};
+
+// A name stands in as one block per word, roughly as wide as the word it hides.
+// It gives the same "there is a name here, about this long" cue a blur does
+// without putting the answer on the page.
+const redact = (name: string) =>
+	name
+		.split(" ")
+		.filter(Boolean)
+		.map((w) => "█".repeat(Math.max(2, Math.min(9, w.length))))
+		.join(" ");
+
 // Counts up the actual win total when it's revealed.
 const WinsReveal = ({
 	actual,
@@ -90,18 +146,159 @@ const WinsReveal = ({
 	);
 };
 
+// Year range + team filter for random draws. A modal rather than a popover: it
+// has to work the same on a phone, where a popover anchored to a toolbar button
+// has nowhere to go.
+const SettingsModal = ({
+	show,
+	onHide,
+	catalog,
+	settings,
+	onChange,
+}: {
+	show: boolean;
+	onHide: () => void;
+	catalog: Catalog | undefined;
+	settings: Settings;
+	onChange: (settings: Settings) => void;
+}) => {
+	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+	const min = catalog?.minSeason ?? 0;
+	const max = catalog?.maxSeason ?? 0;
+	const from = settings.minSeason ?? min;
+	const to = settings.maxSeason ?? max;
+
+	// Dragging one handle past the other pushes the other along rather than
+	// producing an empty range.
+	const setFrom = (value: number) => {
+		const next = Math.max(min, Math.min(max, value));
+		onChange({ ...settings, minSeason: next, maxSeason: Math.max(next, to) });
+	};
+	const setTo = (value: number) => {
+		const next = Math.max(min, Math.min(max, value));
+		onChange({ ...settings, maxSeason: next, minSeason: Math.min(next, from) });
+	};
+
+	const teamOptions = useMemo(() => {
+		const tids = new Set<number>();
+		for (const c of catalog?.candidates ?? []) {
+			tids.add(c.tid);
+		}
+		return [...tids]
+			.map((tid) => ({
+				tid,
+				label:
+					`${teamInfoCache[tid]?.region ?? ""} ${teamInfoCache[tid]?.name ?? tid}`.trim(),
+			}))
+			.sort((a, b) => a.label.localeCompare(b.label));
+	}, [catalog, teamInfoCache]);
+
+	return (
+		<Modal show={show} onHide={onHide}>
+			<Modal.Header closeButton>
+				<Modal.Title className="fs-5">Random game settings</Modal.Title>
+			</Modal.Header>
+			<Modal.Body>
+				<div className="fw-bold">Year range</div>
+				<div className="text-body-secondary small mb-2">
+					Which seasons a random team-season is drawn from
+				</div>
+				<div className="d-flex gap-3 mb-2">
+					<label className="flex-grow-1">
+						<span className="small text-body-secondary">From</span>
+						<input
+							className="form-control"
+							type="number"
+							min={min}
+							max={max}
+							value={from}
+							onChange={(event) => setFrom(Number(event.target.value))}
+						/>
+					</label>
+					<label className="flex-grow-1">
+						<span className="small text-body-secondary">To</span>
+						<input
+							className="form-control"
+							type="number"
+							min={min}
+							max={max}
+							value={to}
+							onChange={(event) => setTo(Number(event.target.value))}
+						/>
+					</label>
+				</div>
+				<input
+					className="form-range"
+					type="range"
+					min={min}
+					max={max}
+					value={from}
+					aria-label="Earliest season"
+					onChange={(event) => setFrom(Number(event.target.value))}
+				/>
+				<input
+					className="form-range"
+					type="range"
+					min={min}
+					max={max}
+					value={to}
+					aria-label="Latest season"
+					onChange={(event) => setTo(Number(event.target.value))}
+				/>
+
+				<hr />
+
+				<div className="fw-bold">Team filter</div>
+				<div className="text-body-secondary small mb-2">
+					Draw random games from one team only
+				</div>
+				<select
+					className="form-select"
+					value={settings.tid === undefined ? "" : String(settings.tid)}
+					onChange={(event) =>
+						onChange({
+							...settings,
+							tid:
+								event.target.value === ""
+									? undefined
+									: Number(event.target.value),
+						})
+					}
+				>
+					<option value="">All teams</option>
+					{teamOptions.map((t) => (
+						<option key={t.tid} value={t.tid}>
+							{t.label}
+						</option>
+					))}
+				</select>
+
+				<button
+					className="btn btn-light-bordered mt-3"
+					onClick={() => onChange({})}
+				>
+					Reset
+				</button>
+			</Modal.Body>
+		</Modal>
+	);
+};
+
 const TriviaTeam = (props: View<"triviaTeam">) => {
 	useTitleBar({ title: "Team Trivia" });
 
 	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 
 	const [round, setRound] = useState(props.round);
+	const [catalog, setCatalog] = useState(props.catalog);
 	const [phase, setPhase] = useState<Phase>("guess");
 	const [revealed, setRevealed] = useState<Set<number>>(new Set());
 	const [score, setScore] = useState(0);
 	const [lastGain, setLastGain] = useState<
 		{ key: number; amount: number } | undefined
 	>();
+	const [missKey, setMissKey] = useState(0);
+	const [miss, setMiss] = useState<string | undefined>();
 	const [leaderResult, setLeaderResult] = useState<
 		Record<number, { pickedPid: number; correct: boolean }>
 	>({});
@@ -109,31 +306,148 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 	const [winsResult, setWinsResult] = useState<boolean | undefined>();
 	const [playoffPick, setPlayoffPick] = useState<number | undefined>();
 	const [loadingNew, setLoadingNew] = useState(false);
+	const [cards, setCards] = useState<Record<number, TriviaPlayerCard>>({});
+	const [settings, setSettings] = useState<Settings>(loadSettings);
+	const [showSettings, setShowSettings] = useState(false);
+	const [showHistory, setShowHistory] = useState(false);
+	const [history, setHistory] = useState<TriviaHistoryEntry[]>(() =>
+		loadHistory("team"),
+	);
 
 	const gain = (amount: number) => {
 		setScore((s) => s + amount);
 		setLastGain((prev) => ({ key: (prev?.key ?? 0) + 1, amount }));
 	};
 
-	const newRound = async () => {
+	const saveSettings = (next: Settings) => {
+		setSettings(next);
+		try {
+			localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+		} catch {}
+	};
+
+	// Faces for the whole roster in one call, dressed in this team's colors.
+	useEffect(() => {
+		if (!round) {
+			return;
+		}
+		let stale = false;
+		setCards({});
+		void primeTriviaFaces(
+			round.roster.map((p) => p.pid),
+			round.team,
+		).then((next) => {
+			if (!stale) {
+				setCards(next);
+			}
+		});
+		return () => {
+			stale = true;
+		};
+	}, [round]);
+
+	const startRound = (fresh: Round) => {
+		setRound(fresh);
+		setPhase("guess");
+		setRevealed(new Set());
+		setScore(0);
+		setLastGain(undefined);
+		setMiss(undefined);
+		setLeaderResult({});
+		setWinsGuess(Math.floor(fresh.wins.games / 2));
+		setWinsResult(undefined);
+		setPlayoffPick(undefined);
+	};
+
+	const newRound = async (
+		overrides: { season?: number; tid?: number } = {},
+	) => {
 		setLoadingNew(true);
 		try {
-			const fresh = await toWorker("main", "triviaNewTeamRound", undefined);
+			const fresh = await toWorker("main", "triviaNewTeamRound", {
+				minSeason: settings.minSeason,
+				maxSeason: settings.maxSeason,
+				tid: settings.tid,
+				...overrides,
+			});
 			if (fresh) {
-				setRound(fresh);
-				setPhase("guess");
-				setRevealed(new Set());
-				setScore(0);
-				setLastGain(undefined);
-				setLeaderResult({});
-				setWinsGuess(Math.floor(fresh.wins.games / 2));
-				setWinsResult(undefined);
-				setPlayoffPick(undefined);
+				startRound(fresh);
 			}
 		} finally {
 			setLoadingNew(false);
 		}
 	};
+
+	// Record the finished game exactly once, when the results stage is reached.
+	const recordedRef = useRef(false);
+	useEffect(() => {
+		if (phase !== "done") {
+			recordedRef.current = false;
+			return;
+		}
+		if (recordedRef.current || !round) {
+			return;
+		}
+		recordedRef.current = true;
+		const max =
+			15 * round.roster.length +
+			10 * LEADER_STATS.length +
+			10 +
+			(round.playoffs ? 10 : 0);
+		setHistory(
+			addHistoryEntry("team", {
+				score,
+				label: `${round.season} ${round.team.label}`,
+				detail: `${revealed.size}/${round.roster.length} named · Grade ${gradeFor(score / max).letter}`,
+				tid: round.team.tid,
+				season: round.season,
+				colors: round.team.colors,
+				progress: { done: revealed.size, total: round.roster.length },
+			}),
+		);
+	}, [phase, round, score, revealed]);
+
+	// The catalog only arrives with the first view render; if that failed (an
+	// empty league at load), fetch it once the player asks for anything.
+	const ensureCatalog = async () => {
+		if (catalog) {
+			return;
+		}
+		const c = await toWorker("main", "triviaTeamCatalog", undefined);
+		if (c) {
+			setCatalog(c);
+		}
+	};
+
+	// Which seasons THIS team can be quizzed on, and which teams existed in THIS
+	// season - so neither dropdown can offer a combination that doesn't exist.
+	// Both are keyed off what's on screen rather than off the settings filter:
+	// the dropdowns change the current game, the filter only shapes random draws.
+	const seasonOptions = useMemo(() => {
+		const seasons = new Set<number>();
+		for (const c of catalog?.candidates ?? []) {
+			if (round === undefined || c.tid === round.team.tid) {
+				seasons.add(c.season);
+			}
+		}
+		return [...seasons].sort((a, b) => b - a);
+	}, [catalog, round]);
+
+	const teamOptionsForSeason = useMemo(() => {
+		const tids = new Set<number>();
+		for (const c of catalog?.candidates ?? []) {
+			if (round === undefined || c.season === round.season) {
+				tids.add(c.tid);
+			}
+		}
+		return [...tids]
+			.map((tid) => ({
+				tid,
+				label:
+					`${teamInfoCache[tid]?.region ?? ""} ${teamInfoCache[tid]?.name ?? tid}`.trim(),
+			}))
+			.sort((a, b) => a.label.localeCompare(b.label));
+	}, [catalog, round, teamInfoCache]);
 
 	if (!round) {
 		return (
@@ -145,7 +459,7 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 				<button
 					className="btn btn-primary"
 					disabled={loadingNew}
-					onClick={newRound}
+					onClick={() => newRound()}
 				>
 					Try again
 				</button>
@@ -155,11 +469,8 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 
 	const t = teamInfoCache[round.team.tid];
 	const inLeaderPhase = typeof phase === "object";
-	const rosterVisible =
-		inLeaderPhase ||
-		phase === "wins" ||
-		phase === "playoffs" ||
-		phase === "done";
+	const namingRound = phase === "guess" || phase === "hint";
+	const rosterVisible = !namingRound;
 	const stageIndex = stageIndexOf(phase);
 	const stages = round.playoffs
 		? STAGES
@@ -168,8 +479,13 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 	const handleNameGuess = (p: TriviaSearchPlayer) => {
 		const hit = round.roster.find((r) => r.pid === p.pid);
 		if (!hit || revealed.has(hit.pid)) {
+			// Naming someone who never played here is the interesting kind of wrong
+			// - say so, rather than swallowing the guess.
+			setMiss(p.name);
+			setMissKey((k) => k + 1);
 			return;
 		}
+		setMiss(undefined);
 		setRevealed((prev) => new Set(prev).add(hit.pid));
 		gain(phase === "guess" ? 15 : 10);
 	};
@@ -229,105 +545,171 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 	).length;
 	const grade = gradeFor(score / maxScore);
 
-	const rosterTable = (
-		<div className="table-responsive">
-			<table
-				className="table table-striped table-borderless table-sm align-middle mb-3"
-				style={{ maxWidth: 640 }}
-			>
-				<thead>
-					<tr>
-						<th>Player</th>
-						<th>Pos</th>
-						<th className="text-end">Age</th>
-						<th className="text-end">GP</th>
-						<th className="text-end">PPG</th>
-						<th className="text-end">RPG</th>
-						<th className="text-end">APG</th>
-					</tr>
-				</thead>
-				<tbody>
-					{round.roster.map((p) => {
-						const shown = rosterVisible || revealed.has(p.pid);
-						const showHints = phase !== "guess" || revealed.has(p.pid);
-						const clickable =
-							inLeaderPhase &&
-							!leaderResult[(phase as { leader: number }).leader];
-						const leaderIndex = inLeaderPhase
-							? (phase as { leader: number }).leader
-							: undefined;
-						const result =
-							leaderIndex !== undefined ? leaderResult[leaderIndex] : undefined;
-						const isAnswer =
-							leaderIndex !== undefined &&
-							result !== undefined &&
-							round.leaders[LEADER_STATS[leaderIndex]![0]] === p.pid;
-						const isPicked = result?.pickedPid === p.pid;
-						return (
-							<tr
-								key={p.pid}
-								className={
-									isAnswer
-										? "table-success"
-										: isPicked && !result.correct
-											? "table-danger"
-											: revealed.has(p.pid) && !rosterVisible
-												? "table-success"
-												: undefined
-								}
-								style={clickable ? { cursor: "pointer" } : undefined}
-								onClick={
-									clickable && leaderIndex !== undefined
-										? () => handleLeaderPick(leaderIndex, p.pid)
-										: undefined
-								}
-							>
-								<td>
-									{shown ? (
-										<span
-											className={
-												revealed.has(p.pid) && !rosterVisible
-													? "d-inline-block trivia-pop"
-													: undefined
-											}
-										>
-											{p.jerseyNumber !== undefined ? (
-												<span className="text-body-secondary me-1">
-													#{p.jerseyNumber}
-												</span>
-											) : null}
-											{p.name}
-											{rosterVisible && !revealed.has(p.pid) ? (
-												<span
-													className="text-body-secondary small ms-1"
-													title="Not named"
-												>
-													·
-												</span>
-											) : null}
-										</span>
-									) : (
-										<span className="text-body-secondary">— hidden —</span>
-									)}
-								</td>
-								<td>{showHints ? p.pos : "?"}</td>
-								<td className="text-end">{showHints ? p.age : "?"}</td>
-								<td className="text-end">{showHints ? p.gp : "?"}</td>
-								<td className="text-end">{showHints ? p.ppg : "?"}</td>
-								<td className="text-end">{showHints ? p.rpg : "?"}</td>
-								<td className="text-end">{showHints ? p.apg : "?"}</td>
-							</tr>
-						);
-					})}
-				</tbody>
-			</table>
+	const leaderIndex = inLeaderPhase
+		? (phase as { leader: number }).leader
+		: undefined;
+	const leaderAnswered =
+		leaderIndex !== undefined && leaderResult[leaderIndex] !== undefined;
+
+	const summary = summarize(history);
+
+	const cardGrid = (
+		<div className="trivia-roster-grid mb-3">
+			{round.roster.map((p) => {
+				const shown = rosterVisible || revealed.has(p.pid);
+				const justNamed = revealed.has(p.pid) && namingRound;
+				const showStats =
+					!namingRound || phase === "hint" || revealed.has(p.pid);
+				const result =
+					leaderIndex === undefined ? undefined : leaderResult[leaderIndex];
+				const isAnswer =
+					leaderIndex !== undefined &&
+					result !== undefined &&
+					round.leaders[LEADER_STATS[leaderIndex]![0]] === p.pid;
+				const isPickedWrong =
+					result !== undefined && result.pickedPid === p.pid && !result.correct;
+				const clickable = inLeaderPhase && !leaderAnswered;
+				const card = cards[p.pid];
+				return (
+					<button
+						key={p.pid}
+						type="button"
+						disabled={!clickable}
+						className={`trivia-roster-card ${justNamed ? "is-named trivia-pop" : ""} ${
+							isAnswer ? "is-answer" : ""
+						} ${isPickedWrong ? "is-wrong trivia-shake" : ""} ${
+							clickable ? "is-clickable" : ""
+						}`}
+						onClick={
+							clickable && leaderIndex !== undefined
+								? () => handleLeaderPick(leaderIndex, p.pid)
+								: undefined
+						}
+					>
+						<span className="trivia-roster-pos">{p.pos}</span>
+						{p.jerseyNumber !== undefined ? (
+							<span className="trivia-roster-jersey">{p.jerseyNumber}</span>
+						) : null}
+						<span className="trivia-roster-face">
+							{card ? (
+								<PlayerPicture
+									face={card.face}
+									imgURL={card.imgURL}
+									colors={card.colors}
+									jersey={card.jersey}
+									lazy
+								/>
+							) : null}
+						</span>
+						<span
+							className={`trivia-roster-name ${shown ? "" : "is-hidden"}`}
+							aria-label={shown ? undefined : "Not named yet"}
+						>
+							{shown ? p.name : redact(p.name)}
+						</span>
+						{showStats ? (
+							<span className="trivia-roster-stats">
+								{p.gp} GP · {p.ppg}/{p.rpg}/{p.apg}
+							</span>
+						) : null}
+					</button>
+				);
+			})}
 		</div>
 	);
 
 	return (
 		<>
+			{/* Toolbar: what you're playing, and how to change it */}
+			<div className="trivia-toolbar mb-3">
+				<button
+					className="btn btn-sm btn-light-bordered"
+					title="Random game settings"
+					onClick={() => {
+						void ensureCatalog();
+						setShowSettings(true);
+					}}
+				>
+					⚙
+				</button>
+				<button
+					className="btn btn-sm btn-light-bordered"
+					disabled={loadingNew}
+					title="Random team-season"
+					onClick={() => newRound()}
+				>
+					🔀 Shuffle
+				</button>
+				<select
+					className="form-select form-select-sm w-auto"
+					title="Season"
+					disabled={loadingNew || seasonOptions.length === 0}
+					value={String(round.season)}
+					onChange={(event) => {
+						void newRound({
+							season: Number(event.target.value),
+							tid: round.team.tid,
+						});
+					}}
+				>
+					{seasonOptions.includes(round.season) ? null : (
+						<option value={String(round.season)}>{round.season}</option>
+					)}
+					{seasonOptions.map((s) => (
+						<option key={s} value={s}>
+							{s}
+						</option>
+					))}
+				</select>
+				<TeamLogoInline
+					imgURL={t?.imgURL}
+					imgURLSmall={t?.imgURLSmall}
+					size={28}
+					includePlaceholderIfNoLogo
+				/>
+				<select
+					className="form-select form-select-sm w-auto"
+					title="Team"
+					disabled={loadingNew || teamOptionsForSeason.length === 0}
+					value={String(round.team.tid)}
+					onChange={(event) => {
+						void newRound({
+							season: round.season,
+							tid: Number(event.target.value),
+						});
+					}}
+				>
+					{teamOptionsForSeason.some((o) => o.tid === round.team.tid) ? null : (
+						<option value={String(round.team.tid)}>{round.team.label}</option>
+					)}
+					{teamOptionsForSeason.map((o) => (
+						<option key={o.tid} value={o.tid}>
+							{o.label}
+						</option>
+					))}
+				</select>
+				<button
+					className="btn btn-sm btn-light-bordered"
+					title="Game history"
+					onClick={() => setShowHistory(true)}
+				>
+					🕘
+				</button>
+				<div className="trivia-toolbar-score ms-auto position-relative">
+					Score: <span className="fw-bold">{score}</span>
+					{lastGain ? (
+						<span
+							key={lastGain.key}
+							className="badge text-bg-success position-absolute top-0 start-100 translate-middle trivia-rise"
+						>
+							+{lastGain.amount}
+						</span>
+					) : null}
+				</div>
+			</div>
+
 			{/* Hero header */}
-			<div className="d-flex flex-wrap align-items-center gap-3 mb-2">
+			<div className="d-flex flex-wrap align-items-center gap-3 mb-3">
 				<TeamLogoInline
 					imgURL={t?.imgURL}
 					imgURLSmall={t?.imgURLSmall}
@@ -342,27 +724,17 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 						How well do you know this team?
 					</div>
 				</div>
-				<div className="d-flex align-items-center gap-2 ms-auto">
-					<div className="trivia-tile position-relative">
-						<div className="trivia-tile-value">{score}</div>
-						<div className="trivia-tile-label">Score</div>
-						{lastGain ? (
-							<span
-								key={lastGain.key}
-								className="badge text-bg-success position-absolute top-0 start-100 translate-middle trivia-rise"
-							>
-								+{lastGain.amount}
-							</span>
-						) : null}
-					</div>
+				{namingRound ? (
 					<button
-						className="btn btn-sm btn-primary"
-						disabled={loadingNew}
-						onClick={newRound}
+						className="btn btn-sm btn-light-bordered ms-auto"
+						onClick={() => {
+							setPhase({ leader: 0 });
+						}}
+						title="Reveal the roster and move on"
 					>
-						{loadingNew ? "Loading…" : "New team"}
+						🏳 Give up
 					</button>
-				</div>
+				) : null}
 			</div>
 
 			{/* Stage rail */}
@@ -383,70 +755,45 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 				})}
 			</div>
 
-			{phase === "guess" || phase === "hint" ? (
-				<>
-					<div
-						className="d-flex align-items-center gap-2 mb-2"
-						style={{ maxWidth: 480 }}
-					>
-						<div className="progress flex-grow-1" style={{ height: 8 }}>
-							<div
-								className="progress-bar bg-success"
-								style={{
-									width: `${(revealed.size / round.roster.length) * 100}%`,
-								}}
-							/>
-						</div>
-						<span className="small text-body-secondary">
-							{revealed.size}/{round.roster.length}
-						</span>
-					</div>
-					<p className="mb-2">
-						Name this roster —{" "}
-						{phase === "guess" ? (
-							<span className="fw-bold">15 points each</span>
-						) : (
-							<span>
-								with hints, <span className="fw-bold">10 points each</span>
-							</span>
-						)}
-					</p>
-					<div className="mb-2" style={{ maxWidth: 480 }}>
-						<TriviaPlayerSelect
-							players={round.searchList.filter((p) => !revealed.has(p.pid))}
-							onSelect={handleNameGuess}
+			{namingRound ? (
+				<div className="d-flex align-items-center gap-2 mb-3">
+					<div className="progress flex-grow-1" style={{ height: 8 }}>
+						<div
+							className="progress-bar bg-success"
+							style={{
+								width: `${(revealed.size / round.roster.length) * 100}%`,
+							}}
 						/>
 					</div>
-					<div className="d-flex gap-2 mb-3">
-						{phase === "guess" ? (
-							<button
-								className="btn btn-light-bordered"
-								onClick={() => setPhase("hint")}
-							>
-								Show hints (10 pts each)
-							</button>
-						) : null}
+					<span className="small text-body-secondary">
+						{revealed.size}/{round.roster.length}
+					</span>
+					{phase === "guess" ? (
 						<button
-							className="btn btn-light-bordered"
-							onClick={() => setPhase({ leader: 0 })}
+							className="btn btn-sm btn-light-bordered"
+							onClick={() => setPhase("hint")}
 						>
-							Continue to stat leaders
+							Show hints
 						</button>
-					</div>
-				</>
+					) : null}
+					<button
+						className="btn btn-sm btn-primary"
+						onClick={() => setPhase({ leader: 0 })}
+					>
+						Continue
+					</button>
+				</div>
 			) : null}
 
-			{inLeaderPhase ? (
-				<div className="mb-2">
-					{(() => {
-						const leaderIndex = (phase as { leader: number }).leader;
+			{inLeaderPhase && leaderIndex !== undefined
+				? (() => {
 						const [statKey, statName, perGameKey, perGameLabel] =
 							LEADER_STATS[leaderIndex]!;
 						const result = leaderResult[leaderIndex];
 						const leaderPid = round.leaders[statKey];
 						const leader = round.roster.find((p) => p.pid === leaderPid);
 						return (
-							<>
+							<div className="mb-3">
 								<div className="d-flex flex-wrap align-items-center gap-2 mb-2">
 									{LEADER_STATS.map(([, name], i) => {
 										const r = leaderResult[i];
@@ -470,7 +817,7 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 									})}
 								</div>
 								<p className="fw-bold mb-2">
-									Who led the team in {statName}? Tap the player. (10 pts)
+									Who led the team in {statName}? Tap a card. (10 pts)
 								</p>
 								{result ? (
 									<div className="mb-2 trivia-rise">
@@ -498,11 +845,10 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 										</button>
 									</div>
 								) : null}
-							</>
+							</div>
 						);
-					})()}
-				</div>
-			) : null}
+					})()
+				: null}
 
 			{phase === "wins" ? (
 				<div className="mb-3" style={{ maxWidth: 480 }}>
@@ -612,11 +958,17 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 											: " · Missed the finish"
 										: ""}
 								</div>
+								{summary.played > 1 ? (
+									<div className="text-body-secondary small mt-1">
+										{summary.played} games played · best {summary.best} ·
+										average {summary.average}
+									</div>
+								) : null}
 							</div>
 							<button
 								className="btn btn-primary"
 								disabled={loadingNew}
-								onClick={newRound}
+								onClick={() => newRound()}
 							>
 								{loadingNew ? "Loading…" : "Play again"}
 							</button>
@@ -625,7 +977,45 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 				</>
 			) : null}
 
-			{rosterTable}
+			{cardGrid}
+
+			{/* The guess bar rides the bottom of the screen through the naming
+			    round, so it stays in reach however far down the grid you are. */}
+			{namingRound ? (
+				<div className="trivia-guess-bar">
+					{miss !== undefined ? (
+						<div
+							key={missKey}
+							className="text-danger small fw-bold mb-1 trivia-shake"
+						>
+							✗ {miss} — not on this team.
+						</div>
+					) : null}
+					<TriviaPlayerSelect
+						players={round.searchList.filter((p) => !revealed.has(p.pid))}
+						onSelect={handleNameGuess}
+						resultsAbove
+						submitTitle="Guess"
+						placeholder={`Guess a player correctly for ${phase === "guess" ? 15 : 10} points…`}
+					/>
+				</div>
+			) : null}
+
+			<SettingsModal
+				show={showSettings}
+				onHide={() => setShowSettings(false)}
+				catalog={catalog}
+				settings={settings}
+				onChange={saveSettings}
+			/>
+
+			<TriviaHistoryModal
+				game="team"
+				show={showHistory}
+				onHide={() => setShowHistory(false)}
+				entries={history}
+				onChange={setHistory}
+			/>
 		</>
 	);
 };

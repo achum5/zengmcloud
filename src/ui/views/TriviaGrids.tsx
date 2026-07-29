@@ -14,6 +14,19 @@ import {
 	type TriviaPlayerCard,
 } from "../util/triviaPlayerCards.ts";
 import { buildHintOptions } from "../util/triviaHint.ts";
+import { TriviaHistoryModal } from "../components/TriviaHistoryModal.tsx";
+import {
+	addHistoryEntry,
+	countPerfect,
+	loadHistory,
+	summarize,
+	type TriviaHistoryEntry,
+} from "../util/triviaHistory.ts";
+import {
+	buildGridShareText,
+	shareOrCopy,
+	tierEmoji,
+} from "../util/triviaShare.ts";
 import { decadeLabel, statLabel } from "../../common/triviaCriteriaLabels.ts";
 import { Confetti } from "./LiveGame/Confetti.tsx";
 import type { View } from "../../common/types.ts";
@@ -71,37 +84,23 @@ const emptyCells = (): CellState[] =>
 	Array.from({ length: 9 }, () => ({ points: 0 }));
 
 const GUESS_SETTING_KEY = "triviaGridsGuesses";
-const STATS_KEY = "triviaGridsStats";
+const HINT_SETTING_KEY = "triviaGridsHintMode";
 
-// Hints per grid. A hint deals six faces, one of which fits the cell - so it
-// turns the cell into a multiple-choice question rather than describing an
-// answer. Solving from a hint is worth a quarter of the points (never zero: a
-// hinted solve still beats a blank cell).
-const HINTS_PER_GRID = 3;
+// Hint mode is a difficulty switch, not a consumable. With it on, tapping a
+// cell deals six faces - one of which fits - so every cell is a multiple-choice
+// question instead of a blank search box. It costs nothing to turn on and there
+// is no budget to ration; the price is on the scoreboard, where a hinted cell
+// is worth a quarter (never zero: a hinted solve still beats a blank cell), so
+// a hinted board and an unhinted one stay comparable.
 const HINT_POINT_MULTIPLIER = 0.25;
 const MIN_HINTED_POINTS = 5;
 
-type Stats = {
-	played: number;
-	immaculate: number;
-	best: number;
-	totalScore: number;
-};
-
-const loadStats = (): Stats => {
+const loadHintMode = (): boolean => {
 	try {
-		const raw = localStorage.getItem(STATS_KEY);
-		if (raw) {
-			const s = JSON.parse(raw);
-			return {
-				played: s.played ?? 0,
-				immaculate: s.immaculate ?? 0,
-				best: s.best ?? 0,
-				totalScore: s.totalScore ?? 0,
-			};
-		}
-	} catch {}
-	return { played: 0, immaculate: 0, best: 0, totalScore: 0 };
+		return localStorage.getItem(HINT_SETTING_KEY) === "1";
+	} catch {
+		return false;
+	}
 };
 
 // Rarity points (0-100, higher = more obscure) mapped to a display tier. Six
@@ -169,14 +168,6 @@ const fmtStatValue = (value: number, decimals: number) =>
 
 const criterionToRef = (c: Criterion): CriterionRef =>
 	c.kind === "team" ? { kind: "team", tid: c.tid } : { kind: c.kind, id: c.id };
-
-// "Michael Jordan" -> "M.J." for the strongest hint tier.
-const initialsOf = (name: string) =>
-	name
-		.split(" ")
-		.filter(Boolean)
-		.map((w) => `${w[0]!.toUpperCase()}.`)
-		.join("");
 
 // --- Presentational pieces (module scope so they aren't remounted per render)
 
@@ -429,12 +420,16 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	const [cards, setCards] = useState<Record<number, TriviaPlayerCard>>({});
 	const [revealCell, setRevealCell] = useState<number | undefined>();
 	const [revealLimit, setRevealLimit] = useState(24);
-	const [stats, setStats] = useState<Stats>(loadStats);
+	const [history, setHistory] = useState<TriviaHistoryEntry[]>(() =>
+		loadHistory("grids"),
+	);
+	const [showHistory, setShowHistory] = useState(false);
+	const [shared, setShared] = useState<string | undefined>();
 
-	// Hints: a per-grid allowance, spent per cell. `hinted` records which cells
-	// were solved with help (so they score less), `hintShuffle` lets a cell be
-	// re-dealt, and `hintWrong` marks faces already ruled out on this deal.
-	const [hintsLeft, setHintsLeft] = useState(HINTS_PER_GRID);
+	// Hint mode. `hinted` records which cells were played with help (so they
+	// score less), `hintShuffle` lets a cell be re-dealt, and `hintWrong` marks
+	// faces already ruled out on this deal.
+	const [hintMode, setHintMode] = useState(loadHintMode);
 	const [hinted, setHinted] = useState<Set<number>>(new Set());
 	const [hintCell, setHintCell] = useState<number | undefined>();
 	const [hintShuffle, setHintShuffle] = useState<Record<number, number>>({});
@@ -476,26 +471,33 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		grid !== undefined && (gaveUp || correctCount === 9 || guessesLeft <= 0);
 	const immaculate = correctCount === 9;
 
-	// Record each finished game into local stats exactly once.
+	const summary = summarize(history);
+	const best = summary.best;
+	const immaculateCount = countPerfect(history);
+
+	// Record each finished game into the history exactly once. The label is the
+	// board itself, so the history search finds "every grid with the Knicks on
+	// it" - which is the thing you'd actually want to look up.
 	const recordedRef = useRef(false);
 	useEffect(() => {
-		if (!done || recordedRef.current) {
+		if (!done || recordedRef.current || !grid) {
 			return;
 		}
 		recordedRef.current = true;
-		setStats((prev) => {
-			const next: Stats = {
-				played: prev.played + 1,
-				immaculate: prev.immaculate + (immaculate ? 1 : 0),
-				best: Math.max(prev.best, score),
-				totalScore: prev.totalScore + score,
-			};
-			try {
-				localStorage.setItem(STATS_KEY, JSON.stringify(next));
-			} catch {}
-			return next;
-		});
-	}, [done, immaculate, score]);
+		const team = [...grid.rows, ...grid.cols].find((c) => c.kind === "team");
+		setHistory(
+			addHistoryEntry("grids", {
+				score,
+				label: `${grid.rows.map((c) => c.label).join(" / ")} × ${grid.cols
+					.map((c) => c.label)
+					.join(" / ")}`,
+				detail: `${correctCount}/9 solved${hinted.size > 0 ? ` · ${hinted.size} hinted` : ""}`,
+				tid: team?.tid,
+				colors: team?.colors,
+				progress: { done: correctCount, total: 9 },
+			}),
+		);
+	}, [done, grid, score, correctCount, hinted]);
 
 	const resetGame = (fresh: GridData) => {
 		setData(fresh);
@@ -509,7 +511,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		setGaveUp(false);
 		setCards({});
 		setRevealCell(undefined);
-		setHintsLeft(HINTS_PER_GRID);
+		setShared(undefined);
 		setHinted(new Set());
 		setHintCell(undefined);
 		setHintShuffle({});
@@ -528,6 +530,33 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		} finally {
 			setLoadingNew(false);
 		}
+	};
+
+	const toggleHintMode = (on: boolean) => {
+		setHintMode(on);
+		try {
+			localStorage.setItem(HINT_SETTING_KEY, on ? "1" : "0");
+		} catch {}
+	};
+
+	const share = async () => {
+		const result = await shareOrCopy(
+			buildGridShareText({
+				points: cells.map((c) => (c.pid === undefined ? undefined : c.points)),
+				score,
+				hintedCount: hinted.size,
+			}),
+		);
+		setShared(
+			result === "copied"
+				? "Copied!"
+				: result === "shared"
+					? "Shared"
+					: "Couldn't share",
+		);
+		// Back to "Share grid" shortly - a button permanently reading "Copied!"
+		// stops looking like a button you can press again.
+		setTimeout(() => setShared(undefined), 2500);
 	};
 
 	const setGuesses = (value: string) => {
@@ -627,22 +656,15 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		});
 	}, [hintCell, grid, hintUsed, popByPid, hintShuffle, searchList.length]);
 
-	const openHint = () => {
-		if (activeCell === undefined) {
-			return;
-		}
-		// Spending a hint on a cell is a one-time cost - reshuffling the same
-		// cell's faces afterwards is free.
-		if (!hinted.has(activeCell)) {
-			if (hintsLeft <= 0) {
-				return;
-			}
-			setHintsLeft((h) => h - 1);
-			setHinted((prev) => new Set(prev).add(activeCell));
-		}
+	// Deal a cell's six faces. Marking the cell hinted is what costs points, and
+	// it's marked the moment the faces are dealt - backing out of the hand
+	// without picking still means you saw six candidates.
+	const openHintFor = (cellIndex: number) => {
+		setHinted((prev) => new Set(prev).add(cellIndex));
 		setHintWrong(new Set());
 		setHintUsed(new Set(usedPids));
-		setHintCell(activeCell);
+		setHintCell(cellIndex);
+		setActiveCell(undefined);
 	};
 
 	// Picking a face. A right answer fills the cell through the normal guess
@@ -867,73 +889,58 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 
 	return (
 		<>
-			<div className="d-flex flex-wrap align-items-center gap-2 mb-3">
-				<div className="trivia-tile">
-					<div className="trivia-tile-value">{score}</div>
-					<div className="trivia-tile-label">Score</div>
-				</div>
-				<div className="trivia-tile">
-					<div className="trivia-tile-value">{correctCount}/9</div>
-					<div className="trivia-tile-label">Solved</div>
-				</div>
-				<div className="trivia-tile">
-					<div className="trivia-tile-value">
-						{gameMaxGuesses === Infinity ? "∞" : Math.max(0, guessesLeft)}
-					</div>
-					<div className="trivia-tile-label">Guesses</div>
-				</div>
-				<div className="trivia-tile">
-					<div className="trivia-tile-value">{hintsLeft}</div>
-					<div className="trivia-tile-label">Hints</div>
-				</div>
-				<div className="d-flex flex-wrap align-items-center gap-2 ms-auto">
-					{editing ? null : (
-						<>
-							{!done ? (
-								<button
-									className="btn btn-sm btn-light-bordered"
-									onClick={() => setGaveUp(true)}
-								>
-									Give up
-								</button>
-							) : null}
-							<button
-								className="btn btn-sm btn-primary"
-								disabled={loadingNew}
-								onClick={newGrid}
-							>
-								{loadingNew ? "Generating…" : "New grid"}
-							</button>
-							<button
-								className="btn btn-sm btn-light-bordered"
-								onClick={startEdit}
-								title="Edit this grid's rows and columns"
-							>
-								Edit
-							</button>
-							<select
-								className="form-select form-select-sm w-auto"
-								title="Guesses per grid (applies to the next grid)"
-								value={String(guessSetting)}
-								onChange={(e) => setGuesses(e.target.value)}
-							>
-								<option value="6">6 guesses</option>
-								<option value="9">9 guesses</option>
-								<option value="12">12 guesses</option>
-								<option value="Infinity">Unlimited</option>
-							</select>
-						</>
+			{editing ? null : (
+				<div className="trivia-toolbar mb-3">
+					{done ? null : (
+						<button
+							className="btn btn-sm btn-light-bordered"
+							onClick={() => setGaveUp(true)}
+						>
+							🏳 Give up
+						</button>
 					)}
+					<button
+						className="btn btn-sm btn-primary"
+						disabled={loadingNew}
+						onClick={newGrid}
+					>
+						{loadingNew ? "Generating…" : "🔄 New"}
+					</button>
+					<select
+						className="form-select form-select-sm w-auto"
+						title="Guesses per grid (applies to the next grid)"
+						value={String(guessSetting)}
+						onChange={(e) => setGuesses(e.target.value)}
+					>
+						<option value="6">6 guesses</option>
+						<option value="9">9 guesses</option>
+						<option value="12">12 guesses</option>
+						<option value="Infinity">Unlimited</option>
+					</select>
+					<button
+						className="btn btn-sm btn-light-bordered"
+						title="Game history"
+						onClick={() => setShowHistory(true)}
+					>
+						🕘
+					</button>
+					<div className="trivia-toolbar-score ms-auto">
+						{correctCount}/9 solved
+					</div>
 				</div>
-			</div>
+			)}
 
 			<div className="trivia-grid-board mb-2" style={{ maxWidth: 640 }}>
 				<div
 					className="trivia-grid-inner"
 					style={{
 						// Fractional columns so the inner grid always fills the board -
-						// fixed max widths left a strip of the container showing.
-						gridTemplateColumns: "minmax(76px, 108px) repeat(3, 1fr)",
+						// fixed max widths left a strip of the container showing. The
+						// minmax(0, ...) lets a column shrink below its header's
+						// min-content width; without it a long criterion ("2nd Round
+						// Pick") pushes the board past the edge of a phone screen.
+						gridTemplateColumns:
+							"minmax(64px, 108px) repeat(3, minmax(0, 1fr))",
 					}}
 				>
 					<div className="trivia-grid-head flex-column">
@@ -943,14 +950,20 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							</div>
 						) : (
 							<>
-								<div className="h3 mb-0">
-									{gameMaxGuesses === Infinity ? "∞" : Math.max(0, guessesLeft)}
-								</div>
 								<div
 									className="text-body-secondary"
 									style={{ fontSize: "0.7rem" }}
 								>
-									guesses
+									Score
+								</div>
+								<div className="h3 mb-0">{score}</div>
+								<div
+									className="text-body-secondary"
+									style={{ fontSize: "0.7rem" }}
+									title="Guesses left"
+								>
+									{gameMaxGuesses === Infinity ? "∞" : Math.max(0, guessesLeft)}{" "}
+									left
 								</div>
 							</>
 						)}
@@ -1102,6 +1115,9 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 											if (done) {
 												setRevealCell(i);
 												setRevealLimit(24);
+											} else if (hintMode) {
+												setWrongGuess(undefined);
+												openHintFor(i);
 											} else {
 												setActiveCell(i);
 												setWrongGuess(undefined);
@@ -1132,6 +1148,36 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 					))}
 				</div>
 			</div>
+
+			{editing ? null : (
+				<div className="trivia-board-actions mb-3" style={{ maxWidth: 640 }}>
+					<button className="btn btn-light-bordered" onClick={share}>
+						🔗 {shared ?? "Share grid"}
+					</button>
+					<label
+						className="trivia-hint-toggle"
+						title="Turn every cell into a six-face multiple choice. Hinted cells score a quarter."
+					>
+						<span className="form-switch d-inline-flex">
+							<input
+								type="checkbox"
+								className="form-check-input m-0"
+								role="switch"
+								checked={hintMode}
+								onChange={(event) => toggleHintMode(event.target.checked)}
+							/>
+						</span>
+						Hint 💡
+					</label>
+					<button
+						className="btn btn-light-bordered ms-auto"
+						onClick={startEdit}
+						title="Build your own rows and columns"
+					>
+						▦ Custom
+					</button>
+				</div>
+			)}
 
 			{editing ? (
 				<div
@@ -1177,9 +1223,12 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							<div style={{ fontSize: "1.3rem", lineHeight: 1.15 }}>
 								{[0, 1, 2].map((r) => (
 									<div key={r}>
-										{[0, 1, 2].map((c) =>
-											cells[r * 3 + c]!.pid !== undefined ? "🟩" : "⬛",
-										)}
+										{[0, 1, 2].map((c) => {
+											const cell = cells[r * 3 + c]!;
+											return tierEmoji(
+												cell.pid === undefined ? undefined : cell.points,
+											);
+										})}
 									</div>
 								))}
 							</div>
@@ -1196,7 +1245,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 								<div className="mb-1">
 									<span className="fw-bold">{score}</span> points ·{" "}
 									{correctCount}/9 solved
-									{score > 0 && score >= stats.best ? (
+									{score > 0 && score >= best ? (
 										<span className="badge text-bg-warning ms-2">
 											New best!
 										</span>
@@ -1238,23 +1287,19 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 			{editing ? null : (
 				<div className="d-flex flex-wrap gap-2">
 					<div className="trivia-tile">
-						<div className="trivia-tile-value">{stats.played}</div>
+						<div className="trivia-tile-value">{summary.played}</div>
 						<div className="trivia-tile-label">Played</div>
 					</div>
 					<div className="trivia-tile">
-						<div className="trivia-tile-value">{stats.immaculate}</div>
+						<div className="trivia-tile-value">{immaculateCount}</div>
 						<div className="trivia-tile-label">Immaculate</div>
 					</div>
 					<div className="trivia-tile">
-						<div className="trivia-tile-value">{stats.best}</div>
+						<div className="trivia-tile-value">{summary.best}</div>
 						<div className="trivia-tile-label">Best</div>
 					</div>
 					<div className="trivia-tile">
-						<div className="trivia-tile-value">
-							{stats.played > 0
-								? Math.round(stats.totalScore / stats.played)
-								: 0}
-						</div>
+						<div className="trivia-tile-value">{summary.average}</div>
 						<div className="trivia-tile-label">Avg score</div>
 					</div>
 				</div>
@@ -1296,19 +1341,14 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 					<div className="d-flex align-items-center gap-2 mt-3">
 						<button
 							className="btn btn-sm btn-light-bordered"
-							disabled={
-								activeCell !== undefined &&
-								!hinted.has(activeCell) &&
-								hintsLeft <= 0
-							}
-							onClick={openHint}
-							title={
-								activeCell !== undefined && hinted.has(activeCell)
-									? "Show this cell's six options again (free)"
-									: `Show six players, one of which fits. Worth ${Math.round(HINT_POINT_MULTIPLIER * 100)}% points`
-							}
+							onClick={() => {
+								if (activeCell !== undefined) {
+									openHintFor(activeCell);
+								}
+							}}
+							title={`Show six players, one of which fits. Worth ${Math.round(HINT_POINT_MULTIPLIER * 100)}% points`}
 						>
-							💡 Hint ({hintsLeft})
+							💡 Hint
 						</button>
 						<div className="text-body-secondary small ms-auto">
 							{gameMaxGuesses === Infinity
@@ -1383,20 +1423,31 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 				</Modal.Body>
 			</Modal>
 
-			{/* Hint mode: six faces, one of which fits the cell */}
+			{/* Hint mode: six faces, one of which fits the cell. The two criteria
+			    are shown as they appear on the board rather than as a text title -
+			    a logo is what you actually recognise a cell by. */}
 			<Modal
 				show={hintCell !== undefined && !done}
 				onHide={() => setHintCell(undefined)}
 				size="lg"
 			>
 				<Modal.Header closeButton>
-					<Modal.Title className="fs-6">
-						{hintCell !== undefined
-							? `${grid.rows[Math.floor(hintCell / 3)]!.label} × ${grid.cols[hintCell % 3]!.label}`
-							: ""}
-					</Modal.Title>
+					<Modal.Title className="fs-5">Hint mode</Modal.Title>
 				</Modal.Header>
 				<Modal.Body>
+					{hintCell !== undefined ? (
+						<div className="trivia-hint-criteria mb-3">
+							<div className="trivia-hint-criterion">
+								<CriterionLabel c={grid.rows[Math.floor(hintCell / 3)]!} />
+							</div>
+							<div className="trivia-hint-times" aria-hidden="true">
+								×
+							</div>
+							<div className="trivia-hint-criterion">
+								<CriterionLabel c={grid.cols[hintCell % 3]!} />
+							</div>
+						</div>
+					) : null}
 					{hintOptions.length === 0 ? (
 						<div className="text-body-secondary">
 							No players are left for this cell.
@@ -1424,20 +1475,26 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 								})}
 							</div>
 							<div className="d-flex align-items-center gap-2 mt-3">
-								<div className="text-body-secondary small">
-									One of these fits both criteria.
-								</div>
+								<div className="fw-bold">Choose the correct player</div>
 								<button
 									className="btn btn-sm btn-light-bordered ms-auto"
 									onClick={reshuffleHint}
 								>
-									Shuffle
+									🔀 Shuffle
 								</button>
 							</div>
 						</>
 					)}
 				</Modal.Body>
 			</Modal>
+
+			<TriviaHistoryModal
+				game="grids"
+				show={showHistory}
+				onHide={() => setShowHistory(false)}
+				entries={history}
+				onChange={setHistory}
+			/>
 
 			{/* Criterion picker (inline edit) */}
 			<Modal

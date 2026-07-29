@@ -49,3 +49,39 @@ export const fetchTriviaCard = (
 	inFlight.set(pid, p);
 	return p;
 };
+
+// Prime the cache for a whole roster in one worker call, applying a single set
+// of team colors to all of them. Team Trivia paints its card grid the instant a
+// round arrives; fetching each face separately staggers visibly on a phone.
+//
+// Already-cached pids are skipped, so re-picking a team-season you've seen
+// before costs nothing.
+export const primeTriviaFaces = async (
+	pids: number[],
+	team: { colors?: [string, string, string]; jersey?: string },
+): Promise<Record<number, TriviaPlayerCard>> => {
+	const missing = pids.filter((pid) => !cache.has(pid));
+	if (missing.length > 0) {
+		const faces = await toWorker("main", "triviaFaces", { pids: missing });
+		for (const face of faces ?? []) {
+			cache.set(face.pid, {
+				pid: face.pid,
+				face: face.face,
+				imgURL: face.imgURL,
+				colors: team.colors,
+				jersey: team.jersey,
+			});
+		}
+	}
+
+	const out: Record<number, TriviaPlayerCard> = {};
+	for (const pid of pids) {
+		const card = cache.get(pid);
+		if (card) {
+			// A pid already cached from another game carries that game's colors, so
+			// re-dress it in this round's jersey without disturbing the cache.
+			out[pid] = { ...card, colors: team.colors, jersey: team.jersey };
+		}
+	}
+	return out;
+};

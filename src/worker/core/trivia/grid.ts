@@ -36,7 +36,15 @@ import {
 // builder can show which cells are dead.
 
 export type GridCriterion =
-	| { kind: "team"; tid: number; label: string }
+	// A team criterion carries its colors so the UI can tint a header, a hint
+	// card or a history entry without a second lookup - teamInfoCache has logos
+	// and names but no colors.
+	| {
+			kind: "team";
+			tid: number;
+			label: string;
+			colors?: [string, string, string];
+	  }
 	| { kind: "career" | "season"; id: string; label: string };
 
 // What the UI sends to identify a criterion when building a custom grid.
@@ -101,7 +109,13 @@ const rarityForPool = (
 };
 
 type Candidate =
-	| { kind: "team"; tid: number; label: string; set: Set<number> }
+	| {
+			kind: "team";
+			tid: number;
+			label: string;
+			colors?: [string, string, string];
+			set: Set<number>;
+	  }
 	| {
 			kind: "career" | "season";
 			id: string;
@@ -162,6 +176,7 @@ const buildCandidates = async (): Promise<Candidates> => {
 			kind: "team" as const,
 			tid: t.tid,
 			label: `${t.region} ${t.name}`,
+			colors: t.colors,
 			set: playersByTeam.get(t.tid)!,
 		}));
 
@@ -266,7 +281,7 @@ const cellPids = (
 
 const toCriterion = (c: Candidate): GridCriterion =>
 	c.kind === "team"
-		? { kind: "team", tid: c.tid, label: c.label }
+		? { kind: "team", tid: c.tid, label: c.label, colors: c.colors }
 		: { kind: c.kind, id: c.id, label: c.label };
 
 const toGrid = (
@@ -628,4 +643,19 @@ export const getTriviaPlayerCard = async (pid: number, tid?: number) => {
 		colors: t?.colors,
 		jersey: t?.jersey,
 	};
+};
+
+// Faces for a whole roster at once. Team Trivia paints fifteen cards the moment
+// a round loads, and fifteen separate worker round-trips is a visible stagger
+// on a phone. Colors are deliberately absent - every player in a round wore the
+// same jersey, so the caller applies the team's colors once.
+export const getTriviaFaces = async (pids: number[]) => {
+	const out: { pid: number; face?: any; imgURL?: string }[] = [];
+	for (const pid of pids) {
+		const p = await idb.getCopy.players({ pid }, "noCopyCache");
+		if (p) {
+			out.push({ pid, face: p.face, imgURL: p.imgURL });
+		}
+	}
+	return out;
 };

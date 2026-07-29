@@ -78,11 +78,21 @@ const TriviaPlayerSelect = ({
 	onSelect,
 	disabled,
 	autoFocus,
+	placeholder = "Search players…",
+	// Results open upwards. For a guess bar that sits at the bottom of the
+	// screen, a dropdown opening downwards would open off the viewport.
+	resultsAbove,
+	submitTitle,
 }: {
 	players: TriviaSearchPlayer[];
 	onSelect: (player: TriviaSearchPlayer) => void;
 	disabled?: boolean;
 	autoFocus?: boolean;
+	placeholder?: string;
+	resultsAbove?: boolean;
+	// Renders a submit button beside the input that takes the highlighted
+	// result, so the bar works by tapping as well as by pressing enter.
+	submitTitle?: string;
 }) => {
 	const [query, setQuery] = useState("");
 	const [highlighted, setHighlighted] = useState(0);
@@ -171,44 +181,63 @@ const TriviaPlayerSelect = ({
 
 	const showEmpty = query.trim().length >= 2 && results.length === 0;
 
+	const resultList =
+		results.length > 0 ? (
+			<div
+				className={`trivia-search-results ${resultsAbove ? "mb-1" : "mt-1"}`}
+			>
+				{results.map((p, i) => (
+					<button
+						key={p.pid}
+						type="button"
+						className={`trivia-search-row ${
+							i === highlighted ? "is-highlighted" : ""
+						}`}
+						onMouseEnter={() => setHighlighted(i)}
+						onClick={() => pick(p)}
+					>
+						<Face card={cards[p.pid]} />
+						<span className="flex-grow-1 text-start text-truncate">
+							<span className="d-block text-truncate">{p.name}</span>
+							<span className="d-block small text-body-secondary">
+								{p.pos ? `${p.pos} · ` : ""}
+								{p.years}
+							</span>
+						</span>
+					</button>
+				))}
+			</div>
+		) : null;
+
 	return (
 		<div>
-			<input
-				ref={inputRef}
-				className="form-control"
-				type="text"
-				value={query}
-				disabled={disabled}
-				placeholder="Search players…"
-				autoComplete="off"
-				spellCheck={false}
-				onChange={(e) => setQuery(e.target.value)}
-				onKeyDown={onKeyDown}
-			/>
-			{results.length > 0 ? (
-				<div className="trivia-search-results mt-1">
-					{results.map((p, i) => (
-						<button
-							key={p.pid}
-							type="button"
-							className={`trivia-search-row ${
-								i === highlighted ? "is-highlighted" : ""
-							}`}
-							onMouseEnter={() => setHighlighted(i)}
-							onClick={() => pick(p)}
-						>
-							<Face card={cards[p.pid]} />
-							<span className="flex-grow-1 text-start text-truncate">
-								<span className="d-block text-truncate">{p.name}</span>
-								<span className="d-block small text-body-secondary">
-									{p.pos ? `${p.pos} · ` : ""}
-									{p.years}
-								</span>
-							</span>
-						</button>
-					))}
-				</div>
-			) : null}
+			{resultsAbove ? resultList : null}
+			<div className="d-flex gap-2">
+				<input
+					ref={inputRef}
+					className="form-control"
+					type="text"
+					value={query}
+					disabled={disabled}
+					placeholder={placeholder}
+					autoComplete="off"
+					spellCheck={false}
+					onChange={(e) => setQuery(e.target.value)}
+					onKeyDown={onKeyDown}
+				/>
+				{submitTitle ? (
+					<button
+						type="button"
+						className="btn btn-primary flex-shrink-0 px-3"
+						disabled={disabled || results.length === 0}
+						title={submitTitle}
+						onClick={() => pick(results[highlighted])}
+					>
+						→
+					</button>
+				) : null}
+			</div>
+			{resultsAbove ? null : resultList}
 			{showEmpty ? (
 				<div className="text-body-secondary small mt-2">
 					No player matches “{query.trim()}”.

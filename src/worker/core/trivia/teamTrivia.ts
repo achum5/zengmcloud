@@ -29,9 +29,35 @@ export type TeamTriviaRoster = {
 	blk: number;
 };
 
+// Which team-season to quiz on. Nothing set = a random one from the whole of
+// league history; a year range narrows the draw; an explicit season/tid picks
+// one outright, which is how the season and team dropdowns work.
+export type TeamTriviaOptions = {
+	season?: number;
+	tid?: number;
+	minSeason?: number;
+	maxSeason?: number;
+};
+
+// Every team-season with enough of a roster to be quizzable, so the UI can
+// populate its season and team dropdowns without guessing (a team that didn't
+// exist in 2044 must not be offered for 2044). Fetched once and cached in the
+// UI rather than resent with every round.
+export type TeamTriviaCatalog = {
+	candidates: { season: number; tid: number }[];
+	minSeason: number;
+	maxSeason: number;
+};
+
 export type TeamTriviaRound = {
 	season: number;
-	team: { tid: number; label: string; abbrev: string };
+	team: {
+		tid: number;
+		label: string;
+		abbrev: string;
+		colors?: [string, string, string];
+		jersey?: string;
+	};
 	roster: TeamTriviaRoster[];
 	// pid of the team leader in each stat (by season total).
 	leaders: { pts: number; trb: number; ast: number; stl: number; blk: number };
@@ -43,10 +69,15 @@ export type TeamTriviaRound = {
 
 const round1 = (x: number) => Math.round(x * 10) / 10;
 
-export const generateTeamTriviaRound = async (): Promise<
-	TeamTriviaRound | undefined
-> => {
-	const pool = await getTriviaPool();
+// Fewer than this and there's nothing to name.
+const MIN_ROSTER = 5;
+
+// Every quizzable team-season. Shared by the catalog (which the dropdowns read)
+// and the generator (which draws from it), so the two can never disagree about
+// what's playable.
+const getCandidates = (
+	pool: Awaited<ReturnType<typeof getTriviaPool>>,
+): { season: number; tid: number }[] => {
 	const currentSeason = g.get("season");
 	const playoffsDone = g.get("phase") > PHASE.PLAYOFFS;
 
@@ -63,7 +94,7 @@ export const generateTeamTriviaRound = async (): Promise<
 
 	const candidates: { season: number; tid: number }[] = [];
 	for (const [key, count] of rosterCount) {
-		if (count < 5) {
+		if (count < MIN_ROSTER) {
 			continue;
 		}
 		const [seasonStr, tidStr] = key.split("-");
@@ -75,9 +106,67 @@ export const generateTeamTriviaRound = async (): Promise<
 		}
 		candidates.push({ season, tid });
 	}
-	if (candidates.length === 0) {
+	candidates.sort((a, b) => a.season - b.season || a.tid - b.tid);
+	return candidates;
+};
+
+export const getTeamTriviaCatalog = async (): Promise<TeamTriviaCatalog> => {
+	const pool = await getTriviaPool();
+	const candidates = getCandidates(pool);
+	let minSeason = Infinity;
+	let maxSeason = -Infinity;
+	for (const c of candidates) {
+		minSeason = Math.min(minSeason, c.season);
+		maxSeason = Math.max(maxSeason, c.season);
+	}
+	if (!Number.isFinite(minSeason)) {
+		const season = g.get("season");
+		minSeason = season;
+		maxSeason = season;
+	}
+	return { candidates, minSeason, maxSeason };
+};
+
+// Narrow the draw to what the player asked for. An exact season+tid pick wins
+// outright; a range or a team filter narrows; and a filter that rules
+// everything out falls back to the unfiltered list rather than returning
+// nothing, because a dropdown that silently does nothing is worse than one
+// that quietly ignores an impossible combination.
+export const narrowCandidates = (
+	candidates: { season: number; tid: number }[],
+	options: TeamTriviaOptions,
+): { season: number; tid: number }[] => {
+	const { season, tid, minSeason, maxSeason } = options;
+	const matches = candidates.filter((c) => {
+		if (season !== undefined && c.season !== season) {
+			return false;
+		}
+		if (tid !== undefined && c.tid !== tid) {
+			return false;
+		}
+		if (minSeason !== undefined && c.season < minSeason) {
+			return false;
+		}
+		if (maxSeason !== undefined && c.season > maxSeason) {
+			return false;
+		}
+		return true;
+	});
+	return matches.length > 0 ? matches : candidates;
+};
+
+export const generateTeamTriviaRound = async (
+	options: TeamTriviaOptions = {},
+): Promise<TeamTriviaRound | undefined> => {
+	const pool = await getTriviaPool();
+	const currentSeason = g.get("season");
+	const playoffsDone = g.get("phase") > PHASE.PLAYOFFS;
+
+	const all = getCandidates(pool);
+	if (all.length === 0) {
 		return undefined;
 	}
+	const candidates = narrowCandidates(all, options);
 
 	// Up to a few draws in case a candidate's team-season row is missing.
 	for (let attempt = 0; attempt < 10; attempt++) {
@@ -173,7 +262,16 @@ export const generateTeamTriviaRound = async (): Promise<
 
 		return {
 			season,
-			team: { tid, label: `${region} ${name}`, abbrev },
+			team: {
+				tid,
+				label: `${region} ${name}`,
+				abbrev,
+				// One set of colors for the whole round: every player on the card
+				// grid wore this team's jersey, so the faces can be drawn without a
+				// per-player team lookup.
+				colors: team?.colors,
+				jersey: team?.jersey,
+			},
 			roster,
 			leaders,
 			wins,
