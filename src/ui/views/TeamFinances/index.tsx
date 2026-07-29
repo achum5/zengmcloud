@@ -746,6 +746,7 @@ const TeamFinances = ({
 	barData,
 	contractTotals,
 	contracts,
+	draftPicks,
 	luxuryTaxAmount,
 	maxStadiumCapacity,
 	minPayrollAmount,
@@ -796,15 +797,23 @@ const TeamFinances = ({
 		new Set(),
 	);
 
+	// Draft picks share the players' key space, sitting after them, so one set
+	// of checkboxes and one totals calculation covers both.
+	const pickKey = (j: number) => contracts.length + j;
+
 	// Who even has a projection to include - a player signed through the last
-	// column has nothing to check.
-	const projectableKeys = contracts
-		.map((p, i) => ({ p, i }))
-		.filter(
-			({ p }) =>
-				!p.released && (p.amountsProjected ?? []).some((x) => x !== undefined),
-		)
-		.map(({ i }) => i);
+	// column has nothing to check. Every pick has one by construction.
+	const projectableKeys = [
+		...contracts
+			.map((p, i) => ({ p, i }))
+			.filter(
+				({ p }) =>
+					!p.released &&
+					(p.amountsProjected ?? []).some((x) => x !== undefined),
+			)
+			.map(({ i }) => i),
+		...draftPicks.map((_, j) => pickKey(j)),
+	];
 
 	const allProjected =
 		projectableKeys.length > 0 &&
@@ -852,7 +861,7 @@ const TeamFinances = ({
 		),
 	];
 
-	const rows = contracts.map((p, i) => {
+	const playerRows = contracts.map((p, i) => {
 		const projectable = projectableKeys.includes(i);
 		const data: DataTableRow["data"] = [
 			projectable
@@ -929,18 +938,99 @@ const TeamFinances = ({
 		};
 	});
 
+	// The picks the team owns, at the money the slot pays.
+	//
+	// A pick is all but committed - the salary is fixed by where it lands - but
+	// it isn't signed, so it reads like the projected columns above: muted,
+	// asterisked, and out of the totals until it's checked in. Before the draft
+	// order exists the slot is the Draft Picks page's projection, which is said
+	// plainly rather than presented as a number the team can count on.
+	const pickRows = draftPicks.map((dp, j) => {
+		const key = pickKey(j);
+		const known = dp.pick > 0;
+		// A pick acquired in a trade says whose it was, the way the Draft Picks
+		// page does - "2028 1st round" alone is ambiguous once a team holds two.
+		const via = dp.originalTid !== tid ? ` (via ${dp.originalAbbrev})` : "";
+		const label = `${dp.season} ${helpers.ordinal(dp.round)} round${via}`;
+		const where =
+			dp.slot === undefined
+				? "slot unknown"
+				: `pick ${dp.slot}${known ? "" : " projected"}`;
+
+		const data: DataTableRow["data"] = [
+			{
+				value: (
+					<input
+						type="checkbox"
+						className="form-check-input m-0"
+						checked={projectedKeys.has(key)}
+						title={`Count the ${label} pick's slot salary in the totals`}
+						onChange={() => toggleOne(key)}
+					/>
+				),
+				sortValue: projectedKeys.has(key) ? 1 : 0,
+				searchValue: "",
+			},
+			{
+				value: <span className="text-body-secondary">PICK</span>,
+				sortValue: "PICK",
+				searchValue: "PICK",
+			},
+			{
+				value: (
+					<a href={helpers.leagueUrl(["draft_picks", `${abbrev}_${tid}`])}>
+						{label}
+					</a>
+				),
+				sortValue: `${dp.season}-${dp.round}`,
+				searchValue: `${label} ${dp.originalAbbrev}`,
+			},
+			{
+				value: dp.capPct.toFixed(1),
+				sortValue: dp.capPct,
+				searchValue: dp.capPct.toFixed(1),
+			},
+		];
+
+		for (let i = 0; i < salariesSeasons.length; i++) {
+			const amount = dp.amounts[i];
+			if (amount === undefined) {
+				data.push(null);
+				continue;
+			}
+			const formatted = helpers.formatCurrency(amount, "M");
+			data.push({
+				classNames: "text-body-secondary",
+				value: `${formatted}*`,
+				sortValue: amount,
+				searchValue: formatted,
+				title: `Rookie scale for ${where}`,
+			});
+		}
+
+		return { key, data };
+	});
+
+	const rows = [...playerRows, ...pickRows];
+
 	// Projected salaries live alongside the committed ones rather than replacing
 	// them, so checking a player adds his to the totals without the table having
 	// to be rebuilt.
-	const projectedTotals = salariesSeasons.map((_, i) =>
-		contracts.reduce(
-			(sum, p, key) =>
-				sum +
-				(p.released || !projectedKeys.has(key)
-					? 0
-					: (p.amountsProjected?.[i] ?? 0)),
-			0,
-		),
+	const projectedTotals = salariesSeasons.map(
+		(_, i) =>
+			contracts.reduce(
+				(sum, p, key) =>
+					sum +
+					(p.released || !projectedKeys.has(key)
+						? 0
+						: (p.amountsProjected?.[i] ?? 0)),
+				0,
+			) +
+			draftPicks.reduce(
+				(sum, dp, j) =>
+					sum + (projectedKeys.has(pickKey(j)) ? (dp.amounts[i] ?? 0) : 0),
+				0,
+			),
 	);
 	const totals = contractTotals.map(
 		(amount, i) => amount + (projectedTotals[i] ?? 0),
@@ -1045,7 +1135,8 @@ const TeamFinances = ({
 				<a href={helpers.leagueUrl(["roster"])}>your roster</a>. Released
 				players who are still owed money are <i>shown in italics</i>. Salaries
 				marked <span className="text-body-secondary">*</span> are projected, not
-				signed. Check a player to count his projection in the totals.
+				signed — a player's next contract, or what a draft pick's slot pays.
+				Check a row to count it in the totals.
 			</p>
 
 			<DataTable

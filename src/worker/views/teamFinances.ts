@@ -1,5 +1,5 @@
 import { PHASE } from "../../common/constants.ts";
-import { finances, team } from "../core/index.ts";
+import { draft, finances, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type {
@@ -13,6 +13,7 @@ import {
 	getProjectedContractAmounts,
 	projectNextContract,
 } from "../util/projectedContracts.ts";
+import { processDraftPicks } from "./draftPicks.ts";
 
 const updateTeamFinances = async (
 	inputs: ViewInput<"teamFinances">,
@@ -124,6 +125,73 @@ const updateTeamFinances = async (
 		for (let i = 0; i < numSeasons; i++) {
 			salariesSeasons.push(season + i);
 		}
+
+		// The picks this team owns, priced at the rookie scale.
+		//
+		// A pick is money the team has all but committed - the salary is fixed by
+		// the slot the moment it's used - but it isn't on the books yet, so it's
+		// presented the same way an expiring player's next deal is: shown, marked,
+		// and left out of the committed totals unless it's checked in.
+		//
+		// The draft is held AFTER its season ends, so a pick in draft year Y first
+		// costs money in Y+1.
+		const rookieSalaries = draft.getRookieSalaries();
+		const numActiveTeams = g.get("numActiveTeams");
+		const draftPicksRaw = await idb.cache.draftPicks.indexGetAll(
+			"draftPicksByTid",
+			inputs.tid,
+		);
+		const draftPicks = (await processDraftPicks(draftPicksRaw))
+			.map((dp) => {
+				// A pick's number is known once the order is set; before that the
+				// Draft Picks page's projection is the best estimate there is, and
+				// it's what the slot money has to be read off.
+				const pickInRound = dp.pick > 0 ? dp.pick : dp.projectedPick;
+				const slot =
+					pickInRound === undefined
+						? undefined
+						: (dp.round - 1) * numActiveTeams + pickInRound;
+				const amount =
+					slot === undefined ? undefined : rookieSalaries[slot - 1];
+
+				const amounts: (number | undefined)[] =
+					Array(numSeasons).fill(undefined);
+				if (amount !== undefined && typeof dp.season === "number") {
+					const start = dp.season + 1;
+					const length = draft.getRookieContractLength(dp.round);
+					for (let year = start; year < start + length; year++) {
+						const i = year - season;
+						if (i >= 0 && i < numSeasons) {
+							amounts[i] = amount / 1000;
+						}
+					}
+				}
+
+				return {
+					dpid: dp.dpid,
+					season: dp.season,
+					round: dp.round,
+					pick: dp.pick,
+					projectedPick: dp.projectedPick,
+					originalAbbrev: dp.originalAbbrev,
+					originalTid: dp.originalTid,
+					slot,
+					amount: amount === undefined ? undefined : amount / 1000,
+					capPct:
+						amount === undefined ? 0 : (100 * amount) / g.get("salaryCap"),
+					amounts,
+				};
+			})
+			// A pick whose rookie deal starts past the last column has nothing to
+			// show in this table; the Draft Picks page has the full list.
+			.filter((dp) => dp.amounts.some((x) => x !== undefined))
+			.sort(
+				(a, b) =>
+					(typeof a.season === "number" ? a.season : Infinity) -
+						(typeof b.season === "number" ? b.season : Infinity) ||
+					a.round - b.round ||
+					(a.slot ?? Infinity) - (b.slot ?? Infinity),
+			);
 
 		// The cap moves. In a real-players league scheduled events step the salary
 		// cap, luxury tax and hard cap up every season, so measuring a 2030 column
@@ -309,6 +377,7 @@ const updateTeamFinances = async (
 			barData,
 			payroll,
 			contracts,
+			draftPicks,
 			contractTotals,
 			salariesSeasons,
 			capsBySeason,
