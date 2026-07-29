@@ -1302,6 +1302,7 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 							handleChange={handleChange}
 							pos={p.pos ?? autoPos}
 							ratingsRow={p.ratings[r]}
+							tid={Number(p.tid)}
 						/>
 
 						<h2>Relatives</h2>

@@ -5,6 +5,10 @@ import { toWorker } from "../../util/toWorker.ts";
 import { getCol } from "../../../common/getCol.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { useLocal } from "../../util/local.ts";
+import {
+	coarsenRating,
+	exemptFromCoarseRatings,
+} from "../../../common/coarsenRating.ts";
 
 const rows = bySport<
 	{
@@ -50,6 +54,7 @@ const RatingsForm = ({
 	handleChange,
 	pos,
 	ratingsRow,
+	tid,
 }: {
 	handleChange: (
 		type: string,
@@ -58,10 +63,19 @@ const RatingsForm = ({
 	) => void;
 	pos: string;
 	ratingsRow: any;
+	// The player's team, for the coarse-ratings prospect exemption.
+	tid?: number;
 }) => {
-	const { challengeNoRatings, godMode } = useLocal([
+	const {
+		challengeNoRatings,
+		godMode,
+		hideRatingsOnesDigit,
+		hideRatingsOnesDigitExceptProspects,
+	} = useLocal([
 		"challengeNoRatings",
 		"godMode",
+		"hideRatingsOnesDigit",
+		"hideRatingsOnesDigitExceptProspects",
 	]);
 
 	const [ovr, setOvr] = useState(ratingsRow.ovr);
@@ -92,6 +106,16 @@ const RatingsForm = ({
 
 	const hideRatings = !godMode && challengeNoRatings;
 
+	// Outside God Mode this screen is a viewer, not an editor - every input is
+	// disabled - so it gets the same treatment as everywhere else the league
+	// shows a rating. It already applied fuzz; it just never learned about the
+	// coarse rounding, which made it the one page where the exact number was
+	// still legible.
+	const coarse =
+		!godMode &&
+		hideRatingsOnesDigit &&
+		!exemptFromCoarseRatings(tid, hideRatingsOnesDigitExceptProspects);
+
 	const fuzzRating = (
 		ratingsRow: any,
 		rating: string,
@@ -103,9 +127,12 @@ const RatingsForm = ({
 
 		const raw = ratingOverride ?? ratingsRow[rating];
 
-		return godMode || rating === "hgt"
-			? raw
-			: Math.round(helpers.bound(raw + ratingsRow.fuzz, 0, 100));
+		const shown =
+			godMode || rating === "hgt"
+				? raw
+				: Math.round(helpers.bound(raw + ratingsRow.fuzz, 0, 100));
+
+		return coarse ? coarsenRating(shown) : shown;
 	};
 
 	return (
