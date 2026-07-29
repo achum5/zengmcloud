@@ -1,4 +1,8 @@
 import { helpers } from "./helpers.ts";
+import {
+	displaySectionHeader,
+	parseSectionHeader,
+} from "../../common/seasonNote.ts";
 
 export type RecapLink = { name: string; href: string };
 
@@ -201,7 +205,6 @@ export const linkifyRecap = (text: string, entries: RecapLink[]): string => {
 // in 2001, so linking the whole note against a single year would send every
 // mention to the wrong page. Each section is linked against its own year
 // instead, and the links land on that season's pages.
-const SECTION_HEADER = /^\s*\[(\d{4})]/;
 
 export const linkifySeasonNote = (
 	text: string,
@@ -223,13 +226,14 @@ export const linkifySeasonNote = (
 	};
 
 	for (const line of text.split("\n")) {
-		const match = SECTION_HEADER.exec(line);
-		if (match) {
+		const header = parseSectionHeader(line);
+		if (header) {
 			flush();
-			season = Number.parseInt(match[1]!);
-			// The header is the year label, not prose - left alone so a link never
-			// ends up inside it.
-			out.push(line);
+			season = header.season;
+			// A header is a label, not prose, so it never gets links written into
+			// it - but it does get rewritten for display (a retirement writeup
+			// shows as a standalone headline rather than a dated log entry).
+			out.push(displaySectionHeader(line));
 		} else {
 			chunk.push(line);
 		}

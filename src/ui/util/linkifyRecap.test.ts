@@ -284,3 +284,60 @@ describe("linking teammates in a player note", () => {
 		assert.ok(out.includes("[Boston](/l/1/roster/BOS_0/2001)"), out);
 	});
 });
+
+// A retirement writeup is an article about a whole career, not an entry in a
+// season log. It was rendering as "[2003] Retirement — A hundred and three
+// games Crotty started 41 games for..." - the year, the marker and the headline
+// all run into the first sentence, because the stored header and body are
+// separated by a single newline and markdown treats that as a soft break.
+describe("a retirement writeup reads as an article", () => {
+	const note = [
+		"[2003] Retirement — A hundred and three games",
+		"Crotty started 41 games for a Boston team that lost 76.",
+		"",
+		"[2001] Crotty played three games for Boston.",
+	].join("\n");
+
+	const out = () => linkifySeasonNote(note, () => []);
+
+	test("the headline stands alone, with no year", () => {
+		assert.ok(out().startsWith("**A hundred and three games**\n\n"), out());
+	});
+
+	test("the year, the marker and the em dash are all gone from it", () => {
+		const headline = out().split("\n")[0]!;
+		assert.ok(!headline.includes("2003"), headline);
+		assert.ok(!headline.includes("Retirement"), headline);
+		assert.ok(!headline.includes("—"), headline);
+	});
+
+	test("the body is its own paragraph, not a continuation", () => {
+		assert.ok(out().includes("**\n\nCrotty started 41 games"), out());
+	});
+
+	// Only retirement. A season entry's year is the whole point of it.
+	test("season sections keep their year label", () => {
+		assert.ok(out().includes("[2001] Crotty played three games"), out());
+	});
+
+	test("a retirement writeup with no headline still gets one", () => {
+		const bare = linkifySeasonNote(
+			"[2003] Retirement\nHe walked away at 35.",
+			() => [],
+		);
+		assert.ok(bare.startsWith("**Retirement**\n\n"), bare);
+	});
+
+	// The stored format is untouched, so re-running a batch still finds and
+	// replaces the same section rather than appending a duplicate.
+	test("only the display changes - links still know the season", () => {
+		const linked = linkifySeasonNote(
+			"[2003] Retirement — The end\nHe finished in Boston.",
+			(season) =>
+				season === 2003
+					? [{ name: "Boston", href: "/l/1/roster/BOS_1/2003" }]
+					: [],
+		);
+		assert.ok(linked.includes("[Boston](/l/1/roster/BOS_1/2003)"), linked);
+	});
+});

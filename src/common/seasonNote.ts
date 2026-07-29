@@ -54,6 +54,45 @@ export const renderSectionHeader = (
 	return label ? `[${season}] ${label}` : `[${season}]`;
 };
 
+// One header line, split into its parts. Returns undefined for anything that
+// isn't a header, so a reader can walk a note line by line.
+export const parseSectionHeader = (
+	line: string,
+): { season: number; kind: SeasonNoteKind; headline: string } | undefined => {
+	const match = HEADER.exec(line);
+	if (!match) {
+		return undefined;
+	}
+	const rest = (match[2] ?? "").trim();
+	const isRetirement = RETIREMENT_PREFIX.test(rest);
+	return {
+		season: Number.parseInt(match[1]!),
+		kind: isRetirement ? "retirement" : "season",
+		headline: isRetirement ? rest.replace(RETIREMENT_PREFIX, "") : rest,
+	};
+};
+
+// How a header should READ on the page, as markdown.
+//
+// A retirement writeup is an article about a whole career, not an entry in a
+// season log, so it gets its headline on its own line and drops the year -
+// which is noise anyway, since the writeup spans every season the player
+// played. Stored form is unchanged ("[2003] Retirement — Headline"); this is
+// purely how it's shown, so re-running a batch still finds and replaces the
+// same section.
+//
+// Season sections keep their [year] label: there, the year is the whole point.
+export const displaySectionHeader = (line: string): string => {
+	const header = parseSectionHeader(line);
+	if (!header || header.kind !== "retirement") {
+		return line;
+	}
+	// The trailing newline becomes a blank line once the note is rejoined, so
+	// markdown renders the headline as its own paragraph instead of running it
+	// into the first sentence.
+	return `**${header.headline || "Retirement"}**\n`;
+};
+
 export const parseSeasonNote = (note: string): SeasonNoteSection[] => {
 	const sections: SeasonNoteSection[] = [];
 	let current: SeasonNoteSection | undefined;
