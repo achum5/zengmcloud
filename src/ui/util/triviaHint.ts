@@ -1,9 +1,21 @@
-// Hint mode for Grids: instead of a text clue, you get six faces, one of which
-// actually fits the cell. Ported from the standalone Grids app's
-// hint-generation, with the same core idea - what makes it a real puzzle is
-// that the five WRONG answers each satisfy exactly one of the cell's two
-// criteria, and are picked to be about as famous as the right one. Six random
-// players would be trivially solvable by recognising the only star.
+// Hint mode for Grids: instead of a text clue, you get six faces, exactly one
+// of which fits the cell.
+//
+// What makes it a real puzzle rather than a giveaway is WHICH five are wrong.
+// The best distractors satisfy exactly one of the cell's two criteria and are
+// about as famous as the right answer; six random players would be trivially
+// solvable by recognising the only star.
+//
+// But "satisfies exactly one criterion" can run dry - a Celtics x Celtics cell
+// has NOBODY who meets one and not the other, and a heavily overlapping pair
+// (a team crossed with an achievement most of that team has) leaves only a
+// handful. So the draw falls through a ladder of progressively looser pools
+// rather than returning a short hand. A hint that deals one face is not a hint,
+// it's the answer.
+//
+// Two invariants hold at every tier, and are what the tests pin down:
+//   - exactly one option is correct
+//   - no other option is a valid answer for that cell
 //
 // This runs entirely in the UI off the per-criterion pid lists the grid ships,
 // so opening a hint is instant and reshuffling costs nothing.
@@ -80,15 +92,17 @@ export const buildHintOptions = ({
 	const topCount = Math.max(1, Math.ceil(byCommonness.length * 0.2));
 	const correct = byCommonness[Math.floor(rng() * topCount)]!;
 
+	// Anything that would ALSO solve the cell is disqualified as a distractor,
+	// at every tier. This is the invariant that keeps "exactly one correct"
+	// true no matter how loose the pool the ladder falls through to.
+	const cellSet = new Set(cellPids);
 	const rowSet = new Set(rowPids);
 	const colSet = new Set(colPids);
 	const correctPop = popByPid.get(correct) ?? 0;
 
-	// Players satisfying exactly one criterion: right-looking, actually wrong.
-	const oneOnly = (from: number[], other: Set<number>) =>
-		from.filter(
-			(pid) => !other.has(pid) && !usedPids.has(pid) && pid !== correct,
-		);
+	const taken = new Set<number>([correct]);
+	const usable = (pid: number) =>
+		!taken.has(pid) && !cellSet.has(pid) && !usedPids.has(pid);
 
 	// Closest in fame to the correct answer first, so the six read as a set of
 	// peers rather than one star and five nobodies.
@@ -99,18 +113,17 @@ export const buildHintOptions = ({
 				Math.abs((popByPid.get(b) ?? 0) - correctPop),
 		);
 
-	const rowOnly = bySimilarity(oneOnly(rowPids, colSet));
-	const colOnly = bySimilarity(oneOnly(colPids, rowSet));
-
 	const need = HINT_OPTION_COUNT - 1;
 	const distractors: number[] = [];
-	const taken = new Set<number>([correct]);
 
 	// Draw from a widened band of the most similar candidates rather than the
 	// top N exactly, so repeated hints on one cell aren't identical.
 	const drawFrom = (pids: number[], count: number) => {
+		if (count <= 0) {
+			return;
+		}
 		const band = pids
-			.filter((pid) => !taken.has(pid))
+			.filter((pid) => usable(pid))
 			.slice(0, Math.max(count * 3, 12));
 		for (const pid of sample(band, count, rng)) {
 			distractors.push(pid);
@@ -118,16 +131,30 @@ export const buildHintOptions = ({
 		}
 	};
 
-	// Aim for a mix of both kinds, so the wrong answers don't all fail the same
-	// criterion (which would itself be a giveaway).
-	drawFrom(rowOnly, Math.min(Math.ceil(need / 2), rowOnly.length));
-	drawFrom(colOnly, Math.min(need - distractors.length, colOnly.length));
-	// Whichever side has more left fills any shortfall.
+	// Tier 1, the good ones: satisfies exactly one of the two criteria. Aim for
+	// a mix of both kinds, so the wrong answers don't all fail the same
+	// criterion - which would itself be a giveaway.
+	const rowOnly = bySimilarity(rowPids.filter((pid) => !colSet.has(pid)));
+	const colOnly = bySimilarity(colPids.filter((pid) => !rowSet.has(pid)));
+	drawFrom(rowOnly, Math.ceil(need / 2));
+	drawFrom(colOnly, need - distractors.length);
+	drawFrom([...rowOnly, ...colOnly], need - distractors.length);
+
+	// Tier 2: meets BOTH criteria on paper but still isn't an answer - the
+	// season-aligned cells ("played for X in a season he was an All-Star") are
+	// full of these, and they're the most convincing wrong answers there are.
 	if (distractors.length < need) {
 		drawFrom(
-			[...rowOnly, ...colOnly].filter((pid) => !taken.has(pid)),
+			bySimilarity(rowPids.filter((pid) => colSet.has(pid))),
 			need - distractors.length,
 		);
+	}
+
+	// Tier 3: anyone at all. Reached when the two criteria are the same or very
+	// nearly - a hand of six that includes some obviously-unrelated names is
+	// still a hint; a hand of one is not.
+	if (distractors.length < need) {
+		drawFrom(bySimilarity([...popByPid.keys()]), need - distractors.length);
 	}
 
 	const options: HintOption[] = [

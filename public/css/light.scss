@@ -2184,11 +2184,26 @@ tr.text-body-secondary {
 	filter: brightness(1.12);
 	border-color: var(--bs-primary);
 }
-// A face already ruled out this deal - kept in place rather than removed, so
-// the remaining options don't jump around under the cursor.
+// After the one pick a hint gets, the hand becomes a result: the face that was
+// chosen and the face that was right are both called out, and everything else
+// recedes. Marked states set their own opacity because a disabled button would
+// otherwise grey out the very thing being pointed at.
 .trivia-hint-option.is-wrong {
-	opacity: 0.4;
+	opacity: 1;
 	border-color: var(--bs-danger);
+	box-shadow: inset 0 0 0 2px var(--bs-danger);
+}
+.trivia-hint-option.is-right {
+	opacity: 1;
+	border-color: var(--bs-success);
+	box-shadow: inset 0 0 0 2px var(--bs-success);
+	background: color-mix(in srgb, var(--bs-success) 15%, var(--bs-tertiary-bg));
+}
+.trivia-hint-option.is-dimmed {
+	opacity: 0.35;
+}
+.trivia-hint-option:disabled {
+	cursor: default;
 }
 
 .trivia-hint-face {

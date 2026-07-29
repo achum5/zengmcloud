@@ -102,6 +102,8 @@ type SavedGrid = {
 	missedByCell: Record<number, string[]>;
 	gaveUp: boolean;
 	hinted: number[];
+	// Optional so a save written before hint picks were one-shot still loads.
+	failed?: number[];
 };
 
 // Was a restored board already over? A finished game has already been written
@@ -110,7 +112,11 @@ const savedIsDone = (saved: SavedGrid): boolean => {
 	const solved = saved.cells.filter((c) => c.pid !== undefined).length;
 	const max =
 		saved.gameMaxGuesses === "Infinity" ? Infinity : saved.gameMaxGuesses;
-	return saved.gaveUp || solved === 9 || max - saved.guessesUsed <= 0;
+	return (
+		saved.gaveUp ||
+		solved + (saved.failed?.length ?? 0) === 9 ||
+		max - saved.guessesUsed <= 0
+	);
 };
 
 const GUESS_SETTING_KEY = "triviaGridsGuesses";
@@ -441,6 +447,12 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		() => restored?.missedByCell ?? {},
 	);
 	const [gaveUp, setGaveUp] = useState(() => restored?.gaveUp ?? false);
+	// Cells burned by a wrong pick in hint mode. Six faces with one right answer
+	// is a single question, so getting it wrong closes the cell rather than
+	// letting you work through the other five.
+	const [failedCells, setFailedCells] = useState<Set<number>>(
+		() => new Set(restored?.failed ?? []),
+	);
 	const [loadingNew, setLoadingNew] = useState(false);
 	const [cards, setCards] = useState<Record<number, TriviaPlayerCard>>({});
 	const [revealCell, setRevealCell] = useState<number | undefined>();
@@ -455,15 +467,16 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	const [profilePid, setProfilePid] = useState<number | undefined>();
 
 	// Hint mode. `hinted` records which cells were played with help (so they
-	// score less), `hintShuffle` lets a cell be re-dealt, and `hintWrong` marks
-	// faces already ruled out on this deal.
+	// score less for the rest of the game, however they're eventually solved),
+	// `hintShuffle` lets a cell be re-dealt, and `hintPicked` is the face that
+	// was chosen - a hint is ONE guess, so choosing is the end of that cell.
 	const [hintMode, setHintMode] = useState(loadHintMode);
 	const [hinted, setHinted] = useState<Set<number>>(
 		() => new Set(restored?.hinted ?? []),
 	);
 	const [hintCell, setHintCell] = useState<number | undefined>();
 	const [hintShuffle, setHintShuffle] = useState<Record<number, number>>({});
-	const [hintWrong, setHintWrong] = useState<Set<number>>(new Set());
+	const [hintPicked, setHintPicked] = useState<number | undefined>();
 	// usedPids frozen at the moment the hand was dealt. Without this, a wrong
 	// pick lands in usedPids, the options recompute, and the whole hand re-deals
 	// under the cursor - so crossing an option out would be meaningless.
@@ -497,8 +510,11 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	const correctCount = cells.filter((c) => c.pid !== undefined).length;
 	const score = cells.reduce((sum, c) => sum + c.points, 0);
 	const guessesLeft = gameMaxGuesses - guessesUsed;
+	// A failed cell can never be solved, so a board with nothing left open is
+	// over even with guesses in hand.
 	const done =
-		grid !== undefined && (gaveUp || correctCount === 9 || guessesLeft <= 0);
+		grid !== undefined &&
+		(gaveUp || correctCount + failedCells.size === 9 || guessesLeft <= 0);
 	const immaculate = correctCount === 9;
 
 	const summary = summarize(history);
@@ -534,6 +550,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 			missedByCell,
 			gaveUp,
 			hinted: [...hinted],
+			failed: [...failedCells],
 		} satisfies SavedGrid);
 	}, [
 		grid,
@@ -545,6 +562,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		missedByCell,
 		gaveUp,
 		hinted,
+		failedCells,
 	]);
 
 	// Faces for a restored board. handleGuess fetches these as cells are solved,
@@ -609,8 +627,9 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		setHinted(new Set());
 		setHintCell(undefined);
 		setHintShuffle({});
-		setHintWrong(new Set());
+		setHintPicked(undefined);
 		setHintUsed(new Set());
+		setFailedCells(new Set());
 		recordedRef.current = false;
 	};
 
@@ -760,65 +779,87 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		return m;
 	}, [searchList]);
 
-	// The six faces for the open hint. Recomputed from the seed, so it survives
-	// re-renders and only changes when the cell or the shuffle count does.
-	const hintOptions = useMemo(() => {
-		if (hintCell === undefined || !grid) {
+	// One cell's hand. Pulled out of the memo so opening a hint can look at what
+	// it would deal BEFORE charging for it.
+	const dealHint = (
+		cellIndex: number,
+		used: Set<number>,
+		shuffleCount: number,
+	) => {
+		if (!grid) {
 			return [];
 		}
-		const r = Math.floor(hintCell / 3);
-		const c = hintCell % 3;
+		const r = Math.floor(cellIndex / 3);
+		const c = cellIndex % 3;
 		return buildHintOptions({
-			cellPids: grid.cells[hintCell]!.pids,
-			rarity: grid.cells[hintCell]!.rarity,
+			cellPids: grid.cells[cellIndex]!.pids,
+			rarity: grid.cells[cellIndex]!.rarity,
 			rowPids: grid.rowPids?.[r] ?? [],
 			colPids: grid.colPids?.[c] ?? [],
-			usedPids: hintUsed,
+			usedPids: used,
 			popByPid,
-			seed: `${hintCell}|${hintShuffle[hintCell] ?? 0}|${searchList.length}`,
+			seed: `${cellIndex}|${shuffleCount}|${searchList.length}`,
 		});
+	};
+
+	// The faces for the open hint. Recomputed from the seed, so it survives
+	// re-renders and only changes when the cell or the shuffle count does.
+	const hintOptions = useMemo(() => {
+		if (hintCell === undefined) {
+			return [];
+		}
+		return dealHint(hintCell, hintUsed, hintShuffle[hintCell] ?? 0);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [hintCell, grid, hintUsed, popByPid, hintShuffle, searchList.length]);
 
-	// Deal a cell's six faces. Marking the cell hinted is what costs points, and
-	// it's marked the moment the faces are dealt - backing out of the hand
-	// without picking still means you saw six candidates.
+	// Deal a cell's faces. Marking the cell hinted is what costs points, and it
+	// sticks for the rest of the game: seeing the shortlist can't be un-seen, so
+	// typing the answer afterwards still scores as a hinted solve.
+	//
+	// A cell with nothing left to find has no hint to give, so it isn't charged
+	// for one.
 	const openHintFor = (cellIndex: number) => {
-		setHinted((prev) => new Set(prev).add(cellIndex));
-		setHintWrong(new Set());
-		setHintUsed(new Set(usedPids));
+		const snapshot = new Set(usedPids);
+		const options = dealHint(cellIndex, snapshot, hintShuffle[cellIndex] ?? 0);
+		if (options.length > 0) {
+			setHinted((prev) => new Set(prev).add(cellIndex));
+		}
+		setHintPicked(undefined);
+		setHintUsed(snapshot);
 		setHintCell(cellIndex);
 		setActiveCell(undefined);
 	};
 
-	// Picking a face. A right answer fills the cell through the normal guess
-	// path (so it burns a guess and scores like any other); a wrong one is
-	// crossed out and costs a guess, same as typing it would have.
+	// Picking a face. Six faces with exactly one right answer is a single
+	// question, so it gets a single answer: right fills the cell, wrong closes
+	// it. Being able to work through the other five made hint mode a free
+	// solve for the price of a few guesses.
 	const pickHint = (pid: number, correct: boolean) => {
-		if (hintCell === undefined) {
+		if (hintCell === undefined || hintPicked !== undefined) {
 			return;
 		}
 		const p = byPid.get(pid);
 		if (!p) {
 			return;
 		}
-		if (correct) {
-			handleGuess(hintCell, p);
-			setHintCell(undefined);
-			return;
-		}
-		setHintWrong((prev) => new Set(prev).add(pid));
+		setHintPicked(pid);
 		handleGuess(hintCell, p);
+		if (correct) {
+			setHintCell(undefined);
+		} else {
+			// The modal stays up so the answer can be seen, but the cell is done.
+			setFailedCells((prev) => new Set(prev).add(hintCell));
+		}
 	};
 
 	const reshuffleHint = () => {
-		if (hintCell === undefined) {
+		if (hintCell === undefined || hintPicked !== undefined) {
 			return;
 		}
 		setHintShuffle((prev) => ({
 			...prev,
 			[hintCell]: (prev[hintCell] ?? 0) + 1,
 		}));
-		setHintWrong(new Set());
 		// Re-deal against what is ACTUALLY used now, so a shuffle drops the
 		// players burned since the hand was dealt.
 		setHintUsed(new Set(usedPids));
@@ -1214,17 +1255,21 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 												</button>
 											);
 										}
+										// A cell burned by a wrong hint pick is out of play. It
+										// can still be opened once the game ends, to see what fit.
+										const failed = failedCells.has(i);
 										return (
 											<button
 												key={cIdx}
 												className={`btn p-0 trivia-cell trivia-grid-cell ${
 													activeCell === i
 														? "btn-primary"
-														: done
+														: failed || done
 															? "btn-light-bordered border-danger"
 															: "btn-light-bordered"
 												}`}
 												style={{ aspectRatio: "1 / 1" }}
+												disabled={failed && !done}
 												onClick={() => {
 													if (done) {
 														setRevealCell(i);
@@ -1245,6 +1290,8 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 														</span>
 														<span className="text-body-secondary">answers</span>
 													</span>
+												) : failed ? (
+													<span className="h4 mb-0 text-danger">&times;</span>
 												) : (
 													<span
 														className={`h4 mb-0 ${hinted.has(i) ? "text-warning" : "text-body-secondary"}`}
@@ -1537,7 +1584,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 			    are shown as they appear on the board rather than as a text title -
 			    a logo is what you actually recognise a cell by. */}
 			<Modal
-				show={hintCell !== undefined && !done}
+				show={hintCell !== undefined}
 				onHide={() => setHintCell(undefined)}
 				size="lg"
 			>
@@ -1567,13 +1614,24 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							<div className="trivia-hint-grid">
 								{hintOptions.map((option) => {
 									const p = byPid.get(option.pid);
-									const ruledOut = hintWrong.has(option.pid);
+									// After a pick the hand becomes a result: the face that
+									// was chosen and the one that was right are both marked,
+									// which is the only way to learn anything from a miss.
+									const answered = hintPicked !== undefined;
+									const picked = hintPicked === option.pid;
+									const reveal = answered
+										? option.correct
+											? "is-right"
+											: picked
+												? "is-wrong"
+												: "is-dimmed"
+										: "";
 									return (
 										<button
 											key={option.pid}
 											type="button"
-											className={`trivia-hint-option ${ruledOut ? "is-wrong" : ""}`}
-											disabled={ruledOut}
+											className={`trivia-hint-option ${reveal}`}
+											disabled={answered}
 											onClick={() => pickHint(option.pid, option.correct)}
 										>
 											<HintFace pid={option.pid} />
@@ -1585,13 +1643,39 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 								})}
 							</div>
 							<div className="d-flex align-items-center gap-2 mt-3">
-								<div className="fw-bold">Choose the correct player</div>
-								<button
-									className="btn btn-sm btn-light-bordered ms-auto"
-									onClick={reshuffleHint}
-								>
-									Shuffle
-								</button>
+								{hintPicked === undefined ? (
+									<>
+										<div className="fw-bold">
+											Choose the correct player — one guess
+										</div>
+										<button
+											className="btn btn-sm btn-light-bordered ms-auto"
+											onClick={reshuffleHint}
+										>
+											Shuffle
+										</button>
+									</>
+								) : (
+									<>
+										<div
+											className={`fw-bold ${
+												hintOptions.find((o) => o.pid === hintPicked)?.correct
+													? "text-success"
+													: "text-danger"
+											}`}
+										>
+											{hintOptions.find((o) => o.pid === hintPicked)?.correct
+												? "Correct"
+												: "Wrong — this cell is closed"}
+										</div>
+										<button
+											className="btn btn-sm btn-primary ms-auto"
+											onClick={() => setHintCell(undefined)}
+										>
+											Close
+										</button>
+									</>
+								)}
 							</div>
 						</>
 					)}
