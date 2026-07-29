@@ -162,6 +162,31 @@ export type DraftReadyEntry = {
 // One team's free-agency board: the ranked list of free agents (pids, best
 // first) it wants a shot at on the next FA day. Published per device; the
 // newest entry per team wins.
+// One finished trivia game, as it travels between devices in a room. The
+// `replay` field is what makes an entry more than a scoreline: it's enough to
+// rebuild the exact board or team-season the author played.
+export type TriviaScoreEntry = {
+	id: string;
+	game: string;
+	ts: number;
+	score: number;
+	label: string;
+	detail: string;
+	progress?: { done: number; total: number };
+	// Per-cell rarity points, in reading order; null = unsolved. Renders the
+	// colored square block without needing the board itself.
+	cells?: (number | null)[];
+	replay?:
+		| { kind: "grid"; code: string }
+		| { kind: "team"; season: number; tid: number };
+	// Who played it, stamped on publish.
+	byName?: string;
+	byTid?: number;
+	// The team the game was ABOUT (roster quizzes), which is not the same thing.
+	tid?: number;
+	season?: number;
+};
+
 export type FaBoardEntry = {
 	season: number;
 	tid: number;
@@ -328,6 +353,16 @@ export interface SyncTransport {
 	publishFaBoard?(entry: FaBoardEntry | null): Promise<void>;
 	subscribeFaBoard?(
 		onChange: (boards: Record<string, FaBoardEntry | null> | undefined) => void,
+	): () => void;
+
+	// Shared trivia scoreboard (see triviaScores.ts). Same per-client merge
+	// semantics as the FA board, but each bucket is a LIST of recent results
+	// rather than a single entry.
+	publishTriviaScores?(entries: TriviaScoreEntry[]): Promise<void>;
+	subscribeTriviaScores?(
+		onChange: (
+			scores: Record<string, TriviaScoreEntry[] | null> | undefined,
+		) => void,
 	): () => void;
 
 	// Live-sim broadcast support (see LiveBroadcastMeta). Optional so the

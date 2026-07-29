@@ -1,15 +1,21 @@
-// Per-game history for the trivia games, kept in localStorage.
+// Play history for the trivia games.
 //
-// The games already tracked aggregates (played / best / average), which tells
-// you how you're doing but not what you did. A list of finished games is the
-// thing worth keeping: it's what makes a good grid or a nasty roster worth
-// remembering, and it's what the Game History screen reads.
+// Two sources, one list. Your own games live in localStorage, so they exist
+// offline and survive the league room going away. Everyone else's arrive from
+// the sync room, which is what makes the history a scoreboard rather than a
+// diary: a grid your league-mate played shows up with their score, their
+// squares and enough information to replay the exact same board.
 //
-// Deliberately NOT stored in the league database. This is per-device play
-// history for a side game, not league state - it should not travel through a
-// league export, and it should not sync between multiplayer devices.
+// Deliberately NOT league data. It should not travel inside a league export,
+// and it is not part of the game state the sync engine reconciles - it rides
+// the room's control channel instead, like the free-agency board.
 
 export type TriviaGame = "grids" | "team";
+
+// What it takes to play a recorded game again.
+export type TriviaReplay =
+	| { kind: "grid"; code: string }
+	| { kind: "team"; season: number; tid: number };
 
 export type TriviaHistoryEntry = {
 	// Unique per entry. Timestamp plus a counter, because two games finished in
@@ -17,18 +23,24 @@ export type TriviaHistoryEntry = {
 	id: string;
 	ts: number;
 	score: number;
-	// What the game was: "2054 Clippers", or a grid's headline criterion.
+	// What the game was: "2054 Clippers", or a grid's six criteria.
 	label: string;
 	// Sublabel: "7/9 solved", "12/15 named".
 	detail: string;
-	// Present when the game was about one team, for the logo and card color.
+	// The team the game was ABOUT, for roster quizzes.
 	tid?: number;
 	season?: number;
 	colors?: [string, string, string];
-	// How much of the game was completed - 9 of 9 cells, 12 of 15 names. Kept as
-	// numbers rather than parsed back out of `detail`, so "did I get everything?"
-	// is a comparison and not a string match.
+	// How much of the game was completed. Kept as numbers rather than parsed back
+	// out of `detail`, so "did I get everything?" is a comparison, not a match.
 	progress?: { done: number; total: number };
+	// Per-cell rarity points in reading order; null = unsolved. Renders the
+	// square block without needing the board.
+	cells?: (number | null)[];
+	replay?: TriviaReplay;
+	// Who played it. Absent on your own entries - the modal labels those "You".
+	byName?: string;
+	byTid?: number;
 };
 
 // Enough to scroll through a long history without letting localStorage grow
@@ -102,10 +114,23 @@ export const clearHistory = (game: TriviaGame): TriviaHistoryEntry[] => {
 	return [];
 };
 
+// Your games plus the room's, deduped by id and newest first. Yours win: only
+// the local copy is guaranteed complete, and only the local copy is deletable.
+export const mergeHistory = (
+	mine: TriviaHistoryEntry[],
+	remote: unknown[],
+): TriviaHistoryEntry[] => {
+	const seen = new Set(mine.map((e) => e.id));
+	const extra = remote.filter(
+		(e): e is TriviaHistoryEntry => isEntry(e) && !seen.has(e.id),
+	);
+	return [...mine, ...extra].sort((a, b) => b.ts - a.ts);
+};
+
 export type HistorySort = "recent" | "best";
 
-// The filter behind the funnel icon: free text over the label, an optional
-// team, and the sort. Pure, so it's testable without a DOM.
+// The filter behind the funnel: free text over the label, an optional team, and
+// the sort. Pure, so it's testable without a DOM.
 export const filterHistory = (
 	entries: TriviaHistoryEntry[],
 	{
@@ -116,10 +141,13 @@ export const filterHistory = (
 ): TriviaHistoryEntry[] => {
 	const q = query.trim().toLowerCase();
 	const out = entries.filter((e) => {
-		if (tid !== undefined && e.tid !== tid) {
+		if (tid !== undefined && e.tid !== tid && e.byTid !== tid) {
 			return false;
 		}
-		if (q && !`${e.label} ${e.detail}`.toLowerCase().includes(q)) {
+		if (
+			q &&
+			!`${e.label} ${e.detail} ${e.byName ?? ""}`.toLowerCase().includes(q)
+		) {
 			return false;
 		}
 		return true;

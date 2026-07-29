@@ -8,6 +8,10 @@ import { setApplyGuard } from "./applyGuard.ts";
 import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
 import { setupSimDayFence, teardownSimDayFence } from "./simDayFence.ts";
 import { setupFaBoard, teardownFaBoard } from "./faBoard.ts";
+import {
+	setupTriviaScores,
+	teardownTriviaScores,
+} from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
@@ -1627,6 +1631,7 @@ const doConnectSharedLeague = async ({
 	// Free-agency boards: watch everyone's ranked FA lists so the day advance
 	// can resolve them (see faBoard.ts). No-op outside free agency.
 	setupFaBoard(transport);
+	setupTriviaScores(transport);
 
 	// Watch for a live lottery reveal (someone running the lottery while
 	// everyone watches the picks flip in lockstep).
@@ -1724,6 +1729,7 @@ export const teardownSharedLeague = async ({
 	teardownDraftReady();
 	teardownSimDayFence();
 	teardownFaBoard();
+	teardownTriviaScores();
 	// Best-effort: end our own broadcast so we don't leave the room locked.
 	if (activeBroadcast) {
 		void endLiveBroadcast();

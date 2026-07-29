@@ -236,12 +236,6 @@ const Trivia82 = ({ data, season }: View<"trivia82">) => {
 	if (mode === undefined) {
 		return (
 			<>
-				<p>
-					Draft a five-man lineup out of your league's history — one player per
-					position — then play the season and see how close it gets to 82-0.
-					Each round rolls a franchise and an era, and you take the best player
-					you can find who fits.
-				</p>
 				<div className="d-flex flex-wrap gap-2">
 					{MODES.map((row) => (
 						<button

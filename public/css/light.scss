@@ -2203,6 +2203,110 @@ tr.text-body-secondary {
 	max-width: 100%;
 }
 
+// --- Solved grid cell ------------------------------------------------------
+// The cell stays on the page's own surface. Flooding it with the rarity color
+// drowned the face and made nine solved cells read as nine unrelated blocks of
+// paint; the rarity now lives in one number and one bar along the bottom, which
+// is quieter and far easier to compare across a board.
+.trivia-grid-solved {
+	position: relative;
+	display: block;
+	width: 100%;
+	aspect-ratio: 1 / 1;
+	padding: 0;
+	border: 0;
+	overflow: hidden;
+	background: var(--bs-body-bg);
+	color: var(--bs-body-color);
+}
+.trivia-grid-solved:hover {
+	filter: brightness(1.08);
+}
+
+.trivia-grid-solved-face {
+	position: absolute;
+	inset: 0 0 20px;
+	display: flex;
+	justify-content: center;
+}
+.trivia-grid-solved-face > * {
+	height: 100%;
+	aspect-ratio: 2 / 3;
+}
+
+.trivia-grid-rarity {
+	position: absolute;
+	top: 2px;
+	right: 4px;
+	font-size: 0.72rem;
+	font-weight: 700;
+	line-height: 1;
+	// The number sits over the face, so it needs to hold up against whatever is
+	// behind it without a box of its own.
+	text-shadow:
+		0 0 3px var(--bs-body-bg),
+		0 0 3px var(--bs-body-bg);
+}
+
+.trivia-grid-solved-name {
+	position: absolute;
+	inset: auto 0 3px;
+	padding-inline: 2px;
+	font-size: 0.68rem;
+	line-height: 15px;
+	text-align: center;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	background: var(--bs-body-bg);
+}
+
+// Length is the rarity, so a row of solved cells reads as a small bar chart.
+.trivia-grid-rarity-bar {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	height: 3px;
+}
+
+// --- Shareable grid code ---------------------------------------------------
+.trivia-code {
+	font-family: var(--bs-font-monospace);
+	font-size: 0.8rem;
+	word-break: break-all;
+	padding: 0.5rem 0.75rem;
+	border: 1px solid var(--bs-border-color);
+	border-radius: var(--bs-border-radius);
+	background: var(--bs-tertiary-bg);
+	user-select: all;
+}
+
+// --- Result squares --------------------------------------------------------
+.trivia-squares {
+	display: grid;
+	gap: 1px;
+}
+
+// --- Player card modal -----------------------------------------------------
+.trivia-profile-head {
+	display: flex;
+	align-items: flex-start;
+	gap: 1rem;
+	margin-bottom: 1rem;
+}
+
+.trivia-profile-face {
+	width: 72px;
+	aspect-ratio: 2 / 3;
+	flex-shrink: 0;
+}
+
+.trivia-profile-facts {
+	font-size: 0.85rem;
+	color: var(--bs-secondary-color);
+	line-height: 1.35;
+}
+
 // The live "N players qualify" readout in a cell while editing.
 .trivia-grid-count {
 	background: var(--bs-body-bg);
@@ -2253,6 +2357,16 @@ tr.text-body-secondary {
 	gap: 0.6rem;
 	padding: 0.3rem 0.5rem;
 	min-width: 0;
+	// It's a button now (each row opens that player's card), so it has to be
+	// told to fill the list rather than shrink to its own contents.
+	width: 100%;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	text-align: left;
+}
+.trivia-answer-row:hover {
+	background: var(--bs-tertiary-bg);
 }
 .trivia-answer-row + .trivia-answer-row {
 	border-top: 1px solid var(--bs-border-color);
@@ -2263,6 +2377,28 @@ tr.text-body-secondary {
 .trivia-answer-row.is-mine {
 	background: color-mix(in srgb, var(--bs-success) 15%, var(--bs-body-bg));
 	box-shadow: inset 3px 0 0 var(--bs-success);
+}
+
+// --- Trivia page layout ----------------------------------------------------
+// Board on the left, everything about the run on the right. On a phone these
+// stack in the same order they'd be read; on a desktop the page stops leaving
+// half the screen empty below a 640px board.
+.trivia-layout {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-start;
+	gap: 1rem;
+}
+
+.trivia-board-col {
+	flex: 1 1 320px;
+	max-width: 640px;
+	min-width: 0;
+}
+
+.trivia-side-col {
+	flex: 1 1 300px;
+	min-width: 0;
 }
 
 // --- Trivia toolbars -------------------------------------------------------
@@ -2290,6 +2426,7 @@ tr.text-body-secondary {
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.5rem;
+	margin-bottom: 1rem;
 }
 
 // The hint switch reads as one control - the label is part of the target, so
@@ -2356,7 +2493,7 @@ tr.text-body-secondary {
 // it looked like.
 .trivia-roster-grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+	grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
 	gap: 0.5rem;
 }
 
@@ -2396,25 +2533,30 @@ tr.text-body-secondary {
 	box-shadow: inset 0 0 0 2px var(--bs-danger);
 }
 
-.trivia-roster-pos,
-.trivia-roster-jersey {
+.trivia-roster-pos {
 	position: absolute;
 	top: 0.25rem;
+	left: 0.25rem;
 	font-size: 0.68rem;
 	font-weight: 700;
 	line-height: 1;
 	padding: 0.15rem 0.3rem;
 	border-radius: 0.2rem;
-}
-.trivia-roster-pos {
-	left: 0.25rem;
 	background: var(--bs-secondary-bg);
 	color: var(--bs-secondary-color);
 }
+
+// The app's own jersey block, scaled to fit a card. Same component the player
+// page uses, so a number looks the same wherever you meet it.
 .trivia-roster-jersey {
+	position: absolute;
+	top: 0.25rem;
 	right: 0.25rem;
-	background: var(--bs-warning);
-	color: #000;
+	display: block;
+	// JerseyNumber renders at a fixed 55x50; shrink it in place rather than
+	// forking the component for one caller.
+	transform: scale(0.55);
+	transform-origin: top right;
 }
 
 .trivia-roster-face {
@@ -2422,7 +2564,8 @@ tr.text-body-secondary {
 	height: 96px;
 	aspect-ratio: 2 / 3;
 	max-width: 100%;
-	margin-top: 0.9rem;
+	// Clears the position badge and the jersey block above it.
+	margin-top: 1.9rem;
 }
 
 .trivia-roster-name {

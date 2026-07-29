@@ -15,18 +15,23 @@ import {
 } from "../util/triviaPlayerCards.ts";
 import { buildHintOptions } from "../util/triviaHint.ts";
 import { TriviaHistoryModal } from "../components/TriviaHistoryModal.tsx";
+import { TriviaPlayerModal } from "../components/TriviaPlayerModal.tsx";
+import { TriviaSquares } from "../components/TriviaSquares.tsx";
 import {
 	addHistoryEntry,
 	countPerfect,
 	loadHistory,
 	summarize,
-	type TriviaHistoryEntry,
+	type TriviaReplay,
 } from "../util/triviaHistory.ts";
+import { shareHistory } from "../util/triviaHistorySync.ts";
+import { shareOrCopy } from "../util/triviaShare.ts";
+import { tierOf } from "../util/triviaTiers.ts";
 import {
-	buildGridShareText,
-	shareOrCopy,
-	tierEmoji,
-} from "../util/triviaShare.ts";
+	decodeGridCode,
+	encodeGridCode,
+	type GridCodeRef,
+} from "../../common/triviaGridCode.ts";
 import { decadeLabel, statLabel } from "../../common/triviaCriteriaLabels.ts";
 import { Confetti } from "./LiveGame/Confetti.tsx";
 import type { View } from "../../common/types.ts";
@@ -101,34 +106,6 @@ const loadHintMode = (): boolean => {
 	} catch {
 		return false;
 	}
-};
-
-// Rarity points (0-100, higher = more obscure) mapped to a display tier. Six
-// tiers rather than four, so a lucky obvious answer and a genuinely deep cut
-// don't land on the same color.
-//
-// The colors are the app's own `text-bg-*` set, ordered by how they actually
-// render here rather than by Bootstrap's names: gray, cyan, green, yellow,
-// orange, red. Note `primary` is orange in this theme, so it belongs near the
-// hot end - putting it where its name suggests breaks the ramp.
-// `cls` fills the solved cell and is the badge color wherever a tier is named.
-const tierOf = (points: number): { label: string; cls: string } => {
-	if (points >= 90) {
-		return { label: "Mythic", cls: "text-bg-danger" };
-	}
-	if (points >= 75) {
-		return { label: "Legendary", cls: "text-bg-primary" };
-	}
-	if (points >= 60) {
-		return { label: "Epic", cls: "text-bg-warning" };
-	}
-	if (points >= 40) {
-		return { label: "Rare", cls: "text-bg-success" };
-	}
-	if (points >= 20) {
-		return { label: "Uncommon", cls: "text-bg-info" };
-	}
-	return { label: "Common", cls: "text-bg-secondary" };
 };
 
 const loadGuessSetting = (): number => {
@@ -237,8 +214,7 @@ const EditableHeader = ({
 					{spec.unit}
 					{spec.scope === "season" && spec.id !== "season-gp"
 						? " (Season)"
-						: ""}{" "}
-					✎
+						: ""}
 				</button>
 				<div className="d-flex gap-1 px-1 pb-1">
 					<select
@@ -286,7 +262,7 @@ const EditableHeader = ({
 					title="Change this criterion"
 					onClick={onClick}
 				>
-					{criterionRef.mode === "debut" ? "Debuted in" : "Played in"} ✎
+					{criterionRef.mode === "debut" ? "Debuted in" : "Played in"}
 				</button>
 				<div className="px-1 pb-1">
 					<select
@@ -317,9 +293,6 @@ const EditableHeader = ({
 			className={`trivia-grid-head-edit ${header ? "" : "is-empty"}`}
 			onClick={onClick}
 		>
-			<span className="trivia-edit-pencil" aria-hidden="true">
-				✎
-			</span>
 			{header ? (
 				<CriterionLabel c={header} />
 			) : (
@@ -420,11 +393,14 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	const [cards, setCards] = useState<Record<number, TriviaPlayerCard>>({});
 	const [revealCell, setRevealCell] = useState<number | undefined>();
 	const [revealLimit, setRevealLimit] = useState(24);
-	const [history, setHistory] = useState<TriviaHistoryEntry[]>(() =>
-		loadHistory("grids"),
-	);
+	const [history, setHistory] = useState(() => loadHistory("grids"));
 	const [showHistory, setShowHistory] = useState(false);
+	const [showShare, setShowShare] = useState(false);
 	const [shared, setShared] = useState<string | undefined>();
+	const [codeInput, setCodeInput] = useState("");
+	const [codeError, setCodeError] = useState<string | undefined>();
+	// The player card, opened by tapping anyone you've already found.
+	const [profilePid, setProfilePid] = useState<number | undefined>();
 
 	// Hint mode. `hinted` records which cells were played with help (so they
 	// score less), `hintShuffle` lets a cell be re-dealt, and `hintWrong` marks
@@ -475,6 +451,19 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	const best = summary.best;
 	const immaculateCount = countPerfect(history);
 
+	// This board as a code someone else can paste in. Derived from the criteria
+	// on screen, so an edited or replayed grid shares correctly too.
+	const gridCode = useMemo(
+		() =>
+			grid
+				? encodeGridCode(
+						grid.rows.map((c) => criterionToRef(c) as GridCodeRef),
+						grid.cols.map((c) => criterionToRef(c) as GridCodeRef),
+					)
+				: "",
+		[grid],
+	);
+
 	// Record each finished game into the history exactly once. The label is the
 	// board itself, so the history search finds "every grid with the Knicks on
 	// it" - which is the thing you'd actually want to look up.
@@ -485,19 +474,23 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		}
 		recordedRef.current = true;
 		const team = [...grid.rows, ...grid.cols].find((c) => c.kind === "team");
-		setHistory(
-			addHistoryEntry("grids", {
-				score,
-				label: `${grid.rows.map((c) => c.label).join(" / ")} × ${grid.cols
-					.map((c) => c.label)
-					.join(" / ")}`,
-				detail: `${correctCount}/9 solved${hinted.size > 0 ? ` · ${hinted.size} hinted` : ""}`,
-				tid: team?.tid,
-				colors: team?.colors,
-				progress: { done: correctCount, total: 9 },
-			}),
-		);
-	}, [done, grid, score, correctCount, hinted]);
+		const next = addHistoryEntry("grids", {
+			score,
+			label: `${grid.rows.map((c) => c.label).join(" / ")} × ${grid.cols
+				.map((c) => c.label)
+				.join(" / ")}`,
+			detail: `${correctCount}/9 solved${hinted.size > 0 ? ` · ${hinted.size} hinted` : ""}`,
+			tid: team?.tid,
+			colors: team?.colors,
+			progress: { done: correctCount, total: 9 },
+			// The squares, so anyone in the room can see the shape of the board
+			// without seeing an answer on it.
+			cells: cells.map((c) => (c.pid === undefined ? null : c.points)),
+			replay: { kind: "grid", code: gridCode },
+		});
+		setHistory(next);
+		shareHistory("grids", next);
+	}, [done, grid, score, correctCount, hinted, cells, gridCode]);
 
 	const resetGame = (fresh: GridData) => {
 		setData(fresh);
@@ -532,6 +525,41 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		}
 	};
 
+	// Load a board from a code. Invalid codes and codes whose criteria don't
+	// exist in THIS league both land here as "no grid" - the message says the
+	// same thing either way, because from the player's side they are the same
+	// problem.
+	const playCode = async (code: string) => {
+		const decoded = decodeGridCode(code);
+		if (!decoded) {
+			setCodeError("That doesn't look like a grid code.");
+			return;
+		}
+		setCodeError(undefined);
+		setLoadingNew(true);
+		try {
+			const fresh = await toWorker("main", "triviaCustomGrid", {
+				rows: decoded.rows as any,
+				cols: decoded.cols as any,
+			});
+			if (fresh && fresh.grid.cells.every((c) => c.pids.length > 0)) {
+				resetGame(fresh);
+				setShowShare(false);
+				setCodeInput("");
+			} else {
+				setCodeError("That grid doesn't work in this league.");
+			}
+		} finally {
+			setLoadingNew(false);
+		}
+	};
+
+	const replay = (r: TriviaReplay) => {
+		if (r.kind === "grid") {
+			void playCode(r.code);
+		}
+	};
+
 	const toggleHintMode = (on: boolean) => {
 		setHintMode(on);
 		try {
@@ -539,23 +567,17 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		} catch {}
 	};
 
-	const share = async () => {
-		const result = await shareOrCopy(
-			buildGridShareText({
-				points: cells.map((c) => (c.pid === undefined ? undefined : c.points)),
-				score,
-				hintedCount: hinted.size,
-			}),
-		);
+	const copyCode = async () => {
+		const result = await shareOrCopy(gridCode);
 		setShared(
 			result === "copied"
-				? "Copied!"
+				? "Copied"
 				: result === "shared"
 					? "Shared"
-					: "Couldn't share",
+					: "Copy failed",
 		);
-		// Back to "Share grid" shortly - a button permanently reading "Copied!"
-		// stops looking like a button you can press again.
+		// A button permanently reading "Copied" stops looking like a button you
+		// can press again.
 		setTimeout(() => setShared(undefined), 2500);
 	};
 
@@ -896,7 +918,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							className="btn btn-sm btn-light-bordered"
 							onClick={() => setGaveUp(true)}
 						>
-							🏳 Give up
+							Give up
 						</button>
 					)}
 					<button
@@ -904,7 +926,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 						disabled={loadingNew}
 						onClick={newGrid}
 					>
-						{loadingNew ? "Generating…" : "🔄 New"}
+						{loadingNew ? "Generating" : "New grid"}
 					</button>
 					<select
 						className="form-select form-select-sm w-auto"
@@ -919,10 +941,9 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 					</select>
 					<button
 						className="btn btn-sm btn-light-bordered"
-						title="Game history"
 						onClick={() => setShowHistory(true)}
 					>
-						🕘
+						History
 					</button>
 					<div className="trivia-toolbar-score ms-auto">
 						{correctCount}/9 solved
@@ -930,380 +951,366 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 				</div>
 			)}
 
-			<div className="trivia-grid-board mb-2" style={{ maxWidth: 640 }}>
-				<div
-					className="trivia-grid-inner"
-					style={{
-						// Fractional columns so the inner grid always fills the board -
-						// fixed max widths left a strip of the container showing. The
-						// minmax(0, ...) lets a column shrink below its header's
-						// min-content width; without it a long criterion ("2nd Round
-						// Pick") pushes the board past the edge of a phone screen.
-						gridTemplateColumns:
-							"minmax(64px, 108px) repeat(3, minmax(0, 1fr))",
-					}}
-				>
-					<div className="trivia-grid-head flex-column">
-						{editing ? (
-							<div className="text-body-secondary small text-center p-1 lh-sm">
-								Tap a header to change it
-							</div>
-						) : (
-							<>
-								<div
-									className="text-body-secondary"
-									style={{ fontSize: "0.7rem" }}
-								>
-									Score
-								</div>
-								<div className="h3 mb-0">{score}</div>
-								<div
-									className="text-body-secondary"
-									style={{ fontSize: "0.7rem" }}
-									title="Guesses left"
-								>
-									{gameMaxGuesses === Infinity ? "∞" : Math.max(0, guessesLeft)}{" "}
-									left
-								</div>
-							</>
-						)}
-					</div>
-
-					{[0, 1, 2].map((i) => {
-						const slot = 3 + i;
-						const header = editing ? headerFor(slot) : grid.cols[i]!;
-						if (!editing) {
-							return (
-								<div key={i} className="trivia-grid-head">
-									<CriterionLabel c={header as Criterion} />
-								</div>
-							);
-						}
-						return (
-							<EditableHeader
-								key={i}
-								header={header}
-								criterionRef={editRefs[slot]}
-								spec={specForSlot(slot)}
-								decades={catalog?.decades ?? []}
-								onClick={() => setEditSlot(slot)}
-								onChange={(ref) => setSlotRef(slot, ref)}
-							/>
-						);
-					})}
-
-					{[0, 1, 2].map((r) => (
-						<Fragment key={r}>
-							{editing ? (
-								<EditableHeader
-									header={headerFor(r)}
-									criterionRef={editRefs[r]}
-									spec={specForSlot(r)}
-									decades={catalog?.decades ?? []}
-									onClick={() => setEditSlot(r)}
-									onChange={(ref) => setSlotRef(r, ref)}
-								/>
-							) : (
-								<div className="trivia-grid-head">
-									<CriterionLabel c={grid.rows[r]!} />
-								</div>
-							)}
-
-							{[0, 1, 2].map((cIdx) => {
-								const i = r * 3 + cIdx;
-
-								// Editing: every cell is a live "is this playable" readout.
-								if (editing) {
-									const count = editPreview?.grid.cells[i]?.pids.length;
-									return (
-										<div key={cIdx} className="trivia-grid-count">
-											{count === undefined ? (
-												<span className="text-body-secondary small">
-													{editLoading ? "…" : "—"}
-												</span>
-											) : (
-												<>
-													<span
-														className={`fw-bold ${count === 0 ? "text-danger" : ""}`}
-													>
-														{count}
-													</span>
-													<span
-														className="text-body-secondary"
-														style={{ fontSize: "0.7rem" }}
-													>
-														{count === 0 ? "none" : "answers"}
-													</span>
-												</>
-											)}
-										</div>
-									);
-								}
-
-								const cell = cells[i]!;
-								const solved = cell.pid !== undefined;
-								if (solved) {
-									const card = cards[cell.pid!];
-									const tier = tierOf(cell.points);
-									return (
+			<div className="trivia-layout">
+				<div className="trivia-board-col">
+					<div className="trivia-grid-board mb-2">
+						<div
+							className="trivia-grid-inner"
+							style={{
+								// Fractional columns so the inner grid always fills the board -
+								// fixed max widths left a strip of the container showing. The
+								// minmax(0, ...) lets a column shrink below its header's
+								// min-content width; without it a long criterion ("2nd Round
+								// Pick") pushes the board past the edge of a phone screen.
+								gridTemplateColumns:
+									"minmax(64px, 108px) repeat(3, minmax(0, 1fr))",
+							}}
+						>
+							<div className="trivia-grid-head flex-column">
+								{editing ? (
+									<div className="text-body-secondary small text-center p-1 lh-sm">
+										Tap a header to change it
+									</div>
+								) : (
+									<>
 										<div
-											key={cIdx}
-											className={`position-relative overflow-hidden trivia-pop trivia-flash-green ${tier.cls}`}
-											style={{
-												aspectRatio: "1 / 1",
-												cursor: done ? "pointer" : undefined,
-											}}
-											onClick={
-												done
-													? () => {
-															setRevealCell(i);
-															setRevealLimit(24);
-														}
-													: undefined
-											}
+											className="text-body-secondary"
+											style={{ fontSize: "0.7rem" }}
 										>
-											<div
-												className="position-absolute d-flex justify-content-center"
-												style={{ inset: "0 0 18px 0" }}
-											>
-												{card ? (
-													<div style={{ height: "100%", aspectRatio: "2 / 3" }}>
-														<PlayerPicture
-															face={card.face}
-															imgURL={card.imgURL}
-															colors={card.colors}
-															jersey={card.jersey}
-															lazy
-														/>
-													</div>
-												) : null}
-											</div>
-											<span
-												// The chip sits on top of the tier-colored cell, so it
-												// needs its own neutral background for contrast.
-												className="badge text-bg-dark position-absolute top-0 end-0 m-1"
-												title={`${tier.label} pick`}
-											>
-												+{cell.points}
-											</span>
-											<div
-												className="position-absolute bottom-0 start-0 end-0 text-center text-truncate px-1 text-white"
-												style={{
-													background: "rgba(0,0,0,0.6)",
-													fontSize: "0.7rem",
-													lineHeight: "18px",
-													height: 18,
-												}}
-											>
-												{cell.name}
-											</div>
+											Score
+										</div>
+										<div className="h3 mb-0">{score}</div>
+										<div
+											className="text-body-secondary"
+											style={{ fontSize: "0.7rem" }}
+											title="Guesses left"
+										>
+											{gameMaxGuesses === Infinity
+												? "∞"
+												: Math.max(0, guessesLeft)}{" "}
+											left
+										</div>
+									</>
+								)}
+							</div>
+
+							{[0, 1, 2].map((i) => {
+								const slot = 3 + i;
+								const header = editing ? headerFor(slot) : grid.cols[i]!;
+								if (!editing) {
+									return (
+										<div key={i} className="trivia-grid-head">
+											<CriterionLabel c={header as Criterion} />
 										</div>
 									);
 								}
 								return (
-									<button
-										key={cIdx}
-										className={`btn p-0 trivia-cell trivia-grid-cell ${
-											activeCell === i
-												? "btn-primary"
-												: done
-													? "btn-light-bordered border-danger"
-													: "btn-light-bordered"
-										}`}
-										style={{ aspectRatio: "1 / 1" }}
-										onClick={() => {
-											if (done) {
-												setRevealCell(i);
-												setRevealLimit(24);
-											} else if (hintMode) {
-												setWrongGuess(undefined);
-												openHintFor(i);
-											} else {
-												setActiveCell(i);
-												setWrongGuess(undefined);
-											}
-										}}
-									>
-										{done ? (
-											<span className="small">
-												<span className="d-block fw-bold">
-													{grid.cells[i]!.pids.length}
-												</span>
-												<span className="text-body-secondary">answers</span>
-											</span>
-										) : hinted.has(i) ? (
-											<span
-												className="text-body-secondary h4 mb-0"
-												title="Hint used"
-											>
-												💡
-											</span>
-										) : (
-											<span className="text-body-secondary h4 mb-0">+</span>
-										)}
-									</button>
+									<EditableHeader
+										key={i}
+										header={header}
+										criterionRef={editRefs[slot]}
+										spec={specForSlot(slot)}
+										decades={catalog?.decades ?? []}
+										onClick={() => setEditSlot(slot)}
+										onChange={(ref) => setSlotRef(slot, ref)}
+									/>
 								);
 							})}
-						</Fragment>
-					))}
-				</div>
-			</div>
 
-			{editing ? null : (
-				<div className="trivia-board-actions mb-3" style={{ maxWidth: 640 }}>
-					<button className="btn btn-light-bordered" onClick={share}>
-						🔗 {shared ?? "Share grid"}
-					</button>
-					<label
-						className="trivia-hint-toggle"
-						title="Turn every cell into a six-face multiple choice. Hinted cells score a quarter."
-					>
-						<span className="form-switch d-inline-flex">
-							<input
-								type="checkbox"
-								className="form-check-input m-0"
-								role="switch"
-								checked={hintMode}
-								onChange={(event) => toggleHintMode(event.target.checked)}
-							/>
-						</span>
-						Hint 💡
-					</label>
-					<button
-						className="btn btn-light-bordered ms-auto"
-						onClick={startEdit}
-						title="Build your own rows and columns"
-					>
-						▦ Custom
-					</button>
-				</div>
-			)}
+							{[0, 1, 2].map((r) => (
+								<Fragment key={r}>
+									{editing ? (
+										<EditableHeader
+											header={headerFor(r)}
+											criterionRef={editRefs[r]}
+											spec={specForSlot(r)}
+											decades={catalog?.decades ?? []}
+											onClick={() => setEditSlot(r)}
+											onChange={(ref) => setSlotRef(r, ref)}
+										/>
+									) : (
+										<div className="trivia-grid-head">
+											<CriterionLabel c={grid.rows[r]!} />
+										</div>
+									)}
 
-			{editing ? (
-				<div
-					className="d-flex flex-wrap align-items-center gap-2 mb-3"
-					style={{ maxWidth: 640 }}
-				>
-					<button
-						className="btn btn-primary"
-						disabled={!editPlayable || editLoading}
-						onClick={playEdited}
-						title={
-							editPlayable
-								? undefined
-								: "Every cell needs at least one qualifying player"
-						}
-					>
-						Play this grid
-					</button>
-					<button
-						className="btn btn-light-bordered"
-						disabled={editLoading}
-						onClick={shuffleEdit}
-					>
-						Shuffle
-					</button>
-					<button
-						className="btn btn-light-bordered ms-auto"
-						onClick={() => setEditing(false)}
-					>
-						Cancel
-					</button>
-					{editComplete && !editLoading && !editPlayable ? (
-						<div className="text-danger small w-100">
-							A red cell has no qualifying player — change one of its criteria.
+									{[0, 1, 2].map((cIdx) => {
+										const i = r * 3 + cIdx;
+
+										// Editing: every cell is a live "is this playable" readout.
+										if (editing) {
+											const count = editPreview?.grid.cells[i]?.pids.length;
+											return (
+												<div key={cIdx} className="trivia-grid-count">
+													{count === undefined ? (
+														<span className="text-body-secondary small">
+															{editLoading ? "…" : "—"}
+														</span>
+													) : (
+														<>
+															<span
+																className={`fw-bold ${count === 0 ? "text-danger" : ""}`}
+															>
+																{count}
+															</span>
+															<span
+																className="text-body-secondary"
+																style={{ fontSize: "0.7rem" }}
+															>
+																{count === 0 ? "none" : "answers"}
+															</span>
+														</>
+													)}
+												</div>
+											);
+										}
+
+										const cell = cells[i]!;
+										const solved = cell.pid !== undefined;
+										if (solved) {
+											const card = cards[cell.pid!];
+											const tier = tierOf(cell.points);
+											// The cell itself stays neutral: flooding it with the tier
+											// color drowned the face and made nine solved cells read as
+											// nine unrelated blocks of paint. The rarity lives in one
+											// bar and one number instead, which is both quieter and
+											// easier to compare across the board.
+											return (
+												<button
+													key={cIdx}
+													type="button"
+													className="trivia-grid-solved trivia-pop"
+													title={`${cell.name} · ${tier.label}`}
+													onClick={() => setProfilePid(cell.pid)}
+												>
+													<span className="trivia-grid-solved-face">
+														{card ? (
+															<PlayerPicture
+																face={card.face}
+																imgURL={card.imgURL}
+																colors={card.colors}
+																jersey={card.jersey}
+																lazy
+															/>
+														) : null}
+													</span>
+													<span
+														className="trivia-grid-rarity"
+														style={{ color: tier.color }}
+													>
+														{cell.points}
+													</span>
+													<span className="trivia-grid-solved-name">
+														{cell.name}
+													</span>
+													<span
+														className="trivia-grid-rarity-bar"
+														style={{
+															width: `${Math.max(4, Math.min(100, cell.points))}%`,
+															background: tier.color,
+														}}
+													/>
+												</button>
+											);
+										}
+										return (
+											<button
+												key={cIdx}
+												className={`btn p-0 trivia-cell trivia-grid-cell ${
+													activeCell === i
+														? "btn-primary"
+														: done
+															? "btn-light-bordered border-danger"
+															: "btn-light-bordered"
+												}`}
+												style={{ aspectRatio: "1 / 1" }}
+												onClick={() => {
+													if (done) {
+														setRevealCell(i);
+														setRevealLimit(24);
+													} else if (hintMode) {
+														setWrongGuess(undefined);
+														openHintFor(i);
+													} else {
+														setActiveCell(i);
+														setWrongGuess(undefined);
+													}
+												}}
+											>
+												{done ? (
+													<span className="small">
+														<span className="d-block fw-bold">
+															{grid.cells[i]!.pids.length}
+														</span>
+														<span className="text-body-secondary">answers</span>
+													</span>
+												) : (
+													<span
+														className={`h4 mb-0 ${hinted.has(i) ? "text-warning" : "text-body-secondary"}`}
+														title={hinted.has(i) ? "Hint used" : undefined}
+													>
+														+
+													</span>
+												)}
+											</button>
+										);
+									})}
+								</Fragment>
+							))}
+						</div>
+					</div>
+
+					{editing ? null : (
+						<div className="trivia-board-actions">
+							<button
+								className="btn btn-light-bordered"
+								onClick={() => {
+									setCodeError(undefined);
+									setShowShare(true);
+								}}
+							>
+								Share grid
+							</button>
+							<label
+								className="trivia-hint-toggle"
+								title="Turn every cell into a six-face multiple choice. Hinted cells score a quarter."
+							>
+								<span className="form-switch d-inline-flex">
+									<input
+										type="checkbox"
+										className="form-check-input m-0"
+										role="switch"
+										checked={hintMode}
+										onChange={(event) => toggleHintMode(event.target.checked)}
+									/>
+								</span>
+								Hint
+							</label>
+							<button
+								className="btn btn-light-bordered ms-auto"
+								onClick={startEdit}
+								title="Build your own rows and columns"
+							>
+								Custom
+							</button>
+						</div>
+					)}
+
+					{editing ? (
+						<div className="d-flex flex-wrap align-items-center gap-2">
+							<button
+								className="btn btn-primary"
+								disabled={!editPlayable || editLoading}
+								onClick={playEdited}
+								title={
+									editPlayable
+										? undefined
+										: "Every cell needs at least one qualifying player"
+								}
+							>
+								Play this grid
+							</button>
+							<button
+								className="btn btn-light-bordered"
+								disabled={editLoading}
+								onClick={shuffleEdit}
+							>
+								Shuffle
+							</button>
+							<button
+								className="btn btn-light-bordered ms-auto"
+								onClick={() => setEditing(false)}
+							>
+								Cancel
+							</button>
+							{editComplete && !editLoading && !editPlayable ? (
+								<div className="text-danger small w-100">
+									A red cell has no qualifying player — change one of its
+									criteria.
+								</div>
+							) : null}
 						</div>
 					) : null}
 				</div>
-			) : done ? (
-				<>
-					{immaculate ? <Confetti /> : null}
-					<div className="card trivia-rise mb-3" style={{ maxWidth: 640 }}>
-						<div className="card-body d-flex flex-wrap align-items-center gap-3">
-							<div style={{ fontSize: "1.3rem", lineHeight: 1.15 }}>
-								{[0, 1, 2].map((r) => (
-									<div key={r}>
-										{[0, 1, 2].map((c) => {
-											const cell = cells[r * 3 + c]!;
-											return tierEmoji(
-												cell.pid === undefined ? undefined : cell.points,
-											);
-										})}
-									</div>
-								))}
-							</div>
-							<div className="flex-grow-1">
-								<div className="h4 mb-1">
-									{immaculate
-										? "Immaculate! 🏆"
-										: correctCount >= 7
-											? "So close!"
-											: correctCount >= 4
-												? "Solid board."
-												: "Tough grid."}
-								</div>
-								<div className="mb-1">
-									<span className="fw-bold">{score}</span> points ·{" "}
-									{correctCount}/9 solved
-									{score > 0 && score >= best ? (
-										<span className="badge text-bg-warning ms-2">
-											New best!
-										</span>
-									) : null}
-								</div>
-								<div className="d-flex flex-wrap gap-1">
-									{cells
-										.filter((c) => c.pid !== undefined)
-										.map((c, i) => {
-											const tier = tierOf(c.points);
-											return (
-												<span key={i} className={`badge ${tier.cls}`}>
-													{tier.label} +{c.points}
-												</span>
-											);
-										})}
-								</div>
-								<div className="text-body-secondary small mt-1">
-									Tap any cell to see its answers.
-								</div>
-							</div>
-							<button
-								className="btn btn-primary"
-								disabled={loadingNew}
-								onClick={newGrid}
-							>
-								{loadingNew ? "Generating…" : "Play again"}
-							</button>
-						</div>
-					</div>
-				</>
-			) : (
-				<p className="text-body-secondary small mb-3">
-					{searchList.length.toLocaleString()} players in the pool. Each player
-					can be used once.
-				</p>
-			)}
 
-			{editing ? null : (
-				<div className="d-flex flex-wrap gap-2">
-					<div className="trivia-tile">
-						<div className="trivia-tile-value">{summary.played}</div>
-						<div className="trivia-tile-label">Played</div>
-					</div>
-					<div className="trivia-tile">
-						<div className="trivia-tile-value">{immaculateCount}</div>
-						<div className="trivia-tile-label">Immaculate</div>
-					</div>
-					<div className="trivia-tile">
-						<div className="trivia-tile-value">{summary.best}</div>
-						<div className="trivia-tile-label">Best</div>
-					</div>
-					<div className="trivia-tile">
-						<div className="trivia-tile-value">{summary.average}</div>
-						<div className="trivia-tile-label">Avg score</div>
-					</div>
+				<div className="trivia-side-col">
+					{done ? (
+						<>
+							{immaculate ? <Confetti /> : null}
+							<div className="card trivia-rise mb-3">
+								<div className="card-body d-flex flex-wrap align-items-center gap-3">
+									<TriviaSquares
+										size={18}
+										cells={cells.map((c) =>
+											c.pid === undefined ? null : c.points,
+										)}
+									/>
+									<div className="flex-grow-1">
+										<div className="h4 mb-1">
+											{immaculate
+												? "Immaculate"
+												: correctCount >= 7
+													? "So close!"
+													: correctCount >= 4
+														? "Solid board."
+														: "Tough grid."}
+										</div>
+										<div className="mb-1">
+											<span className="fw-bold">{score}</span> points ·{" "}
+											{correctCount}/9 solved
+											{score > 0 && score >= best ? (
+												<span className="badge text-bg-warning ms-2">
+													New best!
+												</span>
+											) : null}
+										</div>
+										<div className="d-flex flex-wrap gap-1">
+											{cells
+												.filter((c) => c.pid !== undefined)
+												.map((c, i) => {
+													const tier = tierOf(c.points);
+													return (
+														<span key={i} className={`badge ${tier.badge}`}>
+															{tier.label} +{c.points}
+														</span>
+													);
+												})}
+										</div>
+									</div>
+									<button
+										className="btn btn-primary"
+										disabled={loadingNew}
+										onClick={newGrid}
+									>
+										{loadingNew ? "Generating…" : "Play again"}
+									</button>
+								</div>
+							</div>
+						</>
+					) : null}
+
+					{editing ? null : (
+						<div className="d-flex flex-wrap gap-2">
+							<div className="trivia-tile">
+								<div className="trivia-tile-value">{summary.played}</div>
+								<div className="trivia-tile-label">Played</div>
+							</div>
+							<div className="trivia-tile">
+								<div className="trivia-tile-value">{immaculateCount}</div>
+								<div className="trivia-tile-label">Immaculate</div>
+							</div>
+							<div className="trivia-tile">
+								<div className="trivia-tile-value">{summary.best}</div>
+								<div className="trivia-tile-label">Best</div>
+							</div>
+							<div className="trivia-tile">
+								<div className="trivia-tile-value">{summary.average}</div>
+								<div className="trivia-tile-label">Avg score</div>
+							</div>
+						</div>
+					)}
 				</div>
-			)}
+			</div>
 
 			{/* Guess modal */}
 			<Modal
@@ -1330,7 +1337,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							key={wrongKey}
 							className="text-danger fw-bold small mt-2 trivia-shake"
 						>
-							✗ {wrongGuess} — not a match.
+							{wrongGuess} — not a match.
 						</div>
 					) : null}
 					{activeMissed.length > 0 ? (
@@ -1348,7 +1355,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							}}
 							title={`Show six players, one of which fits. Worth ${Math.round(HINT_POINT_MULTIPLIER * 100)}% points`}
 						>
-							💡 Hint
+							Hint
 						</button>
 						<div className="text-body-secondary small ms-auto">
 							{gameMaxGuesses === Infinity
@@ -1384,9 +1391,11 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 							const pts = reveal?.rarity[pid];
 							const tier = pts === undefined ? undefined : tierOf(pts);
 							return (
-								<div
+								<button
+									type="button"
 									key={pid}
 									className={`trivia-answer-row ${mine ? "is-mine" : ""}`}
+									onClick={() => setProfilePid(pid)}
 								>
 									<AnswerFace pid={pid} />
 									<div className="flex-grow-1" style={{ minWidth: 0 }}>
@@ -1404,11 +1413,11 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 										</div>
 									</div>
 									{tier ? (
-										<span className={`badge flex-shrink-0 ${tier.cls}`}>
+										<span className={`badge flex-shrink-0 ${tier.badge}`}>
 											{tier.label} +{pts}
 										</span>
 									) : null}
-								</div>
+								</button>
 							);
 						})}
 					</div>
@@ -1480,7 +1489,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 									className="btn btn-sm btn-light-bordered ms-auto"
 									onClick={reshuffleHint}
 								>
-									🔀 Shuffle
+									Shuffle
 								</button>
 							</div>
 						</>
@@ -1492,9 +1501,54 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 				game="grids"
 				show={showHistory}
 				onHide={() => setShowHistory(false)}
-				entries={history}
-				onChange={setHistory}
+				onReplay={replay}
 			/>
+
+			<TriviaPlayerModal
+				pid={profilePid}
+				onHide={() => setProfilePid(undefined)}
+			/>
+
+			{/* Share: a grid IS its six criteria, so a code carrying them is
+			    enough for someone else to play the identical board. */}
+			<Modal show={showShare} onHide={() => setShowShare(false)}>
+				<Modal.Header closeButton>
+					<Modal.Title className="fs-5">Share grid</Modal.Title>
+				</Modal.Header>
+				<Modal.Body>
+					<div className="text-body-secondary small mb-1">This grid's code</div>
+					<div className="trivia-code mb-2">{gridCode}</div>
+					<button className="btn btn-primary mb-4" onClick={copyCode}>
+						{shared ?? "Copy code"}
+					</button>
+
+					<div className="text-body-secondary small mb-1">Play a code</div>
+					<div className="d-flex gap-2">
+						<input
+							className="form-control"
+							type="text"
+							value={codeInput}
+							placeholder="Paste a code"
+							autoComplete="off"
+							spellCheck={false}
+							onChange={(event) => {
+								setCodeInput(event.target.value);
+								setCodeError(undefined);
+							}}
+						/>
+						<button
+							className="btn btn-light-bordered flex-shrink-0"
+							disabled={loadingNew || codeInput.trim() === ""}
+							onClick={() => playCode(codeInput)}
+						>
+							Play
+						</button>
+					</div>
+					{codeError ? (
+						<div className="text-danger small mt-2">{codeError}</div>
+					) : null}
+				</Modal.Body>
+			</Modal>
 
 			{/* Criterion picker (inline edit) */}
 			<Modal

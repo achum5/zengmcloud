@@ -3,6 +3,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { safeLocalStorage } from "../util/safeLocalStorage.ts";
 import { PlayerPicture } from "../components/PlayerPicture.tsx";
+import { TriviaPlayerModal } from "../components/TriviaPlayerModal.tsx";
 import { Confetti } from "./LiveGame/Confetti.tsx";
 import type { View } from "../../common/types.ts";
 
@@ -197,6 +198,8 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 	const [gameOver, setGameOver] = useState(false);
 	// "asking" -> awaiting guess; "revealing" -> counting up the answer.
 	const [phase, setPhase] = useState<"asking" | "revealing">("asking");
+	// Both players on screen are named, so either one opens their card.
+	const [profilePid, setProfilePid] = useState<number | undefined>();
 	const [guessedHigher, setGuessedHigher] = useState<boolean | undefined>();
 	const [wasCorrect, setWasCorrect] = useState<boolean | undefined>();
 	const [revealNum, setRevealNum] = useState(0);
@@ -354,24 +357,11 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 	// --- Category picker ----------------------------------------------------
 	if (!category) {
 		const groups = [...new Set(CATEGORIES.map((c) => c.group))];
-		const groupEmoji: Record<string, string> = {
-			"Career Totals": "📊",
-			"Career Averages": "📈",
-			"Season Bests": "🌟",
-			"Game Highs": "🔥",
-			Draft: "🎯",
-		};
 		return (
 			<>
-				<p className="text-body-secondary">
-					Pick a category, then call whether the mystery player's number is
-					higher or lower. Three lives per run, and closer calls score more.
-				</p>
 				{groups.map((group) => (
 					<div key={group} className="mb-3">
-						<h3 className="h6 text-body-secondary">
-							{groupEmoji[group] ?? ""} {group}
-						</h3>
+						<h3 className="h6 text-body-secondary">{group}</h3>
 						<div className="d-flex flex-wrap gap-2">
 							{CATEGORIES.filter((c) => c.group === group).map((c) => {
 								const eligible = players.filter(
@@ -424,16 +414,19 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 	};
 
 	const revealing = phase === "revealing";
-	const fire =
-		streak >= 15 ? "🔥🔥🔥" : streak >= 10 ? "🔥🔥" : streak >= 5 ? "🔥" : "";
 
 	return (
 		<>
+			<TriviaPlayerModal
+				pid={profilePid}
+				onHide={() => setProfilePid(undefined)}
+			/>
 			<div className="d-flex flex-wrap align-items-center gap-2 mb-3">
 				<div className="trivia-tile">
-					<div className="trivia-tile-value">
+					<div
+						className={`trivia-tile-value ${streak >= 5 ? "text-warning" : ""}`}
+					>
 						{streak}
-						{fire ? <span className="ms-1">{fire}</span> : null}
 					</div>
 					<div className="trivia-tile-label">Streak</div>
 				</div>
@@ -456,10 +449,7 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 					<div className="trivia-tile-label">Score</div>
 				</div>
 				<div className="trivia-tile">
-					<div className="trivia-tile-value">
-						{"♥".repeat(Math.max(0, lives))}
-						{"♡".repeat(Math.max(0, 3 - lives))}
-					</div>
+					<div className="trivia-tile-value">{Math.max(0, lives)}</div>
 					<div className="trivia-tile-label">Lives</div>
 				</div>
 				<div className="trivia-tile d-none d-sm-block">
@@ -485,7 +475,13 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 					<div className="card flex-fill" key={`l-${left.pid}`}>
 						<div className="card-body text-center p-2 p-md-3">
 							<Face p={left} />
-							<div className="fw-bold mt-2">{left.name}</div>
+							<button
+								type="button"
+								className="btn btn-link fw-bold mt-2 p-0"
+								onClick={() => setProfilePid(left.pid)}
+							>
+								{left.name}
+							</button>
 							<div className="text-body-secondary small">{left.years}</div>
 							<div className="h2 mt-2 mb-0">
 								{fmtValue(valueOf(left), category.fmt)}
@@ -512,7 +508,13 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 					>
 						<div className="card-body text-center p-2 p-md-3">
 							<Face p={right} />
-							<div className="fw-bold mt-2">{right.name}</div>
+							<button
+								type="button"
+								className="btn btn-link fw-bold mt-2 p-0"
+								onClick={() => setProfilePid(right.pid)}
+							>
+								{right.name}
+							</button>
 							<div className="text-body-secondary small">{right.years}</div>
 							{revealing || gameOver ? (
 								<>
@@ -528,8 +530,8 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 											wasCorrect ? "text-success" : "text-danger"
 										}`}
 									>
-										{wasCorrect ? "✓" : "✗"} You said{" "}
-										{guessedHigher ? "higher ▲" : "lower ▼"}
+										You said {guessedHigher ? "higher" : "lower"} —{" "}
+										{wasCorrect ? "correct" : "wrong"}
 									</div>
 								</>
 							) : (
@@ -543,13 +545,13 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 											className="btn btn-success"
 											onClick={() => answer(true)}
 										>
-											▲ Higher
+											Higher
 										</button>
 										<button
 											className="btn btn-danger"
 											onClick={() => answer(false)}
 										>
-											▼ Lower
+											Lower
 										</button>
 									</div>
 								</>
@@ -577,7 +579,7 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 							<div className="flex-grow-1">
 								<div className="h5 mb-1">
 									{newBest
-										? "🏆 New best!"
+										? "New best"
 										: streak >= 10
 											? "Great run!"
 											: streak >= 5

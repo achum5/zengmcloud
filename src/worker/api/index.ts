@@ -209,6 +209,11 @@ import {
 	getTeamTriviaCatalog,
 	type TeamTriviaOptions,
 } from "../core/trivia/teamTrivia.ts";
+import { getTriviaPlayerProfile } from "../core/trivia/playerProfile.ts";
+import {
+	getRemoteTriviaScores,
+	publishTriviaScores,
+} from "../core/sync/triviaScores.ts";
 import type { SportsbookMarket } from "../../common/types.ts";
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
 import { beforeLeague, beforeNonLeague } from "../util/beforeView.ts";
@@ -2649,6 +2654,29 @@ const triviaTeamCatalog = async () => {
 
 const triviaFaces = async ({ pids }: { pids: number[] }) => {
 	return getTriviaFaces(pids);
+};
+
+// The player card the trivia games open in place, so looking someone up never
+// costs you the board you're in the middle of.
+const triviaPlayerProfile = async ({ pid }: { pid: number }) => {
+	return getTriviaPlayerProfile(pid);
+};
+
+// Share this device's trivia results with the room, and read back everyone
+// else's. Both no-op outside a shared league rather than throwing - the games
+// work perfectly well solo, and a failed publish must never cost you the game
+// you just finished.
+const triviaPublishScores = async ({ entries }: { entries: any[] }) => {
+	try {
+		return await publishTriviaScores(entries);
+	} catch (error) {
+		console.error("Publishing trivia scores failed", error);
+		return false;
+	}
+};
+
+const triviaRemoteScores = async ({ game }: { game: string }) => {
+	return getRemoteTriviaScores(game);
 };
 
 // Catch-up settlement, called when the Sportsbook page loads. A REAL captured
@@ -6552,6 +6580,9 @@ export default {
 		triviaGridCatalog,
 		triviaCustomGrid,
 		triviaPlayerCard,
+		triviaPlayerProfile,
+		triviaPublishScores,
+		triviaRemoteScores,
 		triviaFaces,
 		triviaNewTeamRound,
 		triviaTeamCatalog,

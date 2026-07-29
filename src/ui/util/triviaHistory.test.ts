@@ -6,6 +6,7 @@ import {
 	deleteHistoryEntry,
 	filterHistory,
 	loadHistory,
+	mergeHistory,
 	summarize,
 	type TriviaHistoryEntry,
 } from "./triviaHistory.ts";
@@ -80,6 +81,33 @@ describe("filterHistory", () => {
 		);
 	});
 
+	test("finds a game by who played it", () => {
+		const withAuthor = [
+			entry({ id: "a", byName: "Alex" }),
+			entry({ id: "b", byName: "Sam" }),
+		];
+		assert.deepStrictEqual(
+			filterHistory(withAuthor, { query: "alex" }).map((e) => e.id),
+			["a"],
+		);
+	});
+
+	// The team filter has to catch both senses: a roster quiz ABOUT the Celtics,
+	// and any game played BY whoever runs the Celtics.
+	test("the team filter matches the subject team or the author's team", () => {
+		const mixed = [
+			entry({ id: "subject", tid: 5 }),
+			entry({ id: "author", byTid: 5 }),
+			entry({ id: "neither", tid: 9 }),
+		];
+		assert.deepStrictEqual(
+			filterHistory(mixed, { tid: 5 })
+				.map((e) => e.id)
+				.sort(),
+			["author", "subject"],
+		);
+	});
+
 	test("searches the label and the detail, case-insensitively", () => {
 		assert.deepStrictEqual(
 			filterHistory(entries, { query: "celtics" }).map((e) => e.id),
@@ -121,6 +149,35 @@ describe("summarize", () => {
 				entry({ score: 300 }),
 			]),
 			{ played: 3, best: 300, average: 200 },
+		);
+	});
+});
+
+describe("mergeHistory", () => {
+	const mine = [entry({ id: "mine", ts: 200, label: "my grid" })];
+
+	test("keeps both sides, newest first", () => {
+		const merged = mergeHistory(mine, [
+			entry({ id: "theirs", ts: 300, label: "their grid", byName: "Alex" }),
+		]);
+		assert.deepStrictEqual(
+			merged.map((e) => e.id),
+			["theirs", "mine"],
+		);
+	});
+
+	// A device that sees its own bucket come back from the room must not end up
+	// with every game listed twice.
+	test("an entry that comes back from the room is not duplicated", () => {
+		const merged = mergeHistory(mine, [entry({ id: "mine", ts: 200 })]);
+		assert.strictEqual(merged.length, 1);
+	});
+
+	test("junk from the room is ignored, not rendered", () => {
+		const merged = mergeHistory(mine, [null, 7, {}, { id: "x" }]);
+		assert.deepStrictEqual(
+			merged.map((e) => e.id),
+			["mine"],
 		);
 	});
 });

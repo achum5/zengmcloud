@@ -10,6 +10,8 @@ import TriviaPlayerSelect, {
 	type TriviaSearchPlayer,
 } from "../components/TriviaPlayerSelect.tsx";
 import { TriviaHistoryModal } from "../components/TriviaHistoryModal.tsx";
+import { TriviaPlayerModal } from "../components/TriviaPlayerModal.tsx";
+import { JerseyNumber } from "../components/JerseyNumber.tsx";
 import {
 	primeTriviaFaces,
 	type TriviaPlayerCard,
@@ -18,9 +20,11 @@ import {
 	addHistoryEntry,
 	loadHistory,
 	summarize,
-	type TriviaHistoryEntry,
+	type TriviaReplay,
 } from "../util/triviaHistory.ts";
+import { shareHistory } from "../util/triviaHistorySync.ts";
 import { Confetti } from "./LiveGame/Confetti.tsx";
+import { DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
 import type { View } from "../../common/types.ts";
 
 // Team Trivia: pick a team-season - or take a random one - and name the roster
@@ -310,9 +314,9 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 	const [settings, setSettings] = useState<Settings>(loadSettings);
 	const [showSettings, setShowSettings] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
-	const [history, setHistory] = useState<TriviaHistoryEntry[]>(() =>
-		loadHistory("team"),
-	);
+	const [history, setHistory] = useState(() => loadHistory("team"));
+	// The player card, opened by tapping anyone whose name is showing.
+	const [profilePid, setProfilePid] = useState<number | undefined>();
 
 	const gain = (amount: number) => {
 		setScore((s) => s + amount);
@@ -394,17 +398,18 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 			10 * LEADER_STATS.length +
 			10 +
 			(round.playoffs ? 10 : 0);
-		setHistory(
-			addHistoryEntry("team", {
-				score,
-				label: `${round.season} ${round.team.label}`,
-				detail: `${revealed.size}/${round.roster.length} named · Grade ${gradeFor(score / max).letter}`,
-				tid: round.team.tid,
-				season: round.season,
-				colors: round.team.colors,
-				progress: { done: revealed.size, total: round.roster.length },
-			}),
-		);
+		const next = addHistoryEntry("team", {
+			score,
+			label: `${round.season} ${round.team.label}`,
+			detail: `${revealed.size}/${round.roster.length} named · Grade ${gradeFor(score / max).letter}`,
+			tid: round.team.tid,
+			season: round.season,
+			colors: round.team.colors,
+			progress: { done: revealed.size, total: round.roster.length },
+			replay: { kind: "team", season: round.season, tid: round.team.tid },
+		});
+		setHistory(next);
+		shareHistory("team", next);
 	}, [phase, round, score, revealed]);
 
 	// The catalog only arrives with the first view render; if that failed (an
@@ -574,21 +579,37 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 					<button
 						key={p.pid}
 						type="button"
-						disabled={!clickable}
+						// Once a name is showing, the card opens that player's page. In
+						// the stat-leader round it picks instead, which takes priority -
+						// that's the question being asked right now.
+						disabled={!clickable && !shown}
 						className={`trivia-roster-card ${justNamed ? "is-named trivia-pop" : ""} ${
 							isAnswer ? "is-answer" : ""
 						} ${isPickedWrong ? "is-wrong trivia-shake" : ""} ${
-							clickable ? "is-clickable" : ""
+							clickable || shown ? "is-clickable" : ""
 						}`}
 						onClick={
 							clickable && leaderIndex !== undefined
 								? () => handleLeaderPick(leaderIndex, p.pid)
-								: undefined
+								: shown
+									? () => setProfilePid(p.pid)
+									: undefined
 						}
 					>
 						<span className="trivia-roster-pos">{p.pos}</span>
 						{p.jerseyNumber !== undefined ? (
-							<span className="trivia-roster-jersey">{p.jerseyNumber}</span>
+							<span className="trivia-roster-jersey">
+								<JerseyNumber
+									number={p.jerseyNumber}
+									start={round.season}
+									end={round.season}
+									t={{
+										colors: round.team.colors ?? DEFAULT_TEAM_COLORS,
+										name: round.team.label,
+										region: "",
+									}}
+								/>
+							</span>
 						) : null}
 						<span className="trivia-roster-face">
 							{card ? (
@@ -624,13 +645,12 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 			<div className="trivia-toolbar mb-3">
 				<button
 					className="btn btn-sm btn-light-bordered"
-					title="Random game settings"
 					onClick={() => {
 						void ensureCatalog();
 						setShowSettings(true);
 					}}
 				>
-					⚙
+					Settings
 				</button>
 				<button
 					className="btn btn-sm btn-light-bordered"
@@ -638,7 +658,7 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 					title="Random team-season"
 					onClick={() => newRound()}
 				>
-					🔀 Shuffle
+					Shuffle
 				</button>
 				<select
 					className="form-select form-select-sm w-auto"
@@ -690,10 +710,9 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 				</select>
 				<button
 					className="btn btn-sm btn-light-bordered"
-					title="Game history"
 					onClick={() => setShowHistory(true)}
 				>
-					🕘
+					History
 				</button>
 				<div className="trivia-toolbar-score ms-auto position-relative">
 					Score: <span className="fw-bold">{score}</span>
@@ -720,9 +739,6 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 					<div className="h4 mb-0">
 						{round.season} {round.team.label}
 					</div>
-					<div className="text-body-secondary small">
-						How well do you know this team?
-					</div>
 				</div>
 				{namingRound ? (
 					<button
@@ -732,7 +748,7 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 						}}
 						title="Reveal the roster and move on"
 					>
-						🏳 Give up
+						Give up
 					</button>
 				) : null}
 			</div>
@@ -1013,8 +1029,16 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 				game="team"
 				show={showHistory}
 				onHide={() => setShowHistory(false)}
-				entries={history}
-				onChange={setHistory}
+				onReplay={(r: TriviaReplay) => {
+					if (r.kind === "team") {
+						void newRound({ season: r.season, tid: r.tid });
+					}
+				}}
+			/>
+
+			<TriviaPlayerModal
+				pid={profilePid}
+				onHide={() => setProfilePid(undefined)}
 			/>
 		</>
 	);

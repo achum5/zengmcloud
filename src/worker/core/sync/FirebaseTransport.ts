@@ -37,6 +37,7 @@ import type {
 	ChangesetEntry,
 	DraftReadyEntry,
 	FaBoardEntry,
+	TriviaScoreEntry,
 	LiveBroadcastMeta,
 	LiveBroadcastUpdate,
 	LotteryRevealMeta,
@@ -63,6 +64,7 @@ const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
 // atomic claim for who sims the next pick.
 const DRAFT_READY_DOC_ID = "draftReady";
 const FA_BOARD_DOC_ID = "faBoard";
+const TRIVIA_SCORES_DOC_ID = "triviaScores";
 const DRAFT_ADVANCE_DOC_ID = "draftAdvance";
 
 // The per-season fence over schedule-day sims: which day (and which of its
@@ -366,6 +368,43 @@ export class FirebaseTransport implements SyncTransport {
 			{ merge: true },
 		);
 		this.markContact();
+	}
+
+	async publishTriviaScores(entries: TriviaScoreEntry[]) {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", TRIVIA_SCORES_DOC_ID),
+			{
+				holderId: this.clientId,
+				scores: { [this.clientId]: entries },
+				updatedAt: serverTimestamp(),
+			},
+			{ merge: true },
+		);
+		this.markContact();
+	}
+
+	// Watch the room's trivia results. Fires with the current map, then on every
+	// change.
+	subscribeTriviaScores(
+		onChange: (
+			scores: Record<string, TriviaScoreEntry[] | null> | undefined,
+		) => void,
+	) {
+		return onSnapshot(
+			doc(this.db, "leagues", this.code, "control", TRIVIA_SCORES_DOC_ID),
+			(snapshot) => {
+				this.markContact();
+				const data = snapshot.data();
+				onChange(
+					data && typeof data.scores === "object" && data.scores !== null
+						? (data.scores as Record<string, TriviaScoreEntry[] | null>)
+						: undefined,
+				);
+			},
+			(error) => {
+				console.error("Trivia scores subscription failed", error);
+			},
+		);
 	}
 
 	// Watch everyone's free-agency board entries. Fires with the current map,
