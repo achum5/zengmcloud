@@ -89,6 +89,13 @@ export const ScoreBox = memo(
 			gid: number;
 			neutralSite?: boolean;
 			season?: number;
+			// The displayed spread for an upcoming game, worked out in the worker
+			// off fresh team overalls and corrected by the engine where it has
+			// already played this matchup. Preferred over recomputing it here: the
+			// team overalls a given page happens to be holding are not always the
+			// ones the schedule was built from, which is how the top bar and the
+			// Daily Schedule ended up quoting the same game differently.
+			spread?: number;
 			teams: [Team, Team];
 			numPeriods?: number;
 			overtimes?: number;
@@ -156,16 +163,18 @@ export const ScoreBox = memo(
 				(neutralSite === "playoffs" && phase === PHASE.PLAYOFFS);
 
 			const spread =
-				simSpread !== undefined && !final
+				!final && simSpread !== undefined
 					? simSpread
-					: getGameSpread({
-							ovr0: game.teams[0].ovr,
-							ovr1: game.teams[1].ovr,
-							homeCourtAdvantage,
-							neutralSite: neutralSiteResolved,
-							numPeriods,
-							quarterLength,
-						})!;
+					: !final && game.spread !== undefined
+						? game.spread
+						: getGameSpread({
+								ovr0: game.teams[0].ovr,
+								ovr1: game.teams[1].ovr,
+								homeCourtAdvantage,
+								neutralSite: neutralSiteResolved,
+								numPeriods,
+								quarterLength,
+							})!;
 
 			if (spread > 0) {
 				spreads = [

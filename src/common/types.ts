@@ -1217,6 +1217,9 @@ export type LocalStateUI = {
 		gid: number;
 		numPeriods?: number;
 		overtimes?: number;
+		// The displayed point spread for an upcoming game, computed in the worker
+		// so every page shows the same one. See getUpcoming.
+		spread?: number;
 		teams: [LocalStateUIGameTeam, LocalStateUIGameTeam];
 	}[];
 	fullNames: boolean;

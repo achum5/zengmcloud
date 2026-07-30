@@ -108,6 +108,12 @@ export const buildGameLinePricer = async ({
 		ratings: ["ovr", "pos", "ovrs"],
 		season,
 		fuzz: true,
+		// These ovrs are arithmetic, never display. In a league that hides the
+		// ones digit the default would hand back 0-10 here, team.ovr would build a
+		// team overall out of them, and every spread on the board would collapse
+		// to roughly the home-court constant - the favorite decided by who's at
+		// home rather than by who's better.
+		coarsenRatings: false,
 	});
 	const playersByTid = Map.groupBy(players, (p) => p.tid);
 

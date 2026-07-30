@@ -20,7 +20,11 @@ export type Tier = {
 const TIERS: { min: number; tier: Tier }[] = [
 	{
 		min: 90,
-		tier: { label: "Mythic", color: "var(--bs-danger)", badge: "text-bg-danger" },
+		tier: {
+			label: "Mythic",
+			color: "var(--bs-danger)",
+			badge: "text-bg-danger",
+		},
 	},
 	{
 		min: 75,

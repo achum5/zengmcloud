@@ -155,6 +155,7 @@ const Schedule = ({
 											finals: game.finals,
 											gid: game.gid,
 											season: game.season,
+											spread: game.spread,
 											teams: game.teams,
 										}}
 										playersUpcoming={

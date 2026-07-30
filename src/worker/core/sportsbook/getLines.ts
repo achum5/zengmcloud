@@ -620,6 +620,9 @@ export const getLines = async () => {
 				season,
 				mergeStats: "totOnly",
 				showNoStats: true,
+				// Ranked, not shown. Coarsened to the tens digit a whole decade of
+				// players ties and the preseason award boards become arbitrary.
+				coarsenRatings: false,
 			});
 		}
 		return projectionPool;

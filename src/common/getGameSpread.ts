@@ -1,7 +1,10 @@
 import { bySport } from "./sportFunctions.ts";
 import { defaultGameAttributes } from "./defaultGameAttributes.ts";
 
-const roundHalf = (x: number) => Math.round(x * 2) / 2;
+// Every spread SHOWN outside the sportsbook lands on a whole or half point.
+// (The book's own lines go through toHalfPointLine instead, which forces the
+// half so a bet can't push.)
+export const roundHalf = (x: number) => Math.round(x * 2) / 2;
 
 // The pregame point spread from the HOME team's (teams[0]) perspective:
 //   > 0  home favored by that many points

@@ -192,8 +192,7 @@ export const TriviaHistoryModal = ({
 										<div className="fw-bold text-truncate">{e.label}</div>
 										<div className="trivia-history-sub text-truncate">
 											{mine ? "You" : (e.byName ?? "Someone")}
-											{t ? ` · ${t.abbrev}` : ""} · {e.detail} ·{" "}
-											{fmtWhen(e.ts)}
+											{t ? ` · ${t.abbrev}` : ""} · {e.detail} · {fmtWhen(e.ts)}
 										</div>
 									</div>
 									<div className="text-end flex-shrink-0">

@@ -16,6 +16,9 @@ export const getOneUpcomingGame = async (): Promise<
 		return {
 			finals: game.finals,
 			gid: game.gid,
+			// Worked out in the worker off fresh overalls, so the top bar can't
+			// quote a different number than the schedule pages for the same game.
+			spread: game.spread,
 			teams: [
 				{
 					ovr: game.teams[0].ovr,

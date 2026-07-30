@@ -8,10 +8,7 @@ import { setApplyGuard } from "./applyGuard.ts";
 import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
 import { setupSimDayFence, teardownSimDayFence } from "./simDayFence.ts";
 import { setupFaBoard, teardownFaBoard } from "./faBoard.ts";
-import {
-	setupTriviaScores,
-	teardownTriviaScores,
-} from "./triviaScores.ts";
+import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";

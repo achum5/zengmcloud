@@ -1,5 +1,7 @@
+import { roundHalf } from "../../../common/getGameSpread.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
+import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
 import { warmSimMargins } from "./simSpreads.ts";
 
@@ -75,8 +77,11 @@ export const getSimSpreads = async ({
 		const line = pricer.priceGame(matchup);
 		if (line) {
 			// GameLine.margin is the expected HOME margin, the same orientation
-			// getGameSpread returns, so ScoreBox can use it interchangeably.
-			out[matchup.gid] = line.margin;
+			// getGameSpread returns, so ScoreBox can use it interchangeably. Blending
+			// leaves it continuous, so round it the way every other displayed spread
+			// is rounded - a schedule that reads "-3.7" next to "-4" elsewhere is
+			// worse than being half a point coarse.
+			out[matchup.gid] = roundHalf(line.margin);
 		}
 	}
 
@@ -84,7 +89,18 @@ export const getSimSpreads = async ({
 	if (pending.length > 0) {
 		// Fire-and-forget, bounded. warmSimMargins refuses to start a second drain
 		// while one is running, so the sportsbook and this can't compound.
-		void warmSimMargins(pending.slice(0, MAX_WARM_SPREADS));
+		//
+		// When margins land, the games the top bar and the Schedule page are
+		// holding were priced off the formula, so refresh the one the top bar
+		// shows. Otherwise the same game reads one number on the Daily Schedule
+		// and another three feet above it.
+		void warmSimMargins(pending.slice(0, MAX_WARM_SPREADS)).then(
+			async (landed) => {
+				if (landed) {
+					await recomputeLocalUITeamOvrs();
+				}
+			},
+		);
 	}
 
 	return out;

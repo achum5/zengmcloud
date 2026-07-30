@@ -21,6 +21,14 @@ import { COMPOSITE_WEIGHTS } from "../../common/constants.hockey.ts";
 import { getStartingAndBackupGoalies } from "../core/GameSim.hockey/getStartingAndBackupGoalies.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
+import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
+import {
+	blendMargin,
+	peekSimMargin,
+	rosterFingerprint,
+	settingsFingerprint,
+	simMarginKey,
+} from "../core/sportsbook/simSpreads.ts";
 
 export const getUpcoming = async ({
 	cid,
@@ -102,7 +110,9 @@ export const getUpcoming = async ({
 		Infinity,
 	]);
 	const players = await idb.getCopies.playersPlus(playersRaw, {
-		attrs: ["injury", "pid", "value", "tid"],
+		// ptModifier and rosterOrder are not used by team.ovr - they're part of the
+		// simulated spread's cache key, because the engine reads them.
+		attrs: ["injury", "pid", "value", "tid", "ptModifier", "rosterOrder"],
 		ratings: ["ovr", "pos", "ovrs"],
 		season: g.get("season"),
 		fuzz: true,
@@ -176,20 +186,109 @@ export const getUpcoming = async ({
 		};
 	};
 
+	// The spread to SHOW next to this game, decided once, here, for every page
+	// that shows one. ScoreBox used to work it out itself from the team overalls
+	// it happened to be holding, which meant the league top bar and the Daily
+	// Schedule could quote the same game differently. This is the same number the
+	// sportsbook prices off: the closed-form line, corrected by the engine
+	// wherever the engine has already played this exact matchup.
+	//
+	// Peek-only. Nothing is simulated on this path - a game with no cached margin
+	// gets the formula, exactly as before, and the sportsbook/Daily Schedule warm
+	// the cache in the background.
+	const homeCourtAdvantage = g.get("homeCourtAdvantage");
+	const numPeriods = g.get("numPeriods");
+	const quarterLength = g.get("quarterLength");
+	const neutralSiteSetting = g.get("neutralSite");
+	const phase = g.get("phase");
+	const settingsKey = settingsFingerprint();
+	const rosterKeyCache = new Map<number, string>();
+	const rosterKey = (tid: number) => {
+		let key = rosterKeyCache.get(tid);
+		if (key === undefined) {
+			key = rosterFingerprint(
+				playersByTid.get(tid) ?? [],
+				getActualPlayThroughInjuries(teamsByTid[tid] ?? "default"),
+			);
+			rosterKeyCache.set(tid, key);
+		}
+		return key;
+	};
+
+	const getSpread = ({
+		homeTid,
+		awayTid,
+		day,
+		finals,
+		ovr0,
+		ovr1,
+	}: {
+		homeTid: number;
+		awayTid: number;
+		day: number;
+		finals?: boolean;
+		ovr0: number | undefined;
+		ovr1: number | undefined;
+	}) => {
+		const neutralSite =
+			(neutralSiteSetting === "finals" && !!finals) ||
+			(neutralSiteSetting === "playoffs" && phase === PHASE.PLAYOFFS);
+
+		const formulaMargin = getGameSpread({
+			ovr0,
+			ovr1,
+			homeCourtAdvantage,
+			neutralSite,
+			numPeriods,
+			quarterLength,
+		});
+		if (formulaMargin === undefined) {
+			return undefined;
+		}
+
+		const sim = peekSimMargin(
+			simMarginKey({
+				settings: settingsKey,
+				homeRoster: rosterKey(homeTid),
+				awayRoster: rosterKey(awayTid),
+				neutralSite,
+				daysInFuture: Math.max(0, day - todayDay),
+			}),
+		);
+
+		return roundHalf(sim ? blendMargin(formulaMargin, sim) : formulaMargin);
+	};
+
 	const upcoming: {
 		finals?: boolean;
 		forceWin?: number | "tie";
 		gid: number;
 		season: number;
+		spread?: number;
 		teams: [ReturnType<typeof getTeam>, ReturnType<typeof getTeam>];
 	}[] = filteredSchedule.map(
 		({ awayTid, day, finals, forceWin, gid, homeTid }) => {
+			const teams: [ReturnType<typeof getTeam>, ReturnType<typeof getTeam>] = [
+				getTeam(homeTid, day),
+				getTeam(awayTid, day),
+			];
 			return {
 				finals,
 				forceWin,
 				gid,
 				season: g.get("season"),
-				teams: [getTeam(homeTid, day), getTeam(awayTid, day)],
+				spread:
+					homeTid >= 0 && awayTid >= 0
+						? getSpread({
+								homeTid,
+								awayTid,
+								day,
+								finals,
+								ovr0: teams[0].ovr,
+								ovr1: teams[1].ovr,
+							})
+						: undefined,
+				teams,
 			};
 		},
 	);
