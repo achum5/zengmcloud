@@ -24,7 +24,42 @@ Asking the chat for a hex gets you something plausible and wrong. Asking it
 which of 21 head shapes matches a face is exactly what it's for. Each step does
 only what it's best at.
 
+## Setup (do this first)
+
+These are scripts inside the repo, run from the **repo root**, and they need the
+repo's `node_modules` — `node tools/faceFromPhoto/...` from your home directory
+just gets `Cannot find module`.
+
+```sh
+git clone https://github.com/achum5/zengmcloud.git
+cd zengmcloud
+```
+
+Node 24+ is required (`engines` says `^24.0.0`).
+
+Only two packages are actually needed — `facesjs` and `playwright` — so you can
+skip the app's full toolchain:
+
+```sh
+npm install --no-save facesjs playwright
+npx playwright install chromium
+```
+
+Or, if you want the whole project anyway, `pnpm install` (the declared package
+manager) does it and fetches the browser via its postinstall.
+
+Two of the steps need neither: `downloadImages.mjs` and `applyFaces.mjs` use
+only Node builtins, so if all you want is the photos or the final write-back,
+they run with nothing installed.
+
+Then export your league from the game (Tools → Export League, with players
+included) and point the first command at wherever it landed — the examples below
+say `league.json`, but it'll really be something like
+`~/Downloads/BBGM_League_1_2005.json`.
+
 ## The flow
+
+Every command below runs from the repo root.
 
 ```sh
 # 0. One-time: build the menus the chat picks from.
@@ -65,6 +100,11 @@ are worked examples.
 - **Run steps 1 and 2 locally.** Image hosts are usually unreachable from a
   sandbox, and browsers won't let a page read pixels from a cross-origin image
   anyway. Downloading server-side sidesteps both.
+- `Cannot find module '.../tools/faceFromPhoto/...'` means you are not in the
+  repo root. `cd` into the clone first.
+- `Cannot find package 'playwright'` or `'facesjs'` means the install above was
+  skipped, and `Executable doesn't exist at .../chrome` means
+  `npx playwright install chromium` was.
 - `downloadImages.mjs` is resumable, and `sampleColors.mjs` is deterministic, so
   re-running after adding players is cheap.
 - Photos with the background already removed (see `debgLeague.py`) sample more
