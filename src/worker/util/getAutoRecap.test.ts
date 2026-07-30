@@ -635,7 +635,12 @@ describe("recap quality (from real Day 1 output)", () => {
 			game({ gid: 9080, teams: [spurs, hurtRockets], winnerTid: 46 }),
 		);
 		assert.ok(recap.includes("a torn ACL"), recap);
-		assert.ok(recap.includes("out ~40 games"), recap);
+		// The duration is always stated, but the phrasing rotates so a slate full
+		// of injuries doesn't read from one template.
+		assert.ok(
+			/out ~40 games|out around 40 games|about 40 games/.test(recap),
+			recap,
+		);
 		assert.ok(!recap.includes("Torn ACL"), recap);
 	});
 
@@ -2342,6 +2347,327 @@ describe("a day wrap reads as one night, not one game", () => {
 			assert.ok(
 				sentence.includes("Warriors"),
 				`no opponent, so which game was it? ${sentence}`,
+			);
+		}
+	});
+});
+
+// The third paragraph: the detail beyond the result. These angles exist because
+// the box score carries far more than a lead scorer and a final score, and none
+// of it was being read.
+describe("the extra colour paragraph", () => {
+	const bigNight = (extra: Partial<RecapPlayer> = {}) =>
+		player({
+			name: "Breakout Guy",
+			pts: 34,
+			reb: 6,
+			ast: 4,
+			fg: 13,
+			fga: 22,
+			tp: 4,
+			tpa: 9,
+			ft: 4,
+			fta: 5,
+			min: 39,
+			seasonAvg: avg({ gp: 30, pts: 12.4, fgp: 43 }),
+			...extra,
+		});
+
+	const twoTeamGame = (
+		home: RecapTeam,
+		away: RecapTeam,
+		over: Partial<RecapGame> = {},
+	) =>
+		game({
+			gid: 4242,
+			teams: [home, away],
+			winnerTid: home.tid,
+			...over,
+		});
+
+	test("a night far above a player's average says so, and names him", () => {
+		const w = realisticTeam(
+			{
+				tid: 1,
+				name: "Suns",
+				abbrev: "PHO",
+				pts: 112,
+				ptsQtrs: [28, 28, 28, 28],
+			},
+			bigNight(),
+		);
+		const l = realisticTeam(
+			{
+				tid: 2,
+				name: "Kings",
+				abbrev: "SAC",
+				pts: 98,
+				ptsQtrs: [25, 25, 24, 24],
+			},
+			player({ name: "Other Guy", pts: 20, reb: 5, fg: 8, fga: 18 }),
+		);
+		const recap = getAutoRecap(twoTeamGame(w, l));
+		assert.ok(/12\.4/.test(recap), `no average context: ${recap}`);
+		// The paragraph is detached from where he was introduced, so a bare "He"
+		// would have no antecedent.
+		const last = recap.split("\n\n").at(-1)!;
+		assert.ok(
+			!/^(He|That is \d+ clear of his)\b/.test(last) ||
+				last.includes("Breakout Guy"),
+			`orphan pronoun: ${last}`,
+		);
+	});
+
+	test("a career-best scoring season is called out", () => {
+		const w = realisticTeam(
+			{
+				tid: 3,
+				name: "Bucks",
+				abbrev: "MIL",
+				pts: 106,
+				ptsQtrs: [26, 27, 26, 27],
+			},
+			bigNight({
+				seasonAvg: avg({ gp: 40, pts: 24.5 }),
+				career: [
+					{ ...avg({ pts: 11.0 }), season: 2001 },
+					{ ...avg({ pts: 15.2 }), season: 2002 },
+					{ ...avg({ pts: 18.9 }), season: 2003 },
+				],
+			}),
+		);
+		const l = realisticTeam(
+			{
+				tid: 4,
+				name: "Hawks",
+				abbrev: "ATL",
+				pts: 95,
+				ptsQtrs: [24, 24, 23, 24],
+			},
+			player({ name: "Loser Star", pts: 21, reb: 6, fg: 8, fga: 19 }),
+		);
+		const recap = getAutoRecap(twoTeamGame(w, l));
+		assert.ok(/career/i.test(recap), `no career context: ${recap}`);
+	});
+
+	test("nobody is named twice across the whole recap", () => {
+		const w = realisticTeam(
+			{
+				tid: 5,
+				name: "Jazz",
+				abbrev: "UTA",
+				pts: 104,
+				ptsQtrs: [26, 26, 26, 26],
+			},
+			bigNight(),
+		);
+		const l = realisticTeam(
+			{
+				tid: 6,
+				name: "Magic",
+				abbrev: "ORL",
+				pts: 99,
+				ptsQtrs: [25, 25, 25, 24],
+			},
+			player({
+				name: "Foul Trouble",
+				pts: 22,
+				reb: 11,
+				pf: 6,
+				min: 33,
+				fg: 9,
+				fga: 20,
+			}),
+		);
+		const recap = getAutoRecap(twoTeamGame(w, l));
+		// The headline names the game's best player and so does the lead sentence;
+		// that is normal. What must never happen is the same man's LINE being
+		// printed twice, or a role player being introduced twice.
+		const body = recap.split("\n\n").slice(1).join(" ");
+		assert.ok(
+			body.split("Breakout Guy").length - 1 <= 2,
+			`star's name overused: ${recap}`,
+		);
+		assert.ok(
+			body.split("Foul Trouble").length - 1 <= 1,
+			`role player named twice: ${recap}`,
+		);
+	});
+
+	test("the streak sentence and the form note don't contradict each other", () => {
+		const l10 = [
+			{ opp: "ORL", home: true, won: true, pts: 104, oppPts: 99 },
+			{ opp: "MIA", home: false, won: true, pts: 98, oppPts: 90 },
+			{ opp: "CHI", home: true, won: true, pts: 101, oppPts: 95 },
+			{ opp: "DET", home: true, won: true, pts: 97, oppPts: 88 },
+			{ opp: "NYK", home: false, won: true, pts: 105, oppPts: 100 },
+			{ opp: "BOS", home: true, won: true, pts: 99, oppPts: 91 },
+			{ opp: "TOR", home: false, won: true, pts: 96, oppPts: 92 },
+			{ opp: "PHI", home: true, won: true, pts: 110, oppPts: 101 },
+		];
+		const w = realisticTeam(
+			{
+				tid: 7,
+				name: "Pistons",
+				abbrev: "DET",
+				pts: 104,
+				ptsQtrs: [26, 26, 26, 26],
+				streak: { won: true, count: 8 },
+				last10: l10,
+			},
+			bigNight(),
+		);
+		const wl = realisticTeam(
+			{
+				tid: 8,
+				name: "Wizards",
+				abbrev: "WAS",
+				pts: 95,
+				ptsQtrs: [24, 24, 24, 23],
+			},
+			player({ name: "Wiz Star", pts: 19, reb: 5, fg: 7, fga: 17 }),
+		);
+		const recap = getAutoRecap(twoTeamGame(w, wl));
+		const streakTold = /in a row|straight game|ran their streak/.test(recap);
+		if (streakTold) {
+			assert.ok(
+				!/Pistons have now won \d+ of their last/.test(recap),
+				`streak stated two different ways: ${recap}`,
+			);
+		}
+	});
+
+	test("a quiet game still gets a short recap, not padding", () => {
+		// No averages, no career, no injuries, no spread, balanced shooting - the
+		// extra paragraph should simply not appear.
+		const w = team({
+			tid: 9,
+			name: "Pacers",
+			abbrev: "IND",
+			pts: 92,
+			ptsQtrs: [23, 23, 23, 23],
+			players: [
+				player({ name: "Plain One", pts: 18, reb: 5, ast: 3, fg: 7, fga: 15 }),
+				player({ name: "Plain Two", pts: 14, reb: 6, ast: 2, fg: 6, fga: 13 }),
+			],
+		});
+		const l = team({
+			tid: 10,
+			name: "Bobcats",
+			abbrev: "CHA",
+			pts: 88,
+			ptsQtrs: [22, 22, 22, 22],
+			players: [
+				player({
+					name: "Plain Three",
+					pts: 17,
+					reb: 4,
+					ast: 3,
+					fg: 7,
+					fga: 16,
+				}),
+				player({ name: "Plain Four", pts: 12, reb: 5, ast: 2, fg: 5, fga: 12 }),
+			],
+		});
+		const recap = getAutoRecap(twoTeamGame(w, l));
+		assert.ok(
+			recap.split("\n\n").length <= 3,
+			`padded a nothing game: ${recap}`,
+		);
+	});
+});
+
+describe("the day wrap reads as prose, not a list", () => {
+	const slate = (): RecapGame[] => {
+		const games: RecapGame[] = [];
+		for (let i = 0; i < 12; i++) {
+			const w = realisticTeam(
+				{
+					tid: 100 + i * 2,
+					name: `Alphas${i}`,
+					abbrev: `A${i}`,
+					pts: 100 + i,
+					ptsQtrs: [25, 25, 25, 25 + i],
+				},
+				player({
+					name: `Star A${i}`,
+					pts: 20 + (i % 8),
+					reb: 6,
+					ast: 4,
+					fg: 8,
+					fga: 16,
+				}),
+			);
+			const l = realisticTeam(
+				{
+					tid: 101 + i * 2,
+					name: `Betas${i}`,
+					abbrev: `B${i}`,
+					pts: 90 + (i % 7),
+					ptsQtrs: [22, 23, 22, 23],
+				},
+				player({
+					name: `Star B${i}`,
+					pts: 18 + (i % 6),
+					reb: 5,
+					ast: 3,
+					fg: 7,
+					fga: 17,
+				}),
+			);
+			games.push(
+				game({ gid: 7000 + i, teams: [w, l], winnerTid: w.tid, day: 30 }),
+			);
+		}
+		return games;
+	};
+
+	test("the roundup is broken into sentences, not one giant comma list", () => {
+		const recap = getAutoDayRecap({
+			season: 2004,
+			day: 30,
+			playoffs: false,
+			games: slate(),
+		});
+		const longest = recap
+			.split("\n\n")
+			.flatMap((para) => para.split(". "))
+			.reduce((max, s) => Math.max(max, s.split(",").length), 0);
+		assert.ok(
+			longest <= 6,
+			`a sentence with ${longest} comma clauses: ${recap}`,
+		);
+	});
+
+	test("no roundup opener is used twice in one night", () => {
+		const recap = getAutoDayRecap({
+			season: 2004,
+			day: 31,
+			playoffs: false,
+			games: slate(),
+		});
+		for (const opener of [
+			"Around the league",
+			"Also on the night",
+			"In the rest of the schedule",
+			"Rounding out the slate",
+		]) {
+			const hits = recap.split(opener).length - 1;
+			assert.ok(hits <= 1, `"${opener}" used ${hits} times: ${recap}`);
+		}
+	});
+
+	test("a sentence never opens with a bare numeral", () => {
+		const recap = getAutoDayRecap({
+			season: 2004,
+			day: 32,
+			playoffs: false,
+			games: slate(),
+		});
+		for (const para of recap.split("\n\n")) {
+			assert.ok(
+				!/(^|\. )\d/.test(para.replaceAll("*", "")),
+				`sentence starts with a digit: ${para}`,
 			);
 		}
 	});

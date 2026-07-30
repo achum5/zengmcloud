@@ -54,29 +54,37 @@ export const endRecapBatch = () => {
 	phraseMemory.clear();
 };
 
-export const pick = <T>(rng: () => number, arr: T[]): T => {
+// `poolId` names the pool when its OPTIONS are built with interpolation. Without
+// it the key is the joined text, so a pool containing a team or player name is a
+// different key in every game and the memory silently does nothing - which is
+// exactly why a slate could still read "It was a long way past the 10.0 X had
+// been putting up" and then the same sentence again three games later. Pools of
+// fixed strings need no id; their text IS a stable key.
+export const pick = <T>(rng: () => number, arr: T[], poolId?: string): T => {
 	if (arr.length <= 1) {
 		return arr[0]!;
 	}
 
-	const key = arr.map(String).join("\u0000");
+	const key = poolId ?? arr.map(String).join("\u0000");
 	let used = phraseMemory.get(key);
 	if (!used) {
 		used = new Set<string>();
 		phraseMemory.set(key, used);
 	}
 
-	let fresh = arr.filter((x) => !used!.has(String(x)));
+	// Remembered by INDEX, so an interpolated pool rotates through its shapes
+	// even though the rendered text differs every time.
+	let fresh = arr.map((_, i) => i).filter((i) => !used!.has(String(i)));
 	if (fresh.length === 0) {
 		// Everything has been used once; start the rotation over rather than
 		// refusing to say anything.
 		used.clear();
-		fresh = arr;
+		fresh = arr.map((_, i) => i);
 	}
 
-	const chosen = fresh[Math.floor(rng() * fresh.length)]!;
-	used.add(String(chosen));
-	return chosen;
+	const chosenIdx = fresh[Math.floor(rng() * fresh.length)]!;
+	used.add(String(chosenIdx));
+	return arr[chosenIdx]!;
 };
 
 // Fisher-Yates using the seeded rng, so ordering is deterministic per game.
@@ -186,6 +194,24 @@ const plural = (n: number, word: string): string =>
 // "a 12-point hole" but "an 18-point hole" - the article follows the number's
 // SOUND. For the margins/deficits recaps deal in (single digits through the
 // 60s), the vowel-initial numbers are 8, 11, and 18.
+// Sentence-initial numbers read badly as digits ("4 of the 14 games...").
+const NUM_WORDS = [
+	"zero",
+	"one",
+	"two",
+	"three",
+	"four",
+	"five",
+	"six",
+	"seven",
+	"eight",
+	"nine",
+	"ten",
+	"eleven",
+	"twelve",
+];
+const numWord = (n: number): string => NUM_WORDS[n] ?? String(n);
+
 const aNum = (n: number): string =>
 	n === 8 || n === 11 || n === 18 ? `an ${n}` : `a ${n}`;
 
@@ -1313,11 +1339,15 @@ const statNote = (
 	}
 	if (w.stl >= 10 && l.tov >= 16) {
 		add(
-			pick(rng, [
-				`${cap(theNick(shape.winner))} forced ${l.tov} turnovers.`,
-				`${cap(theNick(shape.winner))} turned ${l.tov} ${nick(shape.loser)} turnovers into offense.`,
-				`${cap(theNick(shape.winner))} hounded ${theNick(shape.loser)} into ${l.tov} turnovers.`,
-			]),
+			pick(
+				rng,
+				[
+					`${cap(theNick(shape.winner))} forced ${l.tov} turnovers.`,
+					`${cap(theNick(shape.winner))} turned ${l.tov} ${nick(shape.loser)} turnovers into offense.`,
+					`${cap(theNick(shape.winner))} hounded ${theNick(shape.loser)} into ${l.tov} turnovers.`,
+				],
+				"forcedTov",
+			),
 			"loserTov",
 		);
 	}
@@ -1357,7 +1387,10 @@ const statNote = (
 };
 
 // The halftime / second-half story, from the quarter scores.
-const secondHalfNote = (shape: Shape): string | undefined => {
+const secondHalfNote = (
+	shape: Shape,
+	rng: () => number,
+): string | undefined => {
 	const { wq, lq, regPeriods } = shape;
 	if (regPeriods < 4 || wq.length < regPeriods || lq.length < regPeriods) {
 		return undefined;
@@ -1391,21 +1424,54 @@ const secondHalfNote = (shape: Shape): string | undefined => {
 	// lead with a bigger comeback). Down 1-3 at the break is a coin flip, not a
 	// story - it takes a real deficit to be worth a sentence.
 	if (halfMargin <= -4 && shape.margin > 0 && shape.comebackFrom < 12) {
-		return `Down ${-halfMargin} at the break, ${theNick(
-			shape.winner,
-		)} outscored ${theNick(shape.loser)} ${wSecond}-${lSecond} in the second half.`;
+		return pick(
+			rng,
+			[
+				`Down ${-halfMargin} at the break, ${theNick(
+					shape.winner,
+				)} outscored ${theNick(shape.loser)} ${wSecond}-${lSecond} in the second half.`,
+				`${cap(theNick(shape.winner))} trailed by ${-halfMargin} at halftime and took the second half ${wSecond}-${lSecond}.`,
+				`The second half belonged to ${theNick(
+					shape.winner,
+				)}, ${wSecond}-${lSecond} after going in ${-halfMargin} down.`,
+				`A ${-halfMargin}-point halftime deficit turned into a ${wSecond}-${lSecond} second half.`,
+			],
+			"halfComeback",
+		);
 	}
 	if (secondMargin >= 12) {
-		return `${cap(theNick(shape.winner))} pulled away after halftime, taking the second half ${wSecond}-${lSecond}.`;
+		return pick(
+			rng,
+			[
+				`${cap(theNick(shape.winner))} pulled away after halftime, taking the second half ${wSecond}-${lSecond}.`,
+				`The game got away from ${theNick(
+					shape.loser,
+				)} after the break - ${wSecond}-${lSecond} over the last two quarters.`,
+				`${cap(theNick(shape.winner))} won the second half ${wSecond}-${lSecond} and were never troubled again.`,
+			],
+			"secondHalfPull",
+		);
 	}
 	if (halfMargin >= 15) {
-		return `${cap(theNick(shape.winner))} led ${wFirst}-${lFirst} at halftime and never looked back.`;
+		return pick(
+			rng,
+			[
+				`${cap(theNick(shape.winner))} led ${wFirst}-${lFirst} at halftime and never looked back.`,
+				`It was ${wFirst}-${lFirst} at the break and the outcome was already clear.`,
+				`${cap(theNick(shape.winner))} built a ${halfMargin}-point halftime lead and sat on it.`,
+			],
+			"halftimeLead",
+		);
 	}
 	return undefined;
 };
 
 // A player who controlled the game by plus-minus (when it's tracked and big).
-const plusMinusNote = (shape: Shape, star: RecapPlayer): string | undefined => {
+const plusMinusNote = (
+	shape: Shape,
+	star: RecapPlayer,
+	rng: () => number,
+): string | undefined => {
 	let best: RecapPlayer | undefined;
 	for (const p of shape.winner.players) {
 		if (typeof p.pm === "number" && (!best || p.pm > (best.pm ?? -Infinity))) {
@@ -1417,7 +1483,16 @@ const plusMinusNote = (shape: Shape, star: RecapPlayer): string | undefined => {
 	if (!best || best === star || (best.pm ?? 0) < 25) {
 		return undefined;
 	}
-	return `${best.name} was a team-best +${best.pm} in ${best.min} minutes.`;
+	return pick(
+		rng,
+		[
+			`${best.name} was a team-best +${best.pm} in ${best.min} minutes.`,
+			`Nobody swung it further than ${best.name}, +${best.pm} across ${best.min} minutes.`,
+			`${best.name} finished +${best.pm}, the best mark on the floor.`,
+			`${best.name} was on the court for ${best.min} minutes and came out +${best.pm}.`,
+		],
+		"plusMinus",
+	);
 };
 
 // The scoreboard's overall character: a shootout or a defensive grind.
@@ -1468,13 +1543,28 @@ const supportSentence = (
 	const ddw = doubleWord(doubleCategories(second).length);
 	const secondText = ddw
 		? `${second.name} added a ${ddw} with ${statPhrase(second)}`
-		: `${second.name} ${pick(rng, ["added", "chipped in", "contributed"])} ${statPhrase(
-				second,
-			)}`;
+		: `${second.name} ${pick(rng, [
+				"added",
+				"chipped in",
+				"contributed",
+				"kicked in",
+				"pitched in with",
+				"tacked on",
+				"was good for",
+				"supplied",
+				"came up with",
+				"finished with",
+			])} ${statPhrase(second)}`;
 
 	const third = cast[1];
 	if (third && (third.pts >= 14 || doubleCategories(third).length >= 2)) {
-		return `${secondText}, and ${third.name} had ${statPhrase(third, 1)}.`;
+		return `${secondText}, and ${third.name} ${pick(rng, [
+			"had",
+			"put up",
+			"posted",
+			"went for",
+			"finished with",
+		])} ${statPhrase(third, 1)}.`;
 	}
 	return `${secondText}.`;
 };
@@ -1497,17 +1587,39 @@ const loserSentence = (
 	// than repeating the team name.
 	let reason = "";
 	if (stats.tov >= 18 && !spent.has("loserTov")) {
-		reason = pick(rng, [
-			`, but ${stats.tov} turnovers did them in`,
-			`, but they coughed it up ${stats.tov} times`,
-			`, but ${stats.tov} turnovers proved costly`,
-		]);
+		reason = pick(
+			rng,
+			[
+				`, but ${stats.tov} turnovers did them in`,
+				`, but they coughed it up ${stats.tov} times`,
+				`, but ${stats.tov} turnovers proved costly`,
+				`, though ${stats.tov} giveaways kept undoing the good work`,
+				`, and ${stats.tov} turnovers were far too many`,
+				`, on a night they gave it away ${stats.tov} times`,
+			],
+			"loserTov",
+		);
 	} else if (stats.fga >= 20 && stats.fgp <= 40 && !spent.has("loserFgp")) {
-		reason = `, but they shot just ${stats.fgp}% as a team`;
+		reason = pick(
+			rng,
+			[
+				`, but they shot just ${stats.fgp}% as a team`,
+				`, though nothing else fell - ${stats.fgp}% for the game`,
+				`, on a ${stats.fgp}% shooting night for the team`,
+			],
+			"loserFgp",
+		);
 	}
 
 	if (leader && (leader.pts >= 18 || doubleCategories(leader).length >= 2)) {
-		const verb = pick(rng, ["led", "paced", "topped"]);
+		const verb = pick(rng, [
+			"led",
+			"paced",
+			"topped",
+			"headed",
+			"fronted",
+			"was the best of",
+		]);
 		// A 19-rebound night is not an ordinary double-double, and burying it in
 		// "(19 points and 19 rebounds)" reads like it was.
 		if (leader.reb >= 18) {
@@ -1545,9 +1657,16 @@ const stakesSentence = (
 	const streak = shape.winner.streak;
 	if (streak && streak.won && streak.count >= 4) {
 		options.push(
-			`The win was ${poss(theNick(shape.winner))} ${ordinal(
-				streak.count,
-			)} in a row.`,
+			pick(
+				rng,
+				[
+					`The win was ${poss(theNick(shape.winner))} ${ordinal(streak.count)} in a row.`,
+					`${cap(theNick(shape.winner))} have now won ${plural(streak.count, "straight game")}.`,
+					`That is ${plural(streak.count, "win")} in a row for ${theNick(shape.winner)}.`,
+					`${cap(theNick(shape.winner))} ran their streak to ${streak.count}.`,
+				],
+				"streak",
+			),
 		);
 	}
 
@@ -1572,7 +1691,16 @@ const stakesSentence = (
 
 	if (isUpset(game, shape) && game.spread) {
 		options.push(
-			`${cap(theNick(shape.winner))} entered ${game.spread.points}-point underdogs.`,
+			pick(
+				rng,
+				[
+					`${cap(theNick(shape.winner))} entered ${game.spread.points}-point underdogs.`,
+					`${cap(theNick(shape.winner))} were given no chance, ${game.spread.points} points the wrong side of the line.`,
+					`The books had ${theNick(shape.winner)} ${game.spread.points} points short of this one.`,
+					`Nobody had ${theNick(shape.winner)} winning - they were ${game.spread.points}-point dogs.`,
+				],
+				"underdog",
+			),
 		);
 	}
 
@@ -1588,11 +1716,15 @@ const stakesSentence = (
 		rng() < 0.5
 	) {
 		options.push(
-			pick(rng, [
-				`${cap(theNick(shape.winner))} improved to ${rec.won}-${rec.lost}.`,
-				`${cap(theNick(shape.winner))} moved to ${rec.won}-${rec.lost}.`,
-				`The win pushed ${theNick(shape.winner)} to ${rec.won}-${rec.lost}.`,
-			]),
+			pick(
+				rng,
+				[
+					`${cap(theNick(shape.winner))} improved to ${rec.won}-${rec.lost}.`,
+					`${cap(theNick(shape.winner))} moved to ${rec.won}-${rec.lost}.`,
+					`The win pushed ${theNick(shape.winner)} to ${rec.won}-${rec.lost}.`,
+				],
+				"record",
+			),
 		);
 	}
 
@@ -1603,7 +1735,10 @@ const stakesSentence = (
 };
 
 // Injury color: returns, playing through, new injuries, and notable inactives.
-const injurySentence = (shape: Shape): string | undefined => {
+const injurySentence = (
+	shape: Shape,
+	rng: () => number,
+): string | undefined => {
 	const bits: string[] = [];
 	for (const t of [shape.winner, shape.loser]) {
 		for (const p of t.players) {
@@ -1613,10 +1748,24 @@ const injurySentence = (shape: Shape): string | undefined => {
 				);
 			} else if (p.injury?.newThisGame && p.injury.gamesRemaining > 0) {
 				bits.push(
-					`${p.name} left with ${aWord(lowerInjury(p.injury.type))} (out ~${plural(
-						p.injury.gamesRemaining,
-						"game",
-					)})`,
+					pick(
+						rng,
+						[
+							`${p.name} left with ${aWord(lowerInjury(p.injury.type))} (out ~${plural(
+								p.injury.gamesRemaining,
+								"game",
+							)})`,
+							`${p.name} went down with ${aWord(lowerInjury(p.injury.type))} and is out around ${plural(
+								p.injury.gamesRemaining,
+								"game",
+							)}`,
+							`${p.name} picked up ${aWord(lowerInjury(p.injury.type))} that will cost him about ${plural(
+								p.injury.gamesRemaining,
+								"game",
+							)}`,
+						],
+						"injuryNew",
+					),
 				);
 			}
 		}
@@ -1625,7 +1774,16 @@ const injurySentence = (shape: Shape): string | undefined => {
 	for (const t of [shape.winner, shape.loser]) {
 		for (const out of t.injuries ?? []) {
 			bits.push(
-				`${theNick(t)} were without ${out.name} (${lowerInjury(out.type)})`,
+				pick(
+					rng,
+					[
+						`${theNick(t)} were without ${out.name} (${lowerInjury(out.type)})`,
+						`${out.name} sat out for ${theNick(t)} with ${aWord(lowerInjury(out.type))}`,
+						`${theNick(t)} were missing ${out.name} (${lowerInjury(out.type)})`,
+						`${aWord(cap(lowerInjury(out.type)))} kept ${out.name} out for ${theNick(t)}`,
+					],
+					"injuryOut",
+				),
 			);
 			break; // one per team is enough
 		}
@@ -1634,6 +1792,371 @@ const injurySentence = (shape: Shape): string | undefined => {
 		return undefined;
 	}
 	return `${cap(bits.slice(0, 2).join("; "))}.`;
+};
+
+// --- Extra colour: angles the two core paragraphs don't cover -----------------
+//
+// Everything below is optional. Each returns undefined when the game gives it
+// nothing to say, so a quiet 98-92 gets a short recap and a wild one gets a
+// long one - which is how it should read. They exist because the box score
+// carries far more than a lead scorer and a final score: what a man's night
+// was against his own average, how the two sides shot it from deep, who got to
+// the line, who has been playing well lately.
+
+// A player's line measured against what he had been doing all season. This is
+// the difference between "scored 31" and "scored 31, and he came in averaging
+// 12" - the second is a story.
+const vsAverageNote = (
+	shape: Shape,
+	star: RecapPlayer,
+	playoffs: boolean,
+	rng: () => number,
+	// The lead sentence has its own "who came in averaging N" clause. Saying it
+	// again two sentences later is the same fact twice.
+	alreadySaidAverage: boolean,
+): string | undefined => {
+	const avg = enteringLine(star, playoffs);
+	if (!avg || avg.gp < 5 || alreadySaidAverage) {
+		return undefined;
+	}
+	const over = star.pts - avg.pts;
+	// A big night ONLY counts as a departure if it's both a large absolute jump
+	// and a large relative one - 28 from a 24-point scorer is Tuesday.
+	if (star.pts >= 20 && over >= 11 && star.pts >= avg.pts * 1.5) {
+		return pick(
+			rng,
+			[
+				`${star.name} came into the night averaging ${avg.pts.toFixed(1)}.`,
+				`That is ${Math.round(over)} clear of ${poss(star.name)} ${avg.pts.toFixed(1)} season average.`,
+				`${star.name} had been averaging ${avg.pts.toFixed(1)} a game to this point.`,
+				`It was a long way past the ${avg.pts.toFixed(1)} ${star.name} had been putting up.`,
+			],
+			"vsAvgHigh",
+		);
+	}
+	// The reverse: a star who was held down, but only when he actually is one.
+	if (avg.pts >= 18 && star.pts <= avg.pts - 10 && star.pts <= 12) {
+		return pick(
+			rng,
+			[
+				`It was a quiet night by ${poss(star.name)} standards - he came in averaging ${avg.pts.toFixed(1)}.`,
+				`The ${avg.pts.toFixed(1)} ${star.name} averages never showed up.`,
+			],
+			"vsAvgLow",
+		);
+	}
+	// An efficient volume night against a middling shooting season.
+	if (
+		star.fga >= 12 &&
+		avg.fgp > 0 &&
+		star.fg / star.fga >= 0.6 &&
+		star.fg / star.fga - avg.fgp / 100 >= 0.12
+	) {
+		return `${star.name} shot it far better than the ${avg.fgp.toFixed(1)}% he had managed on the season.`;
+	}
+	return undefined;
+};
+
+// Career arc. The season averages of every previous year are in the payload and
+// were going unread, which meant a player quietly having the best year of his
+// life read exactly like anyone else.
+const careerArcNote = (
+	star: RecapPlayer,
+	playoffs: boolean,
+	rng: () => number,
+): string | undefined => {
+	const avg = star.seasonAvg;
+	const past = star.career;
+	if (playoffs || !avg || avg.gp < 12 || !past || past.length < 2) {
+		return undefined;
+	}
+	const bestPast = Math.max(...past.map((c) => c.pts));
+	const seasons = past.length + 1;
+	if (avg.pts > bestPast + 1.5 && avg.pts >= 15) {
+		return pick(
+			rng,
+			[
+				`At ${avg.pts.toFixed(1)} a night, ${star.name} is having the best scoring season of his career.`,
+				`${poss(star.name)} ${avg.pts.toFixed(1)} per game is a career best in year ${seasons}.`,
+				`No season ${star.name} has played has scored like this one.`,
+			],
+			"careerBest",
+		);
+	}
+	// A veteran well past his peak is its own story.
+	if (seasons >= 8 && bestPast >= avg.pts + 6 && avg.pts >= 8) {
+		return `${star.name} is ${seasons} seasons in, some way down from the ${bestPast.toFixed(
+			1,
+		)} he once averaged.`;
+	}
+	return undefined;
+};
+
+// The three-point battle, when one side clearly won it. Volume from deep is the
+// single biggest swing factor in a modern box score and nothing was reading it
+// except a bare "knocked down 14 threes".
+const threeNote = (shape: Shape, rng: () => number): string | undefined => {
+	const w = teamStats(shape.winner);
+	const l = teamStats(shape.loser);
+	if (w.tpa < 10 || l.tpa < 10) {
+		return undefined;
+	}
+	const diff = w.tp - l.tp;
+	if (diff >= 7) {
+		return pick(
+			rng,
+			[
+				`The difference was behind the arc: ${w.tp}-of-${w.tpa} for ${theNick(
+					shape.winner,
+				)}, ${l.tp}-of-${l.tpa} for ${theNick(shape.loser)}.`,
+				`${cap(theNick(shape.winner))} made ${diff} more threes than ${theNick(
+					shape.loser,
+				)}, ${w.tp} to ${l.tp}.`,
+				`From deep it was no contest - ${w.tp} threes to ${l.tp}.`,
+			],
+			"threeGap",
+		);
+	}
+	if (l.tpa >= 28 && l.tpp <= 26) {
+		return `${cap(theNick(shape.loser))} went ${l.tp}-of-${l.tpa} from three.`;
+	}
+	return undefined;
+};
+
+// Who got to the line. A lopsided free-throw night is a real explanation for a
+// close result and it was only ever mentioned from the winner's side.
+const freeThrowNote = (shape: Shape, rng: () => number): string | undefined => {
+	const w = teamStats(shape.winner);
+	const l = teamStats(shape.loser);
+	if (w.fta + l.fta < 20) {
+		return undefined;
+	}
+	if (w.fta - l.fta >= 14) {
+		return pick(
+			rng,
+			[
+				`${cap(theNick(shape.winner))} shot ${w.fta} free throws to ${l.fta}.`,
+				`The whistle went one way: ${w.fta} attempts from the line for ${theNick(
+					shape.winner,
+				)}, ${l.fta} for ${theNick(shape.loser)}.`,
+			],
+			"ftGap",
+		);
+	}
+	if (l.fta - w.fta >= 14 && shape.margin <= 10) {
+		return `${cap(theNick(shape.loser))} had the better of the whistle - ${l.fta} free throws to ${w.fta} - and still lost.`;
+	}
+	return undefined;
+};
+
+// Defensive stat lines: blocks and steals, which almost never surfaced because
+// the lead sentence is built around scoring.
+const defensiveNote = (
+	shape: Shape,
+	rng: () => number,
+	said: Set<string>,
+): string | undefined => {
+	const w = teamStats(shape.winner);
+	const bigBlocker = shape.winner.players.find(
+		(p) => p.blk >= 5 && !said.has(p.name),
+	);
+	const bigThief = [...shape.winner.players, ...shape.loser.players].find(
+		(p) => p.stl >= 5 && !said.has(p.name),
+	);
+	const options: string[] = [];
+	if (w.blk >= 9) {
+		options.push(
+			`${cap(theNick(shape.winner))} blocked ${w.blk} shots at the rim.`,
+		);
+	}
+	if (bigBlocker) {
+		options.push(
+			`${bigBlocker.name} protected the rim with ${plural(bigBlocker.blk, "block")}.`,
+		);
+	}
+	if (bigThief) {
+		options.push(
+			`${bigThief.name} picked off ${plural(bigThief.stl, "pass")}.`,
+		);
+	}
+	if (options.length === 0) {
+		return undefined;
+	}
+	const chosen = pick(rng, options);
+	for (const p of [bigBlocker, bigThief]) {
+		if (p && chosen.startsWith(p.name)) {
+			said.add(p.name);
+		}
+	}
+	return chosen;
+};
+
+// Somebody fouled out. pf is in the box score and nothing was reading it.
+const foulOutNote = (shape: Shape, said: Set<string>): string | undefined => {
+	for (const t of [shape.winner, shape.loser]) {
+		for (const p of t.players) {
+			if (p.pf >= 6 && !said.has(p.name)) {
+				said.add(p.name);
+				return `${p.name} fouled out with ${plural(p.pts, "point")} in ${p.min} minutes.`;
+			}
+		}
+	}
+	return undefined;
+};
+
+// Recent form from the last-10 log, which was only being read to find a snapped
+// streak. How a team has been playing is context a reader actually wants.
+const formNote = (
+	shape: Shape,
+	rng: () => number,
+	// Set when a streak sentence has already run. "The Celtics have now won 6
+	// straight" followed by "the Celtics have won 5 of their last 6" is the same
+	// fact told twice, and worse, the two numbers look like they disagree.
+	skipWinner = false,
+): string | undefined => {
+	const describe = (t: RecapTeam): string | undefined => {
+		const l10 = t.last10;
+		// Index 0 is this game, so the FORM entering it is everything after.
+		if (!Array.isArray(l10) || l10.length < 7) {
+			return undefined;
+		}
+		const prior = l10.slice(1);
+		const won = prior.filter((x) => x.won).length;
+		if (won >= prior.length - 1 && prior.length >= 6) {
+			const of = won === prior.length ? "every one of" : `${won} of`;
+			return pick(
+				rng,
+				[
+					`${theNick(t)} have now won ${of} their last ${prior.length}`,
+					`that is ${won} wins in ${prior.length} games for ${theNick(t)}`,
+					`${theNick(t)} are ${won}-${prior.length - won} over their last ${prior.length}`,
+				],
+				"formHot",
+			);
+		}
+		if (won <= 1 && prior.length >= 6) {
+			return pick(
+				rng,
+				[
+					`${theNick(t)} had lost ${prior.length - won} of ${prior.length} coming in`,
+					`${theNick(t)} arrived having dropped ${prior.length - won} of their last ${prior.length}`,
+					`it has been a rough stretch for ${theNick(t)}, ${won}-${prior.length - won} in their last ${prior.length}`,
+				],
+				"formCold",
+			);
+		}
+		return undefined;
+	};
+	const options = [
+		skipWinner ? undefined : describe(shape.winner),
+		describe(shape.loser),
+	].filter((x): x is string => !!x);
+	if (options.length === 0) {
+		return undefined;
+	}
+	return `${cap(pick(rng, options))}.`;
+};
+
+// The loser's second man. Only the losing side's single best player ever got
+// named, so a 24-point night from their number two vanished entirely.
+const loserSupportNote = (
+	shape: Shape,
+	rng: () => number,
+	// Anyone the recap has already named. Without this the note kept
+	// re-introducing the losing side's best player, who the loser sentence had
+	// just finished describing.
+	said: Set<string>,
+): string | undefined => {
+	const second = [...shape.loser.players]
+		.sort((a, b) => b.pts - a.pts)
+		.find(
+			(p) =>
+				!said.has(p.name) && (p.pts >= 16 || doubleCategories(p).length >= 2),
+		);
+	if (!second) {
+		return undefined;
+	}
+	said.add(second.name);
+	return `${second.name} ${pick(rng, [
+		"also had",
+		"finished with",
+		"put up",
+		"was good for",
+		"added",
+	])} ${statPhrase(second, 1)} in defeat.`;
+};
+
+// Whether the favorite covered. The spread is already known to the recap and
+// was only ever used to flag outright upsets.
+const spreadNote = (
+	game: RecapGame,
+	shape: Shape,
+	rng: () => number,
+): string | undefined => {
+	const s = game.spread;
+	if (!s || s.points < 3 || game.playoffs) {
+		return undefined;
+	}
+	// An outright upset has its own sentence elsewhere.
+	if (s.favTid === shape.loser.tid) {
+		return undefined;
+	}
+	const covered = shape.margin > s.points;
+	if (covered && shape.margin - s.points >= 10) {
+		return pick(
+			rng,
+			[
+				`Favored by ${s.points}, ${theNick(shape.winner)} won by ${shape.margin}.`,
+				`The ${s.points}-point line never looked like mattering.`,
+			],
+			"spreadCovered",
+		);
+	}
+	if (!covered && s.points >= 7) {
+		return pick(
+			rng,
+			[
+				`${cap(theNick(shape.winner))} were ${s.points}-point favorites and won by ${shape.margin}.`,
+				`The ${s.points}-point favorites had to sweat this one out.`,
+			],
+			"spreadNarrow",
+		);
+	}
+	return undefined;
+};
+
+// Heavy minutes - a starter who barely came off the floor.
+const minutesNote = (shape: Shape, said: Set<string>): string | undefined => {
+	const iron = [...shape.winner.players, ...shape.loser.players].find(
+		(p) => p.min >= 46 && !said.has(p.name),
+	);
+	if (!iron) {
+		return undefined;
+	}
+	said.add(iron.name);
+	return `${iron.name} logged ${iron.min} minutes.`;
+};
+
+// How the two benches / rotations compared in depth terms.
+const balanceNote = (shape: Shape, rng: () => number): string | undefined => {
+	const w = teamStats(shape.winner);
+	const l = teamStats(shape.loser);
+	if (w.dblFig >= 5 && w.dblFig - l.dblFig >= 3) {
+		return pick(
+			rng,
+			[
+				`${cap(theNick(shape.winner))} got double figures out of ${w.dblFig} players to ${l.dblFig} for ${theNick(
+					shape.loser,
+				)}.`,
+				`The scoring was spread around - ${w.dblFig} ${nick(shape.winner)} in double figures.`,
+			],
+			"balance",
+		);
+	}
+	if (w.ast >= 26 && w.ast - l.ast >= 10) {
+		return `${cap(theNick(shape.winner))} assisted on far more of their baskets, ${w.ast} to ${l.ast}.`;
+	}
+	return undefined;
 };
 
 // --- All-Star Game -------------------------------------------------------------
@@ -1787,23 +2310,87 @@ export const getAutoRecap = (game: RecapGame): string => {
 	const combined = combinedNote(shape, rng);
 	const extras = shuffle(rng, [
 		post.sentences[1],
-		combined ? undefined : secondHalfNote(shape),
+		combined ? undefined : secondHalfNote(shape, rng),
 		stakesSentence(game, shape, rng),
 		combined,
-		plusMinusNote(shape, star),
-		injurySentence(shape),
+		plusMinusNote(shape, star, rng),
+		injurySentence(shape, rng),
 	]).filter((s): s is string => !!s);
 	for (const e of extras) {
-		if (para2.length >= 5) {
+		if (para2.length >= 6) {
 			break;
 		}
 		para2.push(e);
+	}
+
+	// Paragraph 3: the detail a beat writer fills a column with once the result
+	// has been told - what the star's night was against his own season, how the
+	// two sides shot it, who got to the line, how either club has been playing.
+	// All optional, so a forgettable game still gets a short recap and only a
+	// game with things to say runs long.
+	//
+	// Everyone already named, so this paragraph introduces new faces instead of
+	// re-describing the same two men a third time.
+	const said = new Set<string>([star.name]);
+	// The HEADLINE counts too. A losing star named up top had his line skipped by
+	// the loser sentence, then the support note printed it again down here.
+	const alreadyWritten = [headline.text, ...para1, ...para2].join(" ");
+	for (const t of [shape.winner, shape.loser]) {
+		for (const p of t.players) {
+			if (alreadyWritten.includes(p.name)) {
+				said.add(p.name);
+			}
+		}
+	}
+	// A streak sentence in paragraph 2 already covered the winner's recent form.
+	const streakTold =
+		/in a row|straight game|ran their streak|winning streak/.test(
+			alreadyWritten,
+		);
+
+	// Ordered, not shuffled: the man who decided the game comes before how the
+	// two sides shot it, which comes before the bookkeeping. Within each tier the
+	// seed still varies which angles appear at all, so no two recaps line up.
+	const para3 = [
+		vsAverageNote(
+			shape,
+			star,
+			game.playoffs,
+			rng,
+			/averaging|average/.test(alreadyWritten),
+		),
+		careerArcNote(star, game.playoffs, rng),
+		...shuffle(rng, [
+			threeNote(shape, rng),
+			freeThrowNote(shape, rng),
+			balanceNote(shape, rng),
+		]),
+		loserSupportNote(shape, rng, said),
+		...shuffle(rng, [
+			defensiveNote(shape, rng, said),
+			foulOutNote(shape, said),
+			minutesNote(shape, said),
+		]),
+		formNote(shape, rng, streakTold),
+		spreadNote(game, shape, rng),
+	]
+		.filter((x): x is string => !!x)
+		.slice(0, 5);
+
+	// A lone extra sentence isn't a paragraph - it reads as an orphan under two
+	// full ones. Fold it into the second and let the subject dedupe treat it as
+	// part of that paragraph, so a repeated name collapses to a pronoun.
+	if (para3.length === 1 && para2.length > 0) {
+		para2.push(para3.pop()!);
 	}
 
 	const otherNick = nick(shape.loser);
 	const paragraphs = [dedupeSubjects(para1, otherNick).join(" ")];
 	if (para2.length > 0) {
 		paragraphs.push(dedupeSubjects(para2, otherNick).join(" "));
+	}
+	if (para3.length > 0) {
+		paragraphs.push(dedupeSubjects(para3, otherNick).join(" "));
 	}
 	return `**${headline.text}**\n\n${paragraphs.join("\n\n")}`;
 };
@@ -2161,7 +2748,7 @@ const dayHeadline = (
 		if (upsets.length >= 2) {
 			return pick(rng, [
 				`${poss(shot.name)} ${shot.shot} caps a night of upsets`,
-				`${shot.name} sinks ${l} at the wire on a night ${upsets.length} favorites fall`,
+				`${shot.name} sinks ${l} at the wire on a night ${numWord(upsets.length)} favorites fell`,
 			]);
 		}
 		return pick(rng, [
@@ -2191,7 +2778,7 @@ const dayHeadline = (
 		)[0]!;
 		return `${nick(biggest.shape.winner)} stun ${theNick(
 			biggest.shape.loser,
-		)} on a night ${upsets.length} favorites fall`;
+		)} on a night ${numWord(upsets.length)} favorites fell`;
 	}
 
 	if (mStar && doubleCategories(mStar).length >= 3) {
@@ -2480,6 +3067,104 @@ const roundupClause = (shape: Shape, seq: number): string => {
 	return `${w} ${pool[seq % pool.length]} ${l} ${scoreTag(shape)}`;
 };
 
+// League-wide notes read off the whole slate: the night's blowout, its
+// shootout, the best shooting performance. A day wrap that only lists results
+// never tells you what KIND of night it was.
+const leagueNotes = (
+	games: RecapGame[],
+	rng: () => number,
+	limit: number,
+): string[] => {
+	const real = games.filter((g) => !g.allStar);
+	if (real.length < 4) {
+		return [];
+	}
+
+	type Cand = { sort: number; text: string };
+	const cands: Cand[] = [];
+
+	let biggest: { shape: Shape; margin: number } | undefined;
+	let highest: { shape: Shape; total: number } | undefined;
+	let hottest: { shape: Shape; fgp: number } | undefined;
+	let bombs: { shape: Shape; tp: number } | undefined;
+	for (const g of real) {
+		const shape = analyzeShape(g);
+		const total = shape.winner.pts + shape.loser.pts;
+		if (!biggest || shape.margin > biggest.margin) {
+			biggest = { shape, margin: shape.margin };
+		}
+		if (!highest || total > highest.total) {
+			highest = { shape, total };
+		}
+		const w = teamStats(shape.winner);
+		if (w.fga >= 60 && (!hottest || w.fgp > hottest.fgp)) {
+			hottest = { shape, fgp: w.fgp };
+		}
+		if (w.tp >= 15 && (!bombs || w.tp > bombs.tp)) {
+			bombs = { shape, tp: w.tp };
+		}
+	}
+
+	if (biggest && biggest.margin >= 25) {
+		cands.push({
+			sort: 0,
+			text: `The night's most one-sided result was ${poss(
+				theNick(biggest.shape.winner),
+			)} ${biggest.margin}-point win over ${theNick(biggest.shape.loser)}.`,
+		});
+	}
+	if (highest && highest.total >= 235) {
+		cands.push({
+			sort: 1,
+			text: `${cap(theNick(highest.shape.winner))} and ${theNick(
+				highest.shape.loser,
+			)} combined for ${highest.total} points, the most of any game on the slate.`,
+		});
+	}
+	if (hottest && hottest.fgp >= 53) {
+		cands.push({
+			sort: 2,
+			text: `${cap(theNick(hottest.shape.winner))} shot the ball best of anyone, ${hottest.fgp}% from the field.`,
+		});
+	}
+	if (bombs && bombs.tp >= 17) {
+		cands.push({
+			sort: 3,
+			text: `${cap(theNick(bombs.shape.winner))} led the league in threes with ${bombs.tp}.`,
+		});
+	}
+
+	// Home teams' night, when it is lopsided enough to be worth saying.
+	let homeWins = 0;
+	let counted = 0;
+	for (const g of real) {
+		const home = g.teams[0];
+		if (home) {
+			counted += 1;
+			if (g.winnerTid === home.tid) {
+				homeWins += 1;
+			}
+		}
+	}
+	if (
+		counted >= 8 &&
+		(homeWins <= counted * 0.3 || homeWins >= counted * 0.8)
+	) {
+		cands.push({
+			sort: 4,
+			text:
+				homeWins >= counted * 0.8
+					? `Home teams went ${homeWins}-${counted - homeWins}.`
+					: `It was a night for the road: visitors won ${counted - homeWins} of ${counted}.`,
+		});
+	}
+
+	return shuffle(rng, cands)
+		.sort((a, b) => a.sort - b.sort)
+		.slice(0, limit)
+		.map((c) => c.text);
+};
+
 // How many of the day's games were decided by 5 or fewer.
 const closeGamesSentence = (games: RecapGame[]): string | undefined => {
 	const nonExhibition = games.filter((g) => !g.allStar);
@@ -2501,7 +3186,7 @@ const closeGamesSentence = (games: RecapGame[]): string | undefined => {
 	// scores), so only call out an unusually OT-heavy night here; otherwise the
 	// close-game count is the more informative league note.
 	if (close >= 3) {
-		return `${close} of the ${nonExhibition.length} games were decided by five points or fewer.`;
+		return `${cap(numWord(close))} of the ${nonExhibition.length} games were decided by five points or fewer.`;
 	}
 	if (ot >= 3) {
 		return `${ot === nonExhibition.length ? "All" : ot} games went to overtime.`;
@@ -2745,7 +3430,26 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 			roundupExtra > 0
 				? [...roundupClauses, `${roundupExtra} other games`]
 				: roundupClauses;
-		para2.push(`Around the league, ${naturalList(items)}.`);
+		// Broken into sentences of three or four rather than one enormous comma
+		// list. Eight results strung together with commas is technically complete
+		// and completely unreadable; nobody gets to the end of it.
+		const OPENERS = [
+			"Around the league",
+			"Also on the night",
+			"In the rest of the schedule",
+			"Rounding out the slate",
+		];
+		const CHUNK = 4;
+		for (let i = 0, n = 0; i < items.length; i += CHUNK, n += 1) {
+			// A trailing chunk of one reads as an afterthought ("Also on the night,
+			// the Hornets topped the Magic."), so absorb it into the one before.
+			const slice =
+				items.length - i === CHUNK + 1
+					? items.slice(i)
+					: items.slice(i, i + CHUNK);
+			para2.push(`${OPENERS[n % OPENERS.length]}, ${naturalList(slice)}.`);
+			i += slice.length - CHUNK;
+		}
 	}
 
 	// Paragraph 3: the league picture - close-game count, injury news, and then
@@ -2755,6 +3459,12 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	const close = closeGamesSentence(games);
 	if (close) {
 		para3.push(close);
+	}
+
+	// What kind of night it was, league-wide: the blowout, the shootout, the best
+	// shooting performance. Two at most, so the wrap stays a wrap.
+	for (const note of leagueNotes(games, rng, 2)) {
+		para3.push(note);
 	}
 
 	// The night's injury news - who went down matters to the league picture.
