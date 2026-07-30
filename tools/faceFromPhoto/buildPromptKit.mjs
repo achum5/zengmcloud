@@ -55,7 +55,7 @@ single \`\`\`json code fence, and nothing else.
   "piercpa01": {
     "gender": "male",
     "race": "black",
-    "colors": { "skin": "#6f4a2c", "hair": "#141414", "shave": "rgba(0,0,0,0.18)" },
+    "colors": { "shave": "rgba(0,0,0,0.18)" },
     "shape": { "fatness": 0.3, "nose": 1.0, "ear": 0.9 },
     "slots": {
       "head": "head7", "hair": "short", "facialHair": "goatee1",
@@ -68,8 +68,10 @@ single \`\`\`json code fence, and nothing else.
 
 ## Rules (accuracy first)
 
-- **Sample skin and hair color exactly** as hex from the photo — these matter
-  most for likeness. \`colors.skin\` is the face color; \`colors.hair\` the hair.
+- **Don't try to name colors.** Skin and hair hexes are measured off the
+  photo's own pixels by \`sampleColors.mjs\` and overwrite anything you put in
+  \`colors\`, so leave those out and spend the effort on the shapes below —
+  they're the part only you can do.
 - \`race\` (white | black | brown | asian) seeds coherent defaults for anything
   you leave unset — pick by appearance.
 - **Only use ids from the lists below** (or the attached catalog sheets). Any id
@@ -137,8 +139,12 @@ for (const slot of SHEET_SLOTS) {
 	 h1{width:100%;margin:0 0 6px;font-size:16px}
 	</style><h1>faces.js — ${slot} options</h1>${cells}`;
 	await page.setContent(html);
-	await page.locator("body").screenshot({ path: join(kitDir, `catalog-${slot}.png`) });
+	await page
+		.locator("body")
+		.screenshot({ path: join(kitDir, `catalog-${slot}.png`) });
 }
 await browser.close();
 
-console.log(`Wrote prompt-kit/INSTRUCTIONS.md and ${SHEET_SLOTS.length} catalog sheets.`);
+console.log(
+	`Wrote prompt-kit/INSTRUCTIONS.md and ${SHEET_SLOTS.length} catalog sheets.`,
+);

@@ -50,10 +50,13 @@ writeFileSync(join(outDir, `${name}.face.json`), JSON.stringify(face, null, 2));
 // Side-by-side preview. Embeds the reference photo as a data URI if present, so
 // the HTML is self-contained and viewable anywhere.
 let photoImg = "<div class='ph'>no photo provided</div>";
-const photoPath = spec.photo ? resolve(dirname(resolve(specPath)), spec.photo) : undefined;
+const photoPath = spec.photo
+	? resolve(dirname(resolve(specPath)), spec.photo)
+	: undefined;
 if (photoPath && existsSync(photoPath)) {
 	const ext = photoPath.split(".").pop().toLowerCase();
-	const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+	const mime =
+		ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
 	const b64 = readFileSync(photoPath).toString("base64");
 	photoImg = `<img src="data:${mime};base64,${b64}" alt="reference">`;
 }

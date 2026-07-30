@@ -12,7 +12,9 @@ import { resolve, join } from "node:path";
 
 const [leaguePath, outDirArg] = process.argv.slice(2);
 if (!leaguePath) {
-	console.error("usage: node downloadImages.mjs <league-export.json> [out-dir]");
+	console.error(
+		"usage: node downloadImages.mjs <league-export.json> [out-dir]",
+	);
 	process.exit(1);
 }
 const outDir = resolve(outDirArg ?? "player-images");
@@ -38,7 +40,10 @@ const worker = async () => {
 	while (queue.length > 0) {
 		const p = queue.shift();
 		const file = join(outDir, `${p.srID}.${extOf(p.imgURL)}`);
-		manifest.push({ srID: p.srID, name: `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim() });
+		manifest.push({
+			srID: p.srID,
+			name: `${p.firstName ?? ""} ${p.lastName ?? ""}`.trim(),
+		});
 		if (existsSync(file)) {
 			skipped += 1;
 			continue;
@@ -63,6 +68,13 @@ const worker = async () => {
 
 await Promise.all(Array.from({ length: 6 }, worker));
 
-writeFileSync(join(outDir, "_manifest.json"), JSON.stringify(manifest, null, 1));
-console.log(`Done: ${got} downloaded, ${skipped} already present, ${failed} failed.`);
-console.log(`Images in ${outDir} (named <srID>.<ext>); manifest at _manifest.json.`);
+writeFileSync(
+	join(outDir, "_manifest.json"),
+	JSON.stringify(manifest, null, 1),
+);
+console.log(
+	`Done: ${got} downloaded, ${skipped} already present, ${failed} failed.`,
+);
+console.log(
+	`Images in ${outDir} (named <srID>.<ext>); manifest at _manifest.json.`,
+);

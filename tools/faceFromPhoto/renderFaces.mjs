@@ -12,7 +12,9 @@ import { chromium } from "playwright";
 
 const [facesPath, outPath, namesPath] = process.argv.slice(2);
 if (!facesPath || !outPath) {
-	console.error("usage: node renderFaces.mjs <faces.json> <out.png> [names.json]");
+	console.error(
+		"usage: node renderFaces.mjs <faces.json> <out.png> [names.json]",
+	);
 	process.exit(1);
 }
 const faces = JSON.parse(readFileSync(resolve(facesPath), "utf8"));

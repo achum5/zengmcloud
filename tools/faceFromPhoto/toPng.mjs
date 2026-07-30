@@ -32,7 +32,10 @@ if (mode === "slot") {
 	);
 	cells = svgsIndex[arg]
 		.filter((id) => !id.startsWith("female"))
-		.map((id) => ({ label: id, svg: faceToSvgString(base, { [arg]: { id } }) }));
+		.map((id) => ({
+			label: id,
+			svg: faceToSvgString(base, { [arg]: { id } }),
+		}));
 } else {
 	cells = process.argv
 		.slice(3)
@@ -47,7 +50,10 @@ const html = `<!doctype html><meta charset=utf8><style>
 	.map((c) => `<figure>${c.svg}<figcaption>${c.label}</figcaption></figure>`)
 	.join("")}`;
 
-const file = join(outDir, `_view-${mode}-${(arg ?? "").replace(/[^\w]/g, "")}.png`);
+const file = join(
+	outDir,
+	`_view-${mode}-${(arg ?? "").replace(/[^\w]/g, "")}.png`,
+);
 const browser = await chromium.launch();
 const page = await browser.newPage();
 await page.setContent(html);
