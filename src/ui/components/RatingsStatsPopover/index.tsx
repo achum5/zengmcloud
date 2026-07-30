@@ -104,6 +104,9 @@ export const RatingsStatsPopover = ({
 		pid: number;
 		type?: "career" | "current" | "draft" | number;
 		note?: string;
+		// Whether the worker coarsened the ratings row above, so the gradient is
+		// drawn on the same scale the numbers are actually on.
+		coarseRatings?: boolean;
 	}>({
 		pid,
 	});
@@ -155,6 +158,7 @@ export const RatingsStatsPopover = ({
 			pid,
 			type: p.type,
 			note: p.note,
+			coarseRatings: p.coarseRatings,
 		});
 		setLoadingData(false);
 	}, [pid, season]);
@@ -166,8 +170,18 @@ export const RatingsStatsPopover = ({
 		}
 	}, [loadData, loadingData]);
 
-	const { abbrev, tid, age, jerseyNumber, name, ratings, stats, type, note } =
-		player;
+	const {
+		abbrev,
+		tid,
+		age,
+		jerseyNumber,
+		name,
+		ratings,
+		stats,
+		type,
+		note,
+		coarseRatings,
+	} = player;
 
 	// JTODO: this probably makes a bit more sense as a component instead of a pure jsx function?
 	let nameBlock = null;
@@ -224,7 +238,13 @@ export const RatingsStatsPopover = ({
 	const modalHeader = nameBlock;
 	const modalBody = (
 		<>
-			<RatingsStats ratings={ratings} stats={stats} type={type} tid={tid} />
+			<RatingsStats
+				ratings={ratings}
+				stats={stats}
+				type={type}
+				tid={tid}
+				coarseRatings={coarseRatings}
+			/>
 			{note ? <PlayerNote className="mt-2" note={note} /> : null}
 		</>
 	);
@@ -237,7 +257,13 @@ export const RatingsStatsPopover = ({
 			}}
 		>
 			<div className="mb-2">{nameBlock}</div>
-			<RatingsStats ratings={ratings} stats={stats} type={type} tid={tid} />
+			<RatingsStats
+				ratings={ratings}
+				stats={stats}
+				type={type}
+				tid={tid}
+				coarseRatings={coarseRatings}
+			/>
 			{note ? <PlayerNote className="mt-2" note={note} /> : null}
 		</div>
 	);

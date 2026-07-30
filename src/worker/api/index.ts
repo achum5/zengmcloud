@@ -40,7 +40,11 @@ import {
 	season,
 } from "../core/index.ts";
 import { idb } from "../db/index.ts";
-import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
+import {
+	coarsenPlayerForDisplay,
+	exemptFromCoarseRatings,
+	prospectRatingsSeason,
+} from "../../common/coarsenRating.ts";
 import {
 	achievement,
 	g,
@@ -3773,9 +3777,23 @@ const ratingsStatsPopoverInfo = async ({
 	} else {
 		type = actualSeason;
 	}
+
+	// Whether the row above actually came back coarsened, decided here because
+	// this is where it was (or wasn't) done. The UI colours ratings on a 0-10 or
+	// a 0-100 gradient depending on this, and it used to re-derive it from `tid`
+	// alone - which got it wrong the moment prospectSeasonsExact started handing
+	// back a drafted player's prospect season at full resolution, painting every
+	// number green. One source of truth so the two can't drift again.
+	const exceptProspects = g.get("hideRatingsOnesDigitExceptProspects");
+	const coarseRatings =
+		g.get("hideRatingsOnesDigit") &&
+		!exemptFromCoarseRatings(p.tid, exceptProspects) &&
+		!prospectRatingsSeason(p.draft.year, p2.ratings?.season, exceptProspects);
+
 	return {
 		...p2,
 		type,
+		coarseRatings,
 	};
 };
 

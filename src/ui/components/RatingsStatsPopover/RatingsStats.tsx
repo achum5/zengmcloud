@@ -13,6 +13,10 @@ export const RatingsStats = (props: {
 	// The subject's current team, so an undrafted prospect exempted from coarse
 	// ratings is coloured on the scale his numbers are actually on.
 	tid?: number;
+	// Whether these ratings actually came back coarsened. The producer knows -
+	// the exemption is per SEASON as well as per player, so `tid` alone can't
+	// tell you. Supplied wherever it's known; the tid rule is the fallback.
+	coarseRatings?: boolean;
 }) => {
 	const {
 		challengeNoRatings,
@@ -24,8 +28,9 @@ export const RatingsStats = (props: {
 		"hideRatingsOnesDigitExceptProspects",
 	]);
 	const coarseRatings =
-		hideRatingsOnesDigit &&
-		!exemptFromCoarseRatings(props.tid, hideRatingsOnesDigitExceptProspects);
+		props.coarseRatings ??
+		(hideRatingsOnesDigit &&
+			!exemptFromCoarseRatings(props.tid, hideRatingsOnesDigitExceptProspects));
 
 	return bySport({
 		baseball: RatingsStatsBaseball({
