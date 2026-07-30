@@ -21,11 +21,15 @@ import {
 	type ProjectedFire,
 } from "../util/autoPlayPreview.ts";
 
-// How many upcoming sims to compute, and the minimum to show before
-// summarizing. Everything firing before local midnight is always shown, so the
-// list covers the rest of today and its last row is today's final sim.
-const MAX_FIRES = 250;
-const DISPLAY_FIRES = 12;
+// Every projected sim eats at least one league day, so asking for as many fires
+// as there are days left always reaches the end of the phase's schedule -
+// there is nothing further to project, whatever the cap. The ceiling is only a
+// runaway guard for a rule that somehow fires far more often than it advances.
+const MAX_FIRES = 2000;
+
+// The list is scrollable rather than truncated, so this is how tall the box
+// gets before it starts scrolling, not how many rows exist.
+const PREVIEW_MAX_HEIGHT = 460;
 
 const DOW = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
@@ -223,7 +227,11 @@ const AutoPlaySchedule = () => {
 		if (!preview || preview.upcomingDays.length === 0) {
 			return [];
 		}
-		const fires = nextFires(settings.rules, new Date(), MAX_FIRES);
+		const fires = nextFires(
+			settings.rules,
+			new Date(),
+			Math.min(MAX_FIRES, Math.max(1, preview.upcomingDays.length)),
+		);
 		return projectFires(
 			fires,
 			preview.upcomingDays,
@@ -232,18 +240,6 @@ const AutoPlaySchedule = () => {
 		);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [preview, settings.rules, nowBucket]);
-
-	// Show at least DISPLAY_FIRES rows, and never cut off mid-day: every fire
-	// before local midnight stays visible.
-	const shownFires = useMemo(() => {
-		const endOfToday = new Date(now);
-		endOfToday.setHours(24, 0, 0, 0);
-		const todayCount = projected.filter(
-			(f) => f.at < endOfToday.getTime(),
-		).length;
-		return projected.slice(0, Math.max(DISPLAY_FIRES, todayCount));
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [projected, nowBucket]);
 
 	const update = (partial: Partial<AutoPlaySettings>) =>
 		autoPlayScheduler.updateSettings(partial);
@@ -522,7 +518,13 @@ const AutoPlaySchedule = () => {
 							</div>
 						) : (
 							<>
-								<div className="table-responsive">
+								{/* Scrolls rather than truncating: the whole point of the
+								    preview is being able to look as far ahead as the
+								    schedule goes and pick a stopping point out there. */}
+								<div
+									className="table-responsive table-scrollbox border rounded"
+									style={{ maxHeight: PREVIEW_MAX_HEIGHT }}
+								>
 									<table className="table table-sm mb-0 align-middle">
 										<thead>
 											<tr>
@@ -535,7 +537,7 @@ const AutoPlaySchedule = () => {
 											</tr>
 										</thead>
 										<tbody>
-											{shownFires.map((f, i) => {
+											{projected.map((f, i) => {
 												const isStop =
 													stopDay !== undefined && f.toDay === stopDay;
 												const afterStop =
@@ -613,9 +615,6 @@ const AutoPlaySchedule = () => {
 									through Day {projected.at(-1)!.toDay}
 									{projected.at(-1)!.endsPhase && preview?.phaseEndNote
 										? ` (${preview.phaseEndNote.toLowerCase()})`
-										: ""}
-									{projected.length > shownFires.length
-										? ` · showing the next ${shownFires.length}`
 										: ""}
 									.
 								</div>

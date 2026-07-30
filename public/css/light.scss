@@ -2785,3 +2785,18 @@ a.sb-bet-title:hover {
 	font-weight: 800;
 	line-height: 1;
 }
+
+// A table that scrolls inside a fixed-height box, with its header pinned to the
+// top of that box. Sticky on the CELLS rather than the <thead>: Safari didn't
+// support a sticky thead until 16, and border-collapse eats the header's own
+// bottom border once it detaches, so the divider is drawn as an inset shadow.
+.table-scrollbox {
+	overflow-y: auto;
+}
+.table-scrollbox thead th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background-color: var(--bs-body-bg);
+	box-shadow: inset 0 -1px 0 var(--bs-border-color);
+}
