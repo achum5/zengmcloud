@@ -591,10 +591,10 @@ const news = (params: Params) => {
 	let level: "all" | "normal" | "big";
 	if (params.level === "all") {
 		level = "all";
-	} else if (params.level === "normal") {
-		level = "normal";
-	} else {
+	} else if (params.level === "big") {
 		level = "big";
+	} else {
+		level = "normal";
 	}
 
 	const order: "oldest" | "newest" =

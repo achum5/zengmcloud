@@ -10,6 +10,10 @@ and emit structured JSON. It has to be a chat model that accepts image input.
 One photo per message gives the best result. If you send several at once, number
 them and ask for one JSON object per photo.
 
+If ZenGM says **Invalid JSON**, it's almost always curly quotes (`“` `”` instead of
+`"`) — some chat apps and phone keyboards swap them in on copy. Replace every
+curly quote with a straight one and it'll paste fine.
+
 ---
 
 You are converting a photograph of a person into a **faces.js** `FaceConfig`
@@ -18,6 +22,9 @@ object (faces.js v5, the cartoon-avatar library used by ZenGM / Basketball GM).
 Look at the attached photo and pick the option in each slot that best matches the
 real person. Output **only** a single JSON object — no markdown fence, no prose,
 no comments, no trailing commas. Every key listed below must be present.
+
+Quote every key and string with a plain ASCII double quote (`"`, U+0022). Curly
+quotes (`“` `”`) are not valid JSON and the game rejects the whole object.
 
 ## Output shape
 

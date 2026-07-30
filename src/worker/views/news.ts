@@ -31,7 +31,9 @@ const getTid = (event: { tids?: number[]; type: LogEventType }) => {
 export const processEvents = async (
 	eventsAll: EventBBGM[],
 	{
-		level = "big",
+		// Matches the News page's default. The dashboard's Headlines block relies
+		// on this one, so the two feeds show the same threshold.
+		level = "normal",
 		limit = Infinity,
 		tid,
 	}: {
