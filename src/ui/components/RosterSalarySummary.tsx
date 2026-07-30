@@ -1,6 +1,7 @@
 import { HelpPopover } from "./HelpPopover.tsx";
 import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
+import { hardCapForTid } from "../../common/getHardCap.ts";
 
 export const RosterSalarySummary = ({
 	capSpace,
@@ -11,14 +12,38 @@ export const RosterSalarySummary = ({
 	numRosterSpots: number;
 	payroll: number;
 }) => {
-	const { luxuryPayroll, maxContract, minContract, salaryCapType } = useLocal([
+	const {
+		hardCapAmount,
+		hardCapTids,
+		hardCapUseLuxuryTax,
+		luxuryPayroll,
+		maxContract,
+		minContract,
+		salaryCapType,
+		userTid,
+	} = useLocal([
+		"hardCapAmount",
+		"hardCapTids",
+		"hardCapUseLuxuryTax",
 		"luxuryPayroll",
 		"maxContract",
 		"minContract",
 		"salaryCapType",
+		"userTid",
 	]);
 
 	const actualCapSpace = capSpace > 0 ? capSpace : 0;
+
+	// The hard cap is the ceiling that actually binds when re-signing, since
+	// going over the SOFT cap for your own players is allowed and going over
+	// this one isn't. Off in most leagues, in which case there's nothing to say.
+	const hardCap = hardCapForTid(userTid, {
+		hardCapAmount,
+		hardCapTids,
+		hardCapUseLuxuryTax,
+		luxuryPayroll,
+	});
+	const hardCapRoom = hardCap / 1000 - payroll;
 
 	return (
 		<div className="mb-3">
@@ -64,6 +89,16 @@ export const RosterSalarySummary = ({
 					</HelpPopover>
 				</>
 			)}
+			{Number.isFinite(hardCap) ? (
+				<>
+					<br />
+					Hard cap room:{" "}
+					<b className={hardCapRoom > 0 ? "text-success" : "text-danger"}>
+						{helpers.formatCurrency(hardCapRoom, "M")}
+					</b>{" "}
+					(hard cap: {helpers.formatCurrency(hardCap / 1000, "M")})
+				</>
+			) : null}
 			<br />
 			Min contract: {helpers.formatCurrency(minContract / 1000, "M")}
 			<br />
