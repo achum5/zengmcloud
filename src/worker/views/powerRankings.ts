@@ -19,6 +19,12 @@ import {
 	getTeamAtsRecords,
 } from "../util/getTeamAtsRecords.ts";
 
+// How the ranking splits between what a team has DONE and what its roster
+// looks like. Performance reaches its full share after this many games, and
+// the rating keeps the remaining sliver for good.
+const MAX_PERF_WEIGHT = 0.85;
+const PERF_RAMP_GAMES = 20;
+
 const otherToRanks = (
 	teams: {
 		powerRankings: {
@@ -113,12 +119,16 @@ export const addPowerRankingsStuffToTeams = async <
 
 			// Calculate score
 
-			// Start with MOV, scaled for games played
-			let score = (t.stats.mov * t.stats.gp) / g.get("numGames");
-
-			// Add estimated MOV from ovr (0/100 to -30/30)
+			// Point differential IS the ranking. The roster's estimated strength
+			// only stands in for it until enough games have been played to judge,
+			// and keeps a small say after that so a good team on a cold run doesn't
+			// crater. Previously performance was scaled by gp/82 while the rating
+			// counted at FULL weight all year, so the rating outvoted half a season
+			// of actual results.
 			const estimatedMOV = ovr * 0.6 - 30;
-			score += estimatedMOV;
+			const perfWeight =
+				MAX_PERF_WEIGHT * Math.min(1, t.stats.gp / PERF_RAMP_GAMES);
+			let score = t.stats.mov * perfWeight + estimatedMOV * (1 - perfWeight);
 			let winsLastTen = Number.parseInt(t.seasonAttrs.lastTen.split("-")[0]!);
 
 			if (Number.isNaN(winsLastTen)) {

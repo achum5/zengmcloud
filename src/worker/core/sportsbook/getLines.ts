@@ -112,6 +112,12 @@ const TEAM_AWARD_BOARD_SIZE = 30;
 const TIER_NOISE_EARLY = 1.2; // more tier-board Monte-Carlo noise early
 const TIER_NOISE_LATE = 0.6; // matches tierMembershipProbs' default noiseFactor
 
+// The same idea for the futures Monte Carlo, in points of margin rather than a
+// noise multiplier: how far off a team's rating could be from its true
+// strength. Wide before a game is played, tight once a season of evidence is in.
+const FUTURES_UNCERTAINTY_START = 10;
+const FUTURES_UNCERTAINTY_END = 3.5;
+
 // Cap how many upcoming games get a line at once, so the board stays readable.
 const MAX_GAME_LINES = 24;
 
@@ -376,11 +382,23 @@ export const getLines = async () => {
 	const tierNoiseFactor =
 		TIER_NOISE_EARLY - (TIER_NOISE_EARLY - TIER_NOISE_LATE) * seasonProgress;
 
+	// How unsure the book is about each team's true strength, in points of
+	// margin, scaled by how much season is still to come. With 82 games and a
+	// whole bracket left, a rating gap is a guess; pricing it as fact put two
+	// stacked teams at a combined 96% to win the title on a 30-team board
+	// (-250 and +175, with third place out at +5205). By the end of the regular
+	// season the field has shown what it is and the book can be confident.
+	const futuresUncertainty =
+		FUTURES_UNCERTAINTY_END +
+		(FUTURES_UNCERTAINTY_START - FUTURES_UNCERTAINTY_END) *
+			(1 - seasonProgress);
+
 	const sim = simulateFutures({
 		teams: futuresTeams,
 		numGamesPlayoffSeries: g.get("numGamesPlayoffSeries"),
 		iterations: 4000,
 		seed,
+		ratingUncertainty: futuresUncertainty,
 	});
 
 	// Regular-season markets (division winners, win totals) are DECIDED once the
