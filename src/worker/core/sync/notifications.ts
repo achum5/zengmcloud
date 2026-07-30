@@ -779,10 +779,14 @@ const signingBody = (
 	const ovr = rating?.ovr;
 	const pot = rating?.pot;
 	const pos = rating?.pos;
-	const years = Math.max(
-		1,
-		(p.contract?.exp ?? g.get("season")) - g.get("season") + 1,
-	);
+	// A contract signed after the trade deadline doesn't start until NEXT
+	// season, so its length is measured from then. This is the same base
+	// generateContractOptions uses to turn a length into an expiration year;
+	// measuring from g.get("season") counted the just-finished season as a
+	// contract year, so a 2005-2009 deal re-signed in 2004 pushed as "6-year".
+	const baseSeason =
+		g.get("season") - (g.get("phase") <= PHASE.AFTER_TRADE_DEADLINE ? 1 : 0);
+	const years = Math.max(1, (p.contract?.exp ?? baseSeason + 1) - baseSeason);
 	// Total contract value, formatted so a sub-$1M deal reads as "$350k" instead
 	// of rounding down to "$0M". contract.amount is in thousands, so dividing by
 	// 1000 puts it in the millions that formatCurrencyBase expects.

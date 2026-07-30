@@ -878,6 +878,49 @@ describe("buildNotifications", () => {
 		assert.ok(notifs[0]!.body.includes("re-sign Young Star"), notifs[0]!.body);
 	});
 
+	// Re-signing happens AFTER the season is over, so the deal's first year is
+	// the next one. Counting from g.get("season") made a 2027-2031 contract
+	// signed in 2026 push as "6-year", one longer than it is.
+	test("a re-signed contract is measured from the season it starts", async () => {
+		g.setWithoutSavingToDB("phase", PHASE.RESIGN_PLAYERS);
+		const notifs = await buildNotifications(
+			"main.reSign",
+			{
+				changes: [
+					reSignEvent([1]),
+					namedPlayer(1, 0, "Young", "Star", 72, {
+						contract: { amount: 13520, exp: 2031 },
+					}),
+				],
+			},
+			opts,
+		);
+		assert.ok(notifs[0]!.body.includes("5-year, $67.6M"), notifs[0]!.body);
+	});
+
+	// Free agency is after the deadline too, so it counts the same way.
+	test("a free-agency contract is measured from the season it starts", async () => {
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		const notifs = await buildNotifications(
+			"main.signFreeAgent",
+			{
+				changes: [
+					{
+						store: "events",
+						id: 1,
+						type: "put",
+						value: { type: "freeAgent", pids: [1] },
+					},
+					namedPlayer(1, 0, "New", "Guy", 72, {
+						contract: { amount: 15000, exp: 2029 },
+					}),
+				],
+			},
+			opts,
+		);
+		assert.ok(notifs[0]!.body.includes("3-year, $45M"), notifs[0]!.body);
+	});
+
 	test("re-signing a sub-60 pot player is silent", async () => {
 		const notifs = await buildNotifications(
 			"main.reSign",
