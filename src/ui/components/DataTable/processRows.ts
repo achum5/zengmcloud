@@ -1,17 +1,35 @@
 import type { DataTableRow, Props } from "./index.tsx";
 import { normalizeIntl } from "../../../common/normalizeIntl.ts";
 import { orderBy } from "../../../common/utils.ts";
+import { isCoarsenedRatingCol } from "../../../common/coarsenRating.ts";
 import createFilterFunction from "./createFilterFunction.ts";
 import getSearchVal from "./getSearchVal.tsx";
 import getSortVal from "./getSortVal.tsx";
 import type { State } from "./loadStateFromCache.ts";
 
+// A fixed pseudo-random number per row, from its key (the pid, for a player
+// table). FNV-1a: cheap, and it scatters consecutive keys, which matters
+// because that is exactly the correlation being hidden.
+const scrambleKey = (key: DataTableRow["key"]) => {
+	const str = String(key);
+	let hash = 2166136261;
+	for (let i = 0; i < str.length; i++) {
+		hash ^= str.charCodeAt(i);
+		hash = Math.imul(hash, 16777619);
+	}
+	return hash >>> 0;
+};
+
 export const processRows = ({
+	coarseRatings,
 	cols,
 	rankCol,
 	rows,
 	state,
 }: {
+	// The "hide ratings ones digit" mode is on, so every rating column is a
+	// ten-way tie and the tiebreak needs scrambling.
+	coarseRatings?: boolean;
 	state: State;
 } & Pick<Props, "cols" | "rankCol" | "rows">) => {
 	const filterFunctions = state.enableFilters
@@ -87,10 +105,25 @@ export const processRows = ({
 			return getSortVal(row.data[i], cols[i]!.sortType);
 		});
 
+		const orders: ("asc" | "desc")[] = state.sortBys.map((sortBy) => sortBy[1]);
+
+		// Sorting by a coarsened rating puts everyone in a decade on the same
+		// number, and a stable sort then breaks those ties by the order the rows
+		// arrived in - which is the order the worker read them out of the
+		// database. Draft classes are written to it best-first, so "sort by Ovr"
+		// quietly ranked the 6s from 69 down to 60: the exact digit the mode
+		// exists to hide. Scramble the tie instead, deterministically per row so
+		// the order doesn't jitter between renders.
+		const scramble =
+			coarseRatings &&
+			state.sortBys.some((sortBy) =>
+				isCoarsenedRatingCol(cols[sortBy[0]]?.key),
+			);
+
 		rowsOrdered = orderBy(
 			rowsFiltered,
-			sortKeys,
-			state.sortBys.map((sortBy) => sortBy[1]),
+			scramble ? [...sortKeys, (row) => scrambleKey(row.key)] : sortKeys,
+			scramble ? [...orders, "asc"] : orders,
 		);
 	}
 

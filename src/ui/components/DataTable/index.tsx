@@ -28,6 +28,7 @@ import useStickyXX from "./useStickyXX.ts";
 import { useDataTableState } from "./useDataTableState.ts";
 import { processRows } from "./processRows.ts";
 import { useBulkSelectRows, type SelectedRows } from "./useBulkSelectRows.ts";
+import { useLocal } from "../../util/local.ts";
 import { BulkActions, type BulkAction } from "./BulkActions.tsx";
 import {
 	DraggableRow,
@@ -47,6 +48,9 @@ export type SortBy = [number, SortOrder];
 export type Col = {
 	classNames?: any; // Just header
 	desc?: string;
+	// The getCols lookup key ("Ovr", "rating:hgt"), as distinct from the display
+	// title. Absent on hand-built columns.
+	key?: string;
 	noSearch?: boolean;
 	sortSequence?: SortOrder[];
 	sortType?: SortType;
@@ -222,6 +226,8 @@ export const DataTable = ({
 		}
 	}
 
+	const { hideRatingsOnesDigit } = useLocal(["hideRatingsOnesDigit"]);
+
 	const hideAllControlsBool = !!hideAllControls;
 	const { state, setStatePartial, resetState } = useDataTableState({
 		cols,
@@ -272,6 +278,7 @@ export const DataTable = ({
 		const columns = colOrderFiltered.map(({ colIndex }) => cols[colIndex]!);
 		const colNames = columns.map((col) => col.title);
 		const processedRows = processRows({
+			coarseRatings: hideRatingsOnesDigit,
 			cols,
 			rankCol,
 			rows,
@@ -411,6 +418,7 @@ export const DataTable = ({
 	]);
 
 	const processedRows = processRows({
+		coarseRatings: hideRatingsOnesDigit,
 		cols,
 		rankCol,
 		rows,

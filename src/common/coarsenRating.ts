@@ -62,6 +62,29 @@ export const coarsenRatingValue = (value: unknown): unknown => {
 	return value;
 };
 
+// DataTable column keys whose values have been through coarsenRating, so a
+// whole decade of players shows the same number. Sorting on one of these is a
+// ten-way tie, and whatever breaks the tie is a ranking of the hidden ones
+// digit - see the scramble in DataTable's processRows.
+const COARSENED_RATING_COLS = new Set([
+	"Ovr",
+	"Pot",
+	"Peak Ovr",
+	"Rookie Ovr",
+	"Ovr Drop",
+	"Pot Drop",
+	// Year-over-year ovr change, coarsened as a difference of displayed values.
+	"Prog",
+]);
+
+export const isCoarsenedRatingCol = (key: string | undefined): boolean =>
+	key !== undefined &&
+	// Individual ratings ("rating:hgt"), and the per-position overalls the
+	// non-basketball sports show ("pos:C").
+	(key.startsWith("rating:") ||
+		key.startsWith("pos:") ||
+		COARSENED_RATING_COLS.has(key));
+
 // Rating attrs that are NOT 0-100 ratings and must be left alone (ages, seasons,
 // ids). String/array/object attrs are skipped by the typeof check instead.
 export const NO_COARSEN_RATINGS = new Set([

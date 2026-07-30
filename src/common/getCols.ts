@@ -3819,6 +3819,10 @@ export const getCols = (
 
 		return {
 			...cols[title],
+			// The lookup key, kept alongside the display title so a consumer can tell
+			// what a column IS. "Ovr" and "rating:hgt" both render as short numbers
+			// and there is otherwise no way to know they hold ratings.
+			key: title,
 			title: cols[title]!.title ?? title,
 			...overrides[title],
 		};
