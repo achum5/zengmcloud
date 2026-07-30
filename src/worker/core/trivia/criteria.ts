@@ -165,19 +165,21 @@ export const buildCareerAchievements = (
 	const lastDecade = decadeOf(pool.maxSeason);
 	const numDecades = (lastDecade - firstDecade) / 10 + 1;
 	for (let decade = firstDecade; decade <= lastDecade; decade += 10) {
-		list.push({
-			id: `playedIn${decade}s`,
-			label: `Played in the ${decade}s`,
-			test: (p) =>
-				p.rows.some((r) => r.gp > 0 && decadeOf(r.season) === decade),
-			family: `decade${decade}`,
-		});
-		list.push({
-			id: `debutedIn${decade}s`,
-			label: `Debuted in the ${decade}s`,
-			test: (p) => decadeOf(p.firstSeason) === decade,
-			family: `decade${decade}`,
-		});
+		list.push(
+			{
+				id: `playedIn${decade}s`,
+				label: `Played in the ${decade}s`,
+				test: (p) =>
+					p.rows.some((r) => r.gp > 0 && decadeOf(r.season) === decade),
+				family: `decade${decade}`,
+			},
+			{
+				id: `debutedIn${decade}s`,
+				label: `Debuted in the ${decade}s`,
+				test: (p) => decadeOf(p.firstSeason) === decade,
+				family: `decade${decade}`,
+			},
+		);
 	}
 	if (numDecades >= 3) {
 		list.push({

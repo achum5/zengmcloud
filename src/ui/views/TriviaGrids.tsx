@@ -104,6 +104,9 @@ type SavedGrid = {
 	hinted: number[];
 	// Optional so a save written before hint picks were one-shot still loads.
 	failed?: number[];
+	// Ditto, for saves written while a wrong guess still burned the player
+	// across the whole board.
+	missedPidsByCell?: Record<number, number[]>;
 };
 
 // Was a restored board already over? A finished game has already been written
@@ -446,6 +449,12 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 	const [missedByCell, setMissedByCell] = useState<Record<number, string[]>>(
 		() => restored?.missedByCell ?? {},
 	);
+	// The same misses as pids, which is what the search box needs to drop them.
+	// Per CELL, not per board: a wrong guess is wrong for that pairing only, and
+	// the player may well be the right answer somewhere else on the grid.
+	const [missedPidsByCell, setMissedPidsByCell] = useState<
+		Record<number, number[]>
+	>(() => restored?.missedPidsByCell ?? {});
 	const [gaveUp, setGaveUp] = useState(() => restored?.gaveUp ?? false);
 	// Cells burned by a wrong pick in hint mode. Six faces with one right answer
 	// is a single question, so getting it wrong closes the cell rather than
@@ -548,6 +557,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 			guessesUsed,
 			gameMaxGuesses: gameMaxGuesses === Infinity ? "Infinity" : gameMaxGuesses,
 			missedByCell,
+			missedPidsByCell,
 			gaveUp,
 			hinted: [...hinted],
 			failed: [...failedCells],
@@ -560,6 +570,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		guessesUsed,
 		gameMaxGuesses,
 		missedByCell,
+		missedPidsByCell,
 		gaveUp,
 		hinted,
 		failedCells,
@@ -620,6 +631,7 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		setActiveCell(undefined);
 		setWrongGuess(undefined);
 		setMissedByCell({});
+		setMissedPidsByCell({});
 		setGaveUp(false);
 		setCards({});
 		setRevealCell(undefined);
@@ -731,7 +743,13 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		}
 		const cell = grid.cells[cellIndex]!;
 		const correct = cell.pids.includes(guess.pid);
-		setUsedPids((prev) => new Set(prev).add(guess.pid));
+		// One player per BOARD applies to answers, not to attempts. Burning a
+		// wrong guess out of the whole grid meant missing with LeBron on
+		// Celtics x Lakers also locked him out of Lakers x Heat, where he's the
+		// obvious answer.
+		if (correct) {
+			setUsedPids((prev) => new Set(prev).add(guess.pid));
+		}
 		setGuessesUsed((prev) => prev + 1);
 		if (correct) {
 			// Hints are paid for out of the cell's score, not out of guesses.
@@ -762,6 +780,10 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 			setMissedByCell((prev) => ({
 				...prev,
 				[cellIndex]: [...(prev[cellIndex] ?? []), guess.name],
+			}));
+			setMissedPidsByCell((prev) => ({
+				...prev,
+				[cellIndex]: [...(prev[cellIndex] ?? []), guess.pid],
 			}));
 			if (gameMaxGuesses - (guessesUsed + 1) <= 0) {
 				setActiveCell(undefined);
@@ -944,20 +966,24 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 		}
 		let stale = false;
 		setEditLoading(true);
-		void toWorker("main", "triviaCustomGrid", {
-			rows: editRefs.slice(0, 3) as CriterionRef[],
-			cols: editRefs.slice(3, 6) as CriterionRef[],
-		})
-			.then((result) => {
+		// await, not .then: toWorker's declared return nests one promise deeper
+		// than it resolves, so a .then callback hands back a Promise-typed value
+		// and setEditPreview was being passed the wrong shape.
+		void (async () => {
+			try {
+				const result = await toWorker("main", "triviaCustomGrid", {
+					rows: editRefs.slice(0, 3) as CriterionRef[],
+					cols: editRefs.slice(3, 6) as CriterionRef[],
+				});
 				if (!stale) {
 					setEditPreview(result);
 				}
-			})
-			.finally(() => {
+			} finally {
 				if (!stale) {
 					setEditLoading(false);
 				}
-			});
+			}
+		})();
 		return () => {
 			stale = true;
 		};
@@ -1050,6 +1076,9 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 
 	const activeMissed =
 		activeCell !== undefined ? (missedByCell[activeCell] ?? []) : [];
+	const activeMissedPids = new Set(
+		activeCell !== undefined ? (missedPidsByCell[activeCell] ?? []) : [],
+	);
 
 	return (
 		<>
@@ -1472,12 +1501,18 @@ const TriviaGrids = (props: View<"triviaGrids">) => {
 				</Modal.Header>
 				<Modal.Body>
 					<TriviaPlayerSelect
-						players={searchList.filter((p) => !usedPids.has(p.pid))}
+						players={searchList.filter(
+							(p) => !usedPids.has(p.pid) && !activeMissedPids.has(p.pid),
+						)}
 						onSelect={(p) => {
 							if (activeCell !== undefined) {
 								handleGuess(activeCell, p);
 							}
 						}}
+						// The modal exists only to take a guess, and it was opened by a
+						// deliberate tap on a cell. Landing in the search box is what
+						// anyone opening it wants, on a keyboard or a phone.
+						// eslint-disable-next-line jsx-a11y/no-autofocus
 						autoFocus
 					/>
 					{wrongGuess !== undefined ? (

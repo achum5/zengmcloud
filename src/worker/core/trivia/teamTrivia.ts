@@ -16,6 +16,9 @@ export type TeamTriviaRoster = {
 	age: number;
 	gp: number;
 	jerseyNumber: string | undefined;
+	// Minutes per game is the one rate stat the stat-leader round never asks
+	// about, so it's the only one that can be shown while the quiz is running.
+	mpg: number;
 	ppg: number;
 	rpg: number;
 	apg: number;
@@ -28,6 +31,30 @@ export type TeamTriviaRoster = {
 	stl: number;
 	blk: number;
 };
+
+// Roster display order, for a grid whose whole point is that you don't know
+// who these people are yet.
+const POS_ORDER = ["PG", "SG", "G", "GF", "SF", "F", "PF", "FC", "C"];
+const posRank = (pos: string) => {
+	const i = POS_ORDER.indexOf(pos);
+	return i === -1 ? POS_ORDER.length : i;
+};
+const jerseyRank = (jerseyNumber: string | undefined) => {
+	const n = Number.parseInt(jerseyNumber ?? "");
+	return Number.isNaN(n) ? Infinity : n;
+};
+
+// The order the card grid is rendered in. Deliberately says NOTHING about how
+// good anyone was: the grid is on screen while the stat-leader round asks who
+// led the team in points, so a best-first roster would print the answer in the
+// top-left corner.
+export const byRosterDisplayOrder = (
+	a: Pick<TeamTriviaRoster, "pos" | "jerseyNumber" | "name">,
+	b: Pick<TeamTriviaRoster, "pos" | "jerseyNumber" | "name">,
+) =>
+	posRank(a.pos) - posRank(b.pos) ||
+	jerseyRank(a.jerseyNumber) - jerseyRank(b.jerseyNumber) ||
+	a.name.localeCompare(b.name);
 
 // Which team-season to quiz on. Nothing set = a random one from the whole of
 // league history; a year range narrows the draw; an explicit season/tid picks
@@ -203,6 +230,7 @@ export const generateTeamTriviaRound = async (
 						age: season - p.bornYear,
 						gp: r.gp,
 						jerseyNumber: r.jerseyNumber,
+						mpg: round1(r.min / r.gp),
 						ppg: round1(r.pts / r.gp),
 						rpg: round1(r.trb / r.gp),
 						apg: round1(r.ast / r.gp),
@@ -220,7 +248,11 @@ export const generateTeamTriviaRound = async (
 		if (roster.length < 5) {
 			continue;
 		}
-		roster.sort((a, b) => b.pts - a.pts);
+		// Display order. NOT by scoring: the grid is rendered in this order, so
+		// best-first would put the answer to "who led the team in points?" in the
+		// top-left corner of the board before the question is even asked. Position
+		// then jersey reads like a real roster page and gives nothing away.
+		roster.sort(byRosterDisplayOrder);
 
 		const leaderBy = (key: "pts" | "trb" | "ast" | "stl" | "blk") =>
 			roster.reduce((best, p) => (p[key] > best[key] ? p : best)).pid;
@@ -251,8 +283,7 @@ export const generateTeamTriviaRound = async (
 				for (let i = 0; i < numRounds - 1; i++) {
 					options.push(`Lost in ${helpers.ordinal(i + 1)} round`);
 				}
-				options.push("Lost in the Finals");
-				options.push("Won the championship");
+				options.push("Lost in the Finals", "Won the championship");
 				// options index: 0 = missed; 1..numRounds = lost in round i; last = champ
 				const answerIndex =
 					roundsWon < 0 ? 0 : Math.min(roundsWon + 1, options.length - 1);

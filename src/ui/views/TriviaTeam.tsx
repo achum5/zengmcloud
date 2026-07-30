@@ -457,6 +457,8 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 		setWinsGuess(Math.floor(fresh.wins.games / 2));
 		setWinsResult(undefined);
 		setPlayoffPick(undefined);
+		// Otherwise a profile left open carries over onto the new team's board.
+		setProfilePid(undefined);
 	};
 
 	const newRound = async (
@@ -658,6 +660,19 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 
 	const summary = summarize(history);
 
+	// A per-game number IS the answer to one of the stat-leader questions, so it
+	// stays off the cards until that question has been answered. Games and
+	// minutes are never asked about, so they can carry the naming round on their
+	// own. Everything is on the table once the round is over.
+	const revealedStats = LEADER_STATS.filter(
+		(_, i) => phase === "done" || leaderResult[i] !== undefined,
+	);
+
+	// The profile modal is a full career stat table, which answers every
+	// stat-leader question at once. It only opens once there's nothing left to
+	// spoil.
+	const canOpenProfile = phase === "done";
+
 	const cardGrid = (
 		<div className="trivia-roster-grid mb-3">
 			{round.roster.map((p) => {
@@ -679,19 +694,18 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 					<button
 						key={p.pid}
 						type="button"
-						// Once a name is showing, the card opens that player's page. In
-						// the stat-leader round it picks instead, which takes priority -
-						// that's the question being asked right now.
-						disabled={!clickable && !shown}
+						// In the stat-leader round the card picks an answer. Once the
+						// whole round is over it opens that player's page instead.
+						disabled={!clickable && !canOpenProfile}
 						className={`trivia-roster-card ${justNamed ? "is-named trivia-pop" : ""} ${
 							isAnswer ? "is-answer" : ""
 						} ${isPickedWrong ? "is-wrong trivia-shake" : ""} ${
-							clickable || shown ? "is-clickable" : ""
+							clickable || canOpenProfile ? "is-clickable" : ""
 						}`}
 						onClick={
 							clickable && leaderIndex !== undefined
 								? () => handleLeaderPick(leaderIndex, p.pid)
-								: shown
+								: canOpenProfile
 									? () => setProfilePid(p.pid)
 									: undefined
 						}
@@ -730,7 +744,13 @@ const TriviaTeam = (props: View<"triviaTeam">) => {
 						</span>
 						{showStats ? (
 							<span className="trivia-roster-stats">
-								{p.gp} GP · {p.ppg}/{p.rpg}/{p.apg}
+								{[
+									`${p.gp} GP`,
+									`${p.mpg} MPG`,
+									...revealedStats.map(
+										([, , field, label]) => `${p[field]} ${label}`,
+									),
+								].join(" · ")}
 							</span>
 						) : null}
 					</button>

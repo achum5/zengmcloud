@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { narrowCandidates } from "./teamTrivia.ts";
+import { byRosterDisplayOrder, narrowCandidates } from "./teamTrivia.ts";
 
 const candidates = [
 	{ season: 2044, tid: 1 },
@@ -68,5 +68,60 @@ describe("narrowCandidates", () => {
 		const original = [...candidates];
 		narrowCandidates(candidates, { tid: 1 });
 		assert.deepStrictEqual(candidates, original);
+	});
+});
+
+// The card grid is on screen the whole time the stat-leader round is asking
+// who led the team in points, so the order the cards sit in must not answer it.
+describe("byRosterDisplayOrder", () => {
+	const p = (name: string, pos: string, jerseyNumber: string | undefined) => ({
+		name,
+		pos,
+		jerseyNumber,
+	});
+
+	test("guards first, centers last", () => {
+		const sorted = [
+			p("Center", "C", "1"),
+			p("Point", "PG", "1"),
+			p("Wing", "SF", "1"),
+		].sort(byRosterDisplayOrder);
+		assert.deepStrictEqual(
+			sorted.map((x) => x.pos),
+			["PG", "SF", "C"],
+		);
+	});
+
+	test("jersey number orders within a position, numerically", () => {
+		const sorted = [
+			p("Nine", "SG", "9"),
+			p("Twelve", "SG", "12"),
+			p("Two", "SG", "2"),
+		].sort(byRosterDisplayOrder);
+		assert.deepStrictEqual(
+			sorted.map((x) => x.name),
+			["Two", "Nine", "Twelve"],
+		);
+	});
+
+	test("a player with no number sorts last, not first", () => {
+		const sorted = [
+			p("Nameless", "PF", undefined),
+			p("Fifty", "PF", "50"),
+		].sort(byRosterDisplayOrder);
+		assert.deepStrictEqual(
+			sorted.map((x) => x.name),
+			["Fifty", "Nameless"],
+		);
+	});
+
+	test("an unrecognised position lands at the end rather than the front", () => {
+		const sorted = [p("Odd", "??", "1"), p("Guard", "PG", "99")].sort(
+			byRosterDisplayOrder,
+		);
+		assert.deepStrictEqual(
+			sorted.map((x) => x.name),
+			["Guard", "Odd"],
+		);
 	});
 });

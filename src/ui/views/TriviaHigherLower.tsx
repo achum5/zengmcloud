@@ -172,16 +172,41 @@ const fetchCard = (pid: number): Promise<PlayerCard | undefined> => {
 	if (existing) {
 		return existing;
 	}
-	const p = toWorker("main", "triviaPlayerCard", { pid }).then((card) => {
+	// await, not .then: toWorker's declared return nests one promise deeper than
+	// it resolves, so a .then callback gets a value typed as a Promise and the
+	// casts that used to paper over it were lying about the shape.
+	const p = (async () => {
+		const card = await toWorker("main", "triviaPlayerCard", { pid });
 		if (card) {
-			cardCache.set(pid, card as PlayerCard);
+			cardCache.set(pid, card);
 		}
 		inFlight.delete(pid);
-		return card as PlayerCard | undefined;
-	});
+		return card;
+	})();
 	inFlight.set(pid, p);
 	return p;
 };
+
+// Declared at module scope, NOT inside the view. A component created during
+// render is a new type every render, so React tore down and rebuilt the face -
+// and PlayerPicture redraws its canvas on mount, so every guess flickered both
+// portraits.
+const Face = ({ card }: { card: PlayerCard | undefined }) => (
+	<div
+		className="mx-auto"
+		style={{ height: 130, aspectRatio: "2 / 3", maxWidth: "100%" }}
+	>
+		{card ? (
+			<PlayerPicture
+				face={card.face}
+				imgURL={card.imgURL}
+				colors={card.colors}
+				jersey={card.jersey}
+				lazy
+			/>
+		) : null}
+	</div>
+);
 
 // A run in progress. Players are stored as pids and looked back up in the
 // pool, which is the same league data either way and far smaller to write.
@@ -506,26 +531,6 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 		);
 	}
 
-	const Face = ({ p }: { p: HLPlayer }) => {
-		const card = cards[p.pid];
-		return (
-			<div
-				className="mx-auto"
-				style={{ height: 130, aspectRatio: "2 / 3", maxWidth: "100%" }}
-			>
-				{card ? (
-					<PlayerPicture
-						face={card.face}
-						imgURL={card.imgURL}
-						colors={card.colors}
-						jersey={card.jersey}
-						lazy
-					/>
-				) : null}
-			</div>
-		);
-	};
-
 	const revealing = phase === "revealing";
 
 	return (
@@ -590,7 +595,7 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 					{/* Known player */}
 					<div className="card flex-fill" key={`l-${left.pid}`}>
 						<div className="card-body text-center p-2 p-md-3">
-							<Face p={left} />
+							<Face card={cards[left.pid]} />
 							<button
 								type="button"
 								className="btn btn-link fw-bold mt-2 p-0"
@@ -623,14 +628,20 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 						}`}
 					>
 						<div className="card-body text-center p-2 p-md-3">
-							<Face p={right} />
-							<button
-								type="button"
-								className="btn btn-link fw-bold mt-2 p-0"
-								onClick={() => setProfilePid(right.pid)}
-							>
-								{right.name}
-							</button>
+							<Face card={cards[right.pid]} />
+							{/* His page carries the very number you're being asked to
+							    guess, so it stays shut until the reveal. */}
+							{revealing || gameOver ? (
+								<button
+									type="button"
+									className="btn btn-link fw-bold mt-2 p-0"
+									onClick={() => setProfilePid(right.pid)}
+								>
+									{right.name}
+								</button>
+							) : (
+								<div className="fw-bold mt-2">{right.name}</div>
+							)}
 							<div className="text-body-secondary small">{right.years}</div>
 							{revealing || gameOver ? (
 								<>

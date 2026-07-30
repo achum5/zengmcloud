@@ -34,18 +34,22 @@ export const fetchTriviaCard = (
 	if (existing) {
 		return existing;
 	}
-	const p = toWorker("main", "triviaPlayerCard", { pid, tid })
-		.then((card) => {
+	// await, not .then: toWorker's declared return nests one promise deeper than
+	// it resolves, so a .then callback receives a value typed as a Promise and
+	// the casts that hid it were describing the wrong shape.
+	const p = (async () => {
+		try {
+			const card = await toWorker("main", "triviaPlayerCard", { pid, tid });
 			if (card) {
-				cache.set(pid, card as TriviaPlayerCard);
+				cache.set(pid, card);
 			}
-			inFlight.delete(pid);
-			return card as TriviaPlayerCard | undefined;
-		})
-		.catch(() => {
-			inFlight.delete(pid);
+			return card;
+		} catch {
 			return undefined;
-		});
+		} finally {
+			inFlight.delete(pid);
+		}
+	})();
 	inFlight.set(pid, p);
 	return p;
 };
