@@ -55,6 +55,23 @@ export const MARGIN_SIGMA = bySport({
 	hockey: 3.1,
 });
 
+// Talent gaps do not turn into point differential linearly. The best point
+// differential in NBA history is about +12 a night, and no roster however
+// stacked runs away from that: good teams rest starters, coast once a game is
+// won, and get everyone's best effort. A league with a huge spread in team
+// ratings was feeding raw margins like +21 straight into the win model, which
+// says a team wins 95% of its games and projects a 79-win season.
+//
+// tanh compresses smoothly and monotonically - ordinary margins pass through
+// almost untouched (+5 stays +4.9) while the tail is pulled in (+21 becomes
+// +10.5) - so ranking is preserved and only the impossible end is fixed.
+export const MAX_SUSTAINED_MARGIN = 11;
+
+export const softCapMargin = (
+	margin: number,
+	limit = MAX_SUSTAINED_MARGIN,
+): number => limit * Math.tanh(margin / limit);
+
 // Win probability for a team expected to win by `expectedMargin` points
 // (negative if the underdog). Clamped away from 0/1.
 export const marginToWinProb = (expectedMargin: number): number => {

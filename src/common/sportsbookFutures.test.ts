@@ -1,4 +1,5 @@
 import { assert, describe, test } from "vitest";
+import { softCapMargin } from "./sportsbookOdds.ts";
 import {
 	bracketMarketsOpen,
 	simulateFutures,
@@ -341,5 +342,100 @@ describe("bracketMarketsOpen", () => {
 		const open = bracketMarketsOpen({ matchups: [], bestOf: 7 });
 		assert.strictEqual(open.conferenceCids.size, 0);
 		assert.strictEqual(open.title, false);
+	});
+});
+
+// A talent gap is not a point differential, and a point differential is not a
+// win rate - both saturate. A league whose best roster rates 20+ points clear
+// of average was projecting a 79-win season a week into the schedule.
+describe("win totals stay inside reality", () => {
+	const stacked = (gamesPlayed: number): FuturesTeam[] => {
+		// The raw margins a stacked league produces, run through the same
+		// saturation and evidence shading getLines applies before simulating.
+		const RAW = [21, 18, 6, 4, 2, 1, 0, 0, -1, -2, -3, -4, -5, -7, -9, -12];
+		const evidence = 0.72 + 0.28 * Math.min(1, gamesPlayed / 25);
+		return RAW.map((raw, i) => ({
+			tid: i,
+			cid: i % 2,
+			did: i % 4,
+			won: Math.round(gamesPlayed * (0.5 + raw / 60)),
+			gamesRemaining: 82 - gamesPlayed,
+			rating: softCapMargin(raw) * evidence,
+		}));
+	};
+
+	const linesFor = (gamesPlayed: number) => {
+		const sim = simulateFutures({
+			teams: stacked(gamesPlayed),
+			numGamesPlayoffSeries: [7, 7, 7, 7],
+			iterations: 3000,
+			seed: 7,
+			ratingUncertainty: 3.5 + 6.5 * (1 - gamesPlayed / 82),
+		});
+		return stacked(gamesPlayed).map((t) => sim.winTotals.get(t.tid)!.line);
+	};
+
+	test("nobody is projected for a record-shattering season before tip-off", () => {
+		const lines = linesFor(0);
+		assert.ok(
+			Math.max(...lines) <= 63,
+			`preseason favorite at ${Math.max(...lines)} wins`,
+		);
+		assert.ok(
+			Math.min(...lines) >= 15,
+			`worst team at ${Math.min(...lines)} wins`,
+		);
+	});
+
+	test("a handful of games doesn't move the number much", () => {
+		const before = Math.max(...linesFor(0));
+		const after = Math.max(...linesFor(6));
+		assert.ok(
+			Math.abs(after - before) <= 6,
+			`line jumped from ${before} to ${after} on six games`,
+		);
+	});
+
+	test("the number does eventually follow what a team has actually done", () => {
+		// 70 games in at an 85% clip, the season is nearly decided and the line
+		// has to reflect it rather than staying shaded toward the field.
+		const late = Math.max(...linesFor(70));
+		assert.ok(late >= 64, `late-season line only ${late}`);
+	});
+
+	test("the whole league lands in a believable band", () => {
+		for (const gp of [0, 6, 20, 41]) {
+			for (const line of linesFor(gp)) {
+				assert.ok(
+					line >= 10 && line <= 70,
+					`line ${line} at ${gp} games played`,
+				);
+			}
+		}
+	});
+});
+
+describe("softCapMargin", () => {
+	test("ordinary margins pass through almost untouched", () => {
+		for (const m of [-5, -2, 0, 2, 5]) {
+			assert.ok(
+				Math.abs(softCapMargin(m) - m) < 0.7,
+				`${m} became ${softCapMargin(m)}`,
+			);
+		}
+	});
+
+	test("an impossible margin is pulled back to a possible one", () => {
+		assert.ok(softCapMargin(25) < 11.5, `${softCapMargin(25)}`);
+		assert.ok(softCapMargin(-25) > -11.5, `${softCapMargin(-25)}`);
+	});
+
+	test("it never reorders two teams", () => {
+		let prev = -Infinity;
+		for (let m = -30; m <= 30; m += 0.5) {
+			const v = softCapMargin(m);
+			assert.ok(v > prev, `not monotonic at ${m}`);
+			prev = v;
+		}
 	});
 });

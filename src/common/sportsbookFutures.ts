@@ -112,7 +112,11 @@ export const simulateFutures = ({
 		// games), with a tiny jitter for tie-breaks.
 		const simTeams: SimTeam[] = teams.map((t) => {
 			const simRating = t.rating + normalSample(rand) * ratingUncertainty;
-			const p = marginToWinProb(simRating);
+			// Backstop on the projected pace. Even the 73-9 Warriors won 89% of
+			// their games, and they did it without the injuries, rest nights and
+			// flat performances this model has no way to simulate. Nothing here
+			// should ever project a team past a ~70-win or under a ~12-win pace.
+			const p = Math.min(0.85, Math.max(0.15, marginToWinProb(simRating)));
 			let wins = t.won;
 			if (t.gamesRemaining > 0) {
 				const mean = t.gamesRemaining * p;

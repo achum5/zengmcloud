@@ -24,6 +24,7 @@ import {
 	SPORTSBOOK_MAX_AMERICAN,
 } from "../../../common/sportsbook.ts";
 import {
+	softCapMargin,
 	strengthProbs,
 	tierMembershipProbs,
 } from "../../../common/sportsbookOdds.ts";
@@ -117,6 +118,11 @@ const TIER_NOISE_LATE = 0.6; // matches tierMembershipProbs' default noiseFactor
 // strength. Wide before a game is played, tight once a season of evidence is in.
 const FUTURES_UNCERTAINTY_START = 10;
 const FUTURES_UNCERTAINTY_END = 3.5;
+
+// How far a team's projected strength is shaded toward the field before it has
+// played, and how many games it takes to earn the full number back.
+const FUTURES_PRIOR_WEIGHT = 0.72;
+const FUTURES_EVIDENCE_GAMES = 25;
 
 // Cap how many upcoming games get a line at once, so the board stays readable.
 const MAX_GAME_LINES = 24;
@@ -335,14 +341,22 @@ export const getLines = async () => {
 	const ratingOf = (tid: number) => {
 		const estMOV = ((ovrByTid.get(tid) ?? 50) - meanOvr) * 0.6;
 		const s = statsOf(teamByTid.get(tid));
-		if (s.gp <= 0) {
-			return estMOV;
-		}
-		const actualMOV = s.pts - s.oppPts; // per-game differential
+		const actualMOV = s.gp > 0 ? s.pts - s.oppPts : 0; // per-game differential
 		// Trust what the team has actually done more and more as the sample grows:
 		// by ~30 games the real point differential carries 3/4 of the weight.
-		const perfWeight = 0.75 * Math.min(1, s.gp / 30);
-		return estMOV * (1 - perfWeight) + actualMOV * perfWeight;
+		const perfWeight = s.gp > 0 ? 0.75 * Math.min(1, s.gp / 30) : 0;
+		const blended = estMOV * (1 - perfWeight) + actualMOV * perfWeight;
+
+		// A rating gap is an estimate, and before the games are played it is only
+		// an estimate. A book shades its number toward the field until the
+		// evidence arrives, which is why nobody posts 79.5 in October. Full
+		// strength by ~25 games; before that the number is pulled in.
+		const evidence =
+			FUTURES_PRIOR_WEIGHT +
+			(1 - FUTURES_PRIOR_WEIGHT) * Math.min(1, s.gp / FUTURES_EVIDENCE_GAMES);
+
+		// ...and however big the gap, a sustained point differential has a ceiling.
+		return softCapMargin(blended) * evidence;
 	};
 
 	const futuresTeams = activeTeams.map((t) => {

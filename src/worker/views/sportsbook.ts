@@ -12,7 +12,8 @@ const updateSportsbook = async (
 	updateEvents: UpdateEvents,
 	state: any,
 ) => {
-	if (
+	// Anything that can actually move a line or a balance.
+	const dataChanged =
 		updateEvents.includes("firstRun") ||
 		updateEvents.includes("gameSim") ||
 		updateEvents.includes("newPhase") ||
@@ -20,12 +21,14 @@ const updateSportsbook = async (
 		updateEvents.includes("gameAttributes") ||
 		updateEvents.includes("sportsbookLines") ||
 		// Bets placed/settled bump this so the wallet + open bets refresh.
-		updateEvents.includes("watchList") ||
-		// Switching tabs changes only the URL, so without this the view returns
-		// undefined, the UI keeps the props it already had, and the page stays on
-		// whatever tab it first rendered.
-		inputs.tab !== state.tab
-	) {
+		updateEvents.includes("watchList");
+
+	// Switching tabs changes only the URL, so without this the view returns
+	// undefined, the UI keeps the props it already had, and the page stays on
+	// whatever tab it first rendered.
+	const tabChanged = inputs.tab !== state.tab;
+
+	if (dataChanged || tabChanged) {
 		// Catch-up settlement (a bet whose outcome is already known but that a
 		// missed hook didn't settle) is NOT done here. This function runs as a
 		// view load, which is deliberately never cloud-tracked for sync (see
@@ -38,9 +41,17 @@ const updateSportsbook = async (
 		//
 		// The board must never take down the page - if the odds engine fails for
 		// any reason, render an empty book (wallet + bets still work).
-		let board: Awaited<ReturnType<typeof getLines>>;
+		// Pricing the whole book is expensive - a 4000-iteration futures Monte
+		// Carlo, a playoff bracket sim, the award boards, and every player in the
+		// league through playersPlus. None of it can change just because you
+		// clicked a different tab, and recomputing it on every tab click is what
+		// made this page feel slow. Reuse the board unless something actually
+		// moved.
+		let board: Awaited<ReturnType<typeof getLines>> | undefined = dataChanged
+			? undefined
+			: state.board;
 		try {
-			board = await getLines();
+			board ??= await getLines();
 		} catch (error) {
 			console.error("Sportsbook board failed to compute", error);
 			logEvent({
