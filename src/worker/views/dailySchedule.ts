@@ -23,6 +23,9 @@ const updateDailySchedule = async (
 		// A game note was added/edited (e.g. an AI recap filed from this page), so
 		// the note under each game card needs to refresh.
 		updateEvents.includes("notes") ||
+		// A background sim refined the point spreads, so the numbers next to
+		// each game changed.
+		updateEvents.includes("sportsbookLines") ||
 		inputs.season !== state.season ||
 		inputs.day !== state.day ||
 		inputs.cid !== state.cid

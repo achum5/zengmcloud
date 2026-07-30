@@ -71,7 +71,6 @@ export const ScoreBox = memo(
 		game,
 		playersUpcoming,
 		playersUpcomingAbbrev,
-		simSpread,
 		small,
 	}: {
 		actions?: {
@@ -102,13 +101,6 @@ export const ScoreBox = memo(
 		};
 		playersUpcoming?: [any, any];
 		playersUpcomingAbbrev?: boolean;
-		// The engine-corrected expected home margin for an UPCOMING game, from the
-		// same pricer the sportsbook uses, so the two pages can't show different
-		// numbers for the same game. Same orientation as getGameSpread (positive =
-		// home favored). Absent until the caller has fetched it, and never set for
-		// a completed game - a played game's spread has to stay exactly what the
-		// formula says, because that is what the ATS records are derived from.
-		simSpread?: number;
 		small?: boolean;
 	}) => {
 		const {
@@ -162,19 +154,22 @@ export const ScoreBox = memo(
 				(neutralSite === "finals" && !!game.finals) ||
 				(neutralSite === "playoffs" && phase === PHASE.PLAYOFFS);
 
+			// The worker decides an upcoming game's spread (see getUpcoming) so that
+			// every page showing this game shows the same number. Falling back to
+			// computing it here covers completed games, whose spread has to stay
+			// exactly what the formula says - getTeamAtsRecords re-derives every
+			// historical line that way.
 			const spread =
-				!final && simSpread !== undefined
-					? simSpread
-					: !final && game.spread !== undefined
-						? game.spread
-						: getGameSpread({
-								ovr0: game.teams[0].ovr,
-								ovr1: game.teams[1].ovr,
-								homeCourtAdvantage,
-								neutralSite: neutralSiteResolved,
-								numPeriods,
-								quarterLength,
-							})!;
+				!final && game.spread !== undefined
+					? game.spread
+					: getGameSpread({
+							ovr0: game.teams[0].ovr,
+							ovr1: game.teams[1].ovr,
+							homeCourtAdvantage,
+							neutralSite: neutralSiteResolved,
+							numPeriods,
+							quarterLength,
+						})!;
 
 			if (spread > 0) {
 				spreads = [

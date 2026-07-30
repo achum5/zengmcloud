@@ -129,7 +129,7 @@ import { setSingleGameSimActive } from "../core/sync/afterActionHook.ts";
 import { setSyncDebugLogging, syncDebugLog } from "../core/sync/debugLog.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
-import { getSimSpreads } from "../core/sportsbook/scheduleSpreads.ts";
+import { syncDaySpreads } from "../core/sportsbook/scheduleSpreads.ts";
 import { getPlayerRecapData } from "../util/getPlayerRecapData.ts";
 import { removeSeasonNote, upsertSeasonNote } from "../../common/seasonNote.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
@@ -6629,7 +6629,7 @@ export default {
 		getTradeHistoryDump,
 		getDayGamesForRecap,
 		getSeasonRecapData,
-		getSimSpreads,
+		syncDaySpreads,
 		getPlayerRecapData,
 		filePlayerSeasonRecaps,
 		getSyncActivity,

@@ -17,7 +17,7 @@ import {
 	getDailyScheduleScroll,
 	setDailyScheduleScroll,
 } from "../util/dailyScheduleUiState.ts";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 const DailySchedule = ({
 	cid,
@@ -34,37 +34,30 @@ const DailySchedule = ({
 	topPlayers,
 	upcoming,
 }: View<"dailySchedule">) => {
-	// The engine-corrected spreads, fetched AFTER this page has rendered rather
-	// than as part of building it. Pricing reads every active player, which is
-	// fine on the sportsbook but is not work worth adding to a page that just
-	// lists games - so the schedule paints at its usual speed on the formula
-	// line, and these arrive a moment later and replace it. Empty until then.
-	const [simSpreads, setSimSpreads] = useState<Record<number, number>>({});
+	// Prime the engine-corrected spreads for this day, AFTER the page has
+	// rendered rather than as part of building it. Pricing reads every active
+	// player, which is fine on the sportsbook but is not work worth adding to a
+	// page that just lists games.
+	//
+	// Nothing is read back here. The spread each game shows comes from the view
+	// itself (game.spread), so the schedule, the Schedule page and the league top
+	// bar are all quoting one number; this just makes sure that number is the
+	// refined one. When a background sim lands it emits a sportsbookLines update,
+	// which rebuilds this view off the warmed cache.
 	const upcomingKey = upcoming.map((g) => g.gid).join(",");
 	useEffect(() => {
-		let cancelled = false;
-		setSimSpreads({});
 		if (upcoming.length === 0) {
 			return;
 		}
 		(async () => {
 			try {
-				const spreads = await toWorker("main", "getSimSpreads", {
-					season,
-					day,
-				});
-				if (!cancelled) {
-					setSimSpreads(spreads);
-				}
+				await toWorker("main", "syncDaySpreads", { season, day });
 			} catch (error) {
-				// A missing line is not worth breaking the page over - ScoreBox just
-				// keeps showing the formula spread it always did.
-				console.error("Failed to load simulated spreads", error);
+				// A missing line is not worth breaking the page over - every game keeps
+				// showing the closed-form spread it always did.
+				console.error("Failed to refine spreads", error);
 			}
 		})();
-		return () => {
-			cancelled = true;
-		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [season, day, upcomingKey]);
 
@@ -255,7 +248,6 @@ const DailySchedule = ({
 													spread: game.spread,
 													teams: game.teams,
 												}}
-												simSpread={simSpreads[game.gid]}
 												playersUpcoming={playersUpcoming}
 												actions={actions}
 											/>

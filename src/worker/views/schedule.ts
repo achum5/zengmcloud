@@ -574,6 +574,9 @@ const updateUpcoming = async (
 		updateEvents.includes("firstRun") ||
 		updateEvents.includes("gameAttributes") ||
 		updateEvents.includes("gameSim") ||
+		// A background sim refined the point spreads, so the numbers next to
+		// each game changed.
+		updateEvents.includes("sportsbookLines") ||
 		updateEvents.includes("newPhase") ||
 		inputs.abbrev !== state.abbrev
 	) {

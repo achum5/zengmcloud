@@ -13,6 +13,7 @@ import {
 import { americanToImpliedProb } from "../../../common/sportsbook.ts";
 import { idb } from "../../db/index.ts";
 import { getUpcoming } from "../../views/schedule.ts";
+import { syncDaySpreads } from "./scheduleSpreads.ts";
 import { roundHalf } from "../../../common/getGameSpread.ts";
 
 const NUM_TEAMS = 4;
@@ -446,6 +447,25 @@ describe("one spread per game, everywhere", () => {
 				upcoming!.spread,
 				roundHalf(warmMargin),
 				"the schedule pages and the sportsbook are quoting different lines",
+			);
+
+			// And the number pushed to the league top bar is that same one. This is
+			// the surface that was wrong: it holds a snapshot of the user's next
+			// game rather than rebuilding with the page, so it kept whichever line
+			// was current when the snapshot was taken.
+			const published = await syncDaySpreads({
+				season: g.get("season"),
+				day: matchup.day,
+			});
+			assert.deepStrictEqual(
+				published,
+				Object.fromEntries(
+					(await getUpcoming({ day: matchup.day })).map((game) => [
+						game.gid,
+						game.spread,
+					]),
+				),
+				"the top bar is being sent a different spread than the pages show",
 			);
 		} finally {
 			for (const row of await idb.cache.schedule.getAll()) {
