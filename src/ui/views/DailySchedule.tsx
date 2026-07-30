@@ -17,7 +17,7 @@ import {
 	getDailyScheduleScroll,
 	setDailyScheduleScroll,
 } from "../util/dailyScheduleUiState.ts";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const DailySchedule = ({
 	cid,
@@ -34,6 +34,40 @@ const DailySchedule = ({
 	topPlayers,
 	upcoming,
 }: View<"dailySchedule">) => {
+	// The engine-corrected spreads, fetched AFTER this page has rendered rather
+	// than as part of building it. Pricing reads every active player, which is
+	// fine on the sportsbook but is not work worth adding to a page that just
+	// lists games - so the schedule paints at its usual speed on the formula
+	// line, and these arrive a moment later and replace it. Empty until then.
+	const [simSpreads, setSimSpreads] = useState<Record<number, number>>({});
+	const upcomingKey = upcoming.map((g) => g.gid).join(",");
+	useEffect(() => {
+		let cancelled = false;
+		setSimSpreads({});
+		if (upcoming.length === 0) {
+			return;
+		}
+		(async () => {
+			try {
+				const spreads = await toWorker("main", "getSimSpreads", {
+					season,
+					day,
+				});
+				if (!cancelled) {
+					setSimSpreads(spreads);
+				}
+			} catch (error) {
+				// A missing line is not worth breaking the page over - ScoreBox just
+				// keeps showing the formula spread it always did.
+				console.error("Failed to load simulated spreads", error);
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [season, day, upcomingKey]);
+
 	useTitleBar({
 		title: DAILY_SCHEDULE,
 		dropdownView: "daily_schedule",
@@ -220,6 +254,7 @@ const DailySchedule = ({
 													season: game.season,
 													teams: game.teams,
 												}}
+												simSpread={simSpreads[game.gid]}
 												playersUpcoming={playersUpcoming}
 												actions={actions}
 											/>
