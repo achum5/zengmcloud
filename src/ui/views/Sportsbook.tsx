@@ -372,7 +372,7 @@ const Sportsbook = ({
 	) =>
 		boardCard(
 			heading,
-			<div style={{ maxHeight: 360, overflowY: "auto" }}>
+			<div>
 				{rows.map((r) =>
 					marketRow(
 						`${keyPrefix}-${r.tid}`,
@@ -431,7 +431,7 @@ const Sportsbook = ({
 					<div className="mb-3">
 						{boardCard(
 							"Season Win Totals",
-							<div style={{ maxHeight: 420, overflowY: "auto" }}>
+							<div>
 								{board.winTotals.map((t) => (
 									<div
 										key={t.tid}
@@ -525,7 +525,7 @@ const Sportsbook = ({
 						No candidates.
 					</p>
 				) : (
-					<div style={{ maxHeight: 360, overflowY: "auto" }}>
+					<div>
 						{candidates.map((c) =>
 							marketRow(
 								`${keyPrefix}-${c.pid}`,

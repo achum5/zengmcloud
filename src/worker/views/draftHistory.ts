@@ -95,6 +95,9 @@ const updateDraftHistory = async (inputs: ViewInput<"draftHistory">) => {
 		showNoStats: true,
 		showRookies: true,
 		fuzz: true,
+		// The "At Draft" columns ARE the scouting report from his draft class, so
+		// under the prospects exemption they stay exact.
+		prospectSeasonsExact: true,
 	});
 	const players = playersAll
 		.filter((p) => {
@@ -102,7 +105,15 @@ const updateDraftHistory = async (inputs: ViewInput<"draftHistory">) => {
 		})
 		.map((p) => {
 			const currentPr = p.ratings.at(-1);
-			const peakPr: any = maxBy(p.ratings, "ovr");
+			// Peak means peak as a pro. A draft-year row is a projection from
+			// before he played a game, and under the prospects exemption it is
+			// also on a different scale from the rest (exact, where the others are
+			// coarsened to a tens digit), so a straight max would always pick it.
+			const proRatings = p.ratings.filter((r: any) => r.season > p.draft.year);
+			const peakPr: any = maxBy(
+				proRatings.length > 0 ? proRatings : p.ratings,
+				"ovr",
+			);
 			return {
 				// Attributes
 				pid: p.pid,

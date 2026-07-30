@@ -141,7 +141,10 @@ export const coarsenPlayerForDisplay = <T extends Record<string, any>>(
 		out.ratings = coarsenRatingsRow(p.ratings, ratings);
 	}
 
-	if (p.draft) {
+	// Draft-day ovr/pot IS the prospect scouting report - the number you were
+	// shown while he was in the class - so the prospects exemption covers it for
+	// good, exactly like his prospect ratings rows.
+	if (p.draft && !exceptProspects) {
 		const draft: Record<string, any> = { ...p.draft };
 		for (const attr of ["ovr", "pot"]) {
 			if (typeof draft[attr] === "number") {

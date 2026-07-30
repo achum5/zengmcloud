@@ -160,22 +160,29 @@ const summary = async (teams: TradeTeams): Promise<TradeSummary> => {
 		g.get("salaryCapType") === "hard" &&
 		(overCapAndIncreasing(0) || overCapAndIncreasing(1));
 
-	// Secondary hard cap: an absolute ceiling for bound teams. A trade is not
-	// allowed to LEAVE a bound team over its hard cap, even if the trade reduces
-	// that team's payroll (so min-salary ballast can't be shuffled to skirt it).
-	let hardCapCeiling: { j: 0 | 1; over: number } | undefined;
+	// Secondary hard cap: an absolute ceiling for bound teams. Being over it does
+	// NOT freeze a team out of trading - it only stops them TAKING MONEY ON. A
+	// deal that leaves their payroll flat or lower is fine however far over they
+	// are, which is what keeps pick-for-pick swaps and salary dumps available;
+	// picks carry no salary, and blocking those was just a team stuck.
+	let hardCapCeiling: { j: 0 | 1; over: number; added: number } | undefined;
 	for (const j of [0, 1] as const) {
 		const ceiling = getHardCap(tids[j]) / 1000;
-		if (Number.isFinite(ceiling) && s.teams[j].payrollAfterTrade > ceiling) {
-			hardCapCeiling = { j, over: s.teams[j].payrollAfterTrade - ceiling };
+		const after = s.teams[j].payrollAfterTrade;
+		const added = after - s.teams[j].payrollBeforeTrade;
+		if (Number.isFinite(ceiling) && after > ceiling && added > 0) {
+			hardCapCeiling = { j, over: after - ceiling, added };
 			break;
 		}
 	}
 
 	if (hardCapCeiling) {
-		s.warning = `This trade is not allowed because it would leave the ${
+		s.warning = `This trade is not allowed because it adds ${helpers.formatCurrency(
+			hardCapCeiling.added,
+			"M",
+		)} to the payroll of the ${
 			s.teams[hardCapCeiling.j].name
-		} over their hard cap by ${helpers.formatCurrency(
+		} and puts them over their hard cap by ${helpers.formatCurrency(
 			hardCapCeiling.over,
 			"M",
 		)}.`;

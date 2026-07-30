@@ -3725,13 +3725,24 @@ const ratingsStatsPopoverInfo = async ({
 		showRetired: true,
 		oldStats: true,
 		fuzz: true,
+		// This popover is the ONLY place a draft class's ratings are read from
+		// the Draft History and Draft Scouting tables, so it has to honour the
+		// "prospects exempt" option or the exemption may as well not exist.
+		prospectSeasonsExact: true,
 	});
 	if (actualSeason === undefined) {
 		if (draftProspect) {
 			p2.ratings = p2.ratings[0];
 		} else {
-			// Peak ratings
-			p2.ratings = maxBy(p.ratings, "ovr");
+			// Peak ratings. Which season peaked is decided from the TRUE ratings -
+			// a coarsened ovr ties a whole decade together, so picking the max off
+			// the processed rows would pick an arbitrary one - but the row that
+			// gets DISPLAYED is the processed one. Reading it straight off `p`
+			// showed raw ratings: no fuzz, and no coarsening either.
+			const peak = maxBy(p.ratings, "ovr");
+			p2.ratings =
+				p2.ratings.find((row: any) => row.season === peak?.season) ??
+				p2.ratings.at(-1);
 		}
 		p2.age = p2.ratings.season - p.born.year;
 
