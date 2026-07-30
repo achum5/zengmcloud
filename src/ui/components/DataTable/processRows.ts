@@ -7,9 +7,10 @@ import getSearchVal from "./getSearchVal.tsx";
 import getSortVal from "./getSortVal.tsx";
 import type { State } from "./loadStateFromCache.ts";
 
-// A fixed pseudo-random number per row, from its key (the pid, for a player
-// table). FNV-1a: cheap, and it scatters consecutive keys, which matters
-// because that is exactly the correlation being hidden.
+// Last resort for a table that shows ratings but has no Name column to break
+// ties with. A fixed pseudo-random number per row, from its key (the pid, for
+// a player table) - FNV-1a, which scatters consecutive keys, and consecutive
+// keys are exactly the correlation being hidden.
 const scrambleKey = (key: DataTableRow["key"]) => {
 	const str = String(key);
 	let hash = 2166136261;
@@ -28,7 +29,8 @@ export const processRows = ({
 	state,
 }: {
 	// The "hide ratings ones digit" mode is on, so every rating column is a
-	// ten-way tie and the tiebreak needs scrambling.
+	// ten-way tie and the tiebreak has to come from somewhere that isn't the
+	// hidden digit.
 	coarseRatings?: boolean;
 	state: State;
 } & Pick<Props, "cols" | "rankCol" | "rows">) => {
@@ -108,22 +110,38 @@ export const processRows = ({
 		const orders: ("asc" | "desc")[] = state.sortBys.map((sortBy) => sortBy[1]);
 
 		// Sorting by a coarsened rating puts everyone in a decade on the same
-		// number, and a stable sort then breaks those ties by the order the rows
-		// arrived in - which is the order the worker read them out of the
-		// database. Draft classes are written to it best-first, so "sort by Ovr"
-		// quietly ranked the 6s from 69 down to 60: the exact digit the mode
-		// exists to hide. Scramble the tie instead, deterministically per row so
-		// the order doesn't jitter between renders.
-		const scramble =
+		// number, and every one of them SHOULD tie - that's the mode working. But
+		// a stable sort then breaks those ties by the order the rows arrived in,
+		// which is the order the worker read them out of the database, and draft
+		// classes are written to it best-first. So "sort by Ovr" quietly ranked
+		// the 6s from 69 down to 60: the exact digit the mode exists to hide.
+		//
+		// Break the tie by name instead. Alphabetical says nothing about a rating,
+		// it's the same order clicking the Name header gives, and it's stable, so
+		// the table doesn't reshuffle between renders. Always ascending, whichever
+		// way the ratings are pointing - if the names flipped too, reading the two
+		// directions against each other would hand the digit straight back.
+		const tieBreak =
 			coarseRatings &&
 			state.sortBys.some((sortBy) =>
 				isCoarsenedRatingCol(cols[sortBy[0]]?.key),
 			);
+		const nameIndex = tieBreak
+			? cols.findIndex((col) => col.key === "Name")
+			: -1;
+
+		const tieBreakKey =
+			nameIndex >= 0
+				? (row: DataTableRow) =>
+						getSortVal(row.data[nameIndex], cols[nameIndex]!.sortType)
+				: // No name to sort on, so fall back to scattering the tie. Never
+					// leave it to the incoming order, which is the leak.
+					(row: DataTableRow) => scrambleKey(row.key);
 
 		rowsOrdered = orderBy(
 			rowsFiltered,
-			scramble ? [...sortKeys, (row) => scrambleKey(row.key)] : sortKeys,
-			scramble ? [...orders, "asc"] : orders,
+			tieBreak ? [...sortKeys, tieBreakKey] : sortKeys,
+			tieBreak ? [...orders, "asc"] : orders,
 		);
 	}
 

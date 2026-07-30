@@ -12,11 +12,21 @@ import { RecapAIButton } from "./RecapAIButton.tsx";
 //   that built it) → Claude (opens claude.ai in a new tab) → Paste
 //   (the AI's reply, filed as each team's Team Season note).
 // Best generated right after the playoffs finish, before the draft.
-export const SeasonRecap = ({ season }: { season: number }) => {
+export const SeasonRecap = ({
+	heading,
+	season,
+}: {
+	heading: string;
+	season: number;
+}) => {
 	// Built up-front so the Copy tap can write to the clipboard SYNCHRONOUSLY
 	// (iOS Safari rejects a clipboard write that happens after an await).
 	const [prompt, setPrompt] = useState<string | undefined>();
+	const [progress, setProgress] = useState<
+		{ written: number; total: number } | undefined
+	>();
 	const [loadFailed, setLoadFailed] = useState(false);
+	const [reload, setReload] = useState(0);
 
 	const [copied, setCopied] = useState(false);
 	const [pasted, setPasted] = useState(false);
@@ -29,6 +39,7 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 		let cancelled = false;
 		setLoadFailed(false);
 		setPrompt(undefined);
+		setProgress(undefined);
 		(async () => {
 			try {
 				const data = await toWorker("main", "getSeasonRecapData", season);
@@ -38,6 +49,11 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 				setPrompt(
 					data && data.teams.length > 0
 						? buildSeasonRecapPrompt(data)
+						: undefined,
+				);
+				setProgress(
+					data
+						? { written: data.alreadyWrittenTotal, total: data.teams.length }
 						: undefined,
 				);
 			} catch (error) {
@@ -50,7 +66,7 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 		return () => {
 			cancelled = true;
 		};
-	}, [season]);
+	}, [season, reload]);
 
 	const copy = async () => {
 		setResult(undefined);
@@ -93,6 +109,9 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 			setManual(undefined);
 			setPasted(true);
 			globalThis.setTimeout(() => setPasted(false), 3000);
+			// Re-count, so the section can take itself off the page once every team
+			// has a note.
+			setReload((prev) => prev + 1);
 		} catch (error) {
 			console.error("Failed to file season recaps", error);
 			setResult("Something went wrong filing the recaps.");
@@ -119,8 +138,16 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 	const arrow = <span className="text-body-secondary">›</span>;
 	const btnStyle = { width: 62 } as const;
 
+	// Every team written means there is nothing left to do for this season, so
+	// the section disappears - which is how you tell at a glance that the year
+	// is finished.
+	if (progress && progress.total > 0 && progress.written >= progress.total) {
+		return null;
+	}
+
 	return (
 		<div className="d-inline-flex flex-column">
+			<h2 className="h5">{heading}</h2>
 			<div className="d-flex flex-wrap align-items-center gap-1">
 				<button
 					className={`btn btn-sm ${copied ? "btn-success" : "btn-primary"}`}
@@ -154,6 +181,12 @@ export const SeasonRecap = ({ season }: { season: number }) => {
 					)}
 				</button>
 			</div>
+
+			{progress ? (
+				<div className="mt-1 small text-body-secondary">
+					{progress.written}/{progress.total} written
+				</div>
+			) : null}
 
 			{copyFallback !== undefined ? (
 				<textarea

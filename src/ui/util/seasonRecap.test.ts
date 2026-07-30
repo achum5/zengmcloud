@@ -8,6 +8,7 @@ const data: RecapSeasonData = {
 	champ: { tid: 0, region: "LA", name: "Lakers", abbrev: "LAL" },
 	runnerUp: { tid: 1, region: "Boston", name: "Celtics", abbrev: "BOS" },
 	awards: [{ label: "MVP", player: "Star Guy", abbrev: "LAL" }],
+	alreadyWrittenTotal: 0,
 	teams: [
 		{
 			tid: 0,

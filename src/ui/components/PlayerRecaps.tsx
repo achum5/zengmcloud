@@ -45,9 +45,8 @@ export const PlayerRecaps = ({
 }) => {
 	// Batches are cut from whoever is still unwritten, so the list shrinks as it
 	// is worked through and every batch is real work. That means re-deriving
-	// after each successful paste rather than stepping forward. The two draft
-	// passes go further and take themselves off the page once their class is
-	// done - they are there as a reminder.
+	// after each successful paste rather than stepping forward, and the whole
+	// section vanishing once the season is done.
 	const [batchIndex, setBatchIndex] = useState(0);
 	const [reload, setReload] = useState(0);
 	const [data, setData] = useState<RecapPlayerBatch | undefined>();
@@ -166,19 +165,9 @@ export const PlayerRecaps = ({
 
 			// The worker cuts batches from whoever is still unwritten, so re-deriving
 			// from the top rebuilds the batch out of exactly the players still
-			// missing a recap - including the ones this reply dropped. Once nobody
-			// is left the pass covers everyone again for regeneration, and stepping
-			// forward is the right move instead.
-			const stillUnwritten =
-				(data?.totalPlayers ?? 0) -
-				(data?.alreadyWrittenTotal ?? 0) -
-				batchPlayers.filter((p) => !p.alreadyWritten && written.has(p.pid))
-					.length;
-			if (stillUnwritten > 0) {
-				setBatchIndex(0);
-			} else if (data && batchIndex + 1 < data.batchCount) {
-				setBatchIndex(batchIndex + 1);
-			}
+			// missing a recap - including the ones this reply dropped. When nobody
+			// is left it returns nothing at all and the section disappears.
+			setBatchIndex(0);
 			setReload((prev) => prev + 1);
 
 			if (response.wrongKind.length > 0) {
@@ -225,10 +214,11 @@ export const PlayerRecaps = ({
 				? "draft picks"
 				: "players";
 
-	// Once every member of the class has a note the worker returns nothing, and
-	// the pass comes off the page — that's the reminder switching itself off.
-	// Same for a season with no draft class behind it at all.
-	if (filter !== "players" && (!data || data.players.length === 0)) {
+	// Once everyone has a note the worker returns nothing and the pass comes off
+	// the page — that's the reminder switching itself off, and the way to tell
+	// at a glance that a season is finished. Same for a season with no draft
+	// class behind it at all.
+	if (!data || data.players.length === 0) {
 		return null;
 	}
 

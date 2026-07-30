@@ -619,18 +619,18 @@ export const getPlayerRecapData = async ({
 	const unwritten = pool.filter((p: any) => !hasSeasonNote(p.note, season));
 	const alreadyWrittenTotal = totalPlayers - unwritten.length;
 
-	// The draft passes exist as a reminder that a class hasn't been written, so
-	// they come off the page the moment it has been.
-	if (filter !== "players" && unwritten.length === 0) {
+	// Every pass exists as a reminder that a season hasn't been written, so it
+	// comes off the page the moment it has been. A finished year showing no
+	// recap controls at all is the whole signal: scroll to it, see nothing,
+	// it's done.
+	if (unwritten.length === 0) {
 		return undefined;
 	}
 
 	// The batches are cut from WHAT IS LEFT, not from everyone. With six players
 	// still missing a recap out of five hundred, the prompt is those six - not
-	// two hundred of whom a hundred and ninety-four are already done. Only once
-	// the season is complete does the pass reopen to everyone, so a recap can
-	// still be regenerated.
-	const inSeason = unwritten.length > 0 ? unwritten : pool;
+	// two hundred of whom a hundred and ninety-four are already done.
+	const inSeason = unwritten;
 
 	const batchCount = Math.ceil(inSeason.length / batchSize);
 	const clampedIndex = Math.min(Math.max(0, batchIndex), batchCount - 1);

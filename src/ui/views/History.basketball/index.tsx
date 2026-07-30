@@ -88,44 +88,37 @@ const History = (props: View<"history">) => {
 				</div>
 			</div>
 
-			<div className="row">
-				<div className="col-md-6 mt-1">
-					<h2 className="h5">Team Recaps (AI)</h2>
-					<SeasonRecap season={season} />
-				</div>
+			{/* Every recap pass takes itself off the page once the season is fully
+			    written, so a year with nothing here is a year that's done. They
+			    share one flex row rather than a fixed two-column grid, since any
+			    of them can be absent and a grid would leave holes where they
+			    were. */}
+			<div className="d-flex flex-wrap gap-4 mt-1">
+				<SeasonRecap season={season} heading="Team Recaps (AI)" />
 
-				<div className="col-md-6 mt-1">
-					<PlayerRecaps
-						season={season}
-						filter="players"
-						heading="Player Season Recaps (AI)"
-					/>
-				</div>
-			</div>
+				<PlayerRecaps
+					season={season}
+					filter="players"
+					heading="Player Season Recaps (AI)"
+				/>
 
-			<div className="row">
-				<div className="col-md-6 mt-1">
-					{/* This season's own draft class, written after the draft. Its own
-					    pass because none of these players has played a game, so a
-					    season recap has nothing to recap. Disappears once every member
-					    of the class has been written. */}
-					<PlayerRecaps
-						season={season}
-						filter="draftPicks"
-						heading="Draft Class Writeups (AI)"
-					/>
-				</div>
+				{/* This season's own draft class, written after the draft. Its own
+				    pass because none of these players has played a game, so a season
+				    recap has nothing to recap. */}
+				<PlayerRecaps
+					season={season}
+					filter="draftPicks"
+					heading="Draft Class Writeups (AI)"
+				/>
 
-				<div className="col-md-6 mt-1">
-					{/* Next year's draft class, run separately: no stats, no season to
-					    recap, and a scouting report is a different piece of writing
-					    from a season recap. Absent when there's no class to scout. */}
-					<PlayerRecaps
-						season={season}
-						filter="prospects"
-						heading="Draft Prospect Reports (AI)"
-					/>
-				</div>
+				{/* Next year's draft class, run separately: no stats, no season to
+				    recap, and a scouting report is a different piece of writing from
+				    a season recap. Absent when there's no class to scout. */}
+				<PlayerRecaps
+					season={season}
+					filter="prospects"
+					heading="Draft Prospect Reports (AI)"
+				/>
 			</div>
 		</>
 	);

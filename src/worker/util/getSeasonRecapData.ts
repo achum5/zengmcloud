@@ -98,6 +98,9 @@ export type RecapSeasonData = {
 	// League individual-award winners this season (name + team abbrev).
 	awards: { label: string; player: string; abbrev?: string }[];
 	teams: RecapSeasonTeam[];
+	// How many of those teams already have their season note written. When it
+	// reaches teams.length the pass is done and comes off the page.
+	alreadyWrittenTotal: number;
 };
 
 // Offseason phases: everything after the playoffs conclude, in a given BBGM
@@ -565,5 +568,15 @@ export const getSeasonRecapData = async (
 			b.won - a.won || a.lost - b.lost || a.region.localeCompare(b.region),
 	);
 
-	return { season, champ, runnerUp, awards, teams };
+	// A team recap is filed as that team's teamSeason note, so counting the
+	// non-empty ones is how far through the season the pass is.
+	const written = new Set<number>();
+	for (const ts of await idb.getCopies.teamSeasons({ season }, "noCopyCache")) {
+		if (typeof ts.note === "string" && ts.note !== "") {
+			written.add(ts.tid);
+		}
+	}
+	const alreadyWrittenTotal = teams.filter((t) => written.has(t.tid)).length;
+
+	return { season, champ, runnerUp, awards, teams, alreadyWrittenTotal };
 };
