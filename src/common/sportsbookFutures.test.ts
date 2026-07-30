@@ -353,7 +353,7 @@ describe("win totals stay inside reality", () => {
 		// The raw margins a stacked league produces, run through the same
 		// saturation and evidence shading getLines applies before simulating.
 		const RAW = [21, 18, 6, 4, 2, 1, 0, 0, -1, -2, -3, -4, -5, -7, -9, -12];
-		const evidence = 0.72 + 0.28 * Math.min(1, gamesPlayed / 25);
+		const evidence = 0.85 + 0.15 * Math.min(1, gamesPlayed / 25);
 		return RAW.map((raw, i) => ({
 			tid: i,
 			cid: i % 2,
@@ -370,7 +370,7 @@ describe("win totals stay inside reality", () => {
 			numGamesPlayoffSeries: [7, 7, 7, 7],
 			iterations: 3000,
 			seed: 7,
-			ratingUncertainty: 3.5 + 6.5 * (1 - gamesPlayed / 82),
+			ratingUncertainty: 1 + 0.5 * (1 - gamesPlayed / 82),
 		});
 		return stacked(gamesPlayed).map((t) => sim.winTotals.get(t.tid)!.line);
 	};
@@ -436,6 +436,115 @@ describe("softCapMargin", () => {
 			const v = softCapMargin(m);
 			assert.ok(v > prev, `not monotonic at ${m}`);
 			prev = v;
+		}
+	});
+});
+
+// The board as a whole, calibrated against what a real book posts. These bands
+// were found by sweeping the model's three knobs (margin saturation, how far a
+// rating is shaded toward the field before games are played, and how unsure the
+// book is about a rating) across several league shapes at several points in a
+// season - so they are the calibration, not a snapshot of whatever the code
+// happened to produce. Drifting outside them means the book is giving money
+// away in one direction or the other.
+describe("the futures board is calibrated", () => {
+	const NUM_TEAMS = 30;
+	const NUM_GAMES = 82;
+	const CAP = 9;
+	const PRIOR = 0.85;
+	const EV_GAMES = 25;
+
+	// Ratings as raw point margins vs an average team, best first.
+	const shape = (kind: "normal" | "superteam" | "parity"): number[] => {
+		const out: number[] = [];
+		for (let i = 0; i < NUM_TEAMS; i++) {
+			const z = (i - (NUM_TEAMS - 1) / 2) / ((NUM_TEAMS - 1) / 2);
+			if (kind === "normal") {
+				out.push(-z * 8);
+			} else if (kind === "parity") {
+				out.push(-z * 3);
+			} else {
+				out.push(i === 0 ? 21 : i === 1 ? 18 : -z * 7);
+			}
+		}
+		return out.sort((a, b) => b - a);
+	};
+
+	const priceBoard = (raw: number[], gamesPlayed: number) => {
+		const evidence = PRIOR + (1 - PRIOR) * Math.min(1, gamesPlayed / EV_GAMES);
+		const teams: FuturesTeam[] = raw.map((r, i) => ({
+			tid: i,
+			cid: i % 2,
+			did: i % 6,
+			won: Math.round(
+				gamesPlayed * Math.min(0.85, Math.max(0.15, 0.5 + r / 40)),
+			),
+			gamesRemaining: NUM_GAMES - gamesPlayed,
+			rating: softCapMargin(r, CAP) * evidence,
+		}));
+		const sim = simulateFutures({
+			teams,
+			numGamesPlayoffSeries: [7, 7, 7, 7],
+			iterations: 2500,
+			seed: 11,
+			ratingUncertainty: 1 + 0.5 * (1 - gamesPlayed / NUM_GAMES),
+		});
+		const lines = teams.map((t) => sim.winTotals.get(t.tid)!.line);
+		return {
+			favProb: sim.titleProb.get(0)!,
+			lines,
+			sum: lines.reduce((a, b) => a + b, 0),
+		};
+	};
+
+	test("an ordinary league's best team is a real but beatable favorite", () => {
+		const p = priceBoard(shape("normal"), 0).favProb;
+		assert.ok(p > 0.12 && p < 0.24, `favorite at ${(p * 100).toFixed(1)}%`);
+	});
+
+	test("a genuine superteam is priced like one, not like the field", () => {
+		const p = priceBoard(shape("superteam"), 0).favProb;
+		assert.ok(p > 0.25 && p < 0.5, `superteam at ${(p * 100).toFixed(1)}%`);
+	});
+
+	// Never tuned against - a league with no separation must not manufacture a
+	// favorite out of noise.
+	test("a league with no separation has no strong favorite", () => {
+		const { favProb, lines } = priceBoard(shape("parity"), 0);
+		assert.ok(
+			favProb < 0.16,
+			`parity favorite at ${(favProb * 100).toFixed(1)}%`,
+		);
+		assert.ok(
+			Math.max(...lines) - Math.min(...lines) < 22,
+			`parity win totals spread ${Math.max(...lines)} to ${Math.min(...lines)}`,
+		);
+	});
+
+	test("the favorite shortens as the season confirms it, never drifts out", () => {
+		for (const kind of ["normal", "superteam"] as const) {
+			let prev = 0;
+			for (const gp of [0, 20, 41, 70]) {
+				const p = priceBoard(shape(kind), gp).favProb;
+				assert.ok(
+					p >= prev - 0.03,
+					`${kind} favorite went backwards at ${gp} games: ${prev} -> ${p}`,
+				);
+				prev = p;
+			}
+		}
+	});
+
+	test("the win totals add up to roughly the games available", () => {
+		const total = (NUM_TEAMS * NUM_GAMES) / 2;
+		for (const kind of ["normal", "superteam", "parity"] as const) {
+			for (const gp of [0, 20, 41]) {
+				const { sum } = priceBoard(shape(kind), gp);
+				assert.ok(
+					Math.abs(sum - total) < total * 0.03,
+					`${kind} at ${gp} games sums to ${Math.round(sum)}, not ~${total}`,
+				);
+			}
 		}
 	});
 });

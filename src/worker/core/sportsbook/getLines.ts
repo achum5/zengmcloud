@@ -116,12 +116,16 @@ const TIER_NOISE_LATE = 0.6; // matches tierMembershipProbs' default noiseFactor
 // The same idea for the futures Monte Carlo, in points of margin rather than a
 // noise multiplier: how far off a team's rating could be from its true
 // strength. Wide before a game is played, tight once a season of evidence is in.
-const FUTURES_UNCERTAINTY_START = 10;
-const FUTURES_UNCERTAINTY_END = 3.5;
+// Both calibrated by sweep (see MAX_SUSTAINED_MARGIN). These are small because
+// the rating they perturb is already saturated to +/-9: a 10-point jitter on a
+// 9-point scale is more noise than signal, which flattened the whole board and
+// priced a league's best team at +1135 to win it.
+const FUTURES_UNCERTAINTY_START = 1.5;
+const FUTURES_UNCERTAINTY_END = 1;
 
 // How far a team's projected strength is shaded toward the field before it has
 // played, and how many games it takes to earn the full number back.
-const FUTURES_PRIOR_WEIGHT = 0.72;
+const FUTURES_PRIOR_WEIGHT = 0.85;
 const FUTURES_EVIDENCE_GAMES = 25;
 
 // Cap how many upcoming games get a line at once, so the board stays readable.

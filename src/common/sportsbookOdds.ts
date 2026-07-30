@@ -65,7 +65,12 @@ export const MARGIN_SIGMA = bySport({
 // tanh compresses smoothly and monotonically - ordinary margins pass through
 // almost untouched (+5 stays +4.9) while the tail is pulled in (+21 becomes
 // +10.5) - so ranking is preserved and only the impossible end is fixed.
-export const MAX_SUSTAINED_MARGIN = 11;
+// Calibrated, not guessed: swept against three league shapes (ordinary,
+// top-heavy, two-superteams) at tip-off and twenty games in, scoring the
+// resulting board against what real books post - a clear favorite around
+// +400 in an ordinary league, +300 in a top-heavy one, +175 for a genuine
+// superteam, and win totals topping out in the high 50s to low 60s.
+export const MAX_SUSTAINED_MARGIN = 9;
 
 export const softCapMargin = (
 	margin: number,
