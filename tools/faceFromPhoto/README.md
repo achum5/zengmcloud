@@ -37,16 +37,24 @@ cd zengmcloud
 
 Node 24+ is required (`engines` says `^24.0.0`).
 
-Only two packages are actually needed — `facesjs` and `playwright` — so you can
-skip the app's full toolchain:
-
 ```sh
-npm install --no-save facesjs playwright
-npx playwright install chromium
+npm install --legacy-peer-deps
 ```
 
-Or, if you want the whole project anyway, `pnpm install` (the declared package
-manager) does it and fetches the browser via its postinstall.
+`--legacy-peer-deps` is required: the project pins eslint 10 while
+eslint-plugin-jsx-a11y still declares a peer range ending at 9, and npm treats
+that as fatal. Nothing here compiles native code, so the install is just slow,
+not fragile. `pnpm install` also works and is the declared package manager.
+
+Installing a subset (`npm install --no-save facesjs playwright`) does NOT work —
+npm reconciles the whole tree from package.json regardless, so it hits the same
+conflict.
+
+The install's postinstall step downloads the Playwright browser build that
+matches the pinned playwright version. Run `npx playwright install chromium`
+BEFORE installing and you get browsers for whatever version npx happened to
+fetch, which the installed playwright then can't find ("Executable doesn't exist
+at ..."). If that happens, just run it again after the install.
 
 Two of the steps need neither: `downloadImages.mjs` and `applyFaces.mjs` use
 only Node builtins, so if all you want is the photos or the final write-back,
