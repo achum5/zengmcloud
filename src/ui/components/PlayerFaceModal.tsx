@@ -512,12 +512,42 @@ export const PlayerFaceModal = ({
 						</div>
 					</div>
 					<div className="col-12 col-md-8">
+						<div className="d-flex mb-1">
+							<button
+								className="btn btn-light-bordered btn-sm ms-auto"
+								onClick={async () => {
+									let clipboardText;
+									try {
+										clipboardText = await navigator.clipboard.readText();
+									} catch {
+										showNotification({
+											type: "error",
+											text: "Couldn't read the clipboard.",
+										});
+										return;
+									}
+									// Reformat a valid config so it reads like the rest of the
+									// editor's output; leave anything else exactly as pasted, so
+									// the parse error points at what's actually there.
+									try {
+										setText(
+											JSON.stringify(JSON.parse(clipboardText), undefined, 2),
+										);
+									} catch {
+										setText(clipboardText);
+									}
+								}}
+								type="button"
+							>
+								Paste
+							</button>
+						</div>
 						<textarea
 							className="form-control font-monospace"
 							onChange={(event) => {
 								setText(event.target.value);
 							}}
-							rows={6}
+							rows={4}
 							spellCheck={false}
 							style={{ fontSize: "0.8rem" }}
 							value={text}
@@ -645,10 +675,8 @@ export const PlayerFaceModal = ({
 						try {
 							await toWorker("main", "updatePlayerFace", { pid, face });
 							updatePlayerFaceData(pid, face);
-							showNotification({
-								type: "success",
-								text: `Face saved for ${name}.`,
-							});
+							// No success toast: the modal closes and the face on the row
+							// changes, which says it better than a message does.
 							onHide();
 						} catch (error) {
 							showNotification({
