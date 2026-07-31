@@ -7,6 +7,7 @@ import { PHASE } from "../../common/constants.ts";
 import { loadAbbrevs } from "./gameLog.ts";
 import getPlayoffsByConf from "../core/season/getPlayoffsByConf.ts";
 import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
+import { hideTeamOvr } from "../../common/teamRatings.ts";
 
 const updateSeasonPreview = async (
 	{ season }: ViewInput<"seasonPreview">,
@@ -180,8 +181,10 @@ const updateSeasonPreview = async (
 		// Ranking the league's teams by strength is exactly what a league that
 		// hides team ratings is hiding - the names alone, in order, give the whole
 		// thing away. So these boards don't exist there.
-		const hideTeamStrength =
-			g.get("hideTeamRatings") || g.get("challengeNoRatings");
+		const hideTeamStrength = hideTeamOvr({
+			challengeNoRatings: g.get("challengeNoRatings"),
+			hideTeamRatings: g.get("hideTeamRatings"),
+		});
 
 		const teamsTop = hideTeamStrength
 			? []

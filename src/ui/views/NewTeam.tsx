@@ -11,6 +11,7 @@ import { PopText } from "../components/PopText.tsx";
 import { SafeHtml } from "../components/SafeHtml.tsx";
 import { RecordAndPlayoffs } from "../components/RecordAndPlayoffs.tsx";
 import { useLocal } from "../util/local.ts";
+import { showTeamOvr } from "../../common/teamRatings.ts";
 
 const HistoryBlock = ({
 	won,
@@ -336,7 +337,7 @@ const NewTeam = ({
 									won={t.seasonAttrs.won}
 									roundsWonText={t.roundsWonText}
 								/>
-								{!challengeNoRatings && !hideTeamRatings ? (
+								{showTeamOvr({ challengeNoRatings, hideTeamRatings }) ? (
 									<>
 										<br />
 										Team rating: {t.ovr}/100

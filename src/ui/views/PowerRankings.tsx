@@ -10,6 +10,7 @@ import { wrappedTeamLogoAndName } from "../components/TeamLogoAndName.tsx";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
 import { gradeFromRank } from "../../common/teamRatingGrade.ts";
+import { showTeamOvr } from "../../common/teamRatings.ts";
 
 const Other = ({
 	actualShowHealthy,
@@ -77,7 +78,7 @@ const PowerRankings = ({
 
 	// Team ratings can be hidden by the challenge setting, or by the broader
 	// "no visible player ratings" one (a team rating is just its players').
-	const showTeamRatings = !challengeNoRatings && !hideTeamRatings;
+	const showTeamRatings = showTeamOvr({ challengeNoRatings, hideTeamRatings });
 
 	// With no games played there is nothing in a power ranking but the rosters,
 	// so every number on the page - the rank, the category grades - is a

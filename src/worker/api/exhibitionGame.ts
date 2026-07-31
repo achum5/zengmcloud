@@ -27,6 +27,7 @@ import { unwrapGameAttribute } from "../../common/unwrapGameAttribute.ts";
 import { isSport } from "../../common/sportFunctions.ts";
 import { randInt } from "../../common/random.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
+import { hideTeamOvr } from "../../common/teamRatings.ts";
 
 export const getLeagues = async () => {
 	const leagues = await idb.meta.getAll("leagues");
@@ -97,9 +98,10 @@ const getSeasonInfoLeague = async ({
 	// This league hides team ratings, so the teams it exports carry that with
 	// them - otherwise Exhibition would be a way to look up any team's rating in
 	// a league where the setting is on.
-	const hideOvr =
-		(await getGameAttribute("hideTeamRatings")) ||
-		(await getGameAttribute("challengeNoRatings"));
+	const hideOvr = hideTeamOvr({
+		challengeNoRatings: await getGameAttribute("challengeNoRatings"),
+		hideTeamRatings: await getGameAttribute("hideTeamRatings"),
+	});
 
 	// Same idea for Coarse Ratings: a league that shows ratings to the tens digit
 	// shouldn't have the exact numbers readable through Exhibition.

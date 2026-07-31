@@ -13,6 +13,7 @@ import { RosterComposition } from "../../components/RosterComposition.tsx";
 import { PlusMinus } from "../../components/PlusMinus.tsx";
 import { useLocal } from "../../util/local.ts";
 import { hardCapForTid } from "../../../common/getHardCap.ts";
+import { showTeamOvr } from "../../../common/teamRatings.ts";
 
 const fontSizeLarger = { fontSize: "larger" };
 
@@ -300,7 +301,7 @@ const TopStuff = ({
 									) : null}
 								</div>
 							) : null}
-							{!challengeNoRatings && !hideTeamRatings ? (
+							{showTeamOvr({ challengeNoRatings, hideTeamRatings }) ? (
 								<div>
 									Team rating:{" "}
 									<TeamRating ovr={t.ovr} ovrCurrent={t.ovrCurrent} />

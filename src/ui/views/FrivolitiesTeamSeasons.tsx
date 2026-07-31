@@ -9,6 +9,7 @@ import { isSport } from "../../common/sportFunctions.ts";
 import { wrappedMovOrDiff } from "../components/MovOrDiff.tsx";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import { useLocal } from "../util/local.ts";
+import { showTeamOvr } from "../../common/teamRatings.ts";
 
 const FrivolitiesTeamSeasons = ({
 	description,
@@ -22,7 +23,16 @@ const FrivolitiesTeamSeasons = ({
 }: View<"frivolitiesTeamSeasons">) => {
 	useTitleBar({ title, customMenu: frivolitiesMenu });
 
-	const { userTid } = useLocal(["userTid"]);
+	const { challengeNoRatings, hideTeamRatings, userTid } = useLocal([
+		"challengeNoRatings",
+		"hideTeamRatings",
+		"userTid",
+	]);
+
+	// Drop the column rather than leaving a permanently blank one. The worker
+	// already withholds the value; this is just so the table doesn't carry an
+	// empty Ovr header in a league that hides team ratings.
+	const showOvr = showTeamOvr({ challengeNoRatings, hideTeamRatings });
 
 	const cols = getCols([
 		"#",
@@ -34,7 +44,7 @@ const FrivolitiesTeamSeasons = ({
 		...(ties ? ["T"] : []),
 		...(usePts ? ["PTS", "PTS%"] : ["%"]),
 		`stat:${isSport("basketball") ? "mov" : "diff"}`,
-		"Ovr",
+		...(showOvr ? ["Ovr"] : []),
 		...extraCols.map((x) => x.colName),
 		"Links",
 	]);
@@ -82,7 +92,7 @@ const FrivolitiesTeamSeasons = ({
 						: ts,
 					isSport("basketball") ? "mov" : "diff",
 				),
-				ts.ovr,
+				...(showOvr ? [ts.ovr] : []),
 				...extraCols.map((x) => {
 					let value = getValue(ts, x.key);
 					if (x.colName === "AvgAge") {

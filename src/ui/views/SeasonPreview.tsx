@@ -12,6 +12,7 @@ import {
 	coarsenRating,
 	coarsenRatingChange,
 } from "../../common/coarsenRating.ts";
+import { showTeamOvr } from "../../common/teamRatings.ts";
 
 const PlayerList = ({
 	challengeNoRatings,
@@ -158,7 +159,7 @@ const TeamList = ({
 						>
 							{t.region} {t.name}
 						</a>
-						{!challengeNoRatings && !hideTeamRatings ? (
+						{showTeamOvr({ challengeNoRatings, hideTeamRatings }) ? (
 							<>
 								,{" "}
 								<RatingWithChange
@@ -242,7 +243,7 @@ const SeasonPreview = ({
 
 	// Ordering the league's teams by strength is the one thing a league that
 	// hides team ratings is hiding.
-	const showTeamLists = !hideTeamRatings && !challengeNoRatings;
+	const showTeamLists = showTeamOvr({ challengeNoRatings, hideTeamRatings });
 
 	return (
 		<>

@@ -12,6 +12,7 @@ import hasTies from "../core/season/hasTies.ts";
 import { orderBy, type OrderBySortParams } from "../../common/utils.ts";
 import getPlayoffsByConf from "../core/season/getPlayoffsByConf.ts";
 import { isSport } from "../../common/sportFunctions.ts";
+import { hideTeamOvr } from "../../common/teamRatings.ts";
 
 type Most = {
 	value: number;
@@ -100,7 +101,14 @@ const getMostXTeamSeasons = async ({
 		}
 	}
 
-	const challengeNoRatings = g.get("challengeNoRatings");
+	// "No Visible Team Ratings" hides every team's overall rating, so this page
+	// has to honour it as well as No Visible Player Ratings - it was the last
+	// list still printing one. Decided in the worker so the number never reaches
+	// the client at all.
+	const hideOvr = hideTeamOvr({
+		challengeNoRatings: g.get("challengeNoRatings"),
+		hideTeamRatings: g.get("hideTeamRatings"),
+	});
 
 	const teamSeasons = await Promise.all(
 		teamSeasonsAll.map(async (ts) => {
@@ -130,7 +138,7 @@ const getMostXTeamSeasons = async ({
 				pts: 0,
 				oppPts: 0,
 				most: after ? await after(ts.most) : ts.most,
-				ovr: !challengeNoRatings ? ts.ovrEnd : undefined,
+				ovr: hideOvr ? undefined : ts.ovrEnd,
 			};
 		}),
 	);
