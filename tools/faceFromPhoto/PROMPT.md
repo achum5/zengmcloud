@@ -36,7 +36,7 @@ quotes (`“` `”`) are not valid JSON and the game rejects the whole object.
   "body":        { "id": "body3", "color": "#74453d", "size": 1 },
   "jersey":      { "id": "jersey" },
   "ear":         { "id": "ear2", "size": 1 },
-  "head":        { "id": "head5", "shave": "rgba(0,0,0,0)" },
+  "head":        { "id": "head5", "shave": "rgba(0,0,0,0.3)" },
   "eyeLine":     { "id": "line1" },
   "smileLine":   { "id": "line4", "size": 0.82 },
   "miscLine":    { "id": "none" },
@@ -136,12 +136,43 @@ the photo rather than inventing a color from scratch.
   `#2C1608`, medium brown `#5A3825`, light brown `#CC9966`, auburn `#B55239`,
   blond `#e9c67b`, dirty blond `#D7BF91`. Grey/white hair: `#9a9a9a` – `#e8e8e8`.
 
-`head.shave` is an `rgba(0,0,0,A)` string drawing stubble shadow across a shaved
-scalp. Use `"rgba(0,0,0,0)"` for anyone with real hair. For a bald or buzzed
-head with visible shadow, `"rgba(0,0,0,0.1)"` to `"rgba(0,0,0,0.2)"`.
-
 Leave `teamColors` exactly as shown — ZenGM overwrites it with the player's
 actual team colors.
+
+## Stubble: `head.shave`
+
+**This is the five o'clock shadow, and it is the single most commonly missed
+slot.** It is an `rgba(0,0,0,A)` string that shades the beard area of the face —
+jaw, chin, upper lip, cheeks — and, on a bald or closely-cropped head, the scalp
+along with it. It works whether or not the player has hair.
+
+| alpha | reads as |
+|---|---|
+| `rgba(0,0,0,0)` | clean shaven |
+| `rgba(0,0,0,0.1)` – `rgba(0,0,0,0.2)` | faint shadow, a day's growth |
+| `rgba(0,0,0,0.25)` – `rgba(0,0,0,0.4)` | a clear five o'clock shadow |
+| `rgba(0,0,0,0.5)` – `rgba(0,0,0,0.65)` | heavy stubble, a very short beard |
+| above `0.7` | avoid — it goes to a near-solid black mask |
+
+**`facialHair` is for GROWN hair with a defined shape and a hard edge** — a full
+beard, a goatee, a chin strap, sideburns, a distinct mustache. It is NOT for
+stubble. Reaching for a `beard*` id when the player just has a shadow is the
+most common way to get a face wrong: it draws a solid dark shape with a crisp
+outline where the photo has a soft grey haze.
+
+Decide which one you need before you pick either:
+
+- Soft, no clear outline, skin still visible through it, the same length all
+  over → **`head.shave`**, `facialHair: none`.
+- Solid, you could trace its edge, longer than a few days' growth → a
+  **`facialHair`** id, and usually `shave` at 0 or very low.
+- A shaped goatee or mustache sitting in a field of stubble → **both**: the
+  `facialHair` id for the shaped part, plus a `shave` alpha for the haze around
+  it.
+
+Since one value covers the face and the scalp, a bald player with heavy face
+stubble also gets a shadowed crown — which is normally right for a shaved head.
+If the scalp should read as cleanly shaved, stay at `0.35` or below.
 
 ## How to choose
 
@@ -156,11 +187,14 @@ actual team colors.
    `short3`, `parted`, `middle-part`. Long/shoulder-length → `longHair`,
    `shaggy1`, `shaggy2` — and only then set `hairBg` to `longHair` or `shaggy`.
    Everything else keeps `hairBg: none`.
-3. **Facial hair.** Full beard → `beard1`–`beard6`. Chin-only → a `goatee*` or
-   `fullgoatee*`. Mustache only → `mustache1`, `mustache-thin`. Jawline strip →
-   `chin-strap`. Sideburns → `sideburns1`–`3`, `mutton*`. Clean-shaven → `none`.
-   Ids ending in `Stache`, `-stache`, `SB1`/`SB2`/`-sb-1`/`-sb-2` add a mustache
-   or sideburns to the base shape.
+3. **Facial hair — check for stubble FIRST.** If it's a shadow rather than grown
+   hair, that's `head.shave` and `facialHair: none`; see the section above. Only
+   once you've ruled that out: full beard → `beard1`–`beard6`. Chin-only → a
+   `goatee*` or `fullgoatee*`. Mustache only → `mustache1`, `mustache-thin`.
+   Jawline strip → `chin-strap`. Sideburns → `sideburns1`–`3`, `mutton*`.
+   Clean-shaven and no shadow → `none` with `shave` at 0. Ids ending in
+   `Stache`, `-stache`, `SB1`/`SB2`/`-sb-1`/`-sb-2` add a mustache or sideburns
+   to the base shape.
 4. **Head shape** carries the face outline — round, long, square, narrow. Set
    `fatness` alongside it; the two together do most of the silhouette.
 5. **Eyes, eyebrows, nose, mouth.** Higher-numbered ids are not "better", just
