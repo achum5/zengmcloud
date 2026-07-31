@@ -206,6 +206,11 @@ export class SyncEngine {
 			// Highest seq among the chunks received so far - compared against the
 			// author's overall progress to prove a batch can never complete.
 			maxChunkSeq: number;
+			// The EARLIEST chunk seen for this batch - where it actually sits in the
+			// log. maxChunkSeq can't answer that once an author re-uploads a missing
+			// chunk, because that chunk carries a fresh timestamp. See the
+			// out-of-order guard in completeBatch.
+			minChunkSeq: number;
 		}
 	>();
 
@@ -269,6 +274,10 @@ export class SyncEngine {
 	// guard doesn't decline its own replay and recurse. Assigned before it was
 	// ever declared, which typechecked as an error and left the flag untyped.
 	private resyncing = false;
+
+	// Live entries that arrived while a resync was replaying the log. Applied in
+	// seq order once it finishes - they are newer than everything in the replay.
+	private deferredDuringResync: ChangesetEntry[] = [];
 
 	private get applyFailed(): boolean {
 		return this.failedApplies.size > 0;
@@ -1178,6 +1187,16 @@ export class SyncEngine {
 	// if it was our own, a duplicate, or a not-yet-complete bulk chunk). Never
 	// throws.
 	async handleEntry(entry: ChangesetEntry): Promise<boolean> {
+		// A resync is replaying the WHOLE log in order. The live listener is still
+		// running underneath it, and anything it delivers now is NEWER than
+		// everything in that replay - applying it mid-replay would let an old
+		// entry land on top of it. Hold it and deliver it after, which is where it
+		// belongs. (The replay itself doesn't come through here.)
+		if (this.resyncing) {
+			this.deferredDuringResync.push(entry);
+			return false;
+		}
+
 		// Track ordering position for the watermark even for entries we skip
 		// (our own / already-seen) - they're still "caught up" past.
 		if (entry.seq > this.maxSeq) {
@@ -1244,6 +1263,7 @@ export class SyncEngine {
 				action: entry.action,
 				authorId: entry.authorId,
 				maxChunkSeq: 0,
+				minChunkSeq: Number.POSITIVE_INFINITY,
 			};
 			this.pendingBatches.set(batchId, batch);
 			// If this batch was just reset, its re-fetch has begun - pendingBatches
@@ -1258,6 +1278,9 @@ export class SyncEngine {
 		}
 		if (entry.seq > batch.maxChunkSeq) {
 			batch.maxChunkSeq = entry.seq;
+		}
+		if (entry.seq < batch.minChunkSeq) {
+			batch.minChunkSeq = entry.seq;
 		}
 		batch.chunks.set(
 			entry.chunkIndex!,
@@ -1337,6 +1360,19 @@ export class SyncEngine {
 		// ordered fetch no longer can) replayed that old changeset - gameAttributes
 		// and all - straight over the newer phase.
 		//
+		// Judged on the batch's EARLIEST chunk, which is where it actually sits in
+		// the log. Using the newest defeated the whole guard against the one case
+		// it was written for: the missing chunk the author finally uploads carries
+		// a CURRENT timestamp, so the batch's newest chunk sits above the watermark
+		// and a draft-era changeset reads as brand new. That is why this kept
+		// coming back every offseason - the offseason is several big chunked
+		// advances in a row, so it has the most chances to drop one.
+		//
+		// A batch still legitimately in flight can never look old this way: while
+		// it is pending, advanceWatermark pins the watermark at or below it, so
+		// minChunkSeq < persistedSeq only holds for a batch the watermark has
+		// already moved past - which is to say, an abandoned one.
+		//
 		// The batch is NOT dropped. Every one of its chunks is in the durable log,
 		// so a full ordered resync replays them in sequence along with everything
 		// after them - the missed data still lands, it just can no longer land on
@@ -1348,12 +1384,13 @@ export class SyncEngine {
 		// would decline its own replay and recurse.
 		if (
 			!this.resyncing &&
-			batch.maxChunkSeq > 0 &&
-			batch.maxChunkSeq < this.persistedSeq
+			Number.isFinite(batch.minChunkSeq) &&
+			batch.minChunkSeq < this.persistedSeq
 		) {
 			syncDebugLog("engine:batch-out-of-order", {
 				batchId,
 				action: batch.action,
+				minChunkSeq: batch.minChunkSeq,
 				maxChunkSeq: batch.maxChunkSeq,
 				persistedSeq: this.persistedSeq,
 			});
@@ -1425,6 +1462,7 @@ export class SyncEngine {
 					action: first.action,
 					authorId: first.authorId,
 					maxChunkSeq: 0,
+					minChunkSeq: Number.POSITIVE_INFINITY,
 				};
 				this.pendingBatches.set(batchId, batch);
 				this.rebuildingBatches.delete(batchId);
@@ -1442,6 +1480,9 @@ export class SyncEngine {
 					this.seen.add(entry.id);
 					if (entry.seq > batch.maxChunkSeq) {
 						batch.maxChunkSeq = entry.seq;
+					}
+					if (entry.seq < batch.minChunkSeq) {
+						batch.minChunkSeq = entry.seq;
 					}
 				}
 			}
@@ -2037,10 +2078,20 @@ export class SyncEngine {
 		this.pendingBatches.clear();
 		this.failedApplies.clear();
 		this.resyncing = true;
+		this.deferredDuringResync.length = 0;
 		try {
 			return await this.resyncAllInner(entries);
 		} finally {
 			this.resyncing = false;
+			const deferred = this.deferredDuringResync.splice(0);
+			deferred.sort((a, b) => a.seq - b.seq);
+			for (const entry of deferred) {
+				try {
+					await this.handleEntry(entry);
+				} catch (error) {
+					syncDebugLog("engine:deferred-entry-failed", { error });
+				}
+			}
 		}
 	}
 
@@ -2054,20 +2105,61 @@ export class SyncEngine {
 	}> {
 		let applied = 0;
 		let newMaxSeq = this.maxSeq;
+
+		// Replay by ORDERING UNIT, not by entry.
+		//
+		// A bulk changeset's place in the log is where it STARTED. Its chunks are a
+		// transport detail, and a chunk the author re-uploaded days later carries a
+		// timestamp from the RE-UPLOAD, not from when the change was made. Walking
+		// entries in plain seq order therefore lands a whole draft-era changeset
+		// after a phase advance that genuinely came later - the phase goes
+		// backwards, and it goes backwards even though the replay was "in order".
+		//
+		// So group each batch's chunks into one unit keyed by its EARLIEST chunk,
+		// and sort units by that. Single entries are units of one. Within a batch
+		// the chunks go in index order so it completes on its last one.
+		type Unit = { key: number; entries: typeof entries };
+		const units: Unit[] = [];
+		const batchUnits = new Map<string, Unit>();
 		for (const entry of entries) {
 			if (entry.seq > newMaxSeq) {
 				newMaxSeq = entry.seq;
 			}
-			this.seen.add(entry.id);
-
-			const ok =
+			const isChunk =
 				entry.batchId !== undefined &&
 				entry.chunkIndex !== undefined &&
-				entry.chunkCount !== undefined
-					? await this.handleChunk(entry)
-					: await this.apply(entry.changeset, [entry.id]);
-			if (ok) {
-				applied++;
+				entry.chunkCount !== undefined;
+			if (!isChunk) {
+				units.push({ key: entry.seq, entries: [entry] });
+				continue;
+			}
+			let unit = batchUnits.get(entry.batchId!);
+			if (!unit) {
+				unit = { key: entry.seq, entries: [] };
+				batchUnits.set(entry.batchId!, unit);
+				units.push(unit);
+			}
+			unit.key = Math.min(unit.key, entry.seq);
+			unit.entries.push(entry);
+		}
+		for (const unit of batchUnits.values()) {
+			unit.entries.sort((a, b) => a.chunkIndex! - b.chunkIndex!);
+		}
+		units.sort((a, b) => a.key - b.key);
+
+		for (const unit of units) {
+			for (const entry of unit.entries) {
+				this.seen.add(entry.id);
+
+				const ok =
+					entry.batchId !== undefined &&
+					entry.chunkIndex !== undefined &&
+					entry.chunkCount !== undefined
+						? await this.handleChunk(entry)
+						: await this.apply(entry.changeset, [entry.id]);
+				if (ok) {
+					applied++;
+				}
 			}
 		}
 

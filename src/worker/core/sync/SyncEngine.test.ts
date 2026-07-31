@@ -1994,4 +1994,183 @@ describe("SyncEngine", () => {
 			"every chunk of the resurrected batch should have applied",
 		);
 	});
+	// The SAME failure, modelled the way it actually happens - and the reason it
+	// kept coming back every offseason after being "fixed".
+	//
+	// The test above re-pushes the missing chunks with the seqs they were
+	// originally created with, i.e. it models chunks that were always in the log
+	// and merely unreachable. But the real sequence is the author's outbox
+	// draining LATER: publish() stamps serverTimestamp() at send time, so the
+	// chunk that finally lands carries a CURRENT timestamp. Judging the batch by
+	// its newest chunk therefore made a draft-era changeset read as brand new,
+	// the guard declined to fire, and the phase went backwards - the exact case
+	// the guard exists for defeated by the exact act it was written to catch.
+	test("a late-uploaded chunk cannot make a stale batch look current", async () => {
+		const bus = new FakeBus();
+		const host = new SyncEngine(new FakeTransport("H", bus), { isHost: true });
+		host.start();
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+
+		resetG();
+		g.setWithoutSavingToDB("phase", PHASE.AFTER_DRAFT);
+		await resetCache({});
+		await idb.cache.gameAttributes.put({
+			key: "phase",
+			value: PHASE.AFTER_DRAFT,
+		});
+
+		const N = 260;
+		await host.onLocalChangeset(
+			{
+				changes: [
+					...Array.from({ length: N }, (_, i) => ({
+						store: "events" as const,
+						id: i + 1,
+						type: "put" as const,
+						value: { eid: i + 1, type: "test", text: bulkText(2000, i) },
+					})),
+					{
+						store: "gameAttributes" as const,
+						id: "phase",
+						type: "put" as const,
+						value: { key: "phase", value: PHASE.AFTER_DRAFT },
+					},
+				],
+			},
+			"playMenu.untilResignPlayers",
+		);
+		const allChunks = [...bus.entries];
+		assert.ok(allChunks.length > 1, "should be chunked");
+		const batchId = allChunks[0]!.batchId!;
+
+		// Only chunk 0 reached the log; the rest are stuck in the author's outbox.
+		bus.entries.length = 0;
+		bus.entries.push(allChunks[0]!);
+		await receiver.handleEntry(structuredClone(allChunks[0]!));
+
+		// The room advances a phase and the receiver applies it in order. Published
+		// through the bus so it takes the next seq, keeping the log's ordering
+		// honest for the re-upload below.
+		bus.publish({
+			id: "advance-late",
+			authorId: "X",
+			action: "playMenu.untilResignPlayers",
+			changeset: {
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "phase",
+						type: "put",
+						value: { key: "phase", value: PHASE.RESIGN_PLAYERS },
+					},
+				],
+			},
+		});
+		const advanceEntry = bus.entries.at(-1)!;
+		await receiver.handleEntry(structuredClone(advanceEntry));
+		assert.strictEqual(g.get("phase"), PHASE.RESIGN_PLAYERS);
+
+		// The half-batch is judged dead and the watermark moves past it.
+		await (receiver as any).sweepStaleBatches();
+		await receiver.handleEntry(structuredClone(allChunks[0]!));
+		await (receiver as any).sweepStaleBatches();
+		await (receiver as any).sweepStaleBatches();
+		assert.ok((receiver as any).abandonedBatches.has(batchId));
+
+		// NOW the author's outbox drains. Each chunk is PUBLISHED, so it gets a
+		// current seq - above the receiver's watermark, exactly as Firestore's
+		// server timestamp would give it.
+		const republished: ChangesetEntry[] = [];
+		for (const chunk of allChunks.slice(1)) {
+			const { seq: _oldSeq, ...withoutSeq } = chunk;
+			bus.publish(withoutSeq);
+			republished.push(bus.entries.at(-1)!);
+		}
+		assert.ok(
+			republished[0]!.seq > advanceEntry.seq,
+			"a re-uploaded chunk must carry a newer seq than the phase advance",
+		);
+
+		await receiver.handleEntry(structuredClone(republished[0]!));
+
+		assert.strictEqual(
+			g.get("phase"),
+			PHASE.RESIGN_PLAYERS,
+			"a draft-era batch must not drag the phase back, however new its last chunk looks",
+		);
+		// And the data still lands - the ordered resync delivers it.
+		assert.strictEqual(
+			(await idb.cache.events.getAll()).length,
+			N,
+			"the missed data should still land, just in order",
+		);
+	});
+	// The same ordering hazard from the other direction. A resync replays the
+	// whole log oldest-first while the live listener is still running underneath
+	// it, so anything delivered mid-replay is NEWER than everything being
+	// replayed - and applying it right then lets the replay land an old record on
+	// top of it. That matters much more now that resyncs are automatic (a device
+	// that notices it is behind the room runs one), not just a button.
+	test("a live entry arriving mid-resync is applied after the replay, not during", async () => {
+		const bus = new FakeBus();
+		resetG();
+		g.setWithoutSavingToDB("phase", PHASE.AFTER_DRAFT);
+		await resetCache({});
+		await idb.cache.gameAttributes.put({
+			key: "phase",
+			value: PHASE.AFTER_DRAFT,
+		});
+
+		const host = new FakeTransport("H", bus);
+		// One old entry in the log, setting the old phase.
+		await host.publish({
+			id: "old-phase",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "phase",
+						type: "put",
+						value: { key: "phase", value: PHASE.AFTER_DRAFT },
+					},
+				],
+			},
+		});
+
+		const receiver = new SyncEngine(new FakeTransport("R", bus));
+
+		// The room advances WHILE the resync is replaying. Delivered straight to
+		// handleEntry, the way the live listener does.
+		const advance: ChangesetEntry = {
+			id: "advance-mid-resync",
+			authorId: "H",
+			action: "x",
+			seq: 999,
+			changeset: {
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "phase",
+						type: "put",
+						value: { key: "phase", value: PHASE.RESIGN_PLAYERS },
+					},
+				],
+			},
+		};
+		const original = (receiver as any).resyncAllInner.bind(receiver);
+		(receiver as any).resyncAllInner = async (entries: ChangesetEntry[]) => {
+			await receiver.handleEntry(advance);
+			return original(entries);
+		};
+
+		await receiver.resyncAll();
+
+		assert.strictEqual(
+			g.get("phase"),
+			PHASE.RESIGN_PLAYERS,
+			"the newer live entry must win - the replay must not land on top of it",
+		);
+	});
 });
