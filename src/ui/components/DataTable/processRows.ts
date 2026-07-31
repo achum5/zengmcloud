@@ -1,7 +1,10 @@
-import type { DataTableRow, Props } from "./index.tsx";
+import type { DataTableRow, Props, SortBy } from "./index.tsx";
 import { normalizeIntl } from "../../../common/normalizeIntl.ts";
 import { orderBy } from "../../../common/utils.ts";
-import { isCoarsenedRatingCol } from "../../../common/coarsenRating.ts";
+import {
+	coarsenRating,
+	isCoarsenedRatingCol,
+} from "../../../common/coarsenRating.ts";
 import createFilterFunction from "./createFilterFunction.ts";
 import getSearchVal from "./getSearchVal.tsx";
 import getSortVal from "./getSortVal.tsx";
@@ -97,17 +100,58 @@ export const processRows = ({
 	if (state.sortBys === undefined) {
 		rowsOrdered = rowsFiltered;
 	} else {
-		const sortKeys = state.sortBys.map((sortBy) => (row: DataTableRow) => {
-			let i = sortBy[0];
+		const colIndex = (sortBy: SortBy) => {
+			const i = sortBy[0];
+			if (typeof i !== "number" || i >= cols.length) {
+				return 0;
+			}
+			return i;
+		};
 
-			if (typeof i !== "number" || i >= row.data.length || i >= cols.length) {
-				i = 0;
+		const valueOf = (row: DataTableRow, i: number) =>
+			getSortVal(row.data[i >= row.data.length ? 0 : i], cols[i]!.sortType);
+
+		const sortKeys: ((row: DataTableRow) => any)[] = [];
+		const orders: ("asc" | "desc")[] = [];
+
+		for (const sortBy of state.sortBys) {
+			const i = colIndex(sortBy);
+			const order = sortBy[1];
+
+			// A row exempt from the coarsening (a draft prospect, when the setting
+			// spares them) still carries exact ratings, so its 78 sits in the same
+			// column as everyone else's 7. Compared straight, 78 beats every real 8
+			// and the whole draft class floats to the top of the table.
+			//
+			// So sort the exempt rows by the decade they'd have shown, drop them
+			// below the players actually showing that digit, and only then let their
+			// exact number order them against each other - which is the whole point
+			// of exempting them. "Below" means later in the list whichever way the
+			// column is pointing, so that middle key never flips with the order.
+			if (
+				coarseRatings &&
+				isCoarsenedRatingCol(cols[i]?.key) &&
+				rowsFiltered.some((row) => row.coarseExempt)
+			) {
+				const decade = (row: DataTableRow) => {
+					const value = valueOf(row, i);
+					if (row.coarseExempt && typeof value === "number") {
+						return coarsenRating(value);
+					}
+					return value;
+				};
+				sortKeys.push(
+					decade,
+					(row) => (row.coarseExempt ? 1 : 0),
+					(row) => valueOf(row, i),
+				);
+				orders.push(order, "asc", order);
+				continue;
 			}
 
-			return getSortVal(row.data[i], cols[i]!.sortType);
-		});
-
-		const orders: ("asc" | "desc")[] = state.sortBys.map((sortBy) => sortBy[1]);
+			sortKeys.push((row) => valueOf(row, i));
+			orders.push(order);
+		}
 
 		// Sorting by a coarsened rating puts everyone in a decade on the same
 		// number, and every one of them SHOULD tie - that's the mode working. But

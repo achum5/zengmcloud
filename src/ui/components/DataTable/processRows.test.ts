@@ -114,3 +114,86 @@ describe("coarsened rating ties", () => {
 		assert.deepEqual([...keys].sort(), [1, 2, 3, 4, 5, 6, 7, 8]);
 	});
 });
+
+// The prospects exemption spares undrafted players from the coarsening, so
+// Player Ratings shows them at full resolution next to everyone else's tens
+// digit. Compared as plain numbers, a prospect's 78 beats every real 8 and the
+// entire draft class sat above the league.
+describe("rows exempt from the coarsening", () => {
+	// Deliberately interleaved on the way in, so nothing here can pass on the
+	// incoming order alone.
+	const mixed: DataTableRow[] = [
+		{ key: 1, data: ["Prospect 78", 78, 20], coarseExempt: true },
+		{ key: 2, data: ["Real 8", 8, 28] },
+		{ key: 3, data: ["Prospect 71", 71, 19], coarseExempt: true },
+		{ key: 4, data: ["Real 7", 7, 27] },
+		{ key: 5, data: ["Prospect 85", 85, 20], coarseExempt: true },
+		{ key: 6, data: ["Real 8 also", 8, 26] },
+	];
+
+	test("a prospect lands under the players showing his tens digit", () => {
+		assert.deepEqual(names(true, BY_OVR, mixed), [
+			"Real 8",
+			"Real 8 also",
+			"Prospect 85",
+			"Real 7",
+			"Prospect 78",
+			"Prospect 71",
+		]);
+	});
+
+	// Flipping the arrow reverses the decades and reverses the prospects inside
+	// one, but a prospect stays BELOW the real players on his number - otherwise
+	// he'd jump above them just by clicking the header twice.
+	test("still under them with the arrow flipped", () => {
+		assert.deepEqual(names(true, [[1, "asc"]], mixed), [
+			"Real 7",
+			"Prospect 71",
+			"Prospect 78",
+			"Real 8",
+			"Real 8 also",
+			"Prospect 85",
+		]);
+	});
+
+	// Exact ratings are what the exemption is FOR, so ordering prospects by
+	// their real number hides nothing.
+	test("prospects on the same digit rank by their exact rating", () => {
+		const class2005: DataTableRow[] = [
+			{ key: 1, data: ["Bravo", 71, 20], coarseExempt: true },
+			{ key: 2, data: ["Alpha", 79, 19], coarseExempt: true },
+			{ key: 3, data: ["Charlie", 75, 20], coarseExempt: true },
+		];
+		assert.deepEqual(names(true, BY_OVR, class2005), [
+			"Alpha",
+			"Charlie",
+			"Bravo",
+		]);
+	});
+
+	// The exemption only exists because the mode is on. With it off nobody is
+	// coarsened, so there is nothing to fold back.
+	test("without the mode the exact numbers just sort", () => {
+		assert.deepEqual(names(false, BY_OVR, mixed), [
+			"Prospect 85",
+			"Prospect 78",
+			"Prospect 71",
+			"Real 8",
+			"Real 8 also",
+			"Real 7",
+		]);
+	});
+
+	// Age isn't a rating - it was never coarsened, so it sorts on its face value
+	// for prospect and veteran alike.
+	test("a non-rating column is untouched", () => {
+		assert.deepEqual(names(true, BY_AGE, mixed), [
+			"Real 8",
+			"Real 7",
+			"Real 8 also",
+			"Prospect 78",
+			"Prospect 85",
+			"Prospect 71",
+		]);
+	});
+});

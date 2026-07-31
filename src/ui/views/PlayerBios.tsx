@@ -15,6 +15,7 @@ import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { CountryFlag } from "../components/CountryFlag.tsx";
 import { useLocal } from "../util/local.ts";
+import { exemptFromCoarseRatings } from "../../common/coarsenRating.ts";
 
 const PlayerBios = ({ abbrev, players, season, stats }: View<"playerBios">) => {
 	useTitleBar({
@@ -27,9 +28,15 @@ const PlayerBios = ({ abbrev, players, season, stats }: View<"playerBios">) => {
 
 	const {
 		challengeNoRatings,
+		hideRatingsOnesDigitExceptProspects,
 		season: currentSeason,
 		userTid,
-	} = useLocal(["challengeNoRatings", "season", "userTid"]);
+	} = useLocal([
+		"challengeNoRatings",
+		"hideRatingsOnesDigitExceptProspects",
+		"season",
+		"userTid",
+	]);
 
 	const cols = getCols([
 		"Name",
@@ -64,6 +71,12 @@ const PlayerBios = ({ abbrev, players, season, stats }: View<"playerBios">) => {
 				season,
 				playoffs: "regularSeason",
 			},
+			// Same mix as Player Ratings: undrafted prospects keep their exact Ovr
+			// and Pot while everyone else shows a tens digit.
+			coarseExempt: exemptFromCoarseRatings(
+				p.tid,
+				hideRatingsOnesDigitExceptProspects,
+			),
 			data: [
 				wrappedPlayerNameLabels({
 					pid: p.pid,

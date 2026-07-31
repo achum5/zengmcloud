@@ -14,6 +14,7 @@ import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { bySport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
 import { PlayerImageLinkButton } from "../components/PlayerImageLinkButton.tsx";
+import { exemptFromCoarseRatings } from "../../common/coarsenRating.ts";
 
 const PlayerRatings = ({
 	abbrev,
@@ -32,9 +33,15 @@ const PlayerRatings = ({
 
 	const {
 		challengeNoRatings,
+		hideRatingsOnesDigitExceptProspects,
 		season: currentSeason,
 		userTid,
-	} = useLocal(["challengeNoRatings", "season", "userTid"]);
+	} = useLocal([
+		"challengeNoRatings",
+		"hideRatingsOnesDigitExceptProspects",
+		"season",
+		"userTid",
+	]);
 
 	const ovrsPotsColNames: string[] = [];
 	if (
@@ -106,6 +113,13 @@ const PlayerRatings = ({
 				season,
 				playoffs: "regularSeason",
 			},
+			// Undrafted prospects keep their exact ratings when the ones digit is
+			// hidden, so this table mixes 78s with 7s. Sorting needs to know which
+			// is which.
+			coarseExempt: exemptFromCoarseRatings(
+				p.tid,
+				hideRatingsOnesDigitExceptProspects,
+			),
 			data: [
 				{
 					...wrappedName,

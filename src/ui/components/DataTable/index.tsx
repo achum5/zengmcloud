@@ -111,6 +111,11 @@ export type DataTableRow = {
 		  }) => ClassValue);
 	metadata?: DataTableRowMetadata;
 	rowLabel?: ReactNode;
+	// In "hide ratings ones digit" mode, this row was spared the coarsening (the
+	// prospects exemption) so its rating cells still hold exact 0-100 numbers
+	// while the rest of the table holds tens digits. Sorting has to know - see
+	// processRows.
+	coarseExempt?: boolean;
 };
 
 export type StickyCols = 0 | 1 | 2 | 3;
