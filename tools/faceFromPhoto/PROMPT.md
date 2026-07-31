@@ -42,6 +42,10 @@ anything after it is free.
 
 ## Output shape
 
+Every value below is filler, there to show the SHAPE of each entry - which keys
+exist, and whether a slot takes an id, a number, a hex, or a boolean. Not one of
+them is a default or a suggestion. Read every slot off the photo.
+
 ```
 {
   "fatness": 0.42,
@@ -158,23 +162,23 @@ face narrows from cheekbones to chin.
 - Sloping down toward the outer end, a stern set: `eyebrow1`, `eyebrow12`,
   `eyebrow2`, `eyebrow11`
 
-**nose** — mostly a matter of how much is drawn. The lightly-drawn shapes are
-the workhorses here: they read as a real nose at the size this face is actually
-shown, and they leave the eyes, brows and jaw to carry the resemblance, which
-is where it actually lives. Start in the first two groups and only move down as
-the photo earns it.
+**nose** — mostly a matter of how much is drawn. Read it off the photo: how
+wide is the base, are the nostrils visible, is there a bridge line down the
+middle. There is no default here and no group to fall back on — these are five
+genuinely different noses and the photo says which one it is. The list below
+runs narrow to broad; that is the order of the trait, not an order of
+preference.
 
-- A soft squiggle across the bridge — the most natural-looking option on most
-  faces, and a good place to start: `nose1`, `nose7`
-- Just a small hint of a tip, for a neat or narrow nose: `small`, `nose10`,
+- A small hint of a tip, for a neat or narrow nose: `small`, `nose10`,
   `nose14`, `nose3`, `nose8`
+- A soft squiggle across the bridge, no hard edges: `nose1`, `nose7`
 - One clear side line, an angular or straight profile: `nose2`, `nose4`,
   `nose9`, `nose13`, `pinocchio`
-- A full outline with visible nostrils, for a genuinely broad nose with real
-  width at the base: `nose11`, `nose5`
-- Long, tall and unmistakably large — these fill the middle of the face and
-  become the first thing you see, so they fit only a player whose nose is the
-  first thing you see in the photo: `nose6`, `nose12`, `honker`
+- A full outline with visible nostrils, a broad nose with real width at the
+  base: `nose11`, `nose5`
+- Long and tall, drawn with a bridge line running down the middle: `nose6`,
+  `nose12`, `honker`. These fill the center of the face, so they belong to a
+  nose that is genuinely the largest feature on it
 
 **mouth** — pick the expression first; a neutral or lightly-closed mouth is
 almost always the right choice, since this face appears on every screen in the
@@ -304,10 +308,7 @@ If the scalp should read as cleanly shaved, stay at `0.35` or below.
 5. **Eyes, eyebrows, nose, mouth.** Higher-numbered ids are not "better", just
    different. Use the groups above: pick the group the photo puts you in, then
    any id inside it. Don't agonise between neighbours in the same group — they
-   barely differ, and the group is the part that carries the resemblance. Where
-   two groups both look plausible, the more lightly-drawn one is the better bet;
-   a feature drawn heavier than the photo warrants is the kind of error that
-   jumps out.
+   barely differ, and the group is the part that carries the resemblance.
 6. **Lines.** `smileLine` and `miscLine` are the age dial. Young player → both
    `none` or a small `smileLine`. 30s → `smileLine` around 1.0. Veteran →
    `smileLine` 1.5+ plus a `forehead*` line. `freckles1`/`freckles2` only if the
