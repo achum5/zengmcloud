@@ -93,29 +93,10 @@ const request = (key: string, pid: number, season: number | undefined) => {
 	}
 };
 
-export const updatePlayerFaceImage = (pid: number, imgURL: string) => {
-	const prefix = `${pid}:`;
-	const keys = new Set([...cache.keys(), ...subscribers.keys()]);
-
-	for (const key of keys) {
-		if (!key.startsWith(prefix)) {
-			continue;
-		}
-
-		const previous = cache.get(key);
-		cache.set(key, {
-			...(previous ?? {}),
-			face: undefined,
-			imgURL,
-		});
-		notify(key);
-	}
-};
-
-// The mirror of the above, for saving a cartoon face: the image URL goes away
-// (the worker deletes it too, since imgURL wins wherever a player is drawn) and
-// every cached season for this player picks up the new face right away, so the
-// row you just edited updates without a reload.
+// Saving a cartoon face: the image URL goes away (the worker clears it too,
+// since imgURL wins wherever a player is drawn) and every cached season for
+// this player picks up the new face right away, so the row you just edited
+// updates without a reload.
 export const updatePlayerFaceData = (pid: number, face: FaceConfig) => {
 	const prefix = `${pid}:`;
 	const keys = new Set([...cache.keys(), ...subscribers.keys()]);

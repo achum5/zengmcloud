@@ -5144,30 +5144,6 @@ const updatePlayerUntouchable = async ({
 	await toUI("realtimeUpdate", [["playerMovement"]]);
 };
 
-const updatePlayerImage = async ({
-	pid,
-	imgURL,
-}: {
-	pid: number;
-	imgURL: string;
-}) => {
-	const trimmedImgURL = imgURL.trim();
-	if (!trimmedImgURL) {
-		throw new Error("Enter an image URL.");
-	}
-
-	const p = await idb.getCopy.players({ pid }, "noCopyCache");
-	if (!p) {
-		throw new Error("Player not found.");
-	}
-
-	p.imgURL = trimmedImgURL;
-	await idb.cache.players.put(p);
-	await toUI("realtimeUpdate", [["playerMovement"]]);
-
-	return trimmedImgURL;
-};
-
 // Set a player's cartoon face from a faces.js config. Clears any image URL,
 // because imgURL wins over face everywhere it's drawn - keeping it would save
 // the face and change nothing on screen.
@@ -6782,7 +6758,6 @@ export default {
 		updateOptions,
 		updatePlayThroughInjuries,
 		updatePlayerFace,
-		updatePlayerImage,
 		updatePlayerUntouchable,
 		updatePlayerWatch,
 		updatePlayersWatch,
