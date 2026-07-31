@@ -1138,8 +1138,9 @@ describe("getAutoDayRecap", () => {
 		assert.ok(recap.startsWith("**"), recap);
 		// Names the day's top scorer (Kobe, 41).
 		assert.ok(recap.includes("Kobe Bryant"), recap);
-		// Weaves in the standings picture.
-		assert.ok(/Detroit Pistons|San Antonio Spurs/.test(recap), recap);
+		// Weaves in the standings picture. Nicknames, matching every other team
+		// reference in the piece.
+		assert.ok(/\bPistons\b|\bSpurs\b/.test(recap), recap);
 		// A couple of paragraphs of coverage.
 		assert.ok(recap.length > 200, recap);
 	});
@@ -1661,9 +1662,14 @@ describe("regressions from real games", () => {
 	});
 
 	test("team possessive reads right for a name not ending in s", () => {
+		// "Heat" doesn't end in s, so the possessive is "Heat's" - the bug this
+		// guards produced "the Heat' fifth in a row". Which streak phrasing comes
+		// out rotates (the pool is shared across every recap in a run), so assert
+		// the streak is reported at all, and that no phrasing anywhere in the
+		// recap renders the possessive as a bare apostrophe.
 		const recap = getAutoRecap(heatGame);
-		assert.ok(recap.includes("the Heat's fifth in a row"), recap);
-		assert.ok(!/Heat' /.test(recap), recap);
+		assert.ok(/in a row|straight|last \d/.test(recap), recap);
+		assert.ok(!/Heat'(?!s)/.test(recap), recap);
 	});
 
 	test("a shot-blocker's signature stat survives into the body", () => {
@@ -2669,6 +2675,267 @@ describe("the day wrap reads as prose, not a list", () => {
 				!/(^|\. )\d/.test(para.replaceAll("*", "")),
 				`sentence starts with a digit: ${para}`,
 			);
+		}
+	});
+});
+
+// Copy problems found by reading a full day of recaps side by side, which is
+// the only way most of these show up: each sentence is defensible alone and
+// wrong next to the one before it.
+describe("copy that only reads wrong in context", () => {
+	const withInjury = (
+		name: string,
+		type: string,
+		extra: Partial<RecapTeam> = {},
+	) =>
+		realisticTeam(
+			{
+				tid: 1,
+				region: "Indiana",
+				name: "Pacers",
+				abbrev: "IND",
+				pts: 106,
+				injuries: [{ name, type, gamesRemaining: 20 }],
+				...extra,
+			},
+			player({
+				name: "Kirk Hinrich",
+				pts: 28,
+				reb: 3,
+				ast: 7,
+				fg: 11,
+				fga: 18,
+			}),
+		);
+
+	test("an injury named mid-sentence is not capitalized", () => {
+		// The injury types come out of the DB capitalized ("Torn achilles
+		// tendon"). One phrasing put the injury first and pre-capped it, which was
+		// right only when that bit happened to open the sentence - the bits get
+		// joined with "; ", so it read "...; a Torn achilles tendon kept...".
+		for (let seed = 0; seed < 40; seed++) {
+			const recap = getAutoRecap(
+				game({
+					gid: seed,
+					teams: [
+						withInjury("Eddie House", "Torn achilles tendon"),
+						realisticTeam(
+							{
+								tid: 2,
+								region: "Atlanta",
+								name: "Hawks",
+								abbrev: "ATL",
+								pts: 99,
+								injuries: [
+									{
+										name: "Al Harrington",
+										type: "Strained hamstring",
+										gamesRemaining: 8,
+									},
+								],
+							},
+							player({ name: "Rashard Lewis", pts: 17, reb: 5, ast: 2 }),
+						),
+					],
+					winnerTid: 1,
+				}),
+			);
+			assert.ok(
+				!/[,a-z] (?:A|An) [A-Z][a-z]+ (?:achilles|hamstring)/.test(recap),
+				recap,
+			);
+			assert.ok(!/a Torn|a Strained/.test(recap), recap);
+		}
+	});
+
+	test("a scoring average is never left as a bare number", () => {
+		// "Kirk Hinrich came into the night averaging 16.4." - 16.4 what?
+		for (let seed = 0; seed < 40; seed++) {
+			const recap = getAutoRecap(
+				game({
+					gid: seed,
+					teams: [
+						realisticTeam(
+							{ tid: 1, name: "Pacers", abbrev: "IND", pts: 112 },
+							player({
+								name: "Kirk Hinrich",
+								pts: 34,
+								reb: 4,
+								ast: 6,
+								fg: 13,
+								fga: 20,
+								seasonAvg: avg({ pts: 16.4, reb: 3, ast: 5, gp: 50 }),
+							}),
+						),
+						realisticTeam(
+							{ tid: 2, name: "Hawks", abbrev: "ATL", pts: 99 },
+							player({ name: "Rashard Lewis", pts: 17, reb: 5 }),
+						),
+					],
+					winnerTid: 1,
+				}),
+			);
+			// The number must be followed by what it counts, not by a full stop.
+			// (?!\d) so the decimal point in "16.4" isn't read as the full stop.
+			assert.ok(!/averaging \d+(?:\.\d+)?\.(?!\d)/.test(recap), recap);
+			assert.ok(!/averaging \d+(?:\.\d+)? a game/.test(recap), recap);
+		}
+	});
+
+	test("a blowout win under the number is not a scare", () => {
+		// A 22.5-point favorite winning by 10 covered nothing, but it also never
+		// "had to sweat this one out" - it was a comfortable win and a bad beat.
+		for (let seed = 0; seed < 40; seed++) {
+			const recap = getAutoRecap(
+				game({
+					gid: seed,
+					teams: [
+						realisticTeam(
+							{ tid: 1, name: "Cavaliers", abbrev: "CLE", pts: 114 },
+							player({ name: "DerMarr Johnson", pts: 22, reb: 5, stl: 2 }),
+						),
+						realisticTeam(
+							{ tid: 2, name: "Magic", abbrev: "ORL", pts: 104 },
+							player({ name: "Richard Hamilton", pts: 18, reb: 5, ast: 5 }),
+						),
+					],
+					winnerTid: 1,
+					spread: { favTid: 1, points: 22.5 },
+				}),
+			);
+			assert.ok(!/sweat this one out/.test(recap), recap);
+		}
+	});
+
+	test("the loser's supporting man never outscores the man called their leader", () => {
+		// The losing side's featured player is chosen on his whole line, so the
+		// next name up can have more points. "Odom's 22 led the Grizzlies... Van
+		// Horn added 23 in defeat" is a contradiction in consecutive sentences.
+		for (let seed = 0; seed < 60; seed++) {
+			const recap = getAutoRecap(
+				game({
+					gid: seed,
+					teams: [
+						realisticTeam(
+							{ tid: 1, name: "Warriors", abbrev: "GSW", pts: 112 },
+							player({ name: "Gary Payton", pts: 25, reb: 4, ast: 14 }),
+						),
+						team({
+							tid: 2,
+							name: "Grizzlies",
+							abbrev: "MEM",
+							pts: 99,
+							players: [
+								// Leads on the all-round line, but not on points.
+								player({ name: "Lamar Odom", pts: 22, reb: 10, stl: 2 }),
+								player({ name: "Keith Van Horn", pts: 23, reb: 3 }),
+								player({ name: "Bench One", pts: 10, reb: 4 }),
+								player({ name: "Bench Two", pts: 8, reb: 3 }),
+							],
+						}),
+					],
+					winnerTid: 1,
+				}),
+			);
+			if (
+				/led the Grizzlies|paced the Grizzlies|fronted the Grizzlies|headed the Grizzlies|topped the Grizzlies/.test(
+					recap,
+				)
+			) {
+				assert.ok(!/Van Horn/.test(recap), recap);
+			}
+		}
+	});
+
+	test("a team total is not given twice in the same recap", () => {
+		// Paragraph 2 can say "piled up 29 assists" and paragraph 3 could then say
+		// "assisted on far more of their baskets, 29 to 18" - the same 29, two
+		// sentences apart. Same for the double-figures count.
+		for (let seed = 0; seed < 60; seed++) {
+			const recap = getAutoRecap(
+				game({
+					gid: seed,
+					teams: [
+						team({
+							tid: 1,
+							name: "Timberwolves",
+							abbrev: "MIN",
+							pts: 102,
+							players: [
+								player({ name: "Marquis Daniels", pts: 16, reb: 4, ast: 6 }),
+								player({ name: "Chris Andersen", pts: 17, reb: 6, ast: 5 }),
+								player({ name: "Andre Iguodala", pts: 18, reb: 10, ast: 6 }),
+								player({ name: "Wally World", pts: 14, reb: 3, ast: 5 }),
+								player({ name: "Fred Hoiberg", pts: 13, reb: 2, ast: 4 }),
+								player({ name: "Trenton Hassell", pts: 12, reb: 5, ast: 3 }),
+								player({ name: "Mark Madsen", pts: 12, reb: 4, ast: 2 }),
+							],
+						}),
+						team({
+							tid: 2,
+							name: "Bucks",
+							abbrev: "MIL",
+							pts: 78,
+							players: [
+								player({ name: "Mike Wilks", pts: 14, reb: 2, ast: 3 }),
+								player({ name: "Desmond Mason", pts: 12, reb: 4, ast: 2 }),
+								player({ name: "Joe Smith", pts: 9, reb: 6, ast: 1 }),
+								player({ name: "Dan Gadzuric", pts: 8, reb: 5, ast: 1 }),
+							],
+						}),
+					],
+					winnerTid: 1,
+				}),
+			);
+			// Only TEAM-total assist sentences count - a player's own line
+			// legitimately says "6 assists" alongside them. 31 is the winner's
+			// total for this fixture.
+			const assistSentences = recap
+				.split(/(?<=\.)\s+/)
+				.filter(
+					(sentence) =>
+						sentence.includes("31 assist") ||
+						/assisted on far more|out-assisted|moved the ball far better|found the open man/.test(
+							sentence,
+						),
+				);
+			assert.ok(assistSentences.length <= 1, recap);
+			const dblFig = recap
+				.split(/(?<=\.)\s+/)
+				.filter((sentence) => /double figures/.test(sentence));
+			assert.ok(dblFig.length <= 1, recap);
+		}
+	});
+
+	test("a game-winner headline is not followed by someone else's scoring line", () => {
+		// The headline is always the winning shot when there is one, so the body
+		// has to reach it immediately. Opening on the leading scorer made the
+		// headline look like it belonged to a different game.
+		for (let seed = 0; seed < 30; seed++) {
+			const recap = getAutoRecap(
+				game({
+					gid: seed,
+					teams: [
+						realisticTeam(
+							{ tid: 1, name: "Mavericks", abbrev: "DAL", pts: 100 },
+							player({ name: "Ray Allen", pts: 18, reb: 3, ast: 4 }),
+						),
+						realisticTeam(
+							{ tid: 2, name: "Knicks", abbrev: "NYK", pts: 99 },
+							player({ name: "Dion Glover", pts: 27, reb: 3, ast: 8 }),
+						),
+					],
+					winnerTid: 1,
+					clutchPlays: [
+						'<a href="#">Metta World Peace</a> made a game-winning three point play with 0.8 seconds remaining.',
+					],
+				}),
+			);
+			const body = recap.split("\n\n").slice(1).join(" ");
+			const shooterAt = body.indexOf("Metta World Peace");
+			const otherAt = body.indexOf("Ray Allen");
+			assert.ok(shooterAt >= 0, recap);
+			assert.ok(otherAt === -1 || shooterAt < otherAt, recap);
 		}
 	});
 });

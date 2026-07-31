@@ -856,13 +856,19 @@ type Headline = {
 	// The headline led with the LOSING team's best line ("Walker's 27 and 10 not
 	// enough..."), so the losing-side sentence must not print it again.
 	spentLoserStar?: boolean;
+	// The headline printed the star's FULL stat line, not just his name. The
+	// body's star sentence would then be the same numbers a few words later
+	// ("DerMarr Johnson goes for 22 points as..." / "DerMarr Johnson scored 22
+	// points."), so it's dropped instead.
+	spentLine?: boolean;
 };
 
 const h = (
 	text: string,
 	spentStar: boolean,
 	spentLoserStar = false,
-): Headline => ({ text, spentStar, spentLoserStar });
+	spentLine = false,
+): Headline => ({ text, spentStar, spentLoserStar, spentLine });
 
 const buildHeadline = (
 	game: RecapGame,
@@ -1064,7 +1070,15 @@ const buildHeadline = (
 		star.pts < 15 ||
 		(star.pts < 20 && shape.margin >= 15) ||
 		(shape.margin >= 18 && rng() < 0.5);
-	return h(pick(rng, useResult ? resultTemplates : starTemplates), !useResult);
+	const text = pick(rng, useResult ? resultTemplates : starTemplates);
+	// Only the "goes for <full stat phrase>" shape spends the whole line; the
+	// others name him or quote a single number the body doesn't repeat verbatim.
+	return h(
+		text,
+		!useResult,
+		false,
+		text.includes(` goes for ${statPhrase(star, 1)}`),
+	);
 };
 
 // --- Body sentence builders ----------------------------------------------------
@@ -1353,7 +1367,16 @@ const statNote = (
 	}
 	if (w.ast >= 28) {
 		add(
-			`${cap(theNick(shape.winner))} piled up ${w.ast} assists on the night.`,
+			pick(
+				rng,
+				[
+					`${cap(theNick(shape.winner))} piled up ${w.ast} assists on the night.`,
+					`${cap(theNick(shape.winner))} finished with ${w.ast} assists.`,
+					`${cap(theNick(shape.winner))} shared it, ${w.ast} assists on the night.`,
+					`${cap(theNick(shape.winner))} racked up ${w.ast} assists.`,
+				],
+				"teamAst",
+			),
 		);
 	}
 	// A hot start: the winner's first-quarter margin.
@@ -1690,16 +1713,27 @@ const stakesSentence = (
 	}
 
 	if (isUpset(game, shape) && game.spread) {
+		const dog = game.spread.points;
+		// A 3.5-point dog winning is a Tuesday. Reserve the language of a genuine
+		// shock for a number that earns it, and let the small ones be stated
+		// plainly rather than breathlessly.
+		const big = dog >= 7;
 		options.push(
 			pick(
 				rng,
-				[
-					`${cap(theNick(shape.winner))} entered ${game.spread.points}-point underdogs.`,
-					`${cap(theNick(shape.winner))} were given no chance, ${game.spread.points} points the wrong side of the line.`,
-					`The books had ${theNick(shape.winner)} ${game.spread.points} points short of this one.`,
-					`Nobody had ${theNick(shape.winner)} winning - they were ${game.spread.points}-point dogs.`,
-				],
-				"underdog",
+				big
+					? [
+							`${cap(theNick(shape.winner))} were given no chance, ${dog} points the wrong side of the line.`,
+							`Nobody had ${theNick(shape.winner)} winning - they were ${dog}-point dogs.`,
+							`${cap(theNick(shape.winner))} entered ${dog}-point underdogs.`,
+							`The books had ${theNick(shape.winner)} ${dog} points short of this one.`,
+						]
+					: [
+							`${cap(theNick(shape.winner))} entered ${dog}-point underdogs.`,
+							`${cap(theNick(shape.winner))} were getting ${dog} and did not need them.`,
+							`The line had ${theNick(shape.winner)} ${dog} points short.`,
+						],
+				big ? "underdogBig" : "underdogSmall",
 			),
 		);
 	}
@@ -1780,7 +1814,10 @@ const injurySentence = (
 						`${theNick(t)} were without ${out.name} (${lowerInjury(out.type)})`,
 						`${out.name} sat out for ${theNick(t)} with ${aWord(lowerInjury(out.type))}`,
 						`${theNick(t)} were missing ${out.name} (${lowerInjury(out.type)})`,
-						`${aWord(cap(lowerInjury(out.type)))} kept ${out.name} out for ${theNick(t)}`,
+						// NOT pre-capitalized: these bits get joined with "; " and only
+						// the whole string is capped, so a capital here reads as "a
+						// Torn achilles tendon kept..." in the middle of a sentence.
+						`${aWord(lowerInjury(out.type))} kept ${out.name} out for ${theNick(t)}`,
 					],
 					"injuryOut",
 				),
@@ -1826,10 +1863,10 @@ const vsAverageNote = (
 		return pick(
 			rng,
 			[
-				`${star.name} came into the night averaging ${avg.pts.toFixed(1)}.`,
+				`${star.name} came into the night averaging ${avg.pts.toFixed(1)} points a game.`,
 				`That is ${Math.round(over)} clear of ${poss(star.name)} ${avg.pts.toFixed(1)} season average.`,
-				`${star.name} had been averaging ${avg.pts.toFixed(1)} a game to this point.`,
-				`It was a long way past the ${avg.pts.toFixed(1)} ${star.name} had been putting up.`,
+				`${star.name} had been averaging ${avg.pts.toFixed(1)} points a game to this point.`,
+				`It was a long way past the ${avg.pts.toFixed(1)} a night ${star.name} had been putting up.`,
 			],
 			"vsAvgHigh",
 		);
@@ -1839,8 +1876,8 @@ const vsAverageNote = (
 		return pick(
 			rng,
 			[
-				`It was a quiet night by ${poss(star.name)} standards - he came in averaging ${avg.pts.toFixed(1)}.`,
-				`The ${avg.pts.toFixed(1)} ${star.name} averages never showed up.`,
+				`It was a quiet night by ${poss(star.name)} standards - he came in averaging ${avg.pts.toFixed(1)} points a game.`,
+				`The ${avg.pts.toFixed(1)} a night ${star.name} averages never showed up.`,
 			],
 			"vsAvgLow",
 		);
@@ -2067,23 +2104,40 @@ const loserSupportNote = (
 	// just finished describing.
 	said: Set<string>,
 ): string | undefined => {
+	// The losing side's man was named on his overall line, not purely on points,
+	// so the next-best scorer can have MORE points than him. "Odom's 22 led the
+	// Grizzlies... Van Horn added 23 in defeat" is a flat contradiction, so a
+	// candidate who outscored the man already called the leader is skipped.
+	const namedPts = shape.loser.players
+		.filter((p) => said.has(p.name))
+		.map((p) => p.pts);
+	const ceiling = namedPts.length > 0 ? Math.max(...namedPts) : Infinity;
+
 	const second = [...shape.loser.players]
 		.sort((a, b) => b.pts - a.pts)
 		.find(
 			(p) =>
-				!said.has(p.name) && (p.pts >= 16 || doubleCategories(p).length >= 2),
+				!said.has(p.name) &&
+				p.pts <= ceiling &&
+				(p.pts >= 16 || doubleCategories(p).length >= 2),
 		);
 	if (!second) {
 		return undefined;
 	}
 	said.add(second.name);
+	// "in defeat" on its own turned up in most games on a slate, so the tail
+	// rotates too.
 	return `${second.name} ${pick(rng, [
 		"also had",
 		"finished with",
 		"put up",
 		"was good for",
 		"added",
-	])} ${statPhrase(second, 1)} in defeat.`;
+	])} ${statPhrase(second, 1)} ${pick(
+		rng,
+		["in defeat", "in the loss", "in a losing cause", "for the losing side"],
+		"loserTail",
+	)}.`;
 };
 
 // Whether the favorite covered. The spread is already known to the recap and
@@ -2113,11 +2167,25 @@ const spreadNote = (
 		);
 	}
 	if (!covered && s.points >= 7) {
+		// "Had to sweat this one out" needs the game to have actually been in
+		// doubt. A 22.5-point favorite winning by 10 never sweated anything - it
+		// just never got near the number.
+		if (shape.margin <= 5) {
+			return pick(
+				rng,
+				[
+					`The ${s.points}-point favorites had to sweat this one out.`,
+					`${cap(theNick(shape.winner))} were favored by ${s.points} and got out with ${shape.margin}.`,
+				],
+				"spreadScare",
+			);
+		}
 		return pick(
 			rng,
 			[
 				`${cap(theNick(shape.winner))} were ${s.points}-point favorites and won by ${shape.margin}.`,
-				`The ${s.points}-point favorites had to sweat this one out.`,
+				`A ${shape.margin}-point win was nowhere near the ${s.points} ${theNick(shape.winner)} were giving.`,
+				`${cap(theNick(shape.winner))} won comfortably enough but fell ${s.points - shape.margin} short of the number.`,
 			],
 			"spreadNarrow",
 		);
@@ -2138,10 +2206,20 @@ const minutesNote = (shape: Shape, said: Set<string>): string | undefined => {
 };
 
 // How the two benches / rotations compared in depth terms.
-const balanceNote = (shape: Shape, rng: () => number): string | undefined => {
+const balanceNote = (
+	shape: Shape,
+	rng: () => number,
+	// Paragraph 2 has its own "N players in double figures" and "piled up N
+	// assists" sentences. Restating either as a comparison two sentences later
+	// is the same number twice, and it reads as though the writer forgot.
+	told: { dblFig: boolean; assists: boolean } = {
+		dblFig: false,
+		assists: false,
+	},
+): string | undefined => {
 	const w = teamStats(shape.winner);
 	const l = teamStats(shape.loser);
-	if (w.dblFig >= 5 && w.dblFig - l.dblFig >= 3) {
+	if (!told.dblFig && w.dblFig >= 5 && w.dblFig - l.dblFig >= 3) {
 		return pick(
 			rng,
 			[
@@ -2153,8 +2231,17 @@ const balanceNote = (shape: Shape, rng: () => number): string | undefined => {
 			"balance",
 		);
 	}
-	if (w.ast >= 26 && w.ast - l.ast >= 10) {
-		return `${cap(theNick(shape.winner))} assisted on far more of their baskets, ${w.ast} to ${l.ast}.`;
+	if (!told.assists && w.ast >= 26 && w.ast - l.ast >= 10) {
+		return pick(
+			rng,
+			[
+				`${cap(theNick(shape.winner))} assisted on far more of their baskets, ${w.ast} to ${l.ast}.`,
+				`${cap(theNick(shape.winner))} moved the ball far better, ${w.ast} assists to ${l.ast}.`,
+				`The ball found the open man all night for ${theNick(shape.winner)} - ${w.ast} assists to ${l.ast}.`,
+				`${cap(theNick(shape.winner))} out-assisted ${theNick(shape.loser)} ${w.ast} to ${l.ast}.`,
+			],
+			"balanceAst",
+		);
 	}
 	return undefined;
 };
@@ -2252,20 +2339,45 @@ export const getAutoRecap = (game: RecapGame): string => {
 		// again with the verbs swapped.
 		const opener = resultLead(game, shape, rng);
 		flowCovered = opener.covers;
-		para1.push(opener.text, leadSentence(game, shape, star, rng, true));
+		para1.push(opener.text);
+		// The headline may already have printed his whole line ("DerMarr Johnson
+		// goes for 22 points as..."), in which case repeating it as the next
+		// sentence is the same numbers twice. Keep the sentence whenever it
+		// brings anything new - a shooting split, a second category - and drop it
+		// only when every figure in it was in the headline.
+		const starSentence = leadSentence(game, shape, star, rng, true);
+		const figures = (t: string) => t.match(/\d+(?:\.\d+)?/g) ?? [];
+		const inHeadline = new Set(figures(headline.text));
+		if (
+			!headline.spentLine ||
+			figures(starSentence).some((n) => !inHeadline.has(n))
+		) {
+			para1.push(starSentence);
+		}
 		if (shot && !shot.tying) {
 			para1.push(clutchSentence(shot));
 		}
+	} else if (shot && !shot.tying && shot.name !== star.name) {
+		// The headline is the winning shot (buildHeadline always leads with one
+		// when there is one), so the body has to get there immediately. Opening
+		// on someone else's scoring line and reaching the shot a sentence later
+		// made the headline look like it belonged to a different story: "Metta
+		// World Peace's three-point play sinks the Knicks / Ray Allen scored 18
+		// points as...". Result, then the shot, then the leading scorer.
+		const opener = resultLead(game, shape, rng);
+		flowCovered = opener.covers;
+		para1.push(
+			opener.text,
+			clutchSentence(shot),
+			leadSentence(game, shape, star, rng, true),
+		);
 	} else {
 		let lead = leadSentence(game, shape, star, rng);
-		const shooterIsStar = shot && !shot.tying && shot.name === star.name;
+		const shooterIsStar = shot && !shot.tying;
 		if (shooterIsStar) {
 			lead = `${lead.slice(0, -1)}, winning it with ${clutchWhat(shot)}.`;
 		}
 		para1.push(lead);
-		if (shot && !shot.tying && !shooterIsStar) {
-			para1.push(clutchSentence(shot));
-		}
 	}
 
 	// The result lead already carried the comeback / wire-to-wire / overtime /
@@ -2347,6 +2459,11 @@ export const getAutoRecap = (game: RecapGame): string => {
 		/in a row|straight game|ran their streak|winning streak/.test(
 			alreadyWritten,
 		);
+	// Same idea for the two team totals paragraph 2 can hand out on its own.
+	const toldAlready = {
+		dblFig: /in double figures|double figures/.test(alreadyWritten),
+		assists: /assists?\b/.test(alreadyWritten),
+	};
 
 	// Ordered, not shuffled: the man who decided the game comes before how the
 	// two sides shot it, which comes before the bookkeeping. Within each tier the
@@ -2363,7 +2480,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 		...shuffle(rng, [
 			threeNote(shape, rng),
 			freeThrowNote(shape, rng),
-			balanceNote(shape, rng),
+			balanceNote(shape, rng, toldAlready),
 		]),
 		loserSupportNote(shape, rng, said),
 		...shuffle(rng, [
@@ -2382,6 +2499,13 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// part of that paragraph, so a repeated name collapses to a pronoun.
 	if (para3.length === 1 && para2.length > 0) {
 		para2.push(para3.pop()!);
+	}
+	// Same at the top. A lede of one bare result sentence happens when the
+	// headline already spent the star's line and the game had no comeback or
+	// decisive run to describe; pull the next beat up rather than leave the
+	// opening paragraph a single clause.
+	if (para1.length === 1 && para2.length > 1) {
+		para1.push(para2.shift()!);
 	}
 
 	const otherNick = nick(shape.loser);
@@ -2527,11 +2651,14 @@ const conferencePictureSentence = (
 		if (leader.won + leader.lost < 5) {
 			continue;
 		}
-		const who = `${leader.region} ${leader.name} (${leader.won}-${leader.lost})`;
+		// Nicknames, like every other team reference in the piece. "Cleveland
+		// Cavaliers (47-4) lead the Eastern Conference" in a paragraph that has
+		// said "the Cavaliers" four times reads like it was pasted in.
+		const who = `the ${leader.name} (${leader.won}-${leader.lost})`;
 		// An unbeaten leader is the story itself, not a "narrow lead".
 		if (leader.lost === 0) {
 			bits.push(
-				`the ${leader.region} ${leader.name} are still perfect at ${leader.won}-0 atop the ${conf.name}`,
+				`the ${leader.name} are still perfect at ${leader.won}-0 atop the ${conf.name}`,
 			);
 		} else if (second && second.gb >= 1) {
 			bits.push(`${who} lead the ${conf.name} by ${gbText(second.gb)}`);
@@ -3356,7 +3483,11 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	const para2: string[] = [];
 	const others = ranked.slice(1);
 	const notableBlurbs: string[] = [];
-	const upsetVerbs = ["stunned", "upset", "shocked", "toppled"];
+	// "Stunned" and "shocked" belong to a real number. A 3.5-point dog winning
+	// gets the flat verbs, so the strong ones still mean something when the
+	// 13.5-point dog turns up two clauses later.
+	const bigUpsetVerbs = ["stunned", "shocked", "toppled", "upset"];
+	const smallUpsetVerbs = ["upset", "got past", "took down", "knocked off"];
 	let upsetIdx = 0;
 	for (const g of others) {
 		if (g.allStar || coveredGames.has(g)) {
@@ -3366,8 +3497,12 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 		const shot2 = clutchShot(g);
 		let blurb: string | undefined;
 		if (isUpset(g, shape)) {
-			const verb = upsetVerbs[upsetIdx % upsetVerbs.length]!;
 			const spreadPts = g.spread?.points;
+			const verbs =
+				spreadPts !== undefined && spreadPts >= 7
+					? bigUpsetVerbs
+					: smallUpsetVerbs;
+			const verb = verbs[upsetIdx % verbs.length]!;
 			blurb =
 				upsetIdx === 0 && spreadPts !== undefined && spreadPts >= 5
 					? `${theNick(shape.winner)} ${verb} ${theNick(
