@@ -4,7 +4,7 @@ Paste everything below the line into a **vision-capable chat AI** (Claude, ChatG
 Gemini) along with one clear, front-facing photo of the player. It replies with a
 JSON object you paste straight into **Tools → Customize Player → Face** in ZenGM.
 
-Not an image *generator* — Midjourney/DALL-E/Stable Diffusion can't read a photo
+Not an image _generator_ — Midjourney/DALL-E/Stable Diffusion can't read a photo
 and emit structured JSON. It has to be a chat model that accepts image input.
 
 One photo per message gives the best result. If you send several at once, number
@@ -158,14 +158,23 @@ face narrows from cheekbones to chin.
 - Sloping down toward the outer end, a stern set: `eyebrow1`, `eyebrow12`,
   `eyebrow2`, `eyebrow11`
 
-**nose** — mostly a matter of how much is drawn.
+**nose** — mostly a matter of how much is drawn. The lightly-drawn shapes are
+the workhorses here: they read as a real nose at the size this face is actually
+shown, and they leave the eyes, brows and jaw to carry the resemblance, which
+is where it actually lives. Start in the first two groups and only move down as
+the photo earns it.
 
-- Just a small hint of a tip: `small`, `nose10`, `nose14`, `nose3`, `nose8`
-- A soft squiggle across the bridge: `nose1`, `nose7`
-- One clear side line, an angular profile: `nose2`, `nose4`, `nose9`, `nose13`,
-  `pinocchio`
-- Full outline with visible nostrils, a broad or prominent nose: `nose11`,
-  `nose5`, `nose6`, `nose12`, `honker`
+- A soft squiggle across the bridge — the most natural-looking option on most
+  faces, and a good place to start: `nose1`, `nose7`
+- Just a small hint of a tip, for a neat or narrow nose: `small`, `nose10`,
+  `nose14`, `nose3`, `nose8`
+- One clear side line, an angular or straight profile: `nose2`, `nose4`,
+  `nose9`, `nose13`, `pinocchio`
+- A full outline with visible nostrils, for a genuinely broad nose with real
+  width at the base: `nose11`, `nose5`
+- Long, tall and unmistakably large — these fill the middle of the face and
+  become the first thing you see, so they fit only a player whose nose is the
+  first thing you see in the photo: `nose6`, `nose12`, `honker`
 
 **mouth** — pick the expression first; a neutral or lightly-closed mouth is
 almost always the right choice, since this face appears on every screen in the
@@ -180,9 +189,17 @@ game and a big grin wears badly.
 
 **hair** — match length and texture before you match a style name.
 
-- Bald: `bald`, `short-bald` (pair with a `head.shave` alpha; see below)
-- Buzzed and faded: `crop`, `crop-fade`, `crop-fade2`, `short-fade`,
-  `short-fade-2`, `tall-fade`, `blowoutFade`, `fauxhawk-fade`
+- Bald: `bald` — a bare scalp, whether shaved or naturally so. This is the
+  right id for essentially every bald player; pair it with a `head.shave` alpha
+  (see below) and the shadow does the rest
+- Buzzed, cropped and faded — where most short-haired players land, including
+  anyone whose hairline is high, thinning or edged up but still has hair across
+  the top: `crop`, `crop-fade`, `crop-fade2`, `short-fade`, `short-fade-2`,
+  `tall-fade`, `blowoutFade`, `fauxhawk-fade`
+- `short-bald` is a horseshoe: a bare crown with hair only around the sides and
+  back, drawn hard and unmistakably. It is a specific look rather than a
+  general "less hair" option, so reach for it only when the photo shows exactly
+  that. Anything softer than a bare crown belongs in the buzzed group above
 - Short and straight: `short`, `short2`, `short3`, `parted`, `middle-part`,
   `shortBangs`, `hair`, `messy-short`
 - Afro and high-top: `afro`, `afro2`, `high`, `juice`
@@ -197,15 +214,15 @@ game and a big grin wears badly.
 
 Clamp to these ranges. Round to two decimals.
 
-| field | range | meaning |
-|---|---|---|
-| `fatness` | 0 – 1 | face/jaw width. Lean guard ≈ 0.15, average ≈ 0.4, heavy big man ≈ 0.8 |
-| `body.size` | 0.8 – 1.05 | shoulder width |
-| `ear.size` | 0.5 – 1.5 | 1.0 is normal, 1.3+ for noticeably big ears |
-| `nose.size` | 0.5 – 1.25 | |
-| `smileLine.size` | 0.25 – 2.25 | depth of the fold; older faces higher |
-| `eye.angle` | -10 – 15 | integer. Negative = outer corner droops down |
-| `eyebrow.angle` | -15 – 20 | integer. Positive = raised/arched outer end |
+| field            | range       | meaning                                                               |
+| ---------------- | ----------- | --------------------------------------------------------------------- |
+| `fatness`        | 0 – 1       | face/jaw width. Lean guard ≈ 0.15, average ≈ 0.4, heavy big man ≈ 0.8 |
+| `body.size`      | 0.8 – 1.05  | shoulder width                                                        |
+| `ear.size`       | 0.5 – 1.5   | 1.0 is normal, 1.3+ for noticeably big ears                           |
+| `nose.size`      | 0.5 – 1.25  |                                                                       |
+| `smileLine.size` | 0.25 – 2.25 | depth of the fold; older faces higher                                 |
+| `eye.angle`      | -10 – 15    | integer. Negative = outer corner droops down                          |
+| `eyebrow.angle`  | -15 – 20    | integer. Positive = raised/arched outer end                           |
 
 `flip` (on hair, mouth, nose) is a plain boolean that mirrors that piece — pick
 whichever matches the asymmetry you see, `false` if it looks symmetric.
@@ -240,13 +257,13 @@ slot.** It is an `rgba(0,0,0,A)` string that shades the beard area of the face �
 jaw, chin, upper lip, cheeks — and, on a bald or closely-cropped head, the scalp
 along with it. It works whether or not the player has hair.
 
-| alpha | reads as |
-|---|---|
-| `rgba(0,0,0,0)` | clean shaven |
-| `rgba(0,0,0,0.1)` – `rgba(0,0,0,0.2)` | faint shadow, a day's growth |
-| `rgba(0,0,0,0.25)` – `rgba(0,0,0,0.4)` | a clear five o'clock shadow |
-| `rgba(0,0,0,0.5)` – `rgba(0,0,0,0.65)` | heavy stubble, a very short beard |
-| above `0.7` | avoid — it goes to a near-solid black mask |
+| alpha                                  | reads as                                   |
+| -------------------------------------- | ------------------------------------------ |
+| `rgba(0,0,0,0)`                        | clean shaven                               |
+| `rgba(0,0,0,0.1)` – `rgba(0,0,0,0.2)`  | faint shadow, a day's growth               |
+| `rgba(0,0,0,0.25)` – `rgba(0,0,0,0.4)` | a clear five o'clock shadow                |
+| `rgba(0,0,0,0.5)` – `rgba(0,0,0,0.65)` | heavy stubble, a very short beard          |
+| above `0.7`                            | avoid — it goes to a near-solid black mask |
 
 **`facialHair` is for GROWN hair with a defined shape and a hard edge** — a full
 beard, a goatee, a chin strap, sideburns, a distinct mustache. It is NOT for
@@ -287,7 +304,10 @@ If the scalp should read as cleanly shaved, stay at `0.35` or below.
 5. **Eyes, eyebrows, nose, mouth.** Higher-numbered ids are not "better", just
    different. Use the groups above: pick the group the photo puts you in, then
    any id inside it. Don't agonise between neighbours in the same group — they
-   barely differ, and the group is the part that carries the resemblance.
+   barely differ, and the group is the part that carries the resemblance. Where
+   two groups both look plausible, the more lightly-drawn one is the better bet;
+   a feature drawn heavier than the photo warrants is the kind of error that
+   jumps out.
 6. **Lines.** `smileLine` and `miscLine` are the age dial. Young player → both
    `none` or a small `smileLine`. 30s → `smileLine` around 1.0. Veteran →
    `smileLine` 1.5+ plus a `forehead*` line. `freckles1`/`freckles2` only if the
