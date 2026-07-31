@@ -10,6 +10,10 @@ and emit structured JSON. It has to be a chat model that accepts image input.
 One photo per message gives the best result. If you send several at once, number
 them and ask for one JSON object per photo.
 
+The reply is the JSON object followed by a short `Notes:` block flagging
+anything it had to guess at. Copy only the JSON into the game — the notes are
+there so you know which slots to double-check, not for pasting.
+
 If ZenGM says **Invalid JSON**, it's almost always curly quotes (`“` `”` instead of
 `"`) — some chat apps and phone keyboards swap them in on copy. Replace every
 curly quote with a straight one and it'll paste fine.
@@ -20,11 +24,21 @@ You are converting a photograph of a person into a **faces.js** `FaceConfig`
 object (faces.js v5, the cartoon-avatar library used by ZenGM / Basketball GM).
 
 Look at the attached photo and pick the option in each slot that best matches the
-real person. Output **only** a single JSON object — no markdown fence, no prose,
-no comments, no trailing commas. Every key listed below must be present.
+real person.
+
+**Output the JSON object first, with nothing before it** — no preamble, no
+markdown fence. Inside the object: no comments, no trailing commas, and every
+key listed below present.
 
 Quote every key and string with a plain ASCII double quote (`"`, U+0022). Curly
 quotes (`“` `”`) are not valid JSON and the game rejects the whole object.
+
+**After the JSON, add a short `Notes:` block** — up to three one-line bullets,
+only for calls you are genuinely unsure about and where knowing would let me fix
+it myself (bald vs. buzzed, stubble vs. a shaped goatee, a skin tone you had to
+judge through bad lighting). Skip it entirely when nothing is in doubt; don't
+narrate choices you're confident in. The game only ever reads the JSON, so
+anything after it is free.
 
 ## Output shape
 
@@ -105,6 +119,80 @@ Use these EXACT strings. Anything not on the list renders as a blank slot.
 Do NOT use any id beginning with `female` unless the subject is a woman; those
 exist only in eye, eyebrow, hair, hairBg and head.
 
+## What the shapes actually look like
+
+The names above say nothing about the drawings, so here is what each group of
+ids reads as. Pick the GROUP from the photo first, then any id inside it — the
+options within a group differ by small amounts and are close to interchangeable.
+Where a group is ordered, it runs from least to most of the trait.
+
+**head** — they all share the same outline width; what differs is how much the
+face narrows from cheekbones to chin.
+
+- Tapered, chin clearly narrower than the cheeks (a V-shaped face): `head2`,
+  `head1`, `head5`, `head14`, `head11`
+- Balanced oval, a mild taper: `head4`, `head7`, `head3`, `head9`, `head10`,
+  `head8`
+- Square and blocky, jaw nearly as wide as the cheekbones: `head6`, `head12`,
+  `head13`, `head15`, `head16`, `head18`, `head17`
+
+**eye**
+
+- Large and wide open, lots of white: `eye1`, `eye15`, `eye8`, `eye3`, `eye2`,
+  `eye4`, `eye12`
+- Ordinary almond, a neutral default: `eye10`, `eye13`, `eye6`, `eye9`
+- Narrow, hooded or heavy-lidded, sleepy: `eye16`, `eye11`, `eye19`, `eye5`,
+  `eye7`
+- Angled and squinting, an intense or stern look: `eye17`, `eye18`, `eye14`
+
+**eyebrow**
+
+- Thick and heavy: `eyebrow8`, `eyebrow14`, `eyebrow7`, `eyebrow1`, `eyebrow10`,
+  `eyebrow6`
+- Medium: `eyebrow15`, `eyebrow5`, `eyebrow9`, `eyebrow16`, `eyebrow18`,
+  `eyebrow20`, `eyebrow12`
+- Thin and fine: `eyebrow3`, `eyebrow13`, `eyebrow11`, `eyebrow19`, `eyebrow2`,
+  `eyebrow17`
+- Flat, almost no arch: `eyebrow19`, `eyebrow6`, `eyebrow13`, `eyebrow3`
+- Clearly arched or peaked: `eyebrow5`, `eyebrow9`, `eyebrow4`, `eyebrow17`
+- Sloping down toward the outer end, a stern set: `eyebrow1`, `eyebrow12`,
+  `eyebrow2`, `eyebrow11`
+
+**nose** — mostly a matter of how much is drawn.
+
+- Just a small hint of a tip: `small`, `nose10`, `nose14`, `nose3`, `nose8`
+- A soft squiggle across the bridge: `nose1`, `nose7`
+- One clear side line, an angular profile: `nose2`, `nose4`, `nose9`, `nose13`,
+  `pinocchio`
+- Full outline with visible nostrils, a broad or prominent nose: `nose11`,
+  `nose5`, `nose6`, `nose12`, `honker`
+
+**mouth** — pick the expression first; a neutral or lightly-closed mouth is
+almost always the right choice, since this face appears on every screen in the
+game and a big grin wears badly.
+
+- Closed and neutral: `straight`, `closed`, `mouth5`, `mouth6`, `smile-closed`
+  (`smile-closed` is a slight closed-mouth smile — the safe default for a
+  head shot where the subject is smiling politely)
+- Slightly open, relaxed: `mouth`, `mouth2`, `mouth3`, `mouth4`
+- Open smile showing teeth: `smile`, `smile3`, `mouth7`, `mouth8`
+- Big or unusual expressions, use sparingly: `smile2`, `smile4`, `angry`, `side`
+
+**hair** — match length and texture before you match a style name.
+
+- Bald: `bald`, `short-bald` (pair with a `head.shave` alpha; see below)
+- Buzzed and faded: `crop`, `crop-fade`, `crop-fade2`, `short-fade`,
+  `short-fade-2`, `tall-fade`, `blowoutFade`, `fauxhawk-fade`
+- Short and straight: `short`, `short2`, `short3`, `parted`, `middle-part`,
+  `shortBangs`, `hair`, `messy-short`
+- Afro and high-top: `afro`, `afro2`, `high`, `juice`
+- Braids and locs: `cornrows`, `dreads`
+- Curly: `curly`, `curly2`, `curly3`, `curlyFade1`, `curlyFade2`
+- Spiked or styled up: `spike`, `spike2`, `spike3`, `spike4`, `faux-hawk`
+- Long or shaggy: `longHair`, `shaggy1`, `shaggy2`, `emo`, `messy` — and ONLY
+  for these set `hairBg` to `longHair` or `shaggy`; everything above keeps
+  `hairBg: none`
+
 ## Allowed numbers
 
 Clamp to these ranges. Round to two decimals.
@@ -121,6 +209,12 @@ Clamp to these ranges. Round to two decimals.
 
 `flip` (on hair, mouth, nose) is a plain boolean that mirrors that piece — pick
 whichever matches the asymmetry you see, `false` if it looks symmetric.
+
+Most photos are head-and-shoulders crops, which say nothing about shoulder width
+and little about true ear size. **Default `body.size` and `ear.size` to `1`** and
+only move them when the photo actually shows otherwise — a visibly broad or
+narrow frame, ears that clearly stick out. A guess here costs more than the
+default does.
 
 ## Colors
 
@@ -179,14 +273,7 @@ If the scalp should read as cleanly shaved, stay at `0.35` or below.
 1. **Skin and hair color first.** They dominate the resemblance more than any
    shape slot. Judge them from an evenly-lit part of the face (cheek, forehead),
    not a shadowed jaw or a blown-out highlight.
-2. **Hair.** Match length and texture before style name. Bald → `bald` or
-   `short-bald` (+ a shave alpha). Buzzed/faded → `crop`, `crop-fade`,
-   `short-fade`, `tall-fade`, `blowoutFade`. Afro → `afro`, `afro2`, `high`.
-   Braids/locs → `cornrows`, `dreads`, `juice`. Curly → `curly`, `curly2`,
-   `curly3`, `curlyFade1`, `curlyFade2`. Straight short → `short`, `short2`,
-   `short3`, `parted`, `middle-part`. Long/shoulder-length → `longHair`,
-   `shaggy1`, `shaggy2` — and only then set `hairBg` to `longHair` or `shaggy`.
-   Everything else keeps `hairBg: none`.
+2. **Hair.** Length and texture before style name — see the hair groups above.
 3. **Facial hair — check for stubble FIRST.** If it's a shadow rather than grown
    hair, that's `head.shave` and `facialHair: none`; see the section above. Only
    once you've ruled that out: full beard → `beard1`–`beard6`. Chin-only → a
@@ -198,9 +285,9 @@ If the scalp should read as cleanly shaved, stay at `0.35` or below.
 4. **Head shape** carries the face outline — round, long, square, narrow. Set
    `fatness` alongside it; the two together do most of the silhouette.
 5. **Eyes, eyebrows, nose, mouth.** Higher-numbered ids are not "better", just
-   different — pick on shape (wide/narrow, thick/thin, arched/flat, hooked/flat/
-   broad). Set the mouth to a neutral or lightly-smiling id unless the photo has
-   a strong expression; a big grin looks wrong on every other screen in the game.
+   different. Use the groups above: pick the group the photo puts you in, then
+   any id inside it. Don't agonise between neighbours in the same group — they
+   barely differ, and the group is the part that carries the resemblance.
 6. **Lines.** `smileLine` and `miscLine` are the age dial. Young player → both
    `none` or a small `smileLine`. 30s → `smileLine` around 1.0. Veteran →
    `smileLine` 1.5+ plus a `forehead*` line. `freckles1`/`freckles2` only if the
@@ -210,4 +297,22 @@ If the scalp should read as cleanly shaved, stay at `0.35` or below.
    unless you can see one.
 8. `jersey` — use `jersey` unless told otherwise; ZenGM recolors it.
 
-Return the JSON object and nothing else.
+## When the photo won't support a confident call
+
+Small, dark, blurry, side-on or heavily-shadowed photos are common. Don't stall
+and don't invent detail — a wrong specific is worse than a right generic,
+because I can see and correct a generic.
+
+- Pick the **middle of the group**, not an extreme, whenever you're unsure which
+  group applies. A neutral face that's slightly wrong everywhere reads better
+  than one with a hooked nose and squinting eyes it doesn't have.
+- Where a slot is genuinely unreadable, use the plain default: `eyeLine: line1`,
+  `miscLine: none`, `glasses: none`, `accessories: none`, `ear.size: 1`,
+  `body.size: 1`, `flip: false`.
+- **Never** guess an accessory, glasses, or facial hair you cannot actually see.
+  Adding one that isn't there is the most visible kind of error.
+- Get skin tone, hair color, hair length and the stubble level right even on a
+  bad photo — those four carry most of the resemblance and are the most
+  recoverable from poor image quality.
+- Then say which calls were shaky in the `Notes:` block. That is exactly what it
+  is for.
