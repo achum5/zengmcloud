@@ -1,6 +1,6 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import { resetCache, resetG } from "../../../test/helpers.ts";
-import { player } from "../index.ts";
+import { player, team } from "../index.ts";
 import { g, helpers, local } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import {
@@ -15,6 +15,7 @@ import {
 	phaseRedirectComponents,
 	dropStrandedScheduleRows,
 	findStrandedScheduleRows,
+	regressionReason,
 	sweepPhantomScheduleRows,
 } from "./changeset.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
@@ -1316,6 +1317,214 @@ describe("sync changeset", () => {
 			const stranded = await findStrandedScheduleRows();
 			assert.strictEqual(stranded.maxPlayedDay, undefined);
 			assert.strictEqual(stranded.gids.length, 0);
+		});
+	});
+	// The backstop for the whole class of ordering bugs.
+	//
+	// Applying changesets in the order they were authored is what makes
+	// record-level last-write-wins correct, and getting it wrong has produced the
+	// same failure three separate ways now. Each was fixed, but the cost when one
+	// slips through is silent corruption found days later - a phase snapping back
+	// to AFTER_DRAFT, a team's record going from 44-4 to 41-4 in the middle of a
+	// conversation about it. So for fields that only move forward, an out-of-order
+	// write is refused outright rather than trusted.
+	describe("declining writes that move the league backwards", () => {
+		const setup = async () => {
+			resetG();
+			g.setWithoutSavingToDB("season", 2005);
+			g.setWithoutSavingToDB("phase", PHASE.AFTER_TRADE_DEADLINE);
+			await resetCache({});
+			changeTracker.disable();
+		};
+
+		test("a team record cannot go backwards", async () => {
+			await setup();
+			await idb.cache.teamSeasons.add({
+				tid: 0,
+				season: 2005,
+				won: 44,
+				lost: 4,
+			} as any);
+
+			// The exact report: this device is at 44-4, an older copy says 41-4.
+			const stale = await regressionReason({
+				store: "teamSeasons",
+				id: 1,
+				type: "put",
+				value: { tid: 0, season: 2005, won: 41, lost: 4 },
+			} as any);
+			assert.ok(stale, "41-4 over 44-4 should be declined");
+			assert.match(stale!, /41-4/);
+
+			// Forward and equal still go through.
+			assert.strictEqual(
+				await regressionReason({
+					store: "teamSeasons",
+					id: 1,
+					type: "put",
+					value: { tid: 0, season: 2005, won: 45, lost: 4 },
+				} as any),
+				undefined,
+			);
+			assert.strictEqual(
+				await regressionReason({
+					store: "teamSeasons",
+					id: 1,
+					type: "put",
+					value: { tid: 0, season: 2005, won: 44, lost: 4 },
+				} as any),
+				undefined,
+			);
+		});
+
+		// A loss is not a regression - 44-4 to 44-5 is one more game played.
+		test("taking a loss is not a regression", async () => {
+			await setup();
+			await idb.cache.teamSeasons.add({
+				tid: 0,
+				season: 2005,
+				won: 44,
+				lost: 4,
+			} as any);
+			assert.strictEqual(
+				await regressionReason({
+					store: "teamSeasons",
+					id: 1,
+					type: "put",
+					value: { tid: 0, season: 2005, won: 44, lost: 5 },
+				} as any),
+				undefined,
+			);
+		});
+
+		// Next season legitimately starts from 0-0, and it is a different row.
+		test("a new season starting 0-0 is not a regression", async () => {
+			await setup();
+			await idb.cache.teamSeasons.add({
+				tid: 0,
+				season: 2005,
+				won: 44,
+				lost: 4,
+			} as any);
+			assert.strictEqual(
+				await regressionReason({
+					store: "teamSeasons",
+					id: 2,
+					type: "put",
+					value: { tid: 0, season: 2006, won: 0, lost: 0 },
+				} as any),
+				undefined,
+			);
+		});
+
+		test("the phase cannot go backwards", async () => {
+			await setup();
+			g.setWithoutSavingToDB("phase", PHASE.RESIGN_PLAYERS);
+
+			// The offseason rollback, from the other report.
+			const stale = await regressionReason({
+				store: "gameAttributes",
+				id: "phase",
+				type: "put",
+				value: { key: "phase", value: PHASE.AFTER_DRAFT },
+			} as any);
+			assert.ok(stale, "AFTER_DRAFT over RESIGN_PLAYERS should be declined");
+
+			assert.strictEqual(
+				await regressionReason({
+					store: "gameAttributes",
+					id: "phase",
+					type: "put",
+					value: { key: "phase", value: PHASE.FREE_AGENCY },
+				} as any),
+				undefined,
+			);
+		});
+
+		test("the season cannot go backwards", async () => {
+			await setup();
+			assert.ok(
+				await regressionReason({
+					store: "gameAttributes",
+					id: "season",
+					type: "put",
+					value: { key: "season", value: 2004 },
+				} as any),
+			);
+			assert.strictEqual(
+				await regressionReason({
+					store: "gameAttributes",
+					id: "season",
+					type: "put",
+					value: { key: "season", value: 2006 },
+				} as any),
+				undefined,
+			);
+		});
+
+		// Deletes and unrelated stores are none of the guard's business.
+		test("leaves everything else alone", async () => {
+			await setup();
+			for (const change of [
+				{ store: "teamSeasons", id: 1, type: "delete" },
+				{ store: "players", id: 1, type: "put", value: { pid: 1, tid: 0 } },
+				{ store: "events", id: 1, type: "put", value: { eid: 1 } },
+			]) {
+				assert.strictEqual(await regressionReason(change as any), undefined);
+			}
+		});
+
+		// The whole point: replaying old and new in ANY order lands on the newest,
+		// because the older copy is simply declined. That is what makes the
+		// ordering machinery's mistakes survivable instead of corrupting.
+		test("applying old then new, or new then old, both end at the newest", async () => {
+			for (const order of [
+				[41, 44],
+				[44, 41],
+			]) {
+				resetG();
+				g.setWithoutSavingToDB("season", 2005);
+				g.setWithoutSavingToDB("phase", PHASE.AFTER_TRADE_DEADLINE);
+				const t = helpers.getTeamsDefault()[0]!;
+				const seasonRow: any = team.genSeasonRow(t);
+				seasonRow.season = 2005;
+				seasonRow.won = 40;
+				seasonRow.lost = 4;
+				await resetCache({
+					teams: [team.generate(t)],
+					teamSeasons: [seasonRow],
+				});
+				changeTracker.disable();
+
+				const stored: any = await idb.cache.teamSeasons.indexGet(
+					"teamSeasonsByTidSeason",
+					[0, 2005],
+				);
+				for (const won of order) {
+					await applyChangeset(
+						overTheWire({
+							changes: [
+								{
+									store: "teamSeasons",
+									id: stored.rid,
+									type: "put",
+									value: { ...stored, won, lost: 4 },
+								},
+							],
+						}),
+					);
+				}
+
+				const after: any = await idb.cache.teamSeasons.indexGet(
+					"teamSeasonsByTidSeason",
+					[0, 2005],
+				);
+				assert.strictEqual(
+					after.won,
+					44,
+					`applying ${order.join(" then ")} should land on 44`,
+				);
+			}
 		});
 	});
 });

@@ -2034,6 +2034,13 @@ export class SyncEngine {
 		};
 	}
 
+	// Is a full-log replay running right now? During one, declining a stale write
+	// is the guard doing its job on old history, not evidence of a new problem -
+	// see the regression guard in changeset.ts.
+	isResyncing(): boolean {
+		return this.resyncing;
+	}
+
 	// Flag this device as needing a full-log resync on the next connect. The
 	// engine calls onResyncNeeded itself when it knowingly skips a batch; this is
 	// for the cases it CAN'T notice - a caller that found evidence in the data

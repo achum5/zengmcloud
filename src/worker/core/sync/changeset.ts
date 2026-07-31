@@ -554,6 +554,11 @@ export const applyChangeset = async (
 	// happened to fail. Now every healthy record lands, and the aggregate throw at
 	// the end still pins the watermark so the failed records retry.
 	const failures: string[] = [];
+	// Writes declined because they would have moved a monotonic field backwards.
+	// Not per-record failures: the changeset is not retried for these (a retry
+	// would decline them again). They mean this device applied something out of
+	// order, so they trigger a full ordered re-read instead.
+	const regressions: string[] = [];
 	// The season increment (rollover to preseason) needs special handling: the
 	// simmer re-fills its whole cache after it (finalize does idb.cache.fill()),
 	// because several stores are season-scoped. A receiver must do the same or
@@ -595,6 +600,21 @@ export const applyChangeset = async (
 			// aggregate throw below pins the watermark, and the retry applies them
 			// once the data goes through.
 			if (change.store === "gameAttributes" && failures.length > 0) {
+				continue;
+			}
+
+			// A write that would move a monotonic field backwards is stale, whatever
+			// the ordering machinery thinks. Decline it rather than corrupt the
+			// record, and ask for a full ordered re-read so the true state lands.
+			// See regressionReason.
+			let regression: string | undefined;
+			try {
+				regression = await regressionReason(change);
+			} catch {
+				// Never let the guard itself block an apply.
+			}
+			if (regression !== undefined) {
+				regressions.push(regression);
 				continue;
 			}
 
@@ -903,6 +923,26 @@ export const applyChangeset = async (
 		}
 	}
 
+	// Declined at least one stale write, which means something reached this
+	// device out of order. The records that were declined are still wrong
+	// somewhere - re-read the whole log in order to settle them, and say so,
+	// because silent corruption discovered days later is how this class of bug
+	// has always been found.
+	// Not during a full replay: it walks the whole log oldest-first, so declining
+	// the old copies of records this device already has is the expected outcome,
+	// not an anomaly. Reporting it there would also re-arm the marker the resync
+	// is trying to clear, and resync forever.
+	if (regressions.length > 0 && !getSyncEngine()?.isResyncing()) {
+		console.error(
+			`[sync] Declined ${regressions.length} stale write(s) that would have moved the league backwards: ${regressions.slice(0, 3).join("; ")}${regressions.length > 3 ? "; …" : ""}`,
+		);
+		try {
+			getSyncEngine()?.markResyncNeeded();
+		} catch {
+			// Best effort.
+		}
+	}
+
 	// Applied everything that could apply; NOW surface any per-record failures so
 	// the sync engine pins the watermark below this changeset's entries and
 	// retries them (idempotent re-apply). The healthy records above are already
@@ -914,6 +954,100 @@ export const applyChangeset = async (
 				.join("; ")}${failures.length > 3 ? "; …" : ""}`,
 		);
 	}
+};
+
+// ---------------------------------------------------------------------------
+// Regression guard
+//
+// Everything above is about applying changesets in the order they were
+// authored. That order is what makes record-level last-write-wins correct, and
+// getting it wrong has now produced the same failure three separate ways: a
+// bulk batch judged by a chunk its author re-uploaded later, a resync replaying
+// by entry instead of by authoring unit, and a live entry landing mid-replay.
+// Each was a real bug and each is fixed, but they share a shape - some path
+// applies an old changeset over newer state - and the cost when one slips
+// through is silent corruption a user finds days later: a phase snapping back
+// to AFTER_DRAFT, a team's record going from 44-4 to 41-4.
+//
+// So stop relying only on getting the order right, and make an out-of-order
+// write HARMLESS for the fields where "older" is provable from the data itself.
+// A league's phase and a team's games played only ever move forward; a
+// changeset that would move one backward is stale, whatever the ordering
+// machinery believes. Refuse the write, say so, and ask for a full re-read of
+// the log - which replays everything in order and lands on the true state.
+//
+// This also makes replay order-insensitive for these fields: applying old and
+// new in any sequence converges on the newest, because the older one is simply
+// declined.
+//
+// Deliberately narrow. Only fields that are monotonic by construction are
+// guarded - guessing at players or game records would refuse legitimate edits.
+// And a genuinely intended backwards move (God Mode rewinding a phase) is not
+// lost: it is the newest entry in the log, so the resync this triggers replays
+// it last and it wins.
+
+// (season, phase) as one comparable number. Phase resets each season, so the
+// season has to dominate.
+const phaseOrder = (season: unknown, phase: unknown): number | undefined =>
+	typeof season === "number" && typeof phase === "number"
+		? season * 100 + phase
+		: undefined;
+
+// Would this write move a monotonic field backwards? Returns why, or undefined.
+export const regressionReason = async (
+	change: SyncChange,
+): Promise<string | undefined> => {
+	if (change.type !== "put" || !change.value) {
+		return undefined;
+	}
+
+	if (change.store === "gameAttributes") {
+		const value = change.value as { key?: string; value?: unknown };
+		if (value.key === "phase") {
+			const incoming = phaseOrder(g.get("season"), value.value);
+			const local = phaseOrder(g.get("season"), g.get("phase"));
+			if (incoming !== undefined && local !== undefined && incoming < local) {
+				return `phase ${String(value.value)} is behind local phase ${g.get("phase")}`;
+			}
+		}
+		if (value.key === "season") {
+			const incoming = value.value;
+			if (typeof incoming === "number" && incoming < g.get("season")) {
+				return `season ${incoming} is behind local season ${g.get("season")}`;
+			}
+		}
+		return undefined;
+	}
+
+	if (change.store === "teamSeasons") {
+		const value = change.value as {
+			tid?: number;
+			season?: number;
+			won?: number;
+			lost?: number;
+			tied?: number;
+			otl?: number;
+		};
+		if (typeof value.tid !== "number" || typeof value.season !== "number") {
+			return undefined;
+		}
+		const existing: any = await idb.cache.teamSeasons.indexGet(
+			"teamSeasonsByTidSeason",
+			[value.tid, value.season],
+		);
+		if (!existing) {
+			return undefined;
+		}
+		const played = (row: any) =>
+			(row.won ?? 0) + (row.lost ?? 0) + (row.tied ?? 0) + (row.otl ?? 0);
+		const incoming = played(value);
+		const local = played(existing);
+		if (incoming < local) {
+			return `tid ${value.tid} ${value.season} record ${value.won}-${value.lost} is behind local ${existing.won}-${existing.lost}`;
+		}
+	}
+
+	return undefined;
 };
 
 // The played-game invariant: a schedule row whose gid already has a game record
