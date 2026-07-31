@@ -386,4 +386,22 @@ const updateTeamFinances = async (
 	}
 };
 
-export default updateTeamFinances;
+// Which rows the salary table is counting for this team. Cosmetic, cheap, and
+// deliberately outside updateTeamFinances's guard: it has to arrive on the
+// first render AND track a change synced in from another device, and it costs
+// nothing to hand over every time.
+const updatePlan = (inputs: ViewInput<"teamFinances">) => ({
+	plan: g.get("teamFinancesPlan")[inputs.tid],
+});
+
+export default async (
+	inputs: ViewInput<"teamFinances">,
+	updateEvents: UpdateEvents,
+	state: any,
+) => {
+	return Object.assign(
+		{},
+		await updateTeamFinances(inputs, updateEvents, state),
+		updatePlan(inputs),
+	);
+};

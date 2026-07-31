@@ -616,6 +616,24 @@ export type InjuriesSetting = {
 	games: number;
 }[];
 
+// What the Team Finances salary table is counting, per team. Cosmetic: it
+// changes which rows the totals add up on that page and nothing else - no sim
+// input, no contract, no roster decision. The user's plan for the books, saved
+// so it survives leaving the page.
+export type TeamFinancesPlan = {
+	[tid: number]: {
+		// Players whose SIGNED salary has been taken off the books ("what do we
+		// look like without him"). Stored as the exceptions, so a player joining
+		// the roster counts by default.
+		droppedPids: number[];
+		// Players and picks whose PROJECTED salary is being counted - the ones the
+		// user intends to keep at that price. Stored as inclusions, since counting
+		// nobody's projection is the honest default.
+		keptPids: number[];
+		keptDpids: number[];
+	};
+};
+
 export type TragicDeaths = {
 	reason: string;
 	frequency: number;
@@ -819,6 +837,11 @@ export type GameAttributesLeague = {
 	}[];
 	tradeDeadline: number;
 	tradeProposalsSeed: number;
+	// Purely cosmetic, and shared like every other game attribute so it follows
+	// you between devices: which rows the Team Finances salary table is counting.
+	// Keyed by team, because that page is per team and each manager plans their
+	// own. Nothing here reaches the sim.
+	teamFinancesPlan: TeamFinancesPlan;
 	tragicDeathRate: number;
 	easterEggPlayers: boolean;
 	fakeAges: boolean;

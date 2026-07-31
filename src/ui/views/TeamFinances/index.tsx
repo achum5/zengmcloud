@@ -752,6 +752,7 @@ const TeamFinances = ({
 	minPayrollAmount,
 	otherTeamTicketPrices,
 	payroll,
+	plan,
 	salariesSeasons,
 	capsBySeason,
 	show,
@@ -786,31 +787,100 @@ const TeamFinances = ({
 		"salaryCapType",
 	]);
 
-	// Which players' projected salaries count toward the totals, by row key.
-	//
-	// Empty by default: the totals are what the team has actually committed, and
-	// that has to stay the plain reading of the table. Checking players answers
-	// the other question - and one player at a time, because "keep everyone"
-	// is rarely the plan. The real question is usually about two or three
-	// specific guys, and an all-or-nothing toggle can't ask it.
-	const [projectedKeys, setProjectedKeys] = useState<ReadonlySet<number>>(
-		new Set(),
-	);
-
-	// The other half of the same question: which SIGNED salaries count. Held as
-	// exclusions rather than inclusions so "everyone" needs no seeding and stays
-	// the state after a trade or a release changes the roster - the committed
-	// payroll is the plain reading of this table and has to be what it shows
-	// until you say otherwise. Unchecking a player takes his real money out of
-	// every season he's under contract for, which is how you ask what the books
-	// look like without him.
-	const [excludedSignedKeys, setExcludedSignedKeys] = useState<
-		ReadonlySet<number>
-	>(new Set());
-
 	// Draft picks share the players' key space, sitting after them, so one set
 	// of checkboxes and one totals calculation covers both.
 	const pickKey = (j: number) => contracts.length + j;
+
+	// The two checkbox columns, as row keys.
+	//
+	// PROJECTED salaries start unchecked: the totals are what the team has
+	// actually committed, and that has to stay the plain reading of the table.
+	// Checking players answers the other question - and one player at a time,
+	// because "keep everyone" is rarely the plan. The real question is usually
+	// about two or three specific guys, and an all-or-nothing toggle can't ask it.
+	//
+	// SIGNED salaries start checked, and are held as EXCLUSIONS, so a player
+	// arriving in a trade counts without anyone having to tick him. Unchecking
+	// takes his real money out of every season he's under contract for, which is
+	// how you ask what the books look like without him.
+	//
+	// The saved plan stores pids and dpids, not row keys - keys are positions in
+	// this render's arrays, and a signing or a trade renumbers them.
+	const keysFromPlan = () => {
+		const droppedPids = new Set(plan?.droppedPids ?? []);
+		const keptPids = new Set(plan?.keptPids ?? []);
+		const keptDpids = new Set(plan?.keptDpids ?? []);
+
+		const excludedSigned = new Set<number>();
+		const projected = new Set<number>();
+		for (const [i, p] of contracts.entries()) {
+			if (droppedPids.has(p.pid)) {
+				excludedSigned.add(i);
+			}
+			if (keptPids.has(p.pid)) {
+				projected.add(i);
+			}
+		}
+		for (const [j, dp] of draftPicks.entries()) {
+			if (keptDpids.has(dp.dpid)) {
+				projected.add(pickKey(j));
+			}
+		}
+		return { excludedSigned, projected };
+	};
+
+	const [keys, setKeys] = useState(keysFromPlan);
+
+	// Re-read the saved plan when the ROWS change - a different team from the
+	// dropdown, or a trade/signing that renumbers them. Deliberately not when
+	// `plan` itself changes: our own writes come back through that prop a beat
+	// after the click, and until they do it still holds the pre-click plan, so
+	// following it would undo every tick as you made it.
+	const rowsKey = `${tid}|${contracts.map((p) => p.pid).join(",")}|${draftPicks
+		.map((dp) => dp.dpid)
+		.join(",")}`;
+	const [prevRowsKey, setPrevRowsKey] = useState(rowsKey);
+	if (rowsKey !== prevRowsKey) {
+		setPrevRowsKey(rowsKey);
+		setKeys(keysFromPlan());
+	}
+
+	const projectedKeys: ReadonlySet<number> = keys.projected;
+	const excludedSignedKeys: ReadonlySet<number> = keys.excludedSigned;
+
+	// One write per click. Cosmetic state, so it's fire-and-forget: the table
+	// already shows the new totals, and a failed save costs a re-tick.
+	const save = (next: {
+		excludedSigned: Set<number>;
+		projected: Set<number>;
+	}) => {
+		setKeys(next);
+		const droppedPids: number[] = [];
+		const keptPids: number[] = [];
+		const keptDpids: number[] = [];
+		for (const [i, p] of contracts.entries()) {
+			if (next.excludedSigned.has(i)) {
+				droppedPids.push(p.pid);
+			}
+			if (next.projected.has(i)) {
+				keptPids.push(p.pid);
+			}
+		}
+		for (const [j, dp] of draftPicks.entries()) {
+			if (next.projected.has(pickKey(j))) {
+				keptDpids.push(dp.dpid);
+			}
+		}
+		toWorker("main", "setTeamFinancesPlan", {
+			tid,
+			droppedPids,
+			keptPids,
+			keptDpids,
+		}).catch(() => {
+			// Cosmetic - nothing to recover, and an error toast for a checkbox
+			// would be worse than the lost preference.
+		});
+	};
 
 	// Picks have no signed money, so they get no checkbox in that column.
 	const signedKeys = contracts
@@ -821,7 +891,10 @@ const TeamFinances = ({
 	const allSigned = signedKeys.every((key) => !excludedSignedKeys.has(key));
 
 	const toggleAllSigned = () => {
-		setExcludedSignedKeys(allSigned ? new Set(signedKeys) : new Set());
+		save({
+			excludedSigned: allSigned ? new Set(signedKeys) : new Set(),
+			projected: new Set(projectedKeys),
+		});
 	};
 
 	const toggleOneSigned = (key: number) => {
@@ -831,7 +904,7 @@ const TeamFinances = ({
 		} else {
 			next.add(key);
 		}
-		setExcludedSignedKeys(next);
+		save({ excludedSigned: next, projected: new Set(projectedKeys) });
 	};
 
 	// Who even has a projection to include - a player signed through the last
@@ -853,7 +926,10 @@ const TeamFinances = ({
 		projectableKeys.every((key) => projectedKeys.has(key));
 
 	const toggleAll = () => {
-		setProjectedKeys(allProjected ? new Set() : new Set(projectableKeys));
+		save({
+			excludedSigned: new Set(excludedSignedKeys),
+			projected: allProjected ? new Set() : new Set(projectableKeys),
+		});
 	};
 
 	const toggleOne = (key: number) => {
@@ -863,7 +939,7 @@ const TeamFinances = ({
 		} else {
 			next.add(key);
 		}
-		setProjectedKeys(next);
+		save({ excludedSigned: new Set(excludedSignedKeys), projected: next });
 	};
 
 	const cols: Col[] = [
@@ -915,6 +991,7 @@ const TeamFinances = ({
 		const projectable = projectableKeys.includes(i);
 		const signed = signedKeys.includes(i);
 		const signedCounts = signed && !excludedSignedKeys.has(i);
+		const projectedCounts = projectedKeys.has(i);
 		const data: DataTableRow["data"] = [
 			signed
 				? {
@@ -989,16 +1066,20 @@ const TeamFinances = ({
 				}
 			} else {
 				// Past the end of his deal: what keeping him would cost. Muted and
-				// asterisked so it never reads as money already committed.
+				// asterisked so it never reads as money already committed - until
+				// he's checked in, when it stops being hypothetical and starts being
+				// the plan, and reads like the rest of the money on the books.
 				const projected = p.amountsProjected?.[j];
 				if (projected !== undefined) {
 					const formattedAmount = helpers.formatCurrency(projected, "M");
 					data.push({
-						classNames: "text-body-secondary",
+						classNames: projectedCounts ? "fw-bold" : "text-body-secondary",
 						value: `${formattedAmount}*`,
 						sortValue: projected,
 						searchValue: formattedAmount,
-						title: `Projected — ${p.firstName} ${p.lastName} is not under contract in ${salariesSeasons[j]}`,
+						title: projectedCounts
+							? `Planning to keep ${p.firstName} ${p.lastName} at this projected price in ${salariesSeasons[j]}`
+							: `Projected — ${p.firstName} ${p.lastName} is not under contract in ${salariesSeasons[j]}`,
 					});
 				} else {
 					data.push(null);
@@ -1021,6 +1102,7 @@ const TeamFinances = ({
 	// plainly rather than presented as a number the team can count on.
 	const pickRows = draftPicks.map((dp, j) => {
 		const key = pickKey(j);
+		const counted = projectedKeys.has(key);
 		const known = dp.pick > 0;
 		// A pick acquired in a trade says whose it was, the way the Draft Picks
 		// page does - "2028 1st round" alone is ambiguous once a team holds two.
@@ -1076,11 +1158,13 @@ const TeamFinances = ({
 			}
 			const formatted = helpers.formatCurrency(amount, "M");
 			data.push({
-				classNames: "text-body-secondary",
+				classNames: counted ? "fw-bold" : "text-body-secondary",
 				value: `${formatted}*`,
 				sortValue: amount,
 				searchValue: formatted,
-				title: `Rookie scale for ${where}`,
+				title: counted
+					? `Counting the ${label} pick at rookie scale for ${where}`
+					: `Rookie scale for ${where}`,
 			});
 		}
 

@@ -1482,6 +1482,28 @@ export const generateJsonSchema = (sport: Sport | "test") => {
 					tradeProposalsSeed: {
 						type: "integer",
 					},
+					// Cosmetic: which rows the Team Finances salary table counts,
+					// keyed by tid. Nothing the sim reads.
+					teamFinancesPlan: {
+						type: "object",
+						additionalProperties: {
+							type: "object",
+							properties: {
+								droppedPids: {
+									type: "array",
+									items: { type: "integer" },
+								},
+								keptPids: {
+									type: "array",
+									items: { type: "integer" },
+								},
+								keptDpids: {
+									type: "array",
+									items: { type: "integer" },
+								},
+							},
+						},
+					},
 					rpdPot: {
 						type: "boolean",
 					},

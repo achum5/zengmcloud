@@ -387,6 +387,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 
 	neutralSite: "never",
 	tradeProposalsSeed: 0,
+	teamFinancesPlan: {},
 	rpdPot: true,
 	saveOldBoxScores: {
 		pastSeasons: 2,

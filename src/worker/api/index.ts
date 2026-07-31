@@ -3515,6 +3515,42 @@ const importPlayersGetReal = async (param: unknown, conditions: Conditions) => {
 	return players;
 };
 
+// What the Team Finances salary table is counting for one team. Cosmetic only -
+// it moves the totals on that page and touches nothing the sim reads - but it's
+// a game attribute rather than device state so the plan follows the manager
+// between devices, which is the whole point of writing it down.
+const setTeamFinancesPlan = async ({
+	tid,
+	droppedPids,
+	keptPids,
+	keptDpids,
+}: {
+	tid: number;
+	droppedPids: number[];
+	keptPids: number[];
+	keptDpids: number[];
+}) => {
+	const previous = g.get("teamFinancesPlan");
+	const empty =
+		droppedPids.length === 0 && keptPids.length === 0 && keptDpids.length === 0;
+
+	const teamFinancesPlan = { ...previous };
+	if (empty) {
+		// Back to the default view of the table, so stop storing anything for this
+		// team rather than keeping three empty arrays around forever.
+		delete teamFinancesPlan[tid];
+	} else {
+		teamFinancesPlan[tid] = { droppedPids, keptPids, keptDpids };
+	}
+
+	await league.setGameAttributes({ teamFinancesPlan });
+
+	// The cache only auto-flushes every few seconds, and this is a preference
+	// someone ticks and then immediately navigates away from - exactly the write
+	// that would be lost. It's one small record, so pay for it now.
+	await idb.cache.flush();
+};
+
 const incrementTradeProposalsSeed = async () => {
 	await league.setGameAttributes({
 		tradeProposalsSeed: g.get("tradeProposalsSeed") + 1,
@@ -6711,6 +6747,7 @@ export default {
 		setSavedTrade,
 		setScheduleFromEditor,
 		setSyncDebugLogging: setSyncDebugLoggingApi,
+		setTeamFinancesPlan,
 		setUserTidLocal,
 		updateExpansionDraftSetup,
 		advanceToPlayerProtection,
