@@ -264,6 +264,11 @@ export class SyncEngine {
 	// recovered.)
 	private failedApplies = new Set<string>();
 
+	// True only while resyncAll is replaying the whole log, so the out-of-order
+	// guard doesn't decline its own replay and recurse. Assigned before it was
+	// ever declared, which typechecked as an error and left the flag untyped.
+	private resyncing = false;
+
 	private get applyFailed(): boolean {
 		return this.failedApplies.size > 0;
 	}
@@ -1205,12 +1210,21 @@ export class SyncEngine {
 		// resurrect it via the by-batchId rescue instead. (The rescue ingests
 		// this chunk too, straight from the log.)
 		if (this.abandonedBatches.has(batchId)) {
-			this.abandonedBatches.delete(batchId);
 			syncDebugLog("engine:batch-resurrected", {
 				batchId,
 				chunkIndex: entry.chunkIndex,
 			});
-			return this.rescueBatch(batchId);
+			if (await this.rescueBatch(batchId)) {
+				this.abandonedBatches.delete(batchId);
+				return true;
+			}
+			// The rescue couldn't run (no by-id fetch, or one already in flight) or
+			// came up short. Do NOT return here: this chunk is already marked `seen`,
+			// so returning would drop it with nothing buffered to pin the watermark -
+			// a resurrected batch silently going missing a second time, which is
+			// exactly the shape of failure this whole path exists to undo. Fall
+			// through and buffer it like any other chunk, and keep the abandoned
+			// marker so the next chunk retries the rescue.
 		}
 
 		let batch = this.pendingBatches.get(batchId);
@@ -1340,11 +1354,21 @@ export class SyncEngine {
 			try {
 				const result = await this.resyncAll();
 				syncDebugLog("engine:batch-out-of-order-resynced", result);
-				return !result.failed && result.incomplete === 0;
+				if (!result.failed && result.incomplete === 0) {
+					return true;
+				}
 			} catch (error) {
 				syncDebugLog("engine:batch-out-of-order-resync-failed", { error });
-				return false;
 			}
+			// completeBatch already removed this batch from pendingBatches, so
+			// without this nothing pins the watermark and it advances straight past
+			// a changeset that never applied. Mark the carrying entries failed (and
+			// un-seen) so the next catch-up genuinely re-fetches and retries them.
+			for (const id of batch.entryIds) {
+				this.failedApplies.add(id);
+				this.seen.delete(id);
+			}
+			return false;
 		}
 
 		// A failed apply un-sees the WHOLE batch, so the retry can rebuild it from
@@ -1959,6 +1983,14 @@ export class SyncEngine {
 			progressTotal: this.catchUpTotal,
 			liveSubscription: this.hasChangesSubscription(),
 		};
+	}
+
+	// Flag this device as needing a full-log resync on the next connect. The
+	// engine calls onResyncNeeded itself when it knowingly skips a batch; this is
+	// for the cases it CAN'T notice - a caller that found evidence in the data
+	// that shared state went missing (see findStrandedScheduleRows).
+	markResyncNeeded() {
+		this.onResyncNeeded?.();
 	}
 
 	// Read the entire shared change log once (not a live subscription), for a full

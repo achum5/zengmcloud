@@ -12,11 +12,15 @@ import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g, helpers, local, lock, toUI } from "../../util/index.ts";
+import { g, helpers, local, lock, logEvent, toUI } from "../../util/index.ts";
 import { env } from "../../util/env.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
-import { sweepPhantomScheduleRows } from "./changeset.ts";
+import {
+	dropStrandedScheduleRows,
+	findStrandedScheduleRows,
+	sweepPhantomScheduleRows,
+} from "./changeset.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import {
@@ -1528,13 +1532,72 @@ const doConnectSharedLeague = async ({
 	// the connect.
 	void (async () => {
 		try {
-			if (!(await loadResyncNeeded(lid))) {
+			// Two independent reasons to re-read the whole log. The MARKER is the
+			// engine telling on itself: it knowingly skipped a bulk change. The
+			// STRANDED ROWS are evidence from the data, and they catch the case the
+			// marker can't - a day's changeset that went missing without the engine
+			// ever noticing (a dropped delivery, a watermark banked past an entry
+			// that never arrived). Whatever the cause, the recovery is the same:
+			// re-read and re-apply the log in order.
+			const strandedBefore = await findStrandedScheduleRows();
+			const markerSet = await loadResyncNeeded(lid);
+			if (strandedBefore.gids.length > 0) {
+				console.error(
+					`[sync] This device never received day ${strandedBefore.days.join(", ")} of the current season - the league has played through day ${strandedBefore.maxPlayedDay}. Re-reading the shared log to recover it.`,
+				);
+				syncDebugLog("connect:stranded-schedule-detected", {
+					days: strandedBefore.days,
+					rows: strandedBefore.gids.length,
+					maxPlayedDay: strandedBefore.maxPlayedDay,
+				});
+				// Durable, so a reload mid-recovery still heals.
+				await saveResyncNeeded(lid, true);
+			} else if (!markerSet) {
 				return;
 			}
-			syncDebugLog("connect:auto-resync-start", {});
+
+			syncDebugLog("connect:auto-resync-start", {
+				markerSet,
+				stranded: strandedBefore.gids.length,
+			});
 			const result = await engine.resyncAll();
 			syncDebugLog("connect:auto-resync-done", result);
-			if (result.total > 0 && !result.failed && result.incomplete === 0) {
+
+			// Did the resync actually recover the missed day? Judge on the DATA -
+			// the resync's return value says whether the log applied, not whether the
+			// log ever contained the day. But only judge at all after a pass that
+			// genuinely read the whole log and applied it cleanly: an offline or
+			// empty read proves nothing, and acting on it would throw away a day a
+			// later connect could still recover.
+			const conclusive =
+				result.total > 0 && !result.failed && result.incomplete === 0;
+			const strandedAfter = conclusive
+				? await findStrandedScheduleRows()
+				: { gids: [], days: [] as number[], maxPlayedDay: undefined };
+			if (strandedAfter.gids.length > 0) {
+				// The day is not in the shared log and never will be. The games are
+				// unrecoverable, but the rows are the dangerous half: while they sit
+				// there this device believes that missed day is today, and simming
+				// would write games for gids the rest of the league already resolved.
+				const removed = await dropStrandedScheduleRows(strandedAfter.gids);
+				console.error(
+					`[sync] Day ${strandedAfter.days.join(", ")} could not be recovered from the shared log - those games are missing from this device's history. Removed ${removed} stale schedule row(s) so it is back on the league's current day.`,
+				);
+				syncDebugLog("connect:stranded-schedule-dropped", {
+					days: strandedAfter.days,
+					removed,
+				});
+				// Say so. A silent heal is how this went unnoticed for thirteen days:
+				// the device looked fine, it was just quietly a day behind everyone.
+				logEvent({
+					type: "error",
+					text: `This device never received day ${strandedAfter.days.join(", ")}, and it is no longer in the shared log. Those box scores are missing here.`,
+					saveToDb: false,
+					persistent: true,
+				});
+			}
+
+			if (conclusive) {
 				await saveResyncNeeded(lid, false);
 			}
 		} catch (error) {

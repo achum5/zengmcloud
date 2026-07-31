@@ -13,6 +13,8 @@ import {
 	captureChangeset,
 	orderChangesForApply,
 	phaseRedirectComponents,
+	dropStrandedScheduleRows,
+	findStrandedScheduleRows,
 	sweepPhantomScheduleRows,
 } from "./changeset.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
@@ -1218,5 +1220,102 @@ describe("sync changeset", () => {
 		const after = await idb.cache.schedule.getAll();
 		assert.strictEqual(after.length, 1);
 		assert.strictEqual(after[0]!.gid, future.gid);
+	});
+	// The failure this exists for: one device never received a day's changeset -
+	// neither the games nor the schedule deletes - while every later day arrived
+	// normally. Nothing detected it, and because getSchedule takes "today" from
+	// the first schedule row (rows are keyed by gid, so the missed day sorts
+	// first), the device sat pinned on a day the league had played through 13
+	// days earlier, offering to re-sim games that already had results elsewhere.
+	describe("stranded schedule rows", () => {
+		const setup = async () => {
+			resetG();
+			await resetCache({});
+			changeTracker.disable();
+		};
+
+		test("flags rows on a day the league has already played past", async () => {
+			await setup();
+
+			// Day 16 never landed: its rows are still here and it has no games.
+			await idb.cache.schedule.add({ homeTid: 0, awayTid: 1, day: 16 } as any);
+			await idb.cache.schedule.add({ homeTid: 2, awayTid: 3, day: 16 } as any);
+			// Day 29 is upcoming, which is fine.
+			await idb.cache.schedule.add({ homeTid: 4, awayTid: 5, day: 29 } as any);
+			// ...but days 17 and 28 were played, so 16 can never still be upcoming.
+			await idb.cache.games.put({
+				gid: 9001,
+				season: g.get("season"),
+				day: 17,
+				teams: [],
+			} as any);
+			await idb.cache.games.put({
+				gid: 9002,
+				season: g.get("season"),
+				day: 28,
+				teams: [],
+			} as any);
+
+			const stranded = await findStrandedScheduleRows();
+			assert.deepStrictEqual(stranded.days, [16]);
+			assert.strictEqual(stranded.gids.length, 2);
+			assert.strictEqual(stranded.maxPlayedDay, 28);
+
+			// And dropping them leaves the genuinely-upcoming day alone.
+			const removed = await dropStrandedScheduleRows(stranded.gids);
+			assert.strictEqual(removed, 2);
+			const after = await idb.cache.schedule.getAll();
+			assert.strictEqual(after.length, 1);
+			assert.strictEqual(after[0]!.day, 29);
+		});
+
+		// A day being simmed right now has played games and unplayed rows on the
+		// SAME day. Flagging that would delete the rest of a slate mid-sim.
+		test("leaves a half-played day alone", async () => {
+			await setup();
+
+			await idb.cache.schedule.add({ homeTid: 0, awayTid: 1, day: 20 } as any);
+			await idb.cache.schedule.add({ homeTid: 2, awayTid: 3, day: 21 } as any);
+			await idb.cache.games.put({
+				gid: 9003,
+				season: g.get("season"),
+				day: 20,
+				teams: [],
+			} as any);
+
+			const stranded = await findStrandedScheduleRows();
+			assert.deepStrictEqual(stranded.days, []);
+			assert.strictEqual(stranded.gids.length, 0);
+		});
+
+		// A fresh season has a full schedule and no games yet - every row is
+		// legitimately in the future.
+		test("says nothing before any game has been played", async () => {
+			await setup();
+
+			await idb.cache.schedule.add({ homeTid: 0, awayTid: 1, day: 1 } as any);
+			await idb.cache.schedule.add({ homeTid: 2, awayTid: 3, day: 2 } as any);
+
+			const stranded = await findStrandedScheduleRows();
+			assert.strictEqual(stranded.maxPlayedDay, undefined);
+			assert.strictEqual(stranded.gids.length, 0);
+		});
+
+		// Games from before the day field existed must not be read as "day 0
+		// played", which would strand nothing but would also mask a real gap.
+		test("ignores games with no day", async () => {
+			await setup();
+
+			await idb.cache.schedule.add({ homeTid: 0, awayTid: 1, day: 5 } as any);
+			await idb.cache.games.put({
+				gid: 9004,
+				season: g.get("season"),
+				teams: [],
+			} as any);
+
+			const stranded = await findStrandedScheduleRows();
+			assert.strictEqual(stranded.maxPlayedDay, undefined);
+			assert.strictEqual(stranded.gids.length, 0);
+		});
 	});
 });

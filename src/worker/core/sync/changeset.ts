@@ -13,6 +13,7 @@ import {
 } from "../../util/index.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { checkApplyGuard } from "./applyGuard.ts";
+import { getSyncEngine } from "./engineHolder.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
 import type { Phase, UpdateEvents } from "../../../common/types.ts";
@@ -862,6 +863,23 @@ export const applyChangeset = async (
 		} catch (error) {
 			console.error("Phantom schedule sweep failed", error);
 		}
+
+		// And the invariant the phantom sweep can't see: an unplayed row on a day
+		// the league has already played past means a whole day's changeset never
+		// reached this device. Only flag it here - recovery re-reads the entire
+		// shared log, which is far too heavy to run from inside an apply. The
+		// marker is durable, so the next connect does it.
+		try {
+			const stranded = await findStrandedScheduleRows();
+			if (stranded.gids.length > 0) {
+				console.error(
+					`[sync] Missing day ${stranded.days.join(", ")} of the current season (league is on day ${stranded.maxPlayedDay}). Will re-read the shared log on the next connect.`,
+				);
+				getSyncEngine()?.markResyncNeeded();
+			}
+		} catch (error) {
+			console.error("Stranded schedule check failed", error);
+		}
 	}
 
 	// The LeagueTopBar score ticker is fed by a separate UI-state channel, not by
@@ -924,6 +942,79 @@ export const sweepPhantomScheduleRows = async (): Promise<number> => {
 		console.log(
 			`Removed ${removed} already-played game(s) from the schedule (sync self-heal)`,
 		);
+	}
+	return removed;
+};
+
+// The forward-progress invariant: a league plays its days in order, deleting
+// each schedule row as that game is simmed. So an UNPLAYED row can never sit on
+// a day EARLIER than a day that has already been played. When one does, this
+// device missed that whole day's changeset - it received neither the games nor
+// the schedule deletes - while later days arrived normally.
+//
+// This is the one corruption sweepPhantomScheduleRows cannot see. That sweep
+// matches a schedule row against an existing game; here there is no game to
+// match, precisely because the games never landed.
+//
+// Left alone it is much worse than a hole in the game log. getSchedule takes
+// "today" from the first row in the schedule, and schedule rows are keyed by
+// gid, so the missed day sorts first and the device is pinned on it: it lists
+// that day's matchups as upcoming, the Play button offers to sim a day the rest
+// of the league finished long ago, and the games it would write carry gids that
+// already have results everywhere else.
+export const findStrandedScheduleRows = async (): Promise<{
+	gids: number[];
+	days: number[];
+	maxPlayedDay: number | undefined;
+}> => {
+	const [scheduleRows, gameRows] = await Promise.all([
+		idb.cache.schedule.getAll(),
+		// Current season only - that's what the cache holds, and it's the only
+		// season with a schedule.
+		idb.cache.games.getAll(),
+	]);
+
+	let maxPlayedDay: number | undefined;
+	for (const game of gameRows) {
+		// Older games predate the day field.
+		if (
+			game.day !== undefined &&
+			(maxPlayedDay === undefined || game.day > maxPlayedDay)
+		) {
+			maxPlayedDay = game.day;
+		}
+	}
+	if (maxPlayedDay === undefined) {
+		return { gids: [], days: [], maxPlayedDay };
+	}
+
+	const gids: number[] = [];
+	const days = new Set<number>();
+	for (const row of scheduleRows) {
+		// Strictly earlier: a row on the max played day is just an unfinished
+		// slate, which is normal while a day is being simmed.
+		if (row.day !== undefined && row.day < maxPlayedDay) {
+			gids.push(row.gid);
+			days.add(row.day);
+		}
+	}
+
+	return { gids, days: [...days].sort((a, b) => a - b), maxPlayedDay };
+};
+
+// Last resort, once a full resync has failed to recover the missed day: drop
+// the stranded rows. The games themselves are unrecoverable at that point - no
+// local computation can invent results the rest of the league already agreed on
+// - but leaving the rows is the actively dangerous half. Removing them puts
+// this device back on the league's real day and makes it impossible for it to
+// re-sim a day everyone else has already played.
+export const dropStrandedScheduleRows = async (
+	gids: number[],
+): Promise<number> => {
+	let removed = 0;
+	for (const gid of gids) {
+		await idb.cache.schedule.delete(gid);
+		removed += 1;
 	}
 	return removed;
 };

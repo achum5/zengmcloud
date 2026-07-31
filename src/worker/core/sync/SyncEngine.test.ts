@@ -84,6 +84,9 @@ class FakeTransport implements SyncTransport {
 	failPing = false;
 	failPublish = false;
 	pingCount = 0;
+	// Make the by-batchId rescue come up empty, the way it does when the query
+	// can't run or hasn't caught up yet.
+	blindBatchFetch = false;
 
 	constructor(clientId: string, bus: FakeBus) {
 		this.clientId = clientId;
@@ -130,6 +133,9 @@ class FakeTransport implements SyncTransport {
 	// By-batchId rescue fetch, like the real transport's Firestore equality
 	// query - no seq range, so it reaches chunks below any watermark.
 	async fetchBatchEntries(batchId: string): Promise<ChangesetEntry[]> {
+		if (this.blindBatchFetch) {
+			return [];
+		}
 		return this.bus.entries
 			.filter((e) => e.batchId === batchId)
 			.map((e) => JSON.parse(JSON.stringify(e)));
@@ -1900,5 +1906,92 @@ describe("SyncEngine", () => {
 		follower.markRoomBusy();
 		assert.strictEqual(bus.authority?.busyUntil ?? 0, 0);
 		assert.strictEqual(host.isRoomBusy(), false);
+	});
+	// A batch that was abandoned and then RESURRECTED - its author finally
+	// uploaded the missing chunk - used to lose that chunk outright if the
+	// by-batchId rescue couldn't run at that moment. The chunk was already marked
+	// `seen`, so no re-fetch would ever redeliver it, and nothing was buffered to
+	// pin the watermark, so the engine declared itself caught up with a whole
+	// changeset silently missing. That is how a device ends up holding a day's
+	// schedule rows with no games and no idea anything is wrong.
+	test("a resurrected chunk is never dropped when the rescue can't run", async () => {
+		const bus = new FakeBus();
+		resetG();
+		await resetCache({});
+
+		const host = new FakeTransport("H", bus);
+		const chunk = (i: number) => ({
+			id: `res${i}`,
+			authorId: "H",
+			action: "playMenu.sim",
+			batchId: "RES",
+			chunkIndex: i,
+			chunkCount: 3,
+			changeset: {
+				changes: [
+					{
+						store: "events" as const,
+						id: 200 + i,
+						type: "put" as const,
+						value: { eid: 200 + i },
+					},
+				],
+			},
+		});
+		// Two of three chunks, then unrelated activity so the log provably moves
+		// past the batch and it gets abandoned.
+		await host.publish(chunk(0));
+		await host.publish(chunk(2));
+		await host.publish({
+			id: "res-after",
+			authorId: "H",
+			action: "x",
+			changeset: {
+				changes: [{ store: "events", id: 9, type: "put", value: { eid: 9 } }],
+			},
+		});
+
+		const receiverTransport = new FakeTransport("R", bus);
+		const receiver = new SyncEngine(receiverTransport, {});
+		// Blind the rescue so the batch can only be abandoned, not completed.
+		receiverTransport.blindBatchFetch = true;
+		for (let i = 0; i < 20; i++) {
+			await receiver.catchUp();
+			if (receiver.isCaughtUp()) {
+				break;
+			}
+		}
+		assert.strictEqual(
+			receiver.isCaughtUp(),
+			true,
+			"the abandoned batch should stop pinning the watermark",
+		);
+
+		// Now the author uploads the missing chunk, while the rescue is still
+		// unavailable. The engine must NOT swallow it.
+		await host.publish(chunk(1));
+		await receiver.catchUp();
+		assert.strictEqual(
+			receiver.isCaughtUp(),
+			false,
+			"the resurrected chunk was dropped - nothing is pinning the watermark, so the changeset is silently lost",
+		);
+
+		// And once the rescue works again, the batch completes and lands.
+		receiverTransport.blindBatchFetch = false;
+		for (let i = 0; i < 20; i++) {
+			await receiver.catchUp();
+			if (receiver.isCaughtUp()) {
+				break;
+			}
+		}
+		assert.strictEqual(receiver.isCaughtUp(), true);
+		const events = await idb.cache.events.getAll();
+		const eids = events.map((event) => event.eid).sort((a, b) => a - b);
+		assert.deepStrictEqual(
+			eids,
+			[9, 200, 201, 202],
+			"every chunk of the resurrected batch should have applied",
+		);
 	});
 });
