@@ -10,10 +10,81 @@ import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { extraStats } from "./hallOfFame.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { processPlayersHallOfFame } from "../util/processPlayersHallOfFame.ts";
+import {
+	coarsenRating,
+	coarsenRatingChange,
+} from "../../common/coarsenRating.ts";
 
 type Most = {
 	value: number;
 	extra?: Record<string, unknown>;
+};
+
+// The rating-scale numbers each list carries on `most`.
+//
+// `most` is an ATTR, so playersPlus copies it through untouched - it never goes
+// near the coarsening that the Ovr column right beside it gets. In a league
+// that hides the ones digit these were the last place on the site printing
+// exact 0-100 ratings, and the differences leak more than a rating does: a
+// "Prog" of +14 is only possible between two precise numbers.
+//
+//   extraOvrs     - plain ovrs sitting on most.extra
+//   valueDiffFrom - most.value is (ovr - extra[key]); shown as the difference
+//                   of the two DISPLAYED ovrs, so 56 -> 58 reads as 0 and
+//                   58 -> 62 reads as +1, matching coarsenRatingChange
+//   valueMagnitude- most.value is on the rating scale with no endpoints stored
+//                   (the injury drop is recorded as a bare number)
+const MOST_RATING_FIELDS: Record<
+	string,
+	{
+		extraOvrs?: string[];
+		valueDiffFrom?: string;
+		valueMagnitude?: boolean;
+	}
+> = {
+	progs: { valueDiffFrom: "progFrom" },
+	progs_career: { valueDiffFrom: "progFrom" },
+	worst_injuries: { valueMagnitude: true },
+	oldest: { extraOvrs: ["ovr"] },
+	oldest_peaks: { extraOvrs: ["ovr"] },
+	youngest_peaks: { extraOvrs: ["ovr"] },
+	oldest_mvp: { extraOvrs: ["ovr"] },
+	youngest_mvp: { extraOvrs: ["ovr"] },
+	rookies: { extraOvrs: ["rookieOvr"] },
+};
+
+// Display only, and deliberately AFTER the list has been chosen and ordered.
+// Which players make a top-25 is a calculation, and picking it from 0-10 inputs
+// would be a coin flip among everyone who happened to cross a decade boundary.
+export const coarsenMostForDisplay = (most: Most, type: string): Most => {
+	const fields = MOST_RATING_FIELDS[type];
+	if (!fields) {
+		return most;
+	}
+
+	const out: Most = { ...most };
+	const extra = most.extra;
+
+	if (fields.valueDiffFrom !== undefined) {
+		const from = extra?.[fields.valueDiffFrom];
+		if (typeof from === "number" && typeof most.value === "number") {
+			out.value = coarsenRatingChange(from + most.value, most.value);
+		}
+	} else if (fields.valueMagnitude && typeof most.value === "number") {
+		out.value = coarsenRating(most.value);
+	}
+
+	if (fields.extraOvrs && extra) {
+		const newExtra = { ...extra };
+		for (const key of fields.extraOvrs) {
+			if (typeof newExtra[key] === "number") {
+				newExtra[key] = coarsenRating(newExtra[key]);
+			}
+		}
+		out.extra = newExtra;
+	}
+
+	return out;
 };
 
 type PlayersAll = (Player & {
@@ -25,11 +96,15 @@ const getMostXPlayers = async ({
 	getValue,
 	after,
 	sortParams,
+	type,
 }: {
 	filter?: (p: Player) => boolean;
 	getValue: (p: Player) => Most | Most[] | undefined;
 	after?: (most: Most) => Promise<Most> | Most;
 	sortParams?: OrderBySortParams;
+	// Which list this is, so the rating-scale fields it carries on `most` can be
+	// coarsened for display. See MOST_RATING_FIELDS.
+	type: string;
 }) => {
 	const LIMIT = 100;
 	let playersAll: PlayersAll = [];
@@ -93,12 +168,20 @@ const getMostXPlayers = async ({
 	});
 
 	const ordered = sortParams ? orderBy(players, ...sortParams) : players;
+	// Every sortParams tiebreak reads most.extra.ovr, so this has to come after
+	// the ordering - coarsening first would tie a whole decade together and make
+	// the tiebreak meaningless.
+	const coarsenMost = g.get("hideRatingsOnesDigit");
 	for (let i = 0; i < LIMIT; i++) {
 		if (ordered[i]) {
 			ordered[i].rank = i + 1;
 
 			if (after) {
 				ordered[i].most = await after(ordered[i].most);
+			}
+
+			if (coarsenMost && ordered[i].most) {
+				ordered[i].most = coarsenMostForDisplay(ordered[i].most, type);
 			}
 		}
 	}
@@ -444,6 +527,10 @@ const updatePlayers = async (
 						extra: {
 							bestSeasonOverride: row.season,
 							age: row.season - p.born.year,
+							// Not displayed - the lower endpoint, so the Prog shown in a
+							// hide-ones-digit league can be the difference of the two
+							// DISPLAYED ovrs rather than of the exact ones.
+							progFrom: prevOvr,
 						},
 					};
 				});
@@ -490,6 +577,7 @@ const updatePlayers = async (
 					extra: {
 						season: maxSeason,
 						age: maxSeason - p.born.year,
+						progFrom: ovr0,
 					},
 				};
 			};
@@ -1042,6 +1130,7 @@ const updatePlayers = async (
 			getValue,
 			after,
 			sortParams,
+			type,
 		});
 
 		return {
