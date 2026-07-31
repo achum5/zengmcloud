@@ -1,6 +1,7 @@
 import type { Changeset } from "./changeset.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
+import type { LeaguePosition } from "./leaguePosition.ts";
 
 // One device's push registration in a league room, stored at
 // leagues/{code}/members/{uid}. The Cloud Function reads these to know where to
@@ -144,6 +145,10 @@ export type Authority = {
 	// the sim's results. It's a lease, so a simmer that crashes mid-sim can't lock
 	// the room forever - it just expires.
 	busyUntil?: number;
+	// How far the holder's league has actually progressed. Followers compare it
+	// against their own to notice they are missing data even when their sync
+	// engine believes it is caught up - see leaguePosition.ts.
+	position?: LeaguePosition;
 };
 
 // One device's draft ready state, stored under its uid in the shared
@@ -303,7 +308,7 @@ export interface SyncTransport {
 
 	// Stamp/clear the sim authority's "actively advancing" lease on the shared
 	// authority doc (see Authority.busyUntil). Pass 0 to clear.
-	publishBusy?(busyUntil: number): Promise<void>;
+	publishBusy?(busyUntil: number, position?: LeaguePosition): Promise<void>;
 
 	// Draft ready-up support (see draftReady.ts). publishDraftReady merges THIS
 	// device's ready entry onto the shared doc (null clears it); clearUids also

@@ -22,6 +22,11 @@ import {
 	sweepPhantomScheduleRows,
 } from "./changeset.ts";
 import { syncDebugLog } from "./debugLog.ts";
+import {
+	describePosition,
+	getLeaguePosition,
+	isBehindPosition,
+} from "./leaguePosition.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import {
 	isTooFarBehind,
@@ -1199,6 +1204,118 @@ export const resyncSharedLeague = async (): Promise<{
 // that already exists.
 let connectQueue: Promise<unknown> = Promise.resolve();
 
+// How long a follower may sit behind the position the sim authority announced
+// before we stop assuming it's just propagation delay. A day's changeset is
+// chunked across many entries, so a few seconds behind is completely normal.
+const BEHIND_GRACE_MS = 30 * 1000;
+
+// Only one recovery at a time, and remember when we first noticed.
+let behindSince: number | undefined;
+let healingBehind = false;
+
+// The check the engine cannot do for itself.
+//
+// "Am I caught up?" is answered by comparing a watermark against the highest
+// entry the engine has been HANDED - so an entry that never arrived leaves it
+// confidently, silently behind, showing the next day as upcoming and waiting
+// forever. Reconnecting doesn't help, because a fresh catch-up starts from the
+// same banked watermark and the server agrees there is nothing after it.
+//
+// The sim authority stamps how far the league has actually got onto the
+// authority doc, which every device already watches. Comparing that against
+// local data is evidence from outside the broken component.
+//
+// The two ways a room can be out of step look identical from a follower's
+// screen, and this tells them apart: if a full re-read of the log closes the
+// gap, this device had lost entries; if it doesn't, the advance was never
+// uploaded and the gap is on the simmer's side. Both are worth saying out loud
+// - the whole reason this went unnoticed is that neither said anything.
+const checkBehindAuthority = async () => {
+	const engine = getSyncEngine();
+	if (!engine || healingBehind) {
+		return;
+	}
+
+	const announced = engine.getAuthority()?.position;
+	// Nobody has announced a position (an older client is simming), or we ARE the
+	// authority, so there is nothing to be behind.
+	if (!announced || engine.isAuthority()) {
+		behindSince = undefined;
+		return;
+	}
+
+	let localPosition;
+	try {
+		localPosition = await getLeaguePosition();
+	} catch {
+		return;
+	}
+	if (!isBehindPosition(localPosition, announced)) {
+		behindSince = undefined;
+		return;
+	}
+
+	// Behind. Give the ordinary path time to deliver before doing anything - a
+	// sim that just finished is legitimately still arriving.
+	const now = Date.now();
+	if (behindSince === undefined) {
+		behindSince = now;
+		return;
+	}
+	if (now - behindSince < BEHIND_GRACE_MS) {
+		return;
+	}
+
+	healingBehind = true;
+	try {
+		syncDebugLog("connect:behind-authority", {
+			local: describePosition(localPosition),
+			announced: describePosition(announced),
+			engine: engine.getCatchUpDiagnostics(),
+		});
+
+		// Cheap first: an ordinary catch-up. Covers a listener that died quietly
+		// while the watermark was still honest.
+		await engine.catchUp();
+		if (!isBehindPosition(await getLeaguePosition(), announced)) {
+			behindSince = undefined;
+			return;
+		}
+
+		// Still behind, so the watermark itself is wrong - re-read the whole log.
+		const result = await engine.resyncAll();
+		syncDebugLog("connect:behind-authority-resynced", result);
+		const after = await getLeaguePosition();
+		if (!isBehindPosition(after, announced)) {
+			behindSince = undefined;
+			console.log(
+				`[sync] Recovered the missing changes - now at ${describePosition(after)}.`,
+			);
+			return;
+		}
+
+		// A clean, complete re-read of the entire shared log still doesn't have it.
+		// The advance is not in the cloud, so no amount of downloading will find
+		// it: it is still sitting in the simming device's upload queue.
+		if (result.total > 0 && !result.failed && result.incomplete === 0) {
+			behindSince = now;
+			logEvent({
+				type: "error",
+				text: "The latest sim hasn't been uploaded yet. Nothing to fix here - ask whoever is in charge of simming to open the app until their queued uploads finish.",
+				saveToDb: false,
+				persistent: true,
+			});
+			console.error(
+				`[sync] Behind the room (${describePosition(after)} vs ${describePosition(announced)}) and the change log does not contain the gap - the simmer has not uploaded it.`,
+			);
+		}
+	} catch (error) {
+		syncDebugLog("connect:behind-authority-failed", { error });
+	} finally {
+		healingBehind = false;
+	}
+};
+
 export const connectSharedLeague = async (options: {
 	code: string;
 	isHost?: boolean;
@@ -1639,6 +1756,8 @@ const doConnectSharedLeague = async ({
 		pushSyncStateFull();
 		// Unlock a follower whose broadcaster went away without a clean end.
 		checkLiveBroadcastLease();
+		// Notice, and fix, being silently behind the rest of the room.
+		void checkBehindAuthority();
 		checkLotteryRevealLease();
 		// Keep kicking the upload drain while anything is queued - it self-retries
 		// with backoff, but a persistent tick guarantees a stalled queue can never

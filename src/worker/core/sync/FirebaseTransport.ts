@@ -32,6 +32,7 @@ import { syncDebugLog } from "./debugLog.ts";
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
+import { parseLeaguePosition, type LeaguePosition } from "./leaguePosition.ts";
 import type {
 	Authority,
 	ChangesetEntry,
@@ -320,10 +321,13 @@ export class FirebaseTransport implements SyncTransport {
 	// authority doc the holder already owns, so it passes the same rule as the
 	// sim authority itself. Followers read this to know a sim is in flight (see
 	// Authority.busyUntil).
-	async publishBusy(busyUntil: number) {
+	async publishBusy(busyUntil: number, position?: LeaguePosition) {
 		await setDoc(
 			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
-			{ busyUntil },
+			// The position rides along on the lease write rather than costing its
+			// own doc write: the holder already stamps this doc at the start and end
+			// of every advance, which is exactly when the league has moved.
+			{ busyUntil, ...(position ? { position } : {}) },
 			{ merge: true },
 		);
 	}
@@ -669,6 +673,7 @@ export class FirebaseTransport implements SyncTransport {
 							typeof data.holderName === "string" ? data.holderName : "Someone",
 						busyUntil:
 							typeof data.busyUntil === "number" ? data.busyUntil : undefined,
+						position: parseLeaguePosition(data.position),
 					});
 				} else {
 					onChange(undefined);

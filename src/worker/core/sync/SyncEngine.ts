@@ -18,6 +18,7 @@ import type {
 } from "./types.ts";
 import { outbox } from "./outbox.ts";
 import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
+import type { LeaguePosition } from "./leaguePosition.ts";
 
 // Changesets larger than this are "bulk" (e.g. a simulation, which mutates
 // hundreds of records). They're only published by the host, and are split into
@@ -395,20 +396,27 @@ export class SyncEngine {
 	// on conflict-prone edits while a sim/phase/draft is running or still
 	// uploading (before it shows up in the change log). Only the sim authority may
 	// write this. Fire-and-forget - it must never add latency to a sim.
-	markRoomBusy(): void {
+	markRoomBusy(position?: LeaguePosition): void {
 		if (!this.isAuthority()) {
 			return;
 		}
-		void this.transport.publishBusy?.(Date.now() + ROOM_BUSY_LEASE_MS);
+		void this.transport.publishBusy?.(
+			Date.now() + ROOM_BUSY_LEASE_MS,
+			position,
+		);
 	}
 
 	// Release the "actively advancing" lease once the advance has been published
 	// (its seq is now visible to followers, so the caught-up check takes over).
-	clearRoomBusy(): void {
+	// `position` is where the league now sits, stamped alongside the lease
+	// release. That is the moment the advance has been published, so it is the
+	// honest answer to "how far is this room" - and the one thing a follower can
+	// check that doesn't come from its own change log. See leaguePosition.ts.
+	clearRoomBusy(position?: LeaguePosition): void {
 		if (!this.isAuthority()) {
 			return;
 		}
-		void this.transport.publishBusy?.(0);
+		void this.transport.publishBusy?.(0, position);
 	}
 
 	// Is SOMEONE ELSE mid-advance right now? True only for followers - the

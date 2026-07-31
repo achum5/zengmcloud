@@ -13,6 +13,7 @@ import { syncDebugLog } from "./core/sync/debugLog.ts";
 import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
+import { getLeaguePosition } from "./core/sync/leaguePosition.ts";
 import {
 	getSyncRequired,
 	restoreSyncRequiredFromMeta,
@@ -515,7 +516,11 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				// still looks green.
 				const synced = await afterAction(type, name);
 				if (marksBusy) {
-					getSyncEngine()?.clearRoomBusy();
+					// Stamp where the league now sits along with the lease release, so
+					// followers have a second opinion on how far the room has got - one
+					// that doesn't come from their own change log, which is exactly the
+					// thing that fails silently when a day goes missing.
+					getSyncEngine()?.clearRoomBusy(await getLeaguePosition());
 				}
 				if (!synced) {
 					util.logEvent(
@@ -531,7 +536,7 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 			},
 			(error) => {
 				// The advance threw, so nothing will publish - drop the lease now rather
-				// than making followers wait it out.
+				// than making followers wait it out. No position: nothing moved.
 				if (marksBusy) {
 					getSyncEngine()?.clearRoomBusy();
 				}
