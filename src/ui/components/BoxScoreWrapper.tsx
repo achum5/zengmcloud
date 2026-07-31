@@ -5,6 +5,7 @@ import {
 	useState,
 	useRef,
 	type CSSProperties,
+	type ReactNode,
 } from "react";
 import { PHASE, STARTING_NUM_TIMEOUTS } from "../../common/constants.ts";
 import { helpers } from "../util/helpers.ts";
@@ -708,39 +709,37 @@ const NextButton = ({
 		(option) => option.id === "day" || option.id === "week",
 	);
 
-	return (
-		<div className="ms-4">
-			{boxScore.season === season &&
-			currentGidInList &&
-			(nextGid === undefined || clickedGoToNext || autoGoToNext) &&
-			phase >= PHASE.REGULAR_SEASON &&
-			phase <= PHASE.PLAYOFFS ? (
-				<button
-					className="btn btn-light-bordered"
-					disabled={!canPlay || simAuthorityLocked}
-					onClick={simNext}
-					title={simAuthorityReason}
-				>
-					Sim
-					<br />
-					Next
-				</button>
-			) : (
-				<a
-					className={clsx("btn", "btn-light-bordered", {
-						disabled: nextGid === undefined,
-					})}
-					href={helpers.leagueUrl([
-						"game_log",
-						abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
-						boxScore.season,
-						nextGid,
-					])}
-				>
-					Next
-				</a>
-			)}
-		</div>
+	// No wrapper - the caller stacks this with the replay button in one column.
+	// "Sim Next" is set a size down so it fits on one line, which keeps this the
+	// same height as the plain "Next" button and saves a row of vertical space at
+	// the top of every box score.
+	return boxScore.season === season &&
+		currentGidInList &&
+		(nextGid === undefined || clickedGoToNext || autoGoToNext) &&
+		phase >= PHASE.REGULAR_SEASON &&
+		phase <= PHASE.PLAYOFFS ? (
+		<button
+			className="btn btn-light-bordered text-nowrap small"
+			disabled={!canPlay || simAuthorityLocked}
+			onClick={simNext}
+			title={simAuthorityReason}
+		>
+			Sim Next
+		</button>
+	) : (
+		<a
+			className={clsx("btn", "btn-light-bordered", {
+				disabled: nextGid === undefined,
+			})}
+			href={helpers.leagueUrl([
+				"game_log",
+				abbrev === "special" ? abbrev : `${abbrev}_${tid}`,
+				boxScore.season,
+				nextGid,
+			])}
+		>
+			Next
+		</a>
 	);
 };
 
@@ -821,6 +820,7 @@ const BaseballDiamond = ({
 
 const DetailedScore = ({
 	abbrev,
+	belowNext,
 	boxScore,
 	currentGidInList,
 	nextGid,
@@ -830,6 +830,10 @@ const DetailedScore = ({
 	tid,
 }: {
 	abbrev?: string;
+	// Stacked under the Next button in the right-hand column - currently the
+	// "Watch replay" button, which used to sit centered below the score and cost
+	// a whole row of height for one small button.
+	belowNext?: ReactNode;
 	boxScore: any;
 	currentGidInList?: boolean;
 	nextGid?: number;
@@ -999,13 +1003,16 @@ const DetailedScore = ({
 				) : null}
 			</div>
 			{showNextPrev ? (
-				<NextButton
-					abbrev={abbrev}
-					boxScore={boxScore}
-					currentGidInList={currentGidInList}
-					nextGid={nextGid}
-					tid={tid}
-				/>
+				<div className="ms-4 d-flex flex-column align-items-stretch gap-2">
+					<NextButton
+						abbrev={abbrev}
+						boxScore={boxScore}
+						currentGidInList={currentGidInList}
+						nextGid={nextGid}
+						tid={tid}
+					/>
+					{belowNext}
+				</div>
 			) : null}
 		</div>
 	);
@@ -1136,7 +1143,7 @@ const WatchReplayButton = ({ gid }: { gid: number }) => {
 	return (
 		<button
 			type="button"
-			className="btn btn-secondary btn-sm mt-2"
+			className="btn btn-secondary btn-sm text-nowrap"
 			onClick={watch}
 			disabled={loading}
 		>
@@ -1253,6 +1260,18 @@ export const BoxScoreWrapper = ({
 		);
 	}
 
+	// Only completed, real basketball games can have a saved replay. Rendered
+	// once and placed either under the Next button or, when there isn't one,
+	// centered below the score.
+	const replayButton =
+		!live &&
+		isSport("basketball") &&
+		!boxScore.exhibition &&
+		typeof boxScore.gid === "number" &&
+		boxScore.gid >= 0 ? (
+			<WatchReplayButton gid={boxScore.gid} />
+		) : null;
+
 	return (
 		<>
 			<div className="d-flex align-items-center">
@@ -1261,6 +1280,7 @@ export const BoxScoreWrapper = ({
 					{!live ? <HeadlineScore boxScore={boxScore} /> : null}
 					<DetailedScore
 						abbrev={abbrev}
+						belowNext={replayButton}
 						boxScore={boxScore}
 						currentGidInList={currentGidInList}
 						key={boxScore.gid}
@@ -1278,18 +1298,33 @@ export const BoxScoreWrapper = ({
 							t1={t1}
 						/>
 					</div>
-					{!live &&
-					isSport("basketball") &&
-					!boxScore.exhibition &&
-					typeof boxScore.gid === "number" &&
-					boxScore.gid >= 0 ? (
-						<div className="text-center">
-							<WatchReplayButton gid={boxScore.gid} />
-						</div>
-					) : null}
+					{/* Nowhere to stack it when there's no Next button (a live game, or
+					    a box score opened outside the game log). */}
+					{showNextPrev ? null : (
+						<div className="text-center">{replayButton}</div>
+					)}
 				</div>
 				<TeamLogo season={boxScore.season} t={t1} />
 			</div>
+			{/* The recap, right under the score rather than at the foot of the page:
+			    headline only, clicking it drops the rest down. Full width here
+			    instead of inside the narrow column between the two logos, so a real
+			    headline fits on one line. */}
+			{boxScore.exhibition ? null : (
+				<div className="mb-3">
+					<Note
+						key={boxScore.gid}
+						initialNote={boxScore.note}
+						info={{
+							type: "game",
+							gid: boxScore.gid,
+						}}
+						infoLink
+						banner
+						autoLink={buildRecapLinks(boxScore)}
+					/>
+				</div>
+			)}
 			<BoxScore
 				boxScore={boxScore}
 				Row={Row}
@@ -1304,20 +1339,6 @@ export const BoxScoreWrapper = ({
 				</>
 			) : null}
 			{forcedWinText}
-			{boxScore.exhibition ? null : (
-				<div className="mt-3">
-					<Note
-						key={boxScore.gid}
-						initialNote={boxScore.note}
-						info={{
-							type: "game",
-							gid: boxScore.gid,
-						}}
-						infoLink
-						autoLink={buildRecapLinks(boxScore)}
-					/>
-				</div>
-			)}
 		</>
 	);
 };

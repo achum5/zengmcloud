@@ -6,17 +6,24 @@ import {
 	setGameNoteExpanded,
 } from "../util/dailyScheduleUiState.ts";
 
-// A game's note (AI recap) attached to the bottom of its card on the Daily
-// Schedule. Overlay dropdown (see RecapBanner). Whether it's open is remembered
-// across in-app navigation, keyed by gid.
+// A game's note (AI recap): under its card on the Daily Schedule, and under the
+// score on its box score. Whether it's open is remembered across in-app
+// navigation, keyed by gid, so a recap opened in one place is open in the other.
+//
+// `flow` picks how the body opens - overlay (default, under a schedule card,
+// where sitting ON TOP keeps the cards from shifting) or pushing content down
+// (on the box score, where it's full width above the whole stats table and an
+// overlay would bury it).
 export const GameNote = ({
 	gid,
 	note,
 	links,
+	flow,
 }: {
 	gid: number;
 	note: string;
 	links: RecapLink[];
+	flow?: boolean;
 }) => {
 	const [expanded, setExpandedState] = useState(() => isGameNoteExpanded(gid));
 
@@ -31,6 +38,7 @@ export const GameNote = ({
 			links={links}
 			expanded={expanded}
 			onToggle={setExpanded}
+			flow={flow}
 		/>
 	);
 };

@@ -8,6 +8,7 @@ import {
 	linkifySeasonNote,
 	type RecapLink,
 } from "../../util/linkifyRecap.ts";
+import { GameNote } from "../../components/GameNote.tsx";
 
 const MAX_WIDTH = 600;
 
@@ -48,6 +49,11 @@ const Note = (
 				// For game notes (AI recaps): names to auto-link, scoped to the game.
 				autoLink?: RecapLink[];
 				autoLinkBySeason?: (season: number | undefined) => RecapLink[];
+				// Show a game note as the headline-plus-dropdown banner the Daily
+				// Schedule uses, instead of a scrolling block of markdown. Same
+				// component and the same per-gid open state, so a recap opened in one
+				// place is open in the other.
+				banner?: boolean;
 		  }
 		| {
 				initialNote?: undefined;
@@ -57,10 +63,19 @@ const Note = (
 				xs?: boolean;
 				autoLink?: RecapLink[];
 				autoLinkBySeason?: (season: number | undefined) => RecapLink[];
+				banner?: boolean;
 		  },
 ) => {
-	const { initialNote, note, info, infoLink, xs, autoLink, autoLinkBySeason } =
-		props;
+	const {
+		initialNote,
+		note,
+		info,
+		infoLink,
+		xs,
+		autoLink,
+		autoLinkBySeason,
+		banner,
+	} = props;
 
 	const [editing, setEditing] = useState(false);
 	const [editedNote, setEditedNote] = useState(initialNote ?? note ?? "");
@@ -144,6 +159,28 @@ const Note = (
 			>
 				Add {name} note
 			</button>
+		);
+	}
+
+	if (banner && info.type === "game") {
+		return (
+			<>
+				<GameNote
+					gid={info.gid}
+					note={noteToShow}
+					links={autoLink ?? []}
+					flow
+				/>
+				<button
+					type="button"
+					className="btn btn-light-bordered btn-sm mt-2"
+					onClick={() => {
+						setEditing(true);
+					}}
+				>
+					Edit game note
+				</button>
+			</>
 		);
 	}
 
