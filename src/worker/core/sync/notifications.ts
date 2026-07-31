@@ -5,6 +5,10 @@ import { idb } from "../../db/index.ts";
 import getOrder from "../draft/getOrder.ts";
 import type { Game } from "../../../common/types.ts";
 import type { Changeset } from "./changeset.ts";
+import {
+	coarsenRating,
+	exemptFromCoarseRatings,
+} from "../../../common/coarsenRating.ts";
 
 // A push notification to fan out to the OTHER devices in the league room. The
 // acting device (the one whose app is open, that just made the change) writes
@@ -100,6 +104,59 @@ export const endLotteryReveal = (): SyncNotification[] => {
 	return held;
 };
 
+// Every rating that goes out in a notification passes through here.
+//
+// These are read straight off the stored player, so nothing here has been near
+// the display coarsening every screen applies - a league hiding the ones digit
+// was still getting "(58/78)" pushed to its phones, and one hiding ratings
+// outright was getting them too. Same rule as everywhere else: gone entirely
+// under No Visible Player Ratings, floored to the tens digit under Coarse
+// Ratings, and left exact for a draft class when the prospects exemption is on,
+// since those numbers ARE the scouting report.
+//
+// Display only. Anything that RANKS or thresholds on a rating (the free-agent
+// ordering below, the re-sign potential bar) keeps using the true values - a
+// top-5 chosen from 0-10 inputs would be a coin flip.
+const displayRating = (
+	value: unknown,
+	{ prospect = false }: { prospect?: boolean } = {},
+): number | undefined => {
+	if (typeof value !== "number") {
+		return undefined;
+	}
+	if (g.get("challengeNoRatings")) {
+		return undefined;
+	}
+	if (!g.get("hideRatingsOnesDigit")) {
+		return value;
+	}
+	if (prospect && g.get("hideRatingsOnesDigitExceptProspects")) {
+		return value;
+	}
+	return coarsenRating(value);
+};
+
+// "58/78", or "58 ovr" when there's no potential, or "" when ratings are hidden.
+const ratingPair = (
+	ovr: unknown,
+	pot: unknown,
+	opts?: { prospect?: boolean },
+): string => {
+	const o = displayRating(ovr, opts);
+	const p = displayRating(pot, opts);
+	if (o !== undefined && p !== undefined) {
+		return `${o}/${p}`;
+	}
+	if (o !== undefined) {
+		return `${o} ovr`;
+	}
+	return "";
+};
+
+// Is this player spared the coarsening because he's still an undrafted prospect?
+const isProspect = (p: any): boolean =>
+	exemptFromCoarseRatings(p?.tid, g.get("hideRatingsOnesDigitExceptProspects"));
+
 // The current best available free agents, as "Name (ovr/pot)" lines.
 const topFreeAgentsText = async (): Promise<string> => {
 	let fas: any[] = [];
@@ -122,7 +179,12 @@ const topFreeAgentsText = async (): Promise<string> => {
 	if (ranked.length === 0) {
 		return "Free agency is open.";
 	}
-	return ranked.map((r) => `${r.name} (${r.ovr}/${r.pot})`).join("\n");
+	return ranked
+		.map((r) => {
+			const rating = ratingPair(r.ovr, r.pot);
+			return rating ? `${r.name} (${rating})` : r.name;
+		})
+		.join("\n");
 };
 
 // A single broadcast notification announcing a phase transition. Free agency
@@ -742,15 +804,10 @@ const currentRating = (p: any): any =>
 // " (58/78)" (ovr/pot), or " (58 ovr)" if pot is missing, or "" if neither.
 const ratingParen = (p: any): string => {
 	const rating = currentRating(p);
-	const ovr = rating?.ovr;
-	const pot = rating?.pot;
-	if (typeof ovr === "number" && typeof pot === "number") {
-		return ` (${ovr}/${pot})`;
-	}
-	if (typeof ovr === "number") {
-		return ` (${ovr} ovr)`;
-	}
-	return "";
+	const text = ratingPair(rating?.ovr, rating?.pot, {
+		prospect: isProspect(p),
+	});
+	return text ? ` (${text})` : "";
 };
 
 // "X", "X and Y", or "X, Y and Z".
@@ -796,12 +853,7 @@ const signingBody = (
 		totalValueM,
 		"M",
 	);
-	const ratingStr =
-		typeof ovr === "number" && typeof pot === "number"
-			? `${ovr}/${pot}`
-			: typeof ovr === "number"
-				? `${ovr} ovr`
-				: "";
+	const ratingStr = ratingPair(ovr, pot, { prospect: isProspect(p) });
 	const parenParts = [ratingStr, pos].filter(Boolean).join(", ");
 	const who = parenParts ? `${playerName(p)} (${parenParts})` : playerName(p);
 	return `The ${teamLabel(teamById, p.tid)} ${verb} ${who} to a ${years}-year, ${totalStr} contract.`;
@@ -965,10 +1017,10 @@ const buildDraftNotifications = (
 		const ovr = p.draft.ovr ?? rating?.ovr;
 		const pot = p.draft.pot ?? rating?.pot;
 		const pos = rating?.pos;
-		const ratingPart =
-			typeof ovr === "number" && typeof pot === "number"
-				? ` (${ovr}, ${pot})`
-				: "";
+		const ratingPartText = ratingPair(ovr, pot, { prospect: true });
+		const ratingPart = ratingPartText
+			? ` (${ratingPartText.replace("/", ", ")})`
+			: "";
 		const posPart = pos ? `, ${pos}` : "";
 		const collegePart = p.college ? ` from ${p.college}` : "";
 		out.push({

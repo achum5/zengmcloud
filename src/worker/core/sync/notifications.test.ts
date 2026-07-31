@@ -1150,4 +1150,182 @@ describe("buildNotifications", () => {
 		);
 		assert.deepEqual(notifs, []);
 	});
+	// Notifications read ratings straight off the stored player, so they never
+	// went near the display coarsening every screen applies - a league running
+	// Coarse Ratings was still getting "(82/84)" pushed to its phones, which is
+	// the one place the mode couldn't be enforced by looking at the app.
+	describe("hidden and coarsened ratings", () => {
+		const freeAgents = async () => {
+			await resetCache({
+				teams: [
+					{ tid: 0, region: "LA", name: "Lakers", abbrev: "LAL" },
+					{ tid: 1, region: "Boston", name: "Celtics", abbrev: "BOS" },
+				],
+				players: [
+					{
+						pid: 100,
+						tid: -1,
+						firstName: "Prime",
+						lastName: "Target",
+						ratings: [{ ovr: 82, pot: 84, pos: "SF" }],
+						draft: { year: 2020 },
+						retiredYear: Infinity,
+					},
+					{
+						pid: 101,
+						tid: -1,
+						firstName: "Solid",
+						lastName: "Starter",
+						ratings: [{ ovr: 74, pot: 76, pos: "PG" }],
+						draft: { year: 2018 },
+						retiredYear: Infinity,
+					},
+				],
+			});
+			const notifs = await buildNotifications(
+				"playMenu.day",
+				{ changes: [phasePut(PHASE.FREE_AGENCY)] },
+				opts,
+			);
+			return notifs[0]!.body;
+		};
+
+		test("coarse ratings go out floored to the tens digit", async () => {
+			g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+			try {
+				const body = await freeAgents();
+				assert.ok(body.includes("Prime Target (8/8)"), body);
+				assert.ok(body.includes("Solid Starter (7/7)"), body);
+				assert.ok(!body.includes("82"), `leaked the exact rating: ${body}`);
+				assert.ok(!body.includes("84"), `leaked the exact rating: ${body}`);
+			} finally {
+				g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+			}
+		});
+
+		// The ordering is a calculation, so it stays on the true ratings - a
+		// best-five picked from 0-10 inputs would be a coin flip.
+		test("the free agents are still ranked by their real ratings", async () => {
+			g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+			try {
+				const body = await freeAgents();
+				assert.ok(
+					body.indexOf("Prime Target") < body.indexOf("Solid Starter"),
+					body,
+				);
+			} finally {
+				g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+			}
+		});
+
+		test("no visible player ratings sends no numbers at all", async () => {
+			g.setWithoutSavingToDB("challengeNoRatings", true);
+			try {
+				const body = await freeAgents();
+				assert.ok(body.includes("Prime Target"), body);
+				assert.ok(!/\d/.test(body.split("\n")[0]!), `leaked a rating: ${body}`);
+			} finally {
+				g.setWithoutSavingToDB("challengeNoRatings", false);
+			}
+		});
+
+		test("ratings go out in full when neither mode is on", async () => {
+			const body = await freeAgents();
+			assert.ok(body.includes("Prime Target (82/84)"), body);
+		});
+
+		// A draft class's numbers ARE the scouting report, so the prospects
+		// exemption keeps them exact - the same carve-out the ratings pages make.
+		test("a draft pick keeps exact ratings when prospects are exempt", async () => {
+			g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+			g.setWithoutSavingToDB("hideRatingsOnesDigitExceptProspects", true);
+			try {
+				const notifs = await buildNotifications(
+					"playMenu.onePick",
+					{
+						changes: [
+							{
+								store: "players",
+								id: 7,
+								type: "put",
+								value: {
+									pid: 7,
+									tid: 0,
+									firstName: "Rook",
+									lastName: "Ie",
+									ratings: [{ ovr: 55, pot: 78, pos: "SF" }],
+									draft: {
+										round: 1,
+										pick: 3,
+										year: 2026,
+										tid: 0,
+										ovr: 55,
+										pot: 78,
+									},
+								},
+							},
+							{
+								store: "events",
+								id: 100,
+								type: "put",
+								value: { eid: 100, type: "draft", pids: [7], tids: [0] },
+							},
+						],
+					},
+					opts,
+				);
+				assert.ok(notifs[0]!.body.includes("(55, 78)"), notifs[0]!.body);
+			} finally {
+				g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+				g.setWithoutSavingToDB("hideRatingsOnesDigitExceptProspects", false);
+			}
+		});
+
+		test("a draft pick is coarsened when prospects are not exempt", async () => {
+			g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+			try {
+				const notifs = await buildNotifications(
+					"playMenu.onePick",
+					{
+						changes: [
+							{
+								store: "players",
+								id: 7,
+								type: "put",
+								value: {
+									pid: 7,
+									tid: 0,
+									firstName: "Rook",
+									lastName: "Ie",
+									ratings: [{ ovr: 55, pot: 78, pos: "SF" }],
+									draft: {
+										round: 1,
+										pick: 3,
+										year: 2026,
+										tid: 0,
+										ovr: 55,
+										pot: 78,
+									},
+								},
+							},
+							{
+								store: "events",
+								id: 100,
+								type: "put",
+								value: { eid: 100, type: "draft", pids: [7], tids: [0] },
+							},
+						],
+					},
+					opts,
+				);
+				assert.ok(notifs[0]!.body.includes("(5, 7)"), notifs[0]!.body);
+				assert.ok(
+					!notifs[0]!.body.includes("78"),
+					`leaked the exact rating: ${notifs[0]!.body}`,
+				);
+			} finally {
+				g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+			}
+		});
+	});
 });
