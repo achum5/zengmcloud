@@ -17,6 +17,7 @@ import { PlayerImageLinkButton } from "../components/PlayerImageLinkButton.tsx";
 
 const PlayerRatings = ({
 	abbrev,
+	page,
 	players,
 	ratings,
 	season,
@@ -166,10 +167,22 @@ const PlayerRatings = ({
 
 			<DataTable
 				cols={cols}
+				currentPage={page}
 				defaultSort={[6, "desc"]}
 				defaultStickyCols={window.mobile ? 0 : 1}
 				name="PlayerRatings"
 				pagination
+				// The page is part of the address, so a particular page of the ratings
+				// can be linked, bookmarked and opened in a new tab, and the back
+				// button walks through them.
+				pageUrl={(newPage) =>
+					helpers.leagueUrl([
+						"player_ratings",
+						abbrev,
+						season,
+						...(newPage > 1 ? [newPage] : []),
+					])
+				}
 				rows={rows}
 			/>
 		</>

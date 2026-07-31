@@ -300,4 +300,21 @@ const updatePlayers = async (
 	}
 };
 
-export default updatePlayers;
+// The table's page comes from the URL, and changing it must not re-query every
+// player in the league - it's the same rows, just a different slice of them. So
+// it rides alongside updatePlayers rather than being part of its guard.
+const updatePage = (inputs: ViewInput<"playerRatings">) => ({
+	page: inputs.page,
+});
+
+export default async (
+	inputs: ViewInput<"playerRatings">,
+	updateEvents: UpdateEvents,
+	state: any,
+) => {
+	return Object.assign(
+		{},
+		await updatePlayers(inputs, updateEvents, state),
+		updatePage(inputs),
+	);
+};

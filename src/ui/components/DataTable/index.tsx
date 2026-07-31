@@ -42,6 +42,7 @@ import { DataTableContext } from "./contexts.ts";
 import { useStickyTableHeader } from "./useStickyTableHeader.ts";
 import { downloadFile } from "../../util/downloadFile.ts";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
+import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 
 export type SortBy = [number, SortOrder];
 
@@ -140,6 +141,12 @@ export type Props = {
 	name: string;
 	nonfluid?: boolean;
 	pagination?: boolean;
+	// Put the page number in the URL. `pageUrl` builds the address for a page and
+	// turns the pager into real links; `currentPage` then drives the table from
+	// the route, so the URL is the single source of truth for which page shows.
+	// Both or neither.
+	pageUrl?: (page: number) => string;
+	currentPage?: number;
 	rankCol?: number;
 	ref?: RefCallback<DataTableHandle>;
 	rows: DataTableRow[];
@@ -195,6 +202,8 @@ export const DataTable = ({
 	name,
 	nonfluid,
 	pagination,
+	pageUrl,
+	currentPage: currentPageProp,
 	rankCol,
 	ref,
 	rows,
@@ -250,6 +259,17 @@ export const DataTable = ({
 		rows,
 	});
 
+	// With the page in the URL, anything that sends the table back to page 1
+	// (sorting, filtering, searching, changing rows per page) has to move the
+	// address too. Otherwise the route still points at the old page and would
+	// just put it back. Replaces rather than pushes - this isn't somewhere the
+	// back button should have to stop.
+	const resetPageInUrl = () => {
+		if (pageUrl && currentPageProp !== undefined && currentPageProp !== 1) {
+			realtimeUpdate([], pageUrl(1), undefined, true);
+		}
+	};
+
 	const handleColClick = (event: MouseEvent, i: number) => {
 		if (state.sortBys !== undefined) {
 			const sortBys = updateSortBys({
@@ -264,6 +284,7 @@ export const DataTable = ({
 				currentPage: 1,
 				sortBys,
 			});
+			resetPageInUrl();
 		}
 	};
 
@@ -350,6 +371,7 @@ export const DataTable = ({
 			filters,
 		});
 		state.settingsCache.set("DataTableFilters", filters);
+		resetPageInUrl();
 	};
 
 	const handlePagination = (newPage: number) => {
@@ -367,6 +389,7 @@ export const DataTable = ({
 				currentPage: 1,
 				perPage,
 			});
+			resetPageInUrl();
 		}
 	};
 
@@ -375,7 +398,25 @@ export const DataTable = ({
 			currentPage: 1,
 			searchText: event.currentTarget.value,
 		});
+		resetPageInUrl();
 	};
+
+	// A routed table takes its page from the URL, so follow the route when it
+	// moves - a pager link, the back button, or a pasted address all arrive this
+	// way. Done during render (like the reset below) so the right rows paint
+	// immediately instead of a frame late. Only when the ROUTE moves, though:
+	// the table also sends itself back to page 1 (searching, sorting, ...), and
+	// re-asserting the address the moment it does would undo it.
+	const prevPageProp = useRef<number | undefined>(undefined);
+	if (
+		currentPageProp !== undefined &&
+		currentPageProp !== prevPageProp.current
+	) {
+		prevPageProp.current = currentPageProp;
+		if (currentPageProp >= 1 && currentPageProp !== state.currentPage) {
+			setStatePartial({ currentPage: currentPageProp });
+		}
+	}
 
 	// If name changes, it means this is a whole new table and it has a different state (example: Player Stats switching between regular and advanced stats).
 	// If colOrder does not match cols, need to run reconciliation code in loadStateFromCache (example: current vs past seasons in League Finances).
@@ -693,6 +734,7 @@ export const DataTable = ({
 								numRows={numRowsFiltered}
 								onClick={handlePagination}
 								perPage={state.perPage}
+								pageUrl={pageUrl}
 							/>
 						</div>
 					) : null}

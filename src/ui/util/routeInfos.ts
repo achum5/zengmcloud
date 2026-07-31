@@ -81,6 +81,7 @@ export const routeInfos = {
 	"/l/:lid/player_ratings": "playerRatings",
 	"/l/:lid/player_ratings/:abbrev": "playerRatings",
 	"/l/:lid/player_ratings/:abbrev/:season": "playerRatings",
+	"/l/:lid/player_ratings/:abbrev/:season/:page": "playerRatings",
 	"/l/:lid/player_stats": "playerStats",
 	"/l/:lid/player_stats/:abbrev": "playerStats",
 	"/l/:lid/player_stats/:abbrev/:season": "playerStats",
