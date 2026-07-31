@@ -112,6 +112,29 @@ export const updatePlayerFaceImage = (pid: number, imgURL: string) => {
 	}
 };
 
+// The mirror of the above, for saving a cartoon face: the image URL goes away
+// (the worker deletes it too, since imgURL wins wherever a player is drawn) and
+// every cached season for this player picks up the new face right away, so the
+// row you just edited updates without a reload.
+export const updatePlayerFaceData = (pid: number, face: FaceConfig) => {
+	const prefix = `${pid}:`;
+	const keys = new Set([...cache.keys(), ...subscribers.keys()]);
+
+	for (const key of keys) {
+		if (!key.startsWith(prefix)) {
+			continue;
+		}
+
+		const previous = cache.get(key);
+		cache.set(key, {
+			...(previous ?? {}),
+			face,
+			imgURL: undefined,
+		});
+		notify(key);
+	}
+};
+
 // Returns the player's face data once loaded (null = loaded, no face; undefined =
 // still loading or no pid). Re-renders the caller when the data arrives.
 export const usePlayerFace = (

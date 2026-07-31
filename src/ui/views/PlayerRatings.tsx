@@ -13,7 +13,7 @@ import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { bySport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
-import { PlayerImageLinkButton } from "../components/PlayerImageLinkButton.tsx";
+import { PlayerFaceEditButton } from "../components/PlayerFaceEditButton.tsx";
 import { exemptFromCoarseRatings } from "../../common/coarsenRating.ts";
 
 const PlayerRatings = ({
@@ -126,10 +126,11 @@ const PlayerRatings = ({
 					value: (
 						<div className="d-flex align-items-center">
 							<div className="flex-grow-1">{wrappedName.value}</div>
-							<PlayerImageLinkButton
+							<PlayerFaceEditButton
 								firstName={p.firstName}
 								lastName={p.lastName}
 								pid={p.pid}
+								season={season}
 							/>
 						</div>
 					),

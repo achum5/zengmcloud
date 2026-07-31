@@ -5129,6 +5129,28 @@ const updatePlayerImage = async ({
 	return trimmedImgURL;
 };
 
+// Set a player's cartoon face from a faces.js config. Clears any image URL,
+// because imgURL wins over face everywhere it's drawn - keeping it would save
+// the face and change nothing on screen.
+const updatePlayerFace = async ({
+	pid,
+	face,
+}: {
+	pid: number;
+	face: FaceConfig;
+}) => {
+	const p = await idb.getCopy.players({ pid }, "noCopyCache");
+	if (!p) {
+		throw new Error("Player not found.");
+	}
+
+	p.face = face;
+	// "" is how a player with no picture is stored (see player.generate).
+	p.imgURL = "";
+	await idb.cache.players.put(p);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
 const getPlayersNextWatch = (players: Player[]) => {
 	const watchCounts = new Map<number, number>();
 	for (const p of players) {
@@ -6719,6 +6741,7 @@ export default {
 		updateMultiTeamMode,
 		updateOptions,
 		updatePlayThroughInjuries,
+		updatePlayerFace,
 		updatePlayerImage,
 		updatePlayerUntouchable,
 		updatePlayerWatch,
