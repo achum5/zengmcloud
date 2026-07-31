@@ -797,9 +797,42 @@ const TeamFinances = ({
 		new Set(),
 	);
 
+	// The other half of the same question: which SIGNED salaries count. Held as
+	// exclusions rather than inclusions so "everyone" needs no seeding and stays
+	// the state after a trade or a release changes the roster - the committed
+	// payroll is the plain reading of this table and has to be what it shows
+	// until you say otherwise. Unchecking a player takes his real money out of
+	// every season he's under contract for, which is how you ask what the books
+	// look like without him.
+	const [excludedSignedKeys, setExcludedSignedKeys] = useState<
+		ReadonlySet<number>
+	>(new Set());
+
 	// Draft picks share the players' key space, sitting after them, so one set
 	// of checkboxes and one totals calculation covers both.
 	const pickKey = (j: number) => contracts.length + j;
+
+	// Picks have no signed money, so they get no checkbox in that column.
+	const signedKeys = contracts
+		.map((p, i) => ({ p, i }))
+		.filter(({ p }) => p.amounts.some((x) => x !== undefined))
+		.map(({ i }) => i);
+
+	const allSigned = signedKeys.every((key) => !excludedSignedKeys.has(key));
+
+	const toggleAllSigned = () => {
+		setExcludedSignedKeys(allSigned ? new Set(signedKeys) : new Set());
+	};
+
+	const toggleOneSigned = (key: number) => {
+		const next = new Set(excludedSignedKeys);
+		if (next.has(key)) {
+			next.delete(key);
+		} else {
+			next.add(key);
+		}
+		setExcludedSignedKeys(next);
+	};
 
 	// Who even has a projection to include - a player signed through the last
 	// column has nothing to check. Every pick has one by construction.
@@ -836,6 +869,23 @@ const TeamFinances = ({
 	const cols: Col[] = [
 		{
 			title: "",
+			desc: "Count this player's signed salary in the totals",
+			noSearch: true,
+			sortSequence: [],
+			width: "1%",
+			titleReact: (
+				<input
+					type="checkbox"
+					className="form-check-input m-0"
+					checked={allSigned}
+					disabled={signedKeys.length === 0}
+					title="Include every signed salary"
+					onChange={toggleAllSigned}
+				/>
+			),
+		},
+		{
+			title: "",
 			desc: "Count this player's projected salary in the totals",
 			noSearch: true,
 			sortSequence: [],
@@ -863,7 +913,24 @@ const TeamFinances = ({
 
 	const playerRows = contracts.map((p, i) => {
 		const projectable = projectableKeys.includes(i);
+		const signed = signedKeys.includes(i);
+		const signedCounts = signed && !excludedSignedKeys.has(i);
 		const data: DataTableRow["data"] = [
+			signed
+				? {
+						value: (
+							<input
+								type="checkbox"
+								className="form-check-input m-0"
+								checked={signedCounts}
+								title={`Count ${p.firstName} ${p.lastName}'s signed salary in the totals`}
+								onChange={() => toggleOneSigned(i)}
+							/>
+						),
+						sortValue: signedCounts ? 1 : 0,
+						searchValue: "",
+					}
+				: null,
 			projectable
 				? {
 						value: (
@@ -899,15 +966,22 @@ const TeamFinances = ({
 			const amount = p.amounts[j];
 			if (amount !== undefined) {
 				const formattedAmount = helpers.formatCurrency(amount, "M");
+				// Struck through when he's unchecked, so a total that no longer adds
+				// up down the column says which money it left out.
+				const classNames = signedCounts
+					? undefined
+					: "text-body-secondary text-decoration-line-through";
 
 				if (p.released) {
 					data.push({
+						classNames,
 						value: <i>{formattedAmount}</i>,
 						sortValue: amount,
 						searchValue: formattedAmount,
 					});
 				} else {
 					data.push({
+						classNames,
 						value: formattedAmount,
 						sortValue: amount,
 						searchValue: formattedAmount,
@@ -958,6 +1032,8 @@ const TeamFinances = ({
 				: `pick ${dp.slot}${known ? "" : " projected"}`;
 
 		const data: DataTableRow["data"] = [
+			// Nothing is signed for a pick, so the signed column is blank for it.
+			null,
 			{
 				value: (
 					<input
@@ -1032,8 +1108,19 @@ const TeamFinances = ({
 				0,
 			),
 	);
+	// contractTotals is the worker's sum of every committed amount, so taking
+	// the unchecked players back out of it keeps the default totals bit-identical
+	// to what the page has always shown.
+	const excludedSignedTotals = salariesSeasons.map((_, i) =>
+		contracts.reduce(
+			(sum, p, key) =>
+				sum + (excludedSignedKeys.has(key) ? (p.amounts[i] ?? 0) : 0),
+			0,
+		),
+	);
 	const totals = contractTotals.map(
-		(amount, i) => amount + (projectedTotals[i] ?? 0),
+		(amount, i) =>
+			amount - (excludedSignedTotals[i] ?? 0) + (projectedTotals[i] ?? 0),
 	);
 
 	// Each column is measured against ITS season's cap, not today's - scheduled
@@ -1063,7 +1150,7 @@ const TeamFinances = ({
 
 	const footer = [
 		{
-			data: ["", "", `Totals${star}`, ""].concat(
+			data: ["", "", "", `Totals${star}`, ""].concat(
 				// @ts-expect-error
 				totals.map((amount) => highlightZeroNegative(amount)),
 			),
@@ -1071,7 +1158,7 @@ const TeamFinances = ({
 		...(anyHardCap
 			? [
 					{
-						data: ["", "", `Hard Cap Space${star}`, ""].concat(
+						data: ["", "", "", `Hard Cap Space${star}`, ""].concat(
 							// @ts-expect-error
 							totals.map((amount, i) => {
 								const hardCap = hardCapFor(i);
@@ -1086,13 +1173,13 @@ const TeamFinances = ({
 		{
 			data:
 				salaryCapType === "none"
-					? ["", "", `Under Luxury Tax${star}`, ""].concat(
+					? ["", "", "", `Under Luxury Tax${star}`, ""].concat(
 							// @ts-expect-error
 							totals.map((amount, i) =>
 								highlightZeroNegative(capsFor(i).luxuryPayroll / 1000 - amount),
 							),
 						)
-					: ["", "", `Free Cap Space${star}`, ""].concat(
+					: ["", "", "", `Free Cap Space${star}`, ""].concat(
 							// @ts-expect-error
 							totals.map((amount, i) =>
 								highlightZeroNegative(capsFor(i).salaryCap / 1000 - amount),
@@ -1135,13 +1222,14 @@ const TeamFinances = ({
 				<a href={helpers.leagueUrl(["roster"])}>your roster</a>. Released
 				players who are still owed money are <i>shown in italics</i>. Salaries
 				marked <span className="text-body-secondary">*</span> are projected, not
-				signed — a player's next contract, or what a draft pick's slot pays.
-				Check a row to count it in the totals.
+				signed — a player's next contract, or what a draft pick's slot pays. The
+				first column counts signed salary in the totals, the second counts
+				projected.
 			</p>
 
 			<DataTable
 				cols={cols}
-				defaultSort={[4, "desc"]}
+				defaultSort={[5, "desc"]}
 				name="TeamFinances"
 				nonfluid
 				footer={footer}
