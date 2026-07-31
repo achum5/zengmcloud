@@ -42,6 +42,7 @@ export const PlayerFaceEditButton = ({
 			{show ? (
 				<PlayerFaceModal
 					colors={faceData?.colors}
+					imgURL={faceData?.imgURL}
 					initialFace={faceData?.face}
 					jersey={faceData?.jersey}
 					// Remount when the face arrives, so the editor opens on the player's
