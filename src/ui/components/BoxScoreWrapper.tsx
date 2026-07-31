@@ -1339,6 +1339,23 @@ export const BoxScoreWrapper = ({
 				</>
 			) : null}
 			{forcedWinText}
+			{/* The recap itself is up under the score; this is just the way in to
+			    edit it, kept at the foot of the page where it has always been. */}
+			{boxScore.exhibition ? null : (
+				<div className="mt-3">
+					<Note
+						key={boxScore.gid}
+						initialNote={boxScore.note}
+						info={{
+							type: "game",
+							gid: boxScore.gid,
+						}}
+						infoLink
+						editOnly
+						autoLink={buildRecapLinks(boxScore)}
+					/>
+				</div>
+			)}
 		</>
 	);
 };

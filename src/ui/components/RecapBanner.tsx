@@ -18,12 +18,17 @@ export const RecapBanner = ({
 	expanded,
 	onToggle,
 	flow,
+	centered,
 }: {
 	note: string;
 	links: RecapLink[];
 	expanded: boolean;
 	onToggle: (value: boolean) => void;
 	flow?: boolean;
+	// Centered headline with no expand glyph, for the box score - it sits under
+	// a centered score and reads as that game's headline rather than as a list
+	// item. `flow` as well; this only restyles it.
+	centered?: boolean;
 }) => {
 	const text = note.trim();
 	if (text === "") {
@@ -60,6 +65,7 @@ export const RecapBanner = ({
 			className={clsx("game-note small position-relative", {
 				open,
 				"game-note-flow": flow,
+				"game-note-centered": centered,
 			})}
 		>
 			<div

@@ -1328,6 +1328,62 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	content: " ▾";
 }
 
+// The box score's headline. It sits under a centered score and reads as that
+// game's headline, not as a row in a list, so: centered, no glyph hanging off
+// the end of the words, and a short hairline under it instead of a rule running
+// the full width of the page. The whole headline stays tappable; the cue is the
+// pointer plus a small lift on hover, which is enough when the thing you're
+// hovering is one big line of type.
+.game-note-centered .game-note-header {
+	justify-content: center;
+	text-align: center;
+	border-bottom: 0;
+	padding: 0 0 0.35rem;
+	position: relative;
+	transition: opacity 0.15s ease;
+}
+.game-note-centered.open .game-note-header {
+	border-bottom: 0;
+}
+.game-note-centered .game-note-header:hover {
+	opacity: 0.82;
+}
+// The hairline, centered and short. Widens a touch while open so the article
+// below reads as hanging off it.
+.game-note-centered .game-note-header::after {
+	content: "";
+	position: absolute;
+	left: 50%;
+	bottom: 0;
+	transform: translateX(-50%);
+	width: 3rem;
+	height: 2px;
+	border-radius: 1px;
+	background-color: var(--bs-border-color);
+	transition:
+		width 0.2s ease,
+		background-color 0.2s ease;
+}
+.game-note-centered.open .game-note-header::after {
+	width: 7rem;
+}
+// No expand glyph after the words, in either state. The open case needs the
+// same specificity as the .game-note-flow.open rule it is overriding, so both
+// classes are named.
+.game-note-centered .game-note-header .markdown p::after,
+.game-note-centered.game-note-flow.open .game-note-header .markdown p::after {
+	content: none;
+}
+// The article: centered as a block and capped at a comfortable measure, but
+// left-aligned inside it - centered body copy is hard to read past a line or
+// two. Extra room under the hairline so it doesn't crowd the headline.
+.game-note-centered .game-note-body {
+	max-width: 46rem;
+	margin: 0 auto;
+	text-align: left;
+	padding-top: 0.75rem;
+}
+
 // The article flows on the page (no box), animating its height open/closed.
 .game-note-flow .game-note-body {
 	position: static;

@@ -54,6 +54,11 @@ const Note = (
 				// component and the same per-gid open state, so a recap opened in one
 				// place is open in the other.
 				banner?: boolean;
+				// Just the button (and the editor it opens) - no copy of the note.
+				// For a page that already shows the note somewhere else and only wants
+				// the way in to edit it, like the box score, where the recap sits under
+				// the score and this stays at the foot of the page.
+				editOnly?: boolean;
 		  }
 		| {
 				initialNote?: undefined;
@@ -64,6 +69,7 @@ const Note = (
 				autoLink?: RecapLink[];
 				autoLinkBySeason?: (season: number | undefined) => RecapLink[];
 				banner?: boolean;
+				editOnly?: boolean;
 		  },
 ) => {
 	const {
@@ -75,6 +81,7 @@ const Note = (
 		autoLink,
 		autoLinkBySeason,
 		banner,
+		editOnly,
 	} = props;
 
 	const [editing, setEditing] = useState(false);
@@ -162,25 +169,31 @@ const Note = (
 		);
 	}
 
+	// Empty notes already returned the "Add" button above, so this is only ever
+	// the edit path.
+	if (editOnly) {
+		return (
+			<button
+				type="button"
+				className={clsx("btn btn-light-bordered", xs ? "btn-xs" : "btn-sm")}
+				onClick={() => {
+					setEditing(true);
+				}}
+			>
+				Edit {name} note
+			</button>
+		);
+	}
+
 	if (banner && info.type === "game") {
 		return (
-			<>
-				<GameNote
-					gid={info.gid}
-					note={noteToShow}
-					links={autoLink ?? []}
-					flow
-				/>
-				<button
-					type="button"
-					className="btn btn-light-bordered btn-sm mt-2"
-					onClick={() => {
-						setEditing(true);
-					}}
-				>
-					Edit game note
-				</button>
-			</>
+			<GameNote
+				gid={info.gid}
+				note={noteToShow}
+				links={autoLink ?? []}
+				flow
+				centered
+			/>
 		);
 	}
 

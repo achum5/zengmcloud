@@ -19,11 +19,13 @@ export const GameNote = ({
 	note,
 	links,
 	flow,
+	centered,
 }: {
 	gid: number;
 	note: string;
 	links: RecapLink[];
 	flow?: boolean;
+	centered?: boolean;
 }) => {
 	const [expanded, setExpandedState] = useState(() => isGameNoteExpanded(gid));
 
@@ -39,6 +41,7 @@ export const GameNote = ({
 			expanded={expanded}
 			onToggle={setExpanded}
 			flow={flow}
+			centered={centered}
 		/>
 	);
 };
