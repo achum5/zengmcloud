@@ -231,3 +231,42 @@ export const hasSeasonNote = (
 		(section) =>
 			section.season === season && section.kind === kind && section.body !== "",
 	);
+
+// Split a career note into the parts that hang off a season row in the stats
+// table and the parts that don't.
+//
+// Season writeups moved out of the player-page note block and onto the season
+// they're about, which is where you go looking for them. But a section is only
+// reachable there if that season actually HAS a row - a draft prospect has a
+// scouting report and no stats at all, and a player who missed a whole year to
+// injury can have a writeup for a season he never appeared in. Anything with
+// nowhere to go stays in the note block, so nothing becomes unreadable.
+export const splitSeasonNote = (
+	note: string | undefined,
+	// Seasons the player has a stats row for.
+	seasonsWithRows: Set<number>,
+): {
+	bySeason: Map<number, SeasonNoteSection[]>;
+	leftover: string;
+} => {
+	const bySeason = new Map<number, SeasonNoteSection[]>();
+	const leftover: SeasonNoteSection[] = [];
+
+	for (const section of parseSeasonNote(note ?? "")) {
+		if (section.body === "" && section.headline === "") {
+			continue;
+		}
+		if (section.season !== undefined && seasonsWithRows.has(section.season)) {
+			const existing = bySeason.get(section.season);
+			if (existing) {
+				existing.push(section);
+			} else {
+				bySeason.set(section.season, [section]);
+			}
+		} else {
+			leftover.push(section);
+		}
+	}
+
+	return { bySeason, leftover: renderSeasonNote(leftover) };
+};

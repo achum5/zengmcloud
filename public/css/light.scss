@@ -1200,8 +1200,9 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 }
 
 // Markdown in a tight space: the game-note recap under a Daily Schedule card,
-// and the player note inside the ratings popover. Compact block spacing and no
-// trailing margin, so a short note doesn't sit in a box of its own padding.
+// and a season's writeup in the popover off its row in the stats table.
+// Compact block spacing and no trailing margin, so a short note doesn't sit in
+// a box of its own padding.
 .game-note,
 .player-note-compact {
 	line-height: 1.3;

@@ -54,6 +54,11 @@ const Note = (
 				// component and the same per-gid open state, so a recap opened in one
 				// place is open in the other.
 				banner?: boolean;
+				// What to RENDER, when that differs from what gets EDITED. The player
+				// page shows only the part of a career note that isn't already
+				// reachable from a season row in the stats table, but the editor has
+				// to keep the whole thing or saving would delete the rest.
+				displayNote?: string;
 				// Just the button (and the editor it opens) - no copy of the note.
 				// For a page that already shows the note somewhere else and only wants
 				// the way in to edit it, like the box score, where the recap sits under
@@ -70,6 +75,7 @@ const Note = (
 				autoLinkBySeason?: (season: number | undefined) => RecapLink[];
 				banner?: boolean;
 				editOnly?: boolean;
+				displayNote?: string;
 		  },
 ) => {
 	const {
@@ -82,6 +88,7 @@ const Note = (
 		autoLinkBySeason,
 		banner,
 		editOnly,
+		displayNote,
 	} = props;
 
 	const [editing, setEditing] = useState(false);
@@ -153,9 +160,12 @@ const Note = (
 					? "player"
 					: "team";
 
-	const noteToShow = Object.hasOwn(props, "initialNote") ? editedNote : note;
+	const fullNote = Object.hasOwn(props, "initialNote") ? editedNote : note;
+	// `displayNote` only ever narrows what's shown, so an empty string from it is
+	// meaningful (nothing left to show here) while undefined means "show it all".
+	const noteToShow = displayNote ?? fullNote;
 
-	if (noteToShow === undefined || noteToShow === "") {
+	if (fullNote === undefined || fullNote === "") {
 		return (
 			<button
 				type="button"
@@ -170,8 +180,10 @@ const Note = (
 	}
 
 	// Empty notes already returned the "Add" button above, so this is only ever
-	// the edit path.
-	if (editOnly) {
+	// the edit path. `noteToShow` empty with a non-empty note means every section
+	// is being shown somewhere else (a career whose writeups all sit on their
+	// season rows) - there's nothing to print, but there is still plenty to edit.
+	if (editOnly || noteToShow === undefined || noteToShow === "") {
 		return (
 			<button
 				type="button"

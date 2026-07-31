@@ -284,6 +284,7 @@ const TopStuff = ({
 	currentSeason,
 	jerseyNumberInfos,
 	noteTeammates,
+	displayNote,
 	player,
 	randomDebutsForeverPids,
 	retired,
@@ -313,6 +314,10 @@ const TopStuff = ({
 	currentSeason: number;
 	season?: number;
 	showRatings: boolean;
+	// What the note block should RENDER. The full note is still what gets
+	// edited; this is only the part that isn't already readable from a season
+	// row in the stats table.
+	displayNote?: string;
 }) => {
 	const { gender, godMode, phase, spectator, teamInfoCache, userTid } =
 		useLocal([
@@ -759,6 +764,10 @@ const TopStuff = ({
 				<Note
 					key={player.pid}
 					note={player.note}
+					// Season writeups live on their season's row in the stats table
+					// now, so only what has no row shows here. Editing still gets the
+					// whole note - this is display only.
+					displayNote={displayNote}
 					info={{
 						type: "player",
 						pid: player.pid,

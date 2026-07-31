@@ -7,7 +7,17 @@ import addFirstNameShort from "../util/addFirstNameShort.ts";
 const getSeason = async (playersAll: Player[], season: number) => {
 	const playersAllFiltered = playersAll.filter((p) => p.draft.year === season);
 	const players = await idb.getCopies.playersPlus(playersAllFiltered, {
-		attrs: ["pid", "firstName", "lastName", "age", "valueFuzz", "watch"],
+		// imgURL so the table knows who is still on a photo rather than a face -
+		// those are the rows that get the face-editor button.
+		attrs: [
+			"pid",
+			"firstName",
+			"lastName",
+			"age",
+			"valueFuzz",
+			"watch",
+			"imgURL",
+		],
 		ratings: ["ovr", "pot", "skills", "fuzz", "pos"],
 		showNoStats: true,
 		showRookies: true,
@@ -23,6 +33,7 @@ const getSeason = async (playersAll: Player[], season: number) => {
 			age: pa.age,
 			watch: pa.watch,
 			valueFuzz: pa.valueFuzz,
+			imgURL: pa.imgURL,
 			// Ratings - just take the only entry
 			ovr: pa.ratings.at(-1).ovr,
 			pot: pa.ratings.at(-1).pot,

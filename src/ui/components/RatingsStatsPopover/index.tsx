@@ -7,42 +7,6 @@ import { toWorker } from "../../util/toWorker.ts";
 import { ResponsivePopover } from "../ResponsivePopover.tsx";
 import { PLAYER } from "../../../common/constants.ts";
 import { crossTabEmitter } from "../../util/crossTabEmitter.ts";
-import { Markdown } from "../Markdown.tsx";
-import { useLocal } from "../../util/local.ts";
-import {
-	buildPlayerNoteLinks,
-	linkifySeasonNote,
-} from "../../util/linkifyRecap.ts";
-
-// Notes are markdown everywhere else they're shown, and a player note is mostly
-// AI writeups - so rendering it raw here put literal **asterisks** in the one
-// place the note is read most often. Same treatment as the player page: each
-// [year] section is linked against its own season, so a team named in the 2003
-// section points at that team in 2003.
-const PlayerNote = ({
-	className,
-	note,
-}: {
-	className?: string;
-	note: string;
-}) => {
-	const { teamInfoCache } = useLocal(["teamInfoCache"]);
-
-	return (
-		<div
-			className={clsx("text-wrap player-note-compact", className)}
-			style={{
-				maxHeight: "7em",
-				overflowY: "auto",
-			}}
-		>
-			<Markdown>
-				{linkifySeasonNote(note, buildPlayerNoteLinks(teamInfoCache))}
-			</Markdown>
-		</div>
-	);
-};
-
 const Icon = ({
 	onClick,
 	ref,
@@ -103,7 +67,6 @@ export const RatingsStatsPopover = ({
 		};
 		pid: number;
 		type?: "career" | "current" | "draft" | number;
-		note?: string;
 		// Whether the worker coarsened the ratings row above, so the gradient is
 		// drawn on the same scale the numbers are actually on.
 		coarseRatings?: boolean;
@@ -157,7 +120,6 @@ export const RatingsStatsPopover = ({
 			stats: p.stats,
 			pid,
 			type: p.type,
-			note: p.note,
 			coarseRatings: p.coarseRatings,
 		});
 		setLoadingData(false);
@@ -179,7 +141,6 @@ export const RatingsStatsPopover = ({
 		ratings,
 		stats,
 		type,
-		note,
 		coarseRatings,
 	} = player;
 
@@ -245,7 +206,6 @@ export const RatingsStatsPopover = ({
 				tid={tid}
 				coarseRatings={coarseRatings}
 			/>
-			{note ? <PlayerNote className="mt-2" note={note} /> : null}
 		</>
 	);
 
@@ -264,7 +224,6 @@ export const RatingsStatsPopover = ({
 				tid={tid}
 				coarseRatings={coarseRatings}
 			/>
-			{note ? <PlayerNote className="mt-2" note={note} /> : null}
 		</div>
 	);
 

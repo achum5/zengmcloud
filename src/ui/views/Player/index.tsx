@@ -18,6 +18,8 @@ import { InjuryIcon } from "../../components/InjuryIcon.tsx";
 import { SkillsBlock } from "../../components/SkillsBlock.tsx";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 import { useLocal } from "../../util/local.ts";
+import { splitSeasonNote } from "../../../common/seasonNote.ts";
+import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 
 const Player2 = ({
 	bestPos,
@@ -39,11 +41,22 @@ const Player2 = ({
 	teamURL,
 	willingToSign,
 }: View<"player">) => {
-	const { challengeNoRatings, season: currentSeason } = useLocal([
-		"challengeNoRatings",
-		"season",
-	]);
+	const {
+		challengeNoRatings,
+		season: currentSeason,
+		teamInfoCache,
+	} = useLocal(["challengeNoRatings", "season", "teamInfoCache"]);
 	const showRatings = !challengeNoRatings || retired;
+
+	// Season writeups hang off the season they're about, in the stats table.
+	// Anything with no row to hang off - a draft prospect's scouting report, a
+	// writeup for a year he missed entirely - stays in the note block below, so
+	// nothing written about him becomes unreachable.
+	const seasonNotes = splitSeasonNote(
+		player.note,
+		new Set(player.stats.map((ps: { season: number }) => ps.season)),
+	);
+	const noteLinksBySeason = buildPlayerNoteLinks(teamInfoCache, noteTeammates);
 
 	// Per-team career totals (bref-style team rows), fetched once and shared by
 	// every stat table below.
@@ -99,6 +112,9 @@ const Player2 = ({
 				currentSeason={currentSeason}
 				jerseyNumberInfos={jerseyNumberInfos}
 				noteTeammates={noteTeammates}
+				// Only what has nowhere else to go; the season writeups are on their
+				// own rows in the stats table above.
+				displayNote={seasonNotes.leftover}
 				player={player}
 				randomDebutsForeverPids={randomDebutsForeverPids}
 				retired={retired}
@@ -111,7 +127,7 @@ const Player2 = ({
 				willingToSign={willingToSign}
 			/>
 
-			{statTables.map(({ name, onlyShowIf, stats, superCols }) => (
+			{statTables.map(({ name, onlyShowIf, stats, superCols }, i) => (
 				<StatsTable
 					key={name}
 					name={name}
@@ -121,6 +137,11 @@ const Player2 = ({
 					p={player}
 					leaders={leaders}
 					teamStats={teamStats}
+					// Only the first table gets the writeup arrows. Every table lists
+					// the same seasons, so repeating them five times down the page
+					// would be five ways to open the same popover.
+					seasonNotes={i === 0 ? seasonNotes.bySeason : undefined}
+					noteLinksBySeason={i === 0 ? noteLinksBySeason : undefined}
 				/>
 			))}
 

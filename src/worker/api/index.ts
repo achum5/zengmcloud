@@ -3750,7 +3750,10 @@ const ratingsStatsPopoverInfo = async ({
 		hockey: ["keyStatsWithGoalieGP"],
 	});
 
-	const attrs = ["name", "jerseyNumber", "tid", "age", "note"];
+	// No "note" - the popover used to print the player's whole career writeup
+	// under his ratings, which is a lot of prose to hang off a hover. Season
+	// writeups are read from their own row in the stats table now.
+	const attrs = ["name", "jerseyNumber", "tid", "age"];
 	const ratings = ["pos", "ovr", "pot", "season", "tid", ...RATINGS];
 	if (!local.exhibitionGamePlayers && !eightyTwoZeroDraftPlayer) {
 		attrs.push("abbrev");

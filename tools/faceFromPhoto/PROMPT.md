@@ -33,6 +33,12 @@ key listed below present.
 Quote every key and string with a plain ASCII double quote (`"`, U+0022). Curly
 quotes (`“` `”`) are not valid JSON and the game rejects the whole object.
 
+**Never put a line break inside a string.** Every value here is short - an id, a
+hex, an `rgba(...)` - so each one fits on its own line with no wrapping. A
+string broken across two lines is a "Bad control character in string literal"
+error and the game refuses the whole object. Same for a literal tab inside a
+string: use plain spaces only.
+
 **After the JSON, add a short `Notes:` block** — up to three one-line bullets,
 only for calls you are genuinely unsure about and where knowing would let me fix
 it myself (bald vs. buzzed, stubble vs. a shaped goatee, a skin tone you had to

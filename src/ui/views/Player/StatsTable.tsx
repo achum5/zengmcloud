@@ -16,6 +16,9 @@ import { wrappedTeamAbbrevLink } from "../../components/TeamAbbrevLink.tsx";
 import type { SuperCol } from "../../components/DataTable/index.tsx";
 import { formatSeasonRuns } from "../../util/formatSeasonRuns.ts";
 import type { PlayerTeamStats } from "./usePlayerTeamStats.ts";
+import { SeasonNoteButton } from "./SeasonNoteButton.tsx";
+import type { SeasonNoteSection } from "../../../common/seasonNote.ts";
+import type { RecapLink } from "../../util/linkifyRecap.ts";
 
 const hasStats = (
 	careerStats: View<"player">["player"]["careerStats"],
@@ -51,6 +54,8 @@ export const StatsTable = ({
 	superCols,
 	leaders,
 	teamStats,
+	seasonNotes,
+	noteLinksBySeason,
 }: {
 	name: string;
 	onlyShowIf?: string[];
@@ -59,6 +64,11 @@ export const StatsTable = ({
 	superCols?: SuperCol[];
 	leaders: View<"player">["leaders"];
 	teamStats?: PlayerTeamStats;
+	// The player's writeups, keyed by the season they're about. Only passed to
+	// the first stats table - a career's worth of arrows repeated down five
+	// tables would be noise, and they'd all open the same thing.
+	seasonNotes?: Map<number, SeasonNoteSection[]>;
+	noteLinksBySeason?: (season: number | undefined) => RecapLink[];
 }) => {
 	const hasRegularSeasonStats = hasStats(p.careerStats, onlyShowIf);
 	const hasPlayoffStats = hasStats(p.careerStatsPlayoffs, onlyShowIf);
@@ -340,6 +350,13 @@ export const StatsTable = ({
 								awards={p.awards}
 								playoffs={playoffs === true}
 							/>
+							{seasonNotes?.get(ps.season) ? (
+								<SeasonNoteButton
+									links={noteLinksBySeason?.(ps.season) ?? []}
+									season={ps.season}
+									sections={seasonNotes.get(ps.season)!}
+								/>
+							) : null}
 						</>
 					),
 				},

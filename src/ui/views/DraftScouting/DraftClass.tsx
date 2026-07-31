@@ -10,6 +10,7 @@ import type { DataTableRow } from "../../components/DataTable/index.tsx";
 import { downloadFile } from "../../util/downloadFile.ts";
 import { LeagueFileUpload } from "../../components/LeagueFileUpload.tsx";
 import { PlayerImageLinkButton } from "../../components/PlayerImageLinkButton.tsx";
+import { PlayerFaceEditButton } from "../../components/PlayerFaceEditButton.tsx";
 
 const DraftClass = ({
 	challengeNoRatings,
@@ -57,6 +58,16 @@ const DraftClass = ({
 					value: (
 						<div className="d-flex align-items-center">
 							<div className="flex-grow-1">{wrappedName.value}</div>
+							{/* A prospect still on a photo is the one you'd want to convert
+							    to a face, so that's where the editor button goes. */}
+							{p.imgURL ? (
+								<PlayerFaceEditButton
+									firstName={p.firstName}
+									lastName={p.lastName}
+									pid={p.pid}
+									season={season}
+								/>
+							) : null}
 							<PlayerImageLinkButton
 								firstName={p.firstName}
 								lastName={p.lastName}

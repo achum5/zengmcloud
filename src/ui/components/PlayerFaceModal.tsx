@@ -10,6 +10,7 @@ import { showNotification } from "../util/showNotification.ts";
 import { updatePlayerFaceData } from "../util/playerFaces.ts";
 import { FACE_CROPS, FULL_FACE } from "../../common/faceCrops.ts";
 import { FACE_FROM_PHOTO_PROMPT } from "../../common/faceFromPhotoPrompt.ts";
+import { parseFaceJson } from "../../common/repairFaceJson.ts";
 
 // `jersey` and `teamColors` have no controls on purpose: the game overrides
 // both with the player's team on the way to the screen, so editing them would
@@ -404,27 +405,23 @@ export const PlayerFaceModal = ({
 	// you wonder whether it worked.
 	const [copied, setCopied] = useState(false);
 
-	let face: FaceConfig | undefined;
-	let parseError: string | undefined;
-	try {
-		face = JSON.parse(text);
-	} catch (error) {
-		// Curly quotes are what a config pasted out of a chat app usually trips on.
-		parseError = /[‘’“”]/.test(text)
-			? "Invalid JSON — replace the curly quotes with straight ones."
-			: (error as Error).message;
-	}
+	// Repairs the handful of things a chat AI reliably gets wrong (a value
+	// wrapped across two lines, curly quotes, a markdown fence, a trailing
+	// comma). The error is only shown when even the repaired text isn't JSON,
+	// because the rest the user can't act on and shouldn't have to.
+	const face = parseFaceJson(text) as FaceConfig | undefined;
+	const parseError =
+		face === undefined && text.trim() !== ""
+			? "This isn't a faces.js config — paste the JSON object the prompt asks for."
+			: undefined;
 
 	// Redrawing a whole strip of thumbnails costs real time, so let it lag a
 	// slider drag rather than stall it. The live preview above is never deferred.
 	const deferredText = useDeferredValue(text);
-	const galleryBase = useMemo(() => {
-		try {
-			return JSON.parse(deferredText) as FaceConfig;
-		} catch {
-			return undefined;
-		}
-	}, [deferredText]);
+	const galleryBase = useMemo(
+		() => parseFaceJson(deferredText) as FaceConfig | undefined,
+		[deferredText],
+	);
 
 	// A control edit reads the current object, changes one field and writes the
 	// whole thing back out, so the textarea stays formatted and in sync.
@@ -526,16 +523,16 @@ export const PlayerFaceModal = ({
 										});
 										return;
 									}
-									// Reformat a valid config so it reads like the rest of the
-									// editor's output; leave anything else exactly as pasted, so
-									// the parse error points at what's actually there.
-									try {
-										setText(
-											JSON.stringify(JSON.parse(clipboardText), undefined, 2),
-										);
-									} catch {
-										setText(clipboardText);
-									}
+									// Repair what can be repaired and reformat it so it reads
+									// like the rest of the editor's output. A paste that isn't a
+									// config at all goes in as-is, so what's on screen is what
+									// was actually on the clipboard.
+									const parsed = parseFaceJson(clipboardText);
+									setText(
+										parsed === undefined
+											? clipboardText
+											: JSON.stringify(parsed, undefined, 2),
+									);
 								}}
 								type="button"
 							>
