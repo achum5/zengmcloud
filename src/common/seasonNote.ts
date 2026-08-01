@@ -18,7 +18,11 @@
 // player usually retires in a year he also played.
 //
 // Anything the user typed themselves - text under no header - is preserved and
-// kept at the bottom. It is the one thing here that cannot be regenerated.
+// kept at the TOP. It is the one thing here that cannot be regenerated, and the
+// top is the only place it survives a round trip: a reader walking the note line
+// by line has no way to tell trailing prose from more of the section above it,
+// so freeform kept at the bottom was silently absorbed into the OLDEST writeup
+// on the very next parse - and then shown as part of it, under that year.
 
 export type SeasonNoteKind = "season" | "retirement";
 
@@ -198,7 +202,9 @@ export const upsertSeasonNote = (
 
 	headed.sort(orderSections);
 
-	return renderSeasonNote([...headed, ...freeform]);
+	// Freeform first - see the note at the top of this file. Anywhere else and
+	// the next parse folds it into whichever section precedes it.
+	return renderSeasonNote([...freeform, ...headed]);
 };
 
 // Drop one section, leaving everything else alone. Used to clear a retirement
@@ -232,41 +238,117 @@ export const hasSeasonNote = (
 			section.season === season && section.kind === kind && section.body !== "",
 	);
 
-// Split a career note into the parts that hang off a season row in the stats
-// table and the parts that don't.
-//
-// Season writeups moved out of the player-page note block and onto the season
-// they're about, which is where you go looking for them. But a section is only
-// reachable there if that season actually HAS a row - a draft prospect has a
-// scouting report and no stats at all, and a player who missed a whole year to
-// injury can have a writeup for a season he never appeared in. Anything with
-// nowhere to go stays in the note block, so nothing becomes unreadable.
-export const splitSeasonNote = (
-	note: string | undefined,
-	// Seasons the player has a stats row for.
-	seasonsWithRows: Set<number>,
-): {
+export type PlayerNoteSplit = {
+	// The draft-selection writeup, shown off the "Draft: 2001 - Round 1..." line
+	// in the bio. That is the section for the player's DRAFT YEAR: the
+	// draftPicks pass covers the class taken at the END of that season, so the
+	// piece is about being picked, not about a season he played (he hadn't).
+	draftRecap: SeasonNoteSection[];
+	// Scouting reports, shown off the DRAFT SEASON's ratings row. The prospects
+	// pass writes them a season EARLY (it covers next year's class), so a 2001
+	// pick is scouted under [2000] - a year he has no row for at all, which is
+	// why they need a home chosen for them rather than one of their own.
+	scouting: SeasonNoteSection[];
+	// Writeups that hang off a season's row in the stats table.
 	bySeason: Map<number, SeasonNoteSection[]>;
+	// Writeups for a season he was in the league but never played (a year lost
+	// to injury). No stats row to hang off, but there is a ratings row.
+	byRatingsSeason: Map<number, SeasonNoteSection[]>;
+	// Hand-written text, plus anything with nowhere else to go. The only thing
+	// that shows in the note block on the player page.
 	leftover: string;
-} => {
-	const bySeason = new Map<number, SeasonNoteSection[]>();
-	const leftover: SeasonNoteSection[] = [];
+};
 
-	for (const section of parseSeasonNote(note ?? "")) {
-		if (section.body === "" && section.headline === "") {
+// Where each part of a player's note belongs on his page.
+//
+// A career note is one stack of [YYYY] sections, and reading it meant scrolling
+// a box hunting for the year you wanted. Every piece now hangs off the thing it
+// is about - the draft line, a ratings row, a stats row - so the note block is
+// left holding only what a person typed themselves.
+//
+// A player who has NOT been drafted yet is the exception, and gets nothing
+// routed: he has no draft line worth hanging a recap off and no career to
+// speak of, so his scouting report is the whole point of his page and belongs
+// right at the top, which is where it already is.
+export const splitPlayerNote = (
+	note: string | undefined,
+	{
+		draftYear,
+		undrafted,
+		seasonsWithStats,
+		seasonsWithRatings,
+	}: {
+		// The player's draft year, or undefined if he has none.
+		draftYear: number | undefined;
+		// Still a prospect - the draft he belongs to hasn't happened yet.
+		undrafted: boolean;
+		seasonsWithStats: Set<number>;
+		seasonsWithRatings: Set<number>;
+	},
+): PlayerNoteSplit => {
+	const split: PlayerNoteSplit = {
+		draftRecap: [],
+		scouting: [],
+		bySeason: new Map(),
+		byRatingsSeason: new Map(),
+		leftover: "",
+	};
+
+	const sections = parseSeasonNote(note ?? "").filter(
+		(section) => section.body !== "" || section.headline !== "",
+	);
+
+	if (undrafted) {
+		split.leftover = renderSeasonNote(sections);
+		return split;
+	}
+
+	const leftover: SeasonNoteSection[] = [];
+	const push = (
+		map: Map<number, SeasonNoteSection[]>,
+		season: number,
+		section: SeasonNoteSection,
+	) => {
+		const existing = map.get(season);
+		if (existing) {
+			existing.push(section);
+		} else {
+			map.set(season, [section]);
+		}
+	};
+
+	for (const section of sections) {
+		const { season } = section;
+		if (season === undefined) {
+			leftover.push(section);
 			continue;
 		}
-		if (section.season !== undefined && seasonsWithRows.has(section.season)) {
-			const existing = bySeason.get(section.season);
-			if (existing) {
-				existing.push(section);
-			} else {
-				bySeason.set(section.season, [section]);
-			}
+
+		if (draftYear !== undefined && season < draftYear) {
+			// Anything from before the draft is scouting, whichever season it was
+			// filed under - a prospect can sit in the pool for more than one year.
+			split.scouting.push(section);
+		} else if (draftYear !== undefined && season === draftYear) {
+			split.draftRecap.push(section);
+		} else if (seasonsWithStats.has(season)) {
+			push(split.bySeason, season, section);
+		} else if (seasonsWithRatings.has(season)) {
+			push(split.byRatingsSeason, season, section);
 		} else {
 			leftover.push(section);
 		}
 	}
 
-	return { bySeason, leftover: renderSeasonNote(leftover) };
+	// The scouting report needs the draft season's ratings row to hang off. If
+	// there isn't one, it would vanish - keep it in the note block instead.
+	if (
+		split.scouting.length > 0 &&
+		(draftYear === undefined || !seasonsWithRatings.has(draftYear))
+	) {
+		leftover.push(...split.scouting);
+		split.scouting = [];
+	}
+
+	split.leftover = renderSeasonNote(leftover);
+	return split;
 };

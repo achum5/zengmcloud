@@ -89,6 +89,9 @@ const updateDraftHistory = async (inputs: ViewInput<"draftHistory">) => {
 			"watch",
 			"awards",
 			"born",
+			// For the writeup arrow next to each pick: the draft-year section of
+			// his note is the piece about being taken here.
+			"note",
 		],
 		ratings: ["ovr", "pot", "skills", "pos", "season"],
 		stats,
@@ -127,6 +130,7 @@ const updateDraftHistory = async (inputs: ViewInput<"draftHistory">) => {
 				hof: p.hof,
 				watch: p.watch,
 				awards: p.awards,
+				note: p.note,
 				awardCounts: {
 					allStar: p.awards.filter((award: any) => award.type === "All-Star")
 						.length,

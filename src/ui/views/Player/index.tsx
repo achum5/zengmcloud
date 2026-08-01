@@ -17,8 +17,9 @@ import { groupAwards } from "../../util/groupAwards.ts";
 import { InjuryIcon } from "../../components/InjuryIcon.tsx";
 import { SkillsBlock } from "../../components/SkillsBlock.tsx";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
+import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
 import { useLocal } from "../../util/local.ts";
-import { splitSeasonNote } from "../../../common/seasonNote.ts";
+import { splitPlayerNote } from "../../../common/seasonNote.ts";
 import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 
 const Player2 = ({
@@ -48,15 +49,33 @@ const Player2 = ({
 	} = useLocal(["challengeNoRatings", "season", "teamInfoCache"]);
 	const showRatings = !challengeNoRatings || retired;
 
-	// Season writeups hang off the season they're about, in the stats table.
-	// Anything with no row to hang off - a draft prospect's scouting report, a
-	// writeup for a year he missed entirely - stays in the note block below, so
-	// nothing written about him becomes unreachable.
-	const seasonNotes = splitSeasonNote(
-		player.note,
-		new Set(player.stats.map((ps: { season: number }) => ps.season)),
-	);
+	// Every piece of a player's writeup hangs off the thing it is about: the
+	// draft recap on his draft line, the scouting report on his draft season's
+	// ratings row, each season recap on that season's row. Only hand-written
+	// text is left for the note block - except on a prospect, whose scouting
+	// report IS his page and stays at the top.
+	const seasonNotes = splitPlayerNote(player.note, {
+		draftYear: player.draft.year,
+		undrafted: player.tid === PLAYER.UNDRAFTED,
+		seasonsWithStats: new Set(
+			player.stats.map((ps: { season: number }) => ps.season),
+		),
+		seasonsWithRatings: new Set(
+			player.ratings.map((r: { season: number }) => r.season),
+		),
+	});
 	const noteLinksBySeason = buildPlayerNoteLinks(teamInfoCache, noteTeammates);
+
+	// What hangs off a ratings row: the scouting report on the draft season
+	// (it was filed a year early, under a season he has no row for at all), and
+	// any writeup for a year he was on a roster but never played.
+	const ratingsNotes = new Map(seasonNotes.byRatingsSeason);
+	if (seasonNotes.scouting.length > 0 && player.draft.year !== undefined) {
+		ratingsNotes.set(player.draft.year, [
+			...seasonNotes.scouting,
+			...(ratingsNotes.get(player.draft.year) ?? []),
+		]);
+	}
 
 	// Per-team career totals (bref-style team rows), fetched once and shared by
 	// every stat table below.
@@ -112,9 +131,11 @@ const Player2 = ({
 				currentSeason={currentSeason}
 				jerseyNumberInfos={jerseyNumberInfos}
 				noteTeammates={noteTeammates}
-				// Only what has nowhere else to go; the season writeups are on their
-				// own rows in the stats table above.
+				// Only what has nowhere else to go; every writeup is on the row it is
+				// about. On a prospect that is the whole note, scouting and all.
 				displayNote={seasonNotes.leftover}
+				draftRecap={seasonNotes.draftRecap}
+				noteLinksBySeason={noteLinksBySeason}
 				player={player}
 				randomDebutsForeverPids={randomDebutsForeverPids}
 				retired={retired}
@@ -183,6 +204,23 @@ const Player2 = ({
 														type: player.injuries[r.injuryIndex]!.type,
 														gamesRemaining: -1,
 													}}
+												/>
+											) : null}
+											{ratingsNotes.get(r.season) ? (
+												<SeasonNoteButton
+													header={
+														r.season === player.draft.year
+															? `Scouting report — ${player.draft.year} draft`
+															: r.season
+													}
+													id={`ratings-note-${r.season}`}
+													linksFor={noteLinksBySeason}
+													sections={ratingsNotes.get(r.season)!}
+													title={
+														r.season === player.draft.year
+															? "Read the scouting report"
+															: `Read the ${r.season} writeup`
+													}
 												/>
 											) : null}
 										</>

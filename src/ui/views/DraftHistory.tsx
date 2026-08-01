@@ -18,6 +18,9 @@ import { downloadFile } from "../util/downloadFile.ts";
 import { SkillsBlock } from "../components/SkillsBlock.tsx";
 import { getCol } from "../../common/getCol.ts";
 import { bySport } from "../../common/sportFunctions.ts";
+import { SeasonNoteButton } from "../components/SeasonNoteButton.tsx";
+import { splitPlayerNote } from "../../common/seasonNote.ts";
+import { buildPlayerNoteLinks } from "../util/linkifyRecap.ts";
 
 const Summary = ({
 	players,
@@ -291,8 +294,22 @@ const DraftHistory = ({
 		...stats.map((stat) => `stat:${stat}`),
 	]);
 
+	// A pick's writeup is about this page's own row, so it opens from it. Team
+	// names only - the class hasn't played together, so there are no teammates
+	// to link.
+	const noteLinksBySeason = buildPlayerNoteLinks(teamInfoCache);
+
 	const rows: DataTableRow[] = players.map((p) => {
 		const showRatings = !challengeNoRatings || p.currentTid === PLAYER.RETIRED;
+
+		// Only the draft-year section: the rest of a career belongs on his page,
+		// not next to the pick that started it.
+		const { draftRecap } = splitPlayerNote(p.note, {
+			draftYear: p.draft.year,
+			undrafted: false,
+			seasonsWithStats: new Set(),
+			seasonsWithRatings: new Set(),
+		});
 
 		return {
 			key: p.pid,
@@ -306,7 +323,29 @@ const DraftHistory = ({
 				playoffs: "regularSeason",
 			},
 			data: [
-				p.draft.round >= 1 ? `${p.draft.round}-${p.draft.pick}` : null,
+				{
+					value: (
+						<>
+							{p.draft.round >= 1 ? `${p.draft.round}-${p.draft.pick}` : null}
+							{draftRecap.length > 0 ? (
+								<SeasonNoteButton
+									header={`${p.firstName} ${p.lastName}`}
+									id={`draft-recap-${p.pid}`}
+									linksFor={noteLinksBySeason}
+									sections={draftRecap}
+									title={`Read the writeup for ${p.firstName} ${p.lastName}`}
+								/>
+							) : null}
+						</>
+					),
+					// The column sorts with sortType "draftPick", which parses the
+					// "round-pick" STRING - so hand it exactly what the plain cell
+					// used to be, or every pick sorts as an unparseable value.
+					searchValue:
+						p.draft.round >= 1 ? `${p.draft.round}-${p.draft.pick}` : "",
+					sortValue:
+						p.draft.round >= 1 ? `${p.draft.round}-${p.draft.pick}` : null,
+				},
 				wrappedPlayerNameLabels({
 					awards: p.awards,
 					pid: p.pid,

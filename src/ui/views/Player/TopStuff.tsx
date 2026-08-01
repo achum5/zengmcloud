@@ -14,6 +14,9 @@ import clsx from "clsx";
 import { AwardsSummary } from "./AwardsSummary.tsx";
 import { RatingsOverview } from "./RatingsOverview.tsx";
 import Note from "./Note.tsx";
+import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
+import type { SeasonNoteSection } from "../../../common/seasonNote.ts";
+import type { RecapLink } from "../../util/linkifyRecap.ts";
 import { ButtonGroup, Dropdown, DropdownButton } from "react-bootstrap";
 import { CountryFlag } from "../../components/CountryFlag.tsx";
 import { InjuryIcon } from "../../components/InjuryIcon.tsx";
@@ -285,6 +288,8 @@ const TopStuff = ({
 	jerseyNumberInfos,
 	noteTeammates,
 	displayNote,
+	draftRecap,
+	noteLinksBySeason,
 	player,
 	randomDebutsForeverPids,
 	retired,
@@ -318,6 +323,10 @@ const TopStuff = ({
 	// edited; this is only the part that isn't already readable from a season
 	// row in the stats table.
 	displayNote?: string;
+	// The draft-selection writeup, opened from the draft line rather than
+	// dumped in the note block - it is about that one line.
+	draftRecap?: SeasonNoteSection[];
+	noteLinksBySeason?: (season: number | undefined) => RecapLink[];
 }) => {
 	const { gender, godMode, phase, spectator, teamInfoCache, userTid } =
 		useLocal([
@@ -338,6 +347,19 @@ const TopStuff = ({
 	const showTradeFor = player.tid !== userTid && player.tid >= 0;
 	const showTradingBlock = player.tid === userTid;
 
+	// The writeup about how he was picked, hung off the line that says he was
+	// picked. It reads as a caption to the draft line, which is what it is.
+	const draftRecapButton =
+		draftRecap && draftRecap.length > 0 ? (
+			<SeasonNoteButton
+				header={`${player.draft.year} draft`}
+				id="draft-recap"
+				linksFor={noteLinksBySeason ?? (() => [])}
+				sections={draftRecap}
+				title={`Read the ${player.draft.year} draft writeup`}
+			/>
+		) : null;
+
 	let draftInfo: ReactNode = null;
 	if (player.draft.round > 0) {
 		draftInfo = (
@@ -355,6 +377,7 @@ const TopStuff = ({
 				>
 					{player.draft.abbrev}
 				</a>
+				{draftRecapButton}
 				<br />
 			</>
 		);
@@ -365,6 +388,7 @@ const TopStuff = ({
 				<a href={helpers.leagueUrl(["draft_history", player.draft.year])}>
 					{player.draft.year}
 				</a>
+				{draftRecapButton}
 				<br />
 			</>
 		);

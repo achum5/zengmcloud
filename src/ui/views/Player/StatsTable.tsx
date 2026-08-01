@@ -16,7 +16,7 @@ import { wrappedTeamAbbrevLink } from "../../components/TeamAbbrevLink.tsx";
 import type { SuperCol } from "../../components/DataTable/index.tsx";
 import { formatSeasonRuns } from "../../util/formatSeasonRuns.ts";
 import type { PlayerTeamStats } from "./usePlayerTeamStats.ts";
-import { SeasonNoteButton } from "./SeasonNoteButton.tsx";
+import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
 import type { SeasonNoteSection } from "../../../common/seasonNote.ts";
 import type { RecapLink } from "../../util/linkifyRecap.ts";
 
@@ -352,9 +352,11 @@ export const StatsTable = ({
 							/>
 							{seasonNotes?.get(ps.season) ? (
 								<SeasonNoteButton
-									links={noteLinksBySeason?.(ps.season) ?? []}
-									season={ps.season}
+									header={ps.season}
+									id={`season-note-${ps.season}`}
+									linksFor={noteLinksBySeason ?? (() => [])}
 									sections={seasonNotes.get(ps.season)!}
+									title={`Read the ${ps.season} writeup`}
 								/>
 							) : null}
 						</>

@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	hasSeasonNote,
+	splitPlayerNote,
 	parseSeasonNote,
 	removeSeasonNote,
 	upsertSeasonNote,
@@ -98,12 +99,15 @@ describe("upsertSeasonNote", () => {
 		assert.strictEqual(note, "[2012] Retirement — Second take\nTwo.");
 	});
 
-	test("hand-written text is preserved, below the headed sections", () => {
+	// Above the headed sections, not below. Below is unreadable: nothing marks
+	// where a section ends, so the next parse folds trailing prose into the
+	// oldest writeup and it stops being the player's own note at all.
+	test("hand-written text is preserved, above the headed sections", () => {
 		const before = "My favorite player. Traded for him in a heist.";
 		const after = season(before, 2005, "Rookie", "A rookie year.");
 		assert.strictEqual(
 			after,
-			"[2005] Rookie\nA rookie year.\n\nMy favorite player. Traded for him in a heist.",
+			"My favorite player. Traded for him in a heist.\n\n[2005] Rookie\nA rookie year.",
 		);
 		const after2 = season(after, 2006, "Leap", "Sophomore.");
 		assert.ok(after2.includes("Traded for him in a heist."));
@@ -270,5 +274,136 @@ describe("hasSeasonNote", () => {
 	test("an empty note has nothing", () => {
 		assert.strictEqual(hasSeasonNote(undefined, 2005), false);
 		assert.strictEqual(hasSeasonNote("", 2005), false);
+	});
+});
+
+// Every piece of a career note has somewhere on the page it belongs, and the
+// note block at the top is left holding only what a person typed. Gilbert
+// Arenas is the worked example: drafted 2001, scouted under [2000] (the
+// prospects pass runs a season early), first played in 2002.
+describe("deciding where each part of a player's note goes", () => {
+	const NOTE = [
+		"[2003] Third year",
+		"The leap.",
+		"",
+		"[2002] Rookie year",
+		"He played.",
+		"",
+		"[2001] Taken fourth overall",
+		"Did not play this season.",
+		"",
+		"[2000] A 6'4\" lead guard out of Arizona",
+		"Built to score and create in equal measure.",
+	].join("\n");
+
+	const split = (note: string, overrides?: Partial<Parameters<typeof splitPlayerNote>[1]>) =>
+		splitPlayerNote(note, {
+			draftYear: 2001,
+			undrafted: false,
+			seasonsWithStats: new Set([2002, 2003]),
+			seasonsWithRatings: new Set([2001, 2002, 2003]),
+			...overrides,
+		});
+
+	test("the draft-year section is the draft recap", () => {
+		const { draftRecap } = split(NOTE);
+		assert.strictEqual(draftRecap.length, 1);
+		assert.strictEqual(draftRecap[0]!.season, 2001);
+		assert.strictEqual(draftRecap[0]!.headline, "Taken fourth overall");
+	});
+
+	// The whole reason this needs deciding: [2000] is a year he has no row for
+	// at all, so left alone it would sit in the note block forever.
+	test("a pre-draft scouting report is kept for the draft season's row", () => {
+		const { scouting } = split(NOTE);
+		assert.strictEqual(scouting.length, 1);
+		assert.strictEqual(scouting[0]!.season, 2000);
+	});
+
+	test("seasons he played hang off their stats row", () => {
+		const { bySeason } = split(NOTE);
+		assert.deepStrictEqual([...bySeason.keys()].sort(), [2002, 2003]);
+	});
+
+	test("nothing routed is left in the note block", () => {
+		assert.strictEqual(split(NOTE).leftover, "");
+	});
+
+	test("hand-written text stays in the note block", () => {
+		const { leftover, bySeason } = split(`Fun guy.\n\n${NOTE}`);
+		assert.strictEqual(leftover, "Fun guy.");
+		assert.strictEqual(bySeason.size, 2);
+	});
+
+	// A year on a roster but never played has a ratings row and no stats row.
+	// Without this it would be unreachable now that the note block is empty.
+	test("a season missed entirely hangs off its ratings row", () => {
+		const { byRatingsSeason, leftover } = split(
+			"[2004] Lost year\nHe tore his achilles in October.",
+			{
+				seasonsWithRatings: new Set([2001, 2002, 2003, 2004]),
+			},
+		);
+		assert.deepStrictEqual([...byRatingsSeason.keys()], [2004]);
+		assert.strictEqual(leftover, "");
+	});
+
+	// His scouting report IS his page - there is no draft line to hang it off
+	// and no career to speak of, so nothing moves.
+	test("a prospect keeps his whole note at the top", () => {
+		const { leftover, scouting, draftRecap } = split(NOTE, {
+			undrafted: true,
+		});
+		assert.strictEqual(scouting.length, 0);
+		assert.strictEqual(draftRecap.length, 0);
+		assert.ok(leftover.includes("[2000]"));
+	});
+
+	// Better in the wrong place than gone.
+	test("a scouting report with no draft-season row falls back to the note block", () => {
+		const { scouting, leftover } = split(NOTE, {
+			seasonsWithRatings: new Set([2002, 2003]),
+		});
+		assert.strictEqual(scouting.length, 0);
+		assert.ok(leftover.includes("[2000]"));
+	});
+});
+
+// The one thing in a note that cannot be regenerated, and the easiest to lose:
+// a reader walking the note line by line cannot tell trailing prose from more
+// of the section above it, so freeform stored at the bottom came back as part
+// of the oldest writeup - and, once writeups moved onto their season's rows,
+// was shown under that year instead of as the player's own note.
+describe("hand-written text survives a writeup being added", () => {
+	test("it is still its own section after a round trip", () => {
+		const note = upsertSeasonNote("My own thoughts.", {
+			season: 2005,
+			body: "A season.",
+		});
+		const sections = parseSeasonNote(note);
+		assert.strictEqual(sections.length, 2);
+		const freeform = sections.find((s) => s.season === undefined);
+		assert.strictEqual(freeform?.body, "My own thoughts.");
+		assert.strictEqual(
+			sections.find((s) => s.season === 2005)?.body,
+			"A season.",
+		);
+	});
+
+	test("it stays out of the writeups and in the note block", () => {
+		let note = upsertSeasonNote("My own thoughts.", {
+			season: 2005,
+			body: "A season.",
+		});
+		note = upsertSeasonNote(note, { season: 2006, body: "Another season." });
+
+		const { leftover, bySeason } = splitPlayerNote(note, {
+			draftYear: 2004,
+			undrafted: false,
+			seasonsWithStats: new Set([2005, 2006]),
+			seasonsWithRatings: new Set([2004, 2005, 2006]),
+		});
+		assert.strictEqual(leftover, "My own thoughts.");
+		assert.strictEqual(bySeason.get(2005)![0]!.body, "A season.");
 	});
 });
