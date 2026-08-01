@@ -2,7 +2,7 @@
 // no IndexedDB globals (the league cache is mocked), so install fake ones. Must
 // come before other imports that might touch IndexedDB.
 import "fake-indexeddb/auto";
-import { assert, beforeEach, describe, test } from "vitest";
+import { assert, beforeEach, describe, test, vi } from "vitest";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { player } from "../index.ts";
 import { g } from "../../util/index.ts";
@@ -2174,3 +2174,69 @@ describe("SyncEngine", () => {
 		);
 	});
 });
+
+// The download side had no timeout, and the reentrancy guard is only cleared by
+// catchUp()'s `finally` - so a fetch that never settles (a phone that slept
+// mid-request, a socket that died without an error) latched the guard forever.
+// Every later pass returned at the guard doing nothing: the catch-up bar sat at
+// 0%, the live subscription never started, and reloading didn't help because the
+// next session wedged the same way. Seen in the field as "stuck on 0% catching
+// up every time I load in", with a device seven days behind the room while the
+// engine reported itself caught up.
+describe("a catch-up fetch that never comes back", () => {
+	test("times out instead of latching the guard forever", async () => {
+		// Only this test needs them, and the timeouts are a minute apiece.
+		vi.useFakeTimers();
+		try {
+			await hungFetchScenario();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
+const hungFetchScenario = async () => {
+	{
+		const bus = new FakeBus();
+
+		// One entry to find, once fetching works again.
+		const author = new SyncEngine(new FakeTransport("A", bus));
+		author.start();
+		await author.onLocalChangeset(
+			{ changes: [{ store: "trade", id: 0, type: "delete" }] },
+			"main.clearTrade",
+		);
+
+		let hang = true;
+		class HangingTransport extends FakeTransport {
+			override async fetchEntriesSince(sinceMs: number, pageLimit?: number) {
+				if (hang) {
+					// Never settles - not a rejection, which the existing retry path
+					// already handles.
+					return new Promise<ChangesetEntry[]>(() => {});
+				}
+				return super.fetchEntriesSince(sinceMs, pageLimit);
+			}
+		}
+
+		const receiver = new SyncEngine(new HangingTransport("B", bus));
+
+		// Deliberately not awaited: on the old code this promise never settles.
+		const wedged = receiver.catchUp();
+
+		// Both the full-page fetch and the small-page retry have to time out.
+		await vi.advanceTimersByTimeAsync(61_000);
+		await vi.advanceTimersByTimeAsync(21_000);
+
+		assert.strictEqual(await wedged, false, "the hung pass should give up");
+
+		// The guard is free again, so a later pass does real work.
+		hang = false;
+		assert.strictEqual(
+			await receiver.catchUp(),
+			true,
+			"a later pass should reach the head",
+		);
+		assert.strictEqual(receiver.getPersistedSeq() > 0, true);
+	}
+};

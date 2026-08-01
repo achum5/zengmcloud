@@ -72,6 +72,23 @@ const CATCH_UP_SMALL_PAGE = 3;
 // and shouldn't flash a progress bar.
 const CATCH_UP_PROGRESS_MIN = 30;
 
+// Uploads have been time-boxed since day one; the DOWNLOAD side never was. A
+// fetch that neither resolves nor rejects - a phone that slept mid-request, a
+// Firestore query wedged behind a dead socket - leaves catchUp()'s `finally`
+// unreached forever, which latches the reentrancy guard. Every later pass then
+// returns at the guard, so the catch-up bar sits at 0%, the live subscription
+// never starts, and nothing recovers it. Generous, because a full page of
+// bulk-sim chunks is genuinely big on a weak connection.
+const CATCH_UP_FETCH_TIMEOUT = 60_000;
+const CATCH_UP_SMALL_FETCH_TIMEOUT = 20_000;
+
+// Belt and braces for the same failure: if a pass somehow hangs anywhere else,
+// a later call assumes it is lost and proceeds. Comfortably longer than a pass
+// that is merely slow (page cap x the fetch timeout is the theoretical worst
+// case, but a real pass that far behind still logs progress every page).
+const CATCH_UP_STALL_TIMEOUT = 3 * CATCH_UP_FETCH_TIMEOUT;
+const CATCH_UP_FULL_LOG_TIMEOUT = 180_000;
+
 // How long a "room is advancing" lease lasts. Generous enough to cover a single
 // day's sim + upload even on a slow phone; it's re-stamped when a bulk upload
 // starts and cleared as soon as the advance is published, so this only actually
@@ -286,6 +303,10 @@ export class SyncEngine {
 	// Guards catchUp() against reentrancy, so the connect-time drain and the
 	// periodic timer can't fetch the same pages at once.
 	private catchingUp = false;
+	// When the guard went up, so a pass that hangs forever can be recognised as
+	// lost rather than blocking every future pass. A hung promise never reaches
+	// the `finally` that would clear the flag, so nothing else can.
+	private catchingUpSince = 0;
 
 	// The room code, used to scope the durable outbox (undefined = don't use the
 	// outbox, e.g. the in-memory test transport).
@@ -1576,10 +1597,28 @@ export class SyncEngine {
 	// false if a fetch failed, an apply failed, or it stopped early with more to
 	// go - in which case the next tick resumes from the banked watermark.
 	async catchUp(): Promise<boolean> {
-		if (!this.transport.fetchEntriesSince || this.catchingUp || this.stopped) {
+		if (!this.transport.fetchEntriesSince || this.stopped) {
 			return false;
 		}
+		if (this.catchingUp) {
+			const stalledFor = Date.now() - this.catchingUpSince;
+			if (stalledFor < CATCH_UP_STALL_TIMEOUT) {
+				return false;
+			}
+			// The previous pass is never coming back. Take the guard from it and
+			// drop its progress total, so the bar doesn't keep showing a count that
+			// nothing is working through - this pass recounts from scratch.
+			syncDebugLog("engine:catchup-stalled", {
+				stalledFor,
+				progressDone: this.catchUpDone,
+				progressTotal: this.catchUpTotal,
+				persistedSeq: this.persistedSeq,
+				maxSeq: this.maxSeq,
+			});
+			this.finishCatchUp();
+		}
 		this.catchingUp = true;
+		this.catchingUpSince = Date.now();
 		// Per-pass diagnostics: enough to see from a pasted console log exactly why
 		// a device that keeps "catching up" isn't converging (fetches failing,
 		// applies failing, a bulk batch missing chunks, or the watermark pinned).
@@ -1600,7 +1639,13 @@ export class SyncEngine {
 			if (this.catchUpTotal === undefined && this.transport.countEntriesSince) {
 				const frontier = Math.max(this.persistedSeq, this.maxSeq);
 				try {
-					const remaining = await this.transport.countEntriesSince(frontier);
+					// Time-boxed like the fetches below: a hung count would latch the
+					// reentrancy guard just as effectively, and losing the progress
+					// bar is a far smaller cost than losing catch-up entirely.
+					const remaining = await withTimeout(
+						this.transport.countEntriesSince(frontier),
+						CATCH_UP_SMALL_FETCH_TIMEOUT,
+					);
 					// A `remaining` that stays high while `behind` (maxSeq - persistedSeq)
 					// is ~0 means the count query and the watermark disagree - a classic
 					// cause of a stuck "catching up" bar (the total is set but the drain
@@ -1643,9 +1688,9 @@ export class SyncEngine {
 				// would read as a short page and falsely declare the head reached.
 				let requested = CATCH_UP_PAGE_SIZE;
 				try {
-					entries = await this.transport.fetchEntriesSince(
-						fetchCursor,
-						requested,
+					entries = await withTimeout(
+						this.transport.fetchEntriesSince(fetchCursor, requested),
+						CATCH_UP_FETCH_TIMEOUT,
 					);
 				} catch (error) {
 					// A full page of bulk-sim chunks can be ~15 MB and time out on a weak
@@ -1659,9 +1704,9 @@ export class SyncEngine {
 					});
 					requested = CATCH_UP_SMALL_PAGE;
 					try {
-						entries = await this.transport.fetchEntriesSince(
-							fetchCursor,
-							requested,
+						entries = await withTimeout(
+							this.transport.fetchEntriesSince(fetchCursor, requested),
+							CATCH_UP_SMALL_FETCH_TIMEOUT,
 						);
 					} catch (error2) {
 						outcome = "fetch-failed";
@@ -2053,7 +2098,14 @@ export class SyncEngine {
 	// resync. Empty if the transport can't. Can be large - prefer fetchRecentLog
 	// for anything that only needs recent activity.
 	async fetchLog(): Promise<ChangesetEntry[]> {
-		const entries = (await this.transport.fetchAllEntries?.()) ?? [];
+		const fetch = this.transport.fetchAllEntries?.();
+		// Time-boxed for the same reason the paged fetch is: this is the whole
+		// log, it runs on the recovery path for a device that's silently behind,
+		// and a request that never settles would wedge that recovery with no way
+		// back. Longer than a page fetch, because it IS the whole log.
+		const entries = fetch
+			? await withTimeout(fetch, CATCH_UP_FULL_LOG_TIMEOUT)
+			: [];
 		return entries.sort((a, b) => a.seq - b.seq);
 	}
 
