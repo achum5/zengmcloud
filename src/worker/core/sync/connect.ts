@@ -1,4 +1,4 @@
-import { SyncEngine } from "./SyncEngine.ts";
+import { RESYNC_WINDOW_ENTRIES, SyncEngine } from "./SyncEngine.ts";
 import { FirebaseTransport } from "./FirebaseTransport.ts";
 import { outbox } from "./outbox.ts";
 import { ensureAnonymousAuth } from "./auth.ts";
@@ -121,13 +121,10 @@ const makeLeagueId = (): string => {
 // League.syncResyncNeeded). Set by the engine when it abandons a batch; read on
 // connect to trigger a self-healing full-log resync. Survives reloads, unlike the
 // engine's in-memory abandoned-batch set.
-// How much of the log the connect-time self-heal re-reads. Bounded on purpose:
-// the whole log takes minutes on a phone and the read has to COMPLETE for the
-// marker to clear, so an unbounded read meant it never cleared and every
-// connect burned the connection re-reading from the beginning of time. Comfortably
-// more than any plausible gap - the marker is set by the running engine, so
-// whatever it skipped is recent.
-const AUTO_RESYNC_WINDOW_ENTRIES = 2000;
+// How much of the log the recovery paths re-read: RESYNC_WINDOW_ENTRIES, from
+// the engine, so every automatic replay is bounded the same way. Unbounded
+// reads take minutes on a phone and have to COMPLETE to do any good, so they
+// never did.
 
 const loadResyncNeeded = async (lid: number | undefined): Promise<boolean> => {
 	if (typeof lid !== "number") {
@@ -1188,8 +1185,14 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 	return lines.join("\n");
 };
 
-// Force a full catch-up: re-read the entire log and re-apply it from scratch.
-// The one-click fix for a device that silently diverged.
+// Force a full catch-up: re-read the log's tail and re-apply it from scratch.
+// The one-click fix for a device that silently diverged. Bounded like every
+// other replay - the truly unbounded read never finished on a phone, which
+// made the one button sold as the big hammer the one recovery that couldn't
+// complete. A deeper window than the automatic paths, since a person pressing
+// the button has judged something is wrong and will wait for it.
+const MANUAL_RESYNC_WINDOW_ENTRIES = 10_000;
+
 export const resyncSharedLeague = async (): Promise<{
 	total: number;
 	applied: number;
@@ -1200,7 +1203,10 @@ export const resyncSharedLeague = async (): Promise<{
 	if (!engine) {
 		throw new Error("Not connected to a sync room.");
 	}
-	return engine.resyncAll();
+	// Give an in-flight drain a moment to wind down rather than shouldering it
+	// aside; past that, the person clicked the button for a reason.
+	await engine.waitUntilIdle(30_000);
+	return engine.resyncAll({ windowEntries: MANUAL_RESYNC_WINDOW_ENTRIES });
 };
 
 // Join a shared-league sync room. All devices using the same `code` see each
@@ -1254,6 +1260,15 @@ const checkBehindAuthority = async () => {
 		return;
 	}
 
+	// A bulk pass is mid-recovery (a reimport's backlog drain, a replay). Its
+	// position is legitimately in motion - a reading taken now says nothing,
+	// and healing "over" it would mean two appliers interleaving, which is
+	// worse than either problem this check exists to catch. Look again after
+	// it finishes.
+	if (engine.isBusyApplying()) {
+		return;
+	}
+
 	const announced = engine.getAuthority()?.position;
 	// Nobody has announced a position (an older client is simming), or we ARE the
 	// authority, so there is nothing to be behind.
@@ -1303,7 +1318,7 @@ const checkBehindAuthority = async () => {
 		// state, not to recover ancient history.
 		if (ahead) {
 			const result = await engine.resyncAll({
-				windowEntries: AUTO_RESYNC_WINDOW_ENTRIES,
+				windowEntries: RESYNC_WINDOW_ENTRIES,
 			});
 			const after = await getLeaguePosition();
 			syncDebugLog("connect:ahead-authority-resynced", {
@@ -1334,8 +1349,12 @@ const checkBehindAuthority = async () => {
 			return;
 		}
 
-		// Still behind, so the watermark itself is wrong - re-read the whole log.
-		const result = await engine.resyncAll();
+		// Still behind, so the watermark itself is wrong - replay the log's tail.
+		// Windowed: the gap is recent by construction (the watermark believed it
+		// was at the head), and the unbounded read never finished on a phone.
+		const result = await engine.resyncAll({
+			windowEntries: RESYNC_WINDOW_ENTRIES,
+		});
 		syncDebugLog("connect:behind-authority-resynced", result);
 		const after = await getLeaguePosition();
 		if (!isBehindPosition(after, announced)) {
@@ -1725,12 +1744,29 @@ const doConnectSharedLeague = async ({
 				return;
 			}
 
+			// The connect-time drain may be mid-backlog (a reimport can have months
+			// to replay), and that drain, run to completion, IS the correct
+			// recovery. Starting a replay on top of it meant two appliers
+			// interleaving - whichever wrote last won, and when that was the
+			// slower, older pass, the device got dragged to a state the room left
+			// long ago. Wait for idle; if the drain is still healthily working
+			// after all this, skip - the durable marker retries on the next
+			// connect.
+			const idle = await engine.waitUntilIdle(10 * 60 * 1000);
+			if (!idle) {
+				syncDebugLog("connect:auto-resync-skipped-busy", {
+					markerSet,
+					stranded: strandedBefore.gids.length,
+				});
+				return;
+			}
+
 			syncDebugLog("connect:auto-resync-start", {
 				markerSet,
 				stranded: strandedBefore.gids.length,
 			});
 			const result = await engine.resyncAll({
-				windowEntries: AUTO_RESYNC_WINDOW_ENTRIES,
+				windowEntries: RESYNC_WINDOW_ENTRIES,
 			});
 			syncDebugLog("connect:auto-resync-done", result);
 

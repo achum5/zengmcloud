@@ -1556,7 +1556,10 @@ describe("the regression guard does not invent a phase", () => {
 		);
 		assert.ok(stale !== undefined, "a 2004 phase must not apply in 2005");
 
-		// The same phase, for the season we are actually in, is a real advance.
+		// The same phase, for the season we are actually in and one step ahead of
+		// where we stand, is a real advance. (Stepwise - a real advance is one
+		// changeset, one phase; the jump guard below covers the rest.)
+		g.setWithoutSavingToDB("phase", PHASE.RESIGN_PLAYERS);
 		const real = await regressionReason(
 			{
 				store: "gameAttributes",
@@ -1567,6 +1570,47 @@ describe("the regression guard does not invent a phase", () => {
 			2005,
 		);
 		assert.strictEqual(real, undefined);
+	});
+
+	// The disguise stale history wears when it names no season: a previous
+	// season's free agency reads as THIS season's free agency, which scores as a
+	// big move forward and sails through. Nothing legitimate advances several
+	// phases in one write - the sim advances one phase per changeset - so the
+	// size of the jump is itself the tell.
+	test("a multi-phase jump in a single write is refused", async () => {
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+
+		const jump = await regressionReason({
+			store: "gameAttributes",
+			id: "phase",
+			type: "put",
+			value: { key: "phase", value: PHASE.FREE_AGENCY },
+		});
+		assert.ok(
+			jump !== undefined,
+			"regular season to free agency in one write is displaced history",
+		);
+
+		// One step is how the league actually moves.
+		const step = await regressionReason({
+			store: "gameAttributes",
+			id: "phase",
+			type: "put",
+			value: { key: "phase", value: PHASE.AFTER_TRADE_DEADLINE },
+		});
+		assert.strictEqual(step, undefined);
+
+		// The special negative phases re-enter the ordinary sequence from odd
+		// angles, so they are exempt in both directions.
+		g.setWithoutSavingToDB("phase", PHASE.EXPANSION_DRAFT);
+		const exit = await regressionReason({
+			store: "gameAttributes",
+			id: "phase",
+			type: "put",
+			value: { key: "phase", value: PHASE.REGULAR_SEASON },
+		});
+		assert.strictEqual(exit, undefined);
 	});
 
 	test("a season-crossing changeset supplies the season the phase belongs to", async () => {

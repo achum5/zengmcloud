@@ -2160,9 +2160,12 @@ describe("SyncEngine", () => {
 			},
 		};
 		const original = (receiver as any).resyncAllInner.bind(receiver);
-		(receiver as any).resyncAllInner = async (entries: ChangesetEntry[]) => {
+		(receiver as any).resyncAllInner = async (
+			entries: ChangesetEntry[],
+			epoch: number,
+		) => {
 			await receiver.handleEntry(advance);
-			return original(entries);
+			return original(entries, epoch);
 		};
 
 		await receiver.resyncAll();
@@ -2240,3 +2243,189 @@ const hungFetchScenario = async () => {
 		assert.strictEqual(receiver.getPersistedSeq() > 0, true);
 	}
 };
+
+// A bulk change whose chunks were re-uploaded late sits in the log at its
+// RE-UPLOAD time, so "replay in seq order" applies it after changes that came
+// months later. That is how a reimported device watched the replay run the
+// offseason and then park in the preseason while the room was on day 75 of the
+// regular season. The replay now orders units by the era their CONTENT
+// declares, and refuses what it cannot place below the room's announced
+// position.
+describe("a resync replays by the era a change declares, not by raw seq", () => {
+	const attr = (key: "phase" | "season", value: number) => ({
+		store: "gameAttributes" as const,
+		id: key,
+		type: "put" as const,
+		value: { key, value },
+	});
+
+	const publishAdvance = (
+		bus: FakeBus,
+		id: string,
+		changes: ReturnType<typeof attr>[],
+	) => {
+		bus.publish({
+			id,
+			authorId: "OTHER",
+			action: "sim.newPhase",
+			changeset: { changes },
+		});
+	};
+
+	test("a rollover re-uploaded at the head does not drag the league back to the preseason", async () => {
+		resetG();
+		await resetCache({});
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.PRESEASON);
+
+		const bus = new FakeBus();
+		// The log as the room really lived it...
+		publishAdvance(bus, "rollover", [
+			attr("season", 2005),
+			attr("phase", PHASE.PRESEASON),
+		]);
+		publishAdvance(bus, "start-season", [attr("phase", PHASE.REGULAR_SEASON)]);
+		// ...plus the rollover AGAIN at the head, the way a late re-upload lands.
+		// It carries data of its own (a real rollover is a draft class, a
+		// schedule, progression - and the re-upload may be the only surviving
+		// copy), so the right treatment is to apply it IN ITS TRUE POSITION, not
+		// to skip it.
+		bus.publish({
+			id: "rollover-reupload",
+			authorId: "OTHER",
+			action: "sim.newPhase",
+			changeset: {
+				changes: [
+					attr("season", 2005),
+					attr("phase", PHASE.PRESEASON),
+					{
+						store: "events",
+						id: 1,
+						type: "put",
+						value: { eid: 1, type: "newPhase", text: "rollover", season: 2005 },
+					},
+				],
+			},
+		});
+
+		const engine = new SyncEngine(new FakeTransport("ME", bus));
+		// Registered like production, so the replay runs with the live-path
+		// regression guard off - only the replay's own ordering protects it here.
+		setSyncEngine(engine);
+		const result = await engine.resyncAll();
+
+		assert.strictEqual(result.failed, false);
+		assert.strictEqual(
+			g.get("phase"),
+			PHASE.REGULAR_SEASON,
+			"the re-uploaded rollover must replay in its true position, not last",
+		);
+		assert.strictEqual(
+			(await idb.cache.events.getAll()).length,
+			1,
+			"the re-uploaded rollover's own data must still land - repositioned, not dropped",
+		);
+	});
+
+	test("a season-less offseason entry at the head is refused past the room's announced position", async () => {
+		resetG();
+		await resetCache({});
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.PRESEASON);
+
+		const bus = new FakeBus();
+		publishAdvance(bus, "rollover", [
+			attr("season", 2005),
+			attr("phase", PHASE.PRESEASON),
+		]);
+		publishAdvance(bus, "start-season", [attr("phase", PHASE.REGULAR_SEASON)]);
+		// A previous season's free agency, re-uploaded late. It names no season
+		// (phases within a season don't), so by content alone it reads as THIS
+		// season's free agency - which would be a move forward. Only the room's
+		// announced position says it cannot be.
+		publishAdvance(bus, "stale-fa", [attr("phase", PHASE.FREE_AGENCY)]);
+
+		const engine = new SyncEngine(new FakeTransport("ME", bus));
+		(engine as any).authority = {
+			holderId: "H",
+			holderName: "Host",
+			position: { season: 2005, phase: PHASE.REGULAR_SEASON, day: 40 },
+		};
+		setSyncEngine(engine);
+		const result = await engine.resyncAll();
+
+		assert.strictEqual(result.failed, false);
+		assert.strictEqual(
+			g.get("phase"),
+			PHASE.REGULAR_SEASON,
+			"nothing in a replay may advance the league past where the room says it is",
+		);
+	});
+});
+
+// One bulk applier at a time. Two passes working the same backlog dedup-skip
+// each other's entries, so they interleave non-monotonically and the SLOWER
+// pass writes last - concurrent appliers are how a healthy months-long drain
+// turned into a league dragged backwards.
+describe("bulk appliers are serialized", () => {
+	test("two concurrent resyncAll calls share one replay", async () => {
+		resetG();
+		await resetCache({});
+
+		const bus = new FakeBus();
+		bus.publish({
+			id: "e1",
+			authorId: "OTHER",
+			action: "x",
+			changeset: { changes: [{ store: "trade", id: 0, type: "delete" }] },
+		});
+
+		const transport = new FakeTransport("ME", bus);
+		const engine = new SyncEngine(transport);
+		setSyncEngine(engine);
+		const [a, b] = await Promise.all([engine.resyncAll(), engine.resyncAll()]);
+
+		assert.strictEqual(
+			transport.fetchAllCount,
+			1,
+			"the second call must coalesce onto the replay already running",
+		);
+		assert.strictEqual(a, b);
+	});
+
+	test("a second catch-up call while one is progressing yields instead of stealing the guard", async () => {
+		resetG();
+		await resetCache({});
+
+		const bus = new FakeBus();
+		bus.publish({
+			id: "e1",
+			authorId: "OTHER",
+			action: "x",
+			changeset: { changes: [{ store: "trade", id: 0, type: "delete" }] },
+		});
+
+		let release!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		class GatedTransport extends FakeTransport {
+			override async fetchEntriesSince(sinceMs: number, pageLimit?: number) {
+				await gate;
+				return super.fetchEntriesSince(sinceMs, pageLimit);
+			}
+		}
+
+		const engine = new SyncEngine(new GatedTransport("ME", bus));
+		setSyncEngine(engine);
+
+		const first = engine.catchUp();
+		assert.strictEqual(
+			await engine.catchUp(),
+			false,
+			"a pass is in flight and healthy - the newcomer must not start a second one",
+		);
+		release();
+		assert.strictEqual(await first, true, "the original pass finishes its work");
+	});
+});

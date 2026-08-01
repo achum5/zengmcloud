@@ -1048,6 +1048,27 @@ export const regressionReason = async (
 			if (incoming !== undefined && local !== undefined && incoming < local) {
 				return `phase ${String(value.value)} in season ${season} is behind local ${g.get("season")} phase ${g.get("phase")}`;
 			}
+
+			// The other direction old history can wear a disguise: an entry from a
+			// PREVIOUS season's offseason that never wrote a season (phases within a
+			// season don't) reads as this season's free agency and sails through as
+			// a big move forward. But a real advance is one changeset, one phase -
+			// nothing legitimate jumps several phases in a single write. Allow a
+			// margin of two for an entry or two lost in delivery (catch-up replays
+			// stepwise anyway), keep the special negative phases (fantasy and
+			// expansion drafts re-enter the ordinary sequence from odd angles) out
+			// of it, and treat anything bigger as displaced history. Season
+			// crossings are exempt: a rollover names its season and is judged above.
+			const localPhase = g.get("phase");
+			if (
+				season === g.get("season") &&
+				typeof value.value === "number" &&
+				value.value >= 0 &&
+				localPhase >= 0 &&
+				value.value > localPhase + 2
+			) {
+				return `phase ${value.value} jumps ${value.value - localPhase} phases ahead of local phase ${localPhase} in one write`;
+			}
 		}
 		if (value.key === "season") {
 			const incoming = value.value;

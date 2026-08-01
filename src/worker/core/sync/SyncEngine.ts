@@ -95,6 +95,14 @@ const CATCH_UP_SMALL_FETCH_TIMEOUT = 15_000;
 const CATCH_UP_STALL_TIMEOUT = 3 * CATCH_UP_FETCH_TIMEOUT;
 const CATCH_UP_FULL_LOG_TIMEOUT = 120_000;
 
+// How much of the log's tail a bounded replay re-reads. The whole log is the
+// theoretically-correct answer and an impossible request on a phone (it never
+// finished, which is how the recovery marker became a one-way door); the
+// window is bounded, completes, and covers what the recovery paths actually
+// need - a recent gap. Shared by every automatic resync path so they all make
+// the same promise.
+export const RESYNC_WINDOW_ENTRIES = 2000;
+
 // How long a "room is advancing" lease lasts. Generous enough to cover a single
 // day's sim + upload even on a slow phone; it's re-stamped when a bulk upload
 // starts and cleared as soon as the advance is published, so this only actually
@@ -313,6 +321,32 @@ export class SyncEngine {
 	// lost rather than blocking every future pass. A hung promise never reaches
 	// the `finally` that would clear the flag, so nothing else can.
 	private catchingUpSince = 0;
+	// When the current pass last did anything (finished a fetch, applied an
+	// entry). Staleness is judged on THIS, not on when the pass started: a
+	// months-behind reimport legitimately takes many minutes of steady work, and
+	// judging on start time meant a healthy slow pass got its guard stolen at
+	// 135s - leaving TWO passes applying the same backlog concurrently, each
+	// dedup-skipping what the other did, so entries landed out of order and the
+	// slower (older) pass wrote last. That is how a reimport ended up parked in
+	// the preseason with the room mid-season.
+	private catchUpProgressAt = 0;
+	// Bulk-apply generation. Bumped by whoever takes over (a stall steal, a
+	// resync starting); every bulk pass captures it at start and aborts the
+	// moment it no longer matches, so a superseded pass CANNOT keep writing.
+	// This is what actually enforces "one bulk applier at a time" - the flags
+	// alone only prevented polite callers from starting, not zombies from
+	// finishing.
+	private applyEpoch = 0;
+	// Single-flight for resyncAll: concurrent requests coalesce onto the run
+	// already in progress instead of replaying the log twice, interleaved.
+	private resyncPromise:
+		| Promise<{
+				total: number;
+				applied: number;
+				incomplete: number;
+				failed: boolean;
+		  }>
+		| undefined;
 
 	// The room code, used to scope the durable outbox (undefined = don't use the
 	// outbox, e.g. the in-memory test transport).
@@ -1424,7 +1458,13 @@ export class SyncEngine {
 			// Durable marker first, so a reload mid-resync still heals on connect.
 			this.onResyncNeeded?.();
 			try {
-				const result = await this.resyncAll();
+				// Windowed: this runs INSIDE the apply path, on the device least able
+				// to afford it - an unbounded whole-log read here is minutes of dead
+				// air on a phone, and if it can't finish, the marker above already
+				// guarantees the next connect retries.
+				const result = await this.resyncAll({
+					windowEntries: RESYNC_WINDOW_ENTRIES,
+				});
 				syncDebugLog("engine:batch-out-of-order-resynced", result);
 				if (!result.failed && result.incomplete === 0) {
 					return true;
@@ -1606,14 +1646,28 @@ export class SyncEngine {
 		if (!this.transport.fetchEntriesSince || this.stopped) {
 			return false;
 		}
+		// A resync owns the log right now. It re-reads everything a catch-up
+		// would, so there is nothing for this pass to add - and running alongside
+		// it is exactly the concurrent-appliers corruption this guard exists to
+		// prevent. The timer's next tick lands after it finishes.
+		if (this.resyncing) {
+			return false;
+		}
 		if (this.catchingUp) {
-			const stalledFor = Date.now() - this.catchingUpSince;
+			// Stalled means NO PROGRESS, not merely long-running. A pass working
+			// through a big backlog logs progress on every fetch and every entry;
+			// only a pass that has done literally nothing for this long is lost.
+			const stalledFor =
+				Date.now() - Math.max(this.catchingUpSince, this.catchUpProgressAt);
 			if (stalledFor < CATCH_UP_STALL_TIMEOUT) {
 				return false;
 			}
 			// The previous pass is never coming back. Take the guard from it and
 			// drop its progress total, so the bar doesn't keep showing a count that
-			// nothing is working through - this pass recounts from scratch.
+			// nothing is working through - this pass recounts from scratch. Bumping
+			// the epoch makes the takeover safe: if the old pass DOES come back
+			// from whatever wedged it, its next check sees a different epoch and it
+			// exits without touching anything.
 			syncDebugLog("engine:catchup-stalled", {
 				stalledFor,
 				progressDone: this.catchUpDone,
@@ -1622,9 +1676,12 @@ export class SyncEngine {
 				maxSeq: this.maxSeq,
 			});
 			this.finishCatchUp();
+			this.applyEpoch += 1;
 		}
 		this.catchingUp = true;
 		this.catchingUpSince = Date.now();
+		this.catchUpProgressAt = 0;
+		const epoch = this.applyEpoch;
 		// Per-pass diagnostics: enough to see from a pasted console log exactly why
 		// a device that keeps "catching up" isn't converging (fetches failing,
 		// applies failing, a bulk batch missing chunks, or the watermark pinned).
@@ -1680,12 +1737,13 @@ export class SyncEngine {
 			// A bounded number of pages per call, so a single catchUp() can't spin
 			// forever if the head keeps moving; the next tick picks up where we left.
 			for (let page = 0; page < CATCH_UP_MAX_PAGES; page++) {
-				// The engine was torn down mid-drain (a reconnect replaced it). Stop
-				// touching the cache immediately - a zombie drain from a replaced
-				// engine otherwise keeps paging concurrently with the new engine's
-				// drain, and the two interleaved passes churn each other's state.
-				if (this.stopped) {
-					outcome = "stopped";
+				// The engine was torn down mid-drain (a reconnect replaced it), or
+				// another bulk pass took over (a stall steal, a resync starting).
+				// Stop touching the cache immediately - a zombie pass otherwise keeps
+				// applying concurrently with its successor, and the two interleaved
+				// passes churn each other's state.
+				if (this.stopped || this.applyEpoch !== epoch) {
+					outcome = this.stopped ? "stopped" : "superseded";
 					return false;
 				}
 				let entries: ChangesetEntry[];
@@ -1741,14 +1799,15 @@ export class SyncEngine {
 					}
 				}
 				// A reconnect may have stopped this engine while the fetch was in
-				// flight (the top-of-loop check only covers stops between pages). Bail
-				// before applying entries or re-pushing progress, so a zombie pass from
-				// a replaced engine can't touch the new session's cache or re-show a
-				// catch-up bar that teardown already cleared.
-				if (this.stopped) {
-					outcome = "stopped";
+				// flight, or another pass may have taken over (the top-of-loop check
+				// only covers the gap between pages). Bail before applying entries or
+				// re-pushing progress, so a zombie pass can't touch the cache or
+				// re-show a catch-up bar that its successor owns now.
+				if (this.stopped || this.applyEpoch !== epoch) {
+					outcome = this.stopped ? "stopped" : "superseded";
 					return false;
 				}
+				this.catchUpProgressAt = Date.now();
 				pages += 1;
 				if (entries.length === 0) {
 					// Nothing after the cursor - we're at the head.
@@ -1760,9 +1819,18 @@ export class SyncEngine {
 
 				fetched += entries.length;
 				for (const entry of entries.sort((a, b) => a.seq - b.seq)) {
+					// Applying a page can itself take a while on a phone, so the
+					// takeover check has to live INSIDE the entry loop too - a
+					// superseded pass must stop mid-page, not finish out a few hundred
+					// entries over its successor's work.
+					if (this.stopped || this.applyEpoch !== epoch) {
+						outcome = this.stopped ? "stopped" : "superseded";
+						return false;
+					}
 					if (await this.handleEntry(entry)) {
 						applied += 1;
 					}
+					this.catchUpProgressAt = Date.now();
 					// Only entries past the counted baseline advance the bar - a
 					// re-fetched pinned tail (already seen, applies nothing) shouldn't
 					// eat into a total that never included it.
@@ -1820,7 +1888,12 @@ export class SyncEngine {
 			await this.sweepStaleBatches(fetchCursor);
 			return false;
 		} finally {
-			this.catchingUp = false;
+			// Only the pass that still owns the epoch may drop the guard. A
+			// superseded zombie exiting late must not clear the flag out from under
+			// its successor - that reopened the door to a THIRD concurrent pass.
+			if (this.applyEpoch === epoch) {
+				this.catchingUp = false;
+			}
 			// One summary per pass that did work or hit a blocker; the every-15s
 			// idle no-op (0 entries fetched, nothing pinned) stays silent.
 			if (
@@ -2108,6 +2181,40 @@ export class SyncEngine {
 		return this.resyncing;
 	}
 
+	// Is a bulk pass (catch-up drain or replay) actively working the log? "The
+	// drain has been running a while" is not a reason to interrupt it - a
+	// months-behind reimport takes many minutes of steady, healthy work, and
+	// the drain IS the recovery. Recovery paths that would start their own
+	// replay check this first and hold off; only a pass that has made no
+	// progress for the stall timeout stops counting as busy.
+	isBusyApplying(): boolean {
+		if (this.resyncing) {
+			return true;
+		}
+		return (
+			this.catchingUp &&
+			Date.now() - Math.max(this.catchingUpSince, this.catchUpProgressAt) <
+				CATCH_UP_STALL_TIMEOUT
+		);
+	}
+
+	// Wait until no bulk pass is working (polled - passes can chain), up to
+	// maxMs. Returns whether the engine went idle. For background recovery that
+	// wants to replay the log but must not shoulder aside a drain that is
+	// already mid-recovery.
+	async waitUntilIdle(maxMs: number): Promise<boolean> {
+		const deadline = Date.now() + maxMs;
+		while (this.isBusyApplying()) {
+			if (this.stopped || Date.now() >= deadline) {
+				return false;
+			}
+			await new Promise((resolve) => {
+				setTimeout(resolve, 2000);
+			});
+		}
+		return !this.stopped;
+	}
+
 	// Flag this device as needing a full-log resync on the next connect. The
 	// engine calls onResyncNeeded itself when it knowingly skips a batch; this is
 	// for the cases it CAN'T notice - a caller that found evidence in the data
@@ -2163,17 +2270,59 @@ export class SyncEngine {
 		incomplete: number;
 		failed: boolean;
 	}> {
-		const entries = options?.windowEntries
-			? await this.fetchRecentLog(options.windowEntries)
-			: await this.fetchLog();
+		// Single-flight: whoever asks while a resync is already replaying gets THAT
+		// replay's result. Two interleaved replays of the same log was one of the
+		// ways a device got dragged into a state the room was never in.
+		if (this.resyncPromise) {
+			return this.resyncPromise;
+		}
+		const run = this.resyncAllTakeover(options);
+		this.resyncPromise = run;
+		try {
+			return await run;
+		} finally {
+			this.resyncPromise = undefined;
+		}
+	}
 
-		// Start clean so nothing is deduped away and no half-batch lingers.
-		this.pendingBatches.clear();
-		this.failedApplies.clear();
+	private async resyncAllTakeover(options?: {
+		windowEntries?: number;
+	}): Promise<{
+		total: number;
+		applied: number;
+		incomplete: number;
+		failed: boolean;
+	}> {
+		// Take over as THE bulk applier. Any catch-up pass in flight aborts at its
+		// next epoch check (it is redundant - this replay re-reads everything it
+		// would have fetched), and the flag comes down here because the superseded
+		// pass no longer owns it.
+		this.applyEpoch += 1;
+		const epoch = this.applyEpoch;
+		this.finishCatchUp();
+		this.catchingUp = false;
+		// Raised BEFORE the fetch: live deliveries defer from this moment (they are
+		// newer than everything the replay will apply, so they belong after it),
+		// and no new catch-up pass can start while the log is being read.
 		this.resyncing = true;
 		this.deferredDuringResync.length = 0;
 		try {
-			return await this.resyncAllInner(entries);
+			const entries = options?.windowEntries
+				? await this.fetchRecentLog(options.windowEntries)
+				: await this.fetchLog();
+			if (this.stopped || this.applyEpoch !== epoch) {
+				return {
+					total: entries.length,
+					applied: 0,
+					incomplete: 0,
+					failed: true,
+				};
+			}
+
+			// Start clean so nothing is deduped away and no half-batch lingers.
+			this.pendingBatches.clear();
+			this.failedApplies.clear();
+			return await this.resyncAllInner(entries, epoch);
 		} finally {
 			this.resyncing = false;
 			const deferred = this.deferredDuringResync.splice(0);
@@ -2188,8 +2337,36 @@ export class SyncEngine {
 		}
 	}
 
+	// The (season, phase) a unit's own content declares, if it declares one. A
+	// changeset that advances the league writes these as gameAttributes, and
+	// they are the only trustworthy statement of WHEN the change belongs -
+	// chunks re-uploaded days late carry re-upload seqs, so the log position
+	// lies exactly when it matters most.
+	private static unitStamp(entries: ChangesetEntry[]): {
+		season: number | undefined;
+		phase: number | undefined;
+	} {
+		let season: number | undefined;
+		let phase: number | undefined;
+		for (const entry of entries) {
+			for (const change of entry.changeset?.changes ?? []) {
+				if (change.store === "gameAttributes" && change.type === "put") {
+					const value = change.value as { key?: string; value?: unknown };
+					if (value?.key === "season" && typeof value.value === "number") {
+						season = value.value;
+					}
+					if (value?.key === "phase" && typeof value.value === "number") {
+						phase = value.value;
+					}
+				}
+			}
+		}
+		return { season, phase };
+	}
+
 	private async resyncAllInner(
 		entries: Awaited<ReturnType<SyncEngine["fetchLog"]>>,
+		epoch: number,
 	): Promise<{
 		total: number;
 		applied: number;
@@ -2240,7 +2417,104 @@ export class SyncEngine {
 		}
 		units.sort((a, b) => a.key - b.key);
 
+		// Second ordering pass: by the ERA each unit's content declares, because
+		// seq order can lie. A bulk changeset whose chunks were all re-uploaded
+		// late sits in the log at its RE-UPLOAD time - grouping by earliest chunk
+		// can't help when even the earliest chunk is late. Replaying such a log
+		// "in order" applies a whole season rollover after the games that came
+		// months after it, and the league lands back in the preseason. That is not
+		// hypothetical; it is exactly what a windowed replay did to a reimported
+		// device.
+		//
+		// So walk the seq order once, assigning each unit an era:
+		//   - a unit that stamps (season, phase) gets ITS OWN stamp - content is
+		//     the truth about when it belongs;
+		//   - a unit that stamps only a phase borrows the highest season declared
+		//     so far (seasons only ascend, phases meander within one);
+		//   - an unstamped unit inherits the flow position (highest era so far) -
+		//     ordinary entries between advances belong to the era they sit in.
+		// Then a stable sort by era. On a healthy log eras are already
+		// non-decreasing, so this reorders NOTHING; it only moves units whose
+		// content proves they sit in the wrong place, and it moves them to where
+		// their content says they belong.
+		const eraOf = (season: number, phase: number) => season * 100 + phase;
+		let flowEra = Number.NEGATIVE_INFINITY;
+		let flowSeason: number | undefined;
+		const eras = new Map<Unit, number>();
 		for (const unit of units) {
+			const stamp = SyncEngine.unitStamp(unit.entries);
+			if (stamp.season !== undefined) {
+				flowSeason =
+					flowSeason === undefined
+						? stamp.season
+						: Math.max(flowSeason, stamp.season);
+			}
+			let era: number;
+			if (stamp.season !== undefined) {
+				era = eraOf(stamp.season, stamp.phase ?? 0);
+			} else if (stamp.phase !== undefined && flowSeason !== undefined) {
+				era = eraOf(flowSeason, stamp.phase);
+			} else {
+				era = flowEra;
+			}
+			eras.set(unit, era);
+			flowEra = Math.max(flowEra, era);
+		}
+		const indexOf = new Map<Unit, number>(units.map((unit, i) => [unit, i]));
+		units.sort(
+			(a, b) => eras.get(a)! - eras.get(b)! || indexOf.get(a)! - indexOf.get(b)!,
+		);
+
+		// The room's announced position is a ceiling on what a replay may apply.
+		// No entry in the log can honestly advance the league PAST where the
+		// person in charge of simming says it is - a unit that would is displaced
+		// old history whose era could not be pinned down (a phase-only stamp from
+		// a previous season, re-uploaded late). Skipping it is what keeps this
+		// replay from doing the very corruption it exists to repair. Only enforced
+		// against a real announced position from someone else; when this device IS
+		// the authority, or nobody has announced, there is no ceiling to trust.
+		const announced = this.isAuthority() ? undefined : this.authority?.position;
+		const ceiling = announced
+			? eraOf(announced.season, announced.phase)
+			: undefined;
+
+		let replayEra = Number.NEGATIVE_INFINITY;
+		let declined = 0;
+		let aborted = false;
+		for (const unit of units) {
+			// Superseded (a reconnect, a takeover) - stop writing immediately and
+			// report failure so the watermark stays put.
+			if (this.stopped || this.applyEpoch !== epoch) {
+				aborted = true;
+				break;
+			}
+			const era = eras.get(unit)!;
+			// A unit whose declared era is behind where this replay has already
+			// got is stale history out of position; one past the room's announced
+			// position is stale history whose era we couldn't place. Neither may
+			// touch the league. Skipped as a WHOLE - a rollover batch is thousands
+			// of writes, and declining just its phase change while applying the
+			// rest was how a league ended up mid-season with draft-day rosters.
+			const stale = era < replayEra;
+			const beyondRoom = ceiling !== undefined && era > ceiling;
+			if (stale || beyondRoom) {
+				declined += unit.entries.length;
+				for (const entry of unit.entries) {
+					this.seen.add(entry.id);
+				}
+				syncDebugLog("engine:resync-unit-declined", {
+					reason: stale ? "behind-replay" : "beyond-announced-position",
+					era,
+					replayEra,
+					ceiling,
+					entries: unit.entries.length,
+					firstSeq: unit.entries[0]?.seq,
+					batchId: unit.entries[0]?.batchId,
+				});
+				continue;
+			}
+			replayEra = Math.max(replayEra, era);
+
 			for (const entry of unit.entries) {
 				this.seen.add(entry.id);
 
@@ -2254,6 +2528,12 @@ export class SyncEngine {
 					applied++;
 				}
 			}
+		}
+		if (declined > 0) {
+			syncDebugLog("engine:resync-declined-total", {
+				declined,
+				total: entries.length,
+			});
 		}
 
 		// A batch can be left pending simply because the read was WINDOWED and its
@@ -2279,10 +2559,11 @@ export class SyncEngine {
 		this.maxSeq = Math.max(this.maxSeq, newMaxSeq);
 
 		// Only bank the watermark if EVERYTHING re-applied cleanly. If any entry
-		// failed to apply OR a batch is missing a chunk, leave the watermark where
-		// it was - never skip past unapplied data and silently diverge. A fully
-		// clean pass also resets the auto-resync budget.
-		if (!this.applyFailed && incomplete === 0) {
+		// failed to apply, a batch is missing a chunk, or the replay was cut off
+		// by a takeover, leave the watermark where it was - never skip past
+		// unapplied data and silently diverge. (Units DECLINED as stale don't
+		// block banking: skipping them is the point, permanently.)
+		if (!aborted && !this.applyFailed && incomplete === 0) {
 			if (newMaxSeq > this.persistedSeq) {
 				this.persistedSeq = newMaxSeq;
 				this.onWatermark?.(this.persistedSeq);
@@ -2293,7 +2574,7 @@ export class SyncEngine {
 			total: entries.length,
 			applied,
 			incomplete,
-			failed: this.applyFailed,
+			failed: aborted || this.applyFailed,
 		};
 	}
 }
