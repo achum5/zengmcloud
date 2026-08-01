@@ -395,7 +395,9 @@ describe("many simulated offseasons", () => {
 		for (let seed = 1; seed <= runs; seed++) {
 			const { report, entries } = await runOneOffseason(seed, payrollBand);
 			reports.push(report);
-			allEntries.push(...entries);
+			// Every run resets to the same season, so the run's seed is what makes
+			// a (offseason, team) pair unique for the churn metric below.
+			allEntries.push(...entries.map((e) => ({ ...e, season: seed })));
 		}
 
 		const sum = (pick: (r: Report) => number) =>
@@ -602,5 +604,160 @@ describe("the off switch really is off", () => {
 			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
 		).length;
 		assert.ok(after > before, "teams should still be signing free agents");
+	});
+});
+
+// ---------------------------------------------------------------------------
+// The multiplayer guarantees, asserted rather than assumed. Every one of these
+// is a way the AI could quietly do something on a league-mate's behalf, or make
+// two devices disagree, and none of them show up in a normal sim report.
+// ---------------------------------------------------------------------------
+describe("safe in a shared league", () => {
+	beforeEach(() => {
+		changeTracker.disable();
+		changeTracker.reset();
+	});
+
+	const runFullOffseason = async (rng: () => number) => {
+		const capture = captureFrontOfficeLog();
+		const randomSpy = vi.spyOn(Math, "random").mockImplementation(rng);
+		try {
+			for (let day = FA_DAYS; day > 0; day--) {
+				g.setWithoutSavingToDB("daysLeft", day);
+				await decreaseDemands();
+				await clearSpaceForSignings();
+				await autoSign();
+			}
+		} finally {
+			randomSpy.mockRestore();
+		}
+		return capture.stop();
+	};
+
+	// The worst thing this feature could do in a shared league: post salary into
+	// somebody else's roster, or sign for them, with no say from the human who
+	// actually runs that team. userTids syncs and holds every friend's team, so
+	// on the simming device these are the teams that must be left alone.
+	test("never signs or trades on behalf of a human team", async () => {
+		const humanTids = [0, 3, 7];
+		const dumps: FrontOfficeEntry[] = [];
+
+		// Several independent leagues rather than one: player generation uses the
+		// game's own RNG, so a single seed does not reliably reproduce a league
+		// that contains a cap-clearing deal at all - and a run with no deals in it
+		// proves nothing about who they involve.
+		for (let seed = 1; seed <= 12; seed++) {
+			const rng = makeRng(seed);
+			const { salaryCap } = await buildLeague(rng, [0.85, 1.05]);
+			g.setWithoutSavingToDB("userTids", humanTids);
+
+			// Make a human team the single most attractive dumping ground in the
+			// league - almost no payroll, so it has more room than anybody. If the
+			// filter were missing this is the team the AI would reach for first,
+			// which is what gives this test teeth.
+			for (const p of await idb.cache.players.indexGetAll("playersByTid", 0)) {
+				p.contract = { amount: g.get("minContract"), exp: p.contract.exp };
+				await idb.cache.players.put(p);
+			}
+			assert.ok(
+				(await team.getPayroll(0)) < salaryCap * 0.25,
+				"fixture should leave the human team with the most cap room",
+			);
+
+			const rosterBefore = new Map<number, string>();
+			for (const tid of humanTids) {
+				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+				rosterBefore.set(tid, roster.map((p) => p.pid).sort((a, b) => a - b).join(","));
+			}
+
+			const entries = await runFullOffseason(rng);
+			dumps.push(...entries.filter((e) => e.event === "dump-and-sign"));
+
+			// Their rosters must be untouched entirely - not signed to, not traded
+			// with, not reordered by the AI.
+			for (const tid of humanTids) {
+				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+				assert.strictEqual(
+					roster.map((p) => p.pid).sort((a, b) => a - b).join(","),
+					rosterBefore.get(tid),
+					`the AI changed human team ${tid}'s roster`,
+				);
+			}
+		}
+
+		assert.ok(
+			dumps.length > 0,
+			"no cap-clearing deals happened across 12 leagues, so this test cannot fail",
+		);
+
+		// No cap-clearing deal may involve a human team on EITHER side - not as
+		// the team clearing room, and not as the team paid to absorb the salary.
+		for (const e of dumps) {
+			assert.ok(
+				!humanTids.includes(e.tid),
+				`a human team initiated a salary dump: ${JSON.stringify(e)}`,
+			);
+			assert.ok(
+				!humanTids.includes(e.data.partner as number),
+				`a human team was used as a dumping ground: ${JSON.stringify(e)}`,
+			);
+		}
+	}, 120_000);
+
+	// The device in charge of simming can change mid-free-agency, and worker
+	// memory does not travel with it. The once-per-offseason cap therefore has to
+	// live in synced data - it is read back off the trade log - so a new simmer
+	// picking up on day 15 sees the same history and does not let everyone clear
+	// space all over again.
+	test("the once-per-offseason cap survives a change of simmer", async () => {
+		const rng = makeRng(4);
+		await buildLeague(rng, [0.85, 1.05]);
+
+		const first = await runFullOffseason(rng);
+		const dumps = first.filter((e) => e.event === "dump-and-sign");
+		assert.ok(dumps.length > 0, "fixture produced no dumps to test against");
+
+		// The evidence is in the league's own event log, not in this process.
+		const cleared = new Set<number>();
+		for (const event of await idb.cache.events.getAll()) {
+			const aiTrade = (event as any).aiTrade;
+			if (event.type === "trade" && aiTrade?.motivation === "cap-clear") {
+				for (const tid of event.tids ?? []) {
+					cleared.add(tid);
+				}
+			}
+		}
+		for (const d of dumps) {
+			assert.ok(
+				cleared.has(d.tid),
+				`tid ${d.tid} cleared space but left no record a new simmer could read`,
+			);
+		}
+
+		// A fresh simmer would compute everything from scratch: no module state is
+		// carried, and the answer must be the same - nobody gets a second bite.
+		const second = await runFullOffseason(rng);
+		for (const e of second.filter((x) => x.event === "dump-and-sign")) {
+			assert.ok(
+				!cleared.has(e.tid),
+				`tid ${e.tid} cleared space twice in one offseason across a handoff`,
+			);
+		}
+	});
+
+	// A team that has to be rescued by checkRosterSizes should not have made the
+	// plan in the first place.
+	test("a dump never leaves a team unable to field a side", async () => {
+		const rng = makeRng(9);
+		await buildLeague(rng, [0.85, 1.05]);
+		await runFullOffseason(rng);
+
+		for (let tid = 0; tid < NUM_TEAMS; tid++) {
+			const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+			assert.ok(
+				roster.length >= g.get("minRosterSize"),
+				`tid ${tid} finished free agency with ${roster.length} players`,
+			);
+		}
 	});
 });

@@ -53,11 +53,39 @@ const MAX_DUMP_PLAYERS = 3;
 // One per team per offseason. A front office clears the decks for ITS guy; a
 // team doing this five times in one free agency is not planning, it is churning
 // - which is exactly what a long sim showed happening before this cap existed.
-// Held in memory rather than on the league: the only cost of a worker restart
-// mid-free-agency is that one team might get a second bite, and that is a far
-// cheaper failure than a new persisted field to migrate.
-const dumpsThisOffseason = new Map<string, number>();
-const MAX_DUMPS_PER_TEAM = 1;
+
+// Which teams have already done it this season, read back off the league's own
+// event log rather than held in memory.
+//
+// This has to survive a change of simmer. The device in charge can hand off
+// mid-free-agency, and worker memory does not travel - so an in-memory counter
+// silently resets and the next simmer lets everyone dump all over again, which
+// is precisely the churn the cap exists to stop. The trade event is already
+// written, already carries the motivation that identifies these deals, and
+// already syncs to every device, so the limit is derived from the same history
+// every device can see. The events cache holds the current season, which is
+// exactly the window the cap covers.
+const teamsThatAlreadyCleared = async (): Promise<Set<number>> => {
+	const out = new Set<number>();
+	for (const event of await idb.cache.events.getAll()) {
+		const aiTrade = (event as { aiTrade?: { motivation?: string } }).aiTrade;
+		if (
+			event.type === "trade" &&
+			aiTrade?.motivation === CAP_CLEAR_MOTIVATION &&
+			event.season === g.get("season")
+		) {
+			for (const tid of event.tids ?? []) {
+				out.add(tid);
+			}
+		}
+	}
+	return out;
+};
+
+// Stamped on the trade so the deal is identifiable afterwards - by the cap above,
+// and by anyone reading the transaction log wondering why a team gave a player
+// away for nothing.
+const CAP_CLEAR_MOTIVATION = "cap-clear";
 
 // Below this chance of signing, a pursuit is a fantasy and the payroll stays as
 // it is. Deliberately near zero: a neutral AI team sits around 0.05 on this
@@ -66,6 +94,20 @@ const MAX_DUMPS_PER_TEAM = 1;
 // the genuinely impossible - a challenge mode with free agency switched off, a
 // player who will not deal with this team at any price.
 const MIN_PURSUIT_CONFIDENCE = 0.02;
+
+// A team the AI is allowed to act for. Identical rule to the trade AI's own
+// getAITids, and it MUST be applied to both sides of a dump: a league-mate's
+// roster is not a dumping ground. In multiplayer userTids syncs and holds every
+// friend's team, so this excludes all of them on whichever device is simming.
+const isAiControlled = (t: { tid: number; disabled?: boolean }): boolean => {
+	if (t.disabled) {
+		return false;
+	}
+	if (local.autoPlayUntil || g.get("spectator")) {
+		return true;
+	}
+	return !g.get("userTids").includes(t.tid);
+};
 
 const toFaPlayer = (p: Player, season: number): FaPlayer => {
 	const ratings = last(p.ratings);
@@ -323,7 +365,26 @@ const clearSpaceForTeam = async ({
 			value: p.value,
 		}));
 
-	const dump = planDumpPackage({ candidates, shortfall: target.shortfall });
+	// Never dump so deep that the team cannot field a side. checkRosterSizes
+	// would paper over it with minimum signings afterwards, but a team that has
+	// to be rescued from its own cap plan should not have made the plan.
+	const roomToShed = Math.max(
+		0,
+		roster.length + 1 - g.get("minRosterSize"),
+	);
+	if (roomToShed <= 0) {
+		frontOfficeLog(season, tid, "dump-roster-too-thin", {
+			target: target.p.pid,
+			roster: roster.length,
+		});
+		return false;
+	}
+
+	const dump = planDumpPackage({
+		candidates,
+		shortfall: target.shortfall,
+		maxPlayers: Math.min(MAX_DUMP_PLAYERS, roomToShed),
+	});
 	if (!dump) {
 		frontOfficeLog(season, tid, "dump-no-package", {
 			target: target.p.pid,
@@ -359,8 +420,11 @@ const clearSpaceForTeam = async ({
 
 	// Who can take the money? A team with real room, that is not itself chasing
 	// this player, and that is happy to be paid to absorb salary.
+	// Never a human's team. Without this the AI would post salary into a
+	// league-mate's roster in multiplayer, with no say from the person who
+	// actually runs it - a far worse outcome than simply not making the trade.
 	const teams = (await idb.cache.teams.getAll()).filter(
-		(t) => !t.disabled && t.tid !== tid,
+		(t) => t.tid !== tid && isAiControlled(t),
 	);
 	const partners = [];
 	for (const t of teams) {
@@ -464,6 +528,22 @@ const clearSpaceForTeam = async ({
 				continue;
 			}
 
+			// Last look before committing: is he still on the market, and will the
+			// room actually be enough? Everything below this point is irreversible,
+			// and the one outcome worse than not trying is dumping salary and then
+			// not landing him.
+			const stillAvailable = await idb.cache.players.get(target.p.pid);
+			if (!stillAvailable || stillAvailable.tid !== PLAYER.FREE_AGENT) {
+				frontOfficeLog(season, tid, "dump-target-gone", {
+					target: target.p.pid,
+				});
+				return false;
+			}
+			if (payroll - dumpSalary + target.price > salaryCap) {
+				reject("room-insufficient");
+				continue;
+			}
+
 			// Do it, then sign him immediately. These two must not be separated: a
 			// team that dumps salary and then loses the player to someone else has
 			// made itself worse for nothing, which is the one outcome worse than
@@ -476,7 +556,7 @@ const clearSpaceForTeam = async ({
 					initiatorTid: tid,
 					tiers: [posture.tier, partner.posture.tier],
 					dv: Math.round(myDv * 10) / 10,
-					motivation: "cap-clear",
+					motivation: CAP_CLEAR_MOTIVATION,
 				},
 			);
 
@@ -545,16 +625,7 @@ const clearSpaceForSignings = async () => {
 	}
 
 	const season = g.get("season");
-	const allTeams = (await idb.cache.teams.getAll()).filter((t) => {
-		if (t.disabled) {
-			return false;
-		}
-		return !(
-			g.get("userTids").includes(t.tid) &&
-			!local.autoPlayUntil &&
-			!g.get("spectator")
-		);
-	});
+	const allTeams = (await idb.cache.teams.getAll()).filter(isAiControlled);
 	if (allTeams.length < 2) {
 		return;
 	}
@@ -585,8 +656,19 @@ const clearSpaceForSignings = async () => {
 		"desc",
 	);
 
+	// Read once per pass, then kept up to date as deals are done within it.
+	let alreadyCleared: Set<number>;
+	try {
+		alreadyCleared = await teamsThatAlreadyCleared();
+	} catch (error) {
+		// Cannot tell who has already dumped, so do not risk letting everyone do
+		// it again. Skipping a day of cap clearing costs nothing.
+		console.error("clearSpaceForSignings: could not read trade history", error);
+		return;
+	}
+
 	for (const t of ordered) {
-		if ((dumpsThisOffseason.get(`${season}:${t.tid}`) ?? 0) >= MAX_DUMPS_PER_TEAM) {
+		if (alreadyCleared.has(t.tid)) {
 			continue;
 		}
 		const posture = postures.get(t.tid);
@@ -610,8 +692,7 @@ const clearSpaceForSignings = async () => {
 				season,
 			});
 			if (did) {
-				const key = `${season}:${t.tid}`;
-				dumpsThisOffseason.set(key, (dumpsThisOffseason.get(key) ?? 0) + 1);
+				alreadyCleared.add(t.tid);
 			}
 		} catch (error) {
 			console.error(`clearSpaceForSignings: tid ${t.tid} failed`, error);
