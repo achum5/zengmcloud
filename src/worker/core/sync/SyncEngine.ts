@@ -1058,9 +1058,32 @@ export class SyncEngine {
 	// run blocks every future run behind it).
 	private static OUTBOX_OP_TIMEOUT = 15_000;
 
+	// How long a queued ADVANCE may wait before it stops being an upload and
+	// starts being a poison pill (see outbox.pruneStaleAdvances). Two days: a
+	// simmer who queued an advance and stayed offline that long has a room that
+	// either moved on without it or stalled and recovered - either way the
+	// moment it describes is gone.
+	private static STALE_ADVANCE_MAX_AGE_MS = 48 * 60 * 60 * 1000;
+
 	private async doDrain(): Promise<boolean> {
 		if (this.stopped) {
 			return false;
+		}
+		if (this.code !== undefined) {
+			try {
+				const dropped = await outbox.pruneStaleAdvances(
+					this.code,
+					SyncEngine.STALE_ADVANCE_MAX_AGE_MS,
+				);
+				if (dropped > 0) {
+					console.error(
+						`[sync] Dropped ${dropped} queued upload(s) from a days-old league advance - the room has long since moved past it, and re-publishing it is what kept dragging everyone back through the old offseason.`,
+					);
+					syncDebugLog("engine:drain-dropped-stale-advance", { dropped });
+				}
+			} catch {
+				// Best effort - the receivers decline stale advances anyway.
+			}
 		}
 		let pending: Omit<ChangesetEntry, "seq">[];
 		try {

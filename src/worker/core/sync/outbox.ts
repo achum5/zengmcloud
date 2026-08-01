@@ -130,6 +130,67 @@ export const outbox = {
 		return rows.length;
 	},
 
+	// Drop a QUEUED ADVANCE (a bulk changeset carrying a phase or season write)
+	// that has sat unconfirmed longer than maxAgeMs. An advance describes one
+	// specific moment in the league; days later the room has long since moved
+	// past that moment, and re-publishing it does nothing but harm - each
+	// re-publish restamps the same log docs with fresh server timestamps, so
+	// the stale advance sits permanently at the HEAD of the log, every device
+	// that reloads re-fetches it, and the room gets dragged through the old
+	// offseason again and again. (Receivers decline it too, but the log should
+	// stop being re-poisoned at the source.) Ordinary edits keep the long
+	// prune window: a late roster tweak is idempotent and harmless.
+	async pruneStaleAdvances(code: string, maxAgeMs: number): Promise<number> {
+		let dropped = 0;
+		await bestEffort(async () => {
+			const db = await getDB();
+			const cutoff = Date.now() - maxAgeMs;
+			const rows = (await db.getAllFromIndex(STORE, "code", code)) as OutboxRow[];
+			const isAdvance = (row: OutboxRow) => {
+				const entry = row.entry;
+				const attrs =
+					entry.attrs ??
+					entry.changeset?.changes
+						?.filter((c) => c.store === "gameAttributes")
+						.map((c) => (c.value as { key?: string } | undefined)?.key ?? "");
+				return (
+					attrs !== undefined &&
+					(attrs.includes("phase") || attrs.includes("season"))
+				);
+			};
+			// Drop whole batches, never individual chunks - a batch with one chunk
+			// dropped can never assemble, which is its own corruption.
+			const staleBatchIds = new Set<string>();
+			for (const row of rows) {
+				if (
+					row.createdAt < cutoff &&
+					row.entry.batchId !== undefined &&
+					isAdvance(row)
+				) {
+					staleBatchIds.add(row.entry.batchId);
+				}
+			}
+			const stale = rows.filter(
+				(row) =>
+					(row.entry.batchId !== undefined &&
+						staleBatchIds.has(row.entry.batchId)) ||
+					(row.entry.batchId === undefined &&
+						row.createdAt < cutoff &&
+						isAdvance(row)),
+			);
+			if (stale.length === 0) {
+				return;
+			}
+			const tx = db.transaction(STORE, "readwrite");
+			for (const row of stale) {
+				await tx.store.delete(row.key);
+			}
+			await tx.done;
+			dropped = stale.length;
+		});
+		return dropped;
+	},
+
 	// Drop entries older than maxAgeMs (e.g. a room the user never came back to),
 	// so a permanently-failed upload can't make the outbox grow forever.
 	async prune(maxAgeMs: number) {

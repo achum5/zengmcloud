@@ -1613,6 +1613,115 @@ describe("the regression guard does not invent a phase", () => {
 		assert.strictEqual(exit, undefined);
 	});
 
+	// The live-path defence against a re-published old advance: a rollover
+	// batch stuck in some device's outbox arrives looking brand new, and
+	// declining only its phase/season writes let the THOUSANDS of writes riding
+	// along spray draft-era rosters over the live league. It is one atomic
+	// story: either current or junk, whole.
+	test("a changeset declaring a long-past phase is declined in full", async () => {
+		await resetCache({});
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.AFTER_TRADE_DEADLINE);
+
+		await applyChangeset(
+			{
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "season",
+						type: "put",
+						value: { key: "season", value: 2005 },
+					},
+					{
+						store: "gameAttributes",
+						id: "phase",
+						type: "put",
+						value: { key: "phase", value: PHASE.PRESEASON },
+					},
+					{
+						store: "events",
+						id: 900,
+						type: "put",
+						value: { eid: 900, type: "newPhase", text: "stale rollover" },
+					},
+				],
+			} as any,
+			{ authorId: "other" } as any,
+		);
+
+		assert.strictEqual(g.get("phase"), PHASE.AFTER_TRADE_DEADLINE);
+		assert.strictEqual(
+			(await idb.cache.events.getAll()).length,
+			0,
+			"nothing riding along in a stale advance may touch the league",
+		);
+	});
+
+	// ONE phase behind is the straggler shape - a late-assembled batch whose
+	// data is real missed history. It keeps the old treatment: the data lands,
+	// only the phase write is declined.
+	test("a changeset one phase behind keeps its data", async () => {
+		await resetCache({});
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.AFTER_TRADE_DEADLINE);
+
+		await applyChangeset(
+			{
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "phase",
+						type: "put",
+						value: { key: "phase", value: PHASE.REGULAR_SEASON },
+					},
+					{
+						store: "events",
+						id: 902,
+						type: "put",
+						value: { eid: 902, type: "test", text: "real missed history" },
+					},
+				],
+			} as any,
+			{ authorId: "other" } as any,
+		);
+
+		assert.strictEqual(g.get("phase"), PHASE.AFTER_TRADE_DEADLINE);
+		assert.strictEqual(
+			(await idb.cache.events.getAll()).length,
+			1,
+			"a one-phase straggler's data is real history and must land",
+		);
+	});
+
+	test("a season-less multi-phase jump is declined in full", async () => {
+		await resetCache({});
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+
+		await applyChangeset(
+			{
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "phase",
+						type: "put",
+						value: { key: "phase", value: PHASE.FREE_AGENCY },
+					},
+					{
+						store: "events",
+						id: 901,
+						type: "put",
+						value: { eid: 901, type: "newPhase", text: "stale free agency" },
+					},
+				],
+			} as any,
+			{ authorId: "other" } as any,
+		);
+
+		assert.strictEqual(g.get("phase"), PHASE.REGULAR_SEASON);
+		assert.strictEqual((await idb.cache.events.getAll()).length, 0);
+	});
+
 	test("a season-crossing changeset supplies the season the phase belongs to", async () => {
 		// The season is a SIBLING change in the same changeset, so the guard has to
 		// be handed it - a phase change on its own carries no season.

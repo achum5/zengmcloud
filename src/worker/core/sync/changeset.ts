@@ -583,16 +583,74 @@ export const applyChangeset = async (
 	// applied records keeps a concurrent local action's other writes intact.
 	// beginApply only tells the invisible-write CANARY these writes are expected
 	// to be uncaptured - it does not suppress recording.
-	// The season this changeset belongs to, if it says. A phase is only
-	// comparable within a season (see regressionReason), and a changeset that
-	// crosses a season boundary writes both.
+	// The season and phase this changeset belongs to, if it says. A phase is
+	// only comparable within a season (see regressionReason), and a changeset
+	// that crosses a season boundary writes both.
 	let changesetSeason: number | undefined;
+	let changesetPhase: number | undefined;
 	for (const change of changeset.changes) {
 		if (change.store === "gameAttributes" && change.type === "put") {
 			const value = change.value as { key?: string; value?: unknown };
 			if (value?.key === "season" && typeof value.value === "number") {
 				changesetSeason = value.value;
 			}
+			if (value?.key === "phase" && typeof value.value === "number") {
+				changesetPhase = value.value;
+			}
+		}
+	}
+
+	// A changeset that DECLARES where it belongs, and declares somewhere the
+	// league has already been, is old history arriving late - and it must be
+	// declined WHOLE, before anything applies. This is the live-path defence
+	// against the log's ugliest failure: a bulk advance stuck in some device's
+	// outbox for days gets re-published with fresh timestamps every time that
+	// device opens the app, every other device's live listener reassembles it,
+	// and the changeset-level guard used to decline only its two little phase/
+	// season writes while the THOUSANDS of writes riding along (draft-era
+	// rosters, schedule, finances) sprayed across the live league in front of
+	// the user. Declining per-change protected the phase and nothing else; a
+	// season rollover is one atomic story and it is either current or junk.
+	//
+	// Two tells, same as regressionReason: declaring a (season, phase) the
+	// league has long moved past, or a season-less multi-phase jump forward (a
+	// real advance is one changeset, one phase). ONE phase behind is different
+	// - that is the straggler shape: a batch abandoned with chunks missing
+	// whose author came back while the room advanced once, and its data is
+	// real missed history, so it keeps the old treatment (data applies, the
+	// phase write alone is declined per-change below). Negative phases
+	// (fantasy/expansion drafts) are special interludes and exempt, and a
+	// replay orders the whole log itself so it needs no guard here.
+	//
+	// The decline also flags a repair pass: if anything in the declined
+	// changeset WAS real history this device is missing, the ordered replay
+	// delivers it in its true position - the one place it can't do harm.
+	if (
+		!getSyncEngine()?.isResyncing() &&
+		changesetPhase !== undefined &&
+		changesetPhase >= 0 &&
+		g.get("phase") >= 0
+	) {
+		const localSeason = g.get("season");
+		const localPhase = g.get("phase");
+		const incoming = phaseOrder(changesetSeason ?? localSeason, changesetPhase);
+		const localOrder = phaseOrder(localSeason, localPhase);
+		const farBehind =
+			incoming !== undefined &&
+			localOrder !== undefined &&
+			incoming < localOrder - 1;
+		const phantomJump =
+			changesetSeason === undefined && changesetPhase > localPhase + 2;
+		if (farBehind || phantomJump) {
+			console.error(
+				`[sync] Declined an entire changeset (${changeset.changes.length} writes) as displaced old history: it declares season ${changesetSeason ?? localSeason} phase ${changesetPhase}, but the league is at season ${localSeason} phase ${localPhase}.`,
+			);
+			try {
+				getSyncEngine()?.markResyncNeeded();
+			} catch {
+				// Best effort.
+			}
+			return;
 		}
 	}
 
