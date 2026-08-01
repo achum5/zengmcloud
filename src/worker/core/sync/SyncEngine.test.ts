@@ -2225,8 +2225,8 @@ const hungFetchScenario = async () => {
 		const wedged = receiver.catchUp();
 
 		// Both the full-page fetch and the small-page retry have to time out.
-		await vi.advanceTimersByTimeAsync(61_000);
-		await vi.advanceTimersByTimeAsync(21_000);
+		await vi.advanceTimersByTimeAsync(46_000);
+		await vi.advanceTimersByTimeAsync(16_000);
 
 		assert.strictEqual(await wedged, false, "the hung pass should give up");
 

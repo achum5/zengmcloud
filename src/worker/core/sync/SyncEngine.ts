@@ -79,15 +79,21 @@ const CATCH_UP_PROGRESS_MIN = 30;
 // returns at the guard, so the catch-up bar sits at 0%, the live subscription
 // never starts, and nothing recovers it. Generous, because a full page of
 // bulk-sim chunks is genuinely big on a weak connection.
-const CATCH_UP_FETCH_TIMEOUT = 60_000;
-const CATCH_UP_SMALL_FETCH_TIMEOUT = 20_000;
+// Now a backstop rather than the primary defence: the transport's catch-up
+// reads go straight to the server and reject when they can't, so a wedged
+// connection fails in seconds. These only catch a request that stalls
+// mid-flight. Kept generous enough that a genuinely large page (a full page of
+// bulk-sim chunks can be megabytes) isn't cut off on a slow connection - and
+// when it is, the small-page retry below picks it up.
+const CATCH_UP_FETCH_TIMEOUT = 45_000;
+const CATCH_UP_SMALL_FETCH_TIMEOUT = 15_000;
 
 // Belt and braces for the same failure: if a pass somehow hangs anywhere else,
 // a later call assumes it is lost and proceeds. Comfortably longer than a pass
 // that is merely slow (page cap x the fetch timeout is the theoretical worst
 // case, but a real pass that far behind still logs progress every page).
 const CATCH_UP_STALL_TIMEOUT = 3 * CATCH_UP_FETCH_TIMEOUT;
-const CATCH_UP_FULL_LOG_TIMEOUT = 180_000;
+const CATCH_UP_FULL_LOG_TIMEOUT = 120_000;
 
 // How long a "room is advancing" lease lasts. Generous enough to cover a single
 // day's sim + upload even on a slow phone; it's re-stamped when a bulk upload

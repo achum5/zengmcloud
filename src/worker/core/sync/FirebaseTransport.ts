@@ -8,6 +8,7 @@ import {
 	getDocFromServer,
 	getCountFromServer,
 	getDocs,
+	getDocsFromServer,
 	deleteDoc,
 	limit,
 	onSnapshot,
@@ -924,10 +925,22 @@ export class FirebaseTransport implements SyncTransport {
 		};
 	}
 
+	// Reads that catch-up and recovery depend on go straight to the SERVER.
+	//
+	// Plain getDocs() can wait indefinitely when the SDK's connection is wedged -
+	// it is allowed to serve from cache or hold out for the server, and it does not
+	// consider "I cannot reach the server" an error. That is how a device ended up
+	// pinned at "catching up 0%": the aggregate count (which always hits the
+	// server) answered "92 entries to go", and the very next getDocs() for those
+	// entries never came back. getDocsFromServer rejects promptly instead, which is
+	// the failure the retry path is built for. These reads must be authoritative
+	// anyway - serving the backlog from a stale local cache would be wrong.
 	// One-shot read of the whole log, oldest-first, for the activity panel and
 	// full-resync recovery.
 	async fetchAllEntries(): Promise<ChangesetEntry[]> {
-		const snapshot = await getDocs(query(this.changesRef, orderBy("ts")));
+		const snapshot = await getDocsFromServer(
+			query(this.changesRef, orderBy("ts")),
+		);
 		this.markContact();
 		const entries: ChangesetEntry[] = [];
 		for (const docSnap of snapshot.docs) {
@@ -944,7 +957,7 @@ export class FirebaseTransport implements SyncTransport {
 	// longer reach (below its watermark). Single-field equality query, so no
 	// composite index is needed; callers sort by chunkIndex themselves.
 	async fetchBatchEntries(batchId: string): Promise<ChangesetEntry[]> {
-		const snapshot = await getDocs(
+		const snapshot = await getDocsFromServer(
 			query(this.changesRef, where("batchId", "==", batchId)),
 		);
 		this.markContact();
@@ -973,7 +986,9 @@ export class FirebaseTransport implements SyncTransport {
 			orderBy("ts"),
 			...(pageLimit !== undefined ? [limit(pageLimit)] : []),
 		];
-		const snapshot = await getDocs(query(this.changesRef, ...constraints));
+		const snapshot = await getDocsFromServer(
+			query(this.changesRef, ...constraints),
+		);
 		this.markContact();
 		const entries: ChangesetEntry[] = [];
 		for (const docSnap of snapshot.docs) {
@@ -997,7 +1012,7 @@ export class FirebaseTransport implements SyncTransport {
 	// undefined if the log is empty. One doc read, used on connect to tell
 	// "behind" apart from "so far behind that the entries we need were deleted".
 	async fetchOldestEntrySeq(): Promise<number | undefined> {
-		const snapshot = await getDocs(
+		const snapshot = await getDocsFromServer(
 			query(this.changesRef, orderBy("ts"), limit(1)),
 		);
 		this.markContact();
