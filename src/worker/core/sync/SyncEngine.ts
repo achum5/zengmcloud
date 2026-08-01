@@ -2147,13 +2147,25 @@ export class SyncEngine {
 	// always lands on the current shared state. This is the manual recovery for a
 	// device that silently diverged (e.g. an apply that failed and got skipped).
 	// Own entries are re-applied too; they just rewrite our own latest values.
-	async resyncAll(): Promise<{
+	async resyncAll(options?: {
+		// Re-read only the most recent `windowEntries` of the log instead of all
+		// of it. The whole log is the correct answer and an impossible request: a
+		// league deep into a season has thousands of entries, and reading them all
+		// on a phone takes minutes it doesn't get - which is how the recovery
+		// marker became a one-way door (the read never finished, so the marker
+		// never cleared, so every connect tried again). A window is bounded, it
+		// completes, and it is sufficient for what the marker actually means: the
+		// running engine skipped something, so the gap is recent by construction.
+		windowEntries?: number;
+	}): Promise<{
 		total: number;
 		applied: number;
 		incomplete: number;
 		failed: boolean;
 	}> {
-		const entries = await this.fetchLog();
+		const entries = options?.windowEntries
+			? await this.fetchRecentLog(options.windowEntries)
+			: await this.fetchLog();
 
 		// Start clean so nothing is deduped away and no half-batch lingers.
 		this.pendingBatches.clear();
@@ -2244,9 +2256,24 @@ export class SyncEngine {
 			}
 		}
 
-		// Batches still missing a chunk after reading the WHOLE log: those chunks
-		// genuinely aren't in the cloud (a publish that never finished), so this
-		// device can't catch up from the log at all.
+		// A batch can be left pending simply because the read was WINDOWED and its
+		// earlier chunks fall outside the window - nothing is wrong with it, we
+		// just didn't read far enough back. Rescue those by batchId, which finds
+		// chunks at any depth. Without this a single bulk batch straddling the
+		// window edge would report incomplete on every attempt, so the recovery
+		// marker would never clear: the same one-way door the window was added to
+		// remove.
+		// Snapshot the ids first: rescueBatch removes from pendingBatches as it
+		// completes them, so iterating the live map would be mutation-while-
+		// iterating.
+		const stillPending = [...this.pendingBatches.keys()];
+		for (const batchId of stillPending) {
+			await this.rescueBatch(batchId);
+		}
+
+		// Batches still missing a chunk after all that: those chunks genuinely
+		// aren't in the cloud (a publish that never finished), so this device
+		// can't catch up from the log at all.
 		const incomplete = this.pendingBatches.size;
 		this.pendingBatches.clear();
 		this.maxSeq = Math.max(this.maxSeq, newMaxSeq);

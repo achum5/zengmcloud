@@ -7,7 +7,6 @@ import {
 	getDoc,
 	getDocFromServer,
 	getCountFromServer,
-	getDocs,
 	getDocsFromServer,
 	deleteDoc,
 	limit,
@@ -1087,18 +1086,38 @@ export class FirebaseTransport implements SyncTransport {
 	// whole (possibly enormous) log just to render a list - that's what left it
 	// stuck on "Loading…" for a device far behind.
 	async fetchRecentEntries(n: number): Promise<ChangesetEntry[]> {
-		const snapshot = await getDocs(
-			query(this.changesRef, orderBy("ts", "desc"), limit(n)),
-		);
-		this.markContact();
-		const entries: ChangesetEntry[] = [];
-		for (const docSnap of snapshot.docs) {
-			const entry = this.parseEntry(docSnap);
-			if (entry) {
-				entries.push(entry);
+		// Paged, walking backwards from the head, for the same reason the full log
+		// is: `n` is now big enough (a bounded resync window) that one query for
+		// all of it is the same unbounded request that wedged a phone.
+		const collected: ChangesetEntry[] = [];
+		let after: QueryDocumentSnapshot | undefined;
+		while (collected.length < n) {
+			const pageSize = Math.min(FULL_LOG_PAGE_SIZE, n - collected.length);
+			const page = await getDocsFromServer(
+				query(
+					this.changesRef,
+					orderBy("ts", "desc"),
+					...(after ? [startAfter(after)] : []),
+					limit(pageSize),
+				),
+			);
+			this.markContact();
+			for (const docSnap of page.docs) {
+				const entry = this.parseEntry(docSnap);
+				if (entry) {
+					collected.push(entry);
+				}
+			}
+			if (page.size < pageSize) {
+				break;
+			}
+			after = page.docs.at(-1);
+			if (!after) {
+				break;
 			}
 		}
-		return entries.reverse();
+		// Newest-first above; callers want oldest-first.
+		return collected.reverse();
 	}
 
 	subscribe(subscriber: SyncSubscriber) {

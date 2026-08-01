@@ -120,6 +120,14 @@ const makeLeagueId = (): string => {
 // League.syncResyncNeeded). Set by the engine when it abandons a batch; read on
 // connect to trigger a self-healing full-log resync. Survives reloads, unlike the
 // engine's in-memory abandoned-batch set.
+// How much of the log the connect-time self-heal re-reads. Bounded on purpose:
+// the whole log takes minutes on a phone and the read has to COMPLETE for the
+// marker to clear, so an unbounded read meant it never cleared and every
+// connect burned the connection re-reading from the beginning of time. Comfortably
+// more than any plausible gap - the marker is set by the running engine, so
+// whatever it skipped is recent.
+const AUTO_RESYNC_WINDOW_ENTRIES = 2000;
+
 const loadResyncNeeded = async (lid: number | undefined): Promise<boolean> => {
 	if (typeof lid !== "number") {
 		return false;
@@ -1677,7 +1685,9 @@ const doConnectSharedLeague = async ({
 				markerSet,
 				stranded: strandedBefore.gids.length,
 			});
-			const result = await engine.resyncAll();
+			const result = await engine.resyncAll({
+				windowEntries: AUTO_RESYNC_WINDOW_ENTRIES,
+			});
 			syncDebugLog("connect:auto-resync-done", result);
 
 			// Did the resync actually recover the missed day? Judge on the DATA -
