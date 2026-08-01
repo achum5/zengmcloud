@@ -1528,3 +1528,77 @@ describe("sync changeset", () => {
 		});
 	});
 });
+
+// The guard exists to stop an out-of-order LIVE delivery moving the league
+// backwards. Both of these are ways it did the opposite and moved a league
+// somewhere it had never been - reported from the field as a device sitting in
+// the 2005 regular season suddenly landing in free agency.
+describe("the regression guard does not invent a phase", () => {
+	test("a phase from an OLDER season is not read as a move forward", async () => {
+		// Local: 2005, regular season. Incoming: an entry replayed out of the log
+		// carrying free agency - but it is the 2004 offseason's free agency.
+		//
+		// Scored against the LOCAL season for both sides (the bug), 2005-free-
+		// agency beats 2005-regular-season and applies, dropping the league into
+		// free agency. Scored against the season the change belongs to, 2004-free-
+		// agency is plainly behind 2005-regular-season and is declined.
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+
+		const stale = await regressionReason(
+			{
+				store: "gameAttributes",
+				id: "phase",
+				type: "put",
+				value: { key: "phase", value: PHASE.FREE_AGENCY },
+			},
+			2004,
+		);
+		assert.ok(stale !== undefined, "a 2004 phase must not apply in 2005");
+
+		// The same phase, for the season we are actually in, is a real advance.
+		const real = await regressionReason(
+			{
+				store: "gameAttributes",
+				id: "phase",
+				type: "put",
+				value: { key: "phase", value: PHASE.FREE_AGENCY },
+			},
+			2005,
+		);
+		assert.strictEqual(real, undefined);
+	});
+
+	test("a season-crossing changeset supplies the season the phase belongs to", async () => {
+		// The season is a SIBLING change in the same changeset, so the guard has to
+		// be handed it - a phase change on its own carries no season.
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+
+		await applyChangeset(
+			{
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "season",
+						type: "put",
+						value: { key: "season", value: 2006 },
+					},
+					{
+						store: "gameAttributes",
+						id: "phase",
+						type: "put",
+						value: { key: "phase", value: PHASE.PRESEASON },
+					},
+				],
+			} as any,
+			{ authorId: "other" } as any,
+		);
+
+		// Preseason is a LOWER phase number than free agency, so without the
+		// season the guard would decline the rollover and strand the league in the
+		// previous year's free agency forever.
+		assert.strictEqual(g.get("season"), 2006);
+		assert.strictEqual(g.get("phase"), PHASE.PRESEASON);
+	});
+});

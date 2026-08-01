@@ -583,6 +583,19 @@ export const applyChangeset = async (
 	// applied records keeps a concurrent local action's other writes intact.
 	// beginApply only tells the invisible-write CANARY these writes are expected
 	// to be uncaptured - it does not suppress recording.
+	// The season this changeset belongs to, if it says. A phase is only
+	// comparable within a season (see regressionReason), and a changeset that
+	// crosses a season boundary writes both.
+	let changesetSeason: number | undefined;
+	for (const change of changeset.changes) {
+		if (change.store === "gameAttributes" && change.type === "put") {
+			const value = change.value as { key?: string; value?: unknown };
+			if (value?.key === "season" && typeof value.value === "number") {
+				changesetSeason = value.value;
+			}
+		}
+	}
+
 	changeTracker.beginApply();
 	try {
 		for (const change of orderChangesForApply(changeset.changes)) {
@@ -607,11 +620,21 @@ export const applyChangeset = async (
 			// the ordering machinery thinks. Decline it rather than corrupt the
 			// record, and ask for a full ordered re-read so the true state lands.
 			// See regressionReason.
+			//
+			// NEVER during a replay. A resync walks the log oldest-first, so it
+			// legitimately moves the phase backwards every time it crosses a season
+			// boundary - and the guard would then decline the newer entries that
+			// put it right, leaving the league stranded wherever the replay
+			// happened to reach. That is not hypothetical: it dropped a device into
+			// free agency in the middle of a regular season. The replay is ordered
+			// and authoritative; whatever it ends on is the truth.
 			let regression: string | undefined;
-			try {
-				regression = await regressionReason(change);
-			} catch {
-				// Never let the guard itself block an apply.
+			if (!getSyncEngine()?.isResyncing()) {
+				try {
+					regression = await regressionReason(change, changesetSeason);
+				} catch {
+					// Never let the guard itself block an apply.
+				}
 			}
 			if (regression !== undefined) {
 				regressions.push(regression);
@@ -996,6 +1019,8 @@ const phaseOrder = (season: unknown, phase: unknown): number | undefined =>
 // Would this write move a monotonic field backwards? Returns why, or undefined.
 export const regressionReason = async (
 	change: SyncChange,
+	// The season this change's CHANGESET is for, when it names one.
+	changesetSeason?: number,
 ): Promise<string | undefined> => {
 	if (change.type !== "put" || !change.value) {
 		return undefined;
@@ -1004,10 +1029,24 @@ export const regressionReason = async (
 	if (change.store === "gameAttributes") {
 		const value = change.value as { key?: string; value?: unknown };
 		if (value.key === "phase") {
-			const incoming = phaseOrder(g.get("season"), value.value);
+			// Scored against the season the change BELONGS to, not ours.
+			//
+			// This used to read the local season for both sides, which makes a
+			// phase from another season a meaningless comparison: an old entry
+			// carrying "free agency" scored as 2005-free-agency against our
+			// 2005-regular-season and sailed through as a move FORWARD - then the
+			// correct current phase was declined as a move backwards. A device
+			// mid-regular-season ended up in free agency and stayed there.
+			//
+			// A changeset that crosses a season boundary writes the season too, so
+			// the season is available on the same changeset; without it there is
+			// nothing to compare and the safe answer is to allow the write. The
+			// season's own guard below still blocks a genuine rewind.
+			const season = changesetSeason ?? g.get("season");
+			const incoming = phaseOrder(season, value.value);
 			const local = phaseOrder(g.get("season"), g.get("phase"));
 			if (incoming !== undefined && local !== undefined && incoming < local) {
-				return `phase ${String(value.value)} is behind local phase ${g.get("phase")}`;
+				return `phase ${String(value.value)} in season ${season} is behind local ${g.get("season")} phase ${g.get("phase")}`;
 			}
 		}
 		if (value.key === "season") {
