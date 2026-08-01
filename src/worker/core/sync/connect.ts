@@ -1185,6 +1185,65 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 	return lines.join("\n");
 };
 
+// May THIS device advance the shared league right now? Connection and sim
+// authority are checked elsewhere; this is the health half - the checks that
+// were missing when a device whose local state was corrupted (parked at a
+// phantom phase boundary by a bad replay) passed every existing guard and
+// simmed its corruption straight into the shared log for everyone. A device
+// may not advance while it is mid-repair, flagged for repair, or standing
+// somewhere other than where the room's stamped position says the league is.
+// Used by the worker's timeline-advance guard and as the auto-play
+// scheduler's preflight, so an unattended timer can never fire from a state
+// a human would look at and say "that's not our league".
+export const getSimSafety = async (): Promise<
+	{ safe: true } | { safe: false; reason: string }
+> => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		return { safe: true };
+	}
+
+	if (engine.isBusyApplying()) {
+		return {
+			safe: false,
+			reason: "Still applying changes from the cloud. Try again in a moment.",
+		};
+	}
+
+	const lid = g.get("lid");
+	if (await loadResyncNeeded(lid)) {
+		return {
+			safe: false,
+			reason:
+				"This device is flagged for a repair pass and will self-heal shortly. Try again in a minute.",
+		};
+	}
+
+	const announced = engine.getAuthority()?.position;
+	if (announced) {
+		let position;
+		try {
+			position = await getLeaguePosition();
+		} catch {
+			return { safe: true };
+		}
+		if (
+			isBehindPosition(position, announced) ||
+			isAheadOfPosition(position, announced)
+		) {
+			// Durable, so the next connect replays the log and puts it right even
+			// if this session never gets the chance.
+			await saveResyncNeeded(lid, true);
+			return {
+				safe: false,
+				reason: `This device reads as ${describePosition(position)} but the room's last known position is ${describePosition(announced)}. It will repair itself shortly - simming now would fork the league.`,
+			};
+		}
+	}
+
+	return { safe: true };
+};
+
 // Force a full catch-up: re-read the log's tail and re-apply it from scratch.
 // The one-click fix for a device that silently diverged. Bounded like every
 // other replay - the truly unbounded read never finished on a phone, which

@@ -15,6 +15,7 @@ import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
 import { getLeaguePosition } from "./core/sync/leaguePosition.ts";
 import {
+	getSimSafety,
 	getSyncRequired,
 	restoreSyncRequiredFromMeta,
 	startLiveBroadcast,
@@ -414,6 +415,26 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 						{
 							type: "error",
 							text: `Still catching up to the cloud, so this wasn't done. Try again in a moment.`,
+							persistent: true,
+						},
+						conditions,
+					);
+					return undefined;
+				}
+
+				// Everything above says the CONNECTION is healthy; none of it says
+				// the DEVICE is. A device whose local state was corrupted (parked at
+				// a phantom phase by a bad replay) has its watermark at the head and
+				// drains clean - and then sims its corruption into the shared log
+				// for the whole room. Health is judged against evidence the broken
+				// state can't vouch for: a pending repair, or disagreeing with the
+				// room's stamped position.
+				const safety = await getSimSafety();
+				if (!safety.safe) {
+					util.logEvent(
+						{
+							type: "error",
+							text: `This wasn't done: ${safety.reason}`,
 							persistent: true,
 						},
 						conditions,

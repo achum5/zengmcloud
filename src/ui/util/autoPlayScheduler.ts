@@ -585,6 +585,30 @@ class AutoPlayScheduler {
 			return;
 		}
 
+		// The eligibility check above says this device is connected and in charge;
+		// it says nothing about whether its local league state can be trusted. A
+		// device parked at a phantom phase by a bad replay passes every connection
+		// check - and an unattended timer firing from that state sims the
+		// corruption straight into the shared log for the whole room. The worker
+		// refuses such a sim too; asking first means the scheduler PAUSES and
+		// retries instead of burning its fire on a refusal (and instead of
+		// stopping outright, since the device repairs itself and the schedule
+		// should carry on the moment it has).
+		if (state.mpSyncActive) {
+			const safety = (await toWorker("main", "getAutoSimSafety", undefined)) as
+				| { safe: true }
+				| { safe: false; reason: string }
+				| undefined;
+			if (safety && !safety.safe) {
+				if (this.settings.enabled) {
+					this.armTimer();
+				}
+				this.state.pausedReason = safety.reason;
+				this.emit();
+				return;
+			}
+		}
+
 		const phase = state.phase;
 		if (!PLAYABLE_PHASES.has(phase)) {
 			if (this.settings.enabled && this.settings.pauseAtPhaseBoundaries) {

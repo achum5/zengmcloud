@@ -27,6 +27,7 @@ export {
 	getConnectedLid,
 	getSyncActivity,
 	getSyncDebugSnapshot,
+	getSimSafety,
 	getSyncRequired,
 	getSyncStatus,
 	markSyncRequired,

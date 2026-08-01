@@ -2460,6 +2460,35 @@ describe("a resync replays by the era a change declares, not by raw seq", () => 
 			"the announced position is the simmer's own statement of the current phase - adopt it",
 		);
 	});
+
+	test("the authority's own replay trusts its own stamp over its corrupted local state", async () => {
+		resetG();
+		await resetCache({});
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.PRESEASON);
+
+		const bus = new FakeBus();
+		publishAdvance(bus, "rollover-reupload", [
+			attr("season", 2005),
+			attr("phase", PHASE.PRESEASON),
+		]);
+
+		// The stamp was written by THIS device back when it was healthy. A device
+		// that is repairing itself must not trust the thing being repaired - and
+		// the in-charge device is the one whose corruption sims into the shared
+		// log for everyone if this goes wrong.
+		const engine = new SyncEngine(new FakeTransport("ME", bus));
+		(engine as any).authority = {
+			holderId: "ME",
+			holderName: "Me",
+			position: { season: 2005, phase: PHASE.REGULAR_SEASON, day: 40 },
+		};
+		setSyncEngine(engine);
+		const result = await engine.resyncAll();
+
+		assert.strictEqual(result.failed, false);
+		assert.strictEqual(g.get("phase"), PHASE.REGULAR_SEASON);
+	});
 });
 
 // One bulk applier at a time. Two passes working the same backlog dedup-skip

@@ -20,7 +20,10 @@ import { outbox } from "./outbox.ts";
 import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
 import { g } from "../../util/index.ts";
 import { PHASE } from "../../../common/constants.ts";
-import type { LeaguePosition } from "./leaguePosition.ts";
+import {
+	getLeaguePosition,
+	type LeaguePosition,
+} from "./leaguePosition.ts";
 
 // Changesets larger than this are "bulk" (e.g. a simulation, which mutates
 // hundreds of records). They're only published by the host, and are split into
@@ -2493,10 +2496,12 @@ export class SyncEngine {
 		// person in charge of simming says it is - a unit that would is displaced
 		// old history whose era could not be pinned down (a phase-only stamp from
 		// a previous season, re-uploaded late). Skipping it is what keeps this
-		// replay from doing the very corruption it exists to repair. Only enforced
-		// against a real announced position from someone else; when this device IS
-		// the authority, or nobody has announced, there is no ceiling to trust.
-		const announced = this.isAuthority() ? undefined : this.authority?.position;
+		// replay from doing the very corruption it exists to repair. This applies
+		// to the authority's OWN replays too: its stamp was written by this same
+		// device back when it was healthy, which makes it the best statement of
+		// the truth available to a device that is currently repairing itself -
+		// trusting the local state instead is trusting the thing being repaired.
+		const announced = this.authority?.position;
 		const ceiling = announced
 			? eraOf(announced.season, announced.phase)
 			: undefined;
@@ -2603,8 +2608,10 @@ export class SyncEngine {
 		// preseason" with a ready-up button over a 62-14 mid-season roster. The
 		// room's announced position is the simmer's own statement of the current
 		// phase, restamped on every advance, so after a CLEAN pass that still
-		// reads below it, adopt its season/phase. Adopt-forward only, and only
-		// under a real announcement from someone else.
+		// reads below it, adopt its season/phase. Adopt-forward only. When the
+		// stamp is this device's own (it is the authority), that stamp predates
+		// whatever needed repairing, which is exactly why it is trusted over the
+		// local value.
 		if (conclusive && announced !== undefined) {
 			const localEra = eraOf(g.get("season"), g.get("phase"));
 			const target = eraOf(announced.season, announced.phase);
@@ -2636,6 +2643,17 @@ export class SyncEngine {
 				} catch (error) {
 					syncDebugLog("engine:resync-adopt-failed", { error });
 				}
+			}
+		}
+
+		// The authority's stamp should reflect the healed truth, not the state
+		// from before the repair - followers compare themselves against it, and
+		// the sim guard refuses to advance a device that disagrees with it.
+		if (conclusive && this.isAuthority()) {
+			try {
+				this.clearRoomBusy(await getLeaguePosition());
+			} catch (error) {
+				syncDebugLog("engine:resync-restamp-failed", { error });
 			}
 		}
 
