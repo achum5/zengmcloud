@@ -1030,6 +1030,15 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Events",
+			key: "smartAiFrontOffice",
+			name: "Smart AI Front Offices",
+			godModeRequired: "always",
+			type: "bool",
+			description:
+				"AI teams plan free agency around what their franchise is actually trying to do: they weigh fit and age instead of always chasing the highest-rated player, hold cap space open for a marquee free agent, trade salary away to make room for one, and let expensive veterans walk when they are rebuilding. Turn this off for vanilla behavior, where each team simply signs the best free agent it can afford.",
+		},
+		{
+			category: "Events",
 			key: "aiTradesFactor",
 			name: "AI-to-AI Trades Factor",
 			godModeRequired: "always",

@@ -160,13 +160,18 @@ const newPhaseResignPlayers = async (
 	const postures = new Map<number, TradePosture>();
 	let starOvrForResign = Infinity;
 	try {
+		if (!g.get("smartAiFrontOffice")) {
+			throw new Error("smart front office disabled");
+		}
 		const context = await getLeagueTradeContext();
 		starOvrForResign = context.starOvr;
 		for (let tid = 0; tid < g.get("numTeams"); tid++) {
 			postures.set(tid, await getTradePosture(tid, context));
 		}
 	} catch (error) {
-		console.error("newPhaseResignPlayers: posture computation failed", error);
+		if (g.get("smartAiFrontOffice")) {
+			console.error("newPhaseResignPlayers: posture computation failed", error);
+		}
 		postures.clear();
 	}
 

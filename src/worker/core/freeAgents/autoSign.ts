@@ -88,14 +88,23 @@ const autoSign = async () => {
 	// we fall back to the old value-ordered behavior rather than skip free agency.
 	const postures = new Map<number, TradePosture>();
 	let starOvr = Infinity;
+	// The whole feature is one setting away from vanilla: with it off, no
+	// postures are computed and every decision below falls back to the original
+	// "sign the best free agent you can afford" behavior.
+	const smart = g.get("smartAiFrontOffice");
 	try {
+		if (!smart) {
+			throw new Error("smart front office disabled");
+		}
 		const context = await getLeagueTradeContext();
 		starOvr = context.starOvr;
 		for (const t of eligibleTeams) {
 			postures.set(t.tid, await getTradePosture(t.tid, context));
 		}
 	} catch (error) {
-		console.error("autoSign: posture computation failed", error);
+		if (smart) {
+			console.error("autoSign: posture computation failed", error);
+		}
 		postures.clear();
 	}
 

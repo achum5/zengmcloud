@@ -644,6 +644,7 @@ type FootballOvertime = "suddenDeath" | "exceptFg" | "bothPossess";
 export type GameAttributesLeague = {
 	aiJerseyRetirement: boolean;
 	aiTradesFactor: number;
+	smartAiFrontOffice: boolean;
 	allStarGame: number | null;
 	allStarNum: number;
 	allStarType: "draft" | "byConf" | "top";

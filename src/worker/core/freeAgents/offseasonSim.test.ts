@@ -429,6 +429,28 @@ describe("many simulated offseasons", () => {
 							`  ${event}: ${allEntries.filter((e) => e.event === event).length}`,
 					),
 				...(() => {
+					// Churn check: how many times does ONE team dump in ONE offseason?
+					const perRun = new Map<string, number>();
+					for (const e of allEntries.filter((x) => x.event === "dump-and-sign")) {
+						const k = `${e.season}:${e.tid}`;
+						perRun.set(k, (perRun.get(k) ?? 0) + 1);
+					}
+					const maxPerTeam = Math.max(0, ...perRun.values());
+					// Is the net-gain guard ever actually binding?
+					const rejects: Record<string, number> = {};
+					for (const e of allEntries.filter((x) => x.event === "dump-no-deal")) {
+						for (const [k, v] of Object.entries(
+							(e.data.rejected ?? {}) as Record<string, number>,
+						)) {
+							rejects[k] = (rejects[k] ?? 0) + v;
+						}
+					}
+					return [
+						`  max dumps by one team in one offseason: ${maxPerTeam}`,
+						`  rejection reasons: ${JSON.stringify(rejects)}`,
+					];
+				})(),
+				...(() => {
 					const t = allEntries.filter((e) => e.event === "dump-no-target");
 					if (t.length === 0) {return [];}
 					const tot = (k: string) =>
@@ -535,4 +557,50 @@ describe("many simulated offseasons", () => {
 		},
 		600_000,
 	);
+});
+
+// A kill switch nobody has tested is not a kill switch. With the setting off,
+// the league must behave like stock BBGM: no cap holds, no salary dumps, and
+// signings ordered by plain value again.
+describe("the off switch really is off", () => {
+	beforeEach(() => {
+		changeTracker.disable();
+		changeTracker.reset();
+	});
+
+	test("no cap-clearing trades happen and free agency still works", async () => {
+		const rng = makeRng(3);
+		await buildLeague(rng, [0.85, 1.05]);
+		g.setWithoutSavingToDB("smartAiFrontOffice", false);
+
+		const before = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
+
+		const capture = captureFrontOfficeLog();
+		const randomSpy = vi.spyOn(Math, "random").mockImplementation(rng);
+		try {
+			for (let day = FA_DAYS; day > 0; day--) {
+				g.setWithoutSavingToDB("daysLeft", day);
+				await decreaseDemands();
+				await clearSpaceForSignings();
+				await autoSign();
+			}
+		} finally {
+			randomSpy.mockRestore();
+		}
+		const entries = capture.stop();
+
+		assert.strictEqual(
+			entries.length,
+			0,
+			"the front office made decisions while switched off",
+		);
+
+		// Vanilla free agency still has to run.
+		const after = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
+		assert.ok(after > before, "teams should still be signing free agents");
+	});
 });

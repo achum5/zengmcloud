@@ -50,6 +50,15 @@ const MAX_SWEETENERS = 2;
 // a roster teardown.
 const MAX_DUMP_PLAYERS = 3;
 
+// One per team per offseason. A front office clears the decks for ITS guy; a
+// team doing this five times in one free agency is not planning, it is churning
+// - which is exactly what a long sim showed happening before this cap existed.
+// Held in memory rather than on the league: the only cost of a worker restart
+// mid-free-agency is that one team might get a second bite, and that is a far
+// cheaper failure than a new persisted field to migrate.
+const dumpsThisOffseason = new Map<string, number>();
+const MAX_DUMPS_PER_TEAM = 1;
+
 // Below this chance of signing, a pursuit is a fantasy and the payroll stays as
 // it is. Deliberately near zero: a neutral AI team sits around 0.05 on this
 // scale (mood docks every non-user team three points), so anything higher stops
@@ -523,6 +532,9 @@ const clearSpaceForSignings = async () => {
 	if (g.get("salaryCapType") === "none" || g.get("forceHistoricalRosters")) {
 		return;
 	}
+	if (!g.get("smartAiFrontOffice")) {
+		return;
+	}
 
 	const freeAgents = await idb.cache.players.indexGetAll(
 		"playersByTid",
@@ -574,6 +586,9 @@ const clearSpaceForSignings = async () => {
 	);
 
 	for (const t of ordered) {
+		if ((dumpsThisOffseason.get(`${season}:${t.tid}`) ?? 0) >= MAX_DUMPS_PER_TEAM) {
+			continue;
+		}
 		const posture = postures.get(t.tid);
 		if (!posture || posture.tier === "teardown") {
 			frontOfficeLog(season, t.tid, "dump-skip-tier", {
@@ -582,7 +597,7 @@ const clearSpaceForSignings = async () => {
 			continue;
 		}
 		try {
-			await clearSpaceForTeam({
+			const did = await clearSpaceForTeam({
 				tid: t.tid,
 				posture,
 				postures,
@@ -594,6 +609,10 @@ const clearSpaceForSignings = async () => {
 				valueChangeCalculator,
 				season,
 			});
+			if (did) {
+				const key = `${season}:${t.tid}`;
+				dumpsThisOffseason.set(key, (dumpsThisOffseason.get(key) ?? 0) + 1);
+			}
 		} catch (error) {
 			console.error(`clearSpaceForSignings: tid ${t.tid} failed`, error);
 		}
