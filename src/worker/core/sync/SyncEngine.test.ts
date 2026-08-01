@@ -2361,6 +2361,105 @@ describe("a resync replays by the era a change declares, not by raw seq", () => 
 			"nothing in a replay may advance the league past where the room says it is",
 		);
 	});
+
+	test("a day's games stamp their unit, so a re-uploaded rollover sorts before them", async () => {
+		resetG();
+		await resetCache({});
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+
+		const bus = new FakeBus();
+		// Both units write the SAME record, so whichever applies last wins - the
+		// only way to observe replay order from the final state. A day's sim
+		// (games carry their season) must beat the rollover that re-uploaded
+		// after it in seq order but happened before it in league time.
+		bus.publish({
+			id: "day-sim",
+			authorId: "OTHER",
+			action: "sim.games",
+			changeset: {
+				changes: [
+					{
+						store: "games",
+						id: 500,
+						type: "put",
+						value: { gid: 500, season: 2005, playoffs: false, day: 40 },
+					},
+					{
+						store: "events",
+						id: 1,
+						type: "put",
+						value: { eid: 1, type: "x", text: "from the day sim" },
+					},
+				],
+			},
+		});
+		bus.publish({
+			id: "rollover-reupload",
+			authorId: "OTHER",
+			action: "sim.newPhase",
+			changeset: {
+				changes: [
+					attr("season", 2005),
+					attr("phase", PHASE.PRESEASON),
+					{
+						store: "events",
+						id: 1,
+						type: "put",
+						value: { eid: 1, type: "x", text: "from the rollover" },
+					},
+				],
+			},
+		});
+
+		const engine = new SyncEngine(new FakeTransport("ME", bus));
+		setSyncEngine(engine);
+		await engine.resyncAll();
+
+		const events = await idb.cache.events.getAll();
+		assert.strictEqual(events.length, 1);
+		assert.strictEqual(
+			(events[0] as any).text,
+			"from the day sim",
+			"the day's sim happened after the rollover in league time, so its write must win",
+		);
+	});
+
+	test("after a clean replay, the room's announced season/phase is adopted when the window cannot supply it", async () => {
+		resetG();
+		await resetCache({});
+		g.setWithoutSavingToDB("season", 2005);
+		g.setWithoutSavingToDB("phase", PHASE.PRESEASON);
+
+		const bus = new FakeBus();
+		// The ONLY phase-bearing entry the window has is the stale re-uploaded
+		// rollover - the real "start the season" advance is months below the
+		// window. Perfect ordering still leaves the phase parked at preseason.
+		publishAdvance(bus, "rollover-reupload", [
+			attr("season", 2005),
+			attr("phase", PHASE.PRESEASON),
+		]);
+
+		const engine = new SyncEngine(new FakeTransport("ME", bus));
+		(engine as any).authority = {
+			holderId: "H",
+			holderName: "Host",
+			position: { season: 2005, phase: PHASE.REGULAR_SEASON, day: 40 },
+		};
+		setSyncEngine(engine);
+		const result = await engine.resyncAll();
+
+		assert.strictEqual(result.failed, false);
+		assert.strictEqual(
+			g.get("season"),
+			2005,
+		);
+		assert.strictEqual(
+			g.get("phase"),
+			PHASE.REGULAR_SEASON,
+			"the announced position is the simmer's own statement of the current phase - adopt it",
+		);
+	});
 });
 
 // One bulk applier at a time. Two passes working the same backlog dedup-skip

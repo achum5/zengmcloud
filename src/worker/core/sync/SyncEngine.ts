@@ -18,6 +18,8 @@ import type {
 } from "./types.ts";
 import { outbox } from "./outbox.ts";
 import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
+import { g } from "../../util/index.ts";
+import { PHASE } from "../../../common/constants.ts";
 import type { LeaguePosition } from "./leaguePosition.ts";
 
 // Changesets larger than this are "bulk" (e.g. a simulation, which mutates
@@ -2341,7 +2343,10 @@ export class SyncEngine {
 	// changeset that advances the league writes these as gameAttributes, and
 	// they are the only trustworthy statement of WHEN the change belongs -
 	// chunks re-uploaded days late carry re-upload seqs, so the log position
-	// lies exactly when it matters most.
+	// lies exactly when it matters most. A day's sim declares itself too: its
+	// game records carry their season and whether they are playoff games, which
+	// is what lets a re-uploaded rollover sort BEFORE the season's games instead
+	// of merely before the next explicit advance.
 	private static unitStamp(entries: ChangesetEntry[]): {
 		season: number | undefined;
 		phase: number | undefined;
@@ -2357,6 +2362,24 @@ export class SyncEngine {
 					}
 					if (value?.key === "phase" && typeof value.value === "number") {
 						phase = value.value;
+					}
+				}
+			}
+		}
+		if (season === undefined && phase === undefined) {
+			for (const entry of entries) {
+				for (const change of entry.changeset?.changes ?? []) {
+					if (change.store === "games" && change.type === "put") {
+						const value = change.value as {
+							season?: unknown;
+							playoffs?: unknown;
+						};
+						if (typeof value?.season === "number") {
+							season = value.season;
+							phase = value.playoffs
+								? PHASE.PLAYOFFS
+								: PHASE.REGULAR_SEASON;
+						}
 					}
 				}
 			}
@@ -2563,10 +2586,56 @@ export class SyncEngine {
 		// by a takeover, leave the watermark where it was - never skip past
 		// unapplied data and silently diverge. (Units DECLINED as stale don't
 		// block banking: skipping them is the point, permanently.)
-		if (!aborted && !this.applyFailed && incomplete === 0) {
+		const conclusive = !aborted && !this.applyFailed && incomplete === 0;
+		if (conclusive) {
 			if (newMaxSeq > this.persistedSeq) {
 				this.persistedSeq = newMaxSeq;
 				this.onWatermark?.(this.persistedSeq);
+			}
+		}
+
+		// A window can order itself perfectly and still not CONTAIN the room's
+		// current phase: when the newest phase-bearing entry in the log's tail is
+		// a re-uploaded old advance, every phase value the window has to offer is
+		// stale, and the real advance sits months below the window. The games and
+		// rosters still land right - only (season, phase) is left pointing at
+		// wherever that stale advance was - which is how a device showed "2005
+		// preseason" with a ready-up button over a 62-14 mid-season roster. The
+		// room's announced position is the simmer's own statement of the current
+		// phase, restamped on every advance, so after a CLEAN pass that still
+		// reads below it, adopt its season/phase. Adopt-forward only, and only
+		// under a real announcement from someone else.
+		if (conclusive && announced !== undefined) {
+			const localEra = eraOf(g.get("season"), g.get("phase"));
+			const target = eraOf(announced.season, announced.phase);
+			if (localEra < target) {
+				try {
+					await applyChangeset({
+						changes: [
+							{
+								store: "gameAttributes",
+								id: "season",
+								type: "put",
+								value: { key: "season", value: announced.season },
+							},
+							{
+								store: "gameAttributes",
+								id: "phase",
+								type: "put",
+								value: { key: "phase", value: announced.phase },
+							},
+						],
+					});
+					syncDebugLog("engine:resync-adopted-position", {
+						fromEra: localEra,
+						toEra: target,
+					});
+					console.log(
+						`[sync] The log's tail couldn't say which phase the room is in; adopted the announced position (season ${announced.season}, phase ${announced.phase}).`,
+					);
+				} catch (error) {
+					syncDebugLog("engine:resync-adopt-failed", { error });
+				}
 			}
 		}
 
