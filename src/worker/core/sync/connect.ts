@@ -25,6 +25,7 @@ import { syncDebugLog } from "./debugLog.ts";
 import {
 	describePosition,
 	getLeaguePosition,
+	isAheadOfPosition,
 	isBehindPosition,
 } from "./leaguePosition.ts";
 import { endLotteryReveal } from "./notifications.ts";
@@ -1212,9 +1213,11 @@ export const resyncSharedLeague = async (): Promise<{
 // that already exists.
 let connectQueue: Promise<unknown> = Promise.resolve();
 
-// How long a follower may sit behind the position the sim authority announced
-// before we stop assuming it's just propagation delay. A day's changeset is
-// chunked across many entries, so a few seconds behind is completely normal.
+// How long a follower may sit out of step with the position the sim authority
+// announced before we stop assuming it's just propagation delay. A day's
+// changeset is chunked across many entries, so a few seconds off is completely
+// normal - in either direction, since the authority stamps its position as a
+// separate write from the changeset it describes.
 const BEHIND_GRACE_MS = 30 * 1000;
 
 // Only one recovery at a time, and remember when we first noticed.
@@ -1238,6 +1241,13 @@ let healingBehind = false;
 // gap, this device had lost entries; if it doesn't, the advance was never
 // uploaded and the gap is on the simmer's side. Both are worth saying out loud
 // - the whole reason this went unnoticed is that neither said anything.
+//
+// A follower can also end up PAST the room, which is worse, because none of the
+// engine's own bookkeeping will ever call it a problem: it looks caught up, it
+// isn't behind on anything, and it will happily sit there. That is not a
+// theoretical state - a phase scored against the wrong season applied an old
+// offseason's free agency over a live regular season, and the device stayed in
+// free agency with nothing watching for it. Same evidence, same recovery.
 const checkBehindAuthority = async () => {
 	const engine = getSyncEngine();
 	if (!engine || healingBehind) {
@@ -1258,13 +1268,16 @@ const checkBehindAuthority = async () => {
 	} catch {
 		return;
 	}
-	if (!isBehindPosition(localPosition, announced)) {
+	const ahead = isAheadOfPosition(localPosition, announced);
+	if (!ahead && !isBehindPosition(localPosition, announced)) {
 		behindSince = undefined;
 		return;
 	}
 
-	// Behind. Give the ordinary path time to deliver before doing anything - a
-	// sim that just finished is legitimately still arriving.
+	// Out of step. Give the ordinary path time to deliver before doing anything -
+	// a sim that just finished is legitimately still arriving, and the authority
+	// stamps its position separately from the changeset, so either side can lead
+	// for a moment.
 	const now = Date.now();
 	if (behindSince === undefined) {
 		behindSince = now;
@@ -1277,10 +1290,41 @@ const checkBehindAuthority = async () => {
 	healingBehind = true;
 	try {
 		syncDebugLog("connect:behind-authority", {
+			direction: ahead ? "ahead" : "behind",
 			local: describePosition(localPosition),
 			announced: describePosition(announced),
 			engine: engine.getCatchUpDiagnostics(),
 		});
+
+		// Past the room. There is nothing to download - the entries that describe
+		// where the league really is were already delivered, and something applied
+		// over the top of them. Only replaying the log in order can undo that, and
+		// a bounded window is enough: the goal is to land on the room's CURRENT
+		// state, not to recover ancient history.
+		if (ahead) {
+			const result = await engine.resyncAll({
+				windowEntries: AUTO_RESYNC_WINDOW_ENTRIES,
+			});
+			const after = await getLeaguePosition();
+			syncDebugLog("connect:ahead-authority-resynced", {
+				...result,
+				after: describePosition(after),
+			});
+			if (!isAheadOfPosition(after, announced)) {
+				behindSince = undefined;
+				console.log(
+					`[sync] This device had got ahead of the room; replaying the shared log put it back to ${describePosition(after)}.`,
+				);
+			} else {
+				// Do not keep grinding the log every 30 seconds against a state it
+				// cannot explain.
+				behindSince = now;
+				console.error(
+					`[sync] This device reads as ${describePosition(after)} but the room is on ${describePosition(announced)}, and replaying the shared log did not correct it.`,
+				);
+			}
+			return;
+		}
 
 		// Cheap first: an ordinary catch-up. Covers a listener that died quietly
 		// while the watermark was still honest.

@@ -5,6 +5,7 @@ import { idb } from "../../db/index.ts";
 import { PHASE } from "../../../common/constants.ts";
 import {
 	getLeaguePosition,
+	isAheadOfPosition,
 	isBehindPosition,
 	parseLeaguePosition,
 } from "./leaguePosition.ts";
@@ -119,6 +120,54 @@ describe("league position", () => {
 				),
 				true,
 			);
+		});
+
+		// The state a corrupt phase write left a device in: sitting in free agency
+		// while the room played its regular season. Nothing called it behind, so
+		// nothing looked at it.
+		test("a phase past the room counts as ahead", () => {
+			assert.strictEqual(
+				isAheadOfPosition(
+					at(2005, PHASE.FREE_AGENCY, 0),
+					at(2005, PHASE.REGULAR_SEASON, 75),
+				),
+				true,
+			);
+			assert.strictEqual(
+				isBehindPosition(
+					at(2005, PHASE.FREE_AGENCY, 0),
+					at(2005, PHASE.REGULAR_SEASON, 75),
+				),
+				false,
+			);
+		});
+
+		test("a season past the room counts as ahead", () => {
+			assert.strictEqual(
+				isAheadOfPosition(
+					at(2006, PHASE.PRESEASON, 0),
+					at(2005, PHASE.FREE_AGENCY, 0),
+				),
+				true,
+			);
+		});
+
+		// A follower applies a day's games a moment before the authority restamps
+		// its position, so leading on day alone is ordinary traffic.
+		test("a day past the room is not ahead", () => {
+			assert.strictEqual(
+				isAheadOfPosition(
+					at(2005, PHASE.REGULAR_SEASON, 46),
+					at(2005, PHASE.REGULAR_SEASON, 45),
+				),
+				false,
+			);
+		});
+
+		test("level is neither ahead nor behind", () => {
+			const position = at(2005, PHASE.REGULAR_SEASON, 45);
+			assert.strictEqual(isAheadOfPosition(position, position), false);
+			assert.strictEqual(isBehindPosition(position, position), false);
 		});
 	});
 

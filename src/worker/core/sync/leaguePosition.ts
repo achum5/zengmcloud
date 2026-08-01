@@ -54,6 +54,26 @@ export const isBehindPosition = (
 	return local.day < other.day;
 };
 
+// Is `local` PAST `other`? A follower cannot get there honestly: only the
+// person in charge of simming advances the league, and they stamp their
+// position when they do. So a follower reading itself as past the room has
+// applied something it should not have, and is just as out of step as one that
+// is behind - more dangerously so, because "behind" is at least a state the
+// league really passed through.
+//
+// Season and phase only. `day` is left out on purpose: a follower routinely
+// applies a day's games a moment before the authority doc is restamped, so a
+// one-day lead is ordinary traffic, not divergence.
+export const isAheadOfPosition = (
+	local: LeaguePosition,
+	other: LeaguePosition,
+): boolean => {
+	if (local.season !== other.season) {
+		return local.season > other.season;
+	}
+	return local.phase > other.phase;
+};
+
 export const describePosition = (position: LeaguePosition): string =>
 	`${position.season} phase ${position.phase} day ${position.day}`;
 
