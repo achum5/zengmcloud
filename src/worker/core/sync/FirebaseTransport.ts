@@ -15,6 +15,7 @@ import {
 	query,
 	orderBy,
 	runTransaction,
+	startAfter,
 	where,
 	Timestamp,
 	serverTimestamp,
@@ -30,6 +31,12 @@ import {
 } from "./advanceClaimPolicy.ts";
 import { decideSimDayClaim, type SimDayClaimDoc } from "./simDayClaimPolicy.ts";
 import { syncDebugLog } from "./debugLog.ts";
+
+// Page size / cap for the whole-log read. 200 keeps each request small enough
+// to finish on a phone even when the page is full of bulk-sim chunks; the cap
+// is a runaway guard, not a real limit (200k entries is far past any league).
+const FULL_LOG_PAGE_SIZE = 200;
+const FULL_LOG_MAX_PAGES = 1000;
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
@@ -935,21 +942,60 @@ export class FirebaseTransport implements SyncTransport {
 	// entries never came back. getDocsFromServer rejects promptly instead, which is
 	// the failure the retry path is built for. These reads must be authoritative
 	// anyway - serving the backlog from a stale local cache would be wrong.
-	// One-shot read of the whole log, oldest-first, for the activity panel and
-	// full-resync recovery.
+	// The whole log, oldest-first, for full-resync recovery.
+	//
+	// PAGED, not one query. As a single unbounded read this is the request that
+	// wedged a phone: the connect-time auto-resync runs it on every connect
+	// while its marker is set, and on a league deep into a season the log is
+	// thousands of documents including every bulk-sim chunk. That request never
+	// came back, so the resync never finished, so the marker never cleared, so
+	// the next connect tried the same thing - with the catch-up drain stuck
+	// behind it showing 0% the whole time.
+	//
+	// Paged with startAfter on the document itself rather than a timestamp
+	// cursor: two entries can share a millisecond, and a "ts >" cursor would
+	// silently skip the second one. A resync that quietly drops entries is worse
+	// than a slow one.
 	async fetchAllEntries(): Promise<ChangesetEntry[]> {
-		const snapshot = await getDocsFromServer(
-			query(this.changesRef, orderBy("ts")),
-		);
-		this.markContact();
 		const entries: ChangesetEntry[] = [];
-		for (const docSnap of snapshot.docs) {
-			const entry = this.parseEntry(docSnap);
-			if (entry) {
-				entries.push(entry);
+		let after: QueryDocumentSnapshot | undefined;
+
+		for (let page = 0; page < FULL_LOG_MAX_PAGES; page++) {
+			const snapshot = await getDocsFromServer(
+				query(
+					this.changesRef,
+					orderBy("ts"),
+					...(after ? [startAfter(after)] : []),
+					limit(FULL_LOG_PAGE_SIZE),
+				),
+			);
+			this.markContact();
+			for (const docSnap of snapshot.docs) {
+				const entry = this.parseEntry(docSnap);
+				if (entry) {
+					entries.push(entry);
+				}
+			}
+			syncDebugLog("transport:full-log-page", {
+				page,
+				docs: snapshot.size,
+				entriesSoFar: entries.length,
+			});
+			if (snapshot.size < FULL_LOG_PAGE_SIZE) {
+				return entries;
+			}
+			after = snapshot.docs.at(-1);
+			if (!after) {
+				return entries;
 			}
 		}
-		return entries;
+
+		// Hit the page cap. Returning a TRUNCATED log would make the resync look
+		// complete while missing the newest entries - exactly the "conclusive"
+		// signal that clears the recovery marker. Refuse instead.
+		throw new Error(
+			`Change log is longer than ${FULL_LOG_MAX_PAGES * FULL_LOG_PAGE_SIZE} entries`,
+		);
 	}
 
 	// Every chunk of one bulk batch, straight from the log by batchId - no seq

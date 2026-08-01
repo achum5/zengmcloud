@@ -1693,11 +1693,26 @@ export class SyncEngine {
 				// against what was actually asked for, or a successful small-page retry
 				// would read as a short page and falsely declare the head reached.
 				let requested = CATCH_UP_PAGE_SIZE;
+				// Logged BEFORE the await. Without this a capture taken while a fetch
+				// is outstanding is indistinguishable from one where the fetch was
+				// never issued - both show a count and then silence - and that
+				// ambiguity cost two rounds of diagnosis.
+				const fetchStarted = Date.now();
+				syncDebugLog("engine:catchup-fetch-start", {
+					page,
+					fetchCursor,
+					requested,
+				});
 				try {
 					entries = await withTimeout(
 						this.transport.fetchEntriesSince(fetchCursor, requested),
 						CATCH_UP_FETCH_TIMEOUT,
 					);
+					syncDebugLog("engine:catchup-fetch-done", {
+						page,
+						ms: Date.now() - fetchStarted,
+						entries: entries.length,
+					});
 				} catch (error) {
 					// A full page of bulk-sim chunks can be ~15 MB and time out on a weak
 					// connection - the exact moment a behind device is trying to recover.
@@ -1706,6 +1721,7 @@ export class SyncEngine {
 					syncDebugLog("engine:catchup-fetch-retry-small", {
 						page,
 						fetchCursor,
+						ms: Date.now() - fetchStarted,
 						error,
 					});
 					requested = CATCH_UP_SMALL_PAGE;
