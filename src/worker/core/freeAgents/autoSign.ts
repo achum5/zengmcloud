@@ -1,20 +1,51 @@
-import { PLAYER } from "../../../common/constants.ts";
+import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { player, team } from "../index.ts";
 import getBest from "./getBest.ts";
 import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
-import { orderBy } from "../../../common/utils.ts";
+import { last, orderBy } from "../../../common/utils.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import { shuffle } from "../../../common/random.ts";
+import {
+	getLeagueTradeContext,
+	getTradePosture,
+	type TradePosture,
+} from "../trade/tradePosture.ts";
+import {
+	type CapHold,
+	type FaPlayer,
+	isPrize,
+	planCapHold,
+	pursuitScore,
+	resolveCapHolds,
+	scoreFreeAgent,
+} from "./frontOffice.ts";
+import type { Player } from "../../../common/types.ts";
+
+const toFaPlayer = (p: Player, season: number): FaPlayer => {
+	const ratings = last(p.ratings);
+	return {
+		pid: p.pid,
+		ovr: ratings.ovr,
+		pot: ratings.pot,
+		value: p.value,
+		age: season - p.born.year,
+		pos: ratings.pos,
+		amount: p.contract.amount,
+		exp: p.contract.exp,
+		injuredGames: p.injury.gamesRemaining,
+	};
+};
 
 /**
  * AI teams sign free agents.
  *
- * Each team (in random order) will sign free agents up to their salary cap or roster size limit. This should eventually be made smarter
- *
- * @memberOf core.freeAgents
- * @return {Promise}
+ * Each team (in random order) signs at most one free agent per call, chosen for
+ * FIT rather than raw value - and, during the offseason, a team with a credible
+ * shot at a marquee free agent will sit on its cap space instead of spending it.
+ * See frontOffice.ts for the reasoning; this function just fetches the data and
+ * applies the decisions.
  */
 const autoSign = async () => {
 	const players = await idb.cache.players.indexGetAll(
@@ -33,23 +64,106 @@ const autoSign = async () => {
 	const teams = await idb.cache.teams.getAll();
 	shuffle(teams);
 
-	for (const t of teams) {
+	const season = g.get("season");
+	const minContract = g.get("minContract");
+	const salaryCap = g.get("salaryCap");
+	const salaryCapType = g.get("salaryCapType");
+
+	const eligibleTeams = teams.filter((t) => {
+		if (t.disabled) {
+			return false;
+		}
 		// Skip the user's team
-		if (
+		return !(
 			g.get("userTids").includes(t.tid) &&
 			!local.autoPlayUntil &&
 			!g.get("spectator")
-		) {
-			continue;
-		}
+		);
+	});
+	if (eligibleTeams.length === 0) {
+		return;
+	}
 
-		if (t.disabled) {
-			continue;
+	// Franchise posture for every team about to shop. Best-effort: if this fails
+	// we fall back to the old value-ordered behavior rather than skip free agency.
+	const postures = new Map<number, TradePosture>();
+	let starOvr = Infinity;
+	try {
+		const context = await getLeagueTradeContext();
+		starOvr = context.starOvr;
+		for (const t of eligibleTeams) {
+			postures.set(t.tid, await getTradePosture(t.tid, context));
 		}
+	} catch (error) {
+		console.error("autoSign: posture computation failed", error);
+		postures.clear();
+	}
+
+	// Cap holds are an OFFSEASON thing. Once the season is running the marquee
+	// free agents are long gone, so there is nothing left to save space for and
+	// a team sitting out would just play a man short.
+	let capHolds = new Map<number, CapHold>();
+	if (g.get("phase") === PHASE.FREE_AGENCY && postures.size > 0) {
+		const daysLeft = g.get("daysLeft");
+		const prizes = playersSorted
+			.map((p) => toFaPlayer(p, season))
+			.filter((p) => isPrize({ p, starOvr, minContract }));
+
+		if (prizes.length > 0) {
+			const wanted = [];
+			for (const t of eligibleTeams) {
+				const posture = postures.get(t.tid);
+				if (!posture) {
+					continue;
+				}
+				const hold = planCapHold({
+					posture,
+					prizes,
+					payroll: await team.getPayroll(t.tid),
+					salaryCap,
+					salaryCapType,
+					daysLeft,
+					season,
+					minContract,
+				});
+				if (hold) {
+					const prize = prizes.find((p) => p.pid === hold.pid)!;
+					wanted.push({
+						tid: t.tid,
+						hold,
+						score: pursuitScore({
+							p: prize,
+							posture,
+							season,
+							minContract,
+						}),
+					});
+				}
+			}
+			capHolds = resolveCapHolds(wanted);
+		}
+	}
+
+	for (const t of eligibleTeams) {
+		const posture = postures.get(t.tid);
 
 		let probSkip;
 		if (isSport("basketball")) {
-			probSkip = t.strategy === "rebuilding" ? 0.9 : 0.75;
+			// A team with a plan acts on it. The old flat 75-90% skip is what made
+			// free agency feel like a lottery; now only teams with nothing much to
+			// do sit out often, and a team with a real hole moves quickly.
+			if (posture) {
+				probSkip =
+					posture.tier === "teardown"
+						? 0.85
+						: posture.tier === "seller"
+							? 0.75
+							: posture.needs.length > 0
+								? 0.4
+								: 0.6;
+			} else {
+				probSkip = t.strategy === "rebuilding" ? 0.9 : 0.75;
+			}
 		} else {
 			probSkip = 0.5;
 		}
@@ -74,9 +188,42 @@ const autoSign = async () => {
 
 		// Ignore roster size, will drop bad player if necessary in checkRosterSizes, and getBest won't sign min contract player unless under the roster limit
 		const payroll = await team.getPayroll(t.tid);
+
+		// Order the market by what THIS team should want. Falling back to the
+		// league-wide value order keeps old behavior if posture is unavailable.
+		let candidates = posture
+			? orderBy(
+					playersSorted.map((p) => ({
+						p,
+						score: scoreFreeAgent({
+							p: toFaPlayer(p, season),
+							posture,
+							season,
+							minContract,
+						}),
+					})),
+					(x) => x.score,
+					"desc",
+				).map((x) => x.p)
+			: playersSorted;
+
+		// Holding space for a marquee free agent. The money is earmarked for HIM,
+		// so he is exempt; everyone else has to fit under what's left. Minimum
+		// deals stay available throughout, which is how a waiting team still fills
+		// out its bench (and why holding can't leave it short-handed).
+		const hold = capHolds.get(t.tid);
+		if (hold) {
+			candidates = candidates.filter(
+				(p) =>
+					p.pid === hold.pid ||
+					p.contract.amount <= minContract ||
+					payroll + p.contract.amount <= hold.spendCeiling,
+			);
+		}
+
 		const p = getBest(
 			playersOnRoster,
-			playersSorted,
+			candidates,
 			payroll,
 			getHardCap(t.tid),
 		);

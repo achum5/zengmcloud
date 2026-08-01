@@ -15,6 +15,12 @@ import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTra
 import { bySport } from "../../../common/sportFunctions.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import { getHardCap, hardCapEnabled } from "../../util/getHardCap.ts";
+import {
+	getLeagueTradeContext,
+	getTradePosture,
+	type TradePosture,
+} from "../trade/tradePosture.ts";
+import { shouldLetWalk } from "../freeAgents/frontOffice.ts";
 
 export const FREE_AGENCY_DAYS = 30;
 
@@ -148,6 +154,22 @@ const newPhaseResignPlayers = async (
 
 	await contractNegotiation.cancelAll();
 
+	// Franchise posture, so a re-signing decision comes from the same plan the
+	// team trades on. Best-effort: without it we fall back to the old value-only
+	// logic rather than skip re-signings entirely.
+	const postures = new Map<number, TradePosture>();
+	let starOvrForResign = Infinity;
+	try {
+		const context = await getLeagueTradeContext();
+		starOvrForResign = context.starOvr;
+		for (let tid = 0; tid < g.get("numTeams"); tid++) {
+			postures.set(tid, await getTradePosture(tid, context));
+		}
+	} catch (error) {
+		console.error("newPhaseResignPlayers: posture computation failed", error);
+		postures.clear();
+	}
+
 	const valueChangeCalculator = new ValueChangeCalculator();
 	for (const pid of expiringPids) {
 		// Re-fetch players, because normalizeContractDemands might have changed some objects
@@ -239,6 +261,26 @@ const newPhaseResignPlayers = async (
 				// Always sign rookies
 				if (draftPick) {
 					reSignPlayer = true;
+				}
+			}
+
+			// A team going somewhere shouldn't spend real money to keep a player
+			// who will be finished before it is good. This is the re-signing half
+			// of the same idea free agency now runs on: a teardown that keeps
+			// paying its thirty-somethings ends up neither young nor good.
+			// Never applies to a newly drafted rookie or a genuine star.
+			const resignPosture = postures.get(p.tid);
+			if (reSignPlayer && resignPosture && !draftPick) {
+				const walk = shouldLetWalk({
+					tier: resignPosture.tier,
+					age: g.get("season") - p.born.year,
+					amount: contract.amount,
+					years: Math.max(1, contract.exp - g.get("season") + 1),
+					isStar: last(p.ratings).ovr >= starOvrForResign,
+					minContract: g.get("minContract"),
+				});
+				if (walk) {
+					reSignPlayer = false;
 				}
 			}
 
