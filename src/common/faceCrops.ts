@@ -14,7 +14,12 @@ export const FACE_CROPS: Record<string, [number, number, number, number]> = {
 	eyebrow: [95, 212, 210, 85],
 	nose: [145, 292, 110, 102],
 	mouth: [140, 350, 120, 95],
-	facialHair: [70, 280, 260, 180],
+	// Sits low on purpose. The obvious guess - centre it on the mouth - starts
+	// the window mid-eye and stops at the chin, so a full beard is cut off at
+	// exactly the part that distinguishes it from a goatee, and half the
+	// thumbnail is spent on eyes that never change. This runs from the top of
+	// the sideburns down past the jaw, and out wide enough for mutton chops.
+	facialHair: [60, 320, 280, 200],
 	eyeLine: [95, 240, 210, 95],
 	smileLine: [110, 290, 180, 140],
 	miscLine: [60, 80, 280, 340],
