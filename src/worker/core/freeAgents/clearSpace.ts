@@ -615,6 +615,14 @@ const clearSpaceForSignings = async () => {
 	if (!g.get("smartAiFrontOffice")) {
 		return;
 	}
+	// "No free agents" is a challenge setting, and mood marks every non-minimum
+	// free agent unwilling under it. Stock AI teams sign anyway (autoSign has
+	// never consulted mood), and that is left exactly as it was - but building a
+	// multi-team trade to get around a rule the league turned on is a step
+	// further than this should ever go.
+	if (g.get("challengeNoFreeAgents")) {
+		return;
+	}
 
 	const freeAgents = await idb.cache.players.indexGetAll(
 		"playersByTid",

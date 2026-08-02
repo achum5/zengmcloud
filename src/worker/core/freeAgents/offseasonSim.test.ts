@@ -208,6 +208,24 @@ const buildLeague = async (
 		);
 	}
 
+	// A draft class. Pick values are derived ENTIRELY from the undrafted pool
+	// (see getPickValues), so a league without one values every pick at null and
+	// every trade involving a pick evaluates to NaN - which silently disabled the
+	// sweetener half of a salary dump in every earlier run of this harness.
+	for (let i = 0; i < NUM_TEAMS * 2; i++) {
+		const prospect: any = makePlayer({
+			tid: PLAYER.UNDRAFTED,
+			ovr: 50 - Math.floor(i / 3),
+			pot: 70 - Math.floor(i / 4),
+			age: 19,
+			pos: POSITIONS[i % POSITIONS.length]!,
+			amount: minContract,
+			exp: g.get("season") + 3,
+		});
+		prospect.draft.year = g.get("season") + 1;
+		players.push(prospect);
+	}
+
 	await resetCache({ players, teams, draftPicks });
 	// processTrade reaches through to the league DB for team abbrevs; without a
 	// stub every trade throws and the whole feature looks inert from the outside.
@@ -549,6 +567,18 @@ describe("many simulated offseasons", () => {
 				);
 			}
 
+			// Picks must actually be usable as sweeteners. They were not for a long
+			// time - a league with no draft class values every pick at null, every
+			// trade containing one evaluated to NaN, and the whole sweetener half of
+			// the feature was silently dead while the tests stayed green.
+			const withPicks = allEntries.filter(
+				(e) => e.event === "dump-and-sign" && (e.data.picks as number) > 0,
+			);
+			assert.ok(
+				withPicks.length > 0,
+				"no deal ever attached a pick - the sweetener path is dead again",
+			);
+
 			// Still no self-destruction.
 			assert.strictEqual(sum((r) => r.teamsOverCap), 0, "a team blew past the cap");
 			assert.strictEqual(
@@ -757,6 +787,161 @@ describe("safe in a shared league", () => {
 			assert.ok(
 				roster.length >= g.get("minRosterSize"),
 				`tid ${tid} finished free agency with ${roster.length} players`,
+			);
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Leagues that are not the normal case. Each of these is a configuration a real
+// user can pick, and every one of them has a way to make this code do something
+// stupid or throw.
+// ---------------------------------------------------------------------------
+describe("unusual leagues", () => {
+	beforeEach(() => {
+		changeTracker.disable();
+		changeTracker.reset();
+	});
+
+	const runDays = async (rng: () => number, days = 8) => {
+		const capture = captureFrontOfficeLog();
+		const spy = vi.spyOn(Math, "random").mockImplementation(rng);
+		try {
+			for (let day = days; day > 0; day--) {
+				g.setWithoutSavingToDB("daysLeft", day);
+				await decreaseDemands();
+				await clearSpaceForSignings();
+				await autoSign();
+			}
+		} finally {
+			spy.mockRestore();
+		}
+		return capture.stop();
+	};
+
+	// Every team is somebody's. Nothing should happen at all, and nothing should
+	// throw trying to work that out.
+	test("a league where every team is human", async () => {
+		const rng = makeRng(21);
+		await buildLeague(rng, [0.85, 1.05]);
+		g.setWithoutSavingToDB(
+			"userTids",
+			Array.from({ length: NUM_TEAMS }, (_, tid) => tid),
+		);
+
+		const before = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
+		const entries = await runDays(rng);
+		const after = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
+
+		assert.strictEqual(after, before, "the AI touched a roster it does not own");
+		assert.strictEqual(
+			entries.filter((e) => e.event === "dump-and-sign").length,
+			0,
+		);
+	});
+
+	// A hard cap changes what "room" means, and getBest enforces it separately.
+	test("a hard-cap league stays legal", async () => {
+		const rng = makeRng(22);
+		const { salaryCap } = await buildLeague(rng, [0.6, 0.85]);
+		g.setWithoutSavingToDB("salaryCapType", "hard");
+
+		await runDays(rng, 12);
+
+		for (let tid = 0; tid < NUM_TEAMS; tid++) {
+			const payroll = await team.getPayroll(tid);
+			assert.ok(
+				payroll <= salaryCap,
+				`tid ${tid} finished over a HARD cap: ${Math.round(payroll)} / ${salaryCap}`,
+			);
+		}
+	});
+
+	// No cap at all: holding space is meaningless and clearing it is impossible,
+	// so both must simply switch themselves off rather than divide by a cap that
+	// isn't there.
+	test("a league with no salary cap", async () => {
+		const rng = makeRng(23);
+		await buildLeague(rng, [0.6, 0.9]);
+		g.setWithoutSavingToDB("salaryCapType", "none");
+
+		const before = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
+		const entries = await runDays(rng);
+
+		assert.strictEqual(
+			entries.filter((e) => e.event === "dump-and-sign").length,
+			0,
+			"cleared cap space in a league with no cap",
+		);
+		// Signing still has to work.
+		const after = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
+		assert.ok(after > before, "nobody signed anyone in an uncapped league");
+	});
+
+	// "No Free Agents" restricts YOU, not the league - the setting reads "you are
+	// not allowed to sign free agents". AI teams carry on as normal in vanilla,
+	// and they have to here too, or the league stagnates the moment the challenge
+	// is switched on. What must hold is that the user's own team is left alone.
+	test("challengeNoFreeAgents restricts the user, not the AI", async () => {
+		const rng = makeRng(24);
+		await buildLeague(rng, [0.85, 1.05]);
+		g.setWithoutSavingToDB("challengeNoFreeAgents", true);
+		g.setWithoutSavingToDB("userTids", [0]);
+
+		const userBefore = (
+			await idb.cache.players.indexGetAll("playersByTid", 0)
+		).length;
+		const before = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
+
+		const entries = await runDays(rng, 12);
+
+		const after = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
+		assert.ok(after > before, "the AI stopped working under a user-only rule");
+
+		const userAfter = (
+			await idb.cache.players.indexGetAll("playersByTid", 0)
+		).length;
+		assert.strictEqual(
+			userAfter,
+			userBefore,
+			"the user's roster was changed while they were barred from signing",
+		);
+		for (const e of entries.filter((x) => x.event === "dump-and-sign")) {
+			assert.notStrictEqual(e.tid, 0);
+			assert.notStrictEqual(e.data.partner, 0);
+		}
+	});
+
+	// A tiny league leaves almost nobody to trade with; the partner search must
+	// come up empty rather than misbehave.
+	test("a two-team league", async () => {
+		const rng = makeRng(25);
+		await buildLeague(rng, [0.9, 1.0]);
+		for (let tid = 2; tid < NUM_TEAMS; tid++) {
+			const t = await idb.cache.teams.get(tid);
+			t!.disabled = true;
+			await idb.cache.teams.put(t!);
+		}
+		g.setWithoutSavingToDB("numActiveTeams", 2);
+
+		// Just has to not throw, and not deal with a disabled team.
+		const entries = await runDays(rng, 5);
+		for (const e of entries.filter((x) => x.event === "dump-and-sign")) {
+			assert.ok(
+				(e.data.partner as number) < 2,
+				`traded with a disabled team: ${JSON.stringify(e)}`,
 			);
 		}
 	});
