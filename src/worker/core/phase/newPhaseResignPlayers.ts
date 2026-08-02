@@ -175,6 +175,29 @@ const newPhaseResignPlayers = async (
 		postures.clear();
 	}
 
+	// The OVR that puts a player among his own team's few best. Used to stop a bad
+	// team liquidating the rotation it has to rebuild around - see shouldLetWalk.
+	const CORE_PLAYERS_PER_TEAM = 3;
+	const coreOvrByTid = new Map<number, number>();
+	if (postures.size > 0) {
+		const ovrsByTid = new Map<number, number[]>();
+		for (const p of players) {
+			const arr = ovrsByTid.get(p.tid);
+			if (arr) {
+				arr.push(last(p.ratings).ovr);
+			} else {
+				ovrsByTid.set(p.tid, [last(p.ratings).ovr]);
+			}
+		}
+		for (const [tid, ovrs] of ovrsByTid) {
+			ovrs.sort((a, b) => b - a);
+			const cutoff = ovrs[Math.min(CORE_PLAYERS_PER_TEAM, ovrs.length) - 1];
+			if (cutoff !== undefined) {
+				coreOvrByTid.set(tid, cutoff);
+			}
+		}
+	}
+
 	const valueChangeCalculator = new ValueChangeCalculator();
 	for (const pid of expiringPids) {
 		// Re-fetch players, because normalizeContractDemands might have changed some objects
@@ -282,6 +305,7 @@ const newPhaseResignPlayers = async (
 					amount: contract.amount,
 					years: Math.max(1, contract.exp - g.get("season") + 1),
 					isStar: last(p.ratings).ovr >= starOvrForResign,
+					isCore: last(p.ratings).ovr >= (coreOvrByTid.get(p.tid) ?? Infinity),
 					minContract: g.get("minContract"),
 				});
 				if (walk) {

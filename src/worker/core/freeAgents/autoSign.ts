@@ -108,11 +108,16 @@ const autoSign = async () => {
 		postures.clear();
 	}
 
+	// Outside the free agency phase there is no countdown, so nothing is urgent
+	// and fit applies in full.
+	const inFreeAgency = g.get("phase") === PHASE.FREE_AGENCY;
+	const daysLeftOrUndefined = inFreeAgency ? g.get("daysLeft") : undefined;
+
 	// Cap holds are an OFFSEASON thing. Once the season is running the marquee
 	// free agents are long gone, so there is nothing left to save space for and
 	// a team sitting out would just play a man short.
 	let capHolds = new Map<number, CapHold>();
-	if (g.get("phase") === PHASE.FREE_AGENCY && postures.size > 0) {
+	if (inFreeAgency && postures.size > 0) {
 		const daysLeft = g.get("daysLeft");
 		const prizes = playersSorted
 			.map((p) => toFaPlayer(p, season))
@@ -156,14 +161,37 @@ const autoSign = async () => {
 	for (const t of eligibleTeams) {
 		const posture = postures.get(t.tid);
 
+		const playersOnRoster = await idb.cache.players.indexGetAll(
+			"playersByTid",
+			t.tid,
+		);
+
+		// A rebuild is a decision to be bad for a while, not a licence to stop
+		// fielding a team. Once a roster is down to the bare minimum the passive
+		// tiers have nothing left to strip, and sitting out only compounds it.
+		//
+		// Without this, teardown was an ABSORBING STATE: a team that fell into it
+		// let its veterans walk, skipped 85% of free agency, dumped salary, and so
+		// stayed bad enough to be a teardown again next year. Over eight seasons
+		// that produced 10-man rosters and a spread of team ovrs from -58 to 74,
+		// against -8 to 64 for the same league run by stock BBGM.
+		//
+		// Kept to the floor itself rather than a band above it. A version using
+		// minRosterSize + 2 pushed rosters to 13-15 without improving them, and
+		// braking the other way (going passive near the roster limit) was measured
+		// too: it left MORE good players unemployed, not fewer, because a team that
+		// stops shopping signs nobody at all.
+		const stripped = playersOnRoster.length <= g.get("minRosterSize");
+
 		let probSkip;
 		if (isSport("basketball")) {
 			// A team with a plan acts on it. The old flat 75-90% skip is what made
 			// free agency feel like a lottery; now only teams with nothing much to
 			// do sit out often, and a team with a real hole moves quickly.
 			if (posture) {
-				probSkip =
-					posture.tier === "teardown"
+				probSkip = stripped
+					? 0.4
+					: posture.tier === "teardown"
 						? 0.85
 						: posture.tier === "seller"
 							? 0.75
@@ -181,11 +209,6 @@ const autoSign = async () => {
 		if (Math.random() < probSkip) {
 			continue;
 		}
-
-		const playersOnRoster = await idb.cache.players.indexGetAll(
-			"playersByTid",
-			t.tid,
-		);
 
 		// With forceHistoricalRosters, only sign FAs if we have to
 		if (
@@ -209,6 +232,7 @@ const autoSign = async () => {
 							posture,
 							season,
 							minContract,
+							daysLeft: daysLeftOrUndefined,
 						}),
 					})),
 					(x) => x.score,
@@ -230,12 +254,7 @@ const autoSign = async () => {
 			);
 		}
 
-		const p = getBest(
-			playersOnRoster,
-			candidates,
-			payroll,
-			getHardCap(t.tid),
-		);
+		const p = getBest(playersOnRoster, candidates, payroll, getHardCap(t.tid));
 		if (p) {
 			// Remove from list of free agents
 			playersSorted = playersSorted.filter((p2) => p2 !== p);

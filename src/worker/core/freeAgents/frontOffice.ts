@@ -156,9 +156,30 @@ export const contractRiskMultiplier = ({
 
 	const overage = ageAtEnd - 30;
 	const tolerance =
-		tier === "allIn" ? 0.02 : tier === "buyer" ? 0.05 : tier === "fringe" ? 0.09 : 0.14;
+		tier === "allIn"
+			? 0.02
+			: tier === "buyer"
+				? 0.05
+				: tier === "fringe"
+					? 0.09
+					: 0.14;
 	return Math.max(0.4, 1 - overage * tolerance);
 };
+
+// How far the fit adjustments may move a player from his raw value. These exist
+// because the adjustments MULTIPLY: an old player on a long expensive deal, at a
+// position the team is deep at, on a team wanting cap relief used to come out at
+// 0.8 * 0.85 * 0.4 * 0.5 = 0.14 of his value - which sorts a 72-ovr star below a
+// replacement-level scrub.
+//
+// That would be survivable if teams disagreed, but they don't: age and contract
+// risk point the same way at almost every team, so a player buried by them is
+// buried EVERYWHERE and simply never signs. Measured over eight seasons, that
+// left six stars (including a 32-year-old 72 ovr) permanently unemployed while
+// stock BBGM signed all of them. Fit decides between comparable players; it does
+// not get to remove someone from the market.
+export const FIT_FLOOR = 0.7;
+export const FIT_CEILING = 1.3;
 
 // What this free agent is worth TO THIS TEAM. Ordering by this instead of by
 // raw value is what stops every team wanting the same player.
@@ -167,17 +188,26 @@ export const scoreFreeAgent = ({
 	posture,
 	season,
 	minContract,
+	daysLeft,
 }: {
 	p: FaPlayer;
 	posture: TradePosture;
 	season: number;
 	minContract: number;
+	// Days of free agency left, if this is the offseason. Fit matters less as the
+	// market empties - see the urgency ramp below.
+	daysLeft?: number;
 }): number => {
 	const years = Math.max(1, p.exp - season + 1);
 
 	let score = p.value;
 
 	// A rebuilder is buying the player's future, a win-now team his present.
+	// NOTE this tilt is ADDITIVE, so it is not covered by the FIT clamp below -
+	// a rebuilder scoring a 44-ovr/62-pot prospect at 51 will take him over a
+	// 72-ovr star floored to 50. That is a defensible preference on day one and
+	// an absurd one on the last day of free agency, which is what the urgency
+	// ramp at the bottom exists to unwind.
 	// value already blends the two; this tilts it.
 	// `value` already blends present and future; this tilts it hard enough to
 	// actually decide between a 22-year-old project and a 31-year-old starter,
@@ -190,25 +220,42 @@ export const scoreFreeAgent = ({
 		score += (p.ovr - p.pot) * 0.15;
 	}
 
-	score *= ageFitMultiplier(posture.tier, p.age);
-	score *= positionFitMultiplier(posture, p.pos);
-	score *= contractRiskMultiplier({
-		tier: posture.tier,
-		age: p.age,
-		years,
-		amount: p.amount,
-		minContract,
-	});
+	let fit =
+		ageFitMultiplier(posture.tier, p.age) *
+		positionFitMultiplier(posture, p.pos) *
+		contractRiskMultiplier({
+			tier: posture.tier,
+			age: p.age,
+			years,
+			amount: p.amount,
+			minContract,
+		});
 
 	// A team already paying the tax with nothing to show for it should not be
 	// adding salary at all.
 	if (posture.cap.wantsRelief && p.amount > minContract * 1.5) {
-		score *= 0.5;
+		fit *= 0.5;
 	}
 
 	// Nobody's first choice is a player who can't play yet.
 	if (p.injuredGames > 0) {
-		score *= 0.85;
+		fit *= 0.85;
+	}
+
+	fit = Math.min(FIT_CEILING, Math.max(FIT_FLOOR, fit));
+	score *= fit;
+
+	// Late in free agency a front office stops shopping for the ideal fit and
+	// starts taking the best player still on the board - the same instinct that
+	// makes teams give up their cap holds at PURSUIT_GIVE_UP_DAYS.
+	//
+	// This ramps the WHOLE adjustment away, tilt included, so on the last day the
+	// ordering is exactly p.value - which is stock BBGM's ordering. That is the
+	// point: it makes "the market clears at least as well as vanilla" structural
+	// rather than something to be re-checked every time a multiplier is tuned.
+	if (daysLeft !== undefined && daysLeft < PURSUIT_GIVE_UP_DAYS) {
+		const urgency = Math.max(0, daysLeft) / PURSUIT_GIVE_UP_DAYS;
+		score = p.value + (score - p.value) * urgency;
 	}
 
 	return score;
@@ -389,6 +436,7 @@ export const shouldLetWalk = ({
 	amount,
 	years,
 	isStar,
+	isCore,
 	minContract,
 }: {
 	tier: TradePosture["tier"];
@@ -396,9 +444,17 @@ export const shouldLetWalk = ({
 	amount: number;
 	years: number;
 	isStar: boolean;
+	// One of this team's few best players, whatever that is worth league-wide.
+	isCore?: boolean;
 	minContract: number;
 }): boolean => {
-	if (isStar) {
+	// The league-relative exemption is not enough on its own. "Star" means roughly
+	// the best player on an average team, so the WORST teams have nobody who
+	// qualifies and would liquidate their entire rotation for nothing - which is
+	// not a rebuild, and left doormats they could never climb out of. Measured
+	// over eight seasons, team ovrs ranged -56 to 84 against -8 to 64 for stock
+	// BBGM. Whoever your best players are, you keep them or you trade them.
+	if (isStar || isCore) {
 		return false;
 	}
 
