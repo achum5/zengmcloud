@@ -13,7 +13,10 @@ import {
 	captureFrontOfficeLog,
 	type FrontOfficeEntry,
 } from "../../util/frontOfficeLog.ts";
-import { getLeagueTradeContext, getTradePosture } from "../trade/tradePosture.ts";
+import {
+	getLeagueTradeContext,
+	getTradePosture,
+} from "../trade/tradePosture.ts";
 
 // ---------------------------------------------------------------------------
 // A repeatable offseason, run many times over, with every front-office decision
@@ -235,8 +238,8 @@ const buildLeague = async (
 		get: async () => undefined,
 		getAll: async () => [],
 		put: async () => undefined,
-		 
-		async *iterate () {},
+
+		async *iterate() {},
 		index: () => emptyStore,
 	};
 	idb.league = {
@@ -451,14 +454,18 @@ describe("many simulated offseasons", () => {
 				...(() => {
 					// Churn check: how many times does ONE team dump in ONE offseason?
 					const perRun = new Map<string, number>();
-					for (const e of allEntries.filter((x) => x.event === "dump-and-sign")) {
+					for (const e of allEntries.filter(
+						(x) => x.event === "dump-and-sign",
+					)) {
 						const k = `${e.season}:${e.tid}`;
 						perRun.set(k, (perRun.get(k) ?? 0) + 1);
 					}
 					const maxPerTeam = Math.max(0, ...perRun.values());
 					// Is the net-gain guard ever actually binding?
 					const rejects: Record<string, number> = {};
-					for (const e of allEntries.filter((x) => x.event === "dump-no-deal")) {
+					for (const e of allEntries.filter(
+						(x) => x.event === "dump-no-deal",
+					)) {
 						for (const [k, v] of Object.entries(
 							(e.data.rejected ?? {}) as Record<string, number>,
 						)) {
@@ -472,7 +479,9 @@ describe("many simulated offseasons", () => {
 				})(),
 				...(() => {
 					const t = allEntries.filter((e) => e.event === "dump-no-target");
-					if (t.length === 0) {return [];}
+					if (t.length === 0) {
+						return [];
+					}
 					const tot = (k: string) =>
 						t.reduce((a, e) => a + ((e.data[k] as number) ?? 0), 0);
 					return [
@@ -497,98 +506,98 @@ describe("many simulated offseasons", () => {
 
 	// A normal league: plenty of teams with room, so free agency should mostly
 	// just work and nobody should get stuck.
-	test(
-		"a healthy market clears, and teams shop to type",
-		async () => {
-			const { sum, avg, starsSigned, starsAvailable } = await runScenario(
-				"HEALTHY MARKET",
-				undefined,
-				25,
-			);
+	test("a healthy market clears, and teams shop to type", async () => {
+		const { sum, avg, starsSigned, starsAvailable } = await runScenario(
+			"HEALTHY MARKET",
+			undefined,
+			25,
+		);
 
-			// A market that leaves its best players unsigned is broken - the failure
-			// mode cap holds could plausibly cause, so it is checked first.
+		// A market that leaves its best players unsigned is broken - the failure
+		// mode cap holds could plausibly cause, so it is checked first.
+		assert.ok(
+			starsSigned / starsAvailable >= 0.8,
+			`only ${starsSigned}/${starsAvailable} stars found teams`,
+		);
+
+		// The two ways "hold your cap space" could go badly wrong.
+		assert.strictEqual(
+			sum((r) => r.teamsOverCap),
+			0,
+			"a team blew past the cap",
+		);
+		assert.strictEqual(
+			sum((r) => r.shortRosters),
+			0,
+			"a team could not fill its roster",
+		);
+
+		// Win-now teams older, rebuilds younger - the "legitimate direction" claim.
+		const contenderAge = avg((r) => r.contenderAvgAgeAdded);
+		const rebuildAge = avg((r) => r.rebuildAvgAgeAdded);
+		if (contenderAge !== undefined && rebuildAge !== undefined) {
 			assert.ok(
-				starsSigned / starsAvailable >= 0.8,
-				`only ${starsSigned}/${starsAvailable} stars found teams`,
+				contenderAge > rebuildAge,
+				`contenders added avg age ${contenderAge}, rebuilds ${rebuildAge} - expected contenders older`,
 			);
-
-			// The two ways "hold your cap space" could go badly wrong.
-			assert.strictEqual(sum((r) => r.teamsOverCap), 0, "a team blew past the cap");
-			assert.strictEqual(
-				sum((r) => r.shortRosters),
-				0,
-				"a team could not fill its roster",
-			);
-
-			// Win-now teams older, rebuilds younger - the "legitimate direction" claim.
-			const contenderAge = avg((r) => r.contenderAvgAgeAdded);
-			const rebuildAge = avg((r) => r.rebuildAvgAgeAdded);
-			if (contenderAge !== undefined && rebuildAge !== undefined) {
-				assert.ok(
-					contenderAge > rebuildAge,
-					`contenders added avg age ${contenderAge}, rebuilds ${rebuildAge} - expected contenders older`,
-				);
-			}
-		},
-		600_000,
-	);
+		}
+	}, 600_000);
 
 	// A capped-out league, which is where the interesting move lives: everyone is
 	// already committed, so the only way to add a star is to pay someone to take
 	// a contract off your hands first.
-	test(
-		"capped-out teams trade to clear room, and come out ahead doing it",
-		async () => {
-			const { sum, allEntries } = await runScenario(
-				"CAPPED-OUT MARKET",
-				[0.85, 1.05],
-				25,
-			);
+	test("capped-out teams trade to clear room, and come out ahead doing it", async () => {
+		const { sum, allEntries } = await runScenario(
+			"CAPPED-OUT MARKET",
+			[0.85, 1.05],
+			25,
+		);
 
-			// Several a season across the league, not one freak occurrence, and not
-			// so many that every roster is being churned for cap room.
-			const deals = sum((r) => r.dumpAndSign);
+		// Several a season across the league, not one freak occurrence, and not
+		// so many that every roster is being churned for cap room.
+		const deals = sum((r) => r.dumpAndSign);
+		assert.ok(
+			deals >= 5,
+			`only ${deals} teams ever cleared space to sign anyone - the feature is close to dead code`,
+		);
+		assert.ok(
+			deals <= 100,
+			`${deals} dump-and-sign deals across 25 offseasons is a churn factory`,
+		);
+
+		// The deal may be lopsided; the transaction must not be. Every dump has
+		// to be covered by what the signing is worth.
+		for (const e of allEntries.filter((x) => x.event === "dump-and-sign")) {
 			assert.ok(
-				deals >= 5,
-				`only ${deals} teams ever cleared space to sign anyone - the feature is close to dead code`,
+				(e.data.signingGain as number) > (e.data.dumpCost as number),
+				`a dump cost more than the signing was worth: ${JSON.stringify(e.data)}`,
 			);
-			assert.ok(
-				deals <= 100,
-				`${deals} dump-and-sign deals across 25 offseasons is a churn factory`,
-			);
+		}
 
-			// The deal may be lopsided; the transaction must not be. Every dump has
-			// to be covered by what the signing is worth.
-			for (const e of allEntries.filter((x) => x.event === "dump-and-sign")) {
-				assert.ok(
-					(e.data.signingGain as number) > (e.data.dumpCost as number),
-					`a dump cost more than the signing was worth: ${JSON.stringify(e.data)}`,
-				);
-			}
+		// Picks must actually be usable as sweeteners. They were not for a long
+		// time - a league with no draft class values every pick at null, every
+		// trade containing one evaluated to NaN, and the whole sweetener half of
+		// the feature was silently dead while the tests stayed green.
+		const withPicks = allEntries.filter(
+			(e) => e.event === "dump-and-sign" && (e.data.picks as number) > 0,
+		);
+		assert.ok(
+			withPicks.length > 0,
+			"no deal ever attached a pick - the sweetener path is dead again",
+		);
 
-			// Picks must actually be usable as sweeteners. They were not for a long
-			// time - a league with no draft class values every pick at null, every
-			// trade containing one evaluated to NaN, and the whole sweetener half of
-			// the feature was silently dead while the tests stayed green.
-			const withPicks = allEntries.filter(
-				(e) => e.event === "dump-and-sign" && (e.data.picks as number) > 0,
-			);
-			assert.ok(
-				withPicks.length > 0,
-				"no deal ever attached a pick - the sweetener path is dead again",
-			);
-
-			// Still no self-destruction.
-			assert.strictEqual(sum((r) => r.teamsOverCap), 0, "a team blew past the cap");
-			assert.strictEqual(
-				sum((r) => r.shortRosters),
-				0,
-				"a team could not fill its roster",
-			);
-		},
-		600_000,
-	);
+		// Still no self-destruction.
+		assert.strictEqual(
+			sum((r) => r.teamsOverCap),
+			0,
+			"a team blew past the cap",
+		);
+		assert.strictEqual(
+			sum((r) => r.shortRosters),
+			0,
+			"a team could not fill its roster",
+		);
+	}, 600_000);
 });
 
 // A kill switch nobody has tested is not a kill switch. With the setting off,
@@ -697,7 +706,13 @@ describe("safe in a shared league", () => {
 			const rosterBefore = new Map<number, string>();
 			for (const tid of humanTids) {
 				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
-				rosterBefore.set(tid, roster.map((p) => p.pid).sort((a, b) => a - b).join(","));
+				rosterBefore.set(
+					tid,
+					roster
+						.map((p) => p.pid)
+						.sort((a, b) => a - b)
+						.join(","),
+				);
 			}
 
 			const entries = await runFullOffseason(rng);
@@ -708,7 +723,10 @@ describe("safe in a shared league", () => {
 			for (const tid of humanTids) {
 				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
 				assert.strictEqual(
-					roster.map((p) => p.pid).sort((a, b) => a - b).join(","),
+					roster
+						.map((p) => p.pid)
+						.sort((a, b) => a - b)
+						.join(","),
 					rosterBefore.get(tid),
 					`the AI changed human team ${tid}'s roster`,
 				);
@@ -740,12 +758,26 @@ describe("safe in a shared league", () => {
 	// picking up on day 15 sees the same history and does not let everyone clear
 	// space all over again.
 	test("the once-per-offseason cap survives a change of simmer", async () => {
-		const rng = makeRng(4);
-		await buildLeague(rng, [0.85, 1.05]);
-
-		const first = await runFullOffseason(rng);
-		const dumps = first.filter((e) => e.event === "dump-and-sign");
-		assert.ok(dumps.length > 0, "fixture produced no dumps to test against");
+		// Search for a league that actually produces a dump rather than pinning one
+		// lucky seed. Player generation runs off the game's own RNG, so whether a
+		// given seed yields a cap-clearing deal is incidental - and it shifts
+		// whenever any decision upstream is retuned. A hardcoded seed turns that
+		// into a spurious failure in a test about something else entirely.
+		let rng!: () => number;
+		let dumps: FrontOfficeEntry[] = [];
+		for (let seed = 1; seed <= 25; seed += 1) {
+			rng = makeRng(seed);
+			await buildLeague(rng, [0.85, 1.05]);
+			const attempt = await runFullOffseason(rng);
+			dumps = attempt.filter((e) => e.event === "dump-and-sign");
+			if (dumps.length > 0) {
+				break;
+			}
+		}
+		assert.ok(
+			dumps.length > 0,
+			"no league in 25 seeds produced a cap-clearing deal, so this test cannot fail",
+		);
 
 		// The evidence is in the league's own event log, not in this process.
 		const cleared = new Set<number>();
@@ -837,7 +869,11 @@ describe("unusual leagues", () => {
 			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
 		).length;
 
-		assert.strictEqual(after, before, "the AI touched a roster it does not own");
+		assert.strictEqual(
+			after,
+			before,
+			"the AI touched a roster it does not own",
+		);
 		assert.strictEqual(
 			entries.filter((e) => e.event === "dump-and-sign").length,
 			0,
@@ -896,9 +932,8 @@ describe("unusual leagues", () => {
 		g.setWithoutSavingToDB("challengeNoFreeAgents", true);
 		g.setWithoutSavingToDB("userTids", [0]);
 
-		const userBefore = (
-			await idb.cache.players.indexGetAll("playersByTid", 0)
-		).length;
+		const userBefore = (await idb.cache.players.indexGetAll("playersByTid", 0))
+			.length;
 		const before = (
 			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
 		).length;
@@ -910,9 +945,8 @@ describe("unusual leagues", () => {
 		).length;
 		assert.ok(after > before, "the AI stopped working under a user-only rule");
 
-		const userAfter = (
-			await idb.cache.players.indexGetAll("playersByTid", 0)
-		).length;
+		const userAfter = (await idb.cache.players.indexGetAll("playersByTid", 0))
+			.length;
 		assert.strictEqual(
 			userAfter,
 			userBefore,

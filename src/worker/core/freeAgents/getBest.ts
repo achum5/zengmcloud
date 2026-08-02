@@ -34,8 +34,17 @@ const getBest = <T extends PlayerWithoutKey>(
 	let playersSorted: T[];
 	if (DRAFT_BY_TEAM_OVR) {
 		// playersAvailable is sorted by value. So if we hit a player at a minimum contract at a position, no player with lower value needs to be considered
+		//
+		// That reasoning is only sound on a value-sorted list, and callers do not
+		// all provide one - posture-driven free agency orders by fit, which can put
+		// a cheap player at a position of need ahead of a much better one and so
+		// prune the better one away entirely. Sorting here makes the pruning safe
+		// for any caller; it is a no-op when the list already arrived in value
+		// order, and the result is re-sorted by team-ovr improvement below either
+		// way, so nothing downstream can tell the difference.
+		const byValue = orderBy(playersAvailable, "value", "desc");
 		const seenMinContractAtPos = new Set();
-		const playersAvailableFiltered = playersAvailable.filter((p) => {
+		const playersAvailableFiltered = byValue.filter((p) => {
 			const pos = last(p.ratings).pos;
 			if (seenMinContractAtPos.has(pos)) {
 				return false;

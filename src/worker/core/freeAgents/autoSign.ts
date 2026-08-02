@@ -1,4 +1,4 @@
-import { PHASE, PLAYER } from "../../../common/constants.ts";
+import { DRAFT_BY_TEAM_OVR, PHASE, PLAYER } from "../../../common/constants.ts";
 import { player, team } from "../index.ts";
 import getBest from "./getBest.ts";
 import { idb } from "../../db/index.ts";
@@ -223,22 +223,31 @@ const autoSign = async () => {
 
 		// Order the market by what THIS team should want. Falling back to the
 		// league-wide value order keeps old behavior if posture is unavailable.
-		let candidates = posture
-			? orderBy(
-					playersSorted.map((p) => ({
-						p,
-						score: scoreFreeAgent({
-							p: toFaPlayer(p, season),
-							posture,
-							season,
-							minContract,
-							daysLeft: daysLeftOrUndefined,
-						}),
-					})),
-					(x) => x.score,
-					"desc",
-				).map((x) => x.p)
-			: playersSorted;
+		//
+		// Only where getBest actually READS the order. In the DRAFT_BY_TEAM_OVR
+		// sports it re-sorts by team-ovr improvement anyway, so reordering buys
+		// nothing there - and it is actively unsafe, because that branch prunes
+		// every player at a position once it has passed a minimum-contract player
+		// there, on the stated assumption that the list is in value order. Handing
+		// it fit order made an 80-ovr receiver disappear behind a 30-ovr scrub.
+		// Position fit is already the thing team ovr measures in those sports.
+		let candidates =
+			posture && !DRAFT_BY_TEAM_OVR
+				? orderBy(
+						playersSorted.map((p) => ({
+							p,
+							score: scoreFreeAgent({
+								p: toFaPlayer(p, season),
+								posture,
+								season,
+								minContract,
+								daysLeft: daysLeftOrUndefined,
+							}),
+						})),
+						(x) => x.score,
+						"desc",
+					).map((x) => x.p)
+				: playersSorted;
 
 		// Holding space for a marquee free agent. The money is earmarked for HIM,
 		// so he is exempt; everyone else has to fit under what's left. Minimum

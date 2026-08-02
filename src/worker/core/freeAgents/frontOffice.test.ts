@@ -8,6 +8,8 @@ import {
 	positionFitMultiplier,
 	PURSUIT_GIVE_UP_DAYS,
 	resolveCapHolds,
+	FIT_CEILING,
+	FIT_FLOOR,
 	scoreFreeAgent,
 	shouldLetWalk,
 	type FaPlayer,
@@ -86,7 +88,9 @@ describe("who a team should want", () => {
 	});
 
 	test("age fit runs the opposite way for a rebuild and a contender", () => {
-		assert.ok(ageFitMultiplier("teardown", 22) > ageFitMultiplier("teardown", 33));
+		assert.ok(
+			ageFitMultiplier("teardown", 22) > ageFitMultiplier("teardown", 33),
+		);
 		assert.ok(ageFitMultiplier("allIn", 30) > ageFitMultiplier("allIn", 20));
 	});
 
@@ -102,7 +106,12 @@ describe("who a team should want", () => {
 		const guard = fa({ pid: 1, pos: "PG" });
 		const center = fa({ pid: 2, pos: "C" });
 		const score = (p: FaPlayer) =>
-			scoreFreeAgent({ p, posture: needsBigs, season: SEASON, minContract: MIN });
+			scoreFreeAgent({
+				p,
+				posture: needsBigs,
+				season: SEASON,
+				minContract: MIN,
+			});
 		assert.ok(score(center) > score(guard));
 	});
 
@@ -114,11 +123,23 @@ describe("who a team should want", () => {
 		);
 		// A short deal, or a minimum one, is never penalised.
 		assert.strictEqual(
-			contractRiskMultiplier({ tier: "teardown", age: 34, years: 1, amount: 20_000, minContract: MIN }),
+			contractRiskMultiplier({
+				tier: "teardown",
+				age: 34,
+				years: 1,
+				amount: 20_000,
+				minContract: MIN,
+			}),
 			1,
 		);
 		assert.strictEqual(
-			contractRiskMultiplier({ tier: "teardown", age: 34, years: 4, amount: MIN, minContract: MIN }),
+			contractRiskMultiplier({
+				tier: "teardown",
+				age: 34,
+				years: 4,
+				amount: MIN,
+				minContract: MIN,
+			}),
 			1,
 		);
 	});
@@ -131,15 +152,170 @@ describe("who a team should want", () => {
 		});
 		assert.ok(
 			scoreFreeAgent({ p, posture: taxed, season: SEASON, minContract: MIN }) <
-				scoreFreeAgent({ p, posture: normal, season: SEASON, minContract: MIN }),
+				scoreFreeAgent({
+					p,
+					posture: normal,
+					season: SEASON,
+					minContract: MIN,
+				}),
 		);
+	});
+});
+
+describe("fit tilts the market, it does not delete players from it", () => {
+	// Every one of these multipliers is defensible alone. The bug was that they
+	// MULTIPLY, and that they point the same way at nearly every team - so the
+	// player they gang up on is not merely demoted, he is unemployable league-
+	// wide. Over eight simulated seasons that left a 32-year-old 72 ovr without
+	// a job while stock BBGM signed him immediately.
+	test("the worst possible fit still cannot bury a much better player", () => {
+		// Old, expensive, long deal, at a position of surplus, for a team that
+		// wants cap relief: every penalty at once.
+		const hated = fa({
+			pid: 1,
+			age: 34,
+			ovr: 72,
+			pot: 72,
+			value: 72,
+			pos: "SF",
+			amount: 40_000,
+			exp: SEASON + 4,
+		});
+		const p2 = posture({
+			tier: "buyer",
+			surpluses: [{ pos: "F", depth: 3 }] as any,
+			cap: {
+				payroll: 90_000,
+				capSpace: 10_000,
+				overCap: true,
+				overLuxury: true,
+				underFloor: false,
+				wantsRelief: true,
+				canAbsorb: false,
+			},
+		});
+
+		const score = scoreFreeAgent({
+			p: hated,
+			posture: p2,
+			season: SEASON,
+			minContract: MIN,
+		});
+
+		// Unclamped this came out near 0.14 * value. The clamp is the contract.
+		assert.ok(
+			score >= hated.value * FIT_FLOOR - 0.001,
+			`fit drove a ${hated.value}-value player down to ${score.toFixed(1)}, below the ${FIT_FLOOR} floor`,
+		);
+	});
+
+	test("the best possible fit cannot inflate a player without limit", () => {
+		const loved = fa({
+			pid: 1,
+			age: 23,
+			ovr: 50,
+			pot: 50,
+			value: 50,
+			pos: "C",
+			amount: MIN,
+			exp: SEASON,
+		});
+		const p2 = posture({
+			tier: "teardown",
+			needs: [{ pos: "C", severity: 40 }] as any,
+			targetPos: "C",
+		});
+
+		const score = scoreFreeAgent({
+			p: loved,
+			posture: p2,
+			season: SEASON,
+			minContract: MIN,
+		});
+
+		// pot === ovr here so the additive tier tilt contributes nothing and the
+		// ceiling is the only thing under test.
+		assert.ok(
+			score <= loved.value * FIT_CEILING + 0.001,
+			`fit inflated a ${loved.value}-value player to ${score.toFixed(1)}, above the ${FIT_CEILING} ceiling`,
+		);
+	});
+
+	test("on the last day of free agency the ordering is pure value", () => {
+		// A rebuilder normally prefers the prospect: the additive pot tilt plus a
+		// youth bonus beats an older, better player. That preference is fine in
+		// July and absurd once the music is about to stop, so it has to unwind -
+		// and unwind COMPLETELY, because "order by value" is precisely stock
+		// BBGM's order, which is what makes market clearing structural.
+		const prospect = fa({ pid: 1, age: 20, ovr: 44, pot: 70, value: 44 });
+		const better = fa({
+			pid: 2,
+			age: 31,
+			ovr: 62,
+			pot: 62,
+			value: 62,
+			amount: 20_000,
+			exp: SEASON + 3,
+		});
+		const rebuild = posture({ tier: "teardown" });
+
+		const early = (p: FaPlayer) =>
+			scoreFreeAgent({
+				p,
+				posture: rebuild,
+				season: SEASON,
+				minContract: MIN,
+				daysLeft: PURSUIT_GIVE_UP_DAYS,
+			});
+		assert.ok(
+			early(prospect) > early(better),
+			"a rebuilder should prefer the prospect while it still has time",
+		);
+
+		const last = (p: FaPlayer) =>
+			scoreFreeAgent({
+				p,
+				posture: rebuild,
+				season: SEASON,
+				minContract: MIN,
+				daysLeft: 0,
+			});
+		assert.strictEqual(last(prospect), prospect.value);
+		assert.strictEqual(last(better), better.value);
+		assert.ok(
+			last(better) > last(prospect),
+			"with the market closing, the better player has to come out on top",
+		);
+	});
+
+	test("outside free agency there is no countdown and fit applies in full", () => {
+		const vet = fa({ age: 34, ovr: 62, pot: 62, value: 62, exp: SEASON + 4 });
+		const rebuild = posture({ tier: "teardown" });
+		const withoutDays = scoreFreeAgent({
+			p: vet,
+			posture: rebuild,
+			season: SEASON,
+			minContract: MIN,
+		});
+		const plentyOfDays = scoreFreeAgent({
+			p: vet,
+			posture: rebuild,
+			season: SEASON,
+			minContract: MIN,
+			daysLeft: PURSUIT_GIVE_UP_DAYS + 10,
+		});
+		assert.strictEqual(withoutDays, plentyOfDays);
 	});
 });
 
 describe("clearing cap space for a big free agent", () => {
 	const star = fa({ pid: 99, ovr: 70, value: 70, amount: 30_000 });
 
-	const plan = (overrides: Parameters<typeof planCapHold>[0] extends never ? never : Partial<Parameters<typeof planCapHold>[0]>) =>
+	const plan = (
+		overrides: Parameters<typeof planCapHold>[0] extends never
+			? never
+			: Partial<Parameters<typeof planCapHold>[0]>,
+	) =>
 		planCapHold({
 			posture: posture(),
 			prizes: [star],
@@ -169,7 +345,10 @@ describe("clearing cap space for a big free agent", () => {
 	});
 
 	test("a teardown never sits on its space", () => {
-		assert.strictEqual(plan({ posture: posture({ tier: "teardown" }) }), undefined);
+		assert.strictEqual(
+			plan({ posture: posture({ tier: "teardown" }) }),
+			undefined,
+		);
 	});
 
 	// A front office that has missed pivots rather than carrying the space into
@@ -187,12 +366,20 @@ describe("clearing cap space for a big free agent", () => {
 		assert.ok(isPrize({ p: star, starOvr: 65, minContract: MIN }));
 		// Good but not a star.
 		assert.strictEqual(
-			isPrize({ p: fa({ ovr: 60, amount: 30_000 }), starOvr: 65, minContract: MIN }),
+			isPrize({
+				p: fa({ ovr: 60, amount: 30_000 }),
+				starOvr: 65,
+				minContract: MIN,
+			}),
 			false,
 		);
 		// A star on a minimum deal needs no space cleared for him.
 		assert.strictEqual(
-			isPrize({ p: fa({ ovr: 70, amount: MIN * 2 }), starOvr: 65, minContract: MIN }),
+			isPrize({
+				p: fa({ ovr: 70, amount: MIN * 2 }),
+				starOvr: 65,
+				minContract: MIN,
+			}),
 			false,
 		);
 	});
@@ -227,12 +414,21 @@ describe("only the most credible suitors get to wait", () => {
 			[5, 2, 9].map((tid) => ({ tid, hold, score: 50 })),
 			2,
 		);
-		assert.deepStrictEqual([...resolved.keys()].sort((a, b) => a - b), [2, 5]);
+		assert.deepStrictEqual(
+			[...resolved.keys()].sort((a, b) => a - b),
+			[2, 5],
+		);
 	});
 });
 
 describe("letting a player walk", () => {
-	const base = { age: 31, amount: MIN * 6, years: 3, isStar: false, minContract: MIN };
+	const base = {
+		age: 31,
+		amount: MIN * 6,
+		years: 3,
+		isStar: false,
+		minContract: MIN,
+	};
 
 	test("a teardown lets an expensive veteran go", () => {
 		assert.ok(shouldLetWalk({ tier: "teardown", ...base }));
@@ -262,7 +458,64 @@ describe("letting a player walk", () => {
 		);
 	});
 
+	// "Star" is measured LEAGUE-wide - roughly the best player on an average
+	// team - so the clubs most likely to be tearing down are precisely the ones
+	// with nobody who qualifies. Left there, the exemption protected exactly the
+	// teams that did not need protecting, and the worst team in the league would
+	// sell off its entire rotation for nothing and never climb back.
+	test("a bad team's own best players are not sold off for nothing", () => {
+		const args = {
+			tier: "teardown" as const,
+			age: 30,
+			amount: MIN * 8,
+			years: 3,
+			minContract: MIN,
+		};
+
+		// Nobody special by league standards - this is the case that used to walk.
+		assert.strictEqual(shouldLetWalk({ ...args, isStar: false }), true);
+
+		// Same player, except he is one of this team's few best.
+		assert.strictEqual(
+			shouldLetWalk({ ...args, isStar: false, isCore: true }),
+			false,
+		);
+	});
+
+	test("being core does not resurrect a player nobody would keep anyway", () => {
+		// Core or not, a cheap short deal was never the problem this solves, and a
+		// contender was never letting him go in the first place. isCore must not
+		// change answers that were already correct.
+		assert.strictEqual(
+			shouldLetWalk({
+				tier: "teardown",
+				age: 30,
+				amount: MIN,
+				years: 1,
+				isStar: false,
+				isCore: true,
+				minContract: MIN,
+			}),
+			false,
+		);
+		assert.strictEqual(
+			shouldLetWalk({
+				tier: "allIn",
+				age: 30,
+				amount: MIN * 8,
+				years: 3,
+				isStar: false,
+				isCore: false,
+				minContract: MIN,
+			}),
+			false,
+		);
+	});
+
 	test("a young player is kept even in a teardown", () => {
-		assert.strictEqual(shouldLetWalk({ tier: "teardown", ...base, age: 24 }), false);
+		assert.strictEqual(
+			shouldLetWalk({ tier: "teardown", ...base, age: 24 }),
+			false,
+		);
 	});
 });
