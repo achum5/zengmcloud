@@ -34,6 +34,7 @@ export const PlayerRecaps = ({
 	season,
 	filter = "players",
 	heading,
+	undoOnly = false,
 }: {
 	season: number;
 	// Which pass. "players" is season recaps for everyone who was in the league,
@@ -42,6 +43,9 @@ export const PlayerRecaps = ({
 	// runs with their own prompts, because they are different jobs.
 	filter?: RecapFilter;
 	heading: string;
+	// Never offer to WRITE here, only to undo. For a pass whose home is another
+	// page, on a page that still has to be able to clean up after it.
+	undoOnly?: boolean;
 }) => {
 	// Batches are cut from whoever is still unwritten, so the list shrinks as it
 	// is worked through and every batch is real work. That means re-deriving
@@ -189,6 +193,40 @@ export const PlayerRecaps = ({
 		}
 	};
 
+	const noun =
+		filter === "prospects"
+			? "prospects"
+			: filter === "draftPicks"
+				? "draft picks"
+				: "players";
+
+	// Undo: strip this pass's writeups from the players it covers. The section
+	// then removes itself, which is the confirmation.
+	const removeFiled = async () => {
+		if (!data) {
+			return;
+		}
+		if (
+			!window.confirm(
+				`Remove the ${season} writeup from ${data.alreadyWrittenTotal} ${noun}? Anything else in their notes is kept.`,
+			)
+		) {
+			return;
+		}
+		setBusy(true);
+		setResult(undefined);
+		try {
+			await toWorker("main", "clearPlayerSeasonRecaps", { season, filter });
+			setBatchIndex(0);
+			setReload((prev) => prev + 1);
+		} catch (error) {
+			console.error("Failed to remove player recaps", error);
+			setResult("Something went wrong removing the writeups.");
+		} finally {
+			setBusy(false);
+		}
+	};
+
 	const paste = async () => {
 		setResult(undefined);
 		setCopyFallback(undefined);
@@ -207,85 +245,102 @@ export const PlayerRecaps = ({
 	const arrow = <span className="text-body-secondary">›</span>;
 	const btnStyle = { width: 62 } as const;
 
-	const noun =
-		filter === "prospects"
-			? "prospects"
-			: filter === "draftPicks"
-				? "draft picks"
-				: "players";
+	// The Copy → AI → Paste loop, shown while this pass has work left AND is
+	// allowed to run. Once everyone has a note it comes off the page — that's
+	// the reminder switching itself off, and the way to tell at a glance that a
+	// season is finished.
+	const showNag =
+		!undoOnly && !!data && data.players.length > 0 && !data.notYet;
 
-	// Once everyone has a note the worker returns nothing and the pass comes off
-	// the page — that's the reminder switching itself off, and the way to tell
-	// at a glance that a season is finished. Same for a season with no draft
-	// class behind it at all.
-	if (!data || data.players.length === 0) {
+	// The undo outlives the nag in one case only: a pass that cannot run yet but
+	// already has writeups filed against it. That state is a mistake by
+	// definition, and it is the only way back out of it.
+	const showCleanup =
+		!!data && data.alreadyWrittenTotal > 0 && (showNag || !!data.notYet);
+
+	if (!data || (!showNag && !showCleanup)) {
 		return null;
 	}
 
 	return (
 		<div className="d-inline-flex flex-column">
 			<h2 className="h5">{heading}</h2>
-			<div className="d-flex flex-wrap align-items-center gap-1">
-				<button
-					className={`btn btn-sm ${copied ? "btn-success" : "btn-primary"}`}
-					style={btnStyle}
-					disabled={busy || !prompt}
-					onClick={copy}
-					title="Copy AI prompt (this batch of players)"
-				>
-					{copied ? "✓" : "Copy"}
-				</button>
-				{arrow}
-				<RecapAIButton style={btnStyle} />
-				{arrow}
-				<button
-					className={`btn btn-sm ${pasted ? "btn-success" : "btn-primary"}`}
-					style={btnStyle}
-					disabled={busy}
-					onClick={paste}
-					title="Paste AI reply (files each player's note)"
-				>
-					{busy ? (
-						<span
-							className="spinner-border spinner-border-sm"
-							role="status"
-							aria-hidden="true"
-						/>
-					) : pasted ? (
-						"✓"
-					) : (
-						"Paste"
-					)}
-				</button>
-			</div>
-
-			{data ? (
-				<div className="d-flex align-items-center gap-2 mt-1 small text-body-secondary">
+			{showNag ? (
+				<div className="d-flex flex-wrap align-items-center gap-1">
 					<button
-						className="btn btn-sm btn-link p-0 text-decoration-none"
-						disabled={busy || batchIndex === 0}
-						onClick={() => setBatchIndex(batchIndex - 1)}
-						title="Previous batch"
+						className={`btn btn-sm ${copied ? "btn-success" : "btn-primary"}`}
+						style={btnStyle}
+						disabled={busy || !prompt}
+						onClick={copy}
+						title="Copy AI prompt (this batch of players)"
 					>
-						‹
+						{copied ? "✓" : "Copy"}
 					</button>
-					<span>
-						Batch {data.batchIndex + 1}/{data.batchCount} ·{" "}
-						{data.players.length} {noun}
-					</span>
+					{arrow}
+					<RecapAIButton style={btnStyle} />
+					{arrow}
 					<button
-						className="btn btn-sm btn-link p-0 text-decoration-none"
-						disabled={busy || batchIndex + 1 >= data.batchCount}
-						onClick={() => setBatchIndex(batchIndex + 1)}
-						title="Next batch"
+						className={`btn btn-sm ${pasted ? "btn-success" : "btn-primary"}`}
+						style={btnStyle}
+						disabled={busy}
+						onClick={paste}
+						title="Paste AI reply (files each player's note)"
 					>
-						›
+						{busy ? (
+							<span
+								className="spinner-border spinner-border-sm"
+								role="status"
+								aria-hidden="true"
+							/>
+						) : pasted ? (
+							"✓"
+						) : (
+							"Paste"
+						)}
 					</button>
-					<span>
-						· {data.alreadyWrittenTotal}/{data.totalPlayers} written
-					</span>
 				</div>
 			) : null}
+
+			<div className="d-flex align-items-center gap-2 mt-1 small text-body-secondary">
+				{showNag ? (
+					<>
+						<button
+							className="btn btn-sm btn-link p-0 text-decoration-none"
+							disabled={busy || batchIndex === 0}
+							onClick={() => setBatchIndex(batchIndex - 1)}
+							title="Previous batch"
+						>
+							‹
+						</button>
+						<span>
+							Batch {data.batchIndex + 1}/{data.batchCount} ·{" "}
+							{data.players.length} {noun}
+						</span>
+						<button
+							className="btn btn-sm btn-link p-0 text-decoration-none"
+							disabled={busy || batchIndex + 1 >= data.batchCount}
+							onClick={() => setBatchIndex(batchIndex + 1)}
+							title="Next batch"
+						>
+							›
+						</button>
+						<span>·</span>
+					</>
+				) : null}
+				<span>
+					{data.alreadyWrittenTotal}/{data.totalPlayers} written
+				</span>
+				{showCleanup ? (
+					<button
+						className="btn btn-sm btn-outline-danger py-0"
+						disabled={busy}
+						onClick={removeFiled}
+						title={`Remove the ${season} writeup from the ${noun} who already have one`}
+					>
+						Remove
+					</button>
+				) : null}
+			</div>
 
 			{copyFallback !== undefined ? (
 				<textarea

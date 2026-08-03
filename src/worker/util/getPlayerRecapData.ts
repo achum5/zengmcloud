@@ -222,6 +222,10 @@ export type RecapPlayerBatch = {
 	// Which pass this batch belongs to, so the prompt builder knows whether it's
 	// writing season recaps or scouting reports.
 	filter: RecapFilter;
+	// The pass cannot run yet - a draft class before its draft. No batch is
+	// offered, but the counts still come back so anything filed by mistake can
+	// be removed.
+	notYet?: boolean;
 	// Standings + playoff results for the season being written.
 	leagueTeams: RecapLeagueTeam[];
 	champion?: string;
@@ -537,6 +541,78 @@ export type RecapFilter = "players" | "draftPicks" | "prospects";
 // going unpicked is part of that draft's story too.
 const isThisDraftClass = (p: any, season: number) => p.draft?.year === season;
 
+// Has the draft for this class actually been run? A class written up before its
+// draft is a class nobody has been picked by, so every writeup is about a team
+// the player may never join - and the draft-year section of a note is shown on
+// the player's page off his draft line, which then reads as a report on a draft
+// that has not happened.
+export const draftIsComplete = (season: number) =>
+	season < g.get("season") ||
+	(season === g.get("season") && g.get("phase") > PHASE.DRAFT);
+
+// Everyone one pass covers for a season, in a STABLE pid order, alongside the
+// whole player universe the league context is built from.
+//
+// One player, one pass. The two draft classes are checked FIRST and are
+// mutually exclusive with the season recaps, so nobody can land in two batches
+// or fall between them.
+const getRecapPlayers = async (season: number, filter: RecapFilter) => {
+	// activeAndRetired is "all except draft prospects", so on its own it leaves
+	// out the very players two of the three passes are about: a class that hasn't
+	// been drafted yet is still sitting at PLAYER.UNDRAFTED and is invisible to
+	// it. Both draft classes are fetched separately and merged in - and by draft
+	// year rather than by tid, so it works the same whether the draft has
+	// happened yet or the season is being backfilled years later.
+	const [activeAndRetired, thisClass, nextClass] = await Promise.all([
+		idb.getCopies.players({ activeAndRetired: true }, "noCopyCache"),
+		idb.getCopies.players({ draftYear: season }, "noCopyCache"),
+		idb.getCopies.players({ draftYear: season + 1 }, "noCopyCache"),
+	]);
+	const byPid = new Map(activeAndRetired.map((p) => [p.pid, p]));
+	for (const p of [...thisClass, ...nextClass]) {
+		if (!byPid.has(p.pid)) {
+			byPid.set(p.pid, p);
+		}
+	}
+	const playersAll = [...byPid.values()];
+
+	const pool = playersAll
+		.filter((p: any) => {
+			const prospect = isNextDraftClass(p, season);
+			const drafted = isThisDraftClass(p, season);
+
+			if (filter === "prospects") {
+				return prospect;
+			}
+			if (filter === "draftPicks") {
+				return drafted;
+			}
+			if (prospect || drafted) {
+				return false;
+			}
+			// Anyone who retired after this season is included even if the ratings
+			// check misses them, since their retirement writeup is written from this
+			// batch and there is no second pass that would catch them.
+			return (
+				ratingsForSeason(p, season) !== undefined || p.retiredYear === season
+			);
+		})
+		.sort((a: any, b: any) => (a.pid ?? 0) - (b.pid ?? 0));
+
+	return { playersAll, pool };
+};
+
+// Just the pool, for callers that only need to know who a pass covers - notably
+// the undo, which has to strip writeups from exactly those players and nobody
+// else.
+export const getRecapPool = async ({
+	season,
+	filter = "players",
+}: {
+	season: number;
+	filter?: RecapFilter;
+}) => (await getRecapPlayers(season, filter)).pool;
+
 export const getPlayerRecapData = async ({
 	season,
 	batchIndex = 0,
@@ -563,53 +639,7 @@ export const getPlayerRecapData = async ({
 		abbrevByTid.set(t.tid, (t.seasonAttrs as any)?.abbrev ?? `T${t.tid}`);
 	}
 
-	// activeAndRetired is "all except draft prospects", so on its own it leaves
-	// out the very players two of the three passes are about: a class that hasn't
-	// been drafted yet is still sitting at PLAYER.UNDRAFTED and is invisible to
-	// it. Both draft classes are fetched separately and merged in - and by draft
-	// year rather than by tid, so it works the same whether the draft has
-	// happened yet or the season is being backfilled years later.
-	const [activeAndRetired, thisClass, nextClass] = await Promise.all([
-		idb.getCopies.players({ activeAndRetired: true }, "noCopyCache"),
-		idb.getCopies.players({ draftYear: season }, "noCopyCache"),
-		idb.getCopies.players({ draftYear: season + 1 }, "noCopyCache"),
-	]);
-	const byPid = new Map(activeAndRetired.map((p) => [p.pid, p]));
-	for (const p of [...thisClass, ...nextClass]) {
-		if (!byPid.has(p.pid)) {
-			byPid.set(p.pid, p);
-		}
-	}
-	const playersAll = [...byPid.values()];
-
-	// Everyone this pass covers for the season, written or not, in a STABLE pid
-	// order.
-	//
-	// One player, one pass. The two draft classes are checked FIRST and are
-	// mutually exclusive with the season recaps, so nobody can land in two
-	// batches or fall between them.
-	const pool = playersAll
-		.filter((p: any) => {
-			const prospect = isNextDraftClass(p, season);
-			const drafted = isThisDraftClass(p, season);
-
-			if (filter === "prospects") {
-				return prospect;
-			}
-			if (filter === "draftPicks") {
-				return drafted;
-			}
-			if (prospect || drafted) {
-				return false;
-			}
-			// Anyone who retired after this season is included even if the ratings
-			// check misses them, since their retirement writeup is written from this
-			// batch and there is no second pass that would catch them.
-			return (
-				ratingsForSeason(p, season) !== undefined || p.retiredYear === season
-			);
-		})
-		.sort((a: any, b: any) => (a.pid ?? 0) - (b.pid ?? 0));
+	const { playersAll, pool } = await getRecapPlayers(season, filter);
 
 	const totalPlayers = pool.length;
 	if (totalPlayers === 0) {
@@ -619,12 +649,29 @@ export const getPlayerRecapData = async ({
 	const unwritten = pool.filter((p: any) => !hasSeasonNote(p.note, season));
 	const alreadyWrittenTotal = totalPlayers - unwritten.length;
 
+	// A draft class is off limits until its draft has been run.
+	const notYet = filter === "draftPicks" && !draftIsComplete(season);
+
+	// No batch to hand out: either the pass is finished, or it cannot run yet.
 	// Every pass exists as a reminder that a season hasn't been written, so it
-	// comes off the page the moment it has been. A finished year showing no
-	// recap controls at all is the whole signal: scroll to it, see nothing,
-	// it's done.
-	if (unwritten.length === 0) {
-		return undefined;
+	// comes off the page the moment it has been - a finished year showing no
+	// recap controls at all is the whole signal. The counts still travel, since
+	// they are all the caller needs to offer to REMOVE what was already filed.
+	if (notYet || unwritten.length === 0) {
+		return {
+			season,
+			filter,
+			notYet,
+			leagueTeams: [],
+			leaders: [],
+			awardRaces: [],
+			batchIndex: 0,
+			batchCount: 0,
+			batchSize,
+			totalPlayers,
+			alreadyWrittenTotal,
+			players: [],
+		};
 	}
 
 	// The batches are cut from WHAT IS LEFT, not from everyone. With six players

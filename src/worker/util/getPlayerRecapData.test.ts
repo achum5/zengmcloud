@@ -1,6 +1,8 @@
-import { assert, describe, test } from "vitest";
-import { describeTransaction } from "./getPlayerRecapData.ts";
+import { assert, beforeEach, describe, test } from "vitest";
+import { describeTransaction, draftIsComplete } from "./getPlayerRecapData.ts";
 import { PHASE } from "../../common/constants.ts";
+import { g } from "./index.ts";
+import { resetG } from "../../test/helpers.ts";
 
 const abbrevs = new Map([
 	[0, "LAL"],
@@ -89,5 +91,55 @@ describe("describeTransaction", () => {
 			),
 			"2001 draft (for 2002): drafted by BOS (pick 5)",
 		);
+	});
+});
+
+// A draft class written up before its draft produces a writeup about being
+// picked by nobody - and because the draft-year section of a note is shown on
+// the player's page off his draft line, it then sits there on every prospect in
+// the class as a report on a draft that has not happened. The pass has to stay
+// away until the picks are real.
+describe("draftIsComplete", () => {
+	beforeEach(() => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2005);
+	});
+
+	test("the current class is off limits right up to the last pick", () => {
+		for (const phase of [
+			PHASE.PRESEASON,
+			PHASE.REGULAR_SEASON,
+			PHASE.AFTER_TRADE_DEADLINE,
+			PHASE.PLAYOFFS,
+			PHASE.DRAFT_LOTTERY,
+			// Mid-draft counts as incomplete: half the class is still unpicked.
+			PHASE.DRAFT,
+		]) {
+			g.setWithoutSavingToDB("phase", phase);
+			assert.strictEqual(draftIsComplete(2005), false, `phase ${phase}`);
+		}
+	});
+
+	test("it opens up the moment the draft is over, and stays open", () => {
+		for (const phase of [
+			PHASE.AFTER_DRAFT,
+			PHASE.RESIGN_PLAYERS,
+			PHASE.FREE_AGENCY,
+		]) {
+			g.setWithoutSavingToDB("phase", phase);
+			assert.strictEqual(draftIsComplete(2005), true, `phase ${phase}`);
+		}
+	});
+
+	test("past classes are always complete, whatever the phase", () => {
+		for (const phase of [PHASE.PRESEASON, PHASE.PLAYOFFS, PHASE.DRAFT]) {
+			g.setWithoutSavingToDB("phase", phase);
+			assert.strictEqual(draftIsComplete(2004), true, `phase ${phase}`);
+		}
+	});
+
+	test("a class from a season that hasn't happened is never complete", () => {
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		assert.strictEqual(draftIsComplete(2006), false);
 	});
 });

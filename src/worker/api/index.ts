@@ -131,7 +131,11 @@ import { setSyncDebugLogging, syncDebugLog } from "../core/sync/debugLog.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
 import { syncDaySpreads } from "../core/sportsbook/scheduleSpreads.ts";
-import { getPlayerRecapData } from "../util/getPlayerRecapData.ts";
+import {
+	getPlayerRecapData,
+	getRecapPool,
+	type RecapFilter,
+} from "../util/getPlayerRecapData.ts";
 import { removeSeasonNote, upsertSeasonNote } from "../../common/seasonNote.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
 import { PointsFormulaEvaluator } from "../core/team/evaluatePointsFormula.ts";
@@ -4582,6 +4586,48 @@ const filePlayerSeasonRecaps = async ({
 	return { filed, missing, wrongKind };
 };
 
+// Undo for one recap pass: strip the writeups it filed, from exactly the
+// players it covers, and leave everything else in their notes alone.
+//
+// A pass is easy to run at the wrong moment - a draft class written up before
+// the draft has been run gets a writeup about being picked by nobody - and
+// re-running only ever REPLACES a section, so without this the only way back
+// was editing a note by hand on every player in the class.
+const clearPlayerSeasonRecaps = async ({
+	season,
+	filter = "players",
+}: {
+	season: number;
+	filter?: RecapFilter;
+}) => {
+	const pool = await getRecapPool({ season, filter });
+
+	let cleared = 0;
+	for (const p of pool) {
+		// Both kinds, because both come from the same pass: a player's season
+		// recap and, in the year he retires, his retirement piece.
+		let note = removeSeasonNote(p.note, season, "season");
+		note = removeSeasonNote(note, season, "retirement");
+		if (note === (p.note ?? "")) {
+			continue;
+		}
+
+		if (note === "") {
+			delete p.note;
+			delete p.noteBool;
+		} else {
+			p.note = note;
+			p.noteBool = 1;
+		}
+		await idb.cache.players.put(p);
+		cleared += 1;
+	}
+
+	await toUI("realtimeUpdate", [noteUpdateEvents.player]);
+
+	return { cleared };
+};
+
 const reSignAll = async (players: any[]) => {
 	const userTid = g.get("userTid");
 	let negotiations = await idb.cache.negotiations.getAll();
@@ -6605,6 +6651,7 @@ export default {
 		clearSavedTrades,
 		claimSyncAuthority,
 		clearNotes,
+		clearPlayerSeasonRecaps,
 		clearTrade,
 		clearWatchList,
 		connectSharedLeague,

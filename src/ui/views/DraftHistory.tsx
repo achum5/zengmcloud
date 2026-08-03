@@ -409,11 +409,13 @@ const DraftHistory = ({
 				season={season}
 			/>
 
-			{/* The nag lives here as well as on League History, because this is the
-			    page you're on when you're thinking about the class. It removes
-			    itself the moment every member of it has a note. Skipped for the
-			    fake draft classes generated before the league started, which have
-			    nothing worth writing up. */}
+			{/* The class's writeups live here and nowhere else: this is the page
+			    you're on when you're thinking about the class. It stays away until
+			    the draft has actually been run (there is nothing true to say about
+			    a pick nobody has made yet) and removes itself again the moment
+			    every member of the class has a note. Skipped for the fake draft
+			    classes generated before the league started, which have nothing
+			    worth writing up. */}
 			{season >= startingSeason ? (
 				<div className="mb-3">
 					<PlayerRecaps
