@@ -280,6 +280,7 @@ const Roster = ({
 
 		// His writeup for the season this roster is showing, opened from his name
 		// - the same piece his own page hangs off that season's stats row.
+		const seasonNote = seasonNoteSectionsFor(p.note, season);
 		const nameCell = wrappedPlayerNameLabels({
 			pid: p.pid,
 			injury: p.injury,
@@ -292,8 +293,17 @@ const Roster = ({
 			lastName: p.lastName,
 			awards: p.awards,
 			neverShowCountry: true,
+			after:
+				seasonNote.length > 0 ? (
+					<SeasonNoteButton
+						header={`${p.firstName} ${p.lastName}, ${season}`}
+						id={`roster-note-${p.pid}`}
+						linksFor={noteLinksBySeason}
+						sections={seasonNote}
+						title={`Read the ${season} writeup for ${p.firstName} ${p.lastName}`}
+					/>
+				) : null,
 		});
-		const seasonNote = seasonNoteSectionsFor(p.note, season);
 
 		return {
 			key: p.pid,
@@ -321,23 +331,7 @@ const Roster = ({
 				"table-info": p.tid === tid && season !== currentSeason,
 			}),
 			data: [
-				seasonNote.length > 0
-					? {
-							...nameCell,
-							value: (
-								<>
-									{nameCell.value}
-									<SeasonNoteButton
-										header={`${p.firstName} ${p.lastName}, ${season}`}
-										id={`roster-note-${p.pid}`}
-										linksFor={noteLinksBySeason}
-										sections={seasonNote}
-										title={`Read the ${season} writeup for ${p.firstName} ${p.lastName}`}
-									/>
-								</>
-							),
-						}
-					: nameCell,
+				nameCell,
 				p.ratings.pos,
 				p.age,
 				showRatings

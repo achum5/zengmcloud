@@ -6,7 +6,7 @@ import type { Player, PlayerInjury } from "../../common/types.ts";
 import { InjuryIcon } from "./InjuryIcon.tsx";
 import { SeasonIcons } from "./SeasonIcons.tsx";
 import { CountryFlag } from "./CountryFlag.tsx";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useLocal } from "../util/local.ts";
 import { usePlayerFace } from "../util/playerFaces.ts";
 import { PlayerPicture } from "./PlayerPicture.tsx";
@@ -53,6 +53,13 @@ type Props = {
 	// Opt out of the small face shown before the name (for the rare spot where a
 	// face would look wrong, e.g. a name used inline in prose).
 	hideFace?: boolean;
+
+	// Something small to ride along at the end of the name - the writeup bubble
+	// on a roster row. It goes INSIDE the name block on purpose: the awards
+	// variant below wraps everything in a block-level flex row, so anything the
+	// caller appends outside lands on a line of its own and doubles the height
+	// of every row in the table.
+	after?: ReactNode;
 };
 
 const parseLegacyName = (name: string) => {
@@ -175,6 +182,7 @@ export const PlayerNameLabels = (props: Props) => {
 
 	const {
 		abbrev,
+		after,
 		awards,
 		awardsSeason,
 		count,
@@ -275,6 +283,7 @@ export const PlayerNameLabels = (props: Props) => {
 					disableNameLink={disableNameLink}
 				/>
 			) : null}
+			{after}
 			{abbrev !== undefined && tid !== undefined ? (
 				<a
 					href={helpers.leagueUrl(["roster", `${abbrev}_${tid}`, season])}
