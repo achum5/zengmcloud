@@ -1316,14 +1316,6 @@ const TeamFinances = ({
 
 			<SalaryCapInfo className="mb-3" tid={tid} />
 
-			{budget ? null : (
-				<p className="text-danger">
-					The budget is disabled in this league, so most of the information
-					usually shown here is hidden. You can change the budget setting in{" "}
-					<a href={helpers.leagueUrl(["god_mode"])}>God Mode</a>.
-				</p>
-			)}
-
 			<h2>Player Salaries</h2>
 
 			<p>
@@ -1510,6 +1502,16 @@ const TeamFinances = ({
 					</div>
 				) : null}
 			</div>
+
+			{/* Last, not first. It explains the gaps further up the page, and read
+			    before them it was just a red paragraph in the way of the salaries. */}
+			{budget ? null : (
+				<p className="text-danger mt-3">
+					The budget is disabled in this league, so most of the information
+					usually shown here is hidden. You can change the budget setting in{" "}
+					<a href={helpers.leagueUrl(["god_mode"])}>God Mode</a>.
+				</p>
+			)}
 		</>
 	);
 };
