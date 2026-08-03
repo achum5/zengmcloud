@@ -171,7 +171,14 @@ const liveGame = async (gid: number, conditions: Conditions) => {
 		],
 		conditions,
 	);
-	game.play(1, conditions, true, gid, true);
+	// Awaited, unlike upstream. In a sync room the api layer stamps the room's
+	// position when this call RESOLVES - fire-and-forget meant the stamp was
+	// written before the game had simulated, so a live sim of the season's final
+	// game left the room stamped one day (and one phase) in the past. Every
+	// caught-up device then read as "ahead of the room" and ground through
+	// full-log replays forever. The page navigation above has already happened,
+	// so awaiting costs the UI nothing.
+	await game.play(1, conditions, true, gid, true);
 };
 
 const simGame = async (gid: number, conditions: Conditions) => {

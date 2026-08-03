@@ -1227,6 +1227,20 @@ export const getSimSafety = async (): Promise<
 		} catch {
 			return { safe: true };
 		}
+
+		// "Ahead" of a stamp a conclusive full replay has proven stale is not a
+		// health problem - the log agrees with this device, the stamp is just old
+		// (see checkBehindAuthority). Blocking on it froze every action in the
+		// room until someone restamped.
+		if (
+			isAheadOfPosition(position, announced) &&
+			!isBehindPosition(position, announced) &&
+			staleStampKey !== undefined &&
+			describePosition(announced) === staleStampKey
+		) {
+			return { safe: true };
+		}
+
 		if (
 			isBehindPosition(position, announced) ||
 			isAheadOfPosition(position, announced)
@@ -1289,6 +1303,24 @@ const BEHIND_GRACE_MS = 30 * 1000;
 let behindSince: number | undefined;
 let healingBehind = false;
 
+// Test-only: this checker deliberately keeps state between ticks (grace
+// timing, one-recovery-at-a-time, the proven-stale stamp), and tests need each
+// scenario to start from a device that has noticed nothing yet.
+export const resetBehindAuthorityStateForTesting = () => {
+	behindSince = undefined;
+	healingBehind = false;
+	staleStampKey = undefined;
+};
+
+// An announced position stamp a conclusive full replay has PROVEN stale: the
+// log was re-read end to end, it agreed with this device, and this device was
+// still "ahead" of the stamp - which can only mean the stamp is old news (the
+// authority missed a restamp), because every state-changing byte in the room
+// travels through that same log. Remembered so the checker stops grinding
+// replays against it and the sim guard stops blocking actions over it; cleared
+// the moment the announced stamp changes.
+let staleStampKey: string | undefined;
+
 // The check the engine cannot do for itself.
 //
 // "Am I caught up?" is answered by comparing a watermark against the highest
@@ -1313,7 +1345,8 @@ let healingBehind = false;
 // theoretical state - a phase scored against the wrong season applied an old
 // offseason's free agency over a live regular season, and the device stayed in
 // free agency with nothing watching for it. Same evidence, same recovery.
-const checkBehindAuthority = async () => {
+// Exported for tests; production calls it only from the health tick.
+export const checkBehindAuthority = async () => {
 	const engine = getSyncEngine();
 	if (!engine || healingBehind) {
 		return;
@@ -1329,9 +1362,8 @@ const checkBehindAuthority = async () => {
 	}
 
 	const announced = engine.getAuthority()?.position;
-	// Nobody has announced a position (an older client is simming), or we ARE the
-	// authority, so there is nothing to be behind.
-	if (!announced || engine.isAuthority()) {
+	// Nobody has announced a position (an older client is simming).
+	if (!announced) {
 		behindSince = undefined;
 		return;
 	}
@@ -1343,9 +1375,35 @@ const checkBehindAuthority = async () => {
 		return;
 	}
 	const ahead = isAheadOfPosition(localPosition, announced);
+
+	// The AUTHORITY compares against its own stamp. Normally they agree, but a
+	// missed restamp (historically: a fire-and-forget live sim of the season's
+	// final game, which stamped before the game had simulated) leaves the room
+	// stamped in the past - and then every caught-up follower reads as "ahead of
+	// the room" and grinds full-log replays forever, while the sim guard blocks
+	// the whole room from advancing. Only the authority can fix the stamp, so it
+	// falls through to the shared ahead-branch below: a conclusive replay
+	// validates local state against the log and restamps from the healed truth
+	// (rather than blindly trusting a DB that could itself be the corrupt party).
+	if (engine.isAuthority() && !ahead) {
+		behindSince = undefined;
+		return;
+	}
+
 	if (!ahead && !isBehindPosition(localPosition, announced)) {
 		behindSince = undefined;
 		return;
+	}
+
+	// A stamp already proven stale by a conclusive replay: nothing new to do
+	// until the authority restamps. The moment the announced value changes, the
+	// proof no longer applies and checking resumes.
+	if (ahead && staleStampKey !== undefined) {
+		if (describePosition(announced) === staleStampKey) {
+			behindSince = undefined;
+			return;
+		}
+		staleStampKey = undefined;
 	}
 
 	// Out of step. Give the ordinary path time to deliver before doing anything -
@@ -1384,17 +1442,49 @@ const checkBehindAuthority = async () => {
 				...result,
 				after: describePosition(after),
 			});
-			if (!isAheadOfPosition(after, announced)) {
+
+			// Compare against the CURRENT stamp, not the one captured before the
+			// replay - when this device is the authority, the conclusive replay
+			// just restamped it (SyncEngine restamps after every clean pass), and
+			// that IS the fix.
+			const announcedNow = engine.getAuthority()?.position ?? announced;
+
+			if (!isAheadOfPosition(after, announcedNow)) {
 				behindSince = undefined;
 				console.log(
 					`[sync] This device had got ahead of the room; replaying the shared log put it back to ${describePosition(after)}.`,
 				);
+			} else if (
+				!result.failed &&
+				result.incomplete === 0 &&
+				result.total > 0
+			) {
+				// The verdict that matters. The entire log was re-read and re-applied
+				// cleanly, and this device STILL reads ahead of the stamp - so the
+				// LOG agrees with this device, and the stamp is simply stale (the
+				// authority missed a restamp). That is not corruption and cannot be
+				// repaired from here; grinding the same replay every 30 seconds
+				// looked to the user like the season re-simming itself in a loop,
+				// and the durable repair flag it kept setting blocked every action.
+				// Stand down until the stamp changes, and clear the flag - a device
+				// the full log agrees with has nothing to repair.
+				staleStampKey = describePosition(announcedNow);
+				behindSince = undefined;
+				try {
+					await saveResyncNeeded(g.get("lid"), false);
+				} catch {
+					// The flag is advisory; failing to clear it is not worth failing on.
+				}
+				console.log(
+					`[sync] This device is at ${describePosition(after)} and a full replay of the shared log agrees. The room's stamp (${describePosition(announcedNow)}) is out of date - waiting for whoever is in charge of simming to advance or reconnect, which refreshes it.`,
+				);
 			} else {
-				// Do not keep grinding the log every 30 seconds against a state it
-				// cannot explain.
+				// The replay didn't conclude (fetch failure, window exhausted), so
+				// nothing was proven either way. Do not keep grinding the log every
+				// 30 seconds; try again on the next grace window.
 				behindSince = now;
 				console.error(
-					`[sync] This device reads as ${describePosition(after)} but the room is on ${describePosition(announced)}, and replaying the shared log did not correct it.`,
+					`[sync] This device reads as ${describePosition(after)} but the room is on ${describePosition(announcedNow)}, and replaying the shared log did not resolve it.`,
 				);
 			}
 			return;
