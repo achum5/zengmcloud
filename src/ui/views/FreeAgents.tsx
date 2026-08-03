@@ -23,6 +23,7 @@ import {
 } from "../components/DataTable/index.tsx";
 import { NegotiateButtons } from "../components/NegotiateButtons.tsx";
 import { RosterComposition } from "../components/RosterComposition.tsx";
+import { SalaryCapInfo } from "../components/SalaryCapInfo.tsx";
 import { RosterSalarySummary } from "../components/RosterSalarySummary.tsx";
 import {
 	NegotiationModal,
@@ -563,6 +564,8 @@ const FreeAgents = ({
 						numRosterSpots={numRosterSpots}
 						payroll={payroll}
 					/>
+
+					<SalaryCapInfo className="mb-3" />
 
 					{showShowPlayersAffordButton ? (
 						<button

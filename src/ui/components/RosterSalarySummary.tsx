@@ -3,6 +3,9 @@ import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
 import { hardCapForTid } from "../../common/getHardCap.ts";
 
+// This team's own situation: the room it has. The league-wide figures it is
+// measured against (cap, contract limits) are in SalaryCapInfo, shown on the
+// same pages - kept apart so neither is printed twice.
 export const RosterSalarySummary = ({
 	capSpace,
 	numRosterSpots,
@@ -17,7 +20,6 @@ export const RosterSalarySummary = ({
 		hardCapTids,
 		hardCapUseLuxuryTax,
 		luxuryPayroll,
-		maxContract,
 		minContract,
 		salaryCapType,
 		userTid,
@@ -26,7 +28,6 @@ export const RosterSalarySummary = ({
 		"hardCapTids",
 		"hardCapUseLuxuryTax",
 		"luxuryPayroll",
-		"maxContract",
 		"minContract",
 		"salaryCapType",
 		"userTid",
@@ -99,11 +100,6 @@ export const RosterSalarySummary = ({
 					(hard cap: {helpers.formatCurrency(hardCap / 1000, "M")})
 				</>
 			) : null}
-			<br />
-			Min contract: {helpers.formatCurrency(minContract / 1000, "M")}
-			<br />
-			Max contract: {helpers.formatCurrency(maxContract / 1000, "M")}
-			<br />
 		</div>
 	);
 };

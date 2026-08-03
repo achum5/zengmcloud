@@ -8,6 +8,7 @@ import { wrappedTeamLogoAndName } from "../components/TeamLogoAndName.tsx";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { wrappedCurrency } from "../components/wrappedCurrency.ts";
 import { useLocal } from "../util/local.ts";
+import { SalaryCapInfo } from "../components/SalaryCapInfo.tsx";
 
 const LeagueFinances = ({ season, teams }: View<"leagueFinances">) => {
 	useTitleBar({
@@ -20,23 +21,11 @@ const LeagueFinances = ({ season, teams }: View<"leagueFinances">) => {
 
 	const {
 		budget,
-		luxuryPayroll,
-		luxuryTax,
-		minPayroll,
 		salaryCap,
 		salaryCapType,
 		season: currentSeason,
 		userTid,
-	} = useLocal([
-		"budget",
-		"luxuryPayroll",
-		"luxuryTax",
-		"minPayroll",
-		"salaryCap",
-		"salaryCapType",
-		"season",
-		"userTid",
-	]);
+	} = useLocal(["budget", "salaryCap", "salaryCapType", "season", "userTid"]);
 
 	const showCapSpaceForReal = salaryCapType !== "none";
 
@@ -142,37 +131,7 @@ const LeagueFinances = ({ season, teams }: View<"leagueFinances">) => {
 
 	return (
 		<>
-			<p>
-				{salaryCapType !== "none" ? (
-					<>
-						Salary cap: <b>{helpers.formatCurrency(salaryCap / 1000, "M")}</b>{" "}
-						(teams over this amount cannot sign{" "}
-						{salaryCapType === "hard" ? "players" : "free agents"} for more than
-						the minimum contract)
-						<br />
-					</>
-				) : null}
-				Minimum payroll limit:{" "}
-				<b>{helpers.formatCurrency(minPayroll / 1000, "M")}</b> (teams with
-				payrolls below this limit will be assessed a fine equal to the
-				difference at the end of the season)
-				{salaryCapType !== "hard" ? (
-					<>
-						<br />
-						{luxuryTax === 0 ? (
-							"Luxury tax: none"
-						) : (
-							<>
-								Luxury tax limit:{" "}
-								<b>{helpers.formatCurrency(luxuryPayroll / 1000, "M")}</b>{" "}
-								(teams with payrolls above this limit will be assessed a fine
-								equal to {luxuryTax} times the difference at the end of the
-								season)
-							</>
-						)}
-					</>
-				) : null}
-			</p>
+			<SalaryCapInfo className="mb-3" />
 
 			<DataTable
 				cols={cols}

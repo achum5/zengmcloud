@@ -13,6 +13,7 @@ import { SafeHtml } from "../components/SafeHtml.tsx";
 import { NegotiateButtons } from "../components/NegotiateButtons.tsx";
 import { RosterComposition } from "../components/RosterComposition.tsx";
 import { RosterSalarySummary } from "../components/RosterSalarySummary.tsx";
+import { SalaryCapInfo } from "../components/SalaryCapInfo.tsx";
 import { confirm } from "../util/confirm.tsx";
 import {
 	NegotiationModal,
@@ -237,6 +238,8 @@ const NegotiationList = ({
 				numRosterSpots={numRosterSpots}
 				payroll={payroll}
 			/>
+
+			<SalaryCapInfo className="mb-3" />
 
 			<p>
 				Your unsigned players are asking for a total of{" "}

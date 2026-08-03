@@ -36,6 +36,7 @@ import { useBlocker } from "../../hooks/useBlocker.ts";
 import { gradientStyleFactory } from "../../util/gradientStyleFactory.ts";
 import { BarGraph } from "./BarGraph.tsx";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
+import { SalaryCapInfo } from "../../components/SalaryCapInfo.tsx";
 import { getAdjustedTicketPrice } from "../../../common/getAdjustedTicketPrice.ts";
 
 const paddingLeft85 = { paddingLeft: 85 };
@@ -1312,6 +1313,8 @@ const TeamFinances = ({
 				payroll={payroll}
 				tid={tid}
 			/>
+
+			<SalaryCapInfo className="mb-3" tid={tid} />
 
 			{budget ? null : (
 				<p className="text-danger">
