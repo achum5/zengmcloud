@@ -1734,6 +1734,13 @@ export type Local = {
 	goldUntil: number;
 	leagueLoaded: boolean;
 	liveSimRatingsStatsPopoverPlayers: Record<number, Player> | undefined;
+	// The gid of the live sim whose playback is currently in progress, if any.
+	// Lets onLiveSimOver ignore "the game is over" reports from OTHER live game
+	// pages (a finished game in a second tab, a replay reaching its end), which
+	// used to clear liveGameInProgress globally and un-hide everything that flag
+	// exists to hide - a season-ending live sim had the draft lottery ready-up
+	// pop over Game 4 of the finals at Q1.
+	liveSimGid: number | undefined;
 	mailingList: boolean;
 	minFractionDiffs:
 		| Record<

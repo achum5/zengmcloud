@@ -115,9 +115,13 @@ class PlayerRow extends Component<PlayerRowProps> {
 	}
 }
 
-const onLiveSimOver = () => {
-	// Send to worker, rather than doing `localActions.update({ liveGameInProgress: false });`, so it works in all tabs
-	toWorker("main", "onLiveSimOver", undefined);
+const onLiveSimOver = (gid?: number) => {
+	// Send to worker, rather than doing `localActions.update({ liveGameInProgress: false });`, so it works in all tabs.
+	// The gid says WHICH game this page thinks is over - the worker ignores the
+	// report if a different game's live sim is the one in progress, so a replay
+	// ending (or a finished game parked in another tab) can't clear the flag out
+	// from under a fresh live sim and spoil it.
+	toWorker("main", "onLiveSimOver", gid);
 };
 
 const getSeconds = (time: string | undefined) => {
@@ -1416,7 +1420,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				if (!boxScore.current.exhibition) {
 					setDirty(false);
 				}
-				onLiveSimOver();
+				onLiveSimOver(boxScore.current.gid);
 			}
 
 			const endSeconds = getSeconds(boxScore.current.time);
@@ -1437,7 +1441,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// else that invents court positions (the team court editor's preview)
 			// wants ordinary randomness.
 			clearCourtRng();
-			onLiveSimOver();
+			onLiveSimOver(boxScore.current?.gid);
 		};
 	}, []);
 

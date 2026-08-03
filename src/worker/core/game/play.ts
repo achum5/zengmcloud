@@ -183,6 +183,12 @@ const play = async (
 	const cbSaveResults = async (results: GameResults[], dayOver: boolean) => {
 		// Before writeGameStats, so LeagueTopBar can not update with game result
 		if (gidOneGame !== undefined && playByPlay) {
+			// Remember WHICH game the playback is for, so only that game's page can
+			// declare it over. onLiveSimOver used to clear unconditionally, and any
+			// other live game page - a finished game in a second tab, a replay
+			// hitting its final play - would clear the flag mid-playback and un-hide
+			// everything it exists to hide (phase text, ready-up, the score ticker).
+			local.liveSimGid = gidOneGame;
 			await toUI("updateLocal", [{ liveGameInProgress: true }]);
 
 			// Run this before writing player stats

@@ -13,6 +13,7 @@ const defaultLocal: Local = {
 	minFractionDiffs: undefined,
 	leagueLoaded: false,
 	liveSimRatingsStatsPopoverPlayers: undefined,
+	liveSimGid: undefined,
 	phaseText: "",
 	playerBioInfo: undefined,
 	playerOvrMean: 47,
@@ -39,6 +40,7 @@ const local: Local & {
 	leagueLoaded: defaultLocal.leagueLoaded,
 	liveSimRatingsStatsPopoverPlayers:
 		defaultLocal.liveSimRatingsStatsPopoverPlayers,
+	liveSimGid: defaultLocal.liveSimGid,
 	mailingList: defaultLocal.mailingList,
 	minFractionDiffs: defaultLocal.minFractionDiffs,
 	phaseText: defaultLocal.phaseText,
@@ -63,6 +65,7 @@ const local: Local & {
 		local.leagueLoaded = defaultLocal.leagueLoaded;
 		local.liveSimRatingsStatsPopoverPlayers =
 			defaultLocal.liveSimRatingsStatsPopoverPlayers;
+		local.liveSimGid = defaultLocal.liveSimGid;
 		local.minFractionDiffs = defaultLocal.minFractionDiffs;
 		local.phaseText = defaultLocal.phaseText;
 		local.playerBioInfo = defaultLocal.playerBioInfo;

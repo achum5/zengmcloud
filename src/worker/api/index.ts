@@ -4746,7 +4746,27 @@ const switchTeam = async (tid: number, conditions: Conditions) => {
 	}
 };
 
-const onLiveSimOver = async () => {
+const onLiveSimOver = async (gid?: number) => {
+	// Only the page playing THE CURRENT live sim gets to declare it over. Every
+	// LiveGame page fires this - on unmount and on reaching its final play -
+	// including finished games parked in other tabs and REPLAYS of old games,
+	// none of which know a fresh sim is mid-playback. An unconditional clear
+	// here is how a season-ending live sim had the draft lottery ready-up pop
+	// over Game 4 of the finals at Q1: something else's "over" landed right
+	// after play.ts set the flag.
+	//
+	// A report with no gid is allowed through: it can only come from a page that
+	// never received its game data (user bailed on a pending live sim), and
+	// swallowing that would leave the flag stuck on forever.
+	if (
+		gid !== undefined &&
+		local.liveSimGid !== undefined &&
+		gid !== local.liveSimGid
+	) {
+		return;
+	}
+	local.liveSimGid = undefined;
+
 	local.liveSimRatingsStatsPopoverPlayers = undefined;
 
 	// Backstop: guarantee the single-game-sim force-silent flag is cleared once the
