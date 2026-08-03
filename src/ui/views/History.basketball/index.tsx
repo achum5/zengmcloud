@@ -103,17 +103,7 @@ const History = (props: View<"history">) => {
 				/>
 
 				{/* This season's own draft class is written up on the Draft History
-				    page instead, and only once the draft has been run. All that is
-				    left here is the way out of the one state that page can't reach:
-				    writeups filed against a class before its draft, which is the
-				    current season - and the current season isn't in Draft History's
-				    season list until the draft happens. Shows nothing otherwise. */}
-				<PlayerRecaps
-					season={season}
-					filter="draftPicks"
-					heading="Draft Class Writeups (AI)"
-					undoOnly
-				/>
+				    page instead, and only once the draft has been run. */}
 
 				{/* Next year's draft class, run separately: no stats, no season to
 				    recap, and a scouting report is a different piece of writing from

@@ -77,6 +77,65 @@ describe("sync changeset", () => {
 		assert.ok(keys.includes("salaryCap"), "league settings must sync");
 	});
 
+	// The Team Finances checkboxes are a private what-if - "what do the books
+	// look like without him". They were kept in a game attribute, so they
+	// travelled, and because the attribute is ONE record holding a map of every
+	// team, whole-record last-write-wins meant a league-mate ticking a box on
+	// their own team also replaced your plan for your own team.
+	test("the team finances plan is private, in both directions", async () => {
+		resetG();
+		await resetCache({});
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await changeTracker.runCaptured(async () => {
+			await idb.cache.gameAttributes.put({
+				key: "teamFinancesPlan",
+				value: { 0: { droppedPids: [7], keptPids: [], keptDpids: [] } },
+			});
+		});
+
+		assert.ok(
+			!(await captureChangeset()).changes.some(
+				(c) => c.id === "teamFinancesPlan",
+			),
+			"a tick on your own finances page must not be broadcast",
+		);
+
+		// And the other way: a league-mate's plan - including one replayed out of
+		// log history written before this exclusion existed - must not land on top
+		// of ours.
+		await resetCache({});
+		await idb.cache.gameAttributes.put({
+			key: "teamFinancesPlan",
+			value: { 3: { droppedPids: [11], keptPids: [], keptDpids: [] } },
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			{
+				changes: [
+					{
+						store: "gameAttributes",
+						id: "teamFinancesPlan",
+						type: "put",
+						value: {
+							key: "teamFinancesPlan",
+							value: { 5: { droppedPids: [99], keptPids: [], keptDpids: [] } },
+						},
+					},
+				],
+			} as any,
+			{ refreshUI: false },
+		);
+
+		assert.deepStrictEqual(
+			(await idb.cache.gameAttributes.get("teamFinancesPlan"))?.value,
+			{ 3: { droppedPids: [11], keptPids: [], keptDpids: [] } },
+			"our own plan must survive a league-mate's",
+		);
+	});
+
 	test("round-trips put, add, and delete to another device", async () => {
 		// --- Source device: start with two players (pids 0 and 1) ---
 		resetG();

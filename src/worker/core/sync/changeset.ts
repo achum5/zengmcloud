@@ -393,6 +393,12 @@ export const DEVICE_LOCAL_GAME_ATTRIBUTES = new Set([
 	// Proposals page - per-device UI state (each device browses proposals for its
 	// own team). Sharing it would reshuffle every league-mate's proposals.
 	"tradeProposalsSeed",
+	// The Team Finances checkbox plan: which players you have ticked to ask
+	// "what do the books look like without him". A private what-if, not a fact
+	// about the league - and worse than merely visible, it is ONE record holding
+	// a map of every team, so whole-record last-write-wins meant a league-mate
+	// ticking a box on their own team replaced YOUR plan for YOUR team too.
+	"teamFinancesPlan",
 ]);
 
 // Whole stores that are per-device scratch / personal UI state, never shared

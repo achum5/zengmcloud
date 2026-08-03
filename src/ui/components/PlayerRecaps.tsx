@@ -34,7 +34,6 @@ export const PlayerRecaps = ({
 	season,
 	filter = "players",
 	heading,
-	undoOnly = false,
 }: {
 	season: number;
 	// Which pass. "players" is season recaps for everyone who was in the league,
@@ -43,9 +42,6 @@ export const PlayerRecaps = ({
 	// runs with their own prompts, because they are different jobs.
 	filter?: RecapFilter;
 	heading: string;
-	// Never offer to WRITE here, only to undo. For a pass whose home is another
-	// page, on a page that still has to be able to clean up after it.
-	undoOnly?: boolean;
 }) => {
 	// Batches are cut from whoever is still unwritten, so the list shrinks as it
 	// is worked through and every batch is real work. That means re-deriving
@@ -249,8 +245,7 @@ export const PlayerRecaps = ({
 	// allowed to run. Once everyone has a note it comes off the page — that's
 	// the reminder switching itself off, and the way to tell at a glance that a
 	// season is finished.
-	const showNag =
-		!undoOnly && !!data && data.players.length > 0 && !data.notYet;
+	const showNag = !!data && data.players.length > 0 && !data.notYet;
 
 	// The undo outlives the nag in one case only: a pass that cannot run yet but
 	// already has writeups filed against it. That state is a mistake by
