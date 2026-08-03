@@ -54,6 +54,10 @@ type Props = {
 	// face would look wrong, e.g. a name used inline in prose).
 	hideFace?: boolean;
 
+	// Drop the ratings/stats popover trigger. For a name used as a modal header,
+	// where the trigger would open a second modal on top of the first.
+	hideRatingsPopover?: boolean;
+
 	// Something small to ride along at the end of the name - the writeup bubble
 	// on a roster row. It goes INSIDE the name block on purpose: the awards
 	// variant below wraps everything in a block-level flex row, so anything the
@@ -184,6 +188,7 @@ export const PlayerNameLabels = (props: Props) => {
 		abbrev,
 		after,
 		awards,
+		hideRatingsPopover,
 		awardsSeason,
 		count,
 		disableNameLink,
@@ -275,7 +280,7 @@ export const PlayerNameLabels = (props: Props) => {
 				skills={skills}
 				numSkillsBeforeTruncate={numSkillsBeforeTruncate}
 			/>
-			{pid !== undefined ? (
+			{pid !== undefined && !hideRatingsPopover ? (
 				<RatingsStatsPopover
 					pid={pid}
 					season={season}

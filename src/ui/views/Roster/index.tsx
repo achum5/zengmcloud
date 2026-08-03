@@ -22,7 +22,10 @@ import type {
 	DataTableRow,
 	SortBy,
 } from "../../components/DataTable/index.tsx";
-import { wrappedPlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
+import {
+	PlayerNameLabels,
+	wrappedPlayerNameLabels,
+} from "../../components/PlayerNameLabels.tsx";
 import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
 import { seasonNoteSectionsFor } from "../../../common/seasonNote.ts";
 import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
@@ -281,7 +284,7 @@ const Roster = ({
 		// His writeup for the season this roster is showing, opened from his name
 		// - the same piece his own page hangs off that season's stats row.
 		const seasonNote = seasonNoteSectionsFor(p.note, season);
-		const nameCell = wrappedPlayerNameLabels({
+		const nameProps = {
 			pid: p.pid,
 			injury: p.injury,
 			jerseyNumber: p.stats.jerseyNumber,
@@ -293,10 +296,23 @@ const Roster = ({
 			lastName: p.lastName,
 			awards: p.awards,
 			neverShowCountry: true,
+		};
+		const nameCell = wrappedPlayerNameLabels({
+			...nameProps,
 			after:
 				seasonNote.length > 0 ? (
 					<SeasonNoteButton
-						header={`${p.firstName} ${p.lastName}, ${season}`}
+						// The same face and line the row shows, so the writeup opens
+						// under the player it is about rather than under his name in
+						// plain text. Full names and no ratings popover: a modal header
+						// has the room, and the popover would open a second modal on top
+						// of this one.
+						header={
+							<div className="d-flex align-items-center gap-2">
+								<PlayerNameLabels {...nameProps} fullNames hideRatingsPopover />
+								<span className="text-body-secondary">{season}</span>
+							</div>
+						}
 						id={`roster-note-${p.pid}`}
 						linksFor={noteLinksBySeason}
 						sections={seasonNote}
