@@ -775,6 +775,8 @@ const TeamFinances = ({
 		numGames,
 		salaryCap,
 		salaryCapType,
+		spectator,
+		userTid,
 	} = useLocal([
 		"budget",
 		"gameSimInProgress",
@@ -785,7 +787,17 @@ const TeamFinances = ({
 		"numGames",
 		"salaryCap",
 		"salaryCapType",
+		"spectator",
+		"userTid",
 	]);
+
+	// The checkbox plan is a private what-if about YOUR cap sheet, so it exists
+	// only on the team this device is actually playing. In a multiplayer league
+	// everyone runs multi-team mode - every human team sits in userTids - so
+	// anything looser would hand you a league-mate's team complete with
+	// checkboxes. Every other team, human or not, is a CPU team here: no
+	// columns, and the totals are the plain committed money.
+	const canPlan = tid === userTid && !spectator;
 
 	// Draft picks share the players' key space, sitting after them, so one set
 	// of checkboxes and one totals calculation covers both.
@@ -942,7 +954,13 @@ const TeamFinances = ({
 		save({ excludedSigned: new Set(excludedSignedKeys), projected: next });
 	};
 
-	const cols: Col[] = [
+	// The two checkbox columns lead the table, so dropping them is a slice off
+	// the front of every row, header and footer alike.
+	const PLAN_COLS = 2;
+	const dropPlanCols = <T,>(row: T[]): T[] =>
+		canPlan ? row : row.slice(PLAN_COLS);
+
+	const cols: Col[] = dropPlanCols([
 		{
 			title: "",
 			desc: "Count this player's signed salary in the totals",
@@ -985,7 +1003,7 @@ const TeamFinances = ({
 				sortType: "number",
 			}),
 		),
-	];
+	]);
 
 	const playerRows = contracts.map((p, i) => {
 		const projectable = projectableKeys.includes(i);
@@ -1089,7 +1107,7 @@ const TeamFinances = ({
 
 		return {
 			key: i, // Can't be pid because a player will appear twice if he is cut and re-signed
-			data,
+			data: dropPlanCols(data),
 		};
 	});
 
@@ -1168,7 +1186,7 @@ const TeamFinances = ({
 			});
 		}
 
-		return { key, data };
+		return { key, data: dropPlanCols(data) };
 	});
 
 	const rows = [...playerRows, ...pickRows];
@@ -1232,9 +1250,13 @@ const TeamFinances = ({
 	// Marks the totals as carrying money nobody has signed for.
 	const star = projectedKeys.size > 0 ? "*" : "";
 
+	// Label cells sit in the Name column, so the leading padding shrinks with the
+	// table.
+	const footerLead = (label: string) => dropPlanCols(["", "", "", label, ""]);
+
 	const footer = [
 		{
-			data: ["", "", "", `Totals${star}`, ""].concat(
+			data: footerLead(`Totals${star}`).concat(
 				// @ts-expect-error
 				totals.map((amount) => highlightZeroNegative(amount)),
 			),
@@ -1242,7 +1264,7 @@ const TeamFinances = ({
 		...(anyHardCap
 			? [
 					{
-						data: ["", "", "", `Hard Cap Space${star}`, ""].concat(
+						data: footerLead(`Hard Cap Space${star}`).concat(
 							// @ts-expect-error
 							totals.map((amount, i) => {
 								const hardCap = hardCapFor(i);
@@ -1257,13 +1279,13 @@ const TeamFinances = ({
 		{
 			data:
 				salaryCapType === "none"
-					? ["", "", "", `Under Luxury Tax${star}`, ""].concat(
+					? footerLead(`Under Luxury Tax${star}`).concat(
 							// @ts-expect-error
 							totals.map((amount, i) =>
 								highlightZeroNegative(capsFor(i).luxuryPayroll / 1000 - amount),
 							),
 						)
-					: ["", "", "", `Free Cap Space${star}`, ""].concat(
+					: footerLead(`Free Cap Space${star}`).concat(
 							// @ts-expect-error
 							totals.map((amount, i) =>
 								highlightZeroNegative(capsFor(i).salaryCap / 1000 - amount),
@@ -1306,15 +1328,16 @@ const TeamFinances = ({
 				<a href={helpers.leagueUrl(["roster"])}>your roster</a>. Released
 				players who are still owed money are <i>shown in italics</i>. Salaries
 				marked <span className="text-body-secondary">*</span> are projected, not
-				signed — a player's next contract, or what a draft pick's slot pays. The
-				first column counts signed salary in the totals, the second counts
-				projected.
+				signed — a player's next contract, or what a draft pick's slot pays.
+				{canPlan
+					? " The first column counts signed salary in the totals, the second counts projected."
+					: null}
 			</p>
 
 			<DataTable
 				cols={cols}
-				defaultSort={[5, "desc"]}
-				name="TeamFinances"
+				defaultSort={[canPlan ? 5 : 3, "desc"]}
+				name={canPlan ? "TeamFinances" : "TeamFinancesOtherTeam"}
 				nonfluid
 				footer={footer}
 				rows={rows}

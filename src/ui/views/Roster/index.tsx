@@ -23,6 +23,9 @@ import type {
 	SortBy,
 } from "../../components/DataTable/index.tsx";
 import { wrappedPlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
+import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
+import { seasonNoteSectionsFor } from "../../../common/seasonNote.ts";
+import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { wrappedMood } from "../../components/Mood.tsx";
 import { wrappedRatingWithChange } from "../../components/RatingWithChange.tsx";
 import type { BulkAction } from "../../components/DataTable/BulkActions.tsx";
@@ -115,6 +118,7 @@ const Roster = ({
 		phase,
 		salaryCapType,
 		season: currentSeason,
+		teamInfoCache,
 		userTid,
 	} = useLocal([
 		"challengeNoRatings",
@@ -122,6 +126,7 @@ const Roster = ({
 		"phase",
 		"salaryCapType",
 		"season",
+		"teamInfoCache",
 		"userTid",
 	]);
 
@@ -266,8 +271,29 @@ const Roster = ({
 	// Sort by pos for non-basketball sports
 	const defaultSortCol = 1;
 
+	// Team names only: a roster is one team in one season, so the writeups here
+	// are read next to the row they are about rather than as a career.
+	const noteLinksBySeason = buildPlayerNoteLinks(teamInfoCache);
+
 	const rows: DataTableRow[] = playersSorted.map((p, i) => {
 		const showRatings = !challengeNoRatings || p.tid === PLAYER.RETIRED;
+
+		// His writeup for the season this roster is showing, opened from his name
+		// - the same piece his own page hangs off that season's stats row.
+		const nameCell = wrappedPlayerNameLabels({
+			pid: p.pid,
+			injury: p.injury,
+			jerseyNumber: p.stats.jerseyNumber,
+			season,
+			skills: p.ratings.skills,
+			defaultWatch: p.watch,
+			firstName: p.firstName,
+			firstNameShort: p.firstNameShort,
+			lastName: p.lastName,
+			awards: p.awards,
+			neverShowCountry: true,
+		});
+		const seasonNote = seasonNoteSectionsFor(p.note, season);
 
 		return {
 			key: p.pid,
@@ -295,19 +321,23 @@ const Roster = ({
 				"table-info": p.tid === tid && season !== currentSeason,
 			}),
 			data: [
-				wrappedPlayerNameLabels({
-					pid: p.pid,
-					injury: p.injury,
-					jerseyNumber: p.stats.jerseyNumber,
-					season,
-					skills: p.ratings.skills,
-					defaultWatch: p.watch,
-					firstName: p.firstName,
-					firstNameShort: p.firstNameShort,
-					lastName: p.lastName,
-					awards: p.awards,
-					neverShowCountry: true,
-				}),
+				seasonNote.length > 0
+					? {
+							...nameCell,
+							value: (
+								<>
+									{nameCell.value}
+									<SeasonNoteButton
+										header={`${p.firstName} ${p.lastName}, ${season}`}
+										id={`roster-note-${p.pid}`}
+										linksFor={noteLinksBySeason}
+										sections={seasonNote}
+										title={`Read the ${season} writeup for ${p.firstName} ${p.lastName}`}
+									/>
+								</>
+							),
+						}
+					: nameCell,
 				p.ratings.pos,
 				p.age,
 				showRatings

@@ -238,6 +238,22 @@ export const hasSeasonNote = (
 			section.season === season && section.kind === kind && section.body !== "",
 	);
 
+// The writeup for one season of a player's career, for the season-scoped tables
+// a player turns up in away from his own page (a roster for a given year). The
+// full routing in splitPlayerNote needs his whole stats and ratings history to
+// decide where every piece belongs; a table showing one season of one team only
+// ever wants that season's piece.
+export const seasonNoteSectionsFor = (
+	note: string | undefined,
+	season: number,
+): SeasonNoteSection[] =>
+	parseSeasonNote(note ?? "").filter(
+		(section) =>
+			section.season === season &&
+			section.kind === "season" &&
+			(section.body !== "" || section.headline !== ""),
+	);
+
 export type PlayerNoteSplit = {
 	// The draft-selection writeup, shown off the "Draft: 2001 - Round 1..." line
 	// in the bio. That is the section for the player's DRAFT YEAR: the
@@ -320,6 +336,17 @@ export const splitPlayerNote = (
 	for (const section of sections) {
 		const { season } = section;
 		if (season === undefined) {
+			leftover.push(section);
+			continue;
+		}
+
+		// A retirement writeup is about a whole career, not about the season it
+		// happens to be filed under, so it does not belong on that season's row -
+		// hung there it sits next to the season recap for the same year, saying
+		// something much bigger than the row it is attached to. The note block is
+		// the player's own space, and this is the one piece written about him
+		// rather than about one of his years.
+		if (section.kind === "retirement") {
 			leftover.push(section);
 			continue;
 		}

@@ -4,9 +4,12 @@ import { ResponsivePopover } from "./ResponsivePopover.tsx";
 import { linkifyRecap, type RecapLink } from "../util/linkifyRecap.ts";
 import type { SeasonNoteSection } from "../../common/seasonNote.ts";
 
-// An arrow that opens a piece of a player's writeup, hung off whatever the
-// piece is about: a season's row in the stats or ratings table, the draft line
-// in his bio, his selection on the draft history page.
+// A speech bubble that opens a piece of a player's writeup, hung off whatever
+// the piece is about: a season's row in the stats or ratings table, his row on
+// a roster, the draft line in his bio, his selection on the draft history page.
+//
+// It reads as "there is something written in here" - an arrow only said "this
+// expands", which on a table full of numbers looks like another sort control.
 //
 // A career note is one long stack of "[YYYY]" sections, and reading it used to
 // mean scrolling a fixed-height box hunting for the year you wanted. The rows
@@ -27,8 +30,7 @@ export const SeasonNoteButton = ({
 	// Names to link, resolved per section so a 2001 section links to how teams
 	// looked in 2001.
 	linksFor: (season: number | undefined) => RecapLink[];
-	// Everything to show, newest first (a retirement writeup sits above that
-	// year's season recap).
+	// Everything to show, newest first.
 	sections: SeasonNoteSection[];
 	title: string;
 }) => {
@@ -40,13 +42,11 @@ export const SeasonNoteButton = ({
 			{sections.map((section, i) => (
 				<div className={i > 0 ? "mt-3" : undefined} key={i}>
 					{section.headline ? (
-						<div className="fw-bold mb-1">
-							{section.kind === "retirement"
-								? `Retirement — ${section.headline}`
-								: section.headline}
-						</div>
+						<div className="fw-bold mb-1">{section.headline}</div>
 					) : null}
-					<Markdown>{linkifyRecap(section.body, linksFor(section.season))}</Markdown>
+					<Markdown>
+						{linkifyRecap(section.body, linksFor(section.season))}
+					</Markdown>
 				</div>
 			))}
 		</div>
@@ -75,7 +75,7 @@ export const SeasonNoteButton = ({
 					title={title}
 					type="button"
 				>
-					<span className="glyphicon glyphicon-triangle-right" />
+					<span className="glyphicon glyphicon-comment" />
 				</button>
 			)}
 		/>

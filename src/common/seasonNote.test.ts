@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	hasSeasonNote,
+	seasonNoteSectionsFor,
 	splitPlayerNote,
 	parseSeasonNote,
 	removeSeasonNote,
@@ -296,7 +297,10 @@ describe("deciding where each part of a player's note goes", () => {
 		"Built to score and create in equal measure.",
 	].join("\n");
 
-	const split = (note: string, overrides?: Partial<Parameters<typeof splitPlayerNote>[1]>) =>
+	const split = (
+		note: string,
+		overrides?: Partial<Parameters<typeof splitPlayerNote>[1]>,
+	) =>
 		splitPlayerNote(note, {
 			draftYear: 2001,
 			undrafted: false,
@@ -359,6 +363,39 @@ describe("deciding where each part of a player's note goes", () => {
 		assert.ok(leftover.includes("[2000]"));
 	});
 
+	// A retirement writeup is about a whole career. Filed under the year he
+	// retired, it used to hang off that season's row - sitting right beside that
+	// same year's season recap, so the last row of a career carried two writeups
+	// and the bigger one was the harder to find.
+	test("the retirement writeup is the player's note, not a season's", () => {
+		const note = [
+			"[2003] Retirement — The workhorse hangs it up",
+			"Eighteen seasons, and he never missed more than four in a row.",
+			"",
+			"[2003] One last run",
+			"He gave them 31 minutes a night at 39 years old.",
+		].join("\n");
+
+		const { leftover, bySeason } = split(note, {
+			seasonsWithStats: new Set([2002, 2003]),
+		});
+
+		assert.ok(
+			leftover.includes("The workhorse hangs it up"),
+			"the career retrospective belongs in the note block",
+		);
+		assert.strictEqual(
+			bySeason.get(2003)?.length,
+			1,
+			"only the season recap hangs off the season row",
+		);
+		assert.strictEqual(bySeason.get(2003)![0]!.headline, "One last run");
+		assert.ok(
+			!leftover.includes("One last run"),
+			"the season recap must not be duplicated into the note block",
+		);
+	});
+
 	// Better in the wrong place than gone.
 	test("a scouting report with no draft-season row falls back to the note block", () => {
 		const { scouting, leftover } = split(NOTE, {
@@ -366,6 +403,40 @@ describe("deciding where each part of a player's note goes", () => {
 		});
 		assert.strictEqual(scouting.length, 0);
 		assert.ok(leftover.includes("[2000]"));
+	});
+});
+
+// A roster shows one team in one season, so a player's row there wants that
+// season's piece and nothing else - no career retrospective, no other year.
+describe("seasonNoteSectionsFor", () => {
+	const NOTE = [
+		"Hand-written.",
+		"",
+		"[2004] Retirement — A quiet exit",
+		"He walked away in the summer.",
+		"",
+		"[2004] The last lap",
+		"Forty games, and most of them off the bench.",
+		"",
+		"[2003] Still the anchor",
+		"Twenty-two a night.",
+	].join("\n");
+
+	test("it returns only that season's recap", () => {
+		const sections = seasonNoteSectionsFor(NOTE, 2003);
+		assert.strictEqual(sections.length, 1);
+		assert.strictEqual(sections[0]!.headline, "Still the anchor");
+	});
+
+	test("the retirement piece is not a season's writeup", () => {
+		const sections = seasonNoteSectionsFor(NOTE, 2004);
+		assert.strictEqual(sections.length, 1);
+		assert.strictEqual(sections[0]!.headline, "The last lap");
+	});
+
+	test("a season with nothing written gives nothing", () => {
+		assert.deepStrictEqual(seasonNoteSectionsFor(NOTE, 2001), []);
+		assert.deepStrictEqual(seasonNoteSectionsFor(undefined, 2003), []);
 	});
 });
 

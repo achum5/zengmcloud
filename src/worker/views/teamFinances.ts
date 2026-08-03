@@ -388,10 +388,18 @@ const updateTeamFinances = async (
 
 // Which rows the salary table is counting for this team. Cosmetic, cheap, and
 // deliberately outside updateTeamFinances's guard: it has to arrive on the
-// first render AND track a change synced in from another device, and it costs
-// nothing to hand over every time.
+// first render, and it costs nothing to hand over every time.
+//
+// Only ever for the team THIS DEVICE is playing. In a multiplayer league
+// everyone runs multi-team mode, so every human team is in userTids and any
+// check looser than this would put a league-mate's cap sheet on your screen
+// with their ticks in it. Every other team - human or not - reads as a plain
+// CPU team here.
 const updatePlan = (inputs: ViewInput<"teamFinances">) => ({
-	plan: g.get("teamFinancesPlan")[inputs.tid],
+	plan:
+		inputs.tid === g.get("userTid")
+			? g.get("teamFinancesPlan")[inputs.tid]
+			: undefined,
 });
 
 export default async (

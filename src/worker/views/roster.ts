@@ -191,6 +191,9 @@ const updateRoster = async (
 			"mood",
 			"value",
 			"awards",
+			// For the writeup bubble beside each name: the section of his note for
+			// the season this roster is showing.
+			"note",
 		]; // tid and draft are used for checking if a player can be released without paying his salary
 
 		const ratings = ["ovr", "pot", "dovr", "dpot", "skills", "pos", "ovrs"];
