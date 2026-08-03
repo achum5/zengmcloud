@@ -107,6 +107,20 @@ export const setTeamInfo = async (
 		}
 	}
 
+	// Colours are the one field above with no fallback, and it shows: rewatching
+	// an old game drew both sides in the neutral default instead of the clubs'
+	// own colours. Every sibling field falls back to teamInfoCache, but that
+	// cache does not carry colors, so there was nothing for the same pattern to
+	// reach for - and a teamSeason row without them (an imported real-players
+	// history, or a row written before genSeasonRow started stamping them) fell
+	// straight through to grey.
+	//
+	// The team record always has colours, and the current club's are a far better
+	// answer for a past season than no colours at all.
+	if (!t.colors && t.tid >= 0) {
+		t.colors = (await idb.cache.teams.get(t.tid))?.colors;
+	}
+
 	if (!t.colors) {
 		t.colors = DEFAULT_TEAM_COLORS;
 	}
