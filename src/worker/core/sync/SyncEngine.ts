@@ -20,10 +20,7 @@ import { outbox } from "./outbox.ts";
 import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
 import { g } from "../../util/index.ts";
 import { PHASE } from "../../../common/constants.ts";
-import {
-	getLeaguePosition,
-	type LeaguePosition,
-} from "./leaguePosition.ts";
+import { getLeaguePosition, type LeaguePosition } from "./leaguePosition.ts";
 
 // Changesets larger than this are "bulk" (e.g. a simulation, which mutates
 // hundreds of records). They're only published by the host, and are split into
@@ -2402,9 +2399,7 @@ export class SyncEngine {
 						};
 						if (typeof value?.season === "number") {
 							season = value.season;
-							phase = value.playoffs
-								? PHASE.PLAYOFFS
-								: PHASE.REGULAR_SEASON;
+							phase = value.playoffs ? PHASE.PLAYOFFS : PHASE.REGULAR_SEASON;
 						}
 					}
 				}
@@ -2511,7 +2506,8 @@ export class SyncEngine {
 		}
 		const indexOf = new Map<Unit, number>(units.map((unit, i) => [unit, i]));
 		units.sort(
-			(a, b) => eras.get(a)! - eras.get(b)! || indexOf.get(a)! - indexOf.get(b)!,
+			(a, b) =>
+				eras.get(a)! - eras.get(b)! || indexOf.get(a)! - indexOf.get(b)!,
 		);
 
 		// The room's announced position is a ceiling on what a replay may apply.

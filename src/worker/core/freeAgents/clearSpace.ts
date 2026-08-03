@@ -368,10 +368,7 @@ const clearSpaceForTeam = async ({
 	// Never dump so deep that the team cannot field a side. checkRosterSizes
 	// would paper over it with minimum signings afterwards, but a team that has
 	// to be rescued from its own cap plan should not have made the plan.
-	const roomToShed = Math.max(
-		0,
-		roster.length + 1 - g.get("minRosterSize"),
-	);
+	const roomToShed = Math.max(0, roster.length + 1 - g.get("minRosterSize"));
 	if (roomToShed <= 0) {
 		frontOfficeLog(season, tid, "dump-roster-too-thin", {
 			target: target.p.pid,
@@ -436,7 +433,11 @@ const clearSpaceForTeam = async ({
 		if (partnerPayroll + dumpSalary > salaryCap) {
 			continue;
 		}
-		partners.push({ tid: t.tid, posture: partnerPosture, payroll: partnerPayroll });
+		partners.push({
+			tid: t.tid,
+			posture: partnerPosture,
+			payroll: partnerPayroll,
+		});
 	}
 	if (partners.length === 0) {
 		frontOfficeLog(season, tid, "dump-no-partner", {
@@ -548,17 +549,12 @@ const clearSpaceForTeam = async ({
 			// team that dumps salary and then loses the player to someone else has
 			// made itself worse for nothing, which is the one outcome worse than
 			// never trying.
-			await processTrade(
-				[tid, partner.tid],
-				[dumpPids, []],
-				[dpids, []],
-				{
-					initiatorTid: tid,
-					tiers: [posture.tier, partner.posture.tier],
-					dv: Math.round(myDv * 10) / 10,
-					motivation: CAP_CLEAR_MOTIVATION,
-				},
-			);
+			await processTrade([tid, partner.tid], [dumpPids, []], [dpids, []], {
+				initiatorTid: tid,
+				tiers: [posture.tier, partner.posture.tier],
+				dv: Math.round(myDv * 10) / 10,
+				motivation: CAP_CLEAR_MOTIVATION,
+			});
 
 			const signed = await idb.cache.players.get(target.p.pid);
 			if (!signed || signed.tid !== PLAYER.FREE_AGENT) {

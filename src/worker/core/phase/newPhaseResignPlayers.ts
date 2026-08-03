@@ -14,13 +14,18 @@ import { last, orderBy } from "../../../common/utils.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTradedAwayNormalized.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
-import { getHardCap, hardCapEnabled } from "../../util/getHardCap.ts";
+import { getHardCap } from "../../util/getHardCap.ts";
+import { frontOfficeLog } from "../../util/frontOfficeLog.ts";
 import {
 	getLeagueTradeContext,
 	getTradePosture,
 	type TradePosture,
 } from "../trade/tradePosture.ts";
-import { shouldLetWalk } from "../freeAgents/frontOffice.ts";
+import {
+	RETENTION_CORE_RANK,
+	retentionOverpay,
+	shouldLetWalk,
+} from "../freeAgents/frontOffice.ts";
 
 export const FREE_AGENCY_DAYS = 30;
 
@@ -114,8 +119,11 @@ const newPhaseResignPlayers = async (
 
 	const payrollsByTid = new Map<number, number>();
 
-	// Payrolls are also needed to enforce the secondary hard cap on re-signings.
-	if (g.get("salaryCapType") === "hard" || hardCapEnabled()) {
+	// Payrolls are also needed to enforce the secondary hard cap on re-signings,
+	// and to stop a team overpaying itself into oblivion under a soft cap - so
+	// they are now computed unconditionally. Thirty getPayroll calls once per
+	// offseason is nothing next to the posture work above.
+	{
 		for (let tid = 0; tid < g.get("numTeams"); tid++) {
 			const payroll = await team.getPayroll(tid);
 			const expiringPayroll = players
@@ -159,12 +167,18 @@ const newPhaseResignPlayers = async (
 	// logic rather than skip re-signings entirely.
 	const postures = new Map<number, TradePosture>();
 	let starOvrForResign = Infinity;
+	// What the market could supply instead of the player being discussed - the
+	// benchmark any retention premium has to beat.
+	let starterOvrForResign = Infinity;
+	let rotationOvrForResign = Infinity;
 	try {
 		if (!g.get("smartAiFrontOffice")) {
 			throw new Error("smart front office disabled");
 		}
 		const context = await getLeagueTradeContext();
 		starOvrForResign = context.starOvr;
+		starterOvrForResign = context.starterOvr;
+		rotationOvrForResign = context.rotationOvr;
 		for (let tid = 0; tid < g.get("numTeams"); tid++) {
 			postures.set(tid, await getTradePosture(tid, context));
 		}
@@ -175,25 +189,28 @@ const newPhaseResignPlayers = async (
 		postures.clear();
 	}
 
-	// The OVR that puts a player among his own team's few best. Used to stop a bad
-	// team liquidating the rotation it has to rebuild around - see shouldLetWalk.
-	const CORE_PLAYERS_PER_TEAM = 3;
-	const coreOvrByTid = new Map<number, number>();
+	// Where each player sits on his own team by OVR, 0 being its best. Both
+	// re-signing decisions below are team-relative rather than league-relative:
+	// "star" is roughly the best player on an AVERAGE team, so the worst clubs
+	// have nobody who qualifies and would otherwise liquidate the rotation they
+	// have to rebuild around, and never fight to keep anyone.
+	const rosterRankByPid = new Map<number, number>();
 	if (postures.size > 0) {
-		const ovrsByTid = new Map<number, number[]>();
+		const byTid = new Map<number, typeof players>();
 		for (const p of players) {
-			const arr = ovrsByTid.get(p.tid);
+			const arr = byTid.get(p.tid);
 			if (arr) {
-				arr.push(last(p.ratings).ovr);
+				arr.push(p);
 			} else {
-				ovrsByTid.set(p.tid, [last(p.ratings).ovr]);
+				byTid.set(p.tid, [p]);
 			}
 		}
-		for (const [tid, ovrs] of ovrsByTid) {
-			ovrs.sort((a, b) => b - a);
-			const cutoff = ovrs[Math.min(CORE_PLAYERS_PER_TEAM, ovrs.length) - 1];
-			if (cutoff !== undefined) {
-				coreOvrByTid.set(tid, cutoff);
+		for (const roster of byTid.values()) {
+			const sorted = roster
+				.slice()
+				.sort((a, b) => last(b.ratings).ovr - last(a.ratings).ovr);
+			for (const [rank, p] of sorted.entries()) {
+				rosterRankByPid.set(p.pid, rank);
 			}
 		}
 	}
@@ -305,7 +322,8 @@ const newPhaseResignPlayers = async (
 					amount: contract.amount,
 					years: Math.max(1, contract.exp - g.get("season") + 1),
 					isStar: last(p.ratings).ovr >= starOvrForResign,
-					isCore: last(p.ratings).ovr >= (coreOvrByTid.get(p.tid) ?? Infinity),
+					isCore:
+						(rosterRankByPid.get(p.pid) ?? Infinity) < RETENTION_CORE_RANK,
 					minContract: g.get("minContract"),
 				});
 				if (walk) {
@@ -327,9 +345,133 @@ const newPhaseResignPlayers = async (
 			}
 
 			if (reSignPlayer) {
-				const mood = await player.moodInfo(p, p.tid, {
+				let mood = await player.moodInfo(p, p.tid, {
 					contractAmount: p.contract.amount,
 				});
+
+				// He does not want to stay. Before accepting that, find out what he
+				// would cost - a front office built around this player does not just
+				// wave him off at the asking price.
+				//
+				// Everything above has already decided this team WANTS him, so the
+				// only questions left are how far it will go (retentionOverpay) and
+				// whether the cap lets it (the ceiling below, which re-applies the
+				// same two limits the code above checked against the original
+				// figure - raising the offer must not sneak past them).
+				if (!mood.willing && resignPosture && !draftPick) {
+					const maxMultiplier = retentionOverpay({
+						tier: resignPosture.tier,
+						rosterRank: rosterRankByPid.get(p.pid) ?? Infinity,
+						isStar: last(p.ratings).ovr >= starOvrForResign,
+						age: g.get("season") - p.born.year,
+						wantsRelief: resignPosture.cap.wantsRelief,
+						ovr: last(p.ratings).ovr,
+						// A starter is replaced from the starter market, a bench player
+						// from the bench market.
+						replacementOvr:
+							(rosterRankByPid.get(p.pid) ?? Infinity) < RETENTION_CORE_RANK
+								? starterOvrForResign
+								: rotationOvrForResign,
+					});
+
+					if (maxMultiplier <= 1) {
+						frontOfficeLog(g.get("season"), p.tid, "retention-not-worth-it", {
+							pid: p.pid,
+							ovr: last(p.ratings).ovr,
+							tier: resignPosture.tier,
+						});
+					}
+
+					let attempts = 0;
+					if (maxMultiplier > 1) {
+						let ceiling = Number.POSITIVE_INFINITY;
+						if (payroll !== undefined) {
+							if (g.get("salaryCapType") === "hard") {
+								ceiling = Math.min(ceiling, g.get("salaryCap") - payroll);
+							}
+							if (Number.isFinite(hardCap)) {
+								ceiling = Math.min(ceiling, hardCap - payroll);
+							}
+
+							// A soft cap imposes no LEGAL limit, which is not the same as
+							// no limit. Without this a team already at twice the cap kept
+							// bidding: payrolls ran to 222k against a 140k cap, and the
+							// money locked up that way left twenty useful players
+							// unemployed league-wide. The tax line is the budget a front
+							// office actually argues with; a team going all in is allowed
+							// to blow through it, because that is what going all in means.
+							const taxLine = g.get("luxuryPayroll");
+							if (taxLine > 0) {
+								const allowance =
+									resignPosture.tier === "allIn" ? taxLine * 1.2 : taxLine;
+								ceiling = Math.min(ceiling, allowance - payroll);
+							}
+						}
+
+						// Overpay relative to what he is ACTUALLY asking this team, which
+						// is mood.contractAmount - it already carries the up-to-50%
+						// bad-mood premium. Measuring against the raw figure instead was
+						// backwards: a "10% overpay" on a player asking 30% over came out
+						// as underpaying, so the lever pushed the wrong way for precisely
+						// the reluctant players it exists to persuade.
+						const askingPrice = Math.max(mood.contractAmount, contract.amount);
+
+						// Walk the offer up rather than jumping straight to the maximum,
+						// so a team pays the least that actually gets it done - then
+						// always finish at the most it WOULD pay. Without that last rung
+						// a team whose ceiling fell between two steps made no offer at
+						// all: one player sitting at probWilling 0.966, who would have
+						// re-signed for about 3% more, was let go because the ladder
+						// started at 10%.
+						const ladder = [1.1, 1.2, 1.3, 1.4].filter(
+							(step) => step < maxMultiplier,
+						);
+						ladder.push(maxMultiplier);
+
+						for (const step of ladder) {
+							const offer = helpers.bound(
+								helpers.roundContract(askingPrice * step),
+								g.get("minContract"),
+								g.get("maxContract"),
+							);
+							if (offer > ceiling || offer <= contract.amount) {
+								continue;
+							}
+
+							attempts += 1;
+							const improved = await player.moodInfo(p, p.tid, {
+								contractAmount: p.contract.amount,
+								offer,
+							});
+							if (improved.willing) {
+								frontOfficeLog(g.get("season"), p.tid, "retention-overpay", {
+									pid: p.pid,
+									ovr: last(p.ratings).ovr,
+									asked: contract.amount,
+									paid: offer,
+									tier: resignPosture.tier,
+								});
+								contract.amount = offer;
+								p.contract.amount = offer;
+								mood = improved;
+								break;
+							}
+						}
+
+						if (!mood.willing) {
+							frontOfficeLog(g.get("season"), p.tid, "retention-gave-up", {
+								pid: p.pid,
+								ovr: last(p.ratings).ovr,
+								asked: contract.amount,
+								maxMultiplier,
+								attempts,
+								maxContract: g.get("maxContract"),
+								probWilling: mood.probWilling,
+								tier: resignPosture.tier,
+							});
+						}
+					}
+				}
 
 				// Player must be willing to sign (includes draft picks and first year after expansion, from moodInfo)
 				if (!mood.willing) {

@@ -34,7 +34,13 @@ const makePlayer = ({
 	amount: number;
 	exp: number;
 }) => {
-	const p: any = player.generate(tid, age, g.get("season") - age, true, DEFAULT_LEVEL);
+	const p: any = player.generate(
+		tid,
+		age,
+		g.get("season") - age,
+		true,
+		DEFAULT_LEVEL,
+	);
 	const ratings = p.ratings.at(-1);
 	ratings.ovr = ovr;
 	ratings.pot = pot;
@@ -200,14 +206,19 @@ describe("AI free agency runs on a plan", () => {
 			rosterSalaryFraction: 0.25,
 		});
 
-		const before = (await idb.cache.players.indexGetAll("playersByTid", [0, Infinity]))
-			.length;
+		const before = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
 		for (let day = 0; day < 10; day++) {
 			await autoSign();
 		}
-		const after = (await idb.cache.players.indexGetAll("playersByTid", [0, Infinity]))
-			.length;
-		assert.ok(after > before, "holding cap space must not freeze roster building");
+		const after = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
+		assert.ok(
+			after > before,
+			"holding cap space must not freeze roster building",
+		);
 	});
 
 	// A hold that never resolves would be worse than no hold at all, so it has to
@@ -239,16 +250,18 @@ describe("AI free agency runs on a plan", () => {
 
 	// Signing has to keep working when there is no posture to be had.
 	test("in-season signings still happen", async () => {
-		await setup({ prizeAmount: 30_000, rosterSalaryFraction: 0.25, });
+		await setup({ prizeAmount: 30_000, rosterSalaryFraction: 0.25 });
 		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
 
-		const before = (await idb.cache.players.indexGetAll("playersByTid", [0, Infinity]))
-			.length;
+		const before = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
 		for (let day = 0; day < 10; day++) {
 			await autoSign();
 		}
-		const after = (await idb.cache.players.indexGetAll("playersByTid", [0, Infinity]))
-			.length;
+		const after = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		).length;
 		assert.ok(after > before);
 	});
 });

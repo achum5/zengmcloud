@@ -2450,10 +2450,7 @@ describe("a resync replays by the era a change declares, not by raw seq", () => 
 		const result = await engine.resyncAll();
 
 		assert.strictEqual(result.failed, false);
-		assert.strictEqual(
-			g.get("season"),
-			2005,
-		);
+		assert.strictEqual(g.get("season"), 2005);
 		assert.strictEqual(
 			g.get("phase"),
 			PHASE.REGULAR_SEASON,
@@ -2554,6 +2551,10 @@ describe("bulk appliers are serialized", () => {
 			"a pass is in flight and healthy - the newcomer must not start a second one",
 		);
 		release();
-		assert.strictEqual(await first, true, "the original pass finishes its work");
+		assert.strictEqual(
+			await first,
+			true,
+			"the original pass finishes its work",
+		);
 	});
 });

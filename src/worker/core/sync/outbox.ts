@@ -145,7 +145,11 @@ export const outbox = {
 		await bestEffort(async () => {
 			const db = await getDB();
 			const cutoff = Date.now() - maxAgeMs;
-			const rows = (await db.getAllFromIndex(STORE, "code", code)) as OutboxRow[];
+			const rows = (await db.getAllFromIndex(
+				STORE,
+				"code",
+				code,
+			)) as OutboxRow[];
 			const isAdvance = (row: OutboxRow) => {
 				const entry = row.entry;
 				const attrs =

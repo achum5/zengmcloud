@@ -13,11 +13,38 @@ const hasActiveNegotiation = async (tid: number, pid: number) => {
 	);
 };
 
+// How hard money can push on a player's willingness, and how far past his
+// asking price it keeps helping.
+//
+// Without this, money has NO effect on whether a player will sign - the offer
+// only ever set the price of a deal he had already decided to accept. So a
+// player who wanted out could not be kept at any figure, which is not how a
+// front office experiences the problem.
+//
+// Applied as a bounded log-ratio so it is symmetric: paying 25% over helps
+// exactly as much as paying 20% under hurts. The cap matters more than the
+// weight - past OFFER_MAX_RATIO extra money buys nothing, so a rich team cannot
+// simply purchase anyone it likes.
+//
+// The weight is set against the base rate it has to overcome, not picked for
+// looking reasonable in isolation. A non-user team is docked 3 points of mood
+// outright, which puts a typical AI re-signing near probWilling 0.05; at a
+// weight of 6 even a 40% overpay only reached about 0.18, so a front office
+// that decided to fight for a player still lost him 19 times out of 20 and the
+// whole lever was decorative. At 12, that same overpay lands near a coin flip -
+// money usually works on a reluctant player, and never guarantees anything.
+export const OFFER_WEIGHT = 12;
+export const OFFER_MAX_RATIO = 1.5;
+
 const moodInfo = async (
 	p: Player,
 	tid: number,
 	overrides: {
 		contractAmount?: number;
+		// What is actually being put on the table, when that differs from what he
+		// is asking. Omitted by every caller that just wants to know his stance,
+		// which is why adding this changes nothing for them.
+		offer?: number;
 	} = {},
 ) => {
 	const components = await moodComponents(p, tid);
@@ -108,6 +135,19 @@ const moodInfo = async (
 		g.get("minContract"),
 		g.get("maxContract"),
 	);
+
+	// Money talks, within limits. This sits after contractAmount is finalised so
+	// the comparison is against what he is ACTUALLY asking this team - which
+	// already carries the up-to-50% bad-mood premium above - rather than against
+	// his headline number.
+	if (overrides.offer !== undefined && contractAmount > 0) {
+		const ratio = helpers.bound(
+			overrides.offer / contractAmount,
+			1 / OFFER_MAX_RATIO,
+			OFFER_MAX_RATIO,
+		);
+		sumAndStuff += OFFER_WEIGHT * Math.log(ratio);
+	}
 
 	let willing = false;
 	if (

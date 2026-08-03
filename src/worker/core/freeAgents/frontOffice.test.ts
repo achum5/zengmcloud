@@ -10,6 +10,9 @@ import {
 	resolveCapHolds,
 	FIT_CEILING,
 	FIT_FLOOR,
+	MAX_RETENTION_OVERPAY,
+	RETENTION_MIN_EDGE,
+	retentionOverpay,
 	scoreFreeAgent,
 	shouldLetWalk,
 	type FaPlayer,
@@ -509,6 +512,133 @@ describe("letting a player walk", () => {
 				minContract: MIN,
 			}),
 			false,
+		);
+	});
+
+	// Money could not previously move mood at all, so a player who wanted out was
+	// gone at any price. These cover the other half: what a team will PAY to stop
+	// that happening.
+	test("a rebuild never bids to keep anyone", () => {
+		for (const tier of ["teardown", "seller"] as const) {
+			assert.strictEqual(
+				retentionOverpay({
+					tier,
+					rosterRank: 0,
+					isStar: true,
+					age: 27,
+					wantsRelief: false,
+					ovr: 70,
+					replacementOvr: 45,
+				}),
+				1,
+				`a ${tier} should not pay a premium to keep a player it is content to lose`,
+			);
+		}
+	});
+
+	test("a contender pays most for the players it is built around", () => {
+		const base = {
+			rosterRank: 0,
+			isStar: true,
+			age: 27,
+			wantsRelief: false,
+			ovr: 70,
+			replacementOvr: 45,
+		};
+		const allIn = retentionOverpay({ ...base, tier: "allIn" });
+		const buyer = retentionOverpay({ ...base, tier: "buyer" });
+		assert.ok(allIn > buyer, "a win-now team should outbid a patient one");
+		assert.ok(buyer > 1, "a buyer should be willing to pay something");
+		assert.ok(
+			allIn <= MAX_RETENTION_OVERPAY,
+			`overpay ran past its own ceiling: ${allIn}`,
+		);
+	});
+
+	test("the end of the bench is not worth a premium", () => {
+		assert.strictEqual(
+			retentionOverpay({
+				tier: "allIn",
+				rosterRank: 11,
+				isStar: false,
+				age: 27,
+				wantsRelief: false,
+				ovr: 70,
+				replacementOvr: 45,
+			}),
+			1,
+		);
+	});
+
+	// The check the first version of this forgot, and the one that decides
+	// whether the whole idea helps or hurts.
+	test("a replaceable player is let go however highly his team rates him", () => {
+		const args = {
+			tier: "allIn" as const,
+			rosterRank: 0,
+			isStar: false,
+			age: 27,
+			wantsRelief: false,
+			replacementOvr: 50,
+		};
+		assert.strictEqual(
+			retentionOverpay({ ...args, ovr: 50 + RETENTION_MIN_EDGE - 1 }),
+			1,
+			"paying over the odds for someone the market can replace is just spending more",
+		);
+		assert.ok(
+			retentionOverpay({ ...args, ovr: 50 + RETENTION_MIN_EDGE + 8 }) > 1,
+			"a genuinely irreplaceable player should be worth a premium",
+		);
+	});
+
+	test("the premium scales with how irreplaceable he is", () => {
+		// Below the saturation point - past about a starter's worth of separation
+		// the premium is already maxed out, which is deliberate.
+		const args = {
+			tier: "allIn" as const,
+			rosterRank: 0,
+			isStar: true,
+			age: 27,
+			wantsRelief: false,
+			replacementOvr: 45,
+		};
+		const barelyWorthIt = retentionOverpay({ ...args, ovr: 50 });
+		const clearlyWorthIt = retentionOverpay({ ...args, ovr: 56 });
+		assert.ok(
+			barelyWorthIt < clearlyWorthIt,
+			`expected a bigger premium for the less replaceable player: ${barelyWorthIt} vs ${clearlyWorthIt}`,
+		);
+		assert.ok(barelyWorthIt > 1);
+	});
+
+	test("a team already over the tax stops bidding against itself", () => {
+		assert.strictEqual(
+			retentionOverpay({
+				tier: "allIn",
+				rosterRank: 0,
+				isStar: true,
+				age: 27,
+				wantsRelief: true,
+				ovr: 70,
+				replacementOvr: 45,
+			}),
+			1,
+		);
+	});
+
+	test("an aging player is worth less of a premium", () => {
+		const args = {
+			tier: "buyer" as const,
+			rosterRank: 0,
+			isStar: true,
+			wantsRelief: false,
+			ovr: 70,
+			replacementOvr: 45,
+		};
+		assert.ok(
+			retentionOverpay({ ...args, age: 34 }) <
+				retentionOverpay({ ...args, age: 27 }),
 		);
 	});
 

@@ -423,6 +423,114 @@ export const resolveCapHolds = (
 
 // ---- Re-signing ------------------------------------------------------------
 
+// The most a team will pay OVER a player's asking price to stop him leaving.
+//
+// Until now a player who did not want to stay simply left, whatever he was worth
+// and whatever the team was willing to pay - mood.willing was a hard gate with
+// no price attached. Real front offices do not accept that; they overpay to keep
+// the players they are built around, and they let everyone else go.
+//
+// Returns 1 for "will not go above the asking price", which is the answer for
+// most players on most teams.
+export const MAX_RETENTION_OVERPAY = 1.4;
+
+// Where a player sits on his own team, by OVR. 0 is the best player on the
+// roster. A team fights hardest for the players it is built around, a little
+// for the rest of its rotation, and not at all for the end of the bench.
+export const RETENTION_CORE_RANK = 3;
+export const RETENTION_ROTATION_RANK = 8;
+
+// How much better than his replacement a player must be before paying a premium
+// to keep him makes any sense.
+//
+// This is the question the first version of this function forgot to ask, and it
+// is the one that decides whether the whole idea helps or hurts. Overpaying to
+// keep a player you could have replaced from the market for less is not
+// shrewdness, it is just spending more for the same team - and the money is
+// gone league-wide, so it shows up as GOOD PLAYERS GOING UNEMPLOYED elsewhere.
+// Measured over eight seasons, an overpay that ignored replacement level cost
+// the league eleven useful jobs to save four or five players nobody would have
+// missed.
+export const RETENTION_MIN_EDGE = 4;
+
+export const retentionOverpay = ({
+	tier,
+	rosterRank,
+	isStar,
+	age,
+	wantsRelief,
+	ovr,
+	replacementOvr,
+}: {
+	tier: TradePosture["tier"];
+	// 0-based position among his own team's players by OVR.
+	rosterRank: number;
+	// A star by league-wide standards.
+	isStar: boolean;
+	age: number;
+	// Already paying a tax it cannot justify.
+	wantsRelief: boolean;
+	ovr: number;
+	// What the team could reasonably sign instead, for the role he plays.
+	replacementOvr: number;
+}): number => {
+	// A rebuild is not outbidding anyone to keep a player it is content to lose -
+	// that is the whole point of the tier, and paying a premium here would undo
+	// the walk-away logic directly below.
+	if (tier === "teardown" || tier === "seller") {
+		return 1;
+	}
+
+	// The end of the bench is replaceable at the market price. Paying over the
+	// odds there is not a plan, it is just spending more.
+	const core = isStar || rosterRank < RETENTION_CORE_RANK;
+	const rotation = rosterRank < RETENTION_ROTATION_RANK;
+	if (!core && !rotation) {
+		return 1;
+	}
+
+	// A team already over the tax with nothing to show for it has no business
+	// bidding against itself.
+	if (wantsRelief) {
+		return 1;
+	}
+
+	// What is he worth OVER the alternative? A player the market can replace is
+	// not worth a premium however highly his own team rates him.
+	const edge = ovr - replacementOvr;
+	if (edge < RETENTION_MIN_EDGE) {
+		return 1;
+	}
+
+	let over = tier === "allIn" ? 0.4 : tier === "buyer" ? 0.25 : 0.12;
+
+	if (isStar) {
+		over += 0.1;
+	}
+
+	// A rotation player is worth keeping, but not worth the premium you would
+	// pay for someone you build around.
+	if (!core) {
+		over *= 0.5;
+	}
+
+	// Scale with how irreplaceable he actually is, so the biggest premiums are
+	// reserved for the players there is genuinely no substitute for. Full weight
+	// arrives at roughly a starter's worth of separation.
+	over *= Math.min(1, edge / 12);
+
+	// Paying over the odds for a player who will be finished before the team is
+	// done competing is the classic way to end up with unmovable money. Win-now
+	// teams still do it, because their window is now.
+	if (age >= 33) {
+		over *= tier === "allIn" ? 0.7 : 0.3;
+	} else if (age >= 30) {
+		over *= tier === "allIn" ? 0.9 : 0.6;
+	}
+
+	return Math.min(MAX_RETENTION_OVERPAY, 1 + over);
+};
+
 // Should a team let its own expiring player walk on strategic grounds, before
 // any of the value math runs?
 //
