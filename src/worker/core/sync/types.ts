@@ -213,6 +213,23 @@ export interface SyncSubscriber {
 
 // Pluggable backend. The engine talks only to this interface, so the same logic
 // runs over an in-memory fake (tests) or Firebase (production).
+// A periodic full-state checkpoint of the league, published by the sim
+// authority. This is what makes recovery bounded FOREVER: a device too far
+// behind for the delta log (or one whose gap was pruned away) restores the
+// snapshot and replays only the tail since it, instead of needing a log that
+// reaches back to wherever it left off. It is also what makes pruning the log
+// safe at all.
+export type RoomSnapshotMeta = {
+	// The publisher's log watermark at publish time: the snapshot's state
+	// contains every entry at or below this seq.
+	seq: number;
+	// Epoch ms when published.
+	at: number;
+	byName: string;
+	chunkCount: number;
+	position?: LeaguePosition;
+};
+
 export interface SyncTransport {
 	readonly clientId: string;
 
@@ -258,6 +275,21 @@ export interface SyncTransport {
 	// Move the watermark the live subscription starts from (called after the
 	// backlog drain so the subscription's initial snapshot is just the live tail).
 	updateSince?(ts: number): void;
+
+	// Room snapshot (full-state checkpoint) support. publishRoomSnapshot writes
+	// the chunked payload FIRST and the meta doc last, so a reader that sees a
+	// meta doc can always fetch a complete payload; it returns the chunk count.
+	// deleteEntriesBefore prunes log entries older than the given seq (only ever
+	// called with the PREVIOUS snapshot's seq, so the log always covers at least
+	// one full snapshot interval). All optional so the in-memory test transport
+	// can skip them.
+	publishRoomSnapshot?(
+		meta: Omit<RoomSnapshotMeta, "chunkCount">,
+		serialized: string,
+	): Promise<number>;
+	fetchRoomSnapshotMeta?(): Promise<RoomSnapshotMeta | undefined>;
+	fetchRoomSnapshotData?(chunkCount: number): Promise<string | undefined>;
+	deleteEntriesBefore?(seqMs: number): Promise<number>;
 
 	// Is the connection ACTUALLY live right now (not just "we have a transport
 	// object")? Cheap on recent contact, else a real timed round-trip. The

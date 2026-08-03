@@ -88,6 +88,8 @@ const LOTTERY_REVEAL_DOC_ID = "lotteryReveal";
 
 // Keep each payload chunk well under Firestore's 1 MB/doc limit.
 const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
+const ROOM_SNAPSHOT_DOC_ID = "roomSnapshot";
+const ROOM_SNAPSHOT_DATA_PREFIX = "roomSnapshotData";
 
 // If we've had confirmed contact with Firestore within this window, treat the
 // connection as live without a round-trip; otherwise verifyConnection() probes.
@@ -1051,6 +1053,130 @@ export class FirebaseTransport implements SyncTransport {
 	// drained.
 	updateSince(ts: number) {
 		this.sinceTs = ts;
+	}
+
+	// ---- Room snapshot (full-state checkpoint) -----------------------------
+
+	async publishRoomSnapshot(
+		meta: { seq: number; at: number; byName: string; position?: unknown },
+		serialized: string,
+	): Promise<number> {
+		const chunks: string[] = [];
+		for (let i = 0; i < serialized.length; i += LIVE_BROADCAST_CHUNK_BYTES) {
+			chunks.push(serialized.slice(i, i + LIVE_BROADCAST_CHUNK_BYTES));
+		}
+		if (chunks.length === 0) {
+			chunks.push("");
+		}
+		// Chunks first, meta last: a reader that sees the meta doc can always
+		// fetch a complete payload (same discipline as the live broadcast).
+		for (let i = 0; i < chunks.length; i++) {
+			await setDoc(
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					`${ROOM_SNAPSHOT_DATA_PREFIX}${i}`,
+				),
+				{
+					holderId: this.clientId,
+					index: i,
+					data: chunks[i],
+					updatedAt: serverTimestamp(),
+				},
+			);
+		}
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", ROOM_SNAPSHOT_DOC_ID),
+			{
+				holderId: this.clientId,
+				seq: meta.seq,
+				at: meta.at,
+				byName: meta.byName,
+				position: meta.position ?? null,
+				chunkCount: chunks.length,
+				updatedAt: serverTimestamp(),
+			},
+		);
+		this.markContact();
+		return chunks.length;
+	}
+
+	async fetchRoomSnapshotMeta() {
+		const snap = await getDoc(
+			doc(this.db, "leagues", this.code, "control", ROOM_SNAPSHOT_DOC_ID),
+		);
+		this.markContact();
+		const data = snap.data();
+		if (
+			!data ||
+			typeof data.seq !== "number" ||
+			typeof data.chunkCount !== "number"
+		) {
+			return undefined;
+		}
+		return {
+			seq: data.seq,
+			at: typeof data.at === "number" ? data.at : 0,
+			byName: typeof data.byName === "string" ? data.byName : "Someone",
+			chunkCount: data.chunkCount,
+			position: data.position ?? undefined,
+		};
+	}
+
+	async fetchRoomSnapshotData(chunkCount: number) {
+		let out = "";
+		for (let i = 0; i < chunkCount; i++) {
+			const snap = await getDoc(
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					`${ROOM_SNAPSHOT_DATA_PREFIX}${i}`,
+				),
+			);
+			if (!snap.exists()) {
+				return undefined;
+			}
+			const data = snap.data();
+			if (typeof data.data !== "string") {
+				return undefined;
+			}
+			out += data.data;
+		}
+		this.markContact();
+		return out;
+	}
+
+	// Prune log entries older than seqMs, in pages so one call never hangs on a
+	// giant backlog. Safe by protocol: only ever called with the PREVIOUS
+	// snapshot's seq, so everything deleted is covered by two snapshots.
+	async deleteEntriesBefore(seqMs: number): Promise<number> {
+		let deleted = 0;
+		for (let page = 0; page < 20; page++) {
+			const snapshot = await getDocsFromServer(
+				query(
+					this.changesRef,
+					where("ts", "<", Timestamp.fromMillis(seqMs)),
+					orderBy("ts"),
+					limit(200),
+				),
+			);
+			if (snapshot.empty) {
+				break;
+			}
+			for (const docSnap of snapshot.docs) {
+				await deleteDoc(docSnap.ref);
+				deleted++;
+			}
+			if (snapshot.docs.length < 200) {
+				break;
+			}
+		}
+		this.markContact();
+		return deleted;
 	}
 
 	// The seq (server-timestamp millis) of the OLDEST entry still in the log, or

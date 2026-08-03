@@ -1080,7 +1080,7 @@ describe("SyncEngine", () => {
 			releaseSecondFetch = resolve;
 		});
 		class GatedTransport extends FakeTransport {
-			async fetchEntriesSince(sinceMs: number, pageLimit?: number) {
+			override async fetchEntriesSince(sinceMs: number, pageLimit?: number) {
 				calls += 1;
 				if (calls === 2) {
 					signalSecondFetch();

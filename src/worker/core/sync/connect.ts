@@ -23,6 +23,11 @@ import {
 } from "./changeset.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import {
+	maybePublishRoomSnapshot,
+	restoreFromRoomSnapshot,
+	shouldRestoreFromSnapshot,
+} from "./roomSnapshot.ts";
+import {
 	describePosition,
 	getLeaguePosition,
 	isAheadOfPosition,
@@ -1279,6 +1284,20 @@ export const resyncSharedLeague = async (): Promise<{
 	// Give an in-flight drain a moment to wind down rather than shouldering it
 	// aside; past that, the person clicked the button for a reason.
 	await engine.waitUntilIdle(30_000);
+
+	// A device further behind than the room's snapshot cannot be fixed by
+	// replaying recent entries - the ones it needs are seasons back, and may
+	// already be pruned. Restore the snapshot (full state, watermark jumps to
+	// its seq), then the windowed replay below covers just the tail. This is
+	// what makes the button work no matter how far behind a device has fallen.
+	try {
+		if (await shouldRestoreFromSnapshot(engine)) {
+			await restoreFromRoomSnapshot(engine);
+		}
+	} catch (error) {
+		console.error("Snapshot restore during manual resync failed", error);
+	}
+
 	return engine.resyncAll({ windowEntries: MANUAL_RESYNC_WINDOW_ENTRIES });
 };
 
@@ -1514,7 +1533,30 @@ export const checkBehindAuthority = async () => {
 			return;
 		}
 
-		// A clean, complete re-read of the entire shared log still doesn't have it.
+		// A clean, complete re-read of the log's tail still doesn't have it. Two
+		// possibilities left: the advance never uploaded, or this device is so far
+		// behind that the entries it needs are beyond the window (or pruned). The
+		// room snapshot tells them apart - if it sits ahead of our watermark, the
+		// state we're missing is IN it, so restore and take the tail from there.
+		try {
+			if (await shouldRestoreFromSnapshot(engine)) {
+				const restored = await restoreFromRoomSnapshot(engine);
+				if (restored) {
+					await engine.catchUp();
+					const healed = await getLeaguePosition();
+					if (!isBehindPosition(healed, announced)) {
+						behindSince = undefined;
+						console.log(
+							`[sync] Too far behind for the change log - restored the room's snapshot and caught up to ${describePosition(healed)}.`,
+						);
+						return;
+					}
+				}
+			}
+		} catch (error) {
+			console.error("Snapshot restore during behind-recovery failed", error);
+		}
+
 		// The advance is not in the cloud, so no amount of downloading will find
 		// it: it is still sitting in the simming device's upload queue.
 		if (result.total > 0 && !result.failed && result.incomplete === 0) {
@@ -1997,6 +2039,14 @@ const doConnectSharedLeague = async ({
 		checkLiveBroadcastLease();
 		// Notice, and fix, being silently behind the rest of the room.
 		void checkBehindAuthority();
+		// On the authority: checkpoint the league once enough log has accumulated,
+		// and prune entries the previous checkpoint already covers. Self-throttled.
+		{
+			const engineForSnapshot = getSyncEngine();
+			if (engineForSnapshot) {
+				void maybePublishRoomSnapshot(engineForSnapshot);
+			}
+		}
 		checkLotteryRevealLease();
 		// Keep kicking the upload drain while anything is queued - it self-retries
 		// with backoff, but a persistent tick guarantees a stalled queue can never

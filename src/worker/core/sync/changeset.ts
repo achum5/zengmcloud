@@ -387,7 +387,7 @@ const preserveLocalWatch = async (incoming: any) => {
 // team as human-controlled when the host sims). Only `userTid` - the one team
 // you're currently viewing/managing - is per-device, so friends don't yank each
 // other onto the same team.
-const DEVICE_LOCAL_GAME_ATTRIBUTES = new Set([
+export const DEVICE_LOCAL_GAME_ATTRIBUTES = new Set([
 	"userTid",
 	// The seed behind "show me a fresh set of AI trade proposals" on the Trade
 	// Proposals page - per-device UI state (each device browses proposals for its
@@ -405,7 +405,7 @@ const DEVICE_LOCAL_GAME_ATTRIBUTES = new Set([
 // Handled at the store level (not per-action) because even a legitimate action
 // like proposeTrade touches these incidentally (it clears the staged trade and
 // removes a saved trade) - so suppressing individual actions wouldn't be enough.
-const DEVICE_LOCAL_STORES = new Set<Store>([
+export const DEVICE_LOCAL_STORES = new Set<Store>([
 	"trade",
 	"savedTrades",
 	"savedTradingBlock",

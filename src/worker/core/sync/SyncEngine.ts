@@ -186,7 +186,9 @@ const isDraftAction = (action: string): boolean => {
 // Small changes go as one entry; bulk changes (sims) are host-only and chunked.
 // It ignores its own entries and dedups by entry id, so echoes/replays are safe.
 export class SyncEngine {
-	private transport: SyncTransport;
+	// Read-only for collaborating sync modules (the room-snapshot layer builds
+	// on the same transport); everything mutating still goes through the engine.
+	readonly transport: SyncTransport;
 
 	// Who currently holds sim authority (may advance the league). Kept in sync with
 	// the shared control doc via subscribeAuthority. Undefined until someone
@@ -2164,6 +2166,20 @@ export class SyncEngine {
 	}
 
 	// The watermark we've durably caught up through (server-timestamp millis).
+	// Jump the watermark forward to a snapshot's seq after restoring it. The
+	// snapshot's state already CONTAINS every entry at or below that seq, so
+	// re-fetching them would only re-apply history over newer state. Forward
+	// only: a snapshot can never move a device backwards.
+	adoptSnapshotWatermark(seq: number): void {
+		if (seq > this.persistedSeq) {
+			this.persistedSeq = seq;
+			if (seq > this.maxSeq) {
+				this.maxSeq = seq;
+			}
+			this.transport.updateSince?.(seq);
+		}
+	}
+
 	getPersistedSeq(): number {
 		return this.persistedSeq;
 	}
