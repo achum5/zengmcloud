@@ -33,6 +33,7 @@ const STALE_STAMP = { season: 2005, phase: 3, day: 113 };
 const makeEngine = ({
 	isAuthority,
 	resyncResult,
+	catchUpResult = true,
 }: {
 	isAuthority: boolean;
 	resyncResult: {
@@ -41,9 +42,12 @@ const makeEngine = ({
 		incomplete: number;
 		failed: boolean;
 	};
+	// Whether a plain catch-up conclusively reaches the log's head.
+	catchUpResult?: boolean;
 }) => {
 	let position = { ...STALE_STAMP };
 	const resyncCalls: number[] = [];
+	const catchUpCalls: number[] = [];
 	const engine = {
 		isAuthority: () => isAuthority,
 		isBusyApplying: () => false,
@@ -64,11 +68,15 @@ const makeEngine = ({
 			}
 			return resyncResult;
 		},
-		catchUp: async () => true,
+		catchUp: async () => {
+			catchUpCalls.push(Date.now());
+			return catchUpResult;
+		},
 	};
 	return {
 		engine,
 		resyncCalls,
+		catchUpCalls,
 		restamp: (p: typeof position) => {
 			position = p;
 		},
@@ -137,23 +145,23 @@ describe("a stale authority stamp must not loop the room", () => {
 		setSyncEngine(engine as any);
 
 		await tickThroughGrace();
+
+		// The proof is now one genuine round-trip to the log's head - a device
+		// holding the entire log cannot be "ahead of the room". No replay at all:
+		// the replay's apply ceiling is capped by the very stamp under test, so
+		// it never proved anything the head-check doesn't, and to the user it
+		// looked like the season re-simming itself.
 		assert.strictEqual(
 			resyncCalls.length,
-			1,
-			"the first pass should replay the log once to find out who is wrong",
+			0,
+			`a follower ground through ${resyncCalls.length} full-log replays to prove what one head-check proves`,
 		);
 
-		// The old behavior: re-arm and grind the same 2000 entries every 30s,
-		// forever. The proof already happened; asking again cannot answer better.
 		for (let i = 0; i < 5; i++) {
 			vi.advanceTimersByTime(31_000);
 			await checkBehindAuthority();
 		}
-		assert.strictEqual(
-			resyncCalls.length,
-			1,
-			`the checker kept grinding the log against a stamp already proven stale (${resyncCalls.length} replays)`,
-		);
+		assert.strictEqual(resyncCalls.length, 0);
 	});
 
 	test("while stood down, the sim guard stops blocking every action", async () => {
@@ -181,32 +189,32 @@ describe("a stale authority stamp must not loop the room", () => {
 
 	test("a fresh stamp from the authority ends the stand-down", async () => {
 		await setupLocal();
-		const { engine, resyncCalls, restamp } = makeEngine({
+		const { engine, resyncCalls, catchUpCalls, restamp } = makeEngine({
 			isAuthority: false,
 			resyncResult: { total: 2000, applied: 736, incomplete: 0, failed: false },
 		});
 		setSyncEngine(engine as any);
 
 		await tickThroughGrace();
-		assert.strictEqual(resyncCalls.length, 1);
+		assert.strictEqual(resyncCalls.length, 0);
 
 		// The authority restamps at the real position - everything agrees now, so
-		// the checker must go quiet WITHOUT another replay.
+		// the checker must go quiet.
 		restamp({ season: 2005, phase: 4, day: 114 });
 		vi.advanceTimersByTime(31_000);
 		await checkBehindAuthority();
-		assert.strictEqual(resyncCalls.length, 1);
+		assert.strictEqual(resyncCalls.length, 0);
 
 		// And a LATER genuine divergence (new stale stamp value) is noticed again
 		// - the stand-down is scoped to the one stamp it proved stale. Note the
 		// divergence must be in (season, phase): day is deliberately excluded
 		// from ahead/behind, since a follower routinely applies a day's games a
 		// moment before the stamp catches up.
+		const before = catchUpCalls.length;
 		restamp({ season: 2005, phase: 3, day: 999 });
 		await tickThroughGrace();
-		assert.strictEqual(
-			resyncCalls.length,
-			2,
+		assert.ok(
+			catchUpCalls.length > before,
 			"the stand-down must not blind the checker to future divergence",
 		);
 	});
@@ -241,8 +249,10 @@ describe("a stale authority stamp must not loop the room", () => {
 		await setupLocal();
 		const { engine, resyncCalls } = makeEngine({
 			isAuthority: false,
-			// A fetch died mid-window: nothing was proven either way.
+			// The head is unreachable (network flaking), so the cheap proof cannot
+			// run - and the fallback replay died mid-window too. Nothing proven.
 			resyncResult: { total: 2000, applied: 500, incomplete: 3, failed: false },
+			catchUpResult: false,
 		});
 		setSyncEngine(engine as any);
 

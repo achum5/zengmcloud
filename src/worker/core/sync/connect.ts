@@ -1329,6 +1329,7 @@ export const resetBehindAuthorityStateForTesting = () => {
 	behindSince = undefined;
 	healingBehind = false;
 	staleStampKey = undefined;
+	staleStampHydrated = true;
 };
 
 // An announced position stamp a conclusive full replay has PROVEN stale: the
@@ -1339,6 +1340,49 @@ export const resetBehindAuthorityStateForTesting = () => {
 // replays against it and the sim guard stops blocking actions over it; cleared
 // the moment the announced stamp changes.
 let staleStampKey: string | undefined;
+let staleStampHydrated = false;
+
+// The verdict survives reloads. Without this, every page load re-noticed the
+// same stale stamp and re-proved it expensively - to the user, the season
+// visibly "re-simming itself" on every refresh until the authority restamped.
+const loadStaleStampKey = async () => {
+	if (staleStampHydrated) {
+		return;
+	}
+	staleStampHydrated = true;
+	try {
+		const lid = g.get("lid");
+		if (typeof lid === "number") {
+			const league = await idb.meta.get("leagues", lid);
+			if (typeof (league as any)?.syncStaleStampKey === "string") {
+				staleStampKey = (league as any).syncStaleStampKey;
+			}
+		}
+	} catch {
+		// Advisory state; absent is fine.
+	}
+};
+
+const saveStaleStampKey = async (value: string | undefined) => {
+	staleStampKey = value;
+	try {
+		const lid = g.get("lid");
+		if (typeof lid !== "number") {
+			return;
+		}
+		const league = await idb.meta.get("leagues", lid);
+		if (league) {
+			if (value === undefined) {
+				delete (league as any).syncStaleStampKey;
+			} else {
+				(league as any).syncStaleStampKey = value;
+			}
+			await idb.meta.put("leagues", league);
+		}
+	} catch {
+		// Advisory state; the in-memory value still holds for this session.
+	}
+};
 
 // The check the engine cannot do for itself.
 //
@@ -1417,12 +1461,15 @@ export const checkBehindAuthority = async () => {
 	// A stamp already proven stale by a conclusive replay: nothing new to do
 	// until the authority restamps. The moment the announced value changes, the
 	// proof no longer applies and checking resumes.
-	if (ahead && staleStampKey !== undefined) {
-		if (describePosition(announced) === staleStampKey) {
+	await loadStaleStampKey();
+	if (staleStampKey !== undefined) {
+		if (ahead && describePosition(announced) === staleStampKey) {
 			behindSince = undefined;
 			return;
 		}
-		staleStampKey = undefined;
+		if (describePosition(announced) !== staleStampKey) {
+			await saveStaleStampKey(undefined);
+		}
 	}
 
 	// Out of step. Give the ordinary path time to deliver before doing anything -
@@ -1453,6 +1500,49 @@ export const checkBehindAuthority = async () => {
 		// a bounded window is enough: the goal is to land on the room's CURRENT
 		// state, not to recover ancient history.
 		if (ahead) {
+			// THE RULE THAT ENDS THIS CLASS OF INCIDENT: a device that has drained
+			// the shared log to its head cannot be "ahead of the room" - every
+			// state-changing byte in the room travels through that log, and this
+			// device has all of it. One genuine server round-trip to the head is
+			// the whole proof. The full-log replay this used to run instead proved
+			// nothing more - its apply ceiling is capped by the very stamp under
+			// test, so it declined most of what it read and always landed exactly
+			// where the device already was, while looking to the person watching
+			// like the whole season re-simming itself. On the authority the replay
+			// still runs (below): there it has a real job, restamping from
+			// validated state.
+			if (!engine.isAuthority()) {
+				const drained = await engine.catchUp();
+				const announcedFresh = engine.getAuthority()?.position ?? announced;
+				const stillAhead = isAheadOfPosition(
+					await getLeaguePosition(),
+					announcedFresh,
+				);
+				if (drained && stillAhead) {
+					await saveStaleStampKey(describePosition(announcedFresh));
+					behindSince = undefined;
+					try {
+						await saveResyncNeeded(g.get("lid"), false);
+					} catch {
+						// Advisory.
+					}
+					syncDebugLog("connect:stale-stamp-verdict", {
+						local: describePosition(await getLeaguePosition()),
+						announced: describePosition(announcedFresh),
+					});
+					console.log(
+						`[sync] This device holds the entire shared log and is ahead of the room's stamp (${describePosition(announcedFresh)}) - the stamp is out of date. Waiting for whoever is in charge of simming to advance or update, which refreshes it.`,
+					);
+					return;
+				}
+				if (drained && !stillAhead) {
+					behindSince = undefined;
+					return;
+				}
+				// Could not reach the head conclusively - fall through to the
+				// replay, which can page through a backlog plain catch-up could not.
+			}
+
 			const result = await engine.resyncAll({
 				windowEntries: RESYNC_WINDOW_ENTRIES,
 			});
@@ -1487,7 +1577,7 @@ export const checkBehindAuthority = async () => {
 				// and the durable repair flag it kept setting blocked every action.
 				// Stand down until the stamp changes, and clear the flag - a device
 				// the full log agrees with has nothing to repair.
-				staleStampKey = describePosition(announcedNow);
+				await saveStaleStampKey(describePosition(announcedNow));
 				behindSince = undefined;
 				try {
 					await saveResyncNeeded(g.get("lid"), false);
