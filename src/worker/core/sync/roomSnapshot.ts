@@ -8,6 +8,7 @@ import {
 } from "./changeset.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
 import { getLeaguePosition } from "./leaguePosition.ts";
+import { repairLeagueHistory } from "./historyRepair.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import type { SyncEngine } from "./SyncEngine.ts";
 import type { RoomSnapshotMeta } from "./types.ts";
@@ -206,6 +207,15 @@ export const restoreFromRoomSnapshot = async (
 	await applyRoomSnapshotPayload(payload);
 	engine.adoptSnapshotWatermark(meta.seq);
 
+	// The snapshot was another device's database, holes and all. Reconcile the
+	// derived history fields against the bracket right away, so a smudge in the
+	// publisher's past doesn't become this device's ??? champion.
+	try {
+		await repairLeagueHistory("snapshot-restore");
+	} catch (error) {
+		syncDebugLog("snapshot:restore-repair-failed", { error });
+	}
+
 	// Bank the watermark durably right away: everything was just flushed as part
 	// of the restore, so there is no cache/disk gap to worry about, and without
 	// this a crash before the next periodic bank would re-restore from scratch.
@@ -289,6 +299,18 @@ export const maybePublishRoomSnapshot = async (
 		if (entriesSince < SNAPSHOT_EVERY_ENTRIES) {
 			return;
 		}
+
+		// A snapshot makes THIS device's database the room's source of truth, so
+		// its history has to actually be true. Repair what is derivable first;
+		// anything still wrong after that (a torn bracket, a missing champion
+		// row) means this device needs healing itself and must not be the one
+		// everyone else restores from.
+		const { problems } = await repairLeagueHistory("pre-snapshot-publish");
+		if (problems.length > 0) {
+			syncDebugLog("snapshot:publish-blocked-bad-history", { problems });
+			return;
+		}
+
 		await publishRoomSnapshot(engine);
 	} catch (error) {
 		syncDebugLog("snapshot:publish-failed", { error });

@@ -22,6 +22,7 @@ import {
 	sweepPhantomScheduleRows,
 } from "./changeset.ts";
 import { syncDebugLog } from "./debugLog.ts";
+import { repairLeagueHistory } from "./historyRepair.ts";
 import {
 	maybePublishRoomSnapshot,
 	restoreFromRoomSnapshot,
@@ -2106,6 +2107,17 @@ const doConnectSharedLeague = async ({
 			}
 		} catch (error) {
 			syncDebugLog("connect:phantom-schedule-sweep-failed", { error });
+		}
+	})();
+
+	// Same spirit for finished-season history: recompute playoffRoundsWon from
+	// each season's bracket and fix what a past rough recovery left stale (the
+	// "??? champion"). Runs once per connect, in the background.
+	void (async () => {
+		try {
+			await repairLeagueHistory("connect");
+		} catch (error) {
+			syncDebugLog("connect:history-repair-failed", { error });
 		}
 	})();
 
