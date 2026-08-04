@@ -725,6 +725,14 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			},
 			{
 				type: "link",
+				active: (pageID) => pageID === "createCards",
+				league: true,
+				commandPalette: true,
+				path: ["create_cards"],
+				text: "Create Cards",
+			},
+			{
+				type: "link",
 				league: true,
 				commandPalette: true,
 

@@ -87,6 +87,7 @@ import {
 	type NonEmptyArray,
 	type CourtStyle,
 	type Image,
+	type TradingCard,
 	RealPlayerPhotosSchema,
 	RealTeamInfoSchema,
 } from "../../common/types.ts";
@@ -230,6 +231,15 @@ import { beforeLeague, beforeNonLeague } from "../util/beforeView.ts";
 import loadData from "../core/realRosters/loadData.basketball.ts";
 import formatPlayerFactory from "../core/realRosters/formatPlayerFactory.ts";
 import { applyRealPlayerPhotos } from "../core/league/processPlayerNewLeague.ts";
+import {
+	getTradingCardSeasons,
+	getTradingCardSubject,
+} from "../util/getTradingCardSubject.ts";
+import {
+	buildCardBackPrompt,
+	buildCardFrontPrompt,
+} from "../../common/tradingCardPrompt.ts";
+import { cardTitle } from "../../common/tradingCards.ts";
 import { actualPhase } from "../util/actualPhase.ts";
 import { getCol } from "../../common/getCol.ts";
 import { getCols } from "../../common/getCols.ts";
@@ -6422,6 +6432,53 @@ const deleteImage = async (id: string) => {
 	await idb.cache.images.delete(id);
 };
 
+// Trading cards (see common/tradingCards.ts). Stored in the synced
+// `tradingCards` store, so a card made on one device shows up on every device
+// in the room - the collection is shared, like the images gallery.
+const getTradingCardOptions = async (pid: number) => {
+	const p = await idb.getCopy.players({ pid }, "noCopyCache");
+	if (!p) {
+		return { seasons: [] as number[], name: "" };
+	}
+	return {
+		seasons: getTradingCardSeasons(p),
+		name: `${p.firstName} ${p.lastName}`.trim(),
+	};
+};
+
+const getTradingCardPrompts = async ({
+	pid,
+	season,
+	setId,
+	variantId,
+}: {
+	pid: number;
+	season: number;
+	setId: string;
+	variantId: string;
+}) => {
+	const subject = await getTradingCardSubject(pid, season);
+	if (!subject) {
+		return undefined;
+	}
+	return {
+		front: buildCardFrontPrompt(setId, variantId, subject),
+		back: buildCardBackPrompt(setId, variantId, subject),
+		title: cardTitle(setId, variantId, season),
+		playerName: subject.name,
+	};
+};
+
+const upsertTradingCard = async (card: TradingCard) => {
+	await idb.cache.tradingCards.put(card);
+	await toUI("realtimeUpdate", [["tradingCards"]]);
+};
+
+const deleteTradingCard = async (id: string) => {
+	await idb.cache.tradingCards.delete(id);
+	await toUI("realtimeUpdate", [["tradingCards"]]);
+};
+
 // Set a player's primary display image (imgURL) - e.g. "use this gallery image
 // as the profile picture". getCopy + cache.put works for retired players too
 // (they aren't held in the cache), mirroring updatePlayerWatch.
@@ -6669,6 +6726,10 @@ export default {
 		getImages,
 		upsertImage,
 		deleteImage,
+		getTradingCardOptions,
+		getTradingCardPrompts,
+		upsertTradingCard,
+		deleteTradingCard,
 		setPlayerImage,
 		setTeamImage,
 		draftUser,

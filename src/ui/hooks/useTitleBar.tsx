@@ -19,7 +19,6 @@ const useTitleBar = <DropdownFields extends Record<string, number | string>>({
 	moreInfoAbbrev,
 	moreInfoSeason,
 	moreInfoTid,
-	imagesSubject,
 }: {
 	title?: string;
 	titleLong?: string;
@@ -34,9 +33,6 @@ const useTitleBar = <DropdownFields extends Record<string, number | string>>({
 	moreInfoAbbrev?: string;
 	moreInfoSeason?: number;
 	moreInfoTid?: number;
-	// Shows a Photos button in the title bar, opening the images modal for
-	// this player/team.
-	imagesSubject?: LocalStateUI["titleBarImages"];
 } = {}) => {
 	const state = useLocal(["hideDisabledTeams", "teamInfoCache"]);
 
@@ -98,7 +94,6 @@ const useTitleBar = <DropdownFields extends Record<string, number | string>>({
 			moreInfoAbbrev,
 			moreInfoSeason,
 			moreInfoTid,
-			titleBarImages: imagesSubject,
 		});
 	}, [
 		title,
@@ -113,7 +108,6 @@ const useTitleBar = <DropdownFields extends Record<string, number | string>>({
 		moreInfoAbbrev,
 		moreInfoSeason,
 		moreInfoTid,
-		imagesSubject,
 	]);
 };
 

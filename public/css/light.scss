@@ -2857,3 +2857,77 @@ a.sb-bet-title:hover {
 	background-color: var(--bs-body-bg);
 	box-shadow: inset 0 -1px 0 var(--bs-border-color);
 }
+
+// Trading cards. A card is a fixed 2.5 x 3.5 rectangle whichever size it is
+// shown at, so the grid stays even no matter what the generator returned.
+.trading-card {
+	aspect-ratio: 2.5 / 3.5;
+	width: 100%;
+	object-fit: cover;
+	border-radius: 4px;
+	background-color: var(--bs-secondary-bg);
+}
+.trading-card-tile {
+	width: 150px;
+}
+.trading-card-delete {
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+.trading-card-tile:hover .trading-card-delete,
+.trading-card-tile:focus-within .trading-card-delete {
+	opacity: 1;
+}
+
+// Fullscreen viewer. Above the Bootstrap modal layer so a card opened from
+// inside a modal still comes out on top.
+.trading-card-viewer {
+	position: fixed;
+	inset: 0;
+	z-index: 1080;
+	background-color: rgba(0, 0, 0, 0.85);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+}
+// perspective on the frame, preserve-3d on the thing that spins - splitting
+// them is what keeps the flip from reading as a flat cross-fade.
+.trading-card-flipper {
+	perspective: 1600px;
+	height: min(86vh, 120vw);
+	aspect-ratio: 2.5 / 3.5;
+	cursor: pointer;
+}
+.trading-card-flipper-inner {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	transform-style: preserve-3d;
+	transition: transform 0.5s;
+}
+.trading-card-flipper-inner.flipped {
+	transform: rotateY(180deg);
+}
+.trading-card-face {
+	position: absolute;
+	inset: 0;
+	backface-visibility: hidden;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 8px;
+	overflow: hidden;
+	background-color: #000;
+}
+.trading-card-face img {
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+}
+.trading-card-face-back {
+	transform: rotateY(180deg);
+}

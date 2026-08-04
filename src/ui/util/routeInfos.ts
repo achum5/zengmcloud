@@ -185,6 +185,7 @@ export const routeInfos = {
 	"/l/:lid/sportsbook": "sportsbook",
 	"/l/:lid/sportsbook/tab/:tab": "sportsbook",
 	"/l/:lid/sportsbook/game/:gid": "sportsbookGame",
+	"/l/:lid/create_cards": "createCards",
 	"/l/:lid/trivia_grids": "triviaGrids",
 	"/l/:lid/82_0": "trivia82",
 	"/l/:lid/team_trivia": "triviaTeam",

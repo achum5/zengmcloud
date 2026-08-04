@@ -21,6 +21,7 @@ import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
 import { useLocal } from "../../util/local.ts";
 import { splitPlayerNote } from "../../../common/seasonNote.ts";
 import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
+import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 
 const Player2 = ({
 	bestPos,
@@ -40,6 +41,7 @@ const Player2 = ({
 	teamJersey,
 	teamName,
 	teamURL,
+	tradingCards,
 	willingToSign,
 }: View<"player">) => {
 	const {
@@ -84,10 +86,6 @@ const Player2 = ({
 	useTitleBar({
 		title: player.name,
 		customMenu,
-		imagesSubject: {
-			subject: { type: "player", pid: player.pid, name: player.name },
-			season: currentSeason,
-		},
 		dropdownView: "player",
 		dropdownFields:
 			player.tid !== PLAYER.UNDRAFTED
@@ -347,7 +345,7 @@ const Player2 = ({
 				</div>
 			</div>
 
-			<div className="row" style={{ marginBottom: "-1rem" }}>
+			<div className="row">
 				<div className="col-md-6 col-lg-4">
 					<HideableSection title="Injuries">
 						<Injuries injuries={player.injuries} showRatings={showRatings} />
@@ -363,6 +361,14 @@ const Player2 = ({
 							);
 						})}
 						{events.length === 0 ? <p>None</p> : null}
+					</HideableSection>
+				</div>
+			</div>
+
+			<div className="row" style={{ marginBottom: "-1rem" }}>
+				<div className="col">
+					<HideableSection title="Cards">
+						<TradingCardGallery cards={tradingCards} />
 					</HideableSection>
 				</div>
 			</div>

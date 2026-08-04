@@ -507,6 +507,27 @@ export type Image = {
 	at: number; // ms timestamp added, for ordering
 };
 
+// One generated trading card. `setId`/`variantId` index into CARD_SETS and are
+// the card's LOOK; `season` is what the card DEPICTS and is the year printed on
+// it, so a 1985-86 Star design can show a 2026 season. `id` is a
+// client-generated UUID so cards made independently on different synced devices
+// never collide.
+export type TradingCard = {
+	id: string;
+	pid: number;
+	season: number;
+	setId: string;
+	variantId: string;
+	// Denormalized so a card whose set is later renamed still reads correctly.
+	title: string;
+	frontURL: string;
+	backURL?: string;
+	at: number;
+	// Who made it, for the multi-device case. Free text, may be missing on old
+	// rows.
+	by?: string;
+};
+
 export type GamePlayer = any;
 
 export type GameResults = any;
@@ -1334,14 +1355,6 @@ export type LocalStateUI = {
 	moreInfoAbbrev?: string;
 	moreInfoSeason?: number;
 	moreInfoTid?: number;
-	// When set, the title bar shows a Photos button opening the images modal
-	// for this player/team (see useTitleBar's imagesSubject).
-	titleBarImages?: {
-		subject:
-			| { type: "player"; pid: number; name: string }
-			| { type: "team"; tid: number; name: string };
-		season: number;
-	};
 	stickyFooterAd: boolean;
 	stickyFormButtons: boolean;
 } & {
@@ -2403,6 +2416,7 @@ export type UpdateEvents = (
 	| "savedTrades"
 	| "scheduledEvents"
 	| "retiredJerseys"
+	| "tradingCards"
 	| "team"
 	| "teamFinances"
 	| "draftLottery"

@@ -131,7 +131,6 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		dropdownView: undefined,
 		dropdownFields: {},
 		moreInfoAbbrev: undefined,
-		titleBarImages: undefined,
 		moreInfoSeason: undefined,
 		moreInfoTid: undefined,
 		stickyFooterAd: false,

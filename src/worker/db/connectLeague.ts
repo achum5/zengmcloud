@@ -46,6 +46,7 @@ import type {
 	LiveGamePlayByPlay,
 	FaDayResults,
 	Image,
+	TradingCard,
 } from "../../common/types.ts";
 import getInitialNumGamesConfDivSettings from "../core/season/getInitialNumGamesConfDivSettings.ts";
 import { amountToLevel } from "../../common/budgetLevels.ts";
@@ -120,6 +121,13 @@ export interface LeagueDB extends DBSchema {
 	images: {
 		key: string;
 		value: Image;
+	};
+	// AI-generated trading cards (images hosted externally, referenced by URL).
+	// Keyed by a client-generated UUID so cards made independently on different
+	// synced devices never collide. Synced like any other store.
+	tradingCards: {
+		key: string;
+		value: TradingCard;
 	};
 	messages: {
 		key: number;
@@ -690,6 +698,10 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 	});
 
 	db.createObjectStore("images", {
+		keyPath: "id",
+	});
+
+	db.createObjectStore("tradingCards", {
 		keyPath: "id",
 	});
 };
@@ -1784,6 +1796,12 @@ const migrate = async ({
 
 	if (oldVersion < 75) {
 		db.createObjectStore("images", {
+			keyPath: "id",
+		});
+	}
+
+	if (oldVersion < 76) {
+		db.createObjectStore("tradingCards", {
 			keyPath: "id",
 		});
 	}

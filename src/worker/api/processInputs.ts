@@ -1156,6 +1156,7 @@ export default {
 	sportsbookGame: (params: Params) => ({
 		gid: params.gid !== undefined ? Number.parseInt(params.gid) : -1,
 	}),
+	createCards: () => ({}),
 	triviaGrids: () => ({}),
 	triviaTeam: () => ({}),
 	triviaHigherLower: () => ({}),

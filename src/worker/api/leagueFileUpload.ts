@@ -51,6 +51,7 @@ export const parseJSON = () => {
 		seasonLeaders: undefined,
 		teamSeasons: undefined,
 		teamStats: undefined,
+		tradingCards: undefined,
 		teams: undefined,
 		trade: undefined,
 	};

@@ -13,6 +13,7 @@ export { default as awardRaces } from "./awardRaces.ts";
 export { default as sportsbook } from "./sportsbook.ts";
 export { default as sportsbookGame } from "./sportsbookGame.ts";
 export { default as trivia82 } from "./trivia82.ts";
+export { default as createCards } from "./createCards.ts";
 export { default as triviaGrids } from "./triviaGrids.ts";
 export { default as triviaTeam } from "./triviaTeam.ts";
 export { default as triviaHigherLower } from "./triviaHigherLower.ts";

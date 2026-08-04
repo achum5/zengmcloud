@@ -19,6 +19,7 @@ import type {
 	LiveGamePlayByPlay,
 	FaDayResults,
 	Image,
+	TradingCard,
 	Message,
 	MessageWithoutKey,
 	Negotiation,
@@ -67,6 +68,7 @@ export type Store =
 	| "liveGamePlayByPlay"
 	| "faDayResults"
 	| "images"
+	| "tradingCards"
 	| "messages"
 	| "negotiations"
 	| "playerFeats"
@@ -105,6 +107,7 @@ export const STORES: Store[] = [
 	"liveGamePlayByPlay",
 	"faDayResults",
 	"images",
+	"tradingCards",
 	"messages",
 	"negotiations",
 	"playerFeats",
@@ -281,6 +284,7 @@ class Cache {
 	liveGamePlayByPlay: StoreAPI<LiveGamePlayByPlay, LiveGamePlayByPlay, number>;
 	faDayResults: StoreAPI<FaDayResults, FaDayResults, string>;
 	images: StoreAPI<Image, Image, string>;
+	tradingCards: StoreAPI<TradingCard, TradingCard, string>;
 
 	messages: StoreAPI<MessageWithoutKey, Message, number>;
 
@@ -411,6 +415,14 @@ class Cache {
 				// memory, and the sync capture path reads written rows back through
 				// the cache, so they must live there.
 				getData: (tx) => tx.objectStore("images").getAll(),
+			},
+			tradingCards: {
+				pk: "id",
+				pkType: "string",
+				autoIncrement: false,
+				// Fully loaded: every player page filters all cards by pid in memory,
+				// and the sync capture path reads written rows back through the cache.
+				getData: (tx) => tx.objectStore("tradingCards").getAll(),
 			},
 			messages: {
 				pk: "mid",
@@ -604,6 +616,7 @@ class Cache {
 		this.liveGamePlayByPlay = new StoreAPI(this, "liveGamePlayByPlay");
 		this.faDayResults = new StoreAPI(this, "faDayResults");
 		this.images = new StoreAPI(this, "images");
+		this.tradingCards = new StoreAPI(this, "tradingCards");
 		this.messages = new StoreAPI(this, "messages");
 		this.negotiations = new StoreAPI(this, "negotiations");
 		this.playerFeats = new StoreAPI(this, "playerFeats");

@@ -2,7 +2,6 @@ import Dropdown from "../Dropdown.tsx";
 import DropdownLinks from "../DropdownLinks.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
-import { ImagesModal, useImagesModal } from "../ImagesModal.tsx";
 import type { MenuItemHeader } from "../../../common/types.ts";
 import { useCallback } from "react";
 
@@ -67,7 +66,6 @@ export const TitleBar = () => {
 		moreInfoAbbrev,
 		moreInfoSeason,
 		moreInfoTid,
-		titleBarImages,
 		lid,
 	} = useLocal([
 		"title",
@@ -82,11 +80,8 @@ export const TitleBar = () => {
 		"moreInfoAbbrev",
 		"moreInfoSeason",
 		"moreInfoTid",
-		"titleBarImages",
 		"lid",
 	]);
-
-	const imagesModal = useImagesModal(titleBarImages?.season ?? 0);
 
 	if (title === undefined) {
 		return null;
@@ -239,26 +234,14 @@ export const TitleBar = () => {
 						fields={dropdownFields}
 					/>
 				) : null}
-				{titleBarImages ? (
-					<button
-						type="button"
-						className="btn btn-sm btn-light-bordered ms-auto my-1"
-						title="Photos"
-						onClick={() => imagesModal.open(titleBarImages.subject)}
-					>
-						<span className="glyphicon glyphicon-picture" />
-						<span className="d-none d-sm-inline ms-1">Photos</span>
-					</button>
-				) : null}
 				<DropdownLinks
-					className={`title-bar-right-links ${titleBarImages ? "" : "ms-auto"}`}
+					className="title-bar-right-links ms-auto"
 					hideTitle
 					inLeague
 					lid={lid}
 					menuItems={menuItems}
 				/>
 			</aside>
-			<ImagesModal {...imagesModal.props} />
 		</>
 	);
 };

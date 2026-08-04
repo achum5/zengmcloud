@@ -515,10 +515,17 @@ export const getCommon = async (
 	// note, so an ordinary player page pays nothing for it.
 	const noteTeammates = await getNoteTeammates(pRaw);
 
+	// Every card anyone in the room has made of this player, newest first. The
+	// store is fully cached, so this is an in-memory filter.
+	const tradingCards = (await idb.cache.tradingCards.getAll())
+		.filter((card) => card.pid === pid)
+		.sort((a, b) => b.at - a.at);
+
 	return {
 		type: "normal" as const,
 		bestPos,
 		customMenu,
+		tradingCards,
 		jerseyNumberInfos,
 		noteTeammates,
 		pRaw,
@@ -544,6 +551,7 @@ const updatePlayer = async (
 	if (
 		updateEvents.includes("firstRun") ||
 		updateEvents.includes("playerMovement") ||
+		updateEvents.includes("tradingCards") ||
 		!state.retired ||
 		state.pid !== inputs.pid
 	) {
