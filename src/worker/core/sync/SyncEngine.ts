@@ -1297,10 +1297,21 @@ export class SyncEngine {
 			this.lastSeqByAuthor.set(entry.authorId, entry.seq);
 		}
 
-		if (entry.authorId === this.transport.clientId) {
+		// The force-replay zone left by a snapshot restore expires once the
+		// watermark has banked past it - from then on old echoes dedup normally.
+		if (
+			this.tailReplayUpTo !== undefined &&
+			this.persistedSeq >= this.tailReplayUpTo
+		) {
+			this.tailReplayUpTo = undefined;
+		}
+		const forceReplay =
+			this.tailReplayUpTo !== undefined && entry.seq <= this.tailReplayUpTo;
+
+		if (!forceReplay && entry.authorId === this.transport.clientId) {
 			return false;
 		}
-		if (this.seen.has(entry.id)) {
+		if (!forceReplay && this.seen.has(entry.id)) {
 			return false;
 		}
 		this.seen.add(entry.id);
@@ -2170,14 +2181,36 @@ export class SyncEngine {
 	// snapshot's state already CONTAINS every entry at or below that seq, so
 	// re-fetching them would only re-apply history over newer state. Forward
 	// only: a snapshot can never move a device backwards.
+	// While set, entries at or below this seq are applied even if `seen` has
+	// them and even if this device authored them. A snapshot restore just ERASED
+	// those entries' effects from the database (clear + put of the checkpoint),
+	// so the dedup that is normally correct becomes a hole factory: every
+	// already-seen or self-authored entry in the tail would be skipped, and its
+	// data would simply be gone. This was the "device spazzes out and the league
+	// comes back subtly wrong" bug. Cleared once the tail has fully re-applied
+	// (the watermark banks past it), so a late echo of an old entry can never
+	// force-apply stale data afterward.
+	private tailReplayUpTo: number | undefined;
+
 	adoptSnapshotWatermark(seq: number): void {
-		if (seq > this.persistedSeq) {
-			this.persistedSeq = seq;
-			if (seq > this.maxSeq) {
-				this.maxSeq = seq;
-			}
-			this.transport.updateSince?.(seq);
+		// The database now IS the snapshot at exactly `seq`, so the watermark must
+		// match in BOTH directions. Forward-only was fine when restores only ran
+		// on far-behind devices; a REPAIR restore rewinds a device whose state is
+		// suspect, and a watermark left high would skip the entire tail.
+		const before = Math.max(this.maxSeq, this.persistedSeq);
+		if (seq < before) {
+			this.tailReplayUpTo = before;
+			syncDebugLog("engine:snapshot-rewind", { from: before, to: seq });
 		}
+		this.persistedSeq = seq;
+		if (seq > this.maxSeq) {
+			this.maxSeq = seq;
+		}
+		// Buffered half-batches reference pre-restore context; the tail re-read
+		// re-delivers their chunks, and the by-batchId rescue covers any batch
+		// that straddles the snapshot.
+		this.pendingBatches.clear();
+		this.transport.updateSince?.(seq);
 	}
 
 	getPersistedSeq(): number {

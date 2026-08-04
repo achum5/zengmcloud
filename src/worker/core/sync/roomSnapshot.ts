@@ -216,14 +216,16 @@ export const restoreFromRoomSnapshot = async (
 		syncDebugLog("snapshot:restore-repair-failed", { error });
 	}
 
-	// Bank the watermark durably right away: everything was just flushed as part
-	// of the restore, so there is no cache/disk gap to worry about, and without
-	// this a crash before the next periodic bank would re-restore from scratch.
+	// Bank the watermark durably right away, in BOTH directions. Forward: a
+	// crash before the next periodic bank would re-restore from scratch.
+	// Backward (a repair restore rewound the watermark): a stale higher durable
+	// watermark would make a reload resume PAST the tail this restore now needs
+	// re-applied, skipping it forever.
 	try {
 		const lid = g.get("lid");
 		if (typeof lid === "number") {
 			const leagueMeta = await idb.meta.get("leagues", lid);
-			if (leagueMeta && (leagueMeta.syncWatermark ?? 0) < meta.seq) {
+			if (leagueMeta && leagueMeta.syncWatermark !== meta.seq) {
 				leagueMeta.syncWatermark = meta.seq;
 				await idb.meta.put("leagues", leagueMeta);
 			}
@@ -244,21 +246,6 @@ export const restoreFromRoomSnapshot = async (
 
 	syncDebugLog("snapshot:restore-done", { seq: meta.seq });
 	return meta;
-};
-
-// Is this device so far behind that deltas alone cannot get it there? True
-// when the room's snapshot starts AHEAD of our watermark: the entries between
-// us and the snapshot may already be pruned, and even when they aren't, the
-// snapshot is the cheaper road.
-export const shouldRestoreFromSnapshot = async (
-	engine: SyncEngine,
-): Promise<boolean> => {
-	const transport = engine.transport;
-	if (!transport.fetchRoomSnapshotMeta) {
-		return false;
-	}
-	const meta = await transport.fetchRoomSnapshotMeta();
-	return meta !== undefined && meta.seq > engine.getPersistedSeq();
 };
 
 let lastSnapshotCheckAt = 0;

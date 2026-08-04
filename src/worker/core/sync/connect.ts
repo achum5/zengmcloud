@@ -26,7 +26,6 @@ import { repairLeagueHistory } from "./historyRepair.ts";
 import {
 	maybePublishRoomSnapshot,
 	restoreFromRoomSnapshot,
-	shouldRestoreFromSnapshot,
 } from "./roomSnapshot.ts";
 import {
 	describePosition,
@@ -1286,14 +1285,23 @@ export const resyncSharedLeague = async (): Promise<{
 	// aside; past that, the person clicked the button for a reason.
 	await engine.waitUntilIdle(30_000);
 
-	// A device further behind than the room's snapshot cannot be fixed by
-	// replaying recent entries - the ones it needs are seasons back, and may
-	// already be pruned. Restore the snapshot (full state, watermark jumps to
-	// its seq), then the windowed replay below covers just the tail. This is
-	// what makes the button work no matter how far behind a device has fallen.
+	// The button means "my league looks wrong - make it match the room". The
+	// trustworthy way to do that is the checkpoint: restore the room's snapshot
+	// (a complete, consistent base - works no matter how far behind or how
+	// corrupted this device is) and replay only the tail after it. A windowed
+	// replay onto live state is the fallback for rooms with no snapshot, not
+	// the tool of choice: re-applying old changesets over current data visibly
+	// rewinds the league, and anything the guards decline strands old values.
 	try {
-		if (await shouldRestoreFromSnapshot(engine)) {
-			await restoreFromRoomSnapshot(engine);
+		const restored = await restoreFromRoomSnapshot(engine);
+		if (restored) {
+			const drained = await engine.catchUp();
+			return {
+				total: 1,
+				applied: drained ? 1 : 0,
+				incomplete: drained ? 0 : 1,
+				failed: !drained,
+			};
 		}
 	} catch (error) {
 		console.error("Snapshot restore during manual resync failed", error);
@@ -1608,49 +1616,58 @@ export const checkBehindAuthority = async () => {
 			return;
 		}
 
-		// Still behind, so the watermark itself is wrong - replay the log's tail.
-		// Windowed: the gap is recent by construction (the watermark believed it
-		// was at the head), and the unbounded read never finished on a phone.
-		const result = await engine.resyncAll({
-			windowEntries: RESYNC_WINDOW_ENTRIES,
-		});
-		syncDebugLog("connect:behind-authority-resynced", result);
-		const after = await getLeaguePosition();
-		if (!isBehindPosition(after, announced)) {
-			behindSince = undefined;
-			console.log(
-				`[sync] Recovered the missing changes - now at ${describePosition(after)}.`,
-			);
-			return;
-		}
-
-		// A clean, complete re-read of the log's tail still doesn't have it. Two
-		// possibilities left: the advance never uploaded, or this device is so far
-		// behind that the entries it needs are beyond the window (or pruned). The
-		// room snapshot tells them apart - if it sits ahead of our watermark, the
-		// state we're missing is IN it, so restore and take the tail from there.
+		// Still behind, so this device's STATE is suspect, not just its download
+		// position. The trustworthy repair is the checkpoint: restore the room's
+		// snapshot (a complete, consistent base) and take the tail forward from
+		// there. NOT a windowed replay onto live state - re-applying old
+		// changesets over current data is archaeology: the league visibly rewinds
+		// as old vintages land, and any unit the guards then decline strands
+		// those old values in place. That is the "device suddenly goes way back
+		// in time and the league comes back subtly wrong" failure, and it was the
+		// FIRST resort here. Now it's the fallback for rooms with no snapshot.
+		let conclusive = false;
+		let restored = false;
 		try {
-			if (await shouldRestoreFromSnapshot(engine)) {
-				const restored = await restoreFromRoomSnapshot(engine);
-				if (restored) {
-					await engine.catchUp();
-					const healed = await getLeaguePosition();
-					if (!isBehindPosition(healed, announced)) {
-						behindSince = undefined;
-						console.log(
-							`[sync] Too far behind for the change log - restored the room's snapshot and caught up to ${describePosition(healed)}.`,
-						);
-						return;
-					}
+			restored = (await restoreFromRoomSnapshot(engine)) !== undefined;
+			if (restored) {
+				conclusive = await engine.catchUp();
+				const healed = await getLeaguePosition();
+				if (!isBehindPosition(healed, announced)) {
+					behindSince = undefined;
+					console.log(
+						`[sync] Restored the room's snapshot and caught up to ${describePosition(healed)}.`,
+					);
+					return;
 				}
 			}
 		} catch (error) {
 			console.error("Snapshot restore during behind-recovery failed", error);
 		}
 
+		if (!restored) {
+			// No snapshot in this room (it predates the feature, or none has been
+			// published yet) - the windowed replay is all that's left.
+			const result = await engine.resyncAll({
+				windowEntries: RESYNC_WINDOW_ENTRIES,
+			});
+			syncDebugLog("connect:behind-authority-resynced", result);
+			const after = await getLeaguePosition();
+			if (!isBehindPosition(after, announced)) {
+				behindSince = undefined;
+				console.log(
+					`[sync] Recovered the missing changes - now at ${describePosition(after)}.`,
+				);
+				return;
+			}
+			conclusive =
+				result.total > 0 && !result.failed && result.incomplete === 0;
+		}
+
+		const after = await getLeaguePosition();
+
 		// The advance is not in the cloud, so no amount of downloading will find
 		// it: it is still sitting in the simming device's upload queue.
-		if (result.total > 0 && !result.failed && result.incomplete === 0) {
+		if (conclusive) {
 			behindSince = now;
 			logEvent({
 				type: "error",

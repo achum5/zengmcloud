@@ -2558,3 +2558,135 @@ describe("bulk appliers are serialized", () => {
 		);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// The "device goes back in time and the league comes back wrong" bug.
+//
+// A snapshot restore ERASES the local effects of every entry it rolls back
+// over (clear + put of the checkpoint), then the tail catch-up re-reads those
+// entries - and used to silently skip them: already-applied ids sat in `seen`,
+// and self-authored entries were dropped by the authorId check. Every skip was
+// a permanent hole (the ??? champion, vanished games). After a restore, the
+// tail must genuinely RE-APPLY, dedup be damned - and only until the watermark
+// banks past the rewind point, so a late echo of an old entry can't force
+// stale data in afterward.
+// ---------------------------------------------------------------------------
+describe("a snapshot restore replays the tail it erased", () => {
+	test("an entry another device applied live is re-applied after the rewind", async () => {
+		const bus = new FakeBus();
+		const engineA = new SyncEngine(new FakeTransport("A", bus));
+		const engineB = new SyncEngine(new FakeTransport("B", bus));
+		engineA.start();
+
+		// A trades player 0 to tid 7; B applies it live, like any follower.
+		resetG();
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		changeTracker.enable();
+		changeTracker.reset();
+		await changeTracker.runCaptured(async () => {
+			const pA = (await idb.cache.players.getAll()).find((p) => p.pid === 0)!;
+			pA.tid = 7;
+			await idb.cache.players.put(pA);
+		});
+		const changeset = await captureChangeset();
+		await engineA.onLocalChangeset(changeset, "main.proposeTrade");
+
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		changeTracker.disable();
+		assert.strictEqual(
+			await engineB.handleEntry(structuredClone(bus.entries[0]!)),
+			true,
+		);
+
+		// The restore: B's database is rolled back to a checkpoint from BEFORE
+		// the trade (player 0 on his old team), and the watermark rewinds to the
+		// snapshot's seq. The entry's effect is gone; only re-applying it can
+		// bring it back.
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		engineB.adoptSnapshotWatermark(0);
+
+		const applied = await engineB.handleEntry(structuredClone(bus.entries[0]!));
+		assert.strictEqual(
+			applied,
+			true,
+			"the tail must re-apply an entry the restore erased, even though it was seen before",
+		);
+		const after = await idb.cache.players.getAll();
+		assert.strictEqual(after.find((p) => p.pid === 0)!.tid, 7);
+	});
+
+	test("a device's OWN entry is re-applied after the rewind", async () => {
+		const bus = new FakeBus();
+		const engineA = new SyncEngine(new FakeTransport("A", bus));
+		engineA.start();
+
+		resetG();
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		changeTracker.enable();
+		changeTracker.reset();
+		await changeTracker.runCaptured(async () => {
+			const pA = (await idb.cache.players.getAll()).find((p) => p.pid === 0)!;
+			pA.tid = 7;
+			await idb.cache.players.put(pA);
+		});
+		const changeset = await captureChangeset();
+		await engineA.onLocalChangeset(changeset, "main.proposeTrade");
+
+		// The listener echoes its own entry back, as Firestore does - skipped by
+		// authorId, but the seq bookkeeping runs, so the engine knows the head.
+		await engineA.handleEntry(structuredClone(bus.entries[0]!));
+
+		// A restores a checkpoint from before its own trade. The cloud copy of
+		// its own entry is now the ONLY copy - the authorId skip would orphan it
+		// forever.
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		changeTracker.disable();
+		engineA.adoptSnapshotWatermark(0);
+
+		const applied = await engineA.handleEntry(structuredClone(bus.entries[0]!));
+		assert.strictEqual(
+			applied,
+			true,
+			"a device must take its own entry back from the cloud after a restore erased it locally",
+		);
+		const after = await idb.cache.players.getAll();
+		assert.strictEqual(after.find((p) => p.pid === 0)!.tid, 7);
+	});
+
+	test("the force-replay zone expires once the watermark banks past it", async () => {
+		const bus = new FakeBus();
+		const engineA = new SyncEngine(new FakeTransport("A", bus));
+		const engineB = new SyncEngine(new FakeTransport("B", bus));
+		engineA.start();
+
+		resetG();
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		changeTracker.enable();
+		changeTracker.reset();
+		await changeTracker.runCaptured(async () => {
+			const pA = (await idb.cache.players.getAll()).find((p) => p.pid === 0)!;
+			pA.tid = 7;
+			await idb.cache.players.put(pA);
+		});
+		await engineA.onLocalChangeset(await captureChangeset(), "main.trade");
+
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		changeTracker.disable();
+		await engineB.handleEntry(structuredClone(bus.entries[0]!));
+
+		// Rewind, then drain the tail properly - catchUp banks the watermark.
+		await resetCache({ players: [genPlayer(), genPlayer()] });
+		engineB.adoptSnapshotWatermark(0);
+		assert.strictEqual(await engineB.catchUp(), true);
+		const after = await idb.cache.players.getAll();
+		assert.strictEqual(after.find((p) => p.pid === 0)!.tid, 7);
+
+		// The zone is spent: a late echo of that same old entry no longer
+		// force-applies - normal dedup is back in charge.
+		assert.strictEqual(
+			await engineB.handleEntry(structuredClone(bus.entries[0]!)),
+			false,
+			"after the tail is banked, old echoes dedup normally again",
+		);
+	});
+});
