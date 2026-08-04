@@ -1057,10 +1057,18 @@ export class FirebaseTransport implements SyncTransport {
 
 	// ---- Room snapshot (full-state checkpoint) -----------------------------
 
+	// Every publish writes its payload to a FRESH generation of chunk docs and
+	// only then repoints the meta. Writing to fixed doc ids (the old behavior)
+	// meant a multi-minute publish overwrote, one doc at a time, the very
+	// payload the live meta still pointed at - so any device restoring during
+	// that window reassembled a mix of two snapshots and got a corrupt league.
+	// Generations make the payload immutable once written: nothing a publisher
+	// does can damage the snapshot readers are currently allowed to see.
 	async publishRoomSnapshot(
 		meta: { seq: number; at: number; byName: string; position?: unknown },
 		serialized: string,
 	): Promise<number> {
+		const generation = `${meta.seq}-${this.clientId}`;
 		const chunks: string[] = [];
 		for (let i = 0; i < serialized.length; i += LIVE_BROADCAST_CHUNK_BYTES) {
 			chunks.push(serialized.slice(i, i + LIVE_BROADCAST_CHUNK_BYTES));
@@ -1068,8 +1076,9 @@ export class FirebaseTransport implements SyncTransport {
 		if (chunks.length === 0) {
 			chunks.push("");
 		}
-		// Chunks first, meta last: a reader that sees the meta doc can always
-		// fetch a complete payload (same discipline as the live broadcast).
+
+		const previous = await this.fetchRoomSnapshotMeta();
+
 		for (let i = 0; i < chunks.length; i++) {
 			await setDoc(
 				doc(
@@ -1077,7 +1086,7 @@ export class FirebaseTransport implements SyncTransport {
 					"leagues",
 					this.code,
 					"control",
-					`${ROOM_SNAPSHOT_DATA_PREFIX}${i}`,
+					`${ROOM_SNAPSHOT_DATA_PREFIX}_${generation}_${i}`,
 				),
 				{
 					holderId: this.clientId,
@@ -1096,10 +1105,32 @@ export class FirebaseTransport implements SyncTransport {
 				byName: meta.byName,
 				position: meta.position ?? null,
 				chunkCount: chunks.length,
+				generation,
 				updatedAt: serverTimestamp(),
 			},
 		);
 		this.markContact();
+
+		// Only now is the previous generation unreachable. Best effort: a leaked
+		// chunk doc costs storage, a prematurely deleted one costs a league.
+		if (previous?.generation !== undefined) {
+			for (let i = 0; i < previous.chunkCount; i++) {
+				try {
+					await deleteDoc(
+						doc(
+							this.db,
+							"leagues",
+							this.code,
+							"control",
+							`${ROOM_SNAPSHOT_DATA_PREFIX}_${previous.generation}_${i}`,
+						),
+					);
+				} catch {
+					// Housekeeping only.
+				}
+			}
+		}
+
 		return chunks.length;
 	}
 
@@ -1122,10 +1153,12 @@ export class FirebaseTransport implements SyncTransport {
 			byName: typeof data.byName === "string" ? data.byName : "Someone",
 			chunkCount: data.chunkCount,
 			position: data.position ?? undefined,
+			generation:
+				typeof data.generation === "string" ? data.generation : undefined,
 		};
 	}
 
-	async fetchRoomSnapshotData(chunkCount: number) {
+	async fetchRoomSnapshotData(chunkCount: number, generation?: string) {
 		let out = "";
 		for (let i = 0; i < chunkCount; i++) {
 			const snap = await getDoc(
@@ -1134,7 +1167,9 @@ export class FirebaseTransport implements SyncTransport {
 					"leagues",
 					this.code,
 					"control",
-					`${ROOM_SNAPSHOT_DATA_PREFIX}${i}`,
+					generation === undefined
+						? `${ROOM_SNAPSHOT_DATA_PREFIX}${i}`
+						: `${ROOM_SNAPSHOT_DATA_PREFIX}_${generation}_${i}`,
 				),
 			);
 			if (!snap.exists()) {

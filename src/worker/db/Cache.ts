@@ -785,6 +785,26 @@ class Cache {
 		}
 	}
 
+	// Throw away everything held in memory, including the pending write-back
+	// queue, without touching the database.
+	//
+	// For one caller: a multiplayer snapshot restore, which replaces the league
+	// database wholesale underneath us. Every row in here describes the league
+	// that was just replaced, and every id in _dirtyRecords is a promise to
+	// write one of those stale rows back to disk. Filling alone would not be
+	// enough - fill() rebuilds _data but a dirty row for a record the new
+	// database does not have would survive to the next flush and resurrect it.
+	discardForRestore() {
+		for (const store of STORES) {
+			this._data[store] = {};
+			this._deletes[store] = new Set();
+			this._dirtyRecords[store] = new Set();
+		}
+		this._dirtyIndexes = new Set();
+		this._dirty = false;
+		this._setStatus("empty");
+	}
+
 	// Load database from disk and save in cache, wiping out any prior values in cache
 	async fill(season?: number) {
 		this._validateStatus("empty", "full");

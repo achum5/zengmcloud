@@ -228,6 +228,12 @@ export type RoomSnapshotMeta = {
 	byName: string;
 	chunkCount: number;
 	position?: LeaguePosition;
+	// Which set of chunk docs this snapshot's payload lives in. Every publish
+	// writes a FRESH generation and only then points the meta at it, so a
+	// publish in progress can never overwrite the payload the current meta
+	// still refers to. Absent on snapshots from before generations existed,
+	// which used one fixed set of doc ids and could be torn mid-publish.
+	generation?: string;
 };
 
 export interface SyncTransport {
@@ -288,7 +294,10 @@ export interface SyncTransport {
 		serialized: string,
 	): Promise<number>;
 	fetchRoomSnapshotMeta?(): Promise<RoomSnapshotMeta | undefined>;
-	fetchRoomSnapshotData?(chunkCount: number): Promise<string | undefined>;
+	fetchRoomSnapshotData?(
+		chunkCount: number,
+		generation?: string,
+	): Promise<string | undefined>;
 	deleteEntriesBefore?(seqMs: number): Promise<number>;
 
 	// Is the connection ACTUALLY live right now (not just "we have a transport

@@ -6,9 +6,15 @@ import {
 	DEVICE_LOCAL_GAME_ATTRIBUTES,
 	DEVICE_LOCAL_STORES,
 } from "./changeset.ts";
-import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
+import {
+	compressSerialized,
+	decompressSerialized,
+	deserializeChangeset,
+	serializeChangeset,
+} from "./serialize.ts";
 import { getLeaguePosition } from "./leaguePosition.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
+import { checkApplyGuard } from "./applyGuard.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import type { SyncEngine } from "./SyncEngine.ts";
 import type { RoomSnapshotMeta } from "./types.ts";
@@ -74,16 +80,72 @@ export const buildRoomSnapshotPayload = async (): Promise<SnapshotPayload> => {
 	return { version: SNAPSHOT_VERSION, stores };
 };
 
-// Restore a snapshot payload into the league DB: clear each shared store, put
-// the snapshot's rows, reload game attributes and rebuild the cache. The clear
-// is what makes restore complete - rows deleted since this device's state
-// (negotiations, schedule days) vanish with the store instead of lingering.
+// Stores without which a league is not a league. If a payload is missing one,
+// or has one empty, it is not a snapshot worth destroying local data for.
+const REQUIRED_NON_EMPTY_STORES = ["players", "teams", "gameAttributes"];
+
+// Is this payload safe to overwrite a working league with? Checked BEFORE
+// anything is destroyed, because there is no undo afterwards. A torn download,
+// a half-built payload, or a publisher whose own database was broken all look
+// like this: structurally fine, catastrophically empty.
+export const validateRoomSnapshotPayload = (payload: SnapshotPayload) => {
+	const problems: string[] = [];
+
+	if (payload.version !== SNAPSHOT_VERSION) {
+		problems.push(
+			`format version ${payload.version}, but this app understands version ${SNAPSHOT_VERSION}`,
+		);
+		return problems;
+	}
+	if (!payload.stores || typeof payload.stores !== "object") {
+		problems.push("no stores in the payload");
+		return problems;
+	}
+	for (const store of REQUIRED_NON_EMPTY_STORES) {
+		const rows = payload.stores[store];
+		if (!Array.isArray(rows)) {
+			problems.push(`missing the ${store} store`);
+		} else if (rows.length === 0) {
+			problems.push(`the ${store} store is empty`);
+		}
+	}
+	return problems;
+};
+
+// Restore a snapshot payload into the league DB: replace each shared store with
+// the snapshot's rows, reload game attributes and rebuild the cache. Replacing
+// (rather than merging) is what makes a restore complete - rows deleted since
+// this device's state, like finished negotiations or played schedule days,
+// vanish with the store instead of lingering.
+//
+// THE THING THAT MATTERS HERE IS THAT IT CANNOT HALF-HAPPEN. This used to clear
+// a store and then write its rows back one at a time, each write its own
+// auto-committing transaction, tens of thousands of them, with the write-back
+// cache still live alongside. Any interruption - and iOS kills a PWA's
+// in-flight IndexedDB work the moment the app is backgrounded - left the store
+// cleared and only partly refilled, with no way back. That is how a league came
+// back with two players on every roster. Now each store is replaced inside ONE
+// transaction, so an interrupted restore aborts and leaves the store exactly as
+// it was, and the cache is silenced for the duration so it cannot write stale
+// rows into a store that has just been emptied.
 export const applyRoomSnapshotPayload = async (
 	payload: SnapshotPayload,
 ): Promise<void> => {
-	if (payload.version !== SNAPSHOT_VERSION) {
+	// The same last-line check every remote changeset passes, and this path
+	// needs it more than any of them: a changeset that lands in the wrong league
+	// writes some rows, while a snapshot restore replaces the entire database.
+	// If the loaded league is not the one this sync session belongs to - a
+	// missed teardown, a league switch mid-restore - stop before touching disk.
+	if (!checkApplyGuard()) {
 		throw new Error(
-			`Room snapshot has format version ${payload.version}, but this app understands version ${SNAPSHOT_VERSION}. Update the app and try again.`,
+			"Refusing to restore the room's snapshot: the loaded league is not the one this sync session belongs to.",
+		);
+	}
+
+	const problems = validateRoomSnapshotPayload(payload);
+	if (problems.length > 0) {
+		throw new Error(
+			`Refusing to restore the room's snapshot: ${problems.join("; ")}. Nothing on this device was changed.`,
 		);
 	}
 
@@ -97,32 +159,58 @@ export const applyRoomSnapshotPayload = async (
 		}
 	}
 
-	for (const store of snapshotStores()) {
-		const rows = payload.stores[store];
-		if (!Array.isArray(rows)) {
-			// A store this app knows and the snapshot doesn't (or vice versa) is a
-			// version skew smell, but an absent store just means "leave mine alone"
-			// - which is strictly safer than clearing it on no evidence.
-			continue;
-		}
-		await (idb.league as any).clear(store);
-		for (const row of rows) {
-			if (
-				store === "gameAttributes" &&
-				DEVICE_LOCAL_GAME_ATTRIBUTES.has(String((row as any)?.key))
-			) {
+	// Silence the cache. It holds the PRE-restore league and a set of dirty rows
+	// it intends to write back; a flush landing mid-restore would repopulate a
+	// store we just emptied with rows from the database we are replacing. This
+	// is the no-throw way to stop it - flush() returns early when autoSave is
+	// off, where an invalid-status guard would surface as an error toast.
+	const previousAutoSave = local.autoSave;
+	local.autoSave = false;
+	try {
+		for (const store of snapshotStores()) {
+			const rows = payload.stores[store];
+			if (!Array.isArray(rows)) {
+				// A store this app knows and the snapshot doesn't (or vice versa) is a
+				// version skew smell, but an absent store just means "leave mine alone"
+				// - which is strictly safer than clearing it on no evidence.
 				continue;
 			}
-			await (idb.league as any).put(store, row);
+
+			const isGameAttributes = store === "gameAttributes";
+			const transaction = (idb.league as any).transaction(store, "readwrite");
+			const objectStore = transaction.objectStore(store);
+
+			// Issued synchronously so the transaction stays active across the whole
+			// store, exactly as Cache.flush does. Clear and refill commit together
+			// or not at all.
+			objectStore.clear();
+			for (const row of rows) {
+				if (
+					isGameAttributes &&
+					DEVICE_LOCAL_GAME_ATTRIBUTES.has(String((row as any)?.key))
+				) {
+					continue;
+				}
+				objectStore.put(row);
+			}
+			if (isGameAttributes) {
+				for (const row of preserved) {
+					objectStore.put(row);
+				}
+			}
+
+			await transaction.done;
 		}
-	}
-	for (const row of preserved) {
-		await (idb.league as any).put("gameAttributes", row);
+	} finally {
+		local.autoSave = previousAutoSave;
 	}
 
 	// Make the running app see it: g from the restored gameAttributes, the cache
-	// rebuilt from the restored DB.
+	// discarded and rebuilt from the restored DB. Discarding first matters -
+	// otherwise the dirty rows the cache accumulated before the restore would be
+	// flushed back over it at the next opportunity.
 	await league.loadGameAttributes();
+	idb.cache.discardForRestore();
 	await idb.cache.fill();
 };
 
@@ -148,7 +236,11 @@ export const publishRoomSnapshot = async (
 	const previous = await transport.fetchRoomSnapshotMeta();
 
 	const payload = await buildRoomSnapshotPayload();
-	const serialized = serializeChangeset(payload);
+	// gzip, ~10x. A full league as raw JSON is tens of megabytes, which meant
+	// dozens of sequential 700 KB document writes and a publish window minutes
+	// long. Shrinking it shrinks that window by the same factor, and the format
+	// is self-describing so a room with older clients still reads it.
+	const serialized = await compressSerialized(serializeChangeset(payload));
 
 	const meta: Omit<RoomSnapshotMeta, "chunkCount"> = {
 		seq,
@@ -193,12 +285,36 @@ export const restoreFromRoomSnapshot = async (
 	if (!meta) {
 		return undefined;
 	}
-	const serialized = await transport.fetchRoomSnapshotData(meta.chunkCount);
+	const serialized = await transport.fetchRoomSnapshotData(
+		meta.chunkCount,
+		meta.generation,
+	);
 	if (serialized === undefined) {
 		syncDebugLog("snapshot:restore-incomplete-payload", { meta });
 		return undefined;
 	}
-	const payload = deserializeChangeset(serialized) as SnapshotPayload;
+
+	// A payload that will not parse is a torn or truncated download, not a
+	// reason to touch the league. Bail with the local database untouched and
+	// let the caller fall back.
+	let payload: SnapshotPayload;
+	try {
+		payload = deserializeChangeset(
+			await decompressSerialized(serialized),
+		) as SnapshotPayload;
+	} catch (error) {
+		syncDebugLog("snapshot:restore-unreadable-payload", { meta, error });
+		return undefined;
+	}
+
+	const problems = validateRoomSnapshotPayload(payload);
+	if (problems.length > 0) {
+		syncDebugLog("snapshot:restore-rejected", { meta, problems });
+		console.error(
+			`[sync] Ignored the room's snapshot because it is not usable (${problems.join("; ")}). This device was left alone.`,
+		);
+		return undefined;
+	}
 
 	syncDebugLog("snapshot:restore-start", {
 		seq: meta.seq,
