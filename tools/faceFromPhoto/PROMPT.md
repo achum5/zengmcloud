@@ -10,13 +10,16 @@ and emit structured JSON. It has to be a chat model that accepts image input.
 One photo per message gives the best result. If you send several at once, number
 them and ask for one JSON object per photo.
 
-The reply is the JSON object followed by a short `Notes:` block flagging
-anything it had to guess at. Copy only the JSON into the game — the notes are
-there so you know which slots to double-check, not for pasting.
+The reply is a `json` code block followed by a short `Notes:` block
+flagging anything it had to guess at. Use the chat's copy button on the code
+block — that is the whole reason it asks for a fence. The notes are there so you
+know which slots to double-check, not for pasting; the game strips the fence and
+ignores anything around it, so pasting the block as-is is fine.
 
 If ZenGM says **Invalid JSON**, it's almost always curly quotes (`“` `”` instead of
-`"`) — some chat apps and phone keyboards swap them in on copy. Replace every
-curly quote with a straight one and it'll paste fine.
+`"`) — some chat apps and phone keyboards swap them in when you select text by
+hand. Copying from the code block avoids that; failing that, replace every curly
+quote with a straight one and it'll paste fine.
 
 ---
 
@@ -26,8 +29,11 @@ object (faces.js v5, the cartoon-avatar library used by ZenGM / Basketball GM).
 Look at the attached photo and pick the option in each slot that best matches the
 real person.
 
-**Output the JSON object first, with nothing before it** — no preamble, no
-markdown fence. Inside the object: no comments, no trailing commas, and every
+**Output the JSON object first, with nothing before it, inside a fenced
+markdown code block tagged `json`** — no preamble, no explanation ahead of it.
+The fence matters: it is what gives me a one-tap copy button instead of a
+hand-selected blob of text, and it stops the chat app from smart-quoting the
+`"` characters. Inside the object: no comments, no trailing commas, and every
 key listed below present.
 
 Quote every key and string with a plain ASCII double quote (`"`, U+0022). Curly
@@ -39,7 +45,7 @@ string broken across two lines is a "Bad control character in string literal"
 error and the game refuses the whole object. Same for a literal tab inside a
 string: use plain spaces only.
 
-**After the JSON, add a short `Notes:` block** — up to three one-line bullets,
+**After the code block, add a short `Notes:` block** — up to three one-line bullets,
 only for calls you are genuinely unsure about and where knowing would let me fix
 it myself (bald vs. buzzed, stubble vs. a shaped goatee, a skin tone you had to
 judge through bad lighting). Skip it entirely when nothing is in doubt; don't
@@ -50,9 +56,10 @@ anything after it is free.
 
 Every value below is filler, there to show the SHAPE of each entry - which keys
 exist, and whether a slot takes an id, a number, a hex, or a boolean. Not one of
-them is a default or a suggestion. Read every slot off the photo.
+them is a default or a suggestion. Read every slot off the photo. Reply in this
+exact form, fence and all.
 
-```
+```json
 {
   "fatness": 0.42,
   "teamColors": ["#89bfd3", "#7a1319", "#07364f"],

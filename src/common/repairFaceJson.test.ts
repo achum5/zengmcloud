@@ -42,6 +42,16 @@ describe("a face config pasted out of a chat AI", () => {
 		assert.deepEqual(parseFaceJson(text), CONFIG);
 	});
 
+	// Exactly what the prompt now asks the model for: a tagged code block, so the
+	// chat gives a copy button and can't smart-quote the JSON, with the notes
+	// outside it.
+	test("a fenced block followed by a Notes block parses", () => {
+		const text = `Here's the face:\n\n\`\`\`json\n${JSON.stringify(
+			CONFIG,
+		)}\n\`\`\`\n\nNotes:\n- Bald vs. buzzed was a close call.`;
+		assert.deepEqual(parseFaceJson(text), CONFIG);
+	});
+
 	test("prose either side of the object is dropped", () => {
 		const text = `Here you go!\n\n${JSON.stringify(CONFIG)}\n\nNotes:\n- Guessed the hair color.`;
 		assert.deepEqual(parseFaceJson(text), CONFIG);
