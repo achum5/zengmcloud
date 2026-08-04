@@ -693,10 +693,17 @@ describe("hideRatingsOnesDigitExceptProspects", () => {
 		assert.strictEqual(freeAgent.ratings.ovr, Math.floor(full.ovr / 10));
 	});
 
-	test("a retired player is not a prospect", async () => {
+	// Not because he counts as a prospect, but because hiding the ones digit is
+	// there to keep a decision hard, and there is no decision left to make about
+	// a retired player. His page is a record, so it reads at full resolution -
+	// with the prospects option on or off.
+	test("a retired player keeps his exact ratings", async () => {
 		const full = await trueRatings();
 		const retired = await readBack(PLAYER.RETIRED, true);
-		assert.strictEqual(retired.ratings.ovr, Math.floor(full.ovr / 10));
+		assert.deepStrictEqual(retired.ratings, full);
+
+		const retiredNoOption = await readBack(PLAYER.RETIRED, false);
+		assert.deepStrictEqual(retiredNoOption.ratings, full);
 	});
 
 	// With the option off, coarse ratings mean coarse ratings for everyone.

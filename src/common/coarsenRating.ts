@@ -13,12 +13,35 @@ export const coarsenRating = (value: number): number => Math.floor(value / 10);
 // scouting a draft class, so it ends the moment a player lands on a roster.
 const UNDRAFTED_TIDS = new Set([-2, -4, -5]);
 
-// Does the "prospects exempt" option spare this player RIGHT NOW? Only an
-// undrafted prospect, and only when the option is on.
+// PLAYER.RETIRED. Written out rather than imported because this module is
+// shared by both threads and constants.ts pulls in a good deal more than a
+// number's worth of code.
+const RETIRED_TID = -3;
+
+// Is this player spared the coarse display RIGHT NOW?
+//
+// Two ways in. An undrafted prospect, when the "prospects exempt" option is on -
+// that one is about the scouting report you were shown before the draft, and it
+// ends the moment he lands on a roster.
+//
+// And anyone RETIRED, unconditionally. Hiding the ones digit exists to keep you
+// from reading a roster like a spreadsheet - to leave real doubt about which of
+// two 6s is better while you still have to decide something about them. Nothing
+// is left to decide about a retired player: his career is closed, he cannot be
+// signed or traded or played, and his page is a record rather than a scouting
+// report. So the record reads at full resolution.
 export const exemptFromCoarseRatings = (
 	tid: number | undefined,
 	exceptProspects: boolean,
-): boolean => exceptProspects && tid !== undefined && UNDRAFTED_TIDS.has(tid);
+): boolean => {
+	if (tid === undefined) {
+		return false;
+	}
+	if (tid === RETIRED_TID) {
+		return true;
+	}
+	return exceptProspects && UNDRAFTED_TIDS.has(tid);
+};
 
 // Does it spare one SEASON of a player's history? The exemption is really about
 // the scouting report you were shown while he was in a draft class, and that

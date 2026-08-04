@@ -147,12 +147,19 @@ describe("exemptFromCoarseRatings", () => {
 		}
 	});
 
-	test("free agents and retirees are not prospects", () => {
+	test("a free agent is not a prospect", () => {
 		assert.strictEqual(exemptFromCoarseRatings(-1, true), false);
-		assert.strictEqual(exemptFromCoarseRatings(-3, true), false);
 	});
 
-	test("nothing is exempt with the option off", () => {
+	// Not via the prospect rule - a retiree isn't a prospect - but on his own
+	// terms: there is nothing left to decide about him, so his page is a record
+	// and reads at full resolution.
+	test("a retired player is exempt, option or no option", () => {
+		assert.strictEqual(exemptFromCoarseRatings(-3, true), true);
+		assert.strictEqual(exemptFromCoarseRatings(-3, false), true);
+	});
+
+	test("no prospect is exempt with the option off", () => {
 		assert.strictEqual(exemptFromCoarseRatings(-2, false), false);
 	});
 
@@ -179,6 +186,22 @@ describe("coarsenPlayerForDisplay honours the exemption", () => {
 	test("without the option, a prospect is rounded like anyone else", () => {
 		const out = coarsenPlayerForDisplay(prospect, ["ovr", "pot"]);
 		assert.strictEqual(out.ratings.ovr, 7);
+	});
+
+	test("a retired player's whole career comes back untouched", () => {
+		const retired = {
+			tid: -3,
+			ratings: [
+				{ season: 2004, ovr: 74, pot: 81 },
+				{ season: 2005, ovr: 68, pot: 68 },
+			],
+			draft: { year: 1998, ovr: 47, pot: 72 },
+		};
+		const out = coarsenPlayerForDisplay(retired, ["ovr", "pot"]);
+		assert.strictEqual(out.ratings[0]!.ovr, 74);
+		assert.strictEqual(out.ratings[1]!.ovr, 68);
+		assert.strictEqual(out.draft.ovr, 47);
+		assert.strictEqual(out.draft.pot, 72);
 	});
 });
 
