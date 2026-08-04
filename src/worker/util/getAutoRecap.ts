@@ -54,18 +54,38 @@ export const endRecapBatch = () => {
 	phraseMemory.clear();
 };
 
-// `poolId` names the pool when its OPTIONS are built with interpolation. Without
-// it the key is the joined text, so a pool containing a team or player name is a
-// different key in every game and the memory silently does nothing - which is
-// exactly why a slate could still read "It was a long way past the 10.0 X had
-// been putting up" and then the same sentence again three games later. Pools of
-// fixed strings need no id; their text IS a stable key.
+// A pool's identity is its SHAPE, not its rendered text. Keying on the finished
+// string means a pool that interpolates a name or a number is a different key
+// in every game, so the rotation never engages for it. Blanking the variable
+// parts makes the key the template the author actually wrote.
+//
+// This is a backstop, not the main mechanism: pools whose OPTIONS differ in
+// shape game to game (one game's star has a double-double and the next one's
+// doesn't, so the phrase is "# points and # rebounds" here and "#" there) still
+// split into variants, and those need an explicit `poolId` to share one
+// rotation. The headline pools carry ids for exactly that reason. Measured on a
+// twelve-game slate this normalization changes nothing by itself - the ids do
+// the work - but it makes `pick`'s contract hold for every pool added later
+// without anyone having to remember the id.
+const poolKey = (arr: unknown[]): string =>
+	arr
+		.map((option) =>
+			String(option)
+				// Proper nouns - team nicknames, player names - matched as runs so
+				// "Trail Blazers" is one placeholder rather than two.
+				.replaceAll(/\b[A-Z][\w'.\u2019-]*(?:\s+[A-Z][\w'.\u2019-]*)*/g, "~")
+				.replaceAll(/\d+(?:\.\d+)?/g, "#")
+				.replaceAll(/\s+/g, " ")
+				.trim(),
+		)
+		.join("\u0000");
+
 export const pick = <T>(rng: () => number, arr: T[], poolId?: string): T => {
 	if (arr.length <= 1) {
 		return arr[0]!;
 	}
 
-	const key = poolId ?? arr.map(String).join("\u0000");
+	const key = poolId ?? poolKey(arr);
 	let used = phraseMemory.get(key);
 	if (!used) {
 		used = new Set<string>();
@@ -270,11 +290,24 @@ const impact = (p: RecapPlayer): number =>
 	0.4 * p.fga +
 	0.4 * p.tp;
 
+// Who the story is about. Deliberately the SAME weighting the box-score card
+// uses to pick the player it features (common/getBestPlayerBoxScore), because
+// the recap is printed directly under that card: when the two disagreed, the
+// card said "Etan Thomas 13 PTS, 9 TRB, 3 BLK" and the sentence beneath it
+// opened on Brad Miller's 19 points, and the page looked like it hadn't read
+// itself.
+//
+// `impact` below stays as it is for ORDERING the rest of the mentions, where
+// its efficiency and turnover terms genuinely help decide who is worth a
+// sentence next.
+const storyScore = (p: RecapPlayer): number =>
+	0.5 * p.pts + 0.5 * p.reb + 0.5 * p.ast + 1.7 * p.blk + 1.7 * p.stl;
+
 const bestOf = (players: RecapPlayer[]): RecapPlayer | undefined => {
 	let best: RecapPlayer | undefined;
 	let bestScore = -Infinity;
 	for (const p of players) {
-		const s = impact(p);
+		const s = storyScore(p);
 		if (s > bestScore) {
 			bestScore = s;
 			best = p;
@@ -884,11 +917,15 @@ const buildHeadline = (
 
 	if (shot && !shot.tying) {
 		return h(
-			pick(rng, [
-				`${poss(shot.name)} ${shot.shot} sinks the ${loserN}${tag}`,
-				`${poss(shot.name)} ${shot.shot} lifts the ${winnerN} past the ${loserN}${tag}`,
-				`${shot.name} beats the ${loserN} with a ${shot.shot}${tag}`,
-			]),
+			pick(
+				rng,
+				[
+					`${poss(shot.name)} ${shot.shot} sinks the ${loserN}${tag}`,
+					`${poss(shot.name)} ${shot.shot} lifts the ${winnerN} past the ${loserN}${tag}`,
+					`${shot.name} beats the ${loserN} with a ${shot.shot}${tag}`,
+				],
+				"headline:clutch-shot",
+			),
 			false,
 		);
 	}
@@ -899,10 +936,14 @@ const buildHeadline = (
 	if (ddCount >= 3) {
 		const word = doubleWord(ddCount)!;
 		return h(
-			pick(rng, [
-				`${star.name}'s ${word} carries the ${winnerN} past the ${loserN}${tag}`,
-				`${star.name} posts a ${word} as the ${winnerN} ${verb} the ${loserN}${tag}`,
-			]),
+			pick(
+				rng,
+				[
+					`${star.name}'s ${word} carries the ${winnerN} past the ${loserN}${tag}`,
+					`${star.name} posts a ${word} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+				],
+				"headline:multi-double",
+			),
 			true,
 		);
 	}
@@ -919,10 +960,14 @@ const buildHeadline = (
 		// and third time ("rallies" / "stormed back to beat" / "trailed by 14 and
 		// stormed back" all landed in one recap).
 		return h(
-			pick(rng, [
-				`${winnerN} erase ${aNum(shape.comebackFrom)}-point hole to ${verb} the ${loserN}${tag}`,
-				`${star.name} rallies the ${winnerN} past the ${loserN}${tag}`,
-			]),
+			pick(
+				rng,
+				[
+					`${winnerN} erase ${aNum(shape.comebackFrom)}-point hole to ${verb} the ${loserN}${tag}`,
+					`${star.name} rallies the ${winnerN} past the ${loserN}${tag}`,
+				],
+				"headline:comeback",
+			),
 			true,
 		);
 	}
@@ -937,11 +982,15 @@ const buildHeadline = (
 		shape.margin <= 5
 	) {
 		return h(
-			pick(rng, [
-				`${winnerN} survive a scare from the ${loserN}`,
-				`${winnerN} escape the ${loserN} ${scoreTag(shape)}`,
-				`${winnerN} hold off a feisty ${loserN} squad`,
-			]),
+			pick(
+				rng,
+				[
+					`${winnerN} survive a scare from the ${loserN}`,
+					`${winnerN} escape the ${loserN} ${scoreTag(shape)}`,
+					`${winnerN} hold off a feisty ${loserN} squad`,
+				],
+				"headline:scare",
+			),
 			false,
 		);
 	}
@@ -949,10 +998,14 @@ const buildHeadline = (
 	// A 20-20 game headlines itself - "scores 24" would bury the 22 rebounds.
 	if (star.pts >= 20 && star.reb >= 20) {
 		return h(
-			pick(rng, [
-				`${star.name} dominates with ${star.pts} points and ${star.reb} rebounds as the ${winnerN} ${verb} the ${loserN}${tag}`,
-				`${poss(star.name)} ${star.pts}-point, ${star.reb}-rebound night carries the ${winnerN} past the ${loserN}${tag}`,
-			]),
+			pick(
+				rng,
+				[
+					`${star.name} dominates with ${star.pts} points and ${star.reb} rebounds as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${poss(star.name)} ${star.pts}-point, ${star.reb}-rebound night carries the ${winnerN} past the ${loserN}${tag}`,
+				],
+				"headline:20-20",
+			),
 			true,
 		);
 	}
@@ -967,23 +1020,31 @@ const buildHeadline = (
 		shape.margin <= 12
 	) {
 		return h(
-			pick(rng, [
-				`${star.name} outduels ${loserStar.name} as the ${winnerN} ${verb} the ${loserN}${tag}`,
-				`${star.name}'s ${star.pts} edges ${loserStar.name}'s ${loserStar.pts} in ${poss(
-					`the ${winnerN}`,
-				)} win${tag}`,
-			]),
+			pick(
+				rng,
+				[
+					`${star.name} outduels ${loserStar.name} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${star.name}'s ${star.pts} edges ${loserStar.name}'s ${loserStar.pts} in ${poss(
+						`the ${winnerN}`,
+					)} win${tag}`,
+				],
+				"headline:duel",
+			),
 			true,
 		);
 	}
 
 	if (star.pts >= 40) {
 		return h(
-			pick(rng, [
-				`${star.name} drops ${star.pts} as the ${winnerN} ${verb} the ${loserN}${tag}`,
-				`${star.name}'s ${star.pts} sink the ${loserN}${tag}`,
-				`${star.name} pours in ${star.pts} in ${poss(`the ${winnerN}`)} win${tag}`,
-			]),
+			pick(
+				rng,
+				[
+					`${star.name} drops ${star.pts} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${star.name}'s ${star.pts} sink the ${loserN}${tag}`,
+					`${star.name} pours in ${star.pts} in ${poss(`the ${winnerN}`)} win${tag}`,
+				],
+				"headline:40-point",
+			),
 			true,
 		);
 	}
@@ -1002,10 +1063,14 @@ const buildHeadline = (
 	) {
 		const partner = winnerDoubles.find((p) => p !== star)!;
 		return h(
-			pick(rng, [
-				`${star.name} and ${partner.name} lead the ${winnerN} past the ${loserN}${tag}`,
-				`Double-doubles from ${star.name} and ${partner.name} carry the ${winnerN} past the ${loserN}${tag}`,
-			]),
+			pick(
+				rng,
+				[
+					`${star.name} and ${partner.name} lead the ${winnerN} past the ${loserN}${tag}`,
+					`Double-doubles from ${star.name} and ${partner.name} carry the ${winnerN} past the ${loserN}${tag}`,
+				],
+				"headline:two-doubles",
+			),
 			true,
 		);
 	}
@@ -1034,20 +1099,28 @@ const buildHeadline = (
 	// losing side was being headlined as "McGrady leads the Nuggets".)
 	if (
 		loserStar &&
-		impact(loserStar) > impact(star) * 1.35 &&
+		storyScore(loserStar) > storyScore(star) * 1.2 &&
 		loserStar.pts >= 22 &&
 		star.pts < 25
 	) {
 		return h(
-			pick(rng, [
-				`${poss(loserStar.name)} ${statPhrase(loserStar, 1)} not enough as the ${winnerN} ${verb} the ${loserN}${tag}`,
-				`${winnerN} ${verb} the ${loserN} despite ${poss(loserStar.name)} ${statPhrase(loserStar, 1)}${tag}`,
-			]),
+			pick(
+				rng,
+				[
+					`${poss(loserStar.name)} ${statPhrase(loserStar, 1)} not enough as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${winnerN} ${verb} the ${loserN} despite ${poss(loserStar.name)} ${statPhrase(loserStar, 1)}${tag}`,
+				],
+				"headline:loser-star",
+			),
 			false,
 			true,
 		);
 	}
 
+	// Deliberately more shapes than a slate has games of any one kind. The
+	// rotation in `pick` walks a pool before repeating, so a pool of four ran
+	// dry on a twelve-game night and the page went back to sounding like one
+	// sentence with the names swapped.
 	const starTemplates = [
 		`${poss(star.name)} ${sh.text} ${shVerb}${
 			sh.plural ? "" : "s"
@@ -1057,20 +1130,43 @@ const buildHeadline = (
 		`${star.name} goes for ${statPhrase(star, 1)} as the ${winnerN} ${verb} the ${loserN}${tag}`,
 		`${winnerN} ${verb} the ${loserN} behind ${poss(star.name)} ${sh.text}${tag}`,
 		`${star.name} leads the ${winnerN} over the ${loserN}${tag}`,
+		`${star.name} has ${statPhrase(star, 1)} in ${poss(`the ${winnerN}`)} ${scoreTag(shape)} win${tag}`,
+		`${winnerN} lean on ${star.name} to ${verb} the ${loserN}${tag}`,
+		`${winnerN} ride ${poss(star.name)} ${sh.text} past the ${loserN}${tag}`,
+		`${star.name} turns in ${statPhrase(star, 1)} as the ${winnerN} ${verb} the ${loserN}${tag}`,
 	];
 	const resultTemplates = [
 		`${winnerN} ${verb} the ${loserN}, ${scoreTag(shape)}${tag}`,
 		`${winnerN} ${verb} the ${loserN} ${scoreTag(shape)}${tag}`,
+		`${loserN} fall to the ${winnerN} ${scoreTag(shape)}${tag}`,
+		`${winnerN} take the ${loserN} ${scoreTag(shape)}${tag}`,
+		shape.margin >= 15
+			? `${winnerN} pull away from the ${loserN} for ${aNum(shape.margin)}-point win${tag}`
+			: `${winnerN} come out on top of the ${loserN} ${scoreTag(shape)}${tag}`,
 	];
 	// A big margin with a modest star line is a result story, always - a
 	// "Michael Doleac's 17 leads..." headline on a 22-point blowout misses it.
 	// And a sub-15-point "star" never headlines at all ("...behind Chris
 	// Webber's 13" on a 3-point game buried the actual game).
+	// A modest line does not get to headline a game. "Kings slip past the Jazz
+	// behind Tim Young's 15" put a quiet 15 points in lights on a night the
+	// losing side had a 22, and told the reader nothing about the game.
+	//
+	// Measured on the whole line, not the points column: a 15-and-14 night is a
+	// perfectly good headline and a 19-point, three-rebound one is not.
+	const starHasDouble = ddCount >= 2;
+	const outscoredByLoser =
+		!starHasDouble && loserStar !== undefined && loserStar.pts >= star.pts + 6;
 	const useResult =
-		star.pts < 15 ||
-		(star.pts < 20 && shape.margin >= 15) ||
+		(!starHasDouble && star.pts < 17) ||
+		(!starHasDouble && star.pts < 20 && shape.margin >= 15) ||
+		outscoredByLoser ||
 		(shape.margin >= 18 && rng() < 0.5);
-	const text = pick(rng, useResult ? resultTemplates : starTemplates);
+	const text = pick(
+		rng,
+		useResult ? resultTemplates : starTemplates,
+		useResult ? "headline:result" : "headline:star",
+	);
 	// Only the "goes for <full stat phrase>" shape spends the whole line; the
 	// others name him or quote a single number the body doesn't repeat verbatim.
 	return h(
@@ -1334,7 +1430,22 @@ const statNote = (
 	};
 
 	if (w.fga >= 20 && w.fgp >= 52) {
-		add(`${cap(theNick(shape.winner))} shot ${w.fgp}% from the field.`);
+		// One fixed sentence here put "The X shot 52% from the field." in nine
+		// recaps out of twelve on one slate - by far the most repeated line on
+		// the page, and the easiest to vary.
+		add(
+			pick(
+				rng,
+				[
+					`${cap(theNick(shape.winner))} shot ${w.fgp}% from the field.`,
+					`${cap(theNick(shape.winner))} were efficient all night, ${w.fgp}% from the floor.`,
+					`${cap(theNick(shape.winner))} hit ${w.fgp}% of their shots.`,
+					`Shots fell for the ${nick(shape.winner)} - ${w.fgp}% from the field.`,
+					`${cap(theNick(shape.winner))} shot it at a ${w.fgp}% clip.`,
+				],
+				"stat:winner-fgp",
+			),
+		);
 	}
 	if (w.tp >= 14) {
 		add(`${cap(theNick(shape.winner))} knocked down ${w.tp} threes.`);

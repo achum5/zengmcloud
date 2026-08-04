@@ -2939,3 +2939,60 @@ describe("copy that only reads wrong in context", () => {
 		}
 	});
 });
+
+// A slate is read as a page, not as twelve separate recaps, so the thing that
+// gives it away is not any one sentence but the same sentence twelve times with
+// the names swapped. `pick` rotates a pool before repeating - but it keys on the
+// rendered text, and almost every pool interpolates a name or a number, so for
+// years the key was different in every game and the rotation never engaged.
+describe("a slate does not repeat itself", () => {
+	const slateHeadlines = () => {
+		const shapes: [string, string, number, number, number, number][] = [
+			["Bobcats", "SuperSonics", 87, 84, 27, 4],
+			["76ers", "Bucks", 98, 82, 23, 9],
+			["Hawks", "Warriors", 106, 93, 24, 10],
+			["Bulls", "Nets", 100, 99, 34, 16],
+			["Spurs", "Mavericks", 94, 88, 23, 7],
+			["Raptors", "Suns", 110, 103, 21, 5],
+			["Magic", "Knicks", 115, 89, 24, 5],
+			["Timberwolves", "Rockets", 109, 86, 21, 4],
+		];
+
+		beginRecapBatch();
+		const out = shapes.map(([w, l, wp, lp, pts, reb], i) => {
+			const winner = realisticTeam(
+				{ tid: i * 2, name: w, pts: wp },
+				player({ name: `${w} Star`, pts, reb, ast: 3, fg: 9, fga: 18 }),
+			);
+			const loser = realisticTeam(
+				{ tid: i * 2 + 1, name: l, pts: lp },
+				player({ name: `${l} Star`, pts: 18, reb: 6, ast: 3, fg: 7, fga: 17 }),
+			);
+			return (
+				getAutoRecap(
+					game({ gid: i, teams: [winner, loser], winnerTid: winner.tid }),
+				)
+					.split("\n")[0]!
+					// Blank the names and numbers, leaving the sentence's shape.
+					.replaceAll(/\b[A-Z][\w'.’-]*(?:\s+[A-Z][\w'.’-]*)*/g, "~")
+					.replaceAll(/\d+/g, "#")
+			);
+		});
+		endRecapBatch();
+		return out;
+	};
+
+	test("eight games do not produce the same headline shape twice", () => {
+		const shapes = slateHeadlines();
+		const counts = new Map<string, number>();
+		for (const s of shapes) {
+			counts.set(s, (counts.get(s) ?? 0) + 1);
+		}
+		const repeated = [...counts.entries()].filter(([, n]) => n > 1);
+		assert.deepEqual(
+			repeated,
+			[],
+			`repeated headline shapes across one slate:\n${shapes.join("\n")}`,
+		);
+	});
+});
