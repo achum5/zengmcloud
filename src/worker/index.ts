@@ -537,11 +537,21 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				// still looks green.
 				const synced = await afterAction(type, name);
 				if (marksBusy) {
-					// Stamp where the league now sits along with the lease release, so
-					// followers have a second opinion on how far the room has got - one
-					// that doesn't come from their own change log, which is exactly the
-					// thing that fails silently when a day goes missing.
-					getSyncEngine()?.clearRoomBusy(await getLeaguePosition());
+					if (synced) {
+						// Stamp where the league now sits along with the lease release, so
+						// followers have a second opinion on how far the room has got - one
+						// that doesn't come from their own change log, which is exactly the
+						// thing that fails silently when a day goes missing.
+						getSyncEngine()?.clearRoomBusy(await getLeaguePosition());
+					} else {
+						// The advance is queued, NOT in the cloud. Stamping the new
+						// position now would announce a day whose data followers cannot
+						// fetch, and every one of them would grind recovery against a
+						// gap that is not there to download. Release the lease without
+						// a position; the outbox drain that finally lands the upload
+						// restamps (SyncEngine.doDrain).
+						getSyncEngine()?.clearRoomBusy();
+					}
 				}
 				if (!synced) {
 					util.logEvent(

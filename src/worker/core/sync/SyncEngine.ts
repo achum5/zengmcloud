@@ -397,6 +397,8 @@ export class SyncEngine {
 	// Fallback upload queue for engines without a room code (the in-memory test
 	// transport): same FIFO drain semantics, just not durable.
 	private memoryQueue: Omit<ChangesetEntry, "seq">[] = [];
+	// Notifications awaiting confirmation, for the no-room (in-memory) queue.
+	private memoryNotifications = new Map<string, SyncNotification[]>();
 
 	// Single-flight drain: all drainOutbox() calls chain onto this so two drains
 	// can never interleave (which would reorder publishes).
@@ -850,6 +852,12 @@ export class SyncEngine {
 	async onLocalChangeset(
 		changeset: Changeset,
 		action: string,
+		// Push notifications describing this changeset. They are NOT sent here -
+		// they are bound to the changeset's last entry and fired by the drain the
+		// moment that entry is CONFIRMED in the log. A push announces "the room
+		// can see this now"; sending it while the data sat queued in the outbox
+		// produced phones that knew the score of a game the room never received.
+		notifications?: SyncNotification[],
 	): Promise<"confirmed" | "queued"> {
 		if (changeset.changes.length === 0) {
 			return "confirmed";
@@ -920,6 +928,14 @@ export class SyncEngine {
 		// that pins every follower's watermark forever. `seen` keeps our own echo
 		// from being re-applied.
 		await this.enqueueAll(entries);
+		if (notifications && notifications.length > 0) {
+			const lastId = entries.at(-1)!.id;
+			if (this.code !== undefined) {
+				await outbox.addNotifications(this.code, lastId, notifications);
+			} else {
+				this.memoryNotifications.set(lastId, notifications);
+			}
+		}
 		for (const entry of entries) {
 			this.seen.add(entry.id);
 		}
@@ -1064,6 +1080,33 @@ export class SyncEngine {
 	// moment it describes is gone.
 	private static STALE_ADVANCE_MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
+	// Fire the pushes bound to a just-confirmed entry, if any. At most once per
+	// entry (the take deletes the binding first), fire-and-forget, and never a
+	// reason to fail the drain.
+	private async fireNotificationsFor(entryId: string) {
+		try {
+			const notifications =
+				this.code !== undefined
+					? ((await outbox.takeNotifications(entryId)) as
+							| SyncNotification[]
+							| undefined)
+					: this.memoryNotifications.get(entryId);
+			if (this.code === undefined) {
+				this.memoryNotifications.delete(entryId);
+			}
+			if (!notifications) {
+				return;
+			}
+			for (const notification of notifications) {
+				void this.publishNotification(notification).catch((error) => {
+					console.error("[sync] Failed to publish notification", error);
+				});
+			}
+		} catch (error) {
+			console.error("[sync] Failed to publish deferred notifications", error);
+		}
+	}
+
 	private async doDrain(): Promise<boolean> {
 		if (this.stopped) {
 			return false;
@@ -1174,6 +1217,7 @@ export class SyncEngine {
 					// re-publishes later (same doc id - idempotent overwrite).
 				});
 				done += 1;
+				void this.fireNotificationsFor(entry.id);
 				this.onUploadProgress?.({ done, total });
 				if (shouldTraceSyncLabel(entry.action)) {
 					syncDebugLog("engine:drain-publish-confirmed", {
@@ -1196,6 +1240,27 @@ export class SyncEngine {
 			this.drainBackoffMs = 0;
 			this.onUploadComplete?.();
 			syncDebugLog("engine:drain-complete", { published: done });
+
+			// The room's position stamp must only ever TRAIL confirmed data. The
+			// action wrapper skips stamping when its changeset merely queued, so
+			// the drain that finally lands it restamps here - otherwise a sim
+			// whose upload was interrupted would leave the room stamped in the
+			// past forever (harmless but confusing), or, worse, the wrapper's
+			// eager stamp would announce a position whose data followers cannot
+			// fetch, and every one of them would grind recovery against a gap
+			// that is not in the cloud.
+			if (done > 0 && this.isAuthority()) {
+				// Fire-and-forget: the stamp is advisory and reading the position
+				// touches the cache, so it must never hold the drain (or anything
+				// awaiting it) hostage.
+				void (async () => {
+					try {
+						this.clearRoomBusy(await getLeaguePosition());
+					} catch {
+						// The next advance restamps.
+					}
+				})();
+			}
 			return true;
 		} finally {
 			this.onUploadProgress?.(undefined);

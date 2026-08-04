@@ -21,6 +21,22 @@ import type { ChangesetEntry } from "./types.ts";
 
 const DB_NAME = "bbgm-sync-outbox";
 const STORE = "entries";
+// Push notifications waiting for the data they announce. A push saying
+// "Celtics 115" is a promise that the other devices can go see that game; if
+// the changeset behind it is still sitting in this outbox, the promise is a
+// lie - the classic form being a phone that knows the score of a game the
+// room never received, because the simmer backgrounded the app mid-upload.
+// So notifications are keyed to the LAST entry of their changeset and fire
+// only when that entry is confirmed in the log - surviving app restarts the
+// same way the entries themselves do.
+const NOTIFICATIONS_STORE = "notifications";
+
+type NotificationRow = {
+	key: string; // the last entry id of the changeset these announce
+	code: string;
+	notifications: unknown[];
+	createdAt: number;
+};
 
 type OutboxRow = {
 	key: string; // the entry's stable id (unique)
@@ -49,10 +65,15 @@ let dbPromise: Promise<IDBPDatabase> | undefined;
 
 const getDB = () => {
 	if (!dbPromise) {
-		dbPromise = openDB(DB_NAME, 1, {
-			upgrade(db) {
-				const store = db.createObjectStore(STORE, { keyPath: "key" });
-				store.createIndex("code", "code");
+		dbPromise = openDB(DB_NAME, 2, {
+			upgrade(db, oldVersion) {
+				if (oldVersion < 1) {
+					const store = db.createObjectStore(STORE, { keyPath: "key" });
+					store.createIndex("code", "code");
+				}
+				if (oldVersion < 2) {
+					db.createObjectStore(NOTIFICATIONS_STORE, { keyPath: "key" });
+				}
 			},
 		});
 	}
@@ -195,6 +216,39 @@ export const outbox = {
 		return dropped;
 	},
 
+	// Bind notifications to an entry id, durably, BEFORE the drain runs - so an
+	// app killed mid-upload still announces the change when the entry lands on
+	// the next launch. Best-effort: a lost push is an annoyance, not a
+	// correctness problem, and it must never fail the publish itself.
+	async addNotifications(code: string, key: string, notifications: unknown[]) {
+		await bestEffort(async () => {
+			const db = await getDB();
+			await db.put(NOTIFICATIONS_STORE, {
+				key,
+				code,
+				notifications,
+				createdAt: Date.now(),
+			} satisfies NotificationRow);
+		});
+	},
+
+	// Claim the notifications bound to a just-confirmed entry. Removes the row
+	// first, so however many times an entry re-confirms (a hung removal makes it
+	// re-publish idempotently), its pushes fire at most once.
+	async takeNotifications(id: string): Promise<unknown[] | undefined> {
+		return await bestEffort(async () => {
+			const db = await getDB();
+			const row = (await db.get(NOTIFICATIONS_STORE, id)) as
+				| NotificationRow
+				| undefined;
+			if (!row) {
+				return undefined;
+			}
+			await db.delete(NOTIFICATIONS_STORE, id);
+			return row.notifications;
+		});
+	},
+
 	// Drop entries older than maxAgeMs (e.g. a room the user never came back to),
 	// so a permanently-failed upload can't make the outbox grow forever.
 	async prune(maxAgeMs: number) {
@@ -203,14 +257,27 @@ export const outbox = {
 			const cutoff = Date.now() - maxAgeMs;
 			const rows = (await db.getAll(STORE)) as OutboxRow[];
 			const stale = rows.filter((r) => r.createdAt < cutoff);
-			if (stale.length === 0) {
-				return;
+			if (stale.length > 0) {
+				const tx = db.transaction(STORE, "readwrite");
+				for (const row of stale) {
+					await tx.store.delete(row.key);
+				}
+				await tx.done;
 			}
-			const tx = db.transaction(STORE, "readwrite");
-			for (const row of stale) {
-				await tx.store.delete(row.key);
+
+			// Notifications whose entry never confirmed (dropped as a stale
+			// advance, pruned above) must not fire weeks later out of nowhere.
+			const notifRows = (await db.getAll(
+				NOTIFICATIONS_STORE,
+			)) as NotificationRow[];
+			const staleNotifs = notifRows.filter((r) => r.createdAt < cutoff);
+			if (staleNotifs.length > 0) {
+				const tx = db.transaction(NOTIFICATIONS_STORE, "readwrite");
+				for (const row of staleNotifs) {
+					await tx.store.delete(row.key);
+				}
+				await tx.done;
 			}
-			await tx.done;
 		});
 	},
 };

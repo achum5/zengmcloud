@@ -13,8 +13,18 @@ const makeEngine = () => {
 	const published: { label: string; count: number }[] = [];
 	const notifications: { title: string; body: string }[] = [];
 	const engine = {
-		onLocalChangeset: async (changeset: any, label: string) => {
+		// Notifications now ride INTO the engine with the changeset (third
+		// argument) instead of being published behind it - the engine holds them
+		// until the changeset is confirmed in the log, so a push can never
+		// announce data the room cannot fetch. For these tests, "handed to the
+		// engine" is the observable contract.
+		onLocalChangeset: async (
+			changeset: any,
+			label: string,
+			handedNotifications?: any[],
+		) => {
 			published.push({ label, count: changeset.changes.length });
+			notifications.push(...(handedNotifications ?? []));
 			return "confirmed" as const;
 		},
 		getIsHost: () => true,

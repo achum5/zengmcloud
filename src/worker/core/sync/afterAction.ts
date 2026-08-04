@@ -131,6 +131,25 @@ export const afterAction = async (
 		const engine = wrongLeague ? undefined : getSyncEngine();
 		let outcome: "confirmed" | "queued" = "confirmed";
 		if (engine) {
+			// Build the pushes NOW (the changeset is in hand and the DB reflects the
+			// action), but they are handed to the engine rather than sent: a push
+			// announces "the room can see this", so it must fire only when the
+			// changeset is CONFIRMED in the log - immediately on a healthy
+			// connection, or on whatever later drain finally lands a queued upload,
+			// even a next-launch one. Sending on "queued" produced phones that knew
+			// the score of a game the room never received, because the simmer
+			// backgrounded the app before the upload finished.
+			let notifications: Awaited<ReturnType<typeof buildNotifications>> = [];
+			if (!silent) {
+				try {
+					notifications = await buildNotifications(label, changeset, {
+						isHost: engine.getIsHost(),
+						authorName: engine.localName,
+					});
+				} catch (error) {
+					console.error("[sync] Failed to build notifications", error);
+				}
+			}
 			// Hand the changeset to the sync layer. onLocalChangeset persists it to
 			// the durable outbox BEFORE any network attempt, so once it returns
 			// (confirmed OR queued) the delta can no longer be lost - only delayed.
@@ -143,7 +162,7 @@ export const afterAction = async (
 						records: changeset.changes.length,
 					});
 				}
-				outcome = await engine.onLocalChangeset(changeset, label);
+				outcome = await engine.onLocalChangeset(changeset, label, notifications);
 				published = true;
 				if (trace) {
 					syncDebugLog(
@@ -187,34 +206,6 @@ export const afterAction = async (
 				}
 			}
 
-			// Fan phone pushes out once the change is durably on its way - confirmed
-			// in the log, or safely queued (the outbox retries until it lands, so
-			// the push never announces a sync that won't happen; at worst it's a
-			// little early). Skipping the queued case entirely meant a change that
-			// uploaded via retry never notified anyone at all. A sim produces one
-			// detailed notification per team; everything else produces one.
-			// Best-effort - never blocks play. Skipped entirely for a silent
-			// publish (e.g. a single-game sim).
-			if (published && !silent) {
-				try {
-					const notifications = await buildNotifications(label, changeset, {
-						isHost: engine.getIsHost(),
-						authorName: engine.localName,
-					});
-					for (const notification of notifications) {
-						// Fire-and-forget: a Firestore write never rejects while offline
-						// (it buffers and sends on reconnect), so awaiting here could
-						// hang the action behind a dead connection. Buffered delivery is
-						// exactly right anyway - the push goes out when the queued delta
-						// does.
-						void engine.publishNotification(notification).catch((error) => {
-							console.error("[sync] Failed to publish notification", error);
-						});
-					}
-				} catch (error) {
-					console.error("[sync] Failed to publish notifications", error);
-				}
-			}
 		} else {
 			// No cloud target, so there is nothing to retry.
 			published = true;
