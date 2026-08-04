@@ -6,6 +6,7 @@ import {
 	coarsenRatingsRow,
 	coarsenRatingValue,
 	exemptFromCoarseRatings,
+	onShownScale,
 	prospectRatingsSeason,
 } from "./coarsenRating.ts";
 
@@ -252,5 +253,33 @@ describe("prospectRatingsSeason", () => {
 			prospectRatingsSeason(undefined, undefined, true),
 			false,
 		);
+	});
+});
+
+// A rookie's progs are everyone else's progs: what the tens digit did across
+// the year flip. The trap is that with prospects exempt his draft-year row is
+// shown exact (68) and his rookie row floored (7), so the two cannot be
+// subtracted as they stand - which is why rookies showed no progs at all.
+describe("onShownScale", () => {
+	test("same scale on both sides passes the value straight through", () => {
+		assert.strictEqual(onShownScale(68, false, false), 68);
+		assert.strictEqual(onShownScale(6, true, true), 6);
+	});
+
+	test("an exact prospect row is floored to compare against a coarse one", () => {
+		// 68 -> 6, so a rookie row showing 7 reports +1: exactly what the roster
+		// shows for the same player.
+		assert.strictEqual(onShownScale(68, false, true), 6);
+		assert.strictEqual(7 - onShownScale(68, false, true)!, 1);
+	});
+
+	test("a move inside one decade reports no change, as everywhere else", () => {
+		// 61 -> 68 is a real prog, but both floor to 6, so the tens digit did
+		// nothing and neither does the indicator.
+		assert.strictEqual(6 - onShownScale(61, false, true)!, 0);
+	});
+
+	test("exactness cannot be recovered from a floored value", () => {
+		assert.strictEqual(onShownScale(6, true, false), undefined);
 	});
 });

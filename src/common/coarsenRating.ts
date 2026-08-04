@@ -44,6 +44,29 @@ export const prospectRatingsSeason = (
 export const coarsenRatingChange = (current: number, change: number): number =>
 	coarsenRating(current) - coarsenRating(current - change);
 
+// Put a rating onto the scale a row is being SHOWN on, so two rows can be
+// compared without subtracting across scales.
+//
+// This exists for the prospect boundary. With prospects exempt, a player's
+// draft-year row stays exact (68) while his rookie row is floored to the tens
+// digit (7) - so "how much did he prog" cannot be `7 - 68`. Both sides go
+// through the same transform instead, and the answer is what everyone else's
+// answer is: what the tens digit did across the year flip.
+//
+// Returns undefined only for the one direction that can't be recovered -
+// asking for an exact value from one already floored. (Prospect rows precede
+// pro rows, so it doesn't arise going forwards in time.)
+export const onShownScale = (
+	value: number,
+	valueIsCoarse: boolean,
+	shownCoarse: boolean,
+): number | undefined => {
+	if (valueIsCoarse === shownCoarse) {
+		return value;
+	}
+	return shownCoarse ? coarsenRating(value) : undefined;
+};
+
 // ovrs/pots are per-position maps ({ C: 55, PG: 41 }), not plain numbers, so a
 // bare typeof check walks straight past them and they reach the screen at full
 // resolution (the Depth chart and the ratings CSV both read them). Anything that

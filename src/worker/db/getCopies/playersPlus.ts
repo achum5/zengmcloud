@@ -527,20 +527,21 @@ const processRatings = (
 				if (prevRow) {
 					const cur = player.fuzzRating(pr[cat], pr.fuzz);
 					const prev = player.fuzzRating(prevRow[cat], prevRow.fuzz);
+					// Express the change in the units of the value being displayed:
+					// where the row shows a floored rating the change is what the tens
+					// digit did (else a 56->58 bump reads as "5 (+2)"), and where it
+					// shows an exact one the change is exact.
+					//
+					// Both sides go through the SAME transform, which is what makes the
+					// prospect boundary safe - both are true 0-100 here, so a rookie's
+					// exact draft-year row and his floored first pro row compare as
+					// 6 -> 7, never as 68 -> 7. Zeroing that case (the old guard against
+					// a phantom 47-point collapse) is why a rookie showed no progs at
+					// all, on a page where every other player showed theirs.
 					const curCoarse = rowIsCoarse(pr.season);
-					if (curCoarse !== rowIsCoarse(prevRow.season)) {
-						// One row is exact and the other is floored to the tens digit -
-						// the prospect-year boundary. Subtracting across those scales
-						// would report a 47-point collapse where nothing happened.
-						row[attr] = 0;
-					} else if (curCoarse) {
-						// The displayed rating is floored to the tens digit, so the
-						// change must be the difference of those floored values (else a
-						// 56->58 bump shows "5 (+2)" instead of no change).
-						row[attr] = coarsenRating(cur) - coarsenRating(prev);
-					} else {
-						row[attr] = cur - prev;
-					}
+					row[attr] = curCoarse
+						? coarsenRating(cur) - coarsenRating(prev)
+						: cur - prev;
 				} else {
 					row[attr] = 0;
 				}

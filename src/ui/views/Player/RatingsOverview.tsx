@@ -5,6 +5,7 @@ import {
 	ratingsAreCoarse,
 	ratingsGradientStyle,
 } from "../../components/RatingsStatsPopover/ratingsGradientStyle.ts";
+import { onShownScale } from "../../../common/coarsenRating.ts";
 import { RatingWithChange } from "../../components/RatingWithChange.tsx";
 import { type ReactNode } from "react";
 
@@ -34,19 +35,27 @@ export const RatingsOverview = ({
 
 	const coarse = ratingsAreCoarse(tid, currentSeason?.season, draftYear);
 
-	// The year-over-year change is only meaningful when both rows are on the
-	// same scale. A prospect year is exact and the rookie year that follows it
-	// is floored to the tens digit, so subtracting one from the other would
-	// report a 47-point collapse where nothing happened. Falling back to the
-	// current row makes the change zero, which renders as no change at all.
+	// A rookie's progs are everyone else's progs: what the tens digit did across
+	// the year flip. The wrinkle is that his draft-year row is shown exact (68)
+	// while his rookie row is floored (7), so the two can't be subtracted as
+	// they stand - put the older one on the scale being displayed first. This
+	// used to fall back to the current row instead, which made every change zero
+	// and left rookies showing no progs at all.
 	const previous = ratings.findLast(
 		(row) => row.season === currentSeason.season - 1,
 	);
-	const lastSeason =
-		previous !== undefined &&
-		ratingsAreCoarse(tid, previous.season, draftYear) === coarse
-			? previous
-			: currentSeason;
+	const previousCoarse =
+		previous === undefined
+			? coarse
+			: ratingsAreCoarse(tid, previous.season, draftYear);
+
+	const change = (rating: string) => {
+		if (previous === undefined) {
+			return 0;
+		}
+		const before = onShownScale(previous[rating], previousCoarse, coarse);
+		return before === undefined ? 0 : currentSeason[rating] - before;
+	};
 
 	const columns = bySport<
 		Record<
@@ -514,13 +523,13 @@ export const RatingsOverview = ({
 			<div className="d-flex justify-content-between">
 				<h2 className="me-3">
 					Overall:{" "}
-					<RatingWithChange change={currentSeason.ovr - lastSeason.ovr}>
+					<RatingWithChange change={change("ovr")}>
 						{currentSeason.ovr}
 					</RatingWithChange>
 				</h2>
 				<h2>
 					Potential:{" "}
-					<RatingWithChange change={currentSeason.pot - lastSeason.pot}>
+					<RatingWithChange change={change("pot")}>
 						{currentSeason.pot}
 					</RatingWithChange>
 				</h2>
@@ -568,9 +577,7 @@ export const RatingsOverview = ({
 														</div>
 													</td>
 													<td className="px-0 pb-0 ps-1" style={paddingTop}>
-														<RatingWithChange
-															change={current - lastSeason[rating]}
-														/>
+														<RatingWithChange change={change(rating)} />
 													</td>
 												</tr>
 											);
