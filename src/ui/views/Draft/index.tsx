@@ -108,7 +108,26 @@ const Draft = ({
 		draftedSorted = drafted;
 	}
 
+	// A draft pick cannot be taken back, and these buttons sit two per row in a
+	// long list of them - on a phone the wrong one is a thumb's width away. So
+	// say who is about to be picked and make it deliberate.
 	const draftUser = async (pid: number, simToNextUserPick = false) => {
+		const p = undrafted.find((p2) => p2.pid === pid);
+		if (p) {
+			const ratings = challengeNoRatings
+				? ""
+				: `, ${p.ratings.ovr} ovr / ${p.ratings.pot} pot`;
+			const proceed = await confirm(
+				`Draft ${p.firstName} ${p.lastName} (${p.ratings.pos}, ${p.age}${ratings})?`,
+				{
+					okText: simToNextUserPick ? "Draft and sim" : "Draft",
+				},
+			);
+			if (!proceed) {
+				return;
+			}
+		}
+
 		setDrafting(true);
 		await toWorker("main", "draftUser", pid);
 		setDrafting(false);
