@@ -1,6 +1,7 @@
 import { helpers } from "./helpers.ts";
 import {
 	displaySectionHeader,
+	displaySectionHeaderWithoutSeason,
 	parseSectionHeader,
 } from "../../common/seasonNote.ts";
 
@@ -209,6 +210,10 @@ export const linkifyRecap = (text: string, entries: RecapLink[]): string => {
 export const linkifySeasonNote = (
 	text: string,
 	linksFor: (season: number | undefined) => RecapLink[],
+	// Drop the "[YYYY]" labels. The headers still have to be PARSED - they are
+	// what scopes each section's links to the right year - so they are hidden at
+	// render rather than stripped from the text beforehand.
+	hideSeasonLabels = false,
 ): string => {
 	if (!text) {
 		return text;
@@ -233,7 +238,11 @@ export const linkifySeasonNote = (
 			// A header is a label, not prose, so it never gets links written into
 			// it - but it does get rewritten for display (a retirement writeup
 			// shows as a standalone headline rather than a dated log entry).
-			out.push(displaySectionHeader(line));
+			out.push(
+				hideSeasonLabels
+					? displaySectionHeaderWithoutSeason(line)
+					: displaySectionHeader(line),
+			);
 		} else {
 			chunk.push(line);
 		}

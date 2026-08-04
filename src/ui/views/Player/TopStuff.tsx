@@ -288,6 +288,7 @@ const TopStuff = ({
 	jerseyNumberInfos,
 	noteTeammates,
 	displayNote,
+	hideSeasonLabels,
 	draftRecap,
 	noteLinksBySeason,
 	player,
@@ -323,6 +324,9 @@ const TopStuff = ({
 	// edited; this is only the part that isn't already readable from a season
 	// row in the stats table.
 	displayNote?: string;
+	// The page is already scoped to one season, so the "[YYYY]" label above the
+	// writeup restates the dropdown at the top of the page.
+	hideSeasonLabels?: boolean;
 	// The draft-selection writeup, opened from the draft line rather than
 	// dumped in the note block - it is about that one line.
 	draftRecap?: SeasonNoteSection[];
@@ -792,6 +796,7 @@ const TopStuff = ({
 					// now, so only what has no row shows here. Editing still gets the
 					// whole note - this is display only.
 					displayNote={displayNote}
+					hideSeasonLabels={hideSeasonLabels}
 					info={{
 						type: "player",
 						pid: player.pid,

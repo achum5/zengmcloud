@@ -59,6 +59,7 @@ const Note = (
 				// reachable from a season row in the stats table, but the editor has
 				// to keep the whole thing or saving would delete the rest.
 				displayNote?: string;
+				hideSeasonLabels?: boolean;
 				// Just the button (and the editor it opens) - no copy of the note.
 				// For a page that already shows the note somewhere else and only wants
 				// the way in to edit it, like the box score, where the recap sits under
@@ -76,6 +77,7 @@ const Note = (
 				banner?: boolean;
 				editOnly?: boolean;
 				displayNote?: string;
+				hideSeasonLabels?: boolean;
 		  },
 ) => {
 	const {
@@ -89,6 +91,7 @@ const Note = (
 		banner,
 		editOnly,
 		displayNote,
+		hideSeasonLabels,
 	} = props;
 
 	const [editing, setEditing] = useState(false);
@@ -224,7 +227,9 @@ const Note = (
 				    each section is linked against its own year. Linking/rendering is
 				    applied only to the view - the stored/edited text stays plain. */}
 				{autoLinkBySeason ? (
-					<Markdown>{linkifySeasonNote(noteToShow, autoLinkBySeason)}</Markdown>
+					<Markdown>
+						{linkifySeasonNote(noteToShow, autoLinkBySeason, hideSeasonLabels)}
+					</Markdown>
 				) : autoLink && autoLink.length > 0 ? (
 					<Markdown>{linkifyRecap(noteToShow, autoLink)}</Markdown>
 				) : (

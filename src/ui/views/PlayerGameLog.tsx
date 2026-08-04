@@ -1,6 +1,10 @@
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import TopStuff from "./Player/TopStuff.tsx";
+import {
+	renderSeasonNote,
+	seasonNoteSectionsFor,
+} from "../../common/seasonNote.ts";
 import { helpers } from "../util/helpers.ts";
 import { getCols } from "../../common/getCols.ts";
 import { DataTable } from "../components/DataTable/index.tsx";
@@ -355,6 +359,13 @@ const PlayerGameLog = ({
 		striped = true;
 	}
 
+	// The section is kept WITH its "[YYYY]" header rather than reduced to its
+	// body: the header is what scopes the writeup's team and teammate links to
+	// the right year. It is hidden at render instead (hideSeasonLabels).
+	const seasonWriteup = renderSeasonNote(
+		seasonNoteSectionsFor(player.note, season),
+	);
+
 	let noGamesMessage;
 	if (gameLog.length === 0) {
 		noGamesMessage = (
@@ -367,6 +378,12 @@ const PlayerGameLog = ({
 			<TopStuff
 				bestPos={bestPos}
 				currentSeason={currentSeason}
+				// This page is one season of one player, so the note shows that
+				// season's writeup and nothing else - the whole career stack belonged
+				// on his overview, not under a game log for a single year. The year
+				// label goes too: the dropdown at the top of the page already says it.
+				displayNote={seasonWriteup}
+				hideSeasonLabels
 				jerseyNumberInfos={jerseyNumberInfos}
 				noteTeammates={noteTeammates}
 				player={player}

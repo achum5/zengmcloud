@@ -97,6 +97,19 @@ export const displaySectionHeader = (line: string): string => {
 	return `**${header.headline || "Retirement"}**\n`;
 };
 
+// Same idea as displaySectionHeader, but for a view that is ALREADY scoped to
+// one season - the player game log, whose own dropdown says the year at the top
+// of the page. Repeating "[2006]" above the writeup is noise. A headline still
+// shows: that is the part of the header carrying information rather than
+// restating the page.
+export const displaySectionHeaderWithoutSeason = (line: string): string => {
+	const header = parseSectionHeader(line);
+	if (!header) {
+		return line;
+	}
+	return header.headline ? `**${header.headline}**\n` : "";
+};
+
 export const parseSeasonNote = (note: string): SeasonNoteSection[] => {
 	const sections: SeasonNoteSection[] = [];
 	let current: SeasonNoteSection | undefined;

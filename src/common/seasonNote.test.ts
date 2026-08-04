@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	displaySectionHeaderWithoutSeason,
 	hasSeasonNote,
 	seasonNoteSectionsFor,
 	splitPlayerNote,
@@ -476,5 +477,35 @@ describe("hand-written text survives a writeup being added", () => {
 		});
 		assert.strictEqual(leftover, "My own thoughts.");
 		assert.strictEqual(bySeason.get(2005)![0]!.body, "A season.");
+	});
+});
+
+// The player game log is one season of one player, and its own dropdown says
+// which. The whole career stack used to print under it, "[2005]" and "[2004]"
+// labels and all, on a page headed 2006.
+describe("displaySectionHeaderWithoutSeason", () => {
+	test("a bare season label renders as nothing", () => {
+		assert.strictEqual(displaySectionHeaderWithoutSeason("[2006]"), "");
+	});
+
+	test("a headline survives, since it says something the page does not", () => {
+		assert.strictEqual(
+			displaySectionHeaderWithoutSeason("[2006] The leap"),
+			"**The leap**\n",
+		);
+	});
+
+	test("a retirement writeup keeps its headline and loses the year", () => {
+		assert.strictEqual(
+			displaySectionHeaderWithoutSeason("[2012] Retirement — The quiet exit"),
+			"**The quiet exit**\n",
+		);
+	});
+
+	test("an ordinary line is untouched", () => {
+		assert.strictEqual(
+			displaySectionHeaderWithoutSeason("He averaged 21 a night."),
+			"He averaged 21 a night.",
+		);
 	});
 });
