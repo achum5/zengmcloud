@@ -290,11 +290,33 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 	}
 
 	if (p.seasonHighs) {
-		const highs = Object.entries(p.seasonHighs)
-			.map(([stat, value]) => `${value}${stat}`)
-			.join(" ");
-		if (highs) {
-			lines.push(`SEASON HIGHS (single game): ${highs}`);
+		// "SEASON HIGHS (single game): 28pts 11trb 11ast" was read, reasonably, as
+		// one 28-11-11 night — and written up as a triple-double that never
+		// happened. Each of those is his best in that category across the whole
+		// season, and they are usually three different nights.
+		//
+		// So group them by the game they actually came from: bests that share a
+		// game are stated as one line (a real triple-double is then sayable), and
+		// everything else stands alone as what it is.
+		const byGame = new Map<string, string[]>();
+		for (const [stat, high] of Object.entries(p.seasonHighs)) {
+			// No gid (an old or imported league) means we can't prove two of these
+			// shared a night, so they never get grouped.
+			const key = high.gid === undefined ? `alone:${stat}` : `game:${high.gid}`;
+			const list = byGame.get(key) ?? [];
+			list.push(`${high.value} ${stat}`);
+			byGame.set(key, list);
+		}
+
+		const parts = [...byGame.values()].map((group) =>
+			group.length > 1 ? `${group.join(" and ")} in one game` : group[0]!,
+		);
+		if (parts.length > 0) {
+			lines.push(
+				`SEASON BESTS (one entry per category, each his best single game in THAT category; entries are from different games except where one says "in one game"): ${parts.join(
+					"; ",
+				)}`,
+			);
 		}
 	}
 

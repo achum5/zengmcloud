@@ -93,8 +93,10 @@ export type RecapPlayer = {
 	stats: RecapPlayerSeasonStats[];
 	ratings: RecapPlayerSeasonRatings[];
 	// His best single game in each category this season - the concrete detail
-	// that makes a recap read like writing instead of a summary.
-	seasonHighs?: Record<string, number>;
+	// that makes a recap read like writing instead of a summary. Each carries
+	// the game it happened in, because whether two of them share a night is the
+	// difference between a triple-double and three separate good games.
+	seasonHighs?: Record<string, { value: number; gid?: number }>;
 	// Where he finished in each award race this season, when he was in it at all.
 	awardFinishes: { name: string; rank: number }[];
 	awards: { season: number; type: string }[];
@@ -245,9 +247,13 @@ export type RecapPlayerBatch = {
 
 const num = (x: unknown): number => (typeof x === "number" ? x : 0);
 
-// Max stats are stored as [value, gid].
-const maxValue = (x: unknown): number | undefined =>
-	Array.isArray(x) && typeof x[0] === "number" ? x[0] : undefined;
+// Max stats are stored as [value, gid]. The gid rides along: whether two
+// category bests happened on the same night is the difference between a
+// triple-double and three separate good games.
+const maxEntry = (x: unknown): { value: number; gid?: number } | undefined =>
+	Array.isArray(x) && typeof x[0] === "number"
+		? { value: x[0], gid: typeof x[1] === "number" ? x[1] : undefined }
+		: undefined;
 
 const LEADER_STATS = [
 	{ stat: "pts", label: "points" },
@@ -267,16 +273,16 @@ const LEADER_BOARD_SIZE = 5;
 const HIGH_STATS = ["pts", "trb", "ast", "stl", "blk", "tp"] as const;
 
 const seasonHighsFor = (p: any, season: number) => {
-	const out: Record<string, number> = {};
+	const out: Record<string, { value: number; gid?: number }> = {};
 	for (const row of p.stats ?? []) {
 		if (row.season !== season || row.playoffs) {
 			continue;
 		}
 		for (const stat of HIGH_STATS) {
-			const value = maxValue(row[`${stat}Max`]);
+			const entry = maxEntry(row[`${stat}Max`]);
 			// A player traded mid-season has a row per team, so take the better.
-			if (value !== undefined && value > (out[stat] ?? -1)) {
-				out[stat] = value;
+			if (entry !== undefined && entry.value > (out[stat]?.value ?? -1)) {
+				out[stat] = entry;
 			}
 		}
 	}

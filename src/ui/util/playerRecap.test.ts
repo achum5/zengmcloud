@@ -80,7 +80,11 @@ const player = (pid: number, seasons: number) => ({
 	transactions: ["2001 draft: drafted by CHI (pick 5)"],
 	injuries: [{ season: 2004, type: "Sprained ankle", games: 12 }],
 	feats: [{ season: 2005, text: "52 pts, 11 reb, 4 ast (win)" }],
-	seasonHighs: { pts: 52, trb: 14, ast: 9 },
+	seasonHighs: {
+		pts: { value: 52, gid: 11 },
+		trb: { value: 14, gid: 12 },
+		ast: { value: 9, gid: 13 },
+	},
 	awardFinishes: [{ name: "Most Valuable Player", rank: 4 }],
 	alreadyWritten: false,
 });
@@ -559,10 +563,71 @@ describe("league context", () => {
 
 	test("season highs, height and weight, and games started all make it in", () => {
 		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
-		assert.ok(prompt.includes("SEASON HIGHS (single game): 52pts 14trb 9ast"));
+		assert.ok(prompt.includes("52 pts; 14 trb; 9 ast"));
 		assert.ok(prompt.includes(`6'7", 220 lbs`));
 		// gs is optional - a season row without it still reads as plain games.
 		assert.ok(prompt.includes("82g "));
+	});
+
+	// Just the values the SEASON BESTS line lists, with its heading stripped -
+	// the heading explains the "in one game" marker, so it has to be off the
+	// string before anything can assert the marker is absent.
+	const bestsValues = (prompt: string) => {
+		const line = prompt.split("\n").find((l) => l.startsWith("SEASON BESTS"))!;
+		return line.slice(line.lastIndexOf("): ") + 3);
+	};
+
+	// A recap once described a 28-11-11 triple-double the player never had: those
+	// were his best scoring night, his best rebounding night and his best passing
+	// night, three separate games, printed as "28pts 11trb 11ast" under a heading
+	// that said "single game".
+	test("category bests from different games are not presentable as one line", () => {
+		const prompt = buildPlayerRecapPrompt(batch([player(7, 5)]));
+		assert.ok(
+			!prompt.includes("52pts 14trb 9ast"),
+			"three separate nights must not be printed as a box score line",
+		);
+		assert.ok(
+			!/SEASON HIGHS \(single game\)/.test(prompt),
+			"the old heading asserted the very thing that was wrong",
+		);
+		assert.ok(prompt.includes("each his best single game in THAT category"));
+		assert.ok(prompt.includes("from different games"));
+		assert.ok(
+			!bestsValues(prompt).includes("in one game"),
+			"nothing here shared a game, so nothing may claim one",
+		);
+	});
+
+	// The flip side: when the bests really did land on the same night, that IS a
+	// triple-double and the prompt has to let it be written as one.
+	test("category bests from the same game are stated as one game", () => {
+		const p = {
+			...player(7, 5),
+			seasonHighs: {
+				pts: { value: 28, gid: 40 },
+				trb: { value: 11, gid: 40 },
+				ast: { value: 11, gid: 40 },
+			},
+		};
+		const prompt = buildPlayerRecapPrompt(batch([p]));
+		assert.ok(prompt.includes("28 pts and 11 trb and 11 ast in one game"));
+	});
+
+	// An old or imported league has the max values but no game ids. Two bests
+	// might have shared a night; nothing proves it, so nothing claims it.
+	test("bests with no game id are never grouped", () => {
+		const p = {
+			...player(7, 5),
+			seasonHighs: {
+				pts: { value: 28 },
+				trb: { value: 11 },
+				ast: { value: 11 },
+			},
+		};
+		const prompt = buildPlayerRecapPrompt(batch([p]));
+		assert.ok(prompt.includes("28 pts; 11 trb; 11 ast"));
+		assert.ok(!bestsValues(prompt).includes("in one game"));
 	});
 });
 
