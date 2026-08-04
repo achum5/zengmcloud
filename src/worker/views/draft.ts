@@ -174,6 +174,13 @@ const updateDraft = async (inputs: unknown, updateEvents: UpdateEvents) => {
 				season: g.get("season"),
 				showRookies: true,
 				fuzz: true,
+				// Draft Results is the SAME scouting report as the Undrafted list
+				// beside it - the pick doesn't change what this year's report said.
+				// Without this a player dropped from "49 / 57" to "5 / 6" the instant
+				// he was taken, on the same screen, one row over. (A fantasy or
+				// expansion draft is unaffected: those players' rows are years past
+				// their draft, so the exemption doesn't reach them.)
+				prospectSeasonsExact: true,
 			}),
 		);
 
