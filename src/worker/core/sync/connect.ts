@@ -1345,6 +1345,12 @@ const BEHIND_GRACE_MS = 30 * 1000;
 let behindSince: number | undefined;
 let healingBehind = false;
 
+// The missed-data heal for the CURRENT session (set on connect, singleflight),
+// so an engine that skips a batch mid-session can trigger it immediately
+// instead of leaving the device visibly broken until the next launch.
+let healingMissedData = false;
+let healMissedDataNow: ((trigger: string) => Promise<void>) | undefined;
+
 // Test-only: this checker deliberately keeps state between ticks (grace
 // timing, one-recovery-at-a-time, the proven-stale stamp), and tests need each
 // scenario to start from a device that has noticed nothing yet.
@@ -1971,10 +1977,15 @@ const doConnectSharedLeague = async ({
 			pushPendingUploads(count);
 		},
 		// The engine just abandoned a bulk change whose chunks weren't in the log -
-		// it silently skipped shared state. Persist a durable marker so the next
-		// connect self-heals with a full resync even after a reload.
+		// it silently skipped shared state. Persist a durable marker (so even a
+		// reload heals), then heal NOW: the last device that waited for its next
+		// launch spent an evening visibly missing a day of games. The delay lets
+		// the abandoning pass finish; the heal itself also waits for idle.
 		onResyncNeeded: () => {
 			void saveResyncNeeded(lid, true);
+			setTimeout(() => {
+				void healMissedDataNow?.("engine-skip");
+			}, 5000);
 		},
 	});
 	engine.start();
@@ -2031,15 +2042,18 @@ const doConnectSharedLeague = async ({
 	// it cleanly, so an offline/empty read or a still-missing chunk retries on the
 	// next connect instead of clearing the flag and staying stuck. Never blocks
 	// the connect.
-	void (async () => {
+	const healMissedData = async (trigger: string) => {
+		if (healingMissedData) {
+			return;
+		}
+		healingMissedData = true;
 		try {
-			// Two independent reasons to re-read the whole log. The MARKER is the
-			// engine telling on itself: it knowingly skipped a bulk change. The
-			// STRANDED ROWS are evidence from the data, and they catch the case the
-			// marker can't - a day's changeset that went missing without the engine
-			// ever noticing (a dropped delivery, a watermark banked past an entry
-			// that never arrived). Whatever the cause, the recovery is the same:
-			// re-read and re-apply the log in order.
+			// Two independent reasons to recover. The MARKER is the engine telling
+			// on itself: it knowingly skipped a bulk change. The STRANDED ROWS are
+			// evidence from the data, and they catch the case the marker can't - a
+			// day's changeset that went missing without the engine ever noticing
+			// (a dropped delivery, a watermark banked past an entry that never
+			// arrived).
 			const strandedBefore = await findStrandedScheduleRows();
 			const markerSet = await loadResyncNeeded(lid);
 			if (strandedBefore.gids.length > 0) {
@@ -2075,9 +2089,39 @@ const doConnectSharedLeague = async ({
 			}
 
 			syncDebugLog("connect:auto-resync-start", {
+				trigger,
 				markerSet,
 				stranded: strandedBefore.gids.length,
 			});
+
+			// Checkpoint-first, exactly like every other recovery. The windowed
+			// replay can only re-apply what it can reach and what the guards will
+			// accept; the checkpoint rewinds to a complete consistent base and the
+			// tail replay walks forward IN ORDER through the missed day and
+			// everything after it, bypassing the dedup that remembers the skipped
+			// entries as already seen. That bypass is the whole point: an abandoned
+			// batch's entries stay marked seen, which is precisely why a plain
+			// catch-up could never backfill them.
+			try {
+				const restored = await restoreFromRoomSnapshot(engine);
+				if (restored) {
+					await engine.catchUp();
+					const strandedNow = await findStrandedScheduleRows();
+					if (strandedNow.gids.length === 0) {
+						await saveResyncNeeded(lid, false);
+						syncDebugLog("connect:auto-resync-healed-from-snapshot", {
+							trigger,
+						});
+						console.log(
+							"[sync] Recovered the missing day(s) from the room's checkpoint.",
+						);
+						return;
+					}
+				}
+			} catch (error) {
+				syncDebugLog("connect:auto-resync-snapshot-failed", { error });
+			}
+
 			const result = await engine.resyncAll({
 				windowEntries: RESYNC_WINDOW_ENTRIES,
 			});
@@ -2122,8 +2166,12 @@ const doConnectSharedLeague = async ({
 			}
 		} catch (error) {
 			syncDebugLog("connect:auto-resync-failed", { error });
+		} finally {
+			healingMissedData = false;
 		}
-	})();
+	};
+	healMissedDataNow = healMissedData;
+	void healMissedData("connect");
 
 	// Played-game invariant sweep: drop any schedule row whose game already
 	// exists (a phantom "upcoming" copy of a played game, left by a partially
@@ -2362,6 +2410,9 @@ export const teardownSharedLeague = async ({
 	setApplyGuard(undefined);
 	currentCode = undefined;
 	connectedLid = undefined;
+	// The missed-data heal closes over this session's engine; a torn-down
+	// session must not be healable.
+	healMissedDataNow = undefined;
 	currentHostName = undefined;
 	currentCloudReady = false;
 	if (clearPersisted) {

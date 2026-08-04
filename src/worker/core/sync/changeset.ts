@@ -13,6 +13,7 @@ import {
 } from "../../util/index.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { checkApplyGuard } from "./applyGuard.ts";
+import { syncDebugLog } from "./debugLog.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
@@ -527,6 +528,81 @@ export const captureChangeset = async (): Promise<Changeset> => {
 // Apply a changeset received from another device. Writes go THROUGH the cache
 // API (not raw IndexedDB) so the in-memory cache - the live source of truth -
 // stays coherent; writing IndexedDB directly would be clobbered by the next
+// Does this changeset play games of the CURRENT season while an earlier day
+// of that season sits locally unplayed? See the call site for why that must
+// never apply. Exported for tests.
+export const guardDayContiguity = async (
+	changeset: Changeset,
+): Promise<void> => {
+	let season: number;
+	try {
+		season = g.get("season");
+	} catch {
+		// No league loaded (bare test harness) - nothing to judge against.
+		return;
+	}
+
+	// Only judge changesets that PLAY games of the season this device is in.
+	// Cross-season applies (a replay walking old history) are judged at each
+	// step against the season the device is in at that step.
+	let minDay: number | undefined;
+	const incomingGids = new Set<number>();
+	for (const change of changeset.changes) {
+		if (change.store !== "games" || change.type !== "put") {
+			continue;
+		}
+		const game = change.value as
+			| { gid?: number; day?: number; season?: number }
+			| undefined;
+		if (
+			game &&
+			typeof game.gid === "number" &&
+			typeof game.day === "number" &&
+			game.season === season
+		) {
+			incomingGids.add(game.gid);
+			if (minDay === undefined || game.day < minDay) {
+				minDay = game.day;
+			}
+		}
+	}
+	if (minDay === undefined) {
+		return;
+	}
+
+	const scheduleRows = await idb.cache.schedule.getAll();
+	const missingDays = new Set<number>();
+	for (const row of scheduleRows) {
+		if (typeof row.day !== "number" || row.day >= minDay) {
+			continue;
+		}
+		// Satisfied by this very changeset (a multi-day sim ships several days
+		// at once).
+		if (incomingGids.has(row.gid)) {
+			continue;
+		}
+		// A leftover row for a game this device HAS is a phantom row - wrong,
+		// but not missing data; the played-game sweep cleans those.
+		if (await idb.cache.games.get(row.gid)) {
+			continue;
+		}
+		missingDays.add(row.day);
+	}
+	if (missingDays.size === 0) {
+		return;
+	}
+
+	const days = [...missingDays].sort((a, b) => a - b);
+	getSyncEngine()?.markResyncNeeded();
+	syncDebugLog("apply:refused-day-gap", {
+		missingDays: days,
+		incomingDay: minDay,
+	});
+	throw new Error(
+		`Refusing to apply day ${minDay}: day ${days.join(", ")} of this season has not arrived on this device yet. Applying out of order would fork the league; it will self-repair from the room's checkpoint instead.`,
+	);
+};
+
 // cache flush. Recording is suppressed so we don't re-broadcast what we just
 // received. If gameAttributes changed, the in-memory `g` mirror is refreshed.
 export const applyChangeset = async (
@@ -546,6 +622,20 @@ export const applyChangeset = async (
 			"Refusing to apply a remote change: the loaded league is not the one this sync session belongs to.",
 		);
 	}
+
+	// THE DAY-CONTIGUITY GUARD. A changeset that plays day D of the current
+	// season must not land on a device that still has an EARLIER day unplayed:
+	// applying it forks the league - records, stats and standings that include
+	// day D but not day 11 - and the fork looks healthy on every position
+	// check, which is how a device once spent an evening a day behind the room
+	// with no idea. Missing data has exactly one honest response: stop, keep
+	// the watermark pinned below this entry (the throw does that), flag the
+	// durable repair marker, and let the checkpoint heal walk history forward
+	// IN ORDER. Every engine bug that skips an entry - an abandoned batch, a
+	// watermark banked too far, a dedup gone wrong - funnels through here,
+	// because this is the one check made against the DATA rather than against
+	// the bookkeeping that failed.
+	await guardDayContiguity(changeset);
 
 	let touchedGameAttributes = false;
 	let touchedPhase = false;
