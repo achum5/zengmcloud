@@ -33,6 +33,7 @@ import {
 	isAheadOfPosition,
 	isBehindPosition,
 } from "./leaguePosition.ts";
+import { checkLeagueIntegrity } from "./leagueIntegrity.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import {
 	isTooFarBehind,
@@ -1221,6 +1222,19 @@ export const getSimSafety = async (): Promise<
 			safe: false,
 			reason:
 				"This device is flagged for a repair pass and will self-heal shortly. Try again in a minute.",
+		};
+	}
+
+	// A device whose league fails the catastrophe check (stripped rosters, no
+	// teams) must not sim: results computed from a broken league are broken
+	// results, and once published they become everyone's. Position guards below
+	// can't catch this - a damaged device can be at exactly the right (season,
+	// phase, day) with half its players missing.
+	const integrityProblems = await checkLeagueIntegrity();
+	if (integrityProblems.length > 0) {
+		return {
+			safe: false,
+			reason: `This device's copy of the league looks damaged (${integrityProblems[0]}). Use Force Resync on the sync page to restore it from the room - simming now would spread the damage.`,
 		};
 	}
 

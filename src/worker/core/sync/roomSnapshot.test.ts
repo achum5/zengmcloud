@@ -137,12 +137,22 @@ describe("room snapshot round trip", () => {
 	});
 
 	test("a stale device ends up with the authority's state, deletions included", async () => {
-		// The AUTHORITY, three seasons ahead: current rosters, and a negotiation
-		// store that is EMPTY because those rows were deleted long ago.
+		// The AUTHORITY, three seasons ahead: current rosters (full ones - a
+		// mid-season payload with thin rosters is now REFUSED by design), and a
+		// negotiation store that is EMPTY because those rows were deleted long
+		// ago.
 		(idb as any).league = makeLeagueDb({
 			players: [
 				{ pid: 1, name: "Kept", tid: 0 },
+				{ pid: 2, tid: 0 },
+				{ pid: 3, tid: 0 },
+				{ pid: 4, tid: 0 },
+				{ pid: 5, tid: 0 },
 				{ pid: 9, name: "Drafted Later", tid: 1 },
+				{ pid: 10, tid: 1 },
+				{ pid: 11, tid: 1 },
+				{ pid: 12, tid: 1 },
+				{ pid: 13, tid: 1 },
 			],
 			teams: [{ tid: 0 }, { tid: 1 }],
 			negotiations: [],
@@ -173,7 +183,7 @@ describe("room snapshot round trip", () => {
 		const players = await (idb as any).league.getAll("players");
 		assert.deepStrictEqual(
 			players.map((p: any) => p.pid).sort((a: number, b: number) => a - b),
-			[1, 9],
+			[1, 2, 3, 4, 5, 9, 10, 11, 12, 13],
 			"restore must produce the authority's roster, not a merge with the stale one",
 		);
 		assert.strictEqual(

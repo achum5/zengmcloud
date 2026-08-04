@@ -15,6 +15,10 @@ import {
 import { getLeaguePosition } from "./leaguePosition.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
 import { checkApplyGuard } from "./applyGuard.ts";
+import {
+	checkLeagueIntegrity,
+	findPayloadIntegrityProblems,
+} from "./leagueIntegrity.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import type { SyncEngine } from "./SyncEngine.ts";
 import type { RoomSnapshotMeta } from "./types.ts";
@@ -109,6 +113,16 @@ export const validateRoomSnapshotPayload = (payload: SnapshotPayload) => {
 			problems.push(`the ${store} store is empty`);
 		}
 	}
+	if (problems.length > 0) {
+		return problems;
+	}
+
+	// Structure is necessary but not sufficient: the payload also has to
+	// describe a league that could actually be played. A publisher whose own
+	// rosters were stripped produces a payload that passes every shape check
+	// and fails this one - and this is the last moment to stop it, because
+	// after apply, this device becomes the next publisher of the same damage.
+	problems.push(...findPayloadIntegrityProblems(payload.stores));
 	return problems;
 };
 
@@ -411,6 +425,19 @@ export const maybePublishRoomSnapshot = async (
 		const { problems } = await repairLeagueHistory("pre-snapshot-publish");
 		if (problems.length > 0) {
 			syncDebugLog("snapshot:publish-blocked-bad-history", { problems });
+			return;
+		}
+
+		// Same bar for the present as for the past: a device whose own league
+		// fails the catastrophe check must never become what everyone else
+		// restores from. Restorers check this too, but the publish gate is what
+		// keeps a poisoned checkpoint from ever existing - and from pruning the
+		// log entries that still hold the good data.
+		const integrityProblems = await checkLeagueIntegrity();
+		if (integrityProblems.length > 0) {
+			syncDebugLog("snapshot:publish-blocked-bad-league", {
+				problems: integrityProblems,
+			});
 			return;
 		}
 
