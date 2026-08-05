@@ -246,6 +246,14 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 	// feels slow" is diagnosable from a console paste instead of guesswork.
 	const guardStart = Date.now();
 
+	// Every timeline-advance click leaves a breadcrumb BEFORE any guard runs.
+	// A sim click that produces nothing on screen and nothing in the log is
+	// undiagnosable; with this, the capture always shows the click happened,
+	// and whatever follows (or doesn't) names where it died.
+	if (simAuthorityLocked && syncEngine) {
+		syncDebugLog("api:sim-call", { type, name });
+	}
+
 	if (needsConnection) {
 		if (syncEngine) {
 			if (simAuthorityLocked && !syncEngine.isAuthority()) {
@@ -491,6 +499,26 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				// than making followers wait it out. No position: nothing moved.
 				if (marksBusy) {
 					getSyncEngine()?.clearRoomBusy();
+				}
+				// A thrown action used to die silently (the UI never awaits these
+				// rejections): no toast, no log, a button that "does nothing". Say
+				// what happened in both places, then rethrow.
+				if (getSyncEngine()) {
+					syncDebugLog("api:call-failed", {
+						type,
+						name,
+						error: String(error),
+					});
+					util.logEvent(
+						{
+							type: "error",
+							text: `That didn't finish: ${
+								error instanceof Error ? error.message : String(error)
+							}`,
+							persistent: true,
+						},
+						conditions,
+					);
 				}
 				throw error;
 			},

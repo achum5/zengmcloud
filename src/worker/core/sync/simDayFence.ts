@@ -12,6 +12,26 @@ import type { SyncTransport } from "./types.ts";
 // simmer doesn't wedge the room for long. Matches the draft-advance lease.
 const SIM_DAY_LEASE_MS = 90_000;
 
+// See claimSimDayFence: a hung claim must fail, not freeze the sim.
+const CLAIM_TIMEOUT_MS = 10_000;
+const withClaimTimeout = <T>(promise: Promise<T>): Promise<T> =>
+	new Promise((resolve, reject) => {
+		const id = setTimeout(
+			() => reject(new Error(`Timed out after ${CLAIM_TIMEOUT_MS}ms`)),
+			CLAIM_TIMEOUT_MS,
+		);
+		promise.then(
+			(value) => {
+				clearTimeout(id);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(id);
+				reject(error);
+			},
+		);
+	});
+
 let currentTransport: SyncTransport | undefined;
 
 // The most recent day this device claimed, so the end-of-sim publish can close
@@ -48,12 +68,19 @@ export const claimSimDayFence = async (
 		return true;
 	}
 
-	const granted = await transport.claimSimDay(
-		stageKey(),
-		day,
-		gids,
-		SIM_DAY_LEASE_MS,
-	);
+	// TIMED: the claim is a cloud transaction, and an unbounded hang here is a
+	// sim that freezes silently mid-click. A timeout counts as "not granted" -
+	// the safe direction (skip and catch up; if the claim actually landed
+	// server-side, its lease expires on its own).
+	let granted = false;
+	try {
+		granted = await withClaimTimeout(
+			transport.claimSimDay(stageKey(), day, gids, SIM_DAY_LEASE_MS),
+		);
+	} catch (error) {
+		syncDebugLog("simDayFence:claim-failed", { day, error: String(error) });
+		return false;
+	}
 	if (granted) {
 		lastClaimedDay = day;
 	} else {

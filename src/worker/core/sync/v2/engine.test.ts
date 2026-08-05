@@ -143,6 +143,7 @@ class V2Transport implements SyncTransport {
 			byName: string;
 			at: number;
 			action: string;
+			inlineDelta?: string;
 		},
 		expectedVersion: number,
 	) {
@@ -646,6 +647,9 @@ describe("SyncEngineV2", () => {
 			{ title: "Celtics 115", body: "..." } as any,
 		]);
 		assert.strictEqual(transport.notifications.length, 1);
+		// Drain the discard's fire-and-forget recovery before this test ends, so
+		// it can't run against the NEXT test's freshly-swapped league DB.
+		await engine.catchUp();
 		engine.stop();
 	});
 
@@ -877,6 +881,47 @@ describe("SyncEngineV2", () => {
 			stateFetches,
 			fetchesBefore,
 			"the backed-off attempt never touched the network",
+		);
+		engine.stop();
+	});
+
+	// Small payloads ride the pointer doc, so a receiver applies them with ZERO
+	// further reads - even when every read path is wedged (the Safari shape).
+	test("a small edit applies straight from the pointer push, no reads needed", async () => {
+		const room = new Room();
+		initRoom(room);
+		const seedTransport = new V2Transport("A", room);
+		const serialized = serializeChangeset(changesetOf(tradePut(1, 5)));
+		await seedTransport.publishV2Delta(
+			{ version: 1, authorId: "A", action: "main.proposeTrade", at: 1 },
+			serialized,
+		);
+		await seedTransport.commitV2Version(
+			{
+				version: 1,
+				authorId: "A",
+				byName: "A",
+				at: 1,
+				action: "main.proposeTrade",
+				inlineDelta: serialized,
+			},
+			0,
+		);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		// EVERYTHING that reads is dead; only the already-delivered pointer state
+		// (the hint) is available.
+		transport.fetchRoomV2State = () => Promise.reject(new Error("wedged"));
+		transport.fetchV2Delta = () => Promise.reject(new Error("wedged"));
+		const engine = new SyncEngineV2(transport);
+
+		assert.ok(await engine.catchUp(room.state!));
+		assert.strictEqual(await readAppliedVersion(), 1);
+		assert.strictEqual(
+			(await (idb as any).league.getAll("players"))[0].tid,
+			5,
+			"the edit landed from the pointer push alone",
 		);
 		engine.stop();
 	});

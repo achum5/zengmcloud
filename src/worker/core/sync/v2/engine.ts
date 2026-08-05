@@ -88,6 +88,11 @@ const PUBLISH_ATTEMPT_TIMEOUT_MS = 20_000;
 // the user watches nothing happen.
 const CATCHUP_READ_TIMEOUT_MS = 8_000;
 
+// Payloads at or under this many serialized characters ride inside the
+// pointer document itself (Firestore's doc limit is 1 MB; this leaves lots of
+// headroom). Covers roster moves, trades, signings - everything interactive.
+const INLINE_DELTA_LIMIT = 150_000;
+
 // The head probe runs every 5s health tick; its read must resolve or fail
 // well within one tick so probes never pile up behind a hung one.
 const HEAD_PROBE_TIMEOUT_MS = 4_000;
@@ -240,7 +245,10 @@ export class SyncEngineV2 {
 					this.roomVersion = state.version;
 				}
 				if (state.version > this.appliedMirror) {
-					void this.catchUp();
+					// Pass the freshly-delivered state as a hint: for a small edit
+					// the payload rides inside it, so the apply needs ZERO further
+					// reads - it lands even when the read path is wedged.
+					void this.catchUp(state);
 				}
 			},
 			() => {
@@ -303,7 +311,7 @@ export class SyncEngineV2 {
 			}
 			this.roomState = state;
 			if (state.version > this.appliedMirror) {
-				void this.catchUp();
+				void this.catchUp(state);
 			}
 		} catch {
 			this.probeFailureStreak += 1;
@@ -447,7 +455,16 @@ export class SyncEngineV2 {
 		if (this.ready && !force) {
 			return;
 		}
-		await this.transport.ping?.();
+		// TIMED, without exception: a raw Firestore write buffers forever on a
+		// wedged/offline channel, and this is awaited by the pre-action guard
+		// for every sim click - an unbounded hang here was a Play button that
+		// did NOTHING, with no toast and no log, while ordinary edits (which
+		// skip the forced ping once ready) kept working. A timeout throws, the
+		// guard catches it, and the user sees "Cloud sync is not ready".
+		await withTimeout(
+			this.transport.ping?.() ?? Promise.resolve(),
+			CATCHUP_READ_TIMEOUT_MS,
+		);
 		this.ready = true;
 		this.onReadyChange?.(true);
 	}
@@ -571,7 +588,7 @@ export class SyncEngineV2 {
 
 	// ---- Catch-up: the ONE recovery path ------------------------------------
 
-	catchUp(): Promise<boolean> {
+	catchUp(hintState?: V2StateDoc): Promise<boolean> {
 		// A DETERMINISTIC failure (an unreadable checkpoint, a poisoned payload)
 		// fails identically on every attempt - hammering it every second burns
 		// the network and fills the log without ever succeeding. After three
@@ -587,11 +604,11 @@ export class SyncEngineV2 {
 		}
 		this.catchUpChain = this.catchUpChain
 			.catch(() => false)
-			.then(() => this.doCatchUp());
+			.then(() => this.doCatchUp(hintState));
 		return this.catchUpChain;
 	}
 
-	private async doCatchUp(): Promise<boolean> {
+	private async doCatchUp(hintState?: V2StateDoc): Promise<boolean> {
 		if (this.stopped || !this.transport.fetchRoomV2State) {
 			return false;
 		}
@@ -611,11 +628,23 @@ export class SyncEngineV2 {
 			// with no progress means something upstream is missing - report
 			// false, never loop.
 			for (let round = 0; round < 50; round++) {
+				// stop() can land mid-walk (teardown, league switch). Every write
+				// after it would target whatever league loads NEXT - abort here,
+				// not just at entry.
+				if (this.stopped) {
+					return false;
+				}
 				step = "state";
-				const state = await withTimeout(
-					this.transport.fetchRoomV2State(),
-					CATCHUP_READ_TIMEOUT_MS,
-				);
+				// Round 0 can run on the state the live listener just delivered -
+				// fresher than any cache and immune to a wedged read path. Later
+				// rounds re-read (the room may have moved while we walked).
+				const state =
+					round === 0 && hintState && hintState.version >= this.roomVersion
+						? hintState
+						: await withTimeout(
+								this.transport.fetchRoomV2State(),
+								CATCHUP_READ_TIMEOUT_MS,
+							);
 				if (!state) {
 					return false;
 				}
@@ -719,12 +748,24 @@ export class SyncEngineV2 {
 				let progressed = false;
 				for (const version of plan.versions) {
 					step = `delta@${version}`;
-					const delta = this.transport.fetchV2Delta
-						? await withTimeout(
-								this.transport.fetchV2Delta(version),
-								CATCHUP_READ_TIMEOUT_MS,
-							)
-						: undefined;
+					// The head version's payload rides inline on the pointer doc when
+					// small (most interactive edits). Using it needs no read at all -
+					// which is why a roster move now lands the moment the pointer
+					// push arrives, even when chunk reads are hanging.
+					const delta =
+						version === state.version && state.inlineDelta !== undefined
+							? {
+									serialized: state.inlineDelta,
+									authorId: state.authorId,
+									action: state.action ?? "?",
+									at: state.at,
+								}
+							: this.transport.fetchV2Delta
+								? await withTimeout(
+										this.transport.fetchV2Delta(version),
+										CATCHUP_READ_TIMEOUT_MS,
+									)
+								: undefined;
 					if (!delta) {
 						syncDebugLog("v2:delta-missing", { version });
 						return false;
@@ -754,11 +795,25 @@ export class SyncEngineV2 {
 				if (!progressed) {
 					return false;
 				}
+				// The walk consumed everything the pointer said exists. Declaring
+				// success here (instead of one more confirming pointer read) is what
+				// lets a hint-fed pass finish with ZERO reads; if the room moved
+				// mid-walk, the listener/probe delivers the newer pointer and the
+				// next pass handles it.
+				if (this.appliedMirror >= this.roomVersion) {
+					this.catchupFailureStreak = 0;
+					this.notifiedFailingStep = undefined;
+					this.clearCatchUpProgress();
+					return true;
+				}
 			}
 			return false;
 		} catch (error) {
 			syncDebugLog("v2:catchup-failed", { error: String(error), step });
-			this.catchupFailureStreak += 1;
+			// A TIMED-OUT read is the wedge signature (the pointer push worked,
+			// the read hangs), so it counts double: the cycle fires after ONE
+			// timeout instead of two - halving the stall the user sits through.
+			this.catchupFailureStreak += String(error).includes("Timed out") ? 2 : 1;
 			this.lastCatchupFailureAt = Date.now();
 			this.roomVersionAtLastFailure = this.roomVersion;
 			// Repeated identical failures deserve one honest line to the user -
@@ -1052,6 +1107,10 @@ export class SyncEngineV2 {
 						byName: this.localName,
 						at,
 						action: entry.action,
+						// Small payloads ride the pointer doc itself, so receivers
+						// apply them straight off the listener push with no reads.
+						inlineDelta:
+							serialized.length <= INLINE_DELTA_LIMIT ? serialized : undefined,
 					},
 					target - 1,
 				),

@@ -1264,6 +1264,7 @@ export class FirebaseTransport implements SyncTransport {
 			byName: typeof data.byName === "string" ? data.byName : "Someone",
 			at: typeof data.at === "number" ? data.at : 0,
 			action: typeof data.action === "string" ? data.action : undefined,
+			inlineDelta: typeof data.delta === "string" ? data.delta : undefined,
 			checkpointVersion:
 				typeof data.checkpointVersion === "number"
 					? data.checkpointVersion
@@ -1381,6 +1382,7 @@ export class FirebaseTransport implements SyncTransport {
 			byName: string;
 			at: number;
 			action: string;
+			inlineDelta?: string;
 		},
 		expectedVersion: number,
 	): Promise<boolean> {
@@ -1418,6 +1420,7 @@ export class FirebaseTransport implements SyncTransport {
 					byName: next.byName,
 					at: next.at,
 					action: next.action,
+					delta: next.inlineDelta ?? null,
 					checkpointVersion:
 						current && typeof current.checkpointVersion === "number"
 							? current.checkpointVersion

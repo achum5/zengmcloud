@@ -63,6 +63,8 @@ import {
 	claimSimDayFence,
 	completeClaimedSimDayFence,
 } from "../sync/simDayFence.ts";
+import { getSyncEngine as getSyncEngineForPlay } from "../sync/engineHolder.ts";
+import { syncDebugLog } from "../sync/debugLog.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 
@@ -848,6 +850,25 @@ const play = async (
 		setSingleGameSimActive(gidOneGame !== undefined);
 
 		const canStartGames = lock.canStartGames();
+
+		// In a synced room, a silently-refused sim reads as a broken button.
+		// Name the reason in the UI and the sync log instead.
+		if (!canStartGames && getSyncEngineForPlay()) {
+			syncDebugLog("sim:cannot-start", {
+				gameSim: lock.get("gameSim"),
+				newPhase: lock.get("newPhase"),
+			});
+			logEvent(
+				{
+					type: "error",
+					text: lock.get("newPhase")
+						? "Can't sim: a phase change is still finishing (or a previous one didn't finish cleanly). If this persists, reload the page."
+						: "Can't sim: a sim is already running (or a previous one didn't finish cleanly). If this persists, reload the page.",
+					persistent: true,
+				},
+				conditions,
+			);
+		}
 
 		try {
 			if (canStartGames) {

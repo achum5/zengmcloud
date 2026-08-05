@@ -247,6 +247,10 @@ export type V2StateDoc = {
 	at: number;
 	// The action that produced the newest version (display/notifications).
 	action?: string;
+	// The newest version's serialized payload, carried inline when small so
+	// receivers apply it straight off the pointer push with no further reads.
+	// Large payloads (sim days) omit this and are fetched from chunk docs.
+	inlineDelta?: string;
 	// Newest full-state checkpoint, if any: which version it captures, how
 	// many chunks its payload spans, and which publish generation the chunks
 	// live under (absent for checkpoints from older builds).
@@ -347,6 +351,7 @@ export interface SyncTransport {
 			byName: string;
 			at: number;
 			action: string;
+			inlineDelta?: string;
 		},
 		expectedVersion: number,
 	): Promise<boolean>;
