@@ -1246,11 +1246,23 @@ export const getSimSafety = async (): Promise<
 
 	const lid = g.get("lid");
 	if (await loadResyncNeeded(lid)) {
-		return {
-			safe: false,
-			reason:
-				"This device is flagged for a repair pass and will self-heal shortly. Try again in a minute.",
-		};
+		// On v2 the flag is v1 bookkeeping with no v1 healer running: the chain
+		// IS the repair, so "caught up" means healed - clear it and move on.
+		// Left in place, it blocked every sim forever with a promise
+		// ("will self-heal shortly") that nothing on v2 was going to keep.
+		if (engine instanceof SyncEngineV2 && engine.isCaughtUp()) {
+			await saveResyncNeeded(lid, false);
+			syncDebugLog("v2:cleared-stale-resync-flag", { lid });
+		} else {
+			if (engine instanceof SyncEngineV2) {
+				void engine.catchUp();
+			}
+			return {
+				safe: false,
+				reason:
+					"This device is flagged for a repair pass and will self-heal shortly. Try again in a minute.",
+			};
+		}
 	}
 
 	// A device whose league fails the catastrophe check (stripped rosters, no
@@ -1264,6 +1276,17 @@ export const getSimSafety = async (): Promise<
 			safe: false,
 			reason: `This device's copy of the league looks damaged (${integrityProblems[0]}). Use Force Resync on the sync page to restore it from the room - simming now would spread the damage.`,
 		};
+	}
+
+	// The position-stamp comparison below is a v1 heuristic: v1's watermark
+	// could lie, so the room's stamped position served as a second opinion. A
+	// v2 device that is caught up has PROVEN its state (applied version ==
+	// CAS-committed room version) - strictly stronger evidence than a stamp
+	// that only updates on advances and whose "day" arithmetic disagrees with
+	// computed positions in the playoffs. Judging v2 by the stamp blocked sims
+	// with a false "this device reads as X but the room says Y".
+	if (engine instanceof SyncEngineV2) {
+		return { safe: true };
 	}
 
 	const announced = engine.getAuthority()?.position;

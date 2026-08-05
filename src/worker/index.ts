@@ -257,6 +257,7 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 	if (needsConnection) {
 		if (syncEngine) {
 			if (simAuthorityLocked && !syncEngine.isAuthority()) {
+				syncDebugLog("api:guard-refused", { type, name, step: "authority" });
 				const holder =
 					syncEngine.getAuthority()?.holderName ?? "Another device";
 				util.logEvent(
@@ -271,6 +272,7 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 			}
 
 			if (!syncEngine.isCaughtUp()) {
+				syncDebugLog("api:guard-refused", { type, name, step: "caught-up" });
 				util.logEvent(
 					{
 						type: "error",
@@ -293,7 +295,13 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 			// hundreds of ms and feel broken.
 			try {
 				await syncEngine.ensureReady(simAuthorityLocked);
-			} catch {
+			} catch (error) {
+				syncDebugLog("api:guard-refused", {
+					type,
+					name,
+					step: "ensure-ready",
+					error: String(error),
+				});
 				util.logEvent(
 					{
 						type: "error",
@@ -307,6 +315,7 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 
 			const live = await syncEngine.verifyConnection(simAuthorityLocked);
 			if (!live) {
+				syncDebugLog("api:guard-refused", { type, name, step: "verify" });
 				util.logEvent(
 					{
 						type: "error",
@@ -340,6 +349,12 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 			if (simAuthorityLocked) {
 				const drained = await syncEngine.catchUp();
 				if (!drained || !syncEngine.isCaughtUp()) {
+					syncDebugLog("api:guard-refused", {
+						type,
+						name,
+						step: "advance-catchup",
+						drained,
+					});
 					util.logEvent(
 						{
 							type: "error",
@@ -358,8 +373,26 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				// for the whole room. Health is judged against evidence the broken
 				// state can't vouch for: a pending repair, or disagreeing with the
 				// room's stamped position.
-				const safety = await getSimSafety();
+				// A THROW here used to be the one fully-silent death left in the
+				// guard (it escaped every toast and log). Treat it as unsafe.
+				let safety: Awaited<ReturnType<typeof getSimSafety>>;
+				try {
+					safety = await getSimSafety();
+				} catch (error) {
+					safety = {
+						safe: false,
+						reason: `the sim preflight failed (${
+							error instanceof Error ? error.message : String(error)
+						}). Try again in a moment.`,
+					};
+				}
 				if (!safety.safe) {
+					syncDebugLog("api:guard-refused", {
+						type,
+						name,
+						step: "sim-safety",
+						reason: safety.reason,
+					});
 					util.logEvent(
 						{
 							type: "error",
