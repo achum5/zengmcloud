@@ -92,6 +92,9 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"markSyncRequired",
 	"publishAutoPlayState",
 	"refreshSyncUIState",
+	// Foreground sync kick from the UI (probe + drain): cloud reads/writes
+	// only, no league mutations, and it must run even mid-catch-up.
+	"syncNudge",
 	"resyncSharedLeague",
 	// Draft ready-up: writes only the cloud ready doc, never the league DB. Must
 	// stay available while catching up so a device can ready up mid-draft.

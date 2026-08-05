@@ -393,6 +393,25 @@ export const refreshSyncUIState = () => {
 	pushSyncStateFull();
 };
 
+// A foreground kick from the UI: the user just brought the app back (tab
+// visible, window focused, PWA resumed), which is precisely when a
+// backgrounded browser's parked connection has left the screen stale. Sync
+// NOW - probe the head, drain anything queued, re-assert the UI state -
+// instead of waiting out the next timer tick.
+export const syncNudge = () => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		return;
+	}
+	if (engine instanceof SyncEngineV2) {
+		void engine.probeHead();
+	} else {
+		void engine.catchUp();
+	}
+	void engine.drainOutbox();
+	pushSyncStateFull();
+};
+
 // The live transport + auto-play subscription for the current room, so the
 // simmer can publish its schedule and every device can watch it.
 let currentTransport: FirebaseTransport | undefined;
@@ -2006,6 +2025,19 @@ const doConnectSharedLeague = async ({
 				onUploadComplete: () => {
 					uploadOkCounter += 1;
 					void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
+				},
+				// The header's catching-up indicator. V2 only reports when the
+				// device is visibly behind and working on it (a multi-version walk,
+				// or fetches failing and retrying) - exactly when a quiet screen
+				// would otherwise read as "is this thing broken?".
+				onCatchUpProgress: (progress) => {
+					syncDebugLog("connect:catchup-indicator", {
+						showing: progress !== undefined,
+						done: progress?.done,
+						total: progress?.total,
+					});
+					catchUpPillShowing = progress !== undefined;
+					void toUI("updateLocal", [{ mpCatchUp: progress }]);
 				},
 			})
 		: new SyncEngine(transport, {

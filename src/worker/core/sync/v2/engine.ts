@@ -141,11 +141,20 @@ export class SyncEngineV2 {
 	// rebuild from the checkpoint instead of trusting the delta walk alone.
 	private mustRecoverFromCheckpoint = false;
 
-	// Head-probe bookkeeping (see probeHead): single-flight guard, consecutive
-	// failure count, and a throttle on the network-cycle remedy.
+	// Wedge detection (see probeHead / doCatchUp): a single-flight guard for
+	// the probe, per-path consecutive-failure counts, and a throttle on the
+	// network-cycle remedy. The counts are SEPARATE on purpose: a wedge can
+	// hang the delta reads while the tiny pointer read still succeeds, so a
+	// probe success must not absolve a string of catch-up failures.
 	private probing = false;
-	private headFailureStreak = 0;
+	private probeFailureStreak = 0;
+	private catchupFailureStreak = 0;
 	private lastNetworkCycleAt = 0;
+
+	// Whether the UI is currently showing the catch-up indicator for this
+	// engine, so it is only ever cleared when it was shown (no flicker on the
+	// ordinary one-version live applies).
+	private catchUpPillShown = false;
 
 	private memoryQueue: Omit<ChangesetEntry, "seq">[] = [];
 	private memoryNotifications = new Map<string, SyncNotification[]>();
@@ -154,6 +163,9 @@ export class SyncEngineV2 {
 	private onReadyChange: ((ready: boolean) => void) | undefined;
 	private onPendingChange: ((count: number) => void) | undefined;
 	private onUploadComplete: (() => void) | undefined;
+	private onCatchUpProgress:
+		| ((progress: { done: number; total: number } | undefined) => void)
+		| undefined;
 	private publishTimeoutMs: number;
 
 	constructor(
@@ -165,6 +177,12 @@ export class SyncEngineV2 {
 			onReadyChange?: (ready: boolean) => void;
 			onPendingChange?: (count: number) => void;
 			onUploadComplete?: () => void;
+			// Shown while this device is visibly behind the room and working on
+			// it (a big walk, or fetches that are failing and retrying) - never
+			// for the ordinary one-version live apply.
+			onCatchUpProgress?: (
+				progress: { done: number; total: number } | undefined,
+			) => void;
 			// Test hook: shrink the publish-attempt timeout.
 			publishTimeoutMs?: number;
 		} = {},
@@ -176,6 +194,7 @@ export class SyncEngineV2 {
 		this.onReadyChange = options.onReadyChange;
 		this.onPendingChange = options.onPendingChange;
 		this.onUploadComplete = options.onUploadComplete;
+		this.onCatchUpProgress = options.onCatchUpProgress;
 		this.publishTimeoutMs =
 			options.publishTimeoutMs ?? PUBLISH_ATTEMPT_TIMEOUT_MS;
 	}
@@ -254,7 +273,7 @@ export class SyncEngineV2 {
 				this.transport.fetchRoomV2State(),
 				HEAD_PROBE_TIMEOUT_MS,
 			);
-			this.headFailureStreak = 0;
+			this.probeFailureStreak = 0;
 			if (!state) {
 				return;
 			}
@@ -276,30 +295,67 @@ export class SyncEngineV2 {
 				void this.catchUp();
 			}
 		} catch {
-			this.headFailureStreak += 1;
-			if (
-				this.headFailureStreak >= 2 &&
-				this.transport.cycleNetwork &&
-				Date.now() - this.lastNetworkCycleAt > 30_000
-			) {
-				this.headFailureStreak = 0;
-				this.lastNetworkCycleAt = Date.now();
-				syncDebugLog("v2:network-cycled", {});
-				try {
-					await this.transport.cycleNetwork();
-				} catch {
-					// Even a failed cycle is followed by a fresh listener + catch-up.
-				}
-				this.subscribeState();
-				void this.catchUp();
-			}
+			this.probeFailureStreak += 1;
+			await this.maybeCycleNetwork("probe");
 		} finally {
 			this.probing = false;
 		}
 	}
 
+	// The wedged-channel remedy, fired when either failure streak says the
+	// connection is lying about being alive: cycle it, put a fresh listener on
+	// the rebuilt channel, and catch up.
+	private async maybeCycleNetwork(source: "probe" | "catchup") {
+		if (this.stopped || !this.transport.cycleNetwork) {
+			return;
+		}
+		if (
+			Math.max(this.probeFailureStreak, this.catchupFailureStreak) < 2 ||
+			Date.now() - this.lastNetworkCycleAt <= 30_000
+		) {
+			return;
+		}
+		this.probeFailureStreak = 0;
+		this.catchupFailureStreak = 0;
+		this.lastNetworkCycleAt = Date.now();
+		syncDebugLog("v2:network-cycled", { source });
+		try {
+			await this.transport.cycleNetwork();
+		} catch {
+			// Even a failed cycle is followed by a fresh listener + catch-up.
+		}
+		this.subscribeState();
+		void this.catchUp();
+	}
+
+	// Tell the UI this device is visibly behind and working on it. Never fires
+	// for the ordinary one-version live apply - only for a real walk (a big
+	// gap) or when fetches are failing and retrying, which is exactly when a
+	// user staring at a quiet screen starts doubting the app.
+	private reportCatchUpProgress(done: number, total: number) {
+		this.catchUpPillShown = true;
+		try {
+			this.onCatchUpProgress?.({ done, total });
+		} catch {
+			// Display only.
+		}
+	}
+
+	private clearCatchUpProgress() {
+		if (!this.catchUpPillShown) {
+			return;
+		}
+		this.catchUpPillShown = false;
+		try {
+			this.onCatchUpProgress?.(undefined);
+		} catch {
+			// Display only.
+		}
+	}
+
 	stop() {
 		this.stopped = true;
+		this.clearCatchUpProgress();
 		this.authorityUnsubscribe?.();
 		this.authorityUnsubscribe = undefined;
 		this.stateUnsubscribe?.();
@@ -516,12 +572,17 @@ export class SyncEngineV2 {
 			return false;
 		}
 		this.catchingUp = true;
+		// Which read the pass is on, so a failure names its culprit instead of
+		// logging an anonymous {} - "delta@61 timed out" is diagnosable from a
+		// field capture, "error: {}" is not.
+		let step = "state";
 		try {
 			// A bounded number of rounds: each round re-reads the pointer, so a
 			// room advancing while we walk simply extends the walk. Two rounds
 			// with no progress means something upstream is missing - report
 			// false, never loop.
 			for (let round = 0; round < 50; round++) {
+				step = "state";
 				const state = await withTimeout(
 					this.transport.fetchRoomV2State(),
 					CATCHUP_READ_TIMEOUT_MS,
@@ -534,6 +595,12 @@ export class SyncEngineV2 {
 
 				const applied = await readAppliedVersion();
 				this.appliedMirror = applied;
+
+				// A real walk (several versions, or a checkpoint restore) is worth
+				// showing in the header; the ordinary one-version live apply is not.
+				if (state.version - applied > 3) {
+					this.reportCatchUpProgress(applied, state.version);
+				}
 
 				// A discarded stale advance leaves local records the chain never
 				// carried. The delta walk can't remove those (deltas only add), so
@@ -554,6 +621,7 @@ export class SyncEngineV2 {
 						});
 						this.mustRecoverFromCheckpoint = false;
 					} else {
+						step = `checkpoint@${state.checkpointVersion}`;
 						const serialized = await withTimeout(
 							this.transport.fetchV2Checkpoint(
 								state.checkpointVersion,
@@ -581,6 +649,8 @@ export class SyncEngineV2 {
 				const plan = catchUpPlan(applied, state);
 
 				if (plan.type === "caught-up") {
+					this.catchupFailureStreak = 0;
+					this.clearCatchUpProgress();
 					return true;
 				}
 
@@ -591,6 +661,7 @@ export class SyncEngineV2 {
 					) {
 						return false;
 					}
+					step = `checkpoint@${plan.checkpointVersion}`;
 					const serialized = await withTimeout(
 						this.transport.fetchV2Checkpoint(
 							plan.checkpointVersion,
@@ -615,6 +686,7 @@ export class SyncEngineV2 {
 				// Deltas, in order. Any miss aborts the pass; the next pass retries.
 				let progressed = false;
 				for (const version of plan.versions) {
+					step = `delta@${version}`;
 					const delta = this.transport.fetchV2Delta
 						? await withTimeout(
 								this.transport.fetchV2Delta(version),
@@ -642,6 +714,9 @@ export class SyncEngineV2 {
 					}
 					this.appliedMirror = Math.max(this.appliedMirror, version);
 					progressed = true;
+					if (this.catchUpPillShown) {
+						this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
+					}
 					await this.afterRemoteApply(changeset);
 				}
 				if (!progressed) {
@@ -650,7 +725,14 @@ export class SyncEngineV2 {
 			}
 			return false;
 		} catch (error) {
-			syncDebugLog("v2:catchup-failed", { error });
+			syncDebugLog("v2:catchup-failed", { error: String(error), step });
+			this.catchupFailureStreak += 1;
+			// The user is behind and fetches are failing - the one moment they
+			// most need the header to say "working on it" instead of nothing.
+			if (this.roomVersion > this.appliedMirror) {
+				this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
+			}
+			await this.maybeCycleNetwork("catchup");
 			return false;
 		} finally {
 			this.catchingUp = false;

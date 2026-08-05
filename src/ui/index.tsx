@@ -249,6 +249,13 @@ const setupRoutes = async () => {
 	const { keepPushTokenFresh } = await import("./util/keepPushTokenFresh.ts");
 	keepPushTokenFresh();
 
+	// Sync the instant the user looks at the app again (tab visible, window
+	// focused, PWA resumed) - a backgrounded browser parks the network, so
+	// waiting for the next timer tick reads as "my change didn't sync".
+	const { initSyncForegroundNudge } =
+		await import("./util/syncForegroundNudge.ts");
+	initSyncForegroundNudge();
+
 	// The sticky header can come back from an iOS background unstuck, and stays
 	// that way until the app is force-quit. Detect and rebuild it on resume.
 	const { initStickyHeaderWatchdog } =

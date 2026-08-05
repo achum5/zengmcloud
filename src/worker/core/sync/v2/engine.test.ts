@@ -747,6 +747,75 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// The Safari-backgrounded shape from the field: the pointer read works but
+	// the DELTA reads hang/fail, so probes keep succeeding and only catch-up
+	// fails. Those failures must (a) surface the catching-up indicator so the
+	// user sees "working on it" instead of nothing, (b) arm the network cycle
+	// themselves, and (c) clear the indicator once the fetch finally lands.
+	test("failing delta fetches show progress, cycle the network, and clear on success", async () => {
+		const room = new Room();
+		initRoom(room);
+		const seedTransport = new V2Transport("C", room);
+		await seedTransport.publishV2Delta(
+			{ version: 1, authorId: "C", action: "main.releasePlayer", at: 1 },
+			serializeChangeset(changesetOf(tradePut(1, 5))),
+		);
+		await seedTransport.commitV2Version(
+			{
+				version: 1,
+				authorId: "C",
+				byName: "C",
+				at: 1,
+				action: "main.releasePlayer",
+			},
+			0,
+		);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		let cycles = 0;
+		(transport as any).cycleNetwork = async () => {
+			cycles += 1;
+		};
+		const realFetchV2Delta = transport.fetchV2Delta.bind(transport);
+		let deltaReadsFail = true;
+		transport.fetchV2Delta = (version: number) =>
+			deltaReadsFail
+				? Promise.reject(new Error("read hung"))
+				: realFetchV2Delta(version);
+		const progressEvents: ({ done: number; total: number } | undefined)[] = [];
+		const engine = new SyncEngineV2(transport, {
+			onCatchUpProgress: (progress) => {
+				progressEvents.push(progress);
+			},
+		});
+
+		assert.strictEqual(await engine.catchUp(), false);
+		assert.deepStrictEqual(
+			progressEvents.at(-1),
+			{ done: 0, total: 1 },
+			"a failing fetch while behind shows the catching-up indicator",
+		);
+		assert.strictEqual(cycles, 0, "one failure is a blip");
+		assert.strictEqual(await engine.catchUp(), false);
+		assert.strictEqual(
+			cycles,
+			1,
+			"consecutive catch-up failures cycle the network even though probes succeed",
+		);
+
+		// The connection heals; the next pass lands the delta and clears the pill.
+		deltaReadsFail = false;
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(await readAppliedVersion(), 1);
+		assert.strictEqual(
+			progressEvents.at(-1),
+			undefined,
+			"caught up clears the indicator",
+		);
+		engine.stop();
+	});
+
 	test("resyncAll is just catch-up: one recovery path", async () => {
 		const room = new Room();
 		initRoom(room);

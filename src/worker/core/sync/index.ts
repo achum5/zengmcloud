@@ -33,6 +33,7 @@ export {
 	markSyncRequired,
 	publishAutoPlayState,
 	refreshSyncUIState,
+	syncNudge,
 	resyncSharedLeague,
 	publishLotteryRevealState,
 	restoreSyncRequiredFromMeta,

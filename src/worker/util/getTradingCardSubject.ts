@@ -1,4 +1,7 @@
-import type { CardStatRow, CardSubject } from "../../common/tradingCardPrompt.ts";
+import type {
+	CardStatRow,
+	CardSubject,
+} from "../../common/tradingCardPrompt.ts";
 import { idb } from "../db/index.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 import g from "./g.ts";
@@ -148,14 +151,18 @@ export const getTradingCardSubject = async (
 	// falling back to where he is now for a card depicting a season he sat out.
 	const seasonRow = throughSeason.findLast((row) => row.season === season);
 	const tid: number = seasonRow?.tid ?? p.tid;
-	const teamInfo = tid >= 0 ? await getTeamInfoBySeason(tid, season) : undefined;
+	const teamInfo =
+		tid >= 0 ? await getTeamInfoBySeason(tid, season) : undefined;
 
 	const ratingsRows: any[] = Array.isArray(p.ratings) ? p.ratings : [];
 	const ratingsRow =
 		ratingsRows.findLast((row) => row.season <= season) ?? ratingsRows[0];
 
 	const awards: string[] = [];
-	for (const award of (raw.awards ?? []) as { season: number; type: string }[]) {
+	for (const award of (raw.awards ?? []) as {
+		season: number;
+		type: string;
+	}[]) {
 		if (award.season <= season) {
 			awards.push(`${award.type} (${award.season})`);
 		}
@@ -190,9 +197,7 @@ export const getTradingCardSubject = async (
 							: undefined,
 					}
 				: undefined,
-		teamName: teamInfo
-			? `${teamInfo.region} ${teamInfo.name}`
-			: "Free Agents",
+		teamName: teamInfo ? `${teamInfo.region} ${teamInfo.name}` : "Free Agents",
 		teamColors: teamInfo?.colors,
 		season,
 		face: p.face,
