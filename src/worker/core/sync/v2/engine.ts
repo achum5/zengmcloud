@@ -283,7 +283,15 @@ export class SyncEngineV2 {
 	// server reads hanging, Safari's specialty - and the cure is cycling the
 	// connection and rebuilding the listener on the fresh channel.
 	async probeHead(): Promise<void> {
-		if (this.stopped || !this.transport.fetchRoomV2State || this.probing) {
+		// Skipping during a catch-up walk is free: the walk reads this same
+		// state doc every round (with its own timeout + failure streak), so a
+		// probe on top would be a second copy of the read it exists to bound.
+		if (
+			this.stopped ||
+			!this.transport.fetchRoomV2State ||
+			this.probing ||
+			this.catchingUp
+		) {
 			return;
 		}
 		this.probing = true;
@@ -1037,19 +1045,26 @@ export class SyncEngineV2 {
 
 		for (let attempt = 0; attempt < 3; attempt++) {
 			// Never author on top of state we don't have: catch up first,
-			// publish second. The head is the MAX of the server read and the
-			// local mirror: a server/cache read can lag this device's own
-			// just-committed version by a beat, and trusting it alone made a
-			// burst of edits fight itself with CAS conflicts on every entry
-			// (each one targeting the version its predecessor just took).
-			const state = await withTimeout(
-				this.transport.fetchRoomV2State(),
-				this.publishTimeoutMs,
-			);
-			if (!state) {
-				return false;
+			// publish second. The head is the local mirror (kept fresh by the
+			// listener, the head probe, and our own commits) - NOT a fresh
+			// server read, which can lag this device's own just-committed
+			// version by a beat and made a burst of edits fight itself with
+			// CAS conflicts on every entry. The mirror being stale-low is
+			// harmless: publishV2Delta's transaction refuses a taken slot and
+			// the commit CAS refuses a moved head, so the worst case is one
+			// retry - which DOES re-read the server, as does a device that has
+			// never seen the state doc at all.
+			if (attempt > 0 || this.roomState === undefined) {
+				const state = await withTimeout(
+					this.transport.fetchRoomV2State(),
+					this.publishTimeoutMs,
+				);
+				if (!state) {
+					return false;
+				}
+				this.roomState = state;
+				this.roomVersion = Math.max(this.roomVersion, state.version);
 			}
-			this.roomVersion = Math.max(this.roomVersion, state.version);
 			const applied = await readAppliedVersion();
 			if (applied < this.roomVersion) {
 				if (isAdvance) {
@@ -1240,7 +1255,12 @@ export class SyncEngineV2 {
 		}
 		this.publishingCheckpoint = true;
 		try {
-			const state = await this.transport.fetchRoomV2State?.();
+			// The head comes from the engine's mirror: the same health tick that
+			// calls this just ran probeHead (a server read of this exact doc), so
+			// a second fetch bought nothing. A stale mirror can only DELAY a
+			// checkpoint by a tick; commitV2Checkpoint stamps `applied`, which is
+			// this device's own database truth, so it can never mislabel one.
+			const state = this.roomState;
 			if (!state) {
 				return;
 			}

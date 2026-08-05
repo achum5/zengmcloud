@@ -507,6 +507,46 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// The mirror the listener keeps fresh is the publish target - a warm
+	// device pays ZERO state reads to publish an edit. The slot-taken
+	// transaction and the commit CAS stay the arbiters, so this costs nothing
+	// in safety; the server fetch happens only on a retry (a lost race) or on
+	// a device that has never seen the state doc.
+	test("a warm device publishes an edit without reading the state doc", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 2 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+		const transport = new V2Transport("A", room);
+		let stateFetches = 0;
+		const realFetch = transport.fetchRoomV2State.bind(transport);
+		transport.fetchRoomV2State = async () => {
+			stateFetches += 1;
+			return realFetch();
+		};
+		const engine = new SyncEngineV2(transport);
+		// start() subscribes to the pointer, which (like Firestore's initial
+		// snapshot) delivers the current state - that warms the mirror.
+		engine.start();
+		await engine.claimAuthority();
+
+		const outcome = await engine.onLocalChangeset(
+			changesetOf(tradePut(1, 2)),
+			"main.proposeTrade",
+		);
+		assert.strictEqual(outcome, "confirmed");
+		assert.strictEqual(room.state!.version, 1);
+		assert.strictEqual(await readAppliedVersion(), 1);
+		assert.strictEqual(
+			stateFetches,
+			0,
+			"a warm publish is write-only: no state doc read",
+		);
+		engine.stop();
+	});
+
 	// No device's change ever waits on another device being online: a device
 	// that is NOT in charge of simming still publishes its edit as the next
 	// version itself, directly, gated only by the CAS.

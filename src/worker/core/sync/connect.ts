@@ -2521,12 +2521,11 @@ const doConnectSharedLeague = async ({
 		// active rooms, where the old poll re-read a log the listener had already
 		// delivered. During the initial backlog drain this always runs.
 		if (isV2) {
-			// V2 catch-up is one cheap pointer read when already caught up, and
-			// THE recovery path when not. No listener-freshness heuristics: the
-			// pointer poll IS the dead-listener backstop.
-			if (engine) {
-				void engine.catchUp();
-			}
+			// V2 staleness detection lives entirely in the 5s head probe
+			// (server-fresh, timed, wedge-detecting, and it fires catch-up the
+			// moment the head is past what's applied) - a 30s pointer re-read
+			// on top of it bought nothing. This tick stays as the outbox's
+			// unconditional backstop kick.
 			void engine?.drainOutbox();
 			return;
 		}
