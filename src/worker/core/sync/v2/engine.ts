@@ -54,6 +54,34 @@ import { catchUpPlan } from "./protocol.ts";
 // checkpoints are cheap to take (same builder as v1, gzipped).
 const CHECKPOINT_EVERY_VERSIONS = 25;
 
+// Firestore's setDoc never REJECTS while offline - it buffers the write and
+// resolves whenever the connection returns, which can be never for a
+// backgrounded phone. Un-timed awaits on transport writes therefore hang the
+// drain, and the drain is awaited by the user's action: an offline sim would
+// freeze the Play button instead of fast-failing to "queued". Every publish
+// attempt is timed; a timeout leaves the entry safely in the outbox for the
+// next drain kick (immediately on the next action, every 5s from the health
+// tick while anything is queued, every 30s from the catch-up timer).
+const PUBLISH_ATTEMPT_TIMEOUT_MS = 20_000;
+
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+	new Promise((resolve, reject) => {
+		const id = setTimeout(
+			() => reject(new Error(`Timed out after ${ms}ms`)),
+			ms,
+		);
+		promise.then(
+			(value) => {
+				clearTimeout(id);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(id);
+				reject(error);
+			},
+		);
+	});
+
 const makeId = (): string =>
 	typeof crypto !== "undefined" && crypto.randomUUID
 		? crypto.randomUUID()
@@ -92,6 +120,7 @@ export class SyncEngineV2 {
 	private onReadyChange: ((ready: boolean) => void) | undefined;
 	private onPendingChange: ((count: number) => void) | undefined;
 	private onUploadComplete: (() => void) | undefined;
+	private publishTimeoutMs: number;
 
 	constructor(
 		transport: SyncTransport,
@@ -102,6 +131,8 @@ export class SyncEngineV2 {
 			onReadyChange?: (ready: boolean) => void;
 			onPendingChange?: (count: number) => void;
 			onUploadComplete?: () => void;
+			// Test hook: shrink the publish-attempt timeout.
+			publishTimeoutMs?: number;
 		} = {},
 	) {
 		this.transport = transport;
@@ -111,6 +142,8 @@ export class SyncEngineV2 {
 		this.onReadyChange = options.onReadyChange;
 		this.onPendingChange = options.onPendingChange;
 		this.onUploadComplete = options.onUploadComplete;
+		this.publishTimeoutMs =
+			options.publishTimeoutMs ?? PUBLISH_ATTEMPT_TIMEOUT_MS;
 	}
 
 	get clientId(): string {
@@ -597,7 +630,10 @@ export class SyncEngineV2 {
 
 		// Never author on top of state we don't have: catch up first, publish
 		// second. (For a healthy authority this is a no-op read.)
-		const state = await this.transport.fetchRoomV2State();
+		const state = await withTimeout(
+			this.transport.fetchRoomV2State(),
+			this.publishTimeoutMs,
+		);
 		if (!state) {
 			return false;
 		}
@@ -609,29 +645,39 @@ export class SyncEngineV2 {
 			}
 		}
 
-		const target = (await this.transport.fetchRoomV2State())!.version + 1;
+		const target =
+			(await withTimeout(
+				this.transport.fetchRoomV2State(),
+				this.publishTimeoutMs,
+			))!.version + 1;
 		const serialized = await compressSerialized(
 			serializeChangeset(entry.changeset),
 		);
-		await this.transport.publishV2Delta(
-			{
-				version: target,
-				authorId: this.transport.clientId,
-				action: entry.action,
-				at: Date.now(),
-			},
-			serialized,
+		await withTimeout(
+			this.transport.publishV2Delta(
+				{
+					version: target,
+					authorId: this.transport.clientId,
+					action: entry.action,
+					at: Date.now(),
+				},
+				serialized,
+			),
+			this.publishTimeoutMs,
 		);
 
-		const won = await this.transport.commitV2Version(
-			{
-				version: target,
-				authorId: this.transport.clientId,
-				byName: this.localName,
-				at: Date.now(),
-				action: entry.action,
-			},
-			target - 1,
+		const won = await withTimeout(
+			this.transport.commitV2Version(
+				{
+					version: target,
+					authorId: this.transport.clientId,
+					byName: this.localName,
+					at: Date.now(),
+					action: entry.action,
+				},
+				target - 1,
+			),
+			this.publishTimeoutMs,
 		);
 
 		if (!won) {
@@ -689,14 +735,17 @@ export class SyncEngineV2 {
 		const serialized = await compressSerialized(
 			serializeChangeset(entry.changeset),
 		);
-		await this.transport.publishV2Request({
-			id: entry.id,
-			authorId: this.transport.clientId,
-			byName: this.localName,
-			action: entry.action,
-			data: serialized,
-			at: Date.now(),
-		});
+		await withTimeout(
+			this.transport.publishV2Request({
+				id: entry.id,
+				authorId: this.transport.clientId,
+				byName: this.localName,
+				action: entry.action,
+				data: serialized,
+				at: Date.now(),
+			}),
+			this.publishTimeoutMs,
+		);
 		await this.removePending(entry.id);
 		const notifications = await this.takeNotifications(entry.id);
 		for (const notification of notifications ?? []) {

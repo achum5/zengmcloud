@@ -568,6 +568,43 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// Firestore writes never reject while offline - they buffer forever. The
+	// drain must therefore fast-fail to "queued" rather than hanging the action
+	// (and the Play button) behind a write that may never resolve.
+	test("an offline publish times out to 'queued' instead of hanging the action", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 2 }],
+		});
+		const transport = new V2Transport("A", room);
+		// Offline: the delta write buffers and never resolves.
+		transport.publishV2Delta = () => new Promise(() => {});
+		const engine = new SyncEngineV2(transport, { publishTimeoutMs: 50 });
+		engine.start();
+		await engine.claimAuthority();
+
+		const outcome = await engine.onLocalChangeset(
+			changesetOf(tradePut(1, 2)),
+			"playMenu.day",
+		);
+
+		assert.strictEqual(outcome, "queued");
+		assert.strictEqual(
+			await engine.pendingUploadCount(),
+			1,
+			"the sim stays safely queued for the next drain kick",
+		);
+		assert.strictEqual(room.state!.version, 0, "nothing half-published");
+
+		// The connection returns: the ordinary drain kick lands it.
+		delete (transport as any).publishV2Delta;
+		assert.ok(await engine.drainOutbox());
+		assert.strictEqual(room.state!.version, 1);
+		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		engine.stop();
+	});
+
 	test("resyncAll is just catch-up: one recovery path", async () => {
 		const room = new Room();
 		initRoom(room);
