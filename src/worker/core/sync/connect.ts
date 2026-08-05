@@ -1,4 +1,5 @@
 import { RESYNC_WINDOW_ENTRIES, SyncEngine } from "./SyncEngine.ts";
+import { SyncEngineV2 } from "./v2/engine.ts";
 import { FirebaseTransport } from "./FirebaseTransport.ts";
 import { outbox } from "./outbox.ts";
 import { ensureAnonymousAuth } from "./auth.ts";
@@ -1721,6 +1722,10 @@ export const connectSharedLeague = async (options: {
 	code: string;
 	isHost?: boolean;
 	explicit?: boolean;
+	// Create this room on the v2 sync protocol (version chain). Only honored on
+	// an explicit host join of a room with no v1 history; an existing room's
+	// protocol is always auto-detected regardless of this flag.
+	v2?: boolean;
 	// A bring-your-own-Firestore project for this room. Omitted for ordinary
 	// rooms, which use the built-in default project.
 	firebaseConfig?: FirebaseConfig;
@@ -1746,11 +1751,13 @@ const doConnectSharedLeague = async ({
 	code,
 	isHost = false,
 	explicit = false,
+	v2 = false,
 	firebaseConfig,
 }: {
 	code: string;
 	isHost?: boolean;
 	explicit?: boolean;
+	v2?: boolean;
 	firebaseConfig?: FirebaseConfig;
 }) => {
 	const trimmed = code.trim();
@@ -1846,6 +1853,34 @@ const doConnectSharedLeague = async ({
 		sinceTs: watermark,
 	});
 
+	// Which protocol is this room on? Detected from the room itself - the
+	// pointer doc exists if and only if the room runs the v2 version chain. The
+	// `v2` option can only INITIALIZE a fresh room (explicit host join, no v1
+	// history), never convert one.
+	let v2State = await transport.fetchRoomV2State().catch(() => undefined);
+	if (v2State === undefined && v2 && explicit && isHost) {
+		const v1Entries = await transport.countEntriesSince(0).catch(() => 1);
+		if (v1Entries === 0) {
+			const initialized = await transport
+				.commitV2Version(
+					{
+						version: 0,
+						authorId: clientId,
+						byName: "Host",
+						at: Date.now(),
+						action: "init",
+					},
+					0,
+				)
+				.catch(() => false);
+			if (initialized) {
+				v2State = await transport.fetchRoomV2State().catch(() => undefined);
+				syncDebugLog("connect:v2-room-initialized", { code: trimmed });
+			}
+		}
+	}
+	const isV2 = v2State !== undefined;
+
 	// Retention gap check. Catch-up is a `ts >` range read, so a device whose
 	// watermark predates everything left in the log finds nothing missing and
 	// would declare itself current while holding stale records - silently, which
@@ -1855,7 +1890,7 @@ const doConnectSharedLeague = async ({
 	// Only reachable once the log is being trimmed AND this device has been away
 	// longer than the retention window; a device inside the window sees its own
 	// already-applied entries as the oldest and passes.
-	{
+	if (!isV2) {
 		let oldestSeq: number | undefined;
 		let probed = true;
 		try {
@@ -1936,7 +1971,30 @@ const doConnectSharedLeague = async ({
 	}
 	const boundLeagueId = metaLeagueId ?? roomLeagueId ?? makeLeagueId();
 
-	const engine = new SyncEngine(transport, {
+	const engine = isV2
+		? new SyncEngineV2(transport, {
+				isHost,
+				code: trimmed,
+				onAuthorityChange: (authority) => {
+					currentHostName = authority?.holderName;
+					pushAuthorityToUI(
+						authority?.holderId === clientId,
+						authority?.holderName,
+					);
+					pushEditsPaused();
+				},
+				onReadyChange: (ready) => {
+					pushReadyToUI(ready);
+				},
+				onPendingChange: (count) => {
+					pushPendingUploads(count);
+				},
+				onUploadComplete: () => {
+					uploadOkCounter += 1;
+					void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
+				},
+			})
+		: new SyncEngine(transport, {
 		isHost: false,
 		initialWatermark: watermark,
 		code: trimmed,
@@ -1998,7 +2056,7 @@ const doConnectSharedLeague = async ({
 				void healMissedDataNow?.("engine-skip");
 			}, 5000);
 		},
-	});
+	  });
 	engine.start();
 	setSyncEngine(engine);
 	currentCode = trimmed;
@@ -2054,7 +2112,9 @@ const doConnectSharedLeague = async ({
 	// next connect instead of clearing the flag and staying stuck. Never blocks
 	// the connect.
 	const healMissedData = async (trigger: string) => {
-		if (healingMissedData) {
+		if (healingMissedData || isV2) {
+			// v2 has exactly one recovery (engine.catchUp) and its own checkpoint
+			// protocol; none of this machinery applies.
 			return;
 		}
 		healingMissedData = true;
@@ -2171,21 +2231,24 @@ const doConnectSharedLeague = async ({
 	healMissedDataNow = healMissedData;
 	void healMissedData("connect");
 
-	// Played-game invariant sweep: drop any schedule row whose game already
+	// Played-game invariant sweep (v1-log fallout only): drop any schedule row
+	// whose game already
 	// exists (a phantom "upcoming" copy of a played game, left by a partially
 	// applied or abandoned changeset in some prior session). Runs once per
 	// connect regardless of whether anything new syncs in, so a device carrying
 	// this corruption heals just by opening the league.
-	void (async () => {
-		try {
-			const removed = await sweepPhantomScheduleRows();
-			if (removed > 0) {
-				syncDebugLog("connect:phantom-schedule-swept", { removed });
+	if (!isV2) {
+		void (async () => {
+			try {
+				const removed = await sweepPhantomScheduleRows();
+				if (removed > 0) {
+					syncDebugLog("connect:phantom-schedule-swept", { removed });
+				}
+			} catch (error) {
+				syncDebugLog("connect:phantom-schedule-sweep-failed", { error });
 			}
-		} catch (error) {
-			syncDebugLog("connect:phantom-schedule-sweep-failed", { error });
-		}
-	})();
+		})();
+	}
 
 	// Same spirit for finished-season history: recompute playoffRoundsWon from
 	// each season's bracket and fix what a past rough recovery left stale (the
@@ -2216,11 +2279,26 @@ const doConnectSharedLeague = async ({
 		pushSyncStateFull();
 		// Unlock a follower whose broadcaster went away without a clean end.
 		checkLiveBroadcastLease();
-		// Notice, and fix, being silently behind the rest of the room.
-		void checkBehindAuthority();
-		// On the authority: checkpoint the league once enough log has accumulated,
-		// and prune entries the previous checkpoint already covers. Self-throttled.
-		{
+		if (isV2) {
+			// V2's whole health story: stay on the chain's head, keep the room's
+			// checkpoint fresh (authority), and fold any waiting follower requests
+			// (authority). Each is self-throttled and single-flighted.
+			const engineNow = getSyncEngine();
+			if (engineNow instanceof SyncEngineV2) {
+				if (!engineNow.isCaughtUp()) {
+					void engineNow.catchUp();
+				}
+				void engineNow.maybePublishCheckpoint();
+				if (engineNow.isAuthority()) {
+					void engineNow.drainRequests();
+				}
+			}
+		} else {
+			// Notice, and fix, being silently behind the rest of the room.
+			void checkBehindAuthority();
+			// On the authority: checkpoint the league once enough log has
+			// accumulated, and prune entries the previous checkpoint already
+			// covers. Self-throttled.
 			const engineForSnapshot = getSyncEngine();
 			if (engineForSnapshot) {
 				void maybePublishRoomSnapshot(engineForSnapshot);
@@ -2287,10 +2365,15 @@ const doConnectSharedLeague = async ({
 		handleLotteryRevealMeta(meta, clientId);
 	});
 
-	// Kick off the initial paginated backlog drain now (it also starts the live
-	// changes subscription once caught up). Runs in the background so connect
-	// doesn't block on a device that's been away a long time.
-	void driveCatchUp();
+	// Kick off the initial catch-up now, in the background so connect doesn't
+	// block on a device that's been away a long time. V2: the single bounded
+	// chain walk. V1: the paginated backlog drain (which also starts the live
+	// changes subscription once caught up).
+	if (isV2) {
+		void engine.catchUp();
+	} else {
+		void driveCatchUp();
+	}
 
 	// Poll to keep draining / pick up anything the real-time subscription hasn't
 	// delivered yet (and to start that subscription once the initial drain lands).
@@ -2314,6 +2397,16 @@ const doConnectSharedLeague = async ({
 		// unavoidable price of detecting a dead listener. The saving lands in
 		// active rooms, where the old poll re-read a log the listener had already
 		// delivered. During the initial backlog drain this always runs.
+		if (isV2) {
+			// V2 catch-up is one cheap pointer read when already caught up, and
+			// THE recovery path when not. No listener-freshness heuristics: the
+			// pointer poll IS the dead-listener backstop.
+			if (engine) {
+				void engine.catchUp();
+			}
+			void engine?.drainOutbox();
+			return;
+		}
 		const lastDelivery = engine?.getLastChangesDeliveryAt() ?? 0;
 		const changesFresh = Date.now() - lastDelivery < LISTENER_FRESH_MS;
 		const subscribed = engine?.hasChangesSubscription?.() ?? false;

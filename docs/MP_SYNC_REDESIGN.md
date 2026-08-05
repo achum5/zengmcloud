@@ -169,13 +169,22 @@ v1 wipe reduces to. Checkpoint restores write the marker LAST, so an
 interrupted restore retries cleanly instead of trusting a half-restored
 database. Nothing imports this module yet; it risks nothing until wired.
 
-Remaining to wire v2 (in order): transport documents (version pointer with
-compare-and-set, per-version delta docs, per-version checkpoints), the engine
-loop (publish on advance, subscribe + catchUpPlan on the pointer), the
-follower request queue, the per-room protocol marker + creation toggle, and
-the connect branch. Capture (changeTracker), the outbox, deferred
-notifications, authority claims, and every coordination feature are reused
-as-is.
+**V2 wired — opt-in per room.** The transport speaks the chain (version
+pointer moved only by compare-and-set, self-describing immutable delta and
+checkpoint docs, kind-tagged request docs, all under the existing `control`
+rules surface, with reader-side chunk-author verification against zombie
+writers). `SyncEngineV2` presents the exact consumer surface the rest of the
+app was mapped to use, so afterAction, the busy lease, deferred notifications,
+ready-up gates, the FA board, live watching and the rest run unchanged.
+Followers' edits travel as requests the authority folds into the chain. The
+room's protocol is auto-detected on connect from the pointer doc; the "New
+sync engine (v2)" checkbox on the sync page initializes a FRESH room onto v2
+(explicit host join, no v1 history - never a conversion). V1 rooms behave
+exactly as before, byte for byte.
+
+Still open for v2, in order of value: per-version UI activity rows (the
+activity page shows nothing for v2 rooms yet), retention tuning for delta
+docs, and - once v2 has soaked in real rooms - deleting the v1 machinery.
 
 **Stage 1.** Split the payload into `live` + `history/<season>` segments behind a
 manifest. Keep the delta log running alongside. Publishing gets cheap enough to

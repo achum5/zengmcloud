@@ -12,6 +12,7 @@ import {
 	type ApplyDecision,
 	type VersionedChangeset,
 } from "./protocol.ts";
+import type { Changeset } from "../changeset.ts";
 
 // ---------------------------------------------------------------------------
 // The v2 apply: where the version chain touches disk.
@@ -126,6 +127,50 @@ export const applyVersionedChangeset = async (
 		action: vcs.action,
 	});
 	return "apply";
+};
+
+// Write a folded request's records into the local database, in one
+// transaction, WITHOUT touching the version marker - the caller advanced the
+// marker when it minted the version carrying these records, and the records
+// here are that version's exact content landing on its own author. Idempotent
+// whole-record puts, so re-running after a crash converges.
+export const applyRequestRecordsLocally = async (
+	changeset: Changeset,
+): Promise<void> => {
+	if (changeset.changes.length === 0) {
+		return;
+	}
+	const stores = [
+		...new Set(changeset.changes.map((change) => String(change.store))),
+	];
+	const transaction = (idb.league as any).transaction(stores, "readwrite");
+	for (const change of changeset.changes) {
+		const objectStore = transaction.objectStore(String(change.store));
+		if (change.type === "delete") {
+			objectStore.delete(change.id);
+		} else {
+			objectStore.put(change.value);
+		}
+	}
+	await transaction.done;
+
+	await changeTracker.runSuppressed(async () => {
+		for (const change of changeset.changes) {
+			const store = (idb.cache as any)[change.store];
+			if (!store) {
+				continue;
+			}
+			if (change.type === "delete") {
+				try {
+					await store.delete(change.id);
+				} catch {
+					// Absent in cache is fine.
+				}
+			} else {
+				await store.put(change.value);
+			}
+		}
+	});
 };
 
 // Restore a full-state checkpoint that represents version `checkpointVersion`.

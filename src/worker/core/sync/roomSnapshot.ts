@@ -20,8 +20,20 @@ import {
 	findPayloadIntegrityProblems,
 } from "./leagueIntegrity.ts";
 import { syncDebugLog } from "./debugLog.ts";
-import type { SyncEngine } from "./SyncEngine.ts";
+import type { SyncTransport } from "./types.ts";
 import type { RoomSnapshotMeta } from "./types.ts";
+
+// The slice of an engine this module needs - structural, so both protocol
+// engines qualify (only the v1 path ever calls in here, but the types must
+// not force that).
+type SnapshotEngine = {
+	transport: SyncTransport;
+	localName: string;
+	isAuthority: () => boolean;
+	isBusyApplying: () => boolean;
+	getPersistedSeq: () => number;
+	adoptSnapshotWatermark: (seq: number) => void;
+};
 
 // ---------------------------------------------------------------------------
 // ROOM SNAPSHOTS: the checkpoint layer under the delta log.
@@ -232,7 +244,7 @@ export const applyRoomSnapshotPayload = async (
 // entries the PREVIOUS snapshot already covers. Authority only - a follower's
 // state is by definition secondhand.
 export const publishRoomSnapshot = async (
-	engine: SyncEngine,
+	engine: SnapshotEngine,
 ): Promise<RoomSnapshotMeta | undefined> => {
 	const transport = engine.transport;
 	if (
@@ -289,7 +301,7 @@ export const publishRoomSnapshot = async (
 // Restore the room's snapshot onto this device and jump the watermark to its
 // seq. The caller runs an ordinary catch-up afterwards for the tail.
 export const restoreFromRoomSnapshot = async (
-	engine: SyncEngine,
+	engine: SnapshotEngine,
 ): Promise<RoomSnapshotMeta | undefined> => {
 	const transport = engine.transport;
 	if (!transport.fetchRoomSnapshotMeta || !transport.fetchRoomSnapshotData) {
@@ -400,7 +412,7 @@ export const resetSnapshotCadenceForTesting = () => {
 // until it does, any device on an older build that falls behind gets wiped,
 // and any device on a new build has no usable checkpoint to recover from.
 const roomSnapshotIsPoisoned = async (
-	engine: SyncEngine,
+	engine: SnapshotEngine,
 	meta: RoomSnapshotMeta,
 ): Promise<boolean> => {
 	if (vettedSnapshotSeq === meta.seq) {
@@ -443,7 +455,7 @@ const roomSnapshotIsPoisoned = async (
 // authority, at most once per SNAPSHOT_CHECK_MIN_MS, and only while nothing
 // else is moving the league.
 export const maybePublishRoomSnapshot = async (
-	engine: SyncEngine,
+	engine: SnapshotEngine,
 ): Promise<void> => {
 	if (
 		!engine.isAuthority() ||

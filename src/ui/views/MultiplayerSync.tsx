@@ -120,6 +120,7 @@ const MultiplayerSync = () => {
 
 	const [code, setCode] = useState("");
 	const [isHost, setIsHost] = useState(false);
+	const [useV2, setUseV2] = useState(false);
 	const [status, setStatus] = useState<Status>("disconnected");
 	const [error, setError] = useState<string | undefined>();
 	const [claimingSimAuthority, setClaimingSimAuthority] = useState(false);
@@ -410,6 +411,7 @@ const MultiplayerSync = () => {
 			await toWorker("main", "connectSharedLeague", {
 				code: innerCode,
 				isHost,
+				v2: useV2,
 				// Typed by the user on this page - an explicit join, allowed to bind
 				// this league file to the room.
 				explicit: true,
@@ -512,6 +514,24 @@ const MultiplayerSync = () => {
 				/>
 				<label className="form-check-label" htmlFor="sync-host">
 					Sim here on connect
+				</label>
+			</div>
+
+			<div className="form-check mb-3">
+				<input
+					id="sync-v2"
+					type="checkbox"
+					className="form-check-input"
+					checked={useV2}
+					disabled={connected || status === "connecting" || !isHost}
+					onChange={(event) => setUseV2(event.target.checked)}
+				/>
+				<label
+					className="form-check-label"
+					htmlFor="sync-v2"
+					title="New rooms only, applies when the first device connects as the simmer. Existing rooms keep whatever they were created with."
+				>
+					New sync engine (v2)
 				</label>
 			</div>
 

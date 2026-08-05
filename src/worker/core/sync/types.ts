@@ -236,6 +236,35 @@ export type RoomSnapshotMeta = {
 	generation?: string;
 };
 
+// --- Sync v2 (version chain) wire types --------------------------------------
+
+// The room's v2 pointer document. THE source of truth for a v2 room: `version`
+// only ever moves by compare-and-set, so the chain cannot fork at the source.
+export type V2StateDoc = {
+	version: number;
+	authorId: string;
+	byName: string;
+	at: number;
+	// The action that produced the newest version (display/notifications).
+	action?: string;
+	// Newest full-state checkpoint, if any: which version it captures and how
+	// many chunks its payload spans.
+	checkpointVersion?: number;
+	checkpointChunkCount?: number;
+};
+
+// A follower's edit, waiting for the authority to fold it into the next
+// version. Small by construction (one action's changeset).
+export type V2Request = {
+	id: string;
+	authorId: string;
+	byName: string;
+	action: string;
+	// Serialized (Infinity-safe, possibly gzipped) changeset.
+	data: string;
+	at: number;
+};
+
 export interface SyncTransport {
 	readonly clientId: string;
 
@@ -294,6 +323,52 @@ export interface SyncTransport {
 		serialized: string,
 	): Promise<number>;
 	fetchRoomSnapshotMeta?(): Promise<RoomSnapshotMeta | undefined>;
+
+	// ---- Sync v2 (version chain) ------------------------------------------
+	// All optional: the in-memory test transport and older builds simply lack
+	// them, and a v2 room is only ever joined by code that checks.
+	fetchRoomV2State?(): Promise<V2StateDoc | undefined>;
+	subscribeRoomV2State?(onChange: (state: V2StateDoc) => void): () => void;
+	// Write version N's delta payload chunks. Chunk docs are IMMUTABLE (their
+	// ids embed the version), and chunk 0 carries the chunkCount, so a reader
+	// never needs out-of-band metadata.
+	publishV2Delta?(
+		meta: { version: number; authorId: string; action: string; at: number },
+		serialized: string,
+	): Promise<number>;
+	// Compare-and-set the pointer from expectedVersion to next.version. False
+	// means someone else won; the caller must catch up, never overwrite.
+	commitV2Version?(
+		next: {
+			version: number;
+			authorId: string;
+			byName: string;
+			at: number;
+			action: string;
+		},
+		expectedVersion: number,
+	): Promise<boolean>;
+	fetchV2Delta?(version: number): Promise<
+		| {
+				serialized: string;
+				authorId: string;
+				action: string;
+				at: number;
+		  }
+		| undefined
+	>;
+	publishV2Checkpoint?(version: number, serialized: string): Promise<number>;
+	// Point the state doc at a published checkpoint (transactional merge that
+	// never touches `version`).
+	commitV2Checkpoint?(version: number, chunkCount: number): Promise<boolean>;
+	fetchV2Checkpoint?(
+		version: number,
+		chunkCount: number,
+	): Promise<string | undefined>;
+	publishV2Request?(request: V2Request): Promise<void>;
+	fetchV2Requests?(): Promise<V2Request[]>;
+	deleteV2Request?(id: string): Promise<void>;
+	deleteV2DeltasBefore?(version: number): Promise<number>;
 	fetchRoomSnapshotData?(
 		chunkCount: number,
 		generation?: string,

@@ -43,6 +43,8 @@ import { parseLeaguePosition, type LeaguePosition } from "./leaguePosition.ts";
 import type {
 	Authority,
 	ChangesetEntry,
+	V2Request,
+	V2StateDoc,
 	DraftReadyEntry,
 	FaBoardEntry,
 	TriviaScoreEntry,
@@ -90,6 +92,16 @@ const LOTTERY_REVEAL_DOC_ID = "lotteryReveal";
 const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
 const ROOM_SNAPSHOT_DOC_ID = "roomSnapshot";
 const ROOM_SNAPSHOT_DATA_PREFIX = "roomSnapshotData";
+
+// ---- Sync v2 (version chain) doc ids ----------------------------------------
+// All under the existing `control` collection so the current security rules
+// (holderId must be the writer's own uid) cover them without any rules change.
+const V2_STATE_DOC_ID = "v2state";
+const v2DeltaDocId = (version: number, index: number) =>
+	`v2delta_${version}_${index}`;
+const v2CheckpointDocId = (version: number, index: number) =>
+	`v2checkpoint_${version}_${index}`;
+const v2RequestDocId = (id: string) => `v2request_${id}`;
 
 // If we've had confirmed contact with Firestore within this window, treat the
 // connection as live without a round-trip; otherwise verifyConnection() probes.
@@ -1183,6 +1195,375 @@ export class FirebaseTransport implements SyncTransport {
 		}
 		this.markContact();
 		return out;
+	}
+
+	// ---- Sync v2 (version chain) -------------------------------------------
+	//
+	// The pointer doc is the room. It moves ONLY by compare-and-set inside a
+	// Firestore transaction, so two writers cannot both advance it - the chain
+	// cannot fork at the source. Delta and checkpoint payload docs embed their
+	// version in the doc id and are never rewritten: publishing is always
+	// content first, pointer last, onto ids nobody else will ever write.
+
+	async fetchRoomV2State(): Promise<V2StateDoc | undefined> {
+		const snap = await getDoc(
+			doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID),
+		);
+		this.markContact();
+		return this.parseV2State(snap.data());
+	}
+
+	private parseV2State(data: any): V2StateDoc | undefined {
+		if (!data || typeof data.version !== "number") {
+			return undefined;
+		}
+		return {
+			version: data.version,
+			authorId: typeof data.authorId === "string" ? data.authorId : "",
+			byName: typeof data.byName === "string" ? data.byName : "Someone",
+			at: typeof data.at === "number" ? data.at : 0,
+			action: typeof data.action === "string" ? data.action : undefined,
+			checkpointVersion:
+				typeof data.checkpointVersion === "number"
+					? data.checkpointVersion
+					: undefined,
+			checkpointChunkCount:
+				typeof data.checkpointChunkCount === "number"
+					? data.checkpointChunkCount
+					: undefined,
+		};
+	}
+
+	subscribeRoomV2State(onChange: (state: V2StateDoc) => void): () => void {
+		return onSnapshot(
+			doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID),
+			(snap) => {
+				const state = this.parseV2State(snap.data());
+				if (state) {
+					onChange(state);
+				}
+			},
+		);
+	}
+
+	// Write version N's payload chunks. Chunk 0 carries the chunkCount, so the
+	// payload is self-describing - a reader needs nothing but the version.
+	async publishV2Delta(
+		meta: { version: number; authorId: string; action: string; at: number },
+		serialized: string,
+	): Promise<number> {
+		const chunks: string[] = [];
+		for (let i = 0; i < serialized.length; i += LIVE_BROADCAST_CHUNK_BYTES) {
+			chunks.push(serialized.slice(i, i + LIVE_BROADCAST_CHUNK_BYTES));
+		}
+		if (chunks.length === 0) {
+			chunks.push("");
+		}
+		for (let i = 0; i < chunks.length; i++) {
+			await setDoc(
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					v2DeltaDocId(meta.version, i),
+				),
+				{
+					holderId: this.clientId,
+					version: meta.version,
+					index: i,
+					chunkCount: chunks.length,
+					data: chunks[i],
+					authorId: meta.authorId,
+					action: meta.action,
+					at: meta.at,
+					updatedAt: serverTimestamp(),
+				},
+			);
+		}
+		this.markContact();
+		return chunks.length;
+	}
+
+	// THE compare-and-set. True: the pointer moved expectedVersion -> next.
+	// False: someone else moved it first; the caller catches up and never
+	// overwrites. Checkpoint fields are preserved untouched.
+	async commitV2Version(
+		next: {
+			version: number;
+			authorId: string;
+			byName: string;
+			at: number;
+			action: string;
+		},
+		expectedVersion: number,
+	): Promise<boolean> {
+		const ref = doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID);
+		try {
+			await runTransaction(this.db, async (tx) => {
+				const snap = await tx.get(ref);
+				const current = snap.data();
+				const currentVersion =
+					current && typeof current.version === "number" ? current.version : 0;
+				if (currentVersion !== expectedVersion) {
+					throw new Error("cas-conflict");
+				}
+				tx.set(ref, {
+					holderId: this.clientId,
+					version: next.version,
+					authorId: next.authorId,
+					byName: next.byName,
+					at: next.at,
+					action: next.action,
+					checkpointVersion:
+						current && typeof current.checkpointVersion === "number"
+							? current.checkpointVersion
+							: null,
+					checkpointChunkCount:
+						current && typeof current.checkpointChunkCount === "number"
+							? current.checkpointChunkCount
+							: null,
+					updatedAt: serverTimestamp(),
+				});
+			});
+			this.markContact();
+			return true;
+		} catch (error) {
+			if ((error as Error)?.message === "cas-conflict") {
+				return false;
+			}
+			throw error;
+		}
+	}
+
+	async fetchV2Delta(version: number): Promise<
+		| {
+				serialized: string;
+				authorId: string;
+				action: string;
+				at: number;
+		  }
+		| undefined
+	> {
+		const first = await getDoc(
+			doc(this.db, "leagues", this.code, "control", v2DeltaDocId(version, 0)),
+		);
+		if (!first.exists()) {
+			return undefined;
+		}
+		const head = first.data();
+		if (typeof head.data !== "string" || typeof head.chunkCount !== "number") {
+			return undefined;
+		}
+		let out = head.data;
+		for (let i = 1; i < head.chunkCount; i++) {
+			const snap = await getDoc(
+				doc(this.db, "leagues", this.code, "control", v2DeltaDocId(version, i)),
+			);
+			const data = snap.data();
+			// Every chunk must agree with chunk 0 about who wrote it and how many
+			// chunks there are. A zombie ex-authority retrying an uncommitted
+			// publish can overwrite individual chunk docs while the real winner's
+			// commit stands; a mixed read must come back "unreadable" (the caller
+			// retries) rather than reassembling two writers' bytes into one
+			// payload.
+			if (
+				!snap.exists() ||
+				typeof data?.data !== "string" ||
+				data.authorId !== head.authorId ||
+				data.chunkCount !== head.chunkCount
+			) {
+				return undefined;
+			}
+			out += data.data;
+		}
+		this.markContact();
+		return {
+			serialized: out,
+			authorId: typeof head.authorId === "string" ? head.authorId : "",
+			action: typeof head.action === "string" ? head.action : "",
+			at: typeof head.at === "number" ? head.at : 0,
+		};
+	}
+
+	async publishV2Checkpoint(
+		version: number,
+		serialized: string,
+	): Promise<number> {
+		const chunks: string[] = [];
+		for (let i = 0; i < serialized.length; i += LIVE_BROADCAST_CHUNK_BYTES) {
+			chunks.push(serialized.slice(i, i + LIVE_BROADCAST_CHUNK_BYTES));
+		}
+		if (chunks.length === 0) {
+			chunks.push("");
+		}
+		for (let i = 0; i < chunks.length; i++) {
+			await setDoc(
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					v2CheckpointDocId(version, i),
+				),
+				{
+					holderId: this.clientId,
+					version,
+					index: i,
+					chunkCount: chunks.length,
+					data: chunks[i],
+					updatedAt: serverTimestamp(),
+				},
+			);
+		}
+		this.markContact();
+		return chunks.length;
+	}
+
+	// Point the room at a published checkpoint. Transactional so it can never
+	// clobber a concurrent version bump - it rewrites ONLY the checkpoint
+	// fields around whatever version is current.
+	async commitV2Checkpoint(
+		version: number,
+		chunkCount: number,
+	): Promise<boolean> {
+		const ref = doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID);
+		try {
+			await runTransaction(this.db, async (tx) => {
+				const snap = await tx.get(ref);
+				if (!snap.exists()) {
+					throw new Error("no-state");
+				}
+				tx.update(ref, {
+					holderId: this.clientId,
+					checkpointVersion: version,
+					checkpointChunkCount: chunkCount,
+					updatedAt: serverTimestamp(),
+				});
+			});
+			this.markContact();
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	async fetchV2Checkpoint(
+		version: number,
+		chunkCount: number,
+	): Promise<string | undefined> {
+		let out = "";
+		for (let i = 0; i < chunkCount; i++) {
+			const snap = await getDoc(
+				doc(
+					this.db,
+					"leagues",
+					this.code,
+					"control",
+					v2CheckpointDocId(version, i),
+				),
+			);
+			const data = snap.data();
+			if (!snap.exists() || typeof data?.data !== "string") {
+				return undefined;
+			}
+			out += data.data;
+		}
+		this.markContact();
+		return out;
+	}
+
+	async publishV2Request(request: V2Request): Promise<void> {
+		await setDoc(
+			doc(
+				this.db,
+				"leagues",
+				this.code,
+				"control",
+				v2RequestDocId(request.id),
+			),
+			{
+				holderId: this.clientId,
+				kind: "v2request",
+				id: request.id,
+				authorId: request.authorId,
+				byName: request.byName,
+				action: request.action,
+				data: request.data,
+				at: request.at,
+				updatedAt: serverTimestamp(),
+			},
+		);
+		this.markContact();
+	}
+
+	async fetchV2Requests(): Promise<V2Request[]> {
+		const snapshot = await getDocsFromServer(
+			query(
+				collection(this.db, "leagues", this.code, "control"),
+				where("kind", "==", "v2request"),
+			),
+		);
+		this.markContact();
+		const out: V2Request[] = [];
+		for (const docSnap of snapshot.docs) {
+			const data = docSnap.data();
+			if (
+				typeof data.id === "string" &&
+				typeof data.data === "string" &&
+				typeof data.action === "string"
+			) {
+				out.push({
+					id: data.id,
+					authorId: typeof data.authorId === "string" ? data.authorId : "",
+					byName: typeof data.byName === "string" ? data.byName : "Someone",
+					action: data.action,
+					data: data.data,
+					at: typeof data.at === "number" ? data.at : 0,
+				});
+			}
+		}
+		out.sort((a, b) => a.at - b.at);
+		return out;
+	}
+
+	async deleteV2Request(id: string): Promise<void> {
+		try {
+			await deleteDoc(
+				doc(this.db, "leagues", this.code, "control", v2RequestDocId(id)),
+			);
+		} catch {
+			// A leaked request doc is re-processed idempotently, never harmful.
+		}
+	}
+
+	// Prune delta docs for versions below `version` (already covered by a
+	// checkpoint). Chunk 0 tells us each version's chunkCount.
+	async deleteV2DeltasBefore(version: number): Promise<number> {
+		let deleted = 0;
+		for (let v = Math.max(1, version - 500); v < version; v++) {
+			const first = await getDoc(
+				doc(this.db, "leagues", this.code, "control", v2DeltaDocId(v, 0)),
+			);
+			if (!first.exists()) {
+				continue;
+			}
+			const chunkCount =
+				typeof first.data().chunkCount === "number"
+					? first.data().chunkCount
+					: 1;
+			for (let i = 0; i < chunkCount; i++) {
+				try {
+					await deleteDoc(
+						doc(this.db, "leagues", this.code, "control", v2DeltaDocId(v, i)),
+					);
+					deleted += 1;
+				} catch {
+					// Housekeeping.
+				}
+			}
+		}
+		return deleted;
 	}
 
 	// Prune log entries older than seqMs, in pages so one call never hangs on a
