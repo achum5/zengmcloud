@@ -1914,6 +1914,51 @@ const doConnectSharedLeague = async ({
 	}
 	const isV2 = v2State !== undefined;
 
+	// Marker <-> room binding. A v2 applied-version marker is meaningful only
+	// within ONE room's chain, but it lives in the league DB - so a COPY of a
+	// league that synced in some other room arrives carrying that room's
+	// number, and every downstream decision (caught-up, publish target,
+	// checkpoint freshness) would believe it. That is how two rooms sharing a
+	// league lineage cross-contaminated: copies pass the room fingerprint
+	// check by design (all members import the same file), so the fingerprint
+	// cannot catch this. If this league copy is not bound to THIS room, zero
+	// the marker: it joins cleanly through the room's checkpoint, exactly like
+	// a fresh device.
+	if (isV2) {
+		try {
+			const roomRow = await (idb.league as any).get(
+				"gameAttributes",
+				"syncV2Room",
+			);
+			const boundRoom =
+				typeof roomRow?.value === "string" ? roomRow.value : undefined;
+			if (boundRoom !== trimmed) {
+				const transaction = (idb.league as any).transaction(
+					"gameAttributes",
+					"readwrite",
+				);
+				transaction.objectStore("gameAttributes").put({
+					key: "syncV2AppliedVersion",
+					value: 0,
+				});
+				transaction.objectStore("gameAttributes").put({
+					key: "syncV2Room",
+					value: trimmed,
+				});
+				await transaction.done;
+				syncDebugLog("connect:v2-room-binding-reset", {
+					previous: boundRoom,
+					code: trimmed,
+				});
+			}
+		} catch (error) {
+			// Refuse to connect rather than run on an unverified marker.
+			throw new Error(
+				`Could not verify this league's sync state: ${String(error)}`,
+			);
+		}
+	}
+
 	// Retention gap check. Catch-up is a `ts >` range read, so a device whose
 	// watermark predates everything left in the log finds nothing missing and
 	// would declare itself current while holding stale records - silently, which

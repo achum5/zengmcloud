@@ -26,7 +26,8 @@ class Room {
 		number,
 		{ serialized: string; authorId: string; action: string; at: number }
 	>();
-	checkpoints = new Map<number, string>();
+	// Keyed "version:generation" - chunks live under generation-unique ids.
+	checkpoints = new Map<string, string>();
 	authority: Authority | undefined;
 	private stateListeners = new Set<(s: V2StateDoc) => void>();
 	private authorityListeners = new Set<(a: Authority | undefined) => void>();
@@ -172,12 +173,20 @@ class V2Transport implements SyncTransport {
 		return this.room.deltas.get(version);
 	}
 
-	async publishV2Checkpoint(version: number, serialized: string) {
-		this.room.checkpoints.set(version, serialized);
+	async publishV2Checkpoint(
+		version: number,
+		serialized: string,
+		generation?: string,
+	) {
+		this.room.checkpoints.set(`${version}:${generation ?? ""}`, serialized);
 		return 1;
 	}
 
-	async commitV2Checkpoint(version: number, chunkCount: number) {
+	async commitV2Checkpoint(
+		version: number,
+		chunkCount: number,
+		generation?: string,
+	) {
 		if (!this.room.state) {
 			return false;
 		}
@@ -185,12 +194,17 @@ class V2Transport implements SyncTransport {
 			...this.room.state,
 			checkpointVersion: version,
 			checkpointChunkCount: chunkCount,
+			checkpointGeneration: generation,
 		});
 		return true;
 	}
 
-	async fetchV2Checkpoint(version: number) {
-		return this.room.checkpoints.get(version);
+	async fetchV2Checkpoint(
+		version: number,
+		_chunkCount?: number,
+		generation?: string,
+	) {
+		return this.room.checkpoints.get(`${version}:${generation ?? ""}`);
 	}
 
 	async deleteV2DeltasBefore() {
@@ -812,6 +826,57 @@ describe("SyncEngineV2", () => {
 			progressEvents.at(-1),
 			undefined,
 			"caught up clears the indicator",
+		);
+		engine.stop();
+	});
+
+	// A deterministic failure (an unreadable checkpoint) fails identically on
+	// every attempt; after three in a row the engine must back off instead of
+	// hammering the network every second.
+	test("repeated identical catch-up failures back off", async () => {
+		const room = new Room();
+		initRoom(room);
+		const seedTransport = new V2Transport("C", room);
+		await seedTransport.publishV2Delta(
+			{ version: 1, authorId: "C", action: "main.releasePlayer", at: 1 },
+			serializeChangeset(changesetOf(tradePut(1, 5))),
+		);
+		await seedTransport.commitV2Version(
+			{
+				version: 1,
+				authorId: "C",
+				byName: "C",
+				at: 1,
+				action: "main.releasePlayer",
+			},
+			0,
+		);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		let stateFetches = 0;
+		const realFetchState = transport.fetchRoomV2State.bind(transport);
+		transport.fetchRoomV2State = () => {
+			stateFetches += 1;
+			return realFetchState();
+		};
+		transport.fetchV2Delta = () => Promise.reject(new Error("unreadable"));
+		// No cycleNetwork on this transport, so failures accumulate cleanly.
+		const engine = new SyncEngineV2(transport);
+
+		assert.strictEqual(await engine.catchUp(), false);
+		assert.strictEqual(await engine.catchUp(), false);
+		assert.strictEqual(await engine.catchUp(), false);
+		const fetchesBefore = stateFetches;
+		assert.strictEqual(
+			await engine.catchUp(),
+			false,
+			"still failing, but from the backoff",
+		);
+		assert.strictEqual(
+			stateFetches,
+			fetchesBefore,
+			"the backed-off attempt never touched the network",
 		);
 		engine.stop();
 	});

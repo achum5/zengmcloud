@@ -405,6 +405,13 @@ export const DEVICE_LOCAL_GAME_ATTRIBUTES = new Set([
 	// it must never travel to another device, and a checkpoint restore must
 	// not clobber it (the v2 restore path writes it explicitly, last).
 	"syncV2AppliedVersion",
+	// Which room the marker above belongs to. A version number is meaningful
+	// only within ONE room's chain; without this, a copy of a league carried
+	// its old room's marker into a NEW room and was believed - which let two
+	// rooms sharing a league lineage cross-contaminate. On connect, a code
+	// mismatch here resets the marker to 0 so the league joins the room
+	// cleanly through its checkpoint.
+	"syncV2Room",
 ]);
 
 // Whole stores that are per-device scratch / personal UI state, never shared

@@ -100,8 +100,18 @@ const ROOM_SNAPSHOT_DATA_PREFIX = "roomSnapshotData";
 const V2_STATE_DOC_ID = "v2state";
 const v2DeltaDocId = (version: number, index: number) =>
 	`v2delta_${version}_${index}`;
-const v2CheckpointDocId = (version: number, index: number) =>
-	`v2checkpoint_${version}_${index}`;
+// Generation-unique when a generation is given (every new publish), so two
+// publishes can never interleave chunk writes into the same documents - the
+// corruption that once made a room's checkpoint unreadable for every joiner.
+// The un-suffixed form remains readable for checkpoints from older builds.
+const v2CheckpointDocId = (
+	version: number,
+	index: number,
+	generation?: string,
+) =>
+	generation
+		? `v2checkpoint_${version}_${generation}_${index}`
+		: `v2checkpoint_${version}_${index}`;
 
 // If we've had confirmed contact with Firestore within this window, treat the
 // connection as live without a round-trip; otherwise verifyConnection() probes.
@@ -1262,6 +1272,10 @@ export class FirebaseTransport implements SyncTransport {
 				typeof data.checkpointChunkCount === "number"
 					? data.checkpointChunkCount
 					: undefined,
+			checkpointGeneration:
+				typeof data.checkpointGeneration === "string"
+					? data.checkpointGeneration
+					: undefined,
 		};
 	}
 
@@ -1412,6 +1426,10 @@ export class FirebaseTransport implements SyncTransport {
 						current && typeof current.checkpointChunkCount === "number"
 							? current.checkpointChunkCount
 							: null,
+					checkpointGeneration:
+						current && typeof current.checkpointGeneration === "string"
+							? current.checkpointGeneration
+							: null,
 					updatedAt: serverTimestamp(),
 				});
 			});
@@ -1478,6 +1496,7 @@ export class FirebaseTransport implements SyncTransport {
 	async publishV2Checkpoint(
 		version: number,
 		serialized: string,
+		generation?: string,
 	): Promise<number> {
 		const chunks: string[] = [];
 		for (let i = 0; i < serialized.length; i += LIVE_BROADCAST_CHUNK_BYTES) {
@@ -1493,7 +1512,7 @@ export class FirebaseTransport implements SyncTransport {
 					"leagues",
 					this.code,
 					"control",
-					v2CheckpointDocId(version, i),
+					v2CheckpointDocId(version, i, generation),
 				),
 				{
 					holderId: this.clientId,
@@ -1501,6 +1520,7 @@ export class FirebaseTransport implements SyncTransport {
 					index: i,
 					chunkCount: chunks.length,
 					data: chunks[i],
+					generation: generation ?? null,
 					updatedAt: serverTimestamp(),
 				},
 			);
@@ -1515,6 +1535,7 @@ export class FirebaseTransport implements SyncTransport {
 	async commitV2Checkpoint(
 		version: number,
 		chunkCount: number,
+		generation?: string,
 	): Promise<boolean> {
 		const ref = doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID);
 		try {
@@ -1527,6 +1548,7 @@ export class FirebaseTransport implements SyncTransport {
 					holderId: this.clientId,
 					checkpointVersion: version,
 					checkpointChunkCount: chunkCount,
+					checkpointGeneration: generation ?? null,
 					updatedAt: serverTimestamp(),
 				});
 			});
@@ -1540,6 +1562,7 @@ export class FirebaseTransport implements SyncTransport {
 	async fetchV2Checkpoint(
 		version: number,
 		chunkCount: number,
+		generation?: string,
 	): Promise<string | undefined> {
 		let out = "";
 		for (let i = 0; i < chunkCount; i++) {
@@ -1549,7 +1572,7 @@ export class FirebaseTransport implements SyncTransport {
 					"leagues",
 					this.code,
 					"control",
-					v2CheckpointDocId(version, i),
+					v2CheckpointDocId(version, i, generation),
 				),
 			);
 			const data = snap.data();

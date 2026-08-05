@@ -107,6 +107,12 @@ const REQUIRED_NON_EMPTY_STORES = ["players", "teams", "gameAttributes"];
 export const validateRoomSnapshotPayload = (payload: SnapshotPayload) => {
 	const problems: string[] = [];
 
+	// A corrupted download can deserialize into anything; answer with a named
+	// problem instead of crashing on property access.
+	if (!payload || typeof payload !== "object") {
+		problems.push("not a league payload");
+		return problems;
+	}
 	if (payload.version !== SNAPSHOT_VERSION) {
 		problems.push(
 			`format version ${payload.version}, but this app understands version ${SNAPSHOT_VERSION}`,
@@ -252,6 +258,13 @@ export const publishRoomSnapshot = async (
 		!transport.publishRoomSnapshot ||
 		!transport.fetchRoomSnapshotMeta
 	) {
+		return undefined;
+	}
+	// Never snapshot the loaded league into a room it doesn't belong to (a
+	// league switch mid-session, an engine that outlived one). This path reads
+	// the entire current database - published into the wrong room, it is
+	// instant cross-league contamination for everyone there.
+	if (!checkApplyGuard()) {
 		return undefined;
 	}
 

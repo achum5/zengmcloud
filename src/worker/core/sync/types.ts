@@ -247,10 +247,12 @@ export type V2StateDoc = {
 	at: number;
 	// The action that produced the newest version (display/notifications).
 	action?: string;
-	// Newest full-state checkpoint, if any: which version it captures and how
-	// many chunks its payload spans.
+	// Newest full-state checkpoint, if any: which version it captures, how
+	// many chunks its payload spans, and which publish generation the chunks
+	// live under (absent for checkpoints from older builds).
 	checkpointVersion?: number;
 	checkpointChunkCount?: number;
+	checkpointGeneration?: string;
 };
 
 export interface SyncTransport {
@@ -357,13 +359,25 @@ export interface SyncTransport {
 		  }
 		| undefined
 	>;
-	publishV2Checkpoint?(version: number, serialized: string): Promise<number>;
+	// Checkpoint chunks land at generation-unique doc ids and the pointer
+	// flips to them only at commit, so a reader can never see two publishes
+	// spliced together.
+	publishV2Checkpoint?(
+		version: number,
+		serialized: string,
+		generation?: string,
+	): Promise<number>;
 	// Point the state doc at a published checkpoint (transactional merge that
 	// never touches `version`).
-	commitV2Checkpoint?(version: number, chunkCount: number): Promise<boolean>;
+	commitV2Checkpoint?(
+		version: number,
+		chunkCount: number,
+		generation?: string,
+	): Promise<boolean>;
 	fetchV2Checkpoint?(
 		version: number,
 		chunkCount: number,
+		generation?: string,
 	): Promise<string | undefined>;
 	deleteV2DeltasBefore?(version: number): Promise<number>;
 	fetchRoomSnapshotData?(

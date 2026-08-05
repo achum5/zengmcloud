@@ -7,9 +7,13 @@ import {
 	deserializeChangeset,
 	serializeChangeset,
 } from "../serialize.ts";
-import { buildRoomSnapshotPayload } from "../roomSnapshot.ts";
+import {
+	buildRoomSnapshotPayload,
+	validateRoomSnapshotPayload,
+} from "../roomSnapshot.ts";
 import { repairLeagueHistory } from "../historyRepair.ts";
 import { checkLeagueIntegrity } from "../leagueIntegrity.ts";
+import { checkApplyGuard } from "../applyGuard.ts";
 import { syncDebugLog } from "../debugLog.ts";
 import {
 	refreshAfterApply,
@@ -150,6 +154,13 @@ export class SyncEngineV2 {
 	private probeFailureStreak = 0;
 	private catchupFailureStreak = 0;
 	private lastNetworkCycleAt = 0;
+	private lastCatchupFailureAt = 0;
+	private roomVersionAtLastFailure = 0;
+	// The catch-up step already reported to the user via a persistent notice,
+	// so repeated failures at the same step nag exactly once.
+	private notifiedFailingStep: string | undefined;
+	private publishingCheckpoint = false;
+	private checkpointVettedForSession = false;
 
 	// Whether the UI is currently showing the catch-up indicator for this
 	// engine, so it is only ever cleared when it was shown (no flicker on the
@@ -561,6 +572,19 @@ export class SyncEngineV2 {
 	// ---- Catch-up: the ONE recovery path ------------------------------------
 
 	catchUp(): Promise<boolean> {
+		// A DETERMINISTIC failure (an unreadable checkpoint, a poisoned payload)
+		// fails identically on every attempt - hammering it every second burns
+		// the network and fills the log without ever succeeding. After three
+		// consecutive failures, retry on a relaxed cadence until something
+		// changes (a new room version, or enough time for the authority to
+		// publish a fresh checkpoint).
+		if (
+			this.catchupFailureStreak >= 3 &&
+			this.roomVersion === this.roomVersionAtLastFailure &&
+			Date.now() - this.lastCatchupFailureAt < 15_000
+		) {
+			return Promise.resolve(false);
+		}
 		this.catchUpChain = this.catchUpChain
 			.catch(() => false)
 			.then(() => this.doCatchUp());
@@ -569,6 +593,11 @@ export class SyncEngineV2 {
 
 	private async doCatchUp(): Promise<boolean> {
 		if (this.stopped || !this.transport.fetchRoomV2State) {
+			return false;
+		}
+		// Same wall as the apply layer, hit BEFORE any network work: remote
+		// state must never be applied over a league this session doesn't own.
+		if (!checkApplyGuard()) {
 			return false;
 		}
 		this.catchingUp = true;
@@ -626,6 +655,7 @@ export class SyncEngineV2 {
 							this.transport.fetchV2Checkpoint(
 								state.checkpointVersion,
 								state.checkpointChunkCount,
+								state.checkpointGeneration,
 							),
 							CATCHUP_READ_TIMEOUT_MS,
 						);
@@ -650,6 +680,7 @@ export class SyncEngineV2 {
 
 				if (plan.type === "caught-up") {
 					this.catchupFailureStreak = 0;
+					this.notifiedFailingStep = undefined;
 					this.clearCatchUpProgress();
 					return true;
 				}
@@ -666,6 +697,7 @@ export class SyncEngineV2 {
 						this.transport.fetchV2Checkpoint(
 							plan.checkpointVersion,
 							state.checkpointChunkCount,
+							state.checkpointGeneration,
 						),
 						CATCHUP_READ_TIMEOUT_MS,
 					);
@@ -727,6 +759,26 @@ export class SyncEngineV2 {
 		} catch (error) {
 			syncDebugLog("v2:catchup-failed", { error: String(error), step });
 			this.catchupFailureStreak += 1;
+			this.lastCatchupFailureAt = Date.now();
+			this.roomVersionAtLastFailure = this.roomVersion;
+			// Repeated identical failures deserve one honest line to the user -
+			// the retrying is automatic, but silence while stuck reads as broken.
+			if (
+				this.catchupFailureStreak === 3 &&
+				this.notifiedFailingStep !== step
+			) {
+				this.notifiedFailingStep = step;
+				try {
+					logEvent({
+						type: "error",
+						text: "Having trouble loading the league's shared data. Retrying automatically.",
+						saveToDb: false,
+						persistent: true,
+					});
+				} catch {
+					// UI notice only.
+				}
+			}
 			// The user is behind and fetches are failing - the one moment they
 			// most need the header to say "working on it" instead of nothing.
 			if (this.roomVersion > this.appliedMirror) {
@@ -869,6 +921,12 @@ export class SyncEngineV2 {
 
 	private async doDrain(): Promise<boolean> {
 		if (this.stopped) {
+			return false;
+		}
+		// Never touch the chain while the loaded league is not this session's
+		// league (a switch mid-session, a zombie engine): publishing would read
+		// the WRONG league's marker and could mint versions from it.
+		if (!checkApplyGuard()) {
 			return false;
 		}
 		this.draining = true;
@@ -1092,9 +1150,16 @@ export class SyncEngineV2 {
 	// Called from the health tick, authority only. Publishes when the chain has
 	// outgrown the last checkpoint (or has none), through the same integrity
 	// gates as v1 - a damaged league cannot become the room's recovery point.
+	//
+	// SINGLE-FLIGHT, and this is not optional: a checkpoint build+upload takes
+	// longer than one health tick, and two overlapping publishes of the same
+	// version used to interleave their chunk writes into the same documents -
+	// producing a checkpoint that no device could ever read (the field failure
+	// that stranded a fresh joiner at version 0 retrying forever).
 	async maybePublishCheckpoint(): Promise<void> {
 		if (
 			this.stopped ||
+			this.publishingCheckpoint ||
 			!this.isAuthority() ||
 			!this.transport.publishV2Checkpoint ||
 			!this.transport.commitV2Checkpoint ||
@@ -1106,20 +1171,69 @@ export class SyncEngineV2 {
 		) {
 			return;
 		}
+		// The one wall that matters most here: NEVER publish the loaded league
+		// into a room it doesn't belong to. This path reads the whole current
+		// database; without the guard, a league switch mid-session (or an
+		// engine that outlived one) would checkpoint league A's data into
+		// league B's room - full cross-league contamination in one write.
+		if (!checkApplyGuard()) {
+			return;
+		}
+		this.publishingCheckpoint = true;
 		try {
 			const state = await this.transport.fetchRoomV2State?.();
 			if (!state) {
 				return;
 			}
+			const applied = await readAppliedVersion();
+			if (applied < state.version) {
+				return;
+			}
+
 			const last = state.checkpointVersion ?? 0;
+			let mustReplace = false;
 			if (
+				state.checkpointVersion !== undefined &&
+				state.checkpointChunkCount !== undefined &&
+				!this.checkpointVettedForSession &&
+				this.transport.fetchV2Checkpoint
+			) {
+				// Once per session, prove the room's recovery point is actually
+				// usable: fetch it and parse it like a joiner would. An unreadable
+				// checkpoint strands every future joiner, and only a caught-up
+				// device can replace it - so the moment one notices, it must.
+				this.checkpointVettedForSession = true;
+				try {
+					const serialized = await this.transport.fetchV2Checkpoint(
+						state.checkpointVersion,
+						state.checkpointChunkCount,
+						state.checkpointGeneration,
+					);
+					if (serialized === undefined) {
+						mustReplace = true;
+					} else {
+						const payload = deserializeChangeset(
+							await decompressSerialized(serialized),
+						);
+						if (validateRoomSnapshotPayload(payload).length > 0) {
+							mustReplace = true;
+						}
+					}
+				} catch {
+					mustReplace = true;
+				}
+				if (mustReplace) {
+					syncDebugLog("v2:checkpoint-unreadable-replacing", {
+						version: state.checkpointVersion,
+					});
+				}
+			}
+
+			if (
+				!mustReplace &&
 				state.checkpointVersion !== undefined &&
 				state.version - last < CHECKPOINT_EVERY_VERSIONS
 			) {
-				return;
-			}
-			const applied = await readAppliedVersion();
-			if (applied < state.version) {
 				return;
 			}
 
@@ -1138,17 +1252,23 @@ export class SyncEngineV2 {
 
 			const payload = await buildRoomSnapshotPayload();
 			const serialized = await compressSerialized(serializeChangeset(payload));
+			// A fresh generation per publish: chunks land at generation-unique doc
+			// ids and the pointer flips to them only at commit, so a reader can
+			// NEVER see half of one publish spliced with half of another.
+			const generation = makeId().slice(0, 8);
 			const chunkCount = await this.transport.publishV2Checkpoint(
 				applied,
 				serialized,
+				generation,
 			);
-			await this.transport.commitV2Checkpoint(applied, chunkCount);
+			await this.transport.commitV2Checkpoint(applied, chunkCount, generation);
 			syncDebugLog("v2:checkpoint-published", {
 				version: applied,
 				chunkCount,
+				generation,
 			});
 
-			if (last > 0) {
+			if (last > 0 && !mustReplace) {
 				try {
 					await this.transport.deleteV2DeltasBefore?.(last);
 				} catch {
@@ -1156,7 +1276,9 @@ export class SyncEngineV2 {
 				}
 			}
 		} catch (error) {
-			syncDebugLog("v2:checkpoint-failed", { error });
+			syncDebugLog("v2:checkpoint-failed", { error: String(error) });
+		} finally {
+			this.publishingCheckpoint = false;
 		}
 	}
 
