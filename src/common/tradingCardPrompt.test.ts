@@ -4,7 +4,13 @@ import {
 	buildCardFrontPrompt,
 	type CardSubject,
 } from "./tradingCardPrompt.ts";
-import { CARD_SETS, cardSetsById, cardTitle } from "./tradingCards.ts";
+import {
+	CARD_ERAS,
+	CARD_SETS,
+	cardErasById,
+	cardSetsById,
+	cardTitle,
+} from "./tradingCards.ts";
 
 const subject = (overrides: Partial<CardSubject> = {}): CardSubject => ({
 	name: "Ray Harris",
@@ -242,6 +248,66 @@ describe("the catalogue", () => {
 				assert.ok(
 					buildCardBackPrompt(set.id, variant.id, subject()).length > 500,
 					`${set.id}/${variant.id} back`,
+				);
+			}
+		}
+	});
+
+	// A 1969 card rendered factory-fresh looks like a modern reprint of itself,
+	// so the era's aging is carried into the prompt alongside the design.
+	test("every era describes how its cards age, and the front prompt says so", () => {
+		for (const era of CARD_ERAS) {
+			assert.ok(era.wear.length > 0, era.id);
+		}
+		const front = buildCardFrontPrompt("1969-70-topps", "base", subject());
+		assert.ok(
+			front.includes(cardErasById.get("vintage")!.wear),
+			"the vintage wear profile reached the prompt",
+		);
+	});
+
+	// The tall boys are DEFINED by not being 2.5 x 3.5. If the shape doesn't
+	// survive into the prompt, the set is just a plain white-bordered card.
+	test("a non-standard card shape overrides the default proportions", () => {
+		for (const setId of ["1969-70-topps", "1970-71-topps"]) {
+			const set = cardSetsById.get(setId)!;
+			for (const build of [buildCardFrontPrompt, buildCardBackPrompt]) {
+				const prompt = build(setId, "base", subject());
+				assert.ok(
+					prompt.includes(set.proportions!),
+					`${setId} keeps its shape`,
+				);
+				assert.ok(
+					!prompt.includes("standard trading card proportions"),
+					`${setId} does not also claim to be standard-sized`,
+				);
+			}
+		}
+		assert.ok(
+			buildCardFrontPrompt("2012-13-prizm", "base", subject()).includes(
+				"standard trading card proportions (2.5 x 3.5, portrait)",
+			),
+			"an ordinary set still gets the standard size",
+		);
+	});
+
+	// An unlicensed set that renders team logos is the one way these can be
+	// factually wrong on their face, so the instruction has to be in the prompt.
+	test("unlicensed sets carry their no-team-marks rule into every card", () => {
+		const unlicensed = CARD_SETS.filter((set) =>
+			set.markers?.includes("UNLICENSED"),
+		);
+		assert.ok(
+			unlicensed.length >= 4,
+			"the unlicensed sets are still catalogued",
+		);
+		for (const set of unlicensed) {
+			for (const variant of set.variants) {
+				assert.ok(
+					buildCardFrontPrompt(set.id, variant.id, subject()).includes(
+						"UNLICENSED",
+					),
+					`${set.id}/${variant.id}`,
 				);
 			}
 		}

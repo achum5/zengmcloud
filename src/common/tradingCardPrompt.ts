@@ -80,7 +80,14 @@ const statTable = (subject: CardSubject): string => {
 		"SEASON  TEAM   GP   GS   MIN   PTS   TRB   AST   STL   BLK   FG%   3P%   FT%";
 	const pad = (value: string | number, width: number) =>
 		String(value).padStart(width);
-	const row = (r: CardStatRow | (Omit<CardStatRow, "season" | "abbrev"> & { season: string; abbrev: string })) =>
+	const row = (
+		r:
+			| CardStatRow
+			| (Omit<CardStatRow, "season" | "abbrev"> & {
+					season: string;
+					abbrev: string;
+			  }),
+	) =>
 		[
 			pad(r.season, 6),
 			pad(r.abbrev, 5),
@@ -159,12 +166,24 @@ const designBlock = (setId: string): string => {
 		.filter((entry): entry is [string, string] => entry[1] !== undefined)
 		.map(([label, value]) => `- ${label}: ${value}`);
 
+	// A card of this age rendered factory-perfect reads as a reproduction of
+	// itself. The era's wear is as much a period marker as the design is.
+	if (era) {
+		lines.push(`- Condition and age: ${era.wear}`);
+	}
+
 	return `## The card design: ${set.label}
 
 Era design language - ${era?.label ?? ""}: ${era?.language ?? ""}
 
 ${lines.join("\n")}`;
 };
+
+// Most cards are 2.5 x 3.5. The ones that are not - the 1969-71 "tall boys" -
+// are defined by not being, so the shape has to survive into the prompt.
+const shapeOf = (setId: string): string =>
+	cardSetsById.get(setId)?.proportions ??
+	"standard trading card proportions (2.5 x 3.5, portrait)";
 
 const jerseyBlock = (subject: CardSubject): string =>
 	`## The uniform
@@ -191,7 +210,7 @@ export const buildCardFrontPrompt = (
 			? `\n\n## This particular card: ${variant.label}\n\n${variant.treatment}`
 			: "";
 
-	return `Generate the FRONT of a single basketball trading card, as one image. Output only the card - the full card, edge to edge, nothing cropped off, standard trading card proportions (2.5 x 3.5, portrait), no hand holding it, no background scene around it, no packaging.
+	return `Generate the FRONT of a single basketball trading card, as one image. Output only the card - the full card, edge to edge, nothing cropped off, ${shapeOf(setId)}, no hand holding it, no background scene around it, no packaging.
 
 ${FICTION}
 
@@ -233,7 +252,7 @@ export const buildCardBackPrompt = (
 	}
 	const variant = set.variants.find((v) => v.id === variantId);
 
-	return `Generate the BACK of a single basketball trading card, as one image. Output only the card - the full card, edge to edge, standard trading card proportions (2.5 x 3.5, portrait), nothing around it.
+	return `Generate the BACK of a single basketball trading card, as one image. Output only the card - the full card, edge to edge, ${shapeOf(setId)}, nothing around it.
 
 This is the back of a ${set.label}${variant && variant.id !== "base" ? ` ${variant.label}` : ""} card for ${subject.name}, depicting the ${subject.season} season.
 
