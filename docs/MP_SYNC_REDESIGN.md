@@ -155,8 +155,27 @@ Roughly 9,000 lines become unreachable, replaced by maybe 1,200.
 
 **Stage 0 — done.** Full-state transfer made safe: content-addressed immutable
 payloads, atomic per-store apply, validation before destruction, apply guard on
-the restore path, compressed payloads. This is not throwaway work; the new
-model's read path *is* this path.
+the restore path, compressed payloads, poisoned-checkpoint eviction. This is
+not throwaway work; the new model's read path *is* this path.
+
+**V2 core — built, ships dark (`src/worker/core/sync/v2/`).** The protocol is
+now code, not prose. `protocol.ts` is the whole rulebook, pure and tested: a
+device at version N may apply exactly version N+1 and nothing else - a later
+version is a "gap" answered by checkpoint recovery, never by skipping.
+`applyVersion.ts` is the soundness core: the data and the applied-version
+marker commit in ONE IndexedDB transaction, so no kill at any moment can
+manufacture a marker that lies about the data - which is the failure every
+v1 wipe reduces to. Checkpoint restores write the marker LAST, so an
+interrupted restore retries cleanly instead of trusting a half-restored
+database. Nothing imports this module yet; it risks nothing until wired.
+
+Remaining to wire v2 (in order): transport documents (version pointer with
+compare-and-set, per-version delta docs, per-version checkpoints), the engine
+loop (publish on advance, subscribe + catchUpPlan on the pointer), the
+follower request queue, the per-room protocol marker + creation toggle, and
+the connect branch. Capture (changeTracker), the outbox, deferred
+notifications, authority claims, and every coordination feature are reused
+as-is.
 
 **Stage 1.** Split the payload into `live` + `history/<season>` segments behind a
 manifest. Keep the delta log running alongside. Publishing gets cheap enough to

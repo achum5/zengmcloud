@@ -17,7 +17,6 @@ import { env } from "../../util/env.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
 import {
-	dropStrandedScheduleRows,
 	findStrandedScheduleRows,
 	sweepPhantomScheduleRows,
 } from "./changeset.ts";
@@ -1321,6 +1320,19 @@ export const resyncSharedLeague = async (): Promise<{
 		console.error("Snapshot restore during manual resync failed", error);
 	}
 
+	// The checkpoint didn't restore. If the room HAS one, it was refused for
+	// cause (poisoned, unreadable) - and the windowed replay is not a fallback,
+	// it is the league-wrecker: re-applying old history over live state is what
+	// wiped a league tonight. Refuse and say what actually fixes it. Only a
+	// room that has never published a checkpoint at all gets the replay, since
+	// there the log IS the complete history and this button is the only tool.
+	const meta = await engine.transport.fetchRoomSnapshotMeta?.();
+	if (meta !== undefined) {
+		throw new Error(
+			"The room's checkpoint is damaged, so this device can't safely resync from it yet. Whoever is in charge of simming just needs the app open for a few minutes - a fresh checkpoint publishes automatically - then try again.",
+		);
+	}
+
 	return engine.resyncAll({ windowEntries: MANUAL_RESYNC_WINDOW_ENTRIES });
 };
 
@@ -1665,22 +1677,21 @@ export const checkBehindAuthority = async () => {
 		}
 
 		if (!restored) {
-			// No snapshot in this room (it predates the feature, or none has been
-			// published yet) - the windowed replay is all that's left.
-			const result = await engine.resyncAll({
-				windowEntries: RESYNC_WINDOW_ENTRIES,
+			// No usable checkpoint (none published yet, or the published one was
+			// refused). The windowed replay used to run here, and replaying old
+			// history over a live database is the documented league-wrecker - so
+			// it no longer runs ANYWHERE automatically. Stand down until the next
+			// grace window; the authority publishes a usable checkpoint within
+			// minutes (poison eviction + first-checkpoint publish), and the next
+			// pass restores it.
+			syncDebugLog("connect:behind-no-usable-checkpoint", {
+				announced: describePosition(announced),
 			});
-			syncDebugLog("connect:behind-authority-resynced", result);
-			const after = await getLeaguePosition();
-			if (!isBehindPosition(after, announced)) {
-				behindSince = undefined;
-				console.log(
-					`[sync] Recovered the missing changes - now at ${describePosition(after)}.`,
-				);
-				return;
-			}
-			conclusive =
-				result.total > 0 && !result.failed && result.incomplete === 0;
+			console.error(
+				"[sync] Behind the room with no usable checkpoint to restore yet. Waiting for one - whoever is in charge of simming just needs the app open for a few minutes.",
+			);
+			behindSince = now;
+			return;
 		}
 
 		const after = await getLeaguePosition();
@@ -2122,48 +2133,35 @@ const doConnectSharedLeague = async ({
 				syncDebugLog("connect:auto-resync-snapshot-failed", { error });
 			}
 
-			const result = await engine.resyncAll({
-				windowEntries: RESYNC_WINDOW_ENTRIES,
+			// THE CHECKPOINT IS THE ONLY AUTOMATIC HEAL. THERE IS NO FALLBACK.
+			//
+			// The fallback this used to have - engine.resyncAll, the windowed replay
+			// of the shared log over live state - is the thing that wiped a league
+			// tonight, with the receipts in the sync log: the room's checkpoint was
+			// rightly refused as poisoned, the heal fell through to the replay, and
+			// the replay walked ~1000 old changesets from LAST SEASON'S OFFSEASON
+			// over the current league (playMenu.untilResignPlayers is right there in
+			// the capture), applying 936 of 2000 with the guards declining the rest.
+			// Whole-record last-write-wins from months-old history over a live
+			// database is not recovery, it is the wipe - and then the stranded-rows
+			// "last resort" deleted 425 schedule rows from the wreckage it had just
+			// made.
+			//
+			// So: missing data with no usable checkpoint means WAIT, visibly. The
+			// durable marker stays set (blocking sims here), the authority publishes
+			// a fresh checkpoint within minutes (poison eviction + first-checkpoint
+			// publish in roomSnapshot.ts), and the next heal attempt restores it.
+			// Waiting cannot damage anything; the replay provably can.
+			syncDebugLog("connect:auto-resync-no-usable-checkpoint", { trigger });
+			console.error(
+				"[sync] This device is missing shared data and the room has no usable checkpoint yet. Waiting - whoever is in charge of simming just needs to have the app open for a few minutes, then this heals automatically.",
+			);
+			logEvent({
+				type: "error",
+				text: "This device is missing some league data. It will repair itself automatically once the person in charge of simming has the app open for a few minutes.",
+				saveToDb: false,
+				persistent: true,
 			});
-			syncDebugLog("connect:auto-resync-done", result);
-
-			// Did the resync actually recover the missed day? Judge on the DATA -
-			// the resync's return value says whether the log applied, not whether the
-			// log ever contained the day. But only judge at all after a pass that
-			// genuinely read the whole log and applied it cleanly: an offline or
-			// empty read proves nothing, and acting on it would throw away a day a
-			// later connect could still recover.
-			const conclusive =
-				result.total > 0 && !result.failed && result.incomplete === 0;
-			const strandedAfter = conclusive
-				? await findStrandedScheduleRows()
-				: { gids: [], days: [] as number[], maxPlayedDay: undefined };
-			if (strandedAfter.gids.length > 0) {
-				// The day is not in the shared log and never will be. The games are
-				// unrecoverable, but the rows are the dangerous half: while they sit
-				// there this device believes that missed day is today, and simming
-				// would write games for gids the rest of the league already resolved.
-				const removed = await dropStrandedScheduleRows(strandedAfter.gids);
-				console.error(
-					`[sync] Day ${strandedAfter.days.join(", ")} could not be recovered from the shared log - those games are missing from this device's history. Removed ${removed} stale schedule row(s) so it is back on the league's current day.`,
-				);
-				syncDebugLog("connect:stranded-schedule-dropped", {
-					days: strandedAfter.days,
-					removed,
-				});
-				// Say so. A silent heal is how this went unnoticed for thirteen days:
-				// the device looked fine, it was just quietly a day behind everyone.
-				logEvent({
-					type: "error",
-					text: `This device never received day ${strandedAfter.days.join(", ")}, and it is no longer in the shared log. Those box scores are missing here.`,
-					saveToDb: false,
-					persistent: true,
-				});
-			}
-
-			if (conclusive) {
-				await saveResyncNeeded(lid, false);
-			}
 		} catch (error) {
 			syncDebugLog("connect:auto-resync-failed", { error });
 		} finally {

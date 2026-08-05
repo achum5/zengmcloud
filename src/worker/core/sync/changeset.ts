@@ -400,6 +400,11 @@ export const DEVICE_LOCAL_GAME_ATTRIBUTES = new Set([
 	// a map of every team, so whole-record last-write-wins meant a league-mate
 	// ticking a box on their own team replaced YOUR plan for YOUR team too.
 	"teamFinancesPlan",
+	// The v2 sync protocol's applied-version marker (see sync/v2/). It states
+	// how far THIS device's database has applied the room's version chain, so
+	// it must never travel to another device, and a checkpoint restore must
+	// not clobber it (the v2 restore path writes it explicitly, last).
+	"syncV2AppliedVersion",
 ]);
 
 // Whole stores that are per-device scratch / personal UI state, never shared

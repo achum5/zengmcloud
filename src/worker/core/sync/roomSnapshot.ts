@@ -474,9 +474,15 @@ export const maybePublishRoomSnapshot = async (
 			previous !== undefined &&
 			(await roomSnapshotIsPoisoned(engine, previous));
 
-		if (!mustEvictPoison) {
+		// A room with NO checkpoint yet gets its first one promptly rather than
+		// after 1200 entries. The checkpoint is now the ONLY automatic recovery -
+		// the replay-over-live-state fallbacks are gone - so a room without one
+		// has no self-heal at all until this runs.
+		const mustPublishFirst = previous === undefined;
+
+		if (!mustEvictPoison && !mustPublishFirst) {
 			const entriesSince = await engine.transport.countEntriesSince(
-				previous?.seq ?? 0,
+				previous.seq,
 			);
 			if (entriesSince < SNAPSHOT_EVERY_ENTRIES) {
 				return;

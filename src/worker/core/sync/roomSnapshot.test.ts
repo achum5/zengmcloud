@@ -604,4 +604,14 @@ describe("a healthy authority evicts a poisoned checkpoint", () => {
 		await maybePublishRoomSnapshot(engine);
 		assert.strictEqual(published.length, 1);
 	});
+
+	// The checkpoint is now the ONLY automatic recovery - the replay-over-live
+	// fallbacks are gone - so a room without one has no self-heal at all. The
+	// first checkpoint publishes promptly, not after 1200 entries.
+	test("a room with no checkpoint at all gets its first one promptly", async () => {
+		const { engine, published } = makeEngine(healthyPayload());
+		(engine.transport as any).fetchRoomSnapshotMeta = async () => undefined;
+		await maybePublishRoomSnapshot(engine);
+		assert.strictEqual(published.length, 1);
+	});
 });
