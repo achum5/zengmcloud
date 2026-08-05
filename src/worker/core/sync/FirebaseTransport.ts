@@ -1267,7 +1267,10 @@ export class FirebaseTransport implements SyncTransport {
 				bound = existing;
 				return;
 			}
-			tx.set(ref, { leagueId, at: Date.now() });
+			// holderId stamped to our own uid, like every other control-doc
+			// write: the deployed security rule (write requires holderId ==
+			// auth.uid) covers this doc with no rules republish.
+			tx.set(ref, { leagueId, holderId: this.clientId, at: Date.now() });
 		});
 		this.markContact();
 		return bound;
