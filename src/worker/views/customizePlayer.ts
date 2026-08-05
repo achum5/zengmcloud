@@ -10,15 +10,6 @@ import type {
 } from "../../common/types.ts";
 import { last, orderBy } from "../../common/utils.ts";
 import { upgradeFace } from "../util/face.ts";
-import {
-	getPlayerImageMoments,
-	customImagePromptSeed,
-	mediaDayHeadshotMoment,
-} from "../util/getPlayerImageMoments.ts";
-import {
-	getPlayerVideoMoments,
-	customVideoPromptSeed,
-} from "../util/getPlayerVideoMoments.ts";
 
 export const formatPlayerRelativesList = (p: Player) => {
 	const firstSeason = p.ratings[0].season;
@@ -156,69 +147,12 @@ const updateCustomizePlayer = async (
 
 		const initialAutoPos = player.pos(last(p.ratings));
 
-		// Per-player AI-image "moments" (draft night, trades/signings, awards, big
-		// games), each a ready-to-copy cartoon-style prompt for the image generator.
-		let feats: { season?: number; text?: string }[] = [];
-		if (inputs.pid !== null && inputs.type !== "clone") {
-			const events = await idb.getCopies.events(
-				{ pid: inputs.pid },
-				"noCopyCache",
-			);
-			feats = events
-				.filter((event) => event.type === "playerFeat")
-				.map((event) => ({ season: event.season, text: event.text }));
-		}
-		// The headshot preset leads the list - it's the one that produces a drop-in
-		// player image (a simple cartoon headshot on a transparent background)
-		// rather than a career-moment scene.
-		const imageMoments = [
-			await mediaDayHeadshotMoment(p, initialAutoPos, g.get("season")),
-			...(await getPlayerImageMoments(p, initialAutoPos, feats)),
-		];
-		const currentTeamText = teams.find((t) => t.tid === p.tid)?.text;
-		const customImageSeed = customImagePromptSeed(
-			p,
-			initialAutoPos,
-			currentTeamText,
-			g.get("season"),
-		);
-
-		// Per-player AI-VIDEO moments (clutch plays, statistical-feat highlight
-		// reels, award/championship tributes, career montage), each carrying the
-		// on-court context - teammates and opponents likely on the floor, with
-		// heights, weights, and jersey numbers. Needs every player's position, so
-		// build a pid->pos map from the active roster once.
-		const allPlayersForVideo = await idb.cache.players.getAll();
-		const posByPid = new Map<number, string>();
-		for (const other of allPlayersForVideo) {
-			if (other.ratings.length > 0) {
-				posByPid.set(other.pid, player.pos(last(other.ratings)));
-			}
-		}
-		const videoMoments = await getPlayerVideoMoments(
-			p,
-			initialAutoPos,
-			feats,
-			allPlayersForVideo,
-			(pid2) => posByPid.get(pid2),
-		);
-		const customVideoSeed = customVideoPromptSeed(
-			p,
-			initialAutoPos,
-			currentTeamText,
-			g.get("season"),
-		);
-
 		faceCount += 1;
 
 		return {
 			appearanceOption,
 			faceCount,
 			initialAutoPos,
-			imageMoments,
-			customImageSeed,
-			videoMoments,
-			customVideoSeed,
 			originalTid,
 			p,
 			playerMoodTraits: g.get("playerMoodTraits"),

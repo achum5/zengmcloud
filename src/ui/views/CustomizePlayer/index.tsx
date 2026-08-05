@@ -29,8 +29,6 @@ import CustomMoodItemsForm from "./CustomMoodItemsForm.tsx";
 import { roundContract } from "../../../common/roundContract.ts";
 import { Face } from "./Face.tsx";
 import ImageUploader from "../../components/ImageUploader.tsx";
-import PlayerImageGenerator from "../../components/PlayerImageGenerator.tsx";
-import PlayerVideoGenerator from "../../components/PlayerVideoGenerator.tsx";
 import { CurrencyInputGroup } from "../../components/CurrencyInputGroup.tsx";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
@@ -533,10 +531,6 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 
 	const {
 		faceCount,
-		imageMoments,
-		customImageSeed,
-		videoMoments,
-		customVideoSeed,
 		originalTid,
 		playerMoodTraits,
 		playersRelativesList,
@@ -630,27 +624,6 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 			</p>
 
 			<form onSubmit={handleSubmit}>
-				<div className="mb-3" style={{ maxWidth: 520 }}>
-					<PlayerImageGenerator
-						moments={imageMoments}
-						customSeed={customImageSeed}
-						onImageUploaded={(url) => {
-							setState((prevState) => ({
-								...prevState,
-								appearanceOption: "Image URL",
-								p: { ...prevState.p, imgURL: url },
-							}));
-						}}
-					/>
-				</div>
-
-				<div className="mb-3" style={{ maxWidth: 520 }}>
-					<PlayerVideoGenerator
-						moments={videoMoments}
-						customSeed={customVideoSeed}
-					/>
-				</div>
-
 				<div className="row">
 					<div className="col-md-7 mb-3">
 						<h2>Attributes</h2>
