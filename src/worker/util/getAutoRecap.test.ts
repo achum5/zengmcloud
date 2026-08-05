@@ -2500,6 +2500,89 @@ describe("the extra colour paragraph", () => {
 		);
 	});
 
+	// From a real recap: the Celtics lost 106-92, and the last line of the story
+	// read "The Celtics are 9-0 over their last 9." The form window deliberately
+	// excludes the game being recapped, so every sentence built from it has to be
+	// past tense - present tense turns "how they had been playing" into a claim
+	// about right now, directly contradicted by the box score above it.
+	test("a hot team that just lost is never described as currently unbeaten", () => {
+		const hot = Array.from({ length: 9 }, (_, i) => ({
+			opp: "ORL",
+			home: i % 2 === 0,
+			won: true,
+			pts: 100,
+			oppPts: 90,
+		}));
+		// Index 0 is this game - the loss being recapped.
+		const loserL10 = [
+			{ opp: "CHA", home: true, won: false, pts: 92, oppPts: 106 },
+			...hot,
+		];
+		const w = realisticTeam(
+			{
+				tid: 30,
+				name: "Bobcats",
+				abbrev: "CHA",
+				pts: 106,
+				ptsQtrs: [18, 27, 36, 25],
+			},
+			player({
+				name: "Antonis Fotsis",
+				pts: 20,
+				reb: 12,
+				ast: 7,
+				fg: 8,
+				fga: 15,
+			}),
+		);
+		const l = realisticTeam(
+			{
+				tid: 1,
+				name: "Celtics",
+				abbrev: "BOS",
+				pts: 92,
+				ptsQtrs: [30, 18, 22, 22],
+				last10: loserL10,
+			},
+			player({ name: "Chris Paul", pts: 13, reb: 3, ast: 13, fg: 5, fga: 14 }),
+		);
+		// The seed picks which of the three phrasings runs, so sweep enough gids
+		// to exercise all of them - one seed would test one sentence.
+		let toldTheRun = 0;
+		for (let gid = 1; gid <= 60; gid++) {
+			const recap = getAutoRecap(twoTeamGame(w, l, { gid }));
+
+			assert.ok(
+				!/Celtics are \d+-\d+ over/.test(recap),
+				`gid ${gid}: a team that just lost is given a present-tense record: ${recap}`,
+			);
+			assert.ok(
+				!/Celtics have now won/.test(recap),
+				`gid ${gid}: "have now won" excludes the loss it sits under: ${recap}`,
+			);
+			assert.ok(
+				!/that is \d+ wins in \d+ games for the Celtics(?! coming in)/.test(
+					recap,
+				),
+				`gid ${gid}: present-tense form claim under a loss: ${recap}`,
+			);
+
+			if (
+				/came in having won|coming in|entered the night|arrived having/.test(
+					recap,
+				)
+			) {
+				toldTheRun += 1;
+			}
+		}
+		// Guard against a vacuous pass: if the form note stopped being reached at
+		// all, the assertions above would hold for the wrong reason.
+		assert.ok(
+			toldTheRun > 0,
+			"the form note never ran, so this test proved nothing",
+		);
+	});
+
 	test("the streak sentence and the form note don't contradict each other", () => {
 		const l10 = [
 			{ opp: "ORL", home: true, won: true, pts: 104, oppPts: 99 },

@@ -2170,14 +2170,21 @@ const formNote = (
 		}
 		const prior = l10.slice(1);
 		const won = prior.filter((x) => x.won).length;
+		// EVERY sentence here has to be past tense, describing the form the team
+		// carried INTO this game, because that is the window `prior` measures.
+		// Present tense reads as a claim about right now and is then flatly
+		// wrong for the team that just lost: a 9-0 run into a defeat became
+		// "the Celtics are 9-0 over their last 9" underneath a box score of
+		// them losing. It is wrong for the winner too, just less visibly - they
+		// are 10-0 including tonight, not the 9-0 the sentence "now" asserts.
 		if (won >= prior.length - 1 && prior.length >= 6) {
 			const of = won === prior.length ? "every one of" : `${won} of`;
 			return pick(
 				rng,
 				[
-					`${theNick(t)} have now won ${of} their last ${prior.length}`,
-					`that is ${won} wins in ${prior.length} games for ${theNick(t)}`,
-					`${theNick(t)} are ${won}-${prior.length - won} over their last ${prior.length}`,
+					`${theNick(t)} came in having won ${of} their last ${prior.length}`,
+					`that was ${won} wins in ${prior.length} games for ${theNick(t)} coming in`,
+					`${theNick(t)} entered the night ${won}-${prior.length - won} over their previous ${prior.length}`,
 				],
 				"formHot",
 			);
@@ -2188,7 +2195,7 @@ const formNote = (
 				[
 					`${theNick(t)} had lost ${prior.length - won} of ${prior.length} coming in`,
 					`${theNick(t)} arrived having dropped ${prior.length - won} of their last ${prior.length}`,
-					`it has been a rough stretch for ${theNick(t)}, ${won}-${prior.length - won} in their last ${prior.length}`,
+					`it had been a rough stretch for ${theNick(t)}, ${won}-${prior.length - won} in their previous ${prior.length}`,
 				],
 				"formCold",
 			);
