@@ -610,4 +610,152 @@ describe("a healthy authority evicts a poisoned checkpoint", () => {
 		await maybePublishRoomSnapshot(engine);
 		assert.strictEqual(published.length, 1);
 	});
+
+	// Once the authority's league carries an identity, a checkpoint that does
+	// not carry the SAME one is dead weight every restorer refuses - whether it
+	// predates the protection or is another league's state in a reused room.
+	// Same urgency as structural poison: replace it now.
+	test("a checkpoint without this league's identity is replaced immediately", async () => {
+		(idb as any).league = makeLeagueDb({
+			...healthyDb(),
+			gameAttributes: [
+				{ key: "season", value: 2006 },
+				{ key: "syncLeagueId", value: "league-A" },
+			],
+		});
+		const { engine, published } = makeEngine(healthyPayload());
+		await maybePublishRoomSnapshot(engine);
+		assert.strictEqual(published.length, 1);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// League identity: the check that makes cross-league contamination structurally
+// impossible. Twice, a main save was overwritten by another league's state that
+// had gotten into a room (an old build, a second tab, a reused room code). The
+// payload now carries the identity of the league it came from, inside the very
+// gameAttributes it would restore - so however wrong data gets INTO a room, it
+// can never get OUT of it into a league it doesn't belong to.
+// ---------------------------------------------------------------------------
+
+describe("league identity blocks wrong-league restores", () => {
+	let restoreCache: () => void;
+
+	beforeEach(async () => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2008);
+		g.setWithoutSavingToDB("phase", 1);
+		await resetCache({});
+		restoreCache = stubCacheLifecycle();
+		setApplyGuard(undefined);
+	});
+
+	afterEach(() => {
+		restoreCache();
+	});
+
+	// A structurally VALID, healthy payload - the point is that identity is
+	// checked even when everything else about the payload looks perfect.
+	const payloadFromLeague = (leagueId?: string) =>
+		({
+			version: 1,
+			stores: {
+				players: [
+					{ pid: 21, tid: 0 },
+					{ pid: 22, tid: 0 },
+					{ pid: 23, tid: 0 },
+					{ pid: 24, tid: 0 },
+					{ pid: 25, tid: 0 },
+				],
+				teams: [{ tid: 0 }],
+				gameAttributes: [
+					{ key: "season", value: 2028 },
+					{ key: "phase", value: 1 },
+					...(leagueId ? [{ key: "syncLeagueId", value: leagueId }] : []),
+				],
+			},
+		}) as any;
+
+	const localLeague = (leagueId?: string) => ({
+		players: [
+			{ pid: 1, tid: 0 },
+			{ pid: 2, tid: 0 },
+			{ pid: 3, tid: 0 },
+			{ pid: 4, tid: 0 },
+			{ pid: 5, tid: 0 },
+		],
+		teams: [{ tid: 0 }],
+		gameAttributes: [
+			{ key: "season", value: 2006 },
+			...(leagueId ? [{ key: "syncLeagueId", value: leagueId }] : []),
+		],
+	});
+
+	test("THE INCIDENT: another league's snapshot can never replace this league", async () => {
+		(idb as any).league = makeLeagueDb(localLeague("dba-new"));
+		let message = "";
+		try {
+			await applyRoomSnapshotPayload(payloadFromLeague("test-league"));
+		} catch (error) {
+			message = String(error);
+		}
+		assert.ok(
+			message.includes("different league"),
+			"the restore must refuse by name",
+		);
+		const players = await (idb as any).league.getAll("players");
+		assert.deepStrictEqual(
+			players.map((p: any) => p.pid),
+			[1, 2, 3, 4, 5],
+			"the league must be untouched",
+		);
+		const ga = await (idb as any).league.getAll("gameAttributes");
+		assert.strictEqual(
+			ga.find((r: any) => r.key === "season").value,
+			2006,
+			"including its season",
+		);
+	});
+
+	test("a payload with no identity is refused once this league has one", async () => {
+		(idb as any).league = makeLeagueDb(localLeague("dba-new"));
+		let message = "";
+		try {
+			await applyRoomSnapshotPayload(payloadFromLeague(undefined));
+		} catch (error) {
+			message = String(error);
+		}
+		assert.ok(message.includes("does not identify"));
+		assert.strictEqual(
+			(await (idb as any).league.getAll("players")).map((p: any) => p.pid)[0],
+			1,
+			"untouched",
+		);
+	});
+
+	test("a league with no identity yet restores normally and inherits one", async () => {
+		(idb as any).league = makeLeagueDb(localLeague(undefined));
+		await applyRoomSnapshotPayload(payloadFromLeague("test-league"));
+		const ga = await (idb as any).league.getAll("gameAttributes");
+		assert.strictEqual(
+			ga.find((r: any) => r.key === "syncLeagueId").value,
+			"test-league",
+			"the identity arrives with the data it describes",
+		);
+		assert.strictEqual(
+			(await (idb as any).league.getAll("players")).length,
+			5,
+			"and the restore itself worked",
+		);
+	});
+
+	test("a matching identity restores exactly as before", async () => {
+		(idb as any).league = makeLeagueDb(localLeague("dba-new"));
+		await applyRoomSnapshotPayload(payloadFromLeague("dba-new"));
+		const players = await (idb as any).league.getAll("players");
+		assert.deepStrictEqual(
+			players.map((p: any) => p.pid),
+			[21, 22, 23, 24, 25],
+		);
+	});
 });

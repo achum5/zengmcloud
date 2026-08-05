@@ -14,6 +14,7 @@ import {
 import { repairLeagueHistory } from "../historyRepair.ts";
 import { checkLeagueIntegrity } from "../leagueIntegrity.ts";
 import { checkApplyGuard } from "../applyGuard.ts";
+import { payloadLeagueId, readLocalLeagueId } from "../leagueIdentity.ts";
 import { syncDebugLog } from "../debugLog.ts";
 import {
 	refreshAfterApply,
@@ -1343,6 +1344,18 @@ export class SyncEngineV2 {
 						);
 						if (validateRoomSnapshotPayload(payload).length > 0) {
 							mustReplace = true;
+						} else {
+							// A checkpoint that does not carry this league's identity is
+							// refused by every restorer (pre-identity publish, or another
+							// league's state in a reused room) - dead weight that strands
+							// fresh joiners until replaced. Replace it now.
+							const localLeagueId = await readLocalLeagueId();
+							if (
+								localLeagueId !== undefined &&
+								payloadLeagueId((payload as any)?.stores) !== localLeagueId
+							) {
+								mustReplace = true;
+							}
 						}
 					}
 				} catch {

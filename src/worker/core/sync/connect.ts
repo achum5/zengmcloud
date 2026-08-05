@@ -12,6 +12,11 @@ import { setupFaBoard, teardownFaBoard } from "./faBoard.ts";
 import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { setLiveWatchGate } from "./liveWatchGate.ts";
+import {
+	generateLeagueId,
+	readLocalLeagueId,
+	writeLocalLeagueId,
+} from "./leagueIdentity.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, lock, logEvent, toUI } from "../../util/index.ts";
@@ -1976,6 +1981,67 @@ const doConnectSharedLeague = async ({
 	}
 	const isV2 = v2State !== undefined;
 
+	// Room <-> league binding, both protocols, checked BEFORE anything can
+	// move in either direction. A room is claimed by exactly one league
+	// lineage, permanently; a league carries its identity in gameAttributes
+	// (so it travels inside every checkpoint and export). A league that
+	// arrives at a room claimed by a DIFFERENT lineage is refused at the door
+	// - the failure mode this kills is the one that corrupted a main save
+	// twice: wrong-league data reaching a league DB through a room, whether
+	// via a zombie engine, a second tab, an old build, or a reused room code
+	// still holding another league's state.
+	if (transport.claimRoomLeagueId && transport.fetchRoomLeagueId) {
+		try {
+			let localLeagueId = await readLocalLeagueId();
+			if (localLeagueId === undefined) {
+				// A league with no identity yet: connecting IS the declaration
+				// that it is this room's league (same trust as every connect
+				// before identities existed). Adopt the room's identity, or mint
+				// one and claim the room. Every SUBSEQUENT connect is verified.
+				const roomLeagueId = await transport.fetchRoomLeagueId();
+				localLeagueId = roomLeagueId ?? generateLeagueId();
+				await writeLocalLeagueId(localLeagueId);
+				if (roomLeagueId === undefined) {
+					const bound = await transport.claimRoomLeagueId(localLeagueId);
+					if (bound !== localLeagueId) {
+						// Lost a first-claim race to another device - which can only
+						// be a league-mate connecting the same lineage; adopt theirs.
+						localLeagueId = bound;
+						await writeLocalLeagueId(bound);
+					}
+				}
+				syncDebugLog("connect:league-identity-bound", {
+					code: trimmed,
+					adopted: roomLeagueId !== undefined,
+				});
+			} else {
+				const bound = await transport.claimRoomLeagueId(localLeagueId);
+				if (bound !== localLeagueId) {
+					syncDebugLog("connect:league-identity-refused", {
+						code: trimmed,
+						local: localLeagueId,
+						room: bound,
+					});
+					logEvent({
+						type: "error",
+						text: `Room ${trimmed} belongs to a different league, so syncing was stopped to protect this save. Create a new room for this league.`,
+						saveToDb: false,
+						persistent: true,
+					});
+					throw new Error(
+						`Room ${trimmed} belongs to a different league. Create a new room for this league.`,
+					);
+				}
+			}
+		} catch (error) {
+			// Fail CLOSED. Connecting anyway on an unverified binding is exactly
+			// the hole this exists to plug.
+			throw error instanceof Error
+				? error
+				: new Error(`Could not verify this room's league: ${String(error)}`);
+		}
+	}
+
 	// Marker <-> room binding. A v2 applied-version marker is meaningful only
 	// within ONE room's chain, but it lives in the league DB - so a COPY of a
 	// league that synced in some other room arrives carrying that room's
@@ -2376,7 +2442,7 @@ const doConnectSharedLeague = async ({
 				persistent: true,
 			});
 		} catch (error) {
-			syncDebugLog("connect:auto-resync-failed", { error });
+			syncDebugLog("connect:auto-resync-failed", { error: String(error) });
 		} finally {
 			healingMissedData = false;
 		}
@@ -2398,7 +2464,9 @@ const doConnectSharedLeague = async ({
 					syncDebugLog("connect:phantom-schedule-swept", { removed });
 				}
 			} catch (error) {
-				syncDebugLog("connect:phantom-schedule-sweep-failed", { error });
+				syncDebugLog("connect:phantom-schedule-sweep-failed", {
+					error: String(error),
+				});
 			}
 		})();
 	}

@@ -318,6 +318,15 @@ export interface SyncTransport {
 	): Promise<number>;
 	fetchRoomSnapshotMeta?(): Promise<RoomSnapshotMeta | undefined>;
 
+	// ---- Room <-> league binding --------------------------------------------
+	// A room is claimed by exactly one league lineage, permanently. Claiming is
+	// transactional first-writer-wins: the returned id is the room's binding
+	// after the call, whether that is the id passed in (claim succeeded) or an
+	// earlier claimant's (compare and refuse). Optional like everything else so
+	// the in-memory test transports simply lack it.
+	fetchRoomLeagueId?(): Promise<string | undefined>;
+	claimRoomLeagueId?(leagueId: string): Promise<string>;
+
 	// ---- Sync v2 (version chain) ------------------------------------------
 	// All optional: the in-memory test transport and older builds simply lack
 	// them, and a v2 room is only ever joined by code that checks.

@@ -1242,6 +1242,37 @@ export class FirebaseTransport implements SyncTransport {
 		return this.parseV2State(snap.data());
 	}
 
+	// ---- Room <-> league binding ---------------------------------------------
+	// One tiny doc that says which league lineage this room belongs to. Written
+	// once, transactionally, by the first league to connect after this existed;
+	// every later connect compares against it and refuses on mismatch. This is
+	// the front-door half of the cross-league contamination fix - the payload
+	// identity check in roomSnapshot.ts is the back-door half.
+
+	async fetchRoomLeagueId(): Promise<string | undefined> {
+		const ref = doc(this.db, "leagues", this.code, "control", "league");
+		const snap = await getDocFromServer(ref);
+		this.markContact();
+		const value = snap.data()?.leagueId;
+		return typeof value === "string" && value !== "" ? value : undefined;
+	}
+
+	async claimRoomLeagueId(leagueId: string): Promise<string> {
+		const ref = doc(this.db, "leagues", this.code, "control", "league");
+		let bound = leagueId;
+		await runTransaction(this.db, async (tx) => {
+			const snap = await tx.get(ref);
+			const existing = snap.data()?.leagueId;
+			if (typeof existing === "string" && existing !== "") {
+				bound = existing;
+				return;
+			}
+			tx.set(ref, { leagueId, at: Date.now() });
+		});
+		this.markContact();
+		return bound;
+	}
+
 	// Force the SDK to tear down and rebuild its backend channel. The one known
 	// cure for a wedged WebChannel (Safari is fond of killing the stream in a
 	// way the SDK doesn't notice): listeners go quiet and server reads hang

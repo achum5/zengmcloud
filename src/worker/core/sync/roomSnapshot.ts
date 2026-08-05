@@ -15,6 +15,7 @@ import {
 import { getLeaguePosition } from "./leaguePosition.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
 import { checkApplyGuard } from "./applyGuard.ts";
+import { payloadLeagueId, readLocalLeagueId } from "./leagueIdentity.ts";
 import {
 	checkLeagueIntegrity,
 	findPayloadIntegrityProblems,
@@ -179,6 +180,30 @@ export const applyRoomSnapshotPayload = async (
 		throw new Error(
 			`Refusing to restore the room's snapshot: ${problems.join("; ")}. Nothing on this device was changed.`,
 		);
+	}
+
+	// PROVENANCE. Once this league carries an identity, only a payload carrying
+	// the SAME identity may replace its database - full stop. This is the check
+	// that would have saved a main save twice: a room still holding some other
+	// league's state (however it got there - an old build, a zombie engine, a
+	// second tab, a reused code) produces a payload whose identity is missing
+	// or different, and the restore refuses with the local database untouched.
+	// A league with no identity yet (never connected since identities existed)
+	// restores as before and inherits the payload's identity with the data.
+	const localLeagueId = await readLocalLeagueId();
+	if (localLeagueId !== undefined) {
+		const remoteLeagueId = payloadLeagueId(payload.stores);
+		if (remoteLeagueId !== localLeagueId) {
+			syncDebugLog("snapshot:league-identity-refused", {
+				local: localLeagueId,
+				remote: remoteLeagueId,
+			});
+			throw new Error(
+				remoteLeagueId === undefined
+					? "Refusing to restore the room's snapshot: it does not identify which league it belongs to (published before this protection existed). Nothing on this device was changed."
+					: "Refusing to restore the room's snapshot: it belongs to a different league. Nothing on this device was changed.",
+			);
+		}
 	}
 
 	// This device's identity must survive the restore: which team THIS user
@@ -452,6 +477,21 @@ const roomSnapshotIsPoisoned = async (
 			syncDebugLog("snapshot:room-checkpoint-poisoned", {
 				seq: meta.seq,
 				problems,
+			});
+			return true;
+		}
+		// A checkpoint that does not carry THIS league's identity is one every
+		// restorer now refuses (a pre-identity publish, or another league's
+		// state sitting in a reused room). Either way it is dead weight that
+		// blocks fresh joins until the healthy authority replaces it - so
+		// replace it now, same urgency as structural poison.
+		const localLeagueId = await readLocalLeagueId();
+		if (
+			localLeagueId !== undefined &&
+			payloadLeagueId(payload.stores) !== localLeagueId
+		) {
+			syncDebugLog("snapshot:room-checkpoint-wrong-league", {
+				seq: meta.seq,
 			});
 			return true;
 		}

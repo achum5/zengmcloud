@@ -75,6 +75,10 @@ const PINNED_EVENTS = new Set([
 	"v2:drain-failed",
 	"v2:apply-declined",
 	"v2:slow-apply",
+	"connect:league-identity-bound",
+	"connect:league-identity-refused",
+	"snapshot:league-identity-refused",
+	"snapshot:room-checkpoint-wrong-league",
 ]);
 
 export const pushSyncDebugEntry = (payload: Record<string, unknown>) => {
