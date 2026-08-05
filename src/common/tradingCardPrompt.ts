@@ -222,7 +222,13 @@ The design above is a ${set.label} design. That is the LOOK ONLY. This card depi
 
 ## The photograph
 
-The player image is shot as a real press photographer would shoot it: from the sideline or the baseline, at court level, during an actual game, with a long lens - the player mid-action, the crowd and the arena falling out of focus behind him. Natural arena lighting.
+A CANDID shot, not a portrait. This is a professional sports photographer sitting courtside at a live NBA game, shooting this player in the middle of PLAYING BASKETBALL. He is doing something on the court - driving, rising for a jumper, finishing at the rim, defending, coming down with a rebound, running the floor - and he does not know the camera is there. No posing, no looking into the lens, no smiling at the camera, no arms folded, no ball resting on the hip, no studio backdrop.
+
+Shot from the sideline or the baseline, at court level, with a long lens: the player caught mid-action and filling the frame, the crowd and the arena falling out of focus behind him. Natural arena lighting.${
+		set.photography?.toLowerCase().includes("posed")
+			? " EXCEPTION for this particular set: its Photography note above calls for a posed shot, and a few early designs really were made that way - follow the set."
+			: ""
+	}
 
 But it is RENDERED in flat faces.js cartoon style, not photorealism: the player, and anyone visible behind him, are drawn as clean flat vector shapes with solid fills. Think of a cartoon illustration composed exactly the way a real courtside photograph would be composed.
 

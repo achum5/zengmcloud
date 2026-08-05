@@ -144,6 +144,27 @@ describe("the front prompt", () => {
 		assert.ok(prompt.includes("flat faces.js cartoon style"));
 	});
 
+	// A posed, camera-aware player is the default an image model drifts to, and
+	// it is the one thing that stops a card reading like a real card.
+	test("demands a candid in-game action shot, not a portrait", () => {
+		const prompt = buildCardFrontPrompt("prizm", "silver", subject());
+		assert.ok(prompt.includes("A CANDID shot, not a portrait"));
+		assert.ok(prompt.includes("PLAYING BASKETBALL"));
+		assert.ok(prompt.includes("does not know the camera is there"));
+		assert.ok(
+			!prompt.includes("EXCEPTION for this particular set"),
+			"an ordinary set gets no posed carve-out",
+		);
+	});
+
+	// The handful of vintage sets whose whole look is a staged gym portrait
+	// would otherwise get two contradictory instructions.
+	test("a set that is posed on purpose keeps its posed shot", () => {
+		const prompt = buildCardFrontPrompt("1961-62-fleer", "base", subject());
+		assert.ok(prompt.includes("A CANDID shot, not a portrait"));
+		assert.ok(prompt.includes("EXCEPTION for this particular set"));
+	});
+
 	test("pins the uniform to the depicted season", () => {
 		const prompt = buildCardFrontPrompt("1985-86-star", "base", subject());
 		assert.ok(
