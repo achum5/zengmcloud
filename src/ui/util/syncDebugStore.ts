@@ -77,6 +77,10 @@ const PINNED_EVENTS = new Set([
 	"v2:slow-apply",
 	"connect:league-identity-bound",
 	"connect:league-identity-refused",
+	"connect:league-identity-rebound",
+	"connect:league-identity-unverified",
+	"autoPlay:stopped",
+	"autoPlay:sim-failed",
 	"snapshot:league-identity-refused",
 	"snapshot:room-checkpoint-wrong-league",
 ]);
@@ -111,6 +115,16 @@ export const clearSyncDebugEntries = () => {
 const asText = (list: SyncDebugEntry[]): string =>
 	list.map((e) => `${e.at} ${e.event} ${JSON.stringify(e.payload)}`).join("\n");
 
+// Extra one-line summaries contributed to the capture header by UI-side
+// subsystems the worker snapshot can't see (the auto-play scheduler). Pushed
+// in by the subsystem rather than imported from here, which would be a cycle -
+// same shape as the worker's liveWatchGate hook.
+const captureExtras: (() => string)[] = [];
+
+export const registerCaptureExtra = (describe: () => string) => {
+	captureExtras.push(describe);
+};
+
 // The full copy-paste capture: worker state snapshot + buffered log lines.
 // Shared by the debug overlay and the sync page's Copy button, so a tester
 // gets the identical, self-describing paste from either place - including
@@ -126,6 +140,16 @@ export const buildSyncLogCapture = async (
 		header += typeof snap === "string" ? `${snap}\n` : unavailable;
 	} catch {
 		header += unavailable;
+	}
+	// Whatever the auto-play scheduler registered about itself. It lives in the
+	// UI, so the worker snapshot cannot see it - and "auto play didn't sim" was
+	// unanswerable from a capture without it.
+	for (const describe of captureExtras) {
+		try {
+			header += `${describe()}\n`;
+		} catch {
+			// A broken reporter must never cost us the rest of the capture.
+		}
 	}
 	return `${header}${asText(list)}`;
 };

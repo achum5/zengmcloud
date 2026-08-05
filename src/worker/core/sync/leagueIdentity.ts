@@ -47,7 +47,33 @@ export type LeagueIdentityOutcome =
 	| { action: "adopted"; id: string }
 	| { action: "matched"; id: string }
 	| { action: "rebound"; id: string; previous: string }
-	| { action: "refused"; local: string; room: string };
+	| { action: "refused"; local: string; room: string }
+	| { action: "unverified"; error: string };
+
+// Both calls hit the network, and on this platform a server read can hang
+// indefinitely rather than fail (the whole reason every other read in the sync
+// layer is timed). Unbounded, they turned the connect button into a permanent
+// "Connecting..." - the check ran before the engine even existed, so nothing
+// downstream could recover it.
+const IDENTITY_TIMEOUT_MS = 10_000;
+
+const timed = <T>(promise: Promise<T>): Promise<T> =>
+	new Promise((resolve, reject) => {
+		const id = setTimeout(
+			() => reject(new Error(`Timed out after ${IDENTITY_TIMEOUT_MS}ms`)),
+			IDENTITY_TIMEOUT_MS,
+		);
+		promise.then(
+			(value) => {
+				clearTimeout(id);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(id);
+				reject(error);
+			},
+		);
+	});
 
 // THE RULE, in one place because getting it wrong breaks the system in one of
 // two opposite ways - locking legitimate players out of their own league, or
@@ -74,26 +100,37 @@ export const resolveLeagueIdentity = async ({
 	fetchRoomLeagueId: () => Promise<string | undefined>;
 	claimRoomLeagueId: (leagueId: string) => Promise<string>;
 }): Promise<LeagueIdentityOutcome> => {
-	if (localId === undefined) {
-		// No identity yet: adopt the room's, or mint one and claim the room.
-		const roomLeagueId = await fetchRoomLeagueId();
-		if (roomLeagueId !== undefined) {
-			return { action: "adopted", id: roomLeagueId };
+	// A network failure is not evidence of anything - least of all that this
+	// league belongs to someone else - so it must never masquerade as a
+	// refusal, and it must never wedge the connect. The door check is
+	// defense in depth; the check that actually prevents damage is the payload
+	// provenance test in roomSnapshot.ts, which runs at the moment a restore
+	// would overwrite the league and does not depend on this one succeeding.
+	// So: verify when the network allows, carry on when it doesn't.
+	try {
+		if (localId === undefined) {
+			// No identity yet: adopt the room's, or mint one and claim the room.
+			const roomLeagueId = await timed(fetchRoomLeagueId());
+			if (roomLeagueId !== undefined) {
+				return { action: "adopted", id: roomLeagueId };
+			}
+			// A lost first-claim race can only be a league-mate claiming the same
+			// lineage, so taking theirs is right.
+			const bound = await timed(claimRoomLeagueId(generateLeagueId()));
+			return { action: "minted", id: bound };
 		}
-		// A lost first-claim race can only be a league-mate claiming the same
-		// lineage, so taking theirs is right.
-		const bound = await claimRoomLeagueId(generateLeagueId());
-		return { action: "minted", id: bound };
-	}
 
-	const bound = await claimRoomLeagueId(localId);
-	if (bound === localId) {
-		return { action: "matched", id: bound };
+		const bound = await timed(claimRoomLeagueId(localId));
+		if (bound === localId) {
+			return { action: "matched", id: bound };
+		}
+		if (explicit) {
+			return { action: "rebound", id: bound, previous: localId };
+		}
+		return { action: "refused", local: localId, room: bound };
+	} catch (error) {
+		return { action: "unverified", error: String(error) };
 	}
-	if (explicit) {
-		return { action: "rebound", id: bound, previous: localId };
-	}
-	return { action: "refused", local: localId, room: bound };
 };
 
 // The identity carried inside a snapshot/checkpoint payload's gameAttributes

@@ -97,6 +97,43 @@ describe("resolveLeagueIdentity", () => {
 		});
 	});
 
+	// THE SPINNER. Both calls hit the network, and an unbounded hang here left
+	// the app on "Connecting..." forever - the check runs before the engine
+	// exists, so nothing downstream can recover it. A network failure says
+	// nothing about which league owns the room, so it must resolve to
+	// "unverified" and let the connect proceed; the payload provenance check
+	// still refuses a wrong-league restore.
+	test("a hanging binding read gives up instead of wedging the connect", async () => {
+		const started = Date.now();
+		const outcome = await resolveLeagueIdentity({
+			localId: "dba-new",
+			explicit: false,
+			fetchRoomLeagueId: () => new Promise(() => {}),
+			claimRoomLeagueId: () => new Promise(() => {}),
+		});
+		assert.strictEqual(outcome.action, "unverified");
+		assert.ok(
+			Date.now() - started < 20_000,
+			"the check must be bounded, not open-ended",
+		);
+	}, 30_000);
+
+	test("a failing claim is unverified, never a refusal", async () => {
+		const outcome = await resolveLeagueIdentity({
+			localId: "dba-new",
+			explicit: false,
+			fetchRoomLeagueId: async () => undefined,
+			claimRoomLeagueId: async () => {
+				throw new Error("Missing or insufficient permissions.");
+			},
+		});
+		assert.strictEqual(
+			outcome.action,
+			"unverified",
+			"an error must not be reported as belonging to another league",
+		);
+	});
+
 	// THE INCIDENT. Same mismatch, no user intent behind it.
 	test("an automatic reconnect to another league's room is refused", async () => {
 		const r = room("test-league");

@@ -11,6 +11,7 @@ import {
 	type ScheduleRule,
 } from "./scheduleTime.ts";
 import { hasPassedStop, type AutoPlayPreviewData } from "./autoPlayPreview.ts";
+import { pushSyncDebugEntry, registerCaptureExtra } from "./syncDebugStore.ts";
 
 // Re-exported so existing imports (UI, etc.) keep working from one place.
 export {
@@ -185,6 +186,43 @@ class AutoPlayScheduler {
 	private driverLockRequested = false;
 	private driverLockRelease: (() => void) | undefined;
 	private driverLockAbort: AbortController | undefined;
+
+	// Every reason auto play declines to fire used to live ONLY in
+	// state.pausedReason, on a page nobody is looking at when the sims stop
+	// overnight - so a sync log capture could never say why nothing happened.
+	// These breadcrumbs put the decision in the shared capture, deduped so a
+	// once-a-minute recheck of a steady state logs once, not forever.
+	private lastBreadcrumb = "";
+
+	private breadcrumb(event: string, payload: Record<string, unknown> = {}) {
+		const key = `${event}:${JSON.stringify(payload)}`;
+		if (key === this.lastBreadcrumb) {
+			return;
+		}
+		this.lastBreadcrumb = key;
+		pushSyncDebugEntry({ event, ...payload });
+	}
+
+	// A one-line summary of why auto play is or isn't about to sim, for the
+	// capture header. Read by buildSyncLogCapture.
+	describeForCapture(): string {
+		const s = this.settings;
+		const st = this.state;
+		return [
+			`autoPlay: enabled=${s.enabled}`,
+			`running=${st.running}`,
+			`driver=${st.isDriver}`,
+			`rules=${s.rules.filter((r) => r.enabled).length}/${s.rules.length}`,
+			`nextRunAt=${
+				st.nextRunAt === undefined ? "—" : new Date(st.nextRunAt).toISOString()
+			}`,
+			`lastRunAt=${
+				st.lastRunAt === undefined ? "—" : new Date(st.lastRunAt).toISOString()
+			}`,
+			`runCount=${st.runCount}`,
+			`paused=${st.pausedReason ?? "—"}`,
+		].join(" ");
+	}
 
 	private storageKey(lid: number) {
 		return `autoPlayScheduler-${lid}`;
@@ -384,6 +422,9 @@ class AutoPlayScheduler {
 		this.haltTimer();
 		this.persist();
 		this.emit();
+		// Turning ITSELF off is the one outcome a user never sees coming, and
+		// the sims simply stop overnight with no trace anywhere.
+		pushSyncDebugEntry({ event: "autoPlay:stopped", reason });
 	}
 
 	private haltTimer() {
@@ -517,6 +558,12 @@ class AutoPlayScheduler {
 			this.state.pausedReason = "Waiting for cloud connection + sim control.";
 			this.releaseWakeLock();
 			this.emit();
+			const s = local.getState();
+			this.breadcrumb("autoPlay:paused", {
+				why: "not-eligible",
+				connected: !!s.mpSyncActive,
+				inChargeOfSimming: !!s.mpSyncIsHost,
+			});
 			this.timeoutID = setTimeout(() => this.onTimer(), RECHECK_MS);
 			return;
 		}
@@ -530,6 +577,7 @@ class AutoPlayScheduler {
 			this.state.nextRunAt = undefined;
 			this.state.pausedReason = "No active schedule rules.";
 			this.emit();
+			this.breadcrumb("autoPlay:paused", { why: "no-active-rules" });
 			this.timeoutID = setTimeout(() => this.onTimer(), RECHECK_MS);
 			return;
 		}
@@ -568,20 +616,27 @@ class AutoPlayScheduler {
 		{ auto = false }: { auto?: boolean } = {},
 	) {
 		if (this.ticking) {
+			this.breadcrumb("autoPlay:skipped", { why: "already-running" });
 			return;
 		}
 		// Lost the connection or sim authority since we armed - skip; armTimer pauses.
 		if (!this.eligible()) {
+			this.breadcrumb("autoPlay:skipped", { why: "not-eligible" });
 			return;
 		}
 		// Only the elected driver tab runs the AUTOMATIC schedule, so two open tabs
 		// (which share one sim-authority identity) can't each fire and advance the
 		// league two days per tick. A manual "run now" on this tab is exempt.
 		if (auto && !this.isLeader) {
+			// A second tab of the same league holds the lock. If THAT tab is
+			// asleep or was left on a stale page, nothing sims and this is the
+			// only trace of why.
+			this.breadcrumb("autoPlay:skipped", { why: "another-tab-is-driving" });
 			return;
 		}
 		const state = local.getState();
 		if (state.gameSimInProgress) {
+			this.breadcrumb("autoPlay:skipped", { why: "sim-already-in-progress" });
 			return;
 		}
 
@@ -605,6 +660,10 @@ class AutoPlayScheduler {
 				}
 				this.state.pausedReason = safety.reason;
 				this.emit();
+				this.breadcrumb("autoPlay:paused", {
+					why: "worker-refused",
+					reason: safety.reason,
+				});
 				return;
 			}
 		}
@@ -615,6 +674,11 @@ class AutoPlayScheduler {
 				this.stop(
 					`Reached ${phaseName(phase)} - advance manually, then re-enable auto play.`,
 				);
+			} else {
+				this.breadcrumb("autoPlay:skipped", {
+					why: "phase-not-playable",
+					phase,
+				});
 			}
 			return;
 		}
@@ -644,6 +708,7 @@ class AutoPlayScheduler {
 				this.state.pausedReason =
 					"Trade deadline - waiting for every team to ready up.";
 				this.emit();
+				this.breadcrumb("autoPlay:paused", { why: "trade-deadline" });
 			} else {
 				this.stop(
 					"Trade deadline reached - make your moves, then re-enable auto play.",
@@ -652,6 +717,16 @@ class AutoPlayScheduler {
 			return;
 		}
 
+		// Every decline above is logged; this is the one line that says a fire
+		// actually reached the worker, so a capture can tell "never fired" apart
+		// from "fired and the sim did nothing".
+		this.lastBreadcrumb = "";
+		pushSyncDebugEntry({
+			event: "autoPlay:fire",
+			amount: fire.amount,
+			numDays: fire.numDays,
+			auto,
+		});
 		try {
 			if (fire.amount === "days") {
 				await toWorker(
@@ -667,6 +742,10 @@ class AutoPlayScheduler {
 			this.state.pausedReason = undefined;
 		} catch (error) {
 			console.error("Auto play sim failed", error);
+			pushSyncDebugEntry({
+				event: "autoPlay:sim-failed",
+				error: error instanceof Error ? error.message : String(error),
+			});
 			this.appendLog({
 				at: Date.now(),
 				amount: fire.amount,
@@ -824,6 +903,10 @@ class AutoPlayScheduler {
 }
 
 export const autoPlayScheduler = new AutoPlayScheduler();
+
+// Contribute the scheduler's state to every sync log capture, so a report of
+// "auto play didn't sim" arrives with the answer attached.
+registerCaptureExtra(() => autoPlayScheduler.describeForCapture());
 
 // Re-acquire the wake lock when the tab becomes visible again (the browser drops
 // it on tab switch / minimize).

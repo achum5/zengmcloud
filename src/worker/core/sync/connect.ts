@@ -2004,14 +2004,23 @@ const doConnectSharedLeague = async ({
 	//     second tab - never carries that intent. Both contamination incidents
 	//     were exactly this: a league auto-reconnecting to a room holding some
 	//     other league's state. Mismatch here is refused, hard.
-	try {
+	{
 		const outcome = await resolveLeagueIdentity({
-			localId: await readLocalLeagueId(),
+			localId: await readLocalLeagueId().catch(() => undefined),
 			explicit,
 			fetchRoomLeagueId: () => transport.fetchRoomLeagueId(),
 			claimRoomLeagueId: (id) => transport.claimRoomLeagueId(id),
 		});
-		if (outcome.action === "refused") {
+		if (outcome.action === "unverified") {
+			// Could not reach the binding doc. Connecting anyway is safe: the
+			// payload provenance check still refuses a wrong-league restore, and
+			// blocking here would strand a device on a flaky network with a
+			// spinner it can never get past.
+			syncDebugLog("connect:league-identity-unverified", {
+				code: trimmed,
+				error: outcome.error,
+			});
+		} else if (outcome.action === "refused") {
 			syncDebugLog("connect:league-identity-refused", {
 				code: trimmed,
 				local: outcome.local,
@@ -2026,9 +2035,16 @@ const doConnectSharedLeague = async ({
 			throw new Error(
 				`Room ${trimmed} belongs to a different league. If you meant to join it, enter the code and press Connect.`,
 			);
-		}
-		if (outcome.action !== "matched") {
-			await writeLocalLeagueId(outcome.id);
+		} else if (outcome.action !== "matched") {
+			// Writing the identity is local-only, and failing to record it must
+			// not block the connect either - the next connect re-derives it.
+			try {
+				await writeLocalLeagueId(outcome.id);
+			} catch (error) {
+				syncDebugLog("connect:league-identity-write-failed", {
+					error: String(error),
+				});
+			}
 			syncDebugLog(
 				outcome.action === "rebound"
 					? "connect:league-identity-rebound"
@@ -2036,12 +2052,6 @@ const doConnectSharedLeague = async ({
 				{ code: trimmed, action: outcome.action },
 			);
 		}
-	} catch (error) {
-		// Fail CLOSED. Connecting anyway on an unverified binding is exactly
-		// the hole this exists to plug.
-		throw error instanceof Error
-			? error
-			: new Error(`Could not verify this room's league: ${String(error)}`);
 	}
 
 	// Marker <-> room binding. A v2 applied-version marker is meaningful only
