@@ -11,6 +11,7 @@ import { setupSimDayFence, teardownSimDayFence } from "./simDayFence.ts";
 import { setupFaBoard, teardownFaBoard } from "./faBoard.ts";
 import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
+import { setLiveWatchGate } from "./liveWatchGate.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, lock, logEvent, toUI } from "../../util/index.ts";
@@ -20,6 +21,7 @@ import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
 import {
 	findStrandedScheduleRows,
 	sweepPhantomScheduleRows,
+	flushDeferredRefreshAfterLive,
 } from "./changeset.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
@@ -455,8 +457,15 @@ const unfreezeFollower = () => {
 		void toUI("updateLocal", [
 			{ mpLiveBroadcast: undefined, liveGameInProgress: false },
 		]);
+		// Anything that synced in during the playback repainted nothing (spoiler
+		// gate); now that the show is over, paint it all.
+		flushDeferredRefreshAfterLive();
 	}
 };
+
+// The apply layer asks this before repainting: remote data landing while this
+// device is watching a broadcast must not spoil the game mid-playback.
+setLiveWatchGate(() => followedBroadcast !== undefined || followerFroze);
 
 // The followed broadcast's game payload, kept for the liveGame view to serve on
 // ANY load of the page while the broadcast is live - the navigation that
@@ -633,6 +642,7 @@ const handleLiveBroadcastMeta = async (
 			void toUI("updateLocal", [
 				{ mpLiveBroadcast: undefined, liveGameInProgress: false },
 			]);
+			flushDeferredRefreshAfterLive();
 		}
 		return;
 	}
@@ -722,6 +732,7 @@ const checkLiveBroadcastLease = () => {
 		void toUI("updateLocal", [
 			{ mpLiveBroadcast: undefined, liveGameInProgress: false },
 		]);
+		flushDeferredRefreshAfterLive();
 	}
 };
 

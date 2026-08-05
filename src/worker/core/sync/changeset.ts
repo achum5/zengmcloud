@@ -15,6 +15,7 @@ import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { checkApplyGuard } from "./applyGuard.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { getSyncEngine } from "./engineHolder.ts";
+import { isWatchingLiveBroadcast } from "./liveWatchGate.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
 import type { Phase, UpdateEvents } from "../../../common/types.ts";
@@ -615,6 +616,44 @@ export const guardDayContiguity = async (
 	);
 };
 
+// Visual refreshes held back while this device is inside a live playback (its
+// own live sim, or following a league-mate's broadcast). The DATA always
+// applies immediately - the chain never waits - but repainting the phase
+// text, status line, score ticker, or navigating to a new phase's page
+// mid-playback is a spoiler: "2027 Draft Lottery" in the header during game 6
+// of the finals tells you exactly how the series ends. Flushed the moment the
+// playback finishes.
+let deferredRefresh:
+	| {
+			touchedSeason: boolean;
+			touchedGameAttributes: boolean;
+			touchedGames: boolean;
+			touchedPhase: boolean;
+			touchedStatus: boolean;
+			touchedStores: Set<Store>;
+			refreshUI: boolean;
+			sweepGames: boolean;
+			redirect: boolean;
+	  }
+	| undefined;
+
+const isInLivePlayback = () =>
+	local.liveSimGid !== undefined || isWatchingLiveBroadcast();
+
+// Run any refresh that was held back during a live playback. Called wherever
+// a playback ends (the live game page's game-over signal, a broadcast ending
+// or expiring). Safe to call when nothing is pending.
+export const flushDeferredRefreshAfterLive = () => {
+	const pending = deferredRefresh;
+	if (!pending) {
+		return;
+	}
+	deferredRefresh = undefined;
+	void refreshAfterApply(pending).catch((error) => {
+		console.error("Deferred post-live refresh failed", error);
+	});
+};
+
 // Everything a RECEIVING device must refresh after remote records landed, so
 // it behaves like the device that ran the action: season-scoped cache refill,
 // the in-memory `g` mirror, derived worker caches, phase text + Play menu +
@@ -699,6 +738,36 @@ export const refreshAfterApply = async ({
 		local.playerOvrMeanStdStale = true;
 		local.seasonLeaders = undefined;
 		local.minFractionDiffs = undefined;
+	}
+
+	// Mid-live-playback, STOP here: the data landed (cache refill and the g
+	// mirror above are correctness, not paint), but every step below repaints
+	// the screen - phase text, status, ticker, navigation, view refreshes -
+	// and each one can spoil the game still playing out. Bank the flags and
+	// run the rest when the playback ends. Merging keeps a burst of applies
+	// (the finals sim + its phase change) down to one flush.
+	if (isInLivePlayback()) {
+		syncDebugLog("apply:refresh-deferred-live", {
+			touchedPhase,
+			touchedGames,
+		});
+		deferredRefresh = {
+			touchedSeason: (deferredRefresh?.touchedSeason ?? false) || touchedSeason,
+			touchedGameAttributes:
+				(deferredRefresh?.touchedGameAttributes ?? false) ||
+				touchedGameAttributes,
+			touchedGames: (deferredRefresh?.touchedGames ?? false) || touchedGames,
+			touchedPhase: (deferredRefresh?.touchedPhase ?? false) || touchedPhase,
+			touchedStatus: (deferredRefresh?.touchedStatus ?? false) || touchedStatus,
+			touchedStores: new Set([
+				...(deferredRefresh?.touchedStores ?? []),
+				...touchedStores,
+			]),
+			refreshUI: (deferredRefresh?.refreshUI ?? false) || refreshUI,
+			sweepGames: (deferredRefresh?.sweepGames ?? false) || sweepGames,
+			redirect: (deferredRefresh?.redirect ?? false) || redirect,
+		};
+		return;
 	}
 
 	// A phase change is more than a data change: the phase text, the Play menu

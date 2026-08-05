@@ -1,6 +1,7 @@
 export {
 	captureChangeset,
 	applyChangeset,
+	flushDeferredRefreshAfterLive,
 	type Changeset,
 	type SyncChange,
 } from "./changeset.ts";

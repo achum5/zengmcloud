@@ -116,6 +116,7 @@ import {
 	getSyncRequired,
 	getSyncStatus,
 	beginLotteryReveal,
+	flushDeferredRefreshAfterLive,
 	listSyncRooms,
 	markSyncRequired,
 	publishAutoPlayState,
@@ -1352,6 +1353,22 @@ const draftLottery = async () => {
 	// it the instant the result is written. Released in publishLotteryRevealState.
 	if (draftLotteryResult && getSyncEngine() !== undefined) {
 		beginLotteryReveal();
+		// Publish the reveal marker BEFORE this action's changeset can upload
+		// (the api returns first, then the changeset publishes): followers'
+		// lottery pages arm their reveal gate off this tiny doc, so the full
+		// result can never flash on their screens in the gap before the slow
+		// reveal starts. Awaited so the ordering is guaranteed, best-effort on
+		// failure (the reveal heartbeats re-assert it).
+		try {
+			await publishLotteryRevealState({
+				active: true,
+				season: g.get("season"),
+				revealed: -1,
+				startedAt: Date.now(),
+			});
+		} catch (error) {
+			console.error("Failed to pre-publish lottery reveal state", error);
+		}
 	}
 	return draftLotteryResult;
 };
@@ -4825,6 +4842,10 @@ const onLiveSimOver = async (gid?: number) => {
 	local.liveSimGid = undefined;
 
 	local.liveSimRatingsStatsPopoverPlayers = undefined;
+
+	// The show is over: paint everything remote applies held back during the
+	// playback (final scores in the ticker, a phase flip, the status line).
+	flushDeferredRefreshAfterLive();
 
 	// Backstop: guarantee the single-game-sim force-silent flag is cleared once the
 	// live game is done (normal clear is in play.ts). Prevents a stale flag from
