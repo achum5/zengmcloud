@@ -380,9 +380,63 @@ export const restoreFromRoomSnapshot = async (
 
 let lastSnapshotCheckAt = 0;
 
+// Whether this session has already judged the room's current checkpoint.
+// Downloading and validating it costs a few MB, so it happens once per
+// session, re-armed only when a new checkpoint appears.
+let vettedSnapshotSeq: number | undefined;
+
 // Test-only.
 export const resetSnapshotCadenceForTesting = () => {
 	lastSnapshotCheckAt = 0;
+	vettedSnapshotSeq = undefined;
+};
+
+// Is the room's PUBLISHED checkpoint one that restorers would refuse? A
+// checkpoint published by a damaged device before the publish gates existed
+// sits in the room as a landmine: every device that falls far enough behind
+// restores it and gets the damage. New builds refuse it - but refusing is not
+// removing. When the HEALTHY authority finds a poisoned checkpoint, it must
+// replace it immediately rather than waiting out the normal cadence, because
+// until it does, any device on an older build that falls behind gets wiped,
+// and any device on a new build has no usable checkpoint to recover from.
+const roomSnapshotIsPoisoned = async (
+	engine: SyncEngine,
+	meta: RoomSnapshotMeta,
+): Promise<boolean> => {
+	if (vettedSnapshotSeq === meta.seq) {
+		return false;
+	}
+	const transport = engine.transport;
+	if (!transport.fetchRoomSnapshotData) {
+		return false;
+	}
+	try {
+		const serialized = await transport.fetchRoomSnapshotData(
+			meta.chunkCount,
+			meta.generation,
+		);
+		if (serialized === undefined) {
+			// Missing chunks: unreadable by every restorer. Treat as poisoned.
+			return true;
+		}
+		const payload = deserializeChangeset(
+			await decompressSerialized(serialized),
+		) as SnapshotPayload;
+		const problems = validateRoomSnapshotPayload(payload);
+		if (problems.length > 0) {
+			syncDebugLog("snapshot:room-checkpoint-poisoned", {
+				seq: meta.seq,
+				problems,
+			});
+			return true;
+		}
+		vettedSnapshotSeq = meta.seq;
+		return false;
+	} catch (error) {
+		// Unreadable (torn old-format write, corrupt payload): also poison.
+		syncDebugLog("snapshot:room-checkpoint-unreadable", { error });
+		return true;
+	}
 };
 
 // Called from the health tick on every device; does anything only on the
@@ -410,11 +464,23 @@ export const maybePublishRoomSnapshot = async (
 
 	try {
 		const previous = await engine.transport.fetchRoomSnapshotMeta?.();
-		const entriesSince = await engine.transport.countEntriesSince(
-			previous?.seq ?? 0,
-		);
-		if (entriesSince < SNAPSHOT_EVERY_ENTRIES) {
-			return;
+
+		// A poisoned checkpoint is replaced NOW, not on cadence: it wipes any
+		// old-build device that falls behind, and leaves new-build devices with
+		// no usable checkpoint. The publish below still passes the history and
+		// integrity gates, so a damaged authority cannot "replace" poison with
+		// more poison - it simply cannot publish at all.
+		const mustEvictPoison =
+			previous !== undefined &&
+			(await roomSnapshotIsPoisoned(engine, previous));
+
+		if (!mustEvictPoison) {
+			const entriesSince = await engine.transport.countEntriesSince(
+				previous?.seq ?? 0,
+			);
+			if (entriesSince < SNAPSHOT_EVERY_ENTRIES) {
+				return;
+			}
 		}
 
 		// A snapshot makes THIS device's database the room's source of truth, so
@@ -441,7 +507,13 @@ export const maybePublishRoomSnapshot = async (
 			return;
 		}
 
-		await publishRoomSnapshot(engine);
+		const published = await publishRoomSnapshot(engine);
+		if (mustEvictPoison && published) {
+			vettedSnapshotSeq = published.seq;
+			console.log(
+				"[sync] Replaced the room's damaged checkpoint with a fresh one from this device.",
+			);
+		}
 	} catch (error) {
 		syncDebugLog("snapshot:publish-failed", { error });
 	}

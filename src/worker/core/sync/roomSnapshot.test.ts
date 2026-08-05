@@ -5,8 +5,11 @@ import { g, local } from "../../util/index.ts";
 import {
 	applyRoomSnapshotPayload,
 	buildRoomSnapshotPayload,
+	maybePublishRoomSnapshot,
+	resetSnapshotCadenceForTesting,
 	validateRoomSnapshotPayload,
 } from "./roomSnapshot.ts";
+import { serializeChangeset as ser } from "./serialize.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
 import { setApplyGuard } from "./applyGuard.ts";
 
@@ -477,5 +480,128 @@ describe("validateRoomSnapshotPayload", () => {
 			stores: {},
 		} as any);
 		assert.strictEqual(problems.length, 1);
+	});
+});
+
+
+// ---------------------------------------------------------------------------
+// Poisoned-checkpoint eviction. A checkpoint published by a damaged device
+// (before the publish gates existed) sits in the room as a landmine: old-build
+// devices that fall behind restore it and get wiped; new-build devices refuse
+// it and are left with no usable checkpoint at all. The healthy authority must
+// REPLACE it immediately, not wait out the normal cadence.
+// ---------------------------------------------------------------------------
+
+describe("a healthy authority evicts a poisoned checkpoint", () => {
+	let restoreCache: () => void;
+
+	const healthyDb = () => ({
+		players: [
+			{ pid: 1, tid: 0 },
+			{ pid: 2, tid: 0 },
+			{ pid: 3, tid: 0 },
+			{ pid: 4, tid: 0 },
+			{ pid: 5, tid: 0 },
+		],
+		teams: [{ tid: 0 }],
+		gameAttributes: [{ key: "season", value: 2006 }],
+	});
+
+	const poisonedPayload = () =>
+		ser({
+			version: 1,
+			stores: {
+				// The actual poison from the incident: one player on the roster,
+				// mid regular season.
+				players: [{ pid: 9, tid: 0 }],
+				teams: [{ tid: 0 }],
+				gameAttributes: [
+					{ key: "season", value: 2006 },
+					{ key: "phase", value: 1 },
+				],
+			},
+		});
+
+	const healthyPayload = () =>
+		ser({
+			version: 1,
+			stores: {
+				players: [
+					{ pid: 1, tid: 0 },
+					{ pid: 2, tid: 0 },
+					{ pid: 3, tid: 0 },
+					{ pid: 4, tid: 0 },
+					{ pid: 5, tid: 0 },
+				],
+				teams: [{ tid: 0 }],
+				gameAttributes: [
+					{ key: "season", value: 2006 },
+					{ key: "phase", value: 1 },
+				],
+			},
+		});
+
+	const makeEngine = (snapshotData: string) => {
+		const published: unknown[] = [];
+		const transport = {
+			publishRoomSnapshot: async (meta: unknown, _serialized: string) => {
+				published.push(meta);
+				return 1;
+			},
+			fetchRoomSnapshotMeta: async () => ({
+				seq: 500,
+				at: 1,
+				byName: "Old",
+				chunkCount: 1,
+			}),
+			fetchRoomSnapshotData: async () => snapshotData,
+			// Far below the 1200-entry cadence: only eviction can justify a publish.
+			countEntriesSince: async () => 3,
+			deleteEntriesBefore: async () => 0,
+		};
+		const engine = {
+			transport,
+			isAuthority: () => true,
+			isBusyApplying: () => false,
+			getPersistedSeq: () => 900,
+			localName: "Healthy",
+		};
+		return { engine: engine as any, published };
+	};
+
+	beforeEach(async () => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2006);
+		g.setWithoutSavingToDB("phase", 1);
+		await resetCache({});
+		restoreCache = stubCacheLifecycle();
+		resetSnapshotCadenceForTesting();
+		(idb as any).league = makeLeagueDb(healthyDb());
+	});
+
+	afterEach(() => {
+		restoreCache();
+	});
+
+	test("a poisoned checkpoint is replaced immediately, cadence be damned", async () => {
+		const { engine, published } = makeEngine(poisonedPayload());
+		await maybePublishRoomSnapshot(engine);
+		assert.strictEqual(
+			published.length,
+			1,
+			"the landmine must be replaced the moment a healthy authority sees it",
+		);
+	});
+
+	test("a healthy checkpoint below cadence publishes nothing", async () => {
+		const { engine, published } = makeEngine(healthyPayload());
+		await maybePublishRoomSnapshot(engine);
+		assert.strictEqual(published.length, 0);
+	});
+
+	test("an unreadable checkpoint counts as poisoned", async () => {
+		const { engine, published } = makeEngine("not json at all {{{");
+		await maybePublishRoomSnapshot(engine);
+		assert.strictEqual(published.length, 1);
 	});
 });
