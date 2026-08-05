@@ -315,7 +315,14 @@ export interface SyncTransport {
 	// ---- Sync v2 (version chain) ------------------------------------------
 	// All optional: the in-memory test transport and older builds simply lack
 	// them, and a v2 room is only ever joined by code that checks.
-	fetchRoomV2State?(): Promise<V2StateDoc | undefined>;
+	// Server-only unless allowCache - the head probe must fail loudly rather
+	// than confirm a stale cached pointer (see FirebaseTransport).
+	fetchRoomV2State?(options?: {
+		allowCache?: boolean;
+	}): Promise<V2StateDoc | undefined>;
+	// Tear down and rebuild the backend connection - the cure for a silently
+	// wedged channel (dead listeners + hanging reads).
+	cycleNetwork?(): Promise<void>;
 	// onError (optional) fires when the underlying listener terminates, so the
 	// engine can re-establish it instead of silently dropping to timer pacing.
 	subscribeRoomV2State?(

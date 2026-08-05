@@ -7,6 +7,8 @@ import {
 	getDoc,
 	getDocFromServer,
 	getCountFromServer,
+	disableNetwork,
+	enableNetwork,
 	getDocsFromServer,
 	deleteDoc,
 	limit,
@@ -1203,22 +1205,43 @@ export class FirebaseTransport implements SyncTransport {
 	// version in the doc id and are never rewritten: publishing is always
 	// content first, pointer last, onto ids nobody else will ever write.
 
-	// Server-first, ALWAYS. The pointer is the protocol: a cached read here made
-	// a device target an already-committed version 0.3s after its OWN commit
-	// (getDoc served the listener's not-yet-updated view), producing CAS-loss
-	// storms - and with a dead listener the cache never advances at all, so a
-	// cached read can't even detect being behind. Cache is the offline fallback
-	// only, where a stale answer and no answer are equally harmless.
-	async fetchRoomV2State(): Promise<V2StateDoc | undefined> {
+	// Server-only by default. The pointer is the protocol: a cached read here
+	// made a device target an already-committed version 0.3s after its OWN
+	// commit (getDoc served the listener's not-yet-updated view), producing
+	// CAS-loss storms - and with a dead listener the cache never advances at
+	// all, so a cached answer let the 5s head probe "confirm" a stale head and
+	// go back to sleep while the room moved on. A probe must fail loudly, not
+	// lie comfortably. allowCache exists for exactly one caller: connect-time
+	// protocol detection, where a stale answer and no answer are equally
+	// harmless.
+	async fetchRoomV2State(options?: {
+		allowCache?: boolean;
+	}): Promise<V2StateDoc | undefined> {
 		const ref = doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID);
 		let snap;
-		try {
+		if (options?.allowCache) {
+			try {
+				snap = await getDocFromServer(ref);
+			} catch {
+				snap = await getDoc(ref);
+			}
+		} else {
 			snap = await getDocFromServer(ref);
-		} catch {
-			snap = await getDoc(ref);
 		}
 		this.markContact();
 		return this.parseV2State(snap.data());
+	}
+
+	// Force the SDK to tear down and rebuild its backend channel. The one known
+	// cure for a wedged WebChannel (Safari is fond of killing the stream in a
+	// way the SDK doesn't notice): listeners go quiet and server reads hang
+	// until the connection is cycled.
+	async cycleNetwork(): Promise<void> {
+		try {
+			await disableNetwork(this.db);
+		} finally {
+			await enableNetwork(this.db);
+		}
 	}
 
 	private parseV2State(data: any): V2StateDoc | undefined {

@@ -1866,7 +1866,12 @@ const doConnectSharedLeague = async ({
 	// pointer doc exists if and only if the room runs the v2 version chain. The
 	// `v2` option can only INITIALIZE a fresh room (explicit host join, no v1
 	// history), never convert one.
-	let v2State = await transport.fetchRoomV2State().catch(() => undefined);
+	// allowCache: protocol detection tolerates a briefly-unreachable server (a
+	// stale answer and no answer are equally harmless here - the protocol never
+	// changes after room creation).
+	let v2State = await transport
+		.fetchRoomV2State({ allowCache: true })
+		.catch(() => undefined);
 	if (v2State === undefined && v2 && explicit && isHost) {
 		const v1Entries = await transport.countEntriesSince(0).catch(() => 1);
 		if (v1Entries === 0) {

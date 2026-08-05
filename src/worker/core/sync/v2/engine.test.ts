@@ -114,7 +114,10 @@ class V2Transport implements SyncTransport {
 		return this.room.state;
 	}
 
-	subscribeRoomV2State(onChange: (s: V2StateDoc) => void) {
+	subscribeRoomV2State(
+		onChange: (s: V2StateDoc) => void,
+		_onError?: (error: unknown) => void,
+	) {
 		return this.room.onState(onChange);
 	}
 
@@ -702,6 +705,45 @@ describe("SyncEngineV2", () => {
 		}
 		assert.strictEqual(await readAppliedVersion(), 3);
 		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		engine.stop();
+	});
+
+	// A wedged backend channel (Safari killing the stream) makes the head probe
+	// fail while the listener sits quiet. Two consecutive failed probes must
+	// cycle the connection and rebuild the listener - the one known cure.
+	test("two failed head probes cycle the network and rebuild the listener", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("A", room);
+		let cycles = 0;
+		let subscribes = 0;
+		(transport as any).cycleNetwork = async () => {
+			cycles += 1;
+		};
+		const originalSubscribe = transport.subscribeRoomV2State.bind(transport);
+		transport.subscribeRoomV2State = (
+			onChange: (s: V2StateDoc) => void,
+			onError?: (error: unknown) => void,
+		) => {
+			subscribes += 1;
+			return originalSubscribe(onChange, onError);
+		};
+		transport.fetchRoomV2State = () =>
+			Promise.reject(new Error("channel wedged"));
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		const subscribesAfterStart = subscribes;
+
+		await engine.probeHead();
+		assert.strictEqual(cycles, 0, "one failure is a blip, not a wedge");
+		await engine.probeHead();
+		assert.strictEqual(cycles, 1, "the second consecutive failure cycles");
+		assert.strictEqual(
+			subscribes,
+			subscribesAfterStart + 1,
+			"and the listener is rebuilt on the fresh channel",
+		);
 		engine.stop();
 	});
 

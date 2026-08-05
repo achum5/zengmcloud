@@ -78,8 +78,15 @@ const PUBLISH_ATTEMPT_TIMEOUT_MS = 20_000;
 
 // Catch-up reads are timed for the same reason publishes are: a read that
 // hangs (network died mid-request) would wedge the single-flight catch-up
-// chain, and every later catch-up waits behind it forever.
-const CATCHUP_READ_TIMEOUT_MS = 15_000;
+// chain, and every later catch-up waits behind it forever. Short enough that
+// a wedged channel fails a couple of reads within seconds - which is what
+// arms the network cycle below - instead of sitting on one hung read while
+// the user watches nothing happen.
+const CATCHUP_READ_TIMEOUT_MS = 8_000;
+
+// The head probe runs every 5s health tick; its read must resolve or fail
+// well within one tick so probes never pile up behind a hung one.
+const HEAD_PROBE_TIMEOUT_MS = 4_000;
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
 	new Promise((resolve, reject) => {
@@ -133,6 +140,12 @@ export class SyncEngineV2 {
 	// contains a mutation the chain will never carry, so the next catch-up must
 	// rebuild from the checkpoint instead of trusting the delta walk alone.
 	private mustRecoverFromCheckpoint = false;
+
+	// Head-probe bookkeeping (see probeHead): single-flight guard, consecutive
+	// failure count, and a throttle on the network-cycle remedy.
+	private probing = false;
+	private headFailureStreak = 0;
+	private lastNetworkCycleAt = 0;
 
 	private memoryQueue: Omit<ChangesetEntry, "seq">[] = [];
 	private memoryNotifications = new Map<string, SyncNotification[]>();
@@ -224,15 +237,24 @@ export class SyncEngineV2 {
 	// background, a quietly-terminated onSnapshot): the pointer is one tiny
 	// document, so polling it is nearly free, and it turns "stale until the 30s
 	// timer" into "stale for at most one tick".
+	//
+	// The probe is deliberately strict: server answer or failure, never the
+	// cache (a cached answer is the listener's own stale view - it would
+	// "confirm" exactly the staleness the probe exists to catch). Two failures
+	// in a row mean the SDK's backend channel is wedged - listeners quiet,
+	// server reads hanging, Safari's specialty - and the cure is cycling the
+	// connection and rebuilding the listener on the fresh channel.
 	async probeHead(): Promise<void> {
-		if (this.stopped || !this.transport.fetchRoomV2State) {
+		if (this.stopped || !this.transport.fetchRoomV2State || this.probing) {
 			return;
 		}
+		this.probing = true;
 		try {
 			const state = await withTimeout(
 				this.transport.fetchRoomV2State(),
-				CATCHUP_READ_TIMEOUT_MS,
+				HEAD_PROBE_TIMEOUT_MS,
 			);
+			this.headFailureStreak = 0;
 			if (!state) {
 				return;
 			}
@@ -254,7 +276,25 @@ export class SyncEngineV2 {
 				void this.catchUp();
 			}
 		} catch {
-			// Offline or slow; the next tick probes again.
+			this.headFailureStreak += 1;
+			if (
+				this.headFailureStreak >= 2 &&
+				this.transport.cycleNetwork &&
+				Date.now() - this.lastNetworkCycleAt > 30_000
+			) {
+				this.headFailureStreak = 0;
+				this.lastNetworkCycleAt = Date.now();
+				syncDebugLog("v2:network-cycled", {});
+				try {
+					await this.transport.cycleNetwork();
+				} catch {
+					// Even a failed cycle is followed by a fresh listener + catch-up.
+				}
+				this.subscribeState();
+				void this.catchUp();
+			}
+		} finally {
+			this.probing = false;
 		}
 	}
 
