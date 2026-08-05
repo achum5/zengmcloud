@@ -13,8 +13,8 @@ import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { setLiveWatchGate } from "./liveWatchGate.ts";
 import {
-	generateLeagueId,
 	readLocalLeagueId,
+	resolveLeagueIdentity,
 	writeLocalLeagueId,
 } from "./leagueIdentity.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
@@ -1990,56 +1990,58 @@ const doConnectSharedLeague = async ({
 	// twice: wrong-league data reaching a league DB through a room, whether
 	// via a zombie engine, a second tab, an old build, or a reused room code
 	// still holding another league's state.
-	if (transport.claimRoomLeagueId && transport.fetchRoomLeagueId) {
-		try {
-			let localLeagueId = await readLocalLeagueId();
-			if (localLeagueId === undefined) {
-				// A league with no identity yet: connecting IS the declaration
-				// that it is this room's league (same trust as every connect
-				// before identities existed). Adopt the room's identity, or mint
-				// one and claim the room. Every SUBSEQUENT connect is verified.
-				const roomLeagueId = await transport.fetchRoomLeagueId();
-				localLeagueId = roomLeagueId ?? generateLeagueId();
-				await writeLocalLeagueId(localLeagueId);
-				if (roomLeagueId === undefined) {
-					const bound = await transport.claimRoomLeagueId(localLeagueId);
-					if (bound !== localLeagueId) {
-						// Lost a first-claim race to another device - which can only
-						// be a league-mate connecting the same lineage; adopt theirs.
-						localLeagueId = bound;
-						await writeLocalLeagueId(bound);
-					}
-				}
-				syncDebugLog("connect:league-identity-bound", {
-					code: trimmed,
-					adopted: roomLeagueId !== undefined,
-				});
-			} else {
-				const bound = await transport.claimRoomLeagueId(localLeagueId);
-				if (bound !== localLeagueId) {
-					syncDebugLog("connect:league-identity-refused", {
-						code: trimmed,
-						local: localLeagueId,
-						room: bound,
-					});
-					logEvent({
-						type: "error",
-						text: `Room ${trimmed} belongs to a different league, so syncing was stopped to protect this save. Create a new room for this league.`,
-						saveToDb: false,
-						persistent: true,
-					});
-					throw new Error(
-						`Room ${trimmed} belongs to a different league. Create a new room for this league.`,
-					);
-				}
-			}
-		} catch (error) {
-			// Fail CLOSED. Connecting anyway on an unverified binding is exactly
-			// the hole this exists to plug.
-			throw error instanceof Error
-				? error
-				: new Error(`Could not verify this room's league: ${String(error)}`);
+	// The discriminator is EXPLICIT vs AUTOMATIC, exactly as the older
+	// room-fingerprint check above uses it, because that is what actually
+	// separates the two situations:
+	//
+	//   - Typing a room code and pressing Connect IS the statement "this
+	//     league belongs in this room". A league-mate joining with a copy that
+	//     minted its own identity (or an older copy, or a re-created room) must
+	//     always be able to do this, or the protection locks legitimate players
+	//     out of their own league with no way back. It adopts the room's
+	//     identity.
+	//   - An AUTOMATIC reconnect - a stale session pointer, a zombie engine, a
+	//     second tab - never carries that intent. Both contamination incidents
+	//     were exactly this: a league auto-reconnecting to a room holding some
+	//     other league's state. Mismatch here is refused, hard.
+	try {
+		const outcome = await resolveLeagueIdentity({
+			localId: await readLocalLeagueId(),
+			explicit,
+			fetchRoomLeagueId: () => transport.fetchRoomLeagueId(),
+			claimRoomLeagueId: (id) => transport.claimRoomLeagueId(id),
+		});
+		if (outcome.action === "refused") {
+			syncDebugLog("connect:league-identity-refused", {
+				code: trimmed,
+				local: outcome.local,
+				room: outcome.room,
+			});
+			logEvent({
+				type: "error",
+				text: `This league reconnected on its own to room ${trimmed}, which belongs to a different league, so syncing was stopped to protect this save. If you meant to join that room, enter the code and press Connect.`,
+				saveToDb: false,
+				persistent: true,
+			});
+			throw new Error(
+				`Room ${trimmed} belongs to a different league. If you meant to join it, enter the code and press Connect.`,
+			);
 		}
+		if (outcome.action !== "matched") {
+			await writeLocalLeagueId(outcome.id);
+			syncDebugLog(
+				outcome.action === "rebound"
+					? "connect:league-identity-rebound"
+					: "connect:league-identity-bound",
+				{ code: trimmed, action: outcome.action },
+			);
+		}
+	} catch (error) {
+		// Fail CLOSED. Connecting anyway on an unverified binding is exactly
+		// the hole this exists to plug.
+		throw error instanceof Error
+			? error
+			: new Error(`Could not verify this room's league: ${String(error)}`);
 	}
 
 	// Marker <-> room binding. A v2 applied-version marker is meaningful only

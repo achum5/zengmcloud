@@ -42,6 +42,60 @@ export const writeLocalLeagueId = async (id: string): Promise<void> => {
 	});
 };
 
+export type LeagueIdentityOutcome =
+	| { action: "minted"; id: string }
+	| { action: "adopted"; id: string }
+	| { action: "matched"; id: string }
+	| { action: "rebound"; id: string; previous: string }
+	| { action: "refused"; local: string; room: string };
+
+// THE RULE, in one place because getting it wrong breaks the system in one of
+// two opposite ways - locking legitimate players out of their own league, or
+// letting a league be overwritten by a room that isn't its own.
+//
+// The discriminator is intent, expressed as explicit-vs-automatic:
+//
+//   - An EXPLICIT join (the user typed the room code and pressed Connect) is a
+//     statement that this league belongs in this room. A league-mate whose
+//     copy minted its own identity, or who is joining a re-created room, must
+//     always be able to do this - otherwise the protection permanently locks
+//     real players out with no recovery. Their league re-binds to the room.
+//   - An AUTOMATIC reconnect (a stale session pointer, a zombie engine, a
+//     second tab) carries no such intent. BOTH cross-league contamination
+//     incidents were exactly this shape. A mismatch here is refused.
+export const resolveLeagueIdentity = async ({
+	localId,
+	explicit,
+	fetchRoomLeagueId,
+	claimRoomLeagueId,
+}: {
+	localId: string | undefined;
+	explicit: boolean;
+	fetchRoomLeagueId: () => Promise<string | undefined>;
+	claimRoomLeagueId: (leagueId: string) => Promise<string>;
+}): Promise<LeagueIdentityOutcome> => {
+	if (localId === undefined) {
+		// No identity yet: adopt the room's, or mint one and claim the room.
+		const roomLeagueId = await fetchRoomLeagueId();
+		if (roomLeagueId !== undefined) {
+			return { action: "adopted", id: roomLeagueId };
+		}
+		// A lost first-claim race can only be a league-mate claiming the same
+		// lineage, so taking theirs is right.
+		const bound = await claimRoomLeagueId(generateLeagueId());
+		return { action: "minted", id: bound };
+	}
+
+	const bound = await claimRoomLeagueId(localId);
+	if (bound === localId) {
+		return { action: "matched", id: bound };
+	}
+	if (explicit) {
+		return { action: "rebound", id: bound, previous: localId };
+	}
+	return { action: "refused", local: localId, room: bound };
+};
+
 // The identity carried inside a snapshot/checkpoint payload's gameAttributes
 // rows, if the publisher's league had one.
 export const payloadLeagueId = (
