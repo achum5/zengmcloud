@@ -52,7 +52,10 @@ describe("versionsToFetch", () => {
 });
 
 describe("catchUpPlan", () => {
-	const room = (version: number, checkpointVersion?: number): RoomVersionState => ({
+	const room = (
+		version: number,
+		checkpointVersion?: number,
+	): RoomVersionState => ({
 		version,
 		authorId: "a",
 		byName: "Alex",
@@ -79,7 +82,10 @@ describe("catchUpPlan", () => {
 		assert.deepStrictEqual(catchUpPlan(10, room(50, 30)), {
 			type: "checkpoint-then-deltas",
 			checkpointVersion: 30,
-			versions: [31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
+			versions: [
+				31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
+				49, 50,
+			],
 		});
 	});
 

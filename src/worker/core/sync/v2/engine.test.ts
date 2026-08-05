@@ -5,12 +5,7 @@ import { g } from "../../../util/index.ts";
 import { idb } from "../../../db/index.ts";
 import { changeTracker } from "../../../db/changeTracker.ts";
 import { serializeChangeset } from "../serialize.ts";
-import type {
-	Authority,
-	SyncTransport,
-	V2Request,
-	V2StateDoc,
-} from "../types.ts";
+import type { Authority, SyncTransport, V2StateDoc } from "../types.ts";
 import type { SyncNotification } from "../notifications.ts";
 import { SyncEngineV2 } from "./engine.ts";
 import { readAppliedVersion } from "./applyVersion.ts";
@@ -32,7 +27,6 @@ class Room {
 		{ serialized: string; authorId: string; action: string; at: number }
 	>();
 	checkpoints = new Map<number, string>();
-	requests = new Map<string, V2Request>();
 	authority: Authority | undefined;
 	private stateListeners = new Set<(s: V2StateDoc) => void>();
 	private authorityListeners = new Set<(a: Authority | undefined) => void>();
@@ -181,18 +175,6 @@ class V2Transport implements SyncTransport {
 
 	async fetchV2Checkpoint(version: number) {
 		return this.room.checkpoints.get(version);
-	}
-
-	async publishV2Request(request: V2Request) {
-		this.room.requests.set(request.id, request);
-	}
-
-	async fetchV2Requests() {
-		return [...this.room.requests.values()].sort((a, b) => a.at - b.at);
-	}
-
-	async deleteV2Request(id: string) {
-		this.room.requests.delete(id);
 	}
 
 	async deleteV2DeltasBefore() {
@@ -464,9 +446,10 @@ describe("SyncEngineV2", () => {
 		);
 	});
 
-	// One writer means one writer: losing the compare-and-set means the local
-	// unpublished mutation is discarded, never merged.
-	test("losing the CAS drops the entry and does not advance the marker", async () => {
+	// A race between two edits has a loser, and the loser's answer is retry,
+	// not discard: the edit is a whole-record statement of user intent, so it
+	// catches up and lands on top of whatever won.
+	test("an edit that loses the CAS retries and lands as the next version", async () => {
 		const room = new Room();
 		initRoom(room);
 		(idb as any).league = makeLeagueDb({
@@ -483,57 +466,126 @@ describe("SyncEngineV2", () => {
 			changesetOf(tradePut(1, 2)),
 			"main.proposeTrade",
 		);
-		assert.strictEqual(outcome, "queued");
-		assert.strictEqual(
-			await readAppliedVersion(),
-			0,
-			"a lost race must not stamp the loser's marker",
-		);
-		assert.strictEqual(room.state!.version, 0);
-		assert.strictEqual(
-			await engine.pendingUploadCount(),
-			0,
-			"the losing entry is DROPPED (one writer), not retried into a fork",
-		);
+		assert.strictEqual(outcome, "confirmed", "the retry won the second CAS");
+		assert.strictEqual(room.state!.version, 1);
+		assert.strictEqual(await readAppliedVersion(), 1);
+		assert.strictEqual(await engine.pendingUploadCount(), 0);
 		engine.stop();
 	});
 
-	test("a follower's edit travels as a request; the authority folds it into the chain", async () => {
+	// No device's change ever waits on another device being online: a device
+	// that is NOT in charge of simming still publishes its edit as the next
+	// version itself, directly, gated only by the CAS.
+	test("a non-simming device publishes its edit as the next version directly", async () => {
 		const room = new Room();
 		initRoom(room);
-
-		// FOLLOWER files a roster edit.
-		(idb as any).league = makeLeagueDb({ players: [{ pid: 4, tid: 1 }] });
-		const followerTransport = new V2Transport("B", room);
-		const follower = new SyncEngineV2(followerTransport);
 		room.setAuthority({ holderId: "A", holderName: "Alex" });
+
+		// DEVICE B (not the simmer) files a roster edit while A is offline.
+		(idb as any).league = makeLeagueDb({ players: [{ pid: 4, tid: 1 }] });
+		const follower = new SyncEngineV2(new V2Transport("B", room));
+		follower.start();
 		const outcome = await follower.onLocalChangeset(
 			changesetOf(tradePut(4, 1)),
 			"main.updatePlayingTime",
 		);
 		assert.strictEqual(outcome, "confirmed");
-		assert.strictEqual(room.requests.size, 1);
-		assert.strictEqual(room.state!.version, 0, "a follower never mints");
+		assert.strictEqual(
+			room.state!.version,
+			1,
+			"the edit became version 1 without any other device involved",
+		);
+		assert.strictEqual(await readAppliedVersion(), 1);
+		follower.stop();
 
-		// AUTHORITY drains the request queue.
-		(idb as any).league = makeLeagueDb({
-			players: [{ pid: 4, tid: 3 }],
-		});
+		// DEVICE A (the simmer) comes online later and just applies it.
+		(idb as any).league = makeLeagueDb({ players: [{ pid: 4, tid: 3 }] });
 		await resetCache({});
-		const authorityTransport = new V2Transport("A", room);
-		const authority = new SyncEngineV2(authorityTransport);
-		authority.start();
-		await authority.drainRequests();
-
-		assert.strictEqual(room.state!.version, 1, "the edit became version 1");
-		assert.strictEqual(room.requests.size, 0, "the request was consumed");
+		const authority = new SyncEngineV2(new V2Transport("A", room));
+		assert.ok(await authority.catchUp());
 		assert.strictEqual(
 			(await (idb as any).league.getAll("players"))[0].tid,
 			1,
-			"and the authority's own database took the edit",
+			"the simmer's database took the edit on its next catch-up",
 		);
 		assert.strictEqual(await readAppliedVersion(), 1);
-		authority.stop();
+	});
+
+	// The v1-fork preventer, kept: a timeline advance authored on a world the
+	// room has moved past is DISCARDED, and the device snaps back to the
+	// chain's truth via the checkpoint - it is never republished.
+	test("a stale timeline advance is discarded and the device recovers from the checkpoint", async () => {
+		const room = new Room();
+		initRoom(room);
+
+		// The room is at version 1 (someone else simmed), with a checkpoint
+		// capturing version 1.
+		const seedTransport = new V2Transport("C", room);
+		await seedTransport.commitV2Version(
+			{ version: 1, authorId: "C", byName: "C", at: 5, action: "playMenu.day" },
+			0,
+		);
+		await seedTransport.publishV2Checkpoint(
+			1,
+			serializeChangeset({
+				version: 1,
+				stores: {
+					players: [
+						{ pid: 1, tid: 0 },
+						{ pid: 2, tid: 0 },
+						{ pid: 3, tid: 0 },
+						{ pid: 4, tid: 0 },
+						{ pid: 5, tid: 0 },
+					],
+					teams: [{ tid: 0 }],
+					gameAttributes: [
+						{ key: "season", value: 2006 },
+						{ key: "phase", value: 1 },
+					],
+				},
+			}),
+		);
+		await seedTransport.commitV2Checkpoint(1, 1);
+
+		// DEVICE A, still at version 0, simmed its own day locally (pid 1 moved
+		// to tid 99 - a record the chain will never carry).
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 99 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		await engine.claimAuthority();
+
+		const outcome = await engine.onLocalChangeset(
+			changesetOf(tradePut(1, 99)),
+			"playMenu.day",
+		);
+		assert.strictEqual(outcome, "queued");
+		assert.strictEqual(
+			await engine.pendingUploadCount(),
+			0,
+			"the stale advance was discarded, not left to merge later",
+		);
+		assert.strictEqual(
+			room.state!.version,
+			1,
+			"the chain never saw the stale advance",
+		);
+
+		// The recovery (kicked fire-and-forget by the discard) snaps the device
+		// back to the chain: checkpoint restored, marker at 1, tid 99 gone.
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(await readAppliedVersion(), 1);
+		const players = await (idb as any).league.getAll("players");
+		assert.strictEqual(players.length, 5, "the checkpoint roster landed");
+		assert.strictEqual(
+			players.find((p: any) => p.pid === 1).tid,
+			0,
+			"the discarded advance's mutation was rolled back to the chain's state",
+		);
+		engine.stop();
 	});
 
 	test("notifications fire only when the version actually committed", async () => {
@@ -548,22 +600,18 @@ describe("SyncEngineV2", () => {
 		await engine.claimAuthority();
 		transport.forceCasLoss = true;
 
-		await engine.onLocalChangeset(
-			changesetOf(tradePut(1, 2)),
-			"playMenu.day",
-			[{ title: "Celtics 115", body: "..." } as any],
-		);
+		await engine.onLocalChangeset(changesetOf(tradePut(1, 2)), "playMenu.day", [
+			{ title: "Celtics 115", body: "..." } as any,
+		]);
 		assert.strictEqual(
 			transport.notifications.length,
 			0,
 			"a lost commit must not announce anything",
 		);
 
-		await engine.onLocalChangeset(
-			changesetOf(tradePut(1, 2)),
-			"playMenu.day",
-			[{ title: "Celtics 115", body: "..." } as any],
-		);
+		await engine.onLocalChangeset(changesetOf(tradePut(1, 2)), "playMenu.day", [
+			{ title: "Celtics 115", body: "..." } as any,
+		]);
 		assert.strictEqual(transport.notifications.length, 1);
 		engine.stop();
 	});

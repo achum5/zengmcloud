@@ -86,7 +86,10 @@ describe("findIntegrityProblems", () => {
 
 	test("an expansion draft's new team starts empty BY DESIGN", () => {
 		assert.deepStrictEqual(
-			findIntegrityProblems({ ...league([12, 0]), phase: PHASE.EXPANSION_DRAFT }),
+			findIntegrityProblems({
+				...league([12, 0]),
+				phase: PHASE.EXPANSION_DRAFT,
+			}),
 			[],
 		);
 	});
@@ -161,9 +164,7 @@ describe("findPayloadIntegrityProblems", () => {
 			gameAttributes: [
 				{
 					key: "phase",
-					value: [
-						{ start: 2000, value: PHASE.PLAYOFFS },
-					],
+					value: [{ start: 2000, value: PHASE.PLAYOFFS }],
 				},
 			],
 		});

@@ -166,7 +166,7 @@ describe("applyVersionedChangeset", () => {
 		assert.strictEqual(players.find((p: any) => p.pid === 1).tid, 2);
 		assert.strictEqual(players.find((p: any) => p.pid === 9).tid, 2);
 		// And the in-memory cache mirrors the committed truth.
-		assert.strictEqual((await idb.cache.players.get(1) as any)?.tid, 2);
+		assert.strictEqual(((await idb.cache.players.get(1)) as any)?.tid, 2);
 	});
 
 	test("a device with no marker starts at 0 and applies version 1", async () => {
@@ -265,11 +265,19 @@ describe("applyVersionedChangeset", () => {
 		});
 		const outcome = await applyVersionedChangeset(
 			vcs(4, [
-				{ store: "negotiations" as any, id: 55, type: "delete", value: undefined },
+				{
+					store: "negotiations" as any,
+					id: 55,
+					type: "delete",
+					value: undefined,
+				},
 			]),
 		);
 		assert.strictEqual(outcome, "apply");
-		assert.deepStrictEqual(await (idb as any).league.getAll("negotiations"), []);
+		assert.deepStrictEqual(
+			await (idb as any).league.getAll("negotiations"),
+			[],
+		);
 		assert.strictEqual(await readAppliedVersion(), 4);
 	});
 });

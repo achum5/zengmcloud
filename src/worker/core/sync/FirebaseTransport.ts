@@ -43,7 +43,6 @@ import { parseLeaguePosition, type LeaguePosition } from "./leaguePosition.ts";
 import type {
 	Authority,
 	ChangesetEntry,
-	V2Request,
 	V2StateDoc,
 	DraftReadyEntry,
 	FaBoardEntry,
@@ -101,7 +100,6 @@ const v2DeltaDocId = (version: number, index: number) =>
 	`v2delta_${version}_${index}`;
 const v2CheckpointDocId = (version: number, index: number) =>
 	`v2checkpoint_${version}_${index}`;
-const v2RequestDocId = (id: string) => `v2request_${id}`;
 
 // If we've had confirmed contact with Firestore within this window, treat the
 // connection as live without a round-trip; otherwise verifyConnection() probes.
@@ -1471,70 +1469,6 @@ export class FirebaseTransport implements SyncTransport {
 		}
 		this.markContact();
 		return out;
-	}
-
-	async publishV2Request(request: V2Request): Promise<void> {
-		await setDoc(
-			doc(
-				this.db,
-				"leagues",
-				this.code,
-				"control",
-				v2RequestDocId(request.id),
-			),
-			{
-				holderId: this.clientId,
-				kind: "v2request",
-				id: request.id,
-				authorId: request.authorId,
-				byName: request.byName,
-				action: request.action,
-				data: request.data,
-				at: request.at,
-				updatedAt: serverTimestamp(),
-			},
-		);
-		this.markContact();
-	}
-
-	async fetchV2Requests(): Promise<V2Request[]> {
-		const snapshot = await getDocsFromServer(
-			query(
-				collection(this.db, "leagues", this.code, "control"),
-				where("kind", "==", "v2request"),
-			),
-		);
-		this.markContact();
-		const out: V2Request[] = [];
-		for (const docSnap of snapshot.docs) {
-			const data = docSnap.data();
-			if (
-				typeof data.id === "string" &&
-				typeof data.data === "string" &&
-				typeof data.action === "string"
-			) {
-				out.push({
-					id: data.id,
-					authorId: typeof data.authorId === "string" ? data.authorId : "",
-					byName: typeof data.byName === "string" ? data.byName : "Someone",
-					action: data.action,
-					data: data.data,
-					at: typeof data.at === "number" ? data.at : 0,
-				});
-			}
-		}
-		out.sort((a, b) => a.at - b.at);
-		return out;
-	}
-
-	async deleteV2Request(id: string): Promise<void> {
-		try {
-			await deleteDoc(
-				doc(this.db, "leagues", this.code, "control", v2RequestDocId(id)),
-			);
-		} catch {
-			// A leaked request doc is re-processed idempotently, never harmful.
-		}
 	}
 
 	// Prune delta docs for versions below `version` (already covered by a

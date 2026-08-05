@@ -1,4 +1,4 @@
-import { g, local, lock, toUI } from "../../../util/index.ts";
+import { g, local, lock, logEvent, toUI } from "../../../util/index.ts";
 import { league } from "../../index.ts";
 import { idb } from "../../../db/index.ts";
 import { outbox } from "../outbox.ts";
@@ -23,11 +23,11 @@ import type {
 } from "../types.ts";
 import {
 	applyCheckpointV2,
-	applyRequestRecordsLocally,
 	applyVersionedChangeset,
 	readAppliedVersion,
 } from "./applyVersion.ts";
 import { catchUpPlan } from "./protocol.ts";
+import { isTimelineAdvanceLabel } from "../actionLabels.ts";
 
 // ---------------------------------------------------------------------------
 // ENGINE V2: the version chain, running.
@@ -35,11 +35,20 @@ import { catchUpPlan } from "./protocol.ts";
 // The v1 engine spends thousands of lines deciding which of two disagreeing
 // databases is right. This engine cannot have that problem, because it never
 // constructs the disagreement: it applies exactly the next version or nothing
-// (applyVersion.ts), only the authority mints versions and only by
-// compare-and-set (the pointer cannot fork), and a follower's edits travel as
-// requests the authority folds into the chain. Recovery from ANY distance is
-// one code path: catchUpPlan says checkpoint-then-deltas or deltas, both
-// bounded, both ordered, both atomic per step.
+// (applyVersion.ts), and EVERY published change - from any device - becomes
+// the next version by compare-and-set on the room's single version pointer.
+// The CAS is the entire concurrency story: two devices racing for N+1 means
+// one wins and one re-reads; the pointer cannot fork. No device depends on
+// any OTHER device being online to get its change into the cloud. Recovery
+// from ANY distance is one code path: catchUpPlan says checkpoint-then-deltas
+// or deltas, both bounded, both ordered, both atomic per step.
+//
+// Staleness has two different answers, on purpose (see actionLabels.ts):
+// an ordinary edit whose base moved catches up and republishes - it is a
+// whole-record statement of user intent. A TIMELINE ADVANCE whose base moved
+// is discarded loudly and the device snaps back to the chain via checkpoint,
+// because a sim day derived from a world the room has moved past is exactly
+// the artifact that forked v1 leagues when it was merged late.
 //
 // It intentionally presents the same surface connect.ts and the coordination
 // layer already consume (mapped exhaustively before this was written), so
@@ -110,8 +119,12 @@ export class SyncEngineV2 {
 	private catchingUp = false;
 	private drainChain: Promise<boolean> = Promise.resolve(true);
 	private draining = false;
-	private requestTimer: ReturnType<typeof setInterval> | undefined;
 	private ready = false;
+
+	// Set when a stale timeline advance was discarded: the local database
+	// contains a mutation the chain will never carry, so the next catch-up must
+	// rebuild from the checkpoint instead of trusting the delta walk alone.
+	private mustRecoverFromCheckpoint = false;
 
 	private memoryQueue: Omit<ChangesetEntry, "seq">[] = [];
 	private memoryNotifications = new Map<string, SyncNotification[]>();
@@ -168,17 +181,6 @@ export class SyncEngineV2 {
 				void this.catchUp();
 			}
 		});
-		// The authority folds follower requests into the chain. Light poll: one
-		// small query, and only for the authority.
-		this.requestTimer = setInterval(() => {
-			if (this.isAuthority()) {
-				void this.drainRequests();
-			}
-		}, 10_000);
-		const nodeTimer = this.requestTimer as unknown as { unref?: () => void };
-		if (typeof nodeTimer?.unref === "function") {
-			nodeTimer.unref();
-		}
 	}
 
 	stop() {
@@ -187,10 +189,6 @@ export class SyncEngineV2 {
 		this.authorityUnsubscribe = undefined;
 		this.stateUnsubscribe?.();
 		this.stateUnsubscribe = undefined;
-		if (this.requestTimer !== undefined) {
-			clearInterval(this.requestTimer);
-			this.requestTimer = undefined;
-		}
 	}
 
 	// ---- Authority / coordination surface ----------------------------------
@@ -272,11 +270,19 @@ export class SyncEngineV2 {
 		this.onReadyChange?.(true);
 	}
 
-	async verifyConnection(force = false): Promise<void> {
+	// MUST return a boolean: the worker's pre-action guard does
+	// `const live = await engine.verifyConnection(...)` and refuses the action
+	// when falsy. (Returning void here would silently block every cloud-tracked
+	// action in a v2 room.)
+	async verifyConnection(force = false): Promise<boolean> {
 		if (this.transport.verifyConnection) {
-			await this.transport.verifyConnection(force);
-		} else {
+			return (await this.transport.verifyConnection(force)) ?? true;
+		}
+		try {
 			await this.transport.ping?.();
+			return true;
+		} catch {
+			return false;
 		}
 	}
 
@@ -410,6 +416,47 @@ export class SyncEngineV2 {
 
 				const applied = await readAppliedVersion();
 				this.appliedMirror = applied;
+
+				// A discarded stale advance leaves local records the chain never
+				// carried. The delta walk can't remove those (deltas only add), so
+				// recovery is a forced checkpoint restore: snap the whole database
+				// back to a state the chain vouches for, then walk the tail.
+				if (this.mustRecoverFromCheckpoint) {
+					if (
+						state.checkpointVersion === undefined ||
+						state.checkpointChunkCount === undefined ||
+						!this.transport.fetchV2Checkpoint
+					) {
+						// No checkpoint to snap back to (a brand-new room before its
+						// first checkpoint). The overlap from applying the chain's
+						// versions is the best available convergence; say so loudly.
+						syncDebugLog("v2:recovery-no-checkpoint", {
+							applied,
+							roomVersion: state.version,
+						});
+						this.mustRecoverFromCheckpoint = false;
+					} else {
+						const serialized = await this.transport.fetchV2Checkpoint(
+							state.checkpointVersion,
+							state.checkpointChunkCount,
+						);
+						if (serialized === undefined) {
+							return false;
+						}
+						const payload = deserializeChangeset(
+							await decompressSerialized(serialized),
+						);
+						await applyCheckpointV2(payload, state.checkpointVersion);
+						this.appliedMirror = state.checkpointVersion;
+						this.mustRecoverFromCheckpoint = false;
+						syncDebugLog("v2:recovered-from-checkpoint", {
+							checkpointVersion: state.checkpointVersion,
+						});
+						await this.afterRemoteApply(true);
+						continue;
+					}
+				}
+
 				const plan = catchUpPlan(applied, state);
 
 				if (plan.type === "caught-up") {
@@ -596,9 +643,9 @@ export class SyncEngineV2 {
 			}
 
 			for (const entry of pending) {
-				const ok = this.isAuthority()
-					? await this.publishAsVersion(entry)
-					: await this.publishAsRequest(entry);
+				// Every device publishes the same way: as the next version. No
+				// change ever waits on another device being online.
+				const ok = await this.publishAsVersion(entry);
 				if (!ok) {
 					return false;
 				}
@@ -613,10 +660,20 @@ export class SyncEngineV2 {
 		}
 	}
 
-	// The authority's path: mint the next version. The compare-and-set is the
-	// entire concurrency story - losing it means this device is no longer the
-	// chain's writer, and its unpublished local mutation is DISCARDED, loudly,
-	// in favor of catching up. One writer means one writer.
+	// The ONE publish path, for every device: mint the next version. The
+	// compare-and-set on the room's version pointer is the entire concurrency
+	// story - whoever wins the CAS authored that version, the loser re-reads.
+	// No change ever depends on another device being online.
+	//
+	// Staleness has two answers, on purpose (see actionLabels.ts):
+	// - An ordinary edit whose base moved catches up and republishes on top of
+	//   the new head - it is a whole-record statement of user intent, and it
+	//   survives a race. Bounded retries; on exhaustion the entry stays
+	//   durably queued for the next drain kick.
+	// - A TIMELINE ADVANCE whose base moved is DISCARDED, loudly, and the
+	//   device snaps back to the chain via checkpoint recovery. A sim day
+	//   derived from a world the room has moved past is exactly the artifact
+	//   that forked v1 leagues when it was merged late.
 	private async publishAsVersion(
 		entry: Omit<ChangesetEntry, "seq">,
 	): Promise<boolean> {
@@ -627,89 +684,138 @@ export class SyncEngineV2 {
 		) {
 			return false;
 		}
+		const isAdvance = isTimelineAdvanceLabel(entry.action);
 
-		// Never author on top of state we don't have: catch up first, publish
-		// second. (For a healthy authority this is a no-op read.)
-		const state = await withTimeout(
-			this.transport.fetchRoomV2State(),
-			this.publishTimeoutMs,
-		);
-		if (!state) {
-			return false;
-		}
-		const applied = await readAppliedVersion();
-		if (applied < state.version) {
-			const caught = await this.doCatchUpInline();
-			if (!caught) {
-				return false;
-			}
-		}
-
-		const target =
-			(await withTimeout(
+		for (let attempt = 0; attempt < 3; attempt++) {
+			// Never author on top of state we don't have: catch up first,
+			// publish second. (For a healthy device this is a no-op read.)
+			const state = await withTimeout(
 				this.transport.fetchRoomV2State(),
 				this.publishTimeoutMs,
-			))!.version + 1;
-		const serialized = await compressSerialized(
-			serializeChangeset(entry.changeset),
-		);
-		await withTimeout(
-			this.transport.publishV2Delta(
-				{
-					version: target,
-					authorId: this.transport.clientId,
-					action: entry.action,
-					at: Date.now(),
-				},
-				serialized,
-			),
-			this.publishTimeoutMs,
-		);
-
-		const won = await withTimeout(
-			this.transport.commitV2Version(
-				{
-					version: target,
-					authorId: this.transport.clientId,
-					byName: this.localName,
-					at: Date.now(),
-					action: entry.action,
-				},
-				target - 1,
-			),
-			this.publishTimeoutMs,
-		);
-
-		if (!won) {
-			// Someone else advanced the chain while this device thought it was
-			// the writer. The one-writer rule has exactly one honest outcome:
-			// this entry is dropped and the device re-syncs to the chain's
-			// truth. Silent-merging it is how v1 leagues forked.
-			syncDebugLog("v2:cas-lost", { action: entry.action, target });
-			console.error(
-				`[sync] Discarded a local change from "${entry.action}": another device is in charge of the league's timeline now. Re-syncing to the room's state.`,
 			);
+			if (!state) {
+				return false;
+			}
+			const applied = await readAppliedVersion();
+			if (applied < state.version) {
+				if (isAdvance) {
+					return this.discardStaleAdvance(entry, applied, state.version);
+				}
+				const caught = await this.doCatchUpInline();
+				if (!caught) {
+					return false;
+				}
+			}
+
+			const target =
+				(await withTimeout(
+					this.transport.fetchRoomV2State(),
+					this.publishTimeoutMs,
+				))!.version + 1;
+			const serialized = await compressSerialized(
+				serializeChangeset(entry.changeset),
+			);
+			await withTimeout(
+				this.transport.publishV2Delta(
+					{
+						version: target,
+						authorId: this.transport.clientId,
+						action: entry.action,
+						at: Date.now(),
+					},
+					serialized,
+				),
+				this.publishTimeoutMs,
+			);
+
+			const won = await withTimeout(
+				this.transport.commitV2Version(
+					{
+						version: target,
+						authorId: this.transport.clientId,
+						byName: this.localName,
+						at: Date.now(),
+						action: entry.action,
+					},
+					target - 1,
+				),
+				this.publishTimeoutMs,
+			);
+
+			if (!won) {
+				// Someone committed target concurrently - a genuine same-second
+				// race, since the pre-action guard verified we started current.
+				syncDebugLog("v2:cas-lost", {
+					action: entry.action,
+					target,
+					attempt,
+				});
+				if (isAdvance) {
+					return this.discardStaleAdvance(entry, applied, target);
+				}
+				// Their version applies first, then this edit goes on top.
+				continue;
+			}
+
+			// The local database ALREADY contains this mutation (it was made
+			// here); the marker advances to match in its own transaction. A
+			// crash before this lands is healed by the next catch-up
+			// re-applying version `target` over identical records - idempotent
+			// by construction.
+			await this.writeMarker(target);
+			this.appliedMirror = Math.max(this.appliedMirror, target);
+			this.roomVersion = Math.max(this.roomVersion, target);
+
 			await this.removePending(entry.id);
-			await this.takeNotifications(entry.id);
-			void this.catchUp();
-			return false;
+			const notifications = await this.takeNotifications(entry.id);
+			for (const notification of notifications ?? []) {
+				void this.publishNotification(notification).catch(() => {});
+			}
+			syncDebugLog("v2:published", { version: target, action: entry.action });
+			return true;
 		}
 
-		// The local database ALREADY contains this mutation (it was made here);
-		// the marker advances to match in its own transaction. A crash before
-		// this lands is healed by the next catch-up re-applying version
-		// `target` over identical records - idempotent by construction.
-		await this.writeMarker(target);
-		this.appliedMirror = Math.max(this.appliedMirror, target);
-		this.roomVersion = Math.max(this.roomVersion, target);
+		// Retries exhausted (a CAS storm - takes 3 concurrent commits inside a
+		// few seconds). The entry stays durably queued; the health tick keeps
+		// draining, and the next pass starts from a fresh read of the head.
+		syncDebugLog("v2:publish-retries-exhausted", { action: entry.action });
+		return false;
+	}
 
+	// A timeline advance authored on a world the room has moved past: remove
+	// it from the queue, drop its notifications, tell the user plainly, and
+	// snap this device back to the chain's truth. The local database contains
+	// records the chain will never carry, so the recovery is a forced
+	// checkpoint restore - the same "reject the local change" rule that keeps
+	// every device an exact copy of the cloud.
+	private async discardStaleAdvance(
+		entry: Omit<ChangesetEntry, "seq">,
+		applied: number,
+		roomVersion: number,
+	): Promise<boolean> {
+		syncDebugLog("v2:stale-advance-discarded", {
+			action: entry.action,
+			applied,
+			roomVersion,
+		});
+		console.error(
+			`[sync] Discarded "${entry.action}": the league advanced on another device before this device's advance reached the cloud. Restoring this device to the room's state.`,
+		);
+		try {
+			logEvent({
+				type: "error",
+				text: "Your last advance didn't reach the cloud before the league moved on from another device, so it was undone here. This device is re-syncing to the room's state.",
+				saveToDb: false,
+				persistent: true,
+			});
+		} catch {
+			// UI notice only.
+		}
 		await this.removePending(entry.id);
-		const notifications = await this.takeNotifications(entry.id);
-		for (const notification of notifications ?? []) {
-			void this.publishNotification(notification).catch(() => {});
-		}
-		syncDebugLog("v2:published", { version: target, action: entry.action });
-		return true;
+		await this.takeNotifications(entry.id);
+		this.mustRecoverFromCheckpoint = true;
+		void this.catchUp();
+		return false;
 	}
 
 	// Not a single-flight re-entry (doDrain holds the drain lock; catchUp's
@@ -720,94 +826,6 @@ export class SyncEngineV2 {
 			return await this.doCatchUp();
 		} finally {
 			this.catchingUp = wasCatchingUp;
-		}
-	}
-
-	// A follower's path: hand the edit to the authority. Local state already
-	// reflects the edit optimistically; the authority's next version carries
-	// the same whole records back, converging by construction.
-	private async publishAsRequest(
-		entry: Omit<ChangesetEntry, "seq">,
-	): Promise<boolean> {
-		if (!this.transport.publishV2Request) {
-			return false;
-		}
-		const serialized = await compressSerialized(
-			serializeChangeset(entry.changeset),
-		);
-		await withTimeout(
-			this.transport.publishV2Request({
-				id: entry.id,
-				authorId: this.transport.clientId,
-				byName: this.localName,
-				action: entry.action,
-				data: serialized,
-				at: Date.now(),
-			}),
-			this.publishTimeoutMs,
-		);
-		await this.removePending(entry.id);
-		const notifications = await this.takeNotifications(entry.id);
-		for (const notification of notifications ?? []) {
-			void this.publishNotification(notification).catch(() => {});
-		}
-		syncDebugLog("v2:request-published", { action: entry.action });
-		return true;
-	}
-
-	// Authority: fold waiting follower requests into the chain, oldest first.
-	async drainRequests(): Promise<void> {
-		if (
-			this.stopped ||
-			!this.isAuthority() ||
-			!this.transport.fetchV2Requests
-		) {
-			return;
-		}
-		try {
-			const requests = await this.transport.fetchV2Requests();
-			for (const request of requests) {
-				if (request.authorId === this.transport.clientId) {
-					await this.transport.deleteV2Request?.(request.id);
-					continue;
-				}
-				const changeset = deserializeChangeset(
-					await decompressSerialized(request.data),
-				) as Changeset;
-				const ok = await this.publishAsVersion({
-					id: makeId(),
-					authorId: this.transport.clientId,
-					action: request.action,
-					changeset,
-				});
-				if (!ok) {
-					return;
-				}
-				// The published version's records now need to exist HERE too - the
-				// request was another device's mutation. Applying our own freshly
-				// minted version does exactly that, atomically.
-				await this.catchUpSelfAfterRequest(changeset, request.action);
-				await this.transport.deleteV2Request?.(request.id);
-			}
-		} catch (error) {
-			syncDebugLog("v2:drain-requests-failed", { error });
-		}
-	}
-
-	private async catchUpSelfAfterRequest(changeset: Changeset, action: string) {
-		// publishAsVersion advanced the marker already (it assumes local data
-		// contains the mutation, which holds for OWN actions). For a folded
-		// request the records still have to land locally - same records, same
-		// idempotent whole-record puts, wrapped in one transaction.
-		const version = await readAppliedVersion();
-		try {
-			await applyRequestRecordsLocally(changeset);
-			await this.afterRemoteApply(
-				changeset.changes.some((c) => c.store === "gameAttributes"),
-			);
-			syncDebugLog("v2:request-folded", { action, version });
-		} catch (error) {
-			syncDebugLog("v2:request-fold-failed", { action, error });
 		}
 	}
 
@@ -861,9 +879,7 @@ export class SyncEngineV2 {
 			}
 
 			const payload = await buildRoomSnapshotPayload();
-			const serialized = await compressSerialized(
-				serializeChangeset(payload),
-			);
+			const serialized = await compressSerialized(serializeChangeset(payload));
 			const chunkCount = await this.transport.publishV2Checkpoint(
 				applied,
 				serialized,

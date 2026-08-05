@@ -443,10 +443,7 @@ describe("a restore can never leave the league worse than it found it", () => {
 			threw = true;
 		}
 		assert.ok(threw);
-		assert.strictEqual(
-			(await (idb as any).league.getAll("players")).length,
-			4,
-		);
+		assert.strictEqual((await (idb as any).league.getAll("players")).length, 4);
 	});
 });
 
@@ -482,7 +479,6 @@ describe("validateRoomSnapshotPayload", () => {
 		assert.strictEqual(problems.length, 1);
 	});
 });
-
 
 // ---------------------------------------------------------------------------
 // Poisoned-checkpoint eviction. A checkpoint published by a damaged device

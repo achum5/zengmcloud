@@ -36,7 +36,11 @@ const gaValue = (rows: any[], key: string): unknown => {
 		return undefined;
 	}
 	const { value } = row;
-	if (Array.isArray(value) && value.length > 0 && value[0]?.start !== undefined) {
+	if (
+		Array.isArray(value) &&
+		value.length > 0 &&
+		value[0]?.start !== undefined
+	) {
 		return value.at(-1).value;
 	}
 	return value;

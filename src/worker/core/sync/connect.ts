@@ -1998,68 +1998,68 @@ const doConnectSharedLeague = async ({
 				},
 			})
 		: new SyncEngine(transport, {
-		isHost: false,
-		initialWatermark: watermark,
-		code: trimmed,
-		onWatermark: (seq) => {
-			void saveWatermark(lid, seq);
-			// Catching up may have just unblocked edits - refresh the indicator.
-			pushEditsPaused();
-		},
-		onAuthorityChange: (authority) => {
-			currentHostName = authority?.holderName;
-			pushAuthorityToUI(
-				authority?.holderId === clientId,
-				authority?.holderName,
-			);
-			// The busy lease rides on this doc, so a flip here means edits just got
-			// blocked or unblocked - update the header indicator immediately.
-			pushEditsPaused();
-		},
-		// Live upload progress → UI, so any device shows a cloud indicator (with a
-		// count for big changes) while a change uploads.
-		onUploadProgress: (progress) => {
-			void toUI("updateLocal", [{ mpSyncUpload: progress }]);
-		},
-		// A confirmed upload bumps a counter the UI watches to flash "synced ✓".
-		onUploadComplete: () => {
-			uploadOkCounter += 1;
-			void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
-		},
-		// Backlog-drain progress → UI, so a device catching up after an absence
-		// shows how far along it is and roughly how much longer.
-		onCatchUpProgress: (progress) => {
-			// Log every set/clear of the indicator so an "infinitely catching up"
-			// device shows exactly when the bar appears and whether it's ever
-			// cleared (progress === undefined) between passes.
-			syncDebugLog("connect:catchup-indicator", {
-				showing: progress !== undefined,
-				done: progress?.done,
-				total: progress?.total,
+				isHost: false,
+				initialWatermark: watermark,
+				code: trimmed,
+				onWatermark: (seq) => {
+					void saveWatermark(lid, seq);
+					// Catching up may have just unblocked edits - refresh the indicator.
+					pushEditsPaused();
+				},
+				onAuthorityChange: (authority) => {
+					currentHostName = authority?.holderName;
+					pushAuthorityToUI(
+						authority?.holderId === clientId,
+						authority?.holderName,
+					);
+					// The busy lease rides on this doc, so a flip here means edits just got
+					// blocked or unblocked - update the header indicator immediately.
+					pushEditsPaused();
+				},
+				// Live upload progress → UI, so any device shows a cloud indicator (with a
+				// count for big changes) while a change uploads.
+				onUploadProgress: (progress) => {
+					void toUI("updateLocal", [{ mpSyncUpload: progress }]);
+				},
+				// A confirmed upload bumps a counter the UI watches to flash "synced ✓".
+				onUploadComplete: () => {
+					uploadOkCounter += 1;
+					void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
+				},
+				// Backlog-drain progress → UI, so a device catching up after an absence
+				// shows how far along it is and roughly how much longer.
+				onCatchUpProgress: (progress) => {
+					// Log every set/clear of the indicator so an "infinitely catching up"
+					// device shows exactly when the bar appears and whether it's ever
+					// cleared (progress === undefined) between passes.
+					syncDebugLog("connect:catchup-indicator", {
+						showing: progress !== undefined,
+						done: progress?.done,
+						total: progress?.total,
+					});
+					catchUpPillShowing = progress !== undefined;
+					void toUI("updateLocal", [{ mpCatchUp: progress }]);
+				},
+				onReadyChange: (ready) => {
+					pushReadyToUI(ready);
+				},
+				// Queued-but-unconfirmed upload count → UI, so a delta that hasn't reached
+				// the cloud is always visible in the header, never silently waiting.
+				onPendingChange: (count) => {
+					pushPendingUploads(count);
+				},
+				// The engine just abandoned a bulk change whose chunks weren't in the log -
+				// it silently skipped shared state. Persist a durable marker (so even a
+				// reload heals), then heal NOW: the last device that waited for its next
+				// launch spent an evening visibly missing a day of games. The delay lets
+				// the abandoning pass finish; the heal itself also waits for idle.
+				onResyncNeeded: () => {
+					void saveResyncNeeded(lid, true);
+					setTimeout(() => {
+						void healMissedDataNow?.("engine-skip");
+					}, 5000);
+				},
 			});
-			catchUpPillShowing = progress !== undefined;
-			void toUI("updateLocal", [{ mpCatchUp: progress }]);
-		},
-		onReadyChange: (ready) => {
-			pushReadyToUI(ready);
-		},
-		// Queued-but-unconfirmed upload count → UI, so a delta that hasn't reached
-		// the cloud is always visible in the header, never silently waiting.
-		onPendingChange: (count) => {
-			pushPendingUploads(count);
-		},
-		// The engine just abandoned a bulk change whose chunks weren't in the log -
-		// it silently skipped shared state. Persist a durable marker (so even a
-		// reload heals), then heal NOW: the last device that waited for its next
-		// launch spent an evening visibly missing a day of games. The delay lets
-		// the abandoning pass finish; the heal itself also waits for idle.
-		onResyncNeeded: () => {
-			void saveResyncNeeded(lid, true);
-			setTimeout(() => {
-				void healMissedDataNow?.("engine-skip");
-			}, 5000);
-		},
-	  });
 	engine.start();
 	setSyncEngine(engine);
 	currentCode = trimmed;
@@ -2283,18 +2283,16 @@ const doConnectSharedLeague = async ({
 		// Unlock a follower whose broadcaster went away without a clean end.
 		checkLiveBroadcastLease();
 		if (isV2) {
-			// V2's whole health story: stay on the chain's head, keep the room's
-			// checkpoint fresh (authority), and fold any waiting follower requests
-			// (authority). Each is self-throttled and single-flighted.
+			// V2's whole health story: stay on the chain's head and keep the
+			// room's checkpoint fresh (authority). Both self-throttled and
+			// single-flighted. Publishing needs no per-role work here - every
+			// device uploads its own changes as versions.
 			const engineNow = getSyncEngine();
 			if (engineNow instanceof SyncEngineV2) {
 				if (!engineNow.isCaughtUp()) {
 					void engineNow.catchUp();
 				}
 				void engineNow.maybePublishCheckpoint();
-				if (engineNow.isAuthority()) {
-					void engineNow.drainRequests();
-				}
 			}
 		} else {
 			// Notice, and fix, being silently behind the rest of the room.

@@ -162,7 +162,11 @@ export const afterAction = async (
 						records: changeset.changes.length,
 					});
 				}
-				outcome = await engine.onLocalChangeset(changeset, label, notifications);
+				outcome = await engine.onLocalChangeset(
+					changeset,
+					label,
+					notifications,
+				);
 				published = true;
 				if (trace) {
 					syncDebugLog(
@@ -205,7 +209,6 @@ export const afterAction = async (
 					// Best-effort durability; the periodic flush still catches up.
 				}
 			}
-
 		} else {
 			// No cloud target, so there is nothing to retry.
 			published = true;

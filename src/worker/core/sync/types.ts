@@ -253,18 +253,6 @@ export type V2StateDoc = {
 	checkpointChunkCount?: number;
 };
 
-// A follower's edit, waiting for the authority to fold it into the next
-// version. Small by construction (one action's changeset).
-export type V2Request = {
-	id: string;
-	authorId: string;
-	byName: string;
-	action: string;
-	// Serialized (Infinity-safe, possibly gzipped) changeset.
-	data: string;
-	at: number;
-};
-
 export interface SyncTransport {
 	readonly clientId: string;
 
@@ -365,9 +353,6 @@ export interface SyncTransport {
 		version: number,
 		chunkCount: number,
 	): Promise<string | undefined>;
-	publishV2Request?(request: V2Request): Promise<void>;
-	fetchV2Requests?(): Promise<V2Request[]>;
-	deleteV2Request?(id: string): Promise<void>;
 	deleteV2DeltasBefore?(version: number): Promise<number>;
 	fetchRoomSnapshotData?(
 		chunkCount: number,

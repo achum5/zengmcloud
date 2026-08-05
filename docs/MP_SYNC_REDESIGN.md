@@ -171,20 +171,35 @@ database. Nothing imports this module yet; it risks nothing until wired.
 
 **V2 wired — opt-in per room.** The transport speaks the chain (version
 pointer moved only by compare-and-set, self-describing immutable delta and
-checkpoint docs, kind-tagged request docs, all under the existing `control`
-rules surface, with reader-side chunk-author verification against zombie
-writers). `SyncEngineV2` presents the exact consumer surface the rest of the
-app was mapped to use, so afterAction, the busy lease, deferred notifications,
-ready-up gates, the FA board, live watching and the rest run unchanged.
-Followers' edits travel as requests the authority folds into the chain. The
-room's protocol is auto-detected on connect from the pointer doc; the "New
-sync engine (v2)" checkbox on the sync page initializes a FRESH room onto v2
-(explicit host join, no v1 history - never a conversion). V1 rooms behave
-exactly as before, byte for byte.
+checkpoint docs, all under the existing `control` rules surface, with
+reader-side chunk-author verification against zombie writers). `SyncEngineV2`
+presents the exact consumer surface the rest of the app was mapped to use, so
+afterAction, the busy lease, deferred notifications, ready-up gates, the FA
+board, live watching and the rest run unchanged. The room's protocol is
+auto-detected on connect from the pointer doc; the "New sync engine (v2)"
+checkbox on the sync page initializes a FRESH room onto v2 (explicit host
+join, no v1 history - never a conversion). V1 rooms behave exactly as before,
+byte for byte.
+
+**V2 publish model: every device writes its own versions.** There is no
+request/fold path and no dependence on the simmer being online: any device's
+change becomes version N+1 directly, committed by the CAS on the pointer.
+The pre-action guard already refuses to START a cloud-tracked action unless
+the device is connected, ready, and caught up, so a change is only ever made
+on a device that can upload it — publish happens synchronously with the
+action, and failure is loud, not silent. CAS staleness has two deliberate
+answers (`actionLabels.ts`): an ordinary edit whose base moved catches up and
+republishes (bounded retries — it is a whole-record statement of user
+intent); a timeline advance whose base moved is DISCARDED loudly and the
+device snaps back to the chain via forced checkpoint recovery, because a
+stale sim day merged late is exactly how v1 leagues forked. The user is told
+in-app when that happens.
 
 Still open for v2, in order of value: per-version UI activity rows (the
 activity page shows nothing for v2 rooms yet), retention tuning for delta
 docs, and - once v2 has soaked in real rooms - deleting the v1 machinery.
+(The old "non-simmer edits wait for the simmer to fold them" gap is gone:
+every device publishes directly.)
 
 **Stage 1.** Split the payload into `live` + `history/<season>` segments behind a
 manifest. Keep the delta log running alongside. Publishing gets cheap enough to

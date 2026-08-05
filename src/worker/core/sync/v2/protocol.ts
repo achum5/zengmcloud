@@ -20,10 +20,13 @@ import type { Changeset } from "../changeset.ts";
 // - Not version N again (idempotent duplicate, from a retry or an echo).
 // - Not a "probably fine" merge of anything. There are no merges.
 //
-// Only the sim authority publishes versions, and it publishes them with a
+// EVERY device publishes its own changes as versions, each committed with a
 // compare-and-set on the room's version pointer - two racing writers cannot
-// both win, so the chain cannot fork at the source either. Followers' edits
-// travel as requests the authority folds into its next version.
+// both win, so the chain cannot fork at the source either. No device's change
+// ever waits on another device being online. What the CAS loser does next
+// depends on what it lost (see actionLabels.ts): an ordinary edit catches up
+// and republishes; a stale timeline advance is discarded and the device
+// recovers to the chain's truth.
 //
 // Everything the v1 engine agonizes over - watermarks against timestamps,
 // batch abandonment, era-sorted replays, stale position stamps, divergence
@@ -106,7 +109,11 @@ export const catchUpPlan = (
 ):
 	| { type: "caught-up" }
 	| { type: "deltas"; versions: number[] }
-	| { type: "checkpoint-then-deltas"; checkpointVersion: number; versions: number[] } => {
+	| {
+			type: "checkpoint-then-deltas";
+			checkpointVersion: number;
+			versions: number[];
+	  } => {
 	if (appliedVersion >= room.version) {
 		return { type: "caught-up" };
 	}
@@ -118,7 +125,10 @@ export const catchUpPlan = (
 			versions: versionsToFetch(checkpoint, room.version),
 		};
 	}
-	return { type: "deltas", versions: versionsToFetch(appliedVersion, room.version) };
+	return {
+		type: "deltas",
+		versions: versionsToFetch(appliedVersion, room.version),
+	};
 };
 
 // The gameAttributes key holding this device's applied version. It lives in

@@ -63,7 +63,10 @@ const PINNED_EVENTS = new Set([
 	"v2:checkpoint-blocked-history",
 	"v2:checkpoint-blocked-integrity",
 	"v2:checkpoint-failed",
-	"v2:request-fold-failed",
+	"v2:stale-advance-discarded",
+	"v2:publish-retries-exhausted",
+	"v2:recovered-from-checkpoint",
+	"v2:recovery-no-checkpoint",
 	"v2:drain-failed",
 	"v2:apply-declined",
 ]);
@@ -96,9 +99,7 @@ export const clearSyncDebugEntries = () => {
 };
 
 const asText = (list: SyncDebugEntry[]): string =>
-	list
-		.map((e) => `${e.at} ${e.event} ${JSON.stringify(e.payload)}`)
-		.join("\n");
+	list.map((e) => `${e.at} ${e.event} ${JSON.stringify(e.payload)}`).join("\n");
 
 // The full copy-paste capture: worker state snapshot + buffered log lines.
 // Shared by the debug overlay and the sync page's Copy button, so a tester
