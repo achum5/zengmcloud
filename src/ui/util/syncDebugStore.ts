@@ -56,6 +56,16 @@ const PINNED_EVENTS = new Set([
 	"connect:duplicate-skipped",
 	"engine:batch-abandoned",
 	"engine:batch-permanently-incomplete",
+	// V2: the rare events that ARE the diagnosis when something goes wrong.
+	"v2:cas-lost",
+	"v2:delta-missing",
+	"v2:catchup-failed",
+	"v2:checkpoint-blocked-history",
+	"v2:checkpoint-blocked-integrity",
+	"v2:checkpoint-failed",
+	"v2:request-fold-failed",
+	"v2:drain-failed",
+	"v2:apply-declined",
 ]);
 
 export const pushSyncDebugEntry = (payload: Record<string, unknown>) => {
@@ -83,6 +93,30 @@ export const getSyncDebugEntries = (): SyncDebugEntry[] => entries;
 export const clearSyncDebugEntries = () => {
 	entries = [];
 	emitter.emit("change", entries);
+};
+
+const asText = (list: SyncDebugEntry[]): string =>
+	list
+		.map((e) => `${e.at} ${e.event} ${JSON.stringify(e.payload)}`)
+		.join("\n");
+
+// The full copy-paste capture: worker state snapshot + buffered log lines.
+// Shared by the debug overlay and the sync page's Copy button, so a tester
+// gets the identical, self-describing paste from either place - including
+// with the debug flag OFF, since v2 events mirror unconditionally.
+export const buildSyncLogCapture = async (
+	list: SyncDebugEntry[] = entries,
+): Promise<string> => {
+	let header = `=== SYNC LOG CAPTURE (ui v${(window as any).bbgmVersion}) ===\n`;
+	const unavailable =
+		"(worker snapshot unavailable - the app may still be running an older version; fully close the app and reopen it twice)\n";
+	try {
+		const snap = await toWorker("main", "getSyncDebugSnapshot", undefined);
+		header += typeof snap === "string" ? `${snap}\n` : unavailable;
+	} catch {
+		header += unavailable;
+	}
+	return `${header}${asText(list)}`;
 };
 
 export const subscribeSyncDebug = (

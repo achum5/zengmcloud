@@ -6,18 +6,13 @@ import {
 	subscribeSyncDebug,
 	syncDebugEnabled,
 	type SyncDebugEntry,
+	buildSyncLogCapture,
 } from "../../util/syncDebugStore.ts";
 import { showNotification } from "../../util/showNotification.ts";
-import { toWorker } from "../../util/toWorker.ts";
 
 // A fixed on-screen panel that shows the sync debug logs, for diagnosing sync
 // issues on a device with no reachable console (a phone). Only present when sync
 // debug logging is enabled; toggle it from Tools → Multiplayer.
-
-const asText = (entries: SyncDebugEntry[]): string =>
-	entries
-		.map((e) => `${e.at} ${e.event} ${JSON.stringify(e.payload)}`)
-		.join("\n");
 
 const SyncDebugOverlay = () => {
 	const [enabled, setEnabled] = useState(syncDebugEnabled());
@@ -56,21 +51,9 @@ const SyncDebugOverlay = () => {
 		: entries;
 
 	const copyAll = async () => {
-		// Lead with a self-describing state snapshot (whose device, caught up or
-		// stuck, dead listener?) so the paste is diagnosable on its own, then the
-		// log lines. Snapshot is best-effort - never block the copy on it. The UI
-		// version here vs workerVersion inside the snapshot exposes a stale
-		// worker/service-worker cache (the "fix isn't actually running" case).
-		let header = `=== SYNC LOG CAPTURE (ui v${window.bbgmVersion}) ===\n`;
-		const unavailable =
-			"(worker snapshot unavailable - the app may still be running an older version; fully close the app and reopen it twice)\n";
-		try {
-			const snap = await toWorker("main", "getSyncDebugSnapshot", undefined);
-			header += typeof snap === "string" ? `${snap}\n` : unavailable;
-		} catch {
-			header += unavailable;
-		}
-		const text = `${header}${asText(shown)}`;
+		// Snapshot + log lines via the shared builder (also behind the sync
+		// page's Copy button), honoring this overlay's filter.
+		const text = await buildSyncLogCapture(shown);
 		try {
 			await navigator.clipboard.writeText(text);
 			showNotification({ type: "success", text: "Sync logs copied." });

@@ -1169,6 +1169,9 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 	lines.push(
 		`connected=${engine !== undefined} reconnecting=${isReconnecting()} room=${currentCode ?? "—"} inChargeOfSimming=${engine?.isAuthority() ?? false} simmer=${currentHostName ?? "—"}`,
 	);
+	if (engine instanceof SyncEngineV2) {
+		lines.push(engine.getV2SnapshotLine());
+	}
 	if (engine) {
 		const d = engine.getCatchUpDiagnostics();
 		const contactAge = engine.contactAge();

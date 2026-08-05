@@ -324,6 +324,11 @@ export class SyncEngineV2 {
 		return [];
 	}
 
+	// The v2 line for the sync-page log capture: chain state at a glance.
+	getV2SnapshotLine(): string {
+		return `protocol=v2 appliedVersion=${this.appliedMirror} roomVersion=${this.roomVersion} checkpointVersion=${this.roomState?.checkpointVersion ?? "none"} roomAction=${this.roomState?.action ?? "—"}`;
+	}
+
 	// A "full resync" in v2 is just the ordinary catch-up: there is exactly one
 	// recovery path, and this is it.
 	async resyncAll(_options?: { windowEntries?: number }): Promise<{

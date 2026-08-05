@@ -37,7 +37,12 @@ export const syncDebugLog = (
 	event: string,
 	data: Record<string, unknown> = {},
 ) => {
-	if (!loggingEnabled) {
+	// V2 protocol events are ALWAYS logged and mirrored, opt-in flag or not.
+	// The flag exists because v1 catch-up produces hundreds of lines a second;
+	// v2 produces one line per version - a day of heavy play fits in the ring
+	// buffer - and always-on means a tester's copy-paste capture just works,
+	// with zero setup, on the exact session where something misbehaved.
+	if (!loggingEnabled && !event.startsWith("v2:")) {
 		return;
 	}
 	const payload = {

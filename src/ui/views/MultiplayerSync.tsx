@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 // In `common` (not with the sync code) precisely so the UI can read it: the
 // build blacklists worker imports from UI, and duplicating the number here
 // would let the admin default drift from the window actually being stamped.
@@ -6,6 +6,7 @@ import { RETENTION_DAYS } from "../../common/syncRetention.ts";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { useLocal } from "../util/local.ts";
 import { toWorker } from "../util/toWorker.ts";
+import { buildSyncLogCapture } from "../util/syncDebugStore.ts";
 import {
 	clearStoredSync,
 	getStoredSync,
@@ -121,6 +122,8 @@ const MultiplayerSync = () => {
 	const [code, setCode] = useState("");
 	const [isHost, setIsHost] = useState(false);
 	const [useV2, setUseV2] = useState(false);
+	const logCopied = useRef(false);
+	const [, setLogCopiedTick] = useState(0);
 	const [status, setStatus] = useState<Status>("disconnected");
 	const [error, setError] = useState<string | undefined>();
 	const [claimingSimAuthority, setClaimingSimAuthority] = useState(false);
@@ -799,6 +802,26 @@ const MultiplayerSync = () => {
 							onClick={() => void forceResync()}
 						>
 							{resyncing ? "Resyncing…" : "Force full resync"}
+						</button>
+
+						<button
+							className="btn btn-light-bordered btn-sm mb-3 ms-2"
+							onClick={async () => {
+								const text = await buildSyncLogCapture();
+								try {
+									await navigator.clipboard.writeText(text);
+									logCopied.current = true;
+									setLogCopiedTick((t) => t + 1);
+									setTimeout(() => {
+										logCopied.current = false;
+										setLogCopiedTick((t) => t + 1);
+									}, 2000);
+								} catch {
+									window.prompt("Copy the sync logs:", text);
+								}
+							}}
+						>
+							{logCopied.current ? "Copied!" : "Copy sync logs"}
 						</button>
 
 						{resyncResult ? (
