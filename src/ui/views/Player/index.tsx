@@ -51,6 +51,9 @@ const Player2 = ({
 	} = useLocal(["challengeNoRatings", "season", "teamInfoCache"]);
 	const showRatings = !challengeNoRatings || retired;
 
+	// Still a prospect: the draft he belongs to hasn't happened yet.
+	const undrafted = player.tid === PLAYER.UNDRAFTED;
+
 	// Every piece of a player's writeup hangs off the thing it is about: the
 	// draft recap on his draft line, the scouting report on his draft season's
 	// ratings row, each season recap on that season's row. Only hand-written
@@ -58,7 +61,7 @@ const Player2 = ({
 	// report IS his page and stays at the top.
 	const seasonNotes = splitPlayerNote(player.note, {
 		draftYear: player.draft.year,
-		undrafted: player.tid === PLAYER.UNDRAFTED,
+		undrafted,
 		seasonsWithStats: new Set(
 			player.stats.map((ps: { season: number }) => ps.season),
 		),
@@ -132,6 +135,12 @@ const Player2 = ({
 				// Only what has nowhere else to go; every writeup is on the row it is
 				// about. On a prospect that is the whole note, scouting and all.
 				displayNote={seasonNotes.leftover}
+				// A prospect's note IS his scouting report, filed under the season
+				// before his draft. That year is noise on a page about a player who
+				// hasn't played yet, and reads as if it were his draft year. The
+				// header is still parsed (it scopes the writeup's links); only the
+				// "[YYYY]" label is dropped at render.
+				hideSeasonLabels={undrafted}
 				draftRecap={seasonNotes.draftRecap}
 				noteLinksBySeason={noteLinksBySeason}
 				player={player}
