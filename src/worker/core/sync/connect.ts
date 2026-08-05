@@ -441,8 +441,13 @@ let activeBroadcast:
 // Set on a FOLLOWER while it's watching someone else's broadcast. Tracks which
 // broadcast (startedAt) we've already navigated to, and the lease expiry so a
 // crashed broadcaster unlocks us.
+// `over` flips when THIS device's playback reached the game's final play: the
+// show is finished on this screen even though the broadcaster may still be
+// parked on their live game page (their exit is what ends the broadcast doc).
+// Only the spoiler gate reads it - the follow itself stays, so the
+// broadcaster's continuing heartbeats don't re-navigate or re-freeze us.
 let followedBroadcast:
-	| { startedAt: number; gid: number; expiresAt: number }
+	| { startedAt: number; gid: number; expiresAt: number; over?: boolean }
 	| undefined;
 
 // Whether WE (as a follower) froze the header score ticker (liveGameInProgress)
@@ -465,7 +470,30 @@ const unfreezeFollower = () => {
 
 // The apply layer asks this before repainting: remote data landing while this
 // device is watching a broadcast must not spoil the game mid-playback.
-setLiveWatchGate(() => followedBroadcast !== undefined || followerFroze);
+setLiveWatchGate(
+	() =>
+		(followedBroadcast !== undefined && !followedBroadcast.over) ||
+		followerFroze,
+);
+
+// The follower's live game page declared the playback over (final play reached,
+// or the user left the page - the same two moments the local device unlocks).
+// Release the visual gate NOW instead of waiting for the broadcaster to leave
+// their screen, so the box score header and everything else deferred paints the
+// moment the game goes final here. Strict gid match: a replay of some other
+// game ending in another tab must not unlock a broadcast still playing.
+export const markFollowedBroadcastOver = (gid?: number) => {
+	if (
+		followedBroadcast === undefined ||
+		followedBroadcast.over ||
+		gid === undefined ||
+		followedBroadcast.gid !== gid
+	) {
+		return;
+	}
+	followedBroadcast.over = true;
+	followerFroze = false;
+};
 
 // The followed broadcast's game payload, kept for the liveGame view to serve on
 // ANY load of the page while the broadcast is live - the navigation that

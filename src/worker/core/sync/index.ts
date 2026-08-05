@@ -31,6 +31,7 @@ export {
 	getSimSafety,
 	getSyncRequired,
 	getSyncStatus,
+	markFollowedBroadcastOver,
 	markSyncRequired,
 	publishAutoPlayState,
 	refreshSyncUIState,

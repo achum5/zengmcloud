@@ -118,6 +118,7 @@ import {
 	beginLotteryReveal,
 	flushDeferredRefreshAfterLive,
 	listSyncRooms,
+	markFollowedBroadcastOver,
 	markSyncRequired,
 	publishAutoPlayState,
 	publishLotteryRevealState,
@@ -4842,6 +4843,11 @@ const onLiveSimOver = async (gid?: number) => {
 	local.liveSimGid = undefined;
 
 	local.liveSimRatingsStatsPopoverPlayers = undefined;
+
+	// On a follower, this same signal means the FOLLOWED broadcast's game just
+	// went final on this screen - release its spoiler gate now, not when the
+	// broadcaster eventually leaves their live game page.
+	markFollowedBroadcastOver(gid);
 
 	// The show is over: paint everything remote applies held back during the
 	// playback (final scores in the ticker, a phase flip, the status line).

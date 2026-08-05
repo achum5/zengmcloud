@@ -14,6 +14,9 @@ import SelectMultiple from "../../components/SelectMultiple/index.tsx";
 import ImageUploader from "../../components/ImageUploader.tsx";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { CopyPromptButton } from "./CopyPromptButton.tsx";
+import { PlayerPicture } from "../../components/PlayerPicture.tsx";
+import { usePlayerFace } from "../../util/playerFaces.ts";
+import { useLocal } from "../../util/local.ts";
 
 type PlayerOption = View<"createCards">["players"][number];
 
@@ -148,6 +151,11 @@ const CreateCards = ({
 
 	const player = players.find((p) => p.pid === pid);
 	const ready = pid !== undefined && season !== undefined && set !== undefined;
+
+	// The selected player's face (or photo), in the uniform of the selected
+	// season, right here for screenshotting - no trip to the player page.
+	const { lid } = useLocal(["lid"]);
+	const faceData = usePlayerFace(pid, season, lid);
 
 	const generatePrompts = async () => {
 		if (!ready) {
@@ -373,6 +381,18 @@ const CreateCards = ({
 								Random player
 							</button>
 						</div>
+						{faceData && (faceData.face || faceData.imgURL) ? (
+							<div className="col-12">
+								<div style={{ width: 120, height: 180 }}>
+									<PlayerPicture
+										face={faceData.face}
+										imgURL={faceData.imgURL}
+										colors={faceData.colors}
+										jersey={faceData.jersey}
+									/>
+								</div>
+							</div>
+						) : null}
 					</div>
 				</div>
 			</div>
