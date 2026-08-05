@@ -118,10 +118,16 @@ class V2Transport implements SyncTransport {
 		return this.room.onState(onChange);
 	}
 
+	// Same slot rule as the real transport: a version the pointer has already
+	// committed can never have its payload overwritten.
 	async publishV2Delta(
 		meta: { version: number; authorId: string; action: string; at: number },
 		serialized: string,
 	) {
+		const current = this.room.state?.version ?? 0;
+		if (current >= meta.version) {
+			throw new Error("v2-slot-taken");
+		}
 		this.room.deltas.set(meta.version, { ...meta, serialized });
 		return 1;
 	}
@@ -142,6 +148,13 @@ class V2Transport implements SyncTransport {
 		}
 		const current = this.room.state?.version ?? 0;
 		if (current !== expectedVersion) {
+			return false;
+		}
+		// Ownership check, like the real transport: never bless a payload some
+		// other publish overwrote. (Lenient when a test seeded the pointer
+		// without a payload.)
+		const delta = this.room.deltas.get(next.version);
+		if (delta && (delta.authorId !== next.authorId || delta.at !== next.at)) {
 			return false;
 		}
 		this.room.setState({
@@ -399,13 +412,13 @@ describe("SyncEngineV2", () => {
 		const authorTransport = new V2Transport("A", room);
 
 		// The room is at version 10; a checkpoint captures version 9; only the
-		// tail delta (10) still exists.
-		room.setState({
-			version: 10,
-			authorId: "A",
-			byName: "A",
-			at: 10,
-		});
+		// tail delta (10) still exists. Seed in real publish order: payloads
+		// first, pointer last (the slot rule refuses payload writes for
+		// already-committed versions).
+		await authorTransport.publishV2Delta(
+			{ version: 10, authorId: "A", action: "playMenu.day", at: 10 },
+			serializeChangeset(changesetOf(tradePut(5, 7))),
+		);
 		await authorTransport.publishV2Checkpoint(
 			9,
 			serializeChangeset({
@@ -427,10 +440,13 @@ describe("SyncEngineV2", () => {
 			}),
 		);
 		await authorTransport.commitV2Checkpoint(9, 1);
-		await authorTransport.publishV2Delta(
-			{ version: 10, authorId: "A", action: "playMenu.day", at: 10 },
-			serializeChangeset(changesetOf(tradePut(5, 7))),
-		);
+		room.setState({
+			...room.state!,
+			version: 10,
+			authorId: "A",
+			byName: "A",
+			at: 10,
+		});
 
 		// Fresh device at version 0.
 		(idb as any).league = makeLeagueDb({ players: [] });
@@ -649,6 +665,42 @@ describe("SyncEngineV2", () => {
 		delete (transport as any).publishV2Delta;
 		assert.ok(await engine.drainOutbox());
 		assert.strictEqual(room.state!.version, 1);
+		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		engine.stop();
+	});
+
+	// The field bug behind the cas-lost storm: a stale pointer read (cache
+	// lagging this device's own commit) made every entry in a burst target the
+	// version its predecessor just took. The engine must trust its own mirror
+	// over a lagging read and walk the burst 1, 2, 3 with no conflicts.
+	test("a burst of edits publishes sequential versions even when the pointer read is stale", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 2 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+		const transport = new V2Transport("A", room);
+		// The stale read: always report the room where it was at connect.
+		const frozenState = { ...room.state! };
+		transport.fetchRoomV2State = async () => frozenState;
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		await engine.claimAuthority();
+
+		for (let i = 1; i <= 3; i++) {
+			const outcome = await engine.onLocalChangeset(
+				changesetOf(tradePut(1, i)),
+				"main.updatePlayingTime",
+			);
+			assert.strictEqual(outcome, "confirmed", `edit ${i} confirmed`);
+			assert.strictEqual(
+				room.state!.version,
+				i,
+				`edit ${i} became version ${i}`,
+			);
+		}
+		assert.strictEqual(await readAppliedVersion(), 3);
 		assert.strictEqual(await engine.pendingUploadCount(), 0);
 		engine.stop();
 	});

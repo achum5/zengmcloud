@@ -106,6 +106,7 @@ const MultiplayerSync = () => {
 		mpSyncActive,
 		mpSyncIsHost,
 		mpSyncHostName,
+		mpSyncProtocol,
 		mpSyncReady,
 		mpSyncReconnecting,
 		mpSyncUpload,
@@ -114,6 +115,7 @@ const MultiplayerSync = () => {
 		"mpSyncActive",
 		"mpSyncIsHost",
 		"mpSyncHostName",
+		"mpSyncProtocol",
 		"mpSyncReady",
 		"mpSyncReconnecting",
 		"mpSyncUpload",
@@ -525,7 +527,10 @@ const MultiplayerSync = () => {
 					id="sync-v2"
 					type="checkbox"
 					className="form-check-input"
-					checked={useV2}
+					// While connected, show the ROOM's actual protocol - the box is a
+					// room-creation option, and echoing the stale local toggle here made
+					// people think their v2 room wasn't on v2.
+					checked={connected ? mpSyncProtocol === "v2" : useV2}
 					disabled={connected || status === "connecting" || !isHost}
 					onChange={(event) => setUseV2(event.target.checked)}
 				/>

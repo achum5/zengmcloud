@@ -364,7 +364,7 @@ const applyIdentityPut = async (
 // looked up in the cache first, then on disk (retired players and prospects
 // can be watched but may not be cached). If this device never watched the
 // player, the incoming flag is dropped entirely.
-const preserveLocalWatch = async (incoming: any) => {
+export const preserveLocalWatch = async (incoming: any) => {
 	try {
 		let localPlayer = await idb.cache.players.get(incoming.pid);
 		if (localPlayer === undefined && idb.league) {
@@ -423,7 +423,7 @@ export const DEVICE_LOCAL_STORES = new Set<Store>([
 	"savedTradingBlock",
 ]);
 
-const isDeviceLocal = (store: Store, id: number | string) =>
+export const isDeviceLocal = (store: Store, id: number | string) =>
 	DEVICE_LOCAL_STORES.has(store) ||
 	(store === "gameAttributes" && DEVICE_LOCAL_GAME_ATTRIBUTES.has(String(id)));
 
@@ -606,6 +606,272 @@ export const guardDayContiguity = async (
 	throw new Error(
 		`Refusing to apply day ${minDay}: day ${days.join(", ")} of this season has not arrived on this device yet. Applying out of order would fork the league; it will self-repair from the room's checkpoint instead.`,
 	);
+};
+
+// Everything a RECEIVING device must refresh after remote records landed, so
+// it behaves like the device that ran the action: season-scoped cache refill,
+// the in-memory `g` mirror, derived worker caches, phase text + Play menu +
+// phase redirect, the status line, the score ticker, and the UI's
+// realtimeUpdate. Shared by both sync engines - v1 calls it at the end of
+// applyChangeset, v2 after each applied version and after a checkpoint
+// restore. Every step is individually caught: one failing refresh must never
+// skip the others (a throw in updatePhase once left headers frozen on the old
+// phase).
+export const refreshAfterApply = async ({
+	touchedSeason,
+	touchedGameAttributes,
+	touchedGames,
+	touchedPhase,
+	touchedStatus,
+	touchedStores,
+	refreshUI,
+	sweepGames,
+	redirect,
+}: {
+	touchedSeason: boolean;
+	touchedGameAttributes: boolean;
+	touchedGames: boolean;
+	touchedPhase: boolean;
+	touchedStatus: boolean;
+	touchedStores: Set<Store>;
+	refreshUI: boolean;
+	// v1 only: heal phantom/stranded schedule rows left by per-record applies.
+	sweepGames: boolean;
+	// Navigate to the new phase's landing page on a phase flip. Off for
+	// checkpoint restores, where yanking the user to a phase page would be a
+	// surprise rather than a continuation.
+	redirect: boolean;
+}): Promise<void> => {
+	// A synced season rollover: persist what was just applied, then re-fill the
+	// cache, exactly like finalize() does on the simmer for PRESEASON. The cache
+	// scopes several stores to the current season (games, teamStats,
+	// playoffSeries, allStars, headToHeads); without this a follower's cache
+	// keeps last season's rows in "current season" queries forever.
+	if (touchedSeason) {
+		// If this fails, the cache keeps serving the OLD season's scoped rows while
+		// g is about to say the new season - every view (moods, standings, rosters)
+		// then computes against missing data until something else happens to
+		// re-fill. Worth one immediate retry (the usual cause is a transient flush
+		// collision); a second failure is loud because there is no silent recovery.
+		try {
+			await idb.cache.flush();
+			await idb.cache.fill();
+		} catch (error) {
+			console.error("Failed to re-fill cache after synced rollover", error);
+			try {
+				await idb.cache.flush();
+				await idb.cache.fill();
+			} catch (error2) {
+				console.error(
+					"RETRY FAILED: cache is stale after a synced season rollover - the app may show wrong data until this league is closed and reopened",
+					error2,
+				);
+			}
+		}
+	}
+
+	// The cache store now holds the new gameAttributes rows, but the in-memory
+	// `g` object (and the UI's copy) is stale until we reload it from the cache.
+	if (touchedGameAttributes) {
+		try {
+			await loadGameAttributes();
+		} catch (error) {
+			console.error("Failed to reload gameAttributes after sync", error);
+		}
+	}
+
+	// Invalidate worker-local derived caches exactly like the simmer does. The
+	// simmer invalidates these inside its own sim/phase code, which a receiver
+	// never runs - leaving stale means wrong leaders/mood/value math until this
+	// device happens to sim.
+	if (touchedGames || touchedStores.has("players")) {
+		local.seasonLeaders = undefined;
+		local.minFractionDiffs = undefined;
+	}
+	if (touchedSeason) {
+		local.playerOvrMeanStdStale = true;
+		local.seasonLeaders = undefined;
+		local.minFractionDiffs = undefined;
+	}
+
+	// A phase change is more than a data change: the phase text, the Play menu
+	// options, and phase-routed views all need refreshing - and the device should
+	// navigate to the new phase's page. finalize() does all of this for the device
+	// that ran the phase change; a receiving device must do the SAME, or it writes
+	// the new phase to data but keeps showing the old phase's page (e.g. stuck on
+	// Draft Lottery after the simmer advanced to the Draft).
+	const updateEvents: UpdateEvents = [...APPLY_UPDATE_EVENTS];
+	// Store-keyed refresh events the blanket set doesn't cover, so followers on
+	// those views live-update like the author's device.
+	if (touchedStores.has("draftLotteryResults")) {
+		updateEvents.push("draftLottery");
+	}
+	if (touchedStores.has("teams")) {
+		updateEvents.push("retiredJerseys");
+	}
+	if (touchedStores.has("allStars")) {
+		updateEvents.push("allStarDunk", "allStarThree");
+	}
+	if (touchedStores.has("scheduledEvents")) {
+		updateEvents.push("scheduledEvents");
+	}
+	let redirectUrl: string | undefined;
+	if (touchedPhase) {
+		updateEvents.push("newPhase");
+
+		try {
+			await updatePhase();
+		} catch (error) {
+			console.error("Failed to refresh phase text after sync", error);
+		}
+		try {
+			await updatePlayMenu();
+		} catch (error) {
+			console.error("Failed to refresh play menu after sync", error);
+		}
+
+		// Reset the same worker-local flags the simmer's phase functions reset, so
+		// a follower's later behavior (live-sim stop points, fantasy draft results
+		// panel) doesn't run on state from a previous season's phases.
+		try {
+			const phase = g.get("phase") as Phase;
+			if (phase === PHASE.PLAYOFFS) {
+				local.playingUntilEndOfRound = false;
+			}
+			if (phase === PHASE.FANTASY_DRAFT || phase === PHASE.EXPANSION_DRAFT) {
+				local.fantasyDraftResults = [];
+			}
+		} catch (error) {
+			console.error("Failed to reset local phase flags after sync", error);
+		}
+
+		// Redirect to the new phase's landing page, honoring the user's
+		// phaseChangeRedirects setting (same gate finalize uses). This is what makes
+		// a follower actually "flip" to the new phase instead of sitting on the
+		// previous phase's page.
+		if (redirect) {
+			try {
+				const phase = g.get("phase") as Phase;
+				const globalSettings = await getGlobalSettings();
+				const components = phaseRedirectComponents(
+					phase,
+					globalSettings.phaseChangeRedirects,
+				);
+				if (components) {
+					redirectUrl = helpers.leagueUrl(components);
+				}
+			} catch (error) {
+				console.error("Failed to compute phase redirect after sync", error);
+			}
+		}
+	}
+
+	// Refresh the status line ("X days left in free agency", draft progress) on a
+	// receiving device. A phase change also moves the status (e.g. into/out of
+	// free agency), so recompute in either case. updateStatus() with no argument
+	// derives the right text from the just-updated g.
+	if (touchedStatus || touchedPhase) {
+		try {
+			await updateStatus();
+		} catch (error) {
+			console.error("Failed to refresh status after sync", error);
+		}
+	}
+
+	// A game/schedule change just landed: enforce the played-game invariant (no
+	// schedule row may outlive its game) so any phantom left by an earlier
+	// partial apply heals as soon as the next sync touches games. v1 only - a v2
+	// apply is atomic, so it cannot manufacture phantoms or strand days.
+	if (touchedGames && sweepGames) {
+		try {
+			await sweepPhantomScheduleRows();
+		} catch (error) {
+			console.error("Phantom schedule sweep failed", error);
+		}
+
+		// And the invariant the phantom sweep can't see: an unplayed row on a day
+		// the league has already played past means a whole day's changeset never
+		// reached this device. Only flag it here - recovery re-reads the entire
+		// shared log, which is far too heavy to run from inside an apply. The
+		// marker is durable, so the next connect does it.
+		try {
+			const stranded = await findStrandedScheduleRows();
+			if (stranded.gids.length > 0) {
+				console.error(
+					`[sync] Missing day ${stranded.days.join(", ")} of the current season (league is on day ${stranded.maxPlayedDay}). Will re-read the shared log on the next connect.`,
+				);
+				getSyncEngine()?.markResyncNeeded();
+			}
+		} catch (error) {
+			console.error("Stranded schedule check failed", error);
+		}
+	}
+
+	// The LeagueTopBar score ticker is fed by a separate UI-state channel, not by
+	// the cache/realtimeUpdate path. When a synced sim adds games, rebuild it from
+	// the (now-updated) cache so the ticker reflects the new results.
+	if (touchedGames) {
+		try {
+			await initUILocalGames();
+		} catch (error) {
+			console.error("Failed to refresh LeagueTopBar after sync", error);
+		}
+	}
+
+	if (refreshUI) {
+		try {
+			// Passing the URL makes the UI navigate (like finalize's redirect);
+			// without it, realtimeUpdate just refreshes the current page in place.
+			if (redirectUrl !== undefined) {
+				await toUI("realtimeUpdate", [updateEvents, redirectUrl]);
+			} else {
+				await toUI("realtimeUpdate", [updateEvents]);
+			}
+		} catch (error) {
+			console.error("Failed to push UI refresh after sync", error);
+		}
+	}
+};
+
+// A remote-apply summary computed from a changeset's records: which refreshes
+// the receiving device owes. Same classification applyChangeset derives while
+// it applies, for callers (v2) that apply records elsewhere.
+export const summarizeChangesetForRefresh = (
+	changeset: Changeset,
+): {
+	touchedSeason: boolean;
+	touchedGameAttributes: boolean;
+	touchedGames: boolean;
+	touchedPhase: boolean;
+	touchedStatus: boolean;
+	touchedStores: Set<Store>;
+} => {
+	const summary = {
+		touchedSeason: false,
+		touchedGameAttributes: false,
+		touchedGames: false,
+		touchedPhase: false,
+		touchedStatus: false,
+		touchedStores: new Set<Store>(),
+	};
+	for (const change of changeset.changes) {
+		summary.touchedStores.add(change.store);
+		if (change.store === "gameAttributes") {
+			summary.touchedGameAttributes = true;
+			if (change.id === "phase" || change.id === "nextPhase") {
+				summary.touchedPhase = true;
+			}
+			if (change.id === "season") {
+				summary.touchedSeason = true;
+			}
+			if (change.id === "daysLeft") {
+				summary.touchedStatus = true;
+			}
+		} else if (change.store === "games" || change.store === "schedule") {
+			summary.touchedGames = true;
+		}
+	}
+	return summary;
 };
 
 // cache flush. Recording is suppressed so we don't re-broadcast what we just
@@ -922,188 +1188,19 @@ export const applyChangeset = async (
 		changeTracker.endApply();
 	}
 
-	// A synced season rollover: persist what was just applied, then re-fill the
-	// cache, exactly like finalize() does on the simmer for PRESEASON. The cache
-	// scopes several stores to the current season (games, teamStats,
-	// playoffSeries, allStars, headToHeads); without this a follower's cache
-	// keeps last season's rows in "current season" queries forever.
-	if (touchedSeason) {
-		// If this fails, the cache keeps serving the OLD season's scoped rows while
-		// g is about to say the new season - every view (moods, standings, rosters)
-		// then computes against missing data until something else happens to
-		// re-fill. Worth one immediate retry (the usual cause is a transient flush
-		// collision); a second failure is loud because there is no silent recovery.
-		try {
-			await idb.cache.flush();
-			await idb.cache.fill();
-		} catch (error) {
-			console.error("Failed to re-fill cache after synced rollover", error);
-			try {
-				await idb.cache.flush();
-				await idb.cache.fill();
-			} catch (error2) {
-				console.error(
-					"RETRY FAILED: cache is stale after a synced season rollover - the app may show wrong data until this league is closed and reopened",
-					error2,
-				);
-			}
-		}
-	}
-
-	// The cache store now holds the new gameAttributes rows, but the in-memory
-	// `g` object (and the UI's copy) is stale until we reload it from the cache.
-	if (touchedGameAttributes) {
-		await loadGameAttributes();
-	}
-
-	// Invalidate worker-local derived caches exactly like the simmer does. The
-	// simmer invalidates these inside its own sim/phase code, which a receiver
-	// never runs - leaving stale means wrong leaders/mood/value math until this
-	// device happens to sim.
-	if (touchedGames || touchedStores.has("players")) {
-		local.seasonLeaders = undefined;
-		local.minFractionDiffs = undefined;
-	}
-	if (touchedSeason) {
-		local.playerOvrMeanStdStale = true;
-		local.seasonLeaders = undefined;
-		local.minFractionDiffs = undefined;
-	}
-
-	// A phase change is more than a data change: the phase text, the Play menu
-	// options, and phase-routed views all need refreshing - and the device should
-	// navigate to the new phase's page. finalize() does all of this for the device
-	// that ran the phase change; a receiving device must do the SAME, or it writes
-	// the new phase to data but keeps showing the old phase's page (e.g. stuck on
-	// Draft Lottery after the simmer advanced to the Draft).
-	//
-	// Each refresh runs in its own try/catch so one failing (e.g. updatePlayMenu
-	// reading half-synced data) can't skip the others - previously they shared a
-	// catch, so a throw in updatePhase left the header frozen on the old phase.
-	const updateEvents: UpdateEvents = [...APPLY_UPDATE_EVENTS];
-	// Store-keyed refresh events the blanket set doesn't cover, so followers on
-	// those views live-update like the author's device.
-	if (touchedStores.has("draftLotteryResults")) {
-		updateEvents.push("draftLottery");
-	}
-	if (touchedStores.has("teams")) {
-		updateEvents.push("retiredJerseys");
-	}
-	if (touchedStores.has("allStars")) {
-		updateEvents.push("allStarDunk", "allStarThree");
-	}
-	if (touchedStores.has("scheduledEvents")) {
-		updateEvents.push("scheduledEvents");
-	}
-	let redirectUrl: string | undefined;
-	if (touchedPhase) {
-		updateEvents.push("newPhase");
-
-		try {
-			await updatePhase();
-		} catch (error) {
-			console.error("Failed to refresh phase text after sync", error);
-		}
-		try {
-			await updatePlayMenu();
-		} catch (error) {
-			console.error("Failed to refresh play menu after sync", error);
-		}
-
-		// Reset the same worker-local flags the simmer's phase functions reset, so
-		// a follower's later behavior (live-sim stop points, fantasy draft results
-		// panel) doesn't run on state from a previous season's phases.
-		try {
-			const phase = g.get("phase") as Phase;
-			if (phase === PHASE.PLAYOFFS) {
-				local.playingUntilEndOfRound = false;
-			}
-			if (phase === PHASE.FANTASY_DRAFT || phase === PHASE.EXPANSION_DRAFT) {
-				local.fantasyDraftResults = [];
-			}
-		} catch (error) {
-			console.error("Failed to reset local phase flags after sync", error);
-		}
-
-		// Redirect to the new phase's landing page, honoring the user's
-		// phaseChangeRedirects setting (same gate finalize uses). This is what makes
-		// a follower actually "flip" to the new phase instead of sitting on the
-		// previous phase's page.
-		try {
-			const phase = g.get("phase") as Phase;
-			const globalSettings = await getGlobalSettings();
-			const components = phaseRedirectComponents(
-				phase,
-				globalSettings.phaseChangeRedirects,
-			);
-			if (components) {
-				redirectUrl = helpers.leagueUrl(components);
-			}
-		} catch (error) {
-			console.error("Failed to compute phase redirect after sync", error);
-		}
-	}
-
-	// Refresh the status line ("X days left in free agency", draft progress) on a
-	// receiving device. A phase change also moves the status (e.g. into/out of
-	// free agency), so recompute in either case. updateStatus() with no argument
-	// derives the right text from the just-updated g.
-	if (touchedStatus || touchedPhase) {
-		try {
-			await updateStatus();
-		} catch (error) {
-			console.error("Failed to refresh status after sync", error);
-		}
-	}
-
-	// A game/schedule change just landed: enforce the played-game invariant (no
-	// schedule row may outlive its game) so any phantom left by an earlier
-	// partial apply heals as soon as the next sync touches games.
-	if (touchedGames) {
-		try {
-			await sweepPhantomScheduleRows();
-		} catch (error) {
-			console.error("Phantom schedule sweep failed", error);
-		}
-
-		// And the invariant the phantom sweep can't see: an unplayed row on a day
-		// the league has already played past means a whole day's changeset never
-		// reached this device. Only flag it here - recovery re-reads the entire
-		// shared log, which is far too heavy to run from inside an apply. The
-		// marker is durable, so the next connect does it.
-		try {
-			const stranded = await findStrandedScheduleRows();
-			if (stranded.gids.length > 0) {
-				console.error(
-					`[sync] Missing day ${stranded.days.join(", ")} of the current season (league is on day ${stranded.maxPlayedDay}). Will re-read the shared log on the next connect.`,
-				);
-				getSyncEngine()?.markResyncNeeded();
-			}
-		} catch (error) {
-			console.error("Stranded schedule check failed", error);
-		}
-	}
-
-	// The LeagueTopBar score ticker is fed by a separate UI-state channel, not by
-	// the cache/realtimeUpdate path. When a synced sim adds games, rebuild it from
-	// the (now-updated) cache so the ticker reflects the new results.
-	if (touchedGames) {
-		try {
-			await initUILocalGames();
-		} catch (error) {
-			console.error("Failed to refresh LeagueTopBar after sync", error);
-		}
-	}
-
-	if (refreshUI) {
-		// Passing the URL makes the UI navigate (like finalize's redirect); without
-		// it, realtimeUpdate just refreshes the current page in place.
-		if (redirectUrl !== undefined) {
-			await toUI("realtimeUpdate", [updateEvents, redirectUrl]);
-		} else {
-			await toUI("realtimeUpdate", [updateEvents]);
-		}
-	}
+	await refreshAfterApply({
+		touchedSeason,
+		touchedGameAttributes,
+		touchedGames,
+		touchedPhase,
+		touchedStatus,
+		touchedStores,
+		refreshUI,
+		// v1 applies are per-record and can leave phantom/stranded schedule rows;
+		// the sweep is their healer. v2 applies are atomic, so it never runs there.
+		sweepGames: true,
+		redirect: true,
+	});
 
 	// Declined at least one stale write, which means something reached this
 	// device out of order. The records that were declined are still wrong

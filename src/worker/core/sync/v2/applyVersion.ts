@@ -12,6 +12,7 @@ import {
 	type ApplyDecision,
 	type VersionedChangeset,
 } from "./protocol.ts";
+import { isDeviceLocal, preserveLocalWatch } from "../changeset.ts";
 
 // ---------------------------------------------------------------------------
 // The v2 apply: where the version chain touches disk.
@@ -44,9 +45,11 @@ export const readAppliedVersion = async (): Promise<number> => {
 // Suppressed so the patch is never re-captured as a local change. The cache
 // is a mirror here, not a participant: if the process dies before this runs,
 // the next launch fills the cache from the DB and sees the applied state.
-const patchCache = async (vcs: VersionedChangeset): Promise<void> => {
+const patchCache = async (
+	changes: VersionedChangeset["changeset"]["changes"],
+): Promise<void> => {
 	await changeTracker.runSuppressed(async () => {
-		for (const change of vcs.changeset.changes) {
+		for (const change of changes) {
 			const store = (idb.cache as any)[change.store];
 			if (!store) {
 				continue;
@@ -87,10 +90,25 @@ export const applyVersionedChangeset = async (
 		return decision.type;
 	}
 
+	// Same per-record protections the v1 apply gives (see applyChangeset):
+	// never let a peer's device-local state (their controlled team, their
+	// in-progress trades) overwrite ours, and never let a peer's player record
+	// carry THEIR watch-list flag onto this device. Both resolved BEFORE the
+	// transaction opens - an IndexedDB transaction dies if it idles across an
+	// await.
+	const changes = vcs.changeset.changes.filter(
+		(change) => !isDeviceLocal(change.store, change.id),
+	);
+	for (const change of changes) {
+		if (change.store === "players" && change.type === "put" && change.value) {
+			await preserveLocalWatch(change.value);
+		}
+	}
+
 	// Every store this delta touches, plus gameAttributes for the marker.
 	const stores = [
 		...new Set([
-			...vcs.changeset.changes.map((change) => String(change.store)),
+			...changes.map((change) => String(change.store)),
 			"gameAttributes",
 		]),
 	];
@@ -98,7 +116,7 @@ export const applyVersionedChangeset = async (
 	// THE transaction. Operations are issued synchronously so it stays active;
 	// it commits everything or - killed partway - nothing, marker included.
 	const transaction = (idb.league as any).transaction(stores, "readwrite");
-	for (const change of vcs.changeset.changes) {
+	for (const change of changes) {
 		const objectStore = transaction.objectStore(String(change.store));
 		if (change.type === "delete") {
 			objectStore.delete(change.id);
@@ -115,7 +133,7 @@ export const applyVersionedChangeset = async (
 	// Disk is truth now; make memory agree. Failure here is cosmetic (a reload
 	// refills from the DB), so it must never make the apply look failed.
 	try {
-		await patchCache(vcs);
+		await patchCache(changes);
 	} catch (error) {
 		syncDebugLog("v2:cache-patch-failed", { version: vcs.version, error });
 	}

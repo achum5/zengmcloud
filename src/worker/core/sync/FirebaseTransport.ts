@@ -1203,10 +1203,20 @@ export class FirebaseTransport implements SyncTransport {
 	// version in the doc id and are never rewritten: publishing is always
 	// content first, pointer last, onto ids nobody else will ever write.
 
+	// Server-first, ALWAYS. The pointer is the protocol: a cached read here made
+	// a device target an already-committed version 0.3s after its OWN commit
+	// (getDoc served the listener's not-yet-updated view), producing CAS-loss
+	// storms - and with a dead listener the cache never advances at all, so a
+	// cached read can't even detect being behind. Cache is the offline fallback
+	// only, where a stale answer and no answer are equally harmless.
 	async fetchRoomV2State(): Promise<V2StateDoc | undefined> {
-		const snap = await getDoc(
-			doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID),
-		);
+		const ref = doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID);
+		let snap;
+		try {
+			snap = await getDocFromServer(ref);
+		} catch {
+			snap = await getDoc(ref);
+		}
 		this.markContact();
 		return this.parseV2State(snap.data());
 	}
@@ -1232,20 +1242,41 @@ export class FirebaseTransport implements SyncTransport {
 		};
 	}
 
-	subscribeRoomV2State(onChange: (state: V2StateDoc) => void): () => void {
+	subscribeRoomV2State(
+		onChange: (state: V2StateDoc) => void,
+		onError?: (error: unknown) => void,
+	): () => void {
 		return onSnapshot(
 			doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID),
 			(snap) => {
 				const state = this.parseV2State(snap.data());
 				if (state) {
+					this.markContact();
 					onChange(state);
 				}
+			},
+			// Without this, a terminated listener (permissions blip, stream error)
+			// died SILENTLY and the device dropped to timer-paced catch-up - which
+			// looked like "picks take 30 seconds to arrive".
+			(error) => {
+				syncDebugLog("v2:state-listener-error", { error: String(error) });
+				onError?.(error);
 			},
 		);
 	}
 
 	// Write version N's payload chunks. Chunk 0 carries the chunkCount, so the
 	// payload is self-describing - a reader needs nothing but the version.
+	//
+	// Runs as ONE transaction that also READS the version pointer: if the slot
+	// is already committed (pointer >= N), the write aborts with "v2-slot-taken"
+	// instead of overwriting a version's payload after the room accepted it.
+	// Without this, a device publishing from a stale pointer read could replace
+	// an already-committed version's content with a DIFFERENT changeset - the
+	// committed chain would then replay the wrong records onto every device.
+	// Reading the pointer in the transaction also makes the write serializable
+	// against commits: a commit landing mid-write forces a re-run, which then
+	// sees the taken slot and aborts.
 	async publishV2Delta(
 		meta: { version: number; authorId: string; action: string; at: number },
 		serialized: string,
@@ -1257,28 +1288,40 @@ export class FirebaseTransport implements SyncTransport {
 		if (chunks.length === 0) {
 			chunks.push("");
 		}
-		for (let i = 0; i < chunks.length; i++) {
-			await setDoc(
-				doc(
-					this.db,
-					"leagues",
-					this.code,
-					"control",
-					v2DeltaDocId(meta.version, i),
-				),
-				{
-					holderId: this.clientId,
-					version: meta.version,
-					index: i,
-					chunkCount: chunks.length,
-					data: chunks[i],
-					authorId: meta.authorId,
-					action: meta.action,
-					at: meta.at,
-					updatedAt: serverTimestamp(),
-				},
+		await runTransaction(this.db, async (tx) => {
+			const stateSnap = await tx.get(
+				doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID),
 			);
-		}
+			const currentVersion = stateSnap.data()?.version;
+			if (
+				typeof currentVersion === "number" &&
+				currentVersion >= meta.version
+			) {
+				throw new Error("v2-slot-taken");
+			}
+			for (let i = 0; i < chunks.length; i++) {
+				tx.set(
+					doc(
+						this.db,
+						"leagues",
+						this.code,
+						"control",
+						v2DeltaDocId(meta.version, i),
+					),
+					{
+						holderId: this.clientId,
+						version: meta.version,
+						index: i,
+						chunkCount: chunks.length,
+						data: chunks[i],
+						authorId: meta.authorId,
+						action: meta.action,
+						at: meta.at,
+						updatedAt: serverTimestamp(),
+					},
+				);
+			}
+		});
 		this.markContact();
 		return chunks.length;
 	}
@@ -1286,6 +1329,14 @@ export class FirebaseTransport implements SyncTransport {
 	// THE compare-and-set. True: the pointer moved expectedVersion -> next.
 	// False: someone else moved it first; the caller catches up and never
 	// overwrites. Checkpoint fields are preserved untouched.
+	//
+	// Beyond the pointer CAS, the transaction verifies the payload it is about
+	// to commit is OURS: two devices racing for the same slot both write chunks
+	// before either commits, and the loser's chunks can land on top of the
+	// winner's. Committing then would put one device's action label on another
+	// device's records. Reading chunk 0 in the same transaction (matched by
+	// authorId + the publish's `at` stamp) means a commit can only succeed over
+	// the exact payload this device just wrote.
 	async commitV2Version(
 		next: {
 			version: number;
@@ -1304,6 +1355,23 @@ export class FirebaseTransport implements SyncTransport {
 				const currentVersion =
 					current && typeof current.version === "number" ? current.version : 0;
 				if (currentVersion !== expectedVersion) {
+					throw new Error("cas-conflict");
+				}
+				const chunk0 = await tx.get(
+					doc(
+						this.db,
+						"leagues",
+						this.code,
+						"control",
+						v2DeltaDocId(next.version, 0),
+					),
+				);
+				const chunkData = chunk0.data();
+				if (
+					!chunkData ||
+					chunkData.authorId !== next.authorId ||
+					chunkData.at !== next.at
+				) {
 					throw new Error("cas-conflict");
 				}
 				tx.set(ref, {

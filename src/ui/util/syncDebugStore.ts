@@ -67,6 +67,10 @@ const PINNED_EVENTS = new Set([
 	"v2:publish-retries-exhausted",
 	"v2:recovered-from-checkpoint",
 	"v2:recovery-no-checkpoint",
+	"v2:state-listener-error",
+	"v2:state-listener-restarted",
+	"v2:listener-missed",
+	"v2:slot-taken",
 	"v2:drain-failed",
 	"v2:apply-declined",
 ]);

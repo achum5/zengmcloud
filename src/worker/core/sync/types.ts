@@ -316,7 +316,12 @@ export interface SyncTransport {
 	// All optional: the in-memory test transport and older builds simply lack
 	// them, and a v2 room is only ever joined by code that checks.
 	fetchRoomV2State?(): Promise<V2StateDoc | undefined>;
-	subscribeRoomV2State?(onChange: (state: V2StateDoc) => void): () => void;
+	// onError (optional) fires when the underlying listener terminates, so the
+	// engine can re-establish it instead of silently dropping to timer pacing.
+	subscribeRoomV2State?(
+		onChange: (state: V2StateDoc) => void,
+		onError?: (error: unknown) => void,
+	): () => void;
 	// Write version N's delta payload chunks. Chunk docs are IMMUTABLE (their
 	// ids embed the version), and chunk 0 carries the chunkCount, so a reader
 	// never needs out-of-band metadata.

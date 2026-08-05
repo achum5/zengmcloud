@@ -367,6 +367,12 @@ const pushSyncStateFull = () => {
 	void toUI("updateLocal", [
 		{
 			mpSyncActive: engine !== undefined,
+			mpSyncProtocol:
+				engine === undefined
+					? undefined
+					: engine instanceof SyncEngineV2
+						? ("v2" as const)
+						: ("classic" as const),
 			mpSyncReconnecting: isReconnecting(),
 			mpSyncIsHost: engine?.isAuthority() ?? false,
 			mpSyncHostName: authority?.holderName,
@@ -2283,15 +2289,15 @@ const doConnectSharedLeague = async ({
 		// Unlock a follower whose broadcaster went away without a clean end.
 		checkLiveBroadcastLease();
 		if (isV2) {
-			// V2's whole health story: stay on the chain's head and keep the
-			// room's checkpoint fresh (authority). Both self-throttled and
-			// single-flighted. Publishing needs no per-role work here - every
+			// V2's whole health story: ask the server where the head is (the live
+			// listener is the fast path, but this probe is what bounds staleness
+			// when a listener dies silently - one tiny doc read per tick), and
+			// keep the room's checkpoint fresh (authority). Both self-throttled
+			// and single-flighted. Publishing needs no per-role work here - every
 			// device uploads its own changes as versions.
 			const engineNow = getSyncEngine();
 			if (engineNow instanceof SyncEngineV2) {
-				if (!engineNow.isCaughtUp()) {
-					void engineNow.catchUp();
-				}
+				void engineNow.probeHead();
 				void engineNow.maybePublishCheckpoint();
 			}
 		} else {
@@ -2432,6 +2438,7 @@ const doConnectSharedLeague = async ({
 	void toUI("updateLocal", [
 		{
 			mpSyncActive: true,
+			mpSyncProtocol: isV2 ? ("v2" as const) : ("classic" as const),
 			mpSyncReady: engine.isReady(),
 			mpSyncReconnecting: false,
 		},
@@ -2520,7 +2527,12 @@ export const teardownSharedLeague = async ({
 	syncRequired = false;
 
 	void toUI("updateLocal", [
-		{ mpSyncActive: false, mpSyncReady: false, mpSyncReconnecting: false },
+		{
+			mpSyncActive: false,
+			mpSyncProtocol: undefined,
+			mpSyncReady: false,
+			mpSyncReconnecting: false,
+		},
 	]);
 	pushAuthorityToUI(false, undefined);
 

@@ -1,5 +1,4 @@
-import { g, local, lock, logEvent, toUI } from "../../../util/index.ts";
-import { league } from "../../index.ts";
+import { g, local, lock, logEvent } from "../../../util/index.ts";
 import { idb } from "../../../db/index.ts";
 import { outbox } from "../outbox.ts";
 import {
@@ -12,7 +11,11 @@ import { buildRoomSnapshotPayload } from "../roomSnapshot.ts";
 import { repairLeagueHistory } from "../historyRepair.ts";
 import { checkLeagueIntegrity } from "../leagueIntegrity.ts";
 import { syncDebugLog } from "../debugLog.ts";
-import type { Changeset } from "../changeset.ts";
+import {
+	refreshAfterApply,
+	summarizeChangesetForRefresh,
+	type Changeset,
+} from "../changeset.ts";
 import type { SyncNotification } from "../notifications.ts";
 import type {
 	Authority,
@@ -72,6 +75,11 @@ const CHECKPOINT_EVERY_VERSIONS = 25;
 // next drain kick (immediately on the next action, every 5s from the health
 // tick while anything is queued, every 30s from the catch-up timer).
 const PUBLISH_ATTEMPT_TIMEOUT_MS = 20_000;
+
+// Catch-up reads are timed for the same reason publishes are: a read that
+// hangs (network died mid-request) would wedge the single-flight catch-up
+// chain, and every later catch-up waits behind it forever.
+const CATCHUP_READ_TIMEOUT_MS = 15_000;
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
 	new Promise((resolve, reject) => {
@@ -172,15 +180,82 @@ export class SyncEngineV2 {
 				this.onAuthorityChange?.(authority);
 			},
 		);
-		this.stateUnsubscribe = this.transport.subscribeRoomV2State?.((state) => {
-			this.roomState = state;
+		this.subscribeState();
+	}
+
+	// The live pointer listener, with self-healing: a listener that errors is
+	// re-established after a short pause instead of dying silently. (A silently
+	// dead listener demotes the device to timer-paced catch-up - the "every
+	// change takes 30 seconds" field bug.) probeHead() is the belt to this
+	// suspender: it detects a listener that stopped delivering WITHOUT erroring.
+	private subscribeState() {
+		this.stateUnsubscribe?.();
+		this.stateUnsubscribe = this.transport.subscribeRoomV2State?.(
+			(state) => {
+				this.roomState = state;
+				if (state.version > this.roomVersion) {
+					this.roomVersion = state.version;
+				}
+				if (state.version > this.appliedMirror) {
+					void this.catchUp();
+				}
+			},
+			() => {
+				if (this.stopped) {
+					return;
+				}
+				const timer = setTimeout(() => {
+					if (!this.stopped) {
+						syncDebugLog("v2:state-listener-restarted", {});
+						this.subscribeState();
+					}
+				}, 5000);
+				const nodeTimer = timer as unknown as { unref?: () => void };
+				if (typeof nodeTimer?.unref === "function") {
+					nodeTimer.unref();
+				}
+			},
+		);
+	}
+
+	// Ask the SERVER where the room's head is, and catch up if it is past us.
+	// Runs from the 5s health tick. This is what bounds staleness when the live
+	// listener is dead without knowing it (iOS killing the stream in the
+	// background, a quietly-terminated onSnapshot): the pointer is one tiny
+	// document, so polling it is nearly free, and it turns "stale until the 30s
+	// timer" into "stale for at most one tick".
+	async probeHead(): Promise<void> {
+		if (this.stopped || !this.transport.fetchRoomV2State) {
+			return;
+		}
+		try {
+			const state = await withTimeout(
+				this.transport.fetchRoomV2State(),
+				CATCHUP_READ_TIMEOUT_MS,
+			);
+			if (!state) {
+				return;
+			}
 			if (state.version > this.roomVersion) {
+				// The listener should have delivered this version. If it has existed
+				// for a while (age, not just a race with a fresh commit), the
+				// listener has stopped delivering - rebuild it.
+				if (Date.now() - state.at > 10_000) {
+					syncDebugLog("v2:listener-missed", {
+						listenerVersion: this.roomVersion,
+						serverVersion: state.version,
+					});
+					this.subscribeState();
+				}
 				this.roomVersion = state.version;
 			}
+			this.roomState = state;
 			if (state.version > this.appliedMirror) {
 				void this.catchUp();
 			}
-		});
+		} catch {
+			// Offline or slow; the next tick probes again.
+		}
 	}
 
 	stop() {
@@ -407,7 +482,10 @@ export class SyncEngineV2 {
 			// with no progress means something upstream is missing - report
 			// false, never loop.
 			for (let round = 0; round < 50; round++) {
-				const state = await this.transport.fetchRoomV2State();
+				const state = await withTimeout(
+					this.transport.fetchRoomV2State(),
+					CATCHUP_READ_TIMEOUT_MS,
+				);
 				if (!state) {
 					return false;
 				}
@@ -436,9 +514,12 @@ export class SyncEngineV2 {
 						});
 						this.mustRecoverFromCheckpoint = false;
 					} else {
-						const serialized = await this.transport.fetchV2Checkpoint(
-							state.checkpointVersion,
-							state.checkpointChunkCount,
+						const serialized = await withTimeout(
+							this.transport.fetchV2Checkpoint(
+								state.checkpointVersion,
+								state.checkpointChunkCount,
+							),
+							CATCHUP_READ_TIMEOUT_MS,
 						);
 						if (serialized === undefined) {
 							return false;
@@ -452,7 +533,7 @@ export class SyncEngineV2 {
 						syncDebugLog("v2:recovered-from-checkpoint", {
 							checkpointVersion: state.checkpointVersion,
 						});
-						await this.afterRemoteApply(true);
+						await this.afterRemoteApply("checkpoint");
 						continue;
 					}
 				}
@@ -470,9 +551,12 @@ export class SyncEngineV2 {
 					) {
 						return false;
 					}
-					const serialized = await this.transport.fetchV2Checkpoint(
-						plan.checkpointVersion,
-						state.checkpointChunkCount,
+					const serialized = await withTimeout(
+						this.transport.fetchV2Checkpoint(
+							plan.checkpointVersion,
+							state.checkpointChunkCount,
+						),
+						CATCHUP_READ_TIMEOUT_MS,
 					);
 					if (serialized === undefined) {
 						return false;
@@ -484,14 +568,19 @@ export class SyncEngineV2 {
 					// if the payload is not a playable league).
 					await applyCheckpointV2(payload, plan.checkpointVersion);
 					this.appliedMirror = plan.checkpointVersion;
-					await this.afterRemoteApply(true);
+					await this.afterRemoteApply("checkpoint");
 					continue;
 				}
 
 				// Deltas, in order. Any miss aborts the pass; the next pass retries.
 				let progressed = false;
 				for (const version of plan.versions) {
-					const delta = await this.transport.fetchV2Delta?.(version);
+					const delta = this.transport.fetchV2Delta
+						? await withTimeout(
+								this.transport.fetchV2Delta(version),
+								CATCHUP_READ_TIMEOUT_MS,
+							)
+						: undefined;
 					if (!delta) {
 						syncDebugLog("v2:delta-missing", { version });
 						return false;
@@ -513,9 +602,7 @@ export class SyncEngineV2 {
 					}
 					this.appliedMirror = Math.max(this.appliedMirror, version);
 					progressed = true;
-					await this.afterRemoteApply(
-						changeset.changes.some((c) => c.store === "gameAttributes"),
-					);
+					await this.afterRemoteApply(changeset);
 				}
 				if (!progressed) {
 					return false;
@@ -530,17 +617,44 @@ export class SyncEngineV2 {
 		}
 	}
 
-	// After remote state landed: refresh g if attributes moved, tell the UI.
-	// Both are mirrors of the database - failure here is cosmetic, never a
-	// reason to fail the apply that already committed.
-	private async afterRemoteApply(touchedGameAttributes: boolean) {
+	// After remote state landed: run the SAME receiver-side refresh the v1
+	// apply path runs - g reload, season cache refill, phase text, Play menu,
+	// status line, phase redirect, score ticker, realtimeUpdate. Skipping any
+	// of it leaves a follower's screen frozen on the old world even though its
+	// database moved (the original v2 field bug: the phase flipped in data but
+	// the device sat on the Draft Lottery page until a manual refresh).
+	// Failure is cosmetic, never a reason to fail the apply that committed.
+	private async afterRemoteApply(changeset: Changeset | "checkpoint") {
 		try {
-			if (touchedGameAttributes) {
-				await league.loadGameAttributes();
+			if (changeset === "checkpoint") {
+				// A full-state restore touched everything; refresh everything. No
+				// redirect - yanking someone to a phase landing page mid-recovery
+				// is a surprise, not a continuation.
+				await refreshAfterApply({
+					touchedSeason: true,
+					touchedGameAttributes: true,
+					touchedGames: true,
+					touchedPhase: true,
+					touchedStatus: true,
+					touchedStores: new Set([
+						"draftLotteryResults",
+						"teams",
+						"allStars",
+						"scheduledEvents",
+					]),
+					refreshUI: true,
+					sweepGames: false,
+					redirect: false,
+				});
+			} else {
+				await refreshAfterApply({
+					...summarizeChangesetForRefresh(changeset),
+					refreshUI: true,
+					// v2 applies are atomic - phantoms and stranded days cannot exist.
+					sweepGames: false,
+					redirect: true,
+				});
 			}
-			await toUI("realtimeUpdate", [
-				["gameAttributes", "gameSim", "newPhase", "playerMovement"],
-			]);
 		} catch {
 			// The next navigation shows the applied state regardless.
 		}
@@ -688,7 +802,11 @@ export class SyncEngineV2 {
 
 		for (let attempt = 0; attempt < 3; attempt++) {
 			// Never author on top of state we don't have: catch up first,
-			// publish second. (For a healthy device this is a no-op read.)
+			// publish second. The head is the MAX of the server read and the
+			// local mirror: a server/cache read can lag this device's own
+			// just-committed version by a beat, and trusting it alone made a
+			// burst of edits fight itself with CAS conflicts on every entry
+			// (each one targeting the version its predecessor just took).
 			const state = await withTimeout(
 				this.transport.fetchRoomV2State(),
 				this.publishTimeoutMs,
@@ -696,10 +814,11 @@ export class SyncEngineV2 {
 			if (!state) {
 				return false;
 			}
+			this.roomVersion = Math.max(this.roomVersion, state.version);
 			const applied = await readAppliedVersion();
-			if (applied < state.version) {
+			if (applied < this.roomVersion) {
 				if (isAdvance) {
-					return this.discardStaleAdvance(entry, applied, state.version);
+					return this.discardStaleAdvance(entry, applied, this.roomVersion);
 				}
 				const caught = await this.doCatchUpInline();
 				if (!caught) {
@@ -707,26 +826,43 @@ export class SyncEngineV2 {
 				}
 			}
 
-			const target =
-				(await withTimeout(
-					this.transport.fetchRoomV2State(),
-					this.publishTimeoutMs,
-				))!.version + 1;
+			const target = Math.max(this.roomVersion, applied) + 1;
 			const serialized = await compressSerialized(
 				serializeChangeset(entry.changeset),
 			);
-			await withTimeout(
-				this.transport.publishV2Delta(
-					{
-						version: target,
-						authorId: this.transport.clientId,
+			// ONE stamp for the payload and the commit: the commit transaction
+			// verifies the chunks it points at carry this exact (authorId, at),
+			// so it can never bless a payload another racer overwrote.
+			const at = Date.now();
+			try {
+				await withTimeout(
+					this.transport.publishV2Delta(
+						{
+							version: target,
+							authorId: this.transport.clientId,
+							action: entry.action,
+							at,
+						},
+						serialized,
+					),
+					this.publishTimeoutMs,
+				);
+			} catch (error) {
+				if ((error as Error)?.message === "v2-slot-taken") {
+					// Someone committed this version while we prepared - same
+					// meaning as losing the CAS, caught one step earlier.
+					syncDebugLog("v2:slot-taken", {
 						action: entry.action,
-						at: Date.now(),
-					},
-					serialized,
-				),
-				this.publishTimeoutMs,
-			);
+						target,
+						attempt,
+					});
+					if (isAdvance) {
+						return this.discardStaleAdvance(entry, applied, target);
+					}
+					continue;
+				}
+				throw error;
+			}
 
 			const won = await withTimeout(
 				this.transport.commitV2Version(
@@ -734,7 +870,7 @@ export class SyncEngineV2 {
 						version: target,
 						authorId: this.transport.clientId,
 						byName: this.localName,
-						at: Date.now(),
+						at,
 						action: entry.action,
 					},
 					target - 1,

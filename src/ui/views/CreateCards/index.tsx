@@ -111,8 +111,7 @@ const CreateCards = ({
 				(variantLabel !== ""
 					? next.variants.find((v) => v.label === variantLabel)
 					: undefined
-				)?.id ??
-					next.variants[0]!.id,
+				)?.id ?? next.variants[0]!.id,
 			);
 		}
 	}, [filteredSets, setId, variantLabel]);
