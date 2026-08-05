@@ -380,6 +380,53 @@ export class SyncEngineV2 {
 		}
 	}
 
+	// Consecutive health ticks spent with the head known to be past what's
+	// applied, plus the last figures this path pushed (so a stuck state logs
+	// once, not once per tick).
+	private stuckBehindTicks = 0;
+	private lastStuckReport = "";
+
+	// Called from the 5s health tick. The pill's other triggers - a big walk,
+	// a failing fetch - both miss the case from the field: the device KNOWS a
+	// version is coming (the listener delivered the pointer), but the apply is
+	// silently slow (an IndexedDB stall mid-transaction, a wedge no fetch
+	// timeout covers), the gap is small, and nothing fails. The screen showed
+	// nothing for 30 seconds and then a signing appeared out of nowhere. Two
+	// ticks of known-behind is the line between "ordinary live apply" (sub-
+	// second to a few seconds, stays quiet) and "the user deserves to know a
+	// change is in flight".
+	reportIfStuckBehind(): void {
+		if (this.stopped) {
+			return;
+		}
+		if (this.roomVersion <= this.appliedMirror) {
+			this.stuckBehindTicks = 0;
+			this.lastStuckReport = "";
+			// A finished walk clears its own pill; this only mops up one raised
+			// here after the gap closed with no walk in flight to clear it.
+			if (this.catchUpPillShown && !this.catchingUp) {
+				this.clearCatchUpProgress();
+			}
+			return;
+		}
+		this.stuckBehindTicks += 1;
+		if (this.stuckBehindTicks < 2) {
+			return;
+		}
+		const report = `${this.appliedMirror}/${this.roomVersion}`;
+		if (report !== this.lastStuckReport) {
+			this.lastStuckReport = report;
+			this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
+		}
+		// Belt to the listener handler's suspender: if nothing is working on
+		// the gap (the handler's kick was swallowed by a race, or the walk
+		// died without rethrowing), start one. Single-flight + backoff make a
+		// redundant kick free.
+		if (!this.catchingUp) {
+			void this.catchUp(this.roomState);
+		}
+	}
+
 	stop() {
 		this.stopped = true;
 		this.clearCatchUpProgress();

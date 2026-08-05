@@ -2441,6 +2441,12 @@ const doConnectSharedLeague = async ({
 			// device uploads its own changes as versions.
 			const engineNow = getSyncEngine();
 			if (engineNow instanceof SyncEngineV2) {
+				// First, before the probe: if the head has been known-ahead of the
+				// applied version for two ticks, say so on screen and make sure a
+				// catch-up is actually in flight. This is the only indicator for a
+				// silently slow apply (nothing failing, gap too small for the walk
+				// to report itself).
+				engineNow.reportIfStuckBehind();
 				void engineNow.probeHead();
 				void engineNow.maybePublishCheckpoint();
 			}

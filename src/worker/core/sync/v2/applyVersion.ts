@@ -79,6 +79,12 @@ export const applyVersionedChangeset = async (
 		);
 	}
 
+	// Timed so a log capture can tell a slow FETCH from a slow APPLY: the
+	// field showed a 3-record signing arriving on the listener instantly and
+	// then not painting for 30 seconds, and without this number that window
+	// is invisible.
+	const startedAt = Date.now();
+
 	const applied = await readAppliedVersion();
 	const decision = decideApply(applied, vcs.version);
 	if (decision.type !== "apply") {
@@ -138,11 +144,23 @@ export const applyVersionedChangeset = async (
 		syncDebugLog("v2:cache-patch-failed", { version: vcs.version, error });
 	}
 
+	const ms = Date.now() - startedAt;
 	syncDebugLog("v2:applied", {
 		version: vcs.version,
 		records: vcs.changeset.changes.length,
 		action: vcs.action,
+		ms,
 	});
+	// A small delta has no business taking seconds; when it does (Safari
+	// IndexedDB stalling after idle is the known culprit), make the stall
+	// visible in the capture instead of leaving a silent gap.
+	if (ms > 5000) {
+		syncDebugLog("v2:slow-apply", {
+			version: vcs.version,
+			records: vcs.changeset.changes.length,
+			ms,
+		});
+	}
 	return "apply";
 };
 

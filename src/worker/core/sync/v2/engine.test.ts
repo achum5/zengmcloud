@@ -805,6 +805,53 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// The other Safari shape from the field: the pointer arrived instantly, the
+	// gap was one version, nothing failed - and the apply silently took 30
+	// seconds (an IndexedDB stall) with NOTHING on screen. The health-tick
+	// watchdog is the only indicator for that case: two ticks of known-behind
+	// shows the pill, without needing anything to fail first.
+	test("known-behind across ticks shows the indicator even when nothing fails", () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		const progress: ({ done: number; total: number } | undefined)[] = [];
+		const engine = new SyncEngineV2(transport, {
+			onCatchUpProgress: (p) => {
+				progress.push(p);
+			},
+		});
+		// The stuck state itself: the listener delivered the pointer (head 5),
+		// the device has applied 3, and the walk is in flight but hung - so
+		// nothing errors and the walk never reports.
+		(engine as any).roomVersion = 5;
+		(engine as any).appliedMirror = 3;
+		(engine as any).catchingUp = true;
+
+		engine.reportIfStuckBehind();
+		assert.strictEqual(
+			progress.length,
+			0,
+			"one tick stays quiet - ordinary live applies finish well inside it",
+		);
+		engine.reportIfStuckBehind();
+		assert.deepStrictEqual(progress.at(-1), { done: 3, total: 5 });
+		engine.reportIfStuckBehind();
+		assert.strictEqual(
+			progress.length,
+			1,
+			"unchanged figures do not re-report every tick",
+		);
+
+		// The gap closes with no walk left to clear the pill - the watchdog
+		// mops up its own indicator.
+		(engine as any).appliedMirror = 5;
+		(engine as any).catchingUp = false;
+		engine.reportIfStuckBehind();
+		assert.strictEqual(progress.at(-1), undefined, "indicator cleared");
+		engine.stop();
+	});
+
 	// The Safari-backgrounded shape from the field: the pointer read works but
 	// the DELTA reads hang/fail, so probes keep succeeding and only catch-up
 	// fails. Those failures must (a) surface the catching-up indicator so the

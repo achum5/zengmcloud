@@ -74,6 +74,7 @@ const PINNED_EVENTS = new Set([
 	"v2:network-cycled",
 	"v2:drain-failed",
 	"v2:apply-declined",
+	"v2:slow-apply",
 ]);
 
 export const pushSyncDebugEntry = (payload: Record<string, unknown>) => {
