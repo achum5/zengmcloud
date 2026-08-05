@@ -14,6 +14,8 @@ import SelectMultiple from "../../components/SelectMultiple/index.tsx";
 import ImageUploader from "../../components/ImageUploader.tsx";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { CopyPromptButton } from "./CopyPromptButton.tsx";
+import { PasteButton } from "./PasteButton.tsx";
+import { SetDesign } from "./SetDesign.tsx";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { useLocal } from "../../util/local.ts";
@@ -28,12 +30,17 @@ const uuid = (): string =>
 const sample = <T,>(arr: T[]): T | undefined =>
 	arr.length > 0 ? arr[Math.floor(Math.random() * arr.length)] : undefined;
 
-// Every variant label in the catalogue, so "card type" can be filtered on
+// Every variant label in the catalogue, so "parallel" can be filtered on
 // before a set is chosen - the whole point of the filter is to find the sets
 // that HAVE a refractor, not to pick one after the fact.
 const ALL_VARIANT_LABELS = [
 	...new Set(CARD_SETS.flatMap((set) => set.variants.map((v) => v.label))),
 ].sort();
+
+// The set picker is a type-ahead over the whole catalogue, so the brand has to
+// be searchable even when the set's name doesn't contain it ("Flair" is Fleer).
+const setOptionLabel = (set: CardSet) =>
+	set.label.includes(set.brand) ? set.label : `${set.label} · ${set.brand}`;
 
 const CreateCards = ({
 	cards,
@@ -59,8 +66,8 @@ const CreateCards = ({
 	const [backURL, setBackURL] = useState("");
 	const [saving, setSaving] = useState(false);
 
-	// Brands available under the chosen era, and so on down the chain - a filter
-	// that offers dead options isn't a filter.
+	// Each filter offers only values that survive the OTHER filters, so no
+	// combination can ever come back empty and no dropdown offers a dead option.
 	const matchesFilters = useCallback(
 		(set: CardSet, ignore?: "era" | "brand" | "variant") =>
 			(ignore === "era" || era === "" || set.era === era) &&
@@ -69,6 +76,14 @@ const CreateCards = ({
 				variantLabel === "" ||
 				set.variants.some((v) => v.label === variantLabel)),
 		[era, brand, variantLabel],
+	);
+
+	const eras = useMemo(
+		() =>
+			CARD_ERAS.filter((e) =>
+				CARD_SETS.some((set) => set.era === e.id && matchesFilters(set, "era")),
+			),
+		[matchesFilters],
 	);
 
 	const brands = useMemo(
@@ -104,6 +119,8 @@ const CreateCards = ({
 	);
 
 	const set = cardSetsById.get(setId);
+	const variant = set?.variants.find((v) => v.id === variantId);
+	const filtered = era !== "" || brand !== "" || variantLabel !== "";
 
 	// A set that just fell out of the filters shouldn't stay selected.
 	useEffect(() => {
@@ -170,6 +187,16 @@ const CreateCards = ({
 		setPrompts(result);
 	};
 
+	const pickSet = (next: CardSet) => {
+		setSetId(next.id);
+		setVariantId(
+			(variantLabel !== ""
+				? next.variants.find((v) => v.label === variantLabel)
+				: undefined
+			)?.id ?? next.variants[0]!.id,
+		);
+	};
+
 	const randomizeCard = () => {
 		const nextSet = sample(filteredSets);
 		if (!nextSet) {
@@ -219,13 +246,59 @@ const CreateCards = ({
 		realtimeUpdate(["tradingCards"]);
 	};
 
+	const imageField = (
+		which: "front" | "back",
+		url: string,
+		setURL: (url: string) => void,
+	) => (
+		<div className="col-md-6">
+			<label className="form-label mb-1 small text-body-secondary">
+				{which === "front" ? "Front image" : "Back image"}
+			</label>
+			<div className="input-group input-group-sm mb-2">
+				<input
+					type="text"
+					className="form-control"
+					placeholder="Image URL"
+					value={url}
+					onChange={(event) => {
+						setURL(event.target.value);
+					}}
+				/>
+				<PasteButton onPaste={setURL} />
+				{url !== "" ? (
+					<button
+						type="button"
+						className="btn btn-secondary"
+						title="Clear"
+						onClick={() => {
+							setURL("");
+						}}
+					>
+						×
+					</button>
+				) : null}
+			</div>
+			{url !== "" ? (
+				<img
+					src={url}
+					alt=""
+					className="img-thumbnail mb-2 d-block"
+					style={{ maxHeight: 220 }}
+				/>
+			) : (
+				<ImageUploader onUploaded={setURL} />
+			)}
+		</div>
+	);
+
 	return (
 		<>
 			<div className="row g-3">
-				<div className="col-lg-6">
+				<div className="col-lg-7">
 					<h3 className="h5">The card</h3>
 					<div className="row g-2">
-						<div className="col-sm-6">
+						<div className="col-sm-4">
 							<label className="form-label mb-1 small text-body-secondary">
 								Era
 							</label>
@@ -237,14 +310,14 @@ const CreateCards = ({
 								}}
 							>
 								<option value="">All eras</option>
-								{CARD_ERAS.map((e) => (
+								{eras.map((e) => (
 									<option key={e.id} value={e.id}>
 										{e.label}
 									</option>
 								))}
 							</select>
 						</div>
-						<div className="col-sm-6">
+						<div className="col-sm-4">
 							<label className="form-label mb-1 small text-body-secondary">
 								Brand
 							</label>
@@ -263,9 +336,9 @@ const CreateCards = ({
 								))}
 							</select>
 						</div>
-						<div className="col-sm-6">
+						<div className="col-sm-4">
 							<label className="form-label mb-1 small text-body-secondary">
-								Card type
+								Parallel
 							</label>
 							<select
 								className="form-select form-select-sm"
@@ -274,7 +347,7 @@ const CreateCards = ({
 									setVariantLabel(event.target.value);
 								}}
 							>
-								<option value="">All card types</option>
+								<option value="">Any</option>
 								{variantLabels.map((label) => (
 									<option key={label} value={label}>
 										{label}
@@ -282,29 +355,42 @@ const CreateCards = ({
 								))}
 							</select>
 						</div>
-						<div className="col-sm-6">
+
+						<div className="col-12">
 							<label className="form-label mb-1 small text-body-secondary">
-								Set ({filteredSets.length})
+								Set ({filteredSets.length} of {CARD_SETS.length})
+								{filtered ? (
+									<button
+										type="button"
+										className="btn btn-link btn-sm p-0 ms-2 align-baseline"
+										onClick={() => {
+											setEra("");
+											setBrand("");
+											setVariantLabel("");
+										}}
+									>
+										Clear filters
+									</button>
+								) : null}
 							</label>
-							<select
-								className="form-select form-select-sm"
-								value={setId}
-								onChange={(event) => {
-									const next = cardSetsById.get(event.target.value)!;
-									setSetId(next.id);
-									setVariantId(next.variants[0]!.id);
+							<SelectMultiple<CardSet>
+								value={set ?? null}
+								options={filteredSets}
+								onChange={(next) => {
+									if (next) {
+										pickSet(next);
+									}
 								}}
-							>
-								{filteredSets.map((s) => (
-									<option key={s.id} value={s.id}>
-										{s.label}
-									</option>
-								))}
-							</select>
+								getOptionLabel={setOptionLabel}
+								getOptionValue={(s) => s.id}
+								isClearable={false}
+								placeholder="Search every set…"
+							/>
 						</div>
-						<div className="col-sm-6">
+
+						<div className="col-sm-8">
 							<label className="form-label mb-1 small text-body-secondary">
-								Card
+								Version
 							</label>
 							<select
 								className="form-select form-select-sm"
@@ -320,7 +406,7 @@ const CreateCards = ({
 								))}
 							</select>
 						</div>
-						<div className="col-sm-6 d-flex align-items-end">
+						<div className="col-sm-4 d-flex align-items-end">
 							<button
 								type="button"
 								className="btn btn-secondary btn-sm"
@@ -330,13 +416,19 @@ const CreateCards = ({
 								Random card
 							</button>
 						</div>
+
+						{set ? (
+							<div className="col-12">
+								<SetDesign set={set} variant={variant} />
+							</div>
+						) : null}
 					</div>
 				</div>
 
-				<div className="col-lg-6">
+				<div className="col-lg-5">
 					<h3 className="h5">The player</h3>
 					<div className="row g-2">
-						<div className="col-sm-6">
+						<div className="col-12">
 							<label className="form-label mb-1 small text-body-secondary">
 								Player
 							</label>
@@ -353,7 +445,7 @@ const CreateCards = ({
 								placeholder="Choose a player…"
 							/>
 						</div>
-						<div className="col-sm-3">
+						<div className="col-sm-6">
 							<label className="form-label mb-1 small text-body-secondary">
 								Season
 							</label>
@@ -372,7 +464,7 @@ const CreateCards = ({
 								))}
 							</select>
 						</div>
-						<div className="col-sm-3 d-flex align-items-end">
+						<div className="col-sm-6 d-flex align-items-end">
 							<button
 								type="button"
 								className="btn btn-secondary btn-sm"
@@ -425,50 +517,20 @@ const CreateCards = ({
 				) : null}
 			</div>
 
-			{prompts ? (
-				<div className="row g-3 mt-1">
-					<div className="col-md-6">
-						<label className="form-label mb-1 small text-body-secondary">
-							Front image
-						</label>
-						<input
-							type="text"
-							className="form-control form-control-sm mb-2"
-							placeholder="Paste image URL"
-							value={frontURL}
-							onChange={(event) => {
-								setFrontURL(event.target.value);
-							}}
-						/>
-						<ImageUploader onUploaded={setFrontURL} />
-					</div>
-					<div className="col-md-6">
-						<label className="form-label mb-1 small text-body-secondary">
-							Back image
-						</label>
-						<input
-							type="text"
-							className="form-control form-control-sm mb-2"
-							placeholder="Paste image URL"
-							value={backURL}
-							onChange={(event) => {
-								setBackURL(event.target.value);
-							}}
-						/>
-						<ImageUploader onUploaded={setBackURL} />
-					</div>
-					<div className="col-12">
-						<button
-							type="button"
-							className="btn btn-primary"
-							disabled={frontURL === "" || saving}
-							onClick={save}
-						>
-							{saving ? "Saving…" : "Save card"}
-						</button>
-					</div>
+			<div className="row g-3 mt-1">
+				{imageField("front", frontURL, setFrontURL)}
+				{imageField("back", backURL, setBackURL)}
+				<div className="col-12">
+					<button
+						type="button"
+						className="btn btn-primary"
+						disabled={!ready || frontURL === "" || saving}
+						onClick={save}
+					>
+						{saving ? "Saving…" : "Save card"}
+					</button>
 				</div>
-			) : null}
+			</div>
 
 			<h2 className="h5 mt-4">Cards ({cards.length})</h2>
 			<TradingCardGallery cards={cards} showPlayerName onDeleted={refresh} />
