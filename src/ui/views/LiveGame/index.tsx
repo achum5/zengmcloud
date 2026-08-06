@@ -2180,6 +2180,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 		useState<HTMLElement | null>(null);
 	const isStuck = useIsStuck(liveGameStickyDiv);
 
+	// The court is a SIBLING of the sticky score block, not a child of it, so
+	// both are needed to know where the game ends and the chat drawer may start.
+	const [liveCourtDiv, setLiveCourtDiv] = useState<HTMLElement | null>(null);
+
 	// Needs to return actual div, not fragment, for AutoAffix!!!
 	return (
 		<div>
@@ -2307,16 +2311,20 @@ export const LiveGame = (props: View<"liveGame">) => {
 					{boxScore.current.gid >= 0 ? (
 						<>
 							{isSport("basketball") ? (
-								<LiveCourt
-									scene={courtScene.current}
-									teams={[
-										boxScore.current.teams?.[0],
-										boxScore.current.teams?.[1],
-									]}
-									finals={!!boxScore.current.finals}
-									season={boxScore.current.season}
-									sceneMs={speedToMs(speedRef.current)}
-								/>
+								// Measured, not styled: the chat drawer stops at the bottom of
+								// this so it never covers the court.
+								<div ref={setLiveCourtDiv}>
+									<LiveCourt
+										scene={courtScene.current}
+										teams={[
+											boxScore.current.teams?.[0],
+											boxScore.current.teams?.[1],
+										]}
+										finals={!!boxScore.current.finals}
+										season={boxScore.current.season}
+										sceneMs={speedToMs(speedRef.current)}
+									/>
+								</div>
 							) : null}
 							<BoxScoreWrapper
 								Row={PlayerRow}
@@ -2369,7 +2377,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 							quarter={boxScore.current.quarterShort}
 							clock={boxScore.current.time}
 							score={chatScore}
-							boundaryEl={liveGameStickyDiv}
+							boundaryEls={[liveGameStickyDiv, liveCourtDiv]}
 						/>
 						<PlayByPlay
 							boxScore={boxScore.current}

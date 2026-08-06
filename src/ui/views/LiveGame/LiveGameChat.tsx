@@ -34,7 +34,7 @@ export const LiveGameChat = ({
 	quarter,
 	clock,
 	score,
-	boundaryEl,
+	boundaryEls = [],
 }: {
 	messages: LiveGameChatMessage[];
 	// How far THIS viewer has watched. Messages anchored past it stay hidden,
@@ -45,9 +45,10 @@ export const LiveGameChat = ({
 	quarter?: string;
 	clock?: string;
 	score?: string;
-	// The sticky block holding the score and the court. The drawer is capped to
-	// the space BELOW it, so opening the chat never hides the game.
-	boundaryEl?: HTMLElement | null;
+	// Everything the drawer must stay clear of: the sticky score block and the
+	// court, which are siblings rather than one element. The drawer starts below
+	// the LOWEST of them, so opening the chat never hides the game.
+	boundaryEls?: (HTMLElement | null)[];
 }) => {
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState("");
@@ -55,37 +56,56 @@ export const LiveGameChat = ({
 	const listRef = useRef<HTMLDivElement>(null);
 	const seenCount = useRef(0);
 
-	// How tall the whole drawer may be: everything from the bottom of the court
-	// down. Capping the DRAWER rather than the message list means the toggle,
-	// the padding and the input row are accounted for by the flex layout instead
-	// of by a guessed constant, so the list gets exactly the leftover space.
-	const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
+	// Where the drawer sits, both measured off the court:
+	//
+	// maxHeight - everything from the bottom of the court down. Capping the
+	// DRAWER rather than the message list means the toggle, the padding and the
+	// input row are accounted for by the flex layout instead of by a guessed
+	// constant, so the list gets exactly the leftover space.
+	//
+	// left - the content area's left edge. The nav sidebar is also fixed, and
+	// sits ABOVE this (z-index 1040), so a drawer spanning the full width simply
+	// hid its own toggle button behind the nav on desktop. Following the game's
+	// column keeps the drawer beside the sidebar instead of under it, and tracks
+	// the sidebar being toggled for free (that changes the column's width, which
+	// the observer below is already watching).
+	const [dock, setDock] = useState<{ maxHeight?: number; left: number }>({
+		left: 0,
+	});
+	const [scoreEl, courtEl] = boundaryEls;
+	const elements = useMemo(
+		() => [scoreEl, courtEl].filter((el) => el != null),
+		[scoreEl, courtEl],
+	);
 	useEffect(() => {
-		if (!open) {
-			return;
-		}
 		const measure = () => {
 			// visualViewport is the part actually on screen - on iOS innerHeight
 			// includes the area behind the browser chrome, which would size the
 			// drawer taller than the space it has.
 			const viewport = window.visualViewport?.height ?? window.innerHeight;
-			const bottom = boundaryEl?.getBoundingClientRect().bottom;
-			// No court to measure means no idea where it ends, so take half the
-			// screen rather than assuming the whole thing is free.
+			const rects = elements.map((el) => el.getBoundingClientRect());
+			const bottoms = rects
+				.map((rect) => rect.bottom)
+				.filter((bottom) => Number.isFinite(bottom));
+			// Nothing to measure means no idea where the game ends, so take half
+			// the screen rather than assuming the whole thing is free. Scrolled
+			// past everything, the bottoms go negative and the drawer is welcome
+			// to the lot.
 			const floor =
-				bottom === undefined || !Number.isFinite(bottom)
-					? viewport / 2
-					: Math.max(0, bottom);
-			setMaxHeight(Math.max(120, Math.floor(viewport - floor)));
+				bottoms.length === 0 ? viewport / 2 : Math.max(0, ...bottoms);
+			setDock({
+				maxHeight: Math.max(120, Math.floor(viewport - floor)),
+				left: Math.max(0, Math.floor(rects[0]?.left ?? 0)),
+			});
 		};
 		measure();
 
 		// The court sizes itself AFTER the first paint, so a one-shot measurement
-		// reads the sticky block as just the score row and hands the drawer the
-		// court's own space. Watching the element is what keeps the two honest.
+		// reads the game as just the score row and hands the drawer the court's
+		// own space. Watching the elements is what keeps them honest.
 		const observer = new ResizeObserver(measure);
-		if (boundaryEl) {
-			observer.observe(boundaryEl);
+		for (const el of elements) {
+			observer.observe(el);
 		}
 		window.addEventListener("resize", measure);
 		window.addEventListener("scroll", measure, { passive: true });
@@ -96,7 +116,7 @@ export const LiveGameChat = ({
 			window.removeEventListener("scroll", measure);
 			window.visualViewport?.removeEventListener("resize", measure);
 		};
-	}, [open, boundaryEl]);
+	}, [elements]);
 
 	// The cursor when the user STARTED typing. Anchoring to the moment they
 	// began reacting - rather than the moment they hit send - is what makes a
@@ -153,7 +173,13 @@ export const LiveGameChat = ({
 	}
 
 	return (
-		<div className="live-chat-dock" style={open ? { maxHeight } : undefined}>
+		<div
+			className="live-chat-dock"
+			style={{
+				left: dock.left,
+				maxHeight: open ? dock.maxHeight : undefined,
+			}}
+		>
 			<button
 				type="button"
 				className="btn btn-secondary btn-sm align-self-start"
