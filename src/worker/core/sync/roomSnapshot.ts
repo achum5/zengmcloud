@@ -18,6 +18,10 @@ import { checkApplyGuard } from "./applyGuard.ts";
 import { payloadLeagueId, readLocalLeagueId } from "./leagueIdentity.ts";
 import { claimSnapshotRestoreAttempt } from "./snapshotRestoreBackoff.ts";
 import {
+	claimRecoveryAttempt,
+	clearRecoveryAttempt,
+} from "./recoveryBreadcrumb.ts";
+import {
 	checkLeagueIntegrity,
 	findPayloadIntegrityProblems,
 } from "./leagueIntegrity.ts";
@@ -368,10 +372,41 @@ export const restoreFromRoomSnapshot = async (
 	if (!meta) {
 		return undefined;
 	}
-	if (
-		automatic &&
-		!claimSnapshotRestoreAttempt(`${meta.seq}:${meta.generation ?? ""}`)
-	) {
+	const snapshotKey = `${meta.seq}:${meta.generation ?? ""}`;
+	if (automatic && !claimSnapshotRestoreAttempt(snapshotKey)) {
+		return undefined;
+	}
+
+	// Everything below reads, decompresses and parses the WHOLE league, which is
+	// the biggest allocation this app makes and the one a phone can die inside.
+	// A death here takes the in-memory throttle above with it - the tab is gone -
+	// so the only thing that can break a crash/reload loop is a note on disk,
+	// written before the work and cleared after it. Force Resync brackets the
+	// work too (so a crash still leaves a trace) but is never GATED by it: a
+	// person choosing to retry is not a loop.
+	const lid = g.get("lid");
+	const op = `snapshot-restore:${snapshotKey}`;
+	if (!(await claimRecoveryAttempt(lid, op, { gated: automatic }))) {
+		console.error(
+			"[sync] Not restoring the room's snapshot automatically: the last attempt on this device didn't finish (it likely ran out of memory). Use Force Resync on the Multiplayer Sync page to try it deliberately.",
+		);
+		return undefined;
+	}
+	try {
+		return await restoreFromRoomSnapshotInner(engine, meta);
+	} finally {
+		// Reached on success, refusal AND throw - all of which mean the device
+		// survived. Only a crash leaves the note behind.
+		await clearRecoveryAttempt(lid);
+	}
+};
+
+const restoreFromRoomSnapshotInner = async (
+	engine: SnapshotEngine,
+	meta: RoomSnapshotMeta,
+): Promise<RoomSnapshotMeta | undefined> => {
+	const transport = engine.transport;
+	if (!transport.fetchRoomSnapshotData) {
 		return undefined;
 	}
 	const serialized = await transport.fetchRoomSnapshotData(

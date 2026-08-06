@@ -1018,6 +1018,14 @@ export type League = {
 	// otherwise every launch during an ordinary, self-resolving gap opens with an
 	// error. Cleared alongside syncResyncNeeded.
 	syncMissingDataSince?: number;
+	// An expensive recovery this device started and may not have survived (see
+	// recoveryBreadcrumb.ts). Written before the work, cleared after it returns,
+	// so a record still here at launch means the last attempt killed the tab.
+	syncRecoveryAttempt?: {
+		op: string;
+		startedAt: number;
+		failures: number;
+	};
 };
 
 export type Locks = {

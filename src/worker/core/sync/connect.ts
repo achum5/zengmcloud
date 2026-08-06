@@ -49,6 +49,7 @@ import {
 import { checkLeagueIntegrity } from "./leagueIntegrity.ts";
 import { decideMissingDataWarning } from "./missingDataWarning.ts";
 import { resetSnapshotRestoreBackoff } from "./snapshotRestoreBackoff.ts";
+import { readRecoveryAttempt } from "./recoveryBreadcrumb.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import {
 	isTooFarBehind,
@@ -1305,6 +1306,19 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 		if (d.pendingBatches > 0) {
 			lines.push(`pendingBatchDetail=${JSON.stringify(d.pendingBatchDetail)}`);
 		}
+	}
+	// Survives a crash, unlike the log below - which is the whole point. A
+	// recovery still recorded as in flight means the app died inside it, and
+	// names which one.
+	try {
+		const attempt = await readRecoveryAttempt(g.get("lid"));
+		if (attempt) {
+			lines.push(
+				`unfinishedRecovery=${attempt.op} failures=${attempt.failures} startedMsAgo=${Date.now() - attempt.startedAt}`,
+			);
+		}
+	} catch {
+		// Diagnostics must never be the thing that fails.
 	}
 	lines.push(`at=${new Date().toISOString()}`);
 	lines.push("=== LOG ===");
@@ -2567,9 +2581,16 @@ const doConnectSharedLeague = async ({
 			);
 			if (shouldWarn) {
 				warnedMissingData = true;
+				// "It repairs itself" stops being true once the automatic repair has
+				// been switched off for killing the app. Say the thing the user can
+				// actually act on instead.
+				const stalled = await readRecoveryAttempt(lid);
 				logEvent({
 					type: "error",
-					text: "This device is missing some league data. It will repair itself automatically once the person in charge of simming has the app open for a few minutes.",
+					text:
+						stalled !== undefined
+							? "This device is missing some league data, and repairing it automatically didn't finish. Use Force Resync on the Multiplayer Sync page."
+							: "This device is missing some league data. It will repair itself automatically once the person in charge of simming has the app open for a few minutes.",
 					saveToDb: false,
 					persistent: true,
 				});
