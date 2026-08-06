@@ -4,6 +4,7 @@ import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import {
 	applyRoomSnapshotPayload,
+	AUTO_PUBLISH_CHECKPOINTS,
 	buildRoomSnapshotPayload,
 	maybePublishRoomSnapshot,
 	resetSnapshotCadenceForTesting,
@@ -581,9 +582,26 @@ describe("a healthy authority evicts a poisoned checkpoint", () => {
 		restoreCache();
 	});
 
-	test("a poisoned checkpoint is replaced immediately, cadence be damned", async () => {
+	// THE DECISION: nothing builds these automatically any more. Every device
+	// already holds the same league file and only deltas travel; a checkpoint
+	// serves the one case that isn't true, and building one reads the entire
+	// league into memory - which on a phone holding sim authority does not run
+	// slowly, it kills the worker, reloads, and does it again. The cadence logic
+	// below is kept and still tested, behind an explicit opt-in.
+	test("no device builds a checkpoint on its own", async () => {
+		assert.strictEqual(AUTO_PUBLISH_CHECKPOINTS, false);
 		const { engine, published } = makeEngine(poisonedPayload());
 		await maybePublishRoomSnapshot(engine);
+		assert.strictEqual(
+			published.length,
+			0,
+			"not even a poisoned checkpoint is worth reading the whole league for",
+		);
+	});
+
+	test("a poisoned checkpoint is replaced immediately, cadence be damned", async () => {
+		const { engine, published } = makeEngine(poisonedPayload());
+		await maybePublishRoomSnapshot(engine, { enabled: true });
 		assert.strictEqual(
 			published.length,
 			1,
@@ -593,13 +611,13 @@ describe("a healthy authority evicts a poisoned checkpoint", () => {
 
 	test("a healthy checkpoint below cadence publishes nothing", async () => {
 		const { engine, published } = makeEngine(healthyPayload());
-		await maybePublishRoomSnapshot(engine);
+		await maybePublishRoomSnapshot(engine, { enabled: true });
 		assert.strictEqual(published.length, 0);
 	});
 
 	test("an unreadable checkpoint counts as poisoned", async () => {
 		const { engine, published } = makeEngine("not json at all {{{");
-		await maybePublishRoomSnapshot(engine);
+		await maybePublishRoomSnapshot(engine, { enabled: true });
 		assert.strictEqual(published.length, 1);
 	});
 
@@ -609,7 +627,7 @@ describe("a healthy authority evicts a poisoned checkpoint", () => {
 	test("a room with no checkpoint at all gets its first one promptly", async () => {
 		const { engine, published } = makeEngine(healthyPayload());
 		(engine.transport as any).fetchRoomSnapshotMeta = async () => undefined;
-		await maybePublishRoomSnapshot(engine);
+		await maybePublishRoomSnapshot(engine, { enabled: true });
 		assert.strictEqual(published.length, 1);
 	});
 
@@ -646,7 +664,7 @@ describe("a healthy authority evicts a poisoned checkpoint", () => {
 				},
 			}),
 		);
-		await maybePublishRoomSnapshot(engine);
+		await maybePublishRoomSnapshot(engine, { enabled: true });
 		assert.strictEqual(published.length, 1);
 	});
 
@@ -657,7 +675,7 @@ describe("a healthy authority evicts a poisoned checkpoint", () => {
 	test("a checkpoint predating identities is left alone, not rebuilt over", async () => {
 		(idb as any).league = authorityWithIdentity();
 		const { engine, published } = makeEngine(healthyPayload());
-		await maybePublishRoomSnapshot(engine);
+		await maybePublishRoomSnapshot(engine, { enabled: true });
 		assert.strictEqual(
 			published.length,
 			0,

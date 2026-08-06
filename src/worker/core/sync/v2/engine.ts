@@ -8,12 +8,17 @@ import {
 	serializeChangeset,
 } from "../serialize.ts";
 import {
+	AUTO_PUBLISH_CHECKPOINTS,
 	buildRoomSnapshotPayload,
 	validateRoomSnapshotPayload,
 } from "../roomSnapshot.ts";
 import { repairLeagueHistory } from "../historyRepair.ts";
 import { checkLeagueIntegrity } from "../leagueIntegrity.ts";
 import { checkApplyGuard } from "../applyGuard.ts";
+import {
+	claimRecoveryAttempt,
+	clearRecoveryAttempt,
+} from "../recoveryBreadcrumb.ts";
 import { payloadLeagueId, readLocalLeagueId } from "../leagueIdentity.ts";
 import { syncDebugLog } from "../debugLog.ts";
 import {
@@ -1620,7 +1625,15 @@ export class SyncEngineV2 {
 	// version used to interleave their chunk writes into the same documents -
 	// producing a checkpoint that no device could ever read (the field failure
 	// that stranded a fresh joiner at version 0 retrying forever).
-	async maybePublishCheckpoint(): Promise<void> {
+	async maybePublishCheckpoint({
+		// Tests drive the cadence logic directly; production never passes this.
+		enabled = AUTO_PUBLISH_CHECKPOINTS,
+	}: { enabled?: boolean } = {}): Promise<void> {
+		// See AUTO_PUBLISH_CHECKPOINTS: v2 uses the same whole-league builder, so
+		// it has exactly the same way of killing a phone that holds authority.
+		if (!enabled) {
+			return;
+		}
 		if (
 			this.stopped ||
 			this.publishingCheckpoint ||
@@ -1759,9 +1772,31 @@ export class SyncEngineV2 {
 			// gzipped. Timed and sized so the capture shows what this actually
 			// costs on the device that runs it - the number that would have made
 			// the 25-version cadence obviously wrong.
+			//
+			// And on a device where it does not fit, it is not slow, it is fatal:
+			// iOS kills the worker mid-build, the app reloads, the authority finds
+			// the room still has no checkpoint, and builds again. Crashing with
+			// nobody touching the phone. The cadence constants above cannot help,
+			// because a crash resets them - only a note that survives the process
+			// can. One attempt; a device that cannot do this stops volunteering and
+			// the room waits for one that can.
+			const publishOp = "checkpoint-publish";
+			const publishLid = g.get("lid");
+			if (!(await claimRecoveryAttempt(publishLid, publishOp))) {
+				console.error(
+					"[sync] Not building a room checkpoint on this device: the last attempt didn't finish (it likely ran out of memory). Another device in the room will publish one.",
+				);
+				return;
+			}
+			let payload;
+			let serialized;
 			const buildStartedAt = Date.now();
-			const payload = await buildRoomSnapshotPayload();
-			const serialized = await compressSerialized(serializeChangeset(payload));
+			try {
+				payload = await buildRoomSnapshotPayload();
+				serialized = await compressSerialized(serializeChangeset(payload));
+			} finally {
+				await clearRecoveryAttempt(publishLid, publishOp);
+			}
 			const buildMs = Date.now() - buildStartedAt;
 			// A fresh generation per publish: chunks land at generation-unique doc
 			// ids and the pointer flips to them only at commit, so a reader can

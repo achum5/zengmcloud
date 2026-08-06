@@ -901,7 +901,7 @@ describe("SyncEngineV2", () => {
 		(engine as any).roomState = { ...room.state!, version: 60 };
 		(engine as any).appliedMirror = 60;
 		for (let i = 0; i < 10; i++) {
-			await engine.maybePublishCheckpoint();
+			await engine.maybePublishCheckpoint({ enabled: true });
 		}
 		assert.strictEqual(
 			builds,
@@ -915,7 +915,7 @@ describe("SyncEngineV2", () => {
 		(engine as any).appliedMirror = 5000;
 		(engine as any).lastCheckpointCheckAt = Date.now();
 		for (let i = 0; i < 10; i++) {
-			await engine.maybePublishCheckpoint();
+			await engine.maybePublishCheckpoint({ enabled: true });
 		}
 		assert.strictEqual(
 			builds,

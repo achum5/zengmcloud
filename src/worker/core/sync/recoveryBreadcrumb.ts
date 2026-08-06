@@ -111,8 +111,17 @@ export const claimRecoveryAttempt = async (
 
 // The work returned - whether it succeeded, refused, or threw. Any of those
 // means the app survived it, which is the only thing this record tracks.
-export const clearRecoveryAttempt = async (lid: number | undefined) => {
+export const clearRecoveryAttempt = async (
+	lid: number | undefined,
+	// Only clear the note if it is still OUR note. Two heavy operations can be
+	// bracketed in the same league, and clearing someone else's record would
+	// hand a crashing operation a fresh life.
+	op?: string,
+) => {
 	const league = await readRow(lid);
+	if (op !== undefined && league?.syncRecoveryAttempt?.op !== op) {
+		return;
+	}
 	if (league?.syncRecoveryAttempt !== undefined) {
 		delete league.syncRecoveryAttempt;
 		try {

@@ -126,6 +126,35 @@ describe("recovery breadcrumb, durably", () => {
 		);
 	});
 
+	test("clearing is scoped to the op, so two heavy jobs can't free each other", async () => {
+		// A restore and a publish are both bracketed in the same league. If the
+		// publish's finally cleared a restore's note, the restore would get a
+		// fresh life on every launch - the loop, back again.
+		await claimRecoveryAttempt(1, "snapshot-publish");
+		await clearRecoveryAttempt(1, "snapshot-restore:1");
+		assert.strictEqual(
+			(await readRecoveryAttempt(1))?.op,
+			"snapshot-publish",
+			"someone else's note must survive",
+		);
+		await clearRecoveryAttempt(1, "snapshot-publish");
+		assert.strictEqual(await readRecoveryAttempt(1), undefined);
+	});
+
+	test("THE CRASH WITH NOBODY TOUCHING IT: a phone that dies building a checkpoint stops volunteering", async () => {
+		// The phone took over as sim authority. The authority publishes the room
+		// checkpoint; building one reads the whole league into memory. It died
+		// mid-build, reloaded, found the room still had no checkpoint, and started
+		// over - forever, with the user doing nothing.
+		assert.strictEqual(await claimRecoveryAttempt(1, "snapshot-publish"), true);
+		// The worker is killed here - no finally runs.
+		assert.strictEqual(
+			await claimRecoveryAttempt(1, "snapshot-publish"),
+			false,
+			"the next launch must not start the build that just killed it",
+		);
+	});
+
 	test("no meta row is not a reason to block a recovery", async () => {
 		assert.strictEqual(await claimRecoveryAttempt(999, "snap:1"), true);
 		assert.strictEqual(await claimRecoveryAttempt(undefined, "snap:1"), true);

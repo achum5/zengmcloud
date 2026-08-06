@@ -310,6 +310,45 @@ export const publishRoomSnapshot = async (
 		return undefined;
 	}
 
+	// BUILDING A SNAPSHOT IS THE HEAVIEST THING THIS APP DOES. It reads every
+	// store of the league into memory, JSON-stringifies the whole object graph
+	// and gzips the result - all three alive at once. On a phone with a deep
+	// league that is hundreds of megabytes, and iOS does not throw something
+	// catchable, it kills the worker.
+	//
+	// Only the sim authority publishes, so this used to be somebody else's
+	// problem. Then a phone became the authority: it connected, found the room
+	// had no snapshot yet, started building one, died, reloaded, and did it all
+	// again - crashing with nobody touching it. And because the crash was always
+	// the same device, the room never got its first snapshot, which is what made
+	// the build fire on every single launch.
+	//
+	// One attempt. The note is on disk before the build and cleared after it
+	// returns, so a device that cannot survive this stops volunteering, and the
+	// room's snapshot waits for a device that can. Never publishing is a
+	// degraded room; an unusable device is a broken one.
+	const publishLid = g.get("lid");
+	const publishOp = "snapshot-publish";
+	if (!(await claimRecoveryAttempt(publishLid, publishOp))) {
+		console.error(
+			"[sync] Not building a room checkpoint on this device: the last attempt didn't finish (it likely ran out of memory). Another device in the room will publish one.",
+		);
+		return undefined;
+	}
+	try {
+		return await publishRoomSnapshotInner(engine, transport);
+	} finally {
+		await clearRecoveryAttempt(publishLid, publishOp);
+	}
+};
+
+const publishRoomSnapshotInner = async (
+	engine: SnapshotEngine,
+	transport: SyncTransport,
+): Promise<RoomSnapshotMeta | undefined> => {
+	if (!transport.publishRoomSnapshot || !transport.fetchRoomSnapshotMeta) {
+		return undefined;
+	}
 	// The watermark BEFORE building: everything at or below it is in the DB the
 	// payload reads. Entries landing during the build are above it and stay in
 	// the tail, so nothing can fall between snapshot and log.
@@ -397,7 +436,7 @@ export const restoreFromRoomSnapshot = async (
 	} finally {
 		// Reached on success, refusal AND throw - all of which mean the device
 		// survived. Only a crash leaves the note behind.
-		await clearRecoveryAttempt(lid);
+		await clearRecoveryAttempt(lid, op);
 	}
 };
 
@@ -571,9 +610,38 @@ const roomSnapshotIsPoisoned = async (
 // Called from the health tick on every device; does anything only on the
 // authority, at most once per SNAPSHOT_CHECK_MIN_MS, and only while nothing
 // else is moving the league.
+// WHETHER ANY DEVICE BUILDS ROOM CHECKPOINTS AT ALL. Off.
+//
+// The premise of this whole sync layer is that every device already holds the
+// same league file and only deltas travel between them - N+1, forever. A
+// checkpoint exists for the one case that breaks: bootstrapping a device that
+// does NOT have the league, or one so far behind that the log no longer reaches
+// its position. Building one costs the entire league read into memory,
+// stringified and gzipped, which is by far the most expensive thing this app
+// does - and on a phone acting as sim authority it is not expensive, it is
+// fatal: the OS kills the worker mid-build, the app reloads, the room still has
+// no checkpoint, and it builds again. Crashing with nobody touching the device.
+//
+// Paying that, repeatedly, on every device, to serve a case that does not
+// happen in a league where everyone started from the same file, is the wrong
+// trade. So nothing builds them.
+//
+// WHAT THIS GIVES UP, plainly: a device that falls further behind than the
+// log's retention window can no longer be repaired in place, and the log is no
+// longer pruned (publishing checkpoint N is what deletes entries below N-1), so
+// it grows. Restoring a checkpoint that ALREADY exists still works - Force
+// Resync will use one if the room has one. Flip this to true to get the
+// behaviour back.
+export const AUTO_PUBLISH_CHECKPOINTS = false;
+
 export const maybePublishRoomSnapshot = async (
 	engine: SnapshotEngine,
+	// Tests drive the cadence logic directly; production never passes this.
+	{ enabled = AUTO_PUBLISH_CHECKPOINTS }: { enabled?: boolean } = {},
 ): Promise<void> => {
+	if (!enabled) {
+		return;
+	}
 	if (
 		!engine.isAuthority() ||
 		!engine.transport.publishRoomSnapshot ||
