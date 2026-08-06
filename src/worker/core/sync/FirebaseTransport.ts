@@ -1453,6 +1453,14 @@ export class FirebaseTransport implements SyncTransport {
 						action: meta.action,
 						at: meta.at,
 						updatedAt: serverTimestamp(),
+						// Age out like v1's changes do. These used to be pruned when a
+						// checkpoint superseded them; nothing builds checkpoints any
+						// more, so without a TTL they would accumulate forever. Safe to
+						// stamp on delta chunks alone: a Firestore TTL policy only
+						// touches documents that HAVE the field, so the state pointer,
+						// the live broadcast and the chat sitting in this same
+						// collection are untouched.
+						ttlAt: Timestamp.fromMillis(ttlAtMsFor(Date.now())),
 					},
 				);
 			}

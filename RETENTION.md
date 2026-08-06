@@ -12,9 +12,29 @@ fourth are console actions you have to take.**
 
 ## 1. Entries carry a `ttlAt` (shipped)
 
-Every change published from this build stamps `ttlAt = now + 45 days`
-(`src/common/syncRetention.ts`). The field is inert on its own — readers
-ignore it completely — so it is safe to ship well ahead of the policy below.
+Every change published from this build stamps `ttlAt = now + 3 days`
+(`RETENTION_DAYS` in `src/common/syncRetention.ts`). The field is inert on its
+own — readers ignore it completely — so it is safe to ship well ahead of the
+policy below.
+
+The log is a delivery buffer, not an archive: every device already holds the
+same league file and applies deltas as they arrive, so an entry is dead weight
+once everyone has read it. **The cost of a window this short is that a device
+away longer than it, while the others played, must re-import a fresh export.**
+Raise `RETENTION_DAYS` if that starts happening to anyone.
+
+Changing the number only affects entries published *after* the change — older
+ones keep the `ttlAt` they were stamped with. To clear existing history now,
+use **Trim** in the Multiplayer Sync page's admin section.
+
+### v2 rooms
+
+v2 deltas live in `leagues/{code}/control` and carry the same `ttlAt`. They used
+to be pruned when a checkpoint superseded them; nothing builds checkpoints any
+more (see `AUTO_PUBLISH_CHECKPOINTS`), so the TTL is what bounds them. A policy
+on the `control` collection group is safe: Firestore TTL only deletes documents
+that *have* the field, so the state pointer, live broadcast and chat docs
+sharing that collection are untouched.
 
 ## 2. A device that is too far behind is stopped, not silently broken (shipped)
 
@@ -42,13 +62,23 @@ falls through rather than locking out, so a flaky read never becomes a lockout.
 The `ttlAt` field does nothing until Firestore is told to act on it.
 
 **Console:** Firestore Database → **Time-to-live** tab → *Create policy* →
-collection group `changes`, timestamp field `ttlAt`.
+collection group `changes`, timestamp field `ttlAt`. Repeat for the `control`
+collection group to cover v2 deltas.
+
+The same tab tells you whether a policy already exists — if none is listed,
+nothing has ever been deleted and the log holds the room's entire history
+regardless of what `RETENTION_DAYS` says.
 
 **Or gcloud:**
 
 ```
 gcloud firestore fields ttls update ttlAt \
   --collection-group=changes \
+  --enable-ttl \
+  --project=zengmcloud-4a454
+
+gcloud firestore fields ttls update ttlAt \
+  --collection-group=control \
   --enable-ttl \
   --project=zengmcloud-4a454
 ```

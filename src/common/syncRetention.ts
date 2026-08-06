@@ -24,10 +24,18 @@
 // as the duplicated-games incident, so it gets an explicit check rather than a
 // hope: see `isTooFarBehind`.
 
-// Long enough that no realistic player is caught out (a device away for a month
-// and a half is going to need a re-import for other reasons anyway), short
-// enough that a room's log stays a bounded window rather than a full history.
-export const RETENTION_DAYS = 45;
+// The log is a delivery buffer, not an archive. Every device already holds the
+// same league file and applies deltas as they arrive, so an entry is dead
+// weight the moment everyone has read it - which, for a league played daily, is
+// the same day it was written. Three days is generous cover for a weekend.
+//
+// THE COST, and it is a real one: a device that has not opened the app for
+// longer than this, while the others kept playing, needs entries that no longer
+// exist. It is refused at connect (see isTooFarBehind) and has to re-import a
+// fresh export. At 45 days that was theoretical; at 3 it is a long weekend
+// away. That is the trade for a log that stays small - raise this number if it
+// starts costing anyone a re-import.
+export const RETENTION_DAYS = 3;
 export const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 // Can this device still catch up from the log, or did the entries it needs get

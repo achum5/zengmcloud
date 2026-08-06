@@ -43,9 +43,17 @@ describe("ttlAtMsFor", () => {
 		assert.strictEqual(ttlAtMsFor(1_000), 1_000 + RETENTION_MS);
 	});
 
-	test("the window is long enough to cover a normal absence", () => {
-		// A guard on the constant itself: a retention window shorter than a couple
-		// of weeks would start locking out ordinary players who take a break.
-		assert.ok(RETENTION_MS >= 14 * 24 * 60 * 60 * 1000);
+	test("the window still covers a weekend away", () => {
+		// This guard used to demand a fortnight, on the reasoning that anything
+		// shorter would start locking out players who take a break. The window was
+		// then cut to three days deliberately: the log is a delivery buffer, not an
+		// archive, and every device already holds the league file. The lockout is
+		// the accepted price, so what is left to protect is the floor - a window
+		// that does not survive a weekend would refuse people who did nothing
+		// unusual at all.
+		assert.ok(
+			RETENTION_MS >= 3 * 24 * 60 * 60 * 1000,
+			"a shorter window would lock out an ordinary weekend absence",
+		);
 	});
 });
