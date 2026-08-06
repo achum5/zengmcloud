@@ -2000,10 +2000,9 @@ const doConnectSharedLeague = async ({
 	//     always be able to do this, or the protection locks legitimate players
 	//     out of their own league with no way back. It adopts the room's
 	//     identity.
-	//   - An AUTOMATIC reconnect - a stale session pointer, a zombie engine, a
-	//     second tab - never carries that intent. Both contamination incidents
-	//     were exactly this: a league auto-reconnecting to a room holding some
-	//     other league's state. Mismatch here is refused, hard.
+	//   - An AUTOMATIC reconnect carries no such intent, so a mismatch there is
+	//     reported loudly - but it does NOT block the connect. See the comment
+	//     on the "refused" branch below for why that check had to give way.
 	{
 		const outcome = await resolveLeagueIdentity({
 			localId: await readLocalLeagueId().catch(() => undefined),
@@ -2021,20 +2020,46 @@ const doConnectSharedLeague = async ({
 				error: outcome.error,
 			});
 		} else if (outcome.action === "refused") {
-			syncDebugLog("connect:league-identity-refused", {
+			// ADVISORY, NOT BLOCKING - a deliberate retreat.
+			//
+			// Identities are minted per league COPY, so two devices holding the
+			// SAME league can hold different ones: whichever claimed the room
+			// first wins, and every other device mismatches forever. Refusing on
+			// that stopped automatic reconnects working on every device but one -
+			// a constant, certain harm - in exchange for a check that cannot
+			// distinguish "same league, minted separately" from "different
+			// league". Only manual Connect got through, because that rebinds.
+			//
+			// The check that CAN tell them apart is the payload provenance test
+			// at restore time: it compares the identity carried inside the data
+			// against this league's own and refuses a wrong-league restore with
+			// nothing touched. That is where the damage would actually happen,
+			// and it does not depend on this one.
+			//
+			// So: adopt the room's identity, connect, and say so. Once every
+			// device has converged on the room's identity - which now happens by
+			// itself, since a device without one adopts - a mismatch will mean
+			// something again.
+			syncDebugLog("connect:league-identity-adopted-on-mismatch", {
 				code: trimmed,
 				local: outcome.local,
 				room: outcome.room,
 			});
-			logEvent({
-				type: "error",
-				text: `This league reconnected on its own to room ${trimmed}, which belongs to a different league, so syncing was stopped to protect this save. If you meant to join that room, enter the code and press Connect.`,
-				saveToDb: false,
-				persistent: true,
-			});
-			throw new Error(
-				`Room ${trimmed} belongs to a different league. If you meant to join it, enter the code and press Connect.`,
-			);
+			if (!explicit) {
+				logEvent({
+					type: "error",
+					text: `This league and room ${trimmed} were carrying different sync ids, so this device adopted the room's. If you did not expect this league to be in room ${trimmed}, disconnect before simming.`,
+					saveToDb: false,
+					persistent: true,
+				});
+			}
+			try {
+				await writeLocalLeagueId(outcome.room);
+			} catch (error) {
+				syncDebugLog("connect:league-identity-write-failed", {
+					error: String(error),
+				});
+			}
 		} else if (outcome.action !== "matched") {
 			// Writing the identity is local-only, and failing to record it must
 			// not block the connect either - the next connect re-derives it.

@@ -42,6 +42,7 @@ import { SelectSeasonRange } from "./SelectSeasonRange.tsx";
 import { orderBy } from "../../../common/utils.ts";
 import { analyticsEventLocal } from "../../../common/analyticsEventLocal.ts";
 import { choice } from "../../../common/random.ts";
+import { generateRoomCode, roomCodeWarning } from "../../../common/roomCode.ts";
 import { realContinents } from "../../../common/geographicCoordinates.ts";
 import type { NewLeagueSettings } from "../../../worker/views/newLeague.ts";
 import { analyticsEvent } from "../../util/analyticsEvent.ts";
@@ -688,6 +689,12 @@ const NewLeague = (props: View<"newLeague">) => {
 	// multiple league files from ever cross-connecting to the wrong room.
 	const [roomCode, setRoomCode] = useState("");
 	const [roomIsHost, setRoomIsHost] = useState(false);
+	// Creating the room here versus joining one someone else made. It decides
+	// two things the user cannot change afterwards - who sims, and which sync
+	// engine the room runs - so it has to be asked, not inferred from whether
+	// the code happens to exist yet.
+	const [roomMode, setRoomMode] = useState<"none" | "create" | "join">("none");
+	const [roomV2, setRoomV2] = useState(false);
 	const [currentScreen, setCurrentScreen] = useState<
 		"default" | "teams" | "settings"
 	>("default");
@@ -905,12 +912,17 @@ const NewLeague = (props: View<"newLeague">) => {
 			// that room once the league loads (pendingJoin marks it as an explicit,
 			// binding-capable join); blank scrubs any stored session a previous file
 			// with this (possibly recycled) lid left behind.
-			const roomCodeTrimmed = roomCode.trim();
+			const roomCodeTrimmed = roomMode === "none" ? "" : roomCode.trim();
 			if (roomCodeTrimmed) {
 				setStoredSync(lid, {
 					code: roomCodeTrimmed,
-					isHost: roomIsHost,
+					// Whoever creates the room runs it; a joiner only sims if they
+					// said so.
+					isHost: roomMode === "create" ? true : roomIsHost,
 					pendingJoin: true,
+					// Only the device that CREATES the room picks the engine - an
+					// existing room keeps whatever it was made with.
+					v2: roomMode === "create" ? roomV2 : undefined,
 				});
 			} else {
 				clearStoredSync(lid);
@@ -1288,37 +1300,102 @@ const NewLeague = (props: View<"newLeague">) => {
 							</div>
 
 							<div className="mb-3">
-								<label className="form-label" htmlFor="new-league-room-code">
-									Multiplayer room code
-								</label>
-								<input
-									id="new-league-room-code"
-									className="form-control"
-									type="text"
-									placeholder="None"
-									title="Join a multiplayer sync room when this league loads"
-									value={roomCode}
-									onChange={(event) => {
-										setRoomCode(event.target.value);
-									}}
-								/>
-								{roomCode.trim() ? (
-									<div className="form-check mt-2">
-										<input
-											id="new-league-room-host"
-											className="form-check-input"
-											type="checkbox"
-											checked={roomIsHost}
-											onChange={(event) => {
-												setRoomIsHost(event.target.checked);
+								<label className="form-label">Multiplayer</label>
+								<div className="btn-group d-flex" role="group">
+									{(
+										[
+											["none", "Single player"],
+											["create", "Create room"],
+											["join", "Join room"],
+										] as const
+									).map(([value, label]) => (
+										<button
+											key={value}
+											type="button"
+											className={`btn ${roomMode === value ? "btn-primary" : "btn-light"}`}
+											onClick={() => {
+												setRoomMode(value);
+												if (value === "create" && roomCode.trim() === "") {
+													setRoomCode(generateRoomCode());
+												}
 											}}
-										/>
-										<label
-											className="form-check-label"
-											htmlFor="new-league-room-host"
 										>
-											Sim here
-										</label>
+											{label}
+										</button>
+									))}
+								</div>
+
+								{roomMode !== "none" ? (
+									<div className="mt-2">
+										<div className="input-group">
+											<input
+												id="new-league-room-code"
+												className="form-control"
+												type="text"
+												placeholder={
+													roomMode === "create"
+														? "brisk-falcon-482"
+														: "Code from your league-mate"
+												}
+												value={roomCode}
+												onChange={(event) => {
+													setRoomCode(event.target.value);
+												}}
+											/>
+											{roomMode === "create" ? (
+												<button
+													type="button"
+													className="btn btn-secondary"
+													onClick={() => setRoomCode(generateRoomCode())}
+												>
+													Generate
+												</button>
+											) : null}
+										</div>
+										{roomMode === "create" &&
+										roomCodeWarning(roomCode) !== undefined ? (
+											<div className="form-text text-warning">
+												{roomCodeWarning(roomCode)}
+											</div>
+										) : null}
+
+										{roomMode === "create" ? (
+											<div className="form-check mt-2">
+												<input
+													id="new-league-room-v2"
+													className="form-check-input"
+													type="checkbox"
+													checked={roomV2}
+													onChange={(event) => {
+														setRoomV2(event.target.checked);
+													}}
+												/>
+												<label
+													className="form-check-label"
+													htmlFor="new-league-room-v2"
+												>
+													New sync engine (v2)
+												</label>
+											</div>
+										) : (
+											<div className="form-check mt-2">
+												<input
+													id="new-league-room-host"
+													className="form-check-input"
+													type="checkbox"
+													checked={roomIsHost}
+													onChange={(event) => {
+														setRoomIsHost(event.target.checked);
+													}}
+												/>
+												<label
+													className="form-check-label"
+													htmlFor="new-league-room-host"
+												>
+													Sim here
+												</label>
+											</div>
+										)}
 									</div>
 								) : null}
 							</div>

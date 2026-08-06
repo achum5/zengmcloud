@@ -77,6 +77,7 @@ const PINNED_EVENTS = new Set([
 	"v2:slow-apply",
 	"connect:league-identity-bound",
 	"connect:league-identity-refused",
+	"connect:league-identity-adopted-on-mismatch",
 	"connect:league-identity-rebound",
 	"connect:league-identity-unverified",
 	"autoPlay:stopped",

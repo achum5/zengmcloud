@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 // build blacklists worker imports from UI, and duplicating the number here
 // would let the admin default drift from the window actually being stamped.
 import { RETENTION_DAYS } from "../../common/syncRetention.ts";
+import { generateRoomCode, roomCodeWarning } from "../../common/roomCode.ts";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { useLocal } from "../util/local.ts";
 import { toWorker } from "../util/toWorker.ts";
@@ -124,6 +125,11 @@ const MultiplayerSync = () => {
 	const [code, setCode] = useState("");
 	const [isHost, setIsHost] = useState(false);
 	const [useV2, setUseV2] = useState(false);
+	// Creating a room and joining one are different acts with different
+	// inputs, and collapsing them into a single code box hid the one option
+	// that can ONLY be set while creating: the protocol. Asking outright also
+	// means each mode can say what it needs and nothing else.
+	const [mode, setMode] = useState<"create" | "join">("join");
 	const logCopied = useRef(false);
 	const [, setLogCopiedTick] = useState(0);
 	const [status, setStatus] = useState<Status>("disconnected");
@@ -415,15 +421,24 @@ const MultiplayerSync = () => {
 
 			await toWorker("main", "connectSharedLeague", {
 				code: innerCode,
-				isHost,
-				v2: useV2,
+				// Whoever creates the room is by definition its first simmer;
+				// joining a room leaves that to the person already running it
+				// unless the user asks for it.
+				isHost: mode === "create" ? true : isHost,
+				// A room's protocol is set when it is created and can never
+				// change, so this only ever means anything in create mode.
+				v2: mode === "create" ? useV2 : false,
 				// Typed by the user on this page - an explicit join, allowed to bind
 				// this league file to the room.
 				explicit: true,
 				firebaseConfig: config,
 			});
 			setCode(innerCode);
-			setStoredSync(lid, { code: innerCode, isHost, firebaseConfig: config });
+			setStoredSync(lid, {
+				code: innerCode,
+				isHost: mode === "create" ? true : isHost,
+				firebaseConfig: config,
+			});
 			setInvite(config ? encodeSyncInvite(innerCode, config) : undefined);
 			setStatus("connected");
 		} catch (error_) {
@@ -456,6 +471,10 @@ const MultiplayerSync = () => {
 	// device is really connected (and the header dot is green). `status` is kept
 	// only for the transient "connecting…" while a manual Connect is in flight.
 	const connected = mpSyncActive || status === "connected";
+
+	// Only worth saying while picking a NEW code; a code someone hands you is
+	// not yours to second-guess.
+	const codeWarning = roomCodeWarning(code);
 
 	return (
 		<>
@@ -491,57 +510,120 @@ const MultiplayerSync = () => {
 				</div>
 			</div>
 
-			<div className="row" style={{ maxWidth: 500 }}>
-				<div className="col-12 mb-3">
-					<label className="form-label" htmlFor="sync-code">
-						League code
-					</label>
-					<input
-						id="sync-code"
-						type="text"
-						className="form-control"
-						placeholder="e.g. smith-dynasty"
-						value={code}
-						disabled={connected || status === "connecting"}
-						onChange={(event) => setCode(event.target.value)}
-					/>
+			{connected ? (
+				<div className="mb-3" style={{ maxWidth: 500 }}>
+					<div className="d-flex flex-wrap gap-3">
+						<div>
+							<div className="text-body-secondary small">Room</div>
+							<div className="fw-bold">{code}</div>
+						</div>
+						<div>
+							<div className="text-body-secondary small">Engine</div>
+							<div className="fw-bold">
+								{mpSyncProtocol === "v2" ? "v2" : "v1"}
+							</div>
+						</div>
+						<div>
+							<div className="text-body-secondary small">Simming</div>
+							<div className="fw-bold">
+								{mpSyncIsHost ? "You" : (mpSyncHostName ?? "Nobody")}
+							</div>
+						</div>
+					</div>
 				</div>
-			</div>
+			) : (
+				<div style={{ maxWidth: 500 }}>
+					<div className="btn-group mb-3" role="group">
+						<button
+							type="button"
+							className={`btn ${mode === "join" ? "btn-primary" : "btn-light"}`}
+							disabled={status === "connecting"}
+							onClick={() => setMode("join")}
+						>
+							Join a room
+						</button>
+						<button
+							type="button"
+							className={`btn ${mode === "create" ? "btn-primary" : "btn-light"}`}
+							disabled={status === "connecting"}
+							onClick={() => {
+								setMode("create");
+								// Land on a usable code rather than a disabled button.
+								if (code.trim() === "") {
+									setCode(generateRoomCode());
+								}
+							}}
+						>
+							Create a room
+						</button>
+					</div>
 
-			<div className="form-check mb-3">
-				<input
-					id="sync-host"
-					type="checkbox"
-					className="form-check-input"
-					checked={isHost}
-					disabled={connected || status === "connecting"}
-					onChange={(event) => setIsHost(event.target.checked)}
-				/>
-				<label className="form-check-label" htmlFor="sync-host">
-					Sim here on connect
-				</label>
-			</div>
+					<div className="mb-3">
+						<label className="form-label" htmlFor="sync-code">
+							{mode === "create"
+								? "New room code"
+								: "Room code from your league-mate"}
+						</label>
+						<div className="input-group">
+							<input
+								id="sync-code"
+								type="text"
+								className="form-control"
+								placeholder={
+									mode === "create" ? "brisk-falcon-482" : "e.g. smith-dynasty"
+								}
+								value={code}
+								disabled={status === "connecting"}
+								onChange={(event) => setCode(event.target.value)}
+							/>
+							{mode === "create" ? (
+								<button
+									type="button"
+									className="btn btn-secondary"
+									disabled={status === "connecting"}
+									onClick={() => setCode(generateRoomCode())}
+								>
+									Generate
+								</button>
+							) : null}
+						</div>
+						{mode === "create" && codeWarning ? (
+							<div className="form-text text-warning">{codeWarning}</div>
+						) : null}
+					</div>
 
-			<div className="form-check mb-3">
-				<input
-					id="sync-v2"
-					type="checkbox"
-					className="form-check-input"
-					// While connected, show the ROOM's actual protocol - the box is a
-					// room-creation option, and echoing the stale local toggle here made
-					// people think their v2 room wasn't on v2.
-					checked={connected ? mpSyncProtocol === "v2" : useV2}
-					disabled={connected || status === "connecting" || !isHost}
-					onChange={(event) => setUseV2(event.target.checked)}
-				/>
-				<label
-					className="form-check-label"
-					htmlFor="sync-v2"
-					title="New rooms only, applies when the first device connects as the simmer. Existing rooms keep whatever they were created with."
-				>
-					New sync engine (v2)
-				</label>
-			</div>
+					{mode === "create" ? (
+						<div className="form-check mb-3">
+							<input
+								id="sync-v2"
+								type="checkbox"
+								className="form-check-input"
+								checked={useV2}
+								disabled={status === "connecting"}
+								onChange={(event) => setUseV2(event.target.checked)}
+							/>
+							<label className="form-check-label" htmlFor="sync-v2">
+								New sync engine (v2)
+							</label>
+							<div className="form-text">Fixed when the room is created.</div>
+						</div>
+					) : (
+						<div className="form-check mb-3">
+							<input
+								id="sync-host"
+								type="checkbox"
+								className="form-check-input"
+								checked={isHost}
+								disabled={status === "connecting"}
+								onChange={(event) => setIsHost(event.target.checked)}
+							/>
+							<label className="form-check-label" htmlFor="sync-host">
+								Sim here on connect
+							</label>
+						</div>
+					)}
+				</div>
+			)}
 
 			<div className="mb-3" style={{ maxWidth: 500 }}>
 				<div className="form-check">
@@ -620,7 +702,11 @@ const MultiplayerSync = () => {
 						disabled={status === "connecting" || code.trim() === ""}
 						onClick={connect}
 					>
-						{status === "connecting" ? "Connecting…" : "Connect"}
+						{status === "connecting"
+							? "Connecting…"
+							: mode === "create"
+								? "Create room"
+								: "Join room"}
 					</button>
 				)}
 			</div>
