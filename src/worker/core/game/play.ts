@@ -66,6 +66,7 @@ import {
 } from "../sync/simDayFence.ts";
 import { getSyncEngine as getSyncEngineForPlay } from "../sync/engineHolder.ts";
 import { syncDebugLog } from "../sync/debugLog.ts";
+import { scheduleForSim } from "./singleGameSchedule.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 
@@ -677,16 +678,26 @@ const play = async (
 
 		let schedule = await season.getSchedule(true);
 
-		// If live game sim, only do that one game, not the whole day
-		let dayOver = true;
-		if (gidOneGame !== undefined) {
-			const lengthBefore = schedule.length;
-			schedule = schedule.filter((game) => game.gid === gidOneGame);
-			const lengthAfter = schedule.length;
+		// If live game sim, only do that one game, not the whole day.
+		const plan = scheduleForSim(schedule, gidOneGame);
+		schedule = plan.games;
+		const dayOver = plan.dayOver;
 
-			if (lengthBefore - lengthAfter > 0) {
-				dayOver = false;
-			}
+		// THE GAME ASKED FOR IS NOT ON THE SCHEDULE - already played, by this
+		// device moments ago or by another one. Nothing to sim, and stopping is
+		// the only safe move.
+		//
+		// Falling through was catastrophic in the playoffs. Below, an empty
+		// schedule during PHASE.PLAYOFFS is read as "the next playoff day hasn't
+		// been generated yet", so it generates one - and then re-reads the
+		// schedule WITHOUT the single-game filter and sims every game on it. Ask
+		// to watch one game that is already over and the whole next day of the
+		// playoffs runs behind you: exactly the "I live-simmed game 5, and when I
+		// left, game 6 had already been played" report. A request to play one
+		// game must never be able to advance the timeline.
+		if (plan.requestedGameMissing) {
+			syncDebugLog("sim:live-game-already-played", { gid: gidOneGame });
+			return cbNoGames();
 		}
 
 		// Server-side fence: exactly one device per (season, day, games) may sim,
