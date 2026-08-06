@@ -46,6 +46,7 @@ export const RatingsStatsPopover = ({
 	season,
 }: Props) => {
 	const [loadingData, setLoadingData] = useState<boolean>(false);
+	const [failed, setFailed] = useState<boolean>(false);
 	const [player, setPlayer] = useState<{
 		abbrev?: string;
 		tid?: number;
@@ -105,24 +106,40 @@ export const RatingsStatsPopover = ({
 		});
 	}
 
+	// Anything that can go wrong here has to leave the popover retryable. It
+	// used to fire this without a catch, so a rejected call - or a worker guard
+	// answering `undefined`, which the destructuring below then threw on - left
+	// loadingData stuck true forever. toggle() is gated on !loadingData, so the
+	// popover could never try again: it opened blank for the rest of the
+	// session, on every player.
 	const loadData = useCallback(async () => {
-		const p = await toWorker("main", "ratingsStatsPopoverInfo", {
-			pid,
-			season,
-		});
-		setPlayer({
-			abbrev: p.abbrev,
-			tid: p.tid,
-			age: p.age,
-			jerseyNumber: p.jerseyNumber,
-			name: p.name,
-			ratings: p.ratings,
-			stats: p.stats,
-			pid,
-			type: p.type,
-			coarseRatings: p.coarseRatings,
-		});
-		setLoadingData(false);
+		try {
+			const p = await toWorker("main", "ratingsStatsPopoverInfo", {
+				pid,
+				season,
+			});
+			if (!p) {
+				throw new Error("No player info came back");
+			}
+			setPlayer({
+				abbrev: p.abbrev,
+				tid: p.tid,
+				age: p.age,
+				jerseyNumber: p.jerseyNumber,
+				name: p.name,
+				ratings: p.ratings,
+				stats: p.stats,
+				pid,
+				type: p.type,
+				coarseRatings: p.coarseRatings,
+			});
+			setFailed(false);
+		} catch (error) {
+			console.error("ratingsStatsPopoverInfo failed", error);
+			setFailed(true);
+		} finally {
+			setLoadingData(false);
+		}
 	}, [pid, season]);
 
 	const toggle = useCallback(() => {
@@ -196,8 +213,16 @@ export const RatingsStatsPopover = ({
 
 	const id = `ratings-stats-popover-${player.pid}`;
 
+	// An empty Ratings/Stats shell tells the user nothing about why it is
+	// empty. One line, and closing and reopening tries again.
+	const failedBlock = (
+		<div className="text-body-secondary">Couldn't load. Try again.</div>
+	);
+
 	const modalHeader = nameBlock;
-	const modalBody = (
+	const modalBody = failed ? (
+		failedBlock
+	) : (
 		<>
 			<RatingsStats
 				ratings={ratings}
@@ -217,13 +242,17 @@ export const RatingsStatsPopover = ({
 			}}
 		>
 			<div className="mb-2">{nameBlock}</div>
-			<RatingsStats
-				ratings={ratings}
-				stats={stats}
-				type={type}
-				tid={tid}
-				coarseRatings={coarseRatings}
-			/>
+			{failed ? (
+				failedBlock
+			) : (
+				<RatingsStats
+					ratings={ratings}
+					stats={stats}
+					type={type}
+					tid={tid}
+					coarseRatings={coarseRatings}
+				/>
+			)}
 		</div>
 	);
 

@@ -86,6 +86,17 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getSyncDebugSnapshot",
 	// Pure read (builds a text report); no league writes.
 	"getTradeHistoryDump",
+	// PURE READS THAT UI WIDGETS FIRE CONSTANTLY. The caught-up guard exists to
+	// stop a device MUTATING shared records from a stale copy; a read cannot
+	// diverge anything, and the worst it can do is show data a moment old -
+	// which is what is already on the screen behind it. Gating them meant that
+	// during any catch-up (routine on a phone) the guard returned undefined,
+	// the caller dereferenced it, and the widget broke - the ratings popover
+	// opening blank and never recovering was exactly this.
+	"ratingsStatsPopoverInfo",
+	"getPlayerFaces",
+	"getBornLoc",
+	"getPlayerWatch",
 	"getSyncEngine",
 	"getSyncStatus",
 	"listSyncRooms",
