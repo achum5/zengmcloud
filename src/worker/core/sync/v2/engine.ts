@@ -126,6 +126,11 @@ const INLINE_DELTA_LIMIT = 150_000;
 // well within one tick so probes never pile up behind a hung one.
 const HEAD_PROBE_TIMEOUT_MS = 4_000;
 
+// How long a successful readiness probe counts for. Long enough that a burst
+// of edits does not pay for a round trip each, short enough that a connection
+// which died quietly stops being vouched for within a few interactions.
+const READY_TTL_MS = 60_000;
+
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
 	new Promise((resolve, reject) => {
 		const id = setTimeout(
@@ -172,7 +177,15 @@ export class SyncEngineV2 {
 	private catchingUp = false;
 	private drainChain: Promise<boolean> = Promise.resolve(true);
 	private draining = false;
-	private ready = false;
+
+	// Readiness is a LEASE, not a latch. It used to be a one-way boolean: the
+	// first successful ping set it true and nothing ever set it back, so
+	// ensureReady short-circuited forever and "Cloud sync is not ready" could
+	// never fire again however dead the connection got - on the very guard that
+	// gates every sim. Now it expires, and a dead listener revokes it outright.
+	private readyUntil = 0;
+	private readyProbe: Promise<void> | undefined;
+	private lastReportedReady = false;
 
 	// Set when a stale timeline advance was discarded: the local database
 	// contains a mutation the chain will never carry, so the next catch-up must
@@ -203,11 +216,37 @@ export class SyncEngineV2 {
 	// fails for a reason that will not change (a payload it refuses) cannot be
 	// retried in a tight loop - see CHECKPOINT_RESTORE_RETRY_MS.
 	private lastCheckpointAttempt: { key: string; at: number } | undefined;
+	// Bumped every time a checkpoint actually lands. Comparing the version
+	// numbers cannot answer "did the restore happen": a device asking for a
+	// forced restore is typically ALREADY at the checkpoint's version - that is
+	// the whole complaint - so the numbers look identical either way.
+	private checkpointRestores = 0;
 
 	// Whether the UI is currently showing the catch-up indicator for this
 	// engine, so it is only ever cleared when it was shown (no flicker on the
 	// ordinary one-version live applies).
 	private catchUpPillShown = false;
+
+	// Whether each live listener is currently believed to be alive. A Firestore
+	// listener is TERMINAL once its error callback fires, so "subscribed" and
+	// "working" are different questions and readiness depends on the second.
+	private stateListenerHealthy = false;
+	private authorityListenerHealthy = false;
+	private authorityRestartTimer: ReturnType<typeof setTimeout> | undefined;
+
+	// When the state listener last actually delivered. Distinct from the room's
+	// own `at` stamp, which is when the version was WRITTEN: an idle room and a
+	// dead listener produce the same stale `at`, and telling those two apart is
+	// the entire point of the field on the debug capture.
+	private lastStateDeliveryAt = 0;
+
+	// The last few versions this device applied or published, for the sync
+	// page's activity list and the debug capture. v2 has no readable log to
+	// page back through the way v1 does - deltas are pruned behind the
+	// checkpoint - so the honest answer is what this session has seen, kept in
+	// memory and costing nothing.
+	private recentVersions: ChangesetEntry[] = [];
+	private static RECENT_VERSIONS_LIMIT = 60;
 
 	private memoryQueue: Omit<ChangesetEntry, "seq">[] = [];
 	private memoryNotifications = new Map<string, SyncNotification[]>();
@@ -259,13 +298,63 @@ export class SyncEngineV2 {
 	// ---- Lifecycle ---------------------------------------------------------
 
 	start() {
+		this.subscribeAuthority();
+		this.subscribeState();
+	}
+
+	// The authority listener, with the same self-healing the state listener has
+	// had all along. It shipped without an error handler, and a Firestore
+	// listener is terminal once it errors - so one network blip left the device
+	// permanently showing whoever was simming at that moment, with isRoomBusy()
+	// frozen at whatever it last saw. Nothing here is allowed to be permanent.
+	private subscribeAuthority() {
+		this.authorityUnsubscribe?.();
 		this.authorityUnsubscribe = this.transport.subscribeAuthority?.(
 			(authority) => {
+				this.authorityListenerHealthy = true;
 				this.authority = authority;
 				this.onAuthorityChange?.(authority);
 			},
+			(error) => {
+				if (this.stopped) {
+					return;
+				}
+				// Report "nobody is simming" rather than a name we can no longer
+				// vouch for: a stale holder is what makes another device believe
+				// the room is busy and refuse to sim.
+				this.authorityListenerHealthy = false;
+				this.authority = undefined;
+				this.markNotReady();
+				this.authorityUnsubscribe?.();
+				this.authorityUnsubscribe = undefined;
+				this.onAuthorityChange?.(undefined);
+				syncDebugLog("v2:authority-listener-died", { error });
+				if (this.authorityRestartTimer !== undefined) {
+					clearTimeout(this.authorityRestartTimer);
+				}
+				this.authorityRestartTimer = setTimeout(() => {
+					this.authorityRestartTimer = undefined;
+					if (!this.stopped) {
+						syncDebugLog("v2:authority-listener-restarted", {});
+						this.subscribeAuthority();
+					}
+				}, 5000);
+				const nodeTimer = this.authorityRestartTimer as unknown as {
+					unref?: () => void;
+				};
+				if (typeof nodeTimer?.unref === "function") {
+					nodeTimer.unref();
+				}
+			},
 		);
-		this.subscribeState();
+		if (this.authorityUnsubscribe !== undefined) {
+			this.authorityListenerHealthy = true;
+		} else {
+			// No authority support on this transport (tests, stubs). Absent is not
+			// broken - don't hold readiness hostage to a listener that was never
+			// going to exist.
+			this.authorityListenerHealthy = true;
+		}
 	}
 
 	// The live pointer listener, with self-healing: a listener that errors is
@@ -277,6 +366,8 @@ export class SyncEngineV2 {
 		this.stateUnsubscribe?.();
 		this.stateUnsubscribe = this.transport.subscribeRoomV2State?.(
 			(state) => {
+				this.stateListenerHealthy = true;
+				this.lastStateDeliveryAt = Date.now();
 				this.roomState = state;
 				if (state.version > this.roomVersion) {
 					this.roomVersion = state.version;
@@ -292,6 +383,8 @@ export class SyncEngineV2 {
 				if (this.stopped) {
 					return;
 				}
+				this.stateListenerHealthy = false;
+				this.markNotReady();
 				const timer = setTimeout(() => {
 					if (!this.stopped) {
 						syncDebugLog("v2:state-listener-restarted", {});
@@ -304,6 +397,9 @@ export class SyncEngineV2 {
 				}
 			},
 		);
+		// A transport with no state listener at all (tests, stubs) is not a broken
+		// one - the head probe is the fallback and readiness still holds.
+		this.stateListenerHealthy = true;
 	}
 
 	// Ask the SERVER where the room's head is, and catch up if it is past us.
@@ -467,6 +563,10 @@ export class SyncEngineV2 {
 	stop() {
 		this.stopped = true;
 		this.clearCatchUpProgress();
+		if (this.authorityRestartTimer !== undefined) {
+			clearTimeout(this.authorityRestartTimer);
+			this.authorityRestartTimer = undefined;
+		}
 		this.authorityUnsubscribe?.();
 		this.authorityUnsubscribe = undefined;
 		this.stateUnsubscribe?.();
@@ -540,12 +640,54 @@ export class SyncEngineV2 {
 	}
 
 	isReady(): boolean {
-		return this.ready;
+		return (
+			this.stateListenerHealthy &&
+			this.authorityListenerHealthy &&
+			Date.now() < this.readyUntil
+		);
+	}
+
+	// Report a CHANGE in readiness. Edge-triggered off a remembered value rather
+	// than off isReady() read twice around the mutation: the callers that matter
+	// most (a listener error handler) have already flipped the health flag by
+	// the time they get here, so "was it ready a moment ago" cannot be
+	// reconstructed from the current state - and reconstructing it wrong means
+	// the UI never hears that the connection died.
+	private pushReady() {
+		const ready = this.isReady();
+		if (ready !== this.lastReportedReady) {
+			this.lastReportedReady = ready;
+			this.onReadyChange?.(ready);
+		}
+	}
+
+	private markNotReady() {
+		this.readyUntil = 0;
+		this.pushReady();
 	}
 
 	async ensureReady(force = false): Promise<void> {
-		if (this.ready && !force) {
+		// A dead listener is recoverable, so try to recover it here rather than
+		// failing until the restart timer gets around to it - but do not claim
+		// readiness on a connection whose live half is down.
+		if (!this.stateListenerHealthy) {
+			this.subscribeState();
+		}
+		if (!this.authorityListenerHealthy) {
+			this.subscribeAuthority();
+		}
+		if (!this.stateListenerHealthy || !this.authorityListenerHealthy) {
+			this.markNotReady();
+			throw new Error("Cloud sync listeners are not ready.");
+		}
+		if (!force && Date.now() < this.readyUntil) {
 			return;
+		}
+		// Single-flight: the pre-action guard can fire several of these at once
+		// (a burst of edits), and they would otherwise each pay for their own
+		// round trip.
+		if (this.readyProbe) {
+			return this.readyProbe;
 		}
 		// TIMED, without exception: a raw Firestore write buffers forever on a
 		// wedged/offline channel, and this is awaited by the pre-action guard
@@ -553,12 +695,22 @@ export class SyncEngineV2 {
 		// did NOTHING, with no toast and no log, while ordinary edits (which
 		// skip the forced ping once ready) kept working. A timeout throws, the
 		// guard catches it, and the user sees "Cloud sync is not ready".
-		await withTimeout(
-			this.transport.ping?.() ?? Promise.resolve(),
-			CATCHUP_READ_TIMEOUT_MS,
-		);
-		this.ready = true;
-		this.onReadyChange?.(true);
+		this.readyProbe = (async () => {
+			try {
+				await withTimeout(
+					this.transport.ping?.() ?? Promise.resolve(),
+					CATCHUP_READ_TIMEOUT_MS,
+				);
+				this.readyUntil = Date.now() + READY_TTL_MS;
+				this.pushReady();
+			} catch (error) {
+				this.markNotReady();
+				throw error;
+			}
+		})().finally(() => {
+			this.readyProbe = undefined;
+		});
+		return this.readyProbe;
 	}
 
 	// MUST return a boolean: the worker's pre-action guard does
@@ -626,8 +778,11 @@ export class SyncEngineV2 {
 
 	startChangesSubscription(): void {}
 
+	// When the live listener last DELIVERED, not when the room last wrote. The
+	// two look identical on a quiet room and completely different on a dead
+	// listener, which is the only distinction this field exists to draw.
 	getLastChangesDeliveryAt(): number {
-		return this.roomState?.at ?? 0;
+		return this.lastStateDeliveryAt;
 	}
 
 	// Same shape as v1's, so the debug page and drive-catch-up logging consume
@@ -650,8 +805,39 @@ export class SyncEngineV2 {
 		};
 	}
 
-	async fetchRecentLog(_limit?: number): Promise<ChangesetEntry[]> {
-		return [];
+	// What this device has seen the chain do, newest last, capped. Not a read of
+	// the room's log: v2 prunes deltas behind the checkpoint, so there is no
+	// durable log to page back through - the honest answer is this session's
+	// versions, which is also the answer that matters when the question is "is
+	// anything reaching this device". Costs nothing and reads nothing.
+	async fetchRecentLog(limit?: number): Promise<ChangesetEntry[]> {
+		const n = limit ?? SyncEngineV2.RECENT_VERSIONS_LIMIT;
+		return this.recentVersions.slice(-n);
+	}
+
+	private noteVersion(entry: {
+		version: number;
+		authorId: string;
+		action: string;
+		at: number;
+		records: number;
+		attrs?: string[];
+	}) {
+		this.recentVersions.push({
+			id: `v${entry.version}`,
+			authorId: entry.authorId,
+			seq: entry.version,
+			action: entry.action,
+			changeset: { changes: [] },
+			records: entry.records,
+			attrs: entry.attrs ?? [],
+		});
+		if (this.recentVersions.length > SyncEngineV2.RECENT_VERSIONS_LIMIT) {
+			this.recentVersions.splice(
+				0,
+				this.recentVersions.length - SyncEngineV2.RECENT_VERSIONS_LIMIT,
+			);
+		}
 	}
 
 	// The v2 line for the sync-page log capture: chain state at a glance.
@@ -675,6 +861,85 @@ export class SyncEngineV2 {
 			applied,
 			incomplete: ok ? 0 : 1,
 			failed: !ok,
+		};
+	}
+
+	// The Force Resync button, v2 edition.
+	//
+	// resyncAll above is NOT that button, and using it for one was the bug: an
+	// ordinary catch-up finds nothing to do the instant applied === roomVersion,
+	// which is precisely the state someone pressing this is in. Their counter
+	// agrees with the room; it is the DATABASE that looks wrong. So the button
+	// does not ask catch-up to go find work - it declares the local database
+	// untrustworthy and snaps it back to a state the chain vouches for, then
+	// walks the tail.
+	//
+	// Same machinery a discarded stale advance already uses. The only difference
+	// is who decided, and that matters in one place: the automatic backoffs
+	// exist to stop a failing restore from looping, and a person who just
+	// clicked is not a loop. Clear them and go.
+	async forceCheckpointRestore(): Promise<{
+		total: number;
+		applied: number;
+		incomplete: number;
+		failed: boolean;
+	}> {
+		if (!this.transport.fetchRoomV2State || !this.transport.fetchV2Checkpoint) {
+			throw new Error("This room does not support checkpoint recovery.");
+		}
+		// Server-fresh, because the whole premise is that this device's own view
+		// of things is suspect.
+		const state = await withTimeout(
+			this.transport.fetchRoomV2State(),
+			CATCHUP_READ_TIMEOUT_MS,
+		);
+		if (!state) {
+			throw new Error("Couldn't read the room. Check your connection.");
+		}
+		if (
+			state.checkpointVersion === undefined ||
+			state.checkpointChunkCount === undefined
+		) {
+			// A brand-new room has no recovery point yet. Say so, rather than
+			// running a no-op and reporting success - that is the failure this
+			// whole method exists to end. (chunkCount matters as much as the
+			// version: without it the restore path declines and falls through to
+			// an ordinary catch-up, which is the no-op again.)
+			throw new Error(
+				"The room hasn't published a checkpoint yet, so there's nothing to restore from. Whoever is in charge of simming just needs the app open for a few minutes, then try again.",
+			);
+		}
+
+		const restoresBefore = this.checkpointRestores;
+		this.mustRecoverFromCheckpoint = true;
+		this.lastCheckpointAttempt = undefined;
+		this.catchupFailureStreak = 0;
+		this.lastCatchupFailureAt = 0;
+		syncDebugLog("v2:force-checkpoint-restore", {
+			applied: this.appliedMirror,
+			checkpointVersion: state.checkpointVersion,
+			roomVersion: state.version,
+		});
+
+		const ok = await this.catchUp(state);
+		// Never leave the flag armed on the way out: every later catch-up would
+		// drag the whole league back down again.
+		this.mustRecoverFromCheckpoint = false;
+
+		// Whether the checkpoint itself landed, which is the part the user asked
+		// for. The tail after it is ordinary catch-up work that the health tick
+		// finishes on its own, so a walk that stalled there is "not finished
+		// yet", not "your league is still wrong".
+		if (this.checkpointRestores === restoresBefore) {
+			throw new Error(
+				"Couldn't restore from the room's checkpoint. It may be damaged - whoever is in charge of simming just needs the app open for a few minutes so a fresh one publishes, then try again.",
+			);
+		}
+		return {
+			total: 1,
+			applied: 1,
+			incomplete: ok ? 0 : 1,
+			failed: false,
 		};
 	}
 
@@ -788,6 +1053,7 @@ export class SyncEngineV2 {
 						);
 						await applyCheckpointV2(payload, state.checkpointVersion);
 						this.appliedMirror = state.checkpointVersion;
+						this.checkpointRestores += 1;
 						this.mustRecoverFromCheckpoint = false;
 						syncDebugLog("v2:recovered-from-checkpoint", {
 							checkpointVersion: state.checkpointVersion,
@@ -851,6 +1117,7 @@ export class SyncEngineV2 {
 					// if the payload is not a playable league).
 					await applyCheckpointV2(payload, plan.checkpointVersion);
 					this.appliedMirror = plan.checkpointVersion;
+					this.checkpointRestores += 1;
 					await this.afterRemoteApply("checkpoint");
 					continue;
 				}
@@ -896,6 +1163,16 @@ export class SyncEngineV2 {
 						// if a checkpoint restore is needed after all. Re-plan.
 						break;
 					}
+					this.noteVersion({
+						version,
+						authorId: delta.authorId,
+						action: delta.action,
+						at: delta.at,
+						records: changeset.changes.length,
+						attrs: changeset.changes
+							.filter((c) => c.store === "gameAttributes")
+							.map((c) => String(c.id)),
+					});
 					this.appliedMirror = Math.max(this.appliedMirror, version);
 					progressed = true;
 					if (this.catchUpPillShown) {
@@ -1256,6 +1533,16 @@ export class SyncEngineV2 {
 			// re-applying version `target` over identical records - idempotent
 			// by construction.
 			await this.writeMarker(target);
+			this.noteVersion({
+				version: target,
+				authorId: this.transport.clientId,
+				action: entry.action,
+				at,
+				records: entry.changeset.changes.length,
+				attrs: entry.changeset.changes
+					.filter((c) => c.store === "gameAttributes")
+					.map((c) => String(c.id)),
+			});
 			this.appliedMirror = Math.max(this.appliedMirror, target);
 			this.roomVersion = Math.max(this.roomVersion, target);
 

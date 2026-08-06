@@ -69,9 +69,16 @@ export const LiveGameChat = ({
 	// column keeps the drawer beside the sidebar instead of under it, and tracks
 	// the sidebar being toggled for free (that changes the column's width, which
 	// the observer below is already watching).
-	const [dock, setDock] = useState<{ maxHeight?: number; left: number }>({
-		left: 0,
-	});
+	// bottom - how far up from the layout viewport's bottom edge to sit. Zero
+	// almost always; on a phone with the keyboard open it is the keyboard's
+	// height, because `position: fixed; bottom: 0` pins to the LAYOUT viewport
+	// and the keyboard covers the bottom of it - which put the message box the
+	// user just tapped underneath the keyboard they opened by tapping it.
+	const [dock, setDock] = useState<{
+		maxHeight?: number;
+		left: number;
+		bottom: number;
+	}>({ left: 0, bottom: 0 });
 	const [scoreEl, courtEl] = boundaryEls;
 	const elements = useMemo(
 		() => [scoreEl, courtEl].filter((el) => el != null),
@@ -80,13 +87,21 @@ export const LiveGameChat = ({
 	useEffect(() => {
 		const measure = () => {
 			// visualViewport is the part actually on screen - on iOS innerHeight
-			// includes the area behind the browser chrome, which would size the
-			// drawer taller than the space it has.
-			const viewport = window.visualViewport?.height ?? window.innerHeight;
+			// includes the area behind the browser chrome AND behind the keyboard,
+			// either of which would size the drawer taller than the space it has.
+			const vv = window.visualViewport;
+			const viewport = vv?.height ?? window.innerHeight;
+			// How far the visible area is scrolled WITHIN the layout viewport, so
+			// element positions can be expressed in what the user can actually see.
+			// Pinch-zoom and the keyboard both move this.
+			const offsetTop = vv?.offsetTop ?? 0;
+			const bottom = vv
+				? Math.max(0, Math.round(window.innerHeight - vv.height - offsetTop))
+				: 0;
 			const rects = elements.map((el) => el.getBoundingClientRect());
 			const bottoms = rects
-				.map((rect) => rect.bottom)
-				.filter((bottom) => Number.isFinite(bottom));
+				.map((rect) => rect.bottom - offsetTop)
+				.filter((value) => Number.isFinite(value));
 			// Nothing to measure means no idea where the game ends, so take half
 			// the screen rather than assuming the whole thing is free. Scrolled
 			// past everything, the bottoms go negative and the drawer is welcome
@@ -94,8 +109,14 @@ export const LiveGameChat = ({
 			const floor =
 				bottoms.length === 0 ? viewport / 2 : Math.max(0, ...bottoms);
 			setDock({
+				// The 120px floor can push the drawer over the court, but only
+				// when there is genuinely no room below it - in practice, with the
+				// keyboard open. That is the one moment the person is looking at
+				// what they are typing rather than at the game, and the
+				// alternative is a message box too short to use.
 				maxHeight: Math.max(120, Math.floor(viewport - floor)),
 				left: Math.max(0, Math.floor(rects[0]?.left ?? 0)),
+				bottom,
 			});
 		};
 		measure();
@@ -109,12 +130,16 @@ export const LiveGameChat = ({
 		}
 		window.addEventListener("resize", measure);
 		window.addEventListener("scroll", measure, { passive: true });
+		// The visual viewport moves and resizes independently of the page - the
+		// keyboard opening is a resize, and scrolling under it is a scroll.
 		window.visualViewport?.addEventListener("resize", measure);
+		window.visualViewport?.addEventListener("scroll", measure);
 		return () => {
 			observer.disconnect();
 			window.removeEventListener("resize", measure);
 			window.removeEventListener("scroll", measure);
 			window.visualViewport?.removeEventListener("resize", measure);
+			window.visualViewport?.removeEventListener("scroll", measure);
 		};
 	}, [elements]);
 
@@ -177,6 +202,7 @@ export const LiveGameChat = ({
 			className="live-chat-dock"
 			style={{
 				left: dock.left,
+				bottom: dock.bottom,
 				maxHeight: open ? dock.maxHeight : undefined,
 			}}
 		>

@@ -1441,6 +1441,19 @@ export const resyncSharedLeague = async (): Promise<{
 	// aside; past that, the person clicked the button for a reason.
 	await engine.waitUntilIdle(30_000);
 
+	// V2 has its own checkpoint, and must never come near the code below: that
+	// path reads the V1 snapshot docs, which a v2 room never writes. In a room
+	// that has only ever been v2 the read finds nothing and the whole button
+	// degrades to an ordinary catch-up - a no-op exactly when the version
+	// counter agrees with the room and the DATABASE is what's wrong, which is
+	// the only reason anyone presses this. In a room upgraded from v1 it is
+	// worse: the stale v1 snapshot restores over the league while
+	// syncV2AppliedVersion stays at the head, so the device is rolled back and
+	// then believes it is caught up.
+	if (engine instanceof SyncEngineV2) {
+		return engine.forceCheckpointRestore();
+	}
+
 	// The button means "my league looks wrong - make it match the room". The
 	// trustworthy way to do that is the checkpoint: restore the room's snapshot
 	// (a complete, consistent base - works no matter how far behind or how

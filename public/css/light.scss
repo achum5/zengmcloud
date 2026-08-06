@@ -751,6 +751,15 @@ tr.table-warning:hover > td {
 	overflow-y: auto;
 }
 
+// iOS Safari zooms the whole page in whenever you focus an input whose text is
+// smaller than 16px, and it does not zoom back out afterwards - so tapping the
+// message box left you zoomed in, hunting for the Send button, then scrolling
+// back to the top of the game. Bootstrap's small input group is 14px. 16px is
+// the entire fix; nothing else about the row changes.
+.live-chat-dock .form-control {
+	font-size: 16px;
+}
+
 // The collapsed drawer pins ~3rem to the bottom of the viewport, so give the
 // column it came out of that much clearance - otherwise the last few plays can
 // never be scrolled out from under it.

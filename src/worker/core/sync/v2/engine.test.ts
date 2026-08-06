@@ -99,7 +99,10 @@ class V2Transport implements SyncTransport {
 		this.room.setAuthority({ holderId, holderName });
 	}
 
-	subscribeAuthority(onChange: (a: Authority | undefined) => void) {
+	subscribeAuthority(
+		onChange: (a: Authority | undefined) => void,
+		_onError?: (error: unknown) => void,
+	) {
 		return this.room.onAuthority(onChange);
 	}
 
@@ -1152,5 +1155,239 @@ describe("SyncEngineV2", () => {
 			incomplete: 0,
 			failed: false,
 		});
+	});
+
+	// THE BUG THIS ENDS: Force Resync used to route through an ordinary
+	// catch-up, which finds nothing to do the moment applied === roomVersion -
+	// exactly the state of a device whose counter is right and whose DATABASE is
+	// wrong, which is the only reason anyone presses the button. The one big
+	// hammer in the app was a no-op in its only use case.
+	test("force resync restores the checkpoint even when the version says caught up", async () => {
+		const room = new Room();
+		initRoom(room);
+		const authorTransport = new V2Transport("A", room);
+
+		await authorTransport.publishV2Checkpoint(
+			1,
+			serializeChangeset({
+				version: 1,
+				stores: {
+					players: [
+						{ pid: 1, tid: 0 },
+						{ pid: 2, tid: 0 },
+						{ pid: 3, tid: 0 },
+						{ pid: 4, tid: 0 },
+						{ pid: 5, tid: 0 },
+					],
+					teams: [{ tid: 0 }],
+					gameAttributes: [
+						{ key: "season", value: 2006 },
+						{ key: "phase", value: 1 },
+					],
+				},
+			}),
+		);
+		await authorTransport.commitV2Checkpoint(1, 1);
+		room.setState({
+			...room.state!,
+			version: 1,
+			authorId: "A",
+			byName: "A",
+			at: 1,
+		});
+
+		// A device that believes it is fully caught up (marker at the head) but
+		// whose league is missing two thirds of its roster.
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 0 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 1 }],
+		});
+		const engine = new SyncEngineV2(new V2Transport("B", room));
+
+		// The ordinary path agrees there is nothing to do - which is the whole
+		// problem, and why the button needs its own path. (Its reported count is
+		// no use as evidence here: the version mirror starts at zero, so merely
+		// READING the marker looks like progress. The database is the evidence.)
+		await engine.resyncAll();
+		assert.strictEqual(
+			(await (idb as any).league.getAll("players")).length,
+			1,
+			"plain catch-up leaves the damaged league exactly as it was",
+		);
+
+		const result = await engine.forceCheckpointRestore();
+		assert.strictEqual(result.failed, false);
+		assert.strictEqual(result.incomplete, 0);
+		const players = await (idb as any).league.getAll("players");
+		assert.strictEqual(players.length, 5, "the checkpoint roster landed");
+		assert.strictEqual(await readAppliedVersion(), 1);
+	});
+
+	// Reporting success after doing nothing is the failure mode above wearing a
+	// disguise, so a room with no recovery point has to say so out loud.
+	test("force resync refuses when the room has no checkpoint yet", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const engine = new SyncEngineV2(new V2Transport("B", room));
+
+		let message = "";
+		try {
+			await engine.forceCheckpointRestore();
+			assert.fail("expected a refusal");
+		} catch (error) {
+			message = (error as Error).message;
+		}
+		assert.ok(
+			message.includes("hasn't published a checkpoint yet"),
+			`unexpected message: ${message}`,
+		);
+		// And it must not leave the recovery flag armed - every later catch-up
+		// would drag the whole league down again.
+		assert.strictEqual(
+			(engine as any).mustRecoverFromCheckpoint,
+			false,
+			"the forced-recovery flag is not left armed",
+		);
+	});
+
+	// Readiness gates every sim. It used to be a one-way latch: the first
+	// successful ping set it true and nothing ever set it false, so
+	// "Cloud sync is not ready" could never fire again for the session however
+	// dead the connection got.
+	test("readiness expires and a dead listener revokes it", async () => {
+		const room = new Room();
+		initRoom(room);
+		const transport = new V2Transport("B", room);
+		const readyChanges: boolean[] = [];
+		const engine = new SyncEngineV2(transport, {
+			onReadyChange: (ready) => readyChanges.push(ready),
+		});
+		engine.start();
+
+		await engine.ensureReady();
+		assert.strictEqual(engine.isReady(), true);
+		assert.deepStrictEqual(readyChanges, [true]);
+
+		// The lease runs out on its own.
+		(engine as any).readyUntil = Date.now() - 1;
+		assert.strictEqual(engine.isReady(), false, "readiness expires");
+
+		// And a re-probe renews it without needing a reconnect.
+		await engine.ensureReady();
+		assert.strictEqual(engine.isReady(), true);
+
+		// A dead listener revokes it outright, and says so.
+		(engine as any).stateListenerHealthy = false;
+		(engine as any).markNotReady();
+		assert.strictEqual(engine.isReady(), false);
+		assert.strictEqual(readyChanges.at(-1), false);
+		engine.stop();
+	});
+
+	// v2 shipped subscribeAuthority with no error handler. A Firestore listener
+	// is terminal once it errors, so one blip left the device believing forever
+	// that whoever was simming at that moment still was - and isRoomBusy()
+	// frozen with it.
+	test("a dead authority listener clears the holder and is rebuilt", async () => {
+		const room = new Room();
+		initRoom(room);
+		const transport = new V2Transport("B", room);
+		// Hand the engine a listener we can kill on demand.
+		let fail: ((error: unknown) => void) | undefined;
+		let subscribeCount = 0;
+		transport.subscribeAuthority = (
+			onChange: (a: Authority | undefined) => void,
+			onError?: (error: unknown) => void,
+		) => {
+			subscribeCount += 1;
+			fail = onError;
+			return room.onAuthority(onChange);
+		};
+
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		room.setAuthority({ holderId: "A", holderName: "Alex" });
+		assert.strictEqual(engine.getAuthority()?.holderName, "Alex");
+		assert.strictEqual(subscribeCount, 1);
+
+		fail?.(new Error("listener died"));
+		assert.strictEqual(
+			engine.getAuthority(),
+			undefined,
+			"a holder we can no longer vouch for is dropped, not remembered",
+		);
+		assert.strictEqual(engine.isReady(), false);
+
+		await new Promise((resolve) => setTimeout(resolve, 5100));
+		assert.strictEqual(subscribeCount, 2, "and the listener is rebuilt");
+		assert.strictEqual(engine.getAuthority()?.holderName, "Alex");
+		engine.stop();
+	}, 15000);
+
+	// The sync page's activity list and the debug capture both read
+	// fetchRecentLog, which returned [] on v2 - so the one screen a person
+	// checks to see whether anything is reaching their device showed nothing.
+	test("recent versions are recorded for the activity list", async () => {
+		const room = new Room();
+		initRoom(room);
+		const authorTransport = new V2Transport("A", room);
+		await authorTransport.publishV2Delta(
+			{ version: 1, authorId: "A", action: "playMenu.day", at: 1 },
+			serializeChangeset(
+				changesetOf(tradePut(1, 5), {
+					store: "gameAttributes",
+					id: "phase",
+					type: "put",
+					value: { key: "phase", value: 3 },
+				}),
+			),
+		);
+		await authorTransport.commitV2Version(
+			{
+				version: 1,
+				authorId: "A",
+				byName: "A",
+				at: 1,
+				action: "playMenu.day",
+			},
+			0,
+		);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const engine = new SyncEngineV2(new V2Transport("B", room));
+		assert.ok(await engine.catchUp());
+
+		const recent = await engine.fetchRecentLog(10);
+		assert.strictEqual(recent.length, 1);
+		assert.strictEqual(recent[0]!.seq, 1);
+		assert.strictEqual(recent[0]!.action, "playMenu.day");
+		assert.strictEqual(recent[0]!.authorId, "A");
+		assert.strictEqual(recent[0]!.records, 2);
+		assert.deepStrictEqual(recent[0]!.attrs, ["phase"]);
+	});
+
+	// An idle room and a dead listener both leave the room's `at` stamp old.
+	// Telling them apart is the only thing this field is for, so it has to
+	// report DELIVERY, not authorship.
+	test("last-delivery reports when the listener fired, not when the room wrote", async () => {
+		const room = new Room();
+		const engine = new SyncEngineV2(new V2Transport("B", room));
+		assert.strictEqual(engine.getLastChangesDeliveryAt(), 0);
+
+		const before = Date.now();
+		engine.start();
+		room.setState({
+			version: 0,
+			authorId: "init",
+			byName: "Init",
+			// Written long ago - an idle room. Delivery is what just happened.
+			at: 1,
+		});
+		assert.ok(
+			engine.getLastChangesDeliveryAt() >= before,
+			"delivery is now, not the room's ancient write stamp",
+		);
+		engine.stop();
 	});
 });
