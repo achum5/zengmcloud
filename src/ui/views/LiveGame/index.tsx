@@ -2369,6 +2369,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 							quarter={boxScore.current.quarterShort}
 							clock={boxScore.current.time}
 							score={chatScore}
+							boundaryEl={liveGameStickyDiv}
 						/>
 						<PlayByPlay
 							boxScore={boxScore.current}
