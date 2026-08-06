@@ -59,6 +59,7 @@ import {
 	runAfterActionHook,
 	setSingleGameSimActive,
 } from "../sync/afterActionHook.ts";
+import { beginLiveSimNotificationHold } from "../sync/liveSimNotificationHold.ts";
 import {
 	claimSimDayFence,
 	completeClaimedSimDayFence,
@@ -848,6 +849,15 @@ const play = async (
 		// game navigates) so afterAction stays silent no matter what drains the
 		// changeset; a day sim (gidOneGame undefined) clears it so it notifies.
 		setSingleGameSimActive(gidOneGame !== undefined);
+
+		// A game being WATCHED is different from one silently simmed: the room
+		// should hear about it, just not while the watcher is still on Q1. Hold
+		// its pushes here and release them when the playback ends. Without this
+		// they were dropped outright, which is why a playoff run watched game by
+		// game announced nothing to anyone.
+		if (gidOneGame !== undefined && playByPlay) {
+			beginLiveSimNotificationHold();
+		}
 
 		const canStartGames = lock.canStartGames();
 

@@ -5,6 +5,10 @@ import { getSyncEngine } from "./engineHolder.ts";
 import { getConnectedLid } from "./connect.ts";
 import { isSingleGameSimActive } from "./afterActionHook.ts";
 import { buildNotifications } from "./notifications.ts";
+import {
+	holdLiveSimNotifications,
+	isLiveSimNotificationHoldActive,
+} from "./liveSimNotificationHold.ts";
 import { shouldTraceSyncLabel, syncDebugLog } from "./debugLog.ts";
 import { idb } from "../../db/index.ts";
 import { g, local, lock } from "../../util/index.ts";
@@ -139,13 +143,32 @@ export const afterAction = async (
 			// even a next-launch one. Sending on "queued" produced phones that knew
 			// the score of a game the room never received, because the simmer
 			// backgrounded the app before the upload finished.
+			//
+			// Silence during a LIVE sim is a delay, not a cancellation: the room
+			// still wants the score, just not while this device is watching the
+			// game it belongs to. Build them anyway and hold them; onLiveSimOver
+			// sends them. (Which is the difference between a watched game and
+			// "Sim one game" - the latter has no playback to wait for, so it is
+			// silent outright, as before.)
 			let notifications: Awaited<ReturnType<typeof buildNotifications>> = [];
-			if (!silent) {
+			const holdForLiveSim = silent && isLiveSimNotificationHoldActive();
+			if (!silent || holdForLiveSim) {
 				try {
-					notifications = await buildNotifications(label, changeset, {
+					const built = await buildNotifications(label, changeset, {
 						isHost: engine.getIsHost(),
 						authorName: engine.localName,
 					});
+					if (holdForLiveSim) {
+						holdLiveSimNotifications(built);
+						if (trace) {
+							syncDebugLog("afterAction:notifications-held-for-live-sim", {
+								label,
+								count: built.length,
+							});
+						}
+					} else {
+						notifications = built;
+					}
 				} catch (error) {
 					console.error("[sync] Failed to build notifications", error);
 				}

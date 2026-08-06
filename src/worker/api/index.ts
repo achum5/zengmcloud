@@ -132,6 +132,7 @@ import {
 	updateLiveBroadcast,
 } from "../core/sync/index.ts";
 import { setSingleGameSimActive } from "../core/sync/afterActionHook.ts";
+import { releaseLiveSimNotifications } from "../core/sync/liveSimNotificationHold.ts";
 import { setSyncDebugLogging, syncDebugLog } from "../core/sync/debugLog.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
@@ -4858,6 +4859,25 @@ const onLiveSimOver = async (gid?: number) => {
 	// live game is done (normal clear is in play.ts). Prevents a stale flag from
 	// silencing later notifications if a live sim errored before its normal clear.
 	setSingleGameSimActive(false);
+
+	// And now the room can be told. These were built when the sim ran and held
+	// back so watching a game wouldn't broadcast its score mid-playback; the
+	// playback is over, so they go out. Fires on the final play AND on leaving
+	// the page, so bailing on a game still tells the room what happened in it.
+	const heldNotifications = releaseLiveSimNotifications();
+	if (heldNotifications.length > 0) {
+		const engine = getSyncEngine();
+		if (engine) {
+			for (const notification of heldNotifications) {
+				void engine.publishNotification(notification).catch((error) => {
+					console.error(
+						"[sync] Failed to publish held live sim notification",
+						error,
+					);
+				});
+			}
+		}
+	}
 
 	await toUI("updateLocal", [{ liveGameInProgress: false }]);
 };

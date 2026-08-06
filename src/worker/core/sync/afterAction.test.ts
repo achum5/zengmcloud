@@ -6,6 +6,10 @@ import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { afterAction } from "./afterAction.ts";
 import { setSyncEngine } from "./engineHolder.ts";
+import {
+	beginLiveSimNotificationHold,
+	releaseLiveSimNotifications,
+} from "./liveSimNotificationHold.ts";
 
 // A minimal stand-in for the connected SyncEngine, recording what afterAction
 // fans out to it.
@@ -56,6 +60,8 @@ describe("afterAction silent publishing", () => {
 		changeTracker.disable();
 		changeTracker.reset();
 		setSyncEngine(undefined);
+		// Never let one test's hold leak into the next.
+		releaseLiveSimNotifications();
 	});
 
 	// Record one finished game into the cache (inside a sim capture window, so it
@@ -137,6 +143,52 @@ describe("afterAction silent publishing", () => {
 				`${name} must not push a notification`,
 			);
 		}
+	});
+
+	// THE PLAYOFF INCIDENT: watching a game instead of simming it announced
+	// nothing to anyone, ever. Silence during a live sim is there so the watcher
+	// doesn't broadcast the score while they're on Q1 - but it dropped the push
+	// rather than delaying it, and the silent window closes seconds in (when the
+	// sim finishes COMPUTING), long before the playback ends. So nothing re-fired
+	// it. A playoff run watched game by game told the room nothing.
+	test("a live sim's push is held during playback, then sent", async () => {
+		const { engine, published, notifications } = makeEngine();
+		setSyncEngine(engine as any);
+
+		beginLiveSimNotificationHold();
+		await seedOneGame();
+		await afterAction("actions", "liveGame");
+
+		assert.strictEqual(published.length, 1, "the game still syncs immediately");
+		assert.strictEqual(
+			notifications.length,
+			0,
+			"but nothing is pushed while the watcher is still watching",
+		);
+
+		// onLiveSimOver releases them.
+		const held = releaseLiveSimNotifications();
+		assert.ok(
+			held.length >= 1,
+			"the push must have been HELD, not dropped - this is the whole bug",
+		);
+	});
+
+	test("'Sim one game' stays silent outright - it has no playback to wait for", async () => {
+		const { engine, published, notifications } = makeEngine();
+		setSyncEngine(engine as any);
+
+		// No hold armed: play.ts only arms it for a live sim (playByPlay).
+		await seedOneGame();
+		await afterAction("actions", "simGame");
+
+		assert.strictEqual(published.length, 1);
+		assert.strictEqual(notifications.length, 0);
+		assert.strictEqual(
+			releaseLiveSimNotifications().length,
+			0,
+			"and nothing is queued up to fire later either",
+		);
 	});
 
 	test("a full-day sim to a game (simToGame) DOES notify", async () => {
