@@ -92,6 +92,13 @@ const CHECKPOINT_EVERY_VERSIONS = 300;
 // not, and there is no urgency to a checkpoint.
 const CHECKPOINT_CHECK_MIN_MS = 5 * 60 * 1000;
 
+// How long before the SAME checkpoint may be attempted again after a failed
+// restore. Downloading and parsing an entire league is not something to retry
+// on a five-second timer: when the failure is deterministic (a payload this
+// build refuses), the retries never succeed and each one allocates the whole
+// league, which is fatal on a phone long before it is useful anywhere.
+const CHECKPOINT_RESTORE_RETRY_MS = 2 * 60 * 1000;
+
 // Firestore's setDoc never REJECTS while offline - it buffers the write and
 // resolves whenever the connection returns, which can be never for a
 // backgrounded phone. Un-timed awaits on transport writes therefore hang the
@@ -192,6 +199,10 @@ export class SyncEngineV2 {
 	// CHECKPOINT_CHECK_MIN_MS). Starts at 0 so the first look happens promptly
 	// - a room with no checkpoint at all has no recovery until one exists.
 	private lastCheckpointCheckAt = 0;
+	// The last checkpoint restore this device attempted, so a restore that
+	// fails for a reason that will not change (a payload it refuses) cannot be
+	// retried in a tight loop - see CHECKPOINT_RESTORE_RETRY_MS.
+	private lastCheckpointAttempt: { key: string; at: number } | undefined;
 
 	// Whether the UI is currently showing the catch-up indicator for this
 	// engine, so it is only ever cleared when it was shown (no flicker on the
@@ -802,6 +813,25 @@ export class SyncEngineV2 {
 					) {
 						return false;
 					}
+					// A restore is the single most expensive thing a device can do:
+					// download, decompress and parse the whole league. Retrying that
+					// on every health tick is how a REFUSED restore (a checkpoint
+					// this device will never accept) turned into a full-league parse
+					// every five seconds until the phone ran out of memory. One
+					// attempt per checkpoint per backoff window; a genuinely
+					// transient failure still gets retried, just not instantly.
+					const attemptKey = `${plan.checkpointVersion}:${state.checkpointGeneration ?? ""}`;
+					if (
+						this.lastCheckpointAttempt?.key === attemptKey &&
+						Date.now() - this.lastCheckpointAttempt.at <
+							CHECKPOINT_RESTORE_RETRY_MS
+					) {
+						syncDebugLog("v2:checkpoint-restore-backoff", {
+							version: plan.checkpointVersion,
+						});
+						return false;
+					}
+					this.lastCheckpointAttempt = { key: attemptKey, at: Date.now() };
 					step = `checkpoint@${plan.checkpointVersion}`;
 					const serialized = await withTimeout(
 						this.transport.fetchV2Checkpoint(
@@ -1383,14 +1413,20 @@ export class SyncEngineV2 {
 						if (validateRoomSnapshotPayload(payload).length > 0) {
 							mustReplace = true;
 						} else {
-							// A checkpoint that does not carry this league's identity is
-							// refused by every restorer (pre-identity publish, or another
-							// league's state in a reused room) - dead weight that strands
-							// fresh joiners until replaced. Replace it now.
+							// Only a DIFFERENT identity means another league's state is
+							// sitting in this room, which every restorer refuses and which
+							// therefore strands fresh joiners. A checkpoint with no
+							// identity just predates the protection; restorers accept it,
+							// so rebuilding the whole league over it would be an expensive
+							// no-op.
 							const localLeagueId = await readLocalLeagueId();
+							const checkpointLeagueId = payloadLeagueId(
+								(payload as any)?.stores,
+							);
 							if (
 								localLeagueId !== undefined &&
-								payloadLeagueId((payload as any)?.stores) !== localLeagueId
+								checkpointLeagueId !== undefined &&
+								checkpointLeagueId !== localLeagueId
 							) {
 								mustReplace = true;
 							}

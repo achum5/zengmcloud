@@ -190,20 +190,32 @@ export const applyRoomSnapshotPayload = async (
 	// or different, and the restore refuses with the local database untouched.
 	// A league with no identity yet (never connected since identities existed)
 	// restores as before and inherits the payload's identity with the data.
+	// ABSENCE OF EVIDENCE IS NOT EVIDENCE OF MISMATCH. A payload carrying a
+	// DIFFERENT identity is positive proof it belongs to another league, and is
+	// refused. A payload carrying NO identity merely predates this protection -
+	// every checkpoint published before it existed looks like that - and
+	// refusing those bricked v2 outright: a joining device restores the room's
+	// checkpoint, was refused, retried on the health tick, and parsed the whole
+	// league again every few seconds until the phone ran out of memory.
+	// Wrong-room protection for identity-less payloads is the room binding at
+	// connect, which is the check that has the evidence to make that call.
 	const localLeagueId = await readLocalLeagueId();
-	if (localLeagueId !== undefined) {
-		const remoteLeagueId = payloadLeagueId(payload.stores);
-		if (remoteLeagueId !== localLeagueId) {
-			syncDebugLog("snapshot:league-identity-refused", {
-				local: localLeagueId,
-				remote: remoteLeagueId,
-			});
-			throw new Error(
-				remoteLeagueId === undefined
-					? "Refusing to restore the room's snapshot: it does not identify which league it belongs to (published before this protection existed). Nothing on this device was changed."
-					: "Refusing to restore the room's snapshot: it belongs to a different league. Nothing on this device was changed.",
-			);
-		}
+	const remoteLeagueId = payloadLeagueId(payload.stores);
+	if (
+		localLeagueId !== undefined &&
+		remoteLeagueId !== undefined &&
+		remoteLeagueId !== localLeagueId
+	) {
+		syncDebugLog("snapshot:league-identity-refused", {
+			local: localLeagueId,
+			remote: remoteLeagueId,
+		});
+		throw new Error(
+			"Refusing to restore the room's snapshot: it belongs to a different league. Nothing on this device was changed.",
+		);
+	}
+	if (localLeagueId !== undefined && remoteLeagueId === undefined) {
+		syncDebugLog("snapshot:league-identity-absent", { local: localLeagueId });
 	}
 
 	// This device's identity must survive the restore: which team THIS user
@@ -480,15 +492,19 @@ const roomSnapshotIsPoisoned = async (
 			});
 			return true;
 		}
-		// A checkpoint that does not carry THIS league's identity is one every
-		// restorer now refuses (a pre-identity publish, or another league's
-		// state sitting in a reused room). Either way it is dead weight that
-		// blocks fresh joins until the healthy authority replaces it - so
-		// replace it now, same urgency as structural poison.
+		// A checkpoint carrying a DIFFERENT league's identity is another
+		// league's state sitting in this room - every restorer refuses it, so
+		// it blocks fresh joins until replaced. Replace it now, same urgency as
+		// structural poison. A checkpoint carrying NO identity is merely older
+		// than the protection; restorers accept those, so it is not poison and
+		// forcing a full rebuild over it would be an expensive no-op. The next
+		// scheduled checkpoint adds the identity on its own.
 		const localLeagueId = await readLocalLeagueId();
+		const checkpointLeagueId = payloadLeagueId(payload.stores);
 		if (
 			localLeagueId !== undefined &&
-			payloadLeagueId(payload.stores) !== localLeagueId
+			checkpointLeagueId !== undefined &&
+			checkpointLeagueId !== localLeagueId
 		) {
 			syncDebugLog("snapshot:room-checkpoint-wrong-league", {
 				seq: meta.seq,

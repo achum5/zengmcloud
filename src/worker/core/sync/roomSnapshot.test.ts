@@ -611,21 +611,56 @@ describe("a healthy authority evicts a poisoned checkpoint", () => {
 		assert.strictEqual(published.length, 1);
 	});
 
-	// Once the authority's league carries an identity, a checkpoint that does
-	// not carry the SAME one is dead weight every restorer refuses - whether it
-	// predates the protection or is another league's state in a reused room.
-	// Same urgency as structural poison: replace it now.
-	test("a checkpoint without this league's identity is replaced immediately", async () => {
-		(idb as any).league = makeLeagueDb({
+	const authorityWithIdentity = () =>
+		makeLeagueDb({
 			...healthyDb(),
 			gameAttributes: [
 				{ key: "season", value: 2006 },
 				{ key: "syncLeagueId", value: "league-A" },
 			],
 		});
-		const { engine, published } = makeEngine(healthyPayload());
+
+	// A checkpoint holding ANOTHER league's state is what strands joiners: every
+	// restorer refuses it, so the room has no usable recovery point until the
+	// healthy authority replaces it.
+	test("a checkpoint from a different league is replaced immediately", async () => {
+		(idb as any).league = authorityWithIdentity();
+		const { engine, published } = makeEngine(
+			ser({
+				version: 1,
+				stores: {
+					players: [
+						{ pid: 1, tid: 0 },
+						{ pid: 2, tid: 0 },
+						{ pid: 3, tid: 0 },
+						{ pid: 4, tid: 0 },
+						{ pid: 5, tid: 0 },
+					],
+					teams: [{ tid: 0 }],
+					gameAttributes: [
+						{ key: "season", value: 2006 },
+						{ key: "syncLeagueId", value: "some-other-league" },
+					],
+				},
+			}),
+		);
 		await maybePublishRoomSnapshot(engine);
 		assert.strictEqual(published.length, 1);
+	});
+
+	// But a checkpoint with NO identity is simply older than the protection.
+	// Restorers accept those, so it is not poison - and treating it as poison
+	// meant rebuilding the entire league to replace a perfectly usable
+	// checkpoint, on the device least able to afford it.
+	test("a checkpoint predating identities is left alone, not rebuilt over", async () => {
+		(idb as any).league = authorityWithIdentity();
+		const { engine, published } = makeEngine(healthyPayload());
+		await maybePublishRoomSnapshot(engine);
+		assert.strictEqual(
+			published.length,
+			0,
+			"a usable checkpoint must never trigger a full-league rebuild",
+		);
 	});
 });
 
@@ -717,19 +752,18 @@ describe("league identity blocks wrong-league restores", () => {
 		);
 	});
 
-	test("a payload with no identity is refused once this league has one", async () => {
+	// This one bricked v2. Every checkpoint published before identities existed
+	// carries none, and refusing those meant a joining device downloaded and
+	// parsed the whole league, was refused, retried on the health tick, and
+	// parsed it again every few seconds until the phone died. Absence of an
+	// identity is not evidence of anything; only a DIFFERENT one is.
+	test("a payload with no identity is accepted - it just predates the check", async () => {
 		(idb as any).league = makeLeagueDb(localLeague("dba-new"));
-		let message = "";
-		try {
-			await applyRoomSnapshotPayload(payloadFromLeague(undefined));
-		} catch (error) {
-			message = String(error);
-		}
-		assert.ok(message.includes("does not identify"));
-		assert.strictEqual(
-			(await (idb as any).league.getAll("players")).map((p: any) => p.pid)[0],
-			1,
-			"untouched",
+		await applyRoomSnapshotPayload(payloadFromLeague(undefined));
+		assert.deepStrictEqual(
+			(await (idb as any).league.getAll("players")).map((p: any) => p.pid),
+			[21, 22, 23, 24, 25],
+			"the restore must go through, or v2 cannot join any room made before today",
 		);
 	});
 

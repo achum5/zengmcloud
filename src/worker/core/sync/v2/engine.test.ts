@@ -805,6 +805,39 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// A restore that fails for a reason that will not change - a payload this
+	// build refuses - must not be retried on the health tick. Each attempt
+	// downloads and parses the whole league, so a tight retry loop is fatal on
+	// a phone long before it is useful anywhere.
+	test("a failed checkpoint restore backs off instead of looping", async () => {
+		const room = new Room();
+		initRoom(room);
+		const seed = new V2Transport("A", room);
+		await seed.publishV2Checkpoint(5, "not a usable payload", "gen1");
+		await seed.commitV2Checkpoint(5, 1, "gen1");
+		room.setState({ ...room.state!, version: 6 });
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		let fetches = 0;
+		const realFetch = transport.fetchV2Checkpoint.bind(transport);
+		transport.fetchV2Checkpoint = (v: number, c?: number, g?: string) => {
+			fetches += 1;
+			return realFetch(v, c, g);
+		};
+		const engine = new SyncEngineV2(transport);
+
+		for (let i = 0; i < 5; i++) {
+			assert.strictEqual(await engine.catchUp(), false);
+		}
+		assert.strictEqual(
+			fetches,
+			1,
+			"the whole league must be fetched once, not once per attempt",
+		);
+		engine.stop();
+	});
+
 	// Rebuilding the checkpoint means reading the ENTIRE league into memory,
 	// stringifying it and gzipping it - the most expensive thing the sync layer
 	// does. At 25 versions (one version = one user action) a phone was doing
