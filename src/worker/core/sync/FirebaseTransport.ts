@@ -41,6 +41,7 @@ const FULL_LOG_MAX_PAGES = 1000;
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
+import type { LiveGameChatMessage } from "../../../common/liveGameChat.ts";
 import { parseLeaguePosition, type LeaguePosition } from "./leaguePosition.ts";
 import type {
 	Authority,
@@ -75,6 +76,8 @@ const LIVE_BROADCAST_DATA_PREFIX = "liveBroadcastData";
 // atomic claim for who sims the next pick.
 const DRAFT_READY_DOC_ID = "draftReady";
 const FA_BOARD_DOC_ID = "faBoard";
+// Live game chat, one doc per room, message-keyed (see publishLiveChatMessage).
+const LIVE_CHAT_DOC_ID = "liveChat";
 const TRIVIA_SCORES_DOC_ID = "triviaScores";
 const DRAFT_ADVANCE_DOC_ID = "draftAdvance";
 
@@ -386,6 +389,66 @@ export class FirebaseTransport implements SyncTransport {
 				updatedAt: serverTimestamp(),
 			},
 			{ merge: true },
+		);
+		this.markContact();
+	}
+
+	// ---- Live game chat ------------------------------------------------------
+	// Keyed by MESSAGE id rather than by device, so two people typing at the
+	// same instant merge instead of overwriting each other. holderId is stamped
+	// to our own uid like every other control-doc write, so the deployed rule
+	// passes and no rules republish is needed for this feature.
+	async publishLiveChatMessage(message: LiveGameChatMessage): Promise<void> {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", LIVE_CHAT_DOC_ID),
+			{
+				holderId: this.clientId,
+				messages: { [message.id]: message },
+				updatedAt: serverTimestamp(),
+			},
+			{ merge: true },
+		);
+		this.markContact();
+	}
+
+	subscribeLiveChat(
+		onChange: (messages: LiveGameChatMessage[]) => void,
+	): () => void {
+		return onSnapshot(
+			doc(this.db, "leagues", this.code, "control", LIVE_CHAT_DOC_ID),
+			(snap) => {
+				const raw = snap.data()?.messages;
+				if (!raw || typeof raw !== "object") {
+					onChange([]);
+					return;
+				}
+				this.markContact();
+				onChange(
+					Object.values(raw).filter(
+						(m: any) =>
+							m &&
+							typeof m.id === "string" &&
+							typeof m.cursor === "number" &&
+							typeof m.text === "string",
+					) as LiveGameChatMessage[],
+				);
+			},
+			() => {
+				// Chat dropping out must never be treated as a sync failure.
+			},
+		);
+	}
+
+	// A whole-document overwrite (no merge) so the previous game's messages are
+	// actually gone rather than merged into the new broadcast.
+	async clearLiveChat(): Promise<void> {
+		await setDoc(
+			doc(this.db, "leagues", this.code, "control", LIVE_CHAT_DOC_ID),
+			{
+				holderId: this.clientId,
+				messages: {},
+				updatedAt: serverTimestamp(),
+			},
 		);
 		this.markContact();
 	}

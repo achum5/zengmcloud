@@ -86,17 +86,14 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getSyncDebugSnapshot",
 	// Pure read (builds a text report); no league writes.
 	"getTradeHistoryDump",
-	// PURE READS THAT UI WIDGETS FIRE CONSTANTLY. The caught-up guard exists to
-	// stop a device MUTATING shared records from a stale copy; a read cannot
-	// diverge anything, and the worst it can do is show data a moment old -
-	// which is what is already on the screen behind it. Gating them meant that
-	// during any catch-up (routine on a phone) the guard returned undefined,
-	// the caller dereferenced it, and the widget broke - the ratings popover
-	// opening blank and never recovering was exactly this.
+	// The popover's fetch was the one read of its kind NOT listed further down,
+	// so during any catch-up the guard answered undefined, the caller
+	// dereferenced it, and the popover opened blank and never recovered.
 	"ratingsStatsPopoverInfo",
-	"getPlayerFaces",
-	"getBornLoc",
-	"getPlayerWatch",
+	// Live game chat: a cloud write and a UI push, no league mutation. It must
+	// also stay available WHILE catching up - chat during a live sim is exactly
+	// when a device is busiest applying the sim it is watching.
+	"sendLiveChatMessage",
 	"getSyncEngine",
 	"getSyncStatus",
 	"listSyncRooms",
@@ -163,6 +160,7 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getImages",
 	// Read-only lookup of a saved live-game replay.
 	"getLiveGamePlayByPlay",
+	"getLiveGameChat",
 	"hasLiveGameReplay",
 	// Read-only sync-checkpoint lookup for league exports.
 	"getSyncCheckpoint",

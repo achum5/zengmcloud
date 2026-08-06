@@ -35,6 +35,8 @@ import {
 	type FastForward,
 } from "../../components/PlayPauseNext.tsx";
 import { Confetti } from "./Confetti.tsx";
+import { LiveGameChat } from "./LiveGameChat.tsx";
+import type { LiveGameChatMessage } from "../../../common/liveGameChat.ts";
 import { BoxScoreRow } from "../../components/BoxScoreRow.tsx";
 import { getPeriodName } from "../../../common/getPeriodName.ts";
 import LiveCourt, {
@@ -1138,7 +1140,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// the simmer's cursor (no own timer) and the page is locked; on the broadcaster
 	// we additionally heartbeat our cursor to the room. In single-player both are
 	// false and nothing below changes.
-	const { mpLiveBroadcast } = useLocal(["mpLiveBroadcast"]);
+	const { mpLiveBroadcast, mpLiveChat } = useLocal([
+		"mpLiveBroadcast",
+		"mpLiveChat",
+	]);
 	const isFollower =
 		!!mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster;
 	const isBroadcaster =
@@ -1154,6 +1159,46 @@ export const LiveGame = (props: View<"liveGame">) => {
 		boxScore.current.exhibition,
 		isReplay,
 	);
+
+	// ---- Live game chat ------------------------------------------------------
+	// Live, messages arrive over the room subscription. On a replay they come
+	// from the saved game, and the panel is read-only: the log is a record of
+	// what was said that night, not a comment thread.
+	const [replayChat, setReplayChat] = useState<LiveGameChatMessage[]>([]);
+	const replayGid = isReplay ? boxScore.current.gid : undefined;
+	useEffect(() => {
+		if (replayGid === undefined) {
+			setReplayChat([]);
+			return;
+		}
+		let stale = false;
+		void (async () => {
+			const saved = await toWorker("main", "getLiveGameChat", replayGid);
+			if (!stale) {
+				setReplayChat(saved ?? []);
+			}
+		})();
+		return () => {
+			stale = true;
+		};
+	}, [replayGid]);
+
+	const chatMessages = isReplay ? replayChat : mpLiveChat;
+	// The same measure the broadcaster publishes as its cursor - events
+	// consumed - so an anchor means the same thing on every device and on the
+	// replay. Recomputed each render; playIndex changing is what triggers one.
+	const chatCursor =
+		initialEventCount.current - (events.current?.length ?? 0) || 0;
+	// Only people actually watching a live broadcast can talk.
+	const chatCanSend = !isReplay && (isFollower || isBroadcaster);
+	const chatScore =
+		Array.isArray(boxScore.current.teams) && boxScore.current.teams.length === 2
+			? `${boxScore.current.teams[0].abbrev ?? ""} ${
+					boxScore.current.teams[0].pts ?? 0
+				}-${boxScore.current.teams[1].pts ?? 0} ${
+					boxScore.current.teams[1].abbrev ?? ""
+				}`.trim()
+			: undefined;
 
 	const { setDirty } = useBlocker({
 		message: navigateWarning,
@@ -2317,6 +2362,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 								/>
 							</div>
 						) : null}
+						<LiveGameChat
+							messages={chatMessages}
+							cursor={chatCursor}
+							canSend={chatCanSend}
+							quarter={boxScore.current.quarterShort}
+							clock={boxScore.current.time}
+							score={chatScore}
+						/>
 						<PlayByPlay
 							boxScore={boxScore.current}
 							entries={playByPlayEntries.current}

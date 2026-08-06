@@ -125,6 +125,7 @@ import {
 	refreshSyncUIState,
 	syncNudge,
 	resyncSharedLeague,
+	sendLiveChatMessage,
 	setDraftReady,
 	setFaBoard,
 	teardownSharedLeague,
@@ -6648,6 +6649,23 @@ const getLiveGamePlayByPlay = async (gid: number) => {
 	return row?.playByPlay;
 };
 
+// The chat that happened while a game was live-simmed, saved alongside its
+// replay so re-watching shows the conversation at the moments it happened.
+const getLiveGameChat = async (gid: number) => {
+	if (typeof gid !== "number" || Number.isNaN(gid)) {
+		return [];
+	}
+	let row = await idb.cache.liveGamePlayByPlay.get(gid);
+	if (!row) {
+		try {
+			row = await (idb.league as any).get("liveGamePlayByPlay", gid);
+		} catch {
+			// Store missing / read failed - no chat.
+		}
+	}
+	return row?.chat ?? [];
+};
+
 // Cheap existence check for a saved replay (used to decide whether to show the
 // "Watch replay" button) - avoids loading the whole play-by-play payload.
 const hasLiveGameReplay = async (gid: number) => {
@@ -6785,6 +6803,7 @@ export default {
 		getLeagueInfo,
 		getLeagueName,
 		getLeagues,
+		getLiveGameChat,
 		getLiveGamePlayByPlay,
 		hasLiveGameReplay,
 		getNegotiationProps,
@@ -6856,6 +6875,7 @@ export default {
 		ovr,
 		proposeTrade,
 		ratingsStatsPopoverInfo,
+		sendLiveChatMessage,
 		reSignAll,
 		realtimeUpdate,
 		refreshSyncUIState,

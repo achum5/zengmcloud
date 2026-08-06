@@ -9,6 +9,12 @@ import { setApplyGuard } from "./applyGuard.ts";
 import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
 import { setupSimDayFence, teardownSimDayFence } from "./simDayFence.ts";
 import { setupFaBoard, teardownFaBoard } from "./faBoard.ts";
+import {
+	beginLiveChat,
+	persistLiveChatToReplay,
+	setupLiveChat,
+	teardownLiveChat,
+} from "./liveChat.ts";
 import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { setLiveWatchGate } from "./liveWatchGate.ts";
@@ -549,6 +555,10 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 		const byName = engine.localName;
 		activeBroadcast = { gid, startedAt, chunkCount, byName };
 
+		// Scope chat to THIS broadcast and wipe the room's chat doc, so last
+		// game's conversation cannot appear over this one.
+		await beginLiveChat(gid, startedAt, true);
+
 		// Payload is written; now flip the meta doc active so followers react.
 		await transport.publishLiveBroadcast({
 			active: true,
@@ -638,6 +648,12 @@ export const endLiveBroadcast = async () => {
 
 	void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
 
+	// Save the conversation into the replay before the room's copy goes away.
+	// Broadcaster only: liveGamePlayByPlay is a synced store, so every watcher
+	// writing its own copy would put several devices in a publish race over
+	// one row.
+	await persistLiveChatToReplay(broadcast !== undefined);
+
 	if (!transport || !broadcast || !transport.clearLiveBroadcast) {
 		return;
 	}
@@ -689,6 +705,8 @@ const handleLiveBroadcastMeta = async (
 			gid: meta.gid,
 			expiresAt: meta.expiresAt,
 		};
+		// Accept only this broadcast's chat (the broadcaster does the clearing).
+		void beginLiveChat(meta.gid, meta.startedAt, false);
 		// Freeze the header score ticker right now - BEFORE the game result can sync
 		// in - exactly like the simmer, whose liveGameInProgress is set before the
 		// game is even written. The follower's own onLiveSimOver clears it at game
@@ -2618,6 +2636,7 @@ const doConnectSharedLeague = async ({
 	// Free-agency boards: watch everyone's ranked FA lists so the day advance
 	// can resolve them (see faBoard.ts). No-op outside free agency.
 	setupFaBoard(transport);
+	setupLiveChat(transport);
 	setupTriviaScores(transport);
 
 	// Watch for a live lottery reveal (someone running the lottery while
@@ -2731,6 +2750,7 @@ export const teardownSharedLeague = async ({
 	teardownDraftReady();
 	teardownSimDayFence();
 	teardownFaBoard();
+	teardownLiveChat();
 	teardownTriviaScores();
 	// Best-effort: end our own broadcast so we don't leave the room locked.
 	if (activeBroadcast) {

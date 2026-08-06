@@ -2,6 +2,7 @@ import type { Changeset } from "./changeset.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
 import type { LeaguePosition } from "./leaguePosition.ts";
+import type { LiveGameChatMessage } from "../../../common/liveGameChat.ts";
 
 // One device's push registration in a league room, stored at
 // leagues/{code}/members/{uid}. The Cloud Function reads these to know where to
@@ -521,6 +522,18 @@ export interface SyncTransport {
 	// fetchLiveBroadcastData reassembles the payload string from its chunks (or
 	// undefined if a chunk is missing). clearLiveBroadcast marks the broadcast
 	// ended and removes the payload docs.
+	// Live game chat. Many devices write concurrently, so messages merge into
+	// ONE control doc keyed by message id - the same per-key merge the FA board
+	// and draft ready-up use, which is what lets it pass the deployed
+	// control-doc rule (holderId == the writer's own uid) with no rules change.
+	publishLiveChatMessage?(message: LiveGameChatMessage): Promise<void>;
+	subscribeLiveChat?(
+		onChange: (messages: LiveGameChatMessage[]) => void,
+	): () => void;
+	// Wipe the doc when a new broadcast starts, so last game's chat cannot
+	// bleed into this one. Broadcaster only.
+	clearLiveChat?(): Promise<void>;
+
 	publishLiveBroadcast?(update: LiveBroadcastUpdate): Promise<void>;
 	publishLiveBroadcastData?(gid: number, serialized: string): Promise<number>;
 	subscribeLiveBroadcast?(

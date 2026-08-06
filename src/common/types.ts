@@ -1,5 +1,6 @@
 import type { FaceConfig } from "facesjs";
 import type { ReactNode } from "react";
+import type { LiveGameChatMessage } from "./liveGameChat.ts";
 import * as z from "zod";
 import type processInputs from "../worker/api/processInputs.ts";
 import type * as views from "../worker/views/index.ts";
@@ -424,6 +425,10 @@ export type LiveGamePlayByPlay = {
 	gid: number;
 	season: number;
 	playByPlay: any[];
+	// What everyone said while watching it live, each message anchored to the
+	// play index it was sent at, so a replay shows the conversation unfolding
+	// at the right moments. Travels with the league, exports included.
+	chat?: LiveGameChatMessage[];
 };
 
 // One team's line in a contested free-agency roll: its mood-derived odds and
@@ -1327,6 +1332,8 @@ export type LocalStateUI = {
 	// The live-sim broadcast this device is part of (simming to the room, or
 	// watching the simmer in lockstep). Undefined when none. See MpLiveBroadcast.
 	mpLiveBroadcast: MpLiveBroadcast | undefined;
+	// Live game chat for the broadcast currently being watched.
+	mpLiveChat: LiveGameChatMessage[];
 	// Ready-up state (undefined outside a synced gated stage). Drives the header
 	// ready control; gated steps only advance once every user team is ready.
 	mpPhaseReady: MpPhaseReady | undefined;
@@ -2427,6 +2434,7 @@ export type UpdateEvents = (
 	// A follower asking the liveGame view to serve the cached multiplayer
 	// broadcast payload (recovery when the navigation carrying it was dropped).
 	| "mpLiveBroadcast"
+	| "mpLiveChat"
 
 	// Background-simulated game spreads landed, so the sportsbook can re-render
 	// with the refined lines (see core/sportsbook/simSpreads.ts).
