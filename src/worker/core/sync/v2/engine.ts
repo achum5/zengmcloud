@@ -67,9 +67,30 @@ import { isTimelineAdvanceLabel } from "../actionLabels.ts";
 // ---------------------------------------------------------------------------
 
 // Publish a fresh checkpoint once the chain has grown this far past the last
-// one. Small on purpose: the checkpoint is the only recovery, and v2
-// checkpoints are cheap to take (same builder as v1, gzipped).
-const CHECKPOINT_EVERY_VERSIONS = 25;
+// one.
+//
+// This was 25, on the reasoning that "checkpoints are cheap to take (same
+// builder as v1, gzipped)". The premise was exactly backwards: it is the same
+// builder as v1, and that builder is the most expensive thing in the entire
+// sync layer - it reads EVERY store of the league into memory, JSON-stringifies
+// the whole graph, and gzips the result. v1 pays that every 1200 log entries;
+// at 25 versions v2 was paying it roughly fifty times more often, where a
+// version is a single user action. On a phone with a deep league that is
+// repeated hundred-megabyte allocation, and iOS kills the tab for it - which
+// is precisely what "v2 crashes whenever I open a page" was.
+//
+// 300 still checkpoints far more often than v1 while making the rebuild a
+// rare event. Nothing about recovery weakens: deltas older than the PREVIOUS
+// checkpoint are the only ones pruned, so the chain always spans at least a
+// full interval and a behind device still catches up on deltas alone.
+const CHECKPOINT_EVERY_VERSIONS = 300;
+
+// And never even consider it more than this often. v1 has always had this
+// throttle (SNAPSHOT_CHECK_MIN_MS); v2 shipped without one, so a burst of
+// versions during an active session could trigger the full rebuild the moment
+// the interval elapsed, mid-play. Checking is cheap, but the thing it gates is
+// not, and there is no urgency to a checkpoint.
+const CHECKPOINT_CHECK_MIN_MS = 5 * 60 * 1000;
 
 // Firestore's setDoc never REJECTS while offline - it buffers the write and
 // resolves whenever the connection returns, which can be never for a
@@ -167,6 +188,10 @@ export class SyncEngineV2 {
 	private notifiedFailingStep: string | undefined;
 	private publishingCheckpoint = false;
 	private checkpointVettedForSession = false;
+	// Last time the checkpoint decision was even considered (see
+	// CHECKPOINT_CHECK_MIN_MS). Starts at 0 so the first look happens promptly
+	// - a room with no checkpoint at all has no recovery until one exists.
+	private lastCheckpointCheckAt = 0;
 
 	// Whether the UI is currently showing the catch-up indicator for this
 	// engine, so it is only ever cleared when it was shown (no flicker on the
@@ -1301,6 +1326,15 @@ export class SyncEngineV2 {
 		if (!checkApplyGuard()) {
 			return;
 		}
+		// Cheap to ask, ruinous to do - and nothing about a checkpoint is
+		// urgent. Rate-limit the whole consideration, like v1 does, so an
+		// active session can never be interrupted by the rebuild the moment
+		// the version interval elapses.
+		const now = Date.now();
+		if (now - this.lastCheckpointCheckAt < CHECKPOINT_CHECK_MIN_MS) {
+			return;
+		}
+		this.lastCheckpointCheckAt = now;
 		this.publishingCheckpoint = true;
 		try {
 			// The head comes from the engine's mirror: the same health tick that
@@ -1330,6 +1364,10 @@ export class SyncEngineV2 {
 				// checkpoint strands every future joiner, and only a caught-up
 				// device can replace it - so the moment one notices, it must.
 				this.checkpointVettedForSession = true;
+				// Also a whole-league parse, so it is also timed - once per
+				// session rather than per interval, but on a phone it is the same
+				// order of cost as the publish it guards.
+				const vetStartedAt = Date.now();
 				try {
 					const serialized = await this.transport.fetchV2Checkpoint(
 						state.checkpointVersion,
@@ -1361,6 +1399,11 @@ export class SyncEngineV2 {
 				} catch {
 					mustReplace = true;
 				}
+				syncDebugLog("v2:checkpoint-vetted", {
+					version: state.checkpointVersion,
+					ms: Date.now() - vetStartedAt,
+					mustReplace,
+				});
 				if (mustReplace) {
 					syncDebugLog("v2:checkpoint-unreadable-replacing", {
 						version: state.checkpointVersion,
@@ -1389,8 +1432,14 @@ export class SyncEngineV2 {
 				return;
 			}
 
+			// The expensive part: the entire league into memory, stringified and
+			// gzipped. Timed and sized so the capture shows what this actually
+			// costs on the device that runs it - the number that would have made
+			// the 25-version cadence obviously wrong.
+			const buildStartedAt = Date.now();
 			const payload = await buildRoomSnapshotPayload();
 			const serialized = await compressSerialized(serializeChangeset(payload));
+			const buildMs = Date.now() - buildStartedAt;
 			// A fresh generation per publish: chunks land at generation-unique doc
 			// ids and the pointer flips to them only at commit, so a reader can
 			// NEVER see half of one publish spliced with half of another.
@@ -1405,6 +1454,8 @@ export class SyncEngineV2 {
 				version: applied,
 				chunkCount,
 				generation,
+				bytes: serialized.length,
+				buildMs,
 			});
 
 			if (last > 0 && !mustReplace) {

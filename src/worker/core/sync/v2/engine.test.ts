@@ -805,6 +805,54 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// Rebuilding the checkpoint means reading the ENTIRE league into memory,
+	// stringifying it and gzipping it - the most expensive thing the sync layer
+	// does. At 25 versions (one version = one user action) a phone was doing
+	// that every few minutes of play and iOS killed the tab for it. Two
+	// independent brakes now: a version interval well clear of a session's
+	// worth of actions, and a wall-clock throttle on even considering it.
+	test("the checkpoint rebuild is rare enough for a phone to survive", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("A", room);
+		let builds = 0;
+		transport.publishV2Checkpoint = async () => {
+			builds += 1;
+			return 1;
+		};
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		await engine.claimAuthority();
+
+		// A busy session: dozens of versions land in quick succession.
+		(engine as any).roomState = { ...room.state!, version: 60 };
+		(engine as any).appliedMirror = 60;
+		for (let i = 0; i < 10; i++) {
+			await engine.maybePublishCheckpoint();
+		}
+		assert.strictEqual(
+			builds,
+			0,
+			"60 versions must not trigger a full-database rebuild",
+		);
+
+		// Even once the interval IS exceeded, the wall-clock throttle keeps the
+		// rebuild from firing repeatedly off the 5-second health tick.
+		(engine as any).roomState = { ...room.state!, version: 5000 };
+		(engine as any).appliedMirror = 5000;
+		(engine as any).lastCheckpointCheckAt = Date.now();
+		for (let i = 0; i < 10; i++) {
+			await engine.maybePublishCheckpoint();
+		}
+		assert.strictEqual(
+			builds,
+			0,
+			"the throttle must hold even when the version interval has elapsed",
+		);
+		engine.stop();
+	});
+
 	// The other Safari shape from the field: the pointer arrived instantly, the
 	// gap was one version, nothing failed - and the apply silently took 30
 	// seconds (an IndexedDB stall) with NOTHING on screen. The health-tick
