@@ -8,11 +8,11 @@ import { toWorker } from "../../util/toWorker.ts";
 
 // Chat alongside a live game, and the record of it on a replay.
 //
-// Collapsible on purpose: on a phone the court and box score are already
-// fighting for room, so chat opens over the bottom of the screen and can be
-// shut with one tap - but while it IS open the game stays visible above it,
-// because watching together is the whole point. Desktop gets the same panel,
-// just taller.
+// Collapsible on purpose: the court and box score are already fighting for room,
+// so chat opens as a drawer along the bottom of the screen and shuts with one
+// tap - but while it IS open the game stays visible above it, because watching
+// together is the whole point. Same drawer on desktop and mobile; on a bigger
+// screen there is simply more space under the court for it to use.
 
 const Message = ({ message }: { message: LiveGameChatMessage }) => (
 	<div className="mb-2">
@@ -45,9 +45,8 @@ export const LiveGameChat = ({
 	quarter?: string;
 	clock?: string;
 	score?: string;
-	// The sticky block holding the score and the court. On a phone the drawer
-	// is capped to the space BELOW it, so opening the chat never hides the
-	// game.
+	// The sticky block holding the score and the court. The drawer is capped to
+	// the space BELOW it, so opening the chat never hides the game.
 	boundaryEl?: HTMLElement | null;
 }) => {
 	const [open, setOpen] = useState(false);
@@ -56,36 +55,46 @@ export const LiveGameChat = ({
 	const listRef = useRef<HTMLDivElement>(null);
 	const seenCount = useRef(0);
 
-	// How tall the message list may be. Only constrained on the phone layout,
-	// where the panel is docked over the page; on desktop it sits in the
-	// sidebar and needs no cap beyond its own default.
-	const [listMaxHeight, setListMaxHeight] = useState<number | undefined>(
-		undefined,
-	);
+	// How tall the whole drawer may be: everything from the bottom of the court
+	// down. Capping the DRAWER rather than the message list means the toggle,
+	// the padding and the input row are accounted for by the flex layout instead
+	// of by a guessed constant, so the list gets exactly the leftover space.
+	const [maxHeight, setMaxHeight] = useState<number | undefined>(undefined);
 	useEffect(() => {
 		if (!open) {
 			return;
 		}
-		const docked = window.matchMedia("(max-width: 767.98px)");
 		const measure = () => {
-			if (!docked.matches) {
-				setListMaxHeight(undefined);
-				return;
-			}
-			// Everything under the court belongs to the drawer; leave room for
-			// the toggle row and the input beneath the list.
-			const courtBottom = boundaryEl?.getBoundingClientRect().bottom ?? 0;
-			const available = window.innerHeight - Math.max(0, courtBottom);
-			setListMaxHeight(Math.max(80, available - 120));
+			// visualViewport is the part actually on screen - on iOS innerHeight
+			// includes the area behind the browser chrome, which would size the
+			// drawer taller than the space it has.
+			const viewport = window.visualViewport?.height ?? window.innerHeight;
+			const bottom = boundaryEl?.getBoundingClientRect().bottom;
+			// No court to measure means no idea where it ends, so take half the
+			// screen rather than assuming the whole thing is free.
+			const floor =
+				bottom === undefined || !Number.isFinite(bottom)
+					? viewport / 2
+					: Math.max(0, bottom);
+			setMaxHeight(Math.max(120, Math.floor(viewport - floor)));
 		};
 		measure();
+
+		// The court sizes itself AFTER the first paint, so a one-shot measurement
+		// reads the sticky block as just the score row and hands the drawer the
+		// court's own space. Watching the element is what keeps the two honest.
+		const observer = new ResizeObserver(measure);
+		if (boundaryEl) {
+			observer.observe(boundaryEl);
+		}
 		window.addEventListener("resize", measure);
 		window.addEventListener("scroll", measure, { passive: true });
-		docked.addEventListener("change", measure);
+		window.visualViewport?.addEventListener("resize", measure);
 		return () => {
+			observer.disconnect();
 			window.removeEventListener("resize", measure);
 			window.removeEventListener("scroll", measure);
-			docked.removeEventListener("change", measure);
+			window.visualViewport?.removeEventListener("resize", measure);
 		};
 	}, [open, boundaryEl]);
 
@@ -144,10 +153,10 @@ export const LiveGameChat = ({
 	}
 
 	return (
-		<div className="live-chat-dock mt-2">
+		<div className="live-chat-dock" style={open ? { maxHeight } : undefined}>
 			<button
 				type="button"
-				className="btn btn-secondary btn-sm"
+				className="btn btn-secondary btn-sm align-self-start"
 				onClick={() => setOpen(!open)}
 			>
 				{open ? "Hide chat" : "Chat"}
@@ -158,12 +167,8 @@ export const LiveGameChat = ({
 			</button>
 
 			{open ? (
-				<div className="border rounded mt-2 p-2">
-					<div
-						ref={listRef}
-						style={{ maxHeight: listMaxHeight ?? 220, overflowY: "auto" }}
-						className="mb-2"
-					>
+				<div className="live-chat-panel border rounded mt-2 p-2">
+					<div ref={listRef} className="live-chat-messages mb-2">
 						{visible.length === 0 ? (
 							<div className="text-body-secondary small">No messages yet.</div>
 						) : (

@@ -47,6 +47,7 @@ import {
 	isBehindPosition,
 } from "./leaguePosition.ts";
 import { checkLeagueIntegrity } from "./leagueIntegrity.ts";
+import { decideMissingDataWarning } from "./missingDataWarning.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import {
 	isTooFarBehind,
@@ -163,9 +164,37 @@ const saveResyncNeeded = async (lid: number | undefined, value: boolean) => {
 			league.syncResyncNeeded = true;
 		} else {
 			delete league.syncResyncNeeded;
+			// Healed, so the clock behind the user-facing warning starts over.
+			delete league.syncMissingDataSince;
 		}
 		await idb.meta.put("leagues", league);
 	}
+};
+
+// Record this sighting of missing-with-no-checkpoint against the durable stamp,
+// and report whether the gap has now outlasted the grace period (see
+// missingDataWarning.ts).
+const noteMissingDataAndShouldWarn = async (
+	lid: number | undefined,
+	alreadyWarned: boolean,
+) => {
+	if (typeof lid !== "number") {
+		return false;
+	}
+	const league = await idb.meta.get("leagues", lid);
+	if (!league) {
+		return false;
+	}
+	const decision = decideMissingDataWarning({
+		since: league.syncMissingDataSince,
+		alreadyWarned,
+		now: Date.now(),
+	});
+	if (league.syncMissingDataSince !== decision.since) {
+		league.syncMissingDataSince = decision.since;
+		await idb.meta.put("leagues", league);
+	}
+	return decision.warn;
 };
 
 // Minimum spacing between DURABLE watermark banks (cache flush + meta write).
@@ -1477,6 +1506,11 @@ let healingBehind = false;
 let healingMissedData = false;
 let healMissedDataNow: ((trigger: string) => Promise<void>) | undefined;
 
+// Whether the "missing some league data" warning has already been shown this
+// session. The heal retries on a timer and on every engine skip, and one
+// standing warning is the whole message - repeating it just stacks toasts.
+let warnedMissingData = false;
+
 // Test-only: this checker deliberately keeps state between ticks (grace
 // timing, one-recovery-at-a-time, the proven-stale stamp), and tests need each
 // scenario to start from a device that has noticed nothing yet.
@@ -2490,12 +2524,31 @@ const doConnectSharedLeague = async ({
 			console.error(
 				"[sync] This device is missing shared data and the room has no usable checkpoint yet. Waiting - whoever is in charge of simming just needs to have the app open for a few minutes, then this heals automatically.",
 			);
-			logEvent({
-				type: "error",
-				text: "This device is missing some league data. It will repair itself automatically once the person in charge of simming has the app open for a few minutes.",
-				saveToDb: false,
-				persistent: true,
-			});
+
+			// Say it out loud only once the gap has actually outlasted the wait the
+			// message describes, and only once per session. This branch runs on every
+			// connect and on every engine skip, so without a gate an ordinary gap -
+			// the kind that heals as soon as the simmer opens the app - greeted the
+			// user with a persistent red error every single launch.
+			const shouldWarn = await noteMissingDataAndShouldWarn(
+				lid,
+				warnedMissingData,
+			);
+			if (shouldWarn) {
+				warnedMissingData = true;
+				logEvent({
+					type: "error",
+					text: "This device is missing some league data. It will repair itself automatically once the person in charge of simming has the app open for a few minutes.",
+					saveToDb: false,
+					persistent: true,
+				});
+			} else {
+				syncDebugLog("connect:missing-data-warning-suppressed", {
+					trigger,
+					pastGrace: shouldWarn,
+					alreadyWarned: warnedMissingData,
+				});
+			}
 		} catch (error) {
 			syncDebugLog("connect:auto-resync-failed", { error: String(error) });
 		} finally {
@@ -2503,6 +2556,7 @@ const doConnectSharedLeague = async ({
 		}
 	};
 	healMissedDataNow = healMissedData;
+	warnedMissingData = false;
 	void healMissedData("connect");
 
 	// Played-game invariant sweep (v1-log fallout only): drop any schedule row
@@ -2786,6 +2840,7 @@ export const teardownSharedLeague = async ({
 	// The missed-data heal closes over this session's engine; a torn-down
 	// session must not be healable.
 	healMissedDataNow = undefined;
+	warnedMissingData = false;
 	currentHostName = undefined;
 	currentCloudReady = false;
 	if (clearPersisted) {

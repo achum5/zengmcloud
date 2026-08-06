@@ -1012,6 +1012,12 @@ export type League = {
 	// stuck behind the room (e.g. stranded on the old phase after a ready-up
 	// advance). Cleared once a resync re-applies the whole log cleanly.
 	syncResyncNeeded?: boolean;
+	// When this device FIRST found itself missing shared data with no usable
+	// checkpoint to heal from. The heal normally lands within minutes, so the
+	// user-facing warning is held back until this has been set for a while -
+	// otherwise every launch during an ordinary, self-resolving gap opens with an
+	// error. Cleared alongside syncResyncNeeded.
+	syncMissingDataSince?: number;
 };
 
 export type Locks = {

@@ -711,32 +711,51 @@ tr.table-warning:hover > td {
 		overflow: auto;
 	}
 }
-// Live game chat. On desktop it is an ordinary block in the sidebar beside the
-// game. On a phone the sidebar stacks BELOW the play-by-play, which buried the
-// chat off-screen - so there it becomes a drawer docked to the bottom of the
-// viewport, reachable at any moment without scrolling. Its height is capped in
-// JS to the space beneath the court (see LiveGameChat), so opening it never
-// covers the game you are watching.
-@include media-breakpoint-down(md) {
-	// The collapsed drawer pins ~3rem to the bottom of the viewport, so give the
-	// column it came out of that much clearance - otherwise the last few plays
-	// can never be scrolled out from under it.
-	.live-chat-dock ~ * {
-		margin-bottom: 3.5rem;
-	}
-	.live-chat-dock {
-		position: fixed;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		// Above the sticky court (11) and the box score's frozen column (10).
-		z-index: 1035;
-		background-color: var(--bs-body-bg);
-		border-top: 1px solid var(--bs-border-color);
-		padding: 0.5rem 0.75rem calc(0.5rem + env(safe-area-inset-bottom));
-		margin: 0;
-		box-shadow: 0 -2px 8px rgb(0 0 0 / 15%);
-	}
+// Live game chat: a drawer docked to the bottom of the viewport, on every
+// screen size. It lives in the sidebar markup, which on a phone stacks BELOW the
+// play-by-play - so left in flow it was buried several screens down, useless for
+// talking while you watch. Docked, it is one tap away at any scroll position.
+//
+// Its max-height is set in JS to the space beneath the court (see LiveGameChat),
+// and the flex column below spends that budget: chrome first, then whatever is
+// left goes to the message list, which scrolls. So the drawer stops at the court
+// instead of covering it, however many messages there are.
+.live-chat-dock {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	// Above the sticky court (11) and the box score's frozen column (10).
+	z-index: 1035;
+	display: flex;
+	flex-direction: column;
+	background-color: var(--bs-body-bg);
+	border-top: 1px solid var(--bs-border-color);
+	padding: 0.5rem 0.75rem calc(0.5rem + env(safe-area-inset-bottom));
+	margin: 0;
+	box-shadow: 0 -2px 8px rgb(0 0 0 / 15%);
+}
+
+// min-height: 0 is what lets these actually shrink inside the capped column -
+// without it a flex item refuses to go below its content height and the list
+// pushes the drawer back over the court.
+.live-chat-panel {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.live-chat-messages {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+// The collapsed drawer pins ~3rem to the bottom of the viewport, so give the
+// column it came out of that much clearance - otherwise the last few plays can
+// never be scrolled out from under it.
+.live-chat-dock ~ * {
+	margin-bottom: 3.5rem;
 }
 
 .live-game-sticky {
