@@ -7,8 +7,10 @@ import {
 	buildRoomSnapshotPayload,
 	maybePublishRoomSnapshot,
 	resetSnapshotCadenceForTesting,
+	restoreFromRoomSnapshot,
 	validateRoomSnapshotPayload,
 } from "./roomSnapshot.ts";
+import { resetSnapshotRestoreBackoff } from "./snapshotRestoreBackoff.ts";
 import { serializeChangeset as ser } from "./serialize.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
 import { setApplyGuard } from "./applyGuard.ts";
@@ -791,5 +793,110 @@ describe("league identity blocks wrong-league restores", () => {
 			players.map((p: any) => p.pid),
 			[21, 22, 23, 24, 25],
 		);
+	});
+});
+
+// THE INCIDENT: a phone in the playoffs, missing a day of data, clicking Sim
+// game and watching the page die and reload. The behind-the-room healer
+// restored the room's snapshot, could not reach the head on the catch-up after
+// it (there IS a gap - that's the complaint), and came round again on the next
+// FIVE-SECOND health tick. Downloading, decompressing and parsing an entire
+// league that often is a tab iOS kills; it reloads, reconnects, and does it
+// again.
+describe("an automatic restore cannot re-parse the league at tick speed", () => {
+	let restoreCache: () => void;
+
+	const makeRestoreEngine = () => {
+		let downloads = 0;
+		const transport = {
+			fetchRoomSnapshotMeta: async () => ({
+				seq: 500,
+				at: 1,
+				byName: "Simmer",
+				chunkCount: 1,
+				generation: "gen1",
+			}),
+			fetchRoomSnapshotData: async () => {
+				downloads += 1;
+				return ser({
+					version: 1,
+					stores: {
+						players: [
+							{ pid: 1, tid: 0 },
+							{ pid: 2, tid: 0 },
+							{ pid: 3, tid: 0 },
+							{ pid: 4, tid: 0 },
+							{ pid: 5, tid: 0 },
+						],
+						teams: [{ tid: 0 }],
+						gameAttributes: [
+							{ key: "season", value: 2006 },
+							{ key: "phase", value: 1 },
+						],
+					},
+				});
+			},
+		};
+		const engine = {
+			transport,
+			adoptSnapshotWatermark: () => {},
+			getPersistedSeq: () => 0,
+			localName: "Phone",
+		};
+		return { engine: engine as any, downloads: () => downloads };
+	};
+
+	beforeEach(async () => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2006);
+		g.setWithoutSavingToDB("phase", 1);
+		await resetCache({});
+		restoreCache = stubCacheLifecycle();
+		resetSnapshotRestoreBackoff();
+		setApplyGuard(undefined);
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 0 }],
+			teams: [{ tid: 0 }],
+			gameAttributes: [
+				{ key: "season", value: 2006 },
+				{ key: "phase", value: 1 },
+			],
+		});
+	});
+
+	afterEach(() => {
+		restoreCache();
+		resetSnapshotRestoreBackoff();
+	});
+
+	test("the health tick's repeated attempts download the league once", async () => {
+		const { engine, downloads } = makeRestoreEngine();
+
+		assert.ok(await restoreFromRoomSnapshot(engine, { automatic: true }));
+		assert.strictEqual(downloads(), 1);
+
+		// Three more health ticks, five seconds apart in the field.
+		for (let i = 0; i < 3; i++) {
+			assert.strictEqual(
+				await restoreFromRoomSnapshot(engine, { automatic: true }),
+				undefined,
+				"a repeat attempt inside the window must decline",
+			);
+		}
+		assert.strictEqual(
+			downloads(),
+			1,
+			"the whole league must be parsed once, not once per tick",
+		);
+	});
+
+	test("Force Resync is never throttled - a person clicking is not a loop", async () => {
+		const { engine, downloads } = makeRestoreEngine();
+
+		assert.ok(await restoreFromRoomSnapshot(engine, { automatic: true }));
+		// The user, watching nothing happen, presses the button.
+		assert.ok(await restoreFromRoomSnapshot(engine));
+		assert.ok(await restoreFromRoomSnapshot(engine));
+		assert.strictEqual(downloads(), 3);
 	});
 });

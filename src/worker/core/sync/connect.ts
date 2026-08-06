@@ -48,6 +48,7 @@ import {
 } from "./leaguePosition.ts";
 import { checkLeagueIntegrity } from "./leagueIntegrity.ts";
 import { decideMissingDataWarning } from "./missingDataWarning.ts";
+import { resetSnapshotRestoreBackoff } from "./snapshotRestoreBackoff.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import {
 	isTooFarBehind,
@@ -1821,7 +1822,9 @@ export const checkBehindAuthority = async () => {
 		let conclusive = false;
 		let restored = false;
 		try {
-			restored = (await restoreFromRoomSnapshot(engine)) !== undefined;
+			restored =
+				(await restoreFromRoomSnapshot(engine, { automatic: true })) !==
+				undefined;
 			if (restored) {
 				conclusive = await engine.catchUp();
 				const healed = await getLeaguePosition();
@@ -1875,6 +1878,19 @@ export const checkBehindAuthority = async () => {
 		syncDebugLog("connect:behind-authority-failed", { error });
 	} finally {
 		healingBehind = false;
+		// Re-arm the grace window on EVERY exit that didn't resolve the problem.
+		//
+		// The branches above each set this themselves - except one, and it is the
+		// one a device missing data actually takes: the snapshot restored fine,
+		// but the catch-up after it could not reach the head, because there IS a
+		// gap (that is the whole complaint). That path fell out of the function
+		// with behindSince untouched, so the next five-second health tick walked
+		// straight past the grace check and restored the entire league again.
+		// Forever. On a phone that is a tab the OS kills, reloads, and kills
+		// again - "I click sim and the page crashes and reloads".
+		if (behindSince !== undefined) {
+			behindSince = Date.now();
+		}
 	}
 };
 
@@ -2495,7 +2511,9 @@ const doConnectSharedLeague = async ({
 			// batch's entries stay marked seen, which is precisely why a plain
 			// catch-up could never backfill them.
 			try {
-				const restored = await restoreFromRoomSnapshot(engine);
+				const restored = await restoreFromRoomSnapshot(engine, {
+					automatic: true,
+				});
 				if (restored) {
 					await engine.catchUp();
 					const strandedNow = await findStrandedScheduleRows();
@@ -2854,6 +2872,9 @@ export const teardownSharedLeague = async ({
 	// session must not be healable.
 	healMissedDataNow = undefined;
 	warnedMissingData = false;
+	// A different room (or a fresh session on the same one) deserves a clean
+	// shot at its snapshot rather than inheriting the last one's backoff.
+	resetSnapshotRestoreBackoff();
 	currentHostName = undefined;
 	currentCloudReady = false;
 	if (clearPersisted) {

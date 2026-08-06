@@ -16,6 +16,7 @@ import { getLeaguePosition } from "./leaguePosition.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
 import { checkApplyGuard } from "./applyGuard.ts";
 import { payloadLeagueId, readLocalLeagueId } from "./leagueIdentity.ts";
+import { claimSnapshotRestoreAttempt } from "./snapshotRestoreBackoff.ts";
 import {
 	checkLeagueIntegrity,
 	findPayloadIntegrityProblems,
@@ -352,6 +353,12 @@ export const publishRoomSnapshot = async (
 // seq. The caller runs an ordinary catch-up afterwards for the tail.
 export const restoreFromRoomSnapshot = async (
 	engine: SnapshotEngine,
+	// True for the recovery paths that run on a timer. Those are rate-limited
+	// per snapshot: the meta read below is one cheap document, but everything
+	// after it is the whole league, and repeating that at tick speed is how a
+	// phone runs out of memory. The manual Force Resync button leaves this off
+	// and is never throttled.
+	{ automatic = false }: { automatic?: boolean } = {},
 ): Promise<RoomSnapshotMeta | undefined> => {
 	const transport = engine.transport;
 	if (!transport.fetchRoomSnapshotMeta || !transport.fetchRoomSnapshotData) {
@@ -359,6 +366,12 @@ export const restoreFromRoomSnapshot = async (
 	}
 	const meta = await transport.fetchRoomSnapshotMeta();
 	if (!meta) {
+		return undefined;
+	}
+	if (
+		automatic &&
+		!claimSnapshotRestoreAttempt(`${meta.seq}:${meta.generation ?? ""}`)
+	) {
 		return undefined;
 	}
 	const serialized = await transport.fetchRoomSnapshotData(
