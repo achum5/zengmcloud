@@ -1335,6 +1335,30 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 // Used by the worker's timeline-advance guard and as the auto-play
 // scheduler's preflight, so an unattended timer can never fire from a state
 // a human would look at and say "that's not our league".
+// Is the repair flag still describing a real problem?
+//
+// Two independent checks, and both have to agree that nothing is wrong. The
+// watermark says whether this device has read everything the room has
+// published; the schedule says whether a day the league already played past is
+// still sitting here unplayed, which is what a genuinely dropped changeset
+// looks like in the data. A skipped bulk change that mattered shows up in the
+// second even when the first looks clean, which is the whole reason the
+// stranded-row check exists.
+const noDamageToRepair = async (engine: {
+	isCaughtUp: () => boolean;
+}): Promise<boolean> => {
+	if (!engine.isCaughtUp()) {
+		return false;
+	}
+	try {
+		const stranded = await findStrandedScheduleRows();
+		return stranded.gids.length === 0;
+	} catch {
+		// Can't prove it's fine, so don't claim it is.
+		return false;
+	}
+};
+
 export const getSimSafety = async (): Promise<
 	{ safe: true } | { safe: false; reason: string }
 > => {
@@ -1359,6 +1383,22 @@ export const getSimSafety = async (): Promise<
 		if (engine instanceof SyncEngineV2 && engine.isCaughtUp()) {
 			await saveResyncNeeded(lid, false);
 			syncDebugLog("v2:cleared-stale-resync-flag", { lid });
+		} else if (await noDamageToRepair(engine)) {
+			// v1, and the same promise was being broken here for a different
+			// reason. The flag says this device once skipped a bulk change; the
+			// ONLY thing that clears it is a successful room-snapshot restore. A
+			// room that has never published a snapshot has nothing to restore, so
+			// the flag is permanent and every sim is refused forever - "I click
+			// sim and nothing happens", exactly as reported, on a device that had
+			// drained to the head of the log with nothing missing.
+			//
+			// The flag is evidence something WAS skipped. It is not evidence
+			// anything is STILL missing. When both available checks say otherwise
+			// - drained to the head, and no schedule row stranded behind the days
+			// the league has played - there is nothing left to repair, so stop
+			// pretending there is.
+			await saveResyncNeeded(lid, false);
+			syncDebugLog("connect:cleared-stale-resync-flag", { lid });
 		} else {
 			if (engine instanceof SyncEngineV2) {
 				void engine.catchUp();
@@ -2490,6 +2530,25 @@ const doConnectSharedLeague = async ({
 				// Durable, so a reload mid-recovery still heals.
 				await saveResyncNeeded(lid, true);
 			} else if (!markerSet) {
+				return;
+			}
+
+			// Before reaching for the checkpoint: if the flag is the only thing
+			// wrong, retire it. A room that never published a snapshot has nothing
+			// to restore, and the flag's only other exit is that restore - so
+			// without this the device stays flagged forever, refusing every sim,
+			// while being demonstrably whole. (Stranded rows above are the other
+			// half of the evidence; if there were any, this doesn't fire.)
+			if (
+				strandedBefore.gids.length === 0 &&
+				markerSet &&
+				(await noDamageToRepair(engine))
+			) {
+				await saveResyncNeeded(lid, false);
+				syncDebugLog("connect:cleared-stale-resync-flag", { trigger });
+				console.log(
+					"[sync] Cleared this device's repair flag: it has read everything the room published and nothing is missing.",
+				);
 				return;
 			}
 
