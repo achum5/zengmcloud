@@ -1493,22 +1493,31 @@ export class FirebaseTransport implements SyncTransport {
 				if (currentVersion !== expectedVersion) {
 					throw new Error("cas-conflict");
 				}
-				const chunk0 = await tx.get(
-					doc(
-						this.db,
-						"leagues",
-						this.code,
-						"control",
-						v2DeltaDocId(next.version, 0),
-					),
-				);
-				const chunkData = chunk0.data();
-				if (
-					!chunkData ||
-					chunkData.authorId !== next.authorId ||
-					chunkData.at !== next.at
-				) {
-					throw new Error("cas-conflict");
+				// VERSION 0 IS THE ROOM-INITIALIZATION COMMIT AND HAS NO PAYLOAD.
+				// It is the write that brings a v2 room into existence, before any
+				// delta can exist; every real delta is version 1 or higher. The
+				// ownership check below therefore has to skip it - when it did
+				// not, it looked for a v2delta_0_0 document that by definition is
+				// never written, threw cas-conflict, and room creation silently
+				// fell back to v1. "I ticked v2 and got a v1 room" was this.
+				if (next.version > 0) {
+					const chunk0 = await tx.get(
+						doc(
+							this.db,
+							"leagues",
+							this.code,
+							"control",
+							v2DeltaDocId(next.version, 0),
+						),
+					);
+					const chunkData = chunk0.data();
+					if (
+						!chunkData ||
+						chunkData.authorId !== next.authorId ||
+						chunkData.at !== next.at
+					) {
+						throw new Error("cas-conflict");
+					}
 				}
 				tx.set(ref, {
 					holderId: this.clientId,

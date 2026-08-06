@@ -155,12 +155,15 @@ class V2Transport implements SyncTransport {
 		if (current !== expectedVersion) {
 			return false;
 		}
-		// Ownership check, like the real transport: never bless a payload some
-		// other publish overwrote. (Lenient when a test seeded the pointer
-		// without a payload.)
-		const delta = this.room.deltas.get(next.version);
-		if (delta && (delta.authorId !== next.authorId || delta.at !== next.at)) {
-			return false;
+		// Ownership check, mirroring the real transport EXACTLY: never bless a
+		// payload some other publish overwrote. Version 0 is the room-init
+		// commit and has no payload by definition - being lenient here instead
+		// of faithful is why a broken v2 room creation went uncaught.
+		if (next.version > 0) {
+			const delta = this.room.deltas.get(next.version);
+			if (!delta || delta.authorId !== next.authorId || delta.at !== next.at) {
+				return false;
+			}
 		}
 		this.room.setState({
 			...next,
@@ -595,6 +598,12 @@ describe("SyncEngineV2", () => {
 		// The room is at version 1 (someone else simmed), with a checkpoint
 		// capturing version 1.
 		const seedTransport = new V2Transport("C", room);
+		// Payload first, then the pointer - the order a real publish uses, and
+		// now the order the transport enforces.
+		await seedTransport.publishV2Delta(
+			{ version: 1, authorId: "C", action: "playMenu.day", at: 5 },
+			serializeChangeset(changesetOf(tradePut(2, 0))),
+		);
 		await seedTransport.commitV2Version(
 			{ version: 1, authorId: "C", byName: "C", at: 5, action: "playMenu.day" },
 			0,
@@ -803,6 +812,33 @@ describe("SyncEngineV2", () => {
 			"and the listener is rebuilt on the fresh channel",
 		);
 		engine.stop();
+	});
+
+	// Creating a v2 room is a commit of version 0 with NO payload - it is the
+	// write that brings the room into existence, before any delta can exist.
+	// The chunk-ownership check added for the CAS-storm fix had no exemption
+	// for it, so it looked for a delta document that is never written, refused
+	// the commit, and room creation silently produced a v1 room instead. Ticking
+	// "new sync engine" and getting v1 was exactly this.
+	test("a room is created by committing version 0 with no payload", async () => {
+		const room = new Room();
+		const transport = new V2Transport("A", room);
+		const initialized = await transport.commitV2Version(
+			{
+				version: 0,
+				authorId: "A",
+				byName: "Host",
+				at: Date.now(),
+				action: "init",
+			},
+			0,
+		);
+		assert.ok(initialized, "the room-init commit must succeed");
+		assert.strictEqual(
+			(await transport.fetchRoomV2State())?.version,
+			0,
+			"and the room must now exist on v2",
+		);
 	});
 
 	// A restore that fails for a reason that will not change - a payload this
