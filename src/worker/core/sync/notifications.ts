@@ -1208,6 +1208,20 @@ const buildOnTheClockNotifications = async (
 // class, etc.) and must not be mistaken for a trade.
 const MAX_ROSTER_MOVE_CHANGES = 30;
 
+// Everything that only writes NOTES. These rewrite whole game/player/team-season
+// records, so by shape they are indistinguishable from a sim or a roster move -
+// the label is the only thing that tells them apart. The batch recap filers
+// belong here for exactly the reason setNote does, and more urgently: a pass
+// covers a whole league, so it lands dozens of player rows at once and used to
+// be a hair's breadth from being announced as a trade.
+const NOTE_ONLY_LABELS = new Set([
+	"main.setNote",
+	"main.fileTeamSeasonRecaps",
+	"main.filePlayerSeasonRecaps",
+	"main.clearPlayerSeasonRecaps",
+	"main.clearNotes",
+]);
+
 const buildBaseNotifications = async (
 	label: string,
 	changeset: Changeset,
@@ -1216,7 +1230,7 @@ const buildBaseNotifications = async (
 	// Note edits (filing an AI game recap, player/game notes, etc.) rewrite whole
 	// game/player records, which would otherwise look like a sim. The note still
 	// syncs so everyone sees it - it just never triggers a push.
-	if (label === "main.setNote") {
+	if (NOTE_ONLY_LABELS.has(label)) {
 		return [];
 	}
 
@@ -1305,7 +1319,7 @@ export const buildNotifications = async (
 	changeset: Changeset,
 	opts: { isHost: boolean; authorName: string },
 ): Promise<SyncNotification[]> => {
-	if (label === "main.setNote") {
+	if (NOTE_ONLY_LABELS.has(label)) {
 		return [];
 	}
 

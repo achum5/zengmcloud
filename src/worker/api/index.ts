@@ -4552,6 +4552,47 @@ const setNote = async (info: NoteInfo & { editedNote: string }) => {
 	await toUI("realtimeUpdate", [noteUpdateEvents[info.type]]);
 };
 
+// File a whole season's team recaps in ONE call, for the same reason
+// filePlayerSeasonRecaps exists: the UI used to loop setNote per team, and in a
+// shared league every one of those worker calls waits on its own upload to the
+// cloud. Thirty teams meant thirty versions in the change log and about twenty
+// seconds of staring at a spinner. One call is one changeset and one version.
+const fileTeamSeasonRecaps = async ({
+	season,
+	recaps,
+}: {
+	season: number;
+	recaps: { tid: number; note: string }[];
+}) => {
+	let filed = 0;
+	const missing: number[] = [];
+
+	for (const { tid, note } of recaps) {
+		const teamSeason = await idb.getCopy.teamSeasons(
+			{ tid, season },
+			"noCopyCache",
+		);
+		if (!teamSeason) {
+			missing.push(tid);
+			continue;
+		}
+
+		if (note === "") {
+			delete teamSeason.note;
+			delete teamSeason.noteBool;
+		} else {
+			teamSeason.note = note;
+			teamSeason.noteBool = 1;
+		}
+		await idb.cache.teamSeasons.put(teamSeason);
+		filed += 1;
+	}
+
+	await toUI("realtimeUpdate", [noteUpdateEvents.teamSeason]);
+
+	return { filed, missing };
+};
+
 // File a batch of AI-written player season recaps. Merging happens HERE rather
 // than in the UI because the merge needs each player's existing note, and doing
 // it per-player from the UI would be one worker round trip per player (dozens
@@ -6866,6 +6907,7 @@ export default {
 		syncDaySpreads,
 		getPlayerRecapData,
 		filePlayerSeasonRecaps,
+		fileTeamSeasonRecaps,
 		getSyncActivity,
 		getSyncCheckpoint,
 		getSyncDebugSnapshot,

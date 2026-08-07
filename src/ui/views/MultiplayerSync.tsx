@@ -70,6 +70,8 @@ const prettyAction = (action: string): string => {
 		"main.reSign": "Re-signed a player",
 		"main.draftUser": "Draft pick",
 		"main.setNote": "Edited a note",
+		"main.fileTeamSeasonRecaps": "Filed team recaps",
+		"main.filePlayerSeasonRecaps": "Filed player recaps",
 	};
 	if (map[action]) {
 		return map[action];

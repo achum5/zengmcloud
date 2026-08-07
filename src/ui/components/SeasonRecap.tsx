@@ -98,14 +98,12 @@ export const SeasonRecap = ({
 				);
 				return;
 			}
-			for (const [tid, note] of recaps) {
-				await toWorker("main", "setNote", {
-					type: "teamSeason",
-					tid,
-					season,
-					editedNote: note,
-				});
-			}
+			// One call for the whole batch, not one per team: in a shared league
+			// every worker call waits on its own upload to the cloud.
+			await toWorker("main", "fileTeamSeasonRecaps", {
+				season,
+				recaps: [...recaps].map(([tid, note]) => ({ tid, note })),
+			});
 			setManual(undefined);
 			setPasted(true);
 			globalThis.setTimeout(() => setPasted(false), 3000);

@@ -1503,53 +1503,72 @@ export class SyncEngineV2 {
 			// verifies the chunks it points at carry this exact (authorId, at),
 			// so it can never bless a payload another racer overwrote.
 			const at = Date.now();
-			try {
-				await withTimeout(
-					this.transport.publishV2Delta(
-						{
-							version: target,
-							authorId: this.transport.clientId,
-							action: entry.action,
-							at,
-						},
+			const commit = {
+				version: target,
+				authorId: this.transport.clientId,
+				byName: this.localName,
+				at,
+				action: entry.action,
+				// Small payloads ride the pointer doc itself, so receivers
+				// apply them straight off the listener push with no reads.
+				inlineDelta:
+					serialized.length <= INLINE_DELTA_LIMIT ? serialized : undefined,
+			};
+
+			// The fast path, which is nearly every change a person makes: a
+			// payload small enough to ride the pointer is also small enough to be
+			// written in the same transaction as the pointer, so publishing costs
+			// ONE round trip instead of two. Nothing else about the protocol
+			// changes - same slot, same CAS, same meaning on failure.
+			let won: boolean;
+			if (
+				commit.inlineDelta !== undefined &&
+				this.transport.publishAndCommitV2Version
+			) {
+				won = await withTimeout(
+					this.transport.publishAndCommitV2Version(
+						commit,
 						serialized,
+						target - 1,
 					),
 					this.publishTimeoutMs,
 				);
-			} catch (error) {
-				if ((error as Error)?.message === "v2-slot-taken") {
-					// Someone committed this version while we prepared - same
-					// meaning as losing the CAS, caught one step earlier.
-					syncDebugLog("v2:slot-taken", {
-						action: entry.action,
-						target,
-						attempt,
-					});
-					if (isAdvance) {
-						return this.discardStaleAdvance(entry, applied, target);
+			} else {
+				try {
+					await withTimeout(
+						this.transport.publishV2Delta(
+							{
+								version: target,
+								authorId: this.transport.clientId,
+								action: entry.action,
+								at,
+							},
+							serialized,
+						),
+						this.publishTimeoutMs,
+					);
+				} catch (error) {
+					if ((error as Error)?.message === "v2-slot-taken") {
+						// Someone committed this version while we prepared - same
+						// meaning as losing the CAS, caught one step earlier.
+						syncDebugLog("v2:slot-taken", {
+							action: entry.action,
+							target,
+							attempt,
+						});
+						if (isAdvance) {
+							return this.discardStaleAdvance(entry, applied, target);
+						}
+						continue;
 					}
-					continue;
+					throw error;
 				}
-				throw error;
-			}
 
-			const won = await withTimeout(
-				this.transport.commitV2Version(
-					{
-						version: target,
-						authorId: this.transport.clientId,
-						byName: this.localName,
-						at,
-						action: entry.action,
-						// Small payloads ride the pointer doc itself, so receivers
-						// apply them straight off the listener push with no reads.
-						inlineDelta:
-							serialized.length <= INLINE_DELTA_LIMIT ? serialized : undefined,
-					},
-					target - 1,
-				),
-				this.publishTimeoutMs,
-			);
+				won = await withTimeout(
+					this.transport.commitV2Version(commit, target - 1),
+					this.publishTimeoutMs,
+				);
+			}
 
 			if (!won) {
 				// Someone committed target concurrently - a genuine same-second

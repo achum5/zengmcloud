@@ -67,6 +67,9 @@ class V2Transport implements SyncTransport {
 	notifications: SyncNotification[] = [];
 	// Force the next commit to lose, as if another writer won the transaction.
 	forceCasLoss = false;
+	// How each version got written, so a test can tell the one-transaction fast
+	// path from the two-transaction one.
+	roundTrips = { singleShot: 0, twoPhase: 0 };
 
 	constructor(clientId: string, room: Room) {
 		this.clientId = clientId;
@@ -136,7 +139,46 @@ class V2Transport implements SyncTransport {
 			throw new Error("v2-slot-taken");
 		}
 		this.room.deltas.set(meta.version, { ...meta, serialized });
+		this.roundTrips.twoPhase += 1;
 		return 1;
+	}
+
+	// Payload and pointer in ONE transaction, as the real transport does for a
+	// single-chunk payload. Because they are inseparable here, there is no
+	// ownership check to mirror: no other writer can land between them.
+	async publishAndCommitV2Version(
+		next: {
+			version: number;
+			authorId: string;
+			byName: string;
+			at: number;
+			action: string;
+			inlineDelta?: string;
+		},
+		serialized: string,
+		expectedVersion: number,
+	) {
+		if (this.forceCasLoss) {
+			this.forceCasLoss = false;
+			return false;
+		}
+		const current = this.room.state?.version ?? 0;
+		if (current !== expectedVersion) {
+			return false;
+		}
+		this.room.deltas.set(next.version, {
+			serialized,
+			authorId: next.authorId,
+			action: next.action,
+			at: next.at,
+		});
+		this.room.setState({
+			...next,
+			checkpointVersion: this.room.state?.checkpointVersion,
+			checkpointChunkCount: this.room.state?.checkpointChunkCount,
+		});
+		this.roundTrips.singleShot += 1;
+		return true;
 	}
 
 	async commitV2Version(
@@ -510,6 +552,10 @@ describe("SyncEngineV2", () => {
 		assert.strictEqual(room.state!.version, 1);
 		assert.strictEqual(await readAppliedVersion(), 1);
 		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		// The lost CAS kicks a catch-up in the background. Drain it here, or it
+		// applies this room's version 1 into the NEXT test's freshly-swapped
+		// league DB and that test starts one version ahead of where it thinks.
+		await engine.catchUp();
 		engine.stop();
 	});
 
@@ -766,8 +812,14 @@ describe("SyncEngineV2", () => {
 			players: [{ pid: 1, tid: 2 }],
 		});
 		const transport = new V2Transport("A", room);
-		// Offline: the delta write buffers and never resolves.
+		// Offline: the write buffers and never resolves. Both write paths are
+		// stubbed - which one a payload takes is a size detail, and the timeout
+		// has to hold either way.
+		const realPublishDelta = transport.publishV2Delta.bind(transport);
+		const realPublishAndCommit =
+			transport.publishAndCommitV2Version.bind(transport);
 		transport.publishV2Delta = () => new Promise(() => {});
+		transport.publishAndCommitV2Version = () => new Promise(() => {});
 		const engine = new SyncEngineV2(transport, { publishTimeoutMs: 50 });
 		engine.start();
 		await engine.claimAuthority();
@@ -786,7 +838,8 @@ describe("SyncEngineV2", () => {
 		assert.strictEqual(room.state!.version, 0, "nothing half-published");
 
 		// The connection returns: the ordinary drain kick lands it.
-		delete (transport as any).publishV2Delta;
+		transport.publishV2Delta = realPublishDelta;
+		transport.publishAndCommitV2Version = realPublishAndCommit;
 		assert.ok(await engine.drainOutbox());
 		assert.strictEqual(room.state!.version, 1);
 		assert.strictEqual(await engine.pendingUploadCount(), 0);
@@ -826,6 +879,72 @@ describe("SyncEngineV2", () => {
 		}
 		assert.strictEqual(await readAppliedVersion(), 3);
 		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		engine.stop();
+	});
+
+	// Publishing used to be two transactions back to back - write the payload,
+	// then move the pointer at it - which on a phone is most of a second per
+	// change. Filing a season of team recaps was thirty of those in a row.
+	// Anything small enough to ride the pointer doc is small enough to be written
+	// WITH it, so an ordinary edit costs one round trip.
+	test("an ordinary edit publishes in a single round trip", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 2 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		await engine.claimAuthority();
+
+		const outcome = await engine.onLocalChangeset(
+			changesetOf(tradePut(1, 3)),
+			"main.setNote",
+		);
+
+		assert.strictEqual(outcome, "confirmed");
+		assert.strictEqual(transport.roundTrips.singleShot, 1);
+		assert.strictEqual(
+			transport.roundTrips.twoPhase,
+			0,
+			"a small edit must not pay for the separate payload write",
+		);
+		// And the chain is intact: the version, its payload, and the marker all
+		// landed, so a device catching up later can still read it back.
+		assert.strictEqual(room.state!.version, 1);
+		assert.ok(room.deltas.get(1), "version 1's payload is readable");
+		assert.strictEqual(await readAppliedVersion(), 1);
+		await engine.catchUp();
+		engine.stop();
+	});
+
+	// Losing the slot means the same thing on the one-transaction path as it did
+	// on the two: an ordinary edit retries on top of the winner rather than
+	// overwriting it, and it never reports success it didn't have.
+	test("losing the CAS on the single-round-trip path still retries the edit", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 2 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		await engine.claimAuthority();
+
+		transport.forceCasLoss = true;
+		const outcome = await engine.onLocalChangeset(
+			changesetOf(tradePut(1, 3)),
+			"main.setNote",
+		);
+
+		assert.strictEqual(outcome, "confirmed", "the retry landed it");
+		assert.strictEqual(room.state!.version, 1);
+		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		await engine.catchUp();
 		engine.stop();
 	});
 

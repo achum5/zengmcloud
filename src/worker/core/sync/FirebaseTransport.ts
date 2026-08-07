@@ -1560,6 +1560,100 @@ export class FirebaseTransport implements SyncTransport {
 		}
 	}
 
+	// Write the payload AND move the pointer in ONE transaction. Every ordinary
+	// edit - a note, a roster move, a trade - is small enough to take this path,
+	// and it halves the round trips: publishing used to be two transactions back
+	// to back, which on a phone is most of a second per change. Filing a whole
+	// season of team recaps was thirty of those in a row.
+	//
+	// Only for a payload that fits in a single chunk. A bigger one has to write
+	// its chunks first (publishV2Delta) so the pointer never points at a payload
+	// that isn't fully there.
+	//
+	// It also retires the ownership check the split needed. That check existed
+	// because two devices racing for the same slot could both write chunks, and
+	// the loser's could land on top of the winner's between its write and its
+	// commit. There is no "between" here: a transaction either writes both docs
+	// or neither, so the winner's payload and pointer are inseparable.
+	async publishAndCommitV2Version(
+		next: {
+			version: number;
+			authorId: string;
+			byName: string;
+			at: number;
+			action: string;
+			inlineDelta?: string;
+		},
+		serialized: string,
+		expectedVersion: number,
+	): Promise<boolean> {
+		if (serialized.length > LIVE_BROADCAST_CHUNK_BYTES) {
+			throw new Error("v2-payload-not-single-chunk");
+		}
+		const ref = doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID);
+		try {
+			await runTransaction(this.db, async (tx) => {
+				const snap = await tx.get(ref);
+				const current = snap.data();
+				const currentVersion =
+					current && typeof current.version === "number" ? current.version : 0;
+				if (currentVersion !== expectedVersion) {
+					throw new Error("cas-conflict");
+				}
+				tx.set(
+					doc(
+						this.db,
+						"leagues",
+						this.code,
+						"control",
+						v2DeltaDocId(next.version, 0),
+					),
+					{
+						holderId: this.clientId,
+						version: next.version,
+						index: 0,
+						chunkCount: 1,
+						data: serialized,
+						authorId: next.authorId,
+						action: next.action,
+						at: next.at,
+						updatedAt: serverTimestamp(),
+						ttlAt: Timestamp.fromMillis(ttlAtMsFor(Date.now())),
+					},
+				);
+				tx.set(ref, {
+					holderId: this.clientId,
+					version: next.version,
+					authorId: next.authorId,
+					byName: next.byName,
+					at: next.at,
+					action: next.action,
+					delta: next.inlineDelta ?? null,
+					checkpointVersion:
+						current && typeof current.checkpointVersion === "number"
+							? current.checkpointVersion
+							: null,
+					checkpointChunkCount:
+						current && typeof current.checkpointChunkCount === "number"
+							? current.checkpointChunkCount
+							: null,
+					checkpointGeneration:
+						current && typeof current.checkpointGeneration === "string"
+							? current.checkpointGeneration
+							: null,
+					updatedAt: serverTimestamp(),
+				});
+			});
+			this.markContact();
+			return true;
+		} catch (error) {
+			if ((error as Error)?.message === "cas-conflict") {
+				return false;
+			}
+			throw error;
+		}
+	}
+
 	async fetchV2Delta(version: number): Promise<
 		| {
 				serialized: string;

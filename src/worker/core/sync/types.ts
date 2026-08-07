@@ -365,6 +365,22 @@ export interface SyncTransport {
 		},
 		expectedVersion: number,
 	): Promise<boolean>;
+	// Both of the above, as ONE transaction. Only usable for a payload small
+	// enough to be a single chunk; a big one still has to write its chunks
+	// before the pointer can point at them. Same contract as commitV2Version -
+	// false means someone else won the slot and nothing was written.
+	publishAndCommitV2Version?(
+		next: {
+			version: number;
+			authorId: string;
+			byName: string;
+			at: number;
+			action: string;
+			inlineDelta?: string;
+		},
+		serialized: string,
+		expectedVersion: number,
+	): Promise<boolean>;
 	fetchV2Delta?(version: number): Promise<
 		| {
 				serialized: string;

@@ -471,6 +471,25 @@ describe("buildNotifications", () => {
 		assert.deepEqual(notifs, []);
 	});
 
+	test("a batch recap pass sends no notification", async () => {
+		// A whole-league recap pass rewrites a player row per player. That is the
+		// exact shape the roster-move heuristics below look for, and the label is
+		// the only thing separating "filed thirty writeups" from "made a trade".
+		const notifs = await buildNotifications(
+			"main.filePlayerSeasonRecaps",
+			{
+				changes: [
+					playerPut(1, 0),
+					playerPut(2, 0),
+					playerPut(3, 1),
+					playerPut(4, 1),
+				],
+			},
+			opts,
+		);
+		assert.deepEqual(notifs, []);
+	});
+
 	test("non-host never announces a sim", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.day",
