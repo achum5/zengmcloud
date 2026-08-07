@@ -1304,7 +1304,6 @@ export type LocalStateUI = {
 	mpSyncActive: boolean;
 	// Which sync engine the connected room runs. Only meaningful while
 	// mpSyncActive - the room's protocol is fixed at creation.
-	mpSyncProtocol: "v2" | "classic" | undefined;
 	// Does this device currently hold sim authority (may it advance the league)?
 	// Only meaningful while mpSyncActive. Drives the Play-menu / draft locks.
 	mpSyncIsHost: boolean;

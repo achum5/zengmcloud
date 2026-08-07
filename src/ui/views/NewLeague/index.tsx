@@ -694,7 +694,6 @@ const NewLeague = (props: View<"newLeague">) => {
 	// engine the room runs - so it has to be asked, not inferred from whether
 	// the code happens to exist yet.
 	const [roomMode, setRoomMode] = useState<"none" | "create" | "join">("none");
-	const [roomV2, setRoomV2] = useState(false);
 	const [currentScreen, setCurrentScreen] = useState<
 		"default" | "teams" | "settings"
 	>("default");
@@ -1358,25 +1357,7 @@ const NewLeague = (props: View<"newLeague">) => {
 											</div>
 										) : null}
 
-										{roomMode === "create" ? (
-											<div className="form-check mt-2">
-												<input
-													id="new-league-room-v2"
-													className="form-check-input"
-													type="checkbox"
-													checked={roomV2}
-													onChange={(event) => {
-														setRoomV2(event.target.checked);
-													}}
-												/>
-												<label
-													className="form-check-label"
-													htmlFor="new-league-room-v2"
-												>
-													New sync engine (v2)
-												</label>
-											</div>
-										) : (
+										{roomMode === "create" ? null : (
 											<div className="form-check mt-2">
 												<input
 													id="new-league-room-host"

@@ -289,12 +289,6 @@ const pushSyncStateFull = () => {
 	void toUI("updateLocal", [
 		{
 			mpSyncActive: engine !== undefined,
-			mpSyncProtocol:
-				engine === undefined
-					? undefined
-					: engine instanceof SyncEngineV2
-						? ("v2" as const)
-						: ("classic" as const),
 			mpSyncReconnecting: isReconnecting(),
 			mpSyncIsHost: engine?.isAuthority() ?? false,
 			mpSyncHostName: authority?.holderName,
@@ -1825,7 +1819,6 @@ const doConnectSharedLeague = async ({
 	void toUI("updateLocal", [
 		{
 			mpSyncActive: true,
-			mpSyncProtocol: "v2" as const,
 			mpSyncReady: engine.isReady(),
 			mpSyncReconnecting: false,
 		},
@@ -1915,7 +1908,6 @@ export const teardownSharedLeague = async ({
 	void toUI("updateLocal", [
 		{
 			mpSyncActive: false,
-			mpSyncProtocol: undefined,
 			mpSyncReady: false,
 			mpSyncReconnecting: false,
 		},

@@ -107,7 +107,6 @@ const MultiplayerSync = () => {
 		mpSyncActive,
 		mpSyncIsHost,
 		mpSyncHostName,
-		mpSyncProtocol,
 		mpSyncReady,
 		mpSyncReconnecting,
 		mpSyncUpload,
@@ -116,7 +115,6 @@ const MultiplayerSync = () => {
 		"mpSyncActive",
 		"mpSyncIsHost",
 		"mpSyncHostName",
-		"mpSyncProtocol",
 		"mpSyncReady",
 		"mpSyncReconnecting",
 		"mpSyncUpload",
@@ -124,7 +122,6 @@ const MultiplayerSync = () => {
 
 	const [code, setCode] = useState("");
 	const [isHost, setIsHost] = useState(false);
-	const [useV2, setUseV2] = useState(false);
 	// Creating a room and joining one are different acts with different
 	// inputs, and collapsing them into a single code box hid the one option
 	// that can ONLY be set while creating: the protocol. Asking outright also
@@ -515,12 +512,6 @@ const MultiplayerSync = () => {
 							<div className="fw-bold">{code}</div>
 						</div>
 						<div>
-							<div className="text-body-secondary small">Engine</div>
-							<div className="fw-bold">
-								{mpSyncProtocol === "v2" ? "v2" : "v1"}
-							</div>
-						</div>
-						<div>
 							<div className="text-body-secondary small">Simming</div>
 							<div className="fw-bold">
 								{mpSyncIsHost ? "You" : (mpSyncHostName ?? "Nobody")}
@@ -589,22 +580,7 @@ const MultiplayerSync = () => {
 						) : null}
 					</div>
 
-					{mode === "create" ? (
-						<div className="form-check mb-3">
-							<input
-								id="sync-v2"
-								type="checkbox"
-								className="form-check-input"
-								checked={useV2}
-								disabled={status === "connecting"}
-								onChange={(event) => setUseV2(event.target.checked)}
-							/>
-							<label className="form-check-label" htmlFor="sync-v2">
-								New sync engine (v2)
-							</label>
-							<div className="form-text">Fixed when the room is created.</div>
-						</div>
-					) : (
+					{mode === "create" ? null : (
 						<div className="form-check mb-3">
 							<input
 								id="sync-host"
