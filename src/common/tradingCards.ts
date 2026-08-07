@@ -196,6 +196,224 @@ export const CARD_SETS: CardSet[] = [
 			"IMPORTANT: UNLICENSED - no team logos or wordmarks anywhere, city names only.",
 		variants: [BASE, RC("No rookie emblem.")],
 	},
+	{
+		id: "1971-72-topps",
+		label: "1971-72 Topps",
+		brand: "Topps",
+		era: "vintage",
+		since: 1972,
+		stock: "Uncoated stock with a visible dot-screen print pattern, no gloss.",
+		border: "A plain white border on all four sides.",
+		photography:
+			"The player CUT OUT of his photograph and pasted over a flat colour panel, his head deliberately breaking out above the top edge of that panel.",
+		background:
+			"A single solid block of colour behind the cut-out figure - and the colours clash cheerfully with each other from card to card.",
+		typography:
+			"The team city across the top in fat, curvy, unmistakably 1971 lettering. At the bottom the player's name, then his team nickname in black and his position in red.",
+		layout:
+			"Just the cut-out, the colour block and the two lines of type - plenty of white space and no framing devices.",
+		back: "Yellow and blue: the card number, biographical detail, a stat line, and a cartoon posing a quiz question in a box down the right-hand side.",
+		markers:
+			"233 cards, and the first Topps set to include the ABA alongside the NBA. IMPORTANT: many players wear their jerseys BACKWARDS or turned away so the team nickname and logo do not show - the licensing was partial, so keep team marks off the uniform unless the design calls for them.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1972-73-topps",
+		label: "1972-73 Topps",
+		brand: "Topps",
+		era: "vintage",
+		since: 1973,
+		stock: "Uncoated stock with visible print dots.",
+		border: "A white border on all four sides.",
+		photography:
+			"A posed colour photograph, occasionally a game action shot, set against a colourful backdrop crossed by a black stripe.",
+		background: "A brightly coloured field rather than a real arena.",
+		typography:
+			"The team nickname in thick stylish all-caps that GROW in size from left to right, each letter larger than the one before it. The player's name and position sit below, in the white border.",
+		layout:
+			"The rising team name is the whole graphic idea; nothing else competes with it.",
+		back: "Flat ink on light stock: card number, biography, statistics.",
+		markers: "264 cards, NBA and ABA together.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1973-74-topps",
+		label: "1973-74 Topps",
+		brand: "Topps",
+		era: "vintage",
+		since: 1974,
+		stock: "Uncoated stock with visible print dots.",
+		border:
+			"A band of solid colour ringing the photograph, with plain white outside it.",
+		photography:
+			"Either game action or a stiffly posed shot that looks as though the player was told to stand against a wall.",
+		background: "Whatever was behind him - a gym wall, a blurred arena.",
+		typography:
+			"The player's name and team along the bottom in plain block lettering.",
+		layout:
+			"A small graphic in the lower-left corner of a basketball dropping through a hoop, with the player's position printed on it.",
+		back: "Flat ink on light stock: card number, biography, statistics.",
+		markers:
+			"264 cards. A deliberately quieter design than the two loud years before it.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1974-75-topps",
+		label: "1974-75 Topps",
+		brand: "Topps",
+		era: "vintage",
+		since: 1975,
+		stock: "Uncoated stock with visible print dots.",
+		border: "A white border.",
+		photography:
+			"Game action shots run as taken; posed shots are dropped onto a heavily tinted background image that has nothing to do with the player.",
+		background:
+			"For a posed shot, a strongly tinted unrelated scene rather than a real gym.",
+		typography:
+			"The team name running VERTICALLY down the right-hand side of the card in bold bright type - the first basketball set ever to turn its type on its side.",
+		layout:
+			"Along the bottom, a pennant shape carrying the player's name, and a small basketball icon giving his position.",
+		back: "Flat ink on light stock: card number, biography, statistics.",
+		markers: "264 cards.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1975-76-topps",
+		label: "1975-76 Topps",
+		brand: "Topps",
+		era: "vintage",
+		since: 1976,
+		stock: "Uncoated stock with visible print dots.",
+		border: "A thin white border.",
+		photography: "A colour photograph, posed or in game action.",
+		background: "The gym or arena as photographed.",
+		typography:
+			"The team name above the picture and the player's name below it.",
+		layout:
+			"Diagonal striping across the upper-right corner is the one graphic flourish.",
+		back: "Flat ink on light stock: card number, biography, statistics.",
+		markers:
+			"330 cards, the largest basketball set made to that point, and the last to carry ABA players.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1976-77-topps",
+		label: "1976-77 Topps (oversized)",
+		brand: "Topps",
+		era: "vintage",
+		since: 1977,
+		stock: "Uncoated stock with visible print dots.",
+		proportions:
+			"3 1/8 x 5 1/4 inches, PORTRAIT - an oversized card, much bigger than standard in both directions, roughly a 5:8 ratio. Render the image at 1024 x 1720 pixels. This size is the point of the set and must not be normalised.",
+		border: "A white border, generous on all four sides.",
+		photography:
+			"A very large colour photograph that dominates the card, with almost nothing competing for attention.",
+		background: "The arena as photographed.",
+		typography:
+			"The team name set VERTICALLY down the left margin in three-dimensional art-deco lettering. The player's name and position sit on the white border below the picture.",
+		layout:
+			"Graphic circles beside the vertical team name suggest a ball dropping through a hoop.",
+		back: "Flat ink on light stock: card number, biography, statistics.",
+		markers:
+			"Only 144 cards, cut down from the previous year's 330, and the biggest cards Topps had made since 1964.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1977-78-topps",
+		label: "1977-78 Topps",
+		brand: "Topps",
+		era: "vintage",
+		since: 1978,
+		stock: "Uncoated stock with visible print dots.",
+		border: "A white border.",
+		photography: "A colour photograph, posed or in game action.",
+		background: "The arena as photographed.",
+		typography:
+			"Below the picture, the city name inside a banner, with the team name running on from it along the banner's perspective line as though it were the same ribbon. The player's name sits in the lower right, just under the team name.",
+		layout:
+			"A coloured basketball icon in the lower-left corner carries the player's position.",
+		back: "Flat ink on light stock: card number, biography, statistics.",
+		markers: "132 cards.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1978-79-topps",
+		label: "1978-79 Topps",
+		brand: "Topps",
+		era: "vintage",
+		since: 1979,
+		stock: "Uncoated stock with visible print dots.",
+		border: "A white border.",
+		photography:
+			"TWO photographs of the same player: a large game-action shot filling most of the card, plus a small head-and-shoulders portrait inside a CIRCLE in the lower-right corner.",
+		background: "The arena as photographed.",
+		typography:
+			"The city, team name and player's name set along the left-hand side of the big photograph, printed horizontally. The position sits under the small circular portrait.",
+		layout:
+			"The circular inset portrait is the signature of this set and must be there.",
+		back: "Flat ink on light stock: card number, biography, statistics.",
+		markers: "132 cards.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1979-80-topps",
+		label: "1979-80 Topps",
+		brand: "Topps",
+		era: "vintage",
+		since: 1980,
+		stock: "Uncoated stock with visible print dots.",
+		border: "A white border.",
+		photography: "Usually a game-action colour photograph.",
+		background: "The arena as photographed.",
+		typography:
+			"Below the picture a ribbon banner wraps around a drawn basketball: the stretch of banner crossing the ball carries the team name, and the player's name runs along the banner to the left of it, with his position beneath.",
+		layout: "The banner-and-ball device is the whole graphic idea.",
+		back: "Red and black ink on grey card stock.",
+		markers:
+			"132 cards, the last Topps basketball set before the brand left the sport for over a decade.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1980-81-topps",
+		label: "1980-81 Topps (three-panel)",
+		brand: "Topps",
+		era: "vintage",
+		since: 1981,
+		stock: "Uncoated stock with visible print dots, perforated between panels.",
+		proportions:
+			"3.5 x 2.5 inches, LANDSCAPE - a standard card turned on its side, wider than it is tall, a 7:5 ratio. Render the image at 1434 x 1024 pixels. The landscape orientation is essential; this set is the one Topps basketball design that is not portrait.",
+		border: "A white border around the whole card.",
+		photography:
+			"THREE separate tall narrow player panels side by side, each about a third of the card's width, each with its own small photograph. Put THIS card's player in the CENTRE panel, largest and clearest; the two flanking panels hold other players from the same team, smaller and incidental.",
+		background: "The arena as photographed, tightly cropped inside each panel.",
+		typography:
+			"Each panel carries its own player's name, team and position in small plain type - three miniature cards' worth of information on one card.",
+		layout:
+			"Fine PERFORATION lines run down between the panels, so the card reads as something meant to be torn into three.",
+		back: "Three panels of flat-ink statistics and biography, one behind each player.",
+		markers:
+			"176 panel cards covering 264 players. The format is the whole identity of the set - a card that is really three cards.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
+	{
+		id: "1981-82-topps",
+		label: "1981-82 Topps",
+		brand: "Topps",
+		era: "vintage",
+		since: 1982,
+		stock: "Uncoated stock with visible print dots.",
+		border:
+			"A solid colour border framing the photograph, with the Topps logo set into the frame line itself.",
+		photography: "A colour photograph, game action or posed.",
+		background: "The arena as photographed.",
+		typography:
+			"A quarter-round SUNBURST in the lower-left corner, its rays fanning out, carrying the player's name, position and team.",
+		layout: "The corner starburst is the signature device of this set.",
+		back: "An orange border around a brown inner box holding the statistics.",
+		markers:
+			"66 national cards plus three 44-card regional subsets (East, Midwest, West), the region printed next to the card number.",
+		variants: [BASE, RC("No rookie emblem existed.")],
+	},
 
 	// ---------------------------------------------------------------- ERA 1
 	{
@@ -2195,6 +2413,36 @@ export const CARD_SETS: CardSet[] = [
 				label: "Fresh Ink",
 				treatment:
 					"An autograph insert with the signature written directly on the card face.",
+			},
+		],
+	},
+	{
+		id: "1999-00-topps-gallery",
+		label: "1999-00 Topps Gallery",
+		brand: "Topps",
+		era: "premium",
+		since: 2000,
+		stock:
+			"Thick premium card stock with a glassy high-shine finish and gold highlights.",
+		border: "A restrained frame, hung like something in a gallery.",
+		photography:
+			"NOT a photograph. The player is rendered as ARTWORK - painted, brushed or pencilled, with visible strokes and an artist's hand rather than a camera's. This is the one set in the catalogue whose front is a picture of a picture.",
+		background:
+			"An abstract painted ground rather than an arena: washes of colour, brushwork, and gold leaf catching the light.",
+		typography: "Small, quiet lettering that stays out of the artwork's way.",
+		layout:
+			"Composed like a piece hung on a wall - the art is the card, and the furniture around it is minimal.",
+		back: "A restrained back on the same heavy stock, with the biography and statistics set like a gallery placard.",
+		markers:
+			"Topps' art brand: the whole premise is that a card can be a painting instead of a photograph.",
+		variants: [
+			BASE,
+			RC("No rookie emblem."),
+			{
+				id: "gallery-of-heroes",
+				label: "Gallery of Heroes",
+				treatment:
+					"A DIE-CUT card shaped like a cathedral window, the player set against a brilliant multicoloured STAINED-GLASS background with leaded black lines between the panes and light pouring through the colour.",
 			},
 		],
 	},

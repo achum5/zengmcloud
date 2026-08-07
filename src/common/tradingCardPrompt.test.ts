@@ -494,6 +494,29 @@ describe("the catalogue", () => {
 		}
 	});
 
+	// The back's orientation note used to assert the card was portrait. Almost
+	// every one is - but the 1980-81 Topps three-panel card is landscape, and
+	// that sentence sat three lines under a shape section saying LANDSCAPE, so
+	// the prompt argued with itself.
+	test("no set is told two different things about its orientation", () => {
+		for (const set of CARD_SETS) {
+			const back = buildCardBackPrompt(set.id, "base", subject());
+			const saysLandscape = /LANDSCAPE/.test(set.proportions ?? "");
+			if (saysLandscape) {
+				assert.ok(
+					!/still the portrait|is portrait/i.test(back),
+					`${set.id} is landscape but the back calls it portrait`,
+				);
+			}
+		}
+		// And the one landscape set really is in the catalogue, so this test is
+		// guarding something rather than passing vacuously.
+		assert.ok(
+			CARD_SETS.some((set) => /LANDSCAPE/.test(set.proportions ?? "")),
+			"a landscape set exists to guard",
+		);
+	});
+
 	// Eight sets in the catalogue have a back that reads horizontally, which is
 	// true of the real cards - but it describes the LAYOUT, not the card, and
 	// the model took it as the card. That is what produced the landscape back.
@@ -506,7 +529,7 @@ describe("the catalogue", () => {
 		for (const set of horizontal) {
 			const back = buildCardBackPrompt(set.id, "base", subject());
 			assert.ok(
-				back.includes("Do not output a landscape image"),
+				back.includes("Do not change the card's orientation"),
 				`${set.id} is told not to turn the card`,
 			);
 			assert.ok(

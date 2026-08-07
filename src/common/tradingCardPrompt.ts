@@ -224,7 +224,10 @@ The front and the back of this card are generated as two separate images and MUS
 // horizontally, and that is true of the real cards - but it describes the
 // LAYOUT printed on the card, not the card, which is the same 2.5 x 3.5
 // portrait rectangle as the front. You turn a real one sideways to read it.
-const BACK_ORIENTATION = `If the back design described below reads horizontally, that is the layout, not the card. The card is still the portrait shape given above; the horizontal layout is printed rotated a quarter turn onto it, exactly as the real card is, which is why you turn one sideways to read the back. Do not output a landscape image - a back that is a different shape from the front is wrong no matter how good it looks.`;
+// Careful with the wording here: it must NOT say "portrait". Almost every card
+// is, but the 1980-81 Topps three-panel card is landscape, and telling that one
+// its back is portrait contradicts the shape section three lines above it.
+const BACK_ORIENTATION = `If the back design described below reads horizontally, that is the layout, not the card. The card keeps exactly the shape and orientation given above; a horizontal layout on a taller-than-wide card is printed rotated a quarter turn onto it, exactly as the real card is, which is why you turn one sideways to read the back. Do not change the card's orientation to suit the layout - a back that is a different shape from the front is wrong no matter how good it looks.`;
 
 const jerseyBlock = (subject: CardSubject): string =>
 	`## The uniform
