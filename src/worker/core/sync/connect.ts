@@ -1603,6 +1603,9 @@ const doConnectSharedLeague = async ({
 		onPendingChange: (count) => {
 			pushPendingUploads(count);
 		},
+		onUploadingChange: (progress) => {
+			void toUI("updateLocal", [{ mpSyncUpload: progress }]);
+		},
 		onUploadComplete: () => {
 			uploadOkCounter += 1;
 			void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);

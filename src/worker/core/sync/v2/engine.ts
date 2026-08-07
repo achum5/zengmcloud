@@ -260,6 +260,12 @@ export class SyncEngineV2 {
 	private onReadyChange: ((ready: boolean) => void) | undefined;
 	private onPendingChange: ((count: number) => void) | undefined;
 	private onUploadComplete: (() => void) | undefined;
+	// Fired while a drain is actually pushing entries to the cloud, so the
+	// header can show it happening. Nothing else in the app can tell the user
+	// "your sim is going up right now, keep the app open".
+	private onUploadingChange:
+		| ((progress: { done: number; total: number } | undefined) => void)
+		| undefined;
 	private onCatchUpProgress:
 		| ((progress: { done: number; total: number } | undefined) => void)
 		| undefined;
@@ -274,6 +280,9 @@ export class SyncEngineV2 {
 			onReadyChange?: (ready: boolean) => void;
 			onPendingChange?: (count: number) => void;
 			onUploadComplete?: () => void;
+			onUploadingChange?: (
+				progress: { done: number; total: number } | undefined,
+			) => void;
 			// Shown while this device is visibly behind the room and working on
 			// it (a big walk, or fetches that are failing and retrying) - never
 			// for the ordinary one-version live apply.
@@ -291,6 +300,7 @@ export class SyncEngineV2 {
 		this.onReadyChange = options.onReadyChange;
 		this.onPendingChange = options.onPendingChange;
 		this.onUploadComplete = options.onUploadComplete;
+		this.onUploadingChange = options.onUploadingChange;
 		this.onCatchUpProgress = options.onCatchUpProgress;
 		this.publishTimeoutMs =
 			options.publishTimeoutMs ?? PUBLISH_ATTEMPT_TIMEOUT_MS;
@@ -1384,6 +1394,11 @@ export class SyncEngineV2 {
 				return true;
 			}
 
+			// Show the upload while it is happening. A sim is the one action where
+			// the user genuinely needs to know not to close the app yet, and a
+			// silent header during a slow push reads as "nothing is happening".
+			let done = 0;
+			this.onUploadingChange?.({ done, total: pending.length });
 			for (const entry of pending) {
 				// Every device publishes the same way: as the next version. No
 				// change ever waits on another device being online.
@@ -1391,6 +1406,8 @@ export class SyncEngineV2 {
 				if (!ok) {
 					return false;
 				}
+				done += 1;
+				this.onUploadingChange?.({ done, total: pending.length });
 			}
 			this.onUploadComplete?.();
 			return true;
@@ -1399,6 +1416,9 @@ export class SyncEngineV2 {
 			return false;
 		} finally {
 			this.draining = false;
+			// Cleared on every exit - a drain that fails must not leave the header
+			// claiming an upload is still in flight.
+			this.onUploadingChange?.(undefined);
 		}
 	}
 

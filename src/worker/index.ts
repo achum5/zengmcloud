@@ -322,7 +322,22 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 				return undefined;
 			}
 
-			const live = await syncEngine.verifyConnection(simAuthorityLocked);
+			// NOT forced, even for a timeline advance.
+			//
+			// Forcing it made every sim wait on a getDocFromServer round-trip, and
+			// on a phone that read times out (6s) often enough to be the thing
+			// standing between the user and a working Sim button - clicked, waited,
+			// nothing, "Not connected to the cloud right now". The connection was
+			// fine; one probe was slow.
+			//
+			// It was inherited from the old protocol, where a half-dead connection
+			// could fork a room because a sim was merged from stale state. The chain
+			// cannot fork that way: an advance is published as version N+1 by
+			// compare-and-set, and one authored on a base the room has moved past is
+			// discarded rather than merged. And the check immediately below is a
+			// real server read that must reach the head before anything advances -
+			// strictly better evidence than "a document was readable a moment ago".
+			const live = await syncEngine.verifyConnection();
 			if (!live) {
 				syncDebugLog("api:guard-refused", { type, name, step: "verify" });
 				util.logEvent(
