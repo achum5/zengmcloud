@@ -1699,7 +1699,11 @@ const doConnectSharedLeague = async ({
 		// that would otherwise be stamped with the placeholder name.
 		await refreshSyncLocalName();
 		if (isHost) {
-			await engine.claimAuthority();
+			// Only if nobody is in charge of simming - see claimAuthorityIfVacant.
+			// isHost is persisted, so claiming outright here meant every reconnect
+			// of the room's creator stole simming from whoever was actually using
+			// it, and then sat on it.
+			await engine.claimAuthorityIfVacant();
 		}
 	} catch (error) {
 		await teardownSharedLeague({ clearPersisted: false });

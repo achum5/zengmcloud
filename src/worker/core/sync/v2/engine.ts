@@ -250,6 +250,12 @@ export class SyncEngineV2 {
 	private authorityListenerHealthy = false;
 	private authorityRestartTimer: ReturnType<typeof setTimeout> | undefined;
 
+	// Whether the authority doc has been delivered at least once since the
+	// listener was (re)established. See claimAuthorityIfVacant.
+	private authorityLoaded = false;
+
+	private authorityLoadedWaiters: (() => void)[] = [];
+
 	// When the state listener last actually delivered. Distinct from the room's
 	// own `at` stamp, which is when the version was WRITTEN: an idle room and a
 	// dead listener produce the same stale `at`, and telling those two apart is
@@ -341,6 +347,13 @@ export class SyncEngineV2 {
 			(authority) => {
 				this.authorityListenerHealthy = true;
 				this.authority = authority;
+				// The FIRST delivery is what separates "the room has no holder" from
+				// "we haven't been told yet" - and those must never be confused,
+				// because one of them is a licence to claim.
+				this.authorityLoaded = true;
+				for (const waiter of this.authorityLoadedWaiters.splice(0)) {
+					waiter();
+				}
 				this.onAuthorityChange?.(authority);
 			},
 			(error) => {
@@ -352,6 +365,9 @@ export class SyncEngineV2 {
 				// the room is busy and refuse to sim.
 				this.authorityListenerHealthy = false;
 				this.authority = undefined;
+				// Not "the room is empty" - "we can no longer see the room". Anyone
+				// waiting to find out must not read this silence as a vacancy.
+				this.authorityLoaded = false;
 				this.markNotReady();
 				this.authorityUnsubscribe?.();
 				this.authorityUnsubscribe = undefined;
@@ -654,6 +670,70 @@ export class SyncEngineV2 {
 			this.transport.clientId,
 			this.localName,
 		);
+	}
+
+	// Claim ONLY if the room has nobody in charge of simming.
+	//
+	// Connecting used to claim outright whenever this device was the room's
+	// original creator, and that flag is persisted - so every reconnect took
+	// simming away from whoever actually had it. A phone waking up, a tab
+	// reloading, an app resuming: each one silently moved sim control to a
+	// device that then sat idle, which stopped auto play dead and left the room
+	// unable to sim while still reporting a holder. Handing over is an explicit
+	// act ("Sim here"), never a side effect of reconnecting.
+	//
+	// Returns whether it claimed.
+	async claimAuthorityIfVacant(): Promise<boolean> {
+		if (!(await this.waitForAuthoritySnapshot())) {
+			// Never saw the doc, so vacant and taken are indistinguishable. Do
+			// nothing: failing to claim costs one "Sim here" press, while claiming
+			// wrongly silently kills someone else's session.
+			return false;
+		}
+		if (this.authority !== undefined) {
+			return false;
+		}
+		await this.claimAuthority();
+		return true;
+	}
+
+	// Resolves true once the authority doc has actually been delivered at least
+	// once (its value may legitimately be "nobody"), false if it never arrives.
+	private async waitForAuthoritySnapshot(timeoutMs = 5000): Promise<boolean> {
+		if (this.authorityLoaded) {
+			return true;
+		}
+		if (this.transport.subscribeAuthority === undefined) {
+			// Transport has no authority support at all, so there is no holder to
+			// displace and nothing to wait for.
+			return true;
+		}
+		return new Promise<boolean>((resolve) => {
+			let settled = false;
+			const waiter = () => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				clearTimeout(timer);
+				resolve(true);
+			};
+			const timer = setTimeout(() => {
+				if (settled) {
+					return;
+				}
+				settled = true;
+				this.authorityLoadedWaiters = this.authorityLoadedWaiters.filter(
+					(w) => w !== waiter,
+				);
+				resolve(false);
+			}, timeoutMs);
+			const nodeTimer = timer as unknown as { unref?: () => void };
+			if (typeof nodeTimer?.unref === "function") {
+				nodeTimer.unref();
+			}
+			this.authorityLoadedWaiters.push(waiter);
+		});
 	}
 
 	// Rename this device, and push the new name everywhere the room stores a copy

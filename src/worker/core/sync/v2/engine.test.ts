@@ -827,6 +827,70 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// Reconnecting used to claim sim authority outright whenever this device had
+	// created the room - and that flag is persisted, so a phone waking up or a
+	// tab reloading silently took simming from the device actually doing it, and
+	// then sat idle. In the field that stopped auto play dead and left the room
+	// unable to sim while still showing a holder.
+	describe("claiming on connect", () => {
+		test("never takes it from a device that already has it", async () => {
+			const room = new Room();
+			initRoom(room);
+			room.setAuthority({ holderId: "B", holderName: "Dominic" });
+
+			const transport = new V2Transport("A", room);
+			const engine = new SyncEngineV2(transport);
+			engine.start();
+
+			const claimed = await engine.claimAuthorityIfVacant();
+			assert.strictEqual(claimed, false);
+			assert.deepStrictEqual(
+				room.authority,
+				{ holderId: "B", holderName: "Dominic" },
+				"reconnecting must not move sim control off the device using it",
+			);
+			engine.stop();
+		});
+
+		test("claims an empty room, so creating one still makes you the simmer", async () => {
+			const room = new Room();
+			initRoom(room);
+
+			const transport = new V2Transport("A", room);
+			const engine = new SyncEngineV2(transport);
+			engine.start();
+
+			assert.strictEqual(await engine.claimAuthorityIfVacant(), true);
+			assert.strictEqual(room.authority?.holderId, "A");
+			engine.stop();
+		});
+
+		// "Nobody is in charge" and "we have not been told yet" look identical
+		// from the outside, and only one of them is a licence to claim.
+		test("declines when the authority doc never arrives", async () => {
+			const room = new Room();
+			initRoom(room);
+			room.setAuthority({ holderId: "B", holderName: "Dominic" });
+
+			const transport = new V2Transport("A", room);
+			// A listener that is registered but never delivers - the shape of a
+			// wedged Firestore channel.
+			// (the unsubscribe mirrors the fake's Set.delete return type)
+			transport.subscribeAuthority = () => () => true;
+			const engine = new SyncEngineV2(transport);
+			engine.start();
+
+			const claimed = await (engine as any).claimAuthorityIfVacant.call(engine);
+			assert.strictEqual(
+				claimed,
+				false,
+				"silence is not a vacancy - claiming here is how the theft happened",
+			);
+			assert.strictEqual(room.authority?.holderId, "B");
+			engine.stop();
+		}, 10000);
+	});
+
 	test("notifications fire only when the version actually committed", async () => {
 		const room = new Room();
 		initRoom(room);
