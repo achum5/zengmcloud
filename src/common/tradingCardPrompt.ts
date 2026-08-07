@@ -248,19 +248,51 @@ He is wearing the ${subject.teamName} uniform as that franchise actually wore it
 // post-ups, lobs and blocks, a point guard gets step-backs and cross-court
 // passes, and neither gets handed the other's card.
 
+// Deliberately spread across what a basketball game actually contains, not
+// just scoring: shooting, finishing, passing, defending, rebounding, running,
+// hustling, reacting. A pool that is nine kinds of jump shot is only a little
+// less repetitive than one action.
 const ANY_ACTION = [
+	// With the ball
 	"finishing at the rim through contact, body twisting away from the defender",
 	"rising for a pull-up jumper, defender a half-step late",
-	"coming down with a rebound at its highest point, both hands on the ball",
-	"sprinting the floor in transition, head up, ball out in front",
-	"sliding his feet on defence, low, both hands active",
-	"releasing a shot with the follow-through still held, eyes on the rim",
-	"caught mid-air on a floater over a bigger defender",
-	"contesting a shot with one hand straight up, no jump",
-	"diving after a loose ball, both bodies low",
-	"pointing back downcourt at a teammate after a made basket",
 	"driving baseline with a defender on his hip",
+	"caught mid-air on a floater over a bigger defender",
 	"catching the ball on the move and squaring up in one motion",
+	"absorbing contact on the way up, arm extended through the foul",
+	"bringing the ball up against full-court pressure, shielding it with his off arm",
+	"exploding out of a jab step past his man",
+	"gathering off two feet in the lane, ball tucked",
+	"losing his defender on a hard change of direction",
+	"setting his feet behind the arc as the pass arrives",
+	"running off a handoff at the elbow",
+	"rising with a defender's hand in his face",
+	// Shooting, and the beat after it
+	"releasing a shot with the follow-through still held, eyes on the rim",
+	"landing after a shot, still watching the flight of the ball",
+	"hanging on the follow-through of a deep shot, one arm up",
+	// Defence
+	"sliding his feet on defence, low, both hands active",
+	"contesting a shot with one hand straight up, no jump",
+	"reaching in for a steal without leaving his feet",
+	"hedging out on a screen with his arms wide",
+	"leaping to deflect a passing lane",
+	"taking a charge, body already falling backwards",
+	"planted in a defensive stance with the ball-handler right in front of him",
+	"shouting instructions to a teammate while backpedalling on defence",
+	// Rebounding
+	"coming down with a rebound at its highest point, both hands on the ball",
+	"tangled with a defender for a rebound, both hands on the ball",
+	"reaching back to save a rebound to a teammate",
+	// Running and hustle
+	"sprinting the floor in transition, head up, ball out in front",
+	"finishing a fast break with nobody within ten feet",
+	"fighting through a screen, shoulder into the screener",
+	"diving after a loose ball, both bodies low",
+	"jumping to save a ball from going out, body already over the sideline",
+	// Reaction
+	"pointing back downcourt at a teammate after a made basket",
+	"celebrating a basket mid-stride, fist clenched, teammates behind him",
 ];
 
 const GUARD_ACTION = [
@@ -272,6 +304,22 @@ const GUARD_ACTION = [
 	"pulling up in transition off one dribble",
 	"releasing a three from the top of the key over a closeout",
 	"hanging back on the dribble at the top, reading the defence",
+	"throwing a lob toward the rim, eyes up",
+	"going behind his back to change direction",
+	"snaking a pick and roll back across the lane",
+	"dropping a bounce pass through traffic to the roll man",
+	"hesitating at the free-throw line, his defender frozen",
+	"pressuring the ball ninety feet from the basket",
+	"spinning out of a trap in the corner",
+	"throwing an outlet pass the length of the floor",
+	"shooting a sidestep three from the wing, heels near the line",
+	"stealing the ball off the dribble and taking it the other way",
+	"running the break three-on-two with his head up",
+	"coming off a screen with his feet already set to shoot",
+	"drawing two defenders and kicking it out to the corner",
+	"crossing half court with one hand raised, calling the play",
+	"slipping under a big to finish on the far side of the rim",
+	"rising for a jumper at the elbow with a hand in his face",
 ];
 
 const BIG_ACTION = [
@@ -283,6 +331,22 @@ const BIG_ACTION = [
 	"boxing out under the rim, arms wide",
 	"turning over his shoulder into a hook shot",
 	"rolling hard to the rim with a hand up for the pass",
+	"setting a screen at the elbow, feet planted, braced for contact",
+	"ripping a defensive rebound down out of traffic, elbows out",
+	"sealing his man under the basket with a wide base",
+	"swatting a shot away, still in the air",
+	"finishing a putback before coming back down",
+	"stepping out to shoot from the top of the key",
+	"facing up from the elbow, ball held above his head",
+	"drop-stepping baseline into the lane",
+	"altering a shot at the rim without fouling, arm straight up",
+	"running the floor ahead of the guards on a break",
+	"catching the ball in the deep post with both hands",
+	"spinning off his man into the middle of the lane",
+	"holding the ball high over a smaller defender, looking to pass out",
+	"hammering home an alley-oop with one hand",
+	"contesting at the rim as a guard tries to finish over him",
+	"stepping into a short jumper from the free-throw line",
 ];
 
 const WING_ACTION = [
@@ -292,6 +356,20 @@ const WING_ACTION = [
 	"running a defender off a screen and catching it ready to shoot",
 	"stripping the ball on a drive from the weak side",
 	"soaring in from the wing to finish above the rim",
+	"filling the lane on a break and rising for the finish",
+	"shooting a corner three with his toes behind the line",
+	"chasing a layup down from behind for the block",
+	"attacking a closeout with one long dribble",
+	"curling off a screen into the middle of the floor",
+	"backing a smaller defender down on the block",
+	"crashing the offensive glass from the wing",
+	"switching onto a guard and staying in front of him",
+	"catching and rising from the wing without a dribble",
+	"driving the middle and going up through two defenders",
+	"leaking out early and catching the outlet in stride",
+	"denying his man the ball, arm extended into the passing lane",
+	"flying in from the weak side to tip a miss back in",
+	"planting hard and pulling up from mid-range",
 ];
 
 // ZenGM positions: PG G SG GF SF F PF FC C.

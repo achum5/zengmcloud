@@ -168,15 +168,38 @@ describe("the front prompt", () => {
 
 		test("re-rolling gives a real spread, not one action over and over", () => {
 			const seen = new Set<string | undefined>();
-			for (let seed = 0; seed < 200; seed++) {
+			for (let seed = 0; seed < 400; seed++) {
 				seen.add(
 					actionOf(buildCardFrontPrompt("prizm", "silver", subject(), seed)),
 				);
 			}
 			assert.ok(
-				seen.size >= 15,
+				seen.size >= 50,
 				`expected a wide spread of actions, got ${seen.size}`,
 			);
+		});
+
+		// The pool has to stay broad in KIND, not just in count - fifty variations
+		// on a jump shot would read as repetitive as one action does.
+		test("the pool covers more than scoring", () => {
+			const all = new Set<string>();
+			for (const pos of ["PG", "SF", "C"]) {
+				for (let seed = 0; seed < 400; seed++) {
+					const a = actionOf(
+						buildCardFrontPrompt("prizm", "silver", subject({ pos }), seed),
+					);
+					if (a) {
+						all.add(a);
+					}
+				}
+			}
+			const has = (re: RegExp) => [...all].some((a) => re.test(a));
+			assert.ok(has(/defen[cs]e|contesting|block|steal|charge|denying/i));
+			assert.ok(has(/rebound|box|glass|tip/i));
+			assert.ok(has(/pass|kick|outlet|lob|handoff/i));
+			assert.ok(has(/transition|break|sprint|running the floor|leaking/i));
+			assert.ok(has(/loose ball|diving|fighting through|save/i));
+			assert.ok(has(/celebrat|pointing/i));
 		});
 
 		// Variety that puts a centre on a step-back three every third card is
