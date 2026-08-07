@@ -136,6 +136,17 @@ const HEAD_PROBE_TIMEOUT_MS = 4_000;
 // which died quietly stops being vouched for within a few interactions.
 const READY_TTL_MS = 60_000;
 
+// How long to wait before the next catch-up pass, indexed by how many passes
+// have failed in a row. The first retry is immediate - a single blip should
+// not cost the user a wait - and it climbs from there. Any delta that actually
+// applies resets the streak, so a long healthy walk never backs off.
+const CATCHUP_BACKOFF_MS = [0, 1_000, 3_000, 8_000, 15_000, 30_000];
+
+// After tearing the Firestore connection down and back up, give it a moment to
+// re-establish before reading through it. Reading immediately is how a cycle
+// turned into "client is offline" on the very next request.
+const NETWORK_CYCLE_SETTLE_MS = 2_000;
+
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
 	new Promise((resolve, reject) => {
 		const id = setTimeout(
@@ -206,7 +217,6 @@ export class SyncEngineV2 {
 	private catchupFailureStreak = 0;
 	private lastNetworkCycleAt = 0;
 	private lastCatchupFailureAt = 0;
-	private roomVersionAtLastFailure = 0;
 	// The catch-up step already reported to the user via a persistent notice,
 	// so repeated failures at the same step nag exactly once.
 	private notifiedFailingStep: string | undefined;
@@ -485,6 +495,14 @@ export class SyncEngineV2 {
 		if (this.stopped || !this.transport.cycleNetwork) {
 			return;
 		}
+		// Never yank the connection out from under a catch-up that is running.
+		// disableNetwork fails every read in flight, so a probe-triggered cycle
+		// landing mid-walk turned a working pass into "client is offline" and
+		// cost the device its place. The catchup source is exempt: it calls this
+		// from its own catch block, where the pass is already over.
+		if (source === "probe" && this.catchingUp) {
+			return;
+		}
 		if (
 			Math.max(this.probeFailureStreak, this.catchupFailureStreak) < 2 ||
 			Date.now() - this.lastNetworkCycleAt <= 30_000
@@ -501,7 +519,19 @@ export class SyncEngineV2 {
 			// Even a failed cycle is followed by a fresh listener + catch-up.
 		}
 		this.subscribeState();
-		void this.catchUp();
+		// Let the rebuilt connection settle before reading through it - but do
+		// NOT block on the wait. This runs inside the failing pass's catch, and
+		// awaiting here would add the settle to the latency of every failure,
+		// including the ones the pre-action guard is sitting on.
+		const settle = setTimeout(() => {
+			if (!this.stopped) {
+				void this.catchUp();
+			}
+		}, NETWORK_CYCLE_SETTLE_MS);
+		const nodeTimeout = settle as unknown as { unref?: () => void };
+		if (typeof nodeTimeout?.unref === "function") {
+			nodeTimeout.unref();
+		}
 	}
 
 	// Tell the UI this device is visibly behind and working on it. Never fires
@@ -975,17 +1005,28 @@ export class SyncEngineV2 {
 	// ---- Catch-up: the ONE recovery path ------------------------------------
 
 	catchUp(hintState?: V2StateDoc): Promise<boolean> {
-		// A DETERMINISTIC failure (an unreadable checkpoint, a poisoned payload)
-		// fails identically on every attempt - hammering it every second burns
-		// the network and fills the log without ever succeeding. After three
-		// consecutive failures, retry on a relaxed cadence until something
-		// changes (a new room version, or enough time for the authority to
-		// publish a fresh checkpoint).
-		if (
-			this.catchupFailureStreak >= 3 &&
-			this.roomVersion === this.roomVersionAtLastFailure &&
-			Date.now() - this.lastCatchupFailureAt < 15_000
-		) {
+		// Back off after a failed pass, ALWAYS.
+		//
+		// This used to back off only when the room version had not moved since
+		// the last failure, on the theory that a moving room means something has
+		// changed and is worth another go. That is backwards. A device that is
+		// behind and failing is by definition watching the room move away from
+		// it, so the one case the guard excluded was the only case that mattered.
+		// With another device simming, roomVersion changed on every pass and the
+		// backoff never engaged at all: a phone stuck on delta@158 started a new
+		// read the instant the previous one timed out, every eight seconds,
+		// indefinitely.
+		//
+		// That is not free. Firestore's getDoc cannot be cancelled, so every
+		// abandoned attempt leaves a read pending on the client forever. Pile up
+		// enough and the SDK stops trying and answers "client is offline" to
+		// everything - a red dot that no amount of further retrying recovers,
+		// because the retrying is what caused it.
+		const wait =
+			CATCHUP_BACKOFF_MS[
+				Math.min(this.catchupFailureStreak, CATCHUP_BACKOFF_MS.length - 1)
+			]!;
+		if (wait > 0 && Date.now() - this.lastCatchupFailureAt < wait) {
 			return Promise.resolve(false);
 		}
 		this.catchUpChain = this.catchUpChain
@@ -1204,6 +1245,16 @@ export class SyncEngineV2 {
 					});
 					this.appliedMirror = Math.max(this.appliedMirror, version);
 					progressed = true;
+					// A delta that applied is proof the connection works, so the
+					// failure streak starts over. Without this the streak only ever
+					// reset on reaching the head, which meant a device walking a big
+					// gap over a patchy link accumulated failures across passes that
+					// were each mostly SUCCESSFUL - fifty versions applied and one
+					// read lost still counted as a pass that failed. The streak then
+					// only went up, which is how the retry cadence and the network
+					// cycling both ended up permanently in their most aggressive
+					// state on the device that could least afford it.
+					this.catchupFailureStreak = 0;
 					if (this.catchUpPillShown) {
 						this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
 					}
@@ -1232,7 +1283,6 @@ export class SyncEngineV2 {
 			// timeout instead of two - halving the stall the user sits through.
 			this.catchupFailureStreak += String(error).includes("Timed out") ? 2 : 1;
 			this.lastCatchupFailureAt = Date.now();
-			this.roomVersionAtLastFailure = this.roomVersion;
 			// Repeated identical failures deserve one honest line to the user -
 			// the retrying is automatic, but silence while stuck reads as broken.
 			if (

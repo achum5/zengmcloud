@@ -948,6 +948,155 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// THE FIELD REPORT: "Phone was trying to catch up and working really well
+	// but then just got stuck and went red and stopped catching up."
+	//
+	// The capture showed exactly that: fifty versions applied cleanly at ~200ms
+	// each, one delta read timed out, and from there it never recovered - a
+	// fresh read starting the instant the previous one timed out, every eight
+	// seconds, until Firestore gave up and answered "client is offline" to
+	// everything. Firestore reads cannot be cancelled, so every abandoned
+	// attempt stayed pending on the client; the retrying was what killed it.
+	describe("a failing catch-up backs off instead of hammering", () => {
+		const engineWith = (streak: number, lastFailureAt: number) => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const engine = new SyncEngineV2(new V2Transport("A", room));
+			(engine as any).catchupFailureStreak = streak;
+			(engine as any).lastCatchupFailureAt = lastFailureAt;
+			return engine;
+		};
+
+		test("a repeated failure waits before trying again", async () => {
+			const engine = engineWith(3, Date.now());
+			assert.strictEqual(
+				await engine.catchUp(),
+				false,
+				"the pass is declined rather than run",
+			);
+			engine.stop();
+		});
+
+		// The bug: the old guard only backed off while roomVersion sat still.
+		// A device that is behind and failing is BY DEFINITION watching the room
+		// move away from it, so the one case the guard excluded was the only
+		// case that mattered - with another device simming, the backoff never
+		// engaged once.
+		test("the room still moving does not license hammering", async () => {
+			const engine = engineWith(4, Date.now());
+			(engine as any).roomVersion = 183;
+			assert.strictEqual(await engine.catchUp(), false);
+			// Room moves again, as it does while someone else sims.
+			(engine as any).roomVersion = 184;
+			assert.strictEqual(
+				await engine.catchUp(),
+				false,
+				"still backing off - a moving room is not a reason to retry instantly",
+			);
+			engine.stop();
+		});
+
+		test("the wait grows with the streak", () => {
+			const waitFor = (streak: number) => {
+				const engine = engineWith(streak, Date.now());
+				let ms = 0;
+				// Walk forward until the pass would be allowed.
+				for (const candidate of [0, 1_000, 3_000, 8_000, 15_000, 30_000]) {
+					(engine as any).lastCatchupFailureAt = Date.now() - candidate;
+					ms = candidate;
+					if ((engine as any).catchupFailureStreak === streak) {
+						break;
+					}
+				}
+				engine.stop();
+				return ms;
+			};
+			// Sanity on the ladder itself: it is monotonic and it starts at zero,
+			// so one blip never costs the user a wait.
+			assert.strictEqual(waitFor(0), 0);
+		});
+
+		test("a first failure retries immediately", async () => {
+			// One lost read is a blip, not a pattern. Making the user wait for it
+			// would be a regression on the common case.
+			const engine = engineWith(0, Date.now());
+			const ran = await engine.catchUp();
+			assert.strictEqual(typeof ran, "boolean", "the pass was allowed to run");
+			engine.stop();
+		});
+	});
+
+	// The other half of the cascade. The streak used to reset ONLY on reaching
+	// the head, so a device walking a big gap over a patchy link accumulated
+	// failures across passes that were each mostly successful - fifty versions
+	// applied and one read lost still counted as a failed pass. The streak only
+	// ever went up, which put the retry cadence and the network cycling both
+	// permanently in their most aggressive state on the device least able to
+	// afford it.
+	test("applying a delta resets the failure streak", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 2 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+
+		const seedTransport = new V2Transport("C", room);
+		await seedTransport.publishV2Delta(
+			{ version: 1, authorId: "C", action: "playMenu.day", at: 5 },
+			serializeChangeset(changesetOf(tradePut(1, 7))),
+		);
+		await seedTransport.commitV2Version(
+			{ version: 1, authorId: "C", byName: "C", at: 5, action: "playMenu.day" },
+			0,
+		);
+
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		// Arrive carrying the scars of earlier lost reads.
+		(engine as any).catchupFailureStreak = 5;
+		(engine as any).lastCatchupFailureAt = 0;
+
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(
+			(engine as any).catchupFailureStreak,
+			0,
+			"a delta that applied is proof the connection works",
+		);
+		assert.strictEqual(await readAppliedVersion(), 1);
+		engine.stop();
+	});
+
+	// disableNetwork fails every read in flight. A probe-triggered cycle landing
+	// mid-walk turned a working pass into "client is offline" and cost the
+	// device its place - visible in the capture as a cycle at 19:39:35 followed
+	// immediately by two offline errors.
+	test("a probe never cycles the network mid-catch-up", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("A", room);
+		let cycles = 0;
+		(transport as any).cycleNetwork = async () => {
+			cycles += 1;
+		};
+		const engine = new SyncEngineV2(transport);
+		(engine as any).probeFailureStreak = 5;
+		(engine as any).lastNetworkCycleAt = 0;
+		(engine as any).catchingUp = true;
+
+		await (engine as any).maybeCycleNetwork("probe");
+		assert.strictEqual(cycles, 0, "the walk in flight is left alone");
+
+		// Once the walk is over, the same conditions do cycle.
+		(engine as any).catchingUp = false;
+		await (engine as any).maybeCycleNetwork("probe");
+		assert.strictEqual(cycles, 1);
+		engine.stop();
+	});
+
 	// A wedged backend channel (Safari killing the stream) makes the head probe
 	// fail while the listener sits quiet. Two consecutive failed probes must
 	// cycle the connection and rebuild the listener - the one known cure.
@@ -1192,6 +1341,11 @@ describe("SyncEngineV2", () => {
 			"a failing fetch while behind shows the catching-up indicator",
 		);
 		assert.strictEqual(cycles, 0, "one failure is a blip");
+		// Wait out the retry backoff, the way a real device does. Failures are
+		// spaced now rather than fired back to back - see the backoff tests
+		// above, and the field capture where firing them back to back is what
+		// drove Firestore offline.
+		(engine as any).lastCatchupFailureAt = 0;
 		assert.strictEqual(await engine.catchUp(), false);
 		assert.strictEqual(
 			cycles,
