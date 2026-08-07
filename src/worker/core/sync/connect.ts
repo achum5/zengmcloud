@@ -1,4 +1,3 @@
-import { RESYNC_WINDOW_ENTRIES, SyncEngine } from "./SyncEngine.ts";
 import { SyncEngineV2 } from "./v2/engine.ts";
 import { FirebaseTransport } from "./FirebaseTransport.ts";
 import { outbox } from "./outbox.ts";
@@ -25,36 +24,17 @@ import {
 } from "./leagueIdentity.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g, helpers, local, lock, logEvent, toUI } from "../../util/index.ts";
+import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
 import { env } from "../../util/env.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
-import {
-	findStrandedScheduleRows,
-	sweepPhantomScheduleRows,
-	flushDeferredRefreshAfterLive,
-} from "./changeset.ts";
+import { flushDeferredRefreshAfterLive } from "./changeset.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
-import {
-	maybePublishRoomSnapshot,
-	restoreFromRoomSnapshot,
-} from "./roomSnapshot.ts";
-import {
-	describePosition,
-	getLeaguePosition,
-	isAheadOfPosition,
-	isBehindPosition,
-} from "./leaguePosition.ts";
 import { checkLeagueIntegrity } from "./leagueIntegrity.ts";
-import { decideMissingDataWarning } from "./missingDataWarning.ts";
-import { resetSnapshotRestoreBackoff } from "./snapshotRestoreBackoff.ts";
 import { readRecoveryAttempt } from "./recoveryBreadcrumb.ts";
 import { endLotteryReveal } from "./notifications.ts";
-import {
-	isTooFarBehind,
-	RETENTION_DAYS,
-} from "../../../common/syncRetention.ts";
+import {} from "../../../common/syncRetention.ts";
 import type { LiveBroadcastMeta } from "./types.ts";
 
 // This device's catch-up watermark for a league, stored in the durable meta DB
@@ -172,96 +152,7 @@ const saveResyncNeeded = async (lid: number | undefined, value: boolean) => {
 		await idb.meta.put("leagues", league);
 	}
 };
-
-// Record this sighting of missing-with-no-checkpoint against the durable stamp,
-// and report whether the gap has now outlasted the grace period (see
-// missingDataWarning.ts).
-const noteMissingDataAndShouldWarn = async (
-	lid: number | undefined,
-	alreadyWarned: boolean,
-) => {
-	if (typeof lid !== "number") {
-		return false;
-	}
-	const league = await idb.meta.get("leagues", lid);
-	if (!league) {
-		return false;
-	}
-	const decision = decideMissingDataWarning({
-		since: league.syncMissingDataSince,
-		alreadyWarned,
-		now: Date.now(),
-	});
-	if (league.syncMissingDataSince !== decision.since) {
-		league.syncMissingDataSince = decision.since;
-		await idb.meta.put("leagues", league);
-	}
-	return decision.warn;
-};
-
-// Minimum spacing between DURABLE watermark banks (cache flush + meta write).
-// During chained ready-up picks a watermark advance fires per pick; flushing
-// and writing meta every time hammered mobile browsers' IndexedDB ("meta
-// database error event" / transaction aborts on iOS under write pressure).
-// Skipping a bank is always safe: the in-memory watermark keeps advancing for
-// dedup, and on a crash the device just re-fetches a few already-applied
-// entries (idempotent whole-record writes).
-const WATERMARK_BANK_MIN_MS = 4000;
-let lastWatermarkBankAt = 0;
 let watermarkTrailingTimer: ReturnType<typeof setTimeout> | undefined;
-
-const saveWatermark = async (lid: number | undefined, ts: number) => {
-	if (typeof lid !== "number") {
-		return;
-	}
-
-	if (Date.now() - lastWatermarkBankAt < WATERMARK_BANK_MIN_MS) {
-		// Too soon after the last durable bank. Schedule a trailing bank of
-		// whatever the watermark is by then, so the tail of a burst still lands.
-		if (watermarkTrailingTimer === undefined) {
-			watermarkTrailingTimer = setTimeout(() => {
-				watermarkTrailingTimer = undefined;
-				const engine = getSyncEngine();
-				if (engine) {
-					void saveWatermark(lid, engine.getPersistedSeq());
-				}
-			}, WATERMARK_BANK_MIN_MS);
-		}
-		return;
-	}
-
-	// Never let the DURABLE watermark run ahead of the DURABLE league data. The
-	// watermark lives in idb.meta and is written immediately; the data it accounts
-	// for lives in the in-memory cache and only reaches idb.league on a flush. If
-	// the app is killed in between (e.g. iOS backgrounding the PWA), the watermark
-	// would claim "caught up" while the applied data was never saved - and since a
-	// device won't re-fetch anything at/below its watermark, that change is lost
-	// locally forever even though it's still in the cloud. So flush the cache FIRST,
-	// then record the watermark.
-	//
-	// Skip entirely while a local sim / phase change / autoplay is running: those
-	// batch their own flushes for speed, and a mid-sim flush here would both fight
-	// that batching and (worse) bank a watermark ahead of not-yet-flushed sim data.
-	// The periodic catch-up re-runs this once things settle, so nothing is skipped
-	// permanently - the in-memory watermark keeps advancing for dedup regardless.
-	if (lock.get("gameSim") || lock.get("newPhase") || local.autoPlayUntil) {
-		return;
-	}
-	try {
-		await idb.cache.flush();
-	} catch {
-		// A failed flush means the data isn't durable, so don't bank a watermark
-		// past it - just try again on the next tick.
-		return;
-	}
-
-	const league = await idb.meta.get("leagues", lid);
-	if (league && (league.syncWatermark ?? 0) < ts) {
-		league.syncWatermark = ts;
-		await idb.meta.put("leagues", league);
-	}
-	lastWatermarkBankAt = Date.now();
-};
 
 // The room we're currently connected to (if any), so the UI can reflect
 // connection state - including after an auto-reconnect it didn't drive.
@@ -294,10 +185,6 @@ let syncRequired = false;
 // effectively runs while the app is in the foreground, which is exactly when we
 // want it. Undefined when not connected.
 let catchUpTimer: ReturnType<typeof setInterval> | undefined;
-// Whether the header catch-up pill is currently shown (a defined mpCatchUp was
-// pushed and not yet cleared). Lets a drive pass that ends fully caught up clear
-// a pill that was left showing without a matching clear (see driveCatchUp).
-let catchUpPillShowing = false;
 // The live changes listener delivers new deltas in real time for free; this
 // poll is only a BACKSTOP for a silently-dropped listener. So it runs
 // infrequently, and each tick skips its (billed) catch-up read when the listener
@@ -305,15 +192,6 @@ let catchUpPillShowing = false;
 // the steady-state read cost in an active room. A quiet/idle room has no
 // deliveries, so it still probes once per interval to detect a dead listener.
 const CATCH_UP_INTERVAL_MS = 30000;
-
-// A delivery from the live CHANGES listener this recently proves game data is
-// still flowing, so the poll can skip its confirming read (when also fully
-// caught up - see the catchUpTimer). Kept BELOW the poll interval on purpose:
-// if this window equalled the interval, a delivery's age would sit at ~the
-// interval at each tick and sometimes read as "fresh", skipping the probe - a
-// beat that fires only every other tick. Below the interval, a quiet listener
-// reliably probes every tick.
-const LISTENER_FRESH_MS = 20000;
 
 // How many recent log entries the activity panel reads. Bounded so it renders a
 // list instead of pulling a whole season's worth of change docs.
@@ -447,11 +325,7 @@ export const syncNudge = () => {
 	if (!engine) {
 		return;
 	}
-	if (engine instanceof SyncEngineV2) {
-		void engine.probeHead();
-	} else {
-		void engine.catchUp();
-	}
+	void engine.probeHead();
 	void engine.drainOutbox();
 	pushSyncStateFull();
 };
@@ -931,120 +805,8 @@ const checkLotteryRevealLease = () => {
 	}
 };
 
-// Drain the backlog page by page (resumable, bounded memory), then - once truly
-// caught up to the head - move the live subscription's watermark to the head and
-// start it. Deferring the real-time listener this way keeps its initial snapshot
-// to just the live tail, instead of re-loading the entire backlog we just
-// drained (which on a long absence would time out and wedge). Idempotent: the
-// subscription starts at most once; later calls just keep the tail drained.
-// Counts driveCatchUp ticks so the log can show how many passes a device has
-// spent stuck on the catching-up indicator without converging.
-let driveCatchUpTicks = 0;
 // Set while a productive-page-cap re-drive is already queued, so we don't stack
 // multiple immediate re-drives on top of the 15s poll timer.
-let driveCatchUpChained = false;
-
-const driveCatchUp = async () => {
-	const engine = getSyncEngine();
-	if (!engine) {
-		return;
-	}
-	driveCatchUpTicks += 1;
-	const before = engine.getCatchUpDiagnostics();
-	const reachedHead = await engine.catchUp();
-	// A reconnect may have replaced the engine while the drain was in flight
-	// (catchUp() aborts once its engine is stopped). Everything below - starting
-	// the live subscription, moving the transport watermark - must act on the
-	// CURRENT session, not the torn-down one.
-	if (getSyncEngine() !== engine) {
-		return;
-	}
-	const after = engine.getCatchUpDiagnostics();
-
-	// One line per catch-up pass. The telling signals for an "infinitely
-	// catching up" device: reachedHead stays false while `behind` never reaches
-	// 0 (head moving faster than we drain, or fetches failing), or `behind` is 0
-	// yet the indicator persists because a bulk batch is stuck (pendingBatches)
-	// or an apply is pinned (applyFailed) - isCaughtUp() then never becomes true.
-	syncDebugLog("connect:drive-catchup", {
-		tick: driveCatchUpTicks,
-		reachedHead,
-		caughtUp: after.caughtUp,
-		behindBefore: before.behind,
-		behindAfter: after.behind,
-		persistedSeq: after.persistedSeq,
-		maxSeq: after.maxSeq,
-		watermarkAdvanced: after.persistedSeq > before.persistedSeq,
-		pendingBatches: after.pendingBatches,
-		pendingBatchDetail: after.pendingBatchDetail,
-		applyFailed: after.applyFailed,
-		failedApplies: after.failedApplies,
-		progressDone: after.progressDone,
-		progressTotal: after.progressTotal,
-		liveSubscription: after.liveSubscription,
-	});
-
-	// Only go live once the drain has actually reached the head - otherwise the
-	// subscription's initial snapshot would re-load the still-undrained backlog.
-	// (A failed fetch returns false, so we don't prematurely go live either.)
-	if (reachedHead && !engine.hasChangesSubscription()) {
-		currentTransport?.updateSince(engine.getPersistedSeq());
-		engine.startChangesSubscription();
-	}
-	// Catching up may have just unblocked edits.
-	pushEditsPaused();
-
-	// Self-heal a stuck pill: if this pass reached the head and we're genuinely
-	// caught up (nothing pending) with no active progress total, but the pill is
-	// still showing, clear it. finishCatchUp only emits a clear when a progress
-	// TOTAL had been set, so a session that caught up without ever showing a total
-	// (e.g. a near-caught-up reconnect) wouldn't otherwise hide a pill left over
-	// from a prior engine. Only ever CLEARS, and only when provably done.
-	if (
-		reachedHead &&
-		after.caughtUp &&
-		after.progressTotal === undefined &&
-		catchUpPillShowing
-	) {
-		catchUpPillShowing = false;
-		void toUI("updateLocal", [{ mpCatchUp: undefined }]);
-	}
-
-	// A big backlog is drained in bounded chunks (catchUp() caps its pages so it
-	// can't spin forever), and there's no live subscription yet - so without this,
-	// each chunk would wait a full poll interval for the next, and a large room
-	// crawls in (backlog / chunk) 30-second steps that look like "infinitely
-	// catching up". If we didn't reach the head but DID make real progress, keep
-	// draining right away instead of idling. Progress is NOT just the watermark:
-	// while a bulk batch is mid-assembly the watermark is pinned by design, but
-	// fetching further (maxSeq) or applying more entries (progressDone) is real
-	// forward motion and must keep the chain alive - otherwise wedge RECOVERY
-	// (re-fetching a pinned tail to rebuild a batch) is the exact flow that
-	// crawls.
-	const madeProgress =
-		after.persistedSeq > before.persistedSeq ||
-		after.maxSeq > before.maxSeq ||
-		after.progressDone > before.progressDone;
-	// A sweep that just RESET a dead batch owes an immediate rebuild pass: the
-	// reset exists only to confirm-by-refetch and then abandon, and pausing a
-	// full poll tick between those steps kept losing races against phone
-	// screen-lock (the app suspends, in-memory recovery state restarts, the
-	// abandon never runs). Bounded: each reset batch gets exactly one chained
-	// rebuild, after which it either completes or is abandoned.
-	const owesRebuild = engine.hasRebuildingBatches();
-	if (
-		((!reachedHead && madeProgress) || (reachedHead && owesRebuild)) &&
-		!after.applyFailed &&
-		!driveCatchUpChained &&
-		getSyncEngine() !== undefined
-	) {
-		driveCatchUpChained = true;
-		setTimeout(() => {
-			driveCatchUpChained = false;
-			void driveCatchUp();
-		}, 50);
-	}
-};
 
 // Called from the UI (on the simmer's device) whenever its auto-play schedule
 // changes, to broadcast it to the room. No-op if not connected.
@@ -1344,21 +1106,6 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 // looks like in the data. A skipped bulk change that mattered shows up in the
 // second even when the first looks clean, which is the whole reason the
 // stranded-row check exists.
-const noDamageToRepair = async (engine: {
-	isCaughtUp: () => boolean;
-}): Promise<boolean> => {
-	if (!engine.isCaughtUp()) {
-		return false;
-	}
-	try {
-		const stranded = await findStrandedScheduleRows();
-		return stranded.gids.length === 0;
-	} catch {
-		// Can't prove it's fine, so don't claim it is.
-		return false;
-	}
-};
-
 export const getSimSafety = async (): Promise<
 	{ safe: true } | { safe: false; reason: string }
 > => {
@@ -1374,48 +1121,17 @@ export const getSimSafety = async (): Promise<
 		};
 	}
 
+	// A leftover repair flag from the old protocol. Nothing sets it any more and
+	// nothing can act on it, so clear it rather than let it block sims forever.
 	const lid = g.get("lid");
 	if (await loadResyncNeeded(lid)) {
-		// On v2 the flag is v1 bookkeeping with no v1 healer running: the chain
-		// IS the repair, so "caught up" means healed - clear it and move on.
-		// Left in place, it blocked every sim forever with a promise
-		// ("will self-heal shortly") that nothing on v2 was going to keep.
-		if (engine instanceof SyncEngineV2 && engine.isCaughtUp()) {
-			await saveResyncNeeded(lid, false);
-			syncDebugLog("v2:cleared-stale-resync-flag", { lid });
-		} else if (await noDamageToRepair(engine)) {
-			// v1, and the same promise was being broken here for a different
-			// reason. The flag says this device once skipped a bulk change; the
-			// ONLY thing that clears it is a successful room-snapshot restore. A
-			// room that has never published a snapshot has nothing to restore, so
-			// the flag is permanent and every sim is refused forever - "I click
-			// sim and nothing happens", exactly as reported, on a device that had
-			// drained to the head of the log with nothing missing.
-			//
-			// The flag is evidence something WAS skipped. It is not evidence
-			// anything is STILL missing. When both available checks say otherwise
-			// - drained to the head, and no schedule row stranded behind the days
-			// the league has played - there is nothing left to repair, so stop
-			// pretending there is.
-			await saveResyncNeeded(lid, false);
-			syncDebugLog("connect:cleared-stale-resync-flag", { lid });
-		} else {
-			if (engine instanceof SyncEngineV2) {
-				void engine.catchUp();
-			}
-			return {
-				safe: false,
-				reason:
-					"This device is flagged for a repair pass and will self-heal shortly. Try again in a minute.",
-			};
-		}
+		await saveResyncNeeded(lid, false);
+		syncDebugLog("connect:cleared-legacy-resync-flag", { lid });
 	}
 
 	// A device whose league fails the catastrophe check (stripped rosters, no
 	// teams) must not sim: results computed from a broken league are broken
-	// results, and once published they become everyone's. Position guards below
-	// can't catch this - a damaged device can be at exactly the right (season,
-	// phase, day) with half its players missing.
+	// results, and once published they become everyone's.
 	const integrityProblems = await checkLeagueIntegrity();
 	if (integrityProblems.length > 0) {
 		return {
@@ -1424,53 +1140,14 @@ export const getSimSafety = async (): Promise<
 		};
 	}
 
-	// The position-stamp comparison below is a v1 heuristic: v1's watermark
-	// could lie, so the room's stamped position served as a second opinion. A
-	// v2 device that is caught up has PROVEN its state (applied version ==
-	// CAS-committed room version) - strictly stronger evidence than a stamp
-	// that only updates on advances and whose "day" arithmetic disagrees with
-	// computed positions in the playoffs. Judging v2 by the stamp blocked sims
-	// with a false "this device reads as X but the room says Y".
-	if (engine instanceof SyncEngineV2) {
-		return { safe: true };
-	}
-
-	const announced = engine.getAuthority()?.position;
-	if (announced) {
-		let position;
-		try {
-			position = await getLeaguePosition();
-		} catch {
-			return { safe: true };
-		}
-
-		// "Ahead" of a stamp a conclusive full replay has proven stale is not a
-		// health problem - the log agrees with this device, the stamp is just old
-		// (see checkBehindAuthority). Blocking on it froze every action in the
-		// room until someone restamped.
-		if (
-			isAheadOfPosition(position, announced) &&
-			!isBehindPosition(position, announced) &&
-			staleStampKey !== undefined &&
-			describePosition(announced) === staleStampKey
-		) {
-			return { safe: true };
-		}
-
-		if (
-			isBehindPosition(position, announced) ||
-			isAheadOfPosition(position, announced)
-		) {
-			// Durable, so the next connect replays the log and puts it right even
-			// if this session never gets the chance.
-			await saveResyncNeeded(lid, true);
-			return {
-				safe: false,
-				reason: `This device reads as ${describePosition(position)} but the room's last known position is ${describePosition(announced)}. It will repair itself shortly - simming now would fork the league.`,
-			};
-		}
-	}
-
+	// No position-stamp comparison. That was the old protocol's second opinion,
+	// needed because its watermark could lie about being caught up. A device on
+	// the chain that is caught up has PROVEN it - applied version equals the
+	// CAS-committed room version - and the guard above this already refused to
+	// advance without that. Judging it a second time against a stamp that only
+	// moves on advances, and whose day arithmetic disagrees with computed
+	// positions in the playoffs, produced false refusals and the "heal" that
+	// followed them is what rewound people's leagues.
 	return { safe: true };
 };
 
@@ -1533,405 +1210,10 @@ export const resyncSharedLeague = async (): Promise<{
 // that already exists.
 let connectQueue: Promise<unknown> = Promise.resolve();
 
-// How long a follower may sit out of step with the position the sim authority
-// announced before we stop assuming it's just propagation delay. A day's
-// changeset is chunked across many entries, so a few seconds off is completely
-// normal - in either direction, since the authority stamps its position as a
-// separate write from the changeset it describes.
-const BEHIND_GRACE_MS = 30 * 1000;
-
-// Only one recovery at a time, and remember when we first noticed.
-let behindSince: number | undefined;
-let healingBehind = false;
-
-// The missed-data heal for the CURRENT session (set on connect, singleflight),
-// so an engine that skips a batch mid-session can trigger it immediately
-// instead of leaving the device visibly broken until the next launch.
-let healingMissedData = false;
-let healMissedDataNow: ((trigger: string) => Promise<void>) | undefined;
-
-// Whether the "missing some league data" warning has already been shown this
-// session. The heal retries on a timer and on every engine skip, and one
-// standing warning is the whole message - repeating it just stacks toasts.
-let warnedMissingData = false;
-
-// Test-only: this checker deliberately keeps state between ticks (grace
-// timing, one-recovery-at-a-time, the proven-stale stamp), and tests need each
-// scenario to start from a device that has noticed nothing yet.
-export const resetBehindAuthorityStateForTesting = () => {
-	behindSince = undefined;
-	healingBehind = false;
-	staleStampKey = undefined;
-	staleStampHydrated = true;
-};
-
-// An announced position stamp a conclusive full replay has PROVEN stale: the
-// log was re-read end to end, it agreed with this device, and this device was
-// still "ahead" of the stamp - which can only mean the stamp is old news (the
-// authority missed a restamp), because every state-changing byte in the room
-// travels through that same log. Remembered so the checker stops grinding
-// replays against it and the sim guard stops blocking actions over it; cleared
-// the moment the announced stamp changes.
-let staleStampKey: string | undefined;
-let staleStampHydrated = false;
-
-// The verdict survives reloads. Without this, every page load re-noticed the
-// same stale stamp and re-proved it expensively - to the user, the season
-// visibly "re-simming itself" on every refresh until the authority restamped.
-const loadStaleStampKey = async () => {
-	if (staleStampHydrated) {
-		return;
-	}
-	staleStampHydrated = true;
-	try {
-		const lid = g.get("lid");
-		if (typeof lid === "number") {
-			const league = await idb.meta.get("leagues", lid);
-			if (typeof (league as any)?.syncStaleStampKey === "string") {
-				staleStampKey = (league as any).syncStaleStampKey;
-			}
-		}
-	} catch {
-		// Advisory state; absent is fine.
-	}
-};
-
-const saveStaleStampKey = async (value: string | undefined) => {
-	staleStampKey = value;
-	try {
-		const lid = g.get("lid");
-		if (typeof lid !== "number") {
-			return;
-		}
-		const league = await idb.meta.get("leagues", lid);
-		if (league) {
-			if (value === undefined) {
-				delete (league as any).syncStaleStampKey;
-			} else {
-				(league as any).syncStaleStampKey = value;
-			}
-			await idb.meta.put("leagues", league);
-		}
-	} catch {
-		// Advisory state; the in-memory value still holds for this session.
-	}
-};
-
-// The check the engine cannot do for itself.
-//
-// "Am I caught up?" is answered by comparing a watermark against the highest
-// entry the engine has been HANDED - so an entry that never arrived leaves it
-// confidently, silently behind, showing the next day as upcoming and waiting
-// forever. Reconnecting doesn't help, because a fresh catch-up starts from the
-// same banked watermark and the server agrees there is nothing after it.
-//
-// The sim authority stamps how far the league has actually got onto the
-// authority doc, which every device already watches. Comparing that against
-// local data is evidence from outside the broken component.
-//
-// The two ways a room can be out of step look identical from a follower's
-// screen, and this tells them apart: if a full re-read of the log closes the
-// gap, this device had lost entries; if it doesn't, the advance was never
-// uploaded and the gap is on the simmer's side. Both are worth saying out loud
-// - the whole reason this went unnoticed is that neither said anything.
-//
-// A follower can also end up PAST the room, which is worse, because none of the
-// engine's own bookkeeping will ever call it a problem: it looks caught up, it
-// isn't behind on anything, and it will happily sit there. That is not a
-// theoretical state - a phase scored against the wrong season applied an old
-// offseason's free agency over a live regular season, and the device stayed in
-// free agency with nothing watching for it. Same evidence, same recovery.
-// Exported for tests; production calls it only from the health tick.
-export const checkBehindAuthority = async () => {
-	const engine = getSyncEngine();
-	if (!engine || healingBehind) {
-		return;
-	}
-
-	// A bulk pass is mid-recovery (a reimport's backlog drain, a replay). Its
-	// position is legitimately in motion - a reading taken now says nothing,
-	// and healing "over" it would mean two appliers interleaving, which is
-	// worse than either problem this check exists to catch. Look again after
-	// it finishes.
-	if (engine.isBusyApplying()) {
-		return;
-	}
-
-	const announced = engine.getAuthority()?.position;
-	// Nobody has announced a position (an older client is simming).
-	if (!announced) {
-		behindSince = undefined;
-		return;
-	}
-
-	let localPosition;
-	try {
-		localPosition = await getLeaguePosition();
-	} catch {
-		return;
-	}
-	const ahead = isAheadOfPosition(localPosition, announced);
-
-	// The AUTHORITY compares against its own stamp. Normally they agree, but a
-	// missed restamp (historically: a fire-and-forget live sim of the season's
-	// final game, which stamped before the game had simulated) leaves the room
-	// stamped in the past - and then every caught-up follower reads as "ahead of
-	// the room" and grinds full-log replays forever, while the sim guard blocks
-	// the whole room from advancing. Only the authority can fix the stamp, so it
-	// falls through to the shared ahead-branch below: a conclusive replay
-	// validates local state against the log and restamps from the healed truth
-	// (rather than blindly trusting a DB that could itself be the corrupt party).
-	if (engine.isAuthority() && !ahead) {
-		behindSince = undefined;
-		return;
-	}
-
-	if (!ahead && !isBehindPosition(localPosition, announced)) {
-		behindSince = undefined;
-		return;
-	}
-
-	// A stamp already proven stale by a conclusive replay: nothing new to do
-	// until the authority restamps. The moment the announced value changes, the
-	// proof no longer applies and checking resumes.
-	await loadStaleStampKey();
-	if (staleStampKey !== undefined) {
-		if (ahead && describePosition(announced) === staleStampKey) {
-			behindSince = undefined;
-			return;
-		}
-		if (describePosition(announced) !== staleStampKey) {
-			await saveStaleStampKey(undefined);
-		}
-	}
-
-	// Out of step. Give the ordinary path time to deliver before doing anything -
-	// a sim that just finished is legitimately still arriving, and the authority
-	// stamps its position separately from the changeset, so either side can lead
-	// for a moment.
-	const now = Date.now();
-	if (behindSince === undefined) {
-		behindSince = now;
-		return;
-	}
-	if (now - behindSince < BEHIND_GRACE_MS) {
-		return;
-	}
-
-	healingBehind = true;
-	try {
-		syncDebugLog("connect:behind-authority", {
-			direction: ahead ? "ahead" : "behind",
-			local: describePosition(localPosition),
-			announced: describePosition(announced),
-			engine: engine.getCatchUpDiagnostics(),
-		});
-
-		// Past the room. There is nothing to download - the entries that describe
-		// where the league really is were already delivered, and something applied
-		// over the top of them. Only replaying the log in order can undo that, and
-		// a bounded window is enough: the goal is to land on the room's CURRENT
-		// state, not to recover ancient history.
-		if (ahead) {
-			// THE RULE THAT ENDS THIS CLASS OF INCIDENT: a device that has drained
-			// the shared log to its head cannot be "ahead of the room" - every
-			// state-changing byte in the room travels through that log, and this
-			// device has all of it. One genuine server round-trip to the head is
-			// the whole proof. The full-log replay this used to run instead proved
-			// nothing more - its apply ceiling is capped by the very stamp under
-			// test, so it declined most of what it read and always landed exactly
-			// where the device already was, while looking to the person watching
-			// like the whole season re-simming itself. On the authority the replay
-			// still runs (below): there it has a real job, restamping from
-			// validated state.
-			if (!engine.isAuthority()) {
-				const drained = await engine.catchUp();
-				const announcedFresh = engine.getAuthority()?.position ?? announced;
-				const stillAhead = isAheadOfPosition(
-					await getLeaguePosition(),
-					announcedFresh,
-				);
-				if (drained && stillAhead) {
-					await saveStaleStampKey(describePosition(announcedFresh));
-					behindSince = undefined;
-					try {
-						await saveResyncNeeded(g.get("lid"), false);
-					} catch {
-						// Advisory.
-					}
-					syncDebugLog("connect:stale-stamp-verdict", {
-						local: describePosition(await getLeaguePosition()),
-						announced: describePosition(announcedFresh),
-					});
-					console.log(
-						`[sync] This device holds the entire shared log and is ahead of the room's stamp (${describePosition(announcedFresh)}) - the stamp is out of date. Waiting for whoever is in charge of simming to advance or update, which refreshes it.`,
-					);
-					return;
-				}
-				if (drained && !stillAhead) {
-					behindSince = undefined;
-					return;
-				}
-				// Could not reach the head conclusively - fall through to the
-				// replay, which can page through a backlog plain catch-up could not.
-			}
-
-			const result = await engine.resyncAll({
-				windowEntries: RESYNC_WINDOW_ENTRIES,
-			});
-			const after = await getLeaguePosition();
-			syncDebugLog("connect:ahead-authority-resynced", {
-				...result,
-				after: describePosition(after),
-			});
-
-			// Compare against the CURRENT stamp, not the one captured before the
-			// replay - when this device is the authority, the conclusive replay
-			// just restamped it (SyncEngine restamps after every clean pass), and
-			// that IS the fix.
-			const announcedNow = engine.getAuthority()?.position ?? announced;
-
-			if (!isAheadOfPosition(after, announcedNow)) {
-				behindSince = undefined;
-				console.log(
-					`[sync] This device had got ahead of the room; replaying the shared log put it back to ${describePosition(after)}.`,
-				);
-			} else if (
-				!result.failed &&
-				result.incomplete === 0 &&
-				result.total > 0
-			) {
-				// The verdict that matters. The entire log was re-read and re-applied
-				// cleanly, and this device STILL reads ahead of the stamp - so the
-				// LOG agrees with this device, and the stamp is simply stale (the
-				// authority missed a restamp). That is not corruption and cannot be
-				// repaired from here; grinding the same replay every 30 seconds
-				// looked to the user like the season re-simming itself in a loop,
-				// and the durable repair flag it kept setting blocked every action.
-				// Stand down until the stamp changes, and clear the flag - a device
-				// the full log agrees with has nothing to repair.
-				await saveStaleStampKey(describePosition(announcedNow));
-				behindSince = undefined;
-				try {
-					await saveResyncNeeded(g.get("lid"), false);
-				} catch {
-					// The flag is advisory; failing to clear it is not worth failing on.
-				}
-				console.log(
-					`[sync] This device is at ${describePosition(after)} and a full replay of the shared log agrees. The room's stamp (${describePosition(announcedNow)}) is out of date - waiting for whoever is in charge of simming to advance or reconnect, which refreshes it.`,
-				);
-			} else {
-				// The replay didn't conclude (fetch failure, window exhausted), so
-				// nothing was proven either way. Do not keep grinding the log every
-				// 30 seconds; try again on the next grace window.
-				behindSince = now;
-				console.error(
-					`[sync] This device reads as ${describePosition(after)} but the room is on ${describePosition(announcedNow)}, and replaying the shared log did not resolve it.`,
-				);
-			}
-			return;
-		}
-
-		// Cheap first: an ordinary catch-up. Covers a listener that died quietly
-		// while the watermark was still honest.
-		await engine.catchUp();
-		if (!isBehindPosition(await getLeaguePosition(), announced)) {
-			behindSince = undefined;
-			return;
-		}
-
-		// Still behind, so this device's STATE is suspect, not just its download
-		// position. The trustworthy repair is the checkpoint: restore the room's
-		// snapshot (a complete, consistent base) and take the tail forward from
-		// there. NOT a windowed replay onto live state - re-applying old
-		// changesets over current data is archaeology: the league visibly rewinds
-		// as old vintages land, and any unit the guards then decline strands
-		// those old values in place. That is the "device suddenly goes way back
-		// in time and the league comes back subtly wrong" failure, and it was the
-		// FIRST resort here. Now it's the fallback for rooms with no snapshot.
-		let conclusive = false;
-		let restored = false;
-		try {
-			restored =
-				(await restoreFromRoomSnapshot(engine, { automatic: true })) !==
-				undefined;
-			if (restored) {
-				conclusive = await engine.catchUp();
-				const healed = await getLeaguePosition();
-				if (!isBehindPosition(healed, announced)) {
-					behindSince = undefined;
-					console.log(
-						`[sync] Restored the room's snapshot and caught up to ${describePosition(healed)}.`,
-					);
-					return;
-				}
-			}
-		} catch (error) {
-			console.error("Snapshot restore during behind-recovery failed", error);
-		}
-
-		if (!restored) {
-			// No usable checkpoint (none published yet, or the published one was
-			// refused). The windowed replay used to run here, and replaying old
-			// history over a live database is the documented league-wrecker - so
-			// it no longer runs ANYWHERE automatically. Stand down until the next
-			// grace window; the authority publishes a usable checkpoint within
-			// minutes (poison eviction + first-checkpoint publish), and the next
-			// pass restores it.
-			syncDebugLog("connect:behind-no-usable-checkpoint", {
-				announced: describePosition(announced),
-			});
-			console.error(
-				"[sync] Behind the room with no usable checkpoint to restore yet. Waiting for one - whoever is in charge of simming just needs the app open for a few minutes.",
-			);
-			behindSince = now;
-			return;
-		}
-
-		const after = await getLeaguePosition();
-
-		// The advance is not in the cloud, so no amount of downloading will find
-		// it: it is still sitting in the simming device's upload queue.
-		if (conclusive) {
-			behindSince = now;
-			logEvent({
-				type: "error",
-				text: "The latest sim hasn't been uploaded yet. Nothing to fix here - ask whoever is in charge of simming to open the app until their queued uploads finish.",
-				saveToDb: false,
-				persistent: true,
-			});
-			console.error(
-				`[sync] Behind the room (${describePosition(after)} vs ${describePosition(announced)}) and the change log does not contain the gap - the simmer has not uploaded it.`,
-			);
-		}
-	} catch (error) {
-		syncDebugLog("connect:behind-authority-failed", { error });
-	} finally {
-		healingBehind = false;
-		// Re-arm the grace window on EVERY exit that didn't resolve the problem.
-		//
-		// The branches above each set this themselves - except one, and it is the
-		// one a device missing data actually takes: the snapshot restored fine,
-		// but the catch-up after it could not reach the head, because there IS a
-		// gap (that is the whole complaint). That path fell out of the function
-		// with behindSince untouched, so the next five-second health tick walked
-		// straight past the grace check and restored the entire league again.
-		// Forever. On a phone that is a tab the OS kills, reloads, and kills
-		// again - "I click sim and the page crashes and reloads".
-		if (behindSince !== undefined) {
-			behindSince = Date.now();
-		}
-	}
-};
-
 export const connectSharedLeague = async (options: {
 	code: string;
 	isHost?: boolean;
 	explicit?: boolean;
-	// Create this room on the v2 sync protocol (version chain). Only honored on
-	// an explicit host join of a room with no v1 history; an existing room's
-	// protocol is always auto-detected regardless of this flag.
-	v2?: boolean;
 	// A bring-your-own-Firestore project for this room. Omitted for ordinary
 	// rooms, which use the built-in default project.
 	firebaseConfig?: FirebaseConfig;
@@ -1957,13 +1239,11 @@ const doConnectSharedLeague = async ({
 	code,
 	isHost = false,
 	explicit = false,
-	v2 = false,
 	firebaseConfig,
 }: {
 	code: string;
 	isHost?: boolean;
 	explicit?: boolean;
-	v2?: boolean;
 	firebaseConfig?: FirebaseConfig;
 }) => {
 	const trimmed = code.trim();
@@ -2059,38 +1339,64 @@ const doConnectSharedLeague = async ({
 		sinceTs: watermark,
 	});
 
-	// Which protocol is this room on? Detected from the room itself - the
-	// pointer doc exists if and only if the room runs the v2 version chain. The
-	// `v2` option can only INITIALIZE a fresh room (explicit host join, no v1
-	// history), never convert one.
-	// allowCache: protocol detection tolerates a briefly-unreachable server (a
-	// stale answer and no answer are equally harmless here - the protocol never
-	// changes after room creation).
+	// THERE IS ONE PROTOCOL. Every room runs the version chain: a single integer
+	// in the cloud, every change claims N+1 by compare-and-set, every device
+	// remembers the last version it applied and asks for the ones after it. No
+	// watermarks, no reassembly, no position stamps, no repair passes.
+	//
+	// The old protocol tried to understand the whole league - comparing where
+	// each device thought it was, hunting for damage, restoring whole-file
+	// snapshots over live data. Every league-wrecking incident came from that
+	// machinery, so it is gone rather than merely discouraged.
+	//
+	// allowCache: detection tolerates a briefly-unreachable server (a stale
+	// answer and no answer are equally harmless - a room's protocol never
+	// changes).
 	let v2State = await transport
 		.fetchRoomV2State({ allowCache: true })
 		.catch(() => undefined);
-	if (v2State === undefined && v2 && explicit && isHost) {
-		const v1Entries = await transport.countEntriesSince(0).catch(() => 1);
-		if (v1Entries === 0) {
-			const initialized = await transport
-				.commitV2Version(
-					{
-						version: 0,
-						authorId: clientId,
-						byName: "Host",
-						at: Date.now(),
-						action: "init",
-					},
-					0,
-				)
-				.catch(() => false);
-			if (initialized) {
-				v2State = await transport.fetchRoomV2State().catch(() => undefined);
-				syncDebugLog("connect:v2-room-initialized", { code: trimmed });
-			}
+	if (v2State === undefined) {
+		// No pointer yet. Either a brand-new room, which gets one, or a room from
+		// before the chain existed, which cannot be converted in place: its
+		// history is in a format nothing reads any more, and pretending otherwise
+		// would silently start everyone from a blank slate.
+		//
+		// Unknown counts as "has history". A failed read must never be the reason
+		// a v2 pointer gets minted into a room that already holds v1 entries.
+		const legacyEntries = await transport
+			.countEntriesSince(0)
+			.catch(() => undefined);
+		if (legacyEntries === undefined || legacyEntries > 0) {
+			await teardownSharedLeague({ clearPersisted: false });
+			void toUI("updateLocal", [{ mpSyncActive: false }]);
+			throw new Error(
+				"This room uses the old sync protocol, which has been removed. Create a new room, then have everyone import the same league export and join it.",
+			);
+		}
+		const initialized = await transport
+			.commitV2Version(
+				{
+					version: 0,
+					authorId: clientId,
+					byName: "Host",
+					at: Date.now(),
+					action: "init",
+				},
+				0,
+			)
+			.catch(() => false);
+		if (initialized) {
+			v2State = await transport.fetchRoomV2State().catch(() => undefined);
+			syncDebugLog("connect:v2-room-initialized", { code: trimmed });
 		}
 	}
-	const isV2 = v2State !== undefined;
+	if (v2State === undefined) {
+		await teardownSharedLeague({ clearPersisted: false });
+		void toUI("updateLocal", [{ mpSyncActive: false }]);
+		throw new Error(
+			"Couldn't set up this room. Check your connection and try again.",
+		);
+	}
 
 	// Room <-> league binding, both protocols, checked BEFORE anything can
 	// move in either direction. A room is claimed by exactly one league
@@ -2200,39 +1506,37 @@ const doConnectSharedLeague = async ({
 	// cannot catch this. If this league copy is not bound to THIS room, zero
 	// the marker: it joins cleanly through the room's checkpoint, exactly like
 	// a fresh device.
-	if (isV2) {
-		try {
-			const roomRow = await (idb.league as any).get(
+	try {
+		const roomRow = await (idb.league as any).get(
+			"gameAttributes",
+			"syncV2Room",
+		);
+		const boundRoom =
+			typeof roomRow?.value === "string" ? roomRow.value : undefined;
+		if (boundRoom !== trimmed) {
+			const transaction = (idb.league as any).transaction(
 				"gameAttributes",
-				"syncV2Room",
+				"readwrite",
 			);
-			const boundRoom =
-				typeof roomRow?.value === "string" ? roomRow.value : undefined;
-			if (boundRoom !== trimmed) {
-				const transaction = (idb.league as any).transaction(
-					"gameAttributes",
-					"readwrite",
-				);
-				transaction.objectStore("gameAttributes").put({
-					key: "syncV2AppliedVersion",
-					value: 0,
-				});
-				transaction.objectStore("gameAttributes").put({
-					key: "syncV2Room",
-					value: trimmed,
-				});
-				await transaction.done;
-				syncDebugLog("connect:v2-room-binding-reset", {
-					previous: boundRoom,
-					code: trimmed,
-				});
-			}
-		} catch (error) {
-			// Refuse to connect rather than run on an unverified marker.
-			throw new Error(
-				`Could not verify this league's sync state: ${String(error)}`,
-			);
+			transaction.objectStore("gameAttributes").put({
+				key: "syncV2AppliedVersion",
+				value: 0,
+			});
+			transaction.objectStore("gameAttributes").put({
+				key: "syncV2Room",
+				value: trimmed,
+			});
+			await transaction.done;
+			syncDebugLog("connect:v2-room-binding-reset", {
+				previous: boundRoom,
+				code: trimmed,
+			});
 		}
+	} catch (error) {
+		// Refuse to connect rather than run on an unverified marker.
+		throw new Error(
+			`Could not verify this league's sync state: ${String(error)}`,
+		);
 	}
 
 	// Retention gap check. Catch-up is a `ts >` range read, so a device whose
@@ -2244,43 +1548,6 @@ const doConnectSharedLeague = async ({
 	// Only reachable once the log is being trimmed AND this device has been away
 	// longer than the retention window; a device inside the window sees its own
 	// already-applied entries as the oldest and passes.
-	if (!isV2) {
-		let oldestSeq: number | undefined;
-		let probed = true;
-		try {
-			oldestSeq = await transport.fetchOldestEntrySeq();
-		} catch (error) {
-			// Never turn a flaky read into a lockout - if we can't see the log, fall
-			// through and let the normal catch-up machinery deal with it.
-			probed = false;
-			syncDebugLog("connect:oldest-entry-probe-failed", { error });
-		}
-		if (probed && isTooFarBehind(watermark, oldestSeq)) {
-			syncDebugLog("connect:too-far-behind", {
-				lid: lidNumber,
-				watermark,
-				oldestSeq,
-				retentionDays: RETENTION_DAYS,
-			});
-			// Same shape as the room-mismatch refusal below: drop the half-set
-			// session state and tell the UI we're not connected, then throw so an
-			// explicit join shows the reason.
-			//
-			// The persisted room binding is deliberately KEPT (unlike a mismatch
-			// refusal): the fix is to re-import this league, and once that lands a
-			// near-head watermark the next automatic reconnect just works, with no
-			// need to re-enter the code.
-			syncRequired = false;
-			connectedLid = undefined;
-			void toUI("updateLocal", [
-				{ mpSyncActive: false, mpSyncReady: false, mpSyncReconnecting: false },
-			]);
-			throw new Error(
-				`This device is too far behind to catch up. The league's change history only goes back ${RETENTION_DAYS} days, and this copy last synced before that. Ask whoever is in charge of simming to send you a fresh export of the league, then import it and rejoin.`,
-			);
-		}
-	}
-
 	// Room ↔ league-file binding check. Each room carries a fingerprint
 	// (leagueId) of the league file it belongs to, and each synced league stores
 	// the same fingerprint in its meta row. Without this, any stale session
@@ -2325,105 +1592,40 @@ const doConnectSharedLeague = async ({
 	}
 	const boundLeagueId = metaLeagueId ?? roomLeagueId ?? makeLeagueId();
 
-	const engine = isV2
-		? new SyncEngineV2(transport, {
-				isHost,
-				code: trimmed,
-				onAuthorityChange: (authority) => {
-					currentHostName = authority?.holderName;
-					pushAuthorityToUI(
-						authority?.holderId === clientId,
-						authority?.holderName,
-					);
-					pushEditsPaused();
-				},
-				onReadyChange: (ready) => {
-					pushReadyToUI(ready);
-				},
-				onPendingChange: (count) => {
-					pushPendingUploads(count);
-				},
-				onUploadComplete: () => {
-					uploadOkCounter += 1;
-					void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
-				},
-				// The header's catching-up indicator. V2 only reports when the
-				// device is visibly behind and working on it (a multi-version walk,
-				// or fetches failing and retrying) - exactly when a quiet screen
-				// would otherwise read as "is this thing broken?".
-				onCatchUpProgress: (progress) => {
-					syncDebugLog("connect:catchup-indicator", {
-						showing: progress !== undefined,
-						done: progress?.done,
-						total: progress?.total,
-					});
-					catchUpPillShowing = progress !== undefined;
-					void toUI("updateLocal", [{ mpCatchUp: progress }]);
-				},
-			})
-		: new SyncEngine(transport, {
-				isHost: false,
-				initialWatermark: watermark,
-				code: trimmed,
-				onWatermark: (seq) => {
-					void saveWatermark(lid, seq);
-					// Catching up may have just unblocked edits - refresh the indicator.
-					pushEditsPaused();
-				},
-				onAuthorityChange: (authority) => {
-					currentHostName = authority?.holderName;
-					pushAuthorityToUI(
-						authority?.holderId === clientId,
-						authority?.holderName,
-					);
-					// The busy lease rides on this doc, so a flip here means edits just got
-					// blocked or unblocked - update the header indicator immediately.
-					pushEditsPaused();
-				},
-				// Live upload progress → UI, so any device shows a cloud indicator (with a
-				// count for big changes) while a change uploads.
-				onUploadProgress: (progress) => {
-					void toUI("updateLocal", [{ mpSyncUpload: progress }]);
-				},
-				// A confirmed upload bumps a counter the UI watches to flash "synced ✓".
-				onUploadComplete: () => {
-					uploadOkCounter += 1;
-					void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
-				},
-				// Backlog-drain progress → UI, so a device catching up after an absence
-				// shows how far along it is and roughly how much longer.
-				onCatchUpProgress: (progress) => {
-					// Log every set/clear of the indicator so an "infinitely catching up"
-					// device shows exactly when the bar appears and whether it's ever
-					// cleared (progress === undefined) between passes.
-					syncDebugLog("connect:catchup-indicator", {
-						showing: progress !== undefined,
-						done: progress?.done,
-						total: progress?.total,
-					});
-					catchUpPillShowing = progress !== undefined;
-					void toUI("updateLocal", [{ mpCatchUp: progress }]);
-				},
-				onReadyChange: (ready) => {
-					pushReadyToUI(ready);
-				},
-				// Queued-but-unconfirmed upload count → UI, so a delta that hasn't reached
-				// the cloud is always visible in the header, never silently waiting.
-				onPendingChange: (count) => {
-					pushPendingUploads(count);
-				},
-				// The engine just abandoned a bulk change whose chunks weren't in the log -
-				// it silently skipped shared state. Persist a durable marker (so even a
-				// reload heals), then heal NOW: the last device that waited for its next
-				// launch spent an evening visibly missing a day of games. The delay lets
-				// the abandoning pass finish; the heal itself also waits for idle.
-				onResyncNeeded: () => {
-					void saveResyncNeeded(lid, true);
-					setTimeout(() => {
-						void healMissedDataNow?.("engine-skip");
-					}, 5000);
-				},
+	const engine = new SyncEngineV2(transport, {
+		isHost,
+		code: trimmed,
+		onAuthorityChange: (authority) => {
+			currentHostName = authority?.holderName;
+			pushAuthorityToUI(
+				authority?.holderId === clientId,
+				authority?.holderName,
+			);
+			pushEditsPaused();
+		},
+		onReadyChange: (ready) => {
+			pushReadyToUI(ready);
+		},
+		onPendingChange: (count) => {
+			pushPendingUploads(count);
+		},
+		onUploadComplete: () => {
+			uploadOkCounter += 1;
+			void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
+		},
+		// The header's catching-up indicator. V2 only reports when the
+		// device is visibly behind and working on it (a multi-version walk,
+		// or fetches failing and retrying) - exactly when a quiet screen
+		// would otherwise read as "is this thing broken?".
+		onCatchUpProgress: (progress) => {
+			syncDebugLog("connect:catchup-indicator", {
+				showing: progress !== undefined,
+				done: progress?.done,
+				total: progress?.total,
 			});
+			void toUI("updateLocal", [{ mpCatchUp: progress }]);
+		},
+	});
 	engine.start();
 	setSyncEngine(engine);
 	currentCode = trimmed;
@@ -2478,195 +1680,12 @@ const doConnectSharedLeague = async ({
 	// it cleanly, so an offline/empty read or a still-missing chunk retries on the
 	// next connect instead of clearing the flag and staying stuck. Never blocks
 	// the connect.
-	const healMissedData = async (trigger: string) => {
-		if (healingMissedData || isV2) {
-			// v2 has exactly one recovery (engine.catchUp) and its own checkpoint
-			// protocol; none of this machinery applies.
-			return;
-		}
-		healingMissedData = true;
-		try {
-			// Two independent reasons to recover. The MARKER is the engine telling
-			// on itself: it knowingly skipped a bulk change. The STRANDED ROWS are
-			// evidence from the data, and they catch the case the marker can't - a
-			// day's changeset that went missing without the engine ever noticing
-			// (a dropped delivery, a watermark banked past an entry that never
-			// arrived).
-			const strandedBefore = await findStrandedScheduleRows();
-			const markerSet = await loadResyncNeeded(lid);
-			if (strandedBefore.gids.length > 0) {
-				console.error(
-					`[sync] This device never received day ${strandedBefore.days.join(", ")} of the current season - the league has played through day ${strandedBefore.maxPlayedDay}. Re-reading the shared log to recover it.`,
-				);
-				syncDebugLog("connect:stranded-schedule-detected", {
-					days: strandedBefore.days,
-					rows: strandedBefore.gids.length,
-					maxPlayedDay: strandedBefore.maxPlayedDay,
-				});
-				// Durable, so a reload mid-recovery still heals.
-				await saveResyncNeeded(lid, true);
-			} else if (!markerSet) {
-				return;
-			}
-
-			// Before reaching for the checkpoint: if the flag is the only thing
-			// wrong, retire it. A room that never published a snapshot has nothing
-			// to restore, and the flag's only other exit is that restore - so
-			// without this the device stays flagged forever, refusing every sim,
-			// while being demonstrably whole. (Stranded rows above are the other
-			// half of the evidence; if there were any, this doesn't fire.)
-			if (
-				strandedBefore.gids.length === 0 &&
-				markerSet &&
-				(await noDamageToRepair(engine))
-			) {
-				await saveResyncNeeded(lid, false);
-				syncDebugLog("connect:cleared-stale-resync-flag", { trigger });
-				console.log(
-					"[sync] Cleared this device's repair flag: it has read everything the room published and nothing is missing.",
-				);
-				return;
-			}
-
-			// The connect-time drain may be mid-backlog (a reimport can have months
-			// to replay), and that drain, run to completion, IS the correct
-			// recovery. Starting a replay on top of it meant two appliers
-			// interleaving - whichever wrote last won, and when that was the
-			// slower, older pass, the device got dragged to a state the room left
-			// long ago. Wait for idle; if the drain is still healthily working
-			// after all this, skip - the durable marker retries on the next
-			// connect.
-			const idle = await engine.waitUntilIdle(10 * 60 * 1000);
-			if (!idle) {
-				syncDebugLog("connect:auto-resync-skipped-busy", {
-					markerSet,
-					stranded: strandedBefore.gids.length,
-				});
-				return;
-			}
-
-			syncDebugLog("connect:auto-resync-start", {
-				trigger,
-				markerSet,
-				stranded: strandedBefore.gids.length,
-			});
-
-			// Checkpoint-first, exactly like every other recovery. The windowed
-			// replay can only re-apply what it can reach and what the guards will
-			// accept; the checkpoint rewinds to a complete consistent base and the
-			// tail replay walks forward IN ORDER through the missed day and
-			// everything after it, bypassing the dedup that remembers the skipped
-			// entries as already seen. That bypass is the whole point: an abandoned
-			// batch's entries stay marked seen, which is precisely why a plain
-			// catch-up could never backfill them.
-			try {
-				const restored = await restoreFromRoomSnapshot(engine, {
-					automatic: true,
-				});
-				if (restored) {
-					await engine.catchUp();
-					const strandedNow = await findStrandedScheduleRows();
-					if (strandedNow.gids.length === 0) {
-						await saveResyncNeeded(lid, false);
-						syncDebugLog("connect:auto-resync-healed-from-snapshot", {
-							trigger,
-						});
-						console.log(
-							"[sync] Recovered the missing day(s) from the room's checkpoint.",
-						);
-						return;
-					}
-				}
-			} catch (error) {
-				syncDebugLog("connect:auto-resync-snapshot-failed", { error });
-			}
-
-			// THE CHECKPOINT IS THE ONLY AUTOMATIC HEAL. THERE IS NO FALLBACK.
-			//
-			// The fallback this used to have - engine.resyncAll, the windowed replay
-			// of the shared log over live state - is the thing that wiped a league
-			// tonight, with the receipts in the sync log: the room's checkpoint was
-			// rightly refused as poisoned, the heal fell through to the replay, and
-			// the replay walked ~1000 old changesets from LAST SEASON'S OFFSEASON
-			// over the current league (playMenu.untilResignPlayers is right there in
-			// the capture), applying 936 of 2000 with the guards declining the rest.
-			// Whole-record last-write-wins from months-old history over a live
-			// database is not recovery, it is the wipe - and then the stranded-rows
-			// "last resort" deleted 425 schedule rows from the wreckage it had just
-			// made.
-			//
-			// So: missing data with no usable checkpoint means WAIT, visibly. The
-			// durable marker stays set (blocking sims here), the authority publishes
-			// a fresh checkpoint within minutes (poison eviction + first-checkpoint
-			// publish in roomSnapshot.ts), and the next heal attempt restores it.
-			// Waiting cannot damage anything; the replay provably can.
-			syncDebugLog("connect:auto-resync-no-usable-checkpoint", { trigger });
-			console.error(
-				"[sync] This device is missing shared data and the room has no usable checkpoint yet. Waiting - whoever is in charge of simming just needs to have the app open for a few minutes, then this heals automatically.",
-			);
-
-			// Say it out loud only once the gap has actually outlasted the wait the
-			// message describes, and only once per session. This branch runs on every
-			// connect and on every engine skip, so without a gate an ordinary gap -
-			// the kind that heals as soon as the simmer opens the app - greeted the
-			// user with a persistent red error every single launch.
-			const shouldWarn = await noteMissingDataAndShouldWarn(
-				lid,
-				warnedMissingData,
-			);
-			if (shouldWarn) {
-				warnedMissingData = true;
-				// "It repairs itself" stops being true once the automatic repair has
-				// been switched off for killing the app. Say the thing the user can
-				// actually act on instead.
-				const stalled = await readRecoveryAttempt(lid);
-				logEvent({
-					type: "error",
-					text:
-						stalled !== undefined
-							? "This device is missing some league data and couldn't repair itself. Ask whoever is in charge of simming for a fresh export."
-							: "This device is missing some league data. It will repair itself automatically once the person in charge of simming has the app open for a few minutes.",
-					saveToDb: false,
-					persistent: true,
-				});
-			} else {
-				syncDebugLog("connect:missing-data-warning-suppressed", {
-					trigger,
-					pastGrace: shouldWarn,
-					alreadyWarned: warnedMissingData,
-				});
-			}
-		} catch (error) {
-			syncDebugLog("connect:auto-resync-failed", { error: String(error) });
-		} finally {
-			healingMissedData = false;
-		}
-	};
-	healMissedDataNow = healMissedData;
-	warnedMissingData = false;
-	void healMissedData("connect");
-
 	// Played-game invariant sweep (v1-log fallout only): drop any schedule row
 	// whose game already
 	// exists (a phantom "upcoming" copy of a played game, left by a partially
 	// applied or abandoned changeset in some prior session). Runs once per
 	// connect regardless of whether anything new syncs in, so a device carrying
 	// this corruption heals just by opening the league.
-	if (!isV2) {
-		void (async () => {
-			try {
-				const removed = await sweepPhantomScheduleRows();
-				if (removed > 0) {
-					syncDebugLog("connect:phantom-schedule-swept", { removed });
-				}
-			} catch (error) {
-				syncDebugLog("connect:phantom-schedule-sweep-failed", {
-					error: String(error),
-				});
-			}
-		})();
-	}
-
 	// Same spirit for finished-season history: recompute playoffRoundsWon from
 	// each season's bracket and fix what a past rough recovery left stale (the
 	// "??? champion"). Runs once per connect, in the background.
@@ -2696,35 +1715,24 @@ const doConnectSharedLeague = async ({
 		pushSyncStateFull();
 		// Unlock a follower whose broadcaster went away without a clean end.
 		checkLiveBroadcastLease();
-		if (isV2) {
-			// V2's whole health story: ask the server where the head is (the live
-			// listener is the fast path, but this probe is what bounds staleness
-			// when a listener dies silently - one tiny doc read per tick), and
-			// keep the room's checkpoint fresh (authority). Both self-throttled
-			// and single-flighted. Publishing needs no per-role work here - every
-			// device uploads its own changes as versions.
-			const engineNow = getSyncEngine();
-			if (engineNow instanceof SyncEngineV2) {
-				// First, before the probe: if the head has been known-ahead of the
-				// applied version for two ticks, say so on screen and make sure a
-				// catch-up is actually in flight. This is the only indicator for a
-				// silently slow apply (nothing failing, gap too small for the walk
-				// to report itself).
-				engineNow.reportIfStuckBehind();
-				void engineNow.probeHead();
-				void engineNow.maybePublishCheckpoint();
-			}
-		} else {
-			// Notice, and fix, being silently behind the rest of the room.
-			void checkBehindAuthority();
-			// On the authority: checkpoint the league once enough log has
-			// accumulated, and prune entries the previous checkpoint already
-			// covers. Self-throttled.
-			const engineForSnapshot = getSyncEngine();
-			if (engineForSnapshot) {
-				void maybePublishRoomSnapshot(engineForSnapshot);
-			}
+		// V2's whole health story: ask the server where the head is (the live
+		// listener is the fast path, but this probe is what bounds staleness
+		// when a listener dies silently - one tiny doc read per tick), and
+		// keep the room's checkpoint fresh (authority). Both self-throttled
+		// and single-flighted. Publishing needs no per-role work here - every
+		// device uploads its own changes as versions.
+		const engineNow = getSyncEngine();
+		if (engineNow instanceof SyncEngineV2) {
+			// First, before the probe: if the head has been known-ahead of the
+			// applied version for two ticks, say so on screen and make sure a
+			// catch-up is actually in flight. This is the only indicator for a
+			// silently slow apply (nothing failing, gap too small for the walk
+			// to report itself).
+			engineNow.reportIfStuckBehind();
+			void engineNow.probeHead();
+			void engineNow.maybePublishCheckpoint();
 		}
+
 		checkLotteryRevealLease();
 		// Keep kicking the upload drain while anything is queued - it self-retries
 		// with backoff, but a persistent tick guarantees a stalled queue can never
@@ -2791,53 +1799,18 @@ const doConnectSharedLeague = async ({
 	// block on a device that's been away a long time. V2: the single bounded
 	// chain walk. V1: the paginated backlog drain (which also starts the live
 	// changes subscription once caught up).
-	if (isV2) {
-		void engine.catchUp();
-	} else {
-		void driveCatchUp();
-	}
+	void engine.catchUp();
 
 	// Poll to keep draining / pick up anything the real-time subscription hasn't
 	// delivered yet (and to start that subscription once the initial drain lands).
 	if (catchUpTimer !== undefined) {
 		clearInterval(catchUpTimer);
 	}
+	// Backstop kick for the upload queue. Staleness itself needs no polling any
+	// more: the pointer listener delivers, and the 5s head probe is a
+	// server-fresh read that catches a listener which died without saying so.
 	catchUpTimer = setInterval(() => {
-		const engine = getSyncEngine();
-		// Skip the billed catch-up read ONLY when there is provably nothing to do:
-		// the live CHANGES listener delivered an entry within LISTENER_FRESH_MS and
-		// everything seen has been applied (isCaughtUp). Two hard-won subtleties:
-		//   - The freshness signal must be the changes listener SPECIFICALLY, never
-		//     the transport's global contact time: any listener refreshes that (the
-		//     authority doc heartbeats constantly during a sim), so a follower whose
-		//     changes listener silently died looked "fresh" while game data stopped
-		//     arriving - and the skipped backstop meant it could NEVER catch up
-		//     while the room was active (the exact time it most needed to).
-		//   - isCaughtUp alone is also not enough: it is relative to what this
-		//     device has SEEN, so a dead listener yields a confidently-wrong true.
-		// An idle room delivers nothing, so it still probes once per interval - the
-		// unavoidable price of detecting a dead listener. The saving lands in
-		// active rooms, where the old poll re-read a log the listener had already
-		// delivered. During the initial backlog drain this always runs.
-		if (isV2) {
-			// V2 staleness detection lives entirely in the 5s head probe
-			// (server-fresh, timed, wedge-detecting, and it fires catch-up the
-			// moment the head is past what's applied) - a 30s pointer re-read
-			// on top of it bought nothing. This tick stays as the outbox's
-			// unconditional backstop kick.
-			void engine?.drainOutbox();
-			return;
-		}
-		const lastDelivery = engine?.getLastChangesDeliveryAt() ?? 0;
-		const changesFresh = Date.now() - lastDelivery < LISTENER_FRESH_MS;
-		const subscribed = engine?.hasChangesSubscription?.() ?? false;
-		const caughtUp = engine?.isCaughtUp() ?? false;
-		if (!(subscribed && changesFresh && caughtUp)) {
-			void driveCatchUp();
-		}
-		// Second, independent kick for the upload drain (it also self-retries with
-		// backoff after a failure); a no-op when the outbox is empty.
-		void engine?.drainOutbox();
+		void getSyncEngine()?.drainOutbox();
 	}, CATCH_UP_INTERVAL_MS);
 
 	// Turn on change capture so local actions get published to the room.
@@ -2852,7 +1825,7 @@ const doConnectSharedLeague = async ({
 	void toUI("updateLocal", [
 		{
 			mpSyncActive: true,
-			mpSyncProtocol: isV2 ? ("v2" as const) : ("classic" as const),
+			mpSyncProtocol: "v2" as const,
 			mpSyncReady: engine.isReady(),
 			mpSyncReconnecting: false,
 		},
@@ -2903,7 +1876,6 @@ export const teardownSharedLeague = async ({
 	followerFroze = false;
 	currentTransport = undefined;
 	lastPendingUploads = 0;
-	catchUpPillShowing = false;
 	void toUI("updateLocal", [
 		{
 			mpAutoPlay: undefined,
@@ -2926,11 +1898,6 @@ export const teardownSharedLeague = async ({
 	connectedLid = undefined;
 	// The missed-data heal closes over this session's engine; a torn-down
 	// session must not be healable.
-	healMissedDataNow = undefined;
-	warnedMissingData = false;
-	// A different room (or a fresh session on the same one) deserves a clean
-	// shot at its snapshot rather than inheriting the last one's backoff.
-	resetSnapshotRestoreBackoff();
 	currentHostName = undefined;
 	currentCloudReady = false;
 	if (clearPersisted) {

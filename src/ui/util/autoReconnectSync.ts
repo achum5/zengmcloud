@@ -16,12 +16,6 @@ export type StoredSync = {
 	// first connect count as an EXPLICIT join (allowed to bind the league file to
 	// the room); cleared once the connect succeeds.
 	pendingJoin?: boolean;
-	// Create this room on the v2 protocol. Only meaningful alongside
-	// pendingJoin + isHost, because a room's protocol is fixed when it is
-	// created and an existing room keeps whatever it was made with. Without
-	// this, a room chosen at league creation could ONLY ever be v1 - the option
-	// existed nowhere but the sync page, after the fact.
-	v2?: boolean;
 	// A bring-your-own-Firestore project for this room, if the user joined via an
 	// invite. Absent for ordinary rooms, which use the built-in project. Persisted
 	// so an auto-reconnect after a refresh restores the same project.
@@ -42,7 +36,6 @@ export const getStoredSync = (lid: number): StoredSync | undefined => {
 				code: parsed.code,
 				isHost: !!parsed.isHost,
 				pendingJoin: !!parsed.pendingJoin,
-				v2: !!parsed.v2,
 				// Only accept a well-formed config; anything else falls back to the
 				// default project rather than pointing sync at a broken one.
 				...(isValidFirebaseConfig(parsed.firebaseConfig)
@@ -61,7 +54,6 @@ export const setStoredSync = (lid: number, session: StoredSync) => {
 			code: session.code.trim(),
 			isHost: session.isHost,
 			...(session.pendingJoin ? { pendingJoin: true } : {}),
-			...(session.v2 ? { v2: true } : {}),
 			...(session.firebaseConfig
 				? { firebaseConfig: session.firebaseConfig }
 				: {}),
@@ -113,7 +105,6 @@ export const autoReconnectSync = async (lid: number) => {
 				explicit: !!session.pendingJoin,
 				// Only the FIRST connect can create the room, so the protocol
 				// choice rides along with that one-shot join and is dropped after.
-				v2: session.pendingJoin ? session.v2 : undefined,
 				firebaseConfig: session.firebaseConfig,
 			});
 			if (session.pendingJoin) {

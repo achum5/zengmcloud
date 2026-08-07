@@ -425,9 +425,6 @@ const MultiplayerSync = () => {
 				// joining a room leaves that to the person already running it
 				// unless the user asks for it.
 				isHost: mode === "create" ? true : isHost,
-				// A room's protocol is set when it is created and can never
-				// change, so this only ever means anything in create mode.
-				v2: mode === "create" ? useV2 : false,
 				// Typed by the user on this page - an explicit join, allowed to bind
 				// this league file to the room.
 				explicit: true,

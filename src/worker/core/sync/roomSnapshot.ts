@@ -16,7 +16,6 @@ import { getLeaguePosition } from "./leaguePosition.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
 import { checkApplyGuard } from "./applyGuard.ts";
 import { payloadLeagueId, readLocalLeagueId } from "./leagueIdentity.ts";
-import { claimSnapshotRestoreAttempt } from "./snapshotRestoreBackoff.ts";
 import {
 	claimRecoveryAttempt,
 	clearRecoveryAttempt,
@@ -426,10 +425,6 @@ export const restoreFromRoomSnapshot = async (
 		return undefined;
 	}
 	const snapshotKey = `${meta.seq}:${meta.generation ?? ""}`;
-	if (automatic && !claimSnapshotRestoreAttempt(snapshotKey)) {
-		return undefined;
-	}
-
 	// Everything below reads, decompresses and parses the WHOLE league, which is
 	// the biggest allocation this app makes and the one a phone can die inside.
 	// A death here takes the in-memory throttle above with it - the tab is gone -

@@ -6,7 +6,7 @@ export {
 	type SyncChange,
 } from "./changeset.ts";
 export { changeTracker } from "../../db/changeTracker.ts";
-export { SyncEngine } from "./SyncEngine.ts";
+export { SyncEngineV2 } from "./v2/engine.ts";
 export { afterAction } from "./afterAction.ts";
 export {
 	listSyncRooms,

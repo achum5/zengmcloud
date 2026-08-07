@@ -922,7 +922,6 @@ const NewLeague = (props: View<"newLeague">) => {
 					pendingJoin: true,
 					// Only the device that CREATES the room picks the engine - an
 					// existing room keeps whatever it was made with.
-					v2: roomMode === "create" ? roomV2 : undefined,
 				});
 			} else {
 				clearStoredSync(lid);
