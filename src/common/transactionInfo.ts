@@ -100,6 +100,10 @@ export const types: Partial<
 		text: "Jersey Retirement",
 		category: "award",
 	},
+	tradingCard: {
+		text: "Trading Card",
+		category: "league",
+	},
 	ageFraud: {
 		text: "Fraud",
 		category: "rare",

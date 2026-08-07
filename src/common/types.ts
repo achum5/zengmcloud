@@ -1077,6 +1077,7 @@ export type LogEventType =
 	| "teamRelocation"
 	| "teamRename"
 	| "trade"
+	| "tradingCard"
 	| "tragedy"
 	| "upgrade"
 	| "luxuryTax"

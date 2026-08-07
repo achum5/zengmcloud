@@ -6552,7 +6552,14 @@ const getTradingCardPrompts = async ({
 		return undefined;
 	}
 	return {
-		front: buildCardFrontPrompt(setId, variantId, subject),
+		// A fresh seed per press, so "Build prompts" again on the same card gives
+		// a different photograph instead of the identical one forever.
+		front: buildCardFrontPrompt(
+			setId,
+			variantId,
+			subject,
+			Math.floor(Math.random() * 1e9),
+		),
 		back: buildCardBackPrompt(setId, variantId, subject),
 		title: cardTitle(setId, variantId, season),
 		playerName: subject.name,
@@ -6560,8 +6567,56 @@ const getTradingCardPrompts = async ({
 };
 
 const upsertTradingCard = async (card: TradingCard) => {
-	await idb.cache.tradingCards.put(card);
-	await toUI("realtimeUpdate", [["tradingCards"]]);
+	// Only a NEW card is news. This is an upsert, so re-saving an existing one
+	// (a replaced image, a re-generated back) must not file a second headline
+	// for the same card.
+	const isNew = (await idb.cache.tradingCards.get(card.id)) === undefined;
+
+	// Stamp the maker in a shared league, the same name the chat and the live
+	// broadcast attribute with. It has to be recorded HERE rather than worked
+	// out when the feed renders: the event syncs to everyone, so a headline
+	// that said "you" would say it on all three devices.
+	//
+	// The engine's localName is the placeholder "You" until a member name has
+	// actually arrived, which is that same bug wearing a different hat, so an
+	// unnamed device records nobody and gets the neutral wording instead.
+	const maker = getSyncEngine()?.localName;
+	const saved: TradingCard =
+		isNew && card.by === undefined && maker !== undefined && maker !== "You"
+			? { ...card, by: maker }
+			: card;
+
+	await idb.cache.tradingCards.put(saved);
+
+	if (isNew) {
+		const p = await idb.getCopy.players({ pid: saved.pid }, "noCopyCache");
+		if (p) {
+			const playerLink = `<a href="${helpers.leagueUrl([
+				"player",
+				p.pid,
+			])}">${p.firstName} ${p.lastName}</a>`;
+			const cardsLink = `<a href="${helpers.leagueUrl(["create_cards"])}">${
+				saved.title
+			}</a>`;
+			logEvent({
+				type: "tradingCard",
+				text: saved.by
+					? `${saved.by} made a ${cardsLink} card of ${playerLink}.`
+					: `A ${cardsLink} card of ${playerLink} was added.`,
+				showNotification: false,
+				pids: [saved.pid],
+				tids: p.tid >= 0 ? [p.tid] : [],
+				// Above the "normal" feed's threshold of 10 so it shows by default,
+				// below the 20 that "big" filters on - a card someone made is worth
+				// seeing in the feed, but it does not outrank a jersey retirement.
+				score: 10,
+			});
+		}
+	}
+
+	// playerMovement so an open News page (and the dashboard headlines) picks the
+	// new event up without a reload, the same way a jersey retirement does.
+	await toUI("realtimeUpdate", [["tradingCards", "playerMovement"]]);
 };
 
 const deleteTradingCard = async (id: string) => {

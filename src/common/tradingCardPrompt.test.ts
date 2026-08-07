@@ -144,6 +144,101 @@ describe("the front prompt", () => {
 		assert.ok(prompt.includes("flat faces.js cartoon style"));
 	});
 
+	// THE COMPLAINT: "nearly all cards being generated right now is just the
+	// player driving with the ball." The prompt listed six possible actions and
+	// let the model choose, and it chose the same one every time - which no
+	// wording can fix, because each card is generated in a fresh chat that has
+	// never seen the last one. So the card names ONE action and the variety
+	// lives here, where the other cards are actually known.
+	describe("the action on the card", () => {
+		const actionOf = (prompt: string) => {
+			const m = /\*\*THE MOMENT ON THIS CARD: (.*?)\.\*\*/.exec(prompt);
+			return m?.[1];
+		};
+
+		test("every card names one specific action", () => {
+			const prompt = buildCardFrontPrompt("prizm", "silver", subject());
+			const action = actionOf(prompt);
+			assert.ok(action, "an action is named");
+			assert.ok(
+				!prompt.includes("driving, rising for a jumper, finishing at the rim"),
+				"the old menu of options is gone",
+			);
+		});
+
+		test("re-rolling gives a real spread, not one action over and over", () => {
+			const seen = new Set<string | undefined>();
+			for (let seed = 0; seed < 200; seed++) {
+				seen.add(
+					actionOf(buildCardFrontPrompt("prizm", "silver", subject(), seed)),
+				);
+			}
+			assert.ok(
+				seen.size >= 15,
+				`expected a wide spread of actions, got ${seen.size}`,
+			);
+		});
+
+		// Variety that puts a centre on a step-back three every third card is
+		// just a different kind of wrong.
+		test("the action suits the position", () => {
+			const collect = (pos: string) => {
+				const out = new Set<string>();
+				for (let seed = 0; seed < 200; seed++) {
+					const a = actionOf(
+						buildCardFrontPrompt("prizm", "silver", subject({ pos }), seed),
+					);
+					if (a) {
+						out.add(a);
+					}
+				}
+				return out;
+			};
+
+			const center = collect("C");
+			const pointGuard = collect("PG");
+
+			assert.ok(
+				[...center].some((a) => a.includes("posting up")),
+				"a centre can post up",
+			);
+			assert.ok(
+				[...pointGuard].some((a) => a.includes("stepping back")),
+				"a point guard can step back",
+			);
+			assert.ok(
+				![...center].some((a) => a.includes("stepping back")),
+				"a centre never gets the guard-only actions",
+			);
+			assert.ok(
+				![...pointGuard].some((a) => a.includes("posting up")),
+				"a point guard never gets the big-only actions",
+			);
+			// Both still draw on the shared pool, so neither is boxed into a
+			// handful of position clichés.
+			assert.ok(center.size >= 15 && pointGuard.size >= 15);
+		});
+
+		test("without a seed the same card reads the same twice", () => {
+			// The prompt gets copied, and maybe copied again - it must not change
+			// under the user between one paste and the next.
+			const a = buildCardFrontPrompt("prizm", "silver", subject());
+			const b = buildCardFrontPrompt("prizm", "silver", subject());
+			assert.strictEqual(actionOf(a), actionOf(b));
+		});
+
+		test("different cards of the same player differ", () => {
+			// Building out a set of one player should not produce nine copies of
+			// the same photograph.
+			const actions = new Set(
+				CARD_SETS.slice(0, 12).map((set) =>
+					actionOf(buildCardFrontPrompt(set.id, "base", subject())),
+				),
+			);
+			assert.ok(actions.size >= 5, `got ${actions.size} distinct actions`);
+		});
+	});
+
 	// A posed, camera-aware player is the default an image model drifts to, and
 	// it is the one thing that stops a card reading like a real card.
 	test("demands a candid in-game action shot, not a portrait", () => {

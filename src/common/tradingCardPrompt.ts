@@ -235,10 +235,102 @@ He is wearing the ${subject.teamName} uniform as that franchise actually wore it
 			: ""
 	}`;
 
+// ONE action per card, chosen here rather than left to the model.
+//
+// The prompt used to list six possibilities and let it pick. It picked the
+// same one nearly every time - the player driving with the ball - and no
+// wording fixes that, because every card is generated in a fresh chat with no
+// memory of the last one. "Vary it" is an instruction with nothing to vary
+// against. The variety has to live on this side, where the previous cards are
+// actually known.
+//
+// Eligibility is by position, so the variety is also plausible: a centre gets
+// post-ups, lobs and blocks, a point guard gets step-backs and cross-court
+// passes, and neither gets handed the other's card.
+
+const ANY_ACTION = [
+	"finishing at the rim through contact, body twisting away from the defender",
+	"rising for a pull-up jumper, defender a half-step late",
+	"coming down with a rebound at its highest point, both hands on the ball",
+	"sprinting the floor in transition, head up, ball out in front",
+	"sliding his feet on defence, low, both hands active",
+	"releasing a shot with the follow-through still held, eyes on the rim",
+	"caught mid-air on a floater over a bigger defender",
+	"contesting a shot with one hand straight up, no jump",
+	"diving after a loose ball, both bodies low",
+	"pointing back downcourt at a teammate after a made basket",
+	"driving baseline with a defender on his hip",
+	"catching the ball on the move and squaring up in one motion",
+];
+
+const GUARD_ACTION = [
+	"crossing a defender over, the defender's weight going the wrong way",
+	"stepping back into a jumper as the defender lunges past",
+	"whipping a cross-court pass, shoulders still turned the other way",
+	"splitting a double team with the ball kept low",
+	"picking a pass off in the lane and turning upcourt",
+	"pulling up in transition off one dribble",
+	"releasing a three from the top of the key over a closeout",
+	"hanging back on the dribble at the top, reading the defence",
+];
+
+const BIG_ACTION = [
+	"posting up with a forearm into the defender's chest, ball held high",
+	"rising to block a shot at its apex",
+	"catching a lob above the rim",
+	"cocking the ball back for a two-handed dunk",
+	"tipping a missed shot back up with one hand",
+	"boxing out under the rim, arms wide",
+	"turning over his shoulder into a hook shot",
+	"rolling hard to the rim with a hand up for the pass",
+];
+
+const WING_ACTION = [
+	"elevating over a closeout from the corner",
+	"cutting backdoor and catching it in stride",
+	"spinning baseline into the lane",
+	"running a defender off a screen and catching it ready to shoot",
+	"stripping the ball on a drive from the weak side",
+	"soaring in from the wing to finish above the rim",
+];
+
+// ZenGM positions: PG G SG GF SF F PF FC C.
+const actionPool = (pos: string): string[] => {
+	const p = pos.toUpperCase();
+	if (p === "C" || p === "FC" || p === "PF") {
+		return [...ANY_ACTION, ...BIG_ACTION];
+	}
+	if (p === "PG" || p === "G" || p === "SG") {
+		return [...ANY_ACTION, ...GUARD_ACTION];
+	}
+	if (p === "SF" || p === "GF" || p === "F") {
+		return [...ANY_ACTION, ...WING_ACTION];
+	}
+	return ANY_ACTION;
+};
+
+// Stable when nothing distinguishes two cards, so a prompt copied twice reads
+// the same; different across players, seasons, sets and variants, so building
+// out a set does not produce the same photograph nine times.
+const hashCard = (subject: CardSubject, setId: string, variantId: string) => {
+	const key = `${subject.name}|${subject.season}|${setId}|${variantId}`;
+	let h = 2166136261;
+	for (let i = 0; i < key.length; i++) {
+		h ^= key.charCodeAt(i);
+		h = Math.imul(h, 16777619);
+	}
+	return h >>> 0;
+};
+
 export const buildCardFrontPrompt = (
 	setId: string,
 	variantId: string,
 	subject: CardSubject,
+	// Re-roll the photograph without changing anything else about the card.
+	// Omitted, the action is derived from the card itself (see hashCard); the
+	// app passes a fresh number each time the prompts are built so pressing the
+	// button again gives a different shot.
+	actionSeed?: number,
 ): string => {
 	const set = cardSetsById.get(setId);
 	if (!set) {
@@ -250,6 +342,10 @@ export const buildCardFrontPrompt = (
 		variant && variant.treatment
 			? `\n\n## This particular card: ${variant.label}\n\n${variant.treatment}`
 			: "";
+
+	const pool = actionPool(subject.pos);
+	const action =
+		pool[(actionSeed ?? hashCard(subject, setId, variantId)) % pool.length]!;
 
 	return `Generate the FRONT of a single basketball trading card, as one image. Output only the card, nothing else.
 
@@ -265,7 +361,9 @@ The design above is a ${set.label} design. That is the LOOK ONLY. This card depi
 
 ## The photograph
 
-A CANDID shot, not a portrait. This is a professional sports photographer sitting courtside at a live NBA game, shooting this player in the middle of PLAYING BASKETBALL. He is doing something on the court - driving, rising for a jumper, finishing at the rim, defending, coming down with a rebound, running the floor - and he does not know the camera is there. No posing, no looking into the lens, no smiling at the camera, no arms folded, no ball resting on the hip, no studio backdrop.
+A CANDID shot, not a portrait. This is a professional sports photographer sitting courtside at a live NBA game, shooting this player in the middle of PLAYING BASKETBALL, and he does not know the camera is there. No posing, no looking into the lens, no smiling at the camera, no arms folded, no ball resting on the hip, no studio backdrop.
+
+**THE MOMENT ON THIS CARD: ${action}.** Shoot that, not a generic drive with the ball - it is the specific thing that separates this card from every other one in the set, so build the whole frame around it.
 
 Shot from the sideline or the baseline, at court level, with a long lens: the player caught mid-action and filling the frame, the crowd and the arena falling out of focus behind him. Natural arena lighting.${
 		set.photography?.toLowerCase().includes("posed")
