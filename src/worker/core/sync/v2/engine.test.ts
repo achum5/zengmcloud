@@ -1017,6 +1017,70 @@ describe("SyncEngineV2", () => {
 			assert.strictEqual(waitFor(0), 0);
 		});
 
+		// The half-fix. Passes are serialized on a chain, so a call arriving
+		// while one is in flight gets QUEUED - and it was admitted by a backoff
+		// check made before the running pass had failed. It then ran the instant
+		// that pass failed, skipping the wait. The next field capture showed it
+		// exactly: three attempts on delta@174 spaced 8.019s and 8.022s, the read
+		// timeout to the millisecond, where the ladder wanted 0s, 3s, 8s.
+		test("a pass queued behind a failing one still waits", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const seedTransport = new V2Transport("C", room);
+			await seedTransport.publishV2Delta(
+				{ version: 1, authorId: "C", action: "playMenu.day", at: 1 },
+				serializeChangeset(changesetOf(tradePut(1, 5))),
+			);
+			await seedTransport.commitV2Version(
+				{
+					version: 1,
+					authorId: "C",
+					byName: "C",
+					at: 1,
+					action: "playMenu.day",
+				},
+				0,
+			);
+
+			const transport = new V2Transport("A", room);
+			let reads = 0;
+			let releaseFirst: (() => void) | undefined;
+			transport.fetchV2Delta = (() => {
+				reads += 1;
+				if (reads === 1) {
+					// The first read hangs, exactly like a timing-out fetch, and
+					// fails only when we say so.
+					return new Promise((_resolve, reject) => {
+						releaseFirst = () => reject(new Error("Timed out after 8000ms"));
+					});
+				}
+				return Promise.reject(new Error("Timed out after 8000ms"));
+			}) as any;
+			const engine = new SyncEngineV2(transport);
+
+			// Pass one starts and hangs on the read.
+			const first = engine.catchUp();
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			assert.strictEqual(reads, 1, "the first pass is in flight");
+
+			// Pass two is requested WHILE it hangs - the listener firing, the
+			// health tick, the indicator. Nothing has failed yet, so it is
+			// admitted and queued.
+			const second = engine.catchUp();
+
+			releaseFirst!();
+			await first;
+			await second;
+
+			assert.strictEqual(
+				reads,
+				1,
+				"the queued pass must respect the backoff the failure just created, not run 19ms after it",
+			);
+			engine.stop();
+		});
+
 		test("a first failure retries immediately", async () => {
 			// One lost read is a blip, not a pattern. Making the user wait for it
 			// would be a regression on the common case.

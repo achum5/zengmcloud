@@ -1022,17 +1022,30 @@ export class SyncEngineV2 {
 		// enough and the SDK stops trying and answers "client is offline" to
 		// everything - a red dot that no amount of further retrying recovers,
 		// because the retrying is what caused it.
-		const wait =
-			CATCHUP_BACKOFF_MS[
-				Math.min(this.catchupFailureStreak, CATCHUP_BACKOFF_MS.length - 1)
-			]!;
-		if (wait > 0 && Date.now() - this.lastCatchupFailureAt < wait) {
+		if (this.backingOff()) {
 			return Promise.resolve(false);
 		}
 		this.catchUpChain = this.catchUpChain
 			.catch(() => false)
-			.then(() => this.doCatchUp(hintState));
+			// Checked AGAIN here, at execution time, and this is not redundant.
+			// Passes are serialized on this chain, so a call that arrives while
+			// one is in flight is queued - and it was admitted by the check above
+			// against a `lastCatchupFailureAt` from before the running pass had
+			// failed. It then ran the instant that pass failed, skipping the wait
+			// entirely. The field capture showed it plainly: three attempts on
+			// delta@174 spaced 8.019s and 8.022s apart, which is the read timeout
+			// exactly, i.e. each retry starting ~19ms after the previous one gave
+			// up, where the ladder should have spaced them 0s, 3s, 8s.
+			.then(() => (this.backingOff() ? false : this.doCatchUp(hintState)));
 		return this.catchUpChain;
+	}
+
+	private backingOff(): boolean {
+		const wait =
+			CATCHUP_BACKOFF_MS[
+				Math.min(this.catchupFailureStreak, CATCHUP_BACKOFF_MS.length - 1)
+			]!;
+		return wait > 0 && Date.now() - this.lastCatchupFailureAt < wait;
 	}
 
 	private async doCatchUp(hintState?: V2StateDoc): Promise<boolean> {
