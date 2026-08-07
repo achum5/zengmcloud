@@ -42,7 +42,8 @@ export interface MetaDB extends DBSchema {
 			| "realPlayerPhotos"
 			| "realTeamInfo"
 			| "defaultSettingsOverrides"
-			| "keyboardShortcuts";
+			| "keyboardShortcuts"
+			| "syncDeviceName";
 	};
 	leagues: {
 		value: League;

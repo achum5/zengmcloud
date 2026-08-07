@@ -5,7 +5,12 @@ import { g } from "../../../util/index.ts";
 import { idb } from "../../../db/index.ts";
 import { changeTracker } from "../../../db/changeTracker.ts";
 import { serializeChangeset } from "../serialize.ts";
-import type { Authority, SyncTransport, V2StateDoc } from "../types.ts";
+import type {
+	Authority,
+	SyncMember,
+	SyncTransport,
+	V2StateDoc,
+} from "../types.ts";
 import type { SyncNotification } from "../notifications.ts";
 import { SyncEngineV2 } from "./engine.ts";
 import { readAppliedVersion } from "./applyVersion.ts";
@@ -100,6 +105,14 @@ class V2Transport implements SyncTransport {
 
 	async claimAuthority(holderId: string, holderName: string) {
 		this.room.setAuthority({ holderId, holderName });
+	}
+
+	// Every member-doc write, so a test can check a rename reached the copy of
+	// the name the Cloud Function reads.
+	registeredMembers: Partial<SyncMember>[] = [];
+
+	async registerMember(_uid: string, member: Partial<SyncMember>) {
+		this.registeredMembers.push(member);
 	}
 
 	subscribeAuthority(
@@ -768,6 +781,49 @@ describe("SyncEngineV2", () => {
 			false,
 			"handing over must silence this device, or every sim is announced twice",
 		);
+		engine.stop();
+	});
+
+	// localName shipped as the placeholder "You" and nothing ever replaced it -
+	// its only writer, registerMember, is reached solely by enabling push
+	// notifications, and that caller passes no name. So the authority doc, which
+	// is written once at claim time, told every OTHER device that "You" was in
+	// charge of simming. A rename therefore has to reach both stored copies of
+	// the name, and rewriting the authority doc is the part that is easy to miss.
+	test("renaming a device rewrites the name the rest of the room reads", async () => {
+		const room = new Room();
+		initRoom(room);
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		await engine.claimAuthority();
+		assert.strictEqual(room.authority?.holderName, "You");
+
+		await engine.setLocalName("Alex");
+		assert.strictEqual(
+			room.authority?.holderName,
+			"Alex",
+			"a rename while holding authority must rewrite the doc everyone else reads",
+		);
+		assert.deepStrictEqual(
+			transport.registeredMembers,
+			[{ name: "Alex" }],
+			"and the member doc the push payloads are built from",
+		);
+
+		// Idempotent, because this runs on a health tick.
+		await engine.setLocalName("Alex");
+		assert.strictEqual(transport.registeredMembers.length, 1);
+
+		// A follower has no authority doc to rewrite, but still has a member doc.
+		room.setAuthority({ holderId: "B", holderName: "Dominic" });
+		await engine.setLocalName("Alexander");
+		assert.strictEqual(
+			room.authority?.holderName,
+			"Dominic",
+			"renaming yourself must never steal authority from the current holder",
+		);
+		assert.strictEqual(transport.registeredMembers.length, 2);
 		engine.stop();
 	});
 

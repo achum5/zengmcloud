@@ -88,6 +88,64 @@ const clearPersistedSyncSession = async (lid: number | undefined) => {
 	}
 };
 
+// This device's display name in shared rooms. Device-scoped rather than
+// per-league, because the same person on the same browser is the same person in
+// every room they join. Unset (or blank) means "fall back to the team I manage".
+export const loadSyncDeviceName = async (): Promise<string | undefined> => {
+	const stored = await idb.meta.get("attributes", "syncDeviceName");
+	return typeof stored === "string" && stored.trim() !== ""
+		? stored.trim()
+		: undefined;
+};
+
+// What everyone ELSE sees next to this device's sims, notes, cards and
+// notifications. The engine ships with the placeholder "You", and nothing ever
+// replaced it - the one writer, registerMember, is only reached by enabling push
+// notifications, and its single caller passes no name. So every shared string in
+// the room read "You": "You is in charge of simming", notes authored by "You".
+// Prefer an explicit name, then the team this device manages (already unique per
+// person in a shared league, and needs no setup), then a neutral fallback.
+export const resolveSyncLocalName = async (): Promise<string> => {
+	const explicit = await loadSyncDeviceName();
+	if (explicit !== undefined) {
+		return explicit;
+	}
+	try {
+		const tid = g.get("userTid");
+		const team = g.get("teamInfoCache")[tid];
+		if (team) {
+			return `${team.region} ${team.name}`;
+		}
+	} catch {
+		// g isn't loaded (or this league has no team for the tid); the neutral
+		// fallback below is still better than the placeholder.
+	}
+	return "Another device";
+};
+
+// A room that has been running since before devices had real names still holds
+// an authority doc whose holderName is the old "You" placeholder, and that
+// renders as "You is in charge of simming" on every OTHER device. Treat it as
+// unnamed so the existing "Another device" fallbacks take over; it fixes itself
+// for real the next time that device claims.
+const displayHolderName = (holderName: string | undefined) =>
+	holderName === "You" ? undefined : holderName;
+
+// Recompute this device's display name and push it everywhere the room reads it.
+// Cheap and idempotent: returns without a single write when nothing changed.
+// Never throws - the local name is applied before any cloud write is attempted,
+// and a failed write is retried by the next refresh. A rename must not be able
+// to fail a connect.
+export const refreshSyncLocalName = async () => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		return;
+	}
+	try {
+		await engine.setLocalName(await resolveSyncLocalName());
+	} catch {}
+};
+
 // The league file's room-binding fingerprint (see League.syncLeagueId).
 const loadSyncLeagueId = async (
 	lid: number | undefined,
@@ -284,14 +342,14 @@ const pushSyncStateFull = () => {
 	// Keep the dedup sentinels consistent so the event-driven pushers agree.
 	lastHealthPushed = healthy;
 	lastEditsPausedPushed = editsPaused;
-	currentHostName = authority?.holderName;
+	currentHostName = displayHolderName(authority?.holderName);
 
 	void toUI("updateLocal", [
 		{
 			mpSyncActive: engine !== undefined,
 			mpSyncReconnecting: isReconnecting(),
 			mpSyncIsHost: engine?.isAuthority() ?? false,
-			mpSyncHostName: authority?.holderName,
+			mpSyncHostName: currentHostName,
 			mpSyncReady: engine !== undefined && currentCloudReady,
 			mpSyncHealthy: healthy,
 			mpEditsPaused: editsPaused,
@@ -1590,11 +1648,8 @@ const doConnectSharedLeague = async ({
 		isHost,
 		code: trimmed,
 		onAuthorityChange: (authority) => {
-			currentHostName = authority?.holderName;
-			pushAuthorityToUI(
-				authority?.holderId === clientId,
-				authority?.holderName,
-			);
+			currentHostName = displayHolderName(authority?.holderName);
+			pushAuthorityToUI(authority?.holderId === clientId, currentHostName);
 			pushEditsPaused();
 		},
 		onReadyChange: (ready) => {
@@ -1640,6 +1695,9 @@ const doConnectSharedLeague = async ({
 
 	try {
 		await engine.ensureReady();
+		// Between ready and the claim: the authority doc is the first shared doc
+		// that would otherwise be stamped with the placeholder name.
+		await refreshSyncLocalName();
 		if (isHost) {
 			await engine.claimAuthority();
 		}
@@ -1747,6 +1805,9 @@ const doConnectSharedLeague = async ({
 					// Retry on a later tick.
 					lastMemberTid = undefined;
 				});
+				// A team switch also renames this device when no explicit name is
+				// set, since the fallback is the team it manages.
+				void refreshSyncLocalName();
 			}
 		} catch {
 			// g may be mid-reload; try again next tick.

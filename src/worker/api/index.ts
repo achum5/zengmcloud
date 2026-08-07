@@ -115,6 +115,9 @@ import {
 	getSyncEngine,
 	getSyncRequired,
 	getSyncStatus,
+	loadSyncDeviceName,
+	refreshSyncLocalName,
+	resolveSyncLocalName,
 	beginLotteryReveal,
 	flushDeferredRefreshAfterLive,
 	listSyncRooms,
@@ -6593,9 +6596,9 @@ const upsertTradingCard = async (card: TradingCard) => {
 	// out when the feed renders: the event syncs to everyone, so a headline
 	// that said "you" would say it on all three devices.
 	//
-	// The engine's localName is the placeholder "You" until a member name has
-	// actually arrived, which is that same bug wearing a different hat, so an
-	// unnamed device records nobody and gets the neutral wording instead.
+	// Devices resolve a real name at connect now, but an older room can still be
+	// holding the "You" placeholder, and that reads as "You" on every device.
+	// Record nobody in that case and take the neutral wording.
 	const maker = getSyncEngine()?.localName;
 	const saved: TradingCard =
 		isNew && card.by === undefined && maker !== undefined && maker !== "You"
@@ -6853,9 +6856,35 @@ const registerPushToken = async ({
 	}
 	await engine.registerMember({
 		fcmToken: token,
-		name,
+		// The caller doesn't ask for a name, so don't let a blank one overwrite
+		// the one this device already resolved.
+		name: name.trim() === "" ? engine.localName : name,
 		tid: g.get("userTid"),
 	});
+	return { ok: true };
+};
+
+// This device's display name in shared rooms. Blank means "use the team I
+// manage", which is what an unconfigured device does.
+const getSyncDeviceName = async () => {
+	// Resolved rather than read off the engine, so the sync page can show what
+	// the fallback WOULD be before this device has ever connected - which is
+	// exactly when someone is looking at this field.
+	return {
+		stored: (await loadSyncDeviceName()) ?? "",
+		effective: await resolveSyncLocalName(),
+	};
+};
+
+const setSyncDeviceName = async (name: string) => {
+	const trimmed = name.trim();
+	if (trimmed === "") {
+		await idb.meta.delete("attributes", "syncDeviceName");
+	} else {
+		await idb.meta.put("attributes", trimmed, "syncDeviceName");
+	}
+	// Applies immediately to a live room, and is picked up at connect otherwise.
+	await refreshSyncLocalName();
 	return { ok: true };
 };
 
@@ -6984,6 +7013,8 @@ export default {
 		getSyncDebugSnapshot,
 		getSyncStatus,
 		getSyncTeams,
+		getSyncDeviceName,
+		setSyncDeviceName,
 		listSyncRooms,
 		deleteSyncRoom,
 		deleteAllSyncRooms,

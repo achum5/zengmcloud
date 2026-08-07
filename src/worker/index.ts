@@ -267,8 +267,13 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 		if (syncEngine) {
 			if (simAuthorityLocked && !syncEngine.isAuthority()) {
 				syncDebugLog("api:guard-refused", { type, name, step: "authority" });
+				// "You" is the pre-rename placeholder some rooms still have stored;
+				// reading it back at another device would say "You is in charge".
+				const holderName = syncEngine.getAuthority()?.holderName;
 				const holder =
-					syncEngine.getAuthority()?.holderName ?? "Another device";
+					holderName === undefined || holderName === "You"
+						? "Another device"
+						: holderName;
 				util.logEvent(
 					{
 						type: "error",

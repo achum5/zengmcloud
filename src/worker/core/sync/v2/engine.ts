@@ -654,6 +654,24 @@ export class SyncEngineV2 {
 		);
 	}
 
+	// Rename this device, and push the new name everywhere the room stores a copy
+	// of it. Two copies exist and both go stale on their own:
+	//  - the authority doc, written once at claim time, so a rename while holding
+	//    authority must rewrite it or the room shows the old name until the next
+	//    claim (which may never come);
+	//  - the member doc, which is what the Cloud Function puts in push payloads.
+	// Merges, so it never disturbs the fcmToken or tid already stored there.
+	async setLocalName(name: string) {
+		if (name === "" || name === this.localName) {
+			return;
+		}
+		this.localName = name;
+		if (this.isAuthority()) {
+			await this.claimAuthority();
+		}
+		await this.transport.registerMember?.(this.transport.clientId, { name });
+	}
+
 	markRoomBusy(position?: unknown): void {
 		if (!this.isAuthority()) {
 			return;

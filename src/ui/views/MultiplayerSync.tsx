@@ -142,6 +142,11 @@ const MultiplayerSync = () => {
 	const [byoConfigText, setByoConfigText] = useState("");
 	const [invite, setInvite] = useState<string | undefined>();
 
+	// What the rest of the room sees next to this device's sims, notes and cards.
+	// Blank falls back to the team this device manages.
+	const [deviceName, setDeviceName] = useState("");
+	const [deviceNamePlaceholder, setDeviceNamePlaceholder] = useState("");
+
 	const [teams, setTeams] = useState<
 		{ tid: number; region: string; name: string }[]
 	>([]);
@@ -178,13 +183,16 @@ const MultiplayerSync = () => {
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
-			const [workerStatus, syncTeams] = await Promise.all([
+			const [workerStatus, syncTeams, name] = await Promise.all([
 				toWorker("main", "getSyncStatus", undefined),
 				toWorker("main", "getSyncTeams", undefined),
+				toWorker("main", "getSyncDeviceName", undefined),
 			]);
 			if (cancelled) {
 				return;
 			}
+			setDeviceName(name.stored);
+			setDeviceNamePlaceholder(name.effective);
 			setTeams(syncTeams.teams);
 			setUserTid(syncTeams.userTid);
 			setMultiTeamMode(syncTeams.multiTeamMode);
@@ -248,6 +256,11 @@ const MultiplayerSync = () => {
 		// blocked for them.
 		await toWorker("main", "setUserTidLocal", tid);
 		setUserTid(tid);
+		// The unnamed-device fallback is the team, so the placeholder just changed.
+		const team = teams.find((t) => t.tid === tid);
+		if (team) {
+			setDeviceNamePlaceholder(`${team.region} ${team.name}`);
+		}
 	};
 
 	const refreshActivity = async () => {
@@ -475,6 +488,25 @@ const MultiplayerSync = () => {
 	return (
 		<>
 			<div className="row" style={{ maxWidth: 500 }}>
+				<div className="col-12 mb-3">
+					<label className="form-label" htmlFor="sync-name">
+						Your name
+					</label>
+					<input
+						id="sync-name"
+						type="text"
+						className="form-control"
+						maxLength={40}
+						placeholder={deviceNamePlaceholder}
+						value={deviceName}
+						onChange={(event) => {
+							setDeviceName(event.target.value);
+						}}
+						onBlur={() => {
+							void toWorker("main", "setSyncDeviceName", deviceName);
+						}}
+					/>
+				</div>
 				<div className="col-12 mb-3">
 					<label className="form-label" htmlFor="sync-team">
 						Your team
