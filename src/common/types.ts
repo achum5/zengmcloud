@@ -1222,6 +1222,14 @@ export type SyncedAutoPlay = {
 	nextRunAt: number | undefined;
 	// Human-readable schedule lines, for a read-only view on other devices.
 	rules: string[];
+	// The same rules in machine-readable form, so a device that ISN'T simming can
+	// project the whole upcoming schedule instead of only being told the next
+	// time. Its own local rules are no substitute - those are per-device and
+	// are not the schedule that's actually running.
+	//
+	// Optional because the simmer might be on an older build that never sends
+	// them; readers fall back to the summary lines above.
+	scheduleRules?: ScheduleRule[];
 };
 
 // A live-sim broadcast this device is part of, mirrored into UI local state so
@@ -2217,6 +2225,7 @@ import type { TeamStatAttr as TeamStatAttrFootball } from "./types.football.ts";
 import type { TeamStatAttr as TeamStatAttrHockey } from "./types.hockey.ts";
 import type { TIEBREAKERS } from "./constants.ts";
 import type { DropdownOption } from "../ui/hooks/useDropdownOptions.tsx";
+import type { ScheduleRule } from "../ui/util/scheduleTime.ts";
 import type { LookingForState } from "../ui/views/TradingBlock/useLookingForState.ts";
 import type { ALWAYS_WRAP } from "../worker/core/league/loadGameAttributes.ts";
 import type {

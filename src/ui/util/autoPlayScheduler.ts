@@ -352,15 +352,25 @@ class AutoPlayScheduler {
 			return;
 		}
 
+		const enabledRules = this.settings.rules.filter((r) => r.enabled);
 		const snapshot = simming
 			? {
 					enabled: true,
 					nextRunAt: this.state.nextRunAt,
-					rules: this.settings.rules
-						.filter((r) => r.enabled)
-						.map((r) => summarizeRule(r)),
+					rules: enabledRules.map((r) => summarizeRule(r)),
+					// The rules themselves, not just their descriptions, so the
+					// devices that AREN'T simming can project the whole upcoming
+					// schedule rather than being told only the next time. They
+					// can't use their own rules for this - those are per-device
+					// and are not the schedule that is actually running.
+					scheduleRules: enabledRules,
 				}
-			: { enabled: false, nextRunAt: undefined, rules: [] };
+			: {
+					enabled: false,
+					nextRunAt: undefined,
+					rules: [],
+					scheduleRules: [],
+				};
 
 		const serialized = JSON.stringify(snapshot);
 		if (serialized === this.lastPublished) {

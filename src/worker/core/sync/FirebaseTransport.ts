@@ -230,6 +230,11 @@ export class FirebaseTransport implements SyncTransport {
 		// Firestore rejects ANY write containing `undefined`, and the "off"/paused
 		// snapshots carry nextRunAt: undefined - so they silently failed and
 		// followers kept a stale countdown forever. Store null instead.
+		//
+		// The same trap, one level deeper, for the structured rules: ScheduleRule
+		// has an optional `label`, so an unnamed rule carries `label: undefined`
+		// and would take the whole write down with it - silently, leaving every
+		// follower on a stale schedule. Drop the key rather than send undefined.
 		await setDoc(
 			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
 			{
@@ -237,6 +242,10 @@ export class FirebaseTransport implements SyncTransport {
 					enabled: state.enabled,
 					nextRunAt: state.nextRunAt ?? null,
 					rules: state.rules,
+					scheduleRules: (state.scheduleRules ?? []).map((rule) => {
+						const { label, ...rest } = rule;
+						return label === undefined ? rest : { ...rest, label };
+					}),
 				},
 			},
 			{ merge: true },
@@ -261,6 +270,11 @@ export class FirebaseTransport implements SyncTransport {
 								enabled: !!raw.enabled,
 								nextRunAt: raw.nextRunAt ?? undefined,
 								rules: Array.isArray(raw.rules) ? raw.rules : [],
+								// Absent when the simmer is on an older build, so a
+								// reader must fall back to the summary lines above.
+								scheduleRules: Array.isArray(raw.scheduleRules)
+									? raw.scheduleRules
+									: undefined,
 							}
 						: undefined,
 				);

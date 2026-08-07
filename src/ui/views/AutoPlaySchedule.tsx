@@ -195,10 +195,9 @@ const AutoPlaySchedule = () => {
 	// advances) and when eligibility changes.
 	const [preview, setPreview] = useState<AutoPlayPreviewData | undefined>();
 	useEffect(() => {
-		if (!eligible) {
-			setPreview(undefined);
-			return;
-		}
+		// Fetched on EVERY device, not just the simmer. It reads this device's own
+		// copy of the schedule and is not sim-authority locked, and without it a
+		// league-mate can only be told the next run time - never the schedule.
 		let cancelled = false;
 		(async () => {
 			try {
@@ -223,12 +222,27 @@ const AutoPlaySchedule = () => {
 	// rules/data change and roughly every 15s as fires pass (the per-second
 	// countdown is derived separately, below).
 	const nowBucket = Math.floor(now / 15000);
+
+	// Which rules to project. On the simmer that's its own; everywhere else it's
+	// the ones the simmer published, because a follower's own local rules are a
+	// different schedule that nothing is running. Undefined (an older simmer that
+	// doesn't publish them) means we can't project, and the summary lines stand.
+	const projectionRules = eligible
+		? settings.rules
+		: mpAutoPlay?.enabled
+			? mpAutoPlay.scheduleRules
+			: undefined;
+
 	const projected = useMemo(() => {
-		if (!preview || preview.upcomingDays.length === 0) {
+		if (
+			!preview ||
+			preview.upcomingDays.length === 0 ||
+			projectionRules === undefined
+		) {
 			return [];
 		}
 		const fires = nextFires(
-			settings.rules,
+			projectionRules,
 			new Date(),
 			Math.min(MAX_FIRES, Math.max(1, preview.upcomingDays.length)),
 		);
@@ -239,7 +253,7 @@ const AutoPlaySchedule = () => {
 			preview.phaseEndNote,
 		);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [preview, settings.rules, nowBucket]);
+	}, [preview, projectionRules, nowBucket]);
 
 	const update = (partial: Partial<AutoPlaySettings>) =>
 		autoPlayScheduler.updateSettings(partial);
@@ -265,11 +279,19 @@ const AutoPlaySchedule = () => {
 
 	// Show the schedule preview when running, or on demand via "Show schedule".
 	const [showSchedule, setShowSchedule] = useState(false);
-	const showPreview =
-		eligible && hasEnabledRules && (settings.enabled || showSchedule);
+	// On the simmer this is gated on its own settings; on every other device the
+	// schedule is read-only information about what the room is going to do, so it
+	// shows whenever there is something to show. Being unable to see the schedule
+	// you're subject to was the whole complaint.
+	const showPreview = eligible
+		? hasEnabledRules && (settings.enabled || showSchedule)
+		: projected.length > 0;
 
 	// The active stop-after day, if it belongs to the season currently previewed.
+	// Only on the simmer: stopAfter is a local setting, so anywhere else it would
+	// mark a row "Stops here" about a schedule this device has no say over.
 	const stopDay =
+		eligible &&
 		settings.stopAfter &&
 		preview &&
 		settings.stopAfter.season === preview.season
@@ -583,7 +605,11 @@ const AutoPlaySchedule = () => {
 															) : null}
 														</td>
 														<td className="text-end">
-															{isStop ? (
+															{/* Read-only off the simmer: this writes a local
+															    setting, so anywhere else it would look like
+															    editing the room's schedule while changing
+															    nothing at all. */}
+															{!eligible ? null : isStop ? (
 																<button
 																	type="button"
 																	className="btn btn-sm btn-info text-nowrap"
