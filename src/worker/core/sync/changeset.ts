@@ -640,18 +640,55 @@ let deferredRefresh:
 const isInLivePlayback = () =>
 	local.liveSimGid !== undefined || isWatchingLiveBroadcast();
 
-// Run any refresh that was held back during a live playback. Called wherever
-// a playback ends (the live game page's game-over signal, a broadcast ending
-// or expiring). Safe to call when nothing is pending.
-export const flushDeferredRefreshAfterLive = () => {
+// The second reason to hold a refresh back, sharing the bank above: a
+// multi-version catch-up walk. Every applied version repainted the entire UI -
+// phase text, Play menu, status line, score ticker, a blanket realtimeUpdate,
+// and a phase redirect - and the next version could not even be FETCHED until
+// that finished, because the engine awaits it. Walking 150 versions therefore
+// ran 150 full repaints to reach a state only the last one describes, and
+// measurably dominated the join: the gaps between applies scaled with
+// changeset size well past the recorded apply time.
+//
+// Only the paint waits. The correctness work above this hold - the
+// season-scoped cache refill and the `g` reload - still runs per version,
+// because the NEXT version applies against it.
+let coalescingRefresh = false;
+
+export const beginCoalescedRefresh = () => {
+	coalescingRefresh = true;
+};
+
+export const endCoalescedRefresh = () => {
+	coalescingRefresh = false;
+	flushDeferredRefresh();
+};
+
+// Run whatever was banked, if nothing is still holding it back. Both holds
+// share one bank, so whichever releases LAST is the one that paints - a
+// catch-up walk finishing mid-broadcast must not paint, or it spoils exactly
+// what the live hold exists to prevent.
+//
+// Checking the holds here is belt to refreshAfterApply's braces, not the
+// barrier itself: it re-checks and re-banks, so a flush that slipped through
+// would still not paint. What this check actually buys is skipping the
+// correctness half it would re-run on the way to re-banking - a cache
+// flush+fill is far too expensive to spend on a no-op.
+const flushDeferredRefresh = () => {
 	const pending = deferredRefresh;
-	if (!pending) {
+	if (!pending || isInLivePlayback() || coalescingRefresh) {
 		return;
 	}
 	deferredRefresh = undefined;
 	void refreshAfterApply(pending).catch((error) => {
-		console.error("Deferred post-live refresh failed", error);
+		console.error("Deferred refresh failed", error);
 	});
+};
+
+// Run any refresh that was held back during a live playback. Called wherever
+// a playback ends (the live game page's game-over signal, a broadcast ending
+// or expiring). Safe to call when nothing is pending.
+export const flushDeferredRefreshAfterLive = () => {
+	flushDeferredRefresh();
 };
 
 // Everything a RECEIVING device must refresh after remote records landed, so
@@ -740,14 +777,18 @@ export const refreshAfterApply = async ({
 		local.minFractionDiffs = undefined;
 	}
 
-	// Mid-live-playback, STOP here: the data landed (cache refill and the g
-	// mirror above are correctness, not paint), but every step below repaints
-	// the screen - phase text, status, ticker, navigation, view refreshes -
-	// and each one can spoil the game still playing out. Bank the flags and
-	// run the rest when the playback ends. Merging keeps a burst of applies
-	// (the finals sim + its phase change) down to one flush.
-	if (isInLivePlayback()) {
-		syncDebugLog("apply:refresh-deferred-live", {
+	// Held back, STOP here: the data landed (cache refill and the g mirror above
+	// are correctness, not paint), but every step below repaints the screen -
+	// phase text, status, ticker, navigation, view refreshes. Mid-playback each
+	// one can spoil the game still playing out; mid-catch-up each one is thrown
+	// away by the next version a moment later. Bank the flags and run the rest
+	// once the hold lifts. Merging keeps a burst of applies (the finals sim and
+	// its phase change; a 150-version walk) down to a single flush - and the
+	// phase redirect is then computed from the phase actually landed on, rather
+	// than dragging the user through every intermediate one.
+	if (isInLivePlayback() || coalescingRefresh) {
+		syncDebugLog("apply:refresh-deferred", {
+			why: isInLivePlayback() ? "live" : "catchup",
 			touchedPhase,
 			touchedGames,
 		});

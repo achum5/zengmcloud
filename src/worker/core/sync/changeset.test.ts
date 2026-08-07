@@ -10,11 +10,15 @@ import {
 import { changeTracker } from "../../db/changeTracker.ts";
 import {
 	applyChangeset,
+	beginCoalescedRefresh,
 	captureChangeset,
+	endCoalescedRefresh,
+	flushDeferredRefreshAfterLive,
 	orderChangesForApply,
 	phaseRedirectComponents,
 	dropStrandedScheduleRows,
 	findStrandedScheduleRows,
+	refreshAfterApply,
 	regressionReason,
 	sweepPhantomScheduleRows,
 } from "./changeset.ts";
@@ -1812,5 +1816,83 @@ describe("the regression guard does not invent a phase", () => {
 		// previous year's free agency forever.
 		assert.strictEqual(g.get("season"), 2006);
 		assert.strictEqual(g.get("phase"), PHASE.PRESEASON);
+	});
+
+	// A refresh held back has to be released by SOMETHING. The paint half of
+	// refreshAfterApply is what repaints the phase text, so local.phaseText is
+	// the visible proof of whether it ran.
+	describe("held-back refreshes", () => {
+		// touchedPhase is the flag that reaches updatePhase(); the rest are off so
+		// the test exercises one observable path.
+		const phaseRefresh = {
+			touchedSeason: false,
+			touchedGameAttributes: false,
+			touchedGames: false,
+			touchedPhase: true,
+			touchedStatus: false,
+			touchedStores: new Set<any>(),
+			refreshUI: true,
+			sweepGames: false,
+			redirect: false,
+		};
+
+		// The flush is deliberately fire-and-forget, so give it a turn to land.
+		const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+		beforeEach(async () => {
+			resetG();
+			await resetCache();
+			local.liveSimGid = undefined;
+		});
+
+		test("a coalesced walk paints once, after the walk", async () => {
+			g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+			local.phaseText = "stale";
+
+			beginCoalescedRefresh();
+			try {
+				await refreshAfterApply(phaseRefresh);
+				await refreshAfterApply(phaseRefresh);
+				assert.strictEqual(
+					local.phaseText,
+					"stale",
+					"nothing repaints while the walk is still running",
+				);
+			} finally {
+				endCoalescedRefresh();
+			}
+
+			await settle();
+			assert.strictEqual(
+				local.phaseText,
+				`${g.get("season")} playoffs`,
+				"and the banked refresh must actually run when the walk ends - a hold nothing releases is a frozen UI",
+			);
+		});
+
+		// Both holds share one bank, so the walk ending must NOT be enough on its
+		// own. Painting "2027 draft lottery" into the header while someone is
+		// watching game 6 of the finals is the exact spoiler the live hold exists
+		// to prevent, and a catch-up walk can easily finish mid-broadcast.
+		test("the live-playback hold still wins when a walk ends during one", async () => {
+			g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+			local.phaseText = "stale";
+			local.liveSimGid = 7;
+
+			beginCoalescedRefresh();
+			await refreshAfterApply(phaseRefresh);
+			endCoalescedRefresh();
+			await settle();
+			assert.strictEqual(
+				local.phaseText,
+				"stale",
+				"the walk ending must not paint over a live playback",
+			);
+
+			local.liveSimGid = undefined;
+			flushDeferredRefreshAfterLive();
+			await settle();
+			assert.strictEqual(local.phaseText, `${g.get("season")} playoffs`);
+		});
 	});
 });

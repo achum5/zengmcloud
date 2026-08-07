@@ -22,6 +22,8 @@ import {
 import { payloadLeagueId, readLocalLeagueId } from "../leagueIdentity.ts";
 import { syncDebugLog } from "../debugLog.ts";
 import {
+	beginCoalescedRefresh,
+	endCoalescedRefresh,
 	refreshAfterApply,
 	summarizeChangesetForRefresh,
 	type Changeset,
@@ -1225,71 +1227,89 @@ export class SyncEngineV2 {
 
 				// Deltas, in order. Any miss aborts the pass; the next pass retries.
 				let progressed = false;
-				for (const version of plan.versions) {
-					step = `delta@${version}`;
-					// The head version's payload rides inline on the pointer doc when
-					// small (most interactive edits). Using it needs no read at all -
-					// which is why a roster move now lands the moment the pointer
-					// push arrives, even when chunk reads are hanging.
-					const delta =
-						version === state.version && state.inlineDelta !== undefined
-							? {
-									serialized: state.inlineDelta,
-									authorId: state.authorId,
-									action: state.action ?? "?",
-									at: state.at,
-								}
-							: this.transport.fetchV2Delta
-								? await withTimeout(
-										this.transport.fetchV2Delta(version),
-										CATCHUP_READ_TIMEOUT_MS,
-									)
-								: undefined;
-					if (!delta) {
-						syncDebugLog("v2:delta-missing", { version });
-						return false;
+				// A walk of more than one version paints once at the end instead of
+				// once per version. Each repaint is awaited before the next version
+				// can even be fetched, so 150 of them both stutter the UI and stretch
+				// the walk - to produce 149 screens nobody sees. A single-version pass
+				// (an ordinary live delta) is deliberately left exactly as it was.
+				const coalesce = plan.versions.length > 1;
+				if (coalesce) {
+					beginCoalescedRefresh();
+				}
+				try {
+					for (const version of plan.versions) {
+						step = `delta@${version}`;
+						// The head version's payload rides inline on the pointer doc when
+						// small (most interactive edits). Using it needs no read at all -
+						// which is why a roster move now lands the moment the pointer
+						// push arrives, even when chunk reads are hanging.
+						const delta =
+							version === state.version && state.inlineDelta !== undefined
+								? {
+										serialized: state.inlineDelta,
+										authorId: state.authorId,
+										action: state.action ?? "?",
+										at: state.at,
+									}
+								: this.transport.fetchV2Delta
+									? await withTimeout(
+											this.transport.fetchV2Delta(version),
+											CATCHUP_READ_TIMEOUT_MS,
+										)
+									: undefined;
+						if (!delta) {
+							syncDebugLog("v2:delta-missing", { version });
+							return false;
+						}
+						const changeset = deserializeChangeset(
+							await decompressSerialized(delta.serialized),
+						) as Changeset;
+						const outcome = await applyVersionedChangeset({
+							version,
+							authorId: delta.authorId,
+							action: delta.action,
+							changeset,
+							at: delta.at,
+						});
+						if (outcome === "gap") {
+							// The marker moved backwards relative to the plan - only possible
+							// if a checkpoint restore is needed after all. Re-plan.
+							break;
+						}
+						this.noteVersion({
+							version,
+							authorId: delta.authorId,
+							action: delta.action,
+							at: delta.at,
+							records: changeset.changes.length,
+							attrs: changeset.changes
+								.filter((c) => c.store === "gameAttributes")
+								.map((c) => String(c.id)),
+						});
+						this.appliedMirror = Math.max(this.appliedMirror, version);
+						progressed = true;
+						// A delta that applied is proof the connection works, so the
+						// failure streak starts over. Without this the streak only ever
+						// reset on reaching the head, which meant a device walking a big
+						// gap over a patchy link accumulated failures across passes that
+						// were each mostly SUCCESSFUL - fifty versions applied and one
+						// read lost still counted as a pass that failed. The streak then
+						// only went up, which is how the retry cadence and the network
+						// cycling both ended up permanently in their most aggressive
+						// state on the device that could least afford it.
+						this.catchupFailureStreak = 0;
+						if (this.catchUpPillShown) {
+							this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
+						}
+						await this.afterRemoteApply(changeset);
 					}
-					const changeset = deserializeChangeset(
-						await decompressSerialized(delta.serialized),
-					) as Changeset;
-					const outcome = await applyVersionedChangeset({
-						version,
-						authorId: delta.authorId,
-						action: delta.action,
-						changeset,
-						at: delta.at,
-					});
-					if (outcome === "gap") {
-						// The marker moved backwards relative to the plan - only possible
-						// if a checkpoint restore is needed after all. Re-plan.
-						break;
+				} finally {
+					// Runs on every exit - the delta-missing return, the gap break,
+					// and a throw - so a walk can never leave the UI banked and
+					// frozen on the state it started from.
+					if (coalesce) {
+						endCoalescedRefresh();
 					}
-					this.noteVersion({
-						version,
-						authorId: delta.authorId,
-						action: delta.action,
-						at: delta.at,
-						records: changeset.changes.length,
-						attrs: changeset.changes
-							.filter((c) => c.store === "gameAttributes")
-							.map((c) => String(c.id)),
-					});
-					this.appliedMirror = Math.max(this.appliedMirror, version);
-					progressed = true;
-					// A delta that applied is proof the connection works, so the
-					// failure streak starts over. Without this the streak only ever
-					// reset on reaching the head, which meant a device walking a big
-					// gap over a patchy link accumulated failures across passes that
-					// were each mostly SUCCESSFUL - fifty versions applied and one
-					// read lost still counted as a pass that failed. The streak then
-					// only went up, which is how the retry cadence and the network
-					// cycling both ended up permanently in their most aggressive
-					// state on the device that could least afford it.
-					this.catchupFailureStreak = 0;
-					if (this.catchUpPillShown) {
-						this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
-					}
-					await this.afterRemoteApply(changeset);
 				}
 				if (!progressed) {
 					return false;
