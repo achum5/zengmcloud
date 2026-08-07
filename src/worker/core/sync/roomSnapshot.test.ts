@@ -887,34 +887,32 @@ describe("an automatic restore cannot re-parse the league at tick speed", () => 
 		resetSnapshotRestoreBackoff();
 	});
 
-	test("the health tick's repeated attempts download the league once", async () => {
+	// Restore is off, tied to the same switch as publishing - deliberately.
+	// Nothing maintains snapshots any more, so any left in a room are frozen at
+	// the date they were written, and restoring one is not a repair, it is a
+	// time machine. A league-mate watched his file go back to the start of the
+	// season; this is the half of that which lived here.
+	//
+	// The rate-limiting below it is kept and still unit-tested as a pure policy
+	// (snapshotRestoreBackoff.test.ts) so re-enabling is a one-line decision
+	// rather than a rebuild.
+	test("nothing is restored, and nothing is even downloaded", async () => {
 		const { engine, downloads } = makeRestoreEngine();
 
-		assert.ok(await restoreFromRoomSnapshot(engine, { automatic: true }));
-		assert.strictEqual(downloads(), 1);
-
-		// Three more health ticks, five seconds apart in the field.
-		for (let i = 0; i < 3; i++) {
-			assert.strictEqual(
-				await restoreFromRoomSnapshot(engine, { automatic: true }),
-				undefined,
-				"a repeat attempt inside the window must decline",
-			);
-		}
+		assert.strictEqual(
+			await restoreFromRoomSnapshot(engine, { automatic: true }),
+			undefined,
+		);
+		assert.strictEqual(await restoreFromRoomSnapshot(engine), undefined);
 		assert.strictEqual(
 			downloads(),
-			1,
-			"the whole league must be parsed once, not once per tick",
+			0,
+			"a stale snapshot must not be fetched, let alone applied over a live league",
 		);
-	});
-
-	test("Force Resync is never throttled - a person clicking is not a loop", async () => {
-		const { engine, downloads } = makeRestoreEngine();
-
-		assert.ok(await restoreFromRoomSnapshot(engine, { automatic: true }));
-		// The user, watching nothing happen, presses the button.
-		assert.ok(await restoreFromRoomSnapshot(engine));
-		assert.ok(await restoreFromRoomSnapshot(engine));
-		assert.strictEqual(downloads(), 3);
+		assert.deepStrictEqual(
+			(await (idb as any).league.getAll("players")).map((p: any) => p.pid),
+			[1],
+			"the local league is left exactly as it was",
+		);
 	});
 });

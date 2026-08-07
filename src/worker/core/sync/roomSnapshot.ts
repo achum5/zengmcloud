@@ -403,6 +403,20 @@ export const restoreFromRoomSnapshot = async (
 	// and is never throttled.
 	{ automatic = false }: { automatic?: boolean } = {},
 ): Promise<RoomSnapshotMeta | undefined> => {
+	// IF WE DO NOT MAINTAIN THEM, WE MUST NOT RESTORE THEM. Nothing publishes
+	// snapshots any more, so any that still exist in a room are frozen at
+	// whatever date they were written - and restoring one does not "repair" a
+	// device, it drags it back to that date. A snapshot from the start of the
+	// season sends the whole league back to the start of the season, which is
+	// exactly what one league-mate watched happen to his file.
+	//
+	// Publishing and restoring are one switch, deliberately: leaving restore on
+	// while turning publishing off is strictly worse than either extreme.
+	if (!AUTO_PUBLISH_CHECKPOINTS) {
+		syncDebugLog("snapshot:restore-disabled", { automatic });
+		return undefined;
+	}
+
 	const transport = engine.transport;
 	if (!transport.fetchRoomSnapshotMeta || !transport.fetchRoomSnapshotData) {
 		return undefined;

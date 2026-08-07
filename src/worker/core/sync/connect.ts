@@ -1420,7 +1420,7 @@ export const getSimSafety = async (): Promise<
 	if (integrityProblems.length > 0) {
 		return {
 			safe: false,
-			reason: `This device's copy of the league looks damaged (${integrityProblems[0]}). Use Force Resync on the sync page to restore it from the room - simming now would spread the damage.`,
+			reason: `This device's copy of the league looks damaged (${integrityProblems[0]}). Ask whoever is in charge of simming for a fresh export and re-import it - simming now would spread the damage.`,
 		};
 	}
 
@@ -1475,13 +1475,6 @@ export const getSimSafety = async (): Promise<
 };
 
 // Force a full catch-up: re-read the log's tail and re-apply it from scratch.
-// The one-click fix for a device that silently diverged. Bounded like every
-// other replay - the truly unbounded read never finished on a phone, which
-// made the one button sold as the big hammer the one recovery that couldn't
-// complete. A deeper window than the automatic paths, since a person pressing
-// the button has judged something is wrong and will wait for it.
-const MANUAL_RESYNC_WINDOW_ENTRIES = 10_000;
-
 export const resyncSharedLeague = async (): Promise<{
 	total: number;
 	applied: number;
@@ -1509,42 +1502,25 @@ export const resyncSharedLeague = async (): Promise<{
 		return engine.forceCheckpointRestore();
 	}
 
-	// The button means "my league looks wrong - make it match the room". The
-	// trustworthy way to do that is the checkpoint: restore the room's snapshot
-	// (a complete, consistent base - works no matter how far behind or how
-	// corrupted this device is) and replay only the tail after it. A windowed
-	// replay onto live state is the fallback for rooms with no snapshot, not
-	// the tool of choice: re-applying old changesets over current data visibly
-	// rewinds the league, and anything the guards decline strands old values.
-	try {
-		const restored = await restoreFromRoomSnapshot(engine);
-		if (restored) {
-			const drained = await engine.catchUp();
-			return {
-				total: 1,
-				applied: drained ? 1 : 0,
-				incomplete: drained ? 0 : 1,
-				failed: !drained,
-			};
-		}
-	} catch (error) {
-		console.error("Snapshot restore during manual resync failed", error);
-	}
-
-	// The checkpoint didn't restore. If the room HAS one, it was refused for
-	// cause (poisoned, unreadable) - and the windowed replay is not a fallback,
-	// it is the league-wrecker: re-applying old history over live state is what
-	// wiped a league tonight. Refuse and say what actually fixes it. Only a
-	// room that has never published a checkpoint at all gets the replay, since
-	// there the log IS the complete history and this button is the only tool.
-	const meta = await engine.transport.fetchRoomSnapshotMeta?.();
-	if (meta !== undefined) {
-		throw new Error(
-			"The room's checkpoint is damaged, so this device can't safely resync from it yet. Whoever is in charge of simming just needs the app open for a few minutes - a fresh checkpoint publishes automatically - then try again.",
-		);
-	}
-
-	return engine.resyncAll({ windowEntries: MANUAL_RESYNC_WINDOW_ENTRIES });
+	// THERE IS NO SAFE WAY TO REBUILD A DIVERGED v1 DEVICE FROM HERE, so this
+	// no longer pretends there is.
+	//
+	// It used to try two things. The room's snapshot - but nothing publishes
+	// those any more, so any that survive are frozen at the date they were
+	// written and restoring one is a time machine, not a repair. Then, failing
+	// that, a windowed replay: re-reading ten thousand old changesets and
+	// applying them over the live database. That is the one this file has
+	// warned about in capitals for months - "re-applying old history over a
+	// live database is not recovery, it is the wipe" - and it is what sent a
+	// league-mate's file back to the start of the season after a toast in this
+	// same build told him to press this button.
+	//
+	// A device whose data has genuinely diverged needs a fresh export from
+	// someone who is correct. Saying so is not a worse answer than a replay; it
+	// is the same answer without destroying the league on the way to it.
+	throw new Error(
+		"This device can't be repaired from the cloud. Ask whoever is in charge of simming for a fresh export of the league, then import it and rejoin the room.",
+	);
 };
 
 // Join a shared-league sync room. All devices using the same `code` see each
@@ -2648,7 +2624,7 @@ const doConnectSharedLeague = async ({
 					type: "error",
 					text:
 						stalled !== undefined
-							? "This device is missing some league data, and repairing it automatically didn't finish. Use Force Resync on the Multiplayer Sync page."
+							? "This device is missing some league data and couldn't repair itself. Ask whoever is in charge of simming for a fresh export."
 							: "This device is missing some league data. It will repair itself automatically once the person in charge of simming has the app open for a few minutes.",
 					saveToDb: false,
 					persistent: true,
