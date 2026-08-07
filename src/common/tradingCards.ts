@@ -158,7 +158,7 @@ export const CARD_SETS: CardSet[] = [
 		since: 1970,
 		stock: "Heavier uncoated paper stock, matte, with visible print dots.",
 		proportions:
-			'2.5 x 4 11/16 inches, portrait - the "tall boy" format, dramatically taller than a modern card. This unusual shape is essential and must not be normalized to standard proportions.',
+			'2.5 x 4 11/16 inches, PORTRAIT - the "tall boy" format, an 8:15 ratio, dramatically taller than a modern card. Render the image at 1024 x 1920 pixels. This unusual shape is essential and must not be normalized to standard proportions.',
 		border: "A plain white border.",
 		photography:
 			"The player's portrait or posed action sits inside a large OVAL frame cut into the white field, his head sometimes breaking over the top edge of the oval.",
@@ -183,7 +183,7 @@ export const CARD_SETS: CardSet[] = [
 		since: 1971,
 		stock: "Matte uncoated stock with visible print dots.",
 		proportions:
-			'2.5 x 4 11/16 inches, portrait - the "tall boy" format, far taller than a modern card. Keep this shape.',
+			'2.5 x 4 11/16 inches, PORTRAIT - the "tall boy" format, an 8:15 ratio, far taller than a modern card. Render the image at 1024 x 1920 pixels. Keep this shape.',
 		border: "A plain white border.",
 		photography:
 			"A posed portrait or staged action shot, full length in frame.",

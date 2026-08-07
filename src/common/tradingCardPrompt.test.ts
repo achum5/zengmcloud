@@ -299,17 +299,64 @@ describe("the catalogue", () => {
 					`${setId} keeps its shape`,
 				);
 				assert.ok(
-					!prompt.includes("standard trading card proportions"),
+					!prompt.includes("2.5 x 3.5 inches"),
 					`${setId} does not also claim to be standard-sized`,
 				);
 			}
 		}
 		assert.ok(
 			buildCardFrontPrompt("2012-13-prizm", "base", subject()).includes(
-				"standard trading card proportions (2.5 x 3.5, portrait)",
+				"2.5 x 3.5 inches, PORTRAIT",
 			),
 			"an ordinary set still gets the standard size",
 		);
+	});
+
+	// THE BUG: a front came back portrait and the back came back landscape, so
+	// the two halves of one card were different shapes. The prompts are pasted
+	// into the model separately, so the only thing that can hold them together
+	// is both of them saying the same size.
+	test("the front and the back state the same size, every set", () => {
+		for (const set of CARD_SETS) {
+			const front = buildCardFrontPrompt(set.id, "base", subject());
+			const back = buildCardBackPrompt(set.id, "base", subject());
+			const size =
+				set.proportions ??
+				"2.5 x 3.5 inches, PORTRAIT - taller than it is wide, a 5:7 ratio. Render the image at 1024 x 1434 pixels.";
+			assert.ok(front.includes(size), `${set.id} front`);
+			assert.ok(back.includes(size), `${set.id} back`);
+			for (const [side, prompt] of [
+				["front", front],
+				["back", back],
+			] as const) {
+				assert.ok(
+					prompt.includes("MUST come out at identical dimensions"),
+					`${set.id} ${side} says the two halves have to match`,
+				);
+			}
+		}
+	});
+
+	// Eight sets in the catalogue have a back that reads horizontally, which is
+	// true of the real cards - but it describes the LAYOUT, not the card, and
+	// the model took it as the card. That is what produced the landscape back.
+	test("a horizontally-laid-out back is still a portrait card", () => {
+		const horizontal = CARD_SETS.filter((set) => /horizontal/i.test(set.back));
+		assert.ok(
+			horizontal.length >= 5,
+			"the horizontal-back sets are still catalogued",
+		);
+		for (const set of horizontal) {
+			const back = buildCardBackPrompt(set.id, "base", subject());
+			assert.ok(
+				back.includes("Do not output a landscape image"),
+				`${set.id} is told not to turn the card`,
+			);
+			assert.ok(
+				back.includes("the layout, not the card"),
+				`${set.id} is told what horizontal actually refers to`,
+			);
+		}
 	});
 
 	// An unlicensed set that renders team logos is the one way these can be

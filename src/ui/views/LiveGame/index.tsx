@@ -46,7 +46,6 @@ import LiveCourt, {
 	rimXFor,
 	scorerTableRow,
 	setupBallPath,
-	synthHeaveSpot,
 	synthPlaySpot,
 	synthReboundSpot,
 	synthShotSpot,
@@ -55,6 +54,12 @@ import LiveCourt, {
 	type CourtScene,
 	type CourtZone,
 } from "./LiveCourt.tsx";
+import {
+	benchHuddle,
+	HEAVE_MAX_SECONDS,
+	synthHeaveSpot,
+	synthOutOfBoundsPath,
+} from "./courtSpots.ts";
 
 type PlayerRowProps = {
 	exhibition?: boolean;
@@ -295,6 +300,22 @@ const PlayByPlay = ({
 	);
 };
 
+// Play-by-play lines that stop the game rather than advance it. They all get
+// the same picture on the court - both fives in a huddle at their benches, ball
+// dead - because that is what all of them look like. Several carry no team at
+// all (a period starting belongs to nobody), which is why handleCourtEvent
+// checks this set before it gives up on an event with no `t`.
+const STOPPAGE_TYPES = new Set([
+	"timeout",
+	"endOfPeriod",
+	"period",
+	"overtime",
+	"gameOver",
+	"elamActive",
+	"shootoutStart",
+	"shootoutTie",
+]);
+
 const DEFAULT_SPEED = 7;
 
 const speedToMs = (speed: number) => {
@@ -421,6 +442,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// offense on the lane, the rest behind the arc) instead of a normal set.
 			// The value is the shooter's pid, excluded from the lane.
 			freeThrowShooterPid?: number;
+			// Show ONLY the play's actors - no background 5-on-5. For a shootout,
+			// where one player shoots alone and staging a half-court set behind him
+			// would read as an ordinary possession.
+			solo?: boolean;
 		} = {},
 	) => {
 		courtSceneCount.current += 1;
@@ -455,6 +480,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 		let actors = playActors;
 		if (
 			scene.kind !== "jump" &&
+			!opts.solo &&
 			anchorX !== undefined &&
 			Array.isArray(boxScore.current.teams)
 		) {
@@ -593,6 +619,40 @@ export const LiveGame = (props: View<"liveGame">) => {
 		);
 	};
 
+	// A stoppage: a timeout, the end of a period, the final buzzer, the Elam
+	// target going up. The ten on the floor walk off into a huddle in front of
+	// their own bench and the ball goes dead at center. Every one of these lines
+	// used to leave the court frozen on whatever play happened last, which read
+	// as the graphic having stopped working.
+	const pushDeadBallScene = (t: 0 | 1, text: ReactNode) => {
+		const actors: CourtActor[] = [];
+		if (Array.isArray(boxScore.current.teams)) {
+			for (const team of [0, 1] as const) {
+				const onFloor = (boxScore.current.teams[team]?.players ?? [])
+					.filter((p: any) => p.inGame)
+					.slice(0, 5);
+				const spots = benchHuddle(team, onFloor.length);
+				onFloor.forEach((p: any, i: number) => {
+					actors.push({
+						pid: p.pid,
+						name: playerNameByPid(p.pid),
+						x: spots[i]!.x,
+						y: spots[i]!.y,
+						role: "onCourt",
+						t: team,
+					});
+				});
+			}
+		}
+		pushScene({
+			kind: "dead",
+			t,
+			actors,
+			text,
+			ballFrom: { x: (rimXFor(0) + rimXFor(1)) / 2, y: 25 },
+		});
+	};
+
 	// The ball-handler's glide turned into ms (same speed-capped curve the players
 	// use), so the ball's arrival lands exactly when he does - at whatever
 	// playback speed the scene interval is running.
@@ -640,11 +700,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// right there on the floor. Locations are synthesized (the sim has no real
 	// coordinates), but every actor/outcome is the genuine play.
 	const handleCourtEvent = (event: any, text: ReactNode, scoreDiff = 0) => {
-		if (
-			!event ||
-			typeof event.type !== "string" ||
-			typeof event.t !== "number"
-		) {
+		if (!event || typeof event.type !== "string") {
+			return;
+		}
+		// Most events name the team they happened to. A handful of stoppages belong
+		// to nobody - a period starting, the final buzzer, the Elam target going up
+		// - and those still get a scene (see STOPPAGE_TYPES); every other teamless
+		// event is internal bookkeeping with no line to show.
+		if (typeof event.t !== "number" && !STOPPAGE_TYPES.has(event.type)) {
 			return;
 		}
 		// Seed this play's invented geometry from (game, play index). That index
@@ -685,9 +748,27 @@ export const LiveGame = (props: View<"liveGame">) => {
 			);
 		}
 
-		// A three put up with the clock nearly expired is a last-second heave -
-		// shown from way out (around half court) rather than a normal shot spot.
-		const isHeaveNow = () => getSeconds(boxScore.current.time) <= 1.5;
+		// Is THIS three a heave, and if so how much clock was left when it went up?
+		//
+		// Two things have to be true, and the court used to check neither properly.
+		// The sim decides whether a shot was desperate - it sets `desperation` when
+		// it forced the three (late and trailing) or the possession was rushed to
+		// the buzzer - and it prices that in, cutting a rushed shot's make chance by
+		// how little time the possession had. The court was instead calling ANY
+		// three inside 1.5s a heave, so ordinary end-of-quarter threes got staged as
+		// full-court launches. That is why half-court heaves seemed to go in at a
+		// normal three's rate: most of them were normal threes.
+		//
+		// The clock check stays as well, because `desperation` also covers a forced
+		// three with ten seconds left in a close fourth quarter. That is a real
+		// look, not a launch.
+		const heaveSeconds = (ev: any): number | undefined => {
+			if (ev?.desperation !== true) {
+				return undefined;
+			}
+			const secs = getSeconds(boxScore.current.time);
+			return secs <= HEAVE_MAX_SECONDS ? secs : undefined;
+		};
 
 		// A scored basket shows the running score under the play text, flanked by
 		// both team logos: [away] 102 - 99 [home].
@@ -763,9 +844,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 				if (typeof event.pid !== "number") {
 					return;
 				}
+				const heaveSecs =
+					action.zone === "three" ? heaveSeconds(event) : undefined;
 				const spot =
-					action.zone === "three" && isHeaveNow()
-						? synthHeaveSpot(displayT)
+					heaveSecs !== undefined
+						? synthHeaveSpot(displayT, heaveSecs)
 						: synthShotSpot(displayT, action.zone);
 				lastFga.current = {
 					pid: event.pid,
@@ -845,12 +928,15 @@ export const LiveGame = (props: View<"liveGame">) => {
 			const zone: CourtZone = isFt ? "ft" : (reuse?.zone ?? action.zone);
 			// Field goals reuse the attempt spot so the shooter doesn't teleport
 			// between attempt and result; free throws snap to the line.
+			// The attempt's spot is reused so the shooter doesn't teleport. When
+			// there is nothing to reuse (the result names a different shooter than
+			// the attempt did), fall back to an ordinary spot for the zone: only the
+			// ATTEMPT event carries the sim's desperation flag, so a heave cannot be
+			// identified here, and guessing one from the clock alone is exactly the
+			// mistake this change removes.
 			const spot = isFt
 				? synthShotSpot(shooterT, "ft")
-				: (reuse?.spot ??
-					(zone === "three" && isHeaveNow()
-						? synthHeaveSpot(shooterT)
-						: synthShotSpot(shooterT, zone)));
+				: (reuse?.spot ?? synthShotSpot(shooterT, zone));
 
 			const actors: CourtActor[] = [
 				{
@@ -1133,6 +1219,94 @@ export const LiveGame = (props: View<"liveGame">) => {
 				],
 				text,
 			});
+		} else if (type === "outOfBounds") {
+			// Nobody is credited with knocking it out, so there is no actor to
+			// feature - the ball itself is the play. `event.t` is the team it came
+			// off ("on"), which tells us which end of the floor this happened at:
+			// the ball is always in the OFFENSE's frontcourt.
+			const offenseT: 0 | 1 =
+				event.on === "offense" ? displayT : displayT === 0 ? 1 : 0;
+			const { from, to } = synthOutOfBoundsPath(offenseT);
+			pushScene({
+				kind: "oob",
+				t: offenseT,
+				actors: [],
+				text,
+				// Anchors both teams' formations at the right end (see pushScene).
+				rimX: rimXFor(offenseT),
+				ballFrom: from,
+				ballTo: to,
+			});
+		} else if (STOPPAGE_TYPES.has(type)) {
+			pushDeadBallScene(displayT, text);
+		} else if (type === "foulOut" && typeof event.pid === "number") {
+			// He's done: shown checking out at the scorer's table, which is exactly
+			// where he goes.
+			const spot = scorerTableRow(1, 8)[0]!;
+			pushScene({
+				kind: "sub",
+				t: displayT,
+				actors: [
+					{
+						pid: event.pid,
+						name: playerNameByPid(event.pid),
+						x: spot.x,
+						y: spot.y,
+						role: "out",
+					},
+				],
+				text,
+			});
+		} else if (type === "shootoutTeam" && typeof event.pid === "number") {
+			// A three-point shootout: one player alone at the arc, so no background
+			// 5-on-5 (a half-court set behind him would read as a live possession).
+			const spot = synthShotSpot(displayT, "three");
+			lastFga.current = { pid: event.pid, zone: "three", t: displayT, spot };
+			pushScene(
+				{
+					kind: "attempt",
+					t: displayT,
+					actors: [
+						{
+							pid: event.pid,
+							name: playerNameByPid(event.pid),
+							x: spot.x,
+							y: spot.y,
+							role: "main",
+						},
+					],
+					text,
+					shooterFrom: lastActorPos.current.get(event.pid),
+				},
+				{ solo: true },
+			);
+		} else if (type === "shootoutShot" && typeof event.pid === "number") {
+			// Reuse the spot he stepped to, so he shoots from where he was standing.
+			const reuse =
+				lastFga.current?.pid === event.pid ? lastFga.current : undefined;
+			const spot = reuse?.spot ?? synthShotSpot(displayT, "three");
+			pushScene(
+				{
+					kind: event.made ? "make" : "miss",
+					t: displayT,
+					zone: "three",
+					actors: [
+						{
+							pid: event.pid,
+							name: playerNameByPid(event.pid),
+							x: spot.x,
+							y: spot.y,
+							role: "main",
+						},
+					],
+					text,
+					// No running score here: the scoreboard node reads regulation
+					// points, which a shootout make does not change.
+					ballFrom: spot,
+					rimX: rimXFor(displayT),
+				},
+				{ solo: true },
+			);
 		}
 	};
 

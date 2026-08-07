@@ -179,11 +179,39 @@ Era design language - ${era?.label ?? ""}: ${era?.language ?? ""}
 ${lines.join("\n")}`;
 };
 
-// Most cards are 2.5 x 3.5. The ones that are not - the 1969-71 "tall boys" -
-// are defined by not being, so the shape has to survive into the prompt.
-const shapeOf = (setId: string): string =>
-	cardSetsById.get(setId)?.proportions ??
-	"standard trading card proportions (2.5 x 3.5, portrait)";
+// The physical card, stated the SAME WAY in both prompts and given its own
+// section in each.
+//
+// The two prompts are pasted into an image model separately, so nothing but
+// this keeps them the same size - and a front and a back that are different
+// shapes are not a card. It used to be one clause buried in the first sentence,
+// which lost every argument it had with the back description: eight of the sets
+// in the catalogue have a back that reads horizontally, the model took that as
+// the shape of the card rather than the shape of the layout, and returned a
+// landscape back to go with a portrait front.
+//
+// Size is given three ways - inches, ratio, pixels - because different models
+// listen to different ones.
+//
+// Most cards are 2.5 x 3.5. The ones that are not (the 1969-71 "tall boys") are
+// defined by not being, so their shape has to survive into the prompt too.
+const shapeBlock = (setId: string): string => {
+	const proportions = cardSetsById.get(setId)?.proportions;
+	return `## The card's size and shape
+
+${
+	proportions ??
+	"2.5 x 3.5 inches, PORTRAIT - taller than it is wide, a 5:7 ratio. Render the image at 1024 x 1434 pixels."
+}
+
+The front and the back of this card are generated as two separate images and MUST come out at identical dimensions. Output the full card edge to edge at exactly these proportions: nothing cropped off, no hand holding it, no background scene around it, no packaging, no drop shadow, no angled mockup.`;
+};
+
+// The back's own note. Eight sets in the catalogue describe a back that reads
+// horizontally, and that is true of the real cards - but it describes the
+// LAYOUT printed on the card, not the card, which is the same 2.5 x 3.5
+// portrait rectangle as the front. You turn a real one sideways to read it.
+const BACK_ORIENTATION = `If the back design described below reads horizontally, that is the layout, not the card. The card is still the portrait shape given above; the horizontal layout is printed rotated a quarter turn onto it, exactly as the real card is, which is why you turn one sideways to read the back. Do not output a landscape image - a back that is a different shape from the front is wrong no matter how good it looks.`;
 
 const jerseyBlock = (subject: CardSubject): string =>
 	`## The uniform
@@ -210,7 +238,9 @@ export const buildCardFrontPrompt = (
 			? `\n\n## This particular card: ${variant.label}\n\n${variant.treatment}`
 			: "";
 
-	return `Generate the FRONT of a single basketball trading card, as one image. Output only the card - the full card, edge to edge, nothing cropped off, ${shapeOf(setId)}, no hand holding it, no background scene around it, no packaging.
+	return `Generate the FRONT of a single basketball trading card, as one image. Output only the card, nothing else.
+
+${shapeBlock(setId)}
 
 ${FICTION}
 
@@ -258,9 +288,13 @@ export const buildCardBackPrompt = (
 	}
 	const variant = set.variants.find((v) => v.id === variantId);
 
-	return `Generate the BACK of a single basketball trading card, as one image. Output only the card - the full card, edge to edge, ${shapeOf(setId)}, nothing around it.
+	return `Generate the BACK of a single basketball trading card, as one image. Output only the card, nothing else.
 
-This is the back of a ${set.label}${variant && variant.id !== "base" ? ` ${variant.label}` : ""} card for ${subject.name}, depicting the ${subject.season} season.
+This is the back of a ${set.label}${variant && variant.id !== "base" ? ` ${variant.label}` : ""} card for ${subject.name}, depicting the ${subject.season} season. It has to pair with a front generated separately from the same design.
+
+${shapeBlock(setId)}
+
+${BACK_ORIENTATION}
 
 ${FICTION}
 

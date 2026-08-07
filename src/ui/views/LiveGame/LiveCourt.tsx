@@ -9,6 +9,14 @@ import {
 	type ReactNode,
 } from "react";
 import { courtRandom, makeCourtRng } from "./courtRng.ts";
+import {
+	APRON,
+	COURT_H,
+	COURT_W,
+	degToRad,
+	rand,
+	toCourt,
+} from "./courtSpots.ts";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
@@ -28,10 +36,9 @@ import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 // readability, like broadcast graphics - real teams swap at halftime).
 
 // Full court in feet: 94 x 50. Rails/aprons extend the viewBox around it.
-const COURT_W = 94;
-const COURT_H = 50;
+// (Dimensions and the spot synthesis live in courtSpots.ts - see the imports
+// above - so the geometry can be reasoned about without the SVG.)
 const RAIL_W = 5; // team-colored strip behind each baseline
-const APRON = 2.5; // sideline apron top/bottom
 const VIEW = `${-RAIL_W} ${-APRON} ${COURT_W + 2 * RAIL_W} ${COURT_H + 2 * APRON}`;
 
 const RIM_INSET = 5.25; // rim center distance from baseline
@@ -73,6 +80,12 @@ export type CourtSceneKind =
 	| "foul"
 	| "sub"
 	| "jump"
+	// The ball squirts across a boundary line and dies there.
+	| "oob"
+	// Play is stopped (timeout, end of a period, the final buzzer): the ten on
+	// the floor collapse into a huddle in front of their own bench and the ball
+	// goes dead.
+	| "dead"
 	| "other";
 
 export type CourtScene = {
@@ -108,9 +121,6 @@ export type CourtScene = {
 	arriveMs?: number;
 };
 
-const degToRad = (deg: number) => (deg * Math.PI) / 180;
-const rand = (lo: number, hi: number) => lo + courtRandom() * (hi - lo);
-
 // Lighten (amount > 0) or darken (< 0) a hex color, for plank seam lines.
 const shade = (hex: string, amount: number): string => {
 	const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -128,13 +138,6 @@ const shade = (hex: string, amount: number): string => {
 // The rim each display team attacks (away left, home right).
 export const rimXFor = (t: 0 | 1): number =>
 	t === 0 ? RIM_INSET : COURT_W - RIM_INSET;
-
-// Convert a spot expressed as (depth from the attacked baseline, position
-// across the court) into full-court coordinates for team t.
-const toCourt = (t: 0 | 1, depth: number, across: number) => ({
-	x: t === 0 ? depth : COURT_W - depth,
-	y: across,
-});
 
 // A fictional-but-plausible spot for a shot in a zone, oriented toward team
 // t's rim. Angles fan out from the rim (90° = straight toward half court).
@@ -184,10 +187,6 @@ export const synthShotSpot = (
 		Math.min(46, Math.max(4, across)),
 	);
 };
-
-// A last-second heave: way out from the rim, around or beyond half court.
-export const synthHeaveSpot = (t: 0 | 1): { x: number; y: number } =>
-	toCourt(t, rand(46, 58), 25 + rand(-14, 14));
 
 // A generic spot for non-shot plays (turnovers, fouls...) in team t's
 // frontcourt, away from the paint so faces don't sit on the rim.
@@ -1233,6 +1232,82 @@ const LiveCourt = ({
 			return cleanupAttempt;
 		}
 
+		// Out of bounds: the ball gets away and skips across the nearest line,
+		// bouncing lower each time, then dies a step past it. The whole point of
+		// the beat is the travel - a ball that simply vanished read as nothing
+		// happening at all, which is how this play used to look.
+		if (scene.kind === "oob" && scene.ballFrom && scene.ballTo) {
+			const from = scene.ballFrom;
+			const to = scene.ballTo;
+			if (ring) {
+				ring.setAttribute("stroke", "#f8f9fa");
+				// The pulse marks where it crossed the line, not where it started.
+				ring.setAttribute("cx", String(to.x));
+				ring.setAttribute("cy", String(from.y < to.y ? COURT_H : 0));
+			}
+			ball.style.opacity = "1";
+			const start = performance.now();
+			const step = (now: number) => {
+				const p = Math.min(1, (now - start) / 780);
+				// Three bounces, each flatter than the last, as it rolls out.
+				const hops = Math.abs(Math.sin(p * Math.PI * 3));
+				placeBall(
+					from.x + (to.x - from.x) * p,
+					from.y + (to.y - from.y) * p,
+					1.9 * hops * (1 - p * 0.7),
+				);
+				if (ring) {
+					// The line flashes as the ball reaches it, not before.
+					const rp = Math.max(0, (p - 0.55) / 0.45);
+					ring.setAttribute("r", String(1 + 5 * rp));
+					ring.style.opacity = String(0.7 * rp * (1 - rp));
+				}
+				// Dead the moment it is over the line.
+				ball.style.opacity = p < 0.88 ? "1" : String(1 - (p - 0.88) / 0.12);
+				if (p < 1) {
+					rafRef.current = requestAnimationFrame(step);
+				} else {
+					hideBall();
+				}
+			};
+			rafRef.current = requestAnimationFrame(step);
+			return () => {
+				if (rafRef.current !== undefined) {
+					cancelAnimationFrame(rafRef.current);
+				}
+			};
+		}
+
+		// Play stopped. The ball is dead - it is handed to an official at the spot
+		// and stays there - while the players walk off to their huddles (the body
+		// glide moves them; nothing to animate here but the ball settling).
+		if (scene.kind === "dead") {
+			const at = scene.ballFrom ?? { x: COURT_W / 2, y: COURT_H / 2 };
+			if (ring) {
+				ring.style.opacity = "0";
+			}
+			ball.style.opacity = "1";
+			const start = performance.now();
+			const step = (now: number) => {
+				const p = Math.min(1, (now - start) / 520);
+				// One last settling bounce, then it just sits.
+				placeBall(
+					at.x,
+					at.y,
+					1.2 * Math.abs(Math.sin(p * Math.PI * 2)) * (1 - p),
+				);
+				if (p < 1) {
+					rafRef.current = requestAnimationFrame(step);
+				}
+			};
+			rafRef.current = requestAnimationFrame(step);
+			return () => {
+				if (rafRef.current !== undefined) {
+					cancelAnimationFrame(rafRef.current);
+				}
+			};
+		}
+
 		// Non-shot scenes get punchy, readable feedback (the small pulse-only
 		// version read as almost nothing).
 		if (!isShot) {
@@ -1856,16 +1931,24 @@ const LiveCourt = ({
 	const actorsForText = (scene?.actors ?? []).filter(
 		(a) => a.role !== "onCourt",
 	);
+	// Some plays credit nobody - the ball goes out off a scrum, a period ends -
+	// so there is no cluster to hug. Those anchor on the ball instead, which IS
+	// the action; only if there is no ball either does the text fall back to the
+	// bottom of the floor.
+	const ballAnchor =
+		actorsForText.length === 0 ? (scene?.ballTo ?? scene?.ballFrom) : undefined;
 	const clusterMinX = actorsForText.length
 		? Math.min(...actorsForText.map((a) => a.x))
-		: COURT_W / 2;
+		: (ballAnchor?.x ?? COURT_W / 2);
 	const clusterMaxX = actorsForText.length
 		? Math.max(...actorsForText.map((a) => a.x))
-		: COURT_W / 2;
+		: (ballAnchor?.x ?? COURT_W / 2);
 	const clusterMidX = (clusterMinX + clusterMaxX) / 2;
 	const clusterMidY = actorsForText.length
 		? actorsForText.reduce((s, a) => s + a.y, 0) / actorsForText.length
-		: COURT_H - 6;
+		: // Kept on the floor: the ball can die a couple of feet past the sideline,
+			// and the text must not follow it off the court.
+			Math.min(COURT_H - 6, Math.max(6, ballAnchor?.y ?? COURT_H - 6));
 	const bubbleGoesRight = clusterMidX < COURT_W / 2;
 	// Start past the last face on that side (+ a face-width gap) so nobody's
 	// covered.

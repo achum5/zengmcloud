@@ -1,0 +1,172 @@
+import { assert, beforeEach, describe, test } from "vitest";
+import { clearCourtRng, seedCourtRng } from "./courtRng.ts";
+import {
+	APRON,
+	benchHuddle,
+	COURT_H,
+	COURT_W,
+	HEAVE_MAX_SECONDS,
+	synthHeaveSpot,
+	synthOutOfBoundsPath,
+} from "./courtSpots.ts";
+
+// Depth from the rim the team is attacking, which is what "how far out was
+// that shot from" means regardless of which end of the floor it happened at.
+const depthOf = (t: 0 | 1, spot: { x: number; y: number }) =>
+	t === 0 ? spot.x : COURT_W - spot.x;
+
+const sample = (n: number, f: (i: number) => number): number[] => {
+	const out: number[] = [];
+	for (let i = 0; i < n; i++) {
+		seedCourtRng(`sample|${i}`);
+		out.push(f(i));
+	}
+	return out;
+};
+
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+beforeEach(() => {
+	clearCourtRng();
+});
+
+describe("synthHeaveSpot", () => {
+	// THE COMPLAINT: "wayyyy too many half court heaves at end of quarters. They
+	// go in at the same rate as normal 3s." The court drew EVERY three launched
+	// inside 1.5s from beyond half court - including ordinary end-of-quarter
+	// looks, which go in at an ordinary three's rate. Two things fix that: the
+	// caller now only asks for a heave when the SIM flagged the shot desperate,
+	// and how far out the launch comes from now scales with the clock.
+	test("less time on the clock means a deeper launch", () => {
+		for (const t of [0, 1] as const) {
+			const late = mean(sample(40, () => depthOf(t, synthHeaveSpot(t, 0.1))));
+			const mid = mean(sample(40, () => depthOf(t, synthHeaveSpot(t, 0.8))));
+			const early = mean(sample(40, () => depthOf(t, synthHeaveSpot(t, 1.5))));
+			assert.ok(late > mid, `${late} > ${mid}`);
+			assert.ok(mid > early, `${mid} > ${early}`);
+		}
+	});
+
+	test("a tenth of a second is a genuine half-court heave", () => {
+		// Half court is 47ft from the baseline. With no time to do anything but
+		// turn and throw it, that's where it comes from.
+		for (const t of [0, 1] as const) {
+			const depths = sample(40, () => depthOf(t, synthHeaveSpot(t, 0.1)));
+			assert.ok(
+				Math.min(...depths) > 44,
+				`nothing closer than 44ft, got ${Math.min(...depths)}`,
+			);
+		}
+	});
+
+	test("the top of the window is a deep three, not a heave", () => {
+		// This is the case that was being drawn from half court and going in. With
+		// a second and a half a player can get to the logo and shoot it - deep,
+		// but a shot, and it has to LOOK like a shot when it drops.
+		for (const t of [0, 1] as const) {
+			const depths = sample(40, () =>
+				depthOf(t, synthHeaveSpot(t, HEAVE_MAX_SECONDS)),
+			);
+			assert.ok(
+				Math.max(...depths) < 40,
+				`nothing past 40ft, got ${Math.max(...depths)}`,
+			);
+			// Still clearly behind the arc (23.75ft), so it never reads as a normal
+			// catch-and-shoot three either.
+			assert.ok(
+				Math.min(...depths) > 25,
+				`nothing inside 25ft, got ${Math.min(...depths)}`,
+			);
+		}
+	});
+
+	test("a shot from the deepest launch stays on the floor", () => {
+		// The spot carries a face and a name tag, so it must not end up off the
+		// side of the graphic.
+		for (const t of [0, 1] as const) {
+			for (const secs of [0, 0.4, 1, HEAVE_MAX_SECONDS]) {
+				const ys = sample(30, () => synthHeaveSpot(t, secs).y);
+				assert.ok(Math.min(...ys) > 2, `y=${Math.min(...ys)} at ${secs}s`);
+				assert.ok(
+					Math.max(...ys) < COURT_H - 2,
+					`y=${Math.max(...ys)} at ${secs}s`,
+				);
+			}
+		}
+	});
+});
+
+describe("synthOutOfBoundsPath", () => {
+	// Out of bounds used to have no court animation at all: the text changed and
+	// the floor sat on whatever play came before it. The travel IS the play here
+	// - the ball has to be seen crossing a line.
+	test("the ball ends up past a sideline, and the near one", () => {
+		for (const t of [0, 1] as const) {
+			for (let i = 0; i < 40; i++) {
+				seedCourtRng(`oob|${t}|${i}`);
+				const { from, to } = synthOutOfBoundsPath(t);
+				assert.ok(
+					from.y > 0 && from.y < COURT_H,
+					`starts on the floor, got y=${from.y}`,
+				);
+				const outTop = to.y < 0;
+				const outBottom = to.y > COURT_H;
+				assert.ok(outTop || outBottom, `ends out of bounds, got y=${to.y}`);
+				assert.strictEqual(
+					outTop,
+					from.y < COURT_H / 2,
+					"takes the shorter way out",
+				);
+			}
+		}
+	});
+
+	test("it dies inside the frame, not off the edge of it", () => {
+		for (const t of [0, 1] as const) {
+			for (let i = 0; i < 40; i++) {
+				seedCourtRng(`oob-frame|${t}|${i}`);
+				const { to } = synthOutOfBoundsPath(t);
+				assert.ok(to.y >= -APRON, `y=${to.y} above the frame`);
+				assert.ok(to.y <= COURT_H + APRON, `y=${to.y} below the frame`);
+				assert.ok(to.x >= 0 && to.x <= COURT_W, `x=${to.x} off the ends`);
+			}
+		}
+	});
+
+	test("the ball goes out at the end the offense is attacking", () => {
+		// The formation behind the play is anchored on this, so a ball dying in the
+		// wrong backcourt would leave ten players at the other end of the floor.
+		for (let i = 0; i < 40; i++) {
+			seedCourtRng(`oob-end|${i}`);
+			assert.ok(synthOutOfBoundsPath(0).from.x < COURT_W / 2);
+			seedCourtRng(`oob-end|${i}`);
+			assert.ok(synthOutOfBoundsPath(1).from.x > COURT_W / 2);
+		}
+	});
+});
+
+describe("benchHuddle", () => {
+	test("each team huddles on its own side of the scorer's table", () => {
+		const away = benchHuddle(0, 5);
+		const home = benchHuddle(1, 5);
+		assert.ok(Math.max(...away.map((s) => s.x)) < COURT_W / 2);
+		assert.ok(Math.min(...home.map((s) => s.x)) > COURT_W / 2);
+	});
+
+	test("nobody stands off the court", () => {
+		for (const t of [0, 1] as const) {
+			for (const spot of benchHuddle(t, 5)) {
+				assert.ok(spot.x > 4 && spot.x < COURT_W - 4, `x=${spot.x}`);
+				assert.ok(spot.y > 4 && spot.y < COURT_H - 4, `y=${spot.y}`);
+			}
+		}
+	});
+
+	test("a short-handed lineup still gets a huddle", () => {
+		// inGame can be under five (an injury mid-play), and the caller indexes
+		// straight into this array.
+		for (const n of [0, 1, 2, 5]) {
+			assert.strictEqual(benchHuddle(0, n).length, n);
+		}
+	});
+});
