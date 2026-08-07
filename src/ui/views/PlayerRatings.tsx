@@ -10,6 +10,7 @@ import {
 	wrappedContractExp,
 } from "../components/contract.tsx";
 import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels.tsx";
+import { contractValueCell } from "../util/contractValueCell.tsx";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { bySport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
@@ -66,6 +67,7 @@ const PlayerRatings = ({
 		"Age",
 		"Contract",
 		"Exp",
+		"Contract Value",
 		"Ovr",
 		"Pot",
 		...ratings.map((rating) => `rating:${rating}`),
@@ -150,6 +152,7 @@ const PlayerRatings = ({
 				p.contract.amount > 0 && season === currentSeason
 					? wrappedContractExp(p)
 					: null,
+				contractValueCell(p.contractValue),
 				showRatings ? p.ratings.ovr : null,
 				showRatings ? p.ratings.pot : null,
 				...ratings.map((rating) => (showRatings ? p.ratings[rating] : null)),

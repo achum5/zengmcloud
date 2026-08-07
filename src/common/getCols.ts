@@ -3091,6 +3091,12 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
+	"Contract Value": {
+		desc: "Contract Value: what this season's production was worth on the open market, minus what the player is actually paid. Positive is a bargain.",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+		title: "Value",
+	},
 	Count: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",

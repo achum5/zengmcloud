@@ -14,6 +14,10 @@ import type {
 	ViewInput,
 } from "../../common/types.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
+import {
+	loadContractValueContext,
+	valueForPlayer,
+} from "../util/contractValues.ts";
 import { buffOvrDH } from "./depth.ts";
 import { actualPhase } from "../util/actualPhase.ts";
 import { season } from "../core/index.ts";
@@ -284,12 +288,21 @@ const updatePlayers = async (
 			await getPlayers(
 				inputs.season,
 				inputs.abbrev,
-				[],
+				["salary"],
 				[...ratings, ...extraRatings],
-				[],
+				["vorp", "gp"],
 				inputs.tid,
 			),
 		);
+
+		// Priced against the whole league, deliberately loaded separately rather
+		// than reusing the rows above: those have already been filtered to a team
+		// or the playoff field, and calibrating off a subset would re-price wins
+		// against that subset's own payroll.
+		const contractValueContext = await loadContractValueContext(inputs.season);
+		for (const p of players) {
+			p.contractValue = valueForPlayer(p, contractValueContext)?.surplus;
+		}
 
 		return {
 			abbrev: inputs.abbrev,

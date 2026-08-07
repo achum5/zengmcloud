@@ -38,6 +38,7 @@ import { BarGraph } from "./BarGraph.tsx";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
 import { SalaryCapInfo } from "../../components/SalaryCapInfo.tsx";
 import { getAdjustedTicketPrice } from "../../../common/getAdjustedTicketPrice.ts";
+import { contractValueCell } from "../../util/contractValueCell.tsx";
 
 const paddingLeft85 = { paddingLeft: 85 };
 
@@ -996,7 +997,7 @@ const TeamFinances = ({
 				/>
 			),
 		},
-		...getCols(["Pos", "Name", "Cap%"]),
+		...getCols(["Pos", "Name", "Cap%", "Contract Value"]),
 		...salariesSeasons.map(
 			(season): Col => ({
 				title: String(season),
@@ -1055,6 +1056,7 @@ const TeamFinances = ({
 				lastName: p.lastName,
 			}),
 			p.capPct.toFixed(1),
+			contractValueCell(p.contractValue),
 		];
 
 		// Loop through the salaries for the next five years for this player.
@@ -1167,6 +1169,10 @@ const TeamFinances = ({
 				sortValue: dp.capPct,
 				searchValue: dp.capPct.toFixed(1),
 			},
+			// Contract Value: a pick hasn't produced anything yet, so there is
+			// nothing to price. Kept as a cell so this row still lines up with the
+			// player rows above it.
+			null,
 		];
 
 		for (let i = 0; i < salariesSeasons.length; i++) {

@@ -11,6 +11,7 @@ import { expandFieldingStats } from "../util/expandFieldingStats.baseball.ts";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { PlusMinus } from "../components/PlusMinus.tsx";
 import { useLocal } from "../util/local.ts";
+import { contractValueCell } from "../util/contractValueCell.tsx";
 
 export const formatStatGameHigh = (
 	ps: any,
@@ -67,6 +68,7 @@ const PlayerStats = ({
 	players,
 	playoffs,
 	season,
+	showContractValue,
 	statType,
 	stats,
 	superCols,
@@ -91,6 +93,11 @@ const PlayerStats = ({
 		"Age",
 		"Experience",
 		"Team",
+		// Inserted after the leading block on purpose: the football sortCol
+		// indices below count from the front, and the shotLocations titles count
+		// from the back. This column is basketball-only and never present for
+		// season === "all", so it can't disturb either.
+		...(showContractValue ? ["Contract Value"] : []),
 		...(season === "all" ? ["Season"] : []),
 		...stats.map((stat) =>
 			stat === "pos"
@@ -217,6 +224,8 @@ const PlayerStats = ({
 				>
 					{actualAbbrev}
 				</a>,
+
+				...(showContractValue ? [contractValueCell(p.contractValue)] : []),
 
 				...(season === "all" ? [p.stats.season] : []),
 

@@ -8,6 +8,10 @@ import type {
 } from "../../common/types.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { getBestPos } from "../core/player/checkJerseyNumberRetirement.ts";
+import {
+	loadContractValueContext,
+	valueForPlayer,
+} from "../util/contractValues.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { getActivePlayoffTids } from "./playerRatings.ts";
 
@@ -47,6 +51,13 @@ const updatePlayers = async (
 		}
 
 		const stats = statsTable.stats;
+
+		// Contract value is a single-season question: this season's production
+		// against this season's salary. "career" and "all" have no one salary to
+		// price against, so the column is left off there entirely.
+		const showContractValue =
+			isSport("basketball") && typeof inputs.season === "number";
+
 		let actualStats;
 		if (inputs.season === "career") {
 			actualStats = [
@@ -60,6 +71,11 @@ const updatePlayers = async (
 					hockey: "ps",
 				}),
 			];
+		} else if (showContractValue) {
+			// vorp feeds the Value column; it is fetched even on stat tables that
+			// don't display it, and adding it here rather than to `stats` keeps it
+			// out of the table's own columns.
+			actualStats = stats.includes("vorp") ? stats : [...stats, "vorp"];
 		} else {
 			actualStats = stats;
 		}
@@ -149,6 +165,7 @@ const updatePlayers = async (
 				"hof",
 				"watch",
 				"awards",
+				...(showContractValue ? (["salary"] as const) : []),
 			],
 			ratings: ["skills", "pos", "season"],
 			stats: ["abbrev", "tid", "jerseyNumber", "season", ...actualStats],
@@ -232,6 +249,16 @@ const updatePlayers = async (
 
 		players = addFirstNameShort(players);
 
+		if (showContractValue) {
+			// Priced against the whole league, not the rows above - those may have
+			// been filtered to one team, and calibrating off a single payroll
+			// would make a cheap roster look like a roster full of bargains.
+			const context = await loadContractValueContext(inputs.season as number);
+			for (const p of players) {
+				p.contractValue = valueForPlayer(p, context)?.surplus;
+			}
+		}
+
 		for (const p of players) {
 			// Years of experience for this row: as of the row's season (single
 			// season or "all"), or career total for the career view.
@@ -269,6 +296,7 @@ const updatePlayers = async (
 			season: inputs.season,
 			statType: inputs.statType,
 			playoffs: inputs.playoffs,
+			showContractValue,
 			stats,
 			superCols,
 		};

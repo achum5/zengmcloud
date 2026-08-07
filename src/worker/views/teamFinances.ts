@@ -14,6 +14,10 @@ import {
 	projectNextContract,
 } from "../util/projectedContracts.ts";
 import { processDraftPicks } from "./draftPicks.ts";
+import {
+	loadContractValueContext,
+	valueForPlayer,
+} from "../util/contractValues.ts";
 
 const updateTeamFinances = async (
 	inputs: ViewInput<"teamFinances">,
@@ -74,6 +78,20 @@ const updateTeamFinances = async (
 		);
 		const lastSeasonShown = season + numSeasons - 1;
 
+		// How much of this season's production each contract has bought so far,
+		// priced against the rest of the league (see util/contractValues.ts). This
+		// page only has one team loaded, so unlike the player tables it has to go
+		// and read the league to calibrate.
+		const contractValueContext = await loadContractValueContext(
+			g.get("season"),
+		);
+		const currentSeasonStats = (pid: number) => {
+			const p = rosterByPid.get(pid);
+			return p?.stats.findLast(
+				(row: any) => row.season === g.get("season") && !row.playoffs,
+			);
+		};
+
 		// Convert contract objects into table rows
 		const contractTotals = Array(numSeasons).fill(0);
 		const contracts = addFirstNameShort(
@@ -117,6 +135,19 @@ const updateTeamFinances = async (
 					amounts,
 					amountsProjected: projected,
 					capPct: (100 * contract.amount) / g.get("salaryCap"),
+					// Released players are excluded on purpose: dead money bought no
+					// production at all, so "was it good value" is not a question
+					// with an answer, and a big negative would just be noise.
+					contractValue: contract.released
+						? undefined
+						: valueForPlayer(
+								{
+									pid: contract.pid,
+									salary: contract.amount / 1000,
+									stats: currentSeasonStats(contract.pid),
+								},
+								contractValueContext,
+							)?.surplus,
 				};
 			}),
 		);
