@@ -1301,7 +1301,23 @@ const deleteScheduledEvents = async (type: string) => {
 // must already exist. unretirePlayer's info is augmented with a name/skills for
 // display, so only the stored { pid } is persisted back.
 const updateScheduledEvent = async (event: ScheduledEvent) => {
-	const existing = await idb.cache.scheduledEvents.get(event.id);
+	// The cache holds ONLY the current season's scheduled events - its loader
+	// reads them through the `season` index for the season being filled - and a
+	// scheduled event is by definition in the future. So looking one up there
+	// found nothing for essentially every row the page lists, and editing any of
+	// them failed with "Scheduled event not found".
+	//
+	// The page's own list comes from disk (views/scheduledEvents.ts uses
+	// getCopies), which is why every event was visible but none was editable.
+	// Read the cache first, for a row created this session that has not been
+	// flushed yet, then fall back to disk. Every other write path in this file
+	// already reads from disk for exactly this reason.
+	//
+	// The WRITE below needs no such change: a put with an explicit primary key
+	// marks the record dirty and flushes to disk whether or not it was cached.
+	const existing =
+		(await idb.cache.scheduledEvents.get(event.id)) ??
+		(await idb.league.get("scheduledEvents", event.id));
 	if (!existing) {
 		throw new Error("Scheduled event not found");
 	}

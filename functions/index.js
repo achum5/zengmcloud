@@ -46,11 +46,72 @@ exports.sendLeagueNotification = onDocumentCreated(
 			? notification.targetTids
 			: null;
 
+		// ONE MEMBER DOC PER TOKEN.
+		//
+		// A member doc is keyed by the device's anonymous Firebase uid, but the
+		// FCM token belongs to the browser's push subscription, and the two have
+		// nothing to do with each other. Lose the auth persistence - clear site
+		// data, reinstall the home-screen app, or just let iOS evict the storage
+		// of a site you have not opened in a week - and the next registration
+		// writes the SAME token under a NEW uid while the old doc keeps it.
+		//
+		// Nothing ever cleaned that up, so the token went into the send list
+		// twice and the phone got every notification twice. The same stale doc
+		// also defeats the author skip below: the acting device is only one of
+		// its two uids, so it gets pushed its own change.
+		//
+		// Group by token, keep the most recently registered doc, and clear the
+		// token off the rest. Only when every doc in the group can be ordered -
+		// a missing updatedAt means we cannot tell which is current, and a wrong
+		// guess silently turns someone's notifications off.
+		const byToken = new Map();
+		membersSnapshot.forEach((doc) => {
+			const member = doc.data();
+			if (!member.fcmToken) {
+				return;
+			}
+			const group = byToken.get(member.fcmToken) ?? [];
+			group.push({ doc, member });
+			byToken.set(member.fcmToken, group);
+		});
+
+		const supersededRefs = new Set();
+		const dedupeUpdates = [];
+		for (const group of byToken.values()) {
+			if (group.length < 2) {
+				continue;
+			}
+			const stamped = group.filter(
+				(entry) => typeof entry.member.updatedAt?.toMillis === "function",
+			);
+			if (stamped.length !== group.length) {
+				continue;
+			}
+			stamped.sort(
+				(a, b) => b.member.updatedAt.toMillis() - a.member.updatedAt.toMillis(),
+			);
+			for (const entry of stamped.slice(1)) {
+				supersededRefs.add(entry.doc.ref.path);
+				dedupeUpdates.push(
+					entry.doc.ref
+						.update({ fcmToken: FieldValue.delete() })
+						.catch(() => undefined),
+				);
+			}
+		}
+		if (dedupeUpdates.length > 0) {
+			await Promise.all(dedupeUpdates);
+		}
+
 		const tokens = [];
 		const tokenToRef = new Map();
 		membersSnapshot.forEach((doc) => {
 			const member = doc.data();
 			if (!member.fcmToken) {
+				return;
+			}
+			// Just had its token cleared above as a stale duplicate.
+			if (supersededRefs.has(doc.ref.path)) {
 				return;
 			}
 			// Don't notify the person who made the change.
@@ -60,6 +121,11 @@ exports.sendLeagueNotification = onDocumentCreated(
 			// Team targeting (unused in v1, but supported): only ping the managers
 			// of the affected teams.
 			if (targetTids && !targetTids.includes(member.tid)) {
+				return;
+			}
+			// Belt and braces: even if the cleanup above declined to pick a winner,
+			// never put the same token in one send twice.
+			if (tokenToRef.has(member.fcmToken)) {
 				return;
 			}
 			tokens.push(member.fcmToken);
