@@ -58,17 +58,30 @@ const FICTION = `THIS IS A FICTIONAL LEAGUE. The player and team names may coinc
 
 THE ONE EXCEPTION is the uniform. For the jersey, DO use your real-world memory of what that franchise actually wore in that season, as described below.`;
 
+// The attached screenshot is the whole description of the face.
+//
+// This used to also dump the raw faces.js FaceConfig as JSON, on the theory
+// that it would settle anything the screenshot left ambiguous. It settles
+// nothing: an image model cannot run the renderer, so a wall of numbers like
+// eyeLine and fatness is not something it can turn into a face - it just
+// crowds out the instructions that do work. The picture is the spec.
+//
+// And it is a spec for WHO HE IS, not for what his face is doing. It used to
+// say "match it exactly", which got taken literally: the headshot's blank
+// stare and slack open mouth were copied straight onto a player mid-drive,
+// which looks wrong in a way nothing else on the card can rescue. Identity is
+// fixed; expression and head angle belong to the action.
 const faceBlock = (subject: CardSubject): string => {
 	if (!subject.face) {
 		return "";
 	}
-	return `\n\n## The player's face\n\nA screenshot of this player's face is attached - match it exactly. It is a faces.js cartoon avatar, and the card must render him in that same flat vector cartoon style: clean shapes, flat fills, no photorealistic skin or hair texture.
+	return `\n\n## The player's face\n\nA screenshot of this player is attached. It is a HEADSHOT - a straight-on, neutral, unposed reference, the way a roster photo is.
 
-This is the exact faces.js FaceConfig behind that screenshot. Where the screenshot is ambiguous, read the answer off this instead:
+Use it for WHO HE IS, and match these exactly: skin tone, face shape, hair (style, colour, hairline), facial hair, eyebrows, eye shape and colour, and any accessories he is wearing.
 
-\`\`\`json
-${JSON.stringify(subject.face, null, 1)}
-\`\`\``;
+Do NOT copy the expression, the mouth, or the head angle from it. Those belong to the action, not to the reference - a blank stare and a slack open mouth on a player driving to the rim is the single thing that most makes one of these look wrong. Give him the face the moment calls for: eyes on the play, jaw set, mouth closed or open with effort, head turned wherever he is actually looking. He should be recognisably the same person and visibly in the middle of playing.
+
+He is a faces.js cartoon avatar, so render him in that same flat vector cartoon style: clean shapes, flat fills, no photorealistic skin or hair texture.`;
 };
 
 const statTable = (subject: CardSubject): string => {

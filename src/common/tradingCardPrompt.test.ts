@@ -182,16 +182,55 @@ describe("the front prompt", () => {
 		assert.ok(prompt.includes("THE ONE EXCEPTION is the uniform"));
 	});
 
-	test("embeds the face config when there is one", () => {
+	test("points at the attached screenshot when there is a face", () => {
 		const withFace = subject({ face: { fatness: 0.4 } as any });
 		const prompt = buildCardFrontPrompt("prizm", "silver", withFace);
-		assert.ok(prompt.includes("faces.js FaceConfig"));
-		assert.ok(prompt.includes('"fatness"'));
+		assert.ok(prompt.includes("A screenshot of this player is attached"));
+		assert.ok(prompt.includes("flat vector cartoon style"));
+	});
+
+	// The reference is a roster headshot. Told to "match it exactly", the model
+	// copied its blank stare and slack open mouth onto a player mid-drive - the
+	// likeness was right and the card was still wrong. Identity is fixed;
+	// expression and head angle belong to the action.
+	test("the headshot fixes the likeness, not the expression", () => {
+		const withFace = subject({ face: { fatness: 0.4 } as any });
+		const prompt = buildCardFrontPrompt("prizm", "silver", withFace);
+		assert.ok(prompt.includes("HEADSHOT"), "says what the reference is");
+		assert.ok(
+			prompt.includes(
+				"Do NOT copy the expression, the mouth, or the head angle",
+			),
+			"frees the expression",
+		);
+		assert.ok(
+			prompt.includes("skin tone, face shape, hair"),
+			"still pins the likeness",
+		);
+		assert.ok(
+			!prompt.includes("match it exactly"),
+			"the instruction that caused it is gone",
+		);
+	});
+
+	// The FaceConfig used to be dumped into the prompt as JSON to disambiguate
+	// the screenshot. An image model cannot run the faces.js renderer, so those
+	// numbers describe nothing to it - they only push the instructions that do
+	// work further down a long prompt.
+	test("never dumps the raw face config", () => {
+		const withFace = subject({
+			face: { fatness: 0.4, eyeLine: 0.12, hairBg: "none" } as any,
+		});
+		const prompt = buildCardFrontPrompt("prizm", "silver", withFace);
+		assert.ok(!prompt.includes("FaceConfig"), "no mention of the config");
+		assert.ok(!prompt.includes('"fatness"'), "no serialized fields");
+		assert.ok(!prompt.includes("eyeLine"), "no serialized fields");
+		assert.ok(!prompt.includes("```json"), "no json block at all");
 	});
 
 	test("omits the face section entirely when there is no face", () => {
 		const prompt = buildCardFrontPrompt("prizm", "silver", subject());
-		assert.ok(!prompt.includes("faces.js FaceConfig"));
+		assert.ok(!prompt.includes("## The player's face"));
 	});
 });
 
