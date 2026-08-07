@@ -164,7 +164,6 @@ export class SyncEngineV2 {
 	localName = "You";
 
 	private code: string | undefined;
-	private isHostFlag: boolean;
 	private stopped = false;
 
 	private authority: Authority | undefined;
@@ -274,6 +273,9 @@ export class SyncEngineV2 {
 	constructor(
 		transport: SyncTransport,
 		options: {
+			// Accepted and ignored: connect decides whether to claim authority and
+			// calls claimAuthority() itself. Keeping it as engine state was how
+			// "am I the simmer?" got two answers that could disagree.
 			isHost?: boolean;
 			code?: string;
 			onAuthorityChange?: (a: Authority | undefined) => void;
@@ -294,7 +296,6 @@ export class SyncEngineV2 {
 		} = {},
 	) {
 		this.transport = transport;
-		this.isHostFlag = options.isHost ?? false;
 		this.code = options.code;
 		this.onAuthorityChange = options.onAuthorityChange;
 		this.onReadyChange = options.onReadyChange;
@@ -598,8 +599,22 @@ export class SyncEngineV2 {
 		return this.authority;
 	}
 
+	// "Host" means the device currently in charge of simming, read live from the
+	// shared authority doc - NOT the isHost flag this session was constructed
+	// with.
+	//
+	// The flag only ever answers "should I claim authority on connect", and it
+	// is set once and never cleared. Its one consumer is the notification
+	// builder, which stays silent about a sim unless the device that ran it is
+	// the simmer (otherwise a room gets the same result announced twice). Read
+	// off the flag, that silence landed on the WRONG device: join a room as a
+	// follower, press "Sim here" (which claims authority in memory but does not
+	// rewrite the persisted session), then reopen the app - the authority doc
+	// still holds this device's uid, so it is genuinely the simmer and the Play
+	// menu works, but the flag reconstructed as false. Every sim it ran went out
+	// to everyone's league with no notification to anyone.
 	getIsHost(): boolean {
-		return this.isHostFlag;
+		return this.isAuthority();
 	}
 
 	async claimAuthority() {
@@ -607,7 +622,6 @@ export class SyncEngineV2 {
 			this.transport.clientId,
 			this.localName,
 		);
-		this.isHostFlag = true;
 	}
 
 	markRoomBusy(position?: unknown): void {

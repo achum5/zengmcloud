@@ -674,6 +674,57 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// THE SILENT SIMMER: join a room as a follower, press "Sim here", close the
+	// app, reopen it. Claiming authority writes the shared doc but does not
+	// rewrite the persisted session, so the engine reconstructs with
+	// isHost: false - while the authority doc still holds this device's uid
+	// (it is the Firebase anonymous uid, stable across sessions). The device IS
+	// the simmer: the Play menu works and its sims reach everyone. But the
+	// notification builder asks getIsHost() to decide whether to announce a sim,
+	// and reading a construction-time flag instead of the live authority made it
+	// answer "no". Every sim went out with no notification to anybody.
+	test("the simmer announces its sims even when the session was built as a follower", async () => {
+		const room = new Room();
+		initRoom(room);
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport, { isHost: false });
+		engine.start();
+
+		// However this device came to hold authority - claimed last session, and
+		// the doc outlived it.
+		room.setAuthority({ holderId: "A", holderName: "Alex" });
+
+		assert.strictEqual(engine.isAuthority(), true);
+		assert.strictEqual(
+			engine.getIsHost(),
+			true,
+			"the device in charge of simming must report as the host, or its sims announce nothing",
+		);
+		engine.stop();
+	});
+
+	test("a device that is not the simmer does not claim to be", async () => {
+		// The other direction of the same divergence: a flag set once and never
+		// cleared would keep claiming host after someone else took over, and the
+		// room would get the same sim announced twice.
+		const room = new Room();
+		initRoom(room);
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport, { isHost: true });
+		engine.start();
+		await engine.claimAuthority();
+		assert.strictEqual(engine.getIsHost(), true);
+
+		// Someone else presses "Sim here".
+		room.setAuthority({ holderId: "B", holderName: "Dominic" });
+		assert.strictEqual(
+			engine.getIsHost(),
+			false,
+			"handing over must silence this device, or every sim is announced twice",
+		);
+		engine.stop();
+	});
+
 	test("notifications fire only when the version actually committed", async () => {
 		const room = new Room();
 		initRoom(room);
