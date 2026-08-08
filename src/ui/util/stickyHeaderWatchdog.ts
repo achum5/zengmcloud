@@ -33,9 +33,11 @@ const HEADER_SELECTOR = ".navbar-border.sticky-top";
 // Sub-pixel rounding and zoom mean the rect is never exactly on the line.
 const TOLERANCE_PX = 2;
 
-// How long after a resume to keep watching. Layout settles late on a resume -
-// the first frame back can be measured against the pre-suspend viewport - so a
-// single check right away misses it.
+// How long after a resume to keep running the TIMED checks. Layout settles late
+// on a resume - the first frame back can be measured against the pre-suspend
+// viewport - so a single check right away misses it.
+//
+// This deliberately does NOT bound the scroll watch; see armUntilJudged.
 const WATCH_MS = 6000;
 
 // Extra checks after a resume, in ms, on top of the animation-frame one. Cheap
@@ -181,16 +183,74 @@ const check = () => {
 	});
 };
 
-// Watch for a while after a resume: on the next frame, at a few fixed delays,
-// and on any scroll (the only way to catch a resume that happened at the top of
-// the page, where a broken header is indistinguishable from a working one until
-// you move).
+// WHY THE SCROLL WATCH IS NOT TIME-BOUNDED.
+//
+// A detached header is UNDETECTABLE at the top of the document - stuck and
+// unstuck sit in exactly the same place there, and headerIsDetached says so.
+// Scrolling is therefore the only event that can ever answer the question.
+//
+// The watch used to be torn down a few seconds after the resume, scroll
+// listener and all. So the common case went: come back to the app, look at the
+// screen for longer than that, scroll - and the header was broken with nothing
+// left watching. It stayed broken until the next resume, which is exactly the
+// "it's unstuck basically every time I come back" report.
+//
+// So the timed checks still stop (they are for the resume itself, and layout
+// has certainly settled by then), but the scroll watch stays armed until a
+// scroll actually PRODUCES an answer, however long that takes. It then disarms:
+// one rect read per resume, not one per scroll event.
+export type ScrollDecision = "judge" | "keep-waiting" | "stand-down";
+
+export const scrollDecision = ({
+	armed,
+	scrollY,
+}: {
+	armed: boolean;
+	scrollY: number;
+}): ScrollDecision => {
+	if (!armed) {
+		return "stand-down";
+	}
+	// Still at the top: nothing to measure against, so stay armed rather than
+	// burning the one check on a scroll position that cannot answer.
+	if (!Number.isFinite(scrollY) || scrollY <= TOLERANCE_PX) {
+		return "keep-waiting";
+	}
+	return "judge";
+};
+
+let armed = false;
+let onScroll: (() => void) | undefined;
+
+const ensureScrollWatch = () => {
+	if (onScroll) {
+		return;
+	}
+	onScroll = () => {
+		const decision = scrollDecision({ armed, scrollY: window.scrollY });
+		if (decision === "keep-waiting") {
+			return;
+		}
+		if (decision === "judge") {
+			armed = false;
+			check();
+		}
+		// Either way there is nothing left to watch for until the next resume.
+		if (onScroll) {
+			window.removeEventListener("scroll", onScroll);
+			onScroll = undefined;
+		}
+	};
+	window.addEventListener("scroll", onScroll, { passive: true });
+};
+
 const watch = () => {
 	stop?.();
+	armed = true;
+	ensureScrollWatch();
 
 	const timers = CHECK_DELAYS_MS.map((delay) => setTimeout(check, delay));
 	const frame = requestAnimationFrame(check);
-	window.addEventListener("scroll", check, { passive: true });
 
 	const end = setTimeout(() => {
 		stop?.();
@@ -203,7 +263,6 @@ const watch = () => {
 		for (const timer of timers) {
 			clearTimeout(timer);
 		}
-		window.removeEventListener("scroll", check);
 	};
 };
 
@@ -219,4 +278,12 @@ export const initStickyHeaderWatchdog = () => {
 	// fires (returning from a share sheet, a system prompt, split view).
 	window.addEventListener("pageshow", watch);
 	window.addEventListener("focus", watch);
+
+	// The stale constraints come from the web view being resized (for the app
+	// switcher snapshot) and back, so a resize is the most direct signal there
+	// is that what the compositor recorded no longer matches the layout.
+	// Re-arming is cheap - it schedules a few rect reads - so the keyboard
+	// showing and hiding costing one extra check is a fine trade.
+	window.addEventListener("resize", watch);
+	window.addEventListener("orientationchange", watch);
 };

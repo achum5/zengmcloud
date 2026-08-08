@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { headerIsDetached } from "./stickyHeaderWatchdog.ts";
+import { headerIsDetached, scrollDecision } from "./stickyHeaderWatchdog.ts";
 
 const deps = ({
 	scrollY = 500,
@@ -113,6 +113,45 @@ describe("headerIsDetached", () => {
 		assert.strictEqual(
 			headerIsDetached(deps({ scrollY: 500, headerTop: 30 })),
 			false,
+		);
+	});
+});
+
+// The header is undetectable at the top of the page, so scrolling is the only
+// event that can ever catch it. Standing the scroll watch down on a timer meant
+// that coming back to the app and scrolling a moment later than the timer found
+// a broken header with nobody watching - the "unstuck basically every time"
+// report. Staying armed until a scroll can actually answer is the fix.
+describe("scrollDecision", () => {
+	test("a scroll far enough down the page is what we were waiting for", () => {
+		assert.strictEqual(scrollDecision({ armed: true, scrollY: 500 }), "judge");
+	});
+
+	test("stays armed at the top, where the question is unanswerable", () => {
+		assert.strictEqual(
+			scrollDecision({ armed: true, scrollY: 0 }),
+			"keep-waiting",
+			"disarming here is what let a broken header go unwatched",
+		);
+		assert.strictEqual(
+			scrollDecision({ armed: true, scrollY: 1 }),
+			"keep-waiting",
+			"within tolerance is still the top",
+		);
+	});
+
+	test("does nothing when it has already judged this resume", () => {
+		assert.strictEqual(
+			scrollDecision({ armed: false, scrollY: 500 }),
+			"stand-down",
+			"one rect read per resume, not one per scroll event",
+		);
+	});
+
+	test("a nonsense scroll position keeps waiting rather than guessing", () => {
+		assert.strictEqual(
+			scrollDecision({ armed: true, scrollY: Number.NaN }),
+			"keep-waiting",
 		);
 	});
 });
