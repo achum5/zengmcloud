@@ -7,6 +7,10 @@ import {
 	formatAtsRecord,
 	getTeamAtsRecords,
 } from "../util/getTeamAtsRecords.ts";
+import {
+	formatOver500Record,
+	getTeamOver500Records,
+} from "../util/getTeamOver500Records.ts";
 import { getStrengthOfSchedule } from "../util/getStrengthOfSchedule.ts";
 
 export const getMaxPlayoffSeed = async (
@@ -62,7 +66,14 @@ const updateStandings = async (
 		const pointsFormula = g.get("pointsFormula", inputs.season);
 		const usePts = pointsFormula !== "";
 
-		const atsRecords = await getTeamAtsRecords(inputs.season);
+		// One load of the season's games, shared by both columns built from them -
+		// a season of box scores is not something to read twice per render.
+		const games = await idb.getCopies.games(
+			{ season: inputs.season },
+			"noCopyCache",
+		);
+		const atsRecords = await getTeamAtsRecords(inputs.season, games);
+		const over500Records = await getTeamOver500Records(inputs.season, games);
 		const sosByTid = await getStrengthOfSchedule(inputs.season);
 
 		const teams = (
@@ -113,6 +124,7 @@ const updateStandings = async (
 		).map((t) => ({
 			...t,
 			ats: formatAtsRecord(atsRecords.get(t.tid)),
+			over500: formatOver500Record(over500Records.get(t.tid)),
 			sos: sosByTid.get(t.tid),
 			gb: {
 				league: 0,

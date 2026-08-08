@@ -178,6 +178,7 @@ const GroupStandingsRow = ({
 			</td>
 			<td>{t.seasonAttrs.streak}</td>
 			<td>{t.seasonAttrs.lastTen}</td>
+			<td>{t.over500}</td>
 			<td>{t.ats}</td>
 			<td title={sosTitle(t.sos)}>
 				{t.sos ? helpers.roundWinp(t.sos.sos) : null}
@@ -282,6 +283,9 @@ const GroupStandings = ({
 						})}
 						<th>Streak</th>
 						<th>L10</th>
+						<th title="Record against teams with a winning record. Opponents are judged on the record they hold now, so this re-reads itself as the season sorts out who is actually good.">
+							&gt;.500
+						</th>
 						<th title="Against the Spread record">ATS</th>
 						<th title="Strength of remaining schedule: the average winning percentage of the opponents still to play, weighted by how often each is played. Higher is harder.">
 							SOS

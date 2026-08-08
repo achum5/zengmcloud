@@ -1,3 +1,4 @@
+import type { Game } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import { g } from "./index.ts";
 import { getGameSpread } from "../../common/getGameSpread.ts";
@@ -15,12 +16,17 @@ export type AtsRecord = { won: number; lost: number; pushed: number };
 // counted in the regular-season W-L shown next to it.
 export const getTeamAtsRecords = async (
 	season: number,
+	// Callers that already hold the season's games (the standings page, which
+	// also builds the >.500 column from them) pass them in rather than making
+	// this pull every box score a second time.
+	preloadedGames?: Game[],
 ): Promise<Map<number, AtsRecord>> => {
 	const homeCourtAdvantage = g.get("homeCourtAdvantage");
 	const numPeriodsDefault = g.get("numPeriods");
 	const quarterLength = g.get("quarterLength");
 
-	const games = await idb.getCopies.games({ season }, "noCopyCache");
+	const games =
+		preloadedGames ?? (await idb.getCopies.games({ season }, "noCopyCache"));
 
 	const records = new Map<number, AtsRecord>();
 	const bump = (tid: number, key: keyof AtsRecord) => {
