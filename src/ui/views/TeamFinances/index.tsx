@@ -1258,8 +1258,10 @@ const TeamFinances = ({
 	const star = projectedKeys.size > 0 ? "*" : "";
 
 	// Label cells sit in the Name column, so the leading padding shrinks with the
-	// table.
-	const footerLead = (label: string) => dropPlanCols(["", "", "", label, ""]);
+	// table. The trailing blanks cover Cap% and Contract Value - without one per
+	// column the season totals slide left out of their headers.
+	const footerLead = (label: string) =>
+		dropPlanCols(["", "", "", label, "", ""]);
 
 	const footer = [
 		{
