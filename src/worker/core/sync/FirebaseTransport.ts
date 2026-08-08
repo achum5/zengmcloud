@@ -17,6 +17,7 @@ import {
 	orderBy,
 	runTransaction,
 	startAfter,
+	terminate,
 	where,
 	Timestamp,
 	serverTimestamp,
@@ -132,6 +133,11 @@ const PUBLISH_ACK_TIMEOUT_MS = 12_000;
 // A liveness probe that doesn't answer within this long counts as "not connected"
 // (a silently-dropped listener won't error, it just never responds).
 const CONNECTION_PROBE_TIMEOUT_MS = 6000;
+// disableNetwork is queued behind whatever is wedging the client, so it gets a
+// deadline of its own rather than being allowed to hold up re-enabling.
+const NETWORK_DISABLE_TIMEOUT_MS = 3000;
+// How long to stay offline mid-cycle before switching back on.
+const NETWORK_CYCLE_GAP_MS = 750;
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
 	new Promise((resolve, reject) => {
@@ -168,6 +174,13 @@ export class FirebaseTransport implements SyncTransport {
 	// When we last confirmed a live round-trip to Firestore (any successful read,
 	// write, or real-time delivery). Powers verifyConnection().
 	private lastContactAt = Date.now();
+
+	// Every live listener, recorded as the FUNCTION that creates it rather than
+	// the listener itself, so hardRestart() can put them all back on a brand-new
+	// client. Without this a restart would silently kill auto-play, chat,
+	// presence, draft-ready and the rest - everything that subscribes once at
+	// connect time and never looks again.
+	private liveSubs = new Set<{ start: () => () => void; unsub: () => void }>();
 
 	constructor(
 		code: string,
@@ -257,31 +270,33 @@ export class FirebaseTransport implements SyncTransport {
 	// auto-playing. An error handler surfaces permission problems instead of
 	// silently delivering nothing.
 	subscribeAutoPlay(onChange: (state: SyncedAutoPlay | undefined) => void) {
-		return onSnapshot(
-			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
-			(snapshot) => {
-				const data = snapshot.data();
-				const raw = data?.autoPlay as any;
-				// nextRunAt is stored as null when paused/off (Firestore can't store
-				// undefined); normalize back for the UI.
-				onChange(
-					raw
-						? {
-								enabled: !!raw.enabled,
-								nextRunAt: raw.nextRunAt ?? undefined,
-								rules: Array.isArray(raw.rules) ? raw.rules : [],
-								// Absent when the simmer is on an older build, so a
-								// reader must fall back to the summary lines above.
-								scheduleRules: Array.isArray(raw.scheduleRules)
-									? raw.scheduleRules
-									: undefined,
-							}
-						: undefined,
-				);
-			},
-			(error) => {
-				console.error("Auto-play schedule subscription failed", error);
-			},
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
+				(snapshot) => {
+					const data = snapshot.data();
+					const raw = data?.autoPlay as any;
+					// nextRunAt is stored as null when paused/off (Firestore can't store
+					// undefined); normalize back for the UI.
+					onChange(
+						raw
+							? {
+									enabled: !!raw.enabled,
+									nextRunAt: raw.nextRunAt ?? undefined,
+									rules: Array.isArray(raw.rules) ? raw.rules : [],
+									// Absent when the simmer is on an older build, so a
+									// reader must fall back to the summary lines above.
+									scheduleRules: Array.isArray(raw.scheduleRules)
+										? raw.scheduleRules
+										: undefined,
+								}
+							: undefined,
+					);
+				},
+				(error) => {
+					console.error("Auto-play schedule subscription failed", error);
+				},
+			),
 		);
 	}
 
@@ -428,28 +443,30 @@ export class FirebaseTransport implements SyncTransport {
 	subscribeLiveChat(
 		onChange: (messages: LiveGameChatMessage[]) => void,
 	): () => void {
-		return onSnapshot(
-			doc(this.db, "leagues", this.code, "control", LIVE_CHAT_DOC_ID),
-			(snap) => {
-				const raw = snap.data()?.messages;
-				if (!raw || typeof raw !== "object") {
-					onChange([]);
-					return;
-				}
-				this.markContact();
-				onChange(
-					Object.values(raw).filter(
-						(m: any) =>
-							m &&
-							typeof m.id === "string" &&
-							typeof m.cursor === "number" &&
-							typeof m.text === "string",
-					) as LiveGameChatMessage[],
-				);
-			},
-			() => {
-				// Chat dropping out must never be treated as a sync failure.
-			},
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", LIVE_CHAT_DOC_ID),
+				(snap) => {
+					const raw = snap.data()?.messages;
+					if (!raw || typeof raw !== "object") {
+						onChange([]);
+						return;
+					}
+					this.markContact();
+					onChange(
+						Object.values(raw).filter(
+							(m: any) =>
+								m &&
+								typeof m.id === "string" &&
+								typeof m.cursor === "number" &&
+								typeof m.text === "string",
+						) as LiveGameChatMessage[],
+					);
+				},
+				() => {
+					// Chat dropping out must never be treated as a sync failure.
+				},
+			),
 		);
 	}
 
@@ -502,20 +519,22 @@ export class FirebaseTransport implements SyncTransport {
 			scores: Record<string, TriviaScoreEntry[] | null> | undefined,
 		) => void,
 	) {
-		return onSnapshot(
-			doc(this.db, "leagues", this.code, "control", TRIVIA_SCORES_DOC_ID),
-			(snapshot) => {
-				this.markContact();
-				const data = snapshot.data();
-				onChange(
-					data && typeof data.scores === "object" && data.scores !== null
-						? (data.scores as Record<string, TriviaScoreEntry[] | null>)
-						: undefined,
-				);
-			},
-			(error) => {
-				console.error("Trivia scores subscription failed", error);
-			},
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", TRIVIA_SCORES_DOC_ID),
+				(snapshot) => {
+					this.markContact();
+					const data = snapshot.data();
+					onChange(
+						data && typeof data.scores === "object" && data.scores !== null
+							? (data.scores as Record<string, TriviaScoreEntry[] | null>)
+							: undefined,
+					);
+				},
+				(error) => {
+					console.error("Trivia scores subscription failed", error);
+				},
+			),
 		);
 	}
 
@@ -524,20 +543,22 @@ export class FirebaseTransport implements SyncTransport {
 	subscribeFaBoard(
 		onChange: (boards: Record<string, FaBoardEntry | null> | undefined) => void,
 	) {
-		return onSnapshot(
-			doc(this.db, "leagues", this.code, "control", FA_BOARD_DOC_ID),
-			(snapshot) => {
-				this.markContact();
-				const data = snapshot.data();
-				onChange(
-					data && typeof data.boards === "object" && data.boards !== null
-						? (data.boards as Record<string, FaBoardEntry | null>)
-						: undefined,
-				);
-			},
-			(error) => {
-				console.error("FA board subscription failed", error);
-			},
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", FA_BOARD_DOC_ID),
+				(snapshot) => {
+					this.markContact();
+					const data = snapshot.data();
+					onChange(
+						data && typeof data.boards === "object" && data.boards !== null
+							? (data.boards as Record<string, FaBoardEntry | null>)
+							: undefined,
+					);
+				},
+				(error) => {
+					console.error("FA board subscription failed", error);
+				},
+			),
 		);
 	}
 
@@ -548,20 +569,22 @@ export class FirebaseTransport implements SyncTransport {
 			ready: Record<string, DraftReadyEntry | null> | undefined,
 		) => void,
 	) {
-		return onSnapshot(
-			doc(this.db, "leagues", this.code, "control", DRAFT_READY_DOC_ID),
-			(snapshot) => {
-				this.markContact();
-				const data = snapshot.data();
-				onChange(
-					data && typeof data.ready === "object" && data.ready !== null
-						? (data.ready as Record<string, DraftReadyEntry | null>)
-						: undefined,
-				);
-			},
-			(error) => {
-				console.error("Draft ready subscription failed", error);
-			},
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", DRAFT_READY_DOC_ID),
+				(snapshot) => {
+					this.markContact();
+					const data = snapshot.data();
+					onChange(
+						data && typeof data.ready === "object" && data.ready !== null
+							? (data.ready as Record<string, DraftReadyEntry | null>)
+							: undefined,
+					);
+				},
+				(error) => {
+					console.error("Draft ready subscription failed", error);
+				},
+			),
 		);
 	}
 
@@ -587,33 +610,37 @@ export class FirebaseTransport implements SyncTransport {
 	subscribeLotteryReveal(
 		onChange: (meta: LotteryRevealMeta | undefined) => void,
 	) {
-		return onSnapshot(
-			doc(this.db, "leagues", this.code, "control", LOTTERY_REVEAL_DOC_ID),
-			(snapshot) => {
-				this.markContact();
-				const data = snapshot.data();
-				if (
-					data &&
-					data.active &&
-					typeof data.holderId === "string" &&
-					typeof data.season === "number"
-				) {
-					onChange({
-						holderId: data.holderId,
-						active: true,
-						season: data.season,
-						revealed: typeof data.revealed === "number" ? data.revealed : -1,
-						byName: typeof data.byName === "string" ? data.byName : "Someone",
-						startedAt: typeof data.startedAt === "number" ? data.startedAt : 0,
-						expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : 0,
-					});
-				} else {
-					onChange(undefined);
-				}
-			},
-			(error) => {
-				console.error("Lottery reveal subscription failed", error);
-			},
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", LOTTERY_REVEAL_DOC_ID),
+				(snapshot) => {
+					this.markContact();
+					const data = snapshot.data();
+					if (
+						data &&
+						data.active &&
+						typeof data.holderId === "string" &&
+						typeof data.season === "number"
+					) {
+						onChange({
+							holderId: data.holderId,
+							active: true,
+							season: data.season,
+							revealed: typeof data.revealed === "number" ? data.revealed : -1,
+							byName: typeof data.byName === "string" ? data.byName : "Someone",
+							startedAt:
+								typeof data.startedAt === "number" ? data.startedAt : 0,
+							expiresAt:
+								typeof data.expiresAt === "number" ? data.expiresAt : 0,
+						});
+					} else {
+						onChange(undefined);
+					}
+				},
+				(error) => {
+					console.error("Lottery reveal subscription failed", error);
+				},
+			),
 		);
 	}
 
@@ -769,25 +796,29 @@ export class FirebaseTransport implements SyncTransport {
 		onChange: (authority: Authority | undefined) => void,
 		onError?: (error: unknown) => void,
 	) {
-		return onSnapshot(
-			doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
-			(snapshot) => {
-				this.markContact();
-				const data = snapshot.data();
-				if (data && typeof data.holderId === "string") {
-					onChange({
-						holderId: data.holderId,
-						holderName:
-							typeof data.holderName === "string" ? data.holderName : "Someone",
-						busyUntil:
-							typeof data.busyUntil === "number" ? data.busyUntil : undefined,
-						position: parseLeaguePosition(data.position),
-					});
-				} else {
-					onChange(undefined);
-				}
-			},
-			onError,
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", AUTHORITY_DOC_ID),
+				(snapshot) => {
+					this.markContact();
+					const data = snapshot.data();
+					if (data && typeof data.holderId === "string") {
+						onChange({
+							holderId: data.holderId,
+							holderName:
+								typeof data.holderName === "string"
+									? data.holderName
+									: "Someone",
+							busyUntil:
+								typeof data.busyUntil === "number" ? data.busyUntil : undefined,
+							position: parseLeaguePosition(data.position),
+						});
+					} else {
+						onChange(undefined);
+					}
+				},
+				onError,
+			),
 		);
 	}
 
@@ -848,38 +879,42 @@ export class FirebaseTransport implements SyncTransport {
 	subscribeLiveBroadcast(
 		onChange: (meta: LiveBroadcastMeta | undefined) => void,
 	) {
-		return onSnapshot(
-			doc(this.db, "leagues", this.code, "control", LIVE_BROADCAST_DOC_ID),
-			(snapshot) => {
-				this.markContact();
-				const data = snapshot.data();
-				if (
-					data &&
-					data.active &&
-					typeof data.holderId === "string" &&
-					typeof data.gid === "number"
-				) {
-					onChange({
-						holderId: data.holderId,
-						active: true,
-						gid: data.gid,
-						byName: typeof data.byName === "string" ? data.byName : "Someone",
-						cursor: typeof data.cursor === "number" ? data.cursor : 0,
-						paused: !!data.paused,
-						speed: typeof data.speed === "number" ? data.speed : 7,
-						gameOver: !!data.gameOver,
-						startedAt: typeof data.startedAt === "number" ? data.startedAt : 0,
-						chunkCount:
-							typeof data.chunkCount === "number" ? data.chunkCount : 0,
-						expiresAt: typeof data.expiresAt === "number" ? data.expiresAt : 0,
-					});
-				} else {
-					onChange(undefined);
-				}
-			},
-			(error) => {
-				console.error("Live broadcast subscription failed", error);
-			},
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", LIVE_BROADCAST_DOC_ID),
+				(snapshot) => {
+					this.markContact();
+					const data = snapshot.data();
+					if (
+						data &&
+						data.active &&
+						typeof data.holderId === "string" &&
+						typeof data.gid === "number"
+					) {
+						onChange({
+							holderId: data.holderId,
+							active: true,
+							gid: data.gid,
+							byName: typeof data.byName === "string" ? data.byName : "Someone",
+							cursor: typeof data.cursor === "number" ? data.cursor : 0,
+							paused: !!data.paused,
+							speed: typeof data.speed === "number" ? data.speed : 7,
+							gameOver: !!data.gameOver,
+							startedAt:
+								typeof data.startedAt === "number" ? data.startedAt : 0,
+							chunkCount:
+								typeof data.chunkCount === "number" ? data.chunkCount : 0,
+							expiresAt:
+								typeof data.expiresAt === "number" ? data.expiresAt : 0,
+						});
+					} else {
+						onChange(undefined);
+					}
+				},
+				(error) => {
+					console.error("Live broadcast subscription failed", error);
+				},
+			),
 		);
 	}
 
@@ -1353,16 +1388,84 @@ export class FirebaseTransport implements SyncTransport {
 		return bound;
 	}
 
-	// Force the SDK to tear down and rebuild its backend channel. The one known
-	// cure for a wedged WebChannel (Safari is fond of killing the stream in a
+	// Force the SDK to tear down and rebuild its backend channel. The first
+	// remedy for a wedged WebChannel (Safari is fond of killing the stream in a
 	// way the SDK doesn't notice): listeners go quiet and server reads hang
 	// until the connection is cycled.
 	async cycleNetwork(): Promise<void> {
 		try {
-			await disableNetwork(this.db);
+			// disableNetwork runs on Firestore's async queue, which is exactly what
+			// a wedged channel blocks - so it can hang as long as the read that
+			// started this. Don't let it hold up going back online.
+			await withTimeout(disableNetwork(this.db), NETWORK_DISABLE_TIMEOUT_MS);
+		} catch {
+			// Fall through: enabling is the half that matters.
 		} finally {
+			// A beat with the SDK offline before switching back on. Going straight
+			// from disable to enable in the same tick let it re-attach to the same
+			// dead stream, which is a fair part of why cycling so often changed
+			// nothing where turning the radio off did.
+			await new Promise((resolve) => setTimeout(resolve, NETWORK_CYCLE_GAP_MS));
 			await enableNetwork(this.db);
 		}
+	}
+
+	// The stronger remedy, for when cycling the network has already failed to
+	// clear a wedge: throw the whole Firestore client away and build a new one.
+	// This is the in-app version of what actually works for people - swiping the
+	// app away and back, or toggling the radio - and it is a genuinely different
+	// act from cycleNetwork, which keeps the same client and merely asks it to
+	// go offline and back on.
+	//
+	// terminate() drops the instance from the app's provider SYNCHRONOUSLY and
+	// only then returns its promise, so getFirestore() below hands back a fresh
+	// client even though that promise will never settle while the queue is
+	// stuck. Its documented "promises awaiting a response from the server will
+	// not be resolved" is the point: the hung read is abandoned, not inherited.
+	async hardRestart(): Promise<void> {
+		const dead = this.db;
+		void Promise.resolve()
+			.then(() => terminate(dead))
+			.catch(() => {
+				// Terminating a wedged client is best-effort; we have already
+				// stopped using it either way.
+			});
+
+		this.db = getFirestore(getFirebaseApp());
+		this.changesRef = collection(this.db, "leagues", this.code, "changes");
+
+		// Every listener was bound to the dead client. Their unsubscribes are now
+		// no-ops at best and throw at worst, so drop them and re-run the creator
+		// against the new one.
+		for (const entry of this.liveSubs) {
+			try {
+				entry.unsub();
+			} catch {
+				// Already dead with the old client.
+			}
+			try {
+				entry.unsub = entry.start();
+			} catch {
+				// One listener failing to rebind must not strand the others.
+				entry.unsub = () => {};
+			}
+		}
+	}
+
+	// Register a listener so hardRestart() can rebuild it. The creator has to be
+	// re-runnable: it must read this.db / this.changesRef when CALLED, not close
+	// over the values they had at subscribe time.
+	private tracked(start: () => () => void): () => void {
+		const entry = { start, unsub: start() };
+		this.liveSubs.add(entry);
+		return () => {
+			this.liveSubs.delete(entry);
+			try {
+				entry.unsub();
+			} catch {
+				// Unsubscribing a listener whose client was terminated.
+			}
+		};
 	}
 
 	private parseV2State(data: any): V2StateDoc | undefined {
@@ -1395,22 +1498,24 @@ export class FirebaseTransport implements SyncTransport {
 		onChange: (state: V2StateDoc) => void,
 		onError?: (error: unknown) => void,
 	): () => void {
-		return onSnapshot(
-			doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID),
-			(snap) => {
-				const state = this.parseV2State(snap.data());
-				if (state) {
-					this.markContact();
-					onChange(state);
-				}
-			},
-			// Without this, a terminated listener (permissions blip, stream error)
-			// died SILENTLY and the device dropped to timer-paced catch-up - which
-			// looked like "picks take 30 seconds to arrive".
-			(error) => {
-				syncDebugLog("v2:state-listener-error", { error: String(error) });
-				onError?.(error);
-			},
+		return this.tracked(() =>
+			onSnapshot(
+				doc(this.db, "leagues", this.code, "control", V2_STATE_DOC_ID),
+				(snap) => {
+					const state = this.parseV2State(snap.data());
+					if (state) {
+						this.markContact();
+						onChange(state);
+					}
+				},
+				// Without this, a terminated listener (permissions blip, stream error)
+				// died SILENTLY and the device dropped to timer-paced catch-up - which
+				// looked like "picks take 30 seconds to arrive".
+				(error) => {
+					syncDebugLog("v2:state-listener-error", { error: String(error) });
+					onError?.(error);
+				},
+			),
 		);
 	}
 
@@ -1936,61 +2041,63 @@ export class FirebaseTransport implements SyncTransport {
 	}
 
 	subscribe(subscriber: SyncSubscriber) {
-		// Only entries after our watermark - the initial snapshot is the catch-up
-		// (everything we missed), and later snapshots are live updates. Pending
-		// local writes have a null ts and simply don't match `ts > x` until the
-		// server confirms them.
-		const q = query(
-			this.changesRef,
-			where("ts", ">", Timestamp.fromMillis(this.sinceTs)),
-			orderBy("ts"),
-		);
-
 		// Process snapshots one at a time, in order, since applying is async.
 		let chain: Promise<void> = Promise.resolve();
 
-		const unsub = onSnapshot(
-			q,
-			(snapshot) => {
-				// Any delivery (even an empty one) means the listener is live.
-				this.markContact();
-				const entries: ChangesetEntry[] = [];
-				for (const change of snapshot.docChanges()) {
-					if (change.type !== "added") {
-						continue;
+		return this.tracked(() =>
+			onSnapshot(
+				// Only entries after our watermark - the initial snapshot is the
+				// catch-up (everything we missed), and later snapshots are live
+				// updates. Pending local writes have a null ts and simply don't
+				// match `ts > x` until the server confirms them.
+				//
+				// Built HERE rather than once above so a hard restart rebuilds the
+				// query against the new client, and against the watermark as it
+				// stands then - not the one this room started with.
+				query(
+					this.changesRef,
+					where("ts", ">", Timestamp.fromMillis(this.sinceTs)),
+					orderBy("ts"),
+				),
+				(snapshot) => {
+					// Any delivery (even an empty one) means the listener is live.
+					this.markContact();
+					const entries: ChangesetEntry[] = [];
+					for (const change of snapshot.docChanges()) {
+						if (change.type !== "added") {
+							continue;
+						}
+						const entry = this.parseEntry(change.doc);
+						if (entry) {
+							entries.push(entry);
+						}
 					}
-					const entry = this.parseEntry(change.doc);
-					if (entry) {
-						entries.push(entry);
+
+					if (entries.length === 0) {
+						return;
 					}
-				}
 
-				if (entries.length === 0) {
-					return;
-				}
+					syncDebugLog("transport:changes-snapshot", {
+						added: entries.length,
+						firstSeq: entries[0]!.seq,
+						lastSeq: entries[entries.length - 1]!.seq,
+					});
 
-				syncDebugLog("transport:changes-snapshot", {
-					added: entries.length,
-					firstSeq: entries[0]!.seq,
-					lastSeq: entries[entries.length - 1]!.seq,
-				});
-
-				chain = chain.then(async () => {
-					for (const entry of entries) {
-						await subscriber.onEntry(entry);
-					}
-					subscriber.onBatchProcessed?.();
-				});
-			},
-			(error) => {
-				// A failed listener (e.g. it choked on a huge initial snapshot, or the
-				// token expired) must not silently kill sync: the paginated catch-up
-				// timer is the backstop that keeps draining regardless.
-				console.error("Changes subscription failed", error);
-				subscriber.onError?.(error);
-			},
+					chain = chain.then(async () => {
+						for (const entry of entries) {
+							await subscriber.onEntry(entry);
+						}
+						subscriber.onBatchProcessed?.();
+					});
+				},
+				(error) => {
+					// A failed listener (e.g. it choked on a huge initial snapshot, or the
+					// token expired) must not silently kill sync: the paginated catch-up
+					// timer is the backstop that keeps draining regardless.
+					console.error("Changes subscription failed", error);
+					subscriber.onError?.(error);
+				},
+			),
 		);
-
-		return unsub;
 	}
 }

@@ -72,6 +72,8 @@ const PINNED_EVENTS = new Set([
 	"v2:listener-missed",
 	"v2:slot-taken",
 	"v2:network-cycled",
+	"v2:hard-restart",
+	"v2:hard-restart-failed",
 	"v2:drain-failed",
 	"v2:apply-declined",
 	"v2:slow-apply",

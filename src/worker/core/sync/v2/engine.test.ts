@@ -1253,6 +1253,71 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// Field capture: two network cycles across ninety seconds cleared nothing,
+	// and version 274 landed the instant the user turned their radio off and on.
+	// Cycling asks the same client to go offline and back, so it can come back
+	// up on the same dead stream. The second remedy has to be a different act.
+	test("a wedge that survives one cycle escalates to a hard restart", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("A", room);
+		const calls: string[] = [];
+		(transport as any).cycleNetwork = async () => {
+			calls.push("cycle");
+		};
+		(transport as any).hardRestart = async () => {
+			calls.push("restart");
+		};
+		const engine = new SyncEngineV2(transport);
+
+		const wedge = async () => {
+			(engine as any).catchupFailureStreak = 5;
+			(engine as any).lastNetworkCycleAt = 0;
+			await (engine as any).maybeCycleNetwork("catchup");
+		};
+
+		await wedge();
+		assert.deepStrictEqual(calls, ["cycle"], "the cheap remedy goes first");
+
+		await wedge();
+		await wedge();
+		assert.deepStrictEqual(
+			calls,
+			["cycle", "restart", "restart"],
+			"cycling twice more is what the capture shows achieving nothing",
+		);
+
+		// Anything getting through means the next wedge is a fresh one, and
+		// starts back at the cheap rung rather than restarting the client for a
+		// one-off blip.
+		(engine as any).wedgeRemedyCount = 0;
+		await wedge();
+		assert.strictEqual(calls.at(-1), "cycle");
+		engine.stop();
+	});
+
+	// A transport too old to offer hardRestart must still get the cycle, rather
+	// than falling off the ladder and applying no remedy at all.
+	test("a transport without hardRestart keeps cycling", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("A", room);
+		let cycles = 0;
+		(transport as any).cycleNetwork = async () => {
+			cycles += 1;
+		};
+		const engine = new SyncEngineV2(transport);
+		for (let i = 0; i < 3; i++) {
+			(engine as any).catchupFailureStreak = 5;
+			(engine as any).lastNetworkCycleAt = 0;
+			await (engine as any).maybeCycleNetwork("catchup");
+		}
+		assert.strictEqual(cycles, 3);
+		engine.stop();
+	});
+
 	// disableNetwork fails every read in flight. A probe-triggered cycle landing
 	// mid-walk turned a working pass into "client is offline" and cost the
 	// device its place - visible in the capture as a cycle at 19:39:35 followed

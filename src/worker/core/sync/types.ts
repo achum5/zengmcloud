@@ -336,9 +336,13 @@ export interface SyncTransport {
 	fetchRoomV2State?(options?: {
 		allowCache?: boolean;
 	}): Promise<V2StateDoc | undefined>;
-	// Tear down and rebuild the backend connection - the cure for a silently
-	// wedged channel (dead listeners + hanging reads).
+	// Tear down and rebuild the backend connection - the first remedy for a
+	// silently wedged channel (dead listeners + hanging reads).
 	cycleNetwork?(): Promise<void>;
+	// The escalation, for a wedge that cycling did not clear: discard the client
+	// entirely, build a new one, and re-establish every listener on it. Roughly
+	// what closing and reopening the app does, without closing the app.
+	hardRestart?(): Promise<void>;
 	// onError (optional) fires when the underlying listener terminates, so the
 	// engine can re-establish it instead of silently dropping to timer pacing.
 	subscribeRoomV2State?(

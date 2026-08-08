@@ -218,6 +218,10 @@ export class SyncEngineV2 {
 	private probeFailureStreak = 0;
 	private catchupFailureStreak = 0;
 	private lastNetworkCycleAt = 0;
+
+	// Remedies applied to the CURRENT wedge. Reset the moment anything gets
+	// through, so the ladder starts at the cheap rung for the next one.
+	private wedgeRemedyCount = 0;
 	private lastCatchupFailureAt = 0;
 	// The catch-up step already reported to the user via a persistent notice,
 	// so repeated failures at the same step nag exactly once.
@@ -478,6 +482,7 @@ export class SyncEngineV2 {
 				HEAD_PROBE_TIMEOUT_MS,
 			);
 			this.probeFailureStreak = 0;
+			this.wedgeRemedyCount = 0;
 			if (!state) {
 				return;
 			}
@@ -507,10 +512,27 @@ export class SyncEngineV2 {
 	}
 
 	// The wedged-channel remedy, fired when either failure streak says the
-	// connection is lying about being alive: cycle it, put a fresh listener on
+	// connection is lying about being alive: clear it, put fresh listeners on
 	// the rebuilt channel, and catch up.
+	//
+	// ESCALATING, because cycling alone demonstrably does not always work. Field
+	// capture: two cycles across ninety seconds changed nothing, and the version
+	// landed the moment the user turned their radio off and on. disableNetwork /
+	// enableNetwork only asks the SAME client to go offline and back, and it can
+	// come back up on the same dead stream; turning the radio off destroys it.
+	// So the second attempt on a wedge throws the client away instead - the
+	// nearest thing to closing and reopening the app that does not lose the
+	// session.
+	private hardRestartFn(): (() => Promise<void>) | undefined {
+		const fn = this.transport.hardRestart;
+		return fn ? () => fn.call(this.transport) : undefined;
+	}
+
 	private async maybeCycleNetwork(source: "probe" | "catchup") {
-		if (this.stopped || !this.transport.cycleNetwork) {
+		if (
+			this.stopped ||
+			(!this.transport.cycleNetwork && !this.transport.hardRestart)
+		) {
 			return;
 		}
 		// Never yank the connection out from under a catch-up that is running.
@@ -530,11 +552,33 @@ export class SyncEngineV2 {
 		this.probeFailureStreak = 0;
 		this.catchupFailureStreak = 0;
 		this.lastNetworkCycleAt = Date.now();
-		syncDebugLog("v2:network-cycled", { source });
-		try {
-			await this.transport.cycleNetwork();
-		} catch {
-			// Even a failed cycle is followed by a fresh listener + catch-up.
+
+		// First attempt on a fresh wedge cycles; every attempt after that, until
+		// something actually gets through, restarts the client outright. The
+		// counter resets on the next successful catch-up, so an ordinary blip
+		// still gets the cheap remedy next time.
+		this.wedgeRemedyCount += 1;
+		const hardRestart = this.hardRestartFn();
+		if (this.wedgeRemedyCount > 1 && hardRestart) {
+			syncDebugLog("v2:hard-restart", {
+				source,
+				attempt: this.wedgeRemedyCount,
+			});
+			try {
+				await hardRestart();
+			} catch (error) {
+				syncDebugLog("v2:hard-restart-failed", { error: String(error) });
+			}
+			// hardRestart re-establishes the transport's own listeners, but the
+			// engine's two are held here and were bound to the dead client.
+			this.subscribeAuthority();
+		} else {
+			syncDebugLog("v2:network-cycled", { source });
+			try {
+				await this.transport.cycleNetwork?.();
+			} catch {
+				// Even a failed cycle is followed by a fresh listener + catch-up.
+			}
 		}
 		this.subscribeState();
 		// Let the rebuilt connection settle before reading through it - but do
@@ -1073,6 +1117,7 @@ export class SyncEngineV2 {
 		this.mustRecoverFromCheckpoint = true;
 		this.lastCheckpointAttempt = undefined;
 		this.catchupFailureStreak = 0;
+		this.wedgeRemedyCount = 0;
 		this.lastCatchupFailureAt = 0;
 		syncDebugLog("v2:force-checkpoint-restore", {
 			applied: this.appliedMirror,
@@ -1250,6 +1295,7 @@ export class SyncEngineV2 {
 
 				if (plan.type === "caught-up") {
 					this.catchupFailureStreak = 0;
+					this.wedgeRemedyCount = 0;
 					this.notifiedFailingStep = undefined;
 					this.clearCatchUpProgress();
 					return true;
@@ -1378,6 +1424,7 @@ export class SyncEngineV2 {
 						// cycling both ended up permanently in their most aggressive
 						// state on the device that could least afford it.
 						this.catchupFailureStreak = 0;
+						this.wedgeRemedyCount = 0;
 						if (this.catchUpPillShown) {
 							this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
 						}
@@ -1401,6 +1448,7 @@ export class SyncEngineV2 {
 				// next pass handles it.
 				if (this.appliedMirror >= this.roomVersion) {
 					this.catchupFailureStreak = 0;
+					this.wedgeRemedyCount = 0;
 					this.notifiedFailingStep = undefined;
 					this.clearCatchUpProgress();
 					return true;
