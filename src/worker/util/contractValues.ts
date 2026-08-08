@@ -9,7 +9,7 @@ import { PHASE, PLAYER } from "../../common/constants.ts";
 import {
 	getContractValue,
 	getDollarsPerWin,
-	type ContractValue,
+	type ContractValueBreakdown,
 } from "../../common/contractValue.ts";
 import { idb } from "../db/index.ts";
 import { g } from "./index.ts";
@@ -90,6 +90,50 @@ export const loadContractValueContext = async (
 	return contractValueContextFrom(players);
 };
 
+// Prices for several seasons at once, for the player page's salary history.
+//
+// Cached, because each season costs a pass over everyone who played it and a
+// career can span twenty of them. A COMPLETED season's payroll and production
+// never change again, so that pass is worth doing exactly once - but the
+// current season moves with every game, so it is deliberately never cached.
+// Keyed by league too: lids get recycled, and pricing one league's wins with
+// another league's payroll would be silently wrong.
+const contextCache = new Map<string, ContractValueContext>();
+
+export const loadContractValueContexts = async (
+	seasons: readonly number[],
+): Promise<Map<number, ContractValueContext>> => {
+	const lid = g.get("lid");
+	const currentSeason = g.get("season");
+	const cacheable = (season: number) => season !== currentSeason;
+	const key = (season: number) => `${lid}:${season}`;
+
+	const out = new Map<number, ContractValueContext>();
+	const missing: number[] = [];
+	for (const season of new Set(seasons)) {
+		const cached = cacheable(season)
+			? contextCache.get(key(season))
+			: undefined;
+		if (cached) {
+			out.set(season, cached);
+		} else {
+			missing.push(season);
+		}
+	}
+
+	await Promise.all(
+		missing.map(async (season) => {
+			const context = await loadContractValueContext(season);
+			out.set(season, context);
+			if (cacheable(season)) {
+				contextCache.set(key(season), context);
+			}
+		}),
+	);
+
+	return out;
+};
+
 // Undefined - rendered as a blank cell rather than a number - whenever there is
 // no production to price. A rookie who has not played is not a bad contract,
 // and a preseason table of every player showing a large negative would be
@@ -97,13 +141,18 @@ export const loadContractValueContext = async (
 export const valueForPlayer = (
 	p: PricedPlayer,
 	{ dollarsPerWin, minContract }: ContractValueContext,
-): ContractValue | undefined => {
+): ContractValueBreakdown | undefined => {
 	if (!isUnderContract(p) || !p.stats || (p.stats.gp ?? 0) <= 0) {
 		return undefined;
 	}
-	return getContractValue(
-		{ vorp: p.stats.vorp, salary: p.salary! },
-		minContract,
+	const salary = p.salary!;
+	const vorp = p.stats.vorp ?? 0;
+	return {
+		...getContractValue({ vorp, salary }, minContract, dollarsPerWin),
+		// Carried through so the UI can show the sum, not just its answer.
+		vorp,
+		salary,
 		dollarsPerWin,
-	);
+		minContract,
+	};
 };

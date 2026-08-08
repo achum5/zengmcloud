@@ -69,6 +69,16 @@ export type ContractValue = {
 	surplus: number;
 };
 
+// Everything that went into one player's number, so the UI can show the sum
+// rather than just its answer. A number nobody can check is a number nobody
+// trusts, and this one is derived from enough steps to be worth showing.
+export type ContractValueBreakdown = ContractValue & {
+	vorp: number;
+	salary: number;
+	dollarsPerWin: number;
+	minContract: number;
+};
+
 export type ContractValueSettings = {
 	minContract: number;
 	salaryCap: number;

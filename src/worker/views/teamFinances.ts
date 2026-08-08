@@ -147,7 +147,7 @@ const updateTeamFinances = async (
 									stats: currentSeasonStats(contract.pid),
 								},
 								contractValueContext,
-							)?.surplus,
+							),
 				};
 			}),
 		);

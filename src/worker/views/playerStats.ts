@@ -255,7 +255,7 @@ const updatePlayers = async (
 			// would make a cheap roster look like a roster full of bargains.
 			const context = await loadContractValueContext(inputs.season as number);
 			for (const p of players) {
-				p.contractValue = valueForPlayer(p, context)?.surplus;
+				p.contractValue = valueForPlayer(p, context);
 			}
 		}
 

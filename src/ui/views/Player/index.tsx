@@ -18,6 +18,7 @@ import { InjuryIcon } from "../../components/InjuryIcon.tsx";
 import { SkillsBlock } from "../../components/SkillsBlock.tsx";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
+import { contractValueCell } from "../../util/contractValueCell.tsx";
 import { useLocal } from "../../util/local.ts";
 import { splitPlayerNote } from "../../../common/seasonNote.ts";
 import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
@@ -25,6 +26,7 @@ import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 
 const Player2 = ({
 	bestPos,
+	contractValues,
 	customMenu,
 	events,
 	feats,
@@ -50,6 +52,12 @@ const Player2 = ({
 		teamInfoCache,
 	} = useLocal(["challengeNoRatings", "season", "teamInfoCache"]);
 	const showRatings = !challengeNoRatings || retired;
+
+	// What each paid season was worth against what it cost. Absent entirely
+	// outside basketball, and absent for a season with no production to price
+	// (future years of a deal, a season lost to injury).
+	const contractValueBySeason = new Map(contractValues ?? []);
+	const showContractValue = contractValueBySeason.size > 0;
 
 	// Still a prospect: the draft he belongs to hasn't happened yet.
 	const undrafted = player.tid === PLAYER.UNDRAFTED;
@@ -292,12 +300,17 @@ const Player2 = ({
 					<HideableSection title="Salaries">
 						<DataTable
 							className="datatable-negative-margin-top mb-3"
-							cols={getCols(["Year", "Amount"])}
+							cols={getCols(
+								showContractValue
+									? ["Year", "Amount", "Contract Value"]
+									: ["Year", "Amount"],
+							)}
 							defaultSort={[0, "asc"]}
 							footer={{
 								data: [
 									"Total",
 									helpers.formatCurrency(player.salariesTotal, "M"),
+									...(showContractValue ? [null] : []),
 								],
 							}}
 							hideAllControls
@@ -320,6 +333,9 @@ const Player2 = ({
 											),
 										},
 										wrappedCurrency(s.amount, "M"),
+										...(showContractValue
+											? [contractValueCell(contractValueBySeason.get(s.season))]
+											: []),
 									],
 									classNames:
 										s.type === "current"

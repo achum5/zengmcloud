@@ -301,7 +301,7 @@ const updatePlayers = async (
 		// against that subset's own payroll.
 		const contractValueContext = await loadContractValueContext(inputs.season);
 		for (const p of players) {
-			p.contractValue = valueForPlayer(p, contractValueContext)?.surplus;
+			p.contractValue = valueForPlayer(p, contractValueContext);
 		}
 
 		return {

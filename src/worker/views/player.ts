@@ -29,6 +29,11 @@ import { getTeamColors } from "../util/getTeamColors.ts";
 import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
 import { processPlayersHallOfFame } from "../util/processPlayersHallOfFame.ts";
 import { getNoteTeammates } from "../util/getNoteTeammates.ts";
+import {
+	loadContractValueContexts,
+	valueForPlayer,
+} from "../util/contractValues.ts";
+import type { ContractValueBreakdown } from "../../common/contractValue.ts";
 
 export const getPlayerProfileStats = () => {
 	const stats = [];
@@ -521,8 +526,36 @@ export const getCommon = async (
 		.filter((card) => card.pid === pid)
 		.sort((a, b) => b.at - a.at);
 
+	// What each season of this contract actually bought, priced against the
+	// league in THAT season - a win cost something different in 2005 than it
+	// does now, so every season is calibrated on its own. Only seasons he was
+	// paid for and played in produce a number; future years of a deal have no
+	// production to price yet, and come back undefined.
+	const contractValues = new Map<number, ContractValueBreakdown>();
+	if (isSport("basketball")) {
+		const paidSeasons = (p.salaries ?? []).map((s: any) => s.season);
+		const contexts = await loadContractValueContexts(paidSeasons);
+		for (const salary of p.salaries ?? []) {
+			const context = contexts.get(salary.season);
+			if (!context) {
+				continue;
+			}
+			const stats = (p.stats as any[]).findLast(
+				(row) => row.season === salary.season && !row.playoffs,
+			);
+			const value = valueForPlayer(
+				{ pid, salary: salary.amount, stats },
+				context,
+			);
+			if (value) {
+				contractValues.set(salary.season, value);
+			}
+		}
+	}
+
 	return {
 		type: "normal" as const,
+		contractValues: [...contractValues],
 		bestPos,
 		customMenu,
 		tradingCards,
