@@ -3080,6 +3080,91 @@ describe("a slate does not repeat itself", () => {
 		return out;
 	};
 
+	// "to" takes a bare infinitive. The comeback verb pool ("storm back to beat")
+	// run through pastTense and dropped into that slot produced "erased an
+	// 18-point deficit to stormed back to beat the Rivers 103-100".
+	test("a comeback lead never puts a past-tense verb after 'to'", () => {
+		const texts: string[] = [];
+		for (let i = 0; i < 40; i++) {
+			const winner = realisticTeam(
+				{ tid: 0, name: "Apollos", pts: 103, ptsQtrs: [18, 22, 31, 32] },
+				player({ name: "Nenad Canak", pts: 24, reb: 6, fg: 9, fga: 17 }),
+			);
+			const loser = realisticTeam(
+				{ tid: 1, name: "Rivers", pts: 100, ptsQtrs: [36, 24, 22, 18] },
+				player({ name: "Will Ruland", pts: 20, reb: 5, fg: 8, fga: 18 }),
+			);
+			texts.push(
+				getAutoRecap(
+					game({ gid: i, teams: [winner, loser], winnerTid: winner.tid }),
+				),
+			);
+		}
+		const broken = texts.filter((t) =>
+			/deficit to (?:stormed|rallied|came back|beat back|routed|stunned|shocked|held|knocked|topped|handled|survived|outlasted|edged)\b/.test(
+				t,
+			),
+		);
+		assert.deepEqual(broken, []);
+	});
+
+	// Paragraph one's team-stat sentence and paragraph three's comparison were
+	// picked independently, so a recap regularly said "They knocked down 16
+	// threes." and then "From deep it was no contest - 16 threes to 6."
+	test("the three-point line is not reported twice in one recap", () => {
+		// The winner hits 18 threes to the loser's 4, which is both over
+		// statNote's team-total bar and over threeNote's comparison gap - so
+		// paragraph one and paragraph three both WANT to talk about it.
+		const shooters = (
+			name: string,
+			tid: number,
+			pts: number,
+			threes: number[],
+		) =>
+			({
+				tid,
+				region: "",
+				name,
+				abbrev: "???",
+				pts,
+				ptsQtrs: [28, 30, 32, pts - 90],
+				players: threes.map((tp, n) =>
+					player({
+						name: `${name} ${"ABCDE"[n]}`,
+						pts: 26 - n * 3,
+						reb: 5 + n,
+						tp,
+						tpa: tp + 4,
+						fg: 9 - n,
+						fga: 16 - n,
+					}),
+				),
+			}) as RecapTeam;
+
+		for (let i = 0; i < 40; i++) {
+			const winner = shooters("Vultures", 0, 120, [6, 4, 4, 2, 2]);
+			const loser = shooters("Spirits", 1, 100, [2, 1, 1, 0, 0]);
+			const text = getAutoRecap(
+				game({ gid: i, teams: [winner, loser], winnerTid: 0 }),
+			);
+			// The TEAM's three-point total (paragraph one) against the two sides'
+			// three-point comparison (paragraph three). A player's own threes are
+			// a different fact and may appear alongside either.
+			const teamTotal =
+				/knocked down \d+ threes|hit \d+ from deep|made \d+ three-pointers|\w+ threes fell for/.test(
+					text,
+				);
+			const comparison =
+				/difference was behind the arc|made \d+ more threes than|From deep it was no contest/.test(
+					text,
+				);
+			assert.ok(
+				!(teamTotal && comparison),
+				`the team's three-point line told twice:\n${text}`,
+			);
+		}
+	});
+
 	test("eight games do not produce the same headline shape twice", () => {
 		const shapes = slateHeadlines();
 		const counts = new Map<string, number>();
