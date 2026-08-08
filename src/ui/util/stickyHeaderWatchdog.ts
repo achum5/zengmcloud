@@ -28,6 +28,8 @@
 // and self-verifying where it does: if a repair doesn't take, the next check
 // tries again rather than quietly giving up.
 
+import { PINNED_SELECTOR } from "./stickyHeaderPin.ts";
+
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 
 // Sub-pixel rounding and zoom mean the rect is never exactly on the line.
@@ -51,7 +53,7 @@ type Deps = {
 	// The `top` the header is supposed to stick at, from its computed style.
 	stickyTop: () => number;
 	// A modal deliberately switches the header to position:fixed while it pins
-	// the body (see .ios-modal-pinned) - not a fault, and not repairable.
+	// the app wrapper (see .ios-modal-pinned) - not a fault, and not repairable.
 	pinnedByModal: () => boolean;
 };
 
@@ -88,12 +90,14 @@ const computedStickyTop = (element: HTMLElement): number => {
 	return Number.isFinite(top) ? top : 0;
 };
 
+// Element-agnostic on purpose: the pin marker moved from <body> to the app
+// wrapper, and this only ever asks "is a modal currently pinning something?".
 const detached = (element: HTMLElement) =>
 	headerIsDetached({
 		scrollY: () => window.scrollY,
 		headerTop: () => element.getBoundingClientRect().top,
 		stickyTop: () => computedStickyTop(element),
-		pinnedByModal: () => document.body.classList.contains("ios-modal-pinned"),
+		pinnedByModal: () => document.querySelector(PINNED_SELECTOR) !== null,
 	});
 
 // Each step below flushes layout between mutations by reading a geometry
@@ -181,6 +185,27 @@ const check = () => {
 			nudgeScroller();
 		}
 	});
+};
+
+// Closing a modal hands the header back from position:fixed to position:sticky
+// while the wrapper is unpinned and the page is scrolled back to where it was -
+// the same kind of position change, against a viewport that just moved, that
+// leaves WebKit holding stale sticky constraints after a resume.
+//
+// Nothing used to look at the header afterwards. The timed checks only arm on
+// resume events, the scroll watch disarms as soon as it has judged once, and
+// headerIsDetached deliberately stands down for the whole time a modal has
+// something pinned. So a header broken by opening and closing the ratings
+// popover stayed broken with nobody watching. Hence an explicit check, once
+// layout has settled - the same ladder, on the one transition that was exempt
+// from it.
+const UNPIN_CHECK_DELAYS_MS = [50, 250];
+
+export const scheduleModalUnpinCheck = () => {
+	requestAnimationFrame(check);
+	for (const delay of UNPIN_CHECK_DELAYS_MS) {
+		setTimeout(check, delay);
+	}
 };
 
 // WHY THE SCROLL WATCH IS NOT TIME-BOUNDED.

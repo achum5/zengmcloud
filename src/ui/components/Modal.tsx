@@ -2,6 +2,7 @@ import type { ContainerState } from "@restart/ui/ModalManager";
 import { Modal as BaseModal } from "react-bootstrap";
 import BootstrapModalManager from "react-bootstrap/BootstrapModalManager";
 import { createNanoEvents } from "nanoevents";
+import { PINNED_CLASS } from "../util/stickyHeaderPin.ts";
 
 export const emitter = createNanoEvents<{
 	keepScrollToRight: () => void;
@@ -17,8 +18,9 @@ const animation = false;
 // element - the fixed top navbar, the modal itself, and its backdrop all detach
 // and scroll away with the page content. So a fixed header appears to "unstick"
 // and drift up the moment any modal (e.g. the ratings popover, which is a modal
-// on mobile) opens. The robust cross-browser scroll lock - pin <body> in place -
-// sidesteps it entirely: if the page can't scroll, nothing can detach.
+// on mobile) opens. The robust cross-browser scroll lock - pin the app wrapper in
+// place - sidesteps it entirely: if the page can't scroll, nothing can detach.
+// See getPinTarget for why it is the wrapper that gets pinned and not <body>.
 // Exported + pure so the platform gate (including iPadOS, which reports a
 // "Macintosh" UA and is only distinguishable by having a touch screen) is
 // regression-tested.
@@ -29,8 +31,40 @@ const IS_IOS =
 	typeof navigator !== "undefined" &&
 	isIOSUserAgent(navigator.userAgent || "", navigator.maxTouchPoints ?? 0);
 
+// WHAT GETS PINNED, AND WHY IT IS NOT <body>.
+//
+// react-bootstrap portals a modal and its backdrop into <body>, as siblings of
+// the app wrapper. A position:fixed element is supposed to resolve against the
+// viewport, but pinning <body> itself put the modal's own ancestor into
+// position:fixed at a negative offset, and iOS then resolved the modal and the
+// backdrop against that displaced box instead of the viewport - so the backdrop
+// stopped short of the bottom of the screen (page content still bright below the
+// dialog) and the dialog rode up with it.
+//
+// Pinning the wrapper instead sidesteps it: <body> stays in normal flow, so the
+// portaled modal keeps the viewport as its containing block, while taking the
+// wrapper out of flow still collapses the document and locks the scroll exactly
+// as before. #content is where the whole React app mounts (see index.html);
+// <body> remains the fallback so a missing wrapper degrades to the old behavior
+// rather than silently not locking.
+export const getPinTarget = (doc: Document): HTMLElement =>
+	doc.getElementById("content") ?? doc.body;
+
+const HEADER_SELECTOR = ".navbar-border.sticky-top";
+
+// Switching the header to position:fixed takes its space out of flow at the TOP
+// of the document (that is where a sticky element's box lives, however far the
+// page is scrolled), so the background jumps up by exactly the header's height
+// unless that much is restored. This was hardcoded to 52px against a header that
+// actually measures 53, so every modal nudged the page by a pixel. Measuring
+// costs one rect read and cannot drift out of step with the stylesheet.
+export const pinnedHeaderHeight = (doc: Document): number => {
+	const header = doc.querySelector(HEADER_SELECTOR);
+	return header ? header.getBoundingClientRect().height : 0;
+};
+
 class MyModalManager extends BootstrapModalManager {
-	// The scroll position captured when the body was pinned, so it can be
+	// The scroll position captured when the wrapper was pinned, so it can be
 	// restored on unlock. Undefined = not currently pinned.
 	private lockedScrollY: number | undefined;
 
@@ -48,16 +82,20 @@ class MyModalManager extends BootstrapModalManager {
 
 		if (shouldLock) {
 			this.lockedScrollY = scrollY;
-			const { style } = document.body;
+			// Read the header before anything is taken out of flow.
+			const headerHeight = pinnedHeaderHeight(document);
+			const target = getPinTarget(document);
+			const { style } = target;
 			style.position = "fixed";
 			style.top = `-${scrollY}px`;
 			style.left = "0";
 			style.right = "0";
 			style.width = "100%";
+			style.setProperty("--ios-pinned-header-height", `${headerHeight}px`);
 			// Pins the sticky header to the viewport top and restores its layout
 			// space so the background doesn't jump (see .ios-modal-pinned in
 			// light.scss).
-			document.body.classList.add("ios-modal-pinned");
+			target.classList.add(PINNED_CLASS);
 		}
 
 		if (!containerState.scrollBarWidth) {
@@ -74,19 +112,32 @@ class MyModalManager extends BootstrapModalManager {
 	override removeContainerStyle(containerState: ContainerState) {
 		super.removeContainerStyle(containerState);
 
-		// Unpin the body (fires only when the last modal closes) and restore the
+		// Unpin the wrapper (fires only when the last modal closes) and restore the
 		// scroll position it was locked at.
 		if (this.lockedScrollY !== undefined) {
 			const y = this.lockedScrollY;
 			this.lockedScrollY = undefined;
-			const { style } = document.body;
+			const target = getPinTarget(document);
+			const { style } = target;
 			style.position = "";
 			style.top = "";
 			style.left = "";
 			style.right = "";
 			style.width = "";
-			document.body.classList.remove("ios-modal-pinned");
+			style.removeProperty("--ios-pinned-header-height");
+			target.classList.remove(PINNED_CLASS);
 			window.scrollTo(0, y);
+
+			// Handing the header back from fixed to sticky at a restored scroll
+			// offset is exactly the transition that can leave it unstuck, and it is
+			// the one the watchdog stands down for while the pin is in place. Loaded
+			// on demand to keep the watchdog out of the main chunk; it is already in
+			// the module cache by now, since startup imports it the same way.
+			import("../util/stickyHeaderWatchdog.ts").then(
+				({ scheduleModalUnpinCheck }) => {
+					scheduleModalUnpinCheck();
+				},
+			);
 		}
 
 		if (!containerState.scrollBarWidth) {

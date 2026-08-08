@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { isIOSUserAgent } from "./Modal.tsx";
+import { getPinTarget, isIOSUserAgent, pinnedHeaderHeight } from "./Modal.tsx";
 
 // A few representative user agents. maxTouchPoints matters only for iPadOS,
 // which reports a desktop-Mac UA and is otherwise indistinguishable.
@@ -39,5 +39,51 @@ describe("isIOSUserAgent", () => {
 	test("Android and Windows are not iOS, even with touch points", () => {
 		assert.strictEqual(isIOSUserAgent(UA.androidChrome, 5), false);
 		assert.strictEqual(isIOSUserAgent(UA.windows, 10), false);
+	});
+});
+
+// Minimal stand-ins: these helpers only ever touch the handful of members named
+// here, and the node test project has no DOM.
+const fakeDocument = ({
+	content,
+	header,
+}: {
+	content?: unknown;
+	header?: { height: number };
+}) =>
+	({
+		body: "BODY",
+		getElementById: (id: string) => (id === "content" ? content : null),
+		querySelector: () =>
+			header
+				? { getBoundingClientRect: () => ({ height: header.height }) }
+				: null,
+	}) as unknown as Document;
+
+describe("getPinTarget", () => {
+	test("pins the app wrapper, not <body>", () => {
+		// The whole point: <body> must stay in normal flow so a portaled modal
+		// still resolves against the viewport.
+		const content = "CONTENT";
+		assert.strictEqual(getPinTarget(fakeDocument({ content })), content);
+	});
+
+	test("falls back to <body> when there is no wrapper", () => {
+		assert.strictEqual(getPinTarget(fakeDocument({})), "BODY");
+	});
+});
+
+describe("pinnedHeaderHeight", () => {
+	test("reports the header's measured height", () => {
+		// Deliberately not 52 - the point of measuring is that the old hardcoded
+		// value did not match what the header actually renders.
+		assert.strictEqual(
+			pinnedHeaderHeight(fakeDocument({ header: { height: 53 } })),
+			53,
+		);
+	});
+
+	test("reports 0 when there is no header, so the CSS fallback applies", () => {
+		assert.strictEqual(pinnedHeaderHeight(fakeDocument({})), 0);
 	});
 });
