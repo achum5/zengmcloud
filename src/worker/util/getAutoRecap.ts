@@ -208,8 +208,14 @@ const ORDINALS = [
 ];
 const ordinal = (n: number): string => ORDINALS[n] ?? `${n}th`;
 
-const plural = (n: number, word: string): string =>
-	`${n} ${word}${n === 1 ? "" : "s"}`;
+const plural = (n: number, word: string): string => {
+	if (n === 1) {
+		return `${n} ${word}`;
+	}
+	// "5 passs" made it into a real recap. A sibilant ending takes -es.
+	const suffix = /(?:s|sh|ch|x|z)$/.test(word) ? "es" : "s";
+	return `${n} ${word}${suffix}`;
+};
 
 // "a 12-point hole" but "an 18-point hole" - the article follows the number's
 // SOUND. For the margins/deficits recaps deal in (single digits through the
@@ -246,6 +252,22 @@ const lowerInjury = (type: string): string =>
 		.split(" ")
 		.map((w) => (w.length >= 2 && w === w.toUpperCase() ? w : w.toLowerCase()))
 		.join(" ");
+
+// "a sprained ankle", but "plantar fasciitis" and "back spasms" take no article
+// at all - "went down with a plantar fasciitis" is the kind of line that gives
+// the whole thing away. Conditions ending in -itis are uncountable, and a
+// plural name is already plural.
+const injuryPhrase = (type: string): string => {
+	const lower = lowerInjury(type);
+	// "ss" is singular ("abscess"), so it still takes an article.
+	if (
+		lower.endsWith("itis") ||
+		(lower.endsWith("s") && !lower.endsWith("ss"))
+	) {
+		return lower;
+	}
+	return aWord(lower);
+};
 
 // --- Player performance --------------------------------------------------------
 
@@ -1167,14 +1189,11 @@ const buildHeadline = (
 		useResult ? resultTemplates : starTemplates,
 		useResult ? "headline:result" : "headline:star",
 	);
-	// Only the "goes for <full stat phrase>" shape spends the whole line; the
-	// others name him or quote a single number the body doesn't repeat verbatim.
-	return h(
-		text,
-		!useResult,
-		false,
-		text.includes(` goes for ${statPhrase(star, 1)}`),
-	);
+	// Whether the headline printed his WHOLE line, however it was phrased.
+	// Matching on " goes for " alone missed the "has 27 points in the Raccoons'
+	// 99-94 win" and "turns in ..." shapes, so the body opened by saying the
+	// same numbers again one sentence later.
+	return h(text, !useResult, false, text.includes(statPhrase(star, 1)));
 };
 
 // --- Body sentence builders ----------------------------------------------------
@@ -1715,7 +1734,37 @@ const loserSentence = (
 	// The headline already gave this man's line.
 	skipLeader = false,
 ): string | undefined => {
-	const leader = skipLeader ? undefined : bestOf(shape.loser.players);
+	const best = bestOf(shape.loser.players);
+
+	// THE HEADLINE SUBJECT HAS TO BE IN THE STORY. Dropping him because the
+	// headline "already said it" produced recaps like "Isaac Adkins' 24 and 11
+	// not enough..." over a body that never mentions Adkins again - the surest
+	// sign in the whole piece that nobody wrote it. Keep him, but with a fact
+	// the headline did NOT print: how he shot. Failing that, hand the sentence
+	// to the next man up, who at least is new information.
+	if (skipLeader && best) {
+		const stats = teamStats(shape.loser);
+		const why =
+			stats.tov >= 18 && !spent.has("loserTov")
+				? `, but ${theNick(shape.loser)} gave it away ${stats.tov} times`
+				: stats.fga >= 20 && stats.fgp <= 40 && !spent.has("loserFgp")
+					? `, but ${theNick(shape.loser)} shot ${stats.fgp}% as a team`
+					: "";
+		// ALWAYS returns a sentence naming him. Returning undefined here is what
+		// left "Marko Jaric headlined but never appears" - the headline subject
+		// dropping out of his own story. Each rung adds something the headline
+		// did not print, so his line is never simply restated.
+		if (best.fga >= 12) {
+			return `${best.name} shot ${best.fg}-of-${best.fga} from the floor${why}.`;
+		}
+		const second = supportingCast(shape.loser.players, best)[0];
+		if (second && (second.pts >= 14 || doubleCategories(second).length >= 2)) {
+			return `${best.name} got what help there was from ${second.name}, who had ${statPhrase(second)}${why}.`;
+		}
+		return `${best.name} led ${theNick(shape.loser)} in scoring${why === "" ? ", to no avail" : why}.`;
+	}
+
+	const leader = skipLeader ? undefined : best;
 	const stats = teamStats(shape.loser);
 	// "reason" is appended after "...led the Loser", so it uses a pronoun rather
 	// than repeating the team name.
@@ -1768,7 +1817,26 @@ const loserSentence = (
 		const leaderLine = ddw
 			? `${leader.name}'s ${ddw} (${statPhrase(leader)})`
 			: `${leader.name}'s ${statPhrase(leader)}`;
-		return `${leaderLine} ${verb} ${theNick(shape.loser)}${reason}.`;
+		const line = ddw ? `a ${ddw} - ${statPhrase(leader)}` : statPhrase(leader);
+		const them = theNick(shape.loser);
+
+		// SHAPES, not synonyms. Rotating six verbs through one frame - "X's 22
+		// points led/paced/topped/headed the Y" - is the single most obvious tell
+		// that nobody wrote this: every losing team in the league gets the same
+		// sentence with the nouns swapped. These put the player, the team and the
+		// numbers in genuinely different places.
+		return pick(
+			rng,
+			[
+				`${leaderLine} ${verb} ${them}${reason}.`,
+				`${cap(them)} got ${line} from ${leader.name}${reason}.`,
+				`${leader.name} finished with ${line} for ${them}${reason}.`,
+				// Not "22 points from X was..." - a sentence does not open with a
+				// numeral, and every one of these lines starts with one.
+				`The best ${them} could offer was ${line} from ${leader.name}${reason}.`,
+			],
+			"loserShape",
+		);
 	}
 	// No standout to hang it on - name the team directly.
 	if (stats.tov >= 18 && !spent.has("loserTov")) {
@@ -1889,22 +1957,22 @@ const injurySentence = (
 		for (const p of t.players) {
 			if (p.injury?.playingThrough && p.pts >= 18) {
 				bits.push(
-					`${p.name} played through ${aWord(lowerInjury(p.injury.type))} for ${p.pts}`,
+					`${p.name} played through ${injuryPhrase(p.injury.type)} for ${p.pts}`,
 				);
 			} else if (p.injury?.newThisGame && p.injury.gamesRemaining > 0) {
 				bits.push(
 					pick(
 						rng,
 						[
-							`${p.name} left with ${aWord(lowerInjury(p.injury.type))} (out ~${plural(
+							`${p.name} left with ${injuryPhrase(p.injury.type)} (out ~${plural(
 								p.injury.gamesRemaining,
 								"game",
 							)})`,
-							`${p.name} went down with ${aWord(lowerInjury(p.injury.type))} and is out around ${plural(
+							`${p.name} went down with ${injuryPhrase(p.injury.type)} and is out around ${plural(
 								p.injury.gamesRemaining,
 								"game",
 							)}`,
-							`${p.name} picked up ${aWord(lowerInjury(p.injury.type))} that will cost him about ${plural(
+							`${p.name} picked up ${injuryPhrase(p.injury.type)} that will cost him about ${plural(
 								p.injury.gamesRemaining,
 								"game",
 							)}`,
@@ -1923,12 +1991,12 @@ const injurySentence = (
 					rng,
 					[
 						`${theNick(t)} were without ${out.name} (${lowerInjury(out.type)})`,
-						`${out.name} sat out for ${theNick(t)} with ${aWord(lowerInjury(out.type))}`,
+						`${out.name} sat out for ${theNick(t)} with ${injuryPhrase(out.type)}`,
 						`${theNick(t)} were missing ${out.name} (${lowerInjury(out.type)})`,
 						// NOT pre-capitalized: these bits get joined with "; " and only
 						// the whole string is capped, so a capital here reads as "a
 						// Torn achilles tendon kept..." in the middle of a sentence.
-						`${aWord(lowerInjury(out.type))} kept ${out.name} out for ${theNick(t)}`,
+						`${injuryPhrase(out.type)} kept ${out.name} out for ${theNick(t)}`,
 					],
 					"injuryOut",
 				),
@@ -2273,6 +2341,19 @@ const spreadNote = (
 	if (s.favTid === shape.loser.tid) {
 		return undefined;
 	}
+	// Exactly on the number is a push. Treating it as "did not cover" produced
+	// "a 9-point win was nowhere near the 9 they were giving" and "fell 0 short
+	// of the number".
+	if (shape.margin === s.points) {
+		return pick(
+			rng,
+			[
+				`${cap(theNick(shape.winner))} were favored by ${s.points} and won by exactly that.`,
+				`A ${shape.margin}-point win against a ${s.points}-point line: a push.`,
+			],
+			"spreadPush",
+		);
+	}
 	const covered = shape.margin > s.points;
 	if (covered && shape.margin - s.points >= 10) {
 		return pick(
@@ -2470,6 +2551,16 @@ export const getAutoRecap = (game: RecapGame): string => {
 			!headline.spentLine ||
 			figures(starSentence).some((n) => !inHeadline.has(n))
 		) {
+			para1.push(starSentence);
+		} else if (star.fga >= 10) {
+			// Everything in the sentence was already in the headline, so print
+			// something the headline did NOT have rather than dropping him: with
+			// nothing else to carry his name, the man in the headline disappeared
+			// from his own story.
+			para1.push(
+				`${star.name} got there on ${star.fg}-of-${star.fga} shooting.`,
+			);
+		} else {
 			para1.push(starSentence);
 		}
 		if (shot && !shot.tying) {
@@ -3601,6 +3692,9 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	const para2: string[] = [];
 	const others = ranked.slice(1);
 	const notableBlurbs: string[] = [];
+	// Which opener the notable-results sentence used, so the roundup below can
+	// avoid echoing it.
+	let notableOpener: string | undefined;
 	// "Stunned" and "shocked" belong to a real number. A 3.5-point dog winning
 	// gets the flat verbs, so the strong ones still mean something when the
 	// 13.5-point dog turns up two clauses later.
@@ -3656,14 +3750,29 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 		}
 	}
 	if (notableBlurbs.length > 0) {
-		para2.push(`Elsewhere, ${naturalList(notableBlurbs)}.`);
+		notableOpener = pick(
+			rng,
+			["Elsewhere", "There was drama elsewhere too", "Also worth the watch"],
+			"notableOpener",
+		);
+		para2.push(
+			notableOpener === "Elsewhere"
+				? `Elsewhere, ${naturalList(notableBlurbs)}.`
+				: `${notableOpener}: ${naturalList(notableBlurbs)}.`,
+		);
 	}
 
 	// Around the league: sweep up every game not already told, with its score, so
 	// nothing on the slate goes unmentioned. Ordered by notability so the more
 	// interesting leftovers lead; capped so a huge slate rolls the tail into "and
 	// N others" rather than an endless run-on.
-	const ROUNDUP_CAP = 10;
+	// A WRAP IS NOT A SCOREBOARD. This used to sweep up to ten leftovers and
+	// chunk them into groups of four, so a twenty-game night ended with four
+	// consecutive sentences of nothing but scores - "Elsewhere... Around the
+	// league... Also on the night... In the rest of the schedule..." - which is
+	// where the whole thing stopped reading like writing. The full slate is on
+	// the scoreboard already; prose should cover a handful and stop.
+	const ROUNDUP_CAP = 5;
 	const roundupClauses: string[] = [];
 	let roundupExtra = 0;
 	for (const g of ranked) {
@@ -3679,30 +3788,19 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 		}
 	}
 	if (roundupClauses.length > 0) {
-		const items =
-			roundupExtra > 0
-				? [...roundupClauses, `${roundupExtra} other games`]
-				: roundupClauses;
-		// Broken into sentences of three or four rather than one enormous comma
-		// list. Eight results strung together with commas is technically complete
-		// and completely unreadable; nobody gets to the end of it.
-		const OPENERS = [
-			"Around the league",
-			"Also on the night",
-			"In the rest of the schedule",
-			"Rounding out the slate",
-		];
-		const CHUNK = 4;
-		for (let i = 0, n = 0; i < items.length; i += CHUNK, n += 1) {
-			// A trailing chunk of one reads as an afterthought ("Also on the night,
-			// the Hornets topped the Magic."), so absorb it into the one before.
-			const slice =
-				items.length - i === CHUNK + 1
-					? items.slice(i)
-					: items.slice(i, i + CHUNK);
-			para2.push(`${OPENERS[n % OPENERS.length]}, ${naturalList(slice)}.`);
-			i += slice.length - CHUNK;
-		}
+		// No "and 5 other games" tail: it dangles off a list of result clauses as a
+		// bare noun phrase, and the scoreboard has them anyway.
+		const items = roundupClauses;
+		// Never the same opener the notable-results sentence just used, and never
+		// a near-twin of it ("Elsewhere, ... Elsewhere on the slate, ...").
+		const opener = pick(
+			rng,
+			["Around the league", "Also on the night", "In the other games"].filter(
+				(o) => o !== notableOpener,
+			),
+			"roundupOpener",
+		);
+		para2.push(`${opener}, ${naturalList(items)}.`);
 	}
 
 	// Paragraph 3: the league picture - close-game count, injury news, and then

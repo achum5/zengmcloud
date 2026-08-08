@@ -8,12 +8,15 @@
 	// renderSheets.mjs is a standalone contact-sheet generator that deliberately
 	// imports the app's own crop table from src/, which this project excludes.
 	// It's run by hand, never built, so leave it out rather than duplicate the
-	// table to keep the checker happy.
+	// table to keep the checker happy. recapSample.ts is the same deal: it runs
+	// the real getAutoRecap over captured league data so the prose can be read in
+	// bulk, and pulling that in would drag all of src/ into this project.
 	"exclude": [
 		"node_modules",
 		"analysis/venv",
 		"build",
 		"src",
-		"tools/faceFromPhoto/renderSheets.mjs"
+		"tools/faceFromPhoto/renderSheets.mjs",
+		"tools/recapSample.ts"
 	]
 }

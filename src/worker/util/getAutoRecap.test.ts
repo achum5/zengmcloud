@@ -1263,7 +1263,13 @@ describe("getAutoDayRecap", () => {
 			playoffs: false,
 			games: sweepSlate,
 		});
-		assert.ok(recap.includes("Around the league"), recap);
+		// The opener rotates now, so pin the behaviour and not one phrasing.
+		assert.ok(
+			["Around the league", "Also on the night", "In the other games"].some(
+				(o) => recap.includes(o),
+			),
+			recap,
+		);
 		// Every winner is named somewhere in the recap - you can feel caught up.
 		for (const w of ["Nets", "Heat", "Suns", "Jazz", "Magic"]) {
 			assert.ok(recap.includes(w), `${w} missing:\n${recap}`);
@@ -2259,9 +2265,18 @@ describe("a page of recaps doesn't repeat itself", () => {
 		);
 		const { headline, body } = parts(recap);
 		assert.ok(headline.includes("Walker"), recap);
-		// Named in the headline, so the losing-side sentence must not print the
-		// same line again.
-		assert.ok(!body.includes("Walker"), `Walker's line stated twice: ${recap}`);
+		// He IS in the body - a headline about a man the story never mentions is
+		// the giveaway this whole engine exists to avoid. What must not happen is
+		// his LINE being printed twice, so the body covers him with something the
+		// headline didn't say (how he shot).
+		assert.ok(
+			body.includes("Walker"),
+			`Walker headlined but dropped: ${recap}`,
+		);
+		assert.ok(
+			!body.includes("27 points"),
+			`Walker's line stated twice: ${recap}`,
+		);
 	});
 
 	// A 19-rebound night was being flattened into "(19 points and 19 rebounds)".
