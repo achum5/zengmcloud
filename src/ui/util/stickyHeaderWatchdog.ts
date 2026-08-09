@@ -184,6 +184,21 @@ let stop: (() => void) | undefined;
 // mid-repair could otherwise start a second pass that fights the first.
 let repairing = false;
 
+// The layout viewport against the visual one. A field report showed innerHeight
+// 1052 with a visual viewport of 646 - a 406px gap, and the header's offset
+// clamping at exactly -406 - so whether these disagree, and by how much, is the
+// difference between "the compositor lagged" and "sticky is anchored to a
+// viewport the user cannot see".
+const viewportNote = () => {
+	const vv = window.visualViewport;
+	if (!vv) {
+		return "vv=none";
+	}
+	return `vv=${Math.round(vv.height)}/${window.innerHeight}@${Math.round(
+		vv.offsetTop,
+	)}x${vv.scale.toFixed(2)}`;
+};
+
 // Only called when something noteworthy happened, so the log stays short enough
 // to paste and every line means something.
 const note = (element: HTMLElement | null, kind: string, detail?: string) => {
@@ -197,6 +212,44 @@ const note = (element: HTMLElement | null, kind: string, detail?: string) => {
 	});
 };
 
+// MEASURE ONLY WHEN THE PAGE IS STILL.
+//
+// On iOS a sticky element is repositioned by the compositor, and the main
+// thread's getBoundingClientRect() does NOT keep up during a flick or its
+// momentum: it keeps reporting the element's layout position, which scrolls with
+// the document. So mid-scroll a perfectly healthy header reads headerTop ===
+// -scrollY - identical to a genuinely broken one.
+//
+// A field log made that unmistakable. Every detection was followed, tens of
+// milliseconds later, by a "gave-up" at a DIFFERENT scroll offset, every reading
+// exactly -scrollY, and the single "success" landed at scrollY = -3, i.e. the
+// rubber band at the top, where detection is disabled anyway. Not one
+// measurement was taken with the page at rest.
+//
+// That made the watchdog worse than useless: it ran the ladder constantly on a
+// header that may well have been fine, and the ladder is not free - it takes the
+// header out of flow for a frame and nudges the scroll position. Doing that
+// repeatedly during a scroll is itself capable of producing the symptom being
+// chased.
+//
+// So a fault is only ever declared from two readings, a frame apart, that agree
+// with each other AND sit at the same scroll offset. Anything else means the
+// page was moving and the question cannot be answered yet.
+export const detachmentConfirmed = ({
+	before,
+	after,
+}: {
+	before: { scrollY: number; headerTop: number };
+	after: { scrollY: number; headerTop: number };
+}): boolean =>
+	before.scrollY === after.scrollY &&
+	Math.abs(before.headerTop - after.headerTop) <= TOLERANCE_PX;
+
+const reading = (element: HTMLElement) => ({
+	scrollY: Math.round(window.scrollY),
+	headerTop: Math.round(element.getBoundingClientRect().top),
+});
+
 const check = async (trigger = "scroll") => {
 	if (repairing) {
 		return;
@@ -209,7 +262,20 @@ const check = async (trigger = "scroll") => {
 		return;
 	}
 
-	note(element, "detached", `via=${trigger}`);
+	// Confirm against a second reading a frame later before believing it.
+	const before = reading(element);
+	await nextFrame();
+	const after = reading(element);
+	if (!detached(element) || !detachmentConfirmed({ before, after })) {
+		note(
+			element,
+			"unconfirmed",
+			`via=${trigger} moved=${after.scrollY - before.scrollY}`,
+		);
+		return;
+	}
+
+	note(element, "detached", `via=${trigger} ${viewportNote()}`);
 
 	repairing = true;
 	try {
@@ -305,52 +371,45 @@ export const scheduleModalUnpinCheck = () => {
 // by disarming. That trades a rect read every so often while scrolling for a
 // header that heals itself whenever it breaks, from whatever cause, instead of
 // staying broken until the app is force-quit.
-export type ScrollDecision = "judge" | "too-soon" | "at-top";
+export type ScrollDecision = "judge" | "at-top";
 
-// Cheap enough to be invisible, frequent enough that a broken header fixes
-// itself within a flick of the thumb.
-const MIN_CHECK_INTERVAL_MS = 250;
+// How long the page must be still before a reading means anything. Momentum
+// scrolling on iOS keeps the main thread's geometry stale well past the last
+// scroll event, and measuring inside that window is what produced a log full of
+// phantom faults.
+const SETTLE_MS = 250;
 
 export const scrollDecision = ({
 	scrollY,
-	now,
-	lastCheck,
-	minIntervalMs = MIN_CHECK_INTERVAL_MS,
 }: {
 	scrollY: number;
-	now: number;
-	lastCheck: number | undefined;
-	minIntervalMs?: number;
-}): ScrollDecision => {
-	// At the top of the document there is nothing to measure against, so a check
-	// here cannot answer anything - and must not count against the throttle.
-	if (!Number.isFinite(scrollY) || scrollY <= TOLERANCE_PX) {
-		return "at-top";
-	}
-	if (lastCheck !== undefined && now - lastCheck < minIntervalMs) {
-		return "too-soon";
-	}
-	return "judge";
-};
+}): ScrollDecision =>
+	// At the top of the document a stuck header and an unstuck one are in the same
+	// place, so there is nothing a reading here could establish.
+	!Number.isFinite(scrollY) || scrollY <= TOLERANCE_PX ? "at-top" : "judge";
 
-let lastCheck: number | undefined;
+const RESUME_DEDUPE_MS = 1000;
+let lastResumeNote: number | undefined;
+
+let settleTimer: ReturnType<typeof setTimeout> | undefined;
 let onScroll: (() => void) | undefined;
 
+// Debounced, NOT throttled. A throttle fires during the scroll, which is exactly
+// when the answer is unavailable; this waits for the scrolling to stop.
 const ensureScrollWatch = () => {
 	if (onScroll) {
 		return;
 	}
 	onScroll = () => {
-		const decision = scrollDecision({
-			scrollY: window.scrollY,
-			now: Date.now(),
-			lastCheck,
-		});
-		if (decision !== "judge") {
-			return;
+		if (settleTimer !== undefined) {
+			clearTimeout(settleTimer);
 		}
-		lastCheck = Date.now();
-		void check("scroll");
+		settleTimer = setTimeout(() => {
+			settleTimer = undefined;
+			if (scrollDecision({ scrollY: window.scrollY }) === "judge") {
+				void check("scroll-settled");
+			}
+		}, SETTLE_MS);
 	};
 	window.addEventListener("scroll", onScroll, { passive: true });
 };
@@ -362,7 +421,13 @@ const watch = () => {
 	// A resume gets the extra timed checks on top of the standing scroll watch:
 	// layout settles late coming back, and we would rather not wait for the user
 	// to scroll before trying.
-	note(getHeader(), "resume");
+	// visibilitychange, pageshow and focus all fire for one resume, so collapse
+	// them rather than writing the same line three times into a 60-entry log.
+	const now = Date.now();
+	if (lastResumeNote === undefined || now - lastResumeNote > RESUME_DEDUPE_MS) {
+		lastResumeNote = now;
+		note(getHeader(), "resume", viewportNote());
+	}
 
 	const timers = CHECK_DELAYS_MS.map((delay) =>
 		setTimeout(() => {

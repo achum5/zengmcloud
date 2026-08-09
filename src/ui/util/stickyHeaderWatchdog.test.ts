@@ -1,5 +1,9 @@
 import { assert, describe, test } from "vitest";
-import { headerIsDetached, scrollDecision } from "./stickyHeaderWatchdog.ts";
+import {
+	detachmentConfirmed,
+	headerIsDetached,
+	scrollDecision,
+} from "./stickyHeaderWatchdog.ts";
 
 const deps = ({
 	scrollY = 500,
@@ -118,81 +122,72 @@ describe("headerIsDetached", () => {
 });
 
 // The header is undetectable at the top of the page, so scrolling is the only
-// event that can ever catch it. This watch has been narrowed twice and the bug
-// came back both times: first it was torn down on a timer, then it disarmed
-// after a single answer - which assumed only a resume can break a header, and
-// that a repair reporting success has actually held. Neither is true. It is now
-// permanent, with throttling rather than disarming keeping the cost down.
+// event that can ever catch it - but NOT while the scroll is still running. On
+// iOS the main thread's geometry lags the compositor during a flick, so a
+// healthy sticky header reads exactly like a broken one. A field log showed
+// every single detection taken mid-scroll, so the watch now waits for the page
+// to settle and every fault is confirmed against a second reading.
 describe("scrollDecision", () => {
 	test("a scroll far enough down the page is worth measuring", () => {
-		assert.strictEqual(
-			scrollDecision({ scrollY: 500, now: 1000, lastCheck: undefined }),
-			"judge",
-		);
-	});
-
-	test("keeps judging on later scrolls, however many have come before", () => {
-		// The regression that brought this bug back: one answer per resume left a
-		// header broken by anything else with nobody watching.
-		assert.strictEqual(
-			scrollDecision({ scrollY: 500, now: 9_999_999, lastCheck: 1000 }),
-			"judge",
-		);
-	});
-
-	test("throttles bursts of scroll events", () => {
-		assert.strictEqual(
-			scrollDecision({ scrollY: 500, now: 1100, lastCheck: 1000 }),
-			"too-soon",
-		);
-	});
-
-	test("the throttle interval is the boundary", () => {
-		assert.strictEqual(
-			scrollDecision({
-				scrollY: 500,
-				now: 1000,
-				lastCheck: 900,
-				minIntervalMs: 100,
-			}),
-			"judge",
-		);
-		assert.strictEqual(
-			scrollDecision({
-				scrollY: 500,
-				now: 999,
-				lastCheck: 900,
-				minIntervalMs: 100,
-			}),
-			"too-soon",
-		);
+		assert.strictEqual(scrollDecision({ scrollY: 500 }), "judge");
 	});
 
 	test("says nothing at the top, where the question is unanswerable", () => {
+		assert.strictEqual(scrollDecision({ scrollY: 0 }), "at-top");
 		assert.strictEqual(
-			scrollDecision({ scrollY: 0, now: 1000, lastCheck: undefined }),
-			"at-top",
-		);
-		assert.strictEqual(
-			scrollDecision({ scrollY: 1, now: 1000, lastCheck: undefined }),
+			scrollDecision({ scrollY: 1 }),
 			"at-top",
 			"within tolerance is still the top",
 		);
 	});
 
-	test("being at the top does not burn the throttle", () => {
-		// "at-top" must not count as a check, or scrolling up and back down could
-		// silently skip the one measurement that would have caught the fault.
+	test("a nonsense scroll position claims nothing", () => {
+		assert.strictEqual(scrollDecision({ scrollY: Number.NaN }), "at-top");
+	});
+});
+
+describe("detachmentConfirmed", () => {
+	test("two readings at the same offset that agree is a real fault", () => {
 		assert.strictEqual(
-			scrollDecision({ scrollY: 0, now: 1000, lastCheck: 999 }),
-			"at-top",
+			detachmentConfirmed({
+				before: { scrollY: 400, headerTop: -400 },
+				after: { scrollY: 400, headerTop: -400 },
+			}),
+			true,
 		);
 	});
 
-	test("a nonsense scroll position claims nothing", () => {
+	test("a page that moved between readings proves nothing", () => {
+		// The exact shape of the phantom faults in the field log: detected at
+		// scrollY 69, re-measured at 149. Mid-flick, so unanswerable.
 		assert.strictEqual(
-			scrollDecision({ scrollY: Number.NaN, now: 1000, lastCheck: undefined }),
-			"at-top",
+			detachmentConfirmed({
+				before: { scrollY: 69, headerTop: -69 },
+				after: { scrollY: 149, headerTop: -149 },
+			}),
+			false,
+		);
+	});
+
+	test("a header still moving at a settled offset is not confirmed", () => {
+		// Same scroll offset but the rect is still catching up - the compositor
+		// had not finished, so wait rather than tear the header apart.
+		assert.strictEqual(
+			detachmentConfirmed({
+				before: { scrollY: 400, headerTop: -400 },
+				after: { scrollY: 400, headerTop: -120 },
+			}),
+			false,
+		);
+	});
+
+	test("sub-pixel disagreement is still a confirmation", () => {
+		assert.strictEqual(
+			detachmentConfirmed({
+				before: { scrollY: 400, headerTop: -400 },
+				after: { scrollY: 400, headerTop: -401 },
+			}),
+			true,
 		);
 	});
 });
