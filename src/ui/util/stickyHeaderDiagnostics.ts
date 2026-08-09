@@ -88,7 +88,17 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		scrollY: num(window.scrollY),
 		docHeight: num(document.documentElement.scrollHeight),
 		innerHeight: window.innerHeight,
-		visualViewport: vv ? `${num(vv.height)}@${num(vv.offsetTop)}` : "-",
+		// Height/offset/scale of the visible viewport against the layout one. A
+		// non-zero offsetTop or a scale away from 1 means sticky is anchored above
+		// what the user can see - which is a different fault to a stale node.
+		visualViewport: vv
+			? `${num(vv.height)}@${num(vv.offsetTop)}x${vv.scale.toFixed(2)}`
+			: "-",
+		// A document wider than the screen is what makes iOS zoom out in the first
+		// place, so it is the thing to chase if scale is not 1.
+		docWidth: num(document.documentElement.scrollWidth),
+		innerWidth: window.innerWidth,
+		headerTransform: header?.style.transform || "(none)",
 		headerFound: header !== null,
 		headerTop: rect ? num(rect.top) : "-",
 		headerHeight: rect ? num(rect.height) : "-",

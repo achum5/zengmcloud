@@ -10,16 +10,19 @@ const deps = ({
 	headerTop = 0,
 	stickyTop = 0,
 	pinnedByModal = false,
+	visualOffsetTop = 0,
 }: {
 	scrollY?: number;
 	headerTop?: number;
 	stickyTop?: number;
 	pinnedByModal?: boolean;
+	visualOffsetTop?: number;
 }) => ({
 	scrollY: () => scrollY,
 	headerTop: () => headerTop,
 	stickyTop: () => stickyTop,
 	pinnedByModal: () => pinnedByModal,
+	visualOffsetTop: () => visualOffsetTop,
 });
 
 describe("headerIsDetached", () => {
@@ -127,6 +130,42 @@ describe("headerIsDetached", () => {
 // healthy sticky header reads exactly like a broken one. A field log showed
 // every single detection taken mid-scroll, so the watch now waits for the page
 // to settle and every fault is confirmed against a second reading.
+// getBoundingClientRect() measures against the VISUAL viewport while sticky
+// anchors to the LAYOUT one, so zooming or panning the two apart moves a
+// perfectly healthy header to -offsetTop. A field log caught exactly this and
+// the watchdog spent it running an impossible repair four times a second.
+describe("headerIsDetached with the viewports panned apart", () => {
+	test("a header at exactly -offsetTop is doing its job, not broken", () => {
+		// The field numbers: 646-tall visual viewport 406px down a 1052 layout
+		// viewport, header measured at -406.
+		assert.strictEqual(
+			headerIsDetached(
+				deps({ scrollY: 864, headerTop: -406, visualOffsetTop: 406 }),
+			),
+			false,
+		);
+	});
+
+	test("a genuinely detached header is still caught while zoomed", () => {
+		// Gone up with the page rather than parked at the offset.
+		assert.strictEqual(
+			headerIsDetached(
+				deps({ scrollY: 864, headerTop: -864, visualOffsetTop: 406 }),
+			),
+			true,
+		);
+	});
+
+	test("without an offset the old comparison is unchanged", () => {
+		assert.strictEqual(
+			headerIsDetached(
+				deps({ scrollY: 500, headerTop: -500, visualOffsetTop: 0 }),
+			),
+			true,
+		);
+	});
+});
+
 describe("scrollDecision", () => {
 	test("a scroll far enough down the page is worth measuring", () => {
 		assert.strictEqual(scrollDecision({ scrollY: 500 }), "judge");

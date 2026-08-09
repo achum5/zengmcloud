@@ -30,6 +30,11 @@
 
 import { PINNED_SELECTOR } from "./stickyHeaderPin.ts";
 import { recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
+import {
+	applyHeaderShift,
+	headerVisualShift,
+	initVisualViewportHeader,
+} from "./visualViewportHeader.ts";
 
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 
@@ -57,6 +62,9 @@ type Deps = {
 	// A modal deliberately switches the header to position:fixed while it pins
 	// the app wrapper (see .ios-modal-pinned) - not a fault, and not repairable.
 	pinnedByModal: () => boolean;
+	// How far the visible (visual) viewport sits below the top of the layout
+	// viewport. Zero unless the page is zoomed or otherwise panned.
+	visualOffsetTop: () => number;
 };
 
 // Is the header provably not stuck where it should be?
@@ -69,6 +77,7 @@ export const headerIsDetached = ({
 	headerTop,
 	stickyTop,
 	pinnedByModal,
+	visualOffsetTop,
 }: Deps): boolean => {
 	if (pinnedByModal()) {
 		return false;
@@ -81,8 +90,21 @@ export const headerIsDetached = ({
 	if (!Number.isFinite(top)) {
 		return false;
 	}
-	// Above where it should be sticking = it scrolled away with the page.
-	return top < stickyTop() - TOLERANCE_PX;
+	// WHERE A STUCK HEADER ACTUALLY BELONGS WHEN THE PAGE IS ZOOMED.
+	//
+	// getBoundingClientRect() reports against the VISUAL viewport, but sticky
+	// sticks to the LAYOUT viewport. Pinch-zoom or pan the two apart and a header
+	// doing exactly the right thing reads at -visualOffsetTop, not 0.
+	//
+	// A field log caught this precisely: scale 0.85, visual viewport 646 tall
+	// sitting 406px down a 1052 layout viewport, and the header reading -406 -
+	// the offset, to the pixel. The old comparison called that a fault and ran
+	// the repair ladder four times in a second, which could never work, because
+	// nothing about the element was wrong. Subtracting the offset asks the only
+	// meaningful question: is the header where sticky would put it?
+	const offset = visualOffsetTop();
+	const expected = stickyTop() - (Number.isFinite(offset) ? offset : 0);
+	return top < expected - TOLERANCE_PX;
 };
 
 const getHeader = () => document.querySelector<HTMLElement>(HEADER_SELECTOR);
@@ -100,6 +122,7 @@ const detached = (element: HTMLElement) =>
 		headerTop: () => element.getBoundingClientRect().top,
 		stickyTop: () => computedStickyTop(element),
 		pinnedByModal: () => document.querySelector(PINNED_SELECTOR) !== null,
+		visualOffsetTop: () => window.visualViewport?.offsetTop ?? 0,
 	});
 
 // WHY EACH STEP SPANS A FRAME.
@@ -311,7 +334,14 @@ export const forceHeaderRepair = async () => {
 	if (!element) {
 		return;
 	}
-	note(element, "forced", `detached=${detached(element)}`);
+	// Put the header back inside the visible viewport first. When the two
+	// viewports have come apart this IS the reset - the ladder below cannot help,
+	// because nothing about the element is wrong.
+	applyHeaderShift(
+		element,
+		headerVisualShift(window.visualViewport?.offsetTop),
+	);
+	note(element, "forced", `detached=${detached(element)} ${viewportNote()}`);
 	if (repairing) {
 		return;
 	}
@@ -453,6 +483,11 @@ const watch = () => {
 };
 
 export const initStickyHeaderWatchdog = () => {
+	// Sticky anchors to the layout viewport, so zoom or pan can leave the header
+	// off the top of the visible area while behaving perfectly correctly. Started
+	// from here so this stays the one lazily-loaded module in the pair.
+	initVisualViewportHeader();
+
 	// The standing watch, independent of any resume. Installed here rather than
 	// only inside watch() so it is running from the first paint, whatever breaks
 	// the header and whether or not a resume event ever fires.
