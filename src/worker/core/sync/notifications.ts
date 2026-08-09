@@ -666,6 +666,21 @@ const buildSimNotifications = async (
 		}
 	}
 
+	// The day's full slate, for a team that didn't play: the most recent day in
+	// this changeset is the one the notice is about ("no game today, here's what
+	// everyone else did"). Legacy games have no `day`, so fall back to standings.
+	const slateDay = games.reduce<number | undefined>((latest, game) => {
+		const { day } = game;
+		if (day === undefined) {
+			return latest;
+		}
+		return latest === undefined || day > latest ? day : latest;
+	}, undefined);
+	const slatePath =
+		slateDay === undefined
+			? "standings"
+			: `daily_schedule/${season}/${slateDay}`;
+
 	for (const tid of userTids) {
 		const team = teamById.get(tid);
 		const teamName = team ? `${team.region} ${team.name}` : "your team";
@@ -691,7 +706,9 @@ const buildSimNotifications = async (
 					title: `Bye day for the ${team?.name ?? "team"}`,
 					body: around ?? `No other games ${period}.`,
 					targetTids: [tid],
-					path: "standings",
+					// The body is about everyone else's games, so open the slate they
+					// were played on rather than the standings.
+					path: slatePath,
 				});
 			}
 			continue;
@@ -1079,6 +1096,10 @@ const describeTradesFromEvents = (
 		return `a ${season} ${helpers.ordinal(round)}-round pick`;
 	};
 
+	const allTradesPath = `transactions/all/${g.get("season")}/trade`;
+	const tradePath = (eid: unknown) =>
+		typeof eid === "number" ? `trade_summary/${eid}` : allTradesPath;
+
 	const out: SyncNotification[] = [];
 	let shown = 0;
 	for (const e of events) {
@@ -1104,7 +1125,13 @@ const describeTradesFromEvents = (
 			title: "Trade",
 			body,
 			targetTids: null,
-			path: `transactions/all/${g.get("season")}/trade`,
+			// Straight to THIS trade's summary. The eid survives the trip: an event
+			// row carries its own `eid` (keyPath), and a receiver applies the row
+			// verbatim, so the author's key is the key it lands under. Falls back to
+			// the filtered transaction list if the event somehow has no eid, and
+			// tradeSummary itself renders an error rather than the wrong page if the
+			// eid doesn't resolve to a trade.
+			path: tradePath(e.eid),
 		});
 		shown += 1;
 	}
@@ -1114,7 +1141,8 @@ const describeTradesFromEvents = (
 			title: "Trades",
 			body: `…and ${more} more ${more === 1 ? "trade" : "trades"}.`,
 			targetTids: null,
-			path: `transactions/all/${g.get("season")}/trade`,
+			// A roll-up of several trades has no single summary to open.
+			path: allTradesPath,
 		});
 	}
 	return out;

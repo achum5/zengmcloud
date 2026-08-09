@@ -249,6 +249,13 @@ const setupRoutes = async () => {
 	const { keepPushTokenFresh } = await import("./util/keepPushTokenFresh.ts");
 	keepPushTokenFresh();
 
+	// Tapping a notification routes to the page it is about. The push worker
+	// can't navigate us itself (see notificationDeepLink.ts), so it posts the
+	// destination here instead.
+	const { initNotificationDeepLinks } =
+		await import("./util/notificationDeepLink.ts");
+	initNotificationDeepLinks();
+
 	// Sync the instant the user looks at the app again (tab visible, window
 	// focused, PWA resumed) - a backgrounded browser parks the network, so
 	// waiting for the next timer tick reads as "my change didn't sync".

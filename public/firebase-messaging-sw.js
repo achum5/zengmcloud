@@ -70,6 +70,9 @@ async function resolveLid(clientsArr) {
 	return undefined;
 }
 
+// Kept in sync with NOTIFICATION_CLICK_MESSAGE in src/ui/util/notificationDeepLink.ts.
+const CLICK_MESSAGE = "zengm-notification-click";
+
 self.addEventListener("notificationclick", (event) => {
 	event.notification.close();
 	const path = (event.notification.data && event.notification.data.path) || "";
@@ -83,20 +86,25 @@ self.addEventListener("notificationclick", (event) => {
 			const lid = await resolveLid(clientsArr);
 			const url = lid && path ? `/l/${lid}/${path}` : "/";
 
-			// Focus an existing ZenGM tab and navigate it; otherwise open one.
+			// Focus an existing ZenGM tab and let IT do the routing.
+			//
+			// NOT client.navigate(): that rejects with a TypeError unless the window
+			// is controlled by the worker calling it, and this worker lives at its
+			// own scope (see the header comment) so it controls none of them. It
+			// threw on every tap, the catch swallowed it, and the focus alone is why
+			// tapping a notification only ever reopened the current page.
+			// postMessage carries no such restriction.
 			for (const client of clientsArr) {
 				if ("focus" in client) {
 					await client.focus();
-					if (url !== "/" && "navigate" in client) {
-						try {
-							await client.navigate(url);
-						} catch {
-							// Cross-origin or detached; ignore.
-						}
+					if (path) {
+						client.postMessage({ type: CLICK_MESSAGE, path, url });
 					}
 					return;
 				}
 			}
+			// Cold start: no window to talk to, so the URL has to carry the
+			// destination. This is the one case navigate()'s replacement can't cover.
 			if (self.clients.openWindow) {
 				await self.clients.openWindow(url);
 			}

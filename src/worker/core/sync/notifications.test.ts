@@ -31,6 +31,8 @@ const gamePut = (
 	gid: number,
 	home: { tid: number; pts: number },
 	away: { tid: number; pts: number },
+	// Omitted by default so the legacy-game path (no `day`) stays covered.
+	day?: number,
 ): Changeset["changes"][number] => {
 	const [won, lost] = home.pts >= away.pts ? [home, away] : [away, home];
 	return {
@@ -43,6 +45,7 @@ const gamePut = (
 			teams: [{ tid: home.tid }, { tid: away.tid }],
 			won,
 			lost,
+			...(day === undefined ? {} : { day }),
 		},
 	};
 };
@@ -205,6 +208,48 @@ describe("buildNotifications", () => {
 		assert.strictEqual(notifs[0]!.title, "Bye day for the Lakers");
 		// The other games' results are listed, winner first.
 		assert.ok(notifs[0]!.body.includes("BOS 120-114"), notifs[0]!.body);
+	});
+
+	test("a bye day opens the slate those games were played on", async () => {
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{
+				changes: [
+					gamePut(20, { tid: 1, pts: 120 }, { tid: 2, pts: 114 }, 12),
+					gamePut(21, { tid: 3, pts: 99 }, { tid: 4, pts: 90 }, 12),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.path, "daily_schedule/2026/12");
+	});
+
+	test("a multi-day span opens the most recent day", async () => {
+		// A week sim: the notice is about what just happened, so the latest day is
+		// the useful one.
+		const notifs = await buildNotifications(
+			"playMenu.week",
+			{
+				changes: [
+					gamePut(20, { tid: 1, pts: 120 }, { tid: 2, pts: 114 }, 12),
+					gamePut(21, { tid: 3, pts: 99 }, { tid: 4, pts: 90 }, 15),
+					gamePut(22, { tid: 1, pts: 88 }, { tid: 4, pts: 80 }, 14),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.path, "daily_schedule/2026/15");
+	});
+
+	test("a bye day with dayless legacy games still goes somewhere useful", async () => {
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{
+				changes: [gamePut(20, { tid: 1, pts: 120 }, { tid: 2, pts: 114 })],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.path, "standings");
 	});
 
 	test("a bye with no other games falls back to a simple notice", async () => {
@@ -579,6 +624,36 @@ describe("buildNotifications", () => {
 		assert.ok(body.includes("Role Player (74/74)"), body);
 		assert.ok(body.includes("Star Wing (88/88)"), body);
 		assert.ok(body.includes("2027 1st-round pick"), body);
+		// Straight to this trade's own summary, keyed by the event's eid - which
+		// rides along in the synced row, so it resolves on the recipient too.
+		assert.strictEqual(notifs[0]!.path, "trade_summary/100");
+	});
+
+	test("a trade roll-up has no single summary, so it lists trades", async () => {
+		const many = Array.from({ length: 8 }, (_, i) => ({
+			store: "events" as const,
+			id: 200 + i,
+			type: "put" as const,
+			value: {
+				eid: 200 + i,
+				type: "trade",
+				tids: [0, 1],
+				teams: [
+					{ assets: [{ pid: 1, name: `Player ${i}` }] },
+					{ assets: [{ pid: 2, name: `Other ${i}` }] },
+				],
+			},
+		}));
+		const notifs = await buildNotifications(
+			"main.proposeTrade",
+			{ changes: many },
+			opts,
+		);
+		const rollup = notifs.at(-1)!;
+		assert.strictEqual(rollup.title, "Trades");
+		assert.strictEqual(rollup.path, "transactions/all/2026/trade");
+		// The individual ones still deep-link.
+		assert.strictEqual(notifs[0]!.path, "trade_summary/200");
 	});
 
 	test("one-sided trade ('traded nothing for X') → Trade, not a Signing", async () => {
@@ -1126,7 +1201,7 @@ describe("buildNotifications", () => {
 		);
 	});
 
-	test("deep-link paths: trade → transactions, signing → player page", async () => {
+	test("deep-link paths: trade → that trade, signing → player page", async () => {
 		const trade = await buildNotifications(
 			"main.proposeTrade",
 			{
@@ -1144,7 +1219,7 @@ describe("buildNotifications", () => {
 			},
 			opts,
 		);
-		assert.strictEqual(trade[0]!.path, "transactions/all/2026/trade");
+		assert.strictEqual(trade[0]!.path, "trade_summary/100");
 
 		const signing = await buildNotifications(
 			"main.signFreeAgent",
