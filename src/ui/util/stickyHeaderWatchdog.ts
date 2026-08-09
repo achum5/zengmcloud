@@ -29,6 +29,7 @@
 // tries again rather than quietly giving up.
 
 import { PINNED_SELECTOR } from "./stickyHeaderPin.ts";
+import { recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
 
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 
@@ -39,7 +40,8 @@ const TOLERANCE_PX = 2;
 // on a resume - the first frame back can be measured against the pre-suspend
 // viewport - so a single check right away misses it.
 //
-// This deliberately does NOT bound the scroll watch; see armUntilJudged.
+// This bounds only the timed checks. The scroll watch is permanent - see
+// scrollDecision.
 const WATCH_MS = 6000;
 
 // Extra checks after a resume, in ms, on top of the animation-frame one. Cheap
@@ -182,20 +184,39 @@ let stop: (() => void) | undefined;
 // mid-repair could otherwise start a second pass that fights the first.
 let repairing = false;
 
-const check = async () => {
+// Only called when something noteworthy happened, so the log stays short enough
+// to paste and every line means something.
+const note = (element: HTMLElement | null, kind: string, detail?: string) => {
+	recordHeaderEvent({
+		kind,
+		scrollY: Math.round(window.scrollY),
+		headerTop: element
+			? Math.round(element.getBoundingClientRect().top)
+			: Number.NaN,
+		detail,
+	});
+};
+
+const check = async (trigger = "scroll") => {
 	if (repairing) {
 		return;
 	}
 	const element = getHeader();
-	if (!element || !detached(element)) {
+	if (!element) {
+		return;
+	}
+	if (!detached(element)) {
 		return;
 	}
 
+	note(element, "detached", `via=${trigger}`);
+
 	repairing = true;
 	try {
-		for (const step of repairSteps) {
+		for (const [i, step] of repairSteps.entries()) {
 			await step(element);
 			if (!detached(element)) {
+				note(element, "repaired", `step=${i + 1}`);
 				return;
 			}
 		}
@@ -210,9 +231,33 @@ const check = async () => {
 			await rebuildRenderer(element);
 			await nudgeScroller();
 		}
+		note(element, detached(element) ? "gave-up" : "repaired", "step=late");
 	} finally {
 		repairing = false;
 	}
+};
+
+// The manual button. Runs the ladder whether or not the header LOOKS broken,
+// because the one place the user can reach the button - the top of the page - is
+// the one place a broken header is indistinguishable from a healthy one.
+export const forceHeaderRepair = async () => {
+	const element = getHeader();
+	if (!element) {
+		return;
+	}
+	note(element, "forced", `detached=${detached(element)}`);
+	if (repairing) {
+		return;
+	}
+	repairing = true;
+	try {
+		for (const step of repairSteps) {
+			await step(element);
+		}
+	} finally {
+		repairing = false;
+	}
+	note(element, "forced-done");
 };
 
 // Closing a modal hands the header back from position:fixed to position:sticky
@@ -231,11 +276,11 @@ const UNPIN_CHECK_DELAYS_MS = [50, 250];
 
 export const scheduleModalUnpinCheck = () => {
 	requestAnimationFrame(() => {
-		void check();
+		void check("modal-unpin");
 	});
 	for (const delay of UNPIN_CHECK_DELAYS_MS) {
 		setTimeout(() => {
-			void check();
+			void check("modal-unpin");
 		}, delay);
 	}
 };
@@ -305,7 +350,7 @@ const ensureScrollWatch = () => {
 			return;
 		}
 		lastCheck = Date.now();
-		void check();
+		void check("scroll");
 	};
 	window.addEventListener("scroll", onScroll, { passive: true });
 };
@@ -317,13 +362,15 @@ const watch = () => {
 	// A resume gets the extra timed checks on top of the standing scroll watch:
 	// layout settles late coming back, and we would rather not wait for the user
 	// to scroll before trying.
+	note(getHeader(), "resume");
+
 	const timers = CHECK_DELAYS_MS.map((delay) =>
 		setTimeout(() => {
-			void check();
+			void check("resume");
 		}, delay),
 	);
 	const frame = requestAnimationFrame(() => {
-		void check();
+		void check("resume");
 	});
 
 	const end = setTimeout(() => {
