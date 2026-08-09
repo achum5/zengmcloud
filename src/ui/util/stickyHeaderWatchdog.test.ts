@@ -118,40 +118,81 @@ describe("headerIsDetached", () => {
 });
 
 // The header is undetectable at the top of the page, so scrolling is the only
-// event that can ever catch it. Standing the scroll watch down on a timer meant
-// that coming back to the app and scrolling a moment later than the timer found
-// a broken header with nobody watching - the "unstuck basically every time"
-// report. Staying armed until a scroll can actually answer is the fix.
+// event that can ever catch it. This watch has been narrowed twice and the bug
+// came back both times: first it was torn down on a timer, then it disarmed
+// after a single answer - which assumed only a resume can break a header, and
+// that a repair reporting success has actually held. Neither is true. It is now
+// permanent, with throttling rather than disarming keeping the cost down.
 describe("scrollDecision", () => {
-	test("a scroll far enough down the page is what we were waiting for", () => {
-		assert.strictEqual(scrollDecision({ armed: true, scrollY: 500 }), "judge");
+	test("a scroll far enough down the page is worth measuring", () => {
+		assert.strictEqual(
+			scrollDecision({ scrollY: 500, now: 1000, lastCheck: undefined }),
+			"judge",
+		);
 	});
 
-	test("stays armed at the top, where the question is unanswerable", () => {
+	test("keeps judging on later scrolls, however many have come before", () => {
+		// The regression that brought this bug back: one answer per resume left a
+		// header broken by anything else with nobody watching.
 		assert.strictEqual(
-			scrollDecision({ armed: true, scrollY: 0 }),
-			"keep-waiting",
-			"disarming here is what let a broken header go unwatched",
+			scrollDecision({ scrollY: 500, now: 9_999_999, lastCheck: 1000 }),
+			"judge",
+		);
+	});
+
+	test("throttles bursts of scroll events", () => {
+		assert.strictEqual(
+			scrollDecision({ scrollY: 500, now: 1100, lastCheck: 1000 }),
+			"too-soon",
+		);
+	});
+
+	test("the throttle interval is the boundary", () => {
+		assert.strictEqual(
+			scrollDecision({
+				scrollY: 500,
+				now: 1000,
+				lastCheck: 900,
+				minIntervalMs: 100,
+			}),
+			"judge",
 		);
 		assert.strictEqual(
-			scrollDecision({ armed: true, scrollY: 1 }),
-			"keep-waiting",
+			scrollDecision({
+				scrollY: 500,
+				now: 999,
+				lastCheck: 900,
+				minIntervalMs: 100,
+			}),
+			"too-soon",
+		);
+	});
+
+	test("says nothing at the top, where the question is unanswerable", () => {
+		assert.strictEqual(
+			scrollDecision({ scrollY: 0, now: 1000, lastCheck: undefined }),
+			"at-top",
+		);
+		assert.strictEqual(
+			scrollDecision({ scrollY: 1, now: 1000, lastCheck: undefined }),
+			"at-top",
 			"within tolerance is still the top",
 		);
 	});
 
-	test("does nothing when it has already judged this resume", () => {
+	test("being at the top does not burn the throttle", () => {
+		// "at-top" must not count as a check, or scrolling up and back down could
+		// silently skip the one measurement that would have caught the fault.
 		assert.strictEqual(
-			scrollDecision({ armed: false, scrollY: 500 }),
-			"stand-down",
-			"one rect read per resume, not one per scroll event",
+			scrollDecision({ scrollY: 0, now: 1000, lastCheck: 999 }),
+			"at-top",
 		);
 	});
 
-	test("a nonsense scroll position keeps waiting rather than guessing", () => {
+	test("a nonsense scroll position claims nothing", () => {
 		assert.strictEqual(
-			scrollDecision({ armed: true, scrollY: Number.NaN }),
-			"keep-waiting",
+			scrollDecision({ scrollY: Number.NaN, now: 1000, lastCheck: undefined }),
+			"at-top",
 		);
 	});
 });

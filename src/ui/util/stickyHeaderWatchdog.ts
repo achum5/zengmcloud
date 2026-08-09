@@ -100,22 +100,45 @@ const detached = (element: HTMLElement) =>
 		pinnedByModal: () => document.querySelector(PINNED_SELECTOR) !== null,
 	});
 
-// Each step below flushes layout between mutations by reading a geometry
-// property. Layout is not paint - the browser paints once at the end of the
-// task - so the header never renders in the intermediate state and nothing
-// flashes.
+// WHY EACH STEP SPANS A FRAME.
+//
+// These used to run start-to-finish inside one task, deliberately: layout is not
+// paint, so the header never rendered in the intermediate state and nothing
+// flashed. That is also, almost certainly, why the repair did not take.
+//
+// The thing being rebuilt lives in the SCROLLING TREE, on the compositor - that
+// is the whole diagnosis at the top of this file. The compositor is handed a new
+// tree when the browser commits a frame, not when script forces a layout. A
+// position that goes sticky → relative → sticky inside a single task has the
+// same computed value at both ends of that task, so the commit can carry no
+// change at all and the stale node survives untouched. Reading `offsetTop`
+// flushes layout, which is not the same thing and never was.
+//
+// So each step now holds its intermediate state across a real frame, which
+// forces a commit the compositor has to act on. The flash this was avoiding
+// cannot happen: the ladder only ever runs on a header that is ALREADY detached
+// and already scrolled off the top of the screen, so there is no correctly
+// placed header to disturb - only a broken one, briefly broken differently.
 //
 // Every step restores `position` to "" rather than to whatever was there
 // before. The header's position must come from the stylesheet (.sticky-top, or
 // the modal's fixed override); putting back a stale inline value would reinstate
 // exactly the broken state we are trying to clear.
 
+const nextFrame = () =>
+	new Promise<void>((resolve) => {
+		requestAnimationFrame(() => {
+			resolve();
+		});
+	});
+
 // Step 1: rebuild the sticky node. WebKit only recomputes a sticky element's
 // constraints when its position changes, so this is the cheapest thing that can
 // possibly work.
-const rebuildStickyNode = (element: HTMLElement) => {
+const rebuildStickyNode = async (element: HTMLElement) => {
 	element.style.position = "relative";
 	void element.offsetTop;
+	await nextFrame();
 	element.style.position = "";
 	void element.offsetTop;
 };
@@ -124,9 +147,10 @@ const rebuildStickyNode = (element: HTMLElement) => {
 // destroys its renderer, its compositing layer and its scrolling-tree node,
 // rather than asking for them to be recalculated - the difference matters when
 // the stale state is in the compositor rather than in layout.
-const rebuildRenderer = (element: HTMLElement) => {
+const rebuildRenderer = async (element: HTMLElement) => {
 	element.style.display = "none";
 	void element.offsetTop;
+	await nextFrame();
 	element.style.display = "";
 	element.style.position = "";
 	void element.offsetTop;
@@ -136,10 +160,12 @@ const rebuildRenderer = (element: HTMLElement) => {
 // pixel and back makes WebKit reconcile it against the real scroll position.
 // Visually a no-op, and it only ever runs on a header still measurably broken
 // after both rebuilds.
-const nudgeScroller = () => {
+const nudgeScroller = async () => {
 	const y = window.scrollY;
 	window.scrollTo(window.scrollX, y + 1);
 	window.scrollTo(window.scrollX, y);
+	// Let the reconciliation land before anything measures it.
+	await nextFrame();
 };
 
 // Escalate only as far as it takes, re-measuring after each step. Cheap when the
@@ -152,39 +178,41 @@ export const repairSteps = [
 
 let stop: (() => void) | undefined;
 
-const check = () => {
+// One ladder at a time. The steps now await frames, so a scroll arriving
+// mid-repair could otherwise start a second pass that fights the first.
+let repairing = false;
+
+const check = async () => {
+	if (repairing) {
+		return;
+	}
 	const element = getHeader();
 	if (!element || !detached(element)) {
 		return;
 	}
 
-	// Synchronous, so the whole ladder resolves inside one task and the user
-	// never sees an intermediate state.
-	rebuildStickyNode(element);
-	if (!detached(element)) {
-		return;
-	}
-
-	rebuildRenderer(element);
-	if (!detached(element)) {
-		return;
-	}
-
-	nudgeScroller();
-	if (!detached(element)) {
-		return;
-	}
-
-	// Measuring inside the same task can read constraints the compositor has not
-	// applied yet, so give it a frame and run the ladder again before giving up
-	// on this pass. Whatever happens, the scroll listener keeps watching.
-	requestAnimationFrame(() => {
-		const again = getHeader();
-		if (again && detached(again)) {
-			rebuildRenderer(again);
-			nudgeScroller();
+	repairing = true;
+	try {
+		for (const step of repairSteps) {
+			await step(element);
+			if (!detached(element)) {
+				return;
+			}
 		}
-	});
+
+		// Still broken after the whole ladder. One more frame, in case the
+		// compositor simply had not caught up when we measured, then a final pass
+		// before giving up on this attempt - the scroll watch keeps looking either
+		// way, so a header that survives this will be tried again on the next
+		// scroll rather than staying broken until the app is force-quit.
+		await nextFrame();
+		if (detached(element)) {
+			await rebuildRenderer(element);
+			await nudgeScroller();
+		}
+	} finally {
+		repairing = false;
+	}
 };
 
 // Closing a modal hands the header back from position:fixed to position:sticky
@@ -202,49 +230,65 @@ const check = () => {
 const UNPIN_CHECK_DELAYS_MS = [50, 250];
 
 export const scheduleModalUnpinCheck = () => {
-	requestAnimationFrame(check);
+	requestAnimationFrame(() => {
+		void check();
+	});
 	for (const delay of UNPIN_CHECK_DELAYS_MS) {
-		setTimeout(check, delay);
+		setTimeout(() => {
+			void check();
+		}, delay);
 	}
 };
 
-// WHY THE SCROLL WATCH IS NOT TIME-BOUNDED.
+// WHY THE SCROLL WATCH NEVER STANDS DOWN.
 //
 // A detached header is UNDETECTABLE at the top of the document - stuck and
 // unstuck sit in exactly the same place there, and headerIsDetached says so.
 // Scrolling is therefore the only event that can ever answer the question.
 //
-// The watch used to be torn down a few seconds after the resume, scroll
-// listener and all. So the common case went: come back to the app, look at the
-// screen for longer than that, scroll - and the header was broken with nothing
-// left watching. It stayed broken until the next resume, which is exactly the
-// "it's unstuck basically every time I come back" report.
+// This watch has been narrowed twice and both times the bug came back. First it
+// was torn down a few seconds after a resume, so looking at the screen for
+// longer than that and then scrolling met a broken header with nothing left
+// watching. Then it was made to survive until a scroll produced an answer - but
+// it still disarmed after that one answer, which assumed the only thing that can
+// break a header is a resume, and that a repair which reports success has
+// actually worked. Neither holds: a modal, an orientation change, a keyboard, or
+// any other layout churn can break it just as well, and a repair that measures
+// clean can still be undone by the next commit.
 //
-// So the timed checks still stop (they are for the resume itself, and layout
-// has certainly settled by then), but the scroll watch stays armed until a
-// scroll actually PRODUCES an answer, however long that takes. It then disarms:
-// one rect read per resume, not one per scroll event.
-export type ScrollDecision = "judge" | "keep-waiting" | "stand-down";
+// So the watch is now permanent and its cost is bounded by throttling instead of
+// by disarming. That trades a rect read every so often while scrolling for a
+// header that heals itself whenever it breaks, from whatever cause, instead of
+// staying broken until the app is force-quit.
+export type ScrollDecision = "judge" | "too-soon" | "at-top";
+
+// Cheap enough to be invisible, frequent enough that a broken header fixes
+// itself within a flick of the thumb.
+const MIN_CHECK_INTERVAL_MS = 250;
 
 export const scrollDecision = ({
-	armed,
 	scrollY,
+	now,
+	lastCheck,
+	minIntervalMs = MIN_CHECK_INTERVAL_MS,
 }: {
-	armed: boolean;
 	scrollY: number;
+	now: number;
+	lastCheck: number | undefined;
+	minIntervalMs?: number;
 }): ScrollDecision => {
-	if (!armed) {
-		return "stand-down";
-	}
-	// Still at the top: nothing to measure against, so stay armed rather than
-	// burning the one check on a scroll position that cannot answer.
+	// At the top of the document there is nothing to measure against, so a check
+	// here cannot answer anything - and must not count against the throttle.
 	if (!Number.isFinite(scrollY) || scrollY <= TOLERANCE_PX) {
-		return "keep-waiting";
+		return "at-top";
+	}
+	if (lastCheck !== undefined && now - lastCheck < minIntervalMs) {
+		return "too-soon";
 	}
 	return "judge";
 };
 
-let armed = false;
+let lastCheck: number | undefined;
 let onScroll: (() => void) | undefined;
 
 const ensureScrollWatch = () => {
@@ -252,30 +296,35 @@ const ensureScrollWatch = () => {
 		return;
 	}
 	onScroll = () => {
-		const decision = scrollDecision({ armed, scrollY: window.scrollY });
-		if (decision === "keep-waiting") {
+		const decision = scrollDecision({
+			scrollY: window.scrollY,
+			now: Date.now(),
+			lastCheck,
+		});
+		if (decision !== "judge") {
 			return;
 		}
-		if (decision === "judge") {
-			armed = false;
-			check();
-		}
-		// Either way there is nothing left to watch for until the next resume.
-		if (onScroll) {
-			window.removeEventListener("scroll", onScroll);
-			onScroll = undefined;
-		}
+		lastCheck = Date.now();
+		void check();
 	};
 	window.addEventListener("scroll", onScroll, { passive: true });
 };
 
 const watch = () => {
 	stop?.();
-	armed = true;
 	ensureScrollWatch();
 
-	const timers = CHECK_DELAYS_MS.map((delay) => setTimeout(check, delay));
-	const frame = requestAnimationFrame(check);
+	// A resume gets the extra timed checks on top of the standing scroll watch:
+	// layout settles late coming back, and we would rather not wait for the user
+	// to scroll before trying.
+	const timers = CHECK_DELAYS_MS.map((delay) =>
+		setTimeout(() => {
+			void check();
+		}, delay),
+	);
+	const frame = requestAnimationFrame(() => {
+		void check();
+	});
 
 	const end = setTimeout(() => {
 		stop?.();
@@ -292,6 +341,11 @@ const watch = () => {
 };
 
 export const initStickyHeaderWatchdog = () => {
+	// The standing watch, independent of any resume. Installed here rather than
+	// only inside watch() so it is running from the first paint, whatever breaks
+	// the header and whether or not a resume event ever fires.
+	ensureScrollWatch();
+
 	document.addEventListener("visibilitychange", () => {
 		if (document.visibilityState === "visible") {
 			watch();
