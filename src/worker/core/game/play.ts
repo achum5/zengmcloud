@@ -714,10 +714,17 @@ const play = async (
 				games.map((game) => game.gid),
 			);
 			if (!granted) {
+				// Name what was actually refused. Now that a user can sim their own
+				// single game while someone else runs the day, the common rejection is
+				// two people reaching for the SAME GAME - and telling them "this day"
+				// was already simmed describes something that did not happen.
 				logEvent(
 					{
 						type: "error",
-						text: `Another device already simmed this day, so this sim was skipped. Catching up to the cloud now.`,
+						text:
+							gidOneGame === undefined
+								? `Another device already simmed this day, so this sim was skipped. Catching up to the cloud now.`
+								: `Someone else got to this game first, so it wasn't simmed here. Catching up to the cloud now — the result will appear in a moment.`,
 						persistent: true,
 					},
 					conditions,

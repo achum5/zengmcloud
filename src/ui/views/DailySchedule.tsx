@@ -3,6 +3,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
+import { decideOwnGameSim } from "../../common/ownGameSim.ts";
 import { helpers } from "../util/helpers.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
@@ -19,7 +20,7 @@ import {
 	getDailyScheduleScroll,
 	setDailyScheduleScroll,
 } from "../util/dailyScheduleUiState.ts";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 const DailySchedule = ({
 	cid,
@@ -31,6 +32,7 @@ const DailySchedule = ({
 	elam,
 	elamASG,
 	isToday,
+	ownGameSimCutoffSeconds,
 	season,
 	ties,
 	topPlayers,
@@ -75,14 +77,24 @@ const DailySchedule = ({
 
 	const {
 		gameSimInProgress,
+		mpAutoPlay,
 		mpLiveBroadcast,
+		mpSyncActive,
+		mpSyncIsHost,
+		mpSyncReady,
+		mpSyncReconnecting,
 		phase,
 		season: currentSeason,
 		teamInfoCache,
 		userTid,
 	} = useLocal([
 		"gameSimInProgress",
+		"mpAutoPlay",
 		"mpLiveBroadcast",
+		"mpSyncActive",
+		"mpSyncIsHost",
+		"mpSyncReady",
+		"mpSyncReconnecting",
 		"phase",
 		"season",
 		"teamInfoCache",
@@ -93,6 +105,41 @@ const DailySchedule = ({
 	// been simmed and synced - watching is only the animation - so the score
 	// beside this badge is the real one. Someone who left the broadcast has
 	// already opted into seeing results; this is just the way back in.
+	// The cutoff is a moving deadline, so the countdown has to advance on its own
+	// rather than be read during render (which is impure, and would also freeze
+	// the buttons in whatever state the last render happened to catch). Only ticks
+	// while someone is actually auto-playing.
+	const autoPlayNextRunAt = mpAutoPlay?.nextRunAt;
+	const [now, setNow] = useState(() => Date.now());
+	useEffect(() => {
+		if (typeof autoPlayNextRunAt !== "number") {
+			return;
+		}
+		setNow(Date.now());
+		const interval = setInterval(() => {
+			setNow(Date.now());
+		}, 1000);
+		return () => {
+			clearInterval(interval);
+		};
+	}, [autoPlayNextRunAt]);
+
+	// The same policy the worker enforces, so a button that would be refused is
+	// greyed out with the reason in its tooltip rather than offered and rejected.
+	const ownGameSim = (isOwnGame: boolean) =>
+		decideOwnGameSim({
+			isOwnGame,
+			isAuthority: !mpSyncActive || !!mpSyncIsHost,
+			connectedAndReady:
+				!mpSyncActive || (!!mpSyncReady && !mpSyncReconnecting),
+			simInFlight: !!mpLiveBroadcast?.active,
+			msUntilAutoSim:
+				typeof autoPlayNextRunAt === "number"
+					? autoPlayNextRunAt - now
+					: undefined,
+			cutoffSeconds: ownGameSimCutoffSeconds,
+		});
+
 	const liveBroadcastGid =
 		mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster
 			? mpLiveBroadcast.gid
@@ -201,13 +248,18 @@ const DailySchedule = ({
 													const isOwnGame =
 														game.teams[0].tid === userTid ||
 														game.teams[1].tid === userTid;
+													const decision = ownGameSim(isOwnGame);
 													const blocked =
 														gameSimInProgress ||
-														(simAuthorityLocked && !isOwnGame);
+														(simAuthorityLocked && !decision.allow);
 													return [
 														{
 															disabled: blocked,
 															highlight: isOwnGame,
+															title:
+																blocked && !decision.allow
+																	? decision.reason
+																	: undefined,
 															text: (
 																<>
 																	Watch
@@ -221,6 +273,10 @@ const DailySchedule = ({
 														{
 															disabled: blocked,
 															highlight: isOwnGame,
+															title:
+																blocked && !decision.allow
+																	? decision.reason
+																	: undefined,
 															text: (
 																<>
 																	Sim

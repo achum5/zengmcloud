@@ -1,4 +1,6 @@
 import { season } from "../core/index.ts";
+import { getGlobalSettings } from "../util/getGlobalSettings.ts";
+import { DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS } from "../../common/ownGameSim.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
@@ -283,6 +285,11 @@ const updateDailySchedule = async (
 
 		return {
 			...info,
+			// So the UI can grey the sim buttons with the SAME rule the worker
+			// enforces, instead of offering a button that is then refused.
+			ownGameSimCutoffSeconds:
+				(await getGlobalSettings()).ownGameSimCutoffSeconds ??
+				DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS,
 			elam: g.get("elam"),
 			elamASG: g.get("elamASG"),
 			season: inputs.season,

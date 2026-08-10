@@ -110,10 +110,16 @@ const DEFAULT_SETTINGS = (): AutoPlaySettings => ({
 
 // Phases where a plain "sim day/week/month" makes progress on its own. Anything
 // else needs a human, so we pause there.
+//
+// The PLAYOFFS are deliberately NOT here, even though a sim day advances them
+// perfectly well. An unattended timer marching through a postseason nobody
+// asked to watch is the one place "it kept going" is a bug rather than the
+// feature: the regular season is a grind worth automating, the playoffs are the
+// part people actually want to be present for. Auto play therefore stops when
+// the regular season ends, and someone re-enables it if they want the rest.
 const PLAYABLE_PHASES = new Set<number>([
 	PHASE.REGULAR_SEASON,
 	PHASE.AFTER_TRADE_DEADLINE,
-	PHASE.PLAYOFFS,
 	PHASE.FREE_AGENCY,
 ]);
 

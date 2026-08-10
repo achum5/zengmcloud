@@ -79,6 +79,9 @@ export const ScoreBox = memo(
 			href?: string;
 			onClick?: () => void;
 			text: ReactNode;
+			// Why a disabled action is disabled. A greyed-out button that cannot
+			// say what would re-enable it is just a dead end.
+			title?: string;
 		}[];
 		boxScoreTeamOverride?: string;
 		className?: string;
@@ -581,6 +584,7 @@ export const ScoreBox = memo(
 										key={i}
 										className={classNameAction}
 										disabled={action.disabled}
+										title={action.title}
 										onClick={action.onClick}
 									>
 										{action.text}
@@ -590,6 +594,7 @@ export const ScoreBox = memo(
 										key={i}
 										className={`${classNameAction} d-flex align-items-center`}
 										href={action.href}
+										title={action.title}
 									>
 										{action.text}
 									</a>
