@@ -13,6 +13,10 @@ import {
 	ALLSTAR_SIM_AUTHORITY_LOCKED,
 	isSimAuthorityLockedCall,
 } from "./core/sync/actionLabels.ts";
+import {
+	decideOwnGameSimCall,
+	isOwnGameSimCall,
+} from "./core/sync/ownGameSimGate.ts";
 import { syncDebugLog } from "./core/sync/debugLog.ts";
 import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
@@ -265,7 +269,37 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 
 	if (needsConnection) {
 		if (syncEngine) {
-			if (simAuthorityLocked && !syncEngine.isAuthority()) {
+			// One carve-out: your OWN team's single game. A one-gid sim is a
+			// disjoint slice of the day and simDayClaimPolicy's fence refuses any
+			// overlapping claim atomically, so this cannot double-sim a game
+			// whatever the UI allows. See core/sync/ownGameSimGate.ts.
+			let ownGameSimAllowed = false;
+			if (
+				simAuthorityLocked &&
+				!syncEngine.isAuthority() &&
+				isOwnGameSimCall(type, name)
+			) {
+				const decision = await decideOwnGameSimCall(param);
+				ownGameSimAllowed = decision.allow;
+				if (!decision.allow) {
+					syncDebugLog("api:guard-refused", {
+						type,
+						name,
+						step: "own-game",
+					});
+					util.logEvent(
+						{ type: "error", text: decision.reason, persistent: true },
+						conditions,
+					);
+					return undefined;
+				}
+			}
+
+			if (
+				simAuthorityLocked &&
+				!syncEngine.isAuthority() &&
+				!ownGameSimAllowed
+			) {
 				syncDebugLog("api:guard-refused", { type, name, step: "authority" });
 				// "You" is the pre-rename placeholder some rooms still have stored;
 				// reading it back at another device would say "You is in charge".

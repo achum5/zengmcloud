@@ -25,6 +25,7 @@ const updateOptions = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			phaseChangeRedirects: options.phaseChangeRedirects,
 			recapAIProvider: options.recapAIProvider ?? "claude",
 			recapMaxGames: options.recapMaxGames,
+			ownGameSimCutoffSeconds: options.ownGameSimCutoffSeconds,
 			recapMaxPlayers: options.recapMaxPlayers,
 			recapMaxDays: options.recapMaxDays,
 		};

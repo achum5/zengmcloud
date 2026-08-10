@@ -3,6 +3,8 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
+import { helpers } from "../util/helpers.ts";
+import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import { DAILY_SCHEDULE } from "../../common/constants.ts";
 import { NoGamesMessage } from "./GameLog.tsx";
@@ -73,17 +75,28 @@ const DailySchedule = ({
 
 	const {
 		gameSimInProgress,
+		mpLiveBroadcast,
 		phase,
 		season: currentSeason,
 		teamInfoCache,
 		userTid,
 	} = useLocal([
 		"gameSimInProgress",
+		"mpLiveBroadcast",
 		"phase",
 		"season",
 		"teamInfoCache",
 		"userTid",
 	]);
+
+	// A league-mate's live sim that is still running. The game itself has already
+	// been simmed and synced - watching is only the animation - so the score
+	// beside this badge is the real one. Someone who left the broadcast has
+	// already opted into seeing results; this is just the way back in.
+	const liveBroadcastGid =
+		mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster
+			? mpLiveBroadcast.gid
+			: undefined;
 
 	// Can't sim/watch games from here unless this device is in charge of simming.
 	const { locked: simAuthorityLocked } = useSimAuthorityLocked();
@@ -177,38 +190,49 @@ const DailySchedule = ({
 								{upcoming.map((game) => {
 									const actions =
 										isToday && !tradeDeadline
-											? [
-													{
-														disabled: gameSimInProgress || simAuthorityLocked,
-														highlight:
-															game.teams[0].tid === userTid ||
-															game.teams[1].tid === userTid,
-														text: (
-															<>
-																Watch
-																<br />
-																game
-															</>
-														),
-														onClick: () =>
-															toWorker("actions", "liveGame", game.gid),
-													},
-													{
-														disabled: gameSimInProgress || simAuthorityLocked,
-														highlight:
-															game.teams[0].tid === userTid ||
-															game.teams[1].tid === userTid,
-														text: (
-															<>
-																Sim
-																<br />
-																game
-															</>
-														),
-														onClick: () =>
-															toWorker("actions", "simGame", game.gid),
-													},
-												]
+											? (() => {
+													// Your own game stays available even when someone
+													// else is in charge of simming: one gid is a
+													// disjoint slice and the sim-day fence refuses any
+													// overlap. The worker owns the full rule (cutoff
+													// window, a sim already running) and names the
+													// reason when it refuses, so this only has to stop
+													// greying out the button.
+													const isOwnGame =
+														game.teams[0].tid === userTid ||
+														game.teams[1].tid === userTid;
+													const blocked =
+														gameSimInProgress ||
+														(simAuthorityLocked && !isOwnGame);
+													return [
+														{
+															disabled: blocked,
+															highlight: isOwnGame,
+															text: (
+																<>
+																	Watch
+																	<br />
+																	game
+																</>
+															),
+															onClick: () =>
+																toWorker("actions", "liveGame", game.gid),
+														},
+														{
+															disabled: blocked,
+															highlight: isOwnGame,
+															text: (
+																<>
+																	Sim
+																	<br />
+																	game
+																</>
+															),
+															onClick: () =>
+																toWorker("actions", "simGame", game.gid),
+														},
+													];
+												})()
 											: undefined;
 
 									const allowTie = allowForceTie({
@@ -279,6 +303,25 @@ const DailySchedule = ({
 												}
 											>
 												<ScoreBox game={game} />
+												{game.gid === liveBroadcastGid ? (
+													<div className="mt-1">
+														<span className="badge text-bg-danger me-2">
+															LIVE
+														</span>
+														<button
+															className="btn btn-sm btn-link p-0 border-0"
+															type="button"
+															onClick={() => {
+																void realtimeUpdate(
+																	[],
+																	helpers.leagueUrl(["live_game"]),
+																);
+															}}
+														>
+															Watch
+														</button>
+													</div>
+												) : null}
 												{game.note ? (
 													<GameNote
 														gid={game.gid}

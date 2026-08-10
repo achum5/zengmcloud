@@ -387,6 +387,12 @@ export const syncNudge = () => {
 let currentTransport: FirebaseTransport | undefined;
 let autoPlayUnsub: (() => void) | undefined;
 
+// When the room's auto-play is next due to fire, as published by whichever
+// device is running it. Undefined when nobody is auto-playing.
+let roomAutoPlayNextRunAt: number | undefined;
+
+export const getRoomAutoPlayNextRunAt = () => roomAutoPlayNextRunAt;
+
 // ---------------------------------------------------------------------------
 // Live-sim broadcast (Mode B: lockstep). When the sim authority live-sims a game,
 // it publishes the immutable play-by-play once and heartbeats a moving cursor;
@@ -1822,6 +1828,10 @@ const doConnectSharedLeague = async ({
 	// + countdown, and keep a transport handle so the simmer can publish its own.
 	currentTransport = transport;
 	autoPlayUnsub = transport.subscribeAutoPlay?.((autoPlay) => {
+		// Kept here as well as pushed to the UI: the own-game sim gate runs in the
+		// worker and needs to know how close the room's scheduled sim is.
+		roomAutoPlayNextRunAt =
+			typeof autoPlay?.nextRunAt === "number" ? autoPlay.nextRunAt : undefined;
 		void toUI("updateLocal", [{ mpAutoPlay: autoPlay }]);
 	});
 
@@ -1917,6 +1927,7 @@ export const teardownSharedLeague = async ({
 	lastEditsPausedPushed = undefined;
 	autoPlayUnsub?.();
 	autoPlayUnsub = undefined;
+	roomAutoPlayNextRunAt = undefined;
 	liveBroadcastUnsub?.();
 	liveBroadcastUnsub = undefined;
 	lotteryRevealUnsub?.();

@@ -6,6 +6,7 @@ import {
 	DEFAULT_RECAP_MAX_DAYS,
 	DEFAULT_RECAP_MAX_PLAYERS,
 } from "../../common/constants.ts";
+import { DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS } from "../../common/ownGameSim.ts";
 
 export const getGlobalSettings = async () => {
 	const globalSettings = ((await idb.meta.get("attributes", "options")) ??
@@ -15,6 +16,8 @@ export const getGlobalSettings = async () => {
 	globalSettings.recapMaxGames ??= DEFAULT_RECAP_MAX_GAMES;
 	globalSettings.recapMaxDays ??= DEFAULT_RECAP_MAX_DAYS;
 	globalSettings.recapMaxPlayers ??= DEFAULT_RECAP_MAX_PLAYERS;
+	globalSettings.ownGameSimCutoffSeconds ??=
+		DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS;
 
 	return globalSettings;
 };

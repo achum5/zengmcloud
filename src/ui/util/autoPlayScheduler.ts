@@ -650,6 +650,19 @@ class AutoPlayScheduler {
 			return;
 		}
 
+		// A league-mate is part-way through their own game. The game itself is
+		// already simmed and published, but their slice of the day may not have
+		// reached us yet - and a day claim that overlaps a gid someone else has
+		// taken is refused WHOLE, costing the room this tick. Waiting one tick is
+		// cheaper than losing one.
+		if (state.mpLiveBroadcast?.active) {
+			this.breadcrumb("autoPlay:skipped", { why: "live-sim-in-flight" });
+			if (this.settings.enabled) {
+				this.armTimer();
+			}
+			return;
+		}
+
 		// The eligibility check above says this device is connected and in charge;
 		// it says nothing about whether its local league state can be trusted. A
 		// device parked at a phantom phase by a bad replay passes every connection

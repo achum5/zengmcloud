@@ -2363,6 +2363,28 @@ export const LiveGame = (props: View<"liveGame">) => {
 		<div>
 			{confetti.display ? <Confetti colors={confetti.colors} /> : null}
 
+			{/* A follower was navigated here by someone else's sim, so there has to
+			    be a way out. Leaving unmounts this page, which fires onLiveSimOver
+			    and releases the spoiler hold - so results appear immediately, which
+			    is the deliberate trade for being able to go and do something else. */}
+			{isFollower ? (
+				<div className="d-flex align-items-center mb-2">
+					<span className="text-body-secondary me-2">
+						Watching {mpLiveBroadcast?.byName ?? "a league-mate"}'s live sim
+					</span>
+					<button
+						className="btn btn-sm btn-light"
+						type="button"
+						title="Stop watching and show results"
+						onClick={() => {
+							void realtimeUpdate([], helpers.leagueUrl(["daily_schedule"]));
+						}}
+					>
+						Leave
+					</button>
+				</div>
+			) : null}
+
 			{isFollower || isBroadcaster ? null : showWarning ? ( // Broadcasting/watching needs no banner - the live game itself shows it.
 				<p className="text-danger">
 					{navigateWarning}

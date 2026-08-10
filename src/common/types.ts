@@ -1189,6 +1189,10 @@ export type Options = {
 	phaseChangeRedirects: Phase[];
 	recapAIProvider?: RecapAIProvider;
 	recapMaxGames?: number;
+	// Seconds before the room's scheduled auto sim during which a device that is
+	// NOT in charge of simming may not sim its own game. 0 disables the window.
+	// See common/ownGameSim.ts.
+	ownGameSimCutoffSeconds?: number;
 	recapMaxPlayers?: number;
 	recapMaxDays?: number;
 	units?: "metric" | "us";

@@ -48,6 +48,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			recapAIProvider: props.recapAIProvider,
 			recapMaxGames: String(props.recapMaxGames),
 			recapMaxDays: String(props.recapMaxDays),
+			ownGameSimCutoffSeconds: String(props.ownGameSimCutoffSeconds),
 			recapMaxPlayers: String(props.recapMaxPlayers),
 			theme,
 			units,
@@ -94,6 +95,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				recapMaxGames: Number(state.recapMaxGames),
 				recapMaxPlayers: Number(state.recapMaxPlayers),
 				recapMaxDays: Number(state.recapMaxDays),
+				ownGameSimCutoffSeconds: Number(state.ownGameSimCutoffSeconds),
 				units,
 			});
 			showNotification({
@@ -221,6 +223,30 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							className="form-control"
 							onChange={handleChange("recapMaxDays")}
 							value={state.recapMaxDays}
+						/>
+					</div>
+					<div className="col-sm-3 col-6 mb-3">
+						<label
+							className="form-label"
+							htmlFor="options-ownGameSimCutoffSeconds"
+						>
+							Own Game Sim Cutoff{" "}
+							<HelpPopover title="Own Game Sim Cutoff">
+								<p>
+									Seconds before a scheduled multiplayer sim during which you
+									cannot sim or watch your own game, so your result has time to
+									reach the device doing the simming. 0 turns the window off.
+								</p>
+							</HelpPopover>
+						</label>
+						<input
+							id="options-ownGameSimCutoffSeconds"
+							type="number"
+							min={0}
+							step={1}
+							className="form-control"
+							onChange={handleChange("ownGameSimCutoffSeconds")}
+							value={state.ownGameSimCutoffSeconds}
 						/>
 					</div>
 					<div className="col-sm-3 col-6 mb-3">

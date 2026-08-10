@@ -17,6 +17,10 @@ import {
 	DEFAULT_RECAP_MAX_DAYS,
 	DEFAULT_RECAP_MAX_PLAYERS,
 } from "../../common/constants.ts";
+import {
+	DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS,
+	decideOwnGameSim,
+} from "../../common/ownGameSim.ts";
 import actions from "./actions.ts";
 import leagueFileUpload, {
 	decompressStreamIfNecessary,
@@ -5217,6 +5221,14 @@ const updateOptions = async (
 				options.recapMaxPlayers,
 				DEFAULT_RECAP_MAX_PLAYERS,
 			),
+			// Unlike the recap caps, 0 is a legitimate value here: it means "no
+			// cutoff window", leaving the sim-day fence as the only guard.
+			ownGameSimCutoffSeconds: (() => {
+				const num = Math.floor(Number(options.ownGameSimCutoffSeconds));
+				return Number.isFinite(num) && num >= 0
+					? num
+					: DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS;
+			})(),
 		},
 		"options",
 	);
