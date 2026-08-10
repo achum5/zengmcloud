@@ -12,7 +12,7 @@ fourth are console actions you have to take.**
 
 ## 1. Entries carry a `ttlAt` (shipped)
 
-Every change published from this build stamps `ttlAt = now + 3 days`
+Every change published from this build stamps `ttlAt = now + 6 days`
 (`RETENTION_DAYS` in `src/common/syncRetention.ts`). The field is inert on its
 own — readers ignore it completely — so it is safe to ship well ahead of the
 policy below.
@@ -21,7 +21,9 @@ The log is a delivery buffer, not an archive: every device already holds the
 same league file and applies deltas as they arrive, so an entry is dead weight
 once everyone has read it. **The cost of a window this short is that a device
 away longer than it, while the others played, must re-import a fresh export.**
-Raise `RETENTION_DAYS` if that starts happening to anyone.
+Six days covers a long weekend with room either side, so an ordinary week away
+is the first thing that costs a re-import. Raise `RETENTION_DAYS` again if that
+starts happening to anyone.
 
 Changing the number only affects entries published *after* the change — older
 ones keep the `ttlAt` they were stamped with. To clear existing history now,

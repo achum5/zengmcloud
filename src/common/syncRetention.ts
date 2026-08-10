@@ -27,15 +27,15 @@
 // The log is a delivery buffer, not an archive. Every device already holds the
 // same league file and applies deltas as they arrive, so an entry is dead
 // weight the moment everyone has read it - which, for a league played daily, is
-// the same day it was written. Three days is generous cover for a weekend.
+// the same day it was written.
 //
 // THE COST, and it is a real one: a device that has not opened the app for
 // longer than this, while the others kept playing, needs entries that no longer
 // exist. It is refused at connect (see isTooFarBehind) and has to re-import a
-// fresh export. At 45 days that was theoretical; at 3 it is a long weekend
-// away. That is the trade for a log that stays small - raise this number if it
-// starts costing anyone a re-import.
-export const RETENTION_DAYS = 3;
+// fresh export. Six days covers a long weekend plus a couple of days either
+// side, so an ordinary week away is the first thing that costs a re-import
+// rather than a Friday-to-Monday gap. Raise it again if that still bites.
+export const RETENTION_DAYS = 6;
 export const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 // Can this device still catch up from the log, or did the entries it needs get

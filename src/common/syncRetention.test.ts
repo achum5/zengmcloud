@@ -46,11 +46,12 @@ describe("ttlAtMsFor", () => {
 	test("the window still covers a weekend away", () => {
 		// This guard used to demand a fortnight, on the reasoning that anything
 		// shorter would start locking out players who take a break. The window was
-		// then cut to three days deliberately: the log is a delivery buffer, not an
-		// archive, and every device already holds the league file. The lockout is
-		// the accepted price, so what is left to protect is the floor - a window
-		// that does not survive a weekend would refuse people who did nothing
-		// unusual at all.
+		// then cut deliberately: the log is a delivery buffer, not an archive, and
+		// every device already holds the league file. The lockout is the accepted
+		// price, so what is left to protect is the FLOOR - a window that does not
+		// survive a weekend would refuse people who did nothing unusual at all.
+		// This asserts that floor, not the current setting, so tuning the window up
+		// (three days, then six) does not need the test rewritten each time.
 		assert.ok(
 			RETENTION_MS >= 3 * 24 * 60 * 60 * 1000,
 			"a shorter window would lock out an ordinary weekend absence",
