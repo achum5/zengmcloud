@@ -142,7 +142,10 @@ const prospectBlock = (d: RecapProspect, season: number): string[] => {
 		.map(([key, value]) => `${key}${value}`)
 		.join(" ");
 	return [
-		`PROSPECT — eligible for the ${d.draftYear} draft, which is held at the end of the ${d.draftYear} season. It is ${season} and he has never played in this league; nobody knows yet where he will go.`,
+		// Deliberately does NOT say what year it currently is. The report is read
+		// at the draft, so telling the writer it is the season before invites
+		// "he is a year away" framing that is stale by the time anyone sees it.
+		`PROSPECT — coming out in the ${d.draftYear} draft, held at the end of the ${d.draftYear} season. He has never played in this league; nobody knows yet where he will go.`,
 		`  scouting: ovr${d.ovr} pot${d.pot}${subs ? ` | ${subs}` : ""}`,
 	];
 };
@@ -208,7 +211,20 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 				? p.teamAbbrevs.join(" / ")
 				: "no team";
 	const pos = p.prospect ? p.prospect.pos : p.pos;
-	lines.push(`${p.name} — ${pos}, age ${p.age} in ${season}, ${where}`);
+	// A prospect's report is read at his DRAFT, not on the day it was filed - a
+	// class is scouted the season before, so by the time anyone opens the report
+	// he is a year older than he was when it was written. Stating the age he is
+	// now made every report read as though the draft were happening a year early
+	// ("he's eighteen years old" on a card showing 19). Give the age he will be
+	// when he comes out, and label it, so there is nothing to misread.
+	if (p.prospect) {
+		const ageAtDraft = p.age + Math.max(0, p.prospect.draftYear - season);
+		lines.push(
+			`${p.name} — ${pos}, age ${ageAtDraft} at the ${p.prospect.draftYear} draft, ${where}`,
+		);
+	} else {
+		lines.push(`${p.name} — ${pos}, age ${p.age} in ${season}, ${where}`);
+	}
 
 	const bio: string[] = [];
 	const size = [height(p.hgt), p.weight > 0 ? `${p.weight} lbs` : undefined]
@@ -495,7 +511,9 @@ ${FICTIONAL_LEAGUE_NOTICE}
 
 Every player below is in NEXT year's draft class. He has never played a game in this league, has no stats, and nobody has seen him do anything yet. His draft has not happened, so where he goes and who takes him are unknown to you; project them, never state them. There is no season to recap and no absence of one to remark on.
 
-Write the report a scouting department would file the year before he comes out: several paragraphs, and give every one of them real content. Frame, body and athleticism. What he does on offence — how he scores, from where, whether he can shoot it, whether he can create, how he handles it, how he passes. What he does defensively, and whether he can guard his position. Feel for the game, motor, durability. Then the honest part: what has to improve, what may never come, what kind of player he projects as and what kind of role fits him. Say where you think he goes in the draft and why. A short report is a failure here; this is the only thing ever written about him before he arrives.
+Write it as of the draft he is coming out in, not as of today. The class is scouted a season ahead, so his header gives the age he will be WHEN HE IS DRAFTED - that is the only age you may use, and the only one a reader will see beside the report. Never work out or mention how old he is right now, never say what year it currently is, and never describe the draft as being a year away.
+
+Write the report a scouting department would file on him as he comes out: several paragraphs, and give every one of them real content. Frame, body and athleticism. What he does on offence — how he scores, from where, whether he can shoot it, whether he can create, how he handles it, how he passes. What he does defensively, and whether he can guard his position. Feel for the game, motor, durability. Then the honest part: what has to improve, what may never come, what kind of player he projects as and what kind of role fits him. Say where you think he goes in the draft and why. A short report is a failure here; this is the only thing ever written about him before he arrives.
 
 Everything you say has to come from the ratings in his block and nothing else. They are your entire scouting file, and the length of the report comes from reading them carefully — a big man who cannot shoot, a guard with no handle, a phenomenal athlete with no feel are all right there in the numbers.
 

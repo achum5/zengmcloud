@@ -842,11 +842,30 @@ describe("next season's draft class", () => {
 		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
 		assert.ok(
 			prompt.includes(
-				"PROSPECT — eligible for the 2006 draft, which is held at the end of the 2006 season",
+				"PROSPECT — coming out in the 2006 draft, held at the end of the 2006 season",
 			),
 			prompt,
 		);
 		assert.ok(prompt.includes("ovr44 pot71 | hgt90 stre55 ins60 tp20 oiq35"));
+	});
+
+	// A class is scouted the season BEFORE it comes out, so by the time anyone
+	// reads the report the player is a year older than he was when it was filed.
+	// Giving his age at the time produced reports insisting a 19-year-old was
+	// eighteen, on a page showing 19.
+	test("the header gives his age at the draft, not when he was scouted", () => {
+		// Fixture: age 25 in the 2005 season, coming out in the 2006 draft.
+		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
+		assert.ok(prompt.includes("age 26 at the 2006 draft"), prompt);
+		assert.ok(!prompt.includes("age 25 in 2005"), prompt);
+	});
+
+	test("the prompt never tells the writer what year it currently is", () => {
+		// Knowing it is the season before invites "he is a year away" framing,
+		// which is stale by the time the report is read at the draft.
+		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
+		const body = prompt.slice(prompt.indexOf("PLAYER <21>"));
+		assert.ok(!body.includes("It is 2005"), body);
 	});
 
 	// Backfilling an old season, the draft has already been played and the result
@@ -864,7 +883,9 @@ describe("next season's draft class", () => {
 	test("he is headed by his class and position, not as a man with no team", () => {
 		const prompt = buildPlayerRecapPrompt(scoutingBatch([prospect()]));
 		assert.ok(
-			prompt.includes("Player 21 — C, age 25 in 2005, 2006 draft class"),
+			prompt.includes(
+				"Player 21 — C, age 26 at the 2006 draft, 2006 draft class",
+			),
 		);
 		assert.ok(!prompt.includes("Player 21 — , "));
 		const body = prompt.slice(prompt.indexOf("PLAYER <21>"));
