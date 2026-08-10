@@ -1963,4 +1963,196 @@ describe("SyncEngineV2", () => {
 		);
 		engine.stop();
 	});
+
+	// THE FIELD LOG THIS ENCODES: eight timeouts across 149 seconds. Every time
+	// the network cycle ran, the wedged read recovered in ~2s; every time the
+	// 30s throttle blocked it, the device sat 5-31s. Worst case, delta@436:
+	// throttled by 3.5s, the doubled streak had inflated the backoff to 15s,
+	// and with no self-retry the next attempt waited on a pointer push riding
+	// the SAME wedged channel - 18 seconds of dead air for a 130ms apply.
+	describe("wedge recovery timing", () => {
+		const sleep = (ms: number) =>
+			new Promise((resolve) => setTimeout(resolve, ms));
+
+		test("a timeout counts once on the streak, with the wedge as its own flag", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			transport.fetchRoomV2State = () =>
+				Promise.reject(new Error("Timed out after 8000ms"));
+			// No cycleNetwork, so nothing resets what this asserts.
+			const engine = new SyncEngineV2(transport);
+
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.strictEqual(
+				(engine as any).catchupFailureStreak,
+				1,
+				"the old double-count raced the backoff ladder to its 15s rung",
+			);
+			assert.strictEqual(
+				(engine as any).lastCatchupFailureWasTimeout,
+				true,
+				"the wedge signal survives as a flag instead",
+			);
+			engine.stop();
+		});
+
+		test("one timed-out read still fires the cycle on its own", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			transport.fetchRoomV2State = () =>
+				Promise.reject(new Error("Timed out after 8000ms"));
+			let cycles = 0;
+			(transport as any).cycleNetwork = async () => {
+				cycles += 1;
+			};
+			const engine = new SyncEngineV2(transport);
+			(engine as any).lastNetworkCycleAt = 0;
+
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.strictEqual(
+				cycles,
+				1,
+				"this is what the streak double-counting existed for; the flag keeps it",
+			);
+			engine.stop();
+		});
+
+		test("the same read failing twice bypasses the 30s cycle throttle", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			transport.fetchRoomV2State = () =>
+				Promise.reject(new Error("Timed out after 8000ms"));
+			let cycles = 0;
+			(transport as any).cycleNetwork = async () => {
+				cycles += 1;
+			};
+			const engine = new SyncEngineV2(transport);
+			// 15s since the last cycle: inside the 30s throttle, outside the 10s
+			// wedge floor - the delta@436 shape exactly.
+			(engine as any).lastNetworkCycleAt = Date.now() - 15_000;
+
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.strictEqual(cycles, 0, "one failure is throttled, as before");
+
+			(engine as any).lastCatchupFailureAt = 0; // skip the backoff wait
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.strictEqual(
+				cycles,
+				1,
+				"the second failure on the SAME step is proof of a wedge, not a blip",
+			);
+			engine.stop();
+		});
+
+		test("the 10s floor still holds even for a repeating wedge", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			transport.fetchRoomV2State = () =>
+				Promise.reject(new Error("Timed out after 8000ms"));
+			let cycles = 0;
+			(transport as any).cycleNetwork = async () => {
+				cycles += 1;
+			};
+			const engine = new SyncEngineV2(transport);
+			(engine as any).lastNetworkCycleAt = Date.now() - 5_000;
+
+			assert.strictEqual(await engine.catchUp(), false);
+			(engine as any).lastCatchupFailureAt = 0;
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.strictEqual(
+				cycles,
+				0,
+				"a genuinely dead network can never be cycle-stormed",
+			);
+			engine.stop();
+		});
+
+		test("a failed pass retries itself - no external trigger needed", async () => {
+			const room = new Room();
+			initRoom(room);
+			// Seed one version for the retry to find.
+			const seedTransport = new V2Transport("A", room);
+			await seedTransport.publishV2Delta(
+				{ version: 1, authorId: "A", action: "main.proposeTrade", at: 1 },
+				serializeChangeset(changesetOf(tradePut(1, 5))),
+			);
+			await seedTransport.commitV2Version(
+				{
+					version: 1,
+					authorId: "A",
+					byName: "A",
+					at: 1,
+					action: "main.proposeTrade",
+				},
+				0,
+			);
+
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			const realFetchState = transport.fetchRoomV2State.bind(transport);
+			let failures = 0;
+			transport.fetchRoomV2State = () => {
+				if (failures === 0) {
+					failures += 1;
+					return Promise.reject(new Error("Timed out after 8000ms"));
+				}
+				return realFetchState();
+			};
+			const engine = new SyncEngineV2(transport);
+
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.ok(
+				(engine as any).catchupRetryTimer !== undefined,
+				"the failure armed its own retry",
+			);
+			// Streak 1 waits 1s on the ladder; the timer fires just past it. The
+			// old behavior here was 18 seconds of nothing until a pointer push
+			// happened to arrive over the same wedged channel.
+			await sleep(1_400);
+			assert.strictEqual(
+				await readAppliedVersion(),
+				1,
+				"the retry caught up with no pointer push, no probe, no user",
+			);
+			engine.stop();
+		});
+
+		test("stop() takes a pending retry with it", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			let stateFetches = 0;
+			transport.fetchRoomV2State = () => {
+				stateFetches += 1;
+				return Promise.reject(new Error("Timed out after 8000ms"));
+			};
+			const engine = new SyncEngineV2(transport);
+
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.ok((engine as any).catchupRetryTimer !== undefined);
+			engine.stop();
+			assert.strictEqual(
+				(engine as any).catchupRetryTimer,
+				undefined,
+				"no timer may outlive the engine",
+			);
+			const fetchesBefore = stateFetches;
+			await sleep(1_400);
+			assert.strictEqual(
+				stateFetches,
+				fetchesBefore,
+				"nothing fires after teardown",
+			);
+			engine.stop();
+		});
+	});
 });

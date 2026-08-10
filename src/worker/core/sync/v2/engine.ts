@@ -217,6 +217,23 @@ export class SyncEngineV2 {
 	private probing = false;
 	private probeFailureStreak = 0;
 	private catchupFailureStreak = 0;
+	// Whether the most recent catch-up failure was a timed-out read - the wedge
+	// signature. Carried as its own flag instead of double-counting the streak
+	// (which is what used to happen): the streak feeds the backoff ladder, and
+	// inflating it to fire the cycle sooner also raced the ladder to its 15s
+	// rung after two timeouts - lengthening exactly the stalls it meant to cut.
+	private lastCatchupFailureWasTimeout = false;
+	// The step (delta@N / state) the last failure died on, and how many times in
+	// a row it has died there. The SAME read failing twice is ~16s of proof the
+	// channel is wedged rather than blipping, which is what earns the faster
+	// cycle below.
+	private lastFailedCatchupStep: string | undefined;
+	private sameStepFailureCount = 0;
+	// The self-retry armed after a failed pass. Without it, the next attempt
+	// waited on an external trigger - a pointer push riding the SAME wedged
+	// channel that just failed, which is how a field capture showed 18 seconds
+	// of dead air on a delta the next pass applied in 130ms.
+	private catchupRetryTimer: ReturnType<typeof setTimeout> | undefined;
 	private lastNetworkCycleAt = 0;
 
 	// Remedies applied to the CURRENT wedge. Reset the moment anything gets
@@ -528,12 +545,16 @@ export class SyncEngineV2 {
 		return fn ? () => fn.call(this.transport) : undefined;
 	}
 
-	private async maybeCycleNetwork(source: "probe" | "catchup") {
+	// Returns whether a remedy (cycle or hard restart) actually ran, so the
+	// caller knows whether a follow-up catch-up is already scheduled.
+	private async maybeCycleNetwork(
+		source: "probe" | "catchup",
+	): Promise<boolean> {
 		if (
 			this.stopped ||
 			(!this.transport.cycleNetwork && !this.transport.hardRestart)
 		) {
-			return;
+			return false;
 		}
 		// Never yank the connection out from under a catch-up that is running.
 		// disableNetwork fails every read in flight, so a probe-triggered cycle
@@ -541,16 +562,27 @@ export class SyncEngineV2 {
 		// cost the device its place. The catchup source is exempt: it calls this
 		// from its own catch block, where the pass is already over.
 		if (source === "probe" && this.catchingUp) {
-			return;
+			return false;
 		}
-		if (
-			Math.max(this.probeFailureStreak, this.catchupFailureStreak) < 2 ||
-			Date.now() - this.lastNetworkCycleAt <= 30_000
-		) {
-			return;
+		// One timed-out read is the wedge signature and qualifies on its own
+		// (this is what the old streak double-counting was for); anything else
+		// needs two failures before the connection is presumed guilty.
+		const eligible =
+			Math.max(this.probeFailureStreak, this.catchupFailureStreak) >= 2 ||
+			(source === "catchup" && this.lastCatchupFailureWasTimeout);
+		// The 30s spacing exists so a dead network cannot be cycle-stormed into
+		// the SDK's "client is offline" death spiral. But the SAME read failing
+		// twice is ~16 seconds of proof this is a wedge, not a blip - and every
+		// field capture shows a cycle curing a wedge in ~2s while a throttled one
+		// costs 5-30s of dead waiting. A wedge earns a shorter leash; the 10s
+		// floor still bounds the worst-case cycle rate on a genuinely dead
+		// network, where each attempt already costs 8s of timeout + backoff.
+		const minGapMs = this.sameStepFailureCount >= 2 ? 10_000 : 30_000;
+		if (!eligible || Date.now() - this.lastNetworkCycleAt <= minGapMs) {
+			return false;
 		}
 		this.probeFailureStreak = 0;
-		this.catchupFailureStreak = 0;
+		this.resetCatchupFailureTracking();
 		this.lastNetworkCycleAt = Date.now();
 
 		// First attempt on a fresh wedge cycles; every attempt after that, until
@@ -594,6 +626,7 @@ export class SyncEngineV2 {
 		if (typeof nodeTimeout?.unref === "function") {
 			nodeTimeout.unref();
 		}
+		return true;
 	}
 
 	// Tell the UI this device is visibly behind and working on it. Never fires
@@ -671,6 +704,7 @@ export class SyncEngineV2 {
 	stop() {
 		this.stopped = true;
 		this.clearCatchUpProgress();
+		this.clearCatchupRetryTimer();
 		if (this.authorityRestartTimer !== undefined) {
 			clearTimeout(this.authorityRestartTimer);
 			this.authorityRestartTimer = undefined;
@@ -1116,7 +1150,7 @@ export class SyncEngineV2 {
 		const restoresBefore = this.checkpointRestores;
 		this.mustRecoverFromCheckpoint = true;
 		this.lastCheckpointAttempt = undefined;
-		this.catchupFailureStreak = 0;
+		this.resetCatchupFailureTracking();
 		this.wedgeRemedyCount = 0;
 		this.lastCatchupFailureAt = 0;
 		syncDebugLog("v2:force-checkpoint-restore", {
@@ -1185,6 +1219,52 @@ export class SyncEngineV2 {
 		return this.catchUpChain;
 	}
 
+	// Every site that declares the catch-up healthy resets the whole failure
+	// picture through here, so the flag and the same-step counter can never
+	// outlive the failure they described.
+	private resetCatchupFailureTracking() {
+		this.catchupFailureStreak = 0;
+		this.lastCatchupFailureWasTimeout = false;
+		this.lastFailedCatchupStep = undefined;
+		this.sameStepFailureCount = 0;
+	}
+
+	private clearCatchupRetryTimer() {
+		if (this.catchupRetryTimer !== undefined) {
+			clearTimeout(this.catchupRetryTimer);
+			this.catchupRetryTimer = undefined;
+		}
+	}
+
+	// Arm ONE retry at backoff expiry after a failed pass that did not cycle
+	// the network (a cycle schedules its own follow-up). This adds a trigger
+	// and nothing else: catchUp() is already safe to call at any moment from
+	// any number of callers - it serializes on the chain and re-checks the
+	// backoff at execution time - so the worst this timer can do is run a pass
+	// that finds nothing to do.
+	private scheduleCatchupRetry() {
+		if (this.stopped || this.catchupRetryTimer !== undefined) {
+			return;
+		}
+		const wait =
+			CATCHUP_BACKOFF_MS[
+				Math.min(this.catchupFailureStreak, CATCHUP_BACKOFF_MS.length - 1)
+			]!;
+		// A hair past expiry so backingOff() has actually lapsed when it fires.
+		this.catchupRetryTimer = setTimeout(() => {
+			this.catchupRetryTimer = undefined;
+			if (!this.stopped) {
+				void this.catchUp();
+			}
+		}, wait + 50);
+		const nodeTimeout = this.catchupRetryTimer as unknown as {
+			unref?: () => void;
+		};
+		if (typeof nodeTimeout?.unref === "function") {
+			nodeTimeout.unref();
+		}
+	}
+
 	private backingOff(): boolean {
 		const wait =
 			CATCHUP_BACKOFF_MS[
@@ -1203,6 +1283,9 @@ export class SyncEngineV2 {
 			return false;
 		}
 		this.catchingUp = true;
+		// A running pass is exactly what any armed retry wanted; if this one
+		// fails too, its catch arms a fresh timer at the new backoff.
+		this.clearCatchupRetryTimer();
 		// Which read the pass is on, so a failure names its culprit instead of
 		// logging an anonymous {} - "delta@61 timed out" is diagnosable from a
 		// field capture, "error: {}" is not.
@@ -1294,7 +1377,7 @@ export class SyncEngineV2 {
 				const plan = catchUpPlan(applied, state);
 
 				if (plan.type === "caught-up") {
-					this.catchupFailureStreak = 0;
+					this.resetCatchupFailureTracking();
 					this.wedgeRemedyCount = 0;
 					this.notifiedFailingStep = undefined;
 					this.clearCatchUpProgress();
@@ -1423,7 +1506,7 @@ export class SyncEngineV2 {
 						// only went up, which is how the retry cadence and the network
 						// cycling both ended up permanently in their most aggressive
 						// state on the device that could least afford it.
-						this.catchupFailureStreak = 0;
+						this.resetCatchupFailureTracking();
 						this.wedgeRemedyCount = 0;
 						if (this.catchUpPillShown) {
 							this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
@@ -1447,7 +1530,7 @@ export class SyncEngineV2 {
 				// mid-walk, the listener/probe delivers the newer pointer and the
 				// next pass handles it.
 				if (this.appliedMirror >= this.roomVersion) {
-					this.catchupFailureStreak = 0;
+					this.resetCatchupFailureTracking();
 					this.wedgeRemedyCount = 0;
 					this.notifiedFailingStep = undefined;
 					this.clearCatchUpProgress();
@@ -1457,13 +1540,26 @@ export class SyncEngineV2 {
 			return false;
 		} catch (error) {
 			syncDebugLog("v2:catchup-failed", { error: String(error), step });
-			// A TIMED-OUT read is the wedge signature (the pointer push worked,
-			// the read hangs), so it counts double: the cycle fires after ONE
-			// timeout instead of two - halving the stall the user sits through.
-			this.catchupFailureStreak += String(error).includes("Timed out") ? 2 : 1;
+			// A TIMED-OUT read is the wedge signature (the pointer push worked, the
+			// read hangs). It used to count DOUBLE on the streak so the cycle would
+			// fire after one timeout - but the streak also indexes the backoff
+			// ladder, so the double-count raced two timeouts to the 15-second rung
+			// and lengthened exactly the stalls it meant to cut. The wedge signal is
+			// now its own flag; the streak counts failures honestly.
+			this.catchupFailureStreak += 1;
+			this.lastCatchupFailureWasTimeout = String(error).includes("Timed out");
+			if (step === this.lastFailedCatchupStep) {
+				this.sameStepFailureCount += 1;
+			} else {
+				this.lastFailedCatchupStep = step;
+				this.sameStepFailureCount = 1;
+			}
 			this.lastCatchupFailureAt = Date.now();
 			// Repeated identical failures deserve one honest line to the user -
 			// the retrying is automatic, but silence while stuck reads as broken.
+			// (With the old double-counting a pure-timeout streak went 2, 4, 6 and
+			// this === 3 never fired at all; counting honestly makes it mean what
+			// it says: the third consecutive failure.)
 			if (
 				this.catchupFailureStreak === 3 &&
 				this.notifiedFailingStep !== step
@@ -1485,7 +1581,15 @@ export class SyncEngineV2 {
 			if (this.roomVersion > this.appliedMirror) {
 				this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
 			}
-			await this.maybeCycleNetwork("catchup");
+			// A cycle schedules its own follow-up (the settle timer). A failure
+			// that did NOT cycle used to wait on an external trigger - a pointer
+			// push riding the same wedged channel that just failed - which is how
+			// a field capture showed 18 seconds of dead air on a delta the next
+			// pass applied in 130ms. Arm our own retry at backoff expiry instead.
+			const cycled = await this.maybeCycleNetwork("catchup");
+			if (!cycled) {
+				this.scheduleCatchupRetry();
+			}
 			return false;
 		} finally {
 			this.catchingUp = false;
