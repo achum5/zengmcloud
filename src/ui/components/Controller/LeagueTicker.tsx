@@ -164,8 +164,16 @@ export const LeagueTicker = memo(() => {
 	const visible = lid !== undefined && items.length > 0;
 	useEffect(() => {
 		localActions.update({ leagueTickerVisible: visible });
+
+		// The bar is position:fixed, so it covers the bottom of every page unless
+		// the document is given that much extra scrollable space. Without this the
+		// last row of a table, or the buttons at the foot of a form, simply cannot
+		// be reached.
+		document.body.classList.toggle("has-league-ticker", visible);
+
 		return () => {
 			localActions.update({ leagueTickerVisible: false });
+			document.body.classList.remove("has-league-ticker");
 		};
 	}, [visible]);
 

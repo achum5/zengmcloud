@@ -573,3 +573,17 @@ $league-ticker-toggle-width: 22px;
 	border-radius: 0 !important;
 	z-index: 1;
 }
+
+// THE FIXED BAR STEALS THE BOTTOM OF EVERY PAGE unless the document is given
+// that much extra scrollable space. The window is the scroll container here
+// (see the note above the sticky header), so the padding goes on <body>: the
+// page then scrolls far enough that its real last row clears the ticker
+// instead of sitting permanently underneath it.
+//
+// Set from the ticker component rather than assumed, because the bar is not
+// always there - no league, an empty feed, or the user having hidden it.
+body.has-league-ticker {
+	padding-bottom: calc(
+		#{$league-ticker-height} + env(safe-area-inset-bottom, 0px)
+	);
+}
