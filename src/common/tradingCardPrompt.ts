@@ -68,10 +68,33 @@ export type CardSubject = {
 const height = (inches: number): string =>
 	inches > 0 ? `${Math.floor(inches / 12)}'${inches % 12}"` : "";
 
-// The league is fictional and the model must not reach for anything it knows
-// about a real player who happens to share a name. The one exception is the
-// uniform, which is the whole point of picking a season.
-const FICTION = `THIS IS A FICTIONAL LEAGUE. The player and team names may coincide with real people and real franchises, but they are NOT them and share no history. Do not use any real-world knowledge about this player - no real face, no real physical likeness, no real team history, no real awards, no real signature moves, no real jersey number. Everything about the person comes from the data below and nothing else.
+// WHY THIS SECTION IS WORDED THE WAY IT IS.
+//
+// It used to open "THIS IS A FICTIONAL LEAGUE. The player and team names may
+// coincide with real people..." and then hand over a dossier that began
+// "Name: LeBron James". Read plainly, that is a request to depict a named real
+// person, and hosted image models refuse those outright - a league using real
+// player names could not generate a card at all.
+//
+// The card still needs the name ON it, so the name cannot go away. What changes
+// is its JOB. The thing being drawn is the attached cartoon avatar, stated
+// first and without a name attached to it; the name appears once, late, quoted,
+// in a section about typography. Nothing asks for a likeness of anybody, and
+// the model has a picture of exactly who to draw.
+//
+// The uniform exception stays: reproducing the franchise's real kit is the
+// whole reason a season is picked, and it is the part that makes these look
+// like real cards.
+const subjectBlock = (subject: CardSubject): string =>
+	`## What you are drawing
+
+The subject is the CARTOON CHARACTER in the attached image - a flat vector avatar from a basketball video game. Draw that character and nobody else. ${
+		subject.face
+			? "The attached picture is the complete and only reference for his face, hair, skin tone and build."
+			: "Build his appearance from the physical description below and nothing else."
+	}
+
+Every name on this card is LETTERING to be set in type. It is not a description of who to draw, it does not refer to anyone real, and it must not influence the character's appearance. Use no outside knowledge about any name printed here.
 
 THE ONE EXCEPTION is the uniform. For the jersey, DO use your real-world memory of what that franchise actually wore in that season, as described below.`;
 
@@ -92,7 +115,7 @@ const faceBlock = (subject: CardSubject): string => {
 	if (!subject.face) {
 		return "";
 	}
-	return `\n\n## The player's face\n\nA screenshot of this player is attached. It is a HEADSHOT - a straight-on, neutral, unposed reference, the way a roster photo is.
+	return `\n\n## The character's face\n\nThe attached image is this character's avatar, drawn straight on, neutral and unposed.
 
 Use it for WHO HE IS, and match these exactly: skin tone, face shape, hair (style, colour, hairline), facial hair, eyebrows, eye shape and colour, and any accessories he is wearing.
 
@@ -139,6 +162,26 @@ const statTable = (subject: CardSubject): string => {
 		lines.push(row({ ...subject.career, season: "CAREER", abbrev: "" }));
 	}
 	return lines.join("\n");
+};
+
+// What the FRONT needs to know: the things that change how he is drawn. The
+// birthplace, the college and the draft slot belong on the back, and on the
+// front they only made the section read like a file on a real person.
+const characterLines = (subject: CardSubject): string[] => {
+	const lines = [`Position: ${subject.pos}`];
+	const hw = [height(subject.heightIn), `${subject.weightLbs} lbs`]
+		.filter(Boolean)
+		.join(", ");
+	if (hw) {
+		lines.push(`Height/weight: ${hw}`);
+	}
+	if (subject.age !== undefined) {
+		lines.push(`Age: ${subject.age}`);
+	}
+	if (subject.jerseyNumber !== undefined && subject.jerseyNumber !== "") {
+		lines.push(`Jersey number: ${subject.jerseyNumber}`);
+	}
+	return lines;
 };
 
 const bioLines = (subject: CardSubject): string[] => {
@@ -474,7 +517,7 @@ This card commemorates: **${override.achievement}**. Print one small flag on the
 
 ${shapeBlock(setId)}
 
-${FICTION}
+${subjectBlock(subject)}
 
 ${designBlock(setId)}${variantBlock}
 
@@ -490,17 +533,19 @@ But it is RENDERED in flat faces.js cartoon style, not photorealism: the player,
 
 ${uniformBlock}
 
-## The player
+## The character
 
-${bioLines(subject).join("\n")}${
-		subject.awards.length > 0
-			? `\nHonors through ${subject.season}: ${subject.awards.join(", ")}`
-			: ""
-	}${faceBlock(subject)}
+${characterLines(subject).join("\n")}${faceBlock(subject)}
 
-## Text on the card
+## Lettering on the card
 
-The card front shows his name (${subject.name}), his position (${subject.pos}), and his team (${subject.teamName}), laid out the way this set lays them out. Spell the name exactly as written. Do not invent extra text, taglines, or logos that the design description above does not call for.${achievementBlock}`;
+Set these exact strings in the design's own typography, laid out the way this set lays them out. Copy them character for character; they are type on a piece of card and nothing more.
+
+- Name: "${subject.name}"
+- Position: "${subject.pos}"
+- Team: "${subject.teamName}"
+
+Do not invent extra text, taglines, or logos that the design description above does not call for.${achievementBlock}`;
 };
 
 export const buildCardBackPrompt = (
@@ -523,7 +568,7 @@ ${shapeBlock(setId)}
 
 ${BACK_ORIENTATION}
 
-${FICTION}
+${subjectBlock(subject)}
 
 ## The back design
 

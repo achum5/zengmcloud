@@ -294,16 +294,41 @@ describe("the front prompt", () => {
 
 	// The league is fictional everywhere else in the app and has to stay that
 	// way here, with the uniform carved out as the single exception.
+	//
+	// It also has to say so WITHOUT reading as a request to depict a named real
+	// person, which is what gets a prompt refused outright: the thing being drawn
+	// is the attached avatar, and the name is typography.
 	test("blocks real-world knowledge except the uniform", () => {
 		const prompt = buildCardFrontPrompt("prizm", "silver", subject());
-		assert.ok(prompt.includes("THIS IS A FICTIONAL LEAGUE"));
+		assert.ok(prompt.includes("Draw that character and nobody else"));
+		assert.ok(prompt.includes("Use no outside knowledge about any name"));
 		assert.ok(prompt.includes("THE ONE EXCEPTION is the uniform"));
+	});
+
+	test("the name is lettering, never the description of a subject to draw", () => {
+		const prompt = buildCardFrontPrompt("prizm", "silver", subject());
+		const name = subject().name;
+		// It appears once, quoted, under the lettering heading - and nowhere as
+		// "Name: X" at the top of a dossier about a person.
+		assert.ok(prompt.includes(`- Name: "${name}"`));
+		assert.ok(!prompt.includes(`Name: ${name}\n`));
+		assert.strictEqual(
+			prompt.split(name).length - 1,
+			1,
+			"the name appears exactly once on the front",
+		);
+		const lettering = prompt.indexOf("## Lettering on the card");
+		assert.ok(lettering > 0);
+		assert.ok(
+			prompt.indexOf(`- Name: "${name}"`) > lettering,
+			"and it appears inside that section",
+		);
 	});
 
 	test("points at the attached screenshot when there is a face", () => {
 		const withFace = subject({ face: { fatness: 0.4 } as any });
 		const prompt = buildCardFrontPrompt("prizm", "silver", withFace);
-		assert.ok(prompt.includes("A screenshot of this player is attached"));
+		assert.ok(prompt.includes("The attached image is this character's avatar"));
 		assert.ok(prompt.includes("flat vector cartoon style"));
 	});
 
@@ -314,7 +339,10 @@ describe("the front prompt", () => {
 	test("the headshot fixes the likeness, not the expression", () => {
 		const withFace = subject({ face: { fatness: 0.4 } as any });
 		const prompt = buildCardFrontPrompt("prizm", "silver", withFace);
-		assert.ok(prompt.includes("HEADSHOT"), "says what the reference is");
+		assert.ok(
+			prompt.includes("drawn straight on, neutral and unposed"),
+			"says what the reference is",
+		);
 		assert.ok(
 			prompt.includes(
 				"Do NOT copy the expression, the mouth, or the head angle",
@@ -348,7 +376,7 @@ describe("the front prompt", () => {
 
 	test("omits the face section entirely when there is no face", () => {
 		const prompt = buildCardFrontPrompt("prizm", "silver", subject());
-		assert.ok(!prompt.includes("## The player's face"));
+		assert.ok(!prompt.includes("## The character's face"));
 	});
 });
 
