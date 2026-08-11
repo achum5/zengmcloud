@@ -41,6 +41,9 @@ const defaultSetId = (id: string): string => {
 const setOptionLabel = (set: CardSet) =>
 	set.label.includes(set.brand) ? set.label : `${set.label} · ${set.brand}`;
 
+const sample = <T,>(arr: T[]): T | undefined =>
+	arr.length > 0 ? arr[Math.floor(Math.random() * arr.length)] : undefined;
+
 // One achievement at a time: the modal opens on whoever is next, and saving
 // moves straight to the one after. State is reset by the parent keying this
 // component on spec.id.
@@ -70,6 +73,18 @@ const CardMaker = ({
 	const [saving, setSaving] = useState(false);
 
 	const set = cardSetsById.get(setId);
+
+	// A whole different design, in one press, when the seeded default isn't the
+	// one you want for this player. Rolls the version too, so a parallel can turn
+	// up on its own rather than only when you go looking for it.
+	const randomizeCard = () => {
+		const nextSet = sample(CARD_SETS);
+		if (!nextSet) {
+			return;
+		}
+		setSetId(nextSet.id);
+		setVariantId(sample(nextSet.variants)?.id ?? nextSet.variants[0]!.id);
+	};
 
 	// Any change to what the card IS invalidates the prompts and the images
 	// generated from them.
@@ -173,7 +188,7 @@ const CardMaker = ({
 			</Modal.Header>
 			<Modal.Body>
 				<div className="row g-2">
-					<div className="col-md-8">
+					<div className="col-md-6">
 						<label className="form-label mb-1 small text-body-secondary">
 							Set
 						</label>
@@ -208,6 +223,16 @@ const CardMaker = ({
 								</option>
 							))}
 						</select>
+					</div>
+					<div className="col-md-2 d-flex align-items-end">
+						<button
+							type="button"
+							className="btn btn-secondary btn-sm"
+							onClick={randomizeCard}
+							title="Random set and version"
+						>
+							Random
+						</button>
 					</div>
 
 					{spec.kind === "draft" ? (
