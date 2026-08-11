@@ -17,6 +17,7 @@ import {
 	decideOwnGameSimCall,
 	isOwnGameSimCall,
 } from "./core/sync/ownGameSimGate.ts";
+import { setCurrentAction } from "./util/actionContext.ts";
 import { syncDebugLog } from "./core/sync/debugLog.ts";
 import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
@@ -515,7 +516,17 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 
 	// https://github.com/microsoft/TypeScript/issues/21732
 	// @ts-expect-error
-	const call = () => api[type][name](param, conditions);
+	// Stamp which action is running so deep side effects (a phase change
+	// several calls down) can attribute themselves to the click that caused
+	// them. Cleared in a finally: a stale label would blame the wrong action.
+	const call = async () => {
+		setCurrentAction(`${type}.${name}`);
+		try {
+			return await api[type][name](param, conditions);
+		} finally {
+			setCurrentAction(undefined);
+		}
+	};
 
 	// When change tracking is off (normal single-player, non-dev), behave
 	// exactly as before - zero overhead. It's turned on in dev (for the console

@@ -1,4 +1,5 @@
 import { PHASE, WEBSITE_ROOT } from "../../../common/constants.ts";
+import { recordPhaseForensics } from "./phaseForensics.ts";
 import finalize from "./finalize.ts";
 import newPhasePreseason from "./newPhasePreseason.ts";
 import newPhaseRegularSeason from "./newPhaseRegularSeason.ts";
@@ -41,6 +42,12 @@ const newPhase = async (phase: Phase, conditions: Conditions, extra?: any) => {
 			"Can't call newPhase when expansion/fantasy draft is in progress",
 		);
 	}
+
+	// Durable forensics BEFORE the work: every local phase change leaves a
+	// trace that survives the tab, attributed to the API action that ran it.
+	// A remote phase change never comes through here, so an entry means this
+	// device did it itself. See phaseForensics.ts for the incident behind this.
+	await recordPhaseForensics(phase);
 
 	const doPhaseChange = {
 		[PHASE.PRESEASON]: newPhasePreseason,

@@ -1,4 +1,8 @@
 import { SyncEngineV2 } from "./v2/engine.ts";
+import {
+	formatPhaseForensics,
+	getPhaseForensics,
+} from "../phase/phaseForensics.ts";
 import { FirebaseTransport } from "./FirebaseTransport.ts";
 import { outbox } from "./outbox.ts";
 import { ensureAnonymousAuth } from "./auth.ts";
@@ -1137,6 +1141,14 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 				`unfinishedRecovery=${attempt.op} failures=${attempt.failures} startedMsAgo=${Date.now() - attempt.startedAt}`,
 			);
 		}
+	} catch {
+		// Diagnostics must never be the thing that fails.
+	}
+	// Every phase change this device ran itself, durably - the origin of a
+	// phantom advance survives the crash/heal cycle that erases the in-memory
+	// log. See phaseForensics.ts for the field incident behind it.
+	try {
+		lines.push(formatPhaseForensics(await getPhaseForensics()));
 	} catch {
 		// Diagnostics must never be the thing that fails.
 	}
