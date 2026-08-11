@@ -1,67 +1,98 @@
-// The league ticker: the ESPN bar pinned to the bottom of the screen, showing
-// what is happening around the league as one continuous scroll.
+// The league ticker: the ESPN bar pinned to the bottom of the screen.
 //
-// Two feeds go into it and they arrive by completely different routes. SCORES
-// are already in UI state - the top score bar reads the same `games` array, and
-// the worker keeps it fresh through mergeGames - so the ticker costs nothing
-// extra for those. NEWS is pushed separately as a short tail of recent events
-// (see worker/util/updateTickerNews.ts), because nothing was pushing events to
-// the UI at all before this.
+// EVERYTHING IN IT IS LEAGUE-WIDE. The first version reused `games` out of UI
+// state because it was already there and already fresh - but that array exists
+// to feed the TOP score bar, which is a your-team widget, so every score in it
+// had the user's own abbrev in it and the ticker was just their game log
+// crawling past. The feed is built in the worker now (see
+// worker/util/updateTickerItems.ts) and covers the whole league: every score
+// from the day, the rest of today's slate with its point spread, the day's best
+// individual performances, where the award races stand, and the news.
 //
-// This module is the part with rules in it: what order things run in, how much
-// is kept, and - the one that matters - when the ticker is allowed to change at
-// all.
+// The worker assembles each item's display text, so this side stays a renderer.
 
-export type TickerGame = {
-	gid: number;
-	// Set once the game has been played.
-	final: boolean;
-};
-
-export type TickerNews = {
-	eid: number;
-	// Already-formatted HTML from the worker, links and all.
-	text: string;
-	// Drives the little category chip, from common/transactionInfo.ts.
-	category?: string;
+export type TickerTeam = {
+	tid: number;
+	abbrev: string;
+	pts?: number;
 };
 
 export type TickerItem =
-	| ({ type: "game" } & TickerGame)
-	| ({ type: "news" } & TickerNews);
+	// A final score from the most recent day of games.
+	| {
+			type: "score";
+			key: string;
+			gid: number;
+			season: number;
+			// Which team's game log the box score lives under, or "special" for the
+			// All-Star game. The box score URL needs abbrev_tid/season/gid - a bare
+			// gid lands on "No games found for this season".
+			boxScoreTeam: string;
+			away: TickerTeam;
+			home: TickerTeam;
+			overtimes?: number;
+	  }
+	// A game still to be played, with the same point spread every other page
+	// shows for it.
+	| {
+			type: "upcoming";
+			key: string;
+			away: TickerTeam;
+			home: TickerTeam;
+			line?: string;
+	  }
+	// A standout stat line from the day.
+	| {
+			type: "performance";
+			key: string;
+			gid: number;
+			season: number;
+			boxScoreTeam: string;
+			text: string;
+	  }
+	// Where an award race stands, quoting the same model the Award Races page
+	// and the sportsbook use.
+	| { type: "race"; key: string; label: string; text: string }
+	// Transactions, injuries, milestones - the events log.
+	| { type: "news"; key: string; eid: number; text: string; category?: string };
 
-// Today's slate first, then the news, which is the order ESPN's own bar runs
-// in: scores are the thing you look at, headlines are the thing you read while
-// waiting for the scores to come back around.
-export const buildTickerStream = ({
-	games,
-	news,
-	maxNews = 25,
-}: {
-	games: TickerGame[];
-	news: TickerNews[];
-	maxNews?: number;
-}): TickerItem[] => {
-	const items: TickerItem[] = games.map((game) => ({
-		type: "game" as const,
-		...game,
-	}));
+// How much of each kind gets in. Caps are per section so one busy category
+// cannot crowd the others out: an offseason day logs hundreds of events, and a
+// ticker made entirely of minimum-contract signings is not a ticker.
+export const TICKER_LIMITS = {
+	score: 16,
+	upcoming: 8,
+	performance: 6,
+	race: 4,
+	news: 18,
+} as const;
 
-	// Newest first, and bounded: an offseason day can log hundreds of events, and
-	// a scroll long enough to hold them all would take minutes to come around.
-	const seen = new Set<number>();
-	for (const item of news) {
-		if (seen.has(item.eid)) {
-			continue;
-		}
-		seen.add(item.eid);
-		items.push({ type: "news", ...item });
-		if (seen.size >= maxNews) {
-			break;
+// Scores first, then what is still to come, then the day's best games, then the
+// races, then the news. That is roughly the order a sports bar cycles in, and
+// keeping it fixed means a glance at the same spot always finds the same kind
+// of thing.
+const ORDER = ["score", "upcoming", "performance", "race", "news"] as const;
+
+export const buildTickerStream = (items: TickerItem[]): TickerItem[] => {
+	const out: TickerItem[] = [];
+	const seen = new Set<string>();
+
+	for (const type of ORDER) {
+		let taken = 0;
+		for (const item of items) {
+			if (item.type !== type || taken >= TICKER_LIMITS[type]) {
+				continue;
+			}
+			if (seen.has(item.key)) {
+				continue;
+			}
+			seen.add(item.key);
+			out.push(item);
+			taken += 1;
 		}
 	}
 
-	return items;
+	return out;
 };
 
 // WHEN THE TICKER MAY CHANGE.
@@ -75,8 +106,8 @@ export const buildTickerStream = ({
 //
 // The top score bar solves the same problem the same way (LeagueTopBar holds
 // prevGames while liveGameInProgress), and on the receiving side the sync layer
-// already banks UI refreshes for the duration - so news does not even arrive
-// until the playback ends. This is the last of the three doors.
+// already banks UI refreshes for the duration - so nothing even arrives until
+// the playback ends. This is the last of the three doors.
 export const tickerMayUpdate = (state: {
 	liveGameInProgress: boolean;
 	watchingBroadcast: boolean;

@@ -1,6 +1,7 @@
 import type { FaceConfig } from "facesjs";
 import type { ReactNode } from "react";
 import type { LiveGameChatMessage } from "./liveGameChat.ts";
+import type { TickerItem } from "./ticker.ts";
 import * as z from "zod";
 import type processInputs from "../worker/api/processInputs.ts";
 import type * as views from "../worker/views/index.ts";
@@ -1304,15 +1305,12 @@ export type LocalStateUI = {
 		teams: [LocalStateUIGameTeam, LocalStateUIGameTeam];
 	}[];
 	fullNames: boolean;
-	// The news half of the bottom ticker. Scores come from `games` above, which
-	// the top score bar already uses; this is pushed separately because nothing
-	// was sending events to the UI before the ticker existed.
-	tickerNews: {
-		eid: number;
-		text: string;
-		category?: string;
-		season: number;
-	}[];
+	// Everything the bottom ticker shows, built league-wide in the worker: every
+	// score from the day, the rest of today's slate with its spread, the day's
+	// best performances, the award races, and the news. NOT derived from `games`
+	// above - that array is the user's own team's games, which is what made the
+	// first ticker a personal game log instead of a league one.
+	tickerItems: TickerItem[];
 	// Whether the ticker is actually on screen right now, reported by the ticker
 	// itself. Anything else anchored to the bottom of the window reads this to
 	// know whether to lift - the same arrangement stickyFooterAd uses.

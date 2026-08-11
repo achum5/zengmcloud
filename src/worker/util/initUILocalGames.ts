@@ -3,7 +3,7 @@ import { getProcessedGames } from "./getProcessedGames.ts";
 import toUI from "./toUI.ts";
 import type { LocalStateUI } from "../../common/types.ts";
 import { getOneUpcomingGame } from "./recomputeLocalUITeamOvrs.ts";
-import { updateTickerNews } from "./updateTickerNews.ts";
+import { updateTickerItems } from "./updateTickerItems.ts";
 
 export const initUILocalGames = async () => {
 	const userTid = g.get("userTid");
@@ -51,12 +51,12 @@ export const initUILocalGames = async () => {
 		},
 	]);
 
-	// The bottom ticker's news rides the score bar's feed deliberately. Every
+	// The bottom ticker rides the score bar's feed deliberately. Every
 	// path that refreshes scores - a league load, a view change, and crucially
 	// the sync layer's post-apply refresh - then refreshes the ticker too, which
 	// means the ticker inherits the spoiler hold that path already has: while a
 	// live game is being watched, refreshAfterApply is banked and neither feed
 	// moves. Feeding it from its own hook would have meant getting that right a
 	// second time.
-	await updateTickerNews();
+	await updateTickerItems();
 };

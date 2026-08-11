@@ -1,57 +1,97 @@
 import { assert, describe, test } from "vitest";
 import {
 	buildTickerStream,
+	TICKER_LIMITS,
 	tickerDurationSeconds,
 	tickerMayUpdate,
+	type TickerItem,
 } from "./ticker.ts";
 
-const game = (gid: number, final = true) => ({ gid, final });
-const news = (eid: number) => ({ eid, text: `event ${eid}` });
+const score = (gid: number): TickerItem => ({
+	type: "score",
+	key: `score-${gid}`,
+	gid,
+	season: 2026,
+	boxScoreTeam: `BOS_1`,
+	away: { tid: 2, abbrev: "NYC", pts: 100 },
+	home: { tid: 1, abbrev: "BOS", pts: 105 },
+});
+const upcoming = (gid: number): TickerItem => ({
+	type: "upcoming",
+	key: `up-${gid}`,
+	away: { tid: 2, abbrev: "NYC" },
+	home: { tid: 1, abbrev: "BOS" },
+	line: "BOS -3.5",
+});
+const perf = (n: number): TickerItem => ({
+	type: "performance",
+	key: `perf-${n}`,
+	gid: n,
+	season: 2026,
+	boxScoreTeam: "BOS_1",
+	text: "Player 40 PTS",
+});
+const race = (n: number): TickerItem => ({
+	type: "race",
+	key: `race-${n}`,
+	label: "MVP",
+	text: "Someone +180",
+});
+const news = (eid: number): TickerItem => ({
+	type: "news",
+	key: `news-${eid}`,
+	eid,
+	text: `event ${eid}`,
+});
 
 describe("buildTickerStream", () => {
-	test("today's scores lead, news follows", () => {
-		const items = buildTickerStream({
-			games: [game(1), game(2)],
-			news: [news(10), news(11)],
-		});
+	// Everything the ticker shows is league-wide. The first version reused the
+	// user's own games array and turned into their personal game log crawling
+	// past, which is the bug these sections exist to make impossible.
+	test("runs in sections: scores, upcoming, performances, races, news", () => {
+		const items = buildTickerStream([
+			news(1),
+			race(1),
+			perf(1),
+			upcoming(1),
+			score(1),
+		]);
 		assert.deepStrictEqual(
 			items.map((i) => i.type),
-			["game", "game", "news", "news"],
+			["score", "upcoming", "performance", "race", "news"],
 		);
 	});
 
-	test("news is capped, because an offseason day logs hundreds", () => {
-		const items = buildTickerStream({
-			games: [],
-			news: Array.from({ length: 200 }, (_, i) => news(i)),
-			maxNews: 25,
-		});
-		assert.strictEqual(items.length, 25);
+	test("each section is capped, so one busy kind cannot crowd out the rest", () => {
+		const items = buildTickerStream([
+			...Array.from({ length: 500 }, (_, i) => news(i)),
+			score(1),
+			race(1),
+		]);
+		assert.strictEqual(
+			items.filter((i) => i.type === "news").length,
+			TICKER_LIMITS.news,
+		);
+		// The single score and race still make it in, behind 500 events.
+		assert.strictEqual(items.filter((i) => i.type === "score").length, 1);
+		assert.strictEqual(items.filter((i) => i.type === "race").length, 1);
 	});
 
-	test("the same event never appears twice in one pass", () => {
-		const items = buildTickerStream({
-			games: [],
-			news: [news(1), news(1), news(2)],
-		});
-		assert.deepStrictEqual(
-			items.map((i) => (i.type === "news" ? i.eid : undefined)),
-			[1, 2],
-		);
+	test("nothing appears twice in one pass", () => {
+		const items = buildTickerStream([score(1), score(1), score(2)]);
+		assert.strictEqual(items.length, 2);
 	});
 
 	test("an empty league produces an empty ticker rather than a broken one", () => {
-		assert.deepStrictEqual(buildTickerStream({ games: [], news: [] }), []);
+		assert.deepStrictEqual(buildTickerStream([]), []);
 	});
 
-	test("scores alone are enough - news is not required", () => {
-		const items = buildTickerStream({ games: [game(1)], news: [] });
-		assert.strictEqual(items.length, 1);
-		assert.strictEqual(items[0]!.type, "game");
+	test("one section alone is enough", () => {
+		assert.strictEqual(buildTickerStream([news(1), news(2)]).length, 2);
 	});
 });
 
-// The spoiler rule. Getting this wrong doesn't look like a bug, it looks like
+// The spoiler rule. Getting this wrong does not look like a bug, it looks like
 // the app telling you the score of the game you are currently watching.
 describe("tickerMayUpdate", () => {
 	test("frozen while you are watching your own live sim", () => {
@@ -61,7 +101,7 @@ describe("tickerMayUpdate", () => {
 		);
 	});
 
-	test("frozen while following someone else's broadcast", () => {
+	test("frozen while following another player's broadcast", () => {
 		assert.strictEqual(
 			tickerMayUpdate({ liveGameInProgress: false, watchingBroadcast: true }),
 			false,

@@ -1,7 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
 import { localActions, useLocal } from "../../util/local.ts";
-import type { LocalStateUI } from "../../../common/types.ts";
 import { helpers } from "../../util/helpers.ts";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { SafeHtml } from "../SafeHtml.tsx";
@@ -13,81 +12,125 @@ import {
 	type TickerItem,
 } from "../../../common/ticker.ts";
 
-type LocalGame = LocalStateUI["games"][number];
-type LocalNews = LocalStateUI["tickerNews"][number];
-
-// The ESPN bar, pinned to the bottom: today's scores and the league's news
-// scrolling past in one continuous loop.
+// The ESPN bar, pinned to the bottom: the whole league's day scrolling past in
+// one continuous loop - every score, the rest of today's slate with its point
+// spread, the best individual performances, where the award races stand, and
+// the news.
 //
-// Two things about it are load-bearing rather than cosmetic.
+// The feed is assembled league-wide in the worker (updateTickerItems.ts). This
+// side is a renderer, and it owns three behaviours worth naming.
 //
-// FREEZING. While a live game is on screen the whole thing stops updating -
-// see tickerMayUpdate. A ticker is the one widget that can spoil a game you are
+// FREEZING. While a live game is on screen the whole thing stops updating - see
+// tickerMayUpdate. A ticker is the one widget that can spoil a game you are
 // actively watching, and in a shared league it would do it to every follower at
-// once. It holds the last stream it was given until the playback ends, exactly
-// as the top score bar holds prevGames.
+// once. It holds the last stream it was given until the playback ends.
 //
-// THE ANIMATION. The track is duplicated and translated by -50%, which is the
-// oldest marquee trick there is and still the right one: it is a single
-// compositor-driven transform with no layout work per frame, so it costs
-// essentially nothing even on a phone. It pauses on hover and on touch so the
-// links inside it can actually be clicked, and it does not run at all for
-// anyone who has asked for reduced motion - for them the bar is still there and
-// still scrollable by hand.
+// THE ANIMATION. The track is duplicated and translated by -50%, the oldest
+// marquee trick there is and still the right one: a single compositor-driven
+// transform, no layout work per frame. It pauses on hover and on touch so the
+// links inside it can be clicked, and it does not run at all under
+// prefers-reduced-motion, where the bar stays and can be scrolled by hand.
+//
+// THE PAGE UNDERNEATH. Being fixed, it covers the bottom of every page unless
+// the document is given that much extra scrollable space - see the body class.
 
-const Score = ({ game }: { game: LocalGame }) => {
-	const { teamInfoCache } = useLocal(["teamInfoCache"]);
+const Chip = ({ label, className }: { label: string; className: string }) => (
+	<span className={`badge league-ticker-badge me-2 ${className}`}>{label}</span>
+);
 
-	const abbrev = (tid: number) => teamInfoCache[tid]?.abbrev ?? "???";
-	const [away, home] = game.teams;
-	const final = away.pts !== undefined && home.pts !== undefined;
-
-	// The winner in bold, the way a scoreboard does it.
-	const winner = !final
-		? undefined
-		: (away.pts ?? 0) > (home.pts ?? 0)
-			? 0
-			: (home.pts ?? 0) > (away.pts ?? 0)
-				? 1
-				: undefined;
-
-	return (
-		<a
-			className="league-ticker-item text-reset text-decoration-none"
-			href={helpers.leagueUrl(
-				final ? ["game_log", "-1", "-1", game.gid] : ["daily_schedule"],
-			)}
-		>
-			<span className={clsx({ "fw-bold": winner === 0 })}>
-				{abbrev(away.tid)} {final ? away.pts : ""}
-			</span>
-			<span className="text-body-secondary mx-1">{final ? "-" : "@"}</span>
-			<span className={clsx({ "fw-bold": winner === 1 })}>
-				{final ? `${home.pts} ` : ""}
-				{abbrev(home.tid)}
-			</span>
-			{final ? (
-				<span className="text-body-secondary ms-1 league-ticker-tag">
-					{game.overtimes ? `${game.overtimes}OT` : "F"}
+const Item = ({ item }: { item: TickerItem }) => {
+	if (item.type === "score") {
+		const { away, home } = item;
+		const awayWon = (away.pts ?? 0) > (home.pts ?? 0);
+		const homeWon = (home.pts ?? 0) > (away.pts ?? 0);
+		return (
+			<a
+				className="league-ticker-item text-reset text-decoration-none"
+				href={helpers.leagueUrl([
+					"game_log",
+					item.boxScoreTeam,
+					item.season,
+					item.gid,
+				])}
+			>
+				<span className={clsx({ "fw-bold": awayWon })}>
+					{away.abbrev} {away.pts}
 				</span>
-			) : null}
-		</a>
-	);
-};
+				<span className="text-body-secondary mx-1">-</span>
+				<span className={clsx({ "fw-bold": homeWon })}>
+					{home.pts} {home.abbrev}
+				</span>
+				<span className="text-body-secondary ms-1 league-ticker-tag">
+					{item.overtimes
+						? `${item.overtimes > 1 ? item.overtimes : ""}OT`
+						: "F"}
+				</span>
+			</a>
+		);
+	}
 
-const News = ({ item }: { item: LocalNews }) => {
-	const className =
-		item.category && item.category in categories
-			? categories[item.category as keyof typeof categories].className
-			: "bg-secondary";
+	if (item.type === "upcoming") {
+		return (
+			<a
+				className="league-ticker-item text-reset text-decoration-none"
+				href={helpers.leagueUrl(["daily_schedule"])}
+			>
+				<span>
+					{item.away.abbrev} @ {item.home.abbrev}
+				</span>
+				{item.line ? (
+					<span className="text-body-secondary ms-2 league-ticker-tag">
+						{item.line}
+					</span>
+				) : null}
+			</a>
+		);
+	}
 
+	if (item.type === "performance") {
+		return (
+			<a
+				className="league-ticker-item text-reset text-decoration-none"
+				href={helpers.leagueUrl([
+					"game_log",
+					item.boxScoreTeam,
+					item.season,
+					item.gid,
+				])}
+			>
+				<Chip label="Top" className="bg-info" />
+				{item.text}
+			</a>
+		);
+	}
+
+	if (item.type === "race") {
+		return (
+			<a
+				className="league-ticker-item text-reset text-decoration-none"
+				href={helpers.leagueUrl(["award_races"])}
+			>
+				<Chip label={item.label} className="bg-warning" />
+				{item.text}
+			</a>
+		);
+	}
+
+	const known = item.category !== undefined && item.category in categories;
 	return (
 		<span className="league-ticker-item">
-			<span className={`badge league-ticker-badge me-2 ${className}`}>
-				{item.category && item.category in categories
-					? categories[item.category as keyof typeof categories].text
-					: "News"}
-			</span>
+			<Chip
+				label={
+					known
+						? categories[item.category as keyof typeof categories].text
+						: "News"
+				}
+				className={
+					known
+						? categories[item.category as keyof typeof categories].className
+						: "bg-secondary"
+				}
+			/>
 			<SafeHtml dirty={item.text} />
 		</span>
 	);
@@ -96,60 +139,34 @@ const News = ({ item }: { item: LocalNews }) => {
 const STORAGE_KEY = "bbgmShowLeagueTicker";
 
 export const LeagueTicker = memo(() => {
-	const { games, lid, liveGameInProgress, mpLiveBroadcast, tickerNews } =
-		useLocal([
-			"games",
-			"lid",
-			"liveGameInProgress",
-			"mpLiveBroadcast",
-			"tickerNews",
-		]);
+	const { lid, liveGameInProgress, mpLiveBroadcast, tickerItems } = useLocal([
+		"lid",
+		"liveGameInProgress",
+		"mpLiveBroadcast",
+		"tickerItems",
+	]);
 
 	const [show, setShow] = useState(
 		() => safeLocalStorage.getItem(STORAGE_KEY) !== "false",
 	);
 
-	// Everything the bar is currently showing. Held across a live game rather
-	// than recomputed, so nothing that happens during a playback reaches the
-	// screen until it is over.
+	// Held across a live game rather than recomputed, so nothing that happens
+	// during a playback reaches the screen until it is over.
 	const frozen = useRef<TickerItem[]>([]);
 
-	const watchingBroadcast = !!mpLiveBroadcast?.active;
 	const mayUpdate = tickerMayUpdate({
 		liveGameInProgress,
-		watchingBroadcast,
+		watchingBroadcast: !!mpLiveBroadcast?.active,
 	});
 
 	const items = useMemo(() => {
 		if (!mayUpdate) {
 			return frozen.current;
 		}
-		const next = buildTickerStream({
-			games: games.map((game) => ({
-				gid: game.gid,
-				final: game.teams[0].pts !== undefined,
-			})),
-			news: tickerNews,
-		});
+		const next = buildTickerStream(tickerItems);
 		frozen.current = next;
 		return next;
-	}, [games, tickerNews, mayUpdate]);
-
-	const gamesByGid = useMemo(() => {
-		const map = new Map<number, LocalGame>();
-		for (const game of games) {
-			map.set(game.gid, game);
-		}
-		return map;
-	}, [games]);
-
-	const newsByEid = useMemo(() => {
-		const map = new Map<number, LocalNews>();
-		for (const item of tickerNews) {
-			map.set(item.eid, item);
-		}
-		return map;
-	}, [tickerNews]);
+	}, [tickerItems, mayUpdate]);
 
 	// Reduced motion: keep the bar, drop the movement.
 	const [animate, setAnimate] = useState(true);
@@ -181,23 +198,12 @@ export const LeagueTicker = memo(() => {
 		return null;
 	}
 
-	const rendered = items
-		.map((item) => {
-			if (item.type === "game") {
-				const game = gamesByGid.get(item.gid);
-				return game ? <Score key={`g${item.gid}`} game={game} /> : null;
-			}
-			const news = newsByEid.get(item.eid);
-			return news ? <News key={`n${item.eid}`} item={news} /> : null;
-		})
-		.filter(Boolean);
-
-	const duration = tickerDurationSeconds(rendered.length);
+	const duration = tickerDurationSeconds(items.length);
 
 	return (
-		<div className={clsx("league-ticker", { "league-ticker-hidden": !show })}>
-			{show ? (
-				<div className="league-ticker-viewport">
+		<div className="league-ticker">
+			<div className="league-ticker-viewport">
+				{show ? (
 					<div
 						className={clsx("league-ticker-track", {
 							"league-ticker-animate": animate,
@@ -206,15 +212,17 @@ export const LeagueTicker = memo(() => {
 					>
 						{/* Twice, so the loop has no seam: the second copy is scrolling
 						    into place as the first scrolls out. */}
-						{rendered}
+						{items.map((item) => (
+							<Item key={item.key} item={item} />
+						))}
 						<span aria-hidden="true" className="d-flex">
-							{rendered}
+							{items.map((item) => (
+								<Item key={`dup-${item.key}`} item={item} />
+							))}
 						</span>
 					</div>
-				</div>
-			) : (
-				<div className="league-ticker-viewport" />
-			)}
+				) : null}
+			</div>
 			<button
 				className="btn btn-secondary p-0 league-ticker-toggle"
 				title={show ? "Hide ticker" : "Show ticker"}

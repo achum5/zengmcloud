@@ -28,6 +28,7 @@ import {
 } from "../sync/tradeDeadlineGate.ts";
 import { settleBets } from "../sportsbook/bets.ts";
 import { idb } from "../../db/index.ts";
+import { updateTickerItems } from "../../util/updateTickerItems.ts";
 import {
 	advStats,
 	g,
@@ -180,6 +181,15 @@ const play = async (
 		// force-silent flag so the next full day/week sim notifies normally.
 		if (gidOneGame !== undefined) {
 			setSingleGameSimActive(false);
+		}
+
+		// Last word on the ticker, after any phase change above has landed. The
+		// per-day refreshes inside the sim read a memoized slate and award race;
+		// this one is the fresh read the user is actually about to look at.
+		try {
+			await updateTickerItems({ fresh: true });
+		} catch (error) {
+			console.error("Ticker refresh after sim failed", error);
 		}
 	};
 
@@ -393,6 +403,16 @@ const play = async (
 		} else {
 			// This loads next game and calls mergeGames internally
 			await recomputeLocalUITeamOvrs();
+		}
+
+		// The bottom ticker is league-wide, so a day of games changes it even when
+		// the user's team did not play. mergeGames only carries their own games, so
+		// the ticker is rebuilt separately here. Best effort - decoration must
+		// never fail a sim.
+		try {
+			await updateTickerItems();
+		} catch (error) {
+			console.error("Ticker refresh after sim failed", error);
 		}
 
 		await advStats();
