@@ -1254,6 +1254,121 @@ export const CARD_SETS: CardSet[] = [
 		],
 	},
 
+	{
+		id: "1989-90-fleer",
+		label: "1989-90 Fleer",
+		brand: "Fleer",
+		era: "junkWax",
+		since: 1990,
+		stock: "Thin low-gloss cardboard.",
+		border:
+			"A white outer border around the photo, with the player's name and position in a solid colour bar along the bottom and the team name set with it.",
+		photography:
+			"Real in-game action rather than a posed portrait - the change that separated this set from everything that came before it.",
+		background: "The live arena behind the play, unretouched and in focus.",
+		typography: "Plain bold sans-serif. No foil anywhere.",
+		layout:
+			"One large photo, a small team logo, and nothing else competing with it.",
+		back: "White stock with a colour header, a season-by-season stat grid and a short biography paragraph.",
+		markers:
+			"THE SET THAT STARTED THE BOOM: the first mass-market basketball set of the modern run, small by later standards, with peel-off team stickers packed alongside the cards.",
+		variants: [
+			BASE,
+			RC("No rookie emblem - the era did not mark them."),
+			{
+				id: "sticker",
+				label: "Team sticker insert",
+				treatment:
+					"A glossy peel-off sticker rather than a card: a team logo on a bright solid field, printed on sticker stock with the backing visible at the edge.",
+			},
+		],
+	},
+	{
+		id: "1991-92-fleer-ultra",
+		label: "1991-92 Fleer Ultra",
+		brand: "Fleer",
+		era: "junkWax",
+		since: 1992,
+		stock:
+			"Heavier, glossier stock than the base Fleer set of the same year - the whole point of the brand.",
+		border:
+			"A narrow textured band framing a nearly full-bleed photo, with the player's name reversed out of it.",
+		photography:
+			"THE SIGNATURE: photography as the selling point. A large action photo on the front and MORE action photos on the back, at a time when a card back was a stat grid and nothing else.",
+		background: "The arena, shot tight and left alone.",
+		typography: "Clean sans-serif, restrained next to the base set's graphics.",
+		layout: "Photo-first, with the graphics pushed to a thin frame.",
+		back: "Glossy, with a second and third action photo, a stat grid and a scouting paragraph.",
+		markers:
+			"The debut of Ultra, Fleer's first premium brand - the same checklist as the flagship, printed better.",
+		variants: [BASE, RC("No rookie emblem.")],
+	},
+	{
+		id: "1993-94-sp",
+		label: "1993-94 SP",
+		brand: "Upper Deck",
+		era: "junkWax",
+		since: 1994,
+		stock: "Thick mirrored foilboard - the entire card face is reflective.",
+		border:
+			"A silver foil frame with the player's name stamped into it, the whole card catching light like polished metal.",
+		photography: "A cut-out player standing over the reflective foil field.",
+		background:
+			"Mirrored silver rather than a scene, with a faint geometric pattern etched into the foil.",
+		typography: "Thin engraved capitals stamped into the foil.",
+		layout:
+			'Portrait format, "SP" mark small in a corner, everything else foil.',
+		back: "White with a colour photo, a stat grid and a hologram.",
+		markers:
+			"Upper Deck's first premium basketball brand, and the set that made a foilboard rookie card the thing to chase.",
+		variants: [
+			BASE,
+			RC(
+				"THE PREMIER PROSPECTS SUBSET: the rookies get their own die-cut treatment, the top of the card cut into a shaped foil header instead of a straight edge.",
+			),
+			{
+				id: "die-cut",
+				label: "Premier Prospects die-cut",
+				treatment:
+					"The card's top edge is DIE-CUT into a shaped foil header rather than cut square, so the silhouette itself is irregular.",
+			},
+		],
+	},
+	{
+		id: "1994-95-topps-finest",
+		label: "1994-95 Topps Finest",
+		brand: "Topps",
+		era: "junkWax",
+		since: 1995,
+		stock:
+			"Chromium over thick card, shipped under a matte peel-off protective film that most cards still wear - a slightly cloudy layer sitting over the metal.",
+		border:
+			"A heavy metallic frame with an embossed, machined look, the player's name plated across the bottom.",
+		photography: "A cut-out player over the metal field.",
+		background: "Etched and brushed metal rather than an arena.",
+		typography: "Engraved metallic capitals.",
+		layout: "Ornate and industrial, the frame doing as much work as the photo.",
+		back: "Chromium, with a stat grid and a short writeup.",
+		markers:
+			"The set that introduced the REFRACTOR to basketball - the parallel every chase card since is descended from.",
+		variants: [
+			BASE,
+			RC("No rookie emblem."),
+			{
+				id: "refractor",
+				label: "Refractor",
+				treatment:
+					"THE ORIGINAL: the chromium throws a rainbow sheen that shifts as the card turns, brightest where the light hits, with a faint prismatic haze over the whole surface.",
+			},
+			{
+				id: "peeled",
+				label: "Protective coating peeled",
+				treatment:
+					"The matte protective film has been removed, so the chromium underneath is fully bright and glassy rather than clouded.",
+			},
+		],
+	},
+
 	// ---------------------------------------------------------------- ERA 3
 	{
 		id: "1996-97-topps-chrome",
@@ -2447,6 +2562,461 @@ export const CARD_SETS: CardSet[] = [
 		],
 	},
 
+	{
+		id: "1998-99-upper-deck",
+		label: "1998-99 Upper Deck",
+		brand: "Upper Deck",
+		era: "premium",
+		since: 1999,
+		stock: "Heavy white premium stock with a high-gloss face.",
+		border:
+			"Borderless photography running to three edges, with a foil-stamped nameplate and team mark anchoring one corner.",
+		photography:
+			"Large, well-lit game action, colour-corrected and sharp - Upper Deck's whole pitch was that its photography beat everyone's.",
+		background: "The arena, thrown slightly soft behind the player.",
+		typography: "Refined thin capitals in silver foil.",
+		layout: "Photo-dominant with a light graphic touch and a small hologram.",
+		back: "Full-colour with a second photo, a complete stat grid and the Upper Deck hologram.",
+		variants: [
+			BASE,
+			RC("A small foil rookie flag on the nameplate."),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment:
+					"A rectangular window cut into the card holding a swatch of worn jersey cloth, the weave and stitching visible through it.",
+			},
+		],
+	},
+	{
+		id: "1999-00-topps-chrome",
+		label: "1999-00 Topps Chrome",
+		brand: "Topps",
+		era: "premium",
+		since: 2000,
+		stock: "Chromium.",
+		border:
+			"That season's Topps flagship layout re-rendered on mirrored chromium, so every flat colour becomes a metallic one.",
+		photography: "Game action over the chrome field.",
+		background: "Reflective metal where the paper set had plain colour.",
+		typography: "Foil-bright type on the metal.",
+		layout: "The flagship layout exactly, in a harder material.",
+		back: "Chrome, with a stat grid.",
+		variants: [
+			BASE,
+			RC("Carries the flagship set's rookie marking."),
+			{
+				id: "refractor",
+				label: "Refractor",
+				treatment:
+					"A rainbow sheen shifting across the chromium as the card turns.",
+			},
+		],
+	},
+	{
+		id: "1999-00-sp-authentic",
+		label: "1999-00 SP Authentic",
+		brand: "Upper Deck",
+		era: "premium",
+		since: 2000,
+		stock: "Thick, bright white premium stock.",
+		border:
+			"THE SIGNATURE: white space used as design. A generous white field around a single tall photo, a thin rule, and a small foil nameplate - almost nothing else on the card.",
+		photography:
+			"One vertical action photo, cleanly cut out or softly vignetted so the white keeps its hold on the card.",
+		background: "White. Deliberately.",
+		typography: "Small, elegant, foil-stamped capitals.",
+		layout:
+			"Restrained to the point of austerity, in a year when everything else was foil and chrome.",
+		back: "White, with a modest stat block and a second small photo.",
+		variants: [
+			BASE,
+			RC(
+				"The rookie is serial numbered on the card face - the number printed small in the white field.",
+			),
+			{
+				id: "sign-of-the-times",
+				label: "Sign of the Times",
+				treatment:
+					"A hard-signed on-card autograph in bold marker across the white field, the ink sitting on the card stock rather than on a sticker.",
+			},
+		],
+	},
+	{
+		id: "1999-00-upper-deck",
+		label: "1999-00 Upper Deck",
+		brand: "Upper Deck",
+		era: "premium",
+		since: 2000,
+		stock: "Heavy white premium stock.",
+		border:
+			"Borderless action bleeding to the edges, with a foil nameplate and a millennium-styled graphic flourish at one corner.",
+		photography: "Big, sharp game action.",
+		background: "Arena, softened.",
+		typography: "Silver foil capitals with a slight technological slant.",
+		layout: "Photo first, graphics kept to a corner.",
+		back: "Full-colour with a second photo and a full stat grid.",
+		variants: [
+			BASE,
+			RC("A foil rookie flag."),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment:
+					"A worn jersey swatch set into a window cut through the card.",
+			},
+		],
+	},
+	{
+		id: "2000-01-topps-heritage",
+		label: "2000-01 Topps Heritage",
+		brand: "Topps",
+		era: "premium",
+		since: 2001,
+		stock:
+			"Deliberately cheap-feeling uncoated stock with a GREY paper back, printed to look like a card from thirty years earlier rather than a modern one.",
+		border:
+			"THE SIGNATURE: a faithful reissue of the 1971-72 Topps design - a thick solid-colour border in a loud period colour, the team name in tall condensed capitals along the top, and the player's name and position beneath the photo.",
+		photography:
+			"Period-style photography: a posed or plainly-shot player, flatly lit, framed the way a 1971 card framed one.",
+		background: "Plain arena or empty gym, flat and unglamorous.",
+		typography:
+			"Chunky 1970s condensed capitals with no foil - the type is the period marker.",
+		layout: "Simple, centred and old, on purpose.",
+		back: "Grey paper stock with flat single-colour ink, a small stat grid and a cartoon or trivia line, exactly like the original.",
+		markers:
+			"The first Heritage set in basketball: a modern checklist wearing a 1971-72 skin, printed on stock that feels its pretend age.",
+		variants: [
+			BASE,
+			RC("Rookies get their own numbered run inside the set."),
+			{
+				id: "retrofractor",
+				label: "Retrofractor",
+				treatment:
+					"THE JOKE THAT WORKS: the deliberately old-looking design printed on refractive chromium, so a 1971-style card throws a modern rainbow sheen.",
+			},
+			{
+				id: "blast-from-the-past",
+				label: "Blast from the Past",
+				treatment:
+					"An insert card styled as an even older issue, with heavier paper texture and period ink.",
+			},
+		],
+	},
+	{
+		id: "2000-01-upper-deck",
+		label: "2000-01 Upper Deck",
+		brand: "Upper Deck",
+		era: "premium",
+		since: 2001,
+		stock: "Heavy white premium stock, high gloss.",
+		border:
+			"Borderless photography with a foil nameplate and a thin team-coloured accent running along one edge.",
+		photography: "Large, sharp game action.",
+		background: "Arena, softly out of focus.",
+		typography: "Silver foil capitals.",
+		layout: "Clean and photo-led.",
+		back: "Full-colour, second photo, full stat grid, hologram.",
+		variants: [
+			BASE,
+			RC("A foil rookie flag on the nameplate."),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment: "A worn jersey swatch in a window cut through the card.",
+			},
+		],
+	},
+	{
+		id: "2000-01-sp-authentic",
+		label: "2000-01 SP Authentic",
+		brand: "Upper Deck",
+		era: "premium",
+		since: 2001,
+		stock: "Thick bright white premium stock.",
+		border:
+			"The house style: a wide white field, one photo, a thin rule and a small foil nameplate.",
+		photography: "A single vertical action photo, cleanly held in white.",
+		background: "White.",
+		typography: "Small foil capitals.",
+		layout: "Minimal, quiet, expensive-looking.",
+		back: "White with a modest stat block.",
+		variants: [
+			BASE,
+			RC("Serial numbered on the card face, printed small in the white."),
+			{
+				id: "sign-of-the-times",
+				label: "Sign of the Times",
+				treatment:
+					"A hard-signed on-card autograph in marker across the white field.",
+			},
+		],
+	},
+	{
+		id: "2000-01-topps",
+		label: "2000-01 Topps",
+		brand: "Topps",
+		era: "premium",
+		since: 2001,
+		stock: "Glossy white card stock.",
+		border:
+			"A clean modern frame with a team-coloured band carrying the player's name in foil, the photo held inside a squared-off window.",
+		photography: "Straightforward game action.",
+		background: "Arena.",
+		typography: "Foil-stamped capitals over the colour band.",
+		layout: "Orderly and legible - the flagship doing flagship work.",
+		back: "White with a full career stat grid and a short writeup.",
+		variants: [
+			BASE,
+			RC("A rookie flag on the nameplate."),
+			{
+				id: "gold",
+				label: "Gold",
+				treatment:
+					"Gold foil replaces the silver throughout, and the card is serial numbered.",
+			},
+		],
+	},
+	{
+		id: "2001-02-fleer-authentix",
+		label: "2001-02 Fleer Authentix",
+		brand: "Fleer",
+		era: "premium",
+		since: 2002,
+		stock:
+			"Card stock printed and finished to look and feel like an arena TICKET rather than a trading card.",
+		border:
+			"THE SIGNATURE: the whole card is a ticket. A perforated stub runs down one side with a dotted tear line through it, the seat, section and row are printed in small ticket type, and a serial-looking number sits where a ticket's would.",
+		photography:
+			"A player photo printed into the ticket's main panel, treated slightly flat the way a printed ticket image is.",
+		background:
+			"Ticket furniture - fine guilloche security patterning, a faint arena watermark, barcode-like blocks.",
+		typography:
+			"Ticket typography: condensed all-caps, mixed sizes, small print, nothing decorative.",
+		layout:
+			"Ticket layout end to end, with the stub either still attached or torn away.",
+		back: "The back of a ticket: terms in tiny type, an arena map fragment, and a small stat block worked in.",
+		markers:
+			"Fleer's ticket-themed brand, sold on the conceit that you are holding the stub rather than a card.",
+		variants: [
+			BASE,
+			RC("A rookie ticket, marked in the ticket's own small print."),
+			{
+				id: "unripped",
+				label: "Unripped",
+				treatment:
+					"THE FULL TICKET, stub still attached along its perforation - the harder version to find, since the concept invites tearing.",
+			},
+			{
+				id: "ripped",
+				label: "Ripped",
+				treatment:
+					"The stub has been torn off along the perforation, leaving a ragged perforated edge down that side of the card.",
+			},
+			{
+				id: "courtside",
+				label: "Courtside",
+				treatment:
+					"The premium tier of ticket, printed in richer inks with foil where a courtside ticket would carry it.",
+			},
+		],
+	},
+	{
+		id: "2001-02-topps-pristine",
+		label: "2001-02 Topps Pristine",
+		brand: "Topps",
+		era: "premium",
+		since: 2002,
+		stock:
+			"Unusually THICK card, several times the weight of a normal one, with a glassy high-gloss face - the product's whole argument is that you can feel the money.",
+		border:
+			"A tight metallic frame with a jewel-like inner edge, the player held inside it as if mounted.",
+		photography: "A cleanly cut-out player, lit like a product shot.",
+		background:
+			"Polished reflective field rather than an arena - the card presents the player as an object.",
+		typography: "Small precise foil capitals.",
+		layout: "Centred, symmetrical and deliberately over-finished.",
+		back: "Glossy, with a compact stat block and serial numbering.",
+		markers:
+			"Topps' thick-stock premium line - the cards were sold as already being in mint condition, which is where the name comes from.",
+		variants: [
+			BASE,
+			RC("Serial numbered, with a rookie mark in the frame."),
+			{
+				id: "refractor",
+				label: "Refractor",
+				treatment: "The metallic face throws a shifting rainbow sheen.",
+			},
+			{
+				id: "gold-refractor",
+				label: "Gold Refractor",
+				treatment: "A gold-tinted refractor, low serial numbered.",
+			},
+		],
+	},
+	{
+		id: "2001-02-sweet-shot",
+		label: "2001-02 Upper Deck Sweet Shot",
+		brand: "Upper Deck",
+		era: "premium",
+		since: 2002,
+		stock: "Premium white stock with a soft-touch face.",
+		border:
+			"THE SIGNATURE: the hardwood. A polished basketball-floor field with visible plank lines and painted court markings runs under the design, and the player is set on it as if standing on the court itself.",
+		photography: "A cut-out player planted on the rendered floor.",
+		background: "Varnished hardwood, key lines and arc markings.",
+		typography: "Clean foil capitals with a small court-styled numeral.",
+		layout: "Player standing on the floor, name plated along the baseline.",
+		back: "Light, with a stat block and a floor-plan graphic.",
+		markers:
+			"Built around the court itself - the chase cards embed a piece of real game-used arena floor.",
+		variants: [
+			BASE,
+			RC("A rookie mark set into the baseline plate."),
+			{
+				id: "hot-spot-floor",
+				label: "Hot Spot Floor",
+				treatment:
+					"A rectangle of REAL GAME-USED ARENA FLOOR set into a window cut through the card - visible wood grain and varnish, sometimes carrying part of a painted court line.",
+			},
+			{
+				id: "jersey",
+				label: "Game jersey",
+				treatment: "A worn jersey swatch set into a window in the card.",
+			},
+		],
+	},
+	{
+		id: "2001-02-topps-chrome",
+		label: "2001-02 Topps Chrome",
+		brand: "Topps",
+		era: "premium",
+		since: 2002,
+		stock: "Chromium.",
+		border:
+			"The season's Topps flagship frame rendered in mirrored metal, its colour band turning metallic.",
+		photography: "Game action over the chrome.",
+		background: "Reflective metal.",
+		typography: "Foil-bright capitals.",
+		layout: "The flagship layout in a harder material.",
+		back: "Chrome, with a stat grid.",
+		variants: [
+			BASE,
+			RC("Carries the flagship's rookie marking."),
+			{
+				id: "refractor",
+				label: "Refractor",
+				treatment: "A rainbow sheen shifting across the chromium.",
+			},
+			{
+				id: "black-refractor",
+				label: "Black Refractor",
+				treatment:
+					"The chromium is darkened to near-black, so the rainbow reads as a deep oil-slick sheen. Serial numbered.",
+			},
+		],
+	},
+	{
+		id: "2002-03-topps-chrome",
+		label: "2002-03 Topps Chrome",
+		brand: "Topps",
+		era: "premium",
+		since: 2003,
+		stock: "Chromium.",
+		border:
+			"The flagship frame of the season in mirrored metal, with a foil nameplate along the bottom.",
+		photography: "Game action, cleanly framed, over the metal.",
+		background: "Reflective chrome.",
+		typography: "Bright foil capitals.",
+		layout: "Flagship layout, chromium body.",
+		back: "Chrome, with a stat grid.",
+		markers: "The Yao Ming rookie year - the class this set is collected for.",
+		variants: [
+			BASE,
+			RC("Carries the flagship's rookie marking."),
+			{
+				id: "refractor",
+				label: "Refractor",
+				treatment: "A rainbow sheen across the chromium.",
+			},
+			{
+				id: "black-refractor",
+				label: "Black Refractor",
+				treatment:
+					"Darkened chromium carrying a deep oil-slick rainbow, serial numbered.",
+			},
+			{
+				id: "gold-refractor",
+				label: "Gold Refractor",
+				treatment: "A gold-tinted refractor, low serial numbered.",
+			},
+		],
+	},
+	{
+		id: "2002-03-honor-roll",
+		label: "2002-03 Upper Deck Honor Roll",
+		brand: "Upper Deck",
+		era: "premium",
+		since: 2003,
+		stock: "Clean white premium stock.",
+		border:
+			"An understated award-certificate register: a restrained frame around a single large photo, with the player's name plated beneath it and no graphic noise anywhere.",
+		photography: "One clean action photo, generously sized.",
+		background: "Arena, softened, or a plain graded field.",
+		typography:
+			"Formal, lightly serifed capitals rather than sports lettering.",
+		layout: "Calm and symmetrical, closer to a diploma than a card.",
+		back: "White, with a stat grid and a short honours summary.",
+		markers:
+			"Built around honours and accolades, with subsets named for them - Award Performances, Popular Acclaim, Tremendous Talents, Superstar Tributes.",
+		variants: [
+			BASE,
+			RC("A rookie line in the nameplate."),
+			{
+				id: "superstar-tribute",
+				label: "Superstar Tributes",
+				treatment:
+					"A tribute subset card, the frame dressed up with foil and the player given the full width of the card.",
+			},
+			{
+				id: "signature-class",
+				label: "Signature Class",
+				treatment:
+					"An autograph card: a signature laid across the lower half of the clean white field.",
+			},
+		],
+	},
+	{
+		id: "2002-03-topps",
+		label: "2002-03 Topps",
+		brand: "Topps",
+		era: "premium",
+		since: 2003,
+		stock: "Glossy white card stock.",
+		border:
+			"A modern frame with a team-coloured corner wedge and a foil nameplate, the photo squared off inside it.",
+		photography: "Direct game action.",
+		background: "Arena.",
+		typography: "Foil capitals.",
+		layout: "Orderly flagship layout.",
+		back: "White with a full stat grid and a short writeup.",
+		variants: [
+			BASE,
+			RC("A rookie flag on the nameplate."),
+			{
+				id: "gold",
+				label: "Gold",
+				treatment: "Gold foil throughout, serial numbered.",
+			},
+			{
+				id: "black",
+				label: "Black",
+				treatment:
+					"The frame goes black, the foil silver against it. Serial numbered.",
+			},
+		],
+	},
+
 	// ---------------------------------------------------------------- ERA 4
 	{
 		id: "2000-01-ultimate-collection",
@@ -2668,6 +3238,629 @@ export const CARD_SETS: CardSet[] = [
 				id: "courtside",
 				label: "Courtside",
 				treatment: "The premium tier, low serial numbered.",
+			},
+		],
+	},
+
+	{
+		id: "2003-04-upper-deck",
+		label: "2003-04 Upper Deck",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2004,
+		stock: "Heavy white premium stock, high gloss.",
+		border:
+			"THE SIGNATURE: borderless on three sides, with a solid band across the BOTTOM printed in the player's own team colours, carrying his name and the team mark in foil.",
+		photography:
+			"Large game action running clean off the top and both sides of the card.",
+		background: "The arena, softened behind the play.",
+		typography: "Foil capitals set into the team-coloured bottom band.",
+		layout:
+			"Photo edge to edge above, one colour bar below - simple enough that the team's palette identifies the card at a glance.",
+		back: "Full-colour with a second photo, a complete stat grid and the hologram.",
+		markers:
+			"The flagship of the 2003 draft class - the LeBron James, Carmelo Anthony, Dwyane Wade and Chris Bosh rookie year, with the rookies short-printed against the veterans.",
+		variants: [
+			BASE,
+			RC(
+				"A short-printed rookie card, seeded roughly one per four packs rather than collated with the veterans.",
+			),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment:
+					"A swatch of worn jersey cloth set into a window cut through the card, weave visible.",
+			},
+			{
+				id: "exclusives",
+				label: "UD Exclusives",
+				treatment:
+					"A serial-numbered parallel with the number stamped in gold on the card face.",
+			},
+		],
+	},
+	{
+		id: "2003-04-sp-authentic",
+		label: "2003-04 SP Authentic",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2004,
+		stock: "Thick, bright white premium stock.",
+		border:
+			"THE SIGNATURE: white space doing the work. A wide clean white field, one sharp vertical photo, a thin rule and a small nameplate - in a year of foil and clutter this one held its nerve and stayed empty.",
+		photography:
+			"A single tall action photo, cut out or softly vignetted so the white keeps the card.",
+		background: "White.",
+		typography: "Small restrained capitals, lightly foiled.",
+		layout: "Photo left or centre, name plated small, everything else air.",
+		back: "White, a modest stat block, a second small image.",
+		markers:
+			"The blueprint for the serious on-card autograph: the Rookie Authentics subset is serial numbered and signed in the white space rather than on a sticker.",
+		variants: [
+			BASE,
+			RC(
+				"A Rookie Authentics card - serial numbered on the face, the number printed small in the white field.",
+			),
+			{
+				id: "rookie-auto",
+				label: "Rookie Authentics Autograph",
+				treatment:
+					"THE CARD THE SET IS KNOWN FOR: a bold blue on-card signature written straight across the white field, the ink sitting on the stock with visible pen pressure. Serial numbered.",
+			},
+			{
+				id: "sign-of-the-times",
+				label: "Sign of the Times",
+				treatment:
+					"A hard-signed autograph insert, the signature large across the clean field.",
+			},
+		],
+	},
+	{
+		id: "2003-04-topps",
+		label: "2003-04 Topps",
+		brand: "Topps",
+		era: "rpa",
+		since: 2004,
+		stock: "Glossy white card stock.",
+		border:
+			"A clean white card with the photo held in a squared frame, the player's name in foil along a slim team-coloured bar and the Topps mark small in a corner.",
+		photography: "Straight game action, sharp and well lit.",
+		background: "Arena.",
+		typography: "Foil-stamped capitals.",
+		layout: "Plain, legible flagship layout with nothing fighting the photo.",
+		back: "White with a full career stat grid and a short writeup.",
+		markers:
+			"The paper flagship of the 2003 draft class - the set the famous number 221 rookie card comes from.",
+		variants: [
+			BASE,
+			RC('Carries the standardized "RC" rookie shield logo.'),
+			{
+				id: "black",
+				label: "Black",
+				treatment:
+					"The frame turns black with silver foil against it. Serial numbered.",
+			},
+			{
+				id: "gold",
+				label: "Gold",
+				treatment: "Gold foil throughout, low serial numbered.",
+			},
+			{
+				id: "press-plate",
+				label: "Press Plate 1/1",
+				treatment:
+					"THE ACTUAL PRINTING PLATE: a thin metal plate carrying the card's image etched in a single ink channel - black, cyan, magenta or yellow - with plate scuffs, punch holes and ink residue. One of one.",
+			},
+		],
+	},
+	{
+		id: "2004-05-topps-chrome",
+		label: "2004-05 Topps Chrome",
+		brand: "Topps",
+		era: "rpa",
+		since: 2005,
+		stock: "Chromium.",
+		border:
+			"The season's flagship frame rendered in mirrored metal, the team-coloured bar turning metallic.",
+		photography: "Game action over the chrome.",
+		background: "Reflective metal.",
+		typography: "Bright foil capitals.",
+		layout: "Flagship layout, chromium body.",
+		back: "Chrome, with a stat grid.",
+		variants: [
+			BASE,
+			RC('Carries the "RC" rookie shield.'),
+			{
+				id: "refractor",
+				label: "Refractor",
+				treatment: "A rainbow sheen shifting across the chromium.",
+			},
+			{
+				id: "black-refractor",
+				label: "Black Refractor",
+				treatment:
+					"Darkened chromium carrying a deep oil-slick rainbow. Serial numbered.",
+			},
+			{
+				id: "x-fractor",
+				label: "X-Fractor",
+				treatment:
+					"The refractor sheen broken into a fine GRID of small squares across the surface, so the rainbow reads as a mosaic rather than a wash.",
+			},
+		],
+	},
+	{
+		id: "2004-05-sp-authentic",
+		label: "2004-05 SP Authentic",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2005,
+		stock: "Thick bright white premium stock.",
+		border:
+			"The house style held exactly: a wide white field, one vertical photo, a thin rule, a small nameplate.",
+		photography: "A single clean action photo held in white.",
+		background: "White.",
+		typography: "Small foil capitals.",
+		layout: "Minimal and quiet.",
+		back: "White with a modest stat block.",
+		variants: [
+			BASE,
+			RC("A serial-numbered Rookie Authentics card."),
+			{
+				id: "rookie-auto",
+				label: "Rookie Authentics Autograph",
+				treatment:
+					"An on-card signature written across the white field, serial numbered.",
+			},
+			{
+				id: "jersey",
+				label: "Authentic Fabrics",
+				treatment:
+					"A worn jersey swatch set into a window in the white field, the cloth the only colour on the card.",
+			},
+		],
+	},
+	{
+		id: "2004-05-upper-deck",
+		label: "2004-05 Upper Deck",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2005,
+		stock: "Heavy white premium stock.",
+		border:
+			"Borderless photography with a foil nameplate and a team-coloured accent along the lower edge.",
+		photography: "Large sharp game action.",
+		background: "Arena, softened.",
+		typography: "Silver foil capitals.",
+		layout: "Photo-led with a light graphic frame.",
+		back: "Full-colour, second photo, complete stat grid, hologram.",
+		variants: [
+			BASE,
+			RC("A short-printed rookie with a foil rookie flag."),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment: "A worn jersey swatch in a window cut through the card.",
+			},
+		],
+	},
+	{
+		id: "2005-06-topps-chrome",
+		label: "2005-06 Topps Chrome",
+		brand: "Topps",
+		era: "rpa",
+		since: 2006,
+		stock: "Chromium.",
+		border:
+			"The flagship frame in mirrored metal, with a foil nameplate along the bottom.",
+		photography: "Game action over the chrome field.",
+		background: "Reflective metal.",
+		typography: "Bright foil capitals.",
+		layout: "Flagship layout, chromium body.",
+		back: "Chrome, with a stat grid.",
+		markers:
+			"The Chris Paul rookie year, and the set where the refractor rainbow settled into the tiering the hobby still uses.",
+		variants: [
+			BASE,
+			RC('Carries the "RC" rookie shield.'),
+			{
+				id: "refractor",
+				label: "Refractor",
+				treatment:
+					"A rainbow sheen shifting across the chromium. Serial numbered in the four figures.",
+			},
+			{
+				id: "black-refractor",
+				label: "Black Refractor",
+				treatment:
+					"Darkened chromium under a deep oil-slick rainbow. Serial numbered in the hundreds.",
+			},
+			{
+				id: "gold-refractor",
+				label: "Gold Refractor",
+				treatment:
+					"A warm gold-tinted refractor, low serial numbered in the double digits.",
+			},
+			{
+				id: "blue-x-fractor",
+				label: "Blue X-Fractor",
+				treatment:
+					"A blue-tinted refractor with the sheen broken into a fine grid of small squares. Low serial numbered.",
+			},
+			{
+				id: "superfractor",
+				label: "Superfractor 1/1",
+				treatment:
+					"THE ONE OF ONE: a heavy gold refractor with a coarse swirling ripple pattern across the whole surface, unmistakable next to any other parallel.",
+			},
+		],
+	},
+	{
+		id: "2005-06-upper-deck",
+		label: "2005-06 Upper Deck",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2006,
+		stock: "Heavy white premium stock.",
+		border:
+			"Borderless action with a foil nameplate and a thin team-coloured rule near the base.",
+		photography: "Large sharp game action.",
+		background: "Arena.",
+		typography: "Silver foil capitals.",
+		layout: "Photo-led, graphics restrained.",
+		back: "Full-colour with a second photo and a complete stat grid.",
+		variants: [
+			BASE,
+			RC("A short-printed rookie with a foil flag."),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment: "A worn jersey swatch set into the card.",
+			},
+		],
+	},
+	{
+		id: "2005-06-bowman",
+		label: "2005-06 Bowman",
+		brand: "Topps",
+		era: "rpa",
+		since: 2006,
+		stock:
+			"Matte paper for the base card, with the chromium companion cards printed on mirrored stock.",
+		border:
+			"A plain understated frame - Bowman's register is scouting-report sober rather than premium-glossy - with the player's name in small type and a modest team mark.",
+		photography:
+			"Portrait-leaning photography closer to a scouting file than a highlight, often shot before the player has played a professional minute.",
+		background: "Plain or lightly blurred, kept out of the way.",
+		typography: "Small, plain, functional capitals.",
+		layout: "Sober and information-first.",
+		back: "White with a stat grid and a prospect writeup.",
+		markers:
+			"THE PROSPECT BRAND: Bowman exists to print the rookie first, so its rookie cards carry more weight in the set than its veterans do.",
+		variants: [
+			BASE,
+			RC("A prospect card, the reason the set exists."),
+			{
+				id: "chrome",
+				label: "Chrome",
+				treatment:
+					"The same card printed on mirrored chromium instead of paper, the plain design turning metallic.",
+			},
+			{
+				id: "chrome-refractor",
+				label: "Chrome Refractor",
+				treatment:
+					"The chromium version under a rainbow refractive sheen. Serial numbered.",
+			},
+		],
+	},
+	{
+		id: "2006-07-upper-deck",
+		label: "2006-07 Upper Deck",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2007,
+		stock: "Heavy white premium stock.",
+		border:
+			"Borderless photography with a foil nameplate and a subtle team-coloured graphic anchoring one corner.",
+		photography: "Large game action, sharply lit.",
+		background: "Arena, softened.",
+		typography: "Silver foil capitals.",
+		layout: "Photo-dominant, restrained framing.",
+		back: "Full-colour with a second photo and a full stat grid.",
+		variants: [
+			BASE,
+			RC("A short-printed rookie with a foil flag."),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment: "A worn jersey swatch in a window cut through the card.",
+			},
+		],
+	},
+	{
+		id: "2006-07-sp-authentic",
+		label: "2006-07 SP Authentic",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2007,
+		stock: "Thick bright white premium stock.",
+		border:
+			"The house white field, one photo, a thin rule and a small nameplate.",
+		photography: "A single vertical action photo held in white.",
+		background: "White.",
+		typography: "Small foil capitals.",
+		layout: "Minimal.",
+		back: "White with a modest stat block.",
+		variants: [
+			BASE,
+			RC("A serial-numbered Rookie Authentics card."),
+			{
+				id: "rookie-auto",
+				label: "Rookie Authentics Autograph",
+				treatment:
+					"An on-card signature across the white field, serial numbered.",
+			},
+		],
+	},
+	{
+		id: "2007-08-topps-chrome",
+		label: "2007-08 Topps Chrome",
+		brand: "Topps",
+		era: "rpa",
+		since: 2008,
+		stock: "Chromium.",
+		border:
+			"A large foil border framing the photo - one of the simplest layouts Chrome ever ran, and the better for it.",
+		photography: "A big action photo filling most of the card.",
+		background: "Reflective metal behind and around the play.",
+		typography: "Bright foil capitals along the frame.",
+		layout: "Photo large, frame plain, nothing else.",
+		back: "Chrome, with a stat grid.",
+		markers:
+			"The Kevin Durant rookie year. Veterans and retired greats run through the first two thirds of the set and the rookie class fills the back of it.",
+		variants: [
+			BASE,
+			RC('Carries the "RC" rookie shield.'),
+			{
+				id: "refractor",
+				label: "Refractor",
+				treatment: "A rainbow sheen across the chromium. Serial numbered.",
+			},
+			{
+				id: "orange-refractor",
+				label: "Orange Refractor",
+				treatment:
+					"A warm orange-tinted refractor, serial numbered in the low hundreds.",
+			},
+			{
+				id: "white-refractor",
+				label: "White Refractor",
+				treatment:
+					"A pale, almost frosted refractor where the rainbow reads as a soft pearl. Low serial numbered.",
+			},
+			{
+				id: "x-fractor",
+				label: "X-Fractor",
+				treatment:
+					"The refractor sheen broken into a fine grid of small squares. Low serial numbered.",
+			},
+			{
+				id: "1957-58-variation",
+				label: "1957-58 Topps variation",
+				treatment:
+					"A short-printed variation that swaps the modern layout for Topps' 1957-58 design - a plain bordered card with period type - printed on chromium so an antique layout comes out mirrored.",
+			},
+			{
+				id: "superfractor",
+				label: "Superfractor 1/1",
+				treatment:
+					"THE ONE OF ONE: heavy gold refractor with a coarse swirling ripple across the entire surface.",
+			},
+		],
+	},
+	{
+		id: "2007-08-sp-authentic",
+		label: "2007-08 SP Authentic",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2008,
+		stock: "Thick bright white premium stock.",
+		border:
+			"The house white field, one tall photo, a thin rule, a small nameplate.",
+		photography: "A single clean vertical action photo.",
+		background: "White.",
+		typography: "Small foil capitals.",
+		layout: "Minimal and quiet.",
+		back: "White with a modest stat block.",
+		markers: "The Kevin Durant rookie year for the on-card autograph line.",
+		variants: [
+			BASE,
+			RC("A serial-numbered Rookie Authentics card."),
+			{
+				id: "rookie-auto",
+				label: "Rookie Authentics Autograph",
+				treatment:
+					"An on-card signature written across the white field, serial numbered.",
+			},
+			{
+				id: "jersey",
+				label: "Authentic Fabrics",
+				treatment: "A worn jersey swatch set into a window in the white field.",
+			},
+		],
+	},
+	{
+		id: "2007-08-upper-deck",
+		label: "2007-08 Upper Deck",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2008,
+		stock: "Heavy white premium stock.",
+		border:
+			"Borderless action with a foil nameplate and a thin team-coloured accent.",
+		photography: "Large sharp game action.",
+		background: "Arena.",
+		typography: "Silver foil capitals.",
+		layout: "Photo-led.",
+		back: "Full-colour with a second photo and a full stat grid.",
+		variants: [
+			BASE,
+			RC("A short-printed rookie with a foil flag."),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment: "A worn jersey swatch in a window cut through the card.",
+			},
+		],
+	},
+	{
+		id: "2008-09-topps-chrome",
+		label: "2008-09 Topps Chrome",
+		brand: "Topps",
+		era: "rpa",
+		since: 2009,
+		stock: "Chromium.",
+		border:
+			"THE SIGNATURE: a LARGE WHITE FRAME around the photo with a retro-styled team nameplate set into it - a deliberately old-fashioned banner sitting on a mirrored card.",
+		photography: "Game action inside the white frame.",
+		background: "Reflective metal showing through the frame and nameplate.",
+		typography:
+			"Retro block lettering in the team banner, modern foil elsewhere.",
+		layout: "Framed rather than borderless, which sets this year apart.",
+		back: "Chrome, with a stat grid.",
+		markers:
+			"The Derrick Rose, Russell Westbrook and Kevin Love rookie year - the class that drove this set.",
+		variants: [
+			BASE,
+			RC('Carries the "RC" rookie shield.'),
+			{
+				id: "refractor",
+				label: "Refractor",
+				treatment: "A rainbow sheen shifting across the chromium.",
+			},
+			{
+				id: "orange-refractor",
+				label: "Orange Refractor",
+				treatment: "A warm orange-tinted refractor, serial numbered.",
+			},
+			{
+				id: "x-fractor",
+				label: "X-Fractor",
+				treatment:
+					"The sheen broken into a fine grid of small squares. Serial numbered.",
+			},
+			{
+				id: "gold-refractor",
+				label: "Gold Refractor",
+				treatment: "A gold-tinted refractor, low serial numbered.",
+			},
+			{
+				id: "youthquake",
+				label: "Youthquake",
+				treatment:
+					"A rookie-focused insert on chromium with its own bold graphic treatment, often signed.",
+			},
+			{
+				id: "superfractor",
+				label: "Superfractor 1/1",
+				treatment:
+					"THE ONE OF ONE: heavy gold refractor with a coarse swirling ripple across the surface.",
+			},
+		],
+	},
+	{
+		id: "2008-09-upper-deck",
+		label: "2008-09 Upper Deck",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2009,
+		stock: "Heavy white premium stock.",
+		border:
+			"Borderless photography with a foil nameplate and a team-coloured accent along the base.",
+		photography: "Large sharp game action.",
+		background: "Arena, softened.",
+		typography: "Silver foil capitals.",
+		layout: "Photo-led with restrained framing.",
+		back: "Full-colour with a second photo and a complete stat grid.",
+		variants: [
+			BASE,
+			RC("A short-printed rookie with a foil flag."),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment: "A worn jersey swatch in a window cut through the card.",
+			},
+		],
+	},
+	{
+		id: "2009-10-topps",
+		label: "2009-10 Topps",
+		brand: "Topps",
+		era: "rpa",
+		since: 2010,
+		stock: "Glossy white card stock.",
+		border:
+			"A clean white card, the photo squared inside a simple frame with the player's name in foil along a slim team-coloured bar.",
+		photography: "Direct, well-lit game action.",
+		background: "Arena.",
+		typography: "Foil-stamped capitals.",
+		layout: "Plain and legible - a flagship going out on its house style.",
+		back: "White with a full career stat grid and a short writeup.",
+		markers:
+			"THE LAST TOPPS BASKETBALL SET before the licence went exclusive to Panini, and the set the Stephen Curry rookie card comes from.",
+		variants: [
+			BASE,
+			RC('Carries the "RC" rookie shield.'),
+			{
+				id: "gold",
+				label: "Gold",
+				treatment:
+					"Gold foil replaces the silver throughout, serial numbered to the year.",
+			},
+			{
+				id: "black",
+				label: "Black",
+				treatment:
+					"The frame turns black with silver foil against it. Low serial numbered.",
+			},
+			{
+				id: "press-plate",
+				label: "Press Plate 1/1",
+				treatment:
+					"THE ACTUAL PRINTING PLATE: a thin metal plate with the card etched in one ink channel, carrying punch holes, scuffs and ink residue. One of one.",
+			},
+		],
+	},
+	{
+		id: "2009-10-upper-deck",
+		label: "2009-10 Upper Deck",
+		brand: "Upper Deck",
+		era: "rpa",
+		since: 2010,
+		stock: "Heavy white premium stock, high gloss.",
+		border:
+			"Borderless action with a foil nameplate and a thin team-coloured rule - the house look, run one last time.",
+		photography: "Large, sharp, well-lit game action.",
+		background: "Arena, thrown soft.",
+		typography: "Silver foil capitals.",
+		layout: "Photo-dominant, graphics minimal.",
+		back: "Full-colour with a second photo, a complete stat grid and the hologram.",
+		markers:
+			"THE LAST LICENSED UPPER DECK BASKETBALL SET - the end of a run that began in 1991 and of the era when more than one company printed the league.",
+		variants: [
+			BASE,
+			RC("A short-printed rookie with a foil flag."),
+			{
+				id: "game-jersey",
+				label: "Game Jersey",
+				treatment: "A worn jersey swatch in a window cut through the card.",
+			},
+			{
+				id: "exclusives",
+				label: "UD Exclusives",
+				treatment:
+					"A serial-numbered parallel, the number stamped in gold on the card face.",
 			},
 		],
 	},
