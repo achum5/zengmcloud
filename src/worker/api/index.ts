@@ -6587,11 +6587,13 @@ const getTradingCardPrompts = async ({
 	season,
 	setId,
 	variantId,
+	includeName = true,
 }: {
 	pid: number;
 	season: number;
 	setId: string;
 	variantId: string;
+	includeName?: boolean;
 }) => {
 	const subject = await getTradingCardSubject(pid, season);
 	if (!subject) {
@@ -6605,8 +6607,9 @@ const getTradingCardPrompts = async ({
 			variantId,
 			subject,
 			Math.floor(Math.random() * 1e9),
+			{ includeName },
 		),
-		back: buildCardBackPrompt(setId, variantId, subject),
+		back: buildCardBackPrompt(setId, variantId, subject, { includeName }),
 		title: cardTitle(setId, variantId, season),
 		playerName: subject.name,
 	};
@@ -6791,6 +6794,7 @@ const getAchievementCardPrompts = async ({
 	kind,
 	label,
 	scene,
+	includeName = true,
 }: {
 	pid: number;
 	season: number;
@@ -6799,16 +6803,16 @@ const getAchievementCardPrompts = async ({
 	kind: AchievementKind;
 	label: string;
 	scene?: DraftCardScene;
+	includeName?: boolean;
 }) => {
 	const subject = await getTradingCardSubject(pid, season);
 	if (!subject) {
 		return undefined;
 	}
-	const override = achievementPromptOverride(
-		{ kind, label, season, pid },
-		subject,
-		scene,
-	);
+	const override = {
+		...achievementPromptOverride({ kind, label, season, pid }, subject, scene),
+		includeName,
+	};
 	return {
 		front: buildCardFrontPrompt(
 			setId,

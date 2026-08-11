@@ -40,6 +40,16 @@ export type CardPromptOverride = {
 	// What the card commemorates, e.g. "Finals MVP, 2027". Adds a flag to the
 	// front and a line to the back.
 	achievement?: string;
+	// Put the player's name in the prompt at all. Default true.
+	//
+	// ChatGPT's input classifier refuses any prompt containing a well-known
+	// real person's name - the rest of the card sails through, the name alone
+	// fails it, and no wording gets around that (explaining that the player is
+	// fictional makes it worse, since "this isn't really X, but do X" is the
+	// shape of an evasion attempt). Turning this off drops the name everywhere
+	// it appears and asks for the nameplate to be left EMPTY, so the card comes
+	// back correct in every other respect with a blank waiting to be filled.
+	includeName?: boolean;
 };
 
 export type CardSubject = {
@@ -184,8 +194,10 @@ const characterLines = (subject: CardSubject): string[] => {
 	return lines;
 };
 
-const bioLines = (subject: CardSubject): string[] => {
-	const lines: string[] = [`Name: ${subject.name}`, `Position: ${subject.pos}`];
+const bioLines = (subject: CardSubject, includeName = true): string[] => {
+	const lines: string[] = includeName
+		? [`Name: ${subject.name}`, `Position: ${subject.pos}`]
+		: [`Position: ${subject.pos}`];
 	if (subject.jerseyNumber !== undefined && subject.jerseyNumber !== "") {
 		lines.push(`Jersey number: ${subject.jerseyNumber}`);
 	}
@@ -485,6 +497,8 @@ export const buildCardFrontPrompt = (
 			? `\n\n## This particular card: ${variant.label}\n\n${variant.treatment}`
 			: "";
 
+	const includeName = override?.includeName ?? true;
+
 	const pool = actionPool(subject.pos);
 	const action =
 		pool[(actionSeed ?? hashCard(subject, setId, variantId)) % pool.length]!;
@@ -541,10 +555,19 @@ ${characterLines(subject).join("\n")}${faceBlock(subject)}
 
 Set these exact strings in the design's own typography, laid out the way this set lays them out. Copy them character for character; they are type on a piece of card and nothing more.
 
-- Name: "${subject.name}"
-- Position: "${subject.pos}"
+${
+		includeName
+			? `- Name: "${subject.name}"\n`
+			: ""
+	}- Position: "${subject.pos}"
 - Team: "${subject.teamName}"
-
+${
+		includeName
+			? ""
+			: `
+LEAVE THE PLAYER'S NAME OFF THIS CARD. Wherever the design puts the player's name, leave that space EMPTY - no name, no initials, no placeholder, no lorem text, no invented name of any kind. Keep the nameplate, banner or panel itself exactly as the design has it, just blank inside, ready for a name to be added later.
+`
+	}
 Do not invent extra text, taglines, or logos that the design description above does not call for.${achievementBlock}`;
 };
 
@@ -552,17 +575,18 @@ export const buildCardBackPrompt = (
 	setId: string,
 	variantId: string,
 	subject: CardSubject,
-	override?: Pick<CardPromptOverride, "achievement">,
+	override?: Pick<CardPromptOverride, "achievement" | "includeName">,
 ): string => {
 	const set = cardSetsById.get(setId);
 	if (!set) {
 		return "";
 	}
 	const variant = set.variants.find((v) => v.id === variantId);
+	const includeName = override?.includeName ?? true;
 
 	return `Generate the BACK of a single basketball trading card, as one image. Output only the card, nothing else.
 
-This is the back of a ${set.label}${variant && variant.id !== "base" ? ` ${variant.label}` : ""} card for ${subject.name}, depicting the ${subject.season} season. It has to pair with a front generated separately from the same design.
+This is the back of a ${set.label}${variant && variant.id !== "base" ? ` ${variant.label}` : ""} card${includeName ? ` for ${subject.name}` : ""}, depicting the ${subject.season} season. It has to pair with a front generated separately from the same design.
 
 ${shapeBlock(setId)}
 
@@ -584,7 +608,7 @@ Lay it out the way a real card back of this era is laid out - the card number in
 
 ## Biography block
 
-${bioLines(subject).join("\n")}${
+${bioLines(subject, includeName).join("\n")}${
 		subject.awards.length > 0
 			? `\nHonors through ${subject.season}: ${subject.awards.join(", ")}`
 			: ""

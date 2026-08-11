@@ -305,6 +305,60 @@ describe("the front prompt", () => {
 		assert.ok(prompt.includes("THE ONE EXCEPTION is the uniform"));
 	});
 
+	// ChatGPT refuses any prompt containing a well-known real player's name -
+	// confirmed against the real thing: the identical card generated fine with
+	// the name taken out, and failed the moment it went back in. So "off" has to
+	// mean the string is not in the prompt AT ALL, not that it is downplayed.
+	describe("with the name left out", () => {
+		const noName = { includeName: false };
+
+		test("the name appears nowhere in either prompt", () => {
+			const s = subject();
+			const front = buildCardFrontPrompt("prizm", "silver", s, 0, noName);
+			const back = buildCardBackPrompt("prizm", "silver", s, noName);
+			assert.ok(!front.includes(s.name), "front still names him");
+			assert.ok(!back.includes(s.name), "back still names him");
+			// Not even a fragment of it.
+			for (const part of s.name.split(" ")) {
+				assert.ok(!front.includes(part), `front contains "${part}"`);
+				assert.ok(!back.includes(part), `back contains "${part}"`);
+			}
+		});
+
+		test("the nameplate is left blank rather than filled with something invented", () => {
+			const front = buildCardFrontPrompt(
+				"prizm",
+				"silver",
+				subject(),
+				0,
+				noName,
+			);
+			assert.ok(front.includes("LEAVE THE PLAYER'S NAME OFF THIS CARD"));
+			assert.ok(front.includes("no invented name of any kind"));
+		});
+
+		test("everything else about the card survives", () => {
+			const s = subject();
+			const front = buildCardFrontPrompt("prizm", "silver", s, 0, noName);
+			assert.ok(front.includes(s.teamName), "still the right team");
+			assert.ok(front.includes(`"${s.pos}"`), "still the right position");
+			assert.ok(front.includes("**2026**"), "still the right season");
+			assert.ok(front.includes("THE MOMENT ON THIS CARD"), "still an action");
+			const back = buildCardBackPrompt("prizm", "silver", s, noName);
+			assert.ok(back.includes("CAREER"), "the stat grid is untouched");
+		});
+
+		test("leaving it on is the default and still prints the name", () => {
+			const s = subject();
+			assert.ok(buildCardFrontPrompt("prizm", "silver", s, 0).includes(s.name));
+			assert.ok(
+				buildCardFrontPrompt("prizm", "silver", s, 0, {
+					includeName: true,
+				}).includes(s.name),
+			);
+		});
+	});
+
 	test("the name is lettering, never the description of a subject to draw", () => {
 		const prompt = buildCardFrontPrompt("prizm", "silver", subject());
 		const name = subject().name;

@@ -19,6 +19,7 @@ import { SetDesign } from "./SetDesign.tsx";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { useLocal } from "../../util/local.ts";
+import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 
 type PlayerOption = View<"createCards">["players"][number];
 
@@ -65,6 +66,16 @@ const CreateCards = ({
 	const [frontURL, setFrontURL] = useState("");
 	const [backURL, setBackURL] = useState("");
 	const [saving, setSaving] = useState(false);
+
+	// Shared with the achievement card modal, and remembered, because a name that
+	// gets a prompt refused once gets every prompt refused.
+	const [includeName, setIncludeNameRaw] = useState(
+		() => safeLocalStorage.getItem("cardPromptIncludeName") !== "false",
+	);
+	const setIncludeName = (next: boolean) => {
+		setIncludeNameRaw(next);
+		safeLocalStorage.setItem("cardPromptIncludeName", next ? "true" : "false");
+	};
 
 	// Each filter offers only values that survive the OTHER filters, so no
 	// combination can ever come back empty and no dropdown offers a dead option.
@@ -164,7 +175,7 @@ const CreateCards = ({
 		setPrompts(undefined);
 		setFrontURL("");
 		setBackURL("");
-	}, [pid, season, setId, variantId]);
+	}, [pid, season, setId, variantId, includeName]);
 
 	const player = players.find((p) => p.pid === pid);
 	const ready = pid !== undefined && season !== undefined && set !== undefined;
@@ -183,6 +194,7 @@ const CreateCards = ({
 			season,
 			setId,
 			variantId,
+			includeName,
 		});
 		setPrompts(result);
 	};
@@ -500,6 +512,24 @@ const CreateCards = ({
 				>
 					Build prompts
 				</button>
+				<div className="form-check">
+					<input
+						className="form-check-input"
+						type="checkbox"
+						id="create-cards-include-name"
+						checked={includeName}
+						onChange={(event) => {
+							setIncludeName(event.target.checked);
+						}}
+					/>
+					<label
+						className="form-check-label"
+						htmlFor="create-cards-include-name"
+						title="Image models refuse prompts naming a real player. Off leaves the nameplate blank."
+					>
+						Include name
+					</label>
+				</div>
 				{prompts ? (
 					<>
 						<CopyPromptButton label="Copy front prompt" text={prompts.front} />

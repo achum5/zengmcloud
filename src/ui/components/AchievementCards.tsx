@@ -19,6 +19,7 @@ import { RecapAIButton } from "./RecapAIButton.tsx";
 import { PlayerPicture } from "./PlayerPicture.tsx";
 import { usePlayerFace } from "../util/playerFaces.ts";
 import { useLocal } from "../util/local.ts";
+import { safeLocalStorage } from "../util/safeLocalStorage.ts";
 
 type AchievementCardData = {
 	pending: AchievementCardSpec[];
@@ -49,15 +50,23 @@ const sample = <T,>(arr: T[]): T | undefined =>
 // component on spec.id.
 const CardMaker = ({
 	spec,
+	position,
 	remaining,
+	includeName,
+	setIncludeName,
 	onSaved,
-	onSkip,
+	onPrev,
+	onNext,
 	onHide,
 }: {
 	spec: AchievementCardSpec;
+	position: number;
 	remaining: number;
+	includeName: boolean;
+	setIncludeName: (includeName: boolean) => void;
 	onSaved: () => void;
-	onSkip: () => void;
+	onPrev: () => void;
+	onNext: () => void;
 	onHide: () => void;
 }) => {
 	const [setId, setSetId] = useState(() => defaultSetId(spec.id));
@@ -92,7 +101,7 @@ const CardMaker = ({
 		setPrompts(undefined);
 		setFrontURL("");
 		setBackURL("");
-	}, [setId, variantId, scene]);
+	}, [setId, variantId, scene, includeName]);
 
 	const { lid } = useLocal(["lid"]);
 	const faceData = usePlayerFace(spec.pid, spec.season, lid);
@@ -106,6 +115,7 @@ const CardMaker = ({
 			kind: spec.kind,
 			label: spec.label,
 			scene: spec.kind === "draft" ? scene : undefined,
+			includeName,
 		});
 		setPrompts(result);
 	};
@@ -281,6 +291,24 @@ const CardMaker = ({
 						>
 							Build prompts
 						</button>
+						<div className="form-check">
+							<input
+								className="form-check-input"
+								type="checkbox"
+								id="achievement-card-include-name"
+								checked={includeName}
+								onChange={(event) => {
+									setIncludeName(event.target.checked);
+								}}
+							/>
+							<label
+								className="form-check-label"
+								htmlFor="achievement-card-include-name"
+								title="Image models refuse prompts naming a real player. Off leaves the nameplate blank."
+							>
+								Include name
+							</label>
+						</div>
 						{prompts ? (
 							<>
 								<CopyPromptButton
@@ -301,17 +329,29 @@ const CardMaker = ({
 				</div>
 			</Modal.Body>
 			<Modal.Footer>
-				<span className="me-auto small text-body-secondary">
-					{remaining} remaining
-				</span>
-				<button
-					type="button"
-					className="btn btn-secondary"
-					disabled={remaining < 2}
-					onClick={onSkip}
-				>
-					Skip
-				</button>
+				<div className="me-auto d-flex align-items-center gap-2">
+					<button
+						type="button"
+						className="btn btn-secondary btn-sm"
+						disabled={remaining < 2}
+						onClick={onPrev}
+						title="Previous card"
+					>
+						‹
+					</button>
+					<span className="small text-body-secondary">
+						{position} / {remaining}
+					</span>
+					<button
+						type="button"
+						className="btn btn-secondary btn-sm"
+						disabled={remaining < 2}
+						onClick={onNext}
+						title="Next card"
+					>
+						›
+					</button>
+				</div>
 				<button
 					type="button"
 					className="btn btn-primary"
@@ -346,6 +386,19 @@ export const AchievementCards = ({
 	const [show, setShow] = useState(false);
 	const [offset, setOffset] = useState(0);
 
+	// Owned here rather than in the modal, which is keyed on the card's id and so
+	// resets every time the queue moves on. Refusals are systematic - if a real
+	// name fails once it fails for the whole class - so unticking this has to
+	// stick for the rest of the run. Remembered across visits for the same
+	// reason.
+	const [includeName, setIncludeNameRaw] = useState(
+		() => safeLocalStorage.getItem("cardPromptIncludeName") !== "false",
+	);
+	const setIncludeName = (next: boolean) => {
+		setIncludeNameRaw(next);
+		safeLocalStorage.setItem("cardPromptIncludeName", next ? "true" : "false");
+	};
+
 	useEffect(() => {
 		let cancelled = false;
 		setData(undefined);
@@ -371,7 +424,10 @@ export const AchievementCards = ({
 		return null;
 	}
 
-	const spec = data.pending[offset % data.pending.length]!;
+	// Wrap in both directions so the arrows walk the queue as a loop.
+	const count = data.pending.length;
+	const index = ((offset % count) + count) % count;
+	const spec = data.pending[index]!;
 
 	return (
 		<div className="d-inline-flex flex-column">
@@ -393,12 +449,20 @@ export const AchievementCards = ({
 				<CardMaker
 					key={spec.id}
 					spec={spec}
-					remaining={data.pending.length}
+					position={index + 1}
+					remaining={count}
+					includeName={includeName}
+					setIncludeName={setIncludeName}
 					onSaved={() => {
-						setOffset(0);
+						// The saved card leaves the queue, so everything after it shifts
+						// down one - staying put lands on the next card rather than
+						// skipping it.
 						setReload((prev) => prev + 1);
 					}}
-					onSkip={() => {
+					onPrev={() => {
+						setOffset((prev) => prev - 1);
+					}}
+					onNext={() => {
 						setOffset((prev) => prev + 1);
 					}}
 					onHide={() => {
