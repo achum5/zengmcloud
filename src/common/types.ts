@@ -1304,6 +1304,19 @@ export type LocalStateUI = {
 		teams: [LocalStateUIGameTeam, LocalStateUIGameTeam];
 	}[];
 	fullNames: boolean;
+	// The news half of the bottom ticker. Scores come from `games` above, which
+	// the top score bar already uses; this is pushed separately because nothing
+	// was sending events to the UI before the ticker existed.
+	tickerNews: {
+		eid: number;
+		text: string;
+		category?: string;
+		season: number;
+	}[];
+	// Whether the ticker is actually on screen right now, reported by the ticker
+	// itself. Anything else anchored to the bottom of the window reads this to
+	// know whether to lift - the same arrangement stickyFooterAd uses.
+	leagueTickerVisible: boolean;
 	gold?: boolean;
 	keyboardShortcuts: KeyboardShortcutsLocal;
 	leagueCreation?: {

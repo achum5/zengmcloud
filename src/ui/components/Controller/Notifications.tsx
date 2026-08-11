@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { emitter, type Message } from "../../util/notify.ts";
 import { SafeHtml } from "../SafeHtml.tsx";
 import { useLocal } from "../../util/local.ts";
-import { MOBILE_AD_BOTTOM_MARGIN } from "../../../common/constants.ts";
+import {
+	LEAGUE_TICKER_HEIGHT,
+	MOBILE_AD_BOTTOM_MARGIN,
+} from "../../../common/constants.ts";
 
 const MAX_NUM_NOTIFICATIONS = 5;
 
@@ -79,7 +82,13 @@ const unbind = emitter.on("notification", (notification) => {
 });
 
 export const Notifications = () => {
-	const { stickyFooterAd, stickyFormButtons, userTids } = useLocal([
+	const {
+		leagueTickerVisible: showLeagueTicker,
+		stickyFooterAd,
+		stickyFormButtons,
+		userTids,
+	} = useLocal([
+		"leagueTickerVisible",
 		"stickyFooterAd",
 		"stickyFormButtons",
 		"userTids",
@@ -154,6 +163,13 @@ export const Notifications = () => {
 	if (stickyFooterAd) {
 		ulBottom += MOBILE_AD_BOTTOM_MARGIN;
 		buttonBottom += MOBILE_AD_BOTTOM_MARGIN;
+	}
+	// The league ticker occupies the bottom strip of the window, so anything
+	// else anchored down there has to clear it. Same treatment the sticky
+	// footer ad already gets.
+	if (showLeagueTicker) {
+		ulBottom += LEAGUE_TICKER_HEIGHT;
+		buttonBottom += LEAGUE_TICKER_HEIGHT;
 	}
 
 	return (

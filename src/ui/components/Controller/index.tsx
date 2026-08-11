@@ -7,6 +7,7 @@ import { CommandPalette } from "../CommandPalette/index.tsx";
 import { Footer } from "./Footer.tsx";
 import { Header } from "./Header.tsx";
 import { LeagueTopBar } from "./LeagueTopBar.tsx";
+import { LeagueTicker } from "./LeagueTicker.tsx";
 import { MultiTeamMenu } from "./MultiTeamMenu.tsx";
 import { NagModal } from "./NagModal.tsx";
 import { NavBar } from "./NavBar.tsx";
@@ -190,6 +191,7 @@ export const Controller = () => {
 				</div>
 			</div>
 			<Notifications />
+			{popup ? null : <LeagueTicker />}
 			<SyncDebugOverlay />
 		</LazyMotion>
 	);

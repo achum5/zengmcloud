@@ -2991,3 +2991,114 @@ a.sb-bet-title:hover {
 .trading-card-face-back {
 	transform: rotateY(180deg);
 }
+
+// THE LEAGUE TICKER: the ESPN bar pinned to the bottom of the window.
+//
+// The height is a constant other things coordinate around - notifications and
+// the sticky form buttons lift above it - so it lives here as a variable rather
+// than being repeated as a magic number.
+$league-ticker-height: 34px;
+$league-ticker-toggle-width: 22px;
+
+.league-ticker {
+	position: fixed;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	height: $league-ticker-height;
+	z-index: 1030;
+	display: flex;
+	align-items: stretch;
+	background-color: var(--bs-tertiary-bg);
+	border-top: 1px solid var(--bs-border-color);
+
+	// iOS puts its own chrome over the bottom of the window. Without this the
+	// bar sits underneath the home indicator and half of it is unreadable.
+	padding-bottom: env(safe-area-inset-bottom, 0px);
+	height: calc(#{$league-ticker-height} + env(safe-area-inset-bottom, 0px));
+}
+
+.league-ticker-hidden {
+	height: calc(#{$league-ticker-height} + env(safe-area-inset-bottom, 0px));
+}
+
+.league-ticker-viewport {
+	flex: 1 1 auto;
+	overflow: hidden;
+	display: flex;
+	align-items: center;
+	min-width: 0;
+}
+
+.league-ticker-track {
+	display: flex;
+	align-items: center;
+	flex-wrap: nowrap;
+	white-space: nowrap;
+	will-change: transform;
+}
+
+// One transform, composited, no layout per frame. Duration is set inline from
+// how much there is to show.
+@keyframes league-ticker-scroll {
+	from {
+		transform: translate3d(0, 0, 0);
+	}
+	to {
+		transform: translate3d(-50%, 0, 0);
+	}
+}
+
+.league-ticker-animate {
+	animation-name: league-ticker-scroll;
+	animation-timing-function: linear;
+	animation-iteration-count: infinite;
+}
+
+// Stop it so the links inside can be clicked. Touch counts: on a phone there is
+// no hover, so :active is what a finger down gives you.
+.league-ticker:hover .league-ticker-animate,
+.league-ticker:active .league-ticker-animate {
+	animation-play-state: paused;
+}
+
+// Someone who has asked for less motion gets a bar they can scroll themselves.
+@media (prefers-reduced-motion: reduce) {
+	.league-ticker-viewport {
+		overflow-x: auto;
+	}
+	.league-ticker-animate {
+		animation: none;
+	}
+}
+
+.league-ticker-item {
+	display: inline-flex;
+	align-items: center;
+	padding: 0 0.9rem;
+	font-size: 0.85rem;
+	line-height: 1;
+	border-right: 1px solid var(--bs-border-color);
+
+	a {
+		color: inherit;
+	}
+}
+
+.league-ticker-badge {
+	font-size: 0.6rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	padding: 0.15em 0.4em;
+}
+
+.league-ticker-tag {
+	font-size: 0.7rem;
+}
+
+.league-ticker-toggle {
+	flex: 0 0 auto;
+	width: $league-ticker-toggle-width;
+	border-radius: 0 !important;
+	z-index: 1;
+}
