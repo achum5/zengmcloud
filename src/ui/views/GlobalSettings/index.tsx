@@ -50,6 +50,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			recapMaxDays: String(props.recapMaxDays),
 			ownGameSimCutoffSeconds: String(props.ownGameSimCutoffSeconds),
 			achievementCardsDraftPicks: String(props.achievementCardsDraftPicks),
+			cardPromptSafeMode: props.cardPromptSafeMode ? "on" : "off",
 			recapMaxPlayers: String(props.recapMaxPlayers),
 			theme,
 			units,
@@ -98,6 +99,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				recapMaxDays: Number(state.recapMaxDays),
 				ownGameSimCutoffSeconds: Number(state.ownGameSimCutoffSeconds),
 				achievementCardsDraftPicks: Number(state.achievementCardsDraftPicks),
+				cardPromptSafeMode: state.cardPromptSafeMode === "on",
 				units,
 			});
 			showNotification({
@@ -250,6 +252,32 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							onChange={handleChange("ownGameSimCutoffSeconds")}
 							value={state.ownGameSimCutoffSeconds}
 						/>
+					</div>
+					<div className="col-sm-3 col-6 mb-3">
+						<label className="form-label" htmlFor="options-cardPromptSafeMode">
+							Card Prompt Safe Mode{" "}
+							<HelpPopover title="Card Prompt Safe Mode">
+								<p>
+									Image models refuse to draw a real person or to reproduce a
+									real team's logo. On, card prompts describe the player as a
+									fictional cartoon character and have the uniform and card
+									marks invented from the team's colors instead of copied.
+								</p>
+								<p>
+									Off gives a more faithful card - the franchise's real uniform
+									for that season - but is much more likely to be rejected.
+								</p>
+							</HelpPopover>
+						</label>
+						<select
+							id="options-cardPromptSafeMode"
+							className="form-select"
+							onChange={handleChange("cardPromptSafeMode")}
+							value={state.cardPromptSafeMode}
+						>
+							<option value="on">On</option>
+							<option value="off">Off</option>
+						</select>
 					</div>
 					<div className="col-sm-3 col-6 mb-3">
 						<label

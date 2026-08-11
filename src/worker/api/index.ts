@@ -5237,6 +5237,7 @@ const updateOptions = async (
 					? num
 					: DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS;
 			})(),
+			cardPromptSafeMode: !!options.cardPromptSafeMode,
 			// 0 is legitimate here too: it turns draft achievement cards off.
 			achievementCardsDraftPicks: (() => {
 				const num = Math.floor(Number(options.achievementCardsDraftPicks));
@@ -6597,6 +6598,10 @@ const getTradingCardPrompts = async ({
 	if (!subject) {
 		return undefined;
 	}
+	// Safe mode is a per-device Global Setting rather than a control on the card
+	// screens: it changes nothing about what the card IS, only whether an image
+	// model will agree to draw it.
+	const safeMode = (await getGlobalSettings()).cardPromptSafeMode ?? true;
 	return {
 		// A fresh seed per press, so "Build prompts" again on the same card gives
 		// a different photograph instead of the identical one forever.
@@ -6605,8 +6610,9 @@ const getTradingCardPrompts = async ({
 			variantId,
 			subject,
 			Math.floor(Math.random() * 1e9),
+			{ safeMode },
 		),
-		back: buildCardBackPrompt(setId, variantId, subject),
+		back: buildCardBackPrompt(setId, variantId, subject, { safeMode }),
 		title: cardTitle(setId, variantId, season),
 		playerName: subject.name,
 	};
@@ -6804,11 +6810,16 @@ const getAchievementCardPrompts = async ({
 	if (!subject) {
 		return undefined;
 	}
-	const override = achievementPromptOverride(
-		{ kind, label, season, pid },
-		subject,
-		scene,
-	);
+	const safeMode = (await getGlobalSettings()).cardPromptSafeMode ?? true;
+	const override = {
+		...achievementPromptOverride(
+			{ kind, label, season, pid },
+			subject,
+			scene,
+			safeMode,
+		),
+		safeMode,
+	};
 	return {
 		front: buildCardFrontPrompt(
 			setId,
