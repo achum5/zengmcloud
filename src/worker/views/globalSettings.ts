@@ -27,7 +27,6 @@ const updateOptions = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			recapMaxGames: options.recapMaxGames,
 			ownGameSimCutoffSeconds: options.ownGameSimCutoffSeconds,
 			achievementCardsDraftPicks: options.achievementCardsDraftPicks,
-			cardPromptSafeMode: options.cardPromptSafeMode ?? true,
 			recapMaxPlayers: options.recapMaxPlayers,
 			recapMaxDays: options.recapMaxDays,
 		};

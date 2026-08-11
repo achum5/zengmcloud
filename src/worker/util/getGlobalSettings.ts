@@ -20,7 +20,6 @@ export const getGlobalSettings = async () => {
 	globalSettings.ownGameSimCutoffSeconds ??=
 		DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS;
 	globalSettings.achievementCardsDraftPicks ??= DEFAULT_ACHIEVEMENT_DRAFT_PICKS;
-	globalSettings.cardPromptSafeMode ??= true;
 
 	return globalSettings;
 };

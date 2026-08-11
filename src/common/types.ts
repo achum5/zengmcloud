@@ -1197,11 +1197,6 @@ export type Options = {
 	// How many top draft picks get an achievement card each draft. 0 disables
 	// draft cards. See common/achievementCards.ts.
 	achievementCardsDraftPicks?: number;
-	// Build card prompts that hosted image models will accept: no real person,
-	// no reproduced team or brand marks. See FICTION_SAFE in
-	// common/tradingCardPrompt.ts. Defaults on, because a refused prompt makes
-	// no card at all.
-	cardPromptSafeMode?: boolean;
 	recapMaxPlayers?: number;
 	recapMaxDays?: number;
 	units?: "metric" | "us";

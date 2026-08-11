@@ -219,63 +219,6 @@ describe("card prompts with an override", () => {
 		);
 	});
 
-	test("safe mode strips what image models refuse, and keeps the card", () => {
-		const risky = [
-			/may coincide with real people/i,
-			/real-world memory/i,
-			/its real wordmark/i,
-			/\bNBA\b/,
-		];
-		const normal = buildCardFrontPrompt(setId, "base", subject, 0);
-		assert.ok(
-			risky.some((re) => re.test(normal)),
-			"the default prompt is the one that gets refused",
-		);
-
-		const safe = buildCardFrontPrompt(setId, "base", subject, 0, {
-			safeMode: true,
-		});
-		for (const re of risky) {
-			assert.ok(!re.test(safe), `safe mode still contains ${re}`);
-		}
-		assert.ok(
-			safe.includes("FICTIONAL CHARACTER"),
-			"safe mode states the player is fictional",
-		);
-		assert.ok(
-			safe.includes("INVENT the design"),
-			"safe mode invents the uniform instead of reproducing one",
-		);
-		// The card is still the card: same shape, same season, same stat grid.
-		assert.ok(safe.includes("2027"));
-		assert.ok(safe.includes("Test Player"));
-		assert.ok(
-			buildCardBackPrompt(setId, "base", subject, { safeMode: true }).includes(
-				"FICTIONAL CHARACTER",
-			),
-		);
-	});
-
-	test("safe mode reaches the draft-night scene, which asks for real merch", () => {
-		const spec = {
-			kind: "draft" as const,
-			label: "1st Overall Pick",
-			season: 2027,
-			pid: 10,
-		};
-		const unsafe = achievementPromptOverride(
-			spec,
-			subject,
-			"draftNight",
-			false,
-		);
-		assert.ok(/franchise's real 2027 design/.test(unsafe.uniform ?? ""));
-
-		const safe = achievementPromptOverride(spec, subject, "draftNight", true);
-		assert.ok(!/real 2027 design/.test(safe.uniform ?? ""));
-		assert.ok(/INVENT the cap and jersey/.test(safe.uniform ?? ""));
-	});
-
 	test("the back gains the commemoration line", () => {
 		const back = buildCardBackPrompt(setId, "base", subject, {
 			achievement: "Finals MVP, 2027",

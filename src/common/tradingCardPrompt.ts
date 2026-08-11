@@ -40,10 +40,6 @@ export type CardPromptOverride = {
 	// What the card commemorates, e.g. "Finals MVP, 2027". Adds a flag to the
 	// front and a line to the back.
 	achievement?: string;
-	// Build the version that hosted image models will actually accept: no real
-	// person, no reproduced team or brand marks, no named league. See
-	// FICTION_SAFE.
-	safeMode?: boolean;
 };
 
 export type CardSubject = {
@@ -79,53 +75,6 @@ const FICTION = `THIS IS A FICTIONAL LEAGUE. The player and team names may coinc
 
 THE ONE EXCEPTION is the uniform. For the jersey, DO use your real-world memory of what that franchise actually wore in that season, as described below.`;
 
-// SAFE MODE.
-//
-// Hosted image models refuse prompts on sight for two things this card asks for
-// by default: depicting a real, identifiable person, and reproducing a real
-// organisation's logos and wordmarks. The prompt above walks straight into both
-// - it says the names "may coincide with real people", and then explicitly asks
-// for a franchise's real wordmark - and in a league running real player names
-// that reads as "draw me this famous athlete in his actual team's kit".
-//
-// Safe mode makes the same card without either. The player is stated as a
-// fictional cartoon character with the attached avatar as his whole reference,
-// the uniform is invented from the team's colours rather than reproduced, and
-// the league is "professional basketball" rather than a named one. The design,
-// the era, the stat grid and everything else that makes the card what it is are
-// untouched.
-const FICTION_SAFE = `EVERYONE ON THIS CARD IS A FICTIONAL CHARACTER from a basketball video game. Nobody here is a real person, and nothing here belongs to a real organisation.
-
-Build the player only from the written description and the attached cartoon avatar below. Do not base him on anyone real, and do not reproduce any real team's or real company's logo, wordmark, or uniform - every mark on this card is invented from the descriptions given.
-
-Where the design notes below name a card company or an era, they are describing a VISUAL STYLE and nothing else. Do not print any real company's name or logo anywhere on the card.`;
-
-// The safe uniform: the team's colours, and a design made up to fit them.
-const jerseyBlockSafe = (subject: CardSubject): string => {
-	const colors =
-		subject.teamColors && subject.teamColors.length > 0
-			? ` Their colours are ${subject.teamColors.join(", ")}.`
-			: "";
-	return `## The uniform
-
-He wears the ${subject.teamName} uniform.${colors} INVENT the design rather than copying one: a clean, classic basketball uniform in those colours, with the team name in simple athletic lettering across the chest and plain contrasting trim. Do not reproduce any real team's logo, wordmark, or uniform design.${
-		subject.jerseyNumber
-			? ` The number on the jersey is ${subject.jerseyNumber}.`
-			: ""
-	}`;
-};
-
-// "1996-97 Topps Chrome" -> "1996-97". Multi-year brands have no year in the
-// label, so it comes off `since`, which is the ending year of the first season.
-const YEAR_PREFIX = /^(\d{4}(?:-\d{2})?)\s/;
-const neutralSetLabel = (set: { label: string; since: number }): string => {
-	const match = YEAR_PREFIX.exec(set.label);
-	if (match) {
-		return `${match[1]} style`;
-	}
-	return `${set.since - 1}-${String(set.since % 100).padStart(2, "0")} style`;
-};
-
 // The attached screenshot is the whole description of the face.
 //
 // This used to also dump the raw faces.js FaceConfig as JSON, on the theory
@@ -139,15 +88,11 @@ const neutralSetLabel = (set: { label: string; since: number }): string => {
 // stare and slack open mouth were copied straight onto a player mid-drive,
 // which looks wrong in a way nothing else on the card can rescue. Identity is
 // fixed; expression and head angle belong to the action.
-const faceBlock = (subject: CardSubject, safeMode = false): string => {
+const faceBlock = (subject: CardSubject): string => {
 	if (!subject.face) {
 		return "";
 	}
-	return `\n\n## The player's face\n\n${
-		safeMode
-			? "A screenshot of this character's CARTOON AVATAR is attached - a flat vector drawing, not a photograph of anyone. It is his complete reference."
-			: "A screenshot of this player is attached. It is a HEADSHOT - a straight-on, neutral, unposed reference, the way a roster photo is."
-	}
+	return `\n\n## The player's face\n\nA screenshot of this player is attached. It is a HEADSHOT - a straight-on, neutral, unposed reference, the way a roster photo is.
 
 Use it for WHO HE IS, and match these exactly: skin tone, face shape, hair (style, colour, hairline), facial hair, eyebrows, eye shape and colour, and any accessories he is wearing.
 
@@ -230,7 +175,7 @@ const bioLines = (subject: CardSubject): string[] => {
 	return lines;
 };
 
-const designBlock = (setId: string, safeMode = false): string => {
+const designBlock = (setId: string): string => {
 	const set = cardSetsById.get(setId);
 	if (!set) {
 		return "";
@@ -257,13 +202,9 @@ const designBlock = (setId: string, safeMode = false): string => {
 		lines.push(`- Condition and age: ${era.wear}`);
 	}
 
-	// Safe mode drops the brand from the heading and the era's name (several read
-	// "The Fanatics/Topps Return" and the like). The design description itself is
-	// kept word for word - it is what makes the card look like the card, and a
-	// period design is a style, not a trademark.
-	return `## The card design: ${safeMode ? neutralSetLabel(set) : set.label}
+	return `## The card design: ${set.label}
 
-Era design language${safeMode ? "" : ` - ${era?.label ?? ""}`}: ${era?.language ?? ""}
+Era design language - ${era?.label ?? ""}: ${era?.language ?? ""}
 
 ${lines.join("\n")}`;
 };
@@ -501,8 +442,6 @@ export const buildCardFrontPrompt = (
 			? `\n\n## This particular card: ${variant.label}\n\n${variant.treatment}`
 			: "";
 
-	const safeMode = override?.safeMode ?? false;
-
 	const pool = actionPool(subject.pos);
 	const action =
 		pool[(actionSeed ?? hashCard(subject, setId, variantId)) % pool.length]!;
@@ -511,9 +450,7 @@ export const buildCardFrontPrompt = (
 	// override puts in its place. The cartoon-render rule below applies to both.
 	const photographBody = override?.photograph
 		? override.photograph
-		: `A CANDID shot, not a portrait. This is a professional sports photographer sitting courtside at a live ${
-				safeMode ? "" : "NBA "
-			}game, shooting this player in the middle of PLAYING BASKETBALL, and he does not know the camera is there. No posing, no looking into the lens, no smiling at the camera, no arms folded, no ball resting on the hip, no studio backdrop.
+		: `A CANDID shot, not a portrait. This is a professional sports photographer sitting courtside at a live NBA game, shooting this player in the middle of PLAYING BASKETBALL, and he does not know the camera is there. No posing, no looking into the lens, no smiling at the camera, no arms folded, no ball resting on the hip, no studio backdrop.
 
 **THE MOMENT ON THIS CARD: ${action}.** Shoot that, not a generic drive with the ball - it is the specific thing that separates this card from every other one in the set, so build the whole frame around it.
 
@@ -525,9 +462,7 @@ Shot from the sideline or the baseline, at court level, with a long lens: the pl
 
 	const uniformBlock = override?.uniform
 		? `## The uniform\n\n${override.uniform}`
-		: safeMode
-			? jerseyBlockSafe(subject)
-			: jerseyBlock(subject);
+		: jerseyBlock(subject);
 
 	const achievementBlock = override?.achievement
 		? `\n\n## The achievement
@@ -539,13 +474,13 @@ This card commemorates: **${override.achievement}**. Print one small flag on the
 
 ${shapeBlock(setId)}
 
-${safeMode ? FICTION_SAFE : FICTION}
+${FICTION}
 
-${designBlock(setId, safeMode)}${variantBlock}
+${designBlock(setId)}${variantBlock}
 
 ## The season on the card
 
-The design above is a ${safeMode ? neutralSetLabel(set) : set.label} design. That is the LOOK ONLY. This card depicts the **${subject.season}** season, and **${subject.season}** is the year that must be printed on the card wherever the design puts a year. Do not change the year to match the design's own era. A ${safeMode ? neutralSetLabel(set) : set.label} design showing ${subject.season} is exactly what is wanted.
+The design above is a ${set.label} design. That is the LOOK ONLY. This card depicts the **${subject.season}** season, and **${subject.season}** is the year that must be printed on the card wherever the design puts a year. Do not change the year to match the design's own era. A ${set.label} design showing ${subject.season} is exactly what is wanted.
 
 ## The photograph
 
@@ -561,7 +496,7 @@ ${bioLines(subject).join("\n")}${
 		subject.awards.length > 0
 			? `\nHonors through ${subject.season}: ${subject.awards.join(", ")}`
 			: ""
-	}${faceBlock(subject, safeMode)}
+	}${faceBlock(subject)}
 
 ## Text on the card
 
@@ -572,25 +507,23 @@ export const buildCardBackPrompt = (
 	setId: string,
 	variantId: string,
 	subject: CardSubject,
-	override?: Pick<CardPromptOverride, "achievement" | "safeMode">,
+	override?: Pick<CardPromptOverride, "achievement">,
 ): string => {
 	const set = cardSetsById.get(setId);
 	if (!set) {
 		return "";
 	}
 	const variant = set.variants.find((v) => v.id === variantId);
-	const safeMode = override?.safeMode ?? false;
-	const label = safeMode ? neutralSetLabel(set) : set.label;
 
 	return `Generate the BACK of a single basketball trading card, as one image. Output only the card, nothing else.
 
-This is the back of a ${label}${variant && variant.id !== "base" ? ` ${variant.label}` : ""} card for ${subject.name}, depicting the ${subject.season} season. It has to pair with a front generated separately from the same design.
+This is the back of a ${set.label}${variant && variant.id !== "base" ? ` ${variant.label}` : ""} card for ${subject.name}, depicting the ${subject.season} season. It has to pair with a front generated separately from the same design.
 
 ${shapeBlock(setId)}
 
 ${BACK_ORIENTATION}
 
-${safeMode ? FICTION_SAFE : FICTION}
+${FICTION}
 
 ## The back design
 
@@ -602,7 +535,7 @@ Lay it out the way a real card back of this era is laid out - the card number in
 
 ## The season on the card
 
-**${subject.season}** is the season this card depicts and the year printed on it, regardless of what era the ${label} design comes from.
+**${subject.season}** is the season this card depicts and the year printed on it, regardless of what era the ${set.label} design comes from.
 
 ## Biography block
 

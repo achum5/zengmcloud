@@ -235,11 +235,8 @@ const COLLEGE_ACTIONS = [
 // scene AND the uniform, since he hasn't played a pro minute yet.
 export const achievementPromptOverride = (
 	spec: Pick<AchievementCardSpec, "kind" | "label" | "season" | "pid">,
-	subject: { teamName: string; college?: string; teamColors?: string[] },
+	subject: { teamName: string; college?: string },
 	scene?: DraftCardScene,
-	// See FICTION_SAFE in tradingCardPrompt.ts. The draft-night scene is the one
-	// override that asks for real team merchandise, so it has to know.
-	safeMode = false,
 ): CardPromptOverride => {
 	const achievement = `${spec.label}, ${spec.season}`;
 
@@ -259,20 +256,10 @@ export const achievementPromptOverride = (
 				} - do NOT reproduce any real university's actual uniform or logos. Invent a clean, classic collegiate look: simple striping, traditional cut, colors of your choosing that read as a college program.`,
 			};
 		}
-		const colors =
-			subject.teamColors && subject.teamColors.length > 0
-				? ` in the team's colours (${subject.teamColors.join(", ")})`
-				: "";
 		return {
 			achievement,
-			photograph: `Draft night: he is on the draft stage moments after being taken with the ${spec.label.replace(" Overall Pick", "").toLowerCase()} pick - beaming under the stage lights, shaking an official's hand or holding the team jersey up to a wall of camera flashes, the ${spec.season} draft's stage graphics glowing on the boards behind him${
-				safeMode
-					? " (invent those graphics; copy no real ones)"
-					: " with team marks"
-			}.`,
-			uniform: safeMode
-				? `He is NOT in a game uniform. He wears a sharp tailored suit and a plain draft-night cap${colors}, with a jersey held up for the cameras carrying the team name in simple athletic lettering. INVENT the cap and jersey design - do not reproduce any real team's logo, wordmark, or merchandise.`
-				: `He is NOT in a game uniform. He wears a sharp tailored suit and the ${subject.teamName} draft-night cap, with a ${subject.teamName} jersey held up for the cameras - the cap and jersey use that franchise's real ${spec.season} design, which is the one place real-world knowledge belongs on this card.`,
+			photograph: `Draft night: he is on the draft stage moments after being taken with the ${spec.label.replace(" Overall Pick", "").toLowerCase()} pick - beaming under the stage lights, shaking the commissioner's hand or holding the team jersey up to a wall of camera flashes, the ${spec.season} draft's stage graphics and team logos glowing on the boards behind him.`,
+			uniform: `He is NOT in a game uniform. He wears a sharp tailored suit and the ${subject.teamName} draft-night cap, with a ${subject.teamName} jersey held up for the cameras - the cap and jersey use that franchise's real ${spec.season} design, which is the one place real-world knowledge belongs on this card.`,
 		};
 	}
 
