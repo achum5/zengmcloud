@@ -161,7 +161,8 @@ const performanceItems = (games: Game[]): TickerItem[] => {
 };
 
 // ------------------------------------------------------------------ the news
-const IGNORE_TYPES = new Set(["retiredList", "newTeam"]);
+// tradingCard is your own card generator reporting back, not league news.
+const IGNORE_TYPES = new Set(["retiredList", "newTeam", "tradingCard"]);
 const MIN_NEWS_SCORE = 10;
 const MAX_NEWS_SCANNED = 400;
 
