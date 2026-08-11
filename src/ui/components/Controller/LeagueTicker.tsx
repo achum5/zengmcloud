@@ -18,7 +18,20 @@ import {
 // the news.
 //
 // The feed is assembled league-wide in the worker (updateTickerItems.ts). This
-// side is a renderer, and it owns three behaviours worth naming.
+// side is a renderer, and it owns four behaviours worth naming.
+//
+// THE LOOK. It is broadcast chrome, not a page element: a dark bar in both
+// themes, the way a score bar looks on television and on ESPN's own site. What
+// distinguishes one kind of item from another is TYPE, not decoration - weight
+// and colour carry the winner, the spread, the player, the award. An earlier
+// version put a coloured pill in front of every item, which turned a strip of
+// information into a strip of stickers.
+//
+// EVERYTHING GOES SOMEWHERE. A score opens its box score, a player opens their
+// page, an award opens the race, a news item opens the feed. Note that the item
+// bodies are therefore made of several sibling links rather than one wrapping
+// link - an anchor cannot contain another anchor, and the news text arrives as
+// HTML that already has player and team links inside it.
 //
 // FREEZING. While a live game is on screen the whole thing stops updating - see
 // tickerMayUpdate. A ticker is the one widget that can spoil a game you are
@@ -34,106 +47,144 @@ import {
 // THE PAGE UNDERNEATH. Being fixed, it covers the bottom of every page unless
 // the document is given that much extra scrollable space - see the body class.
 
-const Chip = ({ label, className }: { label: string; className: string }) => (
-	<span className={`badge league-ticker-badge me-2 ${className}`}>{label}</span>
+const Kicker = ({ href, label }: { href: string; label: string }) => (
+	<a className="league-ticker-kicker" href={href}>
+		{label}
+	</a>
 );
 
-const Item = ({ item }: { item: TickerItem }) => {
-	if (item.type === "score") {
-		const { away, home } = item;
-		const awayWon = (away.pts ?? 0) > (home.pts ?? 0);
-		const homeWon = (home.pts ?? 0) > (away.pts ?? 0);
-		return (
-			<a
-				className="league-ticker-item text-reset text-decoration-none"
-				href={helpers.leagueUrl([
-					"game_log",
-					item.boxScoreTeam,
-					item.season,
-					item.gid,
-				])}
-			>
-				<span className={clsx({ "fw-bold": awayWon })}>
-					{away.abbrev} {away.pts}
-				</span>
-				<span className="text-body-secondary mx-1">-</span>
-				<span className={clsx({ "fw-bold": homeWon })}>
-					{home.pts} {home.abbrev}
-				</span>
-				<span className="text-body-secondary ms-1 league-ticker-tag">
-					{item.overtimes
-						? `${item.overtimes > 1 ? item.overtimes : ""}OT`
-						: "F"}
-				</span>
-			</a>
-		);
-	}
+const Score = ({ item }: { item: Extract<TickerItem, { type: "score" }> }) => {
+	const { away, home } = item;
+	const awayPts = away.pts ?? 0;
+	const homePts = home.pts ?? 0;
+	const href = helpers.leagueUrl([
+		"game_log",
+		item.boxScoreTeam,
+		item.season,
+		item.gid,
+	]);
 
-	if (item.type === "upcoming") {
-		return (
-			<a
-				className="league-ticker-item text-reset text-decoration-none"
-				href={helpers.leagueUrl(["daily_schedule"])}
-			>
-				<span>
-					{item.away.abbrev} @ {item.home.abbrev}
-				</span>
-				{item.line ? (
-					<span className="text-body-secondary ms-2 league-ticker-tag">
-						{item.line}
-					</span>
+	// The loser goes dim. It is the fastest way to read a final without reading
+	// the numbers at all.
+	const side = (team: typeof away, pts: number, lost: boolean) => (
+		<>
+			<span className={clsx("league-ticker-abbrev", { dim: lost })}>
+				{team.abbrev}
+			</span>
+			<span className={clsx("league-ticker-pts", { dim: lost })}>{pts}</span>
+		</>
+	);
+
+	return (
+		<a className="league-ticker-item" href={href}>
+			{side(away, awayPts, awayPts < homePts)}
+			{side(home, homePts, homePts < awayPts)}
+			<span className="league-ticker-state">
+				{item.overtimes
+					? `FINAL/${item.overtimes > 1 ? item.overtimes : ""}OT`
+					: "FINAL"}
+			</span>
+		</a>
+	);
+};
+
+const Upcoming = ({
+	item,
+}: {
+	item: Extract<TickerItem, { type: "upcoming" }>;
+}) => (
+	<a
+		className="league-ticker-item"
+		href={helpers.leagueUrl(["daily_schedule"])}
+	>
+		<span className="league-ticker-abbrev">{item.away.abbrev}</span>
+		<span className="league-ticker-at">@</span>
+		<span className="league-ticker-abbrev">{item.home.abbrev}</span>
+		{item.line ? <span className="league-ticker-line">{item.line}</span> : null}
+	</a>
+);
+
+const Performance = ({
+	item,
+}: {
+	item: Extract<TickerItem, { type: "performance" }>;
+}) => (
+	<span className="league-ticker-item">
+		<a
+			className="league-ticker-name"
+			href={helpers.leagueUrl(["player", item.pid])}
+		>
+			{item.name}
+		</a>
+		<span className="league-ticker-stat">{item.stat}</span>
+		<a
+			className="league-ticker-aside"
+			href={helpers.leagueUrl([
+				"game_log",
+				item.boxScoreTeam,
+				item.season,
+				item.gid,
+			])}
+		>
+			{item.game}
+		</a>
+	</span>
+);
+
+const Race = ({ item }: { item: Extract<TickerItem, { type: "race" }> }) => (
+	<span className="league-ticker-item">
+		<Kicker href={helpers.leagueUrl(["award_races"])} label={item.label} />
+		{item.entries.map((entry, i) => (
+			<span className="league-ticker-entry" key={entry.pid}>
+				{i > 0 ? <span className="league-ticker-sep" /> : null}
+				<a
+					className="league-ticker-name"
+					href={helpers.leagueUrl(["player", entry.pid])}
+				>
+					{entry.name}
+				</a>
+				{entry.odds ? (
+					<span className="league-ticker-odds">{entry.odds}</span>
 				) : null}
-			</a>
-		);
-	}
+			</span>
+		))}
+	</span>
+);
 
-	if (item.type === "performance") {
-		return (
-			<a
-				className="league-ticker-item text-reset text-decoration-none"
-				href={helpers.leagueUrl([
-					"game_log",
-					item.boxScoreTeam,
-					item.season,
-					item.gid,
-				])}
-			>
-				<Chip label="Top" className="bg-info" />
-				{item.text}
-			</a>
-		);
-	}
-
-	if (item.type === "race") {
-		return (
-			<a
-				className="league-ticker-item text-reset text-decoration-none"
-				href={helpers.leagueUrl(["award_races"])}
-			>
-				<Chip label={item.label} className="bg-warning" />
-				{item.text}
-			</a>
-		);
-	}
-
+const News = ({ item }: { item: Extract<TickerItem, { type: "news" }> }) => {
 	const known = item.category !== undefined && item.category in categories;
 	return (
 		<span className="league-ticker-item">
-			<Chip
+			<Kicker
+				href={helpers.leagueUrl(["news"])}
 				label={
 					known
 						? categories[item.category as keyof typeof categories].text
 						: "News"
 				}
-				className={
-					known
-						? categories[item.category as keyof typeof categories].className
-						: "bg-secondary"
-				}
 			/>
-			<SafeHtml dirty={item.text} />
+			{/* The event text arrives as HTML with its own player and team links. */}
+			<span className="league-ticker-news">
+				<SafeHtml dirty={item.text} />
+			</span>
 		</span>
 	);
+};
+
+const Item = ({ item }: { item: TickerItem }) => {
+	if (item.type === "score") {
+		return <Score item={item} />;
+	}
+	if (item.type === "upcoming") {
+		return <Upcoming item={item} />;
+	}
+	if (item.type === "performance") {
+		return <Performance item={item} />;
+	}
+	if (item.type === "race") {
+		return <Race item={item} />;
+	}
+	return <News item={item} />;
 };
 
 const STORAGE_KEY = "bbgmShowLeagueTicker";
@@ -185,14 +236,21 @@ export const LeagueTicker = memo(() => {
 		// The bar is position:fixed, so it covers the bottom of every page unless
 		// the document is given that much extra scrollable space. Without this the
 		// last row of a table, or the buttons at the foot of a form, simply cannot
-		// be reached.
+		// be reached. Collapsed it is only a sliver, so it takes back most of it.
 		document.body.classList.toggle("has-league-ticker", visible);
+		document.body.classList.toggle(
+			"has-league-ticker-collapsed",
+			visible && !show,
+		);
 
 		return () => {
 			localActions.update({ leagueTickerVisible: false });
-			document.body.classList.remove("has-league-ticker");
+			document.body.classList.remove(
+				"has-league-ticker",
+				"has-league-ticker-collapsed",
+			);
 		};
-	}, [visible]);
+	}, [visible, show]);
 
 	if (!visible) {
 		return null;
@@ -201,7 +259,7 @@ export const LeagueTicker = memo(() => {
 	const duration = tickerDurationSeconds(items.length);
 
 	return (
-		<div className="league-ticker">
+		<div className={clsx("league-ticker", { collapsed: !show })}>
 			<div className="league-ticker-viewport">
 				{show ? (
 					<div
@@ -224,7 +282,8 @@ export const LeagueTicker = memo(() => {
 				) : null}
 			</div>
 			<button
-				className="btn btn-secondary p-0 league-ticker-toggle"
+				className="league-ticker-toggle"
+				type="button"
 				title={show ? "Hide ticker" : "Show ticker"}
 				onClick={() => {
 					const next = !show;
@@ -232,12 +291,9 @@ export const LeagueTicker = memo(() => {
 					safeLocalStorage.setItem(STORAGE_KEY, next ? "true" : "false");
 				}}
 			>
-				<span
-					className={clsx(
-						"glyphicon",
-						show ? "glyphicon-menu-down" : "glyphicon-menu-up",
-					)}
-				/>
+				{/* Drawn rather than an icon font: collapsed, the bar is 16px tall and
+				    a glyph that size is a smudge. */}
+				<span className={clsx("league-ticker-caret", { up: !show })} />
 			</button>
 		</div>
 	);

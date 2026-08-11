@@ -17,6 +17,12 @@ export type TickerTeam = {
 	pts?: number;
 };
 
+export type TickerRaceEntry = {
+	pid: number;
+	name: string;
+	odds?: string;
+};
+
 export type TickerItem =
 	// A final score from the most recent day of games.
 	| {
@@ -41,18 +47,23 @@ export type TickerItem =
 			home: TickerTeam;
 			line?: string;
 	  }
-	// A standout stat line from the day.
+	// A standout stat line from the day. Split rather than pre-joined, because
+	// the three parts are typeset differently: the name carries the item, the
+	// stat line supports it, the score is a footnote.
 	| {
 			type: "performance";
 			key: string;
 			gid: number;
 			season: number;
 			boxScoreTeam: string;
-			text: string;
+			pid: number;
+			name: string;
+			stat: string;
+			game: string;
 	  }
 	// Where an award race stands, quoting the same model the Award Races page
 	// and the sportsbook use.
-	| { type: "race"; key: string; label: string; text: string }
+	| { type: "race"; key: string; label: string; entries: TickerRaceEntry[] }
 	// Transactions, injuries, milestones - the events log.
 	| { type: "news"; key: string; eid: number; text: string; category?: string };
 

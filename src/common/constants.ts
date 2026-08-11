@@ -508,7 +508,7 @@ export const MOBILE_AD_BOTTOM_MARGIN = 52;
 // Height of the league ticker pinned to the bottom of the window. Anything else
 // anchored down there (notifications, sticky form buttons) lifts by this much.
 // Kept in step with $league-ticker-height in the stylesheets.
-export const LEAGUE_TICKER_HEIGHT = 34;
+export const LEAGUE_TICKER_HEIGHT = 36;
 
 export const DEPTH_CHART_NAME = bySport({
 	baseball: "Batting Order",

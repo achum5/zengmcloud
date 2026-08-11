@@ -29,13 +29,16 @@ const perf = (n: number): TickerItem => ({
 	gid: n,
 	season: 2026,
 	boxScoreTeam: "BOS_1",
-	text: "Player 40 PTS",
+	pid: n,
+	name: "Some Player",
+	stat: "40 PTS",
+	game: "NYC 100-105 BOS",
 });
 const race = (n: number): TickerItem => ({
 	type: "race",
 	key: `race-${n}`,
 	label: "MVP",
-	text: "Someone +180",
+	entries: [{ pid: n, name: "Someone", odds: "+180" }],
 });
 const news = (eid: number): TickerItem => ({
 	type: "news",

@@ -6,7 +6,11 @@ import { types } from "../../common/transactionInfo.ts";
 import { formatAmerican } from "../../common/sportsbook.ts";
 import { PHASE } from "../../common/constants.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
-import { TICKER_LIMITS, type TickerItem } from "../../common/ticker.ts";
+import {
+	TICKER_LIMITS,
+	type TickerItem,
+	type TickerRaceEntry,
+} from "../../common/ticker.ts";
 import { getUpcoming } from "../views/schedule.ts";
 import getAwardRaceOdds from "../core/season/getAwardRaceOdds.ts";
 import type { EventBBGM, Game } from "../../common/types.ts";
@@ -149,7 +153,10 @@ const performanceItems = (games: Game[]): TickerItem[] => {
 						boxScoreTeam: allStar
 							? "special"
 							: `${abbrevOf(home.tid)}_${home.tid}`,
-						text: `${p.name} ${line.text} — ${abbrevOf(away.tid)} ${away.pts}-${home.pts} ${abbrevOf(home.tid)}`,
+						pid: p.pid,
+						name: p.name,
+						stat: line.text,
+						game: `${abbrevOf(away.tid)} ${away.pts}-${home.pts} ${abbrevOf(home.tid)}`,
 					},
 				});
 			}
@@ -158,6 +165,22 @@ const performanceItems = (games: Game[]): TickerItem[] => {
 
 	rows.sort((a, b) => b.score - a.score);
 	return rows.slice(0, TICKER_LIMITS.performance).map((row) => row.item);
+};
+
+// A ticker says MVP, not Most Valuable Player - the full names are longer than
+// the entry they label. Anything not listed keeps its name.
+const SHORT_AWARD: Record<string, string> = {
+	"Most Valuable Player": "MVP",
+	"Defensive Player of the Year": "DPOY",
+	"Offensive Player of the Year": "OPOY",
+	"Defensive Forward of the Year": "DFOY",
+	"Rookie of the Year": "ROY",
+	"Defensive Rookie of the Year": "DROY",
+	"Offensive Rookie of the Year": "OROY",
+	"Sixth Man of the Year": "6MOY",
+	"Most Improved Player": "MIP",
+	"Goalie of the Year": "GOTY",
+	"Protector of the Year": "POTY",
 };
 
 // ------------------------------------------------------------------ the news
@@ -285,15 +308,20 @@ const upcomingAndRaces = async (fresh: boolean): Promise<TickerItem[]> => {
 				items.push({
 					type: "race",
 					key: `race-${race.name}`,
-					label: race.name,
-					text: top
-						.map(
-							(p: any) =>
-								`${p.name}${
-									typeof p.odds === "number" ? ` ${formatAmerican(p.odds)}` : ""
-								}`,
-						)
-						.join(" · "),
+					// "Most Valuable Player" is too long to scroll past; the short form
+					// is what a ticker would say.
+					label: SHORT_AWARD[race.name] ?? race.name,
+					// Annotated on the way out. getAwardRaceOdds hands back `any`, so a
+					// missing field here is not a compile error - it is a name in the
+					// ticker that quietly stops being a link.
+					entries: top.map(
+						(p: any): TickerRaceEntry => ({
+							pid: p.pid,
+							name: p.name,
+							odds:
+								typeof p.odds === "number" ? formatAmerican(p.odds) : undefined,
+						}),
+					),
 				});
 			}
 		} catch (error) {
