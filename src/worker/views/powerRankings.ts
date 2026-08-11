@@ -18,6 +18,7 @@ import {
 	formatAtsRecord,
 	getTeamAtsRecords,
 } from "../util/getTeamAtsRecords.ts";
+import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 
 // How the ranking splits between what a team has DONE and what its roster
 // looks like. Performance reaches its full share after this many games, and
@@ -246,9 +247,22 @@ const updatePowerRankings = async (
 		);
 
 		const atsRecords = await getTeamAtsRecords(season);
+
+		// "Team Ratings Delay": when this page may not show its own season's
+		// ratings, it shows the newest ones it is allowed to instead. The rankings
+		// themselves are untouched - they are still computed from the real current
+		// roster, because the delay is about what you can SEE, not about how good
+		// the teams actually are.
+		const { display: teamOvr, ovrs: delayedOvrs } =
+			await getTeamOvrOverride(season);
+
 		const teamsWithAts = teamsWithRankings.map((t) => ({
 			...t,
 			ats: formatAtsRecord(atsRecords.get(t.tid)),
+			powerRankings: {
+				...t.powerRankings,
+				ovrDelayed: delayedOvrs.get(t.tid),
+			},
 		}));
 
 		let ties = false;
@@ -271,6 +285,7 @@ const updatePowerRankings = async (
 			playoffs,
 			season,
 			teams: teamsWithAts,
+			teamOvr,
 			ties: hasTies(season) || ties,
 			otl: g.get("otl", season) || otl,
 		};

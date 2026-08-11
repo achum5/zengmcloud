@@ -10,7 +10,6 @@ import { wrappedTeamLogoAndName } from "../components/TeamLogoAndName.tsx";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
 import { gradeFromRank } from "../../common/teamRatingGrade.ts";
-import { showTeamOvr } from "../../common/teamRatings.ts";
 
 const Other = ({
 	actualShowHealthy,
@@ -43,6 +42,7 @@ const PowerRankings = ({
 	divs,
 	playoffs,
 	season,
+	teamOvr,
 	teams,
 	ties,
 	otl,
@@ -59,13 +59,11 @@ const PowerRankings = ({
 	});
 
 	const {
-		challengeNoRatings,
 		hideRatingsOnesDigit,
 		hideTeamRatings,
 		season: currentSeason,
 		userTid,
 	} = useLocal([
-		"challengeNoRatings",
 		"hideRatingsOnesDigit",
 		"hideTeamRatings",
 		"season",
@@ -78,14 +76,17 @@ const PowerRankings = ({
 
 	// Team ratings can be hidden by the challenge setting, or by the broader
 	// "no visible player ratings" one (a team rating is just its players').
-	const showTeamRatings = showTeamOvr({ challengeNoRatings, hideTeamRatings });
+	// "Team Ratings Delay" softens both: the worker decided which season this
+	// page may show, and handed over that season's ratings if it isn't this one.
+	const showTeamRatings = teamOvr.type === "current";
+	const delayedSeason = teamOvr.type === "delayed" ? teamOvr.season : undefined;
 
 	// With no games played there is nothing in a power ranking but the rosters,
 	// so every number on the page - the rank, the category grades - is a
 	// projection of how good each team is. In a league that hides team ratings
 	// that's the whole secret, printed in order. It opens with the season.
 	const noGamesYet = teams.every((t) => t.stats.gp === 0);
-	const closed = !showTeamRatings && noGamesYet;
+	const closed = !showTeamRatings && delayedSeason === undefined && noGamesYet;
 
 	const [showHealthy, setShowHealthy] = useState(true);
 	const actualShowHealthy = showHealthy || currentSeason !== season;
@@ -111,8 +112,9 @@ const PowerRankings = ({
 			colspan: 4,
 		},
 		{
-			title: showTeamRatings ? "Team Rating" : "",
-			colspan: showTeamRatings ? 2 : 0,
+			title:
+				showTeamRatings || delayedSeason !== undefined ? "Team Rating" : "",
+			colspan: showTeamRatings ? 2 : delayedSeason !== undefined ? 1 : 0,
 		},
 		{
 			title: "",
@@ -145,7 +147,13 @@ const PowerRankings = ({
 		"Team",
 		"Conference",
 		"Division",
-		...(showTeamRatings ? ["Current", "Healthy"] : []),
+		// Delayed, there is one number and it is neither "current" nor
+		// injury-adjusted, so it gets a single column titled with its year.
+		...(showTeamRatings
+			? ["Current", "Healthy"]
+			: delayedSeason !== undefined
+				? ["Healthy"]
+				: []),
 		"W",
 		"L",
 		...(otl ? ["OTL"] : []),
@@ -158,6 +166,17 @@ const PowerRankings = ({
 	];
 
 	const cols = getCols(colNames);
+
+	// The delayed column sits right after #, Team, Conference, Division. Retitle
+	// it with the season it comes from - an unlabelled old rating reads as the
+	// current one, which is worse than showing nothing.
+	if (delayedSeason !== undefined) {
+		const col = cols[4];
+		if (col) {
+			col.title = String(delayedSeason);
+			col.desc = `Team rating as of ${delayedSeason}`;
+		}
+	}
 
 	if (isSport("basketball")) {
 		for (const [colName, col] of Iterator.zip([colNames, cols], {
@@ -198,7 +217,13 @@ const PowerRankings = ({
 							),
 							coarseOvr(t.powerRankings.ovr),
 						]
-					: []),
+					: delayedSeason !== undefined
+						? [
+								t.powerRankings.ovrDelayed === undefined
+									? null
+									: coarseOvr(t.powerRankings.ovrDelayed),
+							]
+						: []),
 				t.seasonAttrs.won,
 				t.seasonAttrs.lost,
 				...(otl ? [t.seasonAttrs.otl] : []),
@@ -260,6 +285,9 @@ const PowerRankings = ({
 				players on each team.
 				{hideTeamRatings
 					? " Category grades are each team's percentile rank in that category, in even fifths across the league."
+					: ""}
+				{delayedSeason !== undefined
+					? ` Team ratings are shown as they were in ${delayedSeason}; the rankings themselves still use each team's current roster.`
 					: ""}
 			</p>
 			{playoffs === "playoffs" && isSport("basketball") ? (

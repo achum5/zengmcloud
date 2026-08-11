@@ -12,7 +12,7 @@ import hasTies from "../core/season/hasTies.ts";
 import { orderBy, type OrderBySortParams } from "../../common/utils.ts";
 import getPlayoffsByConf from "../core/season/getPlayoffsByConf.ts";
 import { isSport } from "../../common/sportFunctions.ts";
-import { hideTeamOvr } from "../../common/teamRatings.ts";
+import { teamOvrVisibleForSeason } from "../../common/teamRatings.ts";
 
 type Most = {
 	value: number;
@@ -105,10 +105,16 @@ const getMostXTeamSeasons = async ({
 	// has to honour it as well as No Visible Player Ratings - it was the last
 	// list still printing one. Decided in the worker so the number never reaches
 	// the client at all.
-	const hideOvr = hideTeamOvr({
+	// "Team Ratings Delay" then softens that per row rather than all at once:
+	// this is a table of past seasons, and a season's rating becomes knowable
+	// once it is old enough. In 2007 with a delay of 5, 2002 and everything
+	// before it show their real ratings and 2003 onward stay blank.
+	const ratingsSettings = {
 		challengeNoRatings: g.get("challengeNoRatings"),
 		hideTeamRatings: g.get("hideTeamRatings"),
-	});
+		teamRatingsDelaySeasons: g.get("teamRatingsDelaySeasons"),
+		season: g.get("season"),
+	};
 
 	const teamSeasons = await Promise.all(
 		teamSeasonsAll.map(async (ts) => {
@@ -138,7 +144,9 @@ const getMostXTeamSeasons = async ({
 				pts: 0,
 				oppPts: 0,
 				most: after ? await after(ts.most) : ts.most,
-				ovr: hideOvr ? undefined : ts.ovrEnd,
+				ovr: teamOvrVisibleForSeason(ratingsSettings, ts.season)
+					? ts.ovrEnd
+					: undefined,
 			};
 		}),
 	);

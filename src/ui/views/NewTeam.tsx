@@ -11,7 +11,6 @@ import { PopText } from "../components/PopText.tsx";
 import { SafeHtml } from "../components/SafeHtml.tsx";
 import { RecordAndPlayoffs } from "../components/RecordAndPlayoffs.tsx";
 import { useLocal } from "../util/local.ts";
-import { showTeamOvr } from "../../common/teamRatings.ts";
 
 const HistoryBlock = ({
 	won,
@@ -101,19 +100,18 @@ const NewTeam = ({
 	expansion,
 	numActiveTeams,
 	otherTeamsWantToHire,
+	teamOvr,
 	teams,
 }: View<"newTeam">) => {
 	const {
 		challengeNoRatings,
 		gameOver,
 		godMode,
-		hideTeamRatings,
 		phase,
 		season,
 		userTid,
 	} = useLocal([
 		"challengeNoRatings",
-		"hideTeamRatings",
 		"gameOver",
 		"godMode",
 		"phase",
@@ -337,10 +335,18 @@ const NewTeam = ({
 									won={t.seasonAttrs.won}
 									roundsWonText={t.roundsWonText}
 								/>
-								{showTeamOvr({ challengeNoRatings, hideTeamRatings }) ? (
+								{teamOvr.type === "current" ? (
 									<>
 										<br />
 										Team rating: {t.ovr}/100
+									</>
+								) : null}
+								{/* "Team Ratings Delay": an older rating in place of the one
+								    being withheld, labelled with the year it is from. */}
+								{teamOvr.type === "delayed" && t.ovrDelayed !== undefined ? (
+									<>
+										<br />
+										Team rating ({teamOvr.season}): {t.ovrDelayed}/100
 									</>
 								) : null}
 							</>

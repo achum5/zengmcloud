@@ -1440,6 +1440,14 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Challenge Modes",
+			key: "teamRatingsDelaySeasons",
+			name: "Team Ratings Delay (Seasons)",
+			type: "int",
+			description:
+				"Softens the two settings above rather than adding to them: instead of hiding team ratings, show each team's rating as it was this many seasons ago. At 5, the 2007 season shows you the 2002 ratings. 0 keeps them hidden. Only affects screens showing a team's overall rating - trades still show the change rather than the number, since an old rating says nothing about a trade you are making now.",
+		},
+		{
+			category: "Challenge Modes",
 			key: "hideRatingsOnesDigit",
 			name: "Coarse Ratings (Tens Digit Only)",
 			type: "bool",

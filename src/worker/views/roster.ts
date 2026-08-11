@@ -14,6 +14,7 @@ import { getActualPlayThroughInjuries } from "../core/game/loadTeams.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { orderTeams } from "../util/orderTeams.ts";
 import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
+import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 
 const sortByPos = (p: {
 	ratings: {
@@ -322,6 +323,12 @@ const updateRoster = async (
 
 		const { gb, playoffsByConf, rank, usePts } = await getStandingsInfo(inputs);
 
+		// "Team Ratings Delay": which season's rating this page may show, and that
+		// season's rating for this team if it isn't the one being viewed.
+		const { display: teamOvr, ovrs: delayedOvrs } = await getTeamOvrOverride(
+			inputs.season,
+		);
+
 		const t2 = {
 			...t,
 			ovr: team.ovr(players, {
@@ -334,6 +341,7 @@ const updateRoster = async (
 				},
 				playoffs: playoffsOvr,
 			}),
+			ovrDelayed: delayedOvrs.get(inputs.tid),
 			roundsWonText: helpers.roundsWonText({
 				playoffRoundsWon: t.seasonAttrs.playoffRoundsWon,
 				numPlayoffRounds: g.get("numGamesPlayoffSeries", inputs.season).length,
@@ -387,6 +395,7 @@ const updateRoster = async (
 				!g.get("spectator"),
 			stats,
 			t: t2,
+			teamOvr,
 			tid: inputs.tid,
 			usePts,
 		};

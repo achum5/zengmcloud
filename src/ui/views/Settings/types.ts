@@ -59,6 +59,7 @@ export type Key =
 	| "hideRatingsOnesDigit"
 	| "hideRatingsOnesDigitExceptProspects"
 	| "hideTeamRatings"
+	| "teamRatingsDelaySeasons"
 	| "challengeNoTrades"
 	| "challengeLoseBestPlayer"
 	| "challengeFiredLuxuryTax"

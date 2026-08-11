@@ -6,6 +6,7 @@ import { orderBy } from "../../common/utils.ts";
 import { getHistoryTeam } from "./teamHistory.ts";
 import { getPlayoffsByConfBySeason } from "./frivolitiesTeamSeasons.ts";
 import type { UpdateEvents } from "../../common/types.ts";
+import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 
 export const getTeamOvr = async (tid: number) => {
 	const playersAll = await idb.cache.players.indexGetAll("playersByTid", tid);
@@ -215,7 +216,15 @@ const updateTeamSelect = async (
 			t.ovr = await getTeamOvr(t.tid);
 		}
 
-		const finalTeams = await addHistoryAndPicksAndPlayers(teamsWithOvr);
+		// "Team Ratings Delay": picking a team is a current-rating screen, so when
+		// today's number is withheld it gets the newest one that isn't.
+		const { display: teamOvr, ovrs: delayedOvrs } = await getTeamOvrOverride();
+		const teamsWithDelayed = teamsWithOvr.map((t) => ({
+			...t,
+			ovrDelayed: delayedOvrs.get(t.tid),
+		}));
+
+		const finalTeams = await addHistoryAndPicksAndPlayers(teamsWithDelayed);
 
 		return {
 			confs: g.get("confs", "current"),
@@ -223,6 +232,7 @@ const updateTeamSelect = async (
 			expansion,
 			numActiveTeams,
 			otherTeamsWantToHire,
+			teamOvr,
 			teams: finalTeams,
 		};
 	}

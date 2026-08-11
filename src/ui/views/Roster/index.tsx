@@ -110,6 +110,7 @@ const Roster = ({
 	showTradingBlock,
 	stats,
 	t,
+	teamOvr,
 	tid,
 	usePts,
 }: View<"roster">) => {
@@ -491,6 +492,7 @@ const Roster = ({
 				showTradeFor={showTradeFor}
 				showTradingBlock={showTradingBlock}
 				t={t}
+				teamOvr={teamOvr}
 				tid={tid}
 				usePts={usePts}
 			/>

@@ -707,6 +707,7 @@ export type GameAttributesLeague = {
 	hideRatingsOnesDigit: boolean;
 	hideRatingsOnesDigitExceptProspects: boolean;
 	hideTeamRatings: boolean;
+	teamRatingsDelaySeasons: number;
 	challengeNoTrades: boolean;
 	challengeLoseBestPlayer: boolean;
 	challengeFiredLuxuryTax: boolean;

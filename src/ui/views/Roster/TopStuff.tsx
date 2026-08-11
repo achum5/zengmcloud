@@ -13,7 +13,6 @@ import { RosterComposition } from "../../components/RosterComposition.tsx";
 import { PlusMinus } from "../../components/PlusMinus.tsx";
 import { useLocal } from "../../util/local.ts";
 import { hardCapForTid } from "../../../common/getHardCap.ts";
-import { showTeamOvr } from "../../../common/teamRatings.ts";
 
 const fontSizeLarger = { fontSize: "larger" };
 
@@ -162,6 +161,7 @@ const TopStuff = ({
 	showTradeFor,
 	showTradingBlock,
 	t,
+	teamOvr,
 	tid,
 	usePts,
 }: Pick<
@@ -177,6 +177,7 @@ const TopStuff = ({
 	| "showTradeFor"
 	| "showTradingBlock"
 	| "t"
+	| "teamOvr"
 	| "tid"
 	| "usePts"
 > & {
@@ -186,9 +187,7 @@ const TopStuff = ({
 }) => {
 	const {
 		budget,
-		challengeNoRatings,
 		godMode,
-		hideTeamRatings,
 		hardCapAmount,
 		hardCapTids,
 		hardCapUseLuxuryTax,
@@ -200,9 +199,7 @@ const TopStuff = ({
 		userTid,
 	} = useLocal([
 		"budget",
-		"challengeNoRatings",
 		"godMode",
-		"hideTeamRatings",
 		"hardCapAmount",
 		"hardCapTids",
 		"hardCapUseLuxuryTax",
@@ -301,10 +298,18 @@ const TopStuff = ({
 									) : null}
 								</div>
 							) : null}
-							{showTeamOvr({ challengeNoRatings, hideTeamRatings }) ? (
+							{teamOvr.type === "current" ? (
 								<div>
 									Team rating:{" "}
 									<TeamRating ovr={t.ovr} ovrCurrent={t.ovrCurrent} />
+								</div>
+							) : null}
+							{/* "Team Ratings Delay": an older rating stands in for the one
+							    being withheld, and says which year it is from - unlabelled it
+							    would read as the current one. */}
+							{teamOvr.type === "delayed" && t.ovrDelayed !== undefined ? (
+								<div>
+									Team rating ({teamOvr.season}): {t.ovrDelayed}
 								</div>
 							) : null}
 							<div className="d-flex gap-3">

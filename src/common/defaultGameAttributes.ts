@@ -256,6 +256,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	hideRatingsOnesDigit: false, // display-only: show ratings floored to the tens digit (56 -> 5)
 	hideRatingsOnesDigitExceptProspects: false, // display-only: undrafted prospects keep their exact ratings
 	hideTeamRatings: false, // display-only: hide team overall ratings (trades show the change instead)
+	teamRatingsDelaySeasons: 0, // display-only: when team ratings are hidden, show each team's rating from N seasons ago instead (0 = keep them hidden)
 	challengeNoTrades: false,
 	challengeLoseBestPlayer: false,
 	challengeFiredLuxuryTax: false,

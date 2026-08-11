@@ -9,7 +9,7 @@ import { isSport } from "../../common/sportFunctions.ts";
 import { wrappedMovOrDiff } from "../components/MovOrDiff.tsx";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
 import { useLocal } from "../util/local.ts";
-import { showTeamOvr } from "../../common/teamRatings.ts";
+import { teamOvrDisplay } from "../../common/teamRatings.ts";
 
 const FrivolitiesTeamSeasons = ({
 	description,
@@ -23,16 +23,34 @@ const FrivolitiesTeamSeasons = ({
 }: View<"frivolitiesTeamSeasons">) => {
 	useTitleBar({ title, customMenu: frivolitiesMenu });
 
-	const { challengeNoRatings, hideTeamRatings, userTid } = useLocal([
+	const {
+		challengeNoRatings,
+		hideTeamRatings,
+		season,
+		teamRatingsDelaySeasons,
+		userTid,
+	} = useLocal([
 		"challengeNoRatings",
 		"hideTeamRatings",
+		"season",
+		"teamRatingsDelaySeasons",
 		"userTid",
 	]);
 
 	// Drop the column rather than leaving a permanently blank one. The worker
 	// already withholds the value; this is just so the table doesn't carry an
 	// empty Ovr header in a league that hides team ratings.
-	const showOvr = showTeamOvr({ challengeNoRatings, hideTeamRatings });
+	//
+	// With "Team Ratings Delay" on, the column stays: the worker fills it in for
+	// every season old enough to be knowable and leaves the recent rows blank,
+	// which is the point - you can see how good a team WAS.
+	const showOvr =
+		teamOvrDisplay({
+			challengeNoRatings,
+			hideTeamRatings,
+			teamRatingsDelaySeasons,
+			season,
+		}).type !== "hidden";
 
 	const cols = getCols([
 		"#",
