@@ -49,6 +49,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			recapMaxGames: String(props.recapMaxGames),
 			recapMaxDays: String(props.recapMaxDays),
 			ownGameSimCutoffSeconds: String(props.ownGameSimCutoffSeconds),
+			achievementCardsDraftPicks: String(props.achievementCardsDraftPicks),
 			recapMaxPlayers: String(props.recapMaxPlayers),
 			theme,
 			units,
@@ -96,6 +97,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				recapMaxPlayers: Number(state.recapMaxPlayers),
 				recapMaxDays: Number(state.recapMaxDays),
 				ownGameSimCutoffSeconds: Number(state.ownGameSimCutoffSeconds),
+				achievementCardsDraftPicks: Number(state.achievementCardsDraftPicks),
 				units,
 			});
 			showNotification({
@@ -247,6 +249,29 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							className="form-control"
 							onChange={handleChange("ownGameSimCutoffSeconds")}
 							value={state.ownGameSimCutoffSeconds}
+						/>
+					</div>
+					<div className="col-sm-3 col-6 mb-3">
+						<label
+							className="form-label"
+							htmlFor="options-achievementCardsDraftPicks"
+						>
+							Draft Achievement Cards{" "}
+							<HelpPopover title="Draft Achievement Cards">
+								<p>
+									How many top picks of each draft get an achievement card
+									(Draft History page). 0 turns draft cards off.
+								</p>
+							</HelpPopover>
+						</label>
+						<input
+							id="options-achievementCardsDraftPicks"
+							type="number"
+							min={0}
+							step={1}
+							className="form-control"
+							onChange={handleChange("achievementCardsDraftPicks")}
+							value={state.achievementCardsDraftPicks}
 						/>
 					</div>
 					<div className="col-sm-3 col-6 mb-3">

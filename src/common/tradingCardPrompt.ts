@@ -25,6 +25,23 @@ export type CardStatRow = {
 	ftp: number;
 };
 
+// An achievement card is an ordinary card with up to three things swapped in:
+// a different photograph (draft night, a college shot, a title celebration),
+// a different outfit to go with it, and a flag naming what it commemorates.
+// Everything else - the set, the shape, the fiction rule, the stat grid -
+// stays exactly the ordinary card's, which is why this is an override and not
+// a second prompt builder.
+export type CardPromptOverride = {
+	// Replaces the candid in-game action on the front.
+	photograph?: string;
+	// Replaces the uniform section on the front, for scenes where he is not in
+	// his pro game uniform (a draft-night suit, a college jersey).
+	uniform?: string;
+	// What the card commemorates, e.g. "Finals MVP, 2027". Adds a flag to the
+	// front and a line to the back.
+	achievement?: string;
+};
+
 export type CardSubject = {
 	name: string;
 	pos: string;
@@ -412,6 +429,7 @@ export const buildCardFrontPrompt = (
 	// app passes a fresh number each time the prompts are built so pressing the
 	// button again gives a different shot.
 	actionSeed?: number,
+	override?: CardPromptOverride,
 ): string => {
 	const set = cardSetsById.get(setId);
 	if (!set) {
@@ -428,6 +446,30 @@ export const buildCardFrontPrompt = (
 	const action =
 		pool[(actionSeed ?? hashCard(subject, setId, variantId)) % pool.length]!;
 
+	// The scene: either the standard candid in-game action, or whatever the
+	// override puts in its place. The cartoon-render rule below applies to both.
+	const photographBody = override?.photograph
+		? override.photograph
+		: `A CANDID shot, not a portrait. This is a professional sports photographer sitting courtside at a live NBA game, shooting this player in the middle of PLAYING BASKETBALL, and he does not know the camera is there. No posing, no looking into the lens, no smiling at the camera, no arms folded, no ball resting on the hip, no studio backdrop.
+
+**THE MOMENT ON THIS CARD: ${action}.** Shoot that, not a generic drive with the ball - it is the specific thing that separates this card from every other one in the set, so build the whole frame around it.
+
+Shot from the sideline or the baseline, at court level, with a long lens: the player caught mid-action and filling the frame, the crowd and the arena falling out of focus behind him. Natural arena lighting.${
+				set.photography?.toLowerCase().includes("posed")
+					? " EXCEPTION for this particular set: its Photography note above calls for a posed shot, and a few early designs really were made that way - follow the set."
+					: ""
+			}`;
+
+	const uniformBlock = override?.uniform
+		? `## The uniform\n\n${override.uniform}`
+		: jerseyBlock(subject);
+
+	const achievementBlock = override?.achievement
+		? `\n\n## The achievement
+
+This card commemorates: **${override.achievement}**. Print one small flag on the front reading exactly "${override.achievement}" - a banner, ribbon, badge, or text strip styled the way this set would style an award or subset marker, consistent with the design language above. Keep it secondary to his name and team.`
+		: "";
+
 	return `Generate the FRONT of a single basketball trading card, as one image. Output only the card, nothing else.
 
 ${shapeBlock(setId)}
@@ -442,19 +484,11 @@ The design above is a ${set.label} design. That is the LOOK ONLY. This card depi
 
 ## The photograph
 
-A CANDID shot, not a portrait. This is a professional sports photographer sitting courtside at a live NBA game, shooting this player in the middle of PLAYING BASKETBALL, and he does not know the camera is there. No posing, no looking into the lens, no smiling at the camera, no arms folded, no ball resting on the hip, no studio backdrop.
-
-**THE MOMENT ON THIS CARD: ${action}.** Shoot that, not a generic drive with the ball - it is the specific thing that separates this card from every other one in the set, so build the whole frame around it.
-
-Shot from the sideline or the baseline, at court level, with a long lens: the player caught mid-action and filling the frame, the crowd and the arena falling out of focus behind him. Natural arena lighting.${
-		set.photography?.toLowerCase().includes("posed")
-			? " EXCEPTION for this particular set: its Photography note above calls for a posed shot, and a few early designs really were made that way - follow the set."
-			: ""
-	}
+${photographBody}
 
 But it is RENDERED in flat faces.js cartoon style, not photorealism: the player, and anyone visible behind him, are drawn as clean flat vector shapes with solid fills. Think of a cartoon illustration composed exactly the way a real courtside photograph would be composed.
 
-${jerseyBlock(subject)}
+${uniformBlock}
 
 ## The player
 
@@ -466,13 +500,14 @@ ${bioLines(subject).join("\n")}${
 
 ## Text on the card
 
-The card front shows his name (${subject.name}), his position (${subject.pos}), and his team (${subject.teamName}), laid out the way this set lays them out. Spell the name exactly as written. Do not invent extra text, taglines, or logos that the design description above does not call for.`;
+The card front shows his name (${subject.name}), his position (${subject.pos}), and his team (${subject.teamName}), laid out the way this set lays them out. Spell the name exactly as written. Do not invent extra text, taglines, or logos that the design description above does not call for.${achievementBlock}`;
 };
 
 export const buildCardBackPrompt = (
 	setId: string,
 	variantId: string,
 	subject: CardSubject,
+	override?: Pick<CardPromptOverride, "achievement">,
 ): string => {
 	const set = cardSetsById.get(setId);
 	if (!set) {
@@ -507,6 +542,10 @@ Lay it out the way a real card back of this era is laid out - the card number in
 ${bioLines(subject).join("\n")}${
 		subject.awards.length > 0
 			? `\nHonors through ${subject.season}: ${subject.awards.join(", ")}`
+			: ""
+	}${
+		override?.achievement
+			? `\n\nThis card commemorates: **${override.achievement}**. Work one line into the biography area saying so, set in the design's own typography.`
 			: ""
 	}
 

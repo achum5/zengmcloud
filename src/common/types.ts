@@ -1193,6 +1193,9 @@ export type Options = {
 	// NOT in charge of simming may not sim its own game. 0 disables the window.
 	// See common/ownGameSim.ts.
 	ownGameSimCutoffSeconds?: number;
+	// How many top draft picks get an achievement card each draft. 0 disables
+	// draft cards. See common/achievementCards.ts.
+	achievementCardsDraftPicks?: number;
 	recapMaxPlayers?: number;
 	recapMaxDays?: number;
 	units?: "metric" | "us";

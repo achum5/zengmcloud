@@ -2,6 +2,7 @@ import { Fragment, useState } from "react";
 import { DataTable } from "../components/DataTable/index.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import { PlayerRecaps } from "../components/PlayerRecaps.tsx";
+import { AchievementCards } from "../components/AchievementCards.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
@@ -417,11 +418,18 @@ const DraftHistory = ({
 			    classes generated before the league started, which have nothing
 			    worth writing up. */}
 			{season >= startingSeason ? (
-				<div className="mb-3">
+				<div className="d-flex flex-wrap gap-4 mb-3">
 					<PlayerRecaps
 						season={season}
 						filter="draftPicks"
 						heading="Draft Class Writeups (AI)"
+					/>
+					{/* The class's top picks get achievement cards, worked through the
+					    same way: it sits here until every card is made, then it's gone. */}
+					<AchievementCards
+						season={season}
+						context="draft"
+						heading="Draft Pick Cards (AI)"
 					/>
 				</div>
 			) : null}

@@ -26,6 +26,7 @@ const updateOptions = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			recapAIProvider: options.recapAIProvider ?? "claude",
 			recapMaxGames: options.recapMaxGames,
 			ownGameSimCutoffSeconds: options.ownGameSimCutoffSeconds,
+			achievementCardsDraftPicks: options.achievementCardsDraftPicks,
 			recapMaxPlayers: options.recapMaxPlayers,
 			recapMaxDays: options.recapMaxDays,
 		};

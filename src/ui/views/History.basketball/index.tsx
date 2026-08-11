@@ -2,6 +2,7 @@ import { MoreLinks } from "../../components/MoreLinks.tsx";
 import { RetiredPlayers } from "../../components/RetiredPlayers.tsx";
 import { SeasonRecap } from "../../components/SeasonRecap.tsx";
 import { PlayerRecaps } from "../../components/PlayerRecaps.tsx";
+import { AchievementCards } from "../../components/AchievementCards.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import AwardsAndChamp from "./AwardsAndChamp.tsx";
 import Team from "./Team.tsx";
@@ -95,6 +96,14 @@ const History = (props: View<"history">) => {
 			    were. */}
 			<div className="d-flex flex-wrap gap-4 mt-1">
 				<SeasonRecap season={season} heading="Team Recaps (AI)" />
+
+				{/* Awards, All-Stars, named teams and the champions' key players each
+				    get a card; done the same way, gone the same way. */}
+				<AchievementCards
+					season={season}
+					context="season"
+					heading="Achievement Cards (AI)"
+				/>
 
 				<PlayerRecaps
 					season={season}

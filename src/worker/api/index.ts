@@ -17,10 +17,7 @@ import {
 	DEFAULT_RECAP_MAX_DAYS,
 	DEFAULT_RECAP_MAX_PLAYERS,
 } from "../../common/constants.ts";
-import {
-	DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS,
-	decideOwnGameSim,
-} from "../../common/ownGameSim.ts";
+import { DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS } from "../../common/ownGameSim.ts";
 import actions from "./actions.ts";
 import leagueFileUpload, {
 	decompressStreamIfNecessary,
@@ -252,7 +249,18 @@ import {
 	buildCardFrontPrompt,
 } from "../../common/tradingCardPrompt.ts";
 import { cardTitle } from "../../common/tradingCards.ts";
+import {
+	achievementPromptOverride,
+	CHAMPION_CARD_PLAYERS,
+	DEFAULT_ACHIEVEMENT_DRAFT_PICKS,
+	deriveDraftAchievementCards,
+	deriveSeasonAchievementCards,
+	type AchievementCardSpec,
+	type AchievementKind,
+	type DraftCardScene,
+} from "../../common/achievementCards.ts";
 import { actualPhase } from "../util/actualPhase.ts";
+import { getGlobalSettings } from "../util/getGlobalSettings.ts";
 import { getCol } from "../../common/getCol.ts";
 import { getCols } from "../../common/getCols.ts";
 import { formatScheduleForEditor } from "../views/scheduleEditor.ts";
@@ -5229,6 +5237,13 @@ const updateOptions = async (
 					? num
 					: DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS;
 			})(),
+			// 0 is legitimate here too: it turns draft achievement cards off.
+			achievementCardsDraftPicks: (() => {
+				const num = Math.floor(Number(options.achievementCardsDraftPicks));
+				return Number.isFinite(num) && num >= 0
+					? num
+					: DEFAULT_ACHIEVEMENT_DRAFT_PICKS;
+			})(),
 		},
 		"options",
 	);
@@ -6655,6 +6670,160 @@ const deleteTradingCard = async (id: string) => {
 	await toUI("realtimeUpdate", [["tradingCards"]]);
 };
 
+// Achievement cards (see common/achievementCards.ts): what a season's card set
+// SHOULD contain, minus what the synced tradingCards store already holds. No
+// queue is stored anywhere - the ids are deterministic, so every device in a
+// room derives the same list and a card saved on one crosses it off on all.
+
+// A championship is a team achievement; the cards go to whoever carried it on
+// the floor, measured the only way a card can defend: playoff minutes.
+const getChampionKeyPlayers = async (
+	season: number,
+): Promise<{ pid: number; name: string }[]> => {
+	const teams = await idb.getCopies.teamsPlus(
+		{
+			attrs: ["tid"],
+			seasonAttrs: ["playoffRoundsWon"],
+			season,
+		},
+		"noCopyCache",
+	);
+	const numRounds = g.get("numGamesPlayoffSeries", season).length;
+	const champ = teams.find((t) => t.seasonAttrs.playoffRoundsWon === numRounds);
+	if (!champ) {
+		return [];
+	}
+
+	const players = await idb.getCopies.players(
+		{ statsTid: champ.tid },
+		"noCopyCache",
+	);
+	const withMinutes = players
+		.map((p) => {
+			let min = 0;
+			for (const row of p.stats) {
+				if (row.season === season && row.playoffs && row.tid === champ.tid) {
+					min += row.min ?? 0;
+				}
+			}
+			return {
+				pid: p.pid,
+				name: `${p.firstName} ${p.lastName}`.trim(),
+				min,
+			};
+		})
+		.filter((p) => p.min > 0);
+	withMinutes.sort((a, b) => b.min - a.min);
+	return withMinutes
+		.slice(0, CHAMPION_CARD_PLAYERS)
+		.map(({ pid, name }) => ({ pid, name }));
+};
+
+const getAchievementCardData = async ({
+	season,
+	context,
+}: {
+	season: number;
+	// "draft" derives the class's top picks (Draft History page); "season"
+	// derives awards, All-Stars and champions (season History page).
+	context: "draft" | "season";
+}) => {
+	let expected: AchievementCardSpec[];
+	if (context === "draft") {
+		const options = await getGlobalSettings();
+		const numPicks =
+			options.achievementCardsDraftPicks ?? DEFAULT_ACHIEVEMENT_DRAFT_PICKS;
+		const players = await idb.getCopies.players(
+			{ draftYear: season },
+			"noCopyCache",
+		);
+		expected = deriveDraftAchievementCards({
+			season,
+			picks: players
+				.filter((p) => p.draft.round === 1 && p.draft.pick >= 1)
+				.map((p) => ({
+					pid: p.pid,
+					name: `${p.firstName} ${p.lastName}`.trim(),
+					pick: p.draft.pick,
+				})),
+			numPicks,
+		});
+	} else {
+		const awards = await idb.getCopy.awards({ season });
+		// Everyone in the All-Star row was selected - the two teams once the
+		// sides are drafted, plus whoever is still in the undrafted pool (which
+		// also keeps injured selections, who earned the card too).
+		const allStarsRow = await idb.getCopy.allStars({ season });
+		const allStars: { pid: number; name: string }[] = [];
+		if (allStarsRow) {
+			const seen = new Set<number>();
+			for (const p of [...allStarsRow.teams.flat(), ...allStarsRow.remaining]) {
+				if (!seen.has(p.pid)) {
+					seen.add(p.pid);
+					allStars.push({ pid: p.pid, name: p.name });
+				}
+			}
+		}
+		expected = deriveSeasonAchievementCards({
+			season,
+			awards,
+			allStars,
+			champions: await getChampionKeyPlayers(season),
+		});
+	}
+
+	const existing = new Set(
+		(await idb.cache.tradingCards.getAll()).map((card) => card.id),
+	);
+	const pending = expected.filter((spec) => !existing.has(spec.id));
+	return {
+		pending,
+		total: expected.length,
+		done: expected.length - pending.length,
+	};
+};
+
+const getAchievementCardPrompts = async ({
+	pid,
+	season,
+	setId,
+	variantId,
+	kind,
+	label,
+	scene,
+}: {
+	pid: number;
+	season: number;
+	setId: string;
+	variantId: string;
+	kind: AchievementKind;
+	label: string;
+	scene?: DraftCardScene;
+}) => {
+	const subject = await getTradingCardSubject(pid, season);
+	if (!subject) {
+		return undefined;
+	}
+	const override = achievementPromptOverride(
+		{ kind, label, season, pid },
+		subject,
+		scene,
+	);
+	return {
+		front: buildCardFrontPrompt(
+			setId,
+			variantId,
+			subject,
+			// Same fresh-seed-per-press behavior as ordinary cards.
+			Math.floor(Math.random() * 1e9),
+			override,
+		),
+		back: buildCardBackPrompt(setId, variantId, subject, override),
+		title: `${cardTitle(setId, variantId, season)} · ${label}`,
+		playerName: subject.name,
+	};
+};
+
 // Set a player's primary display image (imgURL) - e.g. "use this gallery image
 // as the profile picture". getCopy + cache.put works for retired players too
 // (they aren't held in the cache), mirroring updatePlayerWatch.
@@ -6945,6 +7114,8 @@ export default {
 		getImages,
 		upsertImage,
 		deleteImage,
+		getAchievementCardData,
+		getAchievementCardPrompts,
 		getTradingCardOptions,
 		getTradingCardPrompts,
 		upsertTradingCard,
