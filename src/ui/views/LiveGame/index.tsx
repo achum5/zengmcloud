@@ -1889,7 +1889,22 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// The rewind menu: back roughly a game-minute, to the start of the current
 	// quarter, or to the tip-off. Targets are read from playHistory at click time
 	// (all refs), so this list is stable. Only offered when rewinding is possible
-	// (see the `rewinds` prop below) - never for a multiplayer follower.
+	// - see `canRewind` below.
+	// REWINDING IS FOR A REWATCH, NOT FOR A GAME THAT IS HAPPENING.
+	//
+	// A saved game is a recording, so scrubbing back through it is the obvious
+	// thing to be able to do. A live sim is not: it is being played in front of
+	// you, and offering to take it back reads as though the result were still up
+	// for grabs when it is already decided and, in a room, already published to
+	// everyone else.
+	//
+	// This also covers the case that prompted it - simming your own team's game
+	// while a league-mate's device is in charge of the schedule. That is a real
+	// live sim, not a replay (nothing sets `replay` except an explicit rewatch),
+	// and it is neither following a broadcast nor broadcasting one, so it used to
+	// fall through to the ordinary live-sim path and keep its rewind menu.
+	const canRewind = isReplay && !isFollower && !isBroadcaster;
+
 	const rewindMenuItems = useMemo<FastForward[]>(() => {
 		const startOfQuarterCursor = (): number => {
 			const hist = playHistory.current;
@@ -2430,11 +2445,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 											disabled={boxScore.current.gameOver}
 											fastForwardAlignRight
 											fastForwards={fastForwardMenuItems}
-											rewinds={
-												isFollower || isBroadcaster
-													? undefined
-													: rewindMenuItems
-											}
+											rewinds={canRewind ? rewindMenuItems : undefined}
 											onPlay={handlePlay}
 											onPause={handlePause}
 											onNext={handleNextPlay}
@@ -2543,9 +2554,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 									disabled={boxScore.current.gameOver}
 									fastForwardAlignRight
 									fastForwards={fastForwardMenuItems}
-									rewinds={
-										isFollower || isBroadcaster ? undefined : rewindMenuItems
-									}
+									rewinds={canRewind ? rewindMenuItems : undefined}
 									onPlay={handlePlay}
 									onPause={handlePause}
 									onNext={handleNextPlay}
