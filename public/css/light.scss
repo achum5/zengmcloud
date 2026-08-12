@@ -3041,6 +3041,38 @@ $league-ticker-toggle-width: 26px;
 	}
 }
 
+// THE LEFT PANE. Names whatever is going past right now and changes when the
+// marquee reaches the next kind of item, the way a broadcast score bar puts the
+// league or the section in a fixed block and lets the content run beside it.
+//
+// A share of the width rather than a fixed size, so it stays in proportion on a
+// phone, but clamped: below about 80px the longer labels have nowhere to go, and
+// above about 130px it is eating the part of the bar people are reading.
+.league-ticker-label {
+	flex: 0 0 auto;
+	// The floor is set by the longest label - TRANSACTIONS, TOP PERFORMERS - not
+	// by taste. Below it the text clips, which is worse than no pane at all.
+	width: clamp(96px, 13%, 132px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 0.4rem;
+	border-right: 1px solid var(--ticker-rule);
+	// The one place the accent colour is a surface rather than text - it is what
+	// makes the pane read as a marker instead of just another item.
+	box-shadow: inset 3px 0 0 var(--ticker-accent);
+	background-color: rgb(255 255 255 / 5%);
+	color: var(--ticker-fg);
+	font-size: 0.625rem;
+	font-weight: 800;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	line-height: 1.1;
+	text-align: center;
+	// Two short words are allowed to stack; anything longer is the label's fault.
+	overflow: hidden;
+}
+
 .league-ticker-viewport {
 	flex: 1 1 auto;
 	overflow: hidden;
@@ -3177,17 +3209,6 @@ $league-ticker-toggle-width: 26px;
 	font-weight: 600;
 }
 
-// The section label - MVP, INJURIES, TRADES. Set as small uppercase type in the
-// accent colour. This replaced a coloured pill, which read as a sticker.
-.league-ticker-kicker {
-	font-size: 0.625rem;
-	font-weight: 800;
-	letter-spacing: 0.1em;
-	text-transform: uppercase;
-	color: var(--ticker-accent) !important;
-	flex: 0 0 auto;
-}
-
 .league-ticker-name {
 	font-weight: 600;
 }
@@ -3277,6 +3298,23 @@ body.has-league-ticker {
 
 body.has-league-ticker-collapsed {
 	padding-bottom: calc(
+		#{$league-ticker-collapsed-height} + env(safe-area-inset-bottom, 0px)
+	);
+}
+
+// AND THE SIDEBAR HAS TO GET OUT OF THE WAY.
+//
+// .sidebar-inner is fixed to the bottom of the window at a higher z-index than
+// the ticker, so on a wide screen it sat on top of the bar's left end - which is
+// where the label pane lives, and before that was quietly eating the first
+// score. Stopping the sidebar above the bar gives the ticker the full width it
+// is supposed to have; the sidebar's nav already scrolls, so it loses nothing.
+body.has-league-ticker .sidebar-inner {
+	bottom: calc(#{$league-ticker-height} + env(safe-area-inset-bottom, 0px));
+}
+
+body.has-league-ticker-collapsed .sidebar-inner {
+	bottom: calc(
 		#{$league-ticker-collapsed-height} + env(safe-area-inset-bottom, 0px)
 	);
 }

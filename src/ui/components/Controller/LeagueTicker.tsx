@@ -1,4 +1,11 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+	memo,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import clsx from "clsx";
 import { localActions, useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
@@ -47,11 +54,37 @@ import {
 // THE PAGE UNDERNEATH. Being fixed, it covers the bottom of every page unless
 // the document is given that much extra scrollable space - see the body class.
 
-const Kicker = ({ href, label }: { href: string; label: string }) => (
-	<a className="league-ticker-kicker" href={href}>
-		{label}
-	</a>
-);
+// WHAT THE LEFT PANE SAYS.
+//
+// The name of whatever is going past right now - SCORES, then ODDS, then MVP,
+// then TRANSACTIONS - and it changes as the marquee reaches each new kind of
+// item. That is the whole point of the pane: it used to be a label printed in
+// front of EVERY item, which meant reading "INJURIES" forty times to learn one
+// thing. Said once, in a fixed place, it costs nothing and the items get to be
+// only their own content.
+const railLabel = (item: TickerItem): string => {
+	switch (item.type) {
+		case "score": {
+			return "Scores";
+		}
+		case "upcoming": {
+			return "Odds";
+		}
+		case "performance": {
+			return "Top Performers";
+		}
+		case "race": {
+			// The award itself - MVP, DPOY - not the generic word "award".
+			return item.label;
+		}
+		default: {
+			const known = item.category !== undefined && item.category in categories;
+			return known
+				? categories[item.category as keyof typeof categories].text
+				: "News";
+		}
+	}
+};
 
 const Score = ({ item }: { item: Extract<TickerItem, { type: "score" }> }) => {
 	const { away, home } = item;
@@ -133,7 +166,6 @@ const Performance = ({
 
 const Race = ({ item }: { item: Extract<TickerItem, { type: "race" }> }) => (
 	<span className="league-ticker-item">
-		<Kicker href={helpers.leagueUrl(["award_races"])} label={item.label} />
 		{item.entries.map((entry, i) => (
 			<span className="league-ticker-entry" key={entry.pid}>
 				{i > 0 ? <span className="league-ticker-sep" /> : null}
@@ -151,25 +183,12 @@ const Race = ({ item }: { item: Extract<TickerItem, { type: "race" }> }) => (
 	</span>
 );
 
-const News = ({ item }: { item: Extract<TickerItem, { type: "news" }> }) => {
-	const known = item.category !== undefined && item.category in categories;
-	return (
-		<span className="league-ticker-item">
-			<Kicker
-				href={helpers.leagueUrl(["news"])}
-				label={
-					known
-						? categories[item.category as keyof typeof categories].text
-						: "News"
-				}
-			/>
-			{/* The event text arrives as HTML with its own player and team links. */}
-			<span className="league-ticker-news">
-				<SafeHtml dirty={item.text} />
-			</span>
-		</span>
-	);
-};
+// The event text arrives as HTML with its own player and team links.
+const News = ({ item }: { item: Extract<TickerItem, { type: "news" }> }) => (
+	<span className="league-ticker-item league-ticker-news">
+		<SafeHtml dirty={item.text} />
+	</span>
+);
 
 const Item = ({ item }: { item: TickerItem }) => {
 	if (item.type === "score") {
@@ -219,6 +238,80 @@ export const LeagueTicker = memo(() => {
 		return next;
 	}, [tickerItems, mayUpdate]);
 
+	// WHICH ITEM THE LEFT PANE IS NAMING.
+	//
+	// Read off the marquee's real position rather than computed from the clock.
+	// The animation pauses on hover and on touch, and under reduced motion there
+	// is no animation at all - the bar is scrolled by hand - so elapsed time says
+	// nothing reliable about where the track actually is. One rect read does.
+	//
+	// Item offsets within the track are measured once per layout: they only move
+	// when the feed or the window changes, and reading fifty of them on every
+	// frame would be a layout flush several times a second for a caption.
+	const viewportRef = useRef<HTMLDivElement>(null);
+	const trackRef = useRef<HTMLDivElement>(null);
+	const offsets = useRef<number[]>([]);
+	const cycle = useRef(0);
+	const [leading, setLeading] = useState(0);
+
+	useLayoutEffect(() => {
+		const measure = () => {
+			const track = trackRef.current;
+			if (!track) {
+				return;
+			}
+			// Direct children only - the second copy is nested inside its own span,
+			// so this is one pass of the loop and nothing repeats.
+			offsets.current = [
+				...track.querySelectorAll<HTMLElement>(":scope > .league-ticker-item"),
+			].map((node) => node.offsetLeft);
+			// Where the duplicate starts IS the length of one pass.
+			const duplicate = track.querySelector<HTMLElement>(":scope > [data-dup]");
+			cycle.current = duplicate ? duplicate.offsetLeft : track.scrollWidth / 2;
+		};
+		measure();
+		window.addEventListener("resize", measure);
+		return () => window.removeEventListener("resize", measure);
+	}, [items, show]);
+
+	useEffect(() => {
+		if (!show) {
+			return;
+		}
+		let frame = 0;
+		let last = 0;
+		const tick = (now: number) => {
+			frame = requestAnimationFrame(tick);
+			// A caption does not need sixty updates a second, and each one costs a
+			// pair of rect reads.
+			if (now - last < 120) {
+				return;
+			}
+			last = now;
+			const viewport = viewportRef.current;
+			const track = trackRef.current;
+			if (!viewport || !track || cycle.current <= 0) {
+				return;
+			}
+			// How far into one pass of the track the viewport's left edge currently
+			// sits, wrapped, because the track loops.
+			const into =
+				viewport.getBoundingClientRect().left -
+				track.getBoundingClientRect().left;
+			const x = ((into % cycle.current) + cycle.current) % cycle.current;
+			let index = 0;
+			for (const [i, offset] of offsets.current.entries()) {
+				if (offset > x) {
+					break;
+				}
+				index = i;
+			}
+			setLeading((previous) => (previous === index ? previous : index));
+		};
+		frame = requestAnimationFrame(tick);
+		return () => cancelAnimationFrame(frame);
+	}, [show, items]);
+
 	// Reduced motion: keep the bar, drop the movement.
 	const [animate, setAnimate] = useState(true);
 	useEffect(() => {
@@ -260,12 +353,18 @@ export const LeagueTicker = memo(() => {
 
 	return (
 		<div className={clsx("league-ticker", { collapsed: !show })}>
-			<div className="league-ticker-viewport">
+			{show ? (
+				<div className="league-ticker-label">
+					{railLabel(items[leading] ?? items[0]!)}
+				</div>
+			) : null}
+			<div className="league-ticker-viewport" ref={viewportRef}>
 				{show ? (
 					<div
 						className={clsx("league-ticker-track", {
 							"league-ticker-animate": animate,
 						})}
+						ref={trackRef}
 						style={animate ? { animationDuration: `${duration}s` } : undefined}
 					>
 						{/* Twice, so the loop has no seam: the second copy is scrolling
@@ -273,7 +372,7 @@ export const LeagueTicker = memo(() => {
 						{items.map((item) => (
 							<Item key={item.key} item={item} />
 						))}
-						<span aria-hidden="true" className="d-flex">
+						<span aria-hidden="true" className="d-flex" data-dup="">
 							{items.map((item) => (
 								<Item key={`dup-${item.key}`} item={item} />
 							))}
