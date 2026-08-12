@@ -26,6 +26,28 @@ import type { EventBBGM, Game } from "../../common/types.ts";
 const abbrevOf = (tid: number): string =>
 	g.get("teamInfoCache")[tid]?.abbrev ?? "???";
 
+// Franchise colours are not in teamInfoCache, so they are read once per refresh
+// and passed down. Cheap - the teams store is small and already in the cache.
+let colorByTid = new Map<number, string>();
+
+const loadTeamColors = async () => {
+	try {
+		const teams = await idb.cache.teams.getAll();
+		colorByTid = new Map(
+			teams.map((t) => [t.tid, t.colors?.[0] ?? "#000000"] as const),
+		);
+	} catch {
+		colorByTid = new Map();
+	}
+};
+
+const teamRef = (tid: number, pts?: number) => ({
+	tid,
+	abbrev: abbrevOf(tid),
+	pts,
+	color: colorByTid.get(tid),
+});
+
 // ---------------------------------------------------------------- most recent
 // The last day that actually has games, league-wide, without reading a season.
 //
@@ -86,8 +108,8 @@ const scoreItems = (games: Game[]): TickerItem[] =>
 			gid: game.gid,
 			season: game.season,
 			boxScoreTeam: allStar ? "special" : `${abbrevOf(home.tid)}_${home.tid}`,
-			away: { tid: away.tid, abbrev: abbrevOf(away.tid), pts: away.pts },
-			home: { tid: home.tid, abbrev: abbrevOf(home.tid), pts: home.pts },
+			away: teamRef(away.tid, away.pts),
+			home: teamRef(home.tid, home.pts),
 			overtimes: game.overtimes > 0 ? game.overtimes : undefined,
 		};
 	});
@@ -101,7 +123,7 @@ const scoreItems = (games: Game[]): TickerItem[] =>
 // wanted is the best few lines from each of the best few games - not a flat top
 // six, which in practice came from six different games and left every one of
 // them without its context.
-const LINES_PER_GAME = 3;
+const LINES_PER_GAME = 5;
 const GAMES_WITH_LINES = 6;
 
 const performanceItems = (games: Game[]): TickerItem[] => {
@@ -113,6 +135,7 @@ const performanceItems = (games: Game[]): TickerItem[] => {
 		const allStar = home.tid === -1 && away.tid === -2;
 		for (const team of game.teams) {
 			for (const p of team.players ?? []) {
+				const side = abbrevOf(team.tid);
 				const line = bySport({
 					basketball: () => {
 						const pts = p.pts ?? 0;
@@ -164,6 +187,7 @@ const performanceItems = (games: Game[]): TickerItem[] => {
 							? "special"
 							: `${abbrevOf(home.tid)}_${home.tid}`,
 						pid: p.pid,
+						team: side,
 						name: p.name,
 						stat: line.text,
 						game: `${abbrevOf(away.tid)} ${away.pts}-${home.pts} ${abbrevOf(home.tid)}`,
@@ -191,6 +215,55 @@ const performanceItems = (games: Game[]): TickerItem[] => {
 	}
 
 	return [...byGame.values()].flat().slice(0, TICKER_LIMITS.performance);
+};
+
+// Enough of the field to be a race rather than a name. Three left an award
+// block occupying about a third of the bar with nothing beside it.
+const RACE_CANDIDATES = 5;
+
+// Two numbers from whatever the award is actually judged on - points and
+// rebounds for MVP, rebounds and blocks for DPOY - so the odds have something to
+// argue with. The keys come from the award itself, so this needs no per-sport
+// list of its own.
+const STAT_LABELS: Record<string, string> = {
+	pts: "PTS",
+	trb: "REB",
+	ast: "AST",
+	blk: "BLK",
+	stl: "STL",
+	per: "PER",
+	ws: "WS",
+	dws: "DWS",
+};
+
+const raceStatLine = (p: any, statKeys: unknown): string | undefined => {
+	if (!Array.isArray(statKeys) || statKeys.length === 0) {
+		return undefined;
+	}
+	const season = g.get("season");
+	const row = Array.isArray(p?.stats)
+		? p.stats.find((s: any) => s?.season === season && !s?.playoffs)
+		: p?.stats;
+	if (!row) {
+		return undefined;
+	}
+	const parts: string[] = [];
+	for (const key of statKeys.slice(0, 2)) {
+		const value = row[key as string];
+		if (typeof value === "number" && Number.isFinite(value)) {
+			// One decimal, the way every per-game number in the game is shown.
+			// helpers.roundStat lives in the UI and the worker cannot reach it;
+			// reaching for it anyway threw, and because the whole award section sits
+			// inside one try/catch that silently removed every award block from the
+			// ticker. Nothing but a browser looking at the bar would have caught it.
+			parts.push(
+				`${value.toFixed(1)} ${
+					STAT_LABELS[key as string] ?? String(key).toUpperCase()
+				}`,
+			);
+		}
+	}
+	return parts.length > 0 ? parts.join(", ") : undefined;
 };
 
 // A ticker says MVP, not Most Valuable Player - the full names are longer than
@@ -221,6 +294,19 @@ const IGNORE_TYPES = new Set([
 ]);
 const MIN_NEWS_SCORE = 10;
 const MAX_NEWS_SCANNED = 400;
+
+// The block is already headed INJURIES, so every line saying "was injured!"
+// again is nine repetitions of a word the pane just used, and an exclamation
+// mark nine times over. Left alone if the phrasing is not the one expected.
+export const tightenNews = (text: string, type: string): string => {
+	if (type !== "injury") {
+		return text;
+	}
+	return text
+		.replace(" was injured! (", " - ")
+		.replace(/\)$/, "")
+		.replace(" has recovered from his injury.", " is back");
+};
 
 const newsItems = async (): Promise<TickerItem[]> => {
 	const qualifies = (event: EventBBGM) =>
@@ -267,7 +353,7 @@ const newsItems = async (): Promise<TickerItem[]> => {
 			type: "news" as const,
 			key: `news-${event.eid}`,
 			eid: event.eid,
-			text: await formatEventText(event),
+			text: tightenNews(await formatEventText(event), event.type),
 			category: types[event.type]?.category,
 		})),
 	);
@@ -318,8 +404,8 @@ const upcomingAndRaces = async (fresh: boolean): Promise<TickerItem[]> => {
 				items.push({
 					type: "upcoming",
 					key: `up-${game.gid}`,
-					away: { tid: away.tid, abbrev: abbrevOf(away.tid) },
-					home: { tid: home.tid, abbrev: abbrevOf(home.tid) },
+					away: teamRef(away.tid),
+					home: teamRef(home.tid),
 					line,
 				});
 			}
@@ -334,7 +420,7 @@ const upcomingAndRaces = async (fresh: boolean): Promise<TickerItem[]> => {
 		try {
 			const races = await getAwardRaceOdds(g.get("season"));
 			for (const race of races.slice(0, TICKER_LIMITS.race)) {
-				const top = (race.players ?? []).slice(0, 3);
+				const top = (race.players ?? []).slice(0, RACE_CANDIDATES);
 				if (top.length === 0) {
 					continue;
 				}
@@ -351,6 +437,8 @@ const upcomingAndRaces = async (fresh: boolean): Promise<TickerItem[]> => {
 						(p: any): TickerRaceEntry => ({
 							pid: p.pid,
 							name: p.name,
+							abbrev: typeof p.abbrev === "string" ? p.abbrev : undefined,
+							stat: raceStatLine(p, race.stats),
 							odds:
 								typeof p.odds === "number" ? formatAmerican(p.odds) : undefined,
 						}),
@@ -374,6 +462,7 @@ export const updateTickerItems = async ({ fresh = false } = {}) => {
 	let items: TickerItem[] = [];
 
 	try {
+		await loadTeamColors();
 		const games = await recentGames();
 		items = [
 			...scoreItems(games),

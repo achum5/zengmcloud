@@ -48,14 +48,13 @@ import {
 // actively watching, and in a shared league it would do it to every follower at
 // once. It holds the last stream it was given until the playback ends.
 //
-// THE ANIMATION. The track is duplicated and translated by -50%, the oldest
-// marquee trick there is and still the right one: a single compositor-driven
-// transform, no layout work per frame. It pauses on hover and on touch so the
-// links inside it can be clicked, and it does not run at all under
-// prefers-reduced-motion, where the bar stays and can be scrolled by hand.
+// THE MOVEMENT. A transform this component sets, glided by a transition, one
+// block at a time - see the clock below. It holds still under a mouse so the
+// links can be clicked, and under reduced motion it steps a page at a time
+// instead of crawling.
 //
-// THE PAGE UNDERNEATH. Being fixed, it covers the bottom of every page unless
-// the document is given that much extra scrollable space - see the body class.
+// THE PAGE UNDERNEATH. The bar is sticky and in the flow, so it takes real
+// space at the foot of the document rather than covering it.
 
 // THE LEFT PANE.
 //
@@ -67,6 +66,14 @@ import {
 //
 // It used to be a label printed in front of every item, so a run of eighteen
 // news items meant reading "TRANSACTIONS" eighteen times to learn one thing.
+
+// A franchise's colour, as a small flash beside its code. Three letters set the
+// same way as everything else is a list; a colour beside them is a scoreboard.
+const Flash = ({ color }: { color?: string }) =>
+	color ? (
+		<span className="league-ticker-flash" style={{ backgroundColor: color }} />
+	) : null;
+
 const Pane = ({ header }: { header: TickerHeader }) => {
 	if (header.kind === "label") {
 		return <span className="league-ticker-pane-label">{header.text}</span>;
@@ -75,6 +82,7 @@ const Pane = ({ header }: { header: TickerHeader }) => {
 	const { away, home } = header;
 	const side = (team: typeof away, lost: boolean) => (
 		<span className={clsx("league-ticker-pane-row", { dim: lost })}>
+			<Flash color={team.color} />
 			<span className="league-ticker-pane-abbrev">{team.abbrev}</span>
 			<span className="league-ticker-pane-pts">{team.pts ?? 0}</span>
 		</span>
@@ -105,6 +113,7 @@ const Score = ({ item }: { item: Extract<TickerItem, { type: "score" }> }) => {
 	// the numbers at all.
 	const side = (team: typeof away, pts: number, lost: boolean) => (
 		<>
+			<Flash color={team.color} />
 			<span className={clsx("league-ticker-abbrev", { dim: lost })}>
 				{team.abbrev}
 			</span>
@@ -116,11 +125,14 @@ const Score = ({ item }: { item: Extract<TickerItem, { type: "score" }> }) => {
 		<a className="league-ticker-item" href={href}>
 			{side(away, awayPts, awayPts < homePts)}
 			{side(home, homePts, homePts < awayPts)}
-			<span className="league-ticker-state">
-				{item.overtimes
-					? `FINAL/${item.overtimes > 1 ? item.overtimes : ""}OT`
-					: "FINAL"}
-			</span>
+			{/* No "FINAL" on every score. The pane already says SCORES and every
+			    item in the block is one, so it was the same word six times across
+			    the bar. Overtime is worth saying, because it is not the default. */}
+			{item.overtimes ? (
+				<span className="league-ticker-state">
+					{item.overtimes > 1 ? `${item.overtimes}OT` : "OT"}
+				</span>
+			) : null}
 		</a>
 	);
 };
@@ -134,8 +146,10 @@ const Upcoming = ({
 		className="league-ticker-item"
 		href={helpers.leagueUrl(["daily_schedule"])}
 	>
+		<Flash color={item.away.color} />
 		<span className="league-ticker-abbrev">{item.away.abbrev}</span>
 		<span className="league-ticker-at">@</span>
+		<Flash color={item.home.color} />
 		<span className="league-ticker-abbrev">{item.home.abbrev}</span>
 		{item.line ? <span className="league-ticker-line">{item.line}</span> : null}
 	</a>
@@ -147,6 +161,7 @@ const Performance = ({
 	item: Extract<TickerItem, { type: "performance" }>;
 }) => (
 	<span className="league-ticker-item">
+		{item.team ? <span className="league-ticker-side">{item.team}</span> : null}
 		<a
 			className="league-ticker-name"
 			href={helpers.leagueUrl(["player", item.pid])}
@@ -172,12 +187,19 @@ const Race = ({ item }: { item: Extract<TickerItem, { type: "race" }> }) => (
 		{item.entries.map((entry, i) => (
 			<span className="league-ticker-entry" key={entry.pid}>
 				{i > 0 ? <span className="league-ticker-sep" /> : null}
+				<span className="league-ticker-rank">{i + 1}</span>
 				<a
 					className="league-ticker-name"
 					href={helpers.leagueUrl(["player", entry.pid])}
 				>
 					{entry.name}
 				</a>
+				{entry.abbrev ? (
+					<span className="league-ticker-side">{entry.abbrev}</span>
+				) : null}
+				{entry.stat ? (
+					<span className="league-ticker-stat">{entry.stat}</span>
+				) : null}
 				{entry.odds ? (
 					<span className="league-ticker-odds">{entry.odds}</span>
 				) : null}
@@ -493,7 +515,12 @@ export const LeagueTicker = memo(() => {
 			<div className="league-ticker-viewport" ref={viewportRef}>
 				{show && segment ? (
 					<div
-						className="league-ticker-run"
+						className={clsx("league-ticker-run", {
+							// Nothing to crawl means the block is narrower than the bar.
+							// Left-aligned that is a short line of content and a wide black
+							// hole; centred it reads as deliberate.
+							centred: ready && run.travel === 0,
+						})}
 						// Names the block AND the pass, so a single-block feed still
 						// changes it every time round. Read by the browser tests to see
 						// the player advance when the pane text cannot show it.

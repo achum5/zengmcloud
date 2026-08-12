@@ -17,12 +17,21 @@ export type TickerTeam = {
 	tid: number;
 	abbrev: string;
 	pts?: number;
+	// The franchise's primary colour, drawn as a flash beside the abbreviation.
+	// Three letters all set the same way is a list; a colour beside them is a
+	// scoreboard, and it is the cheapest way to tell one row from the next at a
+	// glance. Absent for the All-Star sides, which are not franchises.
+	color?: string;
 };
 
 export type TickerRaceEntry = {
 	pid: number;
 	name: string;
 	odds?: string;
+	// Who he plays for and what he is doing to deserve the odds. Without these an
+	// award block was three bare names on a mostly empty bar.
+	abbrev?: string;
+	stat?: string;
 };
 
 export type TickerItem =
@@ -59,6 +68,9 @@ export type TickerItem =
 			season: number;
 			boxScoreTeam: string;
 			pid: number;
+			// Which side he was on. In a block headed "DAL 103 PHO 110" a bare name
+			// and a stat line does not say which of the two he played for.
+			team?: string;
 			name: string;
 			stat: string;
 			game: string;
@@ -75,9 +87,11 @@ export type TickerItem =
 export const TICKER_LIMITS = {
 	score: 16,
 	upcoming: 8,
-	// Three lines each from the six best games - these are grouped into per-game
-	// segments, so the budget is games x lines rather than a flat top six.
-	performance: 18,
+	// Five lines each from the six best games - these are grouped into per-game
+	// segments, so the budget is games x lines rather than a flat top six. Three
+	// was not enough to fill the bar, and a block half full of nothing reads as
+	// broken rather than as brief.
+	performance: 30,
 	race: 4,
 	news: 18,
 } as const;
