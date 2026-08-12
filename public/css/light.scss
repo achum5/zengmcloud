@@ -3194,10 +3194,12 @@ $league-ticker-toggle-width: 26px;
 	animation-fill-mode: forwards;
 }
 
-// Stop it so the links inside can be clicked. Touch counts: on a phone there is
-// no hover, so :active is what a finger down gives you.
-.league-ticker:hover .league-ticker-crawl,
-.league-ticker:active .league-ticker-crawl {
+// Held still so the links inside can be clicked. Driven by a class the component
+// sets, not by :hover, and only where there is a real pointer: on a touch screen
+// :hover latches after a tap and does not clear until you tap somewhere else,
+// which used to stop the ticker dead. The clock is held too, so the block does
+// not change out from under the cursor.
+.league-ticker.held .league-ticker-crawl {
 	animation-play-state: paused;
 }
 

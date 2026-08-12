@@ -243,31 +243,31 @@ export const LeagueTicker = memo(() => {
 
 	const segments = useMemo(() => buildTickerSegments(items), [items]);
 
-	// WHICH BLOCK IS PLAYING.
+	// WHICH BLOCK IS PLAYING, AND WHAT MAKES IT MOVE ON.
 	//
-	// State, not an observation. The player holds an index, the block at that
-	// index is the only thing rendered, and it advances when that block's crawl
-	// finishes. Nothing has to measure where a moving element currently is - which
-	// is what the previous version did, and why the pane never changed on iOS,
-	// where a compositor-driven transform does not report back to the main thread.
-	const [index, setIndex] = useState(0);
-	const segment = segments[Math.min(index, segments.length - 1)];
+	// A COUNTER, NOT AN INDEX INTO THE LIST. Every advance produces a new React
+	// key even when the list has only one block in it, so that block is remounted
+	// and its crawl runs again. Keyed on a plain index it parked at the end of its
+	// one animation and stayed there forever, which is precisely what a preseason
+	// league looks like: no games, no odds, no award races, and every event in the
+	// log a transaction - one block, played once, frozen.
+	const [cursor, setCursor] = useState(0);
+	const segment =
+		segments.length > 0 ? segments[cursor % segments.length]! : undefined;
+	const blockKey = segment ? `${segment.key}#${cursor}` : undefined;
+
+	// Advance at most once per block, whichever clock gets there first.
+	const advancedFrom = useRef<string>(undefined);
 	const advance = useCallback(() => {
-		setIndex((previous) =>
-			segments.length > 0 ? (previous + 1) % segments.length : 0,
-		);
-	}, [segments.length]);
+		if (blockKey === undefined || advancedFrom.current === blockKey) {
+			return;
+		}
+		advancedFrom.current = blockKey;
+		setCursor((previous) => previous + 1);
+	}, [blockKey]);
 
-	// A refreshed feed can be shorter than the one being played.
-	useEffect(() => {
-		setIndex((previous) =>
-			segments.length > 0 && previous >= segments.length ? 0 : previous,
-		);
-	}, [segments]);
-
-	// Reduced motion: keep the bar, drop the movement. Blocks still change, on a
-	// timer instead of at the end of a crawl, and the contents can be scrolled by
-	// hand.
+	// Reduced motion: keep the bar, drop the movement. Blocks still change - the
+	// clock below does not depend on there being an animation to end.
 	const [animate, setAnimate] = useState(true);
 	useEffect(() => {
 		const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -276,6 +276,21 @@ export const LeagueTicker = memo(() => {
 		query.addEventListener("change", apply);
 		return () => query.removeEventListener("change", apply);
 	}, []);
+
+	// HOLDING IT STILL TO CLICK SOMETHING - but only where there is a real
+	// pointer. On a touch screen :hover latches after a tap and does not clear
+	// until you tap somewhere else, which would stop the ticker dead; and a tap
+	// on a link works whether or not the crawl paused first.
+	const [pointer, setPointer] = useState(false);
+	useEffect(() => {
+		const query = window.matchMedia("(hover: hover) and (pointer: fine)");
+		const apply = () => setPointer(query.matches);
+		apply();
+		query.addEventListener("change", apply);
+		return () => query.removeEventListener("change", apply);
+	}, []);
+	const [held, setHeld] = useState(false);
+	const holding = pointer && held;
 
 	// HOW FAR AND HOW LONG THIS BLOCK HAS TO TRAVEL.
 	//
@@ -288,34 +303,47 @@ export const LeagueTicker = memo(() => {
 	const [run, setRun] = useState<
 		{ key: string; travel: number; duration: number } | undefined
 	>();
-	const key = segment?.key;
 
 	useLayoutEffect(() => {
 		const measure = () => {
 			const viewport = viewportRef.current;
 			const element = runRef.current;
-			if (!viewport || !element || key === undefined) {
+			if (!viewport || !element || blockKey === undefined) {
 				return;
 			}
 			const travel = segmentTravelPx(
 				element.scrollWidth,
 				viewport.getBoundingClientRect().width,
 			);
-			setRun({ key, travel, duration: segmentDurationSeconds(travel) });
+			setRun({
+				key: blockKey,
+				travel,
+				duration: segmentDurationSeconds(travel),
+			});
 		};
 		measure();
 		window.addEventListener("resize", measure);
 		return () => window.removeEventListener("resize", measure);
-	}, [key, items]);
+	}, [blockKey, items]);
 
-	// Under reduced motion there is no crawl to end, so time the block instead.
+	const ready = blockKey !== undefined && run?.key === blockKey;
+
+	// THE CLOCK. A timer, not the end of the animation.
+	//
+	// animationend is a fine signal right up until there is no animation to end,
+	// and there are several ordinary ways for that to happen: reduced motion turns
+	// it off, a block narrower than the bar has nothing to travel, a paused
+	// animation never finishes, and a browser is free to skip one that changes
+	// nothing. Every one of those left the ticker frozen on whatever block it was
+	// on. A timer cannot be skipped, so the timer owns the clock and animationend
+	// is only allowed to make it snappier.
 	useEffect(() => {
-		if (animate || segments.length < 2) {
+		if (!show || !ready || holding) {
 			return;
 		}
-		const timer = setTimeout(advance, 9000);
+		const timer = setTimeout(advance, run.duration * 1000 + 300);
 		return () => clearTimeout(timer);
-	}, [advance, animate, key, segments.length]);
+	}, [advance, holding, ready, run?.duration, show]);
 
 	const visible = lid !== undefined && segments.length > 0;
 	useEffect(() => {
@@ -344,16 +372,18 @@ export const LeagueTicker = memo(() => {
 		return null;
 	}
 
-	const ready = run?.key === key;
-
 	return (
-		<div className={clsx("league-ticker", { collapsed: !show })}>
+		<div
+			className={clsx("league-ticker", { collapsed: !show, held: holding })}
+			onPointerEnter={() => setHeld(true)}
+			onPointerLeave={() => setHeld(false)}
+		>
 			{show && segment ? (
 				<div className="league-ticker-pane">
 					{/* Keyed on the block, so React remounts it and the entrance
 					    animation replays every time the pane changes - the change is
 					    the signal that a new block has started. */}
-					<div className="league-ticker-pane-in" key={segment.key}>
+					<div className="league-ticker-pane-in" key={blockKey}>
 						<Pane header={segment.header} />
 					</div>
 				</div>
@@ -364,7 +394,11 @@ export const LeagueTicker = memo(() => {
 						className={clsx("league-ticker-run", {
 							"league-ticker-crawl": animate && ready,
 						})}
-						key={segment.key}
+						// Names the block AND the pass, so a single-block feed still
+						// changes it every time round. Read by the browser tests to see
+						// the player advance when the pane text cannot show it.
+						data-block={blockKey}
+						key={blockKey}
 						ref={runRef}
 						onAnimationEnd={advance}
 						style={
