@@ -5,8 +5,10 @@
 // runLiveBroadcastStart the moment a live single-game sim's play-by-play is
 // ready, so followers navigate with minimal lag behind the simmer.
 //
-// The hook is a no-op unless this device is connected AND is in charge of simming, so a
-// single-player live sim never touches the cloud.
+// The hook is a no-op unless this device is connected, so a single-player live
+// sim never touches the cloud. The person in charge of simming broadcasts the
+// room's watch-party (everyone navigated in); anyone else live-simming their
+// own game broadcasts opt-in (a header pill others may click).
 
 type LiveBroadcastStartFn = (gid: number, playByPlay: any[]) => void;
 

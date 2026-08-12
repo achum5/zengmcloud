@@ -35,7 +35,9 @@ import {
 setAfterActionHook(afterAction);
 
 // Same pattern for starting a live-sim broadcast the instant a live single-game
-// sim's play-by-play is ready (a no-op unless connected and in charge of simming).
+// sim's play-by-play is ready (a no-op unless connected). The simmer's game
+// broadcasts as the room's watch-party; anyone else's own-game live sim
+// broadcasts as opt-in - a header pill on every other device.
 setLiveBroadcastStartHook((gid, playByPlay) => {
 	void startLiveBroadcast(gid, playByPlay);
 });
@@ -131,6 +133,7 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// a "final score" notification - exactly what a live sim must never do.
 	"updateLiveBroadcast",
 	"endLiveBroadcast",
+	"watchLiveBroadcast",
 	// The watch/star list and the "untouchable" trade flag are PERSONAL
 	// preferences (the watch ones fan out via same-device crossTabEmit, not the
 	// league). They happen to live on the shared `players` record, so they can't

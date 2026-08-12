@@ -12,6 +12,7 @@ import SyncUploadIndicator from "./SyncUploadIndicator.tsx";
 import SyncStatusDot from "./SyncStatusDot.tsx";
 import SyncPausedIndicator from "./SyncPausedIndicator.tsx";
 import SyncCatchUpIndicator from "./SyncCatchUpIndicator.tsx";
+import LiveWatchPill from "./LiveWatchPill.tsx";
 import { HeaderRepairButton } from "./HeaderRepairButton.tsx";
 import { menuItems } from "../../util/menuItems.tsx";
 
@@ -123,6 +124,7 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 				{inLeague ? <SyncStatusDot /> : null}
 				{inLeague ? <SyncCatchUpIndicator /> : null}
 				{inLeague ? <SyncPausedIndicator /> : null}
+				{inLeague ? <LiveWatchPill /> : null}
 				<div className="flex-grow-1" />
 				<HeaderRepairButton />
 				{inLeague ? <PhaseReadyControl /> : null}

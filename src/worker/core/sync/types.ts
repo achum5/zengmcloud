@@ -69,6 +69,15 @@ export type LiveBroadcastMeta = {
 	active: boolean;
 	gid: number;
 	byName: string;
+	// An OPT-IN broadcast: someone live-simming their own game, not the person
+	// in charge of simming running the room's game. Nobody is navigated into
+	// it; every other device shows a header pill and each person chooses.
+	// Explicitly false on the simmer's broadcasts (the doc is written with
+	// merge, so omitting it would inherit whatever the previous broadcast set).
+	optIn?: boolean;
+	// "PHO @ DAL" - what the pill shows, stamped by the broadcaster so viewers
+	// don't need the game record just to label a button.
+	label?: string;
 	// Events the broadcaster has consumed so far - the lockstep position followers
 	// seek to. Always a deterministic pause boundary, so no drift.
 	cursor: number;
@@ -93,6 +102,8 @@ export type LiveBroadcastUpdate = {
 	active?: boolean;
 	gid?: number;
 	byName?: string;
+	optIn?: boolean;
+	label?: string;
 	cursor?: number;
 	paused?: boolean;
 	speed?: number;

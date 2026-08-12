@@ -494,8 +494,54 @@ let followedBroadcastPayload:
 
 export const getFollowedBroadcastPayload = () => followedBroadcastPayload;
 
-// Start broadcasting a live sim to the room. No-op unless connected AND this
-// device is in charge of simming (so single-player / followers never touch the cloud).
+// The latest broadcast SOMEONE ELSE has live (own echoes filtered out). This is
+// what the header pill offers to join, and what an opt-in broadcast checks so
+// it never overwrites a watch-party already running on the room's one doc.
+let roomBroadcastMeta: LiveBroadcastMeta | undefined;
+
+// Show/clear the header pill. Its whole job is "a game is being simmed live,
+// click to watch" - it is set for opt-in broadcasts only, since a forced one
+// navigates everyone in and a pill underneath would be pointing at a game you
+// are already watching.
+const setWatchablePill = (meta: LiveBroadcastMeta | undefined) => {
+	void toUI("updateLocal", [
+		{
+			mpLiveWatchable: meta
+				? {
+						gid: meta.gid,
+						byName: meta.byName,
+						label: meta.label ?? "",
+						startedAt: meta.startedAt,
+					}
+				: undefined,
+		},
+	]);
+};
+
+// "PHO @ DAL", for the header pill on every other device. teams[0] is home in
+// ZenGM; the visitor is named first the way a scoreboard names it.
+const broadcastLabel = async (boxScore: any): Promise<string> => {
+	try {
+		const teams = await idb.cache.teams.getAll();
+		const abbrev = (tid: number) =>
+			teams.find((t) => t.tid === tid)?.abbrev ?? "";
+		const away = abbrev(boxScore?.teams?.[1]?.tid);
+		const home = abbrev(boxScore?.teams?.[0]?.tid);
+		return away && home ? `${away} @ ${home}` : "";
+	} catch {
+		return "";
+	}
+};
+
+// Start broadcasting a live sim to the room. No-op unless connected (so a
+// single-player live sim never touches the cloud).
+//
+// TWO KINDS OF BROADCAST, one doc. The person in charge of simming runs the
+// room's game: everyone is navigated in to watch, as always. Anyone ELSE
+// live-simming their own game broadcasts it as OPT-IN: nobody is pulled away
+// from what they were doing, a pill in the header says a game is being simmed
+// live, and each person chooses whether to click it.
+//
 // The play-by-play + a snapshot of the game record go out ONCE as payload
 // chunks; the moving cursor is heartbeated separately (updateLiveBroadcast).
 export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
@@ -504,10 +550,25 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 	if (
 		!engine ||
 		!transport ||
-		!engine.isAuthority() ||
 		!transport.publishLiveBroadcast ||
 		!transport.publishLiveBroadcastData
 	) {
+		return;
+	}
+	const optIn = !engine.isAuthority();
+
+	// One broadcast doc per room. If someone else's broadcast is live right
+	// now, an opt-in one stays local rather than overwriting the watch-party
+	// out from under its followers. (The own-game sim gate makes this near
+	// impossible to reach - a device watching a broadcast can't start a sim -
+	// but the doc write is the last line of defence, not the first.)
+	if (
+		optIn &&
+		roomBroadcastMeta &&
+		roomBroadcastMeta.active &&
+		roomBroadcastMeta.expiresAt > Date.now()
+	) {
+		syncDebugLog("live:optin-skipped-broadcast-active", { gid });
 		return;
 	}
 
@@ -535,10 +596,14 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 		await beginLiveChat(gid, startedAt, true);
 
 		// Payload is written; now flip the meta doc active so followers react.
+		// optIn and label are ALWAYS written, never omitted: the doc is merged,
+		// so leaving them out would inherit whatever the previous broadcast set.
 		await transport.publishLiveBroadcast({
 			active: true,
 			gid,
 			byName,
+			optIn,
+			label: await broadcastLabel(boxScore),
 			cursor: 0,
 			paused: false,
 			speed: 7,
@@ -643,22 +708,111 @@ export const endLiveBroadcast = async () => {
 // broadcaster - i.e. drive the follower experience: navigate to the live game
 // on a new broadcast, then keep the lockstep cursor flowing to the UI, and
 // unlock when it ends.
+// Join a broadcast: fetch its payload and navigate this device into the live
+// game. The forced path (the simmer's game) calls this the moment the meta
+// appears; the opt-in path calls it only when the user clicks the header pill.
+const followBroadcast = async (
+	meta: LiveBroadcastMeta,
+	transport: FirebaseTransport,
+): Promise<boolean> => {
+	followedBroadcast = {
+		startedAt: meta.startedAt,
+		gid: meta.gid,
+		expiresAt: meta.expiresAt,
+	};
+	// Accept only this broadcast's chat (the broadcaster does the clearing).
+	void beginLiveChat(meta.gid, meta.startedAt, false);
+	// Freeze the header score ticker right now - BEFORE the game result can sync
+	// in - exactly like the simmer, whose liveGameInProgress is set before the
+	// game is even written. The follower's own onLiveSimOver clears it at game
+	// over, revealing the final score in the header just as it does for the simmer.
+	// (For a late opt-in join the score may already be on screen; the freeze
+	// still keeps the rest of the playback spoiler-consistent.)
+	void toUI("updateLocal", [{ liveGameInProgress: true }]);
+	followerFroze = true;
+	try {
+		const serialized = await transport.fetchLiveBroadcastData?.(
+			meta.chunkCount,
+		);
+		if (!serialized) {
+			// Payload not fully there (cleared or mid-write) - drop the follow so a
+			// later snapshot can retry, and release the freeze we just set.
+			followedBroadcast = undefined;
+			unfreezeFollower();
+			return false;
+		}
+		const { boxScore, playByPlay } = deserializeChangeset(serialized);
+		followedBroadcastPayload = {
+			startedAt: meta.startedAt,
+			gid: meta.gid,
+			playByPlay,
+			boxScore,
+		};
+		// Same navigation the simmer's own live sim uses, so the exact same view
+		// path renders it. fromAction bypasses the deep-link guard; mpFollower
+		// tells the view to use the payload's game record.
+		await toUI("realtimeUpdate", [
+			["gameSim"],
+			helpers.leagueUrl(["live_game"]),
+			{
+				gidOneGame: meta.gid,
+				playByPlay,
+				boxScore,
+				fromAction: true,
+				mpFollower: true,
+			},
+		]);
+	} catch (error) {
+		console.error("Failed to start following live broadcast", error);
+		followedBroadcast = undefined;
+		unfreezeFollower();
+		return false;
+	}
+
+	pushFollowerState(meta);
+	return true;
+};
+
+// Push the live cursor/state so the LiveGame view seeks to the simmer's spot.
+const pushFollowerState = (meta: LiveBroadcastMeta) => {
+	void toUI("updateLocal", [
+		{
+			mpLiveBroadcast: {
+				active: true,
+				gid: meta.gid,
+				byName: meta.byName,
+				optIn: !!meta.optIn,
+				isBroadcaster: false,
+				startedAt: meta.startedAt,
+				cursor: meta.cursor,
+				paused: meta.paused,
+				gameOver: meta.gameOver,
+			},
+		},
+	]);
+};
+
 const handleLiveBroadcastMeta = async (
 	meta: LiveBroadcastMeta | undefined,
 	clientId: string,
 	transport: FirebaseTransport,
 ) => {
 	// Our own broadcast is driven locally (startLiveBroadcast / updateLiveBroadcast);
-	// ignore the echo so we don't treat ourselves as a follower.
+	// ignore the echo so we don't treat ourselves as a follower. Ours owning the
+	// doc also means nobody else's is live, so the pill has nothing to offer.
 	if (meta && meta.holderId === clientId) {
+		roomBroadcastMeta = undefined;
+		setWatchablePill(undefined);
 		return;
 	}
 
-	// No live broadcast (ended, expired, or none): release any follow we had, and
-	// unfreeze the header score ticker (liveGameInProgress) it was watching under.
-	// Clear the freeze even if followedBroadcast is already gone (a bailed follow
-	// attempt) so the banner can never get stranded on.
+	// No live broadcast (ended, expired, or none): drop the pill, release any
+	// follow we had, and unfreeze the header score ticker (liveGameInProgress) it
+	// was watching under. Clear the freeze even if followedBroadcast is already
+	// gone (a bailed follow attempt) so the banner can never get stranded on.
 	if (!meta || !meta.active || meta.expiresAt < Date.now()) {
+		roomBroadcastMeta = undefined;
+		setWatchablePill(undefined);
 		if (followedBroadcast || followerFroze) {
 			followedBroadcast = undefined;
 			followedBroadcastPayload = undefined;
@@ -671,86 +825,82 @@ const handleLiveBroadcastMeta = async (
 		return;
 	}
 
-	// A new broadcast (or the first we've seen): load the payload and navigate
-	// this device into the live game. Guard on startedAt so the rapid cursor
-	// heartbeats that follow don't re-navigate.
-	if (!followedBroadcast || followedBroadcast.startedAt !== meta.startedAt) {
-		followedBroadcast = {
-			startedAt: meta.startedAt,
-			gid: meta.gid,
-			expiresAt: meta.expiresAt,
-		};
-		// Accept only this broadcast's chat (the broadcaster does the clearing).
-		void beginLiveChat(meta.gid, meta.startedAt, false);
-		// Freeze the header score ticker right now - BEFORE the game result can sync
-		// in - exactly like the simmer, whose liveGameInProgress is set before the
-		// game is even written. The follower's own onLiveSimOver clears it at game
-		// over, revealing the final score in the header just as it does for the simmer.
-		void toUI("updateLocal", [{ liveGameInProgress: true }]);
-		followerFroze = true;
-		try {
-			const serialized = await transport.fetchLiveBroadcastData?.(
-				meta.chunkCount,
-			);
-			if (!serialized) {
-				// Payload not fully there (cleared or mid-write) - drop the follow so a
-				// later snapshot can retry, and release the freeze we just set.
-				followedBroadcast = undefined;
-				unfreezeFollower();
-				return;
-			}
-			const { boxScore, playByPlay } = deserializeChangeset(serialized);
-			followedBroadcastPayload = {
-				startedAt: meta.startedAt,
-				gid: meta.gid,
-				playByPlay,
-				boxScore,
-			};
-			// Same navigation the simmer's own live sim uses, so the exact same view
-			// path renders it. fromAction bypasses the deep-link guard; mpFollower
-			// tells the view to use the payload's game record.
-			await toUI("realtimeUpdate", [
-				["gameSim"],
-				helpers.leagueUrl(["live_game"]),
-				{
-					gidOneGame: meta.gid,
-					playByPlay,
-					boxScore,
-					fromAction: true,
-					mpFollower: true,
-				},
-			]);
-		} catch (error) {
-			console.error("Failed to start following live broadcast", error);
-			followedBroadcast = undefined;
-			unfreezeFollower();
+	roomBroadcastMeta = meta;
+
+	// OPT-IN: someone live-simming their own game. Nobody is navigated anywhere;
+	// the pill goes up and each person chooses. Only a device that clicked it
+	// (followedBroadcast matches) keeps receiving the cursor.
+	if (meta.optIn) {
+		setWatchablePill(meta);
+		if (followedBroadcast?.startedAt !== meta.startedAt) {
 			return;
 		}
-	} else {
 		followedBroadcast.expiresAt = meta.expiresAt;
+		pushFollowerState(meta);
+		return;
 	}
 
-	// Push the live cursor/state so the LiveGame view seeks to the simmer's spot.
-	void toUI("updateLocal", [
-		{
-			mpLiveBroadcast: {
-				active: true,
-				gid: meta.gid,
-				byName: meta.byName,
-				isBroadcaster: false,
-				startedAt: meta.startedAt,
-				cursor: meta.cursor,
-				paused: meta.paused,
-				gameOver: meta.gameOver,
+	setWatchablePill(undefined);
+
+	// The simmer's broadcast: everyone watches. Join on the first sighting -
+	// guarded on startedAt so the rapid cursor heartbeats don't re-navigate.
+	if (!followedBroadcast || followedBroadcast.startedAt !== meta.startedAt) {
+		await followBroadcast(meta, transport);
+		return;
+	}
+
+	followedBroadcast.expiresAt = meta.expiresAt;
+	pushFollowerState(meta);
+};
+
+// The header pill was clicked: join the opt-in broadcast currently live.
+// Rejoining after backing out reuses the cached payload and drops straight back
+// in at the simmer's current spot.
+export const watchLiveBroadcast = async (): Promise<boolean> => {
+	const transport = currentTransport;
+	const meta = roomBroadcastMeta;
+	if (
+		!transport ||
+		!meta ||
+		!meta.active ||
+		!meta.optIn ||
+		meta.expiresAt < Date.now()
+	) {
+		return false;
+	}
+
+	if (
+		followedBroadcast?.startedAt === meta.startedAt &&
+		followedBroadcastPayload?.startedAt === meta.startedAt
+	) {
+		followedBroadcast.over = false;
+		await toUI("realtimeUpdate", [
+			["gameSim"],
+			helpers.leagueUrl(["live_game"]),
+			{
+				gidOneGame: meta.gid,
+				playByPlay: followedBroadcastPayload.playByPlay,
+				boxScore: followedBroadcastPayload.boxScore,
+				fromAction: true,
+				mpFollower: true,
 			},
-		},
-	]);
+		]);
+		pushFollowerState(meta);
+		return true;
+	}
+
+	return followBroadcast(meta, transport);
 };
 
 // A crashed broadcaster stops heartbeating but never writes active:false, and
 // onSnapshot won't fire again, so the follower must time the lease out itself.
 // Called from the health tick.
 const checkLiveBroadcastLease = () => {
+	// A crashed opt-in broadcaster leaves the pill up with nothing behind it.
+	if (roomBroadcastMeta && Date.now() > roomBroadcastMeta.expiresAt) {
+		roomBroadcastMeta = undefined;
+		setWatchablePill(undefined);
+	}
 	if (followedBroadcast && Date.now() > followedBroadcast.expiresAt) {
 		followedBroadcast = undefined;
 		followedBroadcastPayload = undefined;
@@ -2016,6 +2166,7 @@ const doConnectSharedLeague = async ({
 	activeBroadcast = undefined;
 	followedBroadcast = undefined;
 	followerFroze = false;
+	roomBroadcastMeta = undefined;
 	liveBroadcastUnsub = transport.subscribeLiveBroadcast?.((meta) => {
 		void handleLiveBroadcastMeta(meta, clientId, transport);
 	});
@@ -2121,6 +2272,8 @@ export const teardownSharedLeague = async ({
 	followedBroadcast = undefined;
 	followedBroadcastPayload = undefined;
 	followerFroze = false;
+	roomBroadcastMeta = undefined;
+	setWatchablePill(undefined);
 	currentTransport = undefined;
 	lastPendingUploads = 0;
 	void toUI("updateLocal", [

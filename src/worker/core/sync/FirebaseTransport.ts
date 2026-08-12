@@ -896,6 +896,8 @@ export class FirebaseTransport implements SyncTransport {
 							active: true,
 							gid: data.gid,
 							byName: typeof data.byName === "string" ? data.byName : "Someone",
+							optIn: !!data.optIn,
+							label: typeof data.label === "string" ? data.label : undefined,
 							cursor: typeof data.cursor === "number" ? data.cursor : 0,
 							paused: !!data.paused,
 							speed: typeof data.speed === "number" ? data.speed : 7,

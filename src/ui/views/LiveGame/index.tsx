@@ -1385,8 +1385,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// trap: "Loading..." forever, and a warning about losing play-by-play
 		// results that do not exist standing between the user and any way out.
 		initialDirty: !isReplay && props.events !== undefined,
-		// A follower is locked in until the simmer ends the broadcast.
-		hardBlock: isFollower,
+		// A follower of the simmer's watch-party is locked in until the broadcast
+		// ends. A viewer who CHOSE to watch (clicked the header pill on someone's
+		// own-game sim) is never locked - they came freely and leave freely.
+		hardBlock: isFollower && !mpLiveBroadcast?.optIn,
 	});
 
 	// Arm it the moment the playback does arrive - `initialDirty` is only read

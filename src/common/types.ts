@@ -1250,6 +1250,9 @@ export type MpLiveBroadcast = {
 	gid: number;
 	// Display name of whoever is simming (for the follower banner).
 	byName: string;
+	// An opt-in watch (joined from the header pill) rather than the simmer's
+	// watch-party: the viewer chose to be here, so leaving is never blocked.
+	optIn?: boolean;
 	isBroadcaster: boolean;
 	// Which broadcast this is (the simmer's clock, ms). Changes for each new live
 	// sim, so a follower can remount for a fresh replay even if it was still
@@ -1373,6 +1376,11 @@ export type LocalStateUI = {
 	// The live-sim broadcast this device is part of (simming to the room, or
 	// watching the simmer in lockstep). Undefined when none. See MpLiveBroadcast.
 	mpLiveBroadcast: MpLiveBroadcast | undefined;
+	// A league-mate is live-simming their own game and anyone may watch: the
+	// header pill. Undefined when none (or when this device is the one simming).
+	mpLiveWatchable:
+		| { gid: number; byName: string; label: string; startedAt: number }
+		| undefined;
 	// Live game chat for the broadcast currently being watched.
 	mpLiveChat: LiveGameChatMessage[];
 	// Ready-up state (undefined outside a synced gated stage). Drives the header

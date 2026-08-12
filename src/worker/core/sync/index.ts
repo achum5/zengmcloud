@@ -40,6 +40,7 @@ export {
 	publishAutoPlayState,
 	refreshSyncUIState,
 	syncNudge,
+	watchLiveBroadcast,
 	pushDay,
 	pushUnsyncedDays,
 	reportDayPush,
