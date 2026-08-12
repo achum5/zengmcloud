@@ -165,6 +165,91 @@ describe("achievementPromptOverride", () => {
 		assert.ok(o.uniform?.includes("Detroit Pistons"));
 	});
 
+	// The bug this exists for: DPOY came back as a picture of the man scoring.
+	test("defensive awards put him on defence, not on offence", () => {
+		for (const kind of [
+			"dpoy",
+			"allDefensive1",
+			"allDefensive2",
+			"allDefensive3",
+		] as const) {
+			const o = achievementPromptOverride(
+				{ kind, label: "Defensive Player of the Year", season: 2027, pid: 7 },
+				{ ...subject, pos: "C" },
+			);
+			assert.ok(
+				o.photograph?.includes("DEFENSIVE CARD"),
+				`${kind} did not ask for a defensive scene`,
+			);
+			assert.ok(
+				o.photograph?.includes("He is DEFENDING, not scoring"),
+				`${kind} did not rule out an offensive one`,
+			);
+		}
+	});
+
+	test("an offensive award is left alone", () => {
+		for (const kind of ["mvp", "smoy", "allLeague1", "roy"] as const) {
+			const o = achievementPromptOverride(
+				{ kind, label: "Most Valuable Player", season: 2027, pid: 7 },
+				{ ...subject, pos: "C" },
+			);
+			assert.strictEqual(o.photograph, undefined, kind);
+		}
+	});
+
+	// The defensive moment is picked by position for the same reason the general
+	// pool is: a centre does not pick pockets ninety feet out.
+	test("the defensive moment suits the position", () => {
+		const dpoy = (pos: string, pid: number) =>
+			achievementPromptOverride(
+				{
+					kind: "dpoy",
+					label: "Defensive Player of the Year",
+					season: 2027,
+					pid,
+				},
+				{ ...subject, pos },
+			).photograph!;
+
+		const bigs = new Set<string>();
+		const guards = new Set<string>();
+		for (let pid = 0; pid < 40; pid += 1) {
+			bigs.add(dpoy("C", pid));
+			guards.add(dpoy("PG", pid));
+		}
+		// Each position reaches several different moments...
+		assert.ok(bigs.size > 5, `only ${bigs.size} distinct centre scenes`);
+		assert.ok(guards.size > 5, `only ${guards.size} distinct guard scenes`);
+		// ...and the position-specific ones do not cross over.
+		assert.ok([...bigs].some((s) => s.includes("block a shot at its apex")));
+		assert.ok(![...guards].some((s) => s.includes("block a shot at its apex")));
+		assert.ok([...guards].some((s) => s.includes("ninety feet")));
+		assert.ok(![...bigs].some((s) => s.includes("ninety feet")));
+	});
+
+	test("the same card always asks for the same defensive moment", () => {
+		const once = achievementPromptOverride(
+			{
+				kind: "dpoy",
+				label: "Defensive Player of the Year",
+				season: 2027,
+				pid: 7,
+			},
+			{ ...subject, pos: "SF" },
+		);
+		const twice = achievementPromptOverride(
+			{
+				kind: "dpoy",
+				label: "Defensive Player of the Year",
+				season: 2027,
+				pid: 7,
+			},
+			{ ...subject, pos: "SF" },
+		);
+		assert.strictEqual(once.photograph, twice.photograph);
+	});
+
 	test("the college scene names the school but forbids real college uniforms", () => {
 		const o = achievementPromptOverride(
 			{ kind: "draft", label: "2nd Overall Pick", season: 2027, pid: 20 },

@@ -6809,8 +6809,17 @@ const getAchievementCardPrompts = async ({
 	if (!subject) {
 		return undefined;
 	}
+	// One seed per press, shared: it picks the action on an ordinary card and the
+	// defensive moment on a defensive one, so both re-roll rather than coming
+	// back identical.
+	const actionSeed = Math.floor(Math.random() * 1e9);
 	const override = {
-		...achievementPromptOverride({ kind, label, season, pid }, subject, scene),
+		...achievementPromptOverride(
+			{ kind, label, season, pid },
+			subject,
+			scene,
+			actionSeed,
+		),
 		includeName,
 	};
 	return {
@@ -6818,8 +6827,7 @@ const getAchievementCardPrompts = async ({
 			setId,
 			variantId,
 			subject,
-			// Same fresh-seed-per-press behavior as ordinary cards.
-			Math.floor(Math.random() * 1e9),
+			actionSeed,
 			override,
 		),
 		back: buildCardBackPrompt(setId, variantId, subject, override),

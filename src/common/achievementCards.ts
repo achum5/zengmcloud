@@ -229,14 +229,95 @@ const COLLEGE_ACTIONS = [
 	"cutting through the lane and catching a pass in stride",
 ];
 
-// What each achievement swaps into the card prompts. Award and named-team
-// cards keep the normal in-game photograph and just gain the flag; champion
-// cards trade the game action for the celebration; draft cards replace the
-// scene AND the uniform, since he hasn't played a pro minute yet.
+// A DEFENSIVE AWARD SHOULD SHOW HIM DEFENDING.
+//
+// Left to the ordinary card scene, Defensive Player of the Year came back as a
+// drive to the rim: the general action pool is mostly offence, because most
+// cards are, and nothing told it that this one was different. A card whose flag
+// reads "First Team All-Defensive" over a picture of the man scoring is the
+// wrong picture.
+//
+// Split by position for the same reason the general pool is: rim protection and
+// boxing out belong to a centre, ninety feet of ball pressure to a guard, and
+// chasing a shot down from behind to a wing.
+const DEFENSIVE_ACTIONS_ANY = [
+	"sliding his feet in a defensive stance, low and wide, both hands active",
+	"contesting a jumper with one hand straight up and no jump, body under control",
+	"closing out hard on a shooter, hand high, feet chopping",
+	"taking a charge, body already falling backwards as the drive arrives",
+	"stripping the ball clean on the way up",
+	"leaping into a passing lane to deflect the ball",
+	"fighting over the top of a screen to stay attached to his man",
+	"pointing and shouting a coverage to a teammate as the offence sets up",
+	"walling up at the rim without fouling, both arms vertical",
+	"cutting off a driver at the elbow, chest square, feet set",
+];
+
+const DEFENSIVE_ACTIONS_BIG = [
+	"rising to block a shot at its apex, ball still on the shooter's fingertips",
+	"swatting a layup off the glass, still climbing",
+	"ripping a defensive rebound out of a crowd, elbows out",
+	"boxing out under the rim with a wide base, arms spread",
+	"stepping across to meet a driving guard at the rim, arm straight up",
+	"hedging out on a pick and roll with his arms wide, then recovering",
+	"anchoring the paint with both hands up, eyes on the ball",
+];
+
+const DEFENSIVE_ACTIONS_GUARD = [
+	"picking a ball-handler's pocket and turning upcourt with it",
+	"pressuring the ball ninety feet from the basket, hands mirroring the dribble",
+	"trapping a ball-handler in the corner with a teammate",
+	"jumping a passing lane and coming away with the steal",
+	"sitting down in a stance in front of a driver, chest to chest",
+	"denying the ball on the wing with an arm through the passing lane",
+];
+
+const DEFENSIVE_ACTIONS_WING = [
+	"chasing a layup down from behind and pinning it against the glass",
+	"switching onto a smaller man and staying in front of him",
+	"flying across from the weak side to contest at the rim",
+	"stripping a driver from the blind side",
+	"navigating a screen to stay glued to a shooter coming off it",
+	"reading the ball-handler's eyes and stepping into the pass",
+];
+
+const DEFENSIVE_KINDS = new Set<AchievementKind>([
+	"dpoy",
+	"allDefensive1",
+	"allDefensive2",
+	"allDefensive3",
+]);
+
+// ZenGM positions: PG G SG GF SF F PF FC C.
+const defensivePool = (pos: string | undefined): string[] => {
+	const p = (pos ?? "").toUpperCase();
+	if (p === "C" || p === "FC" || p === "PF") {
+		return [...DEFENSIVE_ACTIONS_ANY, ...DEFENSIVE_ACTIONS_BIG];
+	}
+	if (p === "PG" || p === "G" || p === "SG") {
+		return [...DEFENSIVE_ACTIONS_ANY, ...DEFENSIVE_ACTIONS_GUARD];
+	}
+	if (p === "SF" || p === "GF" || p === "F") {
+		return [...DEFENSIVE_ACTIONS_ANY, ...DEFENSIVE_ACTIONS_WING];
+	}
+	return DEFENSIVE_ACTIONS_ANY;
+};
+
+// What each achievement swaps into the card prompts. Most award and named-team
+// cards keep the normal in-game photograph and just gain the flag; defensive
+// awards keep the framing but insist on a defensive moment; champion cards
+// trade the game action for the celebration; draft cards replace the scene AND
+// the uniform, since he hasn't played a pro minute yet.
 export const achievementPromptOverride = (
 	spec: Pick<AchievementCardSpec, "kind" | "label" | "season" | "pid">,
-	subject: { teamName: string; college?: string },
+	subject: { teamName: string; college?: string; pos?: string },
 	scene?: DraftCardScene,
+	// Fresh on every press of the generate button, so re-rolling a defensive
+	// card gets a different defensive moment rather than the same one forever -
+	// the same behaviour an ordinary card's action already has. Omitted, the
+	// moment is derived from the card itself, so a prompt copied twice reads the
+	// same both times.
+	actionSeed?: number,
 ): CardPromptOverride => {
 	const achievement = `${spec.label}, ${spec.season}`;
 
@@ -267,6 +348,23 @@ export const achievementPromptOverride = (
 		return {
 			achievement,
 			photograph: `The seconds after winning the championship: confetti falling through the arena lights, and he is mid-celebration - arms up and roaring, hugging a teammate, or hoisting the trophy overhead - still in full uniform on the court he just won it on.`,
+		};
+	}
+
+	if (DEFENSIVE_KINDS.has(spec.kind)) {
+		const pool = defensivePool(subject.pos);
+		const action =
+			pool[Math.abs(actionSeed ?? spec.pid + spec.season) % pool.length]!;
+		return {
+			achievement,
+			// Same framing as an ordinary card - this is still a candid courtside
+			// photograph, and it should sit in a set alongside the others. The only
+			// thing being fixed is WHICH half of the floor he is on.
+			photograph: `A CANDID shot, not a portrait. This is a professional sports photographer sitting courtside at a live NBA game, shooting this player in the middle of PLAYING BASKETBALL, and he does not know the camera is there. No posing, no looking into the lens, no smiling at the camera, no arms folded, no ball resting on the hip, no studio backdrop.
+
+**THIS IS A DEFENSIVE CARD. He is DEFENDING, not scoring.** He does not have the ball and he is not shooting it, dribbling it, dunking it or driving with it. The moment on this card: ${action}. Build the whole frame around that.
+
+Shot from the sideline or the baseline, at court level, with a long lens: the player caught mid-action and filling the frame, the opponent he is guarding partly in frame, the crowd and the arena falling out of focus behind him. Natural arena lighting.`,
 		};
 	}
 
