@@ -96,7 +96,6 @@ const put = (store: Store, row: any): SyncChange | undefined => {
 // worth of records comes out right without standing up a whole league.
 export type LeagueRows = {
 	games: any[];
-	schedule: any[];
 	teamSeasons: any[];
 	teamStats: any[];
 	players: any[];
@@ -106,7 +105,6 @@ export type LeagueRows = {
 
 const readLeagueRows = async (season: number): Promise<LeagueRows> => ({
 	games: (await idb.cache.games.getAll()) as any[],
-	schedule: (await idb.cache.schedule.getAll()) as any[],
 	teamSeasons: (await idb.cache.teamSeasons.getAll()) as any[],
 	teamStats: (await idb.cache.teamStats.getAll()) as any[],
 	players: (await idb.cache.players.getAll()) as any[],
@@ -156,11 +154,20 @@ export const buildChanges = (
 	// The room still holds a schedule row for every one of those games, and a
 	// put-only changeset cannot remove it. Left behind, every other device shows
 	// a game as still to be played that has already been played here.
-	const gids = new Set(missing.map((game) => game.gid));
-	for (const row of rows.schedule) {
-		if (gids.has(row.gid)) {
-			changes.push({ store: "schedule", id: row.gid, type: "delete" });
-		}
+	//
+	// ONE DELETE PER PLAYED GAME, asked of the games themselves rather than of
+	// the local schedule. That distinction is the whole bug this had the first
+	// time: simming a day DELETES its schedule rows, so by the time anyone comes
+	// to repair the day this device no longer holds a single one of them, the
+	// filter matched nothing, and the changeset went out with the games and no
+	// deletes at all. The room got the scores; every other device went on
+	// listing the same games under "Upcoming Games".
+	//
+	// A game that has been played has no business on anyone's schedule, so the
+	// delete is unconditional - and deleting a row the receiver does not have is
+	// a no-op, which makes asking first worth nothing.
+	for (const game of missing) {
+		changes.push({ store: "schedule", id: game.gid, type: "delete" });
 	}
 
 	// Standings, team stats and the season's playoff bracket are aggregates: a

@@ -14,7 +14,6 @@ import {
 
 const rows = (overrides: Partial<LeagueRows> = {}): LeagueRows => ({
 	games: [],
-	schedule: [],
 	teamSeasons: [],
 	teamStats: [],
 	players: [],
@@ -132,12 +131,16 @@ describe("buildChanges", () => {
 	// The room still holds a schedule row for every game this device played, and
 	// a put-only changeset cannot remove it: every other device would show a
 	// game as still to be played that has already been played here.
-	test("deletes the schedule rows for exactly those games", () => {
+	//
+	// THE ROWS ARE GONE LOCALLY, AND THAT IS THE POINT. Simming a day deletes
+	// its schedule rows, so a device repairing that day holds none of them. The
+	// first version of this asked the local schedule which rows to delete, found
+	// nothing, and published the games with no deletes at all - the room got the
+	// scores and every other device went on listing the same games as upcoming.
+	// So there is no schedule in these rows, deliberately.
+	test("deletes a schedule row for every played game, though it holds none", () => {
 		const built = buildChanges(
-			rows({
-				games: [game(1, 11), game(2, 12), game(3, 12)],
-				schedule: [{ gid: 2 }, { gid: 3 }, { gid: 9 }],
-			}),
+			rows({ games: [game(1, 11), game(2, 12), game(3, 12)] }),
 			2006,
 			{ kind: "after", day: 11 },
 		);
@@ -266,10 +269,7 @@ describe("buildChanges", () => {
 	// day's schedule rows are cleared.
 	test("carries exactly the named day and nothing either side of it", () => {
 		const built = buildChanges(
-			rows({
-				games: [game(1, 4), game(2, 5), game(3, 5), game(4, 6)],
-				schedule: [{ gid: 1 }, { gid: 2 }, { gid: 3 }, { gid: 4 }],
-			}),
+			rows({ games: [game(1, 4), game(2, 5), game(3, 5), game(4, 6)] }),
 			2006,
 			{ kind: "only", days: [5] },
 		);
@@ -295,5 +295,67 @@ describe("buildChanges", () => {
 			{ kind: "only", days: [5] },
 		);
 		assert.deepStrictEqual(idsFor(built.changes, "games"), [2]);
+	});
+});
+
+// WHAT THE OTHER DEVICE ENDS UP WITH.
+//
+// Checking the changeset store by store is how the schedule bug got through:
+// every individual assertion passed, and the day still arrived on every other
+// device with its games listed as "Upcoming Games". The only question that
+// would have caught it is the one the user actually asks - after this lands,
+// is the receiver right? So apply the changeset to a receiver and look.
+describe("a receiver applying the changeset", () => {
+	// The two devices are in genuinely different states, and that asymmetry is
+	// the whole point: the simmer played the day (games written, schedule rows
+	// gone), the receiver never heard about it (no games, schedule intact).
+	const simmed = rows({
+		games: [game(10, 5), game(11, 5)],
+		teamSeasons: [{ rid: 1, season: 2006, won: 4 }],
+	});
+
+	const receiver = () => ({
+		games: new Map<number, any>(),
+		schedule: new Map<number, any>([
+			[10, { gid: 10, day: 5 }],
+			[11, { gid: 11, day: 5 }],
+			// A later day nobody has played. It must survive.
+			[12, { gid: 12, day: 6 }],
+		]),
+		teamSeasons: new Map<number, any>([[1, { rid: 1, season: 2006, won: 3 }]]),
+	});
+
+	const applyTo = (state: ReturnType<typeof receiver>, changes: any[]) => {
+		for (const change of changes) {
+			const store = (state as any)[change.store];
+			if (!store) {
+				continue;
+			}
+			if (change.type === "delete") {
+				store.delete(change.id);
+			} else {
+				store.set(change.id, change.value);
+			}
+		}
+		return state;
+	};
+
+	test("stops listing the played games as upcoming", () => {
+		const { changes } = buildChanges(simmed, 2006, { kind: "only", days: [5] });
+		const after = applyTo(receiver(), changes);
+
+		assert.deepStrictEqual(
+			[...after.schedule.keys()],
+			[12],
+			"day 5's games were played, so only the unplayed day 6 game is still to come",
+		);
+	});
+
+	test("gains the games and the standings that go with them", () => {
+		const { changes } = buildChanges(simmed, 2006, { kind: "only", days: [5] });
+		const after = applyTo(receiver(), changes);
+
+		assert.deepStrictEqual([...after.games.keys()], [10, 11]);
+		assert.strictEqual(after.teamSeasons.get(1).won, 4);
 	});
 });
