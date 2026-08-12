@@ -43,6 +43,10 @@ import {
 } from "./applyVersion.ts";
 import { catchUpPlan } from "./protocol.ts";
 import { isTimelineAdvanceLabel } from "../actionLabels.ts";
+import {
+	holdPublishForSim,
+	resolveStaleAdvancePlan,
+} from "../publishGuards.ts";
 
 // ---------------------------------------------------------------------------
 // ENGINE V2: the version chain, running.
@@ -194,6 +198,11 @@ export class SyncEngineV2 {
 	private catchingUp = false;
 	private drainChain: Promise<boolean> = Promise.resolve(true);
 	private draining = false;
+
+	// Set while this device is deliberately sitting on queued changes because
+	// the room is mid-sim. Nothing is wrong; the caller uses it to say so rather
+	// than reporting a connection problem.
+	private heldForSim = false;
 
 	// Readiness is a LEASE, not a latch. It used to be a one-way boolean: the
 	// first successful ping set it true and nothing ever set it back, so
@@ -857,6 +866,12 @@ export class SyncEngineV2 {
 		return busyUntil > Date.now();
 	}
 
+	// Queued changes are waiting out a sim, not stuck behind a broken
+	// connection. Two very different things to tell someone.
+	isHeldForSim(): boolean {
+		return this.heldForSim;
+	}
+
 	async registerMember(member: SyncMember) {
 		this.localName = member.name || this.localName;
 		await this.transport.registerMember?.(this.transport.clientId, member);
@@ -1338,13 +1353,32 @@ export class SyncEngineV2 {
 						state.checkpointChunkCount === undefined ||
 						!this.transport.fetchV2Checkpoint
 					) {
-						// No checkpoint to snap back to (a brand-new room before its
-						// first checkpoint). The overlap from applying the chain's
-						// versions is the best available convergence; say so loudly.
+						// No checkpoint to snap back to. This device is holding records
+						// the chain will never carry and there is nothing here that can
+						// remove them - the delta walk only adds. It must NOT go quiet
+						// and report itself caught up, which is precisely how a simmed
+						// day sat on one device for a night with every indicator green.
+						// (The publish path no longer discards without a checkpoint, so
+						// this should now be unreachable from a discard; if it is
+						// reached, something else set the flag and the same honesty
+						// applies.)
 						syncDebugLog("v2:recovery-no-checkpoint", {
 							applied,
 							roomVersion: state.version,
 						});
+						console.error(
+							"[sync] Recovery needed but the room has no checkpoint. This device may be holding records the room does not have; check Multiplayer > Sync for unsent days.",
+						);
+						try {
+							logEvent({
+								type: "error",
+								text: "This device could not be re-synced to the room, because the room has no restore point yet. Open Multiplayer sync and check for unsent days.",
+								saveToDb: false,
+								persistent: true,
+							});
+						} catch {
+							// UI notice only.
+						}
 						this.mustRecoverFromCheckpoint = false;
 					} else {
 						step = `checkpoint@${state.checkpointVersion}`;
@@ -1734,6 +1768,26 @@ export class SyncEngineV2 {
 		if (!checkApplyGuard()) {
 			return false;
 		}
+		// A follower does not publish into the middle of a sim (see
+		// publishGuards.ts). The change is already made locally and durably
+		// queued; the drain is kicked every few seconds, so it goes up as soon as
+		// the advance lands - without ever taking the version the sim is about to
+		// claim.
+		if (
+			holdPublishForSim({
+				isAuthority: this.isAuthority(),
+				roomBusy: this.isRoomBusy(),
+			})
+		) {
+			const pendingCount = await this.pendingUploadCount();
+			if (pendingCount > 0) {
+				this.heldForSim = true;
+				syncDebugLog("v2:publish-held-for-sim", { pending: pendingCount });
+			}
+			return false;
+		}
+		this.heldForSim = false;
+
 		this.draining = true;
 		try {
 			const pending = await this.pendingEntries();
@@ -1819,8 +1873,11 @@ export class SyncEngineV2 {
 			}
 			const applied = await readAppliedVersion();
 			if (applied < this.roomVersion) {
-				if (isAdvance) {
-					return this.discardStaleAdvance(entry, applied, this.roomVersion);
+				if (
+					isAdvance &&
+					!(await this.rebaseStaleAdvance(entry, applied, this.roomVersion))
+				) {
+					return false;
 				}
 				const caught = await this.doCatchUpInline();
 				if (!caught) {
@@ -1889,8 +1946,11 @@ export class SyncEngineV2 {
 							target,
 							attempt,
 						});
-						if (isAdvance) {
-							return this.discardStaleAdvance(entry, applied, target);
+						if (
+							isAdvance &&
+							!(await this.rebaseStaleAdvance(entry, applied, target))
+						) {
+							return false;
 						}
 						continue;
 					}
@@ -1911,8 +1971,11 @@ export class SyncEngineV2 {
 					target,
 					attempt,
 				});
-				if (isAdvance) {
-					return this.discardStaleAdvance(entry, applied, target);
+				if (
+					isAdvance &&
+					!(await this.rebaseStaleAdvance(entry, applied, target))
+				) {
+					return false;
 				}
 				// Their version applies first, then this edit goes on top.
 				continue;
@@ -1953,12 +2016,98 @@ export class SyncEngineV2 {
 		return false;
 	}
 
-	// A timeline advance authored on a world the room has moved past: remove
-	// it from the queue, drop its notifications, tell the user plainly, and
-	// snap this device back to the chain's truth. The local database contains
-	// records the chain will never carry, so the recovery is a forced
-	// checkpoint restore - the same "reject the local change" rule that keeps
-	// every device an exact copy of the cloud.
+	// A timeline advance that lost the race: keep it, or throw it away?
+	//
+	// Throwing it away is only half a move. The other half is snapping this
+	// device's database back to a room checkpoint, which is what removes the
+	// records the chain will never carry - and if that half cannot happen, a
+	// discard leaves the device holding a day nobody else has, quietly. That is
+	// exactly how a simmed day went missing (see publishGuards.ts). And when the
+	// version that beat us touched nothing a played day reads or writes - a
+	// trading card, which is what beat us that night - the advance was never
+	// invalidated in the first place and simply belongs on top.
+	//
+	// Returns true to REBASE (the caller catches up and republishes), false when
+	// the advance was discarded and the caller should give up on it.
+	private async rebaseStaleAdvance(
+		entry: Omit<ChangesetEntry, "seq">,
+		applied: number,
+		roomVersion: number,
+	): Promise<boolean> {
+		// A fresh read, because the loser of a CAS is by definition looking at a
+		// stale head - and this decides whether a whole day of games survives, so
+		// one round trip is cheap.
+		let state = this.roomState;
+		const fetchState = this.transport.fetchRoomV2State?.bind(this.transport);
+		try {
+			if (fetchState) {
+				state =
+					(await withTimeout(fetchState(), this.publishTimeoutMs)) ?? state;
+			}
+		} catch {
+			// Fall back to the mirror; the plan below is conservative without it.
+		}
+		if (state) {
+			this.roomState = state;
+			this.roomVersion = Math.max(this.roomVersion, state.version);
+		}
+
+		const head = Math.max(roomVersion, state?.version ?? 0);
+		const plan = resolveStaleAdvancePlan({
+			applied,
+			roomVersion: head,
+			hasCheckpoint: state?.checkpointVersion !== undefined,
+			interveningStores: await this.interveningStores(applied, state),
+		});
+		syncDebugLog("v2:stale-advance-plan", {
+			action: entry.action,
+			applied,
+			roomVersion: head,
+			plan: plan.plan,
+			reason: plan.reason,
+		});
+		if (plan.plan === "rebase") {
+			return true;
+		}
+		await this.discardStaleAdvance(entry, applied, head);
+		return false;
+	}
+
+	// Which stores the versions this device has not applied touched, when that
+	// can be known for certain. Only the head version's payload is available
+	// without another read, and only when it was small enough to ride the
+	// pointer document - so this answers for a room exactly one version ahead
+	// and returns undefined otherwise. Undefined means "assume it conflicts".
+	private async interveningStores(
+		applied: number,
+		state: V2StateDoc | undefined,
+	): Promise<string[] | undefined> {
+		if (
+			state === undefined ||
+			state.inlineDelta === undefined ||
+			state.version !== applied + 1
+		) {
+			return undefined;
+		}
+		try {
+			const payload = deserializeChangeset(
+				await decompressSerialized(state.inlineDelta),
+			);
+			const stores = payload.changes.map((change: { store: unknown }) =>
+				String(change.store),
+			);
+			return [...new Set<string>(stores)];
+		} catch {
+			return undefined;
+		}
+	}
+
+	// A timeline advance authored on a world the room has moved past, with a
+	// checkpoint to fall back on: remove it from the queue, drop its
+	// notifications, tell the user plainly, and snap this device back to the
+	// chain's truth. The local database contains records the chain will never
+	// carry, so the recovery is a forced checkpoint restore - the same "reject
+	// the local change" rule that keeps every device an exact copy of the cloud.
 	private async discardStaleAdvance(
 		entry: Omit<ChangesetEntry, "seq">,
 		applied: number,

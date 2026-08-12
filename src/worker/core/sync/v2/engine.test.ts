@@ -367,6 +367,22 @@ const initRoom = (room: Room) => {
 	});
 };
 
+// Give the room a restore point at version 0. Whether one exists is now part of
+// what a lost timeline advance decides on (publishGuards.ts): with a checkpoint
+// to snap back to, a stale advance is discarded as before; without one,
+// discarding would strand its records here, so the advance is kept instead.
+const transport0Checkpoint = async (room: Room) => {
+	const seed = new V2Transport("seed", room);
+	await seed.publishV2Checkpoint(
+		0,
+		serializeChangeset({
+			version: 1,
+			stores: { players: [{ pid: 1, tid: 2 }] },
+		}),
+	);
+	await seed.commitV2Checkpoint(0, 1);
+};
+
 describe("SyncEngineV2", () => {
 	let restoreCache: () => void;
 
@@ -894,6 +910,11 @@ describe("SyncEngineV2", () => {
 	test("notifications fire only when the version actually committed", async () => {
 		const room = new Room();
 		initRoom(room);
+		// A checkpoint has to exist for a discard to be the right answer at all -
+		// discarding is only the first half of "discard, then restore" (see
+		// publishGuards.ts), and without the second half the engine keeps the
+		// advance instead. That case is its own test below.
+		await transport0Checkpoint(room);
 		(idb as any).league = makeLeagueDb({
 			players: [{ pid: 1, tid: 2 }],
 		});
@@ -920,6 +941,135 @@ describe("SyncEngineV2", () => {
 		// it can't run against the NEXT test's freshly-swapped league DB.
 		await engine.catchUp();
 		engine.stop();
+	});
+
+	// THE NIGHT A SIMMED DAY WENT MISSING. The advance lost the race, was
+	// discarded, and the room had no checkpoint to snap this device back to - so
+	// the games stayed here and nowhere else, with every indicator green. A
+	// discard with nothing to restore from is strictly worse than keeping the
+	// advance and republishing it on top of whatever won.
+	test("an advance that loses the CAS is kept when the room has no checkpoint", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 2 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		await engine.claimAuthority();
+		transport.forceCasLoss = true;
+
+		const outcome = await engine.onLocalChangeset(
+			changesetOf(tradePut(1, 2)),
+			"playMenu.day",
+		);
+
+		assert.strictEqual(outcome, "confirmed", "the day survived the lost race");
+		assert.strictEqual(room.state!.version, 1);
+		assert.strictEqual(await readAppliedVersion(), 1);
+		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		await engine.catchUp();
+		engine.stop();
+	});
+
+	// The other half of the same night: what actually beat the sim to the slot
+	// was a trading card. A played day neither reads nor writes those, so the
+	// advance was never invalidated - it belongs on top of the card, not in the
+	// bin. Discarding here is what cost a day even though nothing collided.
+	test("an advance rebases over a version that touched only inert stores", async () => {
+		const room = new Room();
+		initRoom(room);
+		await transport0Checkpoint(room);
+
+		// Another device gets version 1 in first, with a trading card.
+		const other = new V2Transport("B", room);
+		const cardDelta = serializeChangeset(
+			changesetOf({
+				store: "tradingCards" as any,
+				id: "card-1",
+				type: "put",
+				value: { id: "card-1", pid: 9 },
+			}),
+		);
+		assert.ok(
+			await other.publishAndCommitV2Version(
+				{
+					version: 1,
+					authorId: "B",
+					byName: "B",
+					at: 2,
+					action: "main.upsertTradingCard",
+					inlineDelta: cardDelta,
+				},
+				cardDelta,
+				0,
+			),
+		);
+
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 2 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		await engine.claimAuthority();
+
+		const outcome = await engine.onLocalChangeset(
+			changesetOf(tradePut(1, 2)),
+			"playMenu.day",
+		);
+
+		assert.strictEqual(outcome, "confirmed");
+		assert.strictEqual(
+			room.state!.version,
+			2,
+			"the day landed on top of the card rather than being thrown away",
+		);
+		assert.strictEqual(room.state!.action, "playMenu.day");
+		assert.strictEqual(await readAppliedVersion(), 2);
+		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		await engine.catchUp();
+		engine.stop();
+	});
+
+	// A follower does not publish into the middle of a sim. Racing the advance
+	// for the next version is exactly how one got discarded; the change is
+	// durably queued and goes up the moment the sim's version lands.
+	test("a follower holds its publish while the room is simming", async () => {
+		const room = new Room();
+		initRoom(room);
+		room.setAuthority({
+			holderId: "A",
+			holderName: "Alex",
+			busyUntil: Date.now() + 60_000,
+		} as any);
+
+		(idb as any).league = makeLeagueDb({ players: [{ pid: 4, tid: 1 }] });
+		const follower = new SyncEngineV2(new V2Transport("B", room));
+		follower.start();
+
+		const outcome = await follower.onLocalChangeset(
+			changesetOf(tradePut(4, 1)),
+			"main.updatePlayingTime",
+		);
+		assert.strictEqual(outcome, "queued");
+		assert.strictEqual(room.state!.version, 0, "the sim's slot is untouched");
+		assert.strictEqual(await follower.pendingUploadCount(), 1);
+		assert.ok(follower.isHeldForSim());
+
+		// The sim finishes and drops the lease: the ordinary drain kick lands it.
+		room.setAuthority({ holderId: "A", holderName: "Alex", busyUntil: 0 });
+		assert.ok(await follower.drainOutbox());
+		assert.strictEqual(room.state!.version, 1);
+		assert.strictEqual(await follower.pendingUploadCount(), 0);
+		assert.strictEqual(follower.isHeldForSim(), false);
+		// Drain the listener's catch-up before this test ends, or it applies this
+		// room's version 1 into the NEXT test's freshly-swapped league DB.
+		await follower.catchUp();
+		follower.stop();
 	});
 
 	// Firestore writes never reject while offline - they buffer forever. The

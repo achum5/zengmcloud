@@ -590,10 +590,16 @@ promiseWorker.register(async ([type, name, param], hostID) => {
 					}
 				}
 				if (!synced) {
+					// Held on purpose while the league is simming is not a failure,
+					// and calling it one sends people looking for a connection
+					// problem that isn't there.
+					const held = getSyncEngine()?.isHeldForSim() ?? false;
 					util.logEvent(
 						{
-							type: "error",
-							text: `This change is saved and queued for the cloud — it will upload automatically when the connection recovers.`,
+							type: held ? "info" : "error",
+							text: held
+								? `The league is simming, so this will go to the room as soon as the sim finishes.`
+								: `This change is saved and queued for the cloud — it will upload automatically when the connection recovers.`,
 							persistent: true,
 						},
 						conditions,
