@@ -42,8 +42,20 @@ describe("deriveSeasonAchievementCards", () => {
 		const alpha = cards.filter((c) => c.pid === 1);
 		assert.deepStrictEqual(
 			alpha.map((c) => c.kind),
-			["mvp", "finalsMvp", "allLeague1", "allStar", "champion"],
+			["mvp", "finalsMvp", "allLeague1", "champion"],
 		);
+	});
+
+	// NO ALL-STAR CARDS. An All-Star season is the one achievement here handed
+	// out by the dozen - twenty-odd a year against one MVP - so a season's list
+	// was mostly All-Stars and the genuinely rare awards were lost in them. The
+	// input is still accepted (and ignored) so the kind survives for cards
+	// already made under it.
+	test("All-Stars are not offered, even when a roster is supplied", () => {
+		const cards = deriveSeasonAchievementCards(input);
+		assert.ok(cards.every((c) => c.kind !== "allStar"));
+		// pid 12 is ONLY an All-Star, so he should not appear at all.
+		assert.ok(cards.every((c) => c.pid !== 12));
 	});
 
 	test("ids are deterministic and unique", () => {

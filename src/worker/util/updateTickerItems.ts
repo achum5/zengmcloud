@@ -405,11 +405,19 @@ const upcomingAndRaces = async (fresh: boolean): Promise<TickerItem[]> => {
 				if (home.tid < 0 || away.tid < 0) {
 					continue;
 				}
-				// A spread is quoted on the favourite, the way a book quotes it.
+				// The spread goes to whoever is laying it, so the renderer can print
+				// it beside that team instead of naming them twice. A positive
+				// spread favours the home side.
+				let awayLine: string | undefined;
+				let homeLine: string | undefined;
 				let line: string | undefined;
 				if (game.spread !== undefined && game.spread !== 0) {
-					const favourite = game.spread > 0 ? home : away;
-					line = `${abbrevOf(favourite.tid)} ${-Math.abs(game.spread)}`;
+					const text = String(-Math.abs(game.spread));
+					if (game.spread > 0) {
+						homeLine = text;
+					} else {
+						awayLine = text;
+					}
 				} else if (game.spread === 0) {
 					line = "PK";
 				}
@@ -418,6 +426,8 @@ const upcomingAndRaces = async (fresh: boolean): Promise<TickerItem[]> => {
 					key: `up-${game.gid}`,
 					away: teamRef(away.tid),
 					home: teamRef(home.tid),
+					awayLine,
+					homeLine,
 					line,
 				});
 			}

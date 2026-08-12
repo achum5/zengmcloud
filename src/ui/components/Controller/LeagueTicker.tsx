@@ -152,9 +152,15 @@ const Upcoming = ({
 	>
 		<Flash color={item.away.color} logo={item.away.logo} />
 		<span className="league-ticker-abbrev">{item.away.abbrev}</span>
+		{item.awayLine ? (
+			<span className="league-ticker-line">{item.awayLine}</span>
+		) : null}
 		<span className="league-ticker-at">@</span>
 		<Flash color={item.home.color} logo={item.home.logo} />
 		<span className="league-ticker-abbrev">{item.home.abbrev}</span>
+		{item.homeLine ? (
+			<span className="league-ticker-line">{item.homeLine}</span>
+		) : null}
 		{item.line ? <span className="league-ticker-line">{item.line}</span> : null}
 	</a>
 );

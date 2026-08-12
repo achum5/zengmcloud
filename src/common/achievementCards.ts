@@ -90,6 +90,12 @@ export type SeasonAchievementInput = {
 		allDefensive?: { players: Named[] }[];
 		allRookie?: Named[];
 	};
+	// NO LONGER GENERATED. An All-Star season is the one achievement here that
+	// is handed out by the dozen - twenty-odd cards a year, against one MVP -
+	// so a season's list was mostly All-Stars and the awards that are actually
+	// rare got lost among them. Accepted and ignored rather than removed from
+	// the type, because the kind itself stays: cards already made under it must
+	// keep their label.
 	allStars?: Named[];
 	// The champions' roster ordered best-first (the caller sorts by playoff
 	// minutes); capped at CHAMPION_CARD_PLAYERS here.
@@ -97,8 +103,7 @@ export type SeasonAchievementInput = {
 };
 
 // The full expected card set for a season, in the order they'll be offered:
-// the individual awards first, then the named teams, then the All-Stars, then
-// the champions. Duplicate pids WITHIN a kind collapse; the same player across
+// the individual awards first, then the named teams, then the champions. Duplicate pids WITHIN a kind collapse; the same player across
 // kinds is the point (an MVP season is also an All-League season - two cards).
 export const deriveSeasonAchievementCards = (
 	input: SeasonAchievementInput,
@@ -151,10 +156,6 @@ export const deriveSeasonAchievementCards = (
 	}
 	for (const p of a?.allRookie ?? []) {
 		push("allRookie", p);
-	}
-
-	for (const p of input.allStars ?? []) {
-		push("allStar", p);
 	}
 
 	for (const p of (input.champions ?? []).slice(0, CHAMPION_CARD_PLAYERS)) {

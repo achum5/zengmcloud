@@ -58,6 +58,13 @@ export type TickerItem =
 			key: string;
 			away: TickerTeam;
 			home: TickerTeam;
+			// THE SPREAD, BESIDE THE TEAM LAYING IT. Exactly one of these is set.
+			// It used to be one `line` printed after the matchup and quoted the way
+			// a book quotes it - "DAL @ PHO   PHO -3.5" - which said PHO twice in
+			// six words. Hung on the favourite it reads as one thought.
+			awayLine?: string;
+			homeLine?: string;
+			// A pick'em belongs to neither side, so it still goes after the matchup.
 			line?: string;
 	  }
 	// A standout stat line from the day. Split rather than pre-joined, because

@@ -6758,24 +6758,12 @@ const getAchievementCardData = async ({
 		});
 	} else {
 		const awards = await idb.getCopy.awards({ season });
-		// Everyone in the All-Star row was selected - the two teams once the
-		// sides are drafted, plus whoever is still in the undrafted pool (which
-		// also keeps injured selections, who earned the card too).
-		const allStarsRow = await idb.getCopy.allStars({ season });
-		const allStars: { pid: number; name: string }[] = [];
-		if (allStarsRow) {
-			const seen = new Set<number>();
-			for (const p of [...allStarsRow.teams.flat(), ...allStarsRow.remaining]) {
-				if (!seen.has(p.pid)) {
-					seen.add(p.pid);
-					allStars.push({ pid: p.pid, name: p.name });
-				}
-			}
-		}
+		// No All-Stars. Twenty-odd selections a season against one MVP buried
+		// the awards that are actually rare, so the season list is the awards,
+		// the named teams and the champions (see deriveSeasonAchievementCards).
 		expected = deriveSeasonAchievementCards({
 			season,
 			awards,
-			allStars,
 			champions: await getChampionKeyPlayers(season),
 		});
 	}
