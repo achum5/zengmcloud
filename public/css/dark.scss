@@ -721,6 +721,15 @@ $league-ticker-toggle-width: 26px;
 	margin-right: -0.1rem;
 }
 
+.league-ticker-logo {
+	width: 17px;
+	height: 17px;
+	object-fit: contain;
+	flex: 0 0 auto;
+	align-self: center;
+	margin-right: -0.1rem;
+}
+
 // A team code. Slightly tightened and tracked out, the way score bars set them.
 .league-ticker-abbrev {
 	font-weight: 700;

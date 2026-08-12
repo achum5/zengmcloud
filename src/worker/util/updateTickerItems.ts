@@ -26,18 +26,29 @@ import type { EventBBGM, Game } from "../../common/types.ts";
 const abbrevOf = (tid: number): string =>
 	g.get("teamInfoCache")[tid]?.abbrev ?? "???";
 
-// Franchise colours are not in teamInfoCache, so they are read once per refresh
+// Franchise marks are not in teamInfoCache, so they are read once per refresh
 // and passed down. Cheap - the teams store is small and already in the cache.
-let colorByTid = new Map<number, string>();
+// The logo is what gets drawn beside the abbreviation; the colour is the flash
+// a team with no logo falls back to.
+let markByTid = new Map<number, { logo?: string; color: string }>();
 
-const loadTeamColors = async () => {
+const loadTeamMarks = async () => {
 	try {
 		const teams = await idb.cache.teams.getAll();
-		colorByTid = new Map(
-			teams.map((t) => [t.tid, t.colors?.[0] ?? "#000000"] as const),
+		markByTid = new Map(
+			teams.map(
+				(t) =>
+					[
+						t.tid,
+						{
+							logo: t.imgURLSmall ?? t.imgURL,
+							color: t.colors?.[0] ?? "#000000",
+						},
+					] as const,
+			),
 		);
 	} catch {
-		colorByTid = new Map();
+		markByTid = new Map();
 	}
 };
 
@@ -45,7 +56,8 @@ const teamRef = (tid: number, pts?: number) => ({
 	tid,
 	abbrev: abbrevOf(tid),
 	pts,
-	color: colorByTid.get(tid),
+	logo: markByTid.get(tid)?.logo,
+	color: markByTid.get(tid)?.color,
 });
 
 // ---------------------------------------------------------------- most recent
@@ -462,7 +474,7 @@ export const updateTickerItems = async ({ fresh = false } = {}) => {
 	let items: TickerItem[] = [];
 
 	try {
-		await loadTeamColors();
+		await loadTeamMarks();
 		const games = await recentGames();
 		items = [
 			...scoreItems(games),

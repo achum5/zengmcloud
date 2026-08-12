@@ -17,10 +17,12 @@ export type TickerTeam = {
 	tid: number;
 	abbrev: string;
 	pts?: number;
-	// The franchise's primary colour, drawn as a flash beside the abbreviation.
-	// Three letters all set the same way is a list; a colour beside them is a
-	// scoreboard, and it is the cheapest way to tell one row from the next at a
-	// glance. Absent for the All-Star sides, which are not franchises.
+	// The franchise's small logo, drawn beside the abbreviation. Three letters
+	// all set the same way is a list; a mark beside them is a scoreboard, and it
+	// is the cheapest way to tell one row from the next at a glance.
+	logo?: string;
+	// The primary colour, as the fallback flash for a team with no logo (custom
+	// leagues, the All-Star sides).
 	color?: string;
 };
 

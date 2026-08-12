@@ -67,10 +67,14 @@ import {
 // It used to be a label printed in front of every item, so a run of eighteen
 // news items meant reading "TRANSACTIONS" eighteen times to learn one thing.
 
-// A franchise's colour, as a small flash beside its code. Three letters set the
-// same way as everything else is a list; a colour beside them is a scoreboard.
-const Flash = ({ color }: { color?: string }) =>
-	color ? (
+// A franchise's mark beside its code. Three letters set the same way as
+// everything else is a list; a mark beside them is a scoreboard. The small logo
+// when the team has one, its colour as a flash when it does not (custom
+// leagues, the All-Star sides).
+const Flash = ({ color, logo }: { color?: string; logo?: string }) =>
+	logo ? (
+		<img className="league-ticker-logo" src={logo} alt="" loading="lazy" />
+	) : color ? (
 		<span className="league-ticker-flash" style={{ backgroundColor: color }} />
 	) : null;
 
@@ -82,7 +86,7 @@ const Pane = ({ header }: { header: TickerHeader }) => {
 	const { away, home } = header;
 	const side = (team: typeof away, lost: boolean) => (
 		<span className={clsx("league-ticker-pane-row", { dim: lost })}>
-			<Flash color={team.color} />
+			<Flash color={team.color} logo={team.logo} />
 			<span className="league-ticker-pane-abbrev">{team.abbrev}</span>
 			<span className="league-ticker-pane-pts">{team.pts ?? 0}</span>
 		</span>
@@ -113,7 +117,7 @@ const Score = ({ item }: { item: Extract<TickerItem, { type: "score" }> }) => {
 	// the numbers at all.
 	const side = (team: typeof away, pts: number, lost: boolean) => (
 		<>
-			<Flash color={team.color} />
+			<Flash color={team.color} logo={team.logo} />
 			<span className={clsx("league-ticker-abbrev", { dim: lost })}>
 				{team.abbrev}
 			</span>
@@ -146,10 +150,10 @@ const Upcoming = ({
 		className="league-ticker-item"
 		href={helpers.leagueUrl(["daily_schedule"])}
 	>
-		<Flash color={item.away.color} />
+		<Flash color={item.away.color} logo={item.away.logo} />
 		<span className="league-ticker-abbrev">{item.away.abbrev}</span>
 		<span className="league-ticker-at">@</span>
-		<Flash color={item.home.color} />
+		<Flash color={item.home.color} logo={item.home.logo} />
 		<span className="league-ticker-abbrev">{item.home.abbrev}</span>
 		{item.line ? <span className="league-ticker-line">{item.line}</span> : null}
 	</a>
