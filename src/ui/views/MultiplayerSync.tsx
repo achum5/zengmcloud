@@ -166,6 +166,12 @@ const MultiplayerSync = () => {
 	const [resyncing, setResyncing] = useState(false);
 	const [resyncResult, setResyncResult] = useState<string | undefined>();
 
+	// A day simmed on this device that never reached the room. Reported first, so
+	// the size of the repair is on screen before anything is published.
+	const [unsynced, setUnsynced] = useState<any>();
+	const [unsyncedBusy, setUnsyncedBusy] = useState(false);
+	const [unsyncedResult, setUnsyncedResult] = useState<string | undefined>();
+
 	// Room admin (clear Firestore codes), gated by a cosmetic password.
 	const [adminInput, setAdminInput] = useState("");
 	const [adminUnlocked, setAdminUnlocked] = useState(false);
@@ -272,6 +278,40 @@ const MultiplayerSync = () => {
 			// Best-effort; leave whatever we had.
 		} finally {
 			setActivityLoading(false);
+		}
+	};
+
+	const checkUnsynced = async () => {
+		setUnsyncedBusy(true);
+		setUnsyncedResult(undefined);
+		try {
+			setUnsynced(await toWorker("main", "reportUnsyncedDays", undefined));
+		} catch (error) {
+			setUnsyncedResult((error as Error).message ?? String(error));
+		} finally {
+			setUnsyncedBusy(false);
+		}
+	};
+
+	const doPushUnsynced = async () => {
+		setUnsyncedBusy(true);
+		setUnsyncedResult(undefined);
+		try {
+			const out: any = await toWorker("main", "pushUnsyncedDays", undefined);
+			if (out?.published) {
+				setUnsyncedResult(
+					out.outcome === "confirmed"
+						? `Sent. ${out.report.games} game${out.report.games === 1 ? "" : "s"} from day ${out.report.days.join(", ")} are now in the room.`
+						: `Queued. The room will have it as soon as the connection allows.`,
+				);
+				setUnsynced(undefined);
+			} else {
+				setUnsyncedResult(out?.report?.reason ?? "Nothing to send.");
+			}
+		} catch (error) {
+			setUnsyncedResult((error as Error).message ?? String(error));
+		} finally {
+			setUnsyncedBusy(false);
 		}
 	};
 
@@ -901,6 +941,37 @@ const MultiplayerSync = () => {
 						>
 							{resyncing ? "Resyncing…" : "Force full resync"}
 						</button>
+
+						<button
+							className="btn btn-light-bordered btn-sm mb-3 ms-2"
+							disabled={unsyncedBusy}
+							onClick={() => void checkUnsynced()}
+						>
+							{unsyncedBusy ? "Checking…" : "Check for unsent days"}
+						</button>
+
+						{unsynced?.kind === "found" ? (
+							<div className="alert alert-warning py-2">
+								<div>
+									This device has played day {unsynced.days.join(", ")} of{" "}
+									{unsynced.season} and the room is still on day{" "}
+									{unsynced.roomDay}. Sending {unsynced.games} game
+									{unsynced.games === 1 ? "" : "s"} ({unsynced.records}{" "}
+									records).
+								</div>
+								<button
+									className="btn btn-warning btn-sm mt-2"
+									disabled={unsyncedBusy}
+									onClick={() => void doPushUnsynced()}
+								>
+									{unsyncedBusy ? "Sending…" : "Send to the room"}
+								</button>
+							</div>
+						) : null}
+						{unsynced?.kind === "none" ? (
+							<p className="text-body-secondary small">{unsynced.reason}</p>
+						) : null}
+						{unsyncedResult ? <p className="small">{unsyncedResult}</p> : null}
 
 						<button
 							className="btn btn-light-bordered btn-sm mb-3 ms-2"

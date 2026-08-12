@@ -40,6 +40,8 @@ export {
 	publishAutoPlayState,
 	refreshSyncUIState,
 	syncNudge,
+	pushUnsyncedDays,
+	reportUnsyncedDays,
 	resyncSharedLeague,
 	publishLotteryRevealState,
 	restoreSyncRequiredFromMeta,

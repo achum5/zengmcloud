@@ -26,6 +26,11 @@ import {
 	resolveLeagueIdentity,
 	writeLocalLeagueId,
 } from "./leagueIdentity.ts";
+import {
+	buildUnsyncedDaysChangeset,
+	describeUnsyncedDays,
+	type UnsyncedDaysReport,
+} from "./republishUnsyncedDays.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
@@ -1222,6 +1227,86 @@ export const getSimSafety = async (): Promise<
 };
 
 // Force a full catch-up: re-read the log's tail and re-apply it from scratch.
+// A day that was simmed here and never reached the room - see
+// republishUnsyncedDays.ts for how a league gets into that state. Reported
+// first so the size of the repair is visible before anything is published, then
+// performed on a second, explicit call.
+export const reportUnsyncedDays = async (): Promise<UnsyncedDaysReport> => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		return { kind: "none", reason: "Not connected to a shared league." };
+	}
+	if (!(engine instanceof SyncEngineV2)) {
+		return {
+			kind: "none",
+			reason: "This repair only applies to v2 rooms.",
+		};
+	}
+	if (!engine.isCaughtUp()) {
+		return {
+			kind: "none",
+			reason:
+				"This device is still catching up on the room. Let it finish first - what looks like a missing day may just be one that has not arrived yet.",
+		};
+	}
+	return describeUnsyncedDays(engine.getAuthority(), engine.isAuthority());
+};
+
+export const pushUnsyncedDays = async (): Promise<{
+	published: boolean;
+	report: UnsyncedDaysReport;
+	outcome?: "confirmed" | "queued";
+}> => {
+	const engine = getSyncEngine();
+	if (!engine || !(engine instanceof SyncEngineV2)) {
+		return {
+			published: false,
+			report: { kind: "none", reason: "Not connected to a v2 shared league." },
+		};
+	}
+	if (!engine.isCaughtUp()) {
+		return {
+			published: false,
+			report: {
+				kind: "none",
+				reason: "Still catching up on the room; not publishing anything yet.",
+			},
+		};
+	}
+
+	// Let any drain in flight finish, so this is not racing the very mechanism
+	// it exists to compensate for.
+	await engine.waitUntilIdle(30_000);
+
+	const { changeset, report } = await buildUnsyncedDaysChangeset(
+		engine.getAuthority(),
+		engine.isAuthority(),
+	);
+	if (report.kind !== "found" || changeset.changes.length === 0) {
+		return { published: false, report };
+	}
+
+	syncDebugLog("v2:pushing-unsynced-days", {
+		season: report.season,
+		days: report.days,
+		games: report.games,
+		records: report.records,
+	});
+
+	// Published under a label that is NOT a timeline advance, on purpose. These
+	// records are already final - they describe games that have been played - so
+	// if the room moves under this publish the right answer is to retry on top of
+	// wherever it got to, which is what an edit does. An advance would be
+	// discarded, which is the behaviour that lost the day in the first place.
+	const outcome = await engine.onLocalChangeset(
+		changeset,
+		"main.pushUnsyncedDays",
+		[],
+	);
+	syncDebugLog("v2:pushed-unsynced-days", { outcome, records: report.records });
+	return { published: true, report, outcome };
+};
+
 export const resyncSharedLeague = async (): Promise<{
 	total: number;
 	applied: number;

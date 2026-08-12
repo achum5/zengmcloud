@@ -200,10 +200,17 @@ describe("buildTickerSegments", () => {
 	});
 
 	test("news is blocked by category, not run together", () => {
+		const categorised = (eid: number, category: string): TickerItem => ({
+			type: "news",
+			key: `news-${eid}`,
+			eid,
+			text: `event ${eid}`,
+			category,
+		});
 		const segments = buildTickerSegments([
-			{ ...news(1), category: "transaction" },
-			{ ...news(2), category: "injury" },
-			{ ...news(3), category: "transaction" },
+			categorised(1, "transaction"),
+			categorised(2, "injury"),
+			categorised(3, "transaction"),
 		]);
 		assert.strictEqual(segments.length, 2);
 		// Two transactions together, the injury on its own.

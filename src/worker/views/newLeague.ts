@@ -161,6 +161,14 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"challengeNoRatings",
 		),
+		teamRatingsDelaySeasons: unwrapGameAttribute(
+			defaultGameAttributes,
+			"teamRatingsDelaySeasons",
+		),
+		saveReplaysTids: unwrapGameAttribute(
+			defaultGameAttributes,
+			"saveReplaysTids",
+		),
 		hideRatingsOnesDigit: unwrapGameAttribute(
 			defaultGameAttributes,
 			"hideRatingsOnesDigit",
