@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
-import type { View } from "../../../common/types.ts";
+import type { TradingCard, View } from "../../../common/types.ts";
 import {
 	CARD_ERAS,
 	CARD_SETS,
@@ -66,6 +66,30 @@ const CreateCards = ({
 	const [frontURL, setFrontURL] = useState("");
 	const [backURL, setBackURL] = useState("");
 	const [saving, setSaving] = useState(false);
+
+	// EDITING AN EXISTING CARD. The form is the same form; all that changes is
+	// that Save writes back to the card's own id instead of minting a new one.
+	// Held whole rather than as an id, because saving has to put back the fields
+	// the form never shows - see save().
+	const [editing, setEditing] = useState<TradingCard | undefined>();
+
+	// Loading a card into the form fights two effects that exist to keep the
+	// form honest while a person fiddles with it: picking a player resets the
+	// season to his most recent, and changing anything about the card wipes the
+	// images (they were generated for the old one). Both are right for a human
+	// turning dials and wrong for a card being restored wholesale, so the load
+	// announces itself here and those effects defer to it.
+	const loadingEdit = useRef<
+		| {
+				pid: number;
+				season: number;
+				setId: string;
+				variantId: string;
+				frontURL: string;
+				backURL: string;
+		  }
+		| undefined
+	>(undefined);
 
 	// Shared with the achievement card modal, and remembered, because a name that
 	// gets a prompt refused once gets every prompt refused.
@@ -162,7 +186,10 @@ const CreateCards = ({
 				return;
 			}
 			setSeasons(options.seasons);
-			setSeason(options.seasons[0] ?? currentSeason);
+			const load = loadingEdit.current;
+			setSeason(
+				load?.pid === pid ? load.season : (options.seasons[0] ?? currentSeason),
+			);
 		})();
 		return () => {
 			stale = true;
@@ -170,9 +197,25 @@ const CreateCards = ({
 	}, [pid, currentSeason]);
 
 	// Any change to what the card IS invalidates the prompts and the images
-	// generated from them.
+	// generated from them - unless this run IS an existing card being loaded
+	// back in, in which case its images are the whole point.
 	useEffect(() => {
 		setPrompts(undefined);
+		const load = loadingEdit.current;
+		if (
+			load &&
+			load.pid === pid &&
+			load.season === season &&
+			load.setId === setId &&
+			load.variantId === variantId
+		) {
+			setFrontURL(load.frontURL);
+			setBackURL(load.backURL);
+			// Consumed: from here on the person is editing, and an ordinary change
+			// to the set or the player should clear the images as it always did.
+			loadingEdit.current = undefined;
+			return;
+		}
 		setFrontURL("");
 		setBackURL("");
 	}, [pid, season, setId, variantId, includeName]);
@@ -236,22 +279,62 @@ const CreateCards = ({
 		setSaving(true);
 		try {
 			await toWorker("main", "upsertTradingCard", {
-				id: uuid(),
+				// The card's own id is what makes this an edit rather than a copy.
+				id: editing?.id ?? uuid(),
 				pid,
 				season,
 				setId,
 				variantId,
+				// Recomputed, so changing the set on an edit renames the card too.
 				title: cardTitle(setId, variantId, season),
 				frontURL,
 				backURL: backURL === "" ? undefined : backURL,
-				at: Date.now(),
+				// CARRIED, NOT REBUILT. The changeset is a whole-record put, so
+				// anything not sent is dropped: `at` orders the gallery (a re-saved
+				// card should stay where it was, not jump to the front) and `by` is
+				// only ever stamped on creation, so losing it would erase who made it.
+				at: editing?.at ?? Date.now(),
+				...(editing?.by === undefined ? {} : { by: editing.by }),
 			});
 			setFrontURL("");
 			setBackURL("");
 			setPrompts(undefined);
+			setEditing(undefined);
 		} finally {
 			setSaving(false);
 		}
+	};
+
+	// Load an existing card back into the form. Everything is set directly AND
+	// announced through loadingEdit, because which of the two arrives first
+	// depends on whether the player changed (the seasons lookup is async).
+	const beginEdit = (card: TradingCard) => {
+		loadingEdit.current = {
+			pid: card.pid,
+			season: card.season,
+			setId: card.setId,
+			variantId: card.variantId,
+			frontURL: card.frontURL,
+			backURL: card.backURL ?? "",
+		};
+		setEditing(card);
+		setSetId(card.setId);
+		setVariantId(card.variantId);
+		setPid(card.pid);
+		setSeason(card.season);
+		setFrontURL(card.frontURL);
+		setBackURL(card.backURL ?? "");
+		setPrompts(undefined);
+		// The form is at the top of a page whose card list is at the bottom.
+		window.scrollTo({ top: 0, behavior: "smooth" });
+	};
+
+	const cancelEdit = () => {
+		loadingEdit.current = undefined;
+		setEditing(undefined);
+		setFrontURL("");
+		setBackURL("");
+		setPrompts(undefined);
 	};
 
 	const refresh = () => {
@@ -550,20 +633,40 @@ const CreateCards = ({
 			<div className="row g-3 mt-1">
 				{imageField("front", frontURL, setFrontURL)}
 				{imageField("back", backURL, setBackURL)}
-				<div className="col-12">
+				<div className="col-12 d-flex flex-wrap align-items-center gap-2">
 					<button
 						type="button"
 						className="btn btn-primary"
 						disabled={!ready || frontURL === "" || saving}
 						onClick={save}
 					>
-						{saving ? "Saving…" : "Save card"}
+						{saving ? "Saving…" : editing ? "Save changes" : "Save card"}
 					</button>
+					{editing ? (
+						<>
+							<button
+								type="button"
+								className="btn btn-secondary"
+								disabled={saving}
+								onClick={cancelEdit}
+							>
+								Cancel
+							</button>
+							<span className="text-body-secondary">
+								Editing {editing.title}
+							</span>
+						</>
+					) : null}
 				</div>
 			</div>
 
 			<h2 className="h5 mt-4">Cards ({cards.length})</h2>
-			<TradingCardGallery cards={cards} showPlayerName onDeleted={refresh} />
+			<TradingCardGallery
+				cards={cards}
+				showPlayerName
+				onDeleted={refresh}
+				onEdit={beginEdit}
+			/>
 		</>
 	);
 };

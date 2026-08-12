@@ -650,14 +650,6 @@ $league-ticker-toggle-width: 26px;
 	// does not start leaves the element where it was with nothing to notice.
 	transition-property: transform;
 	transition-timing-function: linear;
-
-	// A block narrower than the bar has nothing to crawl. Left-aligned that is a
-	// short line of content against a wide black hole; centred it reads as a
-	// deliberately brief block.
-	&.centred {
-		width: 100%;
-		justify-content: center;
-	}
 }
 
 // Held still so the links inside can be clicked. Driven by a class the component
@@ -716,15 +708,6 @@ $league-ticker-toggle-width: 26px;
 	width: 3px;
 	height: 13px;
 	border-radius: 1px;
-	flex: 0 0 auto;
-	align-self: center;
-	margin-right: -0.1rem;
-}
-
-.league-ticker-logo {
-	width: 17px;
-	height: 17px;
-	object-fit: contain;
 	flex: 0 0 auto;
 	align-self: center;
 	margin-right: -0.1rem;

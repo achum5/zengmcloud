@@ -241,6 +241,14 @@ const STORAGE_KEY = "bbgmShowLeagueTicker";
 // is not whipped away the instant it arrives.
 const END_PAUSE_MS = 500;
 
+// And a longer one at the START. A block that begins sliding the instant it
+// appears gives you nothing to read from a standstill: the pane changes, new
+// content arrives, and it is already moving. Holding still for a moment first
+// lets the eye land on what the block IS - the score, the heading, the first
+// item - before any of it starts to travel. Only for blocks that actually have
+// somewhere to go; one that fits the bar is still from the outset anyway.
+const START_PAUSE_MS = 1000;
+
 // How long each page sits still under reduced motion.
 const REDUCED_STEP_MS = 5000;
 
@@ -428,9 +436,28 @@ export const LeagueTicker = memo(() => {
 			// One glide to the far end, then on to the next block.
 			const ms =
 				run.travel > 0 ? run.duration * 1000 * (remaining / run.travel) : 0;
-			setGlide({ key: blockKey, offset: run.travel, ms });
+			// The opening beat, and only for a block starting from the top. Resuming
+			// after a finger has held the bar is a continuation, not an arrival -
+			// pausing again there would read as the ticker having stuck.
+			const lead = run.travel > 0 && from === 0 ? START_PAUSE_MS : 0;
+			if (lead > 0) {
+				// Park it where it is for the beat. Explicitly, rather than by doing
+				// nothing: the previous block's transform is still on the element, so
+				// "no instruction" is not the same as "hold still here".
+				setGlide({ key: blockKey, offset: from, ms: 0 });
+				timers.push(
+					setTimeout(() => {
+						setGlide({ key: blockKey, offset: run.travel, ms });
+					}, lead),
+				);
+			} else {
+				setGlide({ key: blockKey, offset: run.travel, ms });
+			}
 			timers.push(
-				setTimeout(advance, Math.max(run.duration * 1000, ms) + END_PAUSE_MS),
+				setTimeout(
+					advance,
+					lead + Math.max(run.duration * 1000, ms) + END_PAUSE_MS,
+				),
 			);
 		} else {
 			// Someone who has asked for less motion gets the block a page at a time
@@ -518,13 +545,15 @@ export const LeagueTicker = memo(() => {
 			) : null}
 			<div className="league-ticker-viewport" ref={viewportRef}>
 				{show && segment ? (
+					// A block narrower than the bar used to be CENTRED in it, on the
+					// theory that a short line left-aligned reads as a wide black hole.
+					// In a game block it reads as a fault instead: the pane holds the
+					// score, and centring opened a lake of nothing between that score
+					// and the two stat lines belonging to it. Left-aligned, the lines
+					// sit against the score they came from, which is the whole point of
+					// the pane.
 					<div
-						className={clsx("league-ticker-run", {
-							// Nothing to crawl means the block is narrower than the bar.
-							// Left-aligned that is a short line of content and a wide black
-							// hole; centred it reads as deliberate.
-							centred: ready && run.travel === 0,
-						})}
+						className="league-ticker-run"
 						// Names the block AND the pass, so a single-block feed still
 						// changes it every time round. Read by the browser tests to see
 						// the player advance when the pane text cannot show it.

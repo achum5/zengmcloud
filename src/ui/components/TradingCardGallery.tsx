@@ -82,10 +82,15 @@ export const TradingCardGallery = ({
 	cards,
 	showPlayerName,
 	onDeleted,
+	onEdit,
 }: {
 	cards: GalleryCard[];
 	showPlayerName?: boolean;
 	onDeleted?: () => void;
+	// Only the Create Cards page passes this - it is the one place with an
+	// editor to load the card back into. Everywhere else the gallery stays a
+	// display.
+	onEdit?: (card: GalleryCard) => void;
 }) => {
 	const [viewing, setViewing] = useState<string | undefined>();
 
@@ -113,6 +118,18 @@ export const TradingCardGallery = ({
 								alt={card.title}
 							/>
 						</button>
+						{onEdit ? (
+							<button
+								type="button"
+								className="btn btn-sm btn-light trading-card-edit py-0 px-1"
+								title="Edit card"
+								onClick={() => {
+									onEdit(card);
+								}}
+							>
+								<span className="glyphicon glyphicon-edit" />
+							</button>
+						) : null}
 						{onDeleted ? (
 							<button
 								type="button"

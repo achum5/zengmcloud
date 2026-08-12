@@ -2937,8 +2937,18 @@ a.sb-bet-title:hover {
 	opacity: 0;
 	transition: opacity 0.15s;
 }
+// Sits beside Delete, on the same reveal.
+.trading-card-edit {
+	position: absolute;
+	top: 4px;
+	right: 32px;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
 .trading-card-tile:hover .trading-card-delete,
-.trading-card-tile:focus-within .trading-card-delete {
+.trading-card-tile:focus-within .trading-card-delete,
+.trading-card-tile:hover .trading-card-edit,
+.trading-card-tile:focus-within .trading-card-edit {
 	opacity: 1;
 }
 
@@ -3179,14 +3189,6 @@ $league-ticker-toggle-width: 26px;
 	// does not start leaves the element where it was with nothing to notice.
 	transition-property: transform;
 	transition-timing-function: linear;
-
-	// A block narrower than the bar has nothing to crawl. Left-aligned that is a
-	// short line of content against a wide black hole; centred it reads as a
-	// deliberately brief block.
-	&.centred {
-		width: 100%;
-		justify-content: center;
-	}
 }
 
 // Held still so the links inside can be clicked. Driven by a class the component
