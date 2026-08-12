@@ -65,7 +65,6 @@ import {
 	claimSimDayFence,
 	completeClaimedSimDayFence,
 } from "../sync/simDayFence.ts";
-import { getSyncEngine as getSyncEngineForPlay } from "../sync/engineHolder.ts";
 import { syncDebugLog } from "../sync/debugLog.ts";
 import { scheduleForSim } from "./singleGameSchedule.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
@@ -89,6 +88,15 @@ const play = async (
 	gidOneGame?: number,
 	playByPlay?: boolean,
 ) => {
+	// DID A LIVE PLAYBACK ACTUALLY REACH THE SCREEN?
+	//
+	// The live game page is navigated to BEFORE this runs, so it sits on
+	// "Loading..." until the play-by-play arrives - and there are five ways out
+	// of here that never send one: the lock is held, the game is not on the
+	// schedule any more, the roster is illegal, the trade deadline stops the
+	// sim, or the room's fence refuses the day. Every one of them used to leave
+	// that page loading forever. The caller needs a plain answer.
+	let liveSimDelivered = false;
 	// This is called when there are no more games to play, either due to the user's request (e.g. 1 week) elapsing or at the end of the regular season
 	const cbNoGames = async (playoffsOver: boolean = false) => {
 		await updateStatus("Saving...");
@@ -453,6 +461,7 @@ const play = async (
 					playByPlay: liveResult.playByPlay,
 				};
 				url = helpers.leagueUrl(["live_game"]);
+				liveSimDelivered = true;
 				runLiveBroadcastStart(gidOneGame, liveResult.playByPlay);
 			}
 
@@ -717,6 +726,18 @@ const play = async (
 		// game must never be able to advance the timeline.
 		if (plan.requestedGameMissing) {
 			syncDebugLog("sim:live-game-already-played", { gid: gidOneGame });
+			// Say so. This is the ordinary way a Watch click fails now that auto
+			// play sims the day on a timer: the countdown ran out, the day went,
+			// and the button on screen is a second stale. Silence here is what
+			// left the live game page loading forever.
+			logEvent(
+				{
+					type: "error",
+					text: "That game has already been played, so there's nothing to watch. Its box score is in your game log.",
+					saveToDb: false,
+				},
+				conditions,
+			);
 			return cbNoGames();
 		}
 
@@ -899,9 +920,14 @@ const play = async (
 
 		const canStartGames = lock.canStartGames();
 
-		// In a synced room, a silently-refused sim reads as a broken button.
-		// Name the reason in the UI and the sync log instead.
-		if (!canStartGames && getSyncEngineForPlay()) {
+		// A silently-refused sim reads as a broken button. Name the reason.
+		//
+		// Unconditional, not just in a synced room: the play menu disables itself
+		// while a sim runs, but the Watch/Sim buttons on the daily schedule do
+		// not, and auto play can take the lock between the page rendering and the
+		// click landing. That is now the most likely press to be refused, and it
+		// used to be refused in complete silence.
+		if (!canStartGames) {
 			syncDebugLog("sim:cannot-start", {
 				gameSim: lock.get("gameSim"),
 				newPhase: lock.get("newPhase"),
@@ -944,6 +970,8 @@ const play = async (
 	} else {
 		await cbRunDay();
 	}
+
+	return liveSimDelivered;
 };
 
 export default play;

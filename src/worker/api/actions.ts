@@ -178,7 +178,24 @@ const liveGame = async (gid: number, conditions: Conditions) => {
 	// caught-up device then read as "ahead of the room" and ground through
 	// full-log replays forever. The page navigation above has already happened,
 	// so awaiting costs the UI nothing.
-	await game.play(1, conditions, true, gid, true);
+	const delivered = await game.play(1, conditions, true, gid, true);
+
+	// THE SIM DID NOT HAPPEN, AND THE PAGE IS ALREADY THERE.
+	//
+	// Navigating first is what makes the button feel instant, but it means every
+	// way game.play can decline - the lock held by an auto-play day, the game
+	// already played, an illegal roster, the trade deadline, the room's fence -
+	// strands the user on a live game page that says "Loading..." and never
+	// stops. Each of those explains itself in a toast; this is what stops the
+	// screen lying about it. Back to the day's schedule, where the game they
+	// wanted is listed with whatever actually became of it.
+	if (!delivered) {
+		toUI(
+			"realtimeUpdate",
+			[[], helpers.leagueUrl(["daily_schedule"])],
+			conditions,
+		);
+	}
 };
 
 const simGame = async (gid: number, conditions: Conditions) => {

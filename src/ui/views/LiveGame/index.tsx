@@ -1377,10 +1377,25 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const { setDirty } = useBlocker({
 		message: navigateWarning,
 		// A saved replay can be re-watched anytime, so don't block navigation.
-		initialDirty: !isReplay,
+		//
+		// AND NOT UNTIL THERE IS SOMETHING TO LOSE. This page is navigated to
+		// before the sim runs, so it opens holding nothing - and if the sim then
+		// declines (an auto-play day took the lock, the game was already played),
+		// nothing ever arrives. Arming the blocker on mount turned that into a
+		// trap: "Loading..." forever, and a warning about losing play-by-play
+		// results that do not exist standing between the user and any way out.
+		initialDirty: !isReplay && props.events !== undefined,
 		// A follower is locked in until the simmer ends the broadcast.
 		hardBlock: isFollower,
 	});
+
+	// Arm it the moment the playback does arrive - `initialDirty` is only read
+	// once, and the events usually land after the first render.
+	useEffect(() => {
+		if (!isReplay && props.events !== undefined) {
+			setDirty(true);
+		}
+	}, [isReplay, props.events, setDirty]);
 
 	// Make sure to call setPlayIndex after calling this! Can't be done inside because React is not always smart enough to batch renders
 	const processToNextPause = useCallback(
