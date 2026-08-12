@@ -33,20 +33,20 @@ import { recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
 import {
 	applyHeaderShift,
 	headerVisualShift,
+	tickerVisualShift,
 	initVisualViewportHeader,
 } from "./visualViewportHeader.ts";
 
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 
-// THE BOTTOM TICKER HAS THE SAME DISEASE.
+// THE BOTTOM TICKER HAS THE SAME DISEASE, and by now the same treatment: it is
+// position:sticky against the document, exactly like the header, for exactly the
+// reason in the history above. So it inherits the same failure - WebKit hands
+// the compositor constraints computed against a layout that no longer exists,
+// and the bar rides up the page with the content and stays there.
 //
-// It is position:fixed rather than sticky, but the failure is identical and for
-// the same reason: WebKit hands the compositor a rule for where the element
-// belongs, the web view is resized out from under it, and the compositor goes on
-// applying a rule computed against a layout that no longer exists. The bar then
-// scrolls up the page with the document and stays wherever it landed.
-//
-// Same detection shape, same repair ladder, same watch - only the measurement
+// Same detection shape, same repair ladder, same watch, and the same standing
+// visual-viewport correction (visualViewportHeader.ts). Only the measurement
 // differs, because what a bottom bar must hold still is its bottom edge against
 // the foot of the viewport rather than its top edge against the top.
 const TICKER_SELECTOR = ".league-ticker";
@@ -129,18 +129,18 @@ export const headerIsDetached = ({
 type BottomDeps = {
 	// Viewport-relative bottom edge of the bar.
 	barBottom: () => number;
-	// Height of the LAYOUT viewport, which is what a fixed element is positioned
-	// against - not the visible area, which zoom and the URL bar both change.
+	// Height of the LAYOUT viewport, which is what sticky is anchored against -
+	// not the visible area, which zoom and the URL bar both change.
 	layoutHeight: () => number;
 	pinnedByModal: () => boolean;
 	visualOffsetTop: () => number;
 };
 
-// Is a bar fixed to the bottom of the window provably not there?
+// Is a bar stuck to the bottom of the window provably not there?
 //
-// Unlike the header this is answerable at any scroll position: a bottom-fixed
-// bar belongs at the foot of the viewport always, so there is no equivalent of
-// "at the top of the document the two cases look the same".
+// Unlike the header this is answerable at any scroll position: a bottom bar
+// belongs at the foot of the viewport always, so there is no equivalent of "at
+// the top of the document the two cases look the same".
 //
 // Both directions count. A stale compositor rule leaves the bar wherever it was
 // last composited, and the page can then scroll either way underneath it.
@@ -162,8 +162,8 @@ export const bottomBarIsDetached = ({
 		return false;
 	}
 	// Same correction as the header, for the same reason: getBoundingClientRect
-	// reports against the VISUAL viewport while fixed positions against the
-	// LAYOUT one, so a bar doing exactly the right thing on a panned or zoomed
+	// reports against the VISUAL viewport while sticky is anchored to the LAYOUT
+	// one, so a bar doing exactly the right thing on a panned or zoomed
 	// page reads short by the offset between them.
 	const offset = visualOffsetTop();
 	const expected = height - (Number.isFinite(offset) ? offset : 0);
@@ -485,6 +485,14 @@ export const forceHeaderRepair = async () => {
 	applyHeaderShift(
 		HEADER_BAR.get(),
 		headerVisualShift(window.visualViewport?.offsetTop),
+	);
+	applyHeaderShift(
+		TICKER_BAR.get(),
+		tickerVisualShift({
+			offsetTop: window.visualViewport?.offsetTop,
+			visualHeight: window.visualViewport?.height,
+			layoutHeight: layoutViewportHeight(),
+		}),
 	);
 	for (const bar of BARS) {
 		await forceBarRepair(bar);
