@@ -191,8 +191,11 @@ export const Controller = () => {
 				</div>
 			</div>
 			<Notifications />
-			{popup ? null : <LeagueTicker />}
 			<SyncDebugOverlay />
+			{/* LAST, and in the flow. The ticker is position:sticky against the
+			    document, so it has to be the final child of #content for its natural
+			    position to be the bottom of the page. */}
+			{popup ? null : <LeagueTicker />}
 		</LazyMotion>
 	);
 };

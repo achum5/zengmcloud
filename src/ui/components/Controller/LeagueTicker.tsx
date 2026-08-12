@@ -1,5 +1,6 @@
 import {
 	memo,
+	useCallback,
 	useEffect,
 	useLayoutEffect,
 	useMemo,
@@ -11,11 +12,13 @@ import { localActions, useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { SafeHtml } from "../SafeHtml.tsx";
-import { categories } from "../../../common/transactionInfo.ts";
 import {
+	buildTickerSegments,
 	buildTickerStream,
-	tickerDurationSeconds,
+	segmentDurationSeconds,
+	segmentTravelPx,
 	tickerMayUpdate,
+	type TickerHeader,
 	type TickerItem,
 } from "../../../common/ticker.ts";
 
@@ -54,36 +57,37 @@ import {
 // THE PAGE UNDERNEATH. Being fixed, it covers the bottom of every page unless
 // the document is given that much extra scrollable space - see the body class.
 
-// WHAT THE LEFT PANE SAYS.
+// THE LEFT PANE.
 //
-// The name of whatever is going past right now - SCORES, then ODDS, then MVP,
-// then TRANSACTIONS - and it changes as the marquee reaches each new kind of
-// item. That is the whole point of the pane: it used to be a label printed in
-// front of EVERY item, which meant reading "INJURIES" forty times to learn one
-// thing. Said once, in a fixed place, it costs nothing and the items get to be
-// only their own content.
-const railLabel = (item: TickerItem): string => {
-	switch (item.type) {
-		case "score": {
-			return "Scores";
-		}
-		case "upcoming": {
-			return "Odds";
-		}
-		case "performance": {
-			return "Top Performers";
-		}
-		case "race": {
-			// The award itself - MVP, DPOY - not the generic word "award".
-			return item.label;
-		}
-		default: {
-			const known = item.category !== undefined && item.category in categories;
-			return known
-				? categories[item.category as keyof typeof categories].text
-				: "News";
-		}
+// Two things it can hold. Usually the name of the block going past - SCORES,
+// ODDS, MVP, TRANSACTIONS - said once, in a place that does not move. For a
+// single game it holds the score itself, stacked, while that game's stat lines
+// scroll beside it, which is the thing a broadcast ticker does that a list
+// cannot.
+//
+// It used to be a label printed in front of every item, so a run of eighteen
+// news items meant reading "TRANSACTIONS" eighteen times to learn one thing.
+const Pane = ({ header }: { header: TickerHeader }) => {
+	if (header.kind === "label") {
+		return <span className="league-ticker-pane-label">{header.text}</span>;
 	}
+
+	const { away, home } = header;
+	const side = (team: typeof away, lost: boolean) => (
+		<span className={clsx("league-ticker-pane-row", { dim: lost })}>
+			<span className="league-ticker-pane-abbrev">{team.abbrev}</span>
+			<span className="league-ticker-pane-pts">{team.pts ?? 0}</span>
+		</span>
+	);
+	const awayPts = away.pts ?? 0;
+	const homePts = home.pts ?? 0;
+
+	return (
+		<span className="league-ticker-pane-score">
+			{side(away, awayPts < homePts)}
+			{side(home, homePts < awayPts)}
+		</span>
+	);
 };
 
 const Score = ({ item }: { item: Extract<TickerItem, { type: "score" }> }) => {
@@ -149,9 +153,8 @@ const Performance = ({
 		>
 			{item.name}
 		</a>
-		<span className="league-ticker-stat">{item.stat}</span>
 		<a
-			className="league-ticker-aside"
+			className="league-ticker-stat"
 			href={helpers.leagueUrl([
 				"game_log",
 				item.boxScoreTeam,
@@ -159,7 +162,7 @@ const Performance = ({
 				item.gid,
 			])}
 		>
-			{item.game}
+			{item.stat}
 		</a>
 	</span>
 );
@@ -238,81 +241,33 @@ export const LeagueTicker = memo(() => {
 		return next;
 	}, [tickerItems, mayUpdate]);
 
-	// WHICH ITEM THE LEFT PANE IS NAMING.
-	//
-	// Read off the marquee's real position rather than computed from the clock.
-	// The animation pauses on hover and on touch, and under reduced motion there
-	// is no animation at all - the bar is scrolled by hand - so elapsed time says
-	// nothing reliable about where the track actually is. One rect read does.
-	//
-	// Item offsets within the track are measured once per layout: they only move
-	// when the feed or the window changes, and reading fifty of them on every
-	// frame would be a layout flush several times a second for a caption.
-	const viewportRef = useRef<HTMLDivElement>(null);
-	const trackRef = useRef<HTMLDivElement>(null);
-	const offsets = useRef<number[]>([]);
-	const cycle = useRef(0);
-	const [leading, setLeading] = useState(0);
+	const segments = useMemo(() => buildTickerSegments(items), [items]);
 
-	useLayoutEffect(() => {
-		const measure = () => {
-			const track = trackRef.current;
-			if (!track) {
-				return;
-			}
-			// Direct children only - the second copy is nested inside its own span,
-			// so this is one pass of the loop and nothing repeats.
-			offsets.current = [
-				...track.querySelectorAll<HTMLElement>(":scope > .league-ticker-item"),
-			].map((node) => node.offsetLeft);
-			// Where the duplicate starts IS the length of one pass.
-			const duplicate = track.querySelector<HTMLElement>(":scope > [data-dup]");
-			cycle.current = duplicate ? duplicate.offsetLeft : track.scrollWidth / 2;
-		};
-		measure();
-		window.addEventListener("resize", measure);
-		return () => window.removeEventListener("resize", measure);
-	}, [items, show]);
+	// WHICH BLOCK IS PLAYING.
+	//
+	// State, not an observation. The player holds an index, the block at that
+	// index is the only thing rendered, and it advances when that block's crawl
+	// finishes. Nothing has to measure where a moving element currently is - which
+	// is what the previous version did, and why the pane never changed on iOS,
+	// where a compositor-driven transform does not report back to the main thread.
+	const [index, setIndex] = useState(0);
+	const segment = segments[Math.min(index, segments.length - 1)];
+	const advance = useCallback(() => {
+		setIndex((previous) =>
+			segments.length > 0 ? (previous + 1) % segments.length : 0,
+		);
+	}, [segments.length]);
 
+	// A refreshed feed can be shorter than the one being played.
 	useEffect(() => {
-		if (!show) {
-			return;
-		}
-		let frame = 0;
-		let last = 0;
-		const tick = (now: number) => {
-			frame = requestAnimationFrame(tick);
-			// A caption does not need sixty updates a second, and each one costs a
-			// pair of rect reads.
-			if (now - last < 120) {
-				return;
-			}
-			last = now;
-			const viewport = viewportRef.current;
-			const track = trackRef.current;
-			if (!viewport || !track || cycle.current <= 0) {
-				return;
-			}
-			// How far into one pass of the track the viewport's left edge currently
-			// sits, wrapped, because the track loops.
-			const into =
-				viewport.getBoundingClientRect().left -
-				track.getBoundingClientRect().left;
-			const x = ((into % cycle.current) + cycle.current) % cycle.current;
-			let index = 0;
-			for (const [i, offset] of offsets.current.entries()) {
-				if (offset > x) {
-					break;
-				}
-				index = i;
-			}
-			setLeading((previous) => (previous === index ? previous : index));
-		};
-		frame = requestAnimationFrame(tick);
-		return () => cancelAnimationFrame(frame);
-	}, [show, items]);
+		setIndex((previous) =>
+			segments.length > 0 && previous >= segments.length ? 0 : previous,
+		);
+	}, [segments]);
 
-	// Reduced motion: keep the bar, drop the movement.
+	// Reduced motion: keep the bar, drop the movement. Blocks still change, on a
+	// timer instead of at the end of a crawl, and the contents can be scrolled by
+	// hand.
 	const [animate, setAnimate] = useState(true);
 	useEffect(() => {
 		const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -322,7 +277,47 @@ export const LeagueTicker = memo(() => {
 		return () => query.removeEventListener("change", apply);
 	}, []);
 
-	const visible = lid !== undefined && items.length > 0;
+	// HOW FAR AND HOW LONG THIS BLOCK HAS TO TRAVEL.
+	//
+	// Two layout reads per block - the viewport's width and the block's own - and
+	// nothing per frame. Both are layout values rather than animated positions, so
+	// they are honest on every platform. The crawl is held off until they are
+	// taken, so it cannot start from the wrong place and jump.
+	const viewportRef = useRef<HTMLDivElement>(null);
+	const runRef = useRef<HTMLDivElement>(null);
+	const [run, setRun] = useState<
+		{ key: string; travel: number; duration: number } | undefined
+	>();
+	const key = segment?.key;
+
+	useLayoutEffect(() => {
+		const measure = () => {
+			const viewport = viewportRef.current;
+			const element = runRef.current;
+			if (!viewport || !element || key === undefined) {
+				return;
+			}
+			const travel = segmentTravelPx(
+				element.scrollWidth,
+				viewport.getBoundingClientRect().width,
+			);
+			setRun({ key, travel, duration: segmentDurationSeconds(travel) });
+		};
+		measure();
+		window.addEventListener("resize", measure);
+		return () => window.removeEventListener("resize", measure);
+	}, [key, items]);
+
+	// Under reduced motion there is no crawl to end, so time the block instead.
+	useEffect(() => {
+		if (animate || segments.length < 2) {
+			return;
+		}
+		const timer = setTimeout(advance, 9000);
+		return () => clearTimeout(timer);
+	}, [advance, animate, key, segments.length]);
+
+	const visible = lid !== undefined && segments.length > 0;
 	useEffect(() => {
 		localActions.update({ leagueTickerVisible: visible });
 
@@ -349,34 +344,43 @@ export const LeagueTicker = memo(() => {
 		return null;
 	}
 
-	const duration = tickerDurationSeconds(items.length);
+	const ready = run?.key === key;
 
 	return (
 		<div className={clsx("league-ticker", { collapsed: !show })}>
-			{show ? (
-				<div className="league-ticker-label">
-					{railLabel(items[leading] ?? items[0]!)}
+			{show && segment ? (
+				<div className="league-ticker-pane">
+					{/* Keyed on the block, so React remounts it and the entrance
+					    animation replays every time the pane changes - the change is
+					    the signal that a new block has started. */}
+					<div className="league-ticker-pane-in" key={segment.key}>
+						<Pane header={segment.header} />
+					</div>
 				</div>
 			) : null}
 			<div className="league-ticker-viewport" ref={viewportRef}>
-				{show ? (
+				{show && segment ? (
 					<div
-						className={clsx("league-ticker-track", {
-							"league-ticker-animate": animate,
+						className={clsx("league-ticker-run", {
+							"league-ticker-crawl": animate && ready,
 						})}
-						ref={trackRef}
-						style={animate ? { animationDuration: `${duration}s` } : undefined}
+						key={segment.key}
+						ref={runRef}
+						onAnimationEnd={advance}
+						style={
+							ready
+								? {
+										// Starts a full viewport to the right and finishes a full
+										// block-width to the left, so it enters and leaves clean.
+										["--run-from" as any]: `${run.from}px`,
+										animationDuration: `${run.duration}s`,
+									}
+								: undefined
+						}
 					>
-						{/* Twice, so the loop has no seam: the second copy is scrolling
-						    into place as the first scrolls out. */}
-						{items.map((item) => (
+						{segment.items.map((item) => (
 							<Item key={item.key} item={item} />
 						))}
-						<span aria-hidden="true" className="d-flex" data-dup="">
-							{items.map((item) => (
-								<Item key={`dup-${item.key}`} item={item} />
-							))}
-						</span>
 					</div>
 				) : null}
 			</div>

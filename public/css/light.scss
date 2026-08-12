@@ -3002,6 +3002,23 @@ $league-ticker-height: 36px;
 $league-ticker-collapsed-height: 16px;
 $league-ticker-toggle-width: 26px;
 
+// STICKY, NOT FIXED, and this is the whole reason the bar stays put.
+//
+// position:fixed is not reliable on iOS: during a flick and its momentum the
+// compositor does not reposition a fixed element, so it rides up the page with
+// the content and lands wherever the scroll stopped. That is exactly the history
+// at the top of stickyHeaderWatchdog.ts - the header was fixed, it drifted, a
+// translateZ promotion did not help, and converting it to sticky did. A watchdog
+// cannot fix this one either, because it only measures at rest, and at rest the
+// bar has usually snapped back.
+//
+// So the bar is a real element at the end of #content, which is a 100dvh flex
+// column, and it sticks to the bottom of the document the same way the header
+// sticks to the top. Two things follow from that and are not incidental: it can
+// no longer cover the foot of a page, because it occupies actual space; and on a
+// page shorter than the window it still sits at the bottom, because #content is
+// a full viewport tall.
+//
 // This is broadcast chrome, so it keeps its own dark palette in both themes
 // rather than following the page. A score bar looks like a score bar.
 .league-ticker {
@@ -3010,14 +3027,12 @@ $league-ticker-toggle-width: 26px;
 	--ticker-dim: #8f98a5;
 	--ticker-faint: #6b7480;
 	--ticker-rule: #2b3038;
-	--ticker-accent: #ff4d4f;
 	--ticker-odds: #f3c14b;
 
-	position: fixed;
+	position: sticky;
 	bottom: 0;
-	left: 0;
-	right: 0;
 	z-index: 1030;
+	flex: 0 0 auto;
 	display: flex;
 	align-items: stretch;
 	background-color: var(--ticker-bg);
@@ -3041,36 +3056,92 @@ $league-ticker-toggle-width: 26px;
 	}
 }
 
-// THE LEFT PANE. Names whatever is going past right now and changes when the
-// marquee reaches the next kind of item, the way a broadcast score bar puts the
-// league or the section in a fixed block and lets the content run beside it.
+// THE LEFT PANE. Holds the name of the block currently going past - or, for a
+// single game, that game's score - and changes when the block does, the way a
+// broadcast score bar keeps a fixed marker beside a moving crawl.
 //
 // A share of the width rather than a fixed size, so it stays in proportion on a
-// phone, but clamped: below about 80px the longer labels have nowhere to go, and
-// above about 130px it is eating the part of the bar people are reading.
-.league-ticker-label {
+// phone, but clamped: the floor is set by the longest label (TRANSACTIONS, TOP
+// PERFORMERS), below which the text clips, and the ceiling stops it eating the
+// part of the bar people are actually reading.
+.league-ticker-pane {
 	flex: 0 0 auto;
-	// The floor is set by the longest label - TRANSACTIONS, TOP PERFORMERS - not
-	// by taste. Below it the text clips, which is worse than no pane at all.
 	width: clamp(96px, 13%, 132px);
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	padding: 0 0.4rem;
+	overflow: hidden;
 	border-right: 1px solid var(--ticker-rule);
-	// The one place the accent colour is a surface rather than text - it is what
-	// makes the pane read as a marker instead of just another item.
-	box-shadow: inset 3px 0 0 var(--ticker-accent);
-	background-color: rgb(255 255 255 / 5%);
+	background-color: rgb(255 255 255 / 7%);
 	color: var(--ticker-fg);
+}
+
+// The pane is remounted on every block change, so this replays each time and IS
+// the signal that something new has started.
+@keyframes league-ticker-pane-in {
+	from {
+		opacity: 0;
+		transform: translateY(60%);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.league-ticker-pane-in {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	animation: league-ticker-pane-in 0.28s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.league-ticker-pane-in {
+		animation: none;
+	}
+}
+
+.league-ticker-pane-label {
 	font-size: 0.625rem;
 	font-weight: 800;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
 	line-height: 1.1;
 	text-align: center;
-	// Two short words are allowed to stack; anything longer is the label's fault.
-	overflow: hidden;
+}
+
+// A score in the pane: two rows, the loser dimmed, the same reading as a
+// scoreboard rather than a sentence.
+.league-ticker-pane-score {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	width: 100%;
+	line-height: 1.15;
+	font-size: 0.6875rem;
+}
+
+.league-ticker-pane-row {
+	display: flex;
+	justify-content: space-between;
+	gap: 0.35rem;
+
+	&.dim {
+		color: var(--ticker-dim);
+	}
+}
+
+.league-ticker-pane-abbrev {
+	font-weight: 700;
+	letter-spacing: 0.02em;
+}
+
+.league-ticker-pane-pts {
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
 }
 
 .league-ticker-viewport {
@@ -3090,7 +3161,16 @@ $league-ticker-toggle-width: 26px;
 	);
 }
 
-.league-ticker-track {
+// ONE BLOCK'S CRAWL. Starts flush against the pane and travels exactly its own
+// overflow, so the bar is full from a block's first frame to its last - running
+// it in from off-screen and out the other side left the bar empty for seconds at
+// both ends of every block. When the animation ends the component advances to
+// the next block, which is the clock the whole thing runs on: no infinite loop,
+// and nothing has to measure a moving element.
+//
+// A block narrower than the bar travels nothing, and the animation is then pure
+// dwell time before the next one.
+.league-ticker-run {
 	display: flex;
 	align-items: center;
 	flex-wrap: nowrap;
@@ -3098,36 +3178,37 @@ $league-ticker-toggle-width: 26px;
 	will-change: transform;
 }
 
-// One transform, composited, no layout per frame. Duration is set inline from
-// how much there is to show.
-@keyframes league-ticker-scroll {
+@keyframes league-ticker-crawl {
 	from {
 		transform: translate3d(0, 0, 0);
 	}
 	to {
-		transform: translate3d(-50%, 0, 0);
+		transform: translate3d(calc(-1 * var(--run-travel, 0px)), 0, 0);
 	}
 }
 
-.league-ticker-animate {
-	animation-name: league-ticker-scroll;
+.league-ticker-crawl {
+	animation-name: league-ticker-crawl;
 	animation-timing-function: linear;
-	animation-iteration-count: infinite;
+	animation-iteration-count: 1;
+	animation-fill-mode: forwards;
 }
 
 // Stop it so the links inside can be clicked. Touch counts: on a phone there is
 // no hover, so :active is what a finger down gives you.
-.league-ticker:hover .league-ticker-animate,
-.league-ticker:active .league-ticker-animate {
+.league-ticker:hover .league-ticker-crawl,
+.league-ticker:active .league-ticker-crawl {
 	animation-play-state: paused;
 }
 
-// Someone who has asked for less motion gets a bar they can scroll themselves.
+// Someone who has asked for less motion gets a block they can scroll themselves,
+// sitting still; the component changes blocks on a timer instead.
 @media (prefers-reduced-motion: reduce) {
 	.league-ticker-viewport {
 		overflow-x: auto;
 	}
-	.league-ticker-animate {
+	.league-ticker-run {
+		transform: none;
 		animation: none;
 	}
 }
@@ -3282,27 +3363,12 @@ $league-ticker-toggle-width: 26px;
 	}
 }
 
-// THE FIXED BAR STEALS THE BOTTOM OF EVERY PAGE unless the document is given
-// that much extra scrollable space. The window is the scroll container here
-// (see the note above the sticky header), so the padding goes on <body>: the
-// page then scrolls far enough that its real last row clears the ticker
-// instead of sitting permanently underneath it.
+// No padding on <body> for the bar any more, and that is the point of it being
+// sticky: it is in the flow, so the foot of every page already ends above it
+// instead of hiding underneath it. The body classes remain because things that
+// really are fixed - the sidebar, notifications - still have to clear it.
 //
-// Set from the ticker component rather than assumed, because the bar is not
-// always there - no league, an empty feed, or the user having hidden it.
-body.has-league-ticker {
-	padding-bottom: calc(
-		#{$league-ticker-height} + env(safe-area-inset-bottom, 0px)
-	);
-}
-
-body.has-league-ticker-collapsed {
-	padding-bottom: calc(
-		#{$league-ticker-collapsed-height} + env(safe-area-inset-bottom, 0px)
-	);
-}
-
-// AND THE SIDEBAR HAS TO GET OUT OF THE WAY.
+// THE SIDEBAR HAS TO GET OUT OF THE WAY.
 //
 // .sidebar-inner is fixed to the bottom of the window at a higher z-index than
 // the ticker, so on a wide screen it sat on top of the bar's left end - which is

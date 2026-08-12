@@ -95,8 +95,17 @@ const scoreItems = (games: Game[]): TickerItem[] =>
 // ---------------------------------------------------------- day's performances
 // The stat lines worth stopping the scroll for, ranked by a rough game score so
 // a 40-point night and a triple-double both qualify.
+//
+// GROUPED BY GAME, and returned that way. The ticker turns each game's lines
+// into a block with the score held in the left pane beside them, so what is
+// wanted is the best few lines from each of the best few games - not a flat top
+// six, which in practice came from six different games and left every one of
+// them without its context.
+const LINES_PER_GAME = 3;
+const GAMES_WITH_LINES = 6;
+
 const performanceItems = (games: Game[]): TickerItem[] => {
-	type Row = { score: number; item: TickerItem };
+	type Row = { score: number; gid: number; item: TickerItem };
 	const rows: Row[] = [];
 
 	for (const game of games) {
@@ -145,6 +154,7 @@ const performanceItems = (games: Game[]): TickerItem[] => {
 
 				rows.push({
 					score: line.score,
+					gid: game.gid,
 					item: {
 						type: "performance",
 						key: `perf-${game.gid}-${p.pid}`,
@@ -164,7 +174,23 @@ const performanceItems = (games: Game[]): TickerItem[] => {
 	}
 
 	rows.sort((a, b) => b.score - a.score);
-	return rows.slice(0, TICKER_LIMITS.performance).map((row) => row.item);
+
+	// Best lines first, so each game keeps its best and the games rank by their
+	// single best line. Emitted game by game, contiguously, because that grouping
+	// is what the segment builder reads.
+	const byGame = new Map<number, TickerItem[]>();
+	for (const row of rows) {
+		const lines = byGame.get(row.gid);
+		if (lines) {
+			if (lines.length < LINES_PER_GAME) {
+				lines.push(row.item);
+			}
+		} else if (byGame.size < GAMES_WITH_LINES) {
+			byGame.set(row.gid, [row.item]);
+		}
+	}
+
+	return [...byGame.values()].flat().slice(0, TICKER_LIMITS.performance);
 };
 
 // A ticker says MVP, not Most Valuable Player - the full names are longer than
@@ -184,8 +210,15 @@ const SHORT_AWARD: Record<string, string> = {
 };
 
 // ------------------------------------------------------------------ the news
-// tradingCard is your own card generator reporting back, not league news.
-const IGNORE_TYPES = new Set(["retiredList", "newTeam", "tradingCard"]);
+// tradingCard is your own card generator reporting back, not league news, and
+// newLeague is a one-line greeting that would otherwise get a whole block of the
+// ticker to itself for as long as the league is young.
+const IGNORE_TYPES = new Set([
+	"retiredList",
+	"newTeam",
+	"tradingCard",
+	"newLeague",
+]);
 const MIN_NEWS_SCORE = 10;
 const MAX_NEWS_SCANNED = 400;
 
