@@ -32,19 +32,23 @@ type Most = {
 //   valueDiffFrom - most.value is (ovr - extra[key]); shown as the difference
 //                   of the two DISPLAYED ovrs, so 56 -> 58 reads as 0 and
 //                   58 -> 62 reads as +1, matching coarsenRatingChange
-//   valueMagnitude- most.value is on the rating scale with no endpoints stored
-//                   (the injury drop is recorded as a bare number)
+//
+// WORST INJURIES IS DELIBERATELY ABSENT. Its value is an ovr DROP, and a drop
+// is not a rating: flooring it to the tens digit turned every ordinary injury
+// into "0" and the whole list - which exists to rank players by that number -
+// into a column of zeroes with a scrambled order underneath. The exact drop is
+// also already on screen at full resolution in the two other places it appears
+// (the Injuries page and each player's own Injuries table, neither of which
+// coarsens it), so hiding it here bought nothing and cost the page its point.
 const MOST_RATING_FIELDS: Record<
 	string,
 	{
 		extraOvrs?: string[];
 		valueDiffFrom?: string;
-		valueMagnitude?: boolean;
 	}
 > = {
 	progs: { valueDiffFrom: "progFrom" },
 	progs_career: { valueDiffFrom: "progFrom" },
-	worst_injuries: { valueMagnitude: true },
 	oldest: { extraOvrs: ["ovr"] },
 	oldest_peaks: { extraOvrs: ["ovr"] },
 	youngest_peaks: { extraOvrs: ["ovr"] },
@@ -70,8 +74,6 @@ export const coarsenMostForDisplay = (most: Most, type: string): Most => {
 		if (typeof from === "number" && typeof most.value === "number") {
 			out.value = coarsenRatingChange(from + most.value, most.value);
 		}
-	} else if (fields.valueMagnitude && typeof most.value === "number") {
-		out.value = coarsenRating(most.value);
 	}
 
 	if (fields.extraOvrs && extra) {

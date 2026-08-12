@@ -112,13 +112,14 @@ export const coarsenRatingValue = (value: unknown): unknown => {
 // whole decade of players shows the same number. Sorting on one of these is a
 // ten-way tie, and whatever breaks the tie is a ranking of the hidden ones
 // digit - see the scramble in DataTable's processRows.
+// An injury's ovr/pot DROP is not here: a drop is a difference, not a rating,
+// and nothing coarsens it on any of the three pages that show one. Listing it
+// would have the table scramble ties in a column whose numbers are exact.
 const COARSENED_RATING_COLS = new Set([
 	"Ovr",
 	"Pot",
 	"Peak Ovr",
 	"Rookie Ovr",
-	"Ovr Drop",
-	"Pot Drop",
 	// Year-over-year ovr change, coarsened as a difference of displayed values.
 	"Prog",
 ]);

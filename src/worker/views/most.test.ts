@@ -55,16 +55,20 @@ describe("coarsening the frivolities' rating columns", () => {
 		});
 	});
 
-	// The injury drop is stored as a bare number, so there are no endpoints to
-	// difference - the magnitude itself goes on the 0-10 scale.
-	test("an injury's ovr drop loses its ones digit", () => {
+	// AN INJURY'S OVR DROP IS SHOWN EXACTLY, even here. It is a difference, not
+	// a rating, so flooring it to the tens digit turned every ordinary injury
+	// into "0" and left a list whose entire purpose is ranking by that number as
+	// a column of zeroes. The same drop is already on screen at full resolution
+	// on the Injuries page and on each player's own Injuries table.
+	test("an injury's ovr drop keeps its ones digit", () => {
 		assert.strictEqual(
 			coarsenMostForDisplay({ value: 17 }, "worst_injuries").value,
-			1,
+			17,
 		);
 		assert.strictEqual(
-			coarsenMostForDisplay({ value: 24 }, "worst_injuries").value,
-			2,
+			coarsenMostForDisplay({ value: 4 }, "worst_injuries").value,
+			4,
+			"a single-digit drop would otherwise vanish to 0",
 		);
 	});
 
