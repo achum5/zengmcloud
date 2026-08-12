@@ -211,6 +211,27 @@ const Item = ({ item }: { item: TickerItem }) => {
 
 const STORAGE_KEY = "bbgmShowLeagueTicker";
 
+// A beat at the end of a block before the next one takes over, so the last item
+// is not whipped away the instant it arrives.
+const END_PAUSE_MS = 500;
+
+// How long each page sits still under reduced motion.
+const REDUCED_STEP_MS = 5000;
+
+// Where the transform has actually reached, mid-glide. "none" and anything
+// unparseable mean it has not moved.
+const readOffset = (element: HTMLElement): number => {
+	const { transform } = window.getComputedStyle(element);
+	if (!transform || transform === "none") {
+		return 0;
+	}
+	try {
+		return Math.max(0, -new DOMMatrixReadOnly(transform).m41);
+	} catch {
+		return 0;
+	}
+};
+
 export const LeagueTicker = memo(() => {
 	const { lid, liveGameInProgress, mpLiveBroadcast, tickerItems } = useLocal([
 		"lid",
@@ -300,6 +321,7 @@ export const LeagueTicker = memo(() => {
 	// taken, so it cannot start from the wrong place and jump.
 	const viewportRef = useRef<HTMLDivElement>(null);
 	const runRef = useRef<HTMLDivElement>(null);
+	const viewportWidth = useRef(0);
 	const [run, setRun] = useState<
 		{ key: string; travel: number; duration: number } | undefined
 	>();
@@ -311,9 +333,10 @@ export const LeagueTicker = memo(() => {
 			if (!viewport || !element || blockKey === undefined) {
 				return;
 			}
+			viewportWidth.current = viewport.getBoundingClientRect().width;
 			const travel = segmentTravelPx(
 				element.scrollWidth,
-				viewport.getBoundingClientRect().width,
+				viewportWidth.current,
 			);
 			setRun({
 				key: blockKey,
@@ -328,22 +351,101 @@ export const LeagueTicker = memo(() => {
 
 	const ready = blockKey !== undefined && run?.key === blockKey;
 
-	// THE CLOCK. A timer, not the end of the animation.
+	// HOW THE CONTENTS ACTUALLY MOVE.
 	//
-	// animationend is a fine signal right up until there is no animation to end,
-	// and there are several ordinary ways for that to happen: reduced motion turns
-	// it off, a block narrower than the bar has nothing to travel, a paused
-	// animation never finishes, and a browser is free to skip one that changes
-	// nothing. Every one of those left the ticker frozen on whatever block it was
-	// on. A timer cannot be skipped, so the timer owns the clock and animationend
-	// is only allowed to make it snappier.
+	// A transform this component sets, glided by a CSS transition - NOT a CSS
+	// @keyframes animation. The difference is what happens when the animation does
+	// not run, and on a real device that turns out to be a thing that happens: the
+	// bar sat on its first transaction, correctly positioned, correctly measured,
+	// and never moved a pixel. A keyframes animation that does not start leaves the
+	// element exactly where it was and there is no way to notice.
+	//
+	// A transform is a fact about the element. If the transition runs, it glides;
+	// if the transition is refused for any reason, the transform still lands and
+	// the block jumps to its end instead. Degraded, but never static - and the
+	// clock keeps running underneath either way.
+	const [glide, setGlide] = useState<{
+		key: string;
+		offset: number;
+		ms: number;
+	}>();
+
+	// Frozen where it stands when a mouse rests on it, by reading back the
+	// transform the transition has reached. Resuming glides the rest of the way in
+	// proportion, rather than restarting the block under the cursor.
+	const frozenOffset = useRef(0);
 	useEffect(() => {
-		if (!show || !ready || holding) {
+		if (!holding || !runRef.current || blockKey === undefined) {
 			return;
 		}
-		const timer = setTimeout(advance, run.duration * 1000 + 300);
-		return () => clearTimeout(timer);
-	}, [advance, holding, ready, run?.duration, show]);
+		frozenOffset.current = readOffset(runRef.current);
+		setGlide({ key: blockKey, offset: frozenOffset.current, ms: 0 });
+	}, [blockKey, holding]);
+
+	// THE CLOCK, and the movement it drives. A timer, not the end of an animation.
+	//
+	// animationend was the clock once, and it is a fine signal right up until there
+	// is no animation to end - reduced motion turns it off, a block narrower than
+	// the bar has nothing to travel, a paused animation never finishes, and a
+	// browser may skip one that changes nothing. A timer cannot be skipped.
+	useEffect(() => {
+		if (!show || !ready || holding || blockKey === undefined) {
+			return;
+		}
+
+		const from = frozenOffset.current;
+		frozenOffset.current = 0;
+		const remaining = Math.max(0, run.travel - from);
+		const timers: ReturnType<typeof setTimeout>[] = [];
+
+		if (animate) {
+			// One glide to the far end, then on to the next block.
+			const ms =
+				run.travel > 0 ? run.duration * 1000 * (remaining / run.travel) : 0;
+			setGlide({ key: blockKey, offset: run.travel, ms });
+			timers.push(
+				setTimeout(advance, Math.max(run.duration * 1000, ms) + END_PAUSE_MS),
+			);
+		} else {
+			// Someone who has asked for less motion gets the block a page at a time
+			// rather than a crawl - discrete, and still readable, where holding it
+			// perfectly still would just be a frozen ticker.
+			const page = Math.max(160, viewportWidth.current * 0.8);
+			let offset = from;
+			const step = () => {
+				if (offset >= run.travel) {
+					advance();
+					return;
+				}
+				offset = Math.min(run.travel, offset + page);
+				setGlide({ key: blockKey, offset, ms: 0 });
+				timers.push(setTimeout(step, REDUCED_STEP_MS));
+			};
+			setGlide({ key: blockKey, offset: from, ms: 0 });
+			timers.push(setTimeout(step, REDUCED_STEP_MS));
+		}
+
+		return () => {
+			for (const timer of timers) {
+				clearTimeout(timer);
+			}
+		};
+	}, [
+		advance,
+		animate,
+		blockKey,
+		holding,
+		ready,
+		run?.duration,
+		run?.travel,
+		show,
+	]);
+
+	// `glide && ...`, not `glide?.key === blockKey`: with no league both sides are
+	// undefined, the comparison is true, and the next line reads through nothing.
+	const playing = glide !== undefined && glide.key === blockKey;
+	const offset = playing ? glide.offset : 0;
+	const glideMs = playing ? glide.ms : 0;
 
 	const visible = lid !== undefined && segments.length > 0;
 	useEffect(() => {
@@ -391,26 +493,24 @@ export const LeagueTicker = memo(() => {
 			<div className="league-ticker-viewport" ref={viewportRef}>
 				{show && segment ? (
 					<div
-						className={clsx("league-ticker-run", {
-							"league-ticker-crawl": animate && ready,
-						})}
+						className="league-ticker-run"
 						// Names the block AND the pass, so a single-block feed still
 						// changes it every time round. Read by the browser tests to see
 						// the player advance when the pane text cannot show it.
 						data-block={blockKey}
+						// How far this block has to go, and how far it has got. The
+						// browser tests assert on these, because "the block changed" and
+						// "the contents moved" are different questions and only the
+						// second one was ever really being asked.
+						data-travel={ready ? Math.round(run.travel) : -1}
 						key={blockKey}
 						ref={runRef}
-						onAnimationEnd={advance}
-						style={
-							ready
-								? {
-										// Starts a full viewport to the right and finishes a full
-										// block-width to the left, so it enters and leaves clean.
-										["--run-from" as any]: `${run.from}px`,
-										animationDuration: `${run.duration}s`,
-									}
-								: undefined
-						}
+						style={{
+							// Only as far as its own overflow, so the bar is full for the
+							// whole block. A block that already fits travels nothing.
+							transform: `translate3d(${-offset}px, 0, 0)`,
+							transitionDuration: `${Math.round(glideMs)}ms`,
+						}}
 					>
 						{segment.items.map((item) => (
 							<Item key={item.key} item={item} />

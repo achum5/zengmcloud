@@ -635,33 +635,21 @@ $league-ticker-toggle-width: 26px;
 // ONE BLOCK'S CRAWL. Starts flush against the pane and travels exactly its own
 // overflow, so the bar is full from a block's first frame to its last - running
 // it in from off-screen and out the other side left the bar empty for seconds at
-// both ends of every block. When the animation ends the component advances to
-// the next block, which is the clock the whole thing runs on: no infinite loop,
-// and nothing has to measure a moving element.
+// both ends of every block.
 //
-// A block narrower than the bar travels nothing, and the animation is then pure
-// dwell time before the next one.
+// A block narrower than the bar travels nothing and simply sits for its dwell.
 .league-ticker-run {
 	display: flex;
 	align-items: center;
 	flex-wrap: nowrap;
 	white-space: nowrap;
-}
-
-@keyframes league-ticker-crawl {
-	from {
-		transform: translate3d(0, 0, 0);
-	}
-	to {
-		transform: translate3d(calc(-1 * var(--run-travel, 0px)), 0, 0);
-	}
-}
-
-.league-ticker-crawl {
-	animation-name: league-ticker-crawl;
-	animation-timing-function: linear;
-	animation-iteration-count: 1;
-	animation-fill-mode: forwards;
+	// The transform and the duration are set by the component; this only says how
+	// to get between two of them. A transition rather than @keyframes on purpose:
+	// if it is refused the transform still lands, so the block jumps instead of
+	// gliding and the ticker is never merely static. A keyframes animation that
+	// does not start leaves the element where it was with nothing to notice.
+	transition-property: transform;
+	transition-timing-function: linear;
 }
 
 // Held still so the links inside can be clicked. Driven by a class the component
@@ -669,19 +657,16 @@ $league-ticker-toggle-width: 26px;
 // :hover latches after a tap and does not clear until you tap somewhere else,
 // which used to stop the ticker dead. The clock is held too, so the block does
 // not change out from under the cursor.
-.league-ticker.held .league-ticker-crawl {
-	animation-play-state: paused;
-}
+// Nothing to pause: the component freezes the transform where it stands and
+// stops its own clock, then glides the rest of the way when the pointer leaves.
 
 // Someone who has asked for less motion gets a block they can scroll themselves,
 // sitting still; the component changes blocks on a timer instead.
+// Someone who has asked for less motion gets the block a page at a time - the
+// component steps the transform and this makes sure no step is animated.
 @media (prefers-reduced-motion: reduce) {
-	.league-ticker-viewport {
-		overflow-x: auto;
-	}
 	.league-ticker-run {
-		transform: none;
-		animation: none;
+		transition: none;
 	}
 }
 
