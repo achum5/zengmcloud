@@ -240,6 +240,16 @@ const setupRoutes = async () => {
 	render();
 	await setupRoutes();
 
+	// BEFORE the networked initializers below, not after. The header and the
+	// bottom ticker both come back from an iOS background unstuck and stay that
+	// way until the app is force-quit, and this is the only thing that repairs
+	// them - it has no business sitting behind a service worker registration and
+	// two Firebase calls, any of which can hang or reject on a bad connection and
+	// take the rest of this chain with it. It needs nothing but the DOM.
+	const { initStickyHeaderWatchdog } =
+		await import("./util/stickyHeaderWatchdog.ts");
+	initStickyHeaderWatchdog();
+
 	const { initServiceWorker } = await import("./util/initServiceWorker.tsx");
 	await initServiceWorker();
 
@@ -262,10 +272,4 @@ const setupRoutes = async () => {
 	const { initSyncForegroundNudge } =
 		await import("./util/syncForegroundNudge.ts");
 	initSyncForegroundNudge();
-
-	// The sticky header can come back from an iOS background unstuck, and stays
-	// that way until the app is force-quit. Detect and rebuild it on resume.
-	const { initStickyHeaderWatchdog } =
-		await import("./util/stickyHeaderWatchdog.ts");
-	initStickyHeaderWatchdog();
 })();

@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	bottomBarIsDetached,
 	detachmentConfirmed,
 	headerIsDetached,
 	scrollDecision,
@@ -189,8 +190,8 @@ describe("detachmentConfirmed", () => {
 	test("two readings at the same offset that agree is a real fault", () => {
 		assert.strictEqual(
 			detachmentConfirmed({
-				before: { scrollY: 400, headerTop: -400 },
-				after: { scrollY: 400, headerTop: -400 },
+				before: { scrollY: 400, edge: -400 },
+				after: { scrollY: 400, edge: -400 },
 			}),
 			true,
 		);
@@ -201,8 +202,8 @@ describe("detachmentConfirmed", () => {
 		// scrollY 69, re-measured at 149. Mid-flick, so unanswerable.
 		assert.strictEqual(
 			detachmentConfirmed({
-				before: { scrollY: 69, headerTop: -69 },
-				after: { scrollY: 149, headerTop: -149 },
+				before: { scrollY: 69, edge: -69 },
+				after: { scrollY: 149, edge: -149 },
 			}),
 			false,
 		);
@@ -213,8 +214,8 @@ describe("detachmentConfirmed", () => {
 		// had not finished, so wait rather than tear the header apart.
 		assert.strictEqual(
 			detachmentConfirmed({
-				before: { scrollY: 400, headerTop: -400 },
-				after: { scrollY: 400, headerTop: -120 },
+				before: { scrollY: 400, edge: -400 },
+				after: { scrollY: 400, edge: -120 },
 			}),
 			false,
 		);
@@ -223,10 +224,122 @@ describe("detachmentConfirmed", () => {
 	test("sub-pixel disagreement is still a confirmation", () => {
 		assert.strictEqual(
 			detachmentConfirmed({
-				before: { scrollY: 400, headerTop: -400 },
-				after: { scrollY: 400, headerTop: -401 },
+				before: { scrollY: 400, edge: -400 },
+				after: { scrollY: 400, edge: -401 },
 			}),
 			true,
+		);
+	});
+});
+
+// THE BOTTOM TICKER. Same disease as the header, different edge: what has to
+// hold still is its bottom against the foot of the viewport.
+const bottomDeps = ({
+	barBottom = 800,
+	layoutHeight = 800,
+	pinnedByModal = false,
+	visualOffsetTop = 0,
+}: {
+	barBottom?: number;
+	layoutHeight?: number;
+	pinnedByModal?: boolean;
+	visualOffsetTop?: number;
+}) => ({
+	barBottom: () => barBottom,
+	layoutHeight: () => layoutHeight,
+	pinnedByModal: () => pinnedByModal,
+	visualOffsetTop: () => visualOffsetTop,
+});
+
+describe("bottomBarIsDetached", () => {
+	test("a bar sitting on the foot of the viewport is fine", () => {
+		assert.strictEqual(bottomBarIsDetached(bottomDeps({})), false);
+	});
+
+	// The reported failure: the ticker scrolled up the page with the document and
+	// stayed floating in the middle of the screen.
+	test("a bar that floated up the page is detached", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ barBottom: 430, layoutHeight: 800 })),
+			true,
+		);
+	});
+
+	// A stale compositor rule pins the bar where it last was, and the page can
+	// then scroll either way underneath it.
+	test("a bar left below the viewport is detached too", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ barBottom: 1100, layoutHeight: 800 })),
+			true,
+		);
+	});
+
+	// iOS moves the viewport height by a few pixels while the URL bar collapses.
+	// That is the browser working, not the bar breaking.
+	test("a few pixels of viewport churn is not a fault", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ barBottom: 795, layoutHeight: 800 })),
+			false,
+		);
+	});
+
+	// Unlike the header, a bottom bar is just as measurable at the top of the
+	// document as anywhere else - there is no ambiguous position.
+	test("it answers at the top of the document, where the header cannot", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ barBottom: 200, layoutHeight: 800 })),
+			true,
+		);
+	});
+
+	// getBoundingClientRect reports against the visual viewport while fixed
+	// positions against the layout one, so a healthy bar on a panned page reads
+	// short by exactly the offset between them.
+	test("a bar short by exactly the visual offset is doing its job", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(
+				bottomDeps({
+					barBottom: 646,
+					layoutHeight: 1052,
+					visualOffsetTop: 406,
+				}),
+			),
+			false,
+		);
+	});
+
+	test("a genuinely detached bar is still caught while panned", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(
+				bottomDeps({
+					barBottom: 300,
+					layoutHeight: 1052,
+					visualOffsetTop: 406,
+				}),
+			),
+			true,
+		);
+	});
+
+	// The repair ladder nudges the scroll position, which is the last thing a
+	// modal-pinned page needs. The unpin check picks it up afterwards.
+	test("a modal's pin is left alone", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(
+				bottomDeps({ barBottom: 200, layoutHeight: 800, pinnedByModal: true }),
+			),
+			false,
+		);
+	});
+
+	test("unmeasurable geometry claims nothing", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ barBottom: Number.NaN })),
+			false,
+		);
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ layoutHeight: 0 })),
+			false,
 		);
 	});
 });

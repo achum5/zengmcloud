@@ -113,6 +113,27 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		modalPinned: document.querySelector(".ios-modal-pinned") !== null,
 		contentPosition: contentStyle?.position,
 		contentPaddingTop: contentStyle?.paddingTop,
+		// The bottom ticker comes unstuck the same way. What matters for it is the
+		// gap between its bottom edge and the foot of the layout viewport: zero on
+		// a healthy bar, whatever it drifted by on a broken one.
+		...tickerFields(),
+	};
+};
+
+const tickerFields = (): HeaderSnapshot => {
+	const ticker = document.querySelector<HTMLElement>(".league-ticker");
+	if (!ticker) {
+		return { tickerFound: false };
+	}
+	const rect = ticker.getBoundingClientRect();
+	const style = getComputedStyle(ticker);
+	return {
+		tickerFound: true,
+		tickerBottom: num(rect.bottom),
+		tickerGap: num(document.documentElement.clientHeight - rect.bottom),
+		tickerPosition: style.position,
+		tickerInlinePosition: ticker.style.position || "(none)",
+		tickerTransform: ticker.style.transform || "(none)",
 	};
 };
 

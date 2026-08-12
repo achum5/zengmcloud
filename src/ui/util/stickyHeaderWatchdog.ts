@@ -38,8 +38,27 @@ import {
 
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 
+// THE BOTTOM TICKER HAS THE SAME DISEASE.
+//
+// It is position:fixed rather than sticky, but the failure is identical and for
+// the same reason: WebKit hands the compositor a rule for where the element
+// belongs, the web view is resized out from under it, and the compositor goes on
+// applying a rule computed against a layout that no longer exists. The bar then
+// scrolls up the page with the document and stays wherever it landed.
+//
+// Same detection shape, same repair ladder, same watch - only the measurement
+// differs, because what a bottom bar must hold still is its bottom edge against
+// the foot of the viewport rather than its top edge against the top.
+const TICKER_SELECTOR = ".league-ticker";
+
 // Sub-pixel rounding and zoom mean the rect is never exactly on the line.
 const TOLERANCE_PX = 2;
+
+// The bottom bar gets a looser one. Its expected position is derived from the
+// viewport height, and on iOS that number moves while the URL bar collapses and
+// expands - a few pixels of disagreement mid-transition is the browser working,
+// not the bar breaking. A real detachment is tens or hundreds of pixels.
+const BOTTOM_TOLERANCE_PX = 6;
 
 // How long after a resume to keep running the TIMED checks. Layout settles late
 // on a resume - the first frame back can be measured against the pre-suspend
@@ -107,7 +126,49 @@ export const headerIsDetached = ({
 	return top < expected - TOLERANCE_PX;
 };
 
-const getHeader = () => document.querySelector<HTMLElement>(HEADER_SELECTOR);
+type BottomDeps = {
+	// Viewport-relative bottom edge of the bar.
+	barBottom: () => number;
+	// Height of the LAYOUT viewport, which is what a fixed element is positioned
+	// against - not the visible area, which zoom and the URL bar both change.
+	layoutHeight: () => number;
+	pinnedByModal: () => boolean;
+	visualOffsetTop: () => number;
+};
+
+// Is a bar fixed to the bottom of the window provably not there?
+//
+// Unlike the header this is answerable at any scroll position: a bottom-fixed
+// bar belongs at the foot of the viewport always, so there is no equivalent of
+// "at the top of the document the two cases look the same".
+//
+// Both directions count. A stale compositor rule leaves the bar wherever it was
+// last composited, and the page can then scroll either way underneath it.
+export const bottomBarIsDetached = ({
+	barBottom,
+	layoutHeight,
+	pinnedByModal,
+	visualOffsetTop,
+}: BottomDeps): boolean => {
+	// A modal pins the page and can legitimately move things; and the repair
+	// ladder nudges the scroll position, which is the last thing a pinned page
+	// needs. The unpin check picks it up afterwards.
+	if (pinnedByModal()) {
+		return false;
+	}
+	const bottom = barBottom();
+	const height = layoutHeight();
+	if (!Number.isFinite(bottom) || !Number.isFinite(height) || height <= 0) {
+		return false;
+	}
+	// Same correction as the header, for the same reason: getBoundingClientRect
+	// reports against the VISUAL viewport while fixed positions against the
+	// LAYOUT one, so a bar doing exactly the right thing on a panned or zoomed
+	// page reads short by the offset between them.
+	const offset = visualOffsetTop();
+	const expected = height - (Number.isFinite(offset) ? offset : 0);
+	return Math.abs(bottom - expected) > BOTTOM_TOLERANCE_PX;
+};
 
 const computedStickyTop = (element: HTMLElement): number => {
 	const top = Number.parseFloat(window.getComputedStyle(element).top);
@@ -116,14 +177,63 @@ const computedStickyTop = (element: HTMLElement): number => {
 
 // Element-agnostic on purpose: the pin marker moved from <body> to the app
 // wrapper, and this only ever asks "is a modal currently pinning something?".
-const detached = (element: HTMLElement) =>
-	headerIsDetached({
-		scrollY: () => window.scrollY,
-		headerTop: () => element.getBoundingClientRect().top,
-		stickyTop: () => computedStickyTop(element),
-		pinnedByModal: () => document.querySelector(PINNED_SELECTOR) !== null,
-		visualOffsetTop: () => window.visualViewport?.offsetTop ?? 0,
-	});
+const modalPinning = () => document.querySelector(PINNED_SELECTOR) !== null;
+
+const layoutViewportHeight = () => {
+	const clientHeight = document.documentElement?.clientHeight;
+	return Number.isFinite(clientHeight) && clientHeight > 0
+		? clientHeight
+		: window.innerHeight;
+};
+
+// ONE WATCHDOG, TWO BARS.
+//
+// The header and the ticker break the same way and are repaired by the same
+// ladder; all that differs is which edge has to hold still and where a reading
+// means anything. A bar is those two answers plus how to find the element.
+type Bar = {
+	name: string;
+	get: () => HTMLElement | null;
+	// The viewport-relative edge that must not move. Compared across two frames
+	// to tell a real fault from a mid-scroll reading.
+	edge: (element: HTMLElement) => number;
+	detached: (element: HTMLElement) => boolean;
+	// Is a reading at this scroll position capable of establishing anything?
+	answerable: (scrollY: number) => boolean;
+};
+
+const HEADER_BAR: Bar = {
+	name: "header",
+	get: () => document.querySelector<HTMLElement>(HEADER_SELECTOR),
+	edge: (element) => element.getBoundingClientRect().top,
+	detached: (element) =>
+		headerIsDetached({
+			scrollY: () => window.scrollY,
+			headerTop: () => element.getBoundingClientRect().top,
+			stickyTop: () => computedStickyTop(element),
+			pinnedByModal: modalPinning,
+			visualOffsetTop: () => window.visualViewport?.offsetTop ?? 0,
+		}),
+	answerable: (scrollY) => scrollDecision({ scrollY }) === "judge",
+};
+
+const TICKER_BAR: Bar = {
+	name: "ticker",
+	get: () => document.querySelector<HTMLElement>(TICKER_SELECTOR),
+	edge: (element) => element.getBoundingClientRect().bottom,
+	detached: (element) =>
+		bottomBarIsDetached({
+			barBottom: () => element.getBoundingClientRect().bottom,
+			layoutHeight: layoutViewportHeight,
+			pinnedByModal: modalPinning,
+			visualOffsetTop: () => window.visualViewport?.offsetTop ?? 0,
+		}),
+	// A bottom bar is out of place at the top of the document just as visibly as
+	// anywhere else, so there is no position where the question is unanswerable.
+	answerable: () => true,
+};
+
+const BARS: readonly Bar[] = [HEADER_BAR, TICKER_BAR];
 
 // WHY EACH STEP SPANS A FRAME.
 //
@@ -203,9 +313,10 @@ export const repairSteps = [
 
 let stop: (() => void) | undefined;
 
-// One ladder at a time. The steps now await frames, so a scroll arriving
-// mid-repair could otherwise start a second pass that fights the first.
-let repairing = false;
+// One ladder at a time PER BAR. The steps await frames, so a scroll arriving
+// mid-repair could otherwise start a second pass that fights the first - but the
+// header and the ticker are independent elements and must not block each other.
+const repairing = new Set<string>();
 
 // The layout viewport against the visual one. A field report showed innerHeight
 // 1052 with a visual viewport of 646 - a 406px gap, and the header's offset
@@ -223,14 +334,18 @@ const viewportNote = () => {
 };
 
 // Only called when something noteworthy happened, so the log stays short enough
-// to paste and every line means something.
-const note = (element: HTMLElement | null, kind: string, detail?: string) => {
+// to paste and every line means something. The bar's name goes in the kind, so
+// one log covers both without two sets of entries that look alike.
+const note = (
+	bar: Bar,
+	element: HTMLElement | null,
+	kind: string,
+	detail?: string,
+) => {
 	recordHeaderEvent({
-		kind,
+		kind: `${bar.name}:${kind}`,
 		scrollY: Math.round(window.scrollY),
-		headerTop: element
-			? Math.round(element.getBoundingClientRect().top)
-			: Number.NaN,
+		headerTop: element ? Math.round(bar.edge(element)) : Number.NaN,
 		detail,
 	});
 };
@@ -262,35 +377,36 @@ export const detachmentConfirmed = ({
 	before,
 	after,
 }: {
-	before: { scrollY: number; headerTop: number };
-	after: { scrollY: number; headerTop: number };
+	before: { scrollY: number; edge: number };
+	after: { scrollY: number; edge: number };
 }): boolean =>
 	before.scrollY === after.scrollY &&
-	Math.abs(before.headerTop - after.headerTop) <= TOLERANCE_PX;
+	Math.abs(before.edge - after.edge) <= TOLERANCE_PX;
 
-const reading = (element: HTMLElement) => ({
+const reading = (bar: Bar, element: HTMLElement) => ({
 	scrollY: Math.round(window.scrollY),
-	headerTop: Math.round(element.getBoundingClientRect().top),
+	edge: Math.round(bar.edge(element)),
 });
 
-const check = async (trigger = "scroll") => {
-	if (repairing) {
+const checkBar = async (bar: Bar, trigger: string) => {
+	if (repairing.has(bar.name)) {
 		return;
 	}
-	const element = getHeader();
+	const element = bar.get();
 	if (!element) {
 		return;
 	}
-	if (!detached(element)) {
+	if (!bar.answerable(window.scrollY) || !bar.detached(element)) {
 		return;
 	}
 
 	// Confirm against a second reading a frame later before believing it.
-	const before = reading(element);
+	const before = reading(bar, element);
 	await nextFrame();
-	const after = reading(element);
-	if (!detached(element) || !detachmentConfirmed({ before, after })) {
+	const after = reading(bar, element);
+	if (!bar.detached(element) || !detachmentConfirmed({ before, after })) {
 		note(
+			bar,
 			element,
 			"unconfirmed",
 			`via=${trigger} moved=${after.scrollY - before.scrollY}`,
@@ -298,14 +414,14 @@ const check = async (trigger = "scroll") => {
 		return;
 	}
 
-	note(element, "detached", `via=${trigger} ${viewportNote()}`);
+	note(bar, element, "detached", `via=${trigger} ${viewportNote()}`);
 
-	repairing = true;
+	repairing.add(bar.name);
 	try {
 		for (const [i, step] of repairSteps.entries()) {
 			await step(element);
-			if (!detached(element)) {
-				note(element, "repaired", `step=${i + 1}`);
+			if (!bar.detached(element)) {
+				note(bar, element, "repaired", `step=${i + 1}`);
 				return;
 			}
 		}
@@ -313,47 +429,66 @@ const check = async (trigger = "scroll") => {
 		// Still broken after the whole ladder. One more frame, in case the
 		// compositor simply had not caught up when we measured, then a final pass
 		// before giving up on this attempt - the scroll watch keeps looking either
-		// way, so a header that survives this will be tried again on the next
-		// scroll rather than staying broken until the app is force-quit.
+		// way, so a bar that survives this will be tried again on the next scroll
+		// rather than staying broken until the app is force-quit.
 		await nextFrame();
-		if (detached(element)) {
+		if (bar.detached(element)) {
 			await rebuildRenderer(element);
 			await nudgeScroller();
 		}
-		note(element, detached(element) ? "gave-up" : "repaired", "step=late");
+		note(bar, element, bar.detached(element) ? "gave-up" : "repaired", "late");
 	} finally {
-		repairing = false;
+		repairing.delete(bar.name);
 	}
 };
 
-// The manual button. Runs the ladder whether or not the header LOOKS broken,
-// because the one place the user can reach the button - the top of the page - is
-// the one place a broken header is indistinguishable from a healthy one.
-export const forceHeaderRepair = async () => {
-	const element = getHeader();
+// Both bars, every time. They are checked in sequence rather than concurrently
+// so that at most one repair ladder is disturbing the scroll position at once.
+const check = async (trigger = "scroll") => {
+	for (const bar of BARS) {
+		await checkBar(bar, trigger);
+	}
+};
+
+const forceBarRepair = async (bar: Bar) => {
+	const element = bar.get();
 	if (!element) {
 		return;
 	}
-	// Put the header back inside the visible viewport first. When the two
-	// viewports have come apart this IS the reset - the ladder below cannot help,
-	// because nothing about the element is wrong.
-	applyHeaderShift(
+	note(
+		bar,
 		element,
-		headerVisualShift(window.visualViewport?.offsetTop),
+		"forced",
+		`detached=${bar.detached(element)} ${viewportNote()}`,
 	);
-	note(element, "forced", `detached=${detached(element)} ${viewportNote()}`);
-	if (repairing) {
+	if (repairing.has(bar.name)) {
 		return;
 	}
-	repairing = true;
+	repairing.add(bar.name);
 	try {
 		for (const step of repairSteps) {
 			await step(element);
 		}
 	} finally {
-		repairing = false;
+		repairing.delete(bar.name);
 	}
-	note(element, "forced-done");
+	note(bar, element, "forced-done");
+};
+
+// The manual button. Runs the ladder whether or not the bars LOOK broken,
+// because the one place the user can reach the button - the top of the page - is
+// the one place a broken header is indistinguishable from a healthy one.
+export const forceHeaderRepair = async () => {
+	// Put the header back inside the visible viewport first. When the two
+	// viewports have come apart this IS the reset - the ladder below cannot help,
+	// because nothing about the element is wrong.
+	applyHeaderShift(
+		HEADER_BAR.get(),
+		headerVisualShift(window.visualViewport?.offsetTop),
+	);
+	for (const bar of BARS) {
+		await forceBarRepair(bar);
+	}
 };
 
 // Closing a modal hands the header back from position:fixed to position:sticky
@@ -436,9 +571,10 @@ const ensureScrollWatch = () => {
 		}
 		settleTimer = setTimeout(() => {
 			settleTimer = undefined;
-			if (scrollDecision({ scrollY: window.scrollY }) === "judge") {
-				void check("scroll-settled");
-			}
+			// No scroll gate here any more: it was the header's rule, and the ticker
+			// is measurable at the top of the document where the header is not. Each
+			// bar's own `answerable` now decides whether its reading means anything.
+			void check("scroll-settled");
 		}, SETTLE_MS);
 	};
 	window.addEventListener("scroll", onScroll, { passive: true });
@@ -456,7 +592,7 @@ const watch = () => {
 	const now = Date.now();
 	if (lastResumeNote === undefined || now - lastResumeNote > RESUME_DEDUPE_MS) {
 		lastResumeNote = now;
-		note(getHeader(), "resume", viewportNote());
+		note(HEADER_BAR, HEADER_BAR.get(), "resume", viewportNote());
 	}
 
 	const timers = CHECK_DELAYS_MS.map((delay) =>
