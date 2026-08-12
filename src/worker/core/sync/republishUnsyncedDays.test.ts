@@ -121,7 +121,7 @@ describe("buildChanges", () => {
 				],
 			}),
 			2006,
-			11,
+			{ kind: "after", day: 11 },
 		);
 
 		assert.deepStrictEqual(idsFor(built.changes, "games"), [3, 4]);
@@ -139,7 +139,7 @@ describe("buildChanges", () => {
 				schedule: [{ gid: 2 }, { gid: 3 }, { gid: 9 }],
 			}),
 			2006,
-			11,
+			{ kind: "after", day: 11 },
 		);
 
 		const deletes = built.changes.filter(
@@ -167,7 +167,7 @@ describe("buildChanges", () => {
 				],
 			}),
 			2006,
-			11,
+			{ kind: "after", day: 11 },
 		);
 
 		assert.deepStrictEqual(idsFor(built.changes, "teamSeasons"), [1, 2]);
@@ -188,7 +188,7 @@ describe("buildChanges", () => {
 				],
 			}),
 			2006,
-			11,
+			{ kind: "after", day: 11 },
 		);
 
 		assert.deepStrictEqual(idsFor(built.changes, "players"), [1, 2]);
@@ -204,7 +204,7 @@ describe("buildChanges", () => {
 				],
 			}),
 			2006,
-			11,
+			{ kind: "after", day: 11 },
 		);
 
 		assert.deepStrictEqual(idsFor(built.changes, "gameAttributes"), [
@@ -220,11 +220,14 @@ describe("buildChanges", () => {
 				playoffSeries: { season: 2006, series: [] },
 			}),
 			2006,
-			11,
+			{ kind: "after", day: 11 },
 		);
 		assert.deepStrictEqual(idsFor(withSeries.changes, "playoffSeries"), [2006]);
 
-		const without = buildChanges(rows({ games: [game(1, 12)] }), 2006, 11);
+		const without = buildChanges(rows({ games: [game(1, 12)] }), 2006, {
+			kind: "after",
+			day: 11,
+		});
 		assert.strictEqual(idsFor(without.changes, "playoffSeries").length, 0);
 	});
 
@@ -239,7 +242,7 @@ describe("buildChanges", () => {
 				teamSeasons: [{ rid: 1, season: 2006 }],
 			}),
 			2006,
-			11,
+			{ kind: "after", day: 11 },
 		);
 
 		assert.strictEqual(built.games, 0);
@@ -250,7 +253,47 @@ describe("buildChanges", () => {
 	// it would land on unrelated events elsewhere. The news is cosmetic; the
 	// standings are not.
 	test("never carries events", () => {
-		const built = buildChanges(rows({ games: [game(1, 12)] }), 2006, 11);
+		const built = buildChanges(rows({ games: [game(1, 12)] }), 2006, {
+			kind: "after",
+			day: 11,
+		});
 		assert.ok(built.changes.every((change) => change.store !== "events"));
+	});
+
+	// NAMING THE DAY BY HAND. A room that never stamped a position gives the
+	// automatic comparison nothing to work with, so the person at the keyboard
+	// says which day did not go out. Only that day's games go, and only that
+	// day's schedule rows are cleared.
+	test("carries exactly the named day and nothing either side of it", () => {
+		const built = buildChanges(
+			rows({
+				games: [game(1, 4), game(2, 5), game(3, 5), game(4, 6)],
+				schedule: [{ gid: 1 }, { gid: 2 }, { gid: 3 }, { gid: 4 }],
+			}),
+			2006,
+			{ kind: "only", days: [5] },
+		);
+
+		assert.deepStrictEqual(idsFor(built.changes, "games"), [2, 3]);
+		assert.deepStrictEqual(idsFor(built.changes, "schedule"), [2, 3]);
+		assert.deepStrictEqual(built.days, [5]);
+		assert.strictEqual(built.games, 2);
+	});
+
+	test("a named day with no games here comes back empty", () => {
+		const built = buildChanges(rows({ games: [game(1, 4)] }), 2006, {
+			kind: "only",
+			days: [5],
+		});
+		assert.strictEqual(built.games, 0);
+	});
+
+	test("a named day is scoped to its season", () => {
+		const built = buildChanges(
+			rows({ games: [game(1, 5, 2005), game(2, 5, 2006)] }),
+			2006,
+			{ kind: "only", days: [5] },
+		);
+		assert.deepStrictEqual(idsFor(built.changes, "games"), [2]);
 	});
 });

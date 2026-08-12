@@ -172,6 +172,14 @@ const MultiplayerSync = () => {
 	const [unsyncedBusy, setUnsyncedBusy] = useState(false);
 	const [unsyncedResult, setUnsyncedResult] = useState<string | undefined>();
 
+	// The same repair with the day named by hand, for a room that never recorded
+	// a position of its own and so cannot be compared against.
+	const [daySeason, setDaySeason] = useState("");
+	const [dayNumber, setDayNumber] = useState("");
+	const [dayReport, setDayReport] = useState<any>();
+	const [dayBusy, setDayBusy] = useState(false);
+	const [dayResult, setDayResult] = useState<string | undefined>();
+
 	// Room admin (clear Firestore codes), gated by a cosmetic password.
 	const [adminInput, setAdminInput] = useState("");
 	const [adminUnlocked, setAdminUnlocked] = useState(false);
@@ -312,6 +320,51 @@ const MultiplayerSync = () => {
 			setUnsyncedResult((error as Error).message ?? String(error));
 		} finally {
 			setUnsyncedBusy(false);
+		}
+	};
+
+	// Naming the day by hand, for a room that never stamped a position of its own
+	// and so cannot be compared against.
+	const checkDay = async () => {
+		setDayBusy(true);
+		setDayResult(undefined);
+		setDayReport(undefined);
+		try {
+			setDayReport(
+				await toWorker("main", "reportDayPush", {
+					season: Number(daySeason),
+					day: Number(dayNumber),
+				}),
+			);
+		} catch (error) {
+			setDayResult((error as Error).message ?? String(error));
+		} finally {
+			setDayBusy(false);
+		}
+	};
+
+	const doPushDay = async () => {
+		setDayBusy(true);
+		setDayResult(undefined);
+		try {
+			const out: any = await toWorker("main", "pushDay", {
+				season: Number(daySeason),
+				day: Number(dayNumber),
+			});
+			if (out?.published) {
+				setDayResult(
+					out.outcome === "confirmed"
+						? `Sent. Day ${out.report.day} of ${out.report.season} is now in the room.`
+						: "Queued. The room will have it as soon as the connection allows.",
+				);
+				setDayReport(undefined);
+			} else {
+				setDayResult(out?.report?.reason ?? "Nothing to send.");
+			}
+		} catch (error) {
+			setDayResult((error as Error).message ?? String(error));
+		} finally {
+			setDayBusy(false);
 		}
 	};
 
@@ -972,6 +1025,59 @@ const MultiplayerSync = () => {
 							<p className="text-body-secondary small">{unsynced.reason}</p>
 						) : null}
 						{unsyncedResult ? <p className="small">{unsyncedResult}</p> : null}
+
+						<div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
+							<input
+								type="number"
+								className="form-control form-control-sm"
+								style={{ width: 100 }}
+								placeholder="Season"
+								value={daySeason}
+								onChange={(event) => setDaySeason(event.target.value)}
+							/>
+							<input
+								type="number"
+								className="form-control form-control-sm"
+								style={{ width: 80 }}
+								placeholder="Day"
+								value={dayNumber}
+								onChange={(event) => setDayNumber(event.target.value)}
+							/>
+							<button
+								className="btn btn-light-bordered btn-sm"
+								disabled={dayBusy || daySeason === "" || dayNumber === ""}
+								onClick={() => void checkDay()}
+							>
+								{dayBusy ? "Checking…" : "Check this day"}
+							</button>
+						</div>
+
+						{dayReport?.kind === "found" ? (
+							<div className="alert alert-warning py-2">
+								<div>
+									Day {dayReport.day} of {dayReport.season}: {dayReport.games}{" "}
+									game
+									{dayReport.games === 1 ? "" : "s"} ({dayReport.records}{" "}
+									records).
+								</div>
+								<ul className="mb-2 mt-1 ps-3 small">
+									{dayReport.lines.map((line: string, i: number) => (
+										<li key={i}>{line}</li>
+									))}
+								</ul>
+								<button
+									className="btn btn-warning btn-sm"
+									disabled={dayBusy}
+									onClick={() => void doPushDay()}
+								>
+									{dayBusy ? "Sending…" : "Send this day to the room"}
+								</button>
+							</div>
+						) : null}
+						{dayReport?.kind === "none" ? (
+							<p className="text-body-secondary small">{dayReport.reason}</p>
+						) : null}
+						{dayResult ? <p className="small">{dayResult}</p> : null}
 
 						<button
 							className="btn btn-light-bordered btn-sm mb-3 ms-2"

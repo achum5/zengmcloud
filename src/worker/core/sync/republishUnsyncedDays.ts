@@ -114,12 +114,27 @@ const readLeagueRows = async (season: number): Promise<LeagueRows> => ({
 	playoffSeries: await idb.cache.playoffSeries.get(season),
 });
 
+// WHICH DAYS TO SEND.
+//
+// "after" is the automatic repair: everything this device has played past
+// where the room says it is. "only" is the manual one, for a room whose
+// position was never stamped and so cannot be compared against - the user
+// names the day.
+export type DaySelection =
+	| { kind: "after"; day: number }
+	| { kind: "only"; days: number[] };
+
+const selects = (selection: DaySelection, day: number): boolean =>
+	selection.kind === "after"
+		? day > selection.day
+		: selection.days.includes(day);
+
 // The games played here that the room has not seen, and everything their being
 // played implies.
 export const buildChanges = (
 	rows: LeagueRows,
 	season: number,
-	afterDay: number,
+	selection: DaySelection,
 ): { changes: SyncChange[]; days: number[]; games: number } => {
 	const changes: SyncChange[] = [];
 	const days = new Set<number>();
@@ -128,7 +143,7 @@ export const buildChanges = (
 		(game) =>
 			game.season === season &&
 			typeof game.day === "number" &&
-			game.day > afterDay,
+			selects(selection, game.day),
 	);
 	for (const game of missing) {
 		days.add(game.day);
@@ -272,11 +287,10 @@ export const describeUnsyncedDays = async (
 	}
 
 	const rows = await readLeagueRows(plan.season);
-	const { changes, days, games } = buildChanges(
-		rows,
-		plan.season,
-		plan.roomDay,
-	);
+	const { changes, days, games } = buildChanges(rows, plan.season, {
+		kind: "after",
+		day: plan.roomDay,
+	});
 	if (games === 0) {
 		return {
 			kind: "none",
@@ -307,6 +321,121 @@ export const buildUnsyncedDaysChangeset = async (
 		return { changeset: { changes: [] }, report };
 	}
 	const rows = await readLeagueRows(report.season);
-	const { changes } = buildChanges(rows, report.season, report.roomDay);
+	const { changes } = buildChanges(rows, report.season, {
+		kind: "after",
+		day: report.roomDay,
+	});
+	return { changeset: { changes }, report };
+};
+
+// ------------------------------------------------------- NAMING THE DAY
+//
+// The automatic repair compares this device against the position the room
+// stamped on its authority document - and a room that has never stamped one
+// (an older room, or one whose last advance failed before the stamp) gives it
+// nothing to compare against. That is not a reason to be stuck: the person at
+// the keyboard knows perfectly well which day did not go out. So they name it,
+// and it goes out exactly as it would have when it simmed.
+//
+// No comparison, therefore no refusals about how far apart the two are. The
+// only conditions are the two that are about safety rather than bookkeeping:
+// this must be the device in charge of simming, and the day must actually have
+// games on it here.
+
+export type DayPushReport =
+	| { kind: "none"; reason: string }
+	| {
+			kind: "found";
+			season: number;
+			day: number;
+			games: number;
+			records: number;
+			// The scoreboard for the day, so what is about to be sent can be read
+			// back before sending it. Naming the wrong day should be obvious
+			// BEFORE it is published, not after.
+			lines: string[];
+	  };
+
+// "PHO 103 @ DAL 110". teams[0] is the home side in ZenGM, and the visitor is
+// named first the way every scoreboard names it.
+const scoreLine = (game: any, abbrev: (tid: number) => string): string => {
+	const [home, away] = game.teams ?? [];
+	if (!home || !away) {
+		return `Game ${game.gid}`;
+	}
+	return `${abbrev(away.tid)} ${away.pts ?? "?"} @ ${abbrev(home.tid)} ${home.pts ?? "?"}`;
+};
+
+export const describeDayPush = async (
+	{ season, day }: { season: number; day: number },
+	isAuthority: boolean,
+): Promise<DayPushReport> => {
+	if (!isAuthority) {
+		return {
+			kind: "none",
+			reason:
+				"Only the device in charge of simming can push a day, because it is the only one that can have simmed it.",
+		};
+	}
+	if (!Number.isInteger(season) || !Number.isInteger(day)) {
+		return { kind: "none", reason: "Give a season and a day." };
+	}
+
+	const rows = await readLeagueRows(season);
+	const selection: DaySelection = { kind: "only", days: [day] };
+	const { changes, games } = buildChanges(rows, season, selection);
+	if (games === 0) {
+		// Say which days DO exist rather than leaving them to guess. Getting the
+		// day wrong is the easiest mistake to make here and the least useful
+		// thing to be told nothing about.
+		const played = [
+			...new Set(
+				rows.games
+					.filter((row) => row.season === season && row.day !== undefined)
+					.map((row) => row.day as number),
+			),
+		].sort((a, b) => a - b);
+		return {
+			kind: "none",
+			reason:
+				played.length === 0
+					? `No games have been played here in ${season}.`
+					: `No games were played here on day ${day} of ${season}. Days with games: ${played.join(", ")}.`,
+		};
+	}
+
+	const abbrevByTid = new Map<number, string>(
+		((await idb.cache.teams.getAll()) as any[]).map((team) => [
+			team.tid,
+			team.abbrev,
+		]),
+	);
+	const abbrev = (tid: number) => abbrevByTid.get(tid) ?? `#${tid}`;
+
+	return {
+		kind: "found",
+		season,
+		day,
+		games,
+		records: changes.length,
+		lines: rows.games
+			.filter((game) => game.season === season && game.day === day)
+			.map((game) => scoreLine(game, abbrev)),
+	};
+};
+
+export const buildDayPushChangeset = async (
+	target: { season: number; day: number },
+	isAuthority: boolean,
+): Promise<{ changeset: Changeset; report: DayPushReport }> => {
+	const report = await describeDayPush(target, isAuthority);
+	if (report.kind !== "found") {
+		return { changeset: { changes: [] }, report };
+	}
+	const rows = await readLeagueRows(report.season);
+	const { changes } = buildChanges(rows, report.season, {
+		kind: "only",
+		days: [report.day],
+	});
 	return { changeset: { changes }, report };
 };

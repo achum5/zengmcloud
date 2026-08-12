@@ -27,8 +27,11 @@ import {
 	writeLocalLeagueId,
 } from "./leagueIdentity.ts";
 import {
+	buildDayPushChangeset,
 	buildUnsyncedDaysChangeset,
+	describeDayPush,
 	describeUnsyncedDays,
+	type DayPushReport,
 	type UnsyncedDaysReport,
 } from "./republishUnsyncedDays.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
@@ -1304,6 +1307,81 @@ export const pushUnsyncedDays = async (): Promise<{
 		[],
 	);
 	syncDebugLog("v2:pushed-unsynced-days", { outcome, records: report.records });
+	return { published: true, report, outcome };
+};
+
+// NAMING THE DAY BY HAND.
+//
+// The automatic version above compares this device against the position the
+// room stamped for itself, and a room that never stamped one leaves it with
+// nothing to compare against. The person at the keyboard knows which day did
+// not go out, so they say so. Same changeset, same publish, same label - only
+// the choice of which day is made differently.
+export const reportDayPush = async (target: {
+	season: number;
+	day: number;
+}): Promise<DayPushReport> => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		return { kind: "none", reason: "Not connected to a shared league." };
+	}
+	if (!engine.isCaughtUp()) {
+		return {
+			kind: "none",
+			reason:
+				"This device is still catching up on the room. Let it finish first.",
+		};
+	}
+	return describeDayPush(target, engine.isAuthority());
+};
+
+export const pushDay = async (target: {
+	season: number;
+	day: number;
+}): Promise<{
+	published: boolean;
+	report: DayPushReport;
+	outcome?: "confirmed" | "queued";
+}> => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		return {
+			published: false,
+			report: { kind: "none", reason: "Not connected to a shared league." },
+		};
+	}
+	if (!engine.isCaughtUp()) {
+		return {
+			published: false,
+			report: {
+				kind: "none",
+				reason: "Still catching up on the room; not publishing anything yet.",
+			},
+		};
+	}
+
+	await engine.waitUntilIdle(30_000);
+
+	const { changeset, report } = await buildDayPushChangeset(
+		target,
+		engine.isAuthority(),
+	);
+	if (report.kind !== "found" || changeset.changes.length === 0) {
+		return { published: false, report };
+	}
+
+	syncDebugLog("v2:pushing-day", {
+		season: report.season,
+		day: report.day,
+		games: report.games,
+		records: report.records,
+	});
+	const outcome = await engine.onLocalChangeset(
+		changeset,
+		"main.pushUnsyncedDays",
+		[],
+	);
+	syncDebugLog("v2:pushed-day", { outcome, records: report.records });
 	return { published: true, report, outcome };
 };
 
