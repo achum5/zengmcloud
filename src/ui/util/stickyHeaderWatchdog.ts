@@ -129,9 +129,9 @@ export const headerIsDetached = ({
 type BottomDeps = {
 	// Viewport-relative bottom edge of the bar.
 	barBottom: () => number;
-	// Height of the LAYOUT viewport, which is what sticky is anchored against -
-	// not the visible area, which zoom and the URL bar both change.
-	layoutHeight: () => number;
+	// EVERY height the foot of the viewport can legitimately be at. Plural, and
+	// that is the entire lesson of the second field failure (below).
+	anchorHeights: () => number[];
 	pinnedByModal: () => boolean;
 	visualOffsetTop: () => number;
 };
@@ -144,9 +144,27 @@ type BottomDeps = {
 //
 // Both directions count. A stale compositor rule leaves the bar wherever it was
 // last composited, and the page can then scroll either way underneath it.
+//
+// WHY THE ANCHOR IS A SET OF HEIGHTS AND NOT ONE NUMBER. The first version
+// measured against documentElement.clientHeight alone. On iOS that number
+// stays at the SMALL viewport - the one with the URL bar showing - while the
+// layout viewport that sticky is actually anchored to GROWS by the toolbar's
+// height (60-100px) the moment the user scrolls and the toolbar collapses. So
+// scrolling put every healthy ticker 60-100px past the 6px tolerance, the
+// watchdog declared it detached, and the repair ladder went to work on a bar
+// with nothing wrong: position:relative for a frame (the bar visibly parked
+// mid-content - photographed by a user), display:none for another, a scroll
+// nudge mid-flick, "gave-up", and again on the next scroll event. The watchdog
+// WAS the detachment.
+//
+// So the question is now "is the bar at ANY position a healthy bar can be at?"
+// - the static document height, the dynamic innerHeight, and the visible
+// bottom. A truly detached bar rides the content hundreds of pixels from all
+// three; a healthy one is always within tolerance of one of them, whatever the
+// toolbar is doing.
 export const bottomBarIsDetached = ({
 	barBottom,
-	layoutHeight,
+	anchorHeights,
 	pinnedByModal,
 	visualOffsetTop,
 }: BottomDeps): boolean => {
@@ -157,17 +175,24 @@ export const bottomBarIsDetached = ({
 		return false;
 	}
 	const bottom = barBottom();
-	const height = layoutHeight();
-	if (!Number.isFinite(bottom) || !Number.isFinite(height) || height <= 0) {
+	if (!Number.isFinite(bottom)) {
 		return false;
 	}
 	// Same correction as the header, for the same reason: getBoundingClientRect
 	// reports against the VISUAL viewport while sticky is anchored to the LAYOUT
 	// one, so a bar doing exactly the right thing on a panned or zoomed
 	// page reads short by the offset between them.
-	const offset = visualOffsetTop();
-	const expected = height - (Number.isFinite(offset) ? offset : 0);
-	return Math.abs(bottom - expected) > BOTTOM_TOLERANCE_PX;
+	const rawOffset = visualOffsetTop();
+	const offset = Number.isFinite(rawOffset) ? rawOffset : 0;
+	const anchors = anchorHeights().filter(
+		(height) => Number.isFinite(height) && height > 0,
+	);
+	if (anchors.length === 0) {
+		return false;
+	}
+	return anchors.every(
+		(height) => Math.abs(bottom - (height - offset)) > BOTTOM_TOLERANCE_PX,
+	);
 };
 
 const computedStickyTop = (element: HTMLElement): number => {
@@ -224,7 +249,18 @@ const TICKER_BAR: Bar = {
 	detached: (element) =>
 		bottomBarIsDetached({
 			barBottom: () => element.getBoundingClientRect().bottom,
-			layoutHeight: layoutViewportHeight,
+			// Every place a healthy bottom edge can be: the static document
+			// height, the dynamic innerHeight (iOS grows it when the toolbar
+			// collapses - the false-detachment incident), and the visible bottom
+			// (where the standing visual-viewport correction parks the bar).
+			anchorHeights: () => {
+				const vv = window.visualViewport;
+				return [
+					layoutViewportHeight(),
+					window.innerHeight,
+					vv ? vv.offsetTop + vv.height : Number.NaN,
+				];
+			},
 			pinnedByModal: modalPinning,
 			visualOffsetTop: () => window.visualViewport?.offsetTop ?? 0,
 		}),

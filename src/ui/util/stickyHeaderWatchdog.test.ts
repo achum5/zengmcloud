@@ -238,16 +238,18 @@ describe("detachmentConfirmed", () => {
 const bottomDeps = ({
 	barBottom = 800,
 	layoutHeight = 800,
+	anchorHeights = undefined as number[] | undefined,
 	pinnedByModal = false,
 	visualOffsetTop = 0,
 }: {
 	barBottom?: number;
 	layoutHeight?: number;
+	anchorHeights?: number[];
 	pinnedByModal?: boolean;
 	visualOffsetTop?: number;
 }) => ({
 	barBottom: () => barBottom,
-	layoutHeight: () => layoutHeight,
+	anchorHeights: () => anchorHeights ?? [layoutHeight],
 	pinnedByModal: () => pinnedByModal,
 	visualOffsetTop: () => visualOffsetTop,
 });
@@ -340,6 +342,50 @@ describe("bottomBarIsDetached", () => {
 		);
 		assert.strictEqual(
 			bottomBarIsDetached(bottomDeps({ layoutHeight: 0 })),
+			false,
+		);
+	});
+
+	// THE FALSE-DETACHMENT INCIDENT. On iOS, documentElement.clientHeight stays
+	// at the small viewport (URL bar showing) while the layout viewport sticky is
+	// anchored to grows by the toolbar's height the moment the user scrolls. The
+	// first version measured against clientHeight alone, so scrolling put every
+	// HEALTHY ticker 60-100px "off", and the repair ladder went to work on a bar
+	// with nothing wrong - parking it mid-content for a frame, blinking it, and
+	// nudging the scroll, over and over. The bar must be judged against every
+	// height the foot of the viewport can legitimately be at.
+	test("a healthy bar under a collapsed iOS toolbar is not a fault", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(
+				bottomDeps({ barBottom: 812, anchorHeights: [750, 812, 812] }),
+			),
+			false,
+		);
+	});
+
+	test("a bar pinned to the visible bottom by the standing correction is fine", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(
+				bottomDeps({ barBottom: 646, anchorHeights: [1052, 1052, 646] }),
+			),
+			false,
+		);
+	});
+
+	test("a genuinely detached bar is far from every legitimate anchor", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(
+				bottomDeps({ barBottom: 430, anchorHeights: [750, 812, 812] }),
+			),
+			true,
+		);
+	});
+
+	test("an anchor list with no usable entries claims nothing", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(
+				bottomDeps({ barBottom: 430, anchorHeights: [Number.NaN, 0] }),
+			),
 			false,
 		);
 	});
