@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	buildTickerSegments,
 	buildTickerStream,
+	clampSegmentOffset,
 	segmentDurationSeconds,
 	SEGMENT_MAX_SECONDS,
 	SEGMENT_MIN_SECONDS,
@@ -276,5 +277,38 @@ describe("segmentDurationSeconds", () => {
 
 	test("nothing is left on screen forever", () => {
 		assert.strictEqual(segmentDurationSeconds(500_000), SEGMENT_MAX_SECONDS);
+	});
+});
+
+// THE ONE INVARIANT THAT KEEPS THE BAR FULL. A block sits somewhere between
+// flush-left and flush-right of its own overflow; anywhere outside that range
+// is black space on one end or the other, and no offset the player computes is
+// ever meant to be there.
+describe("clampSegmentOffset", () => {
+	test("leaves an offset inside the block's travel alone", () => {
+		assert.strictEqual(clampSegmentOffset(400, 1000), 400);
+	});
+
+	// A stale offset from a longer version of this block - the feed refreshed
+	// under it - would otherwise drag the content off the left edge and leave
+	// the bar empty behind it.
+	test("never travels further than the block has to go", () => {
+		assert.strictEqual(clampSegmentOffset(2574, 468), 468);
+	});
+
+	// And the other end: pushed right of its start opens a hole between the
+	// pane and the first item.
+	test("never pushes the block right of its start", () => {
+		assert.strictEqual(clampSegmentOffset(-120, 1000), 0);
+	});
+
+	test("a block with nothing to travel never moves", () => {
+		assert.strictEqual(clampSegmentOffset(300, 0), 0);
+		assert.strictEqual(clampSegmentOffset(300, -5), 0);
+	});
+
+	test("unmeasurable geometry parks it at the start", () => {
+		assert.strictEqual(clampSegmentOffset(Number.NaN, 1000), 0);
+		assert.strictEqual(clampSegmentOffset(400, Number.NaN), 0);
 	});
 });

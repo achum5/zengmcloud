@@ -304,6 +304,28 @@ export const SEGMENT_PIXELS_PER_SECOND = 150;
 export const SEGMENT_MIN_SECONDS = 7;
 export const SEGMENT_MAX_SECONDS = 45;
 
+// HOW FAR THE BLOCK IS ACTUALLY ALLOWED TO BE MOVED, whatever the player
+// thinks it has reached.
+//
+// The two ends of this are the only two ways the bar can show black. Translate
+// the run right of its start (a negative offset) and a hole opens between the
+// pane and the first item; translate it further left than its own overflow and
+// the tail slides off, leaving a hole at the other end. Neither is ever a thing
+// the player means to do - both mean the offset it is holding and the width it
+// was measured against have come from different moments (a feed refresh, a
+// resize, a measurement taken against content that has since changed).
+//
+// Rather than chase every way those two can drift apart, the render clamps.
+// The worst a stale offset can then do is park the block at one end of its own
+// travel for a beat, which looks like the ticker pausing - not like the bar
+// breaking.
+export const clampSegmentOffset = (offset: number, travel: number): number => {
+	if (!Number.isFinite(offset) || !Number.isFinite(travel) || travel <= 0) {
+		return 0;
+	}
+	return Math.min(Math.max(offset, 0), travel);
+};
+
 export const segmentDurationSeconds = (
 	travelPx: number,
 	pixelsPerSecond = SEGMENT_PIXELS_PER_SECOND,

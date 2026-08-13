@@ -15,6 +15,7 @@ import { SafeHtml } from "../SafeHtml.tsx";
 import {
 	buildTickerSegments,
 	buildTickerStream,
+	clampSegmentOffset,
 	segmentDurationSeconds,
 	segmentTravelPx,
 	tickerMayUpdate,
@@ -503,7 +504,12 @@ export const LeagueTicker = memo(() => {
 	// `glide && ...`, not `glide?.key === blockKey`: with no league both sides are
 	// undefined, the comparison is true, and the next line reads through nothing.
 	const playing = glide !== undefined && glide.key === blockKey;
-	const offset = playing ? glide.offset : 0;
+	// Clamped to what this block can actually travel, not merely to what the
+	// glide last asked for - see clampSegmentOffset. A block is only ever
+	// between flush-left and flush-right, so neither end of the bar can go
+	// black however stale the offset is against the measurement.
+	const offset =
+		playing && ready ? clampSegmentOffset(glide.offset, run.travel) : 0;
 	const glideMs = playing ? glide.ms : 0;
 
 	const visible = lid !== undefined && segments.length > 0;
