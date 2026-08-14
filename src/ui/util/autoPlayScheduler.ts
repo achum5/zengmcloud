@@ -697,9 +697,24 @@ class AutoPlayScheduler {
 			}
 		}
 
-		const phase = state.phase;
+		// Read the calendar BEFORE the phase gate, because the preview carries the
+		// worker's own phase and that is the one the gate must trust. The worker's
+		// playMenu happily sims playoff days when asked (its cap is
+		// phase <= PLAYOFFS), so this gate is the only thing between an unattended
+		// timer and the postseason - and `state.phase` is a UI mirror that a
+		// throttled background tab can hold stale right across the boundary. The
+		// same read doubles as the "before" side of the run log.
+		const before = await this.fetchPreview();
+		const phase = before?.phase ?? state.phase;
 		if (!PLAYABLE_PHASES.has(phase)) {
-			if (this.settings.enabled && this.settings.pauseAtPhaseBoundaries) {
+			if (phase === PHASE.PLAYOFFS) {
+				// Stops UNCONDITIONALLY, whatever pauseAtPhaseBoundaries says -
+				// see the note on PLAYABLE_PHASES.
+				this.stop("Regular season over - auto play stopped.");
+			} else if (
+				this.settings.enabled &&
+				this.settings.pauseAtPhaseBoundaries
+			) {
 				this.stop(
 					`Reached ${phaseName(phase)} - advance manually, then re-enable auto play.`,
 				);
@@ -713,9 +728,6 @@ class AutoPlayScheduler {
 		}
 
 		this.ticking = true;
-		// Read the calendar either side of the sim so the log can say where the
-		// league actually went, not just which button was pressed.
-		const before = await this.fetchPreview();
 
 		// The trade deadline is a decision, and an unattended timer is the worst
 		// thing to have make it. The sim stops there on its own (see
@@ -862,6 +874,25 @@ class AutoPlayScheduler {
 	) {
 		if (!this.settings.enabled) {
 			return;
+		}
+
+		// The sim that just ran crossed out of a playable phase. Catch it HERE,
+		// on the fire that crossed it, rather than leaving it to the next tick's
+		// gate - the next tick may be hours away, fired by a different tab, and
+		// the fire it was armed with would sim playoff days. The regular-season
+		// end stops unconditionally (see PLAYABLE_PHASES); other boundaries
+		// honour pauseAtPhaseBoundaries as the pre-fire gate does.
+		if (preview && !PLAYABLE_PHASES.has(preview.phase)) {
+			if (preview.phase === PHASE.PLAYOFFS) {
+				this.stop("Regular season over - auto play stopped.");
+				return;
+			}
+			if (this.settings.pauseAtPhaseBoundaries) {
+				this.stop(
+					`Reached ${phaseName(preview.phase)} - advance manually, then re-enable auto play.`,
+				);
+				return;
+			}
 		}
 
 		const target = this.settings.stopAfter;
