@@ -43,7 +43,7 @@ const Notes = (props: View<"notes">) => {
 	let rows;
 
 	if (props.type === "draftPick") {
-		const { draftPicks } = props;
+		const { draftPicks, teamOvr } = props;
 
 		infoText = (
 			<>
@@ -55,7 +55,7 @@ const Notes = (props: View<"notes">) => {
 		moreLinks = <MoreLinks type="draft" page="notes" draftType={draftType} />;
 
 		const output = getDraftPicksColsAndRows({
-			challengeNoRatings,
+			teamOvr,
 			draftPicks,
 			draftPicksOutgoing: [],
 		});

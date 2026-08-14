@@ -8,13 +8,17 @@ import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { orderBy } from "../../common/utils.ts";
 import Note from "./Player/Note.tsx";
 import { useLocal } from "../util/local.ts";
+import {
+	delayedTeamOvrNote,
+	type TeamOvrDisplay,
+} from "../../common/teamRatings.ts";
 
 const processRows = ({
-	challengeNoRatings,
+	teamOvr,
 	draftPicks,
 	outgoing,
 }: Pick<View<"draftPicks">, "draftPicks"> & {
-	challengeNoRatings: boolean;
+	teamOvr: TeamOvrDisplay;
 	outgoing: boolean;
 }) => {
 	const rows: DataTableRow[] = orderBy(
@@ -64,7 +68,15 @@ const processRows = ({
 					)
 				) : null,
 				dp.powerRanking,
-				!challengeNoRatings ? dp.ovr : null,
+				// Today's rating, the one from N seasons ago, or nothing at all -
+				// whichever the league's team-ratings settings allow. The column
+				// itself is dropped in the "hidden" case, so `null` here only ever
+				// covers a team with no recorded rating for the delayed season.
+				teamOvr.type === "current"
+					? dp.ovr
+					: teamOvr.type === "delayed"
+						? (dp.ovrDelayed ?? null)
+						: null,
 				helpers.formatRecord(dp.record),
 				dp.avgAge?.toFixed(1),
 				dp.trades
@@ -114,11 +126,11 @@ const processRows = ({
 };
 
 export const getDraftPicksColsAndRows = ({
-	challengeNoRatings,
+	teamOvr,
 	draftPicks,
 	draftPicksOutgoing,
 }: Pick<View<"draftPicks">, "draftPicks" | "draftPicksOutgoing"> & {
-	challengeNoRatings: boolean;
+	teamOvr: TeamOvrDisplay;
 }) => {
 	const cols = getCols(
 		[
@@ -144,7 +156,16 @@ export const getDraftPicksColsAndRows = ({
 				title: "Avg Age",
 			},
 			Ovr: {
-				title: "Team Ovr",
+				// A delayed rating has to SAY which season it is from. An unlabelled
+				// old number is worse than none, because it reads as the current one.
+				title:
+					teamOvr.type === "delayed"
+						? `Team Ovr ${teamOvr.season}`
+						: "Team Ovr",
+				desc:
+					teamOvr.type === "delayed"
+						? delayedTeamOvrNote(teamOvr.season)
+						: undefined,
 			},
 			Note: {
 				classNames: "w-100",
@@ -153,16 +174,26 @@ export const getDraftPicksColsAndRows = ({
 	);
 
 	const rows = processRows({
-		challengeNoRatings,
+		teamOvr,
 		draftPicks,
 		outgoing: false,
 	});
 
 	const rowsOutgoing = processRows({
-		challengeNoRatings,
+		teamOvr,
 		draftPicks: draftPicksOutgoing,
 		outgoing: true,
 	});
+
+	// Hidden means the column goes entirely, rather than a row of blanks under a
+	// heading promising a number.
+	const ovrIndex = 5;
+	if (teamOvr.type === "hidden") {
+		cols.splice(ovrIndex, 1);
+		for (const row of [...rows, ...rowsOutgoing]) {
+			row.data.splice(ovrIndex, 1);
+		}
+	}
 
 	return {
 		cols,
@@ -175,6 +206,7 @@ const DraftPicks = ({
 	abbrev,
 	draftPicks,
 	draftPicksOutgoing,
+	teamOvr,
 	tid,
 }: View<"draftPicks">) => {
 	useTitleBar({
@@ -183,13 +215,10 @@ const DraftPicks = ({
 		dropdownFields: { teams: abbrev },
 	});
 
-	const { challengeNoRatings, draftType } = useLocal([
-		"challengeNoRatings",
-		"draftType",
-	]);
+	const { draftType } = useLocal(["draftType"]);
 
 	const { rows, rowsOutgoing, cols } = getDraftPicksColsAndRows({
-		challengeNoRatings,
+		teamOvr,
 		draftPicks,
 		draftPicksOutgoing,
 	});

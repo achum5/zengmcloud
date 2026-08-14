@@ -5,6 +5,7 @@ import { groupByUnique } from "../../common/utils.ts";
 import { addPowerRankingsStuffToTeams } from "./powerRankings.ts";
 import { getEstPicks } from "../core/team/ValueChangeCalculator.ts";
 import { PLAYER } from "../../common/constants.ts";
+import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 
 const adjustProjectedPick = ({
 	projectedPick,
@@ -57,6 +58,14 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 	);
 
 	const teams = groupByUnique(teamsWithRankings, "tid");
+
+	// The team-ratings settings, which this page was ignoring: it gated the Ovr
+	// column on challengeNoRatings alone, so a league running "No Visible Team
+	// Ratings" kept every original team's overall on screen - the same half of
+	// the rule that Frivolities > Team Seasons once got wrong (see
+	// common/teamRatings.ts). No page season: this is "the team's rating", not
+	// one season's, so the delay counts back from today.
+	const { display: teamOvr, ovrs: delayedOvrs } = await getTeamOvrOverride();
 
 	let estPicksCache;
 
@@ -125,6 +134,9 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 			originalAbbrev: t?.abbrev ?? "???",
 			avgAge: t?.powerRankings.avgAge,
 			ovr: t?.powerRankings.ovr,
+			// What that team rated N seasons ago, for a league that shows the
+			// delayed number instead of hiding it outright.
+			ovrDelayed: t === undefined ? undefined : delayedOvrs.get(t.tid),
 			powerRanking: t?.powerRankings.rank ?? Infinity,
 			record: {
 				won: t?.seasonAttrs.won ?? 0,
@@ -137,7 +149,7 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 		});
 	}
 
-	return draftPicks;
+	return { draftPicks, teamOvr };
 };
 
 const updateDraftPicks = async (
@@ -156,7 +168,8 @@ const updateDraftPicks = async (
 			(dp) => dp.tid === tid || dp.originalTid === tid,
 		);
 
-		const draftPicksProcessed = await processDraftPicks(draftPicksRaw);
+		const { draftPicks: draftPicksProcessed, teamOvr } =
+			await processDraftPicks(draftPicksRaw);
 
 		// Do this after processDraftPicks so processDraftPicks can use the same caches for both
 		const draftPicks = [];
@@ -173,6 +186,7 @@ const updateDraftPicks = async (
 			abbrev,
 			draftPicks,
 			draftPicksOutgoing,
+			teamOvr,
 			tid,
 		};
 	}

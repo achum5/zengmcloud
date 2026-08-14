@@ -172,7 +172,7 @@ const updateTeamFinances = async (
 			"draftPicksByTid",
 			inputs.tid,
 		);
-		const draftPicks = (await processDraftPicks(draftPicksRaw))
+		const draftPicks = (await processDraftPicks(draftPicksRaw)).draftPicks
 			.map((dp) => {
 				// A pick's number is known once the order is set; before that the
 				// Draft Picks page's projection is the best estimate there is, and

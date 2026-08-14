@@ -31,11 +31,12 @@ const updateNotes = async (
 				"noCopyCache",
 			);
 
-			const draftPicks = await processDraftPicks(draftPicksRaw);
+			const { draftPicks, teamOvr } = await processDraftPicks(draftPicksRaw);
 
 			return {
 				type,
 				draftPicks,
+				teamOvr,
 			};
 		} else if (type === "game") {
 			const gamesRaw = await idb.getCopies.games({ note: true }, "noCopyCache");
