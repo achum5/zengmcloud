@@ -27,6 +27,7 @@ import {
 } from "firebase/firestore";
 import { getFirebaseApp } from "./firebaseApp.ts";
 import { ttlAtMsFor } from "../../../common/syncRetention.ts";
+import { range } from "../../../common/utils.ts";
 import {
 	decideAdvanceClaim,
 	type AdvanceClaimDoc,
@@ -1794,11 +1795,26 @@ export class FirebaseTransport implements SyncTransport {
 		if (typeof head.data !== "string" || typeof head.chunkCount !== "number") {
 			return undefined;
 		}
+		// Chunks 1..N in PARALLEL - chunk 0 already said how many there are, and
+		// a committed delta's chunks are immutable, so there is nothing an order
+		// of reads can get wrong. Serially this was one round trip per chunk, and
+		// a simmed day spans several chunks: the single biggest term in how long
+		// a catch-up walk took.
 		let out = head.data;
-		for (let i = 1; i < head.chunkCount; i++) {
-			const snap = await getDoc(
-				doc(this.db, "leagues", this.code, "control", v2DeltaDocId(version, i)),
-			);
+		const rest = await Promise.all(
+			range(1, head.chunkCount).map((i) =>
+				getDoc(
+					doc(
+						this.db,
+						"leagues",
+						this.code,
+						"control",
+						v2DeltaDocId(version, i),
+					),
+				),
+			),
+		);
+		for (const snap of rest) {
 			const data = snap.data();
 			// Every chunk must agree with chunk 0 about who wrote it and how many
 			// chunks there are. A zombie ex-authority retrying an uncommitted

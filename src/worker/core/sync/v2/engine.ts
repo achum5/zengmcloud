@@ -1468,8 +1468,79 @@ export class SyncEngineV2 {
 					continue;
 				}
 
-				// Deltas, in order. Any miss aborts the pass; the next pass retries.
+				// Deltas, APPLIED in order - but FETCHED ahead. Applying strictly
+				// serially is the entire protocol (decideApply admits exactly N+1);
+				// fetching has no such constraint, because a committed delta is
+				// immutable. The old walk awaited fetch, then apply, then repaint,
+				// then the next fetch, so the network sat idle during every apply
+				// and a 50-version walk was 50 round trips laid end to end - a field
+				// log clocked it at ~2s per version with the apply itself under
+				// 300ms. Now a small window of upcoming deltas is always in flight
+				// while the current one applies.
+				//
+				// The window is deliberately modest: the same log showed the
+				// Firestore channel stalling outright about every eighth serial
+				// read, and the last thing a wedgy channel needs is a burst of
+				// unbounded parallel reads.
+				//
+				// Nothing about admission changes. A prefetch that fails or times
+				// out resolves undefined, the walk stops at that version exactly as
+				// it did when the direct fetch failed, and the next pass re-plans
+				// from the marker. Abandoned prefetches are plain reads.
 				let progressed = false;
+				const prefetched = new Map<
+					number,
+					Promise<
+						| {
+								serialized: string;
+								authorId: string;
+								action: string;
+								at: number;
+						  }
+						| { prefetchError: Error }
+						| undefined
+					>
+				>();
+				const PREFETCH_AHEAD = 4;
+				const fetchDelta = (version: number) => {
+					// The head version's payload rides inline on the pointer doc when
+					// small (most interactive edits). Using it needs no read at all -
+					// which is why a roster move now lands the moment the pointer
+					// push arrives, even when chunk reads are hanging.
+					if (version === state.version && state.inlineDelta !== undefined) {
+						return Promise.resolve({
+							serialized: state.inlineDelta,
+							authorId: state.authorId,
+							action: state.action ?? "?",
+							at: state.at,
+						});
+					}
+					if (!this.transport.fetchV2Delta) {
+						return Promise.resolve(undefined);
+					}
+					return withTimeout(
+						this.transport.fetchV2Delta(version),
+						CATCHUP_READ_TIMEOUT_MS,
+					).catch((error) => {
+						// Resolved, never rejected: a prefetch nobody has awaited yet
+						// must not become an unhandled rejection when the walk aborts
+						// on an earlier version. The error itself is KEPT, not
+						// swallowed - the walk rethrows it when this version's turn
+						// comes, because the catch block below is where the failure
+						// streak, the timed-out-read wedge signature and the
+						// network-cycle remedy all live. A timeout that quietly became
+						// "delta missing" would starve all three.
+						return { prefetchError: error as Error };
+					});
+				};
+				const prefetch = (version: number) => {
+					let promise = prefetched.get(version);
+					if (!promise) {
+						promise = fetchDelta(version);
+						prefetched.set(version, promise);
+					}
+					return promise;
+				};
 				// A walk of more than one version paints once at the end instead of
 				// once per version. Each repaint is awaited before the next version
 				// can even be fetched, so 150 of them both stutter the UI and stretch
@@ -1480,26 +1551,23 @@ export class SyncEngineV2 {
 					beginCoalescedRefresh();
 				}
 				try {
-					for (const version of plan.versions) {
+					for (const [i, version] of plan.versions.entries()) {
 						step = `delta@${version}`;
-						// The head version's payload rides inline on the pointer doc when
-						// small (most interactive edits). Using it needs no read at all -
-						// which is why a roster move now lands the moment the pointer
-						// push arrives, even when chunk reads are hanging.
-						const delta =
-							version === state.version && state.inlineDelta !== undefined
-								? {
-										serialized: state.inlineDelta,
-										authorId: state.authorId,
-										action: state.action ?? "?",
-										at: state.at,
-									}
-								: this.transport.fetchV2Delta
-									? await withTimeout(
-											this.transport.fetchV2Delta(version),
-											CATCHUP_READ_TIMEOUT_MS,
-										)
-									: undefined;
+						for (
+							let ahead = i;
+							ahead < plan.versions.length && ahead <= i + PREFETCH_AHEAD;
+							ahead++
+						) {
+							prefetch(plan.versions[ahead]!);
+						}
+						const fetched = await prefetch(version);
+						prefetched.delete(version);
+						if (fetched && "prefetchError" in fetched) {
+							// Rethrown here so a timed-out read still lands in the catch
+							// block exactly as it did when the fetch was awaited inline.
+							throw fetched.prefetchError;
+						}
+						const delta = fetched;
 						if (!delta) {
 							syncDebugLog("v2:delta-missing", { version });
 							return false;

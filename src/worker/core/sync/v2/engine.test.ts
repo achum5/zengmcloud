@@ -467,6 +467,59 @@ describe("SyncEngineV2", () => {
 		assert.strictEqual(players.length, 3);
 	});
 
+	// THE PREFETCH PIPELINE. The walk fetches a window of deltas ahead of the
+	// one it is applying, because fetching is what a long catch-up spends its
+	// time on. Fetch COMPLETION order is up to the network; apply order is the
+	// protocol. So make the fetches complete deliberately backwards - version 8
+	// first, version 1 last - and require the applies to land 1..8 regardless.
+	test("prefetched deltas apply in version order however the fetches complete", async () => {
+		const room = new Room();
+		initRoom(room);
+		const authorTransport = new V2Transport("A", room);
+		for (let v = 1; v <= 8; v++) {
+			await authorTransport.publishV2Delta(
+				{ version: v, authorId: "A", action: `step${v}`, at: v },
+				serializeChangeset(changesetOf(tradePut(v, v * 10))),
+			);
+			await authorTransport.commitV2Version(
+				{ version: v, authorId: "A", byName: "A", at: v, action: `step${v}` },
+				v - 1,
+			);
+		}
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		const realFetch = transport.fetchV2Delta.bind(transport);
+		const applied: number[] = [];
+		let inFlight = 0;
+		let maxInFlight = 0;
+		transport.fetchV2Delta = async (version: number) => {
+			inFlight += 1;
+			maxInFlight = Math.max(maxInFlight, inFlight);
+			// Higher versions resolve FASTER, so the pipeline's completions run
+			// exactly backwards from the order they must apply in.
+			await new Promise((resolve) => {
+				setTimeout(resolve, (9 - version) * 5);
+			});
+			inFlight -= 1;
+			const out = await realFetch(version);
+			if (out) {
+				applied.push(version);
+			}
+			return out;
+		};
+
+		const engine = new SyncEngineV2(transport);
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(await readAppliedVersion(), 8);
+		const players = await (idb as any).league.getAll("players");
+		assert.strictEqual(players.length, 8, "every version's record landed");
+		assert.ok(
+			maxInFlight > 1,
+			`fetches must overlap or the pipeline is not pipelining (saw ${maxInFlight})`,
+		);
+	});
+
 	// THE SKIP, made impossible: if version 2's payload is unreachable, version
 	// 3 must NOT apply. v1 skipped the missing day and forked; v2 stops.
 	test("a missing middle version stops the walk - later versions never apply", async () => {
