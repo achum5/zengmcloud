@@ -1154,10 +1154,12 @@ tr.table-warning:hover > td {
 	}
 }
 
-$league-top-bar-toggle-width: 15px;
+// No reservation at the right edge any more: the show/hide chevron that used
+// to be pinned there is a Global Settings option, so the strip simply ends
+// after its last button. (The berth it needed was held by padding here AND by
+// a margin on Safari, which is what left a dead gap after the last score on
+// iOS.)
 .league-top-bar {
-	padding-right: $league-top-bar-toggle-width;
-
 	// For scrollbar that grows on hover
 	height: 63px;
 	@include media-breakpoint-up(sm) {
@@ -1165,26 +1167,6 @@ $league-top-bar-toggle-width: 15px;
 			height: 0 !important;
 		}
 	}
-}
-// Safari keeps the pinned toggle clear of the scroll container with a MARGIN
-// (the container ends before the toggle) where everyone else uses the
-// container's own padding-right. Both at once reserved the toggle's width
-// twice - padding inside plus margin outside, plus an 8px fudge - which is
-// what put a dead ~40px hole between the end of the score strip and the
-// toggle on iOS. One mechanism at a time: margin exactly the toggle's width,
-// padding off.
-.league-top-bar-safari {
-	margin-right: $league-top-bar-toggle-width;
-	padding-right: 0;
-}
-.league-top-bar-toggle {
-	border-top-right-radius: 0 !important;
-	border-bottom-right-radius: 0 !important;
-	width: $league-top-bar-toggle-width;
-	height: 56px;
-	z-index: 1000;
-	position: absolute;
-	right: 0px;
 }
 
 $small-scrollbar-track-color: $gray-300 !default;

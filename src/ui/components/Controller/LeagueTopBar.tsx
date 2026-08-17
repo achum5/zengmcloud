@@ -1,33 +1,14 @@
-import clsx from "clsx";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { useLocal, localActions } from "../../util/local.ts";
+import { useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
 import { ScoreBox } from "../ScoreBox/index.tsx";
 import { emitter } from "../Modal.tsx";
 
-const Toggle = ({ show, toggle }: { show: boolean; toggle: () => void }) => {
-	// container-fluid is needed to make this account for scrollbar width when modal is open
-	return (
-		<button
-			className="btn btn-secondary p-0 league-top-bar-toggle"
-			title={show ? "Hide scores" : "Show scores"}
-			onClick={toggle}
-		>
-			<span
-				className={clsx(
-					"glyphicon",
-					show ? "glyphicon-menu-right" : "glyphicon-menu-left",
-				)}
-			/>
-		</button>
-	);
-};
-
-const hiddenStyle = {
-	height: 0,
-};
-
-const IS_SAFARI = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+// The strip of recent scores under the navbar. Shown or hidden from Global
+// Settings (Scores Bar) rather than by a chevron pinned to its own right edge -
+// that button cost every browser a permanent reservation at the end of the
+// strip, and on iOS it was reserved twice over, which read as a dead gap after
+// the last score.
 
 export const LeagueTopBar = memo(() => {
 	const { games, lid, liveGameInProgress, showLeagueTopBar } = useLocal([
@@ -128,7 +109,14 @@ export const LeagueTopBar = memo(() => {
 		games[0]!.teams[0].tid === -1 &&
 		games[0]!.teams[1].tid === -2;
 
-	if (lid === undefined || games.length === 0 || onlyAllStarGame) {
+	// Turned off for this device, or nothing worth showing: keep the spacer so
+	// the page below sits where it always did, and render no strip at all.
+	if (
+		!showLeagueTopBar ||
+		lid === undefined ||
+		games.length === 0 ||
+		onlyAllStarGame
+	) {
 		return <div className="mt-2" />;
 	}
 
@@ -137,13 +125,11 @@ export const LeagueTopBar = memo(() => {
 		prevGames.current = games;
 	}
 
-	if (showLeagueTopBar) {
-		// Show only the first upcoming game
-		for (const game of prevGames.current) {
-			games2.push(game);
-			if (game.teams[0].pts === undefined) {
-				break;
-			}
+	// Show only the first upcoming game
+	for (const game of prevGames.current) {
+		games2.push(game);
+		if (game.teams[0].pts === undefined) {
+			break;
 		}
 	}
 
@@ -157,36 +143,21 @@ export const LeagueTopBar = memo(() => {
 
 	return (
 		<div
-			className={`league-top-bar${
-				IS_SAFARI ? " league-top-bar-safari" : ""
-			} flex-shrink-0 d-flex overflow-auto small-scrollbar flex-row ps-1 mt-2`}
-			style={showLeagueTopBar ? undefined : hiddenStyle}
+			className="league-top-bar flex-shrink-0 d-flex overflow-auto small-scrollbar flex-row ps-1 mt-2"
 			ref={(element) => {
 				// Shit is wild, if I just do ref={setWrapperElement} it somehow breaks scrolling to the right, idk why
 				setWrapperElement(element);
 			}}
 		>
-			<Toggle
-				show={showLeagueTopBar}
-				toggle={() => {
-					if (showLeagueTopBar === false) {
-						// When showing, always scroll to right
-						keepScrollToRightRef.current = true;
-					}
-					localActions.setShowLeagueTopBar(!showLeagueTopBar);
-				}}
-			/>
-			{showLeagueTopBar
-				? games2.map((game, i) => (
-						<ScoreBox
-							key={game.gid}
-							className={`me-2${i === 0 ? " ms-auto" : ""}`}
-							game={game}
-							small
-						/>
-					))
-				: null}
-			{showLeagueTopBar && games2.length > 0 ? (
+			{games2.map((game, i) => (
+				<ScoreBox
+					key={game.gid}
+					className={`me-2${i === 0 ? " ms-auto" : ""}`}
+					game={game}
+					small
+				/>
+			))}
+			{games2.length > 0 ? (
 				<>
 					<a
 						className="btn btn-light-bordered d-flex align-items-center me-2 px-1"

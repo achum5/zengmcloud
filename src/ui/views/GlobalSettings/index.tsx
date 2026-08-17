@@ -46,6 +46,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			leagueTicker: local.getState().leagueTickerEnabled
 				? "show"
 				: ("hide" as const),
+			scoresBar: local.getState().showLeagueTopBar ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -92,6 +93,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		// Device-local, like the color scheme above: saved straight to this browser
 		// rather than sent to the worker with the options below.
 		localActions.setLeagueTickerEnabled(state.leagueTicker === "show");
+		localActions.setShowLeagueTopBar(state.scoresBar === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -177,6 +179,26 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							className="form-select"
 							onChange={handleChange("leagueTicker")}
 							value={state.leagueTicker}
+						>
+							<option value="show">Show</option>
+							<option value="hide">Hide</option>
+						</select>
+					</div>
+					<div className="col-sm-3 col-6 mb-3">
+						<label className="form-label" htmlFor="options-scoresBar">
+							Scores Bar{" "}
+							<HelpPopover title="Scores Bar">
+								<p>
+									The row of recent scores across the top of the screen, on this
+									device only.
+								</p>
+							</HelpPopover>
+						</label>
+						<select
+							id="options-scoresBar"
+							className="form-select"
+							onChange={handleChange("scoresBar")}
+							value={state.scoresBar}
 						>
 							<option value="show">Show</option>
 							<option value="hide">Hide</option>
