@@ -20,7 +20,7 @@ import {
 } from "./liveChat.ts";
 import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
-import { setLiveWatchGate, setRoomBroadcastGate } from "./liveWatchGate.ts";
+import { setLiveWatchGate } from "./liveWatchGate.ts";
 import { decideFollowAction } from "./liveBroadcastFollow.ts";
 import {
 	readLocalLeagueId,
@@ -511,16 +511,6 @@ export const getFollowedBroadcastPayload = () => followedBroadcastPayload;
 // it never overwrites one already running on the room's one doc.
 let roomBroadcastMeta: LiveBroadcastMeta | undefined;
 
-// And the sim fence asks this one: is a live sim running in the room at all?
-// Walking out of a broadcast must not hand this device permission to start a
-// second sim on top of the one it just left.
-setRoomBroadcastGate(
-	() =>
-		roomBroadcastMeta !== undefined &&
-		roomBroadcastMeta.active &&
-		roomBroadcastMeta.expiresAt > Date.now(),
-);
-
 // Show/clear the header pill. Its whole job is "a game is being simmed live,
 // click to watch" - so it is only up for a broadcast this device is NOT inside:
 // after walking out of one, or before an auto-join has managed to land. While
@@ -581,12 +571,12 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 	}
 	// One broadcast doc per room, and whoever got there first keeps it. A second
 	// one stays local rather than overwriting a broadcast out from under the
-	// people watching it - now that every broadcast pulls the room in, clobbering
-	// the doc would yank them from one game to another mid-play. (The sim gates
-	// make this near impossible to reach - a device inside a broadcast can't
-	// start a sim - but the doc write is the last line of defence, not the
-	// first. A crashed broadcaster's doc stops counting the moment its lease
-	// lapses, so this can never wedge the room for more than the lease.)
+	// people watching it - every broadcast pulls the room in, so clobbering the
+	// doc would yank them from one game to another mid-play. This is the NORMAL
+	// path for simultaneous sims, not a rarity: any device may live-sim its own
+	// game while another broadcast runs (see ownGameSimGate), it just watches
+	// alone. A crashed broadcaster's doc stops counting the moment its lease
+	// lapses, so the slot can never wedge the room for more than the lease.
 	if (
 		roomBroadcastMeta &&
 		roomBroadcastMeta.active &&
@@ -853,16 +843,23 @@ const handleLiveBroadcastMeta = async (
 
 	roomBroadcastMeta = meta;
 
-	// Whoever is simming it, the room watches it - see liveBroadcastFollow.ts for
-	// the rules and why leaving has to survive the cursor heartbeats.
-	const action = decideFollowAction(meta, followedBroadcast);
-	if (!followedBroadcast || action === "join") {
+	// Whoever is simming it, the room watches it - see liveBroadcastFollow.ts
+	// for the rules, why leaving has to survive the cursor heartbeats, and why a
+	// device mid-live-sim of its OWN game is pilled rather than pulled.
+	const action = decideFollowAction(
+		meta,
+		followedBroadcast,
+		local.liveSimGid !== undefined,
+	);
+	if (action === "join") {
 		setWatchablePill(undefined);
 		await followBroadcast(meta, transport);
 		return;
 	}
 
-	followedBroadcast.expiresAt = meta.expiresAt;
+	if (followedBroadcast) {
+		followedBroadcast.expiresAt = meta.expiresAt;
+	}
 	setWatchablePill(action === "pill" ? meta : undefined);
 	if (action === "cursor") {
 		pushFollowerState(meta);

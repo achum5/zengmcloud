@@ -23,10 +23,6 @@ import { g, local } from "../../util/index.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { getRoomAutoPlayNextRunAt } from "./connect.ts";
-import {
-	isLiveBroadcastActiveInRoom,
-	isWatchingLiveBroadcast,
-} from "./liveWatchGate.ts";
 
 const OWN_GAME_ACTIONS = new Set(["simGame", "liveGame"]);
 
@@ -68,14 +64,15 @@ export const decideOwnGameSimCall = async (
 		isOwnGame: await gidIsOwnGame(gid),
 		isAuthority: engine?.isAuthority() ?? false,
 		connectedAndReady: engine !== undefined,
-		// A live sim already playing here, or a league-mate's broadcast in
-		// progress: starting another is exactly what the fence would refuse.
-		// Room-wide, not just "am I watching" - leaving a broadcast is not
-		// permission to sim over the top of it.
-		simInFlight:
-			local.liveSimGid !== undefined ||
-			isWatchingLiveBroadcast() ||
-			isLiveBroadcastActiveInRoom(),
+		// Only a live sim already playing ON THIS DEVICE. A league-mate's
+		// broadcast is no obstacle: their gid and yours are disjoint slices to
+		// the day-claim fence, the broadcast slot is first-come-first-served
+		// (startLiveBroadcast keeps a second sim local rather than clobbering
+		// the room's watch party), and watching is left by navigating away -
+		// which pressing Sim does. This used to be room-wide, which meant one
+		// person's slow playback locked everyone else out of watching their own
+		// game until it ended.
+		simInFlight: local.liveSimGid !== undefined,
 		msUntilAutoSim:
 			nextRunAt === undefined ? undefined : nextRunAt - Date.now(),
 		cutoffSeconds:

@@ -39,9 +39,14 @@ export type FollowAction =
 export const decideFollowAction = (
 	broadcast: { startedAt: number; gameOver: boolean },
 	followed: FollowRecord,
+	// A live sim of this device's OWN game is playing right now (two can run at
+	// once - see ownGameSimGate). Never navigated out from under: the pill is
+	// offered instead, and since nothing is recorded against the broadcast, the
+	// first heartbeat after the local sim ends joins it as normal.
+	localSimActive = false,
 ): FollowAction => {
 	if (!followed || followed.startedAt !== broadcast.startedAt) {
-		return "join";
+		return localSimActive ? "pill" : "join";
 	}
 	if (followed.left) {
 		return broadcast.gameOver ? "ignore" : "pill";

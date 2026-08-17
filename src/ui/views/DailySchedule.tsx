@@ -80,9 +80,9 @@ const DailySchedule = ({
 
 	const {
 		gameSimInProgress,
+		liveGameInProgress,
 		mpAutoPlay,
 		mpLiveBroadcast,
-		mpLiveWatchable,
 		mpSyncActive,
 		mpSyncIsHost,
 		mpSyncReady,
@@ -93,9 +93,9 @@ const DailySchedule = ({
 		userTid,
 	} = useLocal([
 		"gameSimInProgress",
+		"liveGameInProgress",
 		"mpAutoPlay",
 		"mpLiveBroadcast",
-		"mpLiveWatchable",
 		"mpSyncActive",
 		"mpSyncIsHost",
 		"mpSyncReady",
@@ -137,9 +137,10 @@ const DailySchedule = ({
 			isAuthority: !mpSyncActive || !!mpSyncIsHost,
 			connectedAndReady:
 				!mpSyncActive || (!!mpSyncReady && !mpSyncReconnecting),
-			// Watching one, or one is running in the room and this device walked
-			// out of it - either way a second sim is what the worker would refuse.
-			simInFlight: !!mpLiveBroadcast?.active || !!mpLiveWatchable,
+			// Only a live sim playing on THIS device (e.g. in another tab). A
+			// league-mate's broadcast no longer blocks - your game and theirs run
+			// side by side, yours watched here, theirs still a pill away.
+			simInFlight: !!liveGameInProgress,
 			msUntilAutoSim:
 				typeof autoPlayNextRunAt === "number"
 					? autoPlayNextRunAt - now

@@ -46,8 +46,14 @@ export const decideOwnGameSim = ({
 	// exception is not for it.
 	isAuthority: boolean;
 	connectedAndReady: boolean;
-	// A sim already running anywhere in the room - local, or a league-mate's
-	// broadcast. Two at once is exactly what the fence would refuse.
+	// A live sim already playing ON THIS DEVICE. A league-mate's broadcast
+	// running elsewhere in the room does NOT block: their game and yours are
+	// different gids, so the day-claim fence grants them as disjoint slices, and
+	// the broadcast slot is first-come-first-served (a second sim plays locally
+	// rather than clobbering the room's watch party - see startLiveBroadcast).
+	// Blocking the whole room on one person's playback meant nobody else could
+	// watch their own game until it ended, which is the opposite of what
+	// everyone-can-watch was for.
 	simInFlight: boolean;
 	// Until the room's scheduled auto sim. Undefined when nobody is auto-playing,
 	// which removes the race entirely.
@@ -69,7 +75,7 @@ export const decideOwnGameSim = ({
 	if (simInFlight) {
 		return {
 			allow: false,
-			reason: "A game is already being simmed. Try again in a moment.",
+			reason: "A live sim is already playing on this device.",
 		};
 	}
 	if (

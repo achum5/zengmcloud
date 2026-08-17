@@ -50,4 +50,30 @@ describe("decideFollowAction", () => {
 			"ignore",
 		);
 	});
+
+	test("a device mid-sim of its OWN game is pilled, never pulled", () => {
+		// Two live sims can run at once now (ownGameSimGate). The room's
+		// broadcast must not yank this device out of its own playback - and
+		// every heartbeat is such a chance, same as the Leave case above.
+		assert.strictEqual(decideFollowAction(live, undefined, true), "pill");
+	});
+
+	test("once its own sim ends, the next heartbeat joins as normal", () => {
+		// Nothing was recorded against the broadcast while the local sim played,
+		// so the ordinary never-seen-it rule takes over.
+		assert.strictEqual(decideFollowAction(live, undefined, false), "join");
+	});
+
+	test("its own sim does not disturb an earlier Leave decision", () => {
+		// Left the broadcast, then started an own-game sim: still just the pill,
+		// and still no invitation back into a finished game.
+		assert.strictEqual(
+			decideFollowAction(live, { startedAt: 1000, left: true }, true),
+			"pill",
+		);
+		assert.strictEqual(
+			decideFollowAction(finished, { startedAt: 1000, left: true }, true),
+			"ignore",
+		);
+	});
 });
