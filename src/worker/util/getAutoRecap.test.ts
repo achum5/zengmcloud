@@ -604,6 +604,92 @@ describe("recap quality (from real Day 1 output)", () => {
 		assert.ok(!/\. Richard Hamilton won it/.test(recap), recap);
 	});
 
+	test("a clutch hero with a big night gets his line folded into the shot", () => {
+		const hornets = realisticTeam(
+			{
+				tid: 60,
+				region: "New Orleans",
+				name: "Hornets",
+				abbrev: "NOL",
+				pts: 120,
+				ptsQtrs: [30, 30, 30, 30],
+			},
+			player({ name: "Derrick Rose", pts: 22, ast: 13, fg: 9, fga: 16 }),
+		);
+		// The hero is NOT the lead star, and scored plenty himself.
+		hornets.players.push(
+			player({ name: "Viktor Khryapa", pts: 23, reb: 5, fg: 9, fga: 14 }),
+		);
+		const magic = realisticTeam(
+			{
+				tid: 61,
+				region: "Orlando",
+				name: "Magic",
+				abbrev: "ORL",
+				pts: 117,
+				ptsQtrs: [30, 29, 29, 29],
+			},
+			player({ name: "O.J. Mayo", pts: 30, fg: 11, fga: 22 }),
+		);
+		const recap = getAutoRecap(
+			game({
+				gid: 9090,
+				teams: [hornets, magic],
+				winnerTid: 60,
+				clutchPlays: [
+					'<a href="#">Viktor Khryapa</a> made a game-winning three-point play with 0.7 seconds remaining.',
+				],
+			}),
+		);
+		// His total rides with the winning shot...
+		assert.ok(
+			/Viktor Khryapa won it with .* and finished with 23 points/.test(recap),
+			recap,
+		);
+		// ...so the supporting cast must not introduce him a second time. His
+		// name appears in the headline and the clutch sentence, nowhere else.
+		const mentions = recap.match(/Viktor Khryapa/g) ?? [];
+		assert.ok(mentions.length <= 2, recap);
+	});
+
+	test("a clutch hero with a modest total keeps the shot sentence clean", () => {
+		const pacers = realisticTeam(
+			{
+				tid: 62,
+				region: "Indiana",
+				name: "Pacers",
+				abbrev: "IND",
+				pts: 97,
+				ptsQtrs: [24, 24, 24, 25],
+			},
+			player({ name: "Zoran Planinic", pts: 27, ast: 6, fg: 12, fga: 15 }),
+		);
+		pacers.players.push(player({ name: "Matt Bonner", pts: 6, reb: 3 }));
+		const clippers = realisticTeam(
+			{
+				tid: 63,
+				region: "Los Angeles",
+				name: "Clippers",
+				abbrev: "LAC",
+				pts: 95,
+				ptsQtrs: [24, 24, 24, 23],
+			},
+			player({ name: "Jarvis Hayes", pts: 20, fg: 8, fga: 16 }),
+		);
+		const recap = getAutoRecap(
+			game({
+				gid: 9091,
+				teams: [pacers, clippers],
+				winnerTid: 62,
+				clutchPlays: [
+					'<a href="#">Matt Bonner</a> made a game-winning free throw with 0.5 seconds remaining.',
+				],
+			}),
+		);
+		// Six points is an anticlimax stapled to the biggest moment of the game.
+		assert.ok(!/won it with .* and finished with/.test(recap), recap);
+	});
+
 	test("injury text is prose-cased with acronyms kept, and says 'games'", () => {
 		const spurs = realisticTeam(
 			{
@@ -1557,7 +1643,13 @@ describe("getAutoDayRecap", () => {
 			playoffs: false,
 			games,
 		});
-		assert.ok(/On the injury front/.test(recap), recap);
+		// The frame rotates day to day; any of them counts as covering it.
+		assert.ok(
+			/On the injury front|took its toll|casualty list|hurt along the way/.test(
+				recap,
+			),
+			recap,
+		);
 		assert.ok(
 			/Vince Carter \(sprained ankle, out ~5 games\)/.test(recap),
 			recap,

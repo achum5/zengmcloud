@@ -651,9 +651,25 @@ const clutchWhat = (
 };
 
 // The clutch shot's own beat in the body: who won it, with what, and when.
+// The winning shot, with the hero's full line folded in when it deserves the
+// ink - "Viktor Khryapa won it with a three-point play" hid that he ALSO had 23
+// points, so the supporting-cast sentence re-introduced the headline hero as if
+// he were a bench note. Tells the caller whose line it printed so nothing else
+// prints it again. A modest total stays out - "and finished with 6 points" is
+// an anticlimax stapled to the biggest moment of the game.
 const clutchSentence = (
 	shot: NonNullable<ReturnType<typeof clutchShot>>,
-): string => `${shot.name} won it with ${clutchWhat(shot)}.`;
+	shape?: Shape,
+): { text: string; told?: string } => {
+	const hero = shape?.winner.players.find((x) => x.name === shot.name);
+	if (hero && hero.pts >= 15) {
+		return {
+			text: `${shot.name} won it with ${clutchWhat(shot)} and finished with ${statPhrase(hero, 1)}.`,
+			told: hero.name,
+		};
+	}
+	return { text: `${shot.name} won it with ${clutchWhat(shot)}.` };
+};
 
 const scoreTag = (shape: Shape): string => {
 	const ot =
@@ -1712,7 +1728,7 @@ const plusMinusNote = (
 			`${best.name} was a team-best +${best.pm} in ${best.min} minutes.`,
 			`Nobody swung it further than ${best.name}, +${best.pm} across ${best.min} minutes.`,
 			`${best.name} finished +${best.pm}, the best mark on the floor.`,
-			`${best.name} was on the court for ${best.min} minutes and came out +${best.pm}.`,
+			`${cap(theNick(shape.winner))} outscored them by ${best.pm} with ${best.name} on the floor.`,
 		],
 		"plusMinus",
 	);
@@ -1755,9 +1771,13 @@ const supportSentence = (
 	shape: Shape,
 	star: RecapPlayer,
 	rng: () => number,
+	// A clutch hero whose full line the winning-shot sentence already printed.
+	alreadyTold?: string,
 ): string | undefined => {
 	const cast = supportingCast(shape.winner.players, star).filter(
-		(p) => p.pts >= 12 || doubleCategories(p).length >= 2 || p.reb >= 12,
+		(p) =>
+			p.name !== alreadyTold &&
+			(p.pts >= 12 || doubleCategories(p).length >= 2 || p.reb >= 12),
 	);
 	if (cast.length === 0) {
 		return undefined;
@@ -1983,12 +2003,12 @@ const stakesSentence = (
 							`${cap(theNick(shape.winner))} were given no chance, ${dog} points the wrong side of the line.`,
 							`Nobody had ${theNick(shape.winner)} winning - they were ${dog}-point dogs.`,
 							`${cap(theNick(shape.winner))} entered ${dog}-point underdogs.`,
-							`The books had ${theNick(shape.winner)} ${dog} points short of this one.`,
+							`The books had ${theNick(shape.winner)} losing by ${dog}.`,
 						]
 					: [
 							`${cap(theNick(shape.winner))} entered ${dog}-point underdogs.`,
 							`${cap(theNick(shape.winner))} were getting ${dog} and did not need them.`,
-							`The line had ${theNick(shape.winner)} ${dog} points short.`,
+							`${cap(theNick(shape.winner))} won as ${dog}-point underdogs.`,
 						],
 				big ? "underdogBig" : "underdogSmall",
 			),
@@ -2121,7 +2141,7 @@ const vsAverageNote = (
 			rng,
 			[
 				`${star.name} came into the night averaging ${avg.pts.toFixed(1)} points a game.`,
-				`That is ${Math.round(over)} clear of ${poss(star.name)} ${avg.pts.toFixed(1)} season average.`,
+				`That is ${Math.round(over)} more than the ${avg.pts.toFixed(1)} a game ${star.name} had been averaging.`,
 				`${star.name} had been averaging ${avg.pts.toFixed(1)} points a game to this point.`,
 				`It was a long way past the ${avg.pts.toFixed(1)} a night ${star.name} had been putting up.`,
 			],
@@ -2308,7 +2328,7 @@ const defensiveNote = (
 	}
 	if (bigThief) {
 		options.push(
-			`${bigThief.name} picked off ${plural(bigThief.stl, "pass")}.`,
+			`${bigThief.name} came up with ${plural(bigThief.stl, "steal")}.`,
 		);
 	}
 	if (options.length === 0) {
@@ -2340,7 +2360,7 @@ const foulOutNote = (
 						`${p.name} fouled out with ${line}.`,
 						`${p.name} was gone by the end, fouling out with ${line}.`,
 						`Foul trouble cost ${p.name}, who finished with ${line}.`,
-						`${p.name} picked up his sixth with ${line}.`,
+						`${p.name} picked up his sixth foul, done for the night with ${line}.`,
 					],
 					"foulOut",
 				);
@@ -2661,6 +2681,9 @@ export const getAutoRecap = (game: RecapGame): string => {
 	const para1: string[] = [];
 	const shot = clutchShot(game);
 	let flowCovered: string | undefined;
+	// Set when the clutch sentence printed the hero's full line, so the
+	// supporting cast doesn't introduce him a second time.
+	let heroTold: string | undefined;
 
 	if (headline.spentStar) {
 		// The headline already told the star's story. Open on the RESULT and let
@@ -2691,8 +2714,8 @@ export const getAutoRecap = (game: RecapGame): string => {
 				pick(
 					rng,
 					[
-						`${star.name} got there on ${star.fg}-of-${star.fga} shooting.`,
-						`${star.name} needed ${star.fga} shots to do it, making ${star.fg}.`,
+						`${star.name} scored his ${star.pts} on ${star.fg}-of-${star.fga} shooting.`,
+						`${star.name} needed ${star.fga} shots for his ${star.pts}, making ${star.fg}.`,
 						`${star.name} finished ${star.fg}-of-${star.fga} from the floor.`,
 					],
 					"starSplit",
@@ -2702,7 +2725,9 @@ export const getAutoRecap = (game: RecapGame): string => {
 			para1.push(starSentence);
 		}
 		if (shot && !shot.tying) {
-			para1.push(clutchSentence(shot));
+			const clutch = clutchSentence(shot, shape);
+			para1.push(clutch.text);
+			heroTold = clutch.told;
 		}
 	} else if (shot && !shot.tying && shot.name !== star.name) {
 		// The headline is the winning shot (buildHeadline always leads with one
@@ -2713,9 +2738,11 @@ export const getAutoRecap = (game: RecapGame): string => {
 		// points as...". Result, then the shot, then the leading scorer.
 		const opener = resultLead(game, shape, rng);
 		flowCovered = opener.covers;
+		const clutch = clutchSentence(shot, shape);
+		heroTold = clutch.told;
 		para1.push(
 			opener.text,
-			clutchSentence(shot),
+			clutch.text,
 			leadSentence(game, shape, star, rng, true),
 		);
 	} else {
@@ -2758,7 +2785,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 	if (post.sentences.length > 0) {
 		para2.push(post.sentences[0]!);
 	}
-	const support = supportSentence(shape, star, rng);
+	const support = supportSentence(shape, star, rng, heroTold);
 	if (support) {
 		para2.push(support);
 	}
@@ -3020,6 +3047,7 @@ const gbText = (gb: number): string =>
 
 const conferencePictureSentence = (
 	standings: RecapDayStandings | undefined,
+	rng: () => number,
 ): string | undefined => {
 	if (!standings || standings.confs.length === 0) {
 		return undefined;
@@ -3056,12 +3084,26 @@ const conferencePictureSentence = (
 	if (bits.length === 0) {
 		return undefined;
 	}
-	return `In the standings, ${naturalList(bits)}.`;
+	// The same closer every night reads like a form letter; the frame rotates
+	// even though the facts inside it cannot.
+	return pick(
+		rng,
+		[
+			`In the standings, ${naturalList(bits)}.`,
+			`Around the top of the table, ${naturalList(bits)}.`,
+			`As it stands, ${naturalList(bits)}.`,
+			`The bigger picture: ${naturalList(bits)}.`,
+		],
+		"dayStandings",
+	);
 };
 
 // The night's injury news, worst first - a real league wrap covers who went
 // down, not just who went off.
-const injuryRoundup = (games: RecapGame[]): string | undefined => {
+const injuryRoundup = (
+	games: RecapGame[],
+	rng: () => number,
+): string | undefined => {
 	const bits: { text: string; severity: number }[] = [];
 	for (const game of games) {
 		if (game.allStar) {
@@ -3086,11 +3128,23 @@ const injuryRoundup = (games: RecapGame[]): string | undefined => {
 	}
 	bits.sort((a, b) => b.severity - a.severity);
 	const top = bits.slice(0, 3).map((b) => b.text);
-	return `On the injury front, ${naturalList(top)} went down.`;
+	return pick(
+		rng,
+		[
+			`On the injury front, ${naturalList(top)} went down.`,
+			`The night took its toll: ${naturalList(top)}.`,
+			`${cap(naturalList(top))} ${top.length === 1 ? "was" : "were"} hurt along the way.`,
+			`The casualty list: ${naturalList(top)}.`,
+		],
+		"dayInjuries",
+	);
 };
 
 // A team riding a notable win streak into the night.
-const teamStreakSentence = (games: RecapGame[]): string | undefined => {
+const teamStreakSentence = (
+	games: RecapGame[],
+	rng: () => number,
+): string | undefined => {
 	let best: { team: RecapTeam; count: number } | undefined;
 	for (const game of games) {
 		if (game.allStar) {
@@ -3111,7 +3165,16 @@ const teamStreakSentence = (games: RecapGame[]): string | undefined => {
 	if (!best) {
 		return undefined;
 	}
-	return `${cap(theNick(best.team))} ran their win streak to ${best.count} games.`;
+	return pick(
+		rng,
+		[
+			`${cap(theNick(best.team))} ran their win streak to ${best.count} games.`,
+			`${cap(theNick(best.team))} have now won ${best.count} straight.`,
+			`Make it ${numWord(best.count)} in a row for ${theNick(best.team)}.`,
+			`${cap(theNick(best.team))} stretched their run to ${best.count} wins.`,
+		],
+		"dayStreak",
+	);
 };
 
 // A compact, varied series-state clause for one playoff/play-in game, for the day
@@ -3681,12 +3744,20 @@ const leagueNotes = (
 		});
 	}
 	if (highest && highest.total >= 235) {
+		const ot = highest.shape.ot;
 		cands.push({
 			sort: 1,
 			tid: highest.shape.winner.tid,
-			text: `${cap(theNick(highest.shape.winner))} and ${theNick(
-				highest.shape.loser,
-			)} combined for ${highest.total} points, the most of any game on the slate.`,
+			text:
+				ot > 0
+					? `${cap(theNick(highest.shape.winner))} and ${theNick(
+							highest.shape.loser,
+						)} put up the slate's biggest total, ${highest.total} points across ${
+							ot === 1 ? "an overtime" : `${ot} overtimes`
+						}.`
+					: `${cap(theNick(highest.shape.winner))} and ${theNick(
+							highest.shape.loser,
+						)} combined for ${highest.total} points, the most of any game on the slate.`,
 		});
 	}
 	if (hottest && hottest.fgp >= 53) {
@@ -4132,7 +4203,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	}
 
 	// The night's injury news - who went down matters to the league picture.
-	const injuries = injuryRoundup(games);
+	const injuries = injuryRoundup(games, rng);
 	if (injuries) {
 		para3.push(injuries);
 	}
@@ -4159,11 +4230,11 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			para3.push(`In the playoffs, ${naturalList(seriesBits)}.`);
 		}
 	} else {
-		const streak = teamStreakSentence(games);
+		const streak = teamStreakSentence(games, rng);
 		if (streak) {
 			para3.push(streak);
 		}
-		const picture = conferencePictureSentence(standings);
+		const picture = conferencePictureSentence(standings, rng);
 		if (picture) {
 			para3.push(picture);
 		}
