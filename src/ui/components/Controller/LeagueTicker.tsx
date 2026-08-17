@@ -354,6 +354,11 @@ const LeagueTickerBar = memo(() => {
 	const [held, setHeld] = useState(false);
 	const holding = pointer && held;
 
+	// Bumped on every return to the app; the measurement and clock effects both
+	// key on it. Declared here because the measurement below depends on it; the
+	// listener that drives it lives with the resume note further down.
+	const [resumeNonce, setResumeNonce] = useState(0);
+
 	// HOW FAR AND HOW LONG THIS BLOCK HAS TO TRAVEL.
 	//
 	// Two layout reads per block - the viewport's width and the block's own - and
@@ -388,7 +393,9 @@ const LeagueTickerBar = memo(() => {
 		measure();
 		window.addEventListener("resize", measure);
 		return () => window.removeEventListener("resize", measure);
-	}, [blockKey, items]);
+		// resumeNonce: a suspension can bring the viewport back a different size
+		// without this component ever seeing a resize event.
+	}, [blockKey, items, resumeNonce]);
 
 	const ready = blockKey !== undefined && run?.key === blockKey;
 
@@ -422,6 +429,39 @@ const LeagueTickerBar = memo(() => {
 		frozenOffset.current = readOffset(runRef.current);
 		setGlide({ key: blockKey, offset: frozenOffset.current, ms: 0 });
 	}, [blockKey, holding]);
+
+	// COMING BACK TO THE APP RESTARTS THE CURRENT BLOCK.
+	//
+	// Suspension leaves every piece of the crawl's state stale at once: the
+	// advance timer is overdue and fires immediately on resume, the CSS
+	// transition was frozen mid-glide and lands wherever the compositor left it,
+	// and the travel measurement may be from a viewport that changed while
+	// suspended - a rotation or split-screen resize during suspension fires no
+	// resize event this component sees. Reconciling all of that piecemeal is how
+	// the bar used to come back wrong in a different way each time.
+	//
+	// So a resume does what the header effectively gets for free by having no
+	// animation state: it throws the block's runtime state away and starts the
+	// block again - fresh measurement, fresh glide from the left, opening beat
+	// and all. Keyed by a nonce that both the measurement and the clock effects
+	// depend on.
+	useEffect(() => {
+		const onResume = () => {
+			if (document.visibilityState !== "visible") {
+				return;
+			}
+			frozenOffset.current = 0;
+			setResumeNonce((previous) => previous + 1);
+		};
+		document.addEventListener("visibilitychange", onResume);
+		// A restore from the back/forward cache, which is how iOS often brings a
+		// suspended PWA back, can skip visibilitychange.
+		window.addEventListener("pageshow", onResume);
+		return () => {
+			document.removeEventListener("visibilitychange", onResume);
+			window.removeEventListener("pageshow", onResume);
+		};
+	}, []);
 
 	// THE CLOCK, and the movement it drives. A timer, not the end of an animation.
 	//
@@ -490,12 +530,14 @@ const LeagueTickerBar = memo(() => {
 				clearTimeout(timer);
 			}
 		};
+		// resumeNonce restarts the block from the top - see the resume note above.
 	}, [
 		advance,
 		animate,
 		blockKey,
 		holding,
 		ready,
+		resumeNonce,
 		run?.duration,
 		run?.travel,
 		show,

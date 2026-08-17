@@ -31,10 +31,8 @@
 import { PINNED_SELECTOR } from "./stickyHeaderPin.ts";
 import { recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
 import {
-	applyHeaderShift,
-	headerVisualShift,
-	tickerVisualShift,
 	initVisualViewportHeader,
+	resyncStickyBarShifts,
 } from "./visualViewportHeader.ts";
 
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
@@ -436,6 +434,19 @@ const checkBar = async (bar: Bar, trigger: string) => {
 		return;
 	}
 
+	// Before believing the geometry, make sure the standing visual-viewport
+	// correction is not the geometry. A stale translateY left over from before a
+	// suspend displaces the bar exactly like a detachment, and the position
+	// ladder below can never remove it - the watchdog would detect, fail to
+	// repair, and give up on every check forever. Re-deriving the shift from the
+	// viewports as they are now either clears it (and the re-measure comes back
+	// healthy) or changes nothing and the real ladder proceeds.
+	resyncStickyBarShifts();
+	if (!bar.detached(element)) {
+		note(bar, element, "repaired", "shift-resync");
+		return;
+	}
+
 	// Confirm against a second reading a frame later before believing it.
 	const before = reading(bar, element);
 	await nextFrame();
@@ -515,21 +526,10 @@ const forceBarRepair = async (bar: Bar) => {
 // because the one place the user can reach the button - the top of the page - is
 // the one place a broken header is indistinguishable from a healthy one.
 export const forceHeaderRepair = async () => {
-	// Put the header back inside the visible viewport first. When the two
+	// Put the bars back inside the visible viewport first. When the two
 	// viewports have come apart this IS the reset - the ladder below cannot help,
 	// because nothing about the element is wrong.
-	applyHeaderShift(
-		HEADER_BAR.get(),
-		headerVisualShift(window.visualViewport?.offsetTop),
-	);
-	applyHeaderShift(
-		TICKER_BAR.get(),
-		tickerVisualShift({
-			offsetTop: window.visualViewport?.offsetTop,
-			visualHeight: window.visualViewport?.height,
-			layoutHeight: layoutViewportHeight(),
-		}),
-	);
+	resyncStickyBarShifts();
 	for (const bar of BARS) {
 		await forceBarRepair(bar);
 	}
@@ -638,6 +638,11 @@ const watch = () => {
 		lastResumeNote = now;
 		note(HEADER_BAR, HEADER_BAR.get(), "resume", viewportNote());
 	}
+
+	// First thing on any resume: rebuild both bars' visual-viewport shifts from
+	// the world as it is now. Suspension is exactly when the standing correction
+	// goes stale with no event left to refresh it - see resyncStickyBarShifts.
+	resyncStickyBarShifts();
 
 	const timers = CHECK_DELAYS_MS.map((delay) =>
 		setTimeout(() => {

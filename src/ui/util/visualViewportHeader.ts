@@ -84,6 +84,34 @@ export const applyHeaderShift = (
 	element.style.transform = shift === 0 ? "" : `translateY(${shift}px)`;
 };
 
+// Recompute both shifts against the viewports as they are RIGHT NOW and write
+// them (or clear them) synchronously. This is what every event handler below
+// does on a frame; exported bare because a resume needs it on demand.
+//
+// The stale-shift trap it closes: suspend the app while a shift is applied, and
+// resume can restore the exact same viewport numbers - so no visualViewport
+// event ever fires, the pre-suspend translateY stays on the bar, and the
+// watchdog's position-toggling ladder cannot remove it (it repairs `position`,
+// not `transform`). The ticker then sits mid-page, provably "detached", and
+// unrepairable forever. The header got away with the same hole only because its
+// shift pushes it DOWN into view, where being stale is much less visible.
+export const resyncStickyBarShifts = () => {
+	const vv = window.visualViewport;
+	applyHeaderShift(
+		document.querySelector<HTMLElement>(HEADER_SELECTOR),
+		headerVisualShift(vv?.offsetTop),
+	);
+	applyHeaderShift(
+		document.querySelector<HTMLElement>(TICKER_SELECTOR),
+		tickerVisualShift({
+			offsetTop: vv?.offsetTop,
+			visualHeight: vv?.height,
+			layoutHeight:
+				document.documentElement?.clientHeight || window.innerHeight,
+		}),
+	);
+};
+
 export const initVisualViewportHeader = () => {
 	const vv = window.visualViewport;
 	if (!vv) {
@@ -97,19 +125,7 @@ export const initVisualViewportHeader = () => {
 		}
 		raf = requestAnimationFrame(() => {
 			raf = undefined;
-			applyHeaderShift(
-				document.querySelector<HTMLElement>(HEADER_SELECTOR),
-				headerVisualShift(vv.offsetTop),
-			);
-			applyHeaderShift(
-				document.querySelector<HTMLElement>(TICKER_SELECTOR),
-				tickerVisualShift({
-					offsetTop: vv.offsetTop,
-					visualHeight: vv.height,
-					layoutHeight:
-						document.documentElement?.clientHeight || window.innerHeight,
-				}),
-			);
+			resyncStickyBarShifts();
 		});
 	};
 
