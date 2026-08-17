@@ -187,14 +187,24 @@ export const LeagueTopBar = memo(() => {
 					))
 				: null}
 			{showLeagueTopBar && games2.length > 0 ? (
-				<a
-					className="btn btn-light-bordered d-flex align-items-center me-2 px-1"
-					style={{ height: 56 }}
-					href={helpers.leagueUrl(["daily_schedule", "yesterday"])}
-					title="Yesterday's games"
-				>
-					<span className="glyphicon glyphicon-menu-left" />
-				</a>
+				<>
+					<a
+						className="btn btn-light-bordered d-flex align-items-center me-2 px-1"
+						style={{ height: 56 }}
+						href={helpers.leagueUrl(["daily_schedule", "yesterday"])}
+						title="Yesterday's games"
+					>
+						<span className="glyphicon glyphicon-menu-left" />
+					</a>
+					<a
+						className="btn btn-light-bordered d-flex align-items-center me-2 px-1"
+						style={{ height: 56 }}
+						href={helpers.leagueUrl(["daily_schedule", "today"])}
+						title="Today's games"
+					>
+						<span className="glyphicon glyphicon-step-forward" />
+					</a>
+				</>
 			) : null}
 		</div>
 	);
