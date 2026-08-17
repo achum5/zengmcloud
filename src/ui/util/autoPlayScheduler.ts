@@ -12,6 +12,11 @@ import {
 } from "./scheduleTime.ts";
 import { hasPassedStop, type AutoPlayPreviewData } from "./autoPlayPreview.ts";
 import { pushSyncDebugEntry, registerCaptureExtra } from "./syncDebugStore.ts";
+import {
+	deferralRetryDelay,
+	deferralSuperseded,
+	type DeferredFire,
+} from "./autoPlayDeferral.ts";
 
 // Re-exported so existing imports (UI, etc.) keep working from one place.
 export {
@@ -148,6 +153,12 @@ const phaseName = (phase: number) => {
 // jumps and pick up config changes promptly.
 const RECHECK_MS = 60_000;
 
+// How often a HELD fire looks again at whether it can run yet (see
+// autoPlayDeferral). Tighter than RECHECK_MS because the thing it is waiting on
+// - a league-mate's result reaching this device - clears in seconds, and every
+// one of those seconds is the room's sim running late.
+const DEFER_RETRY_MS = 15_000;
+
 class AutoPlayScheduler {
 	settings: AutoPlaySettings = DEFAULT_SETTINGS();
 
@@ -181,6 +192,12 @@ class AutoPlayScheduler {
 		amount: "day",
 		numDays: 1,
 	};
+
+	// A fire whose moment came while something was in the way, held for a retry
+	// instead of thrown away. See autoPlayDeferral for what it is held against.
+	private deferred:
+		| DeferredFire<{ amount: AutoPlayAmount; numDays: number }>
+		| undefined;
 
 	// Single-driver election across tabs. Two tabs of the same browser share one
 	// sim-authority identity (the Firebase anon uid persists across tabs), so
@@ -446,6 +463,9 @@ class AutoPlayScheduler {
 	private haltTimer() {
 		this.state.running = false;
 		this.state.nextRunAt = undefined;
+		// Turned off, or switching leagues: a fire held against the old schedule
+		// must not survive into the new one.
+		this.deferred = undefined;
 		if (this.timeoutID !== undefined) {
 			clearTimeout(this.timeoutID);
 			this.timeoutID = undefined;
@@ -549,6 +569,35 @@ class AutoPlayScheduler {
 		return best;
 	}
 
+	// Hold a fire whose moment came while something was in the way, so it runs as
+	// soon as that clears rather than being lost until the next scheduled slot -
+	// which, on a fixed-time rule, is tomorrow. See autoPlayDeferral.
+	private hold(
+		fire: { amount: AutoPlayAmount; numDays: number },
+		why: string,
+		{ reason }: { reason: string },
+	) {
+		// The FIRST hold fixes the handover moment. Recomputing it on every retry
+		// would let a fire that is held across a scheduled slot keep pushing its
+		// own deadline outwards and never let the schedule take over.
+		if (this.deferred === undefined) {
+			this.deferred = { fire, supersededAt: this.computeNext()?.at };
+			this.breadcrumb("autoPlay:held", {
+				why,
+				amount: fire.amount,
+				untilSuperseded: this.deferred.supersededAt,
+			});
+		}
+		// armTimer FIRST: it clears pausedReason when it transitions the scheduler
+		// back to running, which would wipe the reason set here. Same ordering as
+		// the trade-deadline pause below, for the same reason.
+		if (this.settings.enabled) {
+			this.armTimer();
+		}
+		this.state.pausedReason = reason;
+		this.emit();
+	}
+
 	// Arm a timer toward the next fire, capped so we re-evaluate at least once a
 	// minute (self-correcting after sleep / clock changes / config edits).
 	private armTimer() {
@@ -588,6 +637,33 @@ class AutoPlayScheduler {
 			this.state.pausedReason = undefined;
 			this.requestWakeLock();
 		}
+
+		// A held fire owns the timer until it runs or the schedule overtakes it.
+		if (this.deferred !== undefined) {
+			if (deferralSuperseded(this.deferred, Date.now())) {
+				// The next scheduled fire has come round, so it REPLACES the held one
+				// rather than queueing behind it - the room sims the day it is due,
+				// not two in a row catching up.
+				this.breadcrumb("autoPlay:heldFireExpired", {
+					amount: this.deferred.fire.amount,
+				});
+				this.deferred = undefined;
+			} else {
+				const delay = deferralRetryDelay(
+					this.deferred,
+					Date.now(),
+					DEFER_RETRY_MS,
+				);
+				this.nextFire = this.deferred.fire;
+				this.state.nextAmount = this.deferred.fire.amount;
+				this.state.nextNumDays = this.deferred.fire.numDays;
+				this.state.nextRunAt = Date.now() + delay;
+				this.timeoutID = setTimeout(() => this.onTimer(), delay);
+				this.emit();
+				return;
+			}
+		}
+
 		const next = this.computeNext();
 		if (!next) {
 			this.state.nextRunAt = undefined;
@@ -656,17 +732,38 @@ class AutoPlayScheduler {
 			return;
 		}
 
-		// A league-mate is part-way through their own game. The game itself is
-		// already simmed and published, but their slice of the day may not have
-		// reached us yet - and a day claim that overlaps a gid someone else has
-		// taken is refused WHOLE, costing the room this tick. Waiting one tick is
-		// cheaper than losing one.
+		// A league-mate is part-way through their own game. That only stands in
+		// our way while their game is still PENDING in this device's schedule: a
+		// day claim overlapping a gid someone else has taken is refused WHOLE,
+		// costing the room this tick. Once their result has landed here, the rest
+		// of the day is a disjoint slice and there is nothing to wait for - which
+		// is the usual case, because a game is published the moment it is simmed
+		// while the playback everyone watches runs for minutes afterwards.
+		//
+		// This used to skip for the whole playback, so a watch party sitting over
+		// a scheduled fire silently cost the room its sim for the night. See
+		// liveSimBlocksDaySim.
 		if (state.mpLiveBroadcast?.active) {
-			this.breadcrumb("autoPlay:skipped", { why: "live-sim-in-flight" });
-			if (this.settings.enabled) {
-				this.armTimer();
+			// On an error we do NOT hold: the day claim is the real fence, and a
+			// refused claim merely costs this tick and says so, whereas holding on
+			// a check that keeps failing would reproduce the very bug being fixed.
+			let blocked = false;
+			try {
+				blocked = !!(await toWorker(
+					"main",
+					"liveSimBlocksDaySim",
+					state.mpLiveBroadcast.gid,
+				));
+			} catch (error) {
+				console.error(error);
 			}
-			return;
+			if (blocked) {
+				this.hold(fire, "live-sim-in-flight", {
+					reason:
+						"Waiting for a league-mate's live game to reach this device — will sim as soon as it does.",
+				});
+				return;
+			}
 		}
 
 		// The eligibility check above says this device is connected and in charge;
@@ -726,6 +823,9 @@ class AutoPlayScheduler {
 			}
 			return;
 		}
+
+		// Past every gate: whatever was being held is running right now.
+		this.deferred = undefined;
 
 		this.ticking = true;
 

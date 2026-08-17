@@ -143,6 +143,7 @@ import {
 } from "../core/sync/index.ts";
 import { setSingleGameSimActive } from "../core/sync/afterActionHook.ts";
 import { releaseLiveSimNotifications } from "../core/sync/liveSimNotificationHold.ts";
+import { liveSimBlocksDaySim } from "../core/sync/liveSimDayCollision.ts";
 import { setSyncDebugLogging, syncDebugLog } from "../core/sync/debugLog.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
@@ -7156,6 +7157,7 @@ export default {
 		getLiveGameChat,
 		getLiveGamePlayByPlay,
 		hasLiveGameReplay,
+		liveSimBlocksDaySim,
 		getNegotiationProps,
 		getNumPlayoffTeams,
 		getPlayerGraphStat,
