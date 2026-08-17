@@ -32,6 +32,7 @@ import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { local, useLocal } from "../../util/local.ts";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { relativeTime } from "../../util/relativeTime.ts";
+import { confirmPlayMenuAdvance } from "../../util/confirmPlayMenuAdvance.tsx";
 
 const TWO_MONTHS_IN_MILLISECONDS = 2 * 30 * 24 * 60 * 60 * 1000;
 const ONE_WEEK_IN_MILLISECONDS = 7 * 24 * 60 * 60 * 1000;
@@ -185,9 +186,14 @@ const getResultsGroupedDefault = ({
 			search: `Play ${option.label}`,
 			anchorProps: {
 				href: option.url,
-				onClick: () => {
+				onClick: async () => {
 					onHide();
 					if (!option.url) {
+						// Same guard as the Play menu itself - typing "re-sign" and
+						// hitting enter is if anything easier to do without looking.
+						if (!(await confirmPlayMenuAdvance(option))) {
+							return;
+						}
 						toWorker("playMenu", option.id as any, undefined);
 					}
 				},

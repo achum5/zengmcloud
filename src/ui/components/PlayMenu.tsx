@@ -10,28 +10,13 @@ import {
 	useKeyboardShortcuts,
 } from "../util/keyboardShortcuts.ts";
 import { confirm } from "../util/confirm.tsx";
+import { confirmPlayMenuAdvance } from "../util/confirmPlayMenuAdvance.tsx";
 
 // Play-menu items that stay available on a device that is not in charge of simming:
 // "stop"/"stopAuto" just halt. Drafting your own player isn't a play-menu item
 // (you click a player), so the draft ADVANCERS here move the shared draft and
 // are locked for non-simmers. Mirrors the guard in worker/index.ts.
 const PLAY_MENU_SIM_AUTHORITY_EXEMPT = new Set(["stop", "stopAuto"]);
-
-// In a synced league, advancing the shared draft is irreversible for the whole
-// room - confirm so the simmer can't fat-finger past someone's pick.
-const DRAFT_ADVANCE_CONFIRM: Record<string, string> = {
-	onePick: "Sim one pick?",
-	untilYourNextPick: "Sim to your next pick?",
-	untilEnd: "Sim to the end of the draft?",
-};
-
-const confirmDraftAdvance = async (id: string): Promise<boolean> => {
-	const message = DRAFT_ADVANCE_CONFIRM[id];
-	if (message === undefined) {
-		return true;
-	}
-	return confirm(message, { okText: "Sim", cancelText: "Cancel" });
-};
 
 const PlayMenu = ({
 	lid,
@@ -73,10 +58,7 @@ const PlayMenu = ({
 				if (option.url) {
 					realtimeUpdate([], option.url);
 				} else {
-					if (
-						local.getState().mpSyncActive &&
-						!(await confirmDraftAdvance(option.id as string))
-					) {
+					if (!(await confirmPlayMenuAdvance(option))) {
 						return;
 					}
 					toWorker("playMenu", option.id as any, undefined);
@@ -89,10 +71,7 @@ const PlayMenu = ({
 	const handleOptionClick = async (option: Option, event: MouseEvent) => {
 		if (!option.url) {
 			event.preventDefault();
-			if (
-				local.getState().mpSyncActive &&
-				!(await confirmDraftAdvance(option.id as string))
-			) {
+			if (!(await confirmPlayMenuAdvance(option))) {
 				return;
 			}
 			toWorker("playMenu", option.id as any, undefined);
