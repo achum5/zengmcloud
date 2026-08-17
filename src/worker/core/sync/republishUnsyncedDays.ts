@@ -1,4 +1,5 @@
 import { idb } from "../../db/index.ts";
+import { g } from "../../util/index.ts";
 import type { Store } from "../../db/Cache.ts";
 import type { Changeset, SyncChange } from "./changeset.ts";
 import { getLeaguePosition, type LeaguePosition } from "./leaguePosition.ts";
@@ -196,11 +197,45 @@ export const buildChanges = (
 		}
 	}
 
-	// Every rostered player: stats, injuries, mood and ratings all move on a
-	// game day, and picking out "only the ones who played" would miss the ones
-	// whose injury ticked down on the bench.
+	// Players. Two very different situations share this code, and they get
+	// different widths:
+	//
+	// The AUTOMATIC repair ("after") has PROVEN the room is behind this device -
+	// planUnsyncedPush compared positions - so this device's current rows are
+	// the room's rows plus the missing days, and sending every rostered player
+	// is merely redundant where nothing changed. Wide is safe there, and it
+	// catches the ones whose injury ticked down on the bench.
+	//
+	// The MANUAL push ("only") can offer no such proof: it exists precisely for
+	// a room whose position was never stamped. If this device's copy of the
+	// league has drifted from the room's in ANY way - and a device that needs
+	// this repair is a device whose bookkeeping already went wrong once -
+	// pushing the whole player table broadcasts the drift to every device as
+	// one giant, authoritative overwrite. That is how a league woke up one
+	// morning with every player's ratings quietly shifted and its recent
+	// injuries erased: the pushed day was real, but it carried a fork of the
+	// entire league along with it. So the manual push carries only the players
+	// who actually appear in the pushed games' box scores - the rows that day
+	// demonstrably changed - and nothing else.
+	const namedDayOnly = selection.kind === "only";
+	let pushPids: Set<number> | undefined;
+	if (namedDayOnly) {
+		pushPids = new Set();
+		for (const game of missing) {
+			for (const t of game.teams ?? []) {
+				for (const p of t.players ?? []) {
+					if (typeof p.pid === "number") {
+						pushPids.add(p.pid);
+					}
+				}
+			}
+		}
+	}
 	for (const player of rows.players) {
 		if (typeof player.tid === "number" && player.tid >= 0) {
+			if (pushPids && !pushPids.has(player.pid)) {
+				continue;
+			}
 			const change = put("players", player);
 			if (change) {
 				changes.push(change);
@@ -208,16 +243,21 @@ export const buildChanges = (
 		}
 	}
 
-	// Small, and it carries the phase and the day counter - the numbers that
-	// tell every other device the league has moved.
-	for (const row of rows.gameAttributes) {
-		if (row?.key !== undefined) {
-			changes.push({
-				store: "gameAttributes",
-				id: row.key,
-				type: "put",
-				value: row,
-			});
+	// Game attributes carry the phase - the number that tells every other
+	// device the league has moved. Only for the proven-behind automatic repair:
+	// a manual push happens INSIDE the room's current phase (the day being
+	// named is a day of it), and this store also holds every league setting,
+	// which a device pushing a lost day has no business rewriting for the room.
+	if (!namedDayOnly) {
+		for (const row of rows.gameAttributes) {
+			if (row?.key !== undefined) {
+				changes.push({
+					store: "gameAttributes",
+					id: row.key,
+					type: "put",
+					value: row,
+				});
+			}
 		}
 	}
 
@@ -344,10 +384,14 @@ export const buildUnsyncedDaysChangeset = async (
 // the keyboard knows perfectly well which day did not go out. So they name it,
 // and it goes out exactly as it would have when it simmed.
 //
-// No comparison, therefore no refusals about how far apart the two are. The
-// only conditions are the two that are about safety rather than bookkeeping:
-// this must be the device in charge of simming, and the day must actually have
-// games on it here.
+// But "the room never stamped a position" is the ONLY licence to skip the
+// comparison. When the room HAS stamped one, it is checked here exactly as the
+// automatic repair checks it - naming a day the room already played past means
+// the room's copy of that day (and of every row this push carries with it) is
+// the living one, and publishing this device's would overwrite the room's
+// present with this device's past. The other two conditions are about safety
+// rather than bookkeeping: this must be the device in charge of simming, and
+// the day must actually have games on it here.
 
 export type DayPushReport =
 	| { kind: "none"; reason: string }
@@ -373,9 +417,30 @@ const scoreLine = (game: any, abbrev: (tid: number) => string): string => {
 	return `${abbrev(away.tid)} ${away.pts ?? "?"} @ ${abbrev(home.tid)} ${home.pts ?? "?"}`;
 };
 
+// Pure, so every refusal is a test. Returns undefined when the push may
+// proceed.
+export const dayPushRefusal = (
+	room: LeaguePosition | undefined,
+	target: { season: number; day: number },
+	local: { season: number; phase: number },
+): string | undefined => {
+	if (!room) {
+		// Nothing stamped, nothing to compare - the case this repair exists for.
+		return undefined;
+	}
+	if (room.season !== target.season || room.phase !== local.phase) {
+		return `The room is on season ${room.season}, phase ${room.phase} - not where this day belongs. Pushing across that gap would overwrite the room's present with this device's past.`;
+	}
+	if (target.day <= room.day) {
+		return `The room has already played through day ${room.day}, so it did not miss day ${target.day} - it has its own copy, and pushing this device's would overwrite every record it carries. If this device's results really are the ones the league should keep, that needs more than a day push.`;
+	}
+	return undefined;
+};
+
 export const describeDayPush = async (
 	{ season, day }: { season: number; day: number },
 	isAuthority: boolean,
+	authority?: unknown,
 ): Promise<DayPushReport> => {
 	if (!isAuthority) {
 		return {
@@ -386,6 +451,15 @@ export const describeDayPush = async (
 	}
 	if (!Number.isInteger(season) || !Number.isInteger(day)) {
 		return { kind: "none", reason: "Give a season and a day." };
+	}
+
+	const refusal = dayPushRefusal(
+		roomPosition(authority),
+		{ season, day },
+		{ season: g.get("season"), phase: g.get("phase") },
+	);
+	if (refusal) {
+		return { kind: "none", reason: refusal };
 	}
 
 	const rows = await readLeagueRows(season);
@@ -434,8 +508,9 @@ export const describeDayPush = async (
 export const buildDayPushChangeset = async (
 	target: { season: number; day: number },
 	isAuthority: boolean,
+	authority?: unknown,
 ): Promise<{ changeset: Changeset; report: DayPushReport }> => {
-	const report = await describeDayPush(target, isAuthority);
+	const report = await describeDayPush(target, isAuthority, authority);
 	if (report.kind !== "found") {
 		return { changeset: { changes: [] }, report };
 	}

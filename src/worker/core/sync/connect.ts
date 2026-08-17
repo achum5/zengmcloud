@@ -1528,7 +1528,7 @@ export const reportDayPush = async (target: {
 				"This device is still catching up on the room. Let it finish first.",
 		};
 	}
-	return describeDayPush(target, engine.isAuthority());
+	return describeDayPush(target, engine.isAuthority(), engine.getAuthority());
 };
 
 export const pushDay = async (target: {
@@ -1561,6 +1561,7 @@ export const pushDay = async (target: {
 	const { changeset, report } = await buildDayPushChangeset(
 		target,
 		engine.isAuthority(),
+		engine.getAuthority(),
 	);
 	if (report.kind !== "found" || changeset.changes.length === 0) {
 		return { published: false, report };

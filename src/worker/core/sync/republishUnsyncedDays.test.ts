@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	buildChanges,
+	dayPushRefusal,
 	planUnsyncedPush,
 	type LeagueRows,
 } from "./republishUnsyncedDays.ts";
@@ -295,6 +296,127 @@ describe("buildChanges", () => {
 			{ kind: "only", days: [5] },
 		);
 		assert.deepStrictEqual(idsFor(built.changes, "games"), [2]);
+	});
+
+	// A named day carries only what THAT DAY provably changed. The automatic
+	// repair may push the whole player table because it has PROVEN the room is
+	// behind; a named day has no proof, and a device that needs this repair is a
+	// device whose bookkeeping already went wrong once. Pushing its whole player
+	// table is how one repair rewrote every player's ratings and erased the
+	// recent injuries on every device in a league.
+	test("a named day carries only the players in its box scores", () => {
+		const inGame = {
+			gid: 2,
+			day: 5,
+			season: 2006,
+			teams: [
+				{ tid: 0, players: [{ pid: 10 }, { pid: 11 }] },
+				{ tid: 1, players: [{ pid: 20 }] },
+			],
+		};
+		const built = buildChanges(
+			rows({
+				games: [game(1, 4), inGame],
+				players: [
+					{ pid: 10, tid: 0 },
+					{ pid: 11, tid: 0 },
+					{ pid: 20, tid: 1 },
+					// Rostered but not in the pushed game: stays home.
+					{ pid: 30, tid: 2 },
+				],
+			}),
+			2006,
+			{ kind: "only", days: [5] },
+		);
+		assert.deepStrictEqual(idsFor(built.changes, "players"), [10, 11, 20]);
+	});
+
+	test("a named day never carries game attributes", () => {
+		// The store holds every league setting alongside the phase; a device
+		// pushing a lost day has no business rewriting the room's settings.
+		const built = buildChanges(
+			rows({
+				games: [game(1, 5)],
+				gameAttributes: [{ key: "phase", value: 1 }],
+			}),
+			2006,
+			{ kind: "only", days: [5] },
+		);
+		assert.deepStrictEqual(idsFor(built.changes, "gameAttributes"), []);
+	});
+
+	test("the automatic repair still carries the wide set", () => {
+		const built = buildChanges(
+			rows({
+				games: [game(1, 5)],
+				players: [
+					{ pid: 10, tid: 0 },
+					{ pid: 30, tid: 2 },
+				],
+				gameAttributes: [{ key: "phase", value: 1 }],
+			}),
+			2006,
+			{ kind: "after", day: 4 },
+		);
+		assert.deepStrictEqual(idsFor(built.changes, "players"), [10, 30]);
+		assert.deepStrictEqual(idsFor(built.changes, "gameAttributes"), ["phase"]);
+	});
+});
+
+describe("dayPushRefusal", () => {
+	const local = { season: 2006, phase: 1 };
+
+	test("no stamped room position - the case the manual push exists for", () => {
+		assert.isUndefined(
+			dayPushRefusal(undefined, { season: 2006, day: 5 }, local),
+		);
+	});
+
+	test("the room is behind the named day: push allowed", () => {
+		assert.isUndefined(
+			dayPushRefusal(
+				{ season: 2006, phase: 1, day: 4 },
+				{ season: 2006, day: 5 },
+				local,
+			),
+		);
+	});
+
+	test("the room already played through the named day: refused", () => {
+		// The failure this guard exists for: the room has its own living copy of
+		// that day, and pushing this device's would overwrite the room's present
+		// with this device's past - every player row it carries included.
+		assert.isString(
+			dayPushRefusal(
+				{ season: 2006, phase: 1, day: 5 },
+				{ season: 2006, day: 5 },
+				local,
+			),
+		);
+		assert.isString(
+			dayPushRefusal(
+				{ season: 2006, phase: 1, day: 40 },
+				{ season: 2006, day: 5 },
+				local,
+			),
+		);
+	});
+
+	test("a season or phase gap: refused", () => {
+		assert.isString(
+			dayPushRefusal(
+				{ season: 2007, phase: 1, day: 2 },
+				{ season: 2006, day: 5 },
+				local,
+			),
+		);
+		assert.isString(
+			dayPushRefusal(
+				{ season: 2006, phase: 3, day: 2 },
+				{ season: 2006, day: 5 },
+				local,
+			),
+		);
 	});
 });
 
