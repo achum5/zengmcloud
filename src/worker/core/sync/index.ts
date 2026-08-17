@@ -35,6 +35,7 @@ export {
 	loadSyncDeviceName,
 	refreshSyncLocalName,
 	resolveSyncLocalName,
+	leaveLiveBroadcast,
 	markFollowedBroadcastOver,
 	markSyncRequired,
 	publishAutoPlayState,

@@ -57,10 +57,11 @@ export type ChangesetEntry = {
 	attrs?: string[];
 };
 
-// A live-sim broadcast in progress. When the sim authority live-sims a game, it
-// publishes the (immutable) play-by-play once, then heartbeats a moving cursor;
-// every follower device navigates to the live game and replays in lockstep,
-// seeing exactly what the simmer sees. Stored at leagues/{code}/control/
+// A live-sim broadcast in progress. Whoever live-sims a game - the person in
+// charge of simming or anyone playing out their own - publishes the (immutable)
+// play-by-play once, then heartbeats a moving cursor; every other device
+// navigates to the live game and replays in lockstep, seeing exactly what the
+// simmer sees (until they leave). Stored at leagues/{code}/control/
 // liveBroadcast (the cursor/meta) with the payload split across
 // control/liveBroadcastData{i} docs (see FirebaseTransport). `expiresAt` is a
 // lease so a simmer that crashes mid-broadcast can't lock followers forever.
@@ -69,12 +70,6 @@ export type LiveBroadcastMeta = {
 	active: boolean;
 	gid: number;
 	byName: string;
-	// An OPT-IN broadcast: someone live-simming their own game, not the person
-	// in charge of simming running the room's game. Nobody is navigated into
-	// it; every other device shows a header pill and each person chooses.
-	// Explicitly false on the simmer's broadcasts (the doc is written with
-	// merge, so omitting it would inherit whatever the previous broadcast set).
-	optIn?: boolean;
 	// "PHO @ DAL" - what the pill shows, stamped by the broadcaster so viewers
 	// don't need the game record just to label a button.
 	label?: string;
@@ -102,6 +97,9 @@ export type LiveBroadcastUpdate = {
 	active?: boolean;
 	gid?: number;
 	byName?: string;
+	// Dead field, still written as false. Broadcasts used to come in two kinds
+	// and this said which; a device on a build that still reads it must not
+	// inherit a leftover true from an older broadcast on the merged doc.
 	optIn?: boolean;
 	label?: string;
 	cursor?: number;

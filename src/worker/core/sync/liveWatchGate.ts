@@ -11,3 +11,18 @@ export const setLiveWatchGate = (fn: (() => boolean) | undefined) => {
 };
 
 export const isWatchingLiveBroadcast = (): boolean => gate?.() ?? false;
+
+// Is a live sim running ANYWHERE in the room - whether or not this device is
+// watching it? A separate question from the one above, and the one the sim
+// fence has to ask: since viewers can walk out of any broadcast, "I am not
+// watching" stopped being the same thing as "nothing is being simmed", and a
+// device that left must not be allowed to start a second sim on top of the
+// one it just walked away from.
+
+let roomGate: (() => boolean) | undefined;
+
+export const setRoomBroadcastGate = (fn: (() => boolean) | undefined) => {
+	roomGate = fn;
+};
+
+export const isLiveBroadcastActiveInRoom = (): boolean => roomGate?.() ?? false;

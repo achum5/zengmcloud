@@ -131,6 +131,15 @@ const onLiveSimOver = (gid?: number) => {
 	toWorker("main", "onLiveSimOver", gid);
 };
 
+// This device is no longer inside a league-mate's broadcast. Separate from
+// onLiveSimOver because that fires whenever any live game page thinks it is
+// finished, while this means specifically "stop treating me as a viewer" - the
+// worker holds it against that broadcast so the next cursor heartbeat doesn't
+// navigate straight back in, and puts the header pill up as the way back.
+const onLeaveBroadcast = (gid: number) => {
+	toWorker("main", "leaveLiveBroadcast", gid);
+};
+
 const getSeconds = (time: string | undefined) => {
 	if (!time) {
 		return 0;
@@ -1324,6 +1333,19 @@ export const LiveGame = (props: View<"liveGame">) => {
 		!!mpLiveBroadcast?.active && mpLiveBroadcast.isBroadcaster;
 	const followerRef = useRef(isFollower);
 	followerRef.current = isFollower;
+	// The broadcast this page is actually rendering, so unmounting can report
+	// that this device walked out of it. Undefined on the broadcaster, on a
+	// replay, and in the brief recovery window where the page still holds the
+	// previous game - none of those are a viewer leaving.
+	const leaveBroadcastGid =
+		isFollower &&
+		!boxScore.current.replay &&
+		props.initialBoxScore?.gid !== undefined &&
+		props.initialBoxScore.gid === mpLiveBroadcast?.gid
+			? props.initialBoxScore.gid
+			: undefined;
+	const leaveBroadcastGidRef = useRef(leaveBroadcastGid);
+	leaveBroadcastGidRef.current = leaveBroadcastGid;
 	// Number of events we started with, so cursor = initial - remaining tells us
 	// how far the simmer (or we) have played.
 	const initialEventCount = useRef(0);
@@ -1385,10 +1407,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// trap: "Loading..." forever, and a warning about losing play-by-play
 		// results that do not exist standing between the user and any way out.
 		initialDirty: !isReplay && props.events !== undefined,
-		// A follower of the simmer's watch-party is locked in until the broadcast
-		// ends. A viewer who CHOSE to watch (clicked the header pill on someone's
-		// own-game sim) is never locked - they came freely and leave freely.
-		hardBlock: isFollower && !mpLiveBroadcast?.optIn,
 	});
 
 	// Arm it the moment the playback does arrive - `initialDirty` is only read
@@ -1678,6 +1696,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// wants ordinary randomness.
 			clearCourtRng();
 			onLiveSimOver(boxScore.current?.gid);
+			if (leaveBroadcastGidRef.current !== undefined) {
+				onLeaveBroadcast(leaveBroadcastGidRef.current);
+			}
 		};
 	}, []);
 
@@ -2398,7 +2419,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 			{/* A follower was navigated here by someone else's sim, so there has to
 			    be a way out. Leaving unmounts this page, which fires onLiveSimOver
 			    and releases the spoiler hold - so results appear immediately, which
-			    is the deliberate trade for being able to go and do something else. */}
+			    is the deliberate trade for being able to go and do something else.
+			    The header pill is the way back in while the game is still running.
+
+			    setDirty first: this button IS the confirmation, and the blocker's
+			    warning ("play-by-play results will not be available") is not even
+			    true for a viewer, who can rejoin. Every OTHER way off the page
+			    still asks. */}
 			{isFollower ? (
 				<div className="d-flex align-items-center mb-2">
 					<span className="text-body-secondary me-2">
@@ -2409,6 +2436,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 						type="button"
 						title="Stop watching and show results"
 						onClick={() => {
+							setDirty(false);
 							void realtimeUpdate([], helpers.leagueUrl(["daily_schedule"]));
 						}}
 					>

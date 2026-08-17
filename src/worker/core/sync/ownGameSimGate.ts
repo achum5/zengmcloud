@@ -23,7 +23,10 @@ import { g, local } from "../../util/index.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { getRoomAutoPlayNextRunAt } from "./connect.ts";
-import { isWatchingLiveBroadcast } from "./liveWatchGate.ts";
+import {
+	isLiveBroadcastActiveInRoom,
+	isWatchingLiveBroadcast,
+} from "./liveWatchGate.ts";
 
 const OWN_GAME_ACTIONS = new Set(["simGame", "liveGame"]);
 
@@ -67,7 +70,12 @@ export const decideOwnGameSimCall = async (
 		connectedAndReady: engine !== undefined,
 		// A live sim already playing here, or a league-mate's broadcast in
 		// progress: starting another is exactly what the fence would refuse.
-		simInFlight: local.liveSimGid !== undefined || isWatchingLiveBroadcast(),
+		// Room-wide, not just "am I watching" - leaving a broadcast is not
+		// permission to sim over the top of it.
+		simInFlight:
+			local.liveSimGid !== undefined ||
+			isWatchingLiveBroadcast() ||
+			isLiveBroadcastActiveInRoom(),
 		msUntilAutoSim:
 			nextRunAt === undefined ? undefined : nextRunAt - Date.now(),
 		cutoffSeconds:

@@ -79,6 +79,7 @@ const DailySchedule = ({
 		gameSimInProgress,
 		mpAutoPlay,
 		mpLiveBroadcast,
+		mpLiveWatchable,
 		mpSyncActive,
 		mpSyncIsHost,
 		mpSyncReady,
@@ -91,6 +92,7 @@ const DailySchedule = ({
 		"gameSimInProgress",
 		"mpAutoPlay",
 		"mpLiveBroadcast",
+		"mpLiveWatchable",
 		"mpSyncActive",
 		"mpSyncIsHost",
 		"mpSyncReady",
@@ -132,7 +134,9 @@ const DailySchedule = ({
 			isAuthority: !mpSyncActive || !!mpSyncIsHost,
 			connectedAndReady:
 				!mpSyncActive || (!!mpSyncReady && !mpSyncReconnecting),
-			simInFlight: !!mpLiveBroadcast?.active,
+			// Watching one, or one is running in the room and this device walked
+			// out of it - either way a second sim is what the worker would refuse.
+			simInFlight: !!mpLiveBroadcast?.active || !!mpLiveWatchable,
 			msUntilAutoSim:
 				typeof autoPlayNextRunAt === "number"
 					? autoPlayNextRunAt - now

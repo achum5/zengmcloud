@@ -7,32 +7,25 @@ export const useBlocker = ({
 	okText = "Navigate away",
 	cancelText = "Stay here",
 	initialDirty = false,
-	hardBlock = false,
 }: {
 	message?: string;
 	okText?: string;
 	cancelText?: string;
 	initialDirty?: boolean;
-	// When true, silently block ALL navigation (no confirm) - used to lock a
-	// multiplayer follower into a live-sim broadcast until the simmer ends it.
-	hardBlock?: boolean;
 } = {}) => {
 	const [dirty, setDirty] = useState(initialDirty);
 
 	useEffect(() => {
-		// `dirty` decides WHETHER we block (for the live sim it's true while the
-		// game is live and cleared when it ends); `hardBlock` decides HOW - a silent,
-		// genuine trap with no escape (a multiplayer viewer) vs. the usual confirm.
+		// `dirty` decides whether we block: for the live sim it's true while the
+		// game is live and cleared when it ends. (There used to be a `hardBlock`
+		// mode that silently refused ALL navigation, to pin a multiplayer viewer
+		// inside a broadcast. Viewers can leave any broadcast now, so nothing
+		// needs a trap with no way out of it.)
 		if (dirty) {
 			router.shouldBlock = async (refresh) => {
 				// This check is needed because realtimeUpdate triggers a refresh pageview through the router to trigger updating data, but we never consider that "navigating away" from a page. For example when clicking "Save" on League Settings
 				if (refresh) {
 					return false;
-				}
-
-				// A locked follower can't leave at all - no escape hatch, no dialog.
-				if (hardBlock) {
-					return true;
 				}
 
 				const proceed = await confirm(message, {
@@ -49,7 +42,7 @@ export const useBlocker = ({
 		} else {
 			router.shouldBlock = undefined;
 		}
-	}, [cancelText, dirty, hardBlock, message, okText]);
+	}, [cancelText, dirty, message, okText]);
 
 	return { dirty, setDirty };
 };
