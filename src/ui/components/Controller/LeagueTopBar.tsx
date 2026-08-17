@@ -202,7 +202,7 @@ export const LeagueTopBar = memo(() => {
 						href={helpers.leagueUrl(["daily_schedule", "today"])}
 						title="Today's games"
 					>
-						<span className="glyphicon glyphicon-step-forward" />
+						<span className="glyphicon glyphicon-menu-right" />
 					</a>
 				</>
 			) : null}

@@ -1166,8 +1166,16 @@ $league-top-bar-toggle-width: 15px;
 		}
 	}
 }
+// Safari keeps the pinned toggle clear of the scroll container with a MARGIN
+// (the container ends before the toggle) where everyone else uses the
+// container's own padding-right. Both at once reserved the toggle's width
+// twice - padding inside plus margin outside, plus an 8px fudge - which is
+// what put a dead ~40px hole between the end of the score strip and the
+// toggle on iOS. One mechanism at a time: margin exactly the toggle's width,
+// padding off.
 .league-top-bar-safari {
-	margin-right: $league-top-bar-toggle-width + 8px;
+	margin-right: $league-top-bar-toggle-width;
+	padding-right: 0;
 }
 .league-top-bar-toggle {
 	border-top-right-radius: 0 !important;
