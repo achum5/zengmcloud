@@ -26,12 +26,18 @@ const PhaseStatusBlock = () => {
 
 	// Hide phase and status, to prevent revealing that the playoffs has ended, thus spoiling a 3-0/3-1/3-2 finals
 	// game. This is needed because game sim happens before the results are displayed in liveGame.
+	//
+	// The auto-play countdown is NOT one of those: it is a clock, it says nothing
+	// about the phase or anyone's result, and how long you have before the next
+	// auto-sim is worth knowing precisely while a live game is on screen. It
+	// freezes itself for the duration so it cannot leak by disappearing - see
+	// AutoPlayCountdown.
 	const text = (
 		<>
 			{liveGameInProgress ? "Live game" : phaseText}
 			<br />
 			{liveGameInProgress ? "in progress" : statusText}
-			{liveGameInProgress ? null : <AutoPlayCountdown />}
+			<AutoPlayCountdown />
 			<SyncUploadIndicator />
 		</>
 	);
