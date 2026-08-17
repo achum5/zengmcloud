@@ -177,6 +177,37 @@ describe("achievementPromptOverride", () => {
 		assert.ok(o.uniform?.includes("Detroit Pistons"));
 	});
 
+	// A card that names Kansas and shows an invented uniform is just wrong, so
+	// the college scene asks for the school's real kit - the same place
+	// real-world knowledge already belongs on the draft-night card.
+	test("the college scene puts him in his actual school's uniform", () => {
+		const o = achievementPromptOverride(
+			{ kind: "draft", label: "1st Overall Pick", season: 2027, pid: 10 },
+			subject,
+			"college",
+		);
+		assert.ok(o.uniform?.includes("the real Kansas basketball uniform"));
+		assert.ok(o.uniform?.includes("actual team colors"));
+		assert.ok(
+			!o.uniform?.includes("do NOT reproduce"),
+			"still telling it to avoid the real school",
+		);
+		assert.ok(
+			!o.uniform?.includes("colors of your choosing"),
+			"still letting it make the colors up",
+		);
+	});
+
+	test("a player with no college on record gets an invented one", () => {
+		const o = achievementPromptOverride(
+			{ kind: "draft", label: "1st Overall Pick", season: 2027, pid: 10 },
+			{ teamName: "Detroit Pistons" },
+			"college",
+		);
+		assert.ok(o.uniform?.includes("invent one"));
+		assert.ok(o.uniform?.includes("COLLEGE here"));
+	});
+
 	// The bug this exists for: DPOY came back as a picture of the man scoring.
 	test("defensive awards put him on defence, not on offence", () => {
 		for (const kind of [
@@ -262,15 +293,14 @@ describe("achievementPromptOverride", () => {
 		assert.strictEqual(once.photograph, twice.photograph);
 	});
 
-	test("the college scene names the school but forbids real college uniforms", () => {
+	test("the college scene puts him in a college arena", () => {
 		const o = achievementPromptOverride(
 			{ kind: "draft", label: "2nd Overall Pick", season: 2027, pid: 20 },
 			subject,
 			"college",
 		);
-		assert.ok(o.photograph?.includes("college"));
-		assert.ok(o.uniform?.includes('"Kansas"'));
-		assert.ok(o.uniform?.includes("do NOT reproduce any real university"));
+		assert.ok(o.photograph?.includes("college game action shot"));
+		assert.ok(o.photograph?.includes("Kansas home arena"));
 	});
 });
 

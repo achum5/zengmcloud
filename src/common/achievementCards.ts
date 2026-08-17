@@ -308,7 +308,8 @@ const defensivePool = (pos: string | undefined): string[] => {
 // cards keep the normal in-game photograph and just gain the flag; defensive
 // awards keep the framing but insist on a defensive moment; champion cards
 // trade the game action for the celebration; draft cards replace the scene AND
-// the uniform, since he hasn't played a pro minute yet.
+// the uniform, since he hasn't played a pro minute yet - in his real college's
+// kit for the college scene, a suit and the team's draft cap for draft night.
 export const achievementPromptOverride = (
 	spec: Pick<AchievementCardSpec, "kind" | "label" | "season" | "pid">,
 	subject: { teamName: string; college?: string; pos?: string },
@@ -330,12 +331,17 @@ export const achievementPromptOverride = (
 				]!;
 			return {
 				achievement,
-				photograph: `A college game action shot from just before the draft: ${action}. Candid, shot courtside with a long lens in a packed college arena, the crowd falling out of focus behind him.`,
-				uniform: `He is in COLLEGE here, not the pros. He wears a college basketball uniform${
-					subject.college
-						? ` with "${subject.college}" in classic collegiate lettering across the chest`
-						: ""
-				} - do NOT reproduce any real university's actual uniform or logos. Invent a clean, classic collegiate look: simple striping, traditional cut, colors of your choosing that read as a college program.`,
+				photograph: `A college game action shot from just before the draft: ${action}. Candid, shot courtside with a long lens in a packed ${
+					subject.college ? `${subject.college} home ` : "college "
+				}arena, the crowd falling out of focus behind him.`,
+				// THE REAL SCHOOL, not a generic one. The player's college is in the
+				// league data and it is a real university, so the card should look
+				// like the place he actually played - same reasoning as the
+				// draft-night cap, which has always used the franchise's real design.
+				// A made-up uniform on a card that names Kansas is just wrong.
+				uniform: subject.college
+					? `He is in COLLEGE here, not the pros. He wears the real ${subject.college} basketball uniform: that university's actual team colors, its actual jersey design, and its real wordmark or logo across the chest, exactly as ${subject.college} wears it. Use what you know about the real school - this is the same place real-world knowledge belongs as the draft-night cap. Do not invent a generic collegiate look, and do not put a pro team's colors on him.`
+					: `He is in COLLEGE here, not the pros. His school is not recorded, so invent one: a clean, classic collegiate uniform - simple striping, traditional cut, colors of your choosing that read as a college program.`,
 			};
 		}
 		return {

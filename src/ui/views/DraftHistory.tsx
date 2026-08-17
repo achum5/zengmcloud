@@ -424,13 +424,6 @@ const DraftHistory = ({
 						filter="draftPicks"
 						heading="Draft Class Writeups (AI)"
 					/>
-					{/* The class's top picks get achievement cards, worked through the
-					    same way: it sits here until every card is made, then it's gone. */}
-					<AchievementCards
-						season={season}
-						context="draft"
-						heading="Draft Pick Cards (AI)"
-					/>
 				</div>
 			) : null}
 
@@ -453,6 +446,21 @@ const DraftHistory = ({
 				rows={rows}
 				superCols={superCols}
 			/>
+
+			{/* The class's top picks get achievement cards, worked through the same
+			    way as the writeups and gone the same way once every card is made.
+			    Below the table rather than above it: making cards is something you
+			    go and do after reading the class, not the first thing the page
+			    should put in front of you. */}
+			{season >= startingSeason ? (
+				<div className="mt-3">
+					<AchievementCards
+						season={season}
+						context="draft"
+						heading="Draft Pick Cards (AI)"
+					/>
+				</div>
+			) : null}
 		</>
 	);
 };
