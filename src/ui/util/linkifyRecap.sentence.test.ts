@@ -1,6 +1,7 @@
 import { assert, beforeAll, describe, test } from "vitest";
 import {
 	buildSentenceGamesForDay,
+	linkRecapSegments,
 	resolveSentenceGame,
 	splitSentences,
 	type SentenceGame,
@@ -143,6 +144,102 @@ describe("splitSentences", () => {
 				.join(""),
 			text,
 		);
+	});
+});
+
+describe("linkRecapSegments", () => {
+	// Reassembling the pieces must give back the prose exactly, minus the
+	// emphasis delimiters the rebalancer adds at cuts - so this compares with
+	// those stripped.
+	const reassemble = (segs: { text: string }[]) =>
+		segs
+			.map((s) => s.text)
+			.join("")
+			.replaceAll("*", "");
+
+	const linked = (text: string) =>
+		linkRecapSegments(text, games)
+			.filter((s) => s.href !== undefined)
+			.map((s) => [s.text.replaceAll("*", "").trim(), s.href] as const);
+
+	test("a single-game sentence wins the whole sentence", () => {
+		const text =
+			"The Heat held off the Kings 109-107 on Kendrick Perkins' game-winner.";
+		assert.deepStrictEqual(linked(text), [
+			[
+				"The Heat held off the Kings 109-107 on Kendrick Perkins' game-winner.",
+				games[0]!.href,
+			],
+		]);
+	});
+
+	test("a round-up sentence links each clause to its own game", () => {
+		// The reported gap: these sentences named several games, so the
+		// whole-sentence rule could only shrug at them and half the recap linked
+		// nothing.
+		const text =
+			"Also on the night, the Pistons beat the Hawks 105-84, and the Wizards routed the Nets by 32.";
+		assert.deepStrictEqual(linked(text), [
+			["the Pistons beat the Hawks 105-84", games[1]!.href],
+			["and the Wizards routed the Nets by 32.", games[2]!.href],
+		]);
+		assert.strictEqual(reassemble(linkRecapSegments(text, games)), text);
+	});
+
+	test("a colon and an 'and' are clause boundaries too", () => {
+		const text =
+			"There was drama elsewhere: the Pistons edged the Hawks 113-111 and the Wizards routed the Nets by 27.";
+		assert.deepStrictEqual(linked(text), [
+			["the Pistons edged the Hawks 113-111", games[1]!.href],
+			["the Wizards routed the Nets by 27.", games[2]!.href],
+		]);
+	});
+
+	test("stat commas never fragment a sentence about one game", () => {
+		// Splitting this at its commas would leave "9 rebounds" as its own
+		// unlinked scrap in the middle of a sentence that resolves perfectly well
+		// whole.
+		const text =
+			"Kendrick Perkins had 31 points, 9 rebounds, and 6 assists as the Heat beat the Kings.";
+		assert.deepStrictEqual(linked(text), [[text, games[0]!.href]]);
+	});
+
+	test("commas inside a player's aside are not clause boundaries", () => {
+		const text =
+			"On the injury front, Kendrick Perkins (sprained knee, out ~13 games) and Jason Richardson (sprained ankle, out ~9 games) went down.";
+		assert.deepStrictEqual(linked(text), [
+			["Kendrick Perkins (sprained knee, out ~13 games)", games[0]!.href],
+			[
+				"Jason Richardson (sprained ankle, out ~9 games) went down.",
+				games[1]!.href,
+			],
+		]);
+		assert.strictEqual(reassemble(linkRecapSegments(text, games)), text);
+	});
+
+	test("a clause naming nobody links nothing, and the prose survives", () => {
+		const text = "Five of the 14 games were decided by five points or fewer.";
+		assert.deepStrictEqual(linked(text), []);
+		assert.strictEqual(reassemble(linkRecapSegments(text, games)), text);
+	});
+
+	// The sub-headline is ONE italic run of "·"-separated blurbs. Cutting it left
+	// the opening "*" in the first blurb and the closing one in the last, so both
+	// rendered as literal asterisks with nothing italic between them.
+	test("an emphasis run spanning cuts is closed and reopened, not broken", () => {
+		const text =
+			"*Jason Richardson pours in 42 · Beno Udrih goes for 38 · Kendrick Perkins wins it*";
+		const segs = linkRecapSegments(text, games);
+		for (const seg of segs) {
+			const stars = (seg.text.match(/\*/g) ?? []).length;
+			assert.strictEqual(stars % 2, 0, `unbalanced emphasis in "${seg.text}"`);
+		}
+		assert.deepStrictEqual(linked(text), [
+			["Jason Richardson pours in 42", games[1]!.href],
+			["Beno Udrih goes for 38", games[2]!.href],
+			["Kendrick Perkins wins it", games[0]!.href],
+		]);
+		assert.strictEqual(reassemble(segs), text.replaceAll("*", ""));
 	});
 });
 

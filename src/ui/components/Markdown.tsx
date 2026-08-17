@@ -5,7 +5,6 @@ import {
 	type ReactNode,
 } from "react";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
-import { splitSentences } from "../util/linkifyRecap.ts";
 
 // A deliberately small, SAFE Markdown renderer for game recaps. It renders React
 // elements (never raw HTML / dangerouslySetInnerHTML), so pasted AI text can't
@@ -93,15 +92,16 @@ const renderInline = (text: string, keyPrefix: string): ReactNode[] => {
 
 export const Markdown = ({
 	children,
-	sentenceLink,
+	linkSegments,
 }: {
 	children: string;
-	// When set, each sentence is offered for a link of its own: return a URL and
-	// the whole sentence becomes a click target (underlining on hover), return
-	// undefined and it renders as plain text. Links INSIDE the sentence still
-	// win their own clicks. Used by recaps to send a sentence to the box score
-	// of the game it describes.
-	sentenceLink?: (sentence: string) => string | undefined;
+	// When set, each block of text is handed over to be broken into pieces, any
+	// of which may carry a URL: a piece with one becomes a click target
+	// (underlining on hover), a piece without renders as plain text. Links
+	// INSIDE a piece still win their own clicks. Used by recaps to send each
+	// sentence - or each clause of a round-up sentence - to the box score of the
+	// game it describes.
+	linkSegments?: (text: string) => { text: string; href?: string }[];
 }) => {
 	const lines = children.replaceAll("\r\n", "\n").split("\n");
 	const blocks: ReactNode[] = [];
@@ -110,13 +110,13 @@ export const Markdown = ({
 	let list: string[] = [];
 
 	const renderSentences = (text: string, key: string): ReactNode[] => {
-		if (!sentenceLink) {
+		if (!linkSegments) {
 			return renderInline(text, key);
 		}
-		return splitSentences(text).map((seg, idx) => {
+		return linkSegments(text).map((seg, idx) => {
 			const k = `${key}-s${idx}`;
 			const nodes = renderInline(seg.text, k);
-			const href = seg.boundary ? undefined : sentenceLink(seg.text);
+			const href = seg.href;
 			if (href === undefined) {
 				return <Fragment key={k}>{nodes}</Fragment>;
 			}

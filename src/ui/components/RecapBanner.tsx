@@ -3,7 +3,7 @@ import clsx from "clsx";
 import { Markdown } from "./Markdown.tsx";
 import {
 	linkifyRecap,
-	resolveSentenceGame,
+	linkRecapSegments,
 	type RecapLink,
 	type SentenceGame,
 } from "../util/linkifyRecap.ts";
@@ -105,9 +105,9 @@ export const RecapBanner = ({
 			{hasMore ? (
 				<div className={clsx("game-note-body", { open })} aria-hidden={!open}>
 					<Markdown
-						sentenceLink={
+						linkSegments={
 							sentenceGames && sentenceGames.length > 0
-								? (sentence) => resolveSentenceGame(sentence, sentenceGames)
+								? (text) => linkRecapSegments(text, sentenceGames)
 								: undefined
 						}
 					>
