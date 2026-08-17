@@ -1,4 +1,8 @@
-import { ALL_STAR_GAME_ONLY, PHASE } from "../../../common/constants.ts";
+import {
+	ALL_STAR_GAME_ONLY,
+	PHASE,
+	SAVE_REPLAYS_DRAMATIC,
+} from "../../../common/constants.ts";
 import {
 	GameSim,
 	allStar,
@@ -433,12 +437,39 @@ const play = async (
 		let url;
 
 		// Persist a rewatchable replay for every game that generated play-by-play
-		// this batch - the one being live-watched, plus any game of a team flagged
-		// for auto-saved replays. Keyed by each game's own gid, written inside the
-		// sim's capture window so it syncs to the whole room like the game itself.
-		// Best-effort: a replay is a nicety, never fail the sim over it.
-		for (const result of results) {
-			if (result.playByPlay !== undefined) {
+		// this batch and still qualifies. Keyed by each game's own gid, written
+		// inside the sim's capture window so it syncs to the whole room like the
+		// game itself. Best-effort: a replay is a nicety, never fail the sim over
+		// it.
+		//
+		// "Still qualifies" is for the dramatic-games option, which generates
+		// play-by-play for the whole slate and only KEEPS the games that earned
+		// it: a statistical feat (the same standard as the Statistical Feats
+		// page - results.team[t].playerFeat, set by checkStatisticalFeat), or a
+		// game winner/tyer (clutchPlays - the shot that won it, tied it, or
+		// forced overtime). Everything a pre-sim rule asked for is saved
+		// unconditionally, exactly as before.
+		{
+			const saveReplaysTids = new Set(g.get("saveReplaysTids"));
+			const saveAllPlayoffGames =
+				saveReplaysTids.has(-2) && g.get("phase") === PHASE.PLAYOFFS;
+			for (const result of results) {
+				if (result.playByPlay === undefined) {
+					continue;
+				}
+				const wantedBeforeSim =
+					result.gid === gidOneGame ||
+					saveAllPlayoffGames ||
+					saveReplaysTids.has(result.team[0].id) ||
+					saveReplaysTids.has(result.team[1].id);
+				const dramatic =
+					saveReplaysTids.has(SAVE_REPLAYS_DRAMATIC) &&
+					(result.team[0].playerFeat ||
+						result.team[1].playerFeat ||
+						result.clutchPlays.length > 0);
+				if (!wantedBeforeSim && !dramatic) {
+					continue;
+				}
 				try {
 					await idb.cache.liveGamePlayByPlay.put({
 						gid: result.gid,
@@ -550,14 +581,23 @@ const play = async (
 		// play-by-play is extra work, so this is only done for the flagged teams'
 		// games (plus the one game being live-watched, as before). The -2 sentinel
 		// means "every playoff game", regardless of team.
+		//
+		// The -3 sentinel is "any game with a statistical feat or a game
+		// winner/tyer" - which can only be known AFTER a game is simmed, so it
+		// works the other way round from the rules above: play-by-play is
+		// generated for EVERY game, and the ones that turn out not to qualify are
+		// simply not saved (see cbSaveResults). That is the whole day paying the
+		// live-sim game's generation cost, which is the price of the option.
 		const saveReplaysTids = new Set(g.get("saveReplaysTids"));
 		const saveAllPlayoffGames =
 			saveReplaysTids.has(-2) && g.get("phase") === PHASE.PLAYOFFS;
+		const saveDramaticGames = saveReplaysTids.has(SAVE_REPLAYS_DRAMATIC);
 
 		for (const game of schedule) {
 			const doPlayByPlay =
 				(gidOneGame === game.gid && playByPlay) ||
 				saveAllPlayoffGames ||
+				saveDramaticGames ||
 				saveReplaysTids.has(game.homeTid) ||
 				saveReplaysTids.has(game.awayTid);
 

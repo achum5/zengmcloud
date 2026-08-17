@@ -23,8 +23,15 @@ import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 // How the ranking splits between what a team has DONE and what its roster
 // looks like. Performance reaches its full share after this many games, and
 // the rating keeps the remaining sliver for good.
-const MAX_PERF_WEIGHT = 0.85;
-const PERF_RAMP_GAMES = 20;
+//
+// The rating used to keep 15% forever and carry most of the first twenty
+// games, which meant a team on a 12-2 start still ranked under a stacked
+// roster playing .500 ball - the rankings read as a prettier team-ratings
+// page. Results now take over faster and more completely: the rating's
+// permanent share is halved, and its early-season say fades within a dozen
+// games instead of a month.
+const MAX_PERF_WEIGHT = 0.92;
+const PERF_RAMP_GAMES = 12;
 
 const otherToRanks = (
 	teams: {

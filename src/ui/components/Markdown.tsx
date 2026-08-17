@@ -1,4 +1,11 @@
-import type { ReactNode } from "react";
+import {
+	Fragment,
+	type KeyboardEvent,
+	type MouseEvent,
+	type ReactNode,
+} from "react";
+import { realtimeUpdate } from "../util/realtimeUpdate.ts";
+import { splitSentences } from "../util/linkifyRecap.ts";
 
 // A deliberately small, SAFE Markdown renderer for game recaps. It renders React
 // elements (never raw HTML / dangerouslySetInnerHTML), so pasted AI text can't
@@ -84,19 +91,68 @@ const renderInline = (text: string, keyPrefix: string): ReactNode[] => {
 	return nodes;
 };
 
-export const Markdown = ({ children }: { children: string }) => {
+export const Markdown = ({
+	children,
+	sentenceLink,
+}: {
+	children: string;
+	// When set, each sentence is offered for a link of its own: return a URL and
+	// the whole sentence becomes a click target (underlining on hover), return
+	// undefined and it renders as plain text. Links INSIDE the sentence still
+	// win their own clicks. Used by recaps to send a sentence to the box score
+	// of the game it describes.
+	sentenceLink?: (sentence: string) => string | undefined;
+}) => {
 	const lines = children.replaceAll("\r\n", "\n").split("\n");
 	const blocks: ReactNode[] = [];
 
 	let paragraph: string[] = [];
 	let list: string[] = [];
 
+	const renderSentences = (text: string, key: string): ReactNode[] => {
+		if (!sentenceLink) {
+			return renderInline(text, key);
+		}
+		return splitSentences(text).map((seg, idx) => {
+			const k = `${key}-s${idx}`;
+			const nodes = renderInline(seg.text, k);
+			const href = seg.boundary ? undefined : sentenceLink(seg.text);
+			if (href === undefined) {
+				return <Fragment key={k}>{nodes}</Fragment>;
+			}
+			const go = (event: MouseEvent | KeyboardEvent) => {
+				// A player/team link inside the sentence keeps its own click.
+				if ((event.target as HTMLElement).closest("a")) {
+					return;
+				}
+				void realtimeUpdate([], href);
+			};
+			return (
+				<span
+					key={k}
+					className="recap-sentence"
+					role="link"
+					tabIndex={0}
+					title="Box score"
+					onClick={go}
+					onKeyDown={(event) => {
+						if (event.key === "Enter") {
+							go(event);
+						}
+					}}
+				>
+					{nodes}
+				</span>
+			);
+		});
+	};
+
 	const flushParagraph = () => {
 		if (paragraph.length > 0) {
 			const key = `p-${blocks.length}`;
 			blocks.push(
 				<p key={key} className="mb-2">
-					{renderInline(paragraph.join(" "), key)}
+					{renderSentences(paragraph.join(" "), key)}
 				</p>,
 			);
 			paragraph = [];

@@ -15,7 +15,10 @@ import { ScoreBox } from "../components/ScoreBox/index.tsx";
 import { SimHereButton } from "../components/SimHereButton.tsx";
 import { GameNote } from "../components/GameNote.tsx";
 import { DayRecap } from "../components/DayRecap.tsx";
-import { buildRecapLinksForGame } from "../util/linkifyRecap.ts";
+import {
+	buildRecapLinksForGame,
+	buildSentenceGamesForDay,
+} from "../util/linkifyRecap.ts";
 import {
 	getDailyScheduleScroll,
 	setDailyScheduleScroll,
@@ -217,6 +220,10 @@ const DailySchedule = ({
 					note={dayNote}
 					links={completed.flatMap((game) =>
 						buildRecapLinksForGame(game, (tid) => teamInfoCache[tid]),
+					)}
+					sentenceGames={buildSentenceGamesForDay(
+						completed,
+						(tid) => teamInfoCache[tid],
 					)}
 				/>
 			) : null}

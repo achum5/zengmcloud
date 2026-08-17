@@ -510,6 +510,11 @@ export const MOBILE_AD_BOTTOM_MARGIN = 52;
 // Kept in step with $league-ticker-height in the stylesheets.
 export const LEAGUE_TICKER_HEIGHT = 36;
 
+// Sentinel in saveReplaysTids: auto-save a replay of any game with a
+// statistical feat or a game winner/tyer. (-1 is the All-Star Game via its
+// roster tid, -2 is every playoff game - see SaveReplaysTeams.)
+export const SAVE_REPLAYS_DRAMATIC = -3;
+
 export const DEPTH_CHART_NAME = bySport({
 	baseball: "Batting Order",
 	basketball: undefined,

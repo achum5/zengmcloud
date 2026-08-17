@@ -1,7 +1,12 @@
 import { type MouseEvent } from "react";
 import clsx from "clsx";
 import { Markdown } from "./Markdown.tsx";
-import { linkifyRecap, type RecapLink } from "../util/linkifyRecap.ts";
+import {
+	linkifyRecap,
+	resolveSentenceGame,
+	type RecapLink,
+	type SentenceGame,
+} from "../util/linkifyRecap.ts";
 
 // The shared presentation for an AI recap on the Daily Schedule: the first line
 // is the always-visible headline with a toggle arrow; clicking it expands the
@@ -19,6 +24,7 @@ export const RecapBanner = ({
 	onToggle,
 	flow,
 	centered,
+	sentenceGames,
 }: {
 	note: string;
 	links: RecapLink[];
@@ -29,6 +35,11 @@ export const RecapBanner = ({
 	// a centered score and reads as that game's headline rather than as a list
 	// item. `flow` as well; this only restyles it.
 	centered?: boolean;
+	// The day's completed games, when this is a DAY recap: each body sentence
+	// that resolves to exactly one of them links to that game's box score
+	// (underlining whole on hover). The headline is left out - clicking it
+	// toggles the note, and a headline that also navigated would fight that.
+	sentenceGames?: SentenceGame[];
 }) => {
 	const text = note.trim();
 	if (text === "") {
@@ -93,7 +104,15 @@ export const RecapBanner = ({
 			</div>
 			{hasMore ? (
 				<div className={clsx("game-note-body", { open })} aria-hidden={!open}>
-					<Markdown>{body}</Markdown>
+					<Markdown
+						sentenceLink={
+							sentenceGames && sentenceGames.length > 0
+								? (sentence) => resolveSentenceGame(sentence, sentenceGames)
+								: undefined
+						}
+					>
+						{body}
+					</Markdown>
 				</div>
 			) : null}
 		</div>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { type RecapLink } from "../util/linkifyRecap.ts";
+import { type RecapLink, type SentenceGame } from "../util/linkifyRecap.ts";
 import { RecapBanner } from "./RecapBanner.tsx";
 import {
 	isDayNoteExpanded,
@@ -15,11 +15,13 @@ export const DayRecap = ({
 	day,
 	note,
 	links,
+	sentenceGames,
 }: {
 	season: number;
 	day: number;
 	note: string;
 	links: RecapLink[];
+	sentenceGames?: SentenceGame[];
 }) => {
 	const [expanded, setExpandedState] = useState(() =>
 		isDayNoteExpanded(season, day),
@@ -35,6 +37,7 @@ export const DayRecap = ({
 			<RecapBanner
 				note={note}
 				links={links}
+				sentenceGames={sentenceGames}
 				expanded={expanded}
 				onToggle={setExpanded}
 				flow

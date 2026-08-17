@@ -1281,6 +1281,18 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 	}
 }
 
+// A recap sentence that resolved to one game: hover underlines the whole
+// sentence (links inside included, which set their own text-decoration and
+// would otherwise opt out) and the click goes to that game's box score.
+.recap-sentence {
+	cursor: pointer;
+
+	&:hover,
+	&:hover a {
+		text-decoration: underline;
+	}
+}
+
 // The always-visible headline row. Shares the card's border (gray-300) with no
 // top border so it reads as one piece, and rounds its bottom corners to match
 // the card's rounded top. Compact vertical padding.

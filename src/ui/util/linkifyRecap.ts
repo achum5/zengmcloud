@@ -83,6 +83,62 @@ export const buildRecapLinksForGame = (
 	return entries;
 };
 
+// One completed game, reduced to what sentence-level linking needs: every name
+// that could identify it in recap prose (both teams' region/nickname forms and
+// every player who appeared), and its box score URL. See RecapBanner - a recap
+// sentence whose names all point at ONE game gets a hover-underline link there.
+export type SentenceGame = { href: string; names: string[] };
+
+export const buildSentenceGamesForDay = (
+	games: { gid: number; season: number; teams: any[] }[],
+	teamInfo: (
+		tid: number,
+	) => { abbrev?: string; region?: string; name?: string } | undefined,
+): SentenceGame[] => {
+	const out: SentenceGame[] = [];
+	for (const game of games) {
+		if (typeof game?.gid !== "number") {
+			continue;
+		}
+		const names: string[] = [];
+		let href: string | undefined;
+		for (const t of Array.isArray(game.teams) ? game.teams : []) {
+			if (typeof t?.tid !== "number") {
+				continue;
+			}
+			const info = t.tid >= 0 ? (t.branding ?? teamInfo(t.tid)) : undefined;
+			// Any real team's abbrev anchors the URL; the All-Star Game's roster
+			// tids are negative and use the "special" slug like everywhere else.
+			if (href === undefined) {
+				href = helpers.leagueUrl([
+					"game_log",
+					info?.abbrev ? `${info.abbrev}_${t.tid}` : "special",
+					game.season,
+					game.gid,
+				]);
+			}
+			for (const label of [
+				`${info?.region ?? ""} ${info?.name ?? ""}`,
+				info?.name ?? "",
+				info?.region ?? "",
+			]) {
+				if (label.trim() !== "") {
+					names.push(label.trim());
+				}
+			}
+			for (const p of Array.isArray(t.players) ? t.players : []) {
+				if (typeof p?.pid === "number" && p.pid >= 0 && p.name) {
+					names.push(String(p.name));
+				}
+			}
+		}
+		if (href !== undefined && names.length > 0) {
+			out.push({ href, names });
+		}
+	}
+	return out;
+};
+
 export type TeamInfoCache = {
 	abbrev?: string;
 	region?: string;
@@ -153,6 +209,54 @@ export const buildTeamSeasonRecapLinks = ({
 
 const escapeRegex = (s: string): string =>
 	s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Split a paragraph into sentences (kept) and the boundaries between them
+// (kept too, as plain text, so nothing is lost in reassembly). Boundaries are a
+// sentence end followed by a capital-ish opener - so "10.9 seconds" and other
+// decimals never split - plus the "·" separator the day recap's sub-headline
+// uses between its blurbs. Used by the Markdown renderer to offer each sentence
+// for a link of its own.
+export const splitSentences = (
+	text: string,
+): { text: string; boundary: boolean }[] => {
+	const parts = text.split(/(\s*·\s*|(?<=[.!?])\s+(?=["'(A-Z]))/);
+	const out: { text: string; boundary: boolean }[] = [];
+	for (const [i, part] of parts.entries()) {
+		if (part !== undefined && part !== "") {
+			out.push({ text: part, boundary: i % 2 === 1 });
+		}
+	}
+	return out;
+};
+
+// Which game is this recap sentence about? Every game name (team or player)
+// found in the sentence votes for its game; a sentence whose names all point at
+// ONE game resolves to that game's box score, and anything ambiguous - the
+// round-up sentences that rattle off half the slate - resolves to nothing
+// rather than to a guess. Matching runs on the prose, so markdown links are
+// stripped to their labels first.
+const mdToPlain = (s: string): string =>
+	s.replace(/\[([^\]]+)]\([^)]*\)/g, "$1");
+
+export const resolveSentenceGame = (
+	sentence: string,
+	games: SentenceGame[],
+): string | undefined => {
+	const plain = mdToPlain(sentence);
+	let href: string | undefined;
+	for (const game of games) {
+		const mentioned = game.names.some((name) =>
+			new RegExp(String.raw`(?<![\w])${escapeRegex(name)}(?![\w])`).test(plain),
+		);
+		if (mentioned) {
+			if (href !== undefined && href !== game.href) {
+				return undefined;
+			}
+			href = game.href;
+		}
+	}
+	return href;
+};
 
 // A placeholder that won't appear in recap text and can't be re-matched by a
 // later (shorter) name, so real numbers never collide and links never nest.

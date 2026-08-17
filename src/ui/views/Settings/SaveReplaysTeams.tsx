@@ -1,5 +1,6 @@
 import { useLocal } from "../../util/local.ts";
 import { orderBy } from "../../../common/utils.ts";
+import { SAVE_REPLAYS_DRAMATIC } from "../../../common/constants.ts";
 
 // The team picker for the "auto-save replays" setting. Value round-trips as a
 // JSON string of team IDs (the jsonString setting type), so this just parses
@@ -47,9 +48,12 @@ const SaveReplaysTeams = ({
 
 	// -1 is the All-Star Game (its rosters are tids -1/-2). Kept separate from the
 	// team list since it isn't a real franchise. -2 is the "all playoff games"
-	// sentinel: save every playoff game regardless of team.
+	// sentinel: save every playoff game regardless of team. -3 saves any game
+	// that turns out to contain a statistical feat or a game winner/tyer - which
+	// costs the most, since every game has to generate play-by-play to find out.
 	const ALL_STAR = -1;
 	const ALL_PLAYOFFS = -2;
+	const DRAMATIC = SAVE_REPLAYS_DRAMATIC;
 
 	return (
 		<div style={{ maxWidth: 420 }}>
@@ -62,6 +66,7 @@ const SaveReplaysTeams = ({
 						setTids([
 							...(selectedSet.has(ALL_STAR) ? [ALL_STAR] : []),
 							...(selectedSet.has(ALL_PLAYOFFS) ? [ALL_PLAYOFFS] : []),
+							...(selectedSet.has(DRAMATIC) ? [DRAMATIC] : []),
 							...teams.map((t) => t.tid),
 						])
 					}
@@ -105,6 +110,23 @@ const SaveReplaysTeams = ({
 					/>
 					<label className="form-check-label" htmlFor="saveReplays-allstar">
 						⭐ All-Star Game
+					</label>
+				</div>
+				<div className="form-check mb-0">
+					<input
+						className="form-check-input"
+						type="checkbox"
+						id="saveReplays-dramatic"
+						disabled={disabled}
+						checked={selectedSet.has(DRAMATIC)}
+						onChange={() => toggle(DRAMATIC)}
+					/>
+					<label
+						className="form-check-label"
+						htmlFor="saveReplays-dramatic"
+						title="Any game with a statistical feat or a game winner/tyer. Slower sims: every game generates play-by-play to find out."
+					>
+						⚡ Feats &amp; game winners
 					</label>
 				</div>
 				<hr className="my-1" />
