@@ -21,7 +21,10 @@ import {
 import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { setLiveWatchGate } from "./liveWatchGate.ts";
-import { decideFollowAction } from "./liveBroadcastFollow.ts";
+import {
+	decideFollowAction,
+	shouldServeFollowedPayload,
+} from "./liveBroadcastFollow.ts";
 import {
 	readLocalLeagueId,
 	resolveLeagueIdentity,
@@ -504,7 +507,10 @@ let followedBroadcastPayload:
 	| { startedAt: number; gid: number; playByPlay: any[]; boxScore: any }
 	| undefined;
 
-export const getFollowedBroadcastPayload = () => followedBroadcastPayload;
+export const getFollowedBroadcastPayload = () =>
+	shouldServeFollowedPayload(followedBroadcast, local.liveSimGid !== undefined)
+		? followedBroadcastPayload
+		: undefined;
 
 // The latest broadcast SOMEONE ELSE has live (own echoes filtered out). This is
 // what the header pill offers to rejoin, and what a starting broadcast checks so

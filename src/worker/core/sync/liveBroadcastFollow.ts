@@ -36,6 +36,19 @@ export type FollowAction =
 	// to, only a score to be spoiled by, so no invitation.
 	| "ignore";
 
+// Should a load of the live game page be served the followed broadcast's
+// payload? The payload outlives the follow on purpose - it is what the header
+// pill rejoins with - so "the payload exists" is not the question. The page
+// belongs to the broadcast only while this device is actually INSIDE it:
+// after walking out (left), or while this device's OWN live sim is playing,
+// the page is somebody else's, and serving the broadcast there is how
+// clicking "watch my game" opened a league-mate's game instead. (The pill
+// rejoin clears `left` before it navigates, so it still gets the payload.)
+export const shouldServeFollowedPayload = (
+	followed: FollowRecord,
+	localSimActive: boolean,
+): boolean => followed !== undefined && !followed.left && !localSimActive;
+
 export const decideFollowAction = (
 	broadcast: { startedAt: number; gameOver: boolean },
 	followed: FollowRecord,

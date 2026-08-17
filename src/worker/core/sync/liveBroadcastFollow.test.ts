@@ -1,5 +1,8 @@
 import { assert, describe, test } from "vitest";
-import { decideFollowAction } from "./liveBroadcastFollow.ts";
+import {
+	decideFollowAction,
+	shouldServeFollowedPayload,
+} from "./liveBroadcastFollow.ts";
 
 const live = { startedAt: 1000, gameOver: false };
 const finished = { startedAt: 1000, gameOver: true };
@@ -62,6 +65,20 @@ describe("decideFollowAction", () => {
 		// Nothing was recorded against the broadcast while the local sim played,
 		// so the ordinary never-seen-it rule takes over.
 		assert.strictEqual(decideFollowAction(live, undefined, false), "join");
+	});
+
+	test("the page is only served the broadcast while actually inside it", () => {
+		// The field bug: leave a broadcast, live-sim your OWN game, and the live
+		// game page - re-running without its one-shot payload - was handed the
+		// broadcast's cached game instead of yours. The payload must only be
+		// served while genuinely following: not after leaving, and never while
+		// this device's own live sim owns the page.
+		assert.isTrue(shouldServeFollowedPayload({ startedAt: 1000 }, false));
+		assert.isFalse(
+			shouldServeFollowedPayload({ startedAt: 1000, left: true }, false),
+		);
+		assert.isFalse(shouldServeFollowedPayload({ startedAt: 1000 }, true));
+		assert.isFalse(shouldServeFollowedPayload(undefined, false));
 	});
 
 	test("its own sim does not disturb an earlier Leave decision", () => {
