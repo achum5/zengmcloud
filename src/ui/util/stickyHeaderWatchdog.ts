@@ -193,6 +193,27 @@ export const bottomBarIsDetached = ({
 	);
 };
 
+// Every height the foot of the viewport can legitimately be at, minus one that
+// cannot be trusted: a resume can hand back a documentElement.clientHeight
+// still sized for the app-switcher snapshot. When it reads SMALLER than
+// innerHeight by more than any toolbar transition is worth, it is not a place a
+// healthy bar can honestly be - and left in the set, it vouches for a bar
+// parked mid-screen and detection never fires. Only the small side is
+// distrusted: a keyboard can legitimately shrink innerHeight below
+// clientHeight, never the reverse. Pure, so the rule is a test.
+export const tickerAnchorHeights = ({
+	client,
+	innerHeight,
+	vvBottom,
+}: {
+	client: number;
+	innerHeight: number;
+	vvBottom: number;
+}): number[] => {
+	const clientStale = innerHeight - client > 150;
+	return [clientStale ? Number.NaN : client, innerHeight, vvBottom];
+};
+
 const computedStickyTop = (element: HTMLElement): number => {
 	const top = Number.parseFloat(window.getComputedStyle(element).top);
 	return Number.isFinite(top) ? top : 0;
@@ -253,11 +274,11 @@ const TICKER_BAR: Bar = {
 			// (where the standing visual-viewport correction parks the bar).
 			anchorHeights: () => {
 				const vv = window.visualViewport;
-				return [
-					layoutViewportHeight(),
-					window.innerHeight,
-					vv ? vv.offsetTop + vv.height : Number.NaN,
-				];
+				return tickerAnchorHeights({
+					client: layoutViewportHeight(),
+					innerHeight: window.innerHeight,
+					vvBottom: vv ? vv.offsetTop + vv.height : Number.NaN,
+				});
 			},
 			pinnedByModal: modalPinning,
 			visualOffsetTop: () => window.visualViewport?.offsetTop ?? 0,
@@ -667,6 +688,50 @@ const watch = () => {
 	};
 };
 
+// On a REAL resume (app switcher, back/forward cache), rebuild the ticker's
+// renderer without asking whether it looks broken. Two reasons this is exempt
+// from the detect-before-act rule everything else here follows: a resume is
+// exactly when detection can be blind (a stale snapshot-sized viewport makes a
+// parked bar measure as healthy - the anchor note above), and it is exactly
+// when acting is free, because the whole screen is repainting from the app
+// switcher's snapshot and a one-frame rebuild of a bottom bar cannot be seen.
+// Runs once immediately and once after layout has settled - constraints
+// rebuilt against the first frame back can be recorded against the
+// pre-suspend viewport and go stale again the moment the real one lands.
+//
+// The ticker only. The header has never needed it, and its detect-first watch
+// demonstrably works there; unconditional toggling of an element that is
+// visible at the top of every resumed screen is not worth trading that for.
+const RESUME_REBUILD_SETTLE_MS = 800;
+let lastTickerResumeRebuild = 0;
+
+const rebuildTickerOnResume = () => {
+	const now = Date.now();
+	if (now - lastTickerResumeRebuild < RESUME_DEDUPE_MS) {
+		return;
+	}
+	lastTickerResumeRebuild = now;
+
+	const pass = async () => {
+		const element = TICKER_BAR.get();
+		if (!element || modalPinning() || repairing.has(TICKER_BAR.name)) {
+			return;
+		}
+		repairing.add(TICKER_BAR.name);
+		try {
+			await rebuildRenderer(element);
+		} finally {
+			repairing.delete(TICKER_BAR.name);
+		}
+	};
+
+	note(TICKER_BAR, TICKER_BAR.get(), "resume-rebuild", viewportNote());
+	void pass();
+	setTimeout(() => {
+		void pass();
+	}, RESUME_REBUILD_SETTLE_MS);
+};
+
 export const initStickyHeaderWatchdog = () => {
 	// Sticky anchors to the layout viewport, so zoom or pan can leave the header
 	// off the top of the visible area while behaving perfectly correctly. Started
@@ -680,6 +745,7 @@ export const initStickyHeaderWatchdog = () => {
 
 	document.addEventListener("visibilitychange", () => {
 		if (document.visibilityState === "visible") {
+			rebuildTickerOnResume();
 			watch();
 		}
 	});
@@ -687,7 +753,10 @@ export const initStickyHeaderWatchdog = () => {
 	// pageshow covers a restore from the back/forward cache, which is how iOS
 	// often brings a suspended PWA back; focus covers the cases where neither
 	// fires (returning from a share sheet, a system prompt, split view).
-	window.addEventListener("pageshow", watch);
+	window.addEventListener("pageshow", () => {
+		rebuildTickerOnResume();
+		watch();
+	});
 	window.addEventListener("focus", watch);
 
 	// The stale constraints come from the web view being resized (for the app

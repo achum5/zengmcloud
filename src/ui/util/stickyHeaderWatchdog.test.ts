@@ -4,6 +4,7 @@ import {
 	detachmentConfirmed,
 	headerIsDetached,
 	scrollDecision,
+	tickerAnchorHeights,
 } from "./stickyHeaderWatchdog.ts";
 import { tickerVisualShift } from "./visualViewportHeader.ts";
 
@@ -444,6 +445,38 @@ describe("tickerVisualShift", () => {
 				layoutHeight: 800,
 			}),
 			0,
+		);
+	});
+});
+
+describe("tickerAnchorHeights", () => {
+	test("normal life keeps all three anchors", () => {
+		// Toolbar collapsed: innerHeight grows past clientHeight by well under the
+		// stale bar - both stay, which is the false-detachment lesson.
+		assert.deepStrictEqual(
+			tickerAnchorHeights({ client: 660, innerHeight: 750, vvBottom: 750 }),
+			[660, 750, 750],
+		);
+	});
+
+	test("a snapshot-sized clientHeight is thrown out", () => {
+		// The resume fault: clientHeight restored at the app-switcher snapshot's
+		// size. Left in, a bar parked at 580 measures healthy and nothing repairs.
+		const anchors = tickerAnchorHeights({
+			client: 580,
+			innerHeight: 830,
+			vvBottom: 830,
+		});
+		assert.ok(Number.isNaN(anchors[0]!));
+		assert.deepStrictEqual(anchors.slice(1), [830, 830]);
+	});
+
+	test("a keyboard shrinking innerHeight does not disqualify clientHeight", () => {
+		// Only the small side is distrusted - innerHeight below clientHeight is
+		// what a keyboard does, and the bar parked behind it is the chosen answer.
+		assert.deepStrictEqual(
+			tickerAnchorHeights({ client: 830, innerHeight: 530, vvBottom: 530 }),
+			[830, 530, 530],
 		);
 	});
 });
