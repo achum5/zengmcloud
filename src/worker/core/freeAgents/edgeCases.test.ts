@@ -274,6 +274,64 @@ describe("determinism and degenerate settings", () => {
 		}
 	}, 300_000);
 
+	test("signing during the regular season", async () => {
+		// autoSign runs after EVERY sim day of the regular season (game/play.ts),
+		// not just in the free agency phase - and the rest of this suite only ever
+		// exercises the phase. In-season the smart path takes a different shape:
+		// there is no daysLeft countdown, so no urgency ramp, and cap holds must
+		// not exist at all (a team "holding space" in February would just play a
+		// man short for a marquee market that is not coming).
+		//
+		// daysLeft is deliberately left at whatever the previous free agency set
+		// it to (here: a stale 0), because that is exactly what the real game
+		// does - it only resets when free agency starts. A crash or a hold built
+		// from that stale number is the bug this test exists to catch.
+		const rng = makeRng(99);
+		const spy = vi.spyOn(Math, "random").mockImplementation(rng);
+		try {
+			await build(rng, {
+				gameAttributes: { phase: PHASE.REGULAR_SEASON, daysLeft: 0 },
+			});
+			const faBefore = (
+				await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+			).length;
+			assert.ok(faBefore > 0);
+
+			// A month of season days. No decreaseDemands - the real in-season loop
+			// runs it too, but the point here is autoSign surviving alone.
+			for (let day = 0; day < 30; day++) {
+				await autoSign();
+			}
+
+			// The market must MOVE in-season: teams filling holes off waivers-level
+			// free agents is normal league behavior, and a smart AI that freezes
+			// mid-season (every team waiting for a prize nobody is selling) would
+			// show up right here as zero signings in a month.
+			const faAfter = (
+				await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+			).length;
+			assert.ok(
+				faAfter < faBefore,
+				`a month of in-season days signed nobody (${faBefore} free agents before and after)`,
+			);
+
+			// And every roster is still coherent.
+			const seen = new Set<number>();
+			for (let tid = 0; tid < NUM_TEAMS; tid++) {
+				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+				for (const p of roster) {
+					assert.ok(
+						!seen.has(p.pid),
+						`player ${p.pid} is on more than one roster`,
+					);
+					seen.add(p.pid);
+				}
+			}
+		} finally {
+			spy.mockRestore();
+		}
+	}, 300_000);
+
 	// Shared body: run it, then insist the league is still coherent. "Survives"
 	// means no throw, no hang, and no roster left in a state the game could not
 	// render - not that the decisions were good, which is not knowable for

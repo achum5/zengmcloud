@@ -198,4 +198,48 @@ describe("free agency performance at full league scale", () => {
 			);
 		}
 	}, 300_000);
+
+	test("the daily in-season overhead is invisible next to a game sim", async () => {
+		// The test above prices the offseason; this prices the season. autoSign
+		// runs after EVERY regular-season sim day (game/play.ts), and with smart on
+		// it rebuilds the league context and thirty postures each time - BEFORE the
+		// skip roll, so the cost is paid even on the ~60-90% of days a team then
+		// does nothing. Vanilla pays nearly nothing on those days. Nothing else in
+		// the suite would notice this cost creeping up, and it multiplies by every
+		// day of every season a league ever sims.
+		const runSeason = async (smart: boolean) => {
+			await build(makeRng(4077));
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+			g.setWithoutSavingToDB("smartAiFrontOffice", smart);
+			const start = performance.now();
+			for (let day = 0; day < 82; day++) {
+				await autoSign();
+			}
+			return performance.now() - start;
+		};
+
+		const vanillaMs = await runSeason(false);
+		const smartMs = await runSeason(true);
+
+		console.log(
+			[
+				"",
+				`=== 82 in-season days, 30 teams ===`,
+				`vanilla: ${vanillaMs.toFixed(0)}ms (${(vanillaMs / 82).toFixed(2)}ms/day)`,
+				`smart:   ${smartMs.toFixed(0)}ms (${(smartMs / 82).toFixed(2)}ms/day)`,
+				"",
+			].join("\n"),
+		);
+
+		// A regular-season day sims games, which costs a couple hundred ms; the
+		// posture work must stay an order of magnitude below that. Measured here:
+		// ~0.9ms/day smart against ~0.7ms/day vanilla. The bar is wall-clock and
+		// generous for CI, but a per-day cost that grew toward a game sim's would
+		// blow through it.
+		if (smartMs > 10_000) {
+			throw new Error(
+				`82 in-season autoSign days took ${smartMs.toFixed(0)}ms - the daily posture work has grown to game-sim scale`,
+			);
+		}
+	}, 300_000);
 });

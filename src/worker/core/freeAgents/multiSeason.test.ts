@@ -247,7 +247,16 @@ describe("eight consecutive offseasons on one league", () => {
 		changeTracker.reset();
 	});
 
-	const runLeague = async (smart: boolean, seed: number) => {
+	const runLeague = async (
+		smart: boolean,
+		seed: number,
+		// Flip smartAiFrontOffice ON at the start of this year (0-based), the way
+		// a real league flips the setting between seasons. The years before it run
+		// vanilla - byte-identical to a runLeague(false, ...) of the same seed,
+		// which is what lets the flip test attribute every post-flip difference to
+		// the flip itself.
+		enableAtYear?: number,
+	) => {
 		const rng = makeRng(seed);
 
 		// The spy covers EVERYTHING, fixture construction included. player.generate
@@ -264,6 +273,9 @@ describe("eight consecutive offseasons on one league", () => {
 			const years: Year[] = [];
 			const allEntries: FrontOfficeEntry[] = [];
 			for (let year = 0; year < SEASONS; year++) {
+				if (enableAtYear !== undefined && year === enableAtYear) {
+					g.setWithoutSavingToDB("smartAiFrontOffice", true);
+				}
 				const season = g.get("season");
 				await addDraftClass(rng, season + 1);
 				await setRecords();
@@ -683,5 +695,113 @@ describe("eight consecutive offseasons on one league", () => {
 			mean <= 9,
 			`smart AI leaves ${mean.toFixed(1)} more useful players unemployed per seed than vanilla`,
 		);
+	});
+
+	// -------------------------------------------------------------------------
+	// FLIPPING IT ON MID-LEAGUE.
+	//
+	// Every run above enables the feature at year zero, on a fresh fixture. A
+	// real league does neither: it flips the setting years in, on rosters and
+	// payrolls the VANILLA rules accumulated - old cores a smart AI would never
+	// have assembled, contracts it would never have signed. The postures computed
+	// from that inherited state are the feature's first-ever look at the league,
+	// and the fear is a transition-year shock: half the league's veterans walking
+	// at once because shouldLetWalk suddenly applies to everybody, or a wave of
+	// salary dumps as every capped-out club discovers "relief" the same morning.
+	//
+	// The control is the same seed run vanilla throughout, so the pre-flip years
+	// are byte-identical (asserted - it proves every post-flip difference is the
+	// flip) and each post-flip year has an exact counterfactual to answer to.
+	// -------------------------------------------------------------------------
+	describe("flipping smart AI on in an established league", () => {
+		const FLIP_YEAR = 4;
+
+		for (const seed of [31, 1234]) {
+			test(`no transition shock, and no worse than vanilla after (seed ${seed})`, async () => {
+				const flipped = await runLeague(false, seed, FLIP_YEAR);
+				const vanilla = await runLeague(false, seed);
+
+				console.log(
+					[
+						table(`FLIPPED ON AT YEAR ${FLIP_YEAR}`, flipped.years),
+						table("VANILLA CONTROL", vanilla.years),
+						"",
+					].join("\n"),
+				);
+
+				// The pre-flip years must be IDENTICAL - same seed, same rules, same
+				// decisions. If they are not, the harness is comparing two different
+				// leagues and nothing after this line means anything.
+				for (let i = 0; i < FLIP_YEAR; i++) {
+					assert.deepStrictEqual(
+						flipped.years[i],
+						vanilla.years[i],
+						`pre-flip year ${i} diverged from the control`,
+					);
+				}
+
+				const transition = flipped.years[FLIP_YEAR]!;
+				const control = vanilla.years[FLIP_YEAR]!;
+
+				// The transition-year shock checks. walkedToFa is the direct measure
+				// of the feared failure: shouldLetWalk waking up on four seasons of
+				// vanilla-accumulated veterans. The bar allows one extra walk-away per
+				// team over the control before it calls shock - far above a strategic
+				// trickle, far below an exodus.
+				assert.ok(
+					transition.walkedToFa <= control.walkedToFa + NUM_TEAMS,
+					`transition-year exodus: ${transition.walkedToFa} walked to FA vs ${control.walkedToFa} in the control`,
+				);
+
+				// One dump per team per offseason is the hard cap; the fear is the
+				// whole league using it at once the year the feature wakes up.
+				assert.ok(
+					transition.dumps <= Math.ceil(NUM_TEAMS / 2),
+					`dump wave in the transition year: ${transition.dumps} dumps`,
+				);
+
+				// From the flip on, the same league-health bars as the main test: the
+				// stars stay employed, nobody fields an illegal side, payroll doesn't
+				// run away.
+				for (let i = FLIP_YEAR; i < SEASONS; i++) {
+					const y = flipped.years[i]!;
+					const v = vanilla.years[i]!;
+					assert.strictEqual(
+						y.shortRosters,
+						0,
+						`season ${y.season}: ${y.shortRosters} teams below the roster minimum`,
+					);
+					assert.ok(
+						y.starsEmployed >= v.starsEmployed - 4,
+						`season ${y.season}: flipped league employs ${y.starsEmployed} stars vs vanilla ${v.starsEmployed}`,
+					);
+				}
+
+				const lastFlipped = flipped.years.at(-1)!;
+				const lastVanilla = vanilla.years.at(-1)!;
+				assert.ok(
+					lastFlipped.avgPayroll < lastVanilla.avgPayroll * 1.5,
+					`payroll ran away after the flip: ${lastFlipped.avgPayroll} vs vanilla ${lastVanilla.avgPayroll}`,
+				);
+				assert.ok(
+					lastFlipped.freeAgents <= lastVanilla.freeAgents * 1.5 + 20,
+					`free agent pool silting up after the flip: ${lastFlipped.freeAgents} vs vanilla ${lastVanilla.freeAgents}`,
+				);
+				assert.ok(
+					Math.min(...flipped.finalSizes) >= g.get("minRosterSize") + 2,
+					`a team was stripped bare after the flip: roster sizes ${flipped.finalSizes.join(" ")}`,
+				);
+
+				// Prime-age stars unemployed - same bar as the main test. The flip
+				// must not strand players the vanilla years signed happily.
+				const primeUnsigned = flipped.unsigned.filter(
+					(x) => x.age <= 33 && x.ovr >= 65,
+				);
+				assert.ok(
+					primeUnsigned.length <= 1,
+					`prime-age stars left unemployed after the flip: ${primeUnsigned.map((x) => x.label).join("; ")}`,
+				);
+			}, 600_000);
+		}
 	});
 });
