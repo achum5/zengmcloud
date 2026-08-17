@@ -354,6 +354,33 @@ const rebalanceMarkdown = <T extends { text: string }>(segments: T[]): T[] => {
 	});
 };
 
+// LINKS ARE OPAQUE TO EVERY CUT AND EVERY COUNT IN THIS MODULE.
+//
+// A link's label and URL are full of characters that mean something else in
+// prose: "[O.J. Mayo](...)" carries a sentence boundary inside its own label
+// (period, space, capital), and a roster URL like /roster/GSW_7/2009 carries
+// what reads as an emphasis underscore. Splitting through the middle of a link
+// printed its halves as raw markdown on the page, and counting its underscore
+// had the rebalancer "closing" an italic nobody opened - a stray _ at the end
+// of every paragraph with a team link in it. So links are swapped for
+// private-use-character placeholders (which no recap text contains) before any splitting,
+// and swapped back at the very end - and for name-matching in between, since
+// the names inside links are exactly what identifies a game.
+const protectLinks = (
+	text: string,
+): { masked: string; restore: (s: string) => string } => {
+	const links: string[] = [];
+	const masked = text.replace(/\[[^\]]*]\([^)]*\)/g, (m) => {
+		links.push(m);
+		return `\uE000${links.length - 1}\uE001`;
+	});
+	return {
+		masked,
+		restore: (s) =>
+			s.replace(/\uE000(\d+)\uE001/g, (_, i) => links[Number(i)]!),
+	};
+};
+
 // Every linkable piece of a recap, in order, with the boundaries between them
 // kept as plain text so the prose reassembles exactly as written.
 //
@@ -365,15 +392,16 @@ export const linkRecapSegments = (
 	text: string,
 	games: SentenceGame[],
 ): { text: string; href?: string }[] => {
+	const { masked, restore } = protectLinks(text);
 	const out: { text: string; href?: string }[] = [];
 
-	for (const sentence of splitSentences(text)) {
+	for (const sentence of splitSentences(masked)) {
 		if (sentence.boundary) {
 			out.push({ text: sentence.text });
 			continue;
 		}
 
-		const hrefs = matchedGameHrefs(sentence.text, games);
+		const hrefs = matchedGameHrefs(restore(sentence.text), games);
 		if (hrefs.length === 1) {
 			out.push({ text: sentence.text, href: hrefs[0] });
 			continue;
@@ -389,13 +417,16 @@ export const linkRecapSegments = (
 					? { text: clause.text }
 					: {
 							text: clause.text,
-							href: resolveSentenceGame(clause.text, games),
+							href: resolveSentenceGame(restore(clause.text), games),
 						},
 			);
 		}
 	}
 
-	return rebalanceMarkdown(out);
+	return rebalanceMarkdown(out).map((seg) => ({
+		...seg,
+		text: restore(seg.text),
+	}));
 };
 
 // A placeholder that won't appear in recap text and can't be re-matched by a

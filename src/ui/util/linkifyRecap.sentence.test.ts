@@ -157,10 +157,11 @@ describe("linkRecapSegments", () => {
 			.join("")
 			.replaceAll("*", "");
 
-	const linked = (text: string) =>
-		linkRecapSegments(text, games)
+	const linked2 = (text: string, gs: SentenceGame[]) =>
+		linkRecapSegments(text, gs)
 			.filter((s) => s.href !== undefined)
 			.map((s) => [s.text.replaceAll("*", "").trim(), s.href] as const);
+	const linked = (text: string) => linked2(text, games);
 
 	test("a single-game sentence wins the whole sentence", () => {
 		const text =
@@ -221,6 +222,47 @@ describe("linkRecapSegments", () => {
 		const text = "Five of the 14 games were decided by five points or fewer.";
 		assert.deepStrictEqual(linked(text), []);
 		assert.strictEqual(reassemble(linkRecapSegments(text, games)), text);
+	});
+
+	// The screenshot bug: "[O.J. Mayo](/l/33/player/2055)" carries a sentence
+	// boundary inside its own label (". " + capital), so the splitter cut the
+	// link in half and both halves printed as raw markdown. Links must be opaque
+	// to every cut.
+	test("a sentence boundary inside a link label never cuts the link", () => {
+		const withInitials: SentenceGame[] = [
+			...games,
+			{
+				href: "/l/1/game_log/MEM_29/2016/103",
+				names: ["Memphis Grizzlies", "Grizzlies", "Memphis", "O.J. Mayo"],
+			},
+		];
+		const text =
+			"[O.J. Mayo](/l/1/player/2055) scored 28 for the [Grizzlies](/l/1/roster/MEM_29/2016). The Heat beat the Kings.";
+		const segs = linkRecapSegments(text, withInitials);
+		// No segment may hold a broken link fragment...
+		for (const seg of segs) {
+			assert.notMatch(seg.text, /\[[^\]]*$/, `link cut open in "${seg.text}"`);
+			assert.notMatch(seg.text, /^[^[]*]\(/, `link cut open in "${seg.text}"`);
+		}
+		// ...the prose reassembles exactly, and both sentences still resolve.
+		assert.strictEqual(segs.map((s) => s.text).join(""), text);
+		assert.deepStrictEqual(linked2(text, withInitials), [
+			[
+				"[O.J. Mayo](/l/1/player/2055) scored 28 for the [Grizzlies](/l/1/roster/MEM_29/2016).",
+				withInitials[3]!.href,
+			],
+			["The Heat beat the Kings.", games[0]!.href],
+		]);
+	});
+
+	// The other screenshot bug: the "_" in a roster URL like /roster/GSW_7/2009
+	// was counted as an open italic, so the rebalancer appended a "closing" _ at
+	// the end of every paragraph with a team link in it.
+	test("underscores inside link URLs are not emphasis", () => {
+		const text =
+			"The [Kings](/l/1/roster/SAC_12/2016) fell to the [Heat](/l/1/roster/MIA_14/2016) in the final game.";
+		const segs = linkRecapSegments(text, games);
+		assert.strictEqual(segs.map((s) => s.text).join(""), text);
 	});
 
 	// The sub-headline is ONE italic run of "·"-separated blurbs. Cutting it left
