@@ -16,6 +16,7 @@ import { useBlocker } from "../../hooks/useBlocker.ts";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
+import { local, localActions } from "../../util/local.ts";
 
 const GlobalSettings = (props: View<"globalSettings">) => {
 	const [state, setState] = useState(() => {
@@ -42,6 +43,9 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 
 		return {
 			fullNames,
+			leagueTicker: local.getState().leagueTickerEnabled
+				? "show"
+				: ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -84,6 +88,10 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		if (window.themeCSSLink) {
 			window.themeCSSLink.href = window.getThemeFilename(window.getTheme());
 		}
+
+		// Device-local, like the color scheme above: saved straight to this browser
+		// rather than sent to the worker with the options below.
+		localActions.setLeagueTickerEnabled(state.leagueTicker === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -152,6 +160,26 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							<option value="default">Auto</option>
 							<option value="light">Light</option>
 							<option value="dark">Dark</option>
+						</select>
+					</div>
+					<div className="col-sm-3 col-6 mb-3">
+						<label className="form-label" htmlFor="options-leagueTicker">
+							League Ticker{" "}
+							<HelpPopover title="League Ticker">
+								<p>
+									The scrolling score bar along the bottom of the screen, on
+									this device only.
+								</p>
+							</HelpPopover>
+						</label>
+						<select
+							id="options-leagueTicker"
+							className="form-select"
+							onChange={handleChange("leagueTicker")}
+							value={state.leagueTicker}
+						>
+							<option value="show">Show</option>
+							<option value="hide">Hide</option>
 						</select>
 					</div>
 					<div className="col-sm-3 col-6 mb-3">

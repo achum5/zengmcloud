@@ -13,6 +13,7 @@ type LocalActions = {
 	mergeGames: (games: LocalStateUI["games"]) => void;
 	updateGameSpreads: (spreadsByGid: Record<number, number>) => void;
 	resetLeague: () => void;
+	setLeagueTickerEnabled: (leagueTickerEnabled: boolean) => void;
 	setShowLeagueTopBar: (showLeagueTopBar: boolean) => void;
 	setSidebarOpen: (sidebarOpen: boolean) => void;
 	update: (obj: Partial<LocalStateUI>) => void;
@@ -24,6 +25,10 @@ type LocalActions = {
 
 const defaultUnits: "metric" | "us" =
 	window.navigator.language === "en-US" ? "us" : "metric";
+
+// Distinct from bbgmShowLeagueTicker, which is the bar's own caret - collapsed
+// to a sliver rather than gone.
+const LEAGUE_TICKER_ENABLED_KEY = "bbgmLeagueTickerEnabled";
 
 type LocalStateWithActions = LocalStateUI & {
 	actions: LocalActions;
@@ -48,6 +53,11 @@ if (showTemp === "true") {
 	initialShowLeagueTopBar = true;
 }
 
+// On unless this device has said otherwise, so a browser with nothing saved (and
+// one where localStorage is unavailable) gets the ticker.
+const initialLeagueTickerEnabled =
+	safeLocalStorage.getItem(LEAGUE_TICKER_ENABLED_KEY) !== "false";
+
 const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 	(set) => ({
 		alwaysShowCountry: false,
@@ -67,6 +77,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		fullNames: false,
 		tickerItems: [],
 		leagueTickerVisible: false,
+		leagueTickerEnabled: initialLeagueTickerEnabled,
 		gameOver: false,
 		gameSimInProgress: false,
 		games: [],
@@ -242,6 +253,14 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 					userTid: 0,
 					userTids: [],
 				});
+			},
+
+			setLeagueTickerEnabled(leagueTickerEnabled: boolean) {
+				set({ leagueTickerEnabled });
+				safeLocalStorage.setItem(
+					LEAGUE_TICKER_ENABLED_KEY,
+					String(leagueTickerEnabled),
+				);
 			},
 
 			setShowLeagueTopBar(showLeagueTopBar: boolean) {

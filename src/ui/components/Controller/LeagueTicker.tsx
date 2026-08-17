@@ -273,7 +273,7 @@ const readOffset = (element: HTMLElement): number => {
 	}
 };
 
-export const LeagueTicker = memo(() => {
+const LeagueTickerBar = memo(() => {
 	const { lid, liveGameInProgress, mpLiveBroadcast, tickerItems } = useLocal([
 		"lid",
 		"liveGameInProgress",
@@ -606,4 +606,18 @@ export const LeagueTicker = memo(() => {
 			</button>
 		</div>
 	);
+});
+
+// Turned off for this device (Global Settings), the bar is never MOUNTED -
+// nothing measures, no clock runs, and the unmount cleanup above puts the bottom
+// of the document back. Gating the render inside the bar would have left all of
+// that running behind an empty screen.
+export const LeagueTicker = memo(() => {
+	const { leagueTickerEnabled } = useLocal(["leagueTickerEnabled"]);
+
+	if (!leagueTickerEnabled) {
+		return null;
+	}
+
+	return <LeagueTickerBar />;
 });
