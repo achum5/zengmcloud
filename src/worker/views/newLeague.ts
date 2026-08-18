@@ -66,6 +66,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"easterEggPlayers",
 		),
+		specializedDraftProspects: unwrapGameAttribute(
+			defaultGameAttributes,
+			"specializedDraftProspects",
+		),
 		fakeAges: unwrapGameAttribute(defaultGameAttributes, "fakeAges"),
 		tragicDeathRate: unwrapGameAttribute(
 			defaultGameAttributes,

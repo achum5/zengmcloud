@@ -1,5 +1,6 @@
 import { PLAYER } from "../../../common/constants.ts";
 import { player } from "../index.ts";
+import { specializeProspect } from "./specializeProspects.ts";
 import { g } from "../../util/index.ts";
 import type { PlayerWithoutKey } from "../../../common/types.ts";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
@@ -220,6 +221,21 @@ const genPlayersWithoutSaving = async (
 				player.bonus(p, -ovrDiff / 2);
 				await player.develop(p, 0);
 			}
+		}
+	}
+
+	// Reshape the class into specialists, if the league asked for it. This runs
+	// last, after every bonus and nerf above, so the shape the user scouts is the
+	// shape that survives - and it only ever touches players generated right
+	// here, so real draft prospects (which arrive as existingPlayers and are
+	// never in this list) keep their real ratings.
+	if (isSport("basketball") && g.get("specializedDraftProspects")) {
+		for (const p of enteringDraft) {
+			specializeProspect(p);
+
+			// ovr, pot, pos and skills are all derived from the ratings that just
+			// changed, so they have to be recomputed before anyone sees them.
+			await player.develop(p, 0);
 		}
 	}
 

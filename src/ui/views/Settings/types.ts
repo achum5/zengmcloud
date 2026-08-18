@@ -29,6 +29,7 @@ export type Key =
 	| "injuryRate"
 	| "tragicDeathRate"
 	| "easterEggPlayers"
+	| "specializedDraftProspects"
 	| "fakeAges"
 	| "brotherRate"
 	| "sonRate"

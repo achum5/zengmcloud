@@ -725,6 +725,9 @@ export type GameAttributesLeague = {
 	difficultySigning: number | null;
 	divs: NonEmptyArray<Div>;
 	draftAges: [number, number];
+	// Reshape generated draft prospects into specialists - good ratings
+	// better, bad ratings worse. See draft/specializeProspects.ts.
+	specializedDraftProspects: boolean;
 	draftPickAutoContract: boolean;
 	draftPickAutoContractPercent: number;
 	draftPickAutoContractRounds: number;

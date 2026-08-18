@@ -661,6 +661,39 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Draft",
+			key: "specializedDraftProspects",
+			name: "Specialized Draft Prospects",
+			godModeRequired: "always",
+			type: "bool",
+			description:
+				"Generate draft classes full of specialists rather than well-rounded players - snipers who can't finish, post scorers with no jumper, slashers who can't shoot.",
+			descriptionLong: (
+				<>
+					<p>
+						Normally most prospects are decent at everything, so they prog into
+						all-around stars or all-around bench players. This makes each
+						prospect's good skill ratings better and bad ones worse, so they
+						come out of the draft with a shape.
+					</p>
+					<p>
+						Athleticism (height, strength, speed, jumping, endurance) and both
+						IQ ratings are left alone - polarizing those makes broken players
+						rather than specialists. Shooting, finishing and rebounding get the
+						strongest treatment; inside scoring, dribbling and passing get a
+						gentler one, since the game already generates plenty of good
+						handlers and passers.
+					</p>
+					<p>
+						Only applies to classes generated from now on, and only to randomly
+						generated prospects - real players keep their real ratings. Since
+						draft classes are generated a few years ahead, expect a few seasons
+						before the first fully specialized class arrives.
+					</p>
+				</>
+			),
+		},
+		{
+			category: "Draft",
 			key: "numSeasonsFutureDraftPicks",
 			name: "# Tradable Draft Pick Seasons",
 			godModeRequired: "existingLeagueOnly",
