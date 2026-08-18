@@ -21,6 +21,8 @@
 // that this runs on every scroll, not only on resume - a standing correction
 // rather than a repair, which is why it is separate from the watchdog.
 
+import { recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
+
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 const TICKER_SELECTOR = ".league-ticker";
 
@@ -84,6 +86,138 @@ export const applyHeaderShift = (
 	element.style.transform = shift === 0 ? "" : `translateY(${shift}px)`;
 };
 
+// WHEN THE LAYOUT VIEWPORT ITSELF IS THE LIE, sticky cannot be corrected -
+// it has to be abandoned.
+//
+// A field report finally caught the state whole: a resumed PWA claiming a
+// 1052px layout viewport over a 646px visual one at scale 0.85, ticker style
+// and geometry all reading exactly right - translateY correct to the pixel,
+// measured bottom on the visible bottom, "detached=false" - while the glass
+// showed the bar parked mid-screen. The compositor was applying sticky
+// against the bottom edge of a viewport that does not exist, and the full
+// repair ladder (position toggle, renderer rebuild, scroll nudge) ran
+// end-to-end without moving the rendered pixels. Nothing that writes styles
+// against that layout can ever look wrong, and nothing on the ladder makes
+// the compositor believe in a different viewport.
+//
+// So when the layout viewport is provably oversized, the ticker stops using
+// its bottom edge at all: position:fixed, anchored to the viewport's TOP -
+// the one edge layout and compositor still agree on - and pushed down to the
+// bottom of the VISIBLE area by a transform computed here from visual
+// viewport numbers alone. The stale quantity (the phantom height) exits the
+// formula entirely. This is the same mechanism as the header's shift, which
+// the same report shows rendering correctly on the same screen.
+//
+// The stylesheet's "sticky, not fixed" rule still holds everywhere else:
+// this engages only while the viewports disagree by more than any toolbar
+// transition is worth AND the page is below 1:1 scale - the shrink-to-fit
+// artifact of a bad restore. The scale gate keeps the keyboard case out
+// (it shrinks the visual viewport at scale 1, and hoisting the bar above
+// the keyboard would cover the input), and pinch-zoom out (scale > 1 shows
+// LESS layout, never more... a zoomed-IN page has scale > 1 and a smaller
+// visual viewport, which is the standing correction's job, not this one).
+const OVERSIZED_MIN_GAP_PX = 150;
+const OVERSIZED_MAX_SCALE = 0.99;
+
+export const layoutViewportOversized = ({
+	scale,
+	visualHeight,
+	layoutHeight,
+}: {
+	scale: number | undefined;
+	visualHeight: number | undefined;
+	layoutHeight: number;
+}): boolean =>
+	scale !== undefined &&
+	visualHeight !== undefined &&
+	Number.isFinite(scale) &&
+	Number.isFinite(visualHeight) &&
+	Number.isFinite(layoutHeight) &&
+	scale < OVERSIZED_MAX_SCALE &&
+	layoutHeight - visualHeight > OVERSIZED_MIN_GAP_PX;
+
+// Where the top of the bar goes so its bottom sits on the visible bottom.
+export const tickerSelfPlacementShift = ({
+	offsetTop,
+	visualHeight,
+	barHeight,
+}: {
+	offsetTop: number | undefined;
+	visualHeight: number;
+	barHeight: number;
+}): number => {
+	const offset =
+		offsetTop !== undefined && Number.isFinite(offsetTop) ? offsetTop : 0;
+	return Math.max(0, Math.round(offset + visualHeight - barHeight));
+};
+
+// Whether the last placement pass used the fixed-top mode, so the transition
+// gets one log line each way instead of one per frame.
+let selfPlacing = false;
+
+const applyTickerPlacement = (
+	element: HTMLElement | null,
+	vv: VisualViewport | null | undefined,
+	layoutHeight: number,
+) => {
+	if (!element) {
+		return;
+	}
+	const oversized =
+		vv != null &&
+		layoutViewportOversized({
+			scale: vv.scale,
+			visualHeight: vv.height,
+			layoutHeight,
+		});
+
+	if (oversized) {
+		const shift = tickerSelfPlacementShift({
+			offsetTop: vv.offsetTop,
+			visualHeight: vv.height,
+			barHeight: element.offsetHeight,
+		});
+		element.style.position = "fixed";
+		element.style.top = "0px";
+		element.style.bottom = "auto";
+		element.style.left = "0";
+		element.style.right = "0";
+		// Always written, never cleared: with top anchoring the transform IS the
+		// placement.
+		element.style.transform = `translateY(${shift}px)`;
+	} else {
+		// Hand the bar back to the stylesheet's sticky and the standing gap
+		// correction.
+		if (element.style.position === "fixed") {
+			element.style.position = "";
+			element.style.top = "";
+			element.style.bottom = "";
+			element.style.left = "";
+			element.style.right = "";
+		}
+		applyHeaderShift(
+			element,
+			tickerVisualShift({
+				offsetTop: vv?.offsetTop,
+				visualHeight: vv?.height,
+				layoutHeight,
+			}),
+		);
+	}
+
+	if (oversized !== selfPlacing) {
+		selfPlacing = oversized;
+		recordHeaderEvent({
+			kind: "ticker:self-place",
+			scrollY: Math.round(window.scrollY),
+			headerTop: Math.round(element.getBoundingClientRect().bottom),
+			detail: oversized
+				? `on gap=${Math.round(layoutHeight - (vv?.height ?? 0))} scale=${vv?.scale.toFixed(2)}`
+				: "off",
+		});
+	}
+};
+
 // Recompute both shifts against the viewports as they are RIGHT NOW and write
 // them (or clear them) synchronously. This is what every event handler below
 // does on a frame; exported bare because a resume needs it on demand.
@@ -101,14 +235,10 @@ export const resyncStickyBarShifts = () => {
 		document.querySelector<HTMLElement>(HEADER_SELECTOR),
 		headerVisualShift(vv?.offsetTop),
 	);
-	applyHeaderShift(
+	applyTickerPlacement(
 		document.querySelector<HTMLElement>(TICKER_SELECTOR),
-		tickerVisualShift({
-			offsetTop: vv?.offsetTop,
-			visualHeight: vv?.height,
-			layoutHeight:
-				document.documentElement?.clientHeight || window.innerHeight,
-		}),
+		vv,
+		document.documentElement?.clientHeight || window.innerHeight,
 	);
 };
 

@@ -1,5 +1,9 @@
 import { assert, describe, test } from "vitest";
-import { headerVisualShift } from "./visualViewportHeader.ts";
+import {
+	headerVisualShift,
+	layoutViewportOversized,
+	tickerSelfPlacementShift,
+} from "./visualViewportHeader.ts";
 
 describe("headerVisualShift", () => {
 	test("pushes the header down by however far the visible area starts", () => {
@@ -24,5 +28,103 @@ describe("headerVisualShift", () => {
 
 	test("rounds to whole pixels", () => {
 		assert.strictEqual(headerVisualShift(405.6), 406);
+	});
+});
+
+describe("layoutViewportOversized", () => {
+	test("the field case: a restored PWA claiming a 1052px viewport over 646 visible at 0.85", () => {
+		assert.isTrue(
+			layoutViewportOversized({
+				scale: 0.85,
+				visualHeight: 646,
+				layoutHeight: 1052,
+			}),
+		);
+	});
+
+	test("the keyboard is not oversized - it shrinks the visual viewport at scale 1", () => {
+		// Engaging here would hoist the bar on top of whatever is being typed.
+		assert.isFalse(
+			layoutViewportOversized({
+				scale: 1,
+				visualHeight: 646,
+				layoutHeight: 1052,
+			}),
+		);
+	});
+
+	test("pinch-zoom in is not oversized - the standing correction's job", () => {
+		assert.isFalse(
+			layoutViewportOversized({
+				scale: 2,
+				visualHeight: 500,
+				layoutHeight: 1052,
+			}),
+		);
+	});
+
+	test("a toolbar transition's worth of disagreement does not qualify", () => {
+		assert.isFalse(
+			layoutViewportOversized({
+				scale: 0.85,
+				visualHeight: 960,
+				layoutHeight: 1052,
+			}),
+		);
+	});
+
+	test("no visual viewport, no verdict", () => {
+		assert.isFalse(
+			layoutViewportOversized({
+				scale: undefined,
+				visualHeight: undefined,
+				layoutHeight: 1052,
+			}),
+		);
+		assert.isFalse(
+			layoutViewportOversized({
+				scale: Number.NaN,
+				visualHeight: 646,
+				layoutHeight: 1052,
+			}),
+		);
+	});
+});
+
+describe("tickerSelfPlacementShift", () => {
+	test("parks the bar's bottom on the visible bottom", () => {
+		// The field case at resume (offset 0) and panned down 324. Either way the
+		// bar's bottom edge (shift + its height) must land exactly on the bottom
+		// of what the user can see (offsetTop + visual height).
+		for (const offsetTop of [0, 324]) {
+			const shift = tickerSelfPlacementShift({
+				offsetTop,
+				visualHeight: 646,
+				barHeight: 37,
+			});
+			assert.strictEqual(shift + 37, offsetTop + 646);
+		}
+	});
+
+	test("a missing offset means the visual viewport starts at the top", () => {
+		assert.strictEqual(
+			tickerSelfPlacementShift({
+				offsetTop: undefined,
+				visualHeight: 646,
+				barHeight: 37,
+			}),
+			609,
+		);
+	});
+
+	test("never places the bar above the viewport", () => {
+		assert.strictEqual(
+			tickerSelfPlacementShift({
+				offsetTop: 0,
+				visualHeight: 20,
+				barHeight: 40,
+			}),
+			0,
+		);
 	});
 });

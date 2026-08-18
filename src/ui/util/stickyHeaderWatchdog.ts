@@ -507,6 +507,11 @@ const checkBar = async (bar: Bar, trigger: string) => {
 		note(bar, element, bar.detached(element) ? "gave-up" : "repaired", "late");
 	} finally {
 		repairing.delete(bar.name);
+		// The ladder clears inline `position` so the stylesheet rules; when the
+		// oversized-viewport self-placement has the ticker positioned inline (see
+		// visualViewportHeader.ts), that clearing strips it. Re-derive placement
+		// from the viewports as they are now, whatever the ladder did.
+		resyncStickyBarShifts();
 	}
 };
 
@@ -540,6 +545,9 @@ const forceBarRepair = async (bar: Bar) => {
 	} finally {
 		repairing.delete(bar.name);
 	}
+	// Same reason as checkBar: the ladder cleared inline `position`, and the
+	// self-placement mode lives in inline styles.
+	resyncStickyBarShifts();
 	note(bar, element, "forced-done");
 };
 
@@ -723,6 +731,9 @@ const rebuildTickerOnResume = () => {
 		} finally {
 			repairing.delete(TICKER_BAR.name);
 		}
+		// The rebuild cleared inline `position`; put the self-placement (or the
+		// ordinary shift) straight back rather than waiting for a viewport event.
+		resyncStickyBarShifts();
 	};
 
 	note(TICKER_BAR, TICKER_BAR.get(), "resume-rebuild", viewportNote());
