@@ -136,9 +136,19 @@ export const FACIAL_HAIR_TIERS = {
 
 export type FacialHairTier = keyof typeof FACIAL_HAIR_TIERS;
 
-// How often facial hair that already exists gets thicker at a threshold age.
-// Under a half so a player's look is recognisable across their career.
-const THICKEN_CHANCE = 0.35;
+// PER YEAR, not per threshold. Aging used to fire at three fixed ages, which
+// made a career a series of three jumps and left anyone past the last one
+// frozen forever. Rolling every preseason instead spreads the change across a
+// career the way it actually happens - and lets a 34-year-old still change.
+//
+// Both are small on purpose: over a fifteen-year career they compound into a
+// look that clearly evolved, while any single season usually changes nothing,
+// so a player stays recognisable from one year to the next.
+const THICKEN_PER_YEAR = 0.12;
+
+// Scales the band's population share into a per-year chance of first growing
+// facial hair.
+const GROW_PER_YEAR = 0.25;
 
 const TIER_ORDER: FacialHairTier[] = ["light", "medium", "heavy", "period"];
 
@@ -251,9 +261,20 @@ export const hairAllowedForRace = (
 	hairId: string,
 	race: Race | undefined,
 ): boolean => {
-	if (race === undefined || race === "brown") {
-		// Unknown ancestry (a generated relative) or the widest real range:
-		// nothing to rule out.
+	if (race === undefined) {
+		// A generated relative inherits a face rather than a race: nothing to
+		// judge it against.
+		return true;
+	}
+	if (RARE_HAIR.has(hairId)) {
+		// Hair worn long and loose enough to hang past the jaw. Held to the one
+		// ancestry it reads as - a league owner's call after a brown-skinned
+		// forward turned up in curtains - and rare even there.
+		return race === "white";
+	}
+	if (race === "brown") {
+		// The widest real range of hair (Latino, Middle Eastern, South Asian):
+		// nothing left to rule out.
 		return true;
 	}
 	if (STRAIGHT_HAIR.has(hairId)) {
@@ -289,8 +310,13 @@ type AgeBand = {
 	minAge: number;
 	facialHair: number;
 	tiers: Partial<Record<FacialHairTier, number>>;
-	// Share of players this age with a visibly receding or gone hairline.
+	// Share of players this age with a visibly receding or gone hairline, used
+	// when a face is first generated.
 	balding: number;
+	// PER YEAR, for a player predisposed to it, used when a face ages. Distinct
+	// from `balding` above: that one describes a population at a moment, this
+	// one is a hazard rate applied every preseason.
+	baldingPerYear: number;
 	glasses: number;
 };
 
@@ -300,6 +326,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.25,
 		tiers: { light: 1 },
 		balding: 0,
+		baldingPerYear: 0,
 		glasses: 0.02,
 	},
 	{
@@ -307,6 +334,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.45,
 		tiers: { light: 0.7, medium: 0.3 },
 		balding: 0.02,
+		baldingPerYear: 0.015,
 		glasses: 0.03,
 	},
 	{
@@ -314,6 +342,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.6,
 		tiers: { light: 0.4, medium: 0.35, heavy: 0.25 },
 		balding: 0.06,
+		baldingPerYear: 0.03,
 		glasses: 0.03,
 	},
 	{
@@ -321,14 +350,40 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.65,
 		tiers: { light: 0.3, medium: 0.33, heavy: 0.32, period: 0.05 },
 		balding: 0.12,
+		baldingPerYear: 0.05,
 		glasses: 0.04,
 	},
 ];
 
-// The ages a look matures at - the boundaries of the bands above.
-export const FACE_AGE_THRESHOLDS = FACE_AGE_BANDS.slice(1).map(
-	(band) => band.minAge,
-);
+// WHO IS EVEN SUSCEPTIBLE, DECIDED ONCE PER PLAYER AND NEVER STORED.
+//
+// Losing your hair is not something that happens to everyone who gets old -
+// plenty of players reach 35 with the same hairline they were drafted with -
+// and rolling the same odds against every player every season eventually
+// balds most of a long-lived league. So susceptibility is a fixed trait,
+// derived from the player's id: the same player always gets the same answer,
+// on every device, forever, with nothing added to the save file and nothing
+// to sync.
+//
+// The same idea covers the guy who simply never grows a beard.
+const hashPid = (pid: number, salt: number): number => {
+	let x = Math.imul(pid + 1, 2654435761) + Math.imul(salt, 40503);
+	x = Math.imul(x ^ (x >>> 15), 2246822507);
+	x = Math.imul(x ^ (x >>> 13), 3266489909);
+	return ((x ^ (x >>> 16)) >>> 0) / 4294967296;
+};
+
+// Roughly the share of men who show real hairline loss over a playing career.
+export const BALDING_PRONE_SHARE = 0.4;
+
+// And the share who stay clean-shaven whatever their age.
+export const NEVER_GROWS_FACIAL_HAIR_SHARE = 0.2;
+
+export const baldingProne = (pid: number | undefined): boolean =>
+	pid !== undefined && hashPid(pid, 1) < BALDING_PRONE_SHARE;
+
+export const growsFacialHair = (pid: number | undefined): boolean =>
+	pid === undefined || hashPid(pid, 2) >= NEVER_GROWS_FACIAL_HAIR_SHARE;
 
 export const bandForAge = (age: number): AgeBand => {
 	let match = FACE_AGE_BANDS[0]!;
@@ -460,19 +515,17 @@ export const applyRealisticFace = (
 export const ageFace = (
 	face: FaceConfig,
 	age: number,
+	pid?: number,
 	rand: () => number = Math.random,
 ): boolean => {
-	if (!FACE_AGE_THRESHOLDS.includes(age)) {
-		return false;
-	}
-
 	const band = bandForAge(age);
 	let changed = false;
 
 	const current = face.facialHair.id;
 	if (current === "none") {
-		// Never had any: this is the age it might come in.
-		if (rand() < band.facialHair) {
+		// Never had any. Some men never will, whatever their age, so this is
+		// gated on the player rather than only on the roll.
+		if (growsFacialHair(pid) && rand() < band.facialHair * GROW_PER_YEAR) {
 			face.facialHair.id = facialHairForAge(age, rand);
 			changed = face.facialHair.id !== "none";
 		}
@@ -485,7 +538,7 @@ export const ageFace = (
 				(tier === undefined ||
 					TIER_ORDER.indexOf(candidate) > TIER_ORDER.indexOf(tier)),
 		);
-		if (available.length > 0 && rand() < THICKEN_CHANCE) {
+		if (available.length > 0 && rand() < THICKEN_PER_YEAR) {
 			const next = pickWeighted(
 				Object.fromEntries(
 					available.map((candidate) => [candidate, band.tiers[candidate]!]),
@@ -497,8 +550,14 @@ export const ageFace = (
 		}
 	}
 
-	// Hairlines only ever go one way.
-	if (face.hair.id !== HAIR_BALD && rand() < band.balding) {
+	// Hairlines only ever go one way, and only for players who were ever going
+	// to lose it. Everyone else keeps what they were drafted with, at 25 and at
+	// 38 alike.
+	if (
+		baldingProne(pid) &&
+		face.hair.id !== HAIR_BALD &&
+		rand() < band.baldingPerYear
+	) {
 		face.hair.id = face.hair.id === HAIR_THINNING ? HAIR_BALD : HAIR_THINNING;
 		changed = true;
 	}

@@ -8,7 +8,8 @@ import {
 	ageFace,
 	applyRealisticFace,
 	bandForAge,
-	FACE_AGE_THRESHOLDS,
+	baldingProne,
+	growsFacialHair,
 	FACIAL_HAIR_TIERS,
 	facialHairForAge,
 	HAIR_RARE,
@@ -99,9 +100,21 @@ describe("hairAllowedForRace", () => {
 		}
 	});
 
-	test("brown spans the widest real range and keeps everything", () => {
+	test("brown spans the widest real range and keeps everything but the long styles", () => {
 		for (const id of [...HAIR_TEXTURES.straight, ...HAIR_TEXTURES.coiled]) {
+			if (HAIR_RARE.includes(id)) {
+				continue;
+			}
 			assert.isTrue(hairAllowedForRace(id, "brown"), id);
+		}
+	});
+
+	test("hair worn long and loose is white-only", () => {
+		for (const id of HAIR_RARE) {
+			assert.isTrue(hairAllowedForRace(id, "white"), id);
+			for (const race of ["black", "brown", "asian"] as const) {
+				assert.isFalse(hairAllowedForRace(id, race), `${id} for ${race}`);
+			}
 		}
 	});
 
@@ -133,10 +146,12 @@ describe("HAIR_RARE", () => {
 	test("mostly re-rolled away, occasionally kept", () => {
 		// rand() >= keep re-rolls, so a high roll drops it and a low roll keeps
 		// it. Both paths must exist or the style is either gone or unchanged.
+		// White, where the style is permitted at all - so what is being tested
+		// here is the rarity roll and not the ancestry rule.
 		const dropped = face({
 			hair: { id: "longHair", color: "#272421", flip: false },
 		});
-		applyRealisticFace(dropped, { age: 25, race: "brown", rand: fixed(0.9) });
+		applyRealisticFace(dropped, { age: 25, race: "white", rand: fixed(0.9) });
 		assert.notStrictEqual(dropped.hair.id, "longHair");
 
 		const kept = face({
@@ -147,16 +162,17 @@ describe("HAIR_RARE", () => {
 		// chance further down does not claim the hair instead.
 		applyRealisticFace(kept, {
 			age: 25,
-			race: "brown",
+			race: "white",
 			rand: sequence([0.9, 0.01, 0.9, 0.9, 0.9, 0.9]),
 		});
 		assert.strictEqual(kept.hair.id, "longHair");
 	});
 
 	test("the reported face: long curtains on a brown-skinned 30-year-old", () => {
-		// Allowed by texture (brown spans the widest range) but wrong for the
-		// league, which is exactly the gap this group closes.
-		assert.isTrue(hairAllowedForRace("longHair", "brown"));
+		// Reported from a freshly created league with the setting on, so the
+		// rule itself was wrong rather than un-applied: these read as one
+		// ancestry, and are rare even there.
+		assert.isFalse(hairAllowedForRace("longHair", "brown"));
 		const p = face({ hair: { id: "longHair", color: "#272421", flip: false } });
 		applyRealisticFace(p, { age: 30, race: "brown", rand: fixed(0.5) });
 		assert.notStrictEqual(p.hair.id, "longHair");
@@ -278,61 +294,139 @@ describe("jitterColor", () => {
 });
 
 describe("ageFace", () => {
-	test("does nothing except at a threshold age", () => {
-		for (const age of [20, 24, 28, 35]) {
-			assert.isFalse(FACE_AGE_THRESHOLDS.includes(age));
-			const f = face();
-			assert.isFalse(ageFace(f, age, fixed(0)));
-			assert.strictEqual(f.facialHair.id, "none");
+	// Aging used to fire at three fixed ages, so a career was three jumps and
+	// anyone past the last one never changed again. It now rolls every
+	// preseason, which spreads change across a career - and, crucially, is
+	// gated on a per-player trait so it does not happen to everyone.
+
+	const proneToBald = (() => {
+		for (let pid = 0; pid < 500; pid++) {
+			if (baldingProne(pid)) {
+				return pid;
+			}
 		}
-	});
+		throw new Error("no balding-prone pid found");
+	})();
 
-	test("facial hair grows in at a threshold", () => {
+	const neverBalds = (() => {
+		for (let pid = 0; pid < 500; pid++) {
+			if (!baldingProne(pid)) {
+				return pid;
+			}
+		}
+		throw new Error("no balding-immune pid found");
+	})();
+
+	test("a player who was never going to lose it keeps it at any age", () => {
+		// The reported gap: some players still have their hair in their 30s.
+		// Even with the roll forced to always succeed, this one never balds.
 		const f = face();
-		const changed = ageFace(f, FACE_AGE_THRESHOLDS[0]!, fixed(0));
-		assert.isTrue(changed);
-		assert.notStrictEqual(f.facialHair.id, "none");
+		for (let age = 19; age <= 40; age++) {
+			ageFace(f, age, neverBalds, fixed(0));
+		}
+		assert.strictEqual(f.hair.id, "short");
 	});
 
-	test("facial hair never thins back out", () => {
-		// The whole reason aging is monotonic: a re-roll every year would have
-		// players growing and shaving a beard at random for a decade.
-		for (const threshold of FACE_AGE_THRESHOLDS) {
+	test("a susceptible player can lose it, one step at a time", () => {
+		const f = face();
+		ageFace(f, 28, proneToBald, fixed(0.001));
+		assert.strictEqual(f.hair.id, HAIR_THINNING);
+		ageFace(f, 33, proneToBald, fixed(0.001));
+		assert.strictEqual(f.hair.id, HAIR_BALD);
+		// Already gone: it stays gone, however the roll lands.
+		ageFace(f, 34, proneToBald, fixed(0.001));
+		assert.strictEqual(f.hair.id, HAIR_BALD);
+	});
+
+	test("no hairline loss before the twenties bands, even when susceptible", () => {
+		const f = face();
+		ageFace(f, 20, proneToBald, fixed(0));
+		assert.strictEqual(f.hair.id, "short");
+	});
+
+	test("it can still change past the old last threshold", () => {
+		// The old three-threshold scheme froze a 32-year-old forever.
+		const f = face();
+		ageFace(f, 36, proneToBald, fixed(0.001));
+		assert.strictEqual(f.hair.id, HAIR_THINNING);
+	});
+
+	test("facial hair never thins back out, at any age", () => {
+		for (const age of [24, 28, 33, 38]) {
 			for (const start of ["goatee1", "fullgoatee", "beard1"]) {
 				const f = face({ facialHair: { id: start } });
-				ageFace(f, threshold, sequence([0, 0.5, 0.5, 0.99]));
-				const before = tierOf(start)!;
-				const after = tierOf(f.facialHair.id);
-				assert.isNotNull(after ?? null);
+				ageFace(f, age, 1, sequence([0, 0.5, 0.5, 0.99]));
 				const order = ["light", "medium", "heavy", "period"];
 				assert.isAtLeast(
-					order.indexOf(after!),
-					order.indexOf(before),
-					`${start} regressed to ${f.facialHair.id} at ${threshold}`,
+					order.indexOf(tierOf(f.facialHair.id)!),
+					order.indexOf(tierOf(start)!),
+					`${start} regressed to ${f.facialHair.id} at ${age}`,
 				);
 			}
 		}
 	});
 
-	test("a hairline recedes one step at a time and never regrows", () => {
-		const f = face();
-		ageFace(f, FACE_AGE_THRESHOLDS[1]!, fixed(0.001));
-		assert.strictEqual(f.hair.id, HAIR_THINNING);
-		ageFace(f, FACE_AGE_THRESHOLDS[2]!, fixed(0.001));
-		assert.strictEqual(f.hair.id, HAIR_BALD);
-		// Already gone: it stays gone, however the roll lands.
-		ageFace(f, FACE_AGE_THRESHOLDS[2]!, fixed(0.001));
-		assert.strictEqual(f.hair.id, HAIR_BALD);
+	test("a typical season changes nothing", () => {
+		// Rolling every year only works if most years are quiet, or a player
+		// would be unrecognisable from one season to the next.
+		let changed = 0;
+		for (let pid = 0; pid < 300; pid++) {
+			const f = face();
+			if (ageFace(f, 28, pid)) {
+				changed += 1;
+			}
+		}
+		assert.isBelow(changed, 90, `${changed}/300 changed in one season`);
+	});
+});
+
+describe("per-player traits", () => {
+	test("the same player always gets the same answer", () => {
+		// Derived from the id rather than stored, so it survives reloads,
+		// exports and every device in a synced league.
+		for (const pid of [0, 7, 1234]) {
+			assert.strictEqual(baldingProne(pid), baldingProne(pid));
+			assert.strictEqual(growsFacialHair(pid), growsFacialHair(pid));
+		}
 	});
 
-	test("reports no change when there is nothing left to mature", () => {
-		// Bald already, and facial hair at the top group with nothing above it -
-		// so the caller can skip writing this player back to the database.
-		const f = face({
-			facialHair: { id: "mutton" },
-			hair: { id: HAIR_BALD, color: "#272421", flip: false },
-		});
-		assert.isFalse(ageFace(f, FACE_AGE_THRESHOLDS[2]!, fixed(0.001)));
+	test("susceptibility is a minority, and beards are a majority", () => {
+		let bald = 0;
+		let beard = 0;
+		const N = 4000;
+		for (let pid = 0; pid < N; pid++) {
+			if (baldingProne(pid)) {
+				bald += 1;
+			}
+			if (growsFacialHair(pid)) {
+				beard += 1;
+			}
+		}
+		assert.isAbove(bald / N, 0.3);
+		assert.isBelow(bald / N, 0.5);
+		assert.isAbove(beard / N, 0.7);
+	});
+
+	test("the two traits are independent of each other", () => {
+		// Same hash with a different salt, so a balding player is no more or
+		// less likely to grow a beard.
+		let both = 0;
+		const N = 4000;
+		for (let pid = 0; pid < N; pid++) {
+			if (baldingProne(pid) && growsFacialHair(pid)) {
+				both += 1;
+			}
+		}
+		// 0.4 * 0.8 = 0.32 if independent.
+		assert.isAbove(both / N, 0.27);
+		assert.isBelow(both / N, 0.37);
+	});
+
+	test("an unknown player still ages, but never balds", () => {
+		// No pid (a face edited outside a league): the safe answer is to leave
+		// the hairline alone rather than guess.
+		assert.isFalse(baldingProne(undefined));
+		assert.isTrue(growsFacialHair(undefined));
 	});
 });
 

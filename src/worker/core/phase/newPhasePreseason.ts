@@ -411,7 +411,7 @@ const newPhasePreseason = async (
 			// ever adds - see realisticFaces.ts - so this writes a face on a
 			// handful of players a season rather than all of them.
 			if (isSport("basketball") && g.get("realisticFaces") && p.face) {
-				ageFace(p.face, newSeason - p.born.year);
+				ageFace(p.face, newSeason - p.born.year, p.pid);
 			}
 		}
 
