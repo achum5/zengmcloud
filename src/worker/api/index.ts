@@ -154,6 +154,7 @@ import {
 	type RecapFilter,
 } from "../util/getPlayerRecapData.ts";
 import { removeSeasonNote, upsertSeasonNote } from "../../common/seasonNote.ts";
+import { recordInjuryForensics } from "../core/sync/injuryForensics.ts";
 import type { NewLeagueTeam } from "../../ui/views/NewLeague/types.ts";
 import { PointsFormulaEvaluator } from "../core/team/evaluatePointsFormula.ts";
 import type { Settings } from "../views/settings.ts";
@@ -6113,6 +6114,11 @@ const upsertCustomizedPlayer = async (
 		const editedInjuryGames =
 			p.injury.gamesRemaining !== prevPlayer.injury.gamesRemaining;
 		if (editedInjuryType || editedInjuryGames) {
+			void recordInjuryForensics({
+				source: "edit",
+				detail: `p${p.pid} ${p.firstName} ${p.lastName} ${prevPlayer.injury.gamesRemaining}(${prevPlayer.injury.type}) > ${p.injury.gamesRemaining}(${p.injury.type})`,
+			});
+
 			let lastInjuriesEntry = p.injuries.at(-1);
 			if (lastInjuriesEntry?.type !== prevPlayer.injury.type) {
 				// If somehow injuries does not contain the previous injury, ignore it

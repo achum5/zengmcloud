@@ -33,7 +33,11 @@ export interface MetaDB extends DBSchema {
 			| RealPlayerPhotos
 			| RealTeamInfo
 			| Partial<Settings>
-			| KeyboardShortcutsLocal;
+			| KeyboardShortcutsLocal
+			// Durable per-device forensic rings; see phaseForensics.ts and
+			// injuryForensics.ts. Typed loosely here so the db layer doesn't
+			// import worker core modules.
+			| unknown[];
 		key:
 			| "lastChangesVersion"
 			| "nagged"
@@ -43,7 +47,9 @@ export interface MetaDB extends DBSchema {
 			| "realTeamInfo"
 			| "defaultSettingsOverrides"
 			| "keyboardShortcuts"
-			| "syncDeviceName";
+			| "syncDeviceName"
+			| "phaseForensics"
+			| "injuryForensics";
 	};
 	leagues: {
 		value: League;

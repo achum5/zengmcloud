@@ -1,4 +1,5 @@
 import { PHASE } from "../../../common/constants.ts";
+import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import { finances, player } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, lock, logEvent } from "../../util/index.ts";
@@ -54,6 +55,11 @@ const doInjury = async (
 		gamesRemaining: p2.injury.gamesRemaining,
 		newThisGame: true,
 	};
+
+	void recordInjuryForensics({
+		source: "new-injury",
+		detail: `p${p2.pid} ${p2.firstName} ${p2.lastName} ${p2.injury.type} out=${p2.injury.gamesRemaining}${reaggravateExtraDays !== undefined ? " (reaggravated)" : ""}`,
+	});
 
 	if (p2.injury.gamesRemaining <= 1) {
 		pidsInjuredOneGameOrLess.add(p2.pid);

@@ -1,5 +1,9 @@
 import { SyncEngineV2 } from "./v2/engine.ts";
 import {
+	formatInjuryForensics,
+	getInjuryForensics,
+} from "./injuryForensics.ts";
+import {
 	formatPhaseForensics,
 	getPhaseForensics,
 } from "../phase/phaseForensics.ts";
@@ -1359,6 +1363,14 @@ export const getSyncDebugSnapshot = async (): Promise<string> => {
 	// log. See phaseForensics.ts for the field incident behind it.
 	try {
 		lines.push(formatPhaseForensics(await getPhaseForensics()));
+	} catch {
+		// Diagnostics must never be the thing that fails.
+	}
+	// Every injury change on this device with its source - the record built
+	// after two field incidents where a countdown lost days and the evidence
+	// was gone before anyone looked. See injuryForensics.ts.
+	try {
+		lines.push(formatInjuryForensics(await getInjuryForensics()));
 	} catch {
 		// Diagnostics must never be the thing that fails.
 	}

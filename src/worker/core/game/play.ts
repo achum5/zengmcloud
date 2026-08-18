@@ -15,6 +15,7 @@ import {
 } from "../index.ts";
 import loadTeams from "./loadTeams.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
+import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
 import updatePlayoffSeries from "./updatePlayoffSeries.ts";
 import writeGameStats from "./writeGameStats.ts";
@@ -302,12 +303,17 @@ const play = async (
 		);
 		if (dayOver && countdownAlreadyRan) {
 			syncDebugLog("sim:daily-countdown-skipped", { day: simmedDay });
+			void recordInjuryForensics({
+				source: "day-tick-skipped",
+				detail: `day=${simmedDay} already counted, countdown not run`,
+			});
 		}
 
 		if (dayOver && !countdownAlreadyRan) {
 			local.minFractionDiffs = undefined;
 
 			const healedTexts: string[] = [];
+			const injuryTickNotes: string[] = [];
 
 			// Injury countdown - This must be after games are saved, of there is a race condition involving new injury assignment in writeStats. Free agents are handled in decreaseDemands.
 			const players = await idb.cache.players.indexGetAll("playersByTid", [
@@ -319,6 +325,9 @@ const play = async (
 				let changed = false;
 
 				if (p.injury.gamesRemaining > 0) {
+					injuryTickNotes.push(
+						`p${p.pid}:${p.injury.gamesRemaining}>${p.injury.gamesRemaining - 1}`,
+					);
 					p.injury.gamesRemaining -= 1;
 					changed = true;
 				}
@@ -423,6 +432,16 @@ const play = async (
 			}
 			if (phase === PHASE.REGULAR_SEASON) {
 				await trade.betweenAiTeams();
+			}
+
+			// One compact durable line for the whole league's countdown this day -
+			// the record that distinguishes "the tick ran twice" from "a remote row
+			// wiped the injury" next time a countdown loses days it should not.
+			if (injuryTickNotes.length > 0) {
+				void recordInjuryForensics({
+					source: "day-tick",
+					detail: `day=${simmedDay ?? "?"} ${injuryTickNotes.join(" ")}`,
+				});
 			}
 
 			// Stamped LAST, so a crash mid-block re-counts the day rather than

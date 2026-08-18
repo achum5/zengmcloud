@@ -13,6 +13,7 @@ import {
 	type VersionedChangeset,
 } from "./protocol.ts";
 import { isDeviceLocal, preserveLocalWatch } from "../changeset.ts";
+import { noteInjuryApply, recordInjuryForensics } from "../injuryForensics.ts";
 
 // ---------------------------------------------------------------------------
 // The v2 apply: where the version chain touches disk.
@@ -108,6 +109,12 @@ export const applyVersionedChangeset = async (
 	for (const change of changes) {
 		if (change.store === "players" && change.type === "put" && change.value) {
 			await preserveLocalWatch(change.value);
+			// Durable per-device record of any injury this remote row changes -
+			// see injuryForensics.ts for the field incidents behind it.
+			await noteInjuryApply(change.value, {
+				action: vcs.action,
+				version: vcs.version,
+			});
 		}
 	}
 
@@ -198,4 +205,10 @@ export const applyCheckpointV2 = async (
 	await transaction.done;
 
 	syncDebugLog("v2:checkpoint-applied", { version: checkpointVersion });
+	// A restore replaces every player row wholesale, injuries included, so the
+	// timeline needs the marker even though per-player diffs would be noise.
+	void recordInjuryForensics({
+		source: "checkpoint",
+		detail: `restored to v=${checkpointVersion}`,
+	});
 };

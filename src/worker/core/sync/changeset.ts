@@ -1,4 +1,5 @@
 import { idb } from "../../db/index.ts";
+import { noteInjuryApply } from "./injuryForensics.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import type { Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
@@ -1250,6 +1251,7 @@ export const applyChangeset = async (
 					// has for the player (including none) before applying the record.
 					if (change.store === "players" && change.value) {
 						await preserveLocalWatch(change.value);
+						await noteInjuryApply(change.value, {});
 					}
 
 					const rule = RECONCILE_BY_IDENTITY[change.store];
