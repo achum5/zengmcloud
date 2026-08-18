@@ -297,6 +297,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	inflationMin: 0,
 	inflationStd: 0,
 	riggedLottery: undefined,
+	lastDailyCountdownDay: undefined,
 	numDraftPicksCurrent: undefined,
 	playoffsByConf: true,
 	playoffsNumTeamsDiv: wrapFromStart(0),

@@ -829,6 +829,10 @@ export type GameAttributesLeague = {
 				startingSeason: number;
 		  };
 	riggedLottery?: (number | null)[];
+	// The last schedule day whose end-of-day countdowns (injuries, trade
+	// cooldowns, FA demands, AI trades) ran, so a day simmed in slices on
+	// several devices is never counted twice. See game/dailyCountdownGate.ts.
+	lastDailyCountdownDay?: { season: number; phase: number; day: number };
 	rookieContractLengths: number[];
 	rookiesCanRefuse: boolean;
 	salaryCap: number;

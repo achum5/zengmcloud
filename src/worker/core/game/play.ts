@@ -14,6 +14,8 @@ import {
 	trade,
 } from "../index.ts";
 import loadTeams from "./loadTeams.ts";
+import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
+import setGameAttributes from "../league/setGameAttributes.ts";
 import updatePlayoffSeries from "./updatePlayoffSeries.ts";
 import writeGameStats from "./writeGameStats.ts";
 import writePlayerStats, {
@@ -205,8 +207,13 @@ const play = async (
 		}
 	};
 
-	// Saves a vector of results objects for a day, as is output from cbSimGames
-	const cbSaveResults = async (results: GameResults[], dayOver: boolean) => {
+	// Saves a vector of results objects for a day, as is output from cbSimGames.
+	// simmedDay identifies the schedule day for the once-per-day gate below.
+	const cbSaveResults = async (
+		results: GameResults[],
+		dayOver: boolean,
+		simmedDay: number | undefined,
+	) => {
 		// Before writeGameStats, so LeagueTopBar can not update with game result
 		if (gidOneGame !== undefined && playByPlay) {
 			// Remember WHICH game the playback is for, so only that game's page can
@@ -278,7 +285,26 @@ const play = async (
 
 		const updateEvents: UpdateEvents = ["gameSim"];
 
-		if (dayOver) {
+		// See dailyCountdownGate.ts: everything in the dayOver block below has
+		// per-day semantics, a shared league can end up deciding "the day is
+		// over" on more than one device, and a double run is a player healing a
+		// day early (a real incident), doubled tragic-death odds, and doubled AI
+		// signing/trade evaluations. The day's identity is stamped into a
+		// replicated game attribute in the same write as the countdown, so a
+		// counted day is never counted again anywhere.
+		const countdownDay =
+			simmedDay === undefined
+				? undefined
+				: { season: g.get("season"), phase: g.get("phase"), day: simmedDay };
+		const countdownAlreadyRan = dayAlreadyCounted(
+			g.get("lastDailyCountdownDay"),
+			countdownDay,
+		);
+		if (dayOver && countdownAlreadyRan) {
+			syncDebugLog("sim:daily-countdown-skipped", { day: simmedDay });
+		}
+
+		if (dayOver && !countdownAlreadyRan) {
 			local.minFractionDiffs = undefined;
 
 			const healedTexts: string[] = [];
@@ -397,6 +423,13 @@ const play = async (
 			}
 			if (phase === PHASE.REGULAR_SEASON) {
 				await trade.betweenAiTeams();
+			}
+
+			// Stamped LAST, so a crash mid-block re-counts the day rather than
+			// marking it counted without counting. Rides the same capture window
+			// as the countdown itself, so the whole room learns of both together.
+			if (countdownDay !== undefined) {
+				await setGameAttributes({ lastDailyCountdownDay: countdownDay });
 			}
 		}
 
@@ -737,7 +770,7 @@ const play = async (
 			}
 		}
 
-		await cbSaveResults(results, dayOver);
+		await cbSaveResults(results, dayOver, schedule[0]?.day);
 	};
 
 	// Simulates a day of games. If there are no games left, it calls cbNoGames.
