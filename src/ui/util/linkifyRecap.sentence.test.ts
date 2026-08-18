@@ -135,6 +135,24 @@ describe("splitSentences", () => {
 		);
 	});
 
+	test("a linkified name or a digit can open a sentence", () => {
+		// "... 104-96. [Dalibor Bagarić](...) led ..." - the opener after the
+		// boundary is a link, not a capital. Missing it fused the two sentences
+		// into one "sentence" naming two games, which fell to the clause path and
+		// got chopped at its stat commas.
+		const segs = splitSentences(
+			"The Heat won 104-96. [Jason Richardson](/l/1/player/5) led all scorers. 76ers up next.",
+		);
+		assert.deepStrictEqual(
+			segs.filter((s) => !s.boundary).map((s) => s.text),
+			[
+				"The Heat won 104-96.",
+				"[Jason Richardson](/l/1/player/5) led all scorers.",
+				"76ers up next.",
+			],
+		);
+	});
+
 	test("reassembly is lossless", () => {
 		const text =
 			"One thing happened. Then another! Did a third? · A blurb · Done.";
@@ -253,6 +271,30 @@ describe("linkRecapSegments", () => {
 			],
 			["The Heat beat the Kings.", games[0]!.href],
 		]);
+	});
+
+	// The second screenshot: back-to-back single-game sentences where the later
+	// ones OPEN with a linked name. Each must stay its own sentence and win its
+	// own whole-sentence link - fusing them names two games, drops to the clause
+	// path, and links "[Player] went for 17 points" while orphaning the rest.
+	test("a sentence opening with a linked name stays separate and links whole", () => {
+		const text =
+			"[Kendrick Perkins](/l/1/player/9) went for 17 points, 11 rebounds, and 4 steals as the [Heat](/l/1/roster/MIA_14/2016) beat the [Kings](/l/1/roster/SAC_12/2016) 104-96. [Jason Richardson](/l/1/player/5) led all scorers with 37 points in the [Pistons](/l/1/roster/DET_8/2016)' win over the [Hawks](/l/1/roster/ATL_3/2016).";
+		const segs = linkRecapSegments(text, games);
+		assert.strictEqual(segs.map((s) => s.text).join(""), text);
+		assert.deepStrictEqual(
+			segs.filter((s) => s.href).map((s) => [s.text, s.href]),
+			[
+				[
+					"[Kendrick Perkins](/l/1/player/9) went for 17 points, 11 rebounds, and 4 steals as the [Heat](/l/1/roster/MIA_14/2016) beat the [Kings](/l/1/roster/SAC_12/2016) 104-96.",
+					games[0]!.href,
+				],
+				[
+					"[Jason Richardson](/l/1/player/5) led all scorers with 37 points in the [Pistons](/l/1/roster/DET_8/2016)' win over the [Hawks](/l/1/roster/ATL_3/2016).",
+					games[1]!.href,
+				],
+			],
+		);
 	});
 
 	// The other screenshot bug: the "_" in a roster URL like /roster/GSW_7/2009

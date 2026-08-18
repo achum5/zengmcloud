@@ -212,14 +212,19 @@ const escapeRegex = (s: string): string =>
 
 // Split a paragraph into sentences (kept) and the boundaries between them
 // (kept too, as plain text, so nothing is lost in reassembly). Boundaries are a
-// sentence end followed by a capital-ish opener - so "10.9 seconds" and other
-// decimals never split - plus the "·" separator the day recap's sub-headline
-// uses between its blurbs. Used by the Markdown renderer to offer each sentence
-// for a link of its own.
+// sentence end, whitespace, then a sentence opener - plus the "·" separator the
+// day recap's sub-headline uses between its blurbs. Decimals like "10.9
+// seconds" never split because the whitespace is required. The opener set must
+// cover everything a recap sentence can start with, and in a LINKIFIED recap
+// that is very often a link - "... 104-96. [Dalibor Bagarić](...) led all
+// scorers ..." - seen here either raw ("[") or as the private-use placeholder
+// protectLinks swaps it for. Missing those fused every such pair of sentences
+// into one "sentence" naming two games, which then fell to the clause path and
+// got chopped at its stat commas. Digits ("76ers ...") count as openers too.
 export const splitSentences = (
 	text: string,
 ): { text: string; boundary: boolean }[] => {
-	const parts = text.split(/(\s*·\s*|(?<=[.!?])\s+(?=["'(A-Z]))/);
+	const parts = text.split(/(\s*·\s*|(?<=[!.?])\s+(?=[\d"'(*A-Z[_\uE000]))/);
 	const out: { text: string; boundary: boolean }[] = [];
 	for (const [i, part] of parts.entries()) {
 		if (part !== undefined && part !== "") {
