@@ -21,8 +21,6 @@
 // that this runs on every scroll, not only on resume - a standing correction
 // rather than a repair, which is why it is separate from the watchdog.
 
-import { recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
-
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 const TICKER_SELECTOR = ".league-ticker";
 
@@ -54,10 +52,12 @@ export const tickerVisualShift = ({
 	offsetTop,
 	visualHeight,
 	layoutHeight,
+	scale,
 }: {
 	offsetTop: number | undefined;
 	visualHeight: number | undefined;
 	layoutHeight: number;
+	scale?: number;
 }): number => {
 	if (
 		offsetTop === undefined ||
@@ -67,6 +67,11 @@ export const tickerVisualShift = ({
 		!Number.isFinite(layoutHeight) ||
 		offsetTop <= 0
 	) {
+		return 0;
+	}
+	// A gap computed from an impossible height is an impossible gap, and acting
+	// on it is what put the bar mid-page. See visualViewportPlausible.
+	if (!visualViewportPlausible({ scale, visualHeight, layoutHeight })) {
 		return 0;
 	}
 	const gap = layoutHeight - (offsetTop + visualHeight);
@@ -86,43 +91,35 @@ export const applyHeaderShift = (
 	element.style.transform = shift === 0 ? "" : `translateY(${shift}px)`;
 };
 
-// WHEN THE LAYOUT VIEWPORT ITSELF IS THE LIE, sticky cannot be corrected -
-// it has to be abandoned.
+// IS THE VISUAL VIEWPORT EVEN TELLING THE TRUTH?
 //
-// A field report finally caught the state whole: a resumed PWA claiming a
-// 1052px layout viewport over a 646px visual one at scale 0.85, ticker style
-// and geometry all reading exactly right - translateY correct to the pixel,
-// measured bottom on the visible bottom, "detached=false" - while the glass
-// showed the bar parked mid-screen. The compositor was applying sticky
-// against the bottom edge of a viewport that does not exist, and the full
-// repair ladder (position toggle, renderer rebuild, scroll nudge) ran
-// end-to-end without moving the rendered pixels. Nothing that writes styles
-// against that layout can ever look wrong, and nothing on the ladder makes
-// the compositor believe in a different viewport.
+// Everything below reads visualViewport.height, and a field log finally caught
+// it lying. On one device, on one page, with nothing changing between them,
+// the reported height alternated within seconds:
 //
-// So when the layout viewport is provably oversized, the ticker stops using
-// its bottom edge at all: position:fixed, offset from the viewport's TOP -
-// the one edge layout and compositor still agree on - down to the bottom of
-// the VISIBLE area, computed here from visual viewport numbers alone. The
-// stale quantity (the phantom height) exits the formula entirely.
+//   vv=1083/1083@0x0.75   ...then...   vv=636/1083@0x0.75
 //
-// The offset is written to `top`, deliberately not to `transform`. A later
-// report showed why: the bar painted at one translateY while its inline style
-// held another, minutes newer, and no repair could shift it - see the note on
-// the write itself below.
+// Both at scale 0.75, and only one can be right. Zooming OUT shows MORE of the
+// page, so at 0.75 the visible height must be at least the layout viewport's,
+// never 59% of it. The 636 is impossible; the 1083, which agrees with the
+// layout viewport, is the real one.
 //
-// The stylesheet's "sticky, not fixed" rule still holds everywhere else:
-// this engages only while the viewports disagree by more than any toolbar
-// transition is worth AND the page is below 1:1 scale - the shrink-to-fit
-// artifact of a bad restore. The scale gate keeps the keyboard case out
-// (it shrinks the visual viewport at scale 1, and hoisting the bar above
-// the keyboard would cover the input), and pinch-zoom out (scale > 1 shows
-// LESS layout, never more... a zoomed-IN page has scale > 1 and a smaller
-// visual viewport, which is the standing correction's job, not this one).
-const OVERSIZED_MIN_GAP_PX = 150;
-const OVERSIZED_MAX_SCALE = 0.99;
+// This mattered because a whole mode was built on the impossible number. The
+// ticker used to abandon sticky and place itself, computing "the bottom of the
+// visible area" from that 636 - which put the bar 600px down a screen that is
+// really 1083 tall, i.e. mid-page. The log shows it flipping on and off every
+// few seconds as the reading alternated, and every time it was on the bar left
+// the bottom of the screen. That mode is gone, and the standing correction
+// below now stands down whenever the numbers cannot be true, which leaves
+// plain sticky doing exactly what it should: holding the foot of the layout
+// viewport, which is where the screen actually ends.
+//
+// Only the HEIGHT is judged here. The header's correction uses offsetTop,
+// a different quantity that this evidence says nothing about, and it works -
+// so it is left alone.
+const IMPLAUSIBLE_SHRINK = 0.9;
 
-export const layoutViewportOversized = ({
+export const visualViewportPlausible = ({
 	scale,
 	visualHeight,
 	layoutHeight,
@@ -130,112 +127,25 @@ export const layoutViewportOversized = ({
 	scale: number | undefined;
 	visualHeight: number | undefined;
 	layoutHeight: number;
-}): boolean =>
-	scale !== undefined &&
-	visualHeight !== undefined &&
-	Number.isFinite(scale) &&
-	Number.isFinite(visualHeight) &&
-	Number.isFinite(layoutHeight) &&
-	scale < OVERSIZED_MAX_SCALE &&
-	layoutHeight - visualHeight > OVERSIZED_MIN_GAP_PX;
-
-// Where the top of the bar goes so its bottom sits on the visible bottom.
-export const tickerSelfPlacementShift = ({
-	offsetTop,
-	visualHeight,
-	barHeight,
-}: {
-	offsetTop: number | undefined;
-	visualHeight: number;
-	barHeight: number;
-}): number => {
-	const offset =
-		offsetTop !== undefined && Number.isFinite(offsetTop) ? offsetTop : 0;
-	return Math.max(0, Math.round(offset + visualHeight - barHeight));
-};
-
-// Whether the last placement pass used the fixed-top mode, so the transition
-// gets one log line each way instead of one per frame.
-let selfPlacing = false;
-
-const applyTickerPlacement = (
-	element: HTMLElement | null,
-	vv: VisualViewport | null | undefined,
-	layoutHeight: number,
-) => {
-	if (!element) {
-		return;
+}): boolean => {
+	if (
+		scale === undefined ||
+		visualHeight === undefined ||
+		!Number.isFinite(scale) ||
+		!Number.isFinite(visualHeight) ||
+		!Number.isFinite(layoutHeight) ||
+		layoutHeight <= 0
+	) {
+		// Nothing to check against: believe it, same as before any of this.
+		return true;
 	}
-	const oversized =
-		vv != null &&
-		layoutViewportOversized({
-			scale: vv.scale,
-			visualHeight: vv.height,
-			layoutHeight,
-		});
-
-	if (oversized) {
-		const shift = tickerSelfPlacementShift({
-			offsetTop: vv.offsetTop,
-			visualHeight: vv.height,
-			barHeight: element.offsetHeight,
-		});
-		element.style.position = "fixed";
-		element.style.bottom = "auto";
-		element.style.left = "0";
-		element.style.right = "0";
-		// PLACED WITH `top`, NOT `transform`, AND THAT IS THE WHOLE POINT.
-		//
-		// A field log caught the bar painted at translateY(600px) while its
-		// inline style read translateY(737px) - the 600 was the value computed
-		// seven minutes earlier, when the viewport offset was still 0. The style
-		// was right, the screen was seven minutes stale, and the repair ladder
-		// could not touch it: the ladder rewrites `position`, and rewriting a
-		// transform to the value it already holds gives the compositor nothing
-		// to commit, so the stale layer survived every pass.
-		//
-		// `transform` is a compositor property - that is why it is fast, and why
-		// a stale layer can keep showing an old one. `top` is a LAYOUT property:
-		// changing it forces layout and paint, which cannot be served out of a
-		// stale compositing layer. Slower, irrelevantly so for one bar, and it
-		// cannot silently show yesterday's number.
-		element.style.top = `${shift}px`;
-		element.style.transform = "";
-	} else {
-		// Hand the bar back to the stylesheet's sticky and the standing gap
-		// correction.
-		if (element.style.position === "fixed") {
-			element.style.position = "";
-			element.style.top = "";
-			element.style.bottom = "";
-			element.style.left = "";
-			element.style.right = "";
-		}
-		// The self-placement leaves a `top` behind even when `position` was
-		// already cleared by a repair-ladder pass; a leftover `top` on a sticky
-		// bottom bar parks it mid-page.
-		element.style.top = "";
-		applyHeaderShift(
-			element,
-			tickerVisualShift({
-				offsetTop: vv?.offsetTop,
-				visualHeight: vv?.height,
-				layoutHeight,
-			}),
-		);
+	if (scale >= 1) {
+		// Zoomed in (or not zoomed): a smaller visible area is exactly right.
+		return true;
 	}
-
-	if (oversized !== selfPlacing) {
-		selfPlacing = oversized;
-		recordHeaderEvent({
-			kind: "ticker:self-place",
-			scrollY: Math.round(window.scrollY),
-			headerTop: Math.round(element.getBoundingClientRect().bottom),
-			detail: oversized
-				? `on gap=${Math.round(layoutHeight - (vv?.height ?? 0))} scale=${vv?.scale.toFixed(2)}`
-				: "off",
-		});
-	}
+	// Zoomed out, so the visible area must not be dramatically SMALLER than the
+	// layout viewport - that combination cannot happen.
+	return visualHeight >= layoutHeight * IMPLAUSIBLE_SHRINK;
 };
 
 // Recompute both shifts against the viewports as they are RIGHT NOW and write
@@ -255,10 +165,26 @@ export const resyncStickyBarShifts = () => {
 		document.querySelector<HTMLElement>(HEADER_SELECTOR),
 		headerVisualShift(vv?.offsetTop),
 	);
-	applyTickerPlacement(
-		document.querySelector<HTMLElement>(TICKER_SELECTOR),
-		vv,
-		document.documentElement?.clientHeight || window.innerHeight,
+	const ticker = document.querySelector<HTMLElement>(TICKER_SELECTOR);
+	const layoutHeight =
+		document.documentElement?.clientHeight || window.innerHeight;
+	// The self-placement mode used to live here and is gone; clear anything a
+	// previous build of it left behind so a bar cannot stay pinned mid-page.
+	if (ticker && ticker.style.position === "fixed") {
+		ticker.style.position = "";
+		ticker.style.top = "";
+		ticker.style.bottom = "";
+		ticker.style.left = "";
+		ticker.style.right = "";
+	}
+	applyHeaderShift(
+		ticker,
+		tickerVisualShift({
+			offsetTop: vv?.offsetTop,
+			visualHeight: vv?.height,
+			layoutHeight,
+			scale: vv?.scale,
+		}),
 	);
 };
 

@@ -464,39 +464,6 @@ export const jitterColor = (
 	);
 };
 
-// GOING GREY, which is the change that actually happens every year.
-//
-// Everything else aging does is a STEP - a beard arrives, a hairline goes,
-// a line deepens - and steps are lumpy by nature: nothing for four years and
-// then a man is suddenly bald. Real aging is mostly continuous, and hair
-// colour is the part of it a cartoon face can carry: a few percent greyer
-// every season, invisible year over year, unmistakable across a decade.
-//
-// It compounds toward grey rather than tracking a stored fraction, so it
-// needs no extra data and can never run backwards. When it starts is a
-// per-player trait like the others, which is why one 38-year-old is salt and
-// pepper and the next is still jet black.
-const GREY = "#a8a29a";
-
-// Share of the way to grey per season, once it has started.
-const GREY_PER_YEAR = 0.07;
-
-export const greyOnsetAge = (pid: number | undefined): number =>
-	pid === undefined ? 99 : Math.round(28 + hashPid(pid, 3) * 16);
-
-export const greyedColor = (hex: string, fraction: number): string => {
-	if (!/^#[\da-f]{6}$/i.test(hex)) {
-		return hex;
-	}
-	const [r, g, b] = hexToRgb(hex);
-	const [r2, g2, b2] = hexToRgb(GREY);
-	return rgbToHex([
-		r + (r2 - r) * fraction,
-		g + (g2 - g) * fraction,
-		b + (b2 - b) * fraction,
-	]);
-};
-
 // WRINKLES, WHICH ARE THE OTHER HALF OF LOOKING OLDER.
 //
 // Hair was only ever half the story: a 36-year-old with a full beard and a
@@ -825,22 +792,21 @@ export const ageFace = (
 		changed = true;
 	}
 
-	// THE CONTINUOUS HALF, below. Neither of these counts as a change worth
-	// recording: they move a few percent a season, so a snapshot of every one
-	// would store twenty near-identical faces per career to capture something
-	// only visible across a decade. The player is written back every preseason
-	// regardless, so they persist either way - the history just keeps the
-	// steps.
+	// THE CONTINUOUS HALF. Steps are lumpy by nature - nothing for four years
+	// and then a man is suddenly bald - so the folds also deepen a little every
+	// season, which is what keeps most years from looking identical.
+	//
+	// It does not count as a change worth recording: it moves a few percent a
+	// season, so a snapshot of every one would store twenty near-identical
+	// faces per career to capture something only visible across a decade. The
+	// player is written back every preseason regardless, so it persists either
+	// way - the history just keeps the steps.
 	const targetSize = LEVEL_TO_SMILE_SIZE[wrinkleCeiling(age, pid)]!;
 	if (face.smileLine.size < targetSize) {
 		face.smileLine.size =
 			Math.round(
 				Math.min(targetSize, face.smileLine.size + SMILE_CREEP_PER_YEAR) * 100,
 			) / 100;
-	}
-
-	if (age >= greyOnsetAge(pid)) {
-		face.hair.color = greyedColor(face.hair.color, GREY_PER_YEAR);
 	}
 
 	// Hairlines only ever go one way, and only for players who were ever going

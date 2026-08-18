@@ -1,8 +1,8 @@
 import { assert, describe, test } from "vitest";
 import {
 	headerVisualShift,
-	layoutViewportOversized,
-	tickerSelfPlacementShift,
+	tickerVisualShift,
+	visualViewportPlausible,
 } from "./visualViewportHeader.ts";
 
 describe("headerVisualShift", () => {
@@ -31,52 +31,17 @@ describe("headerVisualShift", () => {
 	});
 });
 
-describe("layoutViewportOversized", () => {
-	test("the field case: a restored PWA claiming a 1052px viewport over 646 visible at 0.85", () => {
-		assert.isTrue(
-			layoutViewportOversized({
-				scale: 0.85,
-				visualHeight: 646,
-				layoutHeight: 1052,
-			}),
-		);
-	});
-
-	test("the keyboard is not oversized - it shrinks the visual viewport at scale 1", () => {
-		// Engaging here would hoist the bar on top of whatever is being typed.
+describe("visualViewportPlausible", () => {
+	// A field log caught the same device, on the same page, alternating within
+	// seconds between these two readings with nothing changing:
+	//
+	//   vv=1083/1083@0x0.75   and   vv=636/1083@0x0.75
+	//
+	// Only one can be true. Zooming OUT shows MORE of the page, so at 0.75 the
+	// visible height cannot be 59% of the layout viewport.
+	test("the impossible reading is rejected", () => {
 		assert.isFalse(
-			layoutViewportOversized({
-				scale: 1,
-				visualHeight: 646,
-				layoutHeight: 1052,
-			}),
-		);
-	});
-
-	test("pinch-zoom in is not oversized - the standing correction's job", () => {
-		assert.isFalse(
-			layoutViewportOversized({
-				scale: 2,
-				visualHeight: 500,
-				layoutHeight: 1052,
-			}),
-		);
-	});
-
-	test("a toolbar transition's worth of disagreement does not qualify", () => {
-		assert.isFalse(
-			layoutViewportOversized({
-				scale: 0.85,
-				visualHeight: 960,
-				layoutHeight: 1052,
-			}),
-		);
-	});
-
-	test("the second field case: 636 visible over a 1083 layout at 0.75", () => {
-		// A different device and zoom from the first report, same disease.
-		assert.isTrue(
-			layoutViewportOversized({
+			visualViewportPlausible({
 				scale: 0.75,
 				visualHeight: 636,
 				layoutHeight: 1083,
@@ -84,70 +49,89 @@ describe("layoutViewportOversized", () => {
 		);
 	});
 
-	test("no visual viewport, no verdict", () => {
+	test("the self-consistent reading is accepted", () => {
+		assert.isTrue(
+			visualViewportPlausible({
+				scale: 0.75,
+				visualHeight: 1083,
+				layoutHeight: 1083,
+			}),
+		);
+	});
+
+	test("the earlier report had the same impossible signature", () => {
+		// Which is why the mode built on it never worked.
 		assert.isFalse(
-			layoutViewportOversized({
-				scale: undefined,
-				visualHeight: undefined,
+			visualViewportPlausible({
+				scale: 0.85,
+				visualHeight: 646,
 				layoutHeight: 1052,
 			}),
 		);
-		assert.isFalse(
-			layoutViewportOversized({
-				scale: Number.NaN,
-				visualHeight: 646,
+	});
+
+	test("zoomed IN is allowed to show less - that is what zooming in is", () => {
+		assert.isTrue(
+			visualViewportPlausible({
+				scale: 2,
+				visualHeight: 500,
+				layoutHeight: 1052,
+			}),
+		);
+		assert.isTrue(
+			visualViewportPlausible({
+				scale: 1,
+				visualHeight: 640,
+				layoutHeight: 1052,
+			}),
+		);
+	});
+
+	test("nothing to check against means believe it", () => {
+		assert.isTrue(
+			visualViewportPlausible({
+				scale: undefined,
+				visualHeight: undefined,
 				layoutHeight: 1052,
 			}),
 		);
 	});
 });
 
-describe("tickerSelfPlacementShift", () => {
-	test("parks the bar's bottom on the visible bottom", () => {
-		// The field case at resume (offset 0) and panned down 324. Either way the
-		// bar's bottom edge (shift + its height) must land exactly on the bottom
-		// of what the user can see (offsetTop + visual height).
-		for (const offsetTop of [0, 324]) {
-			const shift = tickerSelfPlacementShift({
-				offsetTop,
-				visualHeight: 646,
-				barHeight: 37,
-			});
-			assert.strictEqual(shift + 37, offsetTop + 646);
-		}
-	});
-
-	test("the second field case lands the bar on the visible bottom", () => {
-		// Reported state: 636 visible starting 137 down, 36-tall bar. The style
-		// written from these was correct; what failed was that a compositor kept
-		// painting an older transform, which is why the offset now goes to `top`.
+describe("tickerVisualShift stands down on an impossible viewport", () => {
+	test("no shift from numbers that cannot be true", () => {
+		// Acting on the bogus gap is what pulled the bar off the bottom of the
+		// screen and into the middle of the page.
 		assert.strictEqual(
-			tickerSelfPlacementShift({
+			tickerVisualShift({
 				offsetTop: 137,
 				visualHeight: 636,
-				barHeight: 36,
+				layoutHeight: 1083,
+				scale: 0.75,
 			}),
-			737,
+			0,
 		);
 	});
 
-	test("a missing offset means the visual viewport starts at the top", () => {
+	test("a genuine zoomed-in pan still gets its correction", () => {
 		assert.strictEqual(
-			tickerSelfPlacementShift({
-				offsetTop: undefined,
-				visualHeight: 646,
-				barHeight: 37,
+			tickerVisualShift({
+				offsetTop: 100,
+				visualHeight: 500,
+				layoutHeight: 1000,
+				scale: 2,
 			}),
-			609,
+			-400,
 		);
 	});
 
-	test("never places the bar above the viewport", () => {
+	test("an unzoomed page is untouched, as always", () => {
 		assert.strictEqual(
-			tickerSelfPlacementShift({
+			tickerVisualShift({
 				offsetTop: 0,
-				visualHeight: 20,
-				barHeight: 40,
+				visualHeight: 1000,
+				layoutHeight: 1000,
+				scale: 1,
 			}),
 			0,
 		);

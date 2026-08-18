@@ -13,8 +13,6 @@ import {
 	growsFacialHair,
 	inferRaceFromFace,
 	MAX_WRINKLE_LEVEL,
-	greyedColor,
-	greyOnsetAge,
 	weathersLess,
 	wrinkleCeiling,
 	wrinkleLevelForAge,
@@ -570,62 +568,8 @@ describe("inferRaceFromFace", () => {
 
 describe("the continuous half of aging", () => {
 	// Steps are lumpy by nature - nothing for four years and then a man is
-	// suddenly bald. These are the parts that move a little every season, so
-	// most years look slightly different without anything dramatic happening.
-
-	test("hair greys a few percent a year and never un-greys", () => {
-		let color = "#272421";
-		const shades = [color];
-		for (let i = 0; i < 12; i++) {
-			color = greyedColor(color, 0.07);
-			shades.push(color);
-		}
-		// Monotonic toward grey, and no single step is a jump.
-		const lightness = shades.map((hex) =>
-			[1, 3, 5].reduce(
-				(sum, i) => sum + Number.parseInt(hex.slice(i, i + 2), 16),
-				0,
-			),
-		);
-		for (let i = 1; i < lightness.length; i++) {
-			assert.isAbove(lightness[i]!, lightness[i - 1]!, `step ${i}`);
-		}
-		assert.isBelow(
-			(lightness[1]! - lightness[0]!) / lightness[0]!,
-			0.5,
-			"a single season should be a nudge, not a jump",
-		);
-	});
-
-	test("greying never overshoots grey itself", () => {
-		let color = "#272421";
-		for (let i = 0; i < 200; i++) {
-			color = greyedColor(color, 0.07);
-		}
-		// Converges on the target rather than sailing past into white.
-		const [r, g, b] = [1, 3, 5].map((i) =>
-			Number.parseInt(color.slice(i, i + 2), 16),
-		);
-		assert.isAtMost(r!, 0xa8 + 2);
-		assert.isAtMost(g!, 0xa2 + 2);
-		assert.isAtMost(b!, 0x9a + 2);
-	});
-
-	test("when greying starts varies from player to player", () => {
-		const onsets = new Set<number>();
-		for (let pid = 0; pid < 200; pid++) {
-			onsets.add(greyOnsetAge(pid));
-		}
-		assert.isAbove(onsets.size, 8, "everyone would grey at the same age");
-		for (const onset of onsets) {
-			assert.isAtLeast(onset, 28);
-			assert.isAtMost(onset, 44);
-		}
-	});
-
-	test("greying leaves anything that is not a colour alone", () => {
-		assert.strictEqual(greyedColor("none", 0.5), "none");
-	});
+	// suddenly bald. This is the part that moves a little every season, so most
+	// years look slightly different without anything dramatic happening.
 
 	test("folds deepen between level steps, and stop at the ceiling", () => {
 		const f = face({ smileLine: { id: "none", size: 0.6 } });
@@ -642,13 +586,12 @@ describe("the continuous half of aging", () => {
 		}
 	});
 
-	test("a grey year alone is not worth a history entry", () => {
+	test("a season of only deepening folds is not worth a history entry", () => {
 		// The player is written back every preseason anyway; recording one
 		// snapshot per season would store twenty near-identical faces to
 		// capture something only visible across a decade.
-		const f = face();
-		const greyer = greyOnsetAge(1) + 2;
-		assert.isFalse(ageFace(f, greyer, 1, fixed(0.99)));
+		const f = face({ smileLine: { id: "none", size: 0.6 } });
+		assert.isFalse(ageFace(f, 30, 1, fixed(0.99)));
 	});
 });
 
