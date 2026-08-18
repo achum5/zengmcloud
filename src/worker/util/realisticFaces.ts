@@ -29,6 +29,7 @@
 // which in a synced league is real traffic for no benefit.
 
 import type { FaceConfig } from "facesjs";
+import type { Race } from "../../common/types.ts";
 
 // The style groups, assigned by looking at all 83 rendered styles rather than
 // guessing from their names. A test asserts these cover facesjs's list exactly,
@@ -152,6 +153,108 @@ export const tierOf = (facialHairId: string): FacialHairTier | undefined => {
 		}
 	}
 	return undefined;
+};
+
+// HAIR TEXTURE FOLLOWS ANCESTRY. facesjs uses race only for color palettes
+// and picks hairSTYLES uniformly, so straight flowing hair (curtains, shaggy
+// cuts, emo swoops) lands on Black players at the same rate as anyone - and
+// afros, dreads and hi-top fades land on players whose hair could essentially
+// never grow into them. Both directions read as wrong on a roster page.
+//
+// Styles were classified from their rendered appearance, not their names
+// (same method as the facial hair groups; "juice" and "high" turn out to be
+// hi-top fades, which a name alone would never tell you):
+//
+//  - universal: short cuts, buzzes, fades, crops and loose curls - textures
+//    and lengths anyone plausibly wears.
+//  - straight: styles that need straight flowing hair.
+//  - coiled: styles that need tightly coiled hair.
+//
+// "brown" spans the widest real range of hair (Latino, Middle Eastern, South
+// Asian), so it keeps everything.
+export const HAIR_TEXTURES = {
+	universal: [
+		"bald",
+		"crop",
+		"crop-fade",
+		"crop-fade2",
+		"curly",
+		"curly2",
+		"curly3",
+		"curlyFade1",
+		"curlyFade2",
+		"fauxhawk-fade",
+		"short",
+		"short2",
+		"short3",
+		"short-bald",
+		"short-fade",
+		"short-fade-2",
+		"spike3",
+	],
+	straight: [
+		"emo",
+		"faux-hawk",
+		"hair",
+		"longHair",
+		"messy",
+		"messy-short",
+		"middle-part",
+		"parted",
+		"shaggy1",
+		"shaggy2",
+		"shortBangs",
+		"spike",
+		"spike2",
+		"spike4",
+	],
+	coiled: [
+		"afro",
+		"afro2",
+		"blowoutFade",
+		"cornrows",
+		"dreads",
+		"high",
+		"juice",
+		"tall-fade",
+	],
+} as const;
+
+const STRAIGHT_HAIR = new Set<string>(HAIR_TEXTURES.straight);
+const COILED_HAIR = new Set<string>(HAIR_TEXTURES.coiled);
+
+export const hairAllowedForRace = (
+	hairId: string,
+	race: Race | undefined,
+): boolean => {
+	if (race === undefined || race === "brown") {
+		// Unknown ancestry (a generated relative) or the widest real range:
+		// nothing to rule out.
+		return true;
+	}
+	if (STRAIGHT_HAIR.has(hairId)) {
+		return race !== "black";
+	}
+	if (COILED_HAIR.has(hairId)) {
+		return race === "black";
+	}
+	// Universal, or a style outside the male catalog - leave it be.
+	return true;
+};
+
+// The pool a texture-implausible style is re-rolled from. Balding looks stay
+// out of it: whether a player is balding is the age logic's decision, not a
+// side effect of swapping hair texture.
+export const hairPoolForRace = (race: Race): readonly string[] => {
+	const pool = [
+		...HAIR_TEXTURES.universal,
+		...(race === "black" ? HAIR_TEXTURES.coiled : []),
+		...(race === "white" || race === "asian" ? HAIR_TEXTURES.straight : []),
+		...(race === "brown"
+			? [...HAIR_TEXTURES.straight, ...HAIR_TEXTURES.coiled]
+			: []),
+	];
+	return pool.filter((id) => id !== HAIR_THINNING && id !== HAIR_BALD);
 };
 
 // What a player of a given age should look like. Chances are per player, and
@@ -284,11 +387,21 @@ export const jitterColor = (
 // colors of its own. Mutates, matching how facesjs itself is used here.
 export const applyRealisticFace = (
 	face: FaceConfig,
-	{ age, rand = Math.random }: { age: number; rand?: () => number },
+	{
+		age,
+		race,
+		rand = Math.random,
+	}: { age: number; race?: Race; rand?: () => number },
 ) => {
 	const band = bandForAge(age);
 
 	face.facialHair.id = facialHairForAge(age, rand);
+
+	// Texture first, so the age-based hairline logic below judges the style
+	// the player will actually keep.
+	if (race !== undefined && !hairAllowedForRace(face.hair.id, race)) {
+		face.hair.id = pickFrom(hairPoolForRace(race), rand);
+	}
 
 	// Hairline. Young players are never balding; older ones may be, and a face
 	// that already lost its hair keeps it lost.

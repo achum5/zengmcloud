@@ -11,6 +11,9 @@ import {
 	FACE_AGE_THRESHOLDS,
 	FACIAL_HAIR_TIERS,
 	facialHairForAge,
+	HAIR_TEXTURES,
+	hairAllowedForRace,
+	hairPoolForRace,
 	HAIR_BALD,
 	HAIR_THINNING,
 	jitterColor,
@@ -55,6 +58,68 @@ describe("style groups", () => {
 	test("the balding hairstyles exist in facesjs", () => {
 		assert.include(svgsIndex.hair, HAIR_THINNING);
 		assert.include(svgsIndex.hair, HAIR_BALD);
+	});
+
+	test("the texture groups cover the male hair catalog exactly", () => {
+		// Classified from rendered appearance (juice and high are hi-top fades -
+		// a name alone would never tell you). Female styles are outside the male
+		// generator's reach and stay unclassified. A facesjs upgrade that adds a
+		// style must be classified, not silently left uniform.
+		const grouped = Object.values(HAIR_TEXTURES).flat();
+		assert.strictEqual(
+			new Set(grouped).size,
+			grouped.length,
+			"a style is in two texture groups",
+		);
+		const male = svgsIndex.hair.filter((id) => !id.startsWith("female"));
+		assert.deepStrictEqual([...grouped].toSorted(), [...male].toSorted());
+	});
+});
+
+describe("hairAllowedForRace", () => {
+	test("straight flowing styles never land on Black players", () => {
+		for (const id of HAIR_TEXTURES.straight) {
+			assert.isFalse(hairAllowedForRace(id, "black"), id);
+		}
+	});
+
+	test("tightly coiled styles never land on white or asian players", () => {
+		for (const id of HAIR_TEXTURES.coiled) {
+			assert.isFalse(hairAllowedForRace(id, "white"), id);
+			assert.isFalse(hairAllowedForRace(id, "asian"), id);
+		}
+	});
+
+	test("universal styles land on everyone", () => {
+		for (const id of HAIR_TEXTURES.universal) {
+			for (const race of ["white", "black", "brown", "asian"] as const) {
+				assert.isTrue(hairAllowedForRace(id, race), `${id} for ${race}`);
+			}
+		}
+	});
+
+	test("brown spans the widest real range and keeps everything", () => {
+		for (const id of [...HAIR_TEXTURES.straight, ...HAIR_TEXTURES.coiled]) {
+			assert.isTrue(hairAllowedForRace(id, "brown"), id);
+		}
+	});
+
+	test("no race known means nothing to rule out", () => {
+		// Generated relatives inherit a face rather than a race.
+		assert.isTrue(hairAllowedForRace("middle-part", undefined));
+	});
+});
+
+describe("hairPoolForRace", () => {
+	test("every pool entry is allowed for its race, and balding looks stay out", () => {
+		for (const race of ["white", "black", "brown", "asian"] as const) {
+			const pool = hairPoolForRace(race);
+			assert.isAbove(pool.length, 10);
+			for (const id of pool) {
+				assert.isTrue(hairAllowedForRace(id, race), `${id} for ${race}`);
+				assert.notInclude([HAIR_THINNING, HAIR_BALD], id);
+			}
+		}
 	});
 });
 
@@ -110,6 +175,29 @@ describe("applyRealisticFace", () => {
 		const f = face();
 		applyRealisticFace(f, { age: 34, rand: fixed(0.001) });
 		assert.include([HAIR_THINNING, HAIR_BALD], f.hair.id);
+	});
+
+	test("a texture-implausible style is re-rolled, a plausible one is kept", () => {
+		const f = face({
+			hair: { id: "middle-part", color: "#272421", flip: false },
+		});
+		applyRealisticFace(f, { age: 25, race: "black", rand: fixed(0.4) });
+		assert.isTrue(hairAllowedForRace(f.hair.id, "black"), f.hair.id);
+
+		const f2 = face({ hair: { id: "afro", color: "#272421", flip: false } });
+		applyRealisticFace(f2, { age: 25, race: "white", rand: fixed(0.4) });
+		assert.isTrue(hairAllowedForRace(f2.hair.id, "white"), f2.hair.id);
+
+		const f3 = face({ hair: { id: "afro", color: "#272421", flip: false } });
+		applyRealisticFace(f3, { age: 25, race: "black", rand: fixed(0.4) });
+		assert.strictEqual(f3.hair.id, "afro");
+
+		// No race, no re-roll - a relative's inherited face stays as generated.
+		const f4 = face({
+			hair: { id: "middle-part", color: "#272421", flip: false },
+		});
+		applyRealisticFace(f4, { age: 25, rand: fixed(0.4) });
+		assert.strictEqual(f4.hair.id, "middle-part");
 	});
 
 	test("colors are nudged but stay recognizably the same shade", () => {

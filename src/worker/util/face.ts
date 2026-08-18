@@ -79,7 +79,7 @@ export const generateFace = (
 		: defaultGameAttributes.realisticFaces;
 
 	if (isSport("basketball") && realisticFaces) {
-		applyRealisticFace(face, { age: age ?? 25 });
+		applyRealisticFace(face, { age: age ?? 25, race: options.race });
 	}
 
 	return face;

@@ -1141,6 +1141,11 @@ export const settings: Setting[] = (
 						rare touch on the oldest players.
 					</p>
 					<p>
+						Hairstyle textures also follow ancestry - straight flowing styles
+						and tightly coiled styles each land only on players whose hair
+						plausibly grows that way.
+					</p>
+					<p>
 						It also varies skin and hair color slightly per player. The
 						underlying palette has only two or three shades per skin tone - and
 						sometimes a single hair color - so without this a whole league
