@@ -101,12 +101,15 @@ export const applyHeaderShift = (
 // the compositor believe in a different viewport.
 //
 // So when the layout viewport is provably oversized, the ticker stops using
-// its bottom edge at all: position:fixed, anchored to the viewport's TOP -
-// the one edge layout and compositor still agree on - and pushed down to the
-// bottom of the VISIBLE area by a transform computed here from visual
-// viewport numbers alone. The stale quantity (the phantom height) exits the
-// formula entirely. This is the same mechanism as the header's shift, which
-// the same report shows rendering correctly on the same screen.
+// its bottom edge at all: position:fixed, offset from the viewport's TOP -
+// the one edge layout and compositor still agree on - down to the bottom of
+// the VISIBLE area, computed here from visual viewport numbers alone. The
+// stale quantity (the phantom height) exits the formula entirely.
+//
+// The offset is written to `top`, deliberately not to `transform`. A later
+// report showed why: the bar painted at one translateY while its inline style
+// held another, minutes newer, and no repair could shift it - see the note on
+// the write itself below.
 //
 // The stylesheet's "sticky, not fixed" rule still holds everywhere else:
 // this engages only while the viewports disagree by more than any toolbar
@@ -178,13 +181,26 @@ const applyTickerPlacement = (
 			barHeight: element.offsetHeight,
 		});
 		element.style.position = "fixed";
-		element.style.top = "0px";
 		element.style.bottom = "auto";
 		element.style.left = "0";
 		element.style.right = "0";
-		// Always written, never cleared: with top anchoring the transform IS the
-		// placement.
-		element.style.transform = `translateY(${shift}px)`;
+		// PLACED WITH `top`, NOT `transform`, AND THAT IS THE WHOLE POINT.
+		//
+		// A field log caught the bar painted at translateY(600px) while its
+		// inline style read translateY(737px) - the 600 was the value computed
+		// seven minutes earlier, when the viewport offset was still 0. The style
+		// was right, the screen was seven minutes stale, and the repair ladder
+		// could not touch it: the ladder rewrites `position`, and rewriting a
+		// transform to the value it already holds gives the compositor nothing
+		// to commit, so the stale layer survived every pass.
+		//
+		// `transform` is a compositor property - that is why it is fast, and why
+		// a stale layer can keep showing an old one. `top` is a LAYOUT property:
+		// changing it forces layout and paint, which cannot be served out of a
+		// stale compositing layer. Slower, irrelevantly so for one bar, and it
+		// cannot silently show yesterday's number.
+		element.style.top = `${shift}px`;
+		element.style.transform = "";
 	} else {
 		// Hand the bar back to the stylesheet's sticky and the standing gap
 		// correction.
@@ -195,6 +211,10 @@ const applyTickerPlacement = (
 			element.style.left = "";
 			element.style.right = "";
 		}
+		// The self-placement leaves a `top` behind even when `position` was
+		// already cleared by a repair-ladder pass; a leftover `top` on a sticky
+		// bottom bar parks it mid-page.
+		element.style.top = "";
 		applyHeaderShift(
 			element,
 			tickerVisualShift({

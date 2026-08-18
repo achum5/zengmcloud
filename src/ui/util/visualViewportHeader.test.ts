@@ -73,6 +73,17 @@ describe("layoutViewportOversized", () => {
 		);
 	});
 
+	test("the second field case: 636 visible over a 1083 layout at 0.75", () => {
+		// A different device and zoom from the first report, same disease.
+		assert.isTrue(
+			layoutViewportOversized({
+				scale: 0.75,
+				visualHeight: 636,
+				layoutHeight: 1083,
+			}),
+		);
+	});
+
 	test("no visual viewport, no verdict", () => {
 		assert.isFalse(
 			layoutViewportOversized({
@@ -104,6 +115,20 @@ describe("tickerSelfPlacementShift", () => {
 			});
 			assert.strictEqual(shift + 37, offsetTop + 646);
 		}
+	});
+
+	test("the second field case lands the bar on the visible bottom", () => {
+		// Reported state: 636 visible starting 137 down, 36-tall bar. The style
+		// written from these was correct; what failed was that a compositor kept
+		// painting an older transform, which is why the offset now goes to `top`.
+		assert.strictEqual(
+			tickerSelfPlacementShift({
+				offsetTop: 137,
+				visualHeight: 636,
+				barHeight: 36,
+			}),
+			737,
+		);
 	});
 
 	test("a missing offset means the visual viewport starts at the top", () => {
