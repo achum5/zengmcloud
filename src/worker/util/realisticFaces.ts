@@ -464,6 +464,213 @@ export const jitterColor = (
 	);
 };
 
+// WRINKLES, WHICH ARE THE OTHER HALF OF LOOKING OLDER.
+//
+// Hair was only ever half the story: a 36-year-old with a full beard and a
+// receding hairline still read as 22 underneath, because facesjs assigns the
+// line features at random and never touches them again. It has three, and
+// rendering them shows each is a clean severity ladder:
+//
+//   smileLine  none -> line1..line4   nasolabial folds, shallow to deep
+//   eyeLine    none -> line1..line6   under-eye lines, then crow's feet
+//   miscLine   none -> forehead1..5   brow lines, one to several
+//
+// So a face carries a single WRINKLE LEVEL, 0 to 4, and the three ladders move
+// together with it. A level is capped by age - nobody is weathered at 21 - and
+// climbs at most one step a year, so it creeps rather than jumps.
+//
+// miscLine is shared with blush, freckles and chin marks, which are not age.
+// A player who has one of those keeps it: the slot only accepts brow lines
+// when it is empty or already holds them, so a freckled player still ages
+// through his eyes and smile without losing what makes him recognisable.
+const SMILE_LINES = ["none", "line1", "line2", "line3", "line4"] as const;
+const EYE_LINES = [
+	"none",
+	"line1",
+	"line2",
+	"line3",
+	"line4",
+	"line5",
+	"line6",
+] as const;
+const FOREHEAD_LINES = [
+	"none",
+	"forehead1",
+	"forehead2",
+	"forehead3",
+	"forehead4",
+	"forehead5",
+] as const;
+
+export const MAX_WRINKLE_LEVEL = 4;
+
+// Where each level sits on each ladder. Smile lines lead (they show first and
+// on everyone), the eyes follow, the brow last.
+const LEVEL_TO_SMILE = [0, 1, 2, 3, 4];
+const LEVEL_TO_EYE = [0, 0, 2, 4, 6];
+const LEVEL_TO_FOREHEAD = [0, 0, 1, 3, 5];
+
+// Deep folds are a big part of reading as old, so the size grows with the
+// level too - facesjs allows 0.25 to 2.25.
+const LEVEL_TO_SMILE_SIZE = [0.6, 0.9, 1.2, 1.6, 2];
+
+const clampIndex = (index: number, length: number) =>
+	Math.max(0, Math.min(length - 1, index));
+
+// One step either way at random, so two players at the same level do not have
+// identical faces.
+const jittered = (index: number, length: number, rand: () => number) =>
+	clampIndex(index + (rand() < 0.35 ? (rand() < 0.5 ? -1 : 1) : 0), length);
+
+export const wrinkleLevelForAge = (age: number): number => {
+	if (age < 23) {
+		return 0;
+	}
+	if (age < 27) {
+		return 1;
+	}
+	if (age < 31) {
+		return 2;
+	}
+	if (age < 35) {
+		return 3;
+	}
+	return MAX_WRINKLE_LEVEL;
+};
+
+// Read a face's current level back off it, so aging can advance from wherever
+// a face already is - including one facesjs drew before any of this existed.
+export const wrinkleLevelOf = (face: FaceConfig): number => {
+	const smile = SMILE_LINES.indexOf(face?.smileLine?.id as any);
+	if (smile < 0) {
+		return 0;
+	}
+	let level = 0;
+	for (const [candidate, index] of LEVEL_TO_SMILE.entries()) {
+		if (index <= smile) {
+			level = candidate;
+		}
+	}
+	return level;
+};
+
+export const applyWrinkles = (
+	face: FaceConfig,
+	level: number,
+	rand: () => number = Math.random,
+) => {
+	const capped = clampIndex(level, MAX_WRINKLE_LEVEL + 1);
+
+	// The smile line is NOT jittered: it is what wrinkleLevelOf reads the level
+	// back off, so nudging it would let a face drift down a step and re-age
+	// the same year forever. The other two carry the variety instead.
+	face.smileLine.id = SMILE_LINES[LEVEL_TO_SMILE[capped]!]!;
+	face.smileLine.size =
+		Math.round((LEVEL_TO_SMILE_SIZE[capped]! + (rand() * 0.4 - 0.2)) * 100) /
+		100;
+	face.eyeLine.id =
+		EYE_LINES[jittered(LEVEL_TO_EYE[capped]!, EYE_LINES.length, rand)]!;
+
+	// Brow lines only where the slot is free or already theirs - see above.
+	const misc = face.miscLine?.id ?? "none";
+	if (misc === "none" || (FOREHEAD_LINES as readonly string[]).includes(misc)) {
+		face.miscLine.id =
+			FOREHEAD_LINES[
+				jittered(LEVEL_TO_FOREHEAD[capped]!, FOREHEAD_LINES.length, rand)
+			]!;
+	}
+};
+
+// Chance per year of gaining a step, when age allows one. Small enough that a
+// face creeps toward its age rather than jumping there.
+const WRINKLE_PER_YEAR = 0.3;
+
+// WHAT ANCESTRY A FACE WAS DRAWN FOR, read back off the face itself.
+//
+// A player does not store his race - facesjs takes it at generation and keeps
+// nothing - so applying these rules to players who ALREADY EXIST has to
+// recover it. Skin color is the one durable trace: facesjs picks it from a
+// small fixed palette per race, so the nearest palette entry names the race it
+// came from.
+//
+// A heuristic, and honest about it. The lighter end of the brown palette and
+// the darker end of the white/asian ones sit close together, so a face can be
+// read one off. That is acceptable here - the cost is one player keeping a
+// hairstyle he might not have drawn - and it is only ever used for the
+// retroactive pass, never for generation, which knows the real answer.
+const SKIN_PALETTES: Record<Race, readonly string[]> = {
+	white: ["#f2d6cb", "#ddb7a0"],
+	asian: ["#fedac7", "#f0c5a3", "#eab687"],
+	brown: ["#bb876f", "#aa816f", "#a67358"],
+	black: ["#ad6453", "#74453d", "#5c3937"],
+};
+
+export const inferRaceFromFace = (face: FaceConfig): Race | undefined => {
+	const color = face?.body?.color;
+	if (typeof color !== "string" || !/^#[\da-f]{6}$/i.test(color)) {
+		return undefined;
+	}
+	const [r, g, b] = hexToRgb(color);
+	let best: { race: Race; distance: number } | undefined;
+	for (const [race, palette] of Object.entries(SKIN_PALETTES) as [
+		Race,
+		readonly string[],
+	][]) {
+		for (const entry of palette) {
+			const [r2, g2, b2] = hexToRgb(entry);
+			const distance = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2;
+			if (!best || distance < best.distance) {
+				best = { race, distance };
+			}
+		}
+	}
+	return best?.race;
+};
+
+// EVERY SEASON A PLAYER HAS ALREADY LIVED, run through the aging rules at once.
+//
+// Turning the setting on only affects faces generated afterwards, so an
+// established league keeps a roster of unaged faces forever. This replays the
+// career that already happened: normalise him to what he should have looked
+// like as a rookie, then age him one year at a time up to today, handing each
+// change to the caller so it can be kept as history.
+//
+// Deterministic per player where it matters - the balding and beard traits
+// come from his id - so re-running it does not produce a different man.
+export const applyFaceAgingHistory = ({
+	face,
+	rookieAge,
+	currentAge,
+	pid,
+	race,
+	rand = Math.random,
+	onChange,
+}: {
+	face: FaceConfig;
+	rookieAge: number;
+	currentAge: number;
+	pid?: number;
+	race?: Race;
+	rand?: () => number;
+	onChange?: (age: number) => void;
+}) => {
+	applyRealisticFace(face, {
+		age: Math.min(rookieAge, currentAge),
+		race: race ?? inferRaceFromFace(face),
+		rand,
+	});
+
+	for (
+		let age = Math.min(rookieAge, currentAge) + 1;
+		age <= currentAge;
+		age++
+	) {
+		if (ageFace(face, age, pid, rand)) {
+			onChange?.(age);
+		}
+	}
+};
+
 // Reshape a freshly generated face to suit the player's age, then give it
 // colors of its own. Mutates, matching how facesjs itself is used here.
 export const applyRealisticFace = (
@@ -504,6 +711,12 @@ export const applyRealisticFace = (
 	if (face.glasses.id !== "none" && rand() >= band.glasses) {
 		face.glasses.id = "none";
 	}
+
+	// Lines to match the age. Weighted toward the low end of what the age
+	// allows, so a 32-year-old is usually a little weathered and occasionally
+	// a lot - the same spread real faces have.
+	const ceiling = wrinkleLevelForAge(age);
+	applyWrinkles(face, Math.floor(rand() * rand() * (ceiling + 1)), rand);
 
 	face.body.color = jitterColor(face.body.color, rand, SKIN_JITTER);
 	face.hair.color = jitterColor(face.hair.color, rand, HAIR_JITTER);
@@ -548,6 +761,15 @@ export const ageFace = (
 			face.facialHair.id = pickFrom(FACIAL_HAIR_TIERS[next], rand);
 			changed = true;
 		}
+	}
+
+	// Lines deepen with age, one step at a time and never past what the age
+	// allows. Unlike the hairline this happens to everyone eventually - nobody
+	// reaches 38 with the face they had at 20.
+	const level = wrinkleLevelOf(face);
+	if (level < wrinkleLevelForAge(age) && rand() < WRINKLE_PER_YEAR) {
+		applyWrinkles(face, level + 1, rand);
+		changed = true;
 	}
 
 	// Hairlines only ever go one way, and only for players who were ever going

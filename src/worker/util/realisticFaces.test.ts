@@ -8,8 +8,13 @@ import {
 	ageFace,
 	applyRealisticFace,
 	bandForAge,
+	applyWrinkles,
 	baldingProne,
 	growsFacialHair,
+	inferRaceFromFace,
+	MAX_WRINKLE_LEVEL,
+	wrinkleLevelForAge,
+	wrinkleLevelOf,
 	FACIAL_HAIR_TIERS,
 	facialHairForAge,
 	HAIR_RARE,
@@ -32,6 +37,9 @@ const sequence = (values: number[]) => {
 
 const face = (overrides: Record<string, any> = {}) =>
 	({
+		smileLine: { id: "none", size: 1 },
+		eyeLine: { id: "none" },
+		miscLine: { id: "none" },
 		facialHair: { id: "none" },
 		hair: { id: "short", color: "#272421", flip: false },
 		glasses: { id: "none" },
@@ -376,7 +384,9 @@ describe("ageFace", () => {
 				changed += 1;
 			}
 		}
-		assert.isBelow(changed, 90, `${changed}/300 changed in one season`);
+		// Wrinkles advance more often than hair does, but a line step is a
+		// subtle thing - the bar is that most seasons still change nothing.
+		assert.isBelow(changed, 150, `${changed}/300 changed in one season`);
 	});
 });
 
@@ -434,9 +444,9 @@ describe("generateFace plumbing", () => {
 	// g.get throws on an attribute it doesn't know about, so a missing entry
 	// anywhere in the chain would crash every player generation rather than
 	// fail quietly.
-	test("defaults to off, so existing leagues are unchanged", () => {
+	test("on by default, and generation works with it on", () => {
 		resetG();
-		assert.strictEqual(g.get("realisticFaces"), false);
+		assert.strictEqual(g.get("realisticFaces"), true);
 		assert.doesNotThrow(() => generateFace({ age: 19 }));
 	});
 
@@ -450,5 +460,103 @@ describe("generateFace plumbing", () => {
 			assert.notStrictEqual(tier, "heavy", face.facialHair.id);
 			assert.notInclude([HAIR_THINNING, HAIR_BALD], face.hair.id);
 		}
+	});
+});
+
+describe("wrinkles", () => {
+	test("nobody is weathered in their early twenties", () => {
+		assert.strictEqual(wrinkleLevelForAge(19), 0);
+		assert.strictEqual(wrinkleLevelForAge(22), 0);
+		assert.isAbove(wrinkleLevelForAge(28), 0);
+		assert.strictEqual(wrinkleLevelForAge(38), MAX_WRINKLE_LEVEL);
+	});
+
+	test("the ceiling never falls as a player gets older", () => {
+		for (let age = 19; age < 45; age++) {
+			assert.isAtLeast(wrinkleLevelForAge(age + 1), wrinkleLevelForAge(age));
+		}
+	});
+
+	test("a level round-trips through a face", () => {
+		// Aging reads the level back off the face to know where to go next, so
+		// writing a level and reading it must agree.
+		for (let level = 0; level <= MAX_WRINKLE_LEVEL; level++) {
+			const f = face();
+			applyWrinkles(f, level, fixed(0.9));
+			assert.strictEqual(wrinkleLevelOf(f), level);
+		}
+	});
+
+	test("higher levels mean deeper folds", () => {
+		const young = face();
+		applyWrinkles(young, 0, fixed(0.9));
+		const old = face();
+		applyWrinkles(old, MAX_WRINKLE_LEVEL, fixed(0.9));
+		assert.isAbove(old.smileLine.size, young.smileLine.size);
+		assert.strictEqual(young.eyeLine.id, "none");
+		assert.notStrictEqual(old.eyeLine.id, "none");
+		assert.notStrictEqual(old.miscLine.id, "none");
+	});
+
+	test("freckles and blush survive aging", () => {
+		// They share a slot with the brow lines but are not age - a freckled
+		// player should still be freckled at 38.
+		for (const id of ["freckles1", "blush", "chin1"]) {
+			const f = face({ miscLine: { id } });
+			applyWrinkles(f, MAX_WRINKLE_LEVEL, fixed(0.9));
+			assert.strictEqual(f.miscLine.id, id);
+			// ...but he still ages everywhere else.
+			assert.notStrictEqual(f.smileLine.id, "none");
+		}
+	});
+
+	test("lines never go past what the age allows", () => {
+		const f = face();
+		for (let age = 19; age <= 26; age++) {
+			ageFace(f, age, 1, fixed(0));
+		}
+		assert.isAtMost(wrinkleLevelOf(f), wrinkleLevelForAge(26));
+	});
+
+	test("a long career visibly weathers a face", () => {
+		const f = face();
+		for (let age = 20; age <= 39; age++) {
+			ageFace(f, age, 1, fixed(0));
+		}
+		assert.strictEqual(wrinkleLevelOf(f), MAX_WRINKLE_LEVEL);
+	});
+});
+
+describe("inferRaceFromFace", () => {
+	test("reads a palette skin color back to its race", () => {
+		// Existing players do not store a race, so the retroactive pass has to
+		// recover it from the one durable trace.
+		const cases = [
+			["#f2d6cb", "white"],
+			["#eab687", "asian"],
+			["#a67358", "brown"],
+			["#5c3937", "black"],
+		] as const;
+		for (const [color, race] of cases) {
+			assert.strictEqual(
+				inferRaceFromFace({ body: { color } } as any),
+				race,
+				color,
+			);
+		}
+	});
+
+	test("a jittered color still lands on its own palette", () => {
+		// Generation nudges skin lightness, so the stored color is never an
+		// exact palette entry.
+		assert.strictEqual(
+			inferRaceFromFace({ body: { color: "#5b3836" } } as any),
+			"black",
+		);
+	});
+
+	test("no usable color, no guess", () => {
+		assert.isUndefined(inferRaceFromFace({} as any));
+		assert.isUndefined(inferRaceFromFace({ body: { color: "red" } } as any));
 	});
 });

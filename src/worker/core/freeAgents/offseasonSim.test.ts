@@ -101,6 +101,10 @@ const buildLeague = async (
 	// No user team: every team is run by the AI, which is the point.
 	g.setWithoutSavingToDB("userTids", [-99]);
 	g.setWithoutSavingToDB("salaryCapType", "soft");
+	// Faces are irrelevant here and their generation draws from Math.random,
+	// which these tests replace with a seeded sequence - leaving it on would
+	// make every face feature shift the stream the economics run on.
+	g.setWithoutSavingToDB("realisticFaces", false);
 
 	const salaryCap = g.get("salaryCap");
 	const minContract = g.get("minContract");

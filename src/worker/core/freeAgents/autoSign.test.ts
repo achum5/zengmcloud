@@ -71,6 +71,10 @@ const setup = async ({
 	g.setWithoutSavingToDB("daysLeft", 30);
 	g.setWithoutSavingToDB("userTids", [999]);
 	g.setWithoutSavingToDB("salaryCapType", "soft");
+	// Faces are irrelevant here and their generation draws from Math.random,
+	// which these tests replace with a seeded sequence - leaving it on would
+	// make every face feature shift the stream the economics run on.
+	g.setWithoutSavingToDB("realisticFaces", false);
 
 	const salaryCap = g.get("salaryCap");
 	const minContract = g.get("minContract");

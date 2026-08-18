@@ -1126,7 +1126,6 @@ export const settings: Setting[] = (
 			category: "Players",
 			key: "realisticFaces",
 			name: "Realistic Faces",
-			godModeRequired: "always",
 			type: "bool",
 			description:
 				"Generate faces that match a player's age, drop the novelty styles, and let a player's look mature as he gets older.",

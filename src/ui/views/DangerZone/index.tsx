@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { PHASE, WEBSITE_ROOT } from "../../../common/constants.ts";
+import type { FaceAgingScope } from "../../../worker/core/player/applyFaceAgingToLeague.ts";
 import type { View } from "../../../common/types.ts";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
@@ -14,6 +16,9 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 	});
 
 	const { godMode, phase } = useLocal(["godMode", "phase"]);
+
+	const [faceAgingScope, setFaceAgingScope] = useState<FaceAgingScope>("all");
+	const [agingFaces, setAgingFaces] = useState(false);
 
 	return (
 		<>
@@ -163,6 +168,53 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 				</div>
 
 				<div className="col-md-6 mt-5 mt-sm-0">
+					<h2>Face aging</h2>
+
+					<p>
+						Age every existing player's face to match how old he is now,
+						including the seasons in between. Faces normally only age going
+						forward, so a league that has already been running keeps players who
+						look however old they were when they were created.
+					</p>
+
+					<div className="d-flex flex-wrap gap-2 mb-5">
+						<select
+							className="form-select"
+							onChange={(event) => {
+								setFaceAgingScope(event.target.value as FaceAgingScope);
+							}}
+							style={{ maxWidth: "170px" }}
+							value={faceAgingScope}
+						>
+							<option value="all">All players</option>
+							<option value="fictional">Fictional players only</option>
+							<option value="real">Real players only</option>
+						</select>
+						<button
+							type="button"
+							className="btn btn-light-bordered"
+							disabled={agingFaces}
+							onClick={async () => {
+								setAgingFaces(true);
+								try {
+									const count = await toWorker(
+										"toolsMenu",
+										"applyFaceAging",
+										faceAgingScope,
+									);
+									showNotification({
+										text: `Face aging applied to ${count} player${count === 1 ? "" : "s"}.`,
+										type: "success",
+									});
+								} finally {
+									setAgingFaces(false);
+								}
+							}}
+						>
+							{agingFaces ? "Working..." : "Apply aging"}
+						</button>
+					</div>
+
 					<h2>Auto save</h2>
 
 					<p>
