@@ -3031,15 +3031,30 @@ $league-ticker-toggle-width: 26px;
 // page shorter than the window it still sits at the bottom, because #content is
 // a full viewport tall.
 //
-// This is broadcast chrome, so it keeps its own dark palette in both themes
-// rather than following the page. A score bar looks like a score bar.
+// EVERY COLOUR IN THE BAR IS A VARIABLE, and none of them are hard-coded
+// further down. The bar used to keep one dark palette in both themes - a score
+// bar looks like a score bar - but on a light page that is a black slab across
+// the bottom of an otherwise white screen, which reads as a bug rather than as
+// broadcast chrome. So the palette follows the page, and dark.scss overrides
+// these seven values and nothing else.
+//
+// The overlays matter as much as the base colours: the panes and hover states
+// were tinted with white at low alpha, which lifts a dark surface and does
+// nothing at all on a light one. They are variables too, so the light theme
+// can tint downward instead.
 .league-ticker {
-	--ticker-bg: #15181d;
-	--ticker-fg: #f4f6f8;
-	--ticker-dim: #8f98a5;
-	--ticker-faint: #6b7480;
-	--ticker-rule: #2b3038;
-	--ticker-odds: #f3c14b;
+	--ticker-bg: #f1f3f5;
+	--ticker-fg: #212529;
+	--ticker-dim: #6c757d;
+	--ticker-faint: #adb5bd;
+	--ticker-rule: #dee2e6;
+	// Gold is unreadable on a light surface, so the odds go amber instead.
+	--ticker-odds: #a1670a;
+	--ticker-border: #ced4da;
+	--ticker-shadow: rgb(0 0 0 / 10%);
+	--ticker-overlay: rgb(0 0 0 / 4%);
+	--ticker-overlay-strong: rgb(0 0 0 / 7%);
+	--ticker-hover-fg: #000;
 
 	position: sticky;
 	bottom: 0;
@@ -3049,10 +3064,10 @@ $league-ticker-toggle-width: 26px;
 	align-items: stretch;
 	background-color: var(--ticker-bg);
 	color: var(--ticker-fg);
-	// A rule as well as a shadow: in the dark theme the page behind it is nearly
-	// the same value, and a shadow alone leaves the bar with no edge at all.
-	border-top: 1px solid #363c46;
-	box-shadow: 0 -2px 12px rgb(0 0 0 / 25%);
+	// A rule as well as a shadow: in the dark theme the page behind the bar is
+	// nearly the same value, and a shadow alone leaves it with no edge at all.
+	border-top: 1px solid var(--ticker-border);
+	box-shadow: 0 -2px 12px var(--ticker-shadow);
 
 	// iOS puts its own chrome over the bottom of the window. Without this the
 	// bar sits underneath the home indicator and half of it is unreadable.
@@ -3085,7 +3100,7 @@ $league-ticker-toggle-width: 26px;
 	padding: 0 0.4rem;
 	overflow: hidden;
 	border-right: 1px solid var(--ticker-rule);
-	background-color: rgb(255 255 255 / 7%);
+	background-color: var(--ticker-overlay);
 	color: var(--ticker-fg);
 }
 
@@ -3228,7 +3243,7 @@ $league-ticker-toggle-width: 26px;
 
 	&:hover {
 		color: var(--ticker-fg);
-		background-color: rgb(255 255 255 / 6%);
+		background-color: var(--ticker-overlay);
 	}
 
 	a {
@@ -3236,7 +3251,7 @@ $league-ticker-toggle-width: 26px;
 		text-decoration: none;
 
 		&:hover {
-			color: #fff;
+			color: var(--ticker-hover-fg);
 			text-decoration: underline;
 			text-underline-offset: 2px;
 		}
@@ -3381,7 +3396,7 @@ $league-ticker-toggle-width: 26px;
 
 	&:hover {
 		color: var(--ticker-fg);
-		background-color: rgb(255 255 255 / 8%);
+		background-color: var(--ticker-overlay-strong);
 	}
 }
 
