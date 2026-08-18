@@ -1,4 +1,5 @@
 import type { FaceConfig } from "facesjs";
+import type { PlayerAppearance } from "./playerAppearance.ts";
 import type { ReactNode } from "react";
 import type { LiveGameChatMessage } from "./liveGameChat.ts";
 import type { TickerItem } from "./ticker.ts";
@@ -1554,6 +1555,10 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 		dpid?: number;
 	};
 	face: FaceConfig;
+	// What this player looked like in past seasons, recorded only when the
+	// look actually changed. Absent for anyone who has always looked the
+	// same, which is most players. See common/playerAppearance.ts.
+	appearances?: PlayerAppearance[];
 	firstName: string;
 	gamesUntilTradable: number;
 	hgt: number;

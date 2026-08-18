@@ -15,6 +15,7 @@ import { AwardsSummary } from "./AwardsSummary.tsx";
 import { RatingsOverview } from "./RatingsOverview.tsx";
 import Note from "./Note.tsx";
 import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
+import { PlayerAppearanceGallery } from "../../components/PlayerAppearanceGallery.tsx";
 import type { SeasonNoteSection } from "../../../common/seasonNote.ts";
 import type { RecapLink } from "../../util/linkifyRecap.ts";
 import { ButtonGroup, Dropdown, DropdownButton } from "react-bootstrap";
@@ -342,6 +343,17 @@ const TopStuff = ({
 			"userTid",
 		]);
 
+	const [showGallery, setShowGallery] = useState(false);
+
+	// Every season the player existed, from his ratings rows - the stored
+	// appearance history only holds the seasons that CHANGED, so a gallery
+	// built from that would skip most of a career.
+	const careerSeasons = [
+		...new Set(
+			((player.ratings ?? []) as { season: number }[]).map((row) => row.season),
+		),
+	].sort((a, b) => a - b);
+
 	const freeAgent = player.tid === PLAYER.FREE_AGENT;
 	const injured = player.injury.gamesRemaining > 0;
 	const showContract =
@@ -536,7 +548,16 @@ const TopStuff = ({
 							className="player-picture"
 							style={{
 								marginTop: player.imgURL ? 0 : -20,
+								cursor: careerSeasons.length > 0 ? "pointer" : undefined,
 							}}
+							onClick={
+								careerSeasons.length > 0
+									? () => {
+											setShowGallery(true);
+										}
+									: undefined
+							}
+							title={careerSeasons.length > 0 ? "Every season" : undefined}
 						>
 							<PlayerPicture
 								face={player.face}
@@ -545,6 +566,18 @@ const TopStuff = ({
 								jersey={teamJersey}
 							/>
 						</div>
+						{showGallery ? (
+							<PlayerAppearanceGallery
+								name={player.name}
+								seasons={careerSeasons}
+								player={player}
+								colors={teamColors}
+								jersey={teamJersey}
+								onHide={() => {
+									setShowGallery(false);
+								}}
+							/>
+						) : null}
 						<div>
 							<strong>
 								{bestPos},{" "}

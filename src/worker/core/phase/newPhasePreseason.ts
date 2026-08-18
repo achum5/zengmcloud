@@ -25,6 +25,7 @@ import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { choice, randInt, uniform } from "../../../common/random.ts";
 import { env } from "../../util/env.ts";
 import { ageFace } from "../../util/realisticFaces.ts";
+import { recordAppearance } from "../../../common/playerAppearance.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../../common/sportsbook.ts";
 
 const newPhasePreseason = async (
@@ -411,7 +412,25 @@ const newPhasePreseason = async (
 			// ever adds - see realisticFaces.ts - so this writes a face on a
 			// handful of players a season rather than all of them.
 			if (isSport("basketball") && g.get("realisticFaces") && p.face) {
-				ageFace(p.face, newSeason - p.born.year, p.pid);
+				const before = {
+					face: helpers.deepCopy(p.face),
+					imgURL: p.imgURL,
+				};
+				if (ageFace(p.face, newSeason - p.born.year, p.pid)) {
+					// Keep what he used to look like, so a past box score shows the
+					// rookie rather than today's receding hairline. Written only on
+					// the seasons that actually changed - see playerAppearance.ts.
+					const appearances = recordAppearance({
+						appearances: p.appearances,
+						season: newSeason,
+						firstSeason: p.draft.year > 0 ? p.draft.year : newSeason,
+						look: { face: p.face, imgURL: p.imgURL },
+						previous: before,
+					});
+					if (appearances) {
+						p.appearances = appearances;
+					}
+				}
 			}
 		}
 

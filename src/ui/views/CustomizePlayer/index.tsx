@@ -18,6 +18,10 @@ import {
 import { HelpPopover } from "../../components/HelpPopover.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
+import {
+	appearanceForSeason,
+	recordAppearance,
+} from "../../../common/playerAppearance.ts";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import RatingsForm from "./RatingsForm.tsx";
@@ -267,6 +271,11 @@ const copyValidValues = (
 	// @ts-expect-error
 	target.face = JSON.parse(source.face);
 
+	// Per-season looks (common/playerAppearance.ts). Whitelisted like every
+	// other field here, or editing anything else on the player would silently
+	// wipe his history.
+	target.appearances = source.appearances;
+
 	target.relatives = source.relatives
 		.map((rel) => {
 			// @ts-expect-error
@@ -363,6 +372,9 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 
 		return {
 			appearanceOption: props.appearanceOption,
+			// undefined means the player's current look; a number means that
+			// season's entry in his appearance history.
+			editSeason: undefined as number | undefined,
 			saving: false,
 			p,
 		};
@@ -536,7 +548,72 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 		playersRelativesList,
 		teams,
 	} = props;
-	const { appearanceOption, p, saving } = state;
+	const { appearanceOption, editSeason, p, saving } = state;
+
+	// Every season the player has ratings for - the seasons a look can be
+	// attached to. The stored history only holds the seasons that CHANGED, so
+	// it cannot be the source of this list.
+	const editableSeasons = p
+		? [
+				...new Set(
+					(p.ratings ?? []).map((row: { season: number }) => row.season),
+				),
+			].sort((a: number, b: number) => a - b)
+		: [];
+
+	// Switching seasons banks whatever is in the editor into the season it
+	// belonged to, then loads the newly chosen one. Without the banking half,
+	// picking a season would quietly discard the edit you just made.
+	const handleChangeEditSeason = (event: ChangeEvent<HTMLSelectElement>) => {
+		const raw = event.target.value;
+		const next = raw === "current" ? undefined : Number.parseInt(raw);
+
+		setState((prevState) => {
+			const prevP = prevState.p;
+			if (!prevP) {
+				return prevState;
+			}
+
+			let face;
+			try {
+				face = JSON.parse((prevP as any).face);
+			} catch {
+				// Invalid JSON in the box: leave the history alone rather than
+				// storing something unparseable.
+				face = undefined;
+			}
+
+			let appearances = prevP.appearances;
+			if (face !== undefined && prevState.editSeason !== undefined) {
+				appearances =
+					recordAppearance({
+						appearances,
+						season: prevState.editSeason,
+						firstSeason: prevState.editSeason,
+						look: { face, imgURL: prevP.imgURL },
+					}) ?? appearances;
+			}
+
+			const loaded =
+				next === undefined
+					? { face, imgURL: prevP.imgURL }
+					: appearanceForSeason(
+							{ face, imgURL: prevP.imgURL, appearances },
+							next,
+						);
+
+			return {
+				...prevState,
+				editSeason: next,
+				p: {
+					...prevP,
+					appearances,
+					imgURL: loaded.imgURL ?? "",
+					face: JSON.stringify(loaded.face ?? face, null, 2),
+				} as any,
+			};
+		});
+	};
 
 	const title = originalTid === undefined ? "Create Player" : "Edit Player";
 
@@ -1139,15 +1216,33 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 								You can either create a cartoon face or specify the URL to an
 								image.
 							</label>
-							<select
-								className="form-select"
-								onChange={handleChangeAppearanceOption}
-								style={{ maxWidth: "150px" }}
-								value={appearanceOption}
-							>
-								<option value="Cartoon Face">Cartoon Face</option>
-								<option value="Image URL">Image URL</option>
-							</select>
+							<div className="d-flex flex-wrap gap-2">
+								<select
+									className="form-select"
+									onChange={handleChangeAppearanceOption}
+									style={{ maxWidth: "150px" }}
+									value={appearanceOption}
+								>
+									<option value="Cartoon Face">Cartoon Face</option>
+									<option value="Image URL">Image URL</option>
+								</select>
+								{editableSeasons.length > 0 ? (
+									<select
+										className="form-select"
+										onChange={handleChangeEditSeason}
+										style={{ maxWidth: "150px" }}
+										title="Which season this look applies to"
+										value={editSeason ?? "current"}
+									>
+										<option value="current">Current</option>
+										{editableSeasons.map((year) => (
+											<option key={year} value={year}>
+												{year}
+											</option>
+										))}
+									</select>
+								) : null}
+							</div>
 						</div>
 
 						{appearanceOption === "Cartoon Face" ? (
