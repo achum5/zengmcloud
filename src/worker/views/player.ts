@@ -349,7 +349,16 @@ export const getCommon = async (
 	{
 		const gpBySeason: Record<number, number> = {};
 		for (const ps of p.stats) {
-			if (ps.playoffs || ps.tid < 0) {
+			// The typeof checks matter: playersPlus rows can carry tid as
+			// undefined, and undefined < 0 is false - an undefined smuggled into
+			// getTeamInfoBySeason becomes an invalid IndexedDB key, and that
+			// DataError killed the entire player page.
+			if (
+				ps.playoffs ||
+				typeof ps.tid !== "number" ||
+				ps.tid < 0 ||
+				typeof ps.season !== "number"
+			) {
 				continue;
 			}
 			const gp = ps.gp ?? 0;
@@ -377,10 +386,18 @@ export const getCommon = async (
 		// draft and opening night a player has a ratings row for the new season
 		// and nothing else - and the gallery would show his newest season as
 		// "No team". The ratings rows carry a tid too, so they fill the gap.
-		// A draft prospect's is a negative tid, which is genuinely no team and
-		// stays empty.
+		//
+		// A ratings row's tid is DERIVED - playersPlus works it out from that
+		// season's stats rows, so for exactly the seasons this loop exists for
+		// (no stats yet) it is often undefined, and for a draft prospect it is
+		// undefined or negative. Both are genuinely "no team" and stay empty;
+		// only a real tid is a key worth looking up.
 		for (const pr of p.ratings) {
-			if (appearanceTeams[pr.season] !== undefined || pr.tid < 0) {
+			if (
+				appearanceTeams[pr.season] !== undefined ||
+				typeof pr.tid !== "number" ||
+				pr.tid < 0
+			) {
 				continue;
 			}
 			const ts = await getTeamInfoBySeason(pr.tid, pr.season);

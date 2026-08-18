@@ -2,6 +2,13 @@ import { DEFAULT_JERSEY, DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
 
 export const getTeamInfoBySeason = async (tid: number, season: number) => {
+	// Belt and braces: the types say number, but callers feed this from loosely
+	// typed playersPlus rows, and an undefined here becomes an invalid
+	// IndexedDB key - a DataError that takes down the whole view instead of one
+	// lookup. No team info is the honest answer for a key that cannot exist.
+	if (!Number.isFinite(tid) || !Number.isFinite(season)) {
+		return;
+	}
 	if (tid === -1 || tid === -2) {
 		return {
 			abbrev: "ASG",
