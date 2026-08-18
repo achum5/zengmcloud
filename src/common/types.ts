@@ -728,6 +728,9 @@ export type GameAttributesLeague = {
 	// Reshape generated draft prospects into specialists - good ratings
 	// better, bad ratings worse. See draft/specializeProspects.ts.
 	specializedDraftProspects: boolean;
+	// Age-aware, less novelty-heavy, more varied generated faces, plus faces
+	// that mature as players get older. See worker/util/realisticFaces.ts.
+	realisticFaces: boolean;
 	draftPickAutoContract: boolean;
 	draftPickAutoContractPercent: number;
 	draftPickAutoContractRounds: number;

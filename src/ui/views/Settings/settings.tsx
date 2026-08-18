@@ -1123,6 +1123,40 @@ export const settings: Setting[] = (
 			),
 		},
 		{
+			category: "Players",
+			key: "realisticFaces",
+			name: "Realistic Faces",
+			godModeRequired: "always",
+			type: "bool",
+			description:
+				"Generate faces that match a player's age, drop the novelty styles, and let a player's look mature as he gets older.",
+			descriptionLong: (
+				<>
+					<p>
+						Face generation normally ignores age, so about a quarter of every
+						draft class of 19-to-22-year-olds turns up in mutton chops, a
+						neckbeard, an Abraham Lincoln beard or Wolverine sideburns, and a
+						few are already balding. This ties facial hair and hairlines to age:
+						prospects get young looks, and the period styles are held back as a
+						rare touch on the oldest players.
+					</p>
+					<p>
+						It also varies skin and hair color slightly per player. The
+						underlying palette has only two or three shades per skin tone - and
+						sometimes a single hair color - so without this a whole league
+						shares a handful of exact colors and the faces blur together.
+					</p>
+					<p>
+						With this on, faces mature over a career: facial hair grows in and
+						thickens, and hairlines recede. That happens at a few threshold ages
+						and only ever adds, so a player stays recognizable instead of
+						growing and shaving a beard at random. Faces already in your league
+						are left alone, but they will age from here.
+					</p>
+				</>
+			),
+		},
+		{
 			category: "Events",
 			key: "easterEggPlayers",
 			name: "Easter Egg Players",

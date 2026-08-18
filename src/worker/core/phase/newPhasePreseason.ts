@@ -24,6 +24,7 @@ import { applyRealTeamInfo } from "../../../common/applyRealTeamInfo.ts";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { choice, randInt, uniform } from "../../../common/random.ts";
 import { env } from "../../util/env.ts";
+import { ageFace } from "../../util/realisticFaces.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../../common/sportsbook.ts";
 
 const newPhasePreseason = async (
@@ -405,6 +406,13 @@ const newPhasePreseason = async (
 			// Update ratings
 			player.addRatingsRow(p, scoutingLevel);
 			await player.develop(p, 1, false, coachingLevels[p.tid]);
+
+			// Grow into the look. Only fires at a few threshold ages and only
+			// ever adds - see realisticFaces.ts - so this writes a face on a
+			// handful of players a season rather than all of them.
+			if (isSport("basketball") && g.get("realisticFaces") && p.face) {
+				ageFace(p.face, newSeason - p.born.year);
+			}
 		}
 
 		if (

@@ -102,6 +102,7 @@ const gameAttributesKeysSportSpecific = {
 		"forceRetireRealPlayers",
 		"forceHistoricalRosters",
 		"specializedDraftProspects",
+		"realisticFaces",
 	]),
 	football: new Set<GameAttributeKey>([
 		"fantasyPoints",
@@ -200,6 +201,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	tragicDeathRate: 1 / (100 * 50),
 	easterEggPlayers: true,
 	specializedDraftProspects: false,
+	realisticFaces: false,
 	fakeAges: true,
 	// The probability that a new player will be the son or brother of an existing player. In practice, the observed number may be smaller than this because sometimes a valid match will not be found.
 	sonRate: 0.02,

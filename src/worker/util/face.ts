@@ -5,11 +5,12 @@ import { DEFAULT_JERSEY } from "../../common/constants.ts";
 import g from "./g.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { applyRealisticFace } from "./realisticFaces.ts";
 
 export const generateFace = (
 	options:
-		| { race?: Race; relative?: undefined }
-		| { race?: undefined; relative?: FaceConfig } = {},
+		| { race?: Race; relative?: undefined; age?: number }
+		| { race?: undefined; relative?: FaceConfig; age?: number } = {},
 ) => {
 	let overrides: any;
 
@@ -42,9 +43,11 @@ export const generateFace = (
 		? g.get("gender")
 		: defaultGameAttributes.gender;
 
+	const { age, ...faceOptions } = options;
+
 	let face = generate(overrides, {
 		gender,
-		...options,
+		...faceOptions,
 	});
 
 	const allowEyeBlack = bySport({
@@ -62,8 +65,21 @@ export const generateFace = (
 	) {
 		face = generate(overrides, {
 			gender,
-			...options,
+			...faceOptions,
 		});
+	}
+
+	// Age-aware features, style groups and per-player colors. Basketball only:
+	// the style groups were classified by eye against a basketball league, and
+	// the other sports cover their faces with helmets and hats anyway.
+	// Same guard as gender above: this runs from the team editor before any
+	// league exists, where g has nothing in it.
+	const realisticFaces = Object.hasOwn(g, "realisticFaces")
+		? g.get("realisticFaces")
+		: defaultGameAttributes.realisticFaces;
+
+	if (isSport("basketball") && realisticFaces) {
+		applyRealisticFace(face, { age: age ?? 25 });
 	}
 
 	return face;

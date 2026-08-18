@@ -70,6 +70,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"specializedDraftProspects",
 		),
+		realisticFaces: unwrapGameAttribute(
+			defaultGameAttributes,
+			"realisticFaces",
+		),
 		fakeAges: unwrapGameAttribute(defaultGameAttributes, "fakeAges"),
 		tragicDeathRate: unwrapGameAttribute(
 			defaultGameAttributes,
