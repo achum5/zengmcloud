@@ -466,26 +466,32 @@ export const jitterColor = (
 
 // WRINKLES, WHICH ARE THE OTHER HALF OF LOOKING OLDER.
 //
-// Hair was only ever half the story: a 36-year-old with a full beard and a
-// receding hairline still read as 22 underneath, because facesjs assigns the
-// line features at random and never touches them again. It has three, and
-// rendering them shows each is a clean severity ladder:
+// THE LINE FEATURES ARE VARIANTS, NOT DEGREES, and getting that wrong is what
+// made a player's face improve late in his career. facesjs offers five smile
+// lines, seven eye lines and six brow lines, and the names read like severity
+// ladders - line1, line2, line3 - so they were treated as ones. They are not.
+// Rendering each and measuring what it actually draws settles it:
 //
-//   smileLine  none -> line1..line4   nasolabial folds, shallow to deep
-//   eyeLine    none -> line1..line6   under-eye lines, then crow's feet
-//   miscLine   none -> forehead1..5   brow lines, one to several
+//   smileLine   line1 305   line2 259   line3 328   line4 252
+//   miscLine    fh1 89   fh2 130   fh3 98   fh4 98   fh5 153
 //
-// So a face carries a single WRINKLE LEVEL, 0 to 4, and the three ladders move
-// together with it. A level is capped by age - nobody is weathered at 21 - and
-// climbs at most one step a year, so it creeps rather than jumps.
+// Not monotonic in either case, because these are different SHAPES of fold and
+// different ARRANGEMENTS of brow line, not the same mark getting deeper. Worse
+// for the eyes: line4 and line5 draw under-eye bags while line6 draws
+// something else entirely, so "advancing" from line5 to line6 removes the bags
+// and the man looks younger than he did at 31. That is exactly what was
+// reported.
 //
-// miscLine is shared with blush, freckles and chin marks, which are not age.
-// A player who has one of those keeps it: the slot only accepts brow lines
-// when it is empty or already holds them, so a freckled player still ages
-// through his eyes and smile without losing what makes him recognisable.
-const SMILE_LINES = ["none", "line1", "line2", "line3", "line4"] as const;
+// So nothing walks a ladder any more. Each player gets ONE style per feature,
+// fixed for life from his id, and aging only turns features ON - smile lines
+// first, then the eyes, then the brow. A feature never switches style and
+// never turns off, so a face cannot un-age no matter how the rolls land.
+//
+// The one genuinely continuous dial facesjs has is smileLine.size, and that
+// grows toward an age target and is never allowed to shrink. It is what makes
+// most seasons look slightly different when no feature is turning on.
+const SMILE_LINES = ["line1", "line2", "line3", "line4"] as const;
 const EYE_LINES = [
-	"none",
 	"line1",
 	"line2",
 	"line3",
@@ -494,7 +500,6 @@ const EYE_LINES = [
 	"line6",
 ] as const;
 const FOREHEAD_LINES = [
-	"none",
 	"forehead1",
 	"forehead2",
 	"forehead3",
@@ -502,39 +507,22 @@ const FOREHEAD_LINES = [
 	"forehead5",
 ] as const;
 
-export const MAX_WRINKLE_LEVEL = 4;
+// 0 none, 1 smile, 2 + eyes, 3 + brow.
+export const MAX_WRINKLE_LEVEL = 3;
 
-// Where each level sits on each ladder. Smile lines lead (they show first and
-// on everyone), the eyes follow, the brow last.
-const LEVEL_TO_SMILE = [0, 1, 2, 3, 4];
-const LEVEL_TO_EYE = [0, 0, 2, 4, 6];
-const LEVEL_TO_FOREHEAD = [0, 0, 1, 3, 5];
+const pickStable = <T>(
+	list: readonly T[],
+	pid: number | undefined,
+	salt: number,
+): T => list[Math.floor(hashPid(pid ?? 0, salt) * list.length)]!;
 
-// Deep folds are a big part of reading as old, so the size grows with the
-// level too - facesjs allows 0.25 to 2.25.
-const LEVEL_TO_SMILE_SIZE = [0.6, 0.9, 1.2, 1.6, 2];
-
-const clampIndex = (index: number, length: number) =>
-	Math.max(0, Math.min(length - 1, index));
-
-// One step either way at random, so two players at the same level do not have
-// identical faces.
-const jittered = (index: number, length: number, rand: () => number) =>
-	clampIndex(index + (rand() < 0.35 ? (rand() < 0.5 ? -1 : 1) : 0), length);
-
-// Some faces simply weather less, at any age - the 40-year-old who still
-// looks 30 is a real type, and without this everyone piles up at the maximum
-// the moment they are old enough for it. A quarter of players never reach the
-// last step at all.
-export const WEATHERS_LESS_SHARE = 0.25;
-
-export const weathersLess = (pid: number | undefined): boolean =>
-	pid !== undefined && hashPid(pid, 4) < WEATHERS_LESS_SHARE;
-
-// The ceiling for THIS player: his age's cap, one lower if he is one of the
-// ones who never really lines.
-export const wrinkleCeiling = (age: number, pid: number | undefined): number =>
-	Math.max(0, wrinkleLevelForAge(age) - (weathersLess(pid) ? 1 : 0));
+// One set of marks per player, the same every time they are asked for, so a
+// face keeps its own character as it ages instead of cycling through styles.
+export const lineStylesFor = (pid: number | undefined) => ({
+	smile: pickStable(SMILE_LINES, pid, 5),
+	eye: pickStable(EYE_LINES, pid, 6),
+	forehead: pickStable(FOREHEAD_LINES, pid, 7),
+});
 
 export const wrinkleLevelForAge = (age: number): number => {
 	if (age < 23) {
@@ -546,63 +534,90 @@ export const wrinkleLevelForAge = (age: number): number => {
 	if (age < 31) {
 		return 2;
 	}
-	if (age < 35) {
-		return 3;
-	}
 	return MAX_WRINKLE_LEVEL;
 };
 
-// Read a face's current level back off it, so aging can advance from wherever
-// a face already is - including one facesjs drew before any of this existed.
+// Some faces simply weather less, at any age - the 40-year-old who still looks
+// 30 is a real type, and without this everyone piles up at the maximum the
+// moment they are old enough for it.
+export const WEATHERS_LESS_SHARE = 0.25;
+
+export const weathersLess = (pid: number | undefined): boolean =>
+	pid !== undefined && hashPid(pid, 4) < WEATHERS_LESS_SHARE;
+
+export const wrinkleCeiling = (age: number, pid: number | undefined): number =>
+	Math.max(0, wrinkleLevelForAge(age) - (weathersLess(pid) ? 1 : 0));
+
+// Read the level back off a face. Highest feature present wins, so a face that
+// somehow has brow lines but no smile lines reads as 3 - and applying level 3
+// then ADDS the missing ones rather than removing what is there. That is what
+// makes every write additive no matter what state a face arrives in.
 export const wrinkleLevelOf = (face: FaceConfig): number => {
-	const smile = SMILE_LINES.indexOf(face?.smileLine?.id as any);
-	if (smile < 0) {
-		return 0;
+	if ((FOREHEAD_LINES as readonly string[]).includes(face?.miscLine?.id)) {
+		return 3;
 	}
-	let level = 0;
-	for (const [candidate, index] of LEVEL_TO_SMILE.entries()) {
-		if (index <= smile) {
-			level = candidate;
-		}
+	if (face?.eyeLine?.id && face.eyeLine.id !== "none") {
+		return 2;
 	}
-	return level;
+	if (face?.smileLine?.id && face.smileLine.id !== "none") {
+		return 1;
+	}
+	return 0;
+};
+
+// How deep the folds are at a given age, which is the continuous part.
+const SMILE_SIZE_MIN = 0.6;
+const SMILE_SIZE_MAX = 2;
+const SMILE_SIZE_START_AGE = 22;
+const SMILE_SIZE_FULL_AGE = 38;
+
+export const smileSizeForAge = (age: number): number => {
+	const t = Math.max(
+		0,
+		Math.min(
+			1,
+			(age - SMILE_SIZE_START_AGE) /
+				(SMILE_SIZE_FULL_AGE - SMILE_SIZE_START_AGE),
+		),
+	);
+	return (
+		Math.round((SMILE_SIZE_MIN + (SMILE_SIZE_MAX - SMILE_SIZE_MIN) * t) * 100) /
+		100
+	);
 };
 
 export const applyWrinkles = (
 	face: FaceConfig,
 	level: number,
-	rand: () => number = Math.random,
+	pid?: number,
+	size?: number,
 ) => {
-	const capped = clampIndex(level, MAX_WRINKLE_LEVEL + 1);
+	const capped = Math.max(0, Math.min(MAX_WRINKLE_LEVEL, level));
+	const styles = lineStylesFor(pid);
 
-	// The smile line is NOT jittered: it is what wrinkleLevelOf reads the level
-	// back off, so nudging it would let a face drift down a step and re-age
-	// the same year forever. The other two carry the variety instead.
-	face.smileLine.id = SMILE_LINES[LEVEL_TO_SMILE[capped]!]!;
-	face.smileLine.size =
-		Math.round((LEVEL_TO_SMILE_SIZE[capped]! + (rand() * 0.4 - 0.2)) * 100) /
-		100;
-	face.eyeLine.id =
-		EYE_LINES[jittered(LEVEL_TO_EYE[capped]!, EYE_LINES.length, rand)]!;
+	face.smileLine.id = capped >= 1 ? styles.smile : "none";
+	face.eyeLine.id = capped >= 2 ? styles.eye : "none";
 
-	// Brow lines only where the slot is free or already theirs - see above.
+	// Brow lines share a slot with blush, freckles and chin marks, which are not
+	// age. A player who has one keeps it and ages through his eyes and smile.
 	const misc = face.miscLine?.id ?? "none";
 	if (misc === "none" || (FOREHEAD_LINES as readonly string[]).includes(misc)) {
-		face.miscLine.id =
-			FOREHEAD_LINES[
-				jittered(LEVEL_TO_FOREHEAD[capped]!, FOREHEAD_LINES.length, rand)
-			]!;
+		face.miscLine.id = capped >= 3 ? styles.forehead : "none";
+	}
+
+	if (size !== undefined) {
+		face.smileLine.size = size;
 	}
 };
 
-// Chance per year of gaining a step, when age allows one. Small enough that a
-// face creeps toward its age rather than jumping there.
+// Chance per year of gaining a feature, when age allows one.
 const WRINKLE_PER_YEAR = 0.3;
 
-// How much the folds deepen each season on their own, between level steps.
+// How much the folds deepen each season on their own, between those.
 const SMILE_CREEP_PER_YEAR = 0.05;
 
-// How much rarer the second hairline step is than the first.
+// How much rarer losing it entirely is than starting to lose it, so a man does
+// not go from a full head to bald in two seasons.
 const FULLY_BALD_FACTOR = 0.4;
 
 // WHAT ANCESTRY A FACE WAS DRAWN FOR, read back off the face itself.
@@ -677,6 +692,7 @@ export const applyFaceAgingHistory = ({
 	applyRealisticFace(face, {
 		age: Math.min(rookieAge, currentAge),
 		race: race ?? inferRaceFromFace(face),
+		pid,
 		rand,
 	});
 
@@ -698,8 +714,9 @@ export const applyRealisticFace = (
 	{
 		age,
 		race,
+		pid,
 		rand = Math.random,
-	}: { age: number; race?: Race; rand?: () => number },
+	}: { age: number; race?: Race; pid?: number; rand?: () => number },
 ) => {
 	const band = bandForAge(age);
 
@@ -736,7 +753,12 @@ export const applyRealisticFace = (
 	// allows, so a 32-year-old is usually a little weathered and occasionally
 	// a lot - the same spread real faces have.
 	const ceiling = wrinkleLevelForAge(age);
-	applyWrinkles(face, Math.floor(rand() * rand() * (ceiling + 1)), rand);
+	applyWrinkles(
+		face,
+		Math.floor(rand() * rand() * (ceiling + 1)),
+		pid,
+		smileSizeForAge(age),
+	);
 
 	face.body.color = jitterColor(face.body.color, rand, SKIN_JITTER);
 	face.hair.color = jitterColor(face.hair.color, rand, HAIR_JITTER);
@@ -788,7 +810,9 @@ export const ageFace = (
 	// reaches 38 with the face they had at 20.
 	const level = wrinkleLevelOf(face);
 	if (level < wrinkleCeiling(age, pid) && rand() < WRINKLE_PER_YEAR) {
-		applyWrinkles(face, level + 1, rand);
+		// Additive only - see wrinkleLevelOf. Nothing switches style and nothing
+		// turns off, so a face can never un-age.
+		applyWrinkles(face, level + 1, pid);
 		changed = true;
 	}
 
@@ -801,7 +825,7 @@ export const ageFace = (
 	// faces per career to capture something only visible across a decade. The
 	// player is written back every preseason regardless, so it persists either
 	// way - the history just keeps the steps.
-	const targetSize = LEVEL_TO_SMILE_SIZE[wrinkleCeiling(age, pid)]!;
+	const targetSize = smileSizeForAge(age);
 	if (face.smileLine.size < targetSize) {
 		face.smileLine.size =
 			Math.round(

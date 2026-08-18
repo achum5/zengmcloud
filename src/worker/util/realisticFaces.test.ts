@@ -9,6 +9,8 @@ import {
 	applyRealisticFace,
 	bandForAge,
 	applyWrinkles,
+	lineStylesFor,
+	smileSizeForAge,
 	baldingProne,
 	growsFacialHair,
 	inferRaceFromFace,
@@ -480,36 +482,66 @@ describe("wrinkles", () => {
 	});
 
 	test("a level round-trips through a face", () => {
-		// Aging reads the level back off the face to know where to go next, so
-		// writing a level and reading it must agree.
 		for (let level = 0; level <= MAX_WRINKLE_LEVEL; level++) {
 			const f = face();
-			applyWrinkles(f, level, fixed(0.9));
+			applyWrinkles(f, level, 7);
 			assert.strictEqual(wrinkleLevelOf(f), level);
 		}
 	});
 
-	test("higher levels mean deeper folds", () => {
-		const young = face();
-		applyWrinkles(young, 0, fixed(0.9));
-		const old = face();
-		applyWrinkles(old, MAX_WRINKLE_LEVEL, fixed(0.9));
-		assert.isAbove(old.smileLine.size, young.smileLine.size);
-		assert.strictEqual(young.eyeLine.id, "none");
-		assert.notStrictEqual(old.eyeLine.id, "none");
-		assert.notStrictEqual(old.miscLine.id, "none");
+	test("features turn on in order and never switch style", () => {
+		// The reported bug: the line features are variants, not degrees, so
+		// walking a "ladder" swapped one mark for another and a player's eye
+		// bags disappeared at 35. Each player has one style per feature now.
+		const styles = lineStylesFor(7);
+		const f = face();
+		applyWrinkles(f, 1, 7);
+		assert.strictEqual(f.smileLine.id, styles.smile);
+		assert.strictEqual(f.eyeLine.id, "none");
+
+		applyWrinkles(f, 2, 7);
+		assert.strictEqual(f.smileLine.id, styles.smile, "style must not change");
+		assert.strictEqual(f.eyeLine.id, styles.eye);
+
+		applyWrinkles(f, 3, 7);
+		assert.strictEqual(f.smileLine.id, styles.smile);
+		assert.strictEqual(f.eyeLine.id, styles.eye, "style must not change");
+		assert.strictEqual(f.miscLine.id, styles.forehead);
+	});
+
+	test("a player's styles are the same every time", () => {
+		assert.deepStrictEqual(lineStylesFor(42), lineStylesFor(42));
+	});
+
+	test("nothing a face already has is ever taken away", () => {
+		// The invariant that makes un-aging impossible: reading the level off a
+		// face returns the HIGHEST feature present, so re-applying it can only
+		// fill in what is missing.
+		const f = face({ miscLine: { id: "forehead2" } });
+		assert.strictEqual(wrinkleLevelOf(f), 3);
+		applyWrinkles(f, wrinkleLevelOf(f), 7);
+		assert.notStrictEqual(f.miscLine.id, "none");
+		assert.notStrictEqual(f.smileLine.id, "none");
+		assert.notStrictEqual(f.eyeLine.id, "none");
 	});
 
 	test("freckles and blush survive aging", () => {
-		// They share a slot with the brow lines but are not age - a freckled
-		// player should still be freckled at 38.
 		for (const id of ["freckles1", "blush", "chin1"]) {
 			const f = face({ miscLine: { id } });
-			applyWrinkles(f, MAX_WRINKLE_LEVEL, fixed(0.9));
+			applyWrinkles(f, MAX_WRINKLE_LEVEL, 7);
 			assert.strictEqual(f.miscLine.id, id);
-			// ...but he still ages everywhere else.
 			assert.notStrictEqual(f.smileLine.id, "none");
 		}
+	});
+
+	test("folds deepen with age and never shrink", () => {
+		let previous = 0;
+		for (let age = 19; age <= 45; age++) {
+			const size = smileSizeForAge(age);
+			assert.isAtLeast(size, previous, `age ${age}`);
+			previous = size;
+		}
+		assert.isAbove(smileSizeForAge(38), smileSizeForAge(22));
 	});
 
 	test("lines never go past what the age allows", () => {
@@ -521,14 +553,45 @@ describe("wrinkles", () => {
 	});
 
 	test("a long career weathers a face to its own ceiling", () => {
-		// Its OWN ceiling, not the global maximum: a quarter of players never
-		// reach the last step at all, and pid 1 is one of them.
 		const f = face();
 		for (let age = 20; age <= 39; age++) {
 			ageFace(f, age, 1, fixed(0));
 		}
 		assert.strictEqual(wrinkleLevelOf(f), wrinkleCeiling(39, 1));
 		assert.isAbove(wrinkleLevelOf(f), 0);
+	});
+
+	test("A WHOLE CAREER NEVER GOES BACKWARDS", () => {
+		// The guarantee the reported bug violated, checked directly over many
+		// full careers: no feature ever turns off, no style ever changes, and
+		// the folds never shrink.
+		for (let pid = 0; pid < 300; pid++) {
+			const f = face();
+			applyWrinkles(f, 0, pid, smileSizeForAge(19));
+			let level = wrinkleLevelOf(f);
+			let size = f.smileLine.size;
+			const seen: Record<string, string> = {};
+			for (let age = 20; age <= 40; age++) {
+				ageFace(f, age, pid);
+				assert.isAtLeast(wrinkleLevelOf(f), level, `pid ${pid} age ${age}`);
+				assert.isAtLeast(f.smileLine.size, size, `pid ${pid} age ${age} size`);
+				for (const key of ["smileLine", "eyeLine", "miscLine"] as const) {
+					const id = (f as any)[key].id;
+					if (id !== "none") {
+						if (seen[key] !== undefined) {
+							assert.strictEqual(
+								id,
+								seen[key],
+								`pid ${pid} ${key} changed style at ${age}`,
+							);
+						}
+						seen[key] = id;
+					}
+				}
+				level = wrinkleLevelOf(f);
+				size = f.smileLine.size;
+			}
+		}
 	});
 });
 

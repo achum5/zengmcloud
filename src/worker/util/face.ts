@@ -9,8 +9,13 @@ import { applyRealisticFace } from "./realisticFaces.ts";
 
 export const generateFace = (
 	options:
-		| { race?: Race; relative?: undefined; age?: number }
-		| { race?: undefined; relative?: FaceConfig; age?: number } = {},
+		| { race?: Race; relative?: undefined; age?: number; pid?: number }
+		| {
+				race?: undefined;
+				relative?: FaceConfig;
+				age?: number;
+				pid?: number;
+		  } = {},
 ) => {
 	let overrides: any;
 
@@ -43,7 +48,7 @@ export const generateFace = (
 		? g.get("gender")
 		: defaultGameAttributes.gender;
 
-	const { age, ...faceOptions } = options;
+	const { age, pid, ...faceOptions } = options;
 
 	let face = generate(overrides, {
 		gender,
@@ -79,7 +84,7 @@ export const generateFace = (
 		: defaultGameAttributes.realisticFaces;
 
 	if (isSport("basketball") && realisticFaces) {
-		applyRealisticFace(face, { age: age ?? 25, race: options.race });
+		applyRealisticFace(face, { age: age ?? 25, race: options.race, pid });
 	}
 
 	return face;
