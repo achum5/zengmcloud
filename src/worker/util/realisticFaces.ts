@@ -220,6 +220,30 @@ export const HAIR_TEXTURES = {
 	],
 } as const;
 
+// NOT WRONG FOR ANYONE'S HAIR - WRONG FOR A BASKETBALL LEAGUE.
+//
+// Texture is one axis; era is another. These four grow on plenty of real
+// heads, they just do not turn up on an NBA floor: hair hanging past the jaw,
+// a 2000s side fringe, two shades of skater shag. Uniform selection puts one
+// on roughly one player in ten, which is how a 30-year-old small forward ends
+// up with curtains down to his chin.
+//
+// Thinned rather than deleted, the same call made for the period facial hair:
+// at this rate they show up about once every couple of rosters, which is a
+// character and not a pattern. Deleting them outright would cost the league
+// variety it cannot spare, and some players really do look like this.
+export const HAIR_RARE: readonly string[] = [
+	"longHair",
+	"emo",
+	"shaggy1",
+	"shaggy2",
+];
+
+const RARE_HAIR = new Set<string>(HAIR_RARE);
+
+// Share of the natural rate these keep.
+const RARE_HAIR_KEEP = 0.15;
+
 const STRAIGHT_HAIR = new Set<string>(HAIR_TEXTURES.straight);
 const COILED_HAIR = new Set<string>(HAIR_TEXTURES.coiled);
 
@@ -254,7 +278,9 @@ export const hairPoolForRace = (race: Race): readonly string[] => {
 			? [...HAIR_TEXTURES.straight, ...HAIR_TEXTURES.coiled]
 			: []),
 	];
-	return pool.filter((id) => id !== HAIR_THINNING && id !== HAIR_BALD);
+	return pool.filter(
+		(id) => id !== HAIR_THINNING && id !== HAIR_BALD && !RARE_HAIR.has(id),
+	);
 };
 
 // What a player of a given age should look like. Chances are per player, and
@@ -397,10 +423,15 @@ export const applyRealisticFace = (
 
 	face.facialHair.id = facialHairForAge(age, rand);
 
-	// Texture first, so the age-based hairline logic below judges the style
-	// the player will actually keep.
-	if (race !== undefined && !hairAllowedForRace(face.hair.id, race)) {
-		face.hair.id = pickFrom(hairPoolForRace(race), rand);
+	// Texture and era first, so the age-based hairline logic below judges the
+	// style the player will actually keep. The rare check is second and
+	// short-circuits, so an ordinary style consumes no randomness.
+	if (race !== undefined) {
+		const implausible = !hairAllowedForRace(face.hair.id, race);
+		const overexposed = RARE_HAIR.has(face.hair.id) && rand() >= RARE_HAIR_KEEP;
+		if (implausible || overexposed) {
+			face.hair.id = pickFrom(hairPoolForRace(race), rand);
+		}
 	}
 
 	// Hairline. Young players are never balding; older ones may be, and a face

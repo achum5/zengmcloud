@@ -11,6 +11,7 @@ import {
 	FACE_AGE_THRESHOLDS,
 	FACIAL_HAIR_TIERS,
 	facialHairForAge,
+	HAIR_RARE,
 	HAIR_TEXTURES,
 	hairAllowedForRace,
 	hairPoolForRace,
@@ -107,6 +108,58 @@ describe("hairAllowedForRace", () => {
 	test("no race known means nothing to rule out", () => {
 		// Generated relatives inherit a face rather than a race.
 		assert.isTrue(hairAllowedForRace("middle-part", undefined));
+	});
+});
+
+describe("HAIR_RARE", () => {
+	test("names real styles, and they are classified for texture too", () => {
+		// Era and texture are separate axes: a style being held back does not
+		// exempt it from the coverage test above.
+		const classified = Object.values(HAIR_TEXTURES).flat();
+		for (const id of HAIR_RARE) {
+			assert.include(classified, id, id);
+		}
+	});
+
+	test("a re-roll never lands back on one", () => {
+		// Otherwise thinning them out would just reshuffle among themselves.
+		for (const race of ["white", "black", "brown", "asian"] as const) {
+			for (const id of hairPoolForRace(race)) {
+				assert.notInclude(HAIR_RARE, id, `${id} for ${race}`);
+			}
+		}
+	});
+
+	test("mostly re-rolled away, occasionally kept", () => {
+		// rand() >= keep re-rolls, so a high roll drops it and a low roll keeps
+		// it. Both paths must exist or the style is either gone or unchanged.
+		const dropped = face({
+			hair: { id: "longHair", color: "#272421", flip: false },
+		});
+		applyRealisticFace(dropped, { age: 25, race: "brown", rand: fixed(0.9) });
+		assert.notStrictEqual(dropped.hair.id, "longHair");
+
+		const kept = face({
+			hair: { id: "longHair", color: "#272421", flip: false },
+		});
+		// High roll for the facial hair chance (so it stays "none" and consumes
+		// nothing more), low roll for the keep, then high again so the balding
+		// chance further down does not claim the hair instead.
+		applyRealisticFace(kept, {
+			age: 25,
+			race: "brown",
+			rand: sequence([0.9, 0.01, 0.9, 0.9, 0.9, 0.9]),
+		});
+		assert.strictEqual(kept.hair.id, "longHair");
+	});
+
+	test("the reported face: long curtains on a brown-skinned 30-year-old", () => {
+		// Allowed by texture (brown spans the widest range) but wrong for the
+		// league, which is exactly the gap this group closes.
+		assert.isTrue(hairAllowedForRace("longHair", "brown"));
+		const p = face({ hair: { id: "longHair", color: "#272421", flip: false } });
+		applyRealisticFace(p, { age: 30, race: "brown", rand: fixed(0.5) });
+		assert.notStrictEqual(p.hair.id, "longHair");
 	});
 });
 
