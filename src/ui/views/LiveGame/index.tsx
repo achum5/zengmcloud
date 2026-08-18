@@ -18,6 +18,7 @@ import { helpers } from "../../util/helpers.ts";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { useLocal } from "../../util/local.ts";
+import { orderBoxScoreTeams } from "../../util/liveBoxScoreLayout.ts";
 import type { View } from "../../../common/types.ts";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import useLocalStorageState from "use-local-storage-state";
@@ -1323,9 +1324,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// the simmer's cursor (no own timer) and the page is locked; on the broadcaster
 	// we additionally heartbeat our cursor to the room. In single-player both are
 	// false and nothing below changes.
-	const { mpLiveBroadcast, mpLiveChat } = useLocal([
+	const { mpLiveBroadcast, mpLiveChat, userTid } = useLocal([
 		"mpLiveBroadcast",
 		"mpLiveChat",
+		// Which team this device manages, so the box scores below can lead with
+		// it - see liveBoxScoreLayout.ts.
+		"userTid",
 	]);
 	const isFollower =
 		!!mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster;
@@ -2524,30 +2528,28 @@ export const LiveGame = (props: View<"liveGame">) => {
 									>
 										Top
 									</button>
-									{!isSport("football") ? (
-										<>
-											<button
-												className="btn btn-light-bordered"
-												onClick={() => {
-													document
-														.getElementById("scroll-team-1")
-														?.scrollIntoView();
-												}}
-											>
-												{boxScore.current.teams[0].abbrev}
-											</button>
-											<button
-												className="btn btn-light-bordered"
-												onClick={() => {
-													document
-														.getElementById("scroll-team-2")
-														?.scrollIntoView();
-												}}
-											>
-												{boxScore.current.teams[1].abbrev}
-											</button>
-										</>
-									) : null}
+									{!isSport("football")
+										? // Same ordering the box scores below use, so a button
+											// always scrolls to the team named on it. The anchors
+											// are assigned by position, so deriving the labels from
+											// the raw team order would send them to the wrong team
+											// whenever the device's team was hoisted.
+											orderBoxScoreTeams(boxScore.current.teams, userTid).map(
+												(t: any, i: number) => (
+													<button
+														key={t.abbrev}
+														className="btn btn-light-bordered"
+														onClick={() => {
+															document
+																.getElementById(`scroll-team-${i + 1}`)
+																?.scrollIntoView();
+														}}
+													>
+														{t.abbrev}
+													</button>
+												),
+											)
+										: null}
 									<button
 										className="btn btn-light-bordered"
 										onClick={() => {

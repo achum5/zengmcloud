@@ -4,6 +4,13 @@ import { helpers } from "../util/helpers.ts";
 import { getCols } from "../../common/getCols.ts";
 import { sortByStats, StatsHeader } from "./BoxScore.football.tsx";
 import { type MouseEvent, useState } from "react";
+import { useLocal } from "../util/local.ts";
+import {
+	canHideBoxScoreTeam,
+	getHideOtherBoxScore,
+	orderBoxScoreTeams,
+	setHideOtherBoxScore,
+} from "../util/liveBoxScoreLayout.ts";
 import type { SortBy } from "./DataTable/index.tsx";
 import updateSortBys from "./DataTable/updateSortBys.ts";
 
@@ -240,9 +247,26 @@ const BoxScore = ({
 	const liveGameSim = boxScore.won?.name === undefined;
 	const liveGameInProgress = liveGameSim && !boxScore.gameOver;
 
+	// Whose device this is. Only meaningful for a live game - a historical box
+	// score is a record, and reordering it by who happens to be reading would
+	// make the same game look different on every device.
+	const { userTid } = useLocal(["userTid"]);
+	const [hideOther, setHideOther] = useState(getHideOtherBoxScore);
+
+	const teams = liveGameSim
+		? orderBoxScoreTeams(boxScore.teams, userTid)
+		: boxScore.teams;
+
 	return (
 		<>
-			{boxScore.teams.map((t: any, i: number) => {
+			{teams.map((t: any, i: number) => {
+				const hideable = canHideBoxScoreTeam({
+					tid: t.tid,
+					userTid,
+					liveGameInProgress,
+				});
+				const hidden = hideable && hideOther;
+
 				return (
 					<div
 						key={t.abbrev}
@@ -252,36 +276,58 @@ const BoxScore = ({
 							scrollMarginTop: 136,
 						}}
 					>
-						<h2>
-							{t.tid >= 0 ? (
-								<a
-									href={helpers.leagueUrl([
-										"roster",
-										`${t.abbrev}_${t.tid}`,
-										boxScore.season,
-									])}
+						<h2 className="d-flex align-items-center gap-2">
+							<span>
+								{t.tid >= 0 ? (
+									<a
+										href={helpers.leagueUrl([
+											"roster",
+											`${t.abbrev}_${t.tid}`,
+											boxScore.season,
+										])}
+									>
+										{t.season !== undefined ? `${t.season} ` : null}
+										{t.region} {t.name}
+									</a>
+								) : (
+									<>
+										{t.season !== undefined ? `${t.season} ` : null}
+										{t.region} {t.name}
+									</>
+								)}
+							</span>
+							{hideable ? (
+								<button
+									type="button"
+									className="btn btn-light-bordered btn-sm"
+									onClick={() => {
+										setHideOther(!hidden);
+										setHideOtherBoxScore(!hidden);
+									}}
+									title={
+										hidden
+											? "Show this team's box score"
+											: "Hide this team's box score"
+									}
+									aria-expanded={!hidden}
 								>
-									{t.season !== undefined ? `${t.season} ` : null}
-									{t.region} {t.name}
-								</a>
-							) : (
-								<>
-									{t.season !== undefined ? `${t.season} ` : null}
-									{t.region} {t.name}
-								</>
-							)}
+									{hidden ? "Show" : "Hide"}
+								</button>
+							) : null}
 						</h2>
-						<StatsTable
-							gid={boxScore.gid}
-							Row={Row}
-							exhibition={boxScore.exhibition}
-							forceRowUpdate={forceRowUpdate}
-							liveGameInProgress={liveGameInProgress}
-							numPlayersOnCourt={boxScore.numPlayersOnCourt ?? 5}
-							season={boxScore.season}
-							showHighlights={!!boxScore.hasReplay}
-							t={t}
-						/>
+						{hidden ? null : (
+							<StatsTable
+								gid={boxScore.gid}
+								Row={Row}
+								exhibition={boxScore.exhibition}
+								forceRowUpdate={forceRowUpdate}
+								liveGameInProgress={liveGameInProgress}
+								numPlayersOnCourt={boxScore.numPlayersOnCourt ?? 5}
+								season={boxScore.season}
+								showHighlights={!!boxScore.hasReplay}
+								t={t}
+							/>
+						)}
 					</div>
 				);
 			})}
