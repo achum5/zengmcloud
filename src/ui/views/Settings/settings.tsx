@@ -24,6 +24,7 @@ import type { GameAttributesLeague } from "../../../common/types.ts";
 import { parseCurrencyFormat } from "../../util/parseCurrencyFormat.ts";
 import { getDraftTypeDescription } from "../DraftLottery.tsx";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { hardCapAmountProblem } from "../../../common/getHardCap.ts";
 
 export const descriptions = {
 	difficulty:
@@ -779,18 +780,17 @@ export const settings: Setting[] = (
 					over this number. The only exception is minimum-salary signings needed
 					to reach the minimum roster size. Set to <code>0</code> to turn it
 					off. Choose which teams it binds with <b>Hard Cap Teams</b> below.
+					Ignored while <b>Hard Cap = Luxury Tax Line</b> is on.
 				</>
 			),
 			validator: (value, output) => {
-				if (value < 0) {
-					throw new Error("Must be 0 (off) or a positive number");
-				}
-				if (
-					value > 0 &&
-					typeof output.salaryCap === "number" &&
-					value < output.salaryCap
-				) {
-					throw new Error("Hard cap must be at least the salary cap");
+				const problem = hardCapAmountProblem({
+					hardCapAmount: value,
+					salaryCap: output.salaryCap,
+					hardCapUseLuxuryTax: output.hardCapUseLuxuryTax,
+				});
+				if (problem !== undefined) {
+					throw new Error(problem);
 				}
 			},
 		},
