@@ -284,6 +284,7 @@ const ComparePlayerButton = ({
 };
 
 const TopStuff = ({
+	appearanceTeams,
 	bestPos,
 	currentSeason,
 	jerseyNumberInfos,
@@ -305,6 +306,7 @@ const TopStuff = ({
 	willingToSign,
 }: Pick<
 	View<"player">,
+	| "appearanceTeams"
 	| "bestPos"
 	| "jerseyNumberInfos"
 	| "noteTeammates"
@@ -571,8 +573,8 @@ const TopStuff = ({
 								name={player.name}
 								seasons={careerSeasons}
 								player={player}
-								colors={teamColors}
-								jersey={teamJersey}
+								teams={appearanceTeams}
+								highlightSeason={season}
 								onHide={() => {
 									setShowGallery(false);
 								}}

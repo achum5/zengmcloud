@@ -25,6 +25,7 @@ import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 
 const Player2 = ({
+	appearanceTeams,
 	bestPos,
 	contractValues,
 	customMenu,
@@ -136,6 +137,7 @@ const Player2 = ({
 	return (
 		<>
 			<TopStuff
+				appearanceTeams={appearanceTeams}
 				bestPos={bestPos}
 				currentSeason={currentSeason}
 				jerseyNumberInfos={jerseyNumberInfos}

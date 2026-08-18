@@ -323,6 +323,82 @@ export const getCommon = async (
 		prevKey = key;
 	}
 
+	// WHAT UNIFORM HE WORE THAT YEAR.
+	//
+	// The appearance gallery stacks a headshot for every season of a career, and
+	// dressing all of them in today's jersey makes a four-team journeyman look
+	// like a one-team lifer. The colors come from the team AS IT WAS, not as it
+	// is: a franchise that has since rebranded or relocated is the wrong picture
+	// of 2011, and teamSeasons remembers what it actually looked like.
+	//
+	// One uniform per season, picked by games played, so a midseason trade shows
+	// the jersey he spent the year in rather than whichever stats row happened
+	// to sort last. Playoff rows are skipped because they duplicate the team
+	// with a smaller sample.
+	const appearanceTeams: Record<
+		number,
+		{
+			abbrev: string;
+			colors: [string, string, string];
+			jersey?: string;
+			name: string;
+			region: string;
+			jerseyNumber?: string;
+		}
+	> = {};
+	{
+		const gpBySeason: Record<number, number> = {};
+		for (const ps of p.stats) {
+			if (ps.playoffs || ps.tid < 0) {
+				continue;
+			}
+			const gp = ps.gp ?? 0;
+			// Ties go to the later row, which for a deadline trade is the team
+			// he finished the season with.
+			if (gpBySeason[ps.season] !== undefined && gp < gpBySeason[ps.season]!) {
+				continue;
+			}
+			const ts = await getTeamInfoBySeason(ps.tid, ps.season);
+			if (!ts) {
+				continue;
+			}
+			gpBySeason[ps.season] = gp;
+			appearanceTeams[ps.season] = {
+				abbrev: ts.abbrev,
+				colors: ts.colors,
+				jersey: ts.jersey,
+				name: ts.name,
+				region: ts.region,
+				jerseyNumber: ps.jerseyNumber,
+			};
+		}
+
+		// A stats row only exists once the regular season starts, so between the
+		// draft and opening night a player has a ratings row for the new season
+		// and nothing else - and the gallery would show his newest season as
+		// "No team". The ratings rows carry a tid too, so they fill the gap.
+		// A draft prospect's is a negative tid, which is genuinely no team and
+		// stays empty.
+		for (const pr of p.ratings) {
+			if (appearanceTeams[pr.season] !== undefined || pr.tid < 0) {
+				continue;
+			}
+			const ts = await getTeamInfoBySeason(pr.tid, pr.season);
+			if (!ts) {
+				continue;
+			}
+			appearanceTeams[pr.season] = {
+				abbrev: ts.abbrev,
+				colors: ts.colors,
+				jersey: ts.jersey,
+				name: ts.name,
+				region: ts.region,
+				jerseyNumber:
+					pr.season === g.get("season") ? p.jerseyNumber : undefined,
+			};
+		}
+	}
+
 	let teamColors;
 	let teamJersey;
 	let bestPos;
@@ -561,6 +637,7 @@ export const getCommon = async (
 		bestPos,
 		customMenu,
 		tradingCards,
+		appearanceTeams,
 		jerseyNumberInfos,
 		noteTeammates,
 		pRaw,

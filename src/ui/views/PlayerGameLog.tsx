@@ -156,6 +156,7 @@ const wrappedBaseballDecision = (p: DecisionPlayer, hideRecord: boolean) => {
 };
 
 const PlayerGameLog = ({
+	appearanceTeams,
 	bestPos,
 	customMenu,
 	jerseyNumberInfos,
@@ -376,6 +377,7 @@ const PlayerGameLog = ({
 	return (
 		<>
 			<TopStuff
+				appearanceTeams={appearanceTeams}
 				bestPos={bestPos}
 				currentSeason={currentSeason}
 				// This page is one season of one player, so the note shows that

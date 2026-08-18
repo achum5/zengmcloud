@@ -464,6 +464,108 @@ table {
 	width: 120px;
 }
 
+// THE CAREER GALLERY, one headshot per season grouped into the uniforms they
+// were worn in. Theme-agnostic on purpose: everything that is not a team color
+// is a Bootstrap variable, so dark mode needs no override at all. The team
+// colors are inline, because they are data.
+
+// A stint heading: swatch, team, then a rule that eats the slack so the season
+// range lands hard right whatever the team is called.
+.player-appearance-stint {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-bottom: 0.5rem;
+	min-width: 0;
+}
+
+.player-appearance-swatch {
+	flex: 0 0 auto;
+	width: 0.9rem;
+	height: 0.9rem;
+	border-radius: 50%;
+	border: 2px solid;
+}
+
+.player-appearance-rule {
+	flex: 1 1 auto;
+	min-width: 0.5rem;
+	height: 1px;
+	background-color: var(--bs-border-color);
+}
+
+// auto-fill rather than flex-wrap, so every card is the same size and a short
+// stint lines up with the long one above it. auto-FIT would stretch a two-season
+// stint into two enormous cards next to a twelve-season stint of small ones.
+.player-appearance-grid {
+	display: grid;
+	// Phone first, where four to a row keeps the faces big enough to read the
+	// aging in without making a fifteen-season career an endless scroll.
+	grid-template-columns: repeat(auto-fill, minmax(4.75rem, 1fr));
+	gap: 0.5rem;
+}
+
+@include media-breakpoint-up(md) {
+	.player-appearance-grid {
+		// The modal is 800px here, so this is six to a row - big enough that a
+		// typical three or four season stint fills most of one.
+		grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+	}
+}
+
+.player-appearance-card {
+	border: 1px solid var(--bs-border-color);
+	border-radius: 0.5rem;
+	overflow: hidden;
+	background-color: var(--bs-tertiary-bg);
+}
+
+.player-appearance-card.current {
+	// The season the page itself is scoped to.
+	box-shadow: 0 0 0 2px var(--bs-primary);
+	border-color: transparent;
+}
+
+// 2:3, which is the aspect ratio facesjs draws at - anything else letterboxes
+// the head or crops the jersey.
+.player-appearance-face {
+	aspect-ratio: 2 / 3;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+}
+
+// facesjs renders a bare <div> whose only size is an aspect-ratio, and fills it
+// with an <svg width="100%" height="100%">. As a flex item that div is sized by
+// its content, the content is sized by the div, and the circle resolves to the
+// SVG's 300px intrinsic fallback rather than the card. Giving it a definite
+// width breaks the loop; the aspect-ratio then supplies the height, which
+// matches the card because the card is the same ratio.
+.player-appearance-face > div {
+	flex: 0 0 auto;
+	width: 100%;
+}
+
+// An uploaded photo is a plain <img> with no wrapper, and no reason to be the
+// exact shape of a cartoon head.
+.player-appearance-face > img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+// The nameplate, in the same vocabulary as the jersey numbers further down the
+// player page: team fill, team text, team accent as the top rule.
+.player-appearance-season {
+	border-top: 2px solid;
+	padding: 0.1rem 0;
+	font-size: 0.8rem;
+	font-weight: 700;
+	line-height: 1.4;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+
 .player-awards {
 	white-space: normal;
 }
