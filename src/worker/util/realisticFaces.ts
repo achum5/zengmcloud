@@ -464,6 +464,39 @@ export const jitterColor = (
 	);
 };
 
+// GOING GREY, which is the change that actually happens every year.
+//
+// Everything else aging does is a STEP - a beard arrives, a hairline goes,
+// a line deepens - and steps are lumpy by nature: nothing for four years and
+// then a man is suddenly bald. Real aging is mostly continuous, and hair
+// colour is the part of it a cartoon face can carry: a few percent greyer
+// every season, invisible year over year, unmistakable across a decade.
+//
+// It compounds toward grey rather than tracking a stored fraction, so it
+// needs no extra data and can never run backwards. When it starts is a
+// per-player trait like the others, which is why one 38-year-old is salt and
+// pepper and the next is still jet black.
+const GREY = "#a8a29a";
+
+// Share of the way to grey per season, once it has started.
+const GREY_PER_YEAR = 0.07;
+
+export const greyOnsetAge = (pid: number | undefined): number =>
+	pid === undefined ? 99 : Math.round(28 + hashPid(pid, 3) * 16);
+
+export const greyedColor = (hex: string, fraction: number): string => {
+	if (!/^#[\da-f]{6}$/i.test(hex)) {
+		return hex;
+	}
+	const [r, g, b] = hexToRgb(hex);
+	const [r2, g2, b2] = hexToRgb(GREY);
+	return rgbToHex([
+		r + (r2 - r) * fraction,
+		g + (g2 - g) * fraction,
+		b + (b2 - b) * fraction,
+	]);
+};
+
 // WRINKLES, WHICH ARE THE OTHER HALF OF LOOKING OLDER.
 //
 // Hair was only ever half the story: a 36-year-old with a full beard and a
@@ -521,6 +554,20 @@ const clampIndex = (index: number, length: number) =>
 // identical faces.
 const jittered = (index: number, length: number, rand: () => number) =>
 	clampIndex(index + (rand() < 0.35 ? (rand() < 0.5 ? -1 : 1) : 0), length);
+
+// Some faces simply weather less, at any age - the 40-year-old who still
+// looks 30 is a real type, and without this everyone piles up at the maximum
+// the moment they are old enough for it. A quarter of players never reach the
+// last step at all.
+export const WEATHERS_LESS_SHARE = 0.25;
+
+export const weathersLess = (pid: number | undefined): boolean =>
+	pid !== undefined && hashPid(pid, 4) < WEATHERS_LESS_SHARE;
+
+// The ceiling for THIS player: his age's cap, one lower if he is one of the
+// ones who never really lines.
+export const wrinkleCeiling = (age: number, pid: number | undefined): number =>
+	Math.max(0, wrinkleLevelForAge(age) - (weathersLess(pid) ? 1 : 0));
 
 export const wrinkleLevelForAge = (age: number): number => {
 	if (age < 23) {
@@ -584,6 +631,12 @@ export const applyWrinkles = (
 // Chance per year of gaining a step, when age allows one. Small enough that a
 // face creeps toward its age rather than jumping there.
 const WRINKLE_PER_YEAR = 0.3;
+
+// How much the folds deepen each season on their own, between level steps.
+const SMILE_CREEP_PER_YEAR = 0.05;
+
+// How much rarer the second hairline step is than the first.
+const FULLY_BALD_FACTOR = 0.4;
 
 // WHAT ANCESTRY A FACE WAS DRAWN FOR, read back off the face itself.
 //
@@ -767,19 +820,40 @@ export const ageFace = (
 	// allows. Unlike the hairline this happens to everyone eventually - nobody
 	// reaches 38 with the face they had at 20.
 	const level = wrinkleLevelOf(face);
-	if (level < wrinkleLevelForAge(age) && rand() < WRINKLE_PER_YEAR) {
+	if (level < wrinkleCeiling(age, pid) && rand() < WRINKLE_PER_YEAR) {
 		applyWrinkles(face, level + 1, rand);
 		changed = true;
+	}
+
+	// THE CONTINUOUS HALF, below. Neither of these counts as a change worth
+	// recording: they move a few percent a season, so a snapshot of every one
+	// would store twenty near-identical faces per career to capture something
+	// only visible across a decade. The player is written back every preseason
+	// regardless, so they persist either way - the history just keeps the
+	// steps.
+	const targetSize = LEVEL_TO_SMILE_SIZE[wrinkleCeiling(age, pid)]!;
+	if (face.smileLine.size < targetSize) {
+		face.smileLine.size =
+			Math.round(
+				Math.min(targetSize, face.smileLine.size + SMILE_CREEP_PER_YEAR) * 100,
+			) / 100;
+	}
+
+	if (age >= greyOnsetAge(pid)) {
+		face.hair.color = greyedColor(face.hair.color, GREY_PER_YEAR);
 	}
 
 	// Hairlines only ever go one way, and only for players who were ever going
 	// to lose it. Everyone else keeps what they were drafted with, at 25 and at
 	// 38 alike.
-	if (
-		baldingProne(pid) &&
-		face.hair.id !== HAIR_BALD &&
-		rand() < band.baldingPerYear
-	) {
+	// Losing it entirely is rarer than starting to lose it, so a man does not
+	// go from a full head to bald in two seasons - the jump that reads as a
+	// glitch rather than as aging.
+	const baldingRate =
+		face.hair.id === HAIR_THINNING
+			? band.baldingPerYear * FULLY_BALD_FACTOR
+			: band.baldingPerYear;
+	if (baldingProne(pid) && face.hair.id !== HAIR_BALD && rand() < baldingRate) {
 		face.hair.id = face.hair.id === HAIR_THINNING ? HAIR_BALD : HAIR_THINNING;
 		changed = true;
 	}

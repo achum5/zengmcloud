@@ -13,6 +13,10 @@ import {
 	growsFacialHair,
 	inferRaceFromFace,
 	MAX_WRINKLE_LEVEL,
+	greyedColor,
+	greyOnsetAge,
+	weathersLess,
+	wrinkleCeiling,
 	wrinkleLevelForAge,
 	wrinkleLevelOf,
 	FACIAL_HAIR_TIERS,
@@ -518,12 +522,15 @@ describe("wrinkles", () => {
 		assert.isAtMost(wrinkleLevelOf(f), wrinkleLevelForAge(26));
 	});
 
-	test("a long career visibly weathers a face", () => {
+	test("a long career weathers a face to its own ceiling", () => {
+		// Its OWN ceiling, not the global maximum: a quarter of players never
+		// reach the last step at all, and pid 1 is one of them.
 		const f = face();
 		for (let age = 20; age <= 39; age++) {
 			ageFace(f, age, 1, fixed(0));
 		}
-		assert.strictEqual(wrinkleLevelOf(f), MAX_WRINKLE_LEVEL);
+		assert.strictEqual(wrinkleLevelOf(f), wrinkleCeiling(39, 1));
+		assert.isAbove(wrinkleLevelOf(f), 0);
 	});
 });
 
@@ -558,5 +565,149 @@ describe("inferRaceFromFace", () => {
 	test("no usable color, no guess", () => {
 		assert.isUndefined(inferRaceFromFace({} as any));
 		assert.isUndefined(inferRaceFromFace({ body: { color: "red" } } as any));
+	});
+});
+
+describe("the continuous half of aging", () => {
+	// Steps are lumpy by nature - nothing for four years and then a man is
+	// suddenly bald. These are the parts that move a little every season, so
+	// most years look slightly different without anything dramatic happening.
+
+	test("hair greys a few percent a year and never un-greys", () => {
+		let color = "#272421";
+		const shades = [color];
+		for (let i = 0; i < 12; i++) {
+			color = greyedColor(color, 0.07);
+			shades.push(color);
+		}
+		// Monotonic toward grey, and no single step is a jump.
+		const lightness = shades.map((hex) =>
+			[1, 3, 5].reduce(
+				(sum, i) => sum + Number.parseInt(hex.slice(i, i + 2), 16),
+				0,
+			),
+		);
+		for (let i = 1; i < lightness.length; i++) {
+			assert.isAbove(lightness[i]!, lightness[i - 1]!, `step ${i}`);
+		}
+		assert.isBelow(
+			(lightness[1]! - lightness[0]!) / lightness[0]!,
+			0.5,
+			"a single season should be a nudge, not a jump",
+		);
+	});
+
+	test("greying never overshoots grey itself", () => {
+		let color = "#272421";
+		for (let i = 0; i < 200; i++) {
+			color = greyedColor(color, 0.07);
+		}
+		// Converges on the target rather than sailing past into white.
+		const [r, g, b] = [1, 3, 5].map((i) =>
+			Number.parseInt(color.slice(i, i + 2), 16),
+		);
+		assert.isAtMost(r!, 0xa8 + 2);
+		assert.isAtMost(g!, 0xa2 + 2);
+		assert.isAtMost(b!, 0x9a + 2);
+	});
+
+	test("when greying starts varies from player to player", () => {
+		const onsets = new Set<number>();
+		for (let pid = 0; pid < 200; pid++) {
+			onsets.add(greyOnsetAge(pid));
+		}
+		assert.isAbove(onsets.size, 8, "everyone would grey at the same age");
+		for (const onset of onsets) {
+			assert.isAtLeast(onset, 28);
+			assert.isAtMost(onset, 44);
+		}
+	});
+
+	test("greying leaves anything that is not a colour alone", () => {
+		assert.strictEqual(greyedColor("none", 0.5), "none");
+	});
+
+	test("folds deepen between level steps, and stop at the ceiling", () => {
+		const f = face({ smileLine: { id: "none", size: 0.6 } });
+		const sizes: number[] = [];
+		for (let age = 20; age <= 40; age++) {
+			ageFace(f, age, 1, fixed(0.99));
+			sizes.push(f.smileLine.size);
+		}
+		// fixed(0.99) refuses every discrete roll, so any growth here is the
+		// continuous creep alone.
+		assert.isAbove(sizes.at(-1)!, 0.6);
+		for (let i = 1; i < sizes.length; i++) {
+			assert.isAtLeast(sizes[i]!, sizes[i - 1]!);
+		}
+	});
+
+	test("a grey year alone is not worth a history entry", () => {
+		// The player is written back every preseason anyway; recording one
+		// snapshot per season would store twenty near-identical faces to
+		// capture something only visible across a decade.
+		const f = face();
+		const greyer = greyOnsetAge(1) + 2;
+		assert.isFalse(ageFace(f, greyer, 1, fixed(0.99)));
+	});
+});
+
+describe("weathering varies by player", () => {
+	test("a quarter of players never reach the last step", () => {
+		let less = 0;
+		const N = 4000;
+		for (let pid = 0; pid < N; pid++) {
+			if (weathersLess(pid)) {
+				less += 1;
+			}
+		}
+		assert.isAbove(less / N, 0.2);
+		assert.isBelow(less / N, 0.31);
+	});
+
+	test("their ceiling is one lower, and never negative", () => {
+		const heavy = (() => {
+			for (let pid = 0; pid < 500; pid++) {
+				if (weathersLess(pid)) {
+					return pid;
+				}
+			}
+			throw new Error("none found");
+		})();
+		assert.strictEqual(wrinkleCeiling(40, heavy), wrinkleLevelForAge(40) - 1);
+		assert.strictEqual(wrinkleCeiling(19, heavy), 0);
+	});
+});
+
+describe("hairline loss is gradual", () => {
+	test("going fully bald is rarer than starting to recede", () => {
+		// Otherwise a man goes from a full head to bald in two seasons, which
+		// reads as a glitch rather than as aging.
+		const prone = (() => {
+			for (let pid = 0; pid < 500; pid++) {
+				if (baldingProne(pid)) {
+					return pid;
+				}
+			}
+			throw new Error("none found");
+		})();
+
+		const countStep = (startId: string) => {
+			let hits = 0;
+			for (let trial = 0; trial < 4000; trial++) {
+				const f = face({
+					hair: { id: startId, color: "#272421", flip: false },
+				});
+				ageFace(f, 33, prone);
+				if (f.hair.id !== startId) {
+					hits += 1;
+				}
+			}
+			return hits;
+		};
+
+		const first = countStep("short");
+		const second = countStep(HAIR_THINNING);
+		assert.isAbove(first, second, `${first} vs ${second}`);
 	});
 });
