@@ -2,7 +2,6 @@ import { assert, describe, test } from "vitest";
 import {
 	headerVisualShift,
 	tickerVisualShift,
-	visualViewportPlausible,
 } from "./visualViewportHeader.ts";
 
 describe("headerVisualShift", () => {
@@ -31,109 +30,36 @@ describe("headerVisualShift", () => {
 	});
 });
 
-describe("visualViewportPlausible", () => {
-	// A field log caught the same device, on the same page, alternating within
-	// seconds between these two readings with nothing changing:
+describe("tickerVisualShift", () => {
+	// The bug this closes, from a field report: offsetTop 300 on a 1052-tall
+	// layout viewport. Sticky pinned the bar to the foot of the LAYOUT viewport,
+	// which the report measured at client y 752 - exactly 1052 - 300 - and the
+	// screenshot had it about 70% down the screen with box score below it.
 	//
-	//   vv=1083/1083@0x0.75   and   vv=636/1083@0x0.75
-	//
-	// Only one can be true. Zooming OUT shows MORE of the page, so at 0.75 the
-	// visible height cannot be 59% of the layout viewport.
-	test("the impossible reading is rejected", () => {
-		assert.isFalse(
-			visualViewportPlausible({
-				scale: 0.75,
-				visualHeight: 636,
-				layoutHeight: 1083,
-			}),
-		);
+	// The visible region is the same SIZE as the layout viewport, just slid down
+	// by offsetTop, so the bar needs the same downward correction the header
+	// gets. It was being pushed the other way for a long time.
+	test("moves down by the offset, exactly like the header", () => {
+		assert.strictEqual(tickerVisualShift(300), 300);
+		assert.strictEqual(tickerVisualShift(300), headerVisualShift(300));
+		assert.strictEqual(tickerVisualShift(406), headerVisualShift(406));
 	});
 
-	test("the self-consistent reading is accepted", () => {
-		assert.isTrue(
-			visualViewportPlausible({
-				scale: 0.75,
-				visualHeight: 1083,
-				layoutHeight: 1083,
-			}),
-		);
+	test("an unpanned page is untouched", () => {
+		// Which is every ordinary page on every device - the common path does
+		// nothing at all.
+		assert.strictEqual(tickerVisualShift(0), 0);
+		assert.strictEqual(tickerVisualShift(undefined), 0);
 	});
 
-	test("the earlier report had the same impossible signature", () => {
-		// Which is why the mode built on it never worked.
-		assert.isFalse(
-			visualViewportPlausible({
-				scale: 0.85,
-				visualHeight: 646,
-				layoutHeight: 1052,
-			}),
-		);
+	test("the keyboard is still safe", () => {
+		// It shortens the visible area without moving it, so offsetTop stays 0
+		// and the bar stays put rather than hoisting over what is being typed.
+		assert.strictEqual(tickerVisualShift(0), 0);
 	});
 
-	test("zoomed IN is allowed to show less - that is what zooming in is", () => {
-		assert.isTrue(
-			visualViewportPlausible({
-				scale: 2,
-				visualHeight: 500,
-				layoutHeight: 1052,
-			}),
-		);
-		assert.isTrue(
-			visualViewportPlausible({
-				scale: 1,
-				visualHeight: 640,
-				layoutHeight: 1052,
-			}),
-		);
-	});
-
-	test("nothing to check against means believe it", () => {
-		assert.isTrue(
-			visualViewportPlausible({
-				scale: undefined,
-				visualHeight: undefined,
-				layoutHeight: 1052,
-			}),
-		);
-	});
-});
-
-describe("tickerVisualShift stands down on an impossible viewport", () => {
-	test("no shift from numbers that cannot be true", () => {
-		// Acting on the bogus gap is what pulled the bar off the bottom of the
-		// screen and into the middle of the page.
-		assert.strictEqual(
-			tickerVisualShift({
-				offsetTop: 137,
-				visualHeight: 636,
-				layoutHeight: 1083,
-				scale: 0.75,
-			}),
-			0,
-		);
-	});
-
-	test("a genuine zoomed-in pan still gets its correction", () => {
-		assert.strictEqual(
-			tickerVisualShift({
-				offsetTop: 100,
-				visualHeight: 500,
-				layoutHeight: 1000,
-				scale: 2,
-			}),
-			-400,
-		);
-	});
-
-	test("an unzoomed page is untouched, as always", () => {
-		assert.strictEqual(
-			tickerVisualShift({
-				offsetTop: 0,
-				visualHeight: 1000,
-				layoutHeight: 1000,
-				scale: 1,
-			}),
-			0,
-		);
+	test("never moves upward", () => {
+		assert.strictEqual(tickerVisualShift(-50), 0);
+		assert.strictEqual(tickerVisualShift(Number.NaN), 0);
 	});
 });

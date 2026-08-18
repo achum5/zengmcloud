@@ -4,9 +4,9 @@ import {
 	detachmentConfirmed,
 	headerIsDetached,
 	scrollDecision,
+	stickyBottomAsPlaced,
 	tickerAnchorHeights,
 } from "./stickyHeaderWatchdog.ts";
-import { tickerVisualShift } from "./visualViewportHeader.ts";
 
 const deps = ({
 	scrollY = 500,
@@ -392,59 +392,50 @@ describe("bottomBarIsDetached", () => {
 	});
 });
 
-// THE STANDING CORRECTION, as opposed to the repair. Sticky anchors to the
-// layout viewport, so when the visual viewport sits inside it both bars are
-// parked outside what the user can see, behaving perfectly correctly.
-describe("tickerVisualShift", () => {
-	// The field log that diagnosed the header, read at the other end: a 646-tall
-	// visual viewport 406px down a 1052-tall layout viewport leaves no gap below
-	// it (406 + 646 = 1052), so the ticker is already where it can be seen.
-	test("no gap below the visible area means no shift", () => {
+// THE TWO MECHANISMS HAVE TO AGREE. The standing correction moves the bar; the
+// watchdog judges where the bar is. Read the moved bar naively and the watchdog
+// declares every corrected bar detached and tears it down - the false-detachment
+// incident with a new cause.
+describe("stickyBottomAsPlaced", () => {
+	// The field report that settled the direction of the correction: offsetTop
+	// 300 on a 1052-tall layout viewport, sticky leaving the bar at client y 752.
+	// The correction renders it at 1052; the watchdog has to read 752 back.
+	test("takes our own shift back out of the reading", () => {
+		assert.strictEqual(stickyBottomAsPlaced(1052, 300), 752);
+	});
+
+	test("an unpanned page is read exactly as it renders", () => {
+		assert.strictEqual(stickyBottomAsPlaced(752, 0), 752);
+		assert.strictEqual(stickyBottomAsPlaced(752, undefined), 752);
+	});
+
+	// The whole point: a healthy corrected bar must come out NOT detached.
+	test("a corrected bar is not mistaken for a detached one", () => {
+		const offsetTop = 300;
 		assert.strictEqual(
-			tickerVisualShift({
-				offsetTop: 406,
-				visualHeight: 646,
-				layoutHeight: 1052,
-			}),
-			0,
+			bottomBarIsDetached(
+				bottomDeps({
+					barBottom: stickyBottomAsPlaced(1052, offsetTop),
+					anchorHeights: [1052, 1052, 946],
+					visualOffsetTop: offsetTop,
+				}),
+			),
+			false,
 		);
 	});
 
-	test("a bar parked below the visible area is pulled up by the gap", () => {
+	// And a bar that really is riding the content still gets caught.
+	test("a genuinely detached bar is still caught", () => {
+		const offsetTop = 300;
 		assert.strictEqual(
-			tickerVisualShift({
-				offsetTop: 100,
-				visualHeight: 600,
-				layoutHeight: 800,
-			}),
-			-100,
-		);
-	});
-
-	// The keyboard shortens the visual viewport without moving it. Hoisting the
-	// ticker above the keyboard would put it over whatever is being typed into.
-	test("the keyboard is left alone", () => {
-		assert.strictEqual(
-			tickerVisualShift({ offsetTop: 0, visualHeight: 400, layoutHeight: 800 }),
-			0,
-		);
-	});
-
-	test("agreeing viewports change nothing", () => {
-		assert.strictEqual(
-			tickerVisualShift({ offsetTop: 0, visualHeight: 800, layoutHeight: 800 }),
-			0,
-		);
-	});
-
-	test("unmeasurable geometry changes nothing", () => {
-		assert.strictEqual(
-			tickerVisualShift({
-				offsetTop: undefined,
-				visualHeight: undefined,
-				layoutHeight: 800,
-			}),
-			0,
+			bottomBarIsDetached(
+				bottomDeps({
+					barBottom: stickyBottomAsPlaced(500, offsetTop),
+					anchorHeights: [1052, 1052, 946],
+					visualOffsetTop: offsetTop,
+				}),
+			),
+			true,
 		);
 	});
 });
