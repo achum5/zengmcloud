@@ -428,6 +428,51 @@ describe("the standing correction and the watchdog agree", () => {
 	});
 });
 
+// THE PHANTOM OFFSET, from a field log: offsetTop 240 on a 1083-tall layout
+// viewport, with the ticker sitting at 1083 - exactly where sticky puts it, no
+// transform on it - and the header, measured in the same breath and also
+// untransformed, reading 0 rather than -240. The rects knew nothing about that
+// offset. Subtracting it put the expected foot at 843, so the watchdog called a
+// perfectly placed bar detached and ran the repair ladder on it.
+describe("a phantom visual-viewport offset does not fake a detachment", () => {
+	const FIELD = { anchorHeights: [1083, 1083, 876], visualOffsetTop: 240 };
+
+	test("a bar at the un-offset foot is healthy", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ ...FIELD, barBottom: 1083 })),
+			false,
+		);
+	});
+
+	// And the other world still works: on a genuinely panned page the bar reads
+	// short by the offset, and that is healthy too.
+	test("a bar at the offset foot is also healthy", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ ...FIELD, barBottom: 843 })),
+			false,
+		);
+	});
+
+	test("the visible-bottom anchor still counts", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ ...FIELD, barBottom: 636 })),
+			false,
+		);
+	});
+
+	// The check still has to earn its keep: a bar riding the content is nowhere
+	// near any candidate, with or without the offset.
+	test("a bar adrift in the content is still caught", () => {
+		for (const barBottom of [400, 550, 1400]) {
+			assert.strictEqual(
+				bottomBarIsDetached(bottomDeps({ ...FIELD, barBottom })),
+				true,
+				String(barBottom),
+			);
+		}
+	});
+});
+
 describe("tickerAnchorHeights", () => {
 	test("normal life keeps all three anchors", () => {
 		// Toolbar collapsed: innerHeight grows past clientHeight by well under the

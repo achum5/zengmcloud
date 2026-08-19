@@ -176,10 +176,23 @@ export const bottomBarIsDetached = ({
 	if (!Number.isFinite(bottom)) {
 		return false;
 	}
-	// Same correction as the header, for the same reason: getBoundingClientRect
-	// reports against the VISUAL viewport while sticky is anchored to the LAYOUT
-	// one, so a bar doing exactly the right thing on a panned or zoomed
-	// page reads short by the offset between them.
+	// WITH THE OFFSET AND WITHOUT IT, because we cannot tell which world we are
+	// in and do not have to.
+	//
+	// getBoundingClientRect reports against the VISUAL viewport while sticky is
+	// anchored to the LAYOUT one, so on a genuinely panned page a healthy bar
+	// reads short by the offset between them - hence subtracting it. But
+	// visualViewport can also report a PHANTOM offset that the rects know
+	// nothing about: a field log caught offsetTop 240 on a page whose header,
+	// measured in the same breath and carrying no transform, read 0 rather than
+	// -240. Subtracting 240 there put the expected foot at 843, the healthy bar
+	// measured 1083, and the watchdog tore down a bar that was exactly where it
+	// belonged - the false-detachment incident with a third cause.
+	//
+	// So both readings count as healthy. This is a test for a bar that has come
+	// adrift and is riding the content HUNDREDS of pixels from anywhere it could
+	// legitimately be; admitting one more candidate position costs it almost
+	// nothing, and it no longer has to be right about which offset is real.
 	const rawOffset = visualOffsetTop();
 	const offset = Number.isFinite(rawOffset) ? rawOffset : 0;
 	const anchors = anchorHeights().filter(
@@ -188,8 +201,12 @@ export const bottomBarIsDetached = ({
 	if (anchors.length === 0) {
 		return false;
 	}
-	return anchors.every(
-		(height) => Math.abs(bottom - (height - offset)) > BOTTOM_TOLERANCE_PX,
+	const candidates =
+		offset === 0
+			? anchors
+			: [...anchors, ...anchors.map((height) => height - offset)];
+	return candidates.every(
+		(expected) => Math.abs(bottom - expected) > BOTTOM_TOLERANCE_PX,
 	);
 };
 
