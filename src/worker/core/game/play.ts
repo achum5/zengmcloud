@@ -75,6 +75,7 @@ import {
 } from "../sync/simDayFence.ts";
 import { syncDebugLog } from "../sync/debugLog.ts";
 import { scheduleForSim } from "./singleGameSchedule.ts";
+import { orphanedScheduleGids } from "./orphanedSchedule.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 
@@ -800,6 +801,39 @@ const play = async (
 		await updateStatus(`Playing (${helpers.daysLeft(false, numDays)})`);
 
 		let schedule = await season.getSchedule(true);
+
+		// Which of the scheduled games already have a final result saved. The
+		// games cache holds this season's games keyed by gid, so a hit means a
+		// completed game.
+		const playedGids = new Set<number>();
+		for (const game of schedule) {
+			if ((await idb.cache.games.get(game.gid)) !== undefined) {
+				playedGids.add(game.gid);
+			}
+		}
+
+		// SWEEP ORPHANS FIRST - scheduled games that already have a saved result
+		// (see orphanedSchedule.ts for the field incident). Deleting the row is
+		// what the sim that produced the result would have done; doing it here
+		// un-wedges the day, and the deletions ride this sim's changeset so the
+		// whole room heals from one device pressing Sim. Done BEFORE
+		// scheduleForSim so a single-game sim of an orphan falls into the honest
+		// requestedGameMissing path ("already been played") rather than the
+		// fence's "someone else got there first, the result will appear in a
+		// moment" - which, for an orphan, never comes true.
+		const orphaned = orphanedScheduleGids(schedule, (gid) =>
+			playedGids.has(gid),
+		);
+		if (orphaned.length > 0) {
+			syncDebugLog("schedule:orphans-swept", {
+				day: schedule[0]?.day,
+				gids: orphaned,
+			});
+			for (const gid of orphaned) {
+				await idb.cache.schedule.delete(gid);
+			}
+			schedule = await season.getSchedule(true);
+		}
 
 		// If live game sim, only do that one game, not the whole day.
 		const plan = scheduleForSim(schedule, gidOneGame);
