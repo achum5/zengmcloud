@@ -32,46 +32,54 @@ describe("headerVisualShift", () => {
 });
 
 describe("tickerVisualShift", () => {
-	// The field report that settled the direction, from an installed PWA on an
-	// iPhone: offsetTop 57 on a 1052-tall layout viewport with a 646-tall visual
-	// viewport. The bar had been pushed DOWN by 57, putting its bottom at 1053 -
-	// and it was not on screen. A bar at 1053 on a viewport ending at 1052 would
-	// be sitting on the bottom edge in full view, so the viewport does not end
-	// at 1052. It ends at 646, and the bar was 407px below the screen.
-	test("lifts the bar to the foot of what the user can see", () => {
+	// THE GHOST, from two field reports with identical geometry and the second
+	// one carrying the proof: vv 646/1052 on a page whose content visibly
+	// rendered far below layout y 646, once at offsetTop 0 and once at
+	// offsetTop 69 - and in both, vv width 518 = the full layout width = the
+	// full screen at that scale, with nothing focused. A keyboard-sized height
+	// on a full-width viewport with no keyboard is a resume artifact, and the
+	// bar must be left where sticky put it.
+	test("the full-width ghost is not believed, panned or not", () => {
+		for (const offsetTop of [0, 69]) {
+			assert.strictEqual(
+				tickerVisualShift({
+					visualHeight: 646,
+					layoutHeight: 1052,
+					offsetTop,
+					visualWidth: 518,
+					layoutWidth: 518,
+				}),
+				0,
+			);
+		}
+	});
+
+	// Genuine pinch-zoom narrows BOTH axes - that is what tells it apart from
+	// the ghost, which is a keyboard's shadow and shrinks height alone. Here
+	// the lift applies: sticky holds the layout viewport's foot, which is
+	// below what the user can see.
+	test("a genuinely pinched viewport gets the lift", () => {
 		assert.strictEqual(
 			tickerVisualShift({
 				visualHeight: 646,
 				layoutHeight: 1052,
 				offsetTop: 57,
+				visualWidth: 400,
+				layoutWidth: 518,
 			}),
-			// 646 - (1052 - 57): up, not down.
+			// 646 - (1052 - 57): up to the visible foot.
 			-349,
 		);
 	});
 
-	test("the earlier report lands on the same rule", () => {
-		assert.strictEqual(
-			tickerVisualShift({
-				visualHeight: 646,
-				layoutHeight: 1052,
-				offsetTop: 300,
-			}),
-			-106,
-		);
-	});
-
-	// The ghost reading: a resume handed back a keyboard-sized height with no
-	// keyboard present (the log showed 1052/1052 before backgrounding, 646/1052
-	// after, same page), and the lift computed from it parked the bar
-	// mid-screen. offsetTop 0 is what marks it - the true full-size viewport
-	// has nowhere to pan - so the bar must be left alone.
-	test("a shrunken height with nowhere panned is not believed", () => {
+	test("pinched but sitting at the exact top stands down, like the header", () => {
 		assert.strictEqual(
 			tickerVisualShift({
 				visualHeight: 646,
 				layoutHeight: 1052,
 				offsetTop: 0,
+				visualWidth: 400,
+				layoutWidth: 518,
 			}),
 			0,
 		);
@@ -85,6 +93,8 @@ describe("tickerVisualShift", () => {
 				visualHeight: 1052,
 				layoutHeight: 1052,
 				offsetTop: 0,
+				visualWidth: 518,
+				layoutWidth: 518,
 			}),
 			0,
 		);
@@ -97,20 +107,23 @@ describe("tickerVisualShift", () => {
 			tickerVisualShift({
 				visualHeight: 1200,
 				layoutHeight: 1052,
-				offsetTop: 0,
+				offsetTop: 10,
+				visualWidth: 400,
+				layoutWidth: 518,
 			}),
 			0,
 		);
 	});
 
 	test("the keyboard is left alone", () => {
-		// It shrinks the visual viewport exactly like a zoom, but hoisting the
-		// bar would put it over whatever is being typed into.
+		// Hoisting the bar over it would cover whatever is being typed into.
 		assert.strictEqual(
 			tickerVisualShift({
 				visualHeight: 500,
 				layoutHeight: 1052,
-				offsetTop: 0,
+				offsetTop: 100,
+				visualWidth: 400,
+				layoutWidth: 518,
 				keyboardOpen: true,
 			}),
 			0,
@@ -118,34 +131,34 @@ describe("tickerVisualShift", () => {
 	});
 
 	test("unreadable geometry changes nothing", () => {
+		const pinched = {
+			visualHeight: 646,
+			layoutHeight: 1052,
+			offsetTop: 57,
+			visualWidth: 400,
+			layoutWidth: 518,
+		};
 		assert.strictEqual(
-			tickerVisualShift({
-				visualHeight: undefined,
-				layoutHeight: 1052,
-				offsetTop: 0,
-			}),
+			tickerVisualShift({ ...pinched, visualHeight: undefined }),
 			0,
 		);
 		assert.strictEqual(
-			tickerVisualShift({
-				visualHeight: Number.NaN,
-				layoutHeight: 1052,
-				offsetTop: 0,
-			}),
+			tickerVisualShift({ ...pinched, visualHeight: Number.NaN }),
 			0,
 		);
 		assert.strictEqual(
-			tickerVisualShift({
-				visualHeight: 646,
-				layoutHeight: undefined,
-				offsetTop: 0,
-			}),
+			tickerVisualShift({ ...pinched, layoutHeight: undefined }),
 			0,
 		);
 		assert.strictEqual(
-			tickerVisualShift({ visualHeight: 0, layoutHeight: 1052, offsetTop: 0 }),
+			tickerVisualShift({ ...pinched, visualWidth: undefined }),
 			0,
 		);
+		assert.strictEqual(
+			tickerVisualShift({ ...pinched, layoutWidth: Number.NaN }),
+			0,
+		);
+		assert.strictEqual(tickerVisualShift({ ...pinched, visualHeight: 0 }), 0);
 	});
 });
 

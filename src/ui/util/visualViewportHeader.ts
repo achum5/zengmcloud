@@ -73,24 +73,43 @@ export const headerVisualShift = (offsetTop: number | undefined): number => {
 // present, so the same numbers are sometimes the truth and sometimes a ghost,
 // and no reading of vv.height alone can tell which.
 //
-// offsetTop is the one witness that can. A visual viewport can only be panned
-// WITHIN the layout viewport when it is genuinely smaller than it - you cannot
-// pan a thing inside a thing it completely fills. So offsetTop > 0 vouches for
-// the shrunken height being real, and offsetTop of 0 leaves it uncorroborated,
-// where doing nothing is right: if the height is a ghost, plain sticky is
-// already at the true bottom, and if it is real the page is zoomed in sitting
-// at its exact top, where the header stands down too and one pixel of pan
-// re-arms the correction. Every confirmed-true field case had offsetTop > 0
-// (57, 300, 406); the confirmed-false one had 0.
+// offsetTop looked like a witness - you cannot pan a thing inside a thing it
+// completely fills, so a nonzero offsetTop seemed to prove the height real.
+// The very next report broke that too: vv 646/1052 AT offsetTop 69, bar lifted
+// mid-screen again, and the new report fields show why the gate was fooled.
+// The ghost is not one bad number, it is the whole VisualViewport object
+// living in a self-consistent phantom-keyboard world: its height stays
+// keyboard-sized and its offsetTop tracks the page scroll (69 = scrollY = 69)
+// exactly as if the keyboard were still up. Nothing read from inside that
+// world can vouch for anything else inside it.
+//
+// The witness has to come from outside, and width is it. A visual viewport
+// that is genuinely smaller than the layout viewport only exists under
+// pinch-zoom, and pinch narrows BOTH axes - while the ghost, being a
+// keyboard's shadow, shrinks height alone and keeps the width spanning the
+// screen (the report proves it: vv width 518 = the full layout width = the
+// full 440pt screen at 0.85, with activeElement <body>, so nothing focusable
+// could be covering the missing 400pt). So the lift now requires the width to
+// be genuinely narrowed. On a full-width viewport there is nothing this
+// correction can truthfully know about the bottom of the screen, and every
+// recorded full-width case wants 0 anyway: healthy wants nothing, the ghost
+// wants nothing, and a real keyboard wants nothing because hoisting the bar
+// over it would cover what is being typed.
 export const tickerVisualShift = ({
 	visualHeight,
 	layoutHeight,
 	offsetTop,
+	visualWidth,
+	layoutWidth,
 	keyboardOpen,
 }: {
 	visualHeight: number | undefined;
 	layoutHeight: number | undefined;
 	offsetTop: number | undefined;
+	// The pinch corroboration - see above. Only a width genuinely narrower
+	// than the layout viewport proves the viewport is really smaller at all.
+	visualWidth: number | undefined;
+	layoutWidth: number | undefined;
 	// The software keyboard shrinks the visual viewport exactly like a zoom
 	// does, and no viewport number distinguishes them - so ask the page instead
 	// of guessing from geometry. See keyboardLikelyOpen.
@@ -113,9 +132,24 @@ export const tickerVisualShift = ({
 	) {
 		return 0;
 	}
-	// Uncorroborated height - see above. A ghost reading always comes with
-	// offsetTop 0, because the true full-size viewport has nowhere to pan.
+	if (
+		!Number.isFinite(visualWidth) ||
+		!Number.isFinite(layoutWidth) ||
+		visualWidth === undefined ||
+		layoutWidth === undefined ||
+		layoutWidth <= 0
+	) {
+		// Unreadable widths cannot corroborate anything, and claiming less is
+		// the safe direction.
+		return 0;
+	}
 	if (offsetTop <= 0) {
+		// Nowhere panned means sticky's own spot is the right one.
+		return 0;
+	}
+	// The pinch test. The half pixel forgives rounding; a ghost is not half a
+	// pixel narrow, it is exactly as wide as the layout viewport.
+	if (visualWidth + 0.5 >= layoutWidth) {
 		return 0;
 	}
 	const shift = visualHeight - (layoutHeight - offsetTop);
@@ -203,6 +237,8 @@ export const resyncStickyBarShifts = () => {
 			layoutHeight:
 				document.documentElement?.clientHeight || window.innerHeight,
 			offsetTop: vv?.offsetTop,
+			visualWidth: vv?.width,
+			layoutWidth: document.documentElement?.clientWidth || window.innerWidth,
 			keyboardOpen: keyboardLikelyOpen(document.activeElement),
 		}),
 	);
