@@ -18,6 +18,7 @@ import {
 	toCourt,
 } from "./courtSpots.ts";
 import { useLocal } from "../../util/local.ts";
+import type { CourtImageSlot } from "../../../common/types.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 
@@ -1607,6 +1608,49 @@ const LiveCourt = ({
 	const benchImageURL = court?.benchImageURL || undefined;
 	const centerText = court?.centerText || undefined;
 	const benchText = court?.benchText || undefined;
+	const railImageURL = court?.railImageURL || undefined;
+	// Compared by value, not identity: the editor hands back a fresh style
+	// object on every keystroke, so depending on court.adjust directly would
+	// repaint the floor constantly, and depending on nothing would leave a
+	// slider doing nothing at all. It is a handful of numbers.
+	const adjustKey = JSON.stringify(court?.adjust ?? null);
+
+	// WHERE AN IMAGE ACTUALLY LANDS, once the team has had its say.
+	//
+	// Each slot below states its designed box; this applies the team's scale,
+	// nudge, rotation, opacity and fit on top. Scaling is about the box's
+	// CENTER, so making a center-court logo bigger grows it outward from the
+	// middle instead of dragging it toward one corner - which is what anyone
+	// dragging a size slider expects.
+	const placed = (
+		slot: CourtImageSlot,
+		box: {
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+			opacity: number;
+			fit?: "contain" | "fill";
+		},
+	) => {
+		const adjust = court?.adjust?.[slot];
+		const scale = Math.min(Math.max(adjust?.scale ?? 1, 0.1), 6);
+		const cx = box.x + box.width / 2 + (adjust?.dx ?? 0);
+		const cy = box.y + box.height / 2 + (adjust?.dy ?? 0);
+		const width = box.width * scale;
+		const height = box.height * scale;
+		const rotate = adjust?.rotate ?? 0;
+		const fit = adjust?.fit ?? box.fit ?? "contain";
+		return {
+			x: cx - width / 2,
+			y: cy - height / 2,
+			width,
+			height,
+			opacity: Math.min(Math.max(adjust?.opacity ?? box.opacity, 0), 1),
+			preserveAspectRatio: fit === "fill" ? "none" : "xMidYMid meet",
+			transform: rotate ? `rotate(${rotate} ${cx} ${cy})` : undefined,
+		};
+	};
 
 	// Namespaced ids for the floor's SVG defs (grain filter + clip paths), so
 	// two courts on one page (e.g. the editor preview) don't collide.
@@ -1830,8 +1874,34 @@ const LiveCourt = ({
 	const railLabel = (home?.name || home?.region || home?.abbrev || "")
 		.toUpperCase()
 		.slice(0, 14);
+	// THE STRIP BEHIND EACH BASELINE - the band with the team name on it, and
+	// the first place anyone looks to put an image. Drawn along the rail and
+	// rotated to run with it, so a wordmark reads the way the team name does.
+	const railImage = (left: boolean) => {
+		if (!railImageURL) {
+			return null;
+		}
+		const cx = left ? -RAIL_W / 2 : COURT_W + RAIL_W / 2;
+		// Laid out as if it were horizontal (length along the court's width),
+		// then rotated onto the rail - so "wider" means longer along the rail.
+		const spec = placed("rail", {
+			x: cx - COURT_H / 2,
+			y: 25 - RAIL_W / 2,
+			width: COURT_H,
+			height: RAIL_W,
+			opacity: 0.97,
+			fit: "fill",
+		});
+		return (
+			<g transform={`rotate(${left ? -90 : 90} ${cx} 25)`}>
+				<image href={railImageURL} {...spec} />
+			</g>
+		);
+	};
+
 	const railText = (left: boolean) => {
-		if (!railLabel) {
+		// An image on the rail takes it over; the name would print on top of it.
+		if (!railLabel || railImageURL || court?.hideRailText) {
 			return null;
 		}
 		const x = left ? -RAIL_W / 2 : COURT_W + RAIL_W / 2;
@@ -2034,21 +2104,25 @@ const LiveCourt = ({
 					<>
 						<image
 							href={sidelineImageURL}
-							x={0}
-							y={-APRON}
-							width={COURT_W}
-							height={APRON}
-							preserveAspectRatio="none"
-							opacity={0.97}
+							{...placed("sideline", {
+								x: 0,
+								y: -APRON,
+								width: COURT_W,
+								height: APRON,
+								opacity: 0.97,
+								fit: "fill",
+							})}
 						/>
 						<image
 							href={sidelineImageURL}
-							x={0}
-							y={COURT_H}
-							width={COURT_W}
-							height={APRON}
-							preserveAspectRatio="none"
-							opacity={0.97}
+							{...placed("sideline", {
+								x: 0,
+								y: COURT_H,
+								width: COURT_W,
+								height: APRON,
+								opacity: 0.97,
+								fit: "fill",
+							})}
 						/>
 					</>
 				) : null}
@@ -2058,12 +2132,14 @@ const LiveCourt = ({
 				{benchImageURL ? (
 					<image
 						href={benchImageURL}
-						x={0}
-						y={COURT_H}
-						width={COURT_W}
-						height={APRON}
-						preserveAspectRatio="none"
-						opacity={0.97}
+						{...placed("bench", {
+							x: 0,
+							y: COURT_H,
+							width: COURT_W,
+							height: APRON,
+							opacity: 0.97,
+							fit: "fill",
+						})}
 					/>
 				) : null}
 
@@ -2074,21 +2150,23 @@ const LiveCourt = ({
 					<>
 						<image
 							href={baselineImageURL}
-							x={COURT_W * 0.11 - 9}
-							y={25 - 6}
-							width={18}
-							height={12}
-							opacity={0.9}
-							preserveAspectRatio="xMidYMid meet"
+							{...placed("baseline", {
+								x: COURT_W * 0.11 - 9,
+								y: 25 - 6,
+								width: 18,
+								height: 12,
+								opacity: 0.9,
+							})}
 						/>
 						<image
 							href={baselineImageURL}
-							x={COURT_W * 0.89 - 9}
-							y={25 - 6}
-							width={18}
-							height={12}
-							opacity={0.9}
-							preserveAspectRatio="xMidYMid meet"
+							{...placed("baseline", {
+								x: COURT_W * 0.89 - 9,
+								y: 25 - 6,
+								width: 18,
+								height: 12,
+								opacity: 0.9,
+							})}
 						/>
 					</>
 				) : null}
@@ -2106,12 +2184,13 @@ const LiveCourt = ({
 							<image
 								key={`corner${i}`}
 								href={cornerLogoURL}
-								x={qx - 4.5}
-								y={qy - 4.5}
-								width={9}
-								height={9}
-								opacity={0.8}
-								preserveAspectRatio="xMidYMid meet"
+								{...placed("corner", {
+									x: qx - 4.5,
+									y: qy - 4.5,
+									width: 9,
+									height: 9,
+									opacity: 0.8,
+								})}
 							/>
 						))
 					: null}
@@ -2120,6 +2199,8 @@ const LiveCourt = ({
 				{paintFor(false)}
 				{paintFor(true)}
 
+				{railImage(true)}
+				{railImage(false)}
 				{railText(true)}
 				{railText(false)}
 
@@ -2138,23 +2219,25 @@ const LiveCourt = ({
 				{finals ? (
 					<image
 						href={trophyURL}
-						x={COURT_W / 2 - 17}
-						y={25 - 21}
-						width={34}
-						height={42}
-						opacity={0.97}
-						preserveAspectRatio="xMidYMid meet"
+						{...placed("trophy", {
+							x: COURT_W / 2 - 17,
+							y: 25 - 21,
+							width: 34,
+							height: 42,
+							opacity: 0.97,
+						})}
 					/>
 				) : null}
 				{centerLogoURL ? (
 					<image
 						href={centerLogoURL}
-						x={COURT_W / 2 - (finals ? 13 : 15)}
-						y={25 - (finals ? 13 : 15)}
-						width={finals ? 26 : 30}
-						height={finals ? 26 : 30}
-						opacity={0.97}
-						preserveAspectRatio="xMidYMid meet"
+						{...placed("logo", {
+							x: COURT_W / 2 - (finals ? 13 : 15),
+							y: 25 - (finals ? 13 : 15),
+							width: finals ? 26 : 30,
+							height: finals ? 26 : 30,
+							opacity: 0.97,
+						})}
 					/>
 				) : !finals ? (
 					<text
@@ -2212,21 +2295,23 @@ const LiveCourt = ({
 					<>
 						<image
 							href={secondaryLogoURL}
-							x={COURT_W * 0.27 - 6.5}
-							y={25 - 6.5}
-							width={13}
-							height={13}
-							opacity={0.82}
-							preserveAspectRatio="xMidYMid meet"
+							{...placed("secondary", {
+								x: COURT_W * 0.27 - 6.5,
+								y: 25 - 6.5,
+								width: 13,
+								height: 13,
+								opacity: 0.82,
+							})}
 						/>
 						<image
 							href={secondaryLogoURL}
-							x={COURT_W * 0.73 - 6.5}
-							y={25 - 6.5}
-							width={13}
-							height={13}
-							opacity={0.82}
-							preserveAspectRatio="xMidYMid meet"
+							{...placed("secondary", {
+								x: COURT_W * 0.73 - 6.5,
+								y: 25 - 6.5,
+								width: 13,
+								height: 13,
+								opacity: 0.82,
+							})}
 						/>
 					</>
 				) : null}
@@ -2264,6 +2349,9 @@ const LiveCourt = ({
 			baselineImageURL,
 			cornerLogoURL,
 			benchImageURL,
+			railImageURL,
+			adjustKey,
+			court?.hideRailText,
 			centerText,
 			centerTextColor,
 			benchText,

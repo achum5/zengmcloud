@@ -2220,6 +2220,42 @@ export type SportsbookMarket =
 
 // How a team's basketball court is drawn in the live-game view. Stored on the
 // team record (so it syncs to the whole room) and edited from Manage Teams.
+// WHERE AN IMAGE SITS ON THE FLOOR, and how big.
+//
+// Every image slot on the court gets the same four knobs, so "make it bigger
+// and shift it left" means the same thing wherever you are - a court logo, a
+// baseline script and a sideline banner are all just an image somewhere on a
+// 94x50 floor. The defaults are the slot's built-in placement, so an untouched
+// court renders exactly as it always did.
+export type CourtImageAdjust = {
+	// Multiplier on the slot's default size. 1 = as designed.
+	scale?: number;
+	// 0 = invisible, 1 = opaque. Undefined keeps the slot's own default, which
+	// is usually a little under 1 so the floor reads through.
+	opacity?: number;
+	// Nudge, in feet, along the court's length (dx) and across its width (dy) -
+	// the same units the court itself is drawn in, so 5 is five feet.
+	dx?: number;
+	dy?: number;
+	// Degrees, clockwise, about the image's own center.
+	rotate?: number;
+	// "contain" keeps the image's proportions inside its box; "fill" stretches
+	// it to the box. Banners usually want fill, logos contain.
+	fit?: "contain" | "fill";
+};
+
+// Every image the court can carry. Named by where it lands rather than by what
+// a team happens to put there.
+export type CourtImageSlot =
+	| "logo" // center court
+	| "trophy" // center court, championship look
+	| "secondary" // one in each half-court
+	| "sideline" // both sideline aprons
+	| "bench" // bench-side apron only
+	| "baseline" // on the floor in each backcourt
+	| "corner" // the four quarter-court corners
+	| "rail"; // the raised strip behind each baseline
+
 export type CourtStyle = {
 	floor?: string; // hardwood tone (hex)
 	floorPattern?: "hardwood" | "parquet" | "diagonal" | "chevron" | "solid";
@@ -2240,6 +2276,15 @@ export type CourtStyle = {
 	benchImageURL?: string; // banner along the bench (bottom) sideline only
 	benchText?: string; // sponsor text along the bench sideline (e.g. "celtics.com")
 	benchTextColor?: string; // bench text color (hex); default rail text color
+	// An image on the raised strip behind each baseline - the place the team
+	// name is written by default, and the first place people look for one.
+	railImageURL?: string;
+	// Drop the team name from the rails, so an image (or the bare color) has
+	// them to itself. Implied when railImageURL is set.
+	hideRailText?: boolean;
+	// Per-slot size/opacity/position, keyed by CourtImageSlot. Absent means
+	// every image sits where it was designed to.
+	adjust?: Partial<Record<CourtImageSlot, CourtImageAdjust>>;
 };
 
 export type TeamAttr = keyof Team;
