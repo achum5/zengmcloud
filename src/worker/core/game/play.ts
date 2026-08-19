@@ -832,6 +832,13 @@ const play = async (
 			for (const gid of orphaned) {
 				await idb.cache.schedule.delete(gid);
 			}
+			// Tell the page. The sweep's most common trigger is someone pressing
+			// Sim on the dead card from the Daily Schedule, a path that then bails
+			// without simming anything - and with no update event, that page kept
+			// rendering the card it had just deleted until something unrelated
+			// refreshed it. A field report confirmed exactly that: the log showed
+			// orphans-swept and the publish, and the screen showed no change.
+			await toUI("realtimeUpdate", [["gameSim"]]);
 			schedule = await season.getSchedule(true);
 		}
 
