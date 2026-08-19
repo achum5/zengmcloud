@@ -33,7 +33,6 @@ import { recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
 import {
 	initVisualViewportHeader,
 	resyncStickyBarShifts,
-	tickerVisualShift,
 } from "./visualViewportHeader.ts";
 
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
@@ -194,23 +193,6 @@ export const bottomBarIsDetached = ({
 	);
 };
 
-// Where sticky ACTUALLY put the bar, with our own standing correction taken
-// back out of the reading.
-//
-// The two mechanisms have to agree or they fight. The standing correction
-// pushes the bar down by the visual offset so it lands at the foot of what the
-// user can see; the rule above asks whether the bar is at the foot of the
-// LAYOUT viewport, which is where sticky puts it. A healthy corrected bar
-// therefore reads a full offset past what the rule expects, and the rule would
-// call the correction a detachment and tear the bar down to repair it - the
-// false-detachment incident, rebuilt. Subtracting the shift we applied
-// ourselves keeps the rule asking the only honest question. Pure, so the
-// relationship is a test.
-export const stickyBottomAsPlaced = (
-	renderedBottom: number,
-	offsetTop: number | undefined,
-): number => renderedBottom - tickerVisualShift(offsetTop);
-
 // Every height the foot of the viewport can legitimately be at, minus one that
 // cannot be trusted: a resume can hand back a documentElement.clientHeight
 // still sized for the app-switcher snapshot. When it reads SMALLER than
@@ -285,12 +267,11 @@ const TICKER_BAR: Bar = {
 	edge: (element) => element.getBoundingClientRect().bottom,
 	detached: (element) =>
 		bottomBarIsDetached({
-			// Measured as sticky left it, not as it renders - see above.
-			barBottom: () =>
-				stickyBottomAsPlaced(
-					element.getBoundingClientRect().bottom,
-					window.visualViewport?.offsetTop,
-				),
+			// Measured as it renders. The standing correction lifts the bar to
+			// the foot of the visible area, which is the vvBottom anchor below -
+			// so a corrected bar matches an anchor exactly and the two
+			// mechanisms agree without either having to undo the other.
+			barBottom: () => element.getBoundingClientRect().bottom,
 			// Every place a healthy bottom edge can be: the static document
 			// height, the dynamic innerHeight (iOS grows it when the toolbar
 			// collapses - the false-detachment incident), and the visible bottom

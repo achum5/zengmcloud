@@ -4,7 +4,6 @@ import {
 	detachmentConfirmed,
 	headerIsDetached,
 	scrollDecision,
-	stickyBottomAsPlaced,
 	tickerAnchorHeights,
 } from "./stickyHeaderWatchdog.ts";
 
@@ -392,49 +391,38 @@ describe("bottomBarIsDetached", () => {
 	});
 });
 
-// THE TWO MECHANISMS HAVE TO AGREE. The standing correction moves the bar; the
-// watchdog judges where the bar is. Read the moved bar naively and the watchdog
-// declares every corrected bar detached and tears it down - the false-detachment
-// incident with a new cause.
-describe("stickyBottomAsPlaced", () => {
-	// The field report that settled the direction of the correction: offsetTop
-	// 300 on a 1052-tall layout viewport, sticky leaving the bar at client y 752.
-	// The correction renders it at 1052; the watchdog has to read 752 back.
-	test("takes our own shift back out of the reading", () => {
-		assert.strictEqual(stickyBottomAsPlaced(1052, 300), 752);
-	});
+// THE TWO MECHANISMS HAVE TO AGREE. The standing correction lifts the bar to
+// the foot of the visible area; this asks whether the bar is somewhere a
+// healthy bar can be. If the two disagree the watchdog tears down a bar that is
+// exactly where it was just put - the false-detachment incident with a new
+// cause - so the field numbers are pinned here.
+describe("the standing correction and the watchdog agree", () => {
+	// offsetTop 57, layout 1052, visual 646. Sticky leaves the bar at 995 and
+	// the correction lifts it to 646, which is the vvBottom anchor exactly.
+	const FIELD = {
+		anchorHeights: [1052, 1052, 703],
+		visualOffsetTop: 57,
+	};
 
-	test("an unpanned page is read exactly as it renders", () => {
-		assert.strictEqual(stickyBottomAsPlaced(752, 0), 752);
-		assert.strictEqual(stickyBottomAsPlaced(752, undefined), 752);
-	});
-
-	// The whole point: a healthy corrected bar must come out NOT detached.
-	test("a corrected bar is not mistaken for a detached one", () => {
-		const offsetTop = 300;
+	test("a corrected bar is not called detached", () => {
 		assert.strictEqual(
-			bottomBarIsDetached(
-				bottomDeps({
-					barBottom: stickyBottomAsPlaced(1052, offsetTop),
-					anchorHeights: [1052, 1052, 946],
-					visualOffsetTop: offsetTop,
-				}),
-			),
+			bottomBarIsDetached(bottomDeps({ ...FIELD, barBottom: 646 })),
 			false,
 		);
 	});
 
-	// And a bar that really is riding the content still gets caught.
-	test("a genuinely detached bar is still caught", () => {
-		const offsetTop = 300;
+	// The frame before the correction lands, sticky has it at the foot of the
+	// layout viewport - also a place a healthy bar can be, so no flapping.
+	test("an uncorrected bar is not called detached either", () => {
 		assert.strictEqual(
-			bottomBarIsDetached(
-				bottomDeps({
-					barBottom: stickyBottomAsPlaced(500, offsetTop),
-					anchorHeights: [1052, 1052, 946],
-					visualOffsetTop: offsetTop,
-				}),
-			),
+			bottomBarIsDetached(bottomDeps({ ...FIELD, barBottom: 995 })),
+			false,
+		);
+	});
+
+	test("a bar riding the content is still caught", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(bottomDeps({ ...FIELD, barBottom: 400 })),
 			true,
 		);
 	});

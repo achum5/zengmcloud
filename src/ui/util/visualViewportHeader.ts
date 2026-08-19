@@ -10,11 +10,9 @@
 // measured at -406. That is not a broken header and no amount of rebuilding the
 // sticky node can help; the fix is to put the header back where it can be seen.
 //
-// THE BOTTOM TICKER HAS THE SAME PROBLEM, and - after a long time spent
-// assuming otherwise - the same answer, not a mirrored one. It is sticky, so it
-// holds the foot of the LAYOUT viewport, which on a panned page is offsetTop
-// pixels above the foot of what the user can see. Same correction, same
-// direction: down.
+// THE BOTTOM TICKER HAS THE SAME PROBLEM AT THE OTHER END, and it does need the
+// mirrored answer: it holds the foot of the LAYOUT viewport, which on a zoomed
+// page is BELOW the foot of what the user can see, so it comes up.
 //
 // Nothing happens at all in the normal case, where the two viewports agree. Note
 // that this runs on every scroll, not only on resume - a standing correction
@@ -37,39 +35,101 @@ export const headerVisualShift = (offsetTop: number | undefined): number => {
 	return Math.round(offsetTop);
 };
 
-// AND THE TICKER GETS THE SAME SHIFT, DOWN, FOR THE SAME REASON.
+// How far to lift the ticker so it sits on the foot of the visible area.
 //
-// This was wrong for a long time and the fix is smaller than every attempt at
-// it. The ticker was treated as the header's opposite - if the header is above
-// the visible area, surely the bar is below it - so it was pushed UP by the
-// gap between the visible bottom and the layout viewport's bottom. It is not
-// the opposite. The visible region is the SAME SIZE as the layout viewport,
-// just slid DOWN by offsetTop, so everything in it needs the same downward
-// correction.
+// THIS IS THE MIRROR OF THE HEADER, and the previous build of it was not - it
+// pushed the bar DOWN by offsetTop, the same way the header goes, on the theory
+// that the visible region was the same size as the layout viewport and merely
+// slid down within it. A field report killed that theory outright:
 //
-// A field report settles it. offsetTop 300, layout viewport 1052, and:
+//   offsetTop 57, layout viewport 1052, visual viewport 646 tall
+//   ticker shifted +57, its bottom measured at 1053 - and NOT ON SCREEN
 //
-//   - the header, shifted +300, renders at the top of the screen. Correct, and
-//     it has always worked, which is the evidence that offsetTop is real.
-//   - the ticker, sticky, measured its bottom at client y 752 - which is
-//     exactly 1052 - 300, the layout viewport's bottom seen from a visual
-//     viewport that starts 300 down.
-//   - 752 of 1052 is 71% down the screen, and the screenshot has the bar at
-//     about 70%, sitting on the box score with page content below it.
+// A bar whose bottom edge is at 1053 on a viewport that ends at 1052 would be
+// sitting exactly on the bottom edge, in full view. The user could not see it.
+// So the visible area does not end at 1052, and visualViewport.height - the one
+// number that says where it does end - is telling the truth: it ends at 646,
+// and the bar was 407px below the screen.
 //
-// So sticky put the bar at the foot of the LAYOUT viewport, which is 300px
-// above the foot of what the user can see. It needs to come down by exactly
-// the amount the header comes down by.
+// The arithmetic, all in the coordinates getBoundingClientRect reports (which
+// are relative to the VISUAL viewport here - that is exactly why the header
+// reads -offsetTop when it is doing its job):
 //
-// visualViewport.height is not used at all any more, which also retires every
-// problem with it: it is the number that alternated between two values seconds
-// apart, and the number the old gap was computed from.
+//   sticky puts the bar's bottom at   layoutHeight - offsetTop   = 995
+//   the user can see down to          visualHeight               = 646
+//   so it needs to come up by         646 - 995                  = -349
 //
-// The keyboard is still safe. It shortens the visible area without moving it,
-// so offsetTop stays 0 and nothing shifts - a bar hoisted above the keyboard
-// would cover whatever is being typed into.
-export const tickerVisualShift = (offsetTop: number | undefined): number =>
-	headerVisualShift(offsetTop);
+// Never downward. A positive correction can only push the bar past the foot of
+// the layout viewport, which is the one place sticky already guarantees is no
+// worse than the edge of the screen.
+export const tickerVisualShift = ({
+	visualHeight,
+	layoutHeight,
+	offsetTop,
+	keyboardOpen,
+}: {
+	visualHeight: number | undefined;
+	layoutHeight: number | undefined;
+	offsetTop: number | undefined;
+	// The software keyboard shrinks the visual viewport exactly like a zoom
+	// does, and no viewport number distinguishes them - so ask the page instead
+	// of guessing from geometry. See keyboardLikelyOpen.
+	keyboardOpen?: boolean;
+}): number => {
+	// Hoisting the bar above the keyboard would park it on top of whatever is
+	// being typed into, which is worse than leaving it behind the keyboard.
+	if (keyboardOpen) {
+		return 0;
+	}
+	if (
+		!Number.isFinite(visualHeight) ||
+		!Number.isFinite(layoutHeight) ||
+		!Number.isFinite(offsetTop) ||
+		visualHeight === undefined ||
+		layoutHeight === undefined ||
+		offsetTop === undefined ||
+		visualHeight <= 0 ||
+		layoutHeight <= 0
+	) {
+		return 0;
+	}
+	const shift = visualHeight - (layoutHeight - offsetTop);
+	return shift < 0 ? Math.round(shift) : 0;
+};
+
+// Is the software keyboard (probably) up?
+//
+// This is the only thing the geometry cannot tell us apart: a keyboard and a
+// pinch-zoom both shrink visualViewport.height while the layout viewport stays
+// put. The page knows something the viewport does not, though - a keyboard only
+// appears when something is focused that can take text. Asking that directly
+// beats every heuristic that tried to read it out of the numbers.
+export const keyboardLikelyOpen = (
+	active: Element | null | undefined,
+): boolean => {
+	if (!active) {
+		return false;
+	}
+	const tag = active.tagName;
+	if (tag === "TEXTAREA") {
+		return true;
+	}
+	if (tag === "INPUT") {
+		// A checkbox or a button is an <input> that no keyboard ever opens for.
+		const type = (active as HTMLInputElement).type;
+		return (
+			type !== "checkbox" &&
+			type !== "radio" &&
+			type !== "button" &&
+			type !== "submit" &&
+			type !== "reset" &&
+			type !== "range" &&
+			type !== "color" &&
+			type !== "file"
+		);
+	}
+	return (active as HTMLElement).isContentEditable === true;
+};
 
 export const applyHeaderShift = (
 	element: HTMLElement | null,
@@ -111,7 +171,16 @@ export const resyncStickyBarShifts = () => {
 		ticker.style.left = "";
 		ticker.style.right = "";
 	}
-	applyHeaderShift(ticker, tickerVisualShift(vv?.offsetTop));
+	applyHeaderShift(
+		ticker,
+		tickerVisualShift({
+			visualHeight: vv?.height,
+			layoutHeight:
+				document.documentElement?.clientHeight || window.innerHeight,
+			offsetTop: vv?.offsetTop,
+			keyboardOpen: keyboardLikelyOpen(document.activeElement),
+		}),
+	);
 };
 
 export const initVisualViewportHeader = () => {
