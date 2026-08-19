@@ -19,6 +19,7 @@ import {
 } from "./courtSpots.ts";
 import { useLocal } from "../../util/local.ts";
 import type { CourtImageSlot } from "../../../common/types.ts";
+import { nextSpinDeg, rimReaction } from "./courtAnimation.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 
@@ -954,10 +955,21 @@ const LiveCourt = ({
 }) => {
 	const { lid } = useLocal(["lid"]);
 
-	const ballRef = useRef<SVGCircleElement | null>(null);
+	// The ball is a GROUP now, not a circle: it carries seams and is placed by
+	// one transform, so it can spin as it travels.
+	const ballRef = useRef<SVGGElement | null>(null);
 	const ballShadowRef = useRef<SVGEllipseElement | null>(null);
 	const ringRef = useRef<SVGCircleElement | null>(null);
 	const burstRef = useRef<SVGGElement | null>(null);
+	// A short motion trail behind the ball, so a fast arc reads as a path
+	// rather than a dot that jumps.
+	const trailRef = useRef<(SVGCircleElement | null)[]>([]);
+	// The two rims, so the iron can answer a shot - see rimReact.
+	const rimRefs = useRef<(SVGGElement | null)[]>([]);
+	// Accumulated ball rotation (degrees) and its last floor position, kept
+	// across frames so spin follows distance travelled rather than being
+	// re-derived by every caller.
+	const spinRef = useRef({ deg: 0, x: 0, y: 0, has: false });
 	const rafRef = useRef<number | undefined>(undefined);
 
 	// Measured px size of the court container, so faces can be positioned with a
@@ -1016,6 +1028,16 @@ const LiveCourt = ({
 		if (burst) {
 			burst.style.opacity = "0";
 		}
+		// A new scene starts the ball somewhere else entirely, so the trail must
+		// not draw a streak between the two, and the spin must not lurch by the
+		// jump distance.
+		const trailPrev: { x: number; y: number }[] = [];
+		spinRef.current.has = false;
+		for (const node of trailRef.current) {
+			if (node) {
+				node.style.opacity = "0";
+			}
+		}
 
 		const hideBall = () => {
 			ball.style.opacity = "0";
@@ -1024,6 +1046,11 @@ const LiveCourt = ({
 			}
 			if (ring) {
 				ring.style.opacity = "0";
+			}
+			for (const node of trailRef.current) {
+				if (node) {
+					node.style.opacity = "0";
+				}
 			}
 		};
 
@@ -1034,11 +1061,56 @@ const LiveCourt = ({
 		// flat top-down floor - a real arc instead of a sliding dot. Height is
 		// clamped so a high arc near the top sideline never clips out of frame.
 		const BALL_R = 0.85;
+		// A ball that TRAVELS rotates. Spin is accumulated from the distance
+		// covered between frames rather than passed in by each animation, so a
+		// dribble, a pass, a shot and a ball skipping out of bounds all get it
+		// for free and all get it at the same rate - which is what makes it read
+		// as one physical object instead of an effect applied to some plays.
 		const placeBall = (gx: number, gy: number, h: number) => {
 			const hh = h > 0 ? h : 0;
-			ball.setAttribute("cx", String(gx));
-			ball.setAttribute("cy", String(Math.max(-APRON + 0.3, gy - hh)));
-			ball.setAttribute("r", String(BALL_R * (1 + hh * 0.03)));
+			const spin = spinRef.current;
+			if (spin.has) {
+				spin.deg = nextSpinDeg(spin.deg, spin, { x: gx, y: gy });
+			}
+			spin.x = gx;
+			spin.y = gy;
+			spin.has = true;
+
+			const scale = 1 + hh * 0.03;
+			const by = Math.max(-APRON + 0.3, gy - hh);
+			ball.setAttribute(
+				"transform",
+				`translate(${gx} ${by}) rotate(${spin.deg.toFixed(1)}) scale(${scale.toFixed(3)})`,
+			);
+
+			// The trail: a few ghosts of where the ball just was, each older one
+			// smaller and fainter. Only worth drawing while it is genuinely moving,
+			// so a ball resting in someone's hands does not smear.
+			const trail = trailRef.current;
+			if (trail.length > 0) {
+				const moving = trailPrev.length > 0;
+				trailPrev.unshift({ x: gx, y: by });
+				if (trailPrev.length > trail.length + 1) {
+					trailPrev.pop();
+				}
+				for (const [i, node] of trail.entries()) {
+					const pt = trailPrev[i + 1];
+					if (!node) {
+						continue;
+					}
+					const far = pt ? Math.hypot(pt.x - gx, pt.y - by) : 0;
+					if (!moving || !pt || far < 0.35) {
+						node.style.opacity = "0";
+						continue;
+					}
+					const fade = 1 - i / trail.length;
+					node.setAttribute("cx", String(pt.x));
+					node.setAttribute("cy", String(pt.y));
+					node.setAttribute("r", String(BALL_R * 0.78 * fade));
+					node.style.opacity = String(0.3 * fade);
+				}
+			}
+
 			if (ballShadow) {
 				const ss = 1 / (1 + hh * 0.09);
 				ballShadow.setAttribute("cx", String(gx));
@@ -1068,6 +1140,28 @@ const LiveCourt = ({
 			};
 			rafRef.current = requestAnimationFrame(loop);
 		};
+
+		// Write the rim's answer to the shot for this frame - see rimReaction.
+		const rimReact = (t: 0 | 1, made: boolean, p: number) => {
+			const g = rimRefs.current[t];
+			if (!g) {
+				return;
+			}
+			const rx = rimXFor(t);
+			const r = rimReaction(made, p);
+			g.style.opacity = String(r.opacity);
+			g.setAttribute(
+				"transform",
+				`translate(${(rx + r.dx).toFixed(2)} ${(25 + r.dy).toFixed(2)}) scale(${r.scale.toFixed(3)})`,
+			);
+		};
+
+		// Whichever rim was reacting last scene must stop.
+		for (const g of rimRefs.current) {
+			if (g) {
+				g.style.opacity = "0";
+			}
+		}
 
 		const main = scene.actors.find((a) => a.role === "main");
 		const isShot =
@@ -1554,12 +1648,22 @@ const LiveCourt = ({
 			}
 
 			const p = Math.min(1, (elapsed - FLIGHT_MS) / OUTCOME_MS);
+			rimReact(scene.t, made, p);
 			if (made) {
 				// Swish: drop straight through the rim, ring pulse, shadow gone.
-				ball.setAttribute("cx", String(to.x));
-				ball.setAttribute("cy", String(to.y));
-				ball.setAttribute("r", String(Math.max(0.05, 0.9 * (1 - p))));
+				// Placed by transform like every other frame, so it keeps spinning
+				// as it drops through instead of freezing mid-turn.
+				const shrink = Math.max(0.06, 1 - p);
+				ball.setAttribute(
+					"transform",
+					`translate(${to.x} ${to.y}) rotate(${spinRef.current.deg.toFixed(1)}) scale(${shrink.toFixed(3)})`,
+				);
 				ball.style.opacity = String(1 - p * 0.6);
+				for (const node of trailRef.current) {
+					if (node) {
+						node.style.opacity = "0";
+					}
+				}
 				if (ballShadow) {
 					ballShadow.style.opacity = String(0.25 * (1 - p));
 				}
@@ -2419,6 +2523,36 @@ const LiveCourt = ({
 				    foul collision), driven per-frame via its transform attribute so it
 				    expands and fades. Lines use currentColor so the effect is recolored
 				    per scene by setting the group's `color`. */}
+				{/* THE RIMS' REACTION, one per basket: rings that flare and settle on
+				    a make, and rattle sideways on a miss. Idle at zero opacity, so an
+				    untouched rim costs nothing. In the overlay layer rather than the
+				    memoized floor, because this is the only part of the basket that
+				    ever moves. */}
+				{([0, 1] as const).map((t) => (
+					<g
+						key={`rim${t}`}
+						ref={(node) => {
+							rimRefs.current[t] = node;
+						}}
+						transform={`translate(${rimXFor(t)} 25)`}
+						style={{ opacity: 0, pointerEvents: "none" }}
+					>
+						<circle
+							r={0.95}
+							fill="none"
+							stroke="#fff"
+							strokeWidth={0.3}
+							opacity={0.95}
+						/>
+						<circle
+							r={1.5}
+							fill="none"
+							stroke="#fff"
+							strokeWidth={0.16}
+							opacity={0.5}
+						/>
+					</g>
+				))}
 				<g ref={burstRef} style={{ opacity: 0, pointerEvents: "none" }}>
 					{Array.from({ length: 8 }, (_, i) => {
 						const a = (i / 8) * 2 * Math.PI;
@@ -2436,6 +2570,21 @@ const LiveCourt = ({
 						);
 					})}
 				</g>
+				{/* The ball's motion trail: ghosts of the last few positions, oldest
+				    faintest. Drawn BEFORE the shadow and ball so both paint over it. */}
+				{Array.from({ length: 5 }, (_, i) => (
+					<circle
+						key={`trail${i}`}
+						ref={(node) => {
+							trailRef.current[i] = node;
+						}}
+						cx={0}
+						cy={0}
+						r={0.5}
+						fill="#e8772e"
+						style={{ opacity: 0, pointerEvents: "none" }}
+					/>
+				))}
 				{/* The ball's floor shadow. It stays pinned to the ball's GROUND
 				    position while the ball itself is drawn raised above it (see
 				    placeBall) - the gap between the two is what reads as height, so a
@@ -2450,16 +2599,31 @@ const LiveCourt = ({
 					fill="rgba(0,0,0,0.35)"
 					style={{ opacity: 0, pointerEvents: "none" }}
 				/>
-				<circle
+				{/* THE BALL, drawn at the origin and placed by a transform - which is
+				    what lets it rotate. Seams are the giveaway that it is spinning:
+				    a plain disc could turn all day and look identical. */}
+				<g
 					ref={ballRef}
-					cx={0}
-					cy={0}
-					r={0.9}
-					fill="#e8772e"
-					stroke="#7a3a12"
-					strokeWidth={0.15}
 					style={{ opacity: 0, pointerEvents: "none" }}
-				/>
+					transform="translate(0 0)"
+				>
+					<circle r={0.85} fill="#e8772e" stroke="#7a3a12" strokeWidth={0.14} />
+					{/* The two straight seams, and the two curved ones that wrap the
+					    sides - the classic eight-panel pattern, flattened to a disc. */}
+					<g fill="none" stroke="#7a3a12" strokeWidth={0.12}>
+						<line x1={-0.85} y1={0} x2={0.85} y2={0} />
+						<line x1={0} y1={-0.85} x2={0} y2={0.85} />
+						<path d="M -0.62 -0.58 A 0.85 0.85 0 0 0 -0.62 0.58" />
+						<path d="M 0.62 -0.58 A 0.85 0.85 0 0 1 0.62 0.58" />
+					</g>
+					{/* A soft highlight, so it reads as a sphere rather than a sticker. */}
+					<circle
+						cx={-0.26}
+						cy={-0.28}
+						r={0.26}
+						fill="rgba(255,255,255,0.28)"
+					/>
+				</g>
 			</svg>
 
 			{/* Everyone on the floor, centered on their spot and ALWAYS keyed by
