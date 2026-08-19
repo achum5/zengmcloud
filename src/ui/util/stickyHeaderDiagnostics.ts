@@ -94,6 +94,16 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		visualViewport: vv
 			? `${num(vv.height)}@${num(vv.offsetTop)}x${vv.scale.toFixed(2)}`
 			: "-",
+		// Width and the physical screen, for catching a GHOST height: a resume
+		// can restore a stale keyboard-sized vv.height with no keyboard present,
+		// and the tell is a height wildly short of what width * screen aspect
+		// says it should be. The focused element settles whether a keyboard
+		// could even be up.
+		visualViewportWidth: vv ? num(vv.width) : "-",
+		screen: `${window.screen.width}x${window.screen.height}`,
+		activeElement: document.activeElement
+			? document.activeElement.tagName.toLowerCase()
+			: "(none)",
 		// A document wider than the screen is what makes iOS zoom out in the first
 		// place, so it is the thing to chase if scale is not 1.
 		docWidth: num(document.documentElement.scrollWidth),

@@ -61,6 +61,22 @@ describe("tickerVisualShift", () => {
 		);
 	});
 
+	// The ghost reading: a resume handed back a keyboard-sized height with no
+	// keyboard present (the log showed 1052/1052 before backgrounding, 646/1052
+	// after, same page), and the lift computed from it parked the bar
+	// mid-screen. offsetTop 0 is what marks it - the true full-size viewport
+	// has nowhere to pan - so the bar must be left alone.
+	test("a shrunken height with nowhere panned is not believed", () => {
+		assert.strictEqual(
+			tickerVisualShift({
+				visualHeight: 646,
+				layoutHeight: 1052,
+				offsetTop: 0,
+			}),
+			0,
+		);
+	});
+
 	test("an unzoomed page is untouched", () => {
 		// Which is every ordinary page on every device - the common path does
 		// nothing at all.

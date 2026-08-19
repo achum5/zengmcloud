@@ -6,6 +6,7 @@ import {
 } from "../../../common/liveGameChat.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { OnScreenKeyboard } from "../../components/OnScreenKeyboard.tsx";
+import { keyboardLikelyOpen } from "../../util/visualViewportHeader.ts";
 import clsx from "clsx";
 
 // Type with the in-page keyboard rather than the device's own. Phones only: a
@@ -115,9 +116,16 @@ export const LiveGameChat = ({
 			// element positions can be expressed in what the user can actually see.
 			// Pinch-zoom and the keyboard both move this.
 			const offsetTop = vv?.offsetTop ?? 0;
-			const bottom = vv
-				? Math.max(0, Math.round(window.innerHeight - vv.height - offsetTop))
-				: 0;
+			// Lift over the keyboard only while a text field is actually focused.
+			// This gap exists FOR the native keyboard, and computing it blind was
+			// bitten by the same ghost as the ticker: an iOS resume can restore a
+			// stale keyboard-sized vv.height with no keyboard present, which
+			// hoisted the whole dock mid-screen. (On a phone the chat's own
+			// keyboard never opens the native one, so there it is always 0.)
+			const bottom =
+				vv && keyboardLikelyOpen(document.activeElement)
+					? Math.max(0, Math.round(window.innerHeight - vv.height - offsetTop))
+					: 0;
 			const rects = elements.map((el) => el.getBoundingClientRect());
 			const bottoms = rects
 				.map((rect) => rect.bottom - offsetTop)
@@ -155,12 +163,18 @@ export const LiveGameChat = ({
 		// keyboard opening is a resize, and scrolling under it is a scroll.
 		window.visualViewport?.addEventListener("resize", measure);
 		window.visualViewport?.addEventListener("scroll", measure);
+		// Focus moving into or out of a text field changes whether the keyboard
+		// gap above applies, sometimes before any viewport event lands.
+		window.addEventListener("focusin", measure);
+		window.addEventListener("focusout", measure);
 		return () => {
 			observer.disconnect();
 			window.removeEventListener("resize", measure);
 			window.removeEventListener("scroll", measure);
 			window.visualViewport?.removeEventListener("resize", measure);
 			window.visualViewport?.removeEventListener("scroll", measure);
+			window.removeEventListener("focusin", measure);
+			window.removeEventListener("focusout", measure);
 		};
 	}, [elements]);
 

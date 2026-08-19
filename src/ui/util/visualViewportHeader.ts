@@ -62,6 +62,26 @@ export const headerVisualShift = (offsetTop: number | undefined): number => {
 // Never downward. A positive correction can only push the bar past the foot of
 // the layout viewport, which is the one place sticky already guarantees is no
 // worse than the edge of the screen.
+//
+// AND ONLY WHEN offsetTop CORROBORATES THE HEIGHT. The very next field report
+// after the formula above was restored had the identical geometry - 646-tall
+// visual viewport on a 1052 layout viewport, scale 0.85 - and this time it was
+// FALSE: the lifted bar sat mid-screen with page visibly rendering far below
+// layout y 646, and the log caught the lie being born, vv=1052/1052 before the
+// app was backgrounded and vv=646/1052 on resume, same page, nothing changed.
+// A resume can hand back a stale, keyboard-sized height with no keyboard
+// present, so the same numbers are sometimes the truth and sometimes a ghost,
+// and no reading of vv.height alone can tell which.
+//
+// offsetTop is the one witness that can. A visual viewport can only be panned
+// WITHIN the layout viewport when it is genuinely smaller than it - you cannot
+// pan a thing inside a thing it completely fills. So offsetTop > 0 vouches for
+// the shrunken height being real, and offsetTop of 0 leaves it uncorroborated,
+// where doing nothing is right: if the height is a ghost, plain sticky is
+// already at the true bottom, and if it is real the page is zoomed in sitting
+// at its exact top, where the header stands down too and one pixel of pan
+// re-arms the correction. Every confirmed-true field case had offsetTop > 0
+// (57, 300, 406); the confirmed-false one had 0.
 export const tickerVisualShift = ({
 	visualHeight,
 	layoutHeight,
@@ -91,6 +111,11 @@ export const tickerVisualShift = ({
 		visualHeight <= 0 ||
 		layoutHeight <= 0
 	) {
+		return 0;
+	}
+	// Uncorroborated height - see above. A ghost reading always comes with
+	// offsetTop 0, because the true full-size viewport has nowhere to pan.
+	if (offsetTop <= 0) {
 		return 0;
 	}
 	const shift = visualHeight - (layoutHeight - offsetTop);
