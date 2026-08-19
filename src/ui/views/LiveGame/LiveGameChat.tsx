@@ -20,10 +20,35 @@ import clsx from "clsx";
 // there is nothing there to fix and a replica would only be in the way.
 const OWN_KEYBOARD = typeof window !== "undefined" && window.mobile === true;
 
-// Enough drawer for the keyboard, the message box and a line or two of what has
-// already been said. Below this the keyboard is not usable, so the drawer takes
-// the room even if that means covering the court.
-const TYPING_MIN_HEIGHT = 430;
+// THE DRAWER'S FLOORS, and why an open chat is allowed to cover the court.
+//
+// The old floor was 120px, which is the toggle, the panel padding and the
+// message box with nothing left - the message list is a flex child, so it
+// simply collapsed and the chat log was invisible on a phone. Opening chat has
+// to mean being able to READ chat, so an open drawer claims enough for a real
+// conversation even when the game is using the space; the court is above it and
+// still mostly visible, and one tap puts the drawer away.
+//
+// Both floors are also capped at the visible viewport, so they can never make
+// the drawer taller than the screen.
+const OPEN_MIN_HEIGHT = 300;
+
+// Everything in an open drawer that is not the keyboard: the toggle, the
+// panel's padding, the message box, and the message list's own floor (the
+// 5.5rem min-height that stops it collapsing). Adding the keyboard to THIS
+// rather than to OPEN_MIN_HEIGHT is what keeps a typing drawer from eating the
+// whole screen - it asks for a readable log, not a roomy one, while the
+// keyboard is up.
+const CHAT_CHROME_HEIGHT = 190;
+
+// The keyboard is sized off its own width (see the .osk styles: four key rows
+// of 10.5cqw, a 8.4cqw suggestion strip, 2.9cqw gaps), so its height is a
+// ratio of the drawer's width rather than a guess. Capped because a wide
+// desktop drawer would otherwise compute an absurd keyboard - though desktop
+// never shows one.
+const KEYBOARD_HEIGHT_RATIO = 0.63;
+const keyboardHeightFor = (width: number) =>
+	Math.round(Math.min(width, 560) * KEYBOARD_HEIGHT_RATIO);
 
 // Chat alongside a live game, and the record of it on a replay.
 //
@@ -104,6 +129,8 @@ export const LiveGameChat = ({
 		// used when the on-screen keyboard is up and needs more room than the
 		// space under the court.
 		viewport?: number;
+		// The drawer's own width, which is what the keyboard is sized from.
+		width?: number;
 		left: number;
 		bottom: number;
 	}>({ left: 0, bottom: 0 });
@@ -151,6 +178,7 @@ export const LiveGameChat = ({
 				// alternative is a message box too short to use.
 				maxHeight: Math.max(120, Math.floor(viewport - floor)),
 				viewport: Math.floor(viewport),
+				width: Math.round(rects[0]?.width ?? window.innerWidth),
 				left: Math.max(0, Math.floor(rects[0]?.left ?? 0)),
 				bottom,
 			});
@@ -218,12 +246,15 @@ export const LiveGameChat = ({
 		[messages, cursor],
 	);
 
-	// Stick to the newest message while open.
+	// Stick to the newest message while open. `typing` is a dependency because
+	// the keyboard opening resizes the list, and without re-pinning the log
+	// would be left showing whatever was at the old scroll position - usually
+	// the oldest messages, which is the opposite of what a chat should show.
 	useEffect(() => {
 		if (open && listRef.current) {
 			listRef.current.scrollTop = listRef.current.scrollHeight;
 		}
-	}, [open, visible.length]);
+	}, [open, typing, visible.length]);
 
 	useEffect(() => {
 		if (open) {
@@ -271,18 +302,14 @@ export const LiveGameChat = ({
 		return null;
 	}
 
-	// While the on-screen keyboard is up the drawer needs room for it, which the
-	// space under the court often is not. Take the smaller of "as much as the
-	// screen has" and "enough for the keyboard plus a line or two", so a game
-	// with plenty of room below it is still never covered - the drawer only
-	// climbs over the court when it genuinely has nowhere else to go.
+	// How tall the drawer may be: never less than a readable chat, never more
+	// than the screen, and free to use any extra space under the court.
+	const viewport = dock.viewport;
+	const floor = typing
+		? CHAT_CHROME_HEIGHT + keyboardHeightFor(dock.width ?? 390)
+		: OPEN_MIN_HEIGHT;
 	const maxHeight = open
-		? typing
-			? Math.min(
-					dock.viewport ?? TYPING_MIN_HEIGHT,
-					Math.max(dock.maxHeight ?? 0, TYPING_MIN_HEIGHT),
-				)
-			: dock.maxHeight
+		? Math.min(viewport ?? floor, Math.max(dock.maxHeight ?? 0, floor))
 		: undefined;
 
 	return (

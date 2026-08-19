@@ -1324,9 +1324,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// the simmer's cursor (no own timer) and the page is locked; on the broadcaster
 	// we additionally heartbeat our cursor to the room. In single-player both are
 	// false and nothing below changes.
-	const { mpLiveBroadcast, mpLiveChat, userTid } = useLocal([
+	const { mpLiveBroadcast, mpLiveChat, mpSyncActive, userTid } = useLocal([
 		"mpLiveBroadcast",
 		"mpLiveChat",
+		// Whether this device is in a room at all - which is all chat needs.
+		"mpSyncActive",
 		// Which team this device manages, so the box scores below can lead with
 		// it - see liveBoxScoreLayout.ts.
 		"userTid",
@@ -1389,8 +1391,18 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// replay. Recomputed each render; playIndex changing is what triggers one.
 	const chatCursor =
 		initialEventCount.current - (events.current?.length ?? 0) || 0;
-	// Only people actually watching a live broadcast can talk.
-	const chatCanSend = !isReplay && (isFollower || isBroadcaster);
+	// Anyone in the room can talk during a live game, whether or not this
+	// device holds the room's broadcast slot.
+	//
+	// It used to require the broadcast, and that quietly hid chat on the second
+	// device: a room has ONE broadcast doc and whoever gets there first keeps
+	// it, so a device live-simming its own game while another broadcast runs
+	// stays local (see startLiveBroadcast's skipped-broadcast-active path).
+	// With no broadcast and no messages yet, the panel returned null and there
+	// was nothing on screen to open - on the very device most likely to be
+	// watching alone and wanting to say something about it.
+	const chatCanSend =
+		!isReplay && (isFollower || isBroadcaster || mpSyncActive);
 	const chatScore =
 		Array.isArray(boxScore.current.teams) && boxScore.current.teams.length === 2
 			? `${boxScore.current.teams[0].abbrev ?? ""} ${

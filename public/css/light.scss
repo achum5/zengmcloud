@@ -833,7 +833,7 @@ tr.table-warning:hover > td {
 	flex-direction: column;
 	background-color: var(--bs-body-bg);
 	border-top: 1px solid var(--bs-border-color);
-	padding: 0.5rem 0.75rem calc(0.5rem + env(safe-area-inset-bottom));
+	padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom));
 	margin: 0;
 	box-shadow: 0 -2px 8px rgb(0 0 0 / 15%);
 }
@@ -847,10 +847,19 @@ tr.table-warning:hover > td {
 	min-height: 0;
 }
 
+// THE CHAT LOG, and the one line that decides whether it exists.
+//
+// min-height was 0, which is what a flex child needs to be scrollable - and
+// also what lets it be squeezed to nothing. The message box and the on-screen
+// keyboard below are both flex:0 0 auto, so they took their full height first
+// and the log collapsed to zero: on a phone the chat was literally invisible.
+// A floor of a few lines means the drawer has to grow instead, which it now
+// does (see OPEN_MIN_HEIGHT).
 .live-chat-messages {
 	flex: 1 1 auto;
-	min-height: 0;
+	min-height: 5.5rem;
 	overflow-y: auto;
+	overscroll-behavior: contain;
 }
 
 // iOS Safari zooms the whole page in whenever you focus an input whose text is
@@ -935,10 +944,13 @@ tr.table-warning:hover > td {
 	container-type: inline-size;
 	display: flex;
 	flex-direction: column;
-	gap: 0.75rem;
-	gap: 3.2cqw;
-	margin: 0.5rem -0.5rem -0.5rem;
-	padding: 0.25rem 0 calc(0.5rem + env(safe-area-inset-bottom));
+	gap: 0.7rem;
+	gap: 2.9cqw;
+	// Break out of the panel's padding and border so the keys get the drawer's
+	// full width - every pixel here is key width, and a wider key is an easier
+	// key to hit.
+	margin: 0.5rem calc(-0.5rem - 1px) calc(-0.5rem - 1px);
+	padding: 0.25rem 0 calc(0.4rem + env(safe-area-inset-bottom));
 	background-color: var(--osk-bg);
 	border-radius: 0 0 0.25rem 0.25rem;
 	flex: 0 0 auto;
@@ -956,8 +968,8 @@ tr.table-warning:hover > td {
 .osk-suggest {
 	display: flex;
 	align-items: stretch;
-	height: 2.4rem;
-	height: 9.2cqw;
+	height: 2.2rem;
+	height: 8.4cqw;
 	padding: 0 0.25rem;
 	padding: 0 1.8cqw;
 }
@@ -1012,16 +1024,20 @@ tr.table-warning:hover > td {
 	flex: 1 1 0;
 	flex-basis: 6.98cqw;
 	min-width: 0;
-	height: 2.75rem;
-	height: 9.5cqw;
+	// Taller than the native 1.37 width:height, because a taller key is an
+	// easier key to hit and this keyboard has no fallback; not so tall that the
+	// row stops reading as a keyboard, and not so tall that the chat log above
+	// loses its room.
+	height: 2.9rem;
+	height: 10.5cqw;
 	padding: 0;
 	border: 0;
 	border-radius: 0.3rem;
 	border-radius: 1.15cqw;
 	background-color: var(--osk-key-bg);
 	color: var(--osk-key-fg);
-	font-size: 1.3rem;
-	font-size: 4.9cqw;
+	font-size: 1.4rem;
+	font-size: 5.3cqw;
 	line-height: 1;
 	box-shadow: 0 1px 0 var(--osk-key-shadow);
 }
