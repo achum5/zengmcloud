@@ -500,12 +500,12 @@ $league-ticker-toggle-width: 26px;
 // in light.scss and is imported above.
 .osk {
 	--osk-bg: #1c1c1e;
-	--osk-key-bg: #4a4a4e;
+	--osk-key-bg: #434347;
 	--osk-key-fg: #fff;
 	--osk-key-shadow: #0d0d0f;
 	--osk-key-active: #6a6a6f;
-	--osk-mod-bg: #343438;
-	--osk-mod-active: #6a6a6f;
+	--osk-mod-bg: #2c2c2e;
+	--osk-rule: rgb(255 255 255 / 15%);
 }
 
 // THE LEFT PANE. Holds the name of the block currently going past - or, for a

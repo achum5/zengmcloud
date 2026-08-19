@@ -7,6 +7,12 @@ import {
 import { toWorker } from "../../util/toWorker.ts";
 import { OnScreenKeyboard } from "../../components/OnScreenKeyboard.tsx";
 import { keyboardLikelyOpen } from "../../util/visualViewportHeader.ts";
+import {
+	afterKeyText,
+	applySuggestion,
+	currentWordOf,
+	suggestionsFor,
+} from "../../util/textSuggestions.ts";
 import clsx from "clsx";
 
 // Type with the in-page keyboard rather than the device's own. Phones only: a
@@ -17,7 +23,7 @@ const OWN_KEYBOARD = typeof window !== "undefined" && window.mobile === true;
 // Enough drawer for the keyboard, the message box and a line or two of what has
 // already been said. Below this the keyboard is not usable, so the drawer takes
 // the room even if that means covering the court.
-const TYPING_MIN_HEIGHT = 380;
+const TYPING_MIN_HEIGHT = 430;
 
 // Chat alongside a live game, and the record of it on a replay.
 //
@@ -70,6 +76,7 @@ export const LiveGameChat = ({
 	// keyboard below - see OnScreenKeyboard for why. This is whether that
 	// keyboard is up; on desktop it is never used and the real field is shown.
 	const [typing, setTyping] = useState(false);
+	const dockRef = useRef<HTMLDivElement>(null);
 	const listRef = useRef<HTMLDivElement>(null);
 	const seenCount = useRef(0);
 
@@ -178,6 +185,28 @@ export const LiveGameChat = ({
 		};
 	}, [elements]);
 
+	// Tapping anywhere outside the drawer puts the keyboard away, exactly like
+	// the native one. Listening only while typing, and not preventing anything:
+	// the tap still does whatever it was aimed at.
+	useEffect(() => {
+		if (!typing) {
+			return;
+		}
+		const onDown = (event: PointerEvent) => {
+			if (
+				dockRef.current &&
+				event.target instanceof Node &&
+				!dockRef.current.contains(event.target)
+			) {
+				setTyping(false);
+			}
+		};
+		document.addEventListener("pointerdown", onDown);
+		return () => {
+			document.removeEventListener("pointerdown", onDown);
+		};
+	}, [typing]);
+
 	// The cursor when the user STARTED typing. Anchoring to the moment they
 	// began reacting - rather than the moment they hit send - is what makes a
 	// replay read naturally: the message lands with the play that prompted it,
@@ -258,6 +287,7 @@ export const LiveGameChat = ({
 
 	return (
 		<div
+			ref={dockRef}
 			className="live-chat-dock"
 			style={{
 				left: dock.left,
@@ -337,8 +367,13 @@ export const LiveGameChat = ({
 								</div>
 								{typing ? (
 									<OnScreenKeyboard
-										onKey={(key) => changeText(text + key)}
+										text={text}
+										suggestions={suggestionsFor(currentWordOf(text))}
+										onKey={(key) => changeText(afterKeyText(text, key))}
 										onBackspace={() => changeText(text.slice(0, -1))}
+										onSuggestion={(word) =>
+											changeText(applySuggestion(text, word))
+										}
 										onSubmit={() => {
 											void send();
 										}}

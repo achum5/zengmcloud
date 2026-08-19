@@ -1,5 +1,6 @@
 import clsx from "clsx";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { shouldAutoShift } from "../util/textSuggestions.ts";
 
 // A KEYBOARD THAT IS PART OF THE PAGE.
 //
@@ -17,9 +18,17 @@ import { useRef, useState } from "react";
 // accounts for the drawer accounts for them too. Nothing about the viewport
 // changes, so nothing about the game moves.
 //
-// Layout and behavior follow iOS deliberately: three layers reached the same
-// way, shift that sticks for one letter and locks on a double tap. Muscle
-// memory is the point of a replica.
+// Layout and behavior follow iOS deliberately, down to measured proportions -
+// muscle memory is the point of a replica. The geometry was taken off a
+// side-by-side screenshot of the real keyboard on a 440pt-wide iPhone and is
+// expressed in container-width units (see the .osk styles), so it holds on any
+// screen: key faces about 7% of the width and 9.5% tall, the airy iOS gaps,
+// the half-key stagger of the middle row (which falls out of centering
+// fixed-width keys), shift and backspace pushed to the edges with the extra
+// inset before Z and after M, and a 123/space/send row split roughly
+// 22/46/22. Above the keys sits the QuickType-style suggestion strip; shift
+// sticks for one letter, locks on a double tap, and arms itself at the start
+// of a message and after a sentence ends.
 
 export type ShiftState = "off" | "once" | "lock";
 
@@ -106,23 +115,44 @@ const Key = ({
 );
 
 export const OnScreenKeyboard = ({
+	text = "",
+	suggestions = [],
 	onKey,
 	onBackspace,
+	onSuggestion,
 	onSubmit,
 	onDismiss,
 	submitLabel = "Send",
 	submitDisabled,
 }: {
+	// What has been typed so far - read only for the auto-shift rule.
+	text?: string;
+	// QuickType strip contents, provided by the owner of the text.
+	suggestions?: readonly string[];
 	onKey: (key: string) => void;
 	onBackspace: () => void;
+	onSuggestion?: (suggestion: string) => void;
 	onSubmit: () => void;
 	onDismiss: () => void;
 	submitLabel?: string;
 	submitDisabled?: boolean;
 }) => {
 	const [layer, setLayer] = useState<KeyLayer>("letters");
-	const [shift, setShift] = useState<ShiftState>("once");
+	const [shift, setShift] = useState<ShiftState>(() =>
+		shouldAutoShift(text) ? "once" : "off",
+	);
 	const lastShiftTap = useRef(0);
+
+	// Arm shift when a sentence ends or the message empties - on the
+	// transition, so tapping shift off mid-sentence stays off.
+	const prevAutoShift = useRef(shouldAutoShift(text));
+	useEffect(() => {
+		const should = shouldAutoShift(text);
+		if (should && !prevAutoShift.current) {
+			setShift((current) => (current === "off" ? "once" : current));
+		}
+		prevAutoShift.current = should;
+	}, [text]);
 
 	const rows = KEY_LAYERS[layer];
 	const letters = layer === "letters";
@@ -144,26 +174,39 @@ export const OnScreenKeyboard = ({
 	};
 
 	return (
-		<div className="osk">
-			<div className="osk-bar">
+		<div className={clsx("osk", { "osk-letters": letters })}>
+			{/* The QuickType strip. Suggestions are tapped, never auto-applied -
+			    see textSuggestions.ts - and the keyboard-dismiss chevron lives at
+			    its end, since iPhones have no dismiss key below. */}
+			<div className="osk-suggest">
+				{suggestions.slice(0, 3).map((suggestion, i) => (
+					<button
+						key={suggestion}
+						type="button"
+						className={clsx("osk-suggest-item", { first: i === 0 })}
+						onPointerDown={(event) => {
+							event.preventDefault();
+							onSuggestion?.(suggestion);
+						}}
+					>
+						{suggestion}
+					</button>
+				))}
 				<button
 					type="button"
-					className="osk-dismiss"
+					className="osk-suggest-hide"
 					aria-label="Hide keyboard"
 					onPointerDown={(event) => {
 						event.preventDefault();
 						onDismiss();
 					}}
 				>
-					Done
+					⌄
 				</button>
 			</div>
 
 			{rows.map((row, i) => (
-				<div key={i} className="osk-row">
-					{/* The middle row is inset by half a key on a phone, and the eye
-					    reads a keyboard partly by that stagger. */}
-					{i === 1 && letters ? <div className="osk-spacer" /> : null}
+				<div key={i} className={clsx("osk-row", { "osk-row-edges": i === 2 })}>
 					{i === 2 ? (
 						letters ? (
 							<Key
@@ -200,15 +243,14 @@ export const OnScreenKeyboard = ({
 							onPress={onBackspace}
 						/>
 					) : null}
-					{i === 1 && letters ? <div className="osk-spacer" /> : null}
 				</div>
 			))}
 
-			<div className="osk-row">
+			<div className="osk-row osk-row-bottom">
 				<Key
 					label={letters ? "123" : "ABC"}
 					ariaLabel={letters ? "Numbers" : "Letters"}
-					className="osk-key-mod"
+					className="osk-key-side"
 					onPress={() => setLayer(letters ? "numbers" : "letters")}
 				/>
 				<Key
@@ -219,7 +261,7 @@ export const OnScreenKeyboard = ({
 				/>
 				<Key
 					label={submitLabel}
-					className="osk-key-send"
+					className="osk-key-side osk-key-send"
 					disabled={submitDisabled}
 					onPress={onSubmit}
 				/>

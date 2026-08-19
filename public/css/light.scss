@@ -914,9 +914,15 @@ tr.table-warning:hover > td {
 	}
 }
 
-// THE IN-PAGE KEYBOARD. Sized in rem so it follows the text size, and laid out
-// with flex so the keys divide whatever width the drawer has rather than
-// assuming a phone width.
+// THE IN-PAGE KEYBOARD, to the real iOS keyboard's measured proportions.
+//
+// The geometry came off a side-by-side screenshot against the native keyboard
+// on a 440pt-wide iPhone, and is expressed in cqw (1% of the keyboard's own
+// width) so the same proportions hold at any size: key faces 6.98cqw wide by
+// 9.5cqw tall with 2.95cqw gaps, 1.8cqw side padding, 3.2cqw between rows.
+// Rows center their fixed-width keys, which is all the iOS stagger is - the
+// 9-key middle row lands half a key in by itself. The rem declarations before
+// each cqw one are fallbacks for engines without container queries.
 .osk {
 	--osk-bg: #d1d4db;
 	--osk-key-bg: #fff;
@@ -924,13 +930,15 @@ tr.table-warning:hover > td {
 	--osk-key-shadow: #898b90;
 	--osk-key-active: #b9bcc4;
 	--osk-mod-bg: #adb3bd;
-	--osk-mod-active: #fff;
+	--osk-rule: rgb(0 0 0 / 15%);
 
+	container-type: inline-size;
 	display: flex;
 	flex-direction: column;
-	gap: 0.35rem;
+	gap: 0.75rem;
+	gap: 3.2cqw;
 	margin: 0.5rem -0.5rem -0.5rem;
-	padding: 0.35rem 0.25rem calc(0.35rem + env(safe-area-inset-bottom));
+	padding: 0.25rem 0 calc(0.5rem + env(safe-area-inset-bottom));
 	background-color: var(--osk-bg);
 	border-radius: 0 0 0.25rem 0.25rem;
 	flex: 0 0 auto;
@@ -942,41 +950,92 @@ tr.table-warning:hover > td {
 	touch-action: manipulation;
 }
 
-.osk-bar {
+// The QuickType strip: up to three tappable suggestions divided by hairlines,
+// with the keyboard-dismiss chevron at the end (iPhones have no dismiss key
+// below, and the strip is where the eye already is).
+.osk-suggest {
 	display: flex;
-	justify-content: flex-end;
-	margin-bottom: -0.15rem;
+	align-items: stretch;
+	height: 2.4rem;
+	height: 9.2cqw;
+	padding: 0 0.25rem;
+	padding: 0 1.8cqw;
 }
 
-.osk-dismiss {
+.osk-suggest-item {
+	flex: 1 1 0;
+	min-width: 0;
 	border: 0;
 	background: none;
-	padding: 0 0.35rem;
-	font-size: 0.8125rem;
-	font-weight: 600;
 	color: var(--osk-key-fg);
-	opacity: 0.75;
+	font-size: 1rem;
+	font-size: 3.9cqw;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.osk-suggest-item + .osk-suggest-item {
+	border-left: 1px solid var(--osk-rule);
+}
+
+.osk-suggest-item:active {
+	background-color: var(--osk-key-active);
+	border-radius: 0.3rem;
+}
+
+.osk-suggest-hide {
+	flex: 0 0 auto;
+	width: 2.4rem;
+	width: 9cqw;
+	border: 0;
+	background: none;
+	color: var(--osk-key-fg);
+	font-size: 1.1rem;
+	font-size: 4.3cqw;
+	line-height: 1;
+	opacity: 0.7;
 }
 
 .osk-row {
 	display: flex;
-	gap: 0.25rem;
+	justify-content: center;
+	gap: 0.3rem;
+	gap: 2.95cqw;
+	padding: 0 0.25rem;
+	padding: 0 1.8cqw;
 }
 
 .osk-key {
-	// Equal shares of the row, and min-width 0 so ten of them cannot overflow a
-	// narrow phone.
+	// Fixed shares of the keyboard's width, so centering a short row produces
+	// exactly the iOS stagger; min-width 0 so ten keys cannot overflow.
 	flex: 1 1 0;
+	flex-basis: 6.98cqw;
 	min-width: 0;
-	height: 2.5rem;
+	height: 2.75rem;
+	height: 9.5cqw;
 	padding: 0;
 	border: 0;
 	border-radius: 0.3rem;
+	border-radius: 1.15cqw;
 	background-color: var(--osk-key-bg);
 	color: var(--osk-key-fg);
-	font-size: 1.0625rem;
+	font-size: 1.3rem;
+	font-size: 4.9cqw;
 	line-height: 1;
 	box-shadow: 0 1px 0 var(--osk-key-shadow);
+}
+
+// Letter rows use truly fixed key faces (flex-grow 0); the punctuation row of
+// the number/symbol layers keeps grow, which is how iOS widens those five
+// keys to fill the row.
+.osk-letters .osk-key {
+	flex-grow: 0;
+}
+
+// ...except the space bar, which is the one letter-layer key that fills.
+.osk-letters .osk-key-space {
+	flex-grow: 1;
 }
 
 .osk-key:active {
@@ -987,34 +1046,50 @@ tr.table-warning:hover > td {
 	opacity: 0.5;
 }
 
-// Shift, backspace and the layer switches: wider, and a shade darker so the
-// letters read as the primary thing.
+// Shift, backspace and the layer switch on the third row: wider, darker, and
+// pushed to the edges - space-between spends the row's slack on the iOS inset
+// before Z and after M.
+.osk-row-edges {
+	justify-content: space-between;
+}
+
 .osk-key-mod {
-	flex: 1.5 1 0;
+	flex: 0 0 auto;
+	flex-basis: 11.3cqw;
 	background-color: var(--osk-mod-bg);
-	font-size: 0.875rem;
+	font-size: 1.1rem;
+	font-size: 4.3cqw;
 }
 
 .osk-key-mod.active {
-	background-color: var(--osk-mod-active);
+	// An armed shift turns white with a black glyph, both themes - exactly the
+	// native key.
+	background-color: #fff;
+	color: #000;
+}
+
+.osk-row-bottom {
+	justify-content: flex-start;
+}
+
+.osk-key-side {
+	flex: 0 0 auto;
+	flex-basis: 22.4cqw;
+	background-color: var(--osk-mod-bg);
+	font-size: 1rem;
+	font-size: 3.9cqw;
 }
 
 .osk-key-space {
-	flex: 5 1 0;
-	font-size: 0.8125rem;
+	flex: 1 1 auto;
+	font-size: 1rem;
+	font-size: 3.9cqw;
 }
 
 .osk-key-send {
-	flex: 2.5 1 0;
 	background-color: var(--bs-primary);
 	color: #fff;
-	font-size: 0.875rem;
 	font-weight: 600;
-}
-
-// The half-key inset that makes the middle row read as a keyboard.
-.osk-spacer {
-	flex: 0.5 1 0;
 }
 
 // The collapsed drawer pins ~3rem to the bottom of the viewport, so give the
