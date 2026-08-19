@@ -436,6 +436,72 @@ export const isDeviceLocal = (store: Store, id: number | string) =>
 	DEVICE_LOCAL_STORES.has(store) ||
 	(store === "gameAttributes" && DEVICE_LOCAL_GAME_ATTRIBUTES.has(String(id)));
 
+// Merge an incoming playoffSeries row with local knowledge instead of letting
+// whole-row last-write-wins destroy it. The playoffs are the one place two
+// devices legitimately write the SAME row concurrently: each game's sim
+// updates its own series slot inside the season's single playoffSeries object,
+// so a device that finishes a live game while behind on applies publishes its
+// row built from STALE knowledge of everyone else's series - and, arriving
+// later in the log, it clobbers them (a 4-0 sweep reverted to 3-0 in the
+// field, which then scheduled a phantom "game 4").
+//
+// Series results are monotonic - a slot only ever GAINS games, and the sim-day
+// fence guarantees two devices never sim the same game - so per-slot
+// "most games played wins" is a true merge: it keeps each device's slots
+// without inventing anything. Only attempted when the rows describe the same
+// bracket state (season, round, matchups); anything else falls back to plain
+// last-write-wins.
+export const mergePlayoffSeries = (
+	local: any,
+	incoming: any,
+): { merged: any; altered: boolean } => {
+	if (
+		!local ||
+		local.season !== incoming.season ||
+		local.currentRound !== incoming.currentRound ||
+		!Array.isArray(local.series) ||
+		!Array.isArray(incoming.series) ||
+		local.series.length !== incoming.series.length
+	) {
+		return { merged: incoming, altered: false };
+	}
+
+	const sameMatchup = (a: any, b: any) =>
+		a?.home?.tid === b?.home?.tid && a?.away?.tid === b?.away?.tid;
+	const numGames = (s: any) => (s.home?.won ?? 0) + (s.away?.won ?? 0);
+
+	for (const [i, localRound] of local.series.entries()) {
+		const incomingRound = incoming.series[i];
+		if (
+			!Array.isArray(localRound) ||
+			!Array.isArray(incomingRound) ||
+			localRound.length !== incomingRound.length ||
+			!localRound.every((slot: any, j: number) =>
+				sameMatchup(slot, incomingRound[j]),
+			)
+		) {
+			return { merged: incoming, altered: false };
+		}
+	}
+
+	let altered = false;
+	const mergedSeries = incoming.series.map((incomingRound: any[], i: number) =>
+		incomingRound.map((incomingSlot: any, j: number) => {
+			const localSlot = local.series[i][j];
+			if (numGames(localSlot) > numGames(incomingSlot)) {
+				altered = true;
+				return helpers.deepCopy(localSlot);
+			}
+			return incomingSlot;
+		}),
+	);
+
+	return {
+		merged: altered ? { ...incoming, series: mergedSeries } : incoming,
+		altered,
+	};
+};
+
 // Apply gameAttributes LAST, keeping relative order otherwise (records are
 // whole-object last-write-wins, so reordering across different records is safe
 // by design - see SyncChange). gameAttributes act as the changeset's COMMIT
@@ -1252,6 +1318,46 @@ export const applyChangeset = async (
 					if (change.store === "players" && change.value) {
 						await preserveLocalWatch(change.value);
 						await noteInjuryApply(change.value, {});
+					}
+
+					// A played game must never become scheduled again. During the
+					// playoffs every sim REWRITES the whole schedule from its device's
+					// local knowledge (setSchedule clear + re-add, playoff gids
+					// preserved), so a device that finishes a live game while behind on
+					// applies broadcasts schedule rows for games other devices already
+					// played - and, arriving later in the log, those puts resurrected
+					// the rows everywhere AND their forget() swallowed the
+					// not-yet-published local deletions. If this gid already has a
+					// saved result, the row is refused and any pending local intent
+					// (the deletion) is left alone to publish.
+					if (change.store === "schedule") {
+						const gid = change.value?.gid ?? change.id;
+						const played = await idb.cache.games.get(gid as number);
+						if (played) {
+							continue;
+						}
+					}
+
+					// Merge concurrent playoff-series knowledge instead of letting a
+					// stale row clobber real results (see mergePlayoffSeries). If local
+					// knowledge improved the incoming row, the merged row is
+					// RE-RECORDED (inside a capture window) instead of forgotten, so
+					// the correction publishes back to the room and the stale author
+					// converges too - the merge is a monotonic join, so this settles
+					// instead of echoing.
+					if (change.store === "playoffSeries" && change.value) {
+						const localRow = await api.get(change.id);
+						const { merged, altered } = mergePlayoffSeries(
+							localRow,
+							change.value,
+						);
+						if (altered) {
+							await changeTracker.runCaptured(async () => {
+								await api.put(merged);
+							});
+							touchedStores.add(change.store);
+							continue;
+						}
 					}
 
 					const rule = RECONCILE_BY_IDENTITY[change.store];

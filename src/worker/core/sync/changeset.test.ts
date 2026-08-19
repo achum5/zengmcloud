@@ -18,6 +18,7 @@ import {
 	phaseRedirectComponents,
 	dropStrandedScheduleRows,
 	findStrandedScheduleRows,
+	mergePlayoffSeries,
 	refreshAfterApply,
 	regressionReason,
 	sweepPhantomScheduleRows,
@@ -1185,6 +1186,143 @@ describe("sync changeset", () => {
 				"gameAttributes:season",
 				"gameAttributes:phase",
 			],
+		);
+	});
+
+	test("a schedule put for an already-played game is refused, and the local deletion still publishes", async () => {
+		// THE CONCURRENT-SIM RESURRECTION. During the playoffs every sim rewrites
+		// the whole schedule from local knowledge, so a device that finished a
+		// live game while behind on applies broadcast schedule rows for games
+		// this device already played - resurrecting them here, and swallowing
+		// this device's not-yet-published row deletion via forget().
+		resetG();
+		await resetCache({});
+		await idb.cache.games.add({
+			gid: 12823,
+			season: g.get("season"),
+			playoffs: true,
+			teams: [{ tid: 24 }, { tid: 8 }] as any,
+		} as any);
+		await idb.cache.schedule.add({
+			gid: 12823,
+			homeTid: 24,
+			awayTid: 8,
+			day: 95,
+		} as any);
+		changeTracker.enable();
+		changeTracker.reset();
+
+		// This device simmed the game: the sim deletes the schedule row.
+		changeTracker.beginSim();
+		await idb.cache.schedule.delete(12823);
+		changeTracker.endSim();
+
+		// The stale author's whole-schedule rewrite arrives, re-adding the row.
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "schedule",
+						id: 12823,
+						type: "put",
+						value: { gid: 12823, homeTid: 24, awayTid: 8, day: 95 },
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		// The row stays dead...
+		const schedule = await idb.cache.schedule.getAll();
+		assert.strictEqual(schedule.length, 0, JSON.stringify(schedule));
+		// ...and this device's deletion still publishes (forget didn't eat it).
+		const captured = await captureChangeset();
+		const del = captured.changes.find(
+			(c) => c.store === "schedule" && c.type === "delete" && c.id === 12823,
+		);
+		assert.ok(del, JSON.stringify(captured.changes));
+	});
+
+	test("a stale playoffSeries row merges with local knowledge instead of clobbering it", async () => {
+		// THE 3-0-CLOBBERS-4-0 INCIDENT. This device knows WAS swept 4-0; the
+		// live-simmer's row (published later in the log) was built before that
+		// game applied there, so it says 3-0 - but carries HIS series' new game.
+		// Whole-row LWW must not revert the sweep; per-slot most-games-wins keeps
+		// both devices' games.
+		resetG();
+		await resetCache({});
+		const slot = (
+			homeTid: number,
+			awayTid: number,
+			homeWon: number,
+			awayWon: number,
+		) => ({
+			home: { tid: homeTid, cid: 0, seed: 1, won: homeWon, pts: 0 },
+			away: { tid: awayTid, cid: 0, seed: 8, won: awayWon, pts: 0 },
+			gids: [],
+		});
+		await idb.cache.playoffSeries.add({
+			season: g.get("season"),
+			byConf: 2,
+			currentRound: 0,
+			series: [[slot(8, 24, 4, 0), slot(6, 0, 3, 0)]],
+		} as any);
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "playoffSeries",
+						id: g.get("season"),
+						type: "put",
+						value: {
+							season: g.get("season"),
+							byConf: 2,
+							currentRound: 0,
+							series: [[slot(8, 24, 3, 0), slot(6, 0, 4, 0)]],
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const row = await idb.cache.playoffSeries.get(g.get("season"));
+		// The sweep survives (local knowledge)...
+		assert.strictEqual(row!.series[0]![0]!.home.won, 4);
+		// ...and the author's new game is kept (incoming knowledge).
+		assert.strictEqual(row!.series[0]![1]!.home.won, 4);
+		// The corrected row is RE-RECORDED so it publishes back to the stale
+		// author instead of leaving them diverged.
+		const captured = await captureChangeset();
+		const put = captured.changes.find(
+			(c) => c.store === "playoffSeries" && c.type === "put",
+		);
+		assert.ok(put, JSON.stringify(captured.changes));
+		assert.strictEqual((put as any).value.series[0][0].home.won, 4);
+	});
+
+	test("mergePlayoffSeries falls back to last-write-wins across different bracket states", () => {
+		const local = {
+			season: 2009,
+			currentRound: 1,
+			series: [[{ home: { tid: 1, won: 4 }, away: { tid: 2, won: 0 } }], []],
+		};
+		const incoming = {
+			season: 2009,
+			currentRound: 0,
+			series: [[{ home: { tid: 1, won: 3 }, away: { tid: 2, won: 0 } }], []],
+		};
+		// Different rounds - not comparable, take incoming wholesale.
+		const { merged, altered } = mergePlayoffSeries(local, incoming);
+		assert.strictEqual(altered, false);
+		assert.strictEqual(merged, incoming);
+		// No local row at all - incoming wholesale.
+		assert.strictEqual(
+			mergePlayoffSeries(undefined, incoming).merged,
+			incoming,
 		);
 	});
 
