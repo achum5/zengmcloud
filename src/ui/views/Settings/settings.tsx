@@ -2,6 +2,7 @@ import {
 	COURT,
 	DIFFICULTY,
 	GAME_NAME,
+	isValidSaveReplaysTid,
 	REAL_PLAYERS_INFO,
 	TIEBREAKERS,
 	WEBSITE_ROOT,
@@ -3064,10 +3065,12 @@ export const settings: Setting[] = (
 				if (!Array.isArray(value)) {
 					throw new Error("Must be a list of team IDs");
 				}
-				// -1 is the All-Star Game sentinel, -2 is the "all playoff games"
-				// sentinel; everything else is a real team ID (>= 0).
+				// Checked against the sentinel list itself, not a hardcoded floor:
+				// the floor was -2, so the -3 that the form's own "Feats & game
+				// winners" button writes was rejected on save even though the sim
+				// honored it.
 				for (const num of value) {
-					if (!Number.isInteger(num) || num < -2) {
+					if (!isValidSaveReplaysTid(num)) {
 						throw new Error("Must contain only team ID numbers");
 					}
 				}

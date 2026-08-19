@@ -1,6 +1,10 @@
 import { useLocal } from "../../util/local.ts";
 import { orderBy } from "../../../common/utils.ts";
-import { SAVE_REPLAYS_DRAMATIC } from "../../../common/constants.ts";
+import {
+	SAVE_REPLAYS_ALL_PLAYOFFS,
+	SAVE_REPLAYS_ALL_STAR,
+	SAVE_REPLAYS_DRAMATIC,
+} from "../../../common/constants.ts";
 
 // The team picker for the "auto-save replays" setting. Value round-trips as a
 // JSON string of team IDs (the jsonString setting type), so this just parses
@@ -46,13 +50,10 @@ const SaveReplaysTeams = ({
 		);
 	};
 
-	// -1 is the All-Star Game (its rosters are tids -1/-2). Kept separate from the
-	// team list since it isn't a real franchise. -2 is the "all playoff games"
-	// sentinel: save every playoff game regardless of team. -3 saves any game
-	// that turns out to contain a statistical feat or a game winner/tyer - which
-	// costs the most, since every game has to generate play-by-play to find out.
-	const ALL_STAR = -1;
-	const ALL_PLAYOFFS = -2;
+	// The three non-team entries, all named in constants.ts alongside the check
+	// the settings form validates with - see SAVE_REPLAYS_SENTINELS.
+	const ALL_STAR = SAVE_REPLAYS_ALL_STAR;
+	const ALL_PLAYOFFS = SAVE_REPLAYS_ALL_PLAYOFFS;
 	const DRAMATIC = SAVE_REPLAYS_DRAMATIC;
 
 	return (

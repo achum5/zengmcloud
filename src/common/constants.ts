@@ -510,10 +510,33 @@ export const MOBILE_AD_BOTTOM_MARGIN = 52;
 // Kept in step with $league-ticker-height in the stylesheets.
 export const LEAGUE_TICKER_HEIGHT = 36;
 
-// Sentinel in saveReplaysTids: auto-save a replay of any game with a
-// statistical feat or a game winner/tyer. (-1 is the All-Star Game via its
-// roster tid, -2 is every playoff game - see SaveReplaysTeams.)
+// SENTINELS IN saveReplaysTids, which otherwise holds real team IDs (>= 0).
+//
+// All three are named, and the validator below is written against the list
+// rather than against a hardcoded floor - which is how the newest one came to
+// be rejected by the settings form while the sim itself honored it perfectly.
+// Adding a fourth means adding it here and nowhere else.
+export const SAVE_REPLAYS_ALL_STAR = -1; // the All-Star Game, via its roster tid
+export const SAVE_REPLAYS_ALL_PLAYOFFS = -2; // every playoff game, any team
+// Any game that turns out to contain a statistical feat or a game winner/tyer.
+// The most expensive option: every game has to generate play-by-play to find
+// out whether it qualifies.
 export const SAVE_REPLAYS_DRAMATIC = -3;
+
+export const SAVE_REPLAYS_SENTINELS = [
+	SAVE_REPLAYS_ALL_STAR,
+	SAVE_REPLAYS_ALL_PLAYOFFS,
+	SAVE_REPLAYS_DRAMATIC,
+] as const;
+
+// Is one entry of saveReplaysTids something the sim can act on? A real team ID
+// or one of the sentinels above.
+export const isValidSaveReplaysTid = (value: unknown): boolean =>
+	Number.isInteger(value) &&
+	((value as number) >= 0 ||
+		SAVE_REPLAYS_SENTINELS.includes(
+			value as (typeof SAVE_REPLAYS_SENTINELS)[number],
+		));
 
 export const DEPTH_CHART_NAME = bySport({
 	baseball: "Batting Order",

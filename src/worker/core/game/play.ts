@@ -1,6 +1,7 @@
 import {
 	ALL_STAR_GAME_ONLY,
 	PHASE,
+	SAVE_REPLAYS_ALL_PLAYOFFS,
 	SAVE_REPLAYS_DRAMATIC,
 } from "../../../common/constants.ts";
 import {
@@ -504,7 +505,8 @@ const play = async (
 		{
 			const saveReplaysTids = new Set(g.get("saveReplaysTids"));
 			const saveAllPlayoffGames =
-				saveReplaysTids.has(-2) && g.get("phase") === PHASE.PLAYOFFS;
+				saveReplaysTids.has(SAVE_REPLAYS_ALL_PLAYOFFS) &&
+				g.get("phase") === PHASE.PLAYOFFS;
 			for (const result of results) {
 				if (result.playByPlay === undefined) {
 					continue;
