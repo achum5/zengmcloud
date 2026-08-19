@@ -7,6 +7,7 @@ import {
 	beginLotteryReveal,
 	buildNotifications,
 	endLotteryReveal,
+	scoreSeparator,
 } from "./notifications.ts";
 import type { Changeset } from "./changeset.ts";
 
@@ -163,7 +164,7 @@ describe("buildNotifications", () => {
 			opts,
 		);
 		// Winner first, team nicknames + final score.
-		assert.strictEqual(notifs[0]!.title, "Lakers 110, Celtics 86");
+		assert.strictEqual(notifs[0]!.title, "Lakers 110 vs. Celtics 86");
 		const body = notifs[0]!.body;
 		// Winner's top two (Star Guy outscores Bench Guy on Game Score; REB = orb +
 		// drb = 8), then the loser's scorer - each tagged with the team abbrev.
@@ -188,7 +189,21 @@ describe("buildNotifications", () => {
 			{ changes: [gameWithBoxScore()] },
 			opts,
 		);
-		assert.strictEqual(notifs[0]!.title, "Lakers (5-2) 110, Celtics (3-4) 86");
+		assert.strictEqual(
+			notifs[0]!.title,
+			"Lakers (5-2) 110 vs. Celtics (3-4) 86",
+		);
+	});
+
+	test("a road win reads @ instead of vs.", async () => {
+		// gamePut takes home first, so this is the user's team (tid 0) winning in
+		// Boston - the headline has to say so.
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{ changes: [gamePut(7, { tid: 1, pts: 98 }, { tid: 0, pts: 110 })] },
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Lakers 110 @ Celtics 98");
 	});
 
 	test("team with a bye gets a targeted 'Bye day' notice listing the day's games", async () => {
@@ -421,7 +436,7 @@ describe("buildNotifications", () => {
 		);
 		// A boxscore-less game still reads as a sim (final-score headline), never a
 		// trade. targetTids proves it went through the per-team sim path.
-		assert.strictEqual(notifs[0]!.title, "Lakers 110, Celtics 105");
+		assert.strictEqual(notifs[0]!.title, "Lakers 110 vs. Celtics 105");
 		assert.deepEqual(notifs[0]!.targetTids, [0]);
 	});
 
@@ -1421,5 +1436,39 @@ describe("buildNotifications", () => {
 				g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
 			}
 		});
+	});
+});
+
+// The headline's joint, on its own: which side of it the winner was standing.
+describe("scoreSeparator", () => {
+	test("the winner played at home", () => {
+		assert.strictEqual(
+			scoreSeparator({ teams: [{ tid: 0 }, { tid: 1 }], won: { tid: 0 } }),
+			"vs.",
+		);
+	});
+
+	test("the winner played on the road", () => {
+		assert.strictEqual(
+			scoreSeparator({ teams: [{ tid: 0 }, { tid: 1 }], won: { tid: 1 } }),
+			"@",
+		);
+	});
+
+	// Nobody travelled, so nobody gets credited with a road win.
+	test("a neutral site belongs to neither team", () => {
+		assert.strictEqual(
+			scoreSeparator({
+				teams: [{ tid: 0 }, { tid: 1 }],
+				won: { tid: 1 },
+				neutralSite: true,
+			}),
+			"vs.",
+		);
+	});
+
+	test("an unreadable game claims the lesser thing", () => {
+		assert.strictEqual(scoreSeparator({ won: { tid: 1 } }), "vs.");
+		assert.strictEqual(scoreSeparator({ teams: [], won: { tid: 1 } }), "vs.");
 	});
 });

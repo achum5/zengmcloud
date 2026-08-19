@@ -491,6 +491,32 @@ const dayGameScores = (
 	return lines.length > 0 ? lines.join("\n") : undefined;
 };
 
+// The joint in a final-score headline, read from the WINNER's side:
+//
+//   Celtics (34-27) 106 vs. Hawks (14-48) 100   - won at home
+//   Celtics (34-27) 106 @ Hawks (14-48) 100     - won on the road
+//
+// It used to be a comma, which said nothing. Where a game was played is half of
+// what makes the result interesting - a road win over a good team and a home
+// win over a bad one read completely differently - and the headline already has
+// both teams in winner-first order, so the venue costs no extra space.
+//
+// teams[0] is the home team in ZenGM. A neutral site (the Finals under that
+// setting, and any exhibition) is neither team's building, so it reads "vs."
+// rather than crediting somebody with a road win nobody travelled for. Same for
+// a game whose teams array is missing: "vs." claims less.
+export const scoreSeparator = (game: {
+	teams?: readonly { tid: number }[];
+	won: { tid: number };
+	neutralSite?: boolean;
+}): string => {
+	if (game.neutralSite) {
+		return "vs.";
+	}
+	const homeTid = game.teams?.[0]?.tid;
+	return homeTid !== undefined && homeTid !== game.won.tid ? "@" : "vs.";
+};
+
 // On a bye day, show at most this many of the league's games so the
 // notification stays compact.
 const MAX_BYE_DAY_GAMES = 5;
@@ -743,7 +769,8 @@ const buildSimNotifications = async (
 			const loser = teamById.get(game.lost.tid);
 			const winnerRec = await recordParen(game.won.tid);
 			const loserRec = await recordParen(game.lost.tid);
-			title = `${headlineName(winner)}${winnerRec} ${game.won.pts}, ${headlineName(loser)}${loserRec} ${game.lost.pts}`;
+			const separator = scoreSeparator(game);
+			title = `${headlineName(winner)}${winnerRec} ${game.won.pts} ${separator} ${headlineName(loser)}${loserRec} ${game.lost.pts}`;
 
 			if (abbrev) {
 				path = `game_log/${abbrev}/${season}/${game.gid}`;
@@ -769,7 +796,7 @@ const buildSimNotifications = async (
 			body =
 				lines.length > 0
 					? lines.join("\n")
-					: `Final: ${headlineName(winner)} ${game.won.pts}, ${headlineName(loser)} ${game.lost.pts}.`;
+					: `Final: ${headlineName(winner)} ${game.won.pts} ${separator} ${headlineName(loser)} ${game.lost.pts}.`;
 		} else {
 			// Multiple games: the record is the title; detailed blocks for the first
 			// few games are the body, then a count of any remainder.
