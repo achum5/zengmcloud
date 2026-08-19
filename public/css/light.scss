@@ -862,6 +862,161 @@ tr.table-warning:hover > td {
 	font-size: 16px;
 }
 
+// THE MESSAGE BOX ON A PHONE, which is a div rather than an input so that
+// nothing here can be focused and nothing can summon the native keyboard. It
+// borrows .form-control for the frame and adds back the two things a real field
+// gave it for free: room for a long message to wrap, and somewhere for the
+// caret to sit.
+.live-chat-field {
+	height: auto;
+	min-height: calc(1.5em + 0.5rem + 2px);
+	max-height: 4.5em;
+	overflow-y: auto;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+	cursor: text;
+	// A tap must not select the message text or bring up the loupe.
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
+}
+
+.live-chat-field.typing {
+	// The focus ring a real field would have had, so it still looks like the
+	// thing being typed into.
+	border-color: var(--bs-primary);
+}
+
+.live-chat-caret {
+	display: inline-block;
+	width: 2px;
+	height: 1.1em;
+	margin-left: 1px;
+	vertical-align: text-bottom;
+	background-color: var(--bs-primary);
+	animation: live-chat-caret-blink 1.06s steps(1) infinite;
+}
+
+@keyframes live-chat-caret-blink {
+	0%,
+	50% {
+		opacity: 1;
+	}
+	50.01%,
+	100% {
+		opacity: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.live-chat-caret {
+		animation: none;
+	}
+}
+
+// THE IN-PAGE KEYBOARD. Sized in rem so it follows the text size, and laid out
+// with flex so the keys divide whatever width the drawer has rather than
+// assuming a phone width.
+.osk {
+	--osk-bg: #d1d4db;
+	--osk-key-bg: #fff;
+	--osk-key-fg: #000;
+	--osk-key-shadow: #898b90;
+	--osk-key-active: #b9bcc4;
+	--osk-mod-bg: #adb3bd;
+	--osk-mod-active: #fff;
+
+	display: flex;
+	flex-direction: column;
+	gap: 0.35rem;
+	margin: 0.5rem -0.5rem -0.5rem;
+	padding: 0.35rem 0.25rem calc(0.35rem + env(safe-area-inset-bottom));
+	background-color: var(--osk-bg);
+	border-radius: 0 0 0.25rem 0.25rem;
+	flex: 0 0 auto;
+	// A key press must never select text, show a callout, or fire the 300ms
+	// double-tap zoom.
+	user-select: none;
+	-webkit-user-select: none;
+	-webkit-touch-callout: none;
+	touch-action: manipulation;
+}
+
+.osk-bar {
+	display: flex;
+	justify-content: flex-end;
+	margin-bottom: -0.15rem;
+}
+
+.osk-dismiss {
+	border: 0;
+	background: none;
+	padding: 0 0.35rem;
+	font-size: 0.8125rem;
+	font-weight: 600;
+	color: var(--osk-key-fg);
+	opacity: 0.75;
+}
+
+.osk-row {
+	display: flex;
+	gap: 0.25rem;
+}
+
+.osk-key {
+	// Equal shares of the row, and min-width 0 so ten of them cannot overflow a
+	// narrow phone.
+	flex: 1 1 0;
+	min-width: 0;
+	height: 2.5rem;
+	padding: 0;
+	border: 0;
+	border-radius: 0.3rem;
+	background-color: var(--osk-key-bg);
+	color: var(--osk-key-fg);
+	font-size: 1.0625rem;
+	line-height: 1;
+	box-shadow: 0 1px 0 var(--osk-key-shadow);
+}
+
+.osk-key:active {
+	background-color: var(--osk-key-active);
+}
+
+.osk-key:disabled {
+	opacity: 0.5;
+}
+
+// Shift, backspace and the layer switches: wider, and a shade darker so the
+// letters read as the primary thing.
+.osk-key-mod {
+	flex: 1.5 1 0;
+	background-color: var(--osk-mod-bg);
+	font-size: 0.875rem;
+}
+
+.osk-key-mod.active {
+	background-color: var(--osk-mod-active);
+}
+
+.osk-key-space {
+	flex: 5 1 0;
+	font-size: 0.8125rem;
+}
+
+.osk-key-send {
+	flex: 2.5 1 0;
+	background-color: var(--bs-primary);
+	color: #fff;
+	font-size: 0.875rem;
+	font-weight: 600;
+}
+
+// The half-key inset that makes the middle row read as a keyboard.
+.osk-spacer {
+	flex: 0.5 1 0;
+}
+
 // The collapsed drawer pins ~3rem to the bottom of the viewport, so give the
 // column it came out of that much clearance - otherwise the last few plays can
 // never be scrolled out from under it.

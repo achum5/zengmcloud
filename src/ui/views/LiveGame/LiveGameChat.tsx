@@ -5,6 +5,18 @@ import {
 	type LiveGameChatMessage,
 } from "../../../common/liveGameChat.ts";
 import { toWorker } from "../../util/toWorker.ts";
+import { OnScreenKeyboard } from "../../components/OnScreenKeyboard.tsx";
+import clsx from "clsx";
+
+// Type with the in-page keyboard rather than the device's own. Phones only: a
+// desktop keyboard is hardware, costs no screen space and moves no viewport, so
+// there is nothing there to fix and a replica would only be in the way.
+const OWN_KEYBOARD = typeof window !== "undefined" && window.mobile === true;
+
+// Enough drawer for the keyboard, the message box and a line or two of what has
+// already been said. Below this the keyboard is not usable, so the drawer takes
+// the room even if that means covering the court.
+const TYPING_MIN_HEIGHT = 380;
 
 // Chat alongside a live game, and the record of it on a replay.
 //
@@ -53,6 +65,10 @@ export const LiveGameChat = ({
 	const [open, setOpen] = useState(false);
 	const [text, setText] = useState("");
 	const [sending, setSending] = useState(false);
+	// On a phone the message box is not an <input> and typing is done with the
+	// keyboard below - see OnScreenKeyboard for why. This is whether that
+	// keyboard is up; on desktop it is never used and the real field is shown.
+	const [typing, setTyping] = useState(false);
 	const listRef = useRef<HTMLDivElement>(null);
 	const seenCount = useRef(0);
 
@@ -76,6 +92,10 @@ export const LiveGameChat = ({
 	// user just tapped underneath the keyboard they opened by tapping it.
 	const [dock, setDock] = useState<{
 		maxHeight?: number;
+		// The whole visible area, which is the most the drawer may ever take -
+		// used when the on-screen keyboard is up and needs more room than the
+		// space under the court.
+		viewport?: number;
 		left: number;
 		bottom: number;
 	}>({ left: 0, bottom: 0 });
@@ -115,6 +135,7 @@ export const LiveGameChat = ({
 				// what they are typing rather than at the game, and the
 				// alternative is a message box too short to use.
 				maxHeight: Math.max(120, Math.floor(viewport - floor)),
+				viewport: Math.floor(viewport),
 				left: Math.max(0, Math.floor(rects[0]?.left ?? 0)),
 				bottom,
 			});
@@ -169,6 +190,16 @@ export const LiveGameChat = ({
 
 	const unread = open ? 0 : Math.max(0, visible.length - seenCount.current);
 
+	// Every edit to the message goes through here, from either keyboard, so the
+	// typing anchor and the length cap cannot be honored on one path and missed
+	// on the other.
+	const changeText = (next: string) => {
+		if (text === "" && next !== "") {
+			anchorAtTypingStart.current = cursor;
+		}
+		setText(next.slice(0, MAX_CHAT_MESSAGE_LENGTH));
+	};
+
 	const send = async () => {
 		const toSend = text.trim();
 		if (toSend === "" || sending) {
@@ -197,19 +228,38 @@ export const LiveGameChat = ({
 		return null;
 	}
 
+	// While the on-screen keyboard is up the drawer needs room for it, which the
+	// space under the court often is not. Take the smaller of "as much as the
+	// screen has" and "enough for the keyboard plus a line or two", so a game
+	// with plenty of room below it is still never covered - the drawer only
+	// climbs over the court when it genuinely has nowhere else to go.
+	const maxHeight = open
+		? typing
+			? Math.min(
+					dock.viewport ?? TYPING_MIN_HEIGHT,
+					Math.max(dock.maxHeight ?? 0, TYPING_MIN_HEIGHT),
+				)
+			: dock.maxHeight
+		: undefined;
+
 	return (
 		<div
 			className="live-chat-dock"
 			style={{
 				left: dock.left,
 				bottom: dock.bottom,
-				maxHeight: open ? dock.maxHeight : undefined,
+				maxHeight,
 			}}
 		>
 			<button
 				type="button"
 				className="btn btn-secondary btn-sm align-self-start"
-				onClick={() => setOpen(!open)}
+				onClick={() => {
+					if (open) {
+						setTyping(false);
+					}
+					setOpen(!open);
+				}}
 			>
 				{open ? "Hide chat" : "Chat"}
 				{visible.length > 0 ? ` (${visible.length})` : ""}
@@ -229,34 +279,87 @@ export const LiveGameChat = ({
 					</div>
 
 					{canSend ? (
-						<form
-							className="input-group input-group-sm"
-							onSubmit={(event) => {
-								event.preventDefault();
-								void send();
-							}}
-						>
-							<input
-								type="text"
-								className="form-control"
-								placeholder="Message"
-								maxLength={MAX_CHAT_MESSAGE_LENGTH}
-								value={text}
-								onChange={(event) => {
-									if (text === "" && event.target.value !== "") {
-										anchorAtTypingStart.current = cursor;
-									}
-									setText(event.target.value);
+						OWN_KEYBOARD ? (
+							<>
+								<div className="input-group input-group-sm">
+									{/* Deliberately not an <input>: nothing here can take
+									    focus, so nothing can summon the native keyboard.
+									    That is the entire point - see OnScreenKeyboard. */}
+									<div
+										className={clsx("form-control live-chat-field", {
+											typing,
+										})}
+										role="textbox"
+										aria-label="Message"
+										onPointerDown={(event) => {
+											event.preventDefault();
+											setTyping(true);
+										}}
+									>
+										{text === "" && !typing ? (
+											<span className="text-body-secondary">Message</span>
+										) : (
+											<>
+												{text}
+												{typing ? <span className="live-chat-caret" /> : null}
+											</>
+										)}
+									</div>
+									{/* While the keyboard is up its own Send key does this,
+									    the way the return key does on a phone - two of them
+									    side by side is just clutter. */}
+									{typing ? null : (
+										<button
+											type="button"
+											className="btn btn-primary"
+											disabled={sending || text.trim() === ""}
+											onClick={() => {
+												void send();
+											}}
+										>
+											Send
+										</button>
+									)}
+								</div>
+								{typing ? (
+									<OnScreenKeyboard
+										onKey={(key) => changeText(text + key)}
+										onBackspace={() => changeText(text.slice(0, -1))}
+										onSubmit={() => {
+											void send();
+										}}
+										onDismiss={() => setTyping(false)}
+										submitDisabled={sending || text.trim() === ""}
+									/>
+								) : null}
+							</>
+						) : (
+							<form
+								className="input-group input-group-sm"
+								onSubmit={(event) => {
+									event.preventDefault();
+									void send();
 								}}
-							/>
-							<button
-								type="submit"
-								className="btn btn-primary"
-								disabled={sending || text.trim() === ""}
 							>
-								Send
-							</button>
-						</form>
+								<input
+									type="text"
+									className="form-control"
+									placeholder="Message"
+									maxLength={MAX_CHAT_MESSAGE_LENGTH}
+									value={text}
+									onChange={(event) => {
+										changeText(event.target.value);
+									}}
+								/>
+								<button
+									type="submit"
+									className="btn btn-primary"
+									disabled={sending || text.trim() === ""}
+								>
+									Send
+								</button>
+							</form>
+						)
 					) : null}
 				</div>
 			) : null}

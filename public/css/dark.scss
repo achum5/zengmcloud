@@ -496,6 +496,18 @@ $league-ticker-toggle-width: 26px;
 	--ticker-hover-fg: #fff;
 }
 
+// THE IN-PAGE KEYBOARD's dark palette, and only the palette - the layout lives
+// in light.scss and is imported above.
+.osk {
+	--osk-bg: #1c1c1e;
+	--osk-key-bg: #4a4a4e;
+	--osk-key-fg: #fff;
+	--osk-key-shadow: #0d0d0f;
+	--osk-key-active: #6a6a6f;
+	--osk-mod-bg: #343438;
+	--osk-mod-active: #6a6a6f;
+}
+
 // THE LEFT PANE. Holds the name of the block currently going past - or, for a
 // single game, that game's score - and changes when the block does, the way a
 // broadcast score bar keeps a fixed marker beside a moving crawl.
