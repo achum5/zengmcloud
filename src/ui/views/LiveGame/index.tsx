@@ -2634,15 +2634,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 								/>
 							</div>
 						) : null}
-						<LiveGameChat
-							messages={chatMessages}
-							cursor={chatCursor}
-							canSend={chatCanSend}
-							quarter={boxScore.current.quarterShort}
-							clock={boxScore.current.time}
-							score={chatScore}
-							boundaryEls={[liveGameStickyDiv, liveCourtDiv]}
-						/>
 						<PlayByPlay
 							boxScore={boxScore.current}
 							entries={playByPlayEntries.current}
@@ -2651,6 +2642,26 @@ export const LiveGame = (props: View<"liveGame">) => {
 					</div>
 				</div>
 			</div>
+
+			{/* OUTSIDE THE STICKY COLUMN, and that is the whole point.
+			    position:sticky creates a stacking context even at z-index auto, so
+			    while this lived inside .live-game-affix (sticky from the md
+			    breakpoint up) the drawer's z-index was resolved INSIDE that
+			    context - and the league ticker, at 1030 in the root context,
+			    painted straight over it however high the drawer went. On a phone
+			    the affix is static, no context is created, and the drawer showed
+			    up fine: the fault was desktop-only for exactly that reason.
+			    It is position:fixed and finds its own place from boundaryEls, so
+			    where it sits in the markup only ever affected stacking. */}
+			<LiveGameChat
+				messages={chatMessages}
+				cursor={chatCursor}
+				canSend={chatCanSend}
+				quarter={boxScore.current.quarterShort}
+				clock={boxScore.current.time}
+				score={chatScore}
+				boundaryEls={[liveGameStickyDiv, liveCourtDiv]}
+			/>
 		</div>
 	);
 };

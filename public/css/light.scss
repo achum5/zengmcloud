@@ -1111,8 +1111,13 @@ tr.table-warning:hover > td {
 // The collapsed drawer pins ~3rem to the bottom of the viewport, so give the
 // column it came out of that much clearance - otherwise the last few plays can
 // never be scrolled out from under it.
-.live-chat-dock ~ * {
-	margin-bottom: 3.5rem;
+// The collapsed drawer pins ~3rem to the bottom of the viewport, so the column
+// it came out of needs that much clearance - otherwise the last few plays can
+// never be scrolled out from under it. Stated on the column rather than as a
+// sibling rule, because the drawer is no longer a sibling: it had to move out
+// of the sticky column entirely (see LiveGame) to escape its stacking context.
+.live-game-affix {
+	padding-bottom: 3.5rem;
 }
 
 .live-game-sticky {
