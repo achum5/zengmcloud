@@ -101,17 +101,12 @@ describe("no warning at all", () => {
 		}
 	});
 
-	test("regular season at the trade deadline - simming cannot cross it", () => {
-		// The deadline arms a ready-up, but the ordinary sim path refuses to cross
-		// (tradeDeadlineGate), so a day/week is not stepping over anyone.
-		const atDeadline = readyState({
-			phase: PHASE.REGULAR_SEASON,
-			readyTeams: 1,
-			totalTeams: 3,
-		});
-		assert.isUndefined(warn("day", atDeadline));
-		assert.isUndefined(warn("week", atDeadline));
-		assert.isUndefined(warn("untilTradeDeadline", atDeadline));
+	// With no stop pending the regular season is not a gated stage at all, so
+	// there is nothing to step over and the Play menu stays one click.
+	test("regular season with nothing pending is left alone", () => {
+		for (const id of ["day", "week", "month"]) {
+			assert.isUndefined(warn(id, undefined), id);
+		}
 	});
 });
 
@@ -158,6 +153,39 @@ describe("not everyone is readied up", () => {
 		const warning = ofKind(warn("onePick", state), "notReady");
 		assert.deepStrictEqual(warning.notReady, ["Phoenix"]);
 		assert.deepStrictEqual(warning.onClock, ["Sacramento"]);
+	});
+
+	// A sim stop - the deadline, or a day the league asked to pause before - is
+	// the one time the regular season IS a ready-up stage, and every sim item
+	// runs straight into it. This dialog is the way past: the sim path refuses
+	// to cross on its own, so without it one person who never readies up
+	// strands the whole league with no button anywhere that gets past them.
+	test("a sim stop makes every regular-season sim item step over the room", () => {
+		const atStop = readyState({
+			phase: PHASE.REGULAR_SEASON,
+			readyTeams: 1,
+			totalTeams: 3,
+			teams: [
+				{ tid: 0, name: "Boston", ready: true, onClock: false },
+				{ tid: 1, name: "Sacramento", ready: false, onClock: false },
+				{ tid: 2, name: "Phoenix", ready: false, onClock: false },
+			],
+		});
+		for (const id of [
+			"day",
+			"dayLive",
+			"week",
+			"month",
+			"untilTradeDeadline",
+			"untilAllStarGame",
+			"untilPlayoffs",
+		]) {
+			assert.strictEqual(warn(id, atStop)?.kind, "notReady", id);
+		}
+
+		// And it names who is being stepped over, which is the point of asking.
+		const warning = ofKind(warn("day", atStop), "notReady");
+		assert.deepStrictEqual(warning.notReady, ["Sacramento", "Phoenix"]);
 	});
 
 	test("a free-agency day is a step of the stage", () => {

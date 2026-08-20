@@ -38,11 +38,15 @@ import getOrder from "../draft/getOrder.ts";
 import runPicks from "../draft/runPicks.ts";
 import newPhase from "../phase/newPhase.ts";
 import freeAgentsPlay from "../freeAgents/play.ts";
+import playGames from "../game/play.ts";
 import { resolveFaBoards } from "./faBoard.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { runAfterActionHook } from "./afterActionHook.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import {
+	allowCrossingNextSimStop,
+	clearCrossingNextSimStop,
+	getPendingSimStop,
 	getTradeDeadlineGame,
 	setTradeDeadlineGateActive,
 } from "./tradeDeadlineGate.ts";
@@ -145,14 +149,37 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 
 	if (phase === PHASE.REGULAR_SEASON) {
 		// The regular season is not a gated stage in general - it becomes one for
-		// exactly as long as the deadline sentinel is the next thing on the
-		// schedule. Reading the schedule is a cache hit, so this is cheap enough
-		// for the 2s evaluate tick.
-		const deadline = await getTradeDeadlineGame();
-		if (!deadline) {
+		// exactly as long as a configured stop is the next thing on the schedule.
+		// Reading the schedule is a cache hit, so this is cheap enough for the 2s
+		// evaluate tick.
+		const stop = await getPendingSimStop();
+		if (!stop) {
 			return undefined;
 		}
-		const gid = deadline.gid;
+
+		if (stop.kind === "day") {
+			return {
+				nextStep: 1,
+				nextLabel: `Play day ${stop.day}`,
+				onClockUser: false,
+				waypoints: [],
+				options: [],
+				// A day stop is crossed by PLAYING that day through the ordinary sim
+				// path, which is also what makes it stop being pending - the next day
+				// on the schedule is a different number. The one-shot permission is
+				// what stops that sim meeting the very stop it was sent to cross.
+				advance: async () => {
+					allowCrossingNextSimStop();
+					try {
+						await playGames(1, {}, true);
+					} finally {
+						clearCrossingNextSimStop();
+					}
+				},
+			};
+		}
+
+		const gid = stop.gid;
 		return {
 			nextStep: 1,
 			nextLabel: "Cross the trade deadline",

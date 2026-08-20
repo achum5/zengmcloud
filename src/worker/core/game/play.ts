@@ -29,10 +29,11 @@ import {
 	notifyRosterBlockedSim,
 } from "../sync/simBlockedNotify.ts";
 import {
+	getPendingSimStop,
 	isTradeDeadlineGame,
 	isTradeDeadlineGateActive,
-	notifyTradeDeadlineArrived,
-	shouldStopAtTradeDeadline,
+	notifySimStopArrived,
+	shouldStopAtSimStop,
 } from "../sync/tradeDeadlineGate.ts";
 import { settleBets } from "../sportsbook/bets.ts";
 import { idb } from "../../db/index.ts";
@@ -909,21 +910,24 @@ const play = async (
 			return granted;
 		};
 
-		if (isTradeDeadlineGame(schedule[0])) {
-			// The deadline is the one phase change a sim used to run straight
-			// through. Stop on it instead - alone that costs one extra press, and
-			// in a shared league it is the ready-up gate: the evaluator crosses
-			// once every team is done trading, so simming harder can't skip the
-			// room. Checked BEFORE claiming the day, so bailing leaves the day
-			// unconsumed and the sentinel in place for whoever does cross it.
-			if (shouldStopAtTradeDeadline(start)) {
+		const stop = await getPendingSimStop();
+		if (stop) {
+			// A configured stop is the one place a sim deliberately does not run
+			// straight through. Alone that costs one extra press, and in a shared
+			// league it is the ready-up gate: the evaluator crosses once every team
+			// has said they are done, so simming harder can't skip the room.
+			// Checked BEFORE claiming the day, so bailing leaves the day unconsumed
+			// and - at the deadline - the sentinel in place for whoever does cross.
+			if (shouldStopAtSimStop(start)) {
 				// Say why, or a press of Sim Day looks like it did nothing.
+				const what =
+					stop.kind === "deadline" ? "Trade deadline" : `Day ${stop.day}`;
 				if (isTradeDeadlineGateActive()) {
-					void notifyTradeDeadlineArrived();
+					void notifySimStopArrived(what);
 					logEvent(
 						{
 							type: "info",
-							text: "Trade deadline. The league sims on once every team has readied up.",
+							text: `${what}. The league sims on once every team has readied up.`,
 							saveToDb: false,
 						},
 						conditions,
@@ -932,7 +936,7 @@ const play = async (
 					logEvent(
 						{
 							type: "info",
-							text: "Trade deadline. Make your moves — simming again crosses it.",
+							text: `${what}. Make your moves — simming again crosses it.`,
 							saveToDb: false,
 						},
 						conditions,
@@ -940,6 +944,9 @@ const play = async (
 				}
 				return cbNoGames();
 			}
+		}
+
+		if (isTradeDeadlineGame(schedule[0])) {
 			if (!(await claimDayOrBail(schedule))) {
 				return cbNoGames();
 			}

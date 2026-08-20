@@ -9,9 +9,12 @@ import {
 	getTradeDeadlineGame,
 	isTradeDeadlineGame,
 	isTradeDeadlineGateActive,
-	notifyTradeDeadlineArrived,
+	notifySimStopArrived,
 	setTradeDeadlineGateActive,
-	shouldStopAtTradeDeadline,
+	shouldStopAtSimStop,
+	getPendingSimStop,
+	allowCrossingNextSimStop,
+	clearCrossingNextSimStop,
 } from "./tradeDeadlineGate.ts";
 
 const makeEngine = () => {
@@ -103,9 +106,82 @@ describe("getTradeDeadlineGame", () => {
 	});
 });
 
-describe("shouldStopAtTradeDeadline", () => {
+describe("which stop the sim is standing in front of", () => {
+	beforeEach(async () => {
+		resetG();
+		await resetCache({ schedule: [] });
+	});
+
+	// The deadline used to stop the league whether it wanted to or not. It is an
+	// entry in a list now, and an empty list means nothing stops.
+	test("nothing stops when no stop days are configured", async () => {
+		g.setWithoutSavingToDB("simStopDays", "");
+		await idb.cache.schedule.add(deadline(500) as any);
+		assert.strictEqual(await getPendingSimStop(), undefined);
+	});
+
+	test("the deadline stops only when it is asked for", async () => {
+		await idb.cache.schedule.add(deadline(500) as any);
+
+		g.setWithoutSavingToDB("simStopDays", "15");
+		assert.strictEqual(await getPendingSimStop(), undefined);
+
+		g.setWithoutSavingToDB("simStopDays", "15, deadline");
+		assert.deepStrictEqual(await getPendingSimStop(), {
+			kind: "deadline",
+			gid: 500,
+		});
+	});
+
+	// A day stop fires when that day is NEXT, before it is played, which is what
+	// makes the pause useful: you deal, then the day goes.
+	test("a configured day stops before it is played", async () => {
+		g.setWithoutSavingToDB("simStopDays", "41");
+		await idb.cache.schedule.add(realGame(600) as any);
+		assert.deepStrictEqual(await getPendingSimStop(), { kind: "day", day: 41 });
+	});
+
+	test("a day nobody asked about does not stop", async () => {
+		g.setWithoutSavingToDB("simStopDays", "15, deadline");
+		await idb.cache.schedule.add(realGame(600) as any);
+		assert.strictEqual(await getPendingSimStop(), undefined);
+	});
+
+	// Crossing a day stop means PLAYING it, after which the next day on the
+	// schedule is a different number - which is the whole reason there is no
+	// cleared-list to keep in sync.
+	test("playing the day is what clears it", async () => {
+		g.setWithoutSavingToDB("simStopDays", "41");
+		await idb.cache.schedule.add(realGame(600) as any);
+		assert.ok(await getPendingSimStop());
+		await idb.cache.schedule.delete(600);
+		assert.strictEqual(await getPendingSimStop(), undefined);
+	});
+});
+
+describe("shouldStopAtSimStop", () => {
 	afterEach(() => {
 		setTradeDeadlineGateActive(false);
+		clearCrossingNextSimStop();
+	});
+
+	// The escape hatch. Gating means the ordinary sim path refuses to cross, so
+	// one person who never readies up could strand the league - there was no
+	// button anywhere that got past it. Confirming "Advance anyway" grants this,
+	// and the ready-up evaluator uses the same thing to play a stop day.
+	test("a granted crossing gets through a gate, once", () => {
+		setTradeDeadlineGateActive(true);
+		allowCrossingNextSimStop();
+		assert.strictEqual(shouldStopAtSimStop(true), false);
+		// Consumed - the next sim stops again.
+		assert.strictEqual(shouldStopAtSimStop(true), true);
+	});
+
+	test("a granted crossing can be taken back", () => {
+		setTradeDeadlineGateActive(true);
+		allowCrossingNextSimStop();
+		clearCrossingNextSimStop();
+		assert.strictEqual(shouldStopAtSimStop(true), true);
 	});
 
 	// Alone: stop on arrival, cross on the next press. `start` is true only when
@@ -113,16 +189,16 @@ describe("shouldStopAtTradeDeadline", () => {
 	// deadline" versus "the sim was started on top of it".
 	test("alone, it stops on arrival and crosses on the next press", () => {
 		setTradeDeadlineGateActive(false);
-		assert.strictEqual(shouldStopAtTradeDeadline(false), true);
-		assert.strictEqual(shouldStopAtTradeDeadline(true), false);
+		assert.strictEqual(shouldStopAtSimStop(false), true);
+		assert.strictEqual(shouldStopAtSimStop(true), false);
 	});
 
 	// Gated, pressing play harder must not be a way around the room - the
 	// evaluator is the only thing that crosses.
 	test("gated, it never crosses however the sim was started", () => {
 		setTradeDeadlineGateActive(true);
-		assert.strictEqual(shouldStopAtTradeDeadline(false), true);
-		assert.strictEqual(shouldStopAtTradeDeadline(true), true);
+		assert.strictEqual(shouldStopAtSimStop(false), true);
+		assert.strictEqual(shouldStopAtSimStop(true), true);
 	});
 
 	// Gating means the normal sim path REFUSES to cross, so an armed gate with
@@ -152,7 +228,7 @@ describe("notifyTradeDeadlineArrived", () => {
 		const { engine, notifications } = makeEngine();
 		setSyncEngine(engine as any);
 
-		await notifyTradeDeadlineArrived();
+		await notifySimStopArrived("Trade deadline");
 		assert.strictEqual(notifications.length, 1);
 		assert.strictEqual(notifications[0].targetTids, null);
 		assert.strictEqual(notifications[0].path, "trade");
@@ -166,9 +242,9 @@ describe("notifyTradeDeadlineArrived", () => {
 		const { engine, notifications } = makeEngine();
 		setSyncEngine(engine as any);
 
-		await notifyTradeDeadlineArrived();
-		await notifyTradeDeadlineArrived();
-		await notifyTradeDeadlineArrived();
+		await notifySimStopArrived("Trade deadline");
+		await notifySimStopArrived("Trade deadline");
+		await notifySimStopArrived("Trade deadline");
 		assert.strictEqual(notifications.length, 1);
 	});
 
@@ -176,16 +252,16 @@ describe("notifyTradeDeadlineArrived", () => {
 		const { engine, notifications } = makeEngine();
 		setSyncEngine(engine as any);
 
-		await notifyTradeDeadlineArrived();
+		await notifySimStopArrived("Trade deadline");
 		g.setWithoutSavingToDB("season", g.get("season") + 1);
-		await notifyTradeDeadlineArrived();
+		await notifySimStopArrived("Trade deadline");
 		assert.strictEqual(notifications.length, 2);
 	});
 
 	test("nothing is sent outside a shared league", async () => {
 		setSyncEngine(undefined as any);
 		// Must not throw, and must not need an engine.
-		await notifyTradeDeadlineArrived();
+		await notifySimStopArrived("Trade deadline");
 	});
 
 	// A dropped push must not silence the announcement forever.
@@ -202,10 +278,10 @@ describe("notifyTradeDeadlineArrived", () => {
 			},
 		} as any);
 
-		await notifyTradeDeadlineArrived();
+		await notifySimStopArrived("Trade deadline");
 		assert.strictEqual(sent.length, 0);
 		fail = false;
-		await notifyTradeDeadlineArrived();
+		await notifySimStopArrived("Trade deadline");
 		assert.strictEqual(sent.length, 1);
 	});
 
@@ -213,13 +289,13 @@ describe("notifyTradeDeadlineArrived", () => {
 		const { engine, notifications } = makeEngine();
 		setSyncEngine(engine as any);
 
-		await notifyTradeDeadlineArrived();
+		await notifySimStopArrived("Trade deadline");
 		assert.strictEqual(notifications.length, 1);
 		// Leaving and rejoining a room is the same season, but a new room needs
 		// to hear it.
 		setTradeDeadlineGateActive(true);
 		setTradeDeadlineGateActive(false);
-		await notifyTradeDeadlineArrived();
+		await notifySimStopArrived("Trade deadline");
 		assert.strictEqual(notifications.length, 2);
 	});
 });

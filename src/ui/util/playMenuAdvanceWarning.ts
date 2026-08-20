@@ -31,14 +31,28 @@ const PHASE_ADVANCE_IDS = new Set([
 // room is waiting on each other for, so running one by hand steps over whoever
 // has not readied up yet. Only the stages whose steps live in the Play menu
 // appear here: the draft advances a pick at a time, free agency a day at a
-// time. The regular season's one gated step is crossing the trade deadline,
-// which the ordinary sim path refuses to do on its own (see tradeDeadlineGate),
-// so no regular-season item can step over anyone. Preseason, the lottery and
-// re-signing are single-step stages whose step IS a phase advance, already
-// covered above.
+// time. Preseason, the lottery and re-signing are single-step stages whose step
+// IS a phase advance, already covered above.
+//
+// The regular season is here because of sim stops. It is only ever a gated
+// stage while one is pending - the trade deadline, or a day the league has
+// asked to pause before - and every sim item then runs straight into it. This
+// dialog IS the way past: confirming it grants the one-shot permission that
+// lets that sim cross (see tradeDeadlineGate). Without that the room can be
+// stranded by one person who never readies up, which is a worse failure than
+// somebody simming a day early.
 const GATED_STEP_IDS: Partial<Record<number, Set<string>>> = {
 	[PHASE.DRAFT]: new Set(["onePick", "untilYourNextPick", "untilEnd"]),
 	[PHASE.FREE_AGENCY]: new Set(["day", "week"]),
+	[PHASE.REGULAR_SEASON]: new Set([
+		"day",
+		"dayLive",
+		"week",
+		"month",
+		"untilAllStarGame",
+		"untilTradeDeadline",
+		"untilPlayoffs",
+	]),
 };
 
 export type PlayMenuAdvanceWarning =

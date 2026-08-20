@@ -402,6 +402,10 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 		note: "all",
 	},
 	saveReplaysTids: [], // teams whose games auto-save a rewatchable live-sim replay; empty = none
+	// Days the sim pauses on, as a comma-separated list that may include the
+	// word "deadline" - see common/simStopDays.ts. Empty means it never stops on
+	// its own, including at the trade deadline.
+	simStopDays: "",
 	currencyFormat: ["$", ".", ""],
 	forceRetireRealPlayers: false,
 	forceHistoricalRosters: false,

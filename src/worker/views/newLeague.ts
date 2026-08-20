@@ -245,6 +245,7 @@ export const getDefaultSettings = () => {
 			"numDraftRounds",
 		),
 		tradeDeadline: unwrapGameAttribute(defaultGameAttributes, "tradeDeadline"),
+		simStopDays: unwrapGameAttribute(defaultGameAttributes, "simStopDays"),
 		difficulty: unwrapGameAttribute(defaultGameAttributes, "difficulty"),
 		difficultyTrade: unwrapGameAttribute(
 			defaultGameAttributes,

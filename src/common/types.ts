@@ -860,6 +860,9 @@ export type GameAttributesLeague = {
 	// Teams whose every game auto-saves a live-sim replay (rewatchable even
 	// though it was never live-simmed). Empty = no team auto-saves.
 	saveReplaysTids: number[];
+	// Comma-separated days the sim pauses before playing, optionally including
+	// "deadline". See common/simStopDays.ts.
+	simStopDays: string;
 	season: number;
 	softCapTradeSalaryMatch: number;
 	sonRate: number;

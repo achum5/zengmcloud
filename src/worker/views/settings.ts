@@ -99,6 +99,7 @@ type Key =
 	| "numPlayersOnCourt"
 	| "numDraftRounds"
 	| "tradeDeadline"
+	| "simStopDays"
 	| "difficulty"
 	| "difficultyTrade"
 	| "difficultySigning"
@@ -334,6 +335,7 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			numPlayersOnCourt: g.get("numPlayersOnCourt"),
 			numDraftRounds: g.get("numDraftRounds"),
 			tradeDeadline: g.get("tradeDeadline"),
+			simStopDays: g.get("simStopDays"),
 			difficulty: g.get("difficulty"),
 			difficultyTrade: g.get("difficultyTrade"),
 			difficultySigning: g.get("difficultySigning"),

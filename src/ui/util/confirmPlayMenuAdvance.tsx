@@ -2,6 +2,7 @@ import type { Option } from "../../common/types.ts";
 import { confirm } from "./confirm.tsx";
 import { local } from "./local.ts";
 import { getPlayMenuAdvanceWarning } from "./playMenuAdvanceWarning.ts";
+import { toWorker } from "./toWorker.ts";
 
 // A list of team names, as prose: "Boston", "Boston and Sacramento",
 // "Boston, Sacramento and Phoenix".
@@ -46,7 +47,7 @@ export const confirmPlayMenuAdvance = async (
 		);
 	}
 
-	return confirm(
+	const confirmed = await confirm(
 		<>
 			<p>
 				{warning.readyTeams} of {warning.totalTeams} teams are ready.
@@ -68,4 +69,22 @@ export const confirmPlayMenuAdvance = async (
 			cancelText: "Cancel",
 		},
 	);
+
+	// Saying yes here is what gets a room past a sim stop. The ordinary sim path
+	// refuses to cross one on its own - deliberately, so that simming harder is
+	// never a way around the room - which left a league stranded whenever one
+	// person could not get to their phone. This is the deliberate act that
+	// releases it: the dialog above named exactly who is being stepped over.
+	//
+	// One shot, consumed by the next sim, and harmless when the confirmed action
+	// is not a sim at all.
+	if (confirmed) {
+		try {
+			await toWorker("main", "allowCrossingNextSimStop", undefined);
+		} catch {
+			// If the worker can't be told, the sim simply stops as it would have.
+		}
+	}
+
+	return confirmed;
 };

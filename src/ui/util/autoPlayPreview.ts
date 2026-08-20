@@ -10,6 +10,8 @@ export type PreviewDay = {
 	numGames: number;
 	tradeDeadline?: boolean;
 	allStar?: boolean;
+	// The league pauses before this day. See common/simStopDays.ts.
+	simStop?: boolean;
 };
 
 // How many league days each Play Menu preset advances. "days" isn't here - it

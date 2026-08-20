@@ -177,6 +177,7 @@ export type Key =
 	| "rpdPot"
 	| "saveOldBoxScores"
 	| "saveReplaysTids"
+	| "simStopDays"
 	| "currencyFormat"
 	| "overtimeLength"
 	| "overtimeLengthPlayoffs"

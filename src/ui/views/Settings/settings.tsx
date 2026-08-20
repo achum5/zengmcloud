@@ -23,6 +23,7 @@ import PlayerBioInfo2 from "./PlayerBioInfo.tsx";
 import SaveReplaysTeams from "./SaveReplaysTeams.tsx";
 import type { GameAttributesLeague } from "../../../common/types.ts";
 import { parseCurrencyFormat } from "../../util/parseCurrencyFormat.ts";
+import { invalidSimStopDayToken } from "../../../common/simStopDays.ts";
 import { getDraftTypeDescription } from "../DraftLottery.tsx";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { hardCapAmountProblem } from "../../../common/getHardCap.ts";
@@ -1122,6 +1123,41 @@ export const settings: Setting[] = (
 					</p>
 				</>
 			),
+		},
+		{
+			category: "Schedule",
+			key: "simStopDays",
+			name: "Pause Sim On Days",
+			type: "string",
+			description:
+				'Days the sim pauses before playing, as a list. Include "deadline" to pause at the trade deadline. Blank means it never pauses.',
+			descriptionLong: (
+				<>
+					<p>
+						A comma-separated list, like <code>15, 41, deadline</code>. The sim
+						stops when one of those days is the next thing to be played - so you
+						can trade or sign before it happens - and the trade deadline is just
+						another entry rather than a special case.
+					</p>
+					<p>
+						In a shared league each one is a ready-up: nobody moves past it
+						until every team has said they're done, and auto play waits rather
+						than stopping, so it carries on by itself the moment the room is
+						ready. If someone can't get to their phone, the Play menu will offer
+						to advance anyway and tell you who you're stepping over.
+					</p>
+					<p>
+						Alone it costs one extra click - the sim stops on arrival, and
+						pressing play again crosses it.
+					</p>
+				</>
+			),
+			validator: (value) => {
+				const bad = invalidSimStopDayToken(value);
+				if (bad !== undefined) {
+					throw new Error(`"${bad}" is not a day number or "deadline"`);
+				}
+			},
 		},
 		{
 			category: "Players",

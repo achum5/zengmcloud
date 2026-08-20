@@ -294,6 +294,8 @@ import { recomputeLocalUITeamOvrs } from "../util/recomputeLocalUITeamOvrs.ts";
 import { initUILocalGames } from "../util/initUILocalGames.ts";
 import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
 import type { GenOrderResult } from "../core/draft/genOrder.ts";
+import { allowCrossingNextSimStop } from "../core/sync/tradeDeadlineGate.ts";
+import { parseSimStopDays, stopsOnDay } from "../../common/simStopDays.ts";
 
 const acceptContractNegotiation = async ({
 	pid,
@@ -6471,8 +6473,13 @@ const getAutoPlayPreview = async () => {
 			numGames: number;
 			tradeDeadline: boolean;
 			allStar: boolean;
+			// The league has asked the sim to pause before this day - see
+			// common/simStopDays.ts. Marked here rather than worked out in the UI so
+			// the scheduler and the worker can never disagree about where a stop is.
+			simStop: boolean;
 		}
 	>();
+	const stops = parseSimStopDays(g.get("simStopDays"));
 	for (const item of schedule) {
 		if (item.day === undefined) {
 			continue;
@@ -6484,11 +6491,15 @@ const getAutoPlayPreview = async () => {
 				numGames: 0,
 				tradeDeadline: false,
 				allStar: false,
+				simStop: stopsOnDay(stops, item.day),
 			};
 			byDay.set(item.day, entry);
 		}
 		if (item.homeTid === -3 && item.awayTid === -3) {
 			entry.tradeDeadline = true;
+			if (stops.deadline) {
+				entry.simStop = true;
+			}
 		} else if (item.homeTid === -1 && item.awayTid === -2) {
 			entry.allStar = true;
 		} else {
@@ -7098,6 +7109,7 @@ export default {
 		allStarDraftReset,
 		allStarDraftSetPlayers,
 		allStarGameNow,
+		allowCrossingNextSimStop,
 		autoSortRoster,
 		beforeView,
 		cancelContractNegotiation,

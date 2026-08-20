@@ -829,13 +829,18 @@ class AutoPlayScheduler {
 
 		this.ticking = true;
 
-		// The trade deadline is a decision, and an unattended timer is the worst
-		// thing to have make it. The sim stops there on its own (see
-		// tradeDeadlineGate.ts), so firing anyway would either accomplish nothing
-		// or - alone, where the next press is what crosses it - cross the deadline
-		// with nobody watching. Stop here instead, before the sim is asked to run.
-		if (before?.upcomingDays[0]?.tradeDeadline) {
+		// A sim stop is a decision - the trade deadline, or a day the league asked
+		// to pause before - and an unattended timer is the worst thing to have make
+		// it. The sim stops there on its own (see tradeDeadlineGate.ts), so firing
+		// anyway would either accomplish nothing or - alone, where the next press
+		// is what crosses it - cross with nobody watching. Stop here instead,
+		// before the sim is asked to run.
+		if (before?.upcomingDays[0]?.simStop) {
 			this.ticking = false;
+			const nextDay = before.upcomingDays[0]!;
+			const stopLabel = nextDay.tradeDeadline
+				? "Trade deadline"
+				: `Day ${nextDay.day}`;
 			if (state.mpSyncActive) {
 				// Shared league: the room crosses it by readying up, and auto play
 				// should be waiting to carry on the moment it does - so this PAUSES
@@ -846,13 +851,12 @@ class AutoPlayScheduler {
 				if (this.settings.enabled) {
 					this.armTimer();
 				}
-				this.state.pausedReason =
-					"Trade deadline - waiting for every team to ready up.";
+				this.state.pausedReason = `${stopLabel} - waiting for every team to ready up.`;
 				this.emit();
-				this.breadcrumb("autoPlay:paused", { why: "trade-deadline" });
+				this.breadcrumb("autoPlay:paused", { why: "sim-stop" });
 			} else {
 				this.stop(
-					"Trade deadline reached - make your moves, then re-enable auto play.",
+					`${stopLabel} reached - make your moves, then re-enable auto play.`,
 				);
 			}
 			return;
