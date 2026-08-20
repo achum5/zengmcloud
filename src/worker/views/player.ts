@@ -340,6 +340,8 @@ export const getCommon = async (
 		{
 			abbrev: string;
 			colors: [string, string, string];
+			imgURL?: string;
+			imgURLSmall?: string;
 			jersey?: string;
 			name: string;
 			region: string;
@@ -375,6 +377,8 @@ export const getCommon = async (
 			appearanceTeams[ps.season] = {
 				abbrev: ts.abbrev,
 				colors: ts.colors,
+				imgURL: ts.imgURL,
+				imgURLSmall: ts.imgURLSmall,
 				jersey: ts.jersey,
 				name: ts.name,
 				region: ts.region,
@@ -407,6 +411,8 @@ export const getCommon = async (
 			appearanceTeams[pr.season] = {
 				abbrev: ts.abbrev,
 				colors: ts.colors,
+				imgURL: ts.imgURL,
+				imgURLSmall: ts.imgURLSmall,
 				jersey: ts.jersey,
 				name: ts.name,
 				region: ts.region,

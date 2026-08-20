@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	formatSeasonRange,
 	groupSeasonsByUniform,
+	stintLabel,
 	type AppearanceTeam,
 } from "./PlayerAppearanceGallery.tsx";
 
@@ -104,6 +105,30 @@ describe("groupSeasonsByUniform", () => {
 
 	test("no seasons is no stints", () => {
 		assert.deepStrictEqual(groupSeasonsByUniform([], {}), []);
+	});
+});
+
+describe("stintLabel", () => {
+	test("a team stint reads as the team", () => {
+		assert.strictEqual(
+			stintLabel({ team: BOS, seasons: [2009] }, 0),
+			"Boston Celtics",
+		);
+	});
+
+	// The seasons before a player is drafted are the only ones he could not have
+	// been on a roster for. "No team" reads like he went unsigned; he hadn't
+	// entered the league yet.
+	test("teamless seasons at the start of a career are the scouting pool", () => {
+		assert.strictEqual(
+			stintLabel({ seasons: [2007, 2008] }, 0),
+			"Draft prospect",
+		);
+	});
+
+	// Mid-career, teamless means exactly what it says.
+	test("a teamless stretch later on is a year out of the league", () => {
+		assert.strictEqual(stintLabel({ seasons: [2013] }, 2), "No team");
 	});
 });
 

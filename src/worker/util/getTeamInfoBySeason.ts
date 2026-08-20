@@ -27,6 +27,8 @@ export const getTeamInfoBySeason = async (tid: number, season: number) => {
 		| {
 				abbrev: string;
 				colors: [string, string, string];
+				imgURL?: string;
+				imgURLSmall?: string;
 				jersey?: string;
 				name: string;
 				region: string;
@@ -51,6 +53,10 @@ export const getTeamInfoBySeason = async (tid: number, season: number) => {
 		return {
 			abbrev: ts.abbrev,
 			colors: ts.colors ?? DEFAULT_TEAM_COLORS,
+			// The logo AS IT WAS that season, same as the colors - a franchise that
+			// has since rebranded had a different mark then.
+			imgURL: ts.imgURL,
+			imgURLSmall: ts.imgURLSmall,
 			jersey: ts.jersey,
 			name: ts.name,
 			region: ts.region,

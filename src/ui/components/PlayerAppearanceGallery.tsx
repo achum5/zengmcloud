@@ -1,15 +1,21 @@
 import clsx from "clsx";
 import { Modal } from "./Modal.tsx";
 import { PlayerPicture } from "./PlayerPicture.tsx";
+import { TeamLogoInline } from "./TeamLogoInline.tsx";
 import { appearanceForSeason } from "../../common/playerAppearance.ts";
 import type { PlayerAppearance } from "../../common/playerAppearance.ts";
 import { DEFAULT_JERSEY, DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
+import { helpers } from "../util/helpers.ts";
 import type { FaceConfig } from "facesjs";
 
 // The team a player suited up for in one season, as that team looked THEN.
 export type AppearanceTeam = {
 	abbrev: string;
 	colors: [string, string, string];
+	// The team's mark that season. Optional because plenty of leagues have no
+	// logos at all, in which case the stint heading falls back to a colour dot.
+	imgURL?: string;
+	imgURLSmall?: string;
 	jersey?: string;
 	name: string;
 	region: string;
@@ -59,6 +65,20 @@ export const groupSeasonsByUniform = (
 	return stints;
 };
 
+// A teamless stretch at the very start is the years before he was drafted -
+// the scouting pool, not a gap in a career. Later on, teamless means what it
+// says: he was out of the league that year.
+export const stintLabel = (stint: UniformStint, index: number): string => {
+	if (stint.team) {
+		return `${stint.team.region} ${stint.team.name}`;
+	}
+	return index === 0 ? "Draft prospect" : "No team";
+};
+
+// The stint heading's mark, logo or dot. One size for both so every team name
+// starts at the same x down the modal, however many of them have a crest.
+const MARK_SIZE = 22;
+
 export const formatSeasonRange = (seasons: number[]): string => {
 	const start = seasons[0];
 	const end = seasons.at(-1);
@@ -88,6 +108,7 @@ export const PlayerAppearanceGallery = ({
 	name: string;
 	seasons: number[];
 	player: {
+		pid: number;
 		face?: FaceConfig;
 		imgURL?: string;
 		appearances?: PlayerAppearance[];
@@ -118,18 +139,33 @@ export const PlayerAppearanceGallery = ({
 					const stintColors = team?.colors ?? DEFAULT_TEAM_COLORS;
 					const stintJersey = team?.jersey ?? DEFAULT_JERSEY;
 
+					const logo = team?.imgURLSmall ?? team?.imgURL;
+
 					return (
 						<div key={i} className={i > 0 ? "mt-4" : undefined}>
 							<div className="player-appearance-stint">
-								<span
-									className="player-appearance-swatch"
-									style={{
-										backgroundColor: stintColors[0],
-										borderColor: stintColors[2],
-									}}
-								/>
+								{logo ? (
+									<TeamLogoInline
+										className="flex-shrink-0"
+										imgURL={logo}
+										size={MARK_SIZE}
+									/>
+								) : (
+									<span
+										className="player-appearance-mark"
+										style={{ width: MARK_SIZE, height: MARK_SIZE }}
+									>
+										<span
+											className="player-appearance-swatch"
+											style={{
+												backgroundColor: stintColors[0],
+												borderColor: stintColors[2],
+											}}
+										/>
+									</span>
+								)}
 								<span className="fw-bold text-truncate">
-									{team ? `${team.region} ${team.name}` : "No team"}
+									{stintLabel(stint, i)}
 								</span>
 								{team?.jerseyNumber ? (
 									<span className="text-body-secondary">
@@ -144,9 +180,26 @@ export const PlayerAppearanceGallery = ({
 							<div className="player-appearance-grid">
 								{stint.seasons.map((season) => {
 									const { face, imgURL } = appearanceForSeason(player, season);
+									// Only a season he spent on a roster has a game log to open;
+									// the years in the scouting pool have no games behind them.
+									const Card = team ? "a" : "div";
 									return (
-										<div
+										<Card
 											key={season}
+											href={
+												team
+													? helpers.leagueUrl([
+															"player_game_log",
+															player.pid,
+															season,
+														])
+													: undefined
+											}
+											// Deliberately no onClick handler: the router picks the
+											// click up off document, and closing the modal here could
+											// detach the anchor before the event ever gets there. The
+											// whole view unmounts on navigation anyway.
+											title={team ? `${season} game log` : undefined}
 											className={clsx("player-appearance-card", {
 												current: season === highlightSeason,
 											})}
@@ -170,7 +223,7 @@ export const PlayerAppearanceGallery = ({
 											>
 												{season}
 											</div>
-										</div>
+										</Card>
 									);
 								})}
 							</div>
