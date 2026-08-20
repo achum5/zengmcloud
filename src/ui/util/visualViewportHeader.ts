@@ -83,7 +83,33 @@ export const headerVisualShift = (offsetTop: number | undefined): number => {
 // exactly as if the keyboard were still up. Nothing read from inside that
 // world can vouch for anything else inside it.
 //
-// The witness has to come from outside, and width is it. A visual viewport
+// THE BEST WITNESS IS THE HEADER ITSELF, and it was here the whole time.
+//
+// The header is sticky at top 0, so when a pan is REAL its rect reads exactly
+// -offsetTop before the header's own correction is applied - that is the
+// measurement the header's shift has always been built on, and it works. When
+// offsetTop is a ghost the rects know nothing about it and the same
+// measurement reads 0. So the header answers, by direct observation, the
+// question no viewport number can: is this offset actually in the coordinate
+// system, or only in the VisualViewport object?
+//
+// A field report on /draft settles that it is worth asking. offsetTop 406, the
+// header carrying translateY(406px) and reading 0 - so the pan is real beyond
+// doubt - and yet vv width 518 was the FULL layout width, so the width test
+// below refused the lift. It happened to be harmless there because the visual
+// viewport was flush to the foot of the layout viewport (406 + 646 = 1052),
+// where sticky's bottom and the visible bottom coincide and the right lift is
+// zero anyway. Panned to the MIDDLE of the same page it would not have been:
+// the bar would have sat hundreds of pixels below the screen with the gate
+// refusing to move it.
+//
+// So the width test is no longer the only way in. Either witness will do, and
+// they fail in opposite directions - the ghost has a full width AND an
+// unmoved header, a real pan has at least one of the two. Adding this can only
+// ENABLE a lift that direct measurement already proves is warranted; it never
+// permits one the old rule allowed.
+//
+// The other witness is width. A visual viewport
 // that is genuinely smaller than the layout viewport only exists under
 // pinch-zoom, and pinch narrows BOTH axes - while the ghost, being a
 // keyboard's shadow, shrinks height alone and keeps the width spanning the
@@ -95,12 +121,32 @@ export const headerVisualShift = (offsetTop: number | undefined): number => {
 // recorded full-width case wants 0 anyway: healthy wants nothing, the ghost
 // wants nothing, and a real keyboard wants nothing because hoisting the bar
 // over it would cover what is being typed.
+// Does the header's own position confirm that offsetTop is in the rects?
+//
+// `headerTop` is its measured rect top and `headerShift` the correction
+// currently on it, so their difference is where sticky alone put it: -offsetTop
+// on a real pan, 0 when the offset is a ghost. Undefined inputs mean no
+// measurement, which confirms nothing.
+export const headerConfirmsOffset = (
+	headerTop: number | undefined,
+	headerShift: number,
+	offsetTop: number,
+): boolean => {
+	if (headerTop === undefined || !Number.isFinite(headerTop)) {
+		return false;
+	}
+	// Subpixel layout and rounding, not a real disagreement.
+	const TOLERANCE_PX = 2;
+	return Math.abs(headerTop - headerShift - -offsetTop) <= TOLERANCE_PX;
+};
+
 export const tickerVisualShift = ({
 	visualHeight,
 	layoutHeight,
 	offsetTop,
 	visualWidth,
 	layoutWidth,
+	headerConfirms,
 	keyboardOpen,
 }: {
 	visualHeight: number | undefined;
@@ -110,6 +156,9 @@ export const tickerVisualShift = ({
 	// than the layout viewport proves the viewport is really smaller at all.
 	visualWidth: number | undefined;
 	layoutWidth: number | undefined;
+	// The header's verdict on whether offsetTop is real - see
+	// headerConfirmsOffset. Either this or the pinched width lets the lift run.
+	headerConfirms?: boolean;
 	// The software keyboard shrinks the visual viewport exactly like a zoom
 	// does, and no viewport number distinguishes them - so ask the page instead
 	// of guessing from geometry. See keyboardLikelyOpen.
@@ -132,24 +181,22 @@ export const tickerVisualShift = ({
 	) {
 		return 0;
 	}
-	if (
-		!Number.isFinite(visualWidth) ||
-		!Number.isFinite(layoutWidth) ||
-		visualWidth === undefined ||
-		layoutWidth === undefined ||
-		layoutWidth <= 0
-	) {
-		// Unreadable widths cannot corroborate anything, and claiming less is
-		// the safe direction.
-		return 0;
-	}
 	if (offsetTop <= 0) {
 		// Nowhere panned means sticky's own spot is the right one.
 		return 0;
 	}
 	// The pinch test. The half pixel forgives rounding; a ghost is not half a
-	// pixel narrow, it is exactly as wide as the layout viewport.
-	if (visualWidth + 0.5 >= layoutWidth) {
+	// pixel narrow, it is exactly as wide as the layout viewport. Unreadable
+	// widths corroborate nothing, which is not the same as refuting.
+	const pinched =
+		Number.isFinite(visualWidth) &&
+		Number.isFinite(layoutWidth) &&
+		visualWidth !== undefined &&
+		layoutWidth !== undefined &&
+		layoutWidth > 0 &&
+		visualWidth + 0.5 < layoutWidth;
+	// Either witness will do; the ghost passes neither.
+	if (!pinched && !headerConfirms) {
 		return 0;
 	}
 	const shift = visualHeight - (layoutHeight - offsetTop);
@@ -216,10 +263,22 @@ export const applyHeaderShift = (
 // shift pushes it DOWN into view, where being stale is much less visible.
 export const resyncStickyBarShifts = () => {
 	const vv = window.visualViewport;
-	applyHeaderShift(
-		document.querySelector<HTMLElement>(HEADER_SELECTOR),
-		headerVisualShift(vv?.offsetTop),
-	);
+	const offsetTop = vv?.offsetTop;
+	const header = document.querySelector<HTMLElement>(HEADER_SELECTOR);
+	const headerShift = headerVisualShift(offsetTop);
+	applyHeaderShift(header, headerShift);
+	// Measured AFTER its own shift is applied, which is why the shift is
+	// subtracted back out: what matters is where sticky alone put the header,
+	// and that is the one direct observation of whether offsetTop exists in
+	// the rects at all. See headerConfirmsOffset.
+	const confirms =
+		header !== null &&
+		offsetTop !== undefined &&
+		headerConfirmsOffset(
+			header.getBoundingClientRect().top,
+			headerShift,
+			offsetTop,
+		);
 	const ticker = document.querySelector<HTMLElement>(TICKER_SELECTOR);
 	// The self-placement mode used to live here and is gone; clear anything a
 	// previous build of it left behind so a bar cannot stay pinned mid-page.
@@ -236,9 +295,10 @@ export const resyncStickyBarShifts = () => {
 			visualHeight: vv?.height,
 			layoutHeight:
 				document.documentElement?.clientHeight || window.innerHeight,
-			offsetTop: vv?.offsetTop,
+			offsetTop,
 			visualWidth: vv?.width,
 			layoutWidth: document.documentElement?.clientWidth || window.innerWidth,
+			headerConfirms: confirms,
 			keyboardOpen: keyboardLikelyOpen(document.activeElement),
 		}),
 	);

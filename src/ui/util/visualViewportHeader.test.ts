@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	headerConfirmsOffset,
 	headerVisualShift,
 	keyboardLikelyOpen,
 	tickerVisualShift,
@@ -159,6 +160,125 @@ describe("tickerVisualShift", () => {
 			0,
 		);
 		assert.strictEqual(tickerVisualShift({ ...pinched, visualHeight: 0 }), 0);
+	});
+});
+
+// THE HEADER AS WITNESS. It is sticky at top 0, so on a real pan its rect
+// reads -offsetTop before its own correction; when offsetTop is a ghost the
+// rects know nothing about it and the same reading is 0.
+describe("headerConfirmsOffset", () => {
+	// The /draft report: offsetTop 406, header carrying translateY(406px) and
+	// measuring 0 - so sticky alone had it at -406, and the pan is real.
+	test("a real pan is confirmed", () => {
+		assert.strictEqual(headerConfirmsOffset(0, 406, 406), true);
+	});
+
+	// The ghost: offsetTop 240 with the header untransformed and reading 0, so
+	// sticky put it at 0, not -240.
+	test("a phantom offset is not confirmed", () => {
+		assert.strictEqual(headerConfirmsOffset(0, 0, 240), false);
+	});
+
+	test("subpixel rounding still confirms", () => {
+		assert.strictEqual(headerConfirmsOffset(1.4, 406, 406), true);
+		assert.strictEqual(headerConfirmsOffset(-1.4, 406, 406), true);
+	});
+
+	test("a detached header confirms nothing", () => {
+		// The modal-unpin case: scrolled away with the page, offsetTop 0.
+		assert.strictEqual(headerConfirmsOffset(-82, 0, 0), false);
+	});
+
+	test("no measurement is not a confirmation", () => {
+		assert.strictEqual(headerConfirmsOffset(undefined, 0, 406), false);
+		assert.strictEqual(headerConfirmsOffset(Number.NaN, 0, 406), false);
+	});
+
+	test("an unpanned page confirms trivially, and asks for no lift anyway", () => {
+		assert.strictEqual(headerConfirmsOffset(0, 0, 0), true);
+	});
+});
+
+// EITHER WITNESS, and the ghost passes neither. Pinned against all four field
+// states so a future change cannot quietly re-admit the ghost.
+describe("tickerVisualShift trusts a confirmed offset without a pinch", () => {
+	// /draft: offsetTop 406 on a 1052 layout viewport, FULL width - so the
+	// width test alone refuses - but the header proves the pan. Here the
+	// visual viewport is flush to the foot (406 + 646 = 1052), so the honest
+	// answer is still zero; the point is that it is computed, not refused.
+	test("the flush-to-bottom field case wants no lift either way", () => {
+		assert.strictEqual(
+			tickerVisualShift({
+				visualHeight: 646,
+				layoutHeight: 1052,
+				offsetTop: 406,
+				visualWidth: 518,
+				layoutWidth: 518,
+				headerConfirms: true,
+			}),
+			0,
+		);
+	});
+
+	// Panned to the MIDDLE of that same page, which the old width-only gate
+	// would have refused - leaving the bar hundreds of pixels off screen.
+	test("a confirmed mid-pan gets its lift despite a full width", () => {
+		assert.strictEqual(
+			tickerVisualShift({
+				visualHeight: 646,
+				layoutHeight: 1052,
+				offsetTop: 200,
+				visualWidth: 518,
+				layoutWidth: 518,
+				headerConfirms: true,
+			}),
+			// 646 - (1052 - 200): up to the visible foot.
+			-206,
+		);
+	});
+
+	test("the ghost is still refused, confirmed by neither witness", () => {
+		for (const offsetTop of [0, 69, 240]) {
+			assert.strictEqual(
+				tickerVisualShift({
+					visualHeight: 646,
+					layoutHeight: 1052,
+					offsetTop,
+					visualWidth: 518,
+					layoutWidth: 518,
+					headerConfirms: false,
+				}),
+				0,
+			);
+		}
+	});
+
+	test("a pinch still works on its own, with no header to ask", () => {
+		assert.strictEqual(
+			tickerVisualShift({
+				visualHeight: 646,
+				layoutHeight: 1052,
+				offsetTop: 57,
+				visualWidth: 400,
+				layoutWidth: 518,
+			}),
+			-349,
+		);
+	});
+
+	test("the keyboard still overrides both witnesses", () => {
+		assert.strictEqual(
+			tickerVisualShift({
+				visualHeight: 500,
+				layoutHeight: 1052,
+				offsetTop: 200,
+				visualWidth: 518,
+				layoutWidth: 518,
+				headerConfirms: true,
+				keyboardOpen: true,
+			}),
+			0,
+		);
 	});
 });
 
