@@ -1,39 +1,49 @@
-// Keep the sticky bars inside the part of the page the user can actually see.
+// Keep the bottom ticker inside the part of the page the user can actually see.
 //
-// `position: sticky` sticks to the LAYOUT viewport. Pinch-zoom, or anything else
-// that pans the VISUAL viewport within it, moves what you can see without moving
-// where sticky sticks - so the header parks itself off the top of the screen and
-// stays there, behaving perfectly correctly the whole time.
+// THE HEADER IS NO LONGER PLACED FROM `visualViewport`, AND NOTHING SHOULD BE.
 //
-// A field log from an installed PWA caught it exactly: scale 0.85, a 646-tall
-// visual viewport sitting 406px down a 1052-tall layout viewport, and the header
-// measured at -406. That is not a broken header and no amount of rebuilding the
-// sticky node can help; the fix is to put the header back where it can be seen.
+// The idea was that `position: sticky` sticks to the LAYOUT viewport, so a
+// visual-viewport pan moves what you can see without moving where sticky
+// sticks, parking the header off the top of the screen. One field log seemed to
+// catch exactly that - scale 0.85, a 646-tall visual viewport sitting 406px
+// down a 1052-tall layout viewport, the header measured at -406 - and the
+// header was given `translateY(offsetTop)` to put it back.
 //
-// THE BOTTOM TICKER HAS THE SAME PROBLEM AT THE OTHER END, and it does need the
-// mirrored answer: it holds the foot of the LAYOUT viewport, which on a zoomed
-// page is BELOW the foot of what the user can see, so it comes up.
+// A later log from the same device, same page, same scale, idle, no keyboard,
+// nothing focused, reports:
 //
-// Nothing happens at all in the normal case, where the two viewports agree. Note
-// that this runs on every scroll, not only on resume - a standing correction
-// rather than a repair, which is why it is separate from the watchdog.
+//   281301 header:resume scrollY=0 headerTop=0 vv=1052/1052@0x0.85
+//   300349 header:resume scrollY=0 headerTop=0 vv=1052/1052@0x0.85
+//   325275 header:resume scrollY=0 headerTop=0 vv=646/1052@0x0.85
+//
+// `vv.height` reports 1052 twice and then 646, with innerHeight 1052 throughout
+// and nothing in between. The window did not shrink by 406px on a roster page
+// with nothing focused. Those readings cannot both be true, and 646 is the one
+// that is false - it is a stale keyboard-sized ghost, and the `offsetTop: 406`
+// that comes with it is the same ghost's self-consistent other half
+// (406 + 646 = 1052).
+//
+// So the -406 that justified the header shift was never a pan. It was this.
+// Which is why five builds of a viewport-derived correction all failed in the
+// field, and why the same log then shows the header carrying
+// `translateY(229px)` on a page scrolled to 229 - a header pushed a quarter of
+// the way down the screen by a number that was never true. That is the symptom
+// that has actually been reported, over and over. The symptom the shift existed
+// to fix - a header stranded above the visible area - never has been, once.
+//
+// The header is therefore left alone. Anything a previous build wrote on it is
+// cleared, because a stale translateY survives a suspend and the watchdog's
+// ladder cannot remove it (it repairs `position`, not `transform`). A header
+// that is genuinely detached is the watchdog's job and always was: it confirms
+// across two frames before believing a reading, which is exactly the care a
+// correction running on every scroll cannot take.
+//
+// THE TICKER KEEPS ITS CORRECTION, because it is MEASURED rather than derived
+// from the viewport - see tickerMeasuredShift below - so a lying viewport
+// cannot move it.
 
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 const TICKER_SELECTOR = ".league-ticker";
-
-// How far to push the header down so it sits at the top of the visible area.
-// Never negative: if the visual viewport is somehow above the layout viewport,
-// leaving the header alone is the safe answer.
-export const headerVisualShift = (offsetTop: number | undefined): number => {
-	if (
-		offsetTop === undefined ||
-		!Number.isFinite(offsetTop) ||
-		offsetTop <= 0
-	) {
-		return 0;
-	}
-	return Math.round(offsetTop);
-};
 
 // WHERE THE TICKER GOES, MEASURED INSTEAD OF PREDICTED.
 //
@@ -169,14 +179,13 @@ export const applyHeaderShift = (
 // event ever fires, the pre-suspend translateY stays on the bar, and the
 // watchdog's position-toggling ladder cannot remove it (it repairs `position`,
 // not `transform`). The ticker then sits mid-page, provably "detached", and
-// unrepairable forever. The header got away with the same hole only because its
-// shift pushes it DOWN into view, where being stale is much less visible.
+// unrepairable forever.
 export const resyncStickyBarShifts = () => {
-	const vv = window.visualViewport;
-	applyHeaderShift(
-		document.querySelector<HTMLElement>(HEADER_SELECTOR),
-		headerVisualShift(vv?.offsetTop),
-	);
+	// Always zero. The header is not placed from the viewport any more (see the
+	// top of this file), and passing 0 is what strips a translateY an older
+	// build left on it - including one that survived a suspend, which is the
+	// only way the old shift could persist unnoticed.
+	applyHeaderShift(document.querySelector<HTMLElement>(HEADER_SELECTOR), 0);
 
 	const ticker = document.querySelector<HTMLElement>(TICKER_SELECTOR);
 	if (!ticker) {
