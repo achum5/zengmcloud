@@ -19,6 +19,7 @@ import {
 	PICK_MULTIPLIER,
 	tierForLegacyStrategy,
 } from "./tierValuation.ts";
+import { projectedSlot } from "../trade/futurePickOutlook.ts";
 
 type Asset =
 	| {
@@ -209,8 +210,30 @@ const getPickNumber = async (
 		// tid rather than originalTid, because it's about what the user can control
 		const usersPick = dp.tid === g.get("userTid");
 
-		// For future draft picks, add some uncertainty.
-		const regressionTarget = (usersPick ? 0.75 : 0.25) * numPicksPerRound;
+		// WHERE THIS PICK IS ACTUALLY HEADING.
+		//
+		// The old target was `(usersPick ? 0.75 : 0.25) * numPicksPerRound` - a
+		// constant, and a difficulty thumb rather than a projection, with a
+		// second explicit one applied below. So every AI's future pick regressed
+		// to a top-quarter slot whoever owned it, and the AI could not tell a
+		// teardown's 2029 first from a title favourite's.
+		//
+		// It is projected from the ORIGINAL team's own outlook now - the tier the
+		// rest of the front office runs on, tilted by roster age, pulled toward
+		// the middle of the round as the horizon grows. The user-difficulty
+		// adjustment is left exactly where it already was, below, so this is a
+		// projection and that is the handicap.
+		const outlook = g.get("smartAiFrontOffice")
+			? cache.tiers.get(dp.originalTid)
+			: undefined;
+		const regressionTarget = outlook
+			? projectedSlot({
+					tier: outlook.tier,
+					avgAge: outlook.avgAge,
+					seasons: Math.max(0, season - g.get("season")),
+					numPicksPerRound,
+				})
+			: (usersPick ? 0.75 : 0.25) * numPicksPerRound;
 
 		// Never let this improve the future projection of user's picks
 		let seasons = helpers.bound(season - g.get("season"), 0, 5);
@@ -573,7 +596,7 @@ const computeTiers = (
 	>,
 	teamOvrs: { tid: number; ovr: number }[],
 	wps: { tid: number; wp: number }[],
-): Map<number, TradeTier> => {
+): Map<number, { tier: TradeTier; avgAge: number }> => {
 	const season = g.get("season");
 	const numActiveTeams = teamOvrs.length || g.get("numActiveTeams");
 
@@ -598,7 +621,7 @@ const computeTiers = (
 	const wpByTid = new Map(wps.map((w) => [w.tid, w.wp]));
 	const topTeamOvr = teamOvrs[0]?.ovr ?? 0;
 
-	const tiers = new Map<number, TradeTier>();
+	const tiers = new Map<number, { tier: TradeTier; avgAge: number }>();
 	for (const [i, { tid, ovr }] of teamOvrs.entries()) {
 		const players = (playersByTid.get(tid) ?? []).map((p) => ({
 			age: season - (p.born?.year ?? season - 25),
@@ -606,21 +629,19 @@ const computeTiers = (
 		}));
 		const ovrRankPct =
 			numActiveTeams > 1 ? Math.min(1, i / (numActiveTeams - 1)) : 0;
-		tiers.set(
-			tid,
-			tierFromRoster({
-				players,
-				// getEstPicks already blends the actual record with a
-				// strength-implied win% early in the season, which is the same thing
-				// the posture module does for itself.
-				winp: wpByTid.get(tid) ?? 0.5,
-				ovrRankPct,
-				coreValue,
-				starValue,
-				teamOvr: ovr,
-				topTeamOvr,
-			}).tier,
-		);
+		const { tier, avgAge } = tierFromRoster({
+			players,
+			// getEstPicks already blends the actual record with a
+			// strength-implied win% early in the season, which is the same thing
+			// the posture module does for itself.
+			winp: wpByTid.get(tid) ?? 0.5,
+			ovrRankPct,
+			coreValue,
+			starValue,
+			teamOvr: ovr,
+			topTeamOvr,
+		});
+		tiers.set(tid, { tier, avgAge });
 	}
 	return tiers;
 };
@@ -641,7 +662,7 @@ type ValueChangeCache = {
 	// flag. Computed here because this is the one place that already has every
 	// player, every team OVR and every win% in hand - asking the posture module
 	// for it would re-scan the league once per team.
-	tiers: Map<number, TradeTier>;
+	tiers: Map<number, { tier: TradeTier; avgAge: number }>;
 };
 
 type ToUpdate = {
@@ -787,7 +808,7 @@ export class ValueChangeCalculator {
 		// smart front office is off, or when this team somehow has no roster to
 		// read - see tierForLegacyStrategy.
 		const tier = g.get("smartAiFrontOffice")
-			? (this.cache?.tiers.get(tid) ?? tierForLegacyStrategy(t.strategy))
+			? (this.cache?.tiers.get(tid)?.tier ?? tierForLegacyStrategy(t.strategy))
 			: tierForLegacyStrategy(t.strategy);
 
 		await getPlayers({
