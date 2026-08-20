@@ -32,6 +32,9 @@ export type RecapSeasonPlayer = {
 		trb: number;
 		ast: number;
 	};
+	// What this player was paid this season, in thousands of dollars. Money is
+	// half of why moves happen, so the recap can see who was expensive.
+	salary?: number;
 	// This season's individual awards ("MVP", "First Team All-League", ...).
 	awards?: string[];
 	// This player's transactions in the recap window (the prior offseason that
@@ -83,16 +86,37 @@ export type RecapSeasonTeam = {
 		totalLost: number;
 		recent: RecapFranchiseSeason[];
 	};
+	// End-of-season payroll this year and last, in thousands of dollars. A team
+	// that shed or took on salary shows up here without having to be inferred
+	// from the wording of individual moves.
+	payroll?: number;
+	priorPayroll?: number;
+	// Who the team lost and gained relative to last season's roster - the shape
+	// of the turnover, independent of how each individual move was worded.
+	departed: string[];
+	arrived: string[];
 	// Moves that BUILT this season's roster: the prior BBGM year's offseason
 	// (draft, re-signings, free agency after that year's playoffs). Framed as this
-	// season's offseason. Plain text, newest first.
+	// season's offseason. Plain text, OLDEST FIRST, each tagged with the phase it
+	// happened in - the recap is told to read them as a sequence, so a move and
+	// whatever it paid for stay adjacent.
 	offseasonMoves: string[];
-	// Trades/cuts made DURING this season (in-season moves).
+	// Trades/cuts/signings made DURING this season, same ordering and tagging.
 	inSeasonMoves: string[];
+	// How many older moves the per-team cap dropped, so the recap knows the list
+	// isn't the whole offseason rather than assuming it is.
+	offseasonMovesOmitted?: number;
+	inSeasonMovesOmitted?: number;
 };
 
 export type RecapSeasonData = {
 	season: number;
+	// League money settings, in thousands of dollars. Only included when the
+	// recap is for the current season - these aren't tracked per season, so
+	// quoting them against an old season would be a guess.
+	salaryCap?: number;
+	luxuryTax?: number;
+	minPayroll?: number;
 	champ?: { tid: number; region: string; name: string; abbrev: string };
 	runnerUp?: { tid: number; region: string; name: string; abbrev: string };
 	// League individual-award winners this season (name + team abbrev).
@@ -115,7 +139,54 @@ const TRANSACTION_EVENT_TYPES = new Set([
 	"trade",
 	"freeAgent",
 	"draft",
+	// Deliberately not "refuseToSign": its text is written second-person, to the
+	// user ("refuses to sign with you"), and only fires for the human's own team.
 ]);
+
+// Where in the calendar a move happened. Tagged onto every move so the order
+// within an offseason (draft -> re-signings -> free agency) and within a season
+// (before/after the deadline) is explicit instead of implied.
+const PHASE_LABEL: Record<number, string> = {
+	[PHASE.EXPANSION_DRAFT]: "Expansion draft",
+	[PHASE.FANTASY_DRAFT]: "Fantasy draft",
+	[PHASE.PRESEASON]: "Preseason",
+	[PHASE.REGULAR_SEASON]: "Regular season",
+	[PHASE.AFTER_TRADE_DEADLINE]: "After trade deadline",
+	[PHASE.PLAYOFFS]: "Playoffs",
+	[PHASE.DRAFT_LOTTERY]: "Draft lottery",
+	[PHASE.DRAFT]: "Draft",
+	[PHASE.AFTER_DRAFT]: "After draft",
+	[PHASE.RESIGN_PLAYERS]: "Re-signing period",
+	[PHASE.FREE_AGENCY]: "Free agency",
+};
+
+export const labelMove = (phase: number | undefined, text: string): string => {
+	const label = phase === undefined ? undefined : PHASE_LABEL[phase];
+	return label ? `[${label}] ${text}` : text;
+};
+
+// Per-team cap on how many moves go in the prompt, and per-player cap for the
+// moves listed under a player. Both keep the newest, which are the ones closest
+// to the season being written about.
+const MAX_TEAM_MOVES = 40;
+const MAX_PLAYER_MOVES = 12;
+
+// Trim a move list to the cap without disturbing the order it happened in,
+// keeping the moves nearest the season and reporting how many fell off.
+export const capMoves = (
+	lines: string[],
+	max: number,
+): { lines: string[]; omitted: number } => ({
+	lines: lines.slice(-max),
+	omitted: Math.max(0, lines.length - max),
+});
+
+export type RecapTeamMoves = {
+	offseason: string[];
+	inSeason: string[];
+	offseasonOmitted: number;
+	inSeasonOmitted: number;
+};
 
 const stripTags = (s: string): string =>
 	s
@@ -129,17 +200,22 @@ const stripTags = (s: string): string =>
 const gatherMoves = async (
 	season: number,
 ): Promise<{
-	byTid: Map<number, { offseason: string[]; inSeason: string[] }>;
+	byTid: Map<number, RecapTeamMoves>;
 	// Every transaction that involves a given player (draft, signing, trade, cut),
 	// in chronological order, for that player's block in the recap.
 	byPid: Map<number, string[]>;
 }> => {
-	const byTid = new Map<number, { offseason: string[]; inSeason: string[] }>();
+	const byTid = new Map<number, RecapTeamMoves>();
 	const byPid = new Map<number, string[]>();
 	const push = (tid: number, key: "offseason" | "inSeason", line: string) => {
 		let entry = byTid.get(tid);
 		if (!entry) {
-			entry = { offseason: [], inSeason: [] };
+			entry = {
+				offseason: [],
+				inSeason: [],
+				offseasonOmitted: 0,
+				inSeasonOmitted: 0,
+			};
 			byTid.set(tid, entry);
 		}
 		entry[key].push(line);
@@ -187,6 +263,7 @@ const gatherMoves = async (
 			if (!text) {
 				continue;
 			}
+			text = labelMove((event as any).phase, text);
 			for (const tid of tids) {
 				if (typeof tid === "number" && tid >= 0) {
 					push(tid, bucket, text);
@@ -208,17 +285,23 @@ const gatherMoves = async (
 	await classify("offseason", season - 1);
 	await classify("inSeason", season);
 
-	// Newest-first, and cap so one team can't produce an enormous block.
+	// Leave them in the order they happened. The recap is told to read the moves
+	// as a sequence - a dump and the signing it funded, a trade and the minutes
+	// that opened up - so reversing them would hide exactly the thing that makes
+	// an offseason readable. Cap per bucket, keeping the moves nearest the
+	// season, and record how many were dropped so the prompt can say so.
 	for (const entry of byTid.values()) {
-		entry.offseason.reverse();
-		entry.inSeason.reverse();
-		entry.offseason = entry.offseason.slice(0, 40);
-		entry.inSeason = entry.inSeason.slice(0, 40);
+		const offseason = capMoves(entry.offseason, MAX_TEAM_MOVES);
+		const inSeason = capMoves(entry.inSeason, MAX_TEAM_MOVES);
+		entry.offseason = offseason.lines;
+		entry.offseasonOmitted = offseason.omitted;
+		entry.inSeason = inSeason.lines;
+		entry.inSeasonOmitted = inSeason.omitted;
 	}
 
-	// Per player, keep chronological order (offseason build → in-season) and cap.
+	// Per player, same: chronological (offseason build → in-season), newest kept.
 	for (const [pid, lines] of byPid) {
-		byPid.set(pid, lines.slice(0, 12));
+		byPid.set(pid, capMoves(lines, MAX_PLAYER_MOVES).lines);
 	}
 
 	return { byTid, byPid };
@@ -448,6 +531,28 @@ export const getSeasonRecapData = async (
 				}
 			}
 
+			// The raw rows carry salaries and retirement info that playersPlus
+			// doesn't surface, and we already have them - no extra reads.
+			const rawByPid = new Map<number, any>();
+			for (const p of playersRaw) {
+				rawByPid.set(p.pid, p);
+			}
+			const salaryFor = (pid: number): number | undefined => {
+				const salaries = rawByPid.get(pid)?.salaries;
+				if (!Array.isArray(salaries)) {
+					return undefined;
+				}
+				// A player can pick up more than one row for a season (signed, then
+				// re-signed); the last one is what they finished the year on.
+				let amount: number | undefined;
+				for (const row of salaries) {
+					if (row?.season === season && typeof row.amount === "number") {
+						amount = row.amount;
+					}
+				}
+				return amount;
+			};
+
 			const players: RecapSeasonPlayer[] = [];
 			for (const p of playersPlus) {
 				const st = p.stats;
@@ -483,6 +588,7 @@ export const getSeasonRecapData = async (
 								ast: Math.round((playoff.ast ?? 0) * 10) / 10,
 							}
 						: undefined,
+					salary: salaryFor(p.pid),
 					awards: awardsForSeason(p, season).slice(0, 4),
 					transactions: movesByPid.get(p.pid),
 					majorInjuries: (Array.isArray(p.injuries) ? p.injuries : [])
@@ -497,6 +603,53 @@ export const getSeasonRecapData = async (
 			// Best players first (by minutes, a decent proxy for role), capped.
 			players.sort((a, b) => b.min * b.gp - a.min * a.gp);
 			const topPlayers = players.slice(0, 10);
+
+			// Who left and who showed up since last season. playersRaw is indexed on
+			// statsTid, so last season's roster is already in hand. Roster presence
+			// (a stats row for the team that year), not games played - a player who
+			// missed the whole season with an injury didn't depart.
+			const minutesThisSeason = new Map<number, number>();
+			const minutesLastSeason = new Map<number, number>();
+			for (const p of playersRaw) {
+				for (const row of Array.isArray(p.stats) ? p.stats : []) {
+					if (row?.tid !== tid || row.playoffs) {
+						continue;
+					}
+					const target =
+						row.season === season
+							? minutesThisSeason
+							: row.season === season - 1
+								? minutesLastSeason
+								: undefined;
+					if (target) {
+						target.set(p.pid, (target.get(p.pid) ?? 0) + (row.min ?? 0));
+					}
+				}
+			}
+			const nameOf = (pid: number): string => {
+				const p = rawByPid.get(pid);
+				return p ? `${p.firstName} ${p.lastName}`.trim() : `pid ${pid}`;
+			};
+			const mostUsedFirst =
+				(minutes: Map<number, number>) => (a: number, b: number) =>
+					(minutes.get(b) ?? 0) - (minutes.get(a) ?? 0);
+			const departed = [...minutesLastSeason.keys()]
+				.filter((pid) => !minutesThisSeason.has(pid))
+				.sort(mostUsedFirst(minutesLastSeason))
+				.slice(0, 12)
+				.map((pid) => {
+					// Active players carry retiredYear: Infinity, so this only fires on
+					// someone who actually hung it up.
+					const retiredYear = rawByPid.get(pid)?.retiredYear;
+					const retired =
+						typeof retiredYear === "number" && retiredYear <= season;
+					return `${nameOf(pid)}${retired ? " (retired)" : ""}`;
+				});
+			const arrived = [...minutesThisSeason.keys()]
+				.filter((pid) => !minutesLastSeason.has(pid))
+				.sort(mostUsedFirst(minutesThisSeason))
+				.slice(0, 12)
+				.map(nameOf);
 
 			// Franchise history (this team's seasons up to and including this one).
 			const teamSeasons = (
@@ -515,7 +668,22 @@ export const getSeasonRecapData = async (
 					result: h.roundsWonText,
 				}));
 
-			const teamMoves = movesByTid.get(tid) ?? { offseason: [], inSeason: [] };
+			// payrollEndOfSeason is -1 until the season is assessed, so only quote it
+			// once it's real. Last season's alongside it, so shedding or taking on
+			// salary is visible instead of having to be read out of move wording.
+			const payrollOf = (s: number): number | undefined => {
+				const amount = teamSeasons.find(
+					(ts) => ts.season === s,
+				)?.payrollEndOfSeason;
+				return typeof amount === "number" && amount > 0 ? amount : undefined;
+			};
+
+			const teamMoves: RecapTeamMoves = movesByTid.get(tid) ?? {
+				offseason: [],
+				inSeason: [],
+				offseasonOmitted: 0,
+				inSeasonOmitted: 0,
+			};
 
 			teams.push({
 				tid,
@@ -553,8 +721,14 @@ export const getSeasonRecapData = async (
 					totalLost: fh.totalLost,
 					recent,
 				},
+				payroll: payrollOf(season),
+				priorPayroll: payrollOf(season - 1),
+				departed,
+				arrived,
 				offseasonMoves: teamMoves.offseason,
 				inSeasonMoves: teamMoves.inSeason,
+				offseasonMovesOmitted: teamMoves.offseasonOmitted || undefined,
+				inSeasonMovesOmitted: teamMoves.inSeasonOmitted || undefined,
 			});
 		} catch (error) {
 			// One team's data going wrong shouldn't sink the whole league recap.
@@ -578,5 +752,25 @@ export const getSeasonRecapData = async (
 	}
 	const alreadyWrittenTotal = teams.filter((t) => written.has(t.tid)).length;
 
-	return { season, champ, runnerUp, awards, teams, alreadyWrittenTotal };
+	// The cap settings aren't tracked per season, so they're only trustworthy for
+	// the season currently being played. Quoting today's cap against an old
+	// season would be a guess dressed up as data.
+	const money =
+		season === g.get("season")
+			? {
+					salaryCap: g.get("salaryCap"),
+					luxuryTax: g.get("luxuryPayroll"),
+					minPayroll: g.get("minPayroll"),
+				}
+			: {};
+
+	return {
+		season,
+		...money,
+		champ,
+		runnerUp,
+		awards,
+		teams,
+		alreadyWrittenTotal,
+	};
 };

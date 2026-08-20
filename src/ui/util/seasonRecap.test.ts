@@ -8,6 +8,9 @@ const data: RecapSeasonData = {
 	champ: { tid: 0, region: "LA", name: "Lakers", abbrev: "LAL" },
 	runnerUp: { tid: 1, region: "Boston", name: "Celtics", abbrev: "BOS" },
 	awards: [{ label: "MVP", player: "Star Guy", abbrev: "LAL" }],
+	salaryCap: 150000,
+	luxuryTax: 180000,
+	minPayroll: 120000,
 	alreadyWrittenTotal: 0,
 	teams: [
 		{
@@ -46,6 +49,7 @@ const data: RecapSeasonData = {
 					tpp: 40,
 					ftp: 88,
 					per: 28.5,
+					salary: 45000,
 					playoff: { gp: 20, pts: 32, trb: 8, ast: 10 },
 					awards: ["Most Valuable Player"],
 					transactions: ["Lakers re-signed Star Guy to a 4 yr, $180M contract"],
@@ -63,8 +67,16 @@ const data: RecapSeasonData = {
 					{ season: 2025, won: 52, lost: 30, result: "made conf finals" },
 				],
 			},
-			offseasonMoves: ["Lakers signed Star Guy to a 4 yr contract"],
-			inSeasonMoves: ["Lakers traded for a role player"],
+			payroll: 168000,
+			priorPayroll: 141500,
+			departed: ["Old Vet (retired)", "Salary Guy"],
+			arrived: ["Star Guy", "Cheap Rookie"],
+			offseasonMoves: [
+				"[Free agency] Lakers traded Salary Guy to BKN for nothing",
+				"[Free agency] Lakers signed Star Guy to a 4 yr contract",
+			],
+			offseasonMovesOmitted: 3,
+			inSeasonMoves: ["[Regular season] Lakers traded for a role player"],
 		},
 		{
 			tid: 1,
@@ -85,6 +97,8 @@ const data: RecapSeasonData = {
 				totalLost: 2700,
 				recent: [],
 			},
+			departed: [],
+			arrived: [],
 			offseasonMoves: [],
 			inSeasonMoves: [],
 		},
@@ -114,14 +128,14 @@ describe("buildSeasonRecapPrompt", () => {
 			prompt,
 		);
 		assert.ok(prompt.includes("signed Star Guy"), prompt);
-		assert.ok(prompt.includes("In-season moves:"), prompt);
+		assert.ok(prompt.includes("In-season moves"), prompt);
 	});
 
 	test("lays the data out chronologically: prior offseason before the season", () => {
 		const prompt = buildSeasonRecapPrompt(data);
 		const offseasonIdx = prompt.indexOf("Offseason moves that built");
 		const seasonIdx = prompt.indexOf("The season:");
-		const inSeasonIdx = prompt.indexOf("In-season moves:");
+		const inSeasonIdx = prompt.indexOf("In-season moves");
 		assert.ok(offseasonIdx >= 0 && seasonIdx >= 0 && inSeasonIdx >= 0, prompt);
 		// Prior-offseason build comes before the season, which comes before the
 		// in-season moves — the flow the recap should follow.
@@ -147,6 +161,61 @@ describe("buildSeasonRecapPrompt", () => {
 			prompt.includes("Injury history: Torn ACL, missed 62 games (2023)"),
 			prompt,
 		);
+	});
+
+	// The moves arrive oldest-first so a move sits next to whatever it made
+	// possible. Say so, or the AI has no reason to read them as a sequence -
+	// and reading them out of order is how a dump-then-sign becomes "they got
+	// nothing back".
+	test("says the moves are in the order they happened, and keeps that order", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(prompt.includes("oldest first"), prompt);
+		const dump = prompt.indexOf("traded Salary Guy");
+		const sign = prompt.indexOf("signed Star Guy to a 4 yr");
+		assert.ok(dump >= 0 && sign >= 0, prompt);
+		assert.ok(dump < sign, prompt);
+	});
+
+	test("tells the AI to read a move against the ones around it, not alone", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(prompt.includes("READ THE MOVES AS A SEQUENCE"), prompt);
+	});
+
+	// The failure this guards against is confident invention: an unexplained
+	// move gets a motive attached, and the motive is wrong.
+	test("forbids asserting a motive, or judging a move, that the data doesn't show", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(prompt.includes("Do NOT assert WHY a team made a move"), prompt);
+		assert.ok(prompt.includes("Do NOT call a move a giveaway"), prompt);
+	});
+
+	test("a capped move list admits it is capped", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(prompt.includes("3 earlier ones not shown"), prompt);
+		// The team with no truncation shouldn't claim any.
+		assert.strictEqual(prompt.match(/earlier ones not shown/g)!.length, 1);
+	});
+
+	test("carries the money: league cap, team payroll then and now, player salary", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(prompt.includes("salary cap $150M"), prompt);
+		assert.ok(prompt.includes("luxury tax $180M"), prompt);
+		assert.ok(prompt.includes("Payroll: $168M this season"), prompt);
+		assert.ok(prompt.includes("$141.5M last season"), prompt);
+		assert.ok(prompt.includes("$45M"), prompt);
+	});
+
+	test("spells out who left and who arrived since last season", () => {
+		const prompt = buildSeasonRecapPrompt(data);
+		assert.ok(prompt.includes("Roster turnover vs last season:"), prompt);
+		assert.ok(prompt.includes("Gone: Old Vet (retired), Salary Guy"), prompt);
+		assert.ok(prompt.includes("New: Star Guy, Cheap Rookie"), prompt);
+	});
+
+	test("a team with nothing to report skips the money and turnover blocks", () => {
+		const bos = buildSeasonRecapPrompt({ ...data, teams: [data.teams[1]!] });
+		assert.ok(!bos.includes("Roster turnover"), bos);
+		assert.ok(!bos.includes("Payroll:"), bos);
 	});
 });
 

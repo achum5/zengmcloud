@@ -12,9 +12,18 @@ const INSTRUCTIONS = `You are an expert basketball writer producing a league-wid
 
 ${FICTIONAL_LEAGUE_NOTICE}
 
-You are given a lot of data per team: the team's record and playoff result, its seed, its exact playoff series results (opponent and games won-lost each round — use these for how far a series went; never guess the number of games), its key players' season and postseason lines (with ages, ratings, any awards, each player's transactions, and any major injury history — 50+ games missed, with the season), the franchise's history (championships, playoff appearances, recent seasons), and the transactions that shaped the team. Use whatever tells the best story — how the season met or defied expectations given the roster and moves, breakout or declining players, the franchise's arc, playoff runs or collapses, and how the offseason set the team up. Do NOT dump the raw data back.
+You are given a lot of data per team: the franchise's history (championships, playoff appearances, recent seasons); every transaction that shaped the roster — draft picks, re-signings, free-agent signings, trades, releases — each one tagged in brackets with the part of the calendar it happened in and listed OLDEST FIRST; who left and who arrived versus last season; the team's end-of-season payroll this year and last against the league's salary cap; the record, seed, and points scored and allowed; the exact playoff series results (opponent and games won-lost each round — use these for how far a series went; never guess the number of games); and the key players' season and postseason lines, with ages, ratings, salaries, awards, their own transactions, and any major injury history (50+ games missed, with the season). Use whatever tells the best story — how the season met or defied expectations given the roster and moves, breakout or declining players, the franchise's arc, playoff runs or collapses, and how the offseason set the team up. Do NOT dump the raw data back.
 
-IMPORTANT — tell the story in chronological order, exactly how the data is laid out per team: (1) the OFFSEASON MOVES that BUILT this year's roster (the prior offseason — signings, re-signings, draft picks, trades made BEFORE the season), then (2) the SEASON itself — the regular-season record and how it played out, the IN-SEASON MOVES (trades/cuts made during the year), and (3) the PLAYOFFS. The offseason moves are last summer's build-up that set this team up; weave them in as the season's starting point.
+IMPORTANT — tell the story in chronological order, exactly how the data is laid out per team: (1) the OFFSEASON MOVES that BUILT this year's roster (the prior offseason — signings, re-signings, draft picks, trades made BEFORE the season), then (2) the SEASON itself — the regular-season record and how it played out, the IN-SEASON MOVES (trades/cuts/signings made during the year), and (3) the PLAYOFFS. The offseason moves are last summer's build-up that set this team up; weave them in as the season's starting point.
+
+READ THE MOVES AS A SEQUENCE, not as a list. They are in the order they happened, so a move and whatever it made possible sit next to each other. Before you characterize any move, read the ones around it in the same window and check what happened to the payroll. A trade that brings back little, or a veteran cut loose, is often what paid for a signing a few lines later; a big signing usually has something that cleared room for it. The phase tags tell you the order within an offseason — draft, then re-signings, then free agency — and within a season, before or after the trade deadline.
+
+ACCURACY — these matter more than style:
+- Every fact must come from the data below. Do not invent trades, signings, contract terms, injuries, quotes, or games.
+- Do NOT assert WHY a team made a move — its intentions, its negotiations, its front office's thinking — unless the data says so. State what happened, in what order, and what it cost, and let that speak.
+- Do NOT call a move a giveaway, a fleecing, a mistake, or a salary dump unless the data supports it. Whether a team got something back is a question about the whole window of moves, not about one line of it.
+- Only a player marked "(retired)" retired. Everyone else who left is playing somewhere else.
+- If a team's move list says earlier moves are not shown, do not describe its offseason as if the list were complete.
 
 Follow these rules EXACTLY:
 - Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
@@ -24,6 +33,10 @@ Follow these rules EXACTLY:
 - Weave the notable numbers into the prose; do not paste a stat table. Bold standout players with **name**.
 - Never state a player's rating number. Ratings are scouting information for you — read them to know how good a player is and describe it in basketball terms, never as "a 78 overall". Statistics and records are fine to quote.
 - Put exactly one blank line between teams.`;
+
+// Salaries and payrolls come through in thousands of dollars.
+const millions = (thousands: number): string =>
+	`$${Math.round(thousands / 100) / 10}M`;
 
 const record = (t: RecapSeasonTeam): string => {
 	const parts = [`${t.won}-${t.lost}`];
@@ -43,6 +56,7 @@ const playerLine = (p: RecapSeasonPlayer): string => {
 		typeof p.ovr === "number" && typeof p.pot === "number"
 			? `${p.ovr}/${p.pot} ovr/pot`
 			: undefined,
+		typeof p.salary === "number" ? millions(p.salary) : undefined,
 	]
 		.filter(Boolean)
 		.join(", ");
@@ -92,6 +106,10 @@ const franchiseBlock = (t: RecapSeasonTeam): string => {
 	return lines.join("\n");
 };
 
+// A capped move list must say so, or the recap reads it as the whole offseason.
+const omitted = (count: number | undefined): string =>
+	count ? ` (${count} earlier ones not shown)` : "";
+
 const teamBlock = (t: RecapSeasonTeam): string => {
 	// Laid out chronologically so the recap reads in order: who they are →
 	// the prior offseason that built this year's team → the season → the playoffs.
@@ -104,9 +122,34 @@ const teamBlock = (t: RecapSeasonTeam): string => {
 	if (t.offseasonMoves.length > 0) {
 		lines.push(
 			"",
-			"Offseason moves that built this season's roster (BEFORE the season):",
+			`Offseason moves that built this season's roster (BEFORE the season), oldest first${omitted(
+				t.offseasonMovesOmitted,
+			)}:`,
 			...t.offseasonMoves.map((m) => `- ${m}`),
 		);
+	}
+
+	// Who actually turned over, so the shape of the roster change doesn't have to
+	// be reconstructed from the wording of every individual move.
+	if (t.departed.length > 0 || t.arrived.length > 0) {
+		lines.push("", "Roster turnover vs last season:");
+		if (t.departed.length > 0) {
+			lines.push(`- Gone: ${t.departed.join(", ")}`);
+		}
+		if (t.arrived.length > 0) {
+			lines.push(`- New: ${t.arrived.join(", ")}`);
+		}
+	}
+
+	const payroll: string[] = [];
+	if (typeof t.payroll === "number") {
+		payroll.push(`${millions(t.payroll)} this season`);
+	}
+	if (typeof t.priorPayroll === "number") {
+		payroll.push(`${millions(t.priorPayroll)} last season`);
+	}
+	if (payroll.length > 0) {
+		lines.push("", `Payroll: ${payroll.join(", ")}`);
 	}
 
 	// 2) The season itself, ending at the playoff result.
@@ -131,7 +174,11 @@ const teamBlock = (t: RecapSeasonTeam): string => {
 	}
 
 	if (t.inSeasonMoves.length > 0) {
-		lines.push("", "In-season moves:", ...t.inSeasonMoves.map((m) => `- ${m}`));
+		lines.push(
+			"",
+			`In-season moves, oldest first${omitted(t.inSeasonMovesOmitted)}:`,
+			...t.inSeasonMoves.map((m) => `- ${m}`),
+		);
 	}
 
 	if (t.players.length > 0) {
@@ -143,6 +190,16 @@ const teamBlock = (t: RecapSeasonTeam): string => {
 
 const leagueHeader = (data: RecapSeasonData): string => {
 	const lines: string[] = [];
+	if (typeof data.salaryCap === "number") {
+		const bits = [`salary cap ${millions(data.salaryCap)}`];
+		if (typeof data.luxuryTax === "number") {
+			bits.push(`luxury tax ${millions(data.luxuryTax)}`);
+		}
+		if (typeof data.minPayroll === "number") {
+			bits.push(`minimum payroll ${millions(data.minPayroll)}`);
+		}
+		lines.push(`League money: ${bits.join(", ")}`);
+	}
 	if (data.champ) {
 		lines.push(
 			`Champion: ${data.champ.region} ${data.champ.name} (${data.champ.abbrev})`,
@@ -175,7 +232,7 @@ export const buildSeasonRecapPrompt = (data: RecapSeasonData): string => {
 
 ${data.season} season in review — ${data.teams.length} team${
 		data.teams.length === 1 ? "" : "s"
-	} to recap.
+	} to recap, best record first.
 ${header ? `\n${header}\n` : ""}
 ${blocks}`;
 };
