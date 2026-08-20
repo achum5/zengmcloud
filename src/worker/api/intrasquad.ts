@@ -37,8 +37,13 @@ export const simIntrasquadGame = async (
 		throw new Error("Invalid team.");
 	}
 
-	// Fresh copies so the sim's mutations never touch the league's cached players.
-	const allPlayers = await idb.getCopies.players({ tid }, "noCopyCache");
+	// Fresh copies so the sim's mutations never touch the league's cached
+	// players. Deliberately NOT "noCopyCache": that flag is the caller promising
+	// not to mutate, and it hands back the live cache rows - so `collect` below,
+	// which rewrites rosterOrder to match the squads the user dragged together,
+	// was reordering the actual roster and publishing it to the room. A
+	// scrimmage is a friendly; none of it is meant to reach league state.
+	const allPlayers = await idb.getCopies.players({ tid });
 	const byPid = new Map(allPlayers.map((p) => [p.pid, p]));
 
 	const collect = (pids: number[]): Player[] => {

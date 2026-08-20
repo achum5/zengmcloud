@@ -1,5 +1,6 @@
 import GameSim from "../GameSim.ts";
 import { processTeam } from "../game/loadTeams.ts";
+import { healedForward } from "./healInjuriesForward.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import { mulberry32 } from "../../../common/sportsbookOdds.ts";
@@ -228,26 +229,19 @@ const loadSide = async (tid: number, daysInFuture: number) => {
 			tid,
 			g.get("season"),
 		]),
-		// Copies, because the injuries below are adjusted in place and the sim
-		// mutates whatever it's handed.
+		// NOT copies - "noCopyCache" is this caller promising not to mutate what
+		// it gets back, which is what lets the db hand over the live cache rows.
+		// Anything hypothetical has to be built alongside them, never onto them.
 		idb.getCopies.players({ tid }, "noCopyCache"),
 	]);
 	if (!t || !teamSeason) {
 		return undefined;
 	}
 
-	if (daysInFuture > 0) {
-		for (const p of players) {
-			if (p.injury.gamesRemaining > 0) {
-				p.injury = {
-					...p.injury,
-					gamesRemaining: Math.max(0, p.injury.gamesRemaining - daysInFuture),
-				};
-			}
-		}
-	}
-
-	return processTeam(t, teamSeason, players);
+	// Healed forward as COPIES - see healInjuriesForward.ts. These rows are the
+	// live cache records, and writing a hypothetical onto them put it in the
+	// league and then published it to the whole room.
+	return processTeam(t, teamSeason, healedForward(players, daysInFuture));
 };
 
 export const simGameOutcomes = async ({
