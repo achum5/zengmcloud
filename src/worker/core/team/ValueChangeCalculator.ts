@@ -12,6 +12,13 @@ import { getNumPicksPerRound } from "../trade/getPickValues.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { groupByUnique, last } from "../../../common/utils.ts";
 import { tradeDifficulty } from "../../util/difficulty.ts";
+import { tierFromRoster, type TradeTier } from "../trade/tradePosture.ts";
+import {
+	ageMultiplier,
+	CONTRACT_FACTOR,
+	PICK_MULTIPLIER,
+	tierForLegacyStrategy,
+} from "./tierValuation.ts";
 
 type Asset =
 	| {
@@ -435,7 +442,7 @@ const EXPONENT = bySport({
 
 const sumValues = (
 	players: Asset[],
-	strategy: string,
+	tier: TradeTier,
 	tid: number,
 	includeInjuries = false,
 ) => {
@@ -452,46 +459,16 @@ const sumValues = (
 		const treatAsFutureDraftPick =
 			p.type === "pick" && (season !== p.draftYear || phase <= PHASE.PLAYOFFS);
 
+		// What this team wants, rather than what the league on average wants. Much
+		// of a young player's value is potential, which a team trying to win this
+		// season cannot spend - and all of a pick's value is. See
+		// team/tierValuation.ts, whose middle rows reproduce the old
+		// rebuilding/contending numbers exactly.
+		//
 		// These factors don't make sense for negative value players!!!
-		if (strategy === "rebuilding") {
-			// Value young/cheap players and draft picks more. Penalize expensive/old players
-			if (treatAsFutureDraftPick) {
-				playerValue *= 1.1;
-			} else if (p.age <= 19) {
-				playerValue *= 1.075;
-			} else if (p.age === 20) {
-				playerValue *= 1.05;
-			} else if (p.age === 21) {
-				playerValue *= 1.0375;
-			} else if (p.age === 22) {
-				playerValue *= 1.025;
-			} else if (p.age === 23) {
-				playerValue *= 1.0125;
-			} else if (p.age === 27) {
-				playerValue *= 0.975;
-			} else if (p.age === 28) {
-				playerValue *= 0.95;
-			} else if (p.age >= 29) {
-				playerValue *= 0.9;
-			}
-		} else if (strategy === "contending") {
-			// Much of the value for these players comes from potential, which we don't really care about
-			if (treatAsFutureDraftPick) {
-				playerValue *= 0.825;
-			} else if (p.age <= 19) {
-				playerValue *= 0.8;
-			} else if (p.age === 20) {
-				playerValue *= 0.825;
-			} else if (p.age === 21) {
-				playerValue *= 0.85;
-			} else if (p.age === 22) {
-				playerValue *= 0.875;
-			} else if (p.age === 23) {
-				playerValue *= 0.925;
-			} else if (p.age === 24) {
-				playerValue *= 0.95;
-			}
-		}
+		playerValue *= treatAsFutureDraftPick
+			? PICK_MULTIPLIER[tier]
+			: ageMultiplier(tier, p.age);
 
 		// Normalize for injuries
 		if (includeInjuries && tid !== g.get("userTid")) {
@@ -507,8 +484,7 @@ const sumValues = (
 			playerValue /= 20;
 		}
 
-		const contractsFactor = strategy === "rebuilding" ? 2 : 0.5;
-		playerValue += contractsFactor * p.contractValue;
+		playerValue += CONTRACT_FACTOR[tier] * p.contractValue;
 
 		// if a player was just drafted and can be released, they shouldn't have negative value
 		if (p.type == "player" && p.justDrafted) {
@@ -585,6 +561,70 @@ export const getEstPicks = async (
 	};
 };
 
+// Every team's tier, from data the cache has already gathered. The league bars
+// the tier read needs (what a "core" player is worth, what a "star" is worth)
+// are percentiles over every rostered player, which is the same list this
+// already holds - so the whole league costs one pass rather than one scan per
+// team.
+const computeTiers = (
+	playersByTid: Map<
+		number,
+		{ age?: number; value: number; born?: { year: number } }[]
+	>,
+	teamOvrs: { tid: number; ovr: number }[],
+	wps: { tid: number; wp: number }[],
+): Map<number, TradeTier> => {
+	const season = g.get("season");
+	const numActiveTeams = teamOvrs.length || g.get("numActiveTeams");
+
+	const values: number[] = [];
+	for (const players of playersByTid.values()) {
+		for (const p of players) {
+			values.push(p.value);
+		}
+	}
+	values.sort((a, b) => b - a);
+	const atRank = (rank: number, fallback: number) =>
+		values.length === 0
+			? fallback
+			: (values[
+					Math.min(values.length - 1, Math.max(0, Math.round(rank) - 1))
+				] ?? fallback);
+	// Same bars getLeagueTradeContext uses, so the two agree on what a core
+	// player and a star are.
+	const starValue = Math.max(60, atRank(numActiveTeams, 65));
+	const coreValue = Math.max(52, atRank(numActiveTeams * 3, 55));
+
+	const wpByTid = new Map(wps.map((w) => [w.tid, w.wp]));
+	const topTeamOvr = teamOvrs[0]?.ovr ?? 0;
+
+	const tiers = new Map<number, TradeTier>();
+	for (const [i, { tid, ovr }] of teamOvrs.entries()) {
+		const players = (playersByTid.get(tid) ?? []).map((p) => ({
+			age: season - (p.born?.year ?? season - 25),
+			value: p.value,
+		}));
+		const ovrRankPct =
+			numActiveTeams > 1 ? Math.min(1, i / (numActiveTeams - 1)) : 0;
+		tiers.set(
+			tid,
+			tierFromRoster({
+				players,
+				// getEstPicks already blends the actual record with a
+				// strength-implied win% early in the season, which is the same thing
+				// the posture module does for itself.
+				winp: wpByTid.get(tid) ?? 0.5,
+				ovrRankPct,
+				coreValue,
+				starValue,
+				teamOvr: ovr,
+				topTeamOvr,
+			}).tier,
+		);
+	}
+	return tiers;
+};
+
 type ValueChangeCache = {
 	estPicks: Record<number, number>;
 	estValues: TradePickValues;
@@ -596,6 +636,12 @@ type ValueChangeCache = {
 		tid: number;
 		wp: number;
 	}[];
+	// Every team's posture tier, so an offer is priced by what the franchise is
+	// actually doing rather than by BBGM's two-value, once-a-year `strategy`
+	// flag. Computed here because this is the one place that already has every
+	// player, every team OVR and every win% in hand - asking the posture module
+	// for it would re-scan the league once per team.
+	tiers: Map<number, TradeTier>;
 };
 
 type ToUpdate = {
@@ -678,6 +724,7 @@ export class ValueChangeCalculator {
 				estValues,
 				teamOvrs,
 				wps,
+				tiers: computeTiers(playersByTid, teamOvrs, wps),
 			};
 		} else {
 			return {
@@ -736,7 +783,12 @@ export class ValueChangeCalculator {
 			throw new Error("Invalid team");
 		}
 
-		const strategy = t.strategy;
+		// The plan, not the flag. Falls back to the flag's own two values when the
+		// smart front office is off, or when this team somehow has no roster to
+		// read - see tierForLegacyStrategy.
+		const tier = g.get("smartAiFrontOffice")
+			? (this.cache?.tiers.get(tid) ?? tierForLegacyStrategy(t.strategy))
+			: tierForLegacyStrategy(t.strategy);
 
 		await getPlayers({
 			add,
@@ -760,11 +812,11 @@ export class ValueChangeCalculator {
 		});
 
 		// console.log("ADD");
-		const valuesAdd = sumValues(add, strategy, tid, true);
+		const valuesAdd = sumValues(add, tier, tid, true);
 		// console.log("Total", valuesAdd);
 
 		// console.log("REMOVE");
-		const valuesRemove = sumValues(remove, strategy, tid);
+		const valuesRemove = sumValues(remove, tier, tid);
 		// console.log("Total", valuesRemove);
 
 		return valuesAdd - valuesRemove;

@@ -191,6 +191,105 @@ export const classifyTier = ({
 	return "seller";
 };
 
+// ---- The tier, as one pure read of a roster --------------------------------
+//
+// Extracted because it has two callers and they must never disagree. The other
+// is trade VALUATION (team/ValueChangeCalculator.ts), which used to run off
+// BBGM's own two-value `strategy` flag - so an AI could be planning a teardown
+// while pricing your offer as a contender, and the flag itself is only
+// refreshed once a year, in the offseason. Both of those are exactly the lag
+// this module was written to replace.
+//
+// Pure, and takes the league bars rather than fetching them, so a caller that
+// already has every player in hand (the valuation cache does) pays nothing
+// extra to ask.
+
+// Genuine youth: what drives the young-core signal in the tier.
+export const YOUNG_AGE = 24;
+
+// A young cornerstone can be this old - past YOUNG_AGE, but still young enough
+// that a bad team builds around him rather than shopping him.
+const FOUNDATION_AGE = 26;
+
+// Value-weighted, so the CORE's age drives the timeline rather than deep bench
+// youth. Falls back to a plain mean when nothing has positive value.
+export const valueWeightedAge = (
+	players: readonly { age: number; value: number }[],
+): number => {
+	let num = 0;
+	let den = 0;
+	let plainNum = 0;
+	for (const p of players) {
+		const w = Math.max(0, p.value);
+		num += p.age * w;
+		den += w;
+		plainNum += p.age;
+	}
+	if (den > 0) {
+		return num / den;
+	}
+	return players.length > 0 ? plainNum / players.length : 25;
+};
+
+export const tierFromRoster = ({
+	players,
+	winp,
+	ovrRankPct,
+	coreValue,
+	starValue,
+	teamOvr,
+	topTeamOvr,
+}: {
+	players: readonly { age: number; value: number }[];
+	winp: number;
+	ovrRankPct: number;
+	coreValue: number;
+	starValue: number;
+	// Undefined when this team is not in the league's OVR ranking at all, in
+	// which case it cannot be elite.
+	teamOvr: number | undefined;
+	topTeamOvr: number;
+}): {
+	tier: TradeTier;
+	avgAge: number;
+	youngCoreCount: number;
+	hasFoundation: boolean;
+} => {
+	const avgAge = valueWeightedAge(players);
+	const youngCoreCount = players.filter(
+		(p) => p.age <= YOUNG_AGE && p.value >= coreValue,
+	).length;
+
+	// A young cornerstone to build around: a young-and-good star, or a couple of
+	// young quality players. Decides retool (seller) vs full teardown for a bad
+	// team.
+	const hasFoundation =
+		youngCoreCount >= 2 ||
+		players.some((p) => p.age <= FOUNDATION_AGE && p.value >= starValue);
+
+	let tier = classifyTier({
+		winp,
+		ovrRankPct,
+		avgAge,
+		youngCoreCount,
+		hasFoundation,
+	});
+
+	// A roster right at the top of the league is an UBER-aggressive buyer,
+	// guaranteed - a title-caliber team should go get a star every year. This
+	// overrides a soft, record-based read: a loaded roster off to a slow start
+	// still BUYS, never sells, which would be self-sabotage.
+	if (
+		teamOvr !== undefined &&
+		teamOvr >= topTeamOvr - ELITE_OVR_GAP &&
+		tier !== "allIn"
+	) {
+		tier = "buyer";
+	}
+
+	return { tier, avgAge, youngCoreCount, hasFoundation };
+};
+
 // Per-slot needs (best player there is below starter caliber) and surpluses
 // (two+ starter-caliber players stacked at one slot). starterOvr is the
 // league-relative "replacement starter" bar.
@@ -578,45 +677,25 @@ export const getTradePosture = async (
 			: (gp >= RAMP ? 1 : gp / RAMP) * (won / gp) +
 				(gp >= RAMP ? 0 : 1 - gp / RAMP) * impliedWinp;
 
-	// Value-weighted average age, so the CORE's age drives the timeline, not deep
-	// bench youth. Falls back to a plain mean if there's no positive value.
-	let ageNum = 0;
-	let ageDen = 0;
-	let plainAgeNum = 0;
-	for (const p of players) {
-		const w = Math.max(0, p.value);
-		ageNum += p.age * w;
-		ageDen += w;
-		plainAgeNum += p.age;
-	}
-	const avgAge =
-		ageDen > 0
-			? ageNum / ageDen
-			: players.length > 0
-				? plainAgeNum / players.length
-				: 25;
-
-	const YOUNG_AGE = 24; // genuine youth (drives the tier's young-core signal)
 	const CORE_AGE = 27; // any selling team keeps quality up through its prime
 	const VET_AGE = 29; // a mild seller only cashes in clear veterans
 	const TEARDOWN_SHOP_AGE = 25; // a teardown moves anyone past his early 20s
-	const youngCoreCount = players.filter(
-		(p) => p.age <= YOUNG_AGE && p.value >= context.coreValue,
-	).length;
 
-	// A young cornerstone to build around: a young-and-good star, or a couple of
-	// young quality players. Decides retool (seller) vs full teardown for a bad
-	// team.
-	const hasFoundation =
-		youngCoreCount >= 2 ||
-		players.some((p) => p.age <= 26 && p.value >= context.starValue);
+	const topTeamOvr = context.teamOvrsSorted[0]?.ovr ?? 0;
+	const rankedOvr =
+		rankIdx >= 0 ? (context.teamOvrsSorted[rankIdx]?.ovr ?? 0) : undefined;
 
-	let tier = classifyTier({
+	// One shared read of the roster - see tierFromRoster. Trade VALUATION asks
+	// the same question of the same function, so a team cannot plan a teardown
+	// and price your offer as a contender.
+	const { tier, avgAge, youngCoreCount } = tierFromRoster({
+		players,
 		winp,
 		ovrRankPct,
-		avgAge,
-		youngCoreCount,
-		hasFoundation,
+		coreValue: context.coreValue,
+		starValue: context.starValue,
+		teamOvr: rankedOvr,
+		topTeamOvr,
 	});
 
 	// A roster right at the top of the league (within ELITE_OVR_GAP team-OVR of the
@@ -626,13 +705,8 @@ export const getTradePosture = async (
 	// never sells (that would be self-sabotage). Elite teams also initiate far more
 	// often (see betweenAiTeams) and, when already contending, keep their allIn
 	// urgency. Decision-making only — valuation is untouched.
-	const topTeamOvr = context.teamOvrsSorted[0]?.ovr ?? 0;
-	const teamOvr =
-		rankIdx >= 0 ? (context.teamOvrsSorted[rankIdx]?.ovr ?? 0) : 0;
-	const elite = rankIdx >= 0 && teamOvr >= topTeamOvr - ELITE_OVR_GAP;
-	if (elite && tier !== "allIn") {
-		tier = "buyer";
-	}
+	const elite =
+		rankedOvr !== undefined && rankedOvr >= topTeamOvr - ELITE_OVR_GAP;
 
 	const { needs, surpluses, upgradePos } = isSport("basketball")
 		? analyzePositions(
