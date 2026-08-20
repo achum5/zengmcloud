@@ -394,6 +394,38 @@ let stop: (() => void) | undefined;
 // header and the ticker are independent elements and must not block each other.
 const repairing = new Set<string>();
 
+// A CLAIM TAKEN AFTER AN AWAIT IS NOT A CLAIM.
+//
+// checkBar used to read the set at the top and write it further down, on the far
+// side of the frame it waits to confirm a detachment. Two checks starting in the
+// same frame - two modals unpinning together, and scheduleModalUnpinCheck fires
+// three times per unpin - both walked past a gate that was still open, both
+// waited, and both then ran a ladder on the same element, each toggling its
+// `position` on its own frame schedule.
+//
+// A field log caught it exactly: "header:detached" twice a millisecond apart at
+// the same scroll offset, then "header:repaired step=1" twice, one of them
+// measuring a position the OTHER ladder had put the header in mid-step.
+//
+// Wrapping the whole body makes the claim synchronous with the decision to run,
+// which is the only shape that cannot race, and makes the invariant testable
+// instead of something you have to notice while reading.
+export const runExclusive = async (
+	key: string,
+	body: () => Promise<void>,
+): Promise<boolean> => {
+	if (repairing.has(key)) {
+		return false;
+	}
+	repairing.add(key);
+	try {
+		await body();
+	} finally {
+		repairing.delete(key);
+	}
+	return true;
+};
+
 // The layout viewport against the visual one. A field report showed innerHeight
 // 1052 with a visual viewport of 646 - a 406px gap, and the header's offset
 // clamping at exactly -406 - so whether these disagree, and by how much, is the
@@ -465,75 +497,84 @@ const reading = (bar: Bar, element: HTMLElement) => ({
 });
 
 const checkBar = async (bar: Bar, trigger: string) => {
-	if (repairing.has(bar.name)) {
-		return;
-	}
 	const element = bar.get();
 	if (!element) {
+		return;
+	}
+	// Cheap pre-gate so a check arriving mid-repair does not pay for a layout
+	// read it cannot act on. runExclusive is what actually guarantees the
+	// exclusion; this only saves the work.
+	if (repairing.has(bar.name)) {
 		return;
 	}
 	if (!bar.answerable(window.scrollY) || !bar.detached(element)) {
 		return;
 	}
 
-	// Before believing the geometry, make sure the standing visual-viewport
-	// correction is not the geometry. A stale translateY left over from before a
-	// suspend displaces the bar exactly like a detachment, and the position
-	// ladder below can never remove it - the watchdog would detect, fail to
-	// repair, and give up on every check forever. Re-deriving the shift from the
-	// viewports as they are now either clears it (and the re-measure comes back
-	// healthy) or changes nothing and the real ladder proceeds.
-	resyncStickyBarShifts();
-	if (!bar.detached(element)) {
-		note(bar, element, "repaired", "shift-resync");
-		return;
-	}
-
-	// Confirm against a second reading a frame later before believing it.
-	const before = reading(bar, element);
-	await nextFrame();
-	const after = reading(bar, element);
-	if (!bar.detached(element) || !detachmentConfirmed({ before, after })) {
-		note(
-			bar,
-			element,
-			"unconfirmed",
-			`via=${trigger} moved=${after.scrollY - before.scrollY}`,
-		);
-		return;
-	}
-
-	note(bar, element, "detached", `via=${trigger} ${viewportNote()}`);
-
-	repairing.add(bar.name);
-	try {
-		for (const [i, step] of repairSteps.entries()) {
-			await step(element);
+	await runExclusive(bar.name, async () => {
+		try {
+			// Before believing the geometry, make sure the standing visual-viewport
+			// correction is not the geometry. A stale translateY left over from
+			// before a suspend displaces the bar exactly like a detachment, and the
+			// position ladder below can never remove it - the watchdog would detect,
+			// fail to repair, and give up on every check forever. Re-deriving the
+			// shift from the viewports as they are now either clears it (and the
+			// re-measure comes back healthy) or changes nothing and the real ladder
+			// proceeds.
+			resyncStickyBarShifts();
 			if (!bar.detached(element)) {
-				note(bar, element, "repaired", `step=${i + 1}`);
+				note(bar, element, "repaired", "shift-resync");
 				return;
 			}
-		}
 
-		// Still broken after the whole ladder. One more frame, in case the
-		// compositor simply had not caught up when we measured, then a final pass
-		// before giving up on this attempt - the scroll watch keeps looking either
-		// way, so a bar that survives this will be tried again on the next scroll
-		// rather than staying broken until the app is force-quit.
-		await nextFrame();
-		if (bar.detached(element)) {
-			await rebuildRenderer(element);
-			await nudgeScroller();
+			// Confirm against a second reading a frame later before believing it.
+			const before = reading(bar, element);
+			await nextFrame();
+			const after = reading(bar, element);
+			if (!bar.detached(element) || !detachmentConfirmed({ before, after })) {
+				note(
+					bar,
+					element,
+					"unconfirmed",
+					`via=${trigger} moved=${after.scrollY - before.scrollY}`,
+				);
+				return;
+			}
+
+			note(bar, element, "detached", `via=${trigger} ${viewportNote()}`);
+
+			for (const [i, step] of repairSteps.entries()) {
+				await step(element);
+				if (!bar.detached(element)) {
+					note(bar, element, "repaired", `step=${i + 1}`);
+					return;
+				}
+			}
+
+			// Still broken after the whole ladder. One more frame, in case the
+			// compositor simply had not caught up when we measured, then a final
+			// pass before giving up on this attempt - the scroll watch keeps looking
+			// either way, so a bar that survives this will be tried again on the
+			// next scroll rather than staying broken until the app is force-quit.
+			await nextFrame();
+			if (bar.detached(element)) {
+				await rebuildRenderer(element);
+				await nudgeScroller();
+			}
+			note(
+				bar,
+				element,
+				bar.detached(element) ? "gave-up" : "repaired",
+				"late",
+			);
+		} finally {
+			// The ladder clears inline `position` so the stylesheet rules; when the
+			// oversized-viewport self-placement has the ticker positioned inline
+			// (see visualViewportHeader.ts), that clearing strips it. Re-derive
+			// placement from the viewports as they are now, whatever the ladder did.
+			resyncStickyBarShifts();
 		}
-		note(bar, element, bar.detached(element) ? "gave-up" : "repaired", "late");
-	} finally {
-		repairing.delete(bar.name);
-		// The ladder clears inline `position` so the stylesheet rules; when the
-		// oversized-viewport self-placement has the ticker positioned inline (see
-		// visualViewportHeader.ts), that clearing strips it. Re-derive placement
-		// from the viewports as they are now, whatever the ladder did.
-		resyncStickyBarShifts();
-	}
+	});
 };
 
 // Both bars, every time. They are checked in sequence rather than concurrently
@@ -555,16 +596,13 @@ const forceBarRepair = async (bar: Bar) => {
 		"forced",
 		`detached=${bar.detached(element)} ${viewportNote()}`,
 	);
-	if (repairing.has(bar.name)) {
-		return;
-	}
-	repairing.add(bar.name);
-	try {
+	const ran = await runExclusive(bar.name, async () => {
 		for (const step of repairSteps) {
 			await step(element);
 		}
-	} finally {
-		repairing.delete(bar.name);
+	});
+	if (!ran) {
+		return;
 	}
 	// Same reason as checkBar: the ladder cleared inline `position`, and the
 	// self-placement mode lives in inline styles.
@@ -743,14 +781,14 @@ const rebuildTickerOnResume = () => {
 
 	const pass = async () => {
 		const element = TICKER_BAR.get();
-		if (!element || modalPinning() || repairing.has(TICKER_BAR.name)) {
+		if (!element || modalPinning()) {
 			return;
 		}
-		repairing.add(TICKER_BAR.name);
-		try {
+		const ran = await runExclusive(TICKER_BAR.name, async () => {
 			await rebuildRenderer(element);
-		} finally {
-			repairing.delete(TICKER_BAR.name);
+		});
+		if (!ran) {
+			return;
 		}
 		// The rebuild cleared inline `position`; put the self-placement (or the
 		// ordinary shift) straight back rather than waiting for a viewport event.

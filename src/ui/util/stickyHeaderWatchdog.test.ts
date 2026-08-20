@@ -3,6 +3,7 @@ import {
 	bottomBarIsDetached,
 	detachmentConfirmed,
 	headerIsDetached,
+	runExclusive,
 	scrollDecision,
 	tickerAnchorHeights,
 } from "./stickyHeaderWatchdog.ts";
@@ -502,5 +503,56 @@ describe("tickerAnchorHeights", () => {
 			tickerAnchorHeights({ client: 830, innerHeight: 530, vvBottom: 530 }),
 			[830, 530, 530],
 		);
+	});
+});
+
+describe("runExclusive", () => {
+	const deferred = () => {
+		let resolve!: () => void;
+		const promise = new Promise<void>((r) => {
+			resolve = r;
+		});
+		return { promise, resolve };
+	};
+
+	// The bug this exists for: the claim used to be taken on the far side of the
+	// frame the check waits to confirm a detachment, so two checks starting in
+	// the same frame both got through and both ran a repair ladder on the same
+	// element.
+	test("a second caller is turned away while the first is still awaiting", async () => {
+		const gate = deferred();
+		let runs = 0;
+		const first = runExclusive("header", async () => {
+			runs += 1;
+			await gate.promise;
+		});
+		const second = await runExclusive("header", async () => {
+			runs += 1;
+		});
+		assert.strictEqual(second, false);
+		assert.strictEqual(runs, 1);
+		gate.resolve();
+		assert.strictEqual(await first, true);
+	});
+
+	test("the bars do not block each other", async () => {
+		const gate = deferred();
+		const header = runExclusive("header", () => gate.promise);
+		assert.strictEqual(await runExclusive("ticker", async () => {}), true);
+		gate.resolve();
+		await header;
+	});
+
+	test("the claim is released once the body settles, even on a throw", async () => {
+		let threw = false;
+		try {
+			await runExclusive("header", async () => {
+				throw new Error("ladder blew up");
+			});
+		} catch {
+			threw = true;
+		}
+		assert.ok(threw);
+		assert.strictEqual(await runExclusive("header", async () => {}), true);
 	});
 });
