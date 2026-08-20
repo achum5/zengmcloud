@@ -29,6 +29,22 @@ import {
 	HAIR_THINNING,
 	jitterColor,
 	tierOf,
+	shavesHead,
+	shavesHeadAtAge,
+	greys,
+	greyOnsetAge,
+	greyAmountForAge,
+	greyedColor,
+	greyCrossedAStep,
+	familySeed,
+	fatnessGainByAge,
+	HAIR_VOLUMINOUS,
+	SHAVES_HEAD_SHARE,
+	BALDING_PRONE_SHARE,
+	GREY_PER_YEAR,
+	ungreyedColor,
+	HAIR_PERIOD,
+	applyFaceAgingHistory,
 } from "./realisticFaces.ts";
 
 // A deterministic stand-in for Math.random, so every probabilistic branch can
@@ -46,6 +62,9 @@ const face = (overrides: Record<string, any> = {}) =>
 		miscLine: { id: "none" },
 		facialHair: { id: "none" },
 		hair: { id: "short", color: "#272421", flip: false },
+		hairBg: { id: "none" },
+		head: { id: "head1", shave: "rgba(0,0,0,0)" },
+		fatness: 0.4,
 		glasses: { id: "none" },
 		body: { id: "body", color: "#ad6453", size: 1 },
 		...overrides,
@@ -244,12 +263,21 @@ describe("facialHairForAge", () => {
 });
 
 describe("applyRealisticFace", () => {
-	test("a prospect is never balding, even if the generator said so", () => {
-		for (const id of [HAIR_THINNING, HAIR_BALD]) {
-			const f = face({ hair: { id, color: "#272421", flip: false } });
-			applyRealisticFace(f, { age: 19, rand: fixed(0.99) });
-			assert.notStrictEqual(f.hair.id, id);
-		}
+	// A RECEDING hairline is age. A SHAVED head is a haircut, and forcing it off
+	// young players meant nobody in the league could turn up with the most
+	// recognisable look in basketball until his late twenties.
+	test("a prospect never has a receding hairline, even if the generator said so", () => {
+		const f = face({
+			hair: { id: HAIR_THINNING, color: "#272421", flip: false },
+		});
+		applyRealisticFace(f, { age: 19, rand: fixed(0.99) });
+		assert.notStrictEqual(f.hair.id, HAIR_THINNING);
+	});
+
+	test("a prospect may have a shaved head, because that is a choice", () => {
+		const f = face({ hair: { id: HAIR_BALD, color: "#272421", flip: false } });
+		applyRealisticFace(f, { age: 19, rand: fixed(0.99) });
+		assert.strictEqual(f.hair.id, HAIR_BALD);
 	});
 
 	test("an older player can be balding", () => {
@@ -320,13 +348,15 @@ describe("ageFace", () => {
 		throw new Error("no balding-prone pid found");
 	})();
 
-	const neverBalds = (() => {
+	// Not prone to losing it AND not one of the players who shaves it off, so
+	// the only thing that could change his hair is the balding ladder.
+	const keepsHisHair = (() => {
 		for (let pid = 0; pid < 500; pid++) {
-			if (!baldingProne(pid)) {
+			if (!baldingProne(pid) && !shavesHead(pid)) {
 				return pid;
 			}
 		}
-		throw new Error("no balding-immune pid found");
+		throw new Error("no pid found who keeps his hair");
 	})();
 
 	test("a player who was never going to lose it keeps it at any age", () => {
@@ -334,7 +364,7 @@ describe("ageFace", () => {
 		// Even with the roll forced to always succeed, this one never balds.
 		const f = face();
 		for (let age = 19; age <= 40; age++) {
-			ageFace(f, age, neverBalds, fixed(0));
+			ageFace(f, age, keepsHisHair, fixed(0));
 		}
 		assert.strictEqual(f.hair.id, "short");
 	});
@@ -462,7 +492,8 @@ describe("generateFace plumbing", () => {
 			const tier = tierOf(face.facialHair.id);
 			assert.notStrictEqual(tier, "period", face.facialHair.id);
 			assert.notStrictEqual(tier, "heavy", face.facialHair.id);
-			assert.notInclude([HAIR_THINNING, HAIR_BALD], face.hair.id);
+			// A shaved head is allowed at this age; a receding one is not.
+			assert.notStrictEqual(face.hair.id, HAIR_THINNING);
 		}
 	});
 });
@@ -715,5 +746,458 @@ describe("hairline loss is gradual", () => {
 		const first = countStep("short");
 		const second = countStep(HAIR_THINNING);
 		assert.isAbove(first, second, `${first} vs ${second}`);
+	});
+});
+
+describe("replaying a career that already happened", () => {
+	// applyFaceAgingToLeague starts from the face the player already has. If
+	// that pass re-coloured him, running it twice would move him further from
+	// himself each time - and would drift a father and son apart independently,
+	// undoing the resemblance the relative code goes to trouble to keep.
+	test("aging an existing league leaves his colours alone", () => {
+		const before = face();
+		before.body.color = "#ad6453";
+		before.hair.color = "#272421";
+		applyFaceAgingHistory({
+			face: before,
+			rookieAge: 19,
+			currentAge: 27,
+			pid: 3,
+			race: "black",
+			rand: fixed(0.5),
+		});
+		assert.strictEqual(before.body.color, "#ad6453");
+		// Hair may have greyed, which is age rather than recolouring - but at 27
+		// with this pid it has not started yet.
+		assert.strictEqual(greyAmountForAge(27, 3), 0);
+		assert.strictEqual(before.hair.color, "#272421");
+	});
+
+	test("two runs produce the same man", () => {
+		const run = () => {
+			const f = face();
+			f.body.color = "#ad6453";
+			f.hair.color = "#272421";
+			applyFaceAgingHistory({
+				face: f,
+				rookieAge: 19,
+				currentAge: 34,
+				pid: 11,
+				race: "black",
+				rand: fixed(0.5),
+			});
+			return f;
+		};
+		const first = run();
+		const second = run();
+		applyFaceAgingHistory({
+			face: first,
+			rookieAge: 19,
+			currentAge: 34,
+			pid: 11,
+			race: "black",
+			rand: fixed(0.5),
+		});
+		assert.strictEqual(first.body.color, second.body.color);
+	});
+});
+
+describe("period cuts", () => {
+	test("the hi-top fades are real facesjs hair, and out of the pool", () => {
+		for (const id of HAIR_PERIOD) {
+			assert.include(svgsIndex.hair, id, id);
+		}
+		for (const race of ["black", "brown"] as const) {
+			for (const id of HAIR_PERIOD) {
+				assert.notInclude(hairPoolForRace(race), id, `${race}/${id}`);
+			}
+		}
+	});
+
+	// Thinned, not deleted: a league can be set in any era, and deleting them
+	// outright would cost variety it cannot spare.
+	test("thinned rather than removed", () => {
+		// Under the keep rate, and clear of the age band's balding roll.
+		const kept = face({ hair: { id: "high", color: "#272421", flip: false } });
+		applyRealisticFace(kept, { age: 25, race: "black", rand: fixed(0.1) });
+		assert.strictEqual(kept.hair.id, "high");
+
+		const dropped = face({
+			hair: { id: "high", color: "#272421", flip: false },
+		});
+		applyRealisticFace(dropped, { age: 25, race: "black", rand: fixed(0.99) });
+		assert.notStrictEqual(dropped.hair.id, "high");
+	});
+
+	// Unlike HAIR_RARE, the thinning here is not about who can wear these. They
+	// stay ordinary coiled styles, judged on texture exactly like an afro; all
+	// that changes is how OFTEN they turn up.
+	test("they are still ordinary coiled styles, judged on texture", () => {
+		for (const id of HAIR_PERIOD) {
+			assert.isTrue(hairAllowedForRace(id, "black"), id);
+			assert.isTrue(hairAllowedForRace(id, "brown"), id);
+			assert.isFalse(hairAllowedForRace(id, "white"), id);
+		}
+	});
+});
+
+describe("going grey", () => {
+	// The thing a career does to hair that the model used to say nothing about:
+	// a thirty-eight-year-old with the exact black hair he was drafted with is
+	// the clearest tell that a face was drawn once and never touched again.
+	const greyer = (() => {
+		for (let pid = 0; pid < 500; pid++) {
+			if (greys(pid) && greyOnsetAge(pid) <= 30) {
+				return pid;
+			}
+		}
+		throw new Error("no early-greying pid found");
+	})();
+
+	const lightness = (hex: string) =>
+		[1, 3, 5].reduce(
+			(sum, i) => sum + Number.parseInt(hex.slice(i, i + 2), 16),
+			0,
+		) / 3;
+
+	test("nobody greys before his onset age", () => {
+		for (let pid = 0; pid < 200; pid++) {
+			assert.strictEqual(greyAmountForAge(greyOnsetAge(pid), pid), 0);
+			assert.strictEqual(greyAmountForAge(19, pid), 0);
+		}
+	});
+
+	test("plenty of players never grey at all inside a career", () => {
+		let ever = 0;
+		for (let pid = 0; pid < 2000; pid++) {
+			if (greyAmountForAge(38, pid) > 0.05) {
+				ever += 1;
+			}
+		}
+		// Well short of the whole league, and well short of nobody.
+		assert.isAbove(ever, 100);
+		assert.isBelow(ever, 1000);
+	});
+
+	test("it only ever goes one way", () => {
+		let previous = 0;
+		for (let age = 19; age <= 45; age++) {
+			const amount = greyAmountForAge(age, greyer);
+			assert.isAtLeast(amount, previous, `age ${age}`);
+			previous = amount;
+		}
+	});
+
+	// A face rebuilt at an age has to match the same face aged into that age,
+	// or the retroactive league pass and the preseason would disagree about the
+	// same man.
+	test("aging a year at a time lands where building at that age lands", () => {
+		let stepped = "#272421";
+		for (let age = greyOnsetAge(greyer) + 1; age <= 38; age++) {
+			stepped = greyedColor(stepped, GREY_PER_YEAR);
+		}
+		const built = greyedColor("#272421", greyAmountForAge(38, greyer));
+		for (const i of [1, 3, 5]) {
+			const a = Number.parseInt(stepped.slice(i, i + 2), 16);
+			const b = Number.parseInt(built.slice(i, i + 2), 16);
+			assert.isAtMost(Math.abs(a - b), 2, `${stepped} vs ${built}`);
+		}
+	});
+
+	test("greying lightens hair and never darkens it", () => {
+		const dark = "#272421";
+		assert.isAbove(lightness(greyedColor(dark, 0.4)), lightness(dark));
+		assert.strictEqual(greyedColor(dark, 0), dark);
+		assert.strictEqual(greyedColor("not a colour", 0.5), "not a colour");
+	});
+
+	// A son inherits his father's hair colour verbatim, and a grey father would
+	// hand a twenty-year-old his grey.
+	test("un-greying gets back the colour a man started with", () => {
+		for (const base of ["#272421", "#5a3825", "#d7bf91", "#0f0902"]) {
+			for (const amount of [0.1, 0.3, 0.55]) {
+				const back = ungreyedColor(greyedColor(base, amount), amount);
+				for (const i of [1, 3, 5]) {
+					const a = Number.parseInt(base.slice(i, i + 2), 16);
+					const b = Number.parseInt(back.slice(i, i + 2), 16);
+					assert.isAtMost(Math.abs(a - b), 3, `${base} -> ${back}`);
+				}
+			}
+		}
+	});
+
+	test("un-greying nothing is a no-op", () => {
+		assert.strictEqual(ungreyedColor("#272421", 0), "#272421");
+	});
+
+	test("the drift is remembered at a few points, not every season", () => {
+		let steps = 0;
+		for (let age = 19; age <= 45; age++) {
+			if (greyCrossedAStep(age, greyer)) {
+				steps += 1;
+			}
+		}
+		assert.isAtLeast(steps, 1);
+		assert.isAtMost(steps, 3);
+	});
+
+	test("a face built old is already weathered", () => {
+		const f = face();
+		f.hair.color = "#272421";
+		applyRealisticFace(f, { age: 40, pid: greyer, rand: fixed(0.5) });
+		assert.isAbove(lightness(f.hair.color), lightness("#272421"));
+	});
+});
+
+describe("a shaved head", () => {
+	const shaver = (() => {
+		for (let pid = 0; pid < 500; pid++) {
+			if (shavesHead(pid)) {
+				return pid;
+			}
+		}
+		throw new Error("no head-shaving pid found");
+	})();
+
+	test("about one player in ten, and always the same ones", () => {
+		let count = 0;
+		for (let pid = 0; pid < 4000; pid++) {
+			if (shavesHead(pid)) {
+				count += 1;
+			}
+			assert.strictEqual(shavesHead(pid), shavesHead(pid));
+		}
+		assert.closeTo(count / 4000, SHAVES_HEAD_SHARE, 0.03);
+	});
+
+	test("he does it young, and it sticks", () => {
+		const age = shavesHeadAtAge(shaver);
+		assert.isAtLeast(age, 21);
+		assert.isBelow(age, 29);
+
+		const f = face();
+		ageFace(f, age - 1, shaver, fixed(0.99));
+		assert.strictEqual(f.hair.id, "short");
+		ageFace(f, age, shaver, fixed(0.99));
+		assert.strictEqual(f.hair.id, HAIR_BALD);
+		for (let a = age + 1; a <= 40; a++) {
+			ageFace(f, a, shaver, fixed(0.99));
+			assert.strictEqual(f.hair.id, HAIR_BALD);
+		}
+	});
+
+	// Long hair hanging off the back of a head with none on top is the one
+	// combination facesjs will draw and no head has ever worn.
+	test("shaving clears anything hanging off the back of the head", () => {
+		const f = face();
+		f.hairBg.id = "longHair";
+		ageFace(f, shavesHeadAtAge(shaver), shaver, fixed(0.99));
+		assert.strictEqual(f.hairBg.id, "none");
+	});
+
+	test("a shaved scalp gets a shadow, so it reads as shaved and not hairless", () => {
+		const f = face();
+		f.head.shave = "rgba(0,0,0,0)";
+		ageFace(f, shavesHeadAtAge(shaver), shaver, fixed(0.99));
+		assert.notStrictEqual(f.head.shave, "rgba(0,0,0,0)");
+	});
+});
+
+describe("the balding ladder", () => {
+	const proneNoShave = (() => {
+		for (let pid = 0; pid < 500; pid++) {
+			if (baldingProne(pid) && !shavesHead(pid)) {
+				return pid;
+			}
+		}
+		throw new Error("no prone, non-shaving pid found");
+	})();
+
+	test("the voluminous styles are real facesjs hair", () => {
+		for (const id of HAIR_VOLUMINOUS) {
+			assert.include(svgsIndex.hair, id, id);
+		}
+	});
+
+	// Volume goes before the hairline does. Dreads to a horseshoe in one
+	// preseason reads as a glitch, not as aging.
+	test("big hair is cut back before the hairline shows", () => {
+		for (const id of ["afro", "dreads", "longHair", "high"]) {
+			const f = face({ hair: { id, color: "#272421", flip: false } });
+			ageFace(f, 34, proneNoShave, fixed(0.001));
+			assert.notStrictEqual(f.hair.id, HAIR_THINNING, id);
+			assert.notStrictEqual(f.hair.id, HAIR_BALD, id);
+			assert.notStrictEqual(f.hair.id, id, id);
+
+			// And from there it carries on down the ladder.
+			ageFace(f, 35, proneNoShave, fixed(0.001));
+			assert.strictEqual(f.hair.id, HAIR_THINNING, id);
+			ageFace(f, 36, proneNoShave, fixed(0.001));
+			assert.strictEqual(f.hair.id, HAIR_BALD, id);
+		}
+	});
+
+	test("a receding hairline clears the hair behind it too", () => {
+		const f = face();
+		f.hairBg.id = "longHair";
+		ageFace(f, 34, proneNoShave, fixed(0.001));
+		assert.strictEqual(f.hair.id, HAIR_THINNING);
+		assert.strictEqual(f.hairBg.id, "none");
+	});
+});
+
+describe("baldness in families", () => {
+	test("everyone in a family reads the same seed, whoever you ask", () => {
+		const father = 40;
+		const sons = [91, 12, 77];
+		assert.strictEqual(
+			familySeed(
+				father,
+				sons.map((pid) => ({ pid })),
+			),
+			12,
+		);
+		assert.strictEqual(
+			familySeed(91, [{ pid: father }, { pid: 12 }, { pid: 77 }]),
+			12,
+		);
+		assert.strictEqual(familySeed(12, [{ pid: father }]), 12);
+	});
+
+	test("a player with nobody in the league is judged on his own", () => {
+		assert.isUndefined(familySeed(7, []));
+		assert.isUndefined(familySeed(7, undefined));
+		assert.isUndefined(familySeed(undefined, [{ pid: 1 }]));
+		for (let pid = 0; pid < 200; pid++) {
+			assert.strictEqual(baldingProne(pid, pid), baldingProne(pid));
+		}
+	});
+
+	// Heritable, not deterministic: plenty of sons of bald men keep their hair.
+	test("a family that loses its hair passes that on without settling it", () => {
+		let inProne = 0;
+		let inProneTotal = 0;
+		let outProne = 0;
+		let outProneTotal = 0;
+		for (let seed = 0; seed < 60; seed++) {
+			const familyProne = baldingProne(seed, seed);
+			for (let pid = 1000; pid < 1060; pid++) {
+				const prone = baldingProne(pid, seed);
+				if (familyProne) {
+					inProneTotal += 1;
+					if (prone) {
+						inProne += 1;
+					}
+				} else {
+					outProneTotal += 1;
+					if (prone) {
+						outProne += 1;
+					}
+				}
+			}
+		}
+		const inRate = inProne / inProneTotal;
+		const outRate = outProne / outProneTotal;
+		assert.isAbove(inRate, 0.6, `${inRate}`);
+		assert.isBelow(inRate, 0.95, `${inRate}`);
+		assert.isBelow(outRate, 0.3, `${outRate}`);
+		// And the league-wide rate is left where it was.
+		const overall = (inProne + outProne) / (inProneTotal + outProneTotal);
+		assert.closeTo(overall, BALDING_PRONE_SHARE, 0.08);
+	});
+});
+
+describe("filling out", () => {
+	test("nothing happens to a young player, and it only goes one way", () => {
+		assert.strictEqual(fatnessGainByAge(19), 0);
+		assert.strictEqual(fatnessGainByAge(27), 0);
+		assert.isAbove(fatnessGainByAge(38), fatnessGainByAge(30));
+		let previous = 0;
+		for (let age = 19; age <= 45; age++) {
+			const gain = fatnessGainByAge(age);
+			assert.isAtLeast(gain, previous);
+			previous = gain;
+		}
+	});
+
+	test("a career adds weight, but not a comical amount", () => {
+		const f = face();
+		f.fatness = 0.3;
+		for (let age = 20; age <= 38; age++) {
+			ageFace(f, age, 1, fixed(0.99));
+		}
+		assert.isAbove(f.fatness, 0.3);
+		assert.isBelow(f.fatness, 0.55);
+	});
+
+	test("it never goes past what facesjs will draw", () => {
+		const f = face();
+		f.fatness = 0.99;
+		for (let age = 20; age <= 60; age++) {
+			ageFace(f, age, 1, fixed(0.99));
+		}
+		assert.isAtMost(f.fatness, 1);
+	});
+});
+
+describe("relatives keep the family's colours", () => {
+	// facesjs hands a son his father's skin and hair verbatim, and that IS the
+	// resemblance. The per-player colour nudge used to pull them apart again by
+	// a few points every generation - visible side by side on a roster page.
+	test("a son's skin and hair are exactly his father's", () => {
+		resetG();
+		g.setWithoutSavingToDB("realisticFaces", true);
+		for (let i = 0; i < 40; i++) {
+			const father = generateFace({ race: "black", age: 30, pid: i });
+			const son = generateFace({ relative: father, age: 20, pid: 5000 + i });
+			assert.strictEqual(son.body.color, father.body.color);
+			assert.strictEqual(son.hair.color, father.hair.color);
+		}
+	});
+
+	test("a face drawn from scratch still gets colours of its own", () => {
+		resetG();
+		g.setWithoutSavingToDB("realisticFaces", true);
+		const skins = new Set<string>();
+		for (let i = 0; i < 60; i++) {
+			skins.add(generateFace({ race: "black", age: 25, pid: i }).body.color);
+		}
+		// The whole point of the nudge: a league is not three exact colours.
+		assert.isAbove(skins.size, 20);
+	});
+
+	test("a son is not born with his father's beard or hairline", () => {
+		resetG();
+		g.setWithoutSavingToDB("realisticFaces", true);
+		for (let i = 0; i < 60; i++) {
+			const father = generateFace({ race: "white", age: 36, pid: i });
+			const son = generateFace({ relative: father, age: 19, pid: 6000 + i });
+			assert.notStrictEqual(son.hair.id, HAIR_THINNING);
+			assert.strictEqual(son.smileLine.id, "none");
+			assert.strictEqual(son.eyeLine.id, "none");
+		}
+	});
+});
+
+describe("marks a face already carries", () => {
+	// A face built before its player had an id - every generated player, since
+	// the pid does not exist until the row is written - picks up marks from
+	// nobody's style, and used to swap them for its own the first time it aged.
+	test("a line style is never swapped for another", () => {
+		const f = face();
+		f.smileLine.id = "line4";
+		f.eyeLine.id = "line2";
+		applyWrinkles(f, MAX_WRINKLE_LEVEL, 7);
+		assert.strictEqual(f.smileLine.id, "line4");
+		assert.strictEqual(f.eyeLine.id, "line2");
+	});
+
+	test("a mark below the level is still cleared", () => {
+		const f = face();
+		f.smileLine.id = "line4";
+		f.eyeLine.id = "line2";
+		applyWrinkles(f, 0, 7);
+		assert.strictEqual(f.smileLine.id, "none");
+		assert.strictEqual(f.eyeLine.id, "none");
 	});
 });

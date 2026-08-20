@@ -24,7 +24,7 @@ import { applyRealTeamInfo } from "../../../common/applyRealTeamInfo.ts";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { choice, randInt, uniform } from "../../../common/random.ts";
 import { env } from "../../util/env.ts";
-import { ageFace } from "../../util/realisticFaces.ts";
+import { ageFace, familySeed } from "../../util/realisticFaces.ts";
 import { recordAppearance } from "../../../common/playerAppearance.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../../common/sportsbook.ts";
 
@@ -416,7 +416,18 @@ const newPhasePreseason = async (
 					face: helpers.deepCopy(p.face),
 					imgURL: p.imgURL,
 				};
-				if (ageFace(p.face, newSeason - p.born.year, p.pid)) {
+				// Baldness runs in families, so a player with a father, a son or a
+				// brother in the league is judged against the family's seed rather
+				// than his own alone.
+				if (
+					ageFace(
+						p.face,
+						newSeason - p.born.year,
+						p.pid,
+						undefined,
+						familySeed(p.pid, p.relatives),
+					)
+				) {
 					// Keep what he used to look like, so a past box score shows the
 					// rookie rather than today's receding hairline. Written only on
 					// the seasons that actually changed - see playerAppearance.ts.

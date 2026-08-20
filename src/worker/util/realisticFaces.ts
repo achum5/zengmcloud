@@ -23,10 +23,19 @@
 // hair grows in and thickens, hairlines recede - so a rookie looks like a
 // rookie and a 33-year-old looks like a veteran.
 //
-// Aging is deliberately MONOTONIC and only fires at three ages. Re-rolling
-// every preseason would have players growing and shaving a beard at random
-// year after year, and would rewrite a face on every player every season -
-// which in a synced league is real traffic for no benefit.
+// Aging is deliberately MONOTONIC. Re-rolling every preseason would have
+// players growing and shaving a beard at random year after year, and would
+// rewrite a face on every player every season - which in a synced league is
+// real traffic for no benefit.
+//
+// What a career actually does to a head, and what is modelled here:
+//   - facial hair arrives and thickens          (never thins)
+//   - hair greys                                (never darkens)
+//   - hairlines recede                          (never grow back)
+//   - lines set in                              (never smooth out)
+//   - the man fills out                         (never slims)
+// Every one of those is one-way, which is what lets a face be stored once and
+// replayed from any age without ever contradicting itself.
 
 import type { FaceConfig } from "facesjs";
 import type { Race } from "../../common/types.ts";
@@ -230,6 +239,52 @@ export const HAIR_TEXTURES = {
 	],
 } as const;
 
+// HAIR THAT HAS TO GO SOMEWHERE BEFORE IT GOES AWAY.
+//
+// Losing your hair does not turn an afro into a horseshoe overnight. What
+// happens first is that the hair gets CUT - the volume goes long before the
+// hairline does - and only then does the hairline itself show. Sending a
+// player straight from dreads to `short-bald` in one preseason reads as a
+// glitch, not as aging, because no real head has ever done that.
+//
+// So these styles take an extra rung on the way down: cut back to something
+// short first, and only from there to a receding hairline. Everything not
+// listed is already short enough to skip that rung.
+export const HAIR_VOLUMINOUS: readonly string[] = [
+	"afro",
+	"afro2",
+	"blowoutFade",
+	"cornrows",
+	"curly3",
+	"dreads",
+	"emo",
+	"faux-hawk",
+	"hair",
+	"high",
+	"juice",
+	"longHair",
+	"messy",
+	"shaggy1",
+	"shaggy2",
+	"spike",
+	"spike2",
+	"spike4",
+	"tall-fade",
+];
+
+const VOLUMINOUS_HAIR = new Set<string>(HAIR_VOLUMINOUS);
+
+// The rung below. All universal styles, so this is safe whatever hair the
+// player has - a cut is a cut.
+const SHORT_CUTS: readonly string[] = [
+	"short",
+	"short2",
+	"short3",
+	"crop",
+	"crop-fade",
+	"short-fade",
+];
+
 // NOT WRONG FOR ANYONE'S HAIR - WRONG FOR A BASKETBALL LEAGUE.
 //
 // Texture is one axis; era is another. These four grow on plenty of real
@@ -249,10 +304,24 @@ export const HAIR_RARE: readonly string[] = [
 	"shaggy2",
 ];
 
+// PERIOD CUTS. Same problem as the period facial hair, on the other end of the
+// head: `high` and `juice` are hi-top fades - a real style, worn by real
+// players, and essentially extinct on a modern floor. Uniform selection puts
+// one on about one Black player in twelve, which is how a draft class turns up
+// with three of them.
+//
+// Thinned rather than deleted, and NOT restricted by ancestry the way HAIR_RARE
+// is: there is nothing implausible about who wears these, only about how many
+// and when. At this rate they turn up as a throwback rather than as a trend,
+// which is also right for a league that can be set in any era.
+export const HAIR_PERIOD: readonly string[] = ["high", "juice"];
+
 const RARE_HAIR = new Set<string>(HAIR_RARE);
+const PERIOD_HAIR = new Set<string>(HAIR_PERIOD);
 
 // Share of the natural rate these keep.
 const RARE_HAIR_KEEP = 0.15;
+const PERIOD_HAIR_KEEP = 0.25;
 
 const STRAIGHT_HAIR = new Set<string>(HAIR_TEXTURES.straight);
 const COILED_HAIR = new Set<string>(HAIR_TEXTURES.coiled);
@@ -300,7 +369,11 @@ export const hairPoolForRace = (race: Race): readonly string[] => {
 			: []),
 	];
 	return pool.filter(
-		(id) => id !== HAIR_THINNING && id !== HAIR_BALD && !RARE_HAIR.has(id),
+		(id) =>
+			id !== HAIR_THINNING &&
+			id !== HAIR_BALD &&
+			!RARE_HAIR.has(id) &&
+			!PERIOD_HAIR.has(id),
 	);
 };
 
@@ -376,14 +449,110 @@ const hashPid = (pid: number, salt: number): number => {
 // Roughly the share of men who show real hairline loss over a playing career.
 export const BALDING_PRONE_SHARE = 0.4;
 
+// BALDNESS RUNS IN FAMILIES, which is the one thing everybody knows about it
+// and the one thing a per-player hash cannot express. A son whose father lost
+// his hair is far more likely to lose his own, and in a league where fathers,
+// sons and brothers are all walking around at once, getting that wrong is
+// visible: the Jr. with a full head next to his horseshoe-haired old man.
+//
+// A family's disposition is read off the family's own seed, and it moves the
+// player's threshold rather than deciding for him - heritable, not
+// deterministic, because plenty of sons of bald men keep their hair. The two
+// shares are chosen so the LEAGUE-WIDE rate is unchanged:
+//   0.4 x 0.75 + 0.6 x 0.15 = 0.39
+export const BALDING_PRONE_SHARE_IN_FAMILY = 0.75;
+export const BALDING_PRONE_SHARE_OUT_OF_FAMILY = 0.15;
+
 // And the share who stay clean-shaven whatever their age.
 export const NEVER_GROWS_FACIAL_HAIR_SHARE = 0.2;
 
-export const baldingProne = (pid: number | undefined): boolean =>
-	pid !== undefined && hashPid(pid, 1) < BALDING_PRONE_SHARE;
+export const baldingProne = (
+	pid: number | undefined,
+	// The family's shared seed, when this player has relatives in the league.
+	familyPid?: number,
+): boolean => {
+	if (pid === undefined) {
+		return false;
+	}
+	if (familyPid === undefined || familyPid === pid) {
+		return hashPid(pid, 1) < BALDING_PRONE_SHARE;
+	}
+	const familyProne = hashPid(familyPid, 1) < BALDING_PRONE_SHARE;
+	return (
+		hashPid(pid, 1) <
+		(familyProne
+			? BALDING_PRONE_SHARE_IN_FAMILY
+			: BALDING_PRONE_SHARE_OUT_OF_FAMILY)
+	);
+};
+
+// One seed per family, so it does not matter whether you ask the father, the
+// son or the brother - they all get the same answer about the family. The
+// lowest id in the group is the only choice that is stable no matter who you
+// start from.
+export const familySeed = (
+	pid: number | undefined,
+	relatives: readonly { pid: number }[] | undefined,
+): number | undefined => {
+	if (
+		pid === undefined ||
+		!Array.isArray(relatives) ||
+		relatives.length === 0
+	) {
+		return undefined;
+	}
+	let seed = pid;
+	for (const relative of relatives) {
+		if (typeof relative?.pid === "number" && relative.pid < seed) {
+			seed = relative.pid;
+		}
+	}
+	return seed;
+};
 
 export const growsFacialHair = (pid: number | undefined): boolean =>
 	pid === undefined || hashPid(pid, 2) >= NEVER_GROWS_FACIAL_HAIR_SHARE;
+
+// A SHAVED HEAD IS A HAIRSTYLE, NOT A DIAGNOSIS.
+//
+// The age rules used to treat `bald` purely as the end state of hair loss, and
+// forced it off anyone too young to have lost any - so no player in the league
+// could ever turn up with his head shaved before about 27. In basketball that
+// is backwards: the clean shave is one of the sport's signature looks and it
+// is worn by choice, at every age, by men with perfectly good hairlines.
+//
+// So it gets its own trait. A player who shaves does it at a fixed age in his
+// early twenties and keeps it, which is both how it usually goes and what
+// stops a head flickering between shaved and not from season to season.
+export const SHAVES_HEAD_SHARE = 0.1;
+
+export const shavesHead = (pid: number | undefined): boolean =>
+	pid !== undefined && hashPid(pid, 3) < SHAVES_HEAD_SHARE;
+
+export const shavesHeadAtAge = (pid: number | undefined): number =>
+	21 + Math.floor(hashPid(pid ?? 0, 10) * 8);
+
+// The shadow a shaved scalp leaves. facesjs generates this itself on a quarter
+// of faces, anywhere in 0 to 0.2; a head that has just been shaved and has
+// none reads as hairless rather than shaved, so it gets one.
+export const SHAVED_SCALP_SHADOW = 0.15;
+
+const shaveAlpha = (shave: string | undefined): number => {
+	const match = /rgba\((?:\s*\d+\s*,){3}\s*([\d.]+)\s*\)/.exec(shave ?? "");
+	const value = match ? Number.parseFloat(match[1]!) : 0;
+	return Number.isFinite(value) ? value : 0;
+};
+
+// Shave the head: clear anything that was hanging off the back of it, and give
+// the scalp a shadow if it has none.
+const shaveScalp = (face: FaceConfig) => {
+	if (face.hairBg) {
+		face.hairBg.id = "none";
+	}
+	if (face.head && shaveAlpha(face.head.shave) < 0.05) {
+		face.head.shave = `rgba(0,0,0,${SHAVED_SCALP_SHADOW})`;
+	}
+};
 
 export const bandForAge = (age: number): AgeBand => {
 	let match = FACE_AGE_BANDS[0]!;
@@ -463,6 +632,118 @@ export const jitterColor = (
 		hexToRgb(hex).map((v) => v * factor) as [number, number, number],
 	);
 };
+
+// GOING GREY, which is the most visible thing age does to a head of hair and
+// the one the model had nothing at all to say about. A thirty-eight-year-old
+// with the exact black hair he was drafted with is the single clearest tell
+// that a face was drawn once and never touched again.
+//
+// facesjs draws facial hair in hair.color, so one dial greys the beard and the
+// scalp together. That is the wrong ORDER for most men - beards usually go
+// first - but the library offers no second colour to move, and greying both is
+// far closer to life than greying neither.
+//
+// Warm rather than neutral: pure grey on a cartoon reads as a colour error.
+const GREY = "#b8b2ac";
+
+// Per season, as a share of the distance still to go. Compounding this way is
+// what makes it a drift rather than a switch: nobody greys in one preseason,
+// and the same rule run n times lands at 1 - (1 - r)^n whether it is applied a
+// year at a time or all at once, which is what lets a face be rebuilt from any
+// age and come out the same.
+export const GREY_PER_YEAR = 0.055;
+
+// Not everyone does, inside a playing career. Plenty of men are still jet
+// black at forty, and without this the whole league salt-and-peppers together.
+export const GREYS_SHARE = 0.4;
+
+export const greys = (pid: number | undefined): boolean =>
+	pid !== undefined && hashPid(pid, 8) < GREYS_SHARE;
+
+// When it starts, which is the other half of the spread - one player is
+// flecked at thirty, another is untouched at thirty-eight.
+export const greyOnsetAge = (pid: number | undefined): number =>
+	28 + Math.floor(hashPid(pid ?? 0, 9) * 13);
+
+// How far along a player of this age should be, for a face built at an age
+// rather than aged into one.
+export const greyAmountForAge = (
+	age: number,
+	pid: number | undefined,
+): number => {
+	if (!greys(pid)) {
+		return 0;
+	}
+	const years = Math.max(0, Math.floor(age) - greyOnsetAge(pid));
+	return 1 - (1 - GREY_PER_YEAR) ** years;
+};
+
+export const greyedColor = (hex: string, amount: number): string => {
+	if (!/^#[\da-f]{6}$/i.test(hex) || amount <= 0) {
+		return hex;
+	}
+	const t = Math.min(1, amount);
+	const target = hexToRgb(GREY);
+	return rgbToHex(
+		hexToRgb(hex).map((v, i) => v + (target[i]! - v) * t) as [
+			number,
+			number,
+			number,
+		],
+	);
+};
+
+// GREY IS NOT HEREDITARY, and a relative's face is a copy of a relative's face.
+// facesjs hands a son his father's hair colour verbatim - which is what you
+// want, right up until the father is thirty-six and half grey, at which point
+// the twenty-year-old walks into the draft with his father's grey.
+//
+// The lerp is invertible, so the father's own grey can simply be taken back
+// out: whatever colour he started his career with is what the son inherits.
+// Clamped because at the far end the inverse is numerically hopeless, and a
+// fully grey father is not a useful source of hair colour anyway.
+const MAX_UNGREY = 0.9;
+
+export const ungreyedColor = (hex: string, amount: number): string => {
+	if (!/^#[\da-f]{6}$/i.test(hex) || amount <= 0) {
+		return hex;
+	}
+	const t = Math.min(MAX_UNGREY, amount);
+	const target = hexToRgb(GREY);
+	return rgbToHex(
+		hexToRgb(hex).map((v, i) => (v - target[i]! * t) / (1 - t)) as [
+			number,
+			number,
+			number,
+		],
+	);
+};
+
+// Greying is continuous, so on its own it would never be worth a history
+// entry - and a career would then be recorded as one jump from black to grey
+// whenever some unrelated feature happened to change. These are the points
+// where the drift has become visible enough to be worth remembering.
+const GREY_HISTORY_STEPS = [0.15, 0.3, 0.5];
+
+export const greyCrossedAStep = (
+	age: number,
+	pid: number | undefined,
+): boolean => {
+	const before = greyAmountForAge(age - 1, pid);
+	const after = greyAmountForAge(age, pid);
+	return GREY_HISTORY_STEPS.some((step) => before < step && after >= step);
+};
+
+// FILLING OUT. Nobody finishes a career at the weight he started it, and
+// facesjs draws fatness into the jaw and neck. Small and one-way: over the
+// back half of a career it is the difference between a lean twenty-two and a
+// heavier thirty-six, and in any single season it is invisible.
+const FATNESS_START_AGE = 27;
+const FATNESS_PER_YEAR = 0.012;
+const FATNESS_MAX = 1;
+
+export const fatnessGainByAge = (age: number): number =>
+	Math.max(0, Math.floor(age) - FATNESS_START_AGE) * FATNESS_PER_YEAR;
 
 // WRINKLES, WHICH ARE THE OTHER HALF OF LOOKING OLDER.
 //
@@ -595,14 +876,27 @@ export const applyWrinkles = (
 	const capped = Math.max(0, Math.min(MAX_WRINKLE_LEVEL, level));
 	const styles = lineStylesFor(pid);
 
-	face.smileLine.id = capped >= 1 ? styles.smile : "none";
-	face.eyeLine.id = capped >= 2 ? styles.eye : "none";
+	// A mark the face ALREADY carries is kept exactly as it is. The rule is
+	// that a feature never switches style, and reading the pid style over the
+	// top would break it in the one case that matters: a face built before its
+	// player had an id (a generated player has no pid until the row is written)
+	// picks up marks from nobody's style, and would then swap them for its own
+	// the first time it aged. Keeping what is there means the swap can never
+	// happen, whoever drew the mark.
+	const keep = (
+		current: string | undefined,
+		wanted: boolean,
+		fallback: string,
+	) => (!wanted ? "none" : current && current !== "none" ? current : fallback);
+
+	face.smileLine.id = keep(face.smileLine?.id, capped >= 1, styles.smile);
+	face.eyeLine.id = keep(face.eyeLine?.id, capped >= 2, styles.eye);
 
 	// Brow lines share a slot with blush, freckles and chin marks, which are not
 	// age. A player who has one keeps it and ages through his eyes and smile.
 	const misc = face.miscLine?.id ?? "none";
 	if (misc === "none" || (FOREHEAD_LINES as readonly string[]).includes(misc)) {
-		face.miscLine.id = capped >= 3 ? styles.forehead : "none";
+		face.miscLine.id = keep(misc, capped >= 3, styles.forehead);
 	}
 
 	if (size !== undefined) {
@@ -677,6 +971,7 @@ export const applyFaceAgingHistory = ({
 	rookieAge,
 	currentAge,
 	pid,
+	familyPid,
 	race,
 	rand = Math.random,
 	onChange,
@@ -685,6 +980,7 @@ export const applyFaceAgingHistory = ({
 	rookieAge: number;
 	currentAge: number;
 	pid?: number;
+	familyPid?: number;
 	race?: Race;
 	rand?: () => number;
 	onChange?: (age: number) => void;
@@ -693,6 +989,10 @@ export const applyFaceAgingHistory = ({
 		age: Math.min(rookieAge, currentAge),
 		race: race ?? inferRaceFromFace(face),
 		pid,
+		// This man already has his colours. Replaying his career is not an
+		// occasion to give him new ones, and doing it on every run would move
+		// him a little further from himself each time.
+		keepColors: true,
 		rand,
 	});
 
@@ -701,7 +1001,7 @@ export const applyFaceAgingHistory = ({
 		age <= currentAge;
 		age++
 	) {
-		if (ageFace(face, age, pid, rand)) {
+		if (ageFace(face, age, pid, rand, familyPid)) {
 			onChange?.(age);
 		}
 	}
@@ -715,8 +1015,27 @@ export const applyRealisticFace = (
 		age,
 		race,
 		pid,
+		// Leave the skin and hair colour exactly as they arrived. Two callers
+		// need this and both for the same reason - the colours on the face are
+		// already the right ones, and a nudge would move them off:
+		//
+		//  - A RELATIVE. facesjs hands a son his father's skin and hair verbatim,
+		//    and that IS the family resemblance. Nudging it pulls the two apart
+		//    by a few points every generation, which is plain to see side by side
+		//    on a roster page.
+		//  - A CAREER REPLAY. Aging an existing league starts from the face the
+		//    player already has, so nudging on every pass drifts him further from
+		//    himself each time it is run - and would drift a father and son
+		//    apart independently.
+		keepColors = false,
 		rand = Math.random,
-	}: { age: number; race?: Race; pid?: number; rand?: () => number },
+	}: {
+		age: number;
+		race?: Race;
+		pid?: number;
+		keepColors?: boolean;
+		rand?: () => number;
+	},
 ) => {
 	const band = bandForAge(age);
 
@@ -727,22 +1046,31 @@ export const applyRealisticFace = (
 	// short-circuits, so an ordinary style consumes no randomness.
 	if (race !== undefined) {
 		const implausible = !hairAllowedForRace(face.hair.id, race);
-		const overexposed = RARE_HAIR.has(face.hair.id) && rand() >= RARE_HAIR_KEEP;
+		const overexposed =
+			(RARE_HAIR.has(face.hair.id) && rand() >= RARE_HAIR_KEEP) ||
+			(PERIOD_HAIR.has(face.hair.id) && rand() >= PERIOD_HAIR_KEEP);
 		if (implausible || overexposed) {
 			face.hair.id = pickFrom(hairPoolForRace(race), rand);
 		}
 	}
 
-	// Hairline. Young players are never balding; older ones may be, and a face
-	// that already lost its hair keeps it lost.
-	const alreadyThin =
-		face.hair.id === HAIR_THINNING || face.hair.id === HAIR_BALD;
+	// Hairline. A RECEDING one is age-coded, so a young player never has it and
+	// a face that already lost the hairline keeps it lost. A SHAVED head is
+	// not: it is a haircut, worn at every age, so it is left alone whoever is
+	// wearing it (see shavesHead).
+	const shaved = face.hair.id === HAIR_BALD;
+	const receding = face.hair.id === HAIR_THINNING;
 	if (band.balding === 0) {
-		if (alreadyThin) {
+		if (receding) {
 			face.hair.id = "short";
 		}
-	} else if (!alreadyThin && rand() < band.balding) {
+	} else if (!receding && !shaved && rand() < band.balding) {
 		face.hair.id = rand() < 0.5 ? HAIR_THINNING : HAIR_BALD;
+	}
+	if (face.hair.id === HAIR_THINNING || face.hair.id === HAIR_BALD) {
+		// Long hair hanging off the back of a head that has none on top is the
+		// one combination facesjs will happily draw and no head has ever worn.
+		shaveScalp(face);
 	}
 
 	if (face.glasses.id !== "none" && rand() >= band.glasses) {
@@ -760,8 +1088,22 @@ export const applyRealisticFace = (
 		smileSizeForAge(age),
 	);
 
-	face.body.color = jitterColor(face.body.color, rand, SKIN_JITTER);
-	face.hair.color = jitterColor(face.hair.color, rand, HAIR_JITTER);
+	if (!keepColors) {
+		face.body.color = jitterColor(face.body.color, rand, SKIN_JITTER);
+		face.hair.color = jitterColor(face.hair.color, rand, HAIR_JITTER);
+	}
+
+	// Whatever grey the years before this one would have put there. A face
+	// built at 34 has to arrive already weathered; one built at 19 and aged
+	// forward gets there a season at a time, and the two agree because both
+	// are the same compounding rate.
+	face.hair.color = greyedColor(face.hair.color, greyAmountForAge(age, pid));
+	if (typeof face.fatness === "number") {
+		face.fatness = Math.min(
+			FATNESS_MAX,
+			Math.round((face.fatness + fatnessGainByAge(age)) * 100) / 100,
+		);
+	}
 };
 
 // One year older, at one of the threshold ages: grow into the look rather than
@@ -772,6 +1114,8 @@ export const ageFace = (
 	age: number,
 	pid?: number,
 	rand: () => number = Math.random,
+	// The family's shared seed, so baldness runs in one - see baldingProne.
+	familyPid?: number,
 ): boolean => {
 	const band = bandForAge(age);
 	let changed = false;
@@ -833,19 +1177,70 @@ export const ageFace = (
 			) / 100;
 	}
 
+	// THE HAIR HE CHOSE. A player who shaves his head does it once, in his
+	// early twenties, and that is that - it is a haircut, not a symptom, so it
+	// does not wait for a balding roll and does not need him to be prone to
+	// anything. Skipped if the hairline is already going, because from there
+	// the ladder below is already headed to the same place.
+	if (
+		shavesHead(pid) &&
+		age >= shavesHeadAtAge(pid) &&
+		face.hair.id !== HAIR_BALD &&
+		face.hair.id !== HAIR_THINNING
+	) {
+		face.hair.id = HAIR_BALD;
+		shaveScalp(face);
+		changed = true;
+	}
+
 	// Hairlines only ever go one way, and only for players who were ever going
 	// to lose it. Everyone else keeps what they were drafted with, at 25 and at
 	// 38 alike.
-	// Losing it entirely is rarer than starting to lose it, so a man does not
-	// go from a full head to bald in two seasons - the jump that reads as a
-	// glitch rather than as aging.
+	//
+	// Three rungs, not one. Volume goes before the hairline does - a man cuts
+	// an afro or a mop back to something short well before anyone can see the
+	// hairline behind it - and losing it entirely is rarer than starting to
+	// lose it. Straight from dreads to a horseshoe in a single preseason is
+	// the jump that reads as a glitch rather than as aging.
 	const baldingRate =
 		face.hair.id === HAIR_THINNING
 			? band.baldingPerYear * FULLY_BALD_FACTOR
 			: band.baldingPerYear;
-	if (baldingProne(pid) && face.hair.id !== HAIR_BALD && rand() < baldingRate) {
-		face.hair.id = face.hair.id === HAIR_THINNING ? HAIR_BALD : HAIR_THINNING;
+	if (
+		baldingProne(pid, familyPid) &&
+		face.hair.id !== HAIR_BALD &&
+		rand() < baldingRate
+	) {
+		if (VOLUMINOUS_HAIR.has(face.hair.id)) {
+			face.hair.id = pickFrom(SHORT_CUTS, rand);
+		} else if (face.hair.id !== HAIR_THINNING) {
+			face.hair.id = HAIR_THINNING;
+		} else {
+			face.hair.id = HAIR_BALD;
+		}
+		if (face.hair.id === HAIR_THINNING || face.hair.id === HAIR_BALD) {
+			shaveScalp(face);
+		}
 		changed = true;
+	}
+
+	// GREY. Continuous like the folds, and for the same reason: a season moves
+	// it a few percent, so snapshotting every one would store twenty
+	// near-identical faces to capture something only visible across a decade.
+	// The difference is that grey is the thing a decade is MOST visible in, so
+	// crossing a step gets remembered even though the drift itself does not.
+	if (greys(pid) && age > greyOnsetAge(pid)) {
+		face.hair.color = greyedColor(face.hair.color, GREY_PER_YEAR);
+		if (greyCrossedAStep(age, pid)) {
+			changed = true;
+		}
+	}
+
+	// Filling out, also continuous, also never recorded on its own.
+	if (typeof face.fatness === "number" && age > FATNESS_START_AGE) {
+		face.fatness =
+			Math.round(Math.min(FATNESS_MAX, face.fatness + FATNESS_PER_YEAR) * 100) /
+			100;
 	}
 
 	return changed;

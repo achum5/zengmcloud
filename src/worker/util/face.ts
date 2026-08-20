@@ -5,7 +5,7 @@ import { DEFAULT_JERSEY } from "../../common/constants.ts";
 import g from "./g.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
-import { applyRealisticFace } from "./realisticFaces.ts";
+import { applyRealisticFace, inferRaceFromFace } from "./realisticFaces.ts";
 
 export const generateFace = (
 	options:
@@ -50,6 +50,25 @@ export const generateFace = (
 
 	const { age, pid, ...faceOptions } = options;
 
+	// A relative's face is DEEP-COPIED from the player he is related to, and the
+	// parts facesjs leaves alone are the whole point: same skin, same hair
+	// colour, three quarters of the same features. Two things have to change
+	// downstream because of that.
+	//
+	// The first is race. facesjs works out a relative's race by matching his
+	// skin colour against its own palette, exactly - and the per-player colour
+	// nudge below moves every face off that palette, so for any player in a
+	// realistic-faces league the match fails and the son comes back with hair
+	// drawn from a randomly-raced face. Reading the race back off the father's
+	// skin and handing it to the age pass fixes the hair without handing it to
+	// facesjs, which would make it regenerate the colours and lose the family.
+	//
+	// The second is the colour nudge itself: see `keepColors` below.
+	const inherited = faceOptions.relative !== undefined;
+	const race =
+		options.race ??
+		(inherited ? inferRaceFromFace(faceOptions.relative!) : undefined);
+
 	let face = generate(overrides, {
 		gender,
 		...faceOptions,
@@ -74,6 +93,23 @@ export const generateFace = (
 		});
 	}
 
+	// Put the family's colours back. facesjs re-rolls skin and hair from the
+	// palette whenever it can work out the relative's race, and whether it can
+	// depends on whether the per-player nudge happened to round that particular
+	// face onto an exact palette value - so a son inherited his father's skin
+	// most of the time and a stranger's the rest of it. The colours a son gets
+	// from his father ARE the resemblance; they are not left to a coin toss
+	// inside the library.
+	const relative = faceOptions.relative;
+	if (relative) {
+		if (relative.body?.color) {
+			face.body.color = relative.body.color;
+		}
+		if (relative.hair?.color) {
+			face.hair.color = relative.hair.color;
+		}
+	}
+
 	// Age-aware features, style groups and per-player colors. Basketball only:
 	// the style groups were classified by eye against a basketball league, and
 	// the other sports cover their faces with helmets and hats anyway.
@@ -84,7 +120,12 @@ export const generateFace = (
 		: defaultGameAttributes.realisticFaces;
 
 	if (isSport("basketball") && realisticFaces) {
-		applyRealisticFace(face, { age: age ?? 25, race: options.race, pid });
+		applyRealisticFace(face, {
+			age: age ?? 25,
+			race,
+			pid,
+			keepColors: inherited,
+		});
 	}
 
 	return face;

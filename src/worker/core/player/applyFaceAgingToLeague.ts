@@ -15,6 +15,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import {
 	applyFaceAgingHistory,
+	familySeed,
 	inferRaceFromFace,
 } from "../../util/realisticFaces.ts";
 import { recordAppearance } from "../../../common/playerAppearance.ts";
@@ -89,6 +90,7 @@ export const applyFaceAgingToLeague = async (
 			rookieAge,
 			currentAge,
 			pid: p.pid,
+			familyPid: familySeed(p.pid, p.relatives),
 			race: inferRaceFromFace(p.face),
 			onChange: (age) => {
 				changes.push({ age, face: helpers.deepCopy(p.face) });

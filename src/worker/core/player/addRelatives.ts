@@ -13,6 +13,7 @@ import {
 	toRoman,
 } from "../../util/romanNumerals.ts";
 import { generateFace } from "../../util/face.ts";
+import { greyAmountForAge, ungreyedColor } from "../../util/realisticFaces.ts";
 import { randInt, choice } from "../../../common/random.ts";
 
 const parseLastName = (lastName: string): [string, number | undefined] => {
@@ -143,8 +144,30 @@ const makeSimilar = async (existingRelative: Player, newRelative: Player) => {
 	}
 
 	if (!existingRelative.imgURL) {
+		// Hair colour is inherited verbatim, so a father who has gone grey would
+		// hand his grey to a twenty-year-old. Take his own years back out first:
+		// what the son inherits is the colour the man had when HE came into the
+		// league, which is what a son would actually have.
+		const relative = helpers.deepCopy(existingRelative.face);
+		if (relative?.hair?.color) {
+			relative.hair.color = ungreyedColor(
+				relative.hair.color,
+				greyAmountForAge(
+					g.get("season") - existingRelative.born.year,
+					existingRelative.pid,
+				),
+			);
+		}
+
+		// His own age and his own id, not the defaults. A son is created as a
+		// draft prospect, and a face built at the fallback age of 25 gives a
+		// nineteen-year-old a mid-twenties beard and a mid-twenties hairline -
+		// undoing, for exactly the players you look at most closely, the thing
+		// age-aware faces are for.
 		newRelative.face = generateFace({
-			relative: existingRelative.face,
+			relative,
+			age: g.get("season") - newRelative.born.year,
+			pid: newRelative.pid,
 		});
 	}
 };
@@ -160,7 +183,11 @@ const applyNewCountry = async (p: Player, relative: Player) => {
 		p.firstName = firstName;
 
 		// Generate new name and face
-		p.face = generateFace({ race });
+		p.face = generateFace({
+			race,
+			age: g.get("season") - p.born.year,
+			pid: p.pid,
+		});
 	}
 
 	// Make them the same state/province, if USA/Canada
