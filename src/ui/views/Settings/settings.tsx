@@ -1070,7 +1070,7 @@ export const settings: Setting[] = (
 			godModeRequired: "always",
 			type: "bool",
 			description:
-				"AI teams plan free agency around what their franchise is actually trying to do: they weigh fit and age instead of always chasing the highest-rated player, hold cap space open for a marquee free agent, trade salary away to make room for one, and let expensive veterans walk when they are rebuilding. Turn this off for vanilla behavior, where each team simply signs the best free agent it can afford.",
+				"AI teams run every roster decision off what their franchise is actually trying to do, instead of chasing the highest-rated player available. In free agency they weigh fit and age, hold cap space open for a marquee signing, trade salary away to make room, and let expensive veterans walk when rebuilding. On draft night a rebuilding team takes the highest ceiling in the room while a contender takes someone who can play now, and neither drafts a fourth center. And when a roster has to get down to the limit, a rebuilding team lets the veteran go rather than the 20-year-old. Turn this off for vanilla behavior, where every team simply takes the best player it can.",
 		},
 		{
 			category: "Events",

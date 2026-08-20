@@ -7,8 +7,22 @@ import type { Player } from "../../../common/types.ts";
 import { KEY_POSITIONS_NEEDED } from "../freeAgents/getBest.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
+import { cutOrder } from "./rosterCuts.ts";
+import {
+	getLeagueTradeContext,
+	getTradePosture,
+	type TradePosture,
+} from "../trade/tradePosture.ts";
 
-export const dropPlayers = async (players: Player[], numToDrop: number) => {
+export const dropPlayers = async (
+	players: Player[],
+	numToDrop: number,
+	// What the franchise is trying to do, when it is known. Decides the ORDER
+	// players are let go in - see team/rosterCuts.ts. Absent (an unsmart league,
+	// or a caller with no posture in hand) keeps the old lowest-value-first
+	// ordering exactly.
+	tier?: TradePosture["tier"],
+) => {
 	// Automatically drop lowest value players until we reach g.get("maxRosterSize")
 
 	// Only drop player from a position there is an excess of (no dropping your only kicker)
@@ -64,7 +78,20 @@ export const dropPlayers = async (players: Player[], numToDrop: number) => {
 		}
 	}
 
-	players.sort((a, b) => a.value - b.value); // Lowest first
+	// First to be let go, first. Anchored on value either way; the posture only
+	// decides between comparable players - see team/rosterCuts.ts for why the
+	// old raw-value ordering cut a rebuilding team's youngest player.
+	const ordered = cutOrder(
+		players.map((p) => ({
+			pid: p.pid,
+			value: p.value,
+			age: g.get("season") - p.born.year,
+			pos: last(p.ratings).pos,
+		})),
+		tier,
+	);
+	const byPid = new Map(players.map((p) => [p.pid, p]));
+	players = ordered.map((o) => byPid.get(o.pid)!).filter(Boolean);
 
 	const releasedPIDs = [];
 	for (const p of players) {
@@ -126,6 +153,35 @@ export const dropPlayers = async (players: Player[], numToDrop: number) => {
 const checkRosterSizes = async (
 	userOrOther: "user" | "other",
 ): Promise<string | undefined> => {
+	// Built at most once, and only for a team that is actually over the limit -
+	// the context walks every player in the league, so a league where nobody
+	// needs cutting pays nothing for this.
+	const smart = g.get("smartAiFrontOffice");
+	let leagueContext:
+		| Awaited<ReturnType<typeof getLeagueTradeContext>>
+		| undefined;
+	const tiers = new Map<number, TradePosture["tier"] | undefined>();
+	const tierFor = async (tid: number) => {
+		if (!smart) {
+			return undefined;
+		}
+		if (tiers.has(tid)) {
+			return tiers.get(tid);
+		}
+		let tier: TradePosture["tier"] | undefined;
+		try {
+			leagueContext ??= await getLeagueTradeContext();
+			tier = (await getTradePosture(tid, leagueContext)).tier;
+		} catch (error) {
+			// A roster that has to get legal is not the place to fail; without a
+			// posture the ordering is the one it always was.
+			console.error("Failed to read a posture for roster cuts", error);
+			tier = undefined;
+		}
+		tiers.set(tid, tier);
+		return tier;
+	};
+
 	const minFreeAgents: Player[] = [];
 	let userTeamSizeError: string | undefined;
 
@@ -156,6 +212,7 @@ const checkRosterSizes = async (
 				const releasedPIDsTemp = await dropPlayers(
 					players,
 					numPlayersOnRoster - g.get("maxRosterSize"),
+					await tierFor(tid),
 				);
 				releasedPIDs.push(...releasedPIDsTemp);
 			}

@@ -12,6 +12,14 @@ import type {
 import { player, team } from "../index.ts";
 import { last } from "../../../common/utils.ts";
 import { choice } from "../../../common/random.ts";
+import { scoreProspect } from "./draftBoard.ts";
+import {
+	getLeagueTradeContext,
+	getTradePosture,
+	posBucket,
+	type PosBucket,
+	type TradePosture,
+} from "../trade/tradePosture.ts";
 
 export const getTeamOvrDiffs = (
 	teamPlayers: PlayerWithoutKey[],
@@ -114,6 +122,47 @@ const runPicks = async (
 	}
 	playersAll.sort((a, b) => b.value - a.value);
 
+	// EACH TEAM'S OWN BOARD.
+	//
+	// Only for the real draft: a fantasy or expansion draft is a redistribution
+	// of finished players, where "what is this franchise building toward" is
+	// either meaningless or already answered by the protection lists.
+	//
+	// The league context is read once and each team's posture at most once - both
+	// walk every player in the league, so doing it per pick would turn a sixty-
+	// pick draft into sixty full scans. What changes between a team's picks is
+	// what IT has taken, which draftedByTid tracks instead.
+	const season = g.get("season");
+	const smart =
+		g.get("smartAiFrontOffice") &&
+		g.get("phase") !== PHASE.FANTASY_DRAFT &&
+		expansionDraft.phase !== "draft";
+	let leagueContext:
+		| Awaited<ReturnType<typeof getLeagueTradeContext>>
+		| undefined;
+	const postures = new Map<number, TradePosture | undefined>();
+	const draftedByTid = new Map<number, Map<PosBucket, number>>();
+	const postureFor = async (tid: number) => {
+		if (!smart) {
+			return undefined;
+		}
+		if (postures.has(tid)) {
+			return postures.get(tid);
+		}
+		let posture: TradePosture | undefined;
+		try {
+			leagueContext ??= await getLeagueTradeContext();
+			posture = await getTradePosture(tid, leagueContext);
+		} catch (error) {
+			// A board that cannot be built is not a reason to stall the draft -
+			// the team simply drafts the way it always did.
+			console.error("Failed to build a draft board", error);
+			posture = undefined;
+		}
+		postures.set(tid, posture);
+		return posture;
+	};
+
 	// Called after either the draft is over or it's the user's pick
 	const afterDoneAuto = async () => {
 		await lock.set("drafting", false);
@@ -180,10 +229,33 @@ const runPicks = async (
 				dp.tid,
 			);
 			const teamOvrDiffs = await getTeamOvrDiffs(teamPlayers, playersAll);
+			const posture = await postureFor(dp.tid);
+			const drafted = draftedByTid.get(dp.tid);
 
 			const score = (p: Player, i: number) => {
 				if (DRAFT_BY_TEAM_OVR) {
 					return (teamOvrDiffs[i]! + 0.05 * p.value) ** 40;
+				}
+
+				// Same exponent either way: what changes is WHOSE board is being
+				// raised to it. See draftBoard.ts for why every adjustment there is
+				// a multiplier on value rather than a score of its own.
+				if (posture) {
+					const ratings = last(p.ratings);
+					return (
+						scoreProspect({
+							p: {
+								pid: p.pid,
+								ovr: ratings.ovr,
+								pot: ratings.pot,
+								value: p.value,
+								age: season - p.born.year,
+								pos: ratings.pos,
+							},
+							posture,
+							alreadyDraftedAtPos: drafted?.get(posBucket(ratings.pos)) ?? 0,
+						}) ** 69
+					);
 				}
 
 				return p.value ** 69;
@@ -199,6 +271,21 @@ const runPicks = async (
 			console.log(sum);*/
 
 			const selection = choice(playersAll, score);
+
+			// Remember what this team just did, so its next pick knows. The posture
+			// itself is built from the pre-draft roster and is not rebuilt per pick
+			// (it reads every player in the league), so without this a team that
+			// took a centre in the first round still looked centre-hungry in the
+			// second.
+			if (posture) {
+				const bucket = posBucket(last(selection.ratings).pos);
+				let counts = draftedByTid.get(dp.tid);
+				if (!counts) {
+					counts = new Map();
+					draftedByTid.set(dp.tid, counts);
+				}
+				counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
+			}
 
 			const pid = selection.pid;
 			await selectPlayer(dp, pid);
