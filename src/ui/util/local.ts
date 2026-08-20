@@ -11,7 +11,6 @@ import { gameAttributesSyncedToUi } from "../../common/gameAttributesSyncedToUi.
 type LocalActions = {
 	deleteGames: (gids: number[]) => void;
 	mergeGames: (games: LocalStateUI["games"]) => void;
-	updateGameSpreads: (spreadsByGid: Record<number, number>) => void;
 	resetLeague: () => void;
 	setLeagueTickerEnabled: (leagueTickerEnabled: boolean) => void;
 	setShowLeagueTopBar: (showLeagueTopBar: boolean) => void;
@@ -186,25 +185,6 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 				});
 			},
 
-			// Patch just the displayed spreads of games already in the list. The
-			// worker sends these when a background sim refines a line, so the
-			// league top bar lands on the same number the schedule pages show
-			// instead of holding the pre-sim one. Cheaper than rebuilding the
-			// games - no player load in the worker, just the numbers that moved.
-			updateGameSpreads(spreadsByGid: Record<number, number>) {
-				set((state) => {
-					let changed = false;
-					const newGames = state.games.map((game) => {
-						const spread = spreadsByGid[game.gid];
-						if (spread === undefined || spread === game.spread) {
-							return game;
-						}
-						changed = true;
-						return { ...game, spread };
-					});
-					return changed ? { games: newGames } : {};
-				});
-			},
 
 			// Reset any values specific to a league. statusText and phaseText will be set later, no need to override here and cause UI flicker
 			resetLeague() {

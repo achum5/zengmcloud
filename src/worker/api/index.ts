@@ -147,7 +147,6 @@ import { liveSimBlocksDaySim } from "../core/sync/liveSimDayCollision.ts";
 import { setSyncDebugLogging, syncDebugLog } from "../core/sync/debugLog.ts";
 import { getDayGamesForRecap } from "../util/getDayGamesForRecap.ts";
 import { getSeasonRecapData } from "../util/getSeasonRecapData.ts";
-import { syncDaySpreads } from "../core/sportsbook/scheduleSpreads.ts";
 import {
 	getPlayerRecapData,
 	getRecapPool,
@@ -7201,7 +7200,6 @@ export default {
 		getTradeHistoryDump,
 		getDayGamesForRecap,
 		getSeasonRecapData,
-		syncDaySpreads,
 		getPlayerRecapData,
 		filePlayerSeasonRecaps,
 		fileTeamSeasonRecaps,

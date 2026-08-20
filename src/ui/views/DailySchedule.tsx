@@ -41,33 +41,6 @@ const DailySchedule = ({
 	topPlayers,
 	upcoming,
 }: View<"dailySchedule">) => {
-	// Prime the engine-corrected spreads for this day, AFTER the page has
-	// rendered rather than as part of building it. Pricing reads every active
-	// player, which is fine on the sportsbook but is not work worth adding to a
-	// page that just lists games.
-	//
-	// Nothing is read back here. The spread each game shows comes from the view
-	// itself (game.spread), so the schedule, the Schedule page and the league top
-	// bar are all quoting one number; this just makes sure that number is the
-	// refined one. When a background sim lands it emits a sportsbookLines update,
-	// which rebuilds this view off the warmed cache.
-	const upcomingKey = upcoming.map((g) => g.gid).join(",");
-	useEffect(() => {
-		if (upcoming.length === 0) {
-			return;
-		}
-		(async () => {
-			try {
-				await toWorker("main", "syncDaySpreads", { season, day });
-			} catch (error) {
-				// A missing line is not worth breaking the page over - every game keeps
-				// showing the closed-form spread it always did.
-				console.error("Failed to refine spreads", error);
-			}
-		})();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [season, day, upcomingKey]);
-
 	useTitleBar({
 		title: DAILY_SCHEDULE,
 		dropdownView: "daily_schedule",

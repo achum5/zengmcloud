@@ -27,7 +27,6 @@ const updateDailySchedule = async (
 		updateEvents.includes("notes") ||
 		// A background sim refined the point spreads, so the numbers next to
 		// each game changed.
-		updateEvents.includes("sportsbookLines") ||
 		inputs.season !== state.season ||
 		inputs.day !== state.day ||
 		inputs.cid !== state.cid

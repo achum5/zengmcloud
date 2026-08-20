@@ -3,7 +3,6 @@ import { idb } from "../../db/index.ts";
 import teamOvr from "../team/ovr.ts";
 import getSchedule from "../season/getSchedule.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
-import { warmSimMargins } from "./simSpreads.ts";
 import getAwardRaceOdds from "../season/getAwardRaceOdds.ts";
 import { getPlayers, getTopPlayers } from "../season/awards.ts";
 import {
@@ -325,11 +324,6 @@ export const getLines = async () => {
 	// Any game still priced off the formula gets simulated in the background, and
 	// the board re-renders when they land. Deliberately not awaited: this is the
 	// work the peek-only pricing path exists to keep off the page load.
-	const pendingSims = pricer.pendingSims();
-	if (pendingSims.length > 0) {
-		void warmSimMargins(pendingSims);
-	}
-
 	// --- Futures: Monte Carlo of the season + playoffs ---------------------
 	// One simulation drives EVERY futures market (division, conference, title,
 	// win totals), so they can never contradict each other, and a dominant team

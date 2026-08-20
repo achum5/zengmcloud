@@ -22,13 +22,6 @@ import { getStartingAndBackupGoalies } from "../core/GameSim.hockey/getStartingA
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
 import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
-import {
-	blendMargin,
-	peekSimMargin,
-	rosterFingerprint,
-	settingsFingerprint,
-	simMarginKey,
-} from "../core/sportsbook/simSpreads.ts";
 
 export const getUpcoming = async ({
 	cid,
@@ -110,9 +103,7 @@ export const getUpcoming = async ({
 		Infinity,
 	]);
 	const players = await idb.getCopies.playersPlus(playersRaw, {
-		// ptModifier and rosterOrder are not used by team.ovr - they're part of the
-		// simulated spread's cache key, because the engine reads them.
-		attrs: ["injury", "pid", "value", "tid", "ptModifier", "rosterOrder"],
+		attrs: ["injury", "pid", "value", "tid"],
 		ratings: ["ovr", "pos", "ovrs"],
 		season: g.get("season"),
 		fuzz: true,
@@ -190,42 +181,23 @@ export const getUpcoming = async ({
 	// that shows one. ScoreBox used to work it out itself from the team overalls
 	// it happened to be holding, which meant the league top bar and the Daily
 	// Schedule could quote the same game differently. This is the same number the
-	// sportsbook prices off: the closed-form line, corrected by the engine
-	// wherever the engine has already played this exact matchup.
+	// sportsbook prices off - the closed-form line, and only that.
 	//
-	// Peek-only. Nothing is simulated on this path - a game with no cached margin
-	// gets the formula, exactly as before, and the sportsbook/Daily Schedule warm
-	// the cache in the background.
+	// It used to be corrected by a background simulation of the matchup, which is
+	// why this function once needed a roster fingerprint and a cache probe. See
+	// core/sportsbook/gameLines.ts for what that bought (about a quarter of a
+	// point, on a number rounded to the nearest half) and what it cost.
 	const homeCourtAdvantage = g.get("homeCourtAdvantage");
 	const numPeriods = g.get("numPeriods");
 	const quarterLength = g.get("quarterLength");
 	const neutralSiteSetting = g.get("neutralSite");
 	const phase = g.get("phase");
-	const settingsKey = settingsFingerprint();
-	const rosterKeyCache = new Map<number, string>();
-	const rosterKey = (tid: number) => {
-		let key = rosterKeyCache.get(tid);
-		if (key === undefined) {
-			key = rosterFingerprint(
-				playersByTid.get(tid) ?? [],
-				getActualPlayThroughInjuries(teamsByTid[tid] ?? "default"),
-			);
-			rosterKeyCache.set(tid, key);
-		}
-		return key;
-	};
 
 	const getSpread = ({
-		homeTid,
-		awayTid,
-		day,
 		finals,
 		ovr0,
 		ovr1,
 	}: {
-		homeTid: number;
-		awayTid: number;
-		day: number;
 		finals?: boolean;
 		ovr0: number | undefined;
 		ovr1: number | undefined;
@@ -234,7 +206,7 @@ export const getUpcoming = async ({
 			(neutralSiteSetting === "finals" && !!finals) ||
 			(neutralSiteSetting === "playoffs" && phase === PHASE.PLAYOFFS);
 
-		const formulaMargin = getGameSpread({
+		const margin = getGameSpread({
 			ovr0,
 			ovr1,
 			homeCourtAdvantage,
@@ -242,21 +214,7 @@ export const getUpcoming = async ({
 			numPeriods,
 			quarterLength,
 		});
-		if (formulaMargin === undefined) {
-			return undefined;
-		}
-
-		const sim = peekSimMargin(
-			simMarginKey({
-				settings: settingsKey,
-				homeRoster: rosterKey(homeTid),
-				awayRoster: rosterKey(awayTid),
-				neutralSite,
-				daysInFuture: Math.max(0, day - todayDay),
-			}),
-		);
-
-		return roundHalf(sim ? blendMargin(formulaMargin, sim) : formulaMargin);
+		return margin === undefined ? undefined : roundHalf(margin);
 	};
 
 	const upcoming: {
@@ -280,9 +238,6 @@ export const getUpcoming = async ({
 				spread:
 					homeTid >= 0 && awayTid >= 0
 						? getSpread({
-								homeTid,
-								awayTid,
-								day,
 								finals,
 								ovr0: teams[0].ovr,
 								ovr1: teams[1].ovr,
@@ -576,7 +531,6 @@ const updateUpcoming = async (
 		updateEvents.includes("gameSim") ||
 		// A background sim refined the point spreads, so the numbers next to
 		// each game changed.
-		updateEvents.includes("sportsbookLines") ||
 		updateEvents.includes("newPhase") ||
 		inputs.abbrev !== state.abbrev
 	) {

@@ -15,14 +15,6 @@ import {
 	overProb,
 	toHalfPointLine,
 } from "../../../common/sportsbookOdds.ts";
-import {
-	blendMargin,
-	peekSimMargin,
-	rosterFingerprint,
-	settingsFingerprint,
-	simMarginKey,
-	type SimMarginJob,
-} from "./simSpreads.ts";
 
 // The moneyline / spread / total for a single upcoming game.
 //
@@ -35,16 +27,29 @@ import {
 // games entirely, and left the longshot cap off. Any of those is enough to make
 // an honest bet bounce as "that line has moved".
 //
-// The SPREAD is the closed-form model corrected by the engine itself: where a
-// simulated margin for this exact matchup is already cached, it is blended in
-// (see simSpreads.ts for why, and for why nothing sims on this path). Where it
-// isn't, the game is queued for a background run and priced off the formula in
-// the meantime, so the board renders at its old speed either way. The MONEYLINE
-// falls out of whatever spread that produces, so the two can never disagree.
+// The SPREAD is the closed-form model, full stop, and the MONEYLINE falls out
+// of it so the two can never disagree.
 //
-// The TOTAL stays on season scoring. Measured against the engine it was already
-// accurate to about a point and a half, and a sample small enough to be free
-// carries four points of noise - simming it would make it worse, not better.
+// It used to be corrected by playing the matchup fifty times in the background
+// and blending the average margin in. That is gone. Measured against the engine
+// on a realistic talent grid - team overalls 31 to 70, four hundred runs per
+// matchup - the closed form is off by about three quarters of a point, and the
+// best refit of it that exists shaves that to half a point. On a number
+// displayed to the nearest half point, that is nothing. The premise the sim was
+// built on - that two teams the same overall apart can be genuinely different
+// distances apart - did not survive being measured: adding a level term, an
+// interaction term or a quadratic term to the fit each moved the residual by
+// under a hundredth of a point. The relationship really is the straight line.
+//
+// What it cost was real: fifty full game sims per matchup, a cache keyed on
+// every player's injury countdown (so every day tick invalidated all of it),
+// numbers that appeared only on the two pages that warmed them and then moved
+// under you a second later, and two devices in a room showing different lines
+// until both had done the same work.
+//
+// The TOTAL stays on season scoring, and always did. Measured against the
+// engine it was already accurate to about a point and a half, and a sample
+// small enough to be free carries four points of noise.
 
 export type GameLine = {
 	// Expected home margin. Positive means the home team is favored.
@@ -102,9 +107,7 @@ export const buildGameLinePricer = async ({
 		Infinity,
 	]);
 	const players = await idb.getCopies.playersPlus(playersRaw, {
-		// ptModifier and rosterOrder are not used by the formula - they're part of
-		// the simulated spread's cache key, because the engine reads them.
-		attrs: ["injury", "pid", "value", "tid", "ptModifier", "rosterOrder"],
+		attrs: ["injury", "pid", "value", "tid"],
 		ratings: ["ovr", "pos", "ovrs"],
 		season,
 		fuzz: true,
@@ -178,28 +181,6 @@ export const buildGameLinePricer = async ({
 		return s.gp > 0 ? regress(s.oppPts, s.gp) : undefined;
 	};
 
-	// Keys for the simulated-spread cache, built from the player list already
-	// loaded above so asking for one costs nothing. Both the main board and a
-	// game's prop page reach the spread through this same function, so they can
-	// never key it differently and quote two different lines.
-	const settingsKey = settingsFingerprint();
-	const rosterKeyCache = new Map<number, string>();
-	const rosterKey = (t: PricerTeam) => {
-		let key = rosterKeyCache.get(t.tid);
-		if (key === undefined) {
-			key = rosterFingerprint(
-				playersByTid.get(t.tid) ?? [],
-				getActualPlayThroughInjuries(t),
-			);
-			rosterKeyCache.set(t.tid, key);
-		}
-		return key;
-	};
-
-	// Games priced off the formula because nothing was cached for them yet. The
-	// caller drains this in the background - see warmSimMargins.
-	const pending = new Map<string, SimMarginJob>();
-
 	// Neutral site drops home-court advantage, matching ScoreBox: an upcoming
 	// finals/playoff game the settings mark neutral.
 	const isNeutralSite = (matchup: Matchup) =>
@@ -210,9 +191,6 @@ export const buildGameLinePricer = async ({
 		leagueAvgTotal,
 		scoringFor,
 		scoringAgainst,
-		// Every game priced off the formula so far because no simulated margin was
-		// cached for it. Hand to warmSimMargins WITHOUT awaiting.
-		pendingSims: () => [...pending.values()],
 		priceGame: (matchup: Matchup): GameLine | undefined => {
 			const home = teamByTid.get(matchup.homeTid);
 			const away = teamByTid.get(matchup.awayTid);
@@ -221,7 +199,7 @@ export const buildGameLinePricer = async ({
 			}
 
 			const neutralSite = isNeutralSite(matchup);
-			const formulaMargin = getGameSpread({
+			const margin = getGameSpread({
 				ovr0: gameOvr(home, matchup.day),
 				ovr1: gameOvr(away, matchup.day),
 				homeCourtAdvantage,
@@ -229,32 +207,8 @@ export const buildGameLinePricer = async ({
 				numPeriods,
 				quarterLength,
 			});
-			if (formulaMargin === undefined) {
+			if (margin === undefined) {
 				return undefined;
-			}
-
-			// Correct the formula with the engine, where the engine has already
-			// spoken for this exact matchup. Otherwise queue it and stand on the
-			// formula - pricing never waits on a sim.
-			const key = simMarginKey({
-				settings: settingsKey,
-				homeRoster: rosterKey(home),
-				awayRoster: rosterKey(away),
-				neutralSite,
-				daysInFuture: Math.max(0, matchup.day - todayDay),
-			});
-			const sim = peekSimMargin(key);
-			let margin = formulaMargin;
-			if (sim) {
-				margin = blendMargin(formulaMargin, sim);
-			} else {
-				pending.set(key, {
-					key,
-					homeTid: home.tid,
-					awayTid: away.tid,
-					neutralSite,
-					daysInFuture: Math.max(0, matchup.day - todayDay),
-				});
 			}
 
 			const pHome = marginToWinProb(margin);

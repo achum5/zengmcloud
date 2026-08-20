@@ -35,10 +35,6 @@ const mergeGames = (games: LocalStateUI["games"]) => {
 	localActions.mergeGames(games);
 };
 
-const updateGameSpreads = (spreadsByGid: Record<number, number>) => {
-	localActions.updateGameSpreads(spreadsByGid);
-};
-
 // Should only be called from Shared Worker, to move other tabs to new league because only one can be open at a time
 const newLid = async (lid: number) => {
 	const parts = window.location.pathname.split("/");
@@ -191,7 +187,6 @@ export default {
 	initAds,
 	initGold,
 	mergeGames,
-	updateGameSpreads,
 	newLid,
 	realtimeUpdate: realtimeUpdate2,
 	requestPersistentStorage,

@@ -1,23 +1,43 @@
-import { assert, beforeAll, beforeEach, describe, test } from "vitest";
+import { assert, beforeAll, describe, test } from "vitest";
 import { player, team } from "../index.ts";
 import { g, helpers } from "../../util/index.ts";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
 import { range } from "../../../common/utils.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
-import {
-	__clearSimMargins,
-	__setSimMargin,
-	SIMS_PER_GAME,
-} from "./simSpreads.ts";
 import { americanToImpliedProb } from "../../../common/sportsbook.ts";
 import { idb } from "../../db/index.ts";
 import { getUpcoming } from "../../views/schedule.ts";
-import { syncDaySpreads } from "./scheduleSpreads.ts";
-import { roundHalf } from "../../../common/getGameSpread.ts";
+import { getGameSpread, roundHalf } from "../../../common/getGameSpread.ts";
+import teamOvr from "../team/ovr.ts";
 
 const NUM_TEAMS = 4;
 const ROSTER = 10;
+
+// The team overalls the pricer prices off, computed the same way it does.
+const teamOvrsForMatchup = async () => {
+	const ovrOf = async (tid: number) => {
+		const raw = await idb.cache.players.indexGetAll("playersByTid", tid);
+		const players = await idb.getCopies.playersPlus(raw, {
+			attrs: ["injury", "pid", "value", "tid"],
+			ratings: ["ovr", "pos", "ovrs"],
+			season: g.get("season"),
+			fuzz: true,
+			coarsenRatings: false,
+		});
+		return teamOvr(players, {
+			accountForInjuredPlayers: {
+				numDaysInFuture: 0,
+				playThroughInjuries: [0, 0],
+			},
+			playoffs: false,
+		});
+	};
+	return {
+		home: await ovrOf(matchup.homeTid),
+		away: await ovrOf(matchup.awayTid),
+	};
+};
 
 const activeTeams = () =>
 	range(NUM_TEAMS).map((tid) => ({
@@ -71,15 +91,13 @@ beforeAll(async () => {
 
 const matchup = { day: 1, homeTid: 0, awayTid: 1 };
 
-describe("spreads from the engine", () => {
-	beforeEach(() => {
-		__clearSimMargins();
-	});
-
-	// The whole safety argument rests on this: pricing READS the simulated-margin
-	// cache and never fills it. If priceGame ever started simming, the sportsbook
-	// would block for seconds behind two dozen games.
-	test("pricing an unsimulated board never sims - it queues", async () => {
+describe("the spread", () => {
+	// The spread used to be the closed-form line corrected by fifty background
+	// game sims. Measured against the engine on a realistic talent grid it was
+	// buying about a quarter of a point on a number rounded to the nearest half,
+	// so it is gone - see gameLines.ts. What has to stay true is that the line is
+	// immediate, identical every time, and identical to the formula.
+	test("pricing is instant, because nothing is simulated", async () => {
 		const pricer = await buildGameLinePricer({
 			activeTeams: activeTeams(),
 			season: g.get("season"),
@@ -90,98 +108,34 @@ describe("spreads from the engine", () => {
 		const line = pricer.priceGame(matchup);
 		const elapsed = performance.now() - start;
 
-		assert.ok(line, "should still produce a line");
-		// One GameSim run is ~5ms; fifty is ~220ms. Pricing must be nowhere near.
-		assert.ok(elapsed < 50, `priceGame took ${elapsed}ms - is it simming?`);
-		assert.strictEqual(pricer.pendingSims().length, 1);
+		assert.ok(line, "should produce a line");
+		// One GameSim run alone is ~5ms.
+		assert.ok(elapsed < 20, `priceGame took ${elapsed}ms - is it simming?`);
 	});
 
-	test("with nothing cached, the line is the old formula's", async () => {
+	test("the line is the closed-form formula, exactly", async () => {
 		const pricer = await buildGameLinePricer({
 			activeTeams: activeTeams(),
 			season: g.get("season"),
 			todayDay: 1,
 		});
-		const before = pricer.priceGame(matchup)!;
-
-		// Same inputs, same answer - a board that hasn't warmed up yet is exactly
-		// the board that shipped before this.
-		const pricer2 = await buildGameLinePricer({
-			activeTeams: activeTeams(),
-			season: g.get("season"),
-			todayDay: 1,
-		});
-		assert.strictEqual(pricer2.priceGame(matchup)!.margin, before.margin);
-	});
-
-	test("a cached simulated margin moves the line toward it", async () => {
-		const pricer = await buildGameLinePricer({
-			activeTeams: activeTeams(),
-			season: g.get("season"),
-			todayDay: 1,
-		});
-		const formula = pricer.priceGame(matchup)!.margin;
-		const [job] = pricer.pendingSims();
-		assert.ok(job);
-
-		// A simulated margin 10 points off the formula, at 50 runs' precision.
-		__setSimMargin(job.key, {
-			mean: formula + 10,
-			se: 1.75,
-			n: SIMS_PER_GAME,
-		});
-
-		const warmed = await buildGameLinePricer({
-			activeTeams: activeTeams(),
-			season: g.get("season"),
-			todayDay: 1,
-		});
-		const blended = warmed.priceGame(matchup)!.margin;
-
-		assert.ok(blended > formula, "should move toward the sim");
-		assert.ok(blended < formula + 10, "should not jump all the way");
-		// Nothing left to do for this game.
-		assert.strictEqual(warmed.pendingSims().length, 0);
-	});
-
-	// The user's rule: the moneyline is just the spread, priced. So a line that
-	// moved toward the home team has to shorten the home price too - they cannot
-	// come from different numbers and disagree.
-	test("the moneyline follows the spread", async () => {
-		const pricer = await buildGameLinePricer({
-			activeTeams: activeTeams(),
-			season: g.get("season"),
-			todayDay: 1,
-		});
-		const before = pricer.priceGame(matchup)!;
-		const [job] = pricer.pendingSims();
-
-		__setSimMargin(job!.key, {
-			mean: before.margin + 10,
-			se: 1.75,
-			n: SIMS_PER_GAME,
-		});
-
-		const warmed = await buildGameLinePricer({
-			activeTeams: activeTeams(),
-			season: g.get("season"),
-			todayDay: 1,
-		});
-		const after = warmed.priceGame(matchup)!;
-
-		assert.ok(after.margin > before.margin);
-		assert.ok(
-			americanToImpliedProb(after.moneyline.home) >
-				americanToImpliedProb(before.moneyline.home),
-			"home should be a shorter price once the spread moved its way",
+		const line = pricer.priceGame(matchup)!;
+		const ovrs = await teamOvrsForMatchup();
+		assert.strictEqual(
+			line.margin,
+			getGameSpread({
+				ovr0: ovrs.home,
+				ovr1: ovrs.away,
+				homeCourtAdvantage: g.get("homeCourtAdvantage"),
+				neutralSite: false,
+				numPeriods: g.get("numPeriods"),
+				quarterLength: g.get("quarterLength"),
+			}),
 		);
-		// And the spread line itself tracks the margin.
-		assert.ok(after.spread.line < before.spread.line);
 	});
 
 	// getLines and getGameProps both reach a spread through this one function, so
-	// a bet quoted on a game's prop page validates against the main board. Two
-	// pricers built from the same state must be indistinguishable.
+	// a bet quoted on a game's prop page validates against the main board.
 	test("two pricers over the same state quote identical lines", async () => {
 		const build = () =>
 			buildGameLinePricer({
@@ -189,112 +143,88 @@ describe("spreads from the engine", () => {
 				season: g.get("season"),
 				todayDay: 1,
 			});
-
-		const a = await build();
-		a.priceGame(matchup);
-		const [job] = a.pendingSims();
-		__setSimMargin(job!.key, { mean: 12.5, se: 1.75, n: SIMS_PER_GAME });
-
 		const b = await build();
 		const c = await build();
 		assert.deepStrictEqual(b.priceGame(matchup), c.priceGame(matchup));
 	});
 
-	// A game further out is a different game - rosters heal by then - so it must
-	// not be served the same day's cached margin.
-	test("the same matchup on a later day is queued separately", async () => {
+	// The user's rule: the moneyline is just the spread, priced. They cannot come
+	// from different numbers and disagree.
+	test("the moneyline follows the spread", async () => {
 		const pricer = await buildGameLinePricer({
 			activeTeams: activeTeams(),
 			season: g.get("season"),
 			todayDay: 1,
 		});
-		pricer.priceGame(matchup);
-		pricer.priceGame({ ...matchup, day: 5 });
-		assert.strictEqual(pricer.pendingSims().length, 2);
+
+		// Every game on the board, so this holds across the whole range rather
+		// than for one fixture.
+		const lines = [];
+		for (let homeTid = 0; homeTid < NUM_TEAMS; homeTid++) {
+			for (let awayTid = 0; awayTid < NUM_TEAMS; awayTid++) {
+				if (homeTid !== awayTid) {
+					lines.push(pricer.priceGame({ ...matchup, homeTid, awayTid })!);
+				}
+			}
+		}
+
+		for (const line of lines) {
+			const pHome = americanToImpliedProb(line.moneyline.home);
+			const pAway = americanToImpliedProb(line.moneyline.away);
+			if (line.margin > 0) {
+				assert.ok(
+					pHome > pAway,
+					`home favoured by ${line.margin} but priced longer`,
+				);
+			} else if (line.margin < 0) {
+				assert.ok(
+					pAway > pHome,
+					`away favoured by ${-line.margin} but priced longer`,
+				);
+			}
+			// And the spread line is the margin, the other way up.
+			assert.ok(line.spread.line <= 0 === line.margin >= 0);
+		}
+
+		// A bigger margin is always a shorter home price - the two are one number.
+		const sorted = [...lines].sort((a, b) => a.margin - b.margin);
+		for (let i = 1; i < sorted.length; i++) {
+			assert.ok(
+				americanToImpliedProb(sorted[i]!.moneyline.home) >=
+					americanToImpliedProb(sorted[i - 1]!.moneyline.home),
+				"a longer spread has to mean a shorter moneyline",
+			);
+		}
 	});
 
-	// A team's line has to notice the manager touching his roster before tipoff.
-	// The engine reads rosterOrder, ptModifier, each injury, and the team's
-	// play-through-injuries setting; if any of them isn't in the cache key, the
-	// board keeps quoting the line from before the change.
-	describe("a roster move before tipoff re-prices the game", () => {
-		const keyFor = async (
-			mutate?: (players: any[], teams: ReturnType<typeof activeTeams>) => void,
-		) => {
-			const teams = activeTeams();
-			const roster = await idb.cache.players.indexGetAll("playersByTid", 0);
-			const before = roster.map((p) => ({
-				ptModifier: p.ptModifier,
-				rosterOrder: p.rosterOrder,
-				injury: p.injury,
-			}));
-			mutate?.(roster, teams);
-			for (const p of roster) {
-				await idb.cache.players.put(p);
-			}
-
+	// A hurt player has to move the line before tipoff - the formula prices off
+	// an injury-adjusted team overall, so this is what makes that real.
+	test("a player getting hurt moves the line", async () => {
+		const lineNow = async () => {
 			const pricer = await buildGameLinePricer({
-				activeTeams: teams,
+				activeTeams: activeTeams(),
 				season: g.get("season"),
 				todayDay: 1,
 			});
-			pricer.priceGame(matchup);
-			const key = pricer.pendingSims()[0]!.key;
-
-			// Put it back so each case measures only its own change.
-			for (const [i, p] of roster.entries()) {
-				Object.assign(p, before[i]);
-				await idb.cache.players.put(p);
-			}
-			return key;
+			return pricer.priceGame(matchup)!.margin;
 		};
 
-		test("benching a player", async () => {
-			const base = await keyFor();
-			const benched = await keyFor((players) => {
-				players[0]!.ptModifier = 0;
-			});
-			assert.notStrictEqual(benched, base);
-		});
-
-		test("giving a player extra minutes", async () => {
-			const base = await keyFor();
-			const boosted = await keyFor((players) => {
-				players[0]!.ptModifier = 1.5;
-			});
-			assert.notStrictEqual(boosted, base);
-		});
-
-		test("reordering the rotation", async () => {
-			const base = await keyFor();
-			const reordered = await keyFor((players) => {
-				players[0]!.rosterOrder = 9;
-				players[9]!.rosterOrder = 0;
-			});
-			assert.notStrictEqual(reordered, base);
-		});
-
-		test("a player getting hurt", async () => {
-			const base = await keyFor();
-			const hurt = await keyFor((players) => {
-				players[0]!.injury = { type: "Sprained Ankle", gamesRemaining: 3 };
-			});
-			assert.notStrictEqual(hurt, base);
-		});
-
-		// Playing a hurt guy through it changes who suits up, so it changes the
-		// game the engine plays.
-		test("changing play-through-injuries", async () => {
-			const base = await keyFor();
-			const through = await keyFor((_players, teams) => {
-				teams[0]!.playThroughInjuries = [5, 5];
-			});
-			assert.notStrictEqual(through, base);
-		});
-
-		test("touching nothing leaves the line alone", async () => {
-			assert.strictEqual(await keyFor(), await keyFor());
-		});
+		const roster = await idb.cache.players.indexGetAll("playersByTid", 0);
+		const before = roster.map((p) => p.injury);
+		const base = await lineNow();
+		try {
+			for (const p of roster.slice(0, 5)) {
+				p.injury = { type: "Torn ACL", gamesRemaining: 60 };
+				await idb.cache.players.put(p);
+			}
+			assert.notStrictEqual(await lineNow(), base);
+		} finally {
+			for (const [i, p] of roster.entries()) {
+				p.injury = before[i]!;
+				await idb.cache.players.put(p);
+			}
+		}
+		assert.strictEqual(await lineNow(), base);
 	});
 
 	test("the total is left on the season-scoring model", async () => {
@@ -304,8 +234,6 @@ describe("spreads from the engine", () => {
 			todayDay: 1,
 		});
 		const before = pricer.priceGame(matchup)!;
-		const [job] = pricer.pendingSims();
-		__setSimMargin(job!.key, { mean: 30, se: 1.75, n: SIMS_PER_GAME });
 
 		const warmed = await buildGameLinePricer({
 			activeTeams: activeTeams(),
@@ -345,9 +273,7 @@ describe("hiding the ratings ones digit", () => {
 	};
 
 	test("does not change any line on the board", async () => {
-		__clearSimMargins();
 		const shown = await priceWith(false);
-		__clearSimMargins();
 		const hidden = await priceWith(true);
 
 		assert.strictEqual(
@@ -363,7 +289,6 @@ describe("hiding the ratings ones digit", () => {
 	// Guards the specific failure above rather than just "the two agree": if
 	// both paths coarsened, they would agree on a number that is wrong.
 	test("still separates teams that are far apart", async () => {
-		__clearSimMargins();
 		const teams = activeTeams();
 		// Widest ovr gap available in the fixture, so the formula has something
 		// real to say and the assertion isn't measuring home-court advantage.
@@ -394,22 +319,20 @@ describe("hiding the ratings ones digit", () => {
 // identical cache key from a separately-loaded player list. Nothing about the
 // two call sites forces that, so assert it: if the fingerprints ever drift, the
 // peek silently misses and the top bar quietly falls back to the raw formula
-// while the Daily Schedule shows the corrected line - exactly the split this
-// was meant to close.
 describe("one spread per game, everywhere", () => {
+	// The schedule pages, the Daily Schedule and the sportsbook all show a spread
+	// for the same game, and they must be the same number. They get there by
+	// different routes - getUpcoming computes it, the pricer computes it - so the
+	// only thing keeping them together is that both call getGameSpread with the
+	// same team overalls. Assert it rather than assume it.
 	test("getUpcoming and the pricer agree on an upcoming game", async () => {
-		__clearSimMargins();
-
 		await idb.cache.schedule.add({
 			awayTid: matchup.awayTid,
 			homeTid: matchup.homeTid,
 			day: matchup.day,
 		} as any);
 
-		// Built the way the real callers build it - from the stored team rows -
-		// rather than from the fixture's hardcoded playThroughInjuries, because
-		// that value is part of the cache key and the whole point here is that the
-		// two sides key it identically.
+		// Built the way the real callers build it - from the stored team rows.
 		const realTeams = (await idb.cache.teams.getAll()).map((t) => ({
 			tid: t.tid,
 			playThroughInjuries: t.playThroughInjuries,
@@ -417,55 +340,19 @@ describe("one spread per game, everywhere", () => {
 		}));
 
 		try {
-			// Price it once so the matchup's cache key is known, then answer it with
-			// a margin far from the formula's, so a missed peek is unmistakable.
-			const cold = await buildGameLinePricer({
+			const pricer = await buildGameLinePricer({
 				activeTeams: realTeams,
 				season: g.get("season"),
 				todayDay: matchup.day,
 			});
-			const coldLine = cold.priceGame(matchup)!;
-			const [job] = cold.pendingSims();
-			assert.ok(job, "expected the matchup to be queued for a sim");
-			__setSimMargin(job!.key, { mean: 25, se: 1.75, n: SIMS_PER_GAME });
-
-			const warm = await buildGameLinePricer({
-				activeTeams: realTeams,
-				season: g.get("season"),
-				todayDay: matchup.day,
-			});
-			const warmMargin = warm.priceGame(matchup)!.margin;
-			assert.notStrictEqual(
-				roundHalf(warmMargin),
-				roundHalf(coldLine.margin),
-				"the seeded margin should have moved the line, or this proves nothing",
-			);
+			const priced = pricer.priceGame(matchup)!;
 
 			const [upcoming] = await getUpcoming({ day: matchup.day });
 			assert.ok(upcoming, "expected getUpcoming to return the scheduled game");
 			assert.strictEqual(
 				upcoming!.spread,
-				roundHalf(warmMargin),
+				roundHalf(priced.margin),
 				"the schedule pages and the sportsbook are quoting different lines",
-			);
-
-			// And the number pushed to the league top bar is that same one. This is
-			// the surface that was wrong: it holds a snapshot of the user's next
-			// game rather than rebuilding with the page, so it kept whichever line
-			// was current when the snapshot was taken.
-			const published = await syncDaySpreads({
-				season: g.get("season"),
-				day: matchup.day,
-			});
-			assert.deepStrictEqual(
-				published,
-				Object.fromEntries(
-					(await getUpcoming({ day: matchup.day })).map((game) => [
-						game.gid,
-						game.spread,
-					]),
-				),
-				"the top bar is being sent a different spread than the pages show",
 			);
 		} finally {
 			for (const row of await idb.cache.schedule.getAll()) {
