@@ -35,181 +35,82 @@ export const headerVisualShift = (offsetTop: number | undefined): number => {
 	return Math.round(offsetTop);
 };
 
-// How far to lift the ticker so it sits on the foot of the visible area.
+// WHERE THE TICKER GOES, MEASURED INSTEAD OF PREDICTED.
 //
-// THIS IS THE MIRROR OF THE HEADER, and the previous build of it was not - it
-// pushed the bar DOWN by offsetTop, the same way the header goes, on the theory
-// that the visible region was the same size as the layout viewport and merely
-// slid down within it. A field report killed that theory outright:
+// Four builds of this correction computed the answer from visualViewport, and
+// all four were wrong in the field. The reason is now beyond argument: every
+// one of them treated `vv.height` as the bottom of the screen, and the last
+// two reports put the bar's bottom at exactly 646 and exactly 636 - precisely
+// what that formula asked for - with the user reporting the bar sitting in the
+// MIDDLE of the screen both times. vv.height is not the bottom of the screen
+// on this device, and no arithmetic over a number that is not true can produce
+// a true answer.
 //
-//   offsetTop 57, layout viewport 1052, visual viewport 646 tall
-//   ticker shifted +57, its bottom measured at 1053 - and NOT ON SCREEN
+// What IS true, in every report where the bar looked right, is that its bottom
+// sat at documentElement.clientHeight. So that is the target, and the way to
+// hit it is to measure where the bar actually is and move it the difference -
+// no viewport model at all:
 //
-// A bar whose bottom edge is at 1053 on a viewport that ends at 1052 would be
-// sitting exactly on the bottom edge, in full view. The user could not see it.
-// So the visible area does not end at 1052, and visualViewport.height - the one
-// number that says where it does end - is telling the truth: it ends at 646,
-// and the bar was 407px below the screen.
+//     shift = clientHeight - (measured bottom with our own shift removed)
 //
-// The arithmetic, all in the coordinates getBoundingClientRect reports (which
-// are relative to the VISUAL viewport here - that is exactly why the header
-// reads -offsetTop when it is doing its job):
+// This is correct in both coordinate systems without having to know which one
+// is in force, which is the thing that defeated every previous attempt. When
+// rects are layout-relative and sticky is healthy the measurement already
+// equals clientHeight, so the shift is zero and nothing is touched - the
+// common case, and the state of every report that drew no complaint. When
+// rects are visual-viewport-relative the measurement comes up short by the
+// offset and the shift makes it up exactly, without ever reading offsetTop.
+// When the viewport is lying about its height, the lie is simply not consulted.
 //
-//   sticky puts the bar's bottom at   layoutHeight - offsetTop   = 995
-//   the user can see down to          visualHeight               = 646
-//   so it needs to come up by         646 - 995                  = -349
-//
-// Never downward. A positive correction can only push the bar past the foot of
-// the layout viewport, which is the one place sticky already guarantees is no
-// worse than the edge of the screen.
-//
-// AND ONLY WHEN offsetTop CORROBORATES THE HEIGHT. The very next field report
-// after the formula above was restored had the identical geometry - 646-tall
-// visual viewport on a 1052 layout viewport, scale 0.85 - and this time it was
-// FALSE: the lifted bar sat mid-screen with page visibly rendering far below
-// layout y 646, and the log caught the lie being born, vv=1052/1052 before the
-// app was backgrounded and vv=646/1052 on resume, same page, nothing changed.
-// A resume can hand back a stale, keyboard-sized height with no keyboard
-// present, so the same numbers are sometimes the truth and sometimes a ghost,
-// and no reading of vv.height alone can tell which.
-//
-// offsetTop looked like a witness - you cannot pan a thing inside a thing it
-// completely fills, so a nonzero offsetTop seemed to prove the height real.
-// The very next report broke that too: vv 646/1052 AT offsetTop 69, bar lifted
-// mid-screen again, and the new report fields show why the gate was fooled.
-// The ghost is not one bad number, it is the whole VisualViewport object
-// living in a self-consistent phantom-keyboard world: its height stays
-// keyboard-sized and its offsetTop tracks the page scroll (69 = scrollY = 69)
-// exactly as if the keyboard were still up. Nothing read from inside that
-// world can vouch for anything else inside it.
-//
-// THE BEST WITNESS IS THE HEADER ITSELF, and it was here the whole time.
-//
-// The header is sticky at top 0, so when a pan is REAL its rect reads exactly
-// -offsetTop before the header's own correction is applied - that is the
-// measurement the header's shift has always been built on, and it works. When
-// offsetTop is a ghost the rects know nothing about it and the same
-// measurement reads 0. So the header answers, by direct observation, the
-// question no viewport number can: is this offset actually in the coordinate
-// system, or only in the VisualViewport object?
-//
-// A field report on /draft settles that it is worth asking. offsetTop 406, the
-// header carrying translateY(406px) and reading 0 - so the pan is real beyond
-// doubt - and yet vv width 518 was the FULL layout width, so the width test
-// below refused the lift. It happened to be harmless there because the visual
-// viewport was flush to the foot of the layout viewport (406 + 646 = 1052),
-// where sticky's bottom and the visible bottom coincide and the right lift is
-// zero anyway. Panned to the MIDDLE of the same page it would not have been:
-// the bar would have sat hundreds of pixels below the screen with the gate
-// refusing to move it.
-//
-// So the width test is no longer the only way in. Either witness will do, and
-// they fail in opposite directions - the ghost has a full width AND an
-// unmoved header, a real pan has at least one of the two. Adding this can only
-// ENABLE a lift that direct measurement already proves is warranted; it never
-// permits one the old rule allowed.
-//
-// The other witness is width. A visual viewport
-// that is genuinely smaller than the layout viewport only exists under
-// pinch-zoom, and pinch narrows BOTH axes - while the ghost, being a
-// keyboard's shadow, shrinks height alone and keeps the width spanning the
-// screen (the report proves it: vv width 518 = the full layout width = the
-// full 440pt screen at 0.85, with activeElement <body>, so nothing focusable
-// could be covering the missing 400pt). So the lift now requires the width to
-// be genuinely narrowed. On a full-width viewport there is nothing this
-// correction can truthfully know about the bottom of the screen, and every
-// recorded full-width case wants 0 anyway: healthy wants nothing, the ghost
-// wants nothing, and a real keyboard wants nothing because hoisting the bar
-// over it would cover what is being typed.
-// Does the header's own position confirm that offsetTop is in the rects?
-//
-// `headerTop` is its measured rect top and `headerShift` the correction
-// currently on it, so their difference is where sticky alone put it: -offsetTop
-// on a real pan, 0 when the offset is a ghost. Undefined inputs mean no
-// measurement, which confirms nothing.
-export const headerConfirmsOffset = (
-	headerTop: number | undefined,
-	headerShift: number,
-	offsetTop: number,
-): boolean => {
-	if (headerTop === undefined || !Number.isFinite(headerTop)) {
-		return false;
-	}
-	// Subpixel layout and rounding, not a real disagreement.
-	const TOLERANCE_PX = 2;
-	return Math.abs(headerTop - headerShift - -offsetTop) <= TOLERANCE_PX;
-};
-
-export const tickerVisualShift = ({
-	visualHeight,
+// The keyboard needs no special case either: it does not change clientHeight,
+// so the target does not move and the bar stays where it is instead of
+// hoisting itself over what is being typed.
+export const tickerMeasuredShift = ({
+	measuredBottom,
+	currentShift,
 	layoutHeight,
-	offsetTop,
-	visualWidth,
-	layoutWidth,
-	headerConfirms,
-	keyboardOpen,
 }: {
-	visualHeight: number | undefined;
+	// getBoundingClientRect().bottom of the ticker, as it renders right now.
+	measuredBottom: number | undefined;
+	// The correction currently on it, subtracted back out so this converges in
+	// one step instead of chasing its own tail.
+	currentShift: number;
+	// documentElement.clientHeight - the foot of the layout viewport, which is
+	// where a correctly placed bar has sat in every report that looked right.
 	layoutHeight: number | undefined;
-	offsetTop: number | undefined;
-	// The pinch corroboration - see above. Only a width genuinely narrower
-	// than the layout viewport proves the viewport is really smaller at all.
-	visualWidth: number | undefined;
-	layoutWidth: number | undefined;
-	// The header's verdict on whether offsetTop is real - see
-	// headerConfirmsOffset. Either this or the pinched width lets the lift run.
-	headerConfirms?: boolean;
-	// The software keyboard shrinks the visual viewport exactly like a zoom
-	// does, and no viewport number distinguishes them - so ask the page instead
-	// of guessing from geometry. See keyboardLikelyOpen.
-	keyboardOpen?: boolean;
 }): number => {
-	// Hoisting the bar above the keyboard would park it on top of whatever is
-	// being typed into, which is worse than leaving it behind the keyboard.
-	if (keyboardOpen) {
-		return 0;
-	}
 	if (
-		!Number.isFinite(visualHeight) ||
-		!Number.isFinite(layoutHeight) ||
-		!Number.isFinite(offsetTop) ||
-		visualHeight === undefined ||
+		measuredBottom === undefined ||
 		layoutHeight === undefined ||
-		offsetTop === undefined ||
-		visualHeight <= 0 ||
+		!Number.isFinite(measuredBottom) ||
+		!Number.isFinite(layoutHeight) ||
 		layoutHeight <= 0
 	) {
 		return 0;
 	}
-	if (offsetTop <= 0) {
-		// Nowhere panned means sticky's own spot is the right one.
+	const shift = layoutHeight - (measuredBottom - currentShift);
+	// Sub-pixel differences are rounding, not misplacement, and writing a
+	// transform for them only churns the compositor.
+	if (Math.abs(shift) < 2) {
 		return 0;
 	}
-	// The pinch test. The half pixel forgives rounding; a ghost is not half a
-	// pixel narrow, it is exactly as wide as the layout viewport. Unreadable
-	// widths corroborate nothing, which is not the same as refuting.
-	const pinched =
-		Number.isFinite(visualWidth) &&
-		Number.isFinite(layoutWidth) &&
-		visualWidth !== undefined &&
-		layoutWidth !== undefined &&
-		layoutWidth > 0 &&
-		visualWidth + 0.5 < layoutWidth;
-	// Either witness will do; the ghost passes neither.
-	if (!pinched && !headerConfirms) {
+	// A correction larger than the viewport is not a viewport offset, it is a
+	// bar that has come adrift - which is the watchdog's job to rebuild, not
+	// this one's to paper over.
+	if (Math.abs(shift) > layoutHeight) {
 		return 0;
 	}
-	const shift = visualHeight - (layoutHeight - offsetTop);
-	return shift < 0 ? Math.round(shift) : 0;
+	return Math.round(shift);
 };
 
 // Is the software keyboard (probably) up?
 //
-// This is the only thing the geometry cannot tell us apart: a keyboard and a
-// pinch-zoom both shrink visualViewport.height while the layout viewport stays
-// put. The page knows something the viewport does not, though - a keyboard only
-// appears when something is focused that can take text. Asking that directly
-// beats every heuristic that tried to read it out of the numbers.
+// The ticker no longer needs to ask - it measures its own position, and a
+// keyboard does not move the target (see tickerMeasuredShift). The chat drawer
+// still does: its lift over the keyboard is the one correction that genuinely
+// depends on the keyboard being there, and geometry alone cannot tell a
+// keyboard from a zoom. The page knows something the viewport does not - a
+// keyboard only appears when something focusable by text is focused.
 export const keyboardLikelyOpen = (
 	active: Element | null | undefined,
 ): boolean => {
@@ -235,6 +136,15 @@ export const keyboardLikelyOpen = (
 		);
 	}
 	return (active as HTMLElement).isContentEditable === true;
+};
+
+// The translateY currently written on an element by applyHeaderShift, in px.
+// Parsed from the inline style we ourselves wrote rather than from a computed
+// matrix, so it is exactly the number to subtract back out and nothing else.
+export const currentShiftOf = (element: HTMLElement): number => {
+	const match = /translateY\((-?[\d.]+)px\)/.exec(element.style.transform);
+	const value = match ? Number.parseFloat(match[1]!) : 0;
+	return Number.isFinite(value) ? value : 0;
 };
 
 export const applyHeaderShift = (
@@ -263,26 +173,18 @@ export const applyHeaderShift = (
 // shift pushes it DOWN into view, where being stale is much less visible.
 export const resyncStickyBarShifts = () => {
 	const vv = window.visualViewport;
-	const offsetTop = vv?.offsetTop;
-	const header = document.querySelector<HTMLElement>(HEADER_SELECTOR);
-	const headerShift = headerVisualShift(offsetTop);
-	applyHeaderShift(header, headerShift);
-	// Measured AFTER its own shift is applied, which is why the shift is
-	// subtracted back out: what matters is where sticky alone put the header,
-	// and that is the one direct observation of whether offsetTop exists in
-	// the rects at all. See headerConfirmsOffset.
-	const confirms =
-		header !== null &&
-		offsetTop !== undefined &&
-		headerConfirmsOffset(
-			header.getBoundingClientRect().top,
-			headerShift,
-			offsetTop,
-		);
+	applyHeaderShift(
+		document.querySelector<HTMLElement>(HEADER_SELECTOR),
+		headerVisualShift(vv?.offsetTop),
+	);
+
 	const ticker = document.querySelector<HTMLElement>(TICKER_SELECTOR);
+	if (!ticker) {
+		return;
+	}
 	// The self-placement mode used to live here and is gone; clear anything a
 	// previous build of it left behind so a bar cannot stay pinned mid-page.
-	if (ticker && ticker.style.position === "fixed") {
+	if (ticker.style.position === "fixed") {
 		ticker.style.position = "";
 		ticker.style.top = "";
 		ticker.style.bottom = "";
@@ -291,15 +193,11 @@ export const resyncStickyBarShifts = () => {
 	}
 	applyHeaderShift(
 		ticker,
-		tickerVisualShift({
-			visualHeight: vv?.height,
+		tickerMeasuredShift({
+			measuredBottom: ticker.getBoundingClientRect().bottom,
+			currentShift: currentShiftOf(ticker),
 			layoutHeight:
 				document.documentElement?.clientHeight || window.innerHeight,
-			offsetTop,
-			visualWidth: vv?.width,
-			layoutWidth: document.documentElement?.clientWidth || window.innerWidth,
-			headerConfirms: confirms,
-			keyboardOpen: keyboardLikelyOpen(document.activeElement),
 		}),
 	);
 };
