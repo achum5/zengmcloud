@@ -26,6 +26,7 @@ import {
 	frontOfficeLog,
 	frontOfficeLoggingActive,
 } from "../../util/frontOfficeLog.ts";
+import { signingYears } from "./frontOffice.ts";
 
 const toFaPlayer = (p: Player, season: number): FaPlayer => {
 	const ratings = last(p.ratings);
@@ -358,6 +359,24 @@ const autoSign = async () => {
 		if (p) {
 			// Remove from list of free agents
 			playersSorted = playersSorted.filter((p2) => p2 !== p);
+
+			// The plan decides the structure of the deal - see signingYears.
+			if (posture && isSport("basketball")) {
+				const offset = g.get("phase") <= PHASE.PLAYOFFS ? -1 : 0;
+				const askedYears = p.contract.exp - season - offset;
+				const years = signingYears({
+					tier: posture.tier,
+					age: season - p.born.year,
+					askedYears,
+					amount: p.contract.amount,
+					minContract,
+					minLength: g.get("minContractLength"),
+					maxLength: g.get("maxContractLength"),
+				});
+				if (years !== askedYears) {
+					p.contract.exp = season + years + offset;
+				}
+			}
 
 			await player.sign(p, t.tid, p.contract, g.get("phase"));
 			await idb.cache.players.put(p);

@@ -320,6 +320,44 @@ export const scoreFreeAgent = ({
 	return score;
 };
 
+// HOW LONG A DEAL THIS FRONT OFFICE WANTS, given who it is signing. The ask's
+// years come from a league-wide regression that knows nothing about the
+// signing team's plan; the plan is what decides structure. A seller keeps its
+// veterans on expiring deals - the contract IS the trade asset at the
+// deadline - and locks up a real investment in a young player. A win-now team
+// never anchors itself to a thirty-something's decline years. Amount is
+// untouched (willingness is priced on money, and the user picks lengths
+// freely in their own negotiations - this is the same power).
+export const signingYears = ({
+	tier,
+	age,
+	askedYears,
+	amount,
+	minContract,
+	minLength,
+	maxLength,
+}: {
+	tier: TradePosture["tier"];
+	age: number;
+	askedYears: number;
+	amount: number;
+	minContract: number;
+	minLength: number;
+	maxLength: number;
+}): number => {
+	let years = askedYears;
+	if (tier === "teardown" || tier === "seller") {
+		if (age >= 28) {
+			years = Math.min(years, 1);
+		} else if (age <= 24 && amount > minContract * 1.5) {
+			years = Math.max(years, 3);
+		}
+	} else if ((tier === "allIn" || tier === "buyer") && age >= 32) {
+		years = Math.min(years, 2);
+	}
+	return Math.max(minLength, Math.min(maxLength, years));
+};
+
 // ---- Cap clearing: keeping the powder dry ---------------------------------
 
 // A free agent worth reorganising a payroll around. Deliberately strict: this

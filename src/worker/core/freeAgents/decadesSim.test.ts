@@ -873,6 +873,28 @@ describe("a league runs for a decade without falling apart", () => {
 				`WHIPLASH hold=${holds} step1=${steps1} step2=${steps2} step3+=${steps3}`,
 			);
 
+			{
+				// What the market was FOR, across the whole run - the census of
+				// why AI trades happened.
+				const motives = new Map<string, number>();
+				for (const e of (await idb.cache.events.getAll()) as any[]) {
+					if (e.type === "trade" && e.aiTrade?.motivation) {
+						motives.set(
+							e.aiTrade.motivation,
+							(motives.get(e.aiTrade.motivation) ?? 0) + 1,
+						);
+					}
+				}
+				if (motives.size > 0) {
+					rows.push(
+						`MOTIVES ${[...motives]
+							.sort((a, b) => b[1] - a[1])
+							.map(([k, v]) => `${k}=${v}`)
+							.join(" ")}`,
+					);
+				}
+			}
+
 			if (champions.length > 0) {
 				const byTid = new Map<number, number>();
 				const byTier = new Map<string, number>();

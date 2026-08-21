@@ -20,6 +20,7 @@ import {
 	scoreFreeAgent,
 	shouldLetWalk,
 	type FaPlayer,
+	signingYears,
 } from "./frontOffice.ts";
 import type { TradePosture } from "../trade/tradePosture.ts";
 
@@ -148,6 +149,61 @@ describe("fit scales with the size of the commitment", () => {
 		});
 		assert.isAbove(mid, small);
 		assert.isAbove(small, COMMITMENT_FLOOR);
+	});
+});
+
+describe("the structure of the deal follows the plan", () => {
+	const base = {
+		askedYears: 4,
+		amount: 8_000,
+		minContract: MIN,
+		minLength: 1,
+		maxLength: 5,
+	};
+
+	test("a seller keeps its veterans on expiring deals", () => {
+		assert.strictEqual(signingYears({ ...base, tier: "seller", age: 29 }), 1);
+		assert.strictEqual(signingYears({ ...base, tier: "teardown", age: 31 }), 1);
+	});
+
+	test("a rebuild locks up a real investment in a young player", () => {
+		assert.isAtLeast(
+			signingYears({ ...base, tier: "teardown", age: 22, askedYears: 2 }),
+			3,
+		);
+		// A minimum-deal bench kid is not an investment.
+		assert.strictEqual(
+			signingYears({
+				...base,
+				tier: "teardown",
+				age: 22,
+				askedYears: 2,
+				amount: MIN,
+			}),
+			2,
+		);
+	});
+
+	test("a contender does not anchor itself to decline years", () => {
+		assert.strictEqual(signingYears({ ...base, tier: "allIn", age: 33 }), 2);
+		assert.strictEqual(
+			signingYears({ ...base, tier: "buyer", age: 28 }),
+			base.askedYears,
+		);
+	});
+
+	test("a fringe team takes the ask as it comes", () => {
+		assert.strictEqual(
+			signingYears({ ...base, tier: "fringe", age: 30 }),
+			base.askedYears,
+		);
+	});
+
+	test("league length rules always win", () => {
+		assert.strictEqual(
+			signingYears({ ...base, tier: "seller", age: 30, minLength: 2 }),
+			2,
+		);
 	});
 });
 
