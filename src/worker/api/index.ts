@@ -5164,6 +5164,18 @@ const updateGameAttributesGodMode = async (
 	await idb.cache.flush();
 
 	await toUI("realtimeUpdate", [["gameAttributes"]]);
+
+	// Confirmation that the settings actually landed.
+	//
+	// In a shared league every cloud-tracked call passes the multiplayer guard
+	// first, and each of its nine refusal paths (not connected, still catching
+	// up, sync intended but offline, cloud not ready...) returns undefined
+	// WITHOUT running the action. This function used to return undefined on
+	// success too, so the Settings page could not tell "saved" from "refused"
+	// and reported success either way: the toast said the league settings were
+	// updated, nothing had been written, and going back to the page showed the
+	// old value. Returning a value is what makes a refusal visible.
+	return true;
 };
 
 const updateKeepRosterSorted = async ({

@@ -17,7 +17,23 @@ const Settings = ({ initialSettings }: View<"settings">) => {
 				setDirty(true);
 			}}
 			onSave={async (settings) => {
-				await toWorker("main", "updateGameAttributesGodMode", settings);
+				const saved = await toWorker(
+					"main",
+					"updateGameAttributesGodMode",
+					settings,
+				);
+
+				// In a shared league the multiplayer guard can refuse this before it
+				// runs (not connected, still catching up, reconnecting) and say so
+				// itself. Reporting success anyway is how a setting could be typed
+				// in, confirmed saved, and be blank on the next visit.
+				if (!saved) {
+					showNotification({
+						type: "error",
+						text: "League settings were not saved.",
+					});
+					return;
+				}
 
 				setDirty(false);
 
