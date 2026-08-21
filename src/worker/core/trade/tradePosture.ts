@@ -108,6 +108,8 @@ export type PosturePlayer = {
 	pos: string;
 	contractAmount: number;
 	contractExp: number;
+	// Games he is still out injured (0 when healthy).
+	gamesMissing: number;
 };
 
 // ---- Pure classification helpers (no DB — unit-tested directly) -------------
@@ -298,8 +300,17 @@ export const tierFromRoster = ({
 // slot is solid and not worth chasing.
 const SOFT_UPGRADE_MARGIN = 6;
 
+// A player out for a long stretch does not fill his position TODAY, which is
+// the question needs and surpluses answer - free agency consults them daily,
+// and a team whose only centre just went down for two months should read as
+// having a hole at centre while he is out, exactly like a front office signing
+// a stopgap. Short absences are ridden out on existing depth. Injuries heal
+// over the offseason (newPhaseBeforeDraft), so a lingering hole here is a
+// genuine one carrying into the season, not noise.
+export const LONG_INJURY_GAMES = 10;
+
 export const analyzePositions = (
-	players: { pos: string; ovr: number }[],
+	players: { pos: string; ovr: number; gamesMissing?: number }[],
 	starterOvr: number,
 ): {
 	needs: PositionNeed[];
@@ -312,6 +323,9 @@ export const analyzePositions = (
 } => {
 	const buckets: Record<PosBucket, number[]> = { G: [], F: [], C: [] };
 	for (const p of players) {
+		if ((p.gamesMissing ?? 0) >= LONG_INJURY_GAMES) {
+			continue;
+		}
 		buckets[posBucket(p.pos)].push(p.ovr);
 	}
 
@@ -650,6 +664,7 @@ export const getTradePosture = async (
 		pos: last(p.ratings).pos,
 		contractAmount: p.contract.amount,
 		contractExp: p.contract.exp,
+		gamesMissing: p.injury.gamesRemaining,
 	}));
 
 	// Team strength rank (0 best … 1 worst).

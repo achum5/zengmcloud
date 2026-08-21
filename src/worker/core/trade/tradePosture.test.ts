@@ -2,6 +2,7 @@ import { assert, beforeEach, describe, test } from "vitest";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { g } from "../../util/index.ts";
 import {
+	LONG_INJURY_GAMES,
 	analyzePositions,
 	capPosture,
 	classifyTier,
@@ -463,6 +464,37 @@ describe("getTradePostureReport (integration)", () => {
 	});
 });
 
+describe("a hole is judged by who can play today", () => {
+	// The bug this pins: a team whose only centre went down for two months
+	// read as having no need at centre, so the daily in-season signing loop
+	// never patched the hole a real front office patches within the week.
+	test("a long-injured centre stops filling the centre slot", () => {
+		const starterOvr = 50;
+		const roster = [
+			{ pos: "C", ovr: 60, gamesMissing: 30 },
+			{ pos: "PG", ovr: 55, gamesMissing: 0 },
+			{ pos: "SG", ovr: 52 },
+			{ pos: "SF", ovr: 54 },
+			{ pos: "PF", ovr: 40 },
+		];
+		const { needs } = analyzePositions(roster, starterOvr);
+		assert.ok(
+			needs.some((n) => n.pos === "C"),
+			"the centre hole should be visible while he is out",
+		);
+	});
+
+	test("a short absence is ridden out on existing depth", () => {
+		const starterOvr = 50;
+		const roster = [
+			{ pos: "C", ovr: 60, gamesMissing: LONG_INJURY_GAMES - 1 },
+			{ pos: "PG", ovr: 55 },
+		];
+		const { needs } = analyzePositions(roster, starterOvr);
+		assert.notOk(needs.some((n) => n.pos === "C"));
+	});
+});
+
 // Helper: a slim PosturePlayer with defaults.
 function mkP(pid: number, over: Partial<PosturePlayer>): PosturePlayer {
 	return {
@@ -473,6 +505,7 @@ function mkP(pid: number, over: Partial<PosturePlayer>): PosturePlayer {
 		age: 25,
 		pos: "SF",
 		contractAmount: 5000,
+		gamesMissing: 0,
 		contractExp: 2019,
 		...over,
 	};

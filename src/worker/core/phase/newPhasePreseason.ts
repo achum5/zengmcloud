@@ -26,6 +26,11 @@ import { choice, randInt, uniform } from "../../../common/random.ts";
 import { env } from "../../util/env.ts";
 import { ageFace, familySeed } from "../../util/realisticFaces.ts";
 import { recordAppearance } from "../../../common/playerAppearance.ts";
+import { smartBudgetLevels } from "../finances/smartBudget.ts";
+import {
+	getLeagueTradeContext,
+	getTradePosture,
+} from "../trade/tradePosture.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../../common/sportsbook.ts";
 
 const newPhasePreseason = async (
@@ -217,6 +222,31 @@ const newPhasePreseason = async (
 
 	const activeTeams = teams.filter((t) => !t.disabled);
 	const popRanks = helpers.getPopRanks(activeTeams);
+
+	// A smart front office spreads its departments around the market-size base
+	// by what it is trying to do - see smartBudget.ts. The league context walks
+	// every player, so it is built lazily and once. Best-effort: any failure
+	// falls back to the old coin-flip refresh for that team.
+	let budgetContext:
+		| Awaited<ReturnType<typeof getLeagueTradeContext>>
+		| undefined;
+	const smartLevelsFor = async (tid: number, popRank: number) => {
+		if (!g.get("smartAiFrontOffice")) {
+			return undefined;
+		}
+		try {
+			budgetContext ??= await getLeagueTradeContext();
+			const posture = await getTradePosture(tid, budgetContext);
+			return smartBudgetLevels({
+				tier: posture.tier,
+				baseLevel: finances.defaultBudgetLevel(popRank),
+			});
+		} catch (error) {
+			console.error("Preseason budget posture failed", error);
+			return undefined;
+		}
+	};
+
 	for (const [t, popRank] of Iterator.zip([activeTeams, popRanks], {
 		mode: "strict",
 	})) {
@@ -227,15 +257,21 @@ const newPhasePreseason = async (
 		) {
 			await team.resetTicketPrice(t, popRank);
 
-			// Sometimes update budget items for AI teams
-			for (const key of [
-				"scouting",
-				"coaching",
-				"health",
-				"facilities",
-			] as const) {
-				if (Math.random() < 0.5) {
-					t.budget[key] = finances.defaultBudgetLevel(popRank);
+			const smartLevels = await smartLevelsFor(t.tid, popRank);
+			if (smartLevels) {
+				// The plan decides all four departments together.
+				t.budget = { ...t.budget, ...smartLevels };
+			} else {
+				// Sometimes update budget items for AI teams
+				for (const key of [
+					"scouting",
+					"coaching",
+					"health",
+					"facilities",
+				] as const) {
+					if (Math.random() < 0.5) {
+						t.budget[key] = finances.defaultBudgetLevel(popRank);
+					}
 				}
 			}
 
