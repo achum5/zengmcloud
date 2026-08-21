@@ -252,6 +252,7 @@ const findTarget = async ({
 				posture,
 				season,
 				minContract,
+				maxContract: g.get("maxContract"),
 			}),
 		})),
 		(x) => x.score,

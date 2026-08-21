@@ -178,6 +178,73 @@ export const contractRiskMultiplier = ({
 // left six stars (including a 32-year-old 72 ovr) permanently unemployed while
 // stock BBGM signed all of them. Fit decides between comparable players; it does
 // not get to remove someone from the market.
+// HOW RAW HE IS: 0 for a finished player, 1 for one whose ceiling is thirty
+// points above what he can do today.
+export const UPSIDE_FULL_GAP = 30;
+
+export const upsideShare = (p: { ovr: number; pot: number }): number =>
+	Math.min(1, Math.max(0, (p.pot - p.ovr) / UPSIDE_FULL_GAP));
+
+// A rebuilder is buying the player's future, a win-now team his present.
+//
+// This used to be an ADDITIVE bonus, which meant it escaped the fit clamp
+// below: a teardown scored a 44-ovr/62-pot prospect at 46 + 0.4x18 = 53, then
+// multiplied by a 1.3 ceiling for 69 - above a 72-ovr star floored to 50. Free
+// agency signs the FIRST acceptable name in this order (see getBest), so the
+// star's roster spot went to the prospect and the star went unsigned.
+//
+// As a multiplier inside the clamp, a rebuilder still takes the prospect over
+// a COMPARABLE finished player - which is the whole point - but no preference
+// can outrank a genuinely better one. The exact case above is pinned in
+// frontOffice.test.ts.
+export const UPSIDE_LEAN: Record<TradePosture["tier"], number> = {
+	teardown: 0.25,
+	seller: 0.2,
+	fringe: 0,
+	buyer: -0.08,
+	allIn: -0.2,
+};
+
+export const upsideFitMultiplier = (
+	tier: TradePosture["tier"],
+	p: { ovr: number; pot: number },
+): number => 1 + UPSIDE_LEAN[tier] * upsideShare(p);
+
+// HOW MUCH OF A COMMITMENT THIS CONTRACT IS, 0 to 1.
+//
+// Fit is a statement about a multi-year investment: whether this player will
+// still be useful when the team is good, whether the money is affordable,
+// whether he plays where the hole is. None of that is at stake in a minimum
+// one-year deal for the last bench spot, where two candidates cost exactly
+// the same and the only real question is which one is better - so at the
+// bottom of the market, the ordering should collapse to value.
+//
+// A deal at half the max is treated as a full commitment; the floor keeps a
+// little fit alive even at the minimum, because a team with a gaping hole at
+// centre would still rather its last man be a centre.
+export const COMMITMENT_FLOOR = 0.25;
+
+export const commitmentShare = ({
+	amount,
+	minContract,
+	maxContract,
+}: {
+	amount: number;
+	minContract: number;
+	maxContract: number;
+}): number => {
+	const full = Math.max(minContract, maxContract / 2);
+	const share =
+		full > minContract
+			? (amount - minContract) / (full - minContract)
+			: amount > minContract
+				? 1
+				: 0;
+	return (
+		COMMITMENT_FLOOR + (1 - COMMITMENT_FLOOR) * Math.min(1, Math.max(0, share))
+	);
+};
+
 export const FIT_FLOOR = 0.7;
 export const FIT_CEILING = 1.3;
 
@@ -188,41 +255,27 @@ export const scoreFreeAgent = ({
 	posture,
 	season,
 	minContract,
+	maxContract,
 	daysLeft,
 }: {
 	p: FaPlayer;
 	posture: TradePosture;
 	season: number;
 	minContract: number;
+	maxContract: number;
 	// Days of free agency left, if this is the offseason. Fit matters less as the
 	// market empties - see the urgency ramp below.
 	daysLeft?: number;
 }): number => {
 	const years = Math.max(1, p.exp - season + 1);
 
-	let score = p.value;
-
-	// A rebuilder is buying the player's future, a win-now team his present.
-	// NOTE this tilt is ADDITIVE, so it is not covered by the FIT clamp below -
-	// a rebuilder scoring a 44-ovr/62-pot prospect at 51 will take him over a
-	// 72-ovr star floored to 50. That is a defensible preference on day one and
-	// an absurd one on the last day of free agency, which is what the urgency
-	// ramp at the bottom exists to unwind.
-	// value already blends the two; this tilts it.
-	// `value` already blends present and future; this tilts it hard enough to
-	// actually decide between a 22-year-old project and a 31-year-old starter,
-	// which is the choice these two kinds of team should answer differently.
-	if (posture.tier === "teardown" || posture.tier === "seller") {
-		score += (p.pot - p.ovr) * 0.4;
-	} else if (posture.tier === "allIn") {
-		score += (p.ovr - p.pot) * 0.4;
-	} else if (posture.tier === "buyer") {
-		score += (p.ovr - p.pot) * 0.15;
-	}
+	const score0 = p.value;
+	let score = score0;
 
 	let fit =
 		ageFitMultiplier(posture.tier, p.age) *
 		positionFitMultiplier(posture, p.pos) *
+		upsideFitMultiplier(posture.tier, p) *
 		contractRiskMultiplier({
 			tier: posture.tier,
 			age: p.age,
@@ -243,6 +296,12 @@ export const scoreFreeAgent = ({
 	}
 
 	fit = Math.min(FIT_CEILING, Math.max(FIT_FLOOR, fit));
+
+	// Scaled by how big a commitment the contract is - see commitmentShare.
+	fit =
+		1 +
+		(fit - 1) * commitmentShare({ amount: p.amount, minContract, maxContract });
+
 	score *= fit;
 
 	// Late in free agency a front office stops shopping for the ideal fit and
@@ -255,7 +314,7 @@ export const scoreFreeAgent = ({
 	// rather than something to be re-checked every time a multiplier is tuned.
 	if (daysLeft !== undefined && daysLeft < PURSUIT_GIVE_UP_DAYS) {
 		const urgency = Math.max(0, daysLeft) / PURSUIT_GIVE_UP_DAYS;
-		score = p.value + (score - p.value) * urgency;
+		score = score0 + (score - score0) * urgency;
 	}
 
 	return score;
@@ -287,13 +346,15 @@ export const pursuitScore = ({
 	posture,
 	season,
 	minContract,
+	maxContract,
 }: {
 	p: FaPlayer;
 	posture: TradePosture;
 	season: number;
 	minContract: number;
+	maxContract: number;
 }): number => {
-	const fit = scoreFreeAgent({ p, posture, season, minContract });
+	const fit = scoreFreeAgent({ p, posture, season, minContract, maxContract });
 
 	// A star picks a winner. A 20-win team clearing space for him is the kind of
 	// plan that never actually lands anybody, so it shouldn't get to sit out free
@@ -342,6 +403,7 @@ export const planCapHold = ({
 	daysLeft,
 	season,
 	minContract,
+	maxContract,
 }: {
 	posture: TradePosture;
 	// Prizes still unsigned, in any order.
@@ -353,6 +415,7 @@ export const planCapHold = ({
 	daysLeft: number;
 	season: number;
 	minContract: number;
+	maxContract: number;
 }): CapHold | undefined => {
 	// Holding space is meaningless without a cap to hold it under.
 	if (salaryCapType === "none") {
@@ -374,7 +437,13 @@ export const planCapHold = ({
 		if (payroll + target > salaryCap) {
 			continue;
 		}
-		const score = pursuitScore({ p, posture, season, minContract });
+		const score = pursuitScore({
+			p,
+			posture,
+			season,
+			minContract,
+			maxContract,
+		});
 		if (!best || score > best.score) {
 			best = { p, target, score };
 		}

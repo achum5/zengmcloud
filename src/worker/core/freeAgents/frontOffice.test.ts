@@ -1,6 +1,10 @@
 import { assert, describe, test } from "vitest";
 import {
 	ageFitMultiplier,
+	commitmentShare,
+	COMMITMENT_FLOOR,
+	upsideFitMultiplier,
+	upsideShare,
 	contractRiskMultiplier,
 	isPrize,
 	MAX_PURSUERS_PER_PRIZE,
@@ -22,6 +26,7 @@ import type { TradePosture } from "../trade/tradePosture.ts";
 const SEASON = 2025;
 const MIN = 1000;
 const CAP = 100_000;
+const MAX = 30_000;
 
 const fa = (overrides: Partial<FaPlayer> = {}): FaPlayer => ({
 	pid: 1,
@@ -67,6 +72,85 @@ const posture = (overrides: Partial<TradePosture> = {}): TradePosture =>
 		...overrides,
 	}) as TradePosture;
 
+describe("upside as a multiplier, not a bonus", () => {
+	test("upsideShare runs 0 to 1 and clamps", () => {
+		assert.strictEqual(upsideShare({ ovr: 60, pot: 60 }), 0);
+		assert.strictEqual(upsideShare({ ovr: 40, pot: 70 }), 1);
+		assert.strictEqual(upsideShare({ ovr: 40, pot: 90 }), 1);
+		assert.strictEqual(upsideShare({ ovr: 60, pot: 50 }), 0);
+	});
+
+	test("a rebuild pays a premium for a raw player, a win-now team discounts him", () => {
+		const raw = { ovr: 45, pot: 65 };
+		assert.isAbove(upsideFitMultiplier("teardown", raw), 1);
+		assert.isBelow(upsideFitMultiplier("allIn", raw), 1);
+		assert.strictEqual(upsideFitMultiplier("fringe", raw), 1);
+	});
+
+	// THE BUG THE MULTIPLIER FIXES. The tilt used to be additive, outside the
+	// fit clamp, so a rebuilder scored a 46-value prospect above a 72-value
+	// star and free agency - which signs the first acceptable name in fit
+	// order - gave the star's roster spot to the prospect. No preference gets
+	// to outrank a genuinely better player.
+	test("a teardown still takes the far better player", () => {
+		const prospect = fa({
+			pid: 1,
+			age: 22,
+			ovr: 44,
+			pot: 62,
+			value: 46,
+			amount: 8_000,
+		});
+		const star = fa({
+			pid: 2,
+			age: 27,
+			ovr: 72,
+			pot: 72,
+			value: 72,
+			amount: 30_000,
+		});
+		const rebuild = posture({ tier: "teardown" });
+		const score = (p: FaPlayer) =>
+			scoreFreeAgent({
+				p,
+				posture: rebuild,
+				season: SEASON,
+				minContract: MIN,
+				maxContract: MAX,
+			});
+		assert.isAbove(score(star), score(prospect));
+	});
+});
+
+describe("fit scales with the size of the commitment", () => {
+	test("a minimum deal keeps only a sliver of fit, a big deal keeps it all", () => {
+		assert.strictEqual(
+			commitmentShare({ amount: MIN, minContract: MIN, maxContract: MAX }),
+			COMMITMENT_FLOOR,
+		);
+		assert.strictEqual(
+			commitmentShare({
+				amount: MAX / 2,
+				minContract: MIN,
+				maxContract: MAX,
+			}),
+			1,
+		);
+		const small = commitmentShare({
+			amount: MIN * 2,
+			minContract: MIN,
+			maxContract: MAX,
+		});
+		const mid = commitmentShare({
+			amount: MAX / 4,
+			minContract: MIN,
+			maxContract: MAX,
+		});
+		assert.isAbove(mid, small);
+		assert.isAbove(small, COMMITMENT_FLOOR);
+	});
+});
+
 describe("who a team should want", () => {
 	// The most obviously wrong thing the old code did: everyone chased the same
 	// player, so a team tearing it down handed multi-year money to a 34-year-old.
@@ -78,7 +162,13 @@ describe("who a team should want", () => {
 		const winNow = posture({ tier: "allIn" });
 
 		const score = (p: FaPlayer, pos: TradePosture) =>
-			scoreFreeAgent({ p, posture: pos, season: SEASON, minContract: MIN });
+			scoreFreeAgent({
+				p,
+				posture: pos,
+				season: SEASON,
+				minContract: MIN,
+				maxContract: MAX,
+			});
 
 		assert.ok(
 			score(kid, rebuilding) > score(vet, rebuilding),
@@ -114,6 +204,7 @@ describe("who a team should want", () => {
 				posture: needsBigs,
 				season: SEASON,
 				minContract: MIN,
+				maxContract: MAX,
 			});
 		assert.ok(score(center) > score(guard));
 	});
@@ -154,12 +245,19 @@ describe("who a team should want", () => {
 			cap: { ...normal.cap, overLuxury: true, wantsRelief: true },
 		});
 		assert.ok(
-			scoreFreeAgent({ p, posture: taxed, season: SEASON, minContract: MIN }) <
+			scoreFreeAgent({
+				p,
+				posture: taxed,
+				season: SEASON,
+				minContract: MIN,
+				maxContract: MAX,
+			}) <
 				scoreFreeAgent({
 					p,
 					posture: normal,
 					season: SEASON,
 					minContract: MIN,
+					maxContract: MAX,
 				}),
 		);
 	});
@@ -203,6 +301,7 @@ describe("fit tilts the market, it does not delete players from it", () => {
 			posture: p2,
 			season: SEASON,
 			minContract: MIN,
+			maxContract: MAX,
 		});
 
 		// Unclamped this came out near 0.14 * value. The clamp is the contract.
@@ -234,6 +333,7 @@ describe("fit tilts the market, it does not delete players from it", () => {
 			posture: p2,
 			season: SEASON,
 			minContract: MIN,
+			maxContract: MAX,
 		});
 
 		// pot === ovr here so the additive tier tilt contributes nothing and the
@@ -268,6 +368,7 @@ describe("fit tilts the market, it does not delete players from it", () => {
 				posture: rebuild,
 				season: SEASON,
 				minContract: MIN,
+				maxContract: MAX,
 				daysLeft: PURSUIT_GIVE_UP_DAYS,
 			});
 		assert.ok(
@@ -281,6 +382,7 @@ describe("fit tilts the market, it does not delete players from it", () => {
 				posture: rebuild,
 				season: SEASON,
 				minContract: MIN,
+				maxContract: MAX,
 				daysLeft: 0,
 			});
 		assert.strictEqual(last(prospect), prospect.value);
@@ -299,12 +401,14 @@ describe("fit tilts the market, it does not delete players from it", () => {
 			posture: rebuild,
 			season: SEASON,
 			minContract: MIN,
+			maxContract: MAX,
 		});
 		const plentyOfDays = scoreFreeAgent({
 			p: vet,
 			posture: rebuild,
 			season: SEASON,
 			minContract: MIN,
+			maxContract: MAX,
 			daysLeft: PURSUIT_GIVE_UP_DAYS + 10,
 		});
 		assert.strictEqual(withoutDays, plentyOfDays);
@@ -328,6 +432,7 @@ describe("clearing cap space for a big free agent", () => {
 			daysLeft: 30,
 			season: SEASON,
 			minContract: MIN,
+			maxContract: MAX,
 			...overrides,
 		});
 
@@ -431,6 +536,7 @@ describe("letting a player walk", () => {
 		years: 3,
 		isStar: false,
 		minContract: MIN,
+		maxContract: MAX,
 	};
 
 	test("a teardown lets an expensive veteran go", () => {
@@ -473,6 +579,7 @@ describe("letting a player walk", () => {
 			amount: MIN * 8,
 			years: 3,
 			minContract: MIN,
+			maxContract: MAX,
 		};
 
 		// Nobody special by league standards - this is the case that used to walk.

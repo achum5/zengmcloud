@@ -46,6 +46,20 @@ export const SCARCE_AT_POSITION = 2;
 // that a replacement-level body cannot survive on his position alone.
 export const SCARCITY_PROTECTION = 1.35;
 
+// HOW FAR AGE MAY MOVE A CUT, and it is not as far as the free-agency lean.
+//
+// keepScore used to apply ageFitMultiplier raw, which runs from 1.25 down to
+// 0.55 for a selling team. That is a 2.3x swing on a player's value, so a
+// seller cut a 60-value 31-year-old (33) ahead of a 35-value 23-year-old
+// (43.75) - it inverted a twenty-five point talent gap, which is not
+// "deciding between comparable players" at all.
+//
+// So the lean is clamped. Two players within fifteen percent of each other are
+// separated by what the team is trying to do; a clearly better player is kept
+// either way.
+export const KEEP_AGE_FLOOR = 0.85;
+export const KEEP_AGE_CEILING = 1.15;
+
 export const positionCounts = (
 	players: readonly { pos: string }[],
 ): Map<PosBucket, number> => {
@@ -81,7 +95,12 @@ export const keepScore = ({
 	const atPos = counts.get(bucket) ?? 0;
 	const scarcity = atPos <= SCARCE_AT_POSITION ? SCARCITY_PROTECTION : 1;
 
-	const score = base * ageFitMultiplier(tier, p.age) * scarcity;
+	const lean = Math.min(
+		KEEP_AGE_CEILING,
+		Math.max(KEEP_AGE_FLOOR, ageFitMultiplier(tier, p.age)),
+	);
+
+	const score = base * lean * scarcity;
 	return Number.isFinite(score) ? score : 0;
 };
 

@@ -42,6 +42,17 @@ describe("who goes first", () => {
 		assert.strictEqual(order[0]!.pid, 1, "the project should go first");
 	});
 
+	// THE CLAMP. Unclamped, a seller's age lean ran 1.25 down to 0.55 - a 2.3x
+	// swing that had it cutting a 60-value veteran to keep a 35-value kid,
+	// inverting a twenty-five point talent gap. The lean decides between
+	// comparable players; it does not decide that gap.
+	test("age cannot invert a large talent gap", () => {
+		const kid = p({ pid: 1, age: 23, value: 35, pos: "F" });
+		const vet = p({ pid: 2, age: 31, value: 60, pos: "F" });
+		const order = cutOrder(deepRoster([kid, vet]), "seller");
+		assert.strictEqual(order[0]!.pid, 1, "the kid goes first");
+	});
+
 	// It decides between comparable players; it does not keep a bad one.
 	test("a clearly worse player still goes first, whatever his age", () => {
 		const scrub = p({ pid: 1, age: 21, value: 20, pos: "F" });

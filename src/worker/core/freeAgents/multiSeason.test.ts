@@ -409,6 +409,16 @@ describe("eight consecutive offseasons on one league", () => {
 						.length,
 				});
 
+				// The annual dead-money purge from newPhaseBeforeDraft. The real game
+				// deletes expired released contracts every June; without this,
+				// getPayroll counts them forever and the league slowly chokes on
+				// payroll that does not exist.
+				for (const rp of await idb.cache.releasedPlayers.getAll()) {
+					if (rp.contract.exp <= season && typeof rp.rid === "number") {
+						await idb.cache.releasedPlayers.delete(rp.rid);
+					}
+				}
+
 				// Roll the league forward a year: everyone ages, contracts tick down.
 				g.setWithoutSavingToDB("season", season + 1);
 				for (const p of await idb.cache.players.indexGetAll("playersByTid", [
@@ -442,6 +452,7 @@ describe("eight consecutive offseasons on one league", () => {
 					return {
 						ovr: r.ovr,
 						age: season - p.born.year,
+						couldFit,
 						label: `ovr ${r.ovr} age ${season - p.born.year} $${Math.round(p.contract.amount)} thru ${p.contract.exp} ${r.pos} couldFit=${couldFit}`,
 					};
 				});
@@ -665,15 +676,26 @@ describe("eight consecutive offseasons on one league", () => {
 				),
 			);
 
-			// A player young enough to still be good, left unemployed, is never a
-			// defensible front-office outcome. (Old unsigned players are largely a
-			// fixture artifact: this harness never retires anybody, so it accumulates
+			// A player young enough to still be good, left unemployed WHILE SOMEBODY
+			// COULD AFFORD HIM, is never a defensible front-office outcome. That is
+			// what couldFit was recorded for (see above): with every team capped
+			// out, a star still asking star money is the salary cap working, not
+			// the ordering failing - so the strict bound applies only to players a
+			// team had room for. (Old unsigned players are largely a fixture
+			// artifact: this harness never retires anybody, so it accumulates
 			// 40-year-olds who would not exist in a real league.)
 			const primeUnsigned = smart.unsigned.filter(
 				(x) => x.age <= 33 && x.ovr >= 65,
 			);
+			const passedOver = primeUnsigned.filter((x) => x.couldFit > 0);
 			assert.ok(
-				primeUnsigned.length <= 1,
+				passedOver.length <= 1,
+				`prime-age stars passed over with room available: ${passedOver.map((x) => x.label).join("; ")}`,
+			);
+			// The cap-room excuse only stretches so far: a league stranding a
+			// crowd of prime stars is broken whatever its payrolls say.
+			assert.ok(
+				primeUnsigned.length <= 3,
 				`prime-age stars left unemployed: ${primeUnsigned.map((x) => x.label).join("; ")}`,
 			);
 		}, 600_000);

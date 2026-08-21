@@ -22,6 +22,10 @@ import {
 	scoreFreeAgent,
 } from "./frontOffice.ts";
 import type { Player } from "../../../common/types.ts";
+import {
+	frontOfficeLog,
+	frontOfficeLoggingActive,
+} from "../../util/frontOfficeLog.ts";
 
 const toFaPlayer = (p: Player, season: number): FaPlayer => {
 	const ratings = last(p.ratings);
@@ -66,6 +70,7 @@ const autoSign = async () => {
 
 	const season = g.get("season");
 	const minContract = g.get("minContract");
+	const maxContract = g.get("maxContract");
 	const salaryCap = g.get("salaryCap");
 	const salaryCapType = g.get("salaryCapType");
 
@@ -139,6 +144,7 @@ const autoSign = async () => {
 					daysLeft,
 					season,
 					minContract,
+					maxContract,
 				});
 				if (hold) {
 					const prize = prizes.find((p) => p.pid === hold.pid)!;
@@ -150,6 +156,7 @@ const autoSign = async () => {
 							posture,
 							season,
 							minContract,
+							maxContract,
 						}),
 					});
 				}
@@ -165,6 +172,32 @@ const autoSign = async () => {
 			"playersByTid",
 			t.tid,
 		);
+
+		// Needed before the skip roll now, because whether to skip depends on it.
+		const payroll = await team.getPayroll(t.tid);
+
+		// A STAR THIS TEAM CAN SIGN OUTRIGHT, at his asking price, today.
+		//
+		// The teams with that kind of room are almost always rebuilding - and
+		// every rule below tells them to pass: the highest skip rates, an age
+		// multiplier that cuts a 28-year-old to little more than half, a cap-hold
+		// planner that excludes them by tier. In a league where cap space has
+		// gone scarce (dead money, a few teams hoarding room), that leaves the
+		// only chequebook big enough for a star in the hands of a team
+		// instructed not to open it, and he sits unsigned.
+		//
+		// Real front offices do the opposite: a team with max room signs the
+		// best player willing to take its money, whatever the timeline says - he
+		// is the trade asset, the mentor, the reason the next star comes - so an
+		// affordable star overrides the plan.
+		const affordableStar =
+			posture !== undefined &&
+			playersSorted.some(
+				(p2) =>
+					last(p2.ratings).ovr >= starOvr &&
+					p2.contract.amount > minContract &&
+					p2.contract.amount + payroll <= salaryCap,
+			);
 
 		// A rebuild is a decision to be bad for a while, not a licence to stop
 		// fielding a team. Once a roster is down to the bare minimum the passive
@@ -189,15 +222,16 @@ const autoSign = async () => {
 			// free agency feel like a lottery; now only teams with nothing much to
 			// do sit out often, and a team with a real hole moves quickly.
 			if (posture) {
-				probSkip = stripped
-					? 0.4
-					: posture.tier === "teardown"
-						? 0.85
-						: posture.tier === "seller"
-							? 0.75
-							: posture.needs.length > 0
-								? 0.4
-								: 0.6;
+				probSkip =
+					affordableStar || stripped
+						? 0.4
+						: posture.tier === "teardown"
+							? 0.85
+							: posture.tier === "seller"
+								? 0.75
+								: posture.needs.length > 0
+									? 0.4
+									: 0.6;
 			} else {
 				probSkip = t.strategy === "rebuilding" ? 0.9 : 0.75;
 			}
@@ -219,7 +253,7 @@ const autoSign = async () => {
 		}
 
 		// Ignore roster size, will drop bad player if necessary in checkRosterSizes, and getBest won't sign min contract player unless under the roster limit
-		const payroll = await team.getPayroll(t.tid);
+		// (payroll was fetched above, before the skip roll)
 
 		// Order the market by what THIS team should want. Falling back to the
 		// league-wide value order keeps old behavior if posture is unavailable.
@@ -234,20 +268,58 @@ const autoSign = async () => {
 		let candidates =
 			posture && !DRAFT_BY_TEAM_OVR
 				? orderBy(
-						playersSorted.map((p) => ({
-							p,
-							score: scoreFreeAgent({
+						playersSorted.map((p) => {
+							let score = scoreFreeAgent({
 								p: toFaPlayer(p, season),
 								posture,
 								season,
 								minContract,
+								maxContract,
 								daysLeft: daysLeftOrUndefined,
-							}),
-						})),
+							});
+							// Fit decides between comparable players; it never discounts
+							// a star this team could sign outright (see affordableStar).
+							if (
+								last(p.ratings).ovr >= starOvr &&
+								p.contract.amount + payroll <= salaryCap
+							) {
+								score = Math.max(score, p.value);
+							}
+							return { p, score };
+						}),
 						(x) => x.score,
 						"desc",
 					).map((x) => x.p)
 				: playersSorted;
+
+		// A FULL ROSTER MAKES EVERY SIGNING A RELEASE. getBest deliberately
+		// ignores the roster limit ("will drop bad player if necessary in
+		// checkRosterSizes"), which is fine for the occasional clear upgrade -
+		// but a fit-driven shopper acting on it every few days signs a 16th man,
+		// cuts a guaranteed contract, and repeats next summer. Measured over
+		// twenty simulated seasons, AI teams carried nearly triple the
+		// released-contract payroll stock BBGM does; this gate trims roughly a
+		// contract in six of it. At the limit, a candidate has to be a real
+		// upgrade on the player he forces out - a big one if that player has
+		// guaranteed years left, a marginal one if he is expiring or on a
+		// minimum deal.
+		if (
+			isSport("basketball") &&
+			posture &&
+			playersOnRoster.length >= g.get("maxRosterSize")
+		) {
+			let worstValue = Infinity;
+			let cutCostsRealMoney = false;
+			for (const rp of playersOnRoster) {
+				if (rp.value < worstValue) {
+					worstValue = rp.value;
+					cutCostsRealMoney =
+						rp.contract.exp > season && rp.contract.amount > minContract;
+				}
+			}
+			const margin = cutCostsRealMoney ? 8 : 2;
+			candidates = candidates.filter((p2) => p2.value >= worstValue + margin);
+		}
 
 		// Holding space for a marquee free agent. The money is earmarked for HIM,
 		// so he is exempt; everyone else has to fit under what's left. Minimum
@@ -264,6 +336,25 @@ const autoSign = async () => {
 		}
 
 		const p = getBest(playersOnRoster, candidates, payroll, getHardCap(t.tid));
+		// Only when the smart front office is actually deciding - with it off,
+		// several tests hold the log to zero entries as proof the switch is real.
+		if (posture && frontOfficeLoggingActive()) {
+			// What the market offered this team and what it took, so a long sim can
+			// be asked why a 70-ovr free agent went unsigned all summer.
+			const bestAvailable = playersSorted[0];
+			frontOfficeLog(season, t.tid, p ? "fa-sign" : "fa-pass", {
+				tier: posture?.tier,
+				payroll,
+				capSpace: salaryCap - payroll,
+				rosterSize: playersOnRoster.length,
+				held: capHolds.get(t.tid)?.pid,
+				pid: p?.pid,
+				ovr: p ? last(p.ratings).ovr : undefined,
+				amount: p?.contract.amount,
+				bestOvr: bestAvailable ? last(bestAvailable.ratings).ovr : undefined,
+				bestAmount: bestAvailable?.contract.amount,
+			});
+		}
 		if (p) {
 			// Remove from list of free agents
 			playersSorted = playersSorted.filter((p2) => p2 !== p);
