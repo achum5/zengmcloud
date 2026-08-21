@@ -61,7 +61,7 @@ const getAITids = async () => {
 const expiresThisSeason = (p: Player, season: number) =>
 	p.contract.exp === season;
 
-type AttemptContext = {
+export type AttemptContext = {
 	postures: Map<number, TradePosture>;
 	valueChangeCalculator: ValueChangeCalculator;
 	aiTids: number[];
@@ -92,13 +92,16 @@ const maxOvr = async (pids: number[]): Promise<number> => {
 //   • a buyer/contender offers future assets (a pick, or spare depth) to chase
 //     the win-now talent its lookingFor describes
 // Returns undefined if it has nothing sensible to offer.
-const buildSeed = async (
+export const buildSeed = async (
 	initiator: number,
 	posture: TradePosture,
 	players: Player[],
 	draftPicks: { dpid: number }[],
 	season: number,
 	starOvr: number,
+	// Source of randomness. The AI-AI path uses Math.random; the user-facing
+	// trade proposals pass a seeded stream so the page is stable between games.
+	rand: () => number = Math.random,
 ): Promise<
 	| {
 			pids: number[];
@@ -140,25 +143,25 @@ const buildSeed = async (
 			.filter((p) => last(p.ratings).ovr >= starOvr)
 			.sort((a, b) => b.value - a.value);
 		let p: Player | undefined;
-		if (starsOnBlock.length > 0 && Math.random() < 0.6) {
+		if (starsOnBlock.length > 0 && rand() < 0.6) {
 			p = starsOnBlock[0];
 		} else {
 			const pool = shopPlayers.length > 0 ? shopPlayers : players;
-			p = choice(pool, (pp) => Math.max(0.01, pp.value));
+			p = choice(pool, (pp) => Math.max(0.01, pp.value), rand());
 		}
 		if (p) {
 			pids.push(p.pid);
 			starSale = last(p.ratings).ovr >= starOvr;
 		}
-	} else if (draftPicks.length > 0 && Math.random() < 0.6) {
+	} else if (draftPicks.length > 0 && rand() < 0.6) {
 		// A buyer prefers to spend future assets on present talent.
-		dpids.push(choice(draftPicks).dpid);
+		dpids.push(choice(draftPicks, undefined, rand()).dpid);
 	} else {
 		// Otherwise offer spare depth (never a building block).
 		const blocks = new Set(posture.buildingBlockPids);
 		const spare = players.filter((p) => !blocks.has(p.pid));
 		const pool = spare.length > 0 ? spare : players;
-		const p = choice(pool, (pp) => Math.max(0.01, pp.value));
+		const p = choice(pool, (pp) => Math.max(0.01, pp.value), rand());
 		if (p) {
 			pids.push(p.pid);
 		}
@@ -385,7 +388,7 @@ const shortlistPartners = (
 // by ITS OWN outlook (the value calc is stock BBGM, tilted by each team's
 // strategy). We return how good that offer is FOR THE INITIATOR (dv2), so the
 // caller can compare competing offers and take the best one.
-const buildOfferFromPartner = async (args: {
+export const buildOfferFromPartner = async (args: {
 	initiator: number;
 	initPosture: TradePosture;
 	seed: {
@@ -396,10 +399,20 @@ const buildOfferFromPartner = async (args: {
 	};
 	initiatorExcluded: number[];
 	partner: number;
+	// Assets on the PARTNER's side the initiator is specifically asking for -
+	// how a team calls about YOUR player rather than shopping its own.
+	partnerSeedPids?: number[];
 	ctx: AttemptContext;
 }): Promise<{ teams: TradeTeams; dv2: number; landsStar: boolean } | null> => {
-	const { initiator, initPosture, seed, initiatorExcluded, partner, ctx } =
-		args;
+	const {
+		initiator,
+		initPosture,
+		seed,
+		initiatorExcluded,
+		partner,
+		partnerSeedPids = [],
+		ctx,
+	} = args;
 	const { postures, valueChangeCalculator, season, starOvr } = ctx;
 
 	// Both sides' building blocks (and just-traded players) are off the table.
@@ -425,8 +438,10 @@ const buildOfferFromPartner = async (args: {
 		},
 		{
 			tid: partner,
-			pids: [],
-			pidsExcluded: partnerExcluded,
+			pids: partnerSeedPids,
+			pidsExcluded: partnerExcluded.filter(
+				(pid) => !partnerSeedPids.includes(pid),
+			),
 			dpids: [],
 			dpidsExcluded: [],
 		},
