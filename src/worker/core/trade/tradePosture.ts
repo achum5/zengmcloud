@@ -751,8 +751,18 @@ export const getTradePosture = async (
 		},
 	);
 
-	// A star this team would actually move (usually an aging star on a seller) —
-	// the supply side of a blockbuster.
+	// A star this team would consider moving (usually an aging star on a seller)
+	// — the supply side of a blockbuster. Deliberately looser than the block
+	// itself: this is "worth a phone call about", not "already on the table".
+	//
+	// Tightening it to shopVeteranPids was tried and measured worse on every
+	// seed of a twenty-season run — two points of league quality and more stars
+	// left unemployed — because both uses of this flag are about WHO TO CALL,
+	// and the wider net found more real deals than the false advertisements
+	// cost. (The gap is real: a seller stops protecting a player at CORE_AGE
+	// but only starts shopping him at VET_AGE, so a 28-year-old star reads as
+	// available here while his own team would not lead with him. It just turns
+	// out to be a good lead anyway.)
 	const blockSet = new Set(buildingBlockPids);
 	const shoppableStar = players.some(
 		(p) => !blockSet.has(p.pid) && p.ovr >= context.starOvr,

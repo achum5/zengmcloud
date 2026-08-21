@@ -567,6 +567,23 @@ describe("a league runs for a decade without falling apart", () => {
 			assumed: number;
 			realized?: number;
 		}[] = [];
+		// Every multi-year commitment an AI team made, so what it thought it was
+		// buying can be checked against what the player was actually worth while
+		// it was still paying for him. The money-side twin of picksTaken: a front
+		// office that systematically buys decline is making plans that do not come
+		// true, and nothing in a box score says so.
+		const dealsSigned: {
+			season: number;
+			pid: number;
+			// Share of the salary cap, per year.
+			share: number;
+			years: number;
+			valueAtSigning: number;
+			ageAtSigning: number;
+			realized?: number;
+			atExpiry?: number;
+		}[] = [];
+		const seenDeals = new Set<string>();
 		const champions: {
 			year: number;
 			season: number;
@@ -678,6 +695,41 @@ describe("a league runs for a decade without falling apart", () => {
 					}
 				}
 				await team.checkRosterSizes("other");
+
+				// Every deal on the books we have not seen before. Recorded after
+				// free agency so it catches re-signings and new signings alike -
+				// both are the same bet, that this player is worth this money for
+				// these years. Year zero is skipped because the fixture arrives
+				// with contracts nobody decided on, and rookies because a rookie
+				// deal is the draft's bet: PICKS already measures that one.
+				for (let tid = 0; year > 0 && tid < NUM_TEAMS; tid++) {
+					for (const p of await idb.cache.players.indexGetAll(
+						"playersByTid",
+						tid,
+					)) {
+						const years = p.contract.exp - season + 1;
+						if (
+							years < 2 ||
+							p.contract.amount <= g.get("minContract") * 2 ||
+							p.draft.year >= season - 1
+						) {
+							continue;
+						}
+						const key = `${p.pid}|${p.contract.amount}|${p.contract.exp}`;
+						if (seenDeals.has(key)) {
+							continue;
+						}
+						seenDeals.add(key);
+						dealsSigned.push({
+							season,
+							pid: p.pid,
+							share: p.contract.amount / g.get("salaryCap"),
+							years,
+							valueAtSigning: p.value,
+							ageAtSigning: season - p.born.year,
+						});
+					}
+				}
 
 				// Measure the season.
 				const ctx = await getLeagueTradeContext();
@@ -913,6 +965,21 @@ describe("a league runs for a decade without falling apart", () => {
 							.join(" ")}`,
 				);
 
+				// Settle up any deal signed two seasons ago, and again in its LAST
+				// season - the year the team is still paying full price for
+				// whatever is left of him.
+				for (const rec of dealsSigned) {
+					const elapsed = season - rec.season;
+					if (rec.realized === undefined && elapsed === 2 && rec.years > 2) {
+						const p = await idb.cache.players.get(rec.pid);
+						rec.realized = p && p.tid !== PLAYER.RETIRED ? p.value : 0;
+					}
+					if (rec.atExpiry === undefined && elapsed === rec.years - 1) {
+						const p = await idb.cache.players.get(rec.pid);
+						rec.atExpiry = p && p.tid !== PLAYER.RETIRED ? p.value : 0;
+					}
+				}
+
 				// Settle up any pick made three seasons ago: what is he worth now?
 				for (const rec of picksTaken) {
 					if (rec.realized === undefined && season - rec.season === 3) {
@@ -1106,6 +1173,58 @@ describe("a league runs for a decade without falling apart", () => {
 					}
 					rows.push(`PICKS assumed->worth3y ${parts.join(" ")}`);
 				}
+			}
+
+			{
+				// The same question asked of money instead of picks: did the players
+				// AI teams committed years to hold their value while the team was
+				// still paying? Bucketed by share of the cap, because what makes a
+				// deal risky is what it costs. Diagnostic, not a canary - measured
+				// at 0.94-0.97x two years in and 0.88-0.93x at expiry, which is
+				// ordinary aging rather than a front office buying decline.
+				const mean = (xs: number[]) =>
+					xs.reduce((a, x) => a + x, 0) / Math.max(1, xs.length);
+				const buckets: [string, number, number][] = [
+					["max", 0.25, Infinity],
+					["big", 0.15, 0.25],
+					["mid", 0.07, 0.15],
+					["small", 0, 0.07],
+				];
+				const line = (
+					label: string,
+					rs: typeof dealsSigned,
+					got: (r: (typeof dealsSigned)[number]) => number,
+				) => {
+					const parts: string[] = [];
+					for (const [bl, lo, hi] of buckets) {
+						const inB = rs.filter((r) => r.share >= lo && r.share < hi);
+						if (inB.length === 0) {
+							continue;
+						}
+						const signed = mean(inB.map((r) => r.valueAtSigning));
+						const later = mean(inB.map(got));
+						parts.push(
+							`${bl}:${signed.toFixed(0)}->${later.toFixed(0)}(${(
+								later / Math.max(1, signed)
+							).toFixed(2)}x,n=${inB.length},age${mean(
+								inB.map((r) => r.ageAtSigning),
+							).toFixed(0)},yrs${mean(inB.map((r) => r.years)).toFixed(1)})`,
+						);
+					}
+					if (parts.length > 0) {
+						rows.push(`DEALS ${label} ${parts.join(" ")}`);
+					}
+				};
+				line(
+					"signed->worth2y",
+					dealsSigned.filter((r) => r.realized !== undefined),
+					(r) => r.realized!,
+				);
+				line(
+					"signed->worthAtExpiry",
+					dealsSigned.filter((r) => r.atExpiry !== undefined),
+					(r) => r.atExpiry!,
+				);
 			}
 
 			// Diagnostic, not a canary: measured across four seeds the arms

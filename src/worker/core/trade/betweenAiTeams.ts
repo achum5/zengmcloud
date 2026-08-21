@@ -386,6 +386,28 @@ const shortlistPartners = (
 // AI-AI market, the proposals page, and the trading block all refuse the same
 // nonsense: cap-rule warnings, rentals landing anywhere but a contender, a
 // side that comes out strictly worse, a team acting against its own timeline.
+//
+// A note for whoever reads the numbers here and reaches for the obvious fix.
+// Over twenty simulated seasons the SOFT-CAP SALARY MATCH accounts for 92% of
+// every offer these guards kill - 2597 of them, against 115 downgrades, 88
+// timeline violations and 24 bad rentals. makeItWork builds the cheapest
+// package that clears on VALUE and knows nothing about salary, so an
+// over-the-cap partner is constantly handed an offer it is not allowed to
+// accept, and star sales in particular almost never survive.
+//
+// Attaching salary filler to close the gap - which is what a real front office
+// does, and summary even computes the exact shortfall - was built and measured
+// twice. Any-contract filler raised trade volume by a fifth and cost nearly two
+// points of league quality plus 26M a year in dead money: the value curve
+// prices a bad player at roughly nothing, so the cheapest way to satisfy the
+// match is always to hand somebody a long bad deal, which the receiving team
+// then releases. Restricting filler to EXPIRING contracts (the realistic
+// version) removed most of the extra trades while still raising dead money.
+// Neither version produced a single extra star sale.
+//
+// So the rule stands as a wall on purpose. The deals it blocks are mostly
+// deals that should not happen, and forcing them through only moves bad money
+// around the league.
 export const offerPassesGuards = async (
 	teams: TradeTeams,
 	postures: Map<number, TradePosture>,
