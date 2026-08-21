@@ -36,8 +36,6 @@ import {
 	type FastForward,
 } from "../../components/PlayPauseNext.tsx";
 import { Confetti } from "./Confetti.tsx";
-import { LiveGameChat } from "./LiveGameChat.tsx";
-import type { LiveGameChatMessage } from "../../../common/liveGameChat.ts";
 import { BoxScoreRow } from "../../components/BoxScoreRow.tsx";
 import { getPeriodName } from "../../../common/getPeriodName.ts";
 import LiveCourt, {
@@ -1324,11 +1322,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// the simmer's cursor (no own timer) and the page is locked; on the broadcaster
 	// we additionally heartbeat our cursor to the room. In single-player both are
 	// false and nothing below changes.
-	const { mpLiveBroadcast, mpLiveChat, mpSyncActive, userTid } = useLocal([
+	const { mpLiveBroadcast, userTid } = useLocal([
 		"mpLiveBroadcast",
-		"mpLiveChat",
-		// Whether this device is in a room at all - which is all chat needs.
-		"mpSyncActive",
 		// Which team this device manages, so the box scores below can lead with
 		// it - see liveBoxScoreLayout.ts.
 		"userTid",
@@ -1361,56 +1356,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 		boxScore.current.exhibition,
 		isReplay,
 	);
-
-	// ---- Live game chat ------------------------------------------------------
-	// Live, messages arrive over the room subscription. On a replay they come
-	// from the saved game, and the panel is read-only: the log is a record of
-	// what was said that night, not a comment thread.
-	const [replayChat, setReplayChat] = useState<LiveGameChatMessage[]>([]);
-	const replayGid = isReplay ? boxScore.current.gid : undefined;
-	useEffect(() => {
-		if (replayGid === undefined) {
-			setReplayChat([]);
-			return;
-		}
-		let stale = false;
-		void (async () => {
-			const saved = await toWorker("main", "getLiveGameChat", replayGid);
-			if (!stale) {
-				setReplayChat(saved ?? []);
-			}
-		})();
-		return () => {
-			stale = true;
-		};
-	}, [replayGid]);
-
-	const chatMessages = isReplay ? replayChat : mpLiveChat;
-	// The same measure the broadcaster publishes as its cursor - events
-	// consumed - so an anchor means the same thing on every device and on the
-	// replay. Recomputed each render; playIndex changing is what triggers one.
-	const chatCursor =
-		initialEventCount.current - (events.current?.length ?? 0) || 0;
-	// Anyone in the room can talk during a live game, whether or not this
-	// device holds the room's broadcast slot.
-	//
-	// It used to require the broadcast, and that quietly hid chat on the second
-	// device: a room has ONE broadcast doc and whoever gets there first keeps
-	// it, so a device live-simming its own game while another broadcast runs
-	// stays local (see startLiveBroadcast's skipped-broadcast-active path).
-	// With no broadcast and no messages yet, the panel returned null and there
-	// was nothing on screen to open - on the very device most likely to be
-	// watching alone and wanting to say something about it.
-	const chatCanSend =
-		!isReplay && (isFollower || isBroadcaster || mpSyncActive);
-	const chatScore =
-		Array.isArray(boxScore.current.teams) && boxScore.current.teams.length === 2
-			? `${boxScore.current.teams[0].abbrev ?? ""} ${
-					boxScore.current.teams[0].pts ?? 0
-				}-${boxScore.current.teams[1].pts ?? 0} ${
-					boxScore.current.teams[1].abbrev ?? ""
-				}`.trim()
-			: undefined;
 
 	const { setDirty } = useBlocker({
 		message: navigateWarning,
@@ -2423,10 +2368,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 		useState<HTMLElement | null>(null);
 	const isStuck = useIsStuck(liveGameStickyDiv);
 
-	// The court is a SIBLING of the sticky score block, not a child of it, so
-	// both are needed to know where the game ends and the chat drawer may start.
-	const [liveCourtDiv, setLiveCourtDiv] = useState<HTMLElement | null>(null);
-
 	// Needs to return actual div, not fragment, for AutoAffix!!!
 	return (
 		<div>
@@ -2577,9 +2518,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 					{boxScore.current.gid >= 0 ? (
 						<>
 							{isSport("basketball") ? (
-								// Measured, not styled: the chat drawer stops at the bottom of
-								// this so it never covers the court.
-								<div ref={setLiveCourtDiv}>
+								<div>
 									<LiveCourt
 										scene={courtScene.current}
 										teams={[
@@ -2642,26 +2581,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 					</div>
 				</div>
 			</div>
-
-			{/* OUTSIDE THE STICKY COLUMN, and that is the whole point.
-			    position:sticky creates a stacking context even at z-index auto, so
-			    while this lived inside .live-game-affix (sticky from the md
-			    breakpoint up) the drawer's z-index was resolved INSIDE that
-			    context - and the league ticker, at 1030 in the root context,
-			    painted straight over it however high the drawer went. On a phone
-			    the affix is static, no context is created, and the drawer showed
-			    up fine: the fault was desktop-only for exactly that reason.
-			    It is position:fixed and finds its own place from boundaryEls, so
-			    where it sits in the markup only ever affected stacking. */}
-			<LiveGameChat
-				messages={chatMessages}
-				cursor={chatCursor}
-				canSend={chatCanSend}
-				quarter={boxScore.current.quarterShort}
-				clock={boxScore.current.time}
-				score={chatScore}
-				boundaryEls={[liveGameStickyDiv, liveCourtDiv]}
-			/>
 		</div>
 	);
 };

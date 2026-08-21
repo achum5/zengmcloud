@@ -28,9 +28,20 @@ const pushToUI = () => {
 	void toUI("updateLocal", [{ mpLiveChat: messages }]);
 };
 
+// The live-game chat has no UI any more - its drawer is position:fixed and
+// kept landing in the middle of the screen instead of against the game, so it
+// was removed from the Live Game page. Nothing subscribes here as a result:
+// the room's chat doc would otherwise be read on every live sim, on every
+// device, for a panel nobody can see. The rest of the module is left intact so
+// saved replays that already carry a chat log still read back.
+const CHAT_UI_REMOVED = true;
+
 export const setupLiveChat = (t: SyncTransport) => {
 	teardownLiveChat();
 	transport = t;
+	if (CHAT_UI_REMOVED) {
+		return;
+	}
 	unsubscribe = t.subscribeLiveChat?.((incoming) => {
 		// Only this broadcast's messages. Anything stamped for a different one
 		// is last game's, still sitting in the room doc.
