@@ -1,5 +1,8 @@
 import { assert, describe, test } from "vitest";
 import {
+	INJURY_WEIGHT,
+	MAX_INJURY_DISCOUNT,
+	injuryDiscount,
 	ageMultiplier,
 	CONTRACT_FACTOR,
 	PICK_MULTIPLIER,
@@ -143,5 +146,73 @@ describe("the table can never produce a nonsense price", () => {
 				assert.strictEqual(ageMultiplier(tier, age), 1, tier);
 			}
 		}
+	});
+});
+
+describe("what an injury costs, and to whom", () => {
+	// THE ASYMMETRY THIS EXISTS FOR. A star out half a season misses most of
+	// the only year an all-in team cares about; he will be long healthy before
+	// a teardown is ready to use him.
+	test("a win-now team discounts a hurt player far more than a rebuild does", () => {
+		const args = { gamesRemaining: 40, weighted: true };
+		const allIn = injuryDiscount({ ...args, tier: "allIn" });
+		const teardown = injuryDiscount({ ...args, tier: "teardown" });
+		assert.isAbove(allIn, teardown);
+		assert.isAbove(allIn / teardown, 2);
+	});
+
+	test("a fringe team is exactly the old flat behaviour", () => {
+		for (const gamesRemaining of [0, 10, 40, 75, 200]) {
+			assert.strictEqual(
+				injuryDiscount({ tier: "fringe", gamesRemaining, weighted: true }),
+				injuryDiscount({ tier: "fringe", gamesRemaining, weighted: false }),
+			);
+		}
+	});
+
+	// With the smart front office off, every tier has to give back the stock
+	// numbers - which never looked at the tier at all.
+	test("unweighted, the tier makes no difference", () => {
+		const tiers = ["teardown", "seller", "fringe", "buyer", "allIn"] as const;
+		for (const tier of tiers) {
+			assert.strictEqual(
+				injuryDiscount({ tier, gamesRemaining: 40, weighted: false }),
+				0.4,
+			);
+			assert.strictEqual(
+				injuryDiscount({ tier, gamesRemaining: 200, weighted: false }),
+				0.75,
+			);
+		}
+	});
+
+	test("a healthy player is never discounted", () => {
+		for (const tier of ["allIn", "teardown"] as const) {
+			assert.strictEqual(
+				injuryDiscount({ tier, gamesRemaining: 0, weighted: true }),
+				0,
+			);
+		}
+	});
+
+	// Being hurt makes a player cheap, never worthless - a zero would make him
+	// untradeable rather than a bargain.
+	test("the discount never takes a player to nothing", () => {
+		const tiers = ["teardown", "seller", "fringe", "buyer", "allIn"] as const;
+		for (const tier of tiers) {
+			for (const gamesRemaining of [75, 200, 10_000]) {
+				const d = injuryDiscount({ tier, gamesRemaining, weighted: true });
+				assert.isAtMost(d, MAX_INJURY_DISCOUNT);
+				assert.isBelow(d, 1);
+			}
+		}
+	});
+
+	test("the weights run the right way across the tiers", () => {
+		assert.isBelow(INJURY_WEIGHT.teardown, INJURY_WEIGHT.seller);
+		assert.isBelow(INJURY_WEIGHT.seller, INJURY_WEIGHT.fringe);
+		assert.isBelow(INJURY_WEIGHT.fringe, INJURY_WEIGHT.buyer);
+		assert.isBelow(INJURY_WEIGHT.buyer, INJURY_WEIGHT.allIn);
+		assert.strictEqual(INJURY_WEIGHT.fringe, 1);
 	});
 });

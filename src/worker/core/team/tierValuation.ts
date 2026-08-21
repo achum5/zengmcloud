@@ -141,6 +141,53 @@ export const CONTRACT_FACTOR: Record<TradeTier, number> = {
 	allIn: 0.35,
 };
 
+// HOW MUCH AN INJURY IS WORTH TO THIS TEAM, and it is not the same number for
+// everyone.
+//
+// The injury discount was flat: a 70-ovr star out forty games lost the same
+// share of his value to a team going all-in this season as to one that will
+// not be good for three more. Those are opposite situations. He misses half
+// the only season the all-in team cares about, which is most of the reason to
+// trade for him at all; he will be long healthy before the teardown is ready,
+// so for that team the injury is mostly someone else's problem - and a chance
+// to buy a good player cheap, which is one of the most recognisable moves a
+// rebuilding front office makes.
+//
+// `fringe` is 1, so the middle of the range is exactly the old behaviour, and
+// the whole thing only applies when the smart front office is on.
+export const INJURY_WEIGHT: Record<TradeTier, number> = {
+	teardown: 0.45,
+	seller: 0.7,
+	fringe: 1,
+	buyer: 1.25,
+	allIn: 1.5,
+};
+
+// Stock BBGM stops discounting at 75 games out, and never takes a player all
+// the way to nothing - being hurt is not the same as being worthless, and a
+// zero here would make him untradeable rather than cheap.
+export const INJURY_GAMES_CAP = 75;
+export const MAX_INJURY_DISCOUNT = 0.9;
+
+// The fraction of a player's value an injury removes, 0 to MAX_INJURY_DISCOUNT.
+// Pass weighted: false for the flat stock behaviour.
+export const injuryDiscount = ({
+	tier,
+	gamesRemaining,
+	weighted,
+}: {
+	tier: TradeTier;
+	gamesRemaining: number;
+	weighted: boolean;
+}): number => {
+	if (!(gamesRemaining > 0)) {
+		return 0;
+	}
+	const base = Math.min(gamesRemaining, INJURY_GAMES_CAP) / 100;
+	const scaled = weighted ? base * INJURY_WEIGHT[tier] : base;
+	return Math.min(MAX_INJURY_DISCOUNT, Math.max(0, scaled));
+};
+
 // The tier a league without the smart front office behaves as, so turning the
 // setting off gives back exactly the numbers BBGM always used.
 export const tierForLegacyStrategy = (strategy: string): TradeTier =>

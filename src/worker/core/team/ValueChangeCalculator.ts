@@ -16,6 +16,7 @@ import { tierFromRoster, type TradeTier } from "../trade/tradePosture.ts";
 import {
 	ageMultiplier,
 	CONTRACT_FACTOR,
+	injuryDiscount,
 	PICK_MULTIPLIER,
 	tierForLegacyStrategy,
 } from "./tierValuation.ts";
@@ -468,6 +469,10 @@ const sumValues = (
 	tier: TradeTier,
 	tid: number,
 	includeInjuries = false,
+	// Whether the injury discount is scaled by what this team is trying to do.
+	// Off means the flat stock discount, so a league with the smart front
+	// office turned off values a hurt player exactly as BBGM always did.
+	weightInjuriesByTier = false,
 ) => {
 	if (players.length === 0) {
 		return 0;
@@ -493,13 +498,16 @@ const sumValues = (
 			? PICK_MULTIPLIER[tier]
 			: ageMultiplier(tier, p.age);
 
-		// Normalize for injuries
+		// Normalize for injuries, by what the injury actually costs THIS team -
+		// see injuryDiscount in team/tierValuation.ts.
 		if (includeInjuries && tid !== g.get("userTid")) {
-			if (p.injury.gamesRemaining > 75) {
-				playerValue -= playerValue * 0.75;
-			} else {
-				playerValue -= (playerValue * p.injury.gamesRemaining) / 100;
-			}
+			playerValue -=
+				playerValue *
+				injuryDiscount({
+					tier,
+					gamesRemaining: p.injury.gamesRemaining,
+					weighted: weightInjuriesByTier,
+				});
 		}
 
 		// Really bad players will just get no PT, but don't to count them as 0 because then AI thinks it can't find a trade
@@ -833,11 +841,12 @@ export class ValueChangeCalculator {
 		});
 
 		// console.log("ADD");
-		const valuesAdd = sumValues(add, tier, tid, true);
+		const smartInjuries = g.get("smartAiFrontOffice");
+		const valuesAdd = sumValues(add, tier, tid, true, smartInjuries);
 		// console.log("Total", valuesAdd);
 
 		// console.log("REMOVE");
-		const valuesRemove = sumValues(remove, tier, tid);
+		const valuesRemove = sumValues(remove, tier, tid, false, smartInjuries);
 		// console.log("Total", valuesRemove);
 
 		return valuesAdd - valuesRemove;

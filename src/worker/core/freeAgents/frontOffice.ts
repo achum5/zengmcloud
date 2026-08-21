@@ -1,5 +1,6 @@
 import type { PosBucket, TradePosture } from "../trade/tradePosture.ts";
 import { posBucket } from "../trade/tradePosture.ts";
+import { INJURY_WEIGHT } from "../team/tierValuation.ts";
 
 // ---------------------------------------------------------------------------
 // FREE AGENCY, RUN LIKE A FRONT OFFICE
@@ -245,6 +246,10 @@ export const commitmentShare = ({
 	);
 };
 
+// What an injury costs a middle-of-the-road team in free agency - the flat
+// number stock BBGM applied to everyone, now the centre of a range.
+export const INJURED_FA_PENALTY = 0.15;
+
 export const FIT_FLOOR = 0.7;
 export const FIT_CEILING = 1.3;
 
@@ -284,9 +289,24 @@ export const scoreFreeAgent = ({
 			minContract,
 		});
 
-	// Nobody's first choice is a player who can't play yet.
+	// Nobody's first choice is a player who can't play yet - but how much that
+	// costs depends on what the season is for. A contender is signing him to
+	// play now; a rebuild is signing him for the year after, and a hurt player
+	// it can get cheap is a bargain rather than a problem. Same weights the
+	// trade valuation uses (team/tierValuation.ts), so the two agree on what an
+	// injury is worth to a given team.
+	//
+	// TIER ONLY, deliberately - not scaled by how long he is out. A first
+	// version multiplied the penalty by the length of the injury as well, which
+	// reads as the more careful model and is not: it made every team mind
+	// injuries more rather than making them disagree, and over fifteen seasons
+	// it doubled the number of stars left unsigned (6 to 12 on one seed, 2 to 5
+	// on another) while costing the league a point of average team rating. A
+	// fringe team lands on 0.85 here, which is exactly what every team used to
+	// get, so this rotates the old behaviour around its centre instead of
+	// moving it.
 	if (p.injuredGames > 0) {
-		fit *= 0.85;
+		fit *= 1 - INJURED_FA_PENALTY * INJURY_WEIGHT[posture.tier];
 	}
 
 	fit = Math.min(FIT_CEILING, Math.max(FIT_FLOOR, fit));

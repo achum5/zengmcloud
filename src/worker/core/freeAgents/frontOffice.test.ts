@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	INJURED_FA_PENALTY,
 	ageFitMultiplier,
 	commitmentShare,
 	COMMITMENT_FLOOR,
@@ -203,6 +204,59 @@ describe("the structure of the deal follows the plan", () => {
 			signingYears({ ...base, tier: "seller", age: 30, minLength: 2 }),
 			2,
 		);
+	});
+});
+
+describe("signing a player who cannot play yet", () => {
+	const score = (p: FaPlayer, pos: TradePosture) =>
+		scoreFreeAgent({
+			p,
+			posture: pos,
+			season: SEASON,
+			minContract: MIN,
+			maxContract: MAX,
+		});
+
+	// A contender is signing him to play NOW; a rebuild is signing him for the
+	// year after, so a hurt player it can get cheap is a bargain.
+	test("a rebuild minds an injury far less than a contender does", () => {
+		const hurt = fa({ injuredGames: 40 });
+		const healthy = fa({ injuredGames: 0 });
+		const rebuildDrop =
+			score(healthy, posture({ tier: "teardown" })) -
+			score(hurt, posture({ tier: "teardown" }));
+		const contenderDrop =
+			score(healthy, posture({ tier: "allIn" })) -
+			score(hurt, posture({ tier: "allIn" }));
+		assert.isAbove(contenderDrop, rebuildDrop);
+	});
+
+	// The tier range is a rotation of the old flat behaviour around its centre,
+	// not a shift: a fringe team still gets the number every team used to get,
+	// so it sits in the middle of the range rather than at one end. (The ratio
+	// itself is not INJURED_FA_PENALTY exactly, because fit is clamped and then
+	// scaled by the size of the commitment before it reaches the score.)
+	test("fringe sits in the middle of the range", () => {
+		const drop = (tier: TradePosture["tier"]) => {
+			const pos = posture({ tier });
+			return (
+				score(fa({ injuredGames: 40 }), pos) /
+				score(fa({ injuredGames: 0 }), pos)
+			);
+		};
+		assert.isAbove(INJURED_FA_PENALTY, 0);
+		assert.isAbove(drop("teardown"), drop("fringe"));
+		assert.isAbove(drop("fringe"), drop("allIn"));
+		for (const tier of ["teardown", "fringe", "allIn"] as const) {
+			assert.isBelow(drop(tier), 1);
+		}
+	});
+
+	test("a healthy player is untouched by any of it", () => {
+		assert.isAbove(INJURED_FA_PENALTY, 0);
+		const pos = posture({ tier: "allIn" });
+		const healthy = fa({ injuredGames: 0 });
+		assert.strictEqual(score(healthy, pos), score(fa(), pos));
 	});
 });
 
