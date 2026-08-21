@@ -4,6 +4,9 @@ import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { draft, player, team, trade } from "../index.ts";
+import GameSim from "../GameSim.ts";
+import { processTeam } from "../game/loadTeams.ts";
+import { helpers } from "../../util/index.ts";
 import autoSign from "./autoSign.ts";
 import clearSpaceForSignings from "./clearSpace.ts";
 import decreaseDemands from "./decreaseDemands.ts";
@@ -156,12 +159,31 @@ const ensureDraftClass = async (season: number) => {
 		}
 	}
 
-	// Draft order for THIS season, by reverse standings of the pick's original
-	// team - trading for a bad team's pick is supposed to buy its lottery slot.
-	const ctx = await getLeagueTradeContext();
+	// Draft order for THIS season, worst team first - by the real record when
+	// games were simmed, by roster strength otherwise. Trading for a bad
+	// team's pick is supposed to buy its lottery slot.
+	const records: { tid: number; winp: number }[] = [];
+	for (let tid = 0; tid < NUM_TEAMS; tid++) {
+		const ts = await idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [
+			season,
+			tid,
+		]);
+		const gp = (ts?.won ?? 0) + (ts?.lost ?? 0);
+		if (gp > 0) {
+			records.push({ tid, winp: ts!.won / gp });
+		}
+	}
 	const slotByTid = new Map<number, number>();
-	for (const [i, { tid }] of [...ctx.teamOvrsSorted].reverse().entries()) {
-		slotByTid.set(tid, i + 1);
+	if (records.length === NUM_TEAMS) {
+		records.sort((a, b) => a.winp - b.winp);
+		for (const [i, { tid }] of records.entries()) {
+			slotByTid.set(tid, i + 1);
+		}
+	} else {
+		const ctx = await getLeagueTradeContext();
+		for (const [i, { tid }] of [...ctx.teamOvrsSorted].reverse().entries()) {
+			slotByTid.set(tid, i + 1);
+		}
 	}
 
 	for (let future = season; future <= season + PICK_HORIZON; future++) {
@@ -236,6 +258,13 @@ const rollForward = async (season: number) => {
 		PLAYER.FREE_AGENT,
 		Infinity,
 	])) {
+		// The offseason heals most injuries, like newPhaseBeforeDraft.
+		if (p.injury.gamesRemaining > 0) {
+			p.injury =
+				p.injury.gamesRemaining <= 82
+					? { type: "Healthy", gamesRemaining: 0 }
+					: { ...p.injury, gamesRemaining: p.injury.gamesRemaining - 82 };
+		}
 		if (await player.shouldRetire(p)) {
 			await player.retire(p, {});
 		} else if (p.tid === PLAYER.FREE_AGENT) {
@@ -258,6 +287,123 @@ const rollForward = async (season: number) => {
 	for (const p of players) {
 		await player.updateValues(p);
 		await idb.cache.players.put(p);
+	}
+};
+
+// A REAL SEASON, game by game. Only in deep runs (REAL_GAMES=1) - CI keeps
+// the fast synthetic standings. GameSim is driven directly, the way the
+// sportsbook does it: no schedule machinery, no locks, just inputs built from
+// the cache and results applied back by hand - standings, and the injuries
+// that make the in-season market mean something. The market itself (demands
+// falling, signings, trades) runs every few days all season, which is where
+// deadline behavior and injury stopgaps actually live.
+const simRealSeason = async (rng: () => number) => {
+	g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+	const season = g.get("season");
+	const NUM_GAME_DAYS = 82;
+	let gid = 1;
+
+	// A season row per team, 0-0, for the games to write into.
+	for (let tid = 0; tid < NUM_TEAMS; tid++) {
+		const existing = await idb.cache.teamSeasons.indexGet(
+			"teamSeasonsBySeasonTid",
+			[season, tid],
+		);
+		if (!existing) {
+			const row: any = team.genSeasonRow((await idb.cache.teams.get(tid))!);
+			row.season = season;
+			row.tid = tid;
+			await idb.cache.teamSeasons.add(row);
+		}
+	}
+
+	const loadSide = async (tid: number) => {
+		const [t, teamSeason, players] = await Promise.all([
+			idb.cache.teams.get(tid),
+			idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [season, tid]),
+			idb.getCopies.players({ tid }, "noCopyCache"),
+		]);
+		if (!t || !teamSeason) {
+			return undefined;
+		}
+		return processTeam(t, teamSeason, players);
+	};
+
+	for (let day = 0; day < NUM_GAME_DAYS; day++) {
+		// Everyone injured sits this one out and gets a game closer to healthy.
+		for (const p of await idb.cache.players.indexGetAll("playersByTid", [
+			0,
+			Infinity,
+		])) {
+			if (p.injury.gamesRemaining > 0) {
+				p.injury.gamesRemaining -= 1;
+				if (p.injury.gamesRemaining <= 0) {
+					p.injury = { type: "Healthy", gamesRemaining: 0 };
+				}
+				await idb.cache.players.put(p);
+			}
+		}
+
+		// Random pairings, one game per team per day.
+		const tids = Array.from({ length: NUM_TEAMS }, (_, i) => i);
+		for (let i = tids.length - 1; i > 0; i--) {
+			const j = Math.floor(rng() * (i + 1));
+			[tids[i], tids[j]] = [tids[j]!, tids[i]!];
+		}
+		for (let i = 0; i + 1 < tids.length; i += 2) {
+			const home = await loadSide(tids[i]!);
+			const away = await loadSide(tids[i + 1]!);
+			if (!home || !away) {
+				continue;
+			}
+			// GameSim mutates its inputs, so it gets copies - same as the
+			// sportsbook's usage.
+			const result: any = new GameSim({
+				gid: gid++,
+				day,
+				teams: helpers.deepCopy([home, away]) as any,
+				doPlayByPlay: false,
+				homeCourtFactor: 1,
+				neutralSite: false,
+				allStarGame: false,
+				baseInjuryRate: g.get("injuryRate"),
+			} as any).run();
+
+			const winner = result.team[0].stat.pts > result.team[1].stat.pts ? 0 : 1;
+			for (const j of [0, 1] as const) {
+				const ts = await idb.cache.teamSeasons.indexGet(
+					"teamSeasonsBySeasonTid",
+					[season, result.team[j].id],
+				);
+				if (ts) {
+					if (j === winner) {
+						ts.won += 1;
+					} else {
+						ts.lost += 1;
+					}
+					(ts as any).gp = ts.won + ts.lost;
+					await idb.cache.teamSeasons.put(ts);
+				}
+				for (const sp of result.team[j].player) {
+					if (sp.newInjury) {
+						const p = await idb.cache.players.get(sp.id);
+						if (p && p.injury.gamesRemaining === 0) {
+							p.injury = player.injury(DEFAULT_LEVEL);
+							await idb.cache.players.put(p);
+						}
+					}
+				}
+			}
+		}
+
+		// The market stays open all season.
+		if (day % 3 === 0) {
+			await decreaseDemands();
+			await autoSign();
+			if (nodeEnv.NO_TRADES !== "1") {
+				await trade.betweenAiTeams();
+			}
+		}
 	}
 };
 
@@ -295,8 +441,14 @@ describe("a league runs for a decade without falling apart", () => {
 
 			for (let year = 0; year < SEASONS; year++) {
 				const season = g.get("season");
+				if (nodeEnv.REAL_GAMES === "1") {
+					// The season is actually played: real standings, real injuries,
+					// the market open throughout. Records then also set draft slots.
+					await simRealSeason(rng);
+				} else {
+					await setRecords(rng);
+				}
 				await ensureDraftClass(season);
-				await setRecords(rng);
 
 				// THE DEADLINE WINDOW. Mid-season is where the other half of the
 				// trade AI lives - contenders renting expiring veterans, sellers
@@ -306,7 +458,7 @@ describe("a league runs for a decade without falling apart", () => {
 				// its base rate - what is being exercised is the motivation logic,
 				// not the frenzy.)
 				g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
-				if (nodeEnv.NO_TRADES !== "1") {
+				if (nodeEnv.NO_TRADES !== "1" && nodeEnv.REAL_GAMES !== "1") {
 					for (let tick = 0; tick < 7; tick++) {
 						await trade.betweenAiTeams();
 					}
@@ -390,6 +542,15 @@ describe("a league runs for a decade without falling apart", () => {
 				}
 				positionlessTotal += positionless;
 
+				let injuredNow = 0;
+				for (const p of await idb.cache.players.indexGetAll("playersByTid", [
+					0,
+					Infinity,
+				])) {
+					if (p.injury.gamesRemaining > 0) {
+						injuredNow += 1;
+					}
+				}
 				const fa = await idb.cache.players.indexGetAll(
 					"playersByTid",
 					PLAYER.FREE_AGENT,
@@ -449,7 +610,7 @@ describe("a league runs for a decade without falling apart", () => {
 						`pay ${((payroll / (salaryCap * NUM_TEAMS)) * 100).toFixed(0)}% ` +
 						`dead ${(deadMoney / 1000).toFixed(0)}M ` +
 						`fa ${fa.length} starsUnsigned ${unsignedStars} ` +
-						`trades ${tradeEvents}(d${draftNightTrades}) pickAway ${tradedPicks} ` +
+						`trades ${tradeEvents}(d${draftNightTrades}) pickAway ${tradedPicks} inj ${injuredNow} ` +
 						`illegal ${illegal} positionless ${positionless} ` +
 						`tiers ${["teardown", "seller", "fringe", "buyer", "allIn"]
 							.map(
@@ -613,11 +774,15 @@ describe("a league runs for a decade without falling apart", () => {
 			`released contracts ate ${(worstDeadShare * 100).toFixed(1)}% of league cap\n${log}`,
 		);
 
-		// The posture system keeps expressing the whole range of plans.
-		assert.strictEqual(
-			tiersSeen.size,
-			5,
-			`only saw tiers: ${[...tiersSeen].join(", ")}\n${log}`,
-		);
+		// The posture system keeps expressing the whole range of plans. Tiny
+		// smoke runs legitimately may not produce an all-in team, so this only
+		// applies at the default scale and up.
+		if (NUM_TEAMS * SEASONS >= 150) {
+			assert.strictEqual(
+				tiersSeen.size,
+				5,
+				`only saw tiers: ${[...tiersSeen].join(", ")}\n${log}`,
+			);
+		}
 	}, 240000);
 });
