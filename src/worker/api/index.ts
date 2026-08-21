@@ -205,6 +205,13 @@ import {
 } from "../views/teamGraphs.ts";
 import { DEFAULT_LEVEL } from "../../common/budgetLevels.ts";
 import isUntradable from "../core/trade/isUntradable.ts";
+import { offerPassesGuards } from "../core/trade/betweenAiTeams.ts";
+import {
+	getLeagueTradeContext,
+	getTradePosture,
+	type TradePosture,
+} from "../core/trade/tradePosture.ts";
+import { wasTradedThisSeason } from "../core/trade/tradeMotivation.ts";
 import getWinner from "../../common/getWinner.ts";
 import formatScoreWithShootout from "../../common/formatScoreWithShootout.ts";
 import { getStats } from "../../common/advancedPlayerSearch.ts";
@@ -2985,7 +2992,48 @@ const getOffers = async (
 
 	const valueChangeCalculator = new ValueChangeCalculator();
 
+	// The responding teams' plans, so a block response obeys the same rules an
+	// AI-AI trade does: nobody offers up its young core because the raw math
+	// says the values match, a rebuilder does not bid on the user's veteran,
+	// and no offer takes on a rental it cannot keep. Best-effort - without
+	// postures (or with the smart front office off) responses are unguarded,
+	// which is the old behavior.
+	const postures = new Map<number, TradePosture>();
+	const season = g.get("season");
+	try {
+		if (g.get("smartAiFrontOffice")) {
+			const context = await getLeagueTradeContext();
+			for (const tid of tids) {
+				if (tid !== g.get("userTid")) {
+					postures.set(tid, await getTradePosture(tid, context));
+				}
+			}
+		}
+	} catch (error) {
+		console.error("getOffers: posture computation failed", error);
+		postures.clear();
+	}
+
 	for (const tid of tids) {
+		if (tid === g.get("userTid")) {
+			continue;
+		}
+
+		const posture = postures.get(tid);
+		let responderExcluded: number[] = [];
+		if (posture) {
+			const responderPlayers = await idb.cache.players.indexGetAll(
+				"playersByTid",
+				tid,
+			);
+			responderExcluded = [
+				...posture.buildingBlockPids,
+				...responderPlayers
+					.filter((p) => wasTradedThisSeason(p.transactions, season))
+					.map((p) => p.pid),
+			];
+		}
+
 		const teams: TradeTeams = [
 			{
 				tid: g.get("userTid"),
@@ -2997,23 +3045,25 @@ const getOffers = async (
 			{
 				tid,
 				pids: [],
-				pidsExcluded: [],
+				pidsExcluded: responderExcluded,
 				dpids: [],
 				dpidsExcluded: [],
 			},
 		];
 
-		if (tid !== g.get("userTid")) {
-			const teams2 = await trade.makeItWork(teams, {
-				holdUserConstant: true,
-				maxAssetsToAdd: 4 + userPids.length + userDpids.length,
-				lookingFor,
-				valueChangeCalculator,
-			});
+		const teams2 = await trade.makeItWork(teams, {
+			holdUserConstant: true,
+			maxAssetsToAdd: 4 + userPids.length + userDpids.length,
+			lookingFor,
+			valueChangeCalculator,
+		});
 
-			if (teams2) {
-				offers.push(teams2);
-			}
+		if (
+			teams2 &&
+			(postures.size === 0 ||
+				(await offerPassesGuards(teams2, postures, season)))
+		) {
+			offers.push(teams2);
 		}
 	}
 

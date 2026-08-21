@@ -382,6 +382,31 @@ const shortlistPartners = (
 	return picked;
 };
 
+// Every check a deal must clear beyond the value math, in one place, so the
+// AI-AI market, the proposals page, and the trading block all refuse the same
+// nonsense: cap-rule warnings, rentals landing anywhere but a contender, a
+// side that comes out strictly worse, a team acting against its own timeline.
+export const offerPassesGuards = async (
+	teams: TradeTeams,
+	postures: Map<number, TradePosture>,
+	season: number,
+): Promise<boolean> => {
+	const tradeSummary = await summary(teams);
+	if (tradeSummary.warning) {
+		return false;
+	}
+	if (await hasBadRental(teams, postures, season)) {
+		return false;
+	}
+	if (await anyPureDowngrade(teams, season)) {
+		return false;
+	}
+	if (await violatesTimeline(teams, postures, season)) {
+		return false;
+	}
+	return true;
+};
+
 // One candidate partner's BEST offer for what the initiator is shopping, fully
 // guarded — or null if nothing clean clears. A single feeler in the market: the
 // partner (via makeItWork) assembles the cheapest package IT will accept, judged
@@ -482,17 +507,7 @@ export const buildOfferFromPartner = async (args: {
 		return null;
 	}
 
-	const tradeSummary = await summary(teams);
-	if (tradeSummary.warning) {
-		return null;
-	}
-	if (await hasBadRental(teams, postures, season)) {
-		return null;
-	}
-	if (await anyPureDowngrade(teams, season)) {
-		return null;
-	}
-	if (await violatesTimeline(teams, postures, season)) {
+	if (!(await offerPassesGuards(teams, postures, season))) {
 		return null;
 	}
 
