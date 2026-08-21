@@ -14,6 +14,7 @@ import newPhaseResignPlayers from "../phase/newPhaseResignPlayers.ts";
 import createRandomPlayers from "../league/create/createRandomPlayers.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
+import { captureFrontOfficeLog } from "../../util/frontOfficeLog.ts";
 import {
 	getLeagueTradeContext,
 	getTradePosture,
@@ -548,9 +549,22 @@ describe("a league runs for a decade without falling apart", () => {
 		Math.random = rng;
 
 		const rows: string[] = [];
+		// FO_LOG=1 records every reasoned front-office decision, so a deep run
+		// can be asked WHY - which teams passed, which gave up on a player they
+		// wanted, which dumped salary and for whom.
+		const foLog = nodeEnv.FO_LOG === "1" ? captureFrontOfficeLog() : undefined;
 		// Per-team history, for the questions only a decade can answer: does a
 		// rebuild ever pay off, does anyone get stuck at the bottom forever.
 		const history: { tid: number; tier: string; winp: number }[][] = [];
+		// Every pick made, so what the AI ASSUMED it was buying can be checked
+		// against what the player was actually worth once he had grown into it.
+		const picksTaken: {
+			season: number;
+			slot: number;
+			pid: number;
+			assumed: number;
+			realized?: number;
+		}[] = [];
 		const champions: {
 			year: number;
 			season: number;
@@ -564,6 +578,20 @@ describe("a league runs for a decade without falling apart", () => {
 		let positionlessTotal = 0;
 		let worstDeadShare = 0;
 		const taxByTier = new Map<string, number>();
+		// The single most committed payroll any team ever carried, as a share of
+		// the cap. Removing the tax-line ceiling on re-signing was checked on
+		// league AVERAGES; this is the tail it could not see.
+		let worstPayrollShare = 0;
+		let worstPayrollDetail = "";
+		let worstMaxDealOvr = Infinity;
+		let worstMaxDeal = "";
+		let maxDeals = 0;
+		let maxDealOvrTotal = 0;
+		let pickAssumedTotal = 0;
+		let pickRealizedTotal = 0;
+		let settledPicks = 0;
+		let rosterOvrTotal = 0;
+		let rosterOvrCount = 0;
 		const lastTovrs: number[] = [];
 		const tiersSeen = new Set<string>();
 
@@ -608,7 +636,27 @@ describe("a league runs for a decade without falling apart", () => {
 				}
 
 				g.setWithoutSavingToDB("phase", PHASE.DRAFT);
-				await draft.runPicks({ type: "untilEnd" }, {} as any);
+				// WHAT A PICK IS ASSUMED TO BE WORTH, straight off the curve the
+				// trade AI prices picks from (trade/getPickValues.ts): the value
+				// of the Nth best prospect on the board, right now.
+				const boardBefore = (
+					await idb.cache.players.indexGetAll("playersByTid", PLAYER.UNDRAFTED)
+				)
+					.filter((p) => p.draft.year === season)
+					.map((p) => p.value)
+					.sort((a, b) => b - a);
+				const draftedPids = await draft.runPicks(
+					{ type: "untilEnd" },
+					{} as any,
+				);
+				for (const [i, pid] of (draftedPids ?? []).entries()) {
+					picksTaken.push({
+						season,
+						slot: i + 1,
+						pid,
+						assumed: boardBefore[i] ?? 0,
+					});
+				}
 
 				g.setWithoutSavingToDB("phase", PHASE.RESIGN_PLAYERS);
 				await newPhaseResignPlayers({} as any);
@@ -711,7 +759,51 @@ describe("a league runs for a decade without falling apart", () => {
 							}
 						}
 					}
+					// The most overpaid contract in the league: the weakest player
+					// anyone is paying near-maximum money. This is what a bad deal
+					// looks like on a roster page, and league aggregates hide it.
+					for (const p of roster) {
+						rosterOvrTotal += p.ratings.at(-1)!.ovr;
+						rosterOvrCount += 1;
+						if (p.contract.amount >= 0.8 * g.get("maxContract")) {
+							const ovr = p.ratings.at(-1)!.ovr;
+							if (ovr < worstMaxDealOvr) {
+								worstMaxDealOvr = ovr;
+								worstMaxDeal = `s${season} ${ovr}ovr at ${(
+									p.contract.amount / 1000
+								).toFixed(0)}M`;
+							}
+							maxDeals += 1;
+							maxDealOvrTotal += ovr;
+						}
+					}
+
 					const payroll = await team.getPayroll(tid);
+					if (payroll / salaryCap > worstPayrollShare) {
+						worstPayrollShare = payroll / salaryCap;
+						// What that payroll is MADE of, so a runaway of live
+						// contracts can be told apart from accumulated dead money.
+						const live = roster.reduce((a, p) => a + p.contract.amount, 0);
+						const released = (
+							await idb.cache.releasedPlayers.indexGetAll(
+								"releasedPlayersByTid",
+								tid,
+							)
+						).reduce((a, rp) => a + rp.contract.amount, 0);
+						const top = [...roster]
+							.sort((a, b) => b.contract.amount - a.contract.amount)
+							.slice(0, 4)
+							.map(
+								(p) =>
+									`${p.ratings.at(-1)!.ovr}ovr/${(p.contract.amount / 1000).toFixed(0)}M`,
+							)
+							.join(" ");
+						worstPayrollDetail = `s${season} T${tid} ${(payroll / 1000).toFixed(0)}M = live ${(
+							live / 1000
+						).toFixed(0)}M + dead ${(released / 1000).toFixed(0)}M; n=${
+							roster.length
+						}; top ${top}`;
+					}
 					if (payroll > luxuryPayroll) {
 						taxByTier.set(posture.tier, (taxByTier.get(posture.tier) ?? 0) + 1);
 						if (posture.tier !== "allIn" && !posture.elite) {
@@ -803,10 +895,33 @@ describe("a league runs for a decade without falling apart", () => {
 							.join(" ")}`,
 				);
 
+				// Settle up any pick made three seasons ago: what is he worth now?
+				for (const rec of picksTaken) {
+					if (rec.realized === undefined && season - rec.season === 3) {
+						const p = await idb.cache.players.get(rec.pid);
+						// Out of the league counts as zero, which is the honest
+						// answer for a pick that produced nothing.
+						rec.realized = p && p.tid !== PLAYER.RETIRED ? p.value : 0;
+					}
+				}
+
 				await rollForward(season);
 			}
 		} finally {
 			Math.random = realRandom;
+		}
+
+		if (foLog) {
+			const counts = new Map<string, number>();
+			for (const e of foLog.stop()) {
+				counts.set(e.event, (counts.get(e.event) ?? 0) + 1);
+			}
+			rows.push(
+				`FRONT OFFICE ${[...counts]
+					.sort((a, b) => b[1] - a[1])
+					.map(([k, v]) => `${k}=${v}`)
+					.join(" ")}`,
+			);
 		}
 
 		// What only a decade can tell you. Diagnostics, not assertions - these go
@@ -907,12 +1022,14 @@ describe("a league runs for a decade without falling apart", () => {
 				}
 			}
 			rows.push(
+				`MAX DEALS n=${maxDeals} meanOvr=${(
+					maxDealOvrTotal / Math.max(1, maxDeals)
+				).toFixed(1)} worst ${worstMaxDeal}`,
+				`WORST PAYROLL ${(worstPayrollShare * 100).toFixed(0)}% of cap - ${worstPayrollDetail}`,
 				`TAXPAYERS byTier ${[...taxByTier]
 					.sort((a, b) => b[1] - a[1])
 					.map(([k, v]) => `${k}=${v}`)
 					.join(" ")}`,
-			);
-			rows.push(
 				`WHIPLASH hold=${holds} step1=${steps1} step2=${steps2} step3+=${steps3}`,
 			);
 
@@ -935,6 +1052,41 @@ describe("a league runs for a decade without falling apart", () => {
 							.map(([k, v]) => `${k}=${v}`)
 							.join(" ")}`,
 					);
+				}
+			}
+
+			{
+				const settled = picksTaken.filter((r) => r.realized !== undefined);
+				if (settled.length > 0) {
+					pickAssumedTotal = settled.reduce((a, r) => a + r.assumed, 0);
+					pickRealizedTotal = settled.reduce((a, r) => a + r.realized!, 0);
+					settledPicks = settled.length;
+				}
+				if (settled.length > 0) {
+					const buckets: [string, number, number][] = [
+						["1-3", 1, 3],
+						["4-10", 4, 10],
+						["11-20", 11, 20],
+						["21-30", 21, 30],
+						["31+", 31, Infinity],
+					];
+					const parts: string[] = [];
+					for (const [label, lo, hi] of buckets) {
+						const rows = settled.filter((r) => r.slot >= lo && r.slot <= hi);
+						if (rows.length === 0) {
+							continue;
+						}
+						const mean = (xs: number[]) =>
+							xs.reduce((a, x) => a + x, 0) / xs.length;
+						const assumed = mean(rows.map((r) => r.assumed));
+						const realized = mean(rows.map((r) => r.realized!));
+						parts.push(
+							`${label}:${assumed.toFixed(0)}->${realized.toFixed(0)}(${(
+								realized / Math.max(1, assumed)
+							).toFixed(2)}x,n=${rows.length})`,
+						);
+					}
+					rows.push(`PICKS assumed->worth3y ${parts.join(" ")}`);
 				}
 			}
 
@@ -1010,6 +1162,50 @@ describe("a league runs for a decade without falling apart", () => {
 			worstDeadShare,
 			0.15,
 			`released contracts ate ${(worstDeadShare * 100).toFixed(1)}% of league cap\n${log}`,
+		);
+
+		// A DRAFT PICK IS PRICED OFF THE PROSPECT BOARD (trade/getPickValues.ts):
+		// the value of the Nth best prospect available, today. Everything a
+		// rebuild does is bought with picks, so if that estimate drifts far from
+		// what a pick actually returns, every rebuild in the league is trading
+		// at the wrong price. Measured at 0.99-1.02x across slots; this fires
+		// only on gross miscalibration.
+		if (settledPicks > 20) {
+			const ratio = pickRealizedTotal / Math.max(1, pickAssumedTotal);
+			assert.isAbove(
+				ratio,
+				0.5,
+				`draft picks return far less than they are priced at (${ratio.toFixed(2)}x)\n${log}`,
+			);
+			assert.isBelow(
+				ratio,
+				2,
+				`draft picks return far more than they are priced at (${ratio.toFixed(2)}x)\n${log}`,
+			);
+		}
+
+		// Big money goes to good players. Aging stars on old deals drag this
+		// down and should - the check is only that near-maximum contracts are
+		// held by better-than-average players, not that every one is a bargain.
+		if (maxDeals > 10 && rosterOvrCount > 0) {
+			const maxDealMean = maxDealOvrTotal / maxDeals;
+			const leagueMean = rosterOvrTotal / rosterOvrCount;
+			assert.isAbove(
+				maxDealMean,
+				leagueMean,
+				`near-maximum contracts are going to below-average players (${maxDealMean.toFixed(1)} vs ${leagueMean.toFixed(1)})\n${log}`,
+			);
+		}
+
+		// An AI team is not burdened by a budget, so payroll is allowed to run
+		// well past the cap - talent concentrating on the teams that want it is
+		// the intended effect. What is NOT intended is a team locking up several
+		// times the league's money, which would mean the retention premium had
+		// come off its hinges.
+		assert.isBelow(
+			worstPayrollShare,
+			4,
+			`a team carried ${(worstPayrollShare * 100).toFixed(0)}% of the cap\n${log}`,
 		);
 
 		// The posture system keeps expressing the whole range of plans. Tiny
