@@ -774,8 +774,31 @@ export const BARGAIN_VALUE_MARGIN = 5;
 // One seat stays empty regardless. A team still wants somewhere to put a
 // midseason injury replacement, and the point here is to stop passing on
 // quality, not to run every roster to the brim in July.
-export const bargainRosterHeadroom = (maxRosterSize: number): number =>
-	maxRosterSize - 1;
+//
+// Unless the injuries have already happened. A team that cannot field a legal
+// rotation has no use for a spare seat - the emergency it was being saved for
+// is the one it is in - so the last spot opens up. See shortHanded.
+export const bargainRosterHeadroom = (
+	maxRosterSize: number,
+	shortHanded = false,
+): number => (shortHanded ? maxRosterSize : maxRosterSize - 1);
+
+// Too few healthy bodies to field a rotation. Tied to the league's own floor
+// for how few players a team may carry, because that is the game's statement
+// of what "enough" means; injured men count toward it but cannot play, which
+// is exactly the hole this closes. Measured over eight real seasons of thirty
+// teams, teams played 338 team-days with ten or fewer healthy players while
+// useful free agents sat available at the minimum - and 314 of those had an
+// open roster spot they simply never used. A front office signs a body.
+export const shortHanded = ({
+	healthyCount,
+	minRosterSize,
+}: {
+	// Players fit to play. Undefined outside the season, when there is no game
+	// tomorrow and nothing is urgent.
+	healthyCount: number | undefined;
+	minRosterSize: number;
+}): boolean => healthyCount !== undefined && healthyCount < minRosterSize;
 
 // A rebuilding team's last roster spots belong to players who will still be
 // there when it is good again. Signing a 33-year-old to a minimum deal is free,
@@ -798,6 +821,8 @@ export const findBargain = ({
 	worstRosterValue,
 	rosterSize,
 	maxRosterSize,
+	healthyCount,
+	minRosterSize,
 	season,
 	minContract,
 	maxContract,
@@ -809,15 +834,24 @@ export const findBargain = ({
 	worstRosterValue: number;
 	rosterSize: number;
 	maxRosterSize: number;
+	// Players fit to play right now. Only meaningful in season - see shortHanded.
+	healthyCount?: number;
+	minRosterSize: number;
 	season: number;
 	minContract: number;
 	maxContract: number;
 }): FaPlayer | undefined => {
-	if (rosterSize >= bargainRosterHeadroom(maxRosterSize)) {
+	const short = shortHanded({ healthyCount, minRosterSize });
+
+	if (rosterSize >= bargainRosterHeadroom(maxRosterSize, short)) {
 		return undefined;
 	}
 
-	const ageLimit = bargainAgeLimit(posture.tier);
+	// A team short of bodies is not choosing between this player and the worst
+	// man on its roster - it is choosing between him and a lineup it cannot
+	// fill. Whoever is healthy is the upgrade, and the timeline can wait until
+	// everyone is back.
+	const ageLimit = short ? Infinity : bargainAgeLimit(posture.tier);
 
 	// The fuller the roster, the better he has to be. The margin exists because
 	// the last seat has option value - a team wants somewhere to put a midseason
@@ -826,7 +860,7 @@ export const findBargain = ({
 	// worst man on its roster; it is choosing between him and nobody. (Measured:
 	// an eleven-man team passing on the best player in a 240-man free agent pool
 	// because its own worst man rated two points higher.)
-	const seatsToSpare = bargainRosterHeadroom(maxRosterSize) - rosterSize;
+	const seatsToSpare = bargainRosterHeadroom(maxRosterSize, short) - rosterSize;
 	const margin = BARGAIN_VALUE_MARGIN / seatsToSpare;
 
 	let best: { p: FaPlayer; score: number } | undefined;
@@ -841,7 +875,13 @@ export const findBargain = ({
 		}
 		// The whole justification for the roster spot. Value rather than ovr, so
 		// a 33-year-old does not displace a 22-year-old of the same rating.
-		if (p.value < worstRosterValue + margin) {
+		//
+		// A short-handed team skips this outright rather than easing it. The
+		// comparison is against the worst man on the roster because normally
+		// that is who the newcomer is taking minutes from; a team that cannot
+		// fill its lineup is not taking minutes from anybody, so there is no
+		// one to be better than.
+		if (!short && p.value < worstRosterValue + margin) {
 			continue;
 		}
 

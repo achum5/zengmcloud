@@ -295,6 +295,31 @@ const runOneOffseason = async (
 	entries: FrontOfficeEntry[];
 }> => {
 	const rng = makeRng(seed);
+
+	// The spy covers EVERYTHING, fixture construction included - the same point
+	// multiSeason.test.ts makes. player.generate reaches for BBGM's global RNG,
+	// which bottoms out in Math.random, so a buildLeague left outside the spy
+	// built a DIFFERENT LEAGUE on every run of the same seed. Measured before
+	// this: five identical runs of identical code produced 13-16 cap-clearing
+	// deals and 1-3 carrying a pick - which is how this file could go red
+	// without a line of it changing, and why any A/B run against it was partly
+	// measuring the fixture.
+	const randomSpy = vi.spyOn(Math, "random").mockImplementation(rng);
+	try {
+		return await runOffseasonBody(seed, rng, payrollBand);
+	} finally {
+		randomSpy.mockRestore();
+	}
+};
+
+const runOffseasonBody = async (
+	seed: number,
+	rng: () => number,
+	payrollBand?: [number, number],
+): Promise<{
+	report: Report;
+	entries: FrontOfficeEntry[];
+}> => {
 	const { salaryCap } = await buildLeague(rng, payrollBand);
 
 	const capture = captureFrontOfficeLog();
@@ -324,18 +349,13 @@ const runOneOffseason = async (
 		);
 	}
 
-	// Math.random drives the skip rolls and team shuffle; pin it to this run's
-	// stream so a failure is reproducible from the seed alone.
-	const randomSpy = vi.spyOn(Math, "random").mockImplementation(rng);
-	try {
-		for (let day = FA_DAYS; day > 0; day--) {
-			g.setWithoutSavingToDB("daysLeft", day);
-			await decreaseDemands();
-			await clearSpaceForSignings();
-			await autoSign();
-		}
-	} finally {
-		randomSpy.mockRestore();
+	// Math.random drives the skip rolls and team shuffle; the caller pinned it to
+	// this run's stream already, fixture included.
+	for (let day = FA_DAYS; day > 0; day--) {
+		g.setWithoutSavingToDB("daysLeft", day);
+		await decreaseDemands();
+		await clearSpaceForSignings();
+		await autoSign();
 	}
 
 	const entries = capture.stop();
@@ -582,12 +602,44 @@ describe("many simulated offseasons", () => {
 		// time - a league with no draft class values every pick at null, every
 		// trade containing one evaluated to NaN, and the whole sweetener half of
 		// the feature was silently dead while the tests stayed green.
-		const withPicks = allEntries.filter(
-			(e) => e.event === "dump-and-sign" && (e.data.picks as number) > 0,
+		//
+		// This used to be checked by requiring some COMPLETED deal to carry a
+		// pick, which turned out to be measuring the fixture rather than the
+		// feature: clearSpaceForTeam offers nothing first and only escalates when
+		// that is refused, so a corpus where every dump cleared unsweetened has
+		// no picks in it and nothing is wrong. Once the seeding was made
+		// reproducible (see runOneOffseason) that is exactly what these 25 seeds
+		// produce, and the old assertion failed on a working feature.
+		//
+		// So check the mechanism instead of its side effect. The escalation must
+		// actually run - more structures tried than partners, which can only
+		// happen if numPicks reached 1 - and no attempt may be rejected for not
+		// being priceable, which is the NaN symptom itself.
+		const attempts = allEntries.filter(
+			(e) => e.event === "dump-no-deal" || e.event === "dump-no-partner",
 		);
 		assert.ok(
-			withPicks.length > 0,
-			"no deal ever attached a pick - the sweetener path is dead again",
+			attempts.length > 0,
+			"no dump was ever refused, so the sweetener escalation never ran at all",
+		);
+		let escalated = false;
+		for (const e of attempts) {
+			const rejected = (e.data.rejected ?? {}) as Record<string, number>;
+			for (const unpriceable of ["partner-value-unknown", "cost-unknown"]) {
+				assert.strictEqual(
+					rejected[unpriceable],
+					undefined,
+					`a dump was rejected as "${unpriceable}" - picks are unpriceable again`,
+				);
+			}
+			const tried = Object.values(rejected).reduce((a, x) => a + x, 0);
+			if (tried > (e.data.partnersTried as number)) {
+				escalated = true;
+			}
+		}
+		assert.ok(
+			escalated,
+			"no refused dump was ever re-offered with a pick attached - the sweetener path is dead again",
 		);
 
 		// Still no self-destruction.

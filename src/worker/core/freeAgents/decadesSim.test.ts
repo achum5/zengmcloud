@@ -298,6 +298,9 @@ const rollForward = async (season: number) => {
 // that make the in-season market mean something. The market itself (demands
 // falling, signings, trades) runs every few days all season, which is where
 // deadline behavior and injury stopgaps actually live.
+// Healthy players per team, sampled weekly through every simulated season.
+const healthyBodies: number[] = [];
+
 const simRealSeason = async (rng: () => number) => {
 	g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
 	const season = g.get("season");
@@ -394,6 +397,20 @@ const simRealSeason = async (rng: () => number) => {
 						}
 					}
 				}
+			}
+		}
+
+		// Injured players count toward a roster but cannot play, so a full-looking
+		// team can still be short a rotation - and nothing in the roster rules
+		// notices. Sampled weekly, which is plenty to see a team stuck
+		// short-handed and cheap enough not to slow a deep run. See shortHanded
+		// in frontOffice.ts.
+		if (day % 7 === 0) {
+			for (let tid = 0; tid < NUM_TEAMS; tid++) {
+				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+				healthyBodies.push(
+					roster.filter((p) => p.injury.gamesRemaining === 0).length,
+				);
 			}
 		}
 
@@ -1227,6 +1244,27 @@ describe("a league runs for a decade without falling apart", () => {
 				);
 			}
 
+			if (healthyBodies.length > 0) {
+				const bands = new Map<string, number>();
+				for (const h of healthyBodies) {
+					bands.set(
+						h <= 8 ? "<=8" : h <= 10 ? "9-10" : h <= 12 ? "11-12" : "13+",
+						(bands.get(
+							h <= 8 ? "<=8" : h <= 10 ? "9-10" : h <= 12 ? "11-12" : "13+",
+						) ?? 0) + 1,
+					);
+				}
+				rows.push(
+					`HEALTHY BODIES teamDays=${healthyBodies.length} ${[
+						"<=8",
+						"9-10",
+						"11-12",
+						"13+",
+					]
+						.map((k) => `${k}=${bands.get(k) ?? 0}`)
+						.join(" ")}`,
+				);
+			}
 			// Diagnostic, not a canary: measured across four seeds the arms
 			// overlap (53.9-54.5 with vanilla's minimum-contract refusal in
 			// place, 51.4-53.9 with findBargain), so a threshold here would be

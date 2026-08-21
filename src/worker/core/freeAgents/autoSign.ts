@@ -119,6 +119,11 @@ const autoSign = async () => {
 	// Outside the free agency phase there is no countdown, so nothing is urgent
 	// and fit applies in full.
 	const inFreeAgency = g.get("phase") === PHASE.FREE_AGENCY;
+
+	// Games are being played, so a hole in the rotation is a hole tonight.
+	const inSeason =
+		g.get("phase") === PHASE.REGULAR_SEASON ||
+		g.get("phase") === PHASE.AFTER_TRADE_DEADLINE;
 	const daysLeftOrUndefined = inFreeAgency ? g.get("daysLeft") : undefined;
 
 	// Cap holds are an OFFSEASON thing. Once the season is running the marquee
@@ -450,6 +455,15 @@ const autoSign = async () => {
 						: 0,
 					rosterSize: playersOnRoster.length,
 					maxRosterSize: g.get("maxRosterSize"),
+					// Only during the season: out of it there is no game tomorrow,
+					// injuries heal before one matters, and a team that fills its
+					// last seat with a warm body in July is the churn the roster
+					// gate exists to prevent.
+					healthyCount: inSeason
+						? playersOnRoster.filter((p2) => p2.injury.gamesRemaining === 0)
+								.length
+						: undefined,
+					minRosterSize: g.get("minRosterSize"),
 					season,
 					minContract,
 					maxContract,

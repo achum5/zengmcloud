@@ -6,6 +6,7 @@ import {
 	BARGAIN_VALUE_MARGIN,
 	bargainRosterHeadroom,
 	findBargain,
+	shortHanded,
 	commitmentShare,
 	COMMITMENT_FLOOR,
 	upsideFitMultiplier,
@@ -929,11 +930,13 @@ describe("letting a player walk", () => {
 
 describe("bargains: quality that costs nothing but a roster spot", () => {
 	const MAX_ROSTER = 15;
+	const MIN_ROSTER = 10;
 	const args = {
 		posture: posture(),
 		worstRosterValue: 40,
 		rosterSize: 13,
 		maxRosterSize: MAX_ROSTER,
+		minRosterSize: MIN_ROSTER,
 		season: SEASON,
 		minContract: MIN,
 		maxContract: MAX,
@@ -1024,6 +1027,89 @@ describe("bargains: quality that costs nothing but a roster spot", () => {
 				rosterSize: 0,
 				candidates: [p],
 			}),
+		);
+	});
+});
+
+describe("a team too hurt to field a rotation", () => {
+	const MAX_ROSTER = 15;
+	const MIN_ROSTER = 10;
+	const args = {
+		posture: posture(),
+		worstRosterValue: 40,
+		rosterSize: 14,
+		maxRosterSize: MAX_ROSTER,
+		minRosterSize: MIN_ROSTER,
+		season: SEASON,
+		minContract: MIN,
+		maxContract: MAX,
+	};
+
+	// Injured men count toward the roster but cannot play, so a full-looking
+	// team can be short a rotation. Out of season there is no game tomorrow and
+	// nothing about it is urgent.
+	test("shortHanded only means anything during the season", () => {
+		assert.strictEqual(
+			shortHanded({ healthyCount: undefined, minRosterSize: MIN_ROSTER }),
+			false,
+		);
+		assert.strictEqual(
+			shortHanded({ healthyCount: 9, minRosterSize: MIN_ROSTER }),
+			true,
+		);
+		assert.strictEqual(
+			shortHanded({ healthyCount: 10, minRosterSize: MIN_ROSTER }),
+			false,
+		);
+	});
+
+	test("the seat held back for an emergency opens up in one", () => {
+		assert.strictEqual(bargainRosterHeadroom(MAX_ROSTER), MAX_ROSTER - 1);
+		assert.strictEqual(bargainRosterHeadroom(MAX_ROSTER, true), MAX_ROSTER);
+	});
+
+	// The bar exists to stop a team filling its last seats with bodies. A team
+	// that cannot fill its lineup wants exactly that.
+	test("a body nobody would otherwise take gets signed when the lineup is short", () => {
+		const scrub = fa({ value: 20, ovr: 40, pot: 40, amount: MIN });
+		assert.strictEqual(
+			findBargain({ ...args, candidates: [scrub] }),
+			undefined,
+		);
+		assert.strictEqual(
+			findBargain({ ...args, healthyCount: 8, candidates: [scrub] })?.pid,
+			scrub.pid,
+		);
+	});
+
+	test("a rebuild takes a veteran it would never otherwise take", () => {
+		const vet = fa({ age: 34, value: 45, amount: MIN });
+		const rebuilding = { ...args, posture: posture({ tier: "teardown" }) };
+		assert.strictEqual(
+			findBargain({ ...rebuilding, candidates: [vet] }),
+			undefined,
+		);
+		assert.ok(
+			findBargain({ ...rebuilding, healthyCount: 8, candidates: [vet] }),
+		);
+	});
+
+	// Being short-handed is not a reason to sign somebody who cannot play
+	// either, and it never breaks the roster limit.
+	test("an injured free agent is still no help, and the limit still holds", () => {
+		const hurt = fa({ value: 60, amount: MIN, injuredGames: 20 });
+		assert.strictEqual(
+			findBargain({ ...args, healthyCount: 8, candidates: [hurt] }),
+			undefined,
+		);
+		assert.strictEqual(
+			findBargain({
+				...args,
+				rosterSize: MAX_ROSTER,
+				healthyCount: 8,
+				candidates: [fa({ value: 60, amount: MIN })],
+			}),
+			undefined,
 		);
 	});
 });
