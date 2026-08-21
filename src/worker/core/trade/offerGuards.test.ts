@@ -245,6 +245,23 @@ describe("proposing a trade to a smart front office", () => {
 		return kid;
 	};
 
+	test("with the smart front office off, AI-AI trading still runs (stock path)", async () => {
+		await build();
+		g.setWithoutSavingToDB("smartAiFrontOffice", false);
+		g.setWithoutSavingToDB("aiTradesFactor", 5);
+
+		// The stock path must not depend on any posture machinery - it should
+		// simply run. Trades themselves are probabilistic, so the assertion is
+		// that a bunch of attempts complete cleanly and rosters stay coherent.
+		for (let i = 0; i < 10; i++) {
+			await trade.betweenAiTeams();
+		}
+		for (let tid = 0; tid < NUM; tid++) {
+			const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+			assert.isAbove(roster.length, 0);
+		}
+	});
+
 	test("its young cornerstone is not for sale at any calculated price", async () => {
 		const kid = await build();
 

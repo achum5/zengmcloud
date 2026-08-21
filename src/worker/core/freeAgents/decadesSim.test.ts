@@ -531,6 +531,40 @@ describe("a league runs for a decade without falling apart", () => {
 				`CONCENTRATION topSeeds distinct=${tops.size}/${NUM_TEAMS} max=${Math.max(...tops.values())}/${history.length}; ` +
 					`bottoms distinct=${bottoms.size}/${NUM_TEAMS} max=${Math.max(...bottoms.values())}/${history.length}`,
 			);
+
+			// Does a franchise hold a direction, or flip-flop? Adjacent-tier
+			// moves are ordinary drift; a two-step jump in one offseason is
+			// abrupt; three or more is whiplash no real front office shows.
+			const TIER_ORDER: Record<string, number> = {
+				teardown: 0,
+				seller: 1,
+				fringe: 2,
+				buyer: 3,
+				allIn: 4,
+			};
+			let steps1 = 0;
+			let steps2 = 0;
+			let steps3 = 0;
+			let holds = 0;
+			for (let y = 1; y < history.length; y++) {
+				for (const row of history[y]!) {
+					const d = Math.abs(
+						TIER_ORDER[row.tier]! - TIER_ORDER[history[y - 1]![row.tid]!.tier]!,
+					);
+					if (d === 0) {
+						holds += 1;
+					} else if (d === 1) {
+						steps1 += 1;
+					} else if (d === 2) {
+						steps2 += 1;
+					} else {
+						steps3 += 1;
+					}
+				}
+			}
+			rows.push(
+				`WHIPLASH hold=${holds} step1=${steps1} step2=${steps2} step3+=${steps3}`,
+			);
 		}
 
 		const log = rows.join("\n");

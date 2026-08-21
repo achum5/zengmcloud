@@ -546,6 +546,117 @@ export const buildOfferFromPartner = async (args: {
 	return { teams, dv2, landsStar };
 };
 
+// The pre-posture algorithm, verbatim from this repo's history (337a28255)
+// modulo the newer ValueChangeCalculator API: random initiator, random
+// partner, a value-weighted random asset on the table, makeItWork, and a
+// plain |dv| <= 15 sanity bound. This is what "smart front office off" means
+// for AI-AI trades - the valuation layer already reverts on its own (it
+// prices by the legacy strategy flag when the setting is off), so with this
+// the whole path is stock again.
+const legacyAttempt = async (
+	valueChangeCalculator: ValueChangeCalculator,
+): Promise<boolean> => {
+	const aiTids = await getAITids();
+	if (aiTids.length === 0) {
+		return false;
+	}
+
+	const tid = choice(aiTids);
+	const otherTids = aiTids.filter((tid2) => tid !== tid2);
+	if (otherTids.length === 0) {
+		return false;
+	}
+	const otherTid = choice(otherTids);
+
+	const players = (
+		await idb.cache.players.indexGetAll("playersByTid", tid)
+	).filter((p) => !isUntradable(p).untradable);
+	const draftPicks = await idb.cache.draftPicks.indexGetAll(
+		"draftPicksByTid",
+		tid,
+	);
+	if (players.length === 0 && draftPicks.length === 0) {
+		return false;
+	}
+
+	const r = Math.random();
+	const pids: number[] = [];
+	const dpids: number[] = [];
+	if ((r < 0.7 || draftPicks.length === 0) && players.length > 0) {
+		// Weight by player value - good player more likely to be in trade
+		const p = choice(players, (p2) => p2.value);
+		if (!p) {
+			return false;
+		}
+		pids.push(p.pid);
+	} else if ((r < 0.85 || players.length === 0) && draftPicks.length > 0) {
+		dpids.push(choice(draftPicks).dpid);
+	} else {
+		const p = choice(players, (p2) => p2.value);
+		const dp = choice(draftPicks);
+		if (!p || !dp) {
+			return false;
+		}
+		pids.push(p.pid);
+		dpids.push(dp.dpid);
+	}
+
+	const teams0: TradeTeams = [
+		{ dpids, dpidsExcluded: [], pids, pidsExcluded: [], tid },
+		{
+			dpids: [],
+			dpidsExcluded: [],
+			pids: [],
+			pidsExcluded: [],
+			tid: otherTid,
+		},
+	];
+
+	const teams = await makeItWork(teams0, {
+		holdUserConstant: false,
+		maxAssetsToAdd: 5,
+		valueChangeCalculator,
+	});
+	if (!teams) {
+		return false;
+	}
+
+	// Don't do trades of just picks, it's weird usually
+	if (teams[0].pids.length === 0 && teams[1].pids.length === 0) {
+		return false;
+	}
+
+	// Don't do trades for nothing, it's weird usually
+	if (teams[1].pids.length === 0 && teams[1].dpids.length === 0) {
+		return false;
+	}
+
+	const tradeSummary = await summary(teams);
+	if (tradeSummary.warning) {
+		return false;
+	}
+
+	// Make sure this isn't a really shitty trade
+	const dv2 = await valueChangeCalculator.evaluate({
+		tid: teams[0].tid,
+		pidsAdd: teams[1].pids,
+		pidsRemove: teams[0].pids,
+		dpidsAdd: teams[1].dpids,
+		dpidsRemove: teams[0].dpids,
+		tradingPartnerTid: undefined,
+	});
+	if (Math.abs(dv2) > 15) {
+		return false;
+	}
+
+	await processTrade(
+		[teams[0].tid, teams[1].tid],
+		[teams[0].pids, teams[1].pids],
+		[teams[0].dpids, teams[1].dpids],
+	);
+	return true;
+};
+
 const attempt = async (
 	ctx: AttemptContext,
 ): Promise<[number, number] | false> => {
@@ -704,6 +815,29 @@ const betweenAiTeams = async () => {
 	if (g.get("numActiveTeams") < DEFAULT_NUM_TEAMS) {
 		float *= g.get("numActiveTeams") / DEFAULT_NUM_TEAMS;
 	}
+
+	// With the smart front office off, this is the stock algorithm end to end:
+	// vanilla attempt volume (no activity bump, no deadline frenzy), random
+	// partners, and the plain fairness bound. See legacyAttempt.
+	if (!g.get("smartAiFrontOffice")) {
+		let numAttempts = Math.floor(float);
+		const remainder = float % 1;
+		if (remainder > 0 && Math.random() < remainder) {
+			numAttempts += 1;
+		}
+		if (numAttempts <= 0) {
+			return;
+		}
+		const valueChangeCalculator = new ValueChangeCalculator();
+		for (let i = 0; i < numAttempts; i++) {
+			const tradeHappened = await legacyAttempt(valueChangeCalculator);
+			if (tradeHappened) {
+				valueChangeCalculator.invalidateCache({ teams: "all" });
+			}
+		}
+		return;
+	}
+
 	float *= ACTIVITY_BUMP;
 
 	// Trades ramp up as the deadline approaches (a deadline frenzy).
