@@ -1,7 +1,11 @@
 import { assert, describe, test } from "vitest";
 import {
+	MIN_PURSUIT_CONFIDENCE,
 	INJURED_FA_PENALTY,
 	ageFitMultiplier,
+	BARGAIN_VALUE_MARGIN,
+	bargainRosterHeadroom,
+	findBargain,
 	commitmentShare,
 	COMMITMENT_FLOOR,
 	upsideFitMultiplier,
@@ -257,6 +261,71 @@ describe("signing a player who cannot play yet", () => {
 		const pos = posture({ tier: "allIn" });
 		const healthy = fa({ injuredGames: 0 });
 		assert.strictEqual(score(healthy, pos), score(fa(), pos));
+	});
+});
+
+describe("holding cap space for a player who is actually coming", () => {
+	const prize = (over: Partial<FaPlayer> = {}): FaPlayer =>
+		fa({ pid: 50, ovr: 72, pot: 72, value: 72, amount: 30_000, ...over });
+
+	const plan = (prizes: FaPlayer[], pos = posture({ tier: "buyer" })) =>
+		planCapHold({
+			posture: pos,
+			prizes,
+			payroll: 40_000,
+			salaryCap: CAP,
+			salaryCapType: "soft",
+			daysLeft: 20,
+			season: SEASON,
+			minContract: MIN,
+			maxContract: MAX,
+		});
+
+	test("a team holds room for a star who would sign there", () => {
+		assert.ok(plan([prize({ probWilling: 0.4 })]));
+	});
+
+	// THE POINT OF ALL THIS. A cap hold is an offseason spent NOT signing
+	// anyone, so planning one around a player with no interest is the most
+	// expensive way to be wrong.
+	test("it does not hold for a player who will not deal with it", () => {
+		assert.strictEqual(
+			plan([prize({ probWilling: MIN_PURSUIT_CONFIDENCE / 2 })]),
+			undefined,
+		);
+	});
+
+	test("between two stars it waits on the one more likely to come", () => {
+		const keen = prize({ pid: 1, probWilling: 0.5 });
+		const aloof = prize({ pid: 2, probWilling: 0.03 });
+		assert.strictEqual(plan([keen, aloof])?.pid, 1);
+	});
+
+	// Position steers the choice without vetoing it: a star is still a star,
+	// but between two of them a team waits on the one who fills its hole.
+	test("between two stars it prefers the one who fills a hole", () => {
+		const needsBigs = posture({
+			tier: "buyer",
+			needs: [{ pos: "C", severity: 12 }],
+			surpluses: [{ pos: "G", depth: 2 }],
+		});
+		const centre = prize({ pid: 1, pos: "C", probWilling: 0.3 });
+		const guard = prize({ pid: 2, pos: "PG", probWilling: 0.3 });
+		assert.strictEqual(plan([centre, guard], needsBigs)?.pid, 1);
+	});
+
+	// ...but depth is not a reason to pass on a genuine star, which is what
+	// every prize is (see isPrize).
+	test("it still holds for a star at a position it is deep at", () => {
+		const deepAtGuard = posture({
+			tier: "buyer",
+			surpluses: [{ pos: "G", depth: 2 }],
+		});
+		assert.ok(plan([prize({ pos: "PG", probWilling: 0.5 })], deepAtGuard));
+	});
+
+	test("with no mood known it behaves as it always did", () => {
+		assert.ok(plan([prize()]));
 	});
 });
 
@@ -854,6 +923,107 @@ describe("letting a player walk", () => {
 		assert.strictEqual(
 			shouldLetWalk({ tier: "teardown", ...base, age: 24 }),
 			false,
+		);
+	});
+});
+
+describe("bargains: quality that costs nothing but a roster spot", () => {
+	const MAX_ROSTER = 15;
+	const args = {
+		posture: posture(),
+		worstRosterValue: 40,
+		rosterSize: 13,
+		maxRosterSize: MAX_ROSTER,
+		season: SEASON,
+		minContract: MIN,
+		maxContract: MAX,
+	};
+
+	// The whole point: vanilla will not take this player, because it will not
+	// take ANY minimum player unless the roster is two men short of full.
+	test("a clear upgrade at the minimum is worth the last spot", () => {
+		const p = fa({ value: 40 + BARGAIN_VALUE_MARGIN, amount: MIN });
+		assert.strictEqual(findBargain({ ...args, candidates: [p] })?.pid, p.pid);
+	});
+
+	test("a body who is no better than the worst man on the roster is not", () => {
+		const p = fa({ value: 40 + BARGAIN_VALUE_MARGIN - 1, amount: MIN });
+		assert.strictEqual(findBargain({ ...args, candidates: [p] }), undefined);
+	});
+
+	test("an injured minimum signing is never an upgrade this season", () => {
+		const p = fa({ value: 60, amount: MIN, injuredGames: 20 });
+		assert.strictEqual(findBargain({ ...args, candidates: [p] }), undefined);
+	});
+
+	// One seat stays empty, so this is still not a way to run every roster to
+	// the brim - it is one man more than vanilla allows, not unlimited.
+	test("a full-enough roster has no spot to give", () => {
+		const p = fa({ value: 60, amount: MIN });
+		assert.strictEqual(bargainRosterHeadroom(MAX_ROSTER), MAX_ROSTER - 1);
+		assert.strictEqual(
+			findBargain({
+				...args,
+				rosterSize: MAX_ROSTER - 1,
+				candidates: [p],
+			}),
+			undefined,
+		);
+		assert.ok(
+			findBargain({ ...args, rosterSize: MAX_ROSTER - 2, candidates: [p] }),
+		);
+	});
+
+	test("the better of two upgrades is the one taken", () => {
+		const ok = fa({ pid: 1, ovr: 50, pot: 52, value: 50, amount: MIN });
+		const better = fa({ pid: 2, ovr: 58, pot: 60, value: 58, amount: MIN });
+		assert.strictEqual(
+			findBargain({ ...args, candidates: [ok, better] })?.pid,
+			better.pid,
+		);
+	});
+
+	// A rebuild's last roster spots belong to players who will still be around
+	// when it is finished. The contract is free; the minutes are not.
+	test("a rebuild will not spend its last spot on a veteran", () => {
+		const vet = fa({ age: 33, value: 60, amount: MIN });
+		assert.strictEqual(
+			findBargain({
+				...args,
+				posture: posture({ tier: "teardown" }),
+				candidates: [vet],
+			}),
+			undefined,
+		);
+		assert.ok(
+			findBargain({
+				...args,
+				posture: posture({ tier: "teardown" }),
+				candidates: [fa({ age: 23, value: 60, amount: MIN })],
+			}),
+		);
+	});
+
+	test("a contender has no such age limit", () => {
+		const vet = fa({ age: 33, value: 60, amount: MIN });
+		assert.ok(
+			findBargain({
+				...args,
+				posture: posture({ tier: "allIn" }),
+				candidates: [vet],
+			}),
+		);
+	});
+
+	test("an empty roster has no worst man to beat", () => {
+		const p = fa({ value: 30, amount: MIN });
+		assert.ok(
+			findBargain({
+				...args,
+				worstRosterValue: 0,
+				rosterSize: 0,
+				candidates: [p],
+			}),
 		);
 	});
 });

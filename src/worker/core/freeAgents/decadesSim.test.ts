@@ -541,6 +541,8 @@ describe("a league runs for a decade without falling apart", () => {
 	});
 
 	test("the full offseason cycle", async () => {
+		const bargainsLeftOver: number[] = [];
+		const bestBargainLeft: number[] = [];
 		const rng = makeRng(Number(nodeEnv.SEED ?? 31337));
 		// NOT vi.spyOn: a spy records every call it sees, and a decade of
 		// simulation calls Math.random tens of millions of times - the mock's
@@ -830,6 +832,22 @@ describe("a league runs for a decade without falling apart", () => {
 				).length;
 				unsignedStarTotal += unsignedStars;
 
+				// The cheapest quality in the game: healthy, useful, and asking the
+				// league minimum, yet still unsigned. This is how the AI's refusal
+				// to sign minimum players was caught - every summer a 51-to-57 ovr
+				// player sat in the pool for nothing while teams carried an empty
+				// roster spot. See findBargain in frontOffice.ts.
+				const bargainsLeft = fa.filter(
+					(p) =>
+						p.injury.gamesRemaining === 0 &&
+						p.ratings.at(-1)!.ovr >= 50 &&
+						p.contract.amount <= g.get("minContract"),
+				);
+				bargainsLeftOver.push(bargainsLeft.length);
+				bestBargainLeft.push(
+					Math.max(0, ...bargainsLeft.map((p) => p.ratings.at(-1)!.ovr)),
+				);
+
 				// Trades executed this season and picks living away from home.
 				let tradedPicks = 0;
 				for (const dp of await idb.cache.draftPicks.getAll()) {
@@ -1089,6 +1107,17 @@ describe("a league runs for a decade without falling apart", () => {
 					rows.push(`PICKS assumed->worth3y ${parts.join(" ")}`);
 				}
 			}
+
+			// Diagnostic, not a canary: measured across four seeds the arms
+			// overlap (53.9-54.5 with vanilla's minimum-contract refusal in
+			// place, 51.4-53.9 with findBargain), so a threshold here would be
+			// reading noise. The logic itself is pinned in frontOffice.test.ts;
+			// this row is for reading a deep run.
+			rows.push(
+				`BARGAINS LEFT mean=${avg(bargainsLeftOver).toFixed(1)}/season ` +
+					`bestLeft mean=${avg(bestBargainLeft).toFixed(1)} ` +
+					`max=${Math.max(0, ...bestBargainLeft)}`,
+			);
 
 			if (champions.length > 0) {
 				const byTid = new Map<number, number>();

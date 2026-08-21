@@ -148,6 +148,7 @@ const setup = async ({
 	await resetCache({ players, teams });
 	for (let tid = 0; tid < NUM_TEAMS; tid++) {
 		await idb.cache.teamSeasons.add({
+			...team.genSeasonRow((await idb.cache.teams.get(tid))!),
 			tid,
 			season: g.get("season"),
 			won: 41,

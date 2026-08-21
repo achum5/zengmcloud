@@ -14,7 +14,9 @@ import {
 } from "../trade/tradePosture.ts";
 import {
 	type CapHold,
+	capHoldTarget,
 	type FaPlayer,
+	findBargain,
 	isPrize,
 	planCapHold,
 	pursuitScore,
@@ -130,16 +132,60 @@ const autoSign = async () => {
 			.filter((p) => isPrize({ p, starOvr, minContract }));
 
 		if (prizes.length > 0) {
+			// Would he actually come HERE? A cap hold is an offseason spent not
+			// signing anyone, so it has to be planned against the player's real
+			// stance toward this team rather than his rating. moodInfo is
+			// deterministic per player and team, so every device in a shared
+			// league plans the same way. Only prizes are priced this way - a
+			// handful of players - and the expensive part of the mood system is
+			// cached for the season (local.minFractionDiffs).
+			const prizePlayers = new Map(
+				playersSorted.map((p) => [p.pid, p] as const),
+			);
 			const wanted = [];
+			// Teams that could not have fit ANY prize, kept apart from the ones
+			// that could and decided against it - the two look identical in a
+			// census and mean completely different things.
+			const noRoomForAnyone = new Set<number>();
 			for (const t of eligibleTeams) {
 				const posture = postures.get(t.tid);
 				if (!posture) {
 					continue;
 				}
+				const payrollNow = await team.getPayroll(t.tid);
+
+				// Mood is only worth reading for the prizes this team could fit
+				// under the cap in the first place. Measured over twenty seasons,
+				// three quarters of the prizes a team looked at were unaffordable,
+				// so asking every one of them how it felt about every team was
+				// mostly work thrown away.
+				const prizesForTeam: typeof prizes = [];
+				for (const prize of prizes) {
+					if (payrollNow + capHoldTarget(prize.amount) > salaryCap) {
+						continue;
+					}
+					const full = prizePlayers.get(prize.pid);
+					let probWilling: number | undefined;
+					if (full) {
+						try {
+							probWilling = (await player.moodInfo(full, t.tid)).probWilling;
+						} catch (error) {
+							// A mood the game cannot compute (an old league file with no
+							// expense history, say) is not a reason to stop signing
+							// players. Planning falls back to fit alone, which is what
+							// it did before mood was consulted at all.
+							console.error("Could not read a free agent's mood", error);
+						}
+					}
+					prizesForTeam.push({ ...prize, probWilling });
+				}
+				if (prizesForTeam.length === 0) {
+					noRoomForAnyone.add(t.tid);
+				}
 				const hold = planCapHold({
 					posture,
-					prizes,
-					payroll: await team.getPayroll(t.tid),
+					prizes: prizesForTeam,
+					payroll: payrollNow,
 					salaryCap,
 					salaryCapType,
 					daysLeft,
@@ -163,6 +209,43 @@ const autoSign = async () => {
 				}
 			}
 			capHolds = resolveCapHolds(wanted);
+
+			if (frontOfficeLoggingActive()) {
+				// What each team decided to do with its cap space, and why -
+				// planning around a player who was never coming is invisible in a
+				// box score and expensive in an offseason.
+				for (const t of eligibleTeams) {
+					const posture = postures.get(t.tid);
+					if (!posture || posture.tier === "teardown") {
+						continue;
+					}
+					const w = wanted.find((x) => x.tid === t.tid);
+					if (!w) {
+						frontOfficeLog(
+							season,
+							t.tid,
+							noRoomForAnyone.has(t.tid)
+								? "hold-no-room"
+								: "hold-none-worth-waiting-for",
+							{
+								prizes: prizes.length,
+								tier: posture.tier,
+							},
+						);
+					} else if (capHolds.has(t.tid)) {
+						frontOfficeLog(season, t.tid, "hold-open", {
+							pid: w.hold.pid,
+							score: Math.round(w.score * 100) / 100,
+							tier: posture.tier,
+						});
+					} else {
+						frontOfficeLog(season, t.tid, "hold-outbid-by-rivals", {
+							pid: w.hold.pid,
+							tier: posture.tier,
+						});
+					}
+				}
+			}
 		}
 	}
 
@@ -336,25 +419,70 @@ const autoSign = async () => {
 			);
 		}
 
-		const p = getBest(playersOnRoster, candidates, payroll, getHardCap(t.tid));
+		let p = getBest(playersOnRoster, candidates, payroll, getHardCap(t.tid));
+
+		// Nothing above the minimum was worth it - but that is not the same as
+		// nothing being worth it. getBest will not take a minimum-contract player
+		// unless the roster is two men short of full, which in practice means
+		// never, so good players sit in the pool all summer asking for the least
+		// money in the game. A front office with an open seat takes one when he
+		// is better than the man in the last seat. See findBargain.
+		//
+		// A team holding cap space is not excluded: the hold already exempts
+		// minimum deals for exactly this reason, so waiting for a star never
+		// leaves a roster short-handed.
+		let bargain: FaPlayer | undefined;
+		if (!p && posture && isSport("basketball")) {
+			const minimumFas = candidates
+				.filter((p2) => p2.contract.amount <= minContract)
+				.map((p2) => toFaPlayer(p2, season));
+			if (minimumFas.length > 0) {
+				let worstRosterValue = Infinity;
+				for (const rp of playersOnRoster) {
+					worstRosterValue = Math.min(worstRosterValue, rp.value);
+				}
+				bargain = findBargain({
+					posture,
+					candidates: minimumFas,
+					// An empty roster has no bar to clear, and no worst man to beat.
+					worstRosterValue: Number.isFinite(worstRosterValue)
+						? worstRosterValue
+						: 0,
+					rosterSize: playersOnRoster.length,
+					maxRosterSize: g.get("maxRosterSize"),
+					season,
+					minContract,
+					maxContract,
+				});
+				if (bargain) {
+					const bargainPid = bargain.pid;
+					p = candidates.find((p2) => p2.pid === bargainPid);
+				}
+			}
+		}
 		// Only when the smart front office is actually deciding - with it off,
 		// several tests hold the log to zero entries as proof the switch is real.
 		if (posture && frontOfficeLoggingActive()) {
 			// What the market offered this team and what it took, so a long sim can
 			// be asked why a 70-ovr free agent went unsigned all summer.
 			const bestAvailable = playersSorted[0];
-			frontOfficeLog(season, t.tid, p ? "fa-sign" : "fa-pass", {
-				tier: posture?.tier,
-				payroll,
-				capSpace: salaryCap - payroll,
-				rosterSize: playersOnRoster.length,
-				held: capHolds.get(t.tid)?.pid,
-				pid: p?.pid,
-				ovr: p ? last(p.ratings).ovr : undefined,
-				amount: p?.contract.amount,
-				bestOvr: bestAvailable ? last(bestAvailable.ratings).ovr : undefined,
-				bestAmount: bestAvailable?.contract.amount,
-			});
+			frontOfficeLog(
+				season,
+				t.tid,
+				p ? (bargain ? "fa-bargain" : "fa-sign") : "fa-pass",
+				{
+					tier: posture?.tier,
+					payroll,
+					capSpace: salaryCap - payroll,
+					rosterSize: playersOnRoster.length,
+					held: capHolds.get(t.tid)?.pid,
+					pid: p?.pid,
+					ovr: p ? last(p.ratings).ovr : undefined,
+					amount: p?.contract.amount,
+					bestOvr: bestAvailable ? last(bestAvailable.ratings).ovr : undefined,
+					bestAmount: bestAvailable?.contract.amount,
+				},
+			);
 		}
 		if (p) {
 			// Remove from list of free agents

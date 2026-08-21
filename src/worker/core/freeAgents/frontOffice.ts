@@ -34,6 +34,11 @@ export type FaPlayer = {
 	// Last season of the deal he is asking for.
 	exp: number;
 	injuredGames: number;
+	// How likely he is to sign HERE, 0..1, from the mood system. Optional so
+	// every existing caller that only wants a fit score is unaffected; the cap
+	// hold planner is the one that needs it, because freezing an offseason for
+	// a player who has no interest is the most expensive way to be wrong.
+	probWilling?: number;
 };
 
 // ---- Fit: is this the right player FOR THIS TEAM? --------------------------
@@ -419,6 +424,17 @@ export const pursuitScore = ({
 	return fit * destination * desperation;
 };
 
+// Below this chance of signing, a pursuit is a fantasy and the payroll stays as
+// it is. Deliberately near zero: a neutral AI team sits around 0.05 on this
+// scale (mood docks every non-user team three points), so anything higher stops
+// being a filter on hopeless cases and becomes a blanket ban. What it is for is
+// the genuinely impossible - a challenge mode with free agency switched off, a
+// player who will not deal with this team at any price.
+//
+// Shared with the cap-clearing path (clearSpace.ts) so both halves of the same
+// pursuit agree on what "hopeless" means.
+export const MIN_PURSUIT_CONFIDENCE = 0.02;
+
 // How many teams may hold space for the same player. Without a limit, one
 // tempting free agent freezes half the league's cap and nobody signs anyone.
 export const MAX_PURSUERS_PER_PRIZE = 3;
@@ -433,6 +449,13 @@ export const PURSUIT_GIVE_UP_DAYS = 8;
 // of clearing space, and demanding present-day affordability would mean a team
 // only ever "holds" room for someone it could already sign this second.
 export const PURSUIT_PRICE_PATIENCE = 0.8;
+
+// What a team expects to actually pay for a prize once he has sat unsigned a
+// while - the number its cap room has to cover. Exported so a caller can rule
+// out the prizes it could never fit before doing anything expensive with the
+// rest; planCapHold applies it again itself and is the authority.
+export const capHoldTarget = (amount: number): number =>
+	amount * PURSUIT_PRICE_PATIENCE;
 
 export type CapHold = {
 	// The player this team is keeping room for.
@@ -483,24 +506,53 @@ export const planCapHold = ({
 	let best: { p: FaPlayer; target: number; score: number } | undefined;
 	for (const p of prizes) {
 		// What we expect to actually pay, once he has sat unsigned a while.
-		const target = p.amount * PURSUIT_PRICE_PATIENCE;
+		const target = capHoldTarget(p.amount);
 
 		// Credible only if the room would genuinely be there for him.
 		if (payroll + target > salaryCap) {
 			continue;
 		}
-		const score = pursuitScore({
-			p,
-			posture,
-			season,
-			minContract,
-			maxContract,
-		});
+
+		// Position is NOT a veto here, deliberately. It is already in the score
+		// below (pursuitScore -> scoreFreeAgent -> positionFitMultiplier), so
+		// between two comparable prizes a team waits on the one who fills its
+		// hole. Making depth disqualifying instead had teams passing on a
+		// 75-ovr star because they already had two starters at his position,
+		// which is not something a front office with cap space does - every
+		// prize here is a star by definition (see isPrize).
+
+		// Hopeless is hopeless: no amount of fit justifies freezing an offseason
+		// for a player who will not deal with this team.
+		if ((p.probWilling ?? 1) < MIN_PURSUIT_CONFIDENCE) {
+			continue;
+		}
+
+		// Weighted by whether he would actually come, which makes this an
+		// expected value rather than a wish: fit x how badly this team wants him
+		// x the chance it gets him.
+		//
+		// A hold needs this more than the cap-clearing path does, and for a
+		// structural reason. There, the dump and the signing happen in the same
+		// breath, so a team cannot clear space and then lose him. A hold has no
+		// such guarantee - it is days of free agency spent NOT signing anyone,
+		// on the chance that one player says yes at the end of it. Planning an
+		// offseason around a player who was never coming is the most expensive
+		// way for a front office to be wrong.
+		const score =
+			pursuitScore({
+				p,
+				posture,
+				season,
+				minContract,
+				maxContract,
+			}) * (p.probWilling ?? 1);
 		if (!best || score > best.score) {
 			best = { p, target, score };
 		}
 	}
 
+	// Nobody worth waiting for. Spend the money on the market instead of
+	// carrying it into the season.
 	if (!best) {
 		return undefined;
 	}
@@ -696,4 +748,114 @@ export const shouldLetWalk = ({
 	}
 
 	return false;
+};
+
+// ---- Bargains: quality that costs nothing but a roster spot ---------------
+
+// Vanilla will not sign a minimum-contract free agent unless the roster is two
+// men short of full. The instinct behind that is right - a front office should
+// not stuff its last seats with replacement-level bodies - but the tool is
+// blunt, because it catches every minimum player, including the ones who are
+// plainly better than somebody already on the roster.
+//
+// Measured over twenty seasons of thirty teams, that rule left between one and
+// twenty-two healthy free agents rated 50 and up unsigned at the minimum EVERY
+// summer, while eight to sixteen teams sat a man or two short of full and
+// almost none was ever under thirteen - so the gate essentially never opened.
+// The best of them each year rated 51 to 57 in a league averaging 46. That is
+// a rotation player, for nothing, going nowhere.
+//
+// So: keep the instinct, replace the tool. A minimum deal is worth a roster
+// spot when the player is a clear upgrade on the worst man already holding one.
+// This is the margin at the LAST spot a team will fill; it eases as seats go
+// spare (see findBargain).
+export const BARGAIN_VALUE_MARGIN = 5;
+
+// One seat stays empty regardless. A team still wants somewhere to put a
+// midseason injury replacement, and the point here is to stop passing on
+// quality, not to run every roster to the brim in July.
+export const bargainRosterHeadroom = (maxRosterSize: number): number =>
+	maxRosterSize - 1;
+
+// A rebuilding team's last roster spots belong to players who will still be
+// there when it is good again. Signing a 33-year-old to a minimum deal is free,
+// but the minutes are not.
+const bargainAgeLimit = (tier: TradePosture["tier"]): number => {
+	if (tier === "teardown") {
+		return 26;
+	}
+	if (tier === "seller") {
+		return 29;
+	}
+	return Infinity;
+};
+
+// The best minimum-contract free agent worth a roster spot, or undefined if
+// none of them is. Pure: candidates in, choice out.
+export const findBargain = ({
+	posture,
+	candidates,
+	worstRosterValue,
+	rosterSize,
+	maxRosterSize,
+	season,
+	minContract,
+	maxContract,
+}: {
+	posture: TradePosture;
+	// Free agents asking the minimum, in any order.
+	candidates: FaPlayer[];
+	// Value of the least valuable player already on the roster.
+	worstRosterValue: number;
+	rosterSize: number;
+	maxRosterSize: number;
+	season: number;
+	minContract: number;
+	maxContract: number;
+}): FaPlayer | undefined => {
+	if (rosterSize >= bargainRosterHeadroom(maxRosterSize)) {
+		return undefined;
+	}
+
+	const ageLimit = bargainAgeLimit(posture.tier);
+
+	// The fuller the roster, the better he has to be. The margin exists because
+	// the last seat has option value - a team wants somewhere to put a midseason
+	// addition - and that value falls away when there are several going spare.
+	// A team with four empty seats is not choosing between this player and the
+	// worst man on its roster; it is choosing between him and nobody. (Measured:
+	// an eleven-man team passing on the best player in a 240-man free agent pool
+	// because its own worst man rated two points higher.)
+	const seatsToSpare = bargainRosterHeadroom(maxRosterSize) - rosterSize;
+	const margin = BARGAIN_VALUE_MARGIN / seatsToSpare;
+
+	let best: { p: FaPlayer; score: number } | undefined;
+	for (const p of candidates) {
+		// An injured minimum signing is exactly the warm body vanilla is right to
+		// refuse: he cannot be an upgrade on anyone this season.
+		if (p.injuredGames > 0) {
+			continue;
+		}
+		if (p.age > ageLimit) {
+			continue;
+		}
+		// The whole justification for the roster spot. Value rather than ovr, so
+		// a 33-year-old does not displace a 22-year-old of the same rating.
+		if (p.value < worstRosterValue + margin) {
+			continue;
+		}
+
+		const score = scoreFreeAgent({
+			p,
+			posture,
+			season,
+			minContract,
+			maxContract,
+		});
+		if (!best || score > best.score) {
+			best = { p, score };
+		}
+	}
+
+	return best?.p;
 };

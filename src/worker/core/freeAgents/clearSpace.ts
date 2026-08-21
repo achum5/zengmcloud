@@ -15,7 +15,12 @@ import {
 	frontOfficeLog,
 	frontOfficeLoggingActive,
 } from "../../util/frontOfficeLog.ts";
-import { isPrize, scoreFreeAgent, type FaPlayer } from "./frontOffice.ts";
+import {
+	isPrize,
+	MIN_PURSUIT_CONFIDENCE,
+	scoreFreeAgent,
+	type FaPlayer,
+} from "./frontOffice.ts";
 import type { Player } from "../../../common/types.ts";
 
 // ---------------------------------------------------------------------------
@@ -86,14 +91,6 @@ const teamsThatAlreadyCleared = async (): Promise<Set<number>> => {
 // and by anyone reading the transaction log wondering why a team gave a player
 // away for nothing.
 const CAP_CLEAR_MOTIVATION = "cap-clear";
-
-// Below this chance of signing, a pursuit is a fantasy and the payroll stays as
-// it is. Deliberately near zero: a neutral AI team sits around 0.05 on this
-// scale (mood docks every non-user team three points), so anything higher stops
-// being a filter on hopeless cases and becomes a blanket ban. What it is for is
-// the genuinely impossible - a challenge mode with free agency switched off, a
-// player who will not deal with this team at any price.
-const MIN_PURSUIT_CONFIDENCE = 0.02;
 
 // A team the AI is allowed to act for. Identical rule to the trade AI's own
 // getAITids, and it MUST be applied to both sides of a dump: a league-mate's
