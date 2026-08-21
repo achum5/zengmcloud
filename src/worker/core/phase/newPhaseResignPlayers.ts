@@ -364,7 +364,6 @@ const newPhaseResignPlayers = async (
 						rosterRank: rosterRankByPid.get(p.pid) ?? Infinity,
 						isStar: last(p.ratings).ovr >= starOvrForResign,
 						age: g.get("season") - p.born.year,
-						wantsRelief: resignPosture.cap.wantsRelief,
 						ovr: last(p.ratings).ovr,
 						// A starter is replaced from the starter market, a bench player
 						// from the bench market.
@@ -393,19 +392,13 @@ const newPhaseResignPlayers = async (
 								ceiling = Math.min(ceiling, hardCap - payroll);
 							}
 
-							// A soft cap imposes no LEGAL limit, which is not the same as
-							// no limit. Without this a team already at twice the cap kept
-							// bidding: payrolls ran to 222k against a 140k cap, and the
-							// money locked up that way left twenty useful players
-							// unemployed league-wide. The tax line is the budget a front
-							// office actually argues with; a team going all in is allowed
-							// to blow through it, because that is what going all in means.
-							const taxLine = g.get("luxuryPayroll");
-							if (taxLine > 0) {
-								const allowance =
-									resignPosture.tier === "allIn" ? taxLine * 1.2 : taxLine;
-								ceiling = Math.min(ceiling, allowance - payroll);
-							}
+							// NO TAX-LINE CEILING. An AI team is not burdened by a
+							// budget - the salary cap is a rule it has to navigate, the
+							// luxury tax is only money, and money is not something it
+							// should be talked out of a player by. What still bounds the
+							// bidding is MAX_RETENTION_OVERPAY (how far anyone will go
+							// past the asking price) plus the hard-cap and salary-cap
+							// ceilings above, which are actual rules.
 						}
 
 						// Overpay relative to what he is ACTUALLY asking this team, which

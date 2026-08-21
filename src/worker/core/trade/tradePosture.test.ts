@@ -222,18 +222,11 @@ describe("capPosture", () => {
 		salaryCapType: "soft",
 	};
 
-	test("a taxpaying seller wants relief and cannot absorb money", () => {
+	test("a taxpaying team is over the cap and cannot absorb money", () => {
 		const c = capPosture({ ...caps, payroll: 180000, tier: "seller" });
 		assert.strictEqual(c.overCap, true);
 		assert.strictEqual(c.overLuxury, true);
-		assert.strictEqual(c.wantsRelief, true);
 		assert.strictEqual(c.canAbsorb, false);
-	});
-
-	test("a taxpaying CONTENDER does not seek relief", () => {
-		const c = capPosture({ ...caps, payroll: 180000, tier: "allIn" });
-		assert.strictEqual(c.overLuxury, true);
-		assert.strictEqual(c.wantsRelief, false);
 	});
 
 	test("room under the cap → can absorb salary", () => {

@@ -284,12 +284,6 @@ export const scoreFreeAgent = ({
 			minContract,
 		});
 
-	// A team already paying the tax with nothing to show for it should not be
-	// adding salary at all.
-	if (posture.cap.wantsRelief && p.amount > minContract * 1.5) {
-		fit *= 0.5;
-	}
-
 	// Nobody's first choice is a player who can't play yet.
 	if (p.injuredGames > 0) {
 		fit *= 0.85;
@@ -565,7 +559,6 @@ export const retentionOverpay = ({
 	rosterRank,
 	isStar,
 	age,
-	wantsRelief,
 	ovr,
 	replacementOvr,
 }: {
@@ -575,8 +568,6 @@ export const retentionOverpay = ({
 	// A star by league-wide standards.
 	isStar: boolean;
 	age: number;
-	// Already paying a tax it cannot justify.
-	wantsRelief: boolean;
 	ovr: number;
 	// What the team could reasonably sign instead, for the role he plays.
 	replacementOvr: number;
@@ -593,12 +584,6 @@ export const retentionOverpay = ({
 	const core = isStar || rosterRank < RETENTION_CORE_RANK;
 	const rotation = rosterRank < RETENTION_ROTATION_RANK;
 	if (!core && !rotation) {
-		return 1;
-	}
-
-	// A team already over the tax with nothing to show for it has no business
-	// bidding against itself.
-	if (wantsRelief) {
 		return 1;
 	}
 

@@ -57,8 +57,6 @@ export type CapPosture = {
 	overCap: boolean;
 	overLuxury: boolean;
 	underFloor: boolean;
-	// Wants to shed money (a non-contender paying the tax).
-	wantsRelief: boolean;
 	// Can take money back (room under the cap, or under the floor, or no cap).
 	canAbsorb: boolean;
 };
@@ -389,16 +387,12 @@ export const capPosture = ({
 	const overCap = salaryCapType !== "none" && payroll > salaryCap;
 	const overLuxury = payroll > luxuryPayroll;
 	const underFloor = payroll < minPayroll;
-	const selling = tier === "seller" || tier === "teardown";
-
 	return {
 		payroll,
 		capSpace,
 		overCap,
 		overLuxury,
 		underFloor,
-		// A non-contender paying the luxury tax should be cutting money.
-		wantsRelief: overLuxury && selling,
 		// No cap, room under the cap, or below the spending floor → can take salary.
 		canAbsorb: salaryCapType === "none" || capSpace > 0 || underFloor,
 	};

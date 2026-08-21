@@ -70,7 +70,7 @@ const buildDiagnostics = (view: View<"franchiseOutlook">): string => {
 		);
 		lines.push(`     needs=[${need}] surpluses=[${surplus}]`);
 		lines.push(
-			`     cap: payroll=${t.cap.payroll} space=${t.cap.capSpace} overCap=${t.cap.overCap} overLux=${t.cap.overLuxury} floor=${t.cap.underFloor} wantsRelief=${t.cap.wantsRelief} canAbsorb=${t.cap.canAbsorb}`,
+			`     cap: payroll=${t.cap.payroll} space=${t.cap.capSpace} overCap=${t.cap.overCap} overLux=${t.cap.overLuxury} floor=${t.cap.underFloor} canAbsorb=${t.cap.canAbsorb}`,
 		);
 		lines.push(`     top: ${t.topPlayer ? fmtPlayer(t.topPlayer) : "—"}`);
 		lines.push(

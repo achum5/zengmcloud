@@ -563,6 +563,7 @@ describe("a league runs for a decade without falling apart", () => {
 		let unsignedStarTotal = 0;
 		let positionlessTotal = 0;
 		let worstDeadShare = 0;
+		const taxByTier = new Map<string, number>();
 		const lastTovrs: number[] = [];
 		const tiersSeen = new Set<string>();
 
@@ -684,6 +685,41 @@ describe("a league runs for a decade without falling apart", () => {
 				}
 				positionlessTotal += positionless;
 
+				// A star on a team going nowhere, and a team paying the tax with
+				// nothing to show for it - the two states a real front office is
+				// judged for tolerating.
+				let strandedStars = 0;
+				let taxNoContender = 0;
+				const luxuryPayroll = g.get("luxuryPayroll");
+				for (let tid = 0; tid < NUM_TEAMS; tid++) {
+					const posture = await getTradePosture(tid, ctx);
+					const roster = await idb.cache.players.indexGetAll(
+						"playersByTid",
+						tid,
+					);
+					const selling =
+						posture.tier === "teardown" || posture.tier === "seller";
+					if (selling) {
+						for (const p of roster) {
+							// A veteran star: young ones are cornerstones a rebuild
+							// SHOULD keep, which is not the same failure.
+							if (
+								p.ratings.at(-1)!.ovr >= ctx.starOvr &&
+								season - p.born.year >= 29
+							) {
+								strandedStars += 1;
+							}
+						}
+					}
+					const payroll = await team.getPayroll(tid);
+					if (payroll > luxuryPayroll) {
+						taxByTier.set(posture.tier, (taxByTier.get(posture.tier) ?? 0) + 1);
+						if (posture.tier !== "allIn" && !posture.elite) {
+							taxNoContender += 1;
+						}
+					}
+				}
+
 				let injuredNow = 0;
 				for (const p of await idb.cache.players.indexGetAll("playersByTid", [
 					0,
@@ -757,6 +793,7 @@ describe("a league runs for a decade without falling apart", () => {
 						`dead ${(deadMoney / 1000).toFixed(0)}M ` +
 						`fa ${fa.length} starsUnsigned ${unsignedStars} ` +
 						`trades ${tradeEvents}(d${draftNightTrades}) pickAway ${tradedPicks} inj ${injuredNow} ` +
+						`stranded ${strandedStars} taxNoContend ${taxNoContender} ` +
 						`illegal ${illegal} positionless ${positionless} ` +
 						`tiers ${["teardown", "seller", "fringe", "buyer", "allIn"]
 							.map(
@@ -869,6 +906,12 @@ describe("a league runs for a decade without falling apart", () => {
 					}
 				}
 			}
+			rows.push(
+				`TAXPAYERS byTier ${[...taxByTier]
+					.sort((a, b) => b[1] - a[1])
+					.map(([k, v]) => `${k}=${v}`)
+					.join(" ")}`,
+			);
 			rows.push(
 				`WHIPLASH hold=${holds} step1=${steps1} step2=${steps2} step3+=${steps3}`,
 			);

@@ -66,7 +66,6 @@ const posture = (overrides: Partial<TradePosture> = {}): TradePosture =>
 			overCap: false,
 			overLuxury: false,
 			underFloor: false,
-			wantsRelief: false,
 			canAbsorb: true,
 		},
 		lookingFor: {} as TradePosture["lookingFor"],
@@ -294,28 +293,25 @@ describe("who a team should want", () => {
 		);
 	});
 
-	test("a taxpaying also-ran stops adding salary", () => {
+	// AN AI TEAM IS NOT BURDENED BY A BUDGET. The salary cap is a rule it has
+	// to navigate; the luxury tax is only money, and money must never be the
+	// reason it passes on a player. This used to halve the fit of anyone above
+	// a minimum deal once a non-contender crossed the tax line.
+	test("the tax line does not put a team off a player", () => {
 		const p = fa({ amount: 20_000 });
 		const normal = posture();
 		const taxed = posture({
-			cap: { ...normal.cap, overLuxury: true, wantsRelief: true },
+			cap: { ...normal.cap, overLuxury: true },
 		});
-		assert.ok(
+		const score = (pos: TradePosture) =>
 			scoreFreeAgent({
 				p,
-				posture: taxed,
+				posture: pos,
 				season: SEASON,
 				minContract: MIN,
 				maxContract: MAX,
-			}) <
-				scoreFreeAgent({
-					p,
-					posture: normal,
-					season: SEASON,
-					minContract: MIN,
-					maxContract: MAX,
-				}),
-		);
+			});
+		assert.strictEqual(score(taxed), score(normal));
 	});
 });
 
@@ -347,7 +343,6 @@ describe("fit tilts the market, it does not delete players from it", () => {
 				overCap: true,
 				overLuxury: true,
 				underFloor: false,
-				wantsRelief: true,
 				canAbsorb: false,
 			},
 		});
@@ -689,7 +684,6 @@ describe("letting a player walk", () => {
 					rosterRank: 0,
 					isStar: true,
 					age: 27,
-					wantsRelief: false,
 					ovr: 70,
 					replacementOvr: 45,
 				}),
@@ -704,7 +698,6 @@ describe("letting a player walk", () => {
 			rosterRank: 0,
 			isStar: true,
 			age: 27,
-			wantsRelief: false,
 			ovr: 70,
 			replacementOvr: 45,
 		};
@@ -725,7 +718,6 @@ describe("letting a player walk", () => {
 				rosterRank: 11,
 				isStar: false,
 				age: 27,
-				wantsRelief: false,
 				ovr: 70,
 				replacementOvr: 45,
 			}),
@@ -741,7 +733,6 @@ describe("letting a player walk", () => {
 			rosterRank: 0,
 			isStar: false,
 			age: 27,
-			wantsRelief: false,
 			replacementOvr: 50,
 		};
 		assert.strictEqual(
@@ -763,7 +754,6 @@ describe("letting a player walk", () => {
 			rosterRank: 0,
 			isStar: true,
 			age: 27,
-			wantsRelief: false,
 			replacementOvr: 45,
 		};
 		const barelyWorthIt = retentionOverpay({ ...args, ovr: 50 });
@@ -775,14 +765,16 @@ describe("letting a player walk", () => {
 		assert.ok(barelyWorthIt > 1);
 	});
 
-	test("a team already over the tax stops bidding against itself", () => {
-		assert.strictEqual(
+	// The tax used to end the bidding here. An AI team is not burdened by a
+	// budget, so a contender still fights to keep its own star; what bounds the
+	// offer is MAX_RETENTION_OVERPAY and the cap RULES at the call site.
+	test("being over the tax does not stop a contender keeping its star", () => {
+		assert.isAbove(
 			retentionOverpay({
 				tier: "allIn",
 				rosterRank: 0,
 				isStar: true,
 				age: 27,
-				wantsRelief: true,
 				ovr: 70,
 				replacementOvr: 45,
 			}),
@@ -795,7 +787,6 @@ describe("letting a player walk", () => {
 			tier: "buyer" as const,
 			rosterRank: 0,
 			isStar: true,
-			wantsRelief: false,
 			ovr: 70,
 			replacementOvr: 45,
 		};

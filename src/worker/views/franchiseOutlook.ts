@@ -163,7 +163,6 @@ const updateFranchiseOutlook = async (
 					overCap: posture.cap.overCap,
 					overLuxury: posture.cap.overLuxury,
 					underFloor: posture.cap.underFloor,
-					wantsRelief: posture.cap.wantsRelief,
 					canAbsorb: posture.cap.canAbsorb,
 				},
 			});
