@@ -246,19 +246,32 @@ describe("proposing a trade to a smart front office", () => {
 	};
 
 	test("with the smart front office off, AI-AI trading still runs (stock path)", async () => {
-		await build();
-		g.setWithoutSavingToDB("smartAiFrontOffice", false);
-		g.setWithoutSavingToDB("aiTradesFactor", 5);
+		// Seeded, like every other simulation test here - the stock path rolls
+		// dice constantly and an unseeded run is an unreproducible one.
+		let rs = 424_242;
+		const rng = () => {
+			rs = (rs * 1_664_525 + 1_013_904_223) >>> 0;
+			return rs / 4_294_967_296;
+		};
+		const realRandom = Math.random;
+		Math.random = rng;
+		try {
+			await build();
+			g.setWithoutSavingToDB("smartAiFrontOffice", false);
+			g.setWithoutSavingToDB("aiTradesFactor", 5);
 
-		// The stock path must not depend on any posture machinery - it should
-		// simply run. Trades themselves are probabilistic, so the assertion is
-		// that a bunch of attempts complete cleanly and rosters stay coherent.
-		for (let i = 0; i < 10; i++) {
-			await trade.betweenAiTeams();
-		}
-		for (let tid = 0; tid < NUM; tid++) {
-			const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
-			assert.isAbove(roster.length, 0);
+			// The stock path must not depend on any posture machinery - it should
+			// simply run. Trades themselves are probabilistic, so the assertion is
+			// that a bunch of attempts complete cleanly and rosters stay coherent.
+			for (let i = 0; i < 10; i++) {
+				await trade.betweenAiTeams();
+			}
+			for (let tid = 0; tid < NUM; tid++) {
+				const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+				assert.isAbove(roster.length, 0);
+			}
+		} finally {
+			Math.random = realRandom;
 		}
 	});
 

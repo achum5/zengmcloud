@@ -407,6 +407,132 @@ const simRealSeason = async (rng: () => number) => {
 	}
 };
 
+// THE PLAYOFFS, because a championship is the whole point. Two conferences by
+// cid, top eight each by record, best-of-seven throughout, home court to the
+// better seed. Returns the champion, so a decade of titles can be checked
+// against what the contending tiers claim to be doing. Injuries keep
+// happening - a star going down in May is part of why going all-in is a bet.
+const simPlayoffs = async (): Promise<number | undefined> => {
+	const season = g.get("season");
+
+	const loadSide = async (tid: number) => {
+		const [t, teamSeason, players] = await Promise.all([
+			idb.cache.teams.get(tid),
+			idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [season, tid]),
+			idb.getCopies.players({ tid }, "noCopyCache"),
+		]);
+		if (!t || !teamSeason) {
+			return undefined;
+		}
+		return processTeam(t, teamSeason, players);
+	};
+
+	const standings: { tid: number; cid: number; winp: number }[] = [];
+	for (let tid = 0; tid < NUM_TEAMS; tid++) {
+		const ts = await idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [
+			season,
+			tid,
+		]);
+		const t = await idb.cache.teams.get(tid);
+		const gp = (ts?.won ?? 0) + (ts?.lost ?? 0);
+		if (ts && t && gp > 0) {
+			standings.push({ tid, cid: t.cid, winp: ts.won / gp });
+		}
+	}
+	if (standings.length < 4) {
+		return undefined;
+	}
+
+	let gid = 100_000 * (season % 1000);
+	const series = async (
+		higher: number,
+		lower: number,
+	): Promise<number | undefined> => {
+		let winsHigh = 0;
+		let winsLow = 0;
+		for (let gameNum = 0; gameNum < 7; gameNum++) {
+			// 2-2-1-1-1: games 0,1,4,6 at the higher seed.
+			const homeTid = [0, 1, 4, 6].includes(gameNum) ? higher : lower;
+			const awayTid = homeTid === higher ? lower : higher;
+			const home = await loadSide(homeTid);
+			const away = await loadSide(awayTid);
+			if (!home || !away) {
+				return undefined;
+			}
+			const result: any = new GameSim({
+				gid: gid++,
+				day: -1,
+				teams: helpers.deepCopy([home, away]) as any,
+				doPlayByPlay: false,
+				homeCourtFactor: 1,
+				neutralSite: false,
+				allStarGame: false,
+				baseInjuryRate: g.get("injuryRate"),
+			} as any).run();
+			const homeWon = result.team[0].stat.pts > result.team[1].stat.pts;
+			const winnerTid = homeWon ? homeTid : awayTid;
+			if (winnerTid === higher) {
+				winsHigh += 1;
+			} else {
+				winsLow += 1;
+			}
+			for (const j of [0, 1] as const) {
+				for (const sp of result.team[j].player) {
+					if (sp.newInjury) {
+						const p = await idb.cache.players.get(sp.id);
+						if (p && p.injury.gamesRemaining === 0) {
+							p.injury = player.injury(DEFAULT_LEVEL);
+							await idb.cache.players.put(p);
+						}
+					}
+				}
+			}
+			if (winsHigh === 4 || winsLow === 4) {
+				break;
+			}
+		}
+		return winsHigh >= 4 ? higher : lower;
+	};
+
+	const bracket = async (seeds: number[]): Promise<number | undefined> => {
+		let round = seeds;
+		while (round.length > 1) {
+			const next: number[] = [];
+			for (let i = 0; i < round.length / 2; i++) {
+				const winner = await series(round[i]!, round[round.length - 1 - i]!);
+				if (winner === undefined) {
+					return undefined;
+				}
+				next.push(winner);
+			}
+			// next[i] vs next[len-1-i] is already the standard bracket (the 1v8
+			// winner meets the 4v5 winner), same as the real one - no re-seed.
+			round = next;
+		}
+		return round[0];
+	};
+
+	const champs: number[] = [];
+	for (const cid of [0, 1]) {
+		const conf = standings
+			.filter((x) => x.cid === cid)
+			.sort((a, b) => b.winp - a.winp)
+			.slice(0, 8)
+			.map((x) => x.tid);
+		if (conf.length < 2) {
+			continue;
+		}
+		const champ = await bracket(conf);
+		if (champ !== undefined) {
+			champs.push(champ);
+		}
+	}
+	if (champs.length === 2) {
+		return series(champs[0]!, champs[1]!);
+	}
+	return champs[0];
+};
+
 describe("a league runs for a decade without falling apart", () => {
 	beforeEach(() => {
 		changeTracker.disable();
@@ -425,6 +551,12 @@ describe("a league runs for a decade without falling apart", () => {
 		// Per-team history, for the questions only a decade can answer: does a
 		// rebuild ever pay off, does anyone get stuck at the bottom forever.
 		const history: { tid: number; tier: string; winp: number }[][] = [];
+		const champions: {
+			year: number;
+			season: number;
+			tid: number;
+			tier: string;
+		}[] = [];
 
 		// The canaries.
 		let illegalRosterSeasons = 0;
@@ -441,10 +573,20 @@ describe("a league runs for a decade without falling apart", () => {
 
 			for (let year = 0; year < SEASONS; year++) {
 				const season = g.get("season");
+				let champion: { tid: number; tier: string } | undefined;
 				if (nodeEnv.REAL_GAMES === "1") {
 					// The season is actually played: real standings, real injuries,
 					// the market open throughout. Records then also set draft slots.
 					await simRealSeason(rng);
+					const champTid = await simPlayoffs();
+					if (champTid !== undefined) {
+						// The tier the champion carried INTO the playoffs.
+						const champCtx = await getLeagueTradeContext();
+						champion = {
+							tid: champTid,
+							tier: (await getTradePosture(champTid, champCtx)).tier,
+						};
+					}
 				} else {
 					await setRecords(rng);
 				}
@@ -604,8 +746,12 @@ describe("a league runs for a decade without falling apart", () => {
 				}
 				history.push(yearRow);
 
+				if (champion) {
+					champions.push({ year, season, ...champion });
+				}
 				rows.push(
 					`y${String(year).padStart(2)} s${season} ` +
+						(champion ? `champ T${champion.tid}(${champion.tier}) ` : "") +
 						`tovr ${meanTovr.toFixed(1)} ` +
 						`pay ${((payroll / (salaryCap * NUM_TEAMS)) * 100).toFixed(0)}% ` +
 						`dead ${(deadMoney / 1000).toFixed(0)}M ` +
@@ -726,6 +872,33 @@ describe("a league runs for a decade without falling apart", () => {
 			rows.push(
 				`WHIPLASH hold=${holds} step1=${steps1} step2=${steps2} step3+=${steps3}`,
 			);
+
+			if (champions.length > 0) {
+				const byTid = new Map<number, number>();
+				const byTier = new Map<string, number>();
+				// The tier at trophy time is circular (a 60-win team reads as a
+				// buyer because of its record); the tier the champion OPERATED
+				// under the season before is the honest ledger of whether the
+				// contending plans actually lead to titles.
+				const byPriorTier = new Map<string, number>();
+				for (const c of champions) {
+					byTid.set(c.tid, (byTid.get(c.tid) ?? 0) + 1);
+					byTier.set(c.tier, (byTier.get(c.tier) ?? 0) + 1);
+					const prior = history[c.year - 1]?.[c.tid]?.tier;
+					if (prior) {
+						byPriorTier.set(prior, (byPriorTier.get(prior) ?? 0) + 1);
+					}
+				}
+				const fmt = (m: Map<string, number>) =>
+					[...m]
+						.sort((a, b) => b[1] - a[1])
+						.map(([k, v]) => `${k}=${v}`)
+						.join(" ");
+				rows.push(
+					`TITLES distinct=${byTid.size}/${champions.length} max=${Math.max(...byTid.values())} ` +
+						`byTier ${fmt(byTier)}; priorYearTier ${fmt(byPriorTier)}`,
+				);
+			}
 		}
 
 		const log = rows.join("\n");
