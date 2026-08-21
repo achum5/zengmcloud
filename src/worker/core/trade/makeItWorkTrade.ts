@@ -4,6 +4,8 @@ import makeItWork from "./makeItWork.ts";
 import summary from "./summary.ts";
 import get from "./get.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import { getLeagueTradeContext, getTradePosture } from "./tradePosture.ts";
+import { wasTradedThisSeason } from "./tradeMotivation.ts";
 
 /**
  * Make a trade work
@@ -16,8 +18,44 @@ import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 const makeItWorkTrade = async () => {
 	const tr = await get();
 	const teams0 = tr.teams;
+
+	// The counter-offer comes from a front office with a plan: its building
+	// blocks and just-acquired players never go in the package, even if the
+	// user dragged one in - the counter IS the GM saying "not him, but how
+	// about this". Best-effort; without a posture the old anything-goes
+	// counter still works. Another human's team is left alone.
+	const teamsInput = helpers.deepCopy(teams0);
+	if (
+		g.get("smartAiFrontOffice") &&
+		!g.get("userTids").includes(teamsInput[1].tid)
+	) {
+		try {
+			const context = await getLeagueTradeContext();
+			const posture = await getTradePosture(teamsInput[1].tid, context);
+			const season = g.get("season");
+			const aiPlayers = await idb.cache.players.indexGetAll(
+				"playersByTid",
+				teamsInput[1].tid,
+			);
+			const offLimits = new Set([
+				...posture.buildingBlockPids,
+				...aiPlayers
+					.filter((p) => wasTradedThisSeason(p.transactions, season))
+					.map((p) => p.pid),
+			]);
+			teamsInput[1].pids = teamsInput[1].pids.filter(
+				(pid) => !offLimits.has(pid),
+			);
+			teamsInput[1].pidsExcluded = [
+				...new Set([...teamsInput[1].pidsExcluded, ...offLimits]),
+			];
+		} catch (error) {
+			console.error("makeItWorkTrade: posture guard failed", error);
+		}
+	}
+
 	const valueChangeCalculator = new ValueChangeCalculator();
-	const teams = await makeItWork(helpers.deepCopy(teams0), {
+	const teams = await makeItWork(teamsInput, {
 		holdUserConstant: false,
 		valueChangeCalculator,
 	});

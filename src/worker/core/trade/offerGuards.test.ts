@@ -2,11 +2,12 @@ import { assert, beforeEach, describe, test } from "vitest";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
-import { player, team } from "../index.ts";
+import { player, team, trade } from "../index.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { offerPassesGuards } from "./betweenAiTeams.ts";
-import type { TradePosture } from "./tradePosture.ts";
+import { getLeagueTradeContext, getTradePosture } from "./tradePosture.ts";
+
 import type { TradeTeams } from "../../../common/types.ts";
 
 // The guards are one shared function with three callers (the AI-AI market,
@@ -54,8 +55,7 @@ const makePlayer = ({ pid, tid, ovr, age, amount, exp }: any) => {
 	return p;
 };
 
-const posture = (tid: number, tier: TradePosture["tier"]): TradePosture =>
-	({ tid, tier }) as TradePosture;
+const posture = (tid: number, tier: string): any => ({ tid, tier });
 
 const deal = (
 	pidsA: number[],
@@ -175,6 +175,117 @@ describe("the shared deal guards", () => {
 				g.get("season"),
 			),
 			true,
+		);
+	});
+});
+
+describe("proposing a trade to a smart front office", () => {
+	const NUM = 6;
+
+	const build = async () => {
+		resetG();
+		g.setWithoutSavingToDB("numActiveTeams", NUM);
+		g.setWithoutSavingToDB("numTeams", NUM);
+		g.setWithoutSavingToDB("userTids", [0]);
+		g.setWithoutSavingToDB("userTid", 0);
+		g.setWithoutSavingToDB("smartAiFrontOffice", true);
+
+		const teams: any[] = [];
+		for (let tid = 0; tid < NUM; tid++) {
+			teams.push(
+				team.generate({
+					tid,
+					cid: 0,
+					did: 0,
+					region: `R${tid}`,
+					name: `N${tid}`,
+					abbrev: `T${tid}`,
+					pop: 2,
+					imgURL: "",
+				} as any),
+			);
+		}
+		const season = g.get("season");
+		const players: any[] = [];
+		let pid = 1;
+		for (let tid = 0; tid < NUM; tid++) {
+			for (let i = 0; i < 10; i++) {
+				players.push(
+					makePlayer({
+						pid: pid++,
+						tid,
+						ovr: 45 + (i % 5),
+						age: 26 + (i % 6),
+						amount: 4000,
+						exp: season + 1 + (i % 3),
+					}),
+				);
+			}
+		}
+		// Team 1's young cornerstone - the player its posture protects.
+		const kid = makePlayer({
+			pid: 999,
+			tid: 1,
+			ovr: 64,
+			age: 21,
+			amount: 4000,
+			exp: season + 3,
+		});
+		players.push(kid);
+		await resetCache({ players, teams, draftPicks: [] });
+		stubLeagueDb();
+		for (let tid = 0; tid < NUM; tid++) {
+			const row: any = team.genSeasonRow((await idb.cache.teams.get(tid))!);
+			row.season = season;
+			row.won = 10 + tid * 10;
+			row.lost = 82 - row.won;
+			row.gp = 82;
+			await idb.cache.teamSeasons.add(row);
+		}
+		return kid;
+	};
+
+	test("its young cornerstone is not for sale at any calculated price", async () => {
+		const kid = await build();
+
+		// Make sure the posture really does protect him, so the test means
+		// what it says.
+		const context = await getLeagueTradeContext();
+		const posture = await getTradePosture(1, context);
+		assert.ok(
+			posture.buildingBlockPids.includes(kid.pid),
+			"fixture: the kid should be a building block",
+		);
+
+		// The user offers a mountain of value for him.
+		const userPids = (
+			await idb.cache.players.indexGetAll("playersByTid", 0)
+		).map((p) => p.pid);
+		await idb.cache.trade.add({
+			rid: 0,
+			teams: [
+				{
+					tid: 0,
+					pids: userPids.slice(0, 4),
+					pidsExcluded: [],
+					dpids: [],
+					dpidsExcluded: [],
+				},
+				{
+					tid: 1,
+					pids: [kid.pid],
+					pidsExcluded: [],
+					dpids: [],
+					dpidsExcluded: [],
+				},
+			],
+		} as any);
+
+		const [accepted, message] = await trade.propose(false);
+		assert.strictEqual(accepted, false);
+		assert.ok(
+			message?.includes("isn't going anywhere"),
+			`unexpected message: ${message}`,
 		);
 	});
 });

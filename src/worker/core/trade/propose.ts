@@ -8,6 +8,9 @@ import get from "./get.ts";
 import { idb } from "../../db/index.ts";
 import { hashSavedTrade } from "../../../common/hashSavedTrade.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import { getLeagueTradeContext, getTradePosture } from "./tradePosture.ts";
+import { isBadRental, sellerAcquiresVet } from "./tradeMotivation.ts";
+import moodInfo from "../player/moodInfo.ts";
 
 /**
  * Proposes the current trade in the database.
@@ -50,6 +53,75 @@ const propose = async (
 	}
 
 	let outcome = "rejected"; // Default
+
+	// A front office is more than a calculator: some deals are refused no
+	// matter what the value math says. Only for AI teams with the smart front
+	// office on - another human's team decides for itself, and God Mode's
+	// forceTrade skips straight past. Best-effort: if a posture cannot be
+	// computed, the deal falls through to the plain value decision.
+	if (
+		!forceTrade &&
+		g.get("smartAiFrontOffice") &&
+		!g.get("userTids").includes(teams[1].tid)
+	) {
+		try {
+			const context = await getLeagueTradeContext();
+			const posture = await getTradePosture(teams[1].tid, context);
+			const refusal = async (): Promise<string | undefined> => {
+				// Its building blocks are simply not for sale.
+				const blocks = new Set(posture.buildingBlockPids);
+				for (const pid of teams[1].pids) {
+					if (blocks.has(pid)) {
+						const p = await idb.cache.players.get(pid);
+						const name = p ? `${p.firstName} ${p.lastName}` : "He";
+						return `${name} isn't going anywhere.`;
+					}
+				}
+
+				const season = g.get("season");
+				for (const pid of teams[0].pids) {
+					const p = await idb.cache.players.get(pid);
+					if (!p) {
+						continue;
+					}
+					// A rebuilder does not absorb a veteran unless it is being
+					// paid in draft capital to do it.
+					if (
+						sellerAcquiresVet({
+							acquirerTier: posture.tier,
+							age: season - p.born.year,
+							value: p.value,
+							receivesPicks: teams[0].dpids.length > 0,
+						})
+					) {
+						return "A veteran doesn't fit our timeline.";
+					}
+					// An expiring player who will not re-sign is a rental, and
+					// only a real win-now team takes one on.
+					if (p.contract.exp === season) {
+						const { probWilling } = await moodInfo(p, teams[1].tid);
+						if (
+							isBadRental({
+								isExpiring: true,
+								probWillingAcquirer: probWilling,
+								acquirerTier: posture.tier,
+							})
+						) {
+							const name = `${p.firstName} ${p.lastName}`;
+							return `${name} would walk after the season. No thanks.`;
+						}
+					}
+				}
+				return undefined;
+			};
+			const message = await refusal();
+			if (message !== undefined) {
+				return [false, `Trade rejected! "${message}"`];
+			}
+		} catch (error) {
+			console.error("propose: posture guard failed", error);
+		}
+	}
 
 	const dv = await new ValueChangeCalculator().evaluate({
 		tid: teams[1].tid,
