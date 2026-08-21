@@ -427,6 +427,9 @@ export const buildOfferFromPartner = async (args: {
 	// Assets on the PARTNER's side the initiator is specifically asking for -
 	// how a team calls about YOUR player rather than shopping its own.
 	partnerSeedPids?: number[];
+	// Same, for the partner's draft picks - how a team calls about a PICK, the
+	// draft-night trade-up.
+	partnerSeedDpids?: number[];
 	ctx: AttemptContext;
 }): Promise<{ teams: TradeTeams; dv2: number; landsStar: boolean } | null> => {
 	const {
@@ -436,6 +439,7 @@ export const buildOfferFromPartner = async (args: {
 		initiatorExcluded,
 		partner,
 		partnerSeedPids = [],
+		partnerSeedDpids = [],
 		ctx,
 	} = args;
 	const { postures, valueChangeCalculator, season, starOvr } = ctx;
@@ -467,7 +471,7 @@ export const buildOfferFromPartner = async (args: {
 			pidsExcluded: partnerExcluded.filter(
 				(pid) => !partnerSeedPids.includes(pid),
 			),
-			dpids: [],
+			dpids: partnerSeedDpids,
 			dpidsExcluded: [],
 		},
 	];

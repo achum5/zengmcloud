@@ -13,6 +13,8 @@ import { player, team } from "../index.ts";
 import { last } from "../../../common/utils.ts";
 import { choice } from "../../../common/random.ts";
 import { scoreProspect } from "./draftBoard.ts";
+import maybeTradeUp from "./draftDayTrades.ts";
+import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import {
 	getLeagueTradeContext,
 	getTradePosture,
@@ -142,6 +144,7 @@ const runPicks = async (
 		| undefined;
 	const postures = new Map<number, TradePosture | undefined>();
 	const draftedByTid = new Map<number, Map<PosBucket, number>>();
+	const draftValueChangeCalculator = new ValueChangeCalculator();
 	const postureFor = async (tid: number) => {
 		if (!smart) {
 			return undefined;
@@ -204,7 +207,36 @@ const runPicks = async (
 				return afterDoneAuto();
 			}
 
-			const dp = draftPicks[0];
+			let dp = draftPicks[0];
+
+			// DRAFT-NIGHT TRADES. Before an AI team picks, a team drafting later
+			// may buy the slot to grab the player its board is about to lose -
+			// see draftDayTrades.ts. The pick row is updated by the trade, so on
+			// success the loop just carries on with the new owner on the clock.
+			if (smart && !g.get("userTids").includes(dp.tid)) {
+				try {
+					await postureFor(dp.tid);
+					const traded =
+						leagueContext !== undefined &&
+						(await maybeTradeUp({
+							dp,
+							laterPicks: draftPicks.slice(1),
+							playersAll,
+							postureFor,
+							valueChangeCalculator: draftValueChangeCalculator,
+							starOvr: leagueContext.starOvr,
+							draftedByTid,
+						}));
+					if (traded) {
+						// Same dpid, new tid - getOrder reads the cache rows this
+						// array holds, so re-reading dp is enough.
+						dp = draftPicks[0]!;
+					}
+				} catch (error) {
+					// A failed trade attempt must never stall the draft.
+					console.error("Draft-night trade attempt failed", error);
+				}
+			}
 
 			const singleUserPickInSpectatorMode =
 				g.get("spectator") && action.type === "onePick";

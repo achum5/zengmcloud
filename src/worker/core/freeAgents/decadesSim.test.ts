@@ -406,8 +406,12 @@ describe("a league runs for a decade without falling apart", () => {
 						tradedPicks += 1;
 					}
 				}
-				const tradeEvents = (await idb.cache.events.getAll()).filter(
+				const seasonTrades = (await idb.cache.events.getAll()).filter(
 					(e: any) => e.type === "trade" && e.season === season,
+				);
+				const tradeEvents = seasonTrades.length;
+				const draftNightTrades = seasonTrades.filter(
+					(e: any) => e.aiTrade?.motivation === "draft-trade-up",
 				).length;
 
 				let deadMoney = 0;
@@ -445,7 +449,7 @@ describe("a league runs for a decade without falling apart", () => {
 						`pay ${((payroll / (salaryCap * NUM_TEAMS)) * 100).toFixed(0)}% ` +
 						`dead ${(deadMoney / 1000).toFixed(0)}M ` +
 						`fa ${fa.length} starsUnsigned ${unsignedStars} ` +
-						`trades ${tradeEvents} pickAway ${tradedPicks} ` +
+						`trades ${tradeEvents}(d${draftNightTrades}) pickAway ${tradedPicks} ` +
 						`illegal ${illegal} positionless ${positionless} ` +
 						`tiers ${["teardown", "seller", "fringe", "buyer", "allIn"]
 							.map(
@@ -559,10 +563,12 @@ describe("a league runs for a decade without falling apart", () => {
 			`seasons with an illegal roster size\n${log}`,
 		);
 
-		// Nobody fields a team with no big men or no guards for long.
+		// Nobody fields a team with no big men or no guards for long. The bound
+		// scales with team-seasons so a deep run is held to the same RATE as the
+		// CI config, not the same count.
 		assert.isAtMost(
 			positionlessTotal,
-			3,
+			Math.max(3, Math.ceil(0.01 * NUM_TEAMS * SEASONS)),
 			`too many rosters missing an entire position group\n${log}`,
 		);
 
