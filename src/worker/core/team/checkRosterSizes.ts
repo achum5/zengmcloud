@@ -87,8 +87,11 @@ export const dropPlayers = async (
 			value: p.value,
 			age: g.get("season") - p.born.year,
 			pos: last(p.ratings).pos,
+			contractAmount: p.contract.amount,
+			contractExp: p.contract.exp,
 		})),
 		tier,
+		{ season: g.get("season"), salaryCap: g.get("salaryCap") },
 	);
 	const byPid = new Map(players.map((p) => [p.pid, p]));
 	players = ordered.map((o) => byPid.get(o.pid)!).filter(Boolean);

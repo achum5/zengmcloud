@@ -261,6 +261,9 @@ const autoSign = async () => {
 			"playersByTid",
 			t.tid,
 		);
+		const healthyOnRoster = playersOnRoster.filter(
+			(p2) => p2.injury.gamesRemaining === 0,
+		).length;
 
 		// Needed before the skip roll now, because whether to skip depends on it.
 		const payroll = await team.getPayroll(t.tid);
@@ -303,6 +306,18 @@ const autoSign = async () => {
 		// braking the other way (going passive near the roster limit) was measured
 		// too: it left MORE good players unemployed, not fewer, because a team that
 		// stops shopping signs nobody at all.
+		// Head count, deliberately, even in season. Reading this in HEALTHY
+		// bodies instead - so a team carrying five injured men shops as hard as
+		// one genuinely down to the floor - was built and measured over five
+		// seeds of eight real seasons. It does what it says (short-handed
+		// team-days fell on every seed, 56 to 49) and still made leagues worse:
+		// team ovr down 1.6 with four of five seeds negative, and a champion
+		// fewer across the run. The reason is the tier it fires hardest for. A
+		// teardown's skip rate drops from 85% to 40%, so a rebuilding team with
+		// an injury crisis goes shopping, signs veterans, wins games it did not
+		// want to win, and comes out of the rebuild worse. findBargain already
+		// covers the real hole - when a short-handed team DOES shop, it now
+		// signs a body - and it turns out that is the whole fix.
 		const stripped = playersOnRoster.length <= g.get("minRosterSize");
 
 		let probSkip;
@@ -459,10 +474,7 @@ const autoSign = async () => {
 					// injuries heal before one matters, and a team that fills its
 					// last seat with a warm body in July is the churn the roster
 					// gate exists to prevent.
-					healthyCount: inSeason
-						? playersOnRoster.filter((p2) => p2.injury.gamesRemaining === 0)
-								.length
-						: undefined,
+					healthyCount: inSeason ? healthyOnRoster : undefined,
 					minRosterSize: g.get("minRosterSize"),
 					season,
 					minContract,

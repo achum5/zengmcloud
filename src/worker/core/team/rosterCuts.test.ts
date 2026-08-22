@@ -1,7 +1,9 @@
 import { assert, describe, test } from "vitest";
 import {
+	cutCostLean,
 	cutOrder,
 	keepScore,
+	KEEP_COST_CEILING,
 	positionCounts,
 	SCARCE_AT_POSITION,
 	type CutCandidate,
@@ -157,5 +159,115 @@ describe("it never produces a nonsense order", () => {
 				15,
 			);
 		}
+	});
+});
+
+describe("what the cut leaves behind", () => {
+	const SEASON = 2025;
+	const CAP = 150_000;
+	const money = { season: SEASON, salaryCap: CAP };
+
+	// Releasing a player does not release his money. Only the years AFTER this
+	// one are a cost of cutting - this season is paid either way.
+	test("an expiring contract is free to cut, guaranteed years are not", () => {
+		assert.strictEqual(
+			cutCostLean({
+				contractAmount: 30_000,
+				contractExp: SEASON,
+				season: SEASON,
+				salaryCap: CAP,
+			}),
+			1,
+		);
+		assert.isAbove(
+			cutCostLean({
+				contractAmount: 30_000,
+				contractExp: SEASON + 2,
+				season: SEASON,
+				salaryCap: CAP,
+			}),
+			1,
+		);
+	});
+
+	test("a caller with no contract in hand gets the old ordering", () => {
+		assert.strictEqual(
+			cutCostLean({
+				contractAmount: undefined,
+				contractExp: undefined,
+				season: SEASON,
+				salaryCap: CAP,
+			}),
+			1,
+		);
+	});
+
+	test("no contract is big enough to save a player outright", () => {
+		assert.strictEqual(
+			cutCostLean({
+				contractAmount: CAP,
+				contractExp: SEASON + 5,
+				season: SEASON,
+				salaryCap: CAP,
+			}),
+			KEEP_COST_CEILING,
+		);
+	});
+
+	// The point of the whole thing: between two comparable players, let go of
+	// the one who is nearly off the books.
+	test("the expiring man goes before the one with years left", () => {
+		const expiring = p({
+			pid: 1,
+			value: 45,
+			contractAmount: 20_000,
+			contractExp: SEASON,
+		});
+		const owed = p({
+			pid: 2,
+			value: 45,
+			contractAmount: 20_000,
+			contractExp: SEASON + 3,
+		});
+		const order = cutOrder(deepRoster([expiring, owed]), "buyer", money);
+		assert.isBelow(
+			order.findIndex((x) => x.pid === expiring.pid),
+			order.findIndex((x) => x.pid === owed.pid),
+		);
+	});
+
+	// And the limit of it: a clearly better player is kept whatever he costs.
+	test("a clearly better player is kept however expensive he is to cut", () => {
+		const good = p({
+			pid: 1,
+			value: 60,
+			contractAmount: 1000,
+			contractExp: SEASON,
+		});
+		const bad = p({
+			pid: 2,
+			value: 35,
+			contractAmount: 40_000,
+			contractExp: SEASON + 4,
+		});
+		const order = cutOrder(deepRoster([good, bad]), "buyer", money);
+		assert.isBelow(
+			order.findIndex((x) => x.pid === bad.pid),
+			order.findIndex((x) => x.pid === good.pid),
+		);
+	});
+
+	test("without the money argument nothing changes", () => {
+		const cheap = p({ pid: 1, contractAmount: 1000, contractExp: SEASON });
+		const dear = p({
+			pid: 2,
+			contractAmount: 40_000,
+			contractExp: SEASON + 4,
+		});
+		const counts = positionCounts([cheap, dear]);
+		assert.strictEqual(
+			keepScore({ p: cheap, tier: "buyer", counts }),
+			keepScore({ p: dear, tier: "buyer", counts }),
+		);
 	});
 });

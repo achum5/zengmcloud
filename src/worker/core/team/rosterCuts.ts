@@ -34,6 +34,10 @@ export type CutCandidate = {
 	value: number;
 	age: number;
 	pos: string;
+	// What is still owed to him, and through when. Optional so a caller that
+	// only has ratings in hand still gets the old ordering.
+	contractAmount?: number;
+	contractExp?: number;
 };
 
 // Below this many at a position bucket, a player is the thing keeping the
@@ -60,6 +64,51 @@ export const SCARCITY_PROTECTION = 1.35;
 export const KEEP_AGE_FLOOR = 0.85;
 export const KEEP_AGE_CEILING = 1.15;
 
+// WHAT THE CUT COSTS, which nothing here used to ask.
+//
+// Releasing a player does not release his money: the remaining guaranteed
+// years stay on the payroll as dead money, paying nobody to play. So between
+// two comparable players a front office lets go of the one who is nearly off
+// the books, not the one with three years left - cutting the expensive man
+// converts live salary, which can still be played or traded, into a hole in
+// the cap for as long as the deal runs. An expiring contract is free to cut by
+// this measure, which is exactly why real teams hoard them.
+//
+// Clamped like the age lean and for the same reason: this decides between
+// comparable players. A genuinely worse player is still the one who goes, and
+// nobody is kept purely because he is expensive.
+export const KEEP_COST_CEILING = 1.15;
+
+// Guaranteed money still owed after this season, as a share of the cap, and
+// how much of a keep bonus a full cap's worth of it buys.
+export const cutCostLean = ({
+	contractAmount,
+	contractExp,
+	season,
+	salaryCap,
+}: {
+	contractAmount: number | undefined;
+	contractExp: number | undefined;
+	season: number;
+	salaryCap: number;
+}): number => {
+	if (
+		contractAmount === undefined ||
+		contractExp === undefined ||
+		salaryCap <= 0
+	) {
+		return 1;
+	}
+	// This season is being paid either way, so only the years beyond it are a
+	// cost of cutting rather than a cost of the contract.
+	const yearsAfterThis = Math.max(0, contractExp - season);
+	if (yearsAfterThis === 0) {
+		return 1;
+	}
+	const share = (contractAmount * yearsAfterThis) / salaryCap;
+	return Math.min(KEEP_COST_CEILING, 1 + share);
+};
+
 export const positionCounts = (
 	players: readonly { pos: string }[],
 ): Map<PosBucket, number> => {
@@ -76,12 +125,17 @@ export const keepScore = ({
 	p,
 	tier,
 	counts,
+	season,
+	salaryCap,
 }: {
 	p: CutCandidate;
 	tier: TradePosture["tier"] | undefined;
 	// Position counts across the roster being cut down, so the last centre is
 	// recognisable as the last centre.
 	counts: Map<PosBucket, number>;
+	// For pricing what the cut leaves behind. Omitted keeps the old ordering.
+	season?: number;
+	salaryCap?: number;
 }): number => {
 	const base = Number.isFinite(p.value) ? p.value : 0;
 
@@ -100,7 +154,17 @@ export const keepScore = ({
 		Math.max(KEEP_AGE_FLOOR, ageFitMultiplier(tier, p.age)),
 	);
 
-	const score = base * lean * scarcity;
+	const cost =
+		season !== undefined && salaryCap !== undefined
+			? cutCostLean({
+					contractAmount: p.contractAmount,
+					contractExp: p.contractExp,
+					season,
+					salaryCap,
+				})
+			: 1;
+
+	const score = base * lean * scarcity * cost;
 	return Number.isFinite(score) ? score : 0;
 };
 
@@ -111,11 +175,20 @@ export const keepScore = ({
 export const cutOrder = <T extends CutCandidate>(
 	players: readonly T[],
 	tier: TradePosture["tier"] | undefined,
+	// Present when the caller can price a cut; omitted keeps the old ordering.
+	money?: { season: number; salaryCap: number },
 ): T[] => {
 	const counts = positionCounts(players);
+	const score = (p: T) =>
+		keepScore({
+			p,
+			tier,
+			counts,
+			season: money?.season,
+			salaryCap: money?.salaryCap,
+		});
 	return [...players].sort((a, b) => {
-		const diff =
-			keepScore({ p: a, tier, counts }) - keepScore({ p: b, tier, counts });
+		const diff = score(a) - score(b);
 		return diff !== 0 ? diff : a.pid - b.pid;
 	});
 };
