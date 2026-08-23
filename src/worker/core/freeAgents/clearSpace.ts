@@ -156,6 +156,54 @@ export const isDumpable = ({
 	return true;
 };
 
+// WHAT THE PARTNER HAS TO SEND BACK.
+//
+// A one-way dump needs somebody with enough room under the cap to swallow the
+// whole contract, and in a league running at ninety-odd percent of the cap
+// there usually is not one - "no partner with room" was the single commonest
+// reason a cap-clearing plan died. But taking a big contract and sending a
+// small one the other way is the ordinary shape of this trade in real
+// basketball, and it is legal for a team that would otherwise be over: the
+// salary it sheds is what buys the room to absorb.
+//
+// So: the least salary that keeps the partner legal, and then the cheapest
+// contract it actually has that covers it - cheapest, because every dollar
+// coming back is a dollar of room the dumping team does not get. Value breaks
+// ties, so the partner parts with its most expendable man rather than a
+// rotation piece it would refuse over anyway.
+export const planSalaryBack = <
+	T extends { pid: number; contractAmount: number; value: number },
+>({
+	candidates,
+	partnerPayroll,
+	incomingSalary,
+	salaryCap,
+}: {
+	candidates: readonly T[];
+	partnerPayroll: number;
+	incomingSalary: number;
+	salaryCap: number;
+}): T | undefined => {
+	const needed = partnerPayroll + incomingSalary - salaryCap;
+	if (needed <= 0) {
+		return undefined;
+	}
+	let best: T | undefined;
+	for (const c of candidates) {
+		if (c.contractAmount < needed) {
+			continue;
+		}
+		if (
+			best === undefined ||
+			c.contractAmount < best.contractAmount ||
+			(c.contractAmount === best.contractAmount && c.value < best.value)
+		) {
+			best = c;
+		}
+	}
+	return best;
+};
+
 // Pick the smallest set of contracts that covers the shortfall, worst contracts
 // first. Returns undefined when the team simply cannot get there - better to
 // abandon the plan than to gut the roster chasing it.
@@ -415,13 +463,48 @@ const clearSpaceForTeam = async ({
 			continue;
 		}
 		const partnerPayroll = await team.getPayroll(t.tid);
+
+		// Room for the whole thing: the simple one-way dump.
+		let back: { pid: number; contractAmount: number } | undefined;
 		if (partnerPayroll + dumpSalary > salaryCap) {
-			continue;
+			// Not enough room, so it has to send salary out to make some. Its own
+			// stars are not on the table - a team asked to do somebody a favour
+			// parts with a spare part, and offering anything more just burns an
+			// evaluate() call on a deal it was always going to refuse.
+			const partnerRoster = await idb.cache.players.indexGetAll(
+				"playersByTid",
+				t.tid,
+			);
+			back = planSalaryBack({
+				candidates: partnerRoster
+					.filter((p) => last(p.ratings).ovr < starOvr)
+					.map((p) => ({
+						pid: p.pid,
+						contractAmount: p.contract.amount,
+						value: p.value,
+					})),
+				partnerPayroll,
+				incomingSalary: dumpSalary,
+				salaryCap,
+			});
+			if (!back) {
+				continue;
+			}
+			// Room the dump actually delivers, once what comes back is counted.
+			if (
+				payroll - dumpSalary + back.contractAmount + target.price >
+				salaryCap
+			) {
+				continue;
+			}
 		}
+
 		partners.push({
 			tid: t.tid,
 			posture: partnerPosture,
 			payroll: partnerPayroll,
+			backPids: back ? [back.pid] : [],
+			backSalary: back ? back.contractAmount : 0,
 		});
 	}
 	if (partners.length === 0) {
@@ -432,8 +515,9 @@ const clearSpaceForTeam = async ({
 		return false;
 	}
 
-	// The most room first - the easiest deal to actually get done.
-	partners.sort((a, b) => a.payroll - b.payroll);
+	// Cleanest deal first: nothing coming back beats a little, and among equals
+	// the team with the most room is the easiest to actually get done.
+	partners.sort((a, b) => a.backSalary - b.backSalary || a.payroll - b.payroll);
 
 	const myPicks = orderBy(
 		await idb.cache.draftPicks.indexGetAll("draftPicksByTid", tid),
@@ -461,7 +545,7 @@ const clearSpaceForTeam = async ({
 				{ tid, pids: dumpPids, pidsExcluded: [], dpids, dpidsExcluded: [] },
 				{
 					tid: partner.tid,
-					pids: [],
+					pids: partner.backPids,
 					pidsExcluded: [],
 					dpids: [],
 					dpidsExcluded: [],
@@ -479,7 +563,7 @@ const clearSpaceForTeam = async ({
 			const partnerDv = await valueChangeCalculator.evaluate({
 				tid: partner.tid,
 				pidsAdd: dumpPids,
-				pidsRemove: [],
+				pidsRemove: partner.backPids,
 				dpidsAdd: dpids,
 				dpidsRemove: [],
 				tradingPartnerTid: tid,
@@ -496,9 +580,12 @@ const clearSpaceForTeam = async ({
 			// What it costs us. Giving players and picks away for nothing scores
 			// negative, so the cost is the size of that loss. It IS allowed to be a
 			// loss - that is the whole point - but only one the signing covers.
+			// Whatever comes back is part of the cost, not a bonus: it is a player
+			// this team did not ask for, on a contract it now carries. Pricing it
+			// here is what keeps MAX_DUMP_COST_RATIO honest about the new shape.
 			const myDv = await valueChangeCalculator.evaluate({
 				tid,
-				pidsAdd: [],
+				pidsAdd: partner.backPids,
 				pidsRemove: dumpPids,
 				dpidsAdd: [],
 				dpidsRemove: dpids,
@@ -525,7 +612,10 @@ const clearSpaceForTeam = async ({
 				});
 				return false;
 			}
-			if (payroll - dumpSalary + target.price > salaryCap) {
+			if (
+				payroll - dumpSalary + partner.backSalary + target.price >
+				salaryCap
+			) {
 				reject("room-insufficient");
 				continue;
 			}
@@ -534,12 +624,17 @@ const clearSpaceForTeam = async ({
 			// team that dumps salary and then loses the player to someone else has
 			// made itself worse for nothing, which is the one outcome worse than
 			// never trying.
-			await processTrade([tid, partner.tid], [dumpPids, []], [dpids, []], {
-				initiatorTid: tid,
-				tiers: [posture.tier, partner.posture.tier],
-				dv: Math.round(myDv * 10) / 10,
-				motivation: CAP_CLEAR_MOTIVATION,
-			});
+			await processTrade(
+				[tid, partner.tid],
+				[dumpPids, partner.backPids],
+				[dpids, []],
+				{
+					initiatorTid: tid,
+					tiers: [posture.tier, partner.posture.tier],
+					dv: Math.round(myDv * 10) / 10,
+					motivation: CAP_CLEAR_MOTIVATION,
+				},
+			);
 
 			const signed = await idb.cache.players.get(target.p.pid);
 			if (!signed || signed.tid !== PLAYER.FREE_AGENT) {
@@ -566,6 +661,7 @@ const clearSpaceForTeam = async ({
 				partner: partner.tid,
 				dumped: dumpPids.length,
 				dumpSalary: Math.round(dumpSalary),
+				backSalary: Math.round(partner.backSalary),
 				picks: dpids.length,
 				dumpCost: Math.round(dumpCost * 10) / 10,
 				signingGain: Math.round(signingGain * 10) / 10,

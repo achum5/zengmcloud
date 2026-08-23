@@ -695,7 +695,16 @@ describe("a league runs for a decade without falling apart", () => {
 		const foLog = nodeEnv.FO_LOG === "1" ? captureFrontOfficeLog() : undefined;
 		// Per-team history, for the questions only a decade can answer: does a
 		// rebuild ever pay off, does anyone get stuck at the bottom forever.
-		const history: { tid: number; tier: string; winp: number }[][] = [];
+		const history: {
+			tid: number;
+			tier: string;
+			winp: number;
+			// What a rebuild is supposed to be accumulating, so a rebuild that
+			// never ends can be told apart from one that is quietly working.
+			ownFirsts: number;
+			youngCore: number;
+			bestYoung: number;
+		}[][] = [];
 		// Every pick made, so what the AI ASSUMED it was buying can be checked
 		// against what the player was actually worth once he had grown into it.
 		const picksTaken: {
@@ -1121,16 +1130,28 @@ describe("a league runs for a decade without falling apart", () => {
 				}
 
 				const yearRow: (typeof history)[number] = [];
+				const allPicks = await idb.cache.draftPicks.getAll();
 				for (let tid = 0; tid < NUM_TEAMS; tid++) {
 					const posture = await getTradePosture(tid, ctx);
 					const ts = await idb.cache.teamSeasons.indexGet(
 						"teamSeasonsBySeasonTid",
 						[season, tid],
 					);
+					const roster = await idb.cache.players.indexGetAll(
+						"playersByTid",
+						tid,
+					);
+					const young = roster.filter((p) => season - p.born.year <= 24);
 					yearRow.push({
 						tid,
 						tier: posture.tier,
 						winp: ts ? ts.won / Math.max(1, ts.won + ts.lost) : 0.5,
+						ownFirsts: allPicks.filter(
+							(dp) =>
+								dp.round === 1 && dp.originalTid === tid && dp.tid === tid,
+						).length,
+						youngCore: young.filter((p) => p.value >= ctx.coreValue).length,
+						bestYoung: Math.max(0, ...young.map((p) => p.ratings.at(-1)!.ovr)),
 					});
 				}
 				history.push(yearRow);
@@ -1210,6 +1231,14 @@ describe("a league runs for a decade without falling apart", () => {
 			const at5: number[] = [];
 			let entered = 0;
 			let stuck = 0;
+			// What the two outcomes were actually holding on the way through. A
+			// rebuild that never ends and one that works look identical in win
+			// percentage until the last year, so the question is what they were
+			// accumulating in between - picks, and young players good enough to
+			// build around.
+			type Assets = { firsts: number; core: number; best: number };
+			const stuckRows: Assets[] = [];
+			const escapedRows: Assets[] = [];
 			for (let y = 0; y < history.length; y++) {
 				for (const row of history[y]!) {
 					if (row.tier !== "teardown") {
@@ -1226,15 +1255,43 @@ describe("a league runs for a decade without falling apart", () => {
 					}
 					if (later5) {
 						at5.push(later5.winp - row.winp);
-						if (later5.tier === "teardown" || later5.tier === "seller") {
-							stuck += 1;
+						const during: Assets = { firsts: 0, core: 0, best: 0 };
+						let n = 0;
+						for (let k = 0; k <= 5; k++) {
+							const r = history[y + k]?.[row.tid];
+							if (r) {
+								during.firsts += r.ownFirsts;
+								during.core += r.youngCore;
+								during.best += r.bestYoung;
+								n += 1;
+							}
+						}
+						if (n > 0) {
+							const mean = {
+								firsts: during.firsts / n,
+								core: during.core / n,
+								best: during.best / n,
+							};
+							if (later5.tier === "teardown" || later5.tier === "seller") {
+								stuck += 1;
+								stuckRows.push(mean);
+							} else {
+								escapedRows.push(mean);
+							}
 						}
 					}
 				}
 			}
+			const describe = (a: Assets[]) =>
+				a.length === 0
+					? "n=0"
+					: `n=${a.length} firsts=${avg(a.map((x) => x.firsts)).toFixed(1)} youngCore=${avg(
+							a.map((x) => x.core),
+						).toFixed(2)} bestYoung=${avg(a.map((x) => x.best)).toFixed(1)}`;
 			rows.push(
 				"",
 				`REBUILDS entered=${entered} winp+3y=${avg(at3).toFixed(3)} winp+5y=${avg(at5).toFixed(3)} stillDown@5=${stuck}/${at5.length}`,
+				`REBUILD ASSETS stuck[${describe(stuckRows)}] escaped[${describe(escapedRows)}]`,
 			);
 
 			// How sticky are the standings year over year?
@@ -1324,6 +1381,39 @@ describe("a league runs for a decade without falling apart", () => {
 				if (motives.size > 0) {
 					rows.push(
 						`MOTIVES ${[...motives]
+							.sort((a, b) => b[1] - a[1])
+							.map(([k, v]) => `${k}=${v}`)
+							.join(" ")}`,
+					);
+				}
+
+				// THE SHAPE OF THE MARKET. A league where every deal is one player
+				// for one player is a league whose front offices cannot consolidate
+				// - the single most characteristic move in the sport, two useful
+				// players for one good one, would simply never happen.
+				const shapes = new Map<string, number>();
+				for (const e of (await idb.cache.events.getAll()) as any[]) {
+					if (e.type !== "trade" || !e.aiTrade || !e.teams) {
+						continue;
+					}
+					const counts = (e.teams as any[]).map((t) => ({
+						players: t.assets.filter((a: any) => a.pid !== undefined).length,
+						picks: t.assets.filter((a: any) => a.dpid !== undefined).length,
+					}));
+					const players = counts
+						.map((c) => c.players)
+						.sort((a, b) => b - a)
+						.join("v");
+					const picks = counts.reduce(
+						(a: number, c: { picks: number }) => a + c.picks,
+						0,
+					);
+					const key = `p${players}${picks > 0 ? `+${picks}pk` : ""}`;
+					shapes.set(key, (shapes.get(key) ?? 0) + 1);
+				}
+				if (shapes.size > 0) {
+					rows.push(
+						`TRADE SHAPES ${[...shapes]
 							.sort((a, b) => b[1] - a[1])
 							.map(([k, v]) => `${k}=${v}`)
 							.join(" ")}`,
