@@ -714,6 +714,38 @@ describe("a league runs for a decade without falling apart", () => {
 			assumed: number;
 			realized?: number;
 		}[] = [];
+		// DOES THE BOARD EARN ITS KEEP?
+		//
+		// Every team builds its own draft board - fit, timeline, what it has
+		// already taken - and none of that is something a pick-value curve can
+		// check. That curve says what slot N is worth; it does not say whether
+		// the right player went at slot N.
+		//
+		// So the class is kept whole, in board order, and settled three years on
+		// against the two comparisons that matter: the player who WAS next off
+		// the value list, and the best player still unpicked.
+		//
+		// The answer, over three seeds of sixteen seasons, is that the boards are
+		// FREE. Taken and next-off-the-list come out level in all four pick
+		// buckets - within a tenth of a point either way - so the fit adjustments
+		// move picks to different players of equal expected worth rather than
+		// costing the league talent. That is the good outcome, and not the one to
+		// assume: multipliers in [0.78, 1.22] raised to the 69th power decide the
+		// pick outright, so a board that leaned the wrong way would show up here
+		// immediately.
+		//
+		// The gap to the ceiling is 6 to 11 points and mostly unreachable - see
+		// BOARD ANCHOR below for the check that says so.
+		const draftClasses: {
+			season: number;
+			byBoard: number[];
+			taken: number[];
+			attrs: Map<
+				number,
+				{ ovr: number; pot: number; age: number; value: number }
+			>;
+			realized?: Map<number, number>;
+		}[] = [];
 		// Every multi-year commitment an AI team made, so what it thought it was
 		// buying can be checked against what the player was actually worth while
 		// it was still paying for him. The money-side twin of picksTaken: a front
@@ -823,12 +855,12 @@ describe("a league runs for a decade without falling apart", () => {
 				// WHAT A PICK IS ASSUMED TO BE WORTH, straight off the curve the
 				// trade AI prices picks from (trade/getPickValues.ts): the value
 				// of the Nth best prospect on the board, right now.
-				const boardBefore = (
+				const classBefore = (
 					await idb.cache.players.indexGetAll("playersByTid", PLAYER.UNDRAFTED)
 				)
 					.filter((p) => p.draft.year === season)
-					.map((p) => p.value)
-					.sort((a, b) => b - a);
+					.sort((a, b) => b.value - a.value);
+				const boardBefore = classBefore.map((p) => p.value);
 				const draftedPids = await draft.runPicks(
 					{ type: "untilEnd" },
 					{} as any,
@@ -841,6 +873,22 @@ describe("a league runs for a decade without falling apart", () => {
 						assumed: boardBefore[i] ?? 0,
 					});
 				}
+				draftClasses.push({
+					season,
+					byBoard: classBefore.map((p) => p.pid),
+					taken: [...(draftedPids ?? [])],
+					attrs: new Map(
+						classBefore.map((p) => [
+							p.pid,
+							{
+								ovr: p.ratings.at(-1)!.ovr,
+								pot: p.ratings.at(-1)!.pot,
+								age: season - p.born.year,
+								value: p.value,
+							},
+						]),
+					),
+				});
 
 				g.setWithoutSavingToDB("phase", PHASE.RESIGN_PLAYERS);
 				await newPhaseResignPlayers({} as any);
@@ -1193,6 +1241,16 @@ describe("a league runs for a decade without falling apart", () => {
 				}
 
 				// Settle up any pick made three seasons ago: what is he worth now?
+				for (const cls of draftClasses) {
+					if (cls.realized === undefined && season - cls.season === 3) {
+						const realized = new Map<number, number>();
+						for (const pid of cls.byBoard) {
+							const p = await idb.cache.players.get(pid);
+							realized.set(pid, p && p.tid !== PLAYER.RETIRED ? p.value : 0);
+						}
+						cls.realized = realized;
+					}
+				}
 				for (const rec of picksTaken) {
 					if (rec.realized === undefined && season - rec.season === 3) {
 						const p = await idb.cache.players.get(rec.pid);
@@ -1453,6 +1511,112 @@ describe("a league runs for a decade without falling apart", () => {
 						);
 					}
 					rows.push(`PICKS assumed->worth3y ${parts.join(" ")}`);
+				}
+			}
+
+			{
+				// What the boards were worth. Three numbers per bucket, all in
+				// realized value three years on:
+				//   took  - the player the AI actually chose there
+				//   bpa   - the player who was next off the value list, which is
+				//           what the league would have done with no boards at all
+				//   best  - the best player still on the board, i.e. the ceiling
+				// took below bpa means the boards are costing the league talent.
+				const settled = draftClasses.filter((c) => c.realized);
+				const buckets: [string, number, number][] = [
+					["1-3", 1, 3],
+					["4-10", 4, 10],
+					["11-30", 11, 30],
+					["31+", 31, Infinity],
+				];
+				const parts: string[] = [];
+				for (const [label, lo, hi] of buckets) {
+					let took = 0;
+					let bpa = 0;
+					let best = 0;
+					let n = 0;
+					for (const cls of settled) {
+						const realized = cls.realized!;
+						const left = new Set(cls.byBoard);
+						for (const [i, pid] of cls.taken.entries()) {
+							const slot = i + 1;
+							if (slot >= lo && slot <= hi) {
+								// The ceiling is whoever is still unpicked, which is
+								// what makes this a measure of CHOICE rather than of
+								// where the team was drafting.
+								let ceiling = 0;
+								for (const other of left) {
+									ceiling = Math.max(ceiling, realized.get(other) ?? 0);
+								}
+								took += realized.get(pid) ?? 0;
+								bpa += realized.get(cls.byBoard[i] ?? -1) ?? 0;
+								best += ceiling;
+								n += 1;
+							}
+							left.delete(pid);
+						}
+					}
+					if (n > 0) {
+						parts.push(
+							`${label}:took${(took / n).toFixed(1)}/bpa${(bpa / n).toFixed(1)}/best${(best / n).toFixed(1)}(n=${n})`,
+						);
+					}
+				}
+				if (parts.length > 0) {
+					rows.push(`BOARDS ${parts.join(" ")}`);
+				}
+
+				// IS THERE A BETTER BOARD TO ANCHOR ON?
+				//
+				// Everything above measures how well the AI picks off a list
+				// ordered by BBGM's `value`. This asks whether that list is the
+				// right one: rank each class by a handful of candidate predictors,
+				// take the top thirty, and total what those players were actually
+				// worth three years on. A predictor that beats `value` here is a
+				// better anchor for the board; one that does not is a distraction.
+				//
+				// None of them beat it. Across three seeds `value` scores 54.81
+				// and the nearest rival - an even split of ovr and pot - scores
+				// 54.83, which is noise; ovr alone (54.23) and pot alone (54.60)
+				// are clearly worse, and tilting either toward youth is worse
+				// again. So the six-to-eleven point gap between what teams took
+				// and the best player left is not a modelling failure with a fix
+				// in it. It is the draft being a draft.
+				const predictors: [
+					string,
+					(a: {
+						ovr: number;
+						pot: number;
+						age: number;
+						value: number;
+					}) => number,
+				][] = [
+					["value", (a) => a.value],
+					["ovr", (a) => a.ovr],
+					["pot", (a) => a.pot],
+					["half", (a) => 0.5 * a.ovr + 0.5 * a.pot],
+					["young", (a) => a.value + 2 * (21 - a.age)],
+					["potYoung", (a) => a.pot + 2 * (21 - a.age)],
+				];
+				const scores: string[] = [];
+				for (const [name, f] of predictors) {
+					let total = 0;
+					let count = 0;
+					for (const cls of settled) {
+						const ranked = [...cls.attrs]
+							.sort((a, b) => f(b[1]) - f(a[1]))
+							.slice(0, 30);
+						for (const [pid] of ranked) {
+							total += cls.realized!.get(pid) ?? 0;
+							count += 1;
+						}
+					}
+					if (count > 0) {
+						scores.push(`${name}=${(total / count).toFixed(2)}`);
+					}
+				}
+				if (scores.length > 0) {
+					rows.push(`BOARD ANCHOR top30worth3y ${scores.join(" ")}`);
 				}
 			}
 

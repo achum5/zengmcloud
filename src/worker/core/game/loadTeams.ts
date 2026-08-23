@@ -80,6 +80,19 @@ export const getNumConsecutiveGamesGFactor = (
 let playerStats: Record<string, number | number[]>;
 let teamStats: Record<string, number>;
 
+// Only the user's team gets a choice here; every AI team plays the default.
+//
+// That reads like an oversight - a lever the human can pull and the AI cannot,
+// which is exactly the shape of thing worth fixing - so it was measured rather
+// than assumed. Half the league was given a regular-season threshold of 4 (a
+// star at 90% instead of a healthy bench player), the other half left at 0, and
+// the assignment was then swapped so that team quality could not decide the
+// answer: eight runs of sixteen simulated seasons, thirty teams. The teams
+// playing through injuries won 0.25% more often, with the sign flipping in five
+// of the eight. That is nothing. The window is the reason - gamesRemaining has
+// to land in 1..4 for the setting to mean anything at all, most injuries are
+// longer than that, and when it does apply the risk of reaggravating the injury
+// roughly cancels the few games of better play. Leave it alone.
 export const getActualPlayThroughInjuries = (
 	t: { tid: number; playThroughInjuries: [number, number] } | "default",
 ) => {
