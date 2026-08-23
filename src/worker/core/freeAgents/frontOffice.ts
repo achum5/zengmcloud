@@ -347,6 +347,22 @@ export const scoreFreeAgent = ({
 // never anchors itself to a thirty-something's decline years. Amount is
 // untouched (willingness is priced on money, and the user picks lengths
 // freely in their own negotiations - this is the same power).
+//
+// SIGNINGS ONLY. Applying this to a team's OWN expiring players looks like an
+// obvious missing symmetry - the AI caps an outside 33-year-old at two years
+// and hands its own whatever the regression asks - and it was built and
+// measured over eight seeds of twenty seasons. It fires plenty (320 deals a
+// run were shortened) and made leagues worse: team ovr down 1.1 with five of
+// eight seeds negative, MORE stars left stranded, rebuild payoff down.
+//
+// The asymmetry is real, not an oversight. For an outside free agent a short
+// deal is a cheap flier that costs nothing if he does not work out. For a
+// player already here it is the opposite: shouldLetWalk has ALREADY decided
+// whether this team wants him, so shortening the commitment it just chose to
+// make only means losing him for nothing a year sooner - and a seller's
+// veteran on three years is a better deadline asset than the same man on one.
+// Restricting it to contenders (where that reason does not apply) came out a
+// wash on quality and worse on dead money, so neither version is here.
 export const signingYears = ({
 	tier,
 	age,
