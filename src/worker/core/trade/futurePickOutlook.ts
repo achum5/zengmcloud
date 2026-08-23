@@ -115,3 +115,85 @@ export const projectedSlot = ({
 	const slot = 1 + share * (numPicksPerRound - 1);
 	return Math.max(1, Math.min(numPicksPerRound, Math.round(slot)));
 };
+
+// ---------------------------------------------------------------------------
+// COLA CHANGES WHAT A PICK IS.
+//
+// Under a normal lottery, chances are handed out fresh each year by record, so
+// where a pick lands is a question about how good its team will be - which is
+// exactly what everything above projects. Carry-Over Lottery Allocation is a
+// different game. Chances ACCUMULATE: a team banks COLA_ALPHA every season it
+// misses the deep playoffs, keeps the balance across years, has it cut by
+// playoff success, and spends it entirely on winning the first pick. So a
+// franchise's odds are a stockpile it has been building, not a reading of last
+// season.
+//
+// And one rule matters more than any of that: a first-round pick that has
+// CHANGED HANDS is excluded from the lottery outright (see genOrder.ts - its
+// weight is zero). Which means the pick you acquire is never the pick you were
+// looking at. A rebuilding team's first is a lottery ticket while that team
+// holds it and a mid-round pick the moment you trade for it, and an AI that
+// prices those the same will happily pay lottery money for something that
+// cannot win the lottery.
+//
+// Both facts go through the same small model below.
+// ---------------------------------------------------------------------------
+
+// A rough chance of landing one of the lottery picks, given this team's share
+// of every chance in the pool. Deliberately crude - the real draw is without
+// replacement across several picks - but it has the two properties that
+// matter: no chances means no lottery, and a dominant stockpile means a near
+// certainty.
+export const colaLotteryOdds = ({
+	chancesShare,
+	numLotteryPicks,
+}: {
+	// This team's share of all chances in the pool, 0 to 1.
+	chancesShare: number;
+	numLotteryPicks: number;
+}): number => {
+	const share = clamp01(chancesShare);
+	if (share <= 0 || numLotteryPicks <= 0) {
+		return 0;
+	}
+	// The chance of being missed by every one of the draws.
+	return clamp01(1 - (1 - share) ** numLotteryPicks);
+};
+
+// Where a pick actually lands under COLA, given where its team's RECORD would
+// put it. Two outcomes, blended by the odds: win a lottery pick and land in
+// the top few, or miss and slot in by record - which, having missed, can never
+// be better than the first pick after the lottery.
+export const colaAdjustedSlot = ({
+	recordSlot,
+	chancesShare,
+	lotteryEligible,
+	numLotteryPicks,
+	numPicksPerRound,
+}: {
+	// The slot the team's own outlook implies, 1-based.
+	recordSlot: number;
+	chancesShare: number;
+	// False for a pick that has changed hands, or would by this trade.
+	lotteryEligible: boolean;
+	numLotteryPicks: number;
+	numPicksPerRound: number;
+}): number => {
+	if (!(numPicksPerRound > 0) || !(numLotteryPicks > 0)) {
+		return recordSlot;
+	}
+
+	// Missing the lottery means everyone who won it picks ahead of you.
+	const missSlot = Math.min(
+		numPicksPerRound,
+		Math.max(recordSlot, numLotteryPicks + 1),
+	);
+	if (!lotteryEligible) {
+		return missSlot;
+	}
+
+	// Winning one is equally likely to be any of them.
+	const winSlot = (numLotteryPicks + 1) / 2;
+	const odds = colaLotteryOdds({ chancesShare, numLotteryPicks });
+	return odds * winSlot + (1 - odds) * missSlot;
+};

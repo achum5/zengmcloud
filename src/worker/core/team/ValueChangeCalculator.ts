@@ -1,4 +1,4 @@
-import { PHASE } from "../../../common/constants.ts";
+import { COLA_NUM_LOTTERY_PICKS, PHASE } from "../../../common/constants.ts";
 import { draft, player, team, trade } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local } from "../../util/index.ts";
@@ -20,7 +20,7 @@ import {
 	PICK_MULTIPLIER,
 	tierForLegacyStrategy,
 } from "./tierValuation.ts";
-import { projectedSlot } from "../trade/futurePickOutlook.ts";
+import { colaAdjustedSlot, projectedSlot } from "../trade/futurePickOutlook.ts";
 
 type Asset =
 	| {
@@ -182,7 +182,10 @@ const getPickNumber = async (
 	pidsAdd: number[],
 	pidsRemove: number[],
 	tid: number,
-	tradingPartnerTid?: number,
+	tradingPartnerTid: number | undefined,
+	// Whether this pick is one the team would be TAKING ON. Only COLA cares:
+	// acquiring a pick is what strips its lottery eligibility.
+	acquiring: boolean,
 ) => {
 	const numPicksPerRound = getNumPicksPerRound();
 
@@ -227,7 +230,7 @@ const getPickNumber = async (
 		const outlook = g.get("smartAiFrontOffice")
 			? cache.tiers.get(dp.originalTid)
 			: undefined;
-		const regressionTarget = outlook
+		let regressionTarget = outlook
 			? projectedSlot({
 					tier: outlook.tier,
 					avgAge: outlook.avgAge,
@@ -235,6 +238,23 @@ const getPickNumber = async (
 					numPicksPerRound,
 				})
 			: (usersPick ? 0.75 : 0.25) * numPicksPerRound;
+
+		// UNDER COLA THAT PROJECTION IS ONLY HALF THE STORY. Where a pick lands
+		// is decided by an accumulated stockpile of chances rather than by last
+		// season, and a first that has changed hands is excluded from the
+		// lottery outright - so a pick being ACQUIRED is never eligible, whatever
+		// it was worth a moment earlier in its own team's hands. See
+		// colaAdjustedSlot.
+		if (cache.cola && outlook) {
+			const stock = cache.cola.chancesByTid.get(dp.originalTid) ?? 0;
+			regressionTarget = colaAdjustedSlot({
+				recordSlot: regressionTarget,
+				chancesShare: cache.cola.total > 0 ? stock / cache.cola.total : 0,
+				lotteryEligible: !acquiring && dp.tid === dp.originalTid,
+				numLotteryPicks: cache.cola.numLotteryPicks,
+				numPicksPerRound,
+			});
+		}
 
 		// Never let this improve the future projection of user's picks
 		let seasons = helpers.bound(season - g.get("season"), 0, 5);
@@ -285,7 +305,8 @@ const getPickInfo = async (
 	pidsAdd: number[],
 	pidsRemove: number[],
 	tid: number,
-	tradingPartnerTid?: number,
+	tradingPartnerTid: number | undefined,
+	acquiring: boolean,
 ): Promise<Asset> => {
 	const season =
 		dp.season === "fantasy" || dp.season === "expansion"
@@ -300,6 +321,7 @@ const getPickInfo = async (
 		pidsRemove,
 		tid,
 		tradingPartnerTid,
+		acquiring,
 	);
 
 	let value;
@@ -390,6 +412,7 @@ const getPicks = async ({
 				pidsRemove,
 				tid,
 				tradingPartnerTid,
+				true,
 			);
 			add.push(pickInfo);
 		}
@@ -408,6 +431,7 @@ const getPicks = async ({
 				pidsRemove,
 				tid,
 				tradingPartnerTid,
+				false,
 			);
 			remove.push(pickInfo);
 		}
@@ -654,6 +678,27 @@ const computeTiers = (
 	return tiers;
 };
 
+// Every team's COLA stockpile and what it adds up to, read once per cache
+// build. Only under COLA - every other draft type hands out chances by record
+// each year, which the tier projection already speaks for.
+const getColaChances = async () => {
+	if (g.get("draftType") !== "cola") {
+		return undefined;
+	}
+	const chancesByTid = new Map<number, number>();
+	let total = 0;
+	for (const t of await idb.cache.teams.getAll()) {
+		if (t.disabled) {
+			continue;
+		}
+		const chances =
+			t.draftLottery?.type === "cola" ? t.draftLottery.chances : 0;
+		chancesByTid.set(t.tid, chances);
+		total += chances;
+	}
+	return { chancesByTid, total, numLotteryPicks: COLA_NUM_LOTTERY_PICKS };
+};
+
 type ValueChangeCache = {
 	estPicks: Record<number, number>;
 	estValues: TradePickValues;
@@ -671,6 +716,14 @@ type ValueChangeCache = {
 	// player, every team OVR and every win% in hand - asking the posture module
 	// for it would re-scan the league once per team.
 	tiers: Map<number, { tier: TradeTier; avgAge: number }>;
+	// Under COLA, where a pick lands is decided by an accumulated stockpile of
+	// chances rather than by last season, so the stockpile has to be in hand to
+	// price a pick at all. Undefined under every other draft type.
+	cola?: {
+		chancesByTid: Map<number, number>;
+		total: number;
+		numLotteryPicks: number;
+	};
 };
 
 type ToUpdate = {
@@ -754,6 +807,7 @@ export class ValueChangeCalculator {
 				teamOvrs,
 				wps,
 				tiers: computeTiers(playersByTid, teamOvrs, wps),
+				cola: await getColaChances(),
 			};
 		} else {
 			return {

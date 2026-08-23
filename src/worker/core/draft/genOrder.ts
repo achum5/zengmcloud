@@ -13,7 +13,11 @@ import type {
 } from "../../../common/types.ts";
 import genOrderGetPicks from "./genOrderGetPicks.ts";
 import getTeamsByRound from "./getTeamsByRound.ts";
-import { COLA_ALPHA, PHASE } from "../../../common/constants.ts";
+import {
+	COLA_ALPHA,
+	COLA_NUM_LOTTERY_PICKS,
+	PHASE,
+} from "../../../common/constants.ts";
 import { league } from "../index.ts";
 import getNumPlayoffTeams from "../season/getNumPlayoffTeams.ts";
 import { getNumColaLotteryTeams, updateColaAfterLottery } from "./cola.ts";
@@ -142,7 +146,7 @@ const getLotteryInfo = (
 
 	if (draftType === "cola") {
 		return {
-			numToPick: 4,
+			numToPick: COLA_NUM_LOTTERY_PICKS,
 			chances: [1], // Placeholder, will be filled with real values later
 		};
 	}

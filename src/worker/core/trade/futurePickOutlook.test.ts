@@ -1,6 +1,8 @@
 import { assert, describe, test } from "vitest";
 import {
 	AGE_DRIFT_PER_YEAR,
+	colaAdjustedSlot,
+	colaLotteryOdds,
 	NEUTRAL_ROSTER_AGE,
 	projectedSlot,
 	projectedSlotShare,
@@ -182,5 +184,115 @@ describe("turning it into a pick number", () => {
 				numPicksPerRound: 30,
 			}),
 		);
+	});
+});
+
+describe("a pick under Carry-Over Lottery Allocation", () => {
+	const NUM_PICKS = 30;
+	const LOTTERY = 4;
+	const base = {
+		numLotteryPicks: LOTTERY,
+		numPicksPerRound: NUM_PICKS,
+		lotteryEligible: true,
+	};
+
+	test("no stockpile is no lottery, a dominant one is near certain", () => {
+		assert.strictEqual(
+			colaLotteryOdds({ chancesShare: 0, numLotteryPicks: LOTTERY }),
+			0,
+		);
+		assert.isAbove(
+			colaLotteryOdds({ chancesShare: 0.9, numLotteryPicks: LOTTERY }),
+			0.99,
+		);
+		assert.isAbove(
+			colaLotteryOdds({ chancesShare: 0.3, numLotteryPicks: LOTTERY }),
+			colaLotteryOdds({ chancesShare: 0.1, numLotteryPicks: LOTTERY }),
+		);
+	});
+
+	// The whole point of the system: two teams with the same record can be in
+	// completely different positions depending on what they have banked.
+	test("the same record is worth more with chances banked", () => {
+		const stocked = colaAdjustedSlot({
+			...base,
+			recordSlot: 12,
+			chancesShare: 0.35,
+		});
+		const spent = colaAdjustedSlot({
+			...base,
+			recordSlot: 12,
+			chancesShare: 0,
+		});
+		assert.isBelow(stocked, spent);
+	});
+
+	// A team that just cashed in has nothing left, so its pick is worth only
+	// what its record says - and not even that, since the lottery winners all
+	// pick ahead of it.
+	test("missing the lottery means everyone who won it picks first", () => {
+		assert.strictEqual(
+			colaAdjustedSlot({ ...base, recordSlot: 1, chancesShare: 0 }),
+			LOTTERY + 1,
+		);
+		assert.strictEqual(
+			colaAdjustedSlot({ ...base, recordSlot: 20, chancesShare: 0 }),
+			20,
+		);
+	});
+
+	// THE RULE THAT CATCHES PEOPLE OUT. A first that has changed hands is
+	// excluded from the lottery outright, so the worst team's pick stops being
+	// a lottery ticket the moment you trade for it.
+	test("a pick that has changed hands cannot win the lottery", () => {
+		const held = colaAdjustedSlot({
+			...base,
+			recordSlot: 2,
+			chancesShare: 0.4,
+		});
+		const acquired = colaAdjustedSlot({
+			...base,
+			recordSlot: 2,
+			chancesShare: 0.4,
+			lotteryEligible: false,
+		});
+		assert.isBelow(held, acquired);
+		assert.strictEqual(acquired, LOTTERY + 1);
+	});
+
+	test("a late pick is unaffected either way - it was never winning", () => {
+		for (const lotteryEligible of [true, false]) {
+			assert.strictEqual(
+				colaAdjustedSlot({
+					...base,
+					recordSlot: 28,
+					chancesShare: 0,
+					lotteryEligible,
+				}),
+				28,
+			);
+		}
+	});
+
+	test("nothing ever projects outside the round", () => {
+		for (const recordSlot of [1, 15, 30]) {
+			for (const chancesShare of [0, 0.5, 1]) {
+				const slot = colaAdjustedSlot({ ...base, recordSlot, chancesShare });
+				assert.isAtLeast(slot, 1);
+				assert.isAtMost(slot, NUM_PICKS);
+			}
+		}
+	});
+
+	// A tiny round cannot have four lottery picks ahead of everyone.
+	test("a round smaller than the lottery does not invert", () => {
+		const slot = colaAdjustedSlot({
+			recordSlot: 2,
+			chancesShare: 0,
+			lotteryEligible: false,
+			numLotteryPicks: LOTTERY,
+			numPicksPerRound: 3,
+		});
+		assert.isAtMost(slot, 3);
 	});
 });
