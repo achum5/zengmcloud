@@ -2,8 +2,17 @@ import { assert, beforeEach, describe, test } from "vitest";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
-import { PHASE, PLAYER } from "../../../common/constants.ts";
+import {
+	COLA_NUM_LOTTERY_PICKS,
+	PHASE,
+	PLAYER,
+} from "../../../common/constants.ts";
 import { draft, player, team, trade } from "../index.ts";
+import {
+	classEdge,
+	setAiColaOptOuts,
+	updateColaAfterPlayoffs,
+} from "../draft/cola.ts";
 import GameSim from "../GameSim.ts";
 import { processTeam } from "../game/loadTeams.ts";
 import { helpers } from "../../util/index.ts";
@@ -52,6 +61,42 @@ import {
 
 const nodeEnv: Record<string, string | undefined> =
 	(globalThis as any).process?.env ?? {};
+
+// DRAFT_TYPE=cola runs the real lottery instead of handing the worst team the
+// first pick. Opt-in, because every other measurement in this file was taken
+// with slots assigned straight off the standings and should stay comparable.
+const COLA = nodeEnv.DRAFT_TYPE === "cola";
+const colaRows: {
+	season: number;
+	max: number;
+	total: number;
+	nonZero: number;
+	firstToWorst: boolean;
+	optOuts: number;
+	strength: number | undefined;
+	edge: number | undefined;
+}[] = [];
+
+// How this year's class compares to next year's, by the two measures the
+// opt-out rule turns on: overall strength, and the EDGE a lottery pick buys
+// over the pick you get anyway. Reported because shouldOptOutOfCola is a
+// judgement about those numbers and would quietly stop meaning anything if
+// class generation ever changed shape.
+const classRatios = async (season: number) => {
+	const [a, b] = await Promise.all([
+		classEdge(season, COLA_NUM_LOTTERY_PICKS),
+		classEdge(season + 1, COLA_NUM_LOTTERY_PICKS),
+	]);
+	if (a === undefined || b === undefined) {
+		return { strength: undefined, edge: undefined };
+	}
+	const edgeA = a.lottery - a.fallback;
+	const edgeB = b.lottery - b.fallback;
+	return {
+		strength: b.lottery > 0 ? a.lottery / b.lottery : undefined,
+		edge: edgeB > 0 ? edgeA / edgeB : undefined,
+	};
+};
 
 const NUM_TEAMS = Number(nodeEnv.NUM_TEAMS ?? 16);
 const SEASONS = Number(nodeEnv.SEASONS ?? 12);
@@ -141,8 +186,12 @@ const PICK_HORIZON = 3;
 let nextDpid = 0;
 const ensureDraftClass = async (season: number) => {
 	// The real class generator, so the class is the size and shape the game
-	// actually produces for this many teams.
+	// actually produces for this many teams. Next year's too: the real game has
+	// classes three seasons out by this point (newPhaseResignPlayers), and a
+	// front office deciding whether THIS draft is worth entering has to be able
+	// to see the one behind it.
 	await draft.genPlayers(season, DEFAULT_LEVEL);
+	await draft.genPlayers(season + 1, DEFAULT_LEVEL);
 
 	// Retire picks from drafts already held (runPicks consumed the players but
 	// the pick rows remain), keep everything else - including picks that were
@@ -211,6 +260,46 @@ const ensureDraftClass = async (season: number) => {
 			dp.pick = slotByTid.get(dp.originalTid as number)!;
 			await idb.cache.draftPicks.put(dp);
 		}
+	}
+
+	// Under COLA the standings do not decide the top of the draft - an
+	// accumulated stockpile of chances does, and a pick that has changed hands
+	// is not even in the draw. So the real lottery has to run, or none of the
+	// strategy this mode exists to exercise is reachable.
+	if (COLA) {
+		const beforePhase = g.get("phase");
+		g.setWithoutSavingToDB("phase", PHASE.DRAFT_LOTTERY);
+		// Opt-outs are decided before the draw and after both classes exist,
+		// which is the order newPhaseBeforeDraft/newPhaseDraft run them in.
+		await setAiColaOptOuts();
+		const optOuts = (await idb.cache.teams.getAll()).filter(
+			(t) => t.draftLottery?.type === "cola" && t.draftLottery.optOut,
+		).length;
+		await draft.genOrder(false, {} as any);
+		g.setWithoutSavingToDB("phase", beforePhase);
+
+		const chances: number[] = [];
+		for (const t of await idb.cache.teams.getAll()) {
+			chances.push(
+				t.draftLottery?.type === "cola" ? t.draftLottery.chances : 0,
+			);
+		}
+		let firstPickTid = -1;
+		for (const dp of await idb.cache.draftPicks.getAll()) {
+			if (dp.season === season && dp.round === 1 && dp.pick === 1) {
+				firstPickTid = dp.originalTid;
+			}
+		}
+		const worstTid = [...slotByTid].find(([, slot]) => slot === 1)?.[0];
+		colaRows.push({
+			season,
+			max: Math.max(0, ...chances),
+			total: chances.reduce((a, x) => a + x, 0),
+			nonZero: chances.filter((x) => x > 0).length,
+			firstToWorst: firstPickTid === worstTid,
+			optOuts,
+			...(await classRatios(season)),
+		});
 	}
 };
 
@@ -512,7 +601,15 @@ const simPlayoffs = async (): Promise<number | undefined> => {
 		return winsHigh >= 4 ? higher : lower;
 	};
 
+	// How many series each team won. -1 for anyone who never made it, which is
+	// what BBGM's playoffRoundsWon means and what COLA reads to decide who
+	// banks a season's chances and whose stockpile gets cut.
+	const roundsWon = new Map<number, number>();
+
 	const bracket = async (seeds: number[]): Promise<number | undefined> => {
+		for (const tid of seeds) {
+			roundsWon.set(tid, 0);
+		}
 		let round = seeds;
 		while (round.length > 1) {
 			const next: number[] = [];
@@ -521,6 +618,7 @@ const simPlayoffs = async (): Promise<number | undefined> => {
 				if (winner === undefined) {
 					return undefined;
 				}
+				roundsWon.set(winner, (roundsWon.get(winner) ?? 0) + 1);
 				next.push(winner);
 			}
 			// next[i] vs next[len-1-i] is already the standard bracket (the 1v8
@@ -545,10 +643,29 @@ const simPlayoffs = async (): Promise<number | undefined> => {
 			champs.push(champ);
 		}
 	}
+	let champion: number | undefined;
 	if (champs.length === 2) {
-		return series(champs[0]!, champs[1]!);
+		champion = await series(champs[0]!, champs[1]!);
+		if (champion !== undefined) {
+			roundsWon.set(champion, (roundsWon.get(champion) ?? 0) + 1);
+		}
+	} else {
+		champion = champs[0];
 	}
-	return champs[0];
+
+	// Write it back, because the draft lottery is downstream of it.
+	for (let tid = 0; tid < NUM_TEAMS; tid++) {
+		const ts = await idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [
+			season,
+			tid,
+		]);
+		if (ts) {
+			(ts as any).playoffRoundsWon = roundsWon.get(tid) ?? -1;
+			await idb.cache.teamSeasons.put(ts);
+		}
+	}
+
+	return champion;
 };
 
 describe("a league runs for a decade without falling apart", () => {
@@ -638,16 +755,34 @@ describe("a league runs for a decade without falling apart", () => {
 		try {
 			await build();
 			g.setWithoutSavingToDB("smartAiFrontOffice", nodeEnv.SMART_AI !== "0");
+			if (COLA) {
+				g.setWithoutSavingToDB("draftType", "cola");
+				for (const t of await idb.cache.teams.getAll()) {
+					t.draftLottery = { type: "cola", chances: 0 };
+					await idb.cache.teams.put(t);
+				}
+			}
 			const salaryCap = g.get("salaryCap");
 
 			for (let year = 0; year < SEASONS; year++) {
 				const season = g.get("season");
 				let champion: { tid: number; tier: string } | undefined;
-				if (nodeEnv.REAL_GAMES === "1") {
+				// COLA implies REAL_GAMES: stockpiles move on playoff results, and
+				// synthesized standings have none. Without a played postseason
+				// every team banks nothing and the lottery is a formality.
+				if (nodeEnv.REAL_GAMES === "1" || COLA) {
 					// The season is actually played: real standings, real injuries,
 					// the market open throughout. Records then also set draft slots.
 					await simRealSeason(rng);
 					const champTid = await simPlayoffs();
+					if (COLA) {
+						// Banks a season for everyone who missed the deep rounds and
+						// cuts the stockpiles of everyone who did not, exactly as
+						// newPhaseBeforeDraft does. The opt-out decision that follows
+						// it there needs the draft classes, so it runs in
+						// ensureDraftClass instead.
+						await updateColaAfterPlayoffs();
+					}
 					if (champTid !== undefined) {
 						// The tier the champion carried INTO the playoffs.
 						const champCtx = await getLeagueTradeContext();
@@ -1315,6 +1450,17 @@ describe("a league runs for a decade without falling apart", () => {
 					`TALENT poolTop100=${m(pool.slice(0, 100)).toFixed(1)} ` +
 						`poolTop500=${m(pool.slice(0, 500)).toFixed(1)} ` +
 						`allRostered=${m(rosteredOvrs).toFixed(1)} n=${rosteredOvrs.length}`,
+				);
+			}
+			if (colaRows.length > 0) {
+				rows.push(
+					"",
+					`COLA ${colaRows
+						.map(
+							(c) =>
+								`s${c.season}:max${c.max}/tot${c.total}/nz${c.nonZero}/str${c.strength?.toFixed(2) ?? "?"}/edge${c.edge?.toFixed(2) ?? "?"}${c.optOuts > 0 ? `/out${c.optOuts}` : ""}${c.firstToWorst ? "/worstGot1" : ""}`,
+						)
+						.join(" ")}`,
 				);
 			}
 			// Diagnostic, not a canary: measured across four seeds the arms
