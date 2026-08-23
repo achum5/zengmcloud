@@ -1165,7 +1165,7 @@ export const settings: Setting[] = (
 			name: "Realistic Faces",
 			type: "bool",
 			description:
-				"Generate faces that match a player's age, drop the novelty styles, and let a player's look mature as he gets older.",
+				"Generate faces that match a player's age and drop the novelty styles.",
 			descriptionLong: (
 				<>
 					<p>
@@ -1187,15 +1187,81 @@ export const settings: Setting[] = (
 						sometimes a single hair color - so without this a whole league
 						shares a handful of exact colors and the faces blur together.
 					</p>
+				</>
+			),
+		},
+		{
+			category: "Players",
+			key: "faceAging",
+			name: "Face Aging",
+			type: "bool",
+			description:
+				"Let a player's face mature over his career: facial hair grows in and thickens, hairlines recede.",
+			descriptionLong: (
+				<>
 					<p>
-						With this on, faces mature over a career: facial hair grows in and
-						thickens, and hairlines recede. That happens at a few threshold ages
-						and only ever adds, so a player stays recognizable instead of
-						growing and shaving a beard at random. Faces already in your league
-						are left alone, but they will age from here.
+						Changes happen at a few threshold ages and only ever add, so a
+						player stays recognizable rather than growing and shaving a beard at
+						random. Past appearances are kept, so an old box score still shows
+						the rookie.
+					</p>
+					<p>
+						Faces already in your league are left where they are and age from
+						here. To backfill the careers that already happened, use Face aging
+						in the Danger Zone.
 					</p>
 				</>
 			),
+			// The scope only means anything while aging is on, so it sits in the
+			// same box rather than as a second entry in the list.
+			customForm: ({ disabled, handleChange, id, inputStyle, state }) => {
+				const on = state.faceAging === "true";
+				return (
+					<div style={inputStyle}>
+						<div
+							className="form-check form-switch"
+							title={on ? "Enabled" : "Disabled"}
+						>
+							<input
+								type="checkbox"
+								className="form-check-input"
+								checked={on}
+								disabled={disabled}
+								onChange={handleChange("faceAging", "bool")}
+								id={id}
+								value={state.faceAging}
+							/>
+							<label className="form-check-label" htmlFor={id} />
+						</div>
+						<select
+							className="form-select mt-1"
+							disabled={disabled || !on}
+							onChange={handleChange("faceAgingPlayers", "string")}
+							id={`${id}-players`}
+							value={state.faceAgingPlayers}
+						>
+							<option value="all">All players</option>
+							<option value="fictional">Fictional players only</option>
+							<option value="real">Real players only</option>
+						</select>
+					</div>
+				);
+			},
+			partners: ["faceAgingPlayers"],
+		},
+		{
+			category: "Players",
+			key: "faceAgingPlayers",
+			name: "Face Aging: Players",
+			type: "string",
+			hidden: true,
+			values: [
+				{ key: "all", value: "All players" },
+				{ key: "fictional", value: "Fictional players only" },
+				{ key: "real", value: "Real players only" },
+			],
+			description:
+				"Which players age. Real players are the ones imported from a real-players league; everyone else was invented by the game.",
 		},
 		{
 			category: "Events",

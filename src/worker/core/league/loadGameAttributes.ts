@@ -90,6 +90,12 @@ const loadGameAttributes = async () => {
 					),
 				});
 				delete (g as any).numPlayoffRounds;
+			} else if (key === "faceAging" && Object.hasOwn(g, "realisticFaces")) {
+				// Face aging used to be part of realisticFaces. A league from
+				// before the split keeps doing exactly what it was doing, rather
+				// than picking up the new default - a league that had realistic
+				// faces off would otherwise start aging faces on its own.
+				g.setWithoutSavingToDB("faceAging", g.get("realisticFaces"));
 			} else {
 				g.setWithoutSavingToDB(key, defaultGameAttributes[key]);
 			}

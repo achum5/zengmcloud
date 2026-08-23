@@ -74,6 +74,11 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"realisticFaces",
 		),
+		faceAging: unwrapGameAttribute(defaultGameAttributes, "faceAging"),
+		faceAgingPlayers: unwrapGameAttribute(
+			defaultGameAttributes,
+			"faceAgingPlayers",
+		),
 		fakeAges: unwrapGameAttribute(defaultGameAttributes, "fakeAges"),
 		tragicDeathRate: unwrapGameAttribute(
 			defaultGameAttributes,

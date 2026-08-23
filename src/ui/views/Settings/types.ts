@@ -31,6 +31,8 @@ export type Key =
 	| "easterEggPlayers"
 	| "specializedDraftProspects"
 	| "realisticFaces"
+	| "faceAging"
+	| "faceAgingPlayers"
 	| "fakeAges"
 	| "brotherRate"
 	| "sonRate"

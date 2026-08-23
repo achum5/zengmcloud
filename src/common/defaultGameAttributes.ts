@@ -103,6 +103,8 @@ const gameAttributesKeysSportSpecific = {
 		"forceHistoricalRosters",
 		"specializedDraftProspects",
 		"realisticFaces",
+		"faceAging",
+		"faceAgingPlayers",
 	]),
 	football: new Set<GameAttributeKey>([
 		"fantasyPoints",
@@ -202,6 +204,12 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	easterEggPlayers: true,
 	specializedDraftProspects: false,
 	realisticFaces: true,
+	// Aging is its own switch rather than part of realisticFaces: a league can
+	// want faces drawn to a player's age without wanting them to change under
+	// it, or the reverse. Existing leagues are seeded from realisticFaces on
+	// load so nothing changes under them (see loadGameAttributes).
+	faceAging: true,
+	faceAgingPlayers: "all",
 	fakeAges: true,
 	// The probability that a new player will be the son or brother of an existing player. In practice, the observed number may be smaller than this because sometimes a valid match will not be found.
 	sonRate: 0.02,

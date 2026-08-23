@@ -19,9 +19,10 @@ import {
 	inferRaceFromFace,
 } from "../../util/realisticFaces.ts";
 import { recordAppearance } from "../../../common/playerAppearance.ts";
+import type { FaceAgingScope } from "../../../common/types.ts";
 import { helpers } from "../../util/index.ts";
 
-export type FaceAgingScope = "all" | "fictional" | "real";
+export type { FaceAgingScope } from "../../../common/types.ts";
 
 export const playerInScope = (
 	p: { real?: boolean; srID?: string },

@@ -10,6 +10,11 @@ import type * as views from "../worker/views/index.ts";
 // Would be nice to make .at(-1) return T but idk how, so use the `last` function instead!
 export type NonEmptyArray<T> = [T, ...T[]];
 
+// Which players face aging applies to. Real players are the ones imported from
+// a real-players league (they carry the flag or a Sports Reference id);
+// everyone else was invented by the game.
+export type FaceAgingScope = "all" | "fictional" | "real";
+
 export type Env = {
 	bbgmVersion: string;
 	enableLogging: boolean;
@@ -729,9 +734,15 @@ export type GameAttributesLeague = {
 	// Reshape generated draft prospects into specialists - good ratings
 	// better, bad ratings worse. See draft/specializeProspects.ts.
 	specializedDraftProspects: boolean;
-	// Age-aware, less novelty-heavy, more varied generated faces, plus faces
-	// that mature as players get older. See worker/util/realisticFaces.ts.
+	// Age-aware, less novelty-heavy, more varied GENERATED faces. See
+	// worker/util/realisticFaces.ts.
 	realisticFaces: boolean;
+	// Whether a face changes over a career - hairlines recede, beards arrive.
+	// Separate from realisticFaces, which only decides how a face is drawn the
+	// day it is made.
+	faceAging: boolean;
+	// Which players faceAging applies to.
+	faceAgingPlayers: FaceAgingScope;
 	draftPickAutoContract: boolean;
 	draftPickAutoContractPercent: number;
 	draftPickAutoContractRounds: number;

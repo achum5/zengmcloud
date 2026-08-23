@@ -25,6 +25,7 @@ import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { choice, randInt, uniform } from "../../../common/random.ts";
 import { env } from "../../util/env.ts";
 import { ageFace, familySeed } from "../../util/realisticFaces.ts";
+import { playerInScope } from "../player/applyFaceAgingToLeague.ts";
 import { recordAppearance } from "../../../common/playerAppearance.ts";
 import { smartBudgetLevels } from "../finances/smartBudget.ts";
 import {
@@ -447,7 +448,12 @@ const newPhasePreseason = async (
 			// Grow into the look. Only fires at a few threshold ages and only
 			// ever adds - see realisticFaces.ts - so this writes a face on a
 			// handful of players a season rather than all of them.
-			if (isSport("basketball") && g.get("realisticFaces") && p.face) {
+			if (
+				isSport("basketball") &&
+				g.get("faceAging") &&
+				playerInScope(p, g.get("faceAgingPlayers")) &&
+				p.face
+			) {
 				const before = {
 					face: helpers.deepCopy(p.face),
 					imgURL: p.imgURL,

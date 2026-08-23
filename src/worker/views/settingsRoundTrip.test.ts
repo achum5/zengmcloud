@@ -88,6 +88,64 @@ describe("a league setting survives the round trip", () => {
 		assert.strictEqual(after.initialSettings.simStopDays, "15, 41, deadline");
 	});
 
+	// Face Aging and its scope are the same shape of risk: two attributes added
+	// after the fact, one of them a string, both of which have to appear in the
+	// defaults, the view, and both key lists to work at all.
+	test("Face Aging and its player scope are shown, saved, and reloaded", async () => {
+		await build();
+
+		const before: any = await updateSettings(undefined, ["firstRun"] as any);
+		for (const key of ["faceAging", "faceAgingPlayers"]) {
+			assert.ok(
+				Object.hasOwn(before.initialSettings, key),
+				`the settings view must return ${key}`,
+			);
+		}
+		assert.strictEqual(before.initialSettings.faceAging, true);
+		assert.strictEqual(before.initialSettings.faceAgingPlayers, "all");
+
+		await setGameAttributes({
+			faceAging: false,
+			faceAgingPlayers: "fictional",
+		});
+		assert.strictEqual(
+			(await idb.cache.gameAttributes.get("faceAgingPlayers" as any))?.value,
+			"fictional",
+		);
+
+		delete (g as any).faceAging;
+		delete (g as any).faceAgingPlayers;
+		await loadGameAttributes();
+		assert.strictEqual(g.get("faceAging"), false);
+		assert.strictEqual(g.get("faceAgingPlayers"), "fictional");
+
+		const after: any = await updateSettings(undefined, ["firstRun"] as any);
+		assert.strictEqual(after.initialSettings.faceAging, false);
+		assert.strictEqual(after.initialSettings.faceAgingPlayers, "fictional");
+	});
+
+	// Aging used to be part of Realistic Faces. A league saved before the split
+	// has no faceAging row at all, and must keep doing what it was doing rather
+	// than picking up the new default - otherwise turning Realistic Faces off
+	// stops meaning what it meant.
+	test("a league from before the split inherits what Realistic Faces was set to", async () => {
+		for (const realisticFaces of [false, true]) {
+			await build();
+			await setGameAttributes({ realisticFaces });
+
+			// An old league simply has no such row.
+			await idb.cache.gameAttributes.delete("faceAging" as any);
+			delete (g as any).faceAging;
+
+			await loadGameAttributes();
+			assert.strictEqual(
+				g.get("faceAging"),
+				realisticFaces,
+				`realisticFaces ${realisticFaces} should carry over to faceAging`,
+			);
+		}
+	});
+
 	test("clearing it back to blank also persists", async () => {
 		await build();
 		await setGameAttributes({ simStopDays: "15" });
