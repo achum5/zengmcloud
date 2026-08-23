@@ -558,6 +558,10 @@ describe("a league runs for a decade without falling apart", () => {
 	});
 
 	test("the full offseason cycle", async () => {
+		const tovrSpread: number[] = [];
+		const tovrBest5: number[] = [];
+		const tovrWorst5: number[] = [];
+		const rosteredOvrs: number[] = [];
 		const bargainsLeftOver: number[] = [];
 		const bestBargainLeft: number[] = [];
 		const rng = makeRng(Number(nodeEnv.SEED ?? 31337));
@@ -763,6 +767,12 @@ describe("a league runs for a decade without falling apart", () => {
 						"playersByTid",
 						tid,
 					);
+					// Every rostered player, so the top of the league can be
+					// compared without allocation getting a say. If this moves,
+					// talent was actually gained or lost rather than shuffled.
+					for (const rp of roster) {
+						rosteredOvrs.push(rp.ratings.at(-1)!.ovr);
+					}
 					if (
 						roster.length < g.get("minRosterSize") ||
 						roster.length > g.get("maxRosterSize")
@@ -942,6 +952,35 @@ describe("a league runs for a decade without falling apart", () => {
 				);
 
 				const meanTovr = ovrs.reduce((s, x) => s + x, 0) / ovrs.length;
+
+				// WHY THE MEAN ALONE LIES, and it lied to this harness for a while.
+				//
+				// team.ovr is concave in talent - the fifth star on a roster adds
+				// far less than the first - so for a FIXED pool of players the sum
+				// of team ovrs is MAXIMISED by spreading them evenly and depressed
+				// by any concentration. A league whose contenders assemble stars
+				// and whose rebuilds strip down therefore posts a LOWER mean than
+				// one where everybody is mediocre, while being exactly what the
+				// front office feature is for.
+				//
+				// Measured against stock BBGM over eight real seasons: mean team
+				// ovr 45.2 against 49.6, which reads as a disaster until you look
+				// at the spread. The best five teams were BETTER (71.6 v 70.2) and
+				// the worst five far worse (6.9 v 27.7). Nothing was lost; it moved.
+				//
+				// So the spread is reported next to the mean, and the talent rows
+				// below measure the pool itself, which no allocation can move.
+				{
+					const sd = Math.sqrt(
+						ovrs.reduce((a, x) => a + (x - meanTovr) ** 2, 0) / ovrs.length,
+					);
+					const sorted = [...ovrs].sort((a, b) => b - a);
+					const mean5 = (xs: number[]) =>
+						xs.reduce((a, x) => a + x, 0) / Math.max(1, xs.length);
+					tovrSpread.push(sd);
+					tovrBest5.push(mean5(sorted.slice(0, 5)));
+					tovrWorst5.push(mean5(sorted.slice(-5)));
+				}
 				if (year >= SEASONS - 3) {
 					lastTovrs.push(meanTovr);
 				}
@@ -1265,6 +1304,19 @@ describe("a league runs for a decade without falling apart", () => {
 						.join(" ")}`,
 				);
 			}
+			{
+				const m = (xs: number[]) =>
+					xs.reduce((a, x) => a + x, 0) / Math.max(1, xs.length);
+				const pool = [...rosteredOvrs].sort((a, b) => b - a);
+				rows.push(
+					"",
+					`SPREAD tovrSD=${m(tovrSpread).toFixed(1)} best5=${m(tovrBest5).toFixed(1)} ` +
+						`worst5=${m(tovrWorst5).toFixed(1)} gap=${(m(tovrBest5) - m(tovrWorst5)).toFixed(1)}`,
+					`TALENT poolTop100=${m(pool.slice(0, 100)).toFixed(1)} ` +
+						`poolTop500=${m(pool.slice(0, 500)).toFixed(1)} ` +
+						`allRostered=${m(rosteredOvrs).toFixed(1)} n=${rosteredOvrs.length}`,
+				);
+			}
 			// Diagnostic, not a canary: measured across four seeds the arms
 			// overlap (53.9-54.5 with vanilla's minimum-contract refusal in
 			// place, 51.4-53.9 with findBargain), so a threshold here would be
@@ -1393,6 +1445,23 @@ describe("a league runs for a decade without falling apart", () => {
 			4,
 			`a team carried ${(worstPayrollShare * 100).toFixed(0)}% of the cap\n${log}`,
 		);
+
+		// The bottom is ALLOWED to be bad - a team that tears down should look
+		// torn down, and measured against stock BBGM over eight real seasons the
+		// worst five teams sit near 10 where vanilla's sit near 28. That is the
+		// feature, not a fault: the same runs put the BEST five teams ahead of
+		// vanilla's. What the bottom may not do is fall out of the league. Before
+		// the roster floor was enforced (see `stripped` in autoSign) this reached
+		// -56 with ten-man rosters, so the bar sits far below anything measured
+		// and far above that, and does not argue about how deep a rebuild goes.
+		if (SEASONS >= 8 && tovrWorst5.length > 0) {
+			const worst5 = tovrWorst5.reduce((a, x) => a + x, 0) / tovrWorst5.length;
+			assert.isAbove(
+				worst5,
+				-20,
+				`the bottom five teams averaged ${worst5.toFixed(1)} team ovr\n${log}`,
+			);
+		}
 
 		// The posture system keeps expressing the whole range of plans. Tiny
 		// smoke runs legitimately may not produce an all-in team, so this only
