@@ -3,6 +3,7 @@ import { resetCache, resetG } from "../../../test/helpers.ts";
 import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import {
+	chargeColaOptOuts,
 	type ClassEdge,
 	setAiColaOptOuts,
 	shouldOptOutOfCola,
@@ -11,6 +12,7 @@ import {
 import {
 	COLA_ALPHA,
 	COLA_NUM_LOTTERY_PICKS,
+	COLA_OPT_OUT_PENALTY,
 	PLAYER,
 } from "../../../common/constants.ts";
 
@@ -186,9 +188,17 @@ describe("setAiColaOptOuts", () => {
 	const build = async ({
 		chances,
 		thisTop,
+		// Where the AI team's own first rounder is. Its own by default; hand it
+		// to another team and the pick is out of the draw entirely.
+		firstRounderHeldBy = AI_TID,
+		// How far the AI team went in the playoffs. -1 is "did not make it",
+		// which is what puts a team in the lottery in the first place.
+		aiPlayoffRoundsWon = -1,
 	}: {
 		chances: number;
 		thisTop: number;
+		firstRounderHeldBy?: number;
+		aiPlayoffRoundsWon?: number;
 	}) => {
 		resetG();
 		g.setWithoutSavingToDB("draftType", "cola");
@@ -216,10 +226,11 @@ describe("setAiColaOptOuts", () => {
 		addClass(season, thisTop);
 		addClass(season + 1, 60);
 
+		const tids = [USER_TID, AI_TID, 2];
 		await resetCache({
 			teams: [
-				// Both sitting on the same stockpile, so the only difference
-				// between them is which one the human is running.
+				// The user's team and the AI team sit on the same stockpile, so
+				// the only difference between them is which one the human runs.
 				{ tid: USER_TID, draftLottery: { type: "cola", chances } },
 				{ tid: AI_TID, draftLottery: { type: "cola", chances } },
 				{
@@ -228,6 +239,21 @@ describe("setAiColaOptOuts", () => {
 				},
 			] as any,
 			players,
+			teamSeasons: tids.map((tid, rid) => ({
+				rid,
+				tid,
+				season,
+				playoffRoundsWon: tid === AI_TID ? aiPlayoffRoundsWon : -1,
+			})) as any,
+			// Every team's own first rounder in this year's draft, which is what
+			// the lottery is run on.
+			draftPicks: tids.map((tid) => ({
+				dpid: tid,
+				tid: tid === AI_TID ? firstRounderHeldBy : tid,
+				originalTid: tid,
+				round: 1,
+				season,
+			})) as any,
 		});
 	};
 
@@ -252,6 +278,27 @@ describe("setAiColaOptOuts", () => {
 		assert.isFalse(await optedOut(AI_TID));
 	});
 
+	// A pick that has changed hands is not in the draw, so its old owner cannot
+	// win the lottery however much it has banked - and paying two thousand
+	// chances to sit out a draw you were never in is pure loss.
+	test("a team that traded its first rounder is already out of the draw", async () => {
+		await build({ chances: 40_000, thisTop: 51, firstRounderHeldBy: 2 });
+		await setAiColaOptOuts();
+		assert.isFalse(await optedOut(AI_TID));
+	});
+
+	// Same again for the other way out of the field: reaching the final three
+	// rounds costs a team its stockpile and its place in the lottery.
+	test("a team that went deep in the playoffs is already out of the draw", async () => {
+		await build({
+			chances: 40_000,
+			thisTop: 51,
+			aiPlayoffRoundsWon: g.get("numGamesPlayoffSeries", "current").length,
+		});
+		await setAiColaOptOuts();
+		assert.isFalse(await optedOut(AI_TID));
+	});
+
 	// Same league, same class, smart mode off: the AI does not touch the lever.
 	test("only smart front offices use it", async () => {
 		await build({ chances: 40_000, thisTop: 51 });
@@ -266,5 +313,28 @@ describe("setAiColaOptOuts", () => {
 		g.setWithoutSavingToDB("draftType", "nba2019");
 		await setAiColaOptOuts();
 		assert.isFalse(await optedOut(AI_TID));
+	});
+
+	// An opt out is declared before the draw and paid for after it, and the two
+	// are separate calls because a COLA league can reach draft day without
+	// running the draw at all - genOrder falls back to "noLottery" when too few
+	// teams hold a first rounder. A flag left standing after that would sit the
+	// team out for free, every season, forever.
+	test("declaring it is paid for even when no lottery is held", async () => {
+		await build({ chances: 40_000, thisTop: 51 });
+		await setAiColaOptOuts();
+		assert.isTrue(await optedOut(AI_TID));
+
+		await chargeColaOptOuts();
+
+		const draftLottery = (await idb.cache.teams.get(AI_TID))!.draftLottery!;
+		assert.strictEqual(
+			(draftLottery as any).chances,
+			40_000 - COLA_OPT_OUT_PENALTY,
+		);
+		assert.isUndefined(
+			(draftLottery as any).optOut,
+			"the flag has to come off, or the team sits out again next year",
+		);
 	});
 });

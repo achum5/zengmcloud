@@ -57,16 +57,23 @@ const logChange = (
 // Champion gets their lottery chances multiplied by 0. Loser of the finals, 0.25. Loser of the semifinals, 0.5. Loser of the quarterfinals, 0.75.
 const PLAYOFF_FACTORS = [0.75, 0.5, 0.25, 0];
 
+// Reaching the final three rounds is what costs a team its stockpile, and it is
+// the same line that keeps a team out of the draw - getNumColaLotteryTeams
+// counts everybody below it. One predicate, so the two cannot drift apart.
+const playoffFactor = (playoffRoundsWon: number) => {
+	const numPlayoffRounds = g.get("numGamesPlayoffSeries", "current").length;
+	const offset = numPlayoffRounds - PLAYOFF_FACTORS.length + 1;
+	if (playoffRoundsWon < 0) {
+		return undefined;
+	}
+	return PLAYOFF_FACTORS[playoffRoundsWon - offset];
+};
+
 // Call this at the end of the playoffs
 export const updateColaAfterPlayoffs = async () => {
 	if (g.get("draftType") !== "cola") {
 		return;
 	}
-
-	const numPlayoffRounds = g.get("numGamesPlayoffSeries", "current").length;
-
-	// Add this to playoffRoundsWon and we can index into PLAYOFF_FACTORS
-	const offset = numPlayoffRounds - PLAYOFF_FACTORS.length + 1;
 
 	const season = g.get("season");
 	const teamSeasons = await idb.getCopies.teamSeasons(
@@ -95,8 +102,8 @@ export const updateColaAfterPlayoffs = async () => {
 
 		const before = t.draftLottery.chances;
 
-		const factor = PLAYOFF_FACTORS[row.playoffRoundsWon - offset];
-		if (row.playoffRoundsWon >= 0 && factor !== undefined) {
+		const factor = playoffFactor(row.playoffRoundsWon);
+		if (factor !== undefined) {
 			t.draftLottery.chances = Math.round(t.draftLottery.chances * factor);
 			logChange(
 				before,
@@ -147,7 +154,15 @@ export const updateColaAfterLottery = async (tids: number[]) => {
 		);
 	}
 
-	// Reset colaOptOut
+	await chargeColaOptOuts();
+};
+
+// An opt out is declared before the draw and paid for after it. Charging it is
+// separate from the draw itself because a COLA league can reach draft day
+// without one - genOrder falls back to "noLottery" when too few teams hold a
+// first rounder - and a flag left standing there would sit a team out for free,
+// every season, forever.
+export const chargeColaOptOuts = async () => {
 	const teams = await idb.cache.teams.getAll();
 	for (const t of teams) {
 		if (t.draftLottery?.type === "cola" && t.draftLottery.optOut) {
@@ -403,6 +418,53 @@ export const classEdge = async (
 	};
 };
 
+// Who is actually in this year's draw, and how many chances are riding on it.
+// Neither is "every team" - genOrder gives zero weight to anybody who reached
+// the final three rounds, and zero to anybody whose own first rounder has
+// changed hands, because a traded pick cannot win the lottery. A team outside
+// the field has nothing to protect and nothing to win, so it must never pay to
+// opt out; and a total that counted those teams would badly understate
+// everybody else's odds.
+const colaLotteryField = async () => {
+	const season = g.get("season");
+	const [teamSeasons, draftPicks] = await Promise.all([
+		idb.getCopies.teamSeasons({ season }, "noCopyCache"),
+		idb.cache.draftPicks.getAll(),
+	]);
+
+	const deepPlayoffs = new Set<number>();
+	for (const row of teamSeasons) {
+		if (playoffFactor(row.playoffRoundsWon) !== undefined) {
+			deepPlayoffs.add(row.tid);
+		}
+	}
+
+	const ownFirstRounder = new Set<number>();
+	for (const dp of draftPicks) {
+		if (dp.season === season && dp.round === 1 && dp.tid === dp.originalTid) {
+			ownFirstRounder.add(dp.originalTid);
+		}
+	}
+
+	const chancesByTid = new Map<number, number>();
+	let total = 0;
+	for (const t of await idb.cache.teams.getAll()) {
+		if (
+			t.disabled ||
+			t.draftLottery?.type !== "cola" ||
+			t.draftLottery.optOut ||
+			deepPlayoffs.has(t.tid) ||
+			!ownFirstRounder.has(t.tid)
+		) {
+			continue;
+		}
+		chancesByTid.set(t.tid, t.draftLottery.chances);
+		total += t.draftLottery.chances;
+	}
+
+	return { chancesByTid, total };
+};
+
 // Every AI team's opt-out decision for this year's lottery, taken once, just
 // after the season's chances have settled and before the draw. The user's own
 // team is never touched - that button is theirs.
@@ -420,26 +482,16 @@ export const setAiColaOptOuts = async () => {
 		return;
 	}
 
-	const teams = await idb.cache.teams.getAll();
-	let total = 0;
-	for (const t of teams) {
-		if (!t.disabled && t.draftLottery?.type === "cola") {
-			total += t.draftLottery.chances;
-		}
-	}
+	const { chancesByTid, total } = await colaLotteryField();
 	if (total <= 0) {
 		return;
 	}
 
 	const userTids = g.get("userTids");
-	for (const t of teams) {
-		if (t.disabled || userTids.includes(t.tid)) {
+	for (const [tid, chances] of chancesByTid) {
+		if (userTids.includes(tid)) {
 			continue;
 		}
-		if (t.draftLottery?.type !== "cola" || t.draftLottery.optOut) {
-			continue;
-		}
-		const chances = t.draftLottery.chances;
 		if (
 			!shouldOptOutOfCola({
 				chances,
@@ -451,9 +503,13 @@ export const setAiColaOptOuts = async () => {
 		) {
 			continue;
 		}
+		const t = await idb.cache.teams.get(tid);
+		if (t?.draftLottery?.type !== "cola") {
+			continue;
+		}
 		t.draftLottery.optOut = true;
 		await idb.cache.teams.put(t);
-		frontOfficeLog(season, t.tid, "cola-opt-out", {
+		frontOfficeLog(season, tid, "cola-opt-out", {
 			chances,
 			thisEdge: Math.round(thisClass.lottery - thisClass.fallback),
 			nextEdge: Math.round(nextClass.lottery - nextClass.fallback),

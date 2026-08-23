@@ -20,7 +20,11 @@ import {
 } from "../../../common/constants.ts";
 import { league } from "../index.ts";
 import getNumPlayoffTeams from "../season/getNumPlayoffTeams.ts";
-import { getNumColaLotteryTeams, updateColaAfterLottery } from "./cola.ts";
+import {
+	chargeColaOptOuts,
+	getNumColaLotteryTeams,
+	updateColaAfterLottery,
+} from "./cola.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { shuffle } from "../../../common/random.ts";
 import { simLottery } from "./draftLottery.ts";
@@ -475,6 +479,12 @@ const genOrder = async (
 	if (!mock && draftType === "cola") {
 		const tids = firstRoundOrderAfterLottery.map((t) => t.tid);
 		await updateColaAfterLottery(tids);
+	} else if (!mock && g.get("draftType") === "cola") {
+		// A COLA league that generated its order some other way - the noLottery
+		// fallback above, say. Nobody won anything, but teams that declared they
+		// were sitting out still have to pay for it, and the flag has to come
+		// off or they sit out for free next year too.
+		await chargeColaOptOuts();
 	}
 
 	// First round - everyone else
