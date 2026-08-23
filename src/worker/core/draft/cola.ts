@@ -14,6 +14,7 @@ import logEvent from "../../util/logEvent.ts";
 import getNumPlayoffTeams from "../season/getNumPlayoffTeams.ts";
 import { colaLotteryOdds } from "../trade/futurePickOutlook.ts";
 import { frontOfficeLog } from "../../util/frontOfficeLog.ts";
+import { isAiControlled } from "../../util/isAiControlled.ts";
 
 // All teams up to the final 3 rounds of playoffs
 export const getNumColaLotteryTeams = async () => {
@@ -466,8 +467,8 @@ const colaLotteryField = async () => {
 };
 
 // Every AI team's opt-out decision for this year's lottery, taken once, just
-// after the season's chances have settled and before the draw. The user's own
-// team is never touched - that button is theirs.
+// after the season's chances have settled and before the draw. A team the user
+// is actually running is never touched - that button is theirs.
 export const setAiColaOptOuts = async () => {
 	if (g.get("draftType") !== "cola" || !g.get("smartAiFrontOffice")) {
 		return;
@@ -487,9 +488,8 @@ export const setAiColaOptOuts = async () => {
 		return;
 	}
 
-	const userTids = g.get("userTids");
 	for (const [tid, chances] of chancesByTid) {
-		if (userTids.includes(tid)) {
+		if (!isAiControlled({ tid })) {
 			continue;
 		}
 		if (

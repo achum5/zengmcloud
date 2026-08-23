@@ -1,6 +1,7 @@
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { idb } from "../../db/index.ts";
-import { g, local } from "../../util/index.ts";
+import { g } from "../../util/index.ts";
+import { isAiControlled } from "../../util/isAiControlled.ts";
 import { last, orderBy } from "../../../common/utils.ts";
 import { player, team } from "../index.ts";
 import processTrade from "../trade/processTrade.ts";
@@ -91,20 +92,6 @@ const teamsThatAlreadyCleared = async (): Promise<Set<number>> => {
 // and by anyone reading the transaction log wondering why a team gave a player
 // away for nothing.
 const CAP_CLEAR_MOTIVATION = "cap-clear";
-
-// A team the AI is allowed to act for. Identical rule to the trade AI's own
-// getAITids, and it MUST be applied to both sides of a dump: a league-mate's
-// roster is not a dumping ground. In multiplayer userTids syncs and holds every
-// friend's team, so this excludes all of them on whichever device is simming.
-const isAiControlled = (t: { tid: number; disabled?: boolean }): boolean => {
-	if (t.disabled) {
-		return false;
-	}
-	if (local.autoPlayUntil || g.get("spectator")) {
-		return true;
-	}
-	return !g.get("userTids").includes(t.tid);
-};
 
 const toFaPlayer = (p: Player, season: number): FaPlayer => {
 	const ratings = last(p.ratings);

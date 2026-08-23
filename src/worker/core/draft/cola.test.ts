@@ -278,6 +278,16 @@ describe("setAiColaOptOuts", () => {
 		assert.isFalse(await optedOut(AI_TID));
 	});
 
+	// Auto play and spectator mode hand every team to the AI, the user's own
+	// included, and a lever that stayed off there would be off in exactly the
+	// modes where the whole league is supposed to be AI run.
+	test("in spectator mode the user's team is AI run like any other", async () => {
+		await build({ chances: 40_000, thisTop: 51 });
+		g.setWithoutSavingToDB("spectator", true);
+		await setAiColaOptOuts();
+		assert.isTrue(await optedOut(USER_TID));
+	});
+
 	// A pick that has changed hands is not in the draw, so its old owner cannot
 	// win the lottery however much it has banked - and paying two thousand
 	// chances to sit out a draw you were never in is pure loss.
