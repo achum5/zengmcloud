@@ -16,6 +16,7 @@ import {
 import GameSim from "../GameSim.ts";
 import { processTeam } from "../game/loadTeams.ts";
 import { helpers } from "../../util/index.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import autoSign from "./autoSign.ts";
 import clearSpaceForSignings from "./clearSpace.ts";
 import decreaseDemands from "./decreaseDemands.ts";
@@ -97,6 +98,47 @@ const classRatios = async (season: number) => {
 		edge: edgeB > 0 ? edgeA / edgeB : undefined,
 	};
 };
+
+// TWO GROUPS NO ROSTER MAY BE WITHOUT, per sport. The check behind them - a
+// team fielding nobody at all somewhere it has to field somebody - is the same
+// everywhere; the positions that make it true are not.
+//
+// RUNNING THIS FILE UNDER ANOTHER SPORT is a one-line wrapper - a
+// decadesSim.football.test.ts containing `import "./decadesSim.test.ts"` is
+// picked up by the football project, which matches on filename. That is worth
+// knowing because nothing here is basketball-specific except what is written
+// down, and this pair was the exception: it was hardcoded to PG/SG/G and
+// C/PF/FC, so under any other sport every roster read as missing both groups
+// and the canary fired on every team-season before a single decision had been
+// examined.
+//
+// What it says once it can run. Six seeds of eight football seasons, smart
+// front office against stock, showed the same trade the basketball comments
+// describe: the spread widens (every seed), the bottom five fall about five
+// points (every seed), the top five rise about two, and the talent actually
+// employed across the league is flat - so nobody is worse off for being in a
+// league that concentrates. Mean team ovr is down about a point and moves in
+// both directions, which is the concave-mean artefact the SPREAD row exists to
+// expose rather than a result.
+//
+// One thing did not match. Dead money runs about sixteen million a season
+// higher than stock in ALL SIX seeds, where the same comparison in basketball
+// has it lower - a 53-man roster churns far harder than a 15-man one, so
+// whatever rosterCuts saves per cut is being swamped by the number of them.
+// That is a live lead, not a measured defect: nothing here has looked at why.
+//
+// Baseball trips the canary below at one or two rosters a season, and it is
+// NOT the front office - stock BBGM produces the same rate or worse on the
+// same seeds. Left as it is rather than papered over.
+const POSITION_GROUPS: [Set<string>, Set<string>] = bySport({
+	basketball: [new Set(["C", "PF", "FC"]), new Set(["PG", "SG", "G"])],
+	// No quarterback and no line is not a football team.
+	football: [new Set(["QB"]), new Set(["OL"])],
+	// Somebody has to pitch and somebody has to catch.
+	baseball: [new Set(["SP", "RP"]), new Set(["C"])],
+	// A goalie and a defence.
+	hockey: [new Set(["G"]), new Set(["D"])],
+});
 
 const NUM_TEAMS = Number(nodeEnv.NUM_TEAMS ?? 16);
 const SEASONS = Number(nodeEnv.SEASONS ?? 12);
@@ -976,10 +1018,10 @@ describe("a league runs for a decade without falling apart", () => {
 					for (const p of roster) {
 						payroll += p.contract.amount;
 						const pos = p.ratings.at(-1)!.pos;
-						if (pos === "C" || pos === "PF" || pos === "FC") {
+						if (POSITION_GROUPS[0].has(pos)) {
 							bigs += 1;
 						}
-						if (pos === "PG" || pos === "SG" || pos === "G") {
+						if (POSITION_GROUPS[1].has(pos)) {
 							guards += 1;
 						}
 					}
