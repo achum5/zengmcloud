@@ -1,14 +1,21 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import { resetG } from "../../../test/helpers.ts";
 import {
+	type CapHold,
 	FIT_CEILING,
 	FIT_FLOOR,
 	type FaPlayer,
+	MAX_PURSUERS_PER_PRIZE,
 	MAX_RETENTION_OVERPAY,
+	planCapHold,
+	PURSUIT_GIVE_UP_DAYS,
+	resolveCapHolds,
 	retentionOverpay,
 	scoreFreeAgent,
 	signingYears,
 } from "../freeAgents/frontOffice.ts";
+import { classifyTier } from "../trade/tradePosture.ts";
+import { planDumpPackage } from "../freeAgents/clearSpace.ts";
 import {
 	DRAFT_FIT_CEILING,
 	DRAFT_FIT_FLOOR,
@@ -512,6 +519,353 @@ describe("pick outlook", () => {
 					});
 					finite(slot, `colaAdjustedSlot(${key}=${x})`);
 				}
+			}
+		}
+	});
+});
+
+// ---------------------------------------------------------------------------
+
+describe("planCapHold", () => {
+	const hold = (over: Record<string, unknown> = {}) =>
+		planCapHold({
+			posture: posture("buyer"),
+			prizes: [fa({ pid: 7, ovr: 74, value: 74, amount: 30_000 })],
+			payroll: 40_000,
+			salaryCap: 90_000,
+			salaryCapType: "soft",
+			daysLeft: 25,
+			season: SEASON,
+			minContract: 1500,
+			maxContract: 45_000,
+			...over,
+		} as any);
+
+	test("a hold is only ever for a prize the team could actually sign today", () => {
+		const h = hold();
+		assert.ok(h);
+		assert.strictEqual(h.pid, 7);
+		// The ceiling is the payroll it may still carry and keep the room for
+		// him, so the team's own payroll has to fit under it or the hold is a
+		// promise it cannot keep.
+		assert.isAtLeast(h.spendCeiling, 40_000);
+		assert.isAtMost(h.spendCeiling, 90_000);
+	});
+
+	// Once the money is gone it stays gone: there is no payroll at which a team
+	// that could not afford to wait suddenly can again.
+	test("holding stops for good as payroll rises", () => {
+		let stopped = false;
+		for (const payroll of [0, 20_000, 40_000, 60_000, 66_000, 70_000, 89_000]) {
+			const h = hold({ payroll });
+			if (h === undefined) {
+				stopped = true;
+			} else {
+				assert.isFalse(
+					stopped,
+					`a team with ${payroll} held space that a poorer one could not`,
+				);
+				assert.isAtLeast(h.spendCeiling, payroll);
+			}
+		}
+		assert.isTrue(stopped, "no payroll in the sweep was ever too high");
+	});
+
+	test("and stops for good as free agency runs out", () => {
+		for (const daysLeft of [30, 20, 10, PURSUIT_GIVE_UP_DAYS, 3, 0, -5]) {
+			const h = hold({ daysLeft });
+			if (daysLeft < PURSUIT_GIVE_UP_DAYS) {
+				assert.isUndefined(h, `still waiting with ${daysLeft} days left`);
+			}
+		}
+	});
+
+	test("nothing worth waiting for means shop instead", () => {
+		assert.isUndefined(hold({ prizes: [] }));
+		// Hopeless is hopeless, whatever the fit.
+		assert.isUndefined(
+			hold({
+				prizes: [
+					fa({ pid: 7, ovr: 78, value: 78, amount: 30_000, probWilling: 0 }),
+				],
+			}),
+		);
+		// And a teardown does not freeze an offseason for a star.
+		assert.isUndefined(hold({ posture: posture("teardown") }));
+	});
+
+	test("survives anything a strange league can hand it", () => {
+		for (const tier of TIERS) {
+			for (const x of HOSTILE) {
+				for (const key of ["payroll", "salaryCap", "daysLeft"] as const) {
+					const h = hold({ posture: posture(tier), [key]: x });
+					if (h) {
+						finite(h.spendCeiling, `planCapHold(${tier}, ${key}=${x})`);
+					}
+				}
+				for (const key of ["amount", "ovr", "value", "probWilling"] as const) {
+					const h = hold({
+						posture: posture(tier),
+						prizes: [
+							fa({ pid: 7, ovr: 74, value: 74, amount: 30_000, [key]: x }),
+						],
+					});
+					if (h) {
+						finite(h.spendCeiling, `planCapHold(${tier}, prize ${key}=${x})`);
+					}
+				}
+			}
+		}
+	});
+});
+
+describe("resolveCapHolds", () => {
+	const want = (tid: number, pid: number, score: number) => ({
+		tid,
+		hold: { pid, spendCeiling: 50_000 } as CapHold,
+		score,
+	});
+
+	test("only the most credible few chase any one player", () => {
+		const wanted = Array.from({ length: 9 }, (_, i) => want(i, 100, 9 - i));
+		const resolved = resolveCapHolds(wanted);
+		assert.strictEqual(resolved.size, MAX_PURSUERS_PER_PRIZE);
+		// And it is the best of them, not just any three.
+		for (let tid = 0; tid < MAX_PURSUERS_PER_PRIZE; tid++) {
+			assert.isTrue(resolved.has(tid), `the ${tid} highest bid was dropped`);
+		}
+	});
+
+	test("each prize is counted separately", () => {
+		const wanted = [
+			...Array.from({ length: 5 }, (_, i) => want(i, 100, 5 - i)),
+			...Array.from({ length: 5 }, (_, i) => want(10 + i, 200, 5 - i)),
+		];
+		const resolved = resolveCapHolds(wanted);
+		assert.strictEqual(resolved.size, 2 * MAX_PURSUERS_PER_PRIZE);
+	});
+
+	// THE ONE THAT MATTERS IN A SHARED LEAGUE. Two devices build this list by
+	// walking their own team stores, which need not agree on order. If the
+	// answer depended on that order they would freeze different teams'
+	// offseasons and the save files would diverge - the same hazard cutOrder
+	// breaks its ties on pid to avoid.
+	test("the answer does not depend on what order the teams arrived in", () => {
+		const wanted = [
+			want(3, 100, 5),
+			want(1, 100, 5), // an exact tie with tid 3, resolved by tid
+			want(7, 100, 9),
+			want(2, 100, 1),
+			want(5, 200, 4),
+			want(9, 200, 4), // and another
+		];
+		const expected = [...resolveCapHolds(wanted)]
+			.map(([tid, h]) => `${tid}:${h.pid}`)
+			.sort();
+		// Every rotation of the input, which is what a different store order
+		// looks like in practice.
+		for (let i = 1; i < wanted.length; i++) {
+			const rotated = [...wanted.slice(i), ...wanted.slice(0, i)];
+			const got = [...resolveCapHolds(rotated)]
+				.map(([tid, h]) => `${tid}:${h.pid}`)
+				.sort();
+			assert.deepStrictEqual(
+				got,
+				expected,
+				`rotating the input by ${i} changed who holds`,
+			);
+		}
+		// Reversed too, which no rotation produces.
+		const reversed = [...resolveCapHolds([...wanted].reverse())]
+			.map(([tid, h]) => `${tid}:${h.pid}`)
+			.sort();
+		assert.deepStrictEqual(reversed, expected);
+	});
+});
+
+describe("classifyTier", () => {
+	const ORDER: Record<string, number> = {
+		teardown: 0,
+		seller: 1,
+		fringe: 2,
+		buyer: 3,
+		allIn: 4,
+	};
+
+	const tierAt = (winp: number, over: Record<string, unknown> = {}) =>
+		classifyTier({
+			winp,
+			ovrRankPct: 0.5,
+			avgAge: 27,
+			youngCoreCount: 0,
+			hasFoundation: false,
+			...over,
+		} as any);
+
+	test("winning more never moves a team further from contending", () => {
+		for (const avgAge of [23, 27, 31]) {
+			for (const youngCoreCount of [0, 2]) {
+				for (const hasFoundation of [false, true]) {
+					const ranks: number[] = [];
+					for (let winp = 0; winp <= 1.0001; winp += 0.05) {
+						ranks.push(
+							ORDER[tierAt(winp, { avgAge, youngCoreCount, hasFoundation })]!,
+						);
+					}
+					assertRising(
+						ranks,
+						`age ${avgAge}/core ${youngCoreCount}/foundation ${hasFoundation}: winning more made a team sell`,
+					);
+				}
+			}
+		}
+	});
+
+	test("a better roster never moves a team further from contending either", () => {
+		for (const winp of [0.2, 0.4, 0.55, 0.75]) {
+			const ranks: number[] = [];
+			// 0 is the best roster in the league and 1 the worst, so this walks
+			// from worst to best and the tier must not fall.
+			for (const ovrRankPct of [1, 0.75, 0.5, 0.25, 0]) {
+				ranks.push(ORDER[tierAt(winp, { ovrRankPct })]!);
+			}
+			for (let i = 1; i < ranks.length; i++) {
+				assert.isAtLeast(
+					ranks[i]!,
+					ranks[i - 1]!,
+					`winp ${winp}: a better roster sold harder`,
+				);
+			}
+		}
+	});
+
+	// A young core to build around is the difference between retooling and
+	// tearing it down, and it may only ever soften the answer.
+	test("something to build around never makes a team tear down harder", () => {
+		for (let winp = 0; winp <= 1.0001; winp += 0.05) {
+			for (const ovrRankPct of [0, 0.5, 1]) {
+				const without =
+					ORDER[tierAt(winp, { ovrRankPct, hasFoundation: false })]!;
+				const with_ = ORDER[tierAt(winp, { ovrRankPct, hasFoundation: true })]!;
+				assert.isAtLeast(
+					with_,
+					without,
+					`winp ${winp}: a foundation made the team sell harder`,
+				);
+			}
+		}
+	});
+
+	test("always answers with a tier, whatever it is handed", () => {
+		for (const x of HOSTILE) {
+			for (const key of [
+				"winp",
+				"ovrRankPct",
+				"avgAge",
+				"youngCoreCount",
+			] as const) {
+				const tier = tierAt(0.5, { [key]: x });
+				assert.isTrue(
+					Object.hasOwn(ORDER, tier),
+					`classifyTier(${key}=${x}) returned ${tier}`,
+				);
+			}
+		}
+	});
+});
+
+describe("planDumpPackage", () => {
+	const roster = [
+		{ pid: 1, contractAmount: 3000, value: 40 },
+		{ pid: 2, contractAmount: 8000, value: 52 },
+		{ pid: 3, contractAmount: 12_000, value: 48 },
+		{ pid: 4, contractAmount: 21_000, value: 55 },
+		{ pid: 5, contractAmount: 5000, value: 61 },
+	];
+
+	// THE ONLY THING THAT REALLY MATTERS ABOUT THIS FUNCTION. A dump that does
+	// not cover the shortfall is the one outcome clearSpace calls worse than
+	// never trying: the team gives players away, then still cannot sign the man
+	// it gave them away for. Undefined is a fine answer; a package that falls
+	// short is not.
+	test("whatever it returns actually covers the shortfall", () => {
+		for (let shortfall = 0; shortfall <= 60_000; shortfall += 500) {
+			for (const maxPlayers of [1, 2, 3, 5]) {
+				const chosen = planDumpPackage({
+					candidates: [...roster],
+					shortfall,
+					maxPlayers,
+				});
+				if (chosen === undefined) {
+					continue;
+				}
+				const total = chosen.reduce((t, p) => t + p.contractAmount, 0);
+				assert.isAtLeast(
+					total,
+					shortfall,
+					`shortfall ${shortfall} (max ${maxPlayers}) came back ${total} short of covered`,
+				);
+				assert.isAtMost(
+					chosen.length,
+					maxPlayers,
+					`shortfall ${shortfall}: dumped more players than allowed`,
+				);
+				// Nobody is dumped twice, and everybody dumped was on the roster.
+				const pids = new Set(chosen.map((p) => p.pid));
+				assert.strictEqual(pids.size, chosen.length);
+				for (const p of chosen) {
+					assert.include(
+						roster.map((r) => r.pid),
+						p.pid,
+					);
+				}
+			}
+		}
+	});
+
+	// And it gives up rather than gutting the roster: a shortfall bigger than
+	// everything it could legally move has no package.
+	test("a shortfall it cannot reach has no package at all", () => {
+		const everything = roster.reduce((t, p) => t + p.contractAmount, 0);
+		assert.isUndefined(
+			planDumpPackage({
+				candidates: [...roster],
+				shortfall: everything + 1,
+				maxPlayers: roster.length,
+			}),
+		);
+		assert.isUndefined(planDumpPackage({ candidates: [], shortfall: 1000 }));
+	});
+
+	test("survives anything a strange league can hand it", () => {
+		for (const x of HOSTILE) {
+			for (const key of ["contractAmount", "value"] as const) {
+				const candidates = roster.map((p, i) =>
+					i === 0 ? { ...p, [key]: x } : { ...p },
+				);
+				const chosen = planDumpPackage({ candidates, shortfall: 10_000 });
+				if (chosen) {
+					for (const p of chosen) {
+						assert.include(
+							roster.map((r) => r.pid),
+							p.pid,
+						);
+					}
+				}
+			}
+			const chosen = planDumpPackage({
+				candidates: [...roster],
+				shortfall: x,
+			});
+			if (chosen) {
+				const total = chosen.reduce((t, p) => t + p.contractAmount, 0);
+				// A shortfall that is not a number cannot be covered, so the only
+				// honest answers are undefined or a package that would cover a
+				// real one - never a silent partial dump.
+				assert.isTrue(
+					Number.isFinite(total),
+					`shortfall=${x} produced a package totalling ${total}`,
+				);
 			}
 		}
 	});

@@ -515,8 +515,12 @@ export const planCapHold = ({
 	minContract: number;
 	maxContract: number;
 }): CapHold | undefined => {
-	// Holding space is meaningless without a cap to hold it under.
-	if (salaryCapType === "none") {
+	// Holding space is meaningless without a cap to hold it under - and a cap
+	// that is not a number is the same situation wearing a disguise. Without
+	// this the affordability check below quietly passes (every comparison
+	// against NaN is false), and the team comes away holding room for a player
+	// against a ceiling of NaN, which it then never spends under.
+	if (salaryCapType === "none" || !Number.isFinite(salaryCap)) {
 		return undefined;
 	}
 
@@ -531,8 +535,13 @@ export const planCapHold = ({
 		// What we expect to actually pay, once he has sat unsigned a while.
 		const target = capHoldTarget(p.amount);
 
-		// Credible only if the room would genuinely be there for him.
-		if (payroll + target > salaryCap) {
+		// Credible only if the room would genuinely be there for him - and a
+		// price that cannot be read is not a price the room can be checked
+		// against. Every comparison against NaN is false, so without the first
+		// half of this the affordability test passes by default and the team
+		// ends up holding room against a ceiling of NaN that it never spends
+		// under.
+		if (!Number.isFinite(target) || payroll + target > salaryCap) {
 			continue;
 		}
 
