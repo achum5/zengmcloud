@@ -146,6 +146,21 @@ export const buildSeed = async (
 		if (starsOnBlock.length > 0 && rand() < 0.6) {
 			p = starsOnBlock[0];
 		} else {
+			// The fallback is the WHOLE roster, building blocks included, and
+			// that is deliberate - it was changed to exclude them, to match the
+			// buyer branch twenty lines down, and measured worse on six seeds:
+			// the top five lost 1.1 points, rotation talent 0.22, dead money up
+			// 11% on all six. More trades happened and they were worth less.
+			//
+			// The reason is a distinction worth keeping in mind anywhere else
+			// this comes up. BEING ON THE BLOCK IS NOT THE SAME AS BEING
+			// AVAILABLE AS FILLER. A seed is shopped to a shortlist of teams
+			// that bid against each other, so a cornerstone offered here fetches
+			// what the market thinks he is worth; the untouchables filter below
+			// is what stops the same player being quietly folded into somebody
+			// else's package for nothing. Protecting him from the first is not
+			// protection, it is just a worse trade - the team ends up shopping
+			// its second-best player instead and getting a second-best return.
 			const pool = shopPlayers.length > 0 ? shopPlayers : players;
 			p = choice(pool, (pp) => Math.max(0.01, pp.value), rand());
 		}

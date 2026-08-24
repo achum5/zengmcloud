@@ -727,6 +727,9 @@ describe("a league runs for a decade without falling apart", () => {
 		const rosteredOvrs: number[] = [];
 		// The ten players per team that team.ovr actually counts, league-wide.
 		const rotationOvrs: number[] = [];
+		let scalesRow = "";
+		const seasonOvrs: number[] = [];
+		const seasonValues: number[] = [];
 		// One row per released contract the first season it shows up as dead money.
 		const deadRows: number[][] = [];
 		// WHERE THE ROSTER CRUNCH COMES FROM, which is the same question as
@@ -1057,6 +1060,8 @@ describe("a league runs for a decade without falling apart", () => {
 					// talent was actually gained or lost rather than shuffled.
 					for (const rp of roster) {
 						rosteredOvrs.push(rp.ratings.at(-1)!.ovr);
+						seasonOvrs.push(rp.ratings.at(-1)!.ovr);
+						seasonValues.push(rp.value);
 					}
 					if (
 						roster.length < g.get("minRosterSize") ||
@@ -1260,6 +1265,17 @@ describe("a league runs for a decade without falling apart", () => {
 					worstDeadShare,
 					deadMoney / (salaryCap * NUM_TEAMS),
 				);
+
+				{
+					const o = seasonOvrs.sort((a, b) => b - a);
+					const v = seasonValues.sort((a, b) => b - a);
+					const at = (xs: number[], r: number) => (xs[r - 1] ?? 0).toFixed(1);
+					scalesRow = [30, 90, 150, 240, 450]
+						.map((r) => `r${r}:ovr${at(o, r)}/val${at(v, r)}`)
+						.join(" ");
+					seasonOvrs.length = 0;
+					seasonValues.length = 0;
+				}
 
 				const meanTovr = ovrs.reduce((s, x) => s + x, 0) / ovrs.length;
 
@@ -2009,6 +2025,13 @@ describe("a league runs for a decade without falling apart", () => {
 					// signed or traded for. They respond to completely different
 					// things, and lumping them together hid that for a long time.
 					`OVERFLOW sign=${overflow.sign} trade=${overflow.trade} dump=${overflow.dump} atEnd=${overflow.end}`,
+					// OVR AND VALUE ARE NOT THE SAME SCALE, and a bar meant for one
+					// of them applied to the other is off by dozens of players.
+					// This is the last season's league-wide ranks in both, so
+					// anywhere the code mixes them can be checked rather than
+					// guessed at. See minTradeValue in trade/tradePosture.ts,
+					// which does mix them, on purpose, with the measurement.
+					`SCALES ${scalesRow}`,
 					`DEADPROF ${(() => {
 						const bucket = (name: string, f: (x: number[]) => boolean) => {
 							const xs = deadRows.filter((x) => f(x));

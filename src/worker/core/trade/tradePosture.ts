@@ -784,7 +784,25 @@ export const getTradePosture = async (
 		{
 			vetAge: VET_AGE,
 			teardownAge: TEARDOWN_SHOP_AGE,
-			minTradeValue: context.rotationOvr, // "someone wants him" bar
+			// The "someone wants him" bar. This is an OVR being compared against
+			// a VALUE, which is not a mistake left standing out of laziness: it
+			// was found, corrected, measured and put back.
+			//
+			// The two scales are close but not the same, and they separate as
+			// you go down. In a thirty-team league the 240th best player is 49
+			// by OVR and 52.4 by value (SCALES, in decadesSim.test.ts), so this
+			// bar sits about three points below the eighth-man line it names and
+			// admits perhaps a hundred more players a season than it reads like
+			// it does.
+			//
+			// Raising it to the honest value-scale line was worse on six seeds:
+			// dead money up 9% on all six, rotation talent down 0.12 on five,
+			// mean team ovr down 0.63 on five. The mechanism is the fallback in
+			// betweenAiTeams - a seller whose block comes up EMPTY offers from
+			// its whole roster, so tightening this bar does not make teams shop
+			// less, it makes them shop worse. Fix that first if this is ever
+			// revisited; on its own the honest bar is a regression.
+			minTradeValue: context.rotationOvr,
 			tier,
 		},
 	);
