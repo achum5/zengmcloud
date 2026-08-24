@@ -438,12 +438,20 @@ describe("retentionOverpay and signingYears", () => {
 	test("a contract length is always a whole number of seasons in range", () => {
 		for (const tier of TIERS) {
 			for (const x of HOSTILE) {
-				for (const key of ["age", "askedYears", "amount"] as const) {
+				for (const key of [
+					"age",
+					"askedYears",
+					"amount",
+					"ovr",
+					"rotationOvr",
+				] as const) {
 					const years = signingYears({
 						tier,
 						age: 27,
 						askedYears: 3,
 						amount: 8000,
+						ovr: 55,
+						rotationOvr: 48,
 						minContract: 1500,
 						minLength: 1,
 						maxLength: 5,

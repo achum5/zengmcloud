@@ -97,6 +97,8 @@ const autoSign = async () => {
 	// we fall back to the old value-ordered behavior rather than skip free agency.
 	const postures = new Map<number, TradePosture>();
 	let starOvr = Infinity;
+	// The "someone wants him" line - see signingYears.
+	let rotationOvr = Number.NEGATIVE_INFINITY;
 	// The whole feature is one setting away from vanilla: with it off, no
 	// postures are computed and every decision below falls back to the original
 	// "sign the best free agent you can afford" behavior.
@@ -107,6 +109,7 @@ const autoSign = async () => {
 		}
 		const context = await getLeagueTradeContext();
 		starOvr = context.starOvr;
+		rotationOvr = context.rotationOvr;
 		for (const t of eligibleTeams) {
 			postures.set(t.tid, await getTradePosture(t.tid, context));
 		}
@@ -578,6 +581,8 @@ const autoSign = async () => {
 					age: season - p.born.year,
 					askedYears,
 					amount: p.contract.amount,
+					ovr: last(p.ratings).ovr,
+					rotationOvr,
 					minContract,
 					minLength: g.get("minContractLength"),
 					maxLength: g.get("maxContractLength"),

@@ -27,6 +27,7 @@ import {
 	shouldLetWalk,
 	type FaPlayer,
 	signingYears,
+	STOPGAP_YEARS,
 } from "./frontOffice.ts";
 import type { TradePosture } from "../trade/tradePosture.ts";
 
@@ -161,6 +162,10 @@ describe("the structure of the deal follows the plan", () => {
 	const base = {
 		askedYears: 4,
 		amount: 8_000,
+		// A rotation player by default, so the cases below are about the plan
+		// rather than about the stopgap rule.
+		ovr: 55,
+		rotationOvr: 48,
 		minContract: MIN,
 		minLength: 1,
 		maxLength: 5,
@@ -200,6 +205,25 @@ describe("the structure of the deal follows the plan", () => {
 	test("a fringe team takes the ask as it comes", () => {
 		assert.strictEqual(
 			signingYears({ ...base, tier: "fringe", age: 30 }),
+			base.askedYears,
+		);
+	});
+
+	test("a body nobody else wants is not signed for years", () => {
+		// Below the rotation bar, on real money rather than a minimum: the
+		// population that every dead contract in the league is made of.
+		assert.strictEqual(
+			signingYears({ ...base, tier: "fringe", age: 26, ovr: 40 }),
+			STOPGAP_YEARS,
+		);
+		// The same man at rotation quality keeps his years.
+		assert.strictEqual(
+			signingYears({ ...base, tier: "fringe", age: 26, ovr: 48 }),
+			base.askedYears,
+		);
+		// And a young one is a flier, which is the whole point of the years.
+		assert.strictEqual(
+			signingYears({ ...base, tier: "fringe", age: 23, ovr: 40 }),
 			base.askedYears,
 		);
 	});

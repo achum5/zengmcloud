@@ -378,6 +378,8 @@ export const signingYears = ({
 	age,
 	askedYears,
 	amount,
+	ovr,
+	rotationOvr,
 	minContract,
 	minLength,
 	maxLength,
@@ -386,6 +388,8 @@ export const signingYears = ({
 	age: number;
 	askedYears: number;
 	amount: number;
+	ovr: number;
+	rotationOvr: number;
 	minContract: number;
 	minLength: number;
 	maxLength: number;
@@ -432,7 +436,26 @@ export const signingYears = ({
 	//
 	// Young men are exempt: a cheap 24-year-old is the flier that is supposed to
 	// pay off, and the rule right above deliberately LENGTHENS those.
-	if (amount <= minContract * 2 && age >= STOPGAP_AGE) {
+	//
+	// WHAT MAKES A STOPGAP IS WHAT HE IS, NOT ONLY WHAT HE COSTS. The rule
+	// first shipped keyed on price alone, and that turned out to be the smaller
+	// half of the population it was written for. Profiling every dead contract
+	// in the league over twelve seasons splits them cleanly in two: men the
+	// team DRAFTED, and men it acquired. The draft half is down a third since
+	// justDrafted and the rule above; the acquired half is the whole of what
+	// this front office carries over stock - 55% more of them, 44% more money -
+	// and the median one is a twenty-six-year-old at 40 ovr on three and a half
+	// million, cut with two years still to run. He is nowhere near the league's
+	// eighth-best-per-team line, so nobody was ever going to want him: he is a
+	// body, signed for four years, and the last two are dead the day a better
+	// body turns up.
+	//
+	// Being under the rotation bar is exactly that fact, and it is what the
+	// trade AI already uses for "someone wants him" (minTradeValue in
+	// tradePosture). Reusing it here costs the team nothing - as above, this
+	// blocks no signing, it only declines to guarantee the back end.
+	const belowRotation = Number.isFinite(rotationOvr) && ovr < rotationOvr;
+	if ((amount <= minContract * 2 || belowRotation) && age >= STOPGAP_AGE) {
 		years = Math.min(years, STOPGAP_YEARS);
 	}
 

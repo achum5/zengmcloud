@@ -721,6 +721,11 @@ describe("a league runs for a decade without falling apart", () => {
 		const tovrBest5: number[] = [];
 		const tovrWorst5: number[] = [];
 		const rosteredOvrs: number[] = [];
+		// The ten players per team that team.ovr actually counts, league-wide.
+		const rotationOvrs: number[] = [];
+		// One row per released contract the first season it shows up as dead money.
+		const deadRows: number[][] = [];
+		const deadSeen = new Set<string>();
 		const bargainsLeftOver: number[] = [];
 		const bestBargainLeft: number[] = [];
 		const rng = makeRng(Number(nodeEnv.SEED ?? 31337));
@@ -1028,6 +1033,16 @@ describe("a league runs for a decade without falling apart", () => {
 					if (bigs === 0 || guards === 0) {
 						positionless += 1;
 					}
+					// THE TALENT ACTUALLY DEPLOYED. team.ovr counts a team's best
+					// ten players and nobody else, so this is the pool allocation
+					// can move around but cannot change the size of - the control
+					// for every claim in this file about concentration.
+					for (const o of roster
+						.map((rp) => rp.ratings.at(-1)!.ovr)
+						.sort((a, b) => b - a)
+						.slice(0, 10)) {
+						rotationOvrs.push(o);
+					}
 					ovrs.push(
 						team.ovr(
 							roster.map((p) => ({
@@ -1179,6 +1194,21 @@ describe("a league runs for a decade without falling apart", () => {
 				let deadMoney = 0;
 				for (const rp of await idb.cache.releasedPlayers.getAll()) {
 					deadMoney += rp.contract.amount;
+
+					// Each dead contract once, the season it first appears, with
+					// enough about the man to say which half of the problem he is.
+					const key = `${rp.tid}-${rp.pid}-${rp.contract.exp}`;
+					if (!deadSeen.has(key)) {
+						deadSeen.add(key);
+						const rpp = await idb.cache.players.get(rp.pid);
+						deadRows.push([
+							rp.contract.amount,
+							rp.contract.exp - season + 1,
+							rpp ? rpp.ratings.at(-1)!.ovr : -1,
+							rpp ? season - rpp.born.year : -1,
+							rpp?.draft.tid === rp.tid ? 1 : 0,
+						]);
+					}
 				}
 				worstDeadShare = Math.max(
 					worstDeadShare,
@@ -1204,6 +1234,27 @@ describe("a league runs for a decade without falling apart", () => {
 				//
 				// So the spread is reported next to the mean, and the talent rows
 				// below measure the pool itself, which no allocation can move.
+				//
+				// AND READ best5/worst5 IN THE RIGHT UNITS. team.ovr is a weighted
+				// sum of a team's best ten players - weights 0.333 down to 0.078,
+				// summing to 1.59 - rescaled by 50/15. So one point of roster
+				// talent moves team ovr by about 5.3, and the enormous-looking
+				// bottom-five gap is a small one wearing a magnifying glass:
+				// measured over three seeds, the five worst teams under this front
+				// office are 2.1 points worse across their top ten than stock's,
+				// and that alone prints as the 12-against-26 in the table below.
+				// Their best player is 1.8 points worse and they carry one MORE
+				// body. There is no husk down there; there is a slightly thinner
+				// rotation, amplified.
+				//
+				// The TALENT row's rotation= is the control that settles it: the
+				// mean of every team's best ten, league-wide. Stock 54.3, this
+				// front office 54.0, and the seeds split three each way - the same
+				// talent is being deployed, in a different arrangement. What is
+				// NOT happening is hoarding: players good enough to start
+				// somewhere sitting at roster rank eleven and counting for
+				// nothing. Measured, that population is essentially empty on both
+				// arms (five men across three twelve-season leagues).
 				{
 					const sd = Math.sqrt(
 						ovrs.reduce((a, x) => a + (x - meanTovr) ** 2, 0) / ovrs.length,
@@ -1739,22 +1790,37 @@ describe("a league runs for a decade without falling apart", () => {
 			// rows below have something to be read against. Six seeds of twelve
 			// real basketball seasons, thirty teams, SMART_AI=0 for the control:
 			//
-			//                 stock    smart
-			//   best5          70.8     75.3   up on five seeds of six
-			//   worst5         28.1     11.7   DOWN on all six
-			//   tovrSD         14.5     21.6   up on all six
-			//   allRostered    48.9     48.5   down on all six, barely
-			//   titles         8.7      9.3    noise
-			//   dead $/season  159M     234M   UP on all six
-			//   starsUnsigned  2.2      4.8    up on five of six
+			//                    stock    smart
+			//   best5             68.7     73.5   up on five seeds of six
+			//   worst5            26.2     11.5   DOWN on all six
+			//   tovrSD            14.5     21.4   up on all six
+			//   rotation          54.3     54.0   three seeds each way: flat
+			//   allRostered       48.8     48.6   down, on a bigger n
+			//   rostered n        5140     5271   up on all six
+			//   titles distinct   9.5      8.3    DOWN on five of six
+			//   trades/season     17.6     32.7   up on all six
+			//   dead $/season     141M     203M   UP on all six
+			//   dead contracts    248      323    up on all six
+			//     of them drafted 62       35     DOWN
+			//     of them acquired 186     287    UP
+			//   starsUnsigned/yr  0.15     0.27   up on four of six
 			//
 			// The trade the comments elsewhere in this file describe is real and
 			// still holds: the top five gain four and a half points and the bottom
 			// five lose sixteen. A league run by this front office concentrates,
 			// deliberately, and the concentration is the feature.
 			//
-			// TWO NUMBERS ARE NOT THE FEATURE. Dead money is up 47%, on every
-			// seed, and stars left unsigned better than double.
+			// TWO NUMBERS ARE NOT THE FEATURE. Dead money is up 43%, on every
+			// seed, and stars left unsigned better than half again.
+			//
+			// The DEADPROF row splits it and the split is the whole story. Dead
+			// contracts belonging to men the team DRAFTED are now BELOW stock -
+			// 35 against 62 - because justDrafted stopped charging for cuts the
+			// rules make free and the stopgap rule stopped handing four years to
+			// people who were never going to get them. Every remaining point of
+			// the gap is men the team ACQUIRED: 287 against 186, and 1036M
+			// against 658M. The median one is 26, 40 ovr, on three and a half
+			// million with two years still to run - a body, not a player.
 			//
 			// They are NOT one mechanism, which is what it looked like at first
 			// and is worth correcting here rather than leaving as folklore. The
@@ -1780,7 +1846,28 @@ describe("a league runs for a decade without falling apart", () => {
 						`worst5=${m(tovrWorst5).toFixed(1)} gap=${(m(tovrBest5) - m(tovrWorst5)).toFixed(1)}`,
 					`TALENT poolTop100=${m(pool.slice(0, 100)).toFixed(1)} ` +
 						`poolTop500=${m(pool.slice(0, 500)).toFixed(1)} ` +
-						`allRostered=${m(rosteredOvrs).toFixed(1)} n=${rosteredOvrs.length}`,
+						`allRostered=${m(rosteredOvrs).toFixed(1)} n=${rosteredOvrs.length} ` +
+						`rotation=${m(rotationOvrs).toFixed(2)}`,
+					// WHICH HALF THE DEAD MONEY IS: men the team drafted, or men it
+					// signed or traded for. They respond to completely different
+					// things, and lumping them together hid that for a long time.
+					`DEADPROF ${(() => {
+						const bucket = (name: string, f: (x: number[]) => boolean) => {
+							const xs = deadRows.filter((x) => f(x));
+							const amt = xs.reduce((a, x) => a + x[0]!, 0);
+							return (
+								`${name}:n${xs.length}/${Math.round(amt / 1000)}M` +
+								`/ovr${m(xs.map((x) => x[2]!)).toFixed(0)}` +
+								`/age${m(xs.map((x) => x[3]!)).toFixed(0)}` +
+								`/yr${m(xs.map((x) => x[1]!)).toFixed(1)}`
+							);
+						};
+						return [
+							bucket("all", () => true),
+							bucket("ownDraft", (x) => x[4] === 1),
+							bucket("acquired", (x) => x[4] === 0),
+						].join(" ");
+					})()}`,
 				);
 			}
 			if (colaRows.length > 0) {
