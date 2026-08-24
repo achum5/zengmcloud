@@ -725,6 +725,13 @@ describe("a league runs for a decade without falling apart", () => {
 		const rotationOvrs: number[] = [];
 		// One row per released contract the first season it shows up as dead money.
 		const deadRows: number[][] = [];
+		// WHERE THE ROSTER CRUNCH COMES FROM, which is the same question as
+		// where the dead money is made: every player over the limit when free
+		// agency closes is a release, and a release strands whatever is left on
+		// his contract. Measured, most of it is already there before free agency
+		// opens - the draft class arrives and the team re-signs its own men, and
+		// nothing anywhere counts to fifteen while it happens.
+		const overflow = { sign: 0, trade: 0, dump: 0, end: 0 };
 		const deadSeen = new Set<string>();
 		const bargainsLeftOver: number[] = [];
 		const bestBargainLeft: number[] = [];
@@ -946,11 +953,32 @@ describe("a league runs for a decade without falling apart", () => {
 				await newPhaseResignPlayers({} as any);
 
 				g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+				const excess = async () => {
+					const counts = new Map<number, number>();
+					for (const p of await idb.cache.players.indexGetAll("playersByTid", [
+						0,
+						Infinity,
+					])) {
+						counts.set(p.tid, (counts.get(p.tid) ?? 0) + 1);
+					}
+					let total = 0;
+					for (const n of counts.values()) {
+						total += Math.max(0, n - g.get("maxRosterSize"));
+					}
+					return total;
+				};
 				for (let day = FA_DAYS; day > 0; day--) {
 					g.setWithoutSavingToDB("daysLeft", day);
 					await decreaseDemands();
+					let before = await excess();
 					await clearSpaceForSignings();
+					let after = await excess();
+					overflow.dump += after - before;
+					before = after;
 					await autoSign();
+					after = await excess();
+					overflow.sign += after - before;
+					before = after;
 					// The real FA day ends with AI teams talking to each other
 					// (freeAgents/play.ts does exactly this), and it is the channel
 					// a rebuild actually runs through - veterans out, picks in.
@@ -958,7 +986,9 @@ describe("a league runs for a decade without falling apart", () => {
 					if (nodeEnv.NO_TRADES !== "1") {
 						await trade.betweenAiTeams();
 					}
+					overflow.trade += (await excess()) - before;
 				}
+				overflow.end += await excess();
 				await team.checkRosterSizes("other");
 
 				// Every deal on the books we have not seen before. Recorded after
@@ -1895,6 +1925,43 @@ describe("a league runs for a decade without falling apart", () => {
 			// Across the seeds the two do not even move together - one seed had
 			// the largest dead-money gap and FEWER unsigned stars.
 			//
+			// AND THE DEAD MONEY IS THE PRICE OF THE FEATURE, NOT A DEFECT IN IT.
+			// Five separate mechanisms have now been built and measured against
+			// it, sharing no code and reached from four different directions, and
+			// every one of them lands on the same line. Six seeds each, against
+			// the arm without it:
+			//
+			//                                  dead $/season   rotation
+			//   block re-signing at 15              -50.2M       -0.41
+			//   the same but only below the bar     -33.3M       -0.23
+			//   trade the surplus instead of
+			//     releasing it                      -34.2M       -0.27
+			//   proportional autoSign margin        +4.7M        (worse both)
+			//   autoSign value bar (in autoSign)    -16M         (best5 -2.2)
+			//
+			// A hundred and twenty to a hundred and forty-five million a season
+			// per point of the talent the league actually employs, whichever way
+			// you come at it. That is not four bugs; it is one exchange rate. The
+			// waste is what it costs to keep this many players employed at this
+			// quality, and buying it down buys down the employment with it.
+			//
+			// The last of those is worth its own sentence because the premise
+			// looked airtight and was wrong. Releasing a player does not destroy
+			// him - it returns him to a market that reallocates him - and a team
+			// with an open roster place does better in free agency than it does
+			// taking somebody else's cast-off. Moving 123 surplus contracts a run
+			// instead of releasing them took a third off the dead money and cost
+			// half a point of everyone rostered, because each one crowded out a
+			// better free agent. It is not in the tree.
+			//
+			// TWO THINGS HAVE COME OFF THE CURVE, and they share a shape: both
+			// changed WHICH players a team commits to, not HOW MANY. The stopgap
+			// rule declines to guarantee years to a man below the rotation bar
+			// while still signing him; REBUILD_CORE_RANK stops a rebuild shopping
+			// its own best young players. Neither reduces employment at all, and
+			// the second one raised it. That is the test worth applying to the
+			// next idea here.
+			//
 			// Worth knowing that rosterCuts' measured 22% saving was smart-before
 			// against smart-after. Against stock this is still well up.
 			{
@@ -1912,6 +1979,7 @@ describe("a league runs for a decade without falling apart", () => {
 					// WHICH HALF THE DEAD MONEY IS: men the team drafted, or men it
 					// signed or traded for. They respond to completely different
 					// things, and lumping them together hid that for a long time.
+					`OVERFLOW sign=${overflow.sign} trade=${overflow.trade} dump=${overflow.dump} atEnd=${overflow.end}`,
 					`DEADPROF ${(() => {
 						const bucket = (name: string, f: (x: number[]) => boolean) => {
 							const xs = deadRows.filter((x) => f(x));
