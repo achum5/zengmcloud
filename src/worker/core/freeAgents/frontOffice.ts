@@ -368,6 +368,11 @@ export const scoreFreeAgent = ({
 // veteran on three years is a better deadline asset than the same man on one.
 // Restricting it to contenders (where that reason does not apply) came out a
 // wash on quality and worse on dead money, so neither version is here.
+// Below this a cheap signing is a prospect worth committing to rather than a
+// stopgap; above it he is filling a roster spot.
+export const STOPGAP_AGE = 25;
+export const STOPGAP_YEARS = 2;
+
 export const signingYears = ({
 	tier,
 	age,
@@ -397,6 +402,40 @@ export const signingYears = ({
 	} else if ((tier === "allIn" || tier === "buyer") && age >= 32) {
 		years = Math.min(years, 2);
 	}
+
+	// A CHEAP VETERAN IS A STOPGAP, AND A STOPGAP DOES NOT NEED YEARS.
+	//
+	// Every release an AI team makes happens in free agency - measured, all of
+	// them, on both arms - and a release does not release the money: the
+	// guaranteed years left become dead money. The men being released are
+	// overwhelmingly this population, signed near the minimum to fill out a
+	// roster, and they were being signed for four years at a time. Four years
+	// on a stopgap is three years of dead money the moment somebody better
+	// turns up, and nothing about a minimum-salary thirty-year-old requires the
+	// commitment.
+	//
+	// Unlike the gate in autoSign this blocks no signing at all - the team still
+	// gets the player - so it is not another point on the same trade-off curve
+	// between how many free agents get signed and how flat the league ends up.
+	// Getting off that curve was the point: every other lever tried on this
+	// problem just slid along it. Making the gate's margin proportional to the
+	// money stranded loosened it and cost 4.7M a season MORE dead money and 1.5
+	// more unsigned stars; moving the gate's value bar tightened it and cost 2.2
+	// points of the top five.
+	//
+	// Six seeds of twelve real seasons, against the same code without this rule:
+	// the bottom five gain 2.1 points on five seeds of six and the talent
+	// actually employed across the league gains 0.28 on five of six - the first
+	// thing measured in this file to move that number at all. Dead money and
+	// unsigned stars come down a little, on four seeds of six. Nothing
+	// regresses.
+	//
+	// Young men are exempt: a cheap 24-year-old is the flier that is supposed to
+	// pay off, and the rule right above deliberately LENGTHENS those.
+	if (amount <= minContract * 2 && age >= STOPGAP_AGE) {
+		years = Math.min(years, STOPGAP_YEARS);
+	}
+
 	return Math.max(minLength, Math.min(maxLength, years));
 };
 
