@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import { resetCache, resetG } from "../helpers.ts";
 import { idb } from "../../worker/db/index.ts";
 import { g, local } from "../../worker/util/index.ts";
@@ -108,6 +109,29 @@ export const stubLeagueDb = () => {
 // A plausible league: the AI team is a mid-table buyer with a normal roster,
 // the user has one too, and there are enough other teams for the league-wide
 // bars (star, starter, core) to mean something.
+// SEEDED, and this one is load-bearing rather than tidy.
+//
+// player.generate rolls for everything a rating is made of, so two calls to
+// this builder produce two different leagues even with the same ovr handed in -
+// different potentials, different fuzz, different value. A property that sweeps
+// one input by rebuilding the league at every point is then not sweeping
+// anything: it is comparing a different league at each step, and the answer
+// wanders.
+//
+// It wandered visibly. The accept line came out with holes in it - a 60 ovr
+// refused between a 58 and a 62 accepted, an injury turning a refusal into an
+// acceptance - and none of it was the AI. Every build now draws the same
+// stream, so a sweep varies exactly what the test says it varies.
+const FIXTURE_SEED = 20_260_825;
+
+const makeRng = (seed: number) => {
+	let s = seed >>> 0;
+	return () => {
+		s = (s * 1_664_525 + 1_013_904_223) >>> 0;
+		return s / 4_294_967_296;
+	};
+};
+
 export const buildValuationLeague = async (extra: {
 	user?: Spec[];
 	ai?: Spec[];
@@ -120,6 +144,22 @@ export const buildValuationLeague = async (extra: {
 	// which matters because the tiers do not share an age table - a buyer's
 	// stops at 24 and does not extend, so an ageing player gets no tier-level
 	// penalty from it at all.
+	aiWon?: number;
+}) => {
+	const spy = vi
+		.spyOn(Math, "random")
+		.mockImplementation(makeRng(FIXTURE_SEED));
+	try {
+		return await buildInner(extra);
+	} finally {
+		spy.mockRestore();
+	}
+};
+
+const buildInner = async (extra: {
+	user?: Spec[];
+	ai?: Spec[];
+	aiPicks?: number[];
 	aiWon?: number;
 }) => {
 	resetG();
