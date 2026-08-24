@@ -106,13 +106,21 @@ export const projectedSlot = ({
 	seasons: number;
 	numPicksPerRound: number;
 }): number => {
-	if (!(numPicksPerRound > 0)) {
+	// Finite as well as positive: a round of infinite size makes every slot
+	// infinite, which compares no better than NaN.
+	if (!(numPicksPerRound > 0) || !Number.isFinite(numPicksPerRound)) {
 		return 1;
 	}
 	const share = projectedSlotShare({ tier, avgAge, seasons });
 	// Share 0 is pick 1 and share 1 is the last pick, so the round's own size
 	// decides the spacing rather than a hardcoded league size.
 	const slot = 1 + share * (numPicksPerRound - 1);
+	if (!Number.isFinite(slot)) {
+		// A pick nobody can place is priced as an average one rather than as
+		// NaN, which would poison every comparison it touched without ever
+		// failing. Same reasoning as scoreProspect and keepScore.
+		return Math.max(1, Math.round(numPicksPerRound / 2));
+	}
 	return Math.max(1, Math.min(numPicksPerRound, Math.round(slot)));
 };
 
@@ -179,6 +187,13 @@ export const colaAdjustedSlot = ({
 	numLotteryPicks: number;
 	numPicksPerRound: number;
 }): number => {
+	// Its own caller feeds this projectedSlot, which is now guaranteed to hand
+	// over a real slot - but this is exported and unit tested on its own, and a
+	// slot that is not a number poisons every comparison downstream of it
+	// without ever failing. Cheap to refuse at the door.
+	if (!Number.isFinite(recordSlot)) {
+		return 1;
+	}
 	if (!(numPicksPerRound > 0) || !(numLotteryPicks > 0)) {
 		return recordSlot;
 	}
@@ -195,5 +210,6 @@ export const colaAdjustedSlot = ({
 	// Winning one is equally likely to be any of them.
 	const winSlot = (numLotteryPicks + 1) / 2;
 	const odds = colaLotteryOdds({ chancesShare, numLotteryPicks });
-	return odds * winSlot + (1 - odds) * missSlot;
+	const slot = odds * winSlot + (1 - odds) * missSlot;
+	return Number.isFinite(slot) ? slot : recordSlot;
 };

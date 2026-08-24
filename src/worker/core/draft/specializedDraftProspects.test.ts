@@ -1,4 +1,4 @@
-import { assert, describe, test } from "vitest";
+import { assert, describe, test, vi } from "vitest";
 import { mockIDBLeague, resetCache, resetG } from "../../../test/helpers.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
@@ -13,22 +13,49 @@ import { SPECIALIZE_RULES, specializeRating } from "./specializeProspects.ts";
 
 const SKILL_KEYS = Object.keys(SPECIALIZE_RULES);
 
+// Seeded, like every other simulation test here, and for a reason this file
+// learned the hard way: the lopsidedness test below is the one statistical
+// comparison in it, and unseeded it failed roughly one full-suite run in ten
+// at 34.0 against a bar of 34.2. The margin is real; the noise on a 70-player
+// class was simply the same size.
+//
+// BOTH ARMS DRAW THE SAME STREAM, which is the point of seeding here rather
+// than just pinning a number. The two classes then differ by the setting and
+// by nothing else, so the comparison is paired: the effect comes out at 9.4
+// (37.8 against 28.4) where the unpaired run that failed measured 4.8. The
+// effect was always about nine; the noise was about five.
+//
+// The spy goes on before generation, not after - see offseasonSim.test.ts for
+// what happens when construction is left outside it.
+const makeRng = (seed: number) => {
+	let s = seed >>> 0;
+	return () => {
+		s = (s * 1_664_525 + 1_013_904_223) >>> 0;
+		return s / 4_294_967_296;
+	};
+};
+
 const generateClass = async (specialized: boolean) => {
-	resetG();
-	await resetCache();
-	idb.league = mockIDBLeague();
-	g.setWithoutSavingToDB("specializedDraftProspects", specialized);
+	const spy = vi.spyOn(Math, "random").mockImplementation(makeRng(20_260_824));
+	try {
+		resetG();
+		await resetCache();
+		idb.league = mockIDBLeague();
+		g.setWithoutSavingToDB("specializedDraftProspects", specialized);
 
-	await draft.genPlayers(g.get("season"), DEFAULT_LEVEL);
-	const players = await idb.cache.players.indexGetAll(
-		"playersByDraftYearRetiredYear",
-		[[g.get("season")], [g.get("season"), Infinity]],
-	);
+		await draft.genPlayers(g.get("season"), DEFAULT_LEVEL);
+		const players = await idb.cache.players.indexGetAll(
+			"playersByDraftYearRetiredYear",
+			[[g.get("season")], [g.get("season"), Infinity]],
+		);
 
-	// @ts-expect-error
-	idb.league = undefined;
+		// @ts-expect-error
+		idb.league = undefined;
 
-	return players;
+		return players;
+	} finally {
+		spy.mockRestore();
+	}
 };
 
 // How lopsided a prospect is: the gap between their best and worst skill.

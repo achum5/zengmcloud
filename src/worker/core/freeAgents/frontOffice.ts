@@ -336,7 +336,12 @@ export const scoreFreeAgent = ({
 		score = score0 + (score - score0) * urgency;
 	}
 
-	return score;
+	// A score that is not a number does not fail loudly - it sorts arbitrarily,
+	// and the front office quietly starts picking free agents at random. An
+	// imported league or a God Mode edit can hand this any of ovr, pot, age or
+	// a contract as NaN. Same guard, and the same reasoning, as scoreProspect
+	// and keepScore.
+	return Number.isFinite(score) ? score : 0;
 };
 
 // HOW LONG A DEAL THIS FRONT OFFICE WANTS, given who it is signing. The ask's
@@ -380,7 +385,9 @@ export const signingYears = ({
 	minLength: number;
 	maxLength: number;
 }): number => {
-	let years = askedYears;
+	// A NaN here would be written straight onto a contract, which is worse than
+	// a bad sort: nothing downstream ever checks a contract length again.
+	let years = Number.isFinite(askedYears) ? askedYears : minLength;
 	if (tier === "teardown" || tier === "seller") {
 		if (age >= 28) {
 			years = Math.min(years, 1);
@@ -708,7 +715,11 @@ export const retentionOverpay = ({
 		over *= tier === "allIn" ? 0.9 : 0.6;
 	}
 
-	return Math.min(MAX_RETENTION_OVERPAY, 1 + over);
+	// 1 is "pay the asking price and no more", which is the safe answer to a
+	// question this cannot read - a NaN would compare false against every rung
+	// of the offer ladder and silently let the player walk.
+	const multiplier = Math.min(MAX_RETENTION_OVERPAY, 1 + over);
+	return Number.isFinite(multiplier) ? multiplier : 1;
 };
 
 // Should a team let its own expiring player walk on strategic grounds, before
