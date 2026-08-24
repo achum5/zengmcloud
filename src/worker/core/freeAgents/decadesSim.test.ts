@@ -58,6 +58,10 @@ import {
 //   SEASONS=40 NUM_TEAMS=30 SEED=123 DECADES_LOG=/tmp/decades.log \
 //     npx vitest --run src/worker/core/freeAgents/decadesSim.test.ts
 // SMART_AI=0 runs the same league on the vanilla front office for comparison.
+// REAL_GAMES=1 plays every game instead of synthesizing standings; NO_TRADES=1
+// closes the trade market; DRAFT_TYPE=cola runs the real lottery; FO_LOG=1
+// records every reasoned decision; CAP_TYPE=hard|none runs the decade under a
+// cap rule other than the default soft one.
 // ---------------------------------------------------------------------------
 
 const nodeEnv: Record<string, string | undefined> =
@@ -855,6 +859,13 @@ describe("a league runs for a decade without falling apart", () => {
 		try {
 			await build();
 			g.setWithoutSavingToDB("smartAiFrontOffice", nodeEnv.SMART_AI !== "0");
+			// CAP_TYPE=hard|none runs the whole decade under a cap rule this file
+			// has never exercised past a single offseason. Real leagues are
+			// played under all three, and a front office that only works under a
+			// soft cap works for some of the people using it.
+			if (nodeEnv.CAP_TYPE === "hard" || nodeEnv.CAP_TYPE === "none") {
+				g.setWithoutSavingToDB("salaryCapType", nodeEnv.CAP_TYPE);
+			}
 			if (COLA) {
 				g.setWithoutSavingToDB("draftType", "cola");
 				for (const t of await idb.cache.teams.getAll()) {
@@ -1897,6 +1908,24 @@ describe("a league runs for a decade without falling apart", () => {
 			// still holds: the top five gain four and a half points and the bottom
 			// five lose sixteen. A league run by this front office concentrates,
 			// deliberately, and the concentration is the feature.
+			//
+			// AND IT IS THE SAME FEATURE UNDER ALL THREE CAP RULES, which nothing
+			// had ever checked past a single offseason. CAP_TYPE=hard|none runs
+			// the whole decade under the other two. Six seeds each, thirty teams,
+			// twelve real seasons:
+			//
+			//              tovrSD      best5      rotation    rebuild rot+5y   dead $/season
+			//   hard    13.5 -> 19.4  66.3->72.4  53.9->53.7   4.79 -> 5.13     62M -> 139M
+			//   soft    14.4 -> 21.3  68.7->75.5  54.3->54.2      -              139M -> 201M
+			//   none    16.4 -> 22.9  71.7->76.2  54.3->54.1   3.98 -> 4.84    197M -> 255M
+			//
+			// Same shape every time: six points of concentration on the top five,
+			// rotation talent within a fifth of a point of stock, rebuilds that
+			// recover MORE talent, and dead money up. No illegal roster in any of
+			// the thirty-six runs. The one thing the cap rule changes is the size
+			// of the dead-money gap relative to stock - +124% under a hard cap,
+			// +45% soft, +29% with no cap - which is what it should do, because
+			// the tighter the cap the more a stranded contract costs.
 			//
 			// ONE NUMBER IS NOT THE FEATURE. Dead money is up 42%, on every
 			// seed. Stars left unsigned used to be the other one and is now at
