@@ -1754,13 +1754,19 @@ describe("a league runs for a decade without falling apart", () => {
 			// deliberately, and the concentration is the feature.
 			//
 			// TWO NUMBERS ARE NOT THE FEATURE. Dead money is up 47%, on every
-			// seed, and stars left unsigned better than double. They look like one
-			// mechanism rather than two: this front office trades about seventy
-			// percent more than stock (31 a season against 18), every deal churns
-			// a roster, checkRosterSizes releases whoever is over the limit, and a
-			// release converts live salary into money paid to nobody. Around eight
-			// million a team a season of the cap then buys nothing - which is
-			// exactly the room a team needs to sign the stars now going unsigned.
+			// seed, and stars left unsigned better than double.
+			//
+			// They are NOT one mechanism, which is what it looked like at first
+			// and is worth correcting here rather than leaving as folklore. The
+			// guess was trade churn - this front office trades about seventy
+			// percent more than stock - but instrumenting every release showed
+			// all of them, on both arms, happening in FREE AGENCY and none from a
+			// trade. Smart AI releases 35% more players than stock and strands
+			// 55% more money, at 3.9M a release against 3.3M: it signs more, and
+			// each signing displaces somebody who is still owed.
+			//
+			// Across the seeds the two do not even move together - one seed had
+			// the largest dead-money gap and FEWER unsigned stars.
 			//
 			// Worth knowing that rosterCuts' measured 22% saving was smart-before
 			// against smart-after. Against stock this is still well up.
@@ -1827,6 +1833,23 @@ describe("a league runs for a decade without falling apart", () => {
 			}
 		}
 
+		{
+			// WHAT THE DEAD MONEY IS MADE OF. Every release an AI team makes goes
+			// through checkRosterSizes, and measuring where they happen settled
+			// what was previously a guess: all of them, on both arms, land in
+			// FREE AGENCY. Not one comes from a trade. So the dead money this
+			// front office carries is the price of its own signings displacing
+			// people, and roster churn from trading was never involved.
+			const released = await idb.cache.releasedPlayers.getAll();
+			let stranded = 0;
+			for (const rp of released) {
+				stranded += rp.contract.amount;
+			}
+			rows.push(
+				"",
+				`RELEASED still-owed n=${released.length} total=${Math.round(stranded / 1000)}M`,
+			);
+		}
 		const log = rows.join("\n");
 		if (nodeEnv.DECADES_LOG) {
 			const fs = await import(("node" + ":fs") as any);

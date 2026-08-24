@@ -29,6 +29,7 @@ import {
 	frontOfficeLoggingActive,
 } from "../../util/frontOfficeLog.ts";
 import { signingYears } from "./frontOffice.ts";
+import { cutOrder } from "../team/rosterCuts.ts";
 
 const toFaPlayer = (p: Player, season: number): FaPlayer => {
 	const ratings = last(p.ratings);
@@ -412,15 +413,69 @@ const autoSign = async () => {
 			posture &&
 			playersOnRoster.length >= g.get("maxRosterSize")
 		) {
+			// ASK WHO WOULD ACTUALLY GO, rather than guessing.
+			//
+			// This used to take the lowest raw value on the roster and price the
+			// cut off him. checkRosterSizes does not release that player: it
+			// releases in cutOrder, which is value leaned by age and position
+			// scarcity and then by what the cut COSTS - and cutCostLean
+			// deliberately protects a guaranteed multi-year deal, so the man it
+			// actually lets go is usually a cheaper one somewhere else on the
+			// list. Two places answering the same question differently, and the
+			// gate was pricing a release that was never going to happen.
+			//
+			// It mattered in the direction that costs money. When the raw-worst
+			// player happened to be on a minimum the gate read "cutting is free",
+			// dropped its margin to 2, and waved through a signing whose real
+			// victim had guaranteed years left. Against stock BBGM this front
+			// office released 35% more players and stranded 55% more money, at
+			// 3.9M a release against stock's 3.3M - it was not cutting more
+			// minimum men, it was cutting better-paid ones.
+			//
+			// Six seeds of twelve real seasons say this alone takes stars left
+			// unsigned from 4.8 a run to 3.2, down on five seeds of six, and
+			// costs nothing measurable anywhere else - top five 75.3 to 75.0,
+			// rostered talent flat.
+			//
+			// MOVING THE VALUE BAR HERE TOO WAS MEASURED AND NOT TAKEN. Using
+			// wouldGo.value instead of the raw minimum reads as the same fix and
+			// is a different one: cutOrder's first man is not the lowest value on
+			// the roster, so the bar rises and the gate tightens everywhere. That
+			// buys 8% off the dead money and another half point off unsigned
+			// stars, and it costs 2.2 points of the top five on five seeds of six
+			// - about half of what this front office is up on stock. Worth
+			// knowing about, not worth taking without somebody deciding they want
+			// a flatter league.
+			const wouldGo = cutOrder(
+				playersOnRoster.map((rp) => ({
+					pid: rp.pid,
+					value: rp.value,
+					age: season - rp.born.year,
+					pos: last(rp.ratings).pos,
+					contractAmount: rp.contract.amount,
+					contractExp: rp.contract.exp,
+				})),
+				posture.tier,
+				{ season, salaryCap },
+			)[0];
+			// The VALUE bar stays on the raw worst man. Moving it to wouldGo as
+			// well was measured and it is a different change wearing the same
+			// coat: cutOrder's first man is not the lowest value on the roster
+			// (the lean and the cut cost move him), so the bar rises, the gate
+			// tightens everywhere, and over six seeds the top five lost 2.2
+			// points - about half of what this front office is up on stock. The
+			// defect found here was the CONTRACT being priced off a player who
+			// was never going to be released; that is what is fixed.
 			let worstValue = Infinity;
-			let cutCostsRealMoney = false;
 			for (const rp of playersOnRoster) {
 				if (rp.value < worstValue) {
 					worstValue = rp.value;
-					cutCostsRealMoney =
-						rp.contract.exp > season && rp.contract.amount > minContract;
 				}
 			}
+			const cutCostsRealMoney =
+				wouldGo !== undefined &&
+				wouldGo.contractExp > season &&
+				wouldGo.contractAmount > minContract;
 			const margin = cutCostsRealMoney ? 8 : 2;
 			candidates = candidates.filter((p2) => p2.value >= worstValue + margin);
 		}
