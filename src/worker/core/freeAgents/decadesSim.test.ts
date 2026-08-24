@@ -1735,6 +1735,35 @@ describe("a league runs for a decade without falling apart", () => {
 						.join(" ")}`,
 				);
 			}
+			// WHAT SMART AI ACTUALLY DOES TO A LEAGUE, against stock BBGM, so the
+			// rows below have something to be read against. Six seeds of twelve
+			// real basketball seasons, thirty teams, SMART_AI=0 for the control:
+			//
+			//                 stock    smart
+			//   best5          70.8     75.3   up on five seeds of six
+			//   worst5         28.1     11.7   DOWN on all six
+			//   tovrSD         14.5     21.6   up on all six
+			//   allRostered    48.9     48.5   down on all six, barely
+			//   titles         8.7      9.3    noise
+			//   dead $/season  159M     234M   UP on all six
+			//   starsUnsigned  2.2      4.8    up on five of six
+			//
+			// The trade the comments elsewhere in this file describe is real and
+			// still holds: the top five gain four and a half points and the bottom
+			// five lose sixteen. A league run by this front office concentrates,
+			// deliberately, and the concentration is the feature.
+			//
+			// TWO NUMBERS ARE NOT THE FEATURE. Dead money is up 47%, on every
+			// seed, and stars left unsigned better than double. They look like one
+			// mechanism rather than two: this front office trades about seventy
+			// percent more than stock (31 a season against 18), every deal churns
+			// a roster, checkRosterSizes releases whoever is over the limit, and a
+			// release converts live salary into money paid to nobody. Around eight
+			// million a team a season of the cap then buys nothing - which is
+			// exactly the room a team needs to sign the stars now going unsigned.
+			//
+			// Worth knowing that rosterCuts' measured 22% saving was smart-before
+			// against smart-after. Against stock this is still well up.
 			{
 				const m = (xs: number[]) =>
 					xs.reduce((a, x) => a + x, 0) / Math.max(1, xs.length);
