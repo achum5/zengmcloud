@@ -511,27 +511,48 @@ const sumValues = (
 		const treatAsFutureDraftPick =
 			p.type === "pick" && (season !== p.draftYear || phase <= PHASE.PLAYOFFS);
 
+		// APPLYING A FACTOR TO A SIGNED DESIRABILITY.
+		//
+		// playerValue is a z-score, so roughly half the league is negative, and
+		// `playerValue *= 0.85` does the opposite of what it reads as down there:
+		// -0.5 becomes -0.425, so the penalty makes an unwanted player MORE
+		// wanted. The old code carried a comment saying these factors did not
+		// make sense for negative players; this is what it takes to make sense.
+		//
+		// Move by a share of the MAGNITUDE instead. For a positive player this is
+		// arithmetically identical to multiplying - v + v(f-1) is vf - so nothing
+		// changes for the assets most trades are about. For a negative one a
+		// penalty finally pushes him further down and a bonus lifts him, which is
+		// what both were always meant to do.
+		const applyFactor = (factor: number) => {
+			playerValue += Math.abs(playerValue) * (factor - 1);
+		};
+
 		// What this team wants, rather than what the league on average wants. Much
 		// of a young player's value is potential, which a team trying to win this
 		// season cannot spend - and all of a pick's value is. See
 		// team/tierValuation.ts, whose middle rows reproduce the old
 		// rebuilding/contending numbers exactly.
-		//
-		// These factors don't make sense for negative value players!!!
-		playerValue *= treatAsFutureDraftPick
-			? PICK_MULTIPLIER[tier]
-			: ageMultiplier(tier, p.age);
+		applyFactor(
+			treatAsFutureDraftPick
+				? PICK_MULTIPLIER[tier]
+				: ageMultiplier(tier, p.age),
+		);
 
 		// Normalize for injuries, by what the injury actually costs THIS team -
-		// see injuryDiscount in team/tierValuation.ts.
+		// see injuryDiscount in team/tierValuation.ts. An injured player is worth
+		// less than a healthy one at every level of ability, including below
+		// average, which is exactly the case the old form got backwards: a team
+		// preferred a hurt fringe player to a fit one.
 		if (includeInjuries && tid !== g.get("userTid")) {
-			playerValue -=
-				playerValue *
-				injuryDiscount({
-					tier,
-					gamesRemaining: p.injury.gamesRemaining,
-					weighted: weightInjuriesByTier,
-				});
+			applyFactor(
+				1 -
+					injuryDiscount({
+						tier,
+						gamesRemaining: p.injury.gamesRemaining,
+						weighted: weightInjuriesByTier,
+					}),
+			);
 		}
 
 		// Really bad players will just get no PT, but don't to count them as 0 because then AI thinks it can't find a trade
