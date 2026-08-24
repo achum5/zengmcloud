@@ -131,7 +131,31 @@ export const dropPlayers = async (
 			}
 		}
 
-		await player.release(p, false);
+		// A player released before he has played a game for the team that drafted
+		// him costs nothing - his salary was never guaranteed. This passed false
+		// unconditionally, so an AI team cutting its own second rounder in free
+		// agency booked the whole rookie deal as dead money, while the user's
+		// release button (api/index.ts) asked helpers.justDrafted and paid
+		// nothing for the same cut. One rule, two answers, and the AI had the
+		// expensive one.
+		//
+		// THE COST OF FIXING IT IS REAL AND IS NOT A TUNING CHOICE TO DUCK. Six
+		// seeds of twelve real basketball seasons: dead money falls 10% on all
+		// six, and the top five teams lose 2.9 points on five of six - about two
+		// thirds of what this front office is up on stock BBGM. The money it
+		// stops stranding becomes cap room, the room gets spent, and a league
+		// where everyone can spend concentrates less.
+		//
+		// It ships anyway. Paying money the rules do not charge is not a design
+		// lever, and the user's own team has never paid it - an AI that does is
+		// simply playing by different rules from the person it is playing
+		// against. If a flatter league is the wrong trade, the answer is to
+		// choose a concentration lever on purpose (there is one documented in
+		// autoSign), not to leave this charging AI teams for cuts that are free.
+		await player.release(
+			p,
+			helpers.justDrafted(p, g.get("phase"), g.get("season")),
+		);
 		releasedPIDs.push(p.pid);
 
 		if (releasedPIDs.length >= numToDrop) {
