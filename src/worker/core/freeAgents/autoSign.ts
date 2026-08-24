@@ -509,6 +509,29 @@ const autoSign = async () => {
 		// A team holding cap space is not excluded: the hold already exempts
 		// minimum deals for exactly this reason, so waiting for a star never
 		// leaves a roster short-handed.
+		//
+		// AND ONLY WHEN getBest COMES BACK EMPTY-HANDED, which looks like an
+		// oversight and is not. candidates arrives in this front office's own
+		// order, so a minimum-salary man it ranked FIRST can be stepped over by
+		// getBest's roster-count gate while the signing goes to somebody it
+		// ranked lower and pays millions more for. Letting the bargain win that
+		// argument was measured twice, six seeds each, and both are worse:
+		//
+		//   preferred on rank alone       rotation -0.15, best5 -1.13, dead +129M
+		//   and only if no worse in value rotation -0.23, meanTovr -1.42, dead +128M
+		//
+		// The reason is that a minimum asking price is itself information, and
+		// better information than `value` is. A player's demand is what the
+		// market will pay him NOW, age included; value blends in potential he may
+		// no longer reach. So a minimum-salary free agent whose value matches a
+		// four-million one is not a bargain, he is usually just old, and
+		// findBargain's age limits only bite on selling teams - a contender will
+		// take him. He fills the seat, declines in it, and gets released: dead
+		// money up on five of six seeds in BOTH arms, from a change that spends
+		// less money.
+		//
+		// getBest's refusal to fill a roster with minimum men is load-bearing.
+		// This stays the fallback it is.
 		let bargain: FaPlayer | undefined;
 		if (!p && posture && isSport("basketball")) {
 			const minimumFas = candidates
