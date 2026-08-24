@@ -751,6 +751,11 @@ describe("a league runs for a decade without falling apart", () => {
 			ownFirsts: number;
 			youngCore: number;
 			bestYoung: number;
+			// The team's own best ten, which is what team.ovr counts. Win% at the
+			// end of a rebuild is concentration-confounded - in a league whose top
+			// is heavier, the same roster wins fewer games - so the honest question
+			// about a rebuild is whether the TALENT recovered.
+			rot: number;
 		}[][] = [];
 		// Every pick made, so what the AI ASSUMED it was buying can be checked
 		// against what the player was actually worth once he had grown into it.
@@ -1293,6 +1298,13 @@ describe("a league runs for a decade without falling apart", () => {
 						).length,
 						youngCore: young.filter((p) => p.value >= ctx.coreValue).length,
 						bestYoung: Math.max(0, ...young.map((p) => p.ratings.at(-1)!.ovr)),
+						rot: (() => {
+							const top = roster
+								.map((p) => p.ratings.at(-1)!.ovr)
+								.sort((a, b) => b - a)
+								.slice(0, 10);
+							return top.reduce((a, x) => a + x, 0) / Math.max(1, top.length);
+						})(),
 					});
 				}
 				history.push(yearRow);
@@ -1380,6 +1392,10 @@ describe("a league runs for a decade without falling apart", () => {
 			// Does entering a teardown ever pay off?
 			const at3: number[] = [];
 			const at5: number[] = [];
+			// The same two questions in talent rather than wins.
+			const rot3: number[] = [];
+			const rot5: number[] = [];
+			let noTalentGain = 0;
 			let entered = 0;
 			let stuck = 0;
 			// What the two outcomes were actually holding on the way through. A
@@ -1404,8 +1420,15 @@ describe("a league runs for a decade without falling apart", () => {
 					if (later3) {
 						at3.push(later3.winp - row.winp);
 					}
+					if (later3) {
+						rot3.push(later3.rot - row.rot);
+					}
 					if (later5) {
 						at5.push(later5.winp - row.winp);
+						rot5.push(later5.rot - row.rot);
+						if (later5.rot <= row.rot) {
+							noTalentGain += 1;
+						}
 						const during: Assets = { firsts: 0, core: 0, best: 0 };
 						let n = 0;
 						for (let k = 0; k <= 5; k++) {
@@ -1449,14 +1472,34 @@ describe("a league runs for a decade without falling apart", () => {
 				// what ends a rebuild; keeping the players is. That is what
 				// REBUILD_CORE_RANK in tradePosture was written from.
 				//
-				// It did NOT move the number it was aimed at, which is worth
-				// saying plainly: teams still teardown-or-selling five years on ran
-				// 35% before and 35% after, against stock's 22%. What it moved was
-				// everything around it - fewer teams fall into a full teardown at
-				// all (18.2 a run to 16.5), and the talent that used to be shopped
-				// out of those rosters stays employed. So the stuck-rebuild rate is
-				// still an open problem and this was not its fix.
+				// It did NOT move the number it was aimed at: teams still
+				// teardown-or-selling five years on ran 35% before and 35% after,
+				// against stock's 22%. What it moved was everything around it -
+				// fewer teams fall into a full teardown at all (18.2 a run to
+				// 16.5), and the talent that used to be shopped out of those
+				// rosters stays employed.
+				//
+				// AND THAT 35% AGAINST 22% IS NOT A DEFECT, which took a second
+				// measurement to see and is the reason REBUILD TALENT exists.
+				// stillDown@5 asks whether the team is still SELLING five years
+				// on, and that is a question about wins, and wins are
+				// concentration-confounded exactly the way mean team ovr is: in a
+				// league whose top is this much heavier, the wins the rebuilt team
+				// needs have already been taken. Ask instead what happened to its
+				// TALENT - the mean OVR of its own best ten, which no other team's
+				// success can move - and the ranking flips. Six seeds:
+				//
+				//                      stock    smart
+				//   rot+3y             3.67     4.42
+				//   rot+5y             4.32     5.85   higher on five of six
+				//   no talent gain@5   11%      12%
+				//
+				// A rebuild under this front office recovers a third more talent
+				// than a stock one and fails outright no more often. It just does
+				// not get to call itself a contender afterwards, because the teams
+				// above it got better too.
 				`REBUILDS entered=${entered} winp+3y=${avg(at3).toFixed(3)} winp+5y=${avg(at5).toFixed(3)} stillDown@5=${stuck}/${at5.length}`,
+				`REBUILD TALENT rot+3y=${avg(rot3).toFixed(2)} rot+5y=${avg(rot5).toFixed(2)} noGain@5=${noTalentGain}/${rot5.length}`,
 				`REBUILD ASSETS stuck[${describe(stuckRows)}] escaped[${describe(escapedRows)}]`,
 			);
 
