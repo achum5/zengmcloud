@@ -468,12 +468,21 @@ const getPicks = async ({
 				}
 			}
 
-			// Similar but less extreme for other picks
+			// Similar but less extreme for other picks.
+			//
+			// This counted the FIRST round picks in the deal, not the later ones -
+			// the guard used numBeyond2Other and the multiplier used numBeyond2 -
+			// so the premium for gutting a team's second round was set by how many
+			// firsts happened to be alongside. With no firsts in the deal that
+			// came to 1 + (-2)/(5 * 2) = 0.8, a DISCOUNT, and the exponent below
+			// turns 0.8 into 0.8**7: three second rounders cost a quarter of what
+			// two did, each, so a person could buy a team's whole second round
+			// three picks at a time.
 			const numBeyond2Other = otherPicks.length - 2;
 			if (numBeyond2Other > 0) {
 				for (const pick of otherPicks) {
 					if (pick.value > 0) {
-						pick.value *= 1 + numBeyond2 / (SPORT_FACTOR * pick.dp.round);
+						pick.value *= 1 + numBeyond2Other / (SPORT_FACTOR * pick.dp.round);
 					}
 				}
 			}
