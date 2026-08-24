@@ -86,6 +86,11 @@ class ViewManager {
 	viewData: Record<string, unknown>;
 	idLoaded: string | undefined;
 	processingAction: boolean;
+
+	// Which action the queue is currently held for. Bumped once per initAction,
+	// so a release can tell "the view ran and already moved us on" from "the
+	// view never ran and nobody is coming".
+	actionToken: number;
 	routes: {
 		id: string;
 		regex: RegExp;
@@ -98,6 +103,7 @@ class ViewManager {
 		this.queue = [];
 		this.viewData = {};
 		this.processingAction = false;
+		this.actionToken = 0;
 		this.lastNavigationSymbol = Symbol();
 
 		this.routes = [];
@@ -183,6 +189,7 @@ class ViewManager {
 		raw,
 	}: ActionWithResolve) {
 		this.processingAction = true;
+		const token = ++this.actionToken;
 
 		const state: any = {
 			noTrack: refresh || replace,
@@ -193,16 +200,46 @@ class ViewManager {
 
 		const actualURL = url ?? window.location.pathname + window.location.search;
 
-		await router.navigate(actualURL, {
-			state,
-			refresh,
+		// AND THE CALLER HAS TO BE LET GO TOO. The promise this resolves is what
+		// the worker awaits when it calls toUI("realtimeUpdate"), and a
+		// navigate that rejects used to leave it pending for the life of the
+		// page - so the worker sat waiting on a UI refresh that was never going
+		// to answer, with everything behind it waiting too. Resolving in a
+		// finally reports the attempt as finished, which it is; the error is
+		// logged rather than swallowed.
+		try {
+			await router.navigate(actualURL, {
+				state,
+				refresh,
 
-			// Would like to make this `replace: replace || url === undefined,` so it doesn't add a history entry on refreshes, but then Safari errors "Attempt to use history.replaceState() more than 100 times per 30 seconds"
-			replace,
-		});
+				// Would like to make this `replace: replace || url === undefined,` so it doesn't add a history entry on refreshes, but then Safari errors "Attempt to use history.replaceState() more than 100 times per 30 seconds"
+				replace,
+			});
+		} catch (error) {
+			console.error("Failed to navigate for a view update", error);
+		} finally {
+			// router.navigate runs fromRouter, which waits until the content is displayed, so we can resolve the action here
+			resolve();
 
-		// router.navigate runs fromRouter, which waits until the content is displayed, so we can resolve the action here
-		resolve();
+			// AND THE VIEW MIGHT NEVER HAVE RUN.
+			//
+			// navigate returns early, silently, in three cases: a blocker
+			// refused it, routeMatched declined it, or no route matched. In none
+			// of them is route.cb called, so processUpdate - the only thing that
+			// releases the queue - never happens, and processingAction stays set
+			// with nobody left to clear it. Every later update then parks on the
+			// queue for good: the data keeps landing, the page never repaints,
+			// and only a real navigation (which clears the queue outright) gets
+			// it moving again.
+			//
+			// The token is what makes this safe to do here. If processUpdate DID
+			// run it has already called initNextAction, which either left the
+			// flag down or started the next action and bumped the token - so
+			// this fires only when nothing else has taken over.
+			if (this.processingAction && this.actionToken === token) {
+				this.initNextAction();
+			}
+		}
 	}
 
 	initNextAction() {
@@ -214,7 +251,40 @@ class ViewManager {
 		}
 	}
 
-	async processUpdate(
+	// WHATEVER HAPPENS IN HERE, THE QUEUE HAS TO BE RELEASED.
+	//
+	// processingAction is what stops two updates rendering over each other:
+	// while it is set, fromRealtimeUpdate parks incoming actions on the queue
+	// instead of running them, and initNextAction clears it and picks the next
+	// one up. Every `return` in the body below is careful to call
+	// initNextAction first - but there was no catch, so a single throw
+	// anywhere in it (a worker call rejecting, most likely) left the flag set
+	// with nobody to clear it.
+	//
+	// The page then stops updating. Not the failed update - EVERY update after
+	// it, forever, because they all queue behind a flag that will never come
+	// down. The data keeps arriving and landing correctly, the screen just
+	// stops reflecting it, and the only way out is a real navigation, which
+	// clears the queue and starts over. That is exactly what was reported from
+	// a synced league: a trade arrives, the notification fires, it appears in
+	// transactions, and the page it happened on keeps showing the old picks
+	// until you leave the page and come back.
+	//
+	// So the release moves into a finally, and the individual calls come out.
+	// The error is still logged and the spinner still stops - a stuck spinner
+	// is a much better failure than a silently frozen page.
+	async processUpdate(viewInfo: ViewInfo, navigationSymbol: symbol) {
+		try {
+			await this.runUpdate(viewInfo, navigationSymbol);
+		} catch (error) {
+			console.error("Failed to update the current view", error);
+			actions.doneLoading(viewInfo.id);
+		} finally {
+			this.initNextAction();
+		}
+	}
+
+	private async runUpdate(
 		{ Component, context, id, inLeague }: ViewInfo,
 		navigationSymbol: symbol,
 	) {
@@ -259,7 +329,6 @@ class ViewManager {
 		}
 
 		if (navigationSymbol !== this.lastNavigationSymbol) {
-			this.initNextAction();
 			return;
 		}
 
@@ -278,14 +347,12 @@ class ViewManager {
 		});
 
 		if (navigationSymbol !== this.lastNavigationSymbol) {
-			this.initNextAction();
 			return;
 		}
 
 		// If results is undefined, it means the league wasn't loaded yet at the time of the request, likely because another league was opening in another tab at the same time. So stop now and wait until we get a signal that there is a new league.
 		if (results === undefined) {
 			actions.doneLoading(id);
-			this.initNextAction();
 			return;
 		}
 
@@ -330,15 +397,12 @@ class ViewManager {
 				true,
 			);
 
-			this.initNextAction();
 			return;
 		}
 
 		actions.reset(vars);
 		this.idLoaded = id;
 		this.viewData = vars.data;
-
-		this.initNextAction();
 	}
 }
 
