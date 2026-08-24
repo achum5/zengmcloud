@@ -3,9 +3,12 @@ import {
 	bottomBarIsDetached,
 	detachmentConfirmed,
 	headerIsDetached,
+	repairVerdict,
 	runExclusive,
 	scrollDecision,
+	SETTLE_MS,
 	tickerAnchorHeights,
+	UNPIN_CHECK_DELAYS_MS,
 } from "./stickyHeaderWatchdog.ts";
 
 const deps = ({
@@ -554,5 +557,78 @@ describe("runExclusive", () => {
 		}
 		assert.ok(threw);
 		assert.strictEqual(await runExclusive("header", async () => {}), true);
+	});
+});
+
+describe("repairVerdict", () => {
+	test("a step that fixed it, and stayed fixed, is a repair", () => {
+		assert.strictEqual(
+			repairVerdict({
+				detachedBefore: false,
+				readingsAgree: true,
+				detachedAfter: false,
+			}),
+			"held",
+		);
+	});
+
+	test("a step that changed nothing keeps the ladder going", () => {
+		assert.strictEqual(
+			repairVerdict({
+				detachedBefore: true,
+				readingsAgree: true,
+				detachedAfter: true,
+			}),
+			"still-broken",
+		);
+	});
+
+	test("clean now, broken a frame later, is not a repair", () => {
+		assert.strictEqual(
+			repairVerdict({
+				detachedBefore: false,
+				readingsAgree: true,
+				detachedAfter: true,
+			}),
+			"still-broken",
+		);
+	});
+
+	test("clean twice while the page moved proves nothing", () => {
+		// The case from the field log: "repaired step=2" at a headerTop identical
+		// to the one that declared the fault. Either the ladder worked or the
+		// viewport panned underneath it, and a single reading cannot say which.
+		assert.strictEqual(
+			repairVerdict({
+				detachedBefore: false,
+				readingsAgree: false,
+				detachedAfter: false,
+			}),
+			"unclear",
+		);
+	});
+
+	test("a bar still adrift is still adrift however the page moved", () => {
+		assert.strictEqual(
+			repairVerdict({
+				detachedBefore: true,
+				readingsAgree: false,
+				detachedAfter: true,
+			}),
+			"still-broken",
+		);
+	});
+});
+
+describe("the modal unpin waits for its own scroll to settle", () => {
+	test("every check lands outside the window a reading is worthless in", () => {
+		// Unpinning ends with a scrollTo of hundreds of pixels. Two of the three
+		// checks used to run at the next frame and at 50ms, inside the window
+		// SETTLE_MS exists to exclude, where a healthy header reads exactly like
+		// a broken one.
+		assert.isAbove(UNPIN_CHECK_DELAYS_MS.length, 0);
+		for (const delay of UNPIN_CHECK_DELAYS_MS) {
+			assert.isAbove(delay, SETTLE_MS, `unpin check at ${delay}ms`);
+		}
 	});
 });

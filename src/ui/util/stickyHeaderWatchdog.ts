@@ -70,6 +70,12 @@ const WATCH_MS = 6000;
 // (a rect read each), and they cover the late-settling case without polling.
 const CHECK_DELAYS_MS = [150, 500, 1200, 3000];
 
+// How long the page must be still before a reading means anything. Momentum
+// scrolling on iOS keeps the main thread's geometry stale well past the last
+// scroll event, and measuring inside that window is what produced a log full of
+// phantom faults.
+export const SETTLE_MS = 250;
+
 type Deps = {
 	scrollY: () => number;
 	// Viewport-relative top edge of the header.
@@ -444,6 +450,20 @@ const viewportNote = () => {
 // Only called when something noteworthy happened, so the log stays short enough
 // to paste and every line means something. The bar's name goes in the kind, so
 // one log covers both without two sets of entries that look alike.
+// EVERY LINE CARRIES THE VIEWPORT, because headerTop on its own is not a
+// readable number.
+//
+// A header stuck where it belongs reads -visualOffsetTop; a header that has
+// come adrift reads -scrollY. Those are the SAME NUMBER whenever the visual
+// viewport happens to be panned as far as the page is scrolled, so a note
+// giving headerTop without the offset that goes with it cannot be adjudicated
+// afterwards - and it was the notes claiming success that left it out.
+//
+// A field log made the cost concrete: "header:detached ... headerTop=-349
+// vv=...@0" followed 31ms later by "header:repaired step=2" at headerTop=-349,
+// unchanged. Either the ladder worked and the viewport panned 349px in those
+// 31ms, or nothing happened and the reading was stale. The line that would have
+// said which is the one that was missing it.
 const note = (
 	bar: Bar,
 	element: HTMLElement | null,
@@ -454,7 +474,8 @@ const note = (
 		kind: `${bar.name}:${kind}`,
 		scrollY: Math.round(window.scrollY),
 		headerTop: element ? Math.round(bar.edge(element)) : Number.NaN,
-		detail,
+		detail:
+			detail === undefined ? viewportNote() : `${detail} ${viewportNote()}`,
 	});
 };
 
@@ -495,6 +516,56 @@ const reading = (bar: Bar, element: HTMLElement) => ({
 	scrollY: Math.round(window.scrollY),
 	edge: Math.round(bar.edge(element)),
 });
+
+// DID THAT STEP ACTUALLY FIX ANYTHING?
+//
+// Detection has never trusted one reading: detachmentConfirmed makes it produce
+// two, a frame apart, at the same scroll offset, because a healthy bar measured
+// while the compositor is behind reads exactly like a broken one. The check
+// that followed each repair step had no such guard - a single instantaneous
+// `!detached`, which the same stale geometry, or a visual viewport moving under
+// the user's thumb, can answer either way.
+//
+// So a step could be credited with a repair it did not perform, the ladder
+// would stop, and the bar would still be broken with the log saying otherwise.
+// A field log has a "repaired step=2" at a headerTop identical to the one that
+// declared the fault a moment earlier - nothing moved, and it was called fixed.
+//
+// Three answers, not two, because "the page was moving" is not "it worked".
+export type RepairVerdict = "held" | "still-broken" | "unclear";
+
+export const repairVerdict = ({
+	detachedBefore,
+	readingsAgree,
+	detachedAfter,
+}: {
+	// Straight after the step ran.
+	detachedBefore: boolean;
+	// Did the two readings a frame apart sit at the same scroll offset and agree?
+	readingsAgree: boolean;
+	// A frame later.
+	detachedAfter: boolean;
+}): RepairVerdict => {
+	if (detachedBefore || detachedAfter) {
+		return "still-broken";
+	}
+	return readingsAgree ? "held" : "unclear";
+};
+
+const verdictAfterStep = async (
+	bar: Bar,
+	element: HTMLElement,
+): Promise<RepairVerdict> => {
+	const detachedBefore = bar.detached(element);
+	const before = reading(bar, element);
+	await nextFrame();
+	const after = reading(bar, element);
+	return repairVerdict({
+		detachedBefore,
+		readingsAgree: detachmentConfirmed({ before, after }),
+		detachedAfter: bar.detached(element),
+	});
+};
 
 const checkBar = async (bar: Bar, trigger: string) => {
 	const element = bar.get();
@@ -541,12 +612,23 @@ const checkBar = async (bar: Bar, trigger: string) => {
 				return;
 			}
 
-			note(bar, element, "detached", `via=${trigger} ${viewportNote()}`);
+			note(bar, element, "detached", `via=${trigger}`);
 
 			for (const [i, step] of repairSteps.entries()) {
 				await step(element);
-				if (!bar.detached(element)) {
+				const verdict = await verdictAfterStep(bar, element);
+				if (verdict === "held") {
 					note(bar, element, "repaired", `step=${i + 1}`);
+					return;
+				}
+				if (verdict === "unclear") {
+					// The page moved while we were asking. Stop here rather than
+					// run the next step: everything above this point assumes the
+					// ladder only ever touches an ALREADY broken bar, and a bar
+					// that now measures clean is one we would be breaking to fix.
+					// The scroll watch is permanent, so a bar that really is still
+					// adrift comes back round.
+					note(bar, element, "repair-unclear", `step=${i + 1}`);
 					return;
 				}
 			}
@@ -590,12 +672,7 @@ const forceBarRepair = async (bar: Bar) => {
 	if (!element) {
 		return;
 	}
-	note(
-		bar,
-		element,
-		"forced",
-		`detached=${bar.detached(element)} ${viewportNote()}`,
-	);
+	note(bar, element, "forced", `detached=${bar.detached(element)}`);
 	const ran = await runExclusive(bar.name, async () => {
 		for (const step of repairSteps) {
 			await step(element);
@@ -607,7 +684,10 @@ const forceBarRepair = async (bar: Bar) => {
 	// Same reason as checkBar: the ladder cleared inline `position`, and the
 	// self-placement mode lives in inline styles.
 	resyncStickyBarShifts();
-	note(bar, element, "forced-done");
+	// The manual button's whole point is that the user cannot see whether it
+	// worked - at the top of the page a broken bar and a healthy one sit in the
+	// same place. Saying so is the least this can do.
+	note(bar, element, "forced-done", `detached=${bar.detached(element)}`);
 };
 
 // The manual button. Runs the ladder whether or not the bars LOOK broken,
@@ -635,12 +715,30 @@ export const forceHeaderRepair = async () => {
 // popover stayed broken with nobody watching. Hence an explicit check, once
 // layout has settled - the same ladder, on the one transition that was exempt
 // from it.
-const UNPIN_CHECK_DELAYS_MS = [50, 250];
+// AND IT HAS TO WAIT FOR THE SCROLL IT JUST CAUSED.
+//
+// Unpinning ends with window.scrollTo(0, y), putting several hundred pixels of
+// scroll back in one go. That is a scroll like any other, and everywhere else
+// in this file a reading taken inside SETTLE_MS of one is treated as worthless:
+// on iOS the main thread's geometry lags the compositor, and a healthy bar
+// measured in that window reads headerTop === -scrollY, which is precisely the
+// signature of a broken one.
+//
+// These checks used to run at the next animation frame, +50ms and +250ms, so
+// two of the three landed inside the window the scroll watch refuses to measure
+// in - and the third right on its edge. A field log after closing a ratings
+// popover has "header:detached via=modal-unpin" at headerTop === -scrollY to
+// the pixel, twice, which is either the fault this exists to catch or exactly
+// the stale reading SETTLE_MS exists to exclude, and there is no way to tell
+// them apart from inside that window.
+//
+// So the unpin waits it out too. The cost of the delay is a header that stays
+// broken a quarter of a second longer; the cost of not waiting is a repair
+// ladder toggling `position` on a bar that was never broken, which is a way to
+// CAUSE the flicker it is meant to remove.
+export const UNPIN_CHECK_DELAYS_MS = [SETTLE_MS + 50, SETTLE_MS + 600];
 
 export const scheduleModalUnpinCheck = () => {
-	requestAnimationFrame(() => {
-		void check("modal-unpin");
-	});
 	for (const delay of UNPIN_CHECK_DELAYS_MS) {
 		setTimeout(() => {
 			void check("modal-unpin");
@@ -669,12 +767,6 @@ export const scheduleModalUnpinCheck = () => {
 // header that heals itself whenever it breaks, from whatever cause, instead of
 // staying broken until the app is force-quit.
 export type ScrollDecision = "judge" | "at-top";
-
-// How long the page must be still before a reading means anything. Momentum
-// scrolling on iOS keeps the main thread's geometry stale well past the last
-// scroll event, and measuring inside that window is what produced a log full of
-// phantom faults.
-const SETTLE_MS = 250;
 
 export const scrollDecision = ({
 	scrollY,
@@ -724,7 +816,7 @@ const watch = () => {
 	const now = Date.now();
 	if (lastResumeNote === undefined || now - lastResumeNote > RESUME_DEDUPE_MS) {
 		lastResumeNote = now;
-		note(HEADER_BAR, HEADER_BAR.get(), "resume", viewportNote());
+		note(HEADER_BAR, HEADER_BAR.get(), "resume");
 	}
 
 	// First thing on any resume: rebuild both bars' visual-viewport shifts from
@@ -795,7 +887,7 @@ const rebuildTickerOnResume = () => {
 		resyncStickyBarShifts();
 	};
 
-	note(TICKER_BAR, TICKER_BAR.get(), "resume-rebuild", viewportNote());
+	note(TICKER_BAR, TICKER_BAR.get(), "resume-rebuild");
 	void pass();
 	setTimeout(() => {
 		void pass();
