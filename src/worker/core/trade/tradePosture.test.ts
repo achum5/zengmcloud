@@ -276,16 +276,46 @@ describe("selectBuildingBlocks", () => {
 	});
 
 	test("a mild sell keeps its young-and-prime core, not its graybeards", () => {
-		// 1 (22) and 5 (26) are within the prime window; 2 (30) is a graybeard.
+		// 1 (22), 5 (26) and 4 (20) are within the prime window; 2 and 3 (30) are
+		// graybeards and stay available.
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "seller" });
-		assert.deepEqual(blocks.sort(), [1, 5]);
+		assert.deepEqual(blocks.sort(), [1, 4, 5]);
 	});
 
 	test("even a full teardown keeps its young/prime cornerstones", () => {
-		// 1 (22) and 5 (26) are the future to build around; only the 30-year-old
-		// is available. A teardown never trades its 26-year-old franchise piece.
+		// A teardown never trades its 26-year-old franchise piece.
 		const blocks = selectBuildingBlocks(players, { ...opts, tier: "teardown" });
-		assert.deepEqual(blocks.sort(), [1, 5]);
+		assert.deepEqual(blocks.sort(), [1, 4, 5]);
+	});
+
+	test("a rebuild with nobody at the league bar still keeps its own best", () => {
+		// The case the rule exists for: a team bad enough to be tearing down,
+		// whose best player is nowhere near the league's ninetieth. Before, it
+		// protected NOBODY and shopped its entire future every season.
+		const nobodyGood: PosturePlayer[] = [
+			mkP(1, { age: 23, value: 52 }),
+			mkP(2, { age: 25, value: 50 }),
+			mkP(3, { age: 26, value: 48 }),
+			mkP(4, { age: 24, value: 44 }),
+			mkP(5, { age: 31, value: 55 }),
+		];
+		const blocks = selectBuildingBlocks(nobodyGood, {
+			...opts,
+			tier: "teardown",
+		});
+		assert.deepEqual(blocks.sort(), [1, 2, 3]);
+	});
+
+	test("nothing changes for a rebuild whose young core clears the bar anyway", () => {
+		const allGood: PosturePlayer[] = [
+			mkP(1, { age: 22, value: 66 }),
+			mkP(2, { age: 24, value: 64 }),
+			mkP(3, { age: 25, value: 62 }),
+			mkP(4, { age: 26, value: 61 }),
+			mkP(5, { age: 31, value: 70 }),
+		];
+		const blocks = selectBuildingBlocks(allGood, { ...opts, tier: "seller" });
+		assert.deepEqual(blocks.sort(), [1, 2, 3, 4]);
 	});
 });
 

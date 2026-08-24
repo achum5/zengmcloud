@@ -403,6 +403,30 @@ export const capPosture = ({
 // contender protects its best guys, not just its youth. A selling team leaves
 // its veterans available (only its young future pieces are off-limits), which
 // is exactly how it avoids letting a good vet waste away.
+//
+// A REBUILD KEEPS THE BEST PLAYERS IT HAS, not only the ones the league would
+// call good. coreValue is league-relative - about the ninetieth best player in
+// a thirty-team league - and a team bad enough to be tearing down frequently
+// has nobody at all who clears it. That team protected NOBODY, so
+// selectShopVeterans put its entire roster over twenty-five on the block: the
+// season a twenty-four-year-old it had drafted turned twenty-six, he was
+// shopped, along with everyone else it had spent the rebuild collecting. A
+// rebuild run that way can never assemble the core it exists to assemble, and
+// the only ones that escaped were the ones lucky enough to draft a player good
+// enough for the LEAGUE bar to protect.
+//
+// Measured over six twelve-season leagues before this: rebuilds that got out
+// and rebuilds that never did held the same number of first-round picks (3.8
+// against 3.7). What separated them was the young core - 2.4 players against
+// 1.8, best young player 59.0 against 56.9. Stockpiling picks is not what ends
+// a rebuild; keeping the players is.
+//
+// The re-signing code found the same thing first and says it in the same
+// words: "star" is roughly the best player on an AVERAGE team, so the worst
+// clubs have nobody who qualifies and would otherwise liquidate the rotation
+// they have to rebuild around. This is that fix, on the trade side.
+export const REBUILD_CORE_RANK = 3;
+
 export const selectBuildingBlocks = (
 	players: PosturePlayer[],
 	{
@@ -417,6 +441,18 @@ export const selectBuildingBlocks = (
 		tier: TradeTier;
 	},
 ): number[] => {
+	// The team's own best young players, for the rebuild rule below. Ties break
+	// on pid so two devices in a shared league protect the same men.
+	const rebuildCore = new Set<number>();
+	if (tier === "seller" || tier === "teardown") {
+		for (const p of players
+			.filter((p2) => p2.age <= coreAge)
+			.sort((a, b) => b.value - a.value || a.pid - b.pid)
+			.slice(0, REBUILD_CORE_RANK)) {
+			rebuildCore.add(p.pid);
+		}
+	}
+
 	const out: number[] = [];
 	for (const p of players) {
 		let protect: boolean;
@@ -427,7 +463,9 @@ export const selectBuildingBlocks = (
 			protect = p.value >= starValue;
 		} else if (tier === "seller" || tier === "teardown") {
 			// Rebuild: keep the young/prime core to build around, cash in the rest.
-			protect = p.value >= coreValue && p.age <= coreAge;
+			// League-good, or the best this team has - see above.
+			protect =
+				p.age <= coreAge && (p.value >= coreValue || rebuildCore.has(p.pid));
 		} else {
 			// buyer / fringe: keep every quality player. A young, rising team hoards
 			// its core and only adds complementary pieces.

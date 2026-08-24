@@ -1441,6 +1441,21 @@ describe("a league runs for a decade without falling apart", () => {
 						).toFixed(2)} bestYoung=${avg(a.map((x) => x.best)).toFixed(1)}`;
 			rows.push(
 				"",
+				// WHAT ENDS A REBUILD, measured across six twelve-season leagues.
+				// Rebuilds that got out and rebuilds that never did held the SAME
+				// number of first-round picks - 3.8 against 3.7. What separated
+				// them was young players good enough to build on: 2.4 against 1.8,
+				// best young player 59.0 against 56.9. Stockpiling picks is not
+				// what ends a rebuild; keeping the players is. That is what
+				// REBUILD_CORE_RANK in tradePosture was written from.
+				//
+				// It did NOT move the number it was aimed at, which is worth
+				// saying plainly: teams still teardown-or-selling five years on ran
+				// 35% before and 35% after, against stock's 22%. What it moved was
+				// everything around it - fewer teams fall into a full teardown at
+				// all (18.2 a run to 16.5), and the talent that used to be shopped
+				// out of those rosters stays employed. So the stuck-rebuild rate is
+				// still an open problem and this was not its fix.
 				`REBUILDS entered=${entered} winp+3y=${avg(at3).toFixed(3)} winp+5y=${avg(at5).toFixed(3)} stillDown@5=${stuck}/${at5.length}`,
 				`REBUILD ASSETS stuck[${describe(stuckRows)}] escaped[${describe(escapedRows)}]`,
 			);
@@ -1790,28 +1805,31 @@ describe("a league runs for a decade without falling apart", () => {
 			// rows below have something to be read against. Six seeds of twelve
 			// real basketball seasons, thirty teams, SMART_AI=0 for the control:
 			//
-			//                    stock    smart
-			//   best5             68.7     73.5   up on five seeds of six
-			//   worst5            26.2     11.5   DOWN on all six
-			//   tovrSD            14.5     21.4   up on all six
-			//   rotation          54.3     54.0   three seeds each way: flat
-			//   allRostered       48.8     48.6   down, on a bigger n
-			//   rostered n        5140     5271   up on all six
-			//   titles distinct   9.5      8.3    DOWN on five of six
-			//   trades/season     17.6     32.7   up on all six
-			//   dead $/season     141M     203M   UP on all six
-			//   dead contracts    248      323    up on all six
-			//     of them drafted 62       35     DOWN
-			//     of them acquired 186     287    UP
-			//   starsUnsigned/yr  0.15     0.27   up on four of six
+			//                     stock    smart
+			//   best5              68.7     75.5   up on all six
+			//   worst5             26.2     12.9   DOWN on all six
+			//   tovrSD             14.5     21.3   up on all six
+			//   rotation           54.3     54.2   three seeds each way: flat
+			//   allRostered        48.8     48.8   identical
+			//   rostered n         5140     5270   up on all six
+			//   titles distinct    9.5      9.3    noise
+			//   trades/season      17.6     32.7   up on all six
+			//   dead $/season      141M     200M   UP on all six
+			//   dead contracts     248      326    up on all six
+			//     of them drafted  62       36     DOWN
+			//     of them acquired 186      290    UP
+			//   starsUnsigned/yr   0.15     0.17   noise
 			//
 			// The trade the comments elsewhere in this file describe is real and
 			// still holds: the top five gain four and a half points and the bottom
 			// five lose sixteen. A league run by this front office concentrates,
 			// deliberately, and the concentration is the feature.
 			//
-			// TWO NUMBERS ARE NOT THE FEATURE. Dead money is up 43%, on every
-			// seed, and stars left unsigned better than half again.
+			// ONE NUMBER IS NOT THE FEATURE. Dead money is up 42%, on every
+			// seed. Stars left unsigned used to be the other one and is now at
+			// parity - the whole of it turned out to be a rebuild shopping its own
+			// young players into a market with nowhere to put them, and it went
+			// away when selectBuildingBlocks stopped letting that happen.
 			//
 			// The DEADPROF row splits it and the split is the whole story. Dead
 			// contracts belonging to men the team DRAFTED are now BELOW stock -
