@@ -31,11 +31,13 @@ const updateNotes = async (
 				"noCopyCache",
 			);
 
-			const { draftPicks, teamOvr } = await processDraftPicks(draftPicksRaw);
+			const { draftPicks, noGamesYet, teamOvr } =
+				await processDraftPicks(draftPicksRaw);
 
 			return {
 				type,
 				draftPicks,
+				noGamesYet,
 				teamOvr,
 			};
 		} else if (type === "game") {

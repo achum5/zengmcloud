@@ -112,6 +112,28 @@ export const teamOvrVisibleForSeason = (
 	return rowSeason <= display.season;
 };
 
+// WHEN A POWER RANKING IS NOTHING BUT THE TEAM RATINGS IN ORDER.
+//
+// A power ranking combines recent performance, margin of victory and team
+// rating. Before any games are played the first two are empty, so all that is
+// left is the ratings, sorted - which in a league that hides team ratings is
+// the entire secret, published as a list. The Power Rankings page has always
+// closed itself in that state; the draft-pick tables print the same rank in a
+// column and did not, so a preseason league with "No Visible Team Ratings" on
+// could read every team's standing straight off the Draft Picks page.
+//
+// One rule, so the two screens cannot drift apart again. A delay is not
+// covered: it means the owner opted into seeing ratings from N seasons ago, and
+// the page that does that says outright that the rankings still use today's
+// rosters.
+export const powerRankingIsJustTeamOvr = ({
+	display,
+	noGamesYet,
+}: {
+	display: TeamOvrDisplay;
+	noGamesYet: boolean;
+}): boolean => display.type === "hidden" && noGamesYet;
+
 // How a delayed rating is labelled, everywhere it is shown. One string so the
 // screens cannot drift apart on what the number means.
 export const delayedTeamOvrNote = (season: number): string =>

@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	delayedTeamOvrNote,
 	hideTeamOvr,
+	powerRankingIsJustTeamOvr,
 	showTeamOvr,
 	teamOvrDisplay,
 	teamOvrDisplayForSeason,
@@ -194,5 +195,59 @@ describe("teamOvrVisibleForSeason", () => {
 describe("delayedTeamOvrNote", () => {
 	test("names the season, because an unlabelled old number reads as the current one", () => {
 		assert.strictEqual(delayedTeamOvrNote(2002), "2002 rating");
+	});
+});
+
+// THE PRESEASON LEAK. A power ranking is performance plus margin of victory
+// plus team rating, so before a game is played it is only the last of those -
+// the hidden ratings, sorted and numbered. The Power Rankings page had always
+// closed itself in that state, but the Draft Picks table printed the same rank
+// in a column, so a 2011 preseason league with team ratings off could read the
+// whole league's pecking order off it (reported from a screenshot: every
+// original team at rank 5, ATL 24, DEN 28, CHI 18).
+describe("powerRankingIsJustTeamOvr", () => {
+	test("ratings hidden and no games played closes it", () => {
+		assert.strictEqual(
+			powerRankingIsJustTeamOvr({
+				display: { type: "hidden" },
+				noGamesYet: true,
+			}),
+			true,
+		);
+	});
+
+	// Once there are results, the ranking is made of something other than the
+	// ratings, and the Power Rankings page shows it - so withholding it here
+	// would only hide what is one click away.
+	test("once games have been played the ranking stands on its own", () => {
+		assert.strictEqual(
+			powerRankingIsJustTeamOvr({
+				display: { type: "hidden" },
+				noGamesYet: false,
+			}),
+			false,
+		);
+	});
+
+	test("a league that shows ratings has nothing to protect", () => {
+		assert.strictEqual(
+			powerRankingIsJustTeamOvr({
+				display: { type: "current" },
+				noGamesYet: true,
+			}),
+			false,
+		);
+	});
+
+	// The delay is an opt-in to scouting with old information, and the page that
+	// serves it says outright that the rankings still use today's rosters.
+	test("a delayed league keeps its ranking", () => {
+		assert.strictEqual(
+			powerRankingIsJustTeamOvr({
+				display: { type: "delayed", season: 2006 },
+				noGamesYet: true,
+			}),
+			false,
+		);
 	});
 });

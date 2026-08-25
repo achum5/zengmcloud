@@ -10,6 +10,7 @@ import { wrappedTeamLogoAndName } from "../components/TeamLogoAndName.tsx";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
 import { gradeFromRank } from "../../common/teamRatingGrade.ts";
+import { powerRankingIsJustTeamOvr } from "../../common/teamRatings.ts";
 
 const Other = ({
 	actualShowHealthy,
@@ -85,8 +86,12 @@ const PowerRankings = ({
 	// so every number on the page - the rank, the category grades - is a
 	// projection of how good each team is. In a league that hides team ratings
 	// that's the whole secret, printed in order. It opens with the season.
+	//
+	// The same rule now guards the rank column on the draft-pick tables, so it
+	// lives in common/teamRatings.ts rather than here - see
+	// powerRankingIsJustTeamOvr.
 	const noGamesYet = teams.every((t) => t.stats.gp === 0);
-	const closed = !showTeamRatings && delayedSeason === undefined && noGamesYet;
+	const closed = powerRankingIsJustTeamOvr({ display: teamOvr, noGamesYet });
 
 	const [showHealthy, setShowHealthy] = useState(true);
 	const actualShowHealthy = showHealthy || currentSeason !== season;

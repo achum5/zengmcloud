@@ -67,6 +67,13 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 	// one season's, so the delay counts back from today.
 	const { display: teamOvr, ovrs: delayedOvrs } = await getTeamOvrOverride();
 
+	// Whether the power ranking column is safe to show, which before any games
+	// have been played it is not: with no results to combine, a power ranking is
+	// the team ratings sorted, and this page was printing it in a league that
+	// hides them. Same rule as the Power Rankings page, which closes outright in
+	// that state - see powerRankingIsJustTeamOvr.
+	const noGamesYet = teamsWithRankings.every((t) => t.stats.gp === 0);
+
 	let estPicksCache;
 
 	for (const dp of draftPicksRaw) {
@@ -149,7 +156,7 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 		});
 	}
 
-	return { draftPicks, teamOvr };
+	return { draftPicks, noGamesYet, teamOvr };
 };
 
 const updateDraftPicks = async (
@@ -162,14 +169,20 @@ const updateDraftPicks = async (
 		updateEvents.includes("gameSim") ||
 		updateEvents.includes("playerMovement") ||
 		updateEvents.includes("newPhase") ||
+		// Which columns exist depends on the team-ratings settings, so a change to
+		// them has to redraw the table rather than leave a stale one up.
+		updateEvents.includes("gameAttributes") ||
 		abbrev !== state.abbrev
 	) {
 		const draftPicksRaw = (await idb.cache.draftPicks.getAll()).filter(
 			(dp) => dp.tid === tid || dp.originalTid === tid,
 		);
 
-		const { draftPicks: draftPicksProcessed, teamOvr } =
-			await processDraftPicks(draftPicksRaw);
+		const {
+			draftPicks: draftPicksProcessed,
+			noGamesYet,
+			teamOvr,
+		} = await processDraftPicks(draftPicksRaw);
 
 		// Do this after processDraftPicks so processDraftPicks can use the same caches for both
 		const draftPicks = [];
@@ -186,6 +199,7 @@ const updateDraftPicks = async (
 			abbrev,
 			draftPicks,
 			draftPicksOutgoing,
+			noGamesYet,
 			teamOvr,
 			tid,
 		};

@@ -10,6 +10,7 @@ import Note from "./Player/Note.tsx";
 import { useLocal } from "../util/local.ts";
 import {
 	delayedTeamOvrNote,
+	powerRankingIsJustTeamOvr,
 	type TeamOvrDisplay,
 } from "../../common/teamRatings.ts";
 
@@ -126,10 +127,12 @@ const processRows = ({
 };
 
 export const getDraftPicksColsAndRows = ({
+	noGamesYet,
 	teamOvr,
 	draftPicks,
 	draftPicksOutgoing,
 }: Pick<View<"draftPicks">, "draftPicks" | "draftPicksOutgoing"> & {
+	noGamesYet: boolean;
 	teamOvr: TeamOvrDisplay;
 }) => {
 	const cols = getCols(
@@ -185,14 +188,29 @@ export const getDraftPicksColsAndRows = ({
 		outgoing: true,
 	});
 
+	const dropColumn = (index: number) => {
+		cols.splice(index, 1);
+		for (const row of [...rows, ...rowsOutgoing]) {
+			row.data.splice(index, 1);
+		}
+	};
+
 	// Hidden means the column goes entirely, rather than a row of blanks under a
-	// heading promising a number.
+	// heading promising a number. Highest index first, so removing one does not
+	// move the other.
 	const ovrIndex = 5;
 	if (teamOvr.type === "hidden") {
-		cols.splice(ovrIndex, 1);
-		for (const row of [...rows, ...rowsOutgoing]) {
-			row.data.splice(ovrIndex, 1);
-		}
+		dropColumn(ovrIndex);
+	}
+
+	// And the power ranking goes with it before any games are played, because
+	// until there are results to fold in, the ranking IS the hidden ratings
+	// sorted - a league with team ratings off could read the whole league's
+	// pecking order off this page while the Power Rankings page refused to show
+	// it. See powerRankingIsJustTeamOvr.
+	const powerRankingIndex = 4;
+	if (powerRankingIsJustTeamOvr({ display: teamOvr, noGamesYet })) {
+		dropColumn(powerRankingIndex);
 	}
 
 	return {
@@ -206,6 +224,7 @@ const DraftPicks = ({
 	abbrev,
 	draftPicks,
 	draftPicksOutgoing,
+	noGamesYet,
 	teamOvr,
 	tid,
 }: View<"draftPicks">) => {
@@ -218,6 +237,7 @@ const DraftPicks = ({
 	const { draftType } = useLocal(["draftType"]);
 
 	const { rows, rowsOutgoing, cols } = getDraftPicksColsAndRows({
+		noGamesYet,
 		teamOvr,
 		draftPicks,
 		draftPicksOutgoing,
