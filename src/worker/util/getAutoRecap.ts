@@ -1235,7 +1235,7 @@ const buildHeadline = (
 			pick(
 				rng,
 				[
-					`${star.name}'s ${word} carries the ${winnerN} past the ${loserN}${tag}`,
+					`${poss(star.name)} ${word} carries the ${winnerN} past the ${loserN}${tag}`,
 					`${star.name} posts a ${word} as the ${winnerN} ${verb} the ${loserN}${tag}`,
 				],
 				"headline:multi-double",
@@ -1320,7 +1320,7 @@ const buildHeadline = (
 				rng,
 				[
 					`${star.name} outduels ${loserStar.name} as the ${winnerN} ${verb} the ${loserN}${tag}`,
-					`${star.name}'s ${star.pts} edges ${loserStar.name}'s ${loserStar.pts} in ${poss(
+					`${poss(star.name)} ${star.pts} edges ${poss(loserStar.name)} ${loserStar.pts} in ${poss(
 						`the ${winnerN}`,
 					)} win${tag}`,
 				],
@@ -1336,7 +1336,7 @@ const buildHeadline = (
 				rng,
 				[
 					`${star.name} drops ${star.pts} as the ${winnerN} ${verb} the ${loserN}${tag}`,
-					`${star.name}'s ${star.pts} sink the ${loserN}${tag}`,
+					`${poss(star.name)} ${star.pts} sink the ${loserN}${tag}`,
 					`${star.name} pours in ${star.pts} in ${poss(`the ${winnerN}`)} win${tag}`,
 				],
 				"headline:40-point",
@@ -2170,8 +2170,8 @@ const loserSentence = (
 		}
 		const ddw = doubleWord(doubleCategories(leader).length);
 		const leaderLine = ddw
-			? `${leader.name}'s ${ddw} (${statPhrase(leader)})`
-			: `${leader.name}'s ${statPhrase(leader)}`;
+			? `${poss(leader.name)} ${ddw} (${statPhrase(leader)})`
+			: `${poss(leader.name)} ${statPhrase(leader)}`;
 		const line = ddw ? `a ${ddw} - ${statPhrase(leader)}` : statPhrase(leader);
 		const them = theNick(shape.loser);
 
@@ -3316,9 +3316,9 @@ const gameBlurb = (
 		// Give the marquee star his full line, calling out a triple-double.
 		const ddw = doubleWord(doubleCategories(star).length);
 		if (ddw && doubleCategories(star).length >= 3) {
-			return `${base} behind ${star.name}'s ${ddw} (${statPhrase(star)})`;
+			return `${base} behind ${poss(star.name)} ${ddw} (${statPhrase(star)})`;
 		}
-		return `${base} behind ${star.name}'s ${statPhrase(star, 2)}`;
+		return `${base} behind ${poss(star.name)} ${statPhrase(star, 2)}`;
 	}
 	return base;
 };
@@ -3748,7 +3748,7 @@ const dayHeadline = (
 				pick(
 					rng,
 					[
-						`${mStar.name}'s ${sh.text} power${sh.plural ? "" : "s"} ${tw} past ${l}`,
+						`${poss(mStar.name)} ${sh.text} power${sh.plural ? "" : "s"} ${tw} past ${l}`,
 						...stateBits,
 					],
 					"dayHeadlinePlayoffStar",
@@ -3950,7 +3950,10 @@ const collectStorylines = (
 			out.push({
 				score: 80 + shape.comebackFrom,
 				kind: "comeback",
-				text: `${w} rally from ${shape.comebackFrom} down past ${l}`,
+				// "rally from 17 down past the Pandas" split the verb from its
+				// object across the whole adverbial. Put the object back next to
+				// the verb.
+				text: `${w} rally past ${l} from ${shape.comebackFrom} down`,
 				tids,
 				game: g,
 			});

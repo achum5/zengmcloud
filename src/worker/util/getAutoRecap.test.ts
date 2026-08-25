@@ -3948,3 +3948,93 @@ describe("a postseason read end to end", () => {
 		assert.ok(sawRoundup, "fixture never reached the roundup sentence");
 	});
 });
+
+// One possessive style for the whole generator. poss() renders a name ending
+// in "s" AP-style ("Jared Jones'"), but eight templates hardcoded "'s" and
+// produced "Jared Jones's" - sometimes both forms in the same day's page.
+describe("possessives", () => {
+	test("a name ending in s takes one form everywhere", () => {
+		// Star lines chosen to reach every template that renders a possessive:
+		// a triple-double, a big scoring night, and a modest line that leaves the
+		// headline to the result templates.
+		const STAR_LINES = [
+			{ pts: 34, reb: 11, ast: 11, tp: 6, tpa: 11, fg: 12, fga: 21 },
+			{ pts: 41, reb: 6, ast: 4, tp: 7, tpa: 13, fg: 14, fga: 24 },
+			{ pts: 27, reb: 12, ast: 3, tp: 2, tpa: 5, fg: 10, fga: 18 },
+			{ pts: 15, reb: 4, ast: 3, tp: 1, tpa: 4, fg: 6, fga: 14 },
+		];
+		const mk = (gid: number): RecapGame => {
+			const bos = realisticTeam(
+				{
+					tid: 1,
+					region: "Boston",
+					name: "Celtics",
+					abbrev: "BOS",
+					pts: 118,
+					ptsQtrs: [30, 28, 32, 28],
+				},
+				player({
+					name: "Jared Jones",
+					...STAR_LINES[gid % STAR_LINES.length]!,
+				}),
+			);
+			const det = realisticTeam(
+				{
+					tid: 2,
+					region: "Detroit",
+					name: "Pistons",
+					abbrev: "DET",
+					pts: 104,
+					ptsQtrs: [26, 26, 26, 26],
+				},
+				player({
+					name: "Chauncey Rivers",
+					...STAR_LINES[(gid + 2) % STAR_LINES.length]!,
+				}),
+			);
+			return game({ gid, teams: [bos, det], winnerTid: 1 });
+		};
+
+		const all: string[] = [];
+		for (let gid = 1; gid <= 80; gid += 1) {
+			// The day wrap has possessive templates of its own (gameBlurb), which
+			// getAutoRecap never reaches.
+			all.push(
+				getAutoRecap(mk(gid)),
+				getAutoDayRecap({
+					season: 2026,
+					day: gid,
+					playoffs: false,
+					games: [mk(gid), mk(gid + 500)],
+				}),
+			);
+		}
+		// A scoring duel, which has its own headline shapes: both stars over 30,
+		// neither with a triple-double, inside a two-possession game.
+		for (let gid = 1; gid <= 40; gid += 1) {
+			const duel = mk(gid);
+			duel.teams[0].pts = 108;
+			duel.teams[1].pts = 104;
+			Object.assign(duel.teams[0].players[0]!, {
+				pts: 36,
+				reb: 5,
+				ast: 4,
+				fg: 13,
+				fga: 24,
+			});
+			Object.assign(duel.teams[1].players[0]!, {
+				pts: 33,
+				reb: 4,
+				ast: 5,
+				fg: 12,
+				fga: 25,
+			});
+			all.push(getAutoRecap(duel));
+		}
+		const joined = all.join("\n");
+		assert.ok(!/Jones's/.test(joined), joined.slice(0, 900));
+		assert.ok(!/Rivers's/.test(joined), joined.slice(0, 900));
+		// Guard the guard: the possessive has to actually appear somewhere.
+		assert.ok(/Jones'|Rivers'/.test(joined), joined.slice(0, 900));
+	});
+});
