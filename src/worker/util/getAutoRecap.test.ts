@@ -4319,3 +4319,94 @@ describe("the standings sentence", () => {
 		);
 	});
 });
+
+// A superlative measured over the wrong set of players reads perfectly and is
+// simply false. The plus-minus note picked from the WINNER's players minus the
+// star, then claimed "the best mark on the floor" from that list.
+describe("plus-minus superlatives", () => {
+	const gameWith = (
+		gid: number,
+		winnerPm: number[],
+		loserPm: number[],
+	): RecapGame => {
+		const mkTeam = (
+			tid: number,
+			name: string,
+			pts: number,
+			pms: number[],
+			starPts: number,
+		) => {
+			const t = realisticTeam(
+				{
+					tid,
+					name,
+					abbrev: name.slice(0, 3).toUpperCase(),
+					pts,
+					ptsQtrs: [pts >> 2, pts >> 2, pts >> 2, pts - 3 * (pts >> 2)],
+				},
+				player({ name: `${name} Star`, pts: starPts, reb: 6, ast: 4 }),
+			);
+			t.players.forEach((p, i) => {
+				p.pm = pms[i] ?? 0;
+				p.min = 30;
+			});
+			return t;
+		};
+		return game({
+			gid,
+			winnerTid: tidOf(gid),
+			teams: [
+				mkTeam(tidOf(gid), "Celtics", 118, winnerPm, 24),
+				mkTeam(tidOf(gid) + 1, "Pistons", 92, loserPm, 21),
+			],
+		});
+	};
+	const tidOf = (gid: number) => gid * 2;
+
+	// The swing sits on the LAST man in the rotation both times: the note skips
+	// anyone the recap has already named, and the starters all get written up.
+	test("nobody is called the best on the floor when somebody beat them", () => {
+		// The star (index 0) swings hardest, and the note never considers him -
+		// so the man it does pick must not claim the floor.
+		let noted = 0;
+		for (let gid = 1; gid <= 60; gid += 1) {
+			const recap = getAutoRecap(
+				gameWith(
+					gid,
+					[40, 4, 6, 8, 10, 12, 32],
+					[-10, -12, -14, -8, -6, -4, -2],
+				),
+			);
+			if (/\+32/.test(recap)) {
+				noted += 1;
+			}
+			assert.ok(
+				!/best mark on the floor|Nobody swung it further|team-best/.test(recap),
+				`a non-leader is called the best: ${recap}`,
+			);
+		}
+		assert.ok(
+			noted > 0,
+			"the plus-minus note never ran, so nothing was tested",
+		);
+	});
+
+	test("the outright leader may still claim it", () => {
+		let claimed = 0;
+		for (let gid = 101; gid <= 160; gid += 1) {
+			const recap = getAutoRecap(
+				gameWith(
+					gid,
+					[12, 4, 6, 8, 10, 14, 34],
+					[-10, -12, -14, -8, -6, -4, -2],
+				),
+			);
+			if (
+				/best mark on the floor|Nobody swung it further|team-best/.test(recap)
+			) {
+				claimed += 1;
+			}
+		}
+		assert.ok(claimed > 0, "the true leader never got the superlative");
+	});
+});

@@ -1996,23 +1996,48 @@ const plusMinusNote = (
 	if (!best || (best.pm ?? 0) < 25) {
 		return undefined;
 	}
-	// "the best mark on the floor" is only true of the actual leader.
-	const isLeader = best === candidates[0];
+	// The superlatives have to be measured against what they actually claim.
+	// `candidates` is the winner's players MINUS the star, so "best mark on the
+	// floor" was being asserted from a list that could not see the star or the
+	// losing side at all - and printed "Casey Dye finished +32, the best mark on
+	// the floor" in a game somebody else finished +34.
+	const maxPmOf = (players: RecapPlayer[]): number =>
+		players.reduce(
+			(acc, p) => (typeof p.pm === "number" && p.pm > acc ? p.pm : acc),
+			Number.NEGATIVE_INFINITY,
+		);
+	const pm = best.pm ?? 0;
+	const isTeamBest = pm >= maxPmOf(shape.winner.players);
+	const isFloorBest =
+		isTeamBest &&
+		pm >= maxPmOf([...shape.winner.players, ...shape.loser.players]);
+
+	// True whatever the ranking: it states the swing, not a superlative.
+	const neutral = [
+		`${best.name} was +${pm} in ${best.min} minutes.`,
+		`${cap(theNick(shape.winner))} outscored them by ${pm} with ${best.name} on the floor.`,
+		`${best.name} finished +${pm}.`,
+	];
 	return pick(
 		rng,
-		isLeader
+		isFloorBest
 			? [
-					`${best.name} was a team-best +${best.pm} in ${best.min} minutes.`,
-					`Nobody swung it further than ${best.name}, +${best.pm} across ${best.min} minutes.`,
-					`${best.name} finished +${best.pm}, the best mark on the floor.`,
-					`${cap(theNick(shape.winner))} outscored them by ${best.pm} with ${best.name} on the floor.`,
+					`${best.name} was a team-best +${pm} in ${best.min} minutes.`,
+					`Nobody swung it further than ${best.name}, +${pm} across ${best.min} minutes.`,
+					`${best.name} finished +${pm}, the best mark on the floor.`,
+					`${cap(theNick(shape.winner))} outscored them by ${pm} with ${best.name} on the floor.`,
 				]
-			: [
-					`${best.name} was +${best.pm} in ${best.min} minutes.`,
-					`${cap(theNick(shape.winner))} outscored them by ${best.pm} with ${best.name} on the floor.`,
-					`${best.name} finished +${best.pm}.`,
-				],
-		isLeader ? "plusMinus" : "plusMinusSecond",
+			: isTeamBest
+				? [
+						`${best.name} was a team-best +${pm} in ${best.min} minutes.`,
+						...neutral,
+					]
+				: neutral,
+		isFloorBest
+			? "plusMinus"
+			: isTeamBest
+				? "plusMinusTeamBest"
+				: "plusMinusSecond",
 	);
 };
 

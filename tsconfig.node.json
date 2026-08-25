@@ -11,12 +11,15 @@
 	// table to keep the checker happy. recapSample.ts is the same deal: it runs
 	// the real getAutoRecap over captured league data so the prose can be read in
 	// bulk, and pulling that in would drag all of src/ into this project.
+	// recapVerify.ts does the same, checking the prose's claims against the box
+	// scores rather than printing it.
 	"exclude": [
 		"node_modules",
 		"analysis/venv",
 		"build",
 		"src",
 		"tools/faceFromPhoto/renderSheets.mjs",
-		"tools/recapSample.ts"
+		"tools/recapSample.ts",
+		"tools/recapVerify.ts"
 	]
 }
