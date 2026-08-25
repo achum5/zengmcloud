@@ -4038,3 +4038,169 @@ describe("possessives", () => {
 		assert.ok(/Jones'|Rivers'/.test(joined), joined.slice(0, 900));
 	});
 });
+
+// The deck is a row of secondary headlines above the wrap's body. The body's
+// job is to add stories, not to spell the deck's out again.
+describe("the day wrap does not tell a story twice", () => {
+	const bigGame = (
+		gid: number,
+		homeName: string,
+		awayName: string,
+		homeStar: RecapPlayer,
+		awayStar: RecapPlayer,
+		extra: Partial<RecapGame> = {},
+	): RecapGame =>
+		game({
+			gid,
+			winnerTid: gid * 2,
+			teams: [
+				realisticTeam(
+					{
+						tid: gid * 2,
+						name: homeName,
+						abbrev: homeName.slice(0, 3).toUpperCase(),
+						pts: 112,
+						ptsQtrs: [28, 28, 28, 28],
+					},
+					homeStar,
+				),
+				realisticTeam(
+					{
+						tid: gid * 2 + 1,
+						name: awayName,
+						abbrev: awayName.slice(0, 3).toUpperCase(),
+						pts: 101,
+						ptsQtrs: [26, 25, 25, 25],
+					},
+					awayStar,
+				),
+			],
+			...extra,
+		});
+
+	const slate = () => [
+		// Marquee: a walk-off.
+		bigGame(
+			7001,
+			"Celtics",
+			"Pistons",
+			player({ name: "Paul Pierce", pts: 31, reb: 6, ast: 5 }),
+			player({ name: "Chauncey Billups", pts: 22, ast: 8 }),
+			{
+				clutchPlays: [
+					'<a href="#">Paul Pierce</a> made a game-winning three-pointer with 1 seconds remaining.',
+				],
+			},
+		),
+		// A triple-double the deck will want.
+		bigGame(
+			7002,
+			"Lakers",
+			"Kings",
+			player({ name: "Magic Carter", pts: 24, reb: 12, ast: 13 }),
+			player({ name: "Mike Bibby", pts: 19, ast: 6 }),
+		),
+		bigGame(
+			7003,
+			"Spurs",
+			"Mavericks",
+			player({ name: "Tim Duncan", pts: 27, reb: 14 }),
+			player({ name: "Dirk Nowitzki", pts: 25, reb: 9 }),
+		),
+		bigGame(
+			7004,
+			"Suns",
+			"Jazz",
+			player({ name: "Steve Nash", pts: 21, ast: 15 }),
+			player({ name: "Carlos Boozer", pts: 20, reb: 11 }),
+		),
+		// The night's leading scorer AND a triple-double, on the same side of the
+		// same game. This is the shape that produced "Matt Hoge led all scorers
+		// with 33 in the Gold Club's win over the Curses ... Adrian Murphy put
+		// together a triple-double as the Gold Club beat the Curses".
+		(() => {
+			const g = bigGame(
+				7005,
+				"Bulls",
+				"Pacers",
+				// 32, not 38: at 33+ the deck claims him as its own storyline and
+				// the leading-scorer line never runs, which is the line that has
+				// to mark this game as told.
+				player({ name: "Matt Hoge", pts: 32, reb: 5, ast: 3 }),
+				player({ name: "Reggie Miller", pts: 18, reb: 4 }),
+			);
+			g.teams[0].players.splice(
+				1,
+				0,
+				player({ name: "Adrian Murphy", pts: 23, reb: 11, ast: 10 }),
+			);
+			return g;
+		})(),
+	];
+
+	test("a player the deck put in lights is not re-introduced below it", () => {
+		for (let day = 1; day <= 20; day += 1) {
+			const recap = getAutoDayRecap({
+				season: 2005,
+				day,
+				playoffs: false,
+				games: slate(),
+			});
+			const lines = recap.split("\n");
+			const deck = lines.find((l) => l.startsWith("*") && !l.startsWith("**"));
+			if (!deck) {
+				continue;
+			}
+			const body = lines.filter((l) => !l.startsWith("*")).join("\n");
+			for (const name of [
+				"Paul Pierce",
+				"Magic Carter",
+				"Tim Duncan",
+				"Steve Nash",
+			]) {
+				assert.ok(
+					!(
+						deck.includes(name) &&
+						new RegExp(
+							`${name}(?:'s)? (?:led|had|put|went|posted|got|scored)`,
+						).test(body)
+					),
+					`day ${day}: ${name} is in the deck and the body:\n${recap}`,
+				);
+			}
+		}
+	});
+
+	test("one game is not reported twice in the same wrap", () => {
+		for (let day = 1; day <= 20; day += 1) {
+			const recap = getAutoDayRecap({
+				season: 2005,
+				day,
+				playoffs: false,
+				games: slate(),
+			});
+			const body = recap
+				.split("\n")
+				.filter((l) => !l.startsWith("*"))
+				.join(" ");
+			// Each game should be told once. Counting sentences that name a team
+			// catches every phrasing, where matching "X beat Y" pairings misses
+			// the ones that only name the opponent ("... against the Pacers").
+			for (const nickname of [
+				"Pistons",
+				"Kings",
+				"Mavericks",
+				"Jazz",
+				"Pacers",
+			]) {
+				const mentions = body
+					.split(/(?<=[!.?]) /)
+					.filter((sentence) => sentence.includes(nickname));
+				assert.ok(
+					mentions.length <= 1,
+					`day ${day}: the ${nickname} game is told ${mentions.length} times:\n${recap}`,
+				);
+			}
+		}
+	});
+});

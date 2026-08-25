@@ -4063,7 +4063,11 @@ const dayDeck = (
 	// are excluded for the same reason the marquee's are: the deck exists to add
 	// stories, not to say the headline again in different words.
 	headlineGame?: RecapGame,
-): { text: string; games: RecapGame[] } | undefined => {
+	// Returns the PLAYERS it featured as well as the games. Without them the
+	// body re-told the same man two lines below the deck that had just named
+	// him: "Adrian Murphy triple-doubles" over "Adrian Murphy put together a
+	// triple-double (23 points, 11 rebounds, and 10 assists)".
+): { text: string; games: RecapGame[]; players: RecapPlayer[] } | undefined => {
 	const usedTids = new Set<number>([
 		marquee.teams[0].tid,
 		marquee.teams[1].tid,
@@ -4074,6 +4078,7 @@ const dayDeck = (
 	const usedKinds = new Set<string>();
 	const picks: string[] = [];
 	const covered: RecapGame[] = [];
+	const featured: RecapPlayer[] = [];
 	for (const s of storylines) {
 		if (s.tids.some((tid) => usedTids.has(tid))) {
 			continue; // don't reuse the marquee's teams or a team already in the deck
@@ -4092,12 +4097,15 @@ const dayDeck = (
 		if (s.game) {
 			covered.push(s.game);
 		}
+		if (s.pid) {
+			featured.push(s.pid);
+		}
 		if (picks.length >= 3) {
 			break;
 		}
 	}
 	return picks.length > 0
-		? { text: picks.join(" · "), games: covered }
+		? { text: picks.join(" · "), games: covered, players: featured }
 		: undefined;
 };
 
@@ -4420,6 +4428,11 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	if (mStar) {
 		named.add(mStar);
 	}
+	// Anyone the deck put in lights counts as named - the body's job is to add
+	// stories, not to spell out the deck's.
+	for (const p of deckResult?.players ?? []) {
+		named.add(p);
+	}
 
 	// The day's leading scorer, when it isn't the marquee star already described.
 	if (topScorer && topScorer.p.pts >= 30 && !named.has(topScorer.p)) {
@@ -4477,7 +4490,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		(perf) =>
 			doubleCategories(perf.p).length >= 3 &&
 			!named.has(perf.p) &&
-			!marqueeTids.has(perf.team.tid),
+			!marqueeTids.has(perf.team.tid) &&
+			// Same reason as the second standout: without this, the leading
+			// scorer's game came straight back from the other side.
+			!coveredGames.has(perf.game),
 	);
 	if (tdPerf) {
 		para1.push(
@@ -4499,6 +4515,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				!named.has(perf.p) &&
 				!perf.won &&
 				!marqueeTids.has(perf.team.tid) &&
+				// Deliberately NOT filtered on coveredGames. This is the other
+				// side of a game the wrap may have told from the winner's view,
+				// and a 23-18-8 wasted in defeat is its own story rather than a
+				// restatement of the result.
 				((perf.p.pts >= 20 && doubleCategories(perf.p).length >= 2) ||
 					perf.p.pts >= 35),
 		);
