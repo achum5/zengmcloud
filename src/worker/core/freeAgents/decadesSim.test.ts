@@ -762,6 +762,8 @@ describe("a league runs for a decade without falling apart", () => {
 		const rosteredOvrs: number[] = [];
 		// The ten players per team that team.ovr actually counts, league-wide.
 		const rotationOvrs: number[] = [];
+		// The same ten-per-team count, taken off the top of the whole league.
+		const deployableOvrs: number[] = [];
 		let scalesRow = "";
 		const seasonOvrs: number[] = [];
 		const seasonValues: number[] = [];
@@ -1342,6 +1344,26 @@ describe("a league runs for a decade without falling apart", () => {
 					deadMoney / (salaryCap * NUM_TEAMS),
 				);
 
+				// WHAT THE LEAGUE COULD HAVE DEPLOYED, against what it did.
+				//
+				// rotation= is the mean of every team's own best ten, and this file
+				// called it the measure allocation cannot move. That is only true
+				// while nobody is buried: a roster holds fifteen and team.ovr counts
+				// ten, so a team stacked deep enough pushes good players into slots
+				// that count for nothing while a stripped one fills its tenth seat
+				// with whoever is left. deployable= is the same number under perfect
+				// allocation - the best 10-per-team players in the league, wherever
+				// they actually are - so the gap between the two IS the cost of how
+				// the league is arranged, and a change to rotation= can finally be
+				// told apart from a change to the talent underneath it.
+				{
+					const best = [...seasonOvrs]
+						.sort((a, b) => b - a)
+						.slice(0, 10 * NUM_TEAMS);
+					deployableOvrs.push(
+						best.reduce((a, x) => a + x, 0) / Math.max(1, best.length),
+					);
+				}
 				{
 					const o = seasonOvrs.sort((a, b) => b - a);
 					const v = seasonValues.sort((a, b) => b - a);
@@ -1999,27 +2021,50 @@ describe("a league runs for a decade without falling apart", () => {
 			// THE ROTATION ROW IS NEW AND IT IS THE WORST NUMBER IN THE TABLE.
 			// Until market sizes existed here it read 54.3 against 54.2, three
 			// seeds each way - the same talent, differently arranged, which is
-			// what every claim in this file about concentration rests on. Give
+			// what every claim in this file about concentration rested on. Give
 			// the teams different populations and it becomes 54.5 against 53.8,
-			// down on five seeds of six: this front office now employs
-			// measurably LESS of the league's talent than stock does.
+			// down on five seeds of six.
 			//
-			// It is not the budget plan. Running the smart front office with
-			// vanilla's coin-flip budgets instead of smartBudgetLevels leaves it
-			// at 53.80 - identical to three decimal places - so the departments
-			// are not what changed. What changed is that free agents now have
-			// preferences: moodComponents scores market size from population
-			// RANK, and thirty tied teams all ranked 15.5 and cancelled it out.
-			// Stars left unsigned tell the same story, 0.37 a season against
-			// stock's 0.10.
+			// AND rotation= IS NOT THE CONTROL THIS FILE CALLED IT. It was
+			// described as the measure allocation cannot move, which is only true
+			// while nobody is buried: a roster holds fifteen and team.ovr counts
+			// ten, so a team stacked deep enough pushes good players into slots
+			// worth nothing while a stripped one fills its tenth seat with
+			// whatever is left. That was empirically fine when it was written -
+			// burial measured at essentially zero - and stopped being fine the
+			// moment markets made the league more unequal.
 			//
-			// The suspicion to chase is the pursuit machinery. A team that holds
-			// cap space for a prize (planCapHold) or tears up a payroll to chase
-			// one (clearSpace) is betting on landing him, and both gate on
-			// mood.probWilling against MIN_PURSUIT_CONFIDENCE - a bar set at 0.02
-			// when every team in this harness was equally attractive and no such
-			// bet could be long odds. A small-market team can now be a genuine
-			// long shot, freeze its summer on one, and end up signing nobody.
+			// deployable= is the honest control: the same ten-per-team count
+			// taken off the top of the whole league, so the gap between the two
+			// IS the arrangement. Six seeds:
+			//
+			//                       stock    smart
+			//   deployable          54.95    54.51   the talent that was there
+			//   rotation            54.51    53.80   what got played
+			//   cost of arrangement  0.44     0.71
+			//
+			// So the 0.71 splits about 0.44 talent and 0.27 arrangement. The
+			// arrangement half is the feature working harder - this front office
+			// concentrates more, and concentration buries people. The TALENT half
+			// is not, and it is the open question.
+			//
+			// It is not the budget plan: running the smart front office on
+			// vanilla's coin-flip budgets gives 53.80, identical to three
+			// decimals. It is not cap holds either - switching planCapHold off
+			// entirely leaves rotation at 53.81 and makes the top five and stars
+			// unsigned both WORSE, so the hold is earning its keep.
+			//
+			// What it looks like is players nobody signs. Against the whole
+			// living population (rostered and free agents together) the two arms'
+			// top three hundred are near enough level, 54.89 against 55.06; among
+			// ROSTERED players they are 54.51 against 54.95. Stock's rostered top
+			// three hundred falls 0.11 short of the league's; this front office's
+			// falls 0.38 short. It is not the stars - those are 0.37 a season
+			// against 0.10, far too few to move a mean over three hundred - and
+			// it is not minimum-salary men either, since BARGAINS LEFT runs LOWER
+			// here than stock. It is good players asking real money, and the
+			// obvious suspect is the roster gate in autoSign that refuses to
+			// sign anyone when the cut it would force costs money.
 			//
 			// The trade the comments elsewhere in this file describe is real and
 			// still holds: the top five gain four and a half points and the bottom
@@ -2121,7 +2166,8 @@ describe("a league runs for a decade without falling apart", () => {
 					`TALENT poolTop100=${m(pool.slice(0, 100)).toFixed(1)} ` +
 						`poolTop500=${m(pool.slice(0, 500)).toFixed(1)} ` +
 						`allRostered=${m(rosteredOvrs).toFixed(1)} n=${rosteredOvrs.length} ` +
-						`rotation=${m(rotationOvrs).toFixed(2)}`,
+						`rotation=${m(rotationOvrs).toFixed(2)} ` +
+						`deployable=${m(deployableOvrs).toFixed(2)}`,
 					// WHICH HALF THE DEAD MONEY IS: men the team drafted, or men it
 					// signed or traded for. They respond to completely different
 					// things, and lumping them together hid that for a long time.
