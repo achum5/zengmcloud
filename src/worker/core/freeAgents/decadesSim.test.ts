@@ -2062,9 +2062,25 @@ describe("a league runs for a decade without falling apart", () => {
 			// falls 0.38 short. It is not the stars - those are 0.37 a season
 			// against 0.10, far too few to move a mean over three hundred - and
 			// it is not minimum-salary men either, since BARGAINS LEFT runs LOWER
-			// here than stock. It is good players asking real money, and the
-			// obvious suspect is the roster gate in autoSign that refuses to
-			// sign anyone when the cut it would force costs money.
+			// here than stock. Measured, the leftovers here are thirteen a season
+			// above 50 ovr against stock's nine, and BETTER (54.3 against 52.4),
+			// DEARER ($12.3M against $4.7M) and OLDER (31.2 against 30.1). Aging
+			// veterans asking real money, which stock signs and this front office
+			// declines.
+			//
+			// Two more candidates ruled out since. The roster gate in autoSign
+			// that refuses a signing when the cut it forces costs money: taking
+			// it out entirely leaves rotation at 53.78 and costs 78M a season in
+			// dead money, so it is not holding anybody back. And a genuine
+			// inconsistency in the scoring - contractRiskMultiplier discounts a
+			// player for the years he ASKED for, while signingYears was about to
+			// shorten them, so a rebuild passes on a thirty-one-year-old over a
+			// four-year risk it would have converted to one season. Pricing the
+			// deal actually offered works and is not worth it: rotation +0.09,
+			// deployable +0.06, top hundred +0.55, bought for 20.6M a season of
+			// dead money. That is 230M per point of employed talent against the
+			// 120M-145M every other lever on this curve costs, so it is the
+			// expensive way to buy it. The numbers are at the call site.
 			//
 			// The trade the comments elsewhere in this file describe is real and
 			// still holds: the top five gain four and a half points and the bottom

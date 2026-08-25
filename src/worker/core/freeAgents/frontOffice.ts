@@ -150,6 +150,27 @@ export const contractRiskMultiplier = ({
 	// one-year deal at any price: the risk being priced here is COMMITTING to a
 	// player's decline years, and a expiring contract commits to nothing. (It is
 	// the move a smart team makes with an old player, not one to discourage.)
+	//
+	// WHICH MAKES `years` HERE THE WRONG LENGTH, and deliberately so. Callers
+	// pass the length off the player's DEMAND, but no team ever signs that
+	// deal: signingYears rewrites it first, and for old men on selling teams it
+	// rewrites four years to one - a commitment this function would then score
+	// as no risk at all. So a rebuild discounts a thirty-one-year-old for a
+	// four-year deal it was about to convert to a single season.
+	//
+	// That population is real and it is where this front office's unemployed
+	// talent sits: thirteen players a season above 50 ovr left unsigned against
+	// stock's nine, and the ones left over are better (54.3 against 52.4),
+	// dearer ($12.3M against $4.7M) and older (31.2 against 30.1).
+	//
+	// Passing the length actually offered was built and measured over six
+	// seeds. It works, and it is not worth it. Rotation talent +0.09, the
+	// deployable pool +0.06, the top hundred +0.55 on five seeds - bought with
+	// 20.6M a season more dead money. That is about 230M per point of employed
+	// talent, against the 120M-145M this file measures for every other lever on
+	// the same curve (see decadesSim.test.ts), so it is a strictly expensive way
+	// to buy something. Distinct champions also fell by more than one on five
+	// seeds of six.
 	if (amount <= minContract * 1.5 || years <= 1) {
 		return 1;
 	}
