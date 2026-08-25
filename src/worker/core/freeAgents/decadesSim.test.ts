@@ -28,6 +28,12 @@ import { smartBudgetLevels } from "../finances/smartBudget.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { captureFrontOfficeLog } from "../../util/frontOfficeLog.ts";
 import {
+	synergyCompositeRating,
+	synergyForLineup,
+	synergySkillCounts,
+	synergyTotal,
+} from "../GameSim.basketball/synergy.ts";
+import {
 	getLeagueTradeContext,
 	getTradePosture,
 } from "../trade/tradePosture.ts";
@@ -764,6 +770,43 @@ describe("a league runs for a decade without falling apart", () => {
 		const rotationOvrs: number[] = [];
 		// The same ten-per-team count, taken off the top of the whole league.
 		const deployableOvrs: number[] = [];
+		// WHAT THE LINEUP IS WORTH BEYOND THE FIVE MEN IN IT. The game sim pays a
+		// team for the MIX of skills on the floor - shooting, ball-handling,
+		// interior defence - and team.ovr, which is what the front office builds
+		// toward, cannot see it. So measure it: the synergy of each team's best
+		// five, against the best any five could score.
+		const synergyOff: number[] = [];
+		const synergyDef: number[] = [];
+		const synergyReb: number[] = [];
+		const synergyTotals: number[] = [];
+		const synergyCounts: Record<string, number[]> = {
+			"3": [],
+			A: [],
+			B: [],
+			Di: [],
+			Dp: [],
+			Po: [],
+			Ps: [],
+			R: [],
+		};
+		const synergyBestSwap: number[] = [];
+		// WHAT SYNERGY IS ACTUALLY WORTH, in the only currency that settles it.
+		//
+		// team.ovr cannot see synergy, so no amount of measuring roster quality can
+		// say whether a front office should give up a point of talent for a better
+		// fit. Played seasons can: record every team-season's rating, its lineup
+		// synergy and the win percentage it produced, then regress. The ratio of the
+		// two coefficients is the exchange rate - how many points of team rating one
+		// unit of synergy is worth - and it is the number every decision about fit
+		// has to clear. Needs REAL_GAMES=1; synthesized standings are a function of
+		// team ovr alone and would report zero by construction.
+		const winRows: [tovr: number, syn: number, winp: number][] = [];
+		// Per-capita skill rates: the starting five against the whole roster and
+		// against the unsigned pool. If the five are no richer in a skill than the
+		// bench is, the league is not wasting it - it simply does not have it.
+		const rate5: Record<string, number[]> = { "3": [], A: [], R: [] };
+		const rateRoster: Record<string, number[]> = { "3": [], A: [], R: [] };
+		const rateFA: Record<string, number[]> = { "3": [], A: [], R: [] };
 		let scalesRow = "";
 		const seasonOvrs: number[] = [];
 		const seasonValues: number[] = [];
@@ -1172,6 +1215,73 @@ describe("a league runs for a decade without falling apart", () => {
 						.slice(0, 10)) {
 						rotationOvrs.push(o);
 					}
+					{
+						// The five who would start: the sim picks its lineup by
+						// valueNoPot, so this reads the roster the same way rather
+						// than by ovr.
+						const five = [...roster]
+							.sort((a, b) => b.valueNoPot - a.valueNoPot)
+							.slice(0, 5)
+							.map((rp) => ({
+								compositeRating: synergyCompositeRating(rp.ratings.at(-1)!),
+							}));
+						if (five.length === 5) {
+							const syn = synergyForLineup(five);
+							synergyOff.push(syn.off);
+							synergyDef.push(syn.def);
+							synergyReb.push(syn.reb);
+							synergyTotals.push(synergyTotal(syn));
+							const counts = synergySkillCounts(five);
+							for (const k of Object.keys(synergyCounts)) {
+								synergyCounts[k]!.push((counts as any)[k]);
+							}
+							// HOW MUCH BETTER A FIVE THE SAME ROSTER COULD FIELD:
+							// the best five-man group among the top eight by value,
+							// against the five the sim will actually play. Bounds
+							// what fit is worth at fixed talent.
+							const top8 = [...roster]
+								.sort((a, b) => b.valueNoPot - a.valueNoPot)
+								.slice(0, 8)
+								.map((rp) => ({
+									compositeRating: synergyCompositeRating(rp.ratings.at(-1)!),
+								}));
+							let best = synergyTotal(syn);
+							for (let a = 0; a < top8.length; a++) {
+								for (let b = a + 1; b < top8.length; b++) {
+									for (let c = b + 1; c < top8.length; c++) {
+										for (let d = c + 1; d < top8.length; d++) {
+											for (let e = d + 1; e < top8.length; e++) {
+												const t = synergyTotal(
+													synergyForLineup([
+														top8[a]!,
+														top8[b]!,
+														top8[c]!,
+														top8[d]!,
+														top8[e]!,
+													]),
+												);
+												if (t > best) {
+													best = t;
+												}
+											}
+										}
+									}
+								}
+							}
+							synergyBestSwap.push(best - synergyTotal(syn));
+							for (const k of ["3", "A", "R"] as const) {
+								rate5[k]!.push((counts as any)[k] / 5);
+							}
+							const allCounts = synergySkillCounts(
+								roster.map((rp) => ({
+									compositeRating: synergyCompositeRating(rp.ratings.at(-1)!),
+								})),
+							);
+							for (const k of ["3", "A", "R"] as const) {
+								rateRoster[k]!.push((allCounts as any)[k] / roster.length);
+							}
+						}
+					}
 					ovrs.push(
 						team.ovr(
 							roster.map((p) => ({
@@ -1288,6 +1398,16 @@ describe("a league runs for a decade without falling apart", () => {
 					(p) => p.ratings.at(-1)!.ovr >= STAR_OVR,
 				).length;
 				unsignedStarTotal += unsignedStars;
+				if (fa.length > 0) {
+					const faCounts = synergySkillCounts(
+						fa.map((p) => ({
+							compositeRating: synergyCompositeRating(p.ratings.at(-1)!),
+						})),
+					);
+					for (const k of ["3", "A", "R"] as const) {
+						rateFA[k]!.push((faCounts as any)[k] / fa.length);
+					}
+				}
 
 				// The cheapest quality in the game: healthy, useful, and asking the
 				// league minimum, yet still unsigned. This is how the AI's refusal
@@ -1443,6 +1563,32 @@ describe("a league runs for a decade without falling apart", () => {
 						tid,
 					);
 					const young = roster.filter((p) => season - p.born.year <= 24);
+					if (ts && ts.won + ts.lost > 0) {
+						const five = [...roster]
+							.sort((a, b) => b.valueNoPot - a.valueNoPot)
+							.slice(0, 5)
+							.map((rp) => ({
+								compositeRating: synergyCompositeRating(rp.ratings.at(-1)!),
+							}));
+						if (five.length === 5) {
+							winRows.push([
+								team.ovr(
+									roster.map((rp) => ({
+										pid: rp.pid,
+										injury: rp.injury,
+										value: rp.value,
+										ratings: {
+											ovr: rp.ratings.at(-1)!.ovr,
+											ovrs: rp.ratings.at(-1)!.ovrs,
+											pos: rp.ratings.at(-1)!.pos,
+										},
+									})),
+								),
+								synergyTotal(synergyForLineup(five)),
+								ts.won / (ts.won + ts.lost),
+							]);
+						}
+					}
 					yearRow.push({
 						tid,
 						tier: posture.tier,
@@ -2187,6 +2333,72 @@ describe("a league runs for a decade without falling apart", () => {
 					// WHICH HALF THE DEAD MONEY IS: men the team drafted, or men it
 					// signed or traded for. They respond to completely different
 					// things, and lumping them together hid that for a long time.
+					// SYNERGY, the thing team ovr cannot see. off/def/reb do not
+					// share a ceiling (1, 5/6, 1/2), so each is shown against its
+					// own; total is the sim's own weighting of the three (see
+					// synergyTotal), out of a maximum of 5.
+					`SYNERGY off=${m(synergyOff).toFixed(3)} def=${m(synergyDef).toFixed(3)} ` +
+						`reb=${m(synergyReb).toFixed(3)} total=${m(synergyTotals).toFixed(3)}/5 ` +
+						`worstTeam=${Math.min(...synergyTotals).toFixed(2)} bestTeam=${Math.max(...synergyTotals).toFixed(2)}`,
+					`SYNERGY COUNTS ${Object.entries(synergyCounts)
+						.map(([k, v]) => `${k}=${m(v).toFixed(2)}`)
+						.join(" ")}`,
+					`SYNERGY HEADROOM bestFiveFromTop8 +${m(synergyBestSwap).toFixed(3)}`,
+					// Two-predictor least squares on played seasons. bSyn/bOvr is the
+					// exchange rate: points of team rating per unit of synergy.
+					`SYNERGY PRICE ${(() => {
+						// GATED ON PLAYED SEASONS, and this is not a nicety. Without
+						// REAL_GAMES the harness SYNTHESIZES each record from team ovr
+						// (see setRecords), so win percentage is a function of the one
+						// predictor by construction and synergy can only pick up noise -
+						// the first version of this row duly reported an exchange rate of
+						// -0.62, which reads as "synergy loses you games" and means
+						// nothing at all. A diagnostic that answers when it cannot know
+						// is worse than one that stays quiet.
+						if (nodeEnv.REAL_GAMES !== "1" && !COLA) {
+							return "n/a (standings are synthesized - needs REAL_GAMES=1)";
+						}
+						if (winRows.length < 30) {
+							return `n/a (only ${winRows.length} played team-seasons)`;
+						}
+						const n = winRows.length;
+						const mx1 = m(winRows.map((r) => r[0]));
+						const mx2 = m(winRows.map((r) => r[1]));
+						const my = m(winRows.map((r) => r[2]));
+						let s11 = 0;
+						let s22 = 0;
+						let s12 = 0;
+						let s1y = 0;
+						let s2y = 0;
+						for (const [x1, x2, y] of winRows) {
+							const a = x1 - mx1;
+							const b = x2 - mx2;
+							const c = y - my;
+							s11 += a * a;
+							s22 += b * b;
+							s12 += a * b;
+							s1y += a * c;
+							s2y += b * c;
+						}
+						const det = s11 * s22 - s12 * s12;
+						if (det === 0) {
+							return "degenerate";
+						}
+						const bOvr = (s22 * s1y - s12 * s2y) / det;
+						const bSyn = (s11 * s2y - s12 * s1y) / det;
+						return (
+							`n=${n} winpPerOvr=${bOvr.toFixed(5)} winpPerSyn=${bSyn.toFixed(5)} ` +
+							`ovrPerSyn=${(bSyn / bOvr).toFixed(2)} meanSyn=${mx2.toFixed(2)}`
+						);
+					})()}`,
+					`SYNERGY SUPPLY ${(["3", "A", "R"] as const)
+						.map(
+							(k) =>
+								`${k}: five=${m(rate5[k]!).toFixed(3)} roster=${m(
+									rateRoster[k]!,
+								).toFixed(3)} unsigned=${m(rateFA[k]!).toFixed(3)}`,
+						)
+						.join(" | ")}`,
 					`OVERFLOW sign=${overflow.sign} trade=${overflow.trade} dump=${overflow.dump} atEnd=${overflow.end}`,
 					// OVR AND VALUE ARE NOT THE SAME SCALE, and a bar meant for one
 					// of them applied to the other is off by dozens of players.
