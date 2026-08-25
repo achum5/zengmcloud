@@ -13,18 +13,34 @@ export const FACE_CROPS: Record<string, [number, number, number, number]> = {
 	eye: [95, 240, 210, 95],
 	eyebrow: [95, 212, 210, 85],
 	nose: [145, 292, 110, 102],
-	mouth: [140, 350, 120, 95],
+	// Was [140, 350, 120, 95], which cut the bottom off every open mouth -
+	// `smile`, `smile3`, `angry` and `mouth` all ran past the foot of the window,
+	// so the widest grin in the set and a neutral bar looked equally like a
+	// stripe. Re-derived by rendering the whole slot; this clears the lowest of
+	// them with room to spare.
+	mouth: [120, 335, 160, 140],
 	// Sits low on purpose. The obvious guess - centre it on the mouth - starts
 	// the window mid-eye and stops at the chin, so a full beard is cut off at
 	// exactly the part that distinguishes it from a goatee, and half the
 	// thumbnail is spent on eyes that never change. This runs from the top of
 	// the sideburns down past the jaw, and out wide enough for mutton chops.
 	facialHair: [60, 320, 280, 200],
-	eyeLine: [95, 240, 210, 95],
-	smileLine: [110, 290, 180, 140],
-	miscLine: [60, 80, 280, 340],
+	// Wider and taller than the eye window it used to share: eyeLine's marks are
+	// crow's feet, under-eye lines and cheek lines, and half of them fell
+	// outside a window sized for the eye itself.
+	eyeLine: [60, 180, 280, 220],
+	// The folds sit LOWER than the old [110, 290, 180, 140] window reached -
+	// all four options were clipped to a few pixels at the bottom edge, which
+	// is also why nobody noticed that line4 curves the opposite way to the rest.
+	smileLine: [100, 300, 200, 200],
+	// miscLine covers the forehead AND the chin, and the old 340-tall window
+	// stopped at the mouth: chin1 and chin2 rendered as blank thumbnails
+	// indistinguishable from `none`.
+	miscLine: [60, 90, 280, 430],
 	glasses: [80, 210, 240, 150],
-	accessories: [0, 0, 400, 300],
+	// Deep enough for eye-black, which sits under the eyes and was entirely
+	// outside a window that stopped at the brow line.
+	accessories: [0, 0, 400, 380],
 	body: [0, 330, 400, 270],
 	jersey: [0, 330, 400, 270],
 };

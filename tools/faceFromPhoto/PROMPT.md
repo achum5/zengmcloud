@@ -124,10 +124,11 @@ Use these EXACT strings. Anything not on the list renders as a blank slot.
 - **jersey**: jersey, jersey2, jersey3, jersey4, jersey5, baseball, baseball2,
   baseball3, baseball4, football, football2, football3, football4, football5,
   hockey, hockey2, hockey3, hockey4
-- **eyeLine** (crease/eyelid line): none, line1, line2, line3, line4, line5, line6
+- **eyeLine** (age marks around the eye — NOT an eyelid crease): none, line1,
+  line2, line3, line4, line5, line6
 - **smileLine** (nasolabial folds): none, line1, line2, line3, line4
-- **miscLine**: none, chin1, chin2, forehead1, forehead2, forehead3, forehead4,
-  forehead5, freckles1, freckles2
+- **miscLine**: none, blush, chin1, chin2, forehead1, forehead2, forehead3,
+  forehead4, forehead5, freckles1, freckles2
 - **glasses**: none, glasses1-primary, glasses1-secondary, glasses2-black,
   glasses2-primary, glasses2-secondary, facemask
 - **accessories**: none, headband, headband-high, hat, hat2, hat3, eye-black,
@@ -139,93 +140,232 @@ exist only in eye, eyebrow, hair, hairBg and head.
 ## What the shapes actually look like
 
 The names above say nothing about the drawings, so here is what each group of
-ids reads as. Pick the GROUP from the photo first, then any id inside it — the
-options within a group differ by small amounts and are close to interchangeable.
-Where a group is ordered, it runs from least to most of the trait.
+ids reads as. Every description below was written by RENDERING the option and
+looking at it, not by reading its name — several of the names are actively
+misleading (`afro` is a smooth cap, `dreads` is a top-knot, `eyeLine` is not an
+eyelid crease).
 
-**head** — they all share the same outline width; what differs is how much the
-face narrows from cheekbones to chin.
+Pick the GROUP from the photo first, then any id inside it. Options inside a
+group differ by small amounts and are close to interchangeable; a few are called
+out individually because they are distinctive enough to be a wrong answer rather
+than an approximate one.
 
-- Tapered, chin clearly narrower than the cheeks (a V-shaped face): `head2`,
-  `head1`, `head5`, `head14`, `head11`
-- Balanced oval, a mild taper: `head4`, `head7`, `head3`, `head9`, `head10`,
-  `head8`
-- Square and blocky, jaw nearly as wide as the cheekbones: `head6`, `head12`,
-  `head13`, `head15`, `head16`, `head18`, `head17`
+**head** — two things vary, and they are independent: how WIDE the face is, and
+whether the jaw runs straight down to a flat chin or curves in to a rounded one.
+`fatness` adds width on top of whichever you pick, so choose the shape here and
+set the width there.
 
-**eye**
+- Oval — the sides curve continuously and the chin is rounded and clearly
+  narrower than the cheeks: `head1`, `head2`, `head14` (narrowest, a long egg),
+  `head8`, `head9`, `head13`, `head4`, `head5` (the neutral middle of the whole
+  set — use it when the photo won't say)
+- In between — the sides straighten but the jaw corners stay soft: `head6`,
+  `head7`, `head10`, `head11` (widest at the temples, tapering)
+- Square — the sides run straight down to a flat base with corners you can
+  point at: `head3`, `head15`, `head16`, `head17`, `head18`, `head12` (the
+  widest and boxiest in the set)
 
-- Large and wide open, lots of white: `eye1`, `eye15`, `eye8`, `eye3`, `eye2`,
-  `eye4`, `eye12`
-- Ordinary almond, a neutral default: `eye10`, `eye13`, `eye6`, `eye9`
-- Narrow, hooded or heavy-lidded, sleepy: `eye16`, `eye11`, `eye19`, `eye5`,
-  `eye7`
-- Angled and squinting, an intense or stern look: `eye17`, `eye18`, `eye14`
+**eye** — the sclera is drawn either bright white (reads cartoonish) or a soft
+off-white (reads more natural); it is a real difference at a glance.
 
-**eyebrow**
+- Big and wide open, plenty of white: `eye1` (huge, squared-off top — the most
+  cartoonish), `eye8` (large angular hexagon), `eye15` (large but a thin
+  outline and a tiny pupil, reads startled), `eye2` (a plain dome), `eye4`
+  (pointed almond, large pupil), `eye12`
+- Ordinary almond, the neutral default: `eye10`, `eye13`, `eye6`, `eye9`
+- Narrow, heavy-lidded, sleepy: `eye16` (a thick lid bar over a sliver of
+  white), `eye19`, `eye14`, `eye5` (tall and narrow with an unusual VERTICAL
+  pupil)
+- Angled and squinting, stern or intense: `eye17` (sharp angular wedge, the
+  hardest look in the set), `eye18`
+- Drawn with the lid CUTTING ACROSS the eye, which reads as half-closed however
+  big the shape underneath is: `eye3` (a full circle with a straight lid across
+  the top), `eye11`
+- `eye7` is a pure horizontal bar with no curve at all. It is a deliberate
+  deadpan/slit look, not a narrow eye — do not reach for it just because the
+  subject's eyes are small
 
-- Thick and heavy: `eyebrow8`, `eyebrow14`, `eyebrow7`, `eyebrow1`, `eyebrow10`,
-  `eyebrow6`
-- Medium: `eyebrow15`, `eyebrow5`, `eyebrow9`, `eyebrow16`, `eyebrow18`,
-  `eyebrow20`, `eyebrow12`
-- Thin and fine: `eyebrow3`, `eyebrow13`, `eyebrow11`, `eyebrow19`, `eyebrow2`,
-  `eyebrow17`
-- Flat, almost no arch: `eyebrow19`, `eyebrow6`, `eyebrow13`, `eyebrow3`
-- Clearly arched or peaked: `eyebrow5`, `eyebrow9`, `eyebrow4`, `eyebrow17`
-- Sloping down toward the outer end, a stern set: `eyebrow1`, `eyebrow12`,
-  `eyebrow2`, `eyebrow11`
+**eyebrow** — thickness first, then arch.
 
-**nose** — mostly a matter of how much is drawn. Read it off the photo: how
-wide is the base, are the nostrils visible, is there a bridge line down the
-middle. There is no default here and no group to fall back on — these are five
-genuinely different noses and the photo says which one it is. The list below
-runs narrow to broad; that is the order of the trait, not an order of
-preference.
+- Thick and heavy: `eyebrow8` and `eyebrow14` (the boldest), `eyebrow7`,
+  `eyebrow1`, `eyebrow5` (thick AND strongly arched), `eyebrow12` (thick with
+  angular, notched ends), `eyebrow10` (thick with a wavy underside),
+  `eyebrow6` (a plain thick rectangular slab, no arch at all)
+- Medium: `eyebrow15`, `eyebrow9`, `eyebrow16`, `eyebrow18`, `eyebrow20`
+- Thin and fine: `eyebrow3` (long and sleek, tapering to a point), `eyebrow13`,
+  `eyebrow11`, `eyebrow2` (a thin angular wedge), `eyebrow19` (a thin, almost
+  perfectly straight bar — the flattest option)
+- Distinctly arched or peaked: `eyebrow5` (a rounded arch), `eyebrow4` (a flat
+  bar with a hard chevron PEAK in the middle), `eyebrow9` (a kink toward the
+  inner third), `eyebrow17` (short, and the outer end curls up into a hook —
+  the most unusual shape here, so only when the photo shows it)
 
-- A small hint of a tip, for a neat or narrow nose: `small`, `nose10`,
-  `nose14`, `nose3`, `nose8`
-- A soft squiggle across the bridge, no hard edges: `nose1`, `nose7`
-- One clear side line, an angular or straight profile: `nose2`, `nose4`,
-  `nose9`, `nose13`, `pinocchio`
-- A full outline with visible nostrils, a broad nose with real width at the
-  base: `nose11`, `nose5`
-- Long and tall, drawn with a bridge line running down the middle: `nose6`,
-  `nose12`, `honker`. These fill the center of the face, so they belong to a
-  nose that is genuinely the largest feature on it
+**nose** — read the photo for three things: is there a bridge line down the
+middle, are the nostrils drawn, and how wide is the base. There is no default;
+these are genuinely different noses.
 
-**mouth** — pick the expression first; a neutral or lightly-closed mouth is
-almost always the right choice, since this face appears on every screen in the
-game and a big grin wears badly.
+- Barely drawn — a small curve or bracket, for a neat or narrow nose: `small`
+  and `nose10` (a shallow downward arc), `nose14` (a small squared bracket),
+  `nose8` (a short bridge stub over a small base)
+- A soft horizontal squiggle, no hard edges and no bridge: `nose1`
+- One clear line down ONE SIDE, ending in a hook — an angular or straight
+  profile seen slightly off-centre: `nose2` (long and sloped), `nose13`,
+  `nose9`, `nose4` (the shortest of them), `pinocchio` (a sharp bend, the most
+  protruding)
+- Angular tip with no side line: `nose3`, drawn as a plain V chevron
+- A full base outline with visible NOSTRILS, for a broad fleshy nose: `nose11`,
+  `nose5` (the widest and flattest)
+- Long, with a bridge line running down the middle — these fill the centre of
+  the face, so use them when the nose is genuinely the biggest feature on it:
+  `nose6` (two lines with flaring tips), `honker` (a long narrow tube — long,
+  NOT broad), `nose12` (a bridge line plus the full nostril base — the largest
+  nose in the set), `nose7` (a bridge line over a wide shallow base)
 
-- Closed and neutral: `straight`, `closed`, `mouth5`, `mouth6`, `smile-closed`
-  (`smile-closed` is a slight closed-mouth smile — the safe default for a
-  head shot where the subject is smiling politely)
-- Slightly open, relaxed: `mouth`, `mouth2`, `mouth3`, `mouth4`
-- Open smile showing teeth: `smile`, `smile3`, `mouth7`, `mouth8`
-- Big or unusual expressions, use sparingly: `smile2`, `smile4`, `angry`, `side`
+**mouth** — pick the expression first. A neutral or lightly-closed mouth is
+almost always right: this face appears on every screen in the game and a big
+grin wears badly.
+
+- Closed, neutral: `straight` (a short flat bar, the most minimal), `closed` (a
+  wider flat bar with angled ends, reads stern/pressed), `mouth5` (a soft wavy
+  lip line), `mouth6`, `mouth3` (a closed upward curve — a faint smile),
+  `smile-closed` (a clean upward arc; the safe default when the subject is
+  smiling politely with the mouth shut)
+- Slightly open and relaxed: `mouth2`, `mouth4` (thin slivers with lip lines
+  above and below), `mouth` (a small open oval)
+- Open, showing a plain white gap: `smile` (a broad half-moon), `smile3` (the
+  widest grin in the set)
+- Open with TEETH actually drawn: `mouth7` (a solid band of teeth), `mouth8`
+  (teeth with the gaps between them drawn in)
+- Unusual, use only when the photo really shows it: `smile2` (a small round
+  laughing "O"), `smile4` (angular strokes at the corners), `angry` (a wide
+  wavy open grimace), `side` (a one-sided smirk, strongly asymmetric)
 
 **hair** — match length and texture before you match a style name.
 
-- Bald: `bald` — a bare scalp, whether shaved or naturally so. This is the
-  right id for essentially every bald player; pair it with a `head.shave` alpha
-  (see below) and the shadow does the rest
-- Buzzed, cropped and faded — where most short-haired players land, including
-  anyone whose hairline is high, thinning or edged up but still has hair across
-  the top: `crop`, `crop-fade`, `crop-fade2`, `short-fade`, `short-fade-2`,
-  `tall-fade`, `blowoutFade`, `fauxhawk-fade`
-- `short-bald` is a horseshoe: a bare crown with hair only around the sides and
-  back, drawn hard and unmistakably. It is a specific look rather than a
-  general "less hair" option, so reach for it only when the photo shows exactly
-  that. Anything softer than a bare crown belongs in the buzzed group above
-- Short and straight: `short`, `short2`, `short3`, `parted`, `middle-part`,
-  `shortBangs`, `hair`, `messy-short`
-- Afro and high-top: `afro`, `afro2`, `high`, `juice`
-- Braids and locs: `cornrows`, `dreads`
-- Curly: `curly`, `curly2`, `curly3`, `curlyFade1`, `curlyFade2`
-- Spiked or styled up: `spike`, `spike2`, `spike3`, `spike4`, `faux-hawk`
-- Long or shaggy: `longHair`, `shaggy1`, `shaggy2`, `emo`, `messy` — and ONLY
-  for these set `hairBg` to `longHair` or `shaggy`; everything above keeps
-  `hairBg: none`
+- Bald: `bald` — a bare scalp. The right id for essentially every bald player;
+  pair it with a `head.shave` alpha (see below) and the shadow does the rest
+- Shaved almost to the skin, scalp clearly showing through: `short-fade`
+  (lightest), `short-fade-2`. These sit between `bald` and a buzz cut and are
+  the right answer for a very close crop
+- Buzzed and faded, a smooth short cap with shorter sides: `crop` (no fade
+  contrast at all), `crop-fade`, `crop-fade2`, `spike4`, `curlyFade1`,
+  `curlyFade2`
+- Short and smooth: `short` (a plain cap with a straight hairline — the
+  neutral default), `short2` (a slight quiff at the front), `parted` (a side
+  part), `middle-part` (a centre part with two lobes), `hair` (tousled, with a
+  peak in the fringe)
+- Short and TEXTURED rather than smooth — still short, but drawn bumpy or
+  spiky: `short3` (short curls round the temples), `messy-short` (short but
+  strongly spiked all over), `blowoutFade` (tufted on top, faded sides),
+  `shortBangs` (a jagged fringe of bangs low over the eyebrows)
+- Flat-top / box — a tall block of hair with a flat top and hard faded sides.
+  A very specific silhouette, unmistakable when it is right and badly wrong
+  when it is not: `high` (a clean rectangle), `juice` (the same with a stepped,
+  slanted front), `tall-fade` (a shorter box)
+- Afro: `afro2` is the real one — big, wide and textured. `afro` is a SMOOTH
+  rounded helmet with a clean outline, closer to a moderate rounded cut than to
+  a pick-out afro
+- Braids and locs: `cornrows` (clear vertical rows on top, faded sides),
+  `dreads` (short sides with a BUNDLE of locs tied up on top — not long hanging
+  locs)
+- Curly, medium volume: `curly`, `curly2` (the loosest and biggest), `curly3`
+- Raised in the middle: `faux-hawk` (soft, sides not shaved), `fauxhawk-fade`
+  (a hard fade line at the sides)
+- Spiky: `spike` (a row of sharp vertical spikes over short sides), `spike2`,
+  `spike3` (bushiest)
+- Long or shaggy: `longHair` (falls past the ears and frames the face),
+  `shaggy1`, `shaggy2` (shorter and choppier), `messy` (chunky pieces over the
+  forehead), `emo` (a long fringe swept over one eyebrow) — and ONLY for these
+  set `hairBg` to `longHair` or `shaggy`; everything above keeps `hairBg: none`
+
+`hairBg` draws its mass INDEPENDENTLY of the hair id, so setting it on a short
+cut adds hair behind the head that the cut in front does not explain — it comes
+out looking like a mullet. That is the only thing to be careful about here:
+`longHair` hangs to about jaw level, `shaggy` is a little shorter and rougher.
+
+**facialHair** — the families, since 83 ids is far more than the number of
+actual looks.
+
+- Full beard, mustache included, heaviest first: `beard1`, `beard3`, `beard5`,
+  `beard2`, `beard6`, `beard-point` (drawn to a point at the chin), `beard4`
+  (the lightest — patchy and jaw-hugging)
+- Circle beard — mustache joined to a chin patch, nothing on the jaw:
+  `fullgoatee` (tightest) through `fullgoatee2`, `fullgoatee3`, `fullgoatee4`,
+  `fullgoatee5` to `fullgoatee6` (fullest, reaching the neck)
+- Chin only, no mustache, smallest first: `soul` (a soul patch — a small
+  triangle under the lip), `goatee9`, `goatee10`, `goatee7`, `goatee3`,
+  `goatee17`, `goatee8`, `goatee2` (a narrow vertical strip), `goatee1`,
+  `goatee5`, `goatee18`, `goatee4`
+- Mustache only: `mustache1` (solid and full), `mustache-thin` (drawn as sparse
+  hatch marks — reads patchy rather than thin)
+- Patchy chin growth, drawn as hatch marks rather than a solid shape:
+  `goatee-thin`, `goatee-thin-stache`
+- Jawline strip: `chin-strap` (no mustache), `chin-strapStache` (with one)
+- Chin curtain, jaw and under-chin with the upper lip left BARE — a Lincoln:
+  `honest-abe`. `honest-abe-stache` adds the mustache and stops being one
+- Below the jaw only, nothing on the face itself: `neckbeard`, `neckbeard2`
+- Sideburns alone, longest first: `sideburns1`, `sideburns2`, `sideburns3`
+- Mutton chops — wide sideburns running down the jaw toward the mouth:
+  `mutton`, `logan` (the biggest), and the `muttonGoatee*` / `loganGoatee*`
+  variants which add a chin patch
+- Horseshoe / handlebar — a mustache with two strips running down past the
+  corners of the mouth: `harley1`, `harley2` (adds a soul patch), `harly3`
+  (adds a chin patch — note the spelling, it is `harly3`, not `harley3`)
+- Box goatee — a hard rectangular block around the mouth and chin: `wilt`
+
+The `-stache`, `Stache`, `SB1`/`SB2`/`-sb-1`/`-sb-2` and `soul` suffixes add a
+mustache, sideburns (1 = long, 2 = short) or a soul patch to the base shape.
+**The absence of a suffix does not mean the absence of a mustache** — several
+plain ids (`goatee11`, `goatee12`, `goatee15`, `goatee16`, `goatee19`,
+`goatee6`) are drawn with one anyway. If the subject has no mustache, prefer an
+id from the "chin only" list above, which is the one that has actually been
+checked.
+
+**eyeLine** is NOT an eyelid crease, whatever the name suggests — it is a set of
+age and detail marks around the eye, and `none` is the neutral default. Adding
+one to a young face ages it for no reason.
+
+- `line1` — a small vertical furrow at the inner end of each brow (a frown line)
+- `line2` — crow's feet, radiating from the outer corners
+- `line3` — a long curve under each eye; pronounced eye bags
+- `line4` — a shorter, tighter version of the same, subtle
+- `line5` — long lines running from beside the nose down across the cheeks
+- `line6` — a fine line tucked under the lower edge of each brow
+
+**smileLine** — the nasolabial folds either side of the mouth, scaled by
+`smileLine.size`. `line1` and `line3` are parentheses `( )` curving away from
+the mouth, `line3` the wider and rounder; `line2` is the same shape drawn
+angular, `< >`. `line4` is drawn the OTHER WAY ROUND, `> <`, bowing in toward
+the mouth — it reads as dimples rather than as age, so do not treat it as
+interchangeable with the rest.
+
+**miscLine** — one slot, four unrelated things.
+
+- Forehead lines, least to most: `forehead3` (a faint short line), `forehead4`
+  (one long line), `forehead2` (two lines), `forehead1` (a Y-shaped furrow
+  between the brows), `forehead5` (a line plus that furrow — the most aged)
+- `chin1` — a shallow crease under the lower lip
+- `chin2` — a short VERTICAL line below the mouth: a cleft chin. This is a real
+  identifying feature, so use it when the photo shows one
+- `freckles1` — dotted freckle patches on the cheeks. `freckles2` is drawn as
+  diagonal hatch marks and reads more like scarring than freckles
+- `blush` — rosy patches on both cheeks; not something a player photo calls for
+
+**glasses** — two frames, in colors.
+
+- `glasses1-primary`, `glasses1-secondary` — THICK, heavy, rounded frames
+- `glasses2-black` — thin rectangular frames in plain black
+- `glasses2-primary`, `glasses2-secondary` — the same thin frames tinted from
+  the team's colors, which can come out bright blue or red. `glasses2-black` is
+  the safe choice for ordinary glasses; there is no `glasses1-black`
+- `facemask` is a translucent protective mask over the WHOLE face, not eyewear
+
+**accessories** — `hat`, `hat2` and `hat3` are the same team-colored cap with
+different brim undersides, and they cover the crown while leaving the hair at
+the sides showing, so a cap is not a substitute for getting the hair right.
+`headband` sits at the hairline and `headband-high` an inch above it.
+`eye-black` is two black bars under the eyes. `santa-hat` is what it sounds
+like.
 
 ## Allowed numbers
 
@@ -322,10 +462,12 @@ If the scalp should read as cleanly shaved, stay at `0.35` or below.
    different. Use the groups above: pick the group the photo puts you in, then
    any id inside it. Don't agonise between neighbours in the same group — they
    barely differ, and the group is the part that carries the resemblance.
-6. **Lines.** `smileLine` and `miscLine` are the age dial. Young player → both
-   `none` or a small `smileLine`. 30s → `smileLine` around 1.0. Veteran →
-   `smileLine` 1.5+ plus a `forehead*` line. `freckles1`/`freckles2` only if the
-   photo clearly shows freckles.
+6. **Lines.** `smileLine`, `eyeLine` and `miscLine` are the age dial, and all
+   three default to `none`. Young player → all `none`, or a small `smileLine`.
+   30s → `smileLine` around 1.0. Veteran → `smileLine` 1.5+, a `forehead*`
+   line, and `eyeLine` `line2` (crow's feet) or `line3` (eye bags) if the photo
+   shows them. `chin2` is a cleft chin and `freckles1` freckles — both are
+   identifying features worth setting when you can see them, at any age.
 7. **Accessories/glasses only if the player actually wears them in games.** A
    headband, yes. Glasses from a press-conference photo, no. Never set `facemask`
    unless you can see one.
@@ -340,9 +482,12 @@ because I can see and correct a generic.
 - Pick the **middle of the group**, not an extreme, whenever you're unsure which
   group applies. A neutral face that's slightly wrong everywhere reads better
   than one with a hooked nose and squinting eyes it doesn't have.
-- Where a slot is genuinely unreadable, use the plain default: `eyeLine: line1`,
+- Where a slot is genuinely unreadable, use the plain default: `eyeLine: none`,
   `miscLine: none`, `glasses: none`, `accessories: none`, `ear.size: 1`,
-  `body.size: 1`, `flip: false`.
+  `body.size: 1`, `flip: false`. (`eyeLine` used to be defaulted to `line1`
+  here, on the assumption that the name meant an eyelid crease. It does not —
+  `line1` is a frown furrow between the brows, and defaulting to it put one on
+  every face in the game.)
 - **Never** guess an accessory, glasses, or facial hair you cannot actually see.
   Adding one that isn't there is the most visible kind of error.
 - Get skin tone, hair color, hair length and the stubble level right even on a
