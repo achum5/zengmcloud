@@ -3633,6 +3633,76 @@ const daySeriesPhrase = (
 	};
 };
 
+// What the marquee playoff game sets up, for the day wrap. On a one-game day -
+// every Finals game, and most of the later rounds - the wrap's series roundup
+// skips the marquee (it is already the story) and so had nothing at all to say:
+// the whole wrap was a headline and one sentence of score. This is the beat
+// that was missing, and it is phrased apart from the game recap's own stakes
+// sentence so the two blocks do not read as one repeated twice.
+const dayStakesPhrase = (
+	g: RecapGame,
+	rng: () => number,
+): string | undefined => {
+	const s = g.series;
+	if (!s || typeof s.bestOf !== "number" || s.bestOf <= 1) {
+		return undefined;
+	}
+	const shape = analyzeShape(g);
+	const w = theNick(shape.winner);
+	const l = theNick(shape.loser);
+	const winnerIsHome = shape.winner.abbrev === s.homeAbbrev;
+	const wAfter = (winnerIsHome ? s.homeWon : s.awayWon) + 1;
+	const lAfter = winnerIsHome ? s.awayWon : s.homeWon;
+	const need = Math.floor(s.bestOf / 2) + 1;
+	const nextGame = wAfter + lAfter + 1;
+	const prize = s.round === s.numRounds ? "the title" : "the next round";
+
+	// The series is over; the clinch is the story and the headline has it.
+	if (wAfter >= need) {
+		return undefined;
+	}
+	const winnerNeeds = need - wAfter;
+	const loserNeeds = need - lAfter;
+
+	if (winnerNeeds === 1 && loserNeeds === 1) {
+		return `Game ${nextGame} is for ${prize}.`;
+	}
+	if (winnerNeeds === 1) {
+		return pick(
+			rng,
+			[
+				`One more and ${w} are through; ${l} have no more room.`,
+				`${cap(l)} have to win out from here, starting in Game ${nextGame}.`,
+				`Game ${nextGame} can end it.`,
+			],
+			"dayStakesBrink",
+		);
+	}
+	if (loserNeeds === 1) {
+		return pick(
+			rng,
+			[
+				`${cap(l)} can still finish it in Game ${nextGame}.`,
+				`${cap(w)} are not out of it, but ${l} need only one more.`,
+				`It is still ${poss(l)} series to close out.`,
+			],
+			"dayStakesBehind",
+		);
+	}
+	// numWord on BOTH halves: plural() renders the count as a numeral, and
+	// "the Blizzard need 3 more wins; the Monuments need four" mixed the two
+	// inside one sentence.
+	const wins = (n: number) => `${numWord(n)} ${n === 1 ? "win" : "wins"}`;
+	return pick(
+		rng,
+		[
+			`${cap(w)} need ${numWord(winnerNeeds)} more; ${l} need ${numWord(loserNeeds)}.`,
+			`${cap(w)} are ${wins(winnerNeeds)} from ${prize}, ${l} ${wins(loserNeeds)}.`,
+		],
+		"dayStakesOpen",
+	);
+};
+
 // The day's headline, driven by the single biggest thing that happened -
 // a buzzer-beater, a 45-point night, a playoff clinch, an upset, a rout, a
 // thriller - rather than a fixed "N-game slate" template. Seeded variation keeps
@@ -4747,6 +4817,14 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			}
 			if (seriesBits.length >= 4) {
 				break;
+			}
+		}
+		// Nothing left after the marquee - a one-game day. Say what the marquee
+		// series now hinges on instead of falling silent.
+		if (seriesBits.length === 0) {
+			const stakes = dayStakesPhrase(marquee, rng);
+			if (stakes) {
+				para3.push(stakes);
 			}
 		}
 		if (seriesBits.length > 0) {

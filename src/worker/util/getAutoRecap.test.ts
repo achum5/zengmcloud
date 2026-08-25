@@ -4410,3 +4410,99 @@ describe("plus-minus superlatives", () => {
 		assert.ok(claimed > 0, "the true leader never got the superlative");
 	});
 });
+
+// Every Finals game is a one-game day. The wrap's series roundup skips the
+// marquee, so on those days it had nothing to say at all - a headline and one
+// sentence of score, for the biggest game of the year.
+describe("a one-game playoff day", () => {
+	const finalsGame = (homeWon: number, awayWon: number, gid: number) => {
+		const bos = realisticTeam(
+			{
+				tid: 1,
+				region: "Boston",
+				name: "Celtics",
+				abbrev: "BOS",
+				pts: 104,
+				ptsQtrs: [26, 24, 28, 26],
+				seed: 1,
+			},
+			player({ name: "Paul Pierce", pts: 28, reb: 7, ast: 5 }),
+		);
+		const det = realisticTeam(
+			{
+				tid: 2,
+				region: "Detroit",
+				name: "Pistons",
+				abbrev: "DET",
+				pts: 96,
+				ptsQtrs: [24, 24, 24, 24],
+				seed: 2,
+			},
+			player({ name: "Chauncey Billups", pts: 25, ast: 7 }),
+		);
+		return game({
+			gid,
+			teams: [bos, det],
+			winnerTid: 1,
+			playoffs: true,
+			series: {
+				round: 4,
+				numRounds: 4,
+				bestOf: 7,
+				homeAbbrev: "BOS",
+				awayAbbrev: "DET",
+				homeSeed: 1,
+				awaySeed: 2,
+				homeWon,
+				awayWon,
+			},
+		});
+	};
+
+	test("says what the series now hinges on", () => {
+		// Series states where this win does NOT clinch: the opener, level at 1-1,
+		// level at 2-2, and surviving from 1-3. (3-3 is excluded on purpose - the
+		// winner of Game 7 takes the title, so there are no stakes left to state.)
+		for (const [h, a] of [
+			[0, 0],
+			[1, 1],
+			[2, 2],
+			[1, 3],
+		] as const) {
+			let said = 0;
+			for (let day = 1; day <= 12; day += 1) {
+				const recap = getAutoDayRecap({
+					season: 2008,
+					day,
+					playoffs: true,
+					games: [finalsGame(h, a, 7700 + h * 10 + a)],
+				});
+				if (
+					/need (?:one|two|three|four)|Game \d+ (?:can end it|is for the title)|finish it in Game \d+|have no more room|win out from here|series to close out|wins from the title/.test(
+						recap,
+					)
+				) {
+					said += 1;
+				}
+			}
+			assert.ok(said > 0, `series ${h}-${a}: the wrap never stated the stakes`);
+		}
+	});
+
+	test("a clincher does not get a stakes line - the series is over", () => {
+		for (let day = 1; day <= 12; day += 1) {
+			const recap = getAutoDayRecap({
+				season: 2008,
+				day,
+				playoffs: true,
+				games: [finalsGame(3, 2, 7800)],
+			});
+			assert.ok(
+				!/need (?:one|two|three|four) more|can end it|finish it in Game/.test(
+					recap,
+				),
+				recap,
+			);
+		}
+	});
+});
