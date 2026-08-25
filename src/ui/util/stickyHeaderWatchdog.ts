@@ -125,8 +125,22 @@ export const headerIsDetached = ({
 	// the repair ladder four times in a second, which could never work, because
 	// nothing about the element was wrong. Subtracting the offset asks the only
 	// meaningful question: is the header where sticky would put it?
+	//
+	// EXCEPT WHEN THE OFFSET IS ONLY AN ECHO OF THE SCROLL. A later report from
+	// the same device has the header at -16 with offsetTop 16 AND scrollY 16,
+	// then -283 with both at 283 - and the user watching it ride up out of the
+	// window while this excuse called it healthy and the manual button declared
+	// success. When offsetTop equals scrollY they are one number wearing two
+	// names (a layout viewport pinned to the document top, the visual one
+	// panning inside it - on iOS scrollY tracks the visual viewport), and a
+	// header at minus that number is indistinguishable from one riding the
+	// page. The user's screen says which it is. So the excuse stands only when
+	// the offset says something scrollY does not.
 	const offset = visualOffsetTop();
-	const expected = stickyTop() - (Number.isFinite(offset) ? offset : 0);
+	const offsetIsScrollEcho =
+		Number.isFinite(offset) && Math.abs(offset - scrolled) <= TOLERANCE_PX;
+	const expected =
+		stickyTop() - (Number.isFinite(offset) && !offsetIsScrollEcho ? offset : 0);
 	return top < expected - TOLERANCE_PX;
 };
 

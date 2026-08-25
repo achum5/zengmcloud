@@ -162,6 +162,26 @@ describe("headerIsDetached with the viewports panned apart", () => {
 		);
 	});
 
+	test("an offset that merely echoes scrollY excuses nothing", () => {
+		// The field report this rule is from: headerTop -16 at scrollY 16 with
+		// offsetTop 16 - then -283 with both at 283 - and the user watching the
+		// header ride up out of the window while the old excuse called it
+		// healthy. When the two numbers are one number, a header at minus it is
+		// indistinguishable from one riding the page, and the screen says which.
+		assert.strictEqual(
+			headerIsDetached(
+				deps({ scrollY: 16, headerTop: -16, visualOffsetTop: 16 }),
+			),
+			true,
+		);
+		assert.strictEqual(
+			headerIsDetached(
+				deps({ scrollY: 283, headerTop: -283, visualOffsetTop: 283 }),
+			),
+			true,
+		);
+	});
+
 	test("without an offset the old comparison is unchanged", () => {
 		assert.strictEqual(
 			headerIsDetached(
