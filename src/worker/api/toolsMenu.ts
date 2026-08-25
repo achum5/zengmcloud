@@ -7,6 +7,7 @@ import {
 	applyFaceAgingToLeague,
 	type FaceAgingScope,
 } from "../core/player/applyFaceAgingToLeague.ts";
+import { clearFiledRecaps } from "../core/league/clearFiledRecaps.ts";
 
 const toolsMenu = {
 	autoPlaySeasons: (param: unknown, conditions: Conditions) => {
@@ -28,6 +29,11 @@ const toolsMenu = {
 		const count = await applyFaceAgingToLeague(scope);
 		await toUI("realtimeUpdate", [["playerMovement"]]);
 		return count;
+	},
+	clearFiledRecaps: async () => {
+		const counts = await clearFiledRecaps();
+		await toUI("realtimeUpdate", [["notes"]]);
+		return counts;
 	},
 	resetDb: async (param: unknown, conditions: Conditions) => {
 		const response = await toUI("confirmDeleteAllLeagues", [], conditions);

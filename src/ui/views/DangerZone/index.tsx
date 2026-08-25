@@ -3,6 +3,7 @@ import { PHASE, WEBSITE_ROOT } from "../../../common/constants.ts";
 import type { FaceAgingScope } from "../../../worker/core/player/applyFaceAgingToLeague.ts";
 import type { View } from "../../../common/types.ts";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
+import { confirm } from "../../util/confirm.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { useLocal } from "../../util/local.ts";
 import { showNotification } from "../../util/showNotification.ts";
@@ -19,6 +20,7 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 
 	const [faceAgingScope, setFaceAgingScope] = useState<FaceAgingScope>("all");
 	const [agingFaces, setAgingFaces] = useState(false);
+	const [clearingRecaps, setClearingRecaps] = useState(false);
 
 	return (
 		<>
@@ -214,6 +216,56 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 							{agingFaces ? "Working..." : "Apply aging"}
 						</button>
 					</div>
+
+					<h2>Recaps</h2>
+
+					<p>
+						Automatic recaps always use the current generator, but a recap you
+						filed with the AI or wrote yourself overrides it. This deletes every
+						filed game and day recap in the league.
+					</p>
+
+					<button
+						type="button"
+						className="btn btn-light-bordered mb-5"
+						disabled={clearingRecaps}
+						onClick={async () => {
+							const proceed = await confirm(
+								"Delete every filed game and day recap in this league? The automatic recaps will show instead. This cannot be undone.",
+								{
+									title: "Delete filed recaps",
+									// Opens with Cancel focused: this throws away text the
+									// user wrote or paid an AI to write, and there is no
+									// undo.
+									danger: true,
+									okText: "Delete",
+								},
+							);
+							if (!proceed) {
+								return;
+							}
+
+							setClearingRecaps(true);
+							try {
+								const { games, days } = await toWorker(
+									"toolsMenu",
+									"clearFiledRecaps",
+									undefined,
+								);
+								showNotification({
+									text:
+										games === 0 && days === 0
+											? "No filed recaps to delete - every box score was already using the automatic recap."
+											: `Deleted ${games} game recap${games === 1 ? "" : "s"} and ${days} day recap${days === 1 ? "" : "s"}.`,
+									type: "success",
+								});
+							} finally {
+								setClearingRecaps(false);
+							}
+						}}
+					>
+						{clearingRecaps ? "Working..." : "Delete filed recaps"}
+					</button>
 
 					<h2>Auto save</h2>
 
