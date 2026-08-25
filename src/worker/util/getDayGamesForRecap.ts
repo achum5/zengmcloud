@@ -167,6 +167,11 @@ export type RecapGame = {
 		mvp?: string;
 		dunk?: { winner?: string; players: string[] };
 		three?: { winner?: string; players: string[] };
+		// The two squads' real names ("Team LeBron", "Eastern Conference"). The
+		// game record's own team rows are the sentinel All-Star tids, which
+		// getTeamInfoBySeason answers with region "All-Stars" and name "1"/"2" -
+		// so a recap built from those read "1 beat 2 in the All-Star Game".
+		teamNames?: [string, string];
 	};
 };
 
@@ -558,6 +563,7 @@ export const getDayGamesForRecap = async ({
 			mvp: allStars.mvp?.name,
 			dunk: contest(allStars.dunk),
 			three: contest(allStars.three),
+			teamNames: allStars.teamNames,
 		};
 	};
 
@@ -1119,6 +1125,7 @@ const createAutoRecapContext = async (season: number) => {
 			mvp: allStars.mvp?.name,
 			dunk: contest(allStars.dunk),
 			three: contest(allStars.three),
+			teamNames: allStars.teamNames,
 		};
 	};
 

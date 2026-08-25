@@ -2913,26 +2913,147 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 	const loser = winner === home ? away : home;
 	const as = game.allStar ?? {};
 	const star = bestOf(winner.players) ?? bestOf(loser.players);
+	const loserStar = bestOf(loser.players);
+
+	// The squads' REAL names. game.teams carries the sentinel All-Star tids,
+	// which resolve to region "All-Stars" and name "1"/"2" - so this used to
+	// read "1 beat 2 155-148 in the All-Star Game".
+	const [name0, name1] = as.teamNames ?? [];
+	const squad = (t: RecapTeam): string => {
+		const real = t === home ? name0 : name1;
+		if (real && real !== "") {
+			return real;
+		}
+		// No stored names (an imported league, an older save): fall back to
+		// something that at least reads as a side rather than a digit.
+		return t === home ? "the home side" : "the visitors";
+	};
+	const w = squad(winner);
+	const l = squad(loser);
+	const total = winner.pts + loser.pts;
 
 	const headline = as.mvp
-		? `${as.mvp} takes home All-Star Game MVP`
-		: `The stars come out for the All-Star Game`;
+		? pick(
+				rng,
+				[
+					`${as.mvp} takes home All-Star Game MVP`,
+					`${as.mvp} is the All-Star Game MVP`,
+					`${as.mvp} steals the show at the All-Star Game`,
+				],
+				"allStarHeadlineMvp",
+			)
+		: pick(
+				rng,
+				[
+					"The stars come out for the All-Star Game",
+					`${w} take the All-Star Game`,
+				],
+				"allStarHeadline",
+			);
 
 	const sentences: string[] = [];
 	sentences.push(
-		`${nick(winner)} beat ${nick(loser)} ${winner.pts}-${loser.pts} in the All-Star Game${
-			star ? `, with ${star.name} pouring in ${star.pts}` : ""
-		}.`,
+		pick(
+			rng,
+			[
+				`${w} beat ${l} ${winner.pts}-${loser.pts} in the All-Star Game.`,
+				`It was ${w} over ${l}, ${winner.pts}-${loser.pts}, in the All-Star Game.`,
+				`${w} came out on top of ${l} ${winner.pts}-${loser.pts} in the All-Star Game.`,
+			],
+			"allStarResult",
+		),
 	);
+
+	// The MVP is the story, so lead with HIS line when he can be found in the
+	// box score - the old version named whoever the impact score liked best and
+	// left the headline's MVP unexplained.
+	const named = new Set<string>();
+	const mvpLine = as.mvp
+		? [...winner.players, ...loser.players].find((p) => p.name === as.mvp)
+		: undefined;
+	if (mvpLine) {
+		named.add(mvpLine.name);
+		sentences.push(
+			pick(
+				rng,
+				[
+					`${mvpLine.name} had ${statPhrase(mvpLine)}.`,
+					`${mvpLine.name} finished with ${statPhrase(mvpLine)}.`,
+					`The award went to ${mvpLine.name}, on ${statPhrase(mvpLine)}.`,
+				],
+				"allStarMvpLine",
+			),
+		);
+	} else if (star) {
+		named.add(star.name);
+		sentences.push(`${star.name} poured in ${plural(star.pts, "point")}.`);
+	}
+
+	// One more line from each side, so the piece names more than one man.
+	const other = [...winner.players]
+		.sort((a, b) => b.pts - a.pts)
+		.find((p) => !named.has(p.name) && p.pts >= 15);
+	if (other) {
+		named.add(other.name);
+		sentences.push(`${other.name} added ${statPhrase(other, 1)} for ${w}.`);
+	}
+	if (loserStar && !named.has(loserStar.name) && loserStar.pts >= 15) {
+		sentences.push(
+			pick(
+				rng,
+				[
+					`${loserStar.name} led ${l} with ${statPhrase(loserStar, 1)}.`,
+					`The best of it for ${l} was ${statPhrase(loserStar, 1)} from ${loserStar.name}.`,
+				],
+				"allStarLoserStar",
+			),
+		);
+	}
+
+	// Nobody plays defense in this game, and the scoreboard says so.
+	if (total >= 280) {
+		sentences.push(
+			pick(
+				rng,
+				[
+					`Defense was optional, as usual: ${total} points between them.`,
+					`The two sides combined for ${total} points.`,
+				],
+				"allStarTotal",
+			),
+		);
+	}
+
+	// The weekend's contests, with the field named - the runners-up were in the
+	// data all along and never reached the page.
 	const extras: string[] = [];
+	const field = (c: { winner?: string; players: string[] } | undefined) => {
+		if (!c?.winner) {
+			return "";
+		}
+		const rest = c.players.filter((p) => p !== c.winner);
+		return rest.length > 0 ? ` over ${naturalList(rest)}` : "";
+	};
 	if (as.dunk?.winner) {
-		extras.push(`${as.dunk.winner} won the dunk contest`);
+		extras.push(`${as.dunk.winner} won the dunk contest${field(as.dunk)}`);
 	}
 	if (as.three?.winner) {
-		extras.push(`${as.three.winner} took the three-point shootout`);
+		extras.push(
+			`${as.three.winner} took the three-point shootout${field(as.three)}`,
+		);
 	}
 	if (extras.length > 0) {
-		sentences.push(`Over the weekend, ${naturalList(extras)}.`);
+		// Joined with a semicolon, not naturalList: each clause can already end
+		// in its own "A and B" field list, and "won the dunk contest over Zach
+		// LaVine and Derrick Jones Jr. and Stephen Curry took the three-point
+		// shootout" runs the two together.
+		sentences.push(
+			`${pick(
+				rng,
+				["Over the weekend", "Elsewhere on the weekend", "On the undercard"],
+				"allStarExtras",
+			)}, ${extras.join("; ")}.`,
+		);
 	}
 
 	return `**${headline}**\n\n${sentences.join(" ")}`;

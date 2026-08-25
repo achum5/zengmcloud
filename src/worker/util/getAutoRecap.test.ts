@@ -4506,3 +4506,124 @@ describe("a one-game playoff day", () => {
 		}
 	});
 });
+
+// The All-Star recap had no test at all, and was naming the two squads "1" and
+// "2" - the sentinel All-Star tids resolve to region "All-Stars", name "1"/"2",
+// and the real squad names were never carried into the recap payload.
+describe("the All-Star Game", () => {
+	const allStarGame = (
+		gid: number,
+		extra: Partial<NonNullable<RecapGame["allStar"]>> = {},
+	): RecapGame => {
+		const east = realisticTeam(
+			{
+				tid: -1,
+				region: "All-Stars",
+				name: "1",
+				abbrev: "ASG",
+				pts: 155,
+				ptsQtrs: [40, 38, 39, 38],
+			},
+			player({ name: "LeBron James", pts: 34, reb: 8, ast: 9 }),
+		);
+		const west = realisticTeam(
+			{
+				tid: -2,
+				region: "All-Stars",
+				name: "2",
+				abbrev: "ASG",
+				pts: 148,
+				ptsQtrs: [37, 37, 37, 37],
+			},
+			player({ name: "Kevin Durant", pts: 31, reb: 6, ast: 4 }),
+		);
+		return game({
+			gid,
+			teams: [east, west],
+			winnerTid: -1,
+			allStar: {
+				mvp: "LeBron James",
+				teamNames: ["Team LeBron", "Team Giannis"],
+				dunk: {
+					winner: "Aaron Gordon",
+					players: ["Aaron Gordon", "Zach LaVine", "Derrick Jones Jr."],
+				},
+				three: {
+					winner: "Stephen Curry",
+					players: ["Stephen Curry", "Devin Booker"],
+				},
+				...extra,
+			},
+		});
+	};
+
+	test("names the squads, never '1' and '2'", () => {
+		for (let gid = 1; gid <= 30; gid += 1) {
+			const recap = getAutoRecap(allStarGame(gid));
+			assert.ok(recap.includes("Team LeBron"), recap);
+			assert.ok(recap.includes("Team Giannis"), recap);
+			assert.ok(!/\b1 beat 2\b|\bAll-Stars 1\b(?! )/.test(recap), recap);
+			assert.ok(!/\b(?:beat|over|of) 2\b/.test(recap), recap);
+		}
+	});
+
+	test("explains the MVP instead of just naming him", () => {
+		let withLine = 0;
+		for (let gid = 1; gid <= 30; gid += 1) {
+			const recap = getAutoRecap(allStarGame(gid));
+			assert.ok(/LeBron James/.test(recap), recap);
+			if (/34 points/.test(recap)) {
+				withLine += 1;
+			}
+		}
+		assert.ok(withLine > 0, "the MVP's line never reached the page");
+	});
+
+	test("names the contest fields, not only the winners", () => {
+		let named = 0;
+		for (let gid = 1; gid <= 30; gid += 1) {
+			const recap = getAutoRecap(allStarGame(gid));
+			if (/Zach LaVine/.test(recap) && /Devin Booker/.test(recap)) {
+				named += 1;
+			}
+			// Each contest clause can end in its own "A and B" field, so joining
+			// the two with "and" ran them together: "...over Zach LaVine and
+			// Derrick Jones Jr. and Stephen Curry took the three-point shootout".
+			assert.ok(
+				!/Jr\. and Stephen Curry took/.test(recap),
+				`the two contests run together: ${recap}`,
+			);
+		}
+		assert.ok(named > 0, "the contest runners-up never reached the page");
+	});
+
+	test("every line about a player names him", () => {
+		for (let gid = 1; gid <= 30; gid += 1) {
+			const recap = getAutoRecap(allStarGame(gid));
+			// "31 points was the best of it for Team Giannis" named nobody. The
+			// sentence must carry a player's name, whatever shape it takes.
+			for (const sentence of recap.split(/(?<=[!.?]) /)) {
+				if (!/best of it for/.test(sentence)) {
+					continue;
+				}
+				assert.ok(
+					/LeBron James|Kevin Durant|Role|Bench/.test(sentence),
+					`a stat line with no player: ${sentence}`,
+				);
+			}
+			// And the award goes to a person, not to a stat line.
+			assert.ok(
+				!/award went to \d+ points/.test(recap),
+				`the award went to a stat line: ${recap}`,
+			);
+		}
+	});
+
+	test("survives a league with no stored squad names", () => {
+		for (let gid = 1; gid <= 10; gid += 1) {
+			const recap = getAutoRecap(allStarGame(gid, { teamNames: undefined }));
+			assert.ok(!/\b1 beat 2\b/.test(recap), recap);
+			assert.ok(recap.includes("All-Star Game"), recap);
+		}
+	});
+});
