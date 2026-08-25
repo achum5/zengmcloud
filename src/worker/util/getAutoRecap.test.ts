@@ -1569,8 +1569,13 @@ describe("getAutoDayRecap", () => {
 				],
 			},
 		});
-		assert.ok(/still perfect at 6-0/.test(recap), recap);
-		assert.ok(!/hold a narrow lead/.test(recap), recap);
+		// Either phrasing of "unbeaten"; the pool rotates so a two-conference
+		// league doesn't render the same clause twice in one sentence.
+		assert.ok(
+			/still perfect at 6-0|nobody has beaten the Heat yet, 6-0/.test(recap),
+			recap,
+		);
+		assert.ok(!/hold a narrow lead|only just/.test(recap), recap);
 		// KG's 23-18-8 in a loss makes the wrap.
 		assert.ok(/Kevin Garnett'?s.*losing effort/.test(recap), recap);
 	});
@@ -4202,5 +4207,115 @@ describe("the day wrap does not tell a story twice", () => {
 				);
 			}
 		}
+	});
+});
+
+// A two-conference league renders the standings clause twice in one sentence,
+// so the two halves have to be able to differ.
+describe("the standings sentence", () => {
+	const conf = (
+		name: string,
+		leader: [string, number, number],
+		second: [string, number, number],
+	) => ({
+		name,
+		teams: [
+			{
+				rank: 1,
+				abbrev: leader[0].slice(0, 3).toUpperCase(),
+				region: leader[0],
+				name: leader[0],
+				won: leader[1],
+				lost: leader[2],
+				gb: 0,
+			},
+			{
+				rank: 2,
+				abbrev: second[0].slice(0, 3).toUpperCase(),
+				region: second[0],
+				name: second[0],
+				won: second[1],
+				lost: second[2],
+				gb: 3,
+			},
+		],
+	});
+
+	test("both conferences are not described in identical words", () => {
+		const games = [
+			mkGame(
+				6100,
+				"Heat",
+				"Pacers",
+				104,
+				96,
+				true,
+				player({ name: "Dwyane Wade", pts: 28, reb: 5, ast: 6 }),
+				player({ name: "Danny Granger", pts: 21, reb: 6 }),
+			),
+			mkGame(
+				6101,
+				"Lakers",
+				"Kings",
+				110,
+				99,
+				true,
+				player({ name: "Kobe Bryant", pts: 33, reb: 5, ast: 4 }),
+				player({ name: "Mike Bibby", pts: 20, ast: 7 }),
+			),
+		];
+		let sawBoth = 0;
+		for (let day = 20; day < 44; day += 1) {
+			const recap = getAutoDayRecap({
+				season: 2009,
+				day,
+				playoffs: false,
+				games,
+				standings: {
+					day,
+					confs: [
+						conf("Eastern Conference", ["Heat", 30, 12], ["Celtics", 27, 15]),
+						conf("Western Conference", ["Lakers", 32, 10], ["Spurs", 29, 13]),
+					],
+				},
+			});
+			// Whitespace normalized first: the recap has paragraph breaks, and
+			// splitting on "end-of-sentence + single space" runs two paragraphs
+			// together into one "sentence".
+			const line = recap
+				.replaceAll(/\s+/g, " ")
+				.split(/(?<=[!.?]) /)
+				.find((s) => s.includes("Eastern Conference"));
+			if (!line || !line.includes("Western Conference")) {
+				continue;
+			}
+			sawBoth += 1;
+			// Drop the rotating opener ("In the standings, ", "The bigger
+			// picture: "); it sits on the first half only and would make two
+			// identical clauses compare unequal.
+			// Defaulted, not narrowed: assert.ok is untyped here (node:assert has no
+			// types in this project), so it cannot narrow string | undefined.
+			const [east = "", west = ""] = line
+				.replace(/^[^,:]+[,:] /, "")
+				.split(" and ");
+			assert.ok(east !== "" && west !== "", line);
+			// Strip the names and records; what's left is the frame. The trailing
+			// period has to go too - it is only on the second half, and left in it
+			// makes two identical frames compare unequal.
+			const frame = (s: string) =>
+				s
+					.replace(/the [A-Z][\w ]+|\(\d+-\d+\)|\d+/g, "")
+					.replace(/[\s.]+$/, "")
+					.trim();
+			assert.notEqual(
+				frame(east),
+				frame(west),
+				`both conferences use the same frame: ${line}`,
+			);
+		}
+		assert.ok(
+			sawBoth > 0,
+			"the standings sentence never named both conferences",
+		);
 	});
 });

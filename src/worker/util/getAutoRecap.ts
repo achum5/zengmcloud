@@ -3349,15 +3349,46 @@ const conferencePictureSentence = (
 		// Cavaliers (47-4) lead the Eastern Conference" in a paragraph that has
 		// said "the Cavaliers" four times reads like it was pasted in.
 		const who = `the ${leader.name} (${leader.won}-${leader.lost})`;
+		// Rotated, because a two-conference league renders this branch TWICE in
+		// one sentence and the fixed phrasing made both halves identical: "the
+		// Heat (30-12) lead the Eastern Conference by three games and the Lakers
+		// (32-10) lead the Western Conference by two games."
+		//
 		// An unbeaten leader is the story itself, not a "narrow lead".
 		if (leader.lost === 0) {
 			bits.push(
-				`the ${leader.name} are still perfect at ${leader.won}-0 atop the ${conf.name}`,
+				pick(
+					rng,
+					[
+						`the ${leader.name} are still perfect at ${leader.won}-0 atop the ${conf.name}`,
+						`nobody has beaten the ${leader.name} yet, ${leader.won}-0 and top of the ${conf.name}`,
+					],
+					"dayStandingsPerfect",
+				),
 			);
 		} else if (second && second.gb >= 1) {
-			bits.push(`${who} lead the ${conf.name} by ${gbText(second.gb)}`);
+			bits.push(
+				pick(
+					rng,
+					[
+						`${who} lead the ${conf.name} by ${gbText(second.gb)}`,
+						`${who} are ${gbText(second.gb)} clear at the top of the ${conf.name}`,
+						`${gbText(second.gb)} separate ${who} from the rest of the ${conf.name}`,
+					],
+					"dayStandingsLead",
+				),
+			);
 		} else if (second) {
-			bits.push(`${who} hold a narrow lead in the ${conf.name}`);
+			bits.push(
+				pick(
+					rng,
+					[
+						`${who} hold a narrow lead in the ${conf.name}`,
+						`${who} are top of the ${conf.name}, but only just`,
+					],
+					"dayStandingsNarrow",
+				),
+			);
 		} else {
 			bits.push(`${who} sit atop the ${conf.name}`);
 		}
