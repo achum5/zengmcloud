@@ -118,7 +118,7 @@ for (const entry of data) {
 				"blocks",
 				/\b(?:finished with|blocked) (\d+) (?:shots at the rim|blocks)\b/g,
 			],
-			["blk", "blocks", /\b(\d+) [A-Z][\w]* blocks\b/g],
+			["blk", "blocks", /\b(\d+) [A-Z]\w* blocks\b/g],
 			["blk", "blocks", /sent back (\d+) shots\b/g],
 			["tov", "turnovers", /forced (\d+) turnovers\b/g],
 			["tp", "threes", /\bmade (\d+) three-pointers\b/g],
@@ -142,7 +142,7 @@ for (const entry of data) {
 
 		// "N players in double figures" must match the count of 10+ scorers.
 		for (const m of text.matchAll(
-			/\b(?:had (\d+) players score in double figures|(\d+) in double figures|(\w+) ([A-Z][\w]*) reached double figures)/g,
+			/\b(?:had (\d+) players score in double figures|(\d+) in double figures|(\w+) ([A-Z]\w*) reached double figures)/g,
 		)) {
 			const raw = m[1] ?? m[2];
 			const words: Record<string, number> = {
