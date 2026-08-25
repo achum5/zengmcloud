@@ -90,17 +90,6 @@ type Deps = {
 	visualOffsetTop: () => number;
 };
 
-// Is the visual-viewport offset just scrollY wearing a second name? True in
-// the pinned-layout pan state AND when a ghost offset mirrors the scroll -
-// and in both, a bar's rect cannot be trusted to excuse anything.
-export const offsetEchoesScroll = (
-	scrolled: number,
-	offset: number | undefined,
-): boolean =>
-	offset !== undefined &&
-	Number.isFinite(offset) &&
-	Math.abs(offset - scrolled) <= TOLERANCE_PX;
-
 // Is the header provably not stuck where it should be?
 //
 // Only answerable while the page is scrolled past the header's resting place: at
@@ -137,22 +126,18 @@ export const headerIsDetached = ({
 	// nothing about the element was wrong. Subtracting the offset asks the only
 	// meaningful question: is the header where sticky would put it?
 	//
-	// EXCEPT WHEN THE OFFSET IS ONLY AN ECHO OF THE SCROLL. A later report from
-	// the same device has the header at -16 with offsetTop 16 AND scrollY 16,
-	// then -283 with both at 283 - and the user watching it ride up out of the
-	// window while this excuse called it healthy and the manual button declared
-	// success. When offsetTop equals scrollY they are one number wearing two
-	// names (a layout viewport pinned to the document top, the visual one
-	// panning inside it - on iOS scrollY tracks the visual viewport), and a
-	// header at minus that number is indistinguishable from one riding the
-	// page. The user's screen says which it is. So the excuse stands only when
-	// the offset says something scrollY does not.
+	// One caveat this excuse cannot answer: when offsetTop happens to EQUAL
+	// scrollY, a header at minus that number is indistinguishable from one
+	// riding the page. A field device sat in exactly that state for days and
+	// the header genuinely was off-screen - but the cause was the layout
+	// viewport itself, expanded past the screen by an overwide element, which
+	// no repair of the ELEMENT can fix (the ladder ran and could not, and the
+	// transform that could was rejected as ugly). That state is now prevented
+	// at the root instead: minimum-scale=1 in index.html makes the expansion
+	// impossible, and the diagnostics name any element that tries. So the
+	// excuse stands, and this stays calm in a state it cannot repair.
 	const offset = visualOffsetTop();
-	const expected =
-		stickyTop() -
-		(Number.isFinite(offset) && !offsetEchoesScroll(scrolled, offset)
-			? offset
-			: 0);
+	const expected = stickyTop() - (Number.isFinite(offset) ? offset : 0);
 	return top < expected - TOLERANCE_PX;
 };
 
@@ -608,8 +593,6 @@ const checkBar = async (bar: Bar, trigger: string) => {
 		return;
 	}
 
-	let tickerConvictedByHeader = false;
-
 	await runExclusive(bar.name, async () => {
 		try {
 			// Before believing the geometry, make sure the standing visual-viewport
@@ -620,12 +603,7 @@ const checkBar = async (bar: Bar, trigger: string) => {
 			// shift from the viewports as they are now either clears it (and the
 			// re-measure comes back healthy) or changes nothing and the real ladder
 			// proceeds.
-			// This check runs behind the scroll watch's debounce (or an explicit
-			// post-settle delay), so it owns the settle call - without asserting
-			// it, the shift's own quiet window races the watchdog's equal-length
-			// one and the resync silently refuses at exactly the moments it is
-			// needed.
-			resyncStickyBarShifts({ assumeSettled: true });
+			resyncStickyBarShifts();
 			if (!bar.detached(element)) {
 				note(bar, element, "repaired", "shift-resync");
 				return;
@@ -646,20 +624,6 @@ const checkBar = async (bar: Bar, trigger: string) => {
 			}
 
 			note(bar, element, "detached", `via=${trigger}`);
-
-			// A header confirmed detached while the offset echoes the scroll
-			// convicts the ticker too. In that state the ticker's own rect swears
-			// it is healthy (it reads exactly its anchor) while the user watches
-			// both bars ride - the same stale compositor state moves them
-			// together, and the header is the only witness whose displacement is
-			// measurable. Flag it now; the repair runs after this ladder so only
-			// one repair disturbs the scroll at a time.
-			if (
-				bar.name === "header" &&
-				offsetEchoesScroll(window.scrollY, window.visualViewport?.offsetTop)
-			) {
-				tickerConvictedByHeader = true;
-			}
 
 			for (const [i, step] of repairSteps.entries()) {
 				await step(element);
@@ -701,13 +665,9 @@ const checkBar = async (bar: Bar, trigger: string) => {
 			// oversized-viewport self-placement has the ticker positioned inline
 			// (see visualViewportHeader.ts), that clearing strips it. Re-derive
 			// placement from the viewports as they are now, whatever the ladder did.
-			resyncStickyBarShifts({ assumeSettled: true });
+			resyncStickyBarShifts();
 		}
 	});
-
-	if (tickerConvictedByHeader) {
-		await forceBarRepair(TICKER_BAR, "header-witness");
-	}
 };
 
 // Both bars, every time. They are checked in sequence rather than concurrently
@@ -718,17 +678,12 @@ const check = async (trigger = "scroll") => {
 	}
 };
 
-const forceBarRepair = async (bar: Bar, via?: string) => {
+const forceBarRepair = async (bar: Bar) => {
 	const element = bar.get();
 	if (!element) {
 		return;
 	}
-	note(
-		bar,
-		element,
-		"forced",
-		`detached=${bar.detached(element)}${via ? ` via=${via}` : ""}`,
-	);
+	note(bar, element, "forced", `detached=${bar.detached(element)}`);
 	const ran = await runExclusive(bar.name, async () => {
 		for (const step of repairSteps) {
 			await step(element);
@@ -738,11 +693,8 @@ const forceBarRepair = async (bar: Bar, via?: string) => {
 		return;
 	}
 	// Same reason as checkBar: the ladder cleared inline `position`, and the
-	// self-placement mode lives in inline styles. Asserting settledness is what
-	// keeps this resync from being refused: the ladder's own scroll nudge just
-	// marked the page churning, and a refusal here is how the manual button
-	// once stripped a working shift and reported the wreckage as done.
-	resyncStickyBarShifts({ assumeSettled: true });
+	// self-placement mode lives in inline styles.
+	resyncStickyBarShifts();
 	// The manual button's whole point is that the user cannot see whether it
 	// worked - at the top of the page a broken bar and a healthy one sit in the
 	// same place. Saying so is the least this can do.
@@ -756,7 +708,7 @@ export const forceHeaderRepair = async () => {
 	// Put the bars back inside the visible viewport first. When the two
 	// viewports have come apart this IS the reset - the ladder below cannot help,
 	// because nothing about the element is wrong.
-	resyncStickyBarShifts({ assumeSettled: true });
+	resyncStickyBarShifts();
 	for (const bar of BARS) {
 		await forceBarRepair(bar);
 	}
@@ -881,8 +833,7 @@ const watch = () => {
 	// First thing on any resume: rebuild both bars' visual-viewport shifts from
 	// the world as it is now. Suspension is exactly when the standing correction
 	// goes stale with no event left to refresh it - see resyncStickyBarShifts.
-	// Asserted settled: the stale-shift trap must be cleared even mid-churn.
-	resyncStickyBarShifts({ assumeSettled: true });
+	resyncStickyBarShifts();
 
 	const timers = CHECK_DELAYS_MS.map((delay) =>
 		setTimeout(() => {
@@ -944,7 +895,7 @@ const rebuildTickerOnResume = () => {
 		}
 		// The rebuild cleared inline `position`; put the self-placement (or the
 		// ordinary shift) straight back rather than waiting for a viewport event.
-		resyncStickyBarShifts({ assumeSettled: true });
+		resyncStickyBarShifts();
 	};
 
 	note(TICKER_BAR, TICKER_BAR.get(), "resume-rebuild");

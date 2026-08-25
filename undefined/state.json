@@ -1,0 +1,26 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:3000",
+      "localStorage": [
+        {
+          "name": "goodIDB",
+          "value": "1"
+        },
+        {
+          "name": "bbgmVersion",
+          "value": "2026.08.25.0158"
+        },
+        {
+          "name": "prevTeamRegionName",
+          "value": "Atlanta Gold Club"
+        },
+        {
+          "name": "bugsnag-anonymous-id",
+          "value": "cmt82d7cr0000337a4mbs91h8"
+        }
+      ]
+    }
+  ]
+}

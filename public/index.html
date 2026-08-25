@@ -3,7 +3,19 @@
 	<head>
 		<meta charset="utf-8" />
 		<title>GAME_NAME</title>
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!-- minimum-scale pins iOS at 1x. Without it, any element that renders wider
+		than the screen - even for one frame - makes iOS expand the layout viewport
+		to fit it and zoom out, PERMANENTLY until the next launch. position:sticky
+		anchors to the layout viewport, so in that state the header and the score
+		ticker sit partly or fully outside the visible screen and "scroll away",
+		which no amount of repair machinery can honestly fix. A field device sat at
+		a 518px-wide viewport on a 440pt screen (scale 0.85 = 440/518) for days
+		because of this. With the scale pinned, overflow just means a momentarily
+		pannable page - the bars stay exactly where sticky puts them. -->
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1, minimum-scale=1"
+		/>
 		<meta name="theme-color" content="#FF7F2A" />
 		<meta name="format-detection" content="telephone=no" />
 		<meta name="color-scheme" content="light dark" />

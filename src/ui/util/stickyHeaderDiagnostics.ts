@@ -77,6 +77,47 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 	const rect = header?.getBoundingClientRect();
 	const vv = window.visualViewport;
 
+	// The deepest element whose right edge sticks out past the screen without
+	// any ancestor clipping it - the kind of element that expands the iOS layout
+	// viewport. Bounded walk; "-" when nothing does.
+	const widestElement = () => {
+		try {
+			const limit = Math.max(window.screen.width, 320);
+			const clips = (el: Element) => {
+				for (let a = el.parentElement; a; a = a.parentElement) {
+					if (getComputedStyle(a).overflowX !== "visible") {
+						return true;
+					}
+				}
+				return false;
+			};
+			let worst: { right: number; desc: string } | undefined;
+			let seen = 0;
+			for (const el of document.querySelectorAll("body *")) {
+				if (seen++ > 4000) {
+					break;
+				}
+				const r = el.getBoundingClientRect();
+				if (r.right > limit + 2 && (!worst || r.right > worst.right)) {
+					if (clips(el)) {
+						continue;
+					}
+					const cls =
+						typeof el.className === "string"
+							? el.className.split(" ").slice(0, 3).join(".")
+							: "";
+					worst = {
+						right: Math.round(r.right),
+						desc: `${el.tagName.toLowerCase()}${cls ? `.${cls}` : ""} right=${Math.round(r.right)} w=${Math.round(r.width)}`,
+					};
+				}
+			}
+			return worst ? worst.desc : "-";
+		} catch {
+			return "(scan failed)";
+		}
+	};
+
 	return {
 		version: window.bbgmVersion,
 		ua: navigator.userAgent,
@@ -127,6 +168,13 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		// gap between its bottom edge and the foot of the layout viewport: zero on
 		// a healthy bar, whatever it drifted by on a broken one.
 		...tickerFields(),
+		// THE ELEMENT THAT BROKE THE VIEWPORT, when one has. iOS expands the
+		// layout viewport to fit anything that renders wider than the screen and
+		// keeps the expansion until the next launch - a field device sat at 518px
+		// on a 440pt screen for days, both sticky bars anchored partly off the
+		// glass. minimum-scale=1 now prevents the expansion, so an overwide
+		// element shows up as a pannable page instead; either way, this names it.
+		widestElement: widestElement(),
 	};
 };
 

@@ -1,50 +1,26 @@
-// Keep both sticky bars inside the part of the page the user can actually see.
+// Keep the bottom ticker inside the part of the page the user can actually see.
 //
-// NOTHING HERE TRUSTS A `visualViewport` NUMBER ON ITS OWN. The ticker's
-// correction is measured against clientHeight and reads no viewport at all;
-// the header's (headerMeasuredShift below) acts only on an offsetTop that
-// scrollY independently corroborates, only at rest, and only by the measured
-// difference. The history of why - five failed viewport-derived builds, a
-// ghost `vv.height`, and then a field report proving the stranded-header state
-// real after all - is told at each function.
+// THE HEADER IS NOT PLACED FROM HERE, AND THE STORY OF WHY IS NOW COMPLETE.
 //
-// The idea was that `position: sticky` sticks to the LAYOUT viewport, so a
-// visual-viewport pan moves what you can see without moving where sticky
-// sticks, parking the header off the top of the screen. One field log seemed to
-// catch exactly that - scale 0.85, a 646-tall visual viewport sitting 406px
-// down a 1052-tall layout viewport, the header measured at -406 - and the
-// header was given `translateY(offsetTop)` to put it back.
+// Five builds of a viewport-derived header correction failed in the field,
+// because `visualViewport` lies on the device that needed them: its height
+// flipped 1052 -> 646 on an idle page, and a correction derived from those
+// numbers once pushed a healthy header a quarter of the way down the screen
+// (translateY(229) on a page scrolled to 229). A sixth build measured instead
+// of derived, corroborated offsetTop against scrollY, and gated itself to
+// rest - and it WORKED, and the owner called the result ugly and asked for it
+// gone, because a header that rides during every scroll and snaps back at
+// every stop is worse to live with than the defect.
 //
-// A later log from the same device, same page, same scale, idle, no keyboard,
-// nothing focused, reports:
-//
-//   281301 header:resume scrollY=0 headerTop=0 vv=1052/1052@0x0.85
-//   300349 header:resume scrollY=0 headerTop=0 vv=1052/1052@0x0.85
-//   325275 header:resume scrollY=0 headerTop=0 vv=646/1052@0x0.85
-//
-// `vv.height` reports 1052 twice and then 646, with innerHeight 1052 throughout
-// and nothing in between. The window did not shrink by 406px on a roster page
-// with nothing focused. Those readings cannot both be true, and 646 is the one
-// that is false - it is a stale keyboard-sized ghost, and the `offsetTop: 406`
-// that comes with it is the same ghost's self-consistent other half
-// (406 + 646 = 1052).
-//
-// So the -406 that justified the header shift was never proven a pan - it was
-// equally this ghost - and the same log shows the header carrying
-// `translateY(229px)` on a page scrolled to 229, a header pushed a quarter of
-// the way down the screen by a number that was never corroborated. Five builds
-// of a viewport-derived correction failed in the field this way, and for a
-// while the header was left alone entirely, on the claim that the stranded
-// state had never actually been reported.
-//
-// It has been now, unambiguously: same device, at rest, headerTop -16 at
-// scrollY 16 and then -283 at 283, the user watching the header ride out of
-// the window while the diagnostics called it healthy and the manual repair
-// button reported success. Both facts stand - the viewport lies sometimes, AND
-// the stranded state is real - so the header shift is back with the discipline
-// the old one lacked: measured like the ticker's, gated to rest, and acting
-// only when scrollY corroborates the offset (the one state the ghost cannot
-// fake). See headerMeasuredShift.
+// The defect itself turned out not to be the header's at all. The device sat
+// at a 518px layout viewport on a 440pt screen - iOS had expanded the
+// viewport to fit something that rendered too wide, and kept it that way for
+// days. position:sticky anchors to the layout viewport, so both bars sat
+// partly outside the screen and "scrolled away", exactly as reported. That is
+// fixed at the root: minimum-scale=1 in the viewport meta (index.html), which
+// makes the expansion impossible, and a widest-element scan in the sticky
+// diagnostics so any element that tries gets named. No transform on the
+// header can be the answer to a viewport that is bigger than the screen.
 //
 // THE TICKER KEEPS ITS CORRECTION, because it is MEASURED rather than derived
 // from the viewport - see tickerMeasuredShift below - so a lying viewport
@@ -121,84 +97,6 @@ export const tickerMeasuredShift = ({
 	return Math.round(shift);
 };
 
-// WHERE THE HEADER GOES - MEASURED, AT REST, AND ONLY WITH CORROBORATION.
-//
-// The correction the top of this file removes was killed for trusting numbers
-// that lie, and the incident that killed it stands: `vv.height` flipped
-// 1052 -> 646 on an idle page, and the offset that came with that ghost pushed
-// a healthy header a quarter of the way down the screen. What the removal got
-// wrong is the claim that the stranded-header symptom had never been reported.
-// It since has been, exactly and repeatedly, from the same standalone iPhone
-// PWA: at rest, headerTop -16 at scrollY 16, then -283 at 283, the header
-// visibly riding up out of the window, the repair ladder measuring it
-// "healthy" and the manual button doing nothing. The state is real; the old
-// correction was merely wrong about WHEN.
-//
-// The tell separating that real state from the ghost is in the reports
-// themselves. In the real one, `visualViewport.offsetTop` EQUALS `scrollY` -
-// 16/16, 283/283 - which is the geometry of a layout viewport pinned to the
-// document top while the visual viewport pans inside it (on iOS, scrollY
-// tracks the visual viewport, so pinned layout means the two offsets are one
-// number). The ghost never had that: its offset was 406 with the page at 0,
-// two numbers with nothing to corroborate them. So the header correction
-// returns, gated three ways the old one was not:
-//
-//   - CORROBORATED: only when offsetTop and scrollY agree, the one state the
-//     ghost cannot fake and pinch-zoom (offset independent of scrollY) never
-//     enters. A number is trusted here only when two independent sources say
-//     the same thing.
-//   - AT REST: never within the settle window of a scroll or viewport event.
-//     Mid-flick a healthy header reads -scrollY on the main thread, which is
-//     how the old correction wrote translateY(229) onto a healthy page.
-//   - MEASURED, like the ticker: the shift is whatever moves the header's
-//     MEASURED top back to 0, its own shift subtracted out, bounded by
-//     scrollY (the displacement a ride can actually produce). In every
-//     healthy state the measurement already reads 0 and nothing is written,
-//     and a stale shift self-heals to 0 at the next settle.
-export const headerMeasuredShift = ({
-	measuredTop,
-	currentShift,
-	scrollY,
-	visualOffsetTop,
-	settled,
-}: {
-	// getBoundingClientRect().top of the header, as it renders right now.
-	measuredTop: number | undefined;
-	// The correction currently on it, subtracted back out so this converges in
-	// one step instead of chasing its own tail.
-	currentShift: number;
-	scrollY: number | undefined;
-	visualOffsetTop: number | undefined;
-	// Has the page been still long enough for a reading to mean anything?
-	settled: boolean;
-}): number => {
-	if (
-		!settled ||
-		measuredTop === undefined ||
-		scrollY === undefined ||
-		visualOffsetTop === undefined ||
-		!Number.isFinite(measuredTop) ||
-		!Number.isFinite(scrollY) ||
-		!Number.isFinite(visualOffsetTop)
-	) {
-		return 0;
-	}
-	// The corroboration: a real pinned-layout pan is the only state where the
-	// two agree while scrolled. Everything else - ghost offsets, pinch-zoom,
-	// ordinary pages - fails one of these and gets no shift.
-	if (scrollY <= 2 || Math.abs(scrollY - visualOffsetTop) > 2) {
-		return 0;
-	}
-	const raw = 0 - (measuredTop - currentShift);
-	// Sub-pixel differences are rounding; a shift beyond scrollY is not a
-	// displacement a ride can produce, so it is a measurement not worth acting
-	// on.
-	if (raw < 2 || raw > scrollY + 2) {
-		return 0;
-	}
-	return Math.round(Math.min(raw, scrollY));
-};
-
 // Is the software keyboard (probably) up?
 //
 // The ticker no longer needs to ask - it measures its own position, and a
@@ -266,55 +164,12 @@ export const applyHeaderShift = (
 // watchdog's position-toggling ladder cannot remove it (it repairs `position`,
 // not `transform`). The ticker then sits mid-page, provably "detached", and
 // unrepairable forever.
-// The last moment a scroll or viewport event fired, for the settle gate. 0
-// means none seen since load, which counts as settled.
-let lastViewportChurnAt = 0;
-export const SETTLE_QUIET_MS = 250;
-
-// NOT SETTLED MEANS HANDS OFF, NOT "SHIFT ZERO".
-//
-// The first build of the settle gate made the shift compute 0 mid-churn, and
-// writing 0 strips the transform - so every scroll event tore the working
-// correction off the header, the user watched it ride away again, and the
-// repair button finished by doing the same thing (its ladder nudges the
-// scroll, which marked the page churning, so its final resync stripped the
-// shift it had just verified: a field log shows "forced" entering at
-// headerTop 0, detached=false, and "forced-done" leaving at -119,
-// detached=true, forty milliseconds apart). A resync that is not allowed to
-// measure must not write anything at all; whatever is on the bars stays until
-// a settled pass can re-derive it.
-//
-// Callers that own their own settle discipline - the watchdog's checks run
-// behind a debounce, a resume must rewrite the stale-shift trap regardless -
-// assert it and are never refused.
-export const resyncStickyBarShifts = (options?: {
-	assumeSettled?: boolean;
-}) => {
-	const settled =
-		options?.assumeSettled === true ||
-		lastViewportChurnAt === 0 ||
-		Date.now() - lastViewportChurnAt >= SETTLE_QUIET_MS;
-	if (!settled) {
-		return;
-	}
-	// The header's shift is measured, corroborated and settle-gated - see
-	// headerMeasuredShift. In every state but the pinned-layout pan it computes
-	// 0, and passing 0 is what strips a translateY an older build left on it -
-	// including one that survived a suspend, which is the only way a stale
-	// shift could persist unnoticed.
-	const header = document.querySelector<HTMLElement>(HEADER_SELECTOR);
-	applyHeaderShift(
-		header,
-		header
-			? headerMeasuredShift({
-					measuredTop: header.getBoundingClientRect().top,
-					currentShift: currentShiftOf(header),
-					scrollY: window.scrollY,
-					visualOffsetTop: window.visualViewport?.offsetTop,
-					settled: true,
-				})
-			: 0,
-	);
+export const resyncStickyBarShifts = () => {
+	// Always zero. The header is not placed from the viewport (see the top of
+	// this file), and passing 0 is what strips a translateY an older build
+	// left on it - including one that survived a suspend, which is the only
+	// way the old shift could persist unnoticed.
+	applyHeaderShift(document.querySelector<HTMLElement>(HEADER_SELECTOR), 0);
 
 	const ticker = document.querySelector<HTMLElement>(TICKER_SELECTOR);
 	if (!ticker) {
@@ -347,19 +202,7 @@ export const initVisualViewportHeader = () => {
 	}
 
 	let raf: number | undefined;
-	let settleTimer: ReturnType<typeof setTimeout> | undefined;
 	const sync = () => {
-		lastViewportChurnAt = Date.now();
-		// One more pass once the churn stops, because that is the only moment
-		// the header shift is allowed to act (see headerMeasuredShift) - the
-		// per-event pass below always lands inside its own settle window.
-		if (settleTimer !== undefined) {
-			clearTimeout(settleTimer);
-		}
-		settleTimer = setTimeout(() => {
-			settleTimer = undefined;
-			resyncStickyBarShifts();
-		}, SETTLE_QUIET_MS + 50);
 		if (raf !== undefined) {
 			return;
 		}

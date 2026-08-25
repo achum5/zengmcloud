@@ -3,7 +3,6 @@ import {
 	bottomBarIsDetached,
 	detachmentConfirmed,
 	headerIsDetached,
-	offsetEchoesScroll,
 	repairVerdict,
 	runExclusive,
 	scrollDecision,
@@ -158,26 +157,6 @@ describe("headerIsDetached with the viewports panned apart", () => {
 		assert.strictEqual(
 			headerIsDetached(
 				deps({ scrollY: 864, headerTop: -864, visualOffsetTop: 406 }),
-			),
-			true,
-		);
-	});
-
-	test("an offset that merely echoes scrollY excuses nothing", () => {
-		// The field report this rule is from: headerTop -16 at scrollY 16 with
-		// offsetTop 16 - then -283 with both at 283 - and the user watching the
-		// header ride up out of the window while the old excuse called it
-		// healthy. When the two numbers are one number, a header at minus it is
-		// indistinguishable from one riding the page, and the screen says which.
-		assert.strictEqual(
-			headerIsDetached(
-				deps({ scrollY: 16, headerTop: -16, visualOffsetTop: 16 }),
-			),
-			true,
-		);
-		assert.strictEqual(
-			headerIsDetached(
-				deps({ scrollY: 283, headerTop: -283, visualOffsetTop: 283 }),
 			),
 			true,
 		);
@@ -651,20 +630,5 @@ describe("the modal unpin waits for its own scroll to settle", () => {
 		for (const delay of UNPIN_CHECK_DELAYS_MS) {
 			assert.isAbove(delay, SETTLE_MS, `unpin check at ${delay}ms`);
 		}
-	});
-});
-
-describe("offsetEchoesScroll", () => {
-	test("one number wearing two names is an echo", () => {
-		assert.isTrue(offsetEchoesScroll(119, 119));
-		assert.isTrue(offsetEchoesScroll(119, 120));
-	});
-	test("independent numbers are not", () => {
-		assert.isFalse(offsetEchoesScroll(864, 406));
-		assert.isFalse(offsetEchoesScroll(0, 406));
-	});
-	test("an unreadable offset is not an echo of anything", () => {
-		assert.isFalse(offsetEchoesScroll(119, undefined));
-		assert.isFalse(offsetEchoesScroll(119, Number.NaN));
 	});
 });
