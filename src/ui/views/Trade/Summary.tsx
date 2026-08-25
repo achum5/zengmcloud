@@ -10,7 +10,10 @@ import type { Ref } from "react";
 import { orderBy } from "../../../common/utils.ts";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 import { useLocal } from "../../util/local.ts";
+import { HelpPopover } from "../../components/HelpPopover.tsx";
 import {
+	MAX_TEAM_OVR_DELTA_SYMBOLS,
+	TEAM_OVR_DELTA_BAND,
 	teamOvrDeltaBandLabel,
 	teamOvrDeltaSymbols,
 } from "../../../common/teamRatings.ts";
@@ -65,6 +68,56 @@ export const OvrChange = ({
 		<>
 			{before} {arrow} <span className={className}>{after}</span>
 		</>
+	);
+};
+
+// WHAT THE PLUSES MEAN, in the same "?" popover the rest of the site uses.
+//
+// The signs are only legible once you know the scale - "++" could be twice "+"
+// or the second of five - and a hover tooltip on one value tells you about that
+// value, not about the system. Renders NOTHING when ratings are visible, since
+// there are no bands then: the exact number is on screen.
+export const OvrChangeHelp = () => {
+	const { challengeNoRatings, hideTeamRatings } = useLocal([
+		"challengeNoRatings",
+		"hideTeamRatings",
+	]);
+
+	if (!hideTeamRatings || challengeNoRatings) {
+		return null;
+	}
+
+	return (
+		<HelpPopover title="Team ovr change">
+			<p>
+				Team ratings are hidden in this league, so a trade shows how much it
+				moves each team rather than the rating it moves them to. The change is
+				rounded into bands of five, so you can see the size of a deal without
+				being able to work out anyone&rsquo;s exact rating from it.
+			</p>
+			<table className="table table-sm mb-0">
+				<tbody>
+					{/* Derived from the same functions that draw the cells, so the
+					    key cannot drift from what it is explaining. */}
+					{Array.from({ length: MAX_TEAM_OVR_DELTA_SYMBOLS }, (_, i) => {
+						const smallest = i * TEAM_OVR_DELTA_BAND + 1;
+						return (
+							<tr key={smallest}>
+								<td className="text-success py-1">
+									{teamOvrDeltaSymbols(smallest)}
+								</td>
+								<td className="py-1">{teamOvrDeltaBandLabel(smallest)}</td>
+							</tr>
+						);
+					})}
+					<tr>
+						<td className="py-1">{teamOvrDeltaSymbols(0)}</td>
+						<td className="py-1">{teamOvrDeltaBandLabel(0)}</td>
+					</tr>
+				</tbody>
+			</table>
+			<p className="mt-2 mb-0">Minus signs mean the same sizes downward.</p>
+		</HelpPopover>
 	);
 };
 
@@ -303,7 +356,8 @@ export const SummaryTeam = ({
 							<OvrChange
 								before={summary.teams[t.other].ovrBefore}
 								after={summary.teams[t.other].ovrAfter}
-							/>
+							/>{" "}
+							<OvrChangeHelp />
 						</li>
 					) : null}
 				</ul>

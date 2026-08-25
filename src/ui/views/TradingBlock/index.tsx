@@ -15,7 +15,7 @@ import {
 	wrappedContractExp,
 } from "../../components/contract.tsx";
 import { wrappedPlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
-import { MissingAssets, OvrChange } from "../Trade/Summary.tsx";
+import { MissingAssets, OvrChange, OvrChangeHelp } from "../Trade/Summary.tsx";
 import { teamOvrDeltaSymbols } from "../../../common/teamRatings.ts";
 import type { MissingAsset } from "../../../worker/views/savedTrades.ts";
 import useTradeOffersSwitch from "../../hooks/useTradeOffersSwitch.tsx";
@@ -834,7 +834,12 @@ const TradingBlock = ({
 			) : null}
 
 			{state.offers.length > 0 ? (
-				<div className="mt-3 mt-md-0">{tradeOffersSwitch.toggle}</div>
+				<div className="mt-3 mt-md-0 d-flex align-items-center gap-2">
+					{tradeOffersSwitch.toggle}
+					{/* Above the switch, so one icon explains the bands in both the
+					    table and the card view rather than one per offer. */}
+					<OvrChangeHelp />
+				</div>
 			) : null}
 
 			{tradeOffersSwitch.value === "table" ? (
