@@ -213,7 +213,15 @@ const RECONCILE_BY_IDENTITY: Partial<Record<Store, IdentityRule>> = {
 // only when nothing matches. scheduledEvents: processed events are deleted as
 // the sim advances - a delete by the author's `id` on a device whose ids shifted
 // would remove a DIFFERENT pending event (and leave a phantom one to fire).
-const DELETE_BY_CONTENT = new Set<Store>(["scheduledEvents"]);
+const DELETE_BY_CONTENT = new Set<Store>(["scheduledEvents", "events"]);
+
+// Content-matched stores where a receiver with NO matching row must delete
+// NOTHING, never fall back to the raw autoincrement id. An event id can name a
+// different event on a device whose ids diverged, and a stale log line is
+// recoverable while a wrong-row delete is not. (scheduledEvents keeps the
+// fallback it always had: those rows are short-lived and pre-snapshot history
+// still needs cleaning.)
+const DELETE_BY_CONTENT_NO_FALLBACK = new Set<Store>(["events"]);
 
 // Order-insensitive deep equality for plain JSON values (rows have been through
 // JSON serialization, so only objects/arrays/primitives appear).
@@ -545,13 +553,16 @@ export const captureChangeset = async (): Promise<Changeset> => {
 			// An `events` row is keyed by an autoincrement `eid` that diverges across
 			// devices (each generates its own), and events carry no stable logical
 			// identity to reconcile by. So a delete-by-eid would remove a DIFFERENT,
-			// unrelated event on every other device. The only synced-league path that
-			// deletes an event is the sign/release UNDO (deleteOldData is blocked on
-			// synced leagues), and there the substantive revert is the player put -
-			// which syncs correctly by pid. So keep event deletes LOCAL: the author's
-			// log is cleaned, and receivers simply keep the now-stale log entry rather
-			// than risk losing a real one. Event ADDs still broadcast normally.
-			if (typedStore === "events") {
+			// unrelated event on every other device.
+			//
+			// With the deleted row's SNAPSHOT in hand there is a safe way through:
+			// ship the content and let each receiver delete its own row matching it,
+			// or nothing (DELETE_BY_CONTENT below, with no raw-id fallback for this
+			// store). The trade revert relies on that to erase the trade's log entry
+			// everywhere. Without a snapshot - a row that was never in this device's
+			// cache - the delete stays LOCAL, the old behavior: the author's log is
+			// cleaned and receivers keep a stale line rather than risk a real one.
+			if (typedStore === "events" && deletedRow === undefined) {
 				continue;
 			}
 
@@ -1302,7 +1313,7 @@ export const applyChangeset = async (
 						if (match !== undefined) {
 							await api.delete(match[pkField]);
 							changeTracker.forget(change.store, match[pkField]);
-						} else {
+						} else if (!DELETE_BY_CONTENT_NO_FALLBACK.has(change.store)) {
 							await api.delete(change.id);
 							changeTracker.forget(change.store, change.id);
 						}

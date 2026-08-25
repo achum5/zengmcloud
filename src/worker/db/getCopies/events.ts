@@ -83,7 +83,8 @@ const getCopies = async (
 			return [maybeDeepCopy(event, type)];
 		}
 
-		const event2 = await idb.league.get("events", eid);
+		// idb.league is undefined in tests, which run cache-only.
+		const event2 = await idb.league?.get("events", eid);
 		if (event2) {
 			return [event2];
 		}

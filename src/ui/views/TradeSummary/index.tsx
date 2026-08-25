@@ -10,6 +10,7 @@ import { useLocal } from "../../util/local.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import { confirm } from "../../util/confirm.tsx";
 import { showNotification } from "../../util/showNotification.ts";
+import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 
 const Outcome = ({ outcome }: { outcome: PlayerOutcome }) => {
 	if (!outcome) {
@@ -135,6 +136,9 @@ const TradeSummary = ({
 								type: "error",
 								text: error,
 							});
+						} else {
+							// The trade no longer exists, so neither does this page.
+							await realtimeUpdate([], helpers.leagueUrl(["transactions"]));
 						}
 					}}
 				>

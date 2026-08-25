@@ -127,6 +127,12 @@ export const resetCache = async (
 			await idb.cache.scheduledEvents.add(obj);
 		}
 	}
+
+	if (data.events) {
+		for (const obj of data.events) {
+			await idb.cache.events.add(obj);
+		}
+	}
 };
 
 export const resetG = () => {

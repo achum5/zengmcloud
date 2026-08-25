@@ -1036,6 +1036,149 @@ describe("sync changeset", () => {
 		assert.strictEqual(rows.length, 0, JSON.stringify(rows));
 	});
 
+	test("an event delete with a snapshot syncs, and deletes by content on arrival", async () => {
+		// The trade revert erases the trade's log entry everywhere. Event ids
+		// diverge across devices, so the author's eid 9 is eid 12 here - the
+		// content match must delete the trade event at 12 and leave the
+		// unrelated event living at the author's id alone.
+		resetG();
+		await resetCache({
+			events: [
+				{
+					eid: 9,
+					type: "playoffs",
+					text: "Made the playoffs",
+					season: 2030,
+					tids: [3],
+				},
+				{
+					eid: 12,
+					type: "trade",
+					season: 2030,
+					phase: 0,
+					tids: [0, 1],
+					pids: [55],
+					dpids: [],
+					score: 10,
+					teams: [{ assets: [] }, { assets: [] }],
+				},
+			] as any,
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "events",
+						id: 9, // the author's eid for ITS copy of the trade event
+						type: "delete",
+						value: {
+							eid: 9,
+							type: "trade",
+							season: 2030,
+							phase: 0,
+							tids: [0, 1],
+							pids: [55],
+							dpids: [],
+							score: 10,
+							teams: [{ assets: [] }, { assets: [] }],
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.events.getAll();
+		assert.strictEqual(rows.length, 1, JSON.stringify(rows));
+		assert.strictEqual(rows[0]!.eid, 9);
+		assert.strictEqual(rows[0]!.type, "playoffs");
+	});
+
+	test("an event delete with no content match deletes NOTHING - never the raw id", async () => {
+		// A stale log line is recoverable; erasing a real event by a diverged id
+		// is not. Unlike scheduledEvents there is no fallback.
+		resetG();
+		await resetCache({
+			events: [
+				{
+					eid: 9,
+					type: "playoffs",
+					text: "Made the playoffs",
+					season: 2030,
+					tids: [3],
+				},
+			] as any,
+		});
+		changeTracker.disable();
+
+		await applyChangeset(
+			overTheWire({
+				changes: [
+					{
+						store: "events",
+						id: 9,
+						type: "delete",
+						value: {
+							eid: 9,
+							type: "trade",
+							season: 2029,
+							phase: 0,
+							tids: [0, 1],
+							pids: [56],
+							dpids: [],
+							score: 0,
+							teams: [{ assets: [] }, { assets: [] }],
+						},
+					},
+				],
+			}),
+			{ refreshUI: false },
+		);
+
+		const rows = await idb.cache.events.getAll();
+		assert.strictEqual(rows.length, 1, JSON.stringify(rows));
+		assert.strictEqual(rows[0]!.eid, 9);
+	});
+
+	test("an event delete WITH a snapshot is captured; without one it stays local", async () => {
+		resetG();
+		await resetCache({
+			events: [
+				{
+					eid: 3,
+					type: "trade",
+					season: 2030,
+					phase: 0,
+					tids: [0, 1],
+					pids: [55],
+					dpids: [],
+					score: 0,
+					teams: [{ assets: [] }, { assets: [] }],
+				},
+			] as any,
+		});
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await changeTracker.runCaptured(async () => {
+			// In cache: the delete records its snapshot and must broadcast.
+			await idb.cache.events.delete(3);
+			// Never in cache (only ever on disk): no snapshot, must stay local -
+			// a bare eid cannot be safely deleted on any other device.
+			await idb.cache.events.delete(999);
+		});
+
+		const changeset = await captureChangeset();
+		const eventDeletes = changeset.changes.filter(
+			(c) => c.store === "events" && c.type === "delete",
+		);
+		assert.strictEqual(eventDeletes.length, 1, JSON.stringify(eventDeletes));
+		assert.strictEqual(eventDeletes[0]!.id, 3);
+		assert.ok(eventDeletes[0]!.value, "the snapshot must travel with it");
+	});
+
 	test("captures a scheduledEvents delete with its content snapshot", async () => {
 		resetG();
 		await resetCache({

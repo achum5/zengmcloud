@@ -1,7 +1,11 @@
+import { PHASE } from "../../../common/constants.ts";
 import { idb } from "../../db/index.ts";
-import { g } from "../../util/index.ts";
+import { changeTracker } from "../../db/changeTracker.ts";
+import { g, helpers, toUI, updatePlayMenu } from "../../util/index.ts";
 import type { EventBBGM } from "../../../common/types.ts";
-import processTrade from "./processTrade.ts";
+import { player } from "../index.ts";
+import { getTeammateJerseyNumbers } from "../player/genJerseyNumber.ts";
+import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
 
 type TradeEvent = Extract<EventBBGM, { type: "trade" }>;
 
@@ -11,21 +15,12 @@ type TradeEvent = Extract<EventBBGM, { type: "trade" }>;
 // would no longer restore the world before it, just scramble the world after
 // it. So the plan is all-or-nothing: either every asset can go home, or the
 // trade is not revertable and the reason names what moved.
-//
-// The revert itself is deliberately just another trade, pointed backwards.
-// Players move by pid and picks by dpid - the same writes, on the same stores,
-// as the trade being undone - and a new trade event records the reversal. That
-// is what makes it safe in a synced league: every one of those writes already
-// syncs, while the alternatives (deleting or editing the original event) are
-// exactly the operations the sync layer cannot reconcile, because event ids
-// are not stable across devices. The original event stays; the transaction log
-// shows a trade and its reversal, which is also simply the truth.
 export const planTradeRevert = async (
 	event: TradeEvent,
 ): Promise<
 	| {
 			// What each side sends BACK: the assets it received in `event`, in
-			// event.tids order. Feed straight to processTrade.
+			// event.tids order.
 			pids: [number[], number[]];
 			dpids: [number[], number[]];
 	  }
@@ -69,8 +64,36 @@ export const planTradeRevert = async (
 	return { pids, dpids };
 };
 
-// Undo the trade behind an event, God Mode only. Returns an error message, or
-// undefined on success.
+// Undo the trade behind an event, God Mode only, leaving no trace it ever
+// happened. Returns an error message, or undefined on success.
+//
+// This deliberately does NOT run the reversal through processTrade. A normal
+// trade leaves footprints beyond the moved assets - a transaction on every
+// player, a mood charge on every teamSeason that gave a player up, an event in
+// the league log - and undoing an accident means erasing those, not writing a
+// second set on top:
+//
+//   - Each player's `transactions` entry for this trade is removed, and no
+//     revert entry is added.
+//   - The mood charge (teamSeason.numPlayersTradedAway, which every player's
+//     "this franchise ships people out" mood component is derived from) is
+//     subtracted back off the season the trade happened in. The original
+//     amount was a function of the player's value at trade time and is not
+//     stored, so it is recomputed from his value now - exact when the revert
+//     is prompt, which an accidental trade's always is, and bounded at zero
+//     regardless.
+//   - The trade event itself is deleted, which is the one step that needs
+//     care in a synced league. Event ids are not stable across devices, so a
+//     delete-by-eid could erase an unrelated event elsewhere; instead the
+//     deleted row's full content travels with the changeset and each receiver
+//     deletes its own row matching that content, or nothing (see
+//     DELETE_BY_CONTENT in sync/changeset.ts - a stale log line is
+//     recoverable, a wrong-row delete is not).
+//
+// What is not restored: ptModifier (the trade reset it to 1; its prior value
+// was never recorded) and jersey numbers are reassigned rather than restored
+// (players prefer their old numbers, which are free again, so in practice
+// they come back).
 const revertTrade = async (eid: number): Promise<string | undefined> => {
 	if (!g.get("godMode")) {
 		return "God Mode is required to revert a trade.";
@@ -86,9 +109,80 @@ const revertTrade = async (eid: number): Promise<string | undefined> => {
 		return plan.error;
 	}
 
-	await processTrade(event.tids, plan.pids, plan.dpids, undefined, {
-		revert: true,
-	});
+	const duringSeason = g.get("phase") <= PHASE.PLAYOFFS;
+
+	for (const i of [0, 1] as const) {
+		// Side i received these assets, so they go back to the other side - and
+		// the other side is who paid the mood charge for giving them up.
+		const from = event.tids[i];
+		const to = event.tids[i === 0 ? 1 : 0];
+
+		let giverSeason;
+		if (plan.pids[i].length > 0) {
+			giverSeason = await idb.cache.teamSeasons.indexGet(
+				"teamSeasonsBySeasonTid",
+				[event.season, to],
+			);
+		}
+
+		for (const pid of plan.pids[i]) {
+			const p = (await idb.cache.players.get(pid))!;
+			p.tid = to;
+
+			if (duringSeason) {
+				const teamJerseyNumbers = await getTeammateJerseyNumbers(to, [
+					pid,
+					...plan.pids[i],
+				]);
+				player.setJerseyNumber(
+					p,
+					await player.genJerseyNumber(p, teamJerseyNumbers),
+				);
+			}
+
+			if (p.transactions) {
+				p.transactions = p.transactions.filter(
+					(t) => !(t.type === "trade" && t.eid === eid),
+				);
+			}
+
+			if (giverSeason) {
+				giverSeason.numPlayersTradedAway = Math.max(
+					0,
+					giverSeason.numPlayersTradedAway -
+						helpers.sigmoid(p.valueNoPot / 100, 30, 0.47),
+				);
+			}
+
+			await idb.cache.players.put(p);
+		}
+
+		if (giverSeason) {
+			await idb.cache.teamSeasons.put(giverSeason);
+		}
+
+		for (const dpid of plan.dpids[i]) {
+			const dp = (await idb.cache.draftPicks.get(dpid))!;
+			dp.tid = to;
+			await idb.cache.draftPicks.put(dp);
+		}
+
+		// Unused, but keeps the loop honest about direction.
+		void from;
+	}
+
+	await idb.cache.events.delete(eid);
+	// The event may live only on disk (the cache holds recent seasons), in
+	// which case the delete above recorded no snapshot and would stay local.
+	// Re-record it with the row we already loaded, so the content-matched
+	// delete reaches every device whatever the cache held.
+	changeTracker.record("events", eid, "delete", event);
+
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+	await recomputeLocalUITeamOvrs();
+	if (g.get("phase") === PHASE.DRAFT) {
+		await updatePlayMenu();
+	}
 };
 
 export default revertTrade;
