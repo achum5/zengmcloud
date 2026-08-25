@@ -2653,11 +2653,24 @@ const foulOutNote = (
 const formNote = (
 	shape: Shape,
 	rng: () => number,
-	// Set when a streak sentence has already run. "The Celtics have now won 6
+	// What the recap has said so far. A team whose recent form has ALREADY been
+	// described must not also get a form note: "The Celtics have now won 6
 	// straight" followed by "the Celtics have won 5 of their last 6" is the same
 	// fact told twice, and worse, the two numbers look like they disagree.
-	skipWinner = false,
+	//
+	// Checked PER TEAM. This used to be a single boolean applied to the winner,
+	// which missed the other half of it - the snapped-streak sentence is about
+	// the LOSER, so "It snapped the Monuments' 8-game winning streak." was still
+	// followed by "The Monuments came in having won 8 of their last 9."
+	alreadyWritten = "",
 ): string | undefined => {
+	const STREAK =
+		/in a row|straight game|ran their streak|winning streak|streak to \d/;
+	const sentences = alreadyWritten.split(/(?<=[!.?])\s+/);
+	const formTold = (t: RecapTeam): boolean => {
+		const nickname = nick(t);
+		return sentences.some((x) => x.includes(nickname) && STREAK.test(x));
+	};
 	const describe = (t: RecapTeam): string | undefined => {
 		const l10 = t.last10;
 		// Index 0 is this game, so the FORM entering it is everything after.
@@ -2699,8 +2712,8 @@ const formNote = (
 		return undefined;
 	};
 	const options = [
-		skipWinner ? undefined : describe(shape.winner),
-		describe(shape.loser),
+		formTold(shape.winner) ? undefined : describe(shape.winner),
+		formTold(shape.loser) ? undefined : describe(shape.loser),
 	].filter((x): x is string => !!x);
 	if (options.length === 0) {
 		return undefined;
@@ -3105,11 +3118,6 @@ export const getAutoRecap = (game: RecapGame): string => {
 	const alreadyWritten = [headline.text, ...para1, ...para2].join(" ");
 	const said = namesIn(alreadyWritten, shape);
 	said.add(star.name);
-	// A streak sentence in paragraph 2 already covered the winner's recent form.
-	const streakTold =
-		/in a row|straight game|ran their streak|winning streak/.test(
-			alreadyWritten,
-		);
 	// Same idea for the two team totals paragraph 2 can hand out on its own.
 	const toldAlready = {
 		dblFig: /in double figures|double figures/.test(alreadyWritten),
@@ -3139,7 +3147,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 			foulOutNote(shape, said, rng),
 			minutesNote(shape, said),
 		]),
-		formNote(shape, rng, streakTold),
+		formNote(shape, rng, alreadyWritten),
 		spreadNote(game, shape, rng),
 	]
 		.filter((x): x is string => !!x)

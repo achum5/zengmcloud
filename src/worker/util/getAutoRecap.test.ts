@@ -2613,12 +2613,16 @@ describe("the extra colour paragraph", () => {
 	// past tense - present tense turns "how they had been playing" into a claim
 	// about right now, directly contradicted by the box score above it.
 	test("a hot team that just lost is never described as currently unbeaten", () => {
+		// 8-1, with the loss placed so the run immediately before this game is
+		// only three long. A clean 9-0 run trips the snapped-streak sentence, and
+		// formNote then (correctly) suppresses itself to avoid saying the same
+		// thing twice - which would make this test vacuous.
 		const hot = Array.from({ length: 9 }, (_, i) => ({
 			opp: "ORL",
 			home: i % 2 === 0,
-			won: true,
-			pts: 100,
-			oppPts: 90,
+			won: i !== 3,
+			pts: i === 3 ? 90 : 100,
+			oppPts: i === 3 ? 100 : 90,
 		}));
 		// Index 0 is this game - the loss being recapped.
 		const loserL10 = [
@@ -2688,6 +2692,57 @@ describe("the extra colour paragraph", () => {
 			toldTheRun > 0,
 			"the form note never ran, so this test proved nothing",
 		);
+	});
+
+	// The snapped-streak sentence is about the LOSER, and the form note used to
+	// follow it with the same fact restated: "It snapped the Monuments' 8-game
+	// winning streak. The Monuments came in having won 8 of their last 9."
+	test("a team's recent form is described once, not twice", () => {
+		const unbeaten = Array.from({ length: 9 }, (_, i) => ({
+			opp: "ORL",
+			home: i % 2 === 0,
+			won: true,
+			pts: 100,
+			oppPts: 90,
+		}));
+		const w = realisticTeam(
+			{
+				tid: 30,
+				name: "Bobcats",
+				abbrev: "CHA",
+				pts: 106,
+				ptsQtrs: [18, 27, 36, 25],
+			},
+			player({ name: "Antonis Fotsis", pts: 20, reb: 12, ast: 7 }),
+		);
+		const l = realisticTeam(
+			{
+				tid: 1,
+				name: "Celtics",
+				abbrev: "BOS",
+				pts: 92,
+				ptsQtrs: [30, 18, 22, 22],
+				last10: [
+					{ opp: "CHA", home: true, won: false, pts: 92, oppPts: 106 },
+					...unbeaten,
+				],
+			},
+			player({ name: "Chris Paul", pts: 13, reb: 3, ast: 13 }),
+		);
+		let sawSnapped = 0;
+		for (let gid = 1; gid <= 60; gid++) {
+			const recap = getAutoRecap(twoTeamGame(w, l, { gid }));
+			if (/snapped the Celtics' \d+-game winning streak/.test(recap)) {
+				sawSnapped += 1;
+				assert.ok(
+					!/Celtics came in having won|wins in \d+ games for the Celtics|Celtics entered the night/.test(
+						recap,
+					),
+					`the Celtics' run is stated twice: ${recap}`,
+				);
+			}
+		}
+		assert.ok(sawSnapped > 0, "the snapped-streak sentence never ran");
 	});
 
 	test("the streak sentence and the form note don't contradict each other", () => {
