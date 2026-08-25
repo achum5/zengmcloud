@@ -3,12 +3,14 @@ import {
 	bottomBarIsDetached,
 	detachmentConfirmed,
 	headerIsDetached,
+	repairCanHelp,
 	repairVerdict,
 	runExclusive,
 	scrollDecision,
 	SETTLE_MS,
 	tickerAnchorHeights,
 	UNPIN_CHECK_DELAYS_MS,
+	viewportOffsetIsInformative,
 } from "./stickyHeaderWatchdog.ts";
 
 const deps = ({
@@ -172,6 +174,162 @@ describe("headerIsDetached with the viewports panned apart", () => {
 	});
 });
 
+// THE BLIND SPOT THAT MADE THE REPAIR BUTTON USELESS.
+//
+// Subtracting visualViewport.offsetTop excuses a panned page. But when that
+// offset is the SAME NUMBER as the scroll position, the excuse covers a header
+// lying at its own static position - which is the definition of a header that
+// has come unstuck - and the watchdog reports "healthy" however far the bar has
+// ridden. Two field reports were in exactly this state, both with the owner
+// saying the header scrolled off the screen and the manual repair did nothing.
+describe("headerIsDetached when the offset merely echoes the scroll", () => {
+	// The field report, to the pixel: scrolled to 14, header at -14, offsetTop
+	// 14. Before this rule the answer was false and the ladder never ran.
+	test("a header at its static position is detached, echo or not", () => {
+		assert.strictEqual(
+			headerIsDetached(
+				deps({ scrollY: 14, headerTop: -14, visualOffsetTop: 14 }),
+			),
+			true,
+		);
+	});
+
+	test("and at the larger scroll the same shape showed up at", () => {
+		assert.strictEqual(
+			headerIsDetached(
+				deps({ scrollY: 406, headerTop: -406, visualOffsetTop: 406 }),
+			),
+			true,
+		);
+	});
+
+	// The excuse still has to work where it was earned, which is an offset that
+	// says something the scroll position does not.
+	test("a genuine pan is still excused", () => {
+		assert.strictEqual(
+			headerIsDetached(
+				deps({ scrollY: 864, headerTop: -406, visualOffsetTop: 406 }),
+			),
+			false,
+		);
+	});
+
+	// Rounding, not a different number.
+	test("an offset a pixel off the scroll is still an echo", () => {
+		assert.strictEqual(
+			headerIsDetached(
+				deps({ scrollY: 300, headerTop: -300, visualOffsetTop: 301 }),
+			),
+			true,
+		);
+	});
+});
+
+// The ticker has the same blind spot, and it matters more there: the offset
+// candidates are added to a set that only has to be matched ONCE for the bar to
+// pass, so an echoing offset vouches for a bar at any position at all.
+describe("bottomBarIsDetached when the offset merely echoes the scroll", () => {
+	test("a bar riding the content is caught despite the echo", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(
+				bottomDeps({
+					barBottom: 1038,
+					layoutHeight: 1052,
+					visualOffsetTop: 14,
+					scrollY: 14,
+				}),
+			),
+			true,
+		);
+	});
+
+	test("a genuine pan still gets the bar off the hook", () => {
+		assert.strictEqual(
+			bottomBarIsDetached(
+				bottomDeps({
+					barBottom: 646,
+					layoutHeight: 1052,
+					visualOffsetTop: 406,
+					scrollY: 0,
+				}),
+			),
+			false,
+		);
+	});
+});
+
+// THE LADDER ONLY WORKS ON A STALE ELEMENT, and the probe is how that gets
+// checked before three rebuilds and a scroll nudge go to waste on a bar with
+// nothing wrong with it.
+describe("repairCanHelp", () => {
+	test("a probe where it belongs means the bar alone is stale - rebuild it", () => {
+		assert.strictEqual(repairCanHelp({ probeTop: 0, scrollY: 400 }), true);
+	});
+
+	test("a probe adrift means sticky is broken page-wide - do not bother", () => {
+		assert.strictEqual(repairCanHelp({ probeTop: -400, scrollY: 400 }), false);
+	});
+
+	// At the top of the page a working sticky element and a broken one are in the
+	// same place, so the probe cannot convict anything.
+	test("at the top of the page the probe says nothing", () => {
+		assert.strictEqual(repairCanHelp({ probeTop: 0, scrollY: 0 }), true);
+	});
+
+	test("no probe is no evidence, so the ladder still runs", () => {
+		assert.strictEqual(
+			repairCanHelp({ probeTop: undefined, scrollY: 400 }),
+			true,
+		);
+		assert.strictEqual(
+			repairCanHelp({ probeTop: Number.NaN, scrollY: 400 }),
+			true,
+		);
+	});
+
+	test("a pixel of rounding is not a probe adrift", () => {
+		assert.strictEqual(repairCanHelp({ probeTop: -1, scrollY: 400 }), true);
+	});
+});
+
+describe("viewportOffsetIsInformative", () => {
+	test("zero says nothing", () => {
+		assert.strictEqual(
+			viewportOffsetIsInformative({ offset: 0, scrollY: 0 }),
+			false,
+		);
+	});
+
+	test("an offset that is the scroll position says nothing", () => {
+		assert.strictEqual(
+			viewportOffsetIsInformative({ offset: 240, scrollY: 240 }),
+			false,
+		);
+	});
+
+	test("an offset the scroll position cannot explain says something", () => {
+		assert.strictEqual(
+			viewportOffsetIsInformative({ offset: 406, scrollY: 864 }),
+			true,
+		);
+	});
+
+	// An unreadable scroll position cannot convict the offset of echoing it.
+	test("an unmeasurable scroll leaves the offset trusted", () => {
+		assert.strictEqual(
+			viewportOffsetIsInformative({ offset: 406, scrollY: Number.NaN }),
+			true,
+		);
+	});
+
+	test("an unmeasurable offset is never used", () => {
+		assert.strictEqual(
+			viewportOffsetIsInformative({ offset: Number.NaN, scrollY: 10 }),
+			false,
+		);
+	});
+});
+
 describe("scrollDecision", () => {
 	test("a scroll far enough down the page is worth measuring", () => {
 		assert.strictEqual(scrollDecision({ scrollY: 500 }), "judge");
@@ -245,17 +403,20 @@ const bottomDeps = ({
 	anchorHeights = undefined as number[] | undefined,
 	pinnedByModal = false,
 	visualOffsetTop = 0,
+	scrollY = 0,
 }: {
 	barBottom?: number;
 	layoutHeight?: number;
 	anchorHeights?: number[];
 	pinnedByModal?: boolean;
 	visualOffsetTop?: number;
+	scrollY?: number;
 }) => ({
 	barBottom: () => barBottom,
 	anchorHeights: () => anchorHeights ?? [layoutHeight],
 	pinnedByModal: () => pinnedByModal,
 	visualOffsetTop: () => visualOffsetTop,
+	scrollY: () => scrollY,
 });
 
 describe("bottomBarIsDetached", () => {

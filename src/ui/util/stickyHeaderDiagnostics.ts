@@ -67,6 +67,99 @@ export const formatHeaderReport = (
 
 const num = (value: number) => Math.round(value);
 
+// tag#id.class, trimmed - enough to find the element in the source without
+// making the report unreadable.
+const describe = (el: Element): string => {
+	const id = el.id ? `#${el.id}` : "";
+	const cls =
+		typeof el.className === "string" && el.className.trim()
+			? `.${el.className.trim().split(/\s+/).slice(0, 3).join(".")}`
+			: "";
+	return `${el.tagName.toLowerCase()}${id}${cls}`;
+};
+
+// The sticky probe, as its own export so the watchdog can take one at the
+// moment it declares a fault - which is the reading that matters, and is not
+// the reading the report button can take (the button is at the top of the page,
+// where a broken bar and a healthy one sit in the same place).
+//
+// Returns undefined when there is nowhere to put it.
+export const probeStickyTop = (): number | undefined => {
+	const host = document.getElementById("content");
+	if (!host) {
+		return undefined;
+	}
+	const probe = document.createElement("div");
+	probe.style.cssText =
+		"position:sticky;top:0;height:0;width:0;pointer-events:none";
+	try {
+		host.prepend(probe);
+		return num(probe.getBoundingClientRect().top);
+	} catch {
+		return undefined;
+	} finally {
+		probe.remove();
+	}
+};
+
+// See headerLift in the snapshot: the header's offset inside its own parent,
+// which is zero for a header that is not sticking and `scrollY` for one that
+// is, in whatever coordinate space the rects happen to be reported in.
+const headerLift = (
+	header: HTMLElement | null,
+	rect: DOMRect | undefined,
+): number | string => {
+	const parent = header?.parentElement;
+	if (!parent || !rect) {
+		return "-";
+	}
+	return num(rect.top - parent.getBoundingClientRect().top);
+};
+
+// EVERY ANCESTOR OF THE HEADER, all the way to <html>.
+//
+// position:sticky is broken by things that live on ancestors, not on the
+// element: an overflow that turns one into a scrollport of its own, a transform
+// or filter that makes one the containing block, a `contain` that cuts the
+// subtree off from the scroller. The old clipping-ancestor check looked for
+// exactly one of those and stopped at <body>, so it answered "none" for a
+// header whose ancestors were never fully examined. This prints the chain and
+// lets the reader judge, which is what a diagnostic is for.
+const ancestorChain = (element: HTMLElement): string => {
+	const parts: string[] = [];
+	let node: HTMLElement | null = element.parentElement;
+	let depth = 0;
+	while (node && depth++ < 12) {
+		const style = getComputedStyle(node);
+		const rect = node.getBoundingClientRect();
+		const flags = [
+			style.position,
+			`ovf=${style.overflowX}/${style.overflowY}`,
+			`top=${num(rect.top)}`,
+			`h=${num(rect.height)}`,
+		];
+		// Only worth the characters when they are set to something.
+		if (style.transform !== "none") {
+			flags.push(`transform=${style.transform}`);
+		}
+		if (style.filter !== "none") {
+			flags.push(`filter=${style.filter}`);
+		}
+		if (style.willChange !== "auto") {
+			flags.push(`will-change=${style.willChange}`);
+		}
+		if (style.contain !== "none") {
+			flags.push(`contain=${style.contain}`);
+		}
+		if (style.zoom !== "1" && style.zoom !== "") {
+			flags.push(`zoom=${style.zoom}`);
+		}
+		parts.push(`${describe(node)}[${flags.join(" ")}]`);
+		node = node.parentElement;
+	}
+	return parts.join(" < ");
+};
+
 export const collectHeaderSnapshot = (): HeaderSnapshot => {
 	const header = document.querySelector<HTMLElement>(
 		".navbar-border.sticky-top",
@@ -77,45 +170,97 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 	const rect = header?.getBoundingClientRect();
 	const vv = window.visualViewport;
 
-	// The deepest element whose right edge sticks out past the screen without
-	// any ancestor clipping it - the kind of element that expands the iOS layout
-	// viewport. Bounded walk; "-" when nothing does.
-	const widestElement = () => {
+	// THE ELEMENT THAT OVERFLOWS ITS OWN BOX, which is what makes iOS widen the
+	// layout viewport in the first place.
+	//
+	// The first version of this asked which elements render wider than
+	// window.screen.width, and that question is circular: once iOS HAS widened
+	// the viewport, every full-width element in the page reports exactly the new
+	// width, so the scan named an innocent wrapper and said nothing about the
+	// cause. A field report duly came back naming the app's own layout column.
+	//
+	// scrollWidth > clientWidth is not circular. It is true only of an element
+	// whose CONTENT does not fit inside it, whatever the viewport happens to be,
+	// so it names the thing that is actually too wide and stays silent about
+	// everything that is merely as wide as the page. Elements that scroll on
+	// purpose are skipped - a horizontally scrollable table is doing its job.
+	// Bounded walk; "-" when nothing overflows.
+	const overflowingElement = () => {
 		try {
-			const limit = Math.max(window.screen.width, 320);
-			const clips = (el: Element) => {
-				for (let a = el.parentElement; a; a = a.parentElement) {
-					if (getComputedStyle(a).overflowX !== "visible") {
-						return true;
-					}
-				}
-				return false;
-			};
-			let worst: { right: number; desc: string } | undefined;
+			let worst: { over: number; desc: string } | undefined;
 			let seen = 0;
 			for (const el of document.querySelectorAll("body *")) {
 				if (seen++ > 4000) {
 					break;
 				}
-				const r = el.getBoundingClientRect();
-				if (r.right > limit + 2 && (!worst || r.right > worst.right)) {
-					if (clips(el)) {
-						continue;
-					}
-					const cls =
-						typeof el.className === "string"
-							? el.className.split(" ").slice(0, 3).join(".")
-							: "";
-					worst = {
-						right: Math.round(r.right),
-						desc: `${el.tagName.toLowerCase()}${cls ? `.${cls}` : ""} right=${Math.round(r.right)} w=${Math.round(r.width)}`,
-					};
+				// Not every element answers these (an <svg> child reports zero for
+				// both), so an unusable difference is skipped rather than ranked.
+				const over = el.scrollWidth - el.clientWidth;
+				if (!Number.isFinite(over) || over <= 1) {
+					continue;
 				}
+				// Ties go to the LATER element, which in document order is the
+				// deeper one: a nested column and its parent overflow by exactly
+				// the same amount, and the inner box is nearer the thing at fault.
+				if (worst && over < worst.over) {
+					continue;
+				}
+				// An element that is allowed to scroll sideways contains its own
+				// overflow and cannot push the viewport out.
+				const { overflowX } = getComputedStyle(el);
+				if (overflowX !== "visible" && overflowX !== "clip") {
+					continue;
+				}
+				// The overflowing box is the CONTAINER; the thing that is actually
+				// too wide is a child sticking out of it, and that is the one worth
+				// naming. Verified in a browser: a 900px div in a 440px page shows
+				// up as its parent overflowing, not as itself.
+				worst = {
+					over,
+					desc: `${describe(el)} content=${el.scrollWidth} client=${el.clientWidth} via ${widestChild(el)}`,
+				};
 			}
 			return worst ? worst.desc : "-";
 		} catch {
 			return "(scan failed)";
 		}
+	};
+
+	// Which child is sticking out of an overflowing box. Direct children only -
+	// the walk above visits every box in the page, so the deepest overflowing
+	// container is the one that gets here and its own children are the answer.
+	const widestChild = (el: Element) => {
+		let widest: { width: number; desc: string } | undefined;
+		for (const child of el.children) {
+			const width = child.getBoundingClientRect().width;
+			if (!widest || width > widest.width) {
+				widest = { width, desc: `${describe(child)} w=${num(width)}` };
+			}
+		}
+		return widest ? widest.desc : "(no children)";
+	};
+
+	// DOES STICKY WORK ON THIS PAGE AT ALL?
+	//
+	// This is the measurement five rounds of reports could not make. Everything
+	// else describes the header, and a header at its static position looks the
+	// same whether WebKit lost this one element's sticky node or froze the whole
+	// scrolling tree - two faults with completely different fixes.
+	//
+	// So put a brand-new sticky element in the page, right where the header
+	// lives, and read where it lands. A node created a moment ago cannot be
+	// stale, so:
+	//
+	//   probe stuck (0), header not      -> the header's own node is stale, and
+	//                                       rebuilding it is the right repair
+	//   probe at -scrollY, like header   -> the scrolling tree is frozen for the
+	//                                       whole document; no per-element
+	//                                       repair can help
+	//
+	// Zero-height so inserting it moves nothing, and removed before returning.
+	const stickyProbe = () => {
+		const top = probeStickyTop();
+		return top === undefined ? "-" : String(top);
 	};
 
 	return {
@@ -161,9 +306,41 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		// A non-visible overflow on any ancestor silently breaks position:sticky,
 		// so name the culprit if there is one.
 		clippingAncestor: header ? findClippingAncestor(header) : "-",
+		// HOW FAR STICKY HAS LIFTED THE HEADER OFF ITS OWN STATIC POSITION, and
+		// what it should be. This is the one header measurement that does not
+		// depend on knowing which viewport the rects are reported against,
+		// because both rects are read in the same breath and the coordinate space
+		// cancels: a header sticking properly sits `scrollY` below where the flow
+		// would have put it, and a header that has come unstuck sits at zero,
+		// whatever iOS believes about scale, panning or the size of the screen.
+		//
+		// Five reports argued about coordinate spaces. This number ends that
+		// argument - though not the other one: on iOS the main thread's rects go
+		// stale during a flick and its momentum, so like every other reading here
+		// it only means something with the page at rest.
+		headerLift: headerLift(header, rect),
+		headerLiftExpected: num(window.scrollY),
+		// A sticky element created a moment ago, measured where the header is.
+		// See stickyProbe: it separates a stale node from a frozen scrolling
+		// tree, which is the difference between a repairable fault and one that
+		// no repair of the element can touch.
+		stickyProbe: stickyProbe(),
+		// WHICH ELEMENT IS ACTUALLY SCROLLING. A document scroller is the whole
+		// premise of both bars (see the header CSS); if this ever reads anything
+		// but html, sticky is anchored somewhere nobody designed for.
+		scroller: document.scrollingElement
+			? describe(document.scrollingElement)
+			: "-",
+		docScrollTop: num(document.documentElement.scrollTop),
+		bodyScrollTop: num(document.body.scrollTop),
 		modalPinned: document.querySelector(".ios-modal-pinned") !== null,
 		contentPosition: contentStyle?.position,
 		contentPaddingTop: contentStyle?.paddingTop,
+		contentTop: content ? num(content.getBoundingClientRect().top) : "-",
+		contentHeight: content ? num(content.getBoundingClientRect().height) : "-",
+		// The full chain, because the single-culprit check above stopped at
+		// <body> and could only report one kind of culprit.
+		headerAncestors: header ? ancestorChain(header) : "-",
 		// The bottom ticker comes unstuck the same way. What matters for it is the
 		// gap between its bottom edge and the foot of the layout viewport: zero on
 		// a healthy bar, whatever it drifted by on a broken one.
@@ -172,9 +349,11 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		// layout viewport to fit anything that renders wider than the screen and
 		// keeps the expansion until the next launch - a field device sat at 518px
 		// on a 440pt screen for days, both sticky bars anchored partly off the
-		// glass. minimum-scale=1 now prevents the expansion, so an overwide
-		// element shows up as a pannable page instead; either way, this names it.
-		widestElement: widestElement(),
+		// glass, and minimum-scale=1 did NOT stop it (a later report from the
+		// build that added it came back at 518 again). So this has to name the
+		// element on its own merits rather than by width - see
+		// overflowingElement.
+		overflowingElement: overflowingElement(),
 	};
 };
 

@@ -27,9 +27,22 @@
 // That means the watchdog is inert on every platform where this doesn't happen,
 // and self-verifying where it does: if a repair doesn't take, the next check
 // tries again rather than quietly giving up.
+//
+// AND FOR SIX ROUNDS IT DETECTED NOTHING, on a device whose owner was watching
+// both bars scroll off the screen. The detector had learned to subtract
+// visualViewport.offsetTop before judging - earned honestly, on a panned page -
+// and on the broken device that offset was equal to the scroll position, which
+// is precisely the amount a stranded bar is displaced by. Every reading came out
+// "healthy", the ladder never ran once, and the manual repair button reported
+// nothing wrong. See viewportOffsetIsInformative: an offset that only repeats
+// the scroll position is not evidence of a pan, it is a second symptom of the
+// same stale scrolling tree, and it must not be allowed to excuse the first.
 
 import { PINNED_SELECTOR } from "./stickyHeaderPin.ts";
-import { recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
+import {
+	probeStickyTop,
+	recordHeaderEvent,
+} from "./stickyHeaderDiagnostics.ts";
 import {
 	initVisualViewportHeader,
 	resyncStickyBarShifts,
@@ -126,20 +139,58 @@ export const headerIsDetached = ({
 	// nothing about the element was wrong. Subtracting the offset asks the only
 	// meaningful question: is the header where sticky would put it?
 	//
-	// One caveat this excuse cannot answer: when offsetTop happens to EQUAL
-	// scrollY, a header at minus that number is indistinguishable from one
-	// riding the page. A field device sat in exactly that state for days and
-	// the header genuinely was off-screen - but the cause was the layout
-	// viewport itself, expanded past the screen by an overwide element, which
-	// no repair of the ELEMENT can fix (the ladder ran and could not, and the
-	// transform that could was rejected as ugly). That state is now prevented
-	// at the root instead: minimum-scale=1 in index.html makes the expansion
-	// impossible, and the diagnostics name any element that tries. So the
-	// excuse stands, and this stays calm in a state it cannot repair.
-	const offset = visualOffsetTop();
-	const expected = stickyTop() - (Number.isFinite(offset) ? offset : 0);
+	// AND WHERE THE EXCUSE HAS TO STOP - see viewportOffsetIsInformative. An
+	// offsetTop that merely echoes the scroll position excuses every possible
+	// reading, including a header lying at its own static position, so it must
+	// not be subtracted.
+	const expected = stickyTop() - usableOffset(visualOffsetTop(), scrolled);
 	return top < expected - TOLERANCE_PX;
 };
+
+// IS A VISUAL-VIEWPORT OFFSET WORTH SUBTRACTING, OR IS IT JUST THE SCROLL
+// POSITION WEARING A HAT?
+//
+// Subtracting visualViewport.offsetTop is what lets a genuinely panned page off
+// the hook: the rects and sticky disagree by exactly that offset, and a healthy
+// header reads short by it. But the subtraction is only safe while the offset
+// says something the scroll position does not.
+//
+// When offsetTop EQUALS scrollY it says nothing at all, and worse, it excuses
+// the one reading that proves a fault: a header sitting at its static position
+// reads -scrollY, the excuse expects -offsetTop, the two are the same number,
+// and detection can never fire however far the bar has ridden. Two field
+// reports sat in exactly that state (offsetTop 14 on a page scrolled to 14,
+// header at -14; and the same shape at 406) with the owner reporting both bars
+// scrolling off the screen and the repair button doing nothing - because the
+// ladder was never allowed to run.
+//
+// It is not a coincidence that the two numbers match, either. Both come off the
+// same scrolling tree: when WebKit hands the compositor sticky constraints
+// computed against a scroll offset of zero, the bars stay pinned to the
+// document instead of the viewport AND the visual viewport reports itself
+// offset by the whole scroll. One stale tree, two symptoms - so a matching
+// offset is evidence FOR the fault, and must never be evidence against it.
+//
+// Pure, and exported, because this rule is the reason the watchdog can see the
+// fault at all.
+export const viewportOffsetIsInformative = ({
+	offset,
+	scrollY,
+}: {
+	offset: number;
+	scrollY: number;
+}): boolean => {
+	if (!Number.isFinite(offset) || offset === 0) {
+		return false;
+	}
+	if (!Number.isFinite(scrollY)) {
+		return true;
+	}
+	return Math.abs(offset - scrollY) > TOLERANCE_PX;
+};
+
+const usableOffset = (offset: number, scrollY: number) =>
+	viewportOffsetIsInformative({ offset, scrollY }) ? offset : 0;
 
 type BottomDeps = {
 	// Viewport-relative bottom edge of the bar.
@@ -149,6 +200,9 @@ type BottomDeps = {
 	anchorHeights: () => number[];
 	pinnedByModal: () => boolean;
 	visualOffsetTop: () => number;
+	// Only to tell a real viewport offset from one that is echoing the scroll -
+	// see viewportOffsetIsInformative.
+	scrollY: () => number;
 };
 
 // Is a bar stuck to the bottom of the window provably not there?
@@ -182,6 +236,7 @@ export const bottomBarIsDetached = ({
 	anchorHeights,
 	pinnedByModal,
 	visualOffsetTop,
+	scrollY,
 }: BottomDeps): boolean => {
 	// A modal pins the page and can legitimately move things; and the repair
 	// ladder nudges the scroll position, which is the last thing a pinned page
@@ -210,8 +265,12 @@ export const bottomBarIsDetached = ({
 	// adrift and is riding the content HUNDREDS of pixels from anywhere it could
 	// legitimately be; admitting one more candidate position costs it almost
 	// nothing, and it no longer has to be right about which offset is real.
-	const rawOffset = visualOffsetTop();
-	const offset = Number.isFinite(rawOffset) ? rawOffset : 0;
+	//
+	// One offset is NOT admitted, for the same reason the header's is not: one
+	// that merely echoes the scroll position. It is a symptom of the stale
+	// scrolling tree rather than a pan, and admitting it hands a ridden bar an
+	// alibi at every scroll position it can possibly be at.
+	const offset = usableOffset(visualOffsetTop(), scrollY());
 	const anchors = anchorHeights().filter(
 		(height) => Number.isFinite(height) && height > 0,
 	);
@@ -320,6 +379,7 @@ const TICKER_BAR: Bar = {
 			},
 			pinnedByModal: modalPinning,
 			visualOffsetTop: () => window.visualViewport?.offsetTop ?? 0,
+			scrollY: () => window.scrollY,
 		}),
 	// A bottom bar is out of place at the top of the document just as visibly as
 	// anywhere else, so there is no position where the question is unanswerable.
@@ -394,6 +454,44 @@ const nudgeScroller = async () => {
 	window.scrollTo(window.scrollX, y);
 	// Let the reconciliation land before anything measures it.
 	await nextFrame();
+};
+
+// CAN THE LADDER POSSIBLY HELP, given what the probe just said?
+//
+// Every step of the ladder rebuilds something belonging to ONE element - its
+// sticky node, its renderer - so all of it rests on the assumption that the
+// element is what went stale. The probe is how that assumption gets checked: a
+// sticky element created a moment ago cannot be carrying stale state, so if it
+// lands adrift too, nothing about the bar is wrong and no amount of rebuilding
+// the bar will move it.
+//
+// This is not hypothetical. The field device ran the full ladder from the manual
+// button, twice, and reported the header in exactly the same place afterwards.
+// Left ungated, a working detector would now run that same futile ladder on
+// every scroll that settles - and the ladder is not free: it takes the bar out
+// of flow for a frame and nudges the scroll position, which the history at the
+// top of this file records as capable of causing the symptom by itself.
+//
+// The probe only means something where a stuck bar and a loose one are in
+// different places, which is the same "page must be scrolled" condition the
+// header's own detection has.
+export const repairCanHelp = ({
+	probeTop,
+	scrollY,
+}: {
+	probeTop: number | undefined;
+	scrollY: number;
+}): boolean => {
+	if (probeTop === undefined || !Number.isFinite(probeTop)) {
+		// No reading, no evidence, no reason not to try.
+		return true;
+	}
+	if (!Number.isFinite(scrollY) || scrollY <= TOLERANCE_PX) {
+		return true;
+	}
+	// A fresh sticky element sitting where it belongs means sticky works here and
+	// the bar alone is stale - which is exactly what the ladder is for.
+	return probeTop >= -TOLERANCE_PX;
 };
 
 // Escalate only as far as it takes, re-measuring after each step. Cheap when the
@@ -475,18 +573,36 @@ const viewportNote = () => {
 // unchanged. Either the ladder worked and the viewport panned 349px in those
 // 31ms, or nothing happened and the reading was stale. The line that would have
 // said which is the one that was missing it.
+//
+// EVERY LINE ALSO CARRIES THE LIFT, which is the one number in the log that
+// does not depend on knowing which viewport the rects are reported against. A
+// bar's lift is how far it sits below its own static position inside its
+// parent; both rects are read in the same breath, so the coordinate space
+// cancels out. A header that is sticking is lifted by the scroll offset, and a
+// header that has come unstuck is lifted by nothing at all - two readings that
+// look identical in `headerTop` and cannot be confused here.
+const staticLift = (element: HTMLElement | null) => {
+	const parent = element?.parentElement;
+	if (!element || !parent) {
+		return "";
+	}
+	const lift =
+		element.getBoundingClientRect().top - parent.getBoundingClientRect().top;
+	return ` lift=${Math.round(lift)}`;
+};
+
 const note = (
 	bar: Bar,
 	element: HTMLElement | null,
 	kind: string,
 	detail?: string,
 ) => {
+	const context = `${viewportNote()}${staticLift(element)}`;
 	recordHeaderEvent({
 		kind: `${bar.name}:${kind}`,
 		scrollY: Math.round(window.scrollY),
 		headerTop: element ? Math.round(bar.edge(element)) : Number.NaN,
-		detail:
-			detail === undefined ? viewportNote() : `${detail} ${viewportNote()}`,
+		detail: detail === undefined ? context : `${detail} ${context}`,
 	});
 };
 
@@ -623,7 +739,21 @@ const checkBar = async (bar: Bar, trigger: string) => {
 				return;
 			}
 
-			note(bar, element, "detached", `via=${trigger}`);
+			// THE ONE READING THAT SAYS WHICH FAULT THIS IS, taken at the only
+			// moment it can be taken: a sticky element created right now, measured
+			// where the bars live. If it lands at 0 while the bar is adrift, the
+			// bar's own sticky node is stale and the ladder below is the right
+			// medicine. If it is adrift by the same amount, sticky is not working
+			// for anything in the page and no repair of an ELEMENT can help -
+			// which is worth knowing before the ladder runs three times and gives
+			// up, as it has been doing on the field device.
+			const probeTop = probeStickyTop();
+			note(bar, element, "detached", `via=${trigger} probe=${probeTop ?? "-"}`);
+
+			if (!repairCanHelp({ probeTop, scrollY: window.scrollY })) {
+				note(bar, element, "unrepairable", `probe=${probeTop}`);
+				return;
+			}
 
 			for (const [i, step] of repairSteps.entries()) {
 				await step(element);

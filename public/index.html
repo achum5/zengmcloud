@@ -3,15 +3,14 @@
 	<head>
 		<meta charset="utf-8" />
 		<title>GAME_NAME</title>
-		<!-- minimum-scale pins iOS at 1x. Without it, any element that renders wider
-		than the screen - even for one frame - makes iOS expand the layout viewport
-		to fit it and zoom out, PERMANENTLY until the next launch. position:sticky
-		anchors to the layout viewport, so in that state the header and the score
-		ticker sit partly or fully outside the visible screen and "scroll away",
-		which no amount of repair machinery can honestly fix. A field device sat at
-		a 518px-wide viewport on a 440pt screen (scale 0.85 = 440/518) for days
-		because of this. With the scale pinned, overflow just means a momentarily
-		pannable page - the bars stay exactly where sticky puts them. -->
+		<!-- minimum-scale was added to stop iOS expanding the layout viewport past
+		the screen (a field device sat at 518px on a 440pt screen, scale 0.85 =
+		440/518, for days). IT DID NOT WORK: the very next report, from the build
+		that added it, came back at 518 and 0.85 again - a scale below the stated
+		minimum, so iOS is simply not applying the constraint to this. The
+		expansion is a page scale, not a user zoom, and minimum-scale does not
+		bound it. Left in place because it costs nothing, but nothing depends on
+		it and no fix should assume it works. -->
 		<meta
 			name="viewport"
 			content="width=device-width, initial-scale=1, minimum-scale=1"

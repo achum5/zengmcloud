@@ -12,15 +12,22 @@
 // gone, because a header that rides during every scroll and snaps back at
 // every stop is worse to live with than the defect.
 //
-// The defect itself turned out not to be the header's at all. The device sat
-// at a 518px layout viewport on a 440pt screen - iOS had expanded the
-// viewport to fit something that rendered too wide, and kept it that way for
-// days. position:sticky anchors to the layout viewport, so both bars sat
-// partly outside the screen and "scrolled away", exactly as reported. That is
-// fixed at the root: minimum-scale=1 in the viewport meta (index.html), which
-// makes the expansion impossible, and a widest-element scan in the sticky
-// diagnostics so any element that tries gets named. No transform on the
-// header can be the answer to a viewport that is bigger than the screen.
+// The next theory was that the defect was not the header's at all: the device
+// sat at a 518px layout viewport on a 440pt screen, and position:sticky
+// anchors to the layout viewport, so both bars would sit partly outside the
+// screen. minimum-scale=1 went into the viewport meta to stop the expansion.
+// THAT THEORY IS DEAD TOO - the report from the build carrying it came back at
+// 518 and 0.85, and the expansion cannot be what strands the bars anyway: a
+// wider layout viewport scales the page down, it does not move a stuck header
+// off the top of it.
+//
+// What the same report DID show, once the right number was looked at, is a
+// header sitting at exactly its own static position while the page was
+// scrolled - sticky not engaging at all - and a visualViewport.offsetTop equal
+// to the scroll offset, which is what the watchdog had been subtracting before
+// deciding the header was fine. See viewportOffsetIsInformative in
+// stickyHeaderWatchdog.ts: the detector was cancelling the fault out, which is
+// why the repair button reported nothing wrong and did nothing.
 //
 // THE TICKER KEEPS ITS CORRECTION, because it is MEASURED rather than derived
 // from the viewport - see tickerMeasuredShift below - so a lying viewport
