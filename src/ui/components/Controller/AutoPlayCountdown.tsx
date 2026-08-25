@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocal } from "../../util/local.ts";
 import { helpers } from "../../util/helpers.ts";
 import { autoPlayScheduler } from "../../util/autoPlayScheduler.ts";
+import { autoPlayCountdownVisible } from "../../util/autoPlayCountdownVisible.ts";
 
 const format = (ms: number): string => {
 	const total = Math.max(0, Math.round(ms / 1000));
@@ -26,14 +27,21 @@ const format = (ms: number): string => {
 // mid-game and tell you that was the last one. A clock cannot spoil a game, but
 // a clock DISAPPEARING can. It picks the real state back up when the game ends.
 const AutoPlayCountdown = () => {
-	const { lid, mpSyncActive, mpSyncIsHost, mpAutoPlay, liveGameInProgress } =
-		useLocal([
-			"lid",
-			"mpSyncActive",
-			"mpSyncIsHost",
-			"mpAutoPlay",
-			"liveGameInProgress",
-		]);
+	const {
+		lid,
+		mpSyncActive,
+		mpSyncIsHost,
+		mpAutoPlay,
+		mpPhaseReady,
+		liveGameInProgress,
+	} = useLocal([
+		"lid",
+		"mpSyncActive",
+		"mpSyncIsHost",
+		"mpAutoPlay",
+		"mpPhaseReady",
+		"liveGameInProgress",
+	]);
 	const [now, setNow] = useState(() => Date.now());
 
 	// Keep this device's own scheduler loaded so the simmer runs (and broadcasts)
@@ -60,19 +68,55 @@ const AutoPlayCountdown = () => {
 	const liveEnabled = isSimmer ? localEnabled : !!mpAutoPlay?.enabled;
 	const liveNextRunAt = isSimmer ? localNextRunAt : mpAutoPlay?.nextRunAt;
 
+	// WHILE THE ROOM IS BEING ASKED TO READY UP, THE CLOCK IS A LIE.
+	//
+	// A configured sim stop (a day stop, the trade deadline) becomes a ready-up
+	// gate in a shared league, and the ordinary sim path REFUSES to cross it -
+	// see getPendingSimStop in worker/core/sync/tradeDeadlineGate.ts. So the
+	// timer can run down to zero, fire, and advance nothing: what actually
+	// crosses the stop is the ready-up evaluator, the moment the last team says
+	// it is done.
+	//
+	// Counting down to a sim that cannot happen is worse than showing nothing,
+	// because it reads as "the league moves on in 18 minutes whether you are
+	// ready or not". The scheduler is deliberately LEFT RUNNING underneath -
+	// this only hides the display - so nothing has to be restarted by hand once
+	// the gate opens.
+	//
+	// Exactly while PhaseReadyControl is up, which is the same condition, so the
+	// two never disagree: ready button visible, clock hidden.
+	const gated = mpPhaseReady !== undefined;
+
 	// Held across a live game rather than recomputed - see the note above. Note
 	// nextRunAt is an absolute timestamp, so a held one keeps counting DOWN
 	// correctly; it is only wrong if the schedule itself moved mid-playback.
-	const frozen = useRef({ enabled: liveEnabled, nextRunAt: liveNextRunAt });
-	const { enabled, nextRunAt } = useMemo(() => {
+	//
+	// The gate is frozen WITH it, deliberately. A ready-up becomes visible the
+	// instant the phase advances, which during a live game is before the
+	// playback ends - so reading it live would wink the clock out mid-game,
+	// which is the one thing the freeze exists to prevent.
+	const frozen = useRef({
+		enabled: liveEnabled,
+		nextRunAt: liveNextRunAt,
+		gated,
+	});
+	const {
+		enabled,
+		nextRunAt,
+		gated: gatedNow,
+	} = useMemo(() => {
 		if (liveGameInProgress) {
 			return frozen.current;
 		}
-		frozen.current = { enabled: liveEnabled, nextRunAt: liveNextRunAt };
+		frozen.current = { enabled: liveEnabled, nextRunAt: liveNextRunAt, gated };
 		return frozen.current;
-	}, [liveEnabled, liveNextRunAt, liveGameInProgress]);
+	}, [liveEnabled, liveNextRunAt, gated, liveGameInProgress]);
 
-	const active = enabled && nextRunAt !== undefined;
+	const active = autoPlayCountdownVisible({
+		enabled,
+		nextRunAt,
+		gated: gatedNow,
+	});
 	useEffect(() => {
 		if (!active) {
 			return;
@@ -81,7 +125,10 @@ const AutoPlayCountdown = () => {
 		return () => clearInterval(id);
 	}, [active]);
 
-	if (!enabled || nextRunAt === undefined) {
+	// The undefined check is redundant with `active` at runtime; it is here
+	// because the narrowing happens inside the helper, where TypeScript cannot
+	// follow it to the format() call below.
+	if (!active || nextRunAt === undefined) {
 		return null;
 	}
 	return (
