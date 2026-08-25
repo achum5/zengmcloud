@@ -16,6 +16,7 @@ import {
 } from "../../components/contract.tsx";
 import { wrappedPlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
 import { MissingAssets, OvrChange } from "../Trade/Summary.tsx";
+import { teamOvrDeltaSymbols } from "../../../common/teamRatings.ts";
 import type { MissingAsset } from "../../../worker/views/savedTrades.ts";
 import useTradeOffersSwitch from "../../hooks/useTradeOffersSwitch.tsx";
 import LookingFor from "./LookingFor.tsx";
@@ -355,9 +356,15 @@ export const OfferTable = ({
 		const diff = ovrAfter - ovrBefore;
 		return {
 			value: <OvrChange before={ovrBefore} after={ovrAfter} />,
+			// SORTING stays on the true change even while the cell shows bands, so
+			// "which of these offers helps me most" still orders correctly - and
+			// ordering a list of offers is a far weaker signal than reading an exact
+			// delta off a one-player swap, which is the leak the bands close.
 			sortValue: hideTeamRatings ? diff : ovrAfter,
+			// Searching has to match what is on screen, or typing "+++" finds
+			// nothing while typing the hidden number finds a row.
 			searchValue: hideTeamRatings
-				? `${diff > 0 ? "+" : ""}${diff}`
+				? teamOvrDeltaSymbols(diff)
 				: `${ovrBefore} ${ovrAfter}`,
 		};
 	};

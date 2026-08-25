@@ -134,6 +134,64 @@ export const powerRankingIsJustTeamOvr = ({
 	noGamesYet: boolean;
 }): boolean => display.type === "hidden" && noGamesYet;
 
+// HOW MUCH A TRADE MOVES A TEAM, WITHOUT HANDING BACK THE RATINGS.
+//
+// With team ratings hidden, the trade screens already showed the CHANGE rather
+// than the resulting rating - you should be able to tell whether a deal helps
+// you without knowing how good anyone is. But an EXACT change is a measuring
+// instrument. Offer one player at a time and read the delta off the screen and
+// you can solve for that player's rating to within a point or two, which is
+// precisely the number the setting exists to hide. A league found this and
+// reported it: swap in one guard, team goes +13; swap in another, +11; a third,
+// +5. That orders and near-enough prices three players nobody was supposed to
+// be able to rate.
+//
+// So the change is reported in bands of five, as a run of + or - signs. It
+// still answers the question the number was there for - is this a small
+// upgrade or a huge one - and it stops being an oracle: every rating inside a
+// five-point window now reads identically.
+export const TEAM_OVR_DELTA_BAND = 5;
+
+// Five bands, so a genuinely enormous swing still reads as bigger than a large
+// one rather than saturating early.
+export const MAX_TEAM_OVR_DELTA_SYMBOLS = 5;
+
+// "+++" for +11 to +15, "--" for -6 to -10, "0" for no change.
+export const teamOvrDeltaSymbols = (diff: number): string => {
+	if (!Number.isFinite(diff)) {
+		return "0";
+	}
+	// team.ovr is already rounded, so this only ever matters for an imported
+	// league or a God Mode edit - and rounding first is what keeps a half-point
+	// from being promoted to a full band.
+	const rounded = Math.round(diff);
+	if (rounded === 0) {
+		return "0";
+	}
+	const bands = Math.min(
+		MAX_TEAM_OVR_DELTA_SYMBOLS,
+		Math.ceil(Math.abs(rounded) / TEAM_OVR_DELTA_BAND),
+	);
+	return (rounded > 0 ? "+" : "-").repeat(bands);
+};
+
+// What a run of signs stands for, for the tooltip. Naming the band is not a
+// leak - the band IS what is being disclosed - and without it the reader has to
+// guess whether "++" is twice "+" or the second of five.
+export const teamOvrDeltaBandLabel = (diff: number): string => {
+	const symbols = teamOvrDeltaSymbols(diff);
+	if (symbols === "0") {
+		return "No change";
+	}
+	const sign = symbols[0]!;
+	const bands = symbols.length;
+	if (bands === MAX_TEAM_OVR_DELTA_SYMBOLS) {
+		return `${sign}${(bands - 1) * TEAM_OVR_DELTA_BAND + 1} or more`;
+	}
+	const low = (bands - 1) * TEAM_OVR_DELTA_BAND + 1;
+	return `${sign}${low} to ${sign}${bands * TEAM_OVR_DELTA_BAND}`;
+};
+
 // How a delayed rating is labelled, everywhere it is shown. One string so the
 // screens cannot drift apart on what the number means.
 export const delayedTeamOvrNote = (season: number): string =>

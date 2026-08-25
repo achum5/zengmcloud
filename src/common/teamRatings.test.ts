@@ -3,6 +3,8 @@ import {
 	delayedTeamOvrNote,
 	hideTeamOvr,
 	powerRankingIsJustTeamOvr,
+	teamOvrDeltaBandLabel,
+	teamOvrDeltaSymbols,
 	showTeamOvr,
 	teamOvrDisplay,
 	teamOvrDisplayForSeason,
@@ -249,5 +251,93 @@ describe("powerRankingIsJustTeamOvr", () => {
 			}),
 			false,
 		);
+	});
+});
+
+// THE MEASURING INSTRUMENT. With team ratings hidden the trade screens showed
+// the exact change, which a league used as an oracle: offer one player, read
+// the delta, solve for his rating. The numbers below are theirs - a guard worth
+// +13, another +11, a third +5 - and the whole point of the bands is that the
+// first two now read identically.
+describe("teamOvrDeltaSymbols", () => {
+	test("the reported exploit no longer separates two players in the same band", () => {
+		assert.strictEqual(teamOvrDeltaSymbols(13), "+++");
+		assert.strictEqual(teamOvrDeltaSymbols(11), "+++");
+		assert.strictEqual(teamOvrDeltaSymbols(15), "+++");
+		assert.strictEqual(teamOvrDeltaSymbols(5), "+");
+	});
+
+	test("every band boundary", () => {
+		const cases: [number, string][] = [
+			[1, "+"],
+			[5, "+"],
+			[6, "++"],
+			[10, "++"],
+			[11, "+++"],
+			[15, "+++"],
+			[16, "++++"],
+			[20, "++++"],
+			[21, "+++++"],
+			[999, "+++++"],
+		];
+		for (const [diff, expected] of cases) {
+			assert.strictEqual(teamOvrDeltaSymbols(diff), expected, `+${diff}`);
+		}
+	});
+
+	test("negatives mirror exactly", () => {
+		for (const diff of [1, 5, 6, 10, 11, 15, 16, 20, 21, 999]) {
+			assert.strictEqual(
+				teamOvrDeltaSymbols(-diff),
+				teamOvrDeltaSymbols(diff).replaceAll("+", "-"),
+				`-${diff}`,
+			);
+		}
+	});
+
+	test("no change reads as zero, not as an empty cell", () => {
+		assert.strictEqual(teamOvrDeltaSymbols(0), "0");
+		assert.strictEqual(teamOvrDeltaSymbols(-0), "0");
+	});
+
+	// team.ovr is rounded already, so this is about imported leagues and God
+	// Mode. Rounding first is what stops a half point becoming a whole band.
+	test("a fraction is rounded before it is banded", () => {
+		assert.strictEqual(teamOvrDeltaSymbols(0.4), "0");
+		assert.strictEqual(teamOvrDeltaSymbols(5.4), "+");
+		assert.strictEqual(teamOvrDeltaSymbols(5.6), "++");
+	});
+
+	test("an unusable number claims nothing", () => {
+		assert.strictEqual(teamOvrDeltaSymbols(Number.NaN), "0");
+		assert.strictEqual(teamOvrDeltaSymbols(Number.POSITIVE_INFINITY), "0");
+	});
+
+	// The property that matters: within a band the symbols are identical, so no
+	// sequence of one-player offers can price a player more finely than five.
+	test("nothing inside a band is distinguishable", () => {
+		for (let low = 1; low <= 16; low += 5) {
+			const symbols = teamOvrDeltaSymbols(low);
+			for (let diff = low; diff < low + 5; diff += 1) {
+				assert.strictEqual(teamOvrDeltaSymbols(diff), symbols, `+${diff}`);
+			}
+		}
+	});
+});
+
+describe("teamOvrDeltaBandLabel", () => {
+	test("names the band the symbols stand for", () => {
+		assert.strictEqual(teamOvrDeltaBandLabel(3), "+1 to +5");
+		assert.strictEqual(teamOvrDeltaBandLabel(13), "+11 to +15");
+		assert.strictEqual(teamOvrDeltaBandLabel(-8), "-6 to -10");
+	});
+
+	test("the top band is open-ended", () => {
+		assert.strictEqual(teamOvrDeltaBandLabel(21), "+21 or more");
+		assert.strictEqual(teamOvrDeltaBandLabel(-60), "-21 or more");
+	});
+
+	test("no change", () => {
+		assert.strictEqual(teamOvrDeltaBandLabel(0), "No change");
 	});
 });

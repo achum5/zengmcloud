@@ -10,6 +10,10 @@ import type { Ref } from "react";
 import { orderBy } from "../../../common/utils.ts";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 import { useLocal } from "../../util/local.ts";
+import {
+	teamOvrDeltaBandLabel,
+	teamOvrDeltaSymbols,
+} from "../../../common/teamRatings.ts";
 
 // Arrow is https://icons.getbootstrap.com/icons/arrow-right/ v1.8.1
 export const arrow = (
@@ -46,11 +50,13 @@ export const OvrChange = ({
 	});
 
 	if (hideTeamRatings) {
+		// Bands of five rather than the exact number - an exact delta is a way to
+		// solve for a hidden player rating one swap at a time. See
+		// teamOvrDeltaSymbols.
 		const diff = after - before;
 		return (
-			<span className={className}>
-				{diff > 0 ? "+" : ""}
-				{diff}
+			<span className={className} title={teamOvrDeltaBandLabel(diff)}>
+				{teamOvrDeltaSymbols(diff)}
 			</span>
 		);
 	}
