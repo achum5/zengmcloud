@@ -259,6 +259,16 @@ const lowerInjury = (type: string): string =>
 // plural name is already plural.
 const injuryPhrase = (type: string): string => {
 	const lower = lowerInjury(type);
+	// A BARE PARTICIPLE IS NOT A THING YOU CAN HAVE. Injury types are normally
+	// noun phrases ("Sprained Ankle"), but a league can carry a type that is only
+	// an adjective - the generic "Injured" that arrives with some imported
+	// rosters is the one seen in the wild, and it produced "sat out with an
+	// injured", which is the sort of line that gives the whole generator away.
+	// One word ending in -ed describes the player, not the injury, so name the
+	// injury instead. Nothing is lost: "Injured" never said more than that.
+	if (!lower.includes(" ") && lower.endsWith("ed")) {
+		return "an injury";
+	}
 	// "ss" is singular ("abscess"), so it still takes an article.
 	if (
 		lower.endsWith("itis") ||
@@ -339,6 +349,38 @@ const bestOf = (players: RecapPlayer[]): RecapPlayer | undefined => {
 };
 
 // The winner's supporting cast: everyone but the story player, best first.
+// ONE VOCABULARY FOR "SCORED N", shared by every sentence that says it.
+//
+// These lists used to be written out separately at each site and three of them
+// overlapped, so a single recap could read "Al Horford was good for 18 points"
+// in one paragraph and "Keith Bogans was good for 18 points in defeat" two
+// sentences later. `pick` rotates WITHIN a pool and cannot see across two of
+// them, so the only way one rotation covers all three is for all three to BE
+// one pool - hence the shared id as well as the shared array.
+const SCORED_VERBS = [
+	"added",
+	"chipped in",
+	"contributed",
+	"kicked in",
+	"pitched in with",
+	"tacked on",
+	"was good for",
+	"supplied",
+	"came up with",
+	// "finished with" is deliberately NOT here. Other builders use it for team
+	// totals ("They finished with 28 assists") and the star's shooting line
+	// ("finished 7-of-15"), and `pick` cannot see across builders - so leaving it
+	// in produced "finished 7-of-15... finished with 28 assists... Role One
+	// finished with 16 points" in one recap. Thirteen other verbs cost nothing.
+	"had",
+	"put up",
+	"posted",
+	"went for",
+] as const;
+
+const scoredVerb = (rng: () => number): string =>
+	pick(rng, [...SCORED_VERBS], "scoredVerb");
+
 const supportingCast = (
 	players: RecapPlayer[],
 	star: RecapPlayer,
@@ -419,6 +461,21 @@ const enteringLine = (
 			? p.playoffAvg
 			: p.seasonAvg;
 	return line && line.gp >= 3 ? line : undefined;
+};
+
+// Everyone from either roster whose name appears in a stretch of text. Reading
+// the finished prose rather than tracking as we go means the set cannot fall out
+// of step with what a reader actually sees.
+const namesIn = (text: string, shape: Shape): Set<string> => {
+	const out = new Set<string>();
+	for (const t of [shape.winner, shape.loser]) {
+		for (const p of t.players) {
+			if (text.includes(p.name)) {
+				out.add(p.name);
+			}
+		}
+	}
+	return out;
 };
 
 // --- Team aggregates -----------------------------------------------------------
@@ -698,8 +755,17 @@ const roundName = (round: number, numRounds: number): string => {
 // A rich clause (or two) describing what this playoff/play-in game meant and how
 // it moved the series - the heart of a postseason recap.
 type PostseasonContext = {
-	// A short stakes phrase for the headline ("a Game 7", "an elimination game").
+	// A short stakes phrase for the headline ("a Game 7", "an elimination game"),
+	// joined with " in ".
 	headlineTag?: string;
+	// A headline ending that carries its own preposition, for the stakes " in "
+	// cannot express - "to win the title", "to reach the Finals". Wins over
+	// headlineTag when both are set.
+	//
+	// Without this a championship-clinching game got a headline indistinguishable
+	// from a Tuesday in January: "Celtics lean on Paul Pierce to take down the
+	// Pistons", with the fact that it won them the title left to the body.
+	headlineTail?: string;
 	// Full sentences for the body.
 	sentences: string[];
 };
@@ -709,8 +775,13 @@ const postseasonContext = (
 	shape: Shape,
 ): PostseasonContext => {
 	const out: PostseasonContext = { sentences: [] };
-	const w = nick(shape.winner);
-	const l = nick(shape.loser);
+	// WITH THE ARTICLE. Every sentence built here opens with one of these, and
+	// they were bare nicknames while the rest of the piece says "the Celtics" -
+	// so a playoff recap read "The Celtics got past the Pistons 104-96... Celtics
+	// took a 3-1 lead in the Conference Semifinals." flowSentence has always used
+	// theNick for the same reason.
+	const w = theNick(shape.winner);
+	const l = theNick(shape.loser);
 
 	if (game.playIn) {
 		const p = game.playIn;
@@ -774,22 +845,66 @@ const postseasonContext = (
 		out.headlineTag = "an elimination game";
 	}
 
-	// The clinching case: series won. (When it's the decider, the headline tag
-	// already carries the winner-take-all framing, so the body stays clean.)
+	// THE SEEDS, when they say something. A 2-vs-3 series is just a series; a
+	// low seed beating a high one is the fact everyone repeats about it, and the
+	// numbers were sitting in the payload unread.
+	const wSeed = winnerIsHome ? s.homeSeed : s.awaySeed;
+	const lSeed = winnerIsHome ? s.awaySeed : s.homeSeed;
+	const seedUpset =
+		typeof wSeed === "number" &&
+		typeof lSeed === "number" &&
+		wSeed - lSeed >= 3;
+
+	// The clinching case: series won.
 	if (need !== undefined && wAfter >= need) {
-		if (s.round === s.numRounds) {
-			out.sentences.push(
-				`${cap(w)} are champions, taking the title series ${wAfter}-${lBefore}.`,
-			);
-		} else {
-			const how =
-				lBefore === 0
-					? `a ${wAfter}-0 sweep`
-					: `the series ${wAfter}-${lBefore}`;
-			out.sentences.push(
-				`${cap(w)} closed out ${rnd} with ${how} and advanced.`,
-			);
-		}
+		// The headline has to carry it. A title is the biggest single result in
+		// the game and it was reading like any other win.
+		// A PARTICIPLE, not an infinitive. Several headline templates already
+		// contain a "to" ("Celtics lean on Paul Pierce to take down the
+		// Pistons"), and appending another one stacked them: "...to take down the
+		// Pistons to win the title". A comma clause reads correctly after every
+		// template in the pool.
+		const clinchTail =
+			s.round === s.numRounds
+				? ", clinching the title"
+				: `, advancing to ${roundName(s.round + 1, s.numRounds)}`;
+		// A clincher that is ALSO the decider keeps both facts. Overriding the tag
+		// dropped "Game 7" out of the piece entirely, which is the one detail
+		// nobody would leave out.
+		out.headlineTail = isDecider
+			? `${clinchTail} in ${deciderTag}`
+			: clinchTail;
+		// Two sentences: what the winner did, then WHOSE SEASON JUST ENDED. The
+		// losing side of a series result was never written at all - the recap
+		// reported who advanced and simply stopped, which reads like half a
+		// sentence in the one round where the loser's story is the bigger one.
+		out.sentences.push(
+			...(s.round === s.numRounds
+				? [
+						lBefore === 0
+							? `${cap(w)} are champions, sweeping the title series ${wAfter}-0.`
+							: `${cap(w)} are champions, taking the title series ${wAfter}-${lBefore}.`,
+						isDecider
+							? `It came down to the last night of the season, and ${theNick(shape.loser)} finish as runners-up.`
+							: seedUpset
+								? `The #${wSeed} seed finishes the job against the #${lSeed} seed.`
+								: `${cap(theNick(shape.loser))} finish as runners-up.`,
+					]
+				: [
+						isDecider
+							? `${cap(w)} closed out ${rnd} ${wAfter}-${lBefore} with ${
+									s.bestOf === 7 ? "a Game 7" : `a decisive Game ${gameNo}`
+								} win and advanced.`
+							: lBefore === 0
+								? `${cap(w)} closed out ${rnd} with a ${wAfter}-0 sweep and advanced.`
+								: `${cap(w)} closed out ${rnd} ${wAfter}-${lBefore} and advanced.`,
+						seedUpset
+							? `The #${wSeed} seed puts out the #${lSeed} seed, and ${poss(theNick(shape.loser))} season is over.`
+							: lBefore === 0
+								? `${cap(theNick(shape.loser))} go out without winning a game.`
+								: `${poss(cap(theNick(shape.loser)))} season is over.`,
+					]),
+		);
 		return out;
 	}
 
@@ -815,7 +930,42 @@ const postseasonContext = (
 		);
 	}
 
-	void l;
+	// WHAT IT SETS UP. A series score on its own is a fact; what a reader wants
+	// next is who is now in trouble, and the old context stopped before saying
+	// it. The nickname of the losing side was computed and thrown away here -
+	// this is the sentence it was always missing.
+	if (need !== undefined) {
+		const winnerNeeds = need - wAfter;
+		const loserNeeds = need - lBefore;
+		if (winnerNeeds === 1 && loserNeeds > 1) {
+			out.sentences.push(
+				loserNeeds >= 3
+					? // "straight" is already plural in this idiom - plural() would make
+						// it "3 straights".
+						`${cap(l)} must win ${numWord(loserNeeds)} straight to survive; a win in Game ${gameNo + 1} ends it.`
+					: `${cap(l)} face elimination in Game ${gameNo + 1}.`,
+			);
+		} else if (winnerNeeds === 1) {
+			// Both one win away - the next game decides it either way.
+			out.sentences.push(
+				`Game ${gameNo + 1} decides it, with both sides one win from ${
+					s.round === s.numRounds ? "the title" : "the next round"
+				}.`,
+			);
+		} else if (loserNeeds === 1) {
+			// The winner survived; the other side can still close it out next time.
+			out.sentences.push(
+				`${cap(l)} can still close it out in Game ${gameNo + 1}.`,
+			);
+		} else if (seedUpset && wAfter > lBefore) {
+			out.sentences.push(
+				`The #${wSeed} seed leads the #${lSeed} seed with ${numWord(winnerNeeds)} ${
+					winnerNeeds === 1 ? "win" : "wins"
+				} to go.`,
+			);
+		}
+	}
+
 	return out;
 };
 
@@ -951,7 +1101,8 @@ const buildHeadline = (
 	const winnerN = nick(shape.winner);
 	const loserN = nick(shape.loser);
 	const shot = clutchShot(game);
-	const tag = post.headlineTag ? ` in ${post.headlineTag}` : "";
+	const tag =
+		post.headlineTail ?? (post.headlineTag ? ` in ${post.headlineTag}` : "");
 
 	if (shot && !shot.tying) {
 		return h(
@@ -1710,27 +1861,46 @@ const plusMinusNote = (
 	shape: Shape,
 	star: RecapPlayer,
 	rng: () => number,
+	// Everyone the piece has already named. The plus-minus note shares a
+	// paragraph with the supporting-cast sentence, and the best plus-minus on a
+	// blowout winner is very often the same man the support sentence just wrote
+	// up - which read as "Pavlovic pitched in with 27 points... Pavlovic
+	// finished +34, the best mark on the floor." Skipping to the next-best swing
+	// keeps the note and introduces a new face.
+	said?: ReadonlySet<string>,
 ): string | undefined => {
-	let best: RecapPlayer | undefined;
-	for (const p of shape.winner.players) {
-		if (typeof p.pm === "number" && (!best || p.pm > (best.pm ?? -Infinity))) {
-			best = p;
-		}
+	const candidates = [...shape.winner.players]
+		.filter((p) => typeof p.pm === "number" && p !== star)
+		.sort((a, b) => (b.pm ?? 0) - (a.pm ?? 0));
+	let best = candidates.find((p) => !said?.has(p.name));
+	// If everyone with a big swing is already named, the note has nothing new to
+	// say and is better left out than repeated - but a note about the outright
+	// best mark is still worth having when nobody has been named at all.
+	if (!best && !said) {
+		best = candidates[0];
 	}
 	// +25 is a genuinely dominant shift; the old +18 bar fired in nearly every
 	// blowout and turned the note into filler.
-	if (!best || best === star || (best.pm ?? 0) < 25) {
+	if (!best || (best.pm ?? 0) < 25) {
 		return undefined;
 	}
+	// "the best mark on the floor" is only true of the actual leader.
+	const isLeader = best === candidates[0];
 	return pick(
 		rng,
-		[
-			`${best.name} was a team-best +${best.pm} in ${best.min} minutes.`,
-			`Nobody swung it further than ${best.name}, +${best.pm} across ${best.min} minutes.`,
-			`${best.name} finished +${best.pm}, the best mark on the floor.`,
-			`${cap(theNick(shape.winner))} outscored them by ${best.pm} with ${best.name} on the floor.`,
-		],
-		"plusMinus",
+		isLeader
+			? [
+					`${best.name} was a team-best +${best.pm} in ${best.min} minutes.`,
+					`Nobody swung it further than ${best.name}, +${best.pm} across ${best.min} minutes.`,
+					`${best.name} finished +${best.pm}, the best mark on the floor.`,
+					`${cap(theNick(shape.winner))} outscored them by ${best.pm} with ${best.name} on the floor.`,
+				]
+			: [
+					`${best.name} was +${best.pm} in ${best.min} minutes.`,
+					`${cap(theNick(shape.winner))} outscored them by ${best.pm} with ${best.name} on the floor.`,
+					`${best.name} finished +${best.pm}.`,
+				],
+		isLeader ? "plusMinus" : "plusMinusSecond",
 	);
 };
 
@@ -1786,28 +1956,11 @@ const supportSentence = (
 	const ddw = doubleWord(doubleCategories(second).length);
 	const secondText = ddw
 		? `${second.name} added a ${ddw} with ${statPhrase(second)}`
-		: `${second.name} ${pick(rng, [
-				"added",
-				"chipped in",
-				"contributed",
-				"kicked in",
-				"pitched in with",
-				"tacked on",
-				"was good for",
-				"supplied",
-				"came up with",
-				"finished with",
-			])} ${statPhrase(second)}`;
+		: `${second.name} ${scoredVerb(rng)} ${statPhrase(second)}`;
 
 	const third = cast[1];
 	if (third && (third.pts >= 14 || doubleCategories(third).length >= 2)) {
-		return `${secondText}, and ${third.name} ${pick(rng, [
-			"had",
-			"put up",
-			"posted",
-			"went for",
-			"finished with",
-		])} ${statPhrase(third, 1)}.`;
+		return `${secondText}, and ${third.name} ${scoredVerb(rng)} ${statPhrase(third, 1)}.`;
 	}
 	return `${secondText}.`;
 };
@@ -2171,7 +2324,9 @@ const vsAverageNote = (
 			[
 				`${star.name} shot it far better than the ${avg.fgp.toFixed(1)}% he had managed on the season.`,
 				`${star.name} came in shooting ${avg.fgp.toFixed(1)}% on the year.`,
-				`It was a long way from ${poss(star.name)} ${avg.fgp.toFixed(1)}% season mark.`,
+				// "a long way FROM" reads as a shortfall, and this branch only fires
+				// when he shot at least twelve points BETTER than his season mark.
+				`It was a long way clear of ${poss(star.name)} ${avg.fgp.toFixed(1)}% season mark.`,
 			],
 			"vsSeasonFgp",
 		);
@@ -2463,13 +2618,7 @@ const loserSupportNote = (
 	said.add(second.name);
 	// "in defeat" on its own turned up in most games on a slate, so the tail
 	// rotates too.
-	return `${second.name} ${pick(rng, [
-		"also had",
-		"finished with",
-		"put up",
-		"was good for",
-		"added",
-	])} ${statPhrase(second, 1)} ${pick(
+	return `${second.name} ${scoredVerb(rng)} ${statPhrase(second, 1)} ${pick(
 		rng,
 		["in defeat", "in the loss", "in a losing cause", "for the losing side"],
 		"loserTail",
@@ -2798,12 +2947,19 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// are two readings of the same game arguing with each other. The grind is the
 	// more distinctive observation, so it wins.
 	const combined = combinedNote(shape, rng);
+	// Who the piece has named by the time the extras are chosen. Built the same
+	// way paragraph three builds its own - by reading the text, so it cannot
+	// drift from what is actually on the page.
+	const namedInPara2 = namesIn(
+		[headline.text, ...para1, ...para2].join(" "),
+		shape,
+	);
 	const extras = shuffle(rng, [
 		post.sentences[1],
 		combined ? undefined : secondHalfNote(shape, rng),
 		stakesSentence(game, shape, rng),
 		combined,
-		plusMinusNote(shape, star, rng),
+		plusMinusNote(shape, star, rng, namedInPara2),
 		injurySentence(shape, rng),
 	]).filter((s): s is string => !!s);
 	for (const e of extras) {
@@ -2821,17 +2977,11 @@ export const getAutoRecap = (game: RecapGame): string => {
 	//
 	// Everyone already named, so this paragraph introduces new faces instead of
 	// re-describing the same two men a third time.
-	const said = new Set<string>([star.name]);
 	// The HEADLINE counts too. A losing star named up top had his line skipped by
 	// the loser sentence, then the support note printed it again down here.
 	const alreadyWritten = [headline.text, ...para1, ...para2].join(" ");
-	for (const t of [shape.winner, shape.loser]) {
-		for (const p of t.players) {
-			if (alreadyWritten.includes(p.name)) {
-				said.add(p.name);
-			}
-		}
-	}
+	const said = namesIn(alreadyWritten, shape);
+	said.add(star.name);
 	// A streak sentence in paragraph 2 already covered the winner's recent form.
 	const streakTold =
 		/in a row|straight game|ran their streak|winning streak/.test(

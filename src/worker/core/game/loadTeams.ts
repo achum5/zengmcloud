@@ -224,7 +224,9 @@ export const processTeam = async (
 		const p2 = {
 			id: p.pid,
 			pid: p.pid, // for getDepthPlayers, eventually do it all this way
-			name: `${p.firstName} ${p.lastName}`,
+			// trim: a player with no surname (Nene, Pele) would otherwise be
+			// stored as "Nene ", and every downstream possessive reads "Nene 's".
+			name: `${p.firstName} ${p.lastName}`.trim(),
 			age: g.get("season") - p.born.year,
 			pos: rating.pos,
 			valueNoPot: p.valueNoPot * injuryFactor,

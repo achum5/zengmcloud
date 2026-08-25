@@ -3271,3 +3271,321 @@ describe("a slate does not repeat itself", () => {
 		);
 	});
 });
+
+// Defects found by reading a real day of recaps out of a live league, each one
+// a line a person actually saw on the page.
+describe("copy defects found in the field", () => {
+	const teamWithInjury = (type: string) =>
+		realisticTeam(
+			{
+				tid: 1,
+				region: "Atlanta",
+				name: "Hawks",
+				abbrev: "ATL",
+				pts: 102,
+				injuries: [{ name: "Blake Griffin", type, gamesRemaining: 20 }],
+			},
+			player({ name: "Stephon Marbury", pts: 18, ast: 12, fg: 7, fga: 15 }),
+		);
+	const opponent = realisticTeam(
+		{
+			tid: 2,
+			region: "Portland",
+			name: "Trail Blazers",
+			abbrev: "POR",
+			pts: 96,
+		},
+		player({ name: "Keith Bogans", pts: 18, reb: 4, fg: 7, fga: 16 }),
+	);
+
+	// "Blake Griffin sat out for the Hawks with an injured;" - the generic type
+	// some imported rosters carry is a bare adjective, and the article machinery
+	// treated it as a noun.
+	test("a bare-participle injury type does not become 'an injured'", () => {
+		const recap = getAutoRecap(
+			game({ gid: 7001, teams: [teamWithInjury("Injured"), opponent] }),
+		);
+		assert.ok(!/\ban injured\b/i.test(recap), recap);
+		assert.ok(/\ban injury\b/i.test(recap), recap);
+	});
+
+	test("a real injury name still keeps its own words", () => {
+		const recap = getAutoRecap(
+			game({ gid: 7002, teams: [teamWithInjury("Sprained Ankle"), opponent] }),
+		);
+		assert.ok(/\ba sprained ankle\b/i.test(recap), recap);
+	});
+
+	// "Al Horford was good for 18 points... Keith Bogans was good for 18 points
+	// in defeat." Three sentence builders drew from overlapping verb lists, and
+	// `pick` rotates within a pool but cannot see across two of them.
+	test("no scoring verb is used twice in one recap", () => {
+		const verbs = [
+			"added",
+			"chipped in",
+			"contributed",
+			"kicked in",
+			"pitched in with",
+			"tacked on",
+			"was good for",
+			"supplied",
+			"came up with",
+			"put up",
+			"posted",
+			"went for",
+		];
+		// Sweep seeds: which verbs come up at all is seed-dependent, so one game
+		// proves nothing.
+		for (let gid = 7100; gid < 7160; gid += 1) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [teamWithInjury("Sore Knee"), opponent] }),
+			);
+			for (const verb of verbs) {
+				const hits = recap.split(verb).length - 1;
+				assert.ok(hits <= 1, `"${verb}" twice in gid ${gid}:\n${recap}`);
+			}
+		}
+	});
+
+	// "Sasha Pavlovic pitched in with 27 points, and Jamal Sampson put up 15.
+	// Sasha Pavlovic finished +34, the best mark on the floor." The plus-minus
+	// note shares a paragraph with the supporting cast and knew nothing about it.
+	test("the plus-minus note does not re-introduce a man already named", () => {
+		// LeBron is the story; Pavlovic is the supporting-cast pick AND the
+		// biggest swing on the floor, which is exactly when the two sentences
+		// collided.
+		const suns = realisticTeam(
+			{
+				tid: 3,
+				region: "Phoenix",
+				name: "Suns",
+				abbrev: "PHO",
+				pts: 122,
+				ptsQtrs: [30, 30, 32, 30],
+				players: [
+					player({
+						name: "Lebron James",
+						pts: 34,
+						reb: 5,
+						ast: 9,
+						fg: 13,
+						fga: 20,
+					}),
+					player({
+						name: "Sasha Pavlovic",
+						pts: 27,
+						reb: 4,
+						fg: 10,
+						fga: 16,
+						pm: 34,
+					}),
+					player({ name: "Jamal Sampson", pts: 15, reb: 8, fg: 6, fga: 10 }),
+					player({ name: "Bench Guy", pts: 6, reb: 3, fg: 2, fga: 5 }),
+				],
+			},
+			player({
+				name: "Lebron James",
+				pts: 34,
+				reb: 5,
+				ast: 9,
+				fg: 13,
+				fga: 20,
+			}),
+		);
+		const jazz = realisticTeam(
+			{ tid: 4, region: "Utah", name: "Jazz", abbrev: "UTA", pts: 89 },
+			player({ name: "Rodrigue Beaubois", pts: 20, fg: 8, fga: 19 }),
+		);
+		for (let gid = 7200; gid < 7240; gid += 1) {
+			const recap = getAutoRecap(game({ gid, teams: [suns, jazz] }));
+			const hits = recap.split("Sasha Pavlovic").length - 1;
+			assert.ok(hits <= 1, `named twice in gid ${gid}:\n${recap}`);
+		}
+	});
+
+	// The efficient-shooting note fires only when the star shot far BETTER than
+	// his season mark, and one of its three phrasings said the opposite.
+	test("a big shooting night is never called a long way FROM his average", () => {
+		const bulls = realisticTeam(
+			{
+				tid: 5,
+				region: "Chicago",
+				name: "Bulls",
+				abbrev: "CHI",
+				pts: 115,
+				ptsQtrs: [30, 28, 29, 28],
+			},
+			player({
+				name: "Tyson Chandler",
+				pts: 51,
+				reb: 10,
+				stl: 3,
+				fg: 16,
+				fga: 20,
+				seasonAvg: avg({ pts: 18, fgp: 55.1 }),
+			}),
+		);
+		const spurs = realisticTeam(
+			{ tid: 6, region: "San Antonio", name: "Spurs", abbrev: "SAS", pts: 104 },
+			player({ name: "Corey Maggette", pts: 23, stl: 5, fg: 9, fga: 20 }),
+		);
+		for (let gid = 7300; gid < 7340; gid += 1) {
+			const recap = getAutoRecap(game({ gid, teams: [bulls, spurs] }));
+			assert.ok(
+				!/long way from/.test(recap),
+				`gid ${gid} calls a 16-of-20 night a shortfall:\n${recap}`,
+			);
+		}
+	});
+});
+
+// The postseason context wrote only the winner's half of a series result: the
+// loser's nickname was computed at the top of the function and thrown away
+// unused at the bottom, so a recap said who advanced and simply stopped.
+describe("the losing side of a playoff series", () => {
+	const seriesGame = (
+		homeWon: number,
+		awayWon: number,
+		opts: {
+			gid?: number;
+			round?: number;
+			numRounds?: number;
+			bestOf?: number;
+			wSeed?: number;
+			lSeed?: number;
+		} = {},
+	) => {
+		const bos = realisticTeam(
+			{
+				tid: 1,
+				region: "Boston",
+				name: "Celtics",
+				abbrev: "BOS",
+				pts: 104,
+				ptsQtrs: [26, 24, 28, 26],
+				seed: opts.wSeed ?? 2,
+			},
+			player({ name: "Paul Pierce", pts: 28, reb: 7, ast: 5, fg: 10, fga: 19 }),
+		);
+		const det = realisticTeam(
+			{
+				tid: 2,
+				region: "Detroit",
+				name: "Pistons",
+				abbrev: "DET",
+				pts: 96,
+				ptsQtrs: [24, 24, 24, 24],
+				seed: opts.lSeed ?? 3,
+			},
+			player({ name: "Chauncey Billups", pts: 25, ast: 7, fg: 9, fga: 18 }),
+		);
+		return game({
+			gid: opts.gid ?? 8000,
+			teams: [bos, det],
+			winnerTid: 1,
+			playoffs: true,
+			series: {
+				round: opts.round ?? 2,
+				numRounds: opts.numRounds ?? 4,
+				bestOf: opts.bestOf ?? 7,
+				homeAbbrev: "BOS",
+				awayAbbrev: "DET",
+				homeSeed: opts.wSeed ?? 2,
+				awaySeed: opts.lSeed ?? 3,
+				homeWon,
+				awayWon,
+			},
+		});
+	};
+
+	test("a 3-1 lead says the other side must win three straight", () => {
+		const recap = getAutoRecap(seriesGame(2, 1, { gid: 8001 }));
+		assert.ok(/must win three straight/.test(recap), recap);
+		assert.ok(/Game 5/.test(recap), recap);
+	});
+
+	test("a 3-2 lead says the other side faces elimination next game", () => {
+		const recap = getAutoRecap(seriesGame(2, 2, { gid: 8002 }));
+		assert.ok(/face elimination in Game 6/.test(recap), recap);
+	});
+
+	test("surviving elimination still leaves the other side able to close it out", () => {
+		const recap = getAutoRecap(seriesGame(1, 3, { gid: 8003 }));
+		assert.ok(/elimination/.test(recap), recap);
+		assert.ok(/can still close it out in Game 6/.test(recap), recap);
+	});
+
+	test("a series win ends somebody's season, and says so", () => {
+		const recap = getAutoRecap(seriesGame(3, 1, { gid: 8004, round: 1 }));
+		assert.ok(/season is over/.test(recap), recap);
+	});
+
+	test("a sweep says they never won a game", () => {
+		const recap = getAutoRecap(seriesGame(3, 0, { gid: 8005, round: 1 }));
+		assert.ok(/without winning a game/.test(recap), recap);
+	});
+
+	test("the Finals loser is named as runner-up", () => {
+		const recap = getAutoRecap(
+			seriesGame(3, 2, { gid: 8006, round: 4, numRounds: 4 }),
+		);
+		assert.ok(/runners-up/.test(recap), recap);
+	});
+
+	// Every sentence built here opens with a team, and they were bare nicknames
+	// while the rest of the piece says "the Celtics".
+	test("postseason sentences take the article the rest of the recap uses", () => {
+		for (const [h, a] of [
+			[2, 1],
+			[0, 0],
+			[1, 3],
+			[2, 2],
+		] as const) {
+			const recap = getAutoRecap(seriesGame(h, a, { gid: 8100 + h * 10 + a }));
+			assert.ok(
+				!/(?:^|[!.] )(?:Celtics|Pistons) /.test(recap),
+				`bare nickname opens a sentence:\n${recap}`,
+			);
+		}
+	});
+
+	// A title-clinching game used to get a headline indistinguishable from a
+	// Tuesday in January.
+	test("the headline carries the stakes of a clincher", () => {
+		const title = getAutoRecap(
+			seriesGame(3, 2, { gid: 8200, round: 4, numRounds: 4 }),
+		);
+		assert.ok(/clinching the title/.test(title.split("\n")[0]!), title);
+
+		const advance = getAutoRecap(seriesGame(3, 1, { gid: 8201, round: 1 }));
+		assert.ok(
+			/advancing to the Conference Semifinals/.test(advance.split("\n")[0]!),
+			advance,
+		);
+	});
+
+	// A clincher that is also the decider keeps BOTH facts - dropping "Game 7"
+	// out of a Game 7 is the one detail nobody would leave out.
+	test("a Game 7 clincher stays a Game 7", () => {
+		const recap = getAutoRecap(seriesGame(3, 3, { gid: 8300, round: 1 }));
+		assert.ok(/Game 7/.test(recap), recap);
+		assert.ok(/advancing to/.test(recap), recap);
+	});
+
+	// Seeds were in the payload and never read, and a low seed beating a high one
+	// is the fact everyone repeats about a playoff series.
+	test("a big seed gap is named on an upset", () => {
+		const recap = getAutoRecap(
+			seriesGame(3, 2, { gid: 8400, round: 1, wSeed: 7, lSeed: 2 }),
+		);
+		assert.ok(/#7 seed/.test(recap), recap);
+		assert.ok(/#2 seed/.test(recap), recap);
+	});
+
+	test("a close seed gap is not remarked on", () => {
+		const recap = getAutoRecap(
+			seriesGame(3, 2, { gid: 8401, round: 1, wSeed: 2, lSeed: 3 }),
+		);
+		assert.ok(!/#\d seed/.test(recap), recap);
+	});
+});

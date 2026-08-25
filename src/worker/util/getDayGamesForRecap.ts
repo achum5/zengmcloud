@@ -442,6 +442,19 @@ export type RecapDaySlate = {
 	}[];
 };
 
+// A MONONYM LEAVES A TRAILING SPACE. Stored game records build the name as
+// `${firstName} ${lastName}`, and a player with no surname - Nene, Pele,
+// Ronaldinho - comes out as "Nene " with the space still on it. Downstream that
+// became "Nene 's 25 points and 11 rebounds", every time he had a good night.
+//
+// Fixed at the source too (core/game/writeGameStats.ts), but games already
+// played carry the old string forever, so the recap layer cleans what it reads
+// rather than trusting it.
+export const cleanName = (name: unknown): string =>
+	String(name ?? "Unknown")
+		.replaceAll(/\s+/g, " ")
+		.trim() || "Unknown";
+
 // The league standings AS OF a given league day, split by conference, so a day
 // recap can talk about the playoff picture accurately for that day (not the
 // current, later state). One per day recap needed.
@@ -798,7 +811,7 @@ export const getDayGamesForRecap = async ({
 						(p?.min ?? 0) === 0 && p?.injury && p.injury.gamesRemaining > 0,
 				)
 				.map((p: any) => ({
-					name: String(p?.name ?? "Unknown"),
+					name: cleanName(p?.name),
 					type: String(p.injury.type ?? "injury"),
 					gamesRemaining: p.injury.gamesRemaining ?? 0,
 				}));
@@ -816,7 +829,7 @@ export const getDayGamesForRecap = async ({
 			const players: RecapPlayer[] = [];
 			for (const p of played) {
 				const base: RecapPlayer = {
-					name: String(p?.name ?? "Unknown"),
+					name: cleanName(p?.name),
 					pid: p?.pid,
 					min: Math.round(p?.min ?? 0),
 					pts: p?.pts ?? 0,
@@ -998,7 +1011,7 @@ export const getDayGamesForRecap = async ({
 				p.name &&
 				(!best || p.pts > best.pts)
 			) {
-				best = { name: String(p.name), pts: p.pts };
+				best = { name: cleanName(p.name), pts: p.pts };
 			}
 		}
 		return best;

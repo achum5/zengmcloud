@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	cleanName,
 	enteringAverages,
 	regularSeasonRecordAsOf,
 	selectRecapGames,
@@ -272,5 +273,34 @@ describe("enteringAverages", () => {
 		const before = enteringAverages(lines, 2, 1, false);
 		assert.strictEqual(before?.pts, 10);
 		assert.strictEqual(before?.gp, 1);
+	});
+});
+
+// A MONONYM LEAVES A TRAILING SPACE. Stored game records build a player's name
+// as `${firstName} ${lastName}`, and a player with no surname - Nene, Pele -
+// comes out as "Nene " with the space still attached. Every possessive
+// downstream then reads "Nene 's 25 points and 11 rebounds", which is what a
+// league actually saw.
+describe("cleanName", () => {
+	test("a surname-less player loses his trailing space", () => {
+		assert.strictEqual(cleanName("Nene "), "Nene");
+	});
+
+	test("ordinary names are untouched", () => {
+		assert.strictEqual(cleanName("Chauncey Billups"), "Chauncey Billups");
+	});
+
+	test("accents and punctuation survive", () => {
+		assert.strictEqual(cleanName("Nikola Jokić "), "Nikola Jokić");
+		assert.strictEqual(cleanName(" J.J. Barea"), "J.J. Barea");
+	});
+
+	test("doubled inner spaces collapse", () => {
+		assert.strictEqual(cleanName("Metta  World Peace"), "Metta World Peace");
+	});
+
+	test("nothing usable still gives something printable", () => {
+		assert.strictEqual(cleanName(undefined), "Unknown");
+		assert.strictEqual(cleanName("   "), "Unknown");
 	});
 });

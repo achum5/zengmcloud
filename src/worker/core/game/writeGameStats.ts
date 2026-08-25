@@ -64,7 +64,9 @@ const allStarMVP = async (
 		allStars.mvp = {
 			pid: p.pid,
 			tid: p.tid,
-			name: `${p.firstName} ${p.lastName}`,
+			// trim: a player with no surname (Nene, Pele) would otherwise be
+			// stored as "Nene ", and every downstream possessive reads "Nene 's".
+			name: `${p.firstName} ${p.lastName}`.trim(),
 		}; // Will be saved later
 	}
 
