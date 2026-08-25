@@ -266,12 +266,37 @@ export const applyHeaderShift = (
 // watchdog's position-toggling ladder cannot remove it (it repairs `position`,
 // not `transform`). The ticker then sits mid-page, provably "detached", and
 // unrepairable forever.
-// The last moment a scroll or viewport event fired, for the settle gate on the
-// header shift. 0 means none seen since load, which counts as settled.
+// The last moment a scroll or viewport event fired, for the settle gate. 0
+// means none seen since load, which counts as settled.
 let lastViewportChurnAt = 0;
 export const SETTLE_QUIET_MS = 250;
 
-export const resyncStickyBarShifts = () => {
+// NOT SETTLED MEANS HANDS OFF, NOT "SHIFT ZERO".
+//
+// The first build of the settle gate made the shift compute 0 mid-churn, and
+// writing 0 strips the transform - so every scroll event tore the working
+// correction off the header, the user watched it ride away again, and the
+// repair button finished by doing the same thing (its ladder nudges the
+// scroll, which marked the page churning, so its final resync stripped the
+// shift it had just verified: a field log shows "forced" entering at
+// headerTop 0, detached=false, and "forced-done" leaving at -119,
+// detached=true, forty milliseconds apart). A resync that is not allowed to
+// measure must not write anything at all; whatever is on the bars stays until
+// a settled pass can re-derive it.
+//
+// Callers that own their own settle discipline - the watchdog's checks run
+// behind a debounce, a resume must rewrite the stale-shift trap regardless -
+// assert it and are never refused.
+export const resyncStickyBarShifts = (options?: {
+	assumeSettled?: boolean;
+}) => {
+	const settled =
+		options?.assumeSettled === true ||
+		lastViewportChurnAt === 0 ||
+		Date.now() - lastViewportChurnAt >= SETTLE_QUIET_MS;
+	if (!settled) {
+		return;
+	}
 	// The header's shift is measured, corroborated and settle-gated - see
 	// headerMeasuredShift. In every state but the pinned-layout pan it computes
 	// 0, and passing 0 is what strips a translateY an older build left on it -
@@ -286,9 +311,7 @@ export const resyncStickyBarShifts = () => {
 					currentShift: currentShiftOf(header),
 					scrollY: window.scrollY,
 					visualOffsetTop: window.visualViewport?.offsetTop,
-					settled:
-						lastViewportChurnAt === 0 ||
-						Date.now() - lastViewportChurnAt >= SETTLE_QUIET_MS,
+					settled: true,
 				})
 			: 0,
 	);

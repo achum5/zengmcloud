@@ -90,6 +90,17 @@ type Deps = {
 	visualOffsetTop: () => number;
 };
 
+// Is the visual-viewport offset just scrollY wearing a second name? True in
+// the pinned-layout pan state AND when a ghost offset mirrors the scroll -
+// and in both, a bar's rect cannot be trusted to excuse anything.
+export const offsetEchoesScroll = (
+	scrolled: number,
+	offset: number | undefined,
+): boolean =>
+	offset !== undefined &&
+	Number.isFinite(offset) &&
+	Math.abs(offset - scrolled) <= TOLERANCE_PX;
+
 // Is the header provably not stuck where it should be?
 //
 // Only answerable while the page is scrolled past the header's resting place: at
@@ -137,10 +148,11 @@ export const headerIsDetached = ({
 	// page. The user's screen says which it is. So the excuse stands only when
 	// the offset says something scrollY does not.
 	const offset = visualOffsetTop();
-	const offsetIsScrollEcho =
-		Number.isFinite(offset) && Math.abs(offset - scrolled) <= TOLERANCE_PX;
 	const expected =
-		stickyTop() - (Number.isFinite(offset) && !offsetIsScrollEcho ? offset : 0);
+		stickyTop() -
+		(Number.isFinite(offset) && !offsetEchoesScroll(scrolled, offset)
+			? offset
+			: 0);
 	return top < expected - TOLERANCE_PX;
 };
 
@@ -596,6 +608,8 @@ const checkBar = async (bar: Bar, trigger: string) => {
 		return;
 	}
 
+	let tickerConvictedByHeader = false;
+
 	await runExclusive(bar.name, async () => {
 		try {
 			// Before believing the geometry, make sure the standing visual-viewport
@@ -606,7 +620,12 @@ const checkBar = async (bar: Bar, trigger: string) => {
 			// shift from the viewports as they are now either clears it (and the
 			// re-measure comes back healthy) or changes nothing and the real ladder
 			// proceeds.
-			resyncStickyBarShifts();
+			// This check runs behind the scroll watch's debounce (or an explicit
+			// post-settle delay), so it owns the settle call - without asserting
+			// it, the shift's own quiet window races the watchdog's equal-length
+			// one and the resync silently refuses at exactly the moments it is
+			// needed.
+			resyncStickyBarShifts({ assumeSettled: true });
 			if (!bar.detached(element)) {
 				note(bar, element, "repaired", "shift-resync");
 				return;
@@ -627,6 +646,20 @@ const checkBar = async (bar: Bar, trigger: string) => {
 			}
 
 			note(bar, element, "detached", `via=${trigger}`);
+
+			// A header confirmed detached while the offset echoes the scroll
+			// convicts the ticker too. In that state the ticker's own rect swears
+			// it is healthy (it reads exactly its anchor) while the user watches
+			// both bars ride - the same stale compositor state moves them
+			// together, and the header is the only witness whose displacement is
+			// measurable. Flag it now; the repair runs after this ladder so only
+			// one repair disturbs the scroll at a time.
+			if (
+				bar.name === "header" &&
+				offsetEchoesScroll(window.scrollY, window.visualViewport?.offsetTop)
+			) {
+				tickerConvictedByHeader = true;
+			}
 
 			for (const [i, step] of repairSteps.entries()) {
 				await step(element);
@@ -668,9 +701,13 @@ const checkBar = async (bar: Bar, trigger: string) => {
 			// oversized-viewport self-placement has the ticker positioned inline
 			// (see visualViewportHeader.ts), that clearing strips it. Re-derive
 			// placement from the viewports as they are now, whatever the ladder did.
-			resyncStickyBarShifts();
+			resyncStickyBarShifts({ assumeSettled: true });
 		}
 	});
+
+	if (tickerConvictedByHeader) {
+		await forceBarRepair(TICKER_BAR, "header-witness");
+	}
 };
 
 // Both bars, every time. They are checked in sequence rather than concurrently
@@ -681,12 +718,17 @@ const check = async (trigger = "scroll") => {
 	}
 };
 
-const forceBarRepair = async (bar: Bar) => {
+const forceBarRepair = async (bar: Bar, via?: string) => {
 	const element = bar.get();
 	if (!element) {
 		return;
 	}
-	note(bar, element, "forced", `detached=${bar.detached(element)}`);
+	note(
+		bar,
+		element,
+		"forced",
+		`detached=${bar.detached(element)}${via ? ` via=${via}` : ""}`,
+	);
 	const ran = await runExclusive(bar.name, async () => {
 		for (const step of repairSteps) {
 			await step(element);
@@ -696,8 +738,11 @@ const forceBarRepair = async (bar: Bar) => {
 		return;
 	}
 	// Same reason as checkBar: the ladder cleared inline `position`, and the
-	// self-placement mode lives in inline styles.
-	resyncStickyBarShifts();
+	// self-placement mode lives in inline styles. Asserting settledness is what
+	// keeps this resync from being refused: the ladder's own scroll nudge just
+	// marked the page churning, and a refusal here is how the manual button
+	// once stripped a working shift and reported the wreckage as done.
+	resyncStickyBarShifts({ assumeSettled: true });
 	// The manual button's whole point is that the user cannot see whether it
 	// worked - at the top of the page a broken bar and a healthy one sit in the
 	// same place. Saying so is the least this can do.
@@ -711,7 +756,7 @@ export const forceHeaderRepair = async () => {
 	// Put the bars back inside the visible viewport first. When the two
 	// viewports have come apart this IS the reset - the ladder below cannot help,
 	// because nothing about the element is wrong.
-	resyncStickyBarShifts();
+	resyncStickyBarShifts({ assumeSettled: true });
 	for (const bar of BARS) {
 		await forceBarRepair(bar);
 	}
@@ -836,7 +881,8 @@ const watch = () => {
 	// First thing on any resume: rebuild both bars' visual-viewport shifts from
 	// the world as it is now. Suspension is exactly when the standing correction
 	// goes stale with no event left to refresh it - see resyncStickyBarShifts.
-	resyncStickyBarShifts();
+	// Asserted settled: the stale-shift trap must be cleared even mid-churn.
+	resyncStickyBarShifts({ assumeSettled: true });
 
 	const timers = CHECK_DELAYS_MS.map((delay) =>
 		setTimeout(() => {
@@ -898,7 +944,7 @@ const rebuildTickerOnResume = () => {
 		}
 		// The rebuild cleared inline `position`; put the self-placement (or the
 		// ordinary shift) straight back rather than waiting for a viewport event.
-		resyncStickyBarShifts();
+		resyncStickyBarShifts({ assumeSettled: true });
 	};
 
 	note(TICKER_BAR, TICKER_BAR.get(), "resume-rebuild");

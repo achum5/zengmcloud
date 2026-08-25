@@ -3,6 +3,7 @@ import {
 	bottomBarIsDetached,
 	detachmentConfirmed,
 	headerIsDetached,
+	offsetEchoesScroll,
 	repairVerdict,
 	runExclusive,
 	scrollDecision,
@@ -650,5 +651,20 @@ describe("the modal unpin waits for its own scroll to settle", () => {
 		for (const delay of UNPIN_CHECK_DELAYS_MS) {
 			assert.isAbove(delay, SETTLE_MS, `unpin check at ${delay}ms`);
 		}
+	});
+});
+
+describe("offsetEchoesScroll", () => {
+	test("one number wearing two names is an echo", () => {
+		assert.isTrue(offsetEchoesScroll(119, 119));
+		assert.isTrue(offsetEchoesScroll(119, 120));
+	});
+	test("independent numbers are not", () => {
+		assert.isFalse(offsetEchoesScroll(864, 406));
+		assert.isFalse(offsetEchoesScroll(0, 406));
+	});
+	test("an unreadable offset is not an echo of anything", () => {
+		assert.isFalse(offsetEchoesScroll(119, undefined));
+		assert.isFalse(offsetEchoesScroll(119, Number.NaN));
 	});
 });
