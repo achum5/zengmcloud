@@ -25,6 +25,7 @@ import { getRoundsWonText } from "./frivolitiesTeamSeasons.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { last } from "../../common/utils.ts";
 import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
+import { planTradeRevert } from "../core/trade/revertTrade.ts";
 
 const findRatingsRow = (
 	allRatings: NonEmptyArray<MinimalPlayerRatings>,
@@ -574,6 +575,7 @@ const updateTradeSummary = async (
 ) => {
 	if (
 		updateEvents.includes("firstRun") ||
+		updateEvents.includes("gameAttributes") ||
 		updateEvents.includes("gameSim") ||
 		updateEvents.includes("newPhase") ||
 		updateEvents.includes("playerMovement") ||
@@ -637,8 +639,16 @@ const updateTradeSummary = async (
 		const pointsFormula = g.get("pointsFormula");
 		const usePts = pointsFormula !== "";
 
+		// The trade can be taken back only while every asset is still where it
+		// landed - the same test the revert itself runs, so the button and the
+		// action can never disagree.
+		const godMode = g.get("godMode");
+		const revertable = godMode && !("error" in (await planTradeRevert(event)));
+
 		return {
 			eid,
+			godMode,
+			revertable,
 			teams,
 			season: event.season,
 			phase: event.phase,

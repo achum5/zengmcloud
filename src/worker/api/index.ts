@@ -4260,6 +4260,10 @@ const reorderRosterDrag = async (sortedPids: number[]) => {
 	await toUI("realtimeUpdate", [["gameAttributes", "playerMovement"]]);
 };
 
+const revertTrade = async (eid: number) => {
+	return trade.revertTrade(eid);
+};
+
 const resetPlayingTime = async (tids: number[] | undefined) => {
 	const tids2 = tids ?? [g.get("userTid")];
 
@@ -7330,6 +7334,7 @@ export default {
 		reorderDraftDrag,
 		reorderRosterDrag,
 		resetPlayingTime,
+		revertTrade,
 		simIntrasquadGame,
 		retiredJerseyNumberDelete,
 		retiredJerseyNumberUpsert,

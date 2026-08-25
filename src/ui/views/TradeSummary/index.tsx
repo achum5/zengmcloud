@@ -7,6 +7,9 @@ import Charts from "./Charts.tsx";
 import PickText from "./PickText.tsx";
 import type { PlayerOutcome } from "../../../worker/views/tradeSummary.ts";
 import { useLocal } from "../../util/local.ts";
+import { toWorker } from "../../util/toWorker.ts";
+import { confirm } from "../../util/confirm.tsx";
+import { showNotification } from "../../util/showNotification.ts";
 
 const Outcome = ({ outcome }: { outcome: PlayerOutcome }) => {
 	if (!outcome) {
@@ -91,7 +94,9 @@ const Outcome = ({ outcome }: { outcome: PlayerOutcome }) => {
 };
 
 const TradeSummary = ({
+	eid,
 	phase,
+	revertable,
 	season,
 	seasonsToPlot,
 	stat,
@@ -111,6 +116,31 @@ const TradeSummary = ({
 					{season} {PHASE_TEXT[phase]}
 				</b>
 			</p>
+			{revertable ? (
+				<button
+					className="btn btn-god-mode mb-3"
+					onClick={async () => {
+						const proceed = await confirm(
+							"Revert this trade? Everything it moved goes back.",
+							{
+								okText: "Revert trade",
+							},
+						);
+						if (!proceed) {
+							return;
+						}
+						const error = await toWorker("main", "revertTrade", eid);
+						if (error) {
+							showNotification({
+								type: "error",
+								text: error,
+							});
+						}
+					}}
+				>
+					Revert trade
+				</button>
+			) : null}
 			<div className="d-lg-flex">
 				<div className="d-sm-flex mb-3 mb-lg-0 me-lg-5">
 					{teams.map((t, i) => (

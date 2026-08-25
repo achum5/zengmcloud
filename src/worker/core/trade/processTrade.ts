@@ -24,6 +24,13 @@ const processTrade = async (
 		dv: number;
 		motivation: string;
 	},
+	options?: {
+		// This trade puts an earlier one back. Everything about it is a normal
+		// trade except the mood ledger: numPlayersTradedAway is the "this
+		// franchise ships people out" penalty, and a team returning a player it
+		// was accidentally handed has not shipped anyone out.
+		revert?: boolean;
+	},
 ) => {
 	const teams: TradeEventTeams = [
 		{
@@ -40,7 +47,7 @@ const processTrade = async (
 		const k = j === 0 ? 1 : 0;
 
 		let teamSeason;
-		if (pids[j].length > 0) {
+		if (pids[j].length > 0 && !options?.revert) {
 			teamSeason = await idb.cache.teamSeasons.indexGet(
 				"teamSeasonsBySeasonTid",
 				[g.get("season"), tids[j]],

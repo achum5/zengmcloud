@@ -215,6 +215,7 @@ const isCloudTrackedCall = (type: string, name: string): boolean =>
 // draft and has its own turn logic.
 const SIM_CONFLICT_GATED = new Set([
 	"proposeTrade",
+	"revertTrade",
 	"acceptContractNegotiation",
 	"reSignAll",
 	"releasePlayer",

@@ -9,6 +9,7 @@ import makeItWork from "./makeItWork.ts";
 import makeItWorkTrade from "./makeItWorkTrade.ts";
 import processTrade from "./processTrade.ts";
 import propose from "./propose.ts";
+import revertTrade from "./revertTrade.ts";
 import summary from "./summary.ts";
 import updatePlayers from "./updatePlayers.ts";
 
@@ -24,6 +25,7 @@ export default {
 	makeItWorkTrade,
 	processTrade,
 	propose,
+	revertTrade,
 	summary,
 	updatePlayers,
 };
