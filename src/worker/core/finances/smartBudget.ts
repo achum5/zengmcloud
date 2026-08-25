@@ -34,6 +34,65 @@ export const BUDGET_TILT: Record<TradeTier, Record<BudgetKey, number>> = {
 	allIn: { scouting: -12, coaching: 0, health: 8, facilities: 4 },
 };
 
+// AND THE CLAMP MUST NOT TURN THE PLAN INTO A RAISE.
+//
+// The row summing to zero is only half of "spends what it was going to spend".
+// Levels live on a 1..100 scale and a small-market team starts near the BOTTOM
+// of it: defaultBudgetLevel hands the poorest club in a thirty-team league a
+// base of about 2. A teardown's -8 to health and facilities cannot be taken
+// from a department at 2, so both clamp at 1 while scouting and coaching take
+// their +6 and +10 in full - and the club ends up spending nearly three times
+// what vanilla would have it spend, funded out of nothing. About a third of
+// the league sits low enough for this to bite, every season.
+//
+// It runs the other way at the top: a big-market allIn team clamps its
+// increases against 100 while its -12 to scouting comes off in full, so the
+// plan quietly UNDERspends. Same defect, opposite sign, and the tilt is
+// supposed to be a reallocation in both cases.
+//
+// So whatever the clamp eats is handed back to the departments that still have
+// room, taken from (or given to) the ones that have strayed furthest from the
+// base - the plan keeps its shape and gives up only as much of it as the scale
+// will not fund. A boost that can only be paid for by cutting a department
+// already at the floor is not a plan, it is a wish.
+const settleResidual = (
+	levels: Record<BudgetKey, number>,
+	keys: BudgetKey[],
+	base: number,
+) => {
+	const total = () => keys.reduce((sum, key) => sum + levels[key], 0);
+	// Positive: the row came out UNDER what the team was going to spend.
+	let residual = keys.length * base - total();
+	// Each pass moves exactly one level, so this cannot run longer than the
+	// residual it is closing. The guard is for a bound nobody can reach.
+	let guard = keys.length * MAX_LEVEL;
+	while (residual !== 0 && guard > 0) {
+		guard -= 1;
+		const step = residual > 0 ? 1 : -1;
+		let pick: BudgetKey | undefined;
+		let bestSlack = -Infinity;
+		for (const key of keys) {
+			const room = step > 0 ? levels[key] < MAX_LEVEL : levels[key] > 1;
+			if (!room) {
+				continue;
+			}
+			// Furthest from the base in the direction being corrected, so the
+			// departments the plan cares least about pay first.
+			const slack = step * (base - levels[key]);
+			if (slack > bestSlack) {
+				bestSlack = slack;
+				pick = key;
+			}
+		}
+		if (pick === undefined) {
+			// The whole row is against a bound; there is nowhere left to put it.
+			return;
+		}
+		levels[pick] += step;
+		residual -= step;
+	}
+};
+
 // The department levels for a team with this plan, spread around the given
 // market-size base level.
 export const smartBudgetLevels = ({
@@ -44,9 +103,13 @@ export const smartBudgetLevels = ({
 	baseLevel: number;
 }): Record<BudgetKey, number> => {
 	const tilt = BUDGET_TILT[tier];
+	const keys = Object.keys(tilt) as BudgetKey[];
+	const base = helpers.bound(Math.round(baseLevel), 1, MAX_LEVEL);
+
 	const out = {} as Record<BudgetKey, number>;
-	for (const key of Object.keys(tilt) as BudgetKey[]) {
-		out[key] = helpers.bound(Math.round(baseLevel + tilt[key]), 1, MAX_LEVEL);
+	for (const key of keys) {
+		out[key] = helpers.bound(base + tilt[key], 1, MAX_LEVEL);
 	}
+	settleResidual(out, keys, base);
 	return out;
 };

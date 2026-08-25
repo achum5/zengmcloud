@@ -32,6 +32,31 @@ describe("how a plan spends its budget", () => {
 		}
 	});
 
+	// The row summing to zero is only half of it: the clamp can eat one side of
+	// the trade and leave the other, which is how a small-market rebuild ended
+	// up spending nearly three times its base out of nowhere.
+	test("what a plan spends adds up to what it was going to spend", () => {
+		for (const tier of TIERS) {
+			for (const base of [1, 2, 5, 12, 34, 50, 88, 96, MAX_LEVEL]) {
+				const levels = smartBudgetLevels({ tier, baseLevel: base });
+				const spent = Object.values(levels).reduce((s, x) => s + x, 0);
+				assert.strictEqual(
+					spent,
+					4 * base,
+					`${tier} at base ${base} spent ${spent} against ${4 * base}`,
+				);
+			}
+		}
+	});
+
+	test("a plan the scale cannot fund keeps as much of its shape as it can", () => {
+		// At the very bottom there is nowhere to take money FROM, so a rebuild
+		// still leans toward coaching over health - it just cannot lean as far.
+		const rebuild = smartBudgetLevels({ tier: "teardown", baseLevel: 2 });
+		assert.isAtLeast(rebuild.coaching, rebuild.health);
+		assert.isAtLeast(rebuild.scouting, rebuild.facilities);
+	});
+
 	test("levels stay on the 1..MAX_LEVEL scale at the extremes", () => {
 		for (const tier of TIERS) {
 			for (const base of [1, MAX_LEVEL]) {

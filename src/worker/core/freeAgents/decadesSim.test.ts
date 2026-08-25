@@ -23,6 +23,8 @@ import decreaseDemands from "./decreaseDemands.ts";
 import newPhaseResignPlayers from "../phase/newPhaseResignPlayers.ts";
 import createRandomPlayers from "../league/create/createRandomPlayers.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
+import finances from "../finances/index.ts";
+import { smartBudgetLevels } from "../finances/smartBudget.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { captureFrontOfficeLog } from "../../util/frontOfficeLog.ts";
 import {
@@ -199,7 +201,19 @@ const build = async () => {
 				region: `R${tid}`,
 				name: `N${tid}`,
 				abbrev: `T${tid}`,
-				pop: 2,
+				// MARKETS ARE NOT ALL THE SAME SIZE, and every team here used to
+				// have the same population. That is not a cosmetic simplification:
+				// defaultBudgetLevel is a function of population RANK, so thirty
+				// tied teams all rank 15.5, all get the middle of the scale, and
+				// every department in the league sits at exactly the default
+				// forever. The budget half of the front office cannot express
+				// anything against a league like that - measured, the clamp its
+				// plans run into never fired once in 2160 team-seasons.
+				//
+				// A geometric spread from one to eighteen million, which is about
+				// what BBGM's own default teams span from the smallest market to
+				// the largest. Fixed per tid, like real markets are.
+				pop: 18 ** (tid / Math.max(1, NUM_TEAMS - 1)),
 				imgURL: "",
 			} as any),
 		);
@@ -415,9 +429,30 @@ const rollForward = async (season: number) => {
 		PLAYER.FREE_AGENT,
 		Infinity,
 	]);
+	// AGED UNDER THEIR OWN COACHING STAFF, not a league-wide default.
+	//
+	// This passed DEFAULT_LEVEL for everybody, which made the entire budget
+	// half of the front office invisible here: smartBudgetLevels decides what
+	// each plan spends on coaching, coaching drives progs, and progs are the
+	// largest single input to how good a league's players get. A harness that
+	// develops every player identically cannot see any of it, and a change to
+	// that subsystem measured bit-for-bit identical output - which is how this
+	// gap was noticed.
+	//
+	// The real game uses a three-year average of the team's coaching level
+	// (getLevelLastThree), fed by expense levels accumulated game by game. The
+	// harness applies game results by hand and has no such accumulation, so it
+	// uses the CURRENT level instead: one season rather than three, and
+	// therefore a slightly sharper response to a plan change than the real game
+	// gives. Free agents keep the default - they have no staff.
+	const coachingByTid = new Map<number, number>();
+	for (const t of await idb.cache.teams.getAll()) {
+		coachingByTid.set(t.tid, t.budget?.coaching ?? DEFAULT_LEVEL);
+	}
 	for (const p of players) {
+		const coaching = coachingByTid.get(p.tid) ?? DEFAULT_LEVEL;
 		player.addRatingsRow(p, DEFAULT_LEVEL);
-		await player.develop(p, 1, false, DEFAULT_LEVEL);
+		await player.develop(p, 1, false, coaching);
 	}
 	local.playerOvrMeanStdStale = true;
 	for (const p of players) {
@@ -880,6 +915,47 @@ describe("a league runs for a decade without falling apart", () => {
 
 			for (let year = 0; year < SEASONS; year++) {
 				const season = g.get("season");
+
+				// EVERY TEAM PICKS ITS DEPARTMENTS, the way newPhasePreseason does.
+				// Without this every budget in the league stays at whatever the
+				// fixture left, and a front office feature that decides what a
+				// franchise spends on coaching, health, facilities and scouting
+				// runs entirely unobserved.
+				{
+					const activeTeams = (await idb.cache.teams.getAll()).filter(
+						(t) => !t.disabled,
+					);
+					const popRanks = helpers.getPopRanks(activeTeams);
+					const budgetCtx = g.get("smartAiFrontOffice")
+						? await getLeagueTradeContext()
+						: undefined;
+					for (const [i, t] of activeTeams.entries()) {
+						const baseLevel = finances.defaultBudgetLevel(popRanks[i]!);
+						if (budgetCtx) {
+							const posture = await getTradePosture(t.tid, budgetCtx);
+							const levels = smartBudgetLevels({
+								tier: posture.tier,
+								baseLevel,
+							});
+							t.budget = { ...t.budget, ...levels };
+						} else {
+							// Vanilla's coin flip per department, so the control arm
+							// gets the behavior it actually has.
+							for (const key of [
+								"scouting",
+								"coaching",
+								"health",
+								"facilities",
+							] as const) {
+								if (Math.random() < 0.5) {
+									t.budget[key] = baseLevel;
+								}
+							}
+						}
+						await idb.cache.teams.put(t);
+					}
+				}
+
 				let champion: { tid: number; tier: string } | undefined;
 				// COLA implies REAL_GAMES: stockpiles move on playoff results, and
 				// synthesized standings have none. Without a played postseason
@@ -1906,19 +1982,44 @@ describe("a league runs for a decade without falling apart", () => {
 			// real basketball seasons, thirty teams, SMART_AI=0 for the control:
 			//
 			//                     stock    smart
-			//   best5              68.7     75.5   up on all six
-			//   worst5             26.2     12.9   DOWN on all six
-			//   tovrSD             14.5     21.3   up on all six
-			//   rotation           54.3     54.2   three seeds each way: flat
-			//   allRostered        48.8     48.8   identical
-			//   rostered n         5140     5270   up on all six
-			//   titles distinct    9.5      9.3    noise
-			//   trades/season      17.6     32.7   up on all six
-			//   dead $/season      141M     200M   UP on all six
-			//   dead contracts     248      326    up on all six
-			//     of them drafted  62       36     DOWN
-			//     of them acquired 186      290    UP
-			//   starsUnsigned/yr   0.15     0.17   noise
+			//   best5              71.3     75.5   up on five seeds of six
+			//   worst5             27.1     10.5   DOWN on all six
+			//   tovrSD             14.9     22.1   up on all six
+			//   rotation           54.5     53.8   DOWN on five of six
+			//   allRostered        49.0     48.4   down on five of six
+			//   rostered n         5115     5275   up on all six
+			//   titles distinct    8.3      8.7    noise
+			//   trades/season      18.7     32.3   up on all six
+			//   dead $/season      124M     195M   UP on all six
+			//   dead contracts     240      324    up on all six
+			//     of them drafted  58       46     DOWN
+			//     of them acquired 181      278    UP
+			//   starsUnsigned/yr   0.10     0.37   UP on four of six
+			//
+			// THE ROTATION ROW IS NEW AND IT IS THE WORST NUMBER IN THE TABLE.
+			// Until market sizes existed here it read 54.3 against 54.2, three
+			// seeds each way - the same talent, differently arranged, which is
+			// what every claim in this file about concentration rests on. Give
+			// the teams different populations and it becomes 54.5 against 53.8,
+			// down on five seeds of six: this front office now employs
+			// measurably LESS of the league's talent than stock does.
+			//
+			// It is not the budget plan. Running the smart front office with
+			// vanilla's coin-flip budgets instead of smartBudgetLevels leaves it
+			// at 53.80 - identical to three decimal places - so the departments
+			// are not what changed. What changed is that free agents now have
+			// preferences: moodComponents scores market size from population
+			// RANK, and thirty tied teams all ranked 15.5 and cancelled it out.
+			// Stars left unsigned tell the same story, 0.37 a season against
+			// stock's 0.10.
+			//
+			// The suspicion to chase is the pursuit machinery. A team that holds
+			// cap space for a prize (planCapHold) or tears up a payroll to chase
+			// one (clearSpace) is betting on landing him, and both gate on
+			// mood.probWilling against MIN_PURSUIT_CONFIDENCE - a bar set at 0.02
+			// when every team in this harness was equally attractive and no such
+			// bet could be long odds. A small-market team can now be a genuine
+			// long shot, freeze its summer on one, and end up signing nobody.
 			//
 			// The trade the comments elsewhere in this file describe is real and
 			// still holds: the top five gain four and a half points and the bottom
