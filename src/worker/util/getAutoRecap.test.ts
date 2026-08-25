@@ -3498,26 +3498,47 @@ describe("the losing side of a playoff series", () => {
 		});
 	};
 
+	// These assert the MEANING reaches the page, not one exact wording - each of
+	// these branches rotates through a pool so a slate of eight series games
+	// doesn't print the same sentence eight times.
 	test("a 3-1 lead says the other side must win three straight", () => {
 		const recap = getAutoRecap(seriesGame(2, 1, { gid: 8001 }));
-		assert.ok(/must win three straight/.test(recap), recap);
+		assert.ok(
+			/must win three straight|need three in a row|three straight saves/.test(
+				recap,
+			),
+			recap,
+		);
 		assert.ok(/Game 5/.test(recap), recap);
 	});
 
 	test("a 3-2 lead says the other side faces elimination next game", () => {
 		const recap = getAutoRecap(seriesGame(2, 2, { gid: 8002 }));
-		assert.ok(/face elimination in Game 6/.test(recap), recap);
+		assert.ok(
+			/face elimination in Game 6|Game 6 is win-or-go-home|one loss from the end of their season/.test(
+				recap,
+			),
+			recap,
+		);
 	});
 
 	test("surviving elimination still leaves the other side able to close it out", () => {
 		const recap = getAutoRecap(seriesGame(1, 3, { gid: 8003 }));
-		assert.ok(/elimination/.test(recap), recap);
-		assert.ok(/can still close it out in Game 6/.test(recap), recap);
+		assert.ok(/elimination|survived/.test(recap), recap);
+		assert.ok(
+			/can still close it out in Game 6|finish it in Game 6|series to win, in Game 6/.test(
+				recap,
+			),
+			recap,
+		);
 	});
 
 	test("a series win ends somebody's season, and says so", () => {
 		const recap = getAutoRecap(seriesGame(3, 1, { gid: 8004, round: 1 }));
-		assert.ok(/season is over/.test(recap), recap);
+		assert.ok(
+			/season is over|done for the year|end of the road/.test(recap),
+			recap,
+		);
 	});
 
 	test("a sweep says they never won a game", () => {
@@ -3587,5 +3608,288 @@ describe("the losing side of a playoff series", () => {
 			seriesGame(3, 2, { gid: 8401, round: 1, wSeed: 2, lSeed: 3 }),
 		);
 		assert.ok(!/#\d seed/.test(recap), recap);
+	});
+});
+
+// Defects found by generating a whole real postseason and reading it.
+describe("a postseason read end to end", () => {
+	const seriesSlateGame = (
+		gid: number,
+		homeName: string,
+		awayName: string,
+		homeWon: number,
+		awayWon: number,
+		extra: Partial<RecapGame> = {},
+	): RecapGame => {
+		const home = realisticTeam(
+			{
+				tid: gid * 2,
+				name: homeName,
+				abbrev: homeName.slice(0, 3).toUpperCase(),
+				pts: 104,
+				ptsQtrs: [26, 24, 28, 26],
+				seed: 2,
+			},
+			player({ name: `${homeName} Star`, pts: 27, reb: 7, ast: 5 }),
+		);
+		const away = realisticTeam(
+			{
+				tid: gid * 2 + 1,
+				name: awayName,
+				abbrev: awayName.slice(0, 3).toUpperCase(),
+				pts: 96,
+				ptsQtrs: [24, 24, 24, 24],
+				seed: 3,
+			},
+			player({ name: `${awayName} Star`, pts: 24, reb: 6, ast: 4 }),
+		);
+		return game({
+			gid,
+			teams: [home, away],
+			winnerTid: home.tid,
+			playoffs: true,
+			series: {
+				round: 1,
+				numRounds: 4,
+				bestOf: 7,
+				homeAbbrev: home.abbrev,
+				awayAbbrev: away.abbrev,
+				homeSeed: 2,
+				awaySeed: 3,
+				homeWon,
+				awayWon,
+			},
+			...extra,
+		});
+	};
+
+	// roundName() comes back articled ("the First Round"), so it can only sit
+	// where an article belongs. Two sentences put it after a possessive or a
+	// bare verb: "cut their the First Round deficit", "trail the First Round 3-2".
+	test("the articled round name never doubles an article", () => {
+		const seen: string[] = [];
+		for (let gid = 9000; gid < 9060; gid += 1) {
+			seen.push(
+				getAutoRecap(
+					seriesSlateGame(gid, "Celtics", "Pistons", gid % 4, (gid % 3) + 1),
+				),
+			);
+		}
+		const all = seen.join("\n");
+		assert.ok(!/\btheir the\b/.test(all), all.slice(0, 900));
+		assert.ok(!/\ba the\b/.test(all), all.slice(0, 900));
+	});
+
+	// A whole slate used to print the identical series sentence once per game:
+	// "The X drew first blood in the First Round, 1-0." eight times down a page.
+	test("a slate of series games does not repeat one series sentence", () => {
+		const names = [
+			["Celtics", "Pistons"],
+			["Lakers", "Kings"],
+			["Spurs", "Mavericks"],
+			["Heat", "Nets"],
+			["Suns", "Jazz"],
+			["Bulls", "Pacers"],
+			["Magic", "Bucks"],
+			["Nuggets", "Blazers"],
+		] as const;
+		beginRecapBatch();
+		let text: string;
+		try {
+			text = names
+				.map(([h, a], i) => getAutoRecap(seriesSlateGame(9200 + i, h, a, 0, 0)))
+				.join("\n");
+		} finally {
+			endRecapBatch();
+		}
+		const openers = text.match(/drew first blood in the First Round/g) ?? [];
+		assert.ok(openers.length <= 3, `${openers.length}\n${text}`);
+	});
+
+	// The clinch tail is a participle, so it attaches to whatever the headline
+	// made its subject. One template makes that the LOSER: "Pandas fall to the
+	// Blizzard 107-79, advancing to the Conference Semifinals".
+	test("a clinch tail never hangs off the losing team", () => {
+		// Modest star lines on both sides, so the headline comes from the RESULT
+		// templates - the only pool with a loser-subject shape in it.
+		const quietGame = (gid: number): RecapGame =>
+			game({
+				gid,
+				playoffs: true,
+				winnerTid: gid * 2,
+				teams: [
+					realisticTeam(
+						{
+							tid: gid * 2,
+							name: "Celtics",
+							abbrev: "BOS",
+							pts: 104,
+							ptsQtrs: [26, 24, 28, 26],
+							seed: 2,
+						},
+						player({ name: "Home Star", pts: 14, reb: 3 }),
+					),
+					realisticTeam(
+						{
+							tid: gid * 2 + 1,
+							name: "Pistons",
+							abbrev: "DET",
+							pts: 96,
+							ptsQtrs: [24, 24, 24, 24],
+							seed: 3,
+						},
+						player({ name: "Away Star", pts: 12, reb: 3 }),
+					),
+				],
+				series: {
+					round: 1,
+					numRounds: 4,
+					bestOf: 7,
+					homeAbbrev: "BOS",
+					awayAbbrev: "DET",
+					homeSeed: 2,
+					awaySeed: 3,
+					homeWon: 3,
+					awayWon: 1,
+				},
+			});
+
+		let sawResultHeadline = false;
+		for (let gid = 9300; gid < 9360; gid += 1) {
+			const headline = getAutoRecap(quietGame(gid)).split("\n")[0] ?? "";
+			if (/advancing to/.test(headline)) {
+				sawResultHeadline = true;
+			}
+			assert.ok(
+				!/^\*\*Pistons fall to/.test(headline),
+				`loser is the subject of a clinch headline: ${headline}`,
+			);
+		}
+		// Guard the guard: if the fixture stopped producing clinch headlines the
+		// assertion above would pass while testing nothing.
+		assert.ok(sawResultHeadline, "fixture produced no clinch headline");
+	});
+
+	// The shooting flourish is appended to a line the host sentence already
+	// introduced with "with", so it must not bring its own.
+	test("the shooting flourish never doubles the preposition", () => {
+		const all: string[] = [];
+		for (let gid = 9400; gid < 9460; gid += 1) {
+			all.push(
+				getAutoRecap(
+					seriesSlateGame(gid, "Celtics", "Pistons", 1, 1, {
+						teams: [
+							realisticTeam(
+								{
+									tid: gid * 2,
+									name: "Celtics",
+									abbrev: "BOS",
+									pts: 104,
+									ptsQtrs: [26, 24, 28, 26],
+									seed: 2,
+								},
+								player({
+									name: "Paul Pierce",
+									pts: 33,
+									reb: 5,
+									tp: 5,
+									tpa: 9,
+									fg: 12,
+									fga: 22,
+								}),
+							),
+							realisticTeam(
+								{
+									tid: gid * 2 + 1,
+									name: "Pistons",
+									abbrev: "DET",
+									pts: 96,
+									ptsQtrs: [24, 24, 24, 24],
+									seed: 3,
+								},
+								player({ name: "Chauncey Billups", pts: 24 }),
+							),
+						],
+						winnerTid: gid * 2,
+					}),
+				),
+			);
+		}
+		const joined = all.join("\n");
+		assert.ok(
+			!/ with \d+ (?:points|rebounds)[^.]* with \d+ threes/.test(joined),
+			joined.slice(0, 900),
+		);
+		assert.ok(!/points with \d+ threes/.test(joined), joined.slice(0, 900));
+	});
+
+	// A play-in game is single elimination. Nobody takes command of it, and Game
+	// 1 of a best-of-seven is not command either - both used to get that headline.
+	test("the day headline only claims command when a series has been taken over", () => {
+		const dayOf = (games: RecapGame[], day: number) =>
+			getAutoDayRecap({ season: 2026, day, playoffs: true, games });
+
+		// Across many days, so every entry in the headline pool gets drawn.
+		const playIn = seriesSlateGame(9500, "Celtics", "Pistons", 0, 0, {
+			series: undefined,
+			playIn: {
+				kind: "seed7v8",
+				prizeSeed: 7,
+				homeAbbrev: "CEL",
+				awayAbbrev: "PIS",
+			},
+		});
+		const opener = seriesSlateGame(9510, "Celtics", "Pistons", 0, 0);
+		for (let day = 1; day <= 24; day += 1) {
+			const p = dayOf([playIn], day);
+			assert.ok(!/take command/.test(p), p);
+			// ...and it says what a play-in game actually was, rather than falling
+			// through to a generic star line.
+			const playInHeadline = p.split("\n")[0] ?? "";
+			assert.ok(
+				/play-in|#\d seed|last playoff spot|final berth/.test(playInHeadline),
+				playInHeadline,
+			);
+			const o = dayOf([opener], day);
+			assert.ok(!/take command/.test(o), o);
+		}
+
+		// 3-1 in a best-of-seven IS command, so the phrase stays available there.
+		let sawCommand = false;
+		for (let day = 1; day <= 24; day += 1) {
+			if (
+				/take command/.test(
+					dayOf([seriesSlateGame(9520, "Celtics", "Pistons", 2, 1)], day),
+				)
+			) {
+				sawCommand = true;
+				break;
+			}
+		}
+		assert.ok(sawCommand, "a commanding series lead never says so");
+	});
+
+	// "In the other games, ..." over a single clause read as a miscount on a
+	// two-game night. The second game has to be QUIET or the wrap gives it a
+	// performance line instead, and the roundup never runs at all.
+	test("a single leftover game is not called games", () => {
+		const quiet = seriesSlateGame(9610, "Lakers", "Kings", 1, 0);
+		quiet.teams[0].players[0]!.pts = 12;
+		quiet.teams[1].players[0]!.pts = 10;
+
+		let sawRoundup = false;
+		for (let day = 1; day <= 12; day += 1) {
+			const recap = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: true,
+				games: [seriesSlateGame(9600, "Celtics", "Pistons", 1, 0), quiet],
+			});
+			if (/In the other game\b/.test(recap)) {
+				sawRoundup = true;
+			}
+			assert.ok(!/In the other games/.test(recap), recap);
+		}
+		assert.ok(sawRoundup, "fixture never reached the roundup sentence");
 	});
 });

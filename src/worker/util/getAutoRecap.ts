@@ -420,7 +420,9 @@ const shootingFlourish = (p: RecapPlayer): string | undefined => {
 		return `on ${p.fg}-of-${p.fga} shooting`;
 	}
 	if (p.tp >= 4) {
-		return `with ${p.tp} threes`;
+		// "on", not "with": every caller introduces the stat line with "with", and
+		// "led all scorers with 33 points with 5 threes" doubled it.
+		return `on ${p.tp} threes`;
 	}
 	return undefined;
 };
@@ -762,6 +764,12 @@ type PostseasonContext = {
 	// cannot express - "to win the title", "to reach the Finals". Wins over
 	// headlineTag when both are set.
 	//
+	// It is a PARTICIPIAL clause, so its implied subject is whatever the headline
+	// made the subject - and the winner is the only side it can truthfully be.
+	// "Pandas fall to the Blizzard 107-79, advancing to the Conference
+	// Semifinals" says the swept team advanced. buildHeadline drops the
+	// loser-subject templates whenever this is set.
+	//
 	// Without this a championship-clinching game got a headline indistinguishable
 	// from a Tuesday in January: "Celtics lean on Paul Pierce to take down the
 	// Pistons", with the fact that it won them the title left to the body.
@@ -773,8 +781,15 @@ type PostseasonContext = {
 const postseasonContext = (
 	game: RecapGame,
 	shape: Shape,
+	// Optional on purpose. notability() calls this only to SCORE a game, and
+	// pick() mutates the shared phrase memory - handing that call a live rng
+	// burns a night's rotation on text nobody ever reads. Without an rng the
+	// canonical phrasing is used and the pools are left alone.
+	rng?: () => number,
 ): PostseasonContext => {
 	const out: PostseasonContext = { sentences: [] };
+	const choose = (options: string[], poolId: string): string =>
+		rng ? pick(rng, options, poolId) : options[0]!;
 	// WITH THE ARTICLE. Every sentence built here opens with one of these, and
 	// they were bare nicknames while the rest of the piece says "the Celtics" -
 	// so a playoff recap read "The Celtics got past the Pistons 104-96... Celtics
@@ -897,36 +912,101 @@ const postseasonContext = (
 								} win and advanced.`
 							: lBefore === 0
 								? `${cap(w)} closed out ${rnd} with a ${wAfter}-0 sweep and advanced.`
-								: `${cap(w)} closed out ${rnd} ${wAfter}-${lBefore} and advanced.`,
+								: choose(
+										[
+											`${cap(w)} closed out ${rnd} ${wAfter}-${lBefore} and advanced.`,
+											`${cap(w)} took ${rnd} ${wAfter}-${lBefore} and move on.`,
+											`That is ${rnd} to ${w}, ${wAfter}-${lBefore}, and a place in the next round.`,
+										],
+										"seriesClinch",
+									),
 						seedUpset
 							? `The #${wSeed} seed puts out the #${lSeed} seed, and ${poss(theNick(shape.loser))} season is over.`
 							: lBefore === 0
 								? `${cap(theNick(shape.loser))} go out without winning a game.`
-								: `${poss(cap(theNick(shape.loser)))} season is over.`,
+								: choose(
+										[
+											`${poss(cap(theNick(shape.loser)))} season is over.`,
+											`${cap(theNick(shape.loser))} are done for the year.`,
+											`It is the end of the road for ${theNick(shape.loser)}.`,
+										],
+										"seriesLoserOut",
+									),
 					]),
 		);
 		return out;
 	}
 
 	// The series continues - describe the new state and the stakes met.
+	//
+	// Every branch here used to have exactly ONE phrasing, so a slate of eight
+	// first-round games produced "The X drew first blood in the First Round, 1-0."
+	// six times down the page. pick() with an explicit pool id rotates them
+	// across the night; the id is required because the default key is derived
+	// from the rendered strings, which differ per game and so never collide.
+	//
+	// roundName() returns an ARTICLED name ("the First Round"), so it can only
+	// sit where an article is wanted: "in the First Round" is fine, "their the
+	// First Round deficit" and "trail the First Round 3-2" were not.
 	if (wAfter === lBefore) {
 		out.sentences.push(
-			`${cap(w)} evened ${rnd} at ${wAfter}-${wAfter} with a Game ${gameNo} win.`,
+			choose(
+				[
+					`${cap(w)} evened ${rnd} at ${wAfter}-${wAfter} with a Game ${gameNo} win.`,
+					`Game ${gameNo} went to ${w}, and ${rnd} is level at ${wAfter}-${wAfter}.`,
+					`${cap(w)} answered in Game ${gameNo} to square ${rnd} at ${wAfter}-${wAfter}.`,
+				],
+				"seriesEven",
+			),
 		);
 	} else if (wAfter > lBefore) {
 		out.sentences.push(
 			facingElimination
-				? `${cap(w)} staved off elimination to pull within ${lBefore}-${wAfter} in ${rnd}.`
+				? choose(
+						[
+							`${cap(w)} staved off elimination to pull within ${lBefore}-${wAfter} in ${rnd}.`,
+							`${cap(w)} live to play another game, down ${lBefore}-${wAfter} in ${rnd}.`,
+						],
+						"seriesSurviveTrail",
+					)
 				: wBefore === 0 && lBefore === 0
-					? `${cap(w)} drew first blood in ${rnd}, ${wAfter}-${lBefore}.`
-					: `${cap(w)} took a ${wAfter}-${lBefore} lead in ${rnd}.`,
+					? choose(
+							[
+								`${cap(w)} drew first blood in ${rnd}, ${wAfter}-${lBefore}.`,
+								`${cap(w)} lead ${rnd} ${wAfter}-${lBefore} after taking the opener.`,
+								`Game 1 of ${rnd} went to ${w}.`,
+								`${cap(w)} struck first in ${rnd}.`,
+							],
+							"seriesOpener",
+						)
+					: choose(
+							[
+								`${cap(w)} took a ${wAfter}-${lBefore} lead in ${rnd}.`,
+								`That is a ${wAfter}-${lBefore} edge for ${w} in ${rnd}.`,
+								`${cap(w)} moved ahead ${wAfter}-${lBefore} in ${rnd}.`,
+								`${cap(w)} are up ${wAfter}-${lBefore} in ${rnd}.`,
+							],
+							"seriesLead",
+						),
 		);
 	} else {
 		// Winner still trails the series even after this win.
 		out.sentences.push(
 			facingElimination
-				? `${cap(w)} staved off elimination but still trail ${rnd} ${lBefore}-${wAfter}.`
-				: `${cap(w)} cut their ${rnd} deficit to ${lBefore}-${wAfter}.`,
+				? choose(
+						[
+							`${cap(w)} staved off elimination but still trail in ${rnd}, ${lBefore}-${wAfter}.`,
+							`${cap(w)} survived, though ${l} still lead ${rnd} ${lBefore}-${wAfter}.`,
+						],
+						"seriesSurviveStillTrail",
+					)
+				: choose(
+						[
+							`${cap(w)} cut their deficit in ${rnd} to ${lBefore}-${wAfter}.`,
+							`${cap(w)} got one back, and now trail ${lBefore}-${wAfter} in ${rnd}.`,
+						],
+						"seriesTrail",
+					),
 		);
 	}
 
@@ -942,8 +1022,22 @@ const postseasonContext = (
 				loserNeeds >= 3
 					? // "straight" is already plural in this idiom - plural() would make
 						// it "3 straights".
-						`${cap(l)} must win ${numWord(loserNeeds)} straight to survive; a win in Game ${gameNo + 1} ends it.`
-					: `${cap(l)} face elimination in Game ${gameNo + 1}.`,
+						choose(
+							[
+								`${cap(l)} must win ${numWord(loserNeeds)} straight to survive; a win in Game ${gameNo + 1} ends it.`,
+								`${cap(l)} now need ${numWord(loserNeeds)} in a row, starting in Game ${gameNo + 1}.`,
+								`Nothing short of ${numWord(loserNeeds)} straight saves ${l}, and Game ${gameNo + 1} could end it.`,
+							],
+							"seriesLoserMustRun",
+						)
+					: choose(
+							[
+								`${cap(l)} face elimination in Game ${gameNo + 1}.`,
+								`Game ${gameNo + 1} is win-or-go-home for ${l}.`,
+								`${cap(l)} are one loss from the end of their season.`,
+							],
+							"seriesLoserFacingOut",
+						),
 			);
 		} else if (winnerNeeds === 1) {
 			// Both one win away - the next game decides it either way.
@@ -955,13 +1049,26 @@ const postseasonContext = (
 		} else if (loserNeeds === 1) {
 			// The winner survived; the other side can still close it out next time.
 			out.sentences.push(
-				`${cap(l)} can still close it out in Game ${gameNo + 1}.`,
+				choose(
+					[
+						`${cap(l)} can still close it out in Game ${gameNo + 1}.`,
+						`${cap(l)} get another chance to finish it in Game ${gameNo + 1}.`,
+						`It is still ${poss(l)} series to win, in Game ${gameNo + 1}.`,
+					],
+					"seriesLoserCanClose",
+				),
 			);
 		} else if (seedUpset && wAfter > lBefore) {
+			const wins = `${numWord(winnerNeeds)} ${winnerNeeds === 1 ? "win" : "wins"}`;
 			out.sentences.push(
-				`The #${wSeed} seed leads the #${lSeed} seed with ${numWord(winnerNeeds)} ${
-					winnerNeeds === 1 ? "win" : "wins"
-				} to go.`,
+				choose(
+					[
+						`The #${wSeed} seed leads the #${lSeed} seed with ${wins} to go.`,
+						`The #${lSeed} seed is in trouble against the #${wSeed}, ${wins} from going out.`,
+						`${cap(w)}, seeded #${wSeed}, are ${wins} from putting out the #${lSeed} seed.`,
+					],
+					"seriesSeedUpset",
+				),
 			);
 		}
 	}
@@ -1327,8 +1434,13 @@ const buildHeadline = (
 	const resultTemplates = [
 		`${winnerN} ${verb} the ${loserN}, ${scoreTag(shape)}${tag}`,
 		`${winnerN} ${verb} the ${loserN} ${scoreTag(shape)}${tag}`,
-		`${loserN} fall to the ${winnerN} ${scoreTag(shape)}${tag}`,
-		`${winnerN} take the ${loserN} ${scoreTag(shape)}${tag}`,
+		// Only when nothing is hanging off the end: post.headlineTail is a
+		// participle that has to attach to the winner, and this is the one
+		// template that makes the loser the subject.
+		...(post.headlineTail
+			? []
+			: [`${loserN} fall to the ${winnerN} ${scoreTag(shape)}${tag}`]),
+		`${winnerN} take care of the ${loserN} ${scoreTag(shape)}${tag}`,
 		shape.margin >= 15
 			? `${winnerN} pull away from the ${loserN} for ${aNum(shape.margin)}-point win${tag}`
 			: `${winnerN} come out on top of the ${loserN} ${scoreTag(shape)}${tag}`,
@@ -2108,7 +2220,18 @@ const stakesSentence = (
 	const options: string[] = [];
 
 	const streak = shape.winner.streak;
-	if (streak && streak.won && streak.count >= 4) {
+	// In a series, a streak no longer than the wins in that series says nothing
+	// the series line has not already said - a 4-0 sweep followed by "have now
+	// won 4 straight games" is the same fact twice.
+	const seriesWins = (() => {
+		const ser = game.series;
+		if (!game.playoffs || !ser) {
+			return 0;
+		}
+		const winnerIsHome = shape.winner.abbrev === ser.homeAbbrev;
+		return (winnerIsHome ? ser.homeWon : ser.awayWon) + 1;
+	})();
+	if (streak && streak.won && streak.count >= 4 && streak.count > seriesWins) {
 		options.push(
 			pick(
 				rng,
@@ -2816,7 +2939,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 	}
 
 	const post = game.playoffs
-		? postseasonContext(game, shape)
+		? postseasonContext(game, shape, rng)
 		: { sentences: [] as string[] };
 
 	const headline = buildHeadline(game, shape, star, post, rng);
@@ -3329,10 +3452,17 @@ const teamStreakSentence = (
 
 // A compact, varied series-state clause for one playoff/play-in game, for the day
 // wrap's postseason roundup (lower-cased, no trailing period).
+//
+// The round is returned SEPARATELY rather than baked into the text. A day of
+// eight first-round games produced "the Curses are up 3-1 in the First Round,
+// the Riots grabbed a 3-1 edge in the First Round, ..." - the same four words
+// in every clause. The caller factors a shared round out to the front instead.
+type DaySeriesPhrase = { text: string; round?: string };
+
 const daySeriesPhrase = (
 	g: RecapGame,
 	rng: () => number,
-): string | undefined => {
+): DaySeriesPhrase | undefined => {
 	const shape = analyzeShape(g);
 	const w = theNick(shape.winner);
 	const l = theNick(shape.loser);
@@ -3340,21 +3470,44 @@ const daySeriesPhrase = (
 	if (g.playIn) {
 		const p = g.playIn;
 		if (p.kind === "seed7v8") {
-			return typeof p.prizeSeed === "number"
-				? `${w} grabbed the #${p.prizeSeed} seed`
-				: `${w} took the higher seed`;
+			return {
+				text:
+					typeof p.prizeSeed === "number"
+						? // The conference matters: both play-in winners take a #7 seed,
+							// and side by side "the Monuments grabbed the #7 seed ... the
+							// Whalers grabbed the #7 seed" reads like a mistake.
+							pick(
+								rng,
+								[
+									`${w} grabbed the #${p.prizeSeed} seed`,
+									`${w} came through for the #${p.prizeSeed} seed`,
+									`${w} locked up the #${p.prizeSeed} seed`,
+								],
+								"daySeriesPlayInSeed",
+							)
+						: `${w} took the higher seed`,
+			};
 		}
 		if (p.kind === "seed9v10") {
-			return `${w} ended ${poss(l)} season in the play-in`;
+			return {
+				text: pick(
+					rng,
+					[
+						`${w} ended ${poss(l)} season in the play-in`,
+						`${w} knocked ${l} out of the play-in`,
+					],
+					"daySeriesPlayInOut",
+				),
+			};
 		}
-		return `${w} claimed the last playoff spot`;
+		return { text: `${w} claimed the last playoff spot` };
 	}
 
 	const s = g.series;
 	if (!s) {
 		return undefined;
 	}
-	const rnd = roundName(s.round, s.numRounds);
+	const round = roundName(s.round, s.numRounds);
 	const winnerIsHome = shape.winner.abbrev === s.homeAbbrev;
 	const wBefore = winnerIsHome ? s.homeWon : s.awayWon;
 	const lBefore = winnerIsHome ? s.awayWon : s.homeWon;
@@ -3364,22 +3517,56 @@ const daySeriesPhrase = (
 			? Math.floor(s.bestOf / 2) + 1
 			: undefined;
 
+	// A clinch names what was won, so it carries its own round and must not be
+	// folded under a shared one.
 	if (need !== undefined && wAfter >= need) {
-		return s.round === s.numRounds
-			? `${w} won the championship`
-			: `${w} advanced past ${l}`;
+		return {
+			text:
+				s.round === s.numRounds
+					? `${w} won the championship`
+					: `${w} put ${l} out of ${round}`,
+		};
 	}
 	if (wAfter === lBefore) {
-		return `${w} pulled even with ${l} at ${wAfter}-${wAfter} in ${rnd}`;
+		return {
+			round,
+			text: pick(
+				rng,
+				[
+					`${w} pulled even with ${l} at ${wAfter}-${wAfter}`,
+					`${w} drew level with ${l} at ${wAfter}-${wAfter}`,
+					`${w} squared it with ${l} at ${wAfter}-${wAfter}`,
+				],
+				"daySeriesEven",
+			),
+		};
 	}
 	if (wAfter > lBefore) {
-		return pick(rng, [
-			`${w} lead ${rnd} ${wAfter}-${lBefore}`,
-			`${w} are up ${wAfter}-${lBefore} in ${rnd}`,
-			`${w} grabbed a ${wAfter}-${lBefore} edge in ${rnd}`,
-		]);
+		return {
+			round,
+			text: pick(
+				rng,
+				[
+					`${w} lead ${wAfter}-${lBefore}`,
+					`${w} are up ${wAfter}-${lBefore}`,
+					`${w} grabbed a ${wAfter}-${lBefore} edge`,
+					`${w} moved in front ${wAfter}-${lBefore}`,
+				],
+				"daySeriesLead",
+			),
+		};
 	}
-	return `${w} trail ${rnd} ${lBefore}-${wAfter} despite the win`;
+	return {
+		round,
+		text: pick(
+			rng,
+			[
+				`${w} won but still trail ${lBefore}-${wAfter}`,
+				`${w} got one back but remain down ${lBefore}-${wAfter}`,
+			],
+			"daySeriesTrail",
+		),
+	};
 };
 
 // The day's headline, driven by the single biggest thing that happened -
@@ -3413,7 +3600,7 @@ const dayHeadline = (
 
 	// Postseason storylines lead everything.
 	if (playoffs && marquee.playoffs) {
-		const post = postseasonContext(marquee, mShape);
+		const post = postseasonContext(marquee, mShape, rng);
 		const joined = post.sentences.join(" ");
 		if (/are champions|win the title/.test(joined)) {
 			return hl(
@@ -3437,40 +3624,131 @@ const dayHeadline = (
 				]),
 			);
 		}
-		// A series-tying win that forces a winner-take-all next game.
-		const s = marquee.series;
-		if (s && typeof s.bestOf === "number" && s.bestOf > 1) {
-			const need = Math.floor(s.bestOf / 2) + 1;
+		// Where the series stands after this game, so a headline only claims what
+		// actually happened. The generic fallback used to be a two-entry pool
+		// containing "X take command against Y" - which it then printed over a
+		// play-in game and over Game 1 of a first-round series, neither of which
+		// is anyone taking command of anything.
+		const ss = (() => {
+			const s = marquee.series;
+			if (!s || typeof s.bestOf !== "number" || s.bestOf <= 1) {
+				return undefined;
+			}
 			const winnerIsHome = mShape.winner.abbrev === s.homeAbbrev;
 			const wBefore = winnerIsHome ? s.homeWon : s.awayWon;
 			const lBefore = winnerIsHome ? s.awayWon : s.homeWon;
-			if (wBefore + 1 === need - 1 && lBefore === need - 1) {
-				const decider =
-					s.bestOf === 7 ? "a Game 7" : `a decisive Game ${s.bestOf}`;
-				return hl(`${w} force ${decider} with ${l}`);
-			}
+			return {
+				need: Math.floor(s.bestOf / 2) + 1,
+				wAfter: wBefore + 1,
+				lBefore,
+				gameNo: wBefore + lBefore + 1,
+			};
+		})();
+
+		// A series-tying win that forces a winner-take-all next game.
+		if (ss && ss.wAfter === ss.need - 1 && ss.lBefore === ss.need - 1) {
+			const bestOf = marquee.series!.bestOf!;
+			const decider = bestOf === 7 ? "a Game 7" : `a decisive Game ${bestOf}`;
+			return hl(`${w} force ${decider} with ${l}`);
 		}
 		if (/staved off elimination/.test(joined)) {
 			return hl(
-				pick(rng, [
-					`${w} stave off elimination against ${l}`,
-					`${w} keep their season alive`,
-				]),
+				pick(
+					rng,
+					[
+						`${w} stave off elimination against ${l}`,
+						`${w} keep their season alive`,
+						`${w} refuse to go quietly against ${l}`,
+					],
+					"dayHeadlineSurvive",
+				),
 			);
 		}
 		const shot = clutchShot(marquee);
 		if (shot && !shot.tying) {
 			return hl(`${poss(shot.name)} ${shot.shot} decides a playoff thriller`);
 		}
-		if (mStar) {
+
+		// A play-in game is single elimination, not a series - it has its own
+		// stakes and none of the series language applies to it.
+		if (marquee.playIn) {
+			const kind = marquee.playIn.kind;
+			const prize = marquee.playIn.prizeSeed;
+			const seedBits =
+				typeof prize === "number"
+					? [`${w} claim the #${prize} seed`, `${w} lock up the #${prize} seed`]
+					: [];
 			return hl(
-				pick(rng, [
-					`${mStar.name}'s ${starHeadline(mStar).text} power${
-						starHeadline(mStar).plural ? "" : "s"
-					} ${tw} past ${l}`,
-					`${w} take command against ${l}`,
-				]),
+				pick(
+					rng,
+					kind === "seed9v10"
+						? [
+								`${w} end ${poss(l)} season in the play-in`,
+								`${w} survive and advance in the play-in`,
+								`${w} live to play again, and ${l} do not`,
+							]
+						: kind === "final"
+							? [
+									`${w} grab the last playoff spot`,
+									`${w} take the final berth from ${l}`,
+									...seedBits,
+								]
+							: [
+									...seedBits,
+									`${w} take the play-in game from ${l}`,
+									`${w} come through the play-in against ${l}`,
+								],
+					`dayHeadlinePlayIn:${kind}`,
+				),
 			);
+		}
+
+		// The generic case, said in terms of where the series now stands.
+		const stateBits: string[] = [];
+		if (ss) {
+			if (ss.gameNo === 1) {
+				stateBits.push(
+					`${w} take the opener from ${l}`,
+					`${w} draw first blood against ${l}`,
+				);
+			} else if (ss.wAfter === ss.lBefore) {
+				stateBits.push(
+					`${w} pull level with ${l}`,
+					`${w} answer back against ${l}`,
+				);
+			} else if (ss.wAfter === ss.need - 1 && ss.wAfter - ss.lBefore >= 2) {
+				// Genuinely in command: one win away, and two clear.
+				stateBits.push(
+					`${w} take command against ${l}`,
+					`${w} push ${l} to the brink`,
+				);
+			} else if (ss.wAfter > ss.lBefore) {
+				stateBits.push(
+					`${w} take a ${ss.wAfter}-${ss.lBefore} lead on ${l}`,
+					`${w} edge ahead of ${l}`,
+				);
+			} else {
+				stateBits.push(
+					`${w} get one back against ${l}`,
+					`${w} cut into ${poss(l)} lead`,
+				);
+			}
+		}
+		if (mStar) {
+			const sh = starHeadline(mStar);
+			return hl(
+				pick(
+					rng,
+					[
+						`${mStar.name}'s ${sh.text} power${sh.plural ? "" : "s"} ${tw} past ${l}`,
+						...stateBits,
+					],
+					"dayHeadlinePlayoffStar",
+				),
+			);
+		}
+		if (stateBits.length > 0) {
+			return hl(pick(rng, stateBits, "dayHeadlinePlayoffState"));
 		}
 		return hl(`${w} ${pick(rng, verbPool(marquee, mShape))} ${l}`);
 	}
@@ -4156,6 +4434,12 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		(perf) =>
 			!named.has(perf.p) &&
 			!marqueeTids.has(perf.team.tid) &&
+			// ...and from a game the wrap has not already told. Without this the
+			// leading scorer's game came back around immediately from the other
+			// side: "Jared Jones led all scorers with 40 despite the Cheesesteaks'
+			// loss to the Monuments. Tyrone Allen put together a triple-double as
+			// the Monuments beat the Cheesesteaks."
+			!coveredGames.has(perf.game) &&
 			perf.won &&
 			(perf.p.pts >= 25 || doubleCategories(perf.p).length >= 3),
 	);
@@ -4331,7 +4615,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		const candidates = [
 			"Around the league",
 			"Also on the night",
-			"In the other games",
+			// "In the other games" over a single clause read as a miscount on a
+			// two-game night ("In the other games, the Gold Club beat the Turtles").
+			items.length === 1 ? "In the other game" : "In the other games",
 		].filter((o) => o.split(" ")[0] !== notableFirstWord);
 		const opener = pick(rng, candidates, "roundupOpener");
 		para2.push(`${opener}, ${naturalList(items)}.`);
@@ -4361,15 +4647,15 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	if (playoffs) {
 		// Series developments across the day, skipping the marquee game (already the
 		// story) and any duplicate phrasing.
-		const seriesBits: string[] = [];
+		const seriesBits: DaySeriesPhrase[] = [];
 		const seen = new Set<string>();
 		for (const g of games) {
 			if (marqueeTids.has(g.teams[0].tid) && marqueeTids.has(g.teams[1].tid)) {
 				continue;
 			}
 			const phrase = daySeriesPhrase(g, rng);
-			if (phrase && !seen.has(phrase)) {
-				seen.add(phrase);
+			if (phrase && !seen.has(phrase.text)) {
+				seen.add(phrase.text);
 				seriesBits.push(phrase);
 			}
 			if (seriesBits.length >= 4) {
@@ -4377,7 +4663,20 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			}
 		}
 		if (seriesBits.length > 0) {
-			para3.push(`In the playoffs, ${naturalList(seriesBits)}.`);
+			// When every clause belongs to the same round - which is most nights,
+			// since rounds run in lockstep - say the round once at the front
+			// instead of four times down the sentence.
+			const rounds = new Set(seriesBits.map((b) => b.round));
+			const shared = rounds.size === 1 ? [...rounds][0] : undefined;
+			para3.push(
+				shared
+					? `In ${shared}, ${naturalList(seriesBits.map((b) => b.text))}.`
+					: `In the playoffs, ${naturalList(
+							seriesBits.map((b) =>
+								b.round ? `${b.text} in ${b.round}` : b.text,
+							),
+						)}.`,
+			);
 		}
 	} else {
 		const streak = teamStreakSentence(games, rng);
