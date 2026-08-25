@@ -12,6 +12,7 @@ import type { View } from "../../common/types.ts";
 import { PLAYER } from "../../common/constants.ts";
 import { wrappedAgeAtDeath } from "../components/AgeAtDeath.tsx";
 import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels.tsx";
+import { PlayerFaceEditButton } from "../components/PlayerFaceEditButton.tsx";
 import { orderBy } from "../../common/utils.ts";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { wrappedDraftAbbrev } from "../components/DraftAbbrev.tsx";
@@ -312,6 +313,38 @@ const DraftHistory = ({
 			seasonsWithRatings: new Set(),
 		});
 
+		const wrappedName = wrappedPlayerNameLabels({
+			awards: p.awards,
+			pid: p.pid,
+			season,
+			defaultWatch: p.watch,
+			firstName: p.firstName,
+			firstNameShort: p.firstNameShort,
+			lastName: p.lastName,
+		});
+
+		// The same button, for the same reason, as Draft Scouting: a player still
+		// on a photo is the one worth converting to a face, so that is the only
+		// row that gets one. It matters more here, because a class drops off the
+		// scouting page the moment it is drafted - after that this is the only
+		// list those players appear on together.
+		const nameCell = p.imgURL
+			? {
+					...wrappedName,
+					value: (
+						<div className="d-flex align-items-center">
+							<div className="flex-grow-1">{wrappedName.value}</div>
+							<PlayerFaceEditButton
+								firstName={p.firstName}
+								lastName={p.lastName}
+								pid={p.pid}
+								season={season}
+							/>
+						</div>
+					),
+				}
+			: wrappedName;
+
 		return {
 			key: p.pid,
 			metadata: {
@@ -347,15 +380,7 @@ const DraftHistory = ({
 					sortValue:
 						p.draft.round >= 1 ? `${p.draft.round}-${p.draft.pick}` : null,
 				},
-				wrappedPlayerNameLabels({
-					awards: p.awards,
-					pid: p.pid,
-					season,
-					defaultWatch: p.watch,
-					firstName: p.firstName,
-					firstNameShort: p.firstNameShort,
-					lastName: p.lastName,
-				}),
+				nameCell,
 				p.pos,
 				wrappedDraftAbbrev(
 					{

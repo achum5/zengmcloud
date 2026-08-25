@@ -89,6 +89,10 @@ const updateDraftHistory = async (inputs: ViewInput<"draftHistory">) => {
 			"watch",
 			"awards",
 			"born",
+			// A player still on a photo rather than a face is the one worth
+			// converting, so the table needs to know which rows those are - same
+			// reason draftScouting fetches it.
+			"imgURL",
 			// For the writeup arrow next to each pick: the draft-year section of
 			// his note is the piece about being taken here.
 			"note",
@@ -128,6 +132,7 @@ const updateDraftHistory = async (inputs: ViewInput<"draftHistory">) => {
 				currentAbbrev: p.abbrev,
 				currentTid: p.tid,
 				hof: p.hof,
+				imgURL: p.imgURL,
 				watch: p.watch,
 				awards: p.awards,
 				note: p.note,
