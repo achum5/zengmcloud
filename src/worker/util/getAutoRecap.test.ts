@@ -4920,3 +4920,272 @@ describe("recent form and the standings line", () => {
 		}
 	});
 });
+
+// A general guard against the defect this file keeps finding: a branch with one
+// fixed phrasing reads fine alone and prints the same sentence four times down a
+// full slate. Rather than test each pool, normalize every sentence to its FRAME
+// (numbers and proper nouns blanked) and assert no frame dominates a night.
+describe("a full slate does not repeat itself", () => {
+	const slateGame = (i: number): RecapGame => {
+		// Spread the shapes out so different branches fire: blowouts, one-point
+		// games, overtime, turnover-heavy, whistle-heavy.
+		const margin = [3, 25, 1, 14, 8, 31, 2, 19, 6, 11, 22, 4][i % 12]!;
+		const winPts = 96 + ((i * 7) % 25);
+		const gid = 5000 + i;
+		const win = realisticTeam(
+			{
+				tid: gid * 2,
+				name: `Team${i}`,
+				abbrev: `T${i}`,
+				pts: winPts,
+				ptsQtrs: [
+					24 + (i % 9),
+					22 + (i % 7),
+					26 + (i % 5),
+					winPts - (24 + (i % 9)) - (22 + (i % 7)) - (26 + (i % 5)),
+				],
+				record: { won: 10 + i, lost: 6 + (i % 5) },
+			},
+			player({
+				name: `Star${i}`,
+				pts: 20 + (i % 15),
+				reb: 5 + (i % 9),
+				ast: 3 + (i % 8),
+				fg: 9,
+				fga: 18,
+				tp: i % 6,
+				tpa: 4 + (i % 5),
+				ft: 4 + (i % 12),
+				fta: 5 + (i % 12),
+			}),
+		);
+		const lose = realisticTeam(
+			{
+				tid: gid * 2 + 1,
+				name: `Foe${i}`,
+				abbrev: `F${i}`,
+				pts: winPts - margin,
+				ptsQtrs: [22, 24, 23, winPts - margin - 69],
+				record: { won: 6 + (i % 4), lost: 12 + i },
+			},
+			player({
+				name: `Rival${i}`,
+				pts: 16 + (i % 12),
+				reb: 6 + (i % 8),
+				ast: 2 + (i % 6),
+				fg: 7,
+				fga: 20,
+			}),
+		);
+		lose.players.forEach((p, j) => {
+			p.tov = j < 4 ? 4 + (i % 3) : 1;
+			p.pm = -6;
+		});
+		win.players.forEach((p, j) => {
+			p.pm = j === win.players.length - 1 ? 24 : 3;
+			p.ft = 2 + (i % 4);
+			p.fta = 3 + (i % 5);
+		});
+		// The losing side shoots free throws too. Leaving them on zero made every
+		// game a record whistle disparity, so that branch fired far more often
+		// than it ever would in a real league.
+		lose.players.forEach((p, j) => {
+			p.ft = j < 5 ? 2 + ((i + j) % 4) : 0;
+			p.fta = j < 5 ? 3 + ((i + j) % 5) : 0;
+		});
+		return game({
+			gid,
+			teams: [win, lose],
+			winnerTid: gid * 2,
+			overtimes: i % 5 === 0 ? 1 : 0,
+			spread: {
+				favTid: i % 3 === 0 ? gid * 2 + 1 : gid * 2,
+				points: 4 + (i % 9),
+			},
+		});
+	};
+
+	test("no sentence frame is used three times on one night", () => {
+		beginRecapBatch();
+		let text: string;
+		try {
+			// A realistic slate size. Wider than this and a pool of a dozen verbs
+			// legitimately reuses a shape, which is not the defect being caught -
+			// per-branch variety is asserted separately below.
+			text = Array.from({ length: 14 }, (_, i) =>
+				getAutoRecap(slateGame(i)),
+			).join("\n");
+		} finally {
+			endRecapBatch();
+		}
+
+		// Split on sentence ends only after a lowercase letter, digit, % or
+		// closing quote - so initials like "J.J." do not read as a boundary.
+		const sentences = text
+			.split("\n")
+			.filter((line) => !line.startsWith("**"))
+			.flatMap((line) => line.split(/(?<=[\d"%')a-z])[!.?]\s+/))
+			.map((s) => s.trim())
+			.filter(Boolean);
+
+		const frameOf = (s: string) =>
+			s
+				.replaceAll(/\d+(\.\d+)?%?/g, "#")
+				.replaceAll(/\b[A-Z][\w'-]*(?: [A-Z][\w'-]*)*/g, "N");
+
+		const counts = new Map<string, number>();
+		for (const s of sentences) {
+			const f = frameOf(s);
+			counts.set(f, (counts.get(f) ?? 0) + 1);
+		}
+		const repeated = [...counts].filter(([, n]) => n >= 3);
+		assert.deepEqual(
+			repeated.map(([f, n]) => `${n}x ${f}`),
+			[],
+			`a sentence frame repeats across the slate`,
+		);
+		// Guard the guard: if the slate stopped producing prose this would pass.
+		assert.ok(sentences.length > 60, `only ${sentences.length} sentences`);
+	});
+});
+
+// Every branch that fires on a normal night must have MORE THAN ONE phrasing.
+// A single fixed sentence reads fine alone and prints four times down a slate,
+// which is the defect this file has found over and over. This asserts it per
+// branch rather than per pool, so a new branch added without a pool fails here.
+describe("no branch has only one phrasing", () => {
+	const varied = (i: number): RecapGame => {
+		const margin = [3, 25, 1, 14, 8, 31, 2, 19, 6, 11, 22, 4][i % 12]!;
+		const winPts = 96 + ((i * 7) % 25);
+		const gid = 8000 + i;
+		const win = realisticTeam(
+			{
+				tid: gid * 2,
+				name: `Team${i}`,
+				abbrev: `T${i}`,
+				pts: winPts,
+				ptsQtrs: [
+					24 + (i % 9),
+					22 + (i % 7),
+					26 + (i % 5),
+					winPts - (24 + (i % 9)) - (22 + (i % 7)) - (26 + (i % 5)),
+				],
+				record: { won: 12 + i, lost: 5 + (i % 4) },
+				// A clean run into this game, so the snapped-streak branch fires
+				// for the LOSER below.
+			},
+			player({
+				name: `Star${i}`,
+				pts: 20 + (i % 15),
+				reb: 5 + (i % 9),
+				ast: 3 + (i % 8),
+				fg: 9,
+				fga: 18,
+			}),
+		);
+		const lose = realisticTeam(
+			{
+				tid: gid * 2 + 1,
+				name: `Foe${i}`,
+				abbrev: `F${i}`,
+				pts: winPts - margin,
+				ptsQtrs: [22, 24, 23, winPts - margin - 69],
+				record: { won: 9 + (i % 4), lost: 9 + i },
+				last10: [
+					{ opp: "T", home: true, won: false, pts: 90, oppPts: 100 },
+					...Array.from({ length: 8 }, () => ({
+						opp: "T",
+						home: true,
+						won: true,
+						pts: 100,
+						oppPts: 90,
+					})),
+				],
+			},
+			player({ name: `Rival${i}`, pts: 14, reb: 5, ast: 2, fg: 6, fga: 20 }),
+		);
+		lose.players.forEach((p, j) => {
+			p.tov = j < 5 ? 5 : 2;
+			p.pm = -6;
+			p.ft = 1;
+			p.fta = 1;
+		});
+		win.players.forEach((p, j) => {
+			p.pm = j === win.players.length - 1 ? 24 : 3;
+			p.ft = 5;
+			p.fta = 6;
+		});
+		return game({
+			gid,
+			teams: [win, lose],
+			winnerTid: gid * 2,
+			overtimes: i % 4 === 0 ? 1 : 0,
+			spread: { favTid: gid * 2, points: 4 + (i % 9) },
+		});
+	};
+
+	// Each branch, and a pattern that only its sentences match.
+	const BRANCHES: [string, RegExp][] = [
+		[
+			"loser turnovers",
+			/undone by \d+ turnovers|gave the ball away \d+ times|turnovers were what beat|could not hold on to it - \d+ giveaways/,
+		],
+		[
+			"free-throw edge",
+			/made \d+ free throws to \d+ for|lived at the line, making|made free throws to \d+ in .*favor/,
+		],
+		[
+			"whistle gap",
+			/shot \d+ free throws to \d+\.|whistle went one way|got to the line (?:more than twice|far more) often|were beaten at the line/,
+		],
+		[
+			"snapped streak",
+			/snapped .*\d+-game winning streak|had won \d+ in a row until this one|end of a \d+-game run/,
+		],
+		[
+			"first-quarter run",
+			/jumped out to a \d+-\d+ first quarter|was \d+-\d+ after one|ahead almost immediately/,
+		],
+		[
+			"comfortable cover",
+			/never looked like mattering|Favored by \d+,|made it look modest|expected to win by \d+ and won by/,
+		],
+	];
+
+	test("each branch produces more than one sentence shape", () => {
+		const sentences: string[] = [];
+		for (let batch = 0; batch < 4; batch += 1) {
+			beginRecapBatch();
+			try {
+				for (let i = 0; i < 24; i += 1) {
+					sentences.push(
+						...getAutoRecap(varied(batch * 100 + i))
+							.split("\n")
+							.filter((line) => !line.startsWith("**"))
+							.flatMap((line) => line.split(/(?<=[\d"%')a-z])[!.?]\s+/)),
+					);
+				}
+			} finally {
+				endRecapBatch();
+			}
+		}
+		const frameOf = (s: string) =>
+			s
+				.replaceAll(/\d+(\.\d+)?%?/g, "#")
+				.replaceAll(/\b[A-Z][\w'-]*(?: [A-Z][\w'-]*)*/g, "N")
+				.trim();
+
+		const missing: string[] = [];
+		for (const [name, pattern] of BRANCHES) {
+			const shapes = new Set(
+				sentences.filter((s) => pattern.test(s)).map((s) => frameOf(s)),
+			);
+			if (shapes.size === 0) {
+				missing.push(`${name}: never fired, so nothing was tested`);
+			} else if (shapes.size < 2) {
+				missing.push(`${name}: only one phrasing (${[...shapes][0]})`);
+			}
+		}
+		assert.deepEqual(missing, []);
+	});
+});

@@ -1708,11 +1708,21 @@ const flowSentence = (
 		return { text: pick(rng, options), covers: "wire" };
 	}
 	if (shape.ot > 0) {
+		const extra =
+			shape.ot === 1 ? "an extra period" : `${shape.ot} extra periods`;
 		return {
 			covers: "ot",
-			text: `Neither side could pull away in regulation, and it took ${
-				shape.ot === 1 ? "an extra period" : `${shape.ot} extra periods`
-			} to settle it.`,
+			text: pick(
+				rng,
+				[
+					`Neither side could pull away in regulation, and it took ${extra} to settle it.`,
+					// No fixed minute count here: quarter length and the number of
+					// periods are both league settings.
+					`Regulation settled nothing, and it took ${extra}.`,
+					`The two sides could not be separated in regulation, and ${extra} was needed.`,
+				],
+				"otLede",
+			),
 		};
 	}
 	if (
@@ -1886,15 +1896,33 @@ const statNote = (
 		shape.wq.length > 0
 	) {
 		add(
-			`${cap(theNick(shape.winner))} jumped out to a ${shape.bigRun.wpts}-${shape.bigRun.lpts} first quarter.`,
+			pick(
+				rng,
+				[
+					`${cap(theNick(shape.winner))} jumped out to a ${shape.bigRun.wpts}-${shape.bigRun.lpts} first quarter.`,
+					`It was ${shape.bigRun.wpts}-${shape.bigRun.lpts} after one.`,
+					`${cap(theNick(shape.winner))} were ahead almost immediately, ${shape.bigRun.wpts}-${shape.bigRun.lpts} after the first.`,
+				],
+				"firstQuarterRun",
+			),
 		);
 	}
 	// A big edge at the free-throw line.
 	if (w.ft >= 24 && w.ft - l.ft >= 10) {
 		add(
-			`${cap(theNick(shape.winner))} made ${w.ft} free throws to ${l.ft} for ${theNick(
-				shape.loser,
-			)}.`,
+			pick(
+				rng,
+				[
+					`${cap(theNick(shape.winner))} made ${w.ft} free throws to ${l.ft} for ${theNick(
+						shape.loser,
+					)}.`,
+					`${cap(theNick(shape.winner))} lived at the line, making ${w.ft} to ${l.ft}.`,
+					`It was ${w.ft} made free throws to ${l.ft} in ${poss(
+						theNick(shape.winner),
+					)} favor.`,
+				],
+				"ledeFreeThrows",
+			),
 			"other",
 			"freeThrows",
 		);
@@ -2113,7 +2141,16 @@ const supportSentence = (
 	const second = cast[0]!;
 	const ddw = doubleWord(doubleCategories(second).length);
 	const secondText = ddw
-		? `${second.name} added a ${ddw} with ${statPhrase(second)}`
+		? pick(
+				rng,
+				[
+					`${second.name} added a ${ddw} with ${statPhrase(second)}`,
+					`${second.name} had a ${ddw} of his own, ${statPhrase(second)}`,
+					`${second.name} went for ${statPhrase(second)}`,
+					`${second.name} chipped in a ${ddw}, ${statPhrase(second)}`,
+				],
+				"supportDouble",
+			)
 		: `${second.name} ${scoredVerb(rng)} ${statPhrase(second)}`;
 
 	const third = cast[1];
@@ -2241,7 +2278,16 @@ const loserSentence = (
 	}
 	// No standout to hang it on - name the team directly.
 	if (stats.tov >= 18 && !spent.has("loserTov")) {
-		return `${cap(theNick(shape.loser))} were undone by ${stats.tov} turnovers.`;
+		return pick(
+			rng,
+			[
+				`${cap(theNick(shape.loser))} were undone by ${stats.tov} turnovers.`,
+				`${cap(theNick(shape.loser))} gave the ball away ${stats.tov} times.`,
+				`${stats.tov} turnovers were what beat ${theNick(shape.loser)}.`,
+				`${cap(theNick(shape.loser))} could not hold on to it - ${stats.tov} giveaways.`,
+			],
+			"loserTovAlone",
+		);
 	}
 	if (stats.fga >= 20 && stats.fgp <= 40 && !spent.has("loserFgp")) {
 		return pick(
@@ -2306,7 +2352,15 @@ const stakesSentence = (
 		}
 		if (run >= 4) {
 			options.push(
-				`It snapped ${poss(theNick(shape.loser))} ${run}-game winning streak.`,
+				pick(
+					rng,
+					[
+						`It snapped ${poss(theNick(shape.loser))} ${run}-game winning streak.`,
+						`${cap(theNick(shape.loser))} had won ${run} in a row until this one.`,
+						`That is the end of a ${run}-game run for ${theNick(shape.loser)}.`,
+					],
+					"snappedStreak",
+				),
 			);
 		}
 	}
@@ -2340,25 +2394,52 @@ const stakesSentence = (
 	// The record note earns its sentence only when the record is actually good
 	// ("The Warriors improved to 2-8" is not news), and even then only sometimes
 	// - it was showing up in nearly every recap on a full slate.
+	//
+	// And it now prefers something the record MEANS to a bare restatement of it.
+	// Over a captured season the three "improved to 30-8" shapes accounted for
+	// 170 sentences - 2.7% of everything written, all of it saying only what the
+	// standings already say. A round-numbered win and a big cushion over .500
+	// are facts a reader does not already have.
 	const rec = shape.winner.record;
-	if (
-		rec &&
-		rec.won + rec.lost >= 10 &&
-		!game.playoffs &&
-		rec.won > rec.lost &&
-		rng() < 0.5
-	) {
-		options.push(
-			pick(
-				rng,
-				[
-					`${cap(theNick(shape.winner))} improved to ${rec.won}-${rec.lost}.`,
-					`${cap(theNick(shape.winner))} moved to ${rec.won}-${rec.lost}.`,
-					`The win pushed ${theNick(shape.winner)} to ${rec.won}-${rec.lost}.`,
-				],
-				"record",
-			),
-		);
+	if (rec && rec.won + rec.lost >= 10 && !game.playoffs && rec.won > rec.lost) {
+		const w = cap(theNick(shape.winner));
+		const them = theNick(shape.winner);
+		const over = rec.won - rec.lost;
+		if (rec.won % 10 === 0) {
+			options.push(
+				pick(
+					rng,
+					[
+						`It was ${poss(them)} ${ordinal(rec.won)} win of the season.`,
+						`That is ${rec.won} wins on the year for ${them}.`,
+					],
+					"recordMilestone",
+				),
+			);
+		} else if (over >= 12 && rng() < 0.3) {
+			options.push(
+				pick(
+					rng,
+					[
+						`${w} are ${plural(over, "game")} over .500 at ${rec.won}-${rec.lost}.`,
+						`At ${rec.won}-${rec.lost}, ${them} are ${plural(over, "game")} clear of .500.`,
+					],
+					"recordOver500",
+				),
+			);
+		} else if (rng() < 0.25) {
+			options.push(
+				pick(
+					rng,
+					[
+						`${w} improved to ${rec.won}-${rec.lost}.`,
+						`${w} moved to ${rec.won}-${rec.lost}.`,
+						`The win pushed ${them} to ${rec.won}-${rec.lost}.`,
+					],
+					"record",
+				),
+			);
+		}
 	}
 
 	if (options.length === 0) {
@@ -2606,12 +2687,24 @@ const freeThrowNote = (
 				`The whistle went one way: ${w.fta} attempts from the line for ${theNick(
 					shape.winner,
 				)}, ${l.fta} for ${theNick(shape.loser)}.`,
+				`${cap(theNick(shape.winner))} got to the line ${
+					w.fta >= l.fta * 2 ? "more than twice as often" : "far more often"
+				}, ${w.fta} attempts to ${l.fta}.`,
+				`${cap(theNick(shape.loser))} were beaten at the line, ${l.fta} attempts to ${w.fta}.`,
 			],
 			"ftGap",
 		);
 	}
 	if (l.fta - w.fta >= 14 && shape.margin <= 10) {
-		return `${cap(theNick(shape.loser))} had the better of the whistle - ${l.fta} free throws to ${w.fta} - and still lost.`;
+		return pick(
+			rng,
+			[
+				`${cap(theNick(shape.loser))} had the better of the whistle - ${l.fta} free throws to ${w.fta} - and still lost.`,
+				`${cap(theNick(shape.loser))} shot ${l.fta} free throws to ${w.fta} and lost anyway.`,
+				`The line was no help to ${theNick(shape.loser)}: ${l.fta} attempts to ${w.fta}, and a loss.`,
+			],
+			"ftGapLoser",
+		);
 	}
 	return undefined;
 };
@@ -2804,7 +2897,9 @@ const loserSupportNote = (
 	}
 	said.add(second.name);
 	// "in defeat" on its own turned up in most games on a slate, so the tail
-	// rotates too.
+	// rotates too. Deliberately ONE shape: the verb and tail together give this
+	// sentence more distinct forms than a handful of alternative shapes would,
+	// and shapes without that variation collapse to a single frame each.
 	return `${second.name} ${scoredVerb(rng)} ${statPhrase(second, 1)} ${pick(
 		rng,
 		["in defeat", "in the loss", "in a losing cause", "for the losing side"],
@@ -2847,6 +2942,8 @@ const spreadNote = (
 			[
 				`Favored by ${s.points}, ${theNick(shape.winner)} won by ${shape.margin}.`,
 				`The ${s.points}-point line never looked like mattering.`,
+				`${cap(theNick(shape.winner))} were ${s.points}-point favorites and made it look modest.`,
+				`${cap(theNick(shape.winner))} were expected to win by ${s.points} and won by ${shape.margin}.`,
 			],
 			"spreadCovered",
 		);
