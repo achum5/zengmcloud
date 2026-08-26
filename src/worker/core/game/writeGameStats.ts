@@ -238,6 +238,14 @@ export const gameSimToBoxScore = async (results: GameResults, att: number) => {
 	if (results.pregameSpread !== undefined) {
 		gameStats.spread = results.pregameSpread;
 	}
+	// Only worth the bytes when it differs from the quoted number - which it
+	// does exactly when a correction was applied. See Game.spreadModel.
+	if (
+		results.pregameSpreadModel !== undefined &&
+		results.pregameSpreadModel !== results.pregameSpread
+	) {
+		gameStats.spreadModel = results.pregameSpreadModel;
+	}
 	if (results.neutralSite) {
 		gameStats.neutralSite = true;
 	}

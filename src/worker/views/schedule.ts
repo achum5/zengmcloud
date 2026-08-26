@@ -22,6 +22,10 @@ import { getStartingAndBackupGoalies } from "../core/GameSim.hockey/getStartingA
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
 import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
+import {
+	getTeamSpreadBias,
+	spreadBiasAdjustment,
+} from "../util/getTeamSpreadBias.ts";
 import { pregameLineupSynergyFromPlayers } from "../core/GameSim.basketball/synergy.ts";
 
 export const getUpcoming = async ({
@@ -185,7 +189,9 @@ export const getUpcoming = async ({
 	// that shows one. ScoreBox used to work it out itself from the team overalls
 	// it happened to be holding, which meant the league top bar and the Daily
 	// Schedule could quote the same game differently. This is the same number the
-	// sportsbook prices off - the closed-form line, and only that.
+	// sportsbook prices off - the closed-form line plus the per-team form
+	// correction the sportsbook applies (getTeamSpreadBias.ts), so the two can
+	// never disagree.
 	//
 	// It used to be corrected by a background simulation of the matchup, which is
 	// why this function once needed a roster fingerprint and a cache probe. See
@@ -196,6 +202,7 @@ export const getUpcoming = async ({
 	const quarterLength = g.get("quarterLength");
 	const neutralSiteSetting = g.get("neutralSite");
 	const phase = g.get("phase");
+	const spreadBiases = await getTeamSpreadBias(g.get("season"));
 
 	// Same availability window as the ovr above, so the two inputs describe the
 	// same roster. Undefined (non-basketball, or a roster too thin to field a
@@ -215,12 +222,16 @@ export const getUpcoming = async ({
 		ovr1,
 		synergy0,
 		synergy1,
+		homeTid,
+		awayTid,
 	}: {
 		finals?: boolean;
 		ovr0: number | undefined;
 		ovr1: number | undefined;
 		synergy0: number | undefined;
 		synergy1: number | undefined;
+		homeTid?: number;
+		awayTid?: number;
 	}) => {
 		const neutralSite =
 			(neutralSiteSetting === "finals" && !!finals) ||
@@ -239,7 +250,14 @@ export const getUpcoming = async ({
 					: undefined,
 			playoffs: phase === PHASE.PLAYOFFS,
 		});
-		return margin === undefined ? undefined : roundHalf(margin);
+		if (margin === undefined) {
+			return undefined;
+		}
+		const corrected =
+			homeTid === undefined || awayTid === undefined
+				? margin
+				: margin + spreadBiasAdjustment(spreadBiases, homeTid, awayTid);
+		return roundHalf(corrected);
 	};
 
 	const upcoming: {
@@ -268,6 +286,8 @@ export const getUpcoming = async ({
 								ovr1: teams[1].ovr,
 								synergy0: getSynergy(homeTid, day),
 								synergy1: getSynergy(awayTid, day),
+								homeTid,
+								awayTid,
 							})
 						: undefined,
 				teams,

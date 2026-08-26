@@ -21,6 +21,11 @@ import {
 	overProb,
 	toHalfPointLine,
 } from "../../../common/sportsbookOdds.ts";
+import {
+	getTeamSpreadBias,
+	spreadBiasAdjustment,
+	type SpreadBiasEntry,
+} from "../../util/getTeamSpreadBias.ts";
 
 // The moneyline / spread / total for a single upcoming game.
 //
@@ -33,8 +38,18 @@ import {
 // games entirely, and left the longshot cap off. Any of those is enough to make
 // an honest bet bounce as "that line has moved".
 //
-// The SPREAD is the closed-form model, full stop, and the MONEYLINE falls out
-// of it so the two can never disagree.
+// The SPREAD is the closed-form model plus one thing the model cannot know,
+// and the MONEYLINE falls out of it so the two can never disagree.
+//
+// That one thing is the team itself. The model reads a roster's overall and
+// its lineup synergy; measured against the engine those two leave about 1.5
+// points of error, and ALL of it is a fixed per-team offset that no roster
+// property predicts (see getTeamSpreadBias.ts, which has the numbers). It is
+// visible in results, though, so the line carries a correction measured from
+// how far each side has run past its own number this season. Out of sample
+// that is worth ~0.2 points by mid-season, which is the largest honest
+// improvement available to a formula here - bigger than anything more roster
+// features could buy, and it holds up on a league it was not fitted to.
 //
 // It used to be corrected by playing the matchup fifty times in the background
 // and blending the average margin in. That is gone. Measured against the engine
@@ -58,8 +73,12 @@ import {
 // small enough to be free carries four points of noise.
 
 export type GameLine = {
-	// Expected home margin. Positive means the home team is favored.
+	// Expected home margin, correction included. Positive means the home team
+	// is favored - this is the number that gets quoted.
 	margin: number;
+	// The same before the per-team form correction, which is what the
+	// correction is measured against (see getTeamSpreadBias.ts).
+	modelMargin: number;
 	neutralSite: boolean;
 	moneyline: { home: number; away: number };
 	spread: { line: number; home: number; away: number };
@@ -88,12 +107,17 @@ export const buildGameLinePricer = async ({
 	activeTeams,
 	season,
 	todayDay,
+	spreadBiases,
 }: {
 	activeTeams: PricerTeam[];
 	season: number;
 	// The day the schedule currently sits on, so a game further out can be priced
 	// off rosters healed forward to it.
 	todayDay: number;
+	// Per-team form correction (see getTeamSpreadBias.ts). Passed in by callers
+	// that already swept the season's games for something else; fetched here
+	// otherwise, so every caller prices the same line either way.
+	spreadBiases?: Map<number, SpreadBiasEntry>;
 }) => {
 	const homeCourtAdvantage = g.get("homeCourtAdvantage");
 	const numPeriods = g.get("numPeriods");
@@ -108,6 +132,8 @@ export const buildGameLinePricer = async ({
 		MARGIN_SIGMA * Math.sqrt(gameLengthFactor(numPeriods, quarterLength));
 
 	const teamByTid = new Map(activeTeams.map((t) => [t.tid, t]));
+
+	const biases = spreadBiases ?? (await getTeamSpreadBias(season));
 
 	// Price each game off the SAME team overall the Schedule/ScoreBox page shows
 	// next to it, so the sportsbook's spread and moneyline never diverge from the
@@ -244,7 +270,15 @@ export const buildGameLinePricer = async ({
 				return undefined;
 			}
 
-			const pHome = marginToWinProb(margin, sigma);
+			// What the model says, plus what this season has shown about the two
+			// teams. The model number is kept alongside so the sim can store it
+			// and the correction can go on being measured from it.
+			const modelMargin = margin;
+			const margin2 =
+				modelMargin +
+				spreadBiasAdjustment(biases, matchup.homeTid, matchup.awayTid);
+
+			const pHome = marginToWinProb(margin2, sigma);
 			// The scoring rates feeding the total are regular-season numbers, and
 			// the engine scores ~6.6% fewer points under playoff parameters
 			// (measured - see BASKETBALL_PLAYOFF_TOTAL_FACTOR). Without this every
@@ -262,12 +296,13 @@ export const buildGameLinePricer = async ({
 				});
 			const totalLine = toHalfPointLine(expectedTotal);
 			const pOver = overProb(expectedTotal, totalLine);
-			// Home spread: home favored by `margin`, so the line is -margin.
+			// Home spread: home favored by `margin2`, so the line is -margin2.
 			const spreadLine =
-				toHalfPointLine(Math.abs(margin)) * (margin >= 0 ? -1 : 1);
+				toHalfPointLine(Math.abs(margin2)) * (margin2 >= 0 ? -1 : 1);
 
 			return {
-				margin,
+				margin: margin2,
+				modelMargin,
 				neutralSite,
 				moneyline: {
 					home: priceOdds(pHome),

@@ -16,6 +16,11 @@ import {
 } from "../index.ts";
 import loadTeams from "./loadTeams.ts";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
+import {
+	getTeamSpreadBias,
+	spreadBiasAdjustment,
+	type SpreadBiasEntry,
+} from "../../util/getTeamSpreadBias.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
@@ -568,6 +573,12 @@ const play = async (
 		}
 	};
 
+	// The per-team form correction, refreshed once per simulated day rather than
+	// once per game: it is a season-long average, so a few games of staleness
+	// inside one day changes nothing, and sweeping the season's games for every
+	// game of it would not be free.
+	let spreadBiases: Map<number, SpreadBiasEntry> | undefined;
+
 	// Home minus away pregame lineup synergy, from processed teams. Basketball
 	// only; undefined anywhere it cannot be read, which makes getGameSpread fall
 	// back to its ovr-only model.
@@ -627,8 +638,9 @@ const play = async (
 		// so the recap and ATS pages can quote the same number ScoreBox showed
 		// before tipoff; the synergy input cannot be rebuilt from a box score.
 		let pregameSpread;
+		let pregameSpreadModel;
 		if (!allStarGame) {
-			pregameSpread = getGameSpread({
+			pregameSpreadModel = getGameSpread({
 				ovr0: teams[0].ovr,
 				ovr1: teams[1].ovr,
 				homeCourtAdvantage: g.get("homeCourtAdvantage"),
@@ -639,6 +651,14 @@ const play = async (
 				// The same rule GameSim itself applies its playoff parameters by.
 				playoffs: g.get("phase") === PHASE.PLAYOFFS,
 			});
+			// What was actually quoted for this game: the model plus what the
+			// season has shown about these two teams, matching the sportsbook and
+			// ScoreBox exactly. Both numbers are kept - see Game.spreadModel.
+			pregameSpread =
+				pregameSpreadModel === undefined
+					? undefined
+					: pregameSpreadModel +
+						spreadBiasAdjustment(spreadBiases, teams[0].id, teams[1].id);
 		}
 
 		// GameResults is untyped (`any`) everywhere downstream; the sport unions
@@ -657,6 +677,7 @@ const play = async (
 			dh,
 		}).run();
 		result.pregameSpread = pregameSpread;
+		result.pregameSpreadModel = pregameSpreadModel;
 		return result;
 	};
 
@@ -877,6 +898,10 @@ const play = async (
 			await toUI("realtimeUpdate", [["gameSim"]]);
 			schedule = await season.getSchedule(true);
 		}
+
+		// Refreshed here so every game simmed today is priced off the same
+		// correction, and so a multi-day sim picks up what each day taught it.
+		spreadBiases = await getTeamSpreadBias(g.get("season"));
 
 		// If live game sim, only do that one game, not the whole day.
 		const plan = scheduleForSim(schedule, gidOneGame);

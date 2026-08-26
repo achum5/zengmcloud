@@ -40,6 +40,7 @@ import {
 	tierMembershipProbs,
 } from "../../../common/sportsbookOdds.ts";
 import { getFuturesStrengths } from "./futuresStrength.ts";
+import { getTeamSpreadBias } from "../../util/getTeamSpreadBias.ts";
 import {
 	bracketMarketsOpen,
 	simulateFutures,
@@ -362,8 +363,12 @@ export const getLines = async () => {
 	const activeTeams = teams.filter((t) => !t.disabled);
 	const teamByTid = new Map(activeTeams.map((t) => [t.tid, t]));
 
-	// Each team's against-the-spread record, shown next to its W-L on every game.
-	const atsRecords = await getTeamAtsRecords(season);
+	// One sweep of the season's games feeds both: the against-the-spread record
+	// shown next to each team's W-L, and the per-team form correction the lines
+	// are priced with (getTeamSpreadBias.ts).
+	const seasonGames = await idb.getCopies.games({ season }, "noCopyCache");
+	const atsRecords = await getTeamAtsRecords(season, seasonGames);
+	const spreadBiases = await getTeamSpreadBias(season, seasonGames);
 
 	const phase = g.get("phase");
 	// Read once up here: the injury-availability horizon below needs to know how
@@ -434,6 +439,7 @@ export const getLines = async () => {
 		activeTeams,
 		season,
 		todayDay: schedule[0]?.day ?? 0,
+		spreadBiases,
 	});
 
 	const games = [];

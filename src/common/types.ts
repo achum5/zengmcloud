@@ -420,6 +420,14 @@ export type Game = {
 	// different number than the one shown before tipoff. Optional: games from
 	// before this existed fall back to that re-derivation.
 	spread?: number;
+
+	// The same spread BEFORE the per-team form correction was applied - i.e.
+	// the closed-form model's own number (see getTeamSpreadBias.ts). `spread`
+	// above is what was actually quoted, and is what ATS records grade against;
+	// this one is what the correction is measured from, and keeping the two
+	// apart is what stops the correction from chasing its own tail. Absent on
+	// games played before the correction existed, where the two were equal.
+	spreadModel?: number;
 	playoffs?: boolean;
 	overtimes: number;
 	scoringSummary?: any;
