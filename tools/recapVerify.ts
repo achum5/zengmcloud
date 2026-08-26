@@ -59,8 +59,16 @@ for (const entry of data) {
 		for (const m of text.matchAll(/\b(\d{2,3})-(\d{2,3})\b/g)) {
 			const a = Number(m[1]);
 			const b = Number(m[2]);
-			// Only check pairs that look like a final score (both >= 60).
+			// Only check pairs that look like a final score (both >= 60)...
 			if (a < 60 || b < 60) {
+				continue;
+			}
+			// ...and are not explicitly a PART of the game. A high-scoring half
+			// reads like a final ("a 10-point halftime deficit turned into a
+			// 73-62 second half") and flagging it is how a checker teaches people
+			// to ignore it.
+			const context = text.slice(m.index, m.index + 40);
+			if (/\b(half|quarter|period|overtime|ot|stretch|run)\b/i.test(context)) {
 				continue;
 			}
 			bump("score");

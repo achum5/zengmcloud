@@ -146,17 +146,38 @@ const cap = (s: string): string =>
 // The Spurs shot 54.7%." becomes "...The Spurs led wire to wire. They shot
 // 54.7%." The `[a-z]` guard means a two-word nickname ("The Trail Blazers ...")
 // is left alone rather than mangled.
-const dedupeSubjects = (sentences: string[], otherNick?: string): string[] => {
+const dedupeSubjects = (
+	sentences: string[],
+	otherNick?: string,
+	// The nicknames in play, so a MULTI-WORD one is recognised. The pattern
+	// below can only see a one-word nickname followed by a lowercase verb, so
+	// every team called two things - the Blue Chips, the Gold Club, the Trail
+	// Blazers - was silently skipped, and their recaps read "The Blue Chips took
+	// over in the fourth. The Blue Chips turned 29 turnovers into offense."
+	knownNicks: readonly string[] = [],
+): string[] => {
 	const out = [...sentences];
 	// A sentence with two subjects leaves nothing for "They" to attach to (the
 	// two-team injury line "The Hawks were without X; the Timberwolves were
 	// without Y."). Merely naming the other team as the OBJECT ("The Celtics
 	// topped the Grizzlies 115-105.") is still a clean antecedent.
-	const ambiguous = (sentence: string) =>
-		sentence.includes(";") || sentence.includes(" were without ");
+	//
+	// The SEMICOLON is the signal, and the only one: a two-team injury line is
+	// always built by joining its clauses with "; ". Also testing for " were
+	// without " caught every ONE-team injury sentence too, and those are a
+	// perfectly good antecedent - which is why "The Aztecs were without Parker
+	// Dismuke (sprained knee). The Aztecs ran their streak to 4." kept the name
+	// twice.
+	const ambiguous = (sentence: string) => sentence.includes(";");
 
-	const subjectOf = (sentence: string) =>
-		/^The (\w+) [a-z]/.exec(sentence)?.[1];
+	const subjectOf = (sentence: string): string | undefined => {
+		for (const n of knownNicks) {
+			if (sentence.startsWith(`The ${n} `)) {
+				return n;
+			}
+		}
+		return /^The (\w+) [a-z]/.exec(sentence)?.[1];
+	};
 
 	for (let i = 1; i < out.length; i++) {
 		const cur = subjectOf(out[i]!);
@@ -187,7 +208,7 @@ const dedupeSubjects = (sentences: string[], otherNick?: string): string[] => {
 				}
 			}
 			if (subjectOf(candidate) === cur) {
-				out[i] = out[i]!.replace(/^The \w+ /, "They ");
+				out[i] = `They ${out[i]!.slice(`The ${cur} `.length)}`;
 				break;
 			}
 		}
@@ -2015,7 +2036,7 @@ const plusMinusNote = (
 	// True whatever the ranking: it states the swing, not a superlative.
 	const neutral = [
 		`${best.name} was +${pm} in ${best.min} minutes.`,
-		`${cap(theNick(shape.winner))} outscored them by ${pm} with ${best.name} on the floor.`,
+		`${cap(theNick(shape.winner))} outscored ${theNick(shape.loser)} by ${pm} with ${best.name} on the floor.`,
 		`${best.name} finished +${pm}.`,
 	];
 	return pick(
@@ -2025,7 +2046,7 @@ const plusMinusNote = (
 					`${best.name} was a team-best +${pm} in ${best.min} minutes.`,
 					`Nobody swung it further than ${best.name}, +${pm} across ${best.min} minutes.`,
 					`${best.name} finished +${pm}, the best mark on the floor.`,
-					`${cap(theNick(shape.winner))} outscored them by ${pm} with ${best.name} on the floor.`,
+					`${cap(theNick(shape.winner))} outscored ${theNick(shape.loser)} by ${pm} with ${best.name} on the floor.`,
 				]
 			: isTeamBest
 				? [
@@ -2724,12 +2745,17 @@ const formNote = (
 			);
 		}
 		if (won <= 1 && prior.length >= 6) {
+			// "dropped 9 of their last 9" is how a losing streak reads when
+			// nobody checks for the clean sweep; the hot branch above has always
+			// said "every one of".
+			const lost = prior.length - won;
+			const allOf = won === 0 ? "every one of" : `${lost} of`;
 			return pick(
 				rng,
 				[
-					`${theNick(t)} had lost ${prior.length - won} of ${prior.length} coming in`,
-					`${theNick(t)} arrived having dropped ${prior.length - won} of their last ${prior.length}`,
-					`it had been a rough stretch for ${theNick(t)}, ${won}-${prior.length - won} in their previous ${prior.length}`,
+					`${theNick(t)} had lost ${allOf} their last ${prior.length} coming in`,
+					`${theNick(t)} arrived having dropped ${allOf} their last ${prior.length}`,
+					`it had been a rough stretch for ${theNick(t)}, ${won}-${lost} in their previous ${prior.length}`,
 				],
 				"formCold",
 			);
@@ -3320,12 +3346,13 @@ export const getAutoRecap = (game: RecapGame): string => {
 	}
 
 	const otherNick = nick(shape.loser);
-	const paragraphs = [dedupeSubjects(para1, otherNick).join(" ")];
+	const nicks = [nick(shape.winner), otherNick];
+	const paragraphs = [dedupeSubjects(para1, otherNick, nicks).join(" ")];
 	if (para2.length > 0) {
-		paragraphs.push(dedupeSubjects(para2, otherNick).join(" "));
+		paragraphs.push(dedupeSubjects(para2, otherNick, nicks).join(" "));
 	}
 	if (para3.length > 0) {
-		paragraphs.push(dedupeSubjects(para3, otherNick).join(" "));
+		paragraphs.push(dedupeSubjects(para3, otherNick, nicks).join(" "));
 	}
 	return `**${headline.text}**\n\n${paragraphs.join("\n\n")}`;
 };
@@ -3530,7 +3557,10 @@ const conferencePictureSentence = (
 					rng,
 					[
 						`${who} hold a narrow lead in the ${conf.name}`,
-						`${who} are top of the ${conf.name}, but only just`,
+						// No trailing comma clause here. These bits are joined with
+						// " and ", so "...are top of the East, but only just" ran
+						// straight into the next conference as one long run-on.
+						`${who} cling to the top of the ${conf.name}`,
 					],
 					"dayStandingsNarrow",
 				),

@@ -4627,3 +4627,296 @@ describe("the All-Star Game", () => {
 		}
 	});
 });
+
+// Subject dedupe collapses a repeated team subject to "They". Two holes: the
+// pattern could only see a ONE-WORD nickname, and nothing stopped it producing
+// a sentence with two pronouns and no antecedent for either.
+describe("repeated subjects", () => {
+	const twoWordGame = (gid: number, winnerName: string): RecapGame => {
+		const win = realisticTeam(
+			{
+				tid: 40,
+				region: "Las Vegas",
+				name: winnerName,
+				abbrev: "LV",
+				pts: 118,
+				ptsQtrs: [28, 26, 34, 30],
+			},
+			player({ name: "Oliver Nwokocha", pts: 26, reb: 6, ast: 5 }),
+		);
+		const lose = realisticTeam(
+			{
+				tid: 41,
+				region: "Vancouver",
+				name: "Whalers",
+				abbrev: "VAN",
+				pts: 96,
+				ptsQtrs: [24, 24, 24, 24],
+			},
+			player({ name: "Slade Key", pts: 21, reb: 12 }),
+		);
+		// Give the bench man a big swing so the plus-minus note runs; it is the
+		// sentence that used to say "outscored them".
+		win.players.forEach((p, i) => {
+			p.pm = i === win.players.length - 1 ? 30 : 4;
+			p.min = 28;
+		});
+		lose.players.forEach((p) => {
+			p.pm = -10;
+			p.min = 28;
+		});
+		return game({ gid, teams: [win, lose], winnerTid: 40 });
+	};
+
+	const sentencesOf = (recap: string) =>
+		recap
+			.split("\n\n")
+			.slice(1)
+			.flatMap((paragraph) =>
+				paragraph.split(/(?<=[!.?]) /).map((s) => s.trim()),
+			)
+			.filter(Boolean);
+
+	test("a two-word nickname is deduped like a one-word one", () => {
+		let sawSubject = false;
+		for (let gid = 1; gid <= 60; gid += 1) {
+			const recap = getAutoRecap(twoWordGame(gid, "Blue Chips"));
+			// Within a paragraph, the same subject must not open two sentences in
+			// a row. Paragraphs are checked separately - a new paragraph opening
+			// with "They" would be worse than repeating the name.
+			for (const paragraph of recap.split("\n\n").slice(1)) {
+				const sentences = paragraph
+					.split(/(?<=[!.?]) /)
+					.map((s) => s.trim())
+					.filter(Boolean);
+				for (const [i, sentence] of sentences.entries()) {
+					if (!sentence.startsWith("The Blue Chips ")) {
+						continue;
+					}
+					sawSubject = true;
+					const prev = sentences[i - 1];
+					assert.ok(
+						prev === undefined || !prev.startsWith("The Blue Chips "),
+						`repeated subject: "${prev}" then "${sentence}"`,
+					);
+				}
+			}
+		}
+		assert.ok(sawSubject, "the fixture never used the nickname as a subject");
+	});
+
+	// The invariant is about the OTHER TEAM, not the word "them": "They were
+	// getting 4 and did not need them" is fine ("them" is the points), while
+	// "They outscored them by 30" leaves both pronouns without an antecedent.
+	test("the opposing team is never a bare 'them'", () => {
+		for (let gid = 1; gid <= 60; gid += 1) {
+			for (const name of ["Blue Chips", "Riots"]) {
+				const recap = getAutoRecap(twoWordGame(gid, name));
+				for (const sentence of sentencesOf(recap)) {
+					assert.ok(
+						!/\b(?:outscored|beat|topped|held off|edged|routed|blew out|handled|swept)\s+them\b/.test(
+							sentence,
+						),
+						`the other team is only "them": ${sentence}`,
+					);
+				}
+			}
+		}
+	});
+
+	// A one-team injury line is a perfectly good antecedent; only the two-team
+	// one (joined with a semicolon) is not.
+	test("a single-team injury line does not block the dedupe", () => {
+		const withInjury = (gid: number): RecapGame => {
+			const g = twoWordGame(gid, "Blue Chips");
+			g.teams[0].injuries = [
+				{ name: "Chase Hazel", type: "Sprained Ankle", gamesRemaining: 4 },
+			];
+			return g;
+		};
+		let sawPair = 0;
+		for (let gid = 1; gid <= 80; gid += 1) {
+			const recap = getAutoRecap(withInjury(gid));
+			for (const paragraph of recap.split("\n\n").slice(1)) {
+				const sentences = paragraph
+					.split(/(?<=[!.?]) /)
+					.map((x) => x.trim())
+					.filter(Boolean);
+				for (const [i, sentence] of sentences.entries()) {
+					const prev = sentences[i - 1];
+					if (
+						prev === undefined ||
+						!prev.startsWith("The Blue Chips ") ||
+						prev.includes(";")
+					) {
+						continue;
+					}
+					sawPair += 1;
+					assert.ok(
+						!sentence.startsWith("The Blue Chips "),
+						`a one-team line blocked the dedupe: "${prev}" then "${sentence}"`,
+					);
+				}
+			}
+		}
+		assert.ok(sawPair > 0, "the fixture never produced a candidate pair");
+	});
+
+	test("the plus-minus line names the opponent rather than saying 'them'", () => {
+		let sawLine = 0;
+		for (let gid = 1; gid <= 60; gid += 1) {
+			const recap = getAutoRecap(twoWordGame(gid, "Blue Chips"));
+			if (/outscored/.test(recap)) {
+				sawLine += 1;
+				assert.ok(!/outscored them/.test(recap), recap);
+				assert.ok(/outscored the Whalers/.test(recap), recap);
+			}
+		}
+		assert.ok(sawLine > 0, "the plus-minus line never ran");
+	});
+});
+
+// Found by generating a real 738-game regular season and reading it.
+describe("recent form and the standings line", () => {
+	const last10 = (results: boolean[]) =>
+		results.map((won) => ({
+			opp: "ORL",
+			home: true,
+			won,
+			pts: won ? 100 : 90,
+			oppPts: won ? 90 : 100,
+		}));
+
+	const gameWithForm = (gid: number, loserForm: boolean[]): RecapGame => {
+		const w = realisticTeam(
+			{
+				tid: 30,
+				name: "Bobcats",
+				abbrev: "CHA",
+				pts: 106,
+				ptsQtrs: [26, 27, 28, 25],
+			},
+			player({ name: "Antonis Fotsis", pts: 22, reb: 10, ast: 6 }),
+		);
+		const l = realisticTeam(
+			{
+				tid: 1,
+				name: "Massacre",
+				abbrev: "BOS",
+				pts: 92,
+				ptsQtrs: [23, 23, 23, 23],
+				// Index 0 is this game - the loss being recapped.
+				last10: last10([false, ...loserForm]),
+			},
+			player({ name: "Chris Paul", pts: 15, reb: 3, ast: 9 }),
+		);
+		return game({ gid, teams: [w, l], winnerTid: 30 });
+	};
+
+	test("a team that lost every one of its last N is not '9 of their last 9'", () => {
+		let sawForm = 0;
+		for (let gid = 1; gid <= 60; gid += 1) {
+			const recap = getAutoRecap(gameWithForm(gid, Array(9).fill(false)));
+			if (/last 9|previous 9/.test(recap)) {
+				sawForm += 1;
+			}
+			assert.ok(
+				!/\b9 of (?:their last|)\s*9\b/.test(recap),
+				`a clean sweep counted out longhand: ${recap}`,
+			);
+		}
+		assert.ok(sawForm > 0, "the form note never ran");
+	});
+
+	test("a mixed record still gets the count", () => {
+		let sawCount = 0;
+		for (let gid = 1; gid <= 60; gid += 1) {
+			const recap = getAutoRecap(
+				gameWithForm(gid, [
+					false,
+					false,
+					false,
+					false,
+					false,
+					false,
+					false,
+					false,
+					true,
+				]),
+			);
+			if (/8 of their last 9|8 of 9|1-8 in their previous 9/.test(recap)) {
+				sawCount += 1;
+			}
+		}
+		assert.ok(sawCount > 0, "an 8-loss stretch was never counted");
+	});
+
+	test("the standings halves join cleanly", () => {
+		const conf = (name: string, leader: string, gb: number) => ({
+			name,
+			teams: [
+				{
+					rank: 1,
+					abbrev: leader.slice(0, 3).toUpperCase(),
+					region: leader,
+					name: leader,
+					won: 10,
+					lost: 4,
+					gb: 0,
+				},
+				{
+					rank: 2,
+					abbrev: "OTH",
+					region: "Other",
+					name: "Others",
+					won: 9,
+					lost: 5,
+					gb,
+				},
+			],
+		});
+		const games = [
+			mkGame(
+				6300,
+				"Monuments",
+				"Roses",
+				104,
+				96,
+				true,
+				player({ name: "Tyrone Allen", pts: 27, reb: 6, ast: 5 }),
+				player({ name: "Rose One", pts: 20, reb: 5 }),
+			),
+			mkGame(
+				6301,
+				"Unicorns",
+				"Aztecs",
+				110,
+				99,
+				true,
+				player({ name: "Chris Stewart", pts: 29, reb: 11 }),
+				player({ name: "Aztec One", pts: 21, ast: 6 }),
+			),
+		];
+		for (let day = 20; day <= 44; day += 1) {
+			const recap = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: false,
+				games,
+				standings: {
+					day,
+					// gb 0.5 forces the "narrow lead" branch, which is the one whose
+					// phrasing used to trail a comma clause into the next half.
+					confs: [
+						conf("Eastern Conference", "Monuments", 0.5),
+						conf("Western Conference", "Unicorns", 3),
+					],
+				},
+			});
+			assert.ok(
+				!/, but only just and /.test(recap),
+				`the two conference clauses ran together: ${recap}`,
+			);
+		}
+	});
+});
