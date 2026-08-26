@@ -3,6 +3,7 @@ import { g } from "../../util/index.ts";
 import teamOvr from "../team/ovr.ts";
 import { getActualPlayThroughInjuries } from "../game/loadTeams.ts";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
+import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import {
@@ -119,6 +120,9 @@ export const buildGameLinePricer = async ({
 		coarsenRatings: false,
 	});
 	const playersByTid = Map.groupBy(players, (p) => p.tid);
+	// The raw rows as well: the trimmed playersPlus rows above are all team.ovr
+	// needs, but the synergy composites read the full ratings row.
+	const playersRawByTid = Map.groupBy(playersRaw, (p) => p.tid);
 
 	const playoffSeries = await idb.cache.playoffSeries.get(season);
 	const roundSeries = playoffSeries
@@ -133,6 +137,16 @@ export const buildGameLinePricer = async ({
 				numDaysInFuture: day - todayDay,
 				playThroughInjuries: getActualPlayThroughInjuries(t),
 			},
+			playoffs: !!roundSeries,
+		});
+
+	// Same availability window as gameOvr, so both spread inputs describe one
+	// roster. The board and ScoreBox share this whole pricer, so both quote the
+	// same synergy-aware line.
+	const gameSynergy = (t: PricerTeam, day: number): number | undefined =>
+		pregameLineupSynergyFromPlayers(playersRawByTid.get(t.tid) ?? [], {
+			numDaysInFuture: day - todayDay,
+			playThroughInjuries: getActualPlayThroughInjuries(t),
 			playoffs: !!roundSeries,
 		});
 
@@ -199,6 +213,8 @@ export const buildGameLinePricer = async ({
 			}
 
 			const neutralSite = isNeutralSite(matchup);
+			const synergy0 = gameSynergy(home, matchup.day);
+			const synergy1 = gameSynergy(away, matchup.day);
 			const margin = getGameSpread({
 				ovr0: gameOvr(home, matchup.day),
 				ovr1: gameOvr(away, matchup.day),
@@ -206,6 +222,10 @@ export const buildGameLinePricer = async ({
 				neutralSite,
 				numPeriods,
 				quarterLength,
+				synergyDiff:
+					synergy0 !== undefined && synergy1 !== undefined
+						? synergy0 - synergy1
+						: undefined,
 			});
 			if (margin === undefined) {
 				return undefined;

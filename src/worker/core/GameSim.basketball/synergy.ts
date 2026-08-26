@@ -1,4 +1,5 @@
 import { helpers } from "../../util/index.ts";
+import playThroughInjuriesFactor from "../../../common/playThroughInjuriesFactor.ts";
 import compositeRating from "../player/compositeRating.ts";
 import { COMPOSITE_WEIGHTS } from "../../../common/constants.ts";
 import type { MinimalPlayerRatings } from "../../../common/types.ts";
@@ -228,3 +229,99 @@ export const synergyCompositeRating = (
 // it looked like.
 export const synergyTotal = (s: Synergy): number =>
 	2 * s.off + 3 * s.def + s.reb;
+
+// --- Pregame synergy, for the point spread --------------------------------
+//
+// The spread formula (common/getGameSpread.ts) takes an optional synergy
+// difference, measured to be worth 8.6 points of margin per synergyTotal unit
+// against the engine. These build that number BEFORE a game, from whichever
+// shape of roster the caller has.
+//
+// The predictor is a 70/30 blend of the first five and the second five - the
+// shape that measured best against the engine (starters alone was ~0.2 points
+// worse). Fewer than ten available men falls back to the first five; fewer
+// than five is no reading at all, and the spread falls back to its ovr-only
+// model rather than pricing a lineup that does not exist.
+const PREGAME_STARTER_WEIGHT = 0.7;
+
+// From a PROCESSED team (loadTeams/processTeam output): players are already in
+// rotation order, injury-factored, and carrying every composite. This is
+// exactly the roster the sim is about to be handed, which makes it the exact
+// quantity the coefficient was fitted on.
+export const pregameLineupSynergy = (
+	players: readonly {
+		injured?: boolean;
+		compositeRating: SynergyCompositeRating;
+	}[],
+): number | undefined => {
+	if (!isSport("basketball")) {
+		return undefined;
+	}
+	const available = players.filter((p) => !p.injured);
+	if (available.length < 5) {
+		return undefined;
+	}
+	const first = synergyTotal(synergyForLineup(available.slice(0, 5)));
+	if (available.length < 10) {
+		return first;
+	}
+	const second = synergyTotal(synergyForLineup(available.slice(5, 10)));
+	return PREGAME_STARTER_WEIGHT * first + (1 - PREGAME_STARTER_WEIGHT) * second;
+};
+
+// From RAW player rows (schedule view, sportsbook), where the game is still in
+// the future. Availability mirrors team.ovr's accountForInjuredPlayers rule -
+// back in time for the game, or playing through - and a man playing through has
+// his composites damped by the same factor loadTeams would apply. Ordered by
+// value, the same ordering the game's own roster sort produces for AI teams.
+export const pregameLineupSynergyFromPlayers = (
+	players: readonly {
+		injury: { gamesRemaining: number };
+		ratings: MinimalPlayerRatings[] | readonly MinimalPlayerRatings[];
+		value: number;
+	}[],
+	{
+		numDaysInFuture,
+		playThroughInjuries,
+		playoffs,
+	}: {
+		numDaysInFuture: number;
+		playThroughInjuries: [number, number];
+		playoffs: boolean;
+	},
+): number | undefined => {
+	if (!isSport("basketball")) {
+		return undefined;
+	}
+	const currentPlayThroughInjuries = playThroughInjuries[playoffs ? 1 : 0]!;
+	const available: {
+		value: number;
+		compositeRating: SynergyCompositeRating;
+	}[] = [];
+	for (const p of players) {
+		const gamesRemaining = p.injury.gamesRemaining - numDaysInFuture;
+		let factor;
+		if (gamesRemaining <= 0) {
+			factor = 1;
+		} else if (gamesRemaining <= currentPlayThroughInjuries) {
+			factor = playThroughInjuriesFactor(gamesRemaining);
+		} else {
+			continue;
+		}
+		const ratings = p.ratings.at(-1);
+		if (!ratings) {
+			continue;
+		}
+		const composite = synergyCompositeRating(ratings);
+		if (factor !== 1) {
+			for (const key of Object.keys(
+				composite,
+			) as (keyof SynergyCompositeRating)[]) {
+				composite[key] *= factor;
+			}
+		}
+		available.push({ value: p.value, compositeRating: composite });
+	}
+	available.sort((x, y) => y.value - x.value);
+	return pregameLineupSynergy(available);
+};

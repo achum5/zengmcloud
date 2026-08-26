@@ -15,6 +15,8 @@ import {
 	trade,
 } from "../index.ts";
 import loadTeams from "./loadTeams.ts";
+import { getGameSpread } from "../../../common/getGameSpread.ts";
+import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { dayAlreadyCounted } from "./dailyCountdownGate.ts";
 import { recordInjuryForensics } from "../sync/injuryForensics.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
@@ -566,6 +568,15 @@ const play = async (
 		}
 	};
 
+	// Home minus away pregame lineup synergy, from processed teams. Basketball
+	// only; undefined anywhere it cannot be read, which makes getGameSpread fall
+	// back to its ovr-only model.
+	const pregameSynergyDiff = (teams: [any, any]): number | undefined => {
+		const s0 = pregameLineupSynergy(teams[0].player ?? []);
+		const s1 = pregameLineupSynergy(teams[1].player ?? []);
+		return s0 === undefined || s1 === undefined ? undefined : s0 - s1;
+	};
+
 	const getResult = ({
 		gid,
 		day,
@@ -610,7 +621,27 @@ const play = async (
 			baseInjuryRate = g.get("injuryRate");
 		}
 
-		return new GameSim({
+		// The pregame spread, computed and REMEMBERED here - before the sim, which
+		// mutates these teams' composite ratings in place (home-court advantage),
+		// and from the exact rosters it is about to be handed. Stored on the game
+		// so the recap and ATS pages can quote the same number ScoreBox showed
+		// before tipoff; the synergy input cannot be rebuilt from a box score.
+		let pregameSpread;
+		if (!allStarGame) {
+			pregameSpread = getGameSpread({
+				ovr0: teams[0].ovr,
+				ovr1: teams[1].ovr,
+				homeCourtAdvantage: g.get("homeCourtAdvantage"),
+				neutralSite,
+				numPeriods: g.get("numPeriods"),
+				quarterLength: g.get("quarterLength"),
+				synergyDiff: pregameSynergyDiff(teams),
+			});
+		}
+
+		// GameResults is untyped (`any`) everywhere downstream; the sport unions
+		// returned by run() don't know about the field this attaches.
+		const result: any = new GameSim({
 			gid,
 			day,
 			teams,
@@ -623,6 +654,8 @@ const play = async (
 			// @ts-expect-error
 			dh,
 		}).run();
+		result.pregameSpread = pregameSpread;
+		return result;
 	};
 
 	// Simulates a day of games (whatever is in schedule) and passes the results to cbSaveResults

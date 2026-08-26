@@ -5,15 +5,15 @@ import { getGameSpread } from "../../common/getGameSpread.ts";
 
 export type AtsRecord = { won: number; lost: number; pushed: number };
 
-// A team's against-the-spread record for a season, reconstructed from stored
-// games. The pregame team overalls are saved on every completed game
-// (game.teams[t].ovr), and getGameSpread re-derives the exact spread the
-// sportsbook and ScoreBox showed, so the ATS result is deterministic - no
-// betting line has to be stored at sim time, and this works retroactively on
-// leagues that were already mid-season. Legacy games missing OVRs are skipped
-// (the same limitation ScoreBox's spread display already tolerates). Playoff
-// and All-Star games are left out so the ATS record spans exactly the games
-// counted in the regular-season W-L shown next to it.
+// A team's against-the-spread record for a season, from stored games. Games
+// now save their pregame spread at sim time (game.spread - the synergy-aware
+// number ScoreBox actually showed, which a box score cannot reconstruct);
+// games from before that re-derive the ovr-only line from the stored team
+// overalls (game.teams[t].ovr), which is exactly what was displayed for them.
+// Either way the ATS result is deterministic. Legacy games missing OVRs are
+// skipped (the same limitation ScoreBox's spread display already tolerates).
+// Playoff and All-Star games are left out so the ATS record spans exactly the
+// games counted in the regular-season W-L shown next to it.
 export const getTeamAtsRecords = async (
 	season: number,
 	// Callers that already hold the season's games (the standings page, which
@@ -48,16 +48,21 @@ export const getTeamAtsRecords = async (
 			continue; // All-Star / other special games
 		}
 
-		const spread = getGameSpread({
-			ovr0: home.ovr,
-			ovr1: away.ovr,
-			homeCourtAdvantage,
-			// A regular-season neutral-site game (rare) drops home court, matching
-			// how the line was priced. Finals/playoff neutrality never applies here.
-			neutralSite: !!game.neutralSite,
-			numPeriods: game.numPeriods ?? numPeriodsDefault,
-			quarterLength,
-		});
+		// The stored pregame spread when the game has one (synergy-aware, exactly
+		// what was displayed before tipoff); the ovr-only re-derivation for legacy
+		// games from before it was stored.
+		const spread =
+			game.spread ??
+			getGameSpread({
+				ovr0: home.ovr,
+				ovr1: away.ovr,
+				homeCourtAdvantage,
+				// A regular-season neutral-site game (rare) drops home court, matching
+				// how the line was priced. Finals/playoff neutrality never applies here.
+				neutralSite: !!game.neutralSite,
+				numPeriods: game.numPeriods ?? numPeriodsDefault,
+				quarterLength,
+			});
 		if (spread === undefined) {
 			continue; // legacy game with no stored OVRs - can't grade it
 		}

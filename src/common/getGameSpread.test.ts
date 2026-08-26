@@ -65,3 +65,88 @@ describe("getGameSpread", () => {
 		);
 	});
 });
+
+// The synergy-aware model. Coefficients were fitted against the engine itself
+// (every pairing of two real leagues' rosters, 60 sims a pairing) and each
+// league's fit priced the other league within 0.02 points of its own best fit -
+// see the note in getGameSpread.ts.
+describe("getGameSpread with a synergy reading", () => {
+	const home = { ...base, neutralSite: false };
+
+	test("without synergy, the historical model is untouched", () => {
+		// 0.3 * 10 + 3.3504 = 6.3504 -> 6.5
+		assert.strictEqual(getGameSpread({ ...home, ovr0: 60, ovr1: 50 }), 6.5);
+	});
+
+	test("with synergy, both terms price in", () => {
+		// 0.17 * 10 + 8.6 * 0.5 + 3.3504 = 9.4004 -> 9.5
+		assert.strictEqual(
+			getGameSpread({ ...home, ovr0: 60, ovr1: 50, synergyDiff: 0.5 }),
+			9.5,
+		);
+		// A synergy deficit can flip a small talent edge: 0.17 * 4 + 8.6 * (-0.6)
+		// + 3.3504 = -1.13 -> -1.
+		assert.strictEqual(
+			getGameSpread({ ...home, ovr0: 54, ovr1: 50, synergyDiff: -0.6 }),
+			-1,
+		);
+	});
+
+	test("a zero synergy difference is still the synergy model", () => {
+		// Same shape, different talent: the slope must be 0.17, not 0.3.
+		// 0.17 * 10 + 3.3504 = 5.0504 -> 5.
+		assert.strictEqual(
+			getGameSpread({ ...home, ovr0: 60, ovr1: 50, synergyDiff: 0 }),
+			5,
+		);
+	});
+
+	test("a non-finite synergy reading falls back rather than poisoning the line", () => {
+		assert.strictEqual(
+			getGameSpread({ ...home, ovr0: 60, ovr1: 50, synergyDiff: Number.NaN }),
+			getGameSpread({ ...home, ovr0: 60, ovr1: 50 }),
+		);
+	});
+
+	test("game length scales the whole line, synergy included", () => {
+		// 9.4004 / 2 = 4.7002 -> 4.5.
+		assert.strictEqual(
+			getGameSpread({
+				...home,
+				quarterLength: defaultGameAttributes.quarterLength / 2,
+				ovr0: 60,
+				ovr1: 50,
+				synergyDiff: 0.5,
+			}),
+			4.5,
+		);
+	});
+
+	test("home court still scales with the setting under the synergy model", () => {
+		// 3.3504 * 2 = 6.7008 -> 6.5.
+		assert.strictEqual(
+			getGameSpread({
+				...home,
+				homeCourtAdvantage: 2,
+				ovr0: 50,
+				ovr1: 50,
+				synergyDiff: 0,
+			}),
+			6.5,
+		);
+	});
+
+	test("neutral site drops home court under the synergy model too", () => {
+		// 0.17 * 10 + 8.6 * 0.2 = 3.42 -> 3.5.
+		assert.strictEqual(
+			getGameSpread({
+				...base,
+				neutralSite: true,
+				ovr0: 60,
+				ovr1: 50,
+				synergyDiff: 0.2,
+			}),
+			3.5,
+		);
+	});
+});

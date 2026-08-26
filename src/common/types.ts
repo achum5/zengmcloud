@@ -413,6 +413,13 @@ export type Game = {
 	numGamesToWinSeries?: number;
 	numPeriods?: number; // Optional only for legacy, otherwise it's the number of periods in the game, defined at the start
 	numPlayersOnCourt?: number;
+	// The pregame point spread from the home team's perspective (positive = home
+	// favored), as it was computed WHEN THE GAME WAS PLAYED. Stored because the
+	// formula can see things (lineup synergy) that a finished box score cannot
+	// reconstruct - re-deriving from the stored team ovrs alone would quote a
+	// different number than the one shown before tipoff. Optional: games from
+	// before this existed fall back to that re-derivation.
+	spread?: number;
 	playoffs?: boolean;
 	overtimes: number;
 	scoringSummary?: any;

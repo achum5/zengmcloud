@@ -22,6 +22,7 @@ import { getStartingAndBackupGoalies } from "../core/GameSim.hockey/getStartingA
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
 import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
+import { pregameLineupSynergyFromPlayers } from "../core/GameSim.basketball/synergy.ts";
 
 export const getUpcoming = async ({
 	cid,
@@ -111,6 +112,9 @@ export const getUpcoming = async ({
 		coarsenRatings: false,
 	});
 	const playersByTid = Map.groupBy(players, (t) => t.tid);
+	// The RAW rows too: the playersPlus rows above carry only the three ratings
+	// team.ovr reads, and the synergy composites need the full ratings row.
+	const playersRawByTid = Map.groupBy(playersRaw, (p) => p.tid);
 
 	const playoffSeries = await idb.cache.playoffSeries.get(g.get("season"));
 	const roundSeries = playoffSeries
@@ -193,14 +197,30 @@ export const getUpcoming = async ({
 	const neutralSiteSetting = g.get("neutralSite");
 	const phase = g.get("phase");
 
+	// Same availability window as the ovr above, so the two inputs describe the
+	// same roster. Undefined (non-basketball, or a roster too thin to field a
+	// five) falls back to the ovr-only model inside getGameSpread.
+	const getSynergy = (tid: number, day: number) =>
+		pregameLineupSynergyFromPlayers(playersRawByTid.get(tid) ?? [], {
+			numDaysInFuture: day - todayDay,
+			playThroughInjuries: getActualPlayThroughInjuries(
+				teamsByTid[tid] ?? "default",
+			),
+			playoffs: !!roundSeries,
+		});
+
 	const getSpread = ({
 		finals,
 		ovr0,
 		ovr1,
+		synergy0,
+		synergy1,
 	}: {
 		finals?: boolean;
 		ovr0: number | undefined;
 		ovr1: number | undefined;
+		synergy0: number | undefined;
+		synergy1: number | undefined;
 	}) => {
 		const neutralSite =
 			(neutralSiteSetting === "finals" && !!finals) ||
@@ -213,6 +233,10 @@ export const getUpcoming = async ({
 			neutralSite,
 			numPeriods,
 			quarterLength,
+			synergyDiff:
+				synergy0 !== undefined && synergy1 !== undefined
+					? synergy0 - synergy1
+					: undefined,
 		});
 		return margin === undefined ? undefined : roundHalf(margin);
 	};
@@ -241,6 +265,8 @@ export const getUpcoming = async ({
 								finals,
 								ovr0: teams[0].ovr,
 								ovr1: teams[1].ovr,
+								synergy0: getSynergy(homeTid, day),
+								synergy1: getSynergy(awayTid, day),
 							})
 						: undefined,
 				teams,

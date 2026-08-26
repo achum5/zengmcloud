@@ -1,5 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
+	pregameLineupSynergy,
+	pregameLineupSynergyFromPlayers,
 	synergyForLineup,
 	synergySkillCounts,
 	type SynergyCompositeRating,
@@ -594,5 +596,151 @@ describe("synergySkillCounts", () => {
 		]);
 		assert.isAbove(counts["3"], 0.3);
 		assert.isBelow(counts["3"], 0.5);
+	});
+});
+
+// The pregame readings the point spread prices from. See getGameSpread.ts for
+// the coefficient they feed; what matters here is WHICH players get read.
+describe("pregameLineupSynergy", () => {
+	const flat = (v: number): SynergyCompositeRating => ({
+		shootingThreePointer: v,
+		athleticism: v,
+		dribbling: v,
+		defenseInterior: v,
+		defensePerimeter: v,
+		shootingLowPost: v,
+		passing: v,
+		rebounding: v,
+	});
+	const man = (v: number, injured = false) => ({
+		injured,
+		compositeRating: flat(v),
+	});
+
+	test("fewer than five available men is no reading at all", () => {
+		assert.strictEqual(
+			pregameLineupSynergy([man(0.6), man(0.6), man(0.6), man(0.6)]),
+			undefined,
+		);
+	});
+
+	test("an injured man does not count toward the five", () => {
+		const four = [man(0.6), man(0.6), man(0.6), man(0.6)];
+		assert.strictEqual(
+			pregameLineupSynergy([...four, man(0.6, true)]),
+			undefined,
+		);
+		assert.notStrictEqual(pregameLineupSynergy([...four, man(0.6)]), undefined);
+	});
+
+	test("five to nine men reads the first five alone", () => {
+		const starters = [man(0.8), man(0.8), man(0.8), man(0.8), man(0.8)];
+		const withBench = [...starters, man(0.1), man(0.1)];
+		assert.strictEqual(
+			pregameLineupSynergy(withBench),
+			pregameLineupSynergy(starters),
+		);
+	});
+
+	test("ten men blends the second five in at 30%", () => {
+		const good = Array.from({ length: 5 }, () => man(0.8));
+		const bad = Array.from({ length: 5 }, () => man(0.1));
+		const blended = pregameLineupSynergy([...good, ...bad])!;
+		const firstOnly = pregameLineupSynergy(good)!;
+		const secondOnly = pregameLineupSynergy(bad)!;
+		assert.closeTo(blended, 0.7 * firstOnly + 0.3 * secondOnly, 1e-9);
+	});
+
+	test("an injured starter promotes the next man into the five", () => {
+		const roster = [
+			man(0.8, true),
+			...Array.from({ length: 5 }, () => man(0.5)),
+		];
+		// The reading equals a healthy five of 0.5s - the injured 0.8 never plays.
+		assert.strictEqual(
+			pregameLineupSynergy(roster),
+			pregameLineupSynergy(Array.from({ length: 5 }, () => man(0.5))),
+		);
+	});
+});
+
+describe("pregameLineupSynergyFromPlayers", () => {
+	// A raw player row: a full ratings line at one level, so the eight synergy
+	// composites come out deterministic.
+	const rawMan = (
+		level: number,
+		{
+			value = 50,
+			gamesRemaining = 0,
+		}: { value?: number; gamesRemaining?: number } = {},
+	) => {
+		const ratings: any = { season: 2026, pos: "F" };
+		for (const key of [
+			"hgt",
+			"stre",
+			"spd",
+			"jmp",
+			"endu",
+			"ins",
+			"dnk",
+			"ft",
+			"fg",
+			"tp",
+			"oiq",
+			"diq",
+			"drb",
+			"pss",
+			"reb",
+		]) {
+			ratings[key] = level;
+		}
+		return { injury: { gamesRemaining }, ratings: [ratings], value };
+	};
+	const opts = {
+		numDaysInFuture: 0,
+		playThroughInjuries: [0, 0] as [number, number],
+		playoffs: false,
+	};
+
+	test("mirrors team.ovr's availability window", () => {
+		const healthy = Array.from({ length: 5 }, () => rawMan(60));
+		// Out one game today; available for a game three days out.
+		const outToday = rawMan(60, { gamesRemaining: 1 });
+		assert.strictEqual(
+			pregameLineupSynergyFromPlayers([...healthy.slice(1), outToday], opts),
+			undefined,
+		);
+		assert.notStrictEqual(
+			pregameLineupSynergyFromPlayers([...healthy.slice(1), outToday], {
+				...opts,
+				numDaysInFuture: 3,
+			}),
+			undefined,
+		);
+	});
+
+	test("orders by value, so the reading is the likely rotation's", () => {
+		const stars = Array.from({ length: 5 }, () => rawMan(80, { value: 90 }));
+		const bench = Array.from({ length: 5 }, () => rawMan(20, { value: 10 }));
+		// Shuffled input, same reading: ordering comes from value, not position in
+		// the array.
+		const a = pregameLineupSynergyFromPlayers([...stars, ...bench], opts);
+		const b = pregameLineupSynergyFromPlayers(
+			[bench[0]!, ...stars, ...bench.slice(1)],
+			opts,
+		);
+		assert.strictEqual(a, b);
+	});
+
+	test("a man playing through injury is damped, not dropped", () => {
+		const healthy = Array.from({ length: 5 }, () => rawMan(60));
+		const hurt = rawMan(60, { gamesRemaining: 2 });
+		const withPlayThrough = pregameLineupSynergyFromPlayers(
+			[...healthy.slice(1), hurt],
+			{ ...opts, playThroughInjuries: [3, 3] },
+		);
+		const fullyHealthy = pregameLineupSynergyFromPlayers(healthy, opts);
+		assert.notStrictEqual(withPlayThrough, undefined);
+		assert.ok(withPlayThrough! <= fullyHealthy!);
 	});
 });

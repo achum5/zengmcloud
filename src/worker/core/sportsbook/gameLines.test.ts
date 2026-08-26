@@ -9,6 +9,8 @@ import { americanToImpliedProb } from "../../../common/sportsbook.ts";
 import { idb } from "../../db/index.ts";
 import { getUpcoming } from "../../views/schedule.ts";
 import { getGameSpread, roundHalf } from "../../../common/getGameSpread.ts";
+import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
+import { DEFAULT_PLAY_THROUGH_INJURIES } from "../../../common/constants.ts";
 import teamOvr from "../team/ovr.ts";
 
 const NUM_TEAMS = 4;
@@ -121,6 +123,19 @@ describe("the spread", () => {
 		});
 		const line = pricer.priceGame(matchup)!;
 		const ovrs = await teamOvrsForMatchup();
+		// The formula's second input, built the same way the pricer builds it -
+		// still a closed form, not a simulation.
+		const synergyOf = async (tid: number) =>
+			pregameLineupSynergyFromPlayers(
+				await idb.cache.players.indexGetAll("playersByTid", tid),
+				{
+					numDaysInFuture: 0,
+					playThroughInjuries: DEFAULT_PLAY_THROUGH_INJURIES,
+					playoffs: false,
+				},
+			);
+		const synergy0 = await synergyOf(matchup.homeTid);
+		const synergy1 = await synergyOf(matchup.awayTid);
 		assert.strictEqual(
 			line.margin,
 			getGameSpread({
@@ -130,6 +145,10 @@ describe("the spread", () => {
 				neutralSite: false,
 				numPeriods: g.get("numPeriods"),
 				quarterLength: g.get("quarterLength"),
+				synergyDiff:
+					synergy0 !== undefined && synergy1 !== undefined
+						? synergy0 - synergy1
+						: undefined,
 			}),
 		);
 	});

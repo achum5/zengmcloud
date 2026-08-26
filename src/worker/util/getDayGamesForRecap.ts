@@ -929,17 +929,21 @@ export const getDayGamesForRecap = async ({
 		// (and failing) to find it as a normal series game.
 		const playIn = playoffs ? await playInForGame(game) : undefined;
 
-		// The pregame spread (same calc ScoreBox shows), so the recap knows who was
-		// favored and can frame an upset/blowout against expectations.
+		// The pregame spread (same number ScoreBox showed), so the recap knows who
+		// was favored and can frame an upset/blowout against expectations. Games
+		// store it at sim time now - the synergy input can't be rebuilt from a box
+		// score - so only legacy games re-derive the ovr-only line.
 		let spread: RecapGame["spread"];
-		const rawSpread = getGameSpread({
-			ovr0: game.teams[0].ovr,
-			ovr1: game.teams[1].ovr,
-			homeCourtAdvantage: g.get("homeCourtAdvantage"),
-			neutralSite: !!game.neutralSite,
-			numPeriods: game.numPeriods ?? g.get("numPeriods"),
-			quarterLength: g.get("quarterLength"),
-		});
+		const rawSpread =
+			game.spread ??
+			getGameSpread({
+				ovr0: game.teams[0].ovr,
+				ovr1: game.teams[1].ovr,
+				homeCourtAdvantage: g.get("homeCourtAdvantage"),
+				neutralSite: !!game.neutralSite,
+				numPeriods: game.numPeriods ?? g.get("numPeriods"),
+				quarterLength: g.get("quarterLength"),
+			});
 		if (rawSpread !== undefined) {
 			// > 0 → home (teams[0]) favored; < 0 → away favored; 0 → pick'em.
 			spread =
@@ -1424,14 +1428,18 @@ const createAutoRecapContext = async (season: number) => {
 		const playIn = playoffs ? await playInForGame(game) : undefined;
 
 		let spread: RecapGame["spread"];
-		const rawSpread = getGameSpread({
-			ovr0: game.teams[0].ovr,
-			ovr1: game.teams[1].ovr,
-			homeCourtAdvantage: g.get("homeCourtAdvantage"),
-			neutralSite: !!game.neutralSite,
-			numPeriods: game.numPeriods ?? g.get("numPeriods"),
-			quarterLength: g.get("quarterLength"),
-		});
+		// Stored at sim time when available (synergy-aware); re-derived ovr-only
+		// for legacy games.
+		const rawSpread =
+			game.spread ??
+			getGameSpread({
+				ovr0: game.teams[0].ovr,
+				ovr1: game.teams[1].ovr,
+				homeCourtAdvantage: g.get("homeCourtAdvantage"),
+				neutralSite: !!game.neutralSite,
+				numPeriods: game.numPeriods ?? g.get("numPeriods"),
+				quarterLength: g.get("quarterLength"),
+			});
 		if (rawSpread !== undefined) {
 			spread =
 				rawSpread >= 0
