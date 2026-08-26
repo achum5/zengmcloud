@@ -55,6 +55,16 @@ const clampProb = (p: number): number => Math.min(0.99, Math.max(0.002, p));
 export const longshotVig = (probTrue: number, baseVig: number): number =>
 	baseVig + 1.5 * (1 - Math.min(1, Math.max(0, probTrue))) ** 4;
 
+// Tail hold for the season-long futures boards. In the far tail the book's
+// probability is an estimate with real relative error, and the +30000 cap
+// still pays 300-1 - so the tail is exactly where a small absolute miss
+// becomes a large edge. This charges for that: negligible on favorites (a 30%
+// shot pays under 1% extra), real in the tail (a 1% shot prices like 1.45%).
+// Gentler than longshotVig above, which is shaped for 20-candidate award
+// fields rather than 30-team futures boards.
+export const futuresTailVig = (probTrue: number, baseVig: number): number =>
+	baseVig + 0.5 * (1 - Math.min(1, Math.max(0, probTrue))) ** 12;
+
 export const probToAmerican = (
 	probTrue: number,
 	opts?: { vig?: number; maxAmerican?: number },

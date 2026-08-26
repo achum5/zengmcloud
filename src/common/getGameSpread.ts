@@ -27,8 +27,32 @@ export const roundHalf = (x: number) => Math.round(x * 2) / 2;
 // against the engine from 2.8 points to 2.0 on a 1.3-point noise floor. The
 // straight line in ovr was never wrong (a refit moved it 0.03); what it could
 // not see was that two teams the same ovr apart can be a different SHAPE apart.
-const BASKETBALL_SYNERGY_OVR_SLOPE = 0.17;
-const BASKETBALL_SYNERGY_COEF = 8.6;
+export const BASKETBALL_SYNERGY_OVR_SLOPE = 0.17;
+export const BASKETBALL_SYNERGY_COEF = 8.6;
+
+// Home-court advantage in points at a given league setting (default setting is
+// 1), before game-length scaling. The basketball number is measured against the
+// engine on real rosters (the same 104,400-sim runs as the coefficients above);
+// note it is roster-dependent - synthetic random-player leagues measure ~1.8 -
+// so it describes leagues people actually play.
+export const homeCourtAdvantagePoints = (homeCourtAdvantage: number): number =>
+	bySport({
+		baseball: 1,
+		basketball: 3.3504,
+		football: 3,
+		hockey: 0.25,
+	}) * homeCourtAdvantage;
+
+// How margins scale with game length relative to the sport's default. Expected
+// margins scale linearly with minutes played; per-game noise scales with its
+// square root (more possessions average it out), so sigma consumers multiply by
+// Math.sqrt of this.
+export const gameLengthFactor = (
+	numPeriods: number,
+	quarterLength: number,
+): number =>
+	(numPeriods * quarterLength) /
+	(defaultGameAttributes.numPeriods * defaultGameAttributes.quarterLength);
 
 export const getGameSpread = ({
 	ovr0,
@@ -59,12 +83,7 @@ export const getGameSpread = ({
 	// Default homeCourtAdvantage is 1.
 	const actualHomeCourtAdvantage = neutralSite
 		? 0
-		: bySport({
-				baseball: 1,
-				basketball: 3.3504,
-				football: 3,
-				hockey: 0.25,
-			}) * homeCourtAdvantage;
+		: homeCourtAdvantagePoints(homeCourtAdvantage);
 
 	let spread = bySport({
 		baseball: () => (1 / 10) * (ovr0 - ovr1) + actualHomeCourtAdvantage,
@@ -79,9 +98,7 @@ export const getGameSpread = ({
 	})();
 
 	// Adjust for game length.
-	spread *=
-		(numPeriods * quarterLength) /
-		(defaultGameAttributes.numPeriods * defaultGameAttributes.quarterLength);
+	spread *= gameLengthFactor(numPeriods, quarterLength);
 
 	return roundHalf(spread);
 };

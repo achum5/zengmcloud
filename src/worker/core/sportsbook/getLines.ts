@@ -18,15 +18,25 @@ import {
 import { PHASE, PLAYER, RATINGS } from "../../../common/constants.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import {
+	BASKETBALL_SYNERGY_COEF,
+	BASKETBALL_SYNERGY_OVR_SLOPE,
+	gameLengthFactor,
+	homeCourtAdvantagePoints,
+} from "../../../common/getGameSpread.ts";
+import {
+	futuresTailVig,
 	probToAmerican,
 	SPORTSBOOK_FUTURES_VIG,
 	SPORTSBOOK_MAX_AMERICAN,
 } from "../../../common/sportsbook.ts";
 import {
+	MARGIN_SIGMA,
+	mcShade,
 	softCapMargin,
 	strengthProbs,
 	tierMembershipProbs,
 } from "../../../common/sportsbookOdds.ts";
+import { getFuturesStrengths } from "./futuresStrength.ts";
 import {
 	bracketMarketsOpen,
 	simulateFutures,
@@ -79,23 +89,26 @@ const buildTierBoard = (
 			}[],
 		}));
 	}
+	const TIER_ITERATIONS = 3000;
 	const scores = field.map((p) => p.awardScore ?? 0);
 	const probs = tierMembershipProbs(scores, tierSizes, {
-		iterations: 3000,
+		iterations: TIER_ITERATIONS,
 		seed,
 		noiseFactor,
 	});
 	return tierSizes.map((_, tierIdx) => ({
 		tier: tierIdx + 1,
 		title: titles[tierIdx] ?? `Tier ${tierIdx + 1}`,
-		candidates: sortedByPrice(
-			field.map((p, i) => ({
-				pid: p.pid,
-				name: p.name,
-				tid: p.tid,
-				abbrev: p.abbrev,
-				americanOdds: priceFuture(probs[i]![tierIdx]!),
-			})),
+		candidates: notSettled(
+			sortedByPrice(
+				field.map((p, i) => ({
+					pid: p.pid,
+					name: p.name,
+					tid: p.tid,
+					abbrev: p.abbrev,
+					americanOdds: priceFuture(probs[i]![tierIdx]!, TIER_ITERATIONS),
+				})),
+			),
 		).slice(0, TEAM_AWARD_BOARD_SIZE),
 	}));
 };
@@ -114,29 +127,128 @@ const TIER_NOISE_LATE = 0.6; // matches tierMembershipProbs' default noiseFactor
 
 // The same idea for the futures Monte Carlo, in points of margin rather than a
 // noise multiplier: how far off a team's rating could be from its true
-// strength. Wide before a game is played, tight once a season of evidence is in.
-// Both calibrated by sweep (see MAX_SUSTAINED_MARGIN). These are small because
-// the rating they perturb is already saturated to +/-9: a 10-point jitter on a
-// 9-point scale is more noise than signal, which flattened the whole board and
-// priced a league's best team at +1135 to win it.
-const FUTURES_UNCERTAINTY_START = 1.5;
+// strength. This is the model's HONEST uncertainty, not a flattener: it IS
+// futuresRatingError (persistent model error 1.3 preseason, easing toward 1
+// as results blend in). Jitter above the real uncertainty quietly taxes every
+// favorite (Jensen: a strong team's market probability is concave in its
+// rating), and the EV harness shows the vig only barely covers even the
+// honest amount.
+const FUTURES_UNCERTAINTY_START = 1.3;
 const FUTURES_UNCERTAINTY_END = 1;
 
-// How far a team's projected strength is shaded toward the field before it has
-// played, and how many games it takes to earn the full number back.
+// The Bayesian weight schedule for blending the model rating with a team's
+// actual point differential: weight = gp / (gp + this). 100 is not a mood,
+// it's the two error sizes: per-game margin noise is sigma ~13.1 (measured),
+// the model's PERSISTENT per-team error vs the engine ~1.3 (measured, see
+// FUTURES_MODEL_ERROR), and the sample mean of n games deserves weight
+// n / (n + sigma^2/err^2) = n / (n + 101). Any heavier and the blend imports
+// more sample noise than bias it removes; any lighter and the book never
+// learns what the model can't see. The model never fully lets go, which is
+// what keeps a mid-season trade priced in immediately instead of dragged down
+// by forty games of the old roster's results. Exported for the EV harness.
+export const FUTURES_MOV_PRIOR_GAMES = 100;
+
+// Exported for the EV harness, so it jitters exactly as much as the board.
+export const futuresRatingUncertainty = (seasonProgress: number) =>
+	FUTURES_UNCERTAINTY_END +
+	(FUTURES_UNCERTAINTY_START - FUTURES_UNCERTAINTY_END) * (1 - seasonProgress);
+
+// The strength model's PERSISTENT per-team error vs the engine, in points -
+// the component of its miss that follows a team into every game, which is
+// what a season-long market exposes (single-matchup misses average out over
+// forty different opponents). Measured by spreadCalibration.test.ts's
+// per-team decomposition on two real leagues' rosters: 1.30 and 1.35.
+export const FUTURES_MODEL_ERROR = 1.3;
+
+// How far off the book's own rating could be at this point in a season: the
+// model's persistent error, shrunk by the blend, plus the sample noise the
+// blended point differential carries. Both components in points of margin.
+export const futuresRatingError = (gp: number, sigma: number) => {
+	const w = gp / (gp + FUTURES_MOV_PRIOR_GAMES);
+	const movNoise = gp > 0 ? sigma / Math.sqrt(gp) : 0;
+	return Math.hypot((1 - w) * FUTURES_MODEL_ERROR, w * movNoise);
+};
+
+// The extra juice a win-total side carries because the book cannot know its
+// own line is centered. A bettor with a better model always bets the side the
+// book's rating error favors, and the value of that pick is exactly
+// E[Phi(|D| / winsSd)] - 1/2 = arctan(sd(D) / winsSd) / pi, where D is the
+// book's miss on the line in wins (games x dP/dRating x rating error). Added
+// to BOTH sides' probabilities before the vig - the market equivalent of a
+// book juicing a total it is unsure of to -125/-125 instead of -110/-110.
+export const winTotalLoad = ({
+	gamesRemaining,
+	gp,
+	slope,
+	winsSd,
+	sigma,
+}: {
+	gamesRemaining: number;
+	gp: number;
+	slope: number;
+	winsSd: number;
+	sigma: number;
+}) =>
+	Math.atan(
+		(gamesRemaining * slope * futuresRatingError(gp, sigma)) /
+			Math.max(0.5, winsSd),
+	) / Math.PI;
+
+// LEGACY (non-basketball) evidence shade: how far a team's projected strength
+// is shaded toward the field before it has played, and how many games it takes
+// to earn the full number back. The basketball path deliberately has no such
+// shade - the engine plays preseason rosters at face value, so shading the
+// mean 15% just made every preseason favorite +EV.
 const FUTURES_PRIOR_WEIGHT = 0.85;
 const FUTURES_EVIDENCE_GAMES = 25;
 
 // Cap how many upcoming games get a line at once, so the board stays readable.
 const MAX_GAME_LINES = 24;
 
-// Futures + award bets: the heavier futures hold, same +30000 cap. Used for every
-// non-game market (title/conference/division/win totals, award boards, All-Star).
-const priceFuture = (prob: number) =>
-	probToAmerican(prob, {
-		vig: SPORTSBOOK_FUTURES_VIG,
-		maxAmerican: SPORTSBOOK_MAX_AMERICAN,
+// How many worlds the futures/bracket Monte Carlo simulates per board.
+const FUTURES_ITERATIONS = 4000;
+
+// No futures price shorter than this is ever offered - the outcome is treated
+// as settled and its row comes off the board, like a real book pulling a
+// market once it's decided. The favorite side of the odds clamp tops out at
+// -9900 (implied 99%), so a TRULY clinched outcome left up would be a
+// guaranteed ~1% payout - literal free money, riskless. Exported for the EV
+// harness.
+export const SETTLED_PRICE = -9000;
+const notSettled = <T extends { americanOdds: number }>(rows: T[]): T[] =>
+	rows.filter((r) => r.americanOdds > SETTLED_PRICE);
+
+// The longest price each futures market offers. The smaller the field, the
+// shorter the cap: a division has five outcomes and a conference fifteen, so
+// a 300-1 price there isn't a longshot, it's the book claiming three digits of
+// precision its model doesn't have - the far tail is exactly where the
+// model's measured per-team error can hide a multiple of the true chance.
+// Real books cap these markets the same way and for the same reason.
+// Exported for the EV harness.
+export const FUTURES_CAPS = {
+	title: SPORTSBOOK_MAX_AMERICAN,
+	conference: 12000,
+	division: 6000,
+};
+
+// Futures + award bets: the heavier futures hold plus a tail ramp, capped per
+// market (default +30000). Used for every non-game market (title/conference/
+// division/win totals, award boards, All-Star). `iterations` is the Monte
+// Carlo size the probability came from, for the tail shade (see mcShade);
+// pass Infinity for a closed-form number. Exported for the EV harness
+// (futuresCalibration.test.ts), so it grades the exact prices the board
+// shows.
+export const priceFuture = (
+	prob: number,
+	iterations = FUTURES_ITERATIONS,
+	maxAmerican = SPORTSBOOK_MAX_AMERICAN,
+) => {
+	const shaded = mcShade(prob, iterations);
+	return probToAmerican(shaded, {
+		vig: futuresTailVig(shaded, SPORTSBOOK_FUTURES_VIG),
+		maxAmerican,
 	});
+};
 
 // Power for the preseason overall-rating award projections (MVP/DPOY/ROY). Higher
 // than the in-season AWARD_POWER so the top-rated players are clear, heavy
@@ -250,7 +362,52 @@ export const getLines = async () => {
 	// Each team's against-the-spread record, shown next to its W-L on every game.
 	const atsRecords = await getTeamAtsRecords(season);
 
-	const ovrByTid = await getTeamOvrs(activeTeams, season);
+	const phase = g.get("phase");
+	// Read once up here: the injury-availability horizon below needs to know how
+	// deep in the playoffs we are, and the in-playoffs bracket pricing reuses it.
+	const playoffSeries =
+		phase >= PHASE.PLAYOFFS
+			? await idb.cache.playoffSeries.get(season)
+			: undefined;
+
+	const gamesPlayedOf = (t: (typeof activeTeams)[number]) =>
+		t.seasonAttrs.won +
+		t.seasonAttrs.lost +
+		(t.seasonAttrs.tied ?? 0) +
+		(t.seasonAttrs.otl ?? 0);
+
+	// Basketball futures run on the engine-measured strength model (overall +
+	// lineup synergy at the spread coefficients, injury-availability weighted -
+	// see futuresStrength.ts). Other sports keep the legacy Power-Rankings
+	// heuristic, which needs the flat team ovr.
+	let strengthByTid:
+		| Awaited<ReturnType<typeof getFuturesStrengths>>
+		| undefined;
+	let ovrByTid: Map<number, number> | undefined;
+	if (isSport("basketball")) {
+		// Injury horizon: the games a team still has in front of it - its
+		// remaining regular season, or during the playoffs a rough remaining
+		// bracket length (~6 games a round).
+		const playoffHorizon =
+			6 *
+			Math.max(
+				1,
+				g.get("numGamesPlayoffSeries").length -
+					Math.max(0, playoffSeries?.currentRound ?? 0),
+			);
+		strengthByTid = await getFuturesStrengths(
+			activeTeams.map((t) => ({
+				tid: t.tid,
+				horizonGames:
+					phase >= PHASE.PLAYOFFS
+						? playoffHorizon
+						: Math.max(1, numGames - gamesPlayedOf(t)),
+			})),
+			season,
+		);
+	} else {
+		ovrByTid = await getTeamOvrs(activeTeams, season);
+	}
 
 	// A team's per-game scoring, for the futures strength model below. t.stats can
 	// be missing entirely in a league with no games played (e.g. started directly
@@ -329,21 +486,73 @@ export const getLines = async () => {
 	// win totals), so they can never contradict each other, and a dominant team
 	// prices like one because it actually plays through the bracket. See
 	// common/sportsbookFutures.ts.
-	const meanOvr =
-		activeTeams.reduce((s, t) => s + (ovrByTid.get(t.tid) ?? 50), 0) /
-		Math.max(1, activeTeams.length);
-	// A team's strength as a point margin vs an average team, blending its RATING
-	// (ovr gap × 0.6, the Power Rankings scaling) with its actual season
-	// PERFORMANCE (real point differential). The performance share grows with
-	// games played, so a 46-3 team is priced off what it has actually done.
+
+	// Margins scale with game length; per-game noise only with its square root.
+	const lengthFactor = gameLengthFactor(
+		g.get("numPeriods"),
+		g.get("quarterLength"),
+	);
+	const futuresSigma = MARGIN_SIGMA * Math.sqrt(lengthFactor);
+	const hcaPoints =
+		homeCourtAdvantagePoints(g.get("homeCourtAdvantage")) * lengthFactor;
+
+	// The model half of a team's rating: its expected margin vs an average team,
+	// before any games inform it.
+	let modelMarginOf: (tid: number) => number;
+	if (strengthByTid) {
+		// Basketball: the engine-measured spread model, applied vs the league
+		// means. Same coefficients as every game line, so a team's futures price
+		// and its nightly spreads can never tell two different stories.
+		const rows = [...strengthByTid.values()];
+		const meanExpOvr =
+			rows.reduce((s, r) => s + r.expectedOvr, 0) / Math.max(1, rows.length);
+		const synergyOk =
+			rows.length > 0 && rows.every((r) => r.expectedSynergy !== undefined);
+		const meanExpSynergy = synergyOk
+			? rows.reduce((s, r) => s + r.expectedSynergy!, 0) / rows.length
+			: 0;
+		modelMarginOf = (tid) => {
+			const r = strengthByTid!.get(tid);
+			if (!r) {
+				return 0;
+			}
+			// Same fallback slope as getGameSpread's ovr-only branch when a roster
+			// is too small to read a lineup synergy.
+			const margin = synergyOk
+				? BASKETBALL_SYNERGY_OVR_SLOPE * (r.expectedOvr - meanExpOvr) +
+					BASKETBALL_SYNERGY_COEF * (r.expectedSynergy! - meanExpSynergy)
+				: (15 / 50) * (r.expectedOvr - meanExpOvr);
+			return margin * lengthFactor;
+		};
+	} else {
+		// Legacy path: ovr gap x 0.6, the Power Rankings scaling.
+		const meanOvr =
+			activeTeams.reduce((s, t) => s + (ovrByTid!.get(t.tid) ?? 50), 0) /
+			Math.max(1, activeTeams.length);
+		modelMarginOf = (tid) => ((ovrByTid!.get(tid) ?? 50) - meanOvr) * 0.6;
+	}
+
+	// A team's strength as a point margin vs an average team, blending its
+	// MODEL rating with its actual season PERFORMANCE (real point differential).
 	const ratingOf = (tid: number) => {
-		const estMOV = ((ovrByTid.get(tid) ?? 50) - meanOvr) * 0.6;
 		const s = statsOf(teamByTid.get(tid));
 		const actualMOV = s.gp > 0 ? s.pts - s.oppPts : 0; // per-game differential
+		if (strengthByTid) {
+			// Bayesian blend at the measured error sizes - see
+			// FUTURES_MOV_PRIOR_GAMES. No cap and no preseason shade: the engine's
+			// margins are linear in the rating gap (measured past +35) and it plays
+			// preseason rosters at face value, so both "corrections" were just
+			// mispricings.
+			const w = s.gp / (s.gp + FUTURES_MOV_PRIOR_GAMES);
+			return modelMarginOf(tid) * (1 - w) + actualMOV * w;
+		}
+
+		// Legacy (non-basketball) path, unchanged.
 		// Trust what the team has actually done more and more as the sample grows:
 		// by ~30 games the real point differential carries 3/4 of the weight.
 		const perfWeight = s.gp > 0 ? 0.75 * Math.min(1, s.gp / 30) : 0;
-		const blended = estMOV * (1 - perfWeight) + actualMOV * perfWeight;
+		const blended =
+			modelMarginOf(tid) * (1 - perfWeight) + actualMOV * perfWeight;
 
 		// A rating gap is an estimate, and before the games are played it is only
 		// an estimate. A book shades its number toward the field until the
@@ -357,21 +566,14 @@ export const getLines = async () => {
 		return softCapMargin(blended) * evidence;
 	};
 
-	const futuresTeams = activeTeams.map((t) => {
-		const gp =
-			t.seasonAttrs.won +
-			t.seasonAttrs.lost +
-			(t.seasonAttrs.tied ?? 0) +
-			(t.seasonAttrs.otl ?? 0);
-		return {
-			tid: t.tid,
-			cid: t.cid,
-			did: t.did,
-			won: t.seasonAttrs.won,
-			gamesRemaining: Math.max(0, numGames - gp),
-			rating: ratingOf(t.tid),
-		};
-	});
+	const futuresTeams = activeTeams.map((t) => ({
+		tid: t.tid,
+		cid: t.cid,
+		did: t.did,
+		won: t.seasonAttrs.won,
+		gamesRemaining: Math.max(0, numGames - gamesPlayedOf(t)),
+		rating: ratingOf(t.tid),
+	}));
 
 	// Deterministic seed from league state: lines are stable between sims and
 	// the server re-derives the same board when validating a bet.
@@ -395,33 +597,53 @@ export const getLines = async () => {
 		TIER_NOISE_EARLY - (TIER_NOISE_EARLY - TIER_NOISE_LATE) * seasonProgress;
 
 	// How unsure the book is about each team's true strength, in points of
-	// margin, scaled by how much season is still to come. With 82 games and a
-	// whole bracket left, a rating gap is a guess; pricing it as fact put two
-	// stacked teams at a combined 96% to win the title on a 30-team board
-	// (-250 and +175, with third place out at +5205). By the end of the regular
-	// season the field has shown what it is and the book can be confident.
-	const futuresUncertainty =
-		FUTURES_UNCERTAINTY_END +
-		(FUTURES_UNCERTAINTY_START - FUTURES_UNCERTAINTY_END) *
-			(1 - seasonProgress);
+	// margin, scaled by how much season is still to come.
+	const futuresUncertainty = futuresRatingUncertainty(seasonProgress);
+
+	// The playoff neutral-site settings change who gets a home edge in simulated
+	// series, so the book prices the bracket the engine will actually play.
+	const neutralSiteSetting = g.get("neutralSite");
+	const playoffsNeutral = neutralSiteSetting === "playoffs";
+	const finalsNeutral = playoffsNeutral || neutralSiteSetting === "finals";
+
+	// The actual remaining slate, so win totals price each team's real schedule
+	// (opponents + home/away split). During the playoffs the schedule holds
+	// playoff games, not regular-season slate - and gamesRemaining is 0 anyway.
+	const futuresSchedule =
+		phase < PHASE.PLAYOFFS
+			? schedule
+					.filter(
+						(m) =>
+							m.homeTid >= 0 &&
+							m.awayTid >= 0 &&
+							teamByTid.has(m.homeTid) &&
+							teamByTid.has(m.awayTid),
+					)
+					.map((m) => ({ homeTid: m.homeTid, awayTid: m.awayTid }))
+			: undefined;
 
 	const sim = simulateFutures({
 		teams: futuresTeams,
 		numGamesPlayoffSeries: g.get("numGamesPlayoffSeries"),
-		iterations: 4000,
+		iterations: FUTURES_ITERATIONS,
 		seed,
 		ratingUncertainty: futuresUncertainty,
+		schedule: futuresSchedule,
+		hcaPoints,
+		sigma: futuresSigma,
+		playoffsNeutral,
+		finalsNeutral,
 	});
 
 	// Regular-season markets (division winners, win totals) are DECIDED once the
 	// playoffs start - a real book closes them, so we don't offer them at all.
-	const regularSeasonOver = g.get("phase") >= PHASE.PLAYOFFS;
+	const regularSeasonOver = phase >= PHASE.PLAYOFFS;
 	// Likewise, the champion/conference winner are decided the moment the
 	// playoffs actually finish. The season NUMBER doesn't roll over until next
 	// preseason, so without this a champion already crowned weeks ago would
 	// stay bettable (on a publicly-known outcome) all the way through the
 	// draft lottery, draft, and free agency.
-	const playoffsOver = g.get("phase") > PHASE.PLAYOFFS;
+	const playoffsOver = phase > PHASE.PLAYOFFS;
 
 	// During the playoffs, price the title/conference markets from the ACTUAL
 	// bracket - who's alive and each series' current score - instead of the
@@ -435,7 +657,6 @@ export const getLines = async () => {
 	let marketsOpen: ReturnType<typeof bracketMarketsOpen> | undefined;
 	if (regularSeasonOver && !playoffsOver) {
 		try {
-			const playoffSeries = await idb.cache.playoffSeries.get(season);
 			// currentRound is -1 while the play-in runs; round 0's matchups exist
 			// then with provisional play-in slots, an acceptable approximation for
 			// the day or two it lasts.
@@ -471,13 +692,28 @@ export const getLines = async () => {
 						ratings.set(m.away.tid, ratingOf(m.away.tid));
 					}
 				}
+				// Regular-season finish order, so simulated later rounds put home
+				// court where the engine will actually put it.
+				const seedOrder = new Map(
+					[...activeTeams]
+						.sort((a, b) => b.seasonAttrs.won - a.seasonAttrs.won)
+						.map((t, i) => [t.tid, i]),
+				);
 				bracketSim = simulatePlayoffBracket({
 					matchups,
 					startRound: rnd,
 					numGamesPlayoffSeries: g.get("numGamesPlayoffSeries"),
 					ratings,
-					iterations: 4000,
+					iterations: FUTURES_ITERATIONS,
 					seed: bracketSeed % 2147483647,
+					// A whole season has priced these teams; the book's remaining
+					// uncertainty is the end-of-ramp value, not the old 3.5-point
+					// default that flattened genuine favorites into free money.
+					ratingUncertainty: futuresUncertainty,
+					hcaPoints: playoffsNeutral ? 0 : hcaPoints,
+					sigma: futuresSigma,
+					finalsNeutral,
+					seedOrder,
 				});
 			}
 		} catch (error) {
@@ -485,12 +721,16 @@ export const getLines = async () => {
 		}
 	}
 
-	const teamRow = (t: (typeof activeTeams)[number], prob: number) => ({
+	const teamRow = (
+		t: (typeof activeTeams)[number],
+		prob: number,
+		maxAmerican: number,
+	) => ({
 		tid: t.tid,
 		abbrev: t.abbrev,
 		region: t.region,
 		name: t.name,
-		americanOdds: priceFuture(prob),
+		americanOdds: priceFuture(prob, FUTURES_ITERATIONS, maxAmerican),
 	});
 
 	const championship =
@@ -503,8 +743,10 @@ export const getLines = async () => {
 							t,
 							(bracketSim ? bracketSim.titleProb : sim.titleProb).get(t.tid) ??
 								0,
+							FUTURES_CAPS.title,
 						),
 					)
+					.filter((r) => r.americanOdds > SETTLED_PRICE)
 					.sort((a, b) => a.americanOdds - b.americanOdds);
 
 	// A conference comes off the board as soon as its winner is knowable: once
@@ -532,8 +774,10 @@ export const getLines = async () => {
 								t,
 								(bracketSim ? bracketSim.confProb : sim.confProb).get(t.tid) ??
 									0,
+								FUTURES_CAPS.conference,
 							),
 						)
+						.filter((r) => r.americanOdds > SETTLED_PRICE)
 						.sort((a, b) => a.americanOdds - b.americanOdds),
 				}));
 
@@ -544,7 +788,10 @@ export const getLines = async () => {
 				name: div.name,
 				teams: activeTeams
 					.filter((t) => t.did === div.did)
-					.map((t) => teamRow(t, sim.divProb.get(t.tid) ?? 0))
+					.map((t) =>
+						teamRow(t, sim.divProb.get(t.tid) ?? 0, FUTURES_CAPS.division),
+					)
+					.filter((r) => r.americanOdds > SETTLED_PRICE)
 					.sort((a, b) => a.americanOdds - b.americanOdds),
 			}));
 
@@ -559,14 +806,27 @@ export const getLines = async () => {
 				})
 				.map((t) => {
 					const wt = sim.winTotals.get(t.tid)!;
+					const ft = futuresTeams.find((f) => f.tid === t.tid)!;
+					// Charge both sides for the book's uncertainty in its own line -
+					// see winTotalLoad. Only meaningful where the model's error is
+					// measured (basketball); the legacy path keeps its shade instead.
+					const load = strengthByTid
+						? winTotalLoad({
+								gamesRemaining: ft.gamesRemaining,
+								gp: gamesPlayedOf(t),
+								slope: wt.slope,
+								winsSd: wt.winsSd,
+								sigma: futuresSigma,
+							})
+						: 0;
 					return {
 						tid: t.tid,
 						abbrev: t.abbrev,
 						region: t.region,
 						name: t.name,
 						line: wt.line,
-						over: priceFuture(wt.pOver),
-						under: priceFuture(1 - wt.pOver),
+						over: priceFuture(wt.pOver + load),
+						under: priceFuture(1 - wt.pOver + load),
 					};
 				})
 				.sort((a, b) => b.line - a.line);
@@ -642,14 +902,17 @@ export const getLines = async () => {
 			top.map((p) => p.score),
 			PRESEASON_AWARD_POWER,
 		);
-		return sortedByPrice(
-			top.map((p, i) => ({
-				pid: p.pid,
-				name: p.name,
-				tid: p.tid,
-				abbrev: p.abbrev,
-				americanOdds: priceFuture(probs[i] ?? 0),
-			})),
+		return notSettled(
+			sortedByPrice(
+				top.map((p, i) => ({
+					pid: p.pid,
+					name: p.name,
+					tid: p.tid,
+					abbrev: p.abbrev,
+					// Closed-form probability - no Monte Carlo tail to shade.
+					americanOdds: priceFuture(probs[i] ?? 0, Infinity),
+				})),
+			),
 		);
 	};
 
@@ -687,14 +950,16 @@ export const getLines = async () => {
 						// simulation, so two candidates a hair apart can come back a few
 						// hundredths of a percent the other way. Sort on the price that's
 						// actually shown, and take the twenty shortest.
-						candidates: sortedByPrice(
-							race.players.map((p: any) => ({
-								pid: p.pid,
-								name: p.name,
-								tid: p.tid,
-								abbrev: p.abbrev,
-								americanOdds: p.odds,
-							})),
+						candidates: notSettled(
+							sortedByPrice(
+								race.players.map((p: any) => ({
+									pid: p.pid,
+									name: p.name,
+									tid: p.tid,
+									abbrev: p.abbrev,
+									americanOdds: p.odds,
+								})),
+							),
 						).slice(0, 20),
 					};
 				})

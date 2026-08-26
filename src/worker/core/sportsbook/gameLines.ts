@@ -2,7 +2,10 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import teamOvr from "../team/ovr.ts";
 import { getActualPlayThroughInjuries } from "../game/loadTeams.ts";
-import { getGameSpread } from "../../../common/getGameSpread.ts";
+import {
+	gameLengthFactor,
+	getGameSpread,
+} from "../../../common/getGameSpread.ts";
 import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
@@ -12,6 +15,7 @@ import {
 } from "../../../common/sportsbook.ts";
 import {
 	expectedGameTotal,
+	MARGIN_SIGMA,
 	marginToWinProb,
 	overProb,
 	toHalfPointLine,
@@ -95,6 +99,12 @@ export const buildGameLinePricer = async ({
 	const quarterLength = g.get("quarterLength");
 	const neutralSiteSetting = g.get("neutralSite");
 	const phase = g.get("phase");
+
+	// The spread is already length-scaled (getGameSpread); the noise it fights
+	// through scales only with the square root of the minutes, so a short-game
+	// league's favorites are better bets than the raw margin suggests.
+	const sigma =
+		MARGIN_SIGMA * Math.sqrt(gameLengthFactor(numPeriods, quarterLength));
 
 	const teamByTid = new Map(activeTeams.map((t) => [t.tid, t]));
 
@@ -231,7 +241,7 @@ export const buildGameLinePricer = async ({
 				return undefined;
 			}
 
-			const pHome = marginToWinProb(margin);
+			const pHome = marginToWinProb(margin, sigma);
 			const expectedTotal = expectedGameTotal({
 				homeFor: scoringFor(home),
 				homeAgainst: scoringAgainst(home),

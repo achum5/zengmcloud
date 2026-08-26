@@ -345,9 +345,11 @@ describe("bracketMarketsOpen", () => {
 	});
 });
 
-// A talent gap is not a point differential, and a point differential is not a
-// win rate - both saturate. A league whose best roster rates 20+ points clear
-// of average was projecting a 79-win season a week into the schedule.
+// LEGACY-PATH REGRESSION: these inputs are shaped the way the NON-basketball
+// futures rating still shapes them (softCapMargin + the preseason evidence
+// shade). The basketball path deliberately dropped both - the engine's margins
+// are linear and it plays preseason rosters at face value (see getLines.ts) -
+// but the sim machinery must keep behaving sensibly for legacy-shaped ratings.
 describe("win totals stay inside reality", () => {
 	const stacked = (gamesPlayed: number): FuturesTeam[] => {
 		// The raw margins a stacked league produces, run through the same
@@ -440,13 +442,11 @@ describe("softCapMargin", () => {
 	});
 });
 
-// The board as a whole, calibrated against what a real book posts. These bands
-// were found by sweeping the model's three knobs (margin saturation, how far a
-// rating is shaded toward the field before games are played, and how unsure the
-// book is about a rating) across several league shapes at several points in a
-// season - so they are the calibration, not a snapshot of whatever the code
-// happened to produce. Drifting outside them means the book is giving money
-// away in one direction or the other.
+// LEGACY-PATH REGRESSION, same as above: the softCap/evidence-shaded ratings
+// here are what the non-basketball rating construction still produces, and the
+// bands were calibrated against what a real book posts for that path. The
+// basketball path is instead graded against the engine itself by the EV
+// harness (worker/core/sportsbook/futuresCalibration.test.ts).
 describe("the futures board is calibrated", () => {
 	const NUM_TEAMS = 30;
 	const NUM_GAMES = 82;
@@ -546,5 +546,187 @@ describe("the futures board is calibrated", () => {
 				);
 			}
 		}
+	});
+});
+
+// The schedule-exact season sim: each team's per-game win probability comes
+// from its ACTUAL remaining slate - who it plays and where - not a
+// league-average opponent.
+describe("schedule-aware season sim", () => {
+	const flat = (
+		tid: number,
+		gamesRemaining: number,
+		rating = 0,
+	): FuturesTeam => ({
+		tid,
+		cid: tid % 2,
+		did: tid % 2,
+		won: 0,
+		gamesRemaining,
+		rating,
+	});
+
+	test("a home-heavy slate is worth real wins", () => {
+		// A and B are identical teams; A hosts B twenty times.
+		const teams = [flat(0, 20), flat(1, 20)];
+		const schedule = Array.from({ length: 20 }, () => ({
+			homeTid: 0,
+			awayTid: 1,
+		}));
+		const sim = simulateFutures({
+			teams,
+			numGamesPlayoffSeries: [7],
+			iterations: 3000,
+			seed: 5,
+			ratingUncertainty: 1,
+			schedule,
+			hcaPoints: 10,
+			sigma: 13,
+		});
+		const a = sim.winTotals.get(0)!.line;
+		const b = sim.winTotals.get(1)!.line;
+		// pHome = Phi(10/13) = 0.78: A projects ~15.5 wins, B ~4.5.
+		assert.ok(a - b > 8, `home team ${a}, road team ${b}`);
+	});
+
+	test("strength of schedule moves the number", () => {
+		// A and B are identical; A's slate is a doormat, B's is a juggernaut.
+		const teams = [flat(0, 20), flat(1, 20), flat(2, 20, -10), flat(3, 20, 10)];
+		const schedule = [
+			...Array.from({ length: 10 }, () => ({ homeTid: 0, awayTid: 2 })),
+			...Array.from({ length: 10 }, () => ({ homeTid: 2, awayTid: 0 })),
+			...Array.from({ length: 10 }, () => ({ homeTid: 1, awayTid: 3 })),
+			...Array.from({ length: 10 }, () => ({ homeTid: 3, awayTid: 1 })),
+		];
+		const sim = simulateFutures({
+			teams,
+			numGamesPlayoffSeries: [7],
+			iterations: 3000,
+			seed: 9,
+			ratingUncertainty: 1,
+			schedule,
+			hcaPoints: 0,
+			sigma: 13,
+		});
+		const soft = sim.winTotals.get(0)!.line;
+		const hard = sim.winTotals.get(1)!.line;
+		// Phi(10/13) - Phi(-10/13) = 0.56 extra wins a game, ~11 over 20.
+		assert.ok(soft - hard > 7, `soft slate ${soft}, hard slate ${hard}`);
+	});
+
+	test("win totals carry the spread and slope the pricing layer charges on", () => {
+		const teams = [flat(0, 40), flat(1, 40)];
+		const sim = simulateFutures({
+			teams,
+			numGamesPlayoffSeries: [7],
+			iterations: 2000,
+			seed: 3,
+		});
+		const wt = sim.winTotals.get(0)!;
+		assert.ok(wt.winsSd > 1);
+		assert.ok(wt.slope > 0 && wt.slope < 0.1);
+	});
+});
+
+// Playoff series play out game by game on the engine's real home pattern
+// (betterSeedHome), so a series' current score and site schedule price
+// exactly.
+describe("playoff series home pattern", () => {
+	const ratings = new Map<number, number>([
+		[0, 0],
+		[1, 0],
+		[4, 0],
+		[5, 0],
+	]);
+
+	test("a 3-3 series is game 7 at the better seed's place", () => {
+		const r = simulatePlayoffBracket({
+			matchups: [
+				{ home: { tid: 0, cid: 0, won: 3 }, away: { tid: 1, cid: 0, won: 3 } },
+			],
+			startRound: 0,
+			numGamesPlayoffSeries: [7],
+			ratings,
+			iterations: 4000,
+			seed: 21,
+			ratingUncertainty: 0,
+			hcaPoints: 20,
+			sigma: 13,
+		});
+		// One game left, at home, worth 20 points: Phi(20/13) = 0.94.
+		const p = r.titleProb.get(0)!;
+		assert.ok(Math.abs(p - 0.938) < 0.03, `${p}`);
+	});
+
+	test("down 2-3, the home seed needs a road game 6 first", () => {
+		const r = simulatePlayoffBracket({
+			matchups: [
+				{ home: { tid: 0, cid: 0, won: 2 }, away: { tid: 1, cid: 0, won: 3 } },
+			],
+			startRound: 0,
+			numGamesPlayoffSeries: [7],
+			ratings,
+			iterations: 4000,
+			seed: 22,
+			ratingUncertainty: 0,
+			hcaPoints: 20,
+			sigma: 13,
+		});
+		// Game 6 on the road (0.06) then game 7 at home (0.94) - about 6%.
+		const p = r.titleProb.get(0)!;
+		assert.ok(p < 0.12, `${p}`);
+	});
+
+	test("neutral-site playoffs erase the home edge", () => {
+		const run = (playoffsNeutral: boolean) =>
+			simulateFutures({
+				teams: [
+					{ tid: 0, cid: 0, did: 0, won: 10, gamesRemaining: 0, rating: 0 },
+					{ tid: 1, cid: 1, did: 1, won: 0, gamesRemaining: 0, rating: 0 },
+				],
+				numGamesPlayoffSeries: [7],
+				iterations: 4000,
+				seed: 31,
+				ratingUncertainty: 0,
+				hcaPoints: 20,
+				sigma: 13,
+				playoffsNeutral,
+			}).titleProb.get(0)!;
+		// The 10-win team is the better seed and hosts 4 of 7 at +20 a game...
+		assert.ok(run(false) > 0.6);
+		// ...unless the league plays its playoffs on neutral courts.
+		assert.ok(Math.abs(run(true) - 0.5) < 0.05);
+	});
+
+	test("home court in simulated later rounds follows the regular-season order", () => {
+		const semis: BracketMatchup[] = [
+			{ home: { tid: 0, cid: 0, won: 0 }, away: { tid: 1, cid: 0, won: 0 } },
+			{ home: { tid: 4, cid: 1, won: 0 }, away: { tid: 5, cid: 1, won: 0 } },
+		];
+		// tids 0 and 4 each host their semi; only the FINAL's venue tells them
+		// apart, and tid 4 finished with the league's best record - so when both
+		// advance, the final is at tid 4's place, even though bracket position
+		// alone would have handed it to tid 0.
+		const r = simulatePlayoffBracket({
+			matchups: semis,
+			startRound: 0,
+			numGamesPlayoffSeries: [7, 7],
+			ratings,
+			iterations: 4000,
+			seed: 41,
+			ratingUncertainty: 0,
+			hcaPoints: 20,
+			sigma: 13,
+			seedOrder: new Map([
+				[4, 0],
+				[0, 1],
+				[1, 2],
+				[5, 3],
+			]),
+		});
+		assert.ok(
+			r.titleProb.get(4)! > r.titleProb.get(0)! + 0.1,
+			`best record ${r.titleProb.get(4)}, other semi host ${r.titleProb.get(0)}`,
+		);
 	});
 });

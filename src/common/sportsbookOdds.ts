@@ -48,6 +48,13 @@ export const normalCdf = (z: number): number => {
 // other margin-distribution models (e.g. the "does this game go to overtime"
 // prop in getGameProps.ts) use the exact same spread rather than a
 // second, potentially-inconsistent guess.
+//
+// The basketball 13 is measured against the engine itself, not styled after
+// the NBA: on two real leagues' rosters (104,400 games, spreadCalibration
+// .test.ts) the within-matchup margin sigma came out 13.09 and 13.10, and it
+// is flat across spread sizes (13.0-13.8 from pick'em to 20+ blowouts), so one
+// number really does describe every game. At the default game length - scale
+// by Math.sqrt(gameLengthFactor(...)) for anything else.
 export const MARGIN_SIGMA = bySport({
 	basketball: 13,
 	football: 14.5,
@@ -55,21 +62,18 @@ export const MARGIN_SIGMA = bySport({
 	hockey: 3.1,
 });
 
-// Talent gaps do not turn into point differential linearly. The best point
-// differential in NBA history is about +12 a night, and no roster however
-// stacked runs away from that: good teams rest starters, coast once a game is
-// won, and get everyone's best effort. A league with a huge spread in team
-// ratings was feeding raw margins like +21 straight into the win model, which
-// says a team wins 95% of its games and projects a 79-win season.
+// Cap on how big a sustained margin the LEGACY (non-basketball) futures rating
+// will claim. Real-league intuition - the best point differential in NBA
+// history is about +12 a night because real teams rest starters and coast -
+// applied via tanh, which passes ordinary margins through almost untouched
+// (+5 stays +4.9) while pulling the tail in (+21 becomes +10.5).
 //
-// tanh compresses smoothly and monotonically - ordinary margins pass through
-// almost untouched (+5 stays +4.9) while the tail is pulled in (+21 becomes
-// +10.5) - so ranking is preserved and only the impossible end is fixed.
-// Calibrated, not guessed: swept against three league shapes (ordinary,
-// top-heavy, two-superteams) at tip-off and twenty games in, scoring the
-// resulting board against what real books post - a clear favorite around
-// +400 in an ordinary league, +300 in a top-heavy one, +175 for a genuine
-// superteam, and win totals topping out in the high 50s to low 60s.
+// The basketball futures rating does NOT use this anymore, deliberately: the
+// engine was measured (real rosters, 100k+ sims) and its margins are LINEAR in
+// the rating gap out beyond +35 - simulated teams never coast - so capping the
+// book's number at 9 while the engine keeps producing +15 made every
+// juggernaut future free money for anyone who could count. The book's job is
+// to price the engine, not the NBA.
 export const MAX_SUSTAINED_MARGIN = 9;
 
 export const softCapMargin = (
@@ -78,10 +82,42 @@ export const softCapMargin = (
 ): number => limit * Math.tanh(margin / limit);
 
 // Win probability for a team expected to win by `expectedMargin` points
-// (negative if the underdog). Clamped away from 0/1.
-export const marginToWinProb = (expectedMargin: number): number => {
-	const p = normalCdf(expectedMargin / MARGIN_SIGMA);
+// (negative if the underdog). Clamped away from 0/1. Pass `sigma` when the
+// league's game length differs from the default: margins scale linearly with
+// minutes but noise only with the square root, so sigma is
+// MARGIN_SIGMA * Math.sqrt(gameLengthFactor).
+export const marginToWinProb = (
+	expectedMargin: number,
+	sigma: number = MARGIN_SIGMA,
+): number => {
+	const p = normalCdf(expectedMargin / Math.max(1e-6, sigma));
 	return Math.min(0.995, Math.max(0.005, p));
+};
+
+// Which game of a playoff series the better seed hosts, 0-indexed - the exact
+// scheduling rule the engine uses (worker/core/season/newSchedulePlayoffsDay.ts
+// imports THIS function, so the book and the schedule can never disagree).
+// Best-of-7 comes out H,H,A,A,H,A,H - the standard 2-2-1-1-1.
+export const betterSeedHome = (
+	numGamesPlayoffSeries: number,
+	gameNum: number,
+): boolean => {
+	// For series lengths like 3, 7, 11, 15, etc., special case last 3 games to
+	// ensure the home team always gets the last game
+	const needsSpecialEnding = (numGamesPlayoffSeries + 1) % 4 === 0;
+
+	if (needsSpecialEnding) {
+		// Special case for last 3 games
+		if (gameNum >= numGamesPlayoffSeries - 3) {
+			return (
+				gameNum === numGamesPlayoffSeries - 3 ||
+				gameNum === numGamesPlayoffSeries - 1
+			);
+		}
+	}
+
+	const num = Math.floor(gameNum / 2);
+	return num % 2 === 0;
 };
 
 // Expected total points for a game from each team's GENUINE season scoring
@@ -125,9 +161,21 @@ export const overProbFromSigma = (
 
 // Probability the actual total lands OVER a line, given the expected total.
 // Uses a normal model whose spread scales with the total (more points → more
-// variance). Symmetric around expected === line.
+// variance). Symmetric around expected === line. The 8.5% is measured, not
+// styled: on two real leagues' rosters (104,400 engine games) the total's
+// within-matchup sigma came out 8.49% and 8.54% of the mean total.
 export const overProb = (expectedTotal: number, line: number): number =>
-	overProbFromSigma(expectedTotal, line, Math.max(1, expectedTotal * 0.09));
+	overProbFromSigma(expectedTotal, line, Math.max(1, expectedTotal * 0.085));
+
+// The house never extends the benefit of Monte Carlo doubt: a simulated
+// probability is priced at its upper confidence edge (two standard errors of
+// Binomial(n, p)) before the vig goes on. The boards are deterministic per
+// league state, so a longshot whose 4000-iteration estimate happened to land
+// a couple of sigma low would otherwise sit there as the one +EV row on an
+// otherwise-vigged board until something simmed. Costs a favorite about a
+// point of implied probability; closes the tail completely.
+export const mcShade = (p: number, iterations: number): number =>
+	p + 2 * Math.sqrt(Math.max(0, p * (1 - p)) / Math.max(1, iterations));
 
 // A half-point line placed right at a projection, so an over/under sits near a
 // coin flip (the vig is what makes the house edge). e.g. 47.3 → 47.5.

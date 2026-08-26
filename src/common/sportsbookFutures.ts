@@ -1,8 +1,9 @@
 import {
+	betterSeedHome,
+	MARGIN_SIGMA,
 	marginToWinProb,
 	mulberry32,
 	normalSample,
-	seriesWinProb,
 	toHalfPointLine,
 } from "./sportsbookOdds.ts";
 
@@ -27,11 +28,72 @@ export type FuturesTeam = {
 	rating: number;
 };
 
+// One remaining regular-season game, so the season sim prices each team's
+// ACTUAL schedule - who it still plays and where - instead of a hypothetical
+// slate of league-average opponents.
+export type FuturesScheduleGame = {
+	homeTid: number;
+	awayTid: number;
+};
+
+// Play out the rest of a best-of series game by game. `better` is the seed
+// holding home court: it hosts exactly the games betterSeedHome says (the
+// engine's own scheduling rule), each worth +/-hcaPoints of margin. Works from
+// any current score, so a series in progress prices off where it actually
+// stands.
+const simSeriesGames = ({
+	rand,
+	betterRating,
+	otherRating,
+	bestOf,
+	hcaPoints,
+	sigma,
+	betterWon = 0,
+	otherWon = 0,
+}: {
+	rand: () => number;
+	betterRating: number;
+	otherRating: number;
+	bestOf: number;
+	hcaPoints: number;
+	sigma: number;
+	betterWon?: number;
+	otherWon?: number;
+}): boolean => {
+	const winsNeeded = Math.ceil(bestOf / 2);
+	let b = betterWon;
+	let o = otherWon;
+	while (b < winsNeeded && o < winsNeeded) {
+		// Same rule as the real schedule: the next game's number is the games
+		// already played.
+		const hca = betterSeedHome(bestOf, b + o) ? hcaPoints : -hcaPoints;
+		const pBetter = marginToWinProb(betterRating - otherRating + hca, sigma);
+		if (rand() < pBetter) {
+			b += 1;
+		} else {
+			o += 1;
+		}
+	}
+	return b >= winsNeeded;
+};
+
 export type FuturesResult = {
 	titleProb: Map<number, number>;
 	confProb: Map<number, number>;
 	divProb: Map<number, number>;
-	winTotals: Map<number, { line: number; pOver: number }>;
+	winTotals: Map<
+		number,
+		{
+			line: number;
+			pOver: number;
+			// Spread of the simulated final-wins distribution, and the mean
+			// dP(win a game)/d(rating point) over the team's slate - what the
+			// pricing layer needs to charge for its own rating uncertainty (see
+			// getLines' win-total load).
+			winsSd: number;
+			slope: number;
+		}
+	>;
 };
 
 const largestPowerOfTwoAtMost = (n: number): number =>
@@ -43,6 +105,11 @@ export const simulateFutures = ({
 	iterations = 4000,
 	seed = 1,
 	ratingUncertainty = 3.5,
+	schedule,
+	hcaPoints = 0,
+	sigma = MARGIN_SIGMA,
+	playoffsNeutral = false,
+	finalsNeutral = false,
 }: {
 	teams: FuturesTeam[];
 	// Best-of lengths per playoff round, first round first (e.g. [7,7,7,7]).
@@ -54,6 +121,22 @@ export const simulateFutures = ({
 	// treat strength as known exactly, which is why a solid 3rd-best team gets
 	// genuine title equity (+2500, not 99-1) and no tail collapses to zero.
 	ratingUncertainty?: number;
+	// The remaining regular-season games. When present, each team's per-game win
+	// probability comes from its actual slate - opponents' ratings and the
+	// home/away split - instead of a league-average opponent. Omitted (or a team
+	// absent from it): balanced schedule vs the average of the OTHER teams.
+	schedule?: FuturesScheduleGame[];
+	// Home team's expected margin bump, in points (engine-calibrated,
+	// length-scaled by the caller). Drives both the schedule weighting above and
+	// the playoff series' game-by-game home pattern.
+	hcaPoints?: number;
+	// Per-game margin sigma (length-scaled by the caller).
+	sigma?: number;
+	// League set to neutral-site playoffs: no home edge in any playoff series
+	// (regular-season HCA still applies).
+	playoffsNeutral?: boolean;
+	// League set to a neutral-site finals: no home edge in the final series.
+	finalsNeutral?: boolean;
 }): FuturesResult => {
 	const rounds = Math.max(1, numGamesPlayoffSeries.length);
 	const cids = [...new Set(teams.map((t) => t.cid))];
@@ -64,6 +147,63 @@ export const simulateFutures = ({
 	);
 
 	const rand = mulberry32(seed);
+
+	// Each team's remaining slate, aggregated EXACTLY: the mean per-game win
+	// probability over its actual games (each with its opponent's rating and
+	// home/away HCA), not the win probability of the mean margin - Phi is
+	// concave above a half, so collapsing a varied slate to its mean margin
+	// quietly overpaid every strong team about a win. `slope` is the mean
+	// dP/d(rating), so per-iteration jitter moves the probability to first
+	// order without re-walking the schedule. (Opponents' jitters average out
+	// over a slate - noise an order of magnitude below the team's own.)
+	const normalPdf = (z: number) =>
+		Math.exp(-0.5 * z * z) / Math.sqrt(2 * Math.PI);
+	const ratingByTid = new Map(teams.map((t) => [t.tid, t.rating]));
+	const ratingSum = teams.reduce((s, t) => s + t.rating, 0);
+	const scheduleStats = new Map<
+		number,
+		{ n: number; pSum: number; slopeSum: number }
+	>();
+	const addGame = (tid: number, margin: number) => {
+		let s = scheduleStats.get(tid);
+		if (!s) {
+			s = { n: 0, pSum: 0, slopeSum: 0 };
+			scheduleStats.set(tid, s);
+		}
+		s.n += 1;
+		s.pSum += marginToWinProb(margin, sigma);
+		s.slopeSum += normalPdf(margin / sigma) / sigma;
+	};
+	if (schedule) {
+		for (const game of schedule) {
+			const home = ratingByTid.get(game.homeTid);
+			const away = ratingByTid.get(game.awayTid);
+			if (home === undefined || away === undefined) {
+				continue;
+			}
+			addGame(game.homeTid, home - away + hcaPoints);
+			addGame(game.awayTid, away - home - hcaPoints);
+		}
+	}
+	// Per team: mean per-game win probability over the slate, and its
+	// sensitivity to the team's own rating.
+	const baseP = new Map<number, { p: number; slope: number }>();
+	for (const t of teams) {
+		const s = scheduleStats.get(t.tid);
+		if (s && s.n > 0) {
+			baseP.set(t.tid, { p: s.pSum / s.n, slope: s.slopeSum / s.n });
+		} else {
+			// No schedule info: balanced slate against the average of everyone else
+			// (excluding yourself - the league mean includes you, which quietly
+			// shaved a top team's edge).
+			const others = teams.length > 1 ? teams.length - 1 : 1;
+			const meanMargin = t.rating - (ratingSum - t.rating) / others;
+			baseP.set(t.tid, {
+				p: marginToWinProb(meanMargin, sigma),
+				slope: normalPdf(meanMargin / sigma) / sigma,
+			});
+		}
+	}
 
 	const titleCount = new Map<number, number>();
 	const confCount = new Map<number, number>();
@@ -84,20 +224,30 @@ export const simulateFutures = ({
 
 	type SimTeam = FuturesTeam & { simWins: number };
 
-	// Play a seeded single-elimination-of-series bracket; better seed gets a
-	// ~1 point home edge. Field must be a power of 2, sorted best-first.
+	// Play a seeded single-elimination-of-series bracket, each series game by
+	// game with the real home pattern (the better seed - here, the better
+	// simulated record - holds home court). Field must be a power of 2, sorted
+	// best-first.
 	const runBracket = (field: SimTeam[], isFinals: boolean): SimTeam => {
 		while (field.length > 1) {
 			const bestOf = bestOfForField(field.length, isFinals);
+			const seriesHca =
+				playoffsNeutral || (isFinals && field.length === 2 && finalsNeutral)
+					? 0
+					: hcaPoints;
 			const next: SimTeam[] = [];
 			for (let i = 0; i < field.length / 2; i++) {
 				const a = field[i]!;
 				const b = field[field.length - 1 - i]!;
-				const pA = seriesWinProb(
-					marginToWinProb(a.rating - b.rating + 1),
+				const aWins = simSeriesGames({
+					rand,
+					betterRating: a.rating,
+					otherRating: b.rating,
 					bestOf,
-				);
-				next.push(rand() < pA ? a : b);
+					hcaPoints: seriesHca,
+					sigma,
+				});
+				next.push(aWins ? a : b);
 			}
 			next.sort((x, y) => y.simWins - x.simWins);
 			field = next;
@@ -110,13 +260,18 @@ export const simulateFutures = ({
 		// rating is an estimate, not a fact), then simulate the rest of the
 		// regular season (normal approximation of the binomial over remaining
 		// games), with a tiny jitter for tie-breaks.
+		//
+		// No pace clamp here, on purpose. The old [0.15, 0.85] backstop encoded
+		// "even the 73-9 Warriors only won 89%" - true of the NBA, false of the
+		// engine, which happily lets a +20 roster win 94% of its games. Capping
+		// the book at 0.85 while the engine kept winning made every juggernaut
+		// win-total Over free money. marginToWinProb's own [0.005, 0.995] clamp
+		// still applies.
 		const simTeams: SimTeam[] = teams.map((t) => {
-			const simRating = t.rating + normalSample(rand) * ratingUncertainty;
-			// Backstop on the projected pace. Even the 73-9 Warriors won 89% of
-			// their games, and they did it without the injuries, rest nights and
-			// flat performances this model has no way to simulate. Nothing here
-			// should ever project a team past a ~70-win or under a ~12-win pace.
-			const p = Math.min(0.85, Math.max(0.15, marginToWinProb(simRating)));
+			const jitter = normalSample(rand) * ratingUncertainty;
+			const simRating = t.rating + jitter;
+			const base = baseP.get(t.tid)!;
+			const p = Math.min(0.995, Math.max(0.005, base.p + base.slope * jitter));
 			let wins = t.won;
 			if (t.gamesRemaining > 0) {
 				const mean = t.gamesRemaining * p;
@@ -168,7 +323,10 @@ export const simulateFutures = ({
 	// Win totals: scan half-point lines around the median and take the one
 	// closest to a coin flip, so the juice stays near-balanced (-110/-110 style)
 	// instead of a lopsided +215/-265 market.
-	const winTotals = new Map<number, { line: number; pOver: number }>();
+	const winTotals = new Map<
+		number,
+		{ line: number; pOver: number; winsSd: number; slope: number }
+	>();
 	for (const t of teams) {
 		const samples = winsSamples.get(t.tid)!.sort((a, b) => a - b);
 		const median = samples[Math.floor(samples.length / 2)] ?? t.won;
@@ -183,7 +341,18 @@ export const simulateFutures = ({
 				best = { line, pOver, dist };
 			}
 		}
-		winTotals.set(t.tid, { line: best.line, pOver: best.pOver });
+		const mean =
+			samples.reduce((a, b) => a + b, 0) / Math.max(1, samples.length);
+		const winsSd = Math.sqrt(
+			samples.reduce((s, w) => s + (w - mean) ** 2, 0) /
+				Math.max(1, samples.length),
+		);
+		winTotals.set(t.tid, {
+			line: best.line,
+			pOver: best.pOver,
+			winsSd,
+			slope: baseP.get(t.tid)!.slope,
+		});
 	}
 
 	const toProb = (m: Map<number, number>) => {
@@ -299,7 +468,14 @@ export const simulatePlayoffBracket = ({
 	ratings,
 	iterations = 4000,
 	seed = 1,
-	ratingUncertainty = 3.5,
+	// By the playoffs a whole season has priced every team; the book's rating
+	// error is around a point, not the 3.5 this once defaulted to - which
+	// flattened a genuine 26% title favorite to 14% and made it free money.
+	ratingUncertainty = 1,
+	hcaPoints = 0,
+	sigma = MARGIN_SIGMA,
+	finalsNeutral = false,
+	seedOrder,
 }: {
 	// The in-progress round's matchups, in bracket order (winners of matchups
 	// 2i and 2i+1 meet next round - BBGM's fill order; with reseeding enabled the
@@ -313,6 +489,18 @@ export const simulatePlayoffBracket = ({
 	iterations?: number;
 	seed?: number;
 	ratingUncertainty?: number;
+	// Home team's expected margin bump in points (engine-calibrated,
+	// length-scaled; 0 when the league plays neutral-site playoffs).
+	hcaPoints?: number;
+	// Per-game margin sigma (length-scaled by the caller).
+	sigma?: number;
+	// League set to a neutral-site finals: no home edge in the final series.
+	finalsNeutral?: boolean;
+	// Regular-season finish order (lower = better record), so home court in
+	// SIMULATED later rounds goes to the better record - the engine's actual
+	// rule - instead of whoever sat higher in the bracket. Omitted: bracket
+	// position decides, the old approximation.
+	seedOrder?: Map<number, number>;
 }): BracketFuturesResult => {
 	const rand = mulberry32(seed);
 	const titleCount = new Map<number, number>();
@@ -331,29 +519,27 @@ export const simulatePlayoffBracket = ({
 		}
 	}
 
-	// Win the rest of a best-of series from the current score. The matchup's home
-	// side (the better seed) gets a flat ~1 point edge, matching the pre-playoffs
-	// simulator's convention.
+	// Win the rest of a best-of series from the current score. The matchup's
+	// home side (the better seed) hosts exactly the games the engine's schedule
+	// gives it - see simSeriesGames.
 	const simSeries = (
 		homeRating: number,
 		awayRating: number,
 		bestOf: number,
 		homeWon: number,
 		awayWon: number,
-	): boolean => {
-		const winsNeeded = Math.ceil(bestOf / 2);
-		const pHome = marginToWinProb(homeRating - awayRating + 1);
-		let h = homeWon;
-		let a = awayWon;
-		while (h < winsNeeded && a < winsNeeded) {
-			if (rand() < pHome) {
-				h += 1;
-			} else {
-				a += 1;
-			}
-		}
-		return h >= winsNeeded;
-	};
+		seriesHca: number,
+	): boolean =>
+		simSeriesGames({
+			rand,
+			betterRating: homeRating,
+			otherRating: awayRating,
+			bestOf,
+			hcaPoints: seriesHca,
+			sigma,
+			betterWon: homeWon,
+			otherWon: awayWon,
+		});
 
 	for (let iter = 0; iter < iterations; iter++) {
 		// The book's ratings are estimates; jitter each team's true strength once
@@ -375,6 +561,7 @@ export const simulatePlayoffBracket = ({
 				const only = field[0]!;
 				finalists = only.away ? [only.home, only.away] : [only.home];
 			}
+			const seriesHca = field.length === 1 && finalsNeutral ? 0 : hcaPoints;
 			const winners: BracketTeam[] = [];
 			for (const m of field) {
 				if (!m.away) {
@@ -387,6 +574,7 @@ export const simulatePlayoffBracket = ({
 					bestOf,
 					m.home.won,
 					m.away.won,
+					seriesHca,
 				);
 				winners.push(homeWins ? m.home : m.away);
 			}
@@ -394,13 +582,21 @@ export const simulatePlayoffBracket = ({
 				bump(titleCount, winners[0]!.tid);
 				break;
 			}
-			// Pair sequential winners for the next round; an odd leftover gets a bye.
+			// Pair sequential winners for the next round; an odd leftover gets a
+			// bye. Home court by regular-season finish when known.
 			const next: BracketMatchup[] = [];
 			for (let i = 0; i + 1 < winners.length; i += 2) {
-				next.push({
-					home: { ...winners[i]!, won: 0 },
-					away: { ...winners[i + 1]!, won: 0 },
-				});
+				const a = winners[i]!;
+				const b = winners[i + 1]!;
+				const aHome =
+					seedOrder === undefined ||
+					(seedOrder.get(a.tid) ?? Infinity) <=
+						(seedOrder.get(b.tid) ?? Infinity);
+				next.push(
+					aHome
+						? { home: { ...a, won: 0 }, away: { ...b, won: 0 } }
+						: { home: { ...b, won: 0 }, away: { ...a, won: 0 } },
+				);
 			}
 			if (winners.length % 2 === 1) {
 				next.push({ home: { ...winners.at(-1)!, won: 0 } });

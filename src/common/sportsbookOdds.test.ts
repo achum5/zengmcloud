@@ -9,6 +9,9 @@ import {
 	mulberry32,
 	normalCdf,
 	normalSample,
+	betterSeedHome,
+	MARGIN_SIGMA,
+	mcShade,
 	overProb,
 	overProbFromSigma,
 	probNear,
@@ -459,5 +462,61 @@ describe("pricing off simulated games", () => {
 		assert.ok(eventProb(500, 500) < 1);
 		assert.ok(Math.abs(eventProb(250, 500) - 0.5) < 0.01);
 		assert.strictEqual(eventProb(0, 0), 0.5);
+	});
+});
+
+describe("betterSeedHome", () => {
+	const pattern = (bestOf: number) =>
+		Array.from({ length: bestOf }, (_, g) => betterSeedHome(bestOf, g));
+
+	test("best-of-7 is the 2-2-1-1-1 the schedule actually plays", () => {
+		assert.deepStrictEqual(pattern(7), [
+			true,
+			true,
+			false,
+			false,
+			true,
+			false,
+			true,
+		]);
+	});
+
+	test("best-of-5 and best-of-3 and a single game", () => {
+		assert.deepStrictEqual(pattern(5), [true, true, false, false, true]);
+		assert.deepStrictEqual(pattern(3), [true, false, true]);
+		assert.deepStrictEqual(pattern(1), [true]);
+	});
+
+	test("the better seed always hosts a potential last game", () => {
+		for (const bestOf of [1, 3, 5, 7, 9, 11]) {
+			assert.strictEqual(betterSeedHome(bestOf, bestOf - 1), true);
+		}
+	});
+});
+
+describe("mcShade", () => {
+	test("adds two standard errors of the estimate", () => {
+		const shaded = mcShade(0.5, 4000);
+		assert.ok(Math.abs(shaded - (0.5 + 2 * Math.sqrt(0.25 / 4000))) < 1e-12);
+	});
+
+	test("a closed-form probability is not shaded", () => {
+		assert.strictEqual(mcShade(0.3, Infinity), 0.3);
+	});
+
+	test("an impossible outcome stays impossible", () => {
+		assert.strictEqual(mcShade(0, 4000), 0);
+	});
+});
+
+describe("marginToWinProb with a custom sigma", () => {
+	test("defaults to MARGIN_SIGMA", () => {
+		assert.strictEqual(marginToWinProb(6), marginToWinProb(6, MARGIN_SIGMA));
+	});
+
+	test("noisier games pull the favorite toward a coin flip", () => {
+		const short = marginToWinProb(6, 26);
+		const normal = marginToWinProb(6, 13);
+		assert.ok(short > 0.5 && short < normal);
 	});
 });
