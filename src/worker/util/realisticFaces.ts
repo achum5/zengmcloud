@@ -389,6 +389,28 @@ type AgeBand = {
 	// PER YEAR, for a player predisposed to it, used when a face ages. Distinct
 	// from `balding` above: that one describes a population at a moment, this
 	// one is a hazard rate applied every preseason.
+	//
+	// Kept deliberately low, because ONE successful roll is a big visual step.
+	// facesjs has no gentle "slightly receding" hair - the rung below a normal
+	// cut is `short-bald`, a pronounced horseshoe - so a player who takes a
+	// single rung doesn't look like he's starting to lose it, he looks like
+	// he's lost it. There is no way to make that first step smaller, so the
+	// answer is to make it rarer.
+	//
+	// Measured over 20,000 replayed careers (rookie at 20, same seed before and
+	// after), share of the WHOLE league who have LOST hair by each age. A
+	// shaved head is not hair loss and is not counted: facesjs generates `bald`
+	// as one of its ordinary styles at any age, and shavesHead adds more on
+	// purpose, which together are a steady ~13% at every age.
+	//
+	//        25     28     30     32     34     36     38
+	//   was  1.1%   2.7%   4.2%   6.4%   8.2%  10.0%  11.7%
+	//   now  0.6%   1.7%   2.5%   3.8%   5.1%   6.0%   7.7%
+	//
+	// The old rates put a horseshoe on about one man in nine by the end of a
+	// long career, on top of the one in eight already wearing a bare scalp by
+	// choice - a quarter of the veterans in the league, which reads as everyone
+	// going bald together rather than as the occasional player losing his hair.
 	baldingPerYear: number;
 	glasses: number;
 };
@@ -407,7 +429,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.45,
 		tiers: { light: 0.7, medium: 0.3 },
 		balding: 0.02,
-		baldingPerYear: 0.015,
+		baldingPerYear: 0.008,
 		glasses: 0.03,
 	},
 	{
@@ -415,7 +437,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.6,
 		tiers: { light: 0.4, medium: 0.35, heavy: 0.25 },
 		balding: 0.06,
-		baldingPerYear: 0.03,
+		baldingPerYear: 0.018,
 		glasses: 0.03,
 	},
 	{
@@ -423,7 +445,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.65,
 		tiers: { light: 0.3, medium: 0.33, heavy: 0.32, period: 0.05 },
 		balding: 0.12,
-		baldingPerYear: 0.05,
+		baldingPerYear: 0.03,
 		glasses: 0.04,
 	},
 ];

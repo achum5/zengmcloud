@@ -4,6 +4,7 @@ import type { FaceConfig } from "facesjs";
 import { resetG } from "../../test/helpers.ts";
 import { g } from "./index.ts";
 import { generateFace } from "./face.ts";
+import { mulberry32 } from "../../common/sportsbookOdds.ts";
 import {
 	ageFace,
 	applyRealisticFace,
@@ -1199,5 +1200,72 @@ describe("marks a face already carries", () => {
 		applyWrinkles(f, 0, 7);
 		assert.strictEqual(f.smileLine.id, "none");
 		assert.strictEqual(f.eyeLine.id, "none");
+	});
+});
+
+// HOW MUCH OF THE LEAGUE ACTUALLY LOSES ITS HAIR.
+//
+// The per-year rates in FACE_AGE_BANDS are the only thing standing between a
+// league that occasionally balds someone and a league where every veteran is
+// wearing a horseshoe, and nothing else in this file would notice if they
+// drifted: every other balding test forces the roll, so all of them pass at
+// any rate at all. This one plays real careers at real odds.
+//
+// Bands are wide on purpose. The point is to catch a rate that doubled or
+// went to zero, not to freeze the exact number - see the measured table on
+// AgeBand.baldingPerYear for what it is now.
+describe("how much of a league goes bald", () => {
+	// A shaved head is NOT hair loss: facesjs draws `bald` as an ordinary style
+	// at any age, and shavesHead adds more deliberately. Only a hairline that
+	// receded during the replayed career counts.
+	const shareWhoLostHair = (currentAge: number, n: number) => {
+		const realRandom = Math.random;
+		let lost = 0;
+		try {
+			// Seeded, so this is the same n men every run and the test cannot
+			// flake on an unlucky draw.
+			Math.random = mulberry32(12345);
+			const rand = Math.random;
+			for (let i = 0; i < n; i++) {
+				const pid = i * 7 + 3;
+				const f = generateFace();
+				const bornBald = f.hair.id === HAIR_BALD;
+				applyFaceAgingHistory({
+					face: f,
+					rookieAge: 20,
+					currentAge,
+					pid,
+					rand,
+				});
+				if (
+					f.hair.id === HAIR_THINNING ||
+					(f.hair.id === HAIR_BALD && !bornBald && !shavesHead(pid))
+				) {
+					lost += 1;
+				}
+			}
+		} finally {
+			Math.random = realRandom;
+		}
+		return lost / n;
+	};
+
+	test("a 34-year-old league has a few balding men, not a room full", () => {
+		const share = shareWhoLostHair(34, 3000);
+		assert.isAbove(share, 0.02, `only ${(100 * share).toFixed(1)}% by 34`);
+		assert.isBelow(share, 0.07, `${(100 * share).toFixed(1)}% balding by 34`);
+	});
+
+	test("and it keeps climbing to the end of a career", () => {
+		const at30 = shareWhoLostHair(30, 3000);
+		const at38 = shareWhoLostHair(38, 3000);
+		assert.isAbove(at38, at30);
+		assert.isBelow(at38, 0.1, `${(100 * at38).toFixed(1)}% balding by 38`);
+	});
+
+	test("nobody has lost a hairline before the rates start", () => {
+		// The youngest band is 0 per year, so a 22-year-old who is not wearing a
+		// shave by choice still has his hairline.
+		assert.strictEqual(shareWhoLostHair(22, 1500), 0);
 	});
 });
