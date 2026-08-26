@@ -1,18 +1,110 @@
 import { assert, describe, test } from "vitest";
 import {
+	headerStickyFallbackShift,
 	keyboardLikelyOpen,
 	tickerMeasuredShift,
 } from "./visualViewportHeader.ts";
 
-// THE HEADER HAS NO TEST HERE BECAUSE IT HAS NO CODE HERE.
+// THE HEADER IS STILL NOT PLACED FROM THE VIEWPORT.
 //
 // It used to be pushed down by visualViewport.offsetTop. Five builds of that
 // idea failed in the field, and the log that settled it has vv.height reporting
 // 1052, 1052, then 646 on the same idle page with innerHeight 1052 throughout -
-// so the readings being trusted were not true. The header is left alone now,
-// and the only thing written to it is the empty transform that strips whatever
-// an older build left behind. A genuinely detached header belongs to the
-// watchdog, which confirms across two frames before it believes a reading.
+// so the readings being trusted were not true.
+//
+// What it has now reads no viewport at all: how far the header sits inside its
+// own parent, against how far the page is scrolled. Those agree whenever sticky
+// is working, so the correction is zero and nothing is written - which is the
+// whole reason it is allowed to exist after six failures. See
+// headerStickyFallbackShift.
+describe("headerStickyFallbackShift", () => {
+	const shift = (o: Partial<Parameters<typeof headerStickyFallbackShift>[0]>) =>
+		headerStickyFallbackShift({
+			headerTop: 0,
+			parentTop: 0,
+			currentShift: 0,
+			scrollY: 0,
+			layoutHeight: 1000,
+			...o,
+		});
+
+	// The case that matters most: a working header must never be touched. This
+	// is the objection that got the sixth build removed - it rode down the page
+	// on every scroll and snapped back at every stop.
+	test("a header that is sticking correctly is left alone", () => {
+		for (const scrollY of [1, 18, 200, 950, 4000]) {
+			// Pinned: the header sits scrollY below the top of its parent, because
+			// the parent has scrolled up and the header has not.
+			assert.equal(
+				shift({ headerTop: 0, parentTop: -scrollY, scrollY }),
+				0,
+				`scrolled ${scrollY}`,
+			);
+		}
+	});
+
+	test("at the top of the document nothing is written either", () => {
+		assert.equal(shift({ headerTop: 0, parentTop: 0, scrollY: 0 }), 0);
+	});
+
+	// The field report: lift 0 against a scroll of 18, and a fresh sticky probe
+	// adrift by the same 18.
+	test("a header that is not sticking is pushed back to the top", () => {
+		assert.equal(shift({ headerTop: -18, parentTop: -18, scrollY: 18 }), 18);
+		assert.equal(
+			shift({ headerTop: -640, parentTop: -640, scrollY: 640 }),
+			640,
+		);
+	});
+
+	test("it converges in one step rather than chasing its own answer", () => {
+		// Same broken header, re-measured with the correction already on it: the
+		// rect has moved down by 18, and the answer must still be 18.
+		assert.equal(
+			shift({ headerTop: 0, parentTop: -18, currentShift: 18, scrollY: 18 }),
+			18,
+		);
+	});
+
+	test("sub-pixel differences are rounding, not misplacement", () => {
+		assert.equal(shift({ headerTop: -1, parentTop: -1, scrollY: 1 }), 0);
+	});
+
+	test("it never pulls the header upward", () => {
+		// A header sitting LOWER than the scroll can explain is a different
+		// fault - a stale node - and belongs to the watchdog's ladder.
+		assert.equal(shift({ headerTop: 60, parentTop: -18, scrollY: 18 }), 0);
+	});
+
+	test("a correction taller than the viewport is refused", () => {
+		assert.equal(
+			shift({
+				headerTop: -5000,
+				parentTop: -5000,
+				scrollY: 5000,
+				layoutHeight: 1000,
+			}),
+			0,
+		);
+	});
+
+	test("missing or nonsense readings write nothing", () => {
+		assert.equal(shift({ headerTop: undefined }), 0);
+		assert.equal(shift({ parentTop: undefined }), 0);
+		assert.equal(shift({ scrollY: undefined }), 0);
+		assert.equal(shift({ headerTop: Number.NaN, scrollY: 18 }), 0);
+		assert.equal(shift({ scrollY: Number.POSITIVE_INFINITY }), 0);
+		assert.equal(
+			shift({
+				headerTop: -18,
+				parentTop: -18,
+				scrollY: 18,
+				currentShift: Number.NaN,
+			}),
+			0,
+		);
+	});
+});
 
 // THE TICKER, MEASURED RATHER THAN PREDICTED.
 //

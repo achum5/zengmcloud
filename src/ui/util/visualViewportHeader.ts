@@ -1,6 +1,9 @@
-// Keep the bottom ticker inside the part of the page the user can actually see.
+// Keep the bottom ticker inside the part of the page the user can actually see,
+// and hold the header up when the browser stops holding it up itself.
 //
-// THE HEADER IS NOT PLACED FROM HERE, AND THE STORY OF WHY IS NOW COMPLETE.
+// THE HEADER IS NEVER PLACED FROM THE VIEWPORT, AND THE STORY OF WHY FOLLOWS.
+// It does now get one correction, but not from any viewport number - see
+// headerStickyFallbackShift below, and read this first for what it must not do.
 //
 // Five builds of a viewport-derived header correction failed in the field,
 // because `visualViewport` lies on the device that needed them: its height
@@ -32,6 +35,97 @@
 // THE TICKER KEEPS ITS CORRECTION, because it is MEASURED rather than derived
 // from the viewport - see tickerMeasuredShift below - so a lying viewport
 // cannot move it.
+//
+// AND THE HEADER NOW HAS ONE ON THE SAME TERMS. The report that reopened this
+// added the reading the earlier rounds never had: a position:sticky element
+// created on the spot, in the page, measured -18 while the page was scrolled 18
+// - so sticky was not engaging for ANYTHING, not just for a stale header node.
+// That is a browser fault the app cannot prevent, and the watchdog was right
+// that no repair of an element could fix it, but "correctly diagnosed" left the
+// header scrolling off the screen until the app was force-quit. The correction
+// below reads no viewport, only how far the header sits inside its own parent
+// against how far the page is scrolled, and computes to zero whenever sticky is
+// working - which is the condition the sixth build failed and the reason this
+// one is allowed to exist.
+
+// WHEN STICKY IS NOT STICKING AT ALL, PUT THE HEADER WHERE STICKY WOULD.
+//
+// This is not a seventh viewport-derived correction - it reads no visualViewport
+// number at all. It uses the one measurement the field reports have been
+// carrying all along, and which the snapshot already prints as headerLift: how
+// far the header sits inside its own parent.
+//
+//     pinned by a working sticky  ->  lift == scrollY
+//     not sticking at all         ->  lift == 0
+//
+// The last report was lift=0 against a scroll of 18, and a freshly inserted
+// position:sticky probe read -18 too, so sticky was not engaging for anything
+// in the page - a WebKit fault the app cannot prevent and, until now, did
+// nothing about: the watchdog correctly concluded no ELEMENT repair could help
+// and stopped there, leaving the header to scroll away.
+//
+// scrollY is safe to use where visualViewport was not. It is corroborated by
+// documentElement.scrollTop in every report, and the failure mode that killed
+// the earlier builds - a viewport lying about its height - cannot reach it.
+//
+// Self-cancelling by construction: a healthy header measures lift == scrollY,
+// so the shift is zero and nothing is written. The ugliness the owner rejected
+// was a correction that ran on every scroll of a WORKING header; this one is
+// inert unless sticky is actually broken.
+export const headerStickyFallbackShift = ({
+	headerTop,
+	parentTop,
+	currentShift,
+	scrollY,
+	layoutHeight,
+}: {
+	// getBoundingClientRect().top of the header and of its parent.
+	headerTop: number | undefined;
+	parentTop: number | undefined;
+	// The correction already written on the header, subtracted back out so this
+	// converges in one step instead of measuring its own last answer.
+	currentShift: number;
+	// How far the document is scrolled - where a pinned header's lift should be.
+	scrollY: number | undefined;
+	// documentElement.clientHeight, only to reject a nonsense correction.
+	layoutHeight: number | undefined;
+}): number => {
+	if (
+		headerTop === undefined ||
+		parentTop === undefined ||
+		scrollY === undefined ||
+		!Number.isFinite(headerTop) ||
+		!Number.isFinite(parentTop) ||
+		!Number.isFinite(scrollY) ||
+		!Number.isFinite(currentShift) ||
+		scrollY <= 0
+	) {
+		return 0;
+	}
+	const lift = headerTop - currentShift - parentTop;
+	const shift = scrollY - lift;
+	// Rounding, not misplacement.
+	if (!Number.isFinite(shift) || Math.abs(shift) < 2) {
+		return 0;
+	}
+	// Only ever DOWNWARD. A negative shift would be the header sitting lower
+	// than the scroll can explain, which is a different fault (a stale node the
+	// watchdog rebuilds) and not something to paper over here.
+	if (shift < 0) {
+		return 0;
+	}
+	// A correction taller than the viewport is not a header that failed to
+	// stick, it is one that has come adrift entirely - again the watchdog's job.
+	if (
+		layoutHeight !== undefined &&
+		Number.isFinite(layoutHeight) &&
+		layoutHeight > 0 &&
+		shift > layoutHeight
+	) {
+		return 0;
+	}
+	return Math.round(shift);
+};
 
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 const TICKER_SELECTOR = ".league-ticker";
@@ -172,11 +266,22 @@ export const applyHeaderShift = (
 // not `transform`). The ticker then sits mid-page, provably "detached", and
 // unrepairable forever.
 export const resyncStickyBarShifts = () => {
-	// Always zero. The header is not placed from the viewport (see the top of
-	// this file), and passing 0 is what strips a translateY an older build
-	// left on it - including one that survived a suspend, which is the only
-	// way the old shift could persist unnoticed.
-	applyHeaderShift(document.querySelector<HTMLElement>(HEADER_SELECTOR), 0);
+	// Not placed from the viewport (see the top of this file). The only
+	// correction it ever gets is the measured one above, and only when sticky
+	// has stopped working altogether - which computes to 0 on a healthy page,
+	// so this still strips a translateY an older build left behind.
+	const header = document.querySelector<HTMLElement>(HEADER_SELECTOR);
+	applyHeaderShift(
+		header,
+		headerStickyFallbackShift({
+			headerTop: header?.getBoundingClientRect().top,
+			parentTop: header?.parentElement?.getBoundingClientRect().top,
+			currentShift: header ? currentShiftOf(header) : 0,
+			scrollY: window.scrollY,
+			layoutHeight:
+				document.documentElement?.clientHeight || window.innerHeight,
+		}),
+	);
 
 	const ticker = document.querySelector<HTMLElement>(TICKER_SELECTOR);
 	if (!ticker) {
