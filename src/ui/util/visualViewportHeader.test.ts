@@ -1,7 +1,8 @@
 import { assert, describe, test } from "vitest";
 import {
-	headerStickyFallbackShift,
+	headerLooksUnstuck,
 	keyboardLikelyOpen,
+	stickyIsBroken,
 	tickerMeasuredShift,
 } from "./visualViewportHeader.ts";
 
@@ -12,97 +13,88 @@ import {
 // 1052, 1052, then 646 on the same idle page with innerHeight 1052 throughout -
 // so the readings being trusted were not true.
 //
-// What it has now reads no viewport at all: how far the header sits inside its
-// own parent, against how far the page is scrolled. Those agree whenever sticky
-// is working, so the correction is zero and nothing is written - which is the
-// whole reason it is allowed to exist after six failures. See
-// headerStickyFallbackShift.
-describe("headerStickyFallbackShift", () => {
-	const shift = (o: Partial<Parameters<typeof headerStickyFallbackShift>[0]>) =>
-		headerStickyFallbackShift({
-			headerTop: 0,
-			parentTop: 0,
-			currentShift: 0,
-			scrollY: 0,
-			layoutHeight: 1000,
-			...o,
-		});
+// What it has now reads no viewport at all. It asks one question - is
+// position:sticky working in this page - and if the answer is no, takes the
+// header out of flow at the top of the viewport, which is where sticky would
+// have held it.
+//
+// THE PREVIOUS BUILD OF THIS ANSWERED THE SAME QUESTION WITH A TRANSFORM AND
+// BROKE SOMETHING ELSE. Translating an in-flow element down adds to scrollable
+// overflow in WebKit, so the page grew by however far the header was pushed,
+// which allowed more scroll, which pushed it further. Out of flow cannot do
+// that, which is the whole reason for position:fixed here.
+describe("stickyIsBroken", () => {
+	const broken = (o: Partial<Parameters<typeof stickyIsBroken>[0]>) =>
+		stickyIsBroken({ probeTop: 0, scrollY: 100, ...o });
 
-	// The case that matters most: a working header must never be touched. This
-	// is the objection that got the sixth build removed - it rode down the page
-	// on every scroll and snapped back at every stop.
-	test("a header that is sticking correctly is left alone", () => {
-		for (const scrollY of [1, 18, 200, 950, 4000]) {
-			// Pinned: the header sits scrollY below the top of its parent, because
-			// the parent has scrolled up and the header has not.
+	test("a probe sitting where it belongs means sticky works", () => {
+		assert.equal(broken({ probeTop: 0 }), false);
+		assert.equal(broken({ probeTop: -1 }), false);
+	});
+
+	test("a probe adrift by the scroll means sticky is not engaging", () => {
+		// The field reading: probe -18 on a page scrolled 18.
+		assert.equal(broken({ probeTop: -18, scrollY: 18 }), true);
+		assert.equal(broken({ probeTop: -640, scrollY: 640 }), true);
+	});
+
+	test("at the top of the document the two cases are the same place", () => {
+		assert.equal(broken({ probeTop: 0, scrollY: 0 }), false);
+		assert.equal(broken({ probeTop: -2, scrollY: 2 }), false);
+	});
+
+	test("a missing or nonsense reading is not evidence of a fault", () => {
+		assert.equal(broken({ probeTop: undefined }), false);
+		assert.equal(broken({ scrollY: undefined }), false);
+		assert.equal(broken({ probeTop: Number.NaN }), false);
+		assert.equal(broken({ scrollY: Number.NaN }), false);
+	});
+});
+
+// The cheap pre-check, so a healthy device never pays for a probe at all.
+describe("headerLooksUnstuck", () => {
+	const looks = (o: Partial<Parameters<typeof headerLooksUnstuck>[0]>) =>
+		headerLooksUnstuck({ headerTop: 0, parentTop: 0, scrollY: 100, ...o });
+
+	test("a pinned header sits scrollY below the top of its parent", () => {
+		for (const scrollY of [18, 100, 900]) {
 			assert.equal(
-				shift({ headerTop: 0, parentTop: -scrollY, scrollY }),
-				0,
+				looks({ headerTop: 0, parentTop: -scrollY, scrollY }),
+				false,
 				`scrolled ${scrollY}`,
 			);
 		}
 	});
 
-	test("at the top of the document nothing is written either", () => {
-		assert.equal(shift({ headerTop: 0, parentTop: 0, scrollY: 0 }), 0);
+	test("a header that is not sticking sits flush with its parent", () => {
+		assert.equal(looks({ headerTop: -18, parentTop: -18, scrollY: 18 }), true);
 	});
 
-	// The field report: lift 0 against a scroll of 18, and a fresh sticky probe
-	// adrift by the same 18.
-	test("a header that is not sticking is pushed back to the top", () => {
-		assert.equal(shift({ headerTop: -18, parentTop: -18, scrollY: 18 }), 18);
+	// A header that has not been scrolled far enough to pin yet is sitting at
+	// its own place in the page, not failing to stick.
+	test("a header not yet scrolled past is not called unstuck", () => {
+		// Static 90px down its parent, page only scrolled 50 - it pins at 90.
+		assert.equal(looks({ headerTop: 40, parentTop: -50, scrollY: 50 }), false);
+	});
+
+	// And the same header once the page HAS scrolled past it: a pinned one would
+	// read lift 100, so reading 90 means it stayed where it was.
+	test("a header the page has scrolled past, still at its own place, is", () => {
 		assert.equal(
-			shift({ headerTop: -640, parentTop: -640, scrollY: 640 }),
-			640,
+			looks({ headerTop: -10, parentTop: -100, scrollY: 100 }),
+			true,
 		);
 	});
 
-	test("it converges in one step rather than chasing its own answer", () => {
-		// Same broken header, re-measured with the correction already on it: the
-		// rect has moved down by 18, and the answer must still be 18.
-		assert.equal(
-			shift({ headerTop: 0, parentTop: -18, currentShift: 18, scrollY: 18 }),
-			18,
-		);
+	test("nothing to tell apart at the top of the document", () => {
+		assert.equal(looks({ headerTop: 0, parentTop: 0, scrollY: 0 }), false);
 	});
 
-	test("sub-pixel differences are rounding, not misplacement", () => {
-		assert.equal(shift({ headerTop: -1, parentTop: -1, scrollY: 1 }), 0);
-	});
-
-	test("it never pulls the header upward", () => {
-		// A header sitting LOWER than the scroll can explain is a different
-		// fault - a stale node - and belongs to the watchdog's ladder.
-		assert.equal(shift({ headerTop: 60, parentTop: -18, scrollY: 18 }), 0);
-	});
-
-	test("a correction taller than the viewport is refused", () => {
-		assert.equal(
-			shift({
-				headerTop: -5000,
-				parentTop: -5000,
-				scrollY: 5000,
-				layoutHeight: 1000,
-			}),
-			0,
-		);
-	});
-
-	test("missing or nonsense readings write nothing", () => {
-		assert.equal(shift({ headerTop: undefined }), 0);
-		assert.equal(shift({ parentTop: undefined }), 0);
-		assert.equal(shift({ scrollY: undefined }), 0);
-		assert.equal(shift({ headerTop: Number.NaN, scrollY: 18 }), 0);
-		assert.equal(shift({ scrollY: Number.POSITIVE_INFINITY }), 0);
-		assert.equal(
-			shift({
-				headerTop: -18,
-				parentTop: -18,
-				scrollY: 18,
-				currentShift: Number.NaN,
-			}),
-			0,
-		);
+	test("a missing reading is not evidence of a fault", () => {
+		assert.equal(looks({ headerTop: undefined }), false);
+		assert.equal(looks({ parentTop: undefined }), false);
+		assert.equal(looks({ scrollY: undefined }), false);
+		assert.equal(looks({ headerTop: Number.NaN }), false);
 	});
 });
 

@@ -1256,6 +1256,24 @@ tr.table-warning:hover > td {
 	right: 0;
 }
 
+// The same trick, for the same reason, when position:sticky has stopped working
+// in the page at all - a WebKit fault where a sticky element created on the spot
+// measures adrift by the whole scroll offset, so nothing in the page sticks and
+// the header scrolls off the top. See visualViewportHeader.ts.
+//
+// It has to be position:fixed rather than a transform: a transform on an in-flow
+// element counts toward scrollable overflow, so pushing the header down grew the
+// document, which allowed more scroll, which pushed it further.
+.sticky-fallback-pinned {
+	padding-top: var(--sticky-fallback-header-height, 52px);
+}
+.sticky-fallback-pinned .navbar-border.sticky-top {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+}
+
 .dropdown-links .nav-item,
 .play-button-wrapper {
 	margin: -8px 0;

@@ -50,46 +50,64 @@
 
 // WHEN STICKY IS NOT STICKING AT ALL, PUT THE HEADER WHERE STICKY WOULD.
 //
-// This is not a seventh viewport-derived correction - it reads no visualViewport
-// number at all. It uses the one measurement the field reports have been
-// carrying all along, and which the snapshot already prints as headerLift: how
-// far the header sits inside its own parent.
+// NOT WITH A TRANSFORM. The first build of this did translate the header down
+// by the scroll offset, and it pinned the header correctly - and grew the page.
+// A transform on an in-flow element counts toward scrollable overflow in
+// WebKit, so pushing the header down extended the document, which allowed more
+// scroll, which enlarged the push. The user could scroll a long way past the
+// end of the content and it stayed there. (Chromium does not do this, which is
+// why it took a device to find.)
 //
-//     pinned by a working sticky  ->  lift == scrollY
-//     not sticking at all         ->  lift == 0
+// position:fixed is out of flow and contributes nothing to scrollable overflow,
+// so it cannot feed back into the scroll at all. It anchors to the same layout
+// viewport sticky does, which is exactly where the header belongs.
 //
-// The last report was lift=0 against a scroll of 18, and a freshly inserted
-// position:sticky probe read -18 too, so sticky was not engaging for anything
-// in the page - a WebKit fault the app cannot prevent and, until now, did
-// nothing about: the watchdog correctly concluded no ELEMENT repair could help
-// and stopped there, leaving the header to scroll away.
+// Taking the header out of flow costs its height, so its parent gets that back
+// as padding for as long as the fallback is engaged.
+
+// Is sticky provably not working - from a reading that does NOT depend on what
+// we have already done to the header?
 //
-// scrollY is safe to use where visualViewport was not. It is corroborated by
-// documentElement.scrollTop in every report, and the failure mode that killed
-// the earlier builds - a viewport lying about its height - cannot reach it.
+// It has to be probe-based for that reason. Once the header is fixed, its own
+// position looks correct whether sticky works or not, so measuring the header
+// to decide whether to keep correcting the header is circular, and flickers.
 //
-// Self-cancelling by construction: a healthy header measures lift == scrollY,
-// so the shift is zero and nothing is written. The ugliness the owner rejected
-// was a correction that ran on every scroll of a WORKING header; this one is
-// inert unless sticky is actually broken.
-export const headerStickyFallbackShift = ({
+// At the top of the document a stuck bar and a loose one are in the same place,
+// so there is nothing to tell apart and nothing to correct either.
+export const stickyIsBroken = ({
+	probeTop,
+	scrollY,
+}: {
+	// getBoundingClientRect().top of a position:sticky element created just now.
+	// Zero when sticky works; -scrollY when it is not engaging.
+	probeTop: number | undefined;
+	scrollY: number | undefined;
+}): boolean => {
+	if (
+		probeTop === undefined ||
+		scrollY === undefined ||
+		!Number.isFinite(probeTop) ||
+		!Number.isFinite(scrollY) ||
+		scrollY <= 2
+	) {
+		return false;
+	}
+	return probeTop < -2;
+};
+
+// The cheap pre-check, so a healthy device never pays for a probe. A header
+// that is sticking sits scrollY below the top of its parent; one that is not
+// sits flush with it. Only when this says something is wrong is the probe worth
+// inserting to find out whether it is sticky itself or just this element.
+export const headerLooksUnstuck = ({
 	headerTop,
 	parentTop,
-	currentShift,
 	scrollY,
-	layoutHeight,
 }: {
-	// getBoundingClientRect().top of the header and of its parent.
 	headerTop: number | undefined;
 	parentTop: number | undefined;
-	// The correction already written on the header, subtracted back out so this
-	// converges in one step instead of measuring its own last answer.
-	currentShift: number;
-	// How far the document is scrolled - where a pinned header's lift should be.
 	scrollY: number | undefined;
-	// documentElement.clientHeight, only to reject a nonsense correction.
-	layoutHeight: number | undefined;
-}): number => {
+}): boolean => {
 	if (
 		headerTop === undefined ||
 		parentTop === undefined ||
@@ -97,35 +115,18 @@ export const headerStickyFallbackShift = ({
 		!Number.isFinite(headerTop) ||
 		!Number.isFinite(parentTop) ||
 		!Number.isFinite(scrollY) ||
-		!Number.isFinite(currentShift) ||
-		scrollY <= 0
+		scrollY <= 2
 	) {
-		return 0;
+		return false;
 	}
-	const lift = headerTop - currentShift - parentTop;
-	const shift = scrollY - lift;
-	// Rounding, not misplacement.
-	if (!Number.isFinite(shift) || Math.abs(shift) < 2) {
-		return 0;
-	}
-	// Only ever DOWNWARD. A negative shift would be the header sitting lower
-	// than the scroll can explain, which is a different fault (a stale node the
-	// watchdog rebuilds) and not something to paper over here.
-	if (shift < 0) {
-		return 0;
-	}
-	// A correction taller than the viewport is not a header that failed to
-	// stick, it is one that has come adrift entirely - again the watchdog's job.
-	if (
-		layoutHeight !== undefined &&
-		Number.isFinite(layoutHeight) &&
-		layoutHeight > 0 &&
-		shift > layoutHeight
-	) {
-		return 0;
-	}
-	return Math.round(shift);
+	return Math.abs(headerTop - parentTop) < scrollY - 2;
 };
+
+import { probeStickyTop } from "./stickyHeaderDiagnostics.ts";
+import {
+	STICKY_FALLBACK_CLASS,
+	STICKY_FALLBACK_HEIGHT_VAR,
+} from "./stickyHeaderPin.ts";
 
 const HEADER_SELECTOR = ".navbar-border.sticky-top";
 const TICKER_SELECTOR = ".league-ticker";
@@ -265,23 +266,89 @@ export const applyHeaderShift = (
 // watchdog's position-toggling ladder cannot remove it (it repairs `position`,
 // not `transform`). The ticker then sits mid-page, provably "detached", and
 // unrepairable forever.
+// Put the header out of flow at the top of the viewport, or take it back.
+//
+// A CLASS on the header's parent, not inline styles on the header. The
+// watchdog's repair ladder clears inline `position` on the bars, so an inline
+// fallback and the ladder take it in turns and the header flickers - which is
+// exactly what a browser run showed. The class survives the ladder, and the
+// rules it carries are the ones the iOS modal pin has been using for the same
+// job (see .sticky-fallback-pinned in light.scss).
+//
+// Both directions are idempotent: this runs on every scroll frame and must not
+// touch the DOM when nothing has changed.
+export const applyHeaderFixedFallback = (
+	header: HTMLElement | null,
+	engaged: boolean,
+) => {
+	const parent = header?.parentElement;
+	if (!header || !parent) {
+		return;
+	}
+	if (engaged === parent.classList.contains(STICKY_FALLBACK_CLASS)) {
+		return;
+	}
+	if (engaged) {
+		// Measured BEFORE going out of flow, while it still has a height. The
+		// stylesheet's own fallback covers a header that could not be measured.
+		const height = Math.round(header.getBoundingClientRect().height);
+		if (height > 0) {
+			parent.style.setProperty(STICKY_FALLBACK_HEIGHT_VAR, `${height}px`);
+		}
+		parent.classList.add(STICKY_FALLBACK_CLASS);
+	} else {
+		parent.classList.remove(STICKY_FALLBACK_CLASS);
+		parent.style.removeProperty(STICKY_FALLBACK_HEIGHT_VAR);
+	}
+};
+
+// Probing inserts a node and reads a rect, which forces layout, so it is not
+// something to do on every scroll frame of a healthy page. A device that is
+// broken stays broken, so re-asking is only about noticing that it stopped.
+const PROBE_INTERVAL_MS = 1000;
+let lastProbeAt = 0;
+let lastProbeSaidBroken = false;
+
+const stickyBrokenNow = (header: HTMLElement): boolean => {
+	const scrollY = window.scrollY;
+	const engaged =
+		header.parentElement?.classList.contains(STICKY_FALLBACK_CLASS) === true;
+
+	// While engaged the header's own position proves nothing - it is fixed, so
+	// it looks right either way - and only the probe can say whether to stop.
+	if (
+		!engaged &&
+		!headerLooksUnstuck({
+			headerTop: header.getBoundingClientRect().top,
+			parentTop: header.parentElement?.getBoundingClientRect().top,
+			scrollY,
+		})
+	) {
+		lastProbeSaidBroken = false;
+		return false;
+	}
+
+	const now = Date.now();
+	if (now - lastProbeAt < PROBE_INTERVAL_MS) {
+		return lastProbeSaidBroken;
+	}
+	lastProbeAt = now;
+	lastProbeSaidBroken = stickyIsBroken({
+		probeTop: probeStickyTop(),
+		scrollY,
+	});
+	return lastProbeSaidBroken;
+};
+
 export const resyncStickyBarShifts = () => {
-	// Not placed from the viewport (see the top of this file). The only
-	// correction it ever gets is the measured one above, and only when sticky
-	// has stopped working altogether - which computes to 0 on a healthy page,
-	// so this still strips a translateY an older build left behind.
 	const header = document.querySelector<HTMLElement>(HEADER_SELECTOR);
-	applyHeaderShift(
-		header,
-		headerStickyFallbackShift({
-			headerTop: header?.getBoundingClientRect().top,
-			parentTop: header?.parentElement?.getBoundingClientRect().top,
-			currentShift: header ? currentShiftOf(header) : 0,
-			scrollY: window.scrollY,
-			layoutHeight:
-				document.documentElement?.clientHeight || window.innerHeight,
-		}),
-	);
+	// Never a transform on the header. An older build pushed it down with one
+	// and grew the document doing it - see the note above applyHeaderFixedFallback
+	// - so this also strips whatever such a build left behind.
+	applyHeaderShift(header, 0);
+	if (header) {
+		applyHeaderFixedFallback(header, stickyBrokenNow(header));
+	}
 
 	const ticker = document.querySelector<HTMLElement>(TICKER_SELECTOR);
 	if (!ticker) {
