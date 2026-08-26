@@ -59,8 +59,12 @@ export const getTradeDeadlineGame = async (): Promise<
 // reason a stop is defined as "before day N" rather than "after" - the schedule
 // itself remembers, so there is no cleared-list to sync, to migrate, or to get
 // out of step between devices.
+// `day` is carried on BOTH kinds because the ready-up gate needs a step number
+// that increases through the season - see stopStep in draftReady.ts. Without
+// it every stop in a season shared one step, and readying up for the first one
+// counted as readying up for all of them.
 export type SimStopPoint =
-	| { kind: "deadline"; gid: number }
+	| { kind: "deadline"; gid: number; day: number | undefined }
 	| { kind: "day"; day: number };
 
 export const getPendingSimStop = async (): Promise<
@@ -78,7 +82,9 @@ export const getPendingSimStop = async (): Promise<
 	}
 
 	if (isTradeDeadlineGame(first)) {
-		return stops.deadline ? { kind: "deadline", gid: first.gid } : undefined;
+		return stops.deadline
+			? { kind: "deadline", gid: first.gid, day: first.day }
+			: undefined;
 	}
 	return stopsOnDay(stops, first.day)
 		? { kind: "day", day: first.day! }

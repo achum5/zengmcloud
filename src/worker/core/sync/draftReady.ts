@@ -13,10 +13,13 @@
 //     belonging to a HUMAN team never auto-advances - that user drafting IS
 //     their ready (runPicks pauses on user picks regardless, as a second line
 //     of defense).
-//   - REGULAR_SEASON: not gated in general - only at the TRADE DEADLINE, whose
-//     sentinel sitting at the head of the schedule is what makes the stage
-//     exist. One step: cross it. See tradeDeadlineGate.ts for why the ordinary
-//     sim path refuses to cross while this is live.
+//   - REGULAR_SEASON / AFTER_TRADE_DEADLINE: not gated in general - only when
+//     a configured SIM STOP is the next thing on the schedule, which is either
+//     a day the league asked to pause before or the trade-deadline sentinel.
+//     Each stop is its own gate and its step is the schedule day it sits on,
+//     so readying up for one is not readying up for the next (see stopStep).
+//     See tradeDeadlineGate.ts for why the ordinary sim path refuses to cross
+//     while this is live.
 //   - RESIGN_PLAYERS: one step - start free agency.
 //   - FREE_AGENCY: each day is a step, so you can ready through "N days left"
 //     or the end of free agency (which rolls into the preseason on its own).
@@ -49,6 +52,7 @@ import {
 	getPendingSimStop,
 	getTradeDeadlineGame,
 	setTradeDeadlineGateActive,
+	type SimStopPoint,
 } from "./tradeDeadlineGate.ts";
 import type { DraftReadyEntry, SyncTransport } from "./types.ts";
 import type { MpPhaseReady, Phase } from "../../../common/types.ts";
@@ -63,6 +67,36 @@ const CLAIM_LEASE_MS = 90_000;
 // Free-agency steps are derived from daysLeft (which counts DOWN) so they
 // increase as days sim; the base just keeps them positive.
 const FA_STEP_BASE = 1000;
+
+// A SIM STOP'S STEP NUMBER, AND WHY IT IS NOT JUST 1.
+//
+// A ready entry says "ready through step N of this stage", and a team counts as
+// ready while N >= the step in front of the room. Every other stage keeps that
+// honest by making steps INCREASE - draft picks, free-agency days - so an entry
+// stops covering once the room moves past what you actually agreed to.
+//
+// The regular season used 1 for every stop, and a stage key is only
+// season-and-phase, so one ready entry satisfied every stop for the rest of the
+// season: a league that paused on day 15 and again at the deadline arrived at
+// the deadline with everybody already showing ready, having agreed to nothing.
+// Reported from a live league, and the reason this function exists.
+//
+// The schedule day is the monotonic number that was already there. Day stops
+// use it directly; the deadline uses the day its sentinel sits on, which is
+// always past every day stop that can still be pending in the same phase
+// (crossing it changes phase). The sentinel is alone on its day, so a day stop
+// and the deadline can never collide on one number.
+const DEADLINE_STEP_FALLBACK = 1_000_000;
+
+export const stopStep = (stop: SimStopPoint): number => {
+	if (stop.kind === "day") {
+		return stop.day;
+	}
+	// A sentinel with no day is a legacy schedule row. Every device reads the
+	// same shared row, so they all fall back to the same number - which is what
+	// actually matters here.
+	return stop.day ?? DEADLINE_STEP_FALLBACK;
+};
 
 // The overall pick number (1-based across the whole draft) used as the
 // "ready through" comparator during the draft.
@@ -147,7 +181,14 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 		};
 	}
 
-	if (phase === PHASE.REGULAR_SEASON) {
+	// Both halves of the regular season. AFTER_TRADE_DEADLINE is the same stage
+	// as far as stops are concerned - a league that pauses on a day past the
+	// deadline is in that phase when it gets there - and leaving it out armed
+	// the gate (which is on whenever the evaluator is running) with nothing able
+	// to open it, so the room could only get past such a day via "Advance
+	// anyway". The deadline sentinel cannot exist in this phase, so only day
+	// stops reach the second branch below.
+	if (phase === PHASE.REGULAR_SEASON || phase === PHASE.AFTER_TRADE_DEADLINE) {
 		// The regular season is not a gated stage in general - it becomes one for
 		// exactly as long as a configured stop is the next thing on the schedule.
 		// Reading the schedule is a cache hit, so this is cheap enough for the 2s
@@ -159,7 +200,7 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 
 		if (stop.kind === "day") {
 			return {
-				nextStep: 1,
+				nextStep: stopStep(stop),
 				nextLabel: `Play day ${stop.day}`,
 				onClockUser: false,
 				waypoints: [],
@@ -181,7 +222,7 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 
 		const gid = stop.gid;
 		return {
-			nextStep: 1,
+			nextStep: stopStep(stop),
 			nextLabel: "Cross the trade deadline",
 			onClockUser: false,
 			waypoints: [],
@@ -428,8 +469,10 @@ const holdoutNotifPath = (phase: number): string => {
 	switch (phase) {
 		case PHASE.PRESEASON:
 			return "roster";
-		// The only gated moment in the regular season is the trade deadline.
+		// The gated moments in the regular season are the trade deadline and any
+		// configured day stop, both of which are about making moves.
 		case PHASE.REGULAR_SEASON:
+		case PHASE.AFTER_TRADE_DEADLINE:
 			return "trade";
 		case PHASE.DRAFT_LOTTERY:
 			return "draft_lottery";

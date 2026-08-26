@@ -3,6 +3,7 @@ import {
 	lastHoldoutToNotify,
 	overallPickNumber,
 	readyTeamTids,
+	stopStep,
 } from "./draftReady.ts";
 
 describe("draft ready-up", () => {
@@ -156,5 +157,73 @@ describe("draft ready-up", () => {
 				undefined,
 			);
 		});
+	});
+});
+
+// THE BUG: a league that pauses on day 15 and again at the trade deadline
+// arrived at the deadline with everybody already showing ready. Every regular-
+// season stop used step 1, and a stage key is only season-and-phase, so the
+// ready entry published on day 15 went on satisfying every later stop in the
+// season - the room was never asked a second time.
+describe("regular-season sim stops are separate gates", () => {
+	const key = "2026-4";
+	const userTids = [0, 5];
+
+	test("each stop has its own step, increasing through the season", () => {
+		assert.strictEqual(stopStep({ kind: "day", day: 15 }), 15);
+		assert.strictEqual(stopStep({ kind: "day", day: 41 }), 41);
+		// The deadline sits on its own day, later than any day stop that can
+		// still be pending in the same phase.
+		assert.strictEqual(stopStep({ kind: "deadline", gid: 500, day: 60 }), 60);
+		assert.isAbove(
+			stopStep({ kind: "deadline", gid: 500, day: 60 }),
+			stopStep({ kind: "day", day: 41 }),
+		);
+	});
+
+	test("readying up for day 15 does NOT ready you for the deadline", () => {
+		const dayStop = stopStep({ kind: "day", day: 15 });
+		const deadline = stopStep({ kind: "deadline", gid: 500, day: 60 });
+
+		// Both teams ready for the day-15 stop, exactly as the UI publishes it.
+		const ready = {
+			uidA: { untilPick: dayStop, draftKey: key, tid: 0 },
+			uidB: { untilPick: dayStop, draftKey: key, tid: 5 },
+		};
+		assert.deepEqual(readyTeamTids(ready, userTids, key, dayStop), [0, 5]);
+
+		// The room plays day 15 and reaches the deadline. Nobody has agreed to
+		// anything since, so nobody is ready.
+		assert.deepEqual(readyTeamTids(ready, userTids, key, deadline), []);
+	});
+
+	test("a legacy sentinel with no day still gets a step past every day stop", () => {
+		const step = stopStep({ kind: "deadline", gid: 500, day: undefined });
+		assert.isAbove(step, stopStep({ kind: "day", day: 82 }));
+		assert.deepEqual(
+			readyTeamTids(
+				{ uidA: { untilPick: 82, draftKey: key, tid: 0 } },
+				userTids,
+				key,
+				step,
+			),
+			[],
+		);
+	});
+
+	test("readying up for the stop in front of you still counts", () => {
+		const deadline = stopStep({ kind: "deadline", gid: 500, day: 60 });
+		assert.deepEqual(
+			readyTeamTids(
+				{
+					uidA: { untilPick: deadline, draftKey: key, tid: 0 },
+					uidB: { untilPick: deadline, draftKey: key, tid: 5 },
+				},
+				userTids,
+				key,
+				deadline,
+			),
+			[0, 5],
+		);
 	});
 });

@@ -127,9 +127,12 @@ describe("which stop the sim is standing in front of", () => {
 		assert.strictEqual(await getPendingSimStop(), undefined);
 
 		g.setWithoutSavingToDB("simStopDays", "15, deadline");
+		// The sentinel's day rides along: the ready-up gate turns it into a step
+		// number, so readying up for an earlier stop cannot count for this one.
 		assert.deepStrictEqual(await getPendingSimStop(), {
 			kind: "deadline",
 			gid: 500,
+			day: 40,
 		});
 	});
 
