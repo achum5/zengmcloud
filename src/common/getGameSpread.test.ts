@@ -150,3 +150,70 @@ describe("getGameSpread with a synergy reading", () => {
 		);
 	});
 });
+
+// The playoff branch: the engine plays playoff games with synergy counting
+// roughly double and a bigger home edge (measured - see the playoff constants
+// in getGameSpread.ts).
+describe("getGameSpread in the playoffs", () => {
+	const base = {
+		homeCourtAdvantage: 1,
+		neutralSite: false,
+		numPeriods: 4,
+		quarterLength: 12,
+		playoffs: true,
+	};
+
+	test("uses the measured playoff coefficients exactly", () => {
+		// 0.108 * 10 + 17.7 * 0.5 + 3.3504 * 1.465 = 14.8368... -> 15.
+		assert.strictEqual(
+			getGameSpread({ ...base, ovr0: 60, ovr1: 50, synergyDiff: 0.5 }),
+			15,
+		);
+	});
+
+	test("playoff home court is worth about a point and a half more", () => {
+		const regular = getGameSpread({
+			...base,
+			playoffs: false,
+			ovr0: 50,
+			ovr1: 50,
+			synergyDiff: 0,
+		})!;
+		const playoffs = getGameSpread({
+			...base,
+			ovr0: 50,
+			ovr1: 50,
+			synergyDiff: 0,
+		})!;
+		assert.strictEqual(regular, 3.5); // 3.3504
+		assert.strictEqual(playoffs, 5); // 4.9083
+	});
+
+	test("a fit-built team gains on a talent-built team come playoff time", () => {
+		// Same matchup, two models: dOvr -5 but dSyn +0.3.
+		const args = { ...base, ovr0: 50, ovr1: 55, synergyDiff: 0.3 };
+		const regular = getGameSpread({ ...args, playoffs: false })!;
+		const playoffs = getGameSpread(args)!;
+		// Regular: -0.85 + 2.58 + 3.35 = 5.08; playoffs: -0.54 + 5.31 + 4.91 = 9.68.
+		assert.ok(playoffs - regular > 4, `${regular} -> ${playoffs}`);
+	});
+
+	test("the ovr-only fallback also has a playoff slope", () => {
+		// 0.37 * 10 + 4.9083 = 8.608... -> 8.5.
+		assert.strictEqual(getGameSpread({ ...base, ovr0: 60, ovr1: 50 }), 8.5);
+	});
+
+	test("neutral playoff games drop the whole home edge", () => {
+		// 0.108 * 10 = 1.08 -> 1.
+		assert.strictEqual(
+			getGameSpread({
+				...base,
+				neutralSite: true,
+				ovr0: 60,
+				ovr1: 50,
+				synergyDiff: 0,
+			}),
+			1,
+		);
+	});
+});

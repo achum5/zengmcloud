@@ -18,6 +18,9 @@ import {
 import { PHASE, PLAYER, RATINGS } from "../../../common/constants.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import {
+	BASKETBALL_PLAYOFF_HCA_FACTOR,
+	BASKETBALL_PLAYOFF_SYNERGY_COEF,
+	BASKETBALL_PLAYOFF_SYNERGY_OVR_SLOPE,
 	BASKETBALL_SYNERGY_COEF,
 	BASKETBALL_SYNERGY_OVR_SLOPE,
 	gameLengthFactor,
@@ -495,10 +498,19 @@ export const getLines = async () => {
 	const futuresSigma = MARGIN_SIGMA * Math.sqrt(lengthFactor);
 	const hcaPoints =
 		homeCourtAdvantagePoints(g.get("homeCourtAdvantage")) * lengthFactor;
+	// Playoff home court is measurably bigger (basketball: 4.91 points vs 3.35
+	// - see BASKETBALL_PLAYOFF_HCA_FACTOR).
+	const playoffHcaPoints =
+		hcaPoints * (isSport("basketball") ? BASKETBALL_PLAYOFF_HCA_FACTOR : 1);
 
 	// The model half of a team's rating: its expected margin vs an average team,
-	// before any games inform it.
+	// before any games inform it. `playoffAdjustOf` is what to ADD to a team's
+	// blended rating when it plays a playoff game: the engine plays those with
+	// synergy counting roughly double (measured - see the playoff constants in
+	// getGameSpread.ts), so a team built on fit gains and a team built on raw
+	// talent gives some back.
 	let modelMarginOf: (tid: number) => number;
+	let playoffAdjustOf: (tid: number) => number = () => 0;
 	if (strengthByTid) {
 		// Basketball: the engine-measured spread model, applied vs the league
 		// means. Same coefficients as every game line, so a team's futures price
@@ -523,6 +535,19 @@ export const getLines = async () => {
 					BASKETBALL_SYNERGY_COEF * (r.expectedSynergy! - meanExpSynergy)
 				: (15 / 50) * (r.expectedOvr - meanExpOvr);
 			return margin * lengthFactor;
+		};
+		playoffAdjustOf = (tid) => {
+			const r = strengthByTid!.get(tid);
+			if (!r || !synergyOk) {
+				return 0;
+			}
+			return (
+				((BASKETBALL_PLAYOFF_SYNERGY_OVR_SLOPE - BASKETBALL_SYNERGY_OVR_SLOPE) *
+					(r.expectedOvr - meanExpOvr) +
+					(BASKETBALL_PLAYOFF_SYNERGY_COEF - BASKETBALL_SYNERGY_COEF) *
+						(r.expectedSynergy! - meanExpSynergy)) *
+				lengthFactor
+			);
 		};
 	} else {
 		// Legacy path: ovr gap x 0.6, the Power Rankings scaling.
@@ -565,6 +590,11 @@ export const getLines = async () => {
 		// ...and however big the gap, a sustained point differential has a ceiling.
 		return softCapMargin(blended) * evidence;
 	};
+
+	// A team's strength in PLAYOFF games: the blended rating (which carries
+	// whatever the season's results taught the book) plus the playoff model
+	// shift.
+	const playoffRatingOf = (tid: number) => ratingOf(tid) + playoffAdjustOf(tid);
 
 	const futuresTeams = activeTeams.map((t) => ({
 		tid: t.tid,
@@ -630,9 +660,13 @@ export const getLines = async () => {
 		ratingUncertainty: futuresUncertainty,
 		schedule: futuresSchedule,
 		hcaPoints,
+		playoffHcaPoints,
 		sigma: futuresSigma,
 		playoffsNeutral,
 		finalsNeutral,
+		playoffRatings: new Map(
+			futuresTeams.map((t) => [t.tid, playoffRatingOf(t.tid)]),
+		),
 	});
 
 	// Regular-season markets (division winners, win totals) are DECIDED once the
@@ -687,9 +721,9 @@ export const getLines = async () => {
 				}
 				const ratings = new Map<number, number>();
 				for (const m of matchups) {
-					ratings.set(m.home.tid, ratingOf(m.home.tid));
+					ratings.set(m.home.tid, playoffRatingOf(m.home.tid));
 					if (m.away) {
-						ratings.set(m.away.tid, ratingOf(m.away.tid));
+						ratings.set(m.away.tid, playoffRatingOf(m.away.tid));
 					}
 				}
 				// Regular-season finish order, so simulated later rounds put home
@@ -710,7 +744,7 @@ export const getLines = async () => {
 					// uncertainty is the end-of-ramp value, not the old 3.5-point
 					// default that flattened genuine favorites into free money.
 					ratingUncertainty: futuresUncertainty,
-					hcaPoints: playoffsNeutral ? 0 : hcaPoints,
+					hcaPoints: playoffsNeutral ? 0 : playoffHcaPoints,
 					sigma: futuresSigma,
 					finalsNeutral,
 					seedOrder,

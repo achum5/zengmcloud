@@ -107,9 +107,11 @@ export const simulateFutures = ({
 	ratingUncertainty = 3.5,
 	schedule,
 	hcaPoints = 0,
+	playoffHcaPoints,
 	sigma = MARGIN_SIGMA,
 	playoffsNeutral = false,
 	finalsNeutral = false,
+	playoffRatings,
 }: {
 	teams: FuturesTeam[];
 	// Best-of lengths per playoff round, first round first (e.g. [7,7,7,7]).
@@ -127,9 +129,11 @@ export const simulateFutures = ({
 	// absent from it): balanced schedule vs the average of the OTHER teams.
 	schedule?: FuturesScheduleGame[];
 	// Home team's expected margin bump, in points (engine-calibrated,
-	// length-scaled by the caller). Drives both the schedule weighting above and
-	// the playoff series' game-by-game home pattern.
+	// length-scaled by the caller). Drives the schedule weighting above.
 	hcaPoints?: number;
+	// The playoff series' home edge, when it differs (basketball's measured
+	// playoff HCA is ~1.5 points bigger). Defaults to hcaPoints.
+	playoffHcaPoints?: number;
 	// Per-game margin sigma (length-scaled by the caller).
 	sigma?: number;
 	// League set to neutral-site playoffs: no home edge in any playoff series
@@ -137,6 +141,10 @@ export const simulateFutures = ({
 	playoffsNeutral?: boolean;
 	// League set to a neutral-site finals: no home edge in the final series.
 	finalsNeutral?: boolean;
+	// Per-tid rating for PLAYOFF games, when the sport's playoff margin model
+	// differs from the regular-season one (basketball: synergy counts double).
+	// Missing entries (or the whole map) fall back to the team's rating.
+	playoffRatings?: Map<number, number>;
 }): FuturesResult => {
 	const rounds = Math.max(1, numGamesPlayoffSeries.length);
 	const cids = [...new Set(teams.map((t) => t.cid))];
@@ -222,7 +230,9 @@ export const simulateFutures = ({
 		return numGamesPlayoffSeries[idx] ?? 7;
 	};
 
-	type SimTeam = FuturesTeam & { simWins: number };
+	type SimTeam = FuturesTeam & { simWins: number; playoffRating: number };
+
+	const basePlayoffHca = playoffHcaPoints ?? hcaPoints;
 
 	// Play a seeded single-elimination-of-series bracket, each series game by
 	// game with the real home pattern (the better seed - here, the better
@@ -234,15 +244,15 @@ export const simulateFutures = ({
 			const seriesHca =
 				playoffsNeutral || (isFinals && field.length === 2 && finalsNeutral)
 					? 0
-					: hcaPoints;
+					: basePlayoffHca;
 			const next: SimTeam[] = [];
 			for (let i = 0; i < field.length / 2; i++) {
 				const a = field[i]!;
 				const b = field[field.length - 1 - i]!;
 				const aWins = simSeriesGames({
 					rand,
-					betterRating: a.rating,
-					otherRating: b.rating,
+					betterRating: a.playoffRating,
+					otherRating: b.playoffRating,
 					bestOf,
 					hcaPoints: seriesHca,
 					sigma,
@@ -280,7 +290,13 @@ export const simulateFutures = ({
 				wins += Math.min(t.gamesRemaining, Math.max(0, extra));
 			}
 			winsSamples.get(t.tid)!.push(wins);
-			return { ...t, rating: simRating, simWins: wins + rand() * 0.5 };
+			return {
+				...t,
+				rating: simRating,
+				// The same drawn world, in playoff-model units.
+				playoffRating: (playoffRatings?.get(t.tid) ?? t.rating) + jitter,
+				simWins: wins + rand() * 0.5,
+			};
 		});
 
 		// 2. Division winners: best simulated record in each division.

@@ -636,6 +636,8 @@ const play = async (
 				numPeriods: g.get("numPeriods"),
 				quarterLength: g.get("quarterLength"),
 				synergyDiff: pregameSynergyDiff(teams),
+				// The same rule GameSim itself applies its playoff parameters by.
+				playoffs: g.get("phase") === PHASE.PLAYOFFS,
 			});
 		}
 

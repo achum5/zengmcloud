@@ -45,6 +45,8 @@ import {
 	winTotalLoad,
 } from "./getLines.ts";
 import {
+	BASKETBALL_PLAYOFF_SYNERGY_COEF,
+	BASKETBALL_PLAYOFF_SYNERGY_OVR_SLOPE,
 	BASKETBALL_SYNERGY_COEF,
 	BASKETBALL_SYNERGY_OVR_SLOPE,
 } from "../../../common/getGameSpread.ts";
@@ -71,6 +73,8 @@ const TRUTH_SEASONS = Number(nodeEnv.FUTURES_EV_SEASONS ?? 100_000);
 
 // The engine as measured on real rosters (spreadCalibration.test.ts).
 const HCA_TRUE = 3.3504;
+// Playoff games are worth more to the home side (measured 4.910 / 4.908).
+const HCA_TRUE_PLAYOFFS = 4.909;
 const SIGMA_TRUE = 13.1;
 // The PERSISTENT per-team error the book's ratings carry - the component of
 // the model's miss that follows a team into every game, which is what a
@@ -138,6 +142,15 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 				BASKETBALL_SYNERGY_OVR_SLOPE * (r.expectedOvr - meanOvr) +
 				BASKETBALL_SYNERGY_COEF * (r.expectedSynergy! - meanSyn),
 		);
+		// What each team gains (or gives back) in a playoff game, where synergy
+		// counts roughly double - same construction as getLines' playoffAdjustOf.
+		const playoffAdjust = strengths.map(
+			(r) =>
+				(BASKETBALL_PLAYOFF_SYNERGY_OVR_SLOPE - BASKETBALL_SYNERGY_OVR_SLOPE) *
+					(r.expectedOvr - meanOvr) +
+				(BASKETBALL_PLAYOFF_SYNERGY_COEF - BASKETBALL_SYNERGY_COEF) *
+					(r.expectedSynergy! - meanSyn),
+		);
 
 		// The book's ratings: truth plus its measured model error, drawn once.
 		const errRand = mulberry32(987654321);
@@ -176,6 +189,14 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 		// engine-side ratings in epistemic mode.
 		const STRUCTURAL = BOOK_MODEL_ERROR === 0;
 		let truthRatings: number[] = trueRating;
+		// Playoff-game ratings for the same state: truthRatings + playoffAdjust.
+		let truthPlayoffRatings: number[] = trueRating.map(
+			(r, i) => r + playoffAdjust[i]!,
+		);
+		const setTruthRatings = (base: number[]) => {
+			truthRatings = base;
+			truthPlayoffRatings = base.map((r, i) => r + playoffAdjust[i]!);
+		};
 
 		const truthGame = ([home, away]: [number, number]): TruthGame => ({
 			home,
@@ -186,8 +207,11 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 		});
 
 		// --- Truth machinery ---------------------------------------------------
+		// Series are playoff games: the playoff-model ratings apply.
 		const pTrueSeries = (a: number, b: number, hca: number) =>
-			normalCdf((truthRatings[a]! - truthRatings[b]! + hca) / SIGMA_TRUE);
+			normalCdf(
+				(truthPlayoffRatings[a]! - truthPlayoffRatings[b]! + hca) / SIGMA_TRUE,
+			);
 
 		// Play out a best-of series game by game; `better` holds home court.
 		const playSeries = (
@@ -202,7 +226,9 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 			let bw = betterWon;
 			let ow = otherWon;
 			while (bw < winsNeeded && ow < winsNeeded) {
-				const hca = betterSeedHome(bestOf, bw + ow) ? HCA_TRUE : -HCA_TRUE;
+				const hca = betterSeedHome(bestOf, bw + ow)
+					? HCA_TRUE_PLAYOFFS
+					: -HCA_TRUE_PLAYOFFS;
 				if (rand() < pTrueSeries(better, other, hca)) {
 					bw += 1;
 				} else {
@@ -376,7 +402,7 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 					gpInit[tid]! > 0 ? movSum[tid]! / gpInit[tid]! : 0,
 				),
 			);
-			truthRatings = STRUCTURAL ? stateRating : trueRating;
+			setTruthRatings(STRUCTURAL ? stateRating : trueRating);
 			const truth = runTruth(winsInit, remaining.map(truthGame), seed);
 			const totalRemaining = remaining.length * 2;
 			const totalPossible = n * NUM_GAMES;
@@ -404,7 +430,11 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 				ratingUncertainty: futuresRatingUncertainty(seasonProgress),
 				schedule,
 				hcaPoints: HCA_TRUE,
+				playoffHcaPoints: HCA_TRUE_PLAYOFFS,
 				sigma: MARGIN_SIGMA,
+				playoffRatings: new Map(
+					tids.map((tid) => [tid, stateRating[tid]! + playoffAdjust[tid]!]),
+				),
 			});
 			for (const tid of tids) {
 				grade(
@@ -523,10 +553,12 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 			// The book's end-of-season blended ratings, and which ratings the truth
 			// bracket runs on (the series-in-progress states below are generated
 			// from engine-side reality either way).
-			const playoffRating = tids.map((tid) =>
-				bookRating(tid, NUM_GAMES, full.mov[tid]! / NUM_GAMES),
+			const playoffRating = tids.map(
+				(tid) =>
+					bookRating(tid, NUM_GAMES, full.mov[tid]! / NUM_GAMES) +
+					playoffAdjust[tid]!,
 			);
-			truthRatings = trueRating;
+			setTruthRatings(trueRating);
 			const matchups: BracketMatchup[] = [];
 			for (const cid of cids) {
 				const seeds = tids
@@ -540,8 +572,8 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 					let ow = 0;
 					for (let gm = 0; gm < 3; gm++) {
 						const hca = betterSeedHome(PLAYOFF_SERIES[0]!, gm)
-							? HCA_TRUE
-							: -HCA_TRUE;
+							? HCA_TRUE_PLAYOFFS
+							: -HCA_TRUE_PLAYOFFS;
 						if (seedRand() < pTrueSeries(better, other, hca)) {
 							bw += 1;
 						} else {
@@ -556,7 +588,14 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 			}
 
 			// Truth: finish the bracket from this exact state, many times.
-			truthRatings = STRUCTURAL ? playoffRating : trueRating;
+			// (playoffRating already carries the playoff adjust; setTruthRatings
+			// would add it twice, so set the pair directly.)
+			if (STRUCTURAL) {
+				truthRatings = playoffRating.map((r, i) => r - playoffAdjust[i]!);
+				truthPlayoffRatings = playoffRating;
+			} else {
+				setTruthRatings(trueRating);
+			}
 			const titleCount = new Float64Array(n);
 			const confCount = new Float64Array(n);
 			const truthRand = mulberry32(6006);
@@ -630,7 +669,7 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 				iterations: 4000,
 				seed: 5005,
 				ratingUncertainty: futuresRatingUncertainty(1),
-				hcaPoints: HCA_TRUE,
+				hcaPoints: HCA_TRUE_PLAYOFFS,
 				sigma: MARGIN_SIGMA,
 				seedOrder,
 			});

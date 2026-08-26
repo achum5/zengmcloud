@@ -23,12 +23,22 @@
 //   within-matchup margin sigma: 13.09 / 13.10 (MARGIN_SIGMA 13 - validated),
 //   flat across spread sizes (13.0-13.8 from pick'em to 20+ blowouts).
 //   total: mean ~209, sigma 17.7-17.8 = 8.5% of the mean (overProb's 0.085).
+//   persistent per-team model error: 1.30 / 1.35 (FUTURES_MODEL_ERROR).
+//
+// With SPREAD_CALIBRATION_PLAYOFFS=1 the same run uses the engine's playoff
+// parameters (synergy x2.5, fatigue /1.85). That run found:
+//   refits (0.135, 16.7, hca 4.910) and (0.081, 18.8, hca 4.908) - the
+//   shipped playoff constants are the averages; sigma still ~13.1; totals
+//   mean drops 6.6% (the playoff totals factor).
 import { assert, test } from "vitest";
 import { resetG } from "../../../test/helpers.ts";
 import { g, helpers } from "../../util/index.ts";
 import GameSim from "../GameSim.ts";
 import { processTeam } from "./loadTeams.ts";
-import { DEFAULT_PLAY_THROUGH_INJURIES } from "../../../common/constants.ts";
+import {
+	DEFAULT_PLAY_THROUGH_INJURIES,
+	PHASE,
+} from "../../../common/constants.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
@@ -39,6 +49,10 @@ const nodeEnv: Record<string, string | undefined> =
 	(globalThis as any).process?.env ?? {};
 const ROSTERS = nodeEnv.SPREAD_CALIBRATION_ROSTERS;
 const K = Number(nodeEnv.SPREAD_CALIBRATION_SIMS ?? 60);
+// Sim with the engine's PLAYOFF parameters (synergy x2.5, fatigue /1.85) and
+// refit - playoff games are a different margin model, and the shipped
+// regular-season assertions don't apply to it.
+const PLAYOFFS_MODE = nodeEnv.SPREAD_CALIBRATION_PLAYOFFS === "1";
 
 test.skipIf(!ROSTERS || !isSport("basketball"))(
 	"spread coefficients vs the engine",
@@ -47,6 +61,9 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 		resetG();
 		g.setWithoutSavingToDB("userTids", []);
 		g.setWithoutSavingToDB("userTid", 0);
+		if (PLAYOFFS_MODE) {
+			g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+		}
 
 		const fs = await import(("node" + ":fs") as any);
 		const data = JSON.parse(fs.readFileSync(ROSTERS!, "utf8"));
@@ -136,6 +153,7 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 					quarterLength: g.get("quarterLength"),
 					synergyDiff:
 						s0 !== undefined && s1 !== undefined ? s0 - s1 : undefined,
+					playoffs: PLAYOFFS_MODE,
 				})!;
 				rows.push({ i, j, mean: sum / K, pred });
 
@@ -193,8 +211,46 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 			(2 * (nTeams - 1)) ** 2;
 		const persistentSd = Math.sqrt(Math.max(0, rawBiasVar - estNoiseVar));
 
+		// Refit margin ~ a*dOvr + b*dSyn + c on this run's own sims (both
+		// orderings of every pairing, so the predictor means are 0 by symmetry
+		// and the intercept is the home-court advantage). In regular-season mode
+		// this is a drift check on the shipped coefficients; in playoffs mode it
+		// IS the measurement.
+		let refitLine = "  refit: synergy unavailable";
+		if (meta.every((m) => m.syn !== undefined)) {
+			let sxx = 0;
+			let syy = 0;
+			let sxy = 0;
+			let sxm = 0;
+			let sym = 0;
+			let mSum = 0;
+			for (const r of rows) {
+				const dOvr = meta[r.i]!.ovr - meta[r.j]!.ovr;
+				const dSyn = meta[r.i]!.syn! - meta[r.j]!.syn!;
+				sxx += dOvr * dOvr;
+				syy += dSyn * dSyn;
+				sxy += dOvr * dSyn;
+				sxm += dOvr * r.mean;
+				sym += dSyn * r.mean;
+				mSum += r.mean;
+			}
+			const det = sxx * syy - sxy * sxy;
+			const aOvr = (syy * sxm - sxy * sym) / det;
+			const bSyn = (sxx * sym - sxy * sxm) / det;
+			const hca = mSum / rows.length;
+			let residSS = 0;
+			for (const r of rows) {
+				const dOvr = meta[r.i]!.ovr - meta[r.j]!.ovr;
+				const dSyn = meta[r.i]!.syn! - meta[r.j]!.syn!;
+				const fit = aOvr * dOvr + bSyn * dSyn + hca;
+				residSS += (fit - r.mean) ** 2;
+			}
+			refitLine = `  refit: margin = ${aOvr.toFixed(4)} * dOvr + ${bSyn.toFixed(3)} * dSyn + ${hca.toFixed(3)}, resid sd ${Math.sqrt(residSS / rows.length).toFixed(3)}`;
+		}
+
 		const summary =
-			`spread calibration: ${rows.length} pairings x ${K} sims - MAE ${mae.toFixed(3)} (noise floor ~${noiseFloor.toFixed(2)}), bias ${bias.toFixed(3)}\n` +
+			`spread calibration${PLAYOFFS_MODE ? " (PLAYOFF parameters)" : ""}: ${rows.length} pairings x ${K} sims - MAE ${mae.toFixed(3)} (noise floor ~${noiseFloor.toFixed(2)}), bias ${bias.toFixed(3)}\n` +
+			`${refitLine}\n` +
 			`  margin sigma ${marginSigma.toFixed(3)} (${binSummary})\n` +
 			`  total: mean ${meanTotal.toFixed(1)}, sigma ${totalSigma.toFixed(3)} (${((100 * totalSigma) / meanTotal).toFixed(2)}% of mean)\n` +
 			`  persistent per-team model error: ${persistentSd.toFixed(3)} (raw ${Math.sqrt(rawBiasVar).toFixed(3)}, est noise ${Math.sqrt(estNoiseVar).toFixed(3)})`;
@@ -207,10 +263,23 @@ test.skipIf(!ROSTERS || !isSport("basketball"))(
 		// The shipped ovr-only model measured ~2.8 on this style of run; the
 		// synergy model ~2.0. Failing at 2.6 means the engine has drifted from the
 		// coefficients enough to matter - time to re-fit, not to loosen this.
-		assert.ok(
-			mae < 2.6,
-			`MAE ${mae.toFixed(3)} - coefficients need re-fitting`,
-		);
-		assert.ok(Math.abs(bias) < 0.75, `bias ${bias.toFixed(3)}`);
+		//
+		// Playoff mode verifies the shipped PLAYOFF coefficients, whose fit is
+		// genuinely looser: the two leagues' own best playoff fits left 2.6 and
+		// 3.5 points of residual (collinearity splits the ovr/synergy credit
+		// differently per league), so the shipped averages get a wider band.
+		if (PLAYOFFS_MODE) {
+			assert.ok(
+				mae < 4,
+				`playoff MAE ${mae.toFixed(3)} - coefficients need re-fitting`,
+			);
+			assert.ok(Math.abs(bias) < 0.9, `playoff bias ${bias.toFixed(3)}`);
+		} else {
+			assert.ok(
+				mae < 2.6,
+				`MAE ${mae.toFixed(3)} - coefficients need re-fitting`,
+			);
+			assert.ok(Math.abs(bias) < 0.75, `bias ${bias.toFixed(3)}`);
+		}
 	},
 );

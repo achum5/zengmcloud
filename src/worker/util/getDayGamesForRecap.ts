@@ -943,6 +943,7 @@ export const getDayGamesForRecap = async ({
 				neutralSite: !!game.neutralSite,
 				numPeriods: game.numPeriods ?? g.get("numPeriods"),
 				quarterLength: g.get("quarterLength"),
+				playoffs,
 			});
 		if (rawSpread !== undefined) {
 			// > 0 → home (teams[0]) favored; < 0 → away favored; 0 → pick'em.
@@ -1439,6 +1440,7 @@ const createAutoRecapContext = async (season: number) => {
 				neutralSite: !!game.neutralSite,
 				numPeriods: game.numPeriods ?? g.get("numPeriods"),
 				quarterLength: g.get("quarterLength"),
+				playoffs,
 			});
 		if (rawSpread !== undefined) {
 			spread =

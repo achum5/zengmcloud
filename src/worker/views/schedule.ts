@@ -237,6 +237,7 @@ export const getUpcoming = async ({
 				synergy0 !== undefined && synergy1 !== undefined
 					? synergy0 - synergy1
 					: undefined,
+			playoffs: phase === PHASE.PLAYOFFS,
 		});
 		return margin === undefined ? undefined : roundHalf(margin);
 	};

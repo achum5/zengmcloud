@@ -3,12 +3,13 @@ import { g } from "../../util/index.ts";
 import teamOvr from "../team/ovr.ts";
 import { getActualPlayThroughInjuries } from "../game/loadTeams.ts";
 import {
+	BASKETBALL_PLAYOFF_TOTAL_FACTOR,
 	gameLengthFactor,
 	getGameSpread,
 } from "../../../common/getGameSpread.ts";
 import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
 import { PHASE } from "../../../common/constants.ts";
-import { bySport } from "../../../common/sportFunctions.ts";
+import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import {
 	probToAmerican,
 	SPORTSBOOK_MAX_AMERICAN,
@@ -223,6 +224,7 @@ export const buildGameLinePricer = async ({
 			}
 
 			const neutralSite = isNeutralSite(matchup);
+			const playoffs = !!roundSeries;
 			const synergy0 = gameSynergy(home, matchup.day);
 			const synergy1 = gameSynergy(away, matchup.day);
 			const margin = getGameSpread({
@@ -236,19 +238,28 @@ export const buildGameLinePricer = async ({
 					synergy0 !== undefined && synergy1 !== undefined
 						? synergy0 - synergy1
 						: undefined,
+				playoffs,
 			});
 			if (margin === undefined) {
 				return undefined;
 			}
 
 			const pHome = marginToWinProb(margin, sigma);
-			const expectedTotal = expectedGameTotal({
-				homeFor: scoringFor(home),
-				homeAgainst: scoringAgainst(home),
-				awayFor: scoringFor(away),
-				awayAgainst: scoringAgainst(away),
-				leagueAvgTotal,
-			});
+			// The scoring rates feeding the total are regular-season numbers, and
+			// the engine scores ~6.6% fewer points under playoff parameters
+			// (measured - see BASKETBALL_PLAYOFF_TOTAL_FACTOR). Without this every
+			// playoff total sat ~14 points high and the under was nearly free.
+			const playoffTotalFactor =
+				playoffs && isSport("basketball") ? BASKETBALL_PLAYOFF_TOTAL_FACTOR : 1;
+			const expectedTotal =
+				playoffTotalFactor *
+				expectedGameTotal({
+					homeFor: scoringFor(home),
+					homeAgainst: scoringAgainst(home),
+					awayFor: scoringFor(away),
+					awayAgainst: scoringAgainst(away),
+					leagueAvgTotal,
+				});
 			const totalLine = toHalfPointLine(expectedTotal);
 			const pOver = overProb(expectedTotal, totalLine);
 			// Home spread: home favored by `margin`, so the line is -margin.

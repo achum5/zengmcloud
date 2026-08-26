@@ -10,7 +10,10 @@ import { idb } from "../../db/index.ts";
 import { getUpcoming } from "../../views/schedule.ts";
 import { getGameSpread, roundHalf } from "../../../common/getGameSpread.ts";
 import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
-import { DEFAULT_PLAY_THROUGH_INJURIES } from "../../../common/constants.ts";
+import {
+	DEFAULT_PLAY_THROUGH_INJURIES,
+	PHASE,
+} from "../../../common/constants.ts";
 import teamOvr from "../team/ovr.ts";
 
 const NUM_TEAMS = 4;
@@ -377,6 +380,56 @@ describe("one spread per game, everywhere", () => {
 			for (const row of await idb.cache.schedule.getAll()) {
 				await idb.cache.schedule.delete(row.gid);
 			}
+		}
+	});
+});
+
+// Playoff pricing: the engine plays playoff games under different parameters,
+// and the pricer has to follow (bigger home edge, synergy counting double,
+// ~6.6% fewer points).
+describe("playoff games price off the playoff model", () => {
+	test("the total comes down and the line moves when the playoffs start", async () => {
+		const regular = await buildGameLinePricer({
+			activeTeams: activeTeams(),
+			season: g.get("season"),
+			todayDay: 1,
+		});
+		const regularLine = regular.priceGame(matchup)!;
+
+		const phaseBefore = g.get("phase");
+		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+		await idb.cache.playoffSeries.put({
+			season: g.get("season"),
+			currentRound: 0,
+			series: [
+				[
+					{
+						home: { tid: 0, cid: 0, seed: 1, won: 0 },
+						away: { tid: 1, cid: 0, seed: 2, won: 0 },
+					},
+				],
+			],
+		} as any);
+		try {
+			const playoffs = await buildGameLinePricer({
+				activeTeams: activeTeams(),
+				season: g.get("season"),
+				todayDay: 1,
+			});
+			const playoffLine = playoffs.priceGame(matchup)!;
+
+			// Same scoring rates, playoff scoring factor applied: the total drops
+			// by ~6.6% (a 208-point pace loses ~14 points).
+			assert.ok(
+				regularLine.total.line - playoffLine.total.line > 8,
+				`total ${regularLine.total.line} -> ${playoffLine.total.line}`,
+			);
+			// And the margin is a different model (bigger home edge, synergy
+			// reweighted) - it must actually move.
+			assert.notStrictEqual(regularLine.margin, playoffLine.margin);
+		} finally {
+			g.setWithoutSavingToDB("phase", phaseBefore);
+			await idb.cache.playoffSeries.delete(g.get("season"));
 		}
 	});
 });
