@@ -1,6 +1,12 @@
 import { assert, describe, test } from "vitest";
 import { softCapMargin } from "./sportsbookOdds.ts";
 import {
+	FUTURES_MODEL_ERROR,
+	FUTURES_PLAYOFF_DELTA_ERROR,
+	FUTURES_PLAYOFF_MODEL_ERROR,
+	futuresPlayoffUncertainty,
+} from "../worker/core/sportsbook/getLines.ts";
+import {
 	bracketMarketsOpen,
 	simulateFutures,
 	simulatePlayoffBracket,
@@ -728,5 +734,64 @@ describe("playoff series home pattern", () => {
 			r.titleProb.get(4)! > r.titleProb.get(0)! + 0.1,
 			`best record ${r.titleProb.get(4)}, other semi host ${r.titleProb.get(0)}`,
 		);
+	});
+});
+
+// The postseason is a different game from the one a season priced - see
+// FUTURES_PLAYOFF_DELTA_ERROR in worker/core/sportsbook/getLines.ts, and the
+// outside-the-loop check in worker/core/game/bracketCalibration.test.ts.
+describe("a playoff rating is less certain than a regular-season one", () => {
+	test("the extra miss is what separates the two measured errors", () => {
+		// Measured: 2.24 per team in the playoffs, 1.30 in the regular season.
+		assert.approximately(
+			Math.hypot(FUTURES_MODEL_ERROR, FUTURES_PLAYOFF_DELTA_ERROR),
+			FUTURES_PLAYOFF_MODEL_ERROR,
+			1e-9,
+		);
+		assert.isAbove(FUTURES_PLAYOFF_MODEL_ERROR, FUTURES_MODEL_ERROR);
+	});
+
+	test("and it always widens the bracket's uncertainty", () => {
+		for (const regular of [0, 0.5, 1, 1.3]) {
+			assert.isAbove(futuresPlayoffUncertainty(regular), regular);
+		}
+		// With the season fully priced it is still the playoff model's own
+		// error that is left over, never zero.
+		assert.approximately(
+			futuresPlayoffUncertainty(0),
+			FUTURES_PLAYOFF_DELTA_ERROR,
+			1e-9,
+		);
+	});
+
+	// The point of the whole thing: a bunched pack must not be priced as
+	// though the book knew the order.
+	test("more uncertainty flattens a field the book cannot really separate", () => {
+		const ratings = new Map([
+			[0, 10.8],
+			[1, 10.7],
+			[2, 10.1],
+			[3, 8.3],
+		]);
+		const matchups: BracketMatchup[] = [
+			{ home: { tid: 0, cid: 0, won: 0 }, away: { tid: 3, cid: 0, won: 0 } },
+			{ home: { tid: 1, cid: 1, won: 0 }, away: { tid: 2, cid: 1, won: 0 } },
+		];
+		const run = (ratingUncertainty: number) =>
+			simulatePlayoffBracket({
+				matchups,
+				startRound: 0,
+				numGamesPlayoffSeries: [7, 7],
+				ratings,
+				iterations: 20_000,
+				seed: 7,
+				ratingUncertainty,
+				hcaPoints: 4.9,
+				sigma: 13,
+			}).titleProb;
+		const tight = run(1);
+		const honest = run(futuresPlayoffUncertainty(1));
+		assert.isBelow(honest.get(0)!, tight.get(0)!);
+		assert.isAbove(honest.get(3)!, tight.get(3)!);
 	});
 });

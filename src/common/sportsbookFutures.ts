@@ -105,6 +105,7 @@ export const simulateFutures = ({
 	iterations = 4000,
 	seed = 1,
 	ratingUncertainty = 3.5,
+	playoffRatingExtraUncertainty = 0,
 	schedule,
 	hcaPoints = 0,
 	playoffHcaPoints,
@@ -123,6 +124,11 @@ export const simulateFutures = ({
 	// treat strength as known exactly, which is why a solid 3rd-best team gets
 	// genuine title equity (+2500, not 99-1) and no tail collapses to zero.
 	ratingUncertainty?: number;
+	// How far the PLAYOFF rating can be off beyond the regular-season rating,
+	// in points - an independent draw per team per iteration. 0 keeps the old
+	// behavior (the playoff rating misses by exactly as much as the
+	// regular-season one and in the same direction).
+	playoffRatingExtraUncertainty?: number;
 	// The remaining regular-season games. When present, each team's per-game win
 	// probability comes from its actual slate - opponents' ratings and the
 	// home/away split - instead of a league-average opponent. Omitted (or a team
@@ -280,6 +286,19 @@ export const simulateFutures = ({
 		const simTeams: SimTeam[] = teams.map((t) => {
 			const jitter = normalSample(rand) * ratingUncertainty;
 			const simRating = t.rating + jitter;
+			// A SECOND, INDEPENDENT MISS on the same team's PLAYOFF strength.
+			// Knowing what a team does over 82 games is not the same as knowing
+			// what it does in May: the engine plays the postseason with synergy
+			// counting roughly double, so the model's read of a roster's fit -
+			// the least certain thing it knows - is what the bracket turns on.
+			// Measured, that costs real accuracy (see
+			// FUTURES_PLAYOFF_DELTA_ERROR in sportsbook/getLines.ts), and it is
+			// error the regular-season jitter above cannot stand in for because
+			// it points somewhere else.
+			const playoffJitter =
+				playoffRatingExtraUncertainty > 0
+					? normalSample(rand) * playoffRatingExtraUncertainty
+					: 0;
 			const base = baseP.get(t.tid)!;
 			const p = Math.min(0.995, Math.max(0.005, base.p + base.slope * jitter));
 			let wins = t.won;
@@ -293,8 +312,10 @@ export const simulateFutures = ({
 			return {
 				...t,
 				rating: simRating,
-				// The same drawn world, in playoff-model units.
-				playoffRating: (playoffRatings?.get(t.tid) ?? t.rating) + jitter,
+				// The same drawn world, in playoff-model units, plus its own
+				// extra miss.
+				playoffRating:
+					(playoffRatings?.get(t.tid) ?? t.rating) + jitter + playoffJitter,
 				simWins: wins + rand() * 0.5,
 			};
 		});

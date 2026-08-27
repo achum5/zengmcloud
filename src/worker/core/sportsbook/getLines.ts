@@ -164,6 +164,39 @@ export const futuresRatingUncertainty = (seasonProgress: number) =>
 // per-team decomposition on two real leagues' rosters: 1.30 and 1.35.
 export const FUTURES_MODEL_ERROR = 1.3;
 
+// THE SAME NUMBER FOR A PLAYOFF GAME, AND IT IS NOT THE SAME NUMBER.
+//
+// The engine plays the postseason with synergy counting roughly double, so the
+// playoff margin model leans on the least certain thing the book knows about a
+// roster - how well it fits together - about twice as hard as the regular-season
+// one does. Measured by spreadCalibration.test.ts in PLAYOFFS mode on a real
+// league's rosters: residual sd 3.54 against a 1.69 sim-noise floor, so 3.11
+// per pairing and 2.20 per team, against 1.3 in the regular season.
+//
+// What the bracket needs is the EXTRA miss the playoff translation adds on top
+// of whatever the season already taught the book - the two errors share their
+// inputs, so it is the part that is not already in FUTURES_MODEL_ERROR:
+// sqrt(2.20^2 - 1.3^2).
+export const FUTURES_PLAYOFF_MODEL_ERROR = 2.2;
+
+export const FUTURES_PLAYOFF_DELTA_ERROR = Math.sqrt(
+	FUTURES_PLAYOFF_MODEL_ERROR ** 2 - FUTURES_MODEL_ERROR ** 2,
+);
+
+// How unsure the book is about a team's PLAYOFF strength: its regular-season
+// uncertainty, plus the independent miss above.
+//
+// THIS IS WHAT KEEPS A BRACKET HONEST. Priced at the regular-season number the
+// board reads its own ordering as gospel, and that shows up exactly where a
+// bracket is decided - between contenders whose ratings sit within a couple of
+// points of each other. Measured against the engine's own playoffs
+// (game/bracketCalibration.test.ts), pricing a four-team pack inside 2.5 points
+// at the regular-season uncertainty gave the nominal favourite 33% where the
+// engine gave it 22%, and 9% to a team the engine won 28% with. A -1200 title
+// favourite is the same defect at the other end of the field.
+export const futuresPlayoffUncertainty = (regularUncertainty: number) =>
+	Math.hypot(regularUncertainty, FUTURES_PLAYOFF_DELTA_ERROR);
+
 // How far off the book's own rating could be at this point in a season: the
 // model's persistent error, shrunk by the blend, plus the sample noise the
 // blended point differential carries. Both components in points of margin.
@@ -664,6 +697,7 @@ export const getLines = async () => {
 		iterations: FUTURES_ITERATIONS,
 		seed,
 		ratingUncertainty: futuresUncertainty,
+		playoffRatingExtraUncertainty: FUTURES_PLAYOFF_DELTA_ERROR,
 		schedule: futuresSchedule,
 		hcaPoints,
 		playoffHcaPoints,
@@ -746,10 +780,12 @@ export const getLines = async () => {
 					ratings,
 					iterations: FUTURES_ITERATIONS,
 					seed: bracketSeed % 2147483647,
-					// A whole season has priced these teams; the book's remaining
-					// uncertainty is the end-of-ramp value, not the old 3.5-point
-					// default that flattened genuine favorites into free money.
-					ratingUncertainty: futuresUncertainty,
+					// A whole season has priced these teams, but a playoff game is
+					// not the game they were priced on - see
+					// futuresPlayoffUncertainty. (Still nowhere near the old
+					// 3.5-point default, which flattened genuine favorites into
+					// free money.)
+					ratingUncertainty: futuresPlayoffUncertainty(futuresUncertainty),
 					hcaPoints: playoffsNeutral ? 0 : playoffHcaPoints,
 					sigma: futuresSigma,
 					finalsNeutral,
