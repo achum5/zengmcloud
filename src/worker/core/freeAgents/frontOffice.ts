@@ -962,12 +962,24 @@ export const shortHanded = ({
 // A rebuilding team's last roster spots belong to players who will still be
 // there when it is good again. Signing a 33-year-old to a minimum deal is free,
 // but the minutes are not.
+//
+// The limits started two years tighter (26/29) and were softened after the
+// veteran floor (VET_FLIER_AGE) went in: an unsigned veteran's ask decays all
+// season, and when it finally hits the minimum the teams with the open seats
+// are rebuilding - so the old limits were the last gate keeping the same
+// population unemployed at the end of the same pipeline. Softening them was
+// measured over six seeds of twelve real seasons: on the four seeds the wider
+// window ever fired in, rotation talent and the deployable pool rose on all
+// four, mean team ovr +0.6, the bottom five +0.4, rebuilds recovered talent
+// faster (rot+3y 2.4 to 3.1), and dead money fell slightly - a minimum deal
+// capped at stopgap years cannot strand anything that matters. Real tanking
+// teams sign 28-year-old minimum veterans every summer; now these do too.
 const bargainAgeLimit = (tier: TradePosture["tier"]): number => {
 	if (tier === "teardown") {
-		return 26;
+		return 29;
 	}
 	if (tier === "seller") {
-		return 29;
+		return 31;
 	}
 	return Infinity;
 };

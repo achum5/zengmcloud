@@ -1022,7 +1022,7 @@ describe("bargains: quality that costs nothing but a roster spot", () => {
 
 	// A rebuild's last roster spots belong to players who will still be around
 	// when it is finished. The contract is free; the minutes are not.
-	test("a rebuild will not spend its last spot on a veteran", () => {
+	test("a rebuild will not spend its last spot on an old veteran", () => {
 		const vet = fa({ age: 33, value: 60, amount: MIN });
 		assert.strictEqual(
 			findBargain({
@@ -1039,6 +1039,23 @@ describe("bargains: quality that costs nothing but a roster spot", () => {
 				candidates: [fa({ age: 23, value: 60, amount: MIN })],
 			}),
 		);
+	});
+
+	// ...but a MERELY-PAST-PRIME veteran on a free contract is the end of the
+	// pipeline the veteran floor opened: his ask decayed to the minimum all
+	// season, and the team with the open seat is the rebuild. Measured - see
+	// bargainAgeLimit.
+	test("a rebuild will take a twenty-nine-year-old for nothing", () => {
+		const takes = (tier: "teardown" | "seller", age: number) =>
+			findBargain({
+				...args,
+				posture: posture({ tier }),
+				candidates: [fa({ age, value: 60, amount: MIN })],
+			}) !== undefined;
+		assert.ok(takes("teardown", 29));
+		assert.ok(!takes("teardown", 30));
+		assert.ok(takes("seller", 31));
+		assert.ok(!takes("seller", 32));
 	});
 
 	test("a contender has no such age limit", () => {

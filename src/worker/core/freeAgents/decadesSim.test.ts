@@ -149,6 +149,13 @@ const classRatios = async (season: number) => {
 // measured too and moved nothing (football teams rarely fall below the
 // floor; the two seeds it touched got no better).
 //
+// Disciplining the RE-SIGN path as well was then measured on six football
+// seeds, because the argument for skipping it was only ever a basketball
+// measurement. Same answer in football: dead money three seeds down and
+// three up (a 1.5M mean saving), and stars stranded on rosters UP on four
+// of six. The commitment a team just chose to make is not the place to
+// save years, whatever the sport.
+//
 // Baseball trips the canary below at one or two rosters a season, and it is
 // NOT the front office - stock BBGM produces the same rate or worse on the
 // same seeds. Left as it is rather than papered over.
