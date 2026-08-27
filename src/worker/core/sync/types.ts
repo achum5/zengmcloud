@@ -520,7 +520,9 @@ export interface SyncTransport {
 		gids: number[],
 		leaseMs: number,
 	): Promise<boolean>;
-	completeSimDay?(stageKey: string, day: number): Promise<void>;
+	// Completion is scoped to the gids whose results the caller durably
+	// queued - see simDayClaimPolicy.ts for why a day-level mark wedged rooms.
+	completeSimDay?(stageKey: string, day: number, gids: number[]): Promise<void>;
 
 	// Free-agency board support (see faBoard.ts). Each device publishes its
 	// team's ranked free-agent list (null clears it); everyone subscribes but the

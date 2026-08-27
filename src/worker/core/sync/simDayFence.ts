@@ -40,15 +40,21 @@ let currentTransport: SyncTransport | undefined;
 // time (the gameSim lock). Intermediate days of a multi-day sim don't need
 // completing - each newer-day claim supersedes them via the high-water mark.
 let lastClaimedDay: number | undefined;
+// ...and the games that claim covered, because completion is per gid: marking
+// anything broader permanently fences games this sim never touched (see
+// simDayClaimPolicy.ts).
+let lastClaimedGids: number[] | undefined;
 
 export const setupSimDayFence = (transport: SyncTransport) => {
 	currentTransport = transport;
 	lastClaimedDay = undefined;
+	lastClaimedGids = undefined;
 };
 
 export const teardownSimDayFence = () => {
 	currentTransport = undefined;
 	lastClaimedDay = undefined;
+	lastClaimedGids = undefined;
 };
 
 const stageKey = () => `sim:${g.get("season")}`;
@@ -83,6 +89,7 @@ export const claimSimDayFence = async (
 	}
 	if (granted) {
 		lastClaimedDay = day;
+		lastClaimedGids = gids;
 	} else {
 		syncDebugLog("simDayFence:rejected", { day, gids });
 		// The natural cause of a rejection is that this device is behind the
@@ -99,9 +106,13 @@ export const claimSimDayFence = async (
 export const completeClaimedSimDayFence = () => {
 	const transport = currentTransport;
 	const day = lastClaimedDay;
+	const gids = lastClaimedGids;
 	lastClaimedDay = undefined;
+	lastClaimedGids = undefined;
 	if (day === undefined || !transport?.completeSimDay) {
 		return;
 	}
-	void transport.completeSimDay(stageKey(), day).catch(() => undefined);
+	void transport
+		.completeSimDay(stageKey(), day, gids ?? [])
+		.catch(() => undefined);
 };

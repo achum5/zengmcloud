@@ -1,5 +1,9 @@
 import { assert, describe, test } from "vitest";
-import { decideSimDayClaim, type SimDayClaimDoc } from "./simDayClaimPolicy.ts";
+import {
+	decideSimDayClaim,
+	SIM_DAY_LEGACY_COMPLETED_GRACE_MS,
+	type SimDayClaimDoc,
+} from "./simDayClaimPolicy.ts";
 
 const LEASE = 90_000;
 const NOW = 1_784_169_868_841;
@@ -74,6 +78,7 @@ describe("decideSimDayClaim", () => {
 			day: 32,
 			maxDay: 32,
 			gids: [410, 407, 408, 409],
+			completedGids: undefined,
 		});
 	});
 
@@ -103,6 +108,7 @@ describe("decideSimDayClaim", () => {
 			day: 32,
 			maxDay: 32,
 			gids: [407, 408, 409, 410, 411],
+			completedGids: undefined,
 		});
 	});
 
@@ -112,5 +118,113 @@ describe("decideSimDayClaim", () => {
 			ask(39, [600]),
 		);
 		assert.deepStrictEqual(d, { grant: false, reason: "day-already-run" });
+	});
+
+	// THE WEDGE, as a playoff room actually hit it: a slice claims a game and
+	// dies before queuing anything; another slice of the same day finishes and
+	// the old day-level `completed` stamped the union - fencing the dead
+	// slice's game forever with "games-already-simmed" while its results never
+	// existed. Completion is per gid now, and the legacy mark only holds for a
+	// grace window.
+	describe("a dead slice cannot be fenced by someone else's completion", () => {
+		test("slice-accurate doc: a claimed-but-never-completed game recovers by lease, whatever else completed", () => {
+			const d = decideSimDayClaim(
+				doc({
+					gids: [15440, 15441, 15442, 15443],
+					completed: true,
+					completedGids: [15440, 15441, 15442],
+					at: NOW - LEASE - 1,
+				}),
+				ask(32, [15443]),
+			);
+			assert.deepStrictEqual(d, {
+				grant: true,
+				day: 32,
+				maxDay: 32,
+				gids: [15440, 15441, 15442, 15443],
+				completedGids: [15440, 15441, 15442],
+			});
+		});
+
+		test("...but stays fenced while the lease is live", () => {
+			const d = decideSimDayClaim(
+				doc({
+					gids: [15440, 15443],
+					completedGids: [15440],
+					at: NOW - 5_000,
+				}),
+				ask(32, [15443]),
+			);
+			assert.deepStrictEqual(d, { grant: false, reason: "lease-held" });
+		});
+
+		test("a gid whose results are durably queued is fenced forever", () => {
+			const d = decideSimDayClaim(
+				doc({
+					gids: [15440, 15443],
+					completedGids: [15440, 15443],
+					at: NOW - SIM_DAY_LEGACY_COMPLETED_GRACE_MS - 1,
+				}),
+				ask(32, [15443]),
+			);
+			assert.deepStrictEqual(d, {
+				grant: false,
+				reason: "games-already-simmed",
+			});
+		});
+
+		test("completedGids outranks the legacy boolean when both are present", () => {
+			const d = decideSimDayClaim(
+				doc({
+					gids: [15440, 15443],
+					completed: true,
+					completedGids: [15440],
+					at: NOW - LEASE - 1,
+				}),
+				ask(32, [15443]),
+			);
+			assert.ok(d.grant);
+		});
+
+		test("legacy day-level completion holds only for the grace window", () => {
+			const wedged = doc({
+				gids: [15440, 15441, 15442, 15443],
+				completed: true,
+				at: NOW - SIM_DAY_LEGACY_COMPLETED_GRACE_MS + 1_000,
+			});
+			assert.deepStrictEqual(decideSimDayClaim(wedged, ask(32, [15443])), {
+				grant: false,
+				reason: "games-already-simmed",
+			});
+
+			const stale = doc({
+				gids: [15440, 15441, 15442, 15443],
+				completed: true,
+				at: NOW - SIM_DAY_LEGACY_COMPLETED_GRACE_MS - 1,
+			});
+			// Recovery converts the doc to the slice-accurate shape, so the
+			// ambiguity that caused the wedge cannot recur on this day.
+			assert.deepStrictEqual(decideSimDayClaim(stale, ask(32, [15443])), {
+				grant: true,
+				day: 32,
+				maxDay: 32,
+				gids: [15440, 15441, 15442, 15443],
+				completedGids: [],
+			});
+		});
+
+		test("a disjoint slice's grant never erases completion state", () => {
+			const d = decideSimDayClaim(
+				doc({ gids: [15440], completedGids: [15440] }),
+				ask(32, [15441]),
+			);
+			assert.deepStrictEqual(d, {
+				grant: true,
+				day: 32,
+				maxDay: 32,
+				gids: [15440, 15441],
+				completedGids: [15440],
+			});
+		});
 	});
 });

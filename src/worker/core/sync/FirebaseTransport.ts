@@ -758,6 +758,11 @@ export class FirebaseTransport implements SyncTransport {
 					at: Date.now(),
 					maxDay: decision.maxDay,
 					completed: false,
+					// Present only when the policy carried it: a fresh day starts
+					// without the field, and a grant must never erase completions.
+					...(decision.completedGids !== undefined
+						? { completedGids: decision.completedGids }
+						: {}),
 				});
 			});
 			this.markContact();
@@ -770,19 +775,30 @@ export class FirebaseTransport implements SyncTransport {
 	// Mark this device's claimed day-slice as finished, closing its
 	// crash-recovery re-claim window. Best-effort: a failure just leaves the
 	// lease to expire.
-	async completeSimDay(stageKey: string, day: number): Promise<void> {
+	//
+	// PER GID, not per day (see simDayClaimPolicy.ts): only the games whose
+	// results this device just durably queued are fenced permanently. No
+	// holder check - another device claiming a later slice of the same day
+	// takes the holder field, and that must not stop this slice's completion
+	// from landing (that silent no-op is half of how a day used to get
+	// stamped completed over games nobody ever simmed). The legacy `completed`
+	// boolean is still written for devices running older code; new code
+	// ignores it whenever completedGids is present.
+	async completeSimDay(
+		stageKey: string,
+		day: number,
+		gids: number[],
+	): Promise<void> {
 		const ref = doc(this.db, "leagues", this.code, "control", SIM_DAY_DOC_ID);
 		try {
 			await runTransaction(this.db, async (tx) => {
 				const snap = await tx.get(ref);
 				const data = snap.data() as SimDayClaimDoc | undefined;
-				if (
-					data &&
-					data.stageKey === stageKey &&
-					data.day === day &&
-					data.holderId === this.clientId
-				) {
-					tx.set(ref, { ...data, completed: true });
+				if (data && data.stageKey === stageKey && data.day === day) {
+					const completedGids = [
+						...new Set([...(data.completedGids ?? []), ...gids]),
+					];
+					tx.set(ref, { ...data, completed: true, completedGids });
 				}
 			});
 			this.markContact();
