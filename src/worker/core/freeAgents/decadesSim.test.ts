@@ -2276,6 +2276,21 @@ describe("a league runs for a decade without falling apart", () => {
 			// 120M-145M every other lever on this curve costs, so it is the
 			// expensive way to buy it. The numbers are at the call site.
 			//
+			// WHERE THIS LANDED. The veteran floor (VET_FLIER_AGE), the sport-wide
+			// deal-length gate, and the bargain-age softening were all aimed at
+			// the talent half of that 0.71, and the same six seeds re-run against
+			// stock afterwards say it is closed:
+			//
+			//                       stock    smart
+			//   deployable          54.80    54.83   parity - the open question
+			//   rotation            54.32    54.13
+			//   cost of arrangement  0.48     0.70
+			//
+			// Every point of the remaining rotation gap is now the arrangement
+			// half - concentration burying players on stacked rosters - which is
+			// the feature working as designed. The players nobody would sign are
+			// signed.
+			//
 			// The trade the comments elsewhere in this file describe is real and
 			// still holds: the top five gain four and a half points and the bottom
 			// five lose sixteen. A league run by this front office concentrates,
