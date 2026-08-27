@@ -159,8 +159,8 @@ export const contractRiskMultiplier = ({
 	// four-year deal it was about to convert to a single season.
 	//
 	// That population is real and it is where this front office's unemployed
-	// talent sits: thirteen players a season above 50 ovr left unsigned against
-	// stock's nine, and the ones left over are better (54.3 against 52.4),
+	// talent sat: thirteen players a season above 50 ovr left unsigned against
+	// stock's nine, and the ones left over were better (54.3 against 52.4),
 	// dearer ($12.3M against $4.7M) and older (31.2 against 30.1).
 	//
 	// Passing the length actually offered was built and measured over six
@@ -171,6 +171,14 @@ export const contractRiskMultiplier = ({
 	// the same curve (see decadesSim.test.ts), so it is a strictly expensive way
 	// to buy something. Distinct champions also fell by more than one on five
 	// seeds of six.
+	//
+	// What finally reached that population without paying the curve is the
+	// veteran floor (VET_FLIER_AGE below): don't reprice the risk, just refuse
+	// to let fit bury a proven player below his raw value when a team could
+	// sign him outright - and cap every thirty-something's deal at two years so
+	// the promoted signings cannot strand much. Six seeds of twelve real
+	// seasons: rotation +0.31, deployable +0.28, dead money within 4M a season
+	// of where it was.
 	if (amount <= minContract * 1.5 || years <= 1) {
 		return 1;
 	}
@@ -278,6 +286,30 @@ export const INJURED_FA_PENALTY = 0.15;
 
 export const FIT_FLOOR = 0.7;
 export const FIT_CEILING = 1.3;
+
+// THE VETERANS NOBODY WAS SIGNING. The talent this front office leaves
+// unemployed - measured, thirteen a season above 50 ovr against stock's nine -
+// is not stars (those have their own override) and not minimum men (findBargain
+// cleans that shelf better than stock does). It is proven rotation players in
+// their thirties asking real money: the teams with the room to pay them are
+// rebuilding and discount their age, and the teams that want them are over the
+// cap. Fit was never supposed to remove a player from the market, and for this
+// population it did.
+//
+// So the same floor the affordable-star rule uses extends down to them: a
+// PROVEN player (at or above the league's rotation bar) past this age, whom a
+// team could sign outright today, is never ordered below his raw value. Fit
+// still decides between comparable players everywhere else - a 25-year-old is
+// untouched by this, because no tier buries him in the first place.
+//
+// Age 28 rather than 30 because that is where the selling tiers' age discount
+// starts to bite (0.8 from 28), and a seller taking a proven veteran is not a
+// mistake: signingYears gives that signing ONE year, the veteran is a deadline
+// asset the moment he is signed (shouldDumpExpiring), and he walks for nothing
+// in the offseason if no deal comes. The one-season flier is the move a real
+// rebuilding front office makes with idle cap room, and it cannot strand a
+// dollar past this season.
+export const VET_FLIER_AGE = 28;
 
 // What this free agent is worth TO THIS TEAM. Ordering by this instead of by
 // raw value is what stops every team wanting the same player.
@@ -425,6 +457,14 @@ export const signingYears = ({
 			years = Math.max(years, 3);
 		}
 	} else if ((tier === "allIn" || tier === "buyer") && age >= 32) {
+		years = Math.min(years, 2);
+	}
+
+	// Nobody, whatever their plan, guarantees a third year to a player in his
+	// thirties. This is the discipline that makes the veteran floor in autoSign
+	// safe to have (see VET_FLIER_AGE): the player it promotes signs a deal
+	// short enough that being wrong about him costs at most one dead season.
+	if (age >= 31) {
 		years = Math.min(years, 2);
 	}
 

@@ -821,6 +821,9 @@ describe("a league runs for a decade without falling apart", () => {
 		const overflow = { sign: 0, trade: 0, dump: 0, end: 0 };
 		const deadSeen = new Set<string>();
 		const bargainsLeftOver: number[] = [];
+		// Rotation-caliber (50+ ovr) free agents still unsigned at each season's
+		// end - see the LEFTOVERS row.
+		const leftovers: { ovr: number; age: number; ask: number }[] = [];
 		const bestBargainLeft: number[] = [];
 		const rng = makeRng(Number(nodeEnv.SEED ?? 31337));
 		// NOT vi.spyOn: a spy records every call it sees, and a decade of
@@ -1398,6 +1401,21 @@ describe("a league runs for a decade without falling apart", () => {
 					(p) => p.ratings.at(-1)!.ovr >= STAR_OVR,
 				).length;
 				unsignedStarTotal += unsignedStars;
+				// The population the rotation gap was traced to: players good enough
+				// to be somebody's eighth man, still unsigned when the season ends.
+				// The LEFTOVERS row reports who they are, so a change aimed at them
+				// (see VET_FLIER_AGE in frontOffice.ts) is measured on the people
+				// themselves and not only through league-wide means.
+				for (const p of fa) {
+					const ovr = p.ratings.at(-1)!.ovr;
+					if (ovr >= 50) {
+						leftovers.push({
+							ovr,
+							age: season - p.born.year,
+							ask: p.contract.amount,
+						});
+					}
+				}
 				if (fa.length > 0) {
 					const faCounts = synergySkillCounts(
 						fa.map((p) => ({
@@ -2212,7 +2230,20 @@ describe("a league runs for a decade without falling apart", () => {
 			// above 50 ovr against stock's nine, and BETTER (54.3 against 52.4),
 			// DEARER ($12.3M against $4.7M) and OLDER (31.2 against 30.1). Aging
 			// veterans asking real money, which stock signs and this front office
-			// declines.
+			// declined. (The LEFTOVERS row now reports this population directly.)
+			//
+			// THE VETERAN FLOOR IS WHAT FINALLY REACHED THEM - see VET_FLIER_AGE
+			// in frontOffice.ts. A proven player (above the rotation bar) past 28
+			// whom a team could sign outright is never ordered below his raw
+			// value, and nobody guarantees a thirty-something a third year. Six
+			// seeds of twelve real seasons against the same code without it:
+			// rotation 53.76 to 54.07 (up on four), deployable 54.46 to 54.74 (up
+			// on five), dead money within 4M a season - roughly 13M per point of
+			// employed talent, an order of magnitude off the 120M-145M curve
+			// every score-side lever on this problem had cost. The price is a
+			// touch more dynasty at the very top: distinct champions 9.7 to 8.3
+			// across the six seeds, best5 +2.3 - the concentration the feature
+			// already chooses, leaning a little harder.
 			//
 			// Two more candidates ruled out since. The roster gate in autoSign
 			// that refuses a signing when the cut it forces costs money: taking
@@ -2446,6 +2477,13 @@ describe("a league runs for a decade without falling apart", () => {
 				`BARGAINS LEFT mean=${avg(bargainsLeftOver).toFixed(1)}/season ` +
 					`bestLeft mean=${avg(bestBargainLeft).toFixed(1)} ` +
 					`max=${Math.max(0, ...bestBargainLeft)}`,
+				// Rotation-caliber players (50+ ovr) unsigned at season's end - the
+				// population the rotation-talent gap against stock was traced to.
+				// Diagnostic: n is per-season, the rest describe who is left.
+				`LEFTOVERS 50+ n=${(leftovers.length / SEASONS).toFixed(1)}/season ` +
+					`ovr=${avg(leftovers.map((x) => x.ovr)).toFixed(1)} ` +
+					`age=${avg(leftovers.map((x) => x.age)).toFixed(1)} ` +
+					`ask=$${(avg(leftovers.map((x) => x.ask)) / 1000).toFixed(1)}M`,
 			);
 
 			if (champions.length > 0) {

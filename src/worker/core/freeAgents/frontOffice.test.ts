@@ -209,6 +209,16 @@ describe("the structure of the deal follows the plan", () => {
 		);
 	});
 
+	// The discipline that makes the veteran floor in autoSign safe: whoever
+	// signs a thirty-something, the deal is short enough that being wrong about
+	// him costs at most one dead season.
+	test("nobody guarantees a third year to a player in his thirties", () => {
+		assert.strictEqual(signingYears({ ...base, tier: "fringe", age: 31 }), 2);
+		assert.strictEqual(signingYears({ ...base, tier: "buyer", age: 31 }), 2);
+		// Sellers were already stricter, and stay so.
+		assert.strictEqual(signingYears({ ...base, tier: "seller", age: 31 }), 1);
+	});
+
 	test("a body nobody else wants is not signed for years", () => {
 		// Below the rotation bar, on real money rather than a minimum: the
 		// population that every dead contract in the league is made of.

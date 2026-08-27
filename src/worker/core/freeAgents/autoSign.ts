@@ -22,6 +22,7 @@ import {
 	pursuitScore,
 	resolveCapHolds,
 	scoreFreeAgent,
+	VET_FLIER_AGE,
 } from "./frontOffice.ts";
 import type { Player } from "../../../common/types.ts";
 import {
@@ -386,9 +387,15 @@ const autoSign = async () => {
 								daysLeft: daysLeftOrUndefined,
 							});
 							// Fit decides between comparable players; it never discounts
-							// a star this team could sign outright (see affordableStar).
+							// a star this team could sign outright (see affordableStar),
+							// and it never buries a proven veteran either - the
+							// population fit used to price out of the league entirely.
+							// See VET_FLIER_AGE.
+							const ovr = last(p.ratings).ovr;
 							if (
-								last(p.ratings).ovr >= starOvr &&
+								(ovr >= starOvr ||
+									(ovr >= rotationOvr &&
+										season - p.born.year >= VET_FLIER_AGE)) &&
 								p.contract.amount + payroll <= salaryCap
 							) {
 								score = Math.max(score, p.value);

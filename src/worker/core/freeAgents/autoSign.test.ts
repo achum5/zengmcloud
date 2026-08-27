@@ -270,3 +270,124 @@ describe("AI free agency runs on a plan", () => {
 		assert.ok(after > before);
 	});
 });
+
+// The population fit used to price out of the league: a proven veteran asking
+// real money, in a market where the only team with room is rebuilding. See
+// VET_FLIER_AGE in frontOffice.ts.
+describe("a proven veteran is never buried below his raw value", () => {
+	beforeEach(() => {
+		changeTracker.disable();
+		changeTracker.reset();
+	});
+
+	const setupVetMarket = async () => {
+		resetG();
+		g.setWithoutSavingToDB("numTeams", NUM_TEAMS);
+		g.setWithoutSavingToDB("numActiveTeams", NUM_TEAMS);
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		g.setWithoutSavingToDB("daysLeft", 30);
+		g.setWithoutSavingToDB("userTids", [999]);
+		g.setWithoutSavingToDB("salaryCapType", "soft");
+		g.setWithoutSavingToDB("realisticFaces", false);
+
+		const salaryCap = g.get("salaryCap");
+		const season = g.get("season");
+
+		const teams = [];
+		const players = [];
+		for (let tid = 0; tid < NUM_TEAMS; tid++) {
+			teams.push({
+				tid,
+				disabled: false,
+				strategy: "rebuilding",
+				depth: undefined,
+			});
+			const rebuilding = tid === 0;
+			for (let i = 0; i < 8; i++) {
+				players.push(
+					makePlayer({
+						tid,
+						// Team 0 is a stripped, aging doormat with cheap deals - a
+						// teardown with the league's only real cap room. The rest are
+						// solid and nearly capped out.
+						ovr: rebuilding ? 30 : 45 + ((tid + i) % 7),
+						age: rebuilding ? 30 : 25,
+						pos: i % 3 === 0 ? "PG" : i % 3 === 1 ? "SF" : "C",
+						amount: Math.round((salaryCap * (rebuilding ? 0.2 : 0.95)) / 8),
+						exp: season + 2,
+					}),
+				);
+			}
+		}
+
+		// The proven veteran: above the rotation bar, below the star bar, past
+		// VET_FLIER_AGE, asking real money.
+		const vet = makePlayer({
+			tid: PLAYER.FREE_AGENT,
+			ovr: 49,
+			age: 31,
+			pos: "SF",
+			amount: Math.round(salaryCap * 0.18),
+			exp: season + 3,
+		});
+		players.push(vet);
+
+		// The younger, clearly lesser player the old ordering preferred. Thirteen
+		// points below the veteran, because a stripped roster has a hole at every
+		// position and the need boost lifts BOTH of them - the fixture has to
+		// leave room for the fit adjustments the kid legitimately earns.
+		const kid = makePlayer({
+			tid: PLAYER.FREE_AGENT,
+			ovr: 36,
+			age: 26,
+			pos: "SF",
+			amount: Math.round(salaryCap * 0.15),
+			exp: season + 2,
+		});
+		players.push(kid);
+
+		await resetCache({ players, teams });
+		for (let tid = 0; tid < NUM_TEAMS; tid++) {
+			const rebuilding = tid === 0;
+			await idb.cache.teamSeasons.add({
+				...team.genSeasonRow((await idb.cache.teams.get(tid))!),
+				tid,
+				season,
+				won: rebuilding ? 10 : 45,
+				lost: rebuilding ? 62 : 27,
+				gp: 72,
+			} as any);
+		}
+
+		return { vet, kid, season };
+	};
+
+	test("the rebuilding team with the room signs him, for one year", async () => {
+		const { vet, kid, season } = await setupVetMarket();
+
+		// Pinned so nobody skips their turn; the point is the ORDER of the board,
+		// not how often teams act.
+		const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+		try {
+			await autoSign();
+		} finally {
+			random.mockRestore();
+		}
+
+		const signedVet = await idb.cache.players.get(vet.pid);
+		const signedKid = await idb.cache.players.get(kid.pid);
+		assert.strictEqual(
+			signedVet?.tid,
+			0,
+			"the veteran should be the first signing of the only team with room",
+		);
+		assert.strictEqual(
+			signedKid?.tid,
+			PLAYER.FREE_AGENT,
+			"the lesser young player must not have jumped the proven veteran",
+		);
+		// A selling team's veteran signs an expiring deal - the flier that makes
+		// the floor safe.
+		assert.strictEqual(signedVet!.contract.exp, season + 1);
+	});
+});
