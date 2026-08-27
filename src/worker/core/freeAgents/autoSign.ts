@@ -602,8 +602,15 @@ const autoSign = async () => {
 			// Remove from list of free agents
 			playersSorted = playersSorted.filter((p2) => p2 !== p);
 
-			// The plan decides the structure of the deal - see signingYears.
-			if (posture && isSport("basketball")) {
+			// The plan decides the structure of the deal - see signingYears. Every
+			// sport: this was basketball-only for a while, and the football
+			// decades harness found the cost of the gap - football's dead money
+			// ran three to four times stock's, nearly all of it acquired veterans
+			// in their thirties cut with two-plus years still to run, because a
+			// league whose every asked contract runs four-plus years strands them
+			// whenever the smart market churns. Measured before/after in
+			// decadesSim.football.test.ts.
+			if (posture) {
 				const offset = g.get("phase") <= PHASE.PLAYOFFS ? -1 : 0;
 				const askedYears = p.contract.exp - season - offset;
 				const years = signingYears({

@@ -133,11 +133,21 @@ const classRatios = async (season: number) => {
 // both directions, which is the concave-mean artefact the SPREAD row exists to
 // expose rather than a result.
 //
-// One thing did not match. Dead money runs about sixteen million a season
+// One thing did not match. Dead money ran about sixteen million a season
 // higher than stock in ALL SIX seeds, where the same comparison in basketball
-// has it lower - a 53-man roster churns far harder than a 15-man one, so
-// whatever rosterCuts saves per cut is being swamped by the number of them.
-// That is a live lead, not a measured defect: nothing here has looked at why.
+// has it lower. Profiled (DEADPROF), the pile was nothing like basketball's:
+// acquired veterans in their THIRTIES at minimum-ish salaries, cut with
+// two-plus years still guaranteed - because signingYears, the deal-length
+// discipline that stopped basketball handing four years to stopgaps, was
+// gated to basketball, and football's asked contracts run four-plus years
+// for everyone. Widening the gate to every sport was measured on four
+// thirty-team seeds of eight seasons (dead $/season, control -> with the
+// discipline -> stock): 35->18, 32->34, 19->19, 46->19. The mean gap to
+// stock fell by 40% and the disaster tail collapsed; rotation talent was
+// flat. The residual (seed two's 34) is contracts from paths the discipline
+// deliberately skips - own re-signings - and roster-minimum top-ups were
+// measured too and moved nothing (football teams rarely fall below the
+// floor; the two seeds it touched got no better).
 //
 // Baseball trips the canary below at one or two rosters a season, and it is
 // NOT the front office - stock BBGM produces the same rate or worse on the
@@ -2322,6 +2332,17 @@ describe("a league runs for a decade without falling apart", () => {
 			//     releasing it                      -34.2M       -0.27
 			//   proportional autoSign margin        +4.7M        (worse both)
 			//   autoSign value bar (in autoSign)    -16M         (best5 -2.2)
+			//
+			// A sixth was aimed at the trade side despite the instrumentation
+			// above saying the releases are not trades, and the measurement
+			// agreed with the instrumentation: scaling a contract's burden in
+			// trade VALUATION by its remaining years (so an acquirer refuses
+			// multi-year filler without compensation) made dead money WORSE by
+			// 13M a season on four seeds of six, rotation flat, and left more
+			// stars unsigned. The years penalty is too small to bite on the
+			// 3.5M bodies the dead pile is actually made of, and big enough to
+			// block the aging stars whose large deals are exactly the ones
+			// that should move.
 			//
 			// A hundred and twenty to a hundred and forty-five million a season
 			// per point of the talent the league actually employs, whichever way
