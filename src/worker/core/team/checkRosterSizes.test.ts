@@ -181,6 +181,13 @@ describe("releasing a just-drafted rookie", () => {
 			p.born.year = season - 22;
 			p.ratings.at(-1).ovr = 60 - i * 10;
 			p.value = 60 - i * 10;
+			// ONE POSITION FOR ALL FOUR, so the man this fixture is about is the
+			// man cutOrder actually lets go. player.generate draws a position at
+			// random, and cutOrder protects the last player at a thin one
+			// (SCARCITY_PROTECTION) - so on the draws where the rookie was
+			// somebody's only centre he was spared and a different player was
+			// released, which is a different test passing or failing by luck.
+			p.ratings.at(-1).pos = "SF";
 			p.injury = { type: "Healthy", gamesRemaining: 0 };
 			// The worst of them is the one cutOrder will let go.
 			p.contract = { amount: g.get("minContract"), exp: season + 2 };

@@ -18,13 +18,11 @@ import {
 import { PHASE, PLAYER, RATINGS } from "../../../common/constants.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
 import {
-	BASKETBALL_PLAYOFF_HCA_FACTOR,
 	BASKETBALL_PLAYOFF_SYNERGY_COEF,
 	BASKETBALL_PLAYOFF_SYNERGY_OVR_SLOPE,
 	BASKETBALL_SYNERGY_COEF,
 	BASKETBALL_SYNERGY_OVR_SLOPE,
 	gameLengthFactor,
-	homeCourtAdvantagePoints,
 } from "../../../common/getGameSpread.ts";
 import {
 	futuresTailVig,
@@ -245,6 +243,12 @@ const MAX_GAME_LINES = 24;
 // How many worlds the futures/bracket Monte Carlo simulates per board.
 const FUTURES_ITERATIONS = 4000;
 
+// How far off the book's own rating could be, in points, when it prices an
+// in-progress bracket. The heuristic ratings above are a coarse read of a
+// roster, and this is the figure they were always priced with; the shared
+// default in sportsbookFutures moved on and this did not follow it.
+const LEGACY_BRACKET_UNCERTAINTY = 3.5;
+
 // No futures price shorter than this is ever offered - the outcome is treated
 // as settled and its row comes off the board, like a real book pulling a
 // market once it's decided. The favorite side of the odds clamp tops out at
@@ -417,15 +421,33 @@ export const getLines = async () => {
 		(t.seasonAttrs.tied ?? 0) +
 		(t.seasonAttrs.otl ?? 0);
 
-	// Basketball futures run on the engine-measured strength model (overall +
-	// lineup synergy at the spread coefficients, injury-availability weighted -
-	// see futuresStrength.ts). Other sports keep the legacy Power-Rankings
-	// heuristic, which needs the flat team ovr.
+	// FUTURES RUN ON THE POWER-RANKINGS HEURISTIC, EVERY SPORT.
+	//
+	// Basketball briefly priced them off the engine-measured strength model
+	// instead (overall + lineup synergy at the spread coefficients - see
+	// futuresStrength.ts). Reverted: on a real league it produced a preseason
+	// championship board nobody could defend, with the favourite out at +1765
+	// and most of the field not quotable at all. The model is measured and
+	// right about a single game's margin - that is what the spread uses it for,
+	// and that has not changed - but a futures board is a different object,
+	// and this one was not fit for it.
+	//
+	// The heuristic below is deliberately the exact code that priced futures
+	// before that experiment: ovr gap x 0.6, blended toward real point
+	// differential as games arrive, soft-capped, and shaded toward the field
+	// until the evidence is in. Kept in one branch for every sport so there is
+	// no second path to drift.
+	//
+	// Anything that wants to try again should price a board on a real league's
+	// preseason and look at it first - and futuresCalibration only ever proved
+	// the board consistent with ITS OWN ratings, so it could not have caught
+	// this and cannot catch the next one.
+	const USE_STRENGTH_MODEL_FOR_FUTURES = false;
 	let strengthByTid:
 		| Awaited<ReturnType<typeof getFuturesStrengths>>
 		| undefined;
 	let ovrByTid: Map<number, number> | undefined;
-	if (isSport("basketball")) {
+	if (USE_STRENGTH_MODEL_FOR_FUTURES && isSport("basketball")) {
 		// Injury horizon: the games a team still has in front of it - its
 		// remaining regular season, or during the playoffs a rough remaining
 		// bracket length (~6 games a round).
@@ -535,13 +557,6 @@ export const getLines = async () => {
 		g.get("quarterLength"),
 	);
 	const futuresSigma = MARGIN_SIGMA * Math.sqrt(lengthFactor);
-	const hcaPoints =
-		homeCourtAdvantagePoints(g.get("homeCourtAdvantage")) * lengthFactor;
-	// Playoff home court is measurably bigger (basketball: 4.91 points vs 3.35
-	// - see BASKETBALL_PLAYOFF_HCA_FACTOR).
-	const playoffHcaPoints =
-		hcaPoints * (isSport("basketball") ? BASKETBALL_PLAYOFF_HCA_FACTOR : 1);
-
 	// The model half of a team's rating: its expected margin vs an average team,
 	// before any games inform it. `playoffAdjustOf` is what to ADD to a team's
 	// blended rating when it plays a playoff game: the engine plays those with
@@ -669,44 +684,15 @@ export const getLines = async () => {
 	// margin, scaled by how much season is still to come.
 	const futuresUncertainty = futuresRatingUncertainty(seasonProgress);
 
-	// The playoff neutral-site settings change who gets a home edge in simulated
-	// series, so the book prices the bracket the engine will actually play.
-	const neutralSiteSetting = g.get("neutralSite");
-	const playoffsNeutral = neutralSiteSetting === "playoffs";
-	const finalsNeutral = playoffsNeutral || neutralSiteSetting === "finals";
-
-	// The actual remaining slate, so win totals price each team's real schedule
-	// (opponents + home/away split). During the playoffs the schedule holds
-	// playoff games, not regular-season slate - and gamesRemaining is 0 anyway.
-	const futuresSchedule =
-		phase < PHASE.PLAYOFFS
-			? schedule
-					.filter(
-						(m) =>
-							m.homeTid >= 0 &&
-							m.awayTid >= 0 &&
-							teamByTid.has(m.homeTid) &&
-							teamByTid.has(m.awayTid),
-					)
-					.map((m) => ({ homeTid: m.homeTid, awayTid: m.awayTid }))
-			: undefined;
-
+	// The pre-overhaul argument set, deliberately: with the heuristic ratings
+	// restored above, the schedule-exact and playoff-model extras were priced
+	// against a strength scale that no longer exists here.
 	const sim = simulateFutures({
 		teams: futuresTeams,
 		numGamesPlayoffSeries: g.get("numGamesPlayoffSeries"),
 		iterations: FUTURES_ITERATIONS,
 		seed,
 		ratingUncertainty: futuresUncertainty,
-		playoffRatingExtraUncertainty: FUTURES_PLAYOFF_DELTA_ERROR,
-		schedule: futuresSchedule,
-		hcaPoints,
-		playoffHcaPoints,
-		sigma: futuresSigma,
-		playoffsNeutral,
-		finalsNeutral,
-		playoffRatings: new Map(
-			futuresTeams.map((t) => [t.tid, playoffRatingOf(t.tid)]),
-		),
 	});
 
 	// Regular-season markets (division winners, win totals) are DECIDED once the
@@ -766,13 +752,6 @@ export const getLines = async () => {
 						ratings.set(m.away.tid, playoffRatingOf(m.away.tid));
 					}
 				}
-				// Regular-season finish order, so simulated later rounds put home
-				// court where the engine will actually put it.
-				const seedOrder = new Map(
-					[...activeTeams]
-						.sort((a, b) => b.seasonAttrs.won - a.seasonAttrs.won)
-						.map((t, i) => [t.tid, i]),
-				);
 				bracketSim = simulatePlayoffBracket({
 					matchups,
 					startRound: rnd,
@@ -780,16 +759,11 @@ export const getLines = async () => {
 					ratings,
 					iterations: FUTURES_ITERATIONS,
 					seed: bracketSeed % 2147483647,
-					// A whole season has priced these teams, but a playoff game is
-					// not the game they were priced on - see
-					// futuresPlayoffUncertainty. (Still nowhere near the old
-					// 3.5-point default, which flattened genuine favorites into
-					// free money.)
-					ratingUncertainty: futuresPlayoffUncertainty(futuresUncertainty),
-					hcaPoints: playoffsNeutral ? 0 : playoffHcaPoints,
-					sigma: futuresSigma,
-					finalsNeutral,
-					seedOrder,
+					// The pre-overhaul figure, stated rather than defaulted so it
+					// cannot drift with the shared default: these ratings are the
+					// heuristic's, and that is the uncertainty they were priced
+					// with.
+					ratingUncertainty: LEGACY_BRACKET_UNCERTAINTY,
 				});
 			}
 		} catch (error) {
