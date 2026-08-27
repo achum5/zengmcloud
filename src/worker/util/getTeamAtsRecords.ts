@@ -1,7 +1,7 @@
 import type { Game } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import { g } from "./index.ts";
-import { getGameSpread } from "../../common/getGameSpread.ts";
+import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
 
 export type AtsRecord = { won: number; lost: number; pushed: number };
 
@@ -51,7 +51,14 @@ export const getTeamAtsRecords = async (
 		// The stored pregame spread when the game has one (synergy-aware, exactly
 		// what was displayed before tipoff); the ovr-only re-derivation for legacy
 		// games from before it was stored.
-		const spread =
+		//
+		// ROUNDED, because a bet is graded against the QUOTED line and a quoted
+		// line is a half point. It matters here beyond tidiness: a push is
+		// `diff === 0` exactly, so against a raw float nothing can ever push -
+		// games simmed while play.ts stored the unrounded sum of the model and
+		// its bias correction graded every pick'em as a win or a loss. Rounding
+		// at grade time recovers the number those games were actually quoted at.
+		const rawSpread =
 			game.spread ??
 			getGameSpread({
 				ovr0: home.ovr,
@@ -63,9 +70,10 @@ export const getTeamAtsRecords = async (
 				numPeriods: game.numPeriods ?? numPeriodsDefault,
 				quarterLength,
 			});
-		if (spread === undefined) {
+		if (rawSpread === undefined) {
 			continue; // legacy game with no stored OVRs - can't grade it
 		}
+		const spread = roundHalf(rawSpread);
 
 		// `spread` is the predicted HOME margin (> 0 home favored). The home team
 		// covers when it beats that margin, the away team when home falls short of

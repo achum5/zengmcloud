@@ -15,7 +15,7 @@ import {
 	trade,
 } from "../index.ts";
 import loadTeams from "./loadTeams.ts";
-import { getGameSpread } from "../../../common/getGameSpread.ts";
+import { getGameSpread, roundHalf } from "../../../common/getGameSpread.ts";
 import {
 	getTeamSpreadBias,
 	spreadBiasAdjustment,
@@ -654,11 +654,22 @@ const play = async (
 			// What was actually quoted for this game: the model plus what the
 			// season has shown about these two teams, matching the sportsbook and
 			// ScoreBox exactly. Both numbers are kept - see Game.spreadModel.
+			//
+			// ROUNDED TO A HALF POINT, because this is the QUOTED line and a
+			// quoted line is a half point. The model already is one; the bias
+			// correction is a shrunk average of residuals and is not, so their
+			// sum is a raw float - which the schedule page rounds before showing
+			// (see its getSpread) and this did not. So the number stored on the
+			// game disagreed with the one the user was shown before tipoff, and
+			// every consumer of the stored one quoted the float: the recap
+			// announced a team as "12.595296547950777-point underdogs".
 			pregameSpread =
 				pregameSpreadModel === undefined
 					? undefined
-					: pregameSpreadModel +
-						spreadBiasAdjustment(spreadBiases, teams[0].id, teams[1].id);
+					: roundHalf(
+							pregameSpreadModel +
+								spreadBiasAdjustment(spreadBiases, teams[0].id, teams[1].id),
+						);
 		}
 
 		// GameResults is untyped (`any`) everywhere downstream; the sport unions

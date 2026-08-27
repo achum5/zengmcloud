@@ -1,6 +1,6 @@
 import { idb } from "../db/index.ts";
 import { g } from "./index.ts";
-import { getGameSpread } from "../../common/getGameSpread.ts";
+import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
 import {
@@ -947,10 +947,16 @@ export const getDayGamesForRecap = async ({
 			});
 		if (rawSpread !== undefined) {
 			// > 0 → home (teams[0]) favored; < 0 → away favored; 0 → pick'em.
+			// Rounded because this number gets SPOKEN - "13-point underdogs" -
+			// and a quoted line is a half point. play.ts rounds what it stores
+			// now, but games simmed before it did carry a raw float, and a recap
+			// reading one of those would otherwise read out all seventeen
+			// decimals of it.
+			const points = roundHalf(rawSpread);
 			spread =
-				rawSpread >= 0
-					? { favTid: game.teams[0].tid, points: rawSpread }
-					: { favTid: game.teams[1].tid, points: -rawSpread };
+				points >= 0
+					? { favTid: game.teams[0].tid, points }
+					: { favTid: game.teams[1].tid, points: -points };
 		}
 
 		result.push({
@@ -1443,10 +1449,12 @@ const createAutoRecapContext = async (season: number) => {
 				playoffs,
 			});
 		if (rawSpread !== undefined) {
+			// A half point, because it gets spoken - see the other site above.
+			const points = roundHalf(rawSpread);
 			spread =
-				rawSpread >= 0
-					? { favTid: game.teams[0].tid, points: rawSpread }
-					: { favTid: game.teams[1].tid, points: -rawSpread };
+				points >= 0
+					? { favTid: game.teams[0].tid, points }
+					: { favTid: game.teams[1].tid, points: -points };
 		}
 
 		return {
