@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	COMPLETED_RECLAIM_GRACE_MS,
 	decideAdvanceClaim,
 	type AdvanceClaimDoc,
 } from "./advanceClaimPolicy.ts";
@@ -76,9 +77,9 @@ describe("decideAdvanceClaim", () => {
 		assert.deepStrictEqual(d, { grant: false, reason: "lease-held" });
 	});
 
-	test("the newest step, completed: rejected even after the lease lapses", () => {
+	test("the newest step, freshly completed: rejected (it just ran; this asker is stale by one)", () => {
 		const d = decideAdvanceClaim(
-			doc({ completed: true, at: NOW - 10 * 60_000 }),
+			doc({ completed: true, at: NOW - LEASE - 1 }),
 			ask(40),
 		);
 		assert.deepStrictEqual(d, { grant: false, reason: "step-completed" });
@@ -94,5 +95,54 @@ describe("decideAdvanceClaim", () => {
 		// published the state this step was derived from.
 		const d = decideAdvanceClaim(doc({ at: NOW - 1_000 }), ask(41));
 		assert.deepStrictEqual(d, { grant: true, maxPick: 41 });
+	});
+
+	describe("REGRESSION: a falsely-completed step is not a permanent wedge", () => {
+		// A live league at a day-15 stop: the advance winner's sim declined
+		// cleanly (its stop-crossing permission had been consumed by a
+		// concurrent single-game sim), the claim was still marked completed, and
+		// from then on every device showed 3/3 ready while every claim was
+		// refused "step-completed" - forever. A completed newest step that the
+		// caught-up room STILL derives, long after the claim, is a false
+		// completion; it must reopen.
+		test("completed and past the reclaim grace: granted", () => {
+			const d = decideAdvanceClaim(
+				doc({ completed: true, at: NOW - COMPLETED_RECLAIM_GRACE_MS }),
+				ask(40),
+			);
+			assert.deepStrictEqual(d, { grant: true, maxPick: 40 });
+		});
+
+		test("completed within the grace: still sealed (covers catch-up races and clock skew)", () => {
+			const d = decideAdvanceClaim(
+				doc({ completed: true, at: NOW - COMPLETED_RECLAIM_GRACE_MS + 1 }),
+				ask(40),
+			);
+			assert.deepStrictEqual(d, { grant: false, reason: "step-completed" });
+		});
+
+		test("only the NEWEST completed step reopens - older history stays sealed", () => {
+			// The world can only stop moving at the newest step; an ask for an
+			// older one is a stale device, whatever the clock says.
+			const d = decideAdvanceClaim(
+				doc({
+					pick: 60,
+					maxPick: 60,
+					completed: true,
+					at: NOW - 2 * COMPLETED_RECLAIM_GRACE_MS,
+				}),
+				ask(40),
+			);
+			assert.deepStrictEqual(d, { grant: false, reason: "step-already-run" });
+		});
+
+		test("a re-claimed step re-seals: the fresh claim's lease holds off a third device", () => {
+			// After recovery, the transaction writes a fresh doc (new at,
+			// completed false) - so the next asker sees an ordinary held lease,
+			// not another instant recovery.
+			const reclaimed = doc({ at: NOW - 1_000, completed: false });
+			const d = decideAdvanceClaim(reclaimed, ask(40));
+			assert.deepStrictEqual(d, { grant: false, reason: "lease-held" });
+		});
 	});
 });

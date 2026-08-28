@@ -20,7 +20,7 @@ const NUM_TEAMS = 4;
 const ROSTER = 10;
 
 // The team overalls the pricer prices off, computed the same way it does.
-const teamOvrsForMatchup = async () => {
+const teamOvrsForMatchup = async (playoffs = false) => {
 	const ovrOf = async (tid: number) => {
 		const raw = await idb.cache.players.indexGetAll("playersByTid", tid);
 		const players = await idb.getCopies.playersPlus(raw, {
@@ -35,7 +35,7 @@ const teamOvrsForMatchup = async () => {
 				numDaysInFuture: 0,
 				playThroughInjuries: [0, 0],
 			},
-			playoffs: false,
+			playoffs,
 		});
 	};
 	return {
@@ -424,9 +424,41 @@ describe("playoff games price off the playoff model", () => {
 				regularLine.total.line - playoffLine.total.line > 8,
 				`total ${regularLine.total.line} -> ${playoffLine.total.line}`,
 			);
-			// And the margin is a different model (bigger home edge, synergy
-			// reweighted) - it must actually move.
-			assert.notStrictEqual(regularLine.margin, playoffLine.margin);
+			// And the margin comes off the playoff coefficients - checked against
+			// the formula EXACTLY, the same way the regular-season test above
+			// does, because "regular ≠ playoff" is not a sound assertion: the
+			// bigger playoff home edge and the reweighted slope/synergy pull in
+			// opposite directions, and a random roster draw can land where they
+			// cancel to the same half-point quote (this test flaked exactly
+			// there).
+			const ovrs = await teamOvrsForMatchup(true);
+			const synergyOf = async (tid: number) =>
+				pregameLineupSynergyFromPlayers(
+					await idb.cache.players.indexGetAll("playersByTid", tid),
+					{
+						numDaysInFuture: 0,
+						playThroughInjuries: [0, 0],
+						playoffs: true,
+					},
+				);
+			const synergy0 = await synergyOf(matchup.homeTid);
+			const synergy1 = await synergyOf(matchup.awayTid);
+			assert.strictEqual(
+				playoffLine.margin,
+				getGameSpread({
+					ovr0: ovrs.home,
+					ovr1: ovrs.away,
+					homeCourtAdvantage: g.get("homeCourtAdvantage"),
+					neutralSite: false,
+					numPeriods: g.get("numPeriods"),
+					quarterLength: g.get("quarterLength"),
+					synergyDiff:
+						synergy0 !== undefined && synergy1 !== undefined
+							? synergy0 - synergy1
+							: undefined,
+					playoffs: true,
+				}),
+			);
 		} finally {
 			g.setWithoutSavingToDB("phase", phaseBefore);
 			await idb.cache.playoffSeries.delete(g.get("season"));

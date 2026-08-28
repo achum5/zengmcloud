@@ -41,6 +41,7 @@ import {
 	isTradeDeadlineGateActive,
 	notifySimStopArrived,
 	shouldStopAtSimStop,
+	singleGameWaitsAtSimStop,
 } from "../sync/tradeDeadlineGate.ts";
 import { settleBets } from "../sportsbook/bets.ts";
 import { idb } from "../../db/index.ts";
@@ -989,7 +990,13 @@ const play = async (
 			// has said they are done, so simming harder can't skip the room.
 			// Checked BEFORE claiming the day, so bailing leaves the day unconsumed
 			// and - at the deadline - the sentinel in place for whoever does cross.
-			if (shouldStopAtSimStop(start)) {
+			// A single-game sim asks its own question, which never touches the
+			// one-shot crossing permission - see singleGameWaitsAtSimStop.
+			const stopHere =
+				gidOneGame === undefined
+					? shouldStopAtSimStop(start)
+					: singleGameWaitsAtSimStop();
+			if (stopHere) {
 				// Say why, or a press of Sim Day looks like it did nothing.
 				const what =
 					stop.kind === "deadline" ? "Trade deadline" : `Day ${stop.day}`;

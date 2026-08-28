@@ -146,6 +146,20 @@ export const shouldStopAtSimStop = (start: boolean) => {
 	return gateActive || !start;
 };
 
+// The same question asked by a SINGLE-GAME sim (Sim one game / Watch game).
+//
+// A single game is never the act that crosses a stop - crossing is a decision
+// about the DAY, made by the room readying up or a person choosing "Advance
+// anyway", and the one-shot permission above belongs to the full-day sim that
+// decision launched. This deliberately does not consult (and so can never
+// CONSUME) that permission: a "Sim my game" press racing the ready-up advance
+// used to eat the advance's one-shot, leaving the advance to stop at the very
+// gate it was sent to cross - and then falsely complete its claim, sealing the
+// step while the whole room showed ready. So: gated, a single game simply
+// waits with everyone else; ungated (solo league), it plays - same as before,
+// when a fresh press never stopped.
+export const singleGameWaitsAtSimStop = () => gateActive;
+
 // Fires once per stop, from the device that reached it - which is the one
 // simming, so there is exactly one of it and no need for the
 // smallest-client-id election the holdout nudge uses. Cleared when the gate is

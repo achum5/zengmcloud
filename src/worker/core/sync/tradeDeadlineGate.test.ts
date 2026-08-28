@@ -12,6 +12,7 @@ import {
 	notifySimStopArrived,
 	setTradeDeadlineGateActive,
 	shouldStopAtSimStop,
+	singleGameWaitsAtSimStop,
 	getPendingSimStop,
 	allowCrossingNextSimStop,
 	clearCrossingNextSimStop,
@@ -202,6 +203,25 @@ describe("shouldStopAtSimStop", () => {
 		setTradeDeadlineGateActive(true);
 		assert.strictEqual(shouldStopAtSimStop(false), true);
 		assert.strictEqual(shouldStopAtSimStop(true), true);
+	});
+
+	// REGRESSION: a single-game sim used to route through shouldStopAtSimStop,
+	// which CONSUMES the one-shot. A "Sim my game" press racing the ready-up
+	// advance ate the advance's crossing permission, so the advance stopped at
+	// the very gate it was sent to cross - and then falsely completed its
+	// claim, sealing the step while the whole room showed 3/3 ready.
+	test("a single-game sim waits at an armed gate and leaves the one-shot intact", () => {
+		setTradeDeadlineGateActive(true);
+		allowCrossingNextSimStop();
+		// The interleaved single-game sim: waits, consumes nothing.
+		assert.strictEqual(singleGameWaitsAtSimStop(), true);
+		// The advance's own full-day sim still holds its permission.
+		assert.strictEqual(shouldStopAtSimStop(true), false);
+	});
+
+	test("a single-game sim plays through a stop in a solo league, same as always", () => {
+		setTradeDeadlineGateActive(false);
+		assert.strictEqual(singleGameWaitsAtSimStop(), false);
 	});
 
 	// Gating means the normal sim path REFUSES to cross, so an armed gate with

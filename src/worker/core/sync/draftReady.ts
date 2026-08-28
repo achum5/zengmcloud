@@ -36,7 +36,7 @@
 import { PHASE } from "../../../common/constants.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g, local, toUI } from "../../util/index.ts";
+import { g, local, lock, toUI } from "../../util/index.ts";
 import getOrder from "../draft/getOrder.ts";
 import runPicks from "../draft/runPicks.ts";
 import newPhase from "../phase/newPhase.ts";
@@ -394,12 +394,45 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 	return undefined;
 };
 
+// Did an advance actually move the world past the step it was claimed for?
+//
+// An advance can resolve WITHOUT doing anything: play() declines cleanly when
+// the sim lock is already held (someone simming their own game on this
+// device), when the roster is illegal, when the room's day fence refuses the
+// claim - and a declined newPhase/runPicks looks the same. Treating "the
+// promise resolved" as "the step ran" and completing the claim then SEALS the
+// step: every device shows the whole room ready and nothing ever advances
+// again. A live league wedged exactly this way at a day-15 stop. So the claim
+// is completed only when the re-derived stage says the step is behind us:
+// the stage is gone, the phase moved, or the next step is a different number.
+// Pure and exported for tests.
+export const advanceTookEffect = ({
+	phaseBefore,
+	stepBefore,
+	phaseAfter,
+	stageAfter,
+}: {
+	phaseBefore: number;
+	stepBefore: number;
+	phaseAfter: number;
+	stageAfter: { nextStep: number } | undefined;
+}): boolean =>
+	stageAfter === undefined ||
+	phaseAfter !== phaseBefore ||
+	stageAfter.nextStep !== stepBefore;
+
 let currentTransport: SyncTransport | undefined;
 let unsubscribe: (() => void) | undefined;
 let evaluateTimer: ReturnType<typeof setInterval> | undefined;
 let latestReady: Record<string, DraftReadyEntry | null> | undefined;
 let advancing = false;
 let lastPushed: string | undefined;
+
+// The (stage, step) whose refused claim was last logged, so a steady stuck
+// state - everyone ready, claim refused every 2s tick - leaves ONE line in
+// the sync log instead of hundreds. Without it, the wedge above was invisible
+// in a capture: the room showed ready and the log showed nothing at all.
+let lastClaimRefusedKey: string | undefined;
 
 // The (stage, step, holdout) we last nudged, so the sole-holdout notification
 // fires ONCE per stuck-state instead of every 2s evaluate tick.
@@ -662,7 +695,14 @@ const evaluate = async () => {
 		userTids.length === 0 ||
 		readyTids.length < userTids.length ||
 		!engine.isCaughtUp() ||
-		!transport.claimDraftAdvance
+		!transport.claimDraftAdvance ||
+		// This device can't run an advance right now: a sim or phase change is
+		// already in flight here (e.g. this user watching their own game).
+		// Racing for the claim anyway means winning it and then being refused
+		// by the lock, which stalls the step for the whole room until the
+		// lease expires - let a device that can actually sim win instead.
+		lock.get("gameSim") ||
+		lock.get("newPhase")
 	) {
 		return;
 	}
@@ -724,6 +764,17 @@ const evaluate = async () => {
 			CLAIM_LEASE_MS,
 		);
 		if (!claimed) {
+			// Usually another device won the race a moment ago. But a room that
+			// shows everyone ready and never advances is diagnosable only by this
+			// line - logged once per stuck step, not every 2s tick.
+			const key = `${stageKey}:${stage.nextStep}`;
+			if (key !== lastClaimRefusedKey) {
+				lastClaimRefusedKey = key;
+				syncDebugLog("phaseReady:claim-refused", {
+					stageKey,
+					step: stage.nextStep,
+				});
+			}
 			return;
 		}
 
@@ -735,10 +786,30 @@ const evaluate = async () => {
 
 		await stage2.advance();
 
-		// Close this step's crash-recovery re-claim window (the advance ran to
-		// completion, so nobody should ever run it again).
-		if (transport.completeDraftAdvance) {
-			await transport.completeDraftAdvance(stageKey, stage.nextStep);
+		// Close this step's re-claim window ONLY when the world actually moved
+		// past the step - see advanceTookEffect for the wedge this prevents.
+		// A stalled advance leaves the claim to its lease, so another attempt
+		// (here or on a device that can sim) gets to run.
+		let tookEffect = false;
+		try {
+			tookEffect = advanceTookEffect({
+				phaseBefore: phase,
+				stepBefore: stage.nextStep,
+				phaseAfter: g.get("phase"),
+				stageAfter: await getStageInfo(),
+			});
+		} catch {
+			// Can't verify - treat as not taken and let the lease cover it.
+		}
+		if (tookEffect) {
+			if (transport.completeDraftAdvance) {
+				await transport.completeDraftAdvance(stageKey, stage.nextStep);
+			}
+		} else {
+			syncDebugLog("phaseReady:advance-stalled", {
+				stageKey,
+				step: stage.nextStep,
+			});
 		}
 	} catch (error) {
 		console.error("[sync] ready-up advance failed", error);
@@ -826,6 +897,7 @@ export const setupDraftReady = (transport: SyncTransport) => {
 	);
 	latestReady = undefined;
 	lastHoldoutNotifKey = undefined;
+	lastClaimRefusedKey = undefined;
 	unsubscribe = transport.subscribeDraftReady?.((ready) => {
 		latestReady = ready;
 		void evaluate();
@@ -846,5 +918,6 @@ export const teardownDraftReady = () => {
 	currentTransport = undefined;
 	latestReady = undefined;
 	lastHoldoutNotifKey = undefined;
+	lastClaimRefusedKey = undefined;
 	pushToUI(undefined);
 };

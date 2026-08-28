@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import {
+	advanceTookEffect,
 	lastHoldoutToNotify,
 	overallPickNumber,
 	readyTeamTids,
@@ -224,6 +225,56 @@ describe("regular-season sim stops are separate gates", () => {
 				deadline,
 			),
 			[0, 5],
+		);
+	});
+});
+
+// THE BUG: the advance winner's playGames declined cleanly (its stop-crossing
+// permission had been eaten by a concurrent single-game sim), the claim was
+// marked completed anyway, and the step was sealed: every device showed 3/3
+// ready at the day-15 stop and nothing ever simmed again. Completing the claim
+// now requires the world to have actually moved past the step.
+describe("advanceTookEffect", () => {
+	const before = { phaseBefore: 1, stepBefore: 15 };
+
+	test("the day stop was crossed: the next stop is a later step (or none)", () => {
+		// Played through day 15; the next configured stop is day 30.
+		assert.strictEqual(
+			advanceTookEffect({
+				...before,
+				phaseAfter: 1,
+				stageAfter: { nextStep: 30 },
+			}),
+			true,
+		);
+		// Played through day 15 and no stop is pending any more.
+		assert.strictEqual(
+			advanceTookEffect({ ...before, phaseAfter: 1, stageAfter: undefined }),
+			true,
+		);
+	});
+
+	test("a phase change is an advance even if the new stage reuses step numbers", () => {
+		// Crossing the deadline moves REGULAR_SEASON → AFTER_TRADE_DEADLINE;
+		// preseason/lottery/re-sign advances all move the phase too.
+		assert.strictEqual(
+			advanceTookEffect({
+				...before,
+				phaseAfter: 2,
+				stageAfter: { nextStep: 15 },
+			}),
+			true,
+		);
+	});
+
+	test("the world did not move: the advance was refused, do NOT complete the claim", () => {
+		assert.strictEqual(
+			advanceTookEffect({
+				...before,
+				phaseAfter: 1,
+				stageAfter: { nextStep: 15 },
+			}),
+			false,
 		);
 	});
 });
