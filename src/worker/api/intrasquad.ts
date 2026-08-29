@@ -145,6 +145,10 @@ export const simIntrasquadGame = async (
 			DEFAULT_STADIUM_CAPACITY,
 		);
 
+		// Both squads are this team, so both play on this team's floor. Stated
+		// here because the squads are numbered 0 and 1 for the sim, and those
+		// are real tids belonging to other teams - without this the scrimmage
+		// borrowed their courts (see boxScoreToLiveSim).
 		const teamSeasonOverrides = [0, 1].map((i) => ({
 			region: t.region,
 			name: squadInfo[i]!.name,
@@ -152,6 +156,7 @@ export const simIntrasquadGame = async (
 			imgURL: t.imgURL,
 			imgURLSmall: t.imgURLSmall,
 			colors: squadInfo[i]!.colors,
+			court: t.court,
 		})) as [TeamSeasonOverride, TeamSeasonOverride];
 
 		const liveSim = await boxScoreToLiveSim({

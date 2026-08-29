@@ -4,6 +4,7 @@ import type {
 	UpdateEvents,
 	ViewInput,
 	AllStars,
+	CourtStyle,
 	Game,
 } from "../../common/types.ts";
 import { DEFAULT_TEAM_COLORS, PHASE } from "../../common/constants.ts";
@@ -18,6 +19,11 @@ export type TeamSeasonOverride = {
 	imgURL?: string;
 	imgURLSmall?: string;
 	colors?: [string, string, string];
+	// The basketball court to draw this side on. Present because the games that
+	// need an override are exactly the games whose `tid` is an array index
+	// rather than a team, so the court cannot be looked up - see
+	// boxScoreToLiveSim.
+	court?: CourtStyle;
 };
 
 export const setTeamInfo = async (

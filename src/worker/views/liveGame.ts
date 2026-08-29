@@ -9,6 +9,7 @@ import {
 } from "./gameLog.ts";
 import type {
 	AllStars,
+	CourtStyle,
 	Game,
 	UpdateEvents,
 	ViewInput,
@@ -17,6 +18,30 @@ import { PHASE, STARTING_NUM_TIMEOUTS } from "../../common/constants.ts";
 import { formatClock } from "../../common/formatClock.ts";
 import { getPeriodName } from "../../common/getPeriodName.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
+
+// WHICH COURT A LIVE-SIM SIDE IS DRAWN ON.
+//
+// Normally the team's own, found by tid. But a SYNTHETIC GAME'S tid IS AN
+// ARRAY INDEX, NOT A TEAM: an intrasquad scrimmage numbers its two squads 0
+// and 1, and an exhibition numbers its two sides the same way, so the lookup
+// handed those games whatever courts the league's first two teams happen to
+// own. The field report is a Cleveland scrimmage wearing Cleveland's logo and
+// colors - which came from the override - on Boston's parquet, green key and
+// TD Garden rails, which came from tid 1. Half one court, half another.
+//
+// An override is a synthetic game saying who its teams really are, so it
+// settles the court too, INCLUDING saying there is not one: an exhibition
+// between two historical teams belongs on neutral hardwood, not on whatever
+// floor tid 0 owns today.
+export const liveSimCourt = ({
+	override,
+	teamCourt,
+}: {
+	override: TeamSeasonOverride | undefined;
+	// The court belonging to the league team with this side's tid. Only read
+	// when there is no override, because only then does the tid mean anything.
+	teamCourt: CourtStyle | undefined;
+}): CourtStyle | undefined => (override ? override.court : teamCourt);
 
 export const boxScoreToLiveSim = async ({
 	allStars,
@@ -114,13 +139,33 @@ export const boxScoreToLiveSim = async ({
 		);
 		// Attach the team's custom court style (basketball) so the live-game court
 		// graphic can draw the home team's court.
-		if (isSport("basketball") && t.tid >= 0) {
-			try {
-				const teamRecord = await idb.cache.teams.get(t.tid);
-				t.court = teamRecord?.court;
-			} catch {
-				// Court styling is cosmetic; fall back to defaults.
+		//
+		// A SYNTHETIC GAME'S tid IS AN ARRAY INDEX, NOT A TEAM. An intrasquad
+		// scrimmage numbers its two squads 0 and 1, and an exhibition numbers
+		// its two sides the same way, so looking the court up by tid handed
+		// those games whatever courts the league's first two teams happen to
+		// own. The field report: a Cleveland scrimmage drawn with Cleveland's
+		// logo and colors - which come from the override - on Boston's parquet,
+		// green key and TD Garden rails, which came from tid 1. Half one court,
+		// half another.
+		//
+		// An override is a synthetic game saying who its teams really are, so
+		// it settles the court too, INCLUDING saying there is not one: an
+		// exhibition between two historical teams belongs on neutral hardwood,
+		// not on whatever floor tid 0 owns today.
+		if (isSport("basketball")) {
+			const override = teamSeasonOverrides?.[i];
+			let teamCourt: CourtStyle | undefined;
+			// Only worth asking when the tid is a real team AND nothing has
+			// already said otherwise - the lookup is the whole fault above.
+			if (!override && t.tid >= 0) {
+				try {
+					teamCourt = (await idb.cache.teams.get(t.tid))?.court;
+				} catch {
+					// Court styling is cosmetic; fall back to defaults.
+				}
 			}
+			t.court = liveSimCourt({ override, teamCourt });
 		}
 		t.ptsQtrs = [];
 
