@@ -39,10 +39,7 @@
 // same stale scrolling tree, and it must not be allowed to excuse the first.
 
 import { PINNED_SELECTOR } from "./stickyHeaderPin.ts";
-import {
-	probeStickyTop,
-	recordHeaderEvent,
-} from "./stickyHeaderDiagnostics.ts";
+import { probeSticky, recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
 import {
 	initVisualViewportHeader,
 	resyncStickyBarShifts,
@@ -476,22 +473,31 @@ const nudgeScroller = async () => {
 // different places, which is the same "page must be scrolled" condition the
 // header's own detection has.
 export const repairCanHelp = ({
-	probeTop,
-	scrollY,
+	probe,
 }: {
-	probeTop: number | undefined;
-	scrollY: number;
+	// How far a position:sticky element created just now was lifted off its
+	// static position, and how far it could have been. See probeSticky - this
+	// used to be an absolute top, which the fixed fallback's own padding moves,
+	// so the same reading meant different things depending on whether the
+	// fallback happened to be engaged.
+	probe: { lift: number; possible: number } | undefined;
 }): boolean => {
-	if (probeTop === undefined || !Number.isFinite(probeTop)) {
+	if (
+		probe === undefined ||
+		!Number.isFinite(probe.lift) ||
+		!Number.isFinite(probe.possible)
+	) {
 		// No reading, no evidence, no reason not to try.
 		return true;
 	}
-	if (!Number.isFinite(scrollY) || scrollY <= TOLERANCE_PX) {
+	// At the top of the page a working sticky element and a broken one are in
+	// the same place, so the probe cannot convict anything.
+	if (probe.possible <= TOLERANCE_PX) {
 		return true;
 	}
-	// A fresh sticky element sitting where it belongs means sticky works here and
-	// the bar alone is stale - which is exactly what the ladder is for.
-	return probeTop >= -TOLERANCE_PX;
+	// A fresh sticky element that lifted means sticky works here and the bar
+	// alone is stale - which is exactly what the ladder is for.
+	return probe.lift >= probe.possible / 2;
 };
 
 // Escalate only as far as it takes, re-measuring after each step. Cheap when the
@@ -747,11 +753,13 @@ const checkBar = async (bar: Bar, trigger: string) => {
 			// for anything in the page and no repair of an ELEMENT can help -
 			// which is worth knowing before the ladder runs three times and gives
 			// up, as it has been doing on the field device.
-			const probeTop = probeStickyTop();
-			note(bar, element, "detached", `via=${trigger} probe=${probeTop ?? "-"}`);
+			const probe = probeSticky();
+			const probeDetail =
+				probe === undefined ? "-" : `${probe.lift}/${probe.possible}`;
+			note(bar, element, "detached", `via=${trigger} probe=${probeDetail}`);
 
-			if (!repairCanHelp({ probeTop, scrollY: window.scrollY })) {
-				note(bar, element, "unrepairable", `probe=${probeTop}`);
+			if (!repairCanHelp({ probe })) {
+				note(bar, element, "unrepairable", `probe=${probeDetail}`);
 				return;
 			}
 

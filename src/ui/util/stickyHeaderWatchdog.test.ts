@@ -262,33 +262,57 @@ describe("bottomBarIsDetached when the offset merely echoes the scroll", () => {
 // checked before three rebuilds and a scroll nudge go to waste on a bar with
 // nothing wrong with it.
 describe("repairCanHelp", () => {
-	test("a probe where it belongs means the bar alone is stale - rebuild it", () => {
-		assert.strictEqual(repairCanHelp({ probeTop: 0, scrollY: 400 }), true);
+	test("a probe that lifted means the bar alone is stale - rebuild it", () => {
+		assert.strictEqual(
+			repairCanHelp({ probe: { lift: 400, possible: 400 } }),
+			true,
+		);
 	});
 
-	test("a probe adrift means sticky is broken page-wide - do not bother", () => {
-		assert.strictEqual(repairCanHelp({ probeTop: -400, scrollY: 400 }), false);
+	test("a probe that did not move means sticky is broken page-wide - do not bother", () => {
+		assert.strictEqual(
+			repairCanHelp({ probe: { lift: 0, possible: 400 } }),
+			false,
+		);
 	});
 
 	// At the top of the page a working sticky element and a broken one are in the
 	// same place, so the probe cannot convict anything.
 	test("at the top of the page the probe says nothing", () => {
-		assert.strictEqual(repairCanHelp({ probeTop: 0, scrollY: 0 }), true);
+		assert.strictEqual(
+			repairCanHelp({ probe: { lift: 0, possible: 0 } }),
+			true,
+		);
+	});
+
+	// The reading used to be an absolute top, which the fixed fallback's own
+	// padding moves - so whether the ladder ran depended on whether the
+	// fallback happened to be engaged. A lift carries the padding on both
+	// probes and cancels it.
+	test("the fallback's own padding does not change the verdict", () => {
+		assert.strictEqual(
+			repairCanHelp({ probe: { lift: 0, possible: 30 } }),
+			false,
+		);
 	});
 
 	test("no probe is no evidence, so the ladder still runs", () => {
+		assert.strictEqual(repairCanHelp({ probe: undefined }), true);
 		assert.strictEqual(
-			repairCanHelp({ probeTop: undefined, scrollY: 400 }),
+			repairCanHelp({ probe: { lift: Number.NaN, possible: 400 } }),
 			true,
 		);
 		assert.strictEqual(
-			repairCanHelp({ probeTop: Number.NaN, scrollY: 400 }),
+			repairCanHelp({ probe: { lift: 0, possible: Number.NaN } }),
 			true,
 		);
 	});
 
 	test("a pixel of rounding is not a probe adrift", () => {
-		assert.strictEqual(repairCanHelp({ probeTop: -1, scrollY: 400 }), true);
+		assert.strictEqual(
+			repairCanHelp({ probe: { lift: 399, possible: 400 } }),
+			true,
+		);
 	});
 });
 

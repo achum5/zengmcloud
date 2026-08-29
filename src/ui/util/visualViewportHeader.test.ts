@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	headerLooksUnstuck,
+	headerMeasuredShift,
 	keyboardLikelyOpen,
 	stickyIsBroken,
 	tickerMeasuredShift,
@@ -24,30 +25,98 @@ import {
 // which allowed more scroll, which pushed it further. Out of flow cannot do
 // that, which is the whole reason for position:fixed here.
 describe("stickyIsBroken", () => {
-	const broken = (o: Partial<Parameters<typeof stickyIsBroken>[0]>) =>
-		stickyIsBroken({ probeTop: 0, scrollY: 100, ...o });
+	const broken = (probe: { lift: number; possible: number } | undefined) =>
+		stickyIsBroken({ probe });
 
-	test("a probe sitting where it belongs means sticky works", () => {
-		assert.equal(broken({ probeTop: 0 }), false);
-		assert.equal(broken({ probeTop: -1 }), false);
+	test("a probe lifted the whole way means sticky works", () => {
+		assert.equal(broken({ lift: 100, possible: 100 }), false);
+		assert.equal(broken({ lift: 99, possible: 100 }), false);
 	});
 
-	test("a probe adrift by the scroll means sticky is not engaging", () => {
-		// The field reading: probe -18 on a page scrolled 18.
-		assert.equal(broken({ probeTop: -18, scrollY: 18 }), true);
-		assert.equal(broken({ probeTop: -640, scrollY: 640 }), true);
+	test("a probe that did not move means sticky is not engaging", () => {
+		// The field reading: a probe that never left its static position while
+		// the page was scrolled.
+		assert.equal(broken({ lift: 0, possible: 18 }), true);
+		assert.equal(broken({ lift: 0, possible: 640 }), true);
 	});
 
 	test("at the top of the document the two cases are the same place", () => {
-		assert.equal(broken({ probeTop: 0, scrollY: 0 }), false);
-		assert.equal(broken({ probeTop: -2, scrollY: 2 }), false);
+		assert.equal(broken({ lift: 0, possible: 0 }), false);
+		assert.equal(broken({ lift: 0, possible: 2 }), false);
+	});
+
+	// THE FLICKER THIS SIGNATURE EXISTS TO END. The probe is prepended to
+	// #content, and the fixed fallback puts a header's height of padding there -
+	// so with the fallback engaged and the page scrolled 30, a probe that is
+	// not sticking at all reads +22, which the old absolute test read as
+	// "sticky works". The fallback disengaged, the padding went, the probe read
+	// -30, and it engaged again: every scroll frame, near the top of every page.
+	// A lift is immune - the reference probe carries the same padding.
+	test("REGRESSION: the fallback's own padding cannot fake a working probe", () => {
+		// scrollY 30, 52px of fallback padding, sticky doing nothing.
+		assert.equal(broken({ lift: 0, possible: 30 }), true);
 	});
 
 	test("a missing or nonsense reading is not evidence of a fault", () => {
-		assert.equal(broken({ probeTop: undefined }), false);
-		assert.equal(broken({ scrollY: undefined }), false);
-		assert.equal(broken({ probeTop: Number.NaN }), false);
-		assert.equal(broken({ scrollY: Number.NaN }), false);
+		assert.equal(broken(undefined), false);
+		assert.equal(broken({ lift: Number.NaN, possible: 100 }), false);
+		assert.equal(broken({ lift: 0, possible: Number.NaN }), false);
+	});
+});
+
+// WHAT PUTS THE HEADER BACK ON THE SCREEN once it is out of flow, on a device
+// where position:fixed does not land where position:fixed should.
+describe("headerMeasuredShift", () => {
+	const shift = (o: Partial<Parameters<typeof headerMeasuredShift>[0]>) =>
+		headerMeasuredShift({
+			measuredTop: 0,
+			currentShift: 0,
+			pinned: true,
+			layoutHeight: 1052,
+			...o,
+		});
+
+	test("a pinned header already at the top is left alone", () => {
+		assert.equal(shift({ measuredTop: 0 }), 0);
+	});
+
+	// The field report: fallback engaged, header position:fixed top:0, and it
+	// measured -192 with the page scrolled 192 - the device places fixed
+	// against a viewport it reports as panned by exactly the scroll offset.
+	test("a header displaced by a phantom viewport offset is made up exactly", () => {
+		assert.equal(shift({ measuredTop: -192 }), 192);
+	});
+
+	test("it converges in one step instead of chasing its own tail", () => {
+		// Already corrected by 192 and now measuring 0: the correction is
+		// working, so it is KEPT, not cancelled because the header looks right
+		// while wearing it.
+		assert.equal(shift({ measuredTop: 0, currentShift: 192 }), 192);
+		// Still 40 short with 152 already applied: top up to 192, not 40 more.
+		assert.equal(shift({ measuredTop: -40, currentShift: 152 }), 192);
+	});
+
+	// A transform on an IN-FLOW element counts toward scrollable overflow in
+	// WebKit: an earlier build pushed the in-flow header down, which grew the
+	// document, which allowed more scroll, which enlarged the push.
+	test("an in-flow header is never transformed, however adrift it looks", () => {
+		assert.equal(shift({ measuredTop: -192, pinned: false }), 0);
+	});
+
+	test("sub-pixel drift is not worth a transform", () => {
+		assert.equal(shift({ measuredTop: -1 }), 0);
+		assert.equal(shift({ measuredTop: 1 }), 0);
+	});
+
+	test("a correction bigger than the viewport is refused", () => {
+		assert.equal(shift({ measuredTop: -2000, layoutHeight: 1052 }), 0);
+	});
+
+	test("unmeasurable geometry changes nothing", () => {
+		assert.equal(shift({ measuredTop: undefined }), 0);
+		assert.equal(shift({ layoutHeight: undefined }), 0);
+		assert.equal(shift({ measuredTop: Number.NaN }), 0);
+		assert.equal(shift({ layoutHeight: 0 }), 0);
 	});
 });
 

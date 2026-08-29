@@ -78,10 +78,67 @@ const describe = (el: Element): string => {
 	return `${el.tagName.toLowerCase()}${id}${cls}`;
 };
 
+// HOW FAR STICKY ACTUALLY LIFTS A BRAND-NEW ELEMENT, against how far it could.
+//
+// The absolute reading below (probeStickyTop) was the first version of this and
+// it is not safe to decide on, because the probe's own static position moves:
+// the fixed fallback puts padding on #content, so the probe sits a header's
+// height further down whenever the fallback is engaged. A working probe reads
+// 0 and a broken one reads `padding - scrollY`, and between scrollY 3 and 52
+// those are BOTH above the old threshold - so the fallback disengaged, the
+// padding went away, the probe read `-scrollY` again, and it re-engaged. A
+// flicker, every scroll frame, near the top of every page.
+//
+// Two probes side by side answer it with nothing to calibrate. They are
+// inserted together and are both zero-height, so their static positions are
+// identical, and the only difference between them is that one is sticky:
+//
+//   lift = stickyTop - staticTop     how far sticky moved it
+//   possible = -staticTop            how far it COULD move, to the viewport top
+//
+// Working sticky lifts the probe the whole way (lift === possible); broken
+// sticky does not move it at all (lift === 0). Both rects are read in the same
+// breath, so whatever coordinate space iOS reports them in cancels - the same
+// argument headerLift rests on - and no padding, zoom or viewport offset enters
+// the answer.
+export const probeSticky = ():
+	| { lift: number; possible: number }
+	| undefined => {
+	const host = document.getElementById("content");
+	if (!host) {
+		return undefined;
+	}
+	const style = "height:0;width:0;pointer-events:none";
+	const reference = document.createElement("div");
+	reference.style.cssText = `position:static;${style}`;
+	const probe = document.createElement("div");
+	probe.style.cssText = `position:sticky;top:0;${style}`;
+	try {
+		host.prepend(reference, probe);
+		const staticTop = reference.getBoundingClientRect().top;
+		const stickyTop = probe.getBoundingClientRect().top;
+		if (!Number.isFinite(staticTop) || !Number.isFinite(stickyTop)) {
+			return undefined;
+		}
+		return {
+			lift: num(stickyTop - staticTop),
+			possible: num(Math.max(0, -staticTop)),
+		};
+	} catch {
+		return undefined;
+	} finally {
+		probe.remove();
+		reference.remove();
+	}
+};
+
 // The sticky probe, as its own export so the watchdog can take one at the
 // moment it declares a fault - which is the reading that matters, and is not
 // the reading the report button can take (the button is at the top of the page,
 // where a broken bar and a healthy one sit in the same place).
+//
+// Kept for the REPORT, where an absolute number is worth reading next to the
+// header's own. Decisions use probeSticky above.
 //
 // Returns undefined when there is nowhere to put it.
 export const probeStickyTop = (): number | undefined => {
@@ -325,6 +382,15 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		// tree, which is the difference between a repairable fault and one that
 		// no repair of the element can touch.
 		stickyProbe: stickyProbe(),
+		// The same question asked the way the code now decides it: how far
+		// sticky lifted a fresh probe, over how far it could have. "0/192" is
+		// sticky doing nothing; "192/192" is sticky working. Unlike the
+		// absolute reading above this is not thrown off by the fixed
+		// fallback's own padding - see probeSticky.
+		stickyProbeLift: (() => {
+			const probe = probeSticky();
+			return probe === undefined ? "-" : `${probe.lift}/${probe.possible}`;
+		})(),
 		// WHICH ELEMENT IS ACTUALLY SCROLLING. A document scroller is the whole
 		// premise of both bars (see the header CSS); if this ever reads anything
 		// but html, sticky is anchored somewhere nobody designed for.

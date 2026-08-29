@@ -47,6 +47,21 @@
 // against how far the page is scrolled, and computes to zero whenever sticky is
 // working - which is the condition the sixth build failed and the reason this
 // one is allowed to exist.
+//
+// AND TAKING IT OUT OF FLOW WAS STILL NOT ENOUGH, which is the finding that
+// produced the correction in headerMeasuredShift. The next report has the
+// fallback ENGAGED - the probe read -140 on a page scrolled 192, which is the
+// fallback's own 52px of padding showing through, so the header was already
+// `position:fixed; top:0` - and the header measuring -192 anyway. A fixed
+// element cannot sit 192px above the box it is fixed to, so the box is not
+// where iOS says it is: that device reports a visual viewport 646 tall inside a
+// 1052 layout viewport with offsetTop equal to the scroll offset, and places
+// fixed and sticky alike against the phantom.
+//
+// So there is no position value that lands the header on the screen, because
+// every one of them anchors to the same wrong box. What is left is the thing
+// the ticker has been doing successfully all along: measure where the bar
+// actually is, and move it the difference. That is now what both bars do.
 
 // WHEN STICKY IS NOT STICKING AT ALL, PUT THE HEADER WHERE STICKY WOULD.
 //
@@ -73,26 +88,31 @@
 // to decide whether to keep correcting the header is circular, and flickers.
 //
 // At the top of the document a stuck bar and a loose one are in the same place,
-// so there is nothing to tell apart and nothing to correct either.
+// so there is nothing to tell apart and nothing to correct either - which is
+// what `possible` being zero means here.
+//
+// The reading is a LIFT rather than an absolute top, because the absolute one
+// was measured against a static position that our own fallback moves. See
+// probeSticky for the flicker that cost.
 export const stickyIsBroken = ({
-	probeTop,
-	scrollY,
+	probe,
 }: {
-	// getBoundingClientRect().top of a position:sticky element created just now.
-	// Zero when sticky works; -scrollY when it is not engaging.
-	probeTop: number | undefined;
-	scrollY: number | undefined;
+	// How far a position:sticky element created just now was lifted off its
+	// static position, and how far it could have been lifted. See probeSticky.
+	probe: { lift: number; possible: number } | undefined;
 }): boolean => {
 	if (
-		probeTop === undefined ||
-		scrollY === undefined ||
-		!Number.isFinite(probeTop) ||
-		!Number.isFinite(scrollY) ||
-		scrollY <= 2
+		probe === undefined ||
+		!Number.isFinite(probe.lift) ||
+		!Number.isFinite(probe.possible) ||
+		probe.possible <= 2
 	) {
 		return false;
 	}
-	return probeTop < -2;
+	// Working sticky lifts it the whole way and broken sticky not at all, so
+	// anything short of halfway is the broken case with room for the rounding
+	// a zoomed page puts on every rect.
+	return probe.lift < probe.possible / 2;
 };
 
 // The cheap pre-check, so a healthy device never pays for a probe. A header
@@ -122,7 +142,7 @@ export const headerLooksUnstuck = ({
 	return Math.abs(headerTop - parentTop) < scrollY - 2;
 };
 
-import { probeStickyTop } from "./stickyHeaderDiagnostics.ts";
+import { probeSticky } from "./stickyHeaderDiagnostics.ts";
 import {
 	STICKY_FALLBACK_CLASS,
 	STICKY_FALLBACK_HEIGHT_VAR,
@@ -193,6 +213,79 @@ export const tickerMeasuredShift = ({
 	// A correction larger than the viewport is not a viewport offset, it is a
 	// bar that has come adrift - which is the watchdog's job to rebuild, not
 	// this one's to paper over.
+	if (Math.abs(shift) > layoutHeight) {
+		return 0;
+	}
+	return Math.round(shift);
+};
+
+// WHERE THE PINNED HEADER GOES, MEASURED INSTEAD OF ASSUMED.
+//
+// The fixed fallback was supposed to be the end of this: position:fixed anchors
+// to the layout viewport, which is where a stuck header belongs. The field
+// report that reopened it shows the fallback ENGAGED and the header still off
+// the screen - the probe read -140 with the page scrolled 192, which is exactly
+// the fallback's own 52px of padding showing through, so it was on - and the
+// header, `position:fixed; top:0`, measured -192.
+//
+// A fixed element cannot be 192px above the top of the box it is fixed to. So
+// the box is not where iOS says it is: the device reports a visual viewport
+// 646 tall inside a 1052 layout viewport with offsetTop tracking the scroll
+// exactly, and the compositor places fixed and sticky alike against that
+// phantom. Everything anchored to the top of the viewport is displaced up the
+// page by the scroll offset, which is precisely "the header is not sticking"
+// and precisely why no repair of any element has ever fixed it.
+//
+// The ticker has been immune to all of this for one reason - it measures where
+// it actually is and moves by the difference, consulting no viewport number.
+// This is that, for the top bar: drive the header's measured top to zero.
+//
+//     shift = 0 - (measured top with our own shift removed)
+//
+// On a healthy device a pinned header already measures 0, the shift is 0, and
+// nothing is written - so this cannot regress a browser that works.
+//
+// ONLY EVER WHILE PINNED. A transform on an in-flow element counts toward
+// scrollable overflow in WebKit, so an earlier build that pushed the in-flow
+// header down grew the document, which allowed more scroll, which enlarged the
+// push. Out of flow it contributes nothing to overflow and the feedback loop
+// cannot exist.
+export const headerMeasuredShift = ({
+	measuredTop,
+	currentShift,
+	pinned,
+	layoutHeight,
+}: {
+	// getBoundingClientRect().top of the header, as it renders right now.
+	measuredTop: number | undefined;
+	// The correction currently on it, subtracted back out so this converges in
+	// one step instead of chasing its own tail.
+	currentShift: number;
+	// Is the header out of flow (the fixed fallback engaged)? Never correct one
+	// that is still in flow - see above.
+	pinned: boolean;
+	// documentElement.clientHeight, only as a bound on what counts as a
+	// plausible correction.
+	layoutHeight: number | undefined;
+}): number => {
+	if (
+		!pinned ||
+		measuredTop === undefined ||
+		layoutHeight === undefined ||
+		!Number.isFinite(measuredTop) ||
+		!Number.isFinite(layoutHeight) ||
+		layoutHeight <= 0
+	) {
+		return 0;
+	}
+	const shift = -(measuredTop - currentShift);
+	// Sub-pixel differences are rounding, not misplacement, and writing a
+	// transform for them only churns the compositor.
+	if (Math.abs(shift) < 2) {
+		return 0;
+	}
+	// A correction larger than the viewport is not a viewport offset, it is a
+	// bar that has come adrift - which is the watchdog's job, not this one's.
 	if (Math.abs(shift) > layoutHeight) {
 		return 0;
 	}
@@ -333,21 +426,32 @@ const stickyBrokenNow = (header: HTMLElement): boolean => {
 		return lastProbeSaidBroken;
 	}
 	lastProbeAt = now;
-	lastProbeSaidBroken = stickyIsBroken({
-		probeTop: probeStickyTop(),
-		scrollY,
-	});
+	lastProbeSaidBroken = stickyIsBroken({ probe: probeSticky() });
 	return lastProbeSaidBroken;
 };
 
 export const resyncStickyBarShifts = () => {
 	const header = document.querySelector<HTMLElement>(HEADER_SELECTOR);
-	// Never a transform on the header. An older build pushed it down with one
-	// and grew the document doing it - see the note above applyHeaderFixedFallback
-	// - so this also strips whatever such a build left behind.
-	applyHeaderShift(header, 0);
 	if (header) {
-		applyHeaderFixedFallback(header, stickyBrokenNow(header));
+		const pinned = stickyBrokenNow(header);
+		// Out of flow FIRST: the correction below is only allowed on a header
+		// that is, and it has to measure the header as it renders once pinned.
+		applyHeaderFixedFallback(header, pinned);
+		// A transform on the header, which every build before this one was
+		// forbidden - correctly, while the header was in flow, because one
+		// grew the document. Pinned it cannot: see headerMeasuredShift. When
+		// the header is in flow this computes 0, which also strips whatever an
+		// older build left behind.
+		applyHeaderShift(
+			header,
+			headerMeasuredShift({
+				measuredTop: header.getBoundingClientRect().top,
+				currentShift: currentShiftOf(header),
+				pinned,
+				layoutHeight:
+					document.documentElement?.clientHeight || window.innerHeight,
+			}),
+		);
 	}
 
 	const ticker = document.querySelector<HTMLElement>(TICKER_SELECTOR);
