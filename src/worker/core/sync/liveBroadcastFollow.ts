@@ -49,6 +49,26 @@ export const shouldServeFollowedPayload = (
 	localSimActive: boolean,
 ): boolean => followed !== undefined && !followed.left && !localSimActive;
 
+// How many times a device will try to fetch one broadcast's payload before it
+// gives up on that broadcast.
+//
+// A join that cannot read the payload leaves NO follow record - there is
+// nothing to follow - so before this existed every heartbeat looked like a
+// broadcast this device had never seen and started the join over. That is fine
+// for a payload that is merely late, and an unbounded loop for one that is
+// GONE: the chunk docs live in fixed per-room slots, so a second broadcast
+// overwrites them and either device ending one deletes them, while the meta doc
+// keeps saying active for as long as someone is still heartbeating it. And
+// because a join freezes the header BEFORE it fetches, each retry flashed "Live
+// game in progress" over the phase - two or three times a second, on every
+// device in the room at once, for as long as the heartbeat lasted.
+//
+// The payload chunks are written before the meta doc flips active, so a
+// complete payload is always readable for a broadcast that really is live.
+// These attempts only cover a torn write; past them, the broadcast is treated
+// as not being there at all.
+export const MAX_JOIN_ATTEMPTS = 3;
+
 export const decideFollowAction = (
 	broadcast: { startedAt: number; gameOver: boolean },
 	followed: FollowRecord,
@@ -57,7 +77,14 @@ export const decideFollowAction = (
 	// offered instead, and since nothing is recorded against the broadcast, the
 	// first heartbeat after the local sim ends joins it as normal.
 	localSimActive = false,
+	// Joins already attempted and failed against THIS broadcast, by startedAt.
+	// Counted outside the follow record because a failed join is precisely the
+	// case where there is no record to count on - see connect.ts.
+	joinFailures = 0,
 ): FollowAction => {
+	if (joinFailures >= MAX_JOIN_ATTEMPTS) {
+		return "ignore";
+	}
 	if (!followed || followed.startedAt !== broadcast.startedAt) {
 		return localSimActive ? "pill" : "join";
 	}

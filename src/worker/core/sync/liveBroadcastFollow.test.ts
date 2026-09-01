@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	decideFollowAction,
+	MAX_JOIN_ATTEMPTS,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
 
@@ -79,6 +80,65 @@ describe("decideFollowAction", () => {
 		);
 		assert.isFalse(shouldServeFollowedPayload({ startedAt: 1000 }, true));
 		assert.isFalse(shouldServeFollowedPayload(undefined, false));
+	});
+
+	test("a broadcast whose payload cannot be read stops being joined", () => {
+		// THE FLICKER. A join that misses the payload leaves no follow record, so
+		// every one of the broadcaster's heartbeats read as a broadcast never seen
+		// before and started the join over - and each attempt freezes the header
+		// before it fetches, so the whole room's header alternated between the
+		// phase and "Live game in progress" two or three times a second, forever.
+		// Retries are for a torn write, so they are finite.
+		for (let failures = 0; failures < MAX_JOIN_ATTEMPTS; failures++) {
+			assert.strictEqual(
+				decideFollowAction(live, undefined, false, failures),
+				"join",
+				`still worth a try after ${failures} failures`,
+			);
+		}
+		assert.strictEqual(
+			decideFollowAction(live, undefined, false, MAX_JOIN_ATTEMPTS),
+			"ignore",
+		);
+		// And it stays given up on, however many more heartbeats arrive.
+		assert.strictEqual(
+			decideFollowAction(live, undefined, false, MAX_JOIN_ATTEMPTS + 40),
+			"ignore",
+		);
+	});
+
+	test("giving up does not offer the pill either", () => {
+		// "ignore" rather than "pill" on purpose: a button that reopens the same
+		// unreadable payload is a broken button. This is also the one case where
+		// a device mid-sim of its own game is NOT pilled.
+		assert.strictEqual(
+			decideFollowAction(live, undefined, true, MAX_JOIN_ATTEMPTS),
+			"ignore",
+		);
+	});
+
+	test("a device already watching is unaffected by an old failure count", () => {
+		// Failures are cleared on a successful join, so this combination should
+		// not arise - but if it ever did, the rule must not eject somebody from a
+		// playback that is running fine.
+		assert.strictEqual(
+			decideFollowAction(live, { startedAt: 1000 }, false, 0),
+			"cursor",
+		);
+	});
+
+	test("failures are counted per broadcast, not for the room", () => {
+		// The next live sim gets its own startedAt and its own fresh chances -
+		// one unreadable payload must not make the room stop watching games.
+		assert.strictEqual(
+			decideFollowAction(
+				{ startedAt: 2000, gameOver: false },
+				undefined,
+				false,
+				0,
+			),
+			"join",
+		);
 	});
 
 	test("its own sim does not disturb an earlier Leave decision", () => {

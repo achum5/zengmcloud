@@ -461,6 +461,42 @@ let followedBroadcast:
 // followedBroadcast - the freeze is still guaranteed to get released. Otherwise
 // the "Live game in progress" banner sticks on forever.
 let followerFroze = false;
+
+// Take the spoiler hold. Idempotent, so a retry that already holds it does not
+// re-push - and so the header can never be flashed on twice for one join.
+const freezeFollower = () => {
+	if (followerFroze) {
+		return;
+	}
+	followerFroze = true;
+	void toUI("updateLocal", [{ liveGameInProgress: true }]);
+};
+
+// Joins that failed to fetch a payload, per broadcast (keyed by startedAt).
+// A failed join has no follow record to remember itself by, so this is what
+// stops the next heartbeat - 400ms away - from reading as a brand new
+// broadcast and starting the whole thing over. See MAX_JOIN_ATTEMPTS for what
+// that loop looked like on screen. Bounded because startedAt is a clock value
+// and a long session would otherwise accumulate one entry per broadcast.
+const joinFailures = new Map<number, number>();
+const MAX_REMEMBERED_JOIN_FAILURES = 8;
+
+const noteJoinFailure = (startedAt: number): number => {
+	const attempts = (joinFailures.get(startedAt) ?? 0) + 1;
+	// Delete first so re-inserting refreshes this entry's place in the eviction
+	// order - the one we just touched must not be the one evicted.
+	joinFailures.delete(startedAt);
+	joinFailures.set(startedAt, attempts);
+	while (joinFailures.size > MAX_REMEMBERED_JOIN_FAILURES) {
+		const oldest = joinFailures.keys().next().value;
+		if (oldest === undefined) {
+			break;
+		}
+		joinFailures.delete(oldest);
+	}
+	return attempts;
+};
+
 const unfreezeFollower = () => {
 	if (followerFroze) {
 		followerFroze = false;
@@ -755,16 +791,30 @@ const followBroadcast = async (
 	// over, revealing the final score in the header just as it does for the simmer.
 	// (For a late opt-in join the score may already be on screen; the freeze
 	// still keeps the rest of the playback spoiler-consistent.)
-	void toUI("updateLocal", [{ liveGameInProgress: true }]);
-	followerFroze = true;
+	//
+	// Only on the FIRST try at this broadcast, though. The freeze is what makes
+	// the header say "Live game in progress", so freezing ahead of a fetch that
+	// then fails is a visible flash; doing it on every retry is the flicker.
+	// A retry that SUCCEEDS still freezes - just below, before it navigates.
+	if ((joinFailures.get(meta.startedAt) ?? 0) === 0) {
+		freezeFollower();
+	}
 	try {
 		const serialized = await transport.fetchLiveBroadcastData?.(
 			meta.chunkCount,
 		);
 		if (!serialized) {
-			// Payload not fully there (cleared or mid-write) - drop the follow so a
-			// later snapshot can retry, and release the freeze we just set.
+			// Payload not fully there. Record the miss against this broadcast so
+			// the heartbeats that follow retry a bounded number of times rather
+			// than forever, and release the freeze if we took it.
 			followedBroadcast = undefined;
+			const attempts = noteJoinFailure(meta.startedAt);
+			syncDebugLog("live:join-payload-missing", {
+				gid: meta.gid,
+				startedAt: meta.startedAt,
+				chunkCount: meta.chunkCount,
+				attempts,
+			});
 			unfreezeFollower();
 			return false;
 		}
@@ -778,6 +828,10 @@ const followBroadcast = async (
 		// Same navigation the simmer's own live sim uses, so the exact same view
 		// path renders it. fromAction bypasses the deep-link guard; mpFollower
 		// tells the view to use the payload's game record.
+		//
+		// A retry skipped the freeze above; take it now, before anything can
+		// paint the result behind the playback we are about to start.
+		freezeFollower();
 		await toUI("realtimeUpdate", [
 			["gameSim"],
 			helpers.leagueUrl(["live_game"]),
@@ -792,10 +846,18 @@ const followBroadcast = async (
 	} catch (error) {
 		console.error("Failed to start following live broadcast", error);
 		followedBroadcast = undefined;
+		const attempts = noteJoinFailure(meta.startedAt);
+		syncDebugLog("live:join-failed", {
+			gid: meta.gid,
+			startedAt: meta.startedAt,
+			attempts,
+			error: String(error),
+		});
 		unfreezeFollower();
 		return false;
 	}
 
+	joinFailures.delete(meta.startedAt);
 	pushFollowerState(meta);
 	return true;
 };
@@ -860,6 +922,7 @@ const handleLiveBroadcastMeta = async (
 		meta,
 		followedBroadcast,
 		local.liveSimGid !== undefined,
+		joinFailures.get(meta.startedAt) ?? 0,
 	);
 	if (action === "join") {
 		setWatchablePill(undefined);
@@ -928,8 +991,7 @@ export const watchLiveBroadcast = async (): Promise<boolean> => {
 		followedBroadcast.left = false;
 		// Back under the spoiler hold, exactly as a fresh join sets it: the rest
 		// of the game has not happened yet as far as this screen is concerned.
-		void toUI("updateLocal", [{ liveGameInProgress: true }]);
-		followerFroze = true;
+		freezeFollower();
 		await toUI("realtimeUpdate", [
 			["gameSim"],
 			helpers.leagueUrl(["live_game"]),
@@ -945,6 +1007,9 @@ export const watchLiveBroadcast = async (): Promise<boolean> => {
 		return true;
 	}
 
+	// Somebody deliberately asked for this one, so it gets a clean slate rather
+	// than whatever the automatic attempts left behind.
+	joinFailures.delete(meta.startedAt);
 	return followBroadcast(meta, transport);
 };
 
@@ -2232,6 +2297,7 @@ const doConnectSharedLeague = async ({
 	followedBroadcast = undefined;
 	followerFroze = false;
 	roomBroadcastMeta = undefined;
+	joinFailures.clear();
 	liveBroadcastUnsub = transport.subscribeLiveBroadcast?.((meta) => {
 		void handleLiveBroadcastMeta(meta, clientId, transport);
 	});
@@ -2338,6 +2404,7 @@ export const teardownSharedLeague = async ({
 	followedBroadcastPayload = undefined;
 	followerFroze = false;
 	roomBroadcastMeta = undefined;
+	joinFailures.clear();
 	setWatchablePill(undefined);
 	currentTransport = undefined;
 	lastPendingUploads = 0;
