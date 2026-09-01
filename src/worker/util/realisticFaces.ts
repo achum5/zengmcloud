@@ -438,27 +438,37 @@ type AgeBand = {
 	// from `balding` above: that one describes a population at a moment, this
 	// one is a hazard rate applied every preseason.
 	//
-	// Kept deliberately low, because ONE successful roll is a big visual step.
-	// facesjs has no gentle "slightly receding" hair - the rung below a normal
-	// cut is `short-bald`, a pronounced horseshoe - so a player who takes a
-	// single rung doesn't look like he's starting to lose it, he looks like
-	// he's lost it. There is no way to make that first step smaller, so the
-	// answer is to make it rarer.
+	// ONE successful roll is a big visual step: facesjs has no gentle "slightly
+	// receding" hair, so the rung below a normal cut is `short-bald`, a
+	// pronounced horseshoe. A player who takes a single rung does not look like
+	// he is starting to lose it, he looks like he has lost it.
 	//
-	// Measured over 20,000 replayed careers (rookie at 20, same seed before and
-	// after), share of the WHOLE league who have LOST hair by each age. A
-	// shaved head is not hair loss and is not counted: facesjs generates `bald`
-	// as one of its ordinary styles at any age, and shavesHead adds more on
-	// purpose, which together are a steady ~13% at every age.
+	// The first answer to that was to make it RARER, and it was the wrong one -
+	// a rare bad outcome is still a bad outcome when you are looking at the man
+	// it happened to, and a field report duly arrived about twenty-six-year-olds
+	// with horseshoes. The right answer is to make it LATER: see
+	// baldingOnsetAge, which gives every player his own starting age of at least
+	// 28, so these rates now only ever apply to a man old enough for the step
+	// not to be surprising.
 	//
-	//        25     28     30     32     34     36     38
-	//   was  1.1%   2.7%   4.2%   6.4%   8.2%  10.0%  11.7%
-	//   now  0.6%   1.7%   2.5%   3.8%   5.1%   6.0%   7.7%
+	// Which means the rates could go back UP, and had to. Gating on onset alone
+	// took the share of a league that had visibly lost hair by 38 from 7.7% to
+	// 2.9% - a second change nobody asked for, turning an occasional thing into
+	// a nearly absent one. These restore the total and leave only the timing
+	// changed.
 	//
-	// The old rates put a horseshoe on about one man in nine by the end of a
-	// long career, on top of the one in eight already wearing a bare scalp by
-	// choice - a quarter of the veterans in the league, which reads as everyone
-	// going bald together rather than as the occasional player losing his hair.
+	// Measured over 20,000 replayed careers (rookie at 20, aged one season at a
+	// time), share of the WHOLE league who have LOST hair by each age. Hair a
+	// face was GENERATED with is not hair loss and is not counted: facesjs
+	// draws `bald` as one of its ordinary styles at any age, and shavesHead
+	// adds more on purpose.
+	//
+	//                    24     26     28     30     32     34     36     38
+	//   before onset    0.3%   0.5%   1.7%   2.5%   3.8%   5.1%   6.0%   7.7%
+	//   onset only      0.0%   0.0%   0.0%   0.2%   0.6%   1.2%   1.9%   2.9%
+	//   onset + rates   0.0%   0.0%   0.1%   0.4%   1.5%   2.9%   5.1%   7.3%
+	//
+	// So: nothing at all before 28, and the same league by the end of a career.
 	baldingPerYear: number;
 	glasses: number;
 };
@@ -477,7 +487,10 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.45,
 		tiers: { light: 0.7, medium: 0.3 },
 		balding: 0.02,
-		baldingPerYear: 0.008,
+		// Zero, and it stays zero: no player's onset age is below 28, so this
+		// band could not reach anybody anyway (see baldingOnsetAge). Written out
+		// rather than left at a small number that reads as "rarely".
+		baldingPerYear: 0,
 		glasses: 0.03,
 	},
 	{
@@ -485,7 +498,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.6,
 		tiers: { light: 0.4, medium: 0.35, heavy: 0.25 },
 		balding: 0.06,
-		baldingPerYear: 0.018,
+		baldingPerYear: 0.05,
 		glasses: 0.03,
 	},
 	{
@@ -493,7 +506,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.65,
 		tiers: { light: 0.3, medium: 0.33, heavy: 0.32 },
 		balding: 0.12,
-		baldingPerYear: 0.03,
+		baldingPerYear: 0.08,
 		glasses: 0.04,
 	},
 ];
@@ -535,6 +548,42 @@ export const BALDING_PRONE_SHARE_OUT_OF_FAMILY = 0.15;
 
 // And the share who stay clean-shaven whatever their age.
 export const NEVER_GROWS_FACIAL_HAIR_SHARE = 0.2;
+
+// WHEN IT STARTS, WHICH IS NOT AT TWENTY-THREE.
+//
+// Predisposition alone used to decide it: a prone player rolled the hazard
+// every preseason from 23, and 2% of faces built at 23-26 were generated with
+// a receding hairline outright. Both put horseshoes on twenty-six-year-olds,
+// which a field report duly caught, and which no amount of lowering the rate
+// fixes - a rare bad outcome is still a bad outcome when you are looking at
+// the man it happened to.
+//
+// The trouble is the step size, and it is a facesjs limit rather than a
+// modelling one: the rung below a normal cut is `short-bald`, a pronounced
+// horseshoe, so a first roll does not read as "starting to lose it", it reads
+// as "lost it". Something that abrupt has to be reserved for an age where it
+// is not surprising.
+//
+// So each player gets his own onset, deterministic from his id and stored
+// nowhere, and nothing at all happens before it. Late twenties at the very
+// earliest, with the spread running well past the end of most careers - which
+// is also why plenty of prone players still finish with their hair.
+export const BALDING_ONSET_MIN_AGE = 28;
+export const BALDING_ONSET_SPREAD = 12;
+
+export const baldingOnsetAge = (pid: number | undefined): number =>
+	BALDING_ONSET_MIN_AGE +
+	Math.floor(hashPid(pid ?? 0, 11) * BALDING_ONSET_SPREAD);
+
+// Is this player both predisposed AND old enough for it to have begun?
+export const baldingStarted = (
+	age: number,
+	pid: number | undefined,
+	familyPid?: number,
+): boolean =>
+	Number.isFinite(age) &&
+	age >= baldingOnsetAge(pid) &&
+	baldingProne(pid, familyPid);
 
 export const baldingProne = (
 	pid: number | undefined,
@@ -1052,7 +1101,19 @@ export const applyRealisticFace = (
 	// wearing it (see shavesHead).
 	const shaved = face.hair.id === HAIR_BALD;
 	const receding = face.hair.id === HAIR_THINNING;
-	if (band.balding === 0) {
+	// A face BUILT at some age has to arrive where one aged into that age would
+	// be, so it asks the same question ageFace asks: is this player old enough
+	// for his own balding to have started? Before he is, a receding hairline is
+	// undone rather than merely not added - facesjs generates `short-bald` on
+	// its own, and leaving it would put one on a rookie.
+	//
+	// The ONSET only, not predisposition. `band.balding` is a population share -
+	// what fraction of men this age have lost the hairline - and it is already
+	// doing the selecting; asking baldingProne as well would select twice and
+	// quietly thin the veterans out. ageFace is the opposite case and does ask,
+	// because there it is one named player rolling year after year.
+	const couldBeBalding = Number.isFinite(age) && age >= baldingOnsetAge(pid);
+	if (!couldBeBalding) {
 		if (receding) {
 			face.hair.id = "short";
 		}
@@ -1195,7 +1256,7 @@ export const ageFace = (
 			? band.baldingPerYear * FULLY_BALD_FACTOR
 			: band.baldingPerYear;
 	if (
-		baldingProne(pid, familyPid) &&
+		baldingStarted(age, pid, familyPid) &&
 		face.hair.id !== HAIR_BALD &&
 		rand() < baldingRate
 	) {

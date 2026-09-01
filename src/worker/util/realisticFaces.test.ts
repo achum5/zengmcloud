@@ -12,7 +12,9 @@ import {
 	applyWrinkles,
 	lineStylesFor,
 	smileSizeForAge,
+	baldingOnsetAge,
 	baldingProne,
+	BALDING_ONSET_MIN_AGE,
 	growsFacialHair,
 	inferRaceFromFace,
 	MAX_WRINKLE_LEVEL,
@@ -340,8 +342,57 @@ describe("applyRealisticFace", () => {
 
 	test("an older player can be balding", () => {
 		const f = face();
-		applyRealisticFace(f, { age: 34, rand: fixed(0.001) });
+		// Past this player's own onset age, which is what gates it now.
+		applyRealisticFace(f, {
+			age: baldingOnsetAge(undefined) + 4,
+			rand: fixed(0.001),
+		});
 		assert.include([HAIR_THINNING, HAIR_BALD], f.hair.id);
+	});
+
+	// THE FIELD REPORT: horseshoes on twenty-six-year-olds. Nothing may take a
+	// hairline before the player's own onset, whichever way the roll lands and
+	// whatever facesjs handed over.
+	test("nobody is balding before his onset age, however the roll lands", () => {
+		for (let pid = 0; pid < 200; pid++) {
+			for (let age = 19; age < baldingOnsetAge(pid); age++) {
+				const f = face({
+					hair: { id: HAIR_THINNING, color: "#272421", flip: false },
+				});
+				applyRealisticFace(f, { age, pid, rand: fixed(0.001) });
+				assert.notStrictEqual(
+					f.hair.id,
+					HAIR_THINNING,
+					`pid ${pid} is receding at ${age}, before his onset of ${baldingOnsetAge(pid)}`,
+				);
+			}
+		}
+	});
+
+	test("and no season of aging can take one early either", () => {
+		for (let pid = 0; pid < 200; pid++) {
+			const f = face();
+			for (let age = 20; age < baldingOnsetAge(pid); age++) {
+				// The most generous roll there is, every season.
+				ageFace(f, age, pid, fixed(0.0001));
+			}
+			// A RECEDING hairline is the thing that must not happen early. A bare
+			// scalp is not: HAIR_BALD is also the shaved head, which a tenth of
+			// the league takes on somewhere in its early twenties by choice (see
+			// shavesHeadAtAge), and shaving is not losing.
+			assert.notStrictEqual(
+				f.hair.id,
+				HAIR_THINNING,
+				`pid ${pid} is receding at ${baldingOnsetAge(pid) - 1}, before his onset of ${baldingOnsetAge(pid)}`,
+			);
+			if (!shavesHead(pid)) {
+				assert.notStrictEqual(
+					f.hair.id,
+					HAIR_BALD,
+					`pid ${pid} lost his hair before his onset of ${baldingOnsetAge(pid)}`,
+				);
+			}
+		}
 	});
 
 	test("a texture-implausible style is re-rolled, a plausible one is kept", () => {
@@ -397,13 +448,16 @@ describe("ageFace", () => {
 	// preseason, which spreads change across a career - and, crucially, is
 	// gated on a per-player trait so it does not happen to everyone.
 
+	// Prone AND starting at the earliest age anyone does, so a test can name an
+	// age that is past his onset without knowing which one he drew. Every
+	// player has his own now - see baldingOnsetAge.
 	const proneToBald = (() => {
-		for (let pid = 0; pid < 500; pid++) {
-			if (baldingProne(pid)) {
+		for (let pid = 0; pid < 5000; pid++) {
+			if (baldingProne(pid) && baldingOnsetAge(pid) === BALDING_ONSET_MIN_AGE) {
 				return pid;
 			}
 		}
-		throw new Error("no balding-prone pid found");
+		throw new Error("no early balding-prone pid found");
 	})();
 
 	// Not prone to losing it AND not one of the players who shaves it off, so
@@ -429,7 +483,7 @@ describe("ageFace", () => {
 
 	test("a susceptible player can lose it, one step at a time", () => {
 		const f = face();
-		ageFace(f, 28, proneToBald, fixed(0.001));
+		ageFace(f, baldingOnsetAge(proneToBald), proneToBald, fixed(0.001));
 		assert.strictEqual(f.hair.id, HAIR_THINNING);
 		ageFace(f, 33, proneToBald, fixed(0.001));
 		assert.strictEqual(f.hair.id, HAIR_BALD);
