@@ -14,10 +14,45 @@ import type {
 	UpdateEvents,
 	ViewInput,
 } from "../../common/types.ts";
-import { PHASE, STARTING_NUM_TIMEOUTS } from "../../common/constants.ts";
+import { STARTING_NUM_TIMEOUTS } from "../../common/constants.ts";
 import { formatClock } from "../../common/formatClock.ts";
 import { getPeriodName } from "../../common/getPeriodName.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
+
+// IS THIS THE CHAMPIONSHIP? Drives the trophy at center court in the live-game
+// graphic, and the confetti when the series ends.
+//
+// BOTH ARE FACTS ABOUT THE GAME BEING WATCHED, and the game record carries
+// them: writeGameStats stamps `finals` on a final-round game and stores each
+// side's series record as it stood after it. This used to be re-derived from
+// the league as it is RIGHT NOW - the current phase, the current season's
+// playoffSeries, whether the current round happens to be the last one - which
+// gives the same answer only while the game is being played for the first
+// time. Watch that same game back in replay and every one of those reads
+// describes some other moment, so the trophy went missing from every finals
+// rewatch. Reported from a live league.
+//
+// Pure, and takes only the game, which is the whole point.
+export const championshipStakes = (game: {
+	finals?: boolean;
+	numGamesToWinSeries?: number;
+	teams: [{ playoffs?: { won: number } }, { playoffs?: { won: number } }];
+}): { finals: boolean; confetti: boolean } => {
+	const finals = game.finals === true;
+	return {
+		finals,
+		// The series ended here: one side reached the wins it needed, counting
+		// this game. Only ever celebrated for the final round - winning a
+		// semi-final is not a championship.
+		confetti:
+			finals &&
+			game.numGamesToWinSeries !== undefined &&
+			Math.max(
+				game.teams[0].playoffs?.won ?? 0,
+				game.teams[1].playoffs?.won ?? 0,
+			) >= game.numGamesToWinSeries,
+	};
+};
 
 // WHICH COURT A LIVE-SIM SIDE IS DRAWN ON.
 //
@@ -294,39 +329,7 @@ const updatePlayByPlay = async (
 			}
 		}
 
-		let confetti = false;
-		// Is this game the championship series? Drives finals styling (the trophy
-		// at center court) in the live-game court graphic.
-		let finals = false;
-		if (
-			boxScore.playoffs &&
-			boxScore.numGamesToWinSeries !== undefined &&
-			g.get("phase") >= PHASE.PLAYOFFS
-		) {
-			const playoffSeries = await idb.cache.playoffSeries.get(g.get("season"));
-			if (playoffSeries) {
-				const finalRound = playoffSeries.series.at(-1);
-				if (finalRound?.length === 1) {
-					const finalMatchup = finalRound[0]!;
-					if (
-						(finalMatchup.home.tid === boxScore.teams[0].tid &&
-							finalMatchup.away?.tid === boxScore.teams[1].tid) ||
-						(finalMatchup.home.tid === boxScore.teams[1].tid &&
-							finalMatchup.away?.tid === boxScore.teams[0].tid)
-					) {
-						finals =
-							playoffSeries.currentRound === playoffSeries.series.length - 1;
-						const maxWon = Math.max(
-							finalMatchup.home.won,
-							finalMatchup.away?.won ?? 0,
-						);
-						if (maxWon >= boxScore.numGamesToWinSeries) {
-							confetti = true;
-						}
-					}
-				}
-			}
-		}
+		const { finals, confetti } = championshipStakes(boxScore);
 
 		const out = await boxScoreToLiveSim({
 			allStars,
