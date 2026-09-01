@@ -8,8 +8,13 @@ import GameSim from "../core/GameSim.ts";
 import { processTeam } from "../core/game/loadTeams.ts";
 import createRandomPlayers from "../core/league/create/createRandomPlayers.ts";
 import { DEFAULT_LEVEL } from "../../common/budgetLevels.ts";
-import { getAutoRecapsForDay } from "./getDayGamesForRecap.ts";
+import {
+	getAutoRecapsForDay,
+	recapGamesForDay,
+	type RecapGame,
+} from "./getDayGamesForRecap.ts";
 import type { Game } from "../../common/types.ts";
+import { verifyRecap } from "./recapAccuracy.ts";
 
 // A CORPUS OF REAL RECAPS.
 //
@@ -364,12 +369,21 @@ test("recap corpus", { timeout: 3_600_000 }, async () => {
 		}
 	}
 
-	// The real recap path, day by day.
+	// The real recap path, day by day. Every recap is dumped WITH the RecapGame
+	// it was written from, so an accuracy checker can hold each number in the
+	// prose against the box score it came out of.
 	const out: string[] = [];
 	const gameRecaps: string[] = [];
 	const dayRecaps: string[] = [];
+	const pairs: { gid: number; recap: string; game: RecapGame }[] = [];
 	for (let day = 1; day <= DAYS; day++) {
 		const { notes, dayRecap } = await getAutoRecapsForDay({ season, day });
+		for (const rg of await recapGamesForDay({ season, day })) {
+			const note = notes[rg.gid];
+			if (note) {
+				pairs.push({ gid: rg.gid, recap: note, game: rg });
+			}
+		}
 		out.push(
 			`\n${"=".repeat(78)}\nDAY ${day}\n${"=".repeat(78)}\n`,
 			`--- DAY RECAP ---\n${dayRecap}\n`,
@@ -381,6 +395,25 @@ test("recap corpus", { timeout: 3_600_000 }, async () => {
 		}
 	}
 	writeFileSync(LOG, out.join("\n"));
+	writeFileSync(`${LOG}.jsonl`, pairs.map((x) => JSON.stringify(x)).join("\n"));
+
+	// ACCURACY. Every number in the finished prose, held against the box score
+	// it was written from. A corpus run is the only place this can be asked at
+	// scale, so it is asked here and it is fatal - a recap that states something
+	// the game does not contain is the one defect no amount of good phrasing
+	// makes up for.
+	const violations: string[] = [];
+	for (const { gid, recap, game } of pairs) {
+		for (const v of verifyRecap(recap, game)) {
+			violations.push(`gid ${gid} [${v.kind}] ${v.detail}\n    ${v.sentence}`);
+		}
+	}
+	writeFileSync(
+		`${LOG}.accuracy.txt`,
+		violations.length === 0
+			? `${pairs.length} recaps checked, no violations`
+			: violations.join("\n"),
+	);
 
 	// Metrics. Repetition is the failure mode a corpus is FOR: a phrase that
 	// reads fine once reads like a template the ninth time on the same page.
@@ -442,4 +475,11 @@ test("recap corpus", { timeout: 3_600_000 }, async () => {
 	writeFileSync(`${LOG}.stats.txt`, stats.join("\n"));
 
 	assert.ok(gameRecaps.length > 0, "produced recaps");
+	assert.strictEqual(
+		violations.length,
+		0,
+		`${violations.length} inaccurate claims across ${pairs.length} recaps:\n${violations
+			.slice(0, 25)
+			.join("\n")}`,
+	);
 });

@@ -1523,6 +1523,28 @@ const computeStandingsAsOf = async (
 
 // Every completed game on a league day, each with its auto recap (keyed by gid),
 // plus an auto recap for the whole day. Used by the Daily Schedule.
+// Every completed game of one day, built into the shape a recap is written
+// from. Exported because the recaps are only as good as this is: a corpus run
+// holds each number in the finished prose against the box score it came out of
+// (see recapCorpus.test.ts), and that needs both halves.
+export const recapGamesForDay = async ({
+	season,
+	day,
+}: {
+	season: number;
+	day: number;
+}): Promise<RecapGame[]> => {
+	const ctx = await createAutoRecapContext(season);
+	const dayGames = ctx.allGames
+		.filter((game) => (game.day ?? 0) === day && game.won && game.lost)
+		.sort((a, b) => a.gid - b.gid);
+	const games: RecapGame[] = [];
+	for (const game of dayGames) {
+		games.push(await ctx.buildRecapGame(game, day));
+	}
+	return games;
+};
+
 export const getAutoRecapsForDay = async ({
 	season,
 	day,
@@ -1530,17 +1552,9 @@ export const getAutoRecapsForDay = async ({
 	season: number;
 	day: number;
 }): Promise<{ notes: Record<number, string>; dayRecap: string }> => {
-	const ctx = await createAutoRecapContext(season);
-	const dayGames = ctx.allGames
-		.filter((game) => (game.day ?? 0) === day && game.won && game.lost)
-		.sort((a, b) => a.gid - b.gid);
-	if (dayGames.length === 0) {
+	const games = await recapGamesForDay({ season, day });
+	if (games.length === 0) {
 		return { notes: {}, dayRecap: "" };
-	}
-
-	const games: RecapGame[] = [];
-	for (const game of dayGames) {
-		games.push(await ctx.buildRecapGame(game, day));
 	}
 
 	// One night, one pool of phrasing. Each game seeds its own rng, so without
@@ -1559,7 +1573,11 @@ export const getAutoRecapsForDay = async ({
 	const playoffs = games.some((game) => game.playoffs);
 	const standings = playoffs
 		? undefined
-		: await computeStandingsAsOf(season, day, ctx.allGames);
+		: await computeStandingsAsOf(
+				season,
+				day,
+				await idb.getCopies.games({ season }, "noCopyCache"),
+			);
 	const dayRecap = getAutoDayRecap({ season, day, playoffs, games, standings });
 
 	return { notes, dayRecap };

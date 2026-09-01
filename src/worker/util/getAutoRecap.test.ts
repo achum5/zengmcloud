@@ -13,6 +13,7 @@ import type {
 	RecapPlayer,
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
+import { verifyRecap } from "./recapAccuracy.ts";
 
 // A box-score line with only the fields a test cares about; the rest default to
 // zero so fixtures stay short.
@@ -5288,5 +5289,248 @@ describe("no branch has only one phrasing", () => {
 			}
 		}
 		assert.deepEqual(missing, []);
+	});
+});
+
+// THE COPY DESK.
+//
+// Every number the engine prints is meant to be a number the box score
+// contains, and nothing checked that: the builders are thousands of lines of
+// string templates, and one stat attributed to the wrong man, or one
+// differential subtracted the wrong way round, is stated with total confidence
+// and no test notices. verifyRecap reads the finished prose back and holds each
+// claim against the game - it knows nothing about which builder wrote which
+// sentence, so it keeps working when the phrasing changes and it covers
+// builders nobody thought to test.
+//
+// The deep version of this runs over 600 engine-simmed recaps
+// (recapCorpus.test.ts, needs RECAP_LOG). This is the cheap one, so a wrong
+// number cannot reach master between corpus runs.
+describe("every number in a recap is in the box score", () => {
+	// Team totals are SUMMED from the player lines, and the quarters sum to the
+	// final, so a violation is the engine's and never the fixture's.
+	const side = (
+		base: { tid: number; region: string; name: string; abbrev: string },
+		lines: RecapPlayer[],
+		qtrs?: number[],
+	): RecapTeam => {
+		const pts = lines.reduce((a, p) => a + p.pts, 0);
+		const quarters = qtrs ?? [
+			Math.round(pts * 0.26),
+			Math.round(pts * 0.24),
+			Math.round(pts * 0.26),
+			pts -
+				Math.round(pts * 0.26) -
+				Math.round(pts * 0.24) -
+				Math.round(pts * 0.26),
+		];
+		return { ...base, pts, players: lines, ptsQtrs: quarters };
+	};
+
+	const line = (
+		name: string,
+		pts: number,
+		reb: number,
+		ast: number,
+		extra: Partial<RecapPlayer> = {},
+	): RecapPlayer =>
+		player({
+			name,
+			pts,
+			reb,
+			ast,
+			fg: Math.round(pts / 2.4),
+			fga: Math.round(pts / 1.2),
+			tp: Math.round(pts / 12),
+			tpa: Math.round(pts / 5),
+			ft: pts - 2 * Math.round(pts / 2.4) - Math.round(pts / 12),
+			fta: pts - 2 * Math.round(pts / 2.4) - Math.round(pts / 12) + 2,
+			...extra,
+		});
+
+	const cast = (tag: string, top: RecapPlayer): RecapPlayer[] => [
+		top,
+		line(`${tag} Two`, 18, 7, 8),
+		line(`${tag} Three`, 14, 9, 5, { blk: 3 }),
+		line(`${tag} Four`, 11, 4, 7, { stl: 2, tov: 4 }),
+		line(`${tag} Five`, 8, 6, 4, { tov: 3 }),
+		line(`${tag} Six`, 6, 3, 3, { tov: 2 }),
+	];
+
+	// A spread of game shapes, so the branches that only fire on a blowout, an
+	// upset, an overtime or a triple-double are all read back too.
+	const shapes: {
+		top: RecapPlayer;
+		oppTop: RecapPlayer;
+		opts: Partial<RecapGame>;
+	}[] = [
+		{
+			top: line("Ace One", 31, 12, 5),
+			oppTop: line("Foil One", 22, 5, 3),
+			opts: {},
+		},
+		{
+			top: line("Ace Two", 24, 11, 11, { stl: 3 }),
+			oppTop: line("Foil Two", 19, 8, 4),
+			opts: { overtimes: 1 },
+		},
+		{
+			top: line("Ace Three", 41, 6, 2),
+			oppTop: line("Foil Three", 12, 10, 9),
+			opts: { spread: { favTid: 2, points: 9 } },
+		},
+		{
+			top: line("Ace Four", 17, 14, 3, { blk: 6 }),
+			oppTop: line("Foil Four", 28, 4, 7),
+			opts: { spread: { favTid: 1, points: 2.5 } },
+		},
+		{
+			top: line("Ace Five", 20, 5, 12, { stl: 6, tov: 5 }),
+			oppTop: line("Foil Five", 33, 9, 2),
+			opts: {},
+		},
+	];
+
+	test("no recap states a number the game does not contain", () => {
+		let checked = 0;
+		const problems: string[] = [];
+		for (const [i, sh] of shapes.entries()) {
+			for (let gid = 500 + i * 200; gid < 560 + i * 200; gid++) {
+				const winner = side(
+					{ tid: 1, region: "Atlanta", name: "Hawks", abbrev: "ATL" },
+					cast("Home", sh.top),
+				);
+				const loser = side(
+					{ tid: 2, region: "Portland", name: "Trail Blazers", abbrev: "POR" },
+					cast("Away", sh.oppTop),
+				);
+				const [w, l] =
+					winner.pts >= loser.pts ? [winner, loser] : [loser, winner];
+				const g = game({
+					gid,
+					teams: [w, l],
+					winnerTid: w.tid,
+					...sh.opts,
+				});
+				const recap = getAutoRecap(g);
+				checked += 1;
+				for (const v of verifyRecap(recap, g)) {
+					problems.push(
+						`gid ${gid} [${v.kind}] ${v.detail}\n    ${v.sentence}`,
+					);
+				}
+			}
+		}
+		assert.ok(checked >= 300, `swept ${checked} recaps`);
+		assert.deepEqual(
+			problems.slice(0, 10),
+			[],
+			problems.slice(0, 10).join("\n"),
+		);
+	});
+});
+
+// The checker has to be able to FAIL, or the sweep above proves nothing.
+describe("verifyRecap catches a wrong number", () => {
+	const p = (name: string, pts: number, reb: number, ast: number) =>
+		player({
+			name,
+			pts,
+			reb,
+			ast,
+			fg: 10,
+			fga: 20,
+			tp: 2,
+			tpa: 6,
+			ft: 3,
+			fta: 4,
+		});
+	const home: RecapTeam = {
+		tid: 1,
+		region: "Atlanta",
+		name: "Hawks",
+		abbrev: "ATL",
+		pts: 110,
+		ptsQtrs: [30, 25, 30, 25],
+		players: [p("Real Star", 30, 10, 5), p("Real Two", 20, 4, 3)],
+	};
+	const road: RecapTeam = {
+		tid: 2,
+		region: "Portland",
+		name: "Trail Blazers",
+		abbrev: "POR",
+		pts: 100,
+		ptsQtrs: [25, 25, 25, 25],
+		players: [p("Foil Star", 25, 8, 6)],
+	};
+	const g = game({ gid: 1, teams: [home, road], winnerTid: 1 });
+
+	const kinds = (text: string) => verifyRecap(text, g).map((v) => v.kind);
+
+	test("a clean recap passes", () => {
+		assert.deepEqual(
+			kinds(
+				"**Hawks win**\n\nThe Hawks beat the Trail Blazers 110-100. Real Star had 30 points and 10 rebounds.",
+			),
+			[],
+		);
+	});
+
+	test("a wrong final score is caught", () => {
+		assert.ok(
+			kinds("The Hawks beat the Trail Blazers 110-98.").includes("final score"),
+		);
+	});
+
+	test("a stat credited to the wrong man is caught", () => {
+		assert.ok(kinds("Real Two had 30 points.").includes("player points"));
+	});
+
+	test("a stat that belongs to nobody is caught", () => {
+		assert.ok(kinds("Real Star had 44 points.").includes("player points"));
+	});
+
+	test("an owner named AFTER the number is read correctly", () => {
+		// "the best they could offer was 25 points from Foil Star" - the nearest
+		// PRECEDING name is the wrong man, and reading it that way was the first
+		// version of this checker crying wolf on half the corpus.
+		assert.deepEqual(
+			kinds(
+				"Real Star led the way. The best the Trail Blazers could offer was 25 points from Foil Star.",
+			),
+			[],
+		);
+	});
+
+	test("an invented shooting split is caught", () => {
+		assert.ok(
+			kinds("The Hawks went 9-of-41 from three.").includes("shooting split"),
+		);
+	});
+
+	test("a wrong quarter score is caught", () => {
+		assert.ok(kinds("The first quarter went 40-11.").includes("quarter score"));
+	});
+
+	test("overtime nobody played is caught", () => {
+		assert.ok(kinds("It took overtime to settle it.").includes("overtime"));
+	});
+
+	test("a season average is not read as a box-score line", () => {
+		assert.deepEqual(
+			kinds(
+				"Real Star, who came in averaging 12 points a game, had 30 points.",
+			),
+			[],
+		);
+	});
+
+	test("a betting margin is not read as a box-score line", () => {
+		assert.deepEqual(
+			kinds(
+				"The Trail Blazers were given no chance, 7 points the wrong side of the line.",
+			),
+			[],
+		);
 	});
 });
