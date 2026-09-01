@@ -161,6 +161,25 @@ test("recap corpus", { timeout: 3_600_000 }, async () => {
 	// Same dodge decadesSim uses: the typecheck project has no node types.
 	const { writeFileSync } = await import(("node" + ":fs") as any);
 
+	// SEED THE WHOLE RUN. common/random.ts calls Math.random directly, so player
+	// generation and GameSim are otherwise a different league every time - which
+	// makes a before/after on a phrasing change a comparison of two different
+	// seasons. Rates over 900 games still move honestly that way, but nothing
+	// small does, and no individual recap can be diffed at all. Overriding
+	// Math.random for the duration is the only lever the module offers.
+	const realRandom = Math.random;
+	const seeded = rngFromSeed(SEED * 7919 + 13);
+	Math.random = seeded;
+	try {
+		await runCorpus(writeFileSync);
+	} finally {
+		Math.random = realRandom;
+	}
+});
+
+const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
+	const LOG = nodeEnv.RECAP_LOG!;
+
 	resetG();
 	g.setWithoutSavingToDB("numActiveTeams", NUM_TEAMS);
 	g.setWithoutSavingToDB("numTeams", NUM_TEAMS);
@@ -482,4 +501,4 @@ test("recap corpus", { timeout: 3_600_000 }, async () => {
 			.slice(0, 25)
 			.join("\n")}`,
 	);
-});
+};

@@ -1319,6 +1319,13 @@ type Headline = {
 	// ("DerMarr Johnson goes for 22 points as..." / "DerMarr Johnson scored 22
 	// points."), so it's dropped instead.
 	spentLine?: boolean;
+	// The headline printed the SCORE, as every result-shaped one does. The body's
+	// opening sentence then printed it again a dozen words later: "**Rockets fall
+	// to the Trail Blazers 103-85** / Corey King posted 28 points ... as the
+	// Trail Blazers beat the Rockets 103-85." Over a 600-recap corpus that was a
+	// third of every recap. The body keeps the RESULT - it still says who beat
+	// whom - and drops the repeated number.
+	spentScore?: boolean;
 };
 
 const h = (
@@ -1329,6 +1336,17 @@ const h = (
 ): Headline => ({ text, spentStar, spentLoserStar, spentLine });
 
 const buildHeadline = (
+	game: RecapGame,
+	shape: Shape,
+	star: RecapPlayer,
+	post: PostseasonContext,
+	rng: () => number,
+): Headline => {
+	const headline = buildHeadlineText(game, shape, star, post, rng);
+	return { ...headline, spentScore: headline.text.includes(scoreTag(shape)) };
+};
+
+const buildHeadlineText = (
 	game: RecapGame,
 	shape: Shape,
 	star: RecapPlayer,
@@ -1643,11 +1661,14 @@ const resultLead = (
 	game: RecapGame,
 	shape: Shape,
 	rng: () => number,
+	// The headline already printed the score, so this sentence says who beat
+	// whom and leaves the number to it - see Headline.spentScore.
+	scoreTold = false,
 ): { text: string; covers?: "comeback" | "wire" | "ot" | "run" } => {
 	const verb = pastTense(pick(rng, verbPool(game, shape)));
 	const w = theNick(shape.winner);
 	const l = theNick(shape.loser);
-	const score = scoreTag(shape);
+	const score = scoreTold ? "" : ` ${scoreTag(shape)}`;
 
 	if (shape.comebackFrom >= 12 && shape.comebackPeriod > 0) {
 		// "to" takes a BARE INFINITIVE, so neither the past-tense verb nor the
@@ -1659,7 +1680,7 @@ const resultLead = (
 				rng,
 				["beat", "top", "take down", "knock off"],
 				"comebackVerb",
-			)} ${l} ${score}.`,
+			)} ${l}${score}.`,
 			covers: "comeback",
 		};
 	}
@@ -1667,17 +1688,17 @@ const resultLead = (
 		return {
 			text: `It took ${
 				shape.ot === 1 ? "an extra period" : `${shape.ot} extra periods`
-			}, but ${w} ${verb} ${l} ${score}.`,
+			}, but ${w} ${verb} ${l}${score}.`,
 			covers: "ot",
 		};
 	}
 	if (shape.wireToWire && shape.margin >= 10) {
 		return {
 			text: pick(rng, [
-				`${cap(w)} led wire to wire and ${verb} ${l} ${score}.`,
-				`${cap(w)} ${verb} ${l} ${score} without ever trailing.`,
-				`${cap(w)} were in front from the opening tip and ${verb} ${l} ${score}.`,
-				`${cap(w)} ${verb} ${l} ${score}, leading start to finish.`,
+				`${cap(w)} led wire to wire and ${verb} ${l}${score}.`,
+				`${cap(w)} ${verb} ${l}${score} without ever trailing.`,
+				`${cap(w)} were in front from the opening tip and ${verb} ${l}${score}.`,
+				`${cap(w)} ${verb} ${l}${score}, leading start to finish.`,
 			]),
 			covers: "wire",
 		};
@@ -1689,13 +1710,13 @@ const resultLead = (
 		shape.bigRun.period > 1
 	) {
 		return {
-			text: `${cap(w)} ${verb} ${l} ${score}, breaking it open with a ${
+			text: `${cap(w)} ${verb} ${l}${score}, breaking it open with a ${
 				shape.bigRun.wpts
 			}-${shape.bigRun.lpts} ${ordinal(shape.bigRun.period)} quarter.`,
 			covers: "run",
 		};
 	}
-	return { text: `${cap(w)} ${verb} ${l} ${score}.` };
+	return { text: `${cap(w)} ${verb} ${l}${score}.` };
 };
 
 const leadSentence = (
@@ -1706,6 +1727,9 @@ const leadSentence = (
 	// The result has already been stated (by the headline and the result lead),
 	// so give the star's line on its own rather than tacking the score on again.
 	omitResult = false,
+	// Weaker than omitResult: the result clause stays, only the score goes,
+	// because the headline already printed it.
+	scoreTold = false,
 ): string => {
 	const verb = pastTense(pick(rng, verbPool(game, shape)));
 
@@ -1715,9 +1739,9 @@ const leadSentence = (
 		if (omitResult) {
 			return `${star.name} led the way with ${statPhrase(star)}.`;
 		}
-		return `${cap(theNick(shape.winner))} ${verb} ${theNick(
-			shape.loser,
-		)} ${scoreTag(shape)}, led by ${poss(star.name)} ${statPhrase(star)}.`;
+		return `${cap(theNick(shape.winner))} ${verb} ${theNick(shape.loser)}${
+			scoreTold ? "" : ` ${scoreTag(shape)}`
+		}, led by ${poss(star.name)} ${statPhrase(star)}.`;
 	}
 
 	// When the result has already been stated, the star's sentence is the only
@@ -1753,7 +1777,7 @@ const leadSentence = (
 	}
 	return `${subject} ${actionVerb} ${statText}${flourishText} as ${theNick(
 		shape.winner,
-	)} ${verb} ${theNick(shape.loser)} ${scoreTag(shape)}.`;
+	)} ${verb} ${theNick(shape.loser)}${scoreTold ? "" : ` ${scoreTag(shape)}`}.`;
 };
 
 // The winner's second-half scoring edge (winner pts - loser pts after halftime),
@@ -1954,7 +1978,7 @@ const statNote = (
 					`${cap(theNick(shape.winner))} knocked down ${w.tp} threes.`,
 					`${cap(theNick(shape.winner))} hit ${w.tp} from deep.`,
 					`${cap(theNick(shape.winner))} made ${w.tp} three-pointers.`,
-					`${numWord(w.tp)} threes fell for ${theNick(shape.winner)}.`,
+					`${cap(theNick(shape.winner))} got ${numWord(w.tp)} to fall from deep.`,
 				],
 				"statThrees",
 			),
@@ -2418,7 +2442,7 @@ const loserSentence = (
 			[
 				`${cap(theNick(shape.loser))} were undone by ${stats.tov} turnovers.`,
 				`${cap(theNick(shape.loser))} gave the ball away ${stats.tov} times.`,
-				`${stats.tov} turnovers were what beat ${theNick(shape.loser)}.`,
+				`It was turnovers that beat ${theNick(shape.loser)} - ${stats.tov} of them.`,
 				`${cap(theNick(shape.loser))} could not hold on to it - ${stats.tov} giveaways.`,
 			],
 			"loserTovAlone",
@@ -2430,7 +2454,7 @@ const loserSentence = (
 			[
 				`${cap(theNick(shape.loser))} shot just ${stats.fgp}% as a team.`,
 				`${cap(theNick(shape.loser))} never found the range - ${stats.fgp}% for the game.`,
-				`${stats.fgp}% shooting was not going to win ${theNick(shape.loser)} anything.`,
+				`Shooting ${stats.fgp}% was never going to win ${theNick(shape.loser)} anything.`,
 			],
 			"loserColdTeam",
 		);
@@ -3065,7 +3089,7 @@ const spreadNote = (
 			rng,
 			[
 				`${cap(theNick(shape.winner))} were favored by ${s.points} and won by exactly that.`,
-				`A ${shape.margin}-point win against a ${s.points}-point line: a push.`,
+				`${cap(aNum(shape.margin))}-point win against ${aNum(s.points)}-point line: a push.`,
 			],
 			"spreadPush",
 		);
@@ -3383,7 +3407,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 		// The headline already told the star's story. Open on the RESULT and let
 		// his line follow as its own sentence, rather than writing the headline
 		// again with the verbs swapped.
-		const opener = resultLead(game, shape, rng);
+		const opener = resultLead(game, shape, rng, headline.spentScore);
 		flowCovered = opener.covers;
 		para1.push(opener.text);
 		// The headline may already have printed his whole line ("DerMarr Johnson
@@ -3430,7 +3454,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 		// made the headline look like it belonged to a different story: "Metta
 		// World Peace's three-point play sinks the Knicks / Ray Allen scored 18
 		// points as...". Result, then the shot, then the leading scorer.
-		const opener = resultLead(game, shape, rng);
+		const opener = resultLead(game, shape, rng, headline.spentScore);
 		flowCovered = opener.covers;
 		const clutch = clutchSentence(shot, shape);
 		heroTold = clutch.told;
@@ -3440,7 +3464,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 			leadSentence(game, shape, star, rng, true),
 		);
 	} else {
-		let lead = leadSentence(game, shape, star, rng);
+		let lead = leadSentence(game, shape, star, rng, false, headline.spentScore);
 		const shooterIsStar = shot && !shot.tying;
 		if (shooterIsStar) {
 			lead = `${lead.slice(0, -1)}, winning it with ${clutchWhat(shot)}.`;

@@ -5534,3 +5534,133 @@ describe("verifyRecap catches a wrong number", () => {
 		);
 	});
 });
+
+// HOUSE STYLE. Rules the engine already stated for itself in one place and
+// broke in another - measured over a 600-recap corpus, then pinned here.
+describe("house style", () => {
+	// Two profiles. The second is cold, careless and three-happy on purpose:
+	// the templates that used to open on a numeral only fire on a bad shooting
+	// night, a turnover pile, or a three total past the end of numWord's word
+	// list, and a fixture that never gets there proves nothing about them.
+	const p2 = (
+		name: string,
+		pts: number,
+		reb: number,
+		ast: number,
+		cold = false,
+	) =>
+		player({
+			name,
+			pts,
+			reb,
+			ast,
+			fg: cold ? Math.round(pts / 3.4) : Math.round(pts / 2.4),
+			fga: cold ? Math.round(pts / 0.9) : Math.round(pts / 1.1),
+			tp: cold ? Math.round(pts / 3.2) : Math.round(pts / 9),
+			tpa: cold ? Math.round(pts / 1.4) : Math.round(pts / 3),
+			ft: 4,
+			fta: 5,
+			tov: cold ? 2 : 4,
+		});
+	const squad = (
+		base: { tid: number; region: string; name: string; abbrev: string },
+		top: RecapPlayer,
+		cold = false,
+	): RecapTeam => {
+		const players = [
+			top,
+			p2("Two", 18, 6, 5, cold),
+			p2("Three", 15, 8, 3, cold),
+			p2("Four", 12, 4, 7, cold),
+			p2("Five", 9, 5, 2, cold),
+		];
+		const pts = players.reduce((a, x) => a + x.pts, 0);
+		// Quarters have to SUM to the final, or the fixture invents scores the
+		// engine then faithfully prints ("a 8--8 fourth quarter").
+		const q1 = Math.round(pts * 0.27);
+		const q2 = Math.round(pts * 0.24);
+		const q3 = Math.round(pts * 0.25);
+		return { ...base, pts, players, ptsQtrs: [q1, q2, q3, pts - q1 - q2 - q3] };
+	};
+
+	const sweep = (): string[] => {
+		const out: string[] = [];
+		beginRecapBatch();
+		try {
+			for (let gid = 3000; gid < 3240; gid++) {
+				const cold = gid % 2 === 1;
+				const home = squad(
+					{ tid: 1, region: "Atlanta", name: "Hawks", abbrev: "ATL" },
+					p2("Ace", 18 + (gid % 22), 11, 4, cold),
+					cold,
+				);
+				const away = squad(
+					{ tid: 2, region: "Portland", name: "Trail Blazers", abbrev: "POR" },
+					p2("Foil", 14 + (gid % 17), 7, 6, cold),
+					cold,
+				);
+				const [w, l] = home.pts >= away.pts ? [home, away] : [away, home];
+				out.push(
+					getAutoRecap(
+						game({
+							gid,
+							teams: [w, l],
+							winnerTid: w.tid,
+							spread: { favTid: gid % 2 === 0 ? 1 : 2, points: gid % 12 },
+						}),
+					),
+				);
+			}
+		} finally {
+			endRecapBatch();
+		}
+		return out;
+	};
+
+	// "**Rockets fall to the Trail Blazers 103-85** / ... as the Trail Blazers
+	// beat the Rockets 103-85." A third of a 600-recap corpus printed the score
+	// twice inside fifteen words. The body still states the result; the digits
+	// belong to whichever of the two said it first.
+	test("the score is not printed twice", () => {
+		for (const recap of sweep()) {
+			const first = /\b(\d{2,3})-(\d{2,3})\b/.exec(recap);
+			if (!first) {
+				continue;
+			}
+			const both = recap.split(first[0]).length - 1;
+			assert.ok(both <= 1, `"${first[0]}" twice in:\n${recap}`);
+		}
+	});
+
+	// The rule is the engine's own, written into loserShape: "a sentence does not
+	// open with a numeral, and every one of these lines starts with one." Three
+	// templates elsewhere did exactly that, and numWord only spells out as far as
+	// its word list, so a twenty-three-three night fell through to the digits.
+	test("no sentence opens on a numeral", () => {
+		for (const recap of sweep()) {
+			for (const para of recap.split("\n").slice(1)) {
+				for (const sentence of para.split(/(?<=[!.?])\s+/)) {
+					assert.ok(
+						!/^\d/.test(sentence.trim()),
+						`opens on a numeral: "${sentence}"\n${recap}`,
+					);
+				}
+			}
+		}
+	});
+
+	// "A 8-point win against a 8-point line: a push." aNum exists for this and
+	// the push sentence was not using it.
+	test("the article before a number is the one you say out loud", () => {
+		for (const recap of sweep()) {
+			assert.ok(
+				!/\ba (?:8|11|18)\b/.test(recap),
+				`"a" before an eight/eleven/eighteen:\n${recap}`,
+			);
+			assert.ok(
+				!/\ban (?:[02-79]|1[02-9]|[2-9]\d)\b/.test(recap),
+				`"an" before a number that takes "a":\n${recap}`,
+			);
+		}
+	});
+});
