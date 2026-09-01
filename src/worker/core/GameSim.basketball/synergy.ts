@@ -58,9 +58,35 @@ import { isSport } from "../../../common/sportFunctions.ts";
 //
 // If fit is worth chasing at all it has to be somewhere the allocation is
 // FIXED rather than bid for - a draft slot, or a two-team swap where both
-// sides have to agree and both can come out ahead. What none of this settles
-// is whether the prize is big enough to be worth a point of talent, which is
-// what SYNERGY PRICE in the harness exists to answer.
+// sides have to agree and both can come out ahead.
+//
+// THE ROTATION IS THAT PLACE, AND IT IS STILL NOT WORTH IT. That was the
+// obvious next candidate: the five men are already on the roster, so choosing
+// among them competes with nobody and nothing can arbitrage the preference
+// away. The sim picks its lineup purely on valueNoPot (updatePlayersOnCourt),
+// and the harness had measured the best five a team could field out of its own
+// top eight at +0.17 of synergyTotal over the five it actually plays - talent
+// already owned and not deployed.
+//
+// It was built three ways and measured with the only design that can answer
+// "does this win games": half the league treated and half not, so win
+// percentage is not zero-sum against itself. Wins per 82 for the treated half,
+// three seeds each:
+//
+//   lift the better fit into the five            -3.43  -0.34  -0.64
+//   ... and hold the man he displaces back        0.23  -1.51  -2.96
+//   ... and only when the fit gain is large       0.49  -0.46  -3.97
+//
+// Pooled: -1.4 wins a season, against a standard error of about 0.33. Every
+// version cost talent and none of them bought it back.
+//
+// So the prize is not big enough, and the reason the headroom looked bigger
+// than it is, is that +0.17 is the MAXIMUM over 56 five-man combinations. The
+// best of many noisy candidates overstates what is really there, and what is
+// really there does not cover the fifth-best player being replaced by the
+// sixth. Take SYNERGY PRICE's exchange rate as an upper bound, not a price:
+// it is a between-team regression on correlated predictors, and a within-team
+// experiment does not pay it.
 // ---------------------------------------------------------------------------
 
 // The composites synergy is computed from - the only ones it reads.

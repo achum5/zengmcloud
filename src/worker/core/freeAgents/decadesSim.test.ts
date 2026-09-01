@@ -951,6 +951,9 @@ describe("a league runs for a decade without falling apart", () => {
 		let worstMaxDeal = "";
 		let maxDeals = 0;
 		let maxDealOvrTotal = 0;
+		// The luxury-tax bill, in dollars, by the tier of the team that paid it.
+		const taxBillByTier = new Map<string, number>();
+		let taxBillNoContender = 0;
 		let pickAssumedTotal = 0;
 		let pickRealizedTotal = 0;
 		let settledPicks = 0;
@@ -1395,8 +1398,21 @@ describe("a league runs for a decade without falling apart", () => {
 					}
 					if (payroll > luxuryPayroll) {
 						taxByTier.set(posture.tier, (taxByTier.get(posture.tier) ?? 0) + 1);
+						// WHAT THE TAX ACTUALLY COSTS, not just who paid it. At the
+						// default rate a team pays 1.5x every dollar over the line, so
+						// a count alone says nothing about a front office that is a
+						// long way over - and the tiers that have no business paying
+						// it at all (a seller, a teardown) are exactly the ones a
+						// count buries among the contenders. Charged the way finances
+						// charges it.
+						const bill = g.get("luxuryTax") * (payroll - luxuryPayroll);
+						taxBillByTier.set(
+							posture.tier,
+							(taxBillByTier.get(posture.tier) ?? 0) + bill,
+						);
 						if (posture.tier !== "allIn" && !posture.elite) {
 							taxNoContender += 1;
+							taxBillNoContender += bill;
 						}
 					}
 				}
@@ -1906,8 +1922,11 @@ describe("a league runs for a decade without falling apart", () => {
 				`WORST PAYROLL ${(worstPayrollShare * 100).toFixed(0)}% of cap - ${worstPayrollDetail}`,
 				`TAXPAYERS byTier ${[...taxByTier]
 					.sort((a, b) => b[1] - a[1])
-					.map(([k, v]) => `${k}=${v}`)
-					.join(" ")}`,
+					.map(
+						([k, v]) =>
+							`${k}=${v}/$${((taxBillByTier.get(k) ?? 0) / 1000).toFixed(0)}M`,
+					)
+					.join(" ")} noContend=$${(taxBillNoContender / 1000).toFixed(0)}M`,
 				`WHIPLASH hold=${holds} step1=${steps1} step2=${steps2} step3+=${steps3}`,
 			);
 
@@ -2388,6 +2407,23 @@ describe("a league runs for a decade without falling apart", () => {
 			// its own best young players. Neither reduces employment at all, and
 			// the second one raised it. That is the test worth applying to the
 			// next idea here.
+			//
+			// THE NEXT IDEA PASSED THAT TEST AND STILL LOST. Deploying the five
+			// that FIT rather than the five that rate - see SYNERGY HEADROOM
+			// below, which had measured +0.17 of synergyTotal sitting unused on
+			// every team, every season - changes only which of a team's own men
+			// take the floor, so it costs no employment at all and cannot touch
+			// the dead-money curve. It was built three ways and every one cost
+			// wins; the numbers and the reason are at the top of
+			// GameSim.basketball/synergy.ts. Worth knowing that "changes WHICH,
+			// not HOW MANY" is necessary and not sufficient.
+			//
+			// It also leaves a warning on the SYNERGY PRICE row below. That is a
+			// between-team regression on two correlated predictors, and it prices
+			// a unit of synergy at roughly eight and a half team-ovr points; the
+			// within-team experiment that tried to spend it could not buy a
+			// single win. Read it as an upper bound on what fit is worth, never
+			// as an exchange rate to plan against.
 			//
 			// Worth knowing that rosterCuts' measured 22% saving was smart-before
 			// against smart-after. Against stock this is still well up.
