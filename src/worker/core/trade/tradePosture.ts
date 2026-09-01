@@ -51,10 +51,29 @@ export type PosBucket = "G" | "F" | "C";
 export type PositionNeed = { pos: PosBucket; severity: number };
 export type PositionSurplus = { pos: PosBucket; depth: number };
 
+// WHAT MONEY MEANS TO AN AI TEAM, WHICH IS LESS THAN IT LOOKS.
+//
+// An AI franchise has no budget and takes no penalty for the luxury tax: the
+// cash comes off a balance sheet nothing reads back, no owner fires anybody,
+// and the departments are set from market size and posture rather than from
+// what is in the bank (see finances/smartBudget.ts). So the only money that
+// can change a decision here is the SALARY CAP, and only because it is a
+// RULE - room is what decides who may sign a free agent outright and who may
+// take salary back in a trade.
+//
+// `overLuxury` is therefore ADVISORY: it is read by the franchise-outlook
+// view, which shows a human what its team looks like, and by nothing that
+// decides anything. That is deliberate and not an oversight to be tidied up.
+// A rebuilding team over the tax line is not making a mistake; it is spending
+// money that does not exist to spend, and talking it out of a player to save
+// that money would cost basketball and buy nothing. The same reasoning is
+// written out at the re-signing bid ceiling in phase/newPhaseResignPlayers.ts,
+// which is where it bites hardest.
 export type CapPosture = {
 	payroll: number;
 	capSpace: number;
 	overCap: boolean;
+	// See above: shown to humans, never acted on.
 	overLuxury: boolean;
 	underFloor: boolean;
 	// Can take money back (room under the cap, or under the floor, or no cap).

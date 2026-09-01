@@ -399,6 +399,13 @@ const newPhaseResignPlayers = async (
 							// bidding is MAX_RETENTION_OVERPAY (how far anyone will go
 							// past the asking price) plus the hard-cap and salary-cap
 							// ceilings above, which are actual rules.
+							//
+							// Confirmed from the outside since: the AI takes no penalty
+							// for the tax anywhere in the game, so a ceiling here would
+							// cost basketball to save money that does not exist. The
+							// harness measures the tax as a census rather than a bill
+							// for the same reason, and CapPosture in
+							// trade/tradePosture.ts says why overLuxury is advisory.
 						}
 
 						// Overpay relative to what he is ACTUALLY asking this team, which

@@ -951,9 +951,11 @@ describe("a league runs for a decade without falling apart", () => {
 		let worstMaxDeal = "";
 		let maxDeals = 0;
 		let maxDealOvrTotal = 0;
-		// The luxury-tax bill, in dollars, by the tier of the team that paid it.
-		const taxBillByTier = new Map<string, number>();
-		let taxBillNoContender = 0;
+		// UNUSED CAP ROOM, which is the only money that means anything to an AI
+		// team. See the note on the CAP ROOM row.
+		const capRoomByTier = new Map<string, number>();
+		let capRoomTotal = 0;
+		let capRoomTeams = 0;
 		let pickAssumedTotal = 0;
 		let pickRealizedTotal = 0;
 		let settledPicks = 0;
@@ -1398,22 +1400,17 @@ describe("a league runs for a decade without falling apart", () => {
 					}
 					if (payroll > luxuryPayroll) {
 						taxByTier.set(posture.tier, (taxByTier.get(posture.tier) ?? 0) + 1);
-						// WHAT THE TAX ACTUALLY COSTS, not just who paid it. At the
-						// default rate a team pays 1.5x every dollar over the line, so
-						// a count alone says nothing about a front office that is a
-						// long way over - and the tiers that have no business paying
-						// it at all (a seller, a teardown) are exactly the ones a
-						// count buries among the contenders. Charged the way finances
-						// charges it.
-						const bill = g.get("luxuryTax") * (payroll - luxuryPayroll);
-						taxBillByTier.set(
-							posture.tier,
-							(taxBillByTier.get(posture.tier) ?? 0) + bill,
-						);
 						if (posture.tier !== "allIn" && !posture.elite) {
 							taxNoContender += 1;
-							taxBillNoContender += bill;
 						}
+					}
+					if (payroll < salaryCap) {
+						capRoomByTier.set(
+							posture.tier,
+							(capRoomByTier.get(posture.tier) ?? 0) + (salaryCap - payroll),
+						);
+						capRoomTotal += salaryCap - payroll;
+						capRoomTeams += 1;
 					}
 				}
 
@@ -1922,11 +1919,33 @@ describe("a league runs for a decade without falling apart", () => {
 				`WORST PAYROLL ${(worstPayrollShare * 100).toFixed(0)}% of cap - ${worstPayrollDetail}`,
 				`TAXPAYERS byTier ${[...taxByTier]
 					.sort((a, b) => b[1] - a[1])
-					.map(
-						([k, v]) =>
-							`${k}=${v}/$${((taxBillByTier.get(k) ?? 0) / 1000).toFixed(0)}M`,
-					)
-					.join(" ")} noContend=$${(taxBillNoContender / 1000).toFixed(0)}M`,
+					.map(([k, v]) => `${k}=${v}`)
+					.join(" ")}`,
+				// THE ONLY MONEY AN AI TEAM HAS ANY REASON TO CARE ABOUT.
+				//
+				// An AI franchise carries no budget and takes no penalty for the
+				// luxury tax - the cash comes off a balance sheet nothing reads
+				// back. So the tax line is not a constraint on it and the row
+				// above is a census, not a scorecard: a rebuilding team over the
+				// tax is not making a mistake, it is spending money that does not
+				// exist to spend. (An earlier build of this row charged the bill
+				// in dollars and invited exactly the wrong fix.)
+				//
+				// What IS real is the SALARY CAP, because it is a RULE: room
+				// decides who can sign a free agent outright and who can absorb
+				// salary in a trade. Room left unspent at the end of an offseason
+				// is basketball leverage the league did not use, which is the
+				// question worth asking of a front office's finances and the one
+				// nothing here was asking.
+				`CAP ROOM teams=${(capRoomTeams / SEASONS).toFixed(1)}/season ` +
+					`total=$${(capRoomTotal / SEASONS / 1000).toFixed(0)}M/season ` +
+					`byTier ${[...capRoomByTier]
+						.sort((a, b) => b[1] - a[1])
+						.map(
+							([k, v]) =>
+								`${k}=$${v / SEASONS / 1000 < 1 ? "<1" : (v / SEASONS / 1000).toFixed(0)}M`,
+						)
+						.join(" ")}`,
 				`WHIPLASH hold=${holds} step1=${steps1} step2=${steps2} step3+=${steps3}`,
 			);
 
