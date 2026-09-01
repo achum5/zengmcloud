@@ -171,6 +171,41 @@ export const applyVersionedChangeset = async (
 	return "apply";
 };
 
+// Put this device's OWN not-yet-published changes back after a checkpoint
+// restore.
+//
+// A restore replaces the database wholesale with the room's truth - and a
+// change still waiting in the outbox is, by definition, one the room does not
+// have. Without this the device published its queued game as the next version
+// and then did not have it: the restore had erased the game locally, the
+// upload went up from the outbox copy, and a device never re-applies a version
+// it authored. The person who simmed the game was the one person whose league
+// showed it unplayed. No marker write: these records are not a version yet,
+// and the marker stays what the checkpoint made it.
+export const reapplyOwnChangesLocally = async (
+	changes: VersionedChangeset["changeset"]["changes"],
+): Promise<void> => {
+	if (changes.length === 0) {
+		return;
+	}
+	const stores = [...new Set(changes.map((change) => String(change.store)))];
+	const transaction = (idb.league as any).transaction(stores, "readwrite");
+	for (const change of changes) {
+		const objectStore = transaction.objectStore(String(change.store));
+		if (change.type === "delete") {
+			objectStore.delete(change.id);
+		} else {
+			objectStore.put(change.value);
+		}
+	}
+	await transaction.done;
+	try {
+		await patchCache(changes);
+	} catch (error) {
+		syncDebugLog("v2:cache-patch-failed", { reapply: true, error });
+	}
+};
+
 // Restore a full-state checkpoint that represents version `checkpointVersion`.
 //
 // The checkpoint replaces stores one atomic store-replacement at a time (the

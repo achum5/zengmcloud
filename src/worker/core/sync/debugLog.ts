@@ -19,6 +19,7 @@ const TRACE_LABEL_PREFIXES = ["playMenu.", "actions.", "main.reorder"];
 
 const TRACE_LABELS = new Set([
 	"playMenu.sim",
+	"playMenu.simGame",
 	"playMenu.day",
 	"actions.liveGame",
 	"actions.simGame",

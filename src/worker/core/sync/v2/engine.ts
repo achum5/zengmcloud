@@ -40,6 +40,7 @@ import {
 	applyCheckpointV2,
 	applyVersionedChangeset,
 	readAppliedVersion,
+	reapplyOwnChangesLocally,
 } from "./applyVersion.ts";
 import { catchUpPlan } from "./protocol.ts";
 import { isTimelineAdvanceLabel } from "../actionLabels.ts";
@@ -317,6 +318,11 @@ export class SyncEngineV2 {
 		| ((progress: { done: number; total: number } | undefined) => void)
 		| undefined;
 	private publishTimeoutMs: number;
+	private beforePublish:
+		| ((
+				entry: Omit<ChangesetEntry, "seq">,
+		  ) => Promise<"publish" | "drop" | "wait">)
+		| undefined;
 
 	constructor(
 		transport: SyncTransport,
@@ -339,6 +345,14 @@ export class SyncEngineV2 {
 			onCatchUpProgress?: (
 				progress: { done: number; total: number } | undefined,
 			) => void;
+			// Asked before an entry that did not go up on its first attempt is
+			// published. A result queued while this device was away may since
+			// have been superseded by the room (see revalidateQueuedSingleGame in
+			// simDayFence.ts): "drop" removes it and re-syncs the device to what
+			// the room has, "wait" leaves it queued for the next kick.
+			beforePublish?: (
+				entry: Omit<ChangesetEntry, "seq">,
+			) => Promise<"publish" | "drop" | "wait">;
 			// Test hook: shrink the publish-attempt timeout.
 			publishTimeoutMs?: number;
 		} = {},
@@ -351,6 +365,7 @@ export class SyncEngineV2 {
 		this.onUploadComplete = options.onUploadComplete;
 		this.onUploadingChange = options.onUploadingChange;
 		this.onCatchUpProgress = options.onCatchUpProgress;
+		this.beforePublish = options.beforePublish;
 		this.publishTimeoutMs =
 			options.publishTimeoutMs ?? PUBLISH_ATTEMPT_TIMEOUT_MS;
 	}
@@ -1399,6 +1414,7 @@ export class SyncEngineV2 {
 						await applyCheckpointV2(payload, state.checkpointVersion);
 						this.appliedMirror = state.checkpointVersion;
 						this.checkpointRestores += 1;
+						await this.reapplyPendingAfterRestore();
 						this.mustRecoverFromCheckpoint = false;
 						syncDebugLog("v2:recovered-from-checkpoint", {
 							checkpointVersion: state.checkpointVersion,
@@ -1464,6 +1480,7 @@ export class SyncEngineV2 {
 					await applyCheckpointV2(payload, plan.checkpointVersion);
 					this.appliedMirror = plan.checkpointVersion;
 					this.checkpointRestores += 1;
+					await this.reapplyPendingAfterRestore();
 					await this.afterRemoteApply("checkpoint");
 					continue;
 				}
@@ -1917,6 +1934,27 @@ export class SyncEngineV2 {
 		}
 		const isAdvance = isTimelineAdvanceLabel(entry.action);
 
+		if (this.beforePublish) {
+			let verdict: "publish" | "drop" | "wait" = "publish";
+			try {
+				verdict = await this.beforePublish(entry);
+			} catch (error) {
+				syncDebugLog("v2:before-publish-failed", {
+					action: entry.action,
+					error: String(error),
+				});
+				verdict = "wait";
+			}
+			if (verdict === "wait") {
+				return false;
+			}
+			if (verdict === "drop") {
+				await this.discardSupersededEntry(entry);
+				// Handled, so the drain moves on to whatever else is queued.
+				return true;
+			}
+		}
+
 		for (let attempt = 0; attempt < 3; attempt++) {
 			// Never author on top of state we don't have: catch up first,
 			// publish second. The head is the local mirror (kept fresh by the
@@ -2204,6 +2242,48 @@ export class SyncEngineV2 {
 		this.mustRecoverFromCheckpoint = true;
 		void this.catchUp();
 		return false;
+	}
+
+	// A checkpoint restore just replaced the database with the room's truth,
+	// which by definition lacks everything still waiting in this device's
+	// outbox. Put it back, so the device shows what it is about to publish -
+	// see reapplyOwnChangesLocally for the game that went missing on the very
+	// device that simmed it.
+	private async reapplyPendingAfterRestore(): Promise<void> {
+		let pending: Omit<ChangesetEntry, "seq">[] = [];
+		try {
+			pending = await this.pendingEntries();
+		} catch {
+			return;
+		}
+		if (pending.length === 0) {
+			return;
+		}
+		for (const entry of pending) {
+			try {
+				await reapplyOwnChangesLocally(entry.changeset.changes);
+			} catch (error) {
+				syncDebugLog("v2:reapply-after-restore-failed", {
+					action: entry.action,
+					error: String(error),
+				});
+			}
+		}
+		syncDebugLog("v2:reapplied-pending-after-restore", {
+			entries: pending.length,
+		});
+	}
+
+	// A queued result the room has since overtaken (see beforePublish). Same
+	// second half as a discarded advance: the entry leaves the outbox, and the
+	// device snaps back to a checkpoint so the records the chain will never
+	// carry - a game the room played differently - are removed here too.
+	private async discardSupersededEntry(entry: Omit<ChangesetEntry, "seq">) {
+		syncDebugLog("v2:superseded-entry-dropped", { action: entry.action });
+		await this.removePending(entry.id);
+		await this.takeNotifications(entry.id);
+		this.mustRecoverFromCheckpoint = true;
+		void this.catchUp();
 	}
 
 	// Not a single-flight re-entry (doDrain holds the drain lock; catchUp's

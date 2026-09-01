@@ -1,3 +1,4 @@
+import type { SimDayClaimDoc } from "./simDayClaimPolicy.ts";
 import type { Changeset } from "./changeset.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
@@ -523,6 +524,11 @@ export interface SyncTransport {
 	// Completion is scoped to the gids whose results the caller durably
 	// queued - see simDayClaimPolicy.ts for why a day-level mark wedged rooms.
 	completeSimDay?(stageKey: string, day: number, gids: number[]): Promise<void>;
+	// The fence document as it stands, for a device deciding whether a result
+	// it queued while offline is still the room's to receive (see
+	// revalidateQueuedSingleGame in simDayFence.ts). A plain read; the decision
+	// is made with the same pure policy the claim transaction applies.
+	readSimDayClaim?(): Promise<SimDayClaimDoc | undefined>;
 
 	// Free-agency board support (see faBoard.ts). Each device publishes its
 	// team's ranked free-agent list (null clears it); everyone subscribes but the

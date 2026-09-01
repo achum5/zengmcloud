@@ -5,6 +5,7 @@ import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { afterAction } from "./afterAction.ts";
+import { setSingleGameSimActive } from "./afterActionHook.ts";
 import { setSyncEngine } from "./engineHolder.ts";
 import {
 	beginLiveSimNotificationHold,
@@ -62,6 +63,7 @@ describe("afterAction silent publishing", () => {
 		setSyncEngine(undefined);
 		// Never let one test's hold leak into the next.
 		releaseLiveSimNotifications();
+		setSingleGameSimActive(false);
 	});
 
 	// Record one finished game into the cache (inside a sim capture window, so it
@@ -189,6 +191,43 @@ describe("afterAction silent publishing", () => {
 			0,
 			"and nothing is queued up to fire later either",
 		);
+	});
+
+	// The label the engine sees decides whether a lost race means "rebase" or
+	// "discard" (isTimelineAdvanceLabel), and a live sim's playback spawns
+	// interleaved worker calls, any of which can be the one that drains the
+	// game. Whichever it is, the result must go up AS a single game.
+	test("a single game drained by an interleaved call publishes as one", async () => {
+		const { engine, published } = makeEngine();
+		setSyncEngine(engine as any);
+		setSingleGameSimActive(true);
+
+		await seedOneGame();
+		await afterAction("main", "updatePlayingTime");
+
+		assert.strictEqual(published.length, 1);
+		assert.strictEqual(published[0]!.label, "playMenu.simGame");
+	});
+
+	test("a single game drained under its own label keeps it", async () => {
+		const { engine, published } = makeEngine();
+		setSyncEngine(engine as any);
+		setSingleGameSimActive(true);
+
+		await seedOneGame();
+		await afterAction("actions", "liveGame");
+
+		assert.strictEqual(published[0]!.label, "actions.liveGame");
+	});
+
+	test("outside the single-game window, labels are left alone", async () => {
+		const { engine, published } = makeEngine();
+		setSyncEngine(engine as any);
+
+		await seedOneGame();
+		await afterAction("playMenu", "sim");
+
+		assert.strictEqual(published[0]!.label, "playMenu.sim");
 	});
 
 	test("a full-day sim to a game (simToGame) DOES notify", async () => {

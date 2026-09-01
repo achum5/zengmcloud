@@ -784,6 +784,14 @@ export class FirebaseTransport implements SyncTransport {
 	// stamped completed over games nobody ever simmed). The legacy `completed`
 	// boolean is still written for devices running older code; new code
 	// ignores it whenever completedGids is present.
+	async readSimDayClaim(): Promise<SimDayClaimDoc | undefined> {
+		const snap = await getDoc(
+			doc(this.db, "leagues", this.code, "control", SIM_DAY_DOC_ID),
+		);
+		this.markContact();
+		return snap.data() as SimDayClaimDoc | undefined;
+	}
+
 	async completeSimDay(
 		stageKey: string,
 		day: number,

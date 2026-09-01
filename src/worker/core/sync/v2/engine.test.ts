@@ -802,6 +802,156 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// THE REPLAYED GAME. A league-mate simmed their OWN game while somebody else
+	// was in charge of simming. Its publish lost the compare-and-swap to an
+	// ordinary edit, and because the label counted as a timeline advance the
+	// game was discarded and the device rolled back - the fence slice it had
+	// claimed was never completed, so the room's next scheduled sim replayed
+	// the game as crash recovery. One game is a disjoint slice the fence
+	// protects: a lost race rebases it on top, like any edit.
+	test("a single game that loses the race is rebased, never discarded", async () => {
+		const room = new Room();
+		initRoom(room);
+
+		// Version 1 is somebody's lineup change, and the room has a checkpoint -
+		// the exact conditions under which a stale ADVANCE is discarded.
+		const seedTransport = new V2Transport("C", room);
+		await seedTransport.publishV2Delta(
+			{ version: 1, authorId: "C", action: "main.updatePlayingTime", at: 5 },
+			serializeChangeset(changesetOf(tradePut(2, 0))),
+		);
+		await seedTransport.commitV2Version(
+			{
+				version: 1,
+				authorId: "C",
+				byName: "C",
+				at: 5,
+				action: "main.updatePlayingTime",
+			},
+			0,
+		);
+		// The same checkpoint the discard test restores from - a league the
+		// validator accepts, so the inline catch-up's restore actually happens.
+		await seedTransport.publishV2Checkpoint(
+			1,
+			serializeChangeset({
+				version: 1,
+				stores: {
+					players: [
+						{ pid: 1, tid: 0 },
+						{ pid: 2, tid: 0 },
+						{ pid: 3, tid: 0 },
+						{ pid: 4, tid: 0 },
+						{ pid: 5, tid: 0 },
+					],
+					teams: [{ tid: 0 }],
+					gameAttributes: [
+						{ key: "season", value: 2006 },
+						{ key: "phase", value: 1 },
+					],
+				},
+			}),
+		);
+		await seedTransport.commitV2Checkpoint(1, 1);
+
+		// DEVICE A, still at version 0 and NOT in charge of simming, simmed its
+		// own game (its player's line, pid 1, changed).
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 99 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+		room.setAuthority({ holderId: "S", holderName: "Simmer", busyUntil: 0 });
+		const transport = new V2Transport("A", room);
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+
+		const outcome = await engine.onLocalChangeset(
+			changesetOf(tradePut(1, 99)),
+			"playMenu.simGame",
+		);
+		// The entry is NEVER discarded: whatever the first attempt did, it is
+		// still queued or already up.
+		assert.notStrictEqual(await engine.pendingUploadCount(), -1);
+		if (outcome === "queued") {
+			// The listener kicked a checkpoint restore the moment the engine
+			// started, and the publish's inline catch-up backed off behind it -
+			// the same beat a real device sees. The health tick's next drain is
+			// what lands it; do that here.
+			assert.strictEqual(await engine.pendingUploadCount(), 1);
+			assert.ok(await engine.catchUp());
+			assert.isTrue(await engine.drainOutbox());
+		}
+		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		assert.strictEqual(
+			room.state!.version,
+			2,
+			"the game went up on top of the lineup change",
+		);
+		assert.strictEqual(room.state!.action, "playMenu.simGame");
+		const players = await (idb as any).league.getAll("players");
+		assert.strictEqual(
+			players.find((p: any) => p.pid === 1).tid,
+			99,
+			"the game's own records survived on the device",
+		);
+		engine.stop();
+	});
+
+	// A result that waited in the outbox can be answered for before it goes up.
+	test("beforePublish can drop or hold a queued entry", async () => {
+		const room = new Room();
+		initRoom(room);
+		(idb as any).league = makeLeagueDb({
+			players: [{ pid: 1, tid: 5 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 0 }],
+		});
+		const transport = new V2Transport("A", room);
+		let verdict: "publish" | "drop" | "wait" = "wait";
+		const asked: string[] = [];
+		const engine = new SyncEngineV2(transport, {
+			beforePublish: async (entry) => {
+				asked.push(entry.action);
+				return verdict;
+			},
+		});
+		engine.start();
+		await engine.claimAuthority();
+
+		// Held: stays queued, nothing minted.
+		assert.strictEqual(
+			await engine.onLocalChangeset(
+				changesetOf(tradePut(1, 5)),
+				"playMenu.simGame",
+			),
+			"queued",
+		);
+		assert.strictEqual(await engine.pendingUploadCount(), 1);
+		assert.strictEqual(room.state!.version, 0);
+
+		// Dropped: leaves the outbox without minting, and the drain reports
+		// success so anything behind it still goes.
+		verdict = "drop";
+		assert.isTrue(await engine.drainOutbox());
+		assert.strictEqual(await engine.pendingUploadCount(), 0);
+		assert.strictEqual(room.state!.version, 0, "never published");
+		assert.deepEqual(asked, ["playMenu.simGame", "playMenu.simGame"]);
+
+		// Allowed: publishes as normal.
+		verdict = "publish";
+		assert.strictEqual(
+			await engine.onLocalChangeset(
+				changesetOf(tradePut(1, 6)),
+				"playMenu.simGame",
+			),
+			"confirmed",
+		);
+		assert.strictEqual(room.state!.version, 1);
+		// The drop kicked a checkpoint recovery; let it settle before the next
+		// test swaps the league DB out from under it.
+		await engine.catchUp();
+		engine.stop();
+	});
+
 	// THE SILENT SIMMER: join a room as a follower, press "Sim here", close the
 	// app, reopen it. Claiming authority writes the shared doc but does not
 	// rewrite the persisted session, so the engine reconstructs with

@@ -14,7 +14,12 @@ import { setActiveFirebaseConfig } from "./firebaseApp.ts";
 import type { FirebaseConfig } from "./firebaseConfig.ts";
 import { setApplyGuard } from "./applyGuard.ts";
 import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
-import { setupSimDayFence, teardownSimDayFence } from "./simDayFence.ts";
+import {
+	completeDeferredSimDayFence,
+	revalidateQueuedSingleGame,
+	setupSimDayFence,
+	teardownSimDayFence,
+} from "./simDayFence.ts";
 import { setupFaBoard, teardownFaBoard } from "./faBoard.ts";
 import {
 	beginLiveChat,
@@ -2125,7 +2130,11 @@ const doConnectSharedLeague = async ({
 		onUploadComplete: () => {
 			uploadOkCounter += 1;
 			void toUI("updateLocal", [{ mpSyncUploadOk: uploadOkCounter }]);
+			// Everything queued is now confirmed in the room - including a single
+			// game whose fence completion was waiting on exactly that.
+			completeDeferredSimDayFence();
 		},
+		beforePublish: revalidateQueuedSingleGame,
 		// The header's catching-up indicator. V2 only reports when the
 		// device is visibly behind and working on it (a multi-version walk,
 		// or fetches failing and retrying) - exactly when a quiet screen

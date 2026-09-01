@@ -4,6 +4,7 @@ import { logChangeset } from "./devChangesetLogger.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { getConnectedLid } from "./connect.ts";
 import { isSingleGameSimActive } from "./afterActionHook.ts";
+import { isSingleGameSimLabel } from "./actionLabels.ts";
 import { buildNotifications } from "./notifications.ts";
 import {
 	holdLiveSimNotifications,
@@ -178,16 +179,29 @@ export const afterAction = async (
 			// (confirmed OR queued) the delta can no longer be lost - only delayed.
 			// It throws ONLY if the delta could not be made durable, in which case
 			// the outer catch restores the pending changes and schedules a retry.
+			// Whatever drained a single game's result, publish it AS a single game.
+			// A live sim's playback navigation spawns interleaved worker calls, and
+			// the one that happens to drain the game changeset stamps its own label
+			// on it - which is fine for silence (forced above) but not for the
+			// engine's staleness rule, which reads the label to decide whether a
+			// lost race means "rebase" or "discard" (see isTimelineAdvanceLabel),
+			// and for the fence re-validation of a queued result, which has to be
+			// able to recognise the entry as a fenced game at all.
+			const publishLabel =
+				isSingleGameSimActive() && !isSingleGameSimLabel(label)
+					? "playMenu.simGame"
+					: label;
 			try {
 				if (trace) {
 					syncDebugLog("afterAction:publish-start", {
 						label,
+						publishLabel,
 						records: changeset.changes.length,
 					});
 				}
 				outcome = await engine.onLocalChangeset(
 					changeset,
-					label,
+					publishLabel,
 					notifications,
 				);
 				published = true;

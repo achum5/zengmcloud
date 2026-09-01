@@ -97,6 +97,22 @@ export const isSimAuthorityLockedCall = (type: string, name: string): boolean =>
 	(type === "toolsMenu" && TOOLS_MENU_SIM_AUTHORITY_LOCKED.has(name)) ||
 	(type === "main" && MAIN_SIM_AUTHORITY_LOCKED.has(name));
 
+// A SINGLE game within a day, as opposed to a whole day. The two "actions"
+// labels are the dispatched calls; "playMenu.simGame" is what play.ts
+// publishes the result under when the sim finishes (a day sim publishes as
+// "playMenu.sim"), and what afterAction relabels any interleaved drain of that
+// result to. These need sim authority to CALL - see the sets above, and the
+// own-game carve-out in worker/index.ts that lets a follower run one for its
+// own team - but they are not timeline advances when PUBLISHED (below).
+export const SINGLE_GAME_SIM_LABELS: ReadonlySet<string> = new Set([
+	"actions.simGame",
+	"actions.liveGame",
+	"playMenu.simGame",
+]);
+
+export const isSingleGameSimLabel = (label: string): boolean =>
+	SINGLE_GAME_SIM_LABELS.has(label);
+
 // Same question asked of a changeset's action label ("playMenu.sim",
 // "main.proposeTrade", ...) - the form the sync engines see. A timeline
 // advance authored on state the room has since moved past must be DISCARDED,
@@ -104,9 +120,27 @@ export const isSimAuthorityLockedCall = (type: string, name: string): boolean =>
 // forked); an ordinary edit whose base moved is safe to catch up and retry,
 // because it's a whole-record statement of user intent, not a derivation from
 // a particular day.
+//
+// A SINGLE game is not an advance here, even though calling for one needs
+// authority. What makes a whole day dangerous to republish is that it is a
+// derivation from the entire league at one moment - injuries counted down,
+// free agents signed, AI trades made, fourteen games - and none of that is
+// true of one game with the rest of the day still to play: it touches its two
+// teams, their players and its own schedule row, and the schedule-day fence
+// (simDayClaimPolicy.ts) already guarantees nobody else can sim that gid. It
+// was being classified as an advance anyway, so a league-mate's own-game sim
+// that lost the compare-and-swap to somebody setting a lineup was thrown away
+// and the device rolled back to a checkpoint - and because the throwaway
+// counted as "not synced", the fence slice was never completed, its lease
+// lapsed, and the room's next scheduled sim replayed the game as crash
+// recovery. From the person who simmed it: "at 5:40 it simmed on its own as if
+// I had never simmed." A lost race for one game rebases like any other edit.
 export const isTimelineAdvanceLabel = (label: string): boolean => {
 	const dot = label.indexOf(".");
 	if (dot === -1) {
+		return false;
+	}
+	if (isSingleGameSimLabel(label)) {
 		return false;
 	}
 	return isSimAuthorityLockedCall(label.slice(0, dot), label.slice(dot + 1));

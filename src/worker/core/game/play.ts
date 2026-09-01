@@ -182,16 +182,28 @@ const play = async (
 		// same way - the room must stay in sync - but must NOT push a notification:
 		// you deliberately simmed just one game with the rest of the day still to
 		// play, so pinging phones with a "game done" would be noise.
-		const synced = await runAfterActionHook("playMenu", "sim", {
-			silent: gidOneGame !== undefined,
+		//
+		// A single game publishes under its OWN label. The sync engine discards a
+		// timeline advance that loses a race to another device's edit (a day
+		// re-derived over a world that moved is how v1 leagues forked) - and one
+		// game with the rest of the day still to play is not that: it is a
+		// disjoint slice the schedule-day fence already protects, and it must
+		// rebase like an edit rather than vanish. See isTimelineAdvanceLabel.
+		const synced = await runAfterActionHook(
+			"playMenu",
+			gidOneGame !== undefined ? "simGame" : "sim",
+			{ silent: gidOneGame !== undefined },
+		);
+		// Synced: the results are durably queued AND confirmed in the room, so the
+		// claimed slice's crash-recovery window can close now. Not synced: a day
+		// sim is left to its lease (completing it with unpublished results could
+		// fence the day forever while the room never receives it), but a single
+		// game's completion is DEFERRED to the moment its queued upload lands -
+		// see completeClaimedSimDayFence for why the two differ.
+		completeClaimedSimDayFence({
+			synced,
+			singleGame: gidOneGame !== undefined,
 		});
-		if (synced) {
-			// The sim's results are durably queued for the room, so the claimed
-			// day's crash-recovery window can close. On !synced the claim is left
-			// to its lease: completing it with unpublished results could fence the
-			// day forever while the room never receives it.
-			completeClaimedSimDayFence();
-		}
 		if (!synced) {
 			logEvent(
 				{
