@@ -20,7 +20,10 @@ import {
 	wrinkleCeiling,
 	wrinkleLevelForAge,
 	wrinkleLevelOf,
+	FACE_AGE_BANDS,
 	FACIAL_HAIR_TIERS,
+	GENERATED_FACIAL_HAIR,
+	NEVER_GENERATE,
 	facialHairForAge,
 	HAIR_RARE,
 	HAIR_TEXTURES,
@@ -32,18 +35,11 @@ import {
 	tierOf,
 	shavesHead,
 	shavesHeadAtAge,
-	greys,
-	greyOnsetAge,
-	greyAmountForAge,
-	greyedColor,
-	greyCrossedAStep,
 	familySeed,
 	fatnessGainByAge,
 	HAIR_VOLUMINOUS,
 	SHAVES_HEAD_SHARE,
 	BALDING_PRONE_SHARE,
-	GREY_PER_YEAR,
-	ungreyedColor,
 	HAIR_PERIOD,
 	applyFaceAgingHistory,
 } from "./realisticFaces.ts";
@@ -240,21 +236,82 @@ describe("facialHairForAge", () => {
 		}
 	});
 
-	test("period styles are reachable only for the oldest players", () => {
-		const reachable = (age: number) => {
-			const tiers = new Set<string | undefined>();
+	// THE STYLES THE LEAGUE NEVER GROWS.
+	//
+	// Named here rather than read back out of NEVER_GENERATE, which would make
+	// this test agree with whatever the code currently says. These are the ones
+	// that were looked at and rejected, and the list is the assertion.
+	const REJECTED = [
+		// The field report: a 23-year-old in a mustache and flared chops.
+		// mustache1SB1 is a perfectly ordinary medium-tier style and he was old
+		// enough for the medium tier, so no age rule was ever going to keep it
+		// off him.
+		"mustache1SB1",
+		"mustache1SB2",
+		// Beaded, which renders as pale blue blocks under the chin.
+		"beard5",
+		"beard6",
+		"fullgoatee5",
+		"fullgoatee6",
+		// Costume: biker horseshoe, Amish chin curtain, Wolverine chops, mutton
+		// chops, neckbeard, Wilt's sideburns.
+		"harley1",
+		"honest-abe",
+		"logan",
+		"mutton",
+		"neckbeard",
+		"wilt-sideburns-long",
+	];
+
+	test("a rejected style is never generated, at any age", () => {
+		for (const id of REJECTED) {
+			assert.isTrue(NEVER_GENERATE.has(id), `${id} should be excluded`);
+		}
+		for (const age of [19, 22, 26, 30, 33, 38, 44]) {
 			for (let i = 0; i < 400; i++) {
 				const id = facialHairForAge(age, sequence([0, i / 400, i / 400]));
-				if (id !== "none") {
-					tiers.add(tierOf(id));
-				}
+				assert.notInclude(REJECTED, id, `${age}-year-old should not get ${id}`);
 			}
-			return tiers;
-		};
-		assert.notInclude([...reachable(22)], "period");
-		assert.notInclude([...reachable(26)], "period");
-		assert.notInclude([...reachable(30)], "period");
-		assert.include([...reachable(33)], "period");
+		}
+	});
+
+	test("a rejected style is never grown into either", () => {
+		// The other way a face gets one: thickening off an existing style,
+		// which reads its own list and used to read the unfiltered one.
+		for (const age of [22, 26, 31, 36]) {
+			for (let i = 0; i < 300; i++) {
+				const f = face();
+				f.facialHair.id = "goatee1";
+				ageFace(f, age, 7, sequence([0, i / 300, i / 300]));
+				assert.notInclude(REJECTED, f.facialHair.id);
+			}
+		}
+	});
+
+	test("the period tier is listed for classification but never grown", () => {
+		// The list still has to exist: it is what says a face that already has
+		// mutton chops is at the top tier and should not thicken past it.
+		assert.isAbove(FACIAL_HAIR_TIERS.period.length, 0);
+		for (const id of FACIAL_HAIR_TIERS.period) {
+			assert.isTrue(NEVER_GENERATE.has(id), id);
+			assert.strictEqual(tierOf(id), "period", id);
+		}
+		assert.isUndefined(GENERATED_FACIAL_HAIR.period);
+	});
+
+	test("every tier that can still be grown has something to grow", () => {
+		// A tier left in the age bands with an empty generated list would be
+		// picked and then have nothing to return.
+		for (const band of FACE_AGE_BANDS) {
+			for (const tier of Object.keys(band.tiers)) {
+				assert.isAbove(
+					GENERATED_FACIAL_HAIR[tier as keyof typeof FACIAL_HAIR_TIERS]
+						?.length ?? 0,
+					0,
+					`${tier} is in a band but has nothing to generate`,
+				);
+			}
+		}
 	});
 
 	test("older players get facial hair more often than prospects", () => {
@@ -768,9 +825,6 @@ describe("replaying a career that already happened", () => {
 			rand: fixed(0.5),
 		});
 		assert.strictEqual(before.body.color, "#ad6453");
-		// Hair may have greyed, which is age rather than recolouring - but at 27
-		// with this pid it has not started yet.
-		assert.strictEqual(greyAmountForAge(27, 3), 0);
 		assert.strictEqual(before.hair.color, "#272421");
 	});
 
@@ -839,114 +893,6 @@ describe("period cuts", () => {
 			assert.isTrue(hairAllowedForRace(id, "brown"), id);
 			assert.isFalse(hairAllowedForRace(id, "white"), id);
 		}
-	});
-});
-
-describe("going grey", () => {
-	// The thing a career does to hair that the model used to say nothing about:
-	// a thirty-eight-year-old with the exact black hair he was drafted with is
-	// the clearest tell that a face was drawn once and never touched again.
-	const greyer = (() => {
-		for (let pid = 0; pid < 500; pid++) {
-			if (greys(pid) && greyOnsetAge(pid) <= 30) {
-				return pid;
-			}
-		}
-		throw new Error("no early-greying pid found");
-	})();
-
-	const lightness = (hex: string) =>
-		[1, 3, 5].reduce(
-			(sum, i) => sum + Number.parseInt(hex.slice(i, i + 2), 16),
-			0,
-		) / 3;
-
-	test("nobody greys before his onset age", () => {
-		for (let pid = 0; pid < 200; pid++) {
-			assert.strictEqual(greyAmountForAge(greyOnsetAge(pid), pid), 0);
-			assert.strictEqual(greyAmountForAge(19, pid), 0);
-		}
-	});
-
-	test("plenty of players never grey at all inside a career", () => {
-		let ever = 0;
-		for (let pid = 0; pid < 2000; pid++) {
-			if (greyAmountForAge(38, pid) > 0.05) {
-				ever += 1;
-			}
-		}
-		// Well short of the whole league, and well short of nobody.
-		assert.isAbove(ever, 100);
-		assert.isBelow(ever, 1000);
-	});
-
-	test("it only ever goes one way", () => {
-		let previous = 0;
-		for (let age = 19; age <= 45; age++) {
-			const amount = greyAmountForAge(age, greyer);
-			assert.isAtLeast(amount, previous, `age ${age}`);
-			previous = amount;
-		}
-	});
-
-	// A face rebuilt at an age has to match the same face aged into that age,
-	// or the retroactive league pass and the preseason would disagree about the
-	// same man.
-	test("aging a year at a time lands where building at that age lands", () => {
-		let stepped = "#272421";
-		for (let age = greyOnsetAge(greyer) + 1; age <= 38; age++) {
-			stepped = greyedColor(stepped, GREY_PER_YEAR);
-		}
-		const built = greyedColor("#272421", greyAmountForAge(38, greyer));
-		for (const i of [1, 3, 5]) {
-			const a = Number.parseInt(stepped.slice(i, i + 2), 16);
-			const b = Number.parseInt(built.slice(i, i + 2), 16);
-			assert.isAtMost(Math.abs(a - b), 2, `${stepped} vs ${built}`);
-		}
-	});
-
-	test("greying lightens hair and never darkens it", () => {
-		const dark = "#272421";
-		assert.isAbove(lightness(greyedColor(dark, 0.4)), lightness(dark));
-		assert.strictEqual(greyedColor(dark, 0), dark);
-		assert.strictEqual(greyedColor("not a colour", 0.5), "not a colour");
-	});
-
-	// A son inherits his father's hair colour verbatim, and a grey father would
-	// hand a twenty-year-old his grey.
-	test("un-greying gets back the colour a man started with", () => {
-		for (const base of ["#272421", "#5a3825", "#d7bf91", "#0f0902"]) {
-			for (const amount of [0.1, 0.3, 0.55]) {
-				const back = ungreyedColor(greyedColor(base, amount), amount);
-				for (const i of [1, 3, 5]) {
-					const a = Number.parseInt(base.slice(i, i + 2), 16);
-					const b = Number.parseInt(back.slice(i, i + 2), 16);
-					assert.isAtMost(Math.abs(a - b), 3, `${base} -> ${back}`);
-				}
-			}
-		}
-	});
-
-	test("un-greying nothing is a no-op", () => {
-		assert.strictEqual(ungreyedColor("#272421", 0), "#272421");
-	});
-
-	test("the drift is remembered at a few points, not every season", () => {
-		let steps = 0;
-		for (let age = 19; age <= 45; age++) {
-			if (greyCrossedAStep(age, greyer)) {
-				steps += 1;
-			}
-		}
-		assert.isAtLeast(steps, 1);
-		assert.isAtMost(steps, 3);
-	});
-
-	test("a face built old is already weathered", () => {
-		const f = face();
-		f.hair.color = "#272421";
-		applyRealisticFace(f, { age: 40, pid: greyer, rand: fixed(0.5) });
-		assert.isAbove(lightness(f.hair.color), lightness("#272421"));
 	});
 });
 

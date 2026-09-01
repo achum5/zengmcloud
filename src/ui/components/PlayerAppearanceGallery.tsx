@@ -2,7 +2,10 @@ import clsx from "clsx";
 import { Modal } from "./Modal.tsx";
 import { PlayerPicture } from "./PlayerPicture.tsx";
 import { TeamLogoInline } from "./TeamLogoInline.tsx";
-import { appearanceForSeason } from "../../common/playerAppearance.ts";
+import {
+	appearanceForSeason,
+	appearancesDiffer,
+} from "../../common/playerAppearance.ts";
 import type { PlayerAppearance } from "../../common/playerAppearance.ts";
 import { DEFAULT_JERSEY, DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
 import { helpers } from "../util/helpers.ts";
@@ -104,6 +107,7 @@ export const PlayerAppearanceGallery = ({
 	teams,
 	highlightSeason,
 	onHide,
+	onRevert,
 }: {
 	name: string;
 	seasons: number[];
@@ -120,8 +124,30 @@ export const PlayerAppearanceGallery = ({
 	teams?: Record<number, AppearanceTeam | undefined>;
 	highlightSeason?: number;
 	onHide: () => void;
+	// Put one season's look back to the season before it. Omitted where there
+	// is nothing to write to (a read-only view), and the control is then not
+	// offered at all.
+	onRevert?: (season: number) => void;
 }) => {
 	const stints = groupSeasonsByUniform(seasons, teams);
+
+	// THE SEASONS AGING ACTUALLY CHANGED SOMETHING IN, which is the only place
+	// there is anything to undo. Compared against the season before it IN THIS
+	// CAREER rather than the calendar year before, so a year out of the league
+	// does not read as a change. The first season has nothing behind it.
+	const previousSeason = new Map<number, number>();
+	for (const [i, season] of seasons.entries()) {
+		const previous = seasons[i - 1];
+		if (
+			previous !== undefined &&
+			appearancesDiffer(
+				appearanceForSeason(player, previous),
+				appearanceForSeason(player, season),
+			)
+		) {
+			previousSeason.set(season, previous);
+		}
+	}
 
 	return (
 		<Modal onHide={onHide} show size="lg" scrollable>
@@ -183,47 +209,61 @@ export const PlayerAppearanceGallery = ({
 									// Only a season he spent on a roster has a game log to open;
 									// the years in the scouting pool have no games behind them.
 									const Card = team ? "a" : "div";
+									const revertTo = previousSeason.get(season);
 									return (
-										<Card
-											key={season}
-											href={
-												team
-													? helpers.leagueUrl([
-															"player_game_log",
-															player.pid,
-															season,
-														])
-													: undefined
-											}
-											// Deliberately no onClick handler: the router picks the
-											// click up off document, and closing the modal here could
-											// detach the anchor before the event ever gets there. The
-											// whole view unmounts on navigation anyway.
-											title={team ? `${season} game log` : undefined}
-											className={clsx("player-appearance-card", {
-												current: season === highlightSeason,
-											})}
-										>
-											<div className="player-appearance-face">
-												<PlayerPicture
-													face={face}
-													imgURL={imgURL}
-													colors={stintColors}
-													jersey={stintJersey}
-													lazy
-												/>
-											</div>
-											<div
-												className="player-appearance-season"
-												style={{
-													backgroundColor: stintColors[0],
-													borderTopColor: stintColors[2],
-													color: stintColors[1],
-												}}
+										<div key={season} className="player-appearance-cell">
+											<Card
+												href={
+													team
+														? helpers.leagueUrl([
+																"player_game_log",
+																player.pid,
+																season,
+															])
+														: undefined
+												}
+												// Deliberately no onClick handler: the router picks the
+												// click up off document, and closing the modal here could
+												// detach the anchor before the event ever gets there. The
+												// whole view unmounts on navigation anyway.
+												title={team ? `${season} game log` : undefined}
+												className={clsx("player-appearance-card", {
+													current: season === highlightSeason,
+												})}
 											>
-												{season}
-											</div>
-										</Card>
+												<div className="player-appearance-face">
+													<PlayerPicture
+														face={face}
+														imgURL={imgURL}
+														colors={stintColors}
+														jersey={stintJersey}
+														lazy
+													/>
+												</div>
+												<div
+													className="player-appearance-season"
+													style={{
+														backgroundColor: stintColors[0],
+														borderTopColor: stintColors[2],
+														color: stintColors[1],
+													}}
+												>
+													{season}
+												</div>
+											</Card>
+											{onRevert && revertTo !== undefined ? (
+												<button
+													type="button"
+													className="player-appearance-revert"
+													title={`Back to the ${revertTo} face`}
+													onClick={() => {
+														onRevert(season);
+													}}
+												>
+													<span className="glyphicon glyphicon-fast-backward" />
+												</button>
+											) : null}
+										</div>
 									);
 								})}
 							</div>

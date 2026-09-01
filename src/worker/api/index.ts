@@ -303,6 +303,7 @@ import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
 import type { GenOrderResult } from "../core/draft/genOrder.ts";
 import { allowCrossingNextSimStop } from "../core/sync/tradeDeadlineGate.ts";
 import { parseSimStopDays, stopsOnDay } from "../../common/simStopDays.ts";
+import { revertAppearance } from "../../common/playerAppearance.ts";
 
 const acceptContractNegotiation = async ({
 	pid,
@@ -5454,6 +5455,55 @@ const updatePlayerFace = async ({
 	await toUI("realtimeUpdate", [["playerMovement"]]);
 };
 
+// PUT ONE SEASON'S FACE BACK, from the appearance gallery.
+//
+// Faces age on their own, most years change nothing, and the year one does is
+// occasionally a year you would rather it had not. Everything needed to undo
+// it is already in the history - see revertAppearance, which owns the rule -
+// so this is the load, apply, save around it.
+//
+// Written through the cache like every other player edit, so the room sees it.
+const revertPlayerFace = async ({
+	pid,
+	season,
+}: {
+	pid: number;
+	season: number;
+}) => {
+	const p = await idb.getCopy.players({ pid }, "noCopyCache");
+	if (!p) {
+		throw new Error("Player not found.");
+	}
+
+	// The newest season the player has: the one his live face belongs to, so
+	// reverting it moves p.face and reverting an older one does not.
+	const latestSeason = Math.max(
+		g.get("season"),
+		...p.ratings.map((row) => row.season),
+	);
+
+	const reverted = revertAppearance({
+		appearances: p.appearances,
+		season,
+		current: { face: p.face, imgURL: p.imgURL },
+		latestSeason,
+	});
+	if (!reverted) {
+		// Nothing changed that season - the button should not have been there.
+		return;
+	}
+
+	p.appearances = reverted.appearances;
+	if (reverted.current.face) {
+		p.face = reverted.current.face;
+	}
+	// "" is how a player with no picture is stored (see player.generate), and
+	// a look with no imgURL is exactly that rather than "leave the old one".
+	p.imgURL = reverted.current.imgURL ?? "";
+	await idb.cache.players.put(p);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
 const getPlayersNextWatch = (players: Player[]) => {
 	const watchCounts = new Map<number, number>();
 	for (const p of players) {
@@ -7380,6 +7430,7 @@ export default {
 		updateMultiTeamMode,
 		updateOptions,
 		updatePlayThroughInjuries,
+		revertPlayerFace,
 		updatePlayerFace,
 		updatePlayerUntouchable,
 		updatePlayerWatch,

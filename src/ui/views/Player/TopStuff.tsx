@@ -575,6 +575,15 @@ const TopStuff = ({
 								player={player}
 								teams={appearanceTeams}
 								highlightSeason={season}
+								onRevert={(revertSeason) => {
+									// The view reloads on playerMovement, so the gallery
+									// redraws with the restored face and the button for that
+									// season goes away on its own.
+									void toWorker("main", "revertPlayerFace", {
+										pid: player.pid,
+										season: revertSeason,
+									});
+								}}
 								onHide={() => {
 									setShowGallery(false);
 								}}

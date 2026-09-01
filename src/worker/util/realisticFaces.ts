@@ -30,7 +30,6 @@
 //
 // What a career actually does to a head, and what is modelled here:
 //   - facial hair arrives and thickens          (never thins)
-//   - hair greys                                (never darkens)
 //   - hairlines recede                          (never grow back)
 //   - lines set in                              (never smooth out)
 //   - the man fills out                         (never slims)
@@ -100,8 +99,8 @@ export const FACIAL_HAIR_TIERS = {
 		"beard-point",
 	],
 	// Mutton chops, neckbeards, chin curtains, Wolverine chops, Wilt sideburns.
-	// Kept, but only as a rare touch on the oldest players - deleting them
-	// outright would cost the league variety it cannot spare.
+	// LISTED BUT NEVER GENERATED - see NEVER_GENERATE. The list stays because
+	// it is also what classifies a face that already has one.
 	period: [
 		"harley1",
 		"harley1-sb-1",
@@ -144,6 +143,55 @@ export const FACIAL_HAIR_TIERS = {
 } as const;
 
 export type FacialHairTier = keyof typeof FACIAL_HAIR_TIERS;
+
+// STYLES THE LEAGUE NEVER GROWS, chosen by rendering all 83 and looking.
+//
+// The tiers above were built to decide WHEN a style is plausible, and they do
+// that well, but plausible-for-an-age is not the same question as "does this
+// belong on a basketball player at all". A field report of a 23-year-old
+// wearing a mustache with flared chops is what separated them: nothing about
+// the age model was wrong - mustache1SB1 is a legitimate medium-tier style and
+// he was old enough for the medium tier - the style itself just does not
+// belong in the league.
+//
+// Three groups, all judged from the rendered art:
+//
+//  - The whole PERIOD tier. Horseshoe biker mustaches (harley*), Amish chin
+//    curtains (honest-abe*), Wolverine chops (logan*), mutton chops (mutton*),
+//    neckbeards and Wilt's long sideburns. These were kept as "a rare touch on
+//    the oldest players" for the sake of variety; a league that draws them at
+//    all is a league where they turn up, and they read as costume every time.
+//  - MUSTACHE PLUS FLARED CHOPS (mustache1SB1, mustache1SB2), which are the
+//    mutton-chop look wearing a medium-tier label - and the one in the report.
+//  - The BEADED novelties (beard5, beard6, fullgoatee5, fullgoatee6), which
+//    render as pale blue blocks hanging under the chin and read as a drawing
+//    error rather than as hair.
+//
+// Only GENERATION is affected. A face that already has one of these keeps it -
+// nothing in this file has ever taken facial hair away, and a save full of
+// silently rewritten faces is worse than the styles are - so the way to be rid
+// of one already in a league is the revert control in the appearance gallery.
+export const NEVER_GENERATE: ReadonlySet<string> = new Set([
+	...FACIAL_HAIR_TIERS.period,
+	"mustache1SB1",
+	"mustache1SB2",
+	"fullgoatee5",
+	"fullgoatee6",
+	"beard5",
+	"beard6",
+]);
+
+// The tiers as GENERATION sees them. A tier whose every member is excluded
+// (period) drops out entirely rather than becoming an empty list nothing can
+// be picked from.
+export const GENERATED_FACIAL_HAIR = Object.fromEntries(
+	Object.entries(FACIAL_HAIR_TIERS)
+		.map(([tier, ids]) => [
+			tier,
+			(ids as readonly string[]).filter((id) => !NEVER_GENERATE.has(id)),
+		])
+		.filter(([, ids]) => (ids as string[]).length > 0),
+) as Partial<Record<FacialHairTier, string[]>>;
 
 // PER YEAR, not per threshold. Aging used to fire at three fixed ages, which
 // made a career a series of three jumps and left anyone past the last one
@@ -443,7 +491,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 	{
 		minAge: 31,
 		facialHair: 0.65,
-		tiers: { light: 0.3, medium: 0.33, heavy: 0.32, period: 0.05 },
+		tiers: { light: 0.3, medium: 0.33, heavy: 0.32 },
 		balding: 0.12,
 		baldingPerYear: 0.03,
 		glasses: 0.04,
@@ -605,14 +653,25 @@ const pickWeighted = <T extends string>(
 const pickFrom = <T>(list: readonly T[], rand: () => number): T =>
 	list[Math.floor(rand() * list.length)]!;
 
+// Is there anything left in this tier to grow? See GENERATED_FACIAL_HAIR.
+const generatable = (tier: string): tier is FacialHairTier =>
+	(GENERATED_FACIAL_HAIR[tier as FacialHairTier]?.length ?? 0) > 0;
+
 // A facial hair style suitable for this age, or "none".
 export const facialHairForAge = (age: number, rand: () => number): string => {
 	const band = bandForAge(age);
 	if (rand() >= band.facialHair) {
 		return "none";
 	}
-	const tier = pickWeighted(band.tiers, rand);
-	return pickFrom(FACIAL_HAIR_TIERS[tier], rand);
+	// Only tiers that still have something to give - see GENERATED_FACIAL_HAIR.
+	const tiers = Object.fromEntries(
+		Object.entries(band.tiers).filter(([tier]) => generatable(tier)),
+	) as Partial<Record<FacialHairTier, number>>;
+	if (Object.keys(tiers).length === 0) {
+		return "none";
+	}
+	const tier = pickWeighted(tiers, rand);
+	return pickFrom(GENERATED_FACIAL_HAIR[tier]!, rand);
 };
 
 // COLOR VARIETY. facesjs picks skin from a palette of two or three fixed values
@@ -655,106 +714,17 @@ export const jitterColor = (
 	);
 };
 
-// GOING GREY, which is the most visible thing age does to a head of hair and
-// the one the model had nothing at all to say about. A thirty-eight-year-old
-// with the exact black hair he was drafted with is the single clearest tell
-// that a face was drawn once and never touched again.
+// GOING GREY IS GONE. It ran for a while: 40% of players, starting somewhere
+// between 28 and 40, drifting 5.5% of the way to a warm grey every preseason,
+// with the crossings recorded in the appearance history. It was removed on
+// request - facesjs paints the beard and the scalp from one colour, so there
+// was no way to grey a man the way men actually grey, and a whole league
+// drifting toward the same pale hair read worse than nobody greying at all.
 //
-// facesjs draws facial hair in hair.color, so one dial greys the beard and the
-// scalp together. That is the wrong ORDER for most men - beards usually go
-// first - but the library offers no second colour to move, and greying both is
-// far closer to life than greying neither.
-//
-// Warm rather than neutral: pure grey on a cartoon reads as a colour error.
-const GREY = "#b8b2ac";
-
-// Per season, as a share of the distance still to go. Compounding this way is
-// what makes it a drift rather than a switch: nobody greys in one preseason,
-// and the same rule run n times lands at 1 - (1 - r)^n whether it is applied a
-// year at a time or all at once, which is what lets a face be rebuilt from any
-// age and come out the same.
-export const GREY_PER_YEAR = 0.055;
-
-// Not everyone does, inside a playing career. Plenty of men are still jet
-// black at forty, and without this the whole league salt-and-peppers together.
-export const GREYS_SHARE = 0.4;
-
-export const greys = (pid: number | undefined): boolean =>
-	pid !== undefined && hashPid(pid, 8) < GREYS_SHARE;
-
-// When it starts, which is the other half of the spread - one player is
-// flecked at thirty, another is untouched at thirty-eight.
-export const greyOnsetAge = (pid: number | undefined): number =>
-	28 + Math.floor(hashPid(pid ?? 0, 9) * 13);
-
-// How far along a player of this age should be, for a face built at an age
-// rather than aged into one.
-export const greyAmountForAge = (
-	age: number,
-	pid: number | undefined,
-): number => {
-	if (!greys(pid)) {
-		return 0;
-	}
-	const years = Math.max(0, Math.floor(age) - greyOnsetAge(pid));
-	return 1 - (1 - GREY_PER_YEAR) ** years;
-};
-
-export const greyedColor = (hex: string, amount: number): string => {
-	if (!/^#[\da-f]{6}$/i.test(hex) || amount <= 0) {
-		return hex;
-	}
-	const t = Math.min(1, amount);
-	const target = hexToRgb(GREY);
-	return rgbToHex(
-		hexToRgb(hex).map((v, i) => v + (target[i]! - v) * t) as [
-			number,
-			number,
-			number,
-		],
-	);
-};
-
-// GREY IS NOT HEREDITARY, and a relative's face is a copy of a relative's face.
-// facesjs hands a son his father's hair colour verbatim - which is what you
-// want, right up until the father is thirty-six and half grey, at which point
-// the twenty-year-old walks into the draft with his father's grey.
-//
-// The lerp is invertible, so the father's own grey can simply be taken back
-// out: whatever colour he started his career with is what the son inherits.
-// Clamped because at the far end the inverse is numerically hopeless, and a
-// fully grey father is not a useful source of hair colour anyway.
-const MAX_UNGREY = 0.9;
-
-export const ungreyedColor = (hex: string, amount: number): string => {
-	if (!/^#[\da-f]{6}$/i.test(hex) || amount <= 0) {
-		return hex;
-	}
-	const t = Math.min(MAX_UNGREY, amount);
-	const target = hexToRgb(GREY);
-	return rgbToHex(
-		hexToRgb(hex).map((v, i) => (v - target[i]! * t) / (1 - t)) as [
-			number,
-			number,
-			number,
-		],
-	);
-};
-
-// Greying is continuous, so on its own it would never be worth a history
-// entry - and a career would then be recorded as one jump from black to grey
-// whenever some unrelated feature happened to change. These are the points
-// where the drift has become visible enough to be worth remembering.
-const GREY_HISTORY_STEPS = [0.15, 0.3, 0.5];
-
-export const greyCrossedAStep = (
-	age: number,
-	pid: number | undefined,
-): boolean => {
-	const before = greyAmountForAge(age - 1, pid);
-	const after = greyAmountForAge(age, pid);
-	return GREY_HISTORY_STEPS.some((step) => before < step && after >= step);
-};
+// Nothing replaces it, and nothing un-does it: a face already carrying grey
+// in a save keeps it (see the note on NEVER_GENERATE - this file does not
+// rewrite faces behind the user's back), and the way to put one back is the
+// revert control in the appearance gallery.
 
 // FILLING OUT. Nobody finishes a career at the weight he started it, and
 // facesjs draws fatness into the jaw and neck. Small and one-way: over the
@@ -1115,11 +1085,6 @@ export const applyRealisticFace = (
 		face.hair.color = jitterColor(face.hair.color, rand, HAIR_JITTER);
 	}
 
-	// Whatever grey the years before this one would have put there. A face
-	// built at 34 has to arrive already weathered; one built at 19 and aged
-	// forward gets there a season at a time, and the two agree because both
-	// are the same compounding rate.
-	face.hair.color = greyedColor(face.hair.color, greyAmountForAge(age, pid));
 	if (typeof face.fatness === "number") {
 		face.fatness = Math.min(
 			FATNESS_MAX,
@@ -1156,6 +1121,7 @@ export const ageFace = (
 		const available = TIER_ORDER.filter(
 			(candidate) =>
 				band.tiers[candidate] !== undefined &&
+				generatable(candidate) &&
 				(tier === undefined ||
 					TIER_ORDER.indexOf(candidate) > TIER_ORDER.indexOf(tier)),
 		);
@@ -1166,7 +1132,7 @@ export const ageFace = (
 				) as Partial<Record<FacialHairTier, number>>,
 				rand,
 			);
-			face.facialHair.id = pickFrom(FACIAL_HAIR_TIERS[next], rand);
+			face.facialHair.id = pickFrom(GENERATED_FACIAL_HAIR[next]!, rand);
 			changed = true;
 		}
 	}
@@ -1244,18 +1210,6 @@ export const ageFace = (
 			shaveScalp(face);
 		}
 		changed = true;
-	}
-
-	// GREY. Continuous like the folds, and for the same reason: a season moves
-	// it a few percent, so snapshotting every one would store twenty
-	// near-identical faces to capture something only visible across a decade.
-	// The difference is that grey is the thing a decade is MOST visible in, so
-	// crossing a step gets remembered even though the drift itself does not.
-	if (greys(pid) && age > greyOnsetAge(pid)) {
-		face.hair.color = greyedColor(face.hair.color, GREY_PER_YEAR);
-		if (greyCrossedAStep(age, pid)) {
-			changed = true;
-		}
 	}
 
 	// Filling out, also continuous, also never recorded on its own.
