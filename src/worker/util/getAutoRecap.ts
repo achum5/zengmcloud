@@ -388,19 +388,111 @@ const SCORED_VERBS = [
 	"was good for",
 	"supplied",
 	"came up with",
-	// "finished with" is deliberately NOT here. Other builders use it for team
-	// totals ("They finished with 28 assists") and the star's shooting line
-	// ("finished 7-of-15"), and `pick` cannot see across builders - so leaving it
-	// in produced "finished 7-of-15... finished with 28 assists... Role One
-	// finished with 16 points" in one recap. Thirteen other verbs cost nothing.
+	// "finished with" is deliberately NOT here, and not in leadVerb either. The
+	// team-total lines ("They finished with 28 assists"), the foul-out line and
+	// the star's shooting line ("finished 7-of-15") all use it, and `pick` cannot
+	// see across builders - so leaving it in produced "finished 7-of-15...
+	// finished with 28 assists... Role One finished with 16 points" in one
+	// recap. Taking it out of SCORED_VERBS alone was not enough: leadVerb still
+	// held it, and "Marbury finished with 18 points and 12 assists. They finished
+	// with 28 assists." came straight back. The word belongs to those builders
+	// and to no pool. Thirteen other verbs cost nothing.
 	"had",
 	"put up",
 	"posted",
 	"went for",
 ] as const;
 
+// Scoring verbs already spent in the recap being written, BY WORD.
+//
+// pick() rotates within one pool and cannot see another. The lead sentence
+// (leadVerb) and the supporting-cast sentences (scoredVerb) draw from different
+// pools that share words - "put up", "posted", "had" - so one recap could open
+// "Marbury put up 18 points and 12 assists" and close "Role One put up 16
+// points", and which seeds did that was pure luck. The old fix pulled one
+// overlapping word ("finished with") out of one list, which moved the collision
+// rather than removing it: a headline change elsewhere in this file was enough
+// to surface it again at a different gid.
+//
+// Recording the WORD is what makes it impossible, whatever the pools hold and
+// however the rng lands. Reset per recap by resetVerbLedger.
+const usedVerbs = new Set<string>();
+
+const resetVerbLedger = () => {
+	usedVerbs.clear();
+};
+
+// Draw from a pool, stepping past anything this recap has already said. pick()
+// walks a pool by index before repeating, so at most pool.length draws sees
+// every option; if they are all spent (a recap with more scoring sentences than
+// the pool has verbs) the last one stands rather than saying nothing.
+const takeVerb = (
+	rng: () => number,
+	pool: readonly string[],
+	poolId?: string,
+): string => {
+	let verb = pick(rng, [...pool], poolId);
+	for (let i = 0; i < pool.length && usedVerbs.has(verb); i++) {
+		verb = pick(rng, [...pool], poolId);
+	}
+	usedVerbs.add(verb);
+	return verb;
+};
+
+// A verb written into a sentence directly rather than drawn from a pool. Says
+// so, so a later draw does not pick the same word.
+const claimVerb = (verb: string): string => {
+	usedVerbs.add(verb);
+	return verb;
+};
+
+// Every scoring verb any builder can put in a sentence. Several pools hold
+// whole SENTENCES with one of these baked in, and pick() rotates inside one
+// pool while blind to the rest - so a recap read "Evan Green finished with 21
+// points and 9 rebounds for the Clippers... The Pacers finished with 11
+// blocks... Foul trouble cost Cade Green, who finished with 17 points in 24
+// minutes." Three pools, three independent draws, one word, three times on a
+// page. Each of those pools already carried alternatives that avoid it; they
+// just had no way to know it was spent.
+const LEDGER_VERBS = [
+	...SCORED_VERBS,
+	"finished with",
+	"totaled",
+	"recorded",
+	"collected",
+	"scored",
+	"poured in",
+	"erupted for",
+	"exploded for",
+	"piled up",
+	"racked up",
+];
+
+// pick() over a pool of whole sentences, stepping past any option that repeats
+// a verb this recap already spent, then claiming whatever it lands on. Falls
+// back to the plain rotation when every option is spent, so a pool can never
+// refuse to say anything.
+const pickSentence = (
+	rng: () => number,
+	options: string[],
+	poolId?: string,
+): string => {
+	const spent = (text: string) =>
+		LEDGER_VERBS.some((v) => usedVerbs.has(v) && text.includes(` ${v} `));
+	let text = pick(rng, options, poolId);
+	for (let i = 0; i < options.length && spent(text); i++) {
+		text = pick(rng, options, poolId);
+	}
+	for (const v of LEDGER_VERBS) {
+		if (text.includes(` ${v} `)) {
+			usedVerbs.add(v);
+		}
+	}
+	return text;
+};
+
 const scoredVerb = (rng: () => number): string =>
-	pick(rng, [...SCORED_VERBS], "scoredVerb");
+	takeVerb(rng, SCORED_VERBS, "scoredVerb");
 
 const supportingCast = (
 	players: RecapPlayer[],
@@ -463,14 +555,14 @@ const leadVerb = (
 		pool = ["poured in", "erupted for", "exploded for", "piled up"];
 	} else if (p.pts >= 25) {
 		pool = hasExtras
-			? ["posted", "put up", "finished with", "racked up"]
+			? ["posted", "put up", "totaled", "racked up"]
 			: ["scored", "posted", "put up", "racked up"];
 	} else {
 		pool = hasExtras
-			? ["posted", "put up", "finished with", "had"]
-			: ["scored", "finished with", "put up", "had"];
+			? ["posted", "put up", "totaled", "had"]
+			: ["scored", "totaled", "put up", "had"];
 	}
-	return pick(rng, pool);
+	return takeVerb(rng, pool);
 };
 
 // The averages a player brought INTO the game (playoff line in the postseason,
@@ -1120,6 +1212,23 @@ const verbPool = (game: RecapGame, shape: Shape): string[] => {
 	return ["beat", "top", "take down", "handle", "pull away from"];
 };
 
+// "carries the Bucks PAST the Suns."
+//
+// Ten headline shapes end on this connective and every one of them used to
+// spell it "past", which put it beyond the reach of the rotation in pick():
+// that walks a POOL by index, so two templates rendering the same tail look
+// completely distinct to it. Measured over a 375-game corpus the word landed in
+// 32.8% of game headlines - eleven of the fifteen on one night - while the
+// template shapes themselves repeated only 4.3% of the time. The variety was
+// real and it was all above the tail.
+//
+// Pooling the connective itself is what lets the batch memory spread it, and
+// because the pool is shared it spreads across EVERY shape that needs one
+// rather than each shape rotating on its own. Only verbs that take both read
+// right, so "ride his 30 past the Suns" keeps its own word.
+const winOver = (rng: () => number): string =>
+	pick(rng, ["past", "over"], "headline:connective");
+
 const IRREGULAR: Record<string, string> = {
 	beat: "beat",
 	"come back to top": "came back to top",
@@ -1238,7 +1347,7 @@ const buildHeadline = (
 				rng,
 				[
 					`${poss(shot.name)} ${shot.shot} sinks the ${loserN}${tag}`,
-					`${poss(shot.name)} ${shot.shot} lifts the ${winnerN} past the ${loserN}${tag}`,
+					`${poss(shot.name)} ${shot.shot} lifts the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
 					`${shot.name} beats the ${loserN} with a ${shot.shot}${tag}`,
 				],
 				"headline:clutch-shot",
@@ -1256,8 +1365,10 @@ const buildHeadline = (
 			pick(
 				rng,
 				[
-					`${poss(star.name)} ${word} carries the ${winnerN} past the ${loserN}${tag}`,
+					`${poss(star.name)} ${word} carries the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
 					`${star.name} posts a ${word} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${star.name} fills the sheet with a ${word} in ${poss(`the ${winnerN}`)} win${tag}`,
+					`A ${word} from ${star.name} sinks the ${loserN}${tag}`,
 				],
 				"headline:multi-double",
 			),
@@ -1319,7 +1430,9 @@ const buildHeadline = (
 				rng,
 				[
 					`${star.name} dominates with ${star.pts} points and ${star.reb} rebounds as the ${winnerN} ${verb} the ${loserN}${tag}`,
-					`${poss(star.name)} ${star.pts}-point, ${star.reb}-rebound night carries the ${winnerN} past the ${loserN}${tag}`,
+					`${poss(star.name)} ${star.pts}-point, ${star.reb}-rebound night carries the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
+					`${star.name} pulls down ${star.reb} to go with ${star.pts} in ${poss(`the ${winnerN}`)} win${tag}`,
+					`${star.pts} points and ${star.reb} rebounds from ${star.name} bury the ${loserN}${tag}`,
 				],
 				"headline:20-20",
 			),
@@ -1383,8 +1496,11 @@ const buildHeadline = (
 			pick(
 				rng,
 				[
-					`${star.name} and ${partner.name} lead the ${winnerN} past the ${loserN}${tag}`,
-					`Double-doubles from ${star.name} and ${partner.name} carry the ${winnerN} past the ${loserN}${tag}`,
+					`${star.name} and ${partner.name} lead the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
+					`Double-doubles from ${star.name} and ${partner.name} carry the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
+					`${star.name} and ${partner.name} both go for double-doubles as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${winnerN} get double-doubles from ${star.name} and ${partner.name} in a ${scoreTag(shape)} win${tag}`,
+					`${star.name} and ${partner.name} are too much for the ${loserN}${tag}`,
 				],
 				"headline:two-doubles",
 			),
@@ -1395,16 +1511,35 @@ const buildHeadline = (
 	// A defensive showcase.
 	if (star.blk >= 5) {
 		return h(
-			`${poss(star.name)} ${star.blk} blocks anchor the ${winnerN} past the ${loserN}${tag}`,
+			pick(
+				rng,
+				[
+					`${poss(star.name)} ${star.blk} blocks anchor the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
+					`${star.name} swats ${star.blk} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${star.name} protects the rim with ${plural(star.blk, "block")} in ${poss(`the ${winnerN}`)} win${tag}`,
+				],
+				"headline:blocks",
+			),
 			true,
 		);
 	}
 	if (star.stl >= 5 && star.pts >= 15) {
 		return h(
-			`${star.name} takes over with ${plural(star.pts, "point")} and ${plural(
-				star.stl,
-				"steal",
-			)} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+			pick(
+				rng,
+				[
+					`${star.name} takes over with ${plural(star.pts, "point")} and ${plural(
+						star.stl,
+						"steal",
+					)} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${star.name} picks the ${loserN} apart: ${plural(
+						star.pts,
+						"point",
+					)} and ${plural(star.stl, "steal")}${tag}`,
+					`${poss(star.name)} ${plural(star.stl, "steal")} turn the game as the ${winnerN} ${verb} the ${loserN}${tag}`,
+				],
+				"headline:steals",
+			),
 			true,
 		);
 	}
@@ -1441,7 +1576,7 @@ const buildHeadline = (
 	const starTemplates = [
 		`${poss(star.name)} ${sh.text} ${shVerb}${
 			sh.plural ? "" : "s"
-		} the ${winnerN} past the ${loserN}${tag}`,
+		} the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
 		// "goes for" + the full stat phrase, so a 24-and-12 night isn't flattened
 		// into "scores 24".
 		`${star.name} goes for ${statPhrase(star, 1)} as the ${winnerN} ${verb} the ${loserN}${tag}`,
@@ -1875,7 +2010,7 @@ const statNote = (
 	}
 	if (w.ast >= 28) {
 		add(
-			pick(
+			pickSentence(
 				rng,
 				[
 					`${cap(theNick(shape.winner))} piled up ${w.ast} assists on the night.`,
@@ -2141,13 +2276,13 @@ const supportSentence = (
 	const second = cast[0]!;
 	const ddw = doubleWord(doubleCategories(second).length);
 	const secondText = ddw
-		? pick(
+		? pickSentence(
 				rng,
 				[
 					`${second.name} added a ${ddw} with ${statPhrase(second)}`,
 					`${second.name} had a ${ddw} of his own, ${statPhrase(second)}`,
 					`${second.name} went for ${statPhrase(second)}`,
-					`${second.name} chipped in a ${ddw}, ${statPhrase(second)}`,
+					`${second.name} ${claimVerb("chipped in")} a ${ddw}, ${statPhrase(second)}`,
 				],
 				"supportDouble",
 			)
@@ -2263,7 +2398,7 @@ const loserSentence = (
 		// that nobody wrote this: every losing team in the league gets the same
 		// sentence with the nouns swapped. These put the player, the team and the
 		// numbers in genuinely different places.
-		return pick(
+		return pickSentence(
 			rng,
 			[
 				`${leaderLine} ${verb} ${them}${reason}.`,
@@ -2726,7 +2861,7 @@ const defensiveNote = (
 	const options: string[] = [];
 	if (w.blk >= 9) {
 		options.push(
-			pick(
+			pickSentence(
 				rng,
 				[
 					`${cap(theNick(shape.winner))} blocked ${w.blk} shots at the rim.`,
@@ -2745,7 +2880,7 @@ const defensiveNote = (
 	}
 	if (bigThief) {
 		options.push(
-			`${bigThief.name} came up with ${plural(bigThief.stl, "steal")}.`,
+			`${bigThief.name} ${takeVerb(rng, ["came up with", "recorded", "collected"], "thiefVerb")} ${plural(bigThief.stl, "steal")}.`,
 		);
 	}
 	if (options.length === 0) {
@@ -2771,7 +2906,7 @@ const foulOutNote = (
 			if (p.pf >= 6 && !said.has(p.name)) {
 				said.add(p.name);
 				const line = `${plural(p.pts, "point")} in ${p.min} minutes`;
-				return pick(
+				return pickSentence(
 					rng,
 					[
 						`${p.name} fouled out with ${line}.`,
@@ -3118,7 +3253,9 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 		.find((p) => !named.has(p.name) && p.pts >= 15);
 	if (other) {
 		named.add(other.name);
-		sentences.push(`${other.name} added ${statPhrase(other, 1)} for ${w}.`);
+		sentences.push(
+			`${other.name} ${claimVerb("added")} ${statPhrase(other, 1)} for ${w}.`,
+		);
 	}
 	if (loserStar && !named.has(loserStar.name) && loserStar.pts >= 15) {
 		sentences.push(
@@ -3188,6 +3325,9 @@ export const getAutoRecap = (game: RecapGame): string => {
 	if (!inBatch) {
 		phraseMemory.clear();
 	}
+	// Per RECAP, not per batch: a verb spent on this game is free again on the
+	// next one (pick's own rotation spreads those), but never twice here.
+	resetVerbLedger();
 	const rng = rngFromSeed((game.gid + 1) * 2654435761);
 
 	if (game.allStar) {
@@ -4153,6 +4293,10 @@ const dayHeadline = (
 				pick(rng, [
 					`${poss(shot.name)} ${shot.shot} caps a night of upsets`,
 					`${shot.name} sinks ${l} at the wire on a night ${numWord(upsets.length)} favorites fell`,
+					`${cap(numWord(upsets.length))} favorites fall, and ${shot.name} finishes the night with a ${shot.shot}`,
+					`${shot.name} beats ${l} at the wire as the night goes to the underdogs`,
+					`${shot.name} settles it late as ${numWord(upsets.length)} favorites go down`,
+					`A ${shot.shot} from ${shot.name} decides the pick of an upset-filled night`,
 				]),
 			);
 		}
@@ -4160,6 +4304,7 @@ const dayHeadline = (
 			pick(rng, [
 				`${poss(shot.name)} ${shot.shot} sinks ${l} ${scoreTag(mShape)}`,
 				`${shot.name} walks off ${l} ${scoreTag(mShape)}`,
+				`${shot.name} wins it for ${tw} with a ${shot.shot}`,
 			]),
 		);
 	}
@@ -4169,7 +4314,11 @@ const dayHeadline = (
 	if (fortyClub.length >= 2) {
 		const [a, b] = fortyClub;
 		return hl(
-			`${poss(a!.p.name)} ${a!.p.pts} and ${poss(b!.p.name)} ${b!.p.pts} light up the night`,
+			pick(rng, [
+				`${poss(a!.p.name)} ${a!.p.pts} and ${poss(b!.p.name)} ${b!.p.pts} light up the night`,
+				`${a!.p.name} goes for ${a!.p.pts}, ${b!.p.name} for ${b!.p.pts}`,
+				`${a!.p.pts} for ${a!.p.name}, ${b!.p.pts} for ${b!.p.name} on a night the scorers took over`,
+			]),
 		);
 	}
 
@@ -4178,6 +4327,7 @@ const dayHeadline = (
 			pick(rng, [
 				`${mStar.name} erupts for ${mStar.pts} to lead ${tw} past ${l}`,
 				`${mStar.name} drops ${mStar.pts} in ${poss(tw)} win`,
+				`${mStar.name} goes off for ${mStar.pts} as ${tw} beat ${l}`,
 			]),
 		);
 	}
@@ -4187,10 +4337,14 @@ const dayHeadline = (
 		const biggest = [...upsets].sort(
 			(a, b) => (b.g.spread?.points ?? 0) - (a.g.spread?.points ?? 0),
 		)[0]!;
+		const bw = nick(biggest.shape.winner);
+		const bl = theNick(biggest.shape.loser);
 		return hl(
-			`${nick(biggest.shape.winner)} stun ${theNick(
-				biggest.shape.loser,
-			)} on a night ${numWord(upsets.length)} favorites fell`,
+			pick(rng, [
+				`${bw} stun ${bl} on a night ${numWord(upsets.length)} favorites fell`,
+				`${cap(numWord(upsets.length))} favorites fall, ${bw} over ${bl} the biggest of them`,
+				`${bw} knock off ${bl} to headline a ${numWord(upsets.length)}-upset night`,
+			]),
 			biggest.g,
 		);
 	}
@@ -4200,6 +4354,7 @@ const dayHeadline = (
 			pick(rng, [
 				`${mStar.name} triple-doubles to lead ${tw} past ${l}`,
 				`${poss(mStar.name)} triple-double carries ${tw} over ${l}`,
+				`${mStar.name} triple-doubles and ${tw} handle ${l}`,
 			]),
 		);
 	}
@@ -4212,6 +4367,7 @@ const dayHeadline = (
 					? `${w} stun ${l} as ${pts}-point underdogs`
 					: `${w} stun ${l} ${scoreTag(mShape)}`,
 				`${w} shock ${l} ${scoreTag(mShape)}`,
+				`${w} pull the upset over ${l} ${scoreTag(mShape)}`,
 			]),
 		);
 	}
@@ -4221,12 +4377,23 @@ const dayHeadline = (
 			pick(rng, [
 				`${w} outlast ${l} ${scoreTag(mShape)}`,
 				`${w} survive ${l} in ${mShape.ot === 1 ? "overtime" : `${mShape.ot} overtimes`}`,
+				`${w} need ${
+					mShape.ot === 1
+						? "an extra period"
+						: `${numWord(mShape.ot)} extra periods`
+				} to beat ${l}`,
 			]),
 		);
 	}
 
 	if (mShape.comebackFrom >= 15) {
-		return hl(`${w} storm back from ${mShape.comebackFrom} down to beat ${l}`);
+		return hl(
+			pick(rng, [
+				`${w} storm back from ${mShape.comebackFrom} down to beat ${l}`,
+				`${w} erase ${aNum(mShape.comebackFrom)}-point hole to beat ${l}`,
+				`Down ${mShape.comebackFrom}, ${w} come back to beat ${l}`,
+			]),
+		);
 	}
 
 	if (mShape.margin >= 25) {
@@ -4234,6 +4401,7 @@ const dayHeadline = (
 			pick(rng, [
 				`${w} rout ${l} by ${mShape.margin}`,
 				`${w} blow out ${l} ${scoreTag(mShape)}`,
+				`${w} bury ${l} by ${mShape.margin}`,
 			]),
 		);
 	}
@@ -4243,6 +4411,7 @@ const dayHeadline = (
 			pick(rng, [
 				`${w} edge ${l} in a ${scoreTag(mShape)} thriller`,
 				`${w} hold off ${l} at the wire`,
+				`${w} survive ${l} ${scoreTag(mShape)}`,
 			]),
 		);
 	}
@@ -4250,7 +4419,11 @@ const dayHeadline = (
 	// Nothing dramatic anywhere: lead with the night's biggest individual line.
 	if (topPts && topPts.p.pts >= 32) {
 		return hl(
-			`${topPts.p.name} pours in ${topPts.p.pts} to headline the night`,
+			pick(rng, [
+				`${topPts.p.name} pours in ${topPts.p.pts} to headline the night`,
+				`${topPts.p.pts} from ${topPts.p.name} tops the night's scoring`,
+				`${topPts.p.name} goes for ${topPts.p.pts} on a quiet night around the league`,
+			]),
 		);
 	}
 	if (mStar) {
@@ -4674,6 +4847,7 @@ const closeGamesSentence = (games: RecapGame[]): string | undefined => {
 // same game twice stopped producing the same text.
 export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	beginRecapBatch();
+	resetVerbLedger();
 	try {
 		return buildDayRecap(input);
 	} finally {

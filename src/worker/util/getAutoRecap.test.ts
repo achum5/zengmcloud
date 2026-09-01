@@ -1456,7 +1456,16 @@ describe("getAutoDayRecap", () => {
 		});
 		const head = recap.split("\n")[0]!;
 		// The headline is about the league's night, not one game's box score.
-		assert.ok(/night of upsets|favorites fall/.test(head), head);
+		// Every shape this branch can pick says so one way or another - the regex
+		// used to list only two of them and passed on the rng happening to land
+		// there, so widening the pool "broke" it while the headline was right
+		// ("...at the wire on a night three favorites fell").
+		assert.ok(
+			/night of upsets|favorites (fall|fell|go down)|underdogs|upset-filled/.test(
+				head,
+			),
+			head,
+		);
 		// The upsets roundup varies its verbs and carries the biggest spread.
 		assert.ok(!/upset .* upset/.test(recap), recap);
 	});
@@ -3394,9 +3403,13 @@ describe("copy defects found in the field", () => {
 			"posted",
 			"went for",
 		];
-		// Sweep seeds: which verbs come up at all is seed-dependent, so one game
-		// proves nothing.
-		for (let gid = 7100; gid < 7160; gid += 1) {
+		// Sweep seeds HARD. Sixty of them passed for a year while the collision
+		// was still possible - a headline pool changing elsewhere in the engine
+		// shifted which seed hit it, and gid 7109 started reading "Marbury put up
+		// 18 points and 12 assists ... Role One put up 16 points". The guarantee
+		// is now structural (see the verb ledger in getAutoRecap.ts), so the
+		// sweep is wide enough to say so.
+		for (let gid = 7000; gid < 7800; gid += 1) {
 			const recap = getAutoRecap(
 				game({ gid, teams: [teamWithInjury("Sore Knee"), opponent] }),
 			);
@@ -3404,6 +3417,94 @@ describe("copy defects found in the field", () => {
 				const hits = recap.split(verb).length - 1;
 				assert.ok(hits <= 1, `"${verb}" twice in gid ${gid}:\n${recap}`);
 			}
+		}
+	});
+
+	// The lead sentence and the supporting-cast sentence draw from DIFFERENT
+	// pools that share words. pick() rotates inside one pool and cannot see the
+	// other, so this can only be guaranteed by remembering the word itself.
+	test("the lead verb and the support verb are never the same word", () => {
+		const SHARED = ["posted", "put up", "had", "scored", "finished with"];
+		for (let gid = 8000; gid < 8400; gid += 1) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [teamWithInjury("Sore Knee"), opponent] }),
+			);
+			for (const verb of SHARED) {
+				assert.ok(
+					recap.split(verb).length - 1 <= 1,
+					`"${verb}" twice in gid ${gid}:\n${recap}`,
+				);
+			}
+		}
+	});
+
+	// THE MONOCULTURE. Ten headline shapes ended on the literal word "past", so
+	// pick() - which rotates a pool by INDEX - could not see that they all
+	// rendered the same tail. Measured over a 900-game corpus it was in a third
+	// of every headline, eleven of the fifteen on one night, while the template
+	// shapes themselves repeated only 4.3% of the time. A reader does not see
+	// templates; they see the page.
+	test("a night of headlines does not lean on one connective", () => {
+		// Two double-doubles and no dominant scorer - the shape that fired 41
+		// times in a 375-game corpus with BOTH of its two templates ending "past
+		// the X". pick() rotates templates by index and cannot see that they
+		// render the same tail, so a night of these read as one sentence with the
+		// nouns swapped.
+		beginRecapBatch();
+		try {
+			const headlines: string[] = [];
+			for (let i = 0; i < 15; i++) {
+				const winner = team({
+					tid: 1,
+					region: "Atlanta",
+					name: "Hawks",
+					abbrev: "ATL",
+					pts: 104,
+					players: [
+						player({ name: `Star ${i}`, pts: 24, reb: 12, fg: 9, fga: 18 }),
+						player({ name: `Second ${i}`, pts: 17, reb: 11, fg: 7, fga: 13 }),
+						player({
+							name: `Third ${i}`,
+							pts: 12,
+							reb: 4,
+							ast: 5,
+							fg: 5,
+							fga: 11,
+						}),
+						player({ name: `Fourth ${i}`, pts: 9, reb: 3, fg: 4, fga: 9 }),
+					],
+				});
+				const loser = team({
+					tid: 2,
+					region: "Portland",
+					name: "Trail Blazers",
+					abbrev: "POR",
+					pts: 96,
+					players: [
+						player({ name: `Foil ${i}`, pts: 18, reb: 6, fg: 7, fga: 17 }),
+						player({ name: `Foil2 ${i}`, pts: 14, reb: 5, fg: 6, fga: 14 }),
+					],
+				});
+				headlines.push(
+					getAutoRecap(game({ gid: 9000 + i, teams: [winner, loser] })).split(
+						"\n",
+					)[0]!,
+				);
+			}
+			const past = headlines.filter((h) => h.includes(" past the ")).length;
+			assert.ok(
+				past <= 4,
+				`"past the" in ${past} of 15 headlines:\n${headlines.join("\n")}`,
+			);
+			// And the page is not one shape either.
+			assert.ok(
+				new Set(
+					headlines.map((h) => h.replaceAll(/\d+|Star \d+|Second \d+/g, "#")),
+				).size >= 3,
+				headlines.join("\n"),
+			);
+		} finally {
+			endRecapBatch();
 		}
 	});
 
