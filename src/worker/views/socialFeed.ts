@@ -3,6 +3,7 @@ import { g } from "../util/index.ts";
 import {
 	buildFeedDay,
 	getFeedSnapshot,
+	picturesFor,
 	type FeedDay,
 } from "../util/socialFeed.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
@@ -48,6 +49,22 @@ const updateSocialFeed = async (
 			);
 		}
 
+		// Only the accounts actually on the page: a face config is a kilobyte
+		// of JSON and the roster is five hundred players.
+		const onPage = new Set<string>();
+		for (const day of feed) {
+			for (const post of day.posts) {
+				onPage.add(post.accountId);
+				for (const reply of post.replies) {
+					onPage.add(reply.accountId);
+				}
+			}
+		}
+		const pictures = await picturesFor(
+			snapshot,
+			snapshot.accounts.filter((a) => onPage.has(a.id)),
+		);
+
 		const teams = (await idb.cache.teams.getAll()).map((t) => ({
 			tid: t.tid,
 			abbrev: t.abbrev,
@@ -64,6 +81,7 @@ const updateSocialFeed = async (
 			days: inputs.days ?? DAYS_PER_PAGE,
 			hasMore: newestFirst.length > wanted.length,
 			accountCount: snapshot.accounts.length,
+			pictures,
 			teams,
 			userTid: g.get("userTid"),
 		};

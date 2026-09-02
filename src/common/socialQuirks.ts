@@ -76,11 +76,16 @@ export const quirksFor = ({
 	};
 
 	if (team) {
+		// The rah-rah forms are for accounts that would actually type them. A
+		// doomer signing off "#GoCyclones" is the kind of mismatch that undoes
+		// a whole account's voice in four characters.
+		const cheerful = tone !== "doom" && tone !== "snark" && tone !== "wonk";
 		const forms = [
 			`#${tagWord(team.name)}`,
 			`#${team.abbrev}`,
-			`#Go${tagWord(team.name)}`,
-			`#${tagWord(team.name)}Nation`,
+			...(cheerful
+				? [`#Go${tagWord(team.name)}`, `#${tagWord(team.name)}Nation`]
+				: []),
 		];
 		const pickForm = () => forms[Math.floor(rng() * forms.length)]!;
 

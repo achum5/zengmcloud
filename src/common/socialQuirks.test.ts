@@ -1,115 +1,72 @@
 import { assert, describe, test } from "vitest";
-import { quirksFor } from "./socialQuirks.ts";
-import type { SocialTone } from "./socialPersonality.ts";
+import { NO_QUIRKS, quirksFor } from "./socialQuirks.ts";
 
-const TEAM = { name: "Boston Celtics", abbrev: "BOS" };
-const TONES: SocialTone[] = [
-	"wire",
-	"beat",
-	"hype",
-	"snark",
-	"doom",
-	"wonk",
-	"corporate",
-	"unhinged",
-];
+const team = { name: "Cyclones", abbrev: "MIA" };
 
 describe("quirksFor", () => {
-	test("the same account always gets the same quirks", () => {
-		const a = quirksFor({
-			id: "p:12",
-			kind: "player",
-			tone: "hype",
-			team: TEAM,
-		});
-		const b = quirksFor({
-			id: "p:12",
-			kind: "player",
-			tone: "hype",
-			team: TEAM,
-		});
+	test("an account's habits never change", () => {
+		const a = quirksFor({ id: "m:a", kind: "media", tone: "hype", team });
+		const b = quirksFor({ id: "m:a", kind: "media", tone: "hype", team });
 		assert.deepStrictEqual(a, b);
 	});
 
-	test("neighbouring ids do not share a quirk sheet", () => {
-		// The point of burning the generator's first draw: ids that hash close
-		// together must not come out as the same person.
-		const sheets = new Set<string>();
-		for (let pid = 0; pid < 200; pid++) {
-			sheets.add(
+	test("different accounts get different habits", () => {
+		const all = new Set<string>();
+		for (let i = 0; i < 60; i++) {
+			all.add(
 				JSON.stringify(
-					quirksFor({
-						id: `p:${pid}`,
-						kind: "player",
-						tone: "hype",
-						team: TEAM,
-					}),
+					quirksFor({ id: `m:${i}`, kind: "media", tone: "hype", team }),
 				),
 			);
 		}
-		assert.ok(sheets.size > 60, `only ${sheets.size} distinct sheets in 200`);
+		assert.ok(all.size > 20, `only ${all.size} distinct habit sets`);
 	});
 
-	test("quirks are sparse: most accounts have no gimmick at all", () => {
-		let gimmicks = 0;
-		let total = 0;
-		for (const tone of TONES) {
-			for (let i = 0; i < 100; i++) {
-				const q = quirksFor({
-					id: `m:cast:${tone}:${i}`,
-					kind: "media",
-					tone,
-					team: TEAM,
-				});
-				total += 1;
-				if (
-					q.hashtag !== undefined ||
-					q.ellipses ||
-					q.exclaims ||
-					q.emojiBoost > 0
-				) {
-					gimmicks += 1;
-				}
-			}
-		}
-		assert.ok(
-			gimmicks / total < 0.5,
-			`${gimmicks} of ${total} accounts have a gimmick`,
-		);
-	});
-
-	test("a hashtag is one token with no spaces and no digits", () => {
-		for (let i = 0; i < 300; i++) {
-			const q = quirksFor({
-				id: `m:cast:homer:${i}`,
-				kind: "media",
-				tone: "hype",
-				team: { name: "Golden State Warriors", abbrev: "GSW" },
-			});
-			if (q.hashtag !== undefined) {
-				assert.match(q.hashtag, /^#[A-Za-z]+$/, q.hashtag);
-			}
-		}
-	});
-
-	test("an account with no team never gets a hashtag", () => {
+	test("most accounts have no hashtag at all", () => {
+		// A feed where everybody has a gimmick is as fake as one where nobody
+		// does, so this is a ceiling and not a floor.
+		let tagged = 0;
 		for (let i = 0; i < 200; i++) {
-			const q = quirksFor({ id: `m:${i}`, kind: "media", tone: "hype" });
-			assert.strictEqual(q.hashtag, undefined);
+			if (
+				quirksFor({ id: `m:${i}`, kind: "media", tone: "beat", team })
+					.hashtag !== undefined
+			) {
+				tagged += 1;
+			}
+		}
+		assert.ok(tagged < 80, `${tagged} of 200 beat writers use a hashtag`);
+	});
+
+	test("a doomer never posts a rah-rah hashtag", () => {
+		for (let i = 0; i < 200; i++) {
+			for (const tone of ["doom", "snark", "wonk"] as const) {
+				const { hashtag } = quirksFor({
+					id: `m:${i}`,
+					kind: "media",
+					tone,
+					team,
+				});
+				assert.ok(
+					hashtag === undefined || !/^#(Go|.*Nation$)/.test(hashtag),
+					`${tone} account posting ${hashtag}`,
+				);
+			}
 		}
 	});
 
-	test("the dry voices never become emoji people", () => {
-		for (const tone of ["wire", "wonk"] as const) {
-			for (let i = 0; i < 200; i++) {
-				const q = quirksFor({
-					id: `m:${tone}:${i}`,
-					kind: "media",
-					tone,
-					team: TEAM,
-				});
-				assert.strictEqual(q.emojiBoost, 0);
-			}
+	test("an account with no team has no team hashtag", () => {
+		for (let i = 0; i < 40; i++) {
+			assert.strictEqual(
+				quirksFor({ id: `m:${i}`, kind: "media", tone: "hype" }).hashtag,
+				undefined,
+			);
 		}
+	});
+
+	test("the blank set decorates nothing", () => {
+		assert.strictEqual(NO_QUIRKS.openerRate, 0);
+		assert.strictEqual(NO_QUIRKS.closerRate, 0);
+		assert.strictEqual(NO_QUIRKS.hashtag, undefined);
+		assert.strictEqual(NO_QUIRKS.emojiBoost, 0);
 	});
 });

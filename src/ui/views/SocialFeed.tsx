@@ -6,16 +6,17 @@ import { SocialPost, type TeamLike } from "./SocialPost.tsx";
 
 // THE TIMELINE.
 //
-// Grouped by day rather than shown as one endless column, because a league's
-// day IS its unit of time: everything in a day happened at once, and pretending
-// otherwise by inventing timestamps would be a lie the rest of the app would
-// have to keep.
+// Grouped by day, because a league's day IS its unit of time. Within a day the
+// posts run newest-first on a real clock: the games finish through the evening
+// and the news lands during the afternoon before them, so a day reads the way
+// a timeline does rather than as an unordered pile.
 const SocialFeed = ({
 	accountCount,
 	days,
 	errorMessage,
 	feed,
 	hasMore,
+	pictures,
 	season,
 	teams,
 }: View<"socialFeed">) => {
@@ -63,10 +64,13 @@ const SocialFeed = ({
 						>
 							<SocialPost
 								account={post}
+								engagement={post.engagement}
+								picture={pictures[post.accountId]}
 								team={
 									post.tid === undefined ? undefined : teamByTid.get(post.tid)
 								}
 								text={post.text}
+								time={post.time}
 							/>
 							{post.replies.length > 0 ? (
 								<div className="mt-3 ps-3 border-start d-flex flex-column gap-3">
@@ -75,6 +79,8 @@ const SocialFeed = ({
 											key={reply.id}
 											account={reply}
 											compact
+											engagement={reply.engagement}
+											picture={pictures[reply.accountId]}
 											quote={reply.quote}
 											team={
 												reply.tid === undefined
@@ -82,6 +88,7 @@ const SocialFeed = ({
 													: teamByTid.get(reply.tid)
 											}
 											text={reply.text}
+											time={reply.time}
 										/>
 									))}
 								</div>

@@ -1,7 +1,12 @@
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import type { View } from "../../common/types.ts";
-import { Avatar, SocialPost, type TeamLike } from "./SocialPost.tsx";
+import {
+	Avatar,
+	SocialPost,
+	VerifiedBadge,
+	type TeamLike,
+} from "./SocialPost.tsx";
 
 // ONE ACCOUNT'S PAGE. Cover photo, profile picture, name, handle, bio, who
 // they follow, and everything they have said lately.
@@ -12,6 +17,7 @@ import { Avatar, SocialPost, type TeamLike } from "./SocialPost.tsx";
 const SocialAccount = ({
 	account,
 	errorMessage,
+	pictures,
 	posts,
 	season,
 	team,
@@ -38,11 +44,22 @@ const SocialAccount = ({
 			<div className="px-3" style={{ marginTop: -36 }}>
 				<div className="d-flex align-items-end gap-3">
 					<div className="rounded-circle border border-3 border-body bg-body">
-						<Avatar account={account as any} size={84} team={teamLike} />
+						<Avatar
+							account={account as any}
+							picture={pictures?.[account.id]}
+							size={84}
+							team={teamLike}
+						/>
 					</div>
 					<div className="pb-2">
-						<h2 className="mb-0">{account.name}</h2>
-						<div className="text-body-secondary">@{account.handle}</div>
+						<h2 className="mb-0 d-flex align-items-center gap-2">
+							{account.name}
+							{account.verified ? <VerifiedBadge size={20} /> : null}
+						</h2>
+						<div className="text-body-secondary">
+							@{account.handle}
+							{account.followers ? <> · {account.followers} followers</> : null}
+						</div>
 					</div>
 				</div>
 
@@ -90,10 +107,13 @@ const SocialAccount = ({
 				{posts.map((post: any) => (
 					<div key={post.id} className="border rounded p-3">
 						<SocialPost
-							account={post}
+							account={{ ...post, verified: account.verified }}
+							engagement={post.engagement}
 							meta={post.day === 0 ? "Offseason" : `Day ${post.day}`}
+							picture={pictures?.[account.id]}
 							team={teamLike}
 							text={post.text}
+							time={post.time}
 						/>
 					</div>
 				))}

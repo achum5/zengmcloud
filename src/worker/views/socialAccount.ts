@@ -3,8 +3,14 @@ import { g } from "../util/index.ts";
 import {
 	buildAccountDay,
 	getFeedSnapshot,
+	picturesFor,
 	type FeedPost,
 } from "../util/socialFeed.ts";
+import {
+	formatReach,
+	isVerified,
+	reachOf,
+} from "../../common/socialMetrics.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
 
 // How far back one account's page reaches in a single load. Most accounts post
@@ -64,6 +70,23 @@ const updateSocialAccount = async (
 			account.tid !== undefined && account.tid >= 0
 				? await idb.cache.teams.get(account.tid)
 				: undefined;
+		const pictures = await picturesFor(snapshot, [account]);
+		// A profile shows how big this account is, which is the one number a
+		// profile page always has and the feed never does.
+		const notability =
+			account.pid === undefined
+				? 0.5
+				: Math.max(
+						0,
+						Math.min(
+							1,
+							(((
+								await idb.getCopy.players({ pid: account.pid }, "noCopyCache")
+							)?.ratings.at(-1)?.ovr ?? 40) -
+								38) /
+								34,
+						),
+					);
 
 		return {
 			account: {
@@ -79,6 +102,8 @@ const updateSocialAccount = async (
 				coverUrl: account.coverUrl,
 				implicit: account.implicit,
 				tone: account.personality.tone,
+				verified: isVerified(account),
+				followers: formatReach(reachOf(account, notability)),
 			},
 			team: team
 				? {
@@ -91,6 +116,7 @@ const updateSocialAccount = async (
 					}
 				: undefined,
 			posts,
+			pictures,
 			season,
 			userTid: g.get("userTid"),
 		};

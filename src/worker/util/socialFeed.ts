@@ -65,6 +65,14 @@ import {
 } from "../../common/socialCasting.ts";
 import { feudHeat, rivalryFrom } from "../../common/socialFeuds.ts";
 import {
+	engagementFor,
+	isVerified,
+	reachOf,
+	timeOf,
+	type AccountPicture,
+	type Engagement,
+} from "../../common/socialMetrics.ts";
+import {
 	writePostDetailed,
 	writeReplyDetailed,
 	type AvoidFn,
@@ -81,6 +89,11 @@ export type FeedPost = {
 	pid?: number;
 	text: string;
 	eventId: string;
+	verified: boolean;
+	// Clock time and engagement, derived rather than stored - see socialMetrics.
+	time: string;
+	minutes: number;
+	engagement: Engagement;
 	// Replies and quotes hanging off this post, in the order they should read.
 	replies: {
 		id: string;
@@ -92,6 +105,9 @@ export type FeedPost = {
 		pid?: number;
 		text: string;
 		quote: boolean;
+		verified: boolean;
+		time: string;
+		engagement: Engagement;
 	}[];
 };
 
@@ -114,9 +130,14 @@ const POSTS_PER_ACCOUNT_DAY = 2;
 // How far back an account remembers its own lines.
 export const MEMORY_DAYS = 12;
 
+// What counts as "the same line". Hashtags and emoji come off FIRST: two
+// accounts posted an identical stat line and only one of them signed it with
+// a team hashtag, which was enough to slip past a comparison that merely
+// stripped punctuation.
 const normalise = (text: string) =>
 	text
 		.toLowerCase()
+		.replaceAll(/[#@][\d_a-z]+/g, "")
 		.replaceAll(/[^\d a-z]/g, "")
 		.replaceAll(/\s+/g, " ")
 		.trim();
@@ -126,7 +147,25 @@ const normalise = (text: string) =>
 // Everyone in the league, with the personality inputs the resolver needs.
 // Retired players are included: people do not delete their accounts when they
 // stop playing, and their pages are half the point of browsing back.
-const readAccounts = async (): Promise<ResolvedSocialAccount[]> => {
+// The roster, read once per snapshot. Resolving accounts, sizing followings
+// and building avatars all need it, and each was loading all five hundred
+// players for itself.
+let rosterMemo: { fingerprint: string; players: any[] } | undefined;
+const readRoster = async (fingerprint: string): Promise<any[]> => {
+	if (rosterMemo?.fingerprint === fingerprint) {
+		return rosterMemo.players;
+	}
+	const players = await idb.getCopies.players(
+		{ activeAndRetired: true },
+		"noCopyCache",
+	);
+	rosterMemo = { fingerprint, players };
+	return players;
+};
+
+const readAccounts = async (
+	rawPlayers: any[],
+): Promise<ResolvedSocialAccount[]> => {
 	const season = g.get("season");
 	const rawTeams = await idb.cache.teams.getAll();
 	const teams: ImplicitTeam[] = rawTeams.map((t) => ({
@@ -138,7 +177,6 @@ const readAccounts = async (): Promise<ResolvedSocialAccount[]> => {
 		disabled: t.disabled,
 	}));
 
-	const rawPlayers = await idb.getCopies.players({ activeAndRetired: true });
 	const players: ImplicitPlayer[] = rawPlayers.map((p) => {
 		const ratings = p.ratings.at(-1);
 		return {
@@ -148,7 +186,7 @@ const readAccounts = async (): Promise<ResolvedSocialAccount[]> => {
 			pos: ratings?.pos,
 			age: season - p.born.year,
 			ovr: ratings?.ovr ?? 0,
-			experience: p.stats.filter((row) => !row.playoffs).length,
+			experience: p.stats.filter((row: any) => !row.playoffs).length,
 			moodTraits: p.moodTraits ?? [],
 			retired: p.tid === -2 || p.retiredYear <= season,
 		};
@@ -158,7 +196,27 @@ const readAccounts = async (): Promise<ResolvedSocialAccount[]> => {
 	return resolveAccounts({ players, teams, stored });
 };
 
-export const resolveFeedAccounts = readAccounts;
+// How well known a player is, 0 to 1, for the size of his following. Rating
+// is most of it; a long career is the rest, because a fourteen-year starter is
+// a household name in a way a rookie with the same ovr is not.
+const notabilityByPid = new Map<number, number>();
+const readNotability = (rawPlayers: any[]) => {
+	notabilityByPid.clear();
+	const season = g.get("season");
+	for (const p of rawPlayers) {
+		const ovr = p.ratings.at(-1)?.ovr ?? 0;
+		const years = p.stats.filter((row: any) => !row.playoffs).length;
+		const retiredFor = p.tid === -2 ? season - (p.retiredYear ?? season) : 0;
+		const fame =
+			Math.max(0, Math.min(1, (ovr - 38) / 34)) * 0.8 +
+			Math.min(1, years / 12) * 0.2;
+		// Fame fades once someone stops playing, but never to nothing.
+		notabilityByPid.set(p.pid, fame * Math.max(0.35, 1 - retiredFor * 0.05));
+	}
+};
+
+export const resolveFeedAccounts = async () =>
+	readAccounts(await readRoster("accounts-only"));
 
 // ---------------------------------------------------------------- SNAPSHOT
 //
@@ -212,7 +270,9 @@ export const getFeedSnapshot = async (
 		return snapshotMemo;
 	}
 
-	const accounts = await readAccounts();
+	const roster = await readRoster(fingerprint);
+	const accounts = await readAccounts(roster);
+	readNotability(roster);
 	const accountById = new Map(accounts.map((a) => [a.id, a]));
 	// The roster's shape, as far as posts depend on it: who is on which team
 	// and speaking in which voice. An injury changes none of this, so it does
@@ -339,6 +399,72 @@ export const getFeedSnapshot = async (
 	return snapshotMemo;
 };
 
+// ---------------------------------------------------------------- AVATARS
+//
+// What an account's picture actually is. Seven hundred accounts cannot each be
+// given an image by hand, so every one is derived: a player shows the face the
+// league already generated for him (or his photo, if he has one), a franchise
+// shows its logo, and everyone else gets a monogram - tinted with their team's
+// colour when they have one, so the local beat writer sits visually next to
+// the team he covers.
+//
+// Sent as a map keyed by account id and built only for the accounts actually
+// on the page, because a face config is a kilobyte of JSON and the roster is
+// five hundred players.
+
+export const picturesFor = async (
+	snapshot: FeedSnapshot,
+	accounts: readonly ResolvedSocialAccount[],
+): Promise<Record<string, AccountPicture>> => {
+	const teams = await idb.cache.teams.getAll();
+	const teamByTid = new Map(teams.map((t) => [t.tid, t]));
+	const out: Record<string, AccountPicture> = {};
+
+	const wanted = new Set(
+		accounts
+			.filter((a) => a.kind === "player" && a.pid !== undefined)
+			.map((a) => a.pid!),
+	);
+	const players = new Map<number, any>();
+	for (const p of await readRoster(snapshot.fingerprint)) {
+		if (wanted.has(p.pid)) {
+			players.set(p.pid, p);
+		}
+	}
+
+	for (const account of accounts) {
+		const team =
+			account.tid !== undefined && account.tid >= 0
+				? teamByTid.get(account.tid)
+				: undefined;
+		const colors = team?.colors;
+
+		if (account.kind === "player" && account.pid !== undefined) {
+			const p = players.get(account.pid);
+			if (p) {
+				out[account.id] = {
+					face: p.face,
+					imgURL: p.imgURL,
+					jersey: p.stats?.at(-1)?.jerseyNumber ?? p.jerseyNumber,
+					colors,
+				};
+				continue;
+			}
+		}
+		if (account.kind === "team" && team) {
+			out[account.id] = {
+				logoURL: team.imgURL,
+				colors,
+			};
+			continue;
+		}
+		if (colors) {
+			out[account.id] = { colors };
+		}
+	}
+	return out;
+};
+
 // The days worth showing, newest first.
 export const feedDaysForSeason = async (season: number): Promise<number[]> =>
 	[...(await getFeedSnapshot(season)).days].reverse();
@@ -346,8 +472,15 @@ export const feedDaysForSeason = async (season: number): Promise<number[]> =>
 // ---------------------------------------------------------------- CACHES
 
 const dayEventsCache = new Map<string, SocialEvent[]>();
-const memorylessCache = new Map<string, AccountDayPost[]>();
 const accountDayCache = new Map<string, FeedPost[]>();
+// What each cached day SAID, normalised, so the next day can remember it
+// without the posts having to carry their pre-voice text to the UI.
+const lineCache = new Map<string, Set<string>>();
+// One post's pre-voice line, by post id. Two accounts reaching the same
+// sentence and dressing it differently is invisible to a comparison of the
+// finished text - "honest answer: could go either way" showed up twice in one
+// day, once with an opener in front of it.
+const coreByPostId = new Map<string, string>();
 const feedCache = new Map<string, FeedDay>();
 
 // Bounded rather than evicted: these are small strings, the bounds are
@@ -361,8 +494,9 @@ const bounded = <V>(map: Map<string, V>, limit: number) => {
 export const clearSocialFeedCache = () => {
 	snapshotMemo = undefined;
 	dayEventsCache.clear();
-	memorylessCache.clear();
 	accountDayCache.clear();
+	lineCache.clear();
+	coreByPostId.clear();
 	feedCache.clear();
 };
 
@@ -448,37 +582,16 @@ type AccountDayPost = {
 	eventId: string;
 	core: string;
 	text: string;
+	// Where the event sat in the day, so the clock can put a post about the
+	// late game later than a post about the early one.
+	eventIndex: number;
+	eventCount: number;
+	isGame: boolean;
+	salience: number;
 };
 
 const seedFor = (snapshot: FeedSnapshot, day: number) =>
 	`${snapshot.season}|${day}`;
-
-// What this account would say today with no memory of yesterday: a pure
-// function of the account and the day. This is what memory is BUILT FROM, and
-// it is never shown - the shown version is the one that has checked itself
-// against these.
-const memorylessDay = async (
-	snapshot: FeedSnapshot,
-	account: ResolvedSocialAccount,
-	day: number,
-): Promise<AccountDayPost[]> => {
-	const key = `${snapshot.dayKey(day)}|${account.id}`;
-	const cached = memorylessCache.get(key);
-	if (cached) {
-		return cached;
-	}
-	const events = await eventsForDay(snapshot, day);
-	const out = writeAccountDay({
-		snapshot,
-		account,
-		day,
-		events,
-		seen: new Set(),
-	});
-	bounded(memorylessCache, 80_000);
-	memorylessCache.set(key, out);
-	return out;
-};
 
 const writeAccountDay = ({
 	snapshot,
@@ -509,6 +622,7 @@ const writeAccountDay = ({
 	}
 
 	const eventById = new Map(events.map((event) => [event.id, event]));
+	const eventIndexById = new Map(events.map((event, i) => [event.id, i]));
 	const pool = createPhrasePool();
 	pool.beginBatch();
 	const avoid: AvoidFn = (core, text) =>
@@ -531,52 +645,79 @@ const writeAccountDay = ({
 		}
 		seen.add(normalise(written.core));
 		seen.add(normalise(written.text));
-		out.push({ eventId: event.id, core: written.core, text: written.text });
+		out.push({
+			eventId: event.id,
+			core: written.core,
+			text: written.text,
+			eventIndex: eventIndexById.get(event.id) ?? 0,
+			eventCount: events.length,
+			isGame: event.type === "gameResult" || event.type === "performance",
+			salience: event.salience,
+		});
 	}
 	pool.endBatch();
 	return out;
 };
 
-// Everything this account said in its last MEMORY_DAYS days of feed, as the
-// normalised cores and texts a writer has to steer around.
-const recentLines = async (
-	snapshot: FeedSnapshot,
-	account: ResolvedSocialAccount,
-	dayIndex: number,
-): Promise<Set<string>> => {
-	const seen = new Set<string>();
-	for (let j = 1; j <= MEMORY_DAYS; j++) {
-		const day = snapshot.days[dayIndex - j];
-		if (day === undefined) {
-			break;
-		}
-		for (const post of await memorylessDay(snapshot, account, day)) {
-			seen.add(normalise(post.core));
-			seen.add(normalise(post.text));
-		}
-	}
-	return seen;
-};
-
 const toFeedPost = (
 	account: ResolvedSocialAccount,
 	post: AccountDayPost,
-): FeedPost => ({
-	id: `${account.id}|${post.eventId}`,
-	accountId: account.id,
-	handle: account.handle,
-	name: account.name,
-	kind: account.kind,
-	tid: account.tid,
-	pid: account.pid,
-	text: post.text,
-	eventId: post.eventId,
-	replies: [],
-});
+	seed: string,
+): FeedPost => {
+	const reach = reachOf(
+		account,
+		account.pid === undefined ? 0.5 : (notabilityByPid.get(account.pid) ?? 0.4),
+	);
+	const time = timeOf({
+		eventIndex: post.eventIndex,
+		eventCount: post.eventCount,
+		isGame: post.isGame,
+		seed: `${seed}|${account.id}|${post.eventId}`,
+	});
+	return {
+		id: `${account.id}|${post.eventId}`,
+		accountId: account.id,
+		handle: account.handle,
+		name: account.name,
+		kind: account.kind,
+		tid: account.tid,
+		pid: account.pid,
+		text: post.text,
+		eventId: post.eventId,
+		verified: isVerified(account),
+		time: time.label,
+		minutes: time.minutes,
+		engagement: engagementFor({
+			account,
+			reach,
+			salience: post.salience,
+			seed: `${seed}|${account.id}|${post.eventId}`,
+		}),
+		replies: [],
+	};
+};
 
-// ONE ACCOUNT'S OWN DAY, as shown: what it would post today, having checked
-// itself against what it posted recently. The feed and the profile both read
-// from here, which is why a post is the same text in both places.
+// ONE ACCOUNT'S OWN DAY.
+//
+// An account remembers what it ACTUALLY POSTED on its last MEMORY_DAYS days,
+// not what it would have posted with no memory. The difference is not
+// academic: the first version compared today against a memoryless re-render of
+// last week, and on a day where memory had pushed the account off its first
+// choice, the two disagreed - so a line it really had posted three days ago
+// was invisible, and it posted it again. That showed up in the very first
+// screenshot as one player saying "Effort was there. Execution was not." twice
+// in four days.
+//
+// So days chain. Each is cached under its own day key, which depends only on
+// that day's box scores, that day's news and the shape of the roster, so
+// simming tomorrow never invalidates today and the chain is walked once.
+// LOOKBACK bounds the cold cost of walking the chain. Only the last
+// MEMORY_DAYS days have to be exactly right; days before that reach today only
+// through their effect on those, so a couple of windows is plenty and the
+// seam is never visible. It is the difference between a page that opens in
+// three seconds and one that opens in nine.
+const LOOKBACK = MEMORY_DAYS * 2;
+
 export const buildAccountDay = async ({
 	snapshot,
 	account,
@@ -590,19 +731,60 @@ export const buildAccountDay = async ({
 	if (day === undefined) {
 		return [];
 	}
-	const key = `${snapshot.dayKey(day)}|${account.id}|m`;
-	const cached = accountDayCache.get(key);
-	if (cached) {
-		return cached;
+	const keyFor = (i: number) =>
+		`${snapshot.dayKey(snapshot.days[i]!)}|${account.id}`;
+
+	const wanted = keyFor(dayIndex);
+	const hit = accountDayCache.get(wanted);
+	if (hit) {
+		return hit;
 	}
-	const events = await eventsForDay(snapshot, day);
-	const seen = await recentLines(snapshot, account, dayIndex);
-	const out = writeAccountDay({ snapshot, account, day, events, seen }).map(
-		(post) => toFeedPost(account, post),
-	);
-	bounded(accountDayCache, 80_000);
-	accountDayCache.set(key, out);
-	return out;
+
+	// Walk forward from the oldest day that could still be remembered, filling
+	// the cache as it goes. Cached days are skipped, so this is linear the
+	// first time an account is opened and free afterwards.
+	const start = Math.max(0, dayIndex - LOOKBACK);
+	const cores: Set<string>[] = [];
+	for (let i = start; i <= dayIndex; i++) {
+		const key = keyFor(i);
+		let posts = accountDayCache.get(key);
+		if (!posts) {
+			const seen = new Set<string>();
+			for (const older of cores.slice(-MEMORY_DAYS)) {
+				for (const line of older) {
+					seen.add(line);
+				}
+			}
+			const events = await eventsForDay(snapshot, snapshot.days[i]!);
+			const written = writeAccountDay({
+				snapshot,
+				account,
+				day: snapshot.days[i]!,
+				events,
+				seen,
+			});
+			posts = written.map((post) =>
+				toFeedPost(account, post, seedFor(snapshot, snapshot.days[i]!)),
+			);
+			for (const [n, post] of written.entries()) {
+				coreByPostId.set(posts[n]!.id, normalise(post.core));
+			}
+			bounded(accountDayCache, 200_000);
+			accountDayCache.set(key, posts);
+			lineCache.set(
+				key,
+				new Set(
+					written.flatMap((post) => [
+						normalise(post.core),
+						normalise(post.text),
+					]),
+				),
+			);
+		}
+		cores.push(lineCache.get(key) ?? new Set());
+	}
+
+	return accountDayCache.get(wanted) ?? [];
 };
 
 // ---------------------------------------------------------------- THE DAY
@@ -666,10 +848,14 @@ export const buildFeedDay = async ({
 		// Two accounts landing on the same sentence about the same game is
 		// the one repeat memory cannot see, because memory is per account.
 		const line = normalise(post.text);
-		if (said.has(line)) {
+		const core = coreByPostId.get(post.id);
+		if (said.has(line) || (core !== undefined && said.has(core))) {
 			continue;
 		}
 		said.add(line);
+		if (core !== undefined) {
+			said.add(core);
+		}
 		perEvent.set(candidate.eventId, (perEvent.get(candidate.eventId) ?? 0) + 1);
 		slots.push(candidate);
 		out.push({ ...post, replies: [] });
@@ -737,7 +923,19 @@ export const buildFeedDay = async ({
 		}
 		// A replier steers around its own recent posts too, so "Fair." under
 		// a post is not also its post from the day before yesterday.
-		const recent = await recentLines(snapshot, replier, dayIndex);
+		await buildAccountDay({ snapshot, account: replier, dayIndex });
+		const recent = new Set<string>();
+		for (let j = 0; j < MEMORY_DAYS; j++) {
+			const older = snapshot.days[dayIndex - j];
+			if (older === undefined) {
+				break;
+			}
+			for (const line of lineCache.get(
+				`${snapshot.dayKey(older)}|${replier.id}`,
+			) ?? []) {
+				recent.add(line);
+			}
+		}
 		const written = writeReplyDetailed({
 			account: replier,
 			parent: poster,
@@ -750,6 +948,7 @@ export const buildFeedDay = async ({
 			),
 			avoid: (core, text) =>
 				said.has(normalise(text)) ||
+				said.has(normalise(core)) ||
 				recent.has(normalise(core)) ||
 				recent.has(normalise(text)),
 		});
@@ -757,6 +956,19 @@ export const buildFeedDay = async ({
 			continue;
 		}
 		said.add(normalise(written.text));
+		said.add(normalise(written.core));
+		// A reply lands after the post it answers, which is the one ordering
+		// rule a thread cannot break.
+		const replyMinutes = Math.min(
+			24 * 60 - 1,
+			parent.minutes +
+				1 +
+				Math.floor(
+					rngFromSeed(hashSeed(`t|${parent.id}|${replier.id}`))() * 40,
+				),
+		);
+		const h = Math.floor(replyMinutes / 60);
+		const m = replyMinutes % 60;
 		parent.replies.push({
 			id: `${reply.accountId}|${parent.id}`,
 			accountId: replier.id,
@@ -767,9 +979,27 @@ export const buildFeedDay = async ({
 			pid: replier.pid,
 			text: written.text,
 			quote: reply.kind === "quote",
+			verified: isVerified(replier),
+			time: `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`,
+			engagement: engagementFor({
+				account: replier,
+				reach: reachOf(
+					replier,
+					replier.pid === undefined
+						? 0.5
+						: (notabilityByPid.get(replier.pid) ?? 0.4),
+				),
+				salience: event.salience,
+				seed: `${seed}|re|${replier.id}|${parent.id}`,
+				isReply: true,
+				parentLikes: parent.engagement.likes,
+			}),
 		});
 	}
 	pool.endBatch();
+
+	// A timeline is newest-first, and the clock is what says which is newest.
+	out.sort((a, b) => b.minutes - a.minutes || a.id.localeCompare(b.id));
 
 	const feed: FeedDay = { season: snapshot.season, day, posts: out };
 	bounded(feedCache, 400);
