@@ -40,6 +40,7 @@
 
 import { PINNED_SELECTOR } from "./stickyHeaderPin.ts";
 import { probeSticky, recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
+import { recordTouchSample } from "./stickyTouchProbe.ts";
 import {
 	initVisualViewportHeader,
 	resyncStickyBarShifts,
@@ -1077,4 +1078,25 @@ export const initStickyHeaderWatchdog = () => {
 	// showing and hiding costing one extra check is a fine trade.
 	window.addEventListener("resize", watch);
 	window.addEventListener("orientationchange", watch);
+
+	// EVERY TAP IS A MEASUREMENT. A touch carries clientY - the coordinates our
+	// anchors and getBoundingClientRect speak - next to screenY, its position on
+	// the glass, so ordinary use builds the mapping between the two without ever
+	// asking the viewport where the screen is. See stickyTouchProbe.ts for why
+	// no viewport number can be trusted to answer that on this device.
+	window.addEventListener(
+		"touchstart",
+		(event) => {
+			const touch = (event as TouchEvent).touches?.[0];
+			if (!touch) {
+				return;
+			}
+			recordTouchSample({
+				clientY: touch.clientY,
+				screenY: touch.screenY,
+				offsetTop: Math.round(window.visualViewport?.offsetTop ?? 0),
+			});
+		},
+		{ passive: true, capture: true },
+	);
 };

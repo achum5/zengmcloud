@@ -12,6 +12,13 @@
 // scrolling back to the top, where a broken header and a healthy one sit in
 // exactly the same place.
 
+import {
+	getTouchSamples,
+	projectToScreen,
+	screenVerdict,
+	solveTouchMapping,
+} from "./stickyTouchProbe.ts";
+
 export type HeaderLogEntry = {
 	// Milliseconds since the page loaded - relative time is what matters here,
 	// and it avoids a wall clock in the report.
@@ -411,6 +418,7 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		// gap between its bottom edge and the foot of the layout viewport: zero on
 		// a healthy bar, whatever it drifted by on a broken one.
 		...tickerFields(),
+		...touchProbeFields(),
 		// THE ELEMENT THAT BROKE THE VIEWPORT, when one has. iOS expands the
 		// layout viewport to fit anything that renders wider than the screen and
 		// keeps the expansion until the next launch - a field device sat at 518px
@@ -420,6 +428,59 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		// element on its own merits rather than by width - see
 		// overflowingElement.
 		overflowingElement: overflowingElement(),
+	};
+};
+
+// WHERE THE BARS LAND ON THE GLASS, from taps rather than from the viewport.
+//
+// Every previous field report could say only where the bars measure, and on
+// this device measuring correct and looking correct have come apart: the last
+// one had the header at rect.top 0 and the ticker's bottom exactly at the
+// layout viewport foot - both textbook - with the user seeing neither. These
+// fields close that gap. They project each bar's own measured rect through the
+// client-to-screen mapping built from ordinary taps, so the report finally
+// states whether the bars are on the screen at all, and if not, by how much
+// they miss. See stickyTouchProbe.ts.
+const touchProbeFields = (): HeaderSnapshot => {
+	const samples = getTouchSamples();
+	const mapping = solveTouchMapping(samples);
+	if (!mapping) {
+		// Named rather than omitted: "no taps yet" and "the taps disagree" are
+		// different findings, and a missing field reads as neither.
+		return {
+			touchSamples: samples.length,
+			touchMapping: samples.length < 2 ? "need 2+ taps" : "taps too close",
+		};
+	}
+
+	const screenHeight = window.screen?.height;
+	const onGlass = (element: HTMLElement | null) => {
+		if (!element || screenHeight === undefined) {
+			return "-";
+		}
+		const rect = element.getBoundingClientRect();
+		const top = projectToScreen(mapping, rect.top);
+		const bottom = projectToScreen(mapping, rect.bottom);
+		const verdict = screenVerdict({ top, bottom, screenHeight });
+		return `${verdict} ${top}..${bottom} of 0..${screenHeight}`;
+	};
+
+	return {
+		touchSamples: mapping.samples,
+		touchSpread: mapping.spread,
+		// Where client y = 0 actually is. A pinned header claims to be here, so
+		// a large negative number IS the fault, stated in one line.
+		touchOriginY: mapping.originY,
+		// The real scale, next to the one visualViewport reports. The two
+		// disagreeing is itself the finding.
+		touchScale: mapping.scale,
+		touchScaleReported: window.visualViewport?.scale,
+		headerOnGlass: onGlass(
+			document.querySelector<HTMLElement>(".navbar-border.sticky-top"),
+		),
+		tickerOnGlass: onGlass(
+			document.querySelector<HTMLElement>(".league-ticker"),
+		),
 	};
 };
 
