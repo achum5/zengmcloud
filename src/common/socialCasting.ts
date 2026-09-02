@@ -71,6 +71,14 @@ export const relevance = (
 		return 1.4;
 	}
 
+	// LEAGUE-WIDE news - the best record, the worst record, the race for the
+	// last spot - is everybody's business. Without this a beat writer in one
+	// city treated "best record in the league" as somebody else's game, which
+	// is exactly backwards: it is the one kind of story every account covers.
+	if (event.facts.leagueWide === true) {
+		return account.kind === "player" ? 0.6 : 1.4;
+	}
+
 	// No connection. A national account still covers the league; anyone with a
 	// team barely looks up. Without this asymmetry every beat writer in the
 	// league covers every game, which is both wrong and unreadable.

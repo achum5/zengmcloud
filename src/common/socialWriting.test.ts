@@ -939,6 +939,23 @@ describe("memory", () => {
 		assert.strictEqual(out, undefined);
 	});
 
+	test("the core is what a template wrote, before nicknames", () => {
+		// Memory and the day's duplicate check both compare cores, so a
+		// nickname must not be able to make one line look like two.
+		const acct = account("localRadio", { override: { emoji: 0, caps: 0 } });
+		for (let seed = 0; seed < 60; seed++) {
+			const out = writePostDetailed({
+				account: acct,
+				event: game(),
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+			});
+			if (out && /celtics/i.test(out.core)) {
+				assert.match(out.core, /Boston Celtics/);
+			}
+		}
+	});
+
 	test("the casual voices sometimes use the nickname alone", () => {
 		// A bystander in a casual voice: its lines always name both teams, so
 		// every post is a fair sample of which form the name took.
@@ -952,11 +969,13 @@ describe("memory", () => {
 				pool: createPhrasePool(),
 				rng: rngFromSeed(seed),
 			});
-			if (!out || !/celtics|kings/i.test(out.core)) {
+			// The RENDERED text, not the core: the core is deliberately the
+			// pre-nickname line, because that is what memory compares on.
+			if (!out || !/celtics|kings/i.test(out.text)) {
 				continue;
 			}
 			named += 1;
-			if (!/boston|sacramento/i.test(out.core)) {
+			if (!/boston|sacramento/i.test(out.text)) {
 				short += 1;
 			}
 		}
@@ -988,6 +1007,93 @@ describe("shouting", () => {
 			});
 			assert.ok(out.includes("@SnipersFaithful"), out);
 			assert.ok(out.includes("#Snipers"), out);
+		}
+	});
+});
+
+// SHAPE MEMORY. Two different sentences off one template say the same thing in
+// the same shape, and that is what a reader notices over a week: an account
+// answering every series with "Down 1-3 to the Curses. Wonderful." and then
+// "Down 0-3 to the Curses. Wonderful." repeated itself without repeating a
+// word.
+describe("shape memory", () => {
+	const acct = account("beatWriter", {
+		tid: 0,
+		override: { emoji: 0, caps: 0, profanity: 0 },
+	});
+
+	test("a template used recently goes to the back of the queue", () => {
+		const first = writePostDetailed({
+			account: acct,
+			event: game(),
+			pool: createPhrasePool(),
+			rng: rngFromSeed(11),
+		})!;
+		const second = writePostDetailed({
+			account: acct,
+			event: game(),
+			pool: createPhrasePool(),
+			rng: rngFromSeed(11),
+			staleTemplates: new Set([first.templateId]),
+		})!;
+		assert.notStrictEqual(second.templateId, first.templateId);
+	});
+
+	test("a thin bank still speaks when every shape is stale", () => {
+		// Deprioritised, never forbidden: an account with nothing fresh left
+		// has to say something rather than fall silent.
+		const every = new Set<string>();
+		for (let seed = 0; seed < 200; seed++) {
+			const out = writePostDetailed({
+				account: acct,
+				event: game(),
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+			});
+			if (out) {
+				every.add(out.templateId);
+			}
+		}
+		const out = writePostDetailed({
+			account: acct,
+			event: game(),
+			pool: createPhrasePool(),
+			rng: rngFromSeed(7),
+			staleTemplates: every,
+		});
+		assert.ok(out !== undefined, "went silent with every shape stale");
+	});
+
+	test("stale shapes do not change what an account is allowed to say", () => {
+		// Only the ORDER of preference moves. A losing team's account must not
+		// become able to draw a winner's line just because its own are stale.
+		const loser = account("homerFan", {
+			tid: 1,
+			override: { emoji: 0, caps: 0 },
+		});
+		const every = new Set<string>();
+		for (let seed = 0; seed < 200; seed++) {
+			const out = writePostDetailed({
+				account: loser,
+				event: game(),
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+			});
+			if (out) {
+				every.add(out.templateId);
+			}
+		}
+		for (let seed = 0; seed < 60; seed++) {
+			const out = writePostDetailed({
+				account: loser,
+				event: game(),
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+				staleTemplates: every,
+			});
+			if (out) {
+				assert.ok(every.has(out.templateId), `new shape ${out.templateId}`);
+			}
 		}
 	});
 });

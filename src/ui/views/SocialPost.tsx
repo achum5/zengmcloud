@@ -200,6 +200,8 @@ export const SocialPost = ({
 	engagement,
 	quote,
 	compact,
+	indent,
+	replyTo,
 }: {
 	account: PostAccount;
 	text: string;
@@ -210,8 +212,14 @@ export const SocialPost = ({
 	engagement?: { likes: number; reposts: number; replies: number };
 	quote?: boolean;
 	compact?: boolean;
+	// An answer to another answer, stepped in so the argument reads as one.
+	indent?: boolean;
+	replyTo?: string;
 }) => (
-	<div className={clsx("d-flex", compact ? "gap-2" : "gap-3")}>
+	<div
+		className={clsx("d-flex", compact ? "gap-2" : "gap-3")}
+		style={indent ? { marginLeft: 20 } : undefined}
+	>
 		<Avatar
 			account={account}
 			team={team}
@@ -243,6 +251,17 @@ export const SocialPost = ({
 					<span className="badge text-bg-light border ms-1">quoted</span>
 				) : null}
 			</div>
+			{replyTo ? (
+				<div className="text-body-secondary small">
+					Replying to{" "}
+					<a
+						className="text-body-secondary"
+						href={helpers.leagueUrl(["social", replyTo])}
+					>
+						@{replyTo}
+					</a>
+				</div>
+			) : null}
 			<div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
 				{text}
 			</div>

@@ -515,6 +515,335 @@ export const assignEventDays = (
 	return out;
 };
 
+// ---------------------------------------------------------------- THE SEASON ITSELF
+//
+// Everything above is REACTIVE: something happened, and accounts respond to
+// it. A timeline made only of that has a tell, and it shows up worst on the
+// nights that matter least in volume and most in attention - a playoff day has
+// two games and six events, so forty-five post slots chase the same two box
+// scores and the feed becomes eight people describing one man's rebounds.
+//
+// Real basketball talk is mostly ABOUT THE SEASON: who is hot, who is
+// collapsing, who is a game out of the last spot, who is running away with it.
+// None of that is an event the league logs, and all of it is derivable from
+// the same box scores the rest of this file reads. So a day carries the state
+// of the league as of that night, and accounts get something to say that is
+// not a description of a game.
+
+export type TeamStanding = {
+	tid: number;
+	region: string;
+	name: string;
+	abbrev: string;
+	won: number;
+	lost: number;
+	// Positive for a winning streak, negative for a losing one.
+	streak: number;
+	// 1-based, by winning percentage across the whole league.
+	rank: number;
+	// Games behind the league leader.
+	gamesBack: number;
+};
+
+const pct = (t: { won: number; lost: number }) =>
+	t.won + t.lost === 0 ? 0 : t.won / (t.won + t.lost);
+
+// The table as of the end of a day, from every game played up to it.
+export const standingsThrough = (
+	games: readonly {
+		day: number;
+		gid: number;
+		playoffs: boolean;
+		teams: {
+			tid: number;
+			region: string;
+			name: string;
+			abbrev: string;
+			pts: number;
+		}[];
+	}[],
+	day: number,
+): TeamStanding[] => {
+	type Row = Omit<TeamStanding, "rank" | "gamesBack">;
+	const rows = new Map<number, Row>();
+	const ordered = [...games]
+		.filter((game) => !game.playoffs && game.day <= day)
+		.sort((a, b) => a.day - b.day || a.gid - b.gid);
+
+	for (const game of ordered) {
+		const [a, b] = game.teams;
+		if (!a || !b) {
+			continue;
+		}
+		const winner = a.pts > b.pts ? a : b;
+		for (const t of [a, b]) {
+			const row = rows.get(t.tid) ?? {
+				tid: t.tid,
+				region: t.region,
+				name: t.name,
+				abbrev: t.abbrev,
+				won: 0,
+				lost: 0,
+				streak: 0,
+			};
+			const won = t.tid === winner.tid;
+			if (won) {
+				row.won += 1;
+				row.streak = row.streak > 0 ? row.streak + 1 : 1;
+			} else {
+				row.lost += 1;
+				row.streak = row.streak < 0 ? row.streak - 1 : -1;
+			}
+			rows.set(t.tid, row);
+		}
+	}
+
+	const sorted = [...rows.values()].sort(
+		(a, b) => pct(b) - pct(a) || b.won - a.won || a.tid - b.tid,
+	);
+	const leader = sorted[0];
+	return sorted.map((row, i) => ({
+		...row,
+		rank: i + 1,
+		gamesBack:
+			leader === undefined
+				? 0
+				: Math.round(
+						((leader.won - row.won + (row.lost - leader.lost)) / 2) * 10,
+					) / 10,
+	}));
+};
+
+// What is worth saying about the table tonight. Deliberately few: this is
+// seasoning for a day of games, not a standings page, and an account that
+// posts the league table every night is a bot.
+export const seasonStateEvents = ({
+	standings,
+	day,
+	season,
+	// Teams that played tonight. The state of a team nobody watched today is
+	// not news, which is what keeps this from repeating the same four teams
+	// every night of the season.
+	playedToday,
+	// Whether tonight was regular-season basketball at all.
+	regularSeasonToday,
+}: {
+	standings: readonly TeamStanding[];
+	day: number;
+	season: number;
+	playedToday: ReadonlySet<number>;
+	regularSeasonToday: boolean;
+}): SocialEvent[] => {
+	const out: SocialEvent[] = [];
+	const total = standings.length;
+	// Nothing to say about the table on a night nobody played a league game.
+	// During the playoffs the regular-season table is frozen, and "they have
+	// won five in a row" about wins from three weeks ago is worse than saying
+	// nothing - the postseason has its own talk, below.
+	if (total === 0 || !regularSeasonToday) {
+		return out;
+	}
+	// A team with no resolvable name cannot be posted about - better silent
+	// than "the undefined undefined", which is what shipped the first time.
+	const named = standings.filter((t) => t.name !== "" && t.region !== "");
+	const played = named.filter((t) => playedToday.has(t.tid));
+
+	const push = (
+		key: string,
+		team: TeamStanding,
+		salience: number,
+		extra: Record<string, string | number | boolean>,
+	) => {
+		out.push({
+			// Keyed by day so two days never share an id, and by team so the
+			// same note about the same team is one event.
+			id: `ss:${day}:${key}:${team.tid}`,
+			type: "standings",
+			topic: "standings",
+			season,
+			day,
+			// After the games, which is when the table is final.
+			order: 900_000 + out.length,
+			salience,
+			tids: [team.tid],
+			pids: [],
+			facts: {
+				tid: team.tid,
+				teamName: `${team.region} ${team.name}`,
+				teamNick: team.name,
+				abbrev: team.abbrev,
+				won: team.won,
+				lost: team.lost,
+				rank: team.rank,
+				gamesBack: team.gamesBack,
+				streak: Math.abs(team.streak),
+				...extra,
+			},
+		});
+	};
+
+	// A run, in either direction. Four is where people start talking about it.
+	for (const team of played) {
+		if (team.streak >= 4) {
+			push("hot", team, clamp01(0.3 + team.streak / 14), { hot: true });
+		} else if (team.streak <= -4) {
+			push("cold", team, clamp01(0.3 + -team.streak / 14), { cold: true });
+		}
+	}
+
+	// The team at the top, once it means something.
+	const leader = named[0];
+	if (leader && leader.won + leader.lost >= 10 && playedToday.has(leader.tid)) {
+		push("first", leader, 0.45, { first: true, leagueWide: true });
+	}
+
+	// The team at the bottom, same.
+	const worst = named.at(-1);
+	if (worst && worst.won + worst.lost >= 10 && playedToday.has(worst.tid)) {
+		push("worst", worst, 0.35, { worst: true, leagueWide: true });
+	}
+
+	// A close race is the most-discussed thing in any league, so the teams
+	// sitting on the cut line get a note when they are genuinely tight.
+	const line = Math.floor(named.length / 2);
+	const above = named[line - 1];
+	const below = named[line];
+	if (
+		above &&
+		below &&
+		above.won + above.lost >= 20 &&
+		Math.abs(above.gamesBack - below.gamesBack) <= 2 &&
+		(playedToday.has(above.tid) || playedToday.has(below.tid))
+	) {
+		push("race", above, 0.5, {
+			race: true,
+			leagueWide: true,
+			rivalName: `${below.region} ${below.name}`,
+			rivalNick: below.name,
+			rivalAbbrev: below.abbrev,
+			rivalWon: below.won,
+			rivalLost: below.lost,
+		});
+	}
+
+	return out;
+};
+
+// THE POSTSEASON'S OWN TALK.
+//
+// A playoff night is two games, which is six events for forty-five post slots.
+// It is also the night people have the most to say - and none of what they say
+// is about the regular-season table, which stopped moving in April. What they
+// talk about is the SERIES: who leads it, who is a loss from going home, who
+// just stole one on the road. All of that is in the box scores.
+
+export const playoffSeriesEvents = ({
+	games,
+	day,
+	season,
+}: {
+	// Every playoff game of the season, so a series can be counted up to
+	// tonight.
+	games: readonly {
+		day: number;
+		gid: number;
+		playoffs: boolean;
+		teams: {
+			tid: number;
+			region: string;
+			name: string;
+			abbrev: string;
+			pts: number;
+		}[];
+	}[];
+	day: number;
+	season: number;
+}): SocialEvent[] => {
+	const pairKey = (a: number, b: number) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+	const wins = new Map<string, Map<number, number>>();
+	const meta = new Map<
+		string,
+		{ tid: number; region: string; name: string; abbrev: string }[]
+	>();
+	const playedTonight = new Set<string>();
+
+	for (const game of [...games]
+		.filter((g) => g.playoffs && g.day <= day)
+		.sort((a, b) => a.day - b.day || a.gid - b.gid)) {
+		const [a, b] = game.teams;
+		if (!a || !b) {
+			continue;
+		}
+		const key = pairKey(a.tid, b.tid);
+		meta.set(key, [a, b]);
+		const tally = wins.get(key) ?? new Map<number, number>();
+		const winner = a.pts > b.pts ? a : b;
+		tally.set(winner.tid, (tally.get(winner.tid) ?? 0) + 1);
+		wins.set(key, tally);
+		if (game.day === day) {
+			playedTonight.add(key);
+		}
+	}
+
+	const out: SocialEvent[] = [];
+	for (const key of playedTonight) {
+		const teams = meta.get(key);
+		const tally = wins.get(key);
+		if (!teams || !tally) {
+			continue;
+		}
+		const [a, b] = teams;
+		if (!a?.name || !b?.name) {
+			continue;
+		}
+		const aWins = tally.get(a!.tid) ?? 0;
+		const bWins = tally.get(b!.tid) ?? 0;
+		const leader = aWins >= bWins ? a! : b!;
+		const trailer = aWins >= bWins ? b! : a!;
+		const lead = Math.max(aWins, bWins);
+		const behind = Math.min(aWins, bWins);
+		// A finished series is not a series any more. The league log already
+		// announces who won it, and without this the feed said "one loss from
+		// the end of their season" about a team that had already been swept.
+		if (lead >= 4) {
+			continue;
+		}
+		// Four is the standard series length; a team one loss from it is the
+		// story of the night wherever it is set.
+		const clinching = lead === 3;
+		const tied = lead === behind;
+
+		out.push({
+			id: `ps:${day}:${key}`,
+			type: "playoffs",
+			topic: "standings",
+			season,
+			day,
+			order: 900_000 + out.length,
+			salience: clinching ? 0.85 : tied ? 0.6 : 0.55,
+			tids: [leader.tid, trailer.tid],
+			pids: [],
+			facts: {
+				leagueWide: true,
+				tid: leader.tid,
+				teamName: `${leader.region} ${leader.name}`,
+				teamNick: leader.name,
+				abbrev: leader.abbrev,
+				rivalTid: trailer.tid,
+				rivalName: `${trailer.region} ${trailer.name}`,
+				rivalNick: trailer.name,
+				rivalAbbrev: trailer.abbrev,
+				lead,
+				behind,
+				series: true,
+				clinching,
+				tied,
+			},
+		});
+	}
+	return out;
+};
+
 // ---------------------------------------------------------------- PLACEMENT, STABLY
 //
 // assignEventDays above spreads a season's news evenly across its game days.

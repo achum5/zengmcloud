@@ -80,8 +80,10 @@ const SocialFeed = ({
 											account={reply}
 											compact
 											engagement={reply.engagement}
+											indent={reply.replyTo !== undefined}
 											picture={pictures[reply.accountId]}
 											quote={reply.quote}
+											replyTo={reply.replyTo}
 											team={
 												reply.tid === undefined
 													? undefined

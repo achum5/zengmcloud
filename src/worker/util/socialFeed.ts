@@ -54,6 +54,9 @@ import {
 	isFeedableLeagueEvent,
 	OFFSEASON_DAY,
 	placeLeagueEvents,
+	playoffSeriesEvents,
+	seasonStateEvents,
+	standingsThrough,
 	trimDayEvents,
 	type GameForEvents,
 	type SocialEvent,
@@ -78,6 +81,7 @@ import {
 	type AvoidFn,
 } from "../../common/socialWriting.ts";
 import { recapGamesForDay } from "./getDayGamesForRecap.ts";
+import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 
 export type FeedPost = {
 	id: string;
@@ -108,6 +112,10 @@ export type FeedPost = {
 		verified: boolean;
 		time: string;
 		engagement: Engagement;
+		// The handle this answers, when it is answering a reply rather than
+		// the post. A one-level thread is a comment section; the back-and-
+		// forth is what makes it read like an argument between two people.
+		replyTo?: string;
 	}[];
 };
 
@@ -122,6 +130,9 @@ export type FeedDay = {
 const POSTS_PER_DAY = 45;
 const REPLIES_PER_DAY = 14;
 const EVENTS_PER_DAY = 26;
+// How much of a day is about the league rather than about tonight. Small on
+// purpose: an account that posts the standings every night is a bot.
+const SEASON_EVENTS_PER_DAY = 5;
 // The offseason is one undated stretch holding a whole summer of news, so it
 // gets a bigger window than a game night.
 const OFFSEASON_EVENTS = 60;
@@ -236,6 +247,21 @@ export type FeedSnapshot = {
 		games: { tids: number[]; winnerTid: number }[];
 		swappedPairs: [number, number][];
 	};
+	// Every game's teams and score, so any day can rebuild the table as it
+	// stood that night without re-reading the database.
+	standingsInput: {
+		day: number;
+		gid: number;
+		playoffs: boolean;
+		teams: {
+			tid: number;
+			region: string;
+			name: string;
+			abbrev: string;
+			pts: number;
+		}[];
+	}[];
+	playedByDay: Map<number, Set<number>>;
 	// What one day's cache entries depend on, and nothing else.
 	dayKey: (day: number) => string;
 };
@@ -368,6 +394,51 @@ export const getFeedSnapshot = async (
 		return key;
 	};
 
+	// ---- What each day needs to talk about the season rather than only about
+	// the night: the table as of that night, and who played in it.
+	//
+	// A stored game row carries tids and scores but NOT team names - the recap
+	// builder resolves those separately, and skipping that step here printed
+	// "down 2-3 to the undefined undefined" into the feed. Resolved once, by
+	// season, so a franchise that has since moved is still named the way it
+	// was named at the time.
+	const teamsBySeason = new Map<
+		number,
+		{ region: string; name: string; abbrev: string }
+	>();
+	for (const tid of new Set(
+		games.flatMap((game: any) => game.teams.map((t: any) => t.tid)),
+	)) {
+		const info = await getTeamInfoBySeason(tid as number, season);
+		teamsBySeason.set(tid as number, {
+			region: info?.region ?? "",
+			name: info?.name ?? "",
+			abbrev: info?.abbrev ?? "???",
+		});
+	}
+	const standingsInput = games.map((game: any) => ({
+		day: game.day ?? 0,
+		gid: game.gid,
+		playoffs: game.playoffs === true,
+		teams: game.teams.map((t: any) => ({
+			tid: t.tid,
+			...(teamsBySeason.get(t.tid) ?? {
+				region: "",
+				name: "",
+				abbrev: "???",
+			}),
+			pts: t.pts,
+		})),
+	}));
+	const playedByDay = new Map<number, Set<number>>();
+	for (const game of standingsInput) {
+		const set = playedByDay.get(game.day) ?? new Set<number>();
+		for (const t of game.teams) {
+			set.add(t.tid);
+		}
+		playedByDay.set(game.day, set);
+	}
+
 	// ---- Rivalry inputs, once.
 	const swappedPairs: [number, number][] = [];
 	for (const row of rows) {
@@ -394,6 +465,8 @@ export const getFeedSnapshot = async (
 		accountById,
 		leagueEventsByDay,
 		rivalry,
+		standingsInput,
+		playedByDay,
 		dayKey,
 	};
 	return snapshotMemo;
@@ -481,6 +554,10 @@ const lineCache = new Map<string, Set<string>>();
 // finished text - "honest answer: could go either way" showed up twice in one
 // day, once with an opener in front of it.
 const coreByPostId = new Map<string, string>();
+// Which TEMPLATES each cached day used. Refusing a repeated sentence is not
+// enough on its own: two different sentences off the same template say the
+// same thing in the same shape, and a reader notices the shape.
+const shapeCache = new Map<string, Set<string>>();
 const feedCache = new Map<string, FeedDay>();
 
 // Bounded rather than evicted: these are small strings, the bounds are
@@ -497,6 +574,7 @@ export const clearSocialFeedCache = () => {
 	accountDayCache.clear();
 	lineCache.clear();
 	coreByPostId.clear();
+	shapeCache.clear();
 	feedCache.clear();
 };
 
@@ -569,7 +647,36 @@ const eventsForDay = async (
 		const gameEvents = recapGames.flatMap((game) =>
 			eventsFromGame(gameForEvents(snapshot.season, game as any)),
 		);
-		events = trimDayEvents([...gameEvents, ...news], { limit: EVENTS_PER_DAY });
+		// The state of the league as of tonight, which is what people actually
+		// argue about between box scores - and what stops a two-game playoff
+		// day being eight accounts describing the same man's rebounds.
+		const tonight = snapshot.standingsInput.filter((game) => game.day === day);
+		const season = [
+			...seasonStateEvents({
+				standings: standingsThrough(snapshot.standingsInput, day),
+				day,
+				season: snapshot.season,
+				playedToday: snapshot.playedByDay.get(day) ?? new Set(),
+				regularSeasonToday: tonight.some((game) => !game.playoffs),
+			}),
+			...(tonight.some((game) => game.playoffs)
+				? playoffSeriesEvents({
+						games: snapshot.standingsInput,
+						day,
+						season: snapshot.season,
+					})
+				: []),
+		];
+		// Trimmed SEPARATELY and then merged. Season notes score lower on
+		// salience than a forty-point night, quite correctly, so throwing them
+		// into one pool meant they lost every cut and the feature may as well
+		// not have existed - one post in a hundred and seventy-five. Reserving
+		// a few slots is the honest fix: a day always carries some of the
+		// league's state, and it never carries much.
+		events = [
+			...trimDayEvents([...gameEvents, ...news], { limit: EVENTS_PER_DAY }),
+			...trimDayEvents(season, { limit: SEASON_EVENTS_PER_DAY }),
+		].sort((a, b) => a.order - b.order);
 	}
 	bounded(dayEventsCache, 600);
 	dayEventsCache.set(key, events);
@@ -582,6 +689,7 @@ type AccountDayPost = {
 	eventId: string;
 	core: string;
 	text: string;
+	templateId: string;
 	// Where the event sat in the day, so the clock can put a post about the
 	// late game later than a post about the early one.
 	eventIndex: number;
@@ -599,12 +707,14 @@ const writeAccountDay = ({
 	day,
 	events,
 	seen,
+	staleTemplates,
 }: {
 	snapshot: FeedSnapshot;
 	account: ResolvedSocialAccount;
 	day: number;
 	events: SocialEvent[];
 	seen: Set<string>;
+	staleTemplates: Set<string>;
 }): AccountDayPost[] => {
 	const seed = seedFor(snapshot, day);
 	const casting = castDay({
@@ -639,16 +749,19 @@ const writeAccountDay = ({
 			pool,
 			rng: rngFromSeed(hashSeed(`${seed}|${account.id}|${slot.eventId}`)),
 			avoid,
+			staleTemplates,
 		});
 		if (!written) {
 			continue;
 		}
 		seen.add(normalise(written.core));
 		seen.add(normalise(written.text));
+		staleTemplates.add(written.templateId);
 		out.push({
 			eventId: event.id,
 			core: written.core,
 			text: written.text,
+			templateId: written.templateId,
 			eventIndex: eventIndexById.get(event.id) ?? 0,
 			eventCount: events.length,
 			isGame: event.type === "gameResult" || event.type === "performance",
@@ -745,6 +858,7 @@ export const buildAccountDay = async ({
 	// first time an account is opened and free afterwards.
 	const start = Math.max(0, dayIndex - LOOKBACK);
 	const cores: Set<string>[] = [];
+	const shapes: Set<string>[] = [];
 	for (let i = start; i <= dayIndex; i++) {
 		const key = keyFor(i);
 		let posts = accountDayCache.get(key);
@@ -755,6 +869,12 @@ export const buildAccountDay = async ({
 					seen.add(line);
 				}
 			}
+			const staleTemplates = new Set<string>();
+			for (const older of shapes.slice(-MEMORY_DAYS)) {
+				for (const id of older) {
+					staleTemplates.add(id);
+				}
+			}
 			const events = await eventsForDay(snapshot, snapshot.days[i]!);
 			const written = writeAccountDay({
 				snapshot,
@@ -762,6 +882,7 @@ export const buildAccountDay = async ({
 				day: snapshot.days[i]!,
 				events,
 				seen,
+				staleTemplates,
 			});
 			posts = written.map((post) =>
 				toFeedPost(account, post, seedFor(snapshot, snapshot.days[i]!)),
@@ -780,11 +901,38 @@ export const buildAccountDay = async ({
 					]),
 				),
 			);
+			shapeCache.set(key, new Set(written.map((post) => post.templateId)));
 		}
 		cores.push(lineCache.get(key) ?? new Set());
+		shapes.push(shapeCache.get(key) ?? new Set());
 	}
 
 	return accountDayCache.get(wanted) ?? [];
+};
+
+// What one account has said in the days it can still remember. Reads the
+// caches the chain filled, so it is a lookup rather than more generation.
+const memoryOf = (
+	snapshot: FeedSnapshot,
+	account: ResolvedSocialAccount,
+	dayIndex: number,
+): { lines: Set<string>; shapes: Set<string> } => {
+	const lines = new Set<string>();
+	const shapes = new Set<string>();
+	for (let j = 0; j < MEMORY_DAYS; j++) {
+		const older = snapshot.days[dayIndex - j];
+		if (older === undefined) {
+			break;
+		}
+		const key = `${snapshot.dayKey(older)}|${account.id}`;
+		for (const line of lineCache.get(key) ?? []) {
+			lines.add(line);
+		}
+		for (const id of shapeCache.get(key) ?? []) {
+			shapes.add(id);
+		}
+	}
+	return { lines, shapes };
 };
 
 // ---------------------------------------------------------------- THE DAY
@@ -924,18 +1072,12 @@ export const buildFeedDay = async ({
 		// A replier steers around its own recent posts too, so "Fair." under
 		// a post is not also its post from the day before yesterday.
 		await buildAccountDay({ snapshot, account: replier, dayIndex });
-		const recent = new Set<string>();
-		for (let j = 0; j < MEMORY_DAYS; j++) {
-			const older = snapshot.days[dayIndex - j];
-			if (older === undefined) {
-				break;
-			}
-			for (const line of lineCache.get(
-				`${snapshot.dayKey(older)}|${replier.id}`,
-			) ?? []) {
-				recent.add(line);
-			}
-		}
+		await buildAccountDay({ snapshot, account: poster, dayIndex });
+		const { lines: recent, shapes: recentShapes } = memoryOf(
+			snapshot,
+			replier,
+			dayIndex,
+		);
 		const written = writeReplyDetailed({
 			account: replier,
 			parent: poster,
@@ -946,6 +1088,7 @@ export const buildFeedDay = async ({
 			rng: rngFromSeed(
 				hashSeed(`${seed}|re|${reply.accountId}|${reply.parentAccountId}`),
 			),
+			staleTemplates: recentShapes,
 			avoid: (core, text) =>
 				said.has(normalise(text)) ||
 				said.has(normalise(core)) ||
@@ -969,7 +1112,7 @@ export const buildFeedDay = async ({
 		);
 		const h = Math.floor(replyMinutes / 60);
 		const m = replyMinutes % 60;
-		parent.replies.push({
+		const replyRecord = {
 			id: `${reply.accountId}|${parent.id}`,
 			accountId: replier.id,
 			handle: replier.handle,
@@ -994,6 +1137,79 @@ export const buildFeedDay = async ({
 				isReply: true,
 				parentLikes: parent.engagement.likes,
 			}),
+		};
+		parent.replies.push(replyRecord);
+
+		// THE ANSWER BACK. When there is real history between them, the
+		// original poster does not let it go - which is the whole point of
+		// deriving feuds in the first place, and was invisible while every
+		// thread stopped after one reply.
+		if (reply.heat < 0.5 || poster.personality.replyiness < 0.15) {
+			continue;
+		}
+		const own = memoryOf(snapshot, poster, dayIndex);
+		const back = writeReplyDetailed({
+			account: poster,
+			parent: replier,
+			event,
+			heat: reply.heat,
+			pool,
+			rng: rngFromSeed(hashSeed(`${seed}|back|${poster.id}|${replier.id}`)),
+			// The POSTER's memory, not the replier's. Getting this wrong put
+			// self-repeats back into a feed that had none.
+			staleTemplates: own.shapes,
+			avoid: (core, text) =>
+				said.has(normalise(text)) ||
+				said.has(normalise(core)) ||
+				own.lines.has(normalise(core)) ||
+				own.lines.has(normalise(text)),
+		});
+		if (!back) {
+			continue;
+		}
+		said.add(normalise(back.text));
+		said.add(normalise(back.core));
+		const backMinutes = Math.min(
+			24 * 60 - 1,
+			replyMinutes +
+				2 +
+				Math.floor(
+					rngFromSeed(
+						hashSeed(`tb|${parent.id}|${poster.id}|${replier.id}`),
+					)() * 25,
+				),
+		);
+		const bh = Math.floor(backMinutes / 60);
+		const bm = backMinutes % 60;
+		parent.replies.push({
+			// Keyed by WHO is being answered: a post that draws two heated
+			// replies draws two answers back, and without the replier in the
+			// key they were the same row twice.
+			id: `${poster.id}|back|${replier.id}|${parent.id}`,
+			accountId: poster.id,
+			handle: poster.handle,
+			name: poster.name,
+			kind: poster.kind,
+			tid: poster.tid,
+			pid: poster.pid,
+			text: back.text,
+			quote: false,
+			verified: isVerified(poster),
+			time: `${bh % 12 === 0 ? 12 : bh % 12}:${String(bm).padStart(2, "0")} ${bh >= 12 ? "PM" : "AM"}`,
+			engagement: engagementFor({
+				account: poster,
+				reach: reachOf(
+					poster,
+					poster.pid === undefined
+						? 0.5
+						: (notabilityByPid.get(poster.pid) ?? 0.4),
+				),
+				salience: event.salience,
+				seed: `${seed}|back|${poster.id}|${replier.id}|${parent.id}`,
+				isReply: true,
+				parentLikes: replyRecord.engagement.likes,
+			}),
+			replyTo: replier.handle,
 		});
 	}
 	pool.endBatch();

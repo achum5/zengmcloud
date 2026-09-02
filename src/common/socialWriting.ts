@@ -172,7 +172,49 @@ export type SummaryFrame = {
 	stance: Stance;
 };
 
-export type Frame = GameFrame | PerformanceFrame | SummaryFrame;
+// THE STATE OF THE SEASON, as opposed to the state of one game. What an
+// account says about a team's run, its record or the race it is in - the
+// talk that fills a real timeline between the box scores.
+export type StandingsFrame = {
+	kind: "standings";
+	team: string;
+	nick: string;
+	abbrev: string;
+	won: number;
+	lost: number;
+	rank: number;
+	gamesBack: number;
+	streak: number;
+	hot: boolean;
+	cold: boolean;
+	first: boolean;
+	worst: boolean;
+	race: boolean;
+	// A playoff series, counted up to tonight.
+	series: boolean;
+	lead: number;
+	behind: number;
+	clinching: boolean;
+	tied: boolean;
+	rival: string;
+	rivalNick: string;
+	rivalAbbrev: string;
+	rivalWon: number;
+	rivalLost: number;
+	// The account's own team, which changes everything it will say. For a
+	// series, `mine` is the side that LEADS it - so a fan of the team going
+	// out needs its own flag, and had exactly one line without it.
+	mine: boolean;
+	involved: boolean;
+	trailing: boolean;
+	stance: Stance;
+};
+
+export type Frame =
+	| GameFrame
+	| PerformanceFrame
+	| SummaryFrame
+	| StandingsFrame;
 
 const num = (facts: SocialEvent["facts"], key: string): number => {
 	const value = facts[key];
@@ -252,6 +294,52 @@ export const frameFor = (
 			opponent: str(f, "opponentAbbrev"),
 			huge: pts >= 40 || f.tripleDouble === true,
 			stance,
+		};
+	}
+
+	if (
+		(event.type === "standings" || f.series === true) &&
+		typeof f.tid === "number"
+	) {
+		const side = account.personality.loyaltyTid ?? account.tid;
+		const mine = side === f.tid;
+		return {
+			kind: "standings",
+			team: str(f, "teamName"),
+			nick: str(f, "teamNick") || str(f, "teamName"),
+			abbrev: str(f, "abbrev"),
+			won: num(f, "won"),
+			lost: num(f, "lost"),
+			rank: num(f, "rank"),
+			gamesBack: num(f, "gamesBack"),
+			streak: num(f, "streak"),
+			hot: f.hot === true,
+			cold: f.cold === true,
+			first: f.first === true,
+			worst: f.worst === true,
+			race: f.race === true,
+			series: f.series === true,
+			lead: num(f, "lead"),
+			behind: num(f, "behind"),
+			clinching: f.clinching === true,
+			tied: f.tied === true,
+			rival: str(f, "rivalName"),
+			rivalNick: str(f, "rivalNick") || str(f, "rivalName"),
+			rivalAbbrev: str(f, "rivalAbbrev"),
+			rivalWon: num(f, "rivalWon"),
+			rivalLost: num(f, "rivalLost"),
+			mine,
+			involved: mine || (side !== undefined && side === num(f, "rivalTid")),
+			trailing: !mine && side !== undefined && side === num(f, "rivalTid"),
+			// A fan of the team in question is "for" it; a fan of the team it
+			// is racing is "against". Everyone else is watching.
+			stance: mine
+				? f.cold === true || f.worst === true
+					? "against"
+					: "for"
+				: side !== undefined && side === num(f, "rivalTid")
+					? "against"
+					: "neutral",
 		};
 	}
 
@@ -2006,6 +2094,62 @@ const REPLY_TEMPLATES: Template<any>[] = [
 		text: () => `Watching this one closely.`,
 	},
 
+	// THE TAIL. On a busy night the day's duplicate check takes the good
+	// lines first, and whoever comes last falls through to whatever is left -
+	// so if what is left is one catch-all, every thread on every busy night
+	// ends with the same word. Measured: three accounts a month all answering
+	// "Fair." So the tail is wide, and every line in it is a different way of
+	// saying very little.
+	{
+		id: "re.tail.true",
+		when: (f: ReplyFrame) => !f.quote,
+		text: () => `True.`,
+	},
+	{
+		id: "re.tail.suppose",
+		when: (f: ReplyFrame) => !f.quote,
+		text: () => `Suppose so.`,
+	},
+	{
+		id: "re.tail.maybe",
+		when: (f: ReplyFrame) => !f.quote,
+		text: () => `Maybe.`,
+	},
+	{
+		id: "re.tail.hardtosay",
+		when: (f: ReplyFrame) => !f.quote,
+		text: () => `Hard to say either way.`,
+	},
+	{
+		id: "re.tail.seen",
+		when: (f: ReplyFrame) => !f.quote,
+		text: () => `Seen it.`,
+	},
+	{
+		id: "re.tail.point",
+		when: (f: ReplyFrame) => !f.quote,
+		text: () => `You have a point.`,
+	},
+	{
+		id: "re.tail.notsure",
+		when: (f: ReplyFrame) => !f.quote,
+		text: () => `Not sure about that one.`,
+	},
+	{
+		id: "re.tail.wewill",
+		when: (f: ReplyFrame) => !f.quote,
+		text: () => `We will find out.`,
+	},
+	{
+		id: "re.tail.reading",
+		when: (f: ReplyFrame) => !f.quote,
+		text: (f: ReplyFrame) => `Reading this one twice, ${f.parentHandle}.`,
+	},
+	{
+		id: "re.tail.enough",
+		when: (f: ReplyFrame) => !f.quote,
+		text: () => `Good enough for me.`,
+	},
 	// The catch-all, so a thread is never left dangling for want of a line.
 	{
 		id: "re.neutral",
@@ -2023,6 +2167,7 @@ export const writeReplyDetailed = ({
 	pool,
 	rng,
 	avoid,
+	staleTemplates,
 }: {
 	account: ResolvedSocialAccount;
 	parent: ResolvedSocialAccount;
@@ -2032,6 +2177,8 @@ export const writeReplyDetailed = ({
 	pool: PhrasePool;
 	rng: () => number;
 	avoid?: AvoidFn;
+	// Template ids this account used recently.
+	staleTemplates?: ReadonlySet<string>;
 }): WrittenPost | undefined => {
 	const subject = frameFor(account, event);
 	if (!subject) {
@@ -2067,6 +2214,7 @@ export const writeReplyDetailed = ({
 		rng,
 		ledgerKey: frame.quote ? "tmpl:quote" : "tmpl:reply",
 		avoid,
+		staleTemplates,
 	});
 };
 
@@ -2468,6 +2616,7 @@ export const applyVoice = ({
 	rng,
 	positive,
 	quiet = false,
+	onTopic = true,
 }: {
 	text: string;
 	personality: SocialPersonality;
@@ -2479,6 +2628,9 @@ export const applyVoice = ({
 	positive: boolean | undefined;
 	// No decoration at all - see Template.quiet.
 	quiet?: boolean;
+	// Whether this post is about the account's own team, which is the only
+	// time its team hashtag makes sense.
+	onTopic?: boolean;
 }): string => {
 	let out = text;
 	const { tone } = personality;
@@ -2538,7 +2690,14 @@ export const applyVoice = ({
 		out = out.endsWith(".") ? `${out.slice(0, -1)}!` : `${out}!`;
 	}
 
-	if (quirks.hashtag !== undefined && !quiet && rng() < quirks.hashtagRate) {
+	// A team hashtag belongs on a post about that team. A Miami beat writer
+	// signing a note about a Dallas series "#MIA" is the machine showing.
+	if (
+		quirks.hashtag !== undefined &&
+		!quiet &&
+		onTopic &&
+		rng() < quirks.hashtagRate
+	) {
 		out = `${out} ${quirks.hashtag}`;
 	}
 
@@ -2565,6 +2724,335 @@ export const applyVoice = ({
 // on what happened is what stops a player narrating his own box score in the
 // third person, and it is why the player banks are separate files' worth of
 // lines rather than extra tones on the reporter banks.
+// THE SEASON, TALKED ABOUT. Every line here names a real number the event
+// carries - a record, a streak, a games-back - because "they are rolling" with
+// nothing behind it is the emptiest thing an account can post.
+const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
+	// A run.
+	{
+		id: "st.hot.wire",
+		tones: ["wire", "beat", "wonk"],
+		when: (f) => f.hot,
+		text: (f) =>
+			`${f.team} have won ${f.streak} in a row. They are ${f.won}-${f.lost}.`,
+	},
+	{
+		id: "st.hot.short",
+		tones: ["wire", "beat"],
+		when: (f) => f.hot,
+		text: (f) =>
+			`${f.streak} straight for ${f.abbrev}, now ${f.won}-${f.lost}.`,
+	},
+	{
+		id: "st.hot.mine",
+		tones: ["hype", "unhinged", "corporate"],
+		when: (f) => f.hot && f.mine,
+		mood: "up",
+		text: (f) => `${f.streak} in a row. Nobody wants to see us right now.`,
+	},
+	{
+		id: "st.hot.mine.two",
+		tones: ["hype", "unhinged"],
+		when: (f) => f.hot && f.mine,
+		mood: "up",
+		text: (f) =>
+			`${f.won}-${f.lost}. Say the ${f.nick} are not for real again.`,
+	},
+	{
+		id: "st.hot.doom",
+		tones: ["doom", "snark"],
+		when: (f) => f.hot && f.mine,
+		text: (f) =>
+			`${f.streak} straight and I am still waiting for the other shoe.`,
+	},
+	{
+		id: "st.hot.other",
+		tones: ["snark", "doom", "wonk"],
+		when: (f) => f.hot && !f.mine,
+		text: (f) =>
+			`${f.nick} have won ${f.streak} in a row. Cool. Great. Love it.`,
+	},
+	{
+		id: "st.hot.respect",
+		tones: ["beat", "wonk", "wire"],
+		when: (f) => f.hot && !f.mine,
+		text: (f) =>
+			`Whatever the ${f.nick} are doing, ${f.streak} in a row says it is working.`,
+	},
+
+	// A collapse.
+	{
+		id: "st.cold.wire",
+		tones: ["wire", "beat", "wonk"],
+		when: (f) => f.cold,
+		text: (f) =>
+			`${f.team} have lost ${f.streak} straight. They fall to ${f.won}-${f.lost}.`,
+	},
+	{
+		id: "st.cold.short",
+		tones: ["wire", "beat"],
+		when: (f) => f.cold,
+		text: (f) =>
+			`${f.abbrev} drop their ${f.streak}th in a row. ${f.won}-${f.lost}.`,
+	},
+	{
+		id: "st.cold.mine",
+		tones: ["doom", "snark", "unhinged"],
+		when: (f) => f.cold && f.mine,
+		mood: "down",
+		text: (f) => `${f.streak} in a row. ${f.won}-${f.lost}. I am not okay.`,
+	},
+	{
+		id: "st.cold.mine.two",
+		tones: ["doom", "snark"],
+		when: (f) => f.cold && f.mine,
+		mood: "down",
+		text: (f) => `Losing ${f.streak} straight takes real commitment.`,
+	},
+	{
+		id: "st.cold.hope",
+		tones: ["hype", "corporate"],
+		when: (f) => f.cold && f.mine,
+		mood: "up",
+		text: (f) => `${f.won}-${f.lost} and I am not going anywhere. It turns.`,
+	},
+	{
+		id: "st.cold.other",
+		tones: ["snark", "unhinged"],
+		when: (f) => f.cold && !f.mine,
+		text: (f) => `Somebody check on the ${f.nick}. ${f.streak} in a row.`,
+	},
+	{
+		id: "st.cold.wonk",
+		tones: ["wonk", "beat"],
+		when: (f) => f.cold,
+		text: (f) =>
+			`${f.streak} straight losses is not variance any more. ${f.won}-${f.lost}.`,
+	},
+
+	// The top of the league.
+	{
+		id: "st.first.wire",
+		tones: ["wire", "beat", "wonk"],
+		when: (f) => f.first,
+		text: (f) => `Best record in the league: ${f.team}, ${f.won}-${f.lost}.`,
+	},
+	{
+		id: "st.first.mine",
+		tones: ["hype", "corporate", "unhinged"],
+		when: (f) => f.first && f.mine,
+		mood: "up",
+		text: (f) => `${f.won}-${f.lost}. Best in the league. That is the post.`,
+	},
+	{
+		id: "st.first.doom",
+		tones: ["doom", "snark"],
+		when: (f) => f.first && f.mine,
+		text: () => `First place in February means nothing and you all know it.`,
+	},
+	{
+		id: "st.first.other",
+		tones: ["snark", "doom", "wonk"],
+		when: (f) => f.first && !f.mine,
+		text: (f) =>
+			`${f.nick} at ${f.won}-${f.lost} and everyone has decided it is over.`,
+	},
+
+	// The bottom.
+	{
+		id: "st.worst.wire",
+		tones: ["wire", "beat", "wonk"],
+		when: (f) => f.worst,
+		text: (f) =>
+			`${f.team} own the league's worst record at ${f.won}-${f.lost}.`,
+	},
+	{
+		id: "st.worst.mine",
+		tones: ["doom", "snark", "unhinged"],
+		when: (f) => f.worst && f.mine,
+		mood: "down",
+		text: (f) =>
+			`${f.won}-${f.lost}. Worst in the league. At least the pick will be good.`,
+	},
+	{
+		id: "st.worst.hype",
+		tones: ["hype", "corporate"],
+		when: (f) => f.worst && f.mine,
+		text: (f) => `${f.won}-${f.lost} is not who we are. Long way to go.`,
+	},
+
+	// A playoff series, which is the only thing anybody talks about once the
+	// regular-season table has stopped moving.
+	{
+		id: "st.series.wire",
+		tones: ["wire", "beat", "wonk"],
+		when: (f) => f.series && !f.tied,
+		text: (f) => `${f.team} lead the ${f.rivalNick} ${f.lead}-${f.behind}.`,
+	},
+	{
+		id: "st.series.tied",
+		tones: ["wire", "beat", "wonk", "corporate"],
+		when: (f) => f.series && f.tied,
+		text: (f) =>
+			`${f.team} and the ${f.rivalNick} are level at ${f.lead}-${f.behind}.`,
+	},
+	{
+		id: "st.series.clinch",
+		tones: ["wire", "beat", "hype", "corporate"],
+		when: (f) => f.series && f.clinching,
+		text: (f) =>
+			`${f.rival} are one loss from the end of their season. ${f.lead}-${f.behind}.`,
+	},
+	{
+		id: "st.series.mine.up",
+		tones: ["hype", "unhinged", "corporate"],
+		when: (f) => f.series && f.mine && !f.tied,
+		mood: "up",
+		text: (f) => `${f.lead}-${f.behind}. Close it out.`,
+	},
+	{
+		id: "st.series.mine.doom",
+		tones: ["doom", "snark"],
+		when: (f) => f.series && f.mine && !f.tied,
+		text: (f) => `${f.lead}-${f.behind} means nothing. We have blown worse.`,
+	},
+	{
+		id: "st.series.against",
+		tones: ["doom", "snark", "unhinged"],
+		when: (f) => f.series && f.trailing,
+		mood: "down",
+		text: (f) => `Down ${f.behind}-${f.lead} to the ${f.nick}. Wonderful.`,
+	},
+	{
+		id: "st.series.against.doom2",
+		tones: ["doom", "snark"],
+		when: (f) => f.series && f.trailing,
+		mood: "down",
+		text: (f) =>
+			`${f.behind}-${f.lead}. We are not beating the ${f.nick} four times.`,
+	},
+	{
+		id: "st.series.against.doom3",
+		tones: ["doom", "unhinged"],
+		when: (f) => f.series && f.trailing && f.clinching,
+		mood: "down",
+		text: () => `One more and the season is over. I am going to be sick.`,
+	},
+	{
+		id: "st.series.against.quiet",
+		tones: ["wire", "beat", "wonk", "corporate"],
+		when: (f) => f.series && f.trailing,
+		text: (f) => `Facing a ${f.lead}-${f.behind} hole against the ${f.nick}.`,
+	},
+	{
+		id: "st.series.against.wonk",
+		tones: ["wonk", "beat"],
+		when: (f) => f.series && f.trailing,
+		text: (f) =>
+			`Nobody has to tell me what ${f.behind}-${f.lead} means. I can read.`,
+	},
+	{
+		id: "st.series.against.tied",
+		tones: ["hype", "corporate", "beat"],
+		when: (f) => f.series && f.trailing && f.tied,
+		mood: "up",
+		text: (f) => `${f.behind}-${f.lead}. Best of three now. We are fine.`,
+	},
+	{
+		id: "st.series.against.home",
+		tones: ["hype", "unhinged", "corporate"],
+		when: (f) => f.series && f.trailing && !f.clinching,
+		mood: "up",
+		text: (f) => `${f.behind}-${f.lead} and I have seen worse turned around.`,
+	},
+	{
+		id: "st.series.against.snark",
+		tones: ["snark", "unhinged"],
+		when: (f) => f.series && f.trailing,
+		text: (f) =>
+			`Down ${f.behind}-${f.lead}. At least the flights home are short.`,
+	},
+	{
+		id: "st.series.against.fight",
+		tones: ["hype", "unhinged", "corporate"],
+		when: (f) => f.series && f.trailing,
+		mood: "up",
+		text: (f) =>
+			`${f.behind}-${f.lead}. Series is not over until somebody wins four.`,
+	},
+	{
+		id: "st.series.neutral",
+		tones: ["snark", "wonk", "beat"],
+		when: (f) => f.series && f.stance === "neutral" && f.lead - f.behind <= 1,
+		text: (f) =>
+			`${f.abbrev} up ${f.lead}-${f.behind} and this series has been better than anyone expected.`,
+	},
+	{
+		id: "st.series.onesided",
+		tones: ["snark", "wonk", "beat", "wire"],
+		when: (f) => f.series && f.lead - f.behind >= 2,
+		text: (f) =>
+			`${f.lead}-${f.behind}. The ${f.rivalNick} have not been competitive in this series.`,
+	},
+	{
+		id: "st.series.neutral.two",
+		tones: ["wonk", "beat", "wire"],
+		when: (f) => f.series && f.stance === "neutral",
+		text: (f) =>
+			`${f.abbrev} ${f.lead}, ${f.rivalAbbrev} ${f.behind} in the series.`,
+	},
+	{
+		id: "st.series.neutral.three",
+		tones: ["snark", "unhinged", "hype"],
+		when: (f) => f.series && f.stance === "neutral",
+		text: (f) =>
+			`Whatever you think of the ${f.nick}, ${f.lead}-${f.behind} is ${f.lead}-${f.behind}.`,
+	},
+	{
+		id: "st.series.watch",
+		tones: ["wonk", "beat", "wire"],
+		when: (f) => f.series && f.clinching,
+		text: (f) => `Elimination game next for the ${f.rivalNick}.`,
+	},
+
+	// The race.
+	{
+		id: "st.race.wire",
+		tones: ["wire", "beat", "wonk"],
+		when: (f) => f.race,
+		text: (f) =>
+			`${f.team} at ${f.won}-${f.lost}, ${f.rival} at ${f.rivalWon}-${f.rivalLost}. That is the cut line.`,
+	},
+	{
+		id: "st.race.wonk",
+		tones: ["wonk", "beat"],
+		when: (f) => f.race,
+		text: (f) =>
+			`${f.gamesBack} games separate ${f.abbrev} and the ${f.rivalNick}. Every night counts now.`,
+	},
+	{
+		id: "st.race.mine",
+		tones: ["hype", "unhinged", "corporate"],
+		when: (f) => f.race && f.mine,
+		mood: "up",
+		text: (f) =>
+			`${f.won}-${f.lost}. We control this. Nobody is catching us from here.`,
+	},
+	{
+		id: "st.race.doom",
+		tones: ["doom", "snark"],
+		when: (f) => f.race,
+		text: (f) => `We have watched the ${f.nick} lose this exact race before.`,
+	},
+	{
+		id: "st.race.watch",
+		tones: ["snark", "unhinged", "hype"],
+		when: (f) => f.race && !f.mine,
+		text: (f) =>
+			`${f.abbrev} and the ${f.rivalNick} fighting over a first-round exit.`,
+	},
+];
+
 // A FRANCHISE ON A NIGHT IT LOST. This used to be an empty bank, which meant
 // the club account simply vanished from the feed on half of its own games.
 // Real club accounts do post - they post four flat words and no emoji, which
@@ -2630,6 +3118,9 @@ const bankFor = (frame: Frame): Template<any>[] => {
 		}
 		return PERFORMANCE_TEMPLATES;
 	}
+	if (frame.kind === "standings") {
+		return STANDINGS_TEMPLATES;
+	}
 	if (frame.aboutMe) {
 		return SELF_SUMMARY_TEMPLATES;
 	}
@@ -2691,6 +3182,7 @@ const writeFirstAcceptable = ({
 	rng,
 	ledgerKey,
 	avoid,
+	staleTemplates,
 }: {
 	eligible: Template<any>[];
 	frame: Frame | ReplyFrame;
@@ -2699,40 +3191,69 @@ const writeFirstAcceptable = ({
 	rng: () => number;
 	ledgerKey: string;
 	avoid: AvoidFn | undefined;
+	staleTemplates: ReadonlySet<string> | undefined;
 }): WrittenPost | undefined => {
+	// SHAPE MEMORY. Refusing a repeated sentence is not enough on its own: an
+	// account that answered every series with "Down 1-3 to the Curses.
+	// Wonderful." and then "Down 0-3 to the Curses. Wonderful." said two
+	// different sentences and the same thing. So templates this account
+	// reached for recently go to the back of the queue - deprioritised rather
+	// than forbidden, because a thin bank must still be able to speak.
+	const freshIds = new Set(
+		eligible
+			.filter(
+				(template) =>
+					staleTemplates === undefined || !staleTemplates.has(template.id),
+			)
+			.map((template) => template.id),
+	);
 	const remaining = [...eligible];
 	const { tone } = account.personality;
 	const positive =
 		"kind" in frame
 			? positivity(frame as Frame)
 			: positivity((frame as ReplyFrame).subject);
+	const subject =
+		"kind" in frame ? (frame as Frame) : (frame as ReplyFrame).subject;
+	const onTopic = subject.stance !== "neutral";
 
 	while (remaining.length > 0) {
-		const ids = remaining.map((template) => template.id);
+		// Draw from the templates this account has NOT reached for lately
+		// while any are left, and fall back to the rest only once they run
+		// out, so a thin bank can still speak.
+		const unused = remaining.filter((template) => freshIds.has(template.id));
+		const candidates = unused.length > 0 ? unused : remaining;
+		const ids = candidates.map((template) => template.id);
 		const chosenId = pool.takeUnclaimed(rng, ids, ledgerKey);
-		const index = remaining.findIndex((template) => template.id === chosenId);
-		const chosen = remaining[index === -1 ? 0 : index]!;
-		remaining.splice(index === -1 ? 0 : index, 1);
+		const chosen =
+			candidates.find((template) => template.id === chosenId) ?? candidates[0]!;
+		remaining.splice(remaining.indexOf(chosen), 1);
 
-		let core = chosen.text(frame as any);
+		// The line as the template wrote it, BEFORE nicknames. This is what
+		// memory and the day's duplicate check compare on: "14 straight for
+		// the Cleveland Curses" and "14 straight for the Curses" are the same
+		// post, and letting the nickname pass judged them as different.
+		const core = chosen.text(frame as any);
+		let spoken = core;
 		if (
 			"kind" in frame &&
 			frame.kind === "game" &&
 			CASUAL_TONES.has(tone) &&
 			rng() < 0.55
 		) {
-			core = casualNames(core, frame);
+			spoken = casualNames(core, frame);
 		}
 
 		for (let attempt = 0; attempt < DECORATION_TRIES; attempt++) {
 			const text = applyVoice({
-				text: core,
+				text: spoken,
 				personality: account.personality,
 				quirks: account.quirks,
 				pool,
 				rng,
 				positive: chosen.mood === undefined ? positive : chosen.mood === "up",
 				quiet: chosen.quiet === true,
+				onTopic,
 			});
 			if (avoid === undefined || !avoid(core, text)) {
 				return { text, core, templateId: chosen.id };
@@ -2752,12 +3273,15 @@ export const writePostDetailed = ({
 	pool,
 	rng,
 	avoid,
+	staleTemplates,
 }: {
 	account: ResolvedSocialAccount;
 	event: SocialEvent;
 	pool: PhrasePool;
 	rng: () => number;
 	avoid?: AvoidFn;
+	// Template ids this account used recently.
+	staleTemplates?: ReadonlySet<string>;
 }): WrittenPost | undefined => {
 	const frame = frameFor(account, event);
 	if (!frame) {
@@ -2785,6 +3309,7 @@ export const writePostDetailed = ({
 		rng,
 		ledgerKey: `tmpl:${frame.kind}`,
 		avoid,
+		staleTemplates,
 	});
 };
 
