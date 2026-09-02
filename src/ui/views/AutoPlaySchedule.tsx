@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
+import { confirm } from "../util/confirm.tsx";
 import { useLocal } from "../util/local.ts";
 import { toWorker } from "../util/toWorker.ts";
 import {
@@ -447,16 +448,27 @@ const AutoPlaySchedule = () => {
 						<button
 							className="btn btn-light-bordered"
 							disabled={!eligible}
-							onClick={() => void autoPlayScheduler.runNow("day")}
+							onClick={() => {
+								void (async () => {
+									// Off-schedule and irreversible: this sims the shared
+									// league for everyone, right now, from a button that
+									// sits next to Start and Stop.
+									const proceed = await confirm(
+										"This sims a day for the whole league right now, ahead of the schedule.",
+										{
+											title: "Sim a day now?",
+											danger: true,
+											okText: "Sim day",
+											cancelText: "Cancel",
+										},
+									);
+									if (proceed) {
+										await autoPlayScheduler.runNow("day");
+									}
+								})();
+							}}
 						>
 							Sim day now
-						</button>
-						<button
-							className="btn btn-light-bordered"
-							disabled={!eligible}
-							onClick={() => void autoPlayScheduler.runNow("week")}
-						>
-							Sim week now
 						</button>
 						{eligible && hasEnabledRules && !settings.enabled ? (
 							<button
