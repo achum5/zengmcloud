@@ -1,6 +1,8 @@
 import { assert, describe, test } from "vitest";
 import {
+	createFollowerHold,
 	decideFollowAction,
+	type FollowerHoldPatch,
 	MAX_JOIN_ATTEMPTS,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
@@ -152,5 +154,108 @@ describe("decideFollowAction", () => {
 			decideFollowAction(finished, { startedAt: 1000, left: true }, true),
 			"ignore",
 		);
+	});
+});
+
+describe("createFollowerHold", () => {
+	const setup = (ownLiveSimUnderway: () => boolean = () => false) => {
+		const pushes: FollowerHoldPatch[] = [];
+		let painted = 0;
+		const hold = createFollowerHold({
+			push: (patch) => {
+				pushes.push(patch);
+			},
+			ownLiveSimUnderway,
+			afterRelease: () => {
+				painted += 1;
+			},
+		});
+		return { hold, pushes, painted: () => painted };
+	};
+
+	const RELEASED = { mpLiveBroadcast: undefined, liveGameInProgress: false };
+
+	test("joining takes the hold once, however many times the join retries", () => {
+		const { hold, pushes } = setup();
+		hold.take();
+		hold.take();
+		hold.take();
+		assert.strictEqual(hold.isHeld(), true);
+		assert.deepStrictEqual(pushes, [{ liveGameInProgress: true }]);
+	});
+
+	test("a follow ending releases the hold and paints what was held back", () => {
+		const { hold, pushes, painted } = setup();
+		hold.take();
+		assert.strictEqual(hold.release(), "released");
+		assert.strictEqual(hold.isHeld(), false);
+		assert.deepStrictEqual(pushes.at(-1), RELEASED);
+		assert.strictEqual(painted(), 1);
+	});
+
+	test("a release with nothing held still clears the flag - a hold must never stick", () => {
+		// The broadcast ended after this device walked out (leaving released the
+		// hold, the record stayed so Leave would stick). Releasing again costs
+		// nothing and guarantees no path can strand the header on.
+		const { hold, pushes, painted } = setup();
+		assert.strictEqual(hold.release(), "released");
+		assert.deepStrictEqual(pushes, [RELEASED]);
+		assert.strictEqual(painted(), 1);
+	});
+
+	test("the followed game going final leaves the release to the page's own report", () => {
+		const { hold, pushes } = setup();
+		hold.take();
+		hold.markOver();
+		assert.strictEqual(hold.isHeld(), false);
+		// Nothing pushed here: onLiveSimOver from the live game page does it.
+		assert.deepStrictEqual(pushes, [{ liveGameInProgress: true }]);
+	});
+
+	test("a stale follow never releases the hold this device's own live sim owns", () => {
+		// The field failure: pulled into a league-mate's live sim, left it to
+		// watch your own game, and their broadcast ended while yours was on Q3.
+		// The record of their broadcast was still there, and its ending used to
+		// drop liveGameInProgress - final score in the header, mid-game.
+		let ownSim = false;
+		const { hold, pushes, painted } = setup(() => ownSim);
+		hold.take();
+		hold.release(); // walked out: released, as it should be
+		assert.deepStrictEqual(pushes, [{ liveGameInProgress: true }, RELEASED]);
+
+		ownSim = true; // "Watch my game"
+		assert.strictEqual(hold.release(), "kept-for-own-sim");
+		assert.strictEqual(pushes.length, 2, "nothing pushed to the UI");
+		assert.strictEqual(painted(), 1, "nothing painted behind the playback");
+		assert.strictEqual(hold.isHeld(), false);
+	});
+
+	test("a hold still held when the own sim starts drops its broadcast state, not the flag", () => {
+		let ownSim = false;
+		const { hold, pushes, painted } = setup(() => ownSim);
+		hold.take();
+		ownSim = true;
+		assert.strictEqual(hold.release(), "kept-for-own-sim");
+		assert.deepStrictEqual(pushes.at(-1), { mpLiveBroadcast: undefined });
+		assert.strictEqual(painted(), 0);
+		assert.strictEqual(hold.isHeld(), false);
+	});
+
+	test("once the own sim is over, the next follow ending releases as normal", () => {
+		let ownSim = true;
+		const { hold, pushes, painted } = setup(() => ownSim);
+		assert.strictEqual(hold.release(), "kept-for-own-sim");
+		ownSim = false;
+		assert.strictEqual(hold.release(), "released");
+		assert.deepStrictEqual(pushes, [RELEASED]);
+		assert.strictEqual(painted(), 1);
+	});
+
+	test("a session boundary forgets the hold without touching the UI", () => {
+		const { hold, pushes } = setup();
+		hold.take();
+		hold.reset();
+		assert.strictEqual(hold.isHeld(), false);
+		assert.deepStrictEqual(pushes, [{ liveGameInProgress: true }]);
 	});
 });

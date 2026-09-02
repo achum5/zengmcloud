@@ -31,9 +31,11 @@ import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 import { setLiveWatchGate } from "./liveWatchGate.ts";
 import {
+	createFollowerHold,
 	decideFollowAction,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
+import { isLiveSimNotificationHoldActive } from "./liveSimNotificationHold.ts";
 import {
 	readLocalLeagueId,
 	resolveLeagueIdentity,
@@ -460,21 +462,41 @@ let followedBroadcast:
 	  }
 	| undefined;
 
-// Whether WE (as a follower) froze the header score ticker (liveGameInProgress)
-// for a broadcast. Tracked separately from followedBroadcast so that if we bail
-// out of a follow attempt (payload not ready, error) - which clears
-// followedBroadcast - the freeze is still guaranteed to get released. Otherwise
-// the "Live game in progress" banner sticks on forever.
-let followerFroze = false;
+// A live sim of this device's OWN game is underway: requested, being simmed,
+// or playing back. The gid is only known once the game is written, so the
+// seconds before that - the fence claim, the sim itself - are covered by the
+// notification hold, which play.ts arms at the click and onLiveSimOver
+// releases with everything else. What this answers: never pull this device
+// into somebody else's broadcast, and never let a follow ending release the
+// spoiler hold that this sim owns.
+const ownLiveSimUnderway = () =>
+	local.liveSimGid !== undefined || isLiveSimNotificationHoldActive();
 
-// Take the spoiler hold. Idempotent, so a retry that already holds it does not
-// re-push - and so the header can never be flashed on twice for one join.
-const freezeFollower = () => {
-	if (followerFroze) {
-		return;
+// Whether WE (as a follower) hold the header freeze (liveGameInProgress) for a
+// broadcast. Tracked separately from followedBroadcast so that if we bail out
+// of a follow attempt (payload not ready, error) - which clears
+// followedBroadcast - the freeze is still guaranteed to get released. Otherwise
+// the "Live game in progress" banner sticks on forever. See createFollowerHold
+// for the other owner of that flag, and why a follow ending must leave it be.
+const followerHold = createFollowerHold({
+	push: (patch) => {
+		void toUI("updateLocal", [patch]);
+	},
+	ownLiveSimUnderway,
+	// Anything that synced in during the playback repainted nothing (spoiler
+	// gate); now that the show is over, paint it all.
+	afterRelease: flushDeferredRefreshAfterLive,
+});
+
+// Release the hold this device took as a follower - if it is still the
+// follow's to release.
+const releaseFollowerHold = (how: string) => {
+	if (followerHold.release() === "kept-for-own-sim") {
+		syncDebugLog("live:release-kept-for-own-sim", {
+			how,
+			liveSimGid: local.liveSimGid,
+		});
 	}
-	followerFroze = true;
-	void toUI("updateLocal", [{ liveGameInProgress: true }]);
 };
 
 // Joins that failed to fetch a payload, per broadcast (keyed by startedAt).
@@ -503,14 +525,8 @@ const noteJoinFailure = (startedAt: number): number => {
 };
 
 const unfreezeFollower = () => {
-	if (followerFroze) {
-		followerFroze = false;
-		void toUI("updateLocal", [
-			{ mpLiveBroadcast: undefined, liveGameInProgress: false },
-		]);
-		// Anything that synced in during the playback repainted nothing (spoiler
-		// gate); now that the show is over, paint it all.
-		flushDeferredRefreshAfterLive();
+	if (followerHold.isHeld()) {
+		releaseFollowerHold("join-failed");
 	}
 };
 
@@ -519,7 +535,7 @@ const unfreezeFollower = () => {
 setLiveWatchGate(
 	() =>
 		(followedBroadcast !== undefined && !followedBroadcast.over) ||
-		followerFroze,
+		followerHold.isHeld(),
 );
 
 // The follower's live game page declared the playback over (final play reached,
@@ -538,7 +554,7 @@ export const markFollowedBroadcastOver = (gid?: number) => {
 		return;
 	}
 	followedBroadcast.over = true;
-	followerFroze = false;
+	followerHold.markOver();
 };
 
 // The followed broadcast's game payload, kept for the liveGame view to serve on
@@ -553,7 +569,7 @@ let followedBroadcastPayload:
 	| undefined;
 
 export const getFollowedBroadcastPayload = () =>
-	shouldServeFollowedPayload(followedBroadcast, local.liveSimGid !== undefined)
+	shouldServeFollowedPayload(followedBroadcast, ownLiveSimUnderway())
 		? followedBroadcastPayload
 		: undefined;
 
@@ -802,7 +818,7 @@ const followBroadcast = async (
 	// then fails is a visible flash; doing it on every retry is the flicker.
 	// A retry that SUCCEEDS still freezes - just below, before it navigates.
 	if ((joinFailures.get(meta.startedAt) ?? 0) === 0) {
-		freezeFollower();
+		followerHold.take();
 	}
 	try {
 		const serialized = await transport.fetchLiveBroadcastData?.(
@@ -836,7 +852,7 @@ const followBroadcast = async (
 		//
 		// A retry skipped the freeze above; take it now, before anything can
 		// paint the result behind the playback we are about to start.
-		freezeFollower();
+		followerHold.take();
 		await toUI("realtimeUpdate", [
 			["gameSim"],
 			helpers.leagueUrl(["live_game"]),
@@ -906,14 +922,10 @@ const handleLiveBroadcastMeta = async (
 	if (!meta || !meta.active || meta.expiresAt < Date.now()) {
 		roomBroadcastMeta = undefined;
 		setWatchablePill(undefined);
-		if (followedBroadcast || followerFroze) {
+		if (followedBroadcast || followerHold.isHeld()) {
 			followedBroadcast = undefined;
 			followedBroadcastPayload = undefined;
-			followerFroze = false;
-			void toUI("updateLocal", [
-				{ mpLiveBroadcast: undefined, liveGameInProgress: false },
-			]);
-			flushDeferredRefreshAfterLive();
+			releaseFollowerHold("broadcast-ended");
 		}
 		return;
 	}
@@ -926,7 +938,7 @@ const handleLiveBroadcastMeta = async (
 	const action = decideFollowAction(
 		meta,
 		followedBroadcast,
-		local.liveSimGid !== undefined,
+		ownLiveSimUnderway(),
 		joinFailures.get(meta.startedAt) ?? 0,
 	);
 	if (action === "join") {
@@ -961,11 +973,7 @@ export const leaveLiveBroadcast = (gid?: number) => {
 	}
 	followedBroadcast.left = true;
 	followedBroadcast.over = true;
-	followerFroze = false;
-	void toUI("updateLocal", [
-		{ mpLiveBroadcast: undefined, liveGameInProgress: false },
-	]);
-	flushDeferredRefreshAfterLive();
+	releaseFollowerHold("left");
 	if (
 		roomBroadcastMeta &&
 		roomBroadcastMeta.active &&
@@ -996,7 +1004,7 @@ export const watchLiveBroadcast = async (): Promise<boolean> => {
 		followedBroadcast.left = false;
 		// Back under the spoiler hold, exactly as a fresh join sets it: the rest
 		// of the game has not happened yet as far as this screen is concerned.
-		freezeFollower();
+		followerHold.take();
 		await toUI("realtimeUpdate", [
 			["gameSim"],
 			helpers.leagueUrl(["live_game"]),
@@ -1030,11 +1038,7 @@ const checkLiveBroadcastLease = () => {
 	if (followedBroadcast && Date.now() > followedBroadcast.expiresAt) {
 		followedBroadcast = undefined;
 		followedBroadcastPayload = undefined;
-		followerFroze = false;
-		void toUI("updateLocal", [
-			{ mpLiveBroadcast: undefined, liveGameInProgress: false },
-		]);
-		flushDeferredRefreshAfterLive();
+		releaseFollowerHold("lease-expired");
 	}
 };
 
@@ -2304,7 +2308,7 @@ const doConnectSharedLeague = async ({
 	// ignored (handled locally).
 	activeBroadcast = undefined;
 	followedBroadcast = undefined;
-	followerFroze = false;
+	followerHold.reset();
 	roomBroadcastMeta = undefined;
 	joinFailures.clear();
 	liveBroadcastUnsub = transport.subscribeLiveBroadcast?.((meta) => {
@@ -2411,7 +2415,7 @@ export const teardownSharedLeague = async ({
 	activeBroadcast = undefined;
 	followedBroadcast = undefined;
 	followedBroadcastPayload = undefined;
-	followerFroze = false;
+	followerHold.reset();
 	roomBroadcastMeta = undefined;
 	joinFailures.clear();
 	setWatchablePill(undefined);

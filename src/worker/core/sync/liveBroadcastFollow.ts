@@ -93,3 +93,86 @@ export const decideFollowAction = (
 	}
 	return "cursor";
 };
+
+// THE FOLLOWER'S HALF OF THE SPOILER HOLD.
+//
+// liveGameInProgress - the flag that freezes the score bar and the ticker and
+// hides everything a result could leak through - has two owners. A live sim of
+// this device's OWN game takes it before the game is written (play.ts) and
+// releases it when the playback ends (onLiveSimOver). A broadcast this device
+// is watching takes it on join and releases it when the follow ends - here.
+//
+// The two overlap, because a follow record outlives its hold on purpose:
+// walking out of a broadcast has to stick against heartbeats arriving three
+// times a second, so the record stays until that broadcast is gone - and by
+// then this device may be mid-way through a live sim of its own. Every way a
+// follow ended used to release the flag on the strength of the record alone,
+// which is how a league-mate's broadcast ending dropped the hold in the middle
+// of YOUR game: pulled into their sim, left it to watch your own, and the
+// moment theirs went final your score was in the header at Q3 - on every
+// device that had done the same, at once.
+//
+// So a follow ending releases the flag only while no local live sim owns it.
+// Otherwise the follow is forgotten and the flag is left exactly as it is; the
+// local sim's own end releases it.
+export type FollowerHoldPatch =
+	| { liveGameInProgress: true }
+	| { mpLiveBroadcast: undefined }
+	| { mpLiveBroadcast: undefined; liveGameInProgress: false };
+
+export const createFollowerHold = ({
+	push,
+	ownLiveSimUnderway,
+	afterRelease,
+}: {
+	// Push a patch to the UI's local state.
+	push: (patch: FollowerHoldPatch) => void;
+	// A live sim of this device's own game is underway: requested, being
+	// simmed, or playing back.
+	ownLiveSimUnderway: () => boolean;
+	// Paint whatever remote applies held back while the hold was up.
+	afterRelease: () => void;
+}) => {
+	let held = false;
+	return {
+		isHeld: () => held,
+		// Take the hold for a broadcast this device is joining. Idempotent: a
+		// retried join neither re-pushes nor flashes the header a second time.
+		take: () => {
+			if (held) {
+				return;
+			}
+			held = true;
+			push({ liveGameInProgress: true });
+		},
+		// The followed game went final on this screen. The page reports that
+		// itself (onLiveSimOver), and that report releases the flag; only the
+		// bookkeeping happens here.
+		markOver: () => {
+			held = false;
+		},
+		// The follow is over: the broadcast ended or expired, or this device
+		// walked out of it. Pushed whether or not this follow still held the
+		// flag - a hold that somehow outlived its follow must never stick -
+		// EXCEPT while a local live sim owns it.
+		release: (): "released" | "kept-for-own-sim" => {
+			const wasHeld = held;
+			held = false;
+			if (ownLiveSimUnderway()) {
+				if (wasHeld) {
+					// The broadcast state this follow put on screen must not outlive
+					// it; the flag, though, is the local sim's now.
+					push({ mpLiveBroadcast: undefined });
+				}
+				return "kept-for-own-sim";
+			}
+			push({ mpLiveBroadcast: undefined, liveGameInProgress: false });
+			afterRelease();
+			return "released";
+		},
+		// A session boundary (connect, teardown): the UI is reset separately.
+		reset: () => {
+			held = false;
+		},
+	};
+};
