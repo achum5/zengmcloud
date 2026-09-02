@@ -3,17 +3,30 @@
 	<head>
 		<meta charset="utf-8" />
 		<title>GAME_NAME</title>
-		<!-- minimum-scale was added to stop iOS expanding the layout viewport past
-		the screen (a field device sat at 518px on a 440pt screen, scale 0.85 =
-		440/518, for days). IT DID NOT WORK: the very next report, from the build
-		that added it, came back at 518 and 0.85 again - a scale below the stated
-		minimum, so iOS is simply not applying the constraint to this. The
-		expansion is a page scale, not a user zoom, and minimum-scale does not
-		bound it. Left in place because it costs nothing, but nothing depends on
-		it and no fix should assume it works. -->
+		<!-- THE VIEWPORT, AND WHAT IS KNOWN ABOUT IT.
+
+		A field iPhone (440x956pt, standalone) sits for days with innerWidth 518
+		and innerHeight 1052: a layout viewport computed at scale 0.85 (518 =
+		440/0.85; 1052 = (956 - 62pt status bar)/0.85). Taps measured through the
+		sticky touch probe put the REAL vertical scale at 1.02 - the page is drawn
+		one-to-one inside a layout viewport bigger than the glass, and
+		visualViewport.scale = 0.85 is stale. "Scrolling" is then the visual
+		viewport panning inside the layout viewport; position:sticky pins to the
+		layout viewport, so the header pans off the top and the ticker sits at
+		layout y 1052 = screen y 1051, below a 956pt screen.
+
+		minimum-scale=1 was the first attempt and did not hold: the next report
+		came back at 0.85 regardless. Kept because it costs nothing.
+
+		shrink-to-fit=no is Apple's directive for exactly this expansion - Safari
+		widening the layout viewport to fit content that momentarily rendered
+		wider than the screen - and had not been tried. If it holds, the state
+		never forms. If it does not, stickyViewportReset.ts repairs the state
+		from inside the page by rewriting this tag, which is the one action that
+		makes WebKit recompute the layout viewport. -->
 		<meta
 			name="viewport"
-			content="width=device-width, initial-scale=1, minimum-scale=1"
+			content="width=device-width, initial-scale=1, minimum-scale=1, shrink-to-fit=no"
 		/>
 		<meta name="theme-color" content="#FF7F2A" />
 		<meta name="format-detection" content="telephone=no" />

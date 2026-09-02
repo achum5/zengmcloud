@@ -40,7 +40,18 @@
 
 import { PINNED_SELECTOR } from "./stickyHeaderPin.ts";
 import { probeSticky, recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
-import { recordTouchSample } from "./stickyTouchProbe.ts";
+import {
+	getTouchSamples,
+	recordTouchSample,
+	solveTouchMapping,
+} from "./stickyTouchProbe.ts";
+import {
+	isGhostViewport,
+	readViewport,
+	resetLayoutViewport,
+	viewportOversized,
+	watchViewportExpansion,
+} from "./stickyViewportReset.ts";
 import {
 	initVisualViewportHeader,
 	resyncStickyBarShifts,
@@ -598,6 +609,60 @@ const staticLift = (element: HTMLElement | null) => {
 	return ` lift=${Math.round(lift)}`;
 };
 
+// A log line about the viewport rather than about a bar. Same report, same
+// shape, so the next field paste shows the reset next to the detections it
+// answered.
+const viewportEvent = (kind: string, detail: string) => {
+	recordHeaderEvent({
+		kind: `viewport:${kind}`,
+		scrollY: Math.round(window.scrollY),
+		headerTop: Number.NaN,
+		detail: `${detail} ${viewportNote()}`,
+	});
+};
+
+const currentTouchScale = () => solveTouchMapping(getTouchSamples())?.scale;
+
+// THE ONE REPAIR THAT ACTS ON THE VIEWPORT. See stickyViewportReset.ts for
+// the finding this rests on. The automatic path needs the taps to confirm the
+// ghost, because a page the user really pinched looks the same to every
+// number except the measured one; the button is the user saying "broken" and
+// accepts the structural evidence. Throttled so a reset that does not take
+// cannot loop on every scroll.
+let lastAutoReset = Number.NEGATIVE_INFINITY;
+const AUTO_RESET_INTERVAL_MS = 60_000;
+
+const resetViewportIfGhost = async ({
+	manual,
+}: {
+	manual: boolean;
+}): Promise<boolean> => {
+	const reading = readViewport(currentTouchScale());
+	const convicted = manual
+		? viewportOversized(reading)
+		: isGhostViewport(reading);
+	if (!convicted) {
+		return false;
+	}
+	if (!manual) {
+		if (performance.now() - lastAutoReset < AUTO_RESET_INTERVAL_MS) {
+			return false;
+		}
+		lastAutoReset = performance.now();
+	}
+	const { before, after, applied } = await resetLayoutViewport();
+	const changed =
+		applied &&
+		(before.innerWidth !== after.innerWidth ||
+			before.innerHeight !== after.innerHeight ||
+			before.scale !== after.scale);
+	viewportEvent(
+		changed ? "reset" : "reset-noop",
+		`${manual ? "button" : "auto"} touchScale=${reading.touchScale ?? "-"} ${before.innerWidth}x${before.innerHeight}@${before.scale}->${after.innerWidth}x${after.innerHeight}@${after.scale}`,
+	);
+	return changed;
+};
+
 const note = (
 	bar: Bar,
 	element: HTMLElement | null,
@@ -761,6 +826,19 @@ const checkBar = async (bar: Bar, trigger: string) => {
 
 			if (!repairCanHelp({ probe })) {
 				note(bar, element, "unrepairable", `probe=${probeDetail}`);
+				// Nothing about the ELEMENT is wrong - which is exactly the
+				// ghost viewport's signature. If the taps confirm it, reset the
+				// viewport itself and re-measure; the bars follow on their own.
+				if (await resetViewportIfGhost({ manual: false })) {
+					resyncStickyBarShifts();
+					await nextFrame();
+					note(
+						bar,
+						element,
+						bar.detached(element) ? "still-detached" : "repaired",
+						"viewport-reset",
+					);
+				}
 				return;
 			}
 
@@ -844,9 +922,13 @@ const forceBarRepair = async (bar: Bar) => {
 // because the one place the user can reach the button - the top of the page - is
 // the one place a broken header is indistinguishable from a healthy one.
 export const forceHeaderRepair = async () => {
-	// Put the bars back inside the visible viewport first. When the two
-	// viewports have come apart this IS the reset - the ladder below cannot help,
-	// because nothing about the element is wrong.
+	// The viewport first. When the layout viewport has grown past the screen
+	// the ladder below cannot help, because nothing about the element is
+	// wrong; rewriting the viewport meta is the one action that makes WebKit
+	// recompute it. The button is the user saying "broken", so the structural
+	// evidence alone is enough here.
+	await resetViewportIfGhost({ manual: true });
+	// Then put the bars back inside the visible viewport.
 	resyncStickyBarShifts();
 	for (const bar of BARS) {
 		await forceBarRepair(bar);
@@ -1099,4 +1181,9 @@ export const initStickyHeaderWatchdog = () => {
 		},
 		{ passive: true, capture: true },
 	);
+
+	// THE TRIGGER, CAUGHT IN THE ACT. The expansion is transient and no
+	// after-the-fact probe has ever found the culprit; being there when
+	// innerWidth grows past the screen names the page it happened on.
+	watchViewportExpansion((detail) => viewportEvent("expanded", detail));
 };
