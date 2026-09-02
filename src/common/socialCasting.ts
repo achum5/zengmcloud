@@ -229,6 +229,108 @@ export type SocialReplyCasting = {
 	heat: number;
 };
 
+// Cast the answers, after the posts exist. Two passes rather than one,
+// because nothing can reply to a post that has not been cast yet and letting
+// a single pass do both would make a reply's existence depend on iteration
+// order - which is exactly the kind of thing that differs between devices.
+export const castReplies = ({
+	posts,
+	accounts,
+	events,
+	feudBetween,
+	seed,
+	target,
+	maxPerPost = 2,
+}: {
+	posts: readonly SocialCasting[];
+	accounts: readonly ResolvedSocialAccount[];
+	events: readonly SocialEvent[];
+	// History between two accounts, 0 to 1. Derived rather than remembered -
+	// see socialFeuds.
+	feudBetween: (firstId: string, secondId: string) => number;
+	seed: string;
+	target: number;
+	maxPerPost?: number;
+}): SocialReplyCasting[] => {
+	const accountById = new Map(accounts.map((a) => [a.id, a]));
+	const eventById = new Map(events.map((e) => [e.id, e]));
+
+	type Candidate = SocialReplyCasting & { score: number };
+	const candidates: Candidate[] = [];
+
+	for (const post of posts) {
+		const poster = accountById.get(post.accountId);
+		const event = eventById.get(post.eventId);
+		if (!poster || !event) {
+			continue;
+		}
+		for (const account of accounts) {
+			const feud = feudBetween(account.id, poster.id);
+			const appetite = replyAppetite({ account, poster, event, feud });
+			if (appetite < REPLY_FLOOR) {
+				continue;
+			}
+			const rng = rngFromSeed(
+				hashSeed(`${seed}|re|${account.id}|${poster.id}|${event.id}`),
+			);
+			// A quote is a louder move than a reply, so an account that would
+			// rather be seen than heard makes more of them.
+			const p = account.personality;
+			const quoteShare =
+				p.quotiness + p.replyiness > 0
+					? p.quotiness / (p.quotiness + p.replyiness)
+					: 0;
+			candidates.push({
+				accountId: account.id,
+				parentAccountId: poster.id,
+				parentEventId: post.eventId,
+				kind: rng() < quoteShare ? "quote" : "reply",
+				heat: feud,
+				score: appetite * (1 - JITTER + 2 * JITTER * rng()),
+			});
+		}
+	}
+
+	candidates.sort(
+		(a, b) =>
+			b.score - a.score ||
+			a.accountId.localeCompare(b.accountId) ||
+			a.parentAccountId.localeCompare(b.parentAccountId),
+	);
+
+	const perPost = new Map<string, number>();
+	const perAccount = new Map<string, number>();
+	const out: SocialReplyCasting[] = [];
+	for (const candidate of candidates) {
+		if (out.length >= target) {
+			break;
+		}
+		const postKey = `${candidate.parentAccountId}|${candidate.parentEventId}`;
+		if ((perPost.get(postKey) ?? 0) >= maxPerPost) {
+			continue;
+		}
+		// One reply per account per day. Somebody working their way down the
+		// whole timeline is a bot, and reads like one.
+		if ((perAccount.get(candidate.accountId) ?? 0) >= 1) {
+			continue;
+		}
+		perPost.set(postKey, (perPost.get(postKey) ?? 0) + 1);
+		perAccount.set(candidate.accountId, 1);
+		out.push({
+			accountId: candidate.accountId,
+			parentAccountId: candidate.parentAccountId,
+			parentEventId: candidate.parentEventId,
+			kind: candidate.kind,
+			heat: candidate.heat,
+		});
+	}
+	return out;
+};
+
+// Replies are rarer than posts, so the bar is higher. Without this the bottom
+// of every thread fills with accounts that had nothing to add.
+const REPLY_FLOOR = 0.35;
+
 export const replyAppetite = ({
 	account,
 	poster,

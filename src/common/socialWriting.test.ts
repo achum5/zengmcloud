@@ -13,6 +13,7 @@ import {
 	stanceOf,
 	verifyPostNumbers,
 	writePost,
+	writeReply,
 } from "./socialWriting.ts";
 
 const account = (
@@ -521,5 +522,174 @@ describe("verifyPostNumbers", () => {
 			}
 		}
 		assert.strictEqual(checked > 200, true, `only checked ${checked}`);
+	});
+});
+
+// The lines that assert somebody is WRONG, as opposed to merely adding
+// something. Only an account with a higher accuracy bar may reach these.
+const CORRECTION =
+	/not what the box score says|worth mentioning both|^it was \d+-\d+\./i;
+
+describe("writeReply", () => {
+	const reply = (
+		replier: ResolvedSocialAccount,
+		parent: ResolvedSocialAccount,
+		heat = 0,
+		event: SocialEvent = game(),
+		seed = 1,
+	) => {
+		const pool = createPhrasePool();
+		return writeReply({
+			account: replier,
+			parent,
+			event,
+			heat,
+			pool,
+			rng: rngFromSeed(seed),
+		});
+	};
+
+	test("an answer is always produced, so no thread dangles", () => {
+		const text = reply(account("beatWriter"), account("homerFan", { tid: 0 }));
+		assert.notStrictEqual(text, undefined);
+		assert.strictEqual(text!.length > 0, true);
+	});
+
+	test("a correction quotes the same facts the original was held to", () => {
+		// The one reply that states numbers, and it may not invent them either.
+		const wonk = account("analytics");
+		const troll = account("troll", { tid: 0 });
+		for (let seed = 0; seed < 25; seed++) {
+			const text = reply(wonk, troll, 0, game(), seed);
+			if (text === undefined) {
+				continue;
+			}
+			assert.deepStrictEqual(verifyPostNumbers(text, game().facts), [], text);
+		}
+	});
+
+	test("only an account with a higher bar reads another as wrong", () => {
+		// A troll never corrects a wire service, which is the direction that
+		// makes the whole idea read as parody rather than as a feed.
+		const troll = account("troll", { tid: 0 });
+		const wire = account("aggregator", { tid: 0 });
+		for (let seed = 0; seed < 25; seed++) {
+			const text = reply(troll, wire, 0, game(), seed);
+			if (text === undefined) {
+				continue;
+			}
+			assert.strictEqual(CORRECTION.test(text), false, text);
+		}
+	});
+
+	test("a low-accuracy account never corrects a careful one", () => {
+		// Isolates the direction rather than the tone: this account draws from
+		// the same bank the corrections live in, and still must not reach them.
+		const sloppyWonk = account("analytics", {
+			tid: 0,
+			override: { accuracy: 0.2 },
+		});
+		const careful = account("aggregator", { tid: 0 });
+		for (let seed = 0; seed < 30; seed++) {
+			const text = reply(sloppyWonk, careful, 0, game(), seed);
+			if (text === undefined) {
+				continue;
+			}
+			assert.strictEqual(CORRECTION.test(text), false, text);
+		}
+	});
+
+	test("heat unlocks lines that do not exist without history", () => {
+		const troll = account("troll", { tid: 1 });
+		const homer = account("homerFan", { tid: 0 });
+		const cold = new Set<string>();
+		const hot = new Set<string>();
+		for (let seed = 0; seed < 30; seed++) {
+			const c = reply(troll, homer, 0, game(), seed);
+			const h = reply(troll, homer, 1, game(), seed);
+			if (c) {cold.add(c);}
+			if (h) {hot.add(h);}
+		}
+		const heated = [...hot].some((t) => /you again|imagine typing/i.test(t));
+		const coldHeated = [...cold].some((t) =>
+			/you again|imagine typing/i.test(t),
+		);
+		assert.strictEqual(heated, true);
+		assert.strictEqual(coldHeated, false);
+	});
+
+	test("a reply names the account it is answering", () => {
+		const troll = account("troll", { tid: 1 });
+		const homer = account("homerFan", { tid: 0 });
+		let named = false;
+		for (let seed = 0; seed < 30; seed++) {
+			const text = reply(troll, homer, 1, game(), seed);
+			if (text && text.includes("@")) {
+				named = true;
+			}
+		}
+		assert.strictEqual(named, true);
+	});
+
+	test("two similar accounts in one batch do not give the same answer", () => {
+		// The ledger claims template ids across the whole day, so the second
+		// doomer under a same-side post is steered off the first one's line.
+		const pool = createPhrasePool();
+		pool.beginBatch();
+		const parent = account("homerFan", { tid: 0 });
+		const first = writeReply({
+			account: { ...account("doomerFan", { tid: 0 }), id: "m:d1" },
+			parent,
+			event: game({ winnerTid: 1 }),
+			heat: 0,
+			pool,
+			rng: rngFromSeed(2),
+		});
+		const second = writeReply({
+			account: { ...account("doomerFan", { tid: 0 }), id: "m:d2" },
+			parent,
+			event: game({ winnerTid: 1 }),
+			heat: 0,
+			pool,
+			rng: rngFromSeed(2),
+		});
+		assert.notStrictEqual(first, undefined);
+		assert.notStrictEqual(first, second);
+	});
+
+	test("the same reply is written the same way every time", () => {
+		const a = reply(account("analytics"), account("troll", { tid: 0 }), 0.5);
+		const b = reply(account("analytics"), account("troll", { tid: 0 }), 0.5);
+		assert.strictEqual(a, b);
+	});
+
+	test("every reply survives the number checker", () => {
+		const events = [game(), game({ overtimes: 1 }), perfEvent()];
+		let checked = 0;
+		for (const archetypeId of BUILT_IN_ARCHETYPES.map((a) => a.id)) {
+			for (const parentId of ["troll", "homerFan", "aggregator", "doomerFan"]) {
+				for (const event of events) {
+					for (let seed = 0; seed < 4; seed++) {
+						const text = reply(
+							account(archetypeId, { tid: 0 }),
+							account(parentId, { tid: 1 }),
+							seed / 4,
+							event,
+							seed,
+						);
+						if (text === undefined) {
+							continue;
+						}
+						checked += 1;
+						assert.deepStrictEqual(
+							verifyPostNumbers(text, event.facts),
+							[],
+							`${archetypeId} -> ${parentId}: ${text}`,
+						);
+					}
+				}
+			}
+		}
+		assert.strictEqual(checked > 100, true, `only checked ${checked}`);
 	});
 });

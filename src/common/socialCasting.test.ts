@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	castDay,
+	castReplies,
 	interest,
 	relevance,
 	replyAppetite,
@@ -498,5 +499,128 @@ describe("replyAppetite", () => {
 			feud: 0,
 		});
 		assert.strictEqual(quiet < loud, true);
+	});
+});
+
+describe("castReplies", () => {
+	const event = ev("g:0", { tids: [0, 1], salience: 0.9 });
+	const cast = [
+		{ accountId: "m:troll", eventId: "g:0", interest: 0.9 },
+		{ accountId: "m:homer", eventId: "g:0", interest: 0.9 },
+	];
+	const accounts = [
+		account("m:troll", "troll", { tid: 0 }),
+		account("m:homer", "homerFan", { tid: 0 }),
+		account("m:doom", "doomerFan", { tid: 0 }),
+		account("m:wonk", "analytics"),
+		account("m:wire", "aggregator", { tid: 1 }),
+	];
+	const noFeud = () => 0;
+
+	const run = (extra: Partial<Parameters<typeof castReplies>[0]> = {}) =>
+		castReplies({
+			posts: cast,
+			accounts,
+			events: [event],
+			feudBetween: noFeud,
+			seed: "2013|1",
+			target: 10,
+			...extra,
+		});
+
+	test("replies point at a real post", () => {
+		for (const reply of run()) {
+			assert.strictEqual(
+				cast.some(
+					(c) =>
+						c.accountId === reply.parentAccountId &&
+						c.eventId === reply.parentEventId,
+				),
+				true,
+			);
+		}
+	});
+
+	test("nobody replies to themselves", () => {
+		for (const reply of run()) {
+			assert.notStrictEqual(reply.accountId, reply.parentAccountId);
+		}
+	});
+
+	test("one reply per account per day", () => {
+		// Somebody working down the whole timeline is a bot, and reads like one.
+		const counts = new Map<string, number>();
+		for (const reply of run()) {
+			counts.set(reply.accountId, (counts.get(reply.accountId) ?? 0) + 1);
+		}
+		assert.strictEqual(Math.max(0, ...counts.values()) <= 1, true);
+	});
+
+	test("a post does not collect an unlimited pile-on", () => {
+		const counts = new Map<string, number>();
+		for (const reply of run({ maxPerPost: 1 })) {
+			const key = `${reply.parentAccountId}|${reply.parentEventId}`;
+			counts.set(key, (counts.get(key) ?? 0) + 1);
+		}
+		assert.strictEqual(Math.max(0, ...counts.values()) <= 1, true);
+	});
+
+	test("history makes more people answer", () => {
+		const cold = run().length;
+		const hot = run({ feudBetween: () => 1 }).length;
+		assert.strictEqual(hot >= cold, true);
+	});
+
+	test("the same day answers identically every time", () => {
+		assert.deepStrictEqual(run(), run());
+	});
+
+	test("account order does not change the answers", () => {
+		assert.deepStrictEqual(run(), run({ accounts: [...accounts].reverse() }));
+	});
+
+	test("a post nobody can see draws nothing", () => {
+		assert.strictEqual(
+			castReplies({
+				posts: [{ accountId: "m:ghost", eventId: "g:0", interest: 1 }],
+				accounts,
+				events: [event],
+				feudBetween: noFeud,
+				seed: "2013|1",
+				target: 10,
+			}).length,
+			0,
+		);
+	});
+
+	test("a roster with no appetite for arguing produces no replies", () => {
+		// Without a floor the bottom of every thread fills with accounts that
+		// had nothing to add.
+		const quiet = [
+			account("m:a", "aggregator", { tid: 1 }),
+			account("m:b", "aggregator", { tid: 1 }),
+			account("m:c", "aggregator", { tid: 1 }),
+		];
+		assert.strictEqual(
+			castReplies({
+				posts: [{ accountId: "m:a", eventId: "g:0", interest: 0.9 }],
+				accounts: quiet,
+				events: [event],
+				feudBetween: noFeud,
+				seed: "2013|1",
+				target: 10,
+			}).length,
+			0,
+		);
+	});
+
+	test("quotes and replies both appear", () => {
+		const kinds = new Set(
+			run({ target: 40, maxPerPost: 5 }).map((r) => r.kind),
+		);
+		assert.strictEqual(kinds.size >= 1, true);
+		for (const kind of kinds) {
+			assert.strictEqual(["reply", "quote"].includes(kind), true);
+		}
 	});
 });

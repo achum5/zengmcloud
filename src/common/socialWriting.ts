@@ -640,7 +640,10 @@ const SELF_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "self.pts",
 		tones: ["hype", "unhinged", "corporate"],
-		when: (f) => f.pts >= 30,
+		// Only after a win. A sample day had a player posting "37 and we still
+		// had more in the tank" after losing by 29, which is the kind of line
+		// that makes a reader stop believing any of it.
+		when: (f) => f.won && f.pts >= 30,
 		text: (f) => `${f.pts} and we still had more in the tank.`,
 	},
 ];
@@ -765,6 +768,243 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		text: (f) => `${f.summary} Who signed off on this?`,
 	},
 ];
+
+// ---------------------------------------------------------------- REPLIES
+//
+// An answer has to be about the POST, not just about the game, or a thread is
+// two people talking past each other with the same box score. So a reply frame
+// carries who is being answered and whether the replier agrees with them, and
+// the banks are organised by that rather than by event type.
+//
+// Quotes and replies draw from the same banks. The difference is presentational
+// - a quote shows the original above it - and writing two sets of lines for one
+// relationship would thin both.
+
+export type ReplyFrame = {
+	parentName: string;
+	parentHandle: string;
+	// Whether the two accounts are on the same side of what happened. Not the
+	// same as agreeing with each other, which is what makes a thread readable:
+	// two fans of the same team can be at each other precisely because they
+	// watched the same thing.
+	sameSide: boolean;
+	// History between them, 0 to 1, from socialFeuds.
+	heat: number;
+	// The replier reads the post as wrong on the facts.
+	correcting: boolean;
+	subject: Frame;
+};
+
+const REPLY_TEMPLATES: Template<any>[] = [
+	// Agreement.
+	{
+		id: "re.agree.short",
+		tones: ["hype", "beat", "corporate", "unhinged"],
+		when: (f: ReplyFrame) => f.sameSide && f.heat < 0.4,
+		text: () => `Exactly this.`,
+	},
+	{
+		id: "re.agree.name",
+		tones: ["hype", "beat", "corporate"],
+		when: (f: ReplyFrame) => f.sameSide && f.heat < 0.4,
+		text: (f: ReplyFrame) => `${f.parentName} gets it.`,
+	},
+	{
+		id: "re.agree.finally",
+		tones: ["hype", "unhinged", "snark"],
+		when: (f: ReplyFrame) => f.sameSide,
+		text: () => `Finally somebody says it.`,
+	},
+	// Correction. The one reply that needs a number, and it takes it from the
+	// same facts the original post was held to.
+	{
+		id: "re.correct.score",
+		tones: ["wonk", "beat", "wire"],
+		when: (f: ReplyFrame) => f.correcting && f.subject.kind === "game",
+		text: (f: ReplyFrame) => {
+			const game = f.subject as GameFrame;
+			return `It was ${game.winnerPts}-${game.loserPts}. The margin was ${game.margin}.`;
+		},
+	},
+	{
+		id: "re.correct.line",
+		tones: ["wonk", "beat"],
+		when: (f: ReplyFrame) => f.correcting && f.subject.kind === "performance",
+		text: (f: ReplyFrame) => {
+			const perf = f.subject as PerformanceFrame;
+			return `${perf.pts} points on ${perf.tov} turnovers. Worth mentioning both.`;
+		},
+	},
+	{
+		id: "re.correct.soft",
+		tones: ["wonk", "beat", "wire"],
+		when: (f: ReplyFrame) => f.correcting,
+		text: () => `This is not what the box score says.`,
+	},
+	// Disagreement without a correction.
+	{
+		id: "re.disagree.plain",
+		tones: ["snark", "doom", "wonk"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: () => `Respectfully, no.`,
+	},
+	{
+		id: "re.disagree.name",
+		tones: ["snark", "doom", "unhinged"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: (f: ReplyFrame) => `${f.parentName} says this every week.`,
+	},
+	{
+		id: "re.disagree.wait",
+		tones: ["snark", "doom"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: () => `Ask me again in a month.`,
+	},
+	// Heat. Only available once there is history, which is what makes a feud
+	// feel earned rather than declared.
+	{
+		id: "re.heat.again",
+		tones: ["snark", "unhinged", "doom"],
+		when: (f: ReplyFrame) => f.heat >= 0.5,
+		text: (f: ReplyFrame) => `You again, ${f.parentHandle}.`,
+	},
+	{
+		id: "re.heat.record",
+		tones: ["snark", "unhinged", "hype"],
+		when: (f: ReplyFrame) => f.heat >= 0.5 && !f.sameSide,
+		text: () => `Imagine typing this with your season.`,
+	},
+	{
+		id: "re.heat.blocked",
+		tones: ["unhinged", "snark"],
+		when: (f: ReplyFrame) => f.heat >= 0.6,
+		text: () => `Not reading all that. Wrong anyway.`,
+	},
+	// Despair and celebration under someone else's post.
+	{
+		id: "re.doom.same",
+		tones: ["doom"],
+		when: (f: ReplyFrame) => f.sameSide,
+		text: () => `Enjoy it while it lasts.`,
+	},
+	{
+		id: "re.hype.same",
+		tones: ["hype", "unhinged"],
+		when: (f: ReplyFrame) => f.sameSide,
+		text: () => `SAY IT LOUDER`,
+	},
+	{
+		id: "re.doom.knew",
+		tones: ["doom", "snark"],
+		when: (f: ReplyFrame) => f.sameSide,
+		text: () => `We have seen this movie. It does not end well.`,
+	},
+	{
+		id: "re.doom.warn",
+		tones: ["doom"],
+		text: () => `Check back in April.`,
+	},
+	{
+		id: "re.doom.tired",
+		tones: ["doom", "snark", "wonk"],
+		when: (f: ReplyFrame) => f.sameSide,
+		text: () => `One night does not fix the roster.`,
+	},
+	{
+		id: "re.wire.add",
+		tones: ["wire", "beat", "wonk"],
+		text: (f: ReplyFrame) =>
+			f.subject.kind === "game"
+				? `Worth adding: the margin was ${(f.subject as GameFrame).margin}.`
+				: `Worth adding: ${(f.subject as PerformanceFrame).reb} rebounds too.`,
+	},
+	{
+		id: "re.beat.context",
+		tones: ["beat", "wire", "corporate"],
+		text: () => `Some context here, but not an unreasonable read.`,
+	},
+	{
+		id: "re.wonk.sample",
+		tones: ["wonk", "beat"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: () => `One game is not a sample.`,
+	},
+	{
+		id: "re.hype.cosign",
+		tones: ["hype", "corporate", "unhinged"],
+		text: () => `Co-signed.`,
+	},
+	{
+		id: "re.snark.ok",
+		tones: ["snark", "unhinged"],
+		text: () => `Okay.`,
+	},
+	{
+		id: "re.snark.bookmark",
+		tones: ["snark", "wonk", "doom"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: () => `Bookmarking this one.`,
+	},
+	// The catch-all, so a thread is never left dangling for want of a line.
+	{
+		id: "re.neutral",
+		text: () => `Fair.`,
+	},
+];
+
+export const writeReply = ({
+	account,
+	parent,
+	event,
+	heat,
+	pool,
+	rng,
+}: {
+	account: ResolvedSocialAccount;
+	parent: ResolvedSocialAccount;
+	event: SocialEvent;
+	heat: number;
+	pool: PhrasePool;
+	rng: () => number;
+}): string | undefined => {
+	const subject = frameFor(account, event);
+	if (!subject) {
+		return undefined;
+	}
+	const parentStance = stanceOf(parent, event);
+	const frame: ReplyFrame = {
+		parentName: parent.name,
+		parentHandle: `@${parent.handle}`,
+		sameSide: parentStance === subject.stance,
+		heat,
+		// Only an account with a genuinely higher bar reads another as wrong.
+		correcting:
+			account.personality.accuracy - parent.personality.accuracy >= 0.3,
+		subject,
+	};
+
+	const { tone } = account.personality;
+	const eligible = REPLY_TEMPLATES.filter(
+		(template) =>
+			(template.tones === undefined || template.tones.includes(tone)) &&
+			(template.when === undefined || template.when(frame)),
+	);
+	if (eligible.length === 0) {
+		return undefined;
+	}
+	const ids = eligible.map((template) => template.id);
+	const chosenId = pool.takeUnclaimed(rng, ids, "tmpl:reply");
+	const chosen = eligible.find((template) => template.id === chosenId)!;
+
+	return applyVoice({
+		text: chosen.text(frame),
+		personality: account.personality,
+		pool,
+		rng,
+		positive:
+			subject.stance === "neutral" ? undefined : subject.stance === "for",
+	});
+};
 
 // ---------------------------------------------------------------- VOICE
 
