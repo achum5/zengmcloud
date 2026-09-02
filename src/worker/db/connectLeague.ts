@@ -1,3 +1,4 @@
+import type { SocialAccount } from "../../common/socialAccounts.ts";
 import { unwrap } from "@dumbmatter/idb";
 import {
 	DEFAULT_PLAY_THROUGH_INJURIES,
@@ -128,6 +129,15 @@ export interface LeagueDB extends DBSchema {
 	tradingCards: {
 		key: string;
 		value: TradingCard;
+	};
+	// Customized social-media accounts. Sparse ON PURPOSE: every player and
+	// team already has an implicit account derived from the league, so this
+	// holds only edits, removals and hand-made accounts. See socialAccounts.ts
+	// for why five hundred rows of "this player is a player" would be a
+	// checkpoint problem rather than a convenience.
+	socialAccounts: {
+		key: string;
+		value: SocialAccount;
 	};
 	messages: {
 		key: number;
@@ -702,6 +712,10 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 	});
 
 	db.createObjectStore("tradingCards", {
+		keyPath: "id",
+	});
+
+	db.createObjectStore("socialAccounts", {
 		keyPath: "id",
 	});
 };
@@ -1802,6 +1816,12 @@ const migrate = async ({
 
 	if (oldVersion < 76) {
 		db.createObjectStore("tradingCards", {
+			keyPath: "id",
+		});
+	}
+
+	if (oldVersion < 77) {
+		db.createObjectStore("socialAccounts", {
 			keyPath: "id",
 		});
 	}

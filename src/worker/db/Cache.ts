@@ -46,6 +46,7 @@ import type {
 	SavedTradingBlock,
 	NonEmptyArray,
 } from "../../common/types.ts";
+import type { SocialAccount } from "../../common/socialAccounts.ts";
 import type { IDBPTransaction } from "@dumbmatter/idb";
 import type { LeagueDB } from "./connectLeague.ts";
 import getAll from "../../common/getAll.ts";
@@ -69,6 +70,7 @@ export type Store =
 	| "faDayResults"
 	| "images"
 	| "tradingCards"
+	| "socialAccounts"
 	| "messages"
 	| "negotiations"
 	| "playerFeats"
@@ -108,6 +110,7 @@ export const STORES: Store[] = [
 	"faDayResults",
 	"images",
 	"tradingCards",
+	"socialAccounts",
 	"messages",
 	"negotiations",
 	"playerFeats",
@@ -285,6 +288,7 @@ class Cache {
 	faDayResults: StoreAPI<FaDayResults, FaDayResults, string>;
 	images: StoreAPI<Image, Image, string>;
 	tradingCards: StoreAPI<TradingCard, TradingCard, string>;
+	socialAccounts: StoreAPI<SocialAccount, SocialAccount, string>;
 
 	messages: StoreAPI<MessageWithoutKey, Message, number>;
 
@@ -415,6 +419,16 @@ class Cache {
 				// memory, and the sync capture path reads written rows back through
 				// the cache, so they must live there.
 				getData: (tx) => tx.objectStore("images").getAll(),
+			},
+			socialAccounts: {
+				pk: "id",
+				pkType: "string",
+				autoIncrement: false,
+				// Fully loaded, and cheaply: this store holds only customized
+				// accounts, so it is a few dozen rows even in a long league. The
+				// feed resolves every account on every render, so it cannot afford
+				// a database read to find out whether an edit exists.
+				getData: (tx) => tx.objectStore("socialAccounts").getAll(),
 			},
 			tradingCards: {
 				pk: "id",
@@ -617,6 +631,7 @@ class Cache {
 		this.faDayResults = new StoreAPI(this, "faDayResults");
 		this.images = new StoreAPI(this, "images");
 		this.tradingCards = new StoreAPI(this, "tradingCards");
+		this.socialAccounts = new StoreAPI(this, "socialAccounts");
 		this.messages = new StoreAPI(this, "messages");
 		this.negotiations = new StoreAPI(this, "negotiations");
 		this.playerFeats = new StoreAPI(this, "playerFeats");

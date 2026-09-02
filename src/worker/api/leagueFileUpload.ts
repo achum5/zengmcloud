@@ -30,6 +30,7 @@ export const parseJSON = () => {
 		version: undefined,
 		allStars: undefined,
 		awards: undefined,
+		socialAccounts: undefined,
 		draftLotteryResults: undefined,
 		draftPicks: undefined,
 		events: undefined,

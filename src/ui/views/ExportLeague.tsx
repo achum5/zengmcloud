@@ -312,6 +312,7 @@ const storesByKey = {
 		"faDayResults",
 		"images",
 		"tradingCards",
+		"socialAccounts",
 	],
 	newsFeedTransactions: ["events"],
 	newsFeedOther: ["events"],
