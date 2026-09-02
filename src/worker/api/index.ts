@@ -263,6 +263,8 @@ import {
 	buildCardFrontPrompt,
 } from "../../common/tradingCardPrompt.ts";
 import { cardTitle } from "../../common/tradingCards.ts";
+import type { SocialAccount } from "../../common/socialAccounts.ts";
+import { clearSocialFeedCache } from "../util/socialFeed.ts";
 import {
 	achievementPromptOverride,
 	CHAMPION_CARD_PLAYERS,
@@ -5018,6 +5020,130 @@ const onLiveSimOver = async (gid?: number) => {
 	await toUI("updateLocal", [{ liveGameInProgress: false }]);
 };
 
+// ---------------------------------------------------------------- LEAGUE FEED
+//
+// Editing accounts. The store is SPARSE by design (see socialAccounts.ts):
+// every player and team already has an account derived from the league, so a
+// row is written only when someone changes something. That shapes every
+// operation here - saving writes an override, resetting DELETES the row rather
+// than writing defaults back, and removing writes a tombstone because an
+// absent row would simply be re-derived on the next read.
+
+const socialAccountSave = async (row: SocialAccount) => {
+	const existing = await idb.cache.socialAccounts.get(row.id);
+	await idb.cache.socialAccounts.put({
+		...row,
+		createdAt: existing?.createdAt ?? row.createdAt ?? Date.now(),
+		editedAt: Date.now(),
+	});
+	clearSocialFeedCache();
+	await toUI("realtimeUpdate", [["gameSim"]]);
+};
+
+// Back to the league's own answer. Deleting is the whole operation: with no
+// row, the resolver derives the account again from the player or team.
+const socialAccountReset = async (id: string) => {
+	await idb.cache.socialAccounts.delete(id);
+	clearSocialFeedCache();
+	await toUI("realtimeUpdate", [["gameSim"]]);
+};
+
+// A tombstone rather than a deletion, because an implicit account with no row
+// is exactly what "derive it" looks like.
+const socialAccountRemove = async ({
+	id,
+	kind,
+}: {
+	id: string;
+	kind: SocialAccount["kind"];
+}) => {
+	await idb.cache.socialAccounts.put({ id, kind, removed: true });
+	clearSocialFeedCache();
+	await toUI("realtimeUpdate", [["gameSim"]]);
+};
+
+const socialAccountCreate = async (input: {
+	name: string;
+	handle?: string;
+	bio?: string;
+	archetypeId: string;
+	tid?: number;
+}) => {
+	// Client-generated, so two devices adding an account independently never
+	// collide - the same reason images and trading cards are keyed this way.
+	const id = `m:${
+		typeof crypto !== "undefined" && crypto.randomUUID
+			? crypto.randomUUID()
+			: `${Date.now()}-${Math.random().toString(36).slice(2)}`
+	}`;
+	await idb.cache.socialAccounts.put({
+		id,
+		kind: "media",
+		name: input.name,
+		handle: input.handle,
+		bio: input.bio,
+		archetypeId: input.archetypeId,
+		tid: input.tid,
+		createdAt: Date.now(),
+		editedAt: Date.now(),
+	});
+	clearSocialFeedCache();
+	await toUI("realtimeUpdate", [["gameSim"]]);
+	return id;
+};
+
+// THE BATCH EDIT. Applies one change to many accounts at once, which is the
+// only practical way to shape five hundred of them: set every player on a team
+// to an archetype, quieten every fan account, and so on. Each target gets its
+// own row, merged over whatever it already had, so a batch never discards an
+// edit somebody made to one account by hand.
+const socialAccountsBatch = async ({
+	ids,
+	patch,
+}: {
+	ids: string[];
+	patch: Partial<
+		Pick<SocialAccount, "archetypeId" | "bio" | "personality" | "removed">
+	>;
+}) => {
+	for (const id of ids) {
+		const existing = await idb.cache.socialAccounts.get(id);
+		const kind: SocialAccount["kind"] = existing?.kind
+			? existing.kind
+			: id.startsWith("p:")
+				? "player"
+				: id.startsWith("t:")
+					? "team"
+					: "media";
+		// Only touch personality when the batch actually carries one, so a
+		// batch that just sets an archetype does not stamp an empty override
+		// object onto every account it touched.
+		const personality =
+			patch.personality || existing?.personality
+				? {
+						...existing?.personality,
+						...patch.personality,
+						topics: {
+							...existing?.personality?.topics,
+							...patch.personality?.topics,
+						},
+					}
+				: undefined;
+
+		await idb.cache.socialAccounts.put({
+			...existing,
+			id,
+			kind,
+			...patch,
+			personality,
+			createdAt: existing?.createdAt ?? Date.now(),
+			editedAt: Date.now(),
+		});
+	}
+	clearSocialFeedCache();
+	await toUI("realtimeUpdate", [["gameSim"]]);
+};
+
 const updateBudget = async ({
 	budgetLevels,
 	adjustForInflation,
@@ -7422,6 +7548,11 @@ export default {
 		updateBudget,
 		updateConfsDivs,
 		updateDefaultSettingsOverrides,
+		socialAccountCreate,
+		socialAccountRemove,
+		socialAccountReset,
+		socialAccountSave,
+		socialAccountsBatch,
 		updateGameAttributes,
 		updateGameAttributesGodMode,
 		updateKeepRosterSorted,

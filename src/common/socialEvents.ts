@@ -344,6 +344,11 @@ export const eventsFromGame = (game: GameForEvents): SocialEvent[] => {
 				stl: row.p.stl,
 				blk: row.p.blk,
 				tov: row.p.tov,
+				// Shot volume. Carried as real facts rather than left out,
+				// because "31 on 27 shots" is the whole story of some nights
+				// and the number checker refuses any numeral it cannot source.
+				fga: row.p.fga,
+				fta: row.p.fta,
 				doubles,
 				tripleDouble: doubles >= 3,
 				...(row.tsp !== undefined ? { tsp: row.tsp } : {}),
@@ -430,7 +435,15 @@ export const plainEventText = (text: string | undefined): string =>
 		: text
 				.replaceAll(/<[^>]*>/g, "")
 				.replaceAll(/\s+/g, " ")
-				.trim();
+				.trim()
+				// The log shouts its own news ("Player was injured!") because it
+				// is a notification. Posts quote it as prose, and the templates
+				// add their own reaction after it, so the excitement belongs to
+				// the account rather than to the sentence it is passing along.
+				// Mid-string too: the injury line puts the mark before its own
+				// parenthetical, which is where it was first spotted.
+				.replaceAll("!", ".")
+				.replace(/\.\s*\(/, " (");
 
 export const eventFromLeagueEvent = (
 	event: LeagueEventForEvents,

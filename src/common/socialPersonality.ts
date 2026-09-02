@@ -382,7 +382,11 @@ export const BUILT_IN_ARCHETYPES: SocialArchetype[] = [
 			formality: 0.6,
 			verbosity: 0.35,
 			emoji: 0.6,
-			caps: 0.25,
+			// Zero, alone among the archetypes. A franchise account is written
+			// by a communications department, and random mid-sentence emphasis
+			// is the one thing it never does - it reads as a typo, not as
+			// excitement. Its enthusiasm comes out through emoji instead.
+			caps: 0,
 			optimism: 1,
 			accuracy: 1,
 			postiness: 0.9,

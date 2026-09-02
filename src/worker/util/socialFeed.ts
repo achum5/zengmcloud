@@ -243,9 +243,37 @@ const readRivalryInputs = async (season: number) => {
 // ---------------------------------------------------------------- ASSEMBLY
 
 const cache = new Map<string, FeedDay>();
+const accountDayCache = new Map<string, FeedPost[]>();
 
 export const clearSocialFeedCache = () => {
 	cache.clear();
+	accountDayCache.clear();
+};
+
+// What happened on one day, trimmed to the events worth posting about. Shared
+// by the feed and by a single account's profile, so both are looking at the
+// same day rather than at two slightly different ones.
+const eventsForDay = async ({
+	season,
+	day,
+}: {
+	season: number;
+	day: number;
+}) => {
+	const recapGames = await recapGamesForDay({ season, day });
+	const gameEvents = recapGames.flatMap((game) =>
+		eventsFromGame(gameForEvents(game as any)),
+	);
+
+	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
+	const daysWithGames = [
+		...new Set(allGames.map((game: any) => game.day ?? 0)),
+	].sort((a, b) => a - b);
+	const leagueEvents = await readLeagueEvents(season, daysWithGames);
+
+	return trimDayEvents([...gameEvents, ...(leagueEvents.get(day) ?? [])], {
+		limit: EVENTS_PER_DAY,
+	});
 };
 
 export const buildFeedDay = async ({
@@ -262,21 +290,7 @@ export const buildFeedDay = async ({
 	}
 
 	const accounts = await readAccounts();
-	const recapGames = await recapGamesForDay({ season, day });
-	const gameEvents = recapGames.flatMap((game) =>
-		eventsFromGame(gameForEvents(game as any)),
-	);
-
-	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
-	const daysWithGames = [
-		...new Set(allGames.map((game: any) => game.day ?? 0)),
-	].sort((a, b) => a - b);
-	const leagueEvents = await readLeagueEvents(season, daysWithGames);
-
-	const events = trimDayEvents(
-		[...gameEvents, ...(leagueEvents.get(day) ?? [])],
-		{ limit: EVENTS_PER_DAY },
-	);
+	const events = await eventsForDay({ season, day });
 
 	const seed = `${season}|${day}`;
 	const posts = castDay({
@@ -342,6 +356,20 @@ export const buildFeedDay = async ({
 	const eventById = new Map(events.map((event) => [event.id, event]));
 	const out: FeedPost[] = [];
 
+	// EVERY LINE SAID TODAY, normalised. The template ledger already stops one
+	// template repeating, but two banks can land on the same words once voice
+	// has lowercased and trimmed them, and a reader scrolling one day only
+	// sees the sentence. Measured at 37% of a fortnight's posts before this
+	// existed, which is exactly the "cheap and redundant" the feed cannot be.
+	const said = new Set<string>();
+	const normalise = (text: string) =>
+		text
+			.toLowerCase()
+			.replaceAll(/[^\d a-z]/g, "")
+			.replaceAll(/\s+/g, " ")
+			.trim();
+	const alreadySaid = (text: string) => said.has(normalise(text));
+
 	for (const slot of posts) {
 		const account = accountById.get(slot.accountId);
 		const event = eventById.get(slot.eventId);
@@ -353,10 +381,12 @@ export const buildFeedDay = async ({
 			event,
 			pool,
 			rng: rngFromSeed(hashSeed(`${seed}|${slot.accountId}|${slot.eventId}`)),
+			avoid: alreadySaid,
 		});
 		if (text === undefined) {
 			continue;
 		}
+		said.add(normalise(text));
 
 		const post: FeedPost = {
 			id: `${slot.accountId}|${slot.eventId}`,
@@ -387,14 +417,17 @@ export const buildFeedDay = async ({
 				parent: account,
 				event,
 				heat: reply.heat,
+				quote: reply.kind === "quote",
 				pool,
 				rng: rngFromSeed(
 					hashSeed(`${seed}|re|${reply.accountId}|${slot.accountId}`),
 				),
+				avoid: alreadySaid,
 			});
 			if (replyText === undefined) {
 				continue;
 			}
+			said.add(normalise(replyText));
 			post.replies.push({
 				id: `${reply.accountId}|${post.id}`,
 				accountId: replier.id,
@@ -425,6 +458,96 @@ export const buildFeedDay = async ({
 
 // The days worth showing, newest first: every day that has games, so the feed
 // scrolls back through the season the way a timeline does.
+// ONE ACCOUNT'S OWN DAY.
+//
+// The feed holds the day's loudest forty-five posts, which is what a timeline
+// is. A PROFILE is a different question: it asks what this account said, not
+// whether what it said beat seven hundred other accounts for a slot. Asking
+// the first question of a profile page leaves almost every profile empty,
+// which is fatal for a feature whose whole point is that each account is worth
+// clicking into.
+//
+// So a profile runs the same casting restricted to one account. Every choice
+// in castDay is seeded on the account and the day, so this returns exactly the
+// posts that account would have made - the ones that reached the feed, plus
+// the ones that lost the competition for a slot. Days where it did reach the
+// feed are taken from the feed itself, so no post ever exists in two versions.
+export const buildAccountDay = async ({
+	season,
+	day,
+	accountId,
+}: {
+	season: number;
+	day: number;
+	accountId: string;
+}): Promise<FeedPost[]> => {
+	const key = `${season}|${day}|${accountId}`;
+	const cached = accountDayCache.get(key);
+	if (cached) {
+		return cached;
+	}
+
+	const accounts = await readAccounts();
+	const account = accounts.find((a) => a.id === accountId);
+	if (!account) {
+		return [];
+	}
+
+	const events = await eventsForDay({ season, day });
+	const seed = `${season}|${day}`;
+	const casting = castDay({
+		accounts: [account],
+		events,
+		seed,
+		// Only this account, so the day-wide target never binds; the per-account
+		// cap inside castDay is what limits it, exactly as in the feed.
+		limits: { target: POSTS_PER_DAY },
+	});
+
+	const pool = createPhrasePool();
+	pool.beginBatch();
+	const eventById = new Map(events.map((event) => [event.id, event]));
+	const out: FeedPost[] = [];
+	const said = new Set<string>();
+
+	for (const slot of casting) {
+		const event = eventById.get(slot.eventId);
+		if (!event) {
+			continue;
+		}
+		const text = writePost({
+			account,
+			event,
+			pool,
+			rng: rngFromSeed(hashSeed(`${seed}|${slot.accountId}|${slot.eventId}`)),
+			avoid: (candidate) => said.has(candidate),
+		});
+		if (text === undefined) {
+			continue;
+		}
+		said.add(text);
+		out.push({
+			id: `${slot.accountId}|${slot.eventId}`,
+			accountId: account.id,
+			handle: account.handle,
+			name: account.name,
+			kind: account.kind,
+			tid: account.tid,
+			pid: account.pid,
+			text,
+			eventId: event.id,
+			replies: [],
+		});
+	}
+
+	pool.endBatch();
+	if (accountDayCache.size > 400) {
+		accountDayCache.clear();
+	}
+	accountDayCache.set(key, out);
+	return out;
+};
+
 export const feedDaysForSeason = async (season: number): Promise<number[]> => {
 	const games = await idb.getCopies.games({ season }, "noCopyCache");
 	return [...new Set(games.map((game: any) => game.day ?? 0))].sort(

@@ -962,6 +962,12 @@ const socialAccount = (params: Params) => ({
 	handle: params.handle ?? "",
 });
 
+const socialAccounts = (params: Params) => ({
+	// Optional: the manage page doubles as the editor, opening straight onto
+	// one account when a link points at it.
+	handle: params.handle,
+});
+
 const standings = (params: Params) => {
 	let type: "conf" | "div" | "league" =
 		g.get("numGamesPlayoffSeries").length === 0
@@ -1151,6 +1157,7 @@ const advancedPlayerSearch = (params: Params) => {
 
 export default {
 	socialAccount,
+	socialAccounts,
 	socialFeed,
 	account,
 	advancedPlayerSearch,

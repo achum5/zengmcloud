@@ -122,7 +122,12 @@ describe("resolveAccounts", () => {
 			teams: TEAMS,
 			stored: [],
 		});
-		assert.strictEqual(accounts.length, 4);
+		// Two players, two teams, and the media cast the teams imply.
+		assert.strictEqual(accounts.filter((a) => a.kind !== "media").length, 4);
+		assert.strictEqual(
+			accounts.some((a) => a.kind === "media"),
+			true,
+		);
 		assert.strictEqual(
 			accounts.every((a) => a.implicit),
 			true,
@@ -196,7 +201,12 @@ describe("resolveAccounts", () => {
 			teams: [{ ...team(0, "Boston", "Celtics"), disabled: true }],
 			stored: [],
 		});
-		assert.strictEqual(accounts.length, 0);
+		// No team account, and no beat writer or fan account covering it
+		// either - the whole local cast goes with the franchise.
+		assert.strictEqual(
+			accounts.some((a) => a.tid === 0),
+			false,
+		);
 	});
 
 	test("an explicit media account appears alongside the derived ones", () => {
@@ -237,7 +247,7 @@ describe("resolveAccounts", () => {
 				},
 			],
 		});
-		const media = accounts[0]!;
+		const media = accounts.find((a) => a.id === "m:abc")!;
 		assert.strictEqual(media.personality.postiness, 0.1);
 		// The override adds a topic without wiping the twelve it did not
 		// mention - the trap a wholesale spread would set for the batch editor.
@@ -312,7 +322,8 @@ describe("resolveAccounts", () => {
 				{ id: "m:x", kind: "media", name: "Mystery", archetypeId: "nope" },
 			],
 		});
-		assert.strictEqual(accounts[0]!.personality.tone, BASE_PERSONALITY.tone);
+		const mystery = accounts.find((a) => a.id === "m:x")!;
+		assert.strictEqual(mystery.personality.tone, BASE_PERSONALITY.tone);
 	});
 
 	test("handles are unique across the whole league", () => {

@@ -99,6 +99,7 @@ export { default as ResetPassword } from "./ResetPassword.tsx";
 export { default as Roster } from "./Roster/index.tsx";
 export { default as RosterContinuity } from "./RosterContinuity.tsx";
 export { default as SocialAccount } from "./SocialAccount.tsx";
+export { default as SocialAccounts } from "./SocialAccounts.tsx";
 export { default as SocialFeed } from "./SocialFeed.tsx";
 export { default as SavedTrades } from "./SavedTrades.tsx";
 export { default as Schedule } from "./Schedule.tsx";

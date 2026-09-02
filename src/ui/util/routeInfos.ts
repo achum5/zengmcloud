@@ -24,6 +24,8 @@ export const routeInfos = {
 	"/l/:lid/message/:mid": "message",
 	"/l/:lid/social": "socialFeed",
 	"/l/:lid/social/:handle": "socialAccount",
+	"/l/:lid/social_accounts": "socialAccounts",
+	"/l/:lid/social_accounts/:handle": "socialAccounts",
 	"/l/:lid/standings": "standings",
 	"/l/:lid/standings/:season": "standings",
 	"/l/:lid/standings/:season/:type": "standings",

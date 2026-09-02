@@ -35,6 +35,7 @@ import {
 	personalityForPlayer,
 	resolvePersonality,
 } from "./socialPersonality.ts";
+import { mediaCastAccounts } from "./socialMediaCast.ts";
 
 export type SocialAccountKind = "player" | "team" | "media";
 
@@ -91,6 +92,11 @@ export type ResolvedSocialAccount = {
 
 export const playerAccountId = (pid: number) => `p:${pid}`;
 export const teamAccountId = (tid: number) => `t:${tid}`;
+
+// True for any id the resolver derives rather than stores: players, teams and
+// the media cast. A row with one of these ids is only ever an override.
+export const isDerivedAccountId = (id: string) =>
+	id.startsWith("p:") || id.startsWith("t:") || id.startsWith("m:cast:");
 
 // ---------------------------------------------------------------- HANDLES
 //
@@ -261,6 +267,27 @@ export const resolveAccounts = ({
 		});
 	}
 
+	// THE MEDIA AND FAN CAST, derived from the teams the same way the team
+	// accounts were. Ahead of the players so a beat writer's handle never
+	// changes because somebody signed a free agent with a similar name.
+	for (const member of mediaCastAccounts(teams)) {
+		const row = byId.get(member.id);
+		if (row?.removed) {
+			continue;
+		}
+		drafts.push({
+			id: member.id,
+			kind: "media",
+			name: member.name,
+			bio: member.bio,
+			tid: member.tid,
+			archetypeId: member.archetypeId,
+			derivedPersonality: undefined,
+			row,
+			implicit: row === undefined,
+		});
+	}
+
 	for (const p of players) {
 		const id = playerAccountId(p.pid);
 		const row = byId.get(id);
@@ -290,12 +317,19 @@ export const resolveAccounts = ({
 	}
 
 	// Explicit accounts last: they are the ones with hand-typed handles, and
-	// assignHandles claims those before any derived handle anyway.
+	// assignHandles claims those before any derived handle anyway. Skipping by
+	// "already drafted" rather than by id prefix, because a stored row for a
+	// derived account is an OVERRIDE of it, not a second account beside it -
+	// and the cast shares the media prefix with hand-made accounts.
+	const drafted = new Set(drafts.map((draft) => draft.id));
 	for (const row of stored) {
 		if (row.removed || byId.get(row.id) !== row) {
 			continue;
 		}
-		if (row.id.startsWith("p:") || row.id.startsWith("t:")) {
+		// Also skip a row whose target is gone - a player who was purged, or a
+		// team that was disabled. Its override should lapse with the thing it
+		// described, not come back as a nameless account of its own.
+		if (drafted.has(row.id) || isDerivedAccountId(row.id)) {
 			continue;
 		}
 		drafts.push({

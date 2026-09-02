@@ -607,8 +607,12 @@ describe("writeReply", () => {
 		for (let seed = 0; seed < 30; seed++) {
 			const c = reply(troll, homer, 0, game(), seed);
 			const h = reply(troll, homer, 1, game(), seed);
-			if (c) {cold.add(c);}
-			if (h) {hot.add(h);}
+			if (c) {
+				cold.add(c);
+			}
+			if (h) {
+				hot.add(h);
+			}
 		}
 		const heated = [...hot].some((t) => /you again|imagine typing/i.test(t));
 		const coldHeated = [...cold].some((t) =>
@@ -692,4 +696,161 @@ describe("writeReply", () => {
 		}
 		assert.strictEqual(checked > 100, true, `only checked ${checked}`);
 	});
+});
+
+// THE HOLE TEST. Every voice has to have something to say in every situation
+// it can find itself in, because a cell with one eligible line is a catch-all
+// that repeats every single time it comes up. This was measured at ONE line
+// for an enthusiastic account quoting somebody it disagrees with, and that is
+// how "Noting this one down." ended up in a fortnight of output six times.
+describe("reply and quote coverage", () => {
+	const TONES = [
+		"wire",
+		"beat",
+		"hype",
+		"snark",
+		"doom",
+		"wonk",
+		"corporate",
+		"unhinged",
+	] as const;
+
+	const voiced = (
+		tone: (typeof TONES)[number],
+		tid: number,
+		accuracy: number,
+	) =>
+		account("beatWriter", {
+			tid,
+			override: {
+				tone,
+				accuracy,
+				// Voice is off so the count measures the BANK, not the emoji.
+				emoji: 0,
+				caps: 0,
+				profanity: 0,
+				formality: 0.8,
+			},
+		});
+
+	// Same side, other side, a feud, and a correction: the four situations the
+	// banks branch on.
+	const SITUATIONS: [string, boolean, number, boolean][] = [
+		["same side", true, 0, false],
+		["other side", false, 0, false],
+		["a feud", false, 0.7, false],
+		["a correction", false, 0, true],
+	];
+
+	for (const quote of [false, true]) {
+		for (const tone of TONES) {
+			for (const [label, sameSide, heat, correcting] of SITUATIONS) {
+				test(`${quote ? "quotes" : "replies"}: ${tone} on ${label}`, () => {
+					const replier = voiced(tone, 0, correcting ? 1 : 0.5);
+					const parent = voiced("hype", sameSide ? 0 : 1, 0.5);
+					const seen = new Set<string>();
+					for (let seed = 0; seed < 120; seed++) {
+						const pool = createPhrasePool();
+						const text = writeReply({
+							account: replier,
+							parent,
+							event: game(),
+							heat,
+							quote,
+							pool,
+							rng: rngFromSeed(seed * 7919 + 13),
+						});
+						if (text !== undefined) {
+							seen.add(text);
+						}
+					}
+					assert.ok(
+						seen.size >= 6,
+						`only ${seen.size} distinct lines: ${[...seen].join(" / ")}`,
+					);
+				});
+			}
+		}
+	}
+});
+
+// A POST HAS NO CONTEXT. It is read on its own in a timeline, so a line about
+// a game that names only one of the two teams leaves the reader guessing who
+// the other one was. Caught three templates that said "BOS by 10" and one that
+// said "230 points between them" with no "them" anywhere in sight.
+//
+// Only for accounts with NO stake in the game. A fan account saying "beat the
+// Kings" does not have to name its own team, because the account IS the other
+// team - that is the one piece of context a post carries with it.
+describe("every game line names both teams", () => {
+	const TONES = [
+		"wire",
+		"beat",
+		"hype",
+		"snark",
+		"doom",
+		"wonk",
+		"corporate",
+		"unhinged",
+	] as const;
+
+	// A spread of game shapes, so the situational templates get their turn.
+	const SHAPES: [string, Record<string, unknown>][] = [
+		["a normal win", {}],
+		["a blowout", { winnerPts: 130, loserPts: 99 }],
+		["a one-point game", { winnerPts: 101, loserPts: 100 }],
+		["overtime", { overtimes: 1, winnerPts: 118, loserPts: 115 }],
+		["a shootout", { winnerPts: 140, loserPts: 135 }],
+		["a rock fight", { winnerPts: 88, loserPts: 84 }],
+	];
+
+	for (const tone of TONES) {
+		for (const [label, overrides] of SHAPES) {
+			for (const [side, tid] of [["a bystander", undefined]] as const) {
+				test(`${tone} on ${label} as ${side}`, () => {
+					const event = game(overrides);
+					const winner = String(event.facts.winner);
+					const loser = String(event.facts.loser);
+					const winnerAbbrev = String(event.facts.winnerAbbrev);
+					const loserAbbrev = String(event.facts.loserAbbrev);
+					for (let seed = 0; seed < 60; seed++) {
+						const pool = createPhrasePool();
+						const text = writePost({
+							account: account("beatWriter", {
+								tid,
+								override: { tone, emoji: 0, caps: 0, profanity: 0 },
+							}),
+							event,
+							pool,
+							rng: rngFromSeed(seed * 7919 + 13),
+						});
+						if (text === undefined) {
+							continue;
+						}
+						const names = new RegExp(
+							`${winner}|${loser}|${winnerAbbrev}|${loserAbbrev}`,
+							"i",
+						);
+						// Either it names somebody, or it is a reaction that names
+						// nobody at all - what it must never do is name one side
+						// and leave the other implied.
+						const mentionsWinner = new RegExp(
+							`${winner}|${winnerAbbrev}`,
+							"i",
+						).test(text);
+						const mentionsLoser = new RegExp(
+							`${loser}|${loserAbbrev}`,
+							"i",
+						).test(text);
+						if (names.test(text)) {
+							assert.ok(
+								mentionsWinner && mentionsLoser,
+								`names one side only: ${text}`,
+							);
+						}
+					}
+				});
+			}
+		}
+	}
 });

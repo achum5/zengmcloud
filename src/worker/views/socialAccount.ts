@@ -1,6 +1,7 @@
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import {
+	buildAccountDay,
 	buildFeedDay,
 	feedDaysForSeason,
 	resolveFeedAccounts,
@@ -47,8 +48,12 @@ const updateSocialAccount = async (
 		const posts: (FeedPost & { day: number })[] = [];
 		for (const day of days) {
 			const feed = await buildFeedDay({ season, day });
+			// Everything of this account's that reached the timeline, plus the
+			// replies it left under other people's posts.
+			const fromFeed = new Set<string>();
 			for (const post of feed.posts) {
 				if (post.accountId === account.id) {
+					fromFeed.add(post.id);
 					posts.push({ ...post, day });
 				}
 				for (const reply of post.replies) {
@@ -67,6 +72,20 @@ const updateSocialAccount = async (
 							replies: [],
 						});
 					}
+				}
+			}
+
+			// And what it posted that did not make the day's forty-five. The
+			// timeline is a highlight reel; a profile is not, and a profile
+			// that is empty because its owner lost a popularity contest is the
+			// worst possible answer to "let me look through this account".
+			for (const post of await buildAccountDay({
+				season,
+				day,
+				accountId: account.id,
+			})) {
+				if (!fromFeed.has(post.id)) {
+					posts.push({ ...post, day });
 				}
 			}
 		}
