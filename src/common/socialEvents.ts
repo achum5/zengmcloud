@@ -265,6 +265,10 @@ export const eventsFromGame = (game: GameForEvents): SocialEvent[] => {
 			winnerPts: winner.pts,
 			loserPts: loser.pts,
 			margin,
+			// The combined total is a real fact, so it is stated here rather than
+			// added up inside a template - where the number checker would
+			// correctly refuse it for having no source.
+			combined: winner.pts + loser.pts,
 			overtimes: game.overtimes,
 			playoffs: game.playoffs,
 			upset,
