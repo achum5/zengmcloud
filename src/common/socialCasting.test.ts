@@ -1,4 +1,5 @@
 import { assert, describe, test } from "vitest";
+import { NO_QUIRKS } from "./socialQuirks.ts";
 import {
 	castDay,
 	castReplies,
@@ -37,6 +38,7 @@ const account = (
 		archetype: BUILT_IN_ARCHETYPES.find((a) => a.id === archetypeId),
 		override: extra.override,
 	}),
+	quirks: NO_QUIRKS,
 	implicit: false,
 });
 
@@ -505,8 +507,8 @@ describe("replyAppetite", () => {
 describe("castReplies", () => {
 	const event = ev("g:0", { tids: [0, 1], salience: 0.9 });
 	const cast = [
-		{ accountId: "m:troll", eventId: "g:0", interest: 0.9 },
-		{ accountId: "m:homer", eventId: "g:0", interest: 0.9 },
+		{ accountId: "m:troll", eventId: "g:0", interest: 0.9, score: 0.9 },
+		{ accountId: "m:homer", eventId: "g:0", interest: 0.9, score: 0.9 },
 	];
 	const accounts = [
 		account("m:troll", "troll", { tid: 0 }),
@@ -582,7 +584,9 @@ describe("castReplies", () => {
 	test("a post nobody can see draws nothing", () => {
 		assert.strictEqual(
 			castReplies({
-				posts: [{ accountId: "m:ghost", eventId: "g:0", interest: 1 }],
+				posts: [
+					{ accountId: "m:ghost", eventId: "g:0", interest: 1, score: 1 },
+				],
 				accounts,
 				events: [event],
 				feudBetween: noFeud,
@@ -603,7 +607,9 @@ describe("castReplies", () => {
 		];
 		assert.strictEqual(
 			castReplies({
-				posts: [{ accountId: "m:a", eventId: "g:0", interest: 0.9 }],
+				posts: [
+					{ accountId: "m:a", eventId: "g:0", interest: 0.9, score: 0.9 },
+				],
 				accounts: quiet,
 				events: [event],
 				feudBetween: noFeud,

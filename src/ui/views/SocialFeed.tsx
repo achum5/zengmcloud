@@ -46,7 +46,9 @@ const SocialFeed = ({
 			{feed.map((day: any) => (
 				<div key={day.day} className="mb-4">
 					<div className="d-flex align-items-center gap-2 mb-2">
-						<h3 className="mb-0">Day {day.day}</h3>
+						<h3 className="mb-0">
+							{day.day === 0 ? "Offseason" : `Day ${day.day}`}
+						</h3>
 						<div className="flex-grow-1 border-bottom" />
 					</div>
 

@@ -12,6 +12,8 @@ import {
 	type GameForEvents,
 	type GameTeamForEvents,
 	type SocialEvent,
+	placeLeagueEvents,
+	OFFSEASON_DAY,
 } from "./socialEvents.ts";
 
 const line = (
@@ -494,5 +496,210 @@ describe("trimDayEvents", () => {
 			trimDayEvents(events, { limit: 1 }).map((e) => e.id),
 			["g:1"],
 		);
+	});
+});
+
+// STABLE PLACEMENT. The news log records no day, so the days are recovered
+// from the box scores where they can be and interpolated where they cannot.
+// What matters is that a day, once placed, stays placed as the season grows.
+describe("placeLeagueEvents", () => {
+	type G = Parameters<typeof placeLeagueEvents>[0]["games"][number];
+	const game = (
+		gid: number,
+		day: number,
+		tids: [number, number],
+		extra: {
+			playoffs?: boolean;
+			rows?: { pid: number; tid: number; hurt?: boolean }[];
+		} = {},
+	): G => ({
+		gid,
+		day,
+		playoffs: extra.playoffs === true,
+		teams: tids.map((tid) => ({
+			tid,
+			players: (extra.rows ?? [])
+				.filter((row) => row.tid === tid)
+				.map((row) => ({ pid: row.pid, injuryNew: row.hurt })),
+		})),
+	});
+
+	test("an injury lands on the game it happened in", () => {
+		const games = [
+			game(1, 1, [0, 1], { rows: [{ pid: 7, tid: 0 }] }),
+			game(2, 3, [0, 2], { rows: [{ pid: 7, tid: 0, hurt: true }] }),
+			game(3, 5, [0, 3], { rows: [] }),
+		];
+		const placed = placeLeagueEvents({
+			events: [
+				{
+					eid: 10,
+					type: "injured",
+					text: "x was injured.",
+					pids: [7],
+					tids: [0],
+				},
+			],
+			games,
+			offseason: false,
+		});
+		assert.strictEqual(placed.get(10), 3);
+	});
+
+	test("a second injury to the same player pairs with his second hurt game", () => {
+		const games = [
+			game(1, 2, [0, 1], { rows: [{ pid: 7, tid: 0, hurt: true }] }),
+			game(2, 9, [0, 2], { rows: [{ pid: 7, tid: 0, hurt: true }] }),
+		];
+		const placed = placeLeagueEvents({
+			events: [
+				{ eid: 1, type: "injured", pids: [7], tids: [0] },
+				{ eid: 2, type: "injured", pids: [7], tids: [0] },
+			],
+			games,
+			offseason: false,
+		});
+		assert.strictEqual(placed.get(1), 2);
+		assert.strictEqual(placed.get(2), 9);
+	});
+
+	test("a trade lands on the traded player's first game for his new team", () => {
+		const games = [
+			game(1, 1, [0, 1], { rows: [{ pid: 7, tid: 0 }] }),
+			game(2, 4, [0, 1], { rows: [{ pid: 7, tid: 0 }] }),
+			game(3, 6, [1, 2], { rows: [{ pid: 7, tid: 1 }] }),
+			game(4, 8, [1, 2], { rows: [{ pid: 7, tid: 1 }] }),
+		];
+		const placed = placeLeagueEvents({
+			events: [{ eid: 5, type: "trade", pids: [7], tids: [0, 1] }],
+			games,
+			offseason: false,
+		});
+		assert.strictEqual(placed.get(5), 6);
+	});
+
+	test("news between anchors is interpolated, and snapped to a real game day", () => {
+		const games = [
+			game(1, 1, [0, 1], { rows: [{ pid: 7, tid: 0, hurt: true }] }),
+			game(2, 4, [0, 1]),
+			game(3, 7, [0, 1]),
+			game(4, 10, [0, 1], { rows: [{ pid: 8, tid: 0, hurt: true }] }),
+		];
+		const placed = placeLeagueEvents({
+			events: [
+				{ eid: 1, type: "injured", pids: [7] },
+				{ eid: 2, type: "award", text: "somebody won something" },
+				{ eid: 3, type: "injured", pids: [8] },
+			],
+			games,
+			offseason: false,
+		});
+		assert.strictEqual(placed.get(1), 1);
+		assert.strictEqual(placed.get(3), 10);
+		const mid = placed.get(2)!;
+		assert.ok([4, 7].includes(mid), `expected a middle game day, got ${mid}`);
+	});
+
+	test("the past does not move when the season grows", () => {
+		// The whole reason this exists. The even spread it replaces moved every
+		// past event each time a day was played.
+		const early = [
+			game(1, 1, [0, 1], { rows: [{ pid: 7, tid: 0, hurt: true }] }),
+			game(2, 3, [0, 1]),
+			game(3, 5, [0, 1]),
+			game(4, 7, [0, 1], { rows: [{ pid: 8, tid: 0, hurt: true }] }),
+			game(5, 9, [0, 1]),
+		];
+		const events = [
+			{ eid: 1, type: "injured", pids: [7] },
+			{ eid: 2, type: "award", text: "a" },
+			{ eid: 3, type: "award", text: "b" },
+			{ eid: 4, type: "injured", pids: [8] },
+		];
+		const before = placeLeagueEvents({
+			events,
+			games: early,
+			offseason: false,
+		});
+
+		const later = [
+			...early,
+			game(6, 11, [0, 1]),
+			game(7, 13, [0, 1]),
+			game(8, 15, [0, 1], { rows: [{ pid: 9, tid: 0, hurt: true }] }),
+		];
+		const moreEvents = [
+			...events,
+			{ eid: 5, type: "award", text: "c" },
+			{ eid: 6, type: "injured", pids: [9] },
+			{ eid: 7, type: "award", text: "d" },
+		];
+		const after = placeLeagueEvents({
+			events: moreEvents,
+			games: later,
+			offseason: false,
+		});
+
+		for (const event of events) {
+			assert.strictEqual(
+				after.get(event.eid),
+				before.get(event.eid),
+				`event ${event.eid} moved from ${before.get(event.eid)} to ${after.get(event.eid)}`,
+			);
+		}
+	});
+
+	test("a playoff series result lands on the series' last game", () => {
+		const games = [
+			game(1, 80, [0, 1]),
+			game(2, 90, [0, 3], { playoffs: true }),
+			game(3, 92, [0, 3], { playoffs: true }),
+			game(4, 94, [0, 3], { playoffs: true }),
+			game(5, 96, [0, 3], { playoffs: true }),
+		];
+		const placed = placeLeagueEvents({
+			events: [
+				{
+					eid: 1,
+					type: "playoffs",
+					text: "X made a game-winning shot in game 2 of the 1st round.",
+					tids: [0, 3],
+				},
+				{
+					eid: 2,
+					type: "playoffs",
+					text: "The X defeated the Y in the 1st round, 4-0.",
+					tids: [0, 3],
+				},
+			],
+			games,
+			offseason: false,
+		});
+		assert.strictEqual(placed.get(1), 92);
+		assert.strictEqual(placed.get(2), 96);
+	});
+
+	test("after the title, news belongs to the offseason", () => {
+		const games = [
+			game(1, 80, [0, 1]),
+			game(2, 99, [0, 3], { playoffs: true }),
+		];
+		const events = [
+			{
+				eid: 1,
+				type: "playoffs",
+				text: "The X finished in 1st place and are league champions!",
+				tids: [0],
+			},
+			{ eid: 2, type: "award", text: "MVP" },
+			{ eid: 3, type: "draft", text: "drafted" },
+		];
+		const during = placeLeagueEvents({ events, games, offseason: false });
+		assert.strictEqual(during.get(1), 99);
+		assert.strictEqual(during.get(3), 99);
+		const after = placeLeagueEvents({ events, games, offseason: true });
+		assert.strictEqual(after.get(1), 99);
+		assert.strictEqual(after.get(2), OFFSEASON_DAY);
+		assert.strictEqual(after.get(3), OFFSEASON_DAY);
 	});
 });

@@ -260,6 +260,11 @@ export const eventsFromGame = (game: GameForEvents): SocialEvent[] => {
 			loserTid: loser.tid,
 			winnerName: `${winner.region} ${winner.name}`,
 			loserName: `${loser.region} ${loser.name}`,
+			// The nickname alone, for the voices that would never say "the
+			// Boston Celtics" in full. Facts rather than string surgery in a
+			// template, so a region like "Los Angeles" cannot be mangled.
+			winnerNick: winner.name,
+			loserNick: loser.name,
 			winnerAbbrev: winner.abbrev,
 			loserAbbrev: loser.abbrev,
 			winnerPts: winner.pts,
@@ -506,6 +511,235 @@ export const assignEventDays = (
 	for (const [i, eid] of eids.entries()) {
 		const slot = Math.floor((i * sorted.length) / eids.length);
 		out.set(eid, sorted[Math.min(slot, sorted.length - 1)]!);
+	}
+	return out;
+};
+
+// ---------------------------------------------------------------- PLACEMENT, STABLY
+//
+// assignEventDays above spreads a season's news evenly across its game days.
+// That is deterministic, but it is not STABLE: both denominators grow as the
+// season goes on, so an event placed on day 40 today sits on day 43 next week.
+// A timeline whose past keeps moving is not a timeline.
+//
+// There is ground truth for the news that matters most, and it lives in the
+// box scores. A box score records, per player, the team he suited up for and
+// whether he was hurt in that game. So:
+//
+//   - an injury is anchored to the game where his row says newThisGame;
+//   - a trade is anchored to the first game a traded player appears for his
+//     new team;
+//   - a playoff series result is anchored to the last playoff game between
+//     the two teams, and a playoff moment ("in game 3 of the ...") to that
+//     game;
+//   - the champion's coronation is anchored to the last playoff game, and is
+//     also the boundary: everything logged after it is the offseason.
+//
+// Everything else is interpolated by eid between the nearest anchors, and an
+// anchor never moves once its game is in the books. The only news that can
+// still shift is what comes after the season's LAST anchor - the trailing
+// few days - and it settles as soon as the next injury or trade lands.
+
+export type PlacementGame = {
+	gid: number;
+	day: number;
+	playoffs: boolean;
+	teams: {
+		tid: number;
+		players: { pid: number; injuryNew?: boolean }[];
+	}[];
+};
+
+export type PlacementEvent = {
+	eid: number;
+	type: string;
+	text?: string;
+	pids?: number[];
+	tids?: number[];
+};
+
+// Day 0 is the undated stretch: the offseason, and anything that predates the
+// first game. The schedule starts at day 1, so nothing else can claim it.
+export const OFFSEASON_DAY = 0;
+
+export const placeLeagueEvents = ({
+	events,
+	games,
+	offseason,
+}: {
+	// Sorted by eid ascending.
+	events: readonly PlacementEvent[];
+	games: readonly PlacementGame[];
+	// True once the league has moved past the playoffs: news after the title
+	// then belongs to the offseason rather than to the last day of the finals.
+	offseason: boolean;
+}): Map<number, number> => {
+	const out = new Map<number, number>();
+	if (events.length === 0) {
+		return out;
+	}
+
+	const sortedGames = [...games].sort((a, b) => a.day - b.day || a.gid - b.gid);
+	const days = [...new Set(sortedGames.map((game) => game.day))].sort(
+		(a, b) => a - b,
+	);
+	if (days.length === 0) {
+		for (const event of events) {
+			out.set(event.eid, OFFSEASON_DAY);
+		}
+		return out;
+	}
+	const firstDay = days[0]!;
+	const latestDay = days.at(-1)!;
+	const lastRegularDay = Math.max(
+		firstDay,
+		...sortedGames.filter((game) => !game.playoffs).map((game) => game.day),
+	);
+	const lastPlayoffDay = Math.max(
+		lastRegularDay,
+		...sortedGames.filter((game) => game.playoffs).map((game) => game.day),
+	);
+
+	// ---- Indexes over the box scores, built once.
+	const injuryDaysByPid = new Map<number, number[]>();
+	const appearancesByPid = new Map<number, { day: number; tid: number }[]>();
+	const playoffGamesByPair = new Map<string, number[]>();
+	const pairKey = (a: number, b: number) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+	for (const game of sortedGames) {
+		for (const team of game.teams) {
+			for (const player of team.players) {
+				if (player.injuryNew) {
+					const arr = injuryDaysByPid.get(player.pid) ?? [];
+					arr.push(game.day);
+					injuryDaysByPid.set(player.pid, arr);
+				}
+				const seen = appearancesByPid.get(player.pid) ?? [];
+				seen.push({ day: game.day, tid: team.tid });
+				appearancesByPid.set(player.pid, seen);
+			}
+		}
+		if (game.playoffs && game.teams.length === 2) {
+			const key = pairKey(game.teams[0]!.tid, game.teams[1]!.tid);
+			const arr = playoffGamesByPair.get(key) ?? [];
+			arr.push(game.day);
+			playoffGamesByPair.set(key, arr);
+		}
+	}
+
+	// The days a player changed teams, in order: the first game he played for
+	// each new team after having played for a different one.
+	const changeDaysByPid = new Map<number, { day: number; tid: number }[]>();
+	for (const [pid, seen] of appearancesByPid) {
+		const changes: { day: number; tid: number }[] = [];
+		for (let i = 1; i < seen.length; i++) {
+			if (seen[i]!.tid !== seen[i - 1]!.tid) {
+				changes.push(seen[i]!);
+			}
+		}
+		changeDaysByPid.set(pid, changes);
+	}
+
+	// ---- Anchors. Each type keeps a per-key counter so the k-th event of a
+	// kind pairs with the k-th thing in the box scores.
+	const injuryCount = new Map<number, number>();
+	const tradeCount = new Map<number, number>();
+	const anchors: { eid: number; day: number }[] = [];
+	let championEid: number | undefined;
+
+	for (const event of events) {
+		let day: number | undefined;
+		const text = event.text ?? "";
+
+		if (event.type === "injured" && event.pids?.length) {
+			const pid = event.pids[0]!;
+			const k = injuryCount.get(pid) ?? 0;
+			injuryCount.set(pid, k + 1);
+			day = injuryDaysByPid.get(pid)?.[k];
+		} else if (event.type === "trade" && event.pids?.length) {
+			let best: number | undefined;
+			for (const pid of event.pids) {
+				const k = tradeCount.get(pid) ?? 0;
+				tradeCount.set(pid, k + 1);
+				const change = changeDaysByPid.get(pid)?.[k];
+				if (
+					change &&
+					(event.tids === undefined || event.tids.includes(change.tid))
+				) {
+					best = best === undefined ? change.day : Math.min(best, change.day);
+				}
+			}
+			day = best;
+		} else if (event.type === "playoffs") {
+			if (/league champions/.test(text)) {
+				day = lastPlayoffDay;
+				championEid = event.eid;
+			} else if (event.tids?.length === 2) {
+				const series = playoffGamesByPair.get(
+					pairKey(event.tids[0]!, event.tids[1]!),
+				);
+				if (series?.length) {
+					const gameNumber = /game (\d+)/i.exec(text);
+					if (gameNumber) {
+						day = series[Number(gameNumber[1]) - 1];
+					} else if (/defeated the/.test(text)) {
+						day = series.at(-1);
+					}
+				}
+			}
+		} else if (event.type === "madePlayoffs") {
+			day = lastRegularDay;
+		}
+
+		if (day !== undefined) {
+			// Anchors must not run backwards in time. A mismatched pairing
+			// (a player hurt twice, logged once) would otherwise drag every
+			// interpolated event around it the wrong way.
+			const previous = anchors.at(-1);
+			if (previous === undefined || day >= previous.day) {
+				anchors.push({ eid: event.eid, day });
+			}
+		}
+	}
+
+	// ---- Interpolation. Snap to a real game day so nothing lands on a day
+	// with no games, which the feed would not show.
+	const snap = (target: number, lo: number, hi: number) => {
+		let best = lo;
+		for (const day of days) {
+			if (day < lo) {
+				continue;
+			}
+			if (day > hi) {
+				break;
+			}
+			if (Math.abs(day - target) < Math.abs(best - target)) {
+				best = day;
+			}
+		}
+		return best;
+	};
+
+	let a = 0;
+	for (const event of events) {
+		if (championEid !== undefined && event.eid > championEid) {
+			out.set(event.eid, offseason ? OFFSEASON_DAY : latestDay);
+			continue;
+		}
+		while (a < anchors.length && anchors[a]!.eid < event.eid) {
+			a += 1;
+		}
+		const next = anchors[a];
+		const prev = a > 0 ? anchors[a - 1] : undefined;
+		if (next && next.eid === event.eid) {
+			out.set(event.eid, next.day);
+			continue;
+		}
+		const loEid = prev?.eid ?? Math.min(event.eid, events[0]!.eid) - 1;
+		const loDay = prev?.day ?? firstDay;
+		const hiEid = next?.eid ?? events.at(-1)!.eid + 1;
+		const hiDay = next?.day ?? latestDay;
+		const t = hiEid === loEid ? 0 : (event.eid - loEid) / (hiEid - loEid);
+		out.set(event.eid, snap(loDay + t * (hiDay - loDay), loDay, hiDay));
 	}
 	return out;
 };

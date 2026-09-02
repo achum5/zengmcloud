@@ -2,16 +2,13 @@ import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import {
 	buildAccountDay,
-	buildFeedDay,
-	feedDaysForSeason,
-	resolveFeedAccounts,
+	getFeedSnapshot,
 	type FeedPost,
 } from "../util/socialFeed.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
 
-// How far back one account's page reaches in a single load. An account page
-// has to walk days looking for that account's own posts, and most accounts
-// post on a minority of nights, so this is a window rather than a history.
+// How far back one account's page reaches in a single load. Most accounts post
+// on a minority of nights, so this is a window rather than a history.
 const DAYS_SCANNED = 30;
 
 const updateSocialAccount = async (
@@ -34,8 +31,8 @@ const updateSocialAccount = async (
 			};
 		}
 
-		const accounts = await resolveFeedAccounts();
-		const account = accounts.find(
+		const snapshot = await getFeedSnapshot(season);
+		const account = snapshot.accounts.find(
 			(a) => a.handle.toLowerCase() === inputs.handle.toLowerCase(),
 		);
 		if (!account) {
@@ -44,49 +41,22 @@ const updateSocialAccount = async (
 			};
 		}
 
-		const days = (await feedDaysForSeason(season)).slice(0, DAYS_SCANNED);
+		// A profile is the account's own posts - what it said, whether or not
+		// the day's timeline had room for it - newest first. Replies live under
+		// the posts they answer, on the feed.
 		const posts: (FeedPost & { day: number })[] = [];
-		for (const day of days) {
-			const feed = await buildFeedDay({ season, day });
-			// Everything of this account's that reached the timeline, plus the
-			// replies it left under other people's posts.
-			const fromFeed = new Set<string>();
-			for (const post of feed.posts) {
-				if (post.accountId === account.id) {
-					fromFeed.add(post.id);
-					posts.push({ ...post, day });
-				}
-				for (const reply of post.replies) {
-					if (reply.accountId === account.id) {
-						posts.push({
-							...post,
-							day,
-							id: reply.id,
-							accountId: reply.accountId,
-							handle: reply.handle,
-							name: reply.name,
-							kind: reply.kind,
-							tid: reply.tid,
-							pid: reply.pid,
-							text: reply.text,
-							replies: [],
-						});
-					}
-				}
-			}
-
-			// And what it posted that did not make the day's forty-five. The
-			// timeline is a highlight reel; a profile is not, and a profile
-			// that is empty because its owner lost a popularity contest is the
-			// worst possible answer to "let me look through this account".
+		for (
+			let dayIndex = snapshot.days.length - 1;
+			dayIndex >= 0 && dayIndex >= snapshot.days.length - DAYS_SCANNED;
+			dayIndex--
+		) {
+			const day = snapshot.days[dayIndex]!;
 			for (const post of await buildAccountDay({
-				season,
-				day,
-				accountId: account.id,
+				snapshot,
+				account,
+				dayIndex,
 			})) {
-				if (!fromFeed.has(post.id)) {
-					posts.push({ ...post, day });
-				}
+				posts.push({ ...post, day });
 			}
 		}
 

@@ -1,4 +1,5 @@
 import { assert, describe, test } from "vitest";
+import { NO_QUIRKS } from "./socialQuirks.ts";
 import { createPhrasePool, rngFromSeed } from "./phrasePool.ts";
 import type { ResolvedSocialAccount } from "./socialAccounts.ts";
 import { eventsFromGame, type SocialEvent } from "./socialEvents.ts";
@@ -14,6 +15,9 @@ import {
 	verifyPostNumbers,
 	writePost,
 	writeReply,
+	writePostDetailed,
+	OPENERS,
+	CLOSERS,
 } from "./socialWriting.ts";
 
 const account = (
@@ -36,6 +40,7 @@ const account = (
 		archetype: BUILT_IN_ARCHETYPES.find((a) => a.id === archetypeId),
 		override: extra.override,
 	}),
+	quirks: NO_QUIRKS,
 	implicit: false,
 });
 
@@ -853,4 +858,136 @@ describe("every game line names both teams", () => {
 			}
 		}
 	}
+});
+
+// OPENERS AND CLOSERS carry no numbers, because the number checker would
+// refuse a post that contained one and because a sign-off with a score in it
+// is not a sign-off.
+describe("fragments", () => {
+	test("no opener or closer contains a digit", () => {
+		for (const fragment of [...OPENERS, ...CLOSERS]) {
+			assert.notMatch(fragment.text, /\d/, fragment.text);
+		}
+	});
+
+	test("every tone has openers and closers to draw from", () => {
+		for (const tone of [
+			"beat",
+			"hype",
+			"snark",
+			"doom",
+			"wonk",
+			"unhinged",
+		] as const) {
+			assert.ok(
+				OPENERS.some((f) => f.tones?.includes(tone)),
+				`no opener for ${tone}`,
+			);
+			assert.ok(
+				CLOSERS.some((f) => f.tones?.includes(tone)),
+				`no closer for ${tone}`,
+			);
+		}
+	});
+
+	test("a franchise account is never given an opener", () => {
+		// Franchise copy does not clear its throat.
+		assert.strictEqual(
+			OPENERS.some((f) => f.tones?.includes("corporate")),
+			false,
+		);
+	});
+});
+
+// MEMORY. The writer hands back the core line as well as the finished one,
+// and steers around whatever the caller says it has already used - by core,
+// so a new sign-off cannot smuggle an old line back in.
+describe("memory", () => {
+	test("a core the caller has already used is not used again", () => {
+		const acct = account("doomerFan", { tid: 1, override: { emoji: 0 } });
+		const first = writePostDetailed({
+			account: acct,
+			event: game(),
+			pool: createPhrasePool(),
+			rng: rngFromSeed(3),
+		})!;
+		const used = new Set([first.core]);
+		for (let seed = 0; seed < 40; seed++) {
+			const next = writePostDetailed({
+				account: acct,
+				event: game(),
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+				avoid: (core) => used.has(core),
+			});
+			if (next) {
+				assert.notStrictEqual(next.core, first.core);
+				used.add(next.core);
+			}
+		}
+	});
+
+	test("when every line has been used the writer says nothing", () => {
+		const acct = account("aggregator", { override: { emoji: 0 } });
+		const out = writePostDetailed({
+			account: acct,
+			event: game(),
+			pool: createPhrasePool(),
+			rng: rngFromSeed(1),
+			avoid: () => true,
+		});
+		assert.strictEqual(out, undefined);
+	});
+
+	test("the casual voices sometimes use the nickname alone", () => {
+		// A bystander in a casual voice: its lines always name both teams, so
+		// every post is a fair sample of which form the name took.
+		const acct = account("localRadio", { override: { emoji: 0, caps: 0 } });
+		let short = 0;
+		let named = 0;
+		for (let seed = 0; seed < 120; seed++) {
+			const out = writePostDetailed({
+				account: acct,
+				event: game(),
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+			});
+			if (!out || !/celtics|kings/i.test(out.core)) {
+				continue;
+			}
+			named += 1;
+			if (!/boston|sacramento/i.test(out.core)) {
+				short += 1;
+			}
+		}
+		assert.ok(named > 10, `only ${named} named posts`);
+		assert.ok(short > 0, "nickname form never appeared");
+		assert.ok(short < named, "full name never appeared");
+	});
+});
+
+describe("shouting", () => {
+	test("a handle or hashtag is never re-cased", () => {
+		const personality = {
+			...resolvePersonality({
+				archetype: BUILT_IN_ARCHETYPES.find((a) => a.id === "beatWriter"),
+				override: undefined,
+			}),
+			caps: 1,
+			emoji: 0,
+			profanity: 0,
+			formality: 0.9,
+		};
+		for (let seed = 0; seed < 60; seed++) {
+			const out = applyVoice({
+				text: "You again, @SnipersFaithful. Every single week #Snipers",
+				personality,
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+				positive: undefined,
+			});
+			assert.ok(out.includes("@SnipersFaithful"), out);
+			assert.ok(out.includes("#Snipers"), out);
+		}
+	});
 });

@@ -36,6 +36,7 @@ import {
 	resolvePersonality,
 } from "./socialPersonality.ts";
 import { mediaCastAccounts } from "./socialMediaCast.ts";
+import { quirksFor, type SocialQuirks } from "./socialQuirks.ts";
 
 export type SocialAccountKind = "player" | "team" | "media";
 
@@ -85,6 +86,9 @@ export type ResolvedSocialAccount = {
 	personality: SocialPersonality;
 	avatarUrl?: string;
 	coverUrl?: string;
+	// The small stable tics that make this account read as one person. Drawn
+	// from the id, never stored - see socialQuirks.
+	quirks: SocialQuirks;
 	// True when nothing about this account is stored, so the editor can show
 	// "this is a default" and offer a reset that just deletes the row.
 	implicit: boolean;
@@ -355,9 +359,19 @@ export const resolveAccounts = ({
 	}
 	const handles = assignHandles(drafts, explicitHandles);
 
+	const teamById = new Map(teams.map((t) => [t.tid, t]));
+
 	return drafts.map((draft) => {
 		const row = draft.row;
 		const archetypeId = row?.archetypeId ?? draft.archetypeId;
+		const personality = resolvePersonality({
+			archetype: archetypeById(archetypeId),
+			// Derived traits sit BETWEEN the archetype and the user's edit,
+			// so a hand-edited field always wins over a heuristic.
+			override: mergeOverrides(draft.derivedPersonality, row?.personality),
+		});
+		const tid = row?.tid ?? draft.tid;
+		const team = teamById.get(personality.loyaltyTid ?? tid ?? -1);
 		return {
 			id: draft.id,
 			kind: draft.kind,
@@ -365,16 +379,17 @@ export const resolveAccounts = ({
 			name: row?.name ?? draft.name,
 			bio: row?.bio ?? draft.bio,
 			pid: row?.pid ?? draft.pid,
-			tid: row?.tid ?? draft.tid,
+			tid,
 			archetypeId,
-			personality: resolvePersonality({
-				archetype: archetypeById(archetypeId),
-				// Derived traits sit BETWEEN the archetype and the user's edit,
-				// so a hand-edited field always wins over a heuristic.
-				override: mergeOverrides(draft.derivedPersonality, row?.personality),
-			}),
+			personality,
 			avatarUrl: row?.avatarUrl,
 			coverUrl: row?.coverUrl,
+			quirks: quirksFor({
+				id: draft.id,
+				kind: draft.kind,
+				tone: personality.tone,
+				team: team ? { name: team.name, abbrev: team.abbrev } : undefined,
+			}),
 			implicit: draft.implicit,
 		};
 	});

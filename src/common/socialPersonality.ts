@@ -70,7 +70,10 @@ export type SocialPersonality = {
 	formality: number;
 	// 0 is a fragment, 1 will use two sentences and a subordinate clause.
 	verbosity: number;
-	// Chance of an emoji riding along.
+	// Chance of an emoji riding along. Kept RARE across the board: real
+	// timelines are mostly text, and an emoji on every third post is the
+	// quickest way for a feed to read as generated. The highest archetype
+	// sits at about one post in seven.
 	emoji: number;
 	// Chance of SHOUTING a phrase for emphasis.
 	caps: number;
@@ -283,7 +286,7 @@ export const BUILT_IN_ARCHETYPES: SocialArchetype[] = [
 			}),
 			formality: 0.15,
 			verbosity: 0.35,
-			emoji: 0.5,
+			emoji: 0.14,
 			caps: 0.35,
 			optimism: 0.8,
 			accuracy: 0.35,
@@ -334,7 +337,7 @@ export const BUILT_IN_ARCHETYPES: SocialArchetype[] = [
 			formality: 0.05,
 			verbosity: 0.25,
 			caps: 0.5,
-			emoji: 0.3,
+			emoji: 0.1,
 			profanity: 0.3,
 			optimism: -0.3,
 			accuracy: 0.15,
@@ -381,7 +384,7 @@ export const BUILT_IN_ARCHETYPES: SocialArchetype[] = [
 			}),
 			formality: 0.6,
 			verbosity: 0.35,
-			emoji: 0.6,
+			emoji: 0.12,
 			// Zero, alone among the archetypes. A franchise account is written
 			// by a communications department, and random mid-sentence emphasis
 			// is the one thing it never does - it reads as a typo, not as
@@ -410,7 +413,7 @@ export const BUILT_IN_ARCHETYPES: SocialArchetype[] = [
 			}),
 			formality: 0.2,
 			verbosity: 0.3,
-			emoji: 0.45,
+			emoji: 0.1,
 			caps: 0.2,
 			optimism: 0.5,
 			accuracy: 0.8,

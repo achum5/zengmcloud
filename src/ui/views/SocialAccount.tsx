@@ -91,7 +91,7 @@ const SocialAccount = ({
 					<div key={post.id} className="border rounded p-3">
 						<SocialPost
 							account={post}
-							meta={`Day ${post.day}`}
+							meta={post.day === 0 ? "Offseason" : `Day ${post.day}`}
 							team={teamLike}
 							text={post.text}
 						/>

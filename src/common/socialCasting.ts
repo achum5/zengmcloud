@@ -35,6 +35,10 @@ export type SocialCasting = {
 	// The interest that won the slot, kept so the writer can pitch the post's
 	// intensity to how much this account actually cares.
 	interest: number;
+	// Interest with the day's jitter applied - the number the slot actually
+	// won on. Exposed so a caller can cast every account on its own and then
+	// rank the results league-wide by the same measure castDay would have.
+	score: number;
 };
 
 // How much an account cares that this event involves these people, before
@@ -202,6 +206,7 @@ export const castDay = ({
 			accountId: candidate.accountId,
 			eventId: candidate.eventId,
 			interest: candidate.interest,
+			score: candidate.score,
 		});
 	}
 

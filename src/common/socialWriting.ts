@@ -29,11 +29,26 @@ import type { PhrasePool } from "./phrasePool.ts";
 import type { ResolvedSocialAccount } from "./socialAccounts.ts";
 import type { SocialEvent } from "./socialEvents.ts";
 import type { SocialPersonality, SocialTone } from "./socialPersonality.ts";
+import { NO_QUIRKS, type SocialQuirks } from "./socialQuirks.ts";
 
 // Where an account sits relative to what happened. Computed once so templates
 // can be written from a point of view rather than re-deriving it - and so a
 // homer for the losing team can never draw a celebration line.
 export type Stance = "for" | "against" | "neutral";
+
+// The subject of a league-log line: up to the first comma, parenthesis or
+// "in game/the", and never more than eight words. "PF Zach Ackerman was
+// injured" out of "PF Zach Ackerman was injured (Sprained Knee, out for 10
+// games)"; "The Crabs defeated the Gangsters" out of the series update.
+const leadOf = (summary: string): string => {
+	const cut = summary.search(/,| \(| in (?=game |the |a )/);
+	let lead = cut === -1 ? summary : summary.slice(0, cut);
+	const words = lead.split(" ");
+	if (words.length > 8) {
+		lead = words.slice(0, 8).join(" ");
+	}
+	return lead.replace(/[!.]+$/, "");
+};
 
 // Topics that are bad news for everybody involved, whatever the account's
 // loyalty. Kept as a set rather than a flag on the event because it is a
@@ -80,6 +95,10 @@ export type GameFrame = {
 	insider: boolean;
 	winner: string;
 	loser: string;
+	// Nickname only ("Celtics"), for the voices that would never say the
+	// whole thing. Falls back to the full name when the event predates it.
+	winnerNick: string;
+	loserNick: string;
 	winnerAbbrev: string;
 	loserAbbrev: string;
 	winnerPts: number;
@@ -143,6 +162,13 @@ export type SummaryFrame = {
 	// made every account sound like the same wire service reading the same
 	// sentence. Templates specialise on this.
 	topic: SocialEvent["topic"];
+	// The subject of the news, clipped: "The Snipers defeated the Aztecs"
+	// rather than the whole sentence with the score, the game number and the
+	// series state. The wire voices quote the full line; everyone else
+	// mentions the subject and reacts, because four fan accounts pasting the
+	// same press release with different tails is still four copies of the
+	// press release.
+	lead: string;
 	stance: Stance;
 };
 
@@ -177,6 +203,8 @@ export const frameFor = (
 				event.tids.includes(side),
 			winner: str(f, "winnerName"),
 			loser: str(f, "loserName"),
+			winnerNick: str(f, "winnerNick") || str(f, "winnerName"),
+			loserNick: str(f, "loserNick") || str(f, "loserName"),
 			winnerAbbrev: str(f, "winnerAbbrev"),
 			loserAbbrev: str(f, "loserAbbrev"),
 			winnerPts: num(f, "winnerPts"),
@@ -240,6 +268,7 @@ export const frameFor = (
 		player: account.kind === "player",
 		bad: BAD_NEWS_TOPICS.has(event.topic),
 		topic: event.topic,
+		lead: leadOf(summary),
 		stance,
 	};
 };
@@ -648,6 +677,20 @@ const GAME_TEMPLATES: Template<GameFrame>[] = [
 	},
 ];
 
+// "14 pts, 15 reb" rather than "14 pts, 15 reb, 0 ast": a graphic never
+// prints the zero, and neither does anyone typing a line out.
+const statLine = (f: PerformanceFrame, sep: string, gap: string): string =>
+	(
+		[
+			[f.pts, "pts"],
+			[f.reb, "reb"],
+			[f.ast, "ast"],
+		] as const
+	)
+		.filter(([value]) => value > 0)
+		.map(([value, label]) => `${value}${gap}${label}`)
+		.join(sep);
+
 const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "perf.line",
@@ -851,7 +894,7 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "perf.wire.slash",
 		tones: ["wire", "beat", "wonk"],
-		text: (f) => `${f.name}: ${f.pts} pts, ${f.reb} reb, ${f.ast} ast.`,
+		text: (f) => `${f.name}: ${statLine(f, ", ", " ")}.`,
 	},
 	{
 		id: "perf.wire.vs",
@@ -893,7 +936,7 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "perf.corp.line",
 		tones: ["corporate", "hype"],
-		text: (f) => `${f.pts} PTS · ${f.reb} REB · ${f.ast} AST — ${f.name}.`,
+		text: (f) => `${statLine(f, " · ", " ").toUpperCase()} — ${f.name}.`,
 	},
 ];
 
@@ -1218,7 +1261,7 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		id: "sum.hype",
 		tones: ["hype", "corporate"],
 		when: (f) => !f.bad,
-		text: (f) => `${f.summary} Let's go.`,
+		text: (f) => `${f.lead}. Let's go.`,
 	},
 	{
 		// The same voices still have to say SOMETHING when the news is bad.
@@ -1226,23 +1269,23 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		mood: "down",
 		tones: ["hype", "corporate"],
 		when: (f) => f.bad,
-		text: (f) => `${f.summary} Speedy recovery.`,
+		text: (f) => `${f.lead}. Speedy recovery.`,
 	},
 	{
 		id: "sum.doom",
 		tones: ["doom"],
-		text: (f) => `${f.summary} This will go badly.`,
+		text: (f) => `${f.lead}. This will go badly.`,
 	},
 	{
 		id: "sum.snark",
 		tones: ["snark", "unhinged"],
-		text: (f) => `${f.summary} Sure. Great. Love it here.`,
+		text: (f) => `${f.lead}. Sure. Great. Love it here.`,
 	},
 	{
 		id: "sum.question",
 		tones: ["snark", "doom", "unhinged"],
 		when: (f) => !f.bad,
-		text: (f) => `${f.summary} Who signed off on this?`,
+		text: (f) => `${f.lead}. Who signed off on this?`,
 	},
 
 	// ---- BY TOPIC ----------------------------------------------------------
@@ -1264,20 +1307,20 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		id: "sum.inj.doom",
 		tones: ["doom", "snark"],
 		when: (f) => f.topic === "injury",
-		text: (f) => `${f.summary} Of course. Of course it is him.`,
+		text: (f) => `${f.lead}. Of course. Of course it is him.`,
 	},
 	{
 		id: "sum.inj.hope",
 		mood: "up",
 		tones: ["hype", "corporate", "beat"],
 		when: (f) => f.topic === "injury",
-		text: (f) => `${f.summary} Wishing him a fast one.`,
+		text: (f) => `${f.lead}. Wishing him a fast one.`,
 	},
 	{
 		id: "sum.inj.next",
 		tones: ["wonk", "beat", "wire"],
 		when: (f) => f.topic === "injury",
-		text: (f) => `${f.summary} Somebody is about to get minutes.`,
+		text: (f) => `${f.lead}. Somebody is about to get minutes.`,
 	},
 
 	// Trades and releases.
@@ -1285,19 +1328,19 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		id: "sum.trade.grade",
 		tones: ["wonk", "beat", "snark"],
 		when: (f) => f.topic === "trade",
-		text: (f) => `${f.summary} Grading this one in three years.`,
+		text: (f) => `${f.lead}. Grading this one in three years.`,
 	},
 	{
 		id: "sum.trade.why",
 		tones: ["snark", "doom", "unhinged"],
 		when: (f) => f.topic === "trade",
-		text: (f) => `${f.summary} Explain the plan. Slowly.`,
+		text: (f) => `${f.lead}. Explain the plan. Slowly.`,
 	},
 	{
 		id: "sum.trade.like",
 		tones: ["hype", "corporate", "beat"],
 		when: (f) => f.topic === "trade",
-		text: (f) => `${f.summary} Like it. Fits what they needed.`,
+		text: (f) => `${f.lead}. Like it. Fits what they needed.`,
 	},
 	{
 		id: "sum.trade.more",
@@ -1317,13 +1360,13 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		id: "sum.fa.price",
 		tones: ["snark", "doom", "wonk"],
 		when: (f) => f.topic === "freeAgency",
-		text: (f) => `${f.summary} They paid for last season, not next one.`,
+		text: (f) => `${f.lead}. They paid for last season, not next one.`,
 	},
 	{
 		id: "sum.fa.win",
 		tones: ["hype", "corporate"],
 		when: (f) => f.topic === "freeAgency",
-		text: (f) => `${f.summary} Welcome aboard.`,
+		text: (f) => `${f.lead}. Welcome aboard.`,
 	},
 
 	// Awards and milestones.
@@ -1337,7 +1380,7 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		id: "sum.award.snark",
 		tones: ["snark", "doom"],
 		when: (f) => f.topic === "awards",
-		text: (f) => `${f.summary} Voters got there eventually.`,
+		text: (f) => `${f.lead}. Voters got there eventually.`,
 	},
 	{
 		id: "sum.award.history",
@@ -1357,13 +1400,13 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		id: "sum.draft.hype",
 		tones: ["hype", "corporate"],
 		when: (f) => f.topic === "draft",
-		text: (f) => `${f.summary} Great day for this franchise.`,
+		text: (f) => `${f.lead}. Great day for this franchise.`,
 	},
 	{
 		id: "sum.draft.doom",
 		tones: ["doom", "snark"],
 		when: (f) => f.topic === "draft",
-		text: (f) => `${f.summary} Reaching, as usual.`,
+		text: (f) => `${f.lead}. Reaching, as usual.`,
 	},
 
 	// Standings and playoff races.
@@ -1377,13 +1420,13 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		id: "sum.stand.hype",
 		tones: ["hype", "corporate", "unhinged"],
 		when: (f) => f.topic === "standings",
-		text: (f) => `${f.summary} We are not done.`,
+		text: (f) => `${f.lead}. We are not done.`,
 	},
 	{
 		id: "sum.stand.doom",
 		tones: ["doom", "snark"],
 		when: (f) => f.topic === "standings",
-		text: (f) => `${f.summary} Setting up the usual disappointment.`,
+		text: (f) => `${f.lead}. Setting up the usual disappointment.`,
 	},
 
 	// Money.
@@ -1397,7 +1440,7 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		id: "sum.money.snark",
 		tones: ["snark", "doom", "unhinged"],
 		when: (f) => f.topic === "money",
-		text: (f) => `${f.summary} Someone should have read the cap rules.`,
+		text: (f) => `${f.lead}. Someone should have read the cap rules.`,
 	},
 ];
 
@@ -1971,7 +2014,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 ];
 
-export const writeReply = ({
+export const writeReplyDetailed = ({
 	account,
 	parent,
 	event,
@@ -1988,8 +2031,8 @@ export const writeReply = ({
 	quote?: boolean;
 	pool: PhrasePool;
 	rng: () => number;
-	avoid?: (text: string) => boolean;
-}): string | undefined => {
+	avoid?: AvoidFn;
+}): WrittenPost | undefined => {
 	const subject = frameFor(account, event);
 	if (!subject) {
 		return undefined;
@@ -2027,6 +2070,10 @@ export const writeReply = ({
 	});
 };
 
+export const writeReply = (
+	args: Parameters<typeof writeReplyDetailed>[0],
+): string | undefined => writeReplyDetailed(args)?.text;
+
 // ---------------------------------------------------------------- VOICE
 
 const POSITIVE_EMOJI = ["🔥", "😤", "🙌", "💪", "👏"];
@@ -2039,12 +2086,187 @@ const EXPLETIVES = ["damn", "hell", "garbage", "brutal"];
 
 const stripTerminal = (text: string) => text.replace(/[!.]+$/, "");
 
-// Shout one phrase rather than the whole line: an entire post in caps is
-// unreadable, and the real thing people do is emphasize a few words.
+// ---- OPENERS AND CLOSERS.
 //
-// Consecutive capitalised words are treated as ONE token, so a name is shouted
-// whole or not at all. Splitting them produced "Marcin GORTAT led the way" and
-// "DERRICK Rose led the way", which read as a bug rather than as emphasis.
+// A template is the middle of a post. Real posts have a beginning and an end
+// too - a throat-clear, a sign-off - and they are what turn eight lines about
+// a win into a few hundred. They carry NO NUMBERS, ever, because the number
+// checker would refuse them and because a sign-off with a score in it is not
+// a sign-off. `mood` keeps "Run it back." off a loss.
+type Fragment = {
+	text: string;
+	tones?: SocialTone[];
+	mood?: "up" | "down";
+};
+
+export const OPENERS: Fragment[] = [
+	// Beat.
+	{ text: "Quick one.", tones: ["beat"] },
+	{ text: "For the notebook:", tones: ["beat"] },
+	{ text: "Worth noting.", tones: ["beat", "wonk"] },
+	{ text: "From the arena:", tones: ["beat"] },
+	{ text: "Postgame note.", tones: ["beat"] },
+	{ text: "One more from tonight.", tones: ["beat"] },
+	{ text: "Late add.", tones: ["beat", "wonk"] },
+	{ text: "Housekeeping.", tones: ["beat"] },
+	// Hype.
+	{ text: "Listen.", tones: ["hype", "unhinged"] },
+	{ text: "Okay.", tones: ["hype", "snark"] },
+	{ text: "Yeah.", tones: ["hype"] },
+	{ text: "Told you.", tones: ["hype", "doom"], mood: "up" },
+	{ text: "Not surprised.", tones: ["hype", "snark", "doom"] },
+	{ text: "Look.", tones: ["hype", "beat", "snark"] },
+	{ text: "Real quick.", tones: ["hype", "unhinged"] },
+	{ text: "Nah.", tones: ["hype", "unhinged"], mood: "down" },
+	{ text: "Say what you want.", tones: ["hype"] },
+	{ text: "Sorry not sorry.", tones: ["hype", "unhinged"], mood: "up" },
+	// Snark.
+	{ text: "Ah.", tones: ["snark"] },
+	{ text: "Sure.", tones: ["snark"] },
+	{ text: "Cool.", tones: ["snark"] },
+	{ text: "Fun.", tones: ["snark"] },
+	{ text: "Right.", tones: ["snark", "doom"] },
+	{ text: "Neat.", tones: ["snark"] },
+	{ text: "Ah yes.", tones: ["snark"] },
+	{ text: "Love that.", tones: ["snark"] },
+	{ text: "Incredible.", tones: ["snark", "hype"] },
+	{ text: "Wonderful.", tones: ["snark"] },
+	{ text: "Big night.", tones: ["snark", "beat"], mood: "up" },
+	// Doom.
+	{ text: "Yep.", tones: ["doom"] },
+	{ text: "Here we go.", tones: ["doom", "unhinged"] },
+	{ text: "As expected.", tones: ["doom", "wonk"] },
+	{ text: "Called it.", tones: ["doom", "snark"] },
+	{ text: "Naturally.", tones: ["doom", "snark"] },
+	{ text: "Of course.", tones: ["doom"] },
+	{ text: "Sigh.", tones: ["doom"], mood: "down" },
+	{ text: "Right on schedule.", tones: ["doom", "snark"] },
+	{ text: "Every time.", tones: ["doom"] },
+	// Wonk.
+	{ text: "Note:", tones: ["wonk"] },
+	{ text: "Small thing.", tones: ["wonk", "beat"] },
+	{ text: "For context:", tones: ["wonk", "beat"] },
+	{ text: "Data point.", tones: ["wonk"] },
+	{ text: "One detail.", tones: ["wonk", "beat"] },
+	{ text: "Quietly:", tones: ["wonk"] },
+	{ text: "For the record:", tones: ["wonk", "wire"] },
+	// Unhinged.
+	{ text: "OKAY.", tones: ["unhinged"] },
+	{ text: "NO.", tones: ["unhinged"], mood: "down" },
+	{ text: "hello???", tones: ["unhinged"] },
+	{ text: "excuse me.", tones: ["unhinged"] },
+	{ text: "I am screaming.", tones: ["unhinged"] },
+	{ text: "wait.", tones: ["unhinged"] },
+	{ text: "oh my god.", tones: ["unhinged"] },
+	{ text: "somebody explain.", tones: ["unhinged"], mood: "down" },
+	{ text: "I cannot.", tones: ["unhinged"] },
+];
+
+export const CLOSERS: Fragment[] = [
+	// Beat.
+	{ text: "More tomorrow.", tones: ["beat"] },
+	{ text: "Full story to come.", tones: ["beat"] },
+	{ text: "Notebook later.", tones: ["beat"] },
+	{ text: "More as I get it.", tones: ["beat", "wire"] },
+	{ text: "That is the night.", tones: ["beat"] },
+	{ text: "Back at it tomorrow.", tones: ["beat", "corporate"] },
+	// Hype.
+	{ text: "We move.", tones: ["hype", "unhinged"] },
+	{ text: "On to the next.", tones: ["hype", "corporate"] },
+	{ text: "That is all.", tones: ["hype", "snark"] },
+	{ text: "Simple.", tones: ["hype"] },
+	{ text: "Say less.", tones: ["hype", "unhinged"], mood: "up" },
+	{ text: "Run it back.", tones: ["hype", "unhinged"], mood: "up" },
+	{ text: "Not worried.", tones: ["hype"], mood: "down" },
+	{ text: "Book it.", tones: ["hype"], mood: "up" },
+	{ text: "Believe it.", tones: ["hype"], mood: "up" },
+	{ text: "We are fine.", tones: ["hype", "unhinged"], mood: "down" },
+	// Snark.
+	{ text: "Anyway.", tones: ["snark", "doom"] },
+	{ text: "Carry on.", tones: ["snark"] },
+	{ text: "Moving on.", tones: ["snark", "wonk"] },
+	{ text: "Whatever.", tones: ["snark", "doom"] },
+	{ text: "Great stuff.", tones: ["snark"] },
+	{ text: "Noted.", tones: ["snark", "wonk"] },
+	{ text: "Do with that what you will.", tones: ["snark", "wonk"] },
+	// Doom.
+	{ text: "Long season.", tones: ["doom", "beat"] },
+	{ text: "It is what it is.", tones: ["doom"] },
+	{ text: "Same as always.", tones: ["doom"] },
+	{ text: "Ask me in April.", tones: ["doom", "snark"] },
+	{ text: "We know how this goes.", tones: ["doom"] },
+	{ text: "Do not get attached.", tones: ["doom"], mood: "up" },
+	// Wonk.
+	{ text: "Small sample.", tones: ["wonk"] },
+	{ text: "Worth watching.", tones: ["wonk", "beat"] },
+	{ text: "Numbers are numbers.", tones: ["wonk"] },
+	{ text: "File it away.", tones: ["wonk", "beat"] },
+	{ text: "More data needed.", tones: ["wonk"] },
+	{ text: "Caveats apply.", tones: ["wonk"] },
+	// Corporate. Sparse on purpose.
+	{ text: "Thank you for the support.", tones: ["corporate"] },
+	{ text: "See you next game.", tones: ["corporate"] },
+	{ text: "Onward.", tones: ["corporate"] },
+	// Unhinged.
+	{ text: "I need to lie down.", tones: ["unhinged"] },
+	{ text: "goodnight.", tones: ["unhinged"] },
+	{ text: "that is the tweet.", tones: ["unhinged", "snark"] },
+	{ text: "no further questions.", tones: ["unhinged", "snark"] },
+	{ text: "I am not okay.", tones: ["unhinged"], mood: "down" },
+	{ text: "do not talk to me.", tones: ["unhinged"], mood: "down" },
+	{ text: "we are so back.", tones: ["unhinged", "hype"], mood: "up" },
+	{ text: "it is over.", tones: ["unhinged", "doom"], mood: "down" },
+];
+
+const fragmentsFor = (
+	list: Fragment[],
+	tone: SocialTone,
+	positive: boolean | undefined,
+): string[] =>
+	list
+		.filter(
+			(fragment) =>
+				(fragment.tones === undefined || fragment.tones.includes(tone)) &&
+				(fragment.mood === undefined ||
+					(fragment.mood === "up" && positive === true) ||
+					(fragment.mood === "down" && positive === false)),
+		)
+		.map((fragment) => fragment.text);
+
+const sentences = (text: string) =>
+	text
+		.split(/[!.?]+/)
+		.map((part) => part.trim())
+		.filter((part) => part.length > 0);
+
+// A line that already opens with a label ("FINAL:", "Breaking:") or a number,
+// or that is itself a two-word reaction, does not want a throat-clear in front
+// of it. "Okay. Okay." is the machine showing.
+const canOpen = (text: string) => {
+	if (text.length < 14 || /^[A-Za-z]+:/.test(text) || /^\d/.test(text)) {
+		return false;
+	}
+	const first = sentences(text)[0];
+	return first !== undefined && first.split(" ").length > 2;
+};
+
+// A line whose last sentence is already a sign-off ("On to the next.") does
+// not want another one after it, and a question does not want an answer the
+// poster did not write.
+const canClose = (text: string) => {
+	if (text.endsWith("?")) {
+		return false;
+	}
+	const last = sentences(text).at(-1);
+	return last !== undefined && last.split(" ").length > 3;
+};
+
+const ensureTerminal = (text: string) =>
+	/[!.?]$/.test(text) ? text : `${text}.`;
+
+// Shout one phrase rather than the whole line: an entire post in caps is
+// unreadable, and not what anybody actually does.
+//
 // Words nobody emphasizes. Shouting one is the tell that a machine chose the
 // span: "in A 105-104 win", "enjoy it WHILE IT lasts", "win IS a win". A run
 // has to both start and end on something worth raising your voice about.
@@ -2173,6 +2395,11 @@ const NEVER_SHOUT = new Set([
 // Strips the punctuation a token is wearing before asking what word it is, so
 // "lasts." and "it," are judged as "lasts" and "it".
 const shoutable = (token: string): boolean => {
+	// A handle is a link and a hashtag is a tag; re-casing either changes
+	// what it points at, or at least what it looks like it points at.
+	if (token.startsWith("@") || token.startsWith("#")) {
+		return false;
+	}
 	const bare = token.replaceAll(/[^\dA-Za-z]/g, "").toLowerCase();
 	return bare.length > 0 && !NEVER_SHOUT.has(bare);
 };
@@ -2215,7 +2442,14 @@ const shoutSomething = (rng: () => number, text: string): string => {
 		Math.max(1, Math.floor(words.length / 2)),
 	);
 	// Trim function words off the END of the run for the same reason they
-	// cannot begin it.
+	// cannot begin it - and a handle or hashtag anywhere inside it ends the
+	// run before it, since shoutable() refuses those too.
+	for (let i = start + 1; i < start + len; i++) {
+		if (!shoutable(words[i]!)) {
+			len = i - start;
+			break;
+		}
+	}
 	while (len > 1 && !shoutable(words[start + len - 1]!)) {
 		len -= 1;
 	}
@@ -2229,23 +2463,46 @@ const shoutSomething = (rng: () => number, text: string): string => {
 export const applyVoice = ({
 	text,
 	personality,
+	quirks = NO_QUIRKS,
 	pool,
 	rng,
 	positive,
+	quiet = false,
 }: {
 	text: string;
 	personality: SocialPersonality;
+	quirks?: SocialQuirks;
 	pool: PhrasePool;
 	rng: () => number;
 	// Whether the news is good from this account's point of view, which is what
 	// decides between a fire emoji and a skull.
 	positive: boolean | undefined;
+	// No decoration at all - see Template.quiet.
+	quiet?: boolean;
 }): string => {
 	let out = text;
+	const { tone } = personality;
 
-	if (rng() < personality.profanity) {
+	if (!quiet && rng() < personality.profanity) {
 		const word = pool.pick(rng, EXPLETIVES, "voice:expletive");
 		out = `${word}. ${out}`;
+	}
+
+	// How often this account adds a beginning or an end at all. A terse
+	// account rarely does; a rambling one usually does one or the other.
+	const chatty = quiet ? 0 : Math.min(0.5, 0.1 + 0.35 * personality.verbosity);
+
+	if (rng() < chatty * quirks.openerRate && canOpen(out)) {
+		const options = fragmentsFor(OPENERS, tone, positive);
+		if (options.length > 0) {
+			out = `${pool.pick(rng, options, "voice:opener")} ${out}`;
+		}
+	}
+	if (rng() < chatty * quirks.closerRate && canClose(out)) {
+		const options = fragmentsFor(CLOSERS, tone, positive);
+		if (options.length > 0) {
+			out = `${ensureTerminal(out)} ${pool.pick(rng, options, "voice:closer")}`;
+		}
 	}
 
 	// Casing BEFORE shouting. The other order lowercased the shout away, so an
@@ -2258,11 +2515,17 @@ export const applyVoice = ({
 		out = stripTerminal(out);
 	}
 
-	if (rng() < personality.caps) {
+	// Trailing off is a lowercase habit; a sentence break in a formal post is
+	// followed by a capital, which this deliberately does not match.
+	if (quirks.ellipses && rng() < 0.5) {
+		out = out.replaceAll(/\. (?=[a-z])/g, "... ");
+	}
+
+	if (!quiet && rng() < personality.caps) {
 		out = shoutSomething(rng, out);
 	}
 
-	if (personality.catchphrases.length > 0 && rng() < 0.25) {
+	if (!quiet && personality.catchphrases.length > 0 && rng() < 0.25) {
 		const phrase = pool.pick(
 			rng,
 			personality.catchphrases,
@@ -2271,7 +2534,19 @@ export const applyVoice = ({
 		out = `${phrase} ${out}`;
 	}
 
-	if (rng() < personality.emoji) {
+	if (quirks.exclaims && positive === true && !quiet && rng() < 0.6) {
+		out = out.endsWith(".") ? `${out.slice(0, -1)}!` : `${out}!`;
+	}
+
+	if (quirks.hashtag !== undefined && !quiet && rng() < quirks.hashtagRate) {
+		out = `${out} ${quirks.hashtag}`;
+	}
+
+	// The dial means what it says: an account set to 1 always adds one. The
+	// rarity lives in the archetype defaults, not in a cap here, so the editor
+	// can still make an emoji person on purpose.
+	const emojiChance = quiet ? 0 : personality.emoji + quirks.emojiBoost;
+	if (rng() < emojiChance) {
 		const bank =
 			positive === undefined
 				? NEUTRAL_EMOJI
@@ -2373,13 +2648,41 @@ const positivity = (frame: Frame): boolean | undefined => {
 	return frame.stance === "for";
 };
 
+// What a writer hands back: the finished line, and the line BEFORE voice had
+// its way with it. Memory works on both. Two posts with the same core and
+// different sign-offs are still the same post to a reader, so "have I said
+// this already" has to be asked of the core as well as of the text.
+export type WrittenPost = {
+	text: string;
+	core: string;
+	templateId: string;
+};
+
+// Whether the caller has already used this line. Called with the core and
+// the decorated text separately so it can refuse either.
+export type AvoidFn = (core: string, text: string) => boolean;
+
+const CASUAL_TONES = new Set<SocialTone>(["hype", "doom", "unhinged", "snark"]);
+
+// "the Boston Celtics" becomes "the Celtics" about half the time in the casual
+// voices, which is both how people talk and a free doubling of every game
+// line. Numbers are untouched, so the checker is indifferent.
+const casualNames = (core: string, frame: GameFrame): string =>
+	core
+		.replaceAll(frame.winner, frame.winnerNick)
+		.replaceAll(frame.loser, frame.loserNick);
+
+// How many times to re-decorate one core before giving up on the template.
+// Openers and closers are drawn fresh each time, so a core that has been said
+// with one sign-off can come back with another - but only if the CORE itself
+// is still fresh, which is the caller's call.
+const DECORATION_TRIES = 3;
+
 // Walk the eligible templates in the pool's rotation order and return the
 // first finished line the caller will accept. The ledger already stops a
 // template repeating within a batch; `avoid` is the caller's stronger claim -
-// that this exact SENTENCE has already been said today, whoever said it and
-// whichever template produced it. Two templates can converge on the same words
-// once voice has had its way with them, and a reader does not care which bank
-// they came from.
+// that this line has already been said, today or recently, whoever said it
+// and whichever template produced it.
 const writeFirstAcceptable = ({
 	eligible,
 	frame,
@@ -2395,10 +2698,14 @@ const writeFirstAcceptable = ({
 	pool: PhrasePool;
 	rng: () => number;
 	ledgerKey: string;
-	avoid: ((text: string) => boolean) | undefined;
-}): string | undefined => {
+	avoid: AvoidFn | undefined;
+}): WrittenPost | undefined => {
 	const remaining = [...eligible];
-	let fallback: string | undefined;
+	const { tone } = account.personality;
+	const positive =
+		"kind" in frame
+			? positivity(frame as Frame)
+			: positivity((frame as ReplyFrame).subject);
 
 	while (remaining.length > 0) {
 		const ids = remaining.map((template) => template.id);
@@ -2407,33 +2714,39 @@ const writeFirstAcceptable = ({
 		const chosen = remaining[index === -1 ? 0 : index]!;
 		remaining.splice(index === -1 ? 0 : index, 1);
 
-		const text = applyVoice({
-			text: chosen.text(frame as any),
-			personality: chosen.quiet
-				? { ...account.personality, emoji: 0, caps: 0, profanity: 0 }
-				: account.personality,
-			pool,
-			rng,
-			positive:
-				chosen.mood === undefined
-					? "kind" in frame
-						? positivity(frame as Frame)
-						: positivity((frame as ReplyFrame).subject)
-					: chosen.mood === "up",
-		});
-		fallback ??= text;
-		if (avoid === undefined || !avoid(text)) {
-			return text;
+		let core = chosen.text(frame as any);
+		if (
+			"kind" in frame &&
+			frame.kind === "game" &&
+			CASUAL_TONES.has(tone) &&
+			rng() < 0.55
+		) {
+			core = casualNames(core, frame);
+		}
+
+		for (let attempt = 0; attempt < DECORATION_TRIES; attempt++) {
+			const text = applyVoice({
+				text: core,
+				personality: account.personality,
+				quirks: account.quirks,
+				pool,
+				rng,
+				positive: chosen.mood === undefined ? positive : chosen.mood === "up",
+				quiet: chosen.quiet === true,
+			});
+			if (avoid === undefined || !avoid(core, text)) {
+				return { text, core, templateId: chosen.id };
+			}
 		}
 	}
 
-	// Every line this account could say today has already been said today. Say
-	// nothing rather than say it twice - a quiet account reads better than a
-	// duplicated one, and the day is already over its target anyway.
+	// Every line this account could say has already been said. Say nothing
+	// rather than say it twice - a quiet account reads better than a
+	// duplicated one.
 	return undefined;
 };
 
-export const writePost = ({
+export const writePostDetailed = ({
 	account,
 	event,
 	pool,
@@ -2444,9 +2757,8 @@ export const writePost = ({
 	event: SocialEvent;
 	pool: PhrasePool;
 	rng: () => number;
-	// True when the caller has already used this exact text today.
-	avoid?: (text: string) => boolean;
-}): string | undefined => {
+	avoid?: AvoidFn;
+}): WrittenPost | undefined => {
 	const frame = frameFor(account, event);
 	if (!frame) {
 		return undefined;
@@ -2475,6 +2787,10 @@ export const writePost = ({
 		avoid,
 	});
 };
+
+export const writePost = (
+	args: Parameters<typeof writePostDetailed>[0],
+): string | undefined => writePostDetailed(args)?.text;
 
 // ---------------------------------------------------------------- CHECKING
 //

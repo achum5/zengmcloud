@@ -2,8 +2,7 @@ import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import {
 	buildFeedDay,
-	feedDaysForSeason,
-	resolveFeedAccounts,
+	getFeedSnapshot,
 	type FeedDay,
 } from "../util/socialFeed.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
@@ -35,12 +34,18 @@ const updateSocialFeed = async (
 			};
 		}
 
-		const allDays = await feedDaysForSeason(season);
-		const wanted = allDays.slice(0, inputs.days ?? DAYS_PER_PAGE);
+		const snapshot = await getFeedSnapshot(season);
+		const newestFirst = [...snapshot.days].reverse();
+		const wanted = newestFirst.slice(0, inputs.days ?? DAYS_PER_PAGE);
 
 		const feed: FeedDay[] = [];
 		for (const day of wanted) {
-			feed.push(await buildFeedDay({ season, day }));
+			feed.push(
+				await buildFeedDay({
+					snapshot,
+					dayIndex: snapshot.days.indexOf(day),
+				}),
+			);
 		}
 
 		const teams = (await idb.cache.teams.getAll()).map((t) => ({
@@ -57,8 +62,8 @@ const updateSocialFeed = async (
 			feed,
 			season,
 			days: inputs.days ?? DAYS_PER_PAGE,
-			hasMore: allDays.length > wanted.length,
-			accountCount: (await resolveFeedAccounts()).length,
+			hasMore: newestFirst.length > wanted.length,
+			accountCount: snapshot.accounts.length,
 			teams,
 			userTid: g.get("userTid"),
 		};
