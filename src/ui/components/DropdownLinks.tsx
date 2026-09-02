@@ -3,6 +3,7 @@ import { memo, useCallback, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import { Dropdown, Nav } from "react-bootstrap";
 import { helpers } from "../util/helpers.ts";
+import { useLocal } from "../util/local.ts";
 import type {
 	MenuItemLink,
 	MenuItemHeader,
@@ -132,6 +133,11 @@ const MenuItem = ({
 	openID?: string;
 	root: boolean;
 }) => {
+	// Read here rather than threaded down: one leaf needs it, and the flag has
+	// nothing to do with the components in between. Before the early returns,
+	// because it is a hook.
+	const { socialFeed } = useLocal(["socialFeed"]);
+
 	if (menuItem.type === "text") {
 		return <Dropdown.Header>{menuItem.text}</Dropdown.Header>;
 	}
@@ -150,6 +156,10 @@ const MenuItem = ({
 		}
 
 		if (menuItem.godMode && !godMode) {
+			return null;
+		}
+
+		if (menuItem.socialFeed && !socialFeed) {
 			return null;
 		}
 

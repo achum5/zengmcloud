@@ -3180,6 +3180,14 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "UI",
+			key: "socialFeed",
+			name: "League Feed",
+			type: "bool",
+			descriptionLong:
+				"Adds a social media style timeline of the league, written by fictional media, fan and player accounts that react to what happens as you sim. Every account is editable, and nothing is stored - the feed is regenerated from your league's own games and transactions.",
+		},
+		{
+			category: "UI",
 			key: "hideDisabledTeams",
 			name: "Hide Inactive Teams",
 			type: "bool",

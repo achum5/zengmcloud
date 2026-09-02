@@ -93,12 +93,14 @@ const baseSort = () => 0;
 
 const getResultsGroupedDefault = ({
 	godMode,
+	socialFeed,
 	inLeague,
 	onHide,
 	playMenuOptions,
 	searchText,
 }: {
 	godMode: boolean;
+	socialFeed: boolean;
 	inLeague: boolean;
 	onHide: () => void;
 	playMenuOptions: LocalStateUI["playMenuOptions"];
@@ -118,6 +120,10 @@ const getResultsGroupedDefault = ({
 		}
 
 		if (!menuItem.nonLeague && !inLeague) {
+			return false;
+		}
+
+		if (menuItem.socialFeed && !socialFeed) {
 			return false;
 		}
 
@@ -438,6 +444,7 @@ const getResultsGroupedPlayers = async ({
 const getResultsGrouped = async ({
 	challengeNoRatings,
 	godMode,
+	socialFeed,
 	hideDisabledTeams,
 	inLeague,
 	mode,
@@ -448,6 +455,7 @@ const getResultsGrouped = async ({
 }: {
 	challengeNoRatings: LocalStateUI["challengeNoRatings"];
 	godMode: boolean;
+	socialFeed: boolean;
 	hideDisabledTeams: LocalStateUI["hideDisabledTeams"];
 	inLeague: boolean;
 	mode: Mode | undefined;
@@ -487,6 +495,7 @@ const getResultsGrouped = async ({
 	} else {
 		resultsGrouped = getResultsGroupedDefault({
 			godMode,
+			socialFeed,
 			inLeague,
 			onHide,
 			playMenuOptions,
@@ -761,6 +770,7 @@ const CommandPaletteInner = ({
 	const {
 		challengeNoRatings,
 		godMode,
+		socialFeed,
 		hideDisabledTeams,
 		lid,
 		playMenuOptions,
@@ -768,6 +778,7 @@ const CommandPaletteInner = ({
 	} = useLocal([
 		"challengeNoRatings",
 		"godMode",
+		"socialFeed",
 		"hideDisabledTeams",
 		"lid",
 		"playMenuOptions",
@@ -793,6 +804,7 @@ const CommandPaletteInner = ({
 			const newResults = await getResultsGrouped({
 				challengeNoRatings,
 				godMode,
+				socialFeed,
 				hideDisabledTeams,
 				inLeague,
 				mode,
@@ -815,6 +827,7 @@ const CommandPaletteInner = ({
 	}, [
 		challengeNoRatings,
 		godMode,
+		socialFeed,
 		hideDisabledTeams,
 		inLeague,
 		mode,

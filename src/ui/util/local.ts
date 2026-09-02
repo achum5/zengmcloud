@@ -83,6 +83,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		gender: defaultGameAttributes.gender,
 		gold: undefined,
 		godMode: false,
+		socialFeed: false,
 		hideDisabledTeams: false,
 		homeCourtAdvantage: 1,
 		keyboardShortcuts: undefined,
@@ -199,6 +200,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 					tickerItems: [],
 					leagueTickerVisible: false,
 					godMode: false,
+					socialFeed: false,
 					hideDisabledTeams: false,
 					homeCourtAdvantage: 1,
 

@@ -951,6 +951,17 @@ const leagueStats = (params: Params) => {
 	};
 };
 
+const socialFeed = (params: Params) => ({
+	season: validateSeason(params.season),
+	// How far back the timeline has been scrolled, in days. Carried in the URL
+	// so a reload lands where the reader was rather than at the top.
+	days: params.days === undefined ? undefined : Number.parseInt(params.days),
+});
+
+const socialAccount = (params: Params) => ({
+	handle: params.handle ?? "",
+});
+
 const standings = (params: Params) => {
 	let type: "conf" | "div" | "league" =
 		g.get("numGamesPlayoffSeries").length === 0
@@ -1139,6 +1150,8 @@ const advancedPlayerSearch = (params: Params) => {
 };
 
 export default {
+	socialAccount,
+	socialFeed,
 	account,
 	advancedPlayerSearch,
 	allStarDunk: validateSeasonOnly,

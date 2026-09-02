@@ -115,6 +115,14 @@ export type PerformanceFrame = {
 export type SummaryFrame = {
 	kind: "summary";
 	summary: string;
+	// Whether this account IS the person the league's line is about. The log
+	// writes in the third person, so a player account passing it along says
+	// "derek moore had 13 points" about himself - which is the same tell the
+	// performance banks already had to fix.
+	aboutMe: boolean;
+	// A player account, which should REACT to the league's news rather than
+	// read it out. Reciting a wire line is what a media account does.
+	player: boolean;
 	stance: Stance;
 };
 
@@ -202,7 +210,13 @@ export const frameFor = (
 		// than to post a shape with a hole in it.
 		return undefined;
 	}
-	return { kind: "summary", summary, stance };
+	return {
+		kind: "summary",
+		summary,
+		aboutMe: account.pid !== undefined && event.pids.includes(account.pid),
+		player: account.kind === "player",
+		stance,
+	};
 };
 
 // ---------------------------------------------------------------- TEMPLATES
@@ -769,6 +783,48 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	},
 ];
 
+// THE LEAGUE'S NEWS, WHEN IT IS ABOUT YOU. Never quotes the log line, because
+// the log is written in the third person and reading it aloud about yourself is
+// the giveaway this whole design keeps having to design around.
+const SELF_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
+	{ id: "selfsum.blessed", text: () => `Blessed. Thank you all.` },
+	{ id: "selfsum.work", text: () => `Work is not finished.` },
+	{
+		id: "selfsum.team",
+		text: () => `None of this happens without my teammates.`,
+	},
+	{
+		id: "selfsum.hype",
+		tones: ["hype", "unhinged", "corporate"],
+		text: () => `Told you.`,
+	},
+	{
+		id: "selfsum.quiet",
+		tones: ["wire", "beat", "wonk", "doom"],
+		text: () => `Appreciate it. Back to work tomorrow.`,
+	},
+	{
+		id: "selfsum.family",
+		text: () => `For my family and everyone who backed me.`,
+	},
+];
+
+// THE LEAGUE'S NEWS ABOUT SOMEBODY ELSE, said by a player. Short, and never a
+// recital: a player reacting to a team-mate's award does not read the press
+// release aloud.
+const PLAYER_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
+	{ id: "psum.congrats", text: () => `Congrats bro. Well deserved.` },
+	{ id: "psum.earned", text: () => `Earned, not given.` },
+	{ id: "psum.happy", text: () => `Happy for him.` },
+	{ id: "psum.hype", tones: ["hype", "unhinged"], text: () => `LETS GOOO` },
+	{
+		id: "psum.quiet",
+		tones: ["wire", "beat", "wonk", "doom", "snark"],
+		text: () => `Good for him.`,
+	},
+	{ id: "psum.next", text: () => `Now we go get the next one.` },
+];
+
 // ---------------------------------------------------------------- REPLIES
 //
 // An answer has to be about the POST, not just about the game, or a thread is
@@ -1143,6 +1199,12 @@ const bankFor = (frame: Frame): Template<any>[] => {
 			return TEAMMATE_TEMPLATES;
 		}
 		return PERFORMANCE_TEMPLATES;
+	}
+	if (frame.aboutMe) {
+		return SELF_SUMMARY_TEMPLATES;
+	}
+	if (frame.player) {
+		return PLAYER_SUMMARY_TEMPLATES;
 	}
 	return SUMMARY_TEMPLATES;
 };

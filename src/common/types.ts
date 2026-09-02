@@ -786,6 +786,11 @@ export type GameAttributesLeague = {
 	groupScheduleSeries: boolean;
 	heightFactor: number;
 	hideDisabledTeams: boolean;
+	// The league feed: a generated social timeline. Off by default, because a
+	// fictional press corps is a strong flavour and a league should opt into it
+	// rather than find it switched on one day. Nothing is stored either way -
+	// the feed is derived - so turning it off simply stops rendering it.
+	socialFeed: boolean;
 	hofFactor: number;
 	homeCourtAdvantage: number;
 	inflationAvg: number;
@@ -1161,6 +1166,10 @@ export type MenuItemLink = {
 	active?: (pageID?: string, pathname?: string) => boolean;
 	league?: true;
 	godMode?: true;
+	// Hidden unless the league has the feed switched on. A generated press
+	// corps is opt-in, so its entry point should not sit in the menu of a
+	// league that has never enabled it.
+	socialFeed?: true;
 	nonLeague?: true;
 	commandPalette?: true;
 	commandPaletteOnly?: true;
@@ -1373,6 +1382,7 @@ export type LocalStateUI = {
 	};
 	lid?: number;
 	liveGameInProgress: boolean;
+	socialFeed: boolean;
 	// True while connected to a multiplayer sync session - used to hide the
 	// multi-team switcher so it feels like single-player.
 	mpSyncActive: boolean;

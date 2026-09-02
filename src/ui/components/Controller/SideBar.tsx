@@ -134,6 +134,11 @@ const MenuItem = ({
 	pathname?: string;
 	root: boolean;
 }) => {
+	// Read here rather than threaded from the top: the flag is needed by one
+	// leaf, and passing it down would touch four components that have no other
+	// interest in it. Before every early return, because it is a hook.
+	const { socialFeed } = useLocal(["socialFeed"]);
+
 	if (menuItem.type === "text") {
 		return null;
 	}
@@ -152,6 +157,10 @@ const MenuItem = ({
 		}
 
 		if (menuItem.godMode && !godMode) {
+			return null;
+		}
+
+		if (menuItem.socialFeed && !socialFeed) {
 			return null;
 		}
 

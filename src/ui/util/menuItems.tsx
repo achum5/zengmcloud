@@ -233,6 +233,16 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			},
 			{
 				type: "link",
+				active: (pageID) =>
+					pageID === "socialFeed" || pageID === "socialAccount",
+				league: true,
+				socialFeed: true,
+				commandPalette: true,
+				path: ["social"],
+				text: "League Feed",
+			},
+			{
+				type: "link",
 				league: true,
 				commandPalette: true,
 				commandPaletteOnly: true,
