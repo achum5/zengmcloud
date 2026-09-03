@@ -7,9 +7,11 @@ import {
 	nextGameFor,
 	pastSeasonTotals,
 	playerEntering,
+	playerVsOpponent,
 	restEntering,
 	returnFromAbsence,
 	seasonMilestone,
+	scoringNorm,
 	seasonSeries,
 	standingOf,
 	teamSeasonHighs,
@@ -17,8 +19,10 @@ import {
 	type CountingTotals,
 	type Milestone,
 	type PlayerEntering,
+	type ScoringNorm,
 	type SeasonSeries,
 	type TeamSeasonHighs,
+	type VsOpponent,
 } from "./recapContext.ts";
 import { g } from "./index.ts";
 import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
@@ -93,6 +97,8 @@ export type RecapPlayer = {
 	milestone?: Milestone;
 	// His first game back after sitting out three or more with an injury.
 	returnFrom?: { games: number; type: string };
+	// What he had done against tonight's opponent before tonight.
+	vsOpponent?: VsOpponent;
 	// Averages ENTERING this game - the game itself (and anything after) is
 	// excluded, so "he came in averaging X" is always true of these numbers.
 	seasonAvg?: RecapAverages;
@@ -171,6 +177,8 @@ export type RecapTeam = {
 	};
 	// Whether this game set the team's (or the league's) season high.
 	seasonHighs?: TeamSeasonHighs;
+	// What the team had been scoring and allowing entering this game.
+	norm?: ScoringNorm;
 };
 
 // A playoff series' state for context (bracket entry the game belongs to).
@@ -1543,6 +1551,21 @@ const createAutoRecapContext = async (season: number) => {
 							day2,
 							teamGamesOf(t.tid),
 						);
+						if (!playoffs) {
+							const oppTid = game.teams.find(
+								(other: any) => other.tid !== t.tid,
+							)?.tid;
+							if (typeof oppTid === "number") {
+								base.vsOpponent = playerVsOpponent(
+									p.pid,
+									t.tid,
+									oppTid,
+									game.gid,
+									day2,
+									teamGamesOf(t.tid),
+								);
+							}
+						}
 					}
 				}
 				players.push(base);
@@ -1590,6 +1613,7 @@ const createAutoRecapContext = async (season: number) => {
 					};
 				}
 				if (!playoffs) {
+					team.norm = scoringNorm(team.tid, game.gid, day2, mine);
 					team.seasonSeries = seasonSeries(
 						team.tid,
 						opp.tid,

@@ -39,6 +39,7 @@ import {
 export { beginRecapBatch, endRecapBatch, pick } from "./recapText.ts";
 import {
 	benchBeat,
+	dayBracketWatch,
 	dayColdStreak,
 	dayMilestones,
 	dayRaceSentence,
@@ -52,9 +53,11 @@ import {
 	playerStreakBeat,
 	restBeat,
 	returnBeat,
+	scoringNormBeat,
 	seriesBeat,
 	standingsBeat,
 	teamHighBeat,
+	vsOpponentBeat,
 	type BeatContext,
 	type DayBeatContext,
 } from "./recapBeats.ts";
@@ -3182,9 +3185,11 @@ export const getAutoRecap = (game: RecapGame): string => {
 			/averaging|average/.test(alreadyWritten),
 		),
 		careerArcNote(star, game.playoffs, rng),
-		// The night against his own season: a season high, the streak he is on.
+		// The night against his own season: a season high, the streak he is on,
+		// and what he had done to this opponent before tonight.
 		playerHighBeat(star, rng),
 		playerStreakBeat(star, rng),
+		vsOpponentBeat(star, nick(shape.loser), rng),
 		...shuffle(rng, [
 			threeNote(shape, rng, spentTopics.has("threes")),
 			freeThrowNote(shape, rng, spentTopics.has("freeThrows")),
@@ -3221,21 +3226,35 @@ export const getAutoRecap = (game: RecapGame): string => {
 		said,
 		written: [headline.text, ...para1, ...para2, ...para3].join(" "),
 	};
-	const para4 = [
-		teamHighBeat(beatCtx, rng),
-		standingsBeat(beatCtx, rng),
-		formNote(shape, rng, beatCtx.written),
-		...shuffle(rng, [
-			seriesBeat(beatCtx, rng),
-			homeRoadBeat(beatCtx, rng),
-			restBeat(beatCtx, rng),
-			milestoneBeat(beatCtx, rng),
-			returnBeat(beatCtx, rng),
-			benchBeat(beatCtx, rng),
-		]),
-	]
-		.filter((x): x is string => !!x)
-		.slice(0, 3);
+	// Built one sentence at a time, not as a list of calls: a beat has to see
+	// what the beats before it said. Evaluating them all at once meant the
+	// average-against-the-season sentence could not tell that the season-high
+	// sentence two slots earlier had just described the same points.
+	const para4: string[] = [];
+	const addBeat = (beat: () => string | undefined) => {
+		if (para4.length >= 3) {
+			return;
+		}
+		const text = beat();
+		if (text) {
+			para4.push(text);
+			beatCtx.written = `${beatCtx.written} ${text}`;
+		}
+	};
+	addBeat(() => teamHighBeat(beatCtx, rng));
+	addBeat(() => standingsBeat(beatCtx, rng));
+	addBeat(() => formNote(shape, rng, beatCtx.written));
+	for (const beat of shuffle(rng, [
+		() => scoringNormBeat(beatCtx, rng),
+		() => seriesBeat(beatCtx, rng),
+		() => homeRoadBeat(beatCtx, rng),
+		() => restBeat(beatCtx, rng),
+		() => milestoneBeat(beatCtx, rng),
+		() => returnBeat(beatCtx, rng),
+		() => benchBeat(beatCtx, rng),
+	])) {
+		addBeat(beat);
+	}
 	const closer = nextGameBeat(beatCtx, rng);
 	if (closer) {
 		para4.push(closer);
@@ -4977,7 +4996,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// one reads the context the games carry and says nothing when the night
 	// gives it nothing, so a quiet Tuesday still ends after paragraph three.
 	const para4 = playoffs
-		? []
+		? [dayBracketWatch(dayCtx, rng)].filter((x): x is string => !!x)
 		: [
 				dayStandingsMovers(dayCtx, rng),
 				dayRaceSentence(dayCtx, rng),

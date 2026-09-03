@@ -310,6 +310,97 @@ export const teamSeasonHighs = (
 	};
 };
 
+// ---------------------------------------------------------------- THE NORM
+
+export type ScoringNorm = {
+	gp: number;
+	// Points per game scored and allowed, ENTERING this game.
+	pts: number;
+	oppPts: number;
+};
+
+// What a team had been scoring and allowing before tonight. The number that
+// turns "they scored 128" into "they scored 128, fourteen more than they had
+// been managing all season".
+export const scoringNorm = (
+	tid: number,
+	gid: number,
+	day: number,
+	games: readonly ContextGameRow[],
+): ScoringNorm | undefined => {
+	let gp = 0;
+	let pts = 0;
+	let oppPts = 0;
+	for (const g of games) {
+		if (
+			!completed(g) ||
+			g.playoffs ||
+			!involves(g, tid) ||
+			!playedBefore(g, gid, day) ||
+			g.teams[0]?.tid === -1
+		) {
+			continue;
+		}
+		const { mine, opp } = sideOf(g, tid);
+		gp += 1;
+		pts += mine?.pts ?? 0;
+		oppPts += opp?.pts ?? 0;
+	}
+	if (gp === 0) {
+		return undefined;
+	}
+	const r1 = (x: number) => Math.round((x / gp) * 10) / 10;
+	return { gp, pts: r1(pts), oppPts: r1(oppPts) };
+};
+
+// ---------------------------------------------------------------- THE MATCHUP
+
+export type VsOpponent = {
+	// Meetings with a box-score line for him, before this one.
+	games: number;
+	bestPts: number;
+	avgPts: number;
+};
+
+// What a player had done against tonight's opponent, before tonight. A beat
+// writer's "he had 41 on them in November", without needing the calendar.
+export const playerVsOpponent = (
+	pid: number,
+	tid: number,
+	oppTid: number,
+	gid: number,
+	day: number,
+	games: readonly ContextGameRow[],
+): VsOpponent | undefined => {
+	let n = 0;
+	let best = 0;
+	let total = 0;
+	for (const g of games) {
+		if (
+			!completed(g) ||
+			g.playoffs ||
+			!involves(g, tid) ||
+			!involves(g, oppTid) ||
+			!playedBefore(g, gid, day)
+		) {
+			continue;
+		}
+		const entry = sideOf(g, tid).mine?.players?.find(
+			(p: any) => p?.pid === pid && (p.min ?? 0) > 0,
+		);
+		if (!entry) {
+			continue;
+		}
+		n += 1;
+		const pts = entry.pts ?? 0;
+		total += pts;
+		best = Math.max(best, pts);
+	}
+	return n > 0
+		? { games: n, bestPts: best, avgPts: Math.round((total / n) * 10) / 10 }
+		: undefined;
+};
+
 // ---------------------------------------------------------------- THE PLAYER
 
 export type CountingTotals = {

@@ -803,6 +803,134 @@ export const nextGameBeat = (
 	return lNext ? line(ctx.loser, lNext) : undefined;
 };
 
+// ---------------------------------------------------------------- THE NORM
+
+// The scoreboard against what the two clubs had been doing all season. A
+// 128-point night means one thing from a team averaging 96 and another from
+// one averaging 124, and nothing in the recap could tell them apart.
+export const scoringNormBeat = (
+	ctx: BeatContext,
+	rng: Rng,
+): string | undefined => {
+	if (ctx.game.playoffs) {
+		return undefined;
+	}
+	const options: string[] = [];
+	const W = cap(theNick(ctx.winner));
+	const wn = theNick(ctx.winner);
+	const L = cap(theNick(ctx.loser));
+	const ln = theNick(ctx.loser);
+
+	// The season-high beat has already described this team's scoring; a second
+	// sentence measuring the same points against the same season is the same
+	// observation with different arithmetic.
+	const highTold =
+		/season high|had not scored|most .* have scored|any game this season|more than they had in any/.test(
+			ctx.written,
+		);
+
+	const wNorm = ctx.winner.norm;
+	if (wNorm && wNorm.gp >= 12 && !highTold) {
+		const over = Math.round(ctx.winner.pts - wNorm.pts);
+		if (over >= 14) {
+			options.push(
+				pick(
+					rng,
+					[
+						`${W} had been averaging ${wNorm.pts.toFixed(1)} a game coming in.`,
+						// Every shape names the team: these land in a paragraph with
+						// other clubs in it, and "That is 17 more" two sentences after
+						// the last mention of them attaches to the wrong one.
+						`The ${ctx.winner.pts} were ${numWord(over)} more than ${poss(wn)} season average of ${wNorm.pts.toFixed(1)}.`,
+						`${W} scored ${numWord(over)} more than they had been managing on the season.`,
+						`${W} came in averaging ${wNorm.pts.toFixed(1)} and beat it by ${numWord(over)}.`,
+					],
+					"normWinnerHigh",
+				),
+			);
+		}
+	}
+
+	const lNorm = ctx.loser.norm;
+	if (lNorm && lNorm.gp >= 12) {
+		const under = Math.round(lNorm.pts - ctx.loser.pts);
+		if (under >= 14) {
+			options.push(
+				pick(
+					rng,
+					[
+						`${L} came in averaging ${lNorm.pts.toFixed(1)} and never got near it.`,
+						`It left ${ln} ${numWord(under)} short of their season average.`,
+						`${L} had been scoring ${lNorm.pts.toFixed(1)} a game; tonight they managed ${ctx.loser.pts}.`,
+					],
+					"normLoserLow",
+				),
+			);
+		}
+	}
+
+	// A defensive night measured against what the other side usually gets.
+	if (
+		lNorm &&
+		lNorm.gp >= 12 &&
+		lNorm.pts - ctx.loser.pts >= 10 &&
+		ctx.margin >= 8
+	) {
+		options.push(
+			pick(
+				rng,
+				[
+					`${W} held an offense averaging ${lNorm.pts.toFixed(1)} to ${ctx.loser.pts}.`,
+					`Holding ${ln} to ${ctx.loser.pts} was ${numWord(Math.round(lNorm.pts - ctx.loser.pts))} below what they usually get.`,
+					`${cap(ln)} were kept well under their ${lNorm.pts.toFixed(1)} a night.`,
+				],
+				"normDefense",
+			),
+		);
+	}
+
+	return options.length > 0 ? pick(rng, options) : undefined;
+};
+
+// ---------------------------------------------------------------- THE MATCHUP
+
+// What the star had done to this opponent before tonight. Two shapes of
+// story: he keeps doing it, or he had never done it until now.
+export const vsOpponentBeat = (
+	p: RecapPlayer,
+	oppName: string,
+	rng: Rng,
+): string | undefined => {
+	const v = p.vsOpponent;
+	if (!v || v.games < 2 || p.pts < 20) {
+		return undefined;
+	}
+	const opp = `the ${oppName}`;
+	if (v.avgPts >= 24 && p.pts >= 24) {
+		return pick(
+			rng,
+			[
+				`${p.name} has made a habit of this against ${opp}, ${v.avgPts.toFixed(1)} a game in ${numWord(v.games)} earlier meetings.`,
+				`${cap(opp)} have no answer for him: ${v.avgPts.toFixed(1)} a game from ${p.name} across their ${numWord(v.games)} previous meetings.`,
+				`${p.name} had already been averaging ${v.avgPts.toFixed(1)} against ${opp} this season.`,
+			],
+			"vsOppHabit",
+		);
+	}
+	if (p.pts >= v.bestPts + 8 && v.bestPts <= 18) {
+		return pick(
+			rng,
+			[
+				`${p.name} had not managed more than ${v.bestPts} against ${opp} this season.`,
+				`His previous best against ${opp} was ${v.bestPts}.`,
+				`${cap(opp)} had held ${p.name} to ${v.bestPts} or fewer in every earlier meeting.`,
+			],
+			"vsOppBreakout",
+		);
+	}
+	return undefined;
+};
+
 // ---------------------------------------------------------------- THE NIGHT
 //
 // The day wrap's own beats. A league wrap that lists results tells you what
@@ -1157,5 +1285,71 @@ export const dayTomorrow = (
 			`Next up on the schedule is ${matchup}${tail}.`,
 		],
 		"dayTomorrow",
+	);
+};
+
+// ---------------------------------------------------------------- THE BRACKET
+
+// The postseason day wrap's closing context. Which series are on the brink,
+// which are level, and who plays for their season next. The wrap already
+// narrates the night's series results; this is what they set up.
+export const dayBracketWatch = (
+	ctx: DayBeatContext,
+	rng: Rng,
+): string | undefined => {
+	type Watch = { text: string; weight: number };
+	const out: Watch[] = [];
+	for (const game of ctx.games) {
+		const s = game.series;
+		if (!s || typeof s.bestOf !== "number" || s.bestOf <= 1) {
+			continue;
+		}
+		const { winner, loser } = sidesOf(game);
+		if (ctx.saidTids.has(winner.tid) && ctx.saidTids.has(loser.tid)) {
+			continue;
+		}
+		const winnerIsHome = winner.abbrev === s.homeAbbrev;
+		const wAfter = (winnerIsHome ? s.homeWon : s.awayWon) + 1;
+		const lAfter = winnerIsHome ? s.awayWon : s.homeWon;
+		const need = Math.floor(s.bestOf / 2) + 1;
+		const nextGame = wAfter + lAfter + 1;
+		if (wAfter >= need) {
+			continue; // the series is over; the wrap has it as a result
+		}
+		const w = theNick(winner);
+		const l = theNick(loser);
+		if (wAfter === need - 1 && lAfter === need - 1) {
+			out.push({
+				weight: 4,
+				text: `${w} and ${l} play a decider in Game ${nextGame}`,
+			});
+		} else if (wAfter === need - 1) {
+			out.push({
+				weight: 3,
+				text: `${l} face elimination in Game ${nextGame}`,
+			});
+		} else if (wAfter === lAfter) {
+			out.push({
+				weight: 1,
+				text: `${w} and ${l} are level at ${wAfter}-${wAfter}`,
+			});
+		}
+		ctx.saidTids.add(winner.tid);
+		ctx.saidTids.add(loser.tid);
+	}
+	if (out.length === 0) {
+		return undefined;
+	}
+	out.sort((a, b) => b.weight - a.weight);
+	const list = naturalList(out.slice(0, 3).map((x) => x.text));
+	return pick(
+		rng,
+		[
+			`Looking ahead, ${list}.`,
+			`What it sets up: ${list}.`,
+			`Next time out, ${list}.`,
+			`The bracket now: ${list}.`,
+		],
+		"dayBracket",
 	);
 };

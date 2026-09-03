@@ -1,6 +1,7 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import {
 	benchBeat,
+	dayBracketWatch,
 	dayColdStreak,
 	dayMilestones,
 	dayRaceSentence,
@@ -13,9 +14,11 @@ import {
 	playerStreakBeat,
 	restBeat,
 	returnBeat,
+	scoringNormBeat,
 	seriesBeat,
 	standingsBeat,
 	teamHighBeat,
+	vsOpponentBeat,
 	type BeatContext,
 	type DayBeatContext,
 } from "./recapBeats.ts";
@@ -999,5 +1002,228 @@ describe("the day wrap's context", () => {
 			dayTomorrow(ctxOf(noneTomorrow), rngFromSeed(1)),
 			undefined,
 		);
+	});
+});
+
+describe("the night against the season's norms", () => {
+	beforeEach(() => endRecapBatch());
+
+	const withNorm = (
+		name: string,
+		tid: number,
+		pts: number,
+		norm: { gp: number; pts: number; oppPts: number } | undefined,
+	) => team({ tid, name, pts, norm });
+
+	test("a night well above what the winner had been scoring", () => {
+		const w = withNorm("Celtics", 1, 128, { gp: 30, pts: 110.4, oppPts: 108 });
+		const l = withNorm("Knicks", 2, 100, { gp: 30, pts: 104.2, oppPts: 106 });
+		const all = shapes((rng) => scoringNormBeat(game(w, l).ctx, rng));
+		assert.ok(all.size >= 3, [...all].join("\n"));
+		assert.ok(
+			[...all].some((s) => /averaging|season average|managing/.test(s)),
+			[...all].join("\n"),
+		);
+		noNumeralOpener(all);
+	});
+
+	test("a losing side well below its own, and a defensive night named as one", () => {
+		const w = withNorm("Celtics", 1, 100, { gp: 30, pts: 101, oppPts: 100 });
+		const l = withNorm("Knicks", 2, 84, { gp: 30, pts: 112.5, oppPts: 106 });
+		const all = shapes((rng) => scoringNormBeat(game(w, l).ctx, rng));
+		assert.ok(all.size >= 3, [...all].join("\n"));
+		assert.ok(
+			[...all].some((s) =>
+				/short of|never got near|managed|held|under/.test(s),
+			),
+			[...all].join("\n"),
+		);
+	});
+
+	test("the season-high sentence and the average sentence never both fire", () => {
+		const w = withNorm("Celtics", 1, 128, { gp: 30, pts: 110.4, oppPts: 108 });
+		const l = withNorm("Knicks", 2, 100, { gp: 30, pts: 104.2, oppPts: 106 });
+		const { ctx } = game(w, l);
+		ctx.written = "The 128 points were a season high for the Celtics.";
+		// Only the loser's side of it is left to say, and here there is none.
+		assert.strictEqual(scoringNormBeat(ctx, rngFromSeed(1)), undefined);
+	});
+
+	test("every shape names its team, so nothing dangles mid-paragraph", () => {
+		const w = withNorm("Celtics", 1, 128, { gp: 30, pts: 110.4, oppPts: 108 });
+		const l = withNorm("Knicks", 2, 100, { gp: 30, pts: 104.2, oppPts: 106 });
+		const all = shapes((rng) => scoringNormBeat(game(w, l).ctx, rng));
+		for (const s of all) {
+			assert.ok(/Celtics|Knicks/.test(s), s);
+		}
+	});
+
+	test("an ordinary night, a short sample, or the playoffs says nothing", () => {
+		const w = withNorm("Celtics", 1, 108, { gp: 30, pts: 106, oppPts: 104 });
+		const l = withNorm("Knicks", 2, 102, { gp: 30, pts: 105, oppPts: 107 });
+		assert.strictEqual(
+			scoringNormBeat(game(w, l).ctx, rngFromSeed(1)),
+			undefined,
+		);
+
+		const early = withNorm("Celtics", 1, 128, { gp: 4, pts: 100, oppPts: 100 });
+		assert.strictEqual(
+			scoringNormBeat(game(early, l).ctx, rngFromSeed(1)),
+			undefined,
+		);
+
+		const big = withNorm("Celtics", 1, 128, { gp: 30, pts: 105, oppPts: 100 });
+		assert.strictEqual(
+			scoringNormBeat(game(big, l, { playoffs: true }).ctx, rngFromSeed(1)),
+			undefined,
+		);
+	});
+});
+
+describe("a player against this opponent", () => {
+	beforeEach(() => endRecapBatch());
+
+	test("a man who keeps doing it to them", () => {
+		const p = player({
+			name: "Jayson Tatum",
+			pts: 34,
+			vsOpponent: { games: 2, bestPts: 36, avgPts: 33.5 },
+		});
+		const all = shapes((rng) => vsOpponentBeat(p, "Knicks", rng));
+		assert.ok(all.size >= 3, [...all].join("\n"));
+		assert.ok(
+			[...all].every((s) => /Knicks/.test(s)),
+			[...all].join("\n"),
+		);
+		noNumeralOpener(all);
+	});
+
+	test("a man who had never done it to them before", () => {
+		const p = player({
+			name: "Jayson Tatum",
+			pts: 31,
+			vsOpponent: { games: 3, bestPts: 15, avgPts: 12.5 },
+		});
+		const all = shapes((rng) => vsOpponentBeat(p, "Knicks", rng));
+		assert.ok(all.size >= 3, [...all].join("\n"));
+		assert.ok(
+			[...all].every((s) =>
+				/not managed more than|previous best|had held/.test(s),
+			),
+			[...all].join("\n"),
+		);
+		assert.match(vsOpponentBeat(p, "Knicks", rngFromSeed(1))!, /\b15\b/);
+	});
+
+	test("one earlier meeting, a quiet night, or nothing at all says nothing", () => {
+		const once = player({
+			name: "Jayson Tatum",
+			pts: 34,
+			vsOpponent: { games: 1, bestPts: 30, avgPts: 30 },
+		});
+		assert.strictEqual(
+			vsOpponentBeat(once, "Knicks", rngFromSeed(1)),
+			undefined,
+		);
+		const quiet = player({
+			name: "Jayson Tatum",
+			pts: 11,
+			vsOpponent: { games: 3, bestPts: 30, avgPts: 28 },
+		});
+		assert.strictEqual(
+			vsOpponentBeat(quiet, "Knicks", rngFromSeed(1)),
+			undefined,
+		);
+		assert.strictEqual(
+			vsOpponentBeat(
+				player({ name: "Nobody", pts: 30 }),
+				"Knicks",
+				rngFromSeed(1),
+			),
+			undefined,
+		);
+	});
+});
+
+describe("the postseason day wrap", () => {
+	beforeEach(() => endRecapBatch());
+
+	const seriesGame = (
+		gid: number,
+		winnerName: string,
+		loserName: string,
+		homeWon: number,
+		awayWon: number,
+		tids: [number, number],
+	): RecapGame => {
+		const winner = team({
+			tid: tids[0],
+			name: winnerName,
+			abbrev: "WIN",
+			pts: 100,
+		});
+		const loser = team({
+			tid: tids[1],
+			name: loserName,
+			abbrev: "LOS",
+			pts: 90,
+		});
+		return {
+			gid,
+			day: 100,
+			overtimes: 0,
+			winnerTid: tids[0],
+			playoffs: true,
+			clutchPlays: [],
+			teams: [winner, loser],
+			series: {
+				round: 1,
+				numRounds: 4,
+				bestOf: 7,
+				homeAbbrev: "WIN",
+				awayAbbrev: "LOS",
+				homeSeed: 1,
+				awaySeed: 8,
+				homeWon,
+				awayWon,
+			},
+		};
+	};
+
+	const ctx = (games: RecapGame[]): DayBeatContext => ({
+		games,
+		saidTids: new Set(),
+		saidPlayers: new Set(),
+	});
+
+	// Four wins takes a best-of-seven, and tonight's winner had one fewer than
+	// the score below says: (1, 2) is a series pulled level at 2-2, (2, 2) is a
+	// 3-2 lead, (2, 3) is 3-3 and everything on Game 7.
+	test("elimination outranks a series pulled level", () => {
+		const games = [
+			seriesGame(1, "Bucks", "Heat", 1, 2, [3, 4]),
+			seriesGame(2, "Celtics", "Knicks", 2, 2, [1, 2]),
+		];
+		const text = dayBracketWatch(ctx(games), rngFromSeed(1))!;
+		assert.match(text, /Knicks face elimination in Game 6/);
+		assert.match(text, /Bucks and the Heat are level at 2-2/);
+		assert.ok(text.indexOf("elimination") < text.indexOf("level"), text);
+		assert.ok(shapes((rng) => dayBracketWatch(ctx(games), rng)).size >= 3);
+	});
+
+	test("a decider outranks everything", () => {
+		const games = [
+			seriesGame(1, "Celtics", "Knicks", 2, 2, [1, 2]),
+			seriesGame(2, "Bucks", "Heat", 2, 3, [3, 4]),
+		];
+		const text = dayBracketWatch(ctx(games), rngFromSeed(1))!;
+		assert.match(text, /Bucks and the Heat play a decider in Game 7/);
+		assert.ok(text.indexOf("decider") < text.indexOf("elimination"), text);
+	});
+
+	test("a series that just ended is not in the watch", () => {
+		const clinch = [seriesGame(1, "Celtics", "Knicks", 3, 1, [1, 2])];
+		assert.strictEqual(dayBracketWatch(ctx(clinch), rngFromSeed(1)), undefined);
+		assert.strictEqual(dayBracketWatch(ctx([]), rngFromSeed(1)), undefined);
 	});
 });
