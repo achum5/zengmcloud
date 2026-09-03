@@ -29,6 +29,7 @@ import {
 	gbText,
 	injuryPhrase,
 	lowerInjury,
+	naturalList,
 	nick,
 	numWord,
 	ordinal,
@@ -800,4 +801,361 @@ export const nextGameBeat = (
 		return line(ctx.winner, wNext);
 	}
 	return lNext ? line(ctx.loser, lNext) : undefined;
+};
+
+// ---------------------------------------------------------------- THE NIGHT
+//
+// The day wrap's own beats. A league wrap that lists results tells you what
+// happened; these tell you what it meant to the season - who moved in the
+// table, where the race stands at the cut line, who is hot and who cannot buy
+// a win, the round numbers passed, the season highs set, and what is on
+// tomorrow. Same rules as the game beats: pooled phrasings, nothing said
+// twice, undefined when the night gives them nothing.
+
+export type DayBeatContext = {
+	games: RecapGame[];
+	standings?: {
+		playoffSpots?: number;
+		confs: {
+			name: string;
+			teams: {
+				tid?: number;
+				name?: string;
+				abbrev: string;
+				rank: number;
+				won: number;
+				lost: number;
+				gb: number;
+			}[];
+		}[];
+	};
+	// Teams and players the wrap has already given a sentence to.
+	saidTids: Set<number>;
+	saidPlayers: Set<string>;
+};
+
+const realGames = (games: RecapGame[]) => games.filter((g) => !g.allStar);
+
+const sidesOf = (game: RecapGame) => {
+	const [home, away] = game.teams;
+	const winner = game.winnerTid === home.tid ? home : away;
+	const loser = winner === home ? away : home;
+	return { winner, loser };
+};
+
+// Enough of a sample for a rank to mean anything.
+const MIN_GAMES_FOR_RACE = 15;
+
+// Who moved in the playoff picture tonight. Only inside it: a climb to
+// thirteenth is not news, and neither is a slide between two lottery places.
+export const dayStandingsMovers = (
+	ctx: DayBeatContext,
+	rng: Rng,
+): string | undefined => {
+	type Move = { text: string; tid: number; size: number };
+	const moves: Move[] = [];
+	for (const game of realGames(ctx.games)) {
+		if (game.playoffs) {
+			continue;
+		}
+		for (const t of game.teams) {
+			const st = t.standing;
+			if (
+				!st ||
+				st.rankBefore === undefined ||
+				st.rank === st.rankBefore ||
+				st.won + st.lost < MIN_GAMES_FOR_RACE ||
+				ctx.saidTids.has(t.tid)
+			) {
+				continue;
+			}
+			const spots = ctx.standings?.playoffSpots ?? Math.ceil(st.teams / 2);
+			const up = st.rank < st.rankBefore;
+			const intoThePicture = up && st.rank <= spots && st.rankBefore > spots;
+			const outOfIt = !up && st.rank > spots && st.rankBefore <= spots;
+			// No commas inside a clause: these are joined into one list, and a
+			// clause carrying its own comma runs the list together.
+			if (intoThePicture) {
+				moves.push({
+					tid: t.tid,
+					size: 3,
+					text: `${theNick(t)} moved into the ${st.conf} places at ${ordinal(st.rank)}`,
+				});
+			} else if (outOfIt) {
+				moves.push({
+					tid: t.tid,
+					size: 3,
+					text: `${theNick(t)} slid out of the ${st.conf} places to ${ordinal(st.rank)}`,
+				});
+			} else if (st.rank <= spots && up) {
+				moves.push({
+					tid: t.tid,
+					size: st.rank <= 3 ? 2 : 1,
+					text: `${theNick(t)} climbed to ${ordinal(st.rank)} in the ${st.conf}`,
+				});
+			}
+		}
+	}
+	if (moves.length === 0) {
+		return undefined;
+	}
+	moves.sort((a, b) => b.size - a.size);
+	const top = moves.slice(0, 3);
+	for (const m of top) {
+		ctx.saidTids.add(m.tid);
+	}
+	const list = naturalList(top.map((m) => m.text));
+	return pick(
+		rng,
+		[
+			`${cap(list)}.`,
+			`The table moved with them: ${list}.`,
+			`In the standings, ${list}.`,
+			`It shuffled the order too - ${list}.`,
+		],
+		"dayMovers",
+	);
+};
+
+// The cut line: who is holding the last playoff place and by how much.
+export const dayRaceSentence = (
+	ctx: DayBeatContext,
+	rng: Rng,
+): string | undefined => {
+	const standings = ctx.standings;
+	const spots = standings?.playoffSpots;
+	if (!standings || !spots) {
+		return undefined;
+	}
+	const bits: string[] = [];
+	for (const conf of standings.confs) {
+		const last = conf.teams.find((t) => t.rank === spots);
+		const first = conf.teams.find((t) => t.rank === spots + 1);
+		if (!last || !first || last.won + last.lost < MIN_GAMES_FOR_RACE) {
+			continue;
+		}
+		const gap = Math.round((first.gb - last.gb) * 2) / 2;
+		const lastName = last.name ? `the ${last.name}` : last.abbrev;
+		const firstName = first.name ? `the ${first.name}` : first.abbrev;
+		if (gap <= 0) {
+			bits.push(
+				`${lastName} and ${firstName} are level for the last ${conf.name} place`,
+			);
+		} else if (gap <= 3) {
+			bits.push(
+				`${lastName} hold the last ${conf.name} place by ${gbText(gap)} over ${firstName}`,
+			);
+		}
+	}
+	if (bits.length === 0) {
+		return undefined;
+	}
+	return pick(
+		rng,
+		[
+			`On the cut line, ${naturalList(bits)}.`,
+			`The race for the last places: ${naturalList(bits)}.`,
+			`At the bottom of the bracket, ${naturalList(bits)}.`,
+			`Down at the cut line, ${naturalList(bits)}.`,
+		],
+		"dayRace",
+	);
+};
+
+// The team nobody can beat, and the team that cannot win. The hot side is
+// already covered by the wrap's own streak sentence; this is the cold one,
+// which had no voice at all.
+export const dayColdStreak = (
+	ctx: DayBeatContext,
+	rng: Rng,
+): string | undefined => {
+	let worst: { team: RecapTeam; count: number } | undefined;
+	for (const game of realGames(ctx.games)) {
+		const { loser } = sidesOf(game);
+		const s = loser.streak;
+		if (
+			s &&
+			!s.won &&
+			s.count >= 6 &&
+			!ctx.saidTids.has(loser.tid) &&
+			(!worst || s.count > worst.count)
+		) {
+			worst = { team: loser, count: s.count };
+		}
+	}
+	if (!worst) {
+		return undefined;
+	}
+	ctx.saidTids.add(worst.team.tid);
+	const t = theNick(worst.team);
+	const T = cap(t);
+	return pick(
+		rng,
+		[
+			`${T} have now lost ${plural(worst.count, "straight")}.`,
+			`That is ${plural(worst.count, "loss")} in a row for ${t}.`,
+			`${T} have not won in ${numWord(worst.count)} games.`,
+			`The skid reached ${numWord(worst.count)} for ${t}.`,
+		],
+		"dayCold",
+	);
+};
+
+// Round numbers passed across the league tonight.
+export const dayMilestones = (
+	ctx: DayBeatContext,
+	rng: Rng,
+): string | undefined => {
+	type Hit = { text: string; name: string; weight: number };
+	const hits: Hit[] = [];
+	for (const game of realGames(ctx.games)) {
+		for (const t of game.teams) {
+			for (const p of t.players) {
+				const m = p.milestone;
+				if (!m || ctx.saidPlayers.has(p.name)) {
+					continue;
+				}
+				const word = STAT_WORD[m.stat];
+				hits.push({
+					name: p.name,
+					weight: (m.scope === "career" ? 100 : 0) + m.mark / 100,
+					text:
+						m.scope === "career"
+							? `${p.name} went past ${fmtNum(m.mark)} career ${word}`
+							: `${p.name} went past ${fmtNum(m.mark)} ${word} for the season`,
+				});
+			}
+		}
+	}
+	if (hits.length === 0) {
+		return undefined;
+	}
+	hits.sort((a, b) => b.weight - a.weight);
+	const top = hits.slice(0, 2);
+	for (const h of top) {
+		ctx.saidPlayers.add(h.name);
+	}
+	const list = naturalList(top.map((h) => h.text));
+	return pick(
+		rng,
+		[
+			`${cap(list)}.`,
+			`Milestones on the night: ${list}.`,
+			`Round numbers fell too - ${list}.`,
+			`Somewhere in it all, ${list}.`,
+		],
+		"dayMilestones",
+	);
+};
+
+// Season highs set across the league tonight.
+export const daySeasonHighs = (
+	ctx: DayBeatContext,
+	rng: Rng,
+): string | undefined => {
+	const bits: string[] = [];
+	const names: string[] = [];
+	for (const game of realGames(ctx.games)) {
+		if (game.playoffs) {
+			continue;
+		}
+		const { winner } = sidesOf(game);
+		const h = winner.seasonHighs;
+		if (
+			h?.leaguePts &&
+			h.priorGames >= MIN_GAMES_FOR_RACE &&
+			!ctx.saidTids.has(winner.tid)
+		) {
+			ctx.saidTids.add(winner.tid);
+			bits.push(
+				`${poss(theNick(winner))} ${winner.pts} were the most any team has scored this season`,
+			);
+		}
+		for (const t of game.teams) {
+			for (const p of t.players) {
+				const e = p.entering;
+				if (
+					!e ||
+					e.gp < 15 ||
+					ctx.saidPlayers.has(p.name) ||
+					names.length >= 2 ||
+					!(p.pts >= 30 && p.pts > e.high.pts && p.pts - e.high.pts >= 3)
+				) {
+					continue;
+				}
+				ctx.saidPlayers.add(p.name);
+				names.push(
+					`${p.name} set a season high with ${plural(p.pts, "point")}`,
+				);
+			}
+		}
+	}
+	const all = [...bits, ...names];
+	if (all.length === 0) {
+		return undefined;
+	}
+	return pick(
+		rng,
+		[
+			`${cap(naturalList(all))}.`,
+			`Season bests on the night: ${naturalList(all)}.`,
+			`It was a night for career-best sort of numbers - ${naturalList(all)}.`,
+		],
+		"dayHighs",
+	);
+};
+
+// What is on tomorrow, from the teams that played tonight. The pick is the
+// matchup between the two best records, because that is the one a reader
+// would circle.
+export const dayTomorrow = (
+	ctx: DayBeatContext,
+	rng: Rng,
+): string | undefined => {
+	type Fixture = { home: RecapTeam; awayName: string; weight: number };
+	const fixtures: Fixture[] = [];
+	for (const game of realGames(ctx.games)) {
+		if (game.playoffs) {
+			continue;
+		}
+		for (const t of game.teams) {
+			const n = t.nextGame;
+			if (!n || n.daysAway !== 1 || !n.home || !n.oppName) {
+				continue;
+			}
+			const rec = t.record;
+			const wpct =
+				rec && rec.won + rec.lost > 0 ? rec.won / (rec.won + rec.lost) : 0;
+			fixtures.push({ home: t, awayName: n.oppName, weight: wpct });
+		}
+	}
+	if (fixtures.length === 0) {
+		return undefined;
+	}
+	fixtures.sort((a, b) => b.weight - a.weight);
+	const best = fixtures[0]!;
+	const rest = fixtures.length - 1;
+	const matchup = `the ${best.awayName} at ${theNick(best.home)}`;
+	const restWord = `${numWord(rest)} ${rest === 1 ? "other" : "others"}`;
+	const tail =
+		rest > 0
+			? pick(
+					rng,
+					[
+						` and ${numWord(rest)} ${rest === 1 ? "other game" : "other games"}`,
+						`, with ${restWord} on the slate`,
+					],
+					"dayTomorrowTail",
+				)
+			: "";
+	return pick(
+		rng,
+		[
+			`Tomorrow brings ${matchup}${tail}.`,
+			`Up tomorrow: ${matchup}${tail}.`,
+			`Tomorrow night, ${matchup}${tail}.`,
+			`Next up on the schedule is ${matchup}${tail}.`,
+		],
+		"dayTomorrow",
+	);
 };

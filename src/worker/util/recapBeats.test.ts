@@ -1,6 +1,11 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import {
 	benchBeat,
+	dayColdStreak,
+	dayMilestones,
+	dayRaceSentence,
+	dayStandingsMovers,
+	dayTomorrow,
 	homeRoadBeat,
 	milestoneBeat,
 	nextGameBeat,
@@ -12,6 +17,7 @@ import {
 	standingsBeat,
 	teamHighBeat,
 	type BeatContext,
+	type DayBeatContext,
 } from "./recapBeats.ts";
 import type {
 	RecapGame,
@@ -638,6 +644,359 @@ describe("season highs, streaks, milestones and returns", () => {
 		});
 		assert.strictEqual(
 			benchBeat(game(unknown, loser).ctx, rngFromSeed(1)),
+			undefined,
+		);
+	});
+});
+
+// THE NIGHT'S OWN BEATS.
+//
+// The day wrap's context: who moved in the table, the race at the cut line,
+// the team that cannot win, the round numbers, the season bests, tomorrow.
+describe("the day wrap's context", () => {
+	beforeEach(() => endRecapBatch());
+
+	const dayTeam = (
+		tid: number,
+		name: string,
+		over: Partial<RecapTeam> = {},
+	): RecapTeam => team({ tid, name, abbrev: name.slice(0, 3), ...over });
+
+	const dayGame = (winner: RecapTeam, loser: RecapTeam): RecapGame => ({
+		gid: winner.tid * 100,
+		day: 40,
+		overtimes: 0,
+		winnerTid: winner.tid,
+		playoffs: false,
+		clutchPlays: [],
+		teams: [winner, loser],
+	});
+
+	const ctxOf = (
+		games: RecapGame[],
+		standings?: DayBeatContext["standings"],
+	): DayBeatContext => ({
+		games,
+		standings,
+		saidTids: new Set(),
+		saidPlayers: new Set(),
+	});
+
+	const standingRow = (
+		conf: string,
+		rank: number,
+		rankBefore: number,
+		teams = 15,
+	) => ({
+		conf,
+		rank,
+		rankBefore,
+		gb: rank,
+		teams,
+		won: 25,
+		lost: 15,
+	});
+
+	test("a team into the places, a team out of them, a climb inside them", () => {
+		const games = [
+			dayGame(
+				dayTeam(1, "Celtics", { standing: standingRow("East", 8, 10) }),
+				dayTeam(2, "Knicks", { standing: standingRow("East", 9, 8) }),
+			),
+			dayGame(
+				dayTeam(3, "Bucks", { standing: standingRow("East", 2, 4) }),
+				dayTeam(4, "Heat", { standing: standingRow("East", 12, 12) }),
+			),
+		];
+		const text = dayStandingsMovers(
+			ctxOf(games, { playoffSpots: 8, confs: [] }),
+			rngFromSeed(1),
+		)!;
+		assert.match(text, /Celtics moved into the East places at eighth/);
+		assert.match(text, /Knicks slid out of the East places to ninth/);
+		assert.match(text, /Bucks climbed to second/);
+		// No clause carries its own comma: they are joined into one list.
+		assert.notMatch(text, /places, down to/);
+
+		const all = shapes((rng) =>
+			dayStandingsMovers(ctxOf(games, { playoffSpots: 8, confs: [] }), rng),
+		);
+		assert.ok(all.size >= 3, [...all].join("\n"));
+	});
+
+	test("a move outside the picture, or with no sample behind it, is not news", () => {
+		const deep = [
+			dayGame(
+				dayTeam(1, "Celtics", { standing: standingRow("East", 12, 13) }),
+				dayTeam(2, "Knicks", { standing: standingRow("East", 13, 12) }),
+			),
+		];
+		assert.strictEqual(
+			dayStandingsMovers(
+				ctxOf(deep, { playoffSpots: 8, confs: [] }),
+				rngFromSeed(1),
+			),
+			undefined,
+		);
+		const early = [
+			dayGame(
+				dayTeam(1, "Celtics", {
+					standing: { ...standingRow("East", 3, 5), won: 4, lost: 2 },
+				}),
+				dayTeam(2, "Knicks"),
+			),
+		];
+		assert.strictEqual(
+			dayStandingsMovers(
+				ctxOf(early, { playoffSpots: 8, confs: [] }),
+				rngFromSeed(1),
+			),
+			undefined,
+		);
+	});
+
+	test("the cut line names who holds the last place, and by how much", () => {
+		const standings = {
+			playoffSpots: 8,
+			confs: [
+				{
+					name: "East",
+					teams: [
+						{
+							tid: 1,
+							name: "Celtics",
+							abbrev: "BOS",
+							rank: 8,
+							won: 20,
+							lost: 20,
+							gb: 6,
+						},
+						{
+							tid: 2,
+							name: "Knicks",
+							abbrev: "NYK",
+							rank: 9,
+							won: 19,
+							lost: 21,
+							gb: 7,
+						},
+					],
+				},
+				{
+					name: "West",
+					teams: [
+						{
+							tid: 3,
+							name: "Kings",
+							abbrev: "SAC",
+							rank: 8,
+							won: 20,
+							lost: 20,
+							gb: 5,
+						},
+						{
+							tid: 4,
+							name: "Suns",
+							abbrev: "PHX",
+							rank: 9,
+							won: 20,
+							lost: 20,
+							gb: 5,
+						},
+					],
+				},
+			],
+		};
+		const text = dayRaceSentence(ctxOf([], standings), rngFromSeed(1))!;
+		assert.match(
+			text,
+			/Celtics hold the last East place by 1 game over the Knicks/,
+		);
+		assert.match(text, /Kings and the Suns are level for the last West place/);
+		// "cut line" never twice in one sentence.
+		assert.ok((text.match(/cut line/g) ?? []).length <= 1, text);
+		assert.ok(
+			shapes((rng) => dayRaceSentence(ctxOf([], standings), rng)).size >= 3,
+		);
+	});
+
+	test("a runaway race, no spots known, or too few games says nothing", () => {
+		const runaway = {
+			playoffSpots: 8,
+			confs: [
+				{
+					name: "East",
+					teams: [
+						{
+							tid: 1,
+							name: "Celtics",
+							abbrev: "BOS",
+							rank: 8,
+							won: 25,
+							lost: 15,
+							gb: 2,
+						},
+						{
+							tid: 2,
+							name: "Knicks",
+							abbrev: "NYK",
+							rank: 9,
+							won: 15,
+							lost: 25,
+							gb: 12,
+						},
+					],
+				},
+			],
+		};
+		assert.strictEqual(
+			dayRaceSentence(ctxOf([], runaway), rngFromSeed(1)),
+			undefined,
+		);
+		assert.strictEqual(
+			dayRaceSentence(ctxOf([], { confs: runaway.confs }), rngFromSeed(1)),
+			undefined,
+		);
+	});
+
+	test("the longest losing run in the league gets a line", () => {
+		const games = [
+			dayGame(
+				dayTeam(1, "Celtics"),
+				dayTeam(2, "Knicks", { streak: { won: false, count: 11 } }),
+			),
+			dayGame(
+				dayTeam(3, "Bucks"),
+				dayTeam(4, "Heat", { streak: { won: false, count: 7 } }),
+			),
+		];
+		const text = dayColdStreak(ctxOf(games), rngFromSeed(1))!;
+		assert.match(text, /Knicks/);
+		assert.match(text, /11|eleven/);
+		assert.ok(shapes((rng) => dayColdStreak(ctxOf(games), rng)).size >= 3);
+
+		const short = [
+			dayGame(
+				dayTeam(1, "Celtics"),
+				dayTeam(2, "Knicks", { streak: { won: false, count: 3 } }),
+			),
+		];
+		assert.strictEqual(dayColdStreak(ctxOf(short), rngFromSeed(1)), undefined);
+	});
+
+	test("milestones say whether they are career or season, biggest first", () => {
+		const games = [
+			dayGame(
+				dayTeam(1, "Celtics", {
+					players: [
+						player({
+							name: "Old Head",
+							pts: 20,
+							milestone: {
+								scope: "career",
+								stat: "pts",
+								mark: 20000,
+								total: 20004,
+							},
+						}),
+						player({
+							name: "Young Gun",
+							pts: 18,
+							milestone: {
+								scope: "season",
+								stat: "reb",
+								mark: 500,
+								total: 502,
+							},
+						}),
+					],
+				}),
+				dayTeam(2, "Knicks"),
+			),
+		];
+		const text = dayMilestones(ctxOf(games), rngFromSeed(1))!;
+		assert.match(text, /Old Head went past 20,000 career points/);
+		assert.match(text, /Young Gun went past 500 rebounds for the season/);
+		assert.ok(text.indexOf("Old Head") < text.indexOf("Young Gun"));
+		assert.strictEqual(
+			dayMilestones(
+				ctxOf([dayGame(dayTeam(1, "A"), dayTeam(2, "B"))]),
+				rngFromSeed(1),
+			),
+			undefined,
+		);
+	});
+
+	test("a player already in the deck is not given a milestone line as well", () => {
+		const games = [
+			dayGame(
+				dayTeam(1, "Celtics", {
+					players: [
+						player({
+							name: "Old Head",
+							pts: 20,
+							milestone: {
+								scope: "career",
+								stat: "pts",
+								mark: 20000,
+								total: 20004,
+							},
+						}),
+					],
+				}),
+				dayTeam(2, "Knicks"),
+			),
+		];
+		const ctx = ctxOf(games);
+		ctx.saidPlayers.add("Old Head");
+		assert.strictEqual(dayMilestones(ctx, rngFromSeed(1)), undefined);
+	});
+
+	test("tomorrow names the biggest matchup and counts the rest in words", () => {
+		const next = (oppName: string, daysAway = 1, home = true) => ({
+			day: 41,
+			daysAway,
+			home,
+			oppTid: 9,
+			oppName,
+			oppAbbrev: "OPP",
+		});
+		const games = [
+			dayGame(
+				dayTeam(1, "Celtics", {
+					record: { won: 30, lost: 10 },
+					nextGame: next("Bucks"),
+				}),
+				dayTeam(2, "Knicks", {
+					record: { won: 10, lost: 30 },
+					nextGame: next("Heat"),
+				}),
+			),
+			dayGame(
+				dayTeam(3, "Kings", {
+					record: { won: 20, lost: 20 },
+					nextGame: next("Suns"),
+				}),
+				dayTeam(4, "Jazz", {
+					record: { won: 15, lost: 25 },
+					nextGame: next("Nets", 2),
+				}),
+			),
+		];
+		const text = dayTomorrow(ctxOf(games), rngFromSeed(1))!;
+		assert.match(text, /the Bucks at the Celtics/);
+		assert.match(text, /two others?|two other games/);
+		assert.notMatch(text, /\b\d+ other/);
+		assert.ok(shapes((rng) => dayTomorrow(ctxOf(games), rng)).size >= 3);
+
+		const noneTomorrow = [
+			dayGame(
+				dayTeam(1, "Celtics", { nextGame: next("Bucks", 3) }),
+				dayTeam(2, "Knicks"),
+			),
+		];
+		assert.strictEqual(
+			dayTomorrow(ctxOf(noneTomorrow), rngFromSeed(1)),
 			undefined,
 		);
 	});

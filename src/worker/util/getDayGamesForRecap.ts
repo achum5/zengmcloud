@@ -527,6 +527,9 @@ export const cleanName = (name: unknown): string =>
 // current, later state). One per day recap needed.
 export type RecapDayStandings = {
 	day: number;
+	// How many teams from each conference make the playoffs, so a race
+	// sentence can name the cut line rather than guess at it.
+	playoffSpots?: number;
 	confs: {
 		name: string;
 		teams: {
@@ -1661,8 +1664,22 @@ const computeStandingsAsOf = async (
 ): Promise<RecapDayStandings> => {
 	const allTeams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
 	const confs = g.get("confs", season);
+	// 2^rounds seeds, less the byes, split between the conferences - the same
+	// arithmetic genPlayoffSeries uses to build the bracket.
+	const rounds = Math.max(
+		1,
+		(g.get("numGamesPlayoffSeries", season) ?? []).length,
+	);
+	const playoffSpots = Math.max(
+		1,
+		Math.round(
+			(2 ** rounds - g.get("numPlayoffByes", season)) /
+				Math.max(1, confs.length),
+		),
+	);
 	return {
 		day,
+		playoffSpots,
 		confs: confs.map((conf) => {
 			const rows = allTeams
 				.filter((t) => t.cid === conf.cid)

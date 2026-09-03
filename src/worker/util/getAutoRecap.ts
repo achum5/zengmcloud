@@ -39,6 +39,12 @@ import {
 export { beginRecapBatch, endRecapBatch, pick } from "./recapText.ts";
 import {
 	benchBeat,
+	dayColdStreak,
+	dayMilestones,
+	dayRaceSentence,
+	daySeasonHighs,
+	dayStandingsMovers,
+	dayTomorrow,
 	homeRoadBeat,
 	milestoneBeat,
 	nextGameBeat,
@@ -50,6 +56,7 @@ import {
 	standingsBeat,
 	teamHighBeat,
 	type BeatContext,
+	type DayBeatContext,
 } from "./recapBeats.ts";
 
 // A procedural, no-AI recap engine. getAutoRecap turns one RecapGame into a
@@ -409,7 +416,7 @@ const clutchWhat = (
 	const timing = shot.buzzer
 		? " at the buzzer"
 		: shot.seconds !== undefined
-			? ` with ${shot.seconds} seconds left`
+			? ` with ${plural(shot.seconds, "second")} left`
 			: "";
 	// Don't say "won it with a buzzer-beater at the buzzer"...
 	if (shot.shot === "buzzer-beater") {
@@ -3069,7 +3076,10 @@ export const getAutoRecap = (game: RecapGame): string => {
 		let lead = leadSentence(game, shape, star, rng, false, headline.spentScore);
 		const shooterIsStar = shot && !shot.tying;
 		if (shooterIsStar) {
-			lead = `${lead.slice(0, -1)}, winning it with ${clutchWhat(shot)}.`;
+			// "on", not "with": clutchWhat carries its own "with 6.1 seconds
+			// left", and the two together read "winning it with a three-point
+			// play with 6.1 seconds left".
+			lead = `${lead.slice(0, -1)}, winning it on ${clutchWhat(shot)}.`;
 		}
 		para1.push(lead);
 	}
@@ -3393,7 +3403,7 @@ const gameBlurb = (
 				: shot.buzzer
 					? " at the buzzer"
 					: shot.seconds !== undefined
-						? ` with ${shot.seconds} seconds left`
+						? ` with ${plural(shot.seconds, "second")} left`
 						: "";
 		return `${base} on ${poss(shot.name)} ${shot.shot}${timing}`;
 	}
@@ -3455,7 +3465,7 @@ const conferencePictureSentence = (
 					[
 						`${who} lead the ${conf.name} by ${gbText(second.gb)}`,
 						`${who} are ${gbText(second.gb)} clear at the top of the ${conf.name}`,
-						`${gbText(second.gb)} separate ${who} from the rest of the ${conf.name}`,
+						`${gbText(second.gb)} ${second.gb === 1 ? "separates" : "separate"} ${who} from the rest of the ${conf.name}`,
 					],
 					"dayStandingsLead",
 				),
@@ -4874,6 +4884,19 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		para2.push(`${opener}, ${naturalList(items)}.`);
 	}
 
+	// The night's own context, shared by the beats below so no team or player
+	// gets two sentences of it.
+	const dayCtx: DayBeatContext = {
+		games,
+		standings,
+		saidTids: new Set([mShape.winner.tid, mShape.loser.tid]),
+		saidPlayers: new Set(
+			[mStar, ...(deckResult?.players ?? [])]
+				.filter((p): p is RecapPlayer => !!p)
+				.map((p) => p.name),
+		),
+	};
+
 	// Paragraph 3: the league picture - close-game count, injury news, and then
 	// either the playoff series state or the streak/standings context.
 	const para3: string[] = [];
@@ -4948,12 +4971,45 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		}
 	}
 
+	// Paragraph 4: what the night did to the season. Who moved in the table,
+	// where the race stands at the cut line, the team that cannot win, the
+	// round numbers passed, the season bests, and what is on tomorrow. Every
+	// one reads the context the games carry and says nothing when the night
+	// gives it nothing, so a quiet Tuesday still ends after paragraph three.
+	const para4 = playoffs
+		? []
+		: [
+				dayStandingsMovers(dayCtx, rng),
+				dayRaceSentence(dayCtx, rng),
+				...shuffle(rng, [
+					dayColdStreak(dayCtx, rng),
+					dayMilestones(dayCtx, rng),
+					daySeasonHighs(dayCtx, rng),
+				]),
+			]
+				.filter((x): x is string => !!x)
+				.slice(0, 3);
+	if (!playoffs) {
+		const tomorrow = dayTomorrow(dayCtx, rng);
+		if (tomorrow) {
+			para4.push(tomorrow);
+		}
+	}
+	// A lone closing sentence is not a paragraph; fold it up rather than let
+	// it hang under three full ones.
+	if (para4.length === 1 && para3.length > 0 && para3.length <= 4) {
+		para3.push(para4.pop()!);
+	}
+
 	const paragraphs = [dedupeSubjects(para1).join(" ")];
 	if (para2.length > 0) {
 		paragraphs.push(dedupeSubjects(para2).join(" "));
 	}
 	if (para3.length > 0) {
 		paragraphs.push(dedupeSubjects(para3).join(" "));
+	}
+	if (para4.length > 0) {
+		paragraphs.push(dedupeSubjects(para4).join(" "));
 	}
 
 	const head = deck

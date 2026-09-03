@@ -463,9 +463,13 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 
 	// A sentence's SHAPE: names and numbers blanked out, so two sentences built
 	// from one template collide even though they describe different games.
+	// The bold markers come off FIRST. Blanking `**...**` as a unit turned
+	// every headline into the single token "N", so the headline metric read
+	// "1 distinct shape over 450 games" for a year while the headlines were
+	// in fact all different.
 	const shape = (s: string) =>
 		s
-			.replace(/\*\*[^*]+\*\*/g, "N")
+			.replaceAll("**", "")
 			.replace(/\b[A-Z][a-z]+\b/g, "N")
 			.replace(/\d+(\.\d+)?%?/g, "#")
 			.replace(/\s+/g, " ")

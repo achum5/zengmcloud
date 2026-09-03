@@ -600,7 +600,7 @@ describe("recap quality (from real Day 1 output)", () => {
 			}),
 		);
 		// The winning shot merges into the lead sentence...
-		assert.ok(/, winning it with a free throw/.test(recap), recap);
+		assert.ok(/, winning it on a free throw/.test(recap), recap);
 		// ...instead of a second sentence restarting with the same name.
 		assert.ok(!/\. Richard Hamilton won it/.test(recap), recap);
 	});
@@ -5771,6 +5771,47 @@ describe("the fourth paragraph", () => {
 		noStanding.teams[1].standing = undefined;
 		const recap = getAutoRecap(noStanding);
 		assert.doesNotMatch(recap, /Conference/);
+	});
+});
+
+describe("prepositions do not stack", () => {
+	const clutchGame = (): RecapGame => {
+		const win = realisticTeam(
+			{ tid: 1, name: "Bulls", abbrev: "CHI", pts: 107 },
+			player({
+				name: "Marcus Ellis",
+				pts: 28,
+				reb: 6,
+				ast: 5,
+				fg: 10,
+				fga: 18,
+			}),
+		);
+		const lose = realisticTeam(
+			{ tid: 2, name: "Kings", abbrev: "SAC", pts: 104 },
+			player({ name: "Other Guy", pts: 20, reb: 5, fg: 8, fga: 17 }),
+		);
+		return game({
+			teams: [win, lose],
+			winnerTid: 1,
+			clutchPlays: [
+				'<a href="#">Marcus Ellis</a> made a game-winning three-point play with 6.1 seconds remaining.',
+			],
+		});
+	};
+
+	test("the winning play is not introduced twice", () => {
+		const recap = getAutoRecap(clutchGame());
+		assert.doesNotMatch(recap, /winning it with [^.]*\swith\s/);
+		assert.match(recap, /6\.1 seconds left/);
+	});
+
+	test("a single second is not plural", () => {
+		const one = clutchGame();
+		one.clutchPlays = [
+			'<a href="#">Marcus Ellis</a> made a game-winning free throw with 1 seconds remaining.',
+		];
+		assert.doesNotMatch(getAutoRecap(one), /\b1 seconds\b/);
 	});
 });
 
