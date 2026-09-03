@@ -353,6 +353,7 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 							line[k] = sp.stat[k] ?? 0;
 						}
 						line.pm = sp.stat.pm ?? 0;
+						line.gs = sp.stat.gs ?? 0;
 						out.players.push(line);
 					}
 					return out;

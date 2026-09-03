@@ -1,4 +1,25 @@
 import { idb } from "../db/index.ts";
+import {
+	addTotals,
+	boxTotals,
+	careerMilestone,
+	homeAwayRecords,
+	nextGameFor,
+	pastSeasonTotals,
+	playerEntering,
+	restEntering,
+	returnFromAbsence,
+	seasonMilestone,
+	seasonSeries,
+	standingOf,
+	teamSeasonHighs,
+	type ContextScheduleRow,
+	type CountingTotals,
+	type Milestone,
+	type PlayerEntering,
+	type SeasonSeries,
+	type TeamSeasonHighs,
+} from "./recapContext.ts";
 import { g } from "./index.ts";
 import { getGameSpread, roundHalf } from "../../common/getGameSpread.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
@@ -63,6 +84,15 @@ export type RecapPlayer = {
 	fta: number;
 	pf: number;
 	pm?: number;
+	// Started the game, when the box score says so (older games do not).
+	starter?: boolean;
+	// What he brought into the game this season: games, highs, totals and
+	// the streak he was on. See recapContext.ts.
+	entering?: PlayerEntering;
+	// A round number he passed in this game.
+	milestone?: Milestone;
+	// His first game back after sitting out three or more with an injury.
+	returnFrom?: { games: number; type: string };
 	// Averages ENTERING this game - the game itself (and anything after) is
 	// excluded, so "he came in averaging X" is always true of these numbers.
 	seasonAvg?: RecapAverages;
@@ -109,6 +139,35 @@ export type RecapTeam = {
 	// Players held out of this game due to injury.
 	injuries?: RecapInjuryOut[];
 	seed?: number;
+	// Regular-season home and road records through this game.
+	homeRecord?: { won: number; lost: number };
+	awayRecord?: { won: number; lost: number };
+	// The season series against tonight's opponent, entering the game.
+	seasonSeries?: SeasonSeries;
+	// Days since the team last played (1 is a back-to-back).
+	rest?: { daysSince: number; prevDay: number };
+	// The next game on the schedule after this one.
+	nextGame?: {
+		day: number;
+		daysAway: number;
+		home: boolean;
+		oppTid: number;
+		oppName: string;
+		oppAbbrev: string;
+	};
+	// Conference standing after this game, and where it stood the day before.
+	standing?: {
+		conf: string;
+		rank: number;
+		gb: number;
+		teams: number;
+		won: number;
+		lost: number;
+		rankBefore?: number;
+		gbBefore?: number;
+	};
+	// Whether this game set the team's (or the league's) season high.
+	seasonHighs?: TeamSeasonHighs;
 };
 
 // A playoff series' state for context (bracket entry the game belongs to).
@@ -469,6 +528,7 @@ export type RecapDayStandings = {
 		name: string;
 		teams: {
 			rank: number;
+			tid?: number;
 			abbrev: string;
 			region: string;
 			name: string;
@@ -1336,6 +1396,52 @@ const createAutoRecapContext = async (season: number) => {
 		return undefined;
 	};
 
+	// What the writer knows before the game starts - see recapContext.ts. The
+	// schedule gives the next game and the meetings still to come; the standings
+	// are computed once per day and shared by every game on it; career totals
+	// are read once per player.
+	let scheduleRows: ContextScheduleRow[] = [];
+	try {
+		scheduleRows = ((await idb.cache.schedule.getAll()) as any[]).filter(
+			(row) => typeof row?.day === "number",
+		);
+	} catch {
+		scheduleRows = [];
+	}
+	const gamesByTid = new Map<number, typeof allGames>();
+	for (const game of allGames) {
+		for (const t of game.teams) {
+			const arr = gamesByTid.get(t.tid) ?? [];
+			arr.push(game);
+			gamesByTid.set(t.tid, arr);
+		}
+	}
+	const teamGamesOf = (tid: number) => gamesByTid.get(tid) ?? [];
+	const standingsMemo = new Map<number, Promise<RecapDayStandings>>();
+	const standingsOn = (day: number) => {
+		let pending = standingsMemo.get(day);
+		if (!pending) {
+			pending = computeStandingsAsOf(season, day, allGames);
+			standingsMemo.set(day, pending);
+		}
+		return pending;
+	};
+	type CareerTotals = CountingTotals & { gp: number };
+	const careerTotalsCache = new Map<number, CareerTotals | undefined>();
+	const careerTotalsFor = async (pid: number) => {
+		if (!careerTotalsCache.has(pid)) {
+			let totals: CareerTotals | undefined;
+			try {
+				const p = await idb.cache.players.get(pid);
+				totals = p ? pastSeasonTotals(p, season) : undefined;
+			} catch {
+				totals = undefined;
+			}
+			careerTotalsCache.set(pid, totals);
+		}
+		return careerTotalsCache.get(pid);
+	};
+
 	const buildRecapGame = async (
 		game: any,
 		effectiveDay: number,
@@ -1406,6 +1512,32 @@ const createAutoRecapContext = async (season: number) => {
 							true,
 						);
 					}
+					if (!allStar) {
+						const day2 = game.day ?? effectiveDay;
+						const entering = playerEntering(lines, game.gid, day2, playoffs);
+						base.entering = entering;
+						if (typeof p?.gs === "number") {
+							base.starter = p.gs > 0;
+						}
+						if (!playoffs) {
+							const after = addTotals(entering.totals, boxTotals(base));
+							const career = await careerTotalsFor(p.pid);
+							base.milestone =
+								(career
+									? careerMilestone(
+											addTotals(career, entering.totals),
+											addTotals(career, after),
+										)
+									: undefined) ?? seasonMilestone(entering.totals, after);
+						}
+						base.returnFrom = returnFromAbsence(
+							p.pid,
+							t.tid,
+							game.gid,
+							day2,
+							teamGamesOf(t.tid),
+						);
+					}
 				}
 				players.push(base);
 			}
@@ -1430,6 +1562,48 @@ const createAutoRecapContext = async (season: number) => {
 				injuries: injuries.length > 0 ? injuries : undefined,
 				seed: playoffs ? seedOf(t.tid) : undefined,
 			});
+		}
+
+		if (!allStar) {
+			const day2 = game.day ?? effectiveDay;
+			for (const [i, team] of teams.entries()) {
+				const opp = teams[1 - i]!;
+				const mine = teamGamesOf(team.tid);
+				const records = homeAwayRecords(team.tid, day2, mine);
+				team.homeRecord = records.home;
+				team.awayRecord = records.away;
+				team.rest = restEntering(team.tid, game.gid, day2, mine);
+				const next = nextGameFor(team.tid, game.gid, day2, mine, scheduleRows);
+				if (next) {
+					const info = await teamInfo(next.oppTid);
+					team.nextGame = {
+						...next,
+						daysAway: next.day - day2,
+						oppName: info?.name ?? "",
+						oppAbbrev: info?.abbrev ?? "???",
+					};
+				}
+				if (!playoffs) {
+					team.seasonSeries = seasonSeries(
+						team.tid,
+						opp.tid,
+						game.gid,
+						day2,
+						mine,
+						scheduleRows,
+					);
+					team.seasonHighs = teamSeasonHighs(team.tid, game, allGames);
+					const after = standingOf(await standingsOn(day2), team.tid);
+					if (after) {
+						const before = standingOf(await standingsOn(day2 - 1), team.tid);
+						team.standing = {
+							...after,
+							rankBefore: before?.rank,
+							gbBefore: before?.gb,
+						};
+					}
+				}
+			}
 		}
 
 		const playIn = playoffs ? await playInForGame(game) : undefined;
@@ -1492,6 +1666,7 @@ const computeStandingsAsOf = async (
 				.map((t) => {
 					const rec = regularSeasonRecordAsOf(t.tid, day, allGames);
 					return {
+						tid: t.tid,
 						abbrev: t.abbrev,
 						region: t.region,
 						name: t.name,
@@ -1509,6 +1684,7 @@ const computeStandingsAsOf = async (
 				name: conf.name,
 				teams: rows.map((t, i) => ({
 					rank: i + 1,
+					tid: t.tid,
 					abbrev: t.abbrev,
 					region: t.region,
 					name: t.name,
