@@ -5537,6 +5537,243 @@ describe("verifyRecap catches a wrong number", () => {
 
 // HOUSE STYLE. Rules the engine already stated for itself in one place and
 // broke in another - measured over a 600-recap corpus, then pinned here.
+// THE SEASON AROUND THE GAME.
+//
+// The beats in recapBeats.ts read the context getDayGamesForRecap derives -
+// the standings the result moved, the season series, the venue records, the
+// schedule, season highs, milestones, a man back from injury, the bench, who
+// is next. These check that they reach the finished recap, that they say only
+// what the context supports, and that a slate does not print them all the same
+// way.
+describe("the fourth paragraph", () => {
+	// A slate's worth of context, varied the way a real night varies: some
+	// teams climbed, some slid, some set a high, some are on a run, some have
+	// a series going. A night where all twelve did all of it is not a slate.
+	const contextGame = (i: number, over: Partial<RecapGame> = {}): RecapGame => {
+		const gid = 9000 + i;
+		const k = i % 4;
+		const win = realisticTeam(
+			{
+				tid: gid * 2,
+				name: `Team${i}`,
+				abbrev: `T${i}`,
+				pts: 112,
+				ptsQtrs: [30, 28, 30, 24],
+				record: { won: 20 + i, lost: 10 },
+				homeRecord: k === 1 ? { won: 12, lost: 2 } : undefined,
+				awayRecord: k === 1 ? { won: 9, lost: 7 } : undefined,
+				seasonSeries: k === 2 ? { won: 2, lost: 0 } : undefined,
+				rest: { daysSince: k === 3 ? 5 : 2, prevDay: 25 },
+				standing:
+					k === 0
+						? {
+								conf: "Eastern Conference",
+								rank: 2,
+								rankBefore: 4,
+								gb: 1.5,
+								teams: 15,
+								won: 20 + i,
+								lost: 10,
+								leader: `Rival${i}`,
+							}
+						: undefined,
+				seasonHighs:
+					k === 3
+						? {
+								priorGames: 30,
+								pts: true,
+								margin: false,
+								leaguePts: false,
+							}
+						: undefined,
+				nextGame:
+					k !== 2
+						? {
+								day: 31,
+								daysAway: 1 + (i % 3),
+								home: i % 2 === 0,
+								oppTid: 999,
+								oppName: `Next${i}`,
+								oppAbbrev: "NXT",
+							}
+						: undefined,
+			},
+			player({
+				// Varied lines, like a real slate: identical box scores would make
+				// every star sentence the same sentence whatever the engine does.
+				name: `Star${i}`,
+				pts: 26 + ((i * 3) % 12),
+				reb: 4 + (i % 7),
+				ast: 3 + (i % 6),
+				fg: 9 + (i % 5),
+				fga: 17 + (i % 6),
+				entering: {
+					gp: 30,
+					high: {
+						pts: k === 1 ? 28 : 40,
+						reb: 12,
+						ast: 9,
+						tp: 5,
+						stl: 3,
+						blk: 2,
+					},
+					totals: { pts: 700, reb: 200, ast: 150, tp: 60, stl: 30, blk: 15 },
+					streaks: { twenty: k === 2 ? 5 : 0, thirty: 0, doubleDouble: 0 },
+				},
+				milestone:
+					k === 0
+						? { scope: "career", stat: "pts", mark: 10000, total: 10012 }
+						: undefined,
+			}),
+		);
+		const lose = realisticTeam(
+			{
+				tid: gid * 2 + 1,
+				name: `Foe${i}`,
+				abbrev: `F${i}`,
+				pts: 98,
+				ptsQtrs: [24, 26, 24, 24],
+				record: { won: 10, lost: 20 + i },
+				homeRecord: k === 1 ? { won: 4, lost: 10 } : undefined,
+				rest: { daysSince: k === 0 ? 1 : 3, prevDay: 29 },
+				standing:
+					k === 1
+						? {
+								conf: "Eastern Conference",
+								rank: 7,
+								rankBefore: 6,
+								gb: 8,
+								teams: 15,
+								won: 10,
+								lost: 20 + i,
+							}
+						: undefined,
+			},
+			player({
+				name: `Rival${i}`,
+				pts: 18 + (i % 9),
+				reb: 5 + (i % 6),
+				ast: 2 + (i % 5),
+				fg: 7 + (i % 4),
+				fga: 16 + (i % 7),
+			}),
+		);
+		return game({ gid, teams: [win, lose], winnerTid: gid * 2, ...over });
+	};
+
+	// Everything at once, for the checks that need every beat to fire.
+	const loadedGame = (i: number): RecapGame => {
+		const g = contextGame(i);
+		const [win, lose] = g.teams;
+		win.homeRecord = { won: 12, lost: 2 };
+		win.awayRecord = { won: 9, lost: 7 };
+		win.seasonSeries = { won: 2, lost: 0 };
+		win.standing = {
+			conf: "Eastern Conference",
+			rank: 2,
+			rankBefore: 4,
+			gb: 1.5,
+			teams: 15,
+			won: 20 + i,
+			lost: 10,
+			leader: `Rival${i}`,
+		};
+		win.seasonHighs = {
+			priorGames: 30,
+			pts: true,
+			margin: false,
+			leaguePts: false,
+		};
+		win.nextGame = {
+			day: 31,
+			daysAway: 1,
+			home: true,
+			oppTid: 999,
+			oppName: `Next${i}`,
+			oppAbbrev: "NXT",
+		};
+		lose.homeRecord = { won: 4, lost: 10 };
+		return g;
+	};
+
+	test("the context reaches the page: the table, the series, the schedule", () => {
+		const recap = getAutoRecap(loadedGame(1));
+		const paragraphs = recap.split("\n\n");
+		assert.ok(paragraphs.length >= 4, `only ${paragraphs.length} blocks`);
+		const last = paragraphs.at(-1)!;
+		assert.match(
+			last,
+			/Eastern Conference|season|meetings|home|road|bench|Next1|10,000/,
+		);
+	});
+
+	test("nothing in it is invented: every claim checks out against the game", () => {
+		for (let i = 0; i < 6; i++) {
+			const g = loadedGame(i);
+			assert.deepEqual(verifyRecap(getAutoRecap(g), g), []);
+		}
+	});
+
+	test("a game with no season around it still ends cleanly", () => {
+		const bare = game({
+			teams: [
+				realisticTeam(
+					{ tid: 1, name: "Bare", abbrev: "BAR", pts: 100 },
+					player({ name: "Nobody Special", pts: 18, reb: 5, fg: 7, fga: 15 }),
+				),
+				realisticTeam(
+					{ tid: 2, name: "Plain", abbrev: "PLN", pts: 95 },
+					player({ name: "Other Guy", pts: 17, reb: 6, fg: 7, fga: 16 }),
+				),
+			],
+			winnerTid: 1,
+		});
+		const recap = getAutoRecap(bare);
+		assert.ok(recap.split("\n\n").length <= 4, recap);
+		assert.doesNotMatch(recap, /undefined|NaN/);
+	});
+
+	test("a slate does not print the same context sentence three times", () => {
+		beginRecapBatch();
+		let text: string;
+		try {
+			text = Array.from({ length: 12 }, (_, i) =>
+				getAutoRecap(contextGame(i)),
+			).join("\n");
+		} finally {
+			endRecapBatch();
+		}
+		const frames = new Map<string, number>();
+		for (const line of text.split("\n")) {
+			if (line.startsWith("**")) {
+				continue;
+			}
+			for (const sentence of line.split(/(?<=[\d"%')a-z])[!.?]\s+/)) {
+				const frame = sentence
+					.replaceAll(/\d+(\.\d+)?%?/g, "#")
+					.replaceAll(/\b[A-Z][\w'-]*(?: [A-Z][\w'-]*)*/g, "N")
+					.trim();
+				if (frame) {
+					frames.set(frame, (frames.get(frame) ?? 0) + 1);
+				}
+			}
+		}
+		const repeated = [...frames].filter(([, n]) => n >= 3);
+		assert.deepEqual(
+			repeated.map(([f, n]) => `${n}x ${f}`),
+			[],
+		);
+	});
+
+	test("the standings sentence never claims a rank the context did not give", () => {
+		const noStanding = loadedGame(2);
+		noStanding.teams[0].standing = undefined;
+		noStanding.teams[1].standing = undefined;
+		const recap = getAutoRecap(noStanding);
+		assert.doesNotMatch(recap, /Conference/);
+	});
+});
+
 describe("house style", () => {
 	// Two profiles. The second is cold, careless and three-happy on purpose:
 	// the templates that used to open on a numeral only fire on a bad shooting

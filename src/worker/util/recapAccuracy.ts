@@ -63,7 +63,13 @@ const COUNTING: [keyof RecapPlayer, string][] = [
 // period, a run, a rebounding edge or a season record. Those all share the
 // shape and none of them is wrong.
 const NOT_A_FINAL =
-	/quarter|after one|at the break|halftime|half|first|second|third|fourth|\brun\b|stretch|outscor|closed|opened|took over|settled it|broke it open|spurt|glass|boards|rebound|free throw|from the line|threes|from deep|assists|pushed|improved|moved|fell to|dropped to|climbed/i;
+	/quarter|after one|at the break|halftime|half|first|second|third|fourth|\brun\b|stretch|outscor|closed|opened|took over|settled it|broke it open|spurt|glass|boards|rebound|free throw|from the line|threes|from deep|assists|pushed|improved|moved|fell to|dropped to|climbed|meeting|season series|this season|at home|on the road|away from home|own building|bench|reserves/i;
+
+// A count in one of these sentences is a season or career total, a season
+// high being quoted, or a bench total - not a line from tonight's box score.
+const SEASON_TALK =
+	/\bcareer\b|-point mark|-rebound mark|-assist mark|for the season|on the season|this season|of the season|season high/i;
+const BENCH_TALK = /\bbench\b|\breserves?\b/i;
 
 // A points figure in one of these sentences is a betting margin, not a stat.
 const SPREAD_TALK =
@@ -137,6 +143,12 @@ export const verifyRecap = (
 				if (SPREAD_TALK.test(sentence)) {
 					continue;
 				}
+				// "passed 10,000 career points", "went past 500 points on the
+				// season", "had not scored more than 31 this season" - totals and
+				// highs, not tonight's line.
+				if (SEASON_TALK.test(sentence)) {
+					continue;
+				}
 				// "22 points from Evan Hayes" - the owner follows the number, so
 				// the nearest PRECEDING name is the wrong man.
 				const after = sentence.slice(m.index + m[0].length);
@@ -160,6 +172,11 @@ export const verifyRecap = (
 					}
 				}
 				if (owner === undefined) {
+					// "got 48 points from the bench" - a bench total, which the
+					// box score only has when starters are marked.
+					if (BENCH_TALK.test(sentence)) {
+						continue;
+					}
 					if (!totals.has(n) && n !== combined) {
 						add(
 							`unattributed ${word}`,

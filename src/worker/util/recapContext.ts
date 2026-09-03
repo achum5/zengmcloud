@@ -559,6 +559,7 @@ export const returnFromAbsence = (
 export type StandingRow = {
 	tid?: number;
 	abbrev: string;
+	name?: string;
 	rank: number;
 	won: number;
 	lost: number;
@@ -572,6 +573,9 @@ export type Standing = {
 	teams: number;
 	won: number;
 	lost: number;
+	// When first: the gap to second. When not: the nickname of the leader.
+	lead?: number;
+	leader?: string;
 };
 
 export const standingOf = (
@@ -584,7 +588,7 @@ export const standingOf = (
 	for (const conf of standings.confs) {
 		const row = conf.teams.find((t) => t.tid === tid);
 		if (row) {
-			return {
+			const out: Standing = {
 				conf: conf.name,
 				rank: row.rank,
 				gb: row.gb,
@@ -592,6 +596,14 @@ export const standingOf = (
 				won: row.won,
 				lost: row.lost,
 			};
+			const first = conf.teams.find((t) => t.rank === 1);
+			const second = conf.teams.find((t) => t.rank === 2);
+			if (row.rank === 1 && second) {
+				out.lead = second.gb;
+			} else if (row.rank > 1 && first?.name) {
+				out.leader = first.name;
+			}
+			return out;
 		}
 	}
 	return undefined;

@@ -428,6 +428,37 @@ describe("a team's place in the standings", () => {
 			lost: 4,
 		});
 		assert.strictEqual(standingOf(standings, 9), undefined);
+		// First place knows its cushion; everyone else knows who is first.
+		const named = {
+			confs: [
+				{
+					name: "East",
+					teams: [
+						{
+							tid: 3,
+							abbrev: "A",
+							name: "Hawks",
+							rank: 1,
+							won: 10,
+							lost: 2,
+							gb: 0,
+						},
+						{
+							tid: 0,
+							abbrev: "B",
+							name: "Bulls",
+							rank: 2,
+							won: 8,
+							lost: 4,
+							gb: 2,
+						},
+					],
+				},
+			],
+		};
+		assert.strictEqual(standingOf(named, 3)?.lead, 2);
+		assert.strictEqual(standingOf(named, 3)?.leader, undefined);
+		assert.strictEqual(standingOf(named, 0)?.leader, "Hawks");
 		assert.strictEqual(standingOf(undefined, 0), undefined);
 	});
 });

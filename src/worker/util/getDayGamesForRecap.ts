@@ -165,6 +165,9 @@ export type RecapTeam = {
 		lost: number;
 		rankBefore?: number;
 		gbBefore?: number;
+		// First place: the gap to second. Otherwise: the leader's nickname.
+		lead?: number;
+		leader?: string;
 	};
 	// Whether this game set the team's (or the league's) season high.
 	seasonHighs?: TeamSeasonHighs;

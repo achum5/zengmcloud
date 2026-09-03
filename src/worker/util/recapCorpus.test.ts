@@ -266,6 +266,7 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 	const season = g.get("season");
 	const rng = rngFromSeed(SEED);
 	let gid = 1;
+	const nextPlayDay = new Map<number, number>();
 
 	const loadSide = async (tid: number) => {
 		const [t, teamSeason, ps] = await Promise.all([
@@ -293,7 +294,16 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 			}
 		}
 
-		const tids = Array.from({ length: NUM_TEAMS }, (_, i) => i);
+		// A real cadence, not every team every night: a team plays roughly
+		// every other day, now and then on consecutive nights, now and then
+		// with an extra day off - so back-to-backs, rest days and the next game
+		// all happen at the rates a recap would meet in a real league.
+		const tids = Array.from({ length: NUM_TEAMS }, (_, i) => i).filter(
+			(tid) => (nextPlayDay.get(tid) ?? 1) <= day,
+		);
+		if (tids.length % 2 === 1) {
+			tids.pop();
+		}
 		for (let i = tids.length - 1; i > 0; i--) {
 			const j = Math.floor(rng() * (i + 1));
 			[tids[i], tids[j]] = [tids[j]!, tids[i]!];
@@ -360,6 +370,10 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 				}),
 			};
 			await idb.cache.games.add(row as Game);
+			for (const tid of [result.team[0].id, result.team[1].id]) {
+				const r = rng();
+				nextPlayDay.set(tid, day + (r < 0.2 ? 1 : r < 0.85 ? 2 : 3));
+			}
 
 			for (const j of [0, 1] as const) {
 				const ts = await idb.cache.teamSeasons.indexGet(
