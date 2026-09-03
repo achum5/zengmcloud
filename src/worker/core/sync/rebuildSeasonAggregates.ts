@@ -34,12 +34,13 @@
 // the hole to every device. Such rows are held and reported instead.
 //
 // The same lost update also lands ON THE GAMES, which is where a league-mate
-// actually sees it. Every game row stores the record each side carried INTO
-// that game (loadTeams reads it off the season row at sim time), and the box
-// score and the game log print it - so a device simming from a stale row
-// stamps that stale record onto the game, permanently, and every later game
-// it sims carries the same shortfall forward. That is the "39 wins, then 38
-// wins" a reader sees in the game log. Those stamps are rebuilt here too.
+// actually sees it. Every game row stores each side's record including that
+// game (loadTeams reads the season row at sim time and writeGameStats adds
+// the result on top), and the box score and the game log print it - so a
+// device simming from a stale row stamps that stale record onto the game,
+// permanently, and every later game it sims carries the same shortfall
+// forward. That is the "39 wins, then 38 wins" a reader sees in the game log.
+// Those stamps are rebuilt here too.
 //
 // It rebuilds ONLY what is derivable. Hype, attendance, revenues and expenses
 // are also incremented per game but depend on state at the time (ticket
@@ -52,7 +53,7 @@
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g } from "../../util/index.ts";
+import { g, helpers } from "../../util/index.ts";
 import teamStatsKeys from "../team/stats.ts";
 
 // ---------------------------------------------------------------- RECORDS
@@ -275,7 +276,9 @@ export const recordDiffers = (
 
 // ---------------------------------------------------------------- THE STAMPS
 
-// The record a team carried INTO a game, as the game row stores it.
+// The record a game's box score prints for one side, as the game row stores
+// it: the record including that game during the regular season, the final
+// regular-season record on a playoff game.
 export type RecordStamp = {
 	won: number;
 	lost: number;
@@ -285,14 +288,15 @@ export type RecordStamp = {
 
 const emptyStamp = (): RecordStamp => ({ won: 0, lost: 0, tied: 0, otl: 0 });
 
-// What each side's record WAS when each game tipped off, replayed from the
-// games in the order they were played.
+// The record each side's box score prints, replayed from the games in the
+// order they were played.
 //
 // Two rules the sim follows and this has to follow with it. The stamp is the
-// record BEFORE the game, because loadTeams reads the season row and the game
-// is written afterwards. And a playoff game advances nothing: writeTeamStats
-// only touches the record outside the playoffs, so every postseason game
-// carries the final regular-season record.
+// record INCLUDING the game: writeGameStats copies the record loadTeams read
+// off the season row and then increments the winner and loser before the game
+// row is stored, so a 1-0 team's first box score says 1-0, not 0-0. And a
+// playoff game advances nothing: that increment only runs before the playoffs
+// phase, so every postseason game carries the final regular-season record.
 export const gameRecordStamps = (
 	games: readonly GameForRecords[],
 	otl: boolean,
@@ -313,23 +317,22 @@ export const gameRecordStamps = (
 			continue;
 		}
 		const [home, away] = game.teams;
-		out.set(game.gid, [{ ...recordOf(home.tid) }, { ...recordOf(away.tid) }]);
-		if (game.playoffs) {
-			continue;
-		}
-		const tie = game.won.pts === game.lost.pts;
-		for (const t of [home, away]) {
-			const rec = recordOf(t.tid);
-			if (tie) {
-				rec.tied += 1;
-			} else if (game.won.tid === t.tid) {
-				rec.won += 1;
-			} else if (game.overtimes > 0 && otl) {
-				rec.otl += 1;
-			} else {
-				rec.lost += 1;
+		if (!game.playoffs) {
+			const tie = game.won.pts === game.lost.pts;
+			for (const t of [home, away]) {
+				const rec = recordOf(t.tid);
+				if (tie) {
+					rec.tied += 1;
+				} else if (game.won.tid === t.tid) {
+					rec.won += 1;
+				} else if (game.overtimes > 0 && otl) {
+					rec.otl += 1;
+				} else {
+					rec.lost += 1;
+				}
 			}
 		}
+		out.set(game.gid, [{ ...recordOf(home.tid) }, { ...recordOf(away.tid) }]);
 	}
 	return out;
 };
@@ -354,6 +357,66 @@ export const applyStamp = (
 		}
 	}
 	return changed;
+};
+
+// ------------------------------------------------------------ THE PLAYOFF FLAG
+
+// playoffRoundsWon, reconciled against the bracket. The record rebuild cannot
+// see this field - it is not a count of games - but it dies the same death:
+// the playoffs phase sets it to 0 for every team in the bracket, and a stale
+// season row published whole drags it back to -1, which reads as "missed the
+// playoffs" on a team page while that team is up 2-0 in round 1.
+//
+// The bracket is the authority. A team appearing in round N of the series has
+// come through every round before it (byes included - a bye is a round-0
+// series with no away side, and the same advance that places a team into the
+// next round is the write that bumps this field), and the winner of the last
+// round is the champion. The floor derived that way only ever RAISES the
+// stored value: the staleness this repairs always understates, and a bracket
+// this device holds may itself be a round behind, so counting a row down
+// would spread that lag.
+//
+// Empty while a play-in is unresolved (currentRound === -1): round 0 then
+// holds provisional tids for the play-in slots, and a provisional team has
+// not made the playoffs.
+type PlayoffSeriesSide = { tid: number; won: number };
+type PlayoffSeriesShape = {
+	currentRound: number;
+	series: { home: PlayoffSeriesSide; away?: PlayoffSeriesSide }[][];
+};
+
+export const playoffRoundsWonFloor = (
+	playoffSeries: PlayoffSeriesShape,
+	numGamesToWinFinal: number,
+): Map<number, number> => {
+	const floor = new Map<number, number>();
+	if (playoffSeries.currentRound < 0) {
+		return floor;
+	}
+	for (const [round, matchups] of playoffSeries.series.entries()) {
+		for (const matchup of matchups) {
+			for (const side of [matchup.home, matchup.away]) {
+				if (side && typeof side.tid === "number" && side.tid >= 0) {
+					floor.set(side.tid, Math.max(floor.get(side.tid) ?? 0, round));
+				}
+			}
+		}
+	}
+	const numRounds = playoffSeries.series.length;
+	const final = playoffSeries.series[numRounds - 1];
+	if (final?.length === 1) {
+		const { home, away } = final[0]!;
+		const champion =
+			home.won >= numGamesToWinFinal
+				? home.tid
+				: away && away.won >= numGamesToWinFinal
+					? away.tid
+					: undefined;
+		if (champion !== undefined) {
+			floor.set(champion, numRounds);
+		}
+	}
+	return floor;
 };
 
 // ---------------------------------------------------------------- TEAM STATS
@@ -507,6 +570,7 @@ const forgetLocal = (store: string, pk: number | undefined) => {
 };
 
 type RecordChange = { tid: number; before: string; after: string };
+type PlayoffFlagChange = { tid: number; before: number; after: number };
 
 export type RebuildReport = {
 	season: number;
@@ -515,10 +579,13 @@ export type RebuildReport = {
 	// Rows the games could not justify (they count more games than exist
 	// here). Left alone - see the header.
 	recordsHeld: RecordChange[];
+	// playoffRoundsWon raised to what the bracket proves - see
+	// playoffRoundsWonFloor.
+	playoffFlagsFixed: PlayoffFlagChange[];
 	statsRowsFixed: number;
 	statsRowsHeld: number;
-	// Game rows whose stored "record entering this game" disagreed with the
-	// games and was restamped. Local only - see the runner.
+	// Game rows whose stored record stamp disagreed with the games and was
+	// restamped. Local only - see the runner.
 	gameStampsFixed: number;
 };
 
@@ -554,6 +621,7 @@ export const rebuildSeasonAggregates = async ({
 		teamsChecked: 0,
 		recordsFixed: [],
 		recordsHeld: [],
+		playoffFlagsFixed: [],
 		statsRowsFixed: 0,
 		statsRowsHeld: 0,
 		gameStampsFixed: 0,
@@ -607,6 +675,40 @@ export const rebuildSeasonAggregates = async ({
 					forgetLocal("teamStats", rebuiltStats.rid as number);
 					report.statsRowsFixed += 1;
 				}
+			}
+		}
+	}
+
+	// The playoff flag, reconciled against the bracket. Derived from the
+	// playoffSeries store rather than the games, so a held record row does not
+	// gate it - and like every write here, it stays local.
+	const playoffSeries = (await idb.cache.playoffSeries.get(season)) as
+		| (PlayoffSeriesShape & { season: number })
+		| undefined;
+	if (playoffSeries) {
+		const numRounds = playoffSeries.series.length;
+		const floor = playoffRoundsWonFloor(
+			playoffSeries,
+			helpers.numGamesToWinSeries(
+				g.get("numGamesPlayoffSeries", "current")[numRounds - 1],
+			),
+		);
+		for (const row of seasonRows) {
+			if (wanted && !wanted.has(row.tid)) {
+				continue;
+			}
+			const want = floor.get(row.tid);
+			const have =
+				typeof row.playoffRoundsWon === "number" ? row.playoffRoundsWon : -1;
+			if (want !== undefined && have < want) {
+				row.playoffRoundsWon = want;
+				await idb.cache.teamSeasons.put(row as any);
+				forgetLocal("teamSeasons", row.rid);
+				report.playoffFlagsFixed.push({
+					tid: row.tid,
+					before: have,
+					after: want,
+				});
 			}
 		}
 	}
@@ -678,6 +780,13 @@ export const describeRebuild = (report: RebuildReport): string | undefined => {
 	if (report.recordsHeld.length > 0) {
 		parts.push(
 			`held records that count more games than this device has: ${listChanges(report.recordsHeld)}`,
+		);
+	}
+	if (report.playoffFlagsFixed.length > 0) {
+		parts.push(
+			`raised playoffRoundsWon to what the bracket proves: ${report.playoffFlagsFixed
+				.map((fix) => `tid ${fix.tid} ${fix.before} -> ${fix.after}`)
+				.join(", ")}`,
 		);
 	}
 	if (report.statsRowsFixed > 0) {

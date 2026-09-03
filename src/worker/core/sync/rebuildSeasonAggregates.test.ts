@@ -653,7 +653,7 @@ describe("the record stamped on each game", () => {
 
 	const rec = (won: number, lost: number) => ({ won, lost });
 
-	test("the stamp is the record BEFORE the game, and a tie and an OTL count", () => {
+	test("the stamp is the record INCLUDING the game, and a tie and an OTL count", () => {
 		const games = [
 			stampGame(1, 1, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)]),
 			stampGame(2, 2, 0, 1, 90, 90, [rec(1, 0), rec(0, 1)]),
@@ -662,41 +662,43 @@ describe("the record stamped on each game", () => {
 			}),
 		];
 		const withOtl = gameRecordStamps(games, true);
+		// The sim adds the result before storing the game: a first win says 1-0.
 		assert.deepStrictEqual(withOtl.get(1), [
-			{ won: 0, lost: 0, tied: 0, otl: 0 },
-			{ won: 0, lost: 0, tied: 0, otl: 0 },
+			{ won: 1, lost: 0, tied: 0, otl: 0 },
+			{ won: 0, lost: 1, tied: 0, otl: 0 },
 		]);
-		// Entering game 2, the home side has the game-1 win.
+		// Game 2 was a tie, and its stamp carries it.
 		assert.deepStrictEqual(withOtl.get(2)![0], {
-			won: 1,
-			lost: 0,
-			tied: 0,
-			otl: 0,
-		});
-		// Entering game 3 the tie is on both records; tid 0 is away here.
-		assert.deepStrictEqual(withOtl.get(3)![1], {
 			won: 1,
 			lost: 0,
 			tied: 1,
 			otl: 0,
 		});
-		// Game 3 went to overtime, so with OTL on it is an overtime loss.
-		const after = gameRecordStamps(
-			[...games, stampGame(4, 4, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)])],
-			true,
-		);
-		assert.deepStrictEqual(after.get(4)![0], {
+		// Game 3 went to overtime, so with OTL on it lands as an overtime loss
+		// on the loser's stamp; tid 0 is away here.
+		assert.deepStrictEqual(withOtl.get(3)![1], {
 			won: 1,
 			lost: 0,
 			tied: 1,
 			otl: 1,
 		});
+		const after = gameRecordStamps(
+			[...games, stampGame(4, 4, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)])],
+			true,
+		);
+		assert.deepStrictEqual(after.get(4)![0], {
+			won: 2,
+			lost: 0,
+			tied: 1,
+			otl: 1,
+		});
+		// Without OTL the overtime loss is a plain loss.
 		const noOtl = gameRecordStamps(
 			[...games, stampGame(4, 4, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)])],
 			false,
 		);
 		assert.deepStrictEqual(noOtl.get(4)![0], {
-			won: 1,
+			won: 2,
 			lost: 1,
 			tied: 1,
 			otl: 0,
@@ -740,15 +742,15 @@ describe("the record stamped on each game", () => {
 		resetG();
 		g.setWithoutSavingToDB("season", SEASON);
 		g.setWithoutSavingToDB("otl", false);
-		// Three wins, then the win over tid 2, then the loss to tid 3 - which a
-		// stale device stamped as though the fourth win had never happened.
+		// Four wins for tid 0, then the loss to tid 3 - which a stale device
+		// stamped as though the fourth win had never happened.
 		const games = [
-			stampGame(1, 1, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)]),
-			stampGame(2, 2, 2, 0, 90, 100, [rec(0, 0), rec(1, 0)]),
-			stampGame(3, 3, 0, 3, 100, 90, [rec(2, 0), rec(0, 0)]),
-			stampGame(10, 4, 0, 2, 100, 97, [rec(3, 0), rec(0, 1)]),
-			// Stamped 3-0 by a device a game behind; the games say 4-0.
-			stampGame(11, 5, 3, 0, 94, 92, [rec(0, 1), rec(3, 0)]),
+			stampGame(1, 1, 0, 1, 100, 90, [rec(1, 0), rec(0, 1)]),
+			stampGame(2, 2, 2, 0, 90, 100, [rec(0, 1), rec(2, 0)]),
+			stampGame(3, 3, 0, 3, 100, 90, [rec(3, 0), rec(0, 1)]),
+			stampGame(10, 4, 0, 2, 100, 97, [rec(4, 0), rec(0, 2)]),
+			// Stamped 3-1 by a device a game behind; the games say 4-1.
+			stampGame(11, 5, 3, 0, 94, 92, [rec(1, 1), rec(3, 1)]),
 		];
 		await resetCache({
 			teamSeasons: [0, 1, 2, 3].map((tid) => ({
@@ -768,7 +770,7 @@ describe("the record stamped on each game", () => {
 		assert.strictEqual(report.gameStampsFixed, 1);
 		const fixed: any = await idb.cache.games.get(11);
 		assert.strictEqual(fixed.teams[1].won, 4);
-		assert.strictEqual(fixed.teams[1].lost, 0);
+		assert.strictEqual(fixed.teams[1].lost, 1);
 		assert.match(
 			describeRebuild(report)!,
 			/restamped the record on 1 box score/,
@@ -817,5 +819,126 @@ describe("the record stamped on each game", () => {
 		assert.strictEqual(report.gameStampsFixed, 0);
 		const untouched: any = await idb.cache.games.get(2);
 		assert.strictEqual(untouched.teams[0].won, 9);
+	});
+});
+
+// THE PLAYOFF FLAG.
+//
+// The playoffs phase writes playoffRoundsWon = 0 for every team in the
+// bracket, and a stale season row published whole drags it back to -1 - a team
+// up 2-0 in round 1 whose page says they missed the playoffs. The record
+// rebuild cannot see that field, but the bracket is shared state every device
+// agrees on, so it is the authority the repair raises from.
+describe("playoffRoundsWon against the bracket", () => {
+	const side = (tid: number, won = 0) => ({ tid, won, seed: 1 });
+
+	const seedBracket = async (
+		playoffRoundsWon: number[],
+		playoffSeries: Record<string, unknown>,
+	) => {
+		resetG();
+		g.setWithoutSavingToDB("season", SEASON);
+		g.setWithoutSavingToDB("otl", false);
+		const games = [
+			game({ gid: 1, day: 1, home: 0, away: 1, homePts: 100, awayPts: 90 }),
+		];
+		await resetCache({
+			teamSeasons: [0, 1, 2, 3].map((tid) => ({
+				tid,
+				season: SEASON,
+				did: divisionOf(tid),
+				cid: conferenceOf(tid),
+				...record(games, tid),
+				playoffRoundsWon: playoffRoundsWon[tid],
+			})),
+			teamStats: [],
+		});
+		await idb.cache.playoffSeries.put({
+			season: SEASON,
+			...playoffSeries,
+		} as any);
+		for (const g2 of games) {
+			await idb.cache.games.add(g2 as any);
+		}
+	};
+
+	const flagOf = async (tid: number) => {
+		const row: any = await idb.cache.teamSeasons.indexGet(
+			"teamSeasonsBySeasonTid",
+			[SEASON, tid],
+		);
+		return row.playoffRoundsWon;
+	};
+
+	test("a bracket team dragged to -1 is raised to what the bracket proves", async () => {
+		await seedBracket([-1, 0, 1, -1], {
+			currentRound: 1,
+			series: [
+				[
+					{ home: side(0, 4), away: side(1, 2) },
+					{ home: side(2, 4), away: side(3, 0) },
+				],
+				[{ home: side(0), away: side(2) }],
+			],
+		});
+		const report = await rebuildSeasonAggregates();
+		// tid 0 stands in round 1, so it has won round 0; tid 3 stands in
+		// round 0 and nothing further; tid 2 already says what the bracket says.
+		assert.deepStrictEqual(report.playoffFlagsFixed, [
+			{ tid: 0, before: -1, after: 1 },
+			{ tid: 3, before: -1, after: 0 },
+		]);
+		assert.strictEqual(await flagOf(0), 1);
+		assert.strictEqual(await flagOf(1), 0);
+		assert.strictEqual(await flagOf(2), 1);
+		assert.strictEqual(await flagOf(3), 0);
+		assert.match(describeRebuild(report)!, /raised playoffRoundsWon/);
+		// Off the wire, like every repair write.
+		assert.deepStrictEqual(changeTracker.drain(), []);
+
+		// Idempotent: a second pass finds nothing left to raise.
+		const again = await rebuildSeasonAggregates();
+		assert.deepStrictEqual(again.playoffFlagsFixed, []);
+	});
+
+	test("the champion is raised to every round, and a row is never lowered", async () => {
+		await seedBracket([-1, 3, 0, 0], {
+			currentRound: 1,
+			series: [
+				[
+					{ home: side(0, 4), away: side(1, 1) },
+					{ home: side(2, 4), away: side(3, 2) },
+				],
+				[{ home: side(0, 4), away: side(2, 0) }],
+			],
+		});
+		const report = await rebuildSeasonAggregates();
+		// tid 0 won the final: raised past the bracket's last round index. The
+		// beaten finalist still stands in round 1, so its stale 0 rises to 1.
+		// And tid 1's 3, whatever wrote it, is above the floor - not touched:
+		// the bracket this device holds may itself be behind.
+		assert.deepStrictEqual(report.playoffFlagsFixed, [
+			{ tid: 0, before: -1, after: 2 },
+			{ tid: 2, before: 0, after: 1 },
+		]);
+		assert.strictEqual(await flagOf(1), 3);
+	});
+
+	test("an unresolved play-in proves nothing", async () => {
+		// Round 0 holds provisional tids while currentRound is -1; a
+		// provisional team has not made the playoffs.
+		await seedBracket([-1, -1, -1, -1], {
+			currentRound: -1,
+			series: [
+				[
+					{ home: side(0), away: side(1) },
+					{ home: side(2), away: side(3) },
+				],
+			],
+			playIns: [[{ home: side(1), away: side(3) }]],
+		});
+		const report = await rebuildSeasonAggregates();
+		assert.deepStrictEqual(report.playoffFlagsFixed, []);
+		assert.strictEqual(await flagOf(0), -1);
 	});
 });
