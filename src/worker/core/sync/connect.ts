@@ -55,7 +55,10 @@ import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
 import { env } from "../../util/env.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
-import { flushDeferredRefreshAfterLive } from "./changeset.ts";
+import {
+	flushDeferredRefreshAfterLive,
+	repairAggregatesFromGames,
+} from "./changeset.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
 import { checkLeagueIntegrity } from "./leagueIntegrity.ts";
@@ -2341,7 +2344,7 @@ const doConnectSharedLeague = async ({
 	// block on a device that's been away a long time. V2: the single bounded
 	// chain walk. V1: the paginated backlog drain (which also starts the live
 	// changes subscription once caught up).
-	void engine.catchUp();
+	const initialCatchUp = engine.catchUp();
 
 	// Poll to keep draining / pick up anything the real-time subscription hasn't
 	// delivered yet (and to start that subscription once the initial drain lands).
@@ -2361,6 +2364,24 @@ const doConnectSharedLeague = async ({
 	// Arm the invisible-write canary: any write outside a capture/apply window
 	// while synced is a silent room fork in the making - report it loudly.
 	changeTracker.setCanary(true);
+
+	// Once this device is level with the room, hold its records and team totals
+	// against the games and repair whatever disagrees.
+	//
+	// This is the pass that heals a league that is ALREADY wrong. A record lost
+	// to two devices simming at once (see rebuildSeasonAggregates.ts) stays
+	// wrong on every device until something rebuilds it, and the apply-time
+	// pass only fires on a device receiving a sim - so a season that went wrong
+	// last week would wait for somebody else to play. Running it here means
+	// opening the app fixes it.
+	//
+	// Deliberately after the capture window is open above, so the correction is
+	// recorded and published rather than made silently on one device.
+	void initialCatchUp.then(async (ok) => {
+		if (ok) {
+			await repairAggregatesFromGames("connect");
+		}
+	});
 
 	// Let the UI hide single-player-only chrome (e.g. the multi-team switcher)
 	// and clear the "reconnecting" state.

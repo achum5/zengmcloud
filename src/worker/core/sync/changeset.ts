@@ -1021,47 +1021,13 @@ export const refreshAfterApply = async ({
 	// the games themselves are append-only and complete. So after anything that
 	// touched the games, or the rows summed from them, rebuild the current
 	// season's records and totals from the games and publish whatever differed.
-	// Only when this device's games are known complete: not during a resync
-	// replay, not while a day is missing, and not after an apply that dropped
-	// records.
 	if (
 		rebuildAggregates &&
 		(touchedGames ||
 			touchedStores.has("teamSeasons") ||
-			touchedStores.has("teamStats")) &&
-		!getSyncEngine()?.isResyncing()
+			touchedStores.has("teamStats"))
 	) {
-		try {
-			const stranded = await findStrandedScheduleRows();
-			if (stranded.gids.length === 0) {
-				const report = await rebuildSeasonAggregates();
-				const summary = describeRebuild(report);
-				if (summary !== undefined) {
-					console.log(summary);
-					syncDebugLog("apply:rebuild-aggregates", {
-						fixed: report.recordsFixed,
-						held: report.recordsHeld,
-						statsFixed: report.statsRowsFixed,
-						statsHeld: report.statsRowsHeld,
-						playerRowsSuspect: report.playerRowsSuspect,
-					});
-				}
-				// Ship a correction now rather than with this device's next action
-				// - a device that only watches would otherwise sit on the fix. Not
-				// while a local action or sim is capturing: its own drain carries
-				// these rows.
-				if (
-					(report.recordsFixed.length > 0 || report.statsRowsFixed > 0) &&
-					!changeTracker.isCapturing()
-				) {
-					await runAfterActionHook("sync", "rebuildAggregates", {
-						silent: true,
-					});
-				}
-			}
-		} catch (error) {
-			console.error("Season aggregate rebuild failed", error);
-		}
+		await repairAggregatesFromGames("apply");
 	}
 
 	// The LeagueTopBar score ticker is fed by a separate UI-state channel, not by
@@ -1087,6 +1053,60 @@ export const refreshAfterApply = async ({
 		} catch (error) {
 			console.error("Failed to push UI refresh after sync", error);
 		}
+	}
+};
+
+// THE REPAIR PASS: the gate, the rebuild, the log, and the correction.
+//
+// Shared by the two places that run it. After a remote apply that brought
+// games or the rows summed from them - the moment a stale row can have just
+// landed - and ONCE when a synced league connects and catches up.
+//
+// The connect pass is what makes an already-corrupted record heal. The apply
+// pass only fires on a device RECEIVING a sim, so a league whose record went
+// wrong last week would sit wrong until somebody else happened to sim while
+// this device was watching. On connect it is repaired by opening the app.
+//
+// Never while a resync is replaying the log (the replay is authoritative and
+// mid-flight), and never while a day is missing from this device: a rebuild
+// from an incomplete games store is a rebuild from a lie, and publishing it
+// would spread the hole. rebuildSeasonAggregates itself refuses to count a
+// row down for the same reason, so the two guards overlap on purpose.
+export const repairAggregatesFromGames = async (
+	reason: "apply" | "connect",
+): Promise<void> => {
+	if (getSyncEngine()?.isResyncing()) {
+		return;
+	}
+	try {
+		const stranded = await findStrandedScheduleRows();
+		if (stranded.gids.length > 0) {
+			return;
+		}
+		const report = await rebuildSeasonAggregates();
+		const summary = describeRebuild(report);
+		if (summary !== undefined) {
+			console.log(summary);
+			syncDebugLog("sync:rebuild-aggregates", {
+				reason,
+				fixed: report.recordsFixed,
+				held: report.recordsHeld,
+				statsFixed: report.statsRowsFixed,
+				statsHeld: report.statsRowsHeld,
+				playerRowsSuspect: report.playerRowsSuspect,
+			});
+		}
+		// Ship a correction now rather than with this device's next action - a
+		// device that only watches would otherwise sit on the fix. Not while a
+		// local action or sim is capturing: its own drain carries these rows.
+		if (
+			(report.recordsFixed.length > 0 || report.statsRowsFixed > 0) &&
+			!changeTracker.isCapturing()
+		) {
+			await runAfterActionHook("sync", "rebuildAggregates", { silent: true });
+		}
+	} catch (error) {
+		console.error("Season aggregate rebuild failed", error);
 	}
 };
 

@@ -13,6 +13,7 @@ import {
 	statsRowDiffers,
 	type GameForStats,
 } from "./rebuildSeasonAggregates.ts";
+import { repairAggregatesFromGames } from "./changeset.ts";
 
 // Straight from the field: a team went from 39-22 to 38-23 in a single game.
 // The loss was real; the win it took away was the previous game's, which the
@@ -535,5 +536,120 @@ describe("rebuildSeasonAggregates", () => {
 		const p: any = await idb.cache.players.get(5);
 		assert.strictEqual(p.stats[0].gp, 1);
 		assert.match(describeRebuild(report)!, /1 player row\(s\) disagree/);
+	});
+});
+
+// THE REPAIR PASS, which is what actually heals a league that is already
+// wrong. It runs after an apply that brought games, and once when a synced
+// league connects - the second being the one that matters for a record that
+// went wrong days ago, because the first only fires on a device RECEIVING a
+// sim.
+describe("repairAggregatesFromGames", () => {
+	const seasonRow = (tid: number, extra: Record<string, unknown> = {}) => ({
+		tid,
+		season: SEASON,
+		did: divisionOf(tid),
+		cid: conferenceOf(tid),
+		won: 0,
+		lost: 0,
+		tied: 0,
+		otl: 0,
+		wonHome: 0,
+		lostHome: 0,
+		tiedHome: 0,
+		otlHome: 0,
+		wonAway: 0,
+		lostAway: 0,
+		tiedAway: 0,
+		otlAway: 0,
+		wonDiv: 0,
+		lostDiv: 0,
+		tiedDiv: 0,
+		otlDiv: 0,
+		wonConf: 0,
+		lostConf: 0,
+		tiedConf: 0,
+		otlConf: 0,
+		lastTen: [],
+		streak: 0,
+		gpHome: 0,
+		...extra,
+	});
+
+	const fieldGames = () => [
+		game({ gid: 1, day: 1, home: 0, away: 1, homePts: 100, awayPts: 90 }),
+		game({ gid: 2, day: 2, home: 2, away: 0, homePts: 90, awayPts: 100 }),
+		game({ gid: 3, day: 3, home: 0, away: 3, homePts: 100, awayPts: 90 }),
+		game({ gid: 10, day: 4, home: 0, away: 2, homePts: 100, awayPts: 97 }),
+		game({ gid: 11, day: 5, home: 3, away: 0, homePts: 94, awayPts: 92 }),
+	];
+
+	beforeEach(async () => {
+		resetG();
+		g.setWithoutSavingToDB("season", SEASON);
+		g.setWithoutSavingToDB("otl", false);
+	});
+
+	const seed = async (
+		staleWon: number,
+		schedule: { gid: number; day: number }[] = [],
+	) => {
+		const games = fieldGames();
+		const truth = record(games);
+		await resetCache({
+			teamSeasons: [
+				seasonRow(0, { ...truth, won: staleWon }),
+				seasonRow(1, record(games, 1)),
+				seasonRow(2, record(games, 2)),
+				seasonRow(3, record(games, 3)),
+			],
+			teamStats: [],
+		});
+		for (const g2 of games) {
+			await idb.cache.games.add(g2 as any);
+		}
+		for (const row of schedule) {
+			await idb.cache.schedule.add({
+				...row,
+				season: SEASON,
+				homeTid: 0,
+				awayTid: 1,
+			} as any);
+		}
+	};
+
+	const wonOf = async () =>
+		(
+			(await idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [
+				SEASON,
+				0,
+			])) as any
+		).won;
+
+	test("gives the lost win back", async () => {
+		await seed(3);
+		await repairAggregatesFromGames("connect");
+		assert.strictEqual(await wonOf(), 4);
+	});
+
+	test("a day missing from this device stops it dead", async () => {
+		// An unplayed row on day 2 while the league has played day 5: this
+		// device never got a whole day, so its games cannot be trusted and
+		// nothing may be rebuilt from them - let alone published.
+		await seed(3, [{ gid: 99, day: 2 }]);
+		await repairAggregatesFromGames("connect");
+		assert.strictEqual(await wonOf(), 3);
+	});
+
+	test("a healthy league is left exactly as it is", async () => {
+		await seed(4);
+		await repairAggregatesFromGames("apply");
+		assert.strictEqual(await wonOf(), 4);
+	});
+
+	test("a row claiming more than the games show is held, not lowered", async () => {
+		await seed(6);
+		await repairAggregatesFromGames("connect");
+		assert.strictEqual(await wonOf(), 6);
 	});
 });
