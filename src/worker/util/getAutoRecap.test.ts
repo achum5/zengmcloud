@@ -5895,6 +5895,92 @@ describe("the upset headline", () => {
 // the star's whole line, the body prints his shooting instead - and it was
 // printing "scored his 16 on 5-of-15 shooting", which states a poor night in
 // the tone of a good one.
+// THE DAY WRAP'S OPENERS AND ITS STUTTER.
+describe("the day wrap says what it means", () => {
+	const dayTeam = (
+		tid: number,
+		name: string,
+		pts: number,
+		starName: string,
+		starPts: number,
+		extra: Partial<RecapPlayer> = {},
+	) =>
+		realisticTeam(
+			{ tid, name, abbrev: name.slice(0, 3).toUpperCase(), pts },
+			player({ name: starName, pts: starPts, fg: 9, fga: 18, ...extra }),
+		);
+
+	test("a list of routs is not introduced as drama", () => {
+		// Three lopsided results and nothing else: no upset, no comeback, no
+		// game decided late.
+		const games = [0, 1, 2, 3].map((i) =>
+			game({
+				gid: 7700 + i,
+				teams: [
+					dayTeam(i * 2 + 40, `Big${i}`, 120, `Star${i}`, 24 + i),
+					dayTeam(i * 2 + 41, `Small${i}`, 90 - i, `Rival${i}`, 15),
+				],
+				winnerTid: i * 2 + 40,
+			}),
+		);
+		const recap = getAutoDayRecap({
+			season: 2016,
+			day: 5,
+			playoffs: false,
+			games,
+		});
+		assert.doesNotMatch(
+			recap,
+			/There was drama elsewhere too|Also worth the watch/,
+			recap,
+		);
+	});
+
+	test("a performance in defeat is not the mirror of the sentence before it", () => {
+		// Two games. In the first, the winner's man is the night's top scorer,
+		// so he leads; his opponent's big line must not be the next sentence.
+		// The second game offers an alternative loser to write up.
+		const games = [
+			game({
+				gid: 7800,
+				teams: [
+					dayTeam(60, "Mavericks", 113, "Lonnie Dunn", 34),
+					dayTeam(61, "Knicks", 101, "Walker Ingram", 26, { reb: 12, ast: 12 }),
+				],
+				winnerTid: 60,
+			}),
+			game({
+				gid: 7801,
+				teams: [
+					dayTeam(62, "Bucks", 108, "Vince Hayes", 22),
+					dayTeam(63, "Magic", 99, "Obi Jackson", 25, { reb: 13, ast: 4 }),
+				],
+				winnerTid: 62,
+			}),
+		];
+		const recap = getAutoDayRecap({
+			season: 2016,
+			day: 6,
+			playoffs: false,
+			games,
+		});
+		const sentences = recap
+			.split("\n")
+			.filter((line) => line && !line.startsWith("**") && !line.startsWith("*"))
+			.flatMap((line) => line.split(/(?<=\.) /));
+		for (const [i, sentence] of sentences.entries()) {
+			const m = /losing effort against the ([A-Z][\w']+)/.exec(sentence);
+			if (m && i > 0) {
+				assert.doesNotMatch(
+					sentences[i - 1]!,
+					new RegExp(`the ${m[1]}\\b`),
+					`${sentences[i - 1]}\n${sentence}`,
+				);
+			}
+		}
+	});
+});
+
 describe("the star's shooting split", () => {
 	const splitGame = (pts: number, fg: number, fga: number): RecapGame => {
 		const win = realisticTeam(

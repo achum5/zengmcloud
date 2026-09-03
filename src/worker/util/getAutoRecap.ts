@@ -4830,6 +4830,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	}
 
 	const marqueeTids = new Set([mShape.winner.tid, mShape.loser.tid]);
+	// The game the most recent performance sentence was about, so the next one
+	// does not come straight back at it from the other side.
+	let lastPerfGame: RecapGame | undefined;
 	const named = new Set<RecapPlayer>();
 	if (mStar) {
 		named.add(mStar);
@@ -4855,6 +4858,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		);
 		named.add(topScorer.p);
 		coveredGames.add(topScorer.game);
+		lastPerfGame = topScorer.game;
 	}
 
 	// A second standout from a different game entirely. Winners only - "added 31
@@ -4889,6 +4893,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		);
 		named.add(secondPerf.p);
 		coveredGames.add(secondPerf.game);
+		lastPerfGame = secondPerf.game;
 	}
 
 	// A league-wide triple-double gets a nod if it wasn't already the story.
@@ -4911,28 +4916,47 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		);
 		named.add(tdPerf.p);
 		coveredGames.add(tdPerf.game);
+		lastPerfGame = tdPerf.game;
 	}
 
 	// A monster line wasted in a loss is a story of its own (a 23-18-8 night on
 	// the losing side shouldn't vanish from the league wrap).
 	if (para1.length < 5) {
-		const lossPerf = performers.find(
+		// Deliberately NOT filtered on coveredGames. This is the other side of
+		// a game the wrap may have told from the winner's view, and a 23-18-8
+		// wasted in defeat is its own story rather than a restatement of the
+		// result.
+		//
+		// But not straight back at the sentence before it, which reads as a
+		// stutter: "Lonnie Dunn had 25 points as the Mavericks beat the Knicks.
+		// Walker Ingram's 20 points, 12 assists and 4 steals came in a losing
+		// effort against the Mavericks." So another game is PREFERRED - and
+		// only preferred, because when the mirror is the only monster line in
+		// defeat on the slate, printing it beats losing it.
+		const lossCandidates = performers.filter(
 			(perf) =>
 				!named.has(perf.p) &&
 				!perf.won &&
 				!marqueeTids.has(perf.team.tid) &&
-				// Deliberately NOT filtered on coveredGames. This is the other
-				// side of a game the wrap may have told from the winner's view,
-				// and a 23-18-8 wasted in defeat is its own story rather than a
-				// restatement of the result.
 				((perf.p.pts >= 20 && doubleCategories(perf.p).length >= 2) ||
 					perf.p.pts >= 35),
 		);
+		const lossPerf =
+			lossCandidates.find((perf) => perf.game !== lastPerfGame) ??
+			lossCandidates[0];
 		if (lossPerf) {
+			// When the mirror is the only monster line in defeat on the slate it
+			// is still worth printing, but the sentence before it has just named
+			// the matchup - so name it once. "...as the Mavericks beat the
+			// Knicks. Walker Ingram's 20 points, 12 assists and 4 steals came in
+			// a losing effort against the Mavericks."
+			const mirror = lossPerf.game === lastPerfGame;
 			para1.push(
-				`${poss(lossPerf.p.name)} ${statPhrase(
-					lossPerf.p,
-				)} came in a losing effort against ${theNick(lossPerf.opp)}.`,
+				mirror
+					? `${poss(lossPerf.p.name)} ${statPhrase(lossPerf.p)} came in a losing effort.`
+					: `${poss(lossPerf.p.name)} ${statPhrase(
+							lossPerf.p,
+						)} came in a losing effort against ${theNick(lossPerf.opp)}.`,
 			);
 			coveredGames.add(lossPerf.game);
 		}
@@ -5004,10 +5028,21 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		}
 	}
 	if (notableBlurbs.length > 0) {
+		// "There was drama elsewhere too: the Lakers routed the Thunder by 30."
+		// A rout is notable and it is not drama. The opener has to match what
+		// it introduces, so the excitable ones are kept for a list that
+		// actually contains an upset, a comeback, a walk-off or a tight one.
+		const anyDrama = notableBlurbs.some((blurb) =>
+			/stun|shock|upset|took down|knocked off|got past|erased|overtime|at the wire|edged/.test(
+				blurb,
+			),
+		);
 		notableOpener = pick(
 			rng,
-			["Elsewhere", "There was drama elsewhere too", "Also worth the watch"],
-			"notableOpener",
+			anyDrama
+				? ["Elsewhere", "There was drama elsewhere too", "Also worth the watch"]
+				: ["Elsewhere", "Also on the night", "There was more besides"],
+			anyDrama ? "notableOpener" : "notableOpenerFlat",
 		);
 		para2.push(
 			notableOpener === "Elsewhere"
