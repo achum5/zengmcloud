@@ -16,6 +16,7 @@ import {
 	returnBeat,
 	scoringNormBeat,
 	seriesBeat,
+	seriesShapeBeat,
 	standingsBeat,
 	teamHighBeat,
 	vsOpponentBeat,
@@ -1262,9 +1263,155 @@ describe("the postseason day wrap", () => {
 		assert.ok(text.indexOf("decider") < text.indexOf("elimination"), text);
 	});
 
+	test("three series on the brink share one tail, not three", () => {
+		const games = [
+			seriesGame(1, "Celtics", "Knicks", 2, 2, [1, 2]),
+			seriesGame(2, "Bucks", "Heat", 2, 2, [3, 4]),
+			seriesGame(3, "Kings", "Suns", 2, 2, [5, 6]),
+		];
+		const text = dayBracketWatch(ctx(games), rngFromSeed(1))!;
+		assert.strictEqual((text.match(/face elimination/g) ?? []).length, 1);
+		assert.match(text, /all face elimination in Game 6/);
+		for (const name of ["Knicks", "Heat", "Suns"]) {
+			assert.ok(text.includes(name), text);
+		}
+	});
+
 	test("a series that just ended is not in the watch", () => {
 		const clinch = [seriesGame(1, "Celtics", "Knicks", 3, 1, [1, 2])];
 		assert.strictEqual(dayBracketWatch(ctx(clinch), rngFromSeed(1)), undefined);
 		assert.strictEqual(dayBracketWatch(ctx([]), rngFromSeed(1)), undefined);
+	});
+});
+
+describe("what kind of series it has been", () => {
+	beforeEach(() => endRecapBatch());
+
+	const sg = (
+		won: boolean,
+		home: boolean,
+		pts: number,
+		oppPts: number,
+		day: number,
+	) => ({ won, home, pts, oppPts, day });
+
+	const playoffGame = (
+		winner: RecapTeam,
+		loser: RecapTeam,
+		winnerHome = true,
+	) => {
+		const g: RecapGame = {
+			gid: 10,
+			day: 100,
+			overtimes: 0,
+			winnerTid: winner.tid,
+			playoffs: true,
+			clutchPlays: [],
+			teams: winnerHome ? [winner, loser] : [loser, winner],
+		};
+		return {
+			game: g,
+			ctx: {
+				game: g,
+				winner,
+				loser,
+				margin: winner.pts - loser.pts,
+				said: new Set<string>(),
+				written: "",
+			},
+		};
+	};
+
+	test("every game going to the home side is worth saying", () => {
+		const w = team({
+			tid: 1,
+			name: "Celtics",
+			pts: 105,
+			seriesSoFar: [
+				sg(true, true, 110, 100, 96),
+				sg(false, false, 95, 105, 98),
+				sg(false, false, 90, 101, 99),
+			],
+		});
+		const l = team({ tid: 2, name: "Knicks", pts: 98 });
+		const all = shapes((rng) => seriesShapeBeat(playoffGame(w, l).ctx, rng));
+		assert.ok(all.size >= 3, [...all].join("\n"));
+		assert.ok(
+			[...all].some((s) => /home|road/i.test(s)),
+			[...all].join("\n"),
+		);
+		noNumeralOpener(all);
+	});
+
+	test("a road win in a series breaks the pattern and says so", () => {
+		const w = team({
+			tid: 1,
+			name: "Celtics",
+			pts: 105,
+			seriesSoFar: [
+				sg(false, false, 95, 105, 96),
+				sg(true, true, 110, 100, 98),
+			],
+		});
+		const l = team({ tid: 2, name: "Knicks", pts: 98 });
+		const text = seriesShapeBeat(playoffGame(w, l, false).ctx, rngFromSeed(1))!;
+		assert.match(text, /road|away from home|floor/);
+	});
+
+	test("a series of one-possession games, and the night that ended it", () => {
+		const tight = team({
+			tid: 1,
+			name: "Celtics",
+			pts: 101,
+			seriesSoFar: [
+				sg(true, true, 100, 97, 96),
+				sg(false, false, 99, 102, 98),
+				sg(true, true, 104, 101, 99),
+			],
+		});
+		const l = team({ tid: 2, name: "Knicks", pts: 98 });
+		const all = shapes((rng) =>
+			seriesShapeBeat(playoffGame(tight, l).ctx, rng),
+		);
+		assert.ok(
+			[...all].some((s) => /five|last minute/.test(s)),
+			[...all].join("\n"),
+		);
+
+		const blowout = team({
+			tid: 1,
+			name: "Celtics",
+			pts: 120,
+			seriesSoFar: [
+				sg(true, true, 100, 97, 96),
+				sg(false, false, 99, 102, 98),
+				sg(true, true, 104, 101, 99),
+			],
+		});
+		const wide = team({ tid: 2, name: "Knicks", pts: 96 });
+		const shapes2 = shapes((rng) =>
+			seriesShapeBeat(playoffGame(blowout, wide).ctx, rng),
+		);
+		assert.ok(
+			[...shapes2].some((s) => /not close|eight|one-possession/.test(s)),
+			[...shapes2].join("\n"),
+		);
+	});
+
+	test("a regular-season game, or a series one game old, says nothing", () => {
+		const w = team({
+			tid: 1,
+			name: "Celtics",
+			pts: 105,
+			seriesSoFar: [sg(true, true, 110, 100, 96)],
+		});
+		const l = team({ tid: 2, name: "Knicks", pts: 98 });
+		assert.strictEqual(
+			seriesShapeBeat(playoffGame(w, l).ctx, rngFromSeed(1)),
+			undefined,
+		);
+		const regular = playoffGame(w, l);
+		regular.ctx.game.playoffs = false;
+		assert.strictEqual(seriesShapeBeat(regular.ctx, rngFromSeed(1)), undefined);
 	});
 });

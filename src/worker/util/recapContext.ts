@@ -310,6 +310,49 @@ export const teamSeasonHighs = (
 	};
 };
 
+// ---------------------------------------------------------------- THE SERIES
+
+export type SeriesGame = {
+	// From the given team's side.
+	won: boolean;
+	home: boolean;
+	pts: number;
+	oppPts: number;
+	day: number;
+};
+
+// The playoff games these two have already played this postseason, oldest
+// first, from `tid`'s side. What lets a recap say the series has been all
+// home wins, or that nothing before tonight had been decided by more than
+// four - the things a series takes on a character from.
+export const seriesSoFar = (
+	tid: number,
+	oppTid: number,
+	gid: number,
+	day: number,
+	games: readonly ContextGameRow[],
+): SeriesGame[] =>
+	games
+		.filter(
+			(g) =>
+				completed(g) &&
+				g.playoffs &&
+				involves(g, tid) &&
+				involves(g, oppTid) &&
+				playedBefore(g, gid, day),
+		)
+		.sort(byPlayed)
+		.map((g) => {
+			const { home, mine, opp } = sideOf(g, tid);
+			return {
+				won: g.won!.tid === tid,
+				home,
+				pts: mine?.pts ?? 0,
+				oppPts: opp?.pts ?? 0,
+				day: dayOf(g),
+			};
+		});
+
 // ---------------------------------------------------------------- THE NORM
 
 export type ScoringNorm = {

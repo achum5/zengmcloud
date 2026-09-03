@@ -953,6 +953,112 @@ export const vsOpponentBeat = (
 	return undefined;
 };
 
+// ---------------------------------------------------------------- THE SERIES
+
+// What kind of series this has been. A postseason recap's closing paragraph
+// had almost nothing to work with - the standings, the season series, the
+// venue records and the schedule are all regular-season beats, and every one
+// of them sits out the playoffs. The series' own shape is the thing a
+// postseason writer reaches for instead: who has held serve, how close the
+// games have been, whether tonight broke the pattern.
+export const seriesShapeBeat = (
+	ctx: BeatContext,
+	rng: Rng,
+): string | undefined => {
+	if (!ctx.game.playoffs) {
+		return undefined;
+	}
+	const prior = ctx.winner.seriesSoFar;
+	if (!prior || prior.length < 2) {
+		return undefined;
+	}
+	const W = cap(theNick(ctx.winner));
+	const wn = theNick(ctx.winner);
+	const ln = theNick(ctx.loser);
+	const options: string[] = [];
+	const winnerHome = ctx.game.teams[0].tid === ctx.winner.tid;
+
+	// Home advantage: every game so far, tonight included, has gone the way of
+	// whoever was at home.
+	const allHeldServe = prior.every((g) => g.won === g.home) && winnerHome;
+	if (allHeldServe) {
+		options.push(
+			pick(
+				rng,
+				[
+					`Home has decided every game of the series so far.`,
+					`Nobody has won on the road in this series yet.`,
+					`That is ${numWord(prior.length + 1)} games, and ${numWord(prior.length + 1)} wins for the home side.`,
+				],
+				"seriesHomeHold",
+			),
+		);
+	} else if (!winnerHome) {
+		const roadWins = prior.filter((g) => g.won && !g.home).length + 1;
+		options.push(
+			pick(
+				rng,
+				[
+					`${W} have now won ${plural(roadWins, "game")} on the road in the series.`,
+					`That is ${numWord(roadWins)} away from home for ${wn} in this series.`,
+					`${W} took another one on ${poss(ln)} floor.`,
+				],
+				"seriesRoadWin",
+			),
+		);
+	}
+
+	// How close it has been.
+	const margins = [...prior.map((g) => Math.abs(g.pts - g.oppPts)), ctx.margin];
+	const tight = margins.filter((m) => m <= 5).length;
+	if (tight === margins.length && margins.length >= 3) {
+		options.push(
+			pick(
+				rng,
+				[
+					`No game in the series has been decided by more than five.`,
+					`Every game of it has come down to the last minute.`,
+					`${cap(numWord(margins.length))} games, none of them by more than five points.`,
+				],
+				"seriesTight",
+			),
+		);
+	} else if (ctx.margin >= 18 && margins.slice(0, -1).every((m) => m <= 8)) {
+		options.push(
+			pick(
+				rng,
+				[
+					`Nothing before tonight had been decided by more than eight.`,
+					`After ${numWord(prior.length)} tight games, this one was not close.`,
+					`It was the first game of the series that was not a one-possession affair late.`,
+				],
+				"seriesBreak",
+			),
+		);
+	}
+
+	// A team that has been outscored across the series but leads it, or the
+	// reverse - the sort of thing a series scoreboard hides.
+	const forTotal = prior.reduce((acc, g) => acc + g.pts, 0) + ctx.winner.pts;
+	const againstTotal =
+		prior.reduce((acc, g) => acc + g.oppPts, 0) + ctx.loser.pts;
+	if (Math.abs(forTotal - againstTotal) >= 25 && margins.length >= 3) {
+		const ahead = forTotal > againstTotal ? wn : ln;
+		options.push(
+			pick(
+				rng,
+				[
+					`Across the series ${ahead} have outscored the other side by ${Math.abs(forTotal - againstTotal)}.`,
+					`The aggregate over ${numWord(margins.length)} games favours ${ahead} by ${Math.abs(forTotal - againstTotal)}.`,
+				],
+				"seriesAggregate",
+			),
+		);
+	}
+
+	return options.length > 0 ? pick(rng, options) : undefined;
+};
+
 // ---------------------------------------------------------------- THE NIGHT
 //
 // The day wrap's own beats. A league wrap that lists results tells you what
@@ -1366,7 +1472,32 @@ export const dayBracketWatch = (
 		return undefined;
 	}
 	out.sort((a, b) => b.weight - a.weight);
-	const list = naturalList(out.slice(0, 3).map((x) => x.text));
+	// Three series on the brink on the same night is normal, and spelling it
+	// out gave "the Clippers face elimination in Game 6, the Timberwolves face
+	// elimination in Game 6, and the Heat face elimination in Game 6". Clauses
+	// that end the same way are collapsed onto one tail.
+	const chosen = out.slice(0, 3);
+	const byTail = new Map<string, string[]>();
+	for (const item of chosen) {
+		const m =
+			/ (face elimination in Game \d+|play a decider in Game \d+)$/.exec(
+				item.text,
+			);
+		const tail = m ? m[1]! : "";
+		const subject = m ? item.text.slice(0, m.index) : item.text;
+		byTail.set(tail, [...(byTail.get(tail) ?? []), subject]);
+	}
+	const clauses: string[] = [];
+	for (const [tail, subjects] of byTail) {
+		if (!tail) {
+			clauses.push(...subjects);
+		} else if (subjects.length === 1) {
+			clauses.push(`${subjects[0]} ${tail}`);
+		} else {
+			clauses.push(`${naturalList(subjects)} all ${tail}`);
+		}
+	}
+	const list = naturalList(clauses);
 	return pick(
 		rng,
 		[

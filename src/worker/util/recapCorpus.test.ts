@@ -35,6 +35,10 @@ const nodeEnv: Record<string, string | undefined> =
 const LOG = nodeEnv.RECAP_LOG;
 const NUM_TEAMS = 30;
 const DAYS = Number(nodeEnv.RECAP_DAYS ?? 30);
+// A postseason on the end of the regular season, so the playoff recaps - the
+// ones a reader cares most about - are measured too. Off by default so a quick
+// corpus run stays quick; RECAP_PLAYOFFS=1 turns it on.
+const PLAYOFFS = nodeEnv.RECAP_PLAYOFFS === "1";
 const SEED = Number(nodeEnv.RECAP_SEED ?? 1);
 
 const rngFromSeed = (seed: number): (() => number) => {
@@ -280,6 +284,58 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 		return processTeam(t, teamSeason, ps);
 	};
 
+	const buildGameRow = (
+		result: any,
+		gameId: number,
+		day: number,
+		w: number,
+		playoffs: boolean,
+	) => {
+		const row: any = {
+			gid,
+			day,
+			season,
+			att: 18000,
+			clutchPlays: (result.clutchPlays ?? []).map((c: any) => `${c.text}.`),
+			numPlayersOnCourt: result.numPlayersOnCourt ?? 5,
+			numPeriods: g.get("numPeriods"),
+			overtimes: result.overtimes ?? 0,
+			playoffs,
+			scoringSummary: result.scoringSummary ?? [],
+			won: { tid: result.team[w].id, pts: result.team[w].stat.pts },
+			lost: { tid: result.team[1 - w].id, pts: result.team[1 - w].stat.pts },
+			teams: [0, 1].map((j) => {
+				const t = result.team[j];
+				const out: any = {
+					tid: t.id,
+					ovr: t.ovr,
+					pts: t.stat.pts,
+					ptsQtrs: t.stat.ptsQtrs,
+					players: [],
+				};
+				for (const k of STAT_KEYS) {
+					out[k] = t.stat[k] ?? 0;
+				}
+				for (const sp of t.player) {
+					const line: any = {
+						pid: sp.id,
+						name: sp.name,
+						pos: sp.pos,
+						injury: sp.injury,
+					};
+					for (const k of STAT_KEYS) {
+						line[k] = sp.stat[k] ?? 0;
+					}
+					line.pm = sp.stat.pm ?? 0;
+					line.gs = sp.stat.gs ?? 0;
+					out.players.push(line);
+				}
+				return out;
+			}),
+		};
+		return row;
+	};
+
 	for (let day = 1; day <= DAYS; day++) {
 		for (const p of await idb.cache.players.indexGetAll("playersByTid", [
 			0,
@@ -327,48 +383,7 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 			} as any).run();
 
 			const w = result.team[0].stat.pts > result.team[1].stat.pts ? 0 : 1;
-			const row: any = {
-				gid,
-				day,
-				season,
-				att: 18000,
-				clutchPlays: (result.clutchPlays ?? []).map((c: any) => `${c.text}.`),
-				numPlayersOnCourt: result.numPlayersOnCourt ?? 5,
-				numPeriods: g.get("numPeriods"),
-				overtimes: result.overtimes ?? 0,
-				playoffs: false,
-				scoringSummary: result.scoringSummary ?? [],
-				won: { tid: result.team[w].id, pts: result.team[w].stat.pts },
-				lost: { tid: result.team[1 - w].id, pts: result.team[1 - w].stat.pts },
-				teams: [0, 1].map((j) => {
-					const t = result.team[j];
-					const out: any = {
-						tid: t.id,
-						ovr: t.ovr,
-						pts: t.stat.pts,
-						ptsQtrs: t.stat.ptsQtrs,
-						players: [],
-					};
-					for (const k of STAT_KEYS) {
-						out[k] = t.stat[k] ?? 0;
-					}
-					for (const sp of t.player) {
-						const line: any = {
-							pid: sp.id,
-							name: sp.name,
-							pos: sp.pos,
-							injury: sp.injury,
-						};
-						for (const k of STAT_KEYS) {
-							line[k] = sp.stat[k] ?? 0;
-						}
-						line.pm = sp.stat.pm ?? 0;
-						line.gs = sp.stat.gs ?? 0;
-						out.players.push(line);
-					}
-					return out;
-				}),
-			};
+			const row = buildGameRow(result, gid, day, w, false);
 			await idb.cache.games.add(row as Game);
 			for (const tid of [result.team[0].id, result.team[1].id]) {
 				const r = rng();
@@ -403,6 +418,107 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 		}
 	}
 
+	// A first round, played out for real. genPlayoffSeries is not used - it
+	// wants a whole league phase behind it - but the shape it produces is, so
+	// seriesForGame reads the bracket exactly as it does in the app: eight
+	// teams a conference, 1v8 through 4v5, best of seven, home games in the
+	// 2-2-1-1-1 pattern the seeding implies.
+	let lastDay = DAYS;
+	if (PLAYOFFS) {
+		const standings = await Promise.all(
+			teams.map(async (t) => {
+				const ts = await idb.cache.teamSeasons.indexGet(
+					"teamSeasonsBySeasonTid",
+					[season, t.tid],
+				);
+				return {
+					tid: t.tid,
+					cid: t.cid,
+					won: ts?.won ?? 0,
+					lost: ts?.lost ?? 0,
+				};
+			}),
+		);
+		const seedsByConf = [0, 1].map((cid) =>
+			standings
+				.filter((t) => t.cid === cid)
+				.sort((a, b) => b.won - a.won || a.tid - b.tid)
+				.slice(0, 8),
+		);
+		const matchups: any[] = [];
+		for (const conf of seedsByConf) {
+			for (let i = 0; i < 4; i++) {
+				const high = conf[i]!;
+				const low = conf[7 - i]!;
+				matchups.push({
+					home: { tid: high.tid, cid: high.cid, seed: i + 1, won: 0 },
+					away: { tid: low.tid, cid: low.cid, seed: 8 - i, won: 0 },
+					gids: [] as number[],
+				});
+			}
+		}
+		// Four rounds' worth of structure even though only the first is played:
+		// roundName reads the number of rounds off this array, so a one-entry
+		// bracket makes every first-round series "the Finals".
+		await idb.cache.playoffSeries.add({
+			season,
+			currentRound: 0,
+			series: [matchups, [], [], []],
+		} as any);
+
+		// Game n of a best-of-seven is at the higher seed for 1, 2, 5, 7.
+		const homeIsHigher = [true, true, false, false, true, false, true];
+		for (let gameNo = 1; gameNo <= 7; gameNo++) {
+			const day = DAYS + gameNo;
+			lastDay = day;
+			let played = false;
+			for (const matchup of matchups) {
+				if (matchup.home.won === 4 || matchup.away.won === 4) {
+					continue;
+				}
+				const higherHome = homeIsHigher[gameNo - 1]!;
+				const homeTid = higherHome ? matchup.home.tid : matchup.away.tid;
+				const awayTid = higherHome ? matchup.away.tid : matchup.home.tid;
+				const home = await loadSide(homeTid);
+				const away = await loadSide(awayTid);
+				if (!home || !away) {
+					continue;
+				}
+				played = true;
+				const result: any = new GameSim({
+					gid,
+					day,
+					teams: helpers.deepCopy([home, away]) as any,
+					doPlayByPlay: false,
+					homeCourtFactor: 1,
+					neutralSite: false,
+					allStarGame: false,
+					baseInjuryRate: g.get("injuryRate"),
+				} as any).run();
+				const w = result.team[0].stat.pts > result.team[1].stat.pts ? 0 : 1;
+				const row = buildGameRow(result, gid, day, w, true);
+				await idb.cache.games.add(row as Game);
+				matchup.gids.push(gid);
+				const winnerTid = result.team[w].id;
+				if (matchup.home.tid === winnerTid) {
+					matchup.home.won += 1;
+				} else {
+					matchup.away.won += 1;
+				}
+				gid += 1;
+			}
+			if (!played) {
+				break;
+			}
+			const series = await idb.cache.playoffSeries.get(season);
+			if (series) {
+				(series as any).series = [matchups, [], [], []];
+				await idb.cache.playoffSeries.put(series);
+			}
+		}
+		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
+	}
+
 	// The real recap path, day by day. Every recap is dumped WITH the RecapGame
 	// it was written from, so an accuracy checker can hold each number in the
 	// prose against the box score it came out of.
@@ -410,7 +526,7 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 	const gameRecaps: string[] = [];
 	const dayRecaps: string[] = [];
 	const pairs: { gid: number; recap: string; game: RecapGame }[] = [];
-	for (let day = 1; day <= DAYS; day++) {
+	for (let day = 1; day <= lastDay; day++) {
 		const { notes, dayRecap } = await getAutoRecapsForDay({ season, day });
 		for (const rg of await recapGamesForDay({ season, day })) {
 			const note = notes[rg.gid];

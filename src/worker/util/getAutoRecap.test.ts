@@ -5880,6 +5880,53 @@ describe("the upset headline", () => {
 	});
 });
 
+describe("the number the books had is quoted once", () => {
+	test("a headline that says the spread is not echoed by the body", () => {
+		const win = realisticTeam(
+			{
+				tid: 1,
+				name: "Bulls",
+				abbrev: "CHI",
+				pts: 96,
+				record: { won: 20, lost: 20 },
+			},
+			player({ name: "Vince Carter", pts: 15, reb: 4, fg: 6, fga: 14 }),
+		);
+		const lose = realisticTeam(
+			{
+				tid: 2,
+				name: "Pistons",
+				abbrev: "DET",
+				pts: 91,
+				record: { won: 32, lost: 8 },
+			},
+			player({ name: "Franz Ellis", pts: 17, reb: 6, fg: 7, fga: 18 }),
+		);
+		beginRecapBatch();
+		try {
+			for (let i = 0; i < 10; i++) {
+				const recap = getAutoRecap(
+					game({
+						gid: 6100 + i,
+						teams: [win, lose],
+						winnerTid: 1,
+						spread: { favTid: 2, points: 11 },
+					}),
+				);
+				const [headline, ...body] = recap.split("\n");
+				const saidInHeadline =
+					/underdog|-point dogs|wrong side of the line/.test(headline!);
+				const saidInBody = /underdog|-point dogs|wrong side of the line/.test(
+					body.join(" "),
+				);
+				assert.ok(!(saidInHeadline && saidInBody), recap);
+			}
+		} finally {
+			endRecapBatch();
+		}
+	});
+});
+
 describe("prepositions do not stack", () => {
 	const clutchGame = (): RecapGame => {
 		const win = realisticTeam(

@@ -13,6 +13,7 @@ import {
 	seasonMilestone,
 	scoringNorm,
 	seasonSeries,
+	seriesSoFar,
 	standingOf,
 	teamSeasonHighs,
 	type ContextScheduleRow,
@@ -21,6 +22,7 @@ import {
 	type PlayerEntering,
 	type ScoringNorm,
 	type SeasonSeries,
+	type SeriesGame,
 	type TeamSeasonHighs,
 	type VsOpponent,
 } from "./recapContext.ts";
@@ -179,6 +181,8 @@ export type RecapTeam = {
 	seasonHighs?: TeamSeasonHighs;
 	// What the team had been scoring and allowing entering this game.
 	norm?: ScoringNorm;
+	// The earlier games of this playoff series, from this team's side.
+	seriesSoFar?: SeriesGame[];
 };
 
 // A playoff series' state for context (bracket entry the game belongs to).
@@ -1611,6 +1615,12 @@ const createAutoRecapContext = async (season: number) => {
 						oppName: info?.name ?? "",
 						oppAbbrev: info?.abbrev ?? "???",
 					};
+				}
+				if (playoffs) {
+					const soFar = seriesSoFar(team.tid, opp.tid, game.gid, day2, mine);
+					if (soFar.length > 0) {
+						team.seriesSoFar = soFar;
+					}
 				}
 				if (!playoffs) {
 					team.norm = scoringNorm(team.tid, game.gid, day2, mine);

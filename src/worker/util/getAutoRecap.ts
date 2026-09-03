@@ -55,6 +55,7 @@ import {
 	returnBeat,
 	scoringNormBeat,
 	seriesBeat,
+	seriesShapeBeat,
 	standingsBeat,
 	teamHighBeat,
 	vsOpponentBeat,
@@ -2145,6 +2146,10 @@ const stakesSentence = (
 	game: RecapGame,
 	shape: Shape,
 	rng: () => number,
+	// The headline already quoted the number the books had ("11-point
+	// underdogs, the Bulls upset the Pistons"), so the body saying it again
+	// three sentences later is the same fact twice.
+	spreadTold = false,
 ): string | undefined => {
 	const options: string[] = [];
 
@@ -2202,7 +2207,7 @@ const stakesSentence = (
 		}
 	}
 
-	if (isUpset(game, shape) && game.spread) {
+	if (isUpset(game, shape) && game.spread && !spreadTold) {
 		const dog = game.spread.points;
 		// A 3.5-point dog winning is a Tuesday. Reserve the language of a genuine
 		// shock for a number that earns it, and let the small ones be stated
@@ -3209,7 +3214,12 @@ export const getAutoRecap = (game: RecapGame): string => {
 	const extras = shuffle(rng, [
 		post.sentences[1],
 		combined ? undefined : secondHalfNote(shape, rng),
-		stakesSentence(game, shape, rng),
+		stakesSentence(
+			game,
+			shape,
+			rng,
+			/underdog|-point dogs|the wrong side of the line/.test(headline.text),
+		),
 		combined,
 		plusMinusNote(shape, star, rng, namedInPara2),
 		injurySentence(shape, rng),
@@ -3334,6 +3344,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 	addBeat(() => formNote(shape, rng, beatCtx.written));
 	for (const beat of shuffle(rng, [
 		() => scoringNormBeat(beatCtx, rng),
+		() => seriesShapeBeat(beatCtx, rng),
 		() => seriesBeat(beatCtx, rng),
 		() => homeRoadBeat(beatCtx, rng),
 		() => restBeat(beatCtx, rng),
