@@ -5238,7 +5238,11 @@ describe("no branch has only one phrasing", () => {
 		],
 		[
 			"whistle gap",
-			/shot \d+ free throws to \d+\.|whistle went one way|got to the line (?:more than twice|far more) often|were beaten at the line/,
+			// No trailing "\." on the first alternative: the sentence splitter
+			// above consumes the period, so requiring one meant that phrasing
+			// could only ever match as the last sentence of a paragraph - and
+			// the branch read as though it had one shape when it has four.
+			/shot \d+ free throws to \d+|whistle went one way|got to the line (?:more than twice|far more) often|were beaten at the line/,
 		],
 		[
 			"snapped streak",

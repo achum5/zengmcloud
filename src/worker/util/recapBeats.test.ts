@@ -457,6 +457,47 @@ describe("season highs, streaks, milestones and returns", () => {
 		);
 	});
 
+	test("a scoring high is dropped once the average sentence has made the point", () => {
+		const p = player({ name: "Jayson Tatum", pts: 41, entering: entering() });
+		// The name can sit either side of the number in the average clause.
+		for (const said of [
+			"Jayson Tatum came into the night averaging 22.0 points a game.",
+			"It was a long way past the 22.0 a night Jayson Tatum had been putting up.",
+		]) {
+			assert.strictEqual(
+				playerHighBeat(p, rngFromSeed(1), said),
+				undefined,
+				said,
+			);
+		}
+		// A different man's average says nothing about his night.
+		assert.ok(
+			playerHighBeat(
+				p,
+				rngFromSeed(1),
+				"Jaylen Brown came into the night averaging 20.0 points a game.",
+			),
+		);
+	});
+
+	test("a rebounding high survives a sentence about his scoring", () => {
+		const p = player({
+			name: "Domantas Sabonis",
+			pts: 24,
+			reb: 19,
+			entering: entering({
+				high: { pts: 31, reb: 14, ast: 9, tp: 5, stl: 3, blk: 2 },
+			}),
+		});
+		const text = playerHighBeat(
+			p,
+			rngFromSeed(1),
+			"That is 11 more than the 13.0 a game Domantas Sabonis had been averaging.",
+		);
+		assert.ok(text, "the rebounding high was dropped");
+		assert.match(text!, /rebound|glass|grabbed/);
+	});
+
 	test("a player's season high is quoted bare, never as tonight's line", () => {
 		const p = player({ name: "Jayson Tatum", pts: 41, entering: entering() });
 		const all = shapes((rng) => playerHighBeat(p, rng));

@@ -500,7 +500,28 @@ export const teamHighBeat = (
 export const playerHighBeat = (
 	p: RecapPlayer,
 	rng: Rng,
+	// What the piece has said so far. A sentence measuring his night against
+	// his scoring average has already made this observation with different
+	// arithmetic, and the two land side by side: "It was a long way past the
+	// 14.9 a night Lonnie Ingram had been putting up. Lonnie Ingram topped his
+	// season high of 30."
+	//
+	// Checked per SENTENCE and against the name in either position - the
+	// average clause can put it after the number ("the 14.9 a night Lonnie
+	// Ingram had been putting up") as readily as before it - and it suppresses
+	// only the POINTS high. A rebounding or passing high is a different fact,
+	// and dropping it because his scoring was discussed loses a real story.
+	written = "",
 ): string | undefined => {
+	const scoringTold = written
+		.split(/(?<=[!.?])\s+/)
+		.some(
+			(sentence) =>
+				sentence.includes(p.name) &&
+				/averag|a night|a game|per game|season high|scored more than/.test(
+					sentence,
+				),
+		);
 	const e = p.entering;
 	if (!e || e.gp < 10) {
 		return undefined;
@@ -508,6 +529,7 @@ export const playerHighBeat = (
 	// A high by a point in a 22-point night is a footnote; clearing the old
 	// mark by a few, or a genuinely big night, is a sentence.
 	if (
+		!scoringTold &&
 		p.pts >= 22 &&
 		p.pts > e.high.pts &&
 		(p.pts - e.high.pts >= 2 || p.pts >= 30)
@@ -1033,13 +1055,16 @@ export const dayStandingsMovers = (
 		ctx.saidTids.add(m.tid);
 	}
 	const list = naturalList(top.map((m) => m.text));
+	// Not "In the standings": the conference-picture sentence in the paragraph
+	// above owns that opener, and the wrap was running two paragraphs in a row
+	// that both began with it.
 	return pick(
 		rng,
 		[
 			`${cap(list)}.`,
 			`The table moved with them: ${list}.`,
-			`In the standings, ${list}.`,
 			`It shuffled the order too - ${list}.`,
+			`The night moved the order as well: ${list}.`,
 		],
 		"dayMovers",
 	);

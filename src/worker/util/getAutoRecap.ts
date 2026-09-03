@@ -3244,7 +3244,23 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// two sides shot it, which comes before the bookkeeping. Within each tier the
 	// seed still varies which angles appear at all, so no two recaps line up.
 	const loserBest = bestOf(shape.loser.players);
-	const para3 = [
+	// Built one sentence at a time, for the same reason paragraph four is: a
+	// beat has to see what the beats before it said. The season-high sentence
+	// and the against-his-average sentence are the same observation with
+	// different arithmetic, and they were landing back to back.
+	const para3: string[] = [];
+	let para3Written = alreadyWritten;
+	const addColour = (beat: () => string | undefined) => {
+		if (para3.length >= 6) {
+			return;
+		}
+		const text = beat();
+		if (text) {
+			para3.push(text);
+			para3Written = `${para3Written} ${text}`;
+		}
+	};
+	addColour(() =>
 		vsAverageNote(
 			shape,
 			star,
@@ -3252,32 +3268,36 @@ export const getAutoRecap = (game: RecapGame): string => {
 			rng,
 			/averaging|average/.test(alreadyWritten),
 		),
-		careerArcNote(star, game.playoffs, rng),
-		// The night against his own season: a season high, the streak he is on,
-		// and what he had done to this opponent before tonight.
-		playerHighBeat(star, rng),
-		playerStreakBeat(star, rng),
-		vsOpponentBeat(star, nick(shape.loser), rng),
-		...shuffle(rng, [
-			threeNote(shape, rng, spentTopics.has("threes")),
-			freeThrowNote(shape, rng, spentTopics.has("freeThrows")),
-			balanceNote(shape, rng, toldAlready),
-		]),
-		loserSupportNote(shape, rng, said),
-		// The losing side's best man had a season high of his own - only once
-		// the piece has introduced him, so the sentence has a line to refer to.
+	);
+	addColour(() => careerArcNote(star, game.playoffs, rng));
+	// The night against his own season: a season high, the streak he is on,
+	// and what he had done to this opponent before tonight.
+	addColour(() => playerHighBeat(star, rng, para3Written));
+	addColour(() => playerStreakBeat(star, rng));
+	addColour(() => vsOpponentBeat(star, nick(shape.loser), rng));
+	for (const beat of shuffle(rng, [
+		() => threeNote(shape, rng, spentTopics.has("threes")),
+		() => freeThrowNote(shape, rng, spentTopics.has("freeThrows")),
+		() => balanceNote(shape, rng, toldAlready),
+	])) {
+		addColour(beat);
+	}
+	addColour(() => loserSupportNote(shape, rng, said));
+	// The losing side's best man had a season high of his own - only once the
+	// piece has introduced him, so the sentence has a line to refer to.
+	addColour(() =>
 		loserBest && loserBest !== star && said.has(loserBest.name)
-			? playerHighBeat(loserBest, rng)
+			? playerHighBeat(loserBest, rng, para3Written)
 			: undefined,
-		...shuffle(rng, [
-			defensiveNote(shape, rng, said),
-			foulOutNote(shape, said, rng),
-			minutesNote(shape, said),
-		]),
-		spreadNote(game, shape, rng),
-	]
-		.filter((x): x is string => !!x)
-		.slice(0, 6);
+	);
+	for (const beat of shuffle(rng, [
+		() => defensiveNote(shape, rng, said),
+		() => foulOutNote(shape, said, rng),
+		() => minutesNote(shape, said),
+	])) {
+		addColour(beat);
+	}
+	addColour(() => spreadNote(game, shape, rng));
 
 	// Paragraph 4: the season around the game. What the result did in the
 	// standings, the series with this opponent, the venue records, the
