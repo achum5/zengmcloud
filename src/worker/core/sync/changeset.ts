@@ -19,7 +19,6 @@ import { getSyncEngine } from "./engineHolder.ts";
 import { isWatchingLiveBroadcast } from "./liveWatchGate.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
-import { runAfterActionHook } from "./afterActionHook.ts";
 import {
 	describeRebuild,
 	rebuildSeasonAggregates,
@@ -1056,28 +1055,37 @@ export const refreshAfterApply = async ({
 	}
 };
 
-// THE REPAIR PASS: the gate, the rebuild, the log, and the correction.
+// THE REPAIR PASS: the gate, the rebuild, and the log. Nothing is published -
+// see rebuildSeasonAggregates.ts for the field incident that settled that.
 //
-// Shared by the two places that run it. After a remote apply that brought
-// games or the rows summed from them - the moment a stale row can have just
-// landed - and ONCE when a synced league connects and catches up.
-//
-// The connect pass is what makes an already-corrupted record heal. The apply
-// pass only fires on a device RECEIVING a sim, so a league whose record went
-// wrong last week would sit wrong until somebody else happened to sim while
-// this device was watching. On connect it is repaired by opening the app.
+// Shared by the two places that run it: after a remote apply that brought
+// games or the rows summed from them, and when a synced league connects and
+// catches up. The connect pass is the one that heals a league already sitting
+// on a wrong number, since the apply pass only fires on a device receiving a
+// sim.
 //
 // Never while a resync is replaying the log (the replay is authoritative and
 // mid-flight), and never while a day is missing from this device: a rebuild
-// from an incomplete games store is a rebuild from a lie, and publishing it
-// would spread the hole. rebuildSeasonAggregates itself refuses to count a
-// row down for the same reason, so the two guards overlap on purpose.
+// from an incomplete games store is a rebuild from a lie.
+//
+// Throttled, because it reads every game of the season. A burst of applies -
+// a catch-up walk, or a day arriving record by record - would otherwise
+// re-read the whole log per record to reach the same answer. The connect pass
+// ignores the throttle: it is the one that has to run.
+const REPAIR_MIN_GAP_MS = 30_000;
+let lastRepairAt = 0;
+
 export const repairAggregatesFromGames = async (
 	reason: "apply" | "connect",
 ): Promise<void> => {
 	if (getSyncEngine()?.isResyncing()) {
 		return;
 	}
+	const now = Date.now();
+	if (reason === "apply" && now - lastRepairAt < REPAIR_MIN_GAP_MS) {
+		return;
+	}
+	lastRepairAt = now;
 	try {
 		const stranded = await findStrandedScheduleRows();
 		if (stranded.gids.length > 0) {
@@ -1093,17 +1101,8 @@ export const repairAggregatesFromGames = async (
 				held: report.recordsHeld,
 				statsFixed: report.statsRowsFixed,
 				statsHeld: report.statsRowsHeld,
-				playerRowsSuspect: report.playerRowsSuspect,
+				gameStampsFixed: report.gameStampsFixed,
 			});
-		}
-		// Ship a correction now rather than with this device's next action - a
-		// device that only watches would otherwise sit on the fix. Not while a
-		// local action or sim is capturing: its own drain carries these rows.
-		if (
-			(report.recordsFixed.length > 0 || report.statsRowsFixed > 0) &&
-			!changeTracker.isCapturing()
-		) {
-			await runAfterActionHook("sync", "rebuildAggregates", { silent: true });
 		}
 	} catch (error) {
 		console.error("Season aggregate rebuild failed", error);

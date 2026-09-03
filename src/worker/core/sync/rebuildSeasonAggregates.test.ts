@@ -16,6 +16,7 @@ import {
 	type GameForStats,
 } from "./rebuildSeasonAggregates.ts";
 import { repairAggregatesFromGames } from "./changeset.ts";
+import { changeTracker } from "../../db/changeTracker.ts";
 
 // Straight from the field: a team went from 39-22 to 38-23 in a single game.
 // The loss was real; the win it took away was the previous game's, which the
@@ -483,62 +484,6 @@ describe("rebuildSeasonAggregates", () => {
 			{ tid: 2, before: "0-0", after: "0-2" },
 		]);
 	});
-
-	test("counts player rows that disagree with the box scores, without writing them", async () => {
-		const box = (pid: number, min: number, pts: number) => ({
-			pid,
-			gp: 1,
-			min,
-			pts,
-		});
-		const games = [
-			game({
-				gid: 1,
-				day: 1,
-				home: 0,
-				away: 1,
-				homePts: 100,
-				awayPts: 90,
-				players: [[box(5, 30, 20)], [box(6, 30, 10)]],
-			}),
-			game({
-				gid: 2,
-				day: 2,
-				home: 0,
-				away: 1,
-				homePts: 100,
-				awayPts: 90,
-				players: [[box(5, 32, 24)], [box(6, 28, 12)]],
-			}),
-		];
-		const playerRow = (tid: number, gp: number, min: number, pts: number) => ({
-			season: SEASON,
-			tid,
-			playoffs: false,
-			gp,
-			min,
-			pts,
-		});
-		await seed({
-			teamSeasons: [
-				seasonRow(0, record(games, 0)),
-				seasonRow(1, record(games, 1)),
-			],
-			teamStats: [],
-			games,
-			players: [
-				// A game behind, like the team row was.
-				{ pid: 5, tid: 0, stats: [playerRow(0, 1, 30, 20)] },
-				{ pid: 6, tid: 1, stats: [playerRow(1, 2, 58, 22)] },
-			],
-		});
-
-		const report = await rebuildSeasonAggregates();
-		assert.strictEqual(report.playerRowsSuspect, 1);
-		const p: any = await idb.cache.players.get(5);
-		assert.strictEqual(p.stats[0].gp, 1);
-		assert.match(describeRebuild(report)!, /1 player row\(s\) disagree/);
-	});
 });
 
 // THE REPAIR PASS, which is what actually heals a league that is already
@@ -632,6 +577,23 @@ describe("repairAggregatesFromGames", () => {
 		await seed(3);
 		await repairAggregatesFromGames("connect");
 		assert.strictEqual(await wonOf(), 4);
+	});
+
+	// THE LOOP. The first version of this published its corrections, and two
+	// devices that disagreed about one game published corrected rows at each
+	// other once a second for four minutes - 139 versions, the room never
+	// settling, auto-play stuck behind it. Nothing the repair writes may reach
+	// the change tracker, so nothing it writes can be broadcast.
+	test("nothing it writes is left pending for the room", async () => {
+		await seed(3);
+		await changeTracker.runCaptured(async () => {
+			await repairAggregatesFromGames("connect");
+		});
+		assert.strictEqual(await wonOf(), 4);
+		assert.deepStrictEqual(
+			changeTracker.drain().map((change) => change.store),
+			[],
+		);
 	});
 
 	test("a day missing from this device stops it dead", async () => {
@@ -802,7 +764,7 @@ describe("the record stamped on each game", () => {
 			await idb.cache.games.add(game2);
 		}
 
-		const report = await rebuildSeasonAggregates({ auditPlayers: false });
+		const report = await rebuildSeasonAggregates();
 		assert.strictEqual(report.gameStampsFixed, 1);
 		const fixed: any = await idb.cache.games.get(11);
 		assert.strictEqual(fixed.teams[1].won, 4);
@@ -813,7 +775,7 @@ describe("the record stamped on each game", () => {
 		);
 
 		// Idempotent: a second pass finds nothing left to do.
-		const again = await rebuildSeasonAggregates({ auditPlayers: false });
+		const again = await rebuildSeasonAggregates();
 		assert.strictEqual(again.gameStampsFixed, 0);
 	});
 
@@ -850,7 +812,7 @@ describe("the record stamped on each game", () => {
 		for (const game2 of games) {
 			await idb.cache.games.add(game2);
 		}
-		const report = await rebuildSeasonAggregates({ auditPlayers: false });
+		const report = await rebuildSeasonAggregates();
 		assert.strictEqual(report.recordsHeld.length, 1);
 		assert.strictEqual(report.gameStampsFixed, 0);
 		const untouched: any = await idb.cache.games.get(2);

@@ -496,6 +496,16 @@ export const statsRowDiffers = (
 
 // ---------------------------------------------------------------- THE RUNNER
 
+// A repair write, kept off the wire. The write is recorded by the change
+// tracker like any other, so forget it immediately - exactly as applyChangeset
+// does with the records it has just applied. See the header for why none of
+// this is published.
+const forgetLocal = (store: string, pk: number | undefined) => {
+	if (typeof pk === "number") {
+		changeTracker.forget(store, pk);
+	}
+};
+
 type RecordChange = { tid: number; before: string; after: string };
 
 export type RebuildReport = {
@@ -510,9 +520,6 @@ export type RebuildReport = {
 	// Game rows whose stored "record entering this game" disagreed with the
 	// games and was restamped. Local only - see the runner.
 	gameStampsFixed: number;
-	// Player rows whose games played, minutes or points disagree with the box
-	// scores. Reported, not written - see the header.
-	playerRowsSuspect: number;
 };
 
 const fmt = (row: Record<string, unknown>) =>
@@ -520,11 +527,9 @@ const fmt = (row: Record<string, unknown>) =>
 
 export const rebuildSeasonAggregates = async ({
 	tids,
-	auditPlayers = true,
 }: {
 	// Limit to these teams; undefined rebuilds every team in the season.
 	tids?: readonly number[];
-	auditPlayers?: boolean;
 } = {}): Promise<RebuildReport> => {
 	const season = g.get("season");
 	const otl = g.get("otl") === true;
@@ -552,7 +557,6 @@ export const rebuildSeasonAggregates = async ({
 		statsRowsFixed: 0,
 		statsRowsHeld: 0,
 		gameStampsFixed: 0,
-		playerRowsSuspect: 0,
 	};
 
 	for (const row of seasonRows) {
@@ -573,10 +577,9 @@ export const rebuildSeasonAggregates = async ({
 			if (regularSeasonPlayed(rebuilt) < regularSeasonPlayed(row)) {
 				report.recordsHeld.push(change);
 			} else {
-				await changeTracker.runCaptured(async () => {
-					Object.assign(row, rebuilt);
-					await idb.cache.teamSeasons.put(row as any);
-				});
+				Object.assign(row, rebuilt);
+				await idb.cache.teamSeasons.put(row as any);
+				forgetLocal("teamSeasons", row.rid);
 				report.recordsFixed.push(change);
 			}
 		}
@@ -600,9 +603,8 @@ export const rebuildSeasonAggregates = async ({
 				if ((rebuiltStats.gp as number) < ((statsRow.gp as number) ?? 0)) {
 					report.statsRowsHeld += 1;
 				} else {
-					await changeTracker.runCaptured(async () => {
-						await idb.cache.teamStats.put(rebuiltStats as any);
-					});
+					await idb.cache.teamStats.put(rebuiltStats as any);
+					forgetLocal("teamStats", rebuiltStats.rid as number);
 					report.statsRowsFixed += 1;
 				}
 			}
@@ -624,10 +626,6 @@ export const rebuildSeasonAggregates = async ({
 	// shared authoritative state and there are thirty of them.
 	if (report.recordsHeld.length === 0) {
 		report.gameStampsFixed = await restampGames({ games, otl, wanted });
-	}
-
-	if (auditPlayers) {
-		report.playerRowsSuspect = await auditPlayerRows({ season, games, wanted });
 	}
 
 	return report;
@@ -660,93 +658,11 @@ const restampGames = async ({
 		}
 		if (changed) {
 			await idb.cache.games.put(game as any);
-			// Local only. The write is recorded like any other, so forget it
-			// immediately - exactly as applyChangeset does with the records it
-			// has just applied - rather than broadcasting a season of box
-			// scores to say what every device can work out for itself.
-			changeTracker.forget("games", game.gid);
+			forgetLocal("games", game.gid);
 			fixed += 1;
 		}
 	}
 	return fixed;
-};
-
-// Games played, minutes and points per (player, team, playoffs) from the box
-// scores, against the player's own season rows. A disagreement means the same
-// lost update hit a player row; it is counted so the field can say how often,
-// which is what decides whether the rebuild is extended to them.
-const auditPlayerRows = async ({
-	season,
-	games,
-	wanted,
-}: {
-	season: number;
-	games: readonly GameForStats[];
-	wanted: Set<number> | undefined;
-}): Promise<number> => {
-	type Sum = { gp: number; min: number; pts: number };
-	type Slot = { pid: number; tid: number; playoffs: boolean; sum: Sum };
-	const fromBox = new Map<string, Slot>();
-	for (const game of games) {
-		if (game.season !== season || isAllStarGame(game)) {
-			continue;
-		}
-		for (const team of game.teams) {
-			if (wanted && !wanted.has(team.tid)) {
-				continue;
-			}
-			const players = Array.isArray(team.players) ? team.players : [];
-			for (const p of players as any[]) {
-				if (!p || typeof p.pid !== "number" || !(p.gp > 0)) {
-					continue;
-				}
-				const playoffs = game.playoffs === true;
-				const key = `${p.pid}|${team.tid}|${playoffs}`;
-				const slot = fromBox.get(key) ?? {
-					pid: p.pid,
-					tid: team.tid,
-					playoffs,
-					sum: { gp: 0, min: 0, pts: 0 },
-				};
-				slot.sum.gp += 1;
-				slot.sum.min += p.min ?? 0;
-				slot.sum.pts += p.pts ?? 0;
-				fromBox.set(key, slot);
-			}
-		}
-	}
-
-	let suspect = 0;
-	const players = new Map<number, any>();
-	for (const slot of fromBox.values()) {
-		if (!players.has(slot.pid)) {
-			players.set(slot.pid, await idb.cache.players.get(slot.pid));
-		}
-		const p = players.get(slot.pid);
-		if (!p) {
-			continue;
-		}
-		const have: Sum = { gp: 0, min: 0, pts: 0 };
-		for (const row of p.stats as any[]) {
-			if (
-				row.season === season &&
-				row.tid === slot.tid &&
-				row.playoffs === slot.playoffs
-			) {
-				have.gp += row.gp ?? 0;
-				have.min += row.min ?? 0;
-				have.pts += row.pts ?? 0;
-			}
-		}
-		if (
-			have.gp !== slot.sum.gp ||
-			Math.abs(have.min - slot.sum.min) > 0.5 ||
-			have.pts !== slot.sum.pts
-		) {
-			suspect += 1;
-		}
-	}
-	return suspect;
 };
 
 const listChanges = (changes: RecordChange[]) =>
@@ -773,11 +689,6 @@ export const describeRebuild = (report: RebuildReport): string | undefined => {
 	if (report.gameStampsFixed > 0) {
 		parts.push(
 			`restamped the record on ${report.gameStampsFixed} box score(s)`,
-		);
-	}
-	if (report.playerRowsSuspect > 0) {
-		parts.push(
-			`${report.playerRowsSuspect} player row(s) disagree with the box scores (not written)`,
 		);
 	}
 	if (parts.length === 0) {
