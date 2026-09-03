@@ -56,6 +56,9 @@ import LiveCourt, {
 import {
 	benchHuddle,
 	HEAVE_MAX_SECONDS,
+	motionHandlerSpot,
+	possessionBeats,
+	setupBeatMs,
 	synthHeaveSpot,
 	synthOutOfBoundsPath,
 } from "./courtSpots.ts";
@@ -412,10 +415,31 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const breakContext = useRef<{ t: 0 | 1; requireRim: boolean } | undefined>(
 		undefined,
 	);
-	// True on the tick that is showing a synthetic SETUP beat (see the injection
-	// in processToNextPause), so the very next tick consumes the real event
-	// instead of injecting a second setup.
-	const injectedSetup = useRef(false);
+	// How many synthetic beats are still owed to the possession being developed
+	// (see the injection in processToNextPause). Counted down rather than a
+	// boolean, because a possession the sim spent eighteen seconds on gets the
+	// ball swung around two or three times before the shot goes up, and each
+	// swing is its own beat.
+	const setupBeatsLeft = useRef(0);
+	// How far into its motion the current offense is: 0 is the set they walked
+	// into, and every swing advances it (MOTION_OFFENSE_SPOTS). Read inside
+	// pushScene so the shot that ends the possession is staged in the set the
+	// offense actually moved to, instead of everyone snapping back.
+	const motionPhase = useRef(0);
+	// The display team whose possession is being shown, so a fresh possession
+	// resets the motion and an offensive-rebound reset does not (the ball never
+	// left that end).
+	const possessionOffenseT = useRef<0 | 1 | undefined>(undefined);
+	// The playback cursor of the shot whose possession has already been
+	// developed. The beats consume no event, so the cursor stands still while
+	// they play - which is what stops an exhausted possession from opening a
+	// fresh set of beats on the next tick and never reaching the shot.
+	const setupCursor = useRef<number | undefined>(undefined);
+	// The game clock at the last play shown. The sim never says how long a
+	// possession took, but every event carries the clock, so the difference is
+	// exactly that - and it is what decides how many beats the possession is
+	// worth (see possessionBeats).
+	const lastEventClock = useRef<number | undefined>(undefined);
 
 	const playerByPid = (pid: number): any => {
 		for (const t of boxScore.current.teams ?? []) {
@@ -518,6 +542,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 					teams: teamLineups,
 					offenseT,
 					transition: opts.transition,
+					// A break has no motion phases - it is over before an offense
+					// could run anything.
+					motion: opts.transition ? 0 : motionPhase.current,
 				});
 
 				const extras: CourtActor[] = [];
@@ -611,8 +638,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// whole 5-on-5 as the background formation; the ball is animated up the floor
 	// (kind "advance"). Because everyone lands in this set, the shot scene that
 	// follows (built with the SAME transition flag) barely has to move them.
-	const pushSetupScene = (offenseT: 0 | 1, transition: boolean) => {
-		const { ballFrom, ballTo } = setupBallPath(offenseT, transition);
+	const pushSetupScene = (
+		offenseT: 0 | 1,
+		transition: boolean,
+		sameEnd: boolean,
+		ms: number,
+	) => {
+		const { ballFrom, ballTo } = setupBallPath(offenseT, transition, sameEnd);
 		pushScene(
 			{
 				kind: "advance",
@@ -622,9 +654,30 @@ export const LiveGame = (props: View<"liveGame">) => {
 				rimX: rimXFor(offenseT),
 				ballFrom,
 				ballTo,
+				ms,
 			},
 			{ transition },
 		);
+	};
+
+	// A REVERSAL, one beat further into the same possession: the ball is swung to
+	// the man the offense's motion has just lifted into it, and the other four
+	// move with it. Also textless, also consumes no event - it is what the
+	// offense did with the seconds the sim genuinely spent before the shot.
+	const pushSwingScene = (offenseT: 0 | 1, motion: number, ms: number) => {
+		const ballFrom = motionHandlerSpot(offenseT, motion - 1);
+		motionPhase.current = motion;
+		const ballTo = motionHandlerSpot(offenseT, motion);
+		pushScene({
+			kind: "swing",
+			t: offenseT,
+			actors: [],
+			text: null,
+			rimX: rimXFor(offenseT),
+			ballFrom,
+			ballTo,
+			ms,
+		});
 	};
 
 	// A stoppage: a timeout, the end of a period, the final buzzer, the Elam
@@ -670,6 +723,19 @@ export const LiveGame = (props: View<"liveGame">) => {
 	): number => {
 		const d = from ? Math.hypot(to.x - from.x, to.y - from.y) : 0;
 		return glideSeconds(d, speedToMs(speedRef.current)) * 1000;
+	};
+
+	// Hold the current beat for `ms`, then take the next one. Mirrors the normal
+	// auto-play scheduler, which is the only caller that reaches the beats that
+	// develop a possession (a follower is stepped by the simmer's cursor, and a
+	// fast-forward has no beats to hold).
+	const scheduleNextBeat = (ms: number) => {
+		if (!pausedRef.current && !followerRef.current) {
+			setTimeout(() => {
+				processToNextPause();
+				setPlayIndex((prev) => prev + 1);
+			}, ms);
+		}
 	};
 
 	// Look ahead (without consuming) to this attempt's result, so we can decide -
@@ -851,6 +917,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 			if (action.kind === "attempt") {
 				if (typeof event.pid !== "number") {
 					return;
+				}
+				// A shot reached without the beats that develop a possession (a
+				// fast-forward, a rewind, a multiplayer follower stepped by the
+				// simmer's cursor) still has to start the new offense in its own set
+				// rather than in whatever set the previous possession moved into.
+				if (possessionOffenseT.current !== displayT) {
+					possessionOffenseT.current = displayT;
+					motionPhase.current = 0;
 				}
 				const heaveSecs =
 					action.zone === "three" ? heaveSeconds(event) : undefined;
@@ -1409,23 +1483,24 @@ export const LiveGame = (props: View<"liveGame">) => {
 				return 0;
 			}
 
-			// Between possessions, hold a display-only SETUP beat before the next
-			// possession's first SHOT: the ball is brought up and the five settle into
-			// their set (a fast break or a half-court set, decided by peeking at the
-			// shot that's coming), so the court DEVELOPS the possession over its own
-			// beat instead of teleporting everyone end-to-end and firing at once. It
-			// consumes no event, prints no play-by-play line, and moves no cursor - it
-			// just holds for one interval, then the next tick plays the real shot with
-			// everyone already in position. Real-time auto-play ONLY (never
-			// fast-forward, rewind, or a multiplayer follower - `!force` gates that),
-			// where an extra display beat is harmless.
-			if (
-				isSport("basketball") &&
-				!force &&
-				!injectedSetup.current &&
-				(possessionChange.current === true ||
-					breakContext.current !== undefined)
-			) {
+			// DEVELOP THE POSSESSION before its first SHOT, over display-only beats
+			// that consume no event, print no play-by-play line and move no cursor:
+			// the ball is brought up and the five settle into their set (a fast break
+			// or a half-court set, decided by peeking at the shot that's coming), and
+			// then - on a possession the sim actually spent time on - it is swung
+			// around while the offense moves off it (pushSwingScene). Without this
+			// the court teleports everyone end-to-end and fires at once.
+			//
+			// HOW MANY beats comes from the game clock the possession burned, which
+			// the sim reports on every event: a quick hitter gets one, an ordinary
+			// possession two, a grind three, a putback none (see possessionBeats).
+			// They SHARE one budget (setupBeatMs), so swinging the ball twice costs
+			// barely more than bringing it up once.
+			//
+			// Real-time auto-play ONLY (never fast-forward, rewind, or a multiplayer
+			// follower - `!force` gates that), where an extra display beat is
+			// harmless.
+			if (isSport("basketball") && !force) {
 				const next = events.current[0];
 				const nextAction =
 					next && typeof next.type === "string"
@@ -1443,20 +1518,53 @@ export const LiveGame = (props: View<"liveGame">) => {
 						!!bc &&
 						bc.t === offenseT &&
 						(!bc.requireRim || nextAction.zone === "atRim");
-					pushSetupScene(offenseT, transition);
-					injectedSetup.current = true;
-					// Hold this beat, then let the next tick consume the real event.
-					// Mirror the normal auto-play scheduler (only it reaches here).
-					if (!pausedRef.current && !followerRef.current) {
-						setTimeout(() => {
-							processToNextPause();
-							setPlayIndex((prev) => prev + 1);
-						}, speedToMs(speedRef.current));
+					// The clock the sim burned getting to this shot. A period boundary
+					// makes the clock jump back up, so a negative (or absurd) gap means
+					// "no idea", not "no time".
+					const prevClock = lastEventClock.current;
+					const elapsed =
+						typeof next.clock === "number" && prevClock !== undefined
+							? prevClock - next.clock
+							: undefined;
+					const gap =
+						elapsed !== undefined && elapsed >= 0 && elapsed <= 30
+							? elapsed
+							: undefined;
+
+					// The beats consume no event, so the cursor does not move while they
+					// play - which is exactly what marks a shot as already developed.
+					// Without that mark the exhausted possession would open a fresh set
+					// of beats on the very next tick, forever.
+					const cursor = initialEventCount.current - events.current.length;
+					const beats = possessionBeats(gap, transition);
+					const ms = setupBeatMs(
+						speedToMs(speedRef.current),
+						gap,
+						Math.max(1, beats),
+					);
+					if (setupCursor.current !== cursor) {
+						setupCursor.current = cursor;
+						setupBeatsLeft.current = Math.max(0, beats - 1);
+						if (beats > 0) {
+							// Opening this possession. An offensive rebound keeps the ball
+							// at the same end, so it is not brought up the floor again.
+							const sameEnd = possessionOffenseT.current === offenseT;
+							possessionOffenseT.current = offenseT;
+							motionPhase.current = 0;
+							pushSetupScene(offenseT, transition, sameEnd, ms);
+							scheduleNextBeat(ms);
+							return 0;
+						}
+					} else if (setupBeatsLeft.current > 0) {
+						// Still owed beats: swing the ball and move the offense on.
+						setupBeatsLeft.current -= 1;
+						pushSwingScene(offenseT, motionPhase.current + 1, ms);
+						scheduleNextBeat(ms);
+						return 0;
 					}
-					return 0;
 				}
 			}
-			injectedSetup.current = false;
+			setupBeatsLeft.current = 0;
 
 			// Save here since it is mutated in processLiveGameEvents
 			const prevOuts = sportState.current?.outs;
@@ -1477,6 +1585,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 			if (isSport("basketball")) {
 				handleCourtEvent((output as any).event, text, scoreDiff);
+				// Bank the clock this play happened at: the gap to the next shot is
+				// the possession, and the possession is what the beats above are
+				// paced to.
+				const shown = (output as any).event;
+				if (shown && typeof shown.clock === "number") {
+					lastEventClock.current = shown.clock;
+				}
 			}
 
 			overtimes.current = output.overtimes;
@@ -1871,7 +1986,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 				lastActorPos.current = new Map();
 				lastFga.current = undefined;
 				breakContext.current = undefined;
-				injectedSetup.current = false;
+				setupBeatsLeft.current = 0;
+				setupCursor.current = undefined;
+				motionPhase.current = 0;
+				possessionOffenseT.current = undefined;
+				lastEventClock.current = undefined;
 			}
 			while (
 				events.current &&

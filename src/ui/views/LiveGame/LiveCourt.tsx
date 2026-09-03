@@ -14,8 +14,12 @@ import {
 	COURT_H,
 	COURT_W,
 	degToRad,
+	MOTION_OFFENSE_SPOTS,
 	rand,
+	RIM_INSET,
+	rimXFor,
 	toCourt,
+	TRANSITION_OFFENSE_SPOTS,
 } from "./courtSpots.ts";
 import { useLocal } from "../../util/local.ts";
 import type { CourtImageSlot } from "../../../common/types.ts";
@@ -43,10 +47,11 @@ import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 const RAIL_W = 5; // team-colored strip behind each baseline
 const VIEW = `${-RAIL_W} ${-APRON} ${COURT_W + 2 * RAIL_W} ${COURT_H + 2 * APRON}`;
 
-const RIM_INSET = 5.25; // rim center distance from baseline
 const THREE_R = 23.75;
 const CORNER_DIST = 22; // rim center to corner-three line (across)
 const CORNER_LEN = RIM_INSET + Math.sqrt(THREE_R ** 2 - CORNER_DIST ** 2);
+
+export { rimXFor, setupBallPath } from "./courtSpots.ts";
 
 export type CourtZone = "atRim" | "lowPost" | "midRange" | "three" | "ft";
 
@@ -82,6 +87,11 @@ export type CourtSceneKind =
 	| "foul"
 	| "sub"
 	| "jump"
+	// A REVERSAL inside a possession that is still developing: the ball is swung
+	// to a teammate and the five move with it (see MOTION_OFFENSE_SPOTS). Like
+	// "advance" it is textless and consumes no event - it is what the offense
+	// does with the seconds the sim actually spent.
+	| "swing"
 	// The ball squirts across a boundary line and dies there.
 	| "oob"
 	// Play is stopped (timeout, end of a period, the final buzzer): the ten on
@@ -121,6 +131,11 @@ export type CourtScene = {
 	// How long (ms) the ball-handler takes to glide to his spot, so the ball's
 	// arrival (a dribble up, or the catch off a pass) lands exactly when he does.
 	arriveMs?: number;
+	// How long (ms) THIS scene is on screen, when it differs from the playback
+	// interval. The beats that develop a possession share one budget, so a swing
+	// is shorter than a play - and the glides it triggers have to be capped to
+	// what it actually gets, or bodies are still moving when the next beat fires.
+	ms?: number;
 };
 
 // Lighten (amount > 0) or darken (< 0) a hex color, for plank seam lines.
@@ -136,10 +151,6 @@ const shade = (hex: string, amount: number): string => {
 	const b = clamp((n & 0xff) * (1 + amount));
 	return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, "0")}`;
 };
-
-// The rim each display team attacks (away left, home right).
-export const rimXFor = (t: 0 | 1): number =>
-	t === 0 ? RIM_INSET : COURT_W - RIM_INSET;
 
 // A fictional-but-plausible spot for a shot in a zone, oriented toward team
 // t's rim. Angles fan out from the rim (90° = straight toward half court).
@@ -215,52 +226,6 @@ export const scorerTableRow = (
 	}));
 };
 
-// Deterministic half-court formation slots (depth from the attacked baseline,
-// across the width), ordered guard→wing→big. Both clusters live in the
-// offense's frontcourt - the end the ball is at - so all ten faces read as one
-// 5-on-5 set. Slot assignment is stable (full lineup sorted by position, THEN
-// play actors skipped) so a player keeps his slot from scene to scene and just
-// glides; the defense man-marks by shadowing its counterpart's slot a step
-// closer to the rim.
-const OFFENSE_SPOTS: { depth: number; across: number }[] = [
-	{ depth: 28, across: 25 }, // point, top of the key
-	{ depth: 22, across: 42 }, // wing
-	{ depth: 22, across: 8 }, // wing
-	{ depth: 10, across: 39 }, // corner / short corner
-	{ depth: 7, across: 20 }, // low block
-];
-
-// A FAST-BREAK set: the offense is strung out toward the rim in wide lanes -
-// a lead attacker at the basket, both wings filling the lanes, a trailer, and a
-// deep safety - instead of a settled half-court spread. Ordered guard→big (see
-// posRank), so the guard leads the break and the big trails, the way it runs in
-// real life. Used for a possession that starts off a steal or a defensive board
-// (see buildLineupActors' `transition`), which is what makes a turnover into a
-// coast-to-coast break rather than another static set popping onto the floor.
-const TRANSITION_OFFENSE_SPOTS: { depth: number; across: number }[] = [
-	{ depth: 6, across: 25 }, // lead attacker, at the rim
-	{ depth: 13, across: 6 }, // left lane runner
-	{ depth: 13, across: 44 }, // right lane runner
-	{ depth: 23, across: 31 }, // trailer
-	{ depth: 31, across: 19 }, // deep safety / late trailer
-];
-
-// The ball's path for a setup beat: brought up from the FAR end (where the
-// possession was just won) to the ball-handler's spot in the set the team is
-// about to run - the lead attacker on a break, the top of the key in a
-// half-court set. Matches OFFENSE_SPOTS[0] / TRANSITION_OFFENSE_SPOTS[0] so the
-// ball settles right where a real handler stands.
-export const setupBallPath = (
-	offenseT: 0 | 1,
-	transition: boolean,
-): { ballFrom: { x: number; y: number }; ballTo: { x: number; y: number } } => {
-	const handler = transition ? TRANSITION_OFFENSE_SPOTS[0]! : OFFENSE_SPOTS[0]!;
-	return {
-		ballFrom: { x: rimXFor(offenseT === 0 ? 1 : 0), y: 25 },
-		ballTo: toCourt(offenseT, handler.depth, handler.across),
-	};
-};
-
 // Rank a lineup player by court position so the sorted order fills the formation
 // slots guard→wing→big, however the sim labels positions.
 const posRank = (pos: string | undefined): number => {
@@ -315,6 +280,7 @@ export const buildLineupActors = ({
 	teams,
 	offenseT,
 	transition = false,
+	motion = 0,
 }: {
 	teams: [LineupPlayer[], LineupPlayer[]];
 	offenseT: 0 | 1;
@@ -323,9 +289,17 @@ export const buildLineupActors = ({
 	// rest trailing the play - instead of a set man-to-man. Turns a steal / defensive
 	// board into a real numbers-advantage break instead of another half-court set.
 	transition?: boolean;
+	// How far into its motion the half-court offense is: 0 is the set they walk
+	// into, and each swing of the ball advances it (MOTION_OFFENSE_SPOTS). A
+	// break has no phases - it is over before an offense could run anything.
+	motion?: number;
 }): CourtActor[] => {
 	const out: CourtActor[] = [];
-	const offSpots = transition ? TRANSITION_OFFENSE_SPOTS : OFFENSE_SPOTS;
+	const offSpots = transition
+		? TRANSITION_OFFENSE_SPOTS
+		: MOTION_OFFENSE_SPOTS[
+				Math.min(MOTION_OFFENSE_SPOTS.length - 1, Math.max(0, motion))
+			]!;
 	for (const t of [0, 1] as const) {
 		const isOffense = t === offenseT;
 		const onFloor = (teams[t] ?? [])
@@ -1163,6 +1137,10 @@ const LiveCourt = ({
 			}
 		}
 
+		// A beat that sets its own length (a possession's setup/swing beats share
+		// one budget) paces its ball to that, not to the playback interval.
+		const beatMs = scene.ms ?? sceneMs;
+
 		const main = scene.actors.find((a) => a.role === "main");
 		const isShot =
 			scene.kind === "make" || scene.kind === "miss" || scene.kind === "block";
@@ -1183,7 +1161,7 @@ const LiveCourt = ({
 			ball.setAttribute("cy", String(from.y));
 			// Take most of the beat to bring it up, then settle - paced to the scene
 			// so it fills the beat at any speed.
-			const bringMs = Math.max(280, (sceneMs ?? 1100) * 0.68);
+			const bringMs = Math.max(220, (beatMs ?? 1100) * 0.68);
 			const start = performance.now();
 			const step = (now: number) => {
 				const p = Math.min(1, (now - start) / bringMs);
@@ -1192,6 +1170,48 @@ const LiveCourt = ({
 					from.x + (to.x - from.x) * p,
 					from.y + (to.y - from.y) * p,
 					0.6 * Math.abs(Math.sin(p * Math.PI * 4)),
+				);
+				if (p < 1) {
+					rafRef.current = requestAnimationFrame(step);
+				} else {
+					restDribble(to.x, to.y);
+				}
+			};
+			rafRef.current = requestAnimationFrame(step);
+			return () => {
+				if (rafRef.current !== undefined) {
+					cancelAnimationFrame(rafRef.current);
+				}
+			};
+		}
+
+		// A swing: the ball is reversed to a teammate while the possession is still
+		// being run. A flat, quick pass - not a dribble up the floor - and it stays
+		// live in the new handler's hands, because the possession is not over.
+		if (scene.kind === "swing" && scene.ballFrom && scene.ballTo) {
+			if (ring) {
+				ring.style.opacity = "0";
+			}
+			const from = scene.ballFrom;
+			const to = scene.ballTo;
+			ball.style.opacity = "1";
+			// Leaves his hands a beat into the beat, so the pass reads as a decision
+			// rather than the ball already being in the air when the beat opens.
+			const holdMs = Math.max(60, (beatMs ?? 700) * 0.22);
+			const passMs = Math.max(160, (beatMs ?? 700) * 0.48);
+			const start = performance.now();
+			const step = (now: number) => {
+				const e = now - start;
+				if (e < holdMs) {
+					placeBall(from.x, from.y, 0.45 * Math.abs(Math.sin(e / 130)));
+					rafRef.current = requestAnimationFrame(step);
+					return;
+				}
+				const p = Math.min(1, (e - holdMs) / passMs);
+				placeBall(
+					from.x + (to.x - from.x) * p,
+					from.y + (to.y - from.y) * p,
+					1.5 * Math.sin(Math.PI * p),
 				);
 				if (p < 1) {
 					rafRef.current = requestAnimationFrame(step);
@@ -2662,7 +2682,7 @@ const LiveCourt = ({
 								animKey={anim ? scene.key : undefined}
 								nameAbove={background ? undefined : nameAboveFor(actor)}
 								size={size}
-								sceneMs={sceneMs}
+								sceneMs={scene.ms ?? sceneMs}
 							/>
 						);
 					})
@@ -2670,7 +2690,8 @@ const LiveCourt = ({
 
 			{/* The play line, beside the action - placed past the edge of the whole
 			    player cluster so it never covers a face. Skipped entirely on a
-			    textless setup beat (kind "advance"), which shows movement only. */}
+			    textless beat that develops a possession (kinds "advance" and
+			    "swing"), which shows movement only. */}
 			{scene && scene.text ? (
 				<div
 					className="position-absolute"
