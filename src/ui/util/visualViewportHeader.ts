@@ -143,6 +143,7 @@ export const headerLooksUnstuck = ({
 };
 
 import { probeSticky } from "./stickyHeaderDiagnostics.ts";
+import { readViewport, visualViewportStale } from "./stickyViewportReset.ts";
 import {
 	STICKY_FALLBACK_CLASS,
 	STICKY_FALLBACK_HEIGHT_VAR,
@@ -406,6 +407,19 @@ const stickyBrokenNow = (header: HTMLElement): boolean => {
 	const scrollY = window.scrollY;
 	const engaged =
 		header.parentElement?.classList.contains(STICKY_FALLBACK_CLASS) === true;
+
+	// A STALE KEYBOARD INSET. The visual viewport is a keyboard's height
+	// shorter than the layout viewport with no keyboard up, so iOS lets it pan
+	// inside the layout viewport - and sticky, pinned to the layout viewport,
+	// slides off the glass while the probe swears it is healthy (it is: 734
+	// of 749 in the field, the missing 15 being the pan). Nothing corrects an
+	// in-flow header, by design, so pin it: out of flow the measured shift is
+	// allowed, and it drives the header's top to the top of what the user
+	// sees. Held for as long as the inset is stale, not per pan, so the header
+	// does not flip in and out of flow on every scroll.
+	if (visualViewportStale(readViewport())) {
+		return true;
+	}
 
 	// While engaged the header's own position proves nothing - it is fixed, so
 	// it looks right either way - and only the probe can say whether to stop.

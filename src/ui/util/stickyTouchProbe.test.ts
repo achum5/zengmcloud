@@ -52,8 +52,9 @@ describe("solveTouchMapping", () => {
 	});
 
 	test("samples from a different pan position are not mixed in", () => {
-		// Panning a zoomed page slides the mapping. The newest offset is what
-		// the user is looking at; older ones describe a screen that has moved.
+		// Panning a zoomed page slides the mapping, so two pan positions are two
+		// mappings and are never solved together. Equal spread: the newest pan
+		// position wins, because that is the screen the user is looking at.
 		const mapping = solveTouchMapping([
 			sample(100, 900, 0),
 			sample(500, 100, 0),
@@ -86,16 +87,34 @@ describe("solveTouchMapping", () => {
 		);
 	});
 
-	test("only the newest pan position counts, even when it is the smaller group", () => {
+	test("the widest-spread pan position wins, even when it is older", () => {
+		// The fourth field report had twenty-four taps and no mapping: the
+		// newest pan position held a button pressed three times at one height,
+		// and the rule was "newest only". The taps that could answer were all
+		// at an older offset. Now the group that can separate origin from scale
+		// is the one used.
 		const mapping = solveTouchMapping([
 			sample(0, 0, 0),
 			sample(400, 400, 0),
 			sample(800, 800, 0),
-			sample(100, 200, 12),
-			sample(500, 600, 12),
+			sample(300, 400, 12),
+			sample(302, 402, 12),
+			sample(301, 401, 12),
 		])!;
-		assert.strictEqual(mapping.samples, 2);
-		assert.strictEqual(mapping.originY, 100);
+		assert.strictEqual(mapping.samples, 3);
+		assert.strictEqual(mapping.originY, 0);
+		assert.strictEqual(mapping.scale, 1);
+	});
+
+	test("a wall of taps on one button still yields nothing on its own", () => {
+		assert.strictEqual(
+			solveTouchMapping([
+				sample(300, 400, 12),
+				sample(302, 402, 12),
+				sample(301, 401, 12),
+			]),
+			undefined,
+		);
 	});
 });
 

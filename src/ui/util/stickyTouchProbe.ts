@@ -69,15 +69,37 @@ export const solveTouchMapping = (
 	}
 
 	// Panning a zoomed page slides the client-to-screen mapping, so only
-	// samples taken at the same offset describe one mapping. The newest offset
-	// is the one the user is looking at now.
-	const offsetTop = samples.at(-1)!.offsetTop;
-	const usable = samples.filter(
-		(sample) =>
-			sample.offsetTop === offsetTop &&
-			Number.isFinite(sample.clientY) &&
-			Number.isFinite(sample.screenY),
-	);
+	// samples taken at the same offset describe one mapping. Of the offsets on
+	// record, use the one whose taps are spread widest: the newest offset was
+	// tried first, and a user pressing one button three times gave it twenty
+	// samples at the same height and no mapping at all.
+	const byOffset = new Map<number, { group: TouchSample[]; newest: number }>();
+	for (const [i, sample] of samples.entries()) {
+		if (!Number.isFinite(sample.clientY) || !Number.isFinite(sample.screenY)) {
+			continue;
+		}
+		const entry = byOffset.get(sample.offsetTop) ?? { group: [], newest: -1 };
+		entry.group.push(sample);
+		entry.newest = i;
+		byOffset.set(sample.offsetTop, entry);
+	}
+	// Widest spread wins; a tie goes to the newest pan position, which is the
+	// screen the user is looking at.
+	let usable: TouchSample[] = [];
+	let bestSpread = -1;
+	let bestNewest = -1;
+	for (const { group, newest } of byOffset.values()) {
+		const groupYs = group.map((sample) => sample.clientY);
+		const groupSpread = Math.max(...groupYs) - Math.min(...groupYs);
+		if (
+			groupSpread > bestSpread ||
+			(groupSpread === bestSpread && newest > bestNewest)
+		) {
+			bestSpread = groupSpread;
+			bestNewest = newest;
+			usable = group;
+		}
+	}
 	if (usable.length < 2) {
 		return undefined;
 	}

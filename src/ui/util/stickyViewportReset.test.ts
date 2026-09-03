@@ -1,60 +1,82 @@
 import { assert, describe, test } from "vitest";
 import {
-	isGhostViewport,
 	viewportOversized,
+	visualViewportStale,
 	type ViewportReading,
 } from "./stickyViewportReset.ts";
 
-// The field device, as the touch probe measured it.
+// The field device, as reported: zoomed out to 0.85 and with a visual viewport
+// a keyboard's height short of the layout viewport, with nothing focused.
 const FIELD: ViewportReading = {
 	innerWidth: 518,
 	innerHeight: 1052,
 	screenWidth: 440,
 	screenHeight: 956,
 	reportedScale: 0.85,
-	touchScale: 1.021,
+	vvHeight: 646,
+	vvOffsetTop: 15,
+	editableFocused: false,
 };
 
-describe("the ghost viewport", () => {
-	test("the field device is a ghost", () => {
+describe("the stale visual viewport", () => {
+	test("the field device has a stale keyboard inset", () => {
+		assert.strictEqual(visualViewportStale(FIELD), true);
+	});
+
+	test("a keyboard that is actually up is not a fault", () => {
+		// Same numbers, but a textarea has focus: the inset is the keyboard.
+		assert.strictEqual(
+			visualViewportStale({ ...FIELD, editableFocused: true }),
+			false,
+		);
+	});
+
+	test("browser chrome does not count", () => {
+		// Safari's toolbars take a hundred-odd points; that is not a keyboard.
+		assert.strictEqual(
+			visualViewportStale({ ...FIELD, innerHeight: 760, vvHeight: 646 }),
+			false,
+		);
+	});
+
+	test("a healthy page is not stale", () => {
+		assert.strictEqual(
+			visualViewportStale({
+				...FIELD,
+				innerWidth: 440,
+				innerHeight: 894,
+				reportedScale: 1,
+				vvHeight: 894,
+				vvOffsetTop: 0,
+			}),
+			false,
+		);
+	});
+
+	test("no visual viewport API, no verdict", () => {
+		assert.strictEqual(
+			visualViewportStale({ ...FIELD, vvHeight: undefined }),
+			false,
+		);
+	});
+});
+
+describe("the oversized layout viewport", () => {
+	test("the field device is zoomed out", () => {
 		assert.strictEqual(viewportOversized(FIELD), true);
-		assert.strictEqual(isGhostViewport(FIELD), true);
 	});
 
-	test("a page the user really pinched out is not", () => {
-		// Reported and measured agree: the page IS drawn at 0.85. Resetting
-		// it would undo the user's own zoom.
-		const pinched = { ...FIELD, touchScale: 0.85 };
-		assert.strictEqual(viewportOversized(pinched), true);
-		assert.strictEqual(isGhostViewport(pinched), false);
+	test("a page that fits its screen is not, whatever it reports", () => {
+		assert.strictEqual(
+			viewportOversized({ ...FIELD, innerWidth: 440, innerHeight: 894 }),
+			false,
+		);
 	});
 
-	test("a healthy page is neither", () => {
-		const healthy: ViewportReading = {
-			innerWidth: 440,
-			innerHeight: 894,
-			screenWidth: 440,
-			screenHeight: 956,
-			reportedScale: 1,
-			touchScale: 1,
-		};
-		assert.strictEqual(viewportOversized(healthy), false);
-		assert.strictEqual(isGhostViewport(healthy), false);
-	});
-
-	test("without enough taps the automatic path cannot convict", () => {
-		// Oversized says "plausible"; the ghost verdict needs the taps.
-		const untapped = { ...FIELD, touchScale: undefined };
-		assert.strictEqual(viewportOversized(untapped), true);
-		assert.strictEqual(isGhostViewport(untapped), false);
-	});
-
-	test("a page that fits its screen is never oversized, whatever it reports", () => {
-		const fits: ViewportReading = {
-			...FIELD,
-			innerWidth: 440,
-			innerHeight: 894,
-		};
-		assert.strictEqual(viewportOversized(fits), false);
+	test("scale one is never oversized", () => {
+		assert.strictEqual(
+			viewportOversized({ ...FIELD, reportedScale: 1 }),
+			false,
+		);
 	});
 });

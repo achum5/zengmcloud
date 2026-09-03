@@ -40,16 +40,13 @@
 
 import { PINNED_SELECTOR } from "./stickyHeaderPin.ts";
 import { probeSticky, recordHeaderEvent } from "./stickyHeaderDiagnostics.ts";
+import { recordTouchSample } from "./stickyTouchProbe.ts";
 import {
-	getTouchSamples,
-	recordTouchSample,
-	solveTouchMapping,
-} from "./stickyTouchProbe.ts";
-import {
-	isGhostViewport,
 	readViewport,
 	resetLayoutViewport,
+	restoreVisualViewport,
 	viewportOversized,
+	visualViewportStale,
 	watchViewportExpansion,
 } from "./stickyViewportReset.ts";
 import {
@@ -621,34 +618,19 @@ const viewportEvent = (kind: string, detail: string) => {
 	});
 };
 
-const currentTouchScale = () => solveTouchMapping(getTouchSamples())?.scale;
+// THE TWO VIEWPORT REPAIRS. See stickyViewportReset.ts for the finding they
+// rest on. The layout-viewport reset is the button's alone and was a no-op on
+// the field device; it stays because it is logged and cheap. The visual-
+// viewport restore is the one that addresses the fault that actually hides
+// the bars, and it needs a user gesture, so the automatic path arms it on
+// the next touch rather than running it from a scroll.
+let lastRestoreAt = Number.NEGATIVE_INFINITY;
+const RESTORE_INTERVAL_MS = 30_000;
 
-// THE ONE REPAIR THAT ACTS ON THE VIEWPORT. See stickyViewportReset.ts for
-// the finding this rests on. The automatic path needs the taps to confirm the
-// ghost, because a page the user really pinched looks the same to every
-// number except the measured one; the button is the user saying "broken" and
-// accepts the structural evidence. Throttled so a reset that does not take
-// cannot loop on every scroll.
-let lastAutoReset = Number.NEGATIVE_INFINITY;
-const AUTO_RESET_INTERVAL_MS = 60_000;
-
-const resetViewportIfGhost = async ({
-	manual,
-}: {
-	manual: boolean;
-}): Promise<boolean> => {
-	const reading = readViewport(currentTouchScale());
-	const convicted = manual
-		? viewportOversized(reading)
-		: isGhostViewport(reading);
-	if (!convicted) {
+const resetLayoutIfOversized = async (): Promise<boolean> => {
+	const reading = readViewport();
+	if (!viewportOversized(reading)) {
 		return false;
-	}
-	if (!manual) {
-		if (performance.now() - lastAutoReset < AUTO_RESET_INTERVAL_MS) {
-			return false;
-		}
-		lastAutoReset = performance.now();
 	}
 	const { before, after, applied } = await resetLayoutViewport();
 	const changed =
@@ -658,8 +640,30 @@ const resetViewportIfGhost = async ({
 			before.scale !== after.scale);
 	viewportEvent(
 		changed ? "reset" : "reset-noop",
-		`${manual ? "button" : "auto"} touchScale=${reading.touchScale ?? "-"} ${before.innerWidth}x${before.innerHeight}@${before.scale}->${after.innerWidth}x${after.innerHeight}@${after.scale}`,
+		`button ${before.innerWidth}x${before.innerHeight}@${before.scale}->${after.innerWidth}x${after.innerHeight}@${after.scale}`,
 	);
+	return changed;
+};
+
+// Must run from inside a user gesture: that is what lets focus() count.
+const restoreVisualViewportIfStale = async (via: string): Promise<boolean> => {
+	const reading = readViewport();
+	if (!visualViewportStale(reading)) {
+		return false;
+	}
+	if (performance.now() - lastRestoreAt < RESTORE_INTERVAL_MS) {
+		return false;
+	}
+	lastRestoreAt = performance.now();
+	const { before, after } = await restoreVisualViewport();
+	const changed = before !== after;
+	viewportEvent(
+		changed ? "vv-restored" : "vv-restore-noop",
+		`${via} deficit=${Math.round(reading.innerHeight - (reading.vvHeight ?? 0))} height ${before}->${after} inner=${reading.innerHeight}`,
+	);
+	if (changed) {
+		resyncStickyBarShifts();
+	}
 	return changed;
 };
 
@@ -826,19 +830,9 @@ const checkBar = async (bar: Bar, trigger: string) => {
 
 			if (!repairCanHelp({ probe })) {
 				note(bar, element, "unrepairable", `probe=${probeDetail}`);
-				// Nothing about the ELEMENT is wrong - which is exactly the
-				// ghost viewport's signature. If the taps confirm it, reset the
-				// viewport itself and re-measure; the bars follow on their own.
-				if (await resetViewportIfGhost({ manual: false })) {
-					resyncStickyBarShifts();
-					await nextFrame();
-					note(
-						bar,
-						element,
-						bar.detached(element) ? "still-detached" : "repaired",
-						"viewport-reset",
-					);
-				}
+				// Nothing about the ELEMENT is wrong. If the visual viewport is
+				// carrying a stale keyboard inset, the next touch will try to
+				// restore it - see the touchend listener in init.
 				return;
 			}
 
@@ -922,12 +916,12 @@ const forceBarRepair = async (bar: Bar) => {
 // because the one place the user can reach the button - the top of the page - is
 // the one place a broken header is indistinguishable from a healthy one.
 export const forceHeaderRepair = async () => {
-	// The viewport first. When the layout viewport has grown past the screen
-	// the ladder below cannot help, because nothing about the element is
-	// wrong; rewriting the viewport meta is the one action that makes WebKit
-	// recompute it. The button is the user saying "broken", so the structural
-	// evidence alone is enough here.
-	await resetViewportIfGhost({ manual: true });
+	// The viewports first. The button is a user gesture, which is what the
+	// visual-viewport restore needs, and the user saying "broken", which is
+	// enough evidence for the layout reset. Both log what they did.
+	lastRestoreAt = Number.NEGATIVE_INFINITY;
+	await restoreVisualViewportIfStale("button");
+	await resetLayoutIfOversized();
 	// Then put the bars back inside the visible viewport.
 	resyncStickyBarShifts();
 	for (const bar of BARS) {
@@ -1186,4 +1180,16 @@ export const initStickyHeaderWatchdog = () => {
 	// after-the-fact probe has ever found the culprit; being there when
 	// innerWidth grows past the screen names the page it happened on.
 	watchViewportExpansion((detail) => viewportEvent("expanded", detail));
+
+	// THE AUTOMATIC RESTORE. A stale keyboard inset is only clearable from
+	// inside a gesture, and a touch is the one gesture this page is certain
+	// to get. Throttled inside, so a device where it does not take is asked
+	// again every half minute rather than on every tap.
+	window.addEventListener(
+		"touchend",
+		() => {
+			void restoreVisualViewportIfStale("touch");
+		},
+		{ passive: true },
+	);
 };

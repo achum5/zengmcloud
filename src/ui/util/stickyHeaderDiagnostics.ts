@@ -13,6 +13,11 @@
 // exactly the same place.
 
 import {
+	editableIsFocused,
+	readViewport,
+	visualViewportStale,
+} from "./stickyViewportReset.ts";
+import {
 	getTouchSamples,
 	projectToScreen,
 	screenVerdict,
@@ -351,6 +356,12 @@ export const collectHeaderSnapshot = (): HeaderSnapshot => {
 		// could even be up.
 		visualViewportWidth: vv ? num(vv.width) : "-",
 		screen: `${window.screen.width}x${window.screen.height}`,
+		// The stale keyboard inset, named: how much shorter the visual viewport
+		// is than the layout viewport, and whether anything could legitimately
+		// have a keyboard up. See stickyViewportReset.ts.
+		vvDeficit: vv ? num(window.innerHeight - vv.height) : "-",
+		editableFocused: editableIsFocused(),
+		keyboardStuck: visualViewportStale(readViewport()),
 		activeElement: document.activeElement
 			? document.activeElement.tagName.toLowerCase()
 			: "(none)",
@@ -453,7 +464,15 @@ const touchProbeFields = (): HeaderSnapshot => {
 		};
 	}
 
-	const screenHeight = window.screen?.height;
+	// The glass in CSS pixels. The mapping is in client units, which on a
+	// zoomed-out page are bigger than the screen's points: at scale 0.85 a
+	// 956pt screen is 1125 CSS px tall. Comparing against 956 called a
+	// visible ticker "below" in the third field report.
+	const scale = window.visualViewport?.scale || 1;
+	const screenHeight =
+		window.screen?.height === undefined
+			? undefined
+			: Math.round(window.screen.height / scale);
 	const onGlass = (element: HTMLElement | null) => {
 		if (!element || screenHeight === undefined) {
 			return "-";
@@ -471,8 +490,11 @@ const touchProbeFields = (): HeaderSnapshot => {
 		// Where client y = 0 actually is. A pinned header claims to be here, so
 		// a large negative number IS the fault, stated in one line.
 		touchOriginY: mapping.originY,
-		// The real scale, next to the one visualViewport reports. The two
-		// disagreeing is itself the finding.
+		// The slope of screenY against clientY. NOT the page zoom: WebKit's
+		// touch.screenY does not track pinch zoom, so this reads about 1 on a
+		// zoomed page too. It was once read as "the page is drawn at 1:1",
+		// which was wrong; it is kept because a value far from 1 would still
+		// mean something, and so the report format stays stable.
 		touchScale: mapping.scale,
 		touchScaleReported: window.visualViewport?.scale,
 		headerOnGlass: onGlass(
