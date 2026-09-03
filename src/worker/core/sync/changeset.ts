@@ -19,6 +19,11 @@ import { getSyncEngine } from "./engineHolder.ts";
 import { isWatchingLiveBroadcast } from "./liveWatchGate.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
+import { runAfterActionHook } from "./afterActionHook.ts";
+import {
+	describeRebuild,
+	rebuildSeasonAggregates,
+} from "./rebuildSeasonAggregates.ts";
 import type { Phase, UpdateEvents } from "../../../common/types.ts";
 
 // The landing page each phase redirects to, mirroring the redirect returned by
@@ -711,6 +716,7 @@ let deferredRefresh:
 			touchedStores: Set<Store>;
 			refreshUI: boolean;
 			sweepGames: boolean;
+			rebuildAggregates: boolean;
 			redirect: boolean;
 	  }
 	| undefined;
@@ -787,6 +793,7 @@ export const refreshAfterApply = async ({
 	touchedStores,
 	refreshUI,
 	sweepGames,
+	rebuildAggregates = true,
 	redirect,
 }: {
 	touchedSeason: boolean;
@@ -798,6 +805,10 @@ export const refreshAfterApply = async ({
 	refreshUI: boolean;
 	// v1 only: heal phantom/stranded schedule rows left by per-record applies.
 	sweepGames: boolean;
+	// Whether this device's games can be trusted to be complete after this
+	// apply, so records and totals may be rebuilt from them. A v1 apply that
+	// dropped records passes false; the retry that lands them runs it.
+	rebuildAggregates?: boolean;
 	// Navigate to the new phase's landing page on a phase flip. Off for
 	// checkpoint restores, where yanking the user to a phase page would be a
 	// surprise rather than a continuation.
@@ -884,6 +895,8 @@ export const refreshAfterApply = async ({
 			]),
 			refreshUI: (deferredRefresh?.refreshUI ?? false) || refreshUI,
 			sweepGames: (deferredRefresh?.sweepGames ?? false) || sweepGames,
+			rebuildAggregates:
+				(deferredRefresh?.rebuildAggregates ?? true) && rebuildAggregates,
 			redirect: (deferredRefresh?.redirect ?? false) || redirect,
 		};
 		return;
@@ -999,6 +1012,55 @@ export const refreshAfterApply = async ({
 			}
 		} catch (error) {
 			console.error("Stranded schedule check failed", error);
+		}
+	}
+
+	// Records and team totals, replayed from the games. A season row lands here
+	// WHOLE, and can be a game behind the games it arrived with - the author's
+	// copy was stale when it simmed (see rebuildSeasonAggregates.ts) - while
+	// the games themselves are append-only and complete. So after anything that
+	// touched the games, or the rows summed from them, rebuild the current
+	// season's records and totals from the games and publish whatever differed.
+	// Only when this device's games are known complete: not during a resync
+	// replay, not while a day is missing, and not after an apply that dropped
+	// records.
+	if (
+		rebuildAggregates &&
+		(touchedGames ||
+			touchedStores.has("teamSeasons") ||
+			touchedStores.has("teamStats")) &&
+		!getSyncEngine()?.isResyncing()
+	) {
+		try {
+			const stranded = await findStrandedScheduleRows();
+			if (stranded.gids.length === 0) {
+				const report = await rebuildSeasonAggregates();
+				const summary = describeRebuild(report);
+				if (summary !== undefined) {
+					console.log(summary);
+					syncDebugLog("apply:rebuild-aggregates", {
+						fixed: report.recordsFixed,
+						held: report.recordsHeld,
+						statsFixed: report.statsRowsFixed,
+						statsHeld: report.statsRowsHeld,
+						playerRowsSuspect: report.playerRowsSuspect,
+					});
+				}
+				// Ship a correction now rather than with this device's next action
+				// - a device that only watches would otherwise sit on the fix. Not
+				// while a local action or sim is capturing: its own drain carries
+				// these rows.
+				if (
+					(report.recordsFixed.length > 0 || report.statsRowsFixed > 0) &&
+					!changeTracker.isCapturing()
+				) {
+					await runAfterActionHook("sync", "rebuildAggregates", {
+						silent: true,
+					});
+				}
+			}
+		} catch (error) {
+			console.error("Season aggregate rebuild failed", error);
 		}
 	}
 
@@ -1435,6 +1497,9 @@ export const applyChangeset = async (
 		// v1 applies are per-record and can leave phantom/stranded schedule rows;
 		// the sweep is their healer. v2 applies are atomic, so it never runs there.
 		sweepGames: true,
+		// A record that failed to apply may be a game; nothing rebuilt from an
+		// incomplete games store may be written, let alone published.
+		rebuildAggregates: failures.length === 0,
 		redirect: true,
 	});
 
