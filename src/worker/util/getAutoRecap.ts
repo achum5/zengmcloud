@@ -3150,15 +3150,36 @@ export const getAutoRecap = (game: RecapGame): string => {
 			// something the headline did NOT have rather than dropping him: with
 			// nothing else to carry his name, the man in the headline disappeared
 			// from his own story.
+			// The phrasing has to match what the split SAYS. "Vince Dunn scored
+			// his 16 on 5-of-15 shooting" states a poor night in the tone of a
+			// good one and reads as though nobody looked at it; a bad line is
+			// worth writing about, but as a bad line.
+			const pct = star.fga > 0 ? star.fg / star.fga : 0;
 			para1.push(
 				pick(
 					rng,
-					[
-						`${star.name} scored his ${star.pts} on ${star.fg}-of-${star.fga} shooting.`,
-						`${star.name} needed ${star.fga} shots for his ${star.pts}, making ${star.fg}.`,
-						`${star.name} finished ${star.fg}-of-${star.fga} from the floor.`,
-					],
-					"starSplit",
+					pct >= 0.55
+						? [
+								`${star.name} scored his ${star.pts} on ${star.fg}-of-${star.fga} shooting.`,
+								`${star.name} needed only ${star.fga} shots for his ${star.pts}.`,
+								`${star.name} was ${star.fg}-of-${star.fga} from the floor.`,
+							]
+						: pct < 0.42
+							? [
+									`${star.name} needed ${star.fga} shots for his ${star.pts}, making ${star.fg}.`,
+									`${star.name} got there the hard way, ${star.fg}-of-${star.fga} from the floor.`,
+									`The shooting was not pretty for ${star.name} - ${star.fg}-of-${star.fga}.`,
+								]
+							: [
+									`${star.name} scored his ${star.pts} on ${star.fg}-of-${star.fga} shooting.`,
+									`${star.name} finished ${star.fg}-of-${star.fga} from the floor.`,
+									`${star.name} took ${star.fga} shots and made ${star.fg}.`,
+								],
+					pct >= 0.55
+						? "starSplitGood"
+						: pct < 0.42
+							? "starSplitPoor"
+							: "starSplit",
 				),
 			);
 		} else {

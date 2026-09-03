@@ -5891,6 +5891,72 @@ describe("the upset headline", () => {
 // points and 11 assists... Lonnie Green chipped in 33 points", which reads as
 // though nobody checked. Across a 359-recap corpus a "chipped in" line beat
 // the lead by five or more in 24 of them.
+// A SPLIT IS DESCRIBED THE WAY IT READS. When the headline has already spent
+// the star's whole line, the body prints his shooting instead - and it was
+// printing "scored his 16 on 5-of-15 shooting", which states a poor night in
+// the tone of a good one.
+describe("the star's shooting split", () => {
+	const splitGame = (pts: number, fg: number, fga: number): RecapGame => {
+		const win = realisticTeam(
+			{ tid: 1, name: "Mavericks", abbrev: "DAL", pts: 99 },
+			player({ name: "Vince Dunn", pts, reb: 11, fg, fga }),
+		);
+		const lose = realisticTeam(
+			{ tid: 2, name: "Timberwolves", abbrev: "MIN", pts: 89 },
+			player({ name: "Jalen Ingram", pts: 16, reb: 5, fg: 6, fga: 15 }),
+		);
+		return game({ gid: 4400, teams: [win, lose], winnerTid: 1 });
+	};
+
+	const splitSentence = (g: RecapGame) => {
+		const recap = getAutoRecap(g);
+		const m = /(?:Vince Dunn|The shooting)[^.]*\d+-of-\d+[^.]*\./.exec(recap);
+		return m ? m[0] : undefined;
+	};
+
+	test("a poor night is not written in the tone of a good one", () => {
+		const sentences = new Set<string>();
+		beginRecapBatch();
+		try {
+			for (let i = 0; i < 8; i++) {
+				const g = splitGame(16, 5, 15);
+				g.gid = 4400 + i;
+				const text = splitSentence(g);
+				if (text) {
+					sentences.add(text);
+				}
+			}
+		} finally {
+			endRecapBatch();
+		}
+		assert.ok(sentences.size > 0, "no split sentence was produced");
+		for (const text of sentences) {
+			assert.doesNotMatch(text, /scored his \d+ on \d+-of-\d+ shooting/, text);
+			assert.match(text, /the hard way|needed \d+ shots|not pretty/, text);
+		}
+	});
+
+	test("an efficient night keeps the flattering phrasing", () => {
+		const sentences = new Set<string>();
+		beginRecapBatch();
+		try {
+			for (let i = 0; i < 8; i++) {
+				const g = splitGame(24, 10, 16);
+				g.gid = 4500 + i;
+				const text = splitSentence(g);
+				if (text) {
+					sentences.add(text);
+				}
+			}
+		} finally {
+			endRecapBatch();
+		}
+		for (const text of sentences) {
+			assert.doesNotMatch(text, /the hard way|not pretty/, text);
+		}
+	});
+});
+
 describe("the second man who outscored the first", () => {
 	const twoMen = (starPts: number, secondPts: number): RecapGame => {
 		const win = team({
