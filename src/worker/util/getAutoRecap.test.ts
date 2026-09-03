@@ -5774,6 +5774,108 @@ describe("the fourth paragraph", () => {
 	});
 });
 
+// A NIGHT OF UPSETS USED TO BE ONE SENTENCE.
+//
+// The upset branch had a single shape - "X <verb> the Y, 103-98" with the verb
+// rotating - and it wrote twelve per cent of every headline the engine
+// produced. On an upset-heavy night the page read as one headline with the
+// names swapped, which is the exact failure the rest of this file exists to
+// prevent.
+describe("the upset headline", () => {
+	const upset = (i: number): RecapGame => {
+		const gid = 7000 + i;
+		const win = realisticTeam(
+			{
+				tid: gid * 2,
+				name: `Dog${i}`,
+				abbrev: `D${i}`,
+				pts: 100 + (i % 7),
+				record: { won: 8 + i, lost: 20 },
+				streak: i % 3 === 0 ? { won: true, count: 4 + (i % 3) } : undefined,
+			},
+			player({
+				name: `Star${i}`,
+				pts: 18 + ((i * 5) % 14),
+				reb: 4 + (i % 8),
+				ast: 3 + (i % 5),
+				fg: 8 + (i % 4),
+				fga: 16 + (i % 5),
+			}),
+		);
+		const lose = realisticTeam(
+			{
+				tid: gid * 2 + 1,
+				name: `Fave${i}`,
+				abbrev: `F${i}`,
+				pts: 94 + (i % 5),
+				record: { won: 28, lost: 6 },
+				streak: i % 4 === 0 ? { won: false, count: 4 } : undefined,
+			},
+			player({ name: `Rival${i}`, pts: 16 + (i % 6), reb: 6, fg: 7, fga: 18 }),
+		);
+		return game({
+			gid,
+			teams: [win, lose],
+			winnerTid: gid * 2,
+			spread: { favTid: gid * 2 + 1, points: 5 + (i % 9) },
+		});
+	};
+
+	test("a slate of upsets does not print one headline over and over", () => {
+		beginRecapBatch();
+		let headlines: string[];
+		try {
+			headlines = Array.from(
+				{ length: 12 },
+				(_, i) => getAutoRecap(upset(i)).split("\n")[0]!,
+			);
+		} finally {
+			endRecapBatch();
+		}
+		const frameOf = (h: string) =>
+			h
+				.replaceAll("**", "")
+				.replaceAll(/\d+(\.\d+)?/g, "#")
+				.replaceAll(/\b[A-Z][\w'-]*(?: [A-Z][\w'-]*)*/g, "N");
+		const counts = new Map<string, number>();
+		for (const h of headlines) {
+			const f = frameOf(h);
+			counts.set(f, (counts.get(f) ?? 0) + 1);
+		}
+		const worst = Math.max(...counts.values());
+		assert.ok(worst <= 3, `one shape ${worst} times: ${headlines.join("\n")}`);
+		assert.ok(counts.size >= 6, `only ${counts.size} shapes`);
+	});
+
+	test("the number is only quoted when the books really had one", () => {
+		const small = upset(1);
+		small.spread = { favTid: small.teams[1].tid, points: 4 };
+		beginRecapBatch();
+		try {
+			for (let i = 0; i < 8; i++) {
+				const headline = getAutoRecap(small).split("\n")[0]!;
+				assert.doesNotMatch(headline, /\d+-point underdogs/);
+			}
+		} finally {
+			endRecapBatch();
+		}
+	});
+
+	test("every upset headline names both clubs, and a stat line takes a plural verb", () => {
+		beginRecapBatch();
+		try {
+			for (let i = 0; i < 12; i++) {
+				const headline = getAutoRecap(upset(i)).split("\n")[0]!;
+				assert.ok(headline.includes(`Dog${i}`), headline);
+				assert.ok(headline.includes(`Fave${i}`), headline);
+				assert.doesNotMatch(headline, /(?:points|rebounds|assists) stuns\b/);
+			}
+		} finally {
+			endRecapBatch();
+		}
+	});
+});
+
 describe("prepositions do not stack", () => {
 	const clutchGame = (): RecapGame => {
 		const win = realisticTeam(

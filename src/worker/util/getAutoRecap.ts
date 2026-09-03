@@ -1004,10 +1004,59 @@ const buildHeadlineText = (
 		);
 	}
 
+	// THE UPSET, WHICH HAD ONE SHAPE. Twelve per cent of every headline the
+	// engine wrote came out of this branch, and all of it was "X <verb> the Y,
+	// 103-98" with the verb rotating - which is exactly the tell the rest of
+	// this file exists to remove. The number the books had, the record the
+	// favorite carried in, and the run either side was on are all in hand, and
+	// each of them says something the bare result does not.
 	if (isUpset(game, shape)) {
-		return h(
+		const dog = game.spread?.points;
+		const options = [
 			`${winnerN} ${verb} the ${loserN}, ${scoreTag(shape)}${tag}`,
+			`${winnerN} ${verb} the ${loserN} ${scoreTag(shape)}${tag}`,
+			`${winnerN} pull the upset over the ${loserN} ${scoreTag(shape)}${tag}`,
+		];
+		if (dog !== undefined && dog >= 6) {
+			options.push(
+				`${winnerN} ${verb} the ${loserN} as ${dog}-point underdogs${tag}`,
+				`${dog}-point underdogs, the ${winnerN} ${verb} the ${loserN}${tag}`,
+				`Nobody gave the ${winnerN} a chance, and they ${verb} the ${loserN}${tag}`,
+			);
+		}
+		const loserRec = shape.loser.record;
+		if (loserRec && loserRec.won >= loserRec.lost * 2 && loserRec.won >= 12) {
+			options.push(
+				`${winnerN} hand the ${loserN} a rare loss, ${scoreTag(shape)}${tag}`,
+			);
+		}
+		const loserStreak = shape.loser.streak;
+		if (loserStreak && !loserStreak.won && loserStreak.count >= 4) {
+			// The loser's streak ENDS with this game, so it counts tonight.
+			options.push(
+				`${winnerN} send the ${loserN} to a ${ordinal(loserStreak.count)} straight defeat${tag}`,
+			);
+		}
+		const winnerStreak = shape.winner.streak;
+		if (winnerStreak?.won && winnerStreak.count >= 4) {
+			options.push(
+				`${winnerN} make it ${plural(winnerStreak.count, "straight")} with an upset of the ${loserN}${tag}`,
+			);
+		}
+		if (star.pts >= 24) {
+			options.push(
+				// A stat line is a plural subject: "29 points and 9 rebounds
+				// stun", never "stuns".
+				`${poss(star.name)} ${statPhrase(star, 1)} stun the ${loserN} as the ${winnerN} pull the upset${tag}`,
+				`${star.name} leads the ${winnerN} to an upset of the ${loserN}${tag}`,
+			);
+		}
+		const text = pick(rng, options, "headline:upset");
+		return h(
+			text,
+			star.pts >= 24 && text.includes(star.name),
 			false,
+			text.includes(statPhrase(star, 1)),
 		);
 	}
 
@@ -1219,15 +1268,34 @@ const buildHeadlineText = (
 		`${winnerN} ${verb} the ${loserN}, ${scoreTag(shape)}${tag}`,
 		`${winnerN} ${verb} the ${loserN} ${scoreTag(shape)}${tag}`,
 		// Only when nothing is hanging off the end: post.headlineTail is a
-		// participle that has to attach to the winner, and this is the one
-		// template that makes the loser the subject.
+		// participle that has to attach to the winner, and these are the ones
+		// that make the loser the subject.
 		...(post.headlineTail
 			? []
-			: [`${loserN} fall to the ${winnerN} ${scoreTag(shape)}${tag}`]),
+			: [
+					`${loserN} fall to the ${winnerN} ${scoreTag(shape)}${tag}`,
+					`${loserN} cannot keep up with the ${winnerN}, ${scoreTag(shape)}${tag}`,
+				]),
 		`${winnerN} take care of the ${loserN} ${scoreTag(shape)}${tag}`,
+		`${winnerN} see off the ${loserN} ${scoreTag(shape)}${tag}`,
 		shape.margin >= 15
 			? `${winnerN} pull away from the ${loserN} for ${aNum(shape.margin)}-point win${tag}`
 			: `${winnerN} come out on top of the ${loserN} ${scoreTag(shape)}${tag}`,
+		shape.margin >= 15
+			? `${winnerN} have too much for the ${loserN}, ${scoreTag(shape)}${tag}`
+			: `${winnerN} get the better of the ${loserN} ${scoreTag(shape)}${tag}`,
+		// A team on a real run is a story the bare score does not carry.
+		...(shape.winner.streak?.won && shape.winner.streak.count >= 5
+			? [
+					`${winnerN} make it ${plural(shape.winner.streak.count, "straight")} against the ${loserN}${tag}`,
+				]
+			: []),
+		...(shape.winner.seasonHighs?.pts &&
+		(shape.winner.seasonHighs.priorGames ?? 0) >= 15
+			? [
+					`${winnerN} post a season high in a ${scoreTag(shape)} win over the ${loserN}${tag}`,
+				]
+			: []),
 	];
 	// A big margin with a modest star line is a result story, always - a
 	// "Michael Doleac's 17 leads..." headline on a 22-point blowout misses it.
