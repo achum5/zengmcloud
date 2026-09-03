@@ -4,7 +4,9 @@ import { resetCache, resetG } from "../../../test/helpers.ts";
 import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import {
+	applyStamp,
 	describeRebuild,
+	gameRecordStamps,
 	inPlayedOrder,
 	rebuildRecord,
 	rebuildSeasonAggregates,
@@ -651,5 +653,207 @@ describe("repairAggregatesFromGames", () => {
 		await seed(6);
 		await repairAggregatesFromGames("connect");
 		assert.strictEqual(await wonOf(), 6);
+	});
+});
+
+// THE NUMBER ON THE BOX SCORE.
+//
+// Each game row stores the record both sides carried INTO it, and that is what
+// the box score and the game log print. A device simming off a stale season
+// row stamps the stale record onto the game permanently - which is the "39
+// wins, then 38 wins" a league-mate actually reads.
+describe("the record stamped on each game", () => {
+	const stampGame = (
+		gid: number,
+		day: number,
+		home: number,
+		away: number,
+		homePts: number,
+		awayPts: number,
+		stored: [Record<string, unknown>, Record<string, unknown>],
+		extra: { playoffs?: boolean; overtimes?: number } = {},
+	) => {
+		const homeWon = homePts > awayPts;
+		return {
+			gid,
+			day,
+			season: SEASON,
+			overtimes: extra.overtimes ?? 0,
+			playoffs: extra.playoffs,
+			won: homeWon ? { tid: home, pts: homePts } : { tid: away, pts: awayPts },
+			lost: homeWon ? { tid: away, pts: awayPts } : { tid: home, pts: homePts },
+			teams: [
+				{ tid: home, pts: homePts, ...stored[0] },
+				{ tid: away, pts: awayPts, ...stored[1] },
+			],
+		} as any;
+	};
+
+	const rec = (won: number, lost: number) => ({ won, lost });
+
+	test("the stamp is the record BEFORE the game, and a tie and an OTL count", () => {
+		const games = [
+			stampGame(1, 1, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)]),
+			stampGame(2, 2, 0, 1, 90, 90, [rec(1, 0), rec(0, 1)]),
+			stampGame(3, 3, 1, 0, 101, 99, [rec(0, 0), rec(0, 0)], {
+				overtimes: 1,
+			}),
+		];
+		const withOtl = gameRecordStamps(games, true);
+		assert.deepStrictEqual(withOtl.get(1), [
+			{ won: 0, lost: 0, tied: 0, otl: 0 },
+			{ won: 0, lost: 0, tied: 0, otl: 0 },
+		]);
+		// Entering game 2, the home side has the game-1 win.
+		assert.deepStrictEqual(withOtl.get(2)![0], {
+			won: 1,
+			lost: 0,
+			tied: 0,
+			otl: 0,
+		});
+		// Entering game 3 the tie is on both records; tid 0 is away here.
+		assert.deepStrictEqual(withOtl.get(3)![1], {
+			won: 1,
+			lost: 0,
+			tied: 1,
+			otl: 0,
+		});
+		// Game 3 went to overtime, so with OTL on it is an overtime loss.
+		const after = gameRecordStamps(
+			[...games, stampGame(4, 4, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)])],
+			true,
+		);
+		assert.deepStrictEqual(after.get(4)![0], {
+			won: 1,
+			lost: 0,
+			tied: 1,
+			otl: 1,
+		});
+		const noOtl = gameRecordStamps(
+			[...games, stampGame(4, 4, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)])],
+			false,
+		);
+		assert.deepStrictEqual(noOtl.get(4)![0], {
+			won: 1,
+			lost: 1,
+			tied: 1,
+			otl: 0,
+		});
+	});
+
+	test("a playoff game advances nothing, and the All-Star game is not stamped", () => {
+		const games = [
+			stampGame(1, 1, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)]),
+			stampGame(2, 2, -1, -2, 150, 140, [rec(0, 0), rec(0, 0)]),
+			stampGame(3, 3, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)], {
+				playoffs: true,
+			}),
+			stampGame(4, 4, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)], {
+				playoffs: true,
+			}),
+		];
+		const stamps = gameRecordStamps(games, false);
+		assert.strictEqual(stamps.has(2), false);
+		// Both playoff games carry the final regular-season record.
+		assert.deepStrictEqual(stamps.get(3)![0], stamps.get(4)![0]);
+		assert.strictEqual(stamps.get(4)![0]!.won, 1);
+	});
+
+	test("only the fields the row already has are written", () => {
+		const stamp = { won: 4, lost: 1, tied: 2, otl: 3 };
+		// A league with no ties and no overtime losses stores neither.
+		const plain: Record<string, unknown> = { tid: 0, won: 3, lost: 1 };
+		assert.strictEqual(applyStamp(plain, stamp), true);
+		assert.deepStrictEqual(plain, { tid: 0, won: 4, lost: 1 });
+		// A legacy row with no record at all is left alone.
+		const legacy: Record<string, unknown> = { tid: 0 };
+		assert.strictEqual(applyStamp(legacy, stamp), false);
+		assert.deepStrictEqual(legacy, { tid: 0 });
+		// Nothing to do is reported as nothing done.
+		const right: Record<string, unknown> = { tid: 0, won: 4, lost: 1 };
+		assert.strictEqual(applyStamp(right, stamp), false);
+	});
+
+	test("the field case: a stale stamp is corrected on the game itself", async () => {
+		resetG();
+		g.setWithoutSavingToDB("season", SEASON);
+		g.setWithoutSavingToDB("otl", false);
+		// Three wins, then the win over tid 2, then the loss to tid 3 - which a
+		// stale device stamped as though the fourth win had never happened.
+		const games = [
+			stampGame(1, 1, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)]),
+			stampGame(2, 2, 2, 0, 90, 100, [rec(0, 0), rec(1, 0)]),
+			stampGame(3, 3, 0, 3, 100, 90, [rec(2, 0), rec(0, 0)]),
+			stampGame(10, 4, 0, 2, 100, 97, [rec(3, 0), rec(0, 1)]),
+			// Stamped 3-0 by a device a game behind; the games say 4-0.
+			stampGame(11, 5, 3, 0, 94, 92, [rec(0, 1), rec(3, 0)]),
+		];
+		await resetCache({
+			teamSeasons: [0, 1, 2, 3].map((tid) => ({
+				tid,
+				season: SEASON,
+				did: divisionOf(tid),
+				cid: conferenceOf(tid),
+				...record(games as any, tid),
+			})),
+			teamStats: [],
+		});
+		for (const game2 of games) {
+			await idb.cache.games.add(game2);
+		}
+
+		const report = await rebuildSeasonAggregates({ auditPlayers: false });
+		assert.strictEqual(report.gameStampsFixed, 1);
+		const fixed: any = await idb.cache.games.get(11);
+		assert.strictEqual(fixed.teams[1].won, 4);
+		assert.strictEqual(fixed.teams[1].lost, 0);
+		assert.match(
+			describeRebuild(report)!,
+			/restamped the record on 1 box score/,
+		);
+
+		// Idempotent: a second pass finds nothing left to do.
+		const again = await rebuildSeasonAggregates({ auditPlayers: false });
+		assert.strictEqual(again.gameStampsFixed, 0);
+	});
+
+	test("a season row that had to be held stops the restamping too", async () => {
+		resetG();
+		g.setWithoutSavingToDB("season", SEASON);
+		g.setWithoutSavingToDB("otl", false);
+		const games = [
+			stampGame(1, 1, 0, 1, 100, 90, [rec(0, 0), rec(0, 0)]),
+			// Stamped wrong, but the season row below claims games this device
+			// does not have - so the games are the suspect party, not the row.
+			stampGame(2, 2, 0, 1, 100, 90, [rec(9, 9), rec(0, 1)]),
+		];
+		await resetCache({
+			teamSeasons: [
+				{
+					tid: 0,
+					season: SEASON,
+					did: divisionOf(0),
+					cid: conferenceOf(0),
+					...record(games as any, 0),
+					won: 20,
+				},
+				{
+					tid: 1,
+					season: SEASON,
+					did: divisionOf(1),
+					cid: conferenceOf(1),
+					...record(games as any, 1),
+				},
+			],
+			teamStats: [],
+		});
+		for (const game2 of games) {
+			await idb.cache.games.add(game2);
+		}
+		const report = await rebuildSeasonAggregates({ auditPlayers: false });
+		assert.strictEqual(report.recordsHeld.length, 1);
+		assert.strictEqual(report.gameStampsFixed, 0);
+		const untouched: any = await idb.cache.games.get(2);
+		assert.strictEqual(untouched.teams[0].won, 9);
 	});
 });

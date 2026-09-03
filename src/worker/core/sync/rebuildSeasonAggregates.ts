@@ -33,6 +33,14 @@
 // games store with a hole in it; writing and publishing that row would spread
 // the hole to every device. Such rows are held and reported instead.
 //
+// The same lost update also lands ON THE GAMES, which is where a league-mate
+// actually sees it. Every game row stores the record each side carried INTO
+// that game (loadTeams reads it off the season row at sim time), and the box
+// score and the game log print it - so a device simming from a stale row
+// stamps that stale record onto the game, permanently, and every later game
+// it sims carries the same shortfall forward. That is the "39 wins, then 38
+// wins" a reader sees in the game log. Those stamps are rebuilt here too.
+//
 // It rebuilds ONLY what is derivable. Hype, attendance, revenues and expenses
 // are also incremented per game but depend on state at the time (ticket
 // prices, budgets) that a stored game does not carry; those stay as they are.
@@ -265,6 +273,89 @@ export const recordDiffers = (
 		return (have ?? 0) !== want;
 	});
 
+// ---------------------------------------------------------------- THE STAMPS
+
+// The record a team carried INTO a game, as the game row stores it.
+export type RecordStamp = {
+	won: number;
+	lost: number;
+	tied: number;
+	otl: number;
+};
+
+const emptyStamp = (): RecordStamp => ({ won: 0, lost: 0, tied: 0, otl: 0 });
+
+// What each side's record WAS when each game tipped off, replayed from the
+// games in the order they were played.
+//
+// Two rules the sim follows and this has to follow with it. The stamp is the
+// record BEFORE the game, because loadTeams reads the season row and the game
+// is written afterwards. And a playoff game advances nothing: writeTeamStats
+// only touches the record outside the playoffs, so every postseason game
+// carries the final regular-season record.
+export const gameRecordStamps = (
+	games: readonly GameForRecords[],
+	otl: boolean,
+): Map<number, [RecordStamp, RecordStamp]> => {
+	const running = new Map<number, RecordStamp>();
+	const recordOf = (tid: number) => {
+		let rec = running.get(tid);
+		if (!rec) {
+			rec = emptyStamp();
+			running.set(tid, rec);
+		}
+		return rec;
+	};
+
+	const out = new Map<number, [RecordStamp, RecordStamp]>();
+	for (const game of inPlayedOrder(games)) {
+		if (isAllStarGame(game)) {
+			continue;
+		}
+		const [home, away] = game.teams;
+		out.set(game.gid, [{ ...recordOf(home.tid) }, { ...recordOf(away.tid) }]);
+		if (game.playoffs) {
+			continue;
+		}
+		const tie = game.won.pts === game.lost.pts;
+		for (const t of [home, away]) {
+			const rec = recordOf(t.tid);
+			if (tie) {
+				rec.tied += 1;
+			} else if (game.won.tid === t.tid) {
+				rec.won += 1;
+			} else if (game.overtimes > 0 && otl) {
+				rec.otl += 1;
+			} else {
+				rec.lost += 1;
+			}
+		}
+	}
+	return out;
+};
+
+// Apply a stamp to one side of a stored game row, changing only the fields
+// that row already carries. A league without ties or overtime losses stores
+// those as undefined (loadTeams leaves them out), and a legacy row may carry
+// no record at all - inventing fields on either would be a different kind of
+// wrong from the one being fixed.
+export const applyStamp = (
+	side: Record<string, unknown>,
+	stamp: RecordStamp,
+): boolean => {
+	if (typeof side.won !== "number" || typeof side.lost !== "number") {
+		return false;
+	}
+	let changed = false;
+	for (const key of ["won", "lost", "tied", "otl"] as const) {
+		if (typeof side[key] === "number" && side[key] !== stamp[key]) {
+			side[key] = stamp[key];
+			changed = true;
+		}
+	}
+	return changed;
+};
+
 // ---------------------------------------------------------------- TEAM STATS
 
 type GameTeamStats = Record<string, unknown> & { tid: number };
@@ -416,6 +507,9 @@ export type RebuildReport = {
 	recordsHeld: RecordChange[];
 	statsRowsFixed: number;
 	statsRowsHeld: number;
+	// Game rows whose stored "record entering this game" disagreed with the
+	// games and was restamped. Local only - see the runner.
+	gameStampsFixed: number;
 	// Player rows whose games played, minutes or points disagree with the box
 	// scores. Reported, not written - see the header.
 	playerRowsSuspect: number;
@@ -457,6 +551,7 @@ export const rebuildSeasonAggregates = async ({
 		recordsHeld: [],
 		statsRowsFixed: 0,
 		statsRowsHeld: 0,
+		gameStampsFixed: 0,
 		playerRowsSuspect: 0,
 	};
 
@@ -514,11 +609,66 @@ export const rebuildSeasonAggregates = async ({
 		}
 	}
 
+	// The records printed on the box scores and in the game log. Skipped
+	// entirely when any season row had to be HELD: a held row means the games
+	// count fewer than the row does, which is the signature of a games store
+	// with a hole in it, and restamping every game from a hole would turn one
+	// wrong number into a season of them.
+	//
+	// Written LOCALLY and deliberately not published. Every device derives the
+	// same stamps from the same games - the box scores themselves are
+	// append-only and identical everywhere - so each device fixes its own copy
+	// on its own connect, and shipping a season of game rows through the room
+	// to say something every receiver can compute would be megabytes to no
+	// purpose. The season and stats rows ARE published, because they are the
+	// shared authoritative state and there are thirty of them.
+	if (report.recordsHeld.length === 0) {
+		report.gameStampsFixed = await restampGames({ games, otl, wanted });
+	}
+
 	if (auditPlayers) {
 		report.playerRowsSuspect = await auditPlayerRows({ season, games, wanted });
 	}
 
 	return report;
+};
+
+const restampGames = async ({
+	games,
+	otl,
+	wanted,
+}: {
+	games: readonly GameForStats[];
+	otl: boolean;
+	wanted: Set<number> | undefined;
+}): Promise<number> => {
+	const stamps = gameRecordStamps(games, otl);
+	let fixed = 0;
+	for (const game of games) {
+		const pair = stamps.get(game.gid);
+		if (!pair) {
+			continue;
+		}
+		let changed = false;
+		for (const [i, side] of game.teams.entries()) {
+			if (wanted && !wanted.has(side.tid)) {
+				continue;
+			}
+			if (applyStamp(side, pair[i]!)) {
+				changed = true;
+			}
+		}
+		if (changed) {
+			await idb.cache.games.put(game as any);
+			// Local only. The write is recorded like any other, so forget it
+			// immediately - exactly as applyChangeset does with the records it
+			// has just applied - rather than broadcasting a season of box
+			// scores to say what every device can work out for itself.
+			changeTracker.forget("games", game.gid);
+			fixed += 1;
+		}
+	}
+	return fixed;
 };
 
 // Games played, minutes and points per (player, team, playoffs) from the box
@@ -619,6 +769,11 @@ export const describeRebuild = (report: RebuildReport): string | undefined => {
 	}
 	if (report.statsRowsHeld > 0) {
 		parts.push(`held ${report.statsRowsHeld} team stat row(s)`);
+	}
+	if (report.gameStampsFixed > 0) {
+		parts.push(
+			`restamped the record on ${report.gameStampsFixed} box score(s)`,
+		);
 	}
 	if (report.playerRowsSuspect > 0) {
 		parts.push(
