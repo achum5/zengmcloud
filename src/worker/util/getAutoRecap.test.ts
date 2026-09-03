@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
 	beginRecapBatch,
+	dedupeSubjects,
 	endRecapBatch,
 	getAutoDayRecap,
 	getAutoRecap,
@@ -446,16 +447,18 @@ describe("recap quality (from real Day 1 output)", () => {
 		});
 		const recap = getAutoRecap(g);
 		// The generic "basket" reads as a real term in the headline, and the body
-		// describes the moment concretely - never the tautological "won it with a
+		// describes the moment concretely - never the tautological "won it on a
 		// game-winner".
 		assert.ok(/game-winner/.test(recap), recap);
 		assert.ok(
 			recap.includes(
-				"Lindsey Hunter won it with a go-ahead basket with 2 seconds left",
+				"Lindsey Hunter won it on a go-ahead basket with 2 seconds left",
 			),
 			recap,
 		);
-		assert.ok(!recap.includes("won it with a game-winner"), recap);
+		assert.ok(!recap.includes("won it on a game-winner"), recap);
+		// And the play is introduced once: clutchWhat carries its own timing.
+		assert.doesNotMatch(recap, /won it with [^.]*\swith\s/);
 	});
 
 	test("a true buzzer-beater is labeled one", () => {
@@ -644,7 +647,7 @@ describe("recap quality (from real Day 1 output)", () => {
 		);
 		// His total rides with the winning shot...
 		assert.ok(
-			/Viktor Khryapa won it with .* and finished with 23 points/.test(recap),
+			/Viktor Khryapa won it on .* and finished with 23 points/.test(recap),
 			recap,
 		);
 		// ...so the supporting cast must not introduce him a second time. His
@@ -688,7 +691,7 @@ describe("recap quality (from real Day 1 output)", () => {
 			}),
 		);
 		// Six points is an anticlimax stapled to the biggest moment of the game.
-		assert.ok(!/won it with .* and finished with/.test(recap), recap);
+		assert.ok(!/won it on .* and finished with/.test(recap), recap);
 	});
 
 	test("injury text is prose-cased with acronyms kept, and says 'games'", () => {
@@ -5877,6 +5880,118 @@ describe("the upset headline", () => {
 		} finally {
 			endRecapBatch();
 		}
+	});
+});
+
+// THE PIECE HAS TO BE ABLE TO COUNT.
+//
+// The story player is chosen on a whole line - rebounds, assists and steals
+// all count - so the winner's leading SCORER is frequently somebody else. That
+// is the right way to pick a lead, but it produced "Keegan Green posted 22
+// points and 11 assists... Lonnie Green chipped in 33 points", which reads as
+// though nobody checked. Across a 359-recap corpus a "chipped in" line beat
+// the lead by five or more in 24 of them.
+describe("the second man who outscored the first", () => {
+	const twoMen = (starPts: number, secondPts: number): RecapGame => {
+		const win = team({
+			tid: 1,
+			name: "Lakers",
+			abbrev: "LAL",
+			pts: 111,
+			players: [
+				// A whole line that outranks a bigger scorer, which is exactly
+				// when the engine's story pick and the scoreboard disagree.
+				player({
+					name: "Keegan Green",
+					pts: starPts,
+					ast: 11,
+					reb: 9,
+					stl: 3,
+					fg: 8,
+					fga: 17,
+				}),
+				player({
+					name: "Lonnie Green",
+					pts: secondPts,
+					reb: 5,
+					fg: 12,
+					fga: 20,
+				}),
+				player({ name: "Role One", pts: 9, reb: 4, fg: 4, fga: 9 }),
+			],
+		});
+		const lose = realisticTeam(
+			{ tid: 2, name: "Raptors", abbrev: "TOR", pts: 108 },
+			player({ name: "Anthony Mathis", pts: 24, reb: 12, fg: 9, fga: 20 }),
+		);
+		return game({ gid: 4200, teams: [win, lose], winnerTid: 1 });
+	};
+
+	test("he is named the leading scorer, never 'chipped in'", () => {
+		const recap = getAutoRecap(twoMen(22, 33));
+		assert.ok(recap.includes("Lonnie Green"), recap);
+		assert.doesNotMatch(
+			recap,
+			/Lonnie Green (?:chipped in|added|pitched in with|kicked in|tacked on|contributed|was good for|supplied|came up with) 33/,
+			recap,
+		);
+		assert.match(
+			recap,
+			/Lonnie Green[^.]*(?:led the scoring|top-scored|leading scorer)|No one scored more than Lonnie Green/,
+		);
+	});
+
+	test("an ordinary second man still gets an ordinary verb", () => {
+		const recap = getAutoRecap(twoMen(28, 14));
+		assert.doesNotMatch(
+			recap,
+			/Lonnie Green[^.]*(?:led the scoring|top-scored|leading scorer)/,
+		);
+	});
+
+	test("the pool has more than one phrasing", () => {
+		const shapes = new Set<string>();
+		beginRecapBatch();
+		try {
+			for (let i = 0; i < 8; i++) {
+				const g = twoMen(22, 33);
+				g.gid = 4300 + i;
+				const m = /Lonnie Green[^.]*\./.exec(getAutoRecap(g));
+				if (m) {
+					shapes.add(m[0].replaceAll(/\d+/g, "#"));
+				}
+			}
+		} finally {
+			endRecapBatch();
+		}
+		assert.ok(shapes.size >= 3, [...shapes].join("\n"));
+	});
+});
+
+// "The Pistons and the Magic combined for 245 points. They stretched their run
+// to 11 wins." - a compound subject leaves "they" pointing at two clubs and
+// meaning one.
+describe("a compound subject blocks the pronoun", () => {
+	test("two teams named as one subject are not an antecedent", () => {
+		const sentences = [
+			"The Pistons and the Magic combined for 245 points, the most of any game on the slate.",
+			"The Pistons stretched their run to 11 wins.",
+		];
+		assert.deepEqual(
+			dedupeSubjects(sentences, undefined, ["Pistons", "Magic"]),
+			sentences,
+		);
+	});
+
+	test("a single-team subject still collapses", () => {
+		const sentences = [
+			"The Pistons led wire to wire.",
+			"The Pistons stretched their run to 11 wins.",
+		];
+		assert.deepEqual(dedupeSubjects(sentences, undefined, ["Pistons"]), [
+			"The Pistons led wire to wire.",
+			"They stretched their run to 11 wins.",
+		]);
 	});
 });
 

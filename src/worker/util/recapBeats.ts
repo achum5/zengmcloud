@@ -716,8 +716,20 @@ const benchPoints = (t: RecapTeam) =>
 		.filter((p) => p.starter === false)
 		.reduce((acc, p) => acc + p.pts, 0);
 
-const startersKnown = (t: RecapTeam) =>
-	t.players.filter((p) => p.starter === true).length >= 5;
+// A rotation the reader would recognise: five starters marked, and the bench
+// scoring less than the starters. When the flags say the reserves outscored
+// the first five - which happens when a league's minutes are spread evenly
+// enough that "starter" stops meaning anything - a sentence comparing the two
+// benches describes nothing a reader can picture, so there is nothing worth
+// saying.
+const startersKnown = (t: RecapTeam) => {
+	const starters = t.players.filter((p) => p.starter === true);
+	if (starters.length < 5) {
+		return false;
+	}
+	const starterPts = starters.reduce((acc, p) => acc + p.pts, 0);
+	return benchPoints(t) < starterPts;
+};
 
 export const benchBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 	if (!startersKnown(ctx.winner) || !startersKnown(ctx.loser)) {
@@ -902,9 +914,9 @@ export const scoringNormBeat = (
 			pick(
 				rng,
 				[
-					`${W} held an offense averaging ${lNorm.pts.toFixed(1)} to ${ctx.loser.pts}.`,
+					`${W} held an offense averaging ${lNorm.pts.toFixed(1)} a game to ${ctx.loser.pts}.`,
 					`Holding ${ln} to ${ctx.loser.pts} was ${numWord(Math.round(lNorm.pts - ctx.loser.pts))} below what they usually get.`,
-					`${cap(ln)} were kept well under their ${lNorm.pts.toFixed(1)} a night.`,
+					`${cap(ln)} were kept well under their ${lNorm.pts.toFixed(1)} points a game.`,
 				],
 				"normDefense",
 			),

@@ -79,7 +79,7 @@ import {
 // The Spurs shot 54.7%." becomes "...The Spurs led wire to wire. They shot
 // 54.7%." The `[a-z]` guard means a two-word nickname ("The Trail Blazers ...")
 // is left alone rather than mangled.
-const dedupeSubjects = (
+export const dedupeSubjects = (
 	sentences: string[],
 	otherNick?: string,
 	// The nicknames in play, so a MULTI-WORD one is recognised. The pattern
@@ -101,7 +101,13 @@ const dedupeSubjects = (
 	// perfectly good antecedent - which is why "The Aztecs were without Parker
 	// Dismuke (sprained knee). The Aztecs ran their streak to 4." kept the name
 	// twice.
-	const ambiguous = (sentence: string) => sentence.includes(";");
+	// A sentence with two subjects leaves nothing for "They" to attach to. The
+	// semicolon marks the two-team injury line; "the X and the Y" marks every
+	// other compound subject, and without it the day wrap produced "The Pistons
+	// and the Magic combined for 245 points. They stretched their run to 11
+	// wins." - where "they" reads as both clubs and means one.
+	const ambiguous = (sentence: string) =>
+		sentence.includes(";") || /^The \w+[\w ]*? and the \w+/.test(sentence);
 
 	const subjectOf = (sentence: string): string | undefined => {
 		for (const n of knownNicks) {
@@ -447,11 +453,14 @@ const clutchSentence = (
 	const hero = shape?.winner.players.find((x) => x.name === shot.name);
 	if (hero && hero.pts >= 15) {
 		return {
-			text: `${shot.name} won it with ${clutchWhat(shot)} and finished with ${statPhrase(hero, 1)}.`,
+			// "on", not "with": clutchWhat carries its own "with 8.3 seconds
+			// left", and the two together read "won it with a three-pointer
+			// with 8.3 seconds left".
+			text: `${shot.name} won it on ${clutchWhat(shot)} and finished with ${statPhrase(hero, 1)}.`,
 			told: hero.name,
 		};
 	}
-	return { text: `${shot.name} won it with ${clutchWhat(shot)}.` };
+	return { text: `${shot.name} won it on ${clutchWhat(shot)}.` };
 };
 
 const scoreTag = (shape: Shape): string => {
@@ -1977,23 +1986,51 @@ const supportSentence = (
 		return undefined;
 	}
 	const second = cast[0]!;
+
+	// THE MAN WHO ACTUALLY LED THE SCORING. The story player is chosen on a
+	// whole line - rebounds, assists and steals all count - so the winner's
+	// leading scorer is frequently somebody else, and "chipped in 33" under a
+	// lead of 22 reads as though the piece cannot count. Whoever it is, in
+	// whichever slot, gets a verb that matches his line and the fact is stated.
+	// Measured over 359 engine-simmed recaps this was 24 of them.
+	const topScorer = [...shape.winner.players].sort((a, b) => b.pts - a.pts)[0];
+	const outscoredStar = (p: RecapPlayer) =>
+		p === topScorer && p.pts >= star.pts + 5 && p.pts >= 14;
+
+	const topScorerText = (p: RecapPlayer) =>
+		pickSentence(
+			rng,
+			[
+				`${p.name} led the scoring with ${statPhrase(p)}`,
+				`${p.name} top-scored with ${statPhrase(p)}`,
+				`No one scored more than ${p.name}, who had ${statPhrase(p)}`,
+				`${p.name} was the leading scorer with ${statPhrase(p)}`,
+			],
+			"supportTopScorer",
+		);
+
 	const ddw = doubleWord(doubleCategories(second).length);
-	const secondText = ddw
-		? pickSentence(
-				rng,
-				[
-					`${second.name} added a ${ddw} with ${statPhrase(second)}`,
-					`${second.name} had a ${ddw} of his own, ${statPhrase(second)}`,
-					`${second.name} went for ${statPhrase(second)}`,
-					`${second.name} ${claimVerb("chipped in")} a ${ddw}, ${statPhrase(second)}`,
-				],
-				"supportDouble",
-			)
-		: `${second.name} ${scoredVerb(rng)} ${statPhrase(second)}`;
+	const secondText = outscoredStar(second)
+		? topScorerText(second)
+		: ddw
+			? pickSentence(
+					rng,
+					[
+						`${second.name} added a ${ddw} with ${statPhrase(second)}`,
+						`${second.name} had a ${ddw} of his own, ${statPhrase(second)}`,
+						`${second.name} went for ${statPhrase(second)}`,
+						`${second.name} ${claimVerb("chipped in")} a ${ddw}, ${statPhrase(second)}`,
+					],
+					"supportDouble",
+				)
+			: `${second.name} ${scoredVerb(rng)} ${statPhrase(second)}`;
 
 	const third = cast[1];
 	if (third && (third.pts >= 14 || doubleCategories(third).length >= 2)) {
-		return `${secondText}, and ${third.name} ${scoredVerb(rng)} ${statPhrase(third, 1)}.`;
+		const thirdText = outscoredStar(third)
+			? topScorerText(third)
+			: `${third.name} ${scoredVerb(rng)} ${statPhrase(third, 1)}`;
+		return `${secondText}, and ${thirdText}.`;
 	}
 	return `${secondText}.`;
 };
