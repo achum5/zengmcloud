@@ -3504,6 +3504,24 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
+	// The impact section on the player page. Possessions are what says how
+	// much any of the rest of it is worth.
+	Poss: {
+		desc: "Possessions",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
+	Together: {
+		desc: "Net Points Per 100 Possessions With Both On The Floor",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
+	Apart: {
+		desc: "Net Points Per 100 Possessions With Him On The Floor And This Teammate Off It",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
+	Teammate: {},
 	Seed: {
 		desc: "Playoff Seed",
 		sortType: "number",

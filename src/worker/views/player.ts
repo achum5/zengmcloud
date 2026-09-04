@@ -37,6 +37,7 @@ import {
 } from "../util/contractValues.ts";
 import type { ContractValueBreakdown } from "../../common/contractValue.ts";
 import { getGroupPrefix } from "../core/awards/prefixes.ts";
+import { getPlayerImpact } from "../util/getPlayerImpact.ts";
 
 export const getPlayerProfileStats = () => {
 	const stats = [];
@@ -167,7 +168,20 @@ export const getPlayer = async (
 			"pos",
 			"injuryIndex",
 		],
-		stats: ["season", "tid", "abbrev", "age", "jerseyNumber", ...stats],
+		stats: [
+			"season",
+			"tid",
+			"abbrev",
+			"age",
+			"jerseyNumber",
+			...stats,
+			// The impact section shows where each rating stood in the league it
+			// was earned in, and how many possessions it rests on. Asked for by
+			// name because they belong to no stat table.
+			...(isSport("basketball")
+				? ["orapmPct", "drapmPct", "rapmPct", "rapmPoss"]
+				: []),
+		],
 		playoffs: true,
 		combined: true,
 		showRookies: true,
@@ -770,10 +784,34 @@ const updatePlayer = async (
 
 		const leaders = await player.getLeaders(topStuff.pRaw);
 
+		// Who he actually played beside this season, and what the game did while
+		// he did. Only for a player currently on a team, because the lineups it
+		// reads are this season's and live in the cache - any other season would
+		// mean reading the whole league's games to draw one table.
+		let impact;
+		if (isSport("basketball") && p.tid >= 0) {
+			const raw = await getPlayerImpact(p.pid, p.tid, g.get("season"));
+			if (raw) {
+				const partners = [];
+				for (const partner of raw.partners) {
+					const other = await idb.cache.players.get(partner.pid);
+					if (other) {
+						partners.push({
+							...partner,
+							firstName: other.firstName,
+							lastName: other.lastName,
+						});
+					}
+				}
+				impact = { ...raw, partners };
+			}
+		}
+
 		return {
 			...topStuff,
 			events,
 			feats,
+			impact,
 			leaders,
 			ratings: RATINGS,
 		};

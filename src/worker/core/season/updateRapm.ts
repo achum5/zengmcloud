@@ -25,7 +25,11 @@
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { decodeShifts } from "../../util/gameShifts.ts";
-import { computeRapm, type RapmStint } from "../../util/rapm.ts";
+import {
+	computeRapm,
+	type RapmRating,
+	type RapmStint,
+} from "../../util/rapm.ts";
 import type { Game, Player } from "../../../common/types.ts";
 
 // A player is a different regressor for each team he played for, which is both
@@ -129,6 +133,12 @@ export const updateRapm = async (season: number = g.get("season")) => {
 		return;
 	}
 
+	// Where each rating stands in the league it was earned in. Worked out here
+	// because here is the only place the whole distribution is in hand: a page
+	// showing a career would otherwise have to reread every season of it to say
+	// what a number was worth at the time.
+	const ranks = percentiles([...fit.ratings.values()]);
+
 	for (const p of players) {
 		let changed = false;
 
@@ -145,6 +155,10 @@ export const updateRapm = async (season: number = g.get("season")) => {
 			ps.orapm = rating.off;
 			ps.drapm = rating.def;
 			ps.rapm = rating.off + rating.def;
+			ps.rapmPoss = rating.poss;
+			ps.orapmPct = ranks.off(rating.off);
+			ps.drapmPct = ranks.def(rating.def);
+			ps.rapmPct = ranks.total(rating.off + rating.def);
 			changed = true;
 		}
 
@@ -152,4 +166,36 @@ export const updateRapm = async (season: number = g.get("season")) => {
 			await idb.cache.players.put(p);
 		}
 	}
+};
+
+// How many of the league a rating beats, per side. Sorted once and answered by
+// binary search, because every rated player asks three times.
+export const percentiles = (ratings: readonly RapmRating[]) => {
+	const rank = (values: number[]) => {
+		values.sort((a, b) => a - b);
+		return (value: number) => {
+			if (values.length === 0) {
+				return 0;
+			}
+			let low = 0;
+			let high = values.length;
+			while (low < high) {
+				const mid = (low + high) >> 1;
+				if (values[mid]! < value) {
+					low = mid + 1;
+				} else {
+					high = mid;
+				}
+			}
+			// Nobody beats everybody: the best man in the league beats every
+			// OTHER man, which is 99 out of a hundred.
+			return Math.min(99, Math.round((100 * low) / values.length));
+		};
+	};
+
+	return {
+		off: rank(ratings.map((r) => r.off)),
+		def: rank(ratings.map((r) => r.def)),
+		total: rank(ratings.map((r) => r.off + r.def)),
+	};
 };

@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { stintsFromGames, updateRapm } from "./updateRapm.ts";
+import { percentiles, stintsFromGames, updateRapm } from "./updateRapm.ts";
 import { encodeShifts } from "../../util/gameShifts.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
@@ -193,5 +193,33 @@ describe("updateRapm", () => {
 
 		await updateRapm();
 		assert.isUndefined((await idb.cache.players.get(0))!.stats[0]!.rapm);
+	});
+});
+
+describe("percentiles", () => {
+	const ratings = [0, 1, 2, 3, 4].map((n) => ({
+		off: n,
+		def: -n,
+		poss: 1000,
+	}));
+
+	test("where a rating stands in the league it was earned in", () => {
+		const ranks = percentiles(ratings);
+		assert.strictEqual(ranks.off(0), 0);
+		assert.strictEqual(ranks.off(2), 40);
+		// Nobody beats everybody.
+		assert.strictEqual(ranks.off(4), 80);
+		assert.strictEqual(ranks.off(99), 99);
+	});
+
+	// Defense is stored so that bigger is better, so it ranks the same way.
+	test("defense ranks the same direction as offense", () => {
+		const ranks = percentiles(ratings);
+		assert.strictEqual(ranks.def(0), 80);
+		assert.strictEqual(ranks.def(-4), 0);
+	});
+
+	test("an empty league ranks nobody", () => {
+		assert.strictEqual(percentiles([]).total(5), 0);
 	});
 });

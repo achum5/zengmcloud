@@ -24,6 +24,7 @@ import { splitPlayerNote } from "../../../common/seasonNote.ts";
 import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
+import Impact from "./Impact.tsx";
 
 const Player2 = ({
 	appearanceTeams,
@@ -32,6 +33,7 @@ const Player2 = ({
 	customMenu,
 	events,
 	feats,
+	impact,
 	jerseyNumberInfos,
 	leaders,
 	noteTeammates,
@@ -189,6 +191,8 @@ const Player2 = ({
 					noteLinksBySeason={i === 0 ? noteLinksBySeason : undefined}
 				/>
 			))}
+
+			<Impact impact={impact} pid={player.pid} stats={player.stats} />
 
 			<HideableSection
 				title="Ratings"
