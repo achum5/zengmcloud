@@ -158,6 +158,32 @@ describe("updateRapm", () => {
 		assert.isAbove(winner.rapm, loser.rapm);
 	});
 
+	// The season's evidence is identical either way, so any difference is the
+	// previous season's rating being carried in.
+	test("last season's rating is carried into this one", async () => {
+		await buildLeague();
+		const season = g.get("season");
+
+		// Give one man a strong record behind him and nobody else.
+		const p = (await idb.cache.players.get(0))!;
+		p.stats.unshift({
+			season: season - 1,
+			tid: 0,
+			playoffs: false,
+			gp: 82,
+			min: 2400,
+			orapm: 6,
+			drapm: 3,
+		} as any);
+		await idb.cache.players.put(p);
+
+		await updateRapm();
+
+		const withPrior = (await idb.cache.players.get(0))!.stats.at(-1) as any;
+		const teammate = (await idb.cache.players.get(1))!.stats.at(-1) as any;
+		assert.isAbove(withPrior.rapm, teammate.rapm + 2);
+	});
+
 	test("a season with no lineup data changes nothing", async () => {
 		resetG();
 		const p: any = player.generate(0, 25, g.get("season"), true, 20);

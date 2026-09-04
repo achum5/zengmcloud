@@ -64,6 +64,22 @@ export type RapmOptions = {
 	// Every nth stint is held out to score the penalties on.
 	holdoutEvery?: number;
 
+	// What to shrink toward, instead of toward average. A player's rating from
+	// last season is the single most informative thing there is about this
+	// one, and using it is what separates a modern impact estimate from a
+	// plain one-season regression: the penalty stops asking "how sure are we
+	// he is not average" and starts asking "how sure are we he has changed".
+	//
+	// It is a prior, not a floor. A season that disagrees with it strongly
+	// enough moves the rating as far as the evidence warrants, and a player
+	// with no prior is shrunk toward average exactly as before.
+	prior?: ReadonlyMap<string, { off: number; def: number }>;
+
+	// How much of the prior to carry. Players change year to year, so last
+	// season's rating is evidence about this one rather than a prediction of
+	// it, and it is damped accordingly.
+	priorWeight?: number;
+
 	maxIterations?: number;
 	tolerance?: number;
 };
@@ -206,10 +222,14 @@ const solve = (
 		maxIterations,
 		tolerance,
 		initial,
+		prior,
 	}: {
 		maxIterations: number;
 		tolerance: number;
 		initial?: Float64Array;
+		// Per unknown, what the penalty pulls toward. Absent means zero, which
+		// is the ordinary ridge.
+		prior?: Float64Array;
 	},
 ) => {
 	const n = numUnknowns(design);
@@ -234,6 +254,11 @@ const solve = (
 	}
 	for (let c = 0; c < interceptColumn; c++) {
 		diagonal[c]! += lambda;
+		// Shrinking toward a prior instead of toward zero is the same system
+		// with the prior added to the right-hand side.
+		if (prior) {
+			b[c]! += lambda * prior[c]!;
+		}
 	}
 
 	const applyA = (v: Float64Array, out: Float64Array) => {
@@ -365,11 +390,29 @@ export const computeRapm = (
 		holdoutEvery = 5,
 		maxIterations = 400,
 		tolerance = 1e-8,
+		prior,
+		priorWeight = 1,
 	}: RapmOptions = {},
 ): RapmFit | undefined => {
 	const design = buildDesign(stints, minPoss);
 	if (!design || design.numRows === 0 || lambdas.length === 0) {
 		return undefined;
+	}
+
+	// The prior, laid out the way the solver wants it. Defense is stored so
+	// that bigger is better, and the regression works in the opposite
+	// direction, so it goes back the way it came.
+	let priorVector: Float64Array | undefined;
+	if (prior && priorWeight !== 0) {
+		priorVector = new Float64Array(numUnknowns(design));
+		for (const [key, rating] of prior) {
+			const column = design.columnByKey.get(key);
+			if (column === undefined || column === REPLACEMENT) {
+				continue;
+			}
+			priorVector[2 * column] = priorWeight * rating.off;
+			priorVector[2 * column + 1] = -priorWeight * rating.def;
+		}
 	}
 
 	const all = new Int32Array(design.numRows);
@@ -400,6 +443,7 @@ export const computeRapm = (
 				maxIterations,
 				tolerance,
 				initial: warm,
+				prior: priorVector,
 			});
 			warm = x;
 			const error = holdoutError(design, x, holdoutRows);
@@ -410,7 +454,11 @@ export const computeRapm = (
 		}
 	}
 
-	const x = solve(design, lambda, all, { maxIterations, tolerance });
+	const x = solve(design, lambda, all, {
+		maxIterations,
+		tolerance,
+		prior: priorVector,
+	});
 
 	const ratings = new Map<string, RapmRating>();
 	for (const [key, column] of design.columnByKey) {

@@ -8,10 +8,11 @@ import GameSim from "../core/GameSim.ts";
 import { processTeam } from "../core/game/loadTeams.ts";
 import createRandomPlayers from "../core/league/create/createRandomPlayers.ts";
 import { DEFAULT_LEVEL } from "../../common/budgetLevels.ts";
-import { computeRapm, type RapmStint } from "./rapm.ts";
+import { computeRapm, type RapmFit, type RapmStint } from "./rapm.ts";
 import { decodeShifts, encodeShifts } from "./gameShifts.ts";
 import advStats from "./advStats.basketball.ts";
 import addStatsRow from "../core/player/addStatsRow.ts";
+import addRatingsRow from "../core/player/addRatingsRow.ts";
 
 // IS RAPM WORTH HAVING IN THIS GAME?
 //
@@ -21,22 +22,33 @@ import addStatsRow from "../core/player/addStatsRow.ts";
 // good players spend most of the year next to other good players - carries
 // enough independent information to separate them.
 //
-// So this plays a real season with the real engine and asks how well the
-// ratings line up with the ability the players were generated with. Raw
-// plus-minus per 100 is measured beside it as the floor to beat: it uses the
-// same evidence and makes no attempt to untangle who was on the floor.
+// So this plays real seasons with the real engine and asks how well the
+// ratings line up with the ability the players were generated with. Three
+// things are measured beside it:
 //
-//   SPORT=basketball RAPM_QUALITY=1 npx vitest --run \
+//   - Raw plus-minus per 100, the floor. Same evidence, no attempt to
+//     untangle who else was out there.
+//   - PER and BPM, computed by the game's own code on the same season. The
+//     box-score family this is supposed to add something to.
+//   - The same regression run over a multi-season window, which is how real
+//     RAPM is almost always quoted, and the obvious thing to try when one
+//     season turns out to be too few possessions.
+//
+//   SPORT=basketball RAPM_QUALITY=1 RAPM_SEASONS=3 npx vitest --run \
 //     src/worker/util/rapmQuality.test.ts
 //
-// Skipped unless RAPM_QUALITY is set, because a full season of game sim is far
-// too slow for a normal test run.
+// Skipped unless RAPM_QUALITY is set, because a season of game sim is far too
+// slow for a normal test run.
 const nodeEnv: Record<string, string | undefined> =
 	(globalThis as any).process?.env ?? {};
 
 const NUM_TEAMS = 30;
 const GAMES_PER_TEAM = Number(nodeEnv.RAPM_GAMES ?? 82);
 const SEED = Number(nodeEnv.RAPM_SEED ?? 1);
+// Seasons to play. More than one lets a multi-year window be measured against
+// the single season, which is the whole question about it.
+const NUM_SEASONS = Number(nodeEnv.RAPM_SEASONS ?? 1);
+const PRIOR_WEIGHT = Number(nodeEnv.RAPM_PRIOR_WEIGHT ?? 1);
 
 const rngFromSeed = (seed: number): (() => number) => {
 	let a = seed >>> 0;
@@ -84,6 +96,11 @@ const correlation = (a: number[], b: number[]) => {
 	return cov / Math.sqrt(varA * varB);
 };
 
+const key = (pid: number, tid: number) => `${pid}|${tid}`;
+
+const activePlayers = () =>
+	idb.cache.players.indexGetAll("playersByTid", [0, Infinity]);
+
 test("RAPM quality", { timeout: 3_600_000 }, async () => {
 	if (nodeEnv.RAPM_QUALITY !== "1") {
 		return;
@@ -98,66 +115,22 @@ test("RAPM quality", { timeout: 3_600_000 }, async () => {
 	}
 });
 
-const run = async () => {
-	resetG();
-	g.setWithoutSavingToDB("numActiveTeams", NUM_TEAMS);
-	g.setWithoutSavingToDB("numTeams", NUM_TEAMS);
-	g.setWithoutSavingToDB("userTids", []);
-	g.setWithoutSavingToDB("userTid", 0);
-	g.setWithoutSavingToDB("realisticFaces", false);
-	g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+type SeasonResult = {
+	stints: RapmStint[];
+	// On-court plus-minus and possessions, for the floor comparison.
+	raw: Map<string, { pm: number; poss: number }>;
+	shiftBytes: number;
+	boxBytes: number;
+	games: number;
+	poss: number;
+	pts: number;
+};
 
-	const teams: any[] = [];
-	for (let tid = 0; tid < NUM_TEAMS; tid++) {
-		teams.push(
-			team.generate({
-				tid,
-				cid: tid % 2,
-				did: tid % 2,
-				region: `Region${tid}`,
-				name: `Name${tid}`,
-				abbrev: `T${tid}`,
-				pop: 18 ** (tid / Math.max(1, NUM_TEAMS - 1)),
-				imgURL: "",
-			} as any),
-		);
-	}
-
-	const players = await createRandomPlayers({
-		activeTids: teams.map((t) => t.tid),
-		onlyFreeAgents: false,
-		scoutingLevel: DEFAULT_LEVEL,
-		teams,
-	});
-	await resetCache({ players, teams, draftPicks: [] });
-	stubLeagueDb();
-	for (let tid = 0; tid < NUM_TEAMS; tid++) {
-		const t = (await idb.cache.teams.get(tid))!;
-		await idb.cache.teamSeasons.add(team.genSeasonRow(t) as any);
-	}
-
-	// valueNoPot drives the rotation; freshly generated players have none.
-	for (const p of await idb.cache.players.indexGetAll("playersByTid", [
-		0,
-		Infinity,
-	])) {
-		await player.updateValues(p);
-		addStatsRow(p, g.get("season"), false);
-		await idb.cache.players.put(p);
-	}
-
-	// The ability the season is graded against. Taken before a game is played,
-	// so nothing that happens can leak into it.
-	const truth = new Map<number, number>();
-	for (const p of await idb.cache.players.indexGetAll("playersByTid", [
-		0,
-		Infinity,
-	])) {
-		truth.set(p.pid, p.ratings.at(-1)!.ovr);
-	}
-
+const playSeason = async (
+	rng: () => number,
+	collectBox: boolean,
+): Promise<SeasonResult> => {
 	const season = g.get("season");
-	const rng = rngFromSeed(SEED);
 
 	const loadSide = async (tid: number) => {
 		const [t, teamSeason, ps] = await Promise.all([
@@ -168,25 +141,25 @@ const run = async () => {
 		return processTeam(t!, teamSeason!, ps);
 	};
 
-	const stints: RapmStint[] = [];
-	// Raw on-court plus-minus and possessions, for the floor comparison.
-	const raw = new Map<string, { pm: number; poss: number }>();
-	const key = (pid: number, tid: number) => `${pid}|${tid}`;
+	const out: SeasonResult = {
+		stints: [],
+		raw: new Map(),
+		shiftBytes: 0,
+		boxBytes: 0,
+		games: 0,
+		poss: 0,
+		pts: 0,
+	};
 
-	let shiftBytes = 0;
-	let boxBytes = 0;
-	let gid = 1;
 	const nextPlayDay = new Map<number, number>();
-	let day = 0;
 	const target = (NUM_TEAMS * GAMES_PER_TEAM) / 2;
+	let gid = 1;
+	let day = 0;
 
 	while (gid <= target) {
 		day += 1;
 
-		for (const p of await idb.cache.players.indexGetAll("playersByTid", [
-			0,
-			Infinity,
-		])) {
+		for (const p of await activePlayers()) {
 			if (p.injury.gamesRemaining > 0) {
 				p.injury.gamesRemaining -= 1;
 				if (p.injury.gamesRemaining <= 0) {
@@ -227,8 +200,8 @@ const run = async () => {
 			// Through the same packing the game uses, so the encoding is under
 			// test alongside the regression.
 			const encoded = encodeShifts(result.shifts, result.numPlayersOnCourt);
-			shiftBytes += JSON.stringify(encoded).length;
-			boxBytes += JSON.stringify(
+			out.shiftBytes += JSON.stringify(encoded).length;
+			out.boxBytes += JSON.stringify(
 				result.team.map((t: any) => ({
 					tid: t.id,
 					players: t.player.map((sp: any) => ({
@@ -238,6 +211,7 @@ const run = async () => {
 					})),
 				})),
 			).length;
+
 			for (const shift of decodeShifts({
 				shifts: encoded,
 				numPlayersOnCourt: result.numPlayersOnCourt,
@@ -249,12 +223,14 @@ const run = async () => {
 
 				for (const o of [0, 1] as const) {
 					if (shift.poss[o] > 0) {
-						stints.push({
+						out.stints.push({
 							off: lineups[o],
 							def: lineups[o === 0 ? 1 : 0],
 							poss: shift.poss[o],
 							pts: shift.pts[o],
 						});
+						out.poss += shift.poss[o];
+						out.pts += shift.pts[o];
 					}
 				}
 
@@ -262,55 +238,56 @@ const run = async () => {
 				const poss = shift.poss[0] + shift.poss[1];
 				for (const t of [0, 1] as const) {
 					for (const k of lineups[t]) {
-						const row = raw.get(k) ?? { pm: 0, poss: 0 };
+						const row = out.raw.get(k) ?? { pm: 0, poss: 0 };
 						row.pm += t === 0 ? margin : -margin;
 						row.poss += poss;
-						raw.set(k, row);
+						out.raw.set(k, row);
 					}
 				}
 			}
 
 			// The box score, accumulated exactly as the game accumulates it, so
 			// PER and BPM can be computed on this season and compared.
-			for (const t1 of [0, 1] as const) {
-				const t2 = t1 === 0 ? 1 : 0;
-				let ts = (await idb.cache.teamStats.indexGet("teamStatsByPlayoffsTid", [
-					false,
-					result.team[t1].id,
-				])) as any;
-				if (!ts) {
-					ts = team.genStatsRow(result.team[t1].id, false) as any;
-					await idb.cache.teamStats.add(ts);
-				}
-				ts.gp = (ts.gp ?? 0) + 1;
-				for (const [k, v] of Object.entries(result.team[t1].stat)) {
-					if (k === "ptsQtrs" || typeof v !== "number") {
-						continue;
+			if (collectBox) {
+				for (const t1 of [0, 1] as const) {
+					const t2 = t1 === 0 ? 1 : 0;
+					let ts = (await idb.cache.teamStats.indexGet(
+						"teamStatsByPlayoffsTid",
+						[false, result.team[t1].id],
+					)) as any;
+					if (!ts) {
+						ts = team.genStatsRow(result.team[t1].id, false) as any;
+						await idb.cache.teamStats.add(ts);
 					}
-					ts[k] = (ts[k] ?? 0) + v;
-					if (k !== "min") {
-						const oppKey = `opp${k[0]!.toUpperCase()}${k.slice(1)}`;
-						const oppValue = result.team[t2].stat[k];
-						if (typeof oppValue === "number") {
-							ts[oppKey] = (ts[oppKey] ?? 0) + oppValue;
-						}
-					}
-				}
-				await idb.cache.teamStats.put(ts);
-
-				for (const sp of result.team[t1].player) {
-					const p = await idb.cache.players.get(sp.id);
-					if (!p) {
-						continue;
-					}
-					const ps = p.stats.at(-1)! as any;
-					for (const [k, v] of Object.entries(sp.stat)) {
-						if (typeof v !== "number") {
+					ts.gp = (ts.gp ?? 0) + 1;
+					for (const [k, v] of Object.entries(result.team[t1].stat)) {
+						if (k === "ptsQtrs" || typeof v !== "number") {
 							continue;
 						}
-						ps[k] = (ps[k] ?? 0) + v;
+						ts[k] = (ts[k] ?? 0) + v;
+						if (k !== "min") {
+							const oppKey = `opp${k[0]!.toUpperCase()}${k.slice(1)}`;
+							const oppValue = result.team[t2].stat[k];
+							if (typeof oppValue === "number") {
+								ts[oppKey] = (ts[oppKey] ?? 0) + oppValue;
+							}
+						}
 					}
-					await idb.cache.players.put(p);
+					await idb.cache.teamStats.put(ts);
+
+					for (const sp of result.team[t1].player) {
+						const p = await idb.cache.players.get(sp.id);
+						if (!p) {
+							continue;
+						}
+						const ps = p.stats.at(-1)! as any;
+						for (const [k, v] of Object.entries(sp.stat)) {
+							if (typeof v === "number") {
+								ps[k] = (ps[k] ?? 0) + v;
+							}
+						}
+						await idb.cache.players.put(p);
+					}
 				}
 			}
 
@@ -335,45 +312,140 @@ const run = async () => {
 		}
 	}
 
-	// Sanity: the shifts have to add up to the games they came from, or every
-	// number after this is measuring the wrong thing.
-	{
-		const totalPoss = stints.reduce((sum, s) => sum + s.poss, 0);
-		const totalPts = stints.reduce((sum, s) => sum + s.pts, 0);
-		const games = gid - 1;
-		console.log(
-			`shift bytes/game=${(shiftBytes / games).toFixed(0)} box bytes/game=${(
-				boxBytes / games
-			).toFixed(0)}`,
-		);
-		console.log(
-			`poss/game=${(totalPoss / games).toFixed(1)} pts/game=${(
-				totalPts / games
-			).toFixed(1)} pts/100=${((100 * totalPts) / totalPoss).toFixed(1)}`,
+	out.games = gid - 1;
+	return out;
+};
+
+const run = async () => {
+	resetG();
+	g.setWithoutSavingToDB("numActiveTeams", NUM_TEAMS);
+	g.setWithoutSavingToDB("numTeams", NUM_TEAMS);
+	g.setWithoutSavingToDB("userTids", []);
+	g.setWithoutSavingToDB("userTid", 0);
+	g.setWithoutSavingToDB("realisticFaces", false);
+	g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+
+	const teams: any[] = [];
+	for (let tid = 0; tid < NUM_TEAMS; tid++) {
+		teams.push(
+			team.generate({
+				tid,
+				cid: tid % 2,
+				did: tid % 2,
+				region: `Region${tid}`,
+				name: `Name${tid}`,
+				abbrev: `T${tid}`,
+				pop: 18 ** (tid / Math.max(1, NUM_TEAMS - 1)),
+				imgURL: "",
+			} as any),
 		);
 	}
 
-	const started = Date.now();
-	const fit = computeRapm(stints)!;
-	const elapsed = Date.now() - started;
-
-	assert.isDefined(fit);
-
-	const rated = [...fit.ratings.entries()];
-	const ovr = rated.map(([k]) => truth.get(Number(k.split("|")[0]))!);
-	const rapm = rated.map(([, r]) => r.off + r.def);
-	const pm100 = rated.map(([k]) => {
-		const row = raw.get(k)!;
-		return (100 * row.pm) / row.poss;
+	const players = await createRandomPlayers({
+		activeTids: teams.map((t) => t.tid),
+		onlyFreeAgents: false,
+		scoutingLevel: DEFAULT_LEVEL,
+		teams,
 	});
+	await resetCache({ players, teams, draftPicks: [] });
+	stubLeagueDb();
+
+	const addTeamSeasons = async () => {
+		for (let tid = 0; tid < NUM_TEAMS; tid++) {
+			const t = (await idb.cache.teams.get(tid))!;
+			await idb.cache.teamSeasons.add(team.genSeasonRow(t) as any);
+		}
+	};
+	await addTeamSeasons();
+
+	// valueNoPot drives the rotation; freshly generated players have none.
+	for (const p of await activePlayers()) {
+		await player.updateValues(p);
+		await idb.cache.players.put(p);
+	}
+
+	const rng = rngFromSeed(SEED);
+	const seasons: SeasonResult[] = [];
+	const perSeason: RapmFit[] = [];
+	let chained: RapmFit | undefined;
+	// The ability each season is graded against, per season, taken before a
+	// game of it is played so nothing that happens can leak in.
+	const truthBySeason: Map<number, number>[] = [];
+
+	for (let i = 0; i < NUM_SEASONS; i++) {
+		const last = i === NUM_SEASONS - 1;
+
+		if (i > 0) {
+			// A year passes: everybody ages, develops, and is re-valued, so the
+			// multi-year window is averaging over players who actually changed.
+			g.setWithoutSavingToDB("season", g.get("season") + 1);
+			for (const p of await activePlayers()) {
+				addRatingsRow(p, DEFAULT_LEVEL);
+				await player.develop(p, 1);
+				await player.updateValues(p);
+				p.injury = { type: "Healthy", gamesRemaining: 0 };
+				await idb.cache.players.put(p);
+			}
+			await addTeamSeasons();
+		}
+
+		const truth = new Map<number, number>();
+		for (const p of await activePlayers()) {
+			truth.set(p.pid, p.ratings.at(-1)!.ovr);
+			if (last) {
+				// One clean stats row for the season the box-score stats are
+				// computed on.
+				p.stats = [];
+				addStatsRow(p, g.get("season"), false);
+				await idb.cache.players.put(p);
+			}
+		}
+		truthBySeason.push(truth);
+
+		seasons.push(await playSeason(rng, last));
+
+		// Each season's fit, and the same season fitted again shrunk toward the
+		// season before it. The chained one is what the game could compute with
+		// no extra reads at all, so it is the one to beat.
+		const plain = computeRapm(seasons.at(-1)!.stints)!;
+		chained = computeRapm(seasons.at(-1)!.stints, {
+			prior: chained?.ratings,
+			priorWeight: PRIOR_WEIGHT,
+		})!;
+		perSeason.push(plain);
+	}
+
+	const finalSeason = seasons.at(-1)!;
+	const truth = truthBySeason.at(-1)!;
+
+	// Sanity: the shifts have to add up to the games they came from, or every
+	// number after this is measuring the wrong thing.
+	console.log(
+		[
+			`seasons=${NUM_SEASONS} games/season=${finalSeason.games}`,
+			`poss/game=${(finalSeason.poss / finalSeason.games).toFixed(1)}`,
+			`pts/100=${((100 * finalSeason.pts) / finalSeason.poss).toFixed(1)}`,
+			`shift bytes/game=${(finalSeason.shiftBytes / finalSeason.games).toFixed(
+				0,
+			)}`,
+			`box bytes/game=${(finalSeason.boxBytes / finalSeason.games).toFixed(0)}`,
+		].join(" "),
+	);
+
+	const oneYear = perSeason.at(-1)!;
+	assert.isDefined(oneYear);
+
+	const started = Date.now();
+	const window =
+		NUM_SEASONS > 1
+			? computeRapm(seasons.flatMap((season) => season.stints))
+			: undefined;
+	const windowMs = Date.now() - started;
 
 	// The box-score family, computed by the game's own code on the same season.
 	await advStats();
 	const box = new Map<string, { bpm: number; per: number }>();
-	for (const p of await idb.cache.players.indexGetAll("playersByTid", [
-		0,
-		Infinity,
-	])) {
+	for (const p of await activePlayers()) {
 		const ps = p.stats.at(-1) as any;
 		if (ps) {
 			box.set(key(p.pid, ps.tid), {
@@ -383,35 +455,56 @@ const run = async () => {
 		}
 	}
 
-	const rapmR = correlation(ovr, rapm);
-	const pmR = correlation(ovr, pm100);
-	const bpmR = correlation(
-		ovr,
-		rated.map(([k]) => box.get(k)?.bpm ?? 0),
+	// Everybody the one-season fit rated, so every column is scored on the same
+	// set of players.
+	const rated = [...oneYear.ratings.keys()].filter(
+		(k) =>
+			(window?.ratings.has(k) ?? true) && (chained?.ratings.has(k) ?? true),
 	);
-	const perR = correlation(
-		ovr,
-		rated.map(([k]) => box.get(k)?.per ?? 0),
-	);
+	const ovr = rated.map((k) => truth.get(Number(k.split("|")[0]))!);
+	const against = (values: number[]) => correlation(ovr, values).toFixed(3);
 
-	console.log(
-		[
-			`games=${gid - 1} stints=${stints.length} rated=${rated.length}`,
-			`lambda=${fit.lambda} solveMs=${elapsed}`,
-			`r(ovr, RAPM)=${rapmR.toFixed(3)}`,
-			`r(ovr, raw +/- per 100)=${pmR.toFixed(3)}`,
-			`r(ovr, BPM)=${bpmR.toFixed(3)}`,
-			`r(ovr, PER)=${perR.toFixed(3)}`,
-			`spread: sd(RAPM)=${Math.sqrt(
-				rapm.reduce((s, x) => s + x * x, 0) / rapm.length,
-			).toFixed(2)}`,
-		].join("\n"),
-	);
+	const lines = [
+		`rated=${rated.length} lambda=${oneYear.lambda}`,
+		`r(ovr, RAPM 1yr)=${against(
+			rated.map((k) => {
+				const r = oneYear.ratings.get(k)!;
+				return r.off + r.def;
+			}),
+		)}`,
+		`r(ovr, raw +/- per 100)=${against(
+			rated.map((k) => {
+				const row = finalSeason.raw.get(k)!;
+				return (100 * row.pm) / row.poss;
+			}),
+		)}`,
+		`r(ovr, BPM)=${against(rated.map((k) => box.get(k)?.bpm ?? 0))}`,
+		`r(ovr, PER)=${against(rated.map((k) => box.get(k)?.per ?? 0))}`,
+	];
 
-	// Over a short run the possessions are not there for anything to separate,
-	// so the comparison only means something at full length.
-	if (GAMES_PER_TEAM >= 82) {
-		assert.isAbove(rapmR, pmR);
+	if (NUM_SEASONS > 1 && chained) {
+		lines.push(
+			`r(ovr, RAPM 1yr shrunk toward last season, weight ${PRIOR_WEIGHT})=${against(
+				rated.map((k) => {
+					const r = chained!.ratings.get(k)!;
+					return r.off + r.def;
+				}),
+			)}`,
+		);
 	}
-	assert.isAbove(rated.length, 300);
+
+	if (window) {
+		lines.push(
+			`r(ovr, RAPM ${NUM_SEASONS}yr)=${against(
+				rated.map((k) => {
+					const r = window.ratings.get(k)!;
+					return r.off + r.def;
+				}),
+			)} lambda=${window.lambda} solveMs=${windowMs}`,
+		);
+	}
+
+	console.log(lines.join("\n"));
+
+	assert.isAbove(rated.length, 250);
 };

@@ -232,6 +232,61 @@ describe("computeRapm", () => {
 		assert.isBelow(Math.abs(weighted / weight), 0.5);
 	});
 
+	// A player the season can barely see keeps most of what he came in with,
+	// which is the whole reason to carry a prior at all.
+	test("a prior holds where the season has little to say", () => {
+		const { stints } = fakeSeason({ gamesPerTeam: 6 });
+		const prior = new Map([["0-0", { off: 6, def: 4 }]]);
+
+		const without = computeRapm(stints, { minPoss: 100 })!;
+		const with_ = computeRapm(stints, { minPoss: 100, prior })!;
+
+		const before = without.ratings.get("0-0")!;
+		const after = with_.ratings.get("0-0")!;
+		assert.isAbove(after.off, before.off + 2);
+		assert.isAbove(after.def, before.def + 1);
+
+		// And it is his prior, not everybody's.
+		const other = with_.ratings.get("0-1")!;
+		assert.isBelow(Math.abs(other.off - without.ratings.get("0-1")!.off), 0.5);
+	});
+
+	// A prior is evidence, not a verdict. Enough of a season pointing the other
+	// way overrules it.
+	test("a full season overrules a prior that disagrees", () => {
+		const { players, stints } = fakeSeason();
+
+		// The best man in the league, told he was the worst.
+		const best = [...players].sort(
+			(a, b) => b.off + b.def - (a.off + a.def),
+		)[0]!;
+		const prior = new Map([[best.key, { off: -8, def: -8 }]]);
+
+		const fit = computeRapm(stints, { prior })!;
+		const plain = computeRapm(stints)!;
+
+		const withPrior = fit.ratings.get(best.key)!;
+		const total = withPrior.off + withPrior.def;
+		const plainTotal =
+			plain.ratings.get(best.key)!.off + plain.ratings.get(best.key)!.def;
+
+		// Still dragged down by what it was told, but most of the way back to
+		// what the season actually showed.
+		assert.isBelow(total, plainTotal);
+		assert.isBelow(Math.abs(total - plainTotal), Math.abs(total - -16));
+	});
+
+	test("no prior weight is no prior", () => {
+		const { stints } = fakeSeason({ gamesPerTeam: 6 });
+		const prior = new Map([["0-0", { off: 6, def: 4 }]]);
+		assert.deepStrictEqual(
+			computeRapm(stints, { minPoss: 100, prior, priorWeight: 0 })!.ratings.get(
+				"0-0",
+			),
+			computeRapm(stints, { minPoss: 100 })!.ratings.get("0-0"),
+		);
+	});
+
 	test("the same input always gives the same ratings", () => {
 		const { stints } = fakeSeason({ gamesPerTeam: 10 });
 		const a = computeRapm(stints)!;
