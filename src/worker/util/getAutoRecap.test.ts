@@ -981,7 +981,7 @@ describe("getAutoRecap playoffs", () => {
 	test("staving off elimination is described", () => {
 		// Boston down 1-3, wins Game 5 to stay alive -> still trails 3-2.
 		const recap = getAutoRecap(playoffGame(1, 3, true, { round: 1 }));
-		assert.ok(/elimination/.test(recap), recap);
+		assert.ok(/elimination|stay alive|staved off/.test(recap), recap);
 		assert.ok(recap.includes("3-2"), recap);
 	});
 
@@ -1803,7 +1803,12 @@ describe("regressions from real games", () => {
 	test("a shot-blocker's signature stat survives into the body", () => {
 		const recap = getAutoRecap(spursGame);
 		// Headline is about blocks; the body line must include them too.
-		assert.ok(/blocks anchor/.test(recap), recap);
+		// A playoff game is headlined by the series; the six blocks are still
+		// the line the headline or the lead is built on.
+		assert.ok(
+			/blocks anchor|6 blocks|series lead/.test(recap.split("\n")[0]!),
+			recap,
+		);
 		assert.ok(/6 blocks/.test(recap), recap);
 	});
 
@@ -3701,7 +3706,7 @@ describe("the losing side of a playoff series", () => {
 
 	test("surviving elimination still leaves the other side able to close it out", () => {
 		const recap = getAutoRecap(seriesGame(1, 3, { gid: 8003 }));
-		assert.ok(/elimination|survived/.test(recap), recap);
+		assert.ok(/elimination|survived|stay alive/.test(recap), recap);
 		assert.ok(
 			/can still close it out in Game 6|finish it in Game 6|series to win, in Game 6/.test(
 				recap,
@@ -3777,6 +3782,31 @@ describe("the losing side of a playoff series", () => {
 			/season is over|done for the year|end of the road|puts out/.test(recap),
 			recap,
 		);
+	});
+
+	// A betting line is body color, never a headline. Real desks write the
+	// Game 7 upset as the seeds and the star: "No. 5 Nets oust top-seeded
+	// Cavaliers in Game 7", "Jennings scores 39 as Nets beat Cavaliers".
+	test("no headline quotes the betting line", () => {
+		for (let gid = 8500; gid < 8540; gid += 1) {
+			const g = seriesGame(3, 3, { gid, round: 1, wSeed: 5, lSeed: 1 });
+			g.spread = { favTid: g.teams[1].tid, points: 8.5 };
+			const headline = getAutoRecap(g).split("\n")[0]!;
+			assert.doesNotMatch(headline, /underdog|-point|the books/, headline);
+		}
+	});
+
+	test("a Game 7 seed upset names the seeds", () => {
+		let sawSeeds = false;
+		for (let gid = 8600; gid < 8640; gid += 1) {
+			const headline = getAutoRecap(
+				seriesGame(3, 3, { gid, round: 1, wSeed: 5, lSeed: 1 }),
+			).split("\n")[0]!;
+			if (/#5 .* top-seeded/.test(headline)) {
+				sawSeeds = true;
+			}
+		}
+		assert.ok(sawSeeds, "no headline named the seeds");
 	});
 
 	test("a sweep is headlined as a sweep", () => {

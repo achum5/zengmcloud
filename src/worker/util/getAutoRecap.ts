@@ -118,7 +118,19 @@ export const dedupeSubjects = (
 		return /^The (\w+) [a-z]/.exec(sentence)?.[1];
 	};
 
+	// A player named on the losing side without his team ("... 19 points in
+	// defeat") is a competing subject too: reaching past him to the winner's
+	// last sentence turned "The Rockets get the 76ers in two days" into "They
+	// get the 76ers", with the reader's eye on the Bucks.
+	const loserTail =
+		/\b(?:in defeat|in the loss|in a losing cause|for the losing side)\b/;
+
 	for (let i = 1; i < out.length; i++) {
+		// A compound subject is never collapsed: "The Timberwolves and the
+		// Celtics have split four meetings" became "They and the Celtics".
+		if (ambiguous(out[i]!)) {
+			continue;
+		}
 		const cur = subjectOf(out[i]!);
 		if (!cur) {
 			continue;
@@ -141,6 +153,7 @@ export const dedupeSubjects = (
 				if (
 					ambiguous(between) ||
 					subjectOf(between) ||
+					loserTail.test(between) ||
 					(!!otherNick && between.includes(otherNick))
 				) {
 					break;
@@ -368,6 +381,20 @@ const snappedSkid = (shape: Shape): number | undefined => {
 	return before && !before.won && before.count >= 5 ? before.count : undefined;
 };
 
+// The loser was at home, unbeaten there until tonight, with enough home games
+// behind it for that to mean something. The home record runs THROUGH this
+// game, so the one loss on it is this one.
+const firstHomeLoss = (game: RecapGame, shape: Shape): boolean => {
+	const hr = shape.loser.homeRecord;
+	return (
+		!game.playoffs &&
+		game.teams[0].tid === shape.loser.tid &&
+		!!hr &&
+		hr.lost === 1 &&
+		hr.won >= 6
+	);
+};
+
 const isUpset = (game: RecapGame, shape: Shape): boolean => {
 	const s = game.spread;
 	if (!s || s.points < 4) {
@@ -531,6 +558,22 @@ type PostseasonContext = {
 		wAfter: number;
 		lBefore: number;
 		nextRound: string;
+		seedUpset: boolean;
+		wSeed?: number;
+		lSeed?: number;
+	};
+	// The series after this game, when it is not over: what a playoff
+	// headline is actually about ("take a 2-1 lead", "even the series",
+	// "force a Game 7", "stay alive").
+	state?: {
+		round: string;
+		wAfter: number;
+		lBefore: number;
+		gameNo: number;
+		need?: number;
+		facingElimination: boolean;
+		forcesDecider: boolean;
+		deciderTag: string;
 		seedUpset: boolean;
 		wSeed?: number;
 		lSeed?: number;
@@ -713,6 +756,21 @@ const postseasonContext = (
 		);
 		return out;
 	}
+
+	out.state = {
+		round: rnd,
+		wAfter,
+		lBefore,
+		gameNo,
+		need,
+		facingElimination,
+		forcesDecider:
+			need !== undefined && wAfter === need - 1 && lBefore === need - 1,
+		deciderTag,
+		seedUpset,
+		wSeed,
+		lSeed,
+	};
 
 	// The series continues - describe the new state and the stakes met.
 	//
@@ -998,6 +1056,9 @@ type Headline = {
 	// The headline IS the series result ("Pistons close out the Bulls in six"),
 	// so the body's postseason opener must not say it again.
 	spentClinch?: boolean;
+	// The headline carried the series score ("take a 2-1 lead"), so the
+	// body's series-state sentence would be the same numbers again.
+	spentState?: boolean;
 };
 
 const h = (
@@ -1049,8 +1110,29 @@ const buildHeadlineText = (
 		const bigStar = star.pts >= 30 || ddCount >= 3;
 		const starLine =
 			ddCount >= 3 ? doubleWord(ddCount)! : starHeadline(star).text;
-		const dog = isUpset(game, shape) ? game.spread?.points : undefined;
+		// "Jennings scores 39" is how a 39-point Game 7 is headlined anywhere
+		// real; the betting line is not, and "8.5-point underdogs, the Nets
+		// win Game 7" read like a tout sheet. The seeds carry the upset.
+		const seedTag =
+			clinch.seedUpset &&
+			typeof clinch.wSeed === "number" &&
+			typeof clinch.lSeed === "number"
+				? {
+						w: `#${clinch.wSeed} ${winnerN}`,
+						l:
+							clinch.lSeed === 1
+								? `top-seeded ${loserN}`
+								: `#${clinch.lSeed} ${loserN}`,
+					}
+				: undefined;
+		const starVerbLine =
+			ddCount >= 3
+				? `${star.name} posts a ${starLine}`
+				: statPhrase(star, 1) === plural(star.pts, "point")
+					? `${star.name} scores ${star.pts}`
+					: `${star.name} has ${statPhrase(star, 1)}`;
 		const options: string[] = [];
+		const starOptions: string[] = [];
 		if (clinch.title) {
 			if (shot && !shot.tying) {
 				options.push(
@@ -1065,7 +1147,7 @@ const buildHeadlineText = (
 			} else if (clinch.decider) {
 				options.push(
 					`${winnerN} win the title in ${decider}`,
-					`${winnerN} take ${decider} from the ${loserN}, and the title with it`,
+					`${winnerN} beat the ${loserN} in ${decider} to win the title`,
 				);
 			} else {
 				options.push(
@@ -1074,9 +1156,11 @@ const buildHeadlineText = (
 				);
 			}
 			if (bigStar && !(shot && !shot.tying)) {
-				options.push(
+				starOptions.push(
 					`${poss(star.name)} ${starLine} carries the ${winnerN} to the title`,
-					`${star.name} closes out the ${loserN} with ${statPhrase(star, 1)}, and the ${winnerN} are champions`,
+					clinch.decider
+						? `${starVerbLine} as the ${winnerN} win ${decider} and the title`
+						: `${starVerbLine} as the ${winnerN} clinch the title`,
 				);
 			}
 		} else {
@@ -1095,12 +1179,39 @@ const buildHeadlineText = (
 			} else if (clinch.decider) {
 				options.push(
 					`${winnerN} take ${decider} from the ${loserN}, ${scoreTag(shape)}`,
-					`${winnerN} win ${decider} and move on to ${next}`,
-					...(dog !== undefined && dog >= 4
+					`${winnerN} beat the ${loserN} in ${decider}, advance to ${next}`,
+					...(seedTag
 						? [
-								`${dog}-point underdogs, the ${winnerN} win ${decider} against the ${loserN}`,
+								`${seedTag.w} oust ${seedTag.l} in ${decider}`,
+								`${seedTag.w} eliminate ${seedTag.l} in ${decider}`,
 							]
-						: [`${winnerN} survive ${decider} against the ${loserN}`]),
+						: shape.margin >= 15
+							? // "Survive" a 21-point Game 7 is the wrong word.
+								[
+									`${winnerN} run away with ${decider}, ${scoreTag(shape)}`,
+									`${winnerN} make ${decider} a rout, ${scoreTag(shape)}`,
+								]
+							: shape.margin <= 6
+								? [`${winnerN} survive ${decider} against the ${loserN}`]
+								: [`${winnerN} oust the ${loserN} in ${decider}`]),
+				);
+				if (bigStar) {
+					starOptions.push(
+						`${starVerbLine} as the ${winnerN} oust the ${loserN} in ${decider}`,
+						`${starVerbLine}, and the ${winnerN} take ${decider} from the ${loserN}`,
+					);
+				}
+			} else if (shape.margin <= 3 && shape.ot === 0) {
+				// "Put away the Lakers in six" over a 115-114 finish.
+				options.push(
+					`${winnerN} close out the ${loserN} with a ${scoreTag(shape)} escape`,
+					`${winnerN} edge the ${loserN} ${scoreTag(shape)} to close out the series in ${games}`,
+					`${winnerN} hold off the ${loserN} ${scoreTag(shape)} and move on to ${next}`,
+				);
+			} else if (shape.ot > 0) {
+				options.push(
+					`${winnerN} close out the ${loserN} in overtime, ${scoreTag(shape)}`,
+					`${winnerN} need ${shape.ot === 1 ? "an extra period" : `${numWord(shape.ot)} extra periods`} to finish off the ${loserN} in ${games}`,
 				);
 			} else if (shape.comebackFrom >= 12) {
 				options.push(
@@ -1114,25 +1225,27 @@ const buildHeadlineText = (
 					`${winnerN} put away the ${loserN} in ${games} games`,
 				);
 			}
-			if (
-				clinch.seedUpset &&
-				typeof clinch.wSeed === "number" &&
-				typeof clinch.lSeed === "number"
-			) {
-				options.push(
-					clinch.decider
-						? `#${clinch.wSeed} ${winnerN} put out the #${clinch.lSeed} ${loserN} in ${decider}`
-						: `#${clinch.wSeed} ${winnerN} put out the #${clinch.lSeed} ${loserN} in ${games}`,
-				);
+			if (seedTag && !clinch.decider) {
+				options.push(`${seedTag.w} oust ${seedTag.l} in ${games}`);
 			}
-			if (bigStar && !(shot && !shot.tying)) {
-				options.push(
+			if (bigStar && !(shot && !shot.tying) && !clinch.decider) {
+				starOptions.push(
 					`${poss(star.name)} ${starLine} sends the ${winnerN} through to ${next}`,
-					`${star.name} closes out the ${loserN} with ${statPhrase(star, 1)}`,
+					clinch.sweep
+						? `${starVerbLine} as the ${winnerN} sweep the ${loserN}`
+						: `${starVerbLine} as the ${winnerN} close out the ${loserN} in ${games}`,
 				);
 			}
 		}
-		const text = pick(rng, options, "headline:clinch");
+		// A 35-point night in a clincher IS the headline; a 30-point one shares
+		// the rotation with the series result.
+		const text = pick(
+			rng,
+			star.pts >= 35 && starOptions.length > 0
+				? starOptions
+				: [...options, ...starOptions],
+			"headline:clinch",
+		);
 		const headline = h(
 			text,
 			text.includes(star.name),
@@ -1140,6 +1253,122 @@ const buildHeadlineText = (
 			text.includes(statPhrase(star, 1)),
 		);
 		headline.spentClinch = true;
+		return headline;
+	}
+
+	// A PLAYOFF GAME IS HEADLINED BY THE SERIES. "Cavaliers get past the
+	// Pacers 124-118" over a Game 3 that put a #8 seed up 2-1 on the #1 is
+	// not how anyone writes it: the series state is the news, the star and
+	// the seeds carry it, and the clutch shot still leads when there is one.
+	const state = post.state;
+	if (state && !(shot && !shot.tying)) {
+		const L = `the ${loserN}`;
+		const seeds =
+			state.seedUpset &&
+			typeof state.wSeed === "number" &&
+			typeof state.lSeed === "number"
+				? {
+						w: `#${state.wSeed} ${winnerN}`,
+						l:
+							state.lSeed === 1
+								? `top-seeded ${loserN}`
+								: `#${state.lSeed} ${loserN}`,
+					}
+				: undefined;
+		const W = seeds ? seeds.w : winnerN;
+		const Lx = seeds ? seeds.l : L;
+		const score = `${state.wAfter}-${state.lBefore}`;
+		// The state as a verb phrase the winner is the subject of - with the
+		// opponent in it, and without, for the "beat the Kings 93-79 to ..."
+		// shape that has already named them.
+		let stateVerb: string;
+		let stateShort: string;
+		if (state.forcesDecider) {
+			stateVerb = `force ${state.deciderTag} with ${Lx}`;
+			stateShort = `force ${state.deciderTag}`;
+		} else if (state.wAfter === 1 && state.lBefore === 0) {
+			stateVerb = `take Game 1 from ${Lx}`;
+			stateShort = `take Game 1`;
+		} else if (state.wAfter === state.lBefore) {
+			stateVerb = `even the series with ${Lx} at ${score}`;
+			stateShort = `even the series at ${score}`;
+		} else if (state.wAfter > state.lBefore) {
+			const brink = state.need !== undefined && state.wAfter === state.need - 1;
+			stateVerb = brink
+				? `push ${Lx} to the brink, ${score}`
+				: `take a ${score} series lead over ${Lx}`;
+			stateShort = brink ? `go up ${score}` : `lead the series ${score}`;
+		} else if (state.facingElimination) {
+			stateVerb = `stay alive against ${Lx}, ${state.lBefore}-${state.wAfter}`;
+			stateShort = `stay alive in the series`;
+		} else {
+			stateVerb = `cut ${poss(Lx)} series lead to ${state.lBefore}-${state.wAfter}`;
+			stateShort = `cut the series deficit to ${state.lBefore}-${state.wAfter}`;
+		}
+		const ddCount = doubleCategories(star).length;
+		const starLine = statPhrase(star, 1);
+		const starVerbLine =
+			ddCount >= 3
+				? `${star.name} posts a ${doubleWord(ddCount)!}`
+				: starLine === plural(star.pts, "point")
+					? `${star.name} scores ${star.pts}`
+					: `${star.name} has ${starLine}`;
+		// A signature line - five blocks, five steals - headlines like a big
+		// scoring night does.
+		const bigStar =
+			star.pts >= 28 || ddCount >= 3 || star.blk >= 5 || star.stl >= 5;
+		// "Take down the Cavaliers to take Game 1" is the verb twice.
+		let verb = pick(rng, verbPool(game, shape), "playoffVerb");
+		if (verb.startsWith("take") && stateShort.startsWith("take")) {
+			verb = "beat";
+		}
+		// The game's own character outranks the plain forms: a 25-point
+		// comeback or a 48-point rout is the headline, whatever the series.
+		const special = [
+			...(shape.margin >= 20
+				? [
+						`${W} rout ${Lx} ${scoreTag(shape)} to ${stateShort}`,
+						`${W} blow out ${Lx} by ${shape.margin} and ${stateShort}`,
+					]
+				: []),
+			...(shape.comebackFrom >= 12
+				? [
+						`${W} rally from ${shape.comebackFrom} down to ${stateVerb}`,
+						`Down ${shape.comebackFrom}, the ${W} come back to ${stateShort}`,
+					]
+				: []),
+			...(shape.ot > 0
+				? [`${W} outlast ${Lx} in overtime to ${stateShort}`]
+				: []),
+		];
+		const options =
+			special.length > 0 && (shape.comebackFrom >= 15 || shape.margin >= 25)
+				? special
+				: [
+						`${W} ${stateVerb}`,
+						`${W} ${verb} ${L} ${scoreTag(shape)} to ${stateShort}`,
+						...special,
+					];
+		const starOptions = bigStar
+			? [
+					`${starVerbLine} as the ${W} ${stateVerb}`,
+					`${starVerbLine}, and the ${W} ${stateVerb}`,
+				]
+			: [];
+		const text = pick(
+			rng,
+			star.pts >= 35 && starOptions.length > 0
+				? starOptions
+				: [...options, ...starOptions],
+			"headline:series-state",
+		);
+		const headline = h(
+			text,
+			text.includes(star.name),
+			false,
+			text.includes(starLine),
+		);
+		headline.spentState = true;
 		return headline;
 	}
 
@@ -1196,17 +1425,36 @@ const buildHeadlineText = (
 	// favorite carried in, and the run either side was on are all in hand, and
 	// each of them says something the bare result does not.
 	if (isUpset(game, shape)) {
-		const dog = game.spread?.points;
+		// No betting line in a headline. Real desks write the upset as what the
+		// favorite lost - a streak, a home record, a rare defeat - or as the
+		// man who beat them; the number the books had is body color.
 		const options = [
 			`${winnerN} ${verb} the ${loserN}, ${scoreTag(shape)}${tag}`,
 			`${winnerN} ${verb} the ${loserN} ${scoreTag(shape)}${tag}`,
 			`${winnerN} pull the upset over the ${loserN} ${scoreTag(shape)}${tag}`,
+			// Most real upsets are not even labeled: "Jazz beat Bucks 98-91",
+			// "Mathis scores 27 as Jazz top Bucks".
+			`${winnerN} beat the ${loserN} ${scoreTag(shape)}${tag}`,
 		];
-		if (dog !== undefined && dog >= 6) {
+		if (star.pts >= 20) {
 			options.push(
-				`${winnerN} ${verb} the ${loserN} as ${dog}-point underdogs${tag}`,
-				`${dog}-point underdogs, the ${winnerN} ${verb} the ${loserN}${tag}`,
-				`Nobody gave the ${winnerN} a chance, and they ${verb} the ${loserN}${tag}`,
+				`${
+					statPhrase(star, 1) === plural(star.pts, "point")
+						? `${star.name} scores ${star.pts}`
+						: `${star.name} has ${statPhrase(star, 1)}`
+				} as the ${winnerN} ${verb} the ${loserN}${tag}`,
+			);
+		}
+		const loserRun = shape.loser.streakBefore;
+		if (loserRun?.won && loserRun.count >= 5) {
+			options.push(
+				`${winnerN} snap ${poss(`the ${loserN}`)} ${loserRun.count}-game winning streak${tag}`,
+				`${winnerN} end ${poss(`the ${loserN}`)} ${loserRun.count}-game run${tag}`,
+			);
+		}
+		if (firstHomeLoss(game, shape)) {
+			options.push(
+				`${winnerN} hand the ${loserN} their first home loss of the season${tag}`,
 			);
 		}
 		const loserRec = shape.loser.record;
@@ -1297,7 +1545,7 @@ const buildHeadlineText = (
 				[
 					`${winnerN} survive a scare from the ${loserN}`,
 					`${winnerN} escape the ${loserN} ${scoreTag(shape)}`,
-					`${winnerN} hold off a feisty ${loserN} squad`,
+					`${winnerN} hold off the ${loserN} ${scoreTag(shape)}`,
 				],
 				"headline:scare",
 			),
@@ -1489,6 +1737,11 @@ const buildHeadlineText = (
 		shape.margin >= 15
 			? `${winnerN} have too much for the ${loserN}, ${scoreTag(shape)}${tag}`
 			: `${winnerN} get the better of the ${loserN} ${scoreTag(shape)}${tag}`,
+		...(firstHomeLoss(game, shape)
+			? [
+					`${winnerN} hand the ${loserN} their first home loss of the season${tag}`,
+				]
+			: []),
 		// A team on a real run is a story the bare score does not carry.
 		...(shape.winner.streak?.won && shape.winner.streak.count >= 5
 			? [
@@ -1641,7 +1894,18 @@ const leadSentence = (
 	// because the headline already printed it.
 	scoreTold = false,
 ): string => {
-	const verb = pastTense(pick(rng, verbPool(game, shape)));
+	// A plain verb for a comeback: the flow sentence that follows tells the
+	// comeback itself, and "stormed back to beat the Spurs... trailed by 15
+	// and stormed back" was the same verb twice in two sentences.
+	const verb = pastTense(
+		pick(
+			rng,
+			shape.comebackFrom >= 12
+				? ["beat", "top", "take down", "knock off"]
+				: verbPool(game, shape),
+			shape.comebackFrom >= 12 ? "comebackVerb" : undefined,
+		),
+	);
 
 	// A big blowout with no standout line is a TEAM story - "Brad Miller had 13
 	// points as the Clippers won by 31" makes 13 points sound like the reason.
@@ -2252,7 +2516,8 @@ const supportSentence = (
 	const third = cast[1];
 	if (third && (third.pts >= 14 || doubleCategories(third).length >= 2)) {
 		const thirdText = outscoredStar(third)
-			? topScorerText(third)
+			? // Mid-sentence after ", and": "No one scored more" loses its capital.
+				topScorerText(third).replace(/^No one/, "no one")
 			: `${third.name} ${scoredVerb(rng)} ${statPhrase(third, 1)}`;
 		return `${secondText}, and ${thirdText}.`;
 	}
@@ -2374,10 +2639,16 @@ const loserSentence = (
 		// that nobody wrote this: every losing team in the league gets the same
 		// sentence with the nouns swapped. These put the player, the team and the
 		// numbers in genuinely different places.
+		// "28 points and 9 rebounds WERE the best of the Grizzlies"; a lone
+		// "20 points was" is a quantity and stays singular.
+		const agreed =
+			verb === "was the best of" && / and /.test(leaderLine)
+				? "were the best of"
+				: verb;
 		return pickSentence(
 			rng,
 			[
-				`${leaderLine} ${verb} ${them}${reason}.`,
+				`${leaderLine} ${agreed} ${them}${reason}.`,
 				`${cap(them)} got ${line} from ${leader.name}${reason}.`,
 				`${leader.name} finished with ${line} for ${them}${reason}.`,
 				// Not "22 points from X was..." - a sentence does not open with a
@@ -2559,7 +2830,8 @@ const stakesSentence = (
 		const w = cap(theNick(shape.winner));
 		const them = theNick(shape.winner);
 		const over = rec.won - rec.lost;
-		if (rec.won % 10 === 0) {
+		// A tenth win is not a milestone; a twentieth, fortieth or sixtieth is.
+		if (rec.won % 10 === 0 && rec.won >= 20) {
 			options.push(
 				pick(
 					rng,
@@ -2687,6 +2959,10 @@ const vsAverageNote = (
 	// The lead sentence has its own "who came in averaging N" clause. Saying it
 	// again two sentences later is the same fact twice.
 	alreadySaidAverage: boolean,
+	// The lead already printed his shooting split ("on 10-of-15 shooting"),
+	// so the note can refer to it; otherwise it has to state it, or "a long
+	// way clear of his 46.2% season mark" is a comparison with nothing.
+	splitTold = false,
 ): string | undefined => {
 	const avg = enteringLine(star, playoffs);
 	if (!avg || avg.gp < 5 || alreadySaidAverage) {
@@ -2725,15 +3001,23 @@ const vsAverageNote = (
 		star.fg / star.fga >= 0.6 &&
 		star.fg / star.fga - avg.fgp / 100 >= 0.12
 	) {
+		const split = `${star.fg}-of-${star.fga}`;
 		return pick(
 			rng,
-			[
-				`${star.name} shot it far better than the ${avg.fgp.toFixed(1)}% he had managed on the season.`,
-				`${star.name} came in shooting ${avg.fgp.toFixed(1)}% on the year.`,
-				// "a long way FROM" reads as a shortfall, and this branch only fires
-				// when he shot at least twelve points BETTER than his season mark.
-				`It was a long way clear of ${poss(star.name)} ${avg.fgp.toFixed(1)}% season mark.`,
-			],
+			splitTold
+				? [
+						`${star.name} shot it far better than the ${avg.fgp.toFixed(1)}% he had managed on the season.`,
+						`${star.name} came in shooting ${avg.fgp.toFixed(1)}% on the year.`,
+						// "a long way FROM" reads as a shortfall, and this branch only
+						// fires when he shot at least twelve points BETTER than his
+						// season mark.
+						`It was a long way clear of ${poss(star.name)} ${avg.fgp.toFixed(1)}% season mark.`,
+					]
+				: [
+						`${star.name} was ${split} from the floor, far better than the ${avg.fgp.toFixed(1)}% he had managed on the season.`,
+						`${star.name} came in shooting ${avg.fgp.toFixed(1)}% on the year and went ${split}.`,
+						`Going ${split} was a long way clear of ${poss(star.name)} ${avg.fgp.toFixed(1)}% season mark.`,
+					],
 			"vsSeasonFgp",
 		);
 	}
@@ -3086,6 +3370,13 @@ const loserSupportNote = (
 	)}.`;
 };
 
+// "half a point", "1 point", "2.5 points" - a spread miss, which is a half
+// number as often as not. "Fell 0.5 short of the number" reads like a ledger.
+// A bare number otherwise, as the sentence always had it: "N points" reads
+// as a scoring line to the accuracy check, and to a reader.
+const pointsShort = (n: number): string =>
+	n === 0.5 ? "half a point" : `${n}`;
+
 // Whether the favorite covered. The spread is already known to the recap and
 // was only ever used to flag outright upsets.
 const spreadNote = (
@@ -3146,7 +3437,7 @@ const spreadNote = (
 			[
 				`${cap(theNick(shape.winner))} were ${s.points}-point favorites and won by ${shape.margin}.`,
 				`A ${shape.margin}-point win was nowhere near the ${s.points} ${theNick(shape.winner)} were giving.`,
-				`${cap(theNick(shape.winner))} won comfortably enough but fell ${s.points - shape.margin} short of the number.`,
+				`${cap(theNick(shape.winner))} won comfortably enough but fell ${pointsShort(s.points - shape.margin)} short of the number.`,
 			],
 			"spreadNarrow",
 		);
@@ -3528,6 +3819,25 @@ export const getAutoRecap = (game: RecapGame): string => {
 		para1.push(lead);
 	}
 
+	// The headline carried the series score, so the body's series sentence is
+	// dropped below - and the round goes where a wire lead puts it: "beat the
+	// Pistons 104-96 in Game 4 of the First Round".
+	if (headline.spentState && post.state && para1.length > 0) {
+		const where = ` in Game ${post.state.gameNo} of ${post.state.round}`;
+		const first = para1[0]!;
+		const tag = scoreTag(shape);
+		if (first.includes(tag)) {
+			para1[0] = first.replace(tag, `${tag}${where}`);
+		} else {
+			const loserName = theNick(shape.loser);
+			const at = first.indexOf(loserName);
+			para1[0] =
+				at >= 0
+					? `${first.slice(0, at + loserName.length)}${where}${first.slice(at + loserName.length)}`
+					: `${first.slice(0, -1)}${where}.`;
+		}
+	}
+
 	// The result lead already carried the comeback / wire-to-wire / overtime /
 	// decisive-run angle, so the flow sentence would be saying it twice.
 	if (!flowCovered) {
@@ -3561,21 +3871,26 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// again with the tense changed; the paragraph opens on whose season ended
 	// instead. A headline that only names the round the winner reached still
 	// leaves the series score to the body.
-	const postSentences = headline.spentClinch
-		? [
-				// The series score, when the headline said only where the winner
-				// is going. Short: the fact, not the clinch sentence again.
-				...(post.clinch &&
-				!/sweep|Game \d|in (?:three|four|five|six|seven|nine)\b/.test(
-					headline.text,
-				)
-					? [
-							`${cap(theNick(shape.winner))} took the series ${post.clinch.wAfter}-${post.clinch.lBefore}.`,
-						]
-					: []),
-				...post.sentences.slice(1),
-			]
-		: post.sentences;
+	const postSentences = headline.spentState
+		? // "The Cavaliers are up 2-1 in the First Round" under "Cavaliers take
+			// a 2-1 series lead" is the same numbers twice; the stakes sentence
+			// that follows it is the one with something to add.
+			post.sentences.slice(1)
+		: headline.spentClinch
+			? [
+					// The series score, when the headline said only where the winner
+					// is going. Short: the fact, not the clinch sentence again.
+					...(post.clinch &&
+					!/sweep|Game \d|in (?:three|four|five|six|seven|nine)\b/.test(
+						headline.text,
+					)
+						? [
+								`${cap(theNick(shape.winner))} took the series ${post.clinch.wAfter}-${post.clinch.lBefore}.`,
+							]
+						: []),
+					...post.sentences.slice(1),
+				]
+			: post.sentences;
 	if (postSentences.length > 0) {
 		para2.push(postSentences[0]!);
 	}
@@ -3671,6 +3986,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 			game.playoffs,
 			rng,
 			/averaging|average/.test(alreadyWritten),
+			alreadyWritten.includes(`${star.fg}-of-${star.fga}`),
 		),
 	);
 	addColour(() => careerArcNote(star, game.playoffs, rng));
@@ -4082,6 +4398,9 @@ const injuryRoundup = (
 const teamStreakSentence = (
 	games: RecapGame[],
 	rng: () => number,
+	// The deck already in lights ("Kings make it 6 straight"), so the body
+	// does not say the same streak two paragraphs later.
+	deck = "",
 ): string | undefined => {
 	let best: { team: RecapTeam; count: number } | undefined;
 	for (const game of games) {
@@ -4096,7 +4415,13 @@ const teamStreakSentence = (
 		if (winner.record && winner.record.lost === 0) {
 			continue;
 		}
-		if (s && s.won && s.count >= 6 && (!best || s.count > best.count)) {
+		if (
+			s &&
+			s.won &&
+			s.count >= 6 &&
+			(!best || s.count > best.count) &&
+			!(deck.includes(nick(winner)) && /straight/.test(deck))
+		) {
 			best = { team: winner, count: s.count };
 		}
 	}
@@ -4378,9 +4703,13 @@ const dayHeadline = (
 			const next = clinch.nextRound;
 			return hl(
 				pick(rng, [
-					`${w} close out ${l} and reach ${next}`,
-					`${w} advance to ${next}`,
-					`${w} eliminate ${l}`,
+					...(clinch.decider
+						? []
+						: [
+								`${w} close out ${l} and reach ${next}`,
+								`${w} advance to ${next}`,
+								`${w} eliminate ${l}`,
+							]),
 					...(mShape.comebackFrom >= 12
 						? [`${w} rally from ${mShape.comebackFrom} down to close out ${l}`]
 						: []),
@@ -4388,6 +4717,7 @@ const dayHeadline = (
 					...(clinch.decider
 						? [
 								`${w} take ${clinch.deciderTag.replace(/^a decisive/, "the decisive").replace(/^a /, "")} from ${l}`,
+								`${w} win ${clinch.deciderTag.replace(/^a decisive/, "the decisive").replace(/^a /, "")} and reach ${next}`,
 							]
 						: [`${w} put ${l} out in ${numWord(clinch.games)}`]),
 				]),
@@ -4505,13 +4835,29 @@ const dayHeadline = (
 		}
 		if (mStar) {
 			const sh = starHeadline(mStar);
+			// A 42-point night AND the series: "Dunn scores 42 as the Cavaliers
+			// take a 2-1 lead on the Pacers", not one or the other.
+			const starState =
+				mStar.pts >= 30 && stateBits.length > 0
+					? // Every state bit opens with the bare nickname `w`; swap in the
+						// articled form rather than stripping a word, which mangled a
+						// multi-word nickname and once produced "as the take a 2-1 lead".
+						stateBits.map(
+							(bit) =>
+								`${mStar.name} scores ${mStar.pts} as ${tw}${bit.slice(w.length)}`,
+						)
+					: [];
 			return hl(
 				pick(
 					rng,
-					[
-						`${poss(mStar.name)} ${sh.text} power${sh.plural ? "" : "s"} ${tw} past ${l}`,
-						...stateBits,
-					],
+					// A 35-point night is the headline, with the series in it.
+					mStar.pts >= 35 && starState.length > 0
+						? starState
+						: [
+								`${poss(mStar.name)} ${sh.text} power${sh.plural ? "" : "s"} ${tw} past ${l}`,
+								...stateBits,
+								...starState,
+							],
 					"dayHeadlinePlayoffStar",
 				),
 			);
@@ -4647,11 +4993,21 @@ const dayHeadline = (
 		const pts = marquee.spread?.points;
 		return hl(
 			pick(rng, [
-				pts !== undefined && pts >= 6
-					? `${w} stun ${l} as ${pts}-point underdogs`
-					: `${w} stun ${l} ${scoreTag(mShape)}`,
-				`${w} shock ${l} ${scoreTag(mShape)}`,
+				// The seeds and the streaks are a headline's business; the
+				// betting line is the body's.
+				...(pts !== undefined && pts >= 7
+					? [
+							`${w} stun ${l} ${scoreTag(mShape)}`,
+							`${w} shock ${l} ${scoreTag(mShape)}`,
+						]
+					: [`${w} upset ${l} ${scoreTag(mShape)}`]),
 				`${w} pull the upset over ${l} ${scoreTag(mShape)}`,
+				...(mShape.loser.streakBefore?.won &&
+				mShape.loser.streakBefore.count >= 5
+					? [
+							`${w} snap ${poss(l)} ${mShape.loser.streakBefore.count}-game winning streak`,
+						]
+					: []),
 			]),
 		);
 	}
@@ -4770,9 +5126,11 @@ const collectStorylines = (
 				score: 90 + pts * 3 + shape.ot * 10,
 				kind: "upset",
 				text:
-					pts >= 6
-						? `${w} stun ${l} as ${pts}-point underdogs`
-						: `${w} stun ${l}`,
+					shape.loser.streakBefore?.won && shape.loser.streakBefore.count >= 5
+						? `${w} snap ${poss(l)} ${shape.loser.streakBefore.count}-game winning streak`
+						: pts >= 7
+							? `${w} stun ${l} ${scoreTag(shape)}`
+							: `${w} upset ${l} ${scoreTag(shape)}`,
 				tids,
 				game: g,
 			});
@@ -4989,6 +5347,11 @@ const leagueNotes = (
 	games: RecapGame[],
 	rng: () => number,
 	limit: number,
+	// What the wrap has written so far. "The Pistons routed the Jazz by 34"
+	// in the results paragraph, then "the night's most one-sided result was
+	// the Pistons' 34-point win over the Jazz" two sentences later, is the
+	// same fact told twice.
+	written = "",
 ): string[] => {
 	const real = games.filter((g) => !g.allStar);
 	if (real.length < 4) {
@@ -5024,7 +5387,12 @@ const leagueNotes = (
 		}
 	}
 
-	if (biggest && biggest.margin >= 25) {
+	const routTold =
+		biggest !== undefined &&
+		new RegExp(
+			String.raw`${nick(biggest.shape.winner).replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)}.*(?:by ${biggest.margin}\b|${biggest.margin}-point)`,
+		).test(written);
+	if (biggest && biggest.margin >= 25 && !routTold) {
 		cands.push({
 			sort: 0,
 			tid: biggest.shape.winner.tid,
@@ -5557,7 +5925,12 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 
 	// What kind of night it was, league-wide: the blowout, the shootout, the best
 	// shooting performance. Two at most, so the wrap stays a wrap.
-	for (const note of leagueNotes(games, rng, 2)) {
+	for (const note of leagueNotes(
+		games,
+		rng,
+		2,
+		[headline.text, deck ?? "", ...para1, ...para2].join(" "),
+	)) {
 		para3.push(note);
 	}
 
@@ -5591,6 +5964,13 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			const stakes = dayStakesPhrase(marquee, rng);
 			if (stakes) {
 				para3.push(stakes);
+			} else {
+				// A clinch: the wrap had the result and nothing else. Whose season
+				// ended, and how, is the sentence a one-game night was missing.
+				const post = postseasonContext(marquee, mShape, rng);
+				if (post.clinch && post.sentences[1]) {
+					para3.push(post.sentences[1]);
+				}
 			}
 		}
 		if (seriesBits.length > 0) {
@@ -5610,7 +5990,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			);
 		}
 	} else {
-		const streak = teamStreakSentence(games, rng);
+		const streak = teamStreakSentence(games, rng, deck);
 		if (streak) {
 			para3.push(streak);
 		}

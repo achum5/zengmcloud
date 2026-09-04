@@ -1305,7 +1305,7 @@ export const dayColdStreak = (
 	return pick(
 		rng,
 		[
-			`${T} have now lost ${plural(worst.count, "straight")}.`,
+			`${T} have now lost ${worst.count} straight.`,
 			`That is ${plural(worst.count, "loss")} in a row for ${t}.`,
 			`${T} have not won in ${numWord(worst.count)} games.`,
 			`The skid reached ${numWord(worst.count)} for ${t}.`,
