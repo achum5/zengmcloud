@@ -55,6 +55,10 @@ const BASKETBALL_CUMULATIVE: ReadonlySet<string> = new Set([
 	"ewa",
 	"vorp",
 	"ws",
+	// The team's win shares, which the MVP formula reads against a player's
+	// own (min(ws / teamWs, 0.8)). It is summed from unscaled ws before the
+	// projection runs, so it has to scale with the ws it is compared to.
+	"teamWs",
 	"ows",
 	"dws",
 	"fracWS",

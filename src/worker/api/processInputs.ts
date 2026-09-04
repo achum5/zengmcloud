@@ -105,7 +105,7 @@ const account = (params: Params, ctxBBGM: any) => {
 
 const awardsRecords = (params: Params) => {
 	return {
-		awardType: params.awardType || "champion",
+		awardType: params.awardType ?? "champion",
 	};
 };
 
@@ -898,7 +898,7 @@ const teamRecords = (params: Params) => {
 	const filter: "all" | "your_teams" =
 		params.filter === "your_teams" ? "your_teams" : "all";
 	return {
-		byType: params.byType || "by_team",
+		byType: params.byType ?? "by_team",
 		filter,
 	};
 };
@@ -1032,7 +1032,7 @@ const transactions = (params: Params) => {
 		tid,
 		abbrev,
 		season,
-		eventType: params.eventType || "all",
+		eventType: params.eventType ?? "all",
 	};
 };
 
@@ -1165,6 +1165,7 @@ export default {
 	allStarTeams: validateSeasonOnly,
 	allStarThree: validateSeasonOnly,
 	awardRaces: validateSeasonOnly,
+	editAwardWinners: validateSeasonOnly,
 	awardsRecords,
 	sportsbook: (params: Params) => ({
 		// Each tab is its own URL, so the back button and a reload land where you
@@ -1189,7 +1190,6 @@ export default {
 	draftHistory,
 	draftPicks,
 	draftTeamHistory,
-	editAwards: validateSeasonOnly,
 	editTeamCourt,
 	exhibitionGame,
 	exportPlayers: validateSeasonOnly,

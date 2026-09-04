@@ -1,3 +1,4 @@
+import { formatPlayerAwardName } from "../../../common/awards.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import type { Player } from "../../../common/types.ts";
@@ -183,7 +184,12 @@ const buildPlayer = (
 
 	tot.seasons = seasonsPlayed.size;
 
-	const awards = p.awards.map((a) => ({ season: a.season, type: a.type }));
+	// Custom awards carry a name and rank rather than a fixed type string;
+	// formatPlayerAwardName renders either the way the player page does.
+	const awards = p.awards.map((a) => ({
+		season: a.season,
+		type: formatPlayerAwardName(a),
+	}));
 	const hof =
 		!!p.hof || awards.some((a) => a.type === "Inducted into the Hall of Fame");
 

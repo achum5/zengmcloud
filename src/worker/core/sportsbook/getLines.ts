@@ -4,13 +4,13 @@ import teamOvr from "../team/ovr.ts";
 import getSchedule from "../season/getSchedule.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
 import getAwardRaceOdds from "../season/getAwardRaceOdds.ts";
-import { getPlayers, getTopPlayers } from "../season/awards.ts";
+import { getAwardCandidates } from "../awards/getAwardCandidates.ts";
 import {
-	dpoyScore,
-	mvpScore,
-	royFilter,
-	royScore,
-} from "../season/doAwards.basketball.ts";
+	playerName,
+	playerTalent,
+	projectPlayers,
+	type AwardRace,
+} from "../season/getAwardRaceOdds.ts";
 import {
 	getTeamAtsRecords,
 	formatAtsRecord,
@@ -58,6 +58,30 @@ const TEAM_AWARD_TIER_TITLES = ["First Team", "Second Team", "Third Team"];
 export const sortedByPrice = <T extends { americanOdds: number }>(
 	rows: T[],
 ): T[] => [...rows].sort((a, b) => a.americanOdds - b.americanOdds);
+
+// Which of the sportsbook's award markets a race is. Awards are user-defined
+// now, so a renamed one is recognized by the role it acts as (actAs) and an
+// unchanged one by the shortName every default award carries.
+const legacyAwardKey = (race: {
+	shortName: string;
+	actAs?: "mvp" | "roy";
+	group?: AwardRace["group"];
+}): "mvp" | "dpoy" | "roy" | "smoy" | "mip" | undefined => {
+	if (race.group !== undefined) {
+		return undefined;
+	}
+	const byShortName: Record<string, "mvp" | "dpoy" | "roy" | "smoy" | "mip"> = {
+		MVP: "mvp",
+		DPOY: "dpoy",
+		ROY: "roy",
+		SMOY: "smoy",
+		MIP: "mip",
+	};
+	return (
+		byShortName[race.shortName] ??
+		(race.actAs === "mvp" ? "mvp" : race.actAs === "roy" ? "roy" : undefined)
+	);
+};
 
 type TierCandidate = {
 	pid: number;
@@ -972,21 +996,11 @@ export const getLines = async () => {
 		// source of truth - so the Sportsbook and that page never disagree. (This
 		// replaced an older Sportsbook-only overall-blend model that ran badly
 		// inflated favorites vs. the award page.)
-		const awardKeyByName: Record<
-			string,
-			"mvp" | "dpoy" | "roy" | "smoy" | "mip"
-		> = {
-			"Most Valuable Player": "mvp",
-			"Defensive Player of the Year": "dpoy",
-			"Rookie of the Year": "roy",
-			"Sixth Man of the Year": "smoy",
-			"Most Improved Player": "mip",
-		};
 		try {
 			const raceOdds = await getAwardRaceOdds(season);
 			awards = raceOdds
 				.map((race) => {
-					const key = awardKeyByName[race.name];
+					const key = legacyAwardKey(race);
 					if (!key) {
 						return undefined;
 					}
@@ -1002,11 +1016,11 @@ export const getLines = async () => {
 						// actually shown, and take the twenty shortest.
 						candidates: notSettled(
 							sortedByPrice(
-								race.players.map((p: any) => ({
+								race.players.map((p) => ({
 									pid: p.pid,
-									name: p.name,
-									tid: p.tid,
-									abbrev: p.abbrev,
+									name: playerName(p),
+									tid: p.currentStats.tid,
+									abbrev: p.currentStats.abbrev,
 									americanOdds: p.odds,
 								})),
 							),
@@ -1097,15 +1111,40 @@ export const getLines = async () => {
 			const earlyWeight = 1 - seasonProgress;
 			const AWARD_OVR_COEF = 1 / 40;
 			try {
-				const players = await getPlayers(season);
+				// The league's own MVP, DPOY and ROY formulas (core/awards) score a
+				// deep field, projected to a full season the same way the race
+				// odds are; the early-season ovr blend sits on top.
+				const races = (
+					await getAwardCandidates(season, undefined, {
+						numPlayersPerIndividualAward: 40,
+						transformPlayers: projectPlayers({
+							numGames: g.get("numGames"),
+						}),
+					})
+				).awardCandidates
+					.flat()
+					.filter(
+						(race) => race.numTeams === undefined && race.group === undefined,
+					);
+				const field = (
+					key: "mvp" | "dpoy" | "roy",
+					amount: number,
+				): TierCandidate[] =>
+					(races.find((race) => legacyAwardKey(race) === key)?.players ?? [])
+						.slice(0, amount)
+						.map((p) => ({
+							pid: p.pid,
+							name: playerName(p),
+							tid: p.currentStats.tid,
+							abbrev: p.currentStats.abbrev,
+							awardScore: projectedScore(
+								() => p.currentStats.score ?? 0,
+								earlyWeight,
+								AWARD_OVR_COEF,
+							)({ ratings: { ovr: playerTalent(p) } }),
+						}));
 
-				const mvpField = getTopPlayers(
-					{
-						amount: 40,
-						score: projectedScore(mvpScore, earlyWeight, AWARD_OVR_COEF),
-					},
-					players,
-				) as unknown as TierCandidate[];
+				const mvpField = field("mvp", 40);
 				allLeague = buildTierBoard(
 					mvpField,
 					TEAM_AWARD_TIER_SIZES,
@@ -1113,13 +1152,7 @@ export const getLines = async () => {
 					tierNoiseFactor,
 				);
 
-				const dpoyField = getTopPlayers(
-					{
-						amount: 40,
-						score: projectedScore(dpoyScore, earlyWeight, AWARD_OVR_COEF),
-					},
-					players,
-				) as unknown as TierCandidate[];
+				const dpoyField = field("dpoy", 40);
 				allDefensive = buildTierBoard(
 					dpoyField,
 					TEAM_AWARD_TIER_SIZES,
@@ -1127,14 +1160,7 @@ export const getLines = async () => {
 					tierNoiseFactor,
 				);
 
-				const royField = getTopPlayers(
-					{
-						amount: 20,
-						filter: royFilter,
-						score: projectedScore(royScore, earlyWeight, AWARD_OVR_COEF),
-					},
-					players,
-				) as unknown as TierCandidate[];
+				const royField = field("roy", 20);
 				allRookie =
 					buildTierBoard(royField, [5], seed + 303, tierNoiseFactor)[0]
 						?.candidates ?? [];

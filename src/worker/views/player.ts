@@ -17,6 +17,8 @@ import type {
 	MenuItemLink,
 	MinimalPlayerRatings,
 	Player,
+	PlayerAwardBuiltIn,
+	PlayerAwardSimple,
 	UpdateEvents,
 	ViewInput,
 } from "../../common/types.ts";
@@ -34,6 +36,7 @@ import {
 	valueForPlayer,
 } from "../util/contractValues.ts";
 import type { ContractValueBreakdown } from "../../common/contractValue.ts";
+import { getGroupPrefix } from "../core/awards/prefixes.ts";
 
 export const getPlayerProfileStats = () => {
 	const stats = [];
@@ -42,6 +45,10 @@ export const getPlayerProfileStats = () => {
 	}
 
 	return Array.from(new Set(stats));
+};
+
+export type PlayerAwardBuiltInWithPrefix = PlayerAwardBuiltIn & {
+	groupPrefix?: string;
 };
 
 export const getPlayer = async (
@@ -81,7 +88,6 @@ export const getPlayer = async (
 				| "injuries"
 				| "college"
 				| "relatives"
-				| "awards"
 				| "srID"
 		  > & {
 				age: number;
@@ -115,6 +121,7 @@ export const getPlayer = async (
 				experience: number;
 				note?: string;
 				watch: number;
+				awards: (PlayerAwardSimple | PlayerAwardBuiltInWithPrefix)[];
 		  })
 		| undefined = await idb.getCopy.playersPlus(pRaw, {
 		attrs: [
@@ -182,6 +189,14 @@ export const getPlayer = async (
 
 	// Filter out rows with no games played
 	p.stats = p.stats.filter((row) => row.gp! > 0);
+
+	// Handle prefixing awards
+	for (const award of p.awards) {
+		if (award.type === undefined && award.group) {
+			award.groupPrefix = getGroupPrefix(award, award.season);
+			delete award.group;
+		}
+	}
 
 	return p;
 };

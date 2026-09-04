@@ -1,7 +1,7 @@
 import { idb } from "../db/index.ts";
 import { g, helpers } from "./index.ts";
 import { getPlayoffsByConfBySeason } from "../views/frivolitiesTeamSeasons.ts";
-import getAwardCandidates from "../core/season/getAwardCandidates.ts";
+import { getAwardCandidates } from "../core/awards/getAwardCandidates.ts";
 import { PHASE, PHASE_TEXT, RATINGS } from "../../common/constants.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
 import { hasSeasonNote } from "../../common/seasonNote.ts";
@@ -435,7 +435,11 @@ const getAwardRaces = async (
 	const races: RecapAwardRace[] = [];
 	const ranks = new Map<number, string[]>();
 	try {
-		const candidates = await getAwardCandidates(season);
+		// Individual awards only: a named team ("All-League First Team") is not
+		// a race a player is winning or losing.
+		const candidates = (await getAwardCandidates(season)).awardCandidates
+			.flat()
+			.filter((race) => race.numTeams === undefined);
 		for (const race of candidates) {
 			const players = race.players.slice(0, AWARD_RACE_DEPTH);
 			if (players.length === 0) {

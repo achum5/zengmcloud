@@ -47,7 +47,6 @@ import { settleBets } from "../sportsbook/bets.ts";
 import { idb } from "../../db/index.ts";
 import { updateTickerItems } from "../../util/updateTickerItems.ts";
 import {
-	advStats,
 	g,
 	helpers,
 	lock,
@@ -87,6 +86,7 @@ import { scheduleForSim } from "./singleGameSchedule.ts";
 import { orphanedScheduleGids } from "./orphanedSchedule.ts";
 import { runLiveBroadcastStart } from "../sync/liveBroadcastHook.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
+import { advStats } from "../../util/advStats.ts";
 
 /**
  * Play one or more days of games.

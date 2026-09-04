@@ -1,4 +1,5 @@
 import { PHASE } from "../../../common/constants.ts";
+import { legacyAwardPids } from "../../util/legacyAwards.ts";
 import { g, local, lock, toUI, logEvent } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import {
@@ -632,7 +633,7 @@ const resolveMarket = async (
 		if (!awards) {
 			return undefined; // not decided yet
 		}
-		const winner = (awards as any)[m.award];
+		const winner = legacyAwardPids(awards).individual[m.award];
 		// Some awards (e.g. MIP in year 1) can be absent - then any bet loses once
 		// the awards exist.
 		if (!winner) {
@@ -659,16 +660,15 @@ const resolveMarket = async (
 		if (!awards) {
 			return undefined; // not decided yet
 		}
+		const legacy = legacyAwardPids(awards);
 		const teams =
-			m.type === "allLeagueTeam"
-				? (awards as any).allLeague
-				: (awards as any).allDefensive;
+			m.type === "allLeagueTeam" ? legacy.allLeague : legacy.allDefensive;
 		// This award category doesn't exist for this sport/season - can't resolve.
-		if (!teams) {
+		if (teams.length === 0) {
 			return "void";
 		}
-		const players = teams[m.tier - 1]?.players ?? [];
-		return players.some((p: any) => p.pid === m.pid) ? "won" : "lost";
+		const players = teams[m.tier - 1] ?? [];
+		return players.some((p) => p.pid === m.pid) ? "won" : "lost";
 	}
 
 	if (m.type === "allRookieTeam") {
@@ -676,8 +676,8 @@ const resolveMarket = async (
 		if (!awards) {
 			return undefined; // not decided yet
 		}
-		const players = (awards as any).allRookie ?? [];
-		return players.some((p: any) => p?.pid === m.pid) ? "won" : "lost";
+		const players = legacyAwardPids(awards).allRookie;
+		return players.some((p) => p.pid === m.pid) ? "won" : "lost";
 	}
 
 	if (

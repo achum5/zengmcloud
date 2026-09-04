@@ -1,4 +1,5 @@
 import { idb } from "../db/index.ts";
+import { legacyAwardsWithNames } from "./legacyAwards.ts";
 import { g, helpers } from "./index.ts";
 import { PHASE } from "../../common/constants.ts";
 import { formatEventText } from "./formatEventText.ts";
@@ -439,7 +440,10 @@ export const getSeasonRecapData = async (
 	const { byTid: movesByTid, byPid: movesByPid } = await gatherMoves(season);
 
 	// League award winners this season.
-	const awardsRow = await idb.getCopy.awards({ season }, "noCopyCache");
+	const awardsStored = await idb.getCopy.awards({ season }, "noCopyCache");
+	const awardsRow = awardsStored
+		? await legacyAwardsWithNames(awardsStored)
+		: undefined;
 	const awards: RecapSeasonData["awards"] = [];
 	const pushAward = (label: string, a: any) => {
 		if (a && (a.name || a.pid !== undefined)) {

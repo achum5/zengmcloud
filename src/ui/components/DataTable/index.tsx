@@ -53,7 +53,7 @@ export type Col = {
 	// title. Absent on hand-built columns.
 	key?: string;
 	noSearch?: boolean;
-	sortSequence?: SortOrder[];
+	sortSequence?: ReadonlyArray<SortOrder>;
 	sortType?: SortType;
 	searchType?: SortType;
 	title: string;

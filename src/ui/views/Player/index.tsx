@@ -23,6 +23,7 @@ import { useLocal } from "../../util/local.ts";
 import { splitPlayerNote } from "../../../common/seasonNote.ts";
 import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
+import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
 
 const Player2 = ({
 	appearanceTeams,
@@ -134,6 +135,11 @@ const Player2 = ({
 		}
 	}
 
+	const awardsBySeason = Map.groupBy(
+		player.awards.filter((award) => award.type === undefined),
+		(award) => award.season,
+	);
+
 	return (
 		<>
 			<TopStuff
@@ -167,6 +173,7 @@ const Player2 = ({
 
 			{statTables.map(({ name, onlyShowIf, stats, superCols }, i) => (
 				<StatsTable
+					awardsBySeason={awardsBySeason}
 					key={name}
 					name={name}
 					onlyShowIf={onlyShowIf}
@@ -198,6 +205,7 @@ const Player2 = ({
 						"Pot",
 						...ratings.map((rating) => `rating:${rating}`),
 						"Skills",
+						"Awards",
 					])}
 					defaultSort={[0, "asc"]}
 					defaultStickyCols={2}
@@ -270,6 +278,10 @@ const Player2 = ({
 									) : null,
 								),
 								<SkillsBlock className="skills-alone" skills={r.skills} />,
+								wrappedSeasonAwards({
+									awards: awardsBySeason.get(r.season),
+									season: r.season,
+								}),
 							],
 						};
 					})}
@@ -287,7 +299,8 @@ const Player2 = ({
 											<tr key={i}>
 												<td>
 													{a.count > 1 ? `${a.count}x ` : null}
-													{a.type} ({a.seasons.join(", ")})
+													{a.type} ({Object.values(a.seasons).flat().join(", ")}
+													)
 												</td>
 											</tr>
 										);

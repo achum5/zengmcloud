@@ -45,6 +45,7 @@ import type {
 	SeasonLeaders,
 	SavedTradingBlock,
 	NonEmptyArray,
+	Awards,
 } from "../../common/types.ts";
 import type { SocialAccount } from "../../common/socialAccounts.ts";
 import type { IDBPTransaction } from "@dumbmatter/idb";
@@ -270,7 +271,7 @@ class Cache {
 
 	allStars: StoreAPI<AllStars, AllStars, number>;
 
-	awards: StoreAPI<any, any, number>;
+	awards: StoreAPI<Awards, Awards, number>;
 
 	draftLotteryResults: StoreAPI<DraftLotteryResult, DraftLotteryResult, number>;
 
@@ -687,7 +688,7 @@ class Cache {
 
 		for (const [ind, entry] of this._requestQueue.entries()) {
 			if (entry.validStatuses.includes(status)) {
-				self.clearTimeout(entry.timeoutID);
+				clearTimeout(entry.timeoutID);
 				entry.resolve();
 
 				this._requestQueue.delete(ind);

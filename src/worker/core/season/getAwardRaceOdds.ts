@@ -1,5 +1,7 @@
-import getAwardCandidates from "./getAwardCandidates.ts";
-import { getPlayers } from "./awards.ts";
+import {
+	getAwardCandidates,
+	type AwardCandidateOptions,
+} from "../awards/getAwardCandidates.ts";
 import { g, helpers } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import { PHASE } from "../../../common/constants.ts";
@@ -22,66 +24,115 @@ import {
 // pricing the standings so far. The short version: the award formulas add up
 // cumulative production, so at game 10 they are ten games of noise, and a player
 // who missed four of them is marked down as though he will miss 40% of the year.
+//
+// Awards are user-defined now (core/awards), so a race is whatever individual
+// award the league has, scored by its own formula; the score every candidate
+// carries is `currentStats.score`.
 
-// A copy of a candidate with his cumulative production scaled to the season he
-// is on pace to finish. Rates (per game, per 100, PER) are already the right
-// scale and are left alone; only the accumulating stats move.
-const projectPlayer = (
-	p: any,
-	{
-		teamGpByTid,
-		numGames,
-		cumulative,
-	}: {
-		teamGpByTid: Map<number, number>;
-		numGames: number;
-		cumulative: ReadonlySet<string>;
-	},
-) => {
-	const currentStats = p.currentStats ?? {};
-	const gp = currentStats.gp ?? 0;
-	const teamGp = teamGpByTid.get(p.tid) ?? gp;
+type RaceOutput = Awaited<ReturnType<typeof getAwardCandidates>>;
+export type AwardRace = RaceOutput["awardCandidates"][number][number];
+export type AwardRacePlayer = AwardRace["players"][number];
 
-	const projectedGP = projectedGamesPlayed({
-		gp,
-		teamGp,
-		numGames,
-		injuryGamesRemaining: p.injury?.gamesRemaining ?? 0,
-	});
+// A race is a union (individual award, named team), so anything added to its
+// players has to be added to each member - a plain Omit would collapse the
+// union to its common keys and lose actAs and opoyFormula.
+type WithPlayers<R, Extra> = R extends { players: (infer P)[] }
+	? Omit<R, "players"> & { players: (P & Extra)[] }
+	: never;
+export type ScoredRace = WithPlayers<AwardRace, { awardScore: number }>;
+export type PricedRace = WithPlayers<
+	AwardRace,
+	{ awardScore: number; odds: number }
+>;
 
-	// Nothing to project from yet - scaling 0 games by anything is still 0.
-	const scale = gp > 0 ? projectedGP / gp : 1;
+const individualRaces = (out: RaceOutput): AwardRace[] =>
+	out.awardCandidates.flat().filter((race) => race.numTeams === undefined);
 
-	const projectedStats: Record<string, any> = { ...currentStats };
-	if (scale !== 1) {
-		for (const key of Object.keys(projectedStats)) {
-			if (cumulative.has(key) && typeof projectedStats[key] === "number") {
-				projectedStats[key] *= scale;
+// Two races are the same award when they share a shortName and a group.
+export const raceKey = (race: AwardRace): string =>
+	`${race.shortName}|${
+		race.group === undefined
+			? ""
+			: race.group.type === "conf"
+				? `conf${race.group.cid}`
+				: race.group.type === "div"
+					? `div${race.group.did}`
+					: `series${race.group.tids.join("-")}`
+	}`;
+
+export const playerName = (p: { firstName: string; lastName: string }) =>
+	`${p.firstName} ${p.lastName}`.trim();
+
+export const playerTalent = (p: AwardRacePlayer): number =>
+	p.ratings.at(-1)?.ovr ?? 0;
+
+// Scale every candidate's cumulative production to the season he is on pace
+// to finish, in place, before the formulas run. Rates (per game, per 100, PER)
+// are already the right scale and are left alone; only the accumulating stats
+// move. The team's games and the season fraction the formulas may read move
+// with it, so a candidate is judged on a full season rather than on how many
+// games his club happens to have played tonight.
+export const projectPlayers = ({
+	numGames,
+}: {
+	numGames: number;
+}): NonNullable<AwardCandidateOptions["transformPlayers"]> => {
+	const cumulative = cumulativeAwardStats();
+	return (players, teamInfos) => {
+		for (const p of players) {
+			const regular = p.currentStats.regularSeason;
+			const tid = regular?.tid;
+			const teamGp =
+				(tid !== undefined ? teamInfos[tid]?.gp : undefined) ??
+				regular?.gp ??
+				0;
+			for (const currentStats of Object.values(p.currentStats) as Record<
+				string,
+				any
+			>[]) {
+				if (!currentStats) {
+					continue;
+				}
+				const gp = currentStats.gp ?? 0;
+				const projectedGP = projectedGamesPlayed({
+					gp,
+					teamGp,
+					numGames,
+					injuryGamesRemaining: p.injury?.gamesRemaining ?? 0,
+				});
+				// Nothing to project from yet - scaling 0 games by anything is 0.
+				const scale = gp > 0 ? projectedGP / gp : 1;
+				if (scale !== 1) {
+					for (const key of Object.keys(currentStats)) {
+						if (cumulative.has(key) && typeof currentStats[key] === "number") {
+							currentStats[key] *= scale;
+						}
+					}
+				}
+				// Some formula terms scale themselves by games played, so the
+				// projected player has to report the games he'll finish with.
+				currentStats.gp = projectedGP;
+				currentStats.seasonFraction = 1;
+				currentStats.teamGp = numGames;
 			}
 		}
-	}
-	// Some formula terms scale themselves by games played, so the projected
-	// player has to report the games he'll finish with.
-	projectedStats.gp = projectedGP;
-
-	return {
-		...p,
-		currentStats: projectedStats,
-		// Same for the team: judge a candidate on his team's projected full season
-		// rather than on how many games it happens to have played tonight.
-		teamInfo: {
-			...p.teamInfo,
-			gp: numGames,
-		},
 	};
 };
 
 const getAwardRaceOdds = async (season: number) => {
 	const live = season === g.get("season") && g.get("phase") <= PHASE.PLAYOFFS;
 
-	let races;
+	let races: ScoredRace[];
 	let fractionComplete = 1;
-	const talentByPid = new Map<number, number>();
+
+	const withScores = (race: AwardRace): ScoredRace => ({
+		...race,
+		players: race.players.map((p) => ({
+			...p,
+			awardScore:
+				typeof p.currentStats.score === "number" ? p.currentStats.score : 0,
+		})),
+	});
 
 	if (live) {
 		const numGames = g.get("numGames");
@@ -89,59 +140,59 @@ const getAwardRaceOdds = async (season: number) => {
 			{ season },
 			"noCopyCache",
 		);
-		const teamGpByTid = new Map<number, number>();
 		let maxTeamGp = 0;
 		for (const teamSeason of teamSeasons) {
 			const gp = helpers.getTeamSeasonGp(teamSeason);
-			teamGpByTid.set(teamSeason.tid, gp);
 			if (gp > maxTeamGp) {
 				maxTeamGp = gp;
 			}
 		}
 		fractionComplete = numGames > 0 ? Math.min(1, maxTeamGp / numGames) : 1;
 
-		const players = await getPlayers(season);
-		for (const p of players) {
-			talentByPid.set(p.pid, p.ratings?.ovr ?? 0);
-		}
-
-		const cumulative = cumulativeAwardStats();
-		const projected = players.map((p) =>
-			projectPlayer(p, { teamGpByTid, numGames, cumulative }),
-		);
-
 		// The field itself comes from the projection too. Ranking candidates by
-		// partial totals didn't just misprice a player who missed games - it could
-		// leave him out of the top ten entirely.
-		const projectedRaces = await getAwardCandidates(season, projected);
-
-		// Swap the real players back in for display, so the table shows the stats
-		// he has actually put up rather than the projected ones.
-		const actualByPid = new Map(players.map((p: any) => [p.pid, p]));
-		races = projectedRaces.map((row) => ({
-			...row,
-			players: row.players.map((p: any) => ({
-				...(actualByPid.get(p.pid) ?? p),
-				awardScore: p.awardScore,
-			})),
-		}));
+		// partial totals didn't just misprice a player who missed games - it
+		// could leave him out of the top ten entirely.
+		const projected = individualRaces(
+			await getAwardCandidates(season, undefined, {
+				transformPlayers: projectPlayers({ numGames }),
+			}),
+		);
+		// Swap the real players back in for display, so the table shows the
+		// stats he has actually put up rather than the projected ones.
+		const actual = new Map(
+			individualRaces(await getAwardCandidates(season)).map((race) => [
+				raceKey(race),
+				new Map(race.players.map((p) => [p.pid, p])),
+			]),
+		);
+		races = projected.map((race): ScoredRace => {
+			const actualByPid = actual.get(raceKey(race));
+			return {
+				...race,
+				players: race.players.map((p) => ({
+					...(actualByPid?.get(p.pid) ?? p),
+					awardScore:
+						typeof p.currentStats.score === "number" ? p.currentStats.score : 0,
+				})),
+			};
+		});
 	} else {
-		races = await getAwardCandidates(season);
+		races = individualRaces(await getAwardCandidates(season)).map(withScores);
 	}
 
-	return races.map((row) => {
+	return races.map((race): PricedRace => {
 		const probs = awardWinProbs(
-			row.players.map((p: any) => ({
-				score: typeof p.awardScore === "number" ? p.awardScore : 0,
-				talent: talentByPid.get(p.pid) ?? p.ratings?.ovr ?? 0,
+			race.players.map((p) => ({
+				score: p.awardScore,
+				talent: playerTalent(p),
 			})),
 			{
 				fractionComplete,
-				seed: `${season}|${row.name}`,
+				seed: `${season}|${raceKey(race)}`,
 			},
 		);
 
-		const players = row.players.map((p: any, i: number) => ({
+		const players = race.players.map((p, i) => ({
 			...p,
 			// Award bets carry the heavier futures hold and the same cap as every
 			// other bet. The Award Races page and the Sportsbook both read this, so
@@ -153,7 +204,7 @@ const getAwardRaceOdds = async (season: number) => {
 				maxAmerican: SPORTSBOOK_MAX_AMERICAN,
 			}),
 		}));
-		return { ...row, players };
+		return { ...race, players };
 	});
 };
 

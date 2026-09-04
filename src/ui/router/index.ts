@@ -180,6 +180,7 @@ class Router {
 		});
 	}
 
+	// If return false, then no navigation happened and navigationEnd was not called
 	public async navigate(
 		path: string,
 		{
@@ -230,7 +231,7 @@ class Router {
 					if (this.shouldBlock) {
 						const shouldBlock = await this.shouldBlock(refresh);
 						if (shouldBlock) {
-							return;
+							return false;
 						}
 					}
 
@@ -239,7 +240,7 @@ class Router {
 							context,
 						});
 						if (output === false) {
-							return;
+							return false;
 						}
 					}
 
@@ -280,7 +281,7 @@ class Router {
 
 		// HACK! Some ads were including a request for /ads.txt?upapi=true which somehow triggered this code and led to Controller attempting to render multiple pages at once, one of which was outside of the league, leading to beforeViewNonLeague to be called and stop game sim
 		if (error && path.includes("ads.txt")) {
-			return;
+			return false;
 		}
 
 		if (this.navigationEnd) {
@@ -289,6 +290,8 @@ class Router {
 				error,
 			});
 		}
+
+		return true;
 	}
 
 	public async start({
