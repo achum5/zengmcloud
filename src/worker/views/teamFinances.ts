@@ -1,4 +1,5 @@
 import { PHASE } from "../../common/constants.ts";
+import { capsForSeasons } from "../util/capsForSeasons.ts";
 import { draft, finances, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
@@ -227,35 +228,27 @@ const updateTeamFinances = async (
 		// The cap moves. In a real-players league scheduled events step the salary
 		// cap, luxury tax and hard cap up every season, so measuring a 2030 column
 		// against today's cap is wrong by a lot by the time you get there.
-		// Processed events are deleted, so everything still in the store is in the
-		// future - walk them forward, season by season, to get the caps each
-		// column should actually be judged against.
-		const running = {
-			salaryCap: g.get("salaryCap"),
-			luxuryPayroll: g.get("luxuryPayroll"),
-			minPayroll: g.get("minPayroll"),
-			hardCapAmount: g.get("hardCapAmount"),
-			hardCapTids: g.get("hardCapTids"),
-			hardCapUseLuxuryTax: g.get("hardCapUseLuxuryTax"),
-		};
-		const gameAttributeEvents = (await idb.cache.scheduledEvents.getAll())
-			.filter((event) => event.type === "gameAttributes")
-			.sort((a, b) => a.season - b.season || a.phase - b.phase);
-		let eventIndex = 0;
-		const capsBySeason = salariesSeasons.map((yr) => {
-			while (
-				eventIndex < gameAttributeEvents.length &&
-				gameAttributeEvents[eventIndex]!.season <= yr
-			) {
-				const info = (gameAttributeEvents[eventIndex] as any).info ?? {};
-				for (const key of helpers.keys(running)) {
-					if (info[key] !== undefined) {
-						(running as any)[key] = info[key];
-					}
-				}
-				eventIndex += 1;
-			}
-			return { ...running };
+		//
+		// FROM THE DATABASE, not idb.cache: the cache only ever holds the current
+		// season's scheduled events, so a walk over it saw this season's own
+		// pending change and nothing after it, and handed that one number to
+		// every column from the second onward.
+		const gameAttributeEvents = (
+			await idb.getCopies.scheduledEvents(undefined, "noCopyCache")
+		).filter((event) => event.type === "gameAttributes");
+		const capsBySeason = capsForSeasons({
+			seasons: salariesSeasons,
+			current: {
+				salaryCap: g.get("salaryCap"),
+				luxuryPayroll: g.get("luxuryPayroll"),
+				minPayroll: g.get("minPayroll"),
+				hardCapAmount: g.get("hardCapAmount"),
+				hardCapTids: g.get("hardCapTids"),
+				hardCapUseLuxuryTax: g.get("hardCapUseLuxuryTax"),
+			},
+			events: gameAttributeEvents,
+			season: g.get("season"),
+			phase: g.get("phase"),
 		});
 
 		const teamSeasons = await idb.getCopies.teamSeasons({
