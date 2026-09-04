@@ -166,9 +166,13 @@ const AwardSettings = ({
 					setStatus("saving");
 					const awards = awardsStateToAwards(awardsState);
 					if (awards) {
-						await toWorker("main", "updateGameAttributes", {
-							awards,
-						});
+						const renamed = await toWorker("awardSettings", "save", awards);
+						if (renamed.seasons > 0) {
+							showNotification({
+								text: `Renamed in ${renamed.seasons} past season${renamed.seasons === 1 ? "" : "s"}.`,
+								type: "success",
+							});
+						}
 
 						// Do this rather than realtimeUpdate in case the number of awards has changed, like from changing the group setting
 						const newAwards = await toWorker(

@@ -135,6 +135,20 @@ export const backfillVotingRanks =
 
 		const result: BackfillVotingRanksResult = { seasons: 0, ranks: 0 };
 
+		try {
+			return await backfill(result);
+		} finally {
+			// Whatever happened, the cache has to be put back: everything reads
+			// through it, and leaving it holding rows this just rewrote (or,
+			// worse, stuck mid-fill) breaks the rest of the session.
+			await idb.cache.fill();
+		}
+	};
+
+const backfill = async (
+	result: BackfillVotingRanksResult,
+): Promise<BackfillVotingRanksResult> => {
+	{
 		const allAwards = await idb.league.getAll("awards");
 
 		for (const awards of allAwards) {
@@ -230,7 +244,6 @@ export const backfillVotingRanks =
 			result.seasons += 1;
 		}
 
-		await idb.cache.fill();
-
 		return result;
-	};
+	}
+};
