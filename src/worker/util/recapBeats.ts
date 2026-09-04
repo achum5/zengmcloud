@@ -195,9 +195,14 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 		options.push(
 			pick(
 				rng,
+				// Both clubs named. "The season series with the Bulls is level"
+				// in a paragraph that has just been talking about the Bulls left
+				// the reader to guess whose series it was.
 				[
-					`That squared the season series with ${ln} at ${wonNow}-${wonNow}.`,
-					`The season series with ${ln} is level at ${wonNow}-${wonNow}.`,
+					`That squared the season series between ${wn} and ${ln} at ${wonNow}-${wonNow}.`,
+					total === 2
+						? `${W} and ${ln} have split their two meetings this season.`
+						: `${W} and ${ln} have split ${numWord(total)} meetings this season.`,
 					`${W} pulled level with ${ln} at ${wonNow}-${wonNow} for the season.`,
 				],
 				"seriesLevel",
@@ -209,7 +214,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 				rng,
 				[
 					`${W} lead the season series with ${ln} ${wonNow}-${s.lost}.`,
-					`That put ${wn} up ${wonNow}-${s.lost} in the season series.`,
+					`That put ${wn} up ${wonNow}-${s.lost} on ${ln} for the season.`,
 					`It was ${poss(wn)} ${ordinal(wonNow)} win in ${numWord(total)} meetings with ${ln} this season.`,
 				],
 				"seriesLead",
@@ -697,6 +702,20 @@ export const returnBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 		return undefined;
 	}
 	const r = p.returnFrom;
+	// His line has already been written when the piece has named him - as the
+	// headline subject, the lead, the supporting cast. Printing "27 points and
+	// 13 rebounds" a third time is not news; that he was out is.
+	if (ctx.said.has(p.name)) {
+		return pick(
+			rng,
+			[
+				`It was ${poss(p.name)} first game back after ${injuryPhrase(r.type)} cost him ${numWord(r.games)} games.`,
+				`${p.name} had missed the previous ${numWord(r.games)} games with ${injuryPhrase(r.type)}.`,
+				`That was ${p.name} in his first game since ${injuryPhrase(r.type)} sidelined him for ${numWord(r.games)}.`,
+			],
+			"returnFromInjuryTold",
+		);
+	}
 	ctx.said.add(p.name);
 	return pick(
 		rng,
@@ -871,7 +890,7 @@ export const scoringNormBeat = (
 				pick(
 					rng,
 					[
-						`${W} had been averaging ${wNorm.pts.toFixed(1)} a game coming in.`,
+						`${W} had been averaging ${wNorm.pts.toFixed(1)} a game coming in, and put up ${ctx.winner.pts}.`,
 						// Every shape names the team: these land in a paragraph with
 						// other clubs in it, and "That is 17 more" two sentences after
 						// the last mention of them attaches to the wrong one.
@@ -1007,16 +1026,28 @@ export const seriesShapeBeat = (
 		);
 	} else if (!winnerHome) {
 		const roadWins = prior.filter((g) => g.won && !g.home).length + 1;
+		const roadLosses = prior.filter((g) => !g.won && !g.home).length;
 		options.push(
-			pick(
-				rng,
-				[
-					`${W} have now won ${plural(roadWins, "game")} on the road in the series.`,
-					`That is ${numWord(roadWins)} away from home for ${wn} in this series.`,
-					`${W} took another one on ${poss(ln)} floor.`,
-				],
-				"seriesRoadWin",
-			),
+			roadWins === 1
+				? pick(
+						rng,
+						[
+							`It was ${poss(wn)} first win on ${poss(ln)} floor in the series.`,
+							roadLosses > 0
+								? `${W} finally won one on the road, after ${numWord(roadLosses)} ${roadLosses === 1 ? "loss" : "losses"} there.`
+								: `${W} took the first road game of the series.`,
+						],
+						"seriesFirstRoadWin",
+					)
+				: pick(
+						rng,
+						[
+							`That is ${numWord(roadWins)} wins on ${poss(ln)} floor for ${wn} in the series.`,
+							`${W} have now won ${numWord(roadWins)} in ${poss(ln)} building.`,
+							`${W} took another one on ${poss(ln)} floor.`,
+						],
+						"seriesRoadWin",
+					),
 		);
 	}
 
@@ -1061,7 +1092,7 @@ export const seriesShapeBeat = (
 				rng,
 				[
 					`Across the series ${ahead} have outscored the other side by ${Math.abs(forTotal - againstTotal)}.`,
-					`The aggregate over ${numWord(margins.length)} games favours ${ahead} by ${Math.abs(forTotal - againstTotal)}.`,
+					`Over ${numWord(margins.length)} games the aggregate favors ${ahead} by ${Math.abs(forTotal - againstTotal)}.`,
 				],
 				"seriesAggregate",
 			),
@@ -1116,6 +1147,15 @@ const MIN_GAMES_FOR_RACE = 15;
 
 // Who moved in the playoff picture tonight. Only inside it: a climb to
 // thirteenth is not news, and neither is a slide between two lottery places.
+// "the East" for "Eastern Conference", where a wrap names it four times in
+// two sentences; any other conference name is used as it is.
+const confShort = (name: string): string => {
+	const m = /^(east|west|north|south)(?:ern)? conference$/i.exec(name);
+	return m
+		? `the ${m[1]![0]!.toUpperCase()}${m[1]!.slice(1).toLowerCase()}`
+		: `the ${name}`;
+};
+
 export const dayStandingsMovers = (
 	ctx: DayBeatContext,
 	rng: Rng,
@@ -1147,19 +1187,19 @@ export const dayStandingsMovers = (
 				moves.push({
 					tid: t.tid,
 					size: 3,
-					text: `${theNick(t)} moved into the ${st.conf} places at ${ordinal(st.rank)}`,
+					text: `${theNick(t)} moved into a playoff spot in ${confShort(st.conf)} at ${ordinal(st.rank)}`,
 				});
 			} else if (outOfIt) {
 				moves.push({
 					tid: t.tid,
 					size: 3,
-					text: `${theNick(t)} slid out of the ${st.conf} places to ${ordinal(st.rank)}`,
+					text: `${theNick(t)} slid out of the playoff spots in ${confShort(st.conf)} to ${ordinal(st.rank)}`,
 				});
 			} else if (st.rank <= spots && up) {
 				moves.push({
 					tid: t.tid,
 					size: st.rank <= 3 ? 2 : 1,
-					text: `${theNick(t)} climbed to ${ordinal(st.rank)} in the ${st.conf}`,
+					text: `${theNick(t)} climbed to ${ordinal(st.rank)} in ${confShort(st.conf)}`,
 				});
 			}
 		}
@@ -1208,13 +1248,15 @@ export const dayRaceSentence = (
 		const gap = Math.round((first.gb - last.gb) * 2) / 2;
 		const lastName = last.name ? `the ${last.name}` : last.abbrev;
 		const firstName = first.name ? `the ${first.name}` : first.abbrev;
+		// "Playoff spot" once; the second conference gets "the last spot".
+		const spot = bits.length === 0 ? "the last playoff spot" : "the last spot";
 		if (gap <= 0) {
 			bits.push(
-				`${lastName} and ${firstName} are level for the last ${conf.name} place`,
+				`${lastName} and ${firstName} are level for ${spot} in ${confShort(conf.name)}`,
 			);
 		} else if (gap <= 3) {
 			bits.push(
-				`${lastName} hold the last ${conf.name} place by ${gbText(gap)} over ${firstName}`,
+				`${lastName} hold ${spot} in ${confShort(conf.name)} by ${gbText(gap)} over ${firstName}`,
 			);
 		}
 	}
@@ -1365,6 +1407,10 @@ export const daySeasonHighs = (
 	if (all.length === 0) {
 		return undefined;
 	}
+	// "Season bests on the night:" introducing one name is a list of one.
+	if (all.length === 1) {
+		return `${cap(all[0]!)}.`;
+	}
 	return pick(
 		rng,
 		[
@@ -1462,9 +1508,12 @@ export const dayBracketWatch = (
 		const w = theNick(winner);
 		const l = theNick(loser);
 		if (wAfter === need - 1 && lAfter === need - 1) {
+			// The matchup as one item, so two of them list as "Mavericks-Hawks
+			// and Celtics-Cavaliers" rather than "the Mavericks and the Hawks and
+			// the Celtics and the Cavaliers".
 			out.push({
 				weight: 4,
-				text: `${w} and ${l} play a decider in Game ${nextGame}`,
+				text: `${nick(winner)}-${nick(loser)} go to a decider in Game ${nextGame}`,
 			});
 		} else if (wAfter === need - 1) {
 			out.push({
@@ -1492,7 +1541,7 @@ export const dayBracketWatch = (
 	const byTail = new Map<string, string[]>();
 	for (const item of chosen) {
 		const m =
-			/ (face elimination in Game \d+|play a decider in Game \d+)$/.exec(
+			/ (face elimination in Game \d+|go to a decider in Game \d+)$/.exec(
 				item.text,
 			);
 		const tail = m ? m[1]! : "";
@@ -1506,7 +1555,9 @@ export const dayBracketWatch = (
 		} else if (subjects.length === 1) {
 			clauses.push(`${subjects[0]} ${tail}`);
 		} else {
-			clauses.push(`${naturalList(subjects)} all ${tail}`);
+			clauses.push(
+				`${naturalList(subjects)} ${subjects.length === 2 ? "both" : "all"} ${tail}`,
+			);
 		}
 	}
 	const list = naturalList(clauses);

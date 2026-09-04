@@ -144,6 +144,10 @@ export type RecapTeam = {
 	last10?: RecapLast10Game[];
 	// Win/loss streak AS OF this game (includes this game's result).
 	streak?: { won: boolean; count: number };
+	// The streak the team carried INTO this game. When it points the other way
+	// from `streak`, tonight ended it - and a long skid ending is a bigger
+	// story than the win that ended it.
+	streakBefore?: { won: boolean; count: number };
 	// Players held out of this game due to injury.
 	injuries?: RecapInjuryOut[];
 	seed?: number;
@@ -997,6 +1001,9 @@ export const getDayGamesForRecap = async ({
 				ptsQtrs: Array.isArray(t.ptsQtrs) ? t.ptsQtrs : undefined,
 				last10: allStar ? undefined : await last10For(t.tid, game.day ?? day),
 				streak: allStar ? undefined : streakFor(t.tid, game.day ?? day),
+				streakBefore: allStar
+					? undefined
+					: streakFor(t.tid, (game.day ?? day) - 1),
 				injuries: injuries.length > 0 ? injuries : undefined,
 				seed: playoffs ? seedOf(t.tid) : undefined,
 			});
@@ -1592,6 +1599,9 @@ const createAutoRecapContext = async (season: number) => {
 				streak: allStar
 					? undefined
 					: streakFor(t.tid, game.day ?? effectiveDay),
+				streakBefore: allStar
+					? undefined
+					: streakFor(t.tid, (game.day ?? effectiveDay) - 1),
 				injuries: injuries.length > 0 ? injuries : undefined,
 				seed: playoffs ? seedOf(t.tid) : undefined,
 			});

@@ -757,8 +757,14 @@ describe("the day wrap's context", () => {
 			ctxOf(games, { playoffSpots: 8, confs: [] }),
 			rngFromSeed(1),
 		)!;
-		assert.match(text, /Celtics moved into the East places at eighth/);
-		assert.match(text, /Knicks slid out of the East places to ninth/);
+		assert.match(
+			text,
+			/Celtics moved into a playoff spot in the East at eighth/,
+		);
+		assert.match(
+			text,
+			/Knicks slid out of the playoff spots in the East to ninth/,
+		);
 		assert.match(text, /Bucks climbed to second/);
 		// No clause carries its own comma: they are joined into one list.
 		assert.notMatch(text, /places, down to/);
@@ -855,9 +861,12 @@ describe("the day wrap's context", () => {
 		const text = dayRaceSentence(ctxOf([], standings), rngFromSeed(1))!;
 		assert.match(
 			text,
-			/Celtics hold the last East place by 1 game over the Knicks/,
+			/Celtics hold the last playoff spot in the East by 1 game over the Knicks/,
 		);
-		assert.match(text, /Kings and the Suns are level for the last West place/);
+		assert.match(
+			text,
+			/Kings and the Suns are level for the last spot in the West/,
+		);
 		// "cut line" never twice in one sentence.
 		assert.ok((text.match(/cut line/g) ?? []).length <= 1, text);
 		assert.ok(
@@ -1259,7 +1268,7 @@ describe("the postseason day wrap", () => {
 			seriesGame(2, "Bucks", "Heat", 2, 3, [3, 4]),
 		];
 		const text = dayBracketWatch(ctx(games), rngFromSeed(1))!;
-		assert.match(text, /Bucks and the Heat play a decider in Game 7/);
+		assert.match(text, /Bucks-Heat go to a decider in Game 7/);
 		assert.ok(text.indexOf("decider") < text.indexOf("elimination"), text);
 	});
 

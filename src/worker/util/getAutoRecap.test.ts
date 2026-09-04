@@ -16,6 +16,10 @@ import type {
 } from "./getDayGamesForRecap.ts";
 import { verifyRecap } from "./recapAccuracy.ts";
 
+// What a series-clinching headline can look like: the result leads it.
+const CLINCH_HEADLINE =
+	/close out|sweep|finish off|put away|move on|through to|put out|Game \d|title|champions|closes out|to close out/;
+
 // A box-score line with only the fields a test cares about; the rest default to
 // zero so fixtures stay short.
 const player = (p: Partial<RecapPlayer> & { name: string }): RecapPlayer => ({
@@ -953,7 +957,12 @@ describe("getAutoRecap playoffs", () => {
 	test("closeout is called a clinch and advance", () => {
 		// Boston up 3-1, wins Game 5 -> 4-1, series over.
 		const recap = getAutoRecap(playoffGame(3, 1, true, { round: 1 }));
-		assert.ok(/closed out|advanced/.test(recap), recap);
+		assert.ok(
+			/closed out|advanced|closes out|took the series|sweep|in five/.test(
+				recap,
+			),
+			recap,
+		);
 	});
 
 	test("Finals clincher says champions", () => {
@@ -1021,8 +1030,11 @@ describe("getAutoRecap playoffs", () => {
 		});
 		const recap = getAutoRecap(g);
 		assert.ok(!/Game 7/.test(recap), recap);
-		assert.ok(/Game 5/.test(recap), recap);
-		assert.ok(/closed out|advanced/.test(recap), recap);
+		assert.ok(/Game 5/.test(recap.split("\n")[0]!), recap);
+		assert.ok(
+			/season is over|done for the year|end of the road|puts out/.test(recap),
+			recap,
+		);
 	});
 });
 
@@ -1784,7 +1796,7 @@ describe("regressions from real games", () => {
 		// the streak is reported at all, and that no phrasing anywhere in the
 		// recap renders the possessive as a bare apostrophe.
 		const recap = getAutoRecap(heatGame);
-		assert.ok(/in a row|straight|last \d/.test(recap), recap);
+		assert.ok(/in a row|straight|last \d|streak to \d/.test(recap), recap);
 		assert.ok(!/Heat'(?!s)/.test(recap), recap);
 	});
 
@@ -3736,16 +3748,22 @@ describe("the losing side of a playoff series", () => {
 	});
 
 	// A title-clinching game used to get a headline indistinguishable from a
-	// Tuesday in January.
+	// Tuesday in January - and then, for a while, a Tuesday headline with
+	// ", advancing to the Conference Semifinals" hung off the end of it. The
+	// series result IS the headline.
 	test("the headline carries the stakes of a clincher", () => {
 		const title = getAutoRecap(
 			seriesGame(3, 2, { gid: 8200, round: 4, numRounds: 4 }),
 		);
-		assert.ok(/clinching the title/.test(title.split("\n")[0]!), title);
+		assert.ok(/title|champions/.test(title.split("\n")[0]!), title);
 
 		const advance = getAutoRecap(seriesGame(3, 1, { gid: 8201, round: 1 }));
+		assert.ok(CLINCH_HEADLINE.test(advance.split("\n")[0]!), advance);
+		// The clinch is not then said again in the body's opening sentence.
 		assert.ok(
-			/advancing to the Conference Semifinals/.test(advance.split("\n")[0]!),
+			!/closed out the First Round|took the First Round|First Round to the/.test(
+				advance,
+			) || !/in five|in six|sweep/.test(advance.split("\n")[0]!),
 			advance,
 		);
 	});
@@ -3754,8 +3772,16 @@ describe("the losing side of a playoff series", () => {
 	// out of a Game 7 is the one detail nobody would leave out.
 	test("a Game 7 clincher stays a Game 7", () => {
 		const recap = getAutoRecap(seriesGame(3, 3, { gid: 8300, round: 1 }));
-		assert.ok(/Game 7/.test(recap), recap);
-		assert.ok(/advancing to/.test(recap), recap);
+		assert.ok(/Game 7/.test(recap.split("\n")[0]!), recap);
+		assert.ok(
+			/season is over|done for the year|end of the road|puts out/.test(recap),
+			recap,
+		);
+	});
+
+	test("a sweep is headlined as a sweep", () => {
+		const recap = getAutoRecap(seriesGame(3, 0, { gid: 8301, round: 1 }));
+		assert.ok(/sweep/i.test(recap.split("\n")[0]!), recap);
 	});
 
 	// Seeds were in the payload and never read, and a low seed beating a high one
@@ -3922,7 +3948,7 @@ describe("a postseason read end to end", () => {
 		let sawResultHeadline = false;
 		for (let gid = 9300; gid < 9360; gid += 1) {
 			const headline = getAutoRecap(quietGame(gid)).split("\n")[0] ?? "";
-			if (/advancing to/.test(headline)) {
+			if (CLINCH_HEADLINE.test(headline)) {
 				sawResultHeadline = true;
 			}
 			assert.ok(
@@ -5973,7 +5999,7 @@ describe("the day wrap says what it means", () => {
 			if (m && i > 0) {
 				assert.doesNotMatch(
 					sentences[i - 1]!,
-					new RegExp(`the ${m[1]}\\b`),
+					new RegExp(String.raw`the ${m[1]}\b`),
 					`${sentences[i - 1]}\n${sentence}`,
 				);
 			}
