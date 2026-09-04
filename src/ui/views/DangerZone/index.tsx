@@ -21,6 +21,7 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 	const [faceAgingScope, setFaceAgingScope] = useState<FaceAgingScope>("all");
 	const [agingFaces, setAgingFaces] = useState(false);
 	const [clearingRecaps, setClearingRecaps] = useState(false);
+	const [backfillingRanks, setBackfillingRanks] = useState(false);
 
 	return (
 		<>
@@ -265,6 +266,53 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 						}}
 					>
 						{clearingRecaps ? "Working..." : "Delete filed recaps"}
+					</button>
+
+					<h2>Awards</h2>
+
+					<p>
+						Seasons played before this update recorded only award winners, not
+						the players behind them. This re-decides them with their own
+						formulas and box scores, so a player page shows MVP-3 for a
+						third-place finish. Winners never change.
+					</p>
+
+					<button
+						type="button"
+						className="btn btn-light-bordered mb-5"
+						disabled={!godMode || backfillingRanks}
+						onClick={async () => {
+							const proceed = await confirm(
+								"Fill in the players behind every past award winner? This adds to award histories across the league and cannot be undone.",
+								{
+									title: "Fill in award voting",
+									okText: "Fill in",
+								},
+							);
+							if (!proceed) {
+								return;
+							}
+
+							setBackfillingRanks(true);
+							try {
+								const { seasons, ranks } = await toWorker(
+									"toolsMenu",
+									"backfillAwardVotingRanks",
+									undefined,
+								);
+								showNotification({
+									text:
+										ranks === 0
+											? "Nothing to fill in - every past award already lists the players behind the winner."
+											: `Added ${ranks} placing${ranks === 1 ? "" : "s"} across ${seasons} season${seasons === 1 ? "" : "s"}.`,
+									type: "success",
+								});
+							} finally {
+								setBackfillingRanks(false);
+							}
+						}}
+					>
+						{backfillingRanks ? "Working..." : "Fill in award voting"}
 					</button>
 
 					<h2>Auto save</h2>

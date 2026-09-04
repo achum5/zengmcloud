@@ -73,7 +73,9 @@ const teamAwards = async (
 	};
 };
 
-const NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD = 5;
+// How deep the ballot goes: the winner plus the four players behind him, so a
+// player page can show "MVP-3" the way Basketball Reference does.
+export const NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD = 5;
 
 export const doAwards = async (conditions: Conditions) => {
 	const season = g.get("season");

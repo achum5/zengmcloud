@@ -8,6 +8,7 @@ import {
 	type FaceAgingScope,
 } from "../core/player/applyFaceAgingToLeague.ts";
 import { clearFiledRecaps } from "../core/league/clearFiledRecaps.ts";
+import { backfillVotingRanks } from "../core/awards/backfillVotingRanks.ts";
 
 const toolsMenu = {
 	autoPlaySeasons: (param: unknown, conditions: Conditions) => {
@@ -34,6 +35,11 @@ const toolsMenu = {
 		const counts = await clearFiledRecaps();
 		await toUI("realtimeUpdate", [["notes"]]);
 		return counts;
+	},
+	backfillAwardVotingRanks: async () => {
+		const result = await backfillVotingRanks();
+		await toUI("realtimeUpdate", [["playerMovement"]]);
+		return result;
 	},
 	resetDb: async (param: unknown, conditions: Conditions) => {
 		const response = await toUI("confirmDeleteAllLeagues", [], conditions);
