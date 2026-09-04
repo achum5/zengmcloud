@@ -17,6 +17,7 @@ import {
 } from "../../common/constants.ts";
 import { env } from "./env.ts";
 import { initUILocalGames } from "./initUILocalGames.ts";
+import { repairAwardLabels } from "../core/awards/repairAwardLabels.ts";
 
 let heartbeatIntervalID: number;
 
@@ -188,6 +189,18 @@ export const beforeLeague = async (newLid: number, conditions?: Conditions) => {
 
 	await league.loadGameAttributes();
 	await initUILocalGames();
+
+	// An award renamed before renaming carried through history left every past
+	// season with the old label and no way to ever fix it from the settings.
+	// Checked here because the settings are now loaded and this is the one
+	// moment that needs no history: one small record per season, and nothing to
+	// do at all in a league that was never renamed. Best effort - a label is
+	// never a reason to fail a league load.
+	try {
+		await repairAwardLabels();
+	} catch (error) {
+		console.error("Award label repair failed", error);
+	}
 
 	if (loadingNewLid !== newLid) {
 		return;

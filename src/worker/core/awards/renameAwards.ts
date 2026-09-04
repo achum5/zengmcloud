@@ -112,6 +112,63 @@ export const renameMatches = (
 	award.shortName === rename.fromShortName &&
 	(award.numTeams !== undefined) === rename.isTeam;
 
+// WHAT THE SETTINGS SAY EVERY AWARD IS CALLED, RIGHT NOW.
+//
+// The diff above only catches a rename as it happens. It cannot help a league
+// that renamed its awards before any of this existed, or one whose history was
+// half-relabeled and then interrupted - and it never will, because by then
+// there is no "before" left to compare against. Both settings say All-NBA;
+// only the seasons still say All-League.
+//
+// So the same machinery is also pointed at the settings themselves. Every
+// award becomes a rename from its own abbrev to its own current label, which
+// relabels any season still carrying an older one and does nothing at all to a
+// season that already agrees. The abbrev is what identifies an award, so this
+// says exactly what the diff says: an award keeping its abbrev is the same
+// award, and its name follows the settings.
+export const awardRenamesFromSettings = (
+	awards: AwardSettings,
+): AwardRename[] =>
+	awards.map((award) => ({
+		fromShortName: award.shortName,
+		toName: award.name,
+		toShortName: award.shortName,
+		isTeam: award.numTeams !== undefined,
+	}));
+
+// Is any season carrying a label the settings have moved on from? Cheap enough
+// to ask on every league load: the awards rows are one small record per season,
+// and the sweep that answers it is only paid when the answer is yes.
+export const awardLabelsOutOfDate = (
+	rows: readonly {
+		awards?: {
+			shortName: string;
+			name: string;
+			numTeams?: number | undefined;
+		}[];
+	}[],
+	settings: AwardSettings,
+) => {
+	const byShortName = new Map(
+		settings.map((award) => [award.shortName, award]),
+	);
+
+	for (const row of rows) {
+		for (const award of row.awards ?? []) {
+			const setting = byShortName.get(award.shortName);
+			if (
+				setting &&
+				(setting.numTeams !== undefined) === (award.numTeams !== undefined) &&
+				setting.name !== award.name
+			) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+};
+
 export const applyAwardRenames = async (
 	renames: AwardRename[],
 ): Promise<RenameAwardsResult> => {
@@ -171,11 +228,18 @@ const rename = async (
 				continue;
 			}
 
-			award.name = rename.toName;
-			award.shortName = rename.toShortName;
-			changed = true;
+			if (
+				award.name !== rename.toName ||
+				award.shortName !== rename.toShortName
+			) {
+				award.name = rename.toName;
+				award.shortName = rename.toShortName;
+				changed = true;
+			}
 
-			// Only the players who hold it, taken from the award's own ballot.
+			// Every player who holds it, taken from the award's own ballot -
+			// including when the season's own row was already right, because a
+			// player's copy can be stale on its own.
 			const winners =
 				award.numTeams === undefined ? award.winner : award.winner.flat();
 			for (const winner of winners) {
@@ -206,7 +270,12 @@ const rename = async (
 				continue;
 			}
 			for (const { season, rename } of edits) {
-				if (award.season === season && renameMatches(award, rename)) {
+				if (
+					award.season === season &&
+					renameMatches(award, rename) &&
+					(award.name !== rename.toName ||
+						award.shortName !== rename.toShortName)
+				) {
 					award.name = rename.toName;
 					award.shortName = rename.toShortName;
 					changed = true;

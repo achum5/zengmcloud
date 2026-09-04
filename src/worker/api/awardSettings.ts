@@ -11,6 +11,8 @@ import { toUI } from "../util/index.ts";
 import {
 	applyAwardRenames,
 	awardRenames,
+	awardRenamesFromSettings,
+	type AwardRename,
 } from "../core/awards/renameAwards.ts";
 
 export const getAwardCandidates = async (
@@ -42,11 +44,22 @@ export const getAwardCandidates = async (
 // Saving the award settings, with any rename carried back through the seasons
 // already played (see core/awards/renameAwards).
 export const save = async (awards: GameAttributesLeague["awards"]) => {
-	const renames = awardRenames(g.get("awards"), awards);
+	// Two things at once, and they cover different gaps. The diff is the only
+	// thing that can follow an award whose ABBREV changed, since the seasons
+	// carry the old one. The settings themselves catch everything else,
+	// including a rename made before any of this existed - by then there is no
+	// "before" left for a diff to find.
+	const renames = new Map<string, AwardRename>();
+	for (const rename of awardRenamesFromSettings(awards)) {
+		renames.set(rename.fromShortName, rename);
+	}
+	for (const rename of awardRenames(g.get("awards"), awards)) {
+		renames.set(rename.fromShortName, rename);
+	}
 
 	await league.setGameAttributes({ awards });
 
-	const renamed = await applyAwardRenames(renames);
+	const renamed = await applyAwardRenames([...renames.values()]);
 
 	await toUI("realtimeUpdate", [["gameAttributes"]]);
 

@@ -1,5 +1,10 @@
 import { assert, describe, test } from "vitest";
-import { awardRenames, renameMatches } from "./renameAwards.ts";
+import {
+	awardLabelsOutOfDate,
+	awardRenames,
+	awardRenamesFromSettings,
+	renameMatches,
+} from "./renameAwards.ts";
 import type { AwardSettings } from "../../../common/types.ts";
 
 const mvp: AwardSettings[number] = {
@@ -191,5 +196,78 @@ describe("awardRenames", () => {
 				["ALL", "ANBA"],
 			],
 		);
+	});
+});
+
+// The case a diff can never reach: the settings were changed before renaming
+// carried through history, so both sides of any comparison now say All-NBA and
+// only the seasons still say All-League.
+describe("awardRenamesFromSettings", () => {
+	test("every award becomes a rename onto its own current label", () => {
+		assert.deepStrictEqual(
+			awardRenamesFromSettings([mvp, { ...allLeague, name: "All-NBA" }]),
+			[
+				{
+					fromShortName: "MVP",
+					toName: "Most Valuable Player",
+					toShortName: "MVP",
+					isTeam: false,
+				},
+				{
+					fromShortName: "ALL",
+					toName: "All-NBA",
+					toShortName: "ALL",
+					isTeam: true,
+				},
+			],
+		);
+	});
+});
+
+describe("awardLabelsOutOfDate", () => {
+	const season = (name: string, shortName = "ALL") => ({
+		awards: [{ shortName, name, numTeams: 3 }],
+	});
+
+	test("a season still carrying the old label", () => {
+		assert.isTrue(
+			awardLabelsOutOfDate(
+				[season("All-League")],
+				[{ ...allLeague, name: "All-NBA" }],
+			),
+		);
+	});
+
+	test("a league that was never renamed has nothing to do", () => {
+		assert.isFalse(awardLabelsOutOfDate([season("All-League")], [allLeague]));
+		assert.isFalse(awardLabelsOutOfDate([], [allLeague]));
+	});
+
+	// An abbrev no longer in the settings is an award that was deleted or given
+	// a new abbrev, and its history is not this check's to touch.
+	test("an abbrev the settings no longer use is left alone", () => {
+		assert.isFalse(
+			awardLabelsOutOfDate(
+				[season("All-League", "ALL")],
+				[{ ...allLeague, name: "All-NBA", shortName: "ANBA" }],
+			),
+		);
+	});
+
+	// The same abbrev on a team award and an individual one is not the same
+	// award wearing an old label.
+	test("a rename never crosses between team and individual awards", () => {
+		assert.isFalse(
+			awardLabelsOutOfDate(
+				[{ awards: [{ shortName: "ALL", name: "All-League" }] }],
+				[{ ...allLeague, name: "All-NBA" }],
+			),
+		);
+	});
+
+	// Nothing here reads an old-format row's fields, so a season synced from an
+	// older build is not mistaken for a stale label.
+	test("a row with no award list says nothing", () => {
+		assert.isFalse(awardLabelsOutOfDate([{}], [allLeague]));
 	});
 });
