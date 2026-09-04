@@ -445,6 +445,12 @@ export type Game = {
 	numGamesToWinSeries?: number;
 	numPeriods?: number; // Optional only for legacy, otherwise it's the number of periods in the game, defined at the start
 	numPlayersOnCourt?: number;
+
+	// Lineup-level scoring, for the season's RAPM regression. A flat run of
+	// integers, `2 * numPlayersOnCourt + 4` per ten-man matchup - see
+	// worker/util/gameShifts.ts. Regular season games only, and only in sports
+	// and versions that record it, so absent far more often than present.
+	shifts?: number[];
 	// The pregame point spread from the home team's perspective (positive = home
 	// favored), as it was computed WHEN THE GAME WAS PLAYED. Stored because the
 	// formula can see things (lineup synergy) that a finished box score cannot

@@ -14,6 +14,7 @@ import newSchedule from "./newSchedule.ts";
 import newSchedulePlayoffsDay from "./newSchedulePlayoffsDay.ts";
 import setSchedule from "./setSchedule.ts";
 import updateOwnerMood from "./updateOwnerMood.ts";
+import { updateRapm } from "./updateRapm.ts";
 import validatePlayoffSettings from "./validatePlayoffSettings.ts";
 
 export default {
@@ -33,5 +34,6 @@ export default {
 	newSchedulePlayoffsDay,
 	setSchedule,
 	updateOwnerMood,
+	updateRapm,
 	validatePlayoffSettings,
 };

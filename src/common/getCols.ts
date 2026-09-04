@@ -921,6 +921,24 @@ const sportSpecificCols = bySport<{
 			sortType: "number",
 			title: "On-Off",
 		},
+		"stat:orapm": {
+			desc: "Offensive Regularized Adjusted Plus/Minus",
+			sortSequence: ["desc", "asc"],
+			sortType: "number",
+			title: "ORAPM",
+		},
+		"stat:drapm": {
+			desc: "Defensive Regularized Adjusted Plus/Minus",
+			sortSequence: ["desc", "asc"],
+			sortType: "number",
+			title: "DRAPM",
+		},
+		"stat:rapm": {
+			desc: "Regularized Adjusted Plus/Minus",
+			sortSequence: ["desc", "asc"],
+			sortType: "number",
+			title: "RAPM",
+		},
 		"stat:tpp": {
 			desc: "Three Point Percentage",
 			sortSequence: ["desc", "asc"],

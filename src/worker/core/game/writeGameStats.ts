@@ -15,6 +15,7 @@ import getWinner from "../../../common/getWinner.ts";
 import formatScoreWithShootout from "../../../common/formatScoreWithShootout.ts";
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
+import { encodeShifts } from "../../util/gameShifts.ts";
 
 const allStarMVP = async (
 	game: Game,
@@ -261,6 +262,19 @@ export const gameSimToBoxScore = async (results: GameResults, att: number) => {
 
 	const allStarGame = results.team[0].id === -1 && results.team[1].id === -2;
 	let allStars;
+
+	// Lineup-level scoring, kept only where it will be used: the regular season
+	// is the only stretch long enough for the RAPM regression to resolve
+	// anything, and the All-Star game is nobody's record. See gameShifts.ts.
+	if (!playoffs && !allStarGame && results.numPlayersOnCourt) {
+		const shifts = encodeShifts(
+			results.shifts ?? [],
+			results.numPlayersOnCourt,
+		);
+		if (shifts.length > 0) {
+			gameStats.shifts = shifts;
+		}
+	}
 
 	if (allStarGame) {
 		allStars = await idb.cache.allStars.get(g.get("season"));

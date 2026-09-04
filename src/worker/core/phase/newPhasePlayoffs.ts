@@ -14,6 +14,16 @@ const newPhasePlayoffs = async (
 ): Promise<PhaseReturn> => {
 	await achievement.check("afterRegularSeason", conditions);
 
+	// The regular season is over and complete, which is the only moment RAPM
+	// can be computed from - and it has to happen before old games start aging
+	// out from under it. Best effort: a regression is a decoration, and must
+	// never stop a league from reaching the playoffs.
+	try {
+		await season.updateRapm();
+	} catch (error) {
+		console.error("RAPM failed", error);
+	}
+
 	// In case this was somehow set already
 	local.playingUntilEndOfRound = false;
 

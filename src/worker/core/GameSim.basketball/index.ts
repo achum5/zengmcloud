@@ -2,6 +2,7 @@ import { g, helpers } from "../../util/index.ts";
 import { PHASE, STARTING_NUM_TIMEOUTS } from "../../../common/constants.ts";
 import jumpBallWinnerStartsThisPeriodWithPossession from "./jumpBallWinnerStartsThisPeriodWithPossession.ts";
 import { synergyForLineup } from "./synergy.ts";
+import { ShiftLog } from "./shiftLog.ts";
 import getInjuryRate from "./getInjuryRate.ts";
 import type {
 	GameAttributesLeague,
@@ -153,6 +154,14 @@ class GameSim extends GameSimBase {
 
 	playersOnCourt: [PlayerGameSim[], PlayerGameSim[]];
 
+	// Lineup-level scoring, which is what RAPM is regressed on. See
+	// shiftLog.ts and util/rapm.ts.
+	shiftLog: ShiftLog;
+
+	// The team that had the ball on the last possession, so that an offensive
+	// rebound continuing a possession is not counted as a second one.
+	lastOffensiveTeam: TeamNum | undefined;
+
 	t: number;
 
 	numPeriods: number;
@@ -249,6 +258,7 @@ class GameSim extends GameSimBase {
 			this.team[0].player.slice(0, this.numPlayersOnCourt),
 			this.team[1].player.slice(0, this.numPlayersOnCourt),
 		];
+		this.shiftLog = new ShiftLog();
 
 		this.updatePlayersOnCourt({
 			recordStarters: true,
@@ -292,6 +302,7 @@ class GameSim extends GameSimBase {
 
 		this.o = 0;
 		this.d = 1;
+		this.lastOffensiveTeam = this.o;
 	}
 
 	/**
@@ -412,6 +423,7 @@ class GameSim extends GameSimBase {
 			playByPlay: this.playByPlay.getPlayByPlay(this.team),
 			numPlayersOnCourt: this.numPlayersOnCourt,
 			neutralSite: this.neutralSite,
+			shifts: this.shiftLog.getShifts(),
 			// scoringSummary: this.playByPlay.scoringSummary,
 		};
 		return out;
@@ -541,6 +553,12 @@ class GameSim extends GameSimBase {
 		// Team assignments are the opposite of what you'd expect, cause in simPossession it swaps possession at top
 		this.o = Math.random() < prob ? 1 : 0;
 		this.d = this.o === 0 ? 1 : 0;
+
+		// A new period starts a new possession sequence. this.o currently holds
+		// the team that will NOT have the ball, because simPossession swaps at
+		// the top, so recording it here makes the first swap read as a change of
+		// hands rather than a continuation.
+		this.lastOffensiveTeam = this.o;
 		this.playByPlay.logEvent({
 			type: "jumpBall",
 			t: this.d,
@@ -616,6 +634,12 @@ class GameSim extends GameSimBase {
 				this.o = wonJump === 0 ? 0 : 1;
 			}
 			this.d = this.o === 0 ? 1 : 0;
+
+			// A new period starts a new possession sequence. this.o currently holds
+			// the team that will NOT have the ball, because simPossession swaps at
+			// the top, so recording it here makes the first swap read as a change of
+			// hands rather than a continuation.
+			this.lastOffensiveTeam = this.o;
 
 			this.checkElamEnding(); // Before loop, in case it's at 0
 			while (this.t > 0 && !this.elamDone) {
@@ -792,6 +816,14 @@ class GameSim extends GameSimBase {
 		this.o = this.o === 1 ? 0 : 1;
 		this.d = this.o === 1 ? 0 : 1;
 		this.updateTeamCompositeRatings();
+
+		// An offensive rebound sends the same team back out, and this function
+		// runs again for what is still one possession. Only a change of hands
+		// is a new one.
+		if (this.o !== this.lastOffensiveTeam) {
+			this.lastOffensiveTeam = this.o;
+			this.shiftLog.addPossession(this.o);
+		}
 
 		const dtInbound = this.dtInbound();
 		this.t -= dtInbound;
@@ -1142,6 +1174,14 @@ class GameSim extends GameSimBase {
 				this.recordStat(t, p, "gp");
 			}
 		}
+
+		// Whatever else happened above, the floor is now whatever it is. Told
+		// here rather than at the call sites because a player can also leave in
+		// the middle of this function, on the sixth foul during free throws.
+		this.shiftLog.setLineups(
+			this.playersOnCourt[0].slice(0, this.numPlayersOnCourt).map((p) => p.id),
+			this.playersOnCourt[1].slice(0, this.numPlayersOnCourt).map((p) => p.id),
+		);
 
 		return substitutions;
 	}
@@ -2776,6 +2816,8 @@ class GameSim extends GameSimBase {
 				if (s === "pts") {
 					this.team[t].stat.ptsQtrs[this.team[t].stat.ptsQtrs.length - 1] +=
 						amt;
+
+					this.shiftLog.addPoints(t, amt);
 
 					for (const i of [0, 1] as const) {
 						for (let j = 0; j < this.numPlayersOnCourt; j++) {

@@ -717,7 +717,11 @@ const AdvancedPlayerSearch = (props: View<"advancedPlayerSearch">) => {
 						} else {
 							if (
 								isSport("basketball") &&
-								(info.key === "pm100" || info.key === "onOff100")
+								(info.key === "pm100" ||
+									info.key === "onOff100" ||
+									info.key === "orapm" ||
+									info.key === "drapm" ||
+									info.key === "rapm")
 							) {
 								return <PlusMinus>{value as number}</PlusMinus>;
 							}

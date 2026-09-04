@@ -289,6 +289,9 @@ export const PLAYER_STATS_TABLES = {
 			"dbpm",
 			"bpm",
 			"vorp",
+			"orapm",
+			"drapm",
+			"rapm",
 		],
 	},
 	gameHighs: {
