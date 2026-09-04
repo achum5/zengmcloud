@@ -23,6 +23,7 @@ import {
 } from "../../common/defaultGameAttributes.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { formatList } from "../../common/formatList.ts";
+import { normalizeAwardsRow } from "../db/normalizeAwardsRow.ts";
 
 const findAwards = <
 	Input extends AwardSettingIndividual | AwardSettingTeam,
@@ -30,12 +31,16 @@ const findAwards = <
 		? AwardInfoIndividual
 		: AwardInfoTeam,
 >(
-	awards: Awards | undefined,
+	awardsRaw: Awards | undefined,
 	searchFor: Input,
 ): Output[] => {
-	if (!awards) {
+	if (!awardsRaw) {
 		return [];
 	}
+
+	// A season synced from a build older than the custom-awards upgrade is
+	// still in the old shape; convert rather than throw. See normalizeAwardsRow.
+	const awards = normalizeAwardsRow(awardsRaw);
 
 	const simpleEqualityKeys = [
 		"formula",

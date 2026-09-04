@@ -1,6 +1,7 @@
 import { idb } from "../../db/index.ts";
 import { noteInjuryApply } from "./injuryForensics.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
+import { normalizeAwardsRow } from "../../db/normalizeAwardsRow.ts";
 import type { Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
 import {
@@ -1428,6 +1429,15 @@ export const applyChangeset = async (
 						if (played) {
 							continue;
 						}
+					}
+
+					// An awards row authored on a build from before the custom-awards
+					// upgrade arrives in the old shape, and there is no migration
+					// between a changeset and the store. Convert it here rather than
+					// letting one season take down every page that reads award
+					// history. See normalizeAwardsRow.
+					if (change.store === "awards" && change.value) {
+						change.value = normalizeAwardsRow(change.value);
 					}
 
 					// Merge concurrent playoff-series knowledge instead of letting a

@@ -22,6 +22,7 @@
 
 import fastDeepEqual from "fast-deep-equal";
 import { idb } from "../../db/index.ts";
+import { normalizeAwardsRow } from "../../db/normalizeAwardsRow.ts";
 import type { AwardSettings, PlayerAward } from "../../../common/types.ts";
 
 export type AwardRename = {
@@ -149,7 +150,9 @@ const rename = async (
 		{ season: number; rename: AwardRename }[]
 	>();
 
-	for (const awards of await idb.league.getAll("awards")) {
+	for (const raw of await idb.league.getAll("awards")) {
+		// A season synced from an older build is still in the pre-upgrade shape.
+		const awards = normalizeAwardsRow(raw);
 		let changed = false;
 
 		for (const award of awards.awards) {

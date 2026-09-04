@@ -28,6 +28,7 @@
 // skipped, and a player who already has the award is left as he is.
 
 import { idb } from "../../db/index.ts";
+import { normalizeAwardsRow } from "../../db/normalizeAwardsRow.ts";
 import addAward from "../player/addAward.ts";
 import { getAwardCandidates } from "./getAwardCandidates.ts";
 import { NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD } from "./doAwards.ts";
@@ -151,7 +152,10 @@ const backfill = async (
 	{
 		const allAwards = await idb.league.getAll("awards");
 
-		for (const awards of allAwards) {
+		for (const raw of allAwards) {
+			// A season synced from an older build is still in the pre-upgrade
+			// shape.
+			const awards = normalizeAwardsRow(raw);
 			const needsFill = (award: Award) =>
 				award.numTeams === undefined &&
 				award.winner.length < NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD &&

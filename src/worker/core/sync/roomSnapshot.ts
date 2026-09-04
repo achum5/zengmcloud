@@ -1,5 +1,6 @@
 import { idb } from "../../db/index.ts";
 import { STORES } from "../../db/Cache.ts";
+import { normalizeAwardsRow } from "../../db/normalizeAwardsRow.ts";
 import { g, lock, local, toUI } from "../../util/index.ts";
 import { league } from "../index.ts";
 import {
@@ -250,6 +251,12 @@ export const applyRoomSnapshotPayload = async (
 			}
 
 			const isGameAttributes = store === "gameAttributes";
+
+			// A snapshot published from a device on an older build carries its
+			// awards in the pre-upgrade shape, and nothing between it and the store
+			// would convert them. See normalizeAwardsRow.
+			const isAwards = store === "awards";
+
 			const transaction = (idb.league as any).transaction(store, "readwrite");
 			const objectStore = transaction.objectStore(store);
 
@@ -264,7 +271,7 @@ export const applyRoomSnapshotPayload = async (
 				) {
 					continue;
 				}
-				objectStore.put(row);
+				objectStore.put(isAwards ? normalizeAwardsRow(row) : row);
 			}
 			if (isGameAttributes) {
 				for (const row of preserved) {
