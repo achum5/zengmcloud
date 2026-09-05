@@ -313,6 +313,19 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			})
 				? depthChart
 				: []),
+			...(isSport("basketball")
+				? ([
+						{
+							type: "link",
+							active: (pageID) => pageID === "rotation",
+							league: true,
+							rotationPlans: true,
+							commandPalette: true,
+							path: ["rotation"],
+							text: "Rotation",
+						},
+					] as MenuItemLink[])
+				: []),
 			{
 				type: "link",
 				active: (pageID) => pageID === "schedule",

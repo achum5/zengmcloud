@@ -136,7 +136,10 @@ const MenuItem = ({
 	// Read here rather than threaded down: one leaf needs it, and the flag has
 	// nothing to do with the components in between. Before the early returns,
 	// because it is a hook.
-	const { socialFeed } = useLocal(["socialFeed"]);
+	const { rotationPlans, socialFeed } = useLocal([
+		"rotationPlans",
+		"socialFeed",
+	]);
 
 	if (menuItem.type === "text") {
 		return <Dropdown.Header>{menuItem.text}</Dropdown.Header>;
@@ -160,6 +163,10 @@ const MenuItem = ({
 		}
 
 		if (menuItem.socialFeed && !socialFeed) {
+			return null;
+		}
+
+		if (menuItem.rotationPlans && !rotationPlans) {
 			return null;
 		}
 

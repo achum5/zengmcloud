@@ -222,6 +222,8 @@ const SIM_CONFLICT_GATED = new Set([
 	"releasePlayer",
 	"reorderRosterDrag",
 	"reorderDepthDrag",
+	// The rotation plan is read by the sim exactly as the depth chart is.
+	"updateRotation",
 ]);
 
 export type WorkerAPICategory = keyof typeof api;

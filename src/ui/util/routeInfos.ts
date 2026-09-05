@@ -157,6 +157,8 @@ export const routeInfos = {
 	"/l/:lid/transactions/:abbrev/:season": "transactions",
 	"/l/:lid/transactions/:abbrev/:season/:eventType": "transactions",
 	"/l/:lid/danger_zone": "dangerZone",
+	"/l/:lid/rotation": "rotation",
+	"/l/:lid/rotation/:abbrev": "rotation",
 	"/l/:lid/depth": "depth",
 	"/l/:lid/depth/:pos": "depth",
 	"/l/:lid/depth/:pos/:abbrev": "depth",

@@ -2814,6 +2814,18 @@ export const settings: Setting[] = (
 			description:
 				"Track overtime losses (OTL) separately from regulation losses, as is common in hockey.",
 		},
+		...(isSport("basketball")
+			? ([
+					{
+						category: "Game Simulation",
+						key: "rotationPlans",
+						name: "Rotation Plans",
+						type: "bool",
+						description:
+							"Lets you plan your team's substitution pattern on the Rotation page. The coach follows it as a guide during simmed games.",
+					},
+				] as Setting[])
+			: []),
 		{
 			category: "Game Modes",
 			key: "repeatSeason",

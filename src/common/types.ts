@@ -1,3 +1,4 @@
+import type { TeamRotation } from "./rotation.ts";
 import * as z from "zod";
 import type { FaceConfig } from "facesjs";
 import type { PlayerAppearance } from "./playerAppearance.ts";
@@ -804,6 +805,10 @@ export type GameAttributesLeague = {
 	draftLotteryCustomChances: number[];
 	draftLotteryCustomNumPicks: number;
 	elam: boolean;
+	// Lets a team plan its own substitution pattern instead of leaving it to
+	// the coach. Off by default; nothing changes for a league that never turns
+	// it on.
+	rotationPlans: boolean;
 	elamASG: boolean;
 	elamMinutes: number;
 	elamOvertime: boolean;
@@ -1209,6 +1214,8 @@ export type MenuItemLink = {
 	// corps is opt-in, so its entry point should not sit in the menu of a
 	// league that has never enabled it.
 	socialFeed?: true;
+	// Hidden unless the league runs rotation plans, for the same reason.
+	rotationPlans?: true;
 	nonLeague?: true;
 	commandPalette?: true;
 	commandPaletteOnly?: true;
@@ -2091,6 +2098,11 @@ export type Team = {
 		  };
 	firstSeasonAfterExpansion?: number;
 	srID?: string;
+
+	// The rotation plan the coach follows during a simmed game, when the league
+	// has rotation plans turned on and this team has taken control of its own.
+	// Basketball only. See common/rotation.ts.
+	rotation?: TeamRotation;
 
 	pop: number;
 	stadiumCapacity: number;

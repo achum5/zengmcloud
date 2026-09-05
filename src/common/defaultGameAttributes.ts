@@ -608,6 +608,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	realPlayerDeterminism: 0,
 	spectator: false,
 	elam: false,
+	rotationPlans: false,
 	elamASG: false,
 	elamMinutes: 4,
 	elamOvertime: false,

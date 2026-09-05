@@ -1,3 +1,4 @@
+import type { TeamRotation } from "../../../common/rotation.ts";
 import { allStar, player, season, team } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
@@ -112,6 +113,7 @@ export const processTeam = async (
 		tid: number;
 		playThroughInjuries: [number, number];
 		depth?: any;
+		rotation?: TeamRotation;
 	},
 	teamSeason: {
 		won: number;
@@ -206,6 +208,8 @@ export const processTeam = async (
 		},
 		compositeRating,
 		depth: teamInput.depth,
+		// The rotation plan, for the sim to follow. See common/rotation.ts.
+		rotation: teamInput.rotation,
 	};
 
 	const playThroughInjuries = actualPlayThroughInjuries[playoffs ? 1 : 0];

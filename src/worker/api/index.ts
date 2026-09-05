@@ -1,3 +1,4 @@
+import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
 import type { FaceConfig } from "facesjs";
 import {
@@ -5320,6 +5321,35 @@ const updateGameAttributesGodMode = async (
 	return true;
 };
 
+// A team's rotation plan, replaced whole. Reduced to what the sim can follow
+// before it is kept, so the row never carries a player who has left or a
+// period the league does not play. See common/rotation.ts.
+const updateRotation = async ({
+	tid,
+	rotation,
+}: {
+	tid: number;
+	rotation: TeamRotation;
+}) => {
+	if (!g.get("userTids").includes(tid)) {
+		throw new Error("Not your team");
+	}
+
+	const t = await idb.cache.teams.get(tid);
+	if (!t) {
+		throw new Error("Invalid tid");
+	}
+
+	const players = await idb.cache.players.indexGetAll("playersByTid", tid);
+	t.rotation = sanitizeRotation(
+		rotation,
+		new Set(players.map((p) => p.pid)),
+		g.get("numPeriods"),
+	);
+	await idb.cache.teams.put(t);
+	await toUI("realtimeUpdate", [["team"]]);
+};
+
 const updateKeepRosterSorted = async ({
 	tid,
 	keepRosterSorted,
@@ -7587,6 +7617,7 @@ export default {
 		updateGameAttributes,
 		updateGameAttributesGodMode,
 		updateKeepRosterSorted,
+		updateRotation,
 		updateKeyboardShortcuts,
 		updateLeague,
 		updateMultiTeamMode,

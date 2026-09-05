@@ -93,6 +93,7 @@ type Key =
 	| "otl"
 	| "spectator"
 	| "elam"
+	| "rotationPlans"
 	| "elamASG"
 	| "elamMinutes"
 	| "elamOvertime"
@@ -331,6 +332,7 @@ const updateSettings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 			otl: g.get("otl"),
 			spectator: g.get("spectator"),
 			elam: g.get("elam"),
+			rotationPlans: g.get("rotationPlans"),
 			elamASG: g.get("elamASG"),
 			elamMinutes: g.get("elamMinutes"),
 			elamOvertime: g.get("elamOvertime"),

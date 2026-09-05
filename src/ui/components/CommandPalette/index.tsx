@@ -94,6 +94,7 @@ const baseSort = () => 0;
 const getResultsGroupedDefault = ({
 	godMode,
 	socialFeed,
+	rotationPlans,
 	inLeague,
 	onHide,
 	playMenuOptions,
@@ -101,6 +102,7 @@ const getResultsGroupedDefault = ({
 }: {
 	godMode: boolean;
 	socialFeed: boolean;
+	rotationPlans: boolean;
 	inLeague: boolean;
 	onHide: () => void;
 	playMenuOptions: LocalStateUI["playMenuOptions"];
@@ -124,6 +126,10 @@ const getResultsGroupedDefault = ({
 		}
 
 		if (menuItem.socialFeed && !socialFeed) {
+			return false;
+		}
+
+		if (menuItem.rotationPlans && !rotationPlans) {
 			return false;
 		}
 
@@ -445,6 +451,7 @@ const getResultsGrouped = async ({
 	challengeNoRatings,
 	godMode,
 	socialFeed,
+	rotationPlans,
 	hideDisabledTeams,
 	inLeague,
 	mode,
@@ -456,6 +463,7 @@ const getResultsGrouped = async ({
 	challengeNoRatings: LocalStateUI["challengeNoRatings"];
 	godMode: boolean;
 	socialFeed: boolean;
+	rotationPlans: boolean;
 	hideDisabledTeams: LocalStateUI["hideDisabledTeams"];
 	inLeague: boolean;
 	mode: Mode | undefined;
@@ -496,6 +504,8 @@ const getResultsGrouped = async ({
 		resultsGrouped = getResultsGroupedDefault({
 			godMode,
 			socialFeed,
+			rotationPlans,
+			rotationPlans,
 			inLeague,
 			onHide,
 			playMenuOptions,
@@ -771,6 +781,7 @@ const CommandPaletteInner = ({
 		challengeNoRatings,
 		godMode,
 		socialFeed,
+		rotationPlans,
 		hideDisabledTeams,
 		lid,
 		playMenuOptions,
@@ -779,6 +790,7 @@ const CommandPaletteInner = ({
 		"challengeNoRatings",
 		"godMode",
 		"socialFeed",
+		"rotationPlans",
 		"hideDisabledTeams",
 		"lid",
 		"playMenuOptions",
@@ -805,6 +817,9 @@ const CommandPaletteInner = ({
 				challengeNoRatings,
 				godMode,
 				socialFeed,
+				rotationPlans,
+				rotationPlans,
+				rotationPlans,
 				hideDisabledTeams,
 				inLeague,
 				mode,
@@ -828,6 +843,7 @@ const CommandPaletteInner = ({
 		challengeNoRatings,
 		godMode,
 		socialFeed,
+		rotationPlans,
 		hideDisabledTeams,
 		inLeague,
 		mode,

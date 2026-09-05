@@ -882,6 +882,11 @@ const schedule = (params: Params) => {
 	return { abbrev, tid };
 };
 
+const rotation = (params: Params) => {
+	const [tid, abbrev] = validateAbbrev(params.abbrev);
+	return { abbrev, tid };
+};
+
 const teamFinances = (params: Params) => {
 	const show = params.show ?? "10";
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
@@ -1230,6 +1235,7 @@ export default {
 	relatives: player,
 	resetPassword,
 	roster,
+	rotation,
 	schedule,
 	seasonPreview: validateSeasonOnly,
 	standings,

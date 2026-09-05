@@ -3,6 +3,12 @@ import { PHASE, STARTING_NUM_TIMEOUTS } from "../../../common/constants.ts";
 import jumpBallWinnerStartsThisPeriodWithPossession from "./jumpBallWinnerStartsThisPeriodWithPossession.ts";
 import { synergyForLineup } from "./synergy.ts";
 import { ShiftLog } from "./shiftLog.ts";
+import {
+	lineupAt,
+	sanitizeRotation,
+	type RotationStint,
+	type TeamRotation,
+} from "../../../common/rotation.ts";
 import getInjuryRate from "./getInjuryRate.ts";
 import type {
 	GameAttributesLeague,
@@ -105,7 +111,16 @@ type TeamGameSim = {
 		off: number;
 		reb: number;
 	};
+	// The rotation plan, when the league runs them and this team has taken
+	// control of its own. See common/rotation.ts.
+	rotation?: TeamRotation;
 };
+
+// A plan's edge in the substitution scoring. Every player's score is his value
+// times a handful of factors near one, so this puts anybody the plan names
+// above anybody it does not, while leaving the named men to sort among
+// themselves the way they would have anyway.
+const ROTATION_PLAN_BONUS = 1000;
 
 type PossessionOutcome =
 	| "tov"
@@ -157,6 +172,10 @@ class GameSim extends GameSimBase {
 	// Lineup-level scoring, which is what RAPM is regressed on. See
 	// shiftLog.ts and util/rapm.ts.
 	shiftLog: ShiftLog;
+
+	// Each team's rotation plan, already reduced to what can be followed, or
+	// undefined for a team the coach runs himself. See plannedLineup.
+	rotationStints: [RotationStint[] | undefined, RotationStint[] | undefined];
 
 	// The team that had the ball on the last possession, so that an offensive
 	// rebound continuing a possession is not counted as a second one.
@@ -251,6 +270,25 @@ class GameSim extends GameSimBase {
 		this.playByPlay = new PlayByPlayLogger(doPlayByPlay);
 
 		this.team = teams; // If a team plays twice in a day, this needs to be a deep copy
+
+		// A plan is followed only where the league runs them, never in the
+		// All-Star game, and only once a team has taken control of its own.
+		// Reduced here to what the sim can follow (see common/rotation.ts) so
+		// every dead ball after this is a lookup.
+		this.rotationStints = [undefined, undefined];
+		if (!allStarGame && g.get("rotationPlans")) {
+			const numPeriods = g.get("numPeriods");
+			for (const t of teamNums) {
+				const rotation = sanitizeRotation(
+					this.team[t].rotation,
+					new Set(this.team[t].player.map((p) => p.id)),
+					numPeriods,
+				);
+				if (rotation && !rotation.auto && rotation.stints.length > 0) {
+					this.rotationStints[t] = rotation.stints;
+				}
+			}
+		}
 
 		// Starting lineups, which will be reset by updatePlayersOnCourt. This must be done because of injured players in the top 5.
 		this.numPlayersOnCourt = g.get("numPlayersOnCourt");
@@ -858,6 +896,34 @@ class GameSim extends GameSimBase {
 		}
 	}
 
+	// Who the plan means to have on the floor right now. Undefined when no
+	// plan applies to this team, and in overtime, which no plan covers.
+	plannedLineup(t: TeamNum): Set<number> | undefined {
+		const stints = this.rotationStints[t];
+		if (!stints) {
+			return undefined;
+		}
+
+		const period = this.team[t].stat.ptsQtrs.length - 1;
+		if (period < 0 || period >= g.get("numPeriods")) {
+			return undefined;
+		}
+
+		// Before the first possession the clock is not set yet, and the plan's
+		// opening lineup is the one that applies.
+		const periodSeconds = g.get("quarterLength") * 60;
+		const remaining =
+			typeof this.t === "number" && Number.isFinite(this.t)
+				? this.t
+				: periodSeconds;
+		const fraction = Math.min(
+			1 - 1e-9,
+			Math.max(0, 1 - remaining / periodSeconds),
+		);
+
+		return lineupAt(stints, period, fraction);
+	}
+
 	isLateGame() {
 		const quarter = this.team[0].stat.ptsQtrs.length;
 		let lateGame;
@@ -959,6 +1025,9 @@ class GameSim extends GameSimBase {
 	} = {}) {
 		let substitutions = false;
 		let blowout = false;
+		// A close finish is the coach's, not the plan's: he plays the best five
+		// he has, which is what he is for.
+		let closeEndgame = false;
 		const lateGame = this.isLateGame();
 
 		const foulsNeededToFoulOut = g.get("foulsNeededToFoulOut");
@@ -982,11 +1051,18 @@ class GameSim extends GameSimBase {
 						(diff >= 15 && this.t < 3 * 60) ||
 						(diff >= 10 && this.t < 1 * 60));
 			}
+			closeEndgame = lateGame && diff <= 10;
 		}
 
 		const foulLimit = this.getFoulTroubleLimit();
 
 		for (const t of teamNums) {
+			// The plan, when it is in charge right now. It steps aside in a
+			// blowout and in a close finish, where the coach's own judgment is
+			// the point.
+			const plannedNow =
+				blowout || closeEndgame ? undefined : this.plannedLineup(t);
+
 			const getOvrs = (includeFouledOut: boolean) => {
 				// Overall values scaled by fatigue, etc
 				const ovrs: Record<number, number> = {};
@@ -1006,7 +1082,9 @@ class GameSim extends GameSimBase {
 							this.fatigue(p.stat.energy) *
 							(!lateGame ? uniform(0.9, 1.1) : 1);
 
-						if (!this.allStarGame) {
+						// The playing-time settings are the coach's dial, and a plan
+						// in charge replaces them for as long as it is in charge.
+						if (!this.allStarGame && !plannedNow) {
 							ovrs[p.id]! *= p.ptModifier;
 						}
 
@@ -1017,6 +1095,12 @@ class GameSim extends GameSimBase {
 							// If it's not a blowout, worry about foul trouble
 							const foulTroubleFactor = this.getFoulTroubleFactor(p, foulLimit);
 							ovrs[p.id]! *= foulTroubleFactor;
+
+							// The plan's edge. A man in foul trouble is the coach's
+							// call, not the plan's, so he gets none of it.
+							if (plannedNow?.has(p.id) && foulTroubleFactor === 1) {
+								ovrs[p.id]! += ROTATION_PLAN_BONUS;
+							}
 						}
 					}
 				}
@@ -1058,14 +1142,29 @@ class GameSim extends GameSimBase {
 				}
 
 				// Loop through bench players (in order of current roster position) to see if any should be subbed in)
-				for (const b of this.team[t].player) {
+				//
+				// With a plan in charge the bench is tried best first instead, so
+				// the man the plan names is reached before somebody who merely
+				// rates above the one coming off.
+				const bench = plannedNow
+					? [...this.team[t].player].sort((a, b) => ovrs[b.id]! - ovrs[a.id]!)
+					: this.team[t].player;
+				for (const b of bench) {
 					if (this.playersOnCourt[t].includes(b)) {
 						continue;
 					}
 
+					// A planned man replacing an unplanned one goes in now. The
+					// throttle below keeps the coach from churning his own
+					// lineup; it has no business delaying a change the plan asked
+					// for.
+					const planDriven =
+						plannedNow !== undefined &&
+						plannedNow.has(b.id) &&
+						!plannedNow.has(p.id);
+
 					const benchIsValidAndBetter =
-						p.stat.courtTime > 2 &&
-						b.stat.benchTime > 2 &&
+						(planDriven || (p.stat.courtTime > 2 && b.stat.benchTime > 2)) &&
 						ovrs[b.id]! > ovrs[p.id]!;
 					const benchIsEligible = ovrs[b.id] !== -Infinity;
 
@@ -1114,9 +1213,11 @@ class GameSim extends GameSimBase {
 								: this.numPlayersOnCourt >= 3
 									? 1
 									: 0;
+						// The planner chose his five; the position rule is for a
+						// coach choosing them himself.
 						if (
-							(numG < cutoff && numPG === 0) ||
-							(numF < cutoff && numC === 0)
+							!planDriven &&
+							((numG < cutoff && numPG === 0) || (numF < cutoff && numC === 0))
 						) {
 							if (this.fatigue(p.stat.energy) > 0.728 && !onCourtIsIneligible) {
 								// Exception for ridiculously tired players, so really unbalanced teams won't play starters whole game

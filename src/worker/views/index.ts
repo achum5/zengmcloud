@@ -96,6 +96,7 @@ export { default as protectPlayers } from "./protectPlayers.ts";
 export { default as relatives } from "./relatives.ts";
 export { default as resetPassword } from "./resetPassword.ts";
 export { default as roster } from "./roster.ts";
+export { default as rotation } from "./rotation.ts";
 export { default as rosterContinuity } from "./rosterContinuity.ts";
 export { default as savedTrades } from "./savedTrades.ts";
 export { default as schedule } from "./schedule.ts";

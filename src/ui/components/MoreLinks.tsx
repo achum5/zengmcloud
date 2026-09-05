@@ -71,7 +71,11 @@ export const MoreLinks = (
 ) => {
 	const { keepSelfLink, page } = props;
 
-	const { godMode, season: currentSeason } = useLocal(["godMode", "season"]);
+	const {
+		godMode,
+		rotationPlans,
+		season: currentSeason,
+	} = useLocal(["godMode", "rotationPlans", "season"]);
 
 	let links: {
 		url: (string | number | undefined)[] | string;
@@ -135,6 +139,15 @@ export const MoreLinks = (
 				name: "Intrasquad",
 			},
 		];
+
+		// The rotation page is basketball's depth chart, and only exists in a
+		// league that has turned rotation plans on.
+		if (isSport("basketball") && rotationPlans) {
+			links.unshift({
+				url: ["rotation", `${abbrev}_${tid}`],
+				name: "Rotation",
+			});
+		}
 
 		if (
 			bySport({

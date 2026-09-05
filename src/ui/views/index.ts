@@ -98,6 +98,7 @@ export { default as ProtectPlayers } from "./ProtectPlayers.tsx";
 export { default as Relatives } from "./Relatives.tsx";
 export { default as ResetPassword } from "./ResetPassword.tsx";
 export { default as Roster } from "./Roster/index.tsx";
+export { default as Rotation } from "./Rotation.tsx";
 export { default as RosterContinuity } from "./RosterContinuity.tsx";
 export { default as SocialAccount } from "./SocialAccount.tsx";
 export { default as SocialAccounts } from "./SocialAccounts.tsx";
