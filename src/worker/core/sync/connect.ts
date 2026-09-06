@@ -2417,7 +2417,7 @@ export const teardownSharedLeague = async ({
 	// turn it back off so single-player has zero overhead. The canary is always
 	// disarmed - uncaptured writes are normal outside a synced session.
 	changeTracker.setCanary(false);
-	if (process.env.NODE_ENV !== "development") {
+	if (__NODE_ENV !== "development") {
 		changeTracker.disable();
 	}
 

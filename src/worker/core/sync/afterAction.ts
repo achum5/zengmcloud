@@ -103,7 +103,7 @@ export const afterAction = async (
 			SILENT_SYNC_LABELS.has(label) ||
 			isSingleGameSimActive();
 
-		if (process.env.NODE_ENV === "development") {
+		if (__NODE_ENV === "development") {
 			logChangeset(label, changeset);
 		}
 		if (trace) {
