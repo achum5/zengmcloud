@@ -119,9 +119,22 @@ export const StatsTable = ({
 	if (superCols) {
 		superCols = helpers.deepCopy(superCols);
 
-		// No name
-		if (superCols[0]) {
-			superCols[0].colspan -= 1;
+		// The groups are written for the Player Stats page, whose leading
+		// columns are not this table's: it starts Name, Pos, Age, YOE, Team
+		// where this one starts Year, Team, Age. Only the trailing groups are
+		// fixed - each names a run of stats - so rather than adjust the leading
+		// blank by a number that has to be kept in step with two column lists,
+		// it takes whatever is left over.
+		const first = superCols[0];
+		if (first) {
+			const grouped = superCols
+				.slice(1)
+				.reduce((total, superCol) => total + superCol.colspan, 0);
+
+			// The Awards column on the end belongs to no group, and gets a
+			// blank of its own so the header row is not short.
+			first.colspan = cols.length - grouped - 1;
+			superCols.push({ title: "", colspan: 1 });
 		}
 	}
 
