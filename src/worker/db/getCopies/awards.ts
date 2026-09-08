@@ -2,6 +2,15 @@ import { idb } from "../index.ts";
 import type { Awards, GetCopyType } from "../../../common/types.ts";
 import { mergeByPk } from "./helpers.ts";
 import { normalizeAwardsRow } from "../normalizeAwardsRow.ts";
+import { relabelAwardsFromSettings } from "../../../common/awards.ts";
+import { g } from "../../util/index.ts";
+
+// A season keeps the label its awards were given at the time; the settings say
+// what they are called now. See relabelAwardsFromSettings.
+const relabel = (row: Awards): Awards => {
+	const awards = relabelAwardsFromSettings(row?.awards, g.get("awards"));
+	return awards === row?.awards ? row : { ...row, awards };
+};
 
 const getCopies = async (
 	{
@@ -20,7 +29,7 @@ const getCopies = async (
 			"awards",
 			type,
 		);
-		return awards.map(normalizeAwardsRow);
+		return awards.map((row) => relabel(normalizeAwardsRow(row)));
 	}
 
 	return (
@@ -33,7 +42,7 @@ const getCopies = async (
 			// A row from before the custom-awards upgrade can still be sitting in the
 			// store; anything reading award history walks `awards.awards` and would
 			// die on it. See normalizeAwardsRow.
-			.map(normalizeAwardsRow)
+			.map((row) => relabel(normalizeAwardsRow(row)))
 	);
 };
 

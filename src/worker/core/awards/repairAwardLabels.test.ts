@@ -4,6 +4,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import type { AwardSettings } from "../../../common/types.ts";
+import { relabelAwardsFromSettings } from "../../../common/awards.ts";
 
 // A league database small enough to read at a glance, and real enough for the
 // sweep: it walks every awards row and reads back each player it names.
@@ -174,6 +175,58 @@ describe("repairAwardLabels", () => {
 		assert.strictEqual(
 			db.stores.awards!.get(2005)!.awards[0].name,
 			"All-League",
+		);
+	});
+});
+
+// A COPY THAT NO SEASON GIVES AWAY.
+//
+// Detection reads the awards rows. A player whose own copy is stale while
+// every season already agrees is invisible to that - so the players in memory
+// are checked too, and everybody else is relabeled as he is read (see
+// relabelAwardsFromSettings), which is what a page actually shows.
+describe("a stale player copy with no stale season", () => {
+	beforeEach(async () => {
+		resetG();
+		await resetCache();
+	});
+
+	test("a player in memory is enough to trigger the sweep", async () => {
+		const db = fakeLeague({
+			awards: [awardsRow(2005, "All-NBA")],
+			players: [player(1, [2005], "All-League")],
+		});
+		idb.league = db.league;
+		// The same man, sitting in the cache the way an active player does.
+		await idb.cache.players.add(player(1, [2005], "All-League") as any);
+		g.setWithoutSavingToDB("awards", [{ ...allLeague, name: "All-NBA" }]);
+
+		await repairAwardLabels();
+
+		assert.strictEqual(
+			db.stores.players!.get(1)!.awards[0].name,
+			"All-NBA",
+			"the stored copy",
+		);
+	});
+
+	test("nobody in memory, so the stored copy waits for a read", async () => {
+		const db = fakeLeague({
+			awards: [awardsRow(2005, "All-NBA")],
+			players: [player(1, [2005], "All-League")],
+		});
+		idb.league = db.league;
+		g.setWithoutSavingToDB("awards", [{ ...allLeague, name: "All-NBA" }]);
+
+		await repairAwardLabels();
+
+		// Nothing detectable, so nothing written - and nothing needs to be,
+		// because this is what every page will show him as.
+		assert.strictEqual(
+			relabelAwardsFromSettings(db.stores.players!.get(1)!.awards, [
+				{ ...allLeague, name: "All-NBA" },
+			])![0]!.name,
+			"All-NBA",
 		);
 	});
 });

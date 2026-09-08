@@ -16,6 +16,70 @@ import type {
 // the ballot stopped at five, so there was no sixth place to show.
 export const NUM_PLAYERS_PER_INDIVIDUAL_AWARD = 10;
 
+// WHAT AN AWARD IS CALLED, ACCORDING TO THE SETTINGS, RIGHT NOW.
+//
+// A season writes down the label its awards were given at the time, and a
+// player writes down his own copy of it. Renaming an award rewrites both (see
+// core/awards/renameAwards), but a copy can always be left behind: a sweep
+// interrupted, a season synced from a device that had already relabeled its
+// own, a league renamed before any of that existed. One stale copy is enough
+// for a player's page to keep saying All-League forever, because his page
+// reads his copy.
+//
+// So the label is also resolved as it is read. The abbrev is what identifies
+// an award - the settings enforce that it is unique - so an award still
+// answering to an abbrev the settings use takes whatever the settings call it
+// now. An abbrev the settings no longer use belongs to an award that was
+// deleted or renamed abbrev and all; its history is not ours to rewrite, and
+// it is left exactly as stored.
+//
+// Nothing is mutated: an award that already agrees comes back as it was.
+export const relabelAwardsFromSettings = <
+	T extends {
+		type?: string;
+		name?: string;
+		shortName?: string;
+		numTeams?: number;
+	},
+>(
+	awards: readonly T[] | undefined,
+	settings:
+		| readonly { name: string; shortName: string; numTeams?: number }[]
+		| undefined,
+): T[] | undefined => {
+	if (!awards || !settings || settings.length === 0) {
+		return awards as T[] | undefined;
+	}
+
+	const byShortName = new Map(
+		settings.map((award) => [award.shortName, award]),
+	);
+
+	let changed = false;
+	const out = awards.map((award) => {
+		// A legacy award is just a string; it answers to no abbrev.
+		if (award.type !== undefined || award.shortName === undefined) {
+			return award;
+		}
+
+		const setting = byShortName.get(award.shortName);
+		if (
+			!setting ||
+			// A team award and an individual one are different things under the
+			// same abbrev.
+			(setting.numTeams !== undefined) !== (award.numTeams !== undefined) ||
+			setting.name === award.name
+		) {
+			return award;
+		}
+
+		changed = true;
+		return { ...award, name: setting.name };
+	});
+
+	return changed ? out : (awards as T[]);
+};
+
 export const formatTeamNumber = (rank: number) =>
 	`${helpers.ordinal(rank)} Team`;
 

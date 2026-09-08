@@ -33,7 +33,18 @@ export const repairAwardLabels = async () => {
 		normalizeAwardsRow(row),
 	);
 
-	if (!awardLabelsOutOfDate(rows, settings)) {
+	// A player's own copy can be stale on its own, with every season already
+	// agreeing - an interrupted sweep, or a copy that a rename never reached.
+	// The players in memory are free to check and are the ones whose pages get
+	// looked at; anybody they miss is still relabeled as he is read, which is
+	// what the pages actually show. See relabelAwardsFromSettings.
+	const stale =
+		awardLabelsOutOfDate(rows, settings) ||
+		(await idb.cache.players.getAll()).some((p) =>
+			awardLabelsOutOfDate([{ awards: p.awards }], settings),
+		);
+
+	if (!stale) {
 		return;
 	}
 

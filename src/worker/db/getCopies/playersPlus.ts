@@ -13,6 +13,7 @@ import { idb } from "../index.ts";
 import { bySport, isSport } from "../../../common/sportFunctions.ts";
 import { actualPhase } from "../../util/actualPhase.ts";
 import { last } from "../../../common/utils.ts";
+import { relabelAwardsFromSettings } from "../../../common/awards.ts";
 // Purely a display transform on the copied view output - it never touches the
 // stored ratings or anything the sim reads. Opt out with `coarsenRatings: false`
 // when the result feeds a calculation.
@@ -274,6 +275,14 @@ const processAttrs = (
 			output.abbrev = helpers.getAbbrev(p.tid);
 		} else if (attr === "hof") {
 			output[attr] = !!p[attr];
+		} else if (attr === "awards") {
+			// The settings are the authority on what an award is called; a
+			// stored copy only remembers what it was called at the time. See
+			// relabelAwardsFromSettings.
+			output.awards = relabelAwardsFromSettings(
+				helpers.deepCopy(p.awards),
+				g.get("awards"),
+			);
 		} else if (attr === "watch") {
 			output[attr] = p[attr] ?? 0;
 		} else if (
