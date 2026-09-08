@@ -3,12 +3,13 @@ import {
 	ballotAdditions,
 	type BallotCandidate,
 } from "./backfillVotingRanks.ts";
+import { NUM_PLAYERS_PER_INDIVIDUAL_AWARD } from "../../../common/awards.ts";
 
 const candidates = (...pids: number[]): BallotCandidate[] =>
 	pids.map((pid) => ({ pid, tid: pid * 10 }));
 
 describe("ballotAdditions", () => {
-	// A season that only ever recorded the winner: the four behind him are
+	// A season that only ever recorded the winner: everybody behind him is
 	// added, ranked from 2.
 	test("fills in behind a lone winner", () => {
 		assert.deepStrictEqual(
@@ -21,7 +22,33 @@ describe("ballotAdditions", () => {
 				{ pid: 9, tid: 90, rank: 3 },
 				{ pid: 4, tid: 40, rank: 4 },
 				{ pid: 1, tid: 10, rank: 5 },
+				{ pid: 8, tid: 80, rank: 6 },
 			],
+		);
+	});
+
+	// The case that made this worth revisiting: a league whose ballots were
+	// written down five deep, back when that was the whole ballot. Sixth place
+	// existed on the Award Races page and nowhere else.
+	test("a five-deep ballot is extended to the full depth", () => {
+		const additions = ballotAdditions({
+			winner: [1, 2, 3, 4, 5].map((pid) => ({ pid })),
+			candidates: candidates(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12),
+		});
+		assert.deepStrictEqual(
+			additions.map((row) => [row.pid, row.rank]),
+			[
+				[6, 6],
+				[7, 7],
+				[8, 8],
+				[9, 9],
+				[10, 10],
+			],
+		);
+		assert.strictEqual(
+			5 + additions.length,
+			NUM_PLAYERS_PER_INDIVIDUAL_AWARD,
+			"a filled ballot is as deep as the award races page",
 		);
 	});
 
@@ -55,10 +82,14 @@ describe("ballotAdditions", () => {
 	});
 
 	test("nothing when the ballot is already full", () => {
+		const full = Array.from(
+			{ length: NUM_PLAYERS_PER_INDIVIDUAL_AWARD },
+			(_, i) => ({ pid: i + 1 }),
+		);
 		assert.deepStrictEqual(
 			ballotAdditions({
-				winner: [{ pid: 1 }, { pid: 2 }, { pid: 3 }, { pid: 4 }, { pid: 5 }],
-				candidates: candidates(1, 2, 3, 4, 5, 6),
+				winner: full,
+				candidates: candidates(...full.map((p) => p.pid), 99),
 			}),
 			[],
 		);

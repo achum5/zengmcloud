@@ -7,6 +7,15 @@ import type {
 	PlayerAwardBuiltIn,
 } from "./types.ts";
 
+// HOW DEEP AN INDIVIDUAL AWARD'S BALLOT GOES.
+//
+// One number, because it governs two things that have to agree: how many
+// players the Award Races page ranks, and how many of them are written down
+// when the award is decided. When they disagreed, the page would tell you a
+// player finished sixth in MVP voting and his own page could never say so -
+// the ballot stopped at five, so there was no sixth place to show.
+export const NUM_PLAYERS_PER_INDIVIDUAL_AWARD = 10;
+
 export const formatTeamNumber = (rank: number) =>
 	`${helpers.ordinal(rank)} Team`;
 

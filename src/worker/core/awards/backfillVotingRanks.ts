@@ -1,6 +1,6 @@
 // THE REST OF THE BALLOT, FOR SEASONS THAT ONLY EVER RECORDED THE WINNER.
 //
-// Awards now store the top five of every individual award, so a player page
+// Awards now store a ranked ballot for every individual award, so a player page
 // shows "MVP-3" for the man who finished third - the way Basketball Reference
 // writes it. Seasons played before that only ever stored the winner: the old
 // award format had one slot per award and nowhere to put anybody else, so
@@ -31,7 +31,7 @@ import { idb } from "../../db/index.ts";
 import { normalizeAwardsRow } from "../../db/normalizeAwardsRow.ts";
 import addAward from "../player/addAward.ts";
 import { getAwardCandidates } from "./getAwardCandidates.ts";
-import { NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD } from "./doAwards.ts";
+import { NUM_PLAYERS_PER_INDIVIDUAL_AWARD } from "../../../common/awards.ts";
 import type { Award, AwardPlayer, PlayerAward } from "../../../common/types.ts";
 
 export type BackfillVotingRanksResult = {
@@ -61,7 +61,7 @@ export type BallotCandidate = {
 export const ballotAdditions = ({
 	winner,
 	candidates,
-	depth = NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD,
+	depth = NUM_PLAYERS_PER_INDIVIDUAL_AWARD,
 }: {
 	winner: readonly { pid?: number | undefined }[];
 	candidates: readonly BallotCandidate[];
@@ -158,7 +158,7 @@ const backfill = async (
 			const awards = normalizeAwardsRow(raw);
 			const needsFill = (award: Award) =>
 				award.numTeams === undefined &&
-				award.winner.length < NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD &&
+				award.winner.length < NUM_PLAYERS_PER_INDIVIDUAL_AWARD &&
 				award.winner[0]?.pid !== undefined;
 
 			if (!awards.awards.some((award) => needsFill(award))) {

@@ -1,3 +1,4 @@
+import { NUM_PLAYERS_PER_INDIVIDUAL_AWARD } from "../../../common/awards.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import type {
 	Award,
@@ -112,8 +113,8 @@ export const awardCandidateStats: Partial<
 
 export type AwardCandidateOptions = {
 	transformPlayers?: Parameters<typeof processAwards>[0]["transformPlayers"];
-	// Ten is what the Award Races page shows; a futures board on the named
-	// teams wants a deeper field.
+	// Defaults to the ballot depth, which is what the Award Races page shows;
+	// a futures board on the named teams wants a deeper field.
 	numPlayersPerIndividualAward?: number;
 };
 
@@ -136,7 +137,8 @@ export const getAwardCandidates = async (
 		awards,
 		extraStatRanges: [],
 		extraStats: [],
-		numPlayersPerIndividualAward: options.numPlayersPerIndividualAward ?? 10,
+		numPlayersPerIndividualAward:
+			options.numPlayersPerIndividualAward ?? NUM_PLAYERS_PER_INDIVIDUAL_AWARD,
 		season,
 		statOverridesByMatchup,
 		transformPlayers: options.transformPlayers,

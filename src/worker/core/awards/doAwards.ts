@@ -8,7 +8,10 @@ import {
 	updatePlayerAwards,
 } from "./awardsByPlayer.ts";
 import { orderTeams } from "../../util/orderTeams.ts";
-import { leaderAwardCategories } from "../../../common/awards.ts";
+import {
+	leaderAwardCategories,
+	NUM_PLAYERS_PER_INDIVIDUAL_AWARD,
+} from "../../../common/awards.ts";
 
 const teamAwards = async (
 	teamsUnsorted: TeamFiltered<
@@ -73,10 +76,6 @@ const teamAwards = async (
 	};
 };
 
-// How deep the ballot goes: the winner plus the four players behind him, so a
-// player page can show "MVP-3" the way Basketball Reference does.
-export const NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD = 5;
-
 export const doAwards = async (conditions: Conditions) => {
 	const season = g.get("season");
 
@@ -115,7 +114,7 @@ export const doAwards = async (conditions: Conditions) => {
 
 	const { players, realizedAwards } = await processAwards({
 		awards: g.get("awards"),
-		numPlayersPerIndividualAward: NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD,
+		numPlayersPerIndividualAward: NUM_PLAYERS_PER_INDIVIDUAL_AWARD,
 		season,
 		statOverridesByMatchup: undefined,
 
