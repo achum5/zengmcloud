@@ -1,5 +1,12 @@
 import clsx from "clsx";
-import { memo, type ReactNode, useCallback, useEffect, useState } from "react";
+import {
+	memo,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { helpers } from "../../util/helpers.ts";
 import { localActions, useLocal } from "../../util/local.ts";
 import type {
@@ -247,7 +254,24 @@ export const SideBar = memo(({ pageID, pathname }: Props) => {
 		}
 	}, []);
 
+	// The close animation finishes on a timer, and that timer strips the
+	// backdrop and the body scroll lock. Opening again before it fires used to
+	// leave it armed, so it went off under the reopened sidebar: panel showing,
+	// page neither dimmed nor locked behind it. On a phone that is one tap on a
+	// menu item followed by one tap on the hamburger. The timer is kept here so
+	// an open can cancel it.
+	const closeTimeout = useRef<number | undefined>(undefined);
+
+	const cancelClose = () => {
+		if (closeTimeout.current !== undefined) {
+			window.clearTimeout(closeTimeout.current);
+			closeTimeout.current = undefined;
+		}
+	};
+
 	const close = useCallback(() => {
+		cancelClose();
+
 		// These are flat conditions while open is nested, by design - clean up everything!
 		if (node) {
 			node.classList.remove("sidebar-open");
@@ -257,7 +281,9 @@ export const SideBar = memo(({ pageID, pathname }: Props) => {
 			nodeFade.classList.add("sidebar-fade-closing");
 		}
 
-		setTimeout(() => {
+		closeTimeout.current = window.setTimeout(() => {
+			closeTimeout.current = undefined;
+
 			if (nodeFade) {
 				nodeFade.classList.remove("sidebar-fade-open");
 			}
@@ -273,20 +299,24 @@ export const SideBar = memo(({ pageID, pathname }: Props) => {
 	}, [node, nodeFade]);
 
 	const open = useCallback(() => {
+		cancelClose();
+
 		if (node) {
 			node.classList.add("sidebar-open");
 
 			if (nodeFade) {
+				// A close still fading out is superseded, not waited for.
+				nodeFade.classList.remove("sidebar-fade-closing");
 				nodeFade.classList.add("sidebar-fade-open");
 
 				if (document.body) {
-					if (document.body) {
-						document.body.classList.add("modal-open");
-					}
+					document.body.classList.add("modal-open");
 				}
 			}
 		}
 	}, [node, nodeFade]);
+
+	useEffect(() => cancelClose, []);
 
 	useEffect(() => {
 		if (node) {
