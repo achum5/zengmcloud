@@ -1,3 +1,4 @@
+import { clockLeft, type GameFlowSide } from "../../common/gameFlow.ts";
 import type {
 	RecapAverages,
 	RecapDayStandings,
@@ -3659,6 +3660,228 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 
 // --- Entry point: one game -----------------------------------------------------
 
+// --- How it unfolded: the sim's score log, when the game recorded one ---------
+//
+// Everything above reads the box score and the quarter scores, which can say
+// a game was close and not how. These read the flow summary
+// (common/gameFlow.ts): who took the lead for good and when, the last tie,
+// how many times it changed hands, the run that turned it, the lead the loser
+// let go. Each says nothing on a game from before the log existed.
+
+const sideOf = (game: RecapGame, t: RecapTeam): GameFlowSide =>
+	game.teams[0].tid === t.tid ? 0 : 1;
+
+const nameOfPid = (
+	game: RecapGame,
+	pid: number | undefined,
+): string | undefined => {
+	if (pid === undefined) {
+		return undefined;
+	}
+	for (const t of game.teams) {
+		for (const p of t.players) {
+			if (p.pid === pid) {
+				return p.name;
+			}
+		}
+	}
+	return undefined;
+};
+
+// "the fourth", "overtime", "the second overtime".
+const periodTag = (period: number, regPeriods: number): string =>
+	period <= regPeriods
+		? `the ${ordinal(period)}`
+		: period === regPeriods + 1
+			? "overtime"
+			: `the ${ordinal(period - regPeriods)} overtime`;
+
+// How a close game finished. The go-ahead score that held, or failing that
+// the last tie, and the count of lead changes when there were a lot of them.
+const finishNote = (
+	game: RecapGame,
+	shape: Shape,
+	rng: () => number,
+	// A game-winning shot already has its own sentence; a go-ahead basket
+	// inside the last half minute is that shot told twice.
+	shotTold: boolean,
+): string[] => {
+	const flow = game.flow;
+	if (!flow || (shape.margin > 6 && shape.ot === 0)) {
+		return [];
+	}
+	const out: string[] = [];
+	const W = cap(theNick(shape.winner));
+	const wSide = sideOf(game, shape.winner);
+	const inFinal = (period: number) => period >= shape.regPeriods;
+
+	const last = flow.lastLead;
+	if (
+		last &&
+		last.side === wSide &&
+		inFinal(last.period) &&
+		!(shotTold && last.clock <= 30)
+	) {
+		const when = clockLeft(last.clock);
+		const who = nameOfPid(game, last.pid);
+		const where =
+			last.period > shape.regPeriods
+				? ` in ${periodTag(last.period, shape.regPeriods)}`
+				: "";
+		if (when) {
+			out.push(
+				pick(
+					rng,
+					who
+						? [
+								`${W} took the lead for good on ${poss(who)} basket with ${when} left${where}.`,
+								`${cap(poss(who))} basket with ${when} to go${where} put ${theNick(shape.winner)} ahead for the last time.`,
+								`${W} went in front for good with ${when} left${where}, on a basket by ${who}.`,
+							]
+						: [`${W} took the lead for good with ${when} left${where}.`],
+					"leadForGood",
+				),
+			);
+		}
+	} else if (flow.lastTie && inFinal(flow.lastTie.period)) {
+		const when = clockLeft(flow.lastTie.clock);
+		if (when) {
+			out.push(
+				pick(
+					rng,
+					[
+						`It was tied at ${flow.lastTie.pts} with ${when} to play.`,
+						`The last tie came at ${flow.lastTie.pts}, with ${when} left.`,
+					],
+					"lastTie",
+				),
+			);
+		}
+	}
+
+	// A game nobody got away in: either the lead kept changing hands, or
+	// neither side ever built one. One sentence, not both - and only when the
+	// number says something, since "8 lead changes" is an ordinary night.
+	const biggest = Math.max(flow.maxLead[0], flow.maxLead[1]);
+	if (flow.leadChanges >= 10) {
+		out.push(
+			flow.ties > 0
+				? pick(
+						rng,
+						[
+							`There were ${flow.leadChanges} lead changes and ${flow.ties} ties.`,
+							`The lead changed hands ${flow.leadChanges} times, with ${flow.ties} ties.`,
+							// "Nobody led by more than 12" is not a tight game.
+							...(biggest <= 8
+								? [
+										`Nobody led by more than ${biggest} in a game of ${flow.leadChanges} lead changes.`,
+									]
+								: []),
+						],
+						"leadChanges",
+					)
+				: `The lead changed hands ${flow.leadChanges} times.`,
+		);
+	} else if (biggest <= 6 && shape.regPeriods >= 4) {
+		out.push(
+			pick(
+				rng,
+				[
+					`Neither side led by more than ${biggest} all night.`,
+					`The biggest lead either way was ${biggest}.`,
+				],
+				"tightAllNight",
+			),
+		);
+	}
+	return out;
+};
+
+// The lead the loser let go: the biggest they held, or the one they had with
+// two minutes left.
+const blownLeadNote = (
+	game: RecapGame,
+	shape: Shape,
+	rng: () => number,
+	// The comeback line already told the deficit the winner erased, which IS
+	// the loser's biggest lead.
+	written: string,
+): string | undefined => {
+	const flow = game.flow;
+	if (!flow) {
+		return undefined;
+	}
+	const lSide = sideOf(game, shape.loser);
+	const L = cap(theNick(shape.loser));
+	const comebackTold =
+		/deficit|erased|comeback|stormed back|charged home|at the break|at halftime|clawing back|hold on|nearly not enough/i.test(
+			written,
+		);
+	const lead = flow.maxLead[lSide];
+	if (lead >= 12 && !comebackTold) {
+		return pick(
+			rng,
+			[
+				`${L} led by as many as ${lead}.`,
+				`${L} had been up by ${lead} at one stage.`,
+				`At one point ${theNick(shape.loser)} led by ${lead}.`,
+			],
+			"blownLead",
+		);
+	}
+	const two = flow.late?.find((m) => m.clock === 120);
+	if (two) {
+		const l = two.pts[lSide];
+		const w = two.pts[1 - lSide];
+		if (l > w) {
+			const tail = shape.ot > 0 ? " in regulation" : "";
+			return pick(
+				rng,
+				[
+					`${L} were up ${l}-${w} with two minutes to go${tail}.`,
+					`${L} led ${l}-${w} with two minutes left${tail} and could not close it out.`,
+				],
+				"lateLead",
+			);
+		}
+	}
+	return undefined;
+};
+
+// The run that turned it, or the one that was not enough.
+const runNote = (
+	game: RecapGame,
+	shape: Shape,
+	rng: () => number,
+): string | undefined => {
+	const run = game.flow?.run;
+	if (!run) {
+		return undefined;
+	}
+	const isWinner = run.side === sideOf(game, shape.winner);
+	// A 10-0 run is most games; a dozen straight is the one worth a sentence.
+	if (run.pts < (isWinner ? 12 : 15)) {
+		return undefined;
+	}
+	const team = isWinner ? shape.winner : shape.loser;
+	const T = cap(theNick(team));
+	const when = periodTag(run.period, shape.regPeriods);
+	return pick(
+		rng,
+		isWinner
+			? [
+					`${T} ran off ${run.pts} straight points in ${when}.`,
+					`A ${run.pts}-0 run in ${when} put ${theNick(shape.winner)} in charge.`,
+					`${T} put together a ${run.pts}-0 run in ${when}.`,
+				]
+			: [
+					`${T} had a ${run.pts}-0 run in ${when}, and it still was not enough.`,
+					`Even a ${run.pts}-0 run in ${when} could not turn it for ${theNick(shape.loser)}.`,
+				],
+		isWinner ? "runWinner" : "runLoser",
+	);
+};
+
 export const getAutoRecap = (game: RecapGame): string => {
 	if (!isInBatch()) {
 		clearPhraseMemory();
@@ -3850,6 +4073,10 @@ export const getAutoRecap = (game: RecapGame): string => {
 			flowCovered = flow.covers;
 		}
 	}
+	// How it finished, for a game that was still a game at the end.
+	para1.push(
+		...finishNote(game, shape, rng, shot !== undefined && !shot.tying),
+	);
 	const spentFacts = new Set<StatFact>();
 	const spentTopics = new Set<StatTopic>();
 	// A "jumped out to a 30-20 first quarter" note on top of "led wire to wire"
@@ -3948,6 +4175,8 @@ export const getAutoRecap = (game: RecapGame): string => {
 		combined,
 		plusMinusNote(shape, star, rng, namedInPara2),
 		injurySentence(shape, rng),
+		blownLeadNote(game, shape, rng, [headline.text, ...para1].join(" ")),
+		runNote(game, shape, rng),
 	]).filter((s): s is string => !!s);
 	for (const e of extras) {
 		if (para2.length >= 6) {

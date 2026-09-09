@@ -297,6 +297,7 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 			season,
 			att: 18000,
 			clutchPlays: (result.clutchPlays ?? []).map((c: any) => `${c.text}.`),
+			flow: result.flow,
 			numPlayersOnCourt: result.numPlayersOnCourt ?? 5,
 			numPeriods: g.get("numPeriods"),
 			overtimes: result.overtimes ?? 0,
@@ -616,6 +617,9 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 		// (35% of recaps at its worst) and a foul-out nobody would have missed.
 		`recaps quoting the betting line: ${gameRecaps.filter((r) => /underdog|favorite|favored|the books/.test(r)).length}`,
 		`recaps with a foul-out: ${gameRecaps.filter((r) => /fouled out|fouling out|sixth foul|Foul trouble cost/.test(r)).length}`,
+		// What the score log makes possible: a close game that says how it ended.
+		`recaps saying how it finished: ${gameRecaps.filter((r) => /for good|last tie|tied at|lead changes|changed hands|with two minutes/.test(r)).length}`,
+		`recaps naming a run or a blown lead: ${gameRecaps.filter((r) => /-0 run|straight points|as many as|at one stage|At one point/.test(r)).length}`,
 		"",
 		"TOP 25 SENTENCE SHAPES:",
 		...shapes.slice(0, 25).map(([s, c]) => `${String(c).padStart(4)}  ${s}`),

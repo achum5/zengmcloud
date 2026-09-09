@@ -1,3 +1,4 @@
+import { FlowLog } from "../../../common/gameFlow.ts";
 import { g, helpers } from "../../util/index.ts";
 import { PHASE, STARTING_NUM_TIMEOUTS } from "../../../common/constants.ts";
 import jumpBallWinnerStartsThisPeriodWithPossession from "./jumpBallWinnerStartsThisPeriodWithPossession.ts";
@@ -207,6 +208,10 @@ class GameSim extends GameSimBase {
 		tids: [number];
 	}[];
 
+	// Every score as it happens, summarized for the recap once the game is
+	// over. See common/gameFlow.ts.
+	flow: FlowLog;
+
 	o: TeamNum;
 
 	d: TeamNum;
@@ -322,6 +327,7 @@ class GameSim extends GameSimBase {
 
 		this.lastScoringPlay = [];
 		this.clutchPlays = [];
+		this.flow = new FlowLog();
 		this.elam = this.allStarGame ? g.get("elamASG") : g.get("elam");
 		this.elamActive = false;
 		this.elamDone = false;
@@ -458,6 +464,7 @@ class GameSim extends GameSimBase {
 			overtimes: this.overtimes,
 			team: this.team,
 			clutchPlays: this.clutchPlays,
+			flow: this.flow.summary(this.numPeriods),
 			playByPlay: this.playByPlay.getPlayByPlay(this.team),
 			numPlayersOnCourt: this.numPlayersOnCourt,
 			neutralSite: this.neutralSite,
@@ -2919,6 +2926,13 @@ class GameSim extends GameSimBase {
 						amt;
 
 					this.shiftLog.addPoints(t, amt);
+					this.flow.addPoints(
+						t,
+						amt,
+						this.team[t].stat.ptsQtrs.length,
+						this.t,
+						p?.id,
+					);
 
 					for (const i of [0, 1] as const) {
 						for (let j = 0; j < this.numPlayersOnCourt; j++) {

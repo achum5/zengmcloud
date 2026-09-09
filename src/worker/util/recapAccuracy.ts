@@ -63,7 +63,7 @@ const COUNTING: [keyof RecapPlayer, string][] = [
 // period, a run, a rebounding edge or a season record. Those all share the
 // shape and none of them is wrong.
 const NOT_A_FINAL =
-	/quarter|after one|at the break|halftime|half|first|second|third|fourth|\brun\b|stretch|outscor|closed|opened|took over|settled it|broke it open|spurt|glass|boards|rebound|free throw|from the line|threes|from deep|assists|pushed|improved|moved|fell to|dropped to|climbed|meeting|season series|this season|at home|on the road|away from home|own building|bench|reserves/i;
+	/quarter|after one|at the break|halftime|half|first|second|third|fourth|\brun\b|stretch|outscor|closed|opened|took over|settled it|broke it open|spurt|glass|boards|rebound|free throw|from the line|threes|from deep|assists|pushed|improved|moved|fell to|dropped to|climbed|meeting|season series|this season|at home|on the road|away from home|own building|bench|reserves|to go\b|\bleft\b|to play|lead change|tied at|as many as|straight points|two minutes|for good|ahead for the last time|went in front/i;
 
 // A count in one of these sentences is a season or career total, a season
 // high being quoted, or a bench total - not a line from tonight's box score.
@@ -233,6 +233,55 @@ export const verifyRecap = (
 						sentence,
 					);
 				}
+			}
+		}
+	}
+
+	// --- how it unfolded, against the sim's own log --------------------------
+	const flow = game.flow;
+	if (flow) {
+		const claim = (re: RegExp, ok: (n: number) => boolean, kind: string) => {
+			for (const m of text.matchAll(re)) {
+				const n = Number(m[1] ?? m[2]);
+				if (!ok(n)) {
+					add(kind, `said ${n}`, m[0]);
+				}
+			}
+		};
+		claim(/(\d+) lead changes/g, (n) => n === flow.leadChanges, "lead changes");
+		claim(
+			/changed hands (\d+) times/g,
+			(n) => n === flow.leadChanges,
+			"lead changes",
+		);
+		claim(/(\d+) ties\b/g, (n) => n === flow.ties, "ties");
+		claim(/as many as (\d+)/g, (n) => flow.maxLead.includes(n), "biggest lead");
+		claim(
+			/up by (\d+) at one stage/g,
+			(n) => flow.maxLead.includes(n),
+			"biggest lead",
+		);
+		claim(/led by (\d+)\./g, (n) => flow.maxLead.includes(n), "biggest lead");
+		claim(
+			/led by more than (\d+)|biggest lead either way was (\d+)/g,
+			(n) => n === Math.max(flow.maxLead[0], flow.maxLead[1]),
+			"biggest lead",
+		);
+		claim(/(\d+)-0 run/g, (n) => n === flow.run?.pts, "run");
+		claim(/ran off (\d+) straight/g, (n) => n === flow.run?.pts, "run");
+		claim(/tied at (\d+)/g, (n) => n === flow.lastTie?.pts, "last tie");
+		claim(
+			/last tie came at (\d+)/g,
+			(n) => n === flow.lastTie?.pts,
+			"last tie",
+		);
+		const two = flow.late?.find((m) => m.clock === 120);
+		for (const m of text.matchAll(
+			/(?:were up|led) (\d+)-(\d+) with two minutes/g,
+		)) {
+			const said = new Set([Number(m[1]), Number(m[2])]);
+			if (!two || !said.has(two.pts[0]) || !said.has(two.pts[1])) {
+				add("late score", `said ${m[1]}-${m[2]}`, m[0]);
 			}
 		}
 	}

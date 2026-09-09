@@ -1,4 +1,5 @@
 import type { TeamRotation } from "./rotation.ts";
+import type { GameFlow } from "./gameFlow.ts";
 import * as z from "zod";
 import type { FaceConfig } from "facesjs";
 import type { PlayerAppearance } from "./playerAppearance.ts";
@@ -470,6 +471,10 @@ export type Game = {
 	playoffs?: boolean;
 	overtimes: number;
 	scoringSummary?: any;
+	// How the game unfolded - lead changes, the last lead, the run, the late
+	// score - boiled down from the sim's score log. See common/gameFlow.ts.
+	// Basketball only, and absent on games from before it was recorded.
+	flow?: GameFlow;
 	season: number;
 	teams: [GameTeam, GameTeam];
 	won: {

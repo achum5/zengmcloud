@@ -64,8 +64,10 @@ describe("lines at generation", () => {
 		}
 		// Same process, so the same mean to within noise.
 		assert.closeTo(generated / N, aged / N, 0.25, "mean level");
-		// And nobody reaches 36 with the face he had at 20 - this was 60%.
-		assert.isBelow(unlined / N, 0.02, "unlined at 36");
+		// And almost nobody reaches 36 with the face he had at 20 - this was
+		// 60%. A player who weathers less cannot take a line before 27, which
+		// leaves him ten rolls at 0.3, so a couple of percent is the real rate.
+		assert.isBelow(unlined / N, 0.05, "unlined at 36");
 	});
 
 	test("nothing before the first age lines are allowed", () => {

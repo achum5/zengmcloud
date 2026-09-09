@@ -215,6 +215,8 @@ export const gameSimToBoxScore = async (results: GameResults, att: number) => {
 			pts: 0,
 		},
 		scoringSummary: results.scoringSummary,
+		// Only the sports that record it - see common/gameFlow.ts.
+		...(results.flow ? { flow: results.flow } : {}),
 		teams: [
 			{
 				tid: results.team[0].id,

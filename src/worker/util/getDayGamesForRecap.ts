@@ -1,3 +1,4 @@
+import type { GameFlow } from "../../common/gameFlow.ts";
 import { idb } from "../db/index.ts";
 import {
 	addTotals,
@@ -238,6 +239,8 @@ export type RecapGame = {
 	spread?: { favTid: number; points: number };
 	// Narrative highlights ZenGM already generated (game-winners, milestones, ...).
 	clutchPlays: string[];
+	// How the game unfolded, when the sim recorded it. See common/gameFlow.ts.
+	flow?: GameFlow;
 	// Set ONLY for the All-Star Game. The game itself is still the normal box
 	// score in `teams`; this carries the weekend extras (MVP + the dunk and
 	// three-point contests) so the recap can cover the whole All-Star Weekend.
@@ -1056,6 +1059,7 @@ export const getDayGamesForRecap = async ({
 			// No betting line for an exhibition; the All-Star payload replaces it.
 			spread: allStar ? undefined : spread,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
+			flow: game.flow,
 			allStar: allStar ? allStarPayload() : undefined,
 		});
 	}
@@ -1692,6 +1696,7 @@ const createAutoRecapContext = async (season: number) => {
 			playIn,
 			spread: allStar ? undefined : spread,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
+			flow: game.flow,
 			allStar: allStar ? allStarPayload() : undefined,
 		};
 	};
