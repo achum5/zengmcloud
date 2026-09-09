@@ -173,6 +173,39 @@ export const dedupeSubjects = (
 	return out;
 };
 
+// THE SAME MAN, THREE SENTENCES RUNNING. The third paragraph is built one
+// beat at a time and three of them can be about the star - his shooting
+// against his season, his season high, his streak - so it read "Yuta Dunn shot
+// 64.3%... Yuta Dunn had not scored more than 47... It was the 16th game in a
+// row Yuta Dunn has reached 20." A sentence that opens on the name the one
+// before it opened on gets "He" (or "His"). Only then: reaching further back,
+// or past a sentence about somebody else, is how a pronoun ends up pointing at
+// the wrong man.
+export const dedupePlayerSubjects = (
+	sentences: string[],
+	names: readonly string[],
+): string[] => {
+	const out = [...sentences];
+	const opensOn = (sentence: string): string | undefined =>
+		names.find(
+			(name) =>
+				sentence.startsWith(`${name} `) || sentence.startsWith(`${name}'`),
+		);
+	for (let i = 1; i < out.length; i++) {
+		const name = opensOn(out[i]!);
+		if (!name || opensOn(sentences[i - 1]!) !== name) {
+			continue;
+		}
+		const rest = out[i]!.slice(name.length);
+		out[i] = rest.startsWith("'s ")
+			? `His ${rest.slice(3)}`
+			: rest.startsWith("' ")
+				? `His ${rest.slice(2)}`
+				: `He ${rest.slice(1)}`;
+	}
+	return out;
+};
+
 // --- Player performance --------------------------------------------------------
 
 // A rough impact score, only ever used to pick which player's night is the story.
@@ -3065,13 +3098,16 @@ const vsAverageNote = (
 		return pick(
 			rng,
 			splitTold
-				? [
-						`${star.name} shot it far better than the ${avg.fgp.toFixed(1)}% he had managed on the season.`,
-						`${star.name} came in shooting ${avg.fgp.toFixed(1)}% on the year.`,
+				? // The split was printed in the lede, which can be two paragraphs
+					// back by now: "It was a long way clear of his 51.0% season mark"
+					// with nothing nearby for "it" to be. The number is restated.
+					[
+						`${star.name} shot ${((100 * star.fg) / star.fga).toFixed(1)}% on the night against a ${avg.fgp.toFixed(1)}% season mark.`,
+						`${star.name} came in shooting ${avg.fgp.toFixed(1)}% on the year and shot ${((100 * star.fg) / star.fga).toFixed(1)}% in this one.`,
 						// "a long way FROM" reads as a shortfall, and this branch only
 						// fires when he shot at least twelve points BETTER than his
 						// season mark.
-						`It was a long way clear of ${poss(star.name)} ${avg.fgp.toFixed(1)}% season mark.`,
+						`That ${split} was a long way clear of ${poss(star.name)} ${avg.fgp.toFixed(1)}% season mark.`,
 					]
 				: [
 						`${star.name} was ${split} from the floor, far better than the ${avg.fgp.toFixed(1)}% he had managed on the season.`,
@@ -3895,14 +3931,22 @@ const runNote = (
 	const team = isWinner ? shape.winner : shape.loser;
 	const T = cap(theNick(team));
 	const when = periodTag(run.period, shape.regPeriods);
+	// "Put them in charge" of a game they won by three is the wrong tone: in
+	// a close one the run built a lead that then had to be kept.
+	const close = shape.margin <= 6 && shape.ot === 0;
 	return pick(
 		rng,
 		isWinner
-			? [
-					`${T} ran off ${run.pts} straight points in ${when}.`,
-					`A ${run.pts}-0 run in ${when} put ${theNick(shape.winner)} in charge.`,
-					`${T} put together a ${run.pts}-0 run in ${when}.`,
-				]
+			? close
+				? [
+						`${T} ran off ${run.pts} straight points in ${when}, and needed every one of them.`,
+						`A ${run.pts}-0 run in ${when} built the lead ${theNick(shape.winner)} spent the rest of the night protecting.`,
+					]
+				: [
+						`${T} ran off ${run.pts} straight points in ${when}.`,
+						`A ${run.pts}-0 run in ${when} put ${theNick(shape.winner)} in charge.`,
+						`${T} put together a ${run.pts}-0 run in ${when}.`,
+					]
 			: [
 					`${T} had a ${run.pts}-0 run in ${when}, and it still was not enough.`,
 					`Even a ${run.pts}-0 run in ${when} could not turn it for ${theNick(shape.loser)}.`,
@@ -4395,15 +4439,24 @@ export const getAutoRecap = (game: RecapGame): string => {
 
 	const otherNick = nick(shape.loser);
 	const nicks = [nick(shape.winner), otherNick];
-	const paragraphs = [dedupeSubjects(para1, otherNick, nicks).join(" ")];
+	// Longest first, so a "Marcus Jackson Jr." is not read as "Marcus Jackson".
+	const playerNames = [...shape.winner.players, ...shape.loser.players]
+		.map((p) => p.name)
+		.sort((a, b) => b.length - a.length);
+	const tidy = (para: string[]) =>
+		dedupePlayerSubjects(
+			dedupeSubjects(para, otherNick, nicks),
+			playerNames,
+		).join(" ");
+	const paragraphs = [tidy(para1)];
 	if (para2.length > 0) {
-		paragraphs.push(dedupeSubjects(para2, otherNick, nicks).join(" "));
+		paragraphs.push(tidy(para2));
 	}
 	if (para3.length > 0) {
-		paragraphs.push(dedupeSubjects(para3, otherNick, nicks).join(" "));
+		paragraphs.push(tidy(para3));
 	}
 	if (para4.length > 0) {
-		paragraphs.push(dedupeSubjects(para4, otherNick, nicks).join(" "));
+		paragraphs.push(tidy(para4));
 	}
 	return `**${headline.text}**\n\n${paragraphs.join("\n\n")}`;
 };
@@ -5746,7 +5799,7 @@ const leagueNotes = (
 		cands.push({
 			sort: 3,
 			tid: bombs.shape.winner.tid,
-			text: `${cap(theNick(bombs.shape.winner))} led the league in threes with ${bombs.tp}.`,
+			text: `${cap(theNick(bombs.shape.winner))} made the most threes on the slate, ${bombs.tp}.`,
 		});
 	}
 
@@ -6285,8 +6338,28 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				// A clinch: the wrap had the result and nothing else. Whose season
 				// ended, and how, is the sentence a one-game night was missing.
 				const post = postseasonContext(marquee, mShape, rng);
-				if (post.clinch && post.sentences[1]) {
-					para3.push(post.sentences[1]);
+				if (post.clinch) {
+					// Where the winner goes next, unless the headline said so.
+					// "Wizards take Game 7 from the Warriors" over "The Warriors are
+					// done for the year" never said the Wizards were through.
+					if (
+						!post.clinch.title &&
+						!/advance|move on|reach|through to|champion/i.test(headline.text)
+					) {
+						para3.push(
+							pick(
+								rng,
+								[
+									`${cap(theNick(mShape.winner))} move on to ${post.clinch.nextRound}.`,
+									`That puts ${theNick(mShape.winner)} in ${post.clinch.nextRound}.`,
+								],
+								"dayClinchNext",
+							),
+						);
+					}
+					if (post.sentences[1]) {
+						para3.push(post.sentences[1]);
+					}
 				}
 			}
 		}

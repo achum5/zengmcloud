@@ -1111,11 +1111,12 @@ export const seriesShapeBeat = (
 		prior.reduce((acc, g) => acc + g.oppPts, 0) + ctx.loser.pts;
 	if (Math.abs(forTotal - againstTotal) >= 25 && margins.length >= 3) {
 		const ahead = forTotal > againstTotal ? wn : ln;
+		const behind = forTotal > againstTotal ? ln : wn;
 		options.push(
 			pick(
 				rng,
 				[
-					`Across the series ${ahead} have outscored the other side by ${Math.abs(forTotal - againstTotal)}.`,
+					`Across the series ${ahead} have outscored ${behind} by ${Math.abs(forTotal - againstTotal)}.`,
 					`Over ${numWord(margins.length)} games the aggregate favors ${ahead} by ${Math.abs(forTotal - againstTotal)}.`,
 				],
 				"seriesAggregate",
