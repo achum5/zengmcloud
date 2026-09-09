@@ -364,12 +364,30 @@ export const HAIR_RARE: readonly string[] = [
 // which is also right for a league that can be set in any era.
 export const HAIR_PERIOD: readonly string[] = ["high", "juice"];
 
+// SPIKED AND FAUX-HAWKED. Six styles between them, and uniform selection
+// plus the texture re-roll - which for a white or Asian player draws from a
+// pool that is 40% these - put one on more than a fifth of every non-Black
+// player. Measured on a generated league: 22% of white and Asian players, 20%
+// of brown, and a roster page that looked like a boy band. A real floor has a
+// few. Thinned the way the period cuts are, and kept out of the re-roll pool,
+// to roughly a third of that.
+export const HAIR_SPIKED: readonly string[] = [
+	"spike",
+	"spike2",
+	"spike3",
+	"spike4",
+	"faux-hawk",
+	"fauxhawk-fade",
+];
+
 const RARE_HAIR = new Set<string>(HAIR_RARE);
 const PERIOD_HAIR = new Set<string>(HAIR_PERIOD);
+const SPIKED_HAIR = new Set<string>(HAIR_SPIKED);
 
 // Share of the natural rate these keep.
 const RARE_HAIR_KEEP = 0.15;
 const PERIOD_HAIR_KEEP = 0.25;
+const SPIKED_HAIR_KEEP = 0.3;
 
 const STRAIGHT_HAIR = new Set<string>(HAIR_TEXTURES.straight);
 const COILED_HAIR = new Set<string>(HAIR_TEXTURES.coiled);
@@ -421,7 +439,8 @@ export const hairPoolForRace = (race: Race): readonly string[] => {
 			id !== HAIR_THINNING &&
 			id !== HAIR_BALD &&
 			!RARE_HAIR.has(id) &&
-			!PERIOD_HAIR.has(id),
+			!PERIOD_HAIR.has(id) &&
+			!SPIKED_HAIR.has(id),
 	);
 };
 
@@ -650,6 +669,23 @@ export const shavesHead = (pid: number | undefined): boolean =>
 
 export const shavesHeadAtAge = (pid: number | undefined): number =>
 	21 + Math.floor(hashPid(pid ?? 0, 10) * 8);
+
+// A CUT, SOMEWHERE IN HIS THIRTIES.
+//
+// Volume is a young man's hair. Measured over a generated league, the share
+// of 38-year-olds wearing an afro, dreads, a hi-top or a mop was the same as
+// the share of 22-year-olds - hair carried no age signal at all - and no floor
+// looks like that. Half of players cut it back to something short at some
+// point after their late twenties and keep it short; the other half wear what
+// they always wore, which is also true to life. Who cuts is a fixed trait
+// from the id, like the rest, and the cut itself is one of the ordinary short
+// styles - the same rung the balding ladder takes first, for its own reasons.
+export const CUTS_HAIR_SHARE = 0.5;
+export const CUTS_HAIR_FROM_AGE = 29;
+const CUT_PER_YEAR = 0.12;
+
+export const cutsHair = (pid: number | undefined): boolean =>
+	pid !== undefined && hashPid(pid, 12) < CUTS_HAIR_SHARE;
 
 // The shadow a shaved scalp leaves. facesjs generates this itself on a quarter
 // of faces, anywhere in 0 to 0.2; a head that has just been shaved and has
@@ -948,6 +984,31 @@ export const applyWrinkles = (
 // Chance per year of gaining a feature, when age allows one.
 const WRINKLE_PER_YEAR = 0.3;
 
+// The first age a line is allowed at all - see wrinkleLevelForAge.
+const WRINKLE_START_AGE = 23;
+
+// The level a face AGED INTO this age would have: the yearly roll, replayed.
+//
+// A face built at 36 used to draw its level weighted toward the low end,
+// which left 60% of generated 36-year-olds with no lines at all - while a man
+// aged a season at a time from 23 (see ageFace) is almost always at his own
+// ceiling by then. A new league full of veterans looked a decade younger than
+// the same league would after being played. So generation asks the same
+// question aging does, one season at a time.
+export const wrinkleLevelAgedTo = (
+	age: number,
+	pid: number | undefined,
+	rand: () => number,
+): number => {
+	let level = 0;
+	for (let year = WRINKLE_START_AGE; year <= age; year++) {
+		if (level < wrinkleCeiling(year, pid) && rand() < WRINKLE_PER_YEAR) {
+			level += 1;
+		}
+	}
+	return level;
+};
+
 // How much the folds deepen each season on their own, between those.
 const SMILE_CREEP_PER_YEAR = 0.05;
 
@@ -1089,9 +1150,21 @@ export const applyRealisticFace = (
 		const implausible = !hairAllowedForRace(face.hair.id, race);
 		const overexposed =
 			(RARE_HAIR.has(face.hair.id) && rand() >= RARE_HAIR_KEEP) ||
-			(PERIOD_HAIR.has(face.hair.id) && rand() >= PERIOD_HAIR_KEEP);
+			(PERIOD_HAIR.has(face.hair.id) && rand() >= PERIOD_HAIR_KEEP) ||
+			(SPIKED_HAIR.has(face.hair.id) && rand() >= SPIKED_HAIR_KEEP);
 		if (implausible || overexposed) {
 			face.hair.id = pickFrom(hairPoolForRace(race), rand);
+		}
+	}
+
+	// The cut he may already have had by this age - see cutsHair. Replayed the
+	// way the lines are, so a face built at 34 wears what one aged to 34 would.
+	if (cutsHair(pid) && VOLUMINOUS_HAIR.has(face.hair.id)) {
+		for (let year = CUTS_HAIR_FROM_AGE; year <= age; year++) {
+			if (rand() < CUT_PER_YEAR) {
+				face.hair.id = pickFrom(SHORT_CUTS, rand);
+				break;
+			}
 		}
 	}
 
@@ -1130,13 +1203,11 @@ export const applyRealisticFace = (
 		face.glasses.id = "none";
 	}
 
-	// Lines to match the age. Weighted toward the low end of what the age
-	// allows, so a 32-year-old is usually a little weathered and occasionally
-	// a lot - the same spread real faces have.
-	const ceiling = wrinkleLevelForAge(age);
+	// Lines to match the age - the same age a face aged into would show. See
+	// wrinkleLevelAgedTo.
 	applyWrinkles(
 		face,
-		Math.floor(rand() * rand() * (ceiling + 1)),
+		wrinkleLevelAgedTo(age, pid, rand),
 		pid,
 		smileSizeForAge(age),
 	);
@@ -1239,6 +1310,19 @@ export const ageFace = (
 	) {
 		face.hair.id = HAIR_BALD;
 		shaveScalp(face);
+		changed = true;
+	}
+
+	// THE CUT - see cutsHair. Only ever from volume to short, so like everything
+	// else here it cannot be undone by a later roll, and it never touches a
+	// head the balding ladder below has already started on.
+	if (
+		cutsHair(pid) &&
+		age >= CUTS_HAIR_FROM_AGE &&
+		VOLUMINOUS_HAIR.has(face.hair.id) &&
+		rand() < CUT_PER_YEAR
+	) {
+		face.hair.id = pickFrom(SHORT_CUTS, rand);
 		changed = true;
 	}
 

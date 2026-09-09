@@ -1173,8 +1173,8 @@ export const settings: Setting[] = (
 						draft class of 19-to-22-year-olds turns up in mutton chops, a
 						neckbeard, an Abraham Lincoln beard or Wolverine sideburns, and a
 						few are already balding. This ties facial hair and hairlines to age:
-						prospects get young looks, and the period styles are held back as a
-						rare touch on the oldest players.
+						prospects get young looks, and the period styles are never generated
+						at all.
 					</p>
 					<p>
 						Hairstyle textures also follow ancestry - straight flowing styles

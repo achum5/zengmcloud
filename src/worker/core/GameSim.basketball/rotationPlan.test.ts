@@ -170,12 +170,24 @@ beforeAll(async () => {
 		const t = (await idb.cache.teams.get(tid))!;
 		await idb.cache.teamSeasons.add(team.genSeasonRow(t) as any);
 	}
-	for (const p of await idb.cache.players.indexGetAll("playersByTid", [
+	const drawn = await idb.cache.players.indexGetAll("playersByTid", [
 		0,
 		Infinity,
-	])) {
+	]);
+	for (const p of drawn) {
 		await player.updateValues(p);
 		p.injury = { type: "Healthy", gamesRemaining: 0 };
+	}
+	// TWO SIDES THAT CAN PLAY EACH OTHER. The fixed random stream keeps the
+	// draw the same from run to run, but not from change to change: anything
+	// that consumes a random number while a player is generated - a face, say
+	// - shifts every roster after it, and a draw that happened to be lopsided
+	// turns most of the games into garbage time, which is exactly where a plan
+	// stops applying. So the two rosters are dealt from one pool, best to
+	// worst in a snake, and stay evenly matched whatever the draw.
+	drawn.sort((a, b) => b.valueNoPot - a.valueNoPot);
+	for (const [i, p] of drawn.entries()) {
+		p.tid = Math.floor(i / 2) % 2 === 0 ? i % 2 : 1 - (i % 2);
 		await idb.cache.players.put(p);
 	}
 
@@ -285,10 +297,10 @@ describe("a rotation plan in the sim", () => {
 		// Garbage time is the coach's, by design: once the fourth quarter is
 		// out of hand he empties the bench and the plan stops applying. A game
 		// that stayed a game is the only place a stint can be measured.
-		const competitive = playGames({ auto: false, stints }, 24).filter(
+		const competitive = playGames({ auto: false, stints }, 40).filter(
 			(result) => result.margin < 15,
 		);
-		assert.isAtLeast(competitive.length, 6, "close enough games to measure");
+		assert.isAtLeast(competitive.length, 8, "close enough games to measure");
 		assert.closeTo(
 			average(competitive).get(tenthMan)!,
 			6,
