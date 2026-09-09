@@ -845,6 +845,27 @@ export const nextGameBeat = (
 		}
 		return pick(rng, options, "nextGame");
 	};
+	// The same two teams again - a home-and-home. Said once from each side
+	// ("The Bulls visit the Trail Blazers in two days; the Trail Blazers host
+	// the Bulls in two days") it read as two different games.
+	if (
+		wNext &&
+		lNext &&
+		wNext.daysAway === lNext.daysAway &&
+		wNext.oppName === ctx.loser.name &&
+		lNext.oppName === ctx.winner.name
+	) {
+		const host = theNick(wNext.home ? ctx.winner : ctx.loser);
+		return pick(
+			rng,
+			[
+				`The two go again ${when(wNext.daysAway)}, with ${host} at home.`,
+				`They meet again ${when(wNext.daysAway)}, ${host} hosting.`,
+				`Same two teams ${when(wNext.daysAway)}, this time at ${poss(host)} place.`,
+			],
+			"nextGameRematch",
+		);
+	}
 	if (wNext && lNext && rng() < 0.3) {
 		const W = cap(theNick(ctx.winner));
 		const ln = theNick(ctx.loser);
@@ -913,7 +934,7 @@ export const scoringNormBeat = (
 					rng,
 					[
 						`${L} came in averaging ${lNorm.pts.toFixed(1)} and never got near it.`,
-						`It left ${ln} ${numWord(under)} short of their season average.`,
+						`${L} finished ${numWord(under)} below their season average.`,
 						`${L} had been scoring ${lNorm.pts.toFixed(1)} a game; tonight they managed ${ctx.loser.pts}.`,
 					],
 					"normLoserLow",

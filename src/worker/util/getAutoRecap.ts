@@ -2888,17 +2888,29 @@ const stakesSentence = (
 				),
 			);
 		} else if (over >= 12 && rng() < 0.3) {
+			// "Have won 16 more than they have lost, at 16-0" is arithmetic
+			// where the fact is that nobody has beaten them.
 			options.push(
-				pick(
-					rng,
-					[
-						`${w} are ${plural(over, "game")} over .500 at ${rec.won}-${rec.lost}.`,
-						`At ${rec.won}-${rec.lost}, ${them} are ${plural(over, "game")} clear of .500.`,
-						`That is ${rec.won}-${rec.lost}, ${plural(over, "game")} the right side of .500.`,
-						`${w} have won ${over} more than they have lost, at ${rec.won}-${rec.lost}.`,
-					],
-					"recordOver500",
-				),
+				rec.lost === 0
+					? pick(
+							rng,
+							[
+								`${w} are still unbeaten at ${rec.won}-0.`,
+								`Nobody has beaten ${them} yet: ${rec.won}-0.`,
+								`That is ${rec.won} wins without a loss for ${them}.`,
+							],
+							"recordUnbeaten",
+						)
+					: pick(
+							rng,
+							[
+								`${w} are ${plural(over, "game")} over .500 at ${rec.won}-${rec.lost}.`,
+								`At ${rec.won}-${rec.lost}, ${them} are ${plural(over, "game")} clear of .500.`,
+								`That is ${rec.won}-${rec.lost}, ${plural(over, "game")} the right side of .500.`,
+								`${w} have won ${over} more than they have lost, at ${rec.won}-${rec.lost}.`,
+							],
+							"recordOver500",
+						),
 			);
 		} else if (rng() < 0.25) {
 			options.push(
@@ -3313,6 +3325,11 @@ const formNote = (
 		const l10 = t.last10;
 		// Index 0 is this game, so the FORM entering it is everything after.
 		if (!Array.isArray(l10) || l10.length < 7) {
+			return undefined;
+		}
+		// "9 wins in 9 games coming in" under 16-0 is the small number when
+		// the big one is the story; the record note has the unbeaten team.
+		if (t.record && t.record.lost === 0 && t.record.won >= 7) {
 			return undefined;
 		}
 		const prior = l10.slice(1);
@@ -4545,7 +4562,10 @@ const conferencePictureSentence = (
 					rng,
 					[
 						`the ${leader.name} are still perfect at ${leader.won}-0 atop the ${conf.name}`,
-						`nobody has beaten the ${leader.name} yet, ${leader.won}-0 and top of the ${conf.name}`,
+						// No "and" inside a bit: the bits are joined with one, and
+						// "16-0 and top of the East and the Hornets lead the West"
+						// was one sentence.
+						`nobody has beaten the ${leader.name} yet, ${leader.won}-0 at the top of the ${conf.name}`,
 					],
 					"dayStandingsPerfect",
 				),
@@ -5614,9 +5634,15 @@ const leagueNotes = (
 	let highest: { shape: Shape; total: number } | undefined;
 	let hottest: { shape: Shape; fgp: number } | undefined;
 	let bombs: { shape: Shape; tp: number } | undefined;
+	// The game that kept changing hands, from the score log where there is one.
+	let seesaw: { shape: Shape; changes: number } | undefined;
 	for (const g of real) {
 		const shape = analyzeShape(g);
 		const total = shape.winner.pts + shape.loser.pts;
+		const changes = g.flow?.leadChanges ?? 0;
+		if (changes >= 12 && (!seesaw || changes > seesaw.changes)) {
+			seesaw = { shape, changes };
+		}
 		if (!biggest || shape.margin > biggest.margin) {
 			biggest = { shape, margin: shape.margin };
 		}
@@ -5644,6 +5670,20 @@ const leagueNotes = (
 			text: `The night's most one-sided result was ${poss(
 				theNick(biggest.shape.winner),
 			)} ${biggest.margin}-point win over ${theNick(biggest.shape.loser)}.`,
+		});
+	}
+	if (seesaw) {
+		cands.push({
+			sort: 0.5,
+			tid: seesaw.shape.winner.tid,
+			text: pick(
+				rng,
+				[
+					`${cap(theNick(seesaw.shape.winner))} and ${theNick(seesaw.shape.loser)} traded the lead ${seesaw.changes} times.`,
+					`The lead changed hands ${seesaw.changes} times in ${theNick(seesaw.shape.winner)}' game with ${theNick(seesaw.shape.loser)}.`,
+				],
+				"daySeesaw",
+			),
 		});
 	}
 	if (highest && highest.total >= 240) {
