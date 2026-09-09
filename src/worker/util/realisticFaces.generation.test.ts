@@ -179,3 +179,130 @@ describe("the cut", () => {
 		);
 	});
 });
+
+// FEATURES, DIALS, BUILD AND SKIN - the second pass, made from a rendered
+// catalogue of every variant.
+import { svgsIndex } from "facesjs";
+import {
+	EYE_ANGLE,
+	EYEBROW_ANGLE,
+	EYES_CARTOON,
+	EYES_NATURAL,
+	inferRaceFromFace,
+	MOUTHS_CARTOON,
+	MOUTHS_NATURAL,
+	NOSE_SIZE,
+	NOSES_CARTOON,
+	NOSES_NATURAL,
+	SKIN_TONES,
+} from "./realisticFaces.ts";
+
+const male = (ids: readonly string[]) =>
+	ids.filter((id) => !id.startsWith("female")).toSorted();
+
+describe("the cartoon lists", () => {
+	test("cover the male catalogue exactly, cartoon and natural together", () => {
+		assert.deepStrictEqual(
+			[...EYES_CARTOON, ...EYES_NATURAL].toSorted(),
+			male(svgsIndex.eye),
+		);
+		assert.deepStrictEqual(
+			[...MOUTHS_CARTOON, ...MOUTHS_NATURAL].toSorted(),
+			male(svgsIndex.mouth),
+		);
+		assert.deepStrictEqual(
+			[...NOSES_CARTOON, ...NOSES_NATURAL].toSorted(),
+			male(svgsIndex.nose),
+		);
+	});
+
+	test("a cartoon eye is rare, not gone; the dials sit inside their ranges", () => {
+		const rand = seeded(9);
+		const N = 1000;
+		let cartoon = 0;
+		let fat = 0;
+		for (let pid = 1; pid <= N; pid++) {
+			const f = build("white", 25, pid, rand);
+			if (EYES_CARTOON.includes(f.eye.id)) {
+				cartoon += 1;
+			}
+			assert.isAtLeast(f.eye.angle, EYE_ANGLE[0]);
+			assert.isAtMost(f.eye.angle, EYE_ANGLE[1]);
+			assert.isAtLeast(f.eyebrow.angle, EYEBROW_ANGLE[0]);
+			assert.isAtMost(f.eyebrow.angle, EYEBROW_ANGLE[1]);
+			assert.isAtLeast(f.nose.size, NOSE_SIZE[0]);
+			assert.isAtMost(f.nose.size, NOSE_SIZE[1]);
+			fat += f.fatness;
+		}
+		// Uniform selection gave 7 of 19 - 37%.
+		assert.isBelow(cartoon / N, 0.14, "cartoon eyes");
+		assert.isAbove(cartoon, 0, "still around");
+		// Uniform fatness averages 0.5.
+		assert.isBelow(fat / N, 0.42, "mean fatness");
+	});
+
+	test("a face that already exists keeps its own features", () => {
+		const rand = seeded(10);
+		const f = generate(
+			{ jersey: { id: "jersey" } },
+			{ gender: "male", race: "black" },
+		);
+		f.eye.id = "eye8";
+		f.mouth.id = "angry";
+		f.eyebrow.angle = 20;
+		f.fatness = 0.9;
+		applyRealisticFace(f, {
+			age: 22,
+			race: "black",
+			pid: 3,
+			keepColors: true,
+			rand,
+		});
+		assert.strictEqual(f.eye.id, "eye8");
+		assert.strictEqual(f.mouth.id, "angry");
+		assert.strictEqual(f.eyebrow.angle, 20);
+		assert.strictEqual(f.fatness, 0.9);
+	});
+});
+
+describe("skin across the range", () => {
+	test("every anchor gets used, and the race still reads back", () => {
+		const rand = seeded(11);
+		for (const race of ["white", "black", "brown", "asian"] as const) {
+			const nearest = new Set<number>();
+			let right = 0;
+			const N = 400;
+			for (let pid = 1; pid <= N; pid++) {
+				const f = build(race, 25, pid, rand);
+				if (inferRaceFromFace(f) === race) {
+					right += 1;
+				}
+				// Which anchor this tone sits closest to.
+				const [r, g, b] = [1, 3, 5].map((i) =>
+					Number.parseInt(f.body.color.slice(i, i + 2), 16),
+				) as [number, number, number];
+				let best = 0;
+				let bestD = Infinity;
+				for (const [i, tone] of SKIN_TONES[race].entries()) {
+					const [r2, g2, b2] = [1, 3, 5].map((k) =>
+						Number.parseInt(tone.slice(k, k + 2), 16),
+					) as [number, number, number];
+					const d = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2;
+					if (d < bestD) {
+						bestD = d;
+						best = i;
+					}
+				}
+				nearest.add(best);
+			}
+			assert.strictEqual(
+				nearest.size,
+				SKIN_TONES[race].length,
+				`${race} anchors used`,
+			);
+			// The ends of neighbouring ranges sit close, so one reads off now
+			// and then; the retroactive pass can live with that.
+			assert.isAbove(right / N, 0.85, `${race} read back`);
+		}
+	});
+});

@@ -444,6 +444,131 @@ export const hairPoolForRace = (race: Race): readonly string[] => {
 	);
 };
 
+// FEATURES THAT READ AS A CARTOON.
+//
+// facesjs draws every eye, mouth and nose uniformly, and a few of them are
+// drawn for a cartoon: a pop-eyed stare, a bug-eyed circle, a squint of slits,
+// a gritted-teeth grimace, an open-mouthed gape, a bulb nose, a Pinocchio.
+// Rendered side by side - which is how these lists were made - most variants
+// read as a face at rest and a handful read as an expression, and an
+// expression on a headshot is what makes a roster page look like a comic
+// strip. Thinned, not removed: one in a while is a character.
+export const EYES_CARTOON: readonly string[] = [
+	"eye1",
+	"eye2",
+	"eye7",
+	"eye8",
+	"eye10",
+	"eye11",
+	"eye15",
+];
+export const EYES_NATURAL: readonly string[] = [
+	"eye3",
+	"eye4",
+	"eye5",
+	"eye6",
+	"eye9",
+	"eye12",
+	"eye13",
+	"eye14",
+	"eye16",
+	"eye17",
+	"eye18",
+	"eye19",
+];
+export const MOUTHS_CARTOON: readonly string[] = [
+	"angry",
+	"mouth",
+	"mouth7",
+	"mouth8",
+];
+export const MOUTHS_NATURAL: readonly string[] = [
+	"closed",
+	"mouth2",
+	"mouth3",
+	"mouth4",
+	"mouth5",
+	"mouth6",
+	"side",
+	"smile-closed",
+	"smile",
+	"smile2",
+	"smile3",
+	"smile4",
+	"straight",
+];
+export const NOSES_CARTOON: readonly string[] = [
+	"honker",
+	"pinocchio",
+	"nose3",
+	"nose7",
+	"nose9",
+	"nose14",
+];
+export const NOSES_NATURAL: readonly string[] = [
+	"nose1",
+	"nose2",
+	"nose4",
+	"nose5",
+	"nose6",
+	"nose8",
+	"nose10",
+	"nose11",
+	"nose12",
+	"nose13",
+	"small",
+];
+const CARTOON_KEEP = 0.2;
+
+// THE DIALS, AWAY FROM THEIR STOPS. A brow at 20 degrees is a scowl and at
+// -15 a look of alarm; a nose at 1.25 is a caricature of one. facesjs draws
+// each dial uniformly across its whole range, so a fifth of every roster was
+// glowering. The middle of each range is where a face at rest sits.
+export const EYE_ANGLE: readonly [number, number] = [-6, 10];
+export const EYEBROW_ANGLE: readonly [number, number] = [-8, 12];
+export const NOSE_SIZE: readonly [number, number] = [0.6, 1.15];
+
+// ATHLETES. Fatness is drawn uniformly from 0 to 1, and 1 is drawn for a
+// much heavier man than plays professional basketball: a third of every draft
+// class arrived thick-necked. Skewed toward lean, with the tail kept - a
+// heavy center is a real type - and aging adds its own from there.
+export const fatnessForAthlete = (rand: () => number): number =>
+	Math.round(Math.min(1, 0.85 * rand() ** 1.5) * 100) / 100;
+
+// SKIN, ACROSS THE WHOLE RANGE.
+//
+// facesjs picks skin from two or three fixed values per race, so every Black
+// player in a league was one of three browns and a nudge of a few percent
+// was all that told them apart. These anchors span the real range for each,
+// and a tone is drawn BETWEEN two neighbouring anchors rather than from the
+// list, so no two players need share one. They are also what a face's race
+// is read back from (see inferRaceFromFace), so the two stay in step.
+export const SKIN_TONES: Record<Race, readonly string[]> = {
+	white: ["#f7e1d3", "#f2d6cb", "#e8c4ad", "#ddb7a0", "#cfa286"],
+	asian: ["#fedac7", "#f6cfb0", "#f0c5a3", "#eab687", "#dea672"],
+	brown: ["#c99a80", "#bb876f", "#aa816f", "#a67358", "#8f6248"],
+	black: ["#b8735f", "#ad6453", "#8f5446", "#74453d", "#5c3937", "#4a2d2b"],
+};
+
+// Hair the same way. facesjs has one colour for Black players and two for
+// brown and Asian ones; these add the dark browns that are as common as the
+// black.
+export const HAIR_TONES: Record<Race, readonly string[]> = {
+	white: [
+		"#272421",
+		"#3D2314",
+		"#5A3825",
+		"#CC9966",
+		"#2C1608",
+		"#B55239",
+		"#e9c67b",
+		"#D7BF91",
+	],
+	asian: ["#272421", "#0f0902", "#2e1f16"],
+	brown: ["#272421", "#1c1008", "#3a2417"],
+	black: ["#272421", "#1a1613", "#3b2a20"],
+};
+
 // What a player of a given age should look like. Chances are per player, and
 // the tier weights are relative within whatever facial hair they do have.
 type AgeBand = {
@@ -799,6 +924,32 @@ export const jitterColor = (
 	);
 };
 
+// A tone somewhere between two neighbouring anchors.
+export const skinTone = (race: Race, rand: () => number): string => {
+	const tones = SKIN_TONES[race];
+	const i = Math.min(tones.length - 2, Math.floor(rand() * (tones.length - 1)));
+	const t = rand();
+	const a = hexToRgb(tones[i]!);
+	const b = hexToRgb(tones[i + 1]!);
+	return rgbToHex(
+		a.map((v, k) => v + (b[k]! - v) * t) as [number, number, number],
+	);
+};
+
+// Inside the range, or re-drawn inside it.
+const inRange = (
+	value: number | undefined,
+	[lo, hi]: readonly [number, number],
+	rand: () => number,
+	integer: boolean,
+): number => {
+	if (typeof value === "number" && value >= lo && value <= hi) {
+		return value;
+	}
+	const drawn = lo + rand() * (hi - lo);
+	return integer ? Math.round(drawn) : Math.round(drawn * 100) / 100;
+};
+
 // GOING GREY IS GONE. It ran for a while: 40% of players, starting somewhere
 // between 28 and 40, drifting 5.5% of the way to a warm grey every preseason,
 // with the crossings recorded in the appearance history. It was removed on
@@ -1029,12 +1180,6 @@ const FULLY_BALD_FACTOR = 0.4;
 // read one off. That is acceptable here - the cost is one player keeping a
 // hairstyle he might not have drawn - and it is only ever used for the
 // retroactive pass, never for generation, which knows the real answer.
-const SKIN_PALETTES: Record<Race, readonly string[]> = {
-	white: ["#f2d6cb", "#ddb7a0"],
-	asian: ["#fedac7", "#f0c5a3", "#eab687"],
-	brown: ["#bb876f", "#aa816f", "#a67358"],
-	black: ["#ad6453", "#74453d", "#5c3937"],
-};
 
 export const inferRaceFromFace = (face: FaceConfig): Race | undefined => {
 	const color = face?.body?.color;
@@ -1043,7 +1188,7 @@ export const inferRaceFromFace = (face: FaceConfig): Race | undefined => {
 	}
 	const [r, g, b] = hexToRgb(color);
 	let best: { race: Race; distance: number } | undefined;
-	for (const [race, palette] of Object.entries(SKIN_PALETTES) as [
+	for (const [race, palette] of Object.entries(SKIN_TONES) as [
 		Race,
 		readonly string[],
 	][]) {
@@ -1130,12 +1275,17 @@ export const applyRealisticFace = (
 		//    himself each time it is run - and would drift a father and son
 		//    apart independently.
 		keepColors = false,
+		// The eyes, mouth, nose, dials and build likewise: a face that already
+		// exists keeps its own. Defaults to keepColors because the two callers
+		// that keep colours are the two that have a face.
+		keepFeatures = keepColors,
 		rand = Math.random,
 	}: {
 		age: number;
 		race?: Race;
 		pid?: number;
 		keepColors?: boolean;
+		keepFeatures?: boolean;
 		rand?: () => number;
 	},
 ) => {
@@ -1213,8 +1363,18 @@ export const applyRealisticFace = (
 	);
 
 	if (!keepColors) {
-		face.body.color = jitterColor(face.body.color, rand, SKIN_JITTER);
-		face.hair.color = jitterColor(face.hair.color, rand, HAIR_JITTER);
+		// The whole range when the race is known, the library's pick nudged
+		// when it is not.
+		face.body.color = jitterColor(
+			race === undefined ? face.body.color : skinTone(race, rand),
+			rand,
+			SKIN_JITTER,
+		);
+		face.hair.color = jitterColor(
+			race === undefined ? face.hair.color : pickFrom(HAIR_TONES[race], rand),
+			rand,
+			HAIR_JITTER,
+		);
 	}
 
 	if (typeof face.fatness === "number") {
@@ -1222,6 +1382,49 @@ export const applyRealisticFace = (
 			FATNESS_MAX,
 			Math.round((face.fatness + fatnessGainByAge(age)) * 100) / 100,
 		);
+	}
+
+	if (!keepFeatures) {
+		// The cartoon variants, mostly re-drawn from the natural ones - see
+		// EYES_CARTOON and the two lists below it. Last, so a face that is
+		// missing a part (a test fixture, an old save) is left as it is, and so
+		// the draws here come after every decision above rather than shifting
+		// them.
+		const settle = (
+			part: { id: string } | undefined,
+			cartoon: readonly string[],
+			natural: readonly string[],
+		) => {
+			if (part && cartoon.includes(part.id) && rand() >= CARTOON_KEEP) {
+				part.id = pickFrom(natural, rand);
+			}
+		};
+		settle(face.eye, EYES_CARTOON, EYES_NATURAL);
+		settle(face.mouth, MOUTHS_CARTOON, MOUTHS_NATURAL);
+		settle(face.nose, NOSES_CARTOON, NOSES_NATURAL);
+
+		if (face.eye) {
+			face.eye.angle = inRange(face.eye.angle, EYE_ANGLE, rand, true);
+		}
+		if (face.eyebrow) {
+			face.eyebrow.angle = inRange(
+				face.eyebrow.angle,
+				EYEBROW_ANGLE,
+				rand,
+				true,
+			);
+		}
+		if (face.nose) {
+			face.nose.size = inRange(face.nose.size, NOSE_SIZE, rand, false);
+		}
+		// The build, with the years already lived added on top.
+		if (typeof face.fatness === "number") {
+			face.fatness = Math.min(
+				FATNESS_MAX,
+				Math.round((fatnessForAthlete(rand) + fatnessGainByAge(age)) * 100) /
+					100,
+			);
+		}
 	}
 };
 

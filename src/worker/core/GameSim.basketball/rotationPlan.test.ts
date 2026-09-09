@@ -74,6 +74,9 @@ type Side = Awaited<ReturnType<typeof processTeam>>;
 
 let sides: [Side, Side];
 let ordered: number[];
+let ordered1: number[];
+// A plan for the OTHER side, when a test wants both teams playing to one.
+let mirror: TeamRotation | undefined;
 
 const fullGame = (pids: number[]): RotationStint[] =>
 	pids.flatMap((pid) =>
@@ -86,6 +89,7 @@ const playGames = (rotation: TeamRotation | undefined, games: number) => {
 	for (let i = 0; i < games; i++) {
 		const teams = helpers.deepCopy(sides) as any;
 		teams[0].rotation = rotation;
+		teams[1].rotation = mirror;
 		const result: any = new GameSim({
 			gid: i,
 			day: 1,
@@ -208,6 +212,9 @@ beforeAll(async () => {
 	ordered = [...sides[0].player]
 		.sort((a: any, b: any) => b.valueNoPot - a.valueNoPot)
 		.map((p: any) => p.id);
+	ordered1 = [...sides[1].player]
+		.sort((a: any, b: any) => b.valueNoPot - a.valueNoPot)
+		.map((p: any) => p.id);
 });
 
 describe("a rotation plan in the sim", () => {
@@ -294,12 +301,29 @@ describe("a rotation plan in the sim", () => {
 			...[1, 2, 3].map((period) => ({ pid: fifth, period, start: 0, end: 1 })),
 		);
 
-		// Garbage time is the coach's, by design: once the fourth quarter is
-		// out of hand he empties the bench and the plan stops applying. A game
-		// that stayed a game is the only place a stint can be measured.
-		const competitive = playGames({ auto: false, stints }, 40).filter(
-			(result) => result.margin < 15,
-		);
+		// The other side plays to the same kind of plan - four starters all
+		// night - or its coach rests his and the planned side runs away with
+		// most of the forty, which is garbage time, which is where a plan
+		// stops applying. Two teams playing the same way is a game.
+		const [a1, b1, c1, d1, e1] = ordered1 as [
+			number,
+			number,
+			number,
+			number,
+			number,
+		];
+		mirror = {
+			auto: false,
+			stints: [...fullGame([a1, b1, c1, d1]), ...fullGame([e1])],
+		};
+		let competitive;
+		try {
+			competitive = playGames({ auto: false, stints }, 40).filter(
+				(result) => result.margin < 15,
+			);
+		} finally {
+			mirror = undefined;
+		}
 		assert.isAtLeast(competitive.length, 8, "close enough games to measure");
 		assert.closeTo(
 			average(competitive).get(tenthMan)!,
