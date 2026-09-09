@@ -1,3 +1,4 @@
+import { applyFaceAgingToLeague } from "../player/applyFaceAgingToLeague.ts";
 import type { IDBPTransaction } from "@dumbmatter/idb";
 import {
 	draft,
@@ -1846,6 +1847,14 @@ const afterDBStream = async ({
 		fileHasPlayers,
 		phase: gameAttributes.phase,
 	});
+
+	// Every player was drawn as a prospect and developed for years; the face
+	// has to have lived them too, or a new league opens on 34-year-olds with
+	// nineteen-year-old faces. Replayed from the draft age with the same rules
+	// a played season uses. See catchUpFace.
+	if (isSport("basketball") && g.get("realisticFaces")) {
+		await applyFaceAgingToLeague("all", { record: false, skipCurrent: true });
+	}
 
 	// Handle repeatSeason after creating league, so we know what random players were created
 	const currentRepeatSeasonType = g.get("repeatSeason")?.type ?? "disabled";

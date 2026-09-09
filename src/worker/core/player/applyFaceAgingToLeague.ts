@@ -61,6 +61,15 @@ export const replayStartAge = ({
 
 export const applyFaceAgingToLeague = async (
 	scope: FaceAgingScope,
+	{
+		// Keep the seasons the look changed as appearance history. Off at
+		// league creation, where the years being replayed were never played.
+		record = true,
+		// Leave alone anyone with no years to replay. A face generated under the
+		// mode is already right for its age; re-rolling it moves the man for
+		// nothing.
+		skipCurrent = false,
+	}: { record?: boolean; skipCurrent?: boolean } = {},
 ): Promise<number> => {
 	const season = g.get("season");
 	const players = await idb.cache.players.getAll();
@@ -82,6 +91,9 @@ export const applyFaceAgingToLeague = async (
 			bornYear: p.born.year,
 			currentAge,
 		});
+		if (skipCurrent && currentAge <= rookieAge) {
+			continue;
+		}
 
 		// Every season the look changed, so the career reads as a history rather
 		// than one jump to today's face.
@@ -99,7 +111,7 @@ export const applyFaceAgingToLeague = async (
 		});
 
 		let appearances = p.appearances;
-		for (const change of changes) {
+		for (const change of record ? changes : []) {
 			appearances =
 				recordAppearance({
 					appearances,

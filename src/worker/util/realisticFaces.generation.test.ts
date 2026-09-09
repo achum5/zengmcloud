@@ -306,3 +306,104 @@ describe("skin across the range", () => {
 		}
 	});
 });
+
+// THE AGE A FACE IS BUILT AT, AND THE AGE ITS PLAYER IS.
+import {
+	bandForAge,
+	facialHairForAge,
+	tierOf,
+	TIER_ORDER_FOR_TESTS,
+} from "./realisticFaces.ts";
+import { catchUpFace } from "./face.ts";
+import { g } from "./index.ts";
+import { resetG } from "../../test/helpers.ts";
+
+describe("catching a face up to its player's age", () => {
+	test("a prospect drawn at 19 and developed to 34 looks 34", () => {
+		resetG();
+		g.setWithoutSavingToDB("realisticFaces", true);
+		g.setWithoutSavingToDB("season", 2026);
+		const rand = seeded(12);
+		let lined = 0;
+		let bearded = 0;
+		const N = 300;
+		for (let pid = 1; pid <= N; pid++) {
+			const face = build("black", 19, pid, rand);
+			// The generator's work: fifteen years of development, and the birth
+			// year moved back to match.
+			const p = { face, born: { year: 2026 - 34 }, pid };
+			catchUpFace(p, 19);
+			if (wrinkleLevelOf(face) > 0) {
+				lined += 1;
+			}
+			if (face.facialHair.id !== "none") {
+				bearded += 1;
+			}
+		}
+		// Nineteen-year-olds: no lines, one in ten with facial hair.
+		assert.isAbove(lined / N, 0.9, "lined at 34");
+		assert.isAbove(bearded / N, 0.45, "facial hair at 34");
+	});
+
+	test("nothing to replay, nothing touched", () => {
+		resetG();
+		g.setWithoutSavingToDB("realisticFaces", true);
+		g.setWithoutSavingToDB("season", 2026);
+		const face = build("white", 19, 5, seeded(13));
+		const before = JSON.stringify(face);
+		catchUpFace({ face, born: { year: 2026 - 19 }, pid: 5 }, 19);
+		assert.strictEqual(JSON.stringify(face), before);
+	});
+});
+
+describe("a draft class has age in it", () => {
+	test("a 22-year-old has facial hair more often than an 18-year-old", () => {
+		const rand = seeded(14);
+		const share = (age: number) => {
+			let n = 0;
+			for (let i = 0; i < 2000; i++) {
+				if (facialHairForAge(age, rand) !== "none") {
+					n += 1;
+				}
+			}
+			return n / 2000;
+		};
+		const at18 = share(18);
+		const at20 = share(20);
+		const at22 = share(22);
+		assert.isBelow(at18, at20);
+		assert.isBelow(at20, at22);
+		assert.isBelow(bandForAge(18).facialHair, bandForAge(22).facialHair);
+	});
+});
+
+describe("a beard arrives over seasons, not in one", () => {
+	test("first growth is light, and it thickens one tier at a time", () => {
+		const rand = seeded(15);
+		for (let pid = 1; pid <= 200; pid++) {
+			const face = generate(
+				{ jersey: { id: "jersey" } },
+				{ gender: "male", race: "white" },
+			);
+			face.facialHair.id = "none";
+			let previous = "none";
+			for (let age = 20; age <= 38; age++) {
+				ageFace(face, age, pid, rand);
+				const now = face.facialHair.id;
+				if (now !== previous) {
+					const from =
+						previous === "none"
+							? -1
+							: TIER_ORDER_FOR_TESTS.indexOf(tierOf(previous)!);
+					const to = TIER_ORDER_FOR_TESTS.indexOf(tierOf(now)!);
+					assert.strictEqual(
+						to,
+						from + 1,
+						`pid ${pid} at ${age}: ${previous} -> ${now}`,
+					);
+					previous = now;
+				}
+			}
+		}
+	});
+});

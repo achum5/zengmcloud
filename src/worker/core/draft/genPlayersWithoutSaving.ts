@@ -1,3 +1,4 @@
+import { catchUpFace } from "../../util/face.ts";
 import { PLAYER } from "../../../common/constants.ts";
 import { player } from "../index.ts";
 import { specializeProspect } from "./specializeProspects.ts";
@@ -245,6 +246,9 @@ const genPlayersWithoutSaving = async (
 		if (ageAtDraft <= 18) {
 			p.college = "";
 		}
+		// Everyone was drawn at baseAge and some have been developed a season
+		// or three since; the face has to have lived those seasons too.
+		catchUpFace(p, baseAge);
 	}
 
 	/*console.log(draftYear, enteringDraft.length);

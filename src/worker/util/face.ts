@@ -5,7 +5,12 @@ import { DEFAULT_JERSEY } from "../../common/constants.ts";
 import g from "./g.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
-import { applyRealisticFace, inferRaceFromFace } from "./realisticFaces.ts";
+import {
+	applyFaceAgingHistory,
+	applyRealisticFace,
+	familySeed,
+	inferRaceFromFace,
+} from "./realisticFaces.ts";
 
 export const generateFace = (
 	options:
@@ -131,12 +136,58 @@ export const generateFace = (
 	return face;
 };
 
+// A FACE BUILT AT ONE AGE, FOR A PLAYER WHO IS NOW ANOTHER.
+//
+// Players are generated as prospects and then developed for years - a whole
+// league at creation, a draft class inside its own generator - and the face
+// stayed the prospect's. Every new league opened on 34-year-olds with the
+// beardless, unlined faces of nineteen-year-olds. This replays the years
+// between, one at a time, with the same rules a played season uses, so the
+// face arrives where a played career would have taken it. Nothing when the
+// mode is off (facesjs ignores age anyway), when there is no face, or when
+// there are no years to replay.
+export const catchUpFace = (
+	p: {
+		face?: FaceConfig;
+		born: { year: number };
+		pid?: number;
+		relatives?: { pid: number }[];
+	},
+	fromAge: number,
+) => {
+	const realisticFaces = Object.hasOwn(g, "realisticFaces")
+		? g.get("realisticFaces")
+		: defaultGameAttributes.realisticFaces;
+	if (!isSport("basketball") || !realisticFaces || !p.face) {
+		return;
+	}
+	const currentAge = g.get("season") - p.born.year;
+	if (!Number.isFinite(currentAge) || currentAge <= fromAge) {
+		return;
+	}
+	applyFaceAgingHistory({
+		face: p.face,
+		rookieAge: fromAge,
+		currentAge,
+		pid: p.pid,
+		familyPid: familySeed(p.pid, p.relatives),
+		race: inferRaceFromFace(p.face),
+	});
+};
+
 export const upgradeFace = async (p: PlayerWithoutKey) => {
 	// TEMP DISABLE WITH ESLINT 9 UPGRADE eslint-disable-next-line @typescript-eslint/strict-boolean-expressions
 	if (!p.face || !p.face.accessories) {
 		// @ts-expect-error
 		p.face2 = p.face;
-		p.face = generateFace();
+		// His own age and id, so a face made on the fly for a 33-year-old is
+		// a 33-year-old's.
+		p.face = generateFace({
+			age: Object.hasOwn(g, "season")
+				? g.get("season") - p.born.year
+				: undefined,
+			pid: p.pid,
+		});
 		await idb.cache.players.put(p);
 	}
 };

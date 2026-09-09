@@ -208,6 +208,8 @@ const THICKEN_PER_YEAR = 0.12;
 const GROW_PER_YEAR = 0.25;
 
 const TIER_ORDER: FacialHairTier[] = ["light", "medium", "heavy", "period"];
+// The same list, for the test that checks a beard thickens one tier at a time.
+export const TIER_ORDER_FOR_TESTS: readonly FacialHairTier[] = TIER_ORDER;
 
 // Thinning first, then gone - so a receding hairline never grows back.
 export const HAIR_THINNING = "short-bald";
@@ -618,13 +620,32 @@ type AgeBand = {
 };
 
 export const FACE_AGE_BANDS: AgeBand[] = [
+	// Three bands under 23, not one: a 22-year-old should look older than an
+	// 18-year-old on average, and with one band for both a draft class had no
+	// age in it at all.
 	{
 		minAge: 0,
+		facialHair: 0.1,
+		tiers: { light: 1 },
+		balding: 0,
+		baldingPerYear: 0,
+		glasses: 0.02,
+	},
+	{
+		minAge: 20,
 		facialHair: 0.25,
 		tiers: { light: 1 },
 		balding: 0,
 		baldingPerYear: 0,
 		glasses: 0.02,
+	},
+	{
+		minAge: 22,
+		facialHair: 0.38,
+		tiers: { light: 0.85, medium: 0.15 },
+		balding: 0,
+		baldingPerYear: 0,
+		glasses: 0.03,
 	},
 	{
 		minAge: 23,
@@ -642,7 +663,11 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.6,
 		tiers: { light: 0.4, medium: 0.35, heavy: 0.25 },
 		balding: 0.06,
-		baldingPerYear: 0.05,
+		// Trimmed from 0.05 when the cut arrived (see cutsHair): a man who has
+		// already cut his hair short takes the ladder in two rungs instead of
+		// three, which had drifted the league to 9.6% visibly balding by 38.
+		// These bring it back to about 8%.
+		baldingPerYear: 0.04,
 		glasses: 0.03,
 	},
 	{
@@ -650,7 +675,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		facialHair: 0.65,
 		tiers: { light: 0.3, medium: 0.33, heavy: 0.32 },
 		balding: 0.12,
-		baldingPerYear: 0.08,
+		baldingPerYear: 0.065,
 		glasses: 0.04,
 	},
 ];
@@ -1442,31 +1467,37 @@ export const ageFace = (
 	const band = bandForAge(age);
 	let changed = false;
 
+	// ONE STEP AT A TIME. A season used to be able to take a clean-shaven
+	// 31-year-old straight to a full beard, or a goatee to one, because the
+	// first growth and each thickening drew from everything the age allowed.
+	// Year to year a real face barely changes; it is the decade that shows.
+	// So the first hair is always light, and it thickens by one tier, so a
+	// beard arrives the way beards do - over several seasons - and any single
+	// preseason is a small change.
 	const current = face.facialHair.id;
 	if (current === "none") {
 		// Never had any. Some men never will, whatever their age, so this is
 		// gated on the player rather than only on the roll.
-		if (growsFacialHair(pid) && rand() < band.facialHair * GROW_PER_YEAR) {
-			face.facialHair.id = facialHairForAge(age, rand);
-			changed = face.facialHair.id !== "none";
+		if (
+			growsFacialHair(pid) &&
+			generatable("light") &&
+			rand() < band.facialHair * GROW_PER_YEAR
+		) {
+			face.facialHair.id = pickFrom(GENERATED_FACIAL_HAIR.light!, rand);
+			changed = true;
 		}
 	} else {
-		// Already has some: it can thicken, never thin out.
+		// Already has some: the next tier up, when the age allows it, and
+		// never back.
 		const tier = tierOf(current);
-		const available = TIER_ORDER.filter(
-			(candidate) =>
-				band.tiers[candidate] !== undefined &&
-				generatable(candidate) &&
-				(tier === undefined ||
-					TIER_ORDER.indexOf(candidate) > TIER_ORDER.indexOf(tier)),
-		);
-		if (available.length > 0 && rand() < THICKEN_PER_YEAR) {
-			const next = pickWeighted(
-				Object.fromEntries(
-					available.map((candidate) => [candidate, band.tiers[candidate]!]),
-				) as Partial<Record<FacialHairTier, number>>,
-				rand,
-			);
+		const next =
+			tier === undefined ? undefined : TIER_ORDER[TIER_ORDER.indexOf(tier) + 1];
+		if (
+			next !== undefined &&
+			band.tiers[next] !== undefined &&
+			generatable(next) &&
+			rand() < THICKEN_PER_YEAR
+		) {
 			face.facialHair.id = pickFrom(GENERATED_FACIAL_HAIR[next]!, rand);
 			changed = true;
 		}
