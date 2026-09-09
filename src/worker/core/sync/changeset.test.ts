@@ -1,3 +1,4 @@
+import { league } from "../index.ts";
 import { assert, beforeEach, describe, test } from "vitest";
 import { resetCache, resetG } from "../../../test/helpers.ts";
 import { player, team } from "../index.ts";
@@ -80,6 +81,37 @@ describe("sync changeset", () => {
 		assert.ok(!keys.includes("userTid"), "userTid must NOT sync (per-device)");
 		assert.ok(keys.includes("userTids"), "userTids must sync (multi-team set)");
 		assert.ok(keys.includes("salaryCap"), "league settings must sync");
+	});
+
+	// THE SETTINGS PAGE'S OWN ROUTE. The test above writes the rows by hand;
+	// the page goes through league.setGameAttributes, which decides what
+	// changed, wraps the values that carry history, and writes only those. A
+	// league-mate's save has to come out of it as rows another device can
+	// apply - and now that the page is open on every device, this is the path
+	// every league-mate's settings take.
+	test("a settings save through setGameAttributes is captured", async () => {
+		resetG();
+		await resetCache({});
+		changeTracker.enable();
+		changeTracker.reset();
+
+		await changeTracker.runCaptured(async () => {
+			await league.setGameAttributes({
+				salaryCap: 123456,
+				realisticFaces: false,
+			});
+		});
+
+		const changeset = await captureChangeset();
+		const rows = changeset.changes.filter((c) => c.store === "gameAttributes");
+		const keys = rows.map((c) => c.id);
+		assert.include(keys, "salaryCap");
+		assert.include(keys, "realisticFaces");
+		const cap = rows.find((c) => c.id === "salaryCap")!.value as {
+			key: string;
+			value: unknown;
+		};
+		assert.strictEqual(cap.value, 123456);
 	});
 
 	// The Team Finances checkboxes are a private what-if - "what do the books

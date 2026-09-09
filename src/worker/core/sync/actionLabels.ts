@@ -65,6 +65,17 @@ export const ALLSTAR_SIM_AUTHORITY_LOCKED = new Set([
 // league, predetermines results, or bulk-rewrites records - so only the device
 // in charge of simming may run it, or two devices editing at once would race
 // and fork.
+//
+// LEAGUE SETTINGS ARE NOT HERE. updateGameAttributes (God Mode on and off,
+// the auto-play toggles) and updateGameAttributesGodMode (the whole settings
+// page) used to be, and it made the settings page read-only on every device
+// but the one in charge of simming: a save there was refused with a toast that
+// is easy to miss, and the league-mate who made it went looking on another
+// device for a change that had never happened. A settings save is an
+// ordinary edit - a whole-record statement of what the setting should be,
+// captured and published like a lineup change, and applied last on every
+// other device as the changeset's commit point. It advances no timeline, so
+// it needs no authority.
 export const MAIN_SIM_AUTHORITY_LOCKED = new Set([
 	"draftLottery",
 	"startExpansionDraft",
@@ -72,8 +83,6 @@ export const MAIN_SIM_AUTHORITY_LOCKED = new Set([
 	"advanceToPlayerProtection",
 	"cancelExpansionDraft",
 	"updateExpansionDraftSetup",
-	"updateGameAttributes",
-	"updateGameAttributesGodMode",
 	"setScheduleFromEditor",
 	"toggleTradeDeadline",
 	"allStarGameNow",

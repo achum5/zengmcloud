@@ -39,4 +39,18 @@ describe("isTimelineAdvanceLabel", () => {
 		assert.isFalse(isTimelineAdvanceLabel("main.updatePlayingTime"));
 		assert.isFalse(isTimelineAdvanceLabel("nodot"));
 	});
+
+	// A league-mate changed a setting on the one device that was not in charge
+	// of simming, got a toast, and went looking for the change on another
+	// device. The settings page is every device's to use.
+	test("league settings need no sim authority, and are not an advance", () => {
+		assert.isFalse(isSimAuthorityLockedCall("main", "updateGameAttributes"));
+		assert.isFalse(
+			isSimAuthorityLockedCall("main", "updateGameAttributesGodMode"),
+		);
+		assert.isFalse(isTimelineAdvanceLabel("main.updateGameAttributesGodMode"));
+		// What still is: the things that restructure the league or move time.
+		assert.isTrue(isSimAuthorityLockedCall("main", "draftLottery"));
+		assert.isTrue(isSimAuthorityLockedCall("main", "updateConfsDivs"));
+	});
 });
