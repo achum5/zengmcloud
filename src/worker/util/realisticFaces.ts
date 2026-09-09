@@ -563,11 +563,24 @@ export const fatnessForAthlete = (rand: () => number): number =>
 // and a tone is drawn BETWEEN two neighbouring anchors rather than from the
 // list, so no two players need share one. They are also what a face's race
 // is read back from (see inferRaceFromFace), so the two stay in step.
+//
+// Wider than the first cut of this, at both ends and in the middle: the
+// lightest Black skin is a caramel, the darkest is close to ebony, and a
+// white player can be anywhere from very pale to an olive tan. Each list is
+// ordered light to dark, which skinTone relies on.
 export const SKIN_TONES: Record<Race, readonly string[]> = {
-	white: ["#f7e1d3", "#f2d6cb", "#e8c4ad", "#ddb7a0", "#cfa286"],
-	asian: ["#fedac7", "#f6cfb0", "#f0c5a3", "#eab687", "#dea672"],
-	brown: ["#c99a80", "#bb876f", "#aa816f", "#a67358", "#8f6248"],
-	black: ["#b8735f", "#ad6453", "#8f5446", "#74453d", "#5c3937", "#4a2d2b"],
+	white: ["#fbe9de", "#f5dccd", "#eccbb5", "#e0b99e", "#d3a583", "#c4936f"],
+	asian: ["#ffe2cf", "#f8d2b6", "#f0c39f", "#e8b587", "#dca471", "#cf945f"],
+	brown: ["#d8ab8e", "#c99a80", "#b98a70", "#a97a5f", "#966a4e", "#7f5840"],
+	black: [
+		"#c4866b",
+		"#b07058",
+		"#9a5f4b",
+		"#845041",
+		"#6c4237",
+		"#56352e",
+		"#412826",
+	],
 };
 
 // Hair the same way. facesjs has one colour for Black players and two for
@@ -967,16 +980,97 @@ export const jitterColor = (
 	);
 };
 
-// A tone somewhere between two neighbouring anchors.
+// A tone somewhere between two neighbouring anchors, with an undertone of
+// its own. Two men can share a shade and still not share a colour - one
+// warmer, one greyer - and that, more than the shade, is what tells faces
+// apart on a roster page. So the hue and saturation get a small nudge each,
+// well inside what real skin does, on top of the lightness one applied later.
 export const skinTone = (race: Race, rand: () => number): string => {
 	const tones = SKIN_TONES[race];
 	const i = Math.min(tones.length - 2, Math.floor(rand() * (tones.length - 1)));
 	const t = rand();
 	const a = hexToRgb(tones[i]!);
 	const b = hexToRgb(tones[i + 1]!);
-	return rgbToHex(
-		a.map((v, k) => v + (b[k]! - v) * t) as [number, number, number],
+	const mixed = a.map((v, k) => v + (b[k]! - v) * t) as [
+		number,
+		number,
+		number,
+	];
+	const [h, sat, l] = rgbToHsl(mixed);
+	const hue = h + (rand() * 2 - 1) * SKIN_HUE_JITTER;
+	const saturation = Math.max(
+		0,
+		Math.min(1, sat * (1 + (rand() * 2 - 1) * SKIN_SATURATION_JITTER)),
 	);
+	return rgbToHex(hslToRgb([hue, saturation, l]));
+};
+
+// Degrees, and a share of the saturation.
+const SKIN_HUE_JITTER = 4;
+const SKIN_SATURATION_JITTER = 0.12;
+
+const rgbToHsl = ([r, g, b]: [number, number, number]): [
+	number,
+	number,
+	number,
+] => {
+	const R = r / 255;
+	const G = g / 255;
+	const B = b / 255;
+	const max = Math.max(R, G, B);
+	const min = Math.min(R, G, B);
+	const l = (max + min) / 2;
+	if (max === min) {
+		return [0, 0, l];
+	}
+	const d = max - min;
+	const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+	let h: number;
+	if (max === R) {
+		h = (G - B) / d + (G < B ? 6 : 0);
+	} else if (max === G) {
+		h = (B - R) / d + 2;
+	} else {
+		h = (R - G) / d + 4;
+	}
+	return [h * 60, s, l];
+};
+
+const hslToRgb = ([h, s, l]: [number, number, number]): [
+	number,
+	number,
+	number,
+] => {
+	const hue = (((h % 360) + 360) % 360) / 360;
+	if (s === 0) {
+		return [l * 255, l * 255, l * 255];
+	}
+	const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+	const p = 2 * l - q;
+	const channel = (t0: number) => {
+		let t = t0;
+		if (t < 0) {
+			t += 1;
+		}
+		if (t > 1) {
+			t -= 1;
+		}
+		if (t < 1 / 6) {
+			return p + (q - p) * 6 * t;
+		}
+		if (t < 1 / 2) {
+			return q;
+		}
+		if (t < 2 / 3) {
+			return p + (q - p) * (2 / 3 - t) * 6;
+		}
+		return p;
+	};
+	return [
+		channel(hue + 1 / 3) * 255,
+		channel(hue) * 255,
+		channel(hue - 1 / 3) * 255,
+	];
 };
 
 // Inside the range, or re-drawn inside it.
