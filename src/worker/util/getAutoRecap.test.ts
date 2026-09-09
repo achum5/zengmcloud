@@ -5309,11 +5309,9 @@ describe("no branch has only one phrasing", () => {
 		],
 		[
 			"first-quarter run",
-			/jumped out to a \d+-\d+ first quarter|was \d+-\d+ after one|ahead almost immediately/,
-		],
-		[
-			"comfortable cover",
-			/never looked like mattering|Favored by \d+,|made it look modest|expected to win by \d+ and won by/,
+			// Two pools, one angle: the hot start, and the hot start in a game
+			// that then got close.
+			/jumped out to a \d+-\d+ first quarter|was \d+-\d+ after one|ahead almost immediately|had to hold on|clawing back|very nearly not enough/,
 		],
 	];
 

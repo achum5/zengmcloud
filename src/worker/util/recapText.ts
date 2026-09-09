@@ -393,23 +393,29 @@ export const scoredVerb = (rng: () => number): string =>
 // categories worth mentioning (double-double stats always make the cut).
 export const statPhrase = (p: RecapPlayer, maxExtras = 2): string => {
 	const dd = new Set(doubleCategories(p));
-	// [sortWeight, text]. Steals and blocks are rarer and more telling, so they're
-	// weighted up - a 6-block night should out-rank a 7-assist one when trimming.
-	const extras: [number, string][] = [];
+	// [sortWeight, order, text]. Steals and blocks are rarer and more telling,
+	// so they're weighted up - a 6-block night should out-rank a 7-assist one
+	// when trimming. The weight decides what makes the cut; the ORDER is the
+	// one every box score uses, because "36 points, 5 steals, and 8 assists"
+	// reads like nobody has seen a stat line.
+	const extras: [number, number, string][] = [];
 	if (p.reb >= 8 || dd.has("rebounds")) {
-		extras.push([p.reb, plural(p.reb, "rebound")]);
+		extras.push([p.reb, 0, plural(p.reb, "rebound")]);
 	}
 	if (p.ast >= 6 || dd.has("assists")) {
-		extras.push([p.ast, plural(p.ast, "assist")]);
+		extras.push([p.ast, 1, plural(p.ast, "assist")]);
 	}
 	if (p.stl >= 4 || dd.has("steals")) {
-		extras.push([p.stl * 1.7, plural(p.stl, "steal")]);
+		extras.push([p.stl * 1.7, 2, plural(p.stl, "steal")]);
 	}
 	if (p.blk >= 4 || dd.has("blocks")) {
-		extras.push([p.blk * 1.7, plural(p.blk, "block")]);
+		extras.push([p.blk * 1.7, 3, plural(p.blk, "block")]);
 	}
 	extras.sort((a, b) => b[0] - a[0]);
-	const chosen = extras.slice(0, maxExtras).map((e) => e[1]);
+	const chosen = extras
+		.slice(0, maxExtras)
+		.sort((a, b) => a[1] - b[1])
+		.map((e) => e[2]);
 	return naturalList([plural(p.pts, "point"), ...chosen]);
 };
 

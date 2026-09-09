@@ -612,6 +612,10 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 		`headline shapes: ${headlineShapes.length} distinct over ${gameRecaps.length} games ` +
 			`(top ${headlineShapes[0]?.[1]}x)`,
 		`verbatim repeated sentences: ${dupSentences.length}`,
+		// The two fillers that were crowding out the game: the betting line
+		// (35% of recaps at its worst) and a foul-out nobody would have missed.
+		`recaps quoting the betting line: ${gameRecaps.filter((r) => /underdog|favorite|favored|the books/.test(r)).length}`,
+		`recaps with a foul-out: ${gameRecaps.filter((r) => /fouled out|fouling out|sixth foul|Foul trouble cost/.test(r)).length}`,
 		"",
 		"TOP 25 SENTENCE SHAPES:",
 		...shapes.slice(0, 25).map(([s, c]) => `${String(c).padStart(4)}  ${s}`),

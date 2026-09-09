@@ -147,14 +147,18 @@ export const dedupeSubjects = (
 				break;
 			}
 			if (back === 2) {
-				// Only reach past a sentence that introduces no competing subject - a
-				// player's stat line is fine, another team's is not.
+				// Only reach past a sentence that keeps the reader's eye where it
+				// was: an impersonal one, or one that already leans on the same
+				// pronoun. A sentence about a named man moves it - "No one scored
+				// more than Keegan Lowry... They got 20 from Zeke Dunn" read as
+				// Lowry's team, and meant the other one.
 				const between = out[i - 1]!;
 				if (
 					ambiguous(between) ||
 					subjectOf(between) ||
 					loserTail.test(between) ||
-					(!!otherNick && between.includes(otherNick))
+					(!!otherNick && between.includes(otherNick)) ||
+					!/^(?:It|That|There|They)\b/.test(between)
 				) {
 					break;
 				}
@@ -397,7 +401,10 @@ const firstHomeLoss = (game: RecapGame, shape: Shape): boolean => {
 
 const isUpset = (game: RecapGame, shape: Shape): boolean => {
 	const s = game.spread;
-	if (!s || s.points < 4) {
+	// A 4-point dog winning is a coin flip that landed; "pull the upset" was
+	// the second most common headline on the slate. Six points is where a
+	// result starts to surprise anyone.
+	if (!s || s.points < 6) {
 		return false;
 	}
 	return s.favTid === shape.loser.tid;
@@ -2058,6 +2065,34 @@ const flowSentence = (
 			),
 		};
 	}
+	// Down at the break and won: the story of that game is its second half,
+	// not "led by 3 entering the fourth". This used to surface a paragraph
+	// later, after the injury news, as an afterthought to the weaker line.
+	const half = secondHalfSplit(shape);
+	if (half && shape.comebackFrom < 12) {
+		const n = Math.floor(shape.regPeriods / 2);
+		let wFirst = 0;
+		let lFirst = 0;
+		for (let i = 0; i < n; i++) {
+			wFirst += shape.wq[i] ?? 0;
+			lFirst += shape.lq[i] ?? 0;
+		}
+		const down = lFirst - wFirst;
+		if (down >= 6) {
+			return {
+				covers: "comeback",
+				text: pick(
+					rng,
+					[
+						`Down ${down} at the break, ${theNick(shape.winner)} outscored ${theNick(shape.loser)} ${half.w}-${half.l} after halftime.`,
+						`${cap(theNick(shape.winner))} trailed by ${down} at halftime and won the second half ${half.w}-${half.l}.`,
+						`A ${down}-point halftime deficit turned into a ${half.w}-${half.l} second half.`,
+					],
+					"halfComeback",
+				),
+			};
+		}
+	}
 	if (
 		Math.abs(shape.marginEnteringLast) <= 4 &&
 		shape.margin <= 10 &&
@@ -2228,15 +2263,27 @@ const statNote = (
 		shape.bigRun.margin >= 10 &&
 		shape.wq.length > 0
 	) {
+		const q = `${shape.bigRun.wpts}-${shape.bigRun.lpts}`;
 		add(
 			pick(
 				rng,
-				[
-					`${cap(theNick(shape.winner))} jumped out to a ${shape.bigRun.wpts}-${shape.bigRun.lpts} first quarter.`,
-					`It was ${shape.bigRun.wpts}-${shape.bigRun.lpts} after one.`,
-					`${cap(theNick(shape.winner))} were ahead almost immediately, ${shape.bigRun.wpts}-${shape.bigRun.lpts} after the first.`,
-				],
-				"firstQuarterRun",
+				// An 18-point first quarter in a one-point game is not a hot
+				// start, it is a lead that nearly got away - and "jumped out to a
+				// 41-23 first quarter" under "survived the Bucks 115-114" left the
+				// reader to work out for himself that the Bucks came all the way
+				// back.
+				shape.margin <= 5
+					? [
+							`${cap(theNick(shape.winner))} led ${q} after one and then had to hold on.`,
+							`It was ${q} after the first, and ${theNick(shape.loser)} spent the rest of the night clawing back.`,
+							`${cap(aNum(shape.bigRun.margin))}-point first quarter was very nearly not enough.`,
+						]
+					: [
+							`${cap(theNick(shape.winner))} jumped out to a ${q} first quarter.`,
+							`It was ${q} after one.`,
+							`${cap(theNick(shape.winner))} were ahead almost immediately, ${q} after the first.`,
+						],
+				shape.margin <= 5 ? "firstQuarterHeldOn" : "firstQuarterRun",
 			),
 		);
 	}
@@ -2640,9 +2687,11 @@ const loserSentence = (
 		// sentence with the nouns swapped. These put the player, the team and the
 		// numbers in genuinely different places.
 		// "28 points and 9 rebounds WERE the best of the Grizzlies"; a lone
-		// "20 points was" is a quantity and stays singular.
+		// "20 points was" is a quantity and stays singular - and so is "X's
+		// double-double (28 points and 12 rebounds)", whatever is inside the
+		// brackets.
 		const agreed =
-			verb === "was the best of" && / and /.test(leaderLine)
+			verb === "was the best of" && !ddw && / and /.test(leaderLine)
 				? "were the best of"
 				: verb;
 		return pickSentence(
@@ -2786,32 +2835,27 @@ const stakesSentence = (
 		}
 	}
 
-	if (isUpset(game, shape) && game.spread && !spreadTold) {
+	// An upset is news; the number the books had mostly is not. Real coverage
+	// says a team was not supposed to win this one, not that it "was getting 5
+	// and did not need them" - and it never says either about an elimination
+	// game. So the line is quoted only when it was big enough to be the story,
+	// in plain words, and not at all in the postseason.
+	if (isUpset(game, shape) && game.spread && !spreadTold && !game.playoffs) {
 		const dog = game.spread.points;
-		// A 3.5-point dog winning is a Tuesday. Reserve the language of a genuine
-		// shock for a number that earns it, and let the small ones be stated
-		// plainly rather than breathlessly.
-		const big = dog >= 7;
 		options.push(
 			pick(
 				rng,
-				big
+				dog >= 7
 					? [
-							`${cap(theNick(shape.winner))} were given no chance, ${dog} points the wrong side of the line.`,
-							`Nobody had ${theNick(shape.winner)} winning - they were ${dog}-point dogs.`,
-							`${cap(theNick(shape.winner))} entered ${dog}-point underdogs.`,
-							`The books had ${theNick(shape.winner)} losing by ${dog}.`,
+							`${cap(theNick(shape.winner))} came in as ${dog}-point underdogs.`,
+							`Nobody had ${theNick(shape.winner)} winning this one - they were ${dog}-point underdogs.`,
+							`${cap(theNick(shape.winner))} were not supposed to win this, not by the ${dog} points the books had.`,
 						]
 					: [
-							`${cap(theNick(shape.winner))} entered ${dog}-point underdogs.`,
-							// "Did not need them" is a comfortable win's line; a one-point
-							// escape as a 5.5-point dog needed every one of them.
-							shape.margin >= 6
-								? `${cap(theNick(shape.winner))} were getting ${dog} and did not need them.`
-								: `${cap(theNick(shape.winner))} were getting ${dog}, and won outright.`,
-							`${cap(theNick(shape.winner))} won as ${dog}-point underdogs.`,
+							`${cap(theNick(shape.winner))} came in as underdogs.`,
+							`${cap(theNick(shape.winner))} were not supposed to win this one.`,
 						],
-				big ? "underdogBig" : "underdogSmall",
+				dog >= 7 ? "underdogBig" : "underdogSmall",
 			),
 		);
 	}
@@ -3216,7 +3260,13 @@ const foulOutNote = (
 ): string | undefined => {
 	for (const t of [shape.winner, shape.loser]) {
 		for (const p of t.players) {
-			if (p.pf >= 6 && !said.has(p.name)) {
+			// Only when it cost something: a rotation player in a game that was
+			// still a game, or a man with a real line. A 9-point reserve fouling
+			// out of a 20-point loss is a box-score footnote, and it was getting
+			// a sentence in one recap in six.
+			const mattered =
+				(p.min >= 24 || p.pts >= 15) && (shape.margin <= 12 || p.pts >= 20);
+			if (p.pf >= 6 && mattered && !said.has(p.name)) {
 				said.add(p.name);
 				const line = `${plural(p.pts, "point")} in ${p.min} minutes`;
 				return pickSentence(
@@ -3370,76 +3420,29 @@ const loserSupportNote = (
 	)}.`;
 };
 
-// "half a point", "1 point", "2.5 points" - a spread miss, which is a half
-// number as often as not. "Fell 0.5 short of the number" reads like a ledger.
-// A bare number otherwise, as the sentence always had it: "N points" reads
-// as a scoring line to the accuracy check, and to a reader.
-const pointsShort = (n: number): string =>
-	n === 0.5 ? "half a point" : `${n}`;
-
-// Whether the favorite covered. The spread is already known to the recap and
-// was only ever used to flag outright upsets.
+// A heavy favorite that barely got out. That is the one thing the line adds
+// to a recap of a game the favorite won: a favorite that beat the number, or
+// fell short of it, is a ledger entry, and "won comfortably enough but fell
+// half a point short of the number" was in a third of all recaps and belongs
+// in none. Never in the postseason, and not every time even then.
 const spreadNote = (
 	game: RecapGame,
 	shape: Shape,
 	rng: () => number,
 ): string | undefined => {
 	const s = game.spread;
-	if (!s || s.points < 3 || game.playoffs) {
+	if (!s || game.playoffs || s.favTid === shape.loser.tid) {
 		return undefined;
 	}
-	// An outright upset has its own sentence elsewhere.
-	if (s.favTid === shape.loser.tid) {
-		return undefined;
-	}
-	// Exactly on the number is a push. Treating it as "did not cover" produced
-	// "a 9-point win was nowhere near the 9 they were giving" and "fell 0 short
-	// of the number".
-	if (shape.margin === s.points) {
+	if (s.points >= 7 && shape.margin <= 3 && rng() < 0.5) {
 		return pick(
 			rng,
 			[
-				`${cap(theNick(shape.winner))} were favored by ${s.points} and won by exactly that.`,
-				`${cap(aNum(shape.margin))}-point win against ${aNum(s.points)}-point line: a push.`,
+				`The ${s.points}-point favorites had to sweat this one out.`,
+				`${cap(theNick(shape.winner))} were favored by ${s.points} and got out with ${shape.margin}.`,
+				`${cap(theNick(shape.winner))} were supposed to win this one comfortably, and did not.`,
 			],
-			"spreadPush",
-		);
-	}
-	const covered = shape.margin > s.points;
-	if (covered && shape.margin - s.points >= 10) {
-		return pick(
-			rng,
-			[
-				`Favored by ${s.points}, ${theNick(shape.winner)} won by ${shape.margin}.`,
-				`The ${s.points}-point line never looked like mattering.`,
-				`${cap(theNick(shape.winner))} were ${s.points}-point favorites and made it look modest.`,
-				`${cap(theNick(shape.winner))} were expected to win by ${s.points} and won by ${shape.margin}.`,
-			],
-			"spreadCovered",
-		);
-	}
-	if (!covered && s.points >= 7) {
-		// "Had to sweat this one out" needs the game to have actually been in
-		// doubt. A 22.5-point favorite winning by 10 never sweated anything - it
-		// just never got near the number.
-		if (shape.margin <= 5) {
-			return pick(
-				rng,
-				[
-					`The ${s.points}-point favorites had to sweat this one out.`,
-					`${cap(theNick(shape.winner))} were favored by ${s.points} and got out with ${shape.margin}.`,
-				],
-				"spreadScare",
-			);
-		}
-		return pick(
-			rng,
-			[
-				`${cap(theNick(shape.winner))} were ${s.points}-point favorites and won by ${shape.margin}.`,
-				`A ${shape.margin}-point win was nowhere near the ${s.points} ${theNick(shape.winner)} were giving.`,
-				`${cap(theNick(shape.winner))} won comfortably enough but fell ${pointsShort(s.points - shape.margin)} short of the number.`,
-			],
-			"spreadNarrow",
+			"spreadScare",
 		);
 	}
 	return undefined;
@@ -3888,6 +3891,17 @@ export const getAutoRecap = (game: RecapGame): string => {
 								`${cap(theNick(shape.winner))} took the series ${post.clinch.wAfter}-${post.clinch.lBefore}.`,
 							]
 						: []),
+					// A decider's headline names the game and often nothing else -
+					// "Pacers make Game 7 a rout" - and the body then reported whose
+					// season ended without ever saying where the winner goes next.
+					...(post.clinch &&
+					!post.clinch.title &&
+					/Game \d/.test(headline.text) &&
+					!/advance|move on|reach/.test(headline.text)
+						? [
+								`${cap(theNick(shape.winner))} move on to ${post.clinch.nextRound}.`,
+							]
+						: []),
 					...post.sentences.slice(1),
 				]
 			: post.sentences;
@@ -3919,7 +3933,9 @@ export const getAutoRecap = (game: RecapGame): string => {
 		// A "took over in the fourth, 23-11" flow line and a "40-22 over the
 		// last two quarters" note are the same stretch of the game measured
 		// twice, so a run already told stands in for the half.
-		combined || flowCovered === "run" ? undefined : secondHalfNote(shape, rng),
+		combined || flowCovered === "run" || flowCovered === "comeback"
+			? undefined
+			: secondHalfNote(shape, rng),
 		stakesSentence(
 			game,
 			shape,
@@ -5401,7 +5417,7 @@ const leagueNotes = (
 			)} ${biggest.margin}-point win over ${theNick(biggest.shape.loser)}.`,
 		});
 	}
-	if (highest && highest.total >= 235) {
+	if (highest && highest.total >= 240) {
 		const ot = highest.shape.ot;
 		cands.push({
 			sort: 1,
@@ -5418,7 +5434,8 @@ const leagueNotes = (
 						)} combined for ${highest.total} points, the most of any game on the slate.`,
 		});
 	}
-	if (hottest && hottest.fgp >= 53) {
+	// 53% is a good night; it is not "best of anyone" news two nights in three.
+	if (hottest && hottest.fgp >= 55) {
 		cands.push({
 			sort: 2,
 			tid: hottest.shape.winner.tid,
