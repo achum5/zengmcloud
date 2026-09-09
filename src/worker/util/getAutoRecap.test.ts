@@ -3403,7 +3403,10 @@ describe("copy defects found in the field", () => {
 		const recap = getAutoRecap(
 			game({ gid: 7002, teams: [teamWithInjury("Sprained Ankle"), opponent] }),
 		);
-		assert.ok(/\ba sprained ankle\b/i.test(recap), recap);
+		// With or without an article - "(sprained ankle)" and "a sprained
+		// ankle kept him out" are both the injury's own words.
+		assert.ok(/\bsprained ankle\b/i.test(recap), recap);
+		assert.ok(!/\ban injur/i.test(recap), recap);
 	});
 
 	// "Al Horford was good for 18 points... Keith Bogans was good for 18 points

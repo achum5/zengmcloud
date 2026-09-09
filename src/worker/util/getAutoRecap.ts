@@ -2355,7 +2355,10 @@ const secondHalfNote = (
 	// A halftime-deficit comeback (only when the quarter-flow line didn't already
 	// lead with a bigger comeback). Down 1-3 at the break is a coin flip, not a
 	// story - it takes a real deficit to be worth a sentence.
-	if (halfMargin <= -4 && shape.margin > 0 && shape.comebackFrom < 12) {
+	// Six, like the lede's own halftime-comeback line: down four at the break
+	// is a coin flip, and a sentence about it after "led by as many as 16" read
+	// as two stories arguing.
+	if (halfMargin <= -6 && shape.margin > 0 && shape.comebackFrom < 12) {
 		return pick(
 			rng,
 			[
@@ -3722,6 +3725,10 @@ const finishNote = (
 	// A game-winning shot already has its own sentence; a go-ahead basket
 	// inside the last half minute is that shot told twice.
 	shotTold: boolean,
+	// The man the sentence before this one was about, when there is one, so
+	// "Zeke Foster put up 29... Zeke Foster's basket with 4:43 to go" reads
+	// "his basket" instead.
+	justNamed?: string,
 ): string[] => {
 	const flow = game.flow;
 	if (!flow || (shape.margin > 6 && shape.ot === 0)) {
@@ -3749,13 +3756,18 @@ const finishNote = (
 			out.push(
 				pick(
 					rng,
-					who
+					who && who === justNamed
 						? [
-								`${W} took the lead for good on ${poss(who)} basket with ${when} left${where}.`,
-								`${cap(poss(who))} basket with ${when} to go${where} put ${theNick(shape.winner)} ahead for the last time.`,
-								`${W} went in front for good with ${when} left${where}, on a basket by ${who}.`,
+								`His basket with ${when} to go${where} put ${theNick(shape.winner)} ahead for the last time.`,
+								`${W} went in front for good on his basket with ${when} left${where}.`,
 							]
-						: [`${W} took the lead for good with ${when} left${where}.`],
+						: who
+							? [
+									`${W} took the lead for good on ${poss(who)} basket with ${when} left${where}.`,
+									`${cap(poss(who))} basket with ${when} to go${where} put ${theNick(shape.winner)} ahead for the last time.`,
+									`${W} went in front for good with ${when} left${where}, on a basket by ${who}.`,
+								]
+							: [`${W} took the lead for good with ${when} left${where}.`],
 					"leadForGood",
 				),
 			);
@@ -4092,7 +4104,13 @@ export const getAutoRecap = (game: RecapGame): string => {
 	}
 	// How it finished, for a game that was still a game at the end.
 	para1.push(
-		...finishNote(game, shape, rng, shot !== undefined && !shot.tying),
+		...finishNote(
+			game,
+			shape,
+			rng,
+			shot !== undefined && !shot.tying,
+			para1.at(-1)?.includes(star.name) ? star.name : undefined,
+		),
 	);
 	const spentFacts = new Set<StatFact>();
 	const spentTopics = new Set<StatTopic>();
@@ -4172,34 +4190,47 @@ export const getAutoRecap = (game: RecapGame): string => {
 		[headline.text, ...para1, ...para2].join(" "),
 		shape,
 	);
-	const extras = shuffle(rng, [
-		postSentences[1],
+	// Tiers, shuffled within and never across: what happened in the game,
+	// then what it means for the season, then who was missing. Shuffled all
+	// together, "ran their streak to 5" landed between "led by as many as 13"
+	// and the injury list - three facts with nothing to do with each other.
+	const written1 = [headline.text, ...para1].join(" ");
+	const gameTier = shuffle(rng, [
 		// A "took over in the fourth, 23-11" flow line and a "40-22 over the
 		// last two quarters" note are the same stretch of the game measured
 		// twice, so a run already told stands in for the half.
 		combined || flowCovered === "run" || flowCovered === "comeback"
 			? undefined
 			: secondHalfNote(shape, rng),
+		combined,
+		blownLeadNote(game, shape, rng, written1),
+		runNote(game, shape, rng),
+		plusMinusNote(shape, star, rng, namedInPara2),
+	]);
+	const seasonTier = shuffle(rng, [
 		stakesSentence(
 			game,
 			shape,
 			rng,
 			/underdog|-point dogs|the wrong side of the line/.test(headline.text),
-			/in a row|straight|skid|losing streak/.test(
-				[headline.text, ...para1].join(" "),
-			),
+			/in a row|straight|skid|losing streak/.test(written1),
 		),
-		combined,
-		plusMinusNote(shape, star, rng, namedInPara2),
-		injurySentence(shape, rng),
-		blownLeadNote(game, shape, rng, [headline.text, ...para1].join(" ")),
-		runNote(game, shape, rng),
-	]).filter((s): s is string => !!s);
+	]);
+	const extras = [postSentences[1], ...gameTier, ...seasonTier].filter(
+		(s): s is string => !!s,
+	);
+	// Last, and never dropped: who was missing is a fact a reader checks the
+	// recap for, so the paragraph keeps a slot for it however much else the
+	// game gave.
+	const injury = injurySentence(shape, rng);
 	for (const e of extras) {
-		if (para2.length >= 6) {
+		if (para2.length >= (injury ? 5 : 6)) {
 			break;
 		}
 		para2.push(e);
+	}
+	if (injury) {
+		para2.push(injury);
 	}
 
 	// Paragraph 3: the detail a beat writer fills a column with once the result

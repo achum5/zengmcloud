@@ -904,7 +904,10 @@ export const scoringNormBeat = (
 		);
 
 	const wNorm = ctx.winner.norm;
-	if (wNorm && wNorm.gp >= 12 && !highTold) {
+	// Not after an overtime: five extra minutes put a team over its average
+	// on their own, and "17 more than their season average" was crediting the
+	// clock.
+	if (wNorm && wNorm.gp >= 12 && !highTold && ctx.game.overtimes === 0) {
 		const over = Math.round(ctx.winner.pts - wNorm.pts);
 		if (over >= 14) {
 			options.push(
