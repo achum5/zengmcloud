@@ -171,6 +171,14 @@ export type FacialHairTier = keyof typeof FACIAL_HAIR_TIERS;
 // nothing in this file has ever taken facial hair away, and a save full of
 // silently rewritten faces is worse than the styles are - so the way to be rid
 // of one already in a league is the revert control in the appearance gallery.
+//  - SIDEBURNS ON A CLEAN FACE (sideburns1-3). Rendered, they are two
+//    strips of hair with nothing between them, a 1970s look that no player
+//    wears, and the one a league owner reported.
+//  - The DOTTED STUBBLE (goatee-thin, goatee-thin-stache, mustache-thin),
+//    which renders as a row of stitches rather than as hair.
+//  - The SOUL PATCH alone (soul, soul-stache): a real thing, but on a
+//    generated face it reads as a smudge, and it was one light-tier draw in
+//    five.
 export const NEVER_GENERATE: ReadonlySet<string> = new Set([
 	...FACIAL_HAIR_TIERS.period,
 	"mustache1SB1",
@@ -179,6 +187,14 @@ export const NEVER_GENERATE: ReadonlySet<string> = new Set([
 	"fullgoatee6",
 	"beard5",
 	"beard6",
+	"sideburns1",
+	"sideburns2",
+	"sideburns3",
+	"goatee-thin",
+	"goatee-thin-stache",
+	"mustache-thin",
+	"soul",
+	"soul-stache",
 ]);
 
 // The tiers as GENERATION sees them. A tier whose every member is excluded
@@ -380,6 +396,8 @@ export const HAIR_SPIKED: readonly string[] = [
 	"spike4",
 	"faux-hawk",
 	"fauxhawk-fade",
+	// And the jagged fringe, which is the same boy band from the front.
+	"shortBangs",
 ];
 
 const RARE_HAIR = new Set<string>(HAIR_RARE);
