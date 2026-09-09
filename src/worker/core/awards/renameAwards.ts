@@ -136,6 +136,72 @@ export const awardRenamesFromSettings = (
 		isTeam: award.numTeams !== undefined,
 	}));
 
+// AN AWARD RENAMED ABBREV AND ALL, BEFORE ANY OF THIS EXISTED.
+//
+// The diff above recognizes that as it happens, by the slot the award sits in.
+// A league that did it earlier has no diff left: its history says ALL and its
+// settings say ANBA, and the abbrev - the thing that identifies an award - no
+// longer matches anything. Nothing above can help it, and neither can the read.
+//
+// The slot is still there to go on, but a slot on its own is not enough: delete
+// an award and everything below it shifts up one, so the deleted award's
+// history would point at its neighbour and take its name. So the inference is
+// made only when the whole picture agrees with it - the abbrev the history uses
+// is gone from the settings, the abbrev the settings use is nowhere in the
+// history, the slot holds an award of the same kind, and only one abandoned
+// abbrev claims that slot. A deleted award fails the second test, because the
+// award that shifted into its slot is still in the history under its own name.
+export const awardRenamesFromHistory = (
+	settings: AwardSettings,
+	history: readonly {
+		shortName: string;
+		index: number;
+		numTeams?: number | undefined;
+	}[],
+): AwardRename[] => {
+	const inSettings = new Set(settings.map((award) => award.shortName));
+	const inHistory = new Set(history.map((award) => award.shortName));
+
+	// Slot -> the abandoned abbrevs claiming it.
+	const bySlot = new Map<number, Set<string>>();
+	for (const award of history) {
+		if (inSettings.has(award.shortName)) {
+			continue;
+		}
+
+		const setting = settings[award.index];
+		if (
+			!setting ||
+			(setting.numTeams !== undefined) !== (award.numTeams !== undefined) ||
+			inHistory.has(setting.shortName)
+		) {
+			continue;
+		}
+
+		const claims = bySlot.get(award.index) ?? new Set<string>();
+		claims.add(award.shortName);
+		bySlot.set(award.index, claims);
+	}
+
+	const renames: AwardRename[] = [];
+	for (const [slot, claims] of bySlot) {
+		// Two of them, so there is no telling which one this slot belongs to.
+		if (claims.size !== 1) {
+			continue;
+		}
+
+		const setting = settings[slot]!;
+		renames.push({
+			fromShortName: [...claims][0]!,
+			toName: setting.name,
+			toShortName: setting.shortName,
+			isTeam: setting.numTeams !== undefined,
+		});
+	}
+
+	return renames;
+};
+
 // Is any season carrying a label the settings have moved on from? Cheap enough
 // to ask on every league load: the awards rows are one small record per season,
 // and the sweep that answers it is only paid when the answer is yes.
@@ -201,12 +267,6 @@ const rename = async (
 		renames.map((rename) => [rename.fromShortName, rename]),
 	);
 
-	// pid -> the relabelings that player's own award list needs.
-	const playerEdits = new Map<
-		number,
-		{ season: number; rename: AwardRename }[]
-	>();
-
 	for (const raw of await idb.league.getAll("awards")) {
 		// A season synced from an older build is still in the pre-upgrade shape.
 		const awards = normalizeAwardsRow(raw);
@@ -236,20 +296,6 @@ const rename = async (
 				award.shortName = rename.toShortName;
 				changed = true;
 			}
-
-			// Every player who holds it, taken from the award's own ballot -
-			// including when the season's own row was already right, because a
-			// player's copy can be stale on its own.
-			const winners =
-				award.numTeams === undefined ? award.winner : award.winner.flat();
-			for (const winner of winners) {
-				if (winner.pid === undefined) {
-					continue;
-				}
-				const edits = playerEdits.get(winner.pid) ?? [];
-				edits.push({ season: awards.season, rename });
-				playerEdits.set(winner.pid, edits);
-			}
 		}
 
 		if (changed) {
@@ -258,29 +304,52 @@ const rename = async (
 		}
 	}
 
-	for (const [pid, edits] of playerEdits) {
-		const p = await idb.league.get("players", pid);
-		if (!p) {
-			continue;
-		}
+	// EVERY PLAYER, NOT EVERY WINNER NAMED IN A SEASON'S ROW.
+	//
+	// A player's copy is its own record and can be the only one there is: a
+	// league started from real rosters carries decades of awards on the
+	// players and has no awards rows at all, so a sweep that walked the rows
+	// looking for winners had nothing to walk and repaired nothing, on every
+	// league load, forever. The abbrev identifies the award wherever it is
+	// stored, so the players are read directly.
+	for await (const cursor of idb.league.transaction("players", "readwrite")
+		.store) {
+		const p = cursor.value;
 
 		let changed = false;
 		for (const award of p.awards) {
 			if (award.type !== undefined) {
 				continue;
 			}
-			for (const { season, rename } of edits) {
-				if (
-					award.season === season &&
-					renameMatches(award, rename) &&
-					(award.name !== rename.toName ||
-						award.shortName !== rename.toShortName)
-				) {
-					award.name = rename.toName;
-					award.shortName = rename.toShortName;
-					changed = true;
-				}
+
+			const rename = byFromShortName.get(award.shortName);
+			if (
+				!rename ||
+				!renameMatches(award, rename) ||
+				(award.name === rename.toName && award.shortName === rename.toShortName)
+			) {
+				continue;
 			}
+
+			// He already holds something else that season under the abbrev this
+			// is moving to. Two awards sharing an abbrev in a season is what the
+			// settings forbid, so leave this one as it is.
+			if (
+				rename.toShortName !== rename.fromShortName &&
+				p.awards.some(
+					(other) =>
+						other !== award &&
+						other.type === undefined &&
+						other.season === award.season &&
+						other.shortName === rename.toShortName,
+				)
+			) {
+				continue;
+			}
+
+			award.name = rename.toName;
+			award.shortName = rename.toShortName;
+			changed = true;
 		}
 
 		if (changed) {
@@ -296,7 +365,7 @@ const rename = async (
 				return true;
 			});
 
-			await idb.league.put("players", p);
+			await cursor.update(p);
 			result.players += 1;
 		}
 	}

@@ -18,6 +18,7 @@ import { normalizeAwardsRow } from "../../db/normalizeAwardsRow.ts";
 import {
 	applyAwardRenames,
 	awardLabelsOutOfDate,
+	awardRenamesFromHistory,
 	awardRenamesFromSettings,
 } from "./renameAwards.ts";
 
@@ -36,19 +37,35 @@ export const repairAwardLabels = async () => {
 	// A player's own copy can be stale on its own, with every season already
 	// agreeing - an interrupted sweep, or a copy that a rename never reached.
 	// The players in memory are free to check and are the ones whose pages get
-	// looked at; anybody they miss is still relabeled as he is read, which is
-	// what the pages actually show. See relabelAwardsFromSettings.
+	// looked at; anybody they miss is caught by the sweep this triggers, and by
+	// the read in the meantime. See relabelAwardsFromSettings.
+	const players = await idb.cache.players.getAll();
+
+	// The awards this league has actually handed out, as identities: an abbrev
+	// and the slot it sat in. A season's row is written in settings order, so
+	// its position is that slot.
+	const history = [
+		...rows.flatMap((row) =>
+			row.awards.map((award, index) => ({ ...award, index })),
+		),
+		...players.flatMap((p) => p.awards),
+	].filter((award) => award.type === undefined);
+
+	const abbrevRenames = awardRenamesFromHistory(settings, history);
+
 	const stale =
+		abbrevRenames.length > 0 ||
 		awardLabelsOutOfDate(rows, settings) ||
-		(await idb.cache.players.getAll()).some((p) =>
-			awardLabelsOutOfDate([{ awards: p.awards }], settings),
-		);
+		players.some((p) => awardLabelsOutOfDate([{ awards: p.awards }], settings));
 
 	if (!stale) {
 		return;
 	}
 
-	const result = await applyAwardRenames(awardRenamesFromSettings(settings));
+	const result = await applyAwardRenames([
+		...awardRenamesFromSettings(settings),
+		...abbrevRenames,
+	]);
 
 	if (result.seasons > 0) {
 		// Say it happened. A league's whole history silently changing what its
