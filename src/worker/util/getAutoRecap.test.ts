@@ -6432,6 +6432,78 @@ describe("prepositions do not stack", () => {
 	});
 });
 
+describe("a comeback only the score log saw", () => {
+	// Level at every quarter break, 20 down in between: the period boundaries
+	// call it an ordinary win, the score log calls it what it was.
+	const build = (seed: number) =>
+		game({
+			gid: seed,
+			teams: [
+				realisticTeam(
+					{
+						tid: 1,
+						region: "Golden State",
+						name: "Warriors",
+						abbrev: "GSW",
+						pts: 108,
+						ptsQtrs: [24, 30, 28, 26],
+					},
+					player({ name: "Scoot Ellis", pts: 26, reb: 10, fg: 10, fga: 16 }),
+				),
+				realisticTeam(
+					{
+						tid: 2,
+						region: "Miami",
+						name: "Heat",
+						abbrev: "MIA",
+						pts: 99,
+						ptsQtrs: [26, 28, 25, 20],
+					},
+					player({ name: "Evan Hayes", pts: 27, reb: 18, fg: 11, fga: 22 }),
+				),
+			],
+			winnerTid: 1,
+			flow: {
+				leadChanges: 4,
+				ties: 3,
+				maxLead: [9, 20],
+				lastLead: { side: 0, period: 3, clock: 302, pts: [70, 69] },
+				run: { side: 0, pts: 15, period: 2, clock: 400 },
+			},
+		});
+
+	test("the recap says the winner came from 20 down", () => {
+		let told = 0;
+		for (let seed = 0; seed < 20; seed++) {
+			const recap = getAutoRecap(build(seed));
+			if (
+				/came from 20 down|Down 20|20-point hole|trailed by 20|rallies the Warriors/.test(
+					recap,
+				)
+			) {
+				told += 1;
+			}
+			assert.ok(
+				!/held off|handled|pulled away from the Heat/.test(recap),
+				recap,
+			);
+			// And the deficit is not given twice.
+			assert.ok((recap.match(/\b20\b/g) ?? []).length <= 2, recap);
+		}
+		assert.strictEqual(told, 20);
+	});
+
+	test("when the lead changed hands for good is told, whatever the margin", () => {
+		let told = 0;
+		for (let seed = 0; seed < 20; seed++) {
+			if (/for good|ahead for the last time/.test(getAutoRecap(build(seed)))) {
+				told += 1;
+			}
+		}
+		assert.strictEqual(told, 20);
+	});
+});
+
 describe("house style", () => {
 	// Two profiles. The second is cold, careless and three-happy on purpose:
 	// the templates that used to open on a numeral only fire on a bad shooting

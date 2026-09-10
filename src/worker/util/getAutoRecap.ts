@@ -350,6 +350,10 @@ type Shape = {
 	// Winner's largest deficit at any period boundary (0 if it never trailed).
 	comebackFrom: number;
 	comebackPeriod: number;
+	// The loser's biggest lead at any point, from the score log (0 without
+	// one). A team can be 20 down in the second quarter and level by the
+	// break, which the period boundaries never see.
+	loserPeak: number;
 	// Margin the winner led/trailed by entering the final regulation period.
 	marginEnteringLast: number;
 	wireToWire: boolean;
@@ -405,6 +409,8 @@ const analyzeShape = (game: RecapGame): Shape => {
 		wireToWire = ledEveryBoundary && comebackFrom === 0 && wq.length >= 2;
 	}
 
+	const loserPeak = game.flow ? game.flow.maxLead[sideOf(game, loser)] : 0;
+
 	return {
 		winner,
 		loser,
@@ -415,6 +421,7 @@ const analyzeShape = (game: RecapGame): Shape => {
 		regPeriods,
 		comebackFrom,
 		comebackPeriod,
+		loserPeak,
 		marginEnteringLast,
 		wireToWire,
 		bigRun,
@@ -968,6 +975,16 @@ const postseasonContext = (
 
 // --- Headline ------------------------------------------------------------------
 
+// The deficit the winner came back from, when it was a real one: the period
+// boundaries first, else the score log's peak. Zero for a game that was
+// never a comeback.
+const comebackSize = (shape: Shape): number =>
+	shape.comebackFrom >= 12
+		? shape.comebackFrom
+		: shape.loserPeak >= 15
+			? shape.loserPeak
+			: 0;
+
 const verbPool = (game: RecapGame, shape: Shape): string[] => {
 	if (isUpset(game, shape)) {
 		// "Stunned" and "shocked" belong to a real number. The day wrap has
@@ -977,7 +994,7 @@ const verbPool = (game: RecapGame, shape: Shape): string[] => {
 			? ["stun", "upset", "shock", "knock off"]
 			: ["upset", "knock off", "take down", "get past"];
 	}
-	if (shape.comebackFrom >= 12) {
+	if (comebackSize(shape) > 0) {
 		return ["rally past", "storm back to beat", "come back to top"];
 	}
 	if (shape.ot > 0 || shape.margin <= 4) {
@@ -1268,10 +1285,10 @@ const buildHeadlineText = (
 					`${winnerN} close out the ${loserN} in overtime, ${scoreTag(shape)}`,
 					`${winnerN} need ${shape.ot === 1 ? "an extra period" : `${numWord(shape.ot)} extra periods`} to finish off the ${loserN} in ${games}`,
 				);
-			} else if (shape.comebackFrom >= 12) {
+			} else if (comebackSize(shape) > 0) {
 				options.push(
-					`${winnerN} rally from ${shape.comebackFrom} down to close out the ${loserN}`,
-					`Down ${shape.comebackFrom}, the ${winnerN} come back to finish off the ${loserN} in ${games}`,
+					`${winnerN} rally from ${comebackSize(shape)} down to close out the ${loserN}`,
+					`Down ${comebackSize(shape)}, the ${winnerN} come back to finish off the ${loserN} in ${games}`,
 				);
 			} else {
 				options.push(
@@ -1386,10 +1403,10 @@ const buildHeadlineText = (
 						`${W} blow out ${Lx} by ${shape.margin} and ${stateShort}`,
 					]
 				: []),
-			...(shape.comebackFrom >= 12
+			...(comebackSize(shape) > 0
 				? [
-						`${W} rally from ${shape.comebackFrom} down to ${stateVerb}`,
-						`Down ${shape.comebackFrom}, the ${W} come back to ${stateShort}`,
+						`${W} rally from ${comebackSize(shape)} down to ${stateVerb}`,
+						`Down ${comebackSize(shape)}, the ${W} come back to ${stateShort}`,
 					]
 				: []),
 			...(shape.ot > 0
@@ -1397,7 +1414,7 @@ const buildHeadlineText = (
 				: []),
 		];
 		const options =
-			special.length > 0 && (shape.comebackFrom >= 15 || shape.margin >= 25)
+			special.length > 0 && (comebackSize(shape) >= 15 || shape.margin >= 25)
 				? special
 				: [
 						`${W} ${stateVerb}`,
@@ -1561,7 +1578,8 @@ const buildHeadlineText = (
 		);
 	}
 
-	if (shape.comebackFrom >= 12) {
+	const cb = comebackSize(shape);
+	if (cb > 0) {
 		// Either way the comeback is now SAID. The body must not say it a second
 		// and third time ("rallies" / "stormed back to beat" / "trailed by 14 and
 		// stormed back" all landed in one recap).
@@ -1571,13 +1589,13 @@ const buildHeadlineText = (
 				[
 					// A bare verb after "to": the comeback pool's own verbs made
 					// this "erase a 19-point hole to come back to top the Wolves".
-					`${winnerN} erase ${aNum(shape.comebackFrom)}-point hole to ${pick(
+					`${winnerN} erase ${aNum(cb)}-point hole to ${pick(
 						rng,
 						["beat", "top", "take down", "knock off"],
 						"comebackVerb",
 					)} the ${loserN}${tag}`,
 					`${star.name} rallies the ${winnerN} past the ${loserN}${tag}`,
-					`Down ${shape.comebackFrom}, the ${winnerN} come back to beat the ${loserN}${tag}`,
+					`Down ${cb}, the ${winnerN} come back to beat the ${loserN}${tag}`,
 				],
 				"headline:comeback",
 			),
@@ -1893,6 +1911,29 @@ const resultLead = (
 			covers: "comeback",
 		};
 	}
+	if (shape.loserPeak >= 15) {
+		// Level at every period boundary, 20 down in between: the score log
+		// is the only place this comeback shows, so the lead says it.
+		return {
+			text: pick(
+				rng,
+				[
+					`${cap(w)} came from ${shape.loserPeak} down to ${pick(
+						rng,
+						["beat", "top", "take down", "knock off"],
+						"comebackVerb",
+					)} ${l}${score}.`,
+					// A plain verb: the pool's own is a comeback verb, and "trailed
+					// by 16 and still came back to top" said it twice.
+					`${cap(w)} trailed by ${shape.loserPeak} and still ${pastTense(
+						pick(rng, ["beat", "top", "take down"], "comebackVerb"),
+					)} ${l}${score}.`,
+				],
+				"flowComebackLead",
+			),
+			covers: "comeback",
+		};
+	}
 	if (shape.ot > 0) {
 		return {
 			text: `It took ${
@@ -1961,10 +2002,10 @@ const leadSentence = (
 	const verb = pastTense(
 		pick(
 			rng,
-			shape.comebackFrom >= 12
+			comebackSize(shape) > 0
 				? ["beat", "top", "take down", "knock off"]
 				: verbPool(game, shape),
-			shape.comebackFrom >= 12 ? "comebackVerb" : undefined,
+			comebackSize(shape) > 0 ? "comebackVerb" : undefined,
 		),
 	);
 
@@ -3899,7 +3940,11 @@ const finishNote = (
 	justNamed?: string,
 ): string[] => {
 	const flow = game.flow;
-	if (!flow || (shape.margin > 6 && shape.ot === 0)) {
+	const close = shape.margin <= 6 || shape.ot > 0;
+	// When a comeback took the lead for good is its key beat, whatever the
+	// final margin; the tight-game notes below stay for tight games.
+	const comeback = comebackSize(shape) > 0;
+	if (!flow || (!close && !comeback)) {
 		return [];
 	}
 	const out: string[] = [];
@@ -3908,10 +3953,13 @@ const finishNote = (
 	const inFinal = (period: number) => period >= shape.regPeriods;
 
 	const last = flow.lastLead;
+	// In a tight game the lead for good is a fourth-quarter fact. In a
+	// comeback it is the turn of the game, wherever it came after halftime.
+	const halfway = Math.ceil(shape.regPeriods / 2);
 	if (
 		last &&
 		last.side === wSide &&
-		inFinal(last.period) &&
+		(inFinal(last.period) || (comeback && last.period > halfway)) &&
 		!(shotTold && last.clock <= 30)
 	) {
 		const when = clockLeft(last.clock);
@@ -3919,7 +3967,9 @@ const finishNote = (
 		const where =
 			last.period > shape.regPeriods
 				? ` in ${periodTag(last.period, shape.regPeriods)}`
-				: "";
+				: last.period < shape.regPeriods
+					? ` in the ${ordinal(last.period)}`
+					: "";
 		if (when) {
 			out.push(
 				pick(
@@ -3940,7 +3990,7 @@ const finishNote = (
 				),
 			);
 		}
-	} else if (flow.lastTie && inFinal(flow.lastTie.period)) {
+	} else if (close && flow.lastTie && inFinal(flow.lastTie.period)) {
 		const when = clockLeft(flow.lastTie.clock);
 		if (when) {
 			out.push(
@@ -3960,6 +4010,9 @@ const finishNote = (
 	// neither side ever built one. One sentence, not both - and only when the
 	// number says something, since "8 lead changes" is an ordinary night.
 	const biggest = Math.max(flow.maxLead[0], flow.maxLead[1]);
+	if (!close) {
+		return out;
+	}
 	if (flow.leadChanges >= 10) {
 		out.push(
 			flow.ties > 0
@@ -4015,7 +4068,7 @@ const blownLeadNote = (
 	const lSide = sideOf(game, shape.loser);
 	const L = cap(theNick(shape.loser));
 	const comebackTold =
-		/deficit|erased|comeback|stormed back|charged home|at the break|at halftime|clawing back|hold on|nearly not enough/i.test(
+		/deficit|erased|comeback|stormed back|charged home|came from \d|trailed by \d+ and still|at the break|at halftime|clawing back|hold on|nearly not enough/i.test(
 			written,
 		);
 	const lead = flow.maxLead[lSide];
@@ -4680,7 +4733,7 @@ const notability = (game: RecapGame): number => {
 	if (shape.margin <= 3) {
 		n += 20;
 	}
-	if (shape.comebackFrom >= 15) {
+	if (comebackSize(shape) >= 15) {
 		n += 25;
 	}
 	if (star && doubleCategories(star).length >= 3) {
@@ -5225,8 +5278,8 @@ const dayHeadline = (
 								`${w} advance to ${next}`,
 								`${w} eliminate ${l}`,
 							]),
-					...(mShape.comebackFrom >= 12
-						? [`${w} rally from ${mShape.comebackFrom} down to close out ${l}`]
+					...(comebackSize(mShape) > 0
+						? [`${w} rally from ${comebackSize(mShape)} down to close out ${l}`]
 						: []),
 					...(clinch.sweep ? [`${w} sweep ${l}`] : []),
 					...(clinch.decider
@@ -5547,12 +5600,12 @@ const dayHeadline = (
 		);
 	}
 
-	if (mShape.comebackFrom >= 15) {
+	if (comebackSize(mShape) >= 15) {
 		return hl(
 			pick(rng, [
-				`${w} storm back from ${mShape.comebackFrom} down to beat ${l}`,
-				`${w} erase ${aNum(mShape.comebackFrom)}-point hole to beat ${l}`,
-				`Down ${mShape.comebackFrom}, ${w} come back to beat ${l}`,
+				`${w} storm back from ${comebackSize(mShape)} down to beat ${l}`,
+				`${w} erase ${aNum(comebackSize(mShape))}-point hole to beat ${l}`,
+				`Down ${comebackSize(mShape)}, ${w} come back to beat ${l}`,
 			]),
 		);
 	}
@@ -5656,14 +5709,14 @@ const collectStorylines = (
 				game: g,
 			});
 		}
-		if (shape.comebackFrom >= 15) {
+		if (comebackSize(shape) >= 15) {
 			out.push({
-				score: 80 + shape.comebackFrom,
+				score: 80 + comebackSize(shape),
 				kind: "comeback",
 				// "rally from 17 down past the Pandas" split the verb from its
 				// object across the whole adverbial. Put the object back next to
 				// the verb.
-				text: `${w} rally past ${l} from ${shape.comebackFrom} down`,
+				text: `${w} rally past ${l} from ${comebackSize(shape)} down`,
 				tids,
 				game: g,
 			});
@@ -5841,8 +5894,8 @@ const roundupClause = (shape: Shape, seq: number): string => {
 	let pool: string[];
 	// "The Nets blew out the Bulls" is not how a game they trailed by 17
 	// reads, whatever the final margin.
-	if (shape.comebackFrom >= 15) {
-		return `${w} came from ${shape.comebackFrom} down to beat ${l} ${scoreTag(shape)}`;
+	if (comebackSize(shape) >= 15) {
+		return `${w} came from ${comebackSize(shape)} down to beat ${l} ${scoreTag(shape)}`;
 	}
 	if (shape.ot > 0) {
 		pool = ["outlasted", "survived", "edged"];
@@ -6360,9 +6413,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						)} ${scoreTag(shape)} as ${spreadPts}-point underdogs`
 					: `${theNick(shape.winner)} ${verb} ${theNick(shape.loser)} ${scoreTag(shape)}`;
 			upsetIdx += 1;
-		} else if (shape.comebackFrom >= 15) {
+		} else if (comebackSize(shape) >= 15) {
 			blurb = `${theNick(shape.winner)} erased ${aNum(
-				shape.comebackFrom,
+				comebackSize(shape),
 			)}-point deficit to beat ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shot2 && !shot2.tying) {
 			blurb = `${shot2.name} beat ${theNick(shape.loser)} at the wire, ${scoreTag(shape)}`;
