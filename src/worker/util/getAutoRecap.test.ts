@@ -3538,7 +3538,9 @@ describe("copy defects found in the field", () => {
 			game({ gid: 7001, teams: [teamWithInjury("Injured"), opponent] }),
 		);
 		assert.ok(!/\ban injured\b/i.test(recap), recap);
-		assert.ok(/\ban injury\b/i.test(recap), recap);
+		// Either the article form ("an injury kept him out") or the
+		// parenthetical ("(injured)"), depending on the shape drawn.
+		assert.ok(/\ban injury\b|\(injured\)/i.test(recap), recap);
 	});
 
 	test("a real injury name still keeps its own words", () => {

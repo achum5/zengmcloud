@@ -2936,23 +2936,27 @@ const loserSentence = (
 						.filter((p) => p !== leader && p.pts >= 14 && p.pts <= leader.pts)
 						.sort((a, b) => b.pts - a.pts)[0]
 				: undefined;
+		// The shape is picked WITHOUT the tail: with the second man's verb
+		// baked into every candidate, the ledger saw all four as spent and the
+		// pick could no longer steer away from a "finished with" already used.
+		const base = pickSentence(
+			rng,
+			[
+				`${leaderLine} ${agreed} ${them}`,
+				`${cap(them)} got ${line} from ${leader.name}`,
+				`${leader.name} finished with ${line} for ${them}`,
+				// Not "22 points from X was..." - a sentence does not open with a
+				// numeral, and every one of these lines starts with one.
+				`The best ${them} could offer was ${line} from ${leader.name}`,
+			],
+			"loserShape",
+		);
 		const tail =
 			reason ||
 			(second
 				? `, and ${second.name} ${scoredVerb(rng)} ${statPhrase(second, 1)}`
 				: "");
-		return pickSentence(
-			rng,
-			[
-				`${leaderLine} ${agreed} ${them}${tail}.`,
-				`${cap(them)} got ${line} from ${leader.name}${tail}.`,
-				`${leader.name} finished with ${line} for ${them}${tail}.`,
-				// Not "22 points from X was..." - a sentence does not open with a
-				// numeral, and every one of these lines starts with one.
-				`The best ${them} could offer was ${line} from ${leader.name}${tail}.`,
-			],
-			"loserShape",
-		);
+		return `${base}${tail}.`;
 	}
 	// No standout to hang it on. The leading scorer still gets his name in -
 	// a recap that never says who led the losers reads as if nobody did -
