@@ -192,7 +192,25 @@ export const dedupePlayerSubjects = (
 			(name) =>
 				sentence.startsWith(`${name} `) || sentence.startsWith(`${name}'`),
 		);
+	// "It was Obi King's best night on the glass. It was Obi King's fourth
+	// straight double-double." - the possessive frame, one note after another.
+	const itWas = (sentence: string): string | undefined =>
+		names.find((name) => sentence.startsWith(`It was ${name}'`));
+	const afterPossessive = (sentence: string, name: string): string => {
+		const rest = sentence.slice(name.length);
+		return rest.startsWith("'s ") ? rest.slice(3) : rest.slice(2);
+	};
 	for (let i = 1; i < out.length; i++) {
+		const framed = itWas(out[i]!);
+		if (framed) {
+			const prev = sentences[i - 1]!;
+			if (itWas(prev) === framed) {
+				out[i] = `It was also his ${afterPossessive(out[i]!.slice(7), framed)}`;
+			} else if (opensOn(prev) === framed) {
+				out[i] = `It was his ${afterPossessive(out[i]!.slice(7), framed)}`;
+			}
+			continue;
+		}
 		const name = opensOn(out[i]!);
 		if (!name || opensOn(sentences[i - 1]!) !== name) {
 			continue;
@@ -208,6 +226,13 @@ export const dedupePlayerSubjects = (
 };
 
 // --- Player performance --------------------------------------------------------
+
+// "47%" over "47.0%": a percentage is printed to one decimal only when the
+// decimal says something.
+const fmtPct = (x: number): string =>
+	Number.isInteger(Math.round(x * 10) / 10)
+		? String(Math.round(x))
+		: x.toFixed(1);
 
 // A rough impact score, only ever used to pick which player's night is the story.
 // Never shown to the user.
@@ -985,7 +1010,12 @@ const postseasonContext = (
 				choose(
 					[
 						`The #${wSeed} seed leads the #${lSeed} seed with ${wins} to go.`,
-						`The #${lSeed} seed is in trouble against the #${wSeed}, ${wins} from going out.`,
+						// "In trouble" after Game 1 of seven is not trouble yet.
+						...(winnerNeeds <= 2
+							? [
+									`The #${lSeed} seed is in trouble against the #${wSeed}, ${wins} from going out.`,
+								]
+							: []),
 						`${cap(w)}, seeded #${wSeed}, are ${wins} from putting out the #${lSeed} seed.`,
 					],
 					"seriesSeedUpset",
@@ -2824,6 +2854,20 @@ const loserSentence = (
 			"fronted",
 			"was the best of",
 		]);
+		// A 40-point night on the losing side is its own story, not "the best
+		// the Nets could offer".
+		if (leader.pts >= 40) {
+			const them = theNick(shape.loser);
+			return pickSentence(
+				rng,
+				[
+					`${leader.name} poured in ${leader.pts} for ${them}${reason || ", and it still was not enough"}.`,
+					`${cap(them)} got ${plural(leader.pts, "point")} from ${leader.name}${reason || " and lost anyway"}.`,
+					`${leader.name} went for ${statPhrase(leader)} in a losing cause${reason}.`,
+				],
+				"loserBig",
+			);
+		}
 		// A 19-rebound night is not an ordinary double-double, and burying it in
 		// "(19 points and 19 rebounds)" reads like it was.
 		if (leader.reb >= 18) {
@@ -3299,17 +3343,17 @@ const vsAverageNote = (
 					// back by now: "It was a long way clear of his 51.0% season mark"
 					// with nothing nearby for "it" to be. The number is restated.
 					[
-						`${star.name} shot ${((100 * star.fg) / star.fga).toFixed(1)}% on the night against a ${avg.fgp.toFixed(1)}% season mark.`,
-						`${star.name} came in shooting ${avg.fgp.toFixed(1)}% on the year and shot ${((100 * star.fg) / star.fga).toFixed(1)}% in this one.`,
+						`${star.name} shot ${fmtPct((100 * star.fg) / star.fga)}% on the night against a ${fmtPct(avg.fgp)}% season mark.`,
+						`${star.name} came in shooting ${fmtPct(avg.fgp)}% on the year and shot ${fmtPct((100 * star.fg) / star.fga)}% in this one.`,
 						// "a long way FROM" reads as a shortfall, and this branch only
 						// fires when he shot at least twelve points BETTER than his
 						// season mark.
-						`That ${split} was a long way clear of ${poss(star.name)} ${avg.fgp.toFixed(1)}% season mark.`,
+						`That ${split} was a long way clear of ${poss(star.name)} ${fmtPct(avg.fgp)}% season mark.`,
 					]
 				: [
-						`${star.name} was ${split} from the floor, far better than the ${avg.fgp.toFixed(1)}% he had managed on the season.`,
-						`${star.name} came in shooting ${avg.fgp.toFixed(1)}% on the year and went ${split}.`,
-						`Going ${split} was a long way clear of ${poss(star.name)} ${avg.fgp.toFixed(1)}% season mark.`,
+						`${star.name} was ${split} from the floor, far better than the ${fmtPct(avg.fgp)}% he had managed on the season.`,
+						`${star.name} came in shooting ${fmtPct(avg.fgp)}% on the year and went ${split}.`,
+						`Going ${split} was a long way clear of ${poss(star.name)} ${fmtPct(avg.fgp)}% season mark.`,
 					],
 			"vsSeasonFgp",
 		);
@@ -4766,6 +4810,11 @@ const notability = (game: RecapGame): number => {
 	if (star && star.pts >= 40) {
 		n += star.pts;
 	}
+	// A 50-point night in a loss is the night's story wherever it happened.
+	const loserBest = bestOf(shape.loser.players);
+	if (loserBest && loserBest.pts >= 45) {
+		n += loserBest.pts;
+	}
 	return n;
 };
 
@@ -5271,9 +5320,38 @@ const dayHeadline = (
 	const tw = theNick(mShape.winner);
 	const l = theNick(mShape.loser);
 
+	const post =
+		playoffs && marquee.playoffs
+			? postseasonContext(marquee, mShape, rng)
+			: undefined;
+
+	// A 45-point night on the losing side is the night's story, and "Cade
+	// Green's 17 and 13 power the Clippers past the Nets" over a 52-point
+	// loss missed it. A clinch or a game-winner still leads.
+	const loserBig = bestOf(mShape.loser.players);
+	const shotEarly = clutchShot(marquee);
+	if (
+		loserBig &&
+		loserBig.pts >= 45 &&
+		loserBig.pts >= (mStar?.pts ?? 0) + 10 &&
+		!post?.clinch &&
+		!(shotEarly && !shotEarly.tying)
+	) {
+		const where = post?.state ? ` in Game ${post.state.gameNo}` : "";
+		return hl(
+			pick(
+				rng,
+				[
+					`${poss(loserBig.name)} ${loserBig.pts} not enough as ${tw} ${pick(rng, verbPool(marquee, mShape))} ${l}${where}`,
+					`${loserBig.name} scores ${loserBig.pts} in a losing cause${where ? where : ` against ${tw}`}`,
+				],
+				"dayHeadlineLoserBig",
+			),
+		);
+	}
+
 	// Postseason storylines lead everything.
-	if (playoffs && marquee.playoffs) {
-		const post = postseasonContext(marquee, mShape, rng);
+	if (playoffs && marquee.playoffs && post) {
 		const joined = post.sentences.join(" ");
 		const clinch = post.clinch;
 		if (clinch?.title) {
@@ -6281,14 +6359,21 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		const flourish = shootingFlourish(topScorer.p);
 		const line = `${statPhrase(topScorer.p)}${flourish ? ` ${flourish}` : ""}`;
 		const topScore = scoreTag(analyzeShape(topScorer.game));
+		// The sentence before this one has just given the matchup and score
+		// when his game is the marquee, so "in the Nets' 124-114 loss to the
+		// Clippers" straight after "beat the Nets 124-114" says it twice.
 		para1.push(
-			topScorer.won
-				? `${topScorer.p.name} led all scorers with ${line} in ${poss(
-						theNick(topScorer.team),
-					)} ${topScore} win over ${theNick(topScorer.opp)}.`
-				: `${topScorer.p.name} led all scorers with ${line} in ${poss(
-						theNick(topScorer.team),
-					)} ${topScore} loss to ${theNick(topScorer.opp)}.`,
+			coveredGames.has(topScorer.game)
+				? `${topScorer.p.name} led all scorers with ${line} in ${
+						topScorer.won ? "the win" : "the loss"
+					}.`
+				: topScorer.won
+					? `${topScorer.p.name} led all scorers with ${line} in ${poss(
+							theNick(topScorer.team),
+						)} ${topScore} win over ${theNick(topScorer.opp)}.`
+					: `${topScorer.p.name} led all scorers with ${line} in ${poss(
+							theNick(topScorer.team),
+						)} ${topScore} loss to ${theNick(topScorer.opp)}.`,
 		);
 		named.add(topScorer.p);
 		coveredGames.add(topScorer.game);
