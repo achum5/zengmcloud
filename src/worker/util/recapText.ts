@@ -407,8 +407,9 @@ export const statPhrase = (p: RecapPlayer, maxExtras = 2): string => {
 	}
 	// Five stocks split 3-and-2 is why the story pick landed on a 19-point
 	// night over a 23-point one; leaving both off the line made the pick look
-	// like a mistake.
-	const stocks = p.stl + p.blk >= 5;
+	// like a mistake. A 29-point night needs no such help, and "29 points, 2
+	// steals, and 3 blocks" is a box score, not a sentence.
+	const stocks = p.stl + p.blk >= 5 && p.pts < 22;
 	if (p.stl >= 4 || dd.has("steals") || (stocks && p.stl >= 2)) {
 		extras.push([p.stl * 1.7, 2, plural(p.stl, "steal")]);
 	}

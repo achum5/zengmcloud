@@ -5769,6 +5769,11 @@ const roundupClause = (shape: Shape, seq: number): string => {
 	const w = theNick(shape.winner);
 	const l = theNick(shape.loser);
 	let pool: string[];
+	// "The Nets blew out the Bulls" is not how a game they trailed by 17
+	// reads, whatever the final margin.
+	if (shape.comebackFrom >= 15) {
+		return `${w} came from ${shape.comebackFrom} down to beat ${l} ${scoreTag(shape)}`;
+	}
 	if (shape.ot > 0) {
 		pool = ["outlasted", "survived", "edged"];
 	} else if (shape.margin >= 20) {
@@ -6224,6 +6229,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 					perf.p.pts >= 35),
 		);
 		const lossPerf =
+			lossCandidates.find((perf) => !coveredGames.has(perf.game)) ??
 			lossCandidates.find((perf) => perf.game !== lastPerfGame) ??
 			lossCandidates[0];
 		if (lossPerf) {
