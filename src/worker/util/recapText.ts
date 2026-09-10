@@ -375,8 +375,14 @@ export const pickSentence = (
 	const spent = (text: string) =>
 		LEDGER_VERBS.some((v) => usedVerbs.has(v) && text.includes(` ${v} `));
 	let text = pick(rng, options, poolId);
-	for (let i = 0; i < options.length && spent(text); i++) {
-		text = pick(rng, options, poolId);
+	// Redraw from the shapes the ledger has NOT spent, not from the whole
+	// pool again: four random redraws could all land on "finished with" and
+	// the recap said it twice anyway.
+	if (spent(text)) {
+		const fresh = options.filter((o) => !spent(o));
+		if (fresh.length > 0) {
+			text = pick(rng, fresh, poolId ? `${poolId}:fresh` : undefined);
+		}
 	}
 	for (const v of LEDGER_VERBS) {
 		if (text.includes(` ${v} `)) {

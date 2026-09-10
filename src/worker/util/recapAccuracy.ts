@@ -101,7 +101,27 @@ export const verifyRecap = (
 
 	const text = recap.replaceAll("**", "");
 
+	// A sentence that opens "He ..." or "His ..." belongs to the man the
+	// sentence before it was about - the recap turns a repeated subject into
+	// a pronoun, and "He was gone by the end, fouling out with 15 points" is
+	// still his 15 points.
+	let chainOwner: string | undefined;
+	const lastNameIn = (text: string): string | undefined => {
+		let best = -1;
+		let who: string | undefined;
+		for (const nm of names) {
+			const at = text.lastIndexOf(nm);
+			if (at > best) {
+				best = at;
+				who = nm;
+			}
+		}
+		return who;
+	};
 	for (const sentence of splitSentences(recap)) {
+		const prevOwner = chainOwner;
+		const pronounLed = /^(?:He|His)\b/.test(sentence);
+		chainOwner = lastNameIn(sentence) ?? (pronounLed ? chainOwner : undefined);
 		// --- the final score -------------------------------------------------
 		for (const m of sentence.matchAll(/\b(\d{2,3})-(\d{2,3})\b/g)) {
 			const around = sentence.slice(
@@ -170,6 +190,9 @@ export const verifyRecap = (
 					if (best < 0) {
 						owner = undefined;
 					}
+				}
+				if (owner === undefined && pronounLed) {
+					owner = prevOwner;
 				}
 				if (owner === undefined) {
 					// "got 48 points from the bench" - a bench total, which the

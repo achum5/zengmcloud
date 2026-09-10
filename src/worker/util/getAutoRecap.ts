@@ -213,6 +213,19 @@ export const dedupePlayerSubjects = (
 		}
 		const name = opensOn(out[i]!);
 		if (!name || opensOn(sentences[i - 1]!) !== name) {
+			// "...four in a row for Obi King. The 14 rebounds were a season high
+			// for Obi King." - the name closing two sentences running. When the
+			// sentence before names him and this one names nobody else, the
+			// second becomes "for him".
+			const closing = names.find(
+				(n) =>
+					out[i]!.endsWith(` for ${n}.`) &&
+					sentences[i - 1]!.includes(n) &&
+					!names.some((other) => other !== n && out[i]!.includes(other)),
+			);
+			if (closing) {
+				out[i] = `${out[i]!.slice(0, -(closing.length + 1))}him.`;
+			}
 			continue;
 		}
 		const rest = out[i]!.slice(name.length);
@@ -2912,15 +2925,31 @@ const loserSentence = (
 			verb === "was the best of" && !ddw && / and /.test(leaderLine)
 				? "were the best of"
 				: verb;
+		// With no reason clause to carry, the losers' second man rides along:
+		// "Obi Brooks' 18 points led the Celtics, and Keegan Brooks had 16"
+		// over two sentences of the same shape in a row.
+		// The next scorer down, never one who outscored the man just called
+		// their leader, and with a verb the ledger has not spent.
+		const second =
+			reason === ""
+				? [...shape.loser.players]
+						.filter((p) => p !== leader && p.pts >= 14 && p.pts <= leader.pts)
+						.sort((a, b) => b.pts - a.pts)[0]
+				: undefined;
+		const tail =
+			reason ||
+			(second
+				? `, and ${second.name} ${scoredVerb(rng)} ${statPhrase(second, 1)}`
+				: "");
 		return pickSentence(
 			rng,
 			[
-				`${leaderLine} ${agreed} ${them}${reason}.`,
-				`${cap(them)} got ${line} from ${leader.name}${reason}.`,
-				`${leader.name} finished with ${line} for ${them}${reason}.`,
+				`${leaderLine} ${agreed} ${them}${tail}.`,
+				`${cap(them)} got ${line} from ${leader.name}${tail}.`,
+				`${leader.name} finished with ${line} for ${them}${tail}.`,
 				// Not "22 points from X was..." - a sentence does not open with a
 				// numeral, and every one of these lines starts with one.
-				`The best ${them} could offer was ${line} from ${leader.name}${reason}.`,
+				`The best ${them} could offer was ${line} from ${leader.name}${tail}.`,
 			],
 			"loserShape",
 		);
@@ -4532,10 +4561,15 @@ export const getAutoRecap = (game: RecapGame): string => {
 		}
 		para1.push(e);
 	}
-	// Where the series stands is part of what happened, and closes the lede
-	// unless the headline said it.
-	if (postSentences[0] && para1.length < 6) {
-		para1.push(postSentences[0]);
+	// Where the series stands is part of what happened, and closes the lede.
+	// When the headline already carried it, what is left is the stakes
+	// ("The Raptors can still close it out in Game 5"), which is context.
+	const seriesState = headline.spentState ? undefined : postSentences[0];
+	const postContext = headline.spentState
+		? postSentences
+		: postSentences.slice(1);
+	if (seriesState && para1.length < 6) {
+		para1.push(seriesState);
 	}
 	const spentThrees = () =>
 		spentTopics.has("threes") || spentFacts.has("loserThrees");
@@ -4602,6 +4636,17 @@ export const getAutoRecap = (game: RecapGame): string => {
 	addLoser(() =>
 		loserSentence(shape, rng, spentFacts, headline.spentLoserStar),
 	);
+	const said = namesIn(writtenSoFar, shape);
+	said.add(star.name);
+	const loserBest = bestOf(shape.loser.players);
+	// The losing side's best man had a season high of his own - straight
+	// after his line, and only once the piece has introduced him, so the
+	// sentence has a line to refer to.
+	addLoser(() =>
+		loserBest && loserBest !== star && said.has(loserBest.name)
+			? playerHighBeat(loserBest, rng, writtenSoFar)
+			: undefined,
+	);
 	// The two sides' shooting, told as the reason the losers lost: the
 	// three-point line and the free-throw line sit with the side they
 	// explain rather than three paragraphs from it.
@@ -4609,19 +4654,9 @@ export const getAutoRecap = (game: RecapGame): string => {
 		() => threeNote(shape, rng, spentThrees()),
 		() => freeThrowNote(shape, rng, spentTopics.has("freeThrows")),
 	])) {
-		addLoser(beat, 3);
+		addLoser(beat, 4);
 	}
-	const said = namesIn(writtenSoFar, shape);
-	said.add(star.name);
-	addLoser(() => loserSupportNote(shape, rng, said));
-	const loserBest = bestOf(shape.loser.players);
-	// The losing side's best man had a season high of his own - only once
-	// the piece has introduced him, so the sentence has a line to refer to.
-	addLoser(() =>
-		loserBest && loserBest !== star && said.has(loserBest.name)
-			? playerHighBeat(loserBest, rng, writtenSoFar)
-			: undefined,
-	);
+	addLoser(() => loserSupportNote(shape, rng, namesIn(writtenSoFar, shape)));
 	// The defensive note can be either side's man, so it waits until the
 	// losers' best has had his sentence - named first for his steals, he
 	// came back a sentence later as "His 18 points...".
@@ -4654,7 +4689,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 			beatCtx.written = `${beatCtx.written} ${text}`;
 		}
 	};
-	for (const text of postSentences.slice(1)) {
+	for (const text of postContext) {
 		addContext(() => text);
 	}
 	addContext(() =>
