@@ -254,7 +254,7 @@ export const verifyRecap = (
 			(n) => n === flow.leadChanges,
 			"lead changes",
 		);
-		claim(/(\d+) ties\b/g, (n) => n === flow.ties, "ties");
+		claim(/(\d+) ties?\b/g, (n) => n === flow.ties, "ties");
 		claim(/as many as (\d+)/g, (n) => flow.maxLead.includes(n), "biggest lead");
 		claim(
 			/up by (\d+) at one stage/g,

@@ -540,6 +540,9 @@ const clutchSentence = (
 	return { text: `${shot.name} won it on ${clutchWhat(shot)}.` };
 };
 
+const plainScore = (shape: Shape): string =>
+	`${shape.winner.pts}-${shape.loser.pts}`;
+
 const scoreTag = (shape: Shape): string => {
 	const ot =
 		shape.ot > 0 ? ` (${shape.ot === 1 ? "OT" : `${shape.ot}OT`})` : "";
@@ -2120,7 +2123,7 @@ const flowSentence = (
 					[
 						`Down ${down} at the break, ${theNick(shape.winner)} outscored ${theNick(shape.loser)} ${half.w}-${half.l} after halftime.`,
 						`${cap(theNick(shape.winner))} trailed by ${down} at halftime and won the second half ${half.w}-${half.l}.`,
-						`A ${down}-point halftime deficit turned into a ${half.w}-${half.l} second half.`,
+						`${cap(aNum(down))}-point halftime deficit turned into a ${half.w}-${half.l} second half.`,
 					],
 					"halfComeback",
 				),
@@ -2402,7 +2405,7 @@ const secondHalfNote = (
 				`The second half belonged to ${theNick(
 					shape.winner,
 				)}, ${wSecond}-${lSecond} after going in ${-halfMargin} down.`,
-				`A ${-halfMargin}-point halftime deficit turned into a ${wSecond}-${lSecond} second half.`,
+				`${cap(aNum(-halfMargin))}-point halftime deficit turned into a ${wSecond}-${lSecond} second half.`,
 			],
 			"halfComeback",
 		);
@@ -3834,8 +3837,12 @@ const finishNote = (
 				? pick(
 						rng,
 						[
-							`There were ${flow.leadChanges} lead changes and ${flow.ties} ties.`,
-							`The lead changed hands ${flow.leadChanges} times, with ${flow.ties} ties.`,
+							`There were ${flow.leadChanges} lead changes and ${flow.ties} ${
+								flow.ties === 1 ? "tie" : "ties"
+							}.`,
+							`The lead changed hands ${flow.leadChanges} times, with ${flow.ties} ${
+								flow.ties === 1 ? "tie" : "ties"
+							}.`,
 							// "Nobody led by more than 12" is not a tight game.
 							...(biggest <= 8
 								? [
@@ -3898,7 +3905,7 @@ const blownLeadNote = (
 	if (two) {
 		const l = two.pts[lSide];
 		const w = two.pts[1 - lSide];
-		if (l > w) {
+		if (l !== undefined && w !== undefined && l > w) {
 			const tail = shape.ot > 0 ? " in regulation" : "";
 			return pick(
 				rng,
@@ -5779,8 +5786,8 @@ const leagueNotes = (
 				ot > 0
 					? `${cap(theNick(highest.shape.winner))} and ${theNick(
 							highest.shape.loser,
-						)} put up the slate's biggest total, ${highest.total} points across ${
-							ot === 1 ? "an overtime" : `${ot} overtimes`
+						)} put up the slate's biggest total, ${highest.total} points in ${
+							ot === 1 ? "an overtime game" : `a game that went ${ot} overtimes`
 						}.`
 					: `${cap(theNick(highest.shape.winner))} and ${theNick(
 							highest.shape.loser,
@@ -5869,7 +5876,7 @@ const closeGamesSentence = (games: RecapGame[]): string | undefined => {
 		return `${cap(numWord(close))} of the ${nonExhibition.length} games were decided by five points or fewer.`;
 	}
 	if (ot >= 3) {
-		return `${ot === nonExhibition.length ? "All" : ot} games went to overtime.`;
+		return `${ot === nonExhibition.length ? "All" : cap(numWord(ot))} games went to overtime.`;
 	}
 	return undefined;
 };
@@ -6032,7 +6039,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				? `${topScorer.p.name} led all scorers with ${line} in ${poss(
 						theNick(topScorer.team),
 					)} ${topScore} win over ${theNick(topScorer.opp)}.`
-				: `${topScorer.p.name} led all scorers with ${line} despite ${poss(
+				: `${topScorer.p.name} led all scorers with ${line} in ${poss(
 						theNick(topScorer.team),
 					)} ${topScore} loss to ${theNick(topScorer.opp)}.`,
 		);
@@ -6189,9 +6196,15 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		} else if (shot2 && !shot2.tying) {
 			blurb = `${shot2.name} beat ${theNick(shape.loser)} at the wire, ${scoreTag(shape)}`;
 		} else if (shape.ot > 0) {
-			blurb = `${theNick(shape.winner)} outlasted ${theNick(
-				shape.loser,
-			)} ${scoreTag(shape)} in overtime`;
+			blurb = `${theNick(shape.winner)} ${
+				shape.ot === 1 ? "survived" : "outlasted"
+			} ${theNick(shape.loser)} in ${
+				shape.ot === 1
+					? "overtime"
+					: shape.ot === 2
+						? "double overtime"
+						: `${shape.ot} overtimes`
+			}, ${plainScore(shape)}`;
 		} else if (shape.margin >= 25) {
 			blurb = `${theNick(shape.winner)} routed ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shape.margin <= 3) {
@@ -6254,7 +6267,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			continue;
 		}
 		const gShape = analyzeShape(g);
-		if (coveredGames.has(g) && soFar.includes(scoreTag(gShape))) {
+		if (coveredGames.has(g) && soFar.includes(plainScore(gShape))) {
 			continue;
 		}
 		if (roundupClauses.length < ROUNDUP_CAP) {
@@ -6343,36 +6356,38 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		}
 		// Nothing left after the marquee - a one-game day. Say what the marquee
 		// series now hinges on instead of falling silent.
-		if (seriesBits.length === 0) {
-			const stakes = dayStakesPhrase(marquee, rng);
-			if (stakes) {
-				para3.push(stakes);
-			} else {
-				// A clinch: the wrap had the result and nothing else. Whose season
-				// ended, and how, is the sentence a one-game night was missing.
-				const post = postseasonContext(marquee, mShape, rng);
-				if (post.clinch) {
-					// Where the winner goes next, unless the headline said so.
-					// "Wizards take Game 7 from the Warriors" over "The Warriors are
-					// done for the year" never said the Wizards were through.
-					if (
-						!post.clinch.title &&
-						!/advance|move on|reach|through to|champion/i.test(headline.text)
-					) {
-						para3.push(
-							pick(
-								rng,
-								[
-									`${cap(theNick(mShape.winner))} move on to ${post.clinch.nextRound}.`,
-									`That puts ${theNick(mShape.winner)} in ${post.clinch.nextRound}.`,
-								],
-								"dayClinchNext",
-							),
-						);
-					}
-					if (post.sentences[1]) {
-						para3.push(post.sentences[1]);
-					}
+		const stakes =
+			seriesBits.length === 0 ? dayStakesPhrase(marquee, rng) : undefined;
+		if (stakes) {
+			para3.push(stakes);
+		} else {
+			// A clinch in the marquee game: whose season ended, and how, is the
+			// sentence the wrap was missing - on a one-game night it had the
+			// result and nothing else, and on a two-game night the series line
+			// below skips the marquee, so "the #8 seed puts out the #1 seed" was
+			// never said at all.
+			const post = postseasonContext(marquee, mShape, rng);
+			if (post.clinch) {
+				// Where the winner goes next, unless the headline said so.
+				// "Wizards take Game 7 from the Warriors" over "The Warriors are
+				// done for the year" never said the Wizards were through.
+				if (
+					!post.clinch.title &&
+					!/advance|move on|reach|through to|champion/i.test(headline.text)
+				) {
+					para3.push(
+						pick(
+							rng,
+							[
+								`${cap(theNick(mShape.winner))} move on to ${post.clinch.nextRound}.`,
+								`That puts ${theNick(mShape.winner)} in ${post.clinch.nextRound}.`,
+							],
+							"dayClinchNext",
+						),
+					);
+				}
+				if (post.sentences[1]) {
+					para3.push(post.sentences[1]);
 				}
 			}
 		}
