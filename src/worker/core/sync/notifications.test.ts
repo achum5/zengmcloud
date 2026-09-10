@@ -225,6 +225,42 @@ describe("buildNotifications", () => {
 		assert.ok(notifs[0]!.body.includes("BOS 120-114"), notifs[0]!.body);
 	});
 
+	test("a bye day reads the day's recap: its headline, then its first line", async () => {
+		const notifs = await buildNotifications(
+			"playMenu.day",
+			{
+				changes: [
+					{
+						store: "games",
+						id: 20,
+						type: "put",
+						value: {
+							gid: 20,
+							season: 2026,
+							day: 12,
+							teams: [{ tid: 1 }, { tid: 2 }],
+							won: { tid: 1, pts: 120 },
+							lost: { tid: 2, pts: 114 },
+							// The day's filed recap lives on its lowest-gid game.
+							dayNote:
+								"**Celtics stun the Bulls at the wire**\n\n*Kirk Hinrich pours in 40 · Bulls drop a third straight*\n\nThe Celtics beat the Bulls 120-114 on a buzzer-beater.\n\nElsewhere, nothing much happened.",
+						},
+					},
+					gamePut(21, { tid: 3, pts: 99 }, { tid: 4, pts: 90 }, 12),
+				],
+			},
+			opts,
+		);
+		assert.strictEqual(notifs[0]!.title, "Bye day for the Lakers");
+		assert.strictEqual(
+			notifs[0]!.body,
+			"Celtics stun the Bulls at the wire\nThe Celtics beat the Bulls 120-114 on a buzzer-beater.",
+		);
+		// The column of final scores it replaced, and the deck, are both gone.
+		assert.ok(!notifs[0]!.body.includes("BOS 120-114"), notifs[0]!.body);
+		assert.ok(!notifs[0]!.body.includes("pours in 40"), notifs[0]!.body);
+	});
+
 	test("a bye day opens the slate those games were played on", async () => {
 		const notifs = await buildNotifications(
 			"playMenu.day",

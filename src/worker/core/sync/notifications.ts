@@ -9,6 +9,8 @@ import {
 	coarsenRating,
 	exemptFromCoarseRatings,
 } from "../../../common/coarsenRating.ts";
+import { recapNotificationBody } from "../../../common/recapNotification.ts";
+import { getAutoRecapsForDay } from "../../util/getDayGamesForRecap.ts";
 
 // A push notification to fan out to the OTHER devices in the league room. The
 // acting device (the one whose app is open, that just made the change) writes
@@ -707,6 +709,47 @@ const buildSimNotifications = async (
 			? "standings"
 			: `daily_schedule/${season}/${slateDay}`;
 
+	// The day's own recap, for a team that didn't play: its headline and the
+	// line under it say what the night was, which a column of final scores
+	// never did. Built once and only when somebody actually has a bye - it
+	// runs the recap engine over the whole slate.
+	//
+	// A filed "Day in the League" note wins over the generated one, same as the
+	// daily schedule page. The note lives on the day's lowest-gid game.
+	let dayRecapChecked = false;
+	let dayRecapBody: string | undefined;
+	const getDayRecapBody = async (): Promise<string | undefined> => {
+		if (dayRecapChecked) {
+			return dayRecapBody;
+		}
+		dayRecapChecked = true;
+		if (slateDay === undefined) {
+			return undefined;
+		}
+		try {
+			const dayGames = games.filter((game) => game.day === slateDay);
+			const anchor =
+				dayGames.length > 0
+					? dayGames.reduce((a, b) => (a.gid <= b.gid ? a : b))
+					: undefined;
+			const filed = (anchor as { dayNote?: string } | undefined)?.dayNote;
+			if (filed) {
+				dayRecapBody = recapNotificationBody(filed);
+				return dayRecapBody;
+			}
+			const { dayRecap } = await getAutoRecapsForDay({
+				season,
+				day: slateDay,
+			});
+			dayRecapBody = recapNotificationBody(dayRecap);
+		} catch (error) {
+			// A recap that won't build is not a reason to drop the notification -
+			// the scoreboard fallback below still says what happened.
+			console.error("Day recap for notification failed", error);
+		}
+		return dayRecapBody;
+	};
+
 	for (const tid of userTids) {
 		const team = teamById.get(tid);
 		const teamName = team ? `${team.region} ${team.name}` : "your team";
@@ -727,7 +770,9 @@ const buildSimNotifications = async (
 		// notification above already covers everyone, so skip the bye notice.
 		if (teamGames.length === 0) {
 			if (!isAllStarSim && phase !== PHASE.PLAYOFFS && GAME_PHASES.has(phase)) {
-				const around = biggestGamesText(games, teamById, MAX_BYE_DAY_GAMES);
+				const recap = await getDayRecapBody();
+				const around =
+					recap ?? biggestGamesText(games, teamById, MAX_BYE_DAY_GAMES);
 				notifications.push({
 					title: `Bye day for the ${team?.name ?? "team"}`,
 					body: around ?? `No other games ${period}.`,
