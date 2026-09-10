@@ -2733,7 +2733,11 @@ describe("the extra colour paragraph", () => {
 			player({ name: "Loser Star", pts: 21, reb: 6, fg: 8, fga: 19 }),
 		);
 		const recap = getAutoRecap(twoTeamGame(w, l));
-		assert.ok(/career/i.test(recap), `no career context: ${recap}`);
+		// Any of the pool's shapes: the note does not always say "career".
+		assert.ok(
+			/career|has scored like this one|best scoring season/i.test(recap),
+			`no career context: ${recap}`,
+		);
 	});
 
 	test("nobody is named twice across the whole recap", () => {

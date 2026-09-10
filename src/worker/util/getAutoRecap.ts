@@ -2298,7 +2298,7 @@ const flowSentence = (
 // Which team-level fact a note is built on, so two sentences can't both spend
 // it ("The Nets turned 19 Magic turnovers into offense. ... The Magic were
 // undone by 19 turnovers.").
-type StatFact = "loserTov" | "loserFgp" | "other";
+type StatFact = "loserTov" | "loserFgp" | "loserThrees" | "other";
 
 // What a team-stat sentence is ABOUT, so paragraph three doesn't spend its one
 // three-point observation restating the one paragraph one already made. This
@@ -2843,6 +2843,20 @@ const loserSentence = (
 			],
 			"loserFgp",
 		);
+	} else if (stats.tpa >= 25 && stats.tpp <= 28 && !spent.has("loserThrees")) {
+		// Why they lost, in the same sentence as who tried hardest to stop it,
+		// instead of a bare "The Nets shot 25% from three on 32 attempts" two
+		// paragraphs away.
+		spent.add("loserThrees");
+		reason = pick(
+			rng,
+			[
+				`, but they went ${stats.tp}-of-${stats.tpa} from three`,
+				`, though the threes would not fall - ${stats.tp}-of-${stats.tpa}`,
+				`, on a night they shot ${stats.tpp}% from deep`,
+			],
+			"loserThrees",
+		);
 	}
 
 	if (leader && (leader.pts >= 18 || doubleCategories(leader).length >= 2)) {
@@ -3319,7 +3333,9 @@ const vsAverageNote = (
 			rng,
 			[
 				`${star.name} came into the night averaging ${avg.pts.toFixed(1)} points a game and ${beat}.`,
-				`That is ${Math.round(over)} more than the ${avg.pts.toFixed(1)} a game ${star.name} had been averaging.`,
+				// Not "That is 13 more...": this can open a paragraph now, with
+				// his line a paragraph back, so it names the number it means.
+				`The ${star.pts} were ${Math.round(over)} more than the ${avg.pts.toFixed(1)} a game ${star.name} had been averaging.`,
 				`${star.name} had been averaging ${avg.pts.toFixed(1)} points a game, and he ${beat}.`,
 				`It was a long way past the ${avg.pts.toFixed(1)} a night ${star.name} had been putting up.`,
 			],
@@ -4453,14 +4469,13 @@ export const getAutoRecap = (game: RecapGame): string => {
 		}
 	}
 
-	// Paragraph 2: supporting cast, the losing side, stakes, and injuries. The
-	// postseason context leads it when this is a playoff game.
-	const para2: string[] = [];
-	// Under a headline that already carries the series result ("close out the
-	// Bulls in six", "sweep", "Game 7"), the clinch sentence is the headline
-	// again with the tense changed; the paragraph opens on whose season ended
-	// instead. A headline that only names the round the winner reached still
-	// leaves the series score to the body.
+	// THE ORDER A REPORTER WRITES IN. What happened (the lede, above), then
+	// how it happened, then who did it - the winner's men, then the losers -
+	// and last what it means. The sentences used to be grouped by where they
+	// came from (star line, supporting cast, whatever extras fired), which
+	// put "an 18-0 run in the first" after the box-score names and a team's
+	// three-point shooting next to its bench scorer, and read as sentences
+	// thrown in at random.
 	const postSentences = headline.spentState
 		? // "The Cavaliers are up 2-1 in the First Round" under "Cavaliers take
 			// a 2-1 series lead" is the same numbers twice; the stakes sentence
@@ -4492,35 +4507,15 @@ export const getAutoRecap = (game: RecapGame): string => {
 					...post.sentences.slice(1),
 				]
 			: post.sentences;
-	if (postSentences.length > 0) {
-		para2.push(postSentences[0]!);
-	}
-	const support = supportSentence(shape, star, rng, heroTold);
-	if (support) {
-		para2.push(support);
-	}
-	const loser = loserSentence(shape, rng, spentFacts, headline.spentLoserStar);
-	if (loser) {
-		para2.push(loser);
-	}
-	// Fill out with the remaining angles, seed-ordered for variety.
-	// A "neither offense got going" note and a "pulled away after halftime" note
-	// are two readings of the same game arguing with each other. The grind is the
-	// more distinctive observation, so it wins.
+
+	// --- 1. How it happened: the rest of the game story joins the lede. ---
+	//
+	// A "neither offense got going" note and a "pulled away after halftime"
+	// note are two readings of the same game arguing with each other. The
+	// grind is the more distinctive observation, so it wins.
 	const combined = combinedNote(shape, rng);
-	// Who the piece has named by the time the extras are chosen. Built the same
-	// way paragraph three builds its own - by reading the text, so it cannot
-	// drift from what is actually on the page.
-	const namedInPara2 = namesIn(
-		[headline.text, ...para1, ...para2].join(" "),
-		shape,
-	);
-	// Tiers, shuffled within and never across: what happened in the game,
-	// then what it means for the season, then who was missing. Shuffled all
-	// together, "ran their streak to 5" landed between "led by as many as 13"
-	// and the injury list - three facts with nothing to do with each other.
 	const written1 = [headline.text, ...para1].join(" ");
-	const gameTier = shuffle(rng, [
+	const howItHappened = [
 		// A "took over in the fourth, 23-11" flow line and a "40-22 over the
 		// last two quarters" note are the same stretch of the game measured
 		// twice, so a run already told stands in for the half.
@@ -4528,11 +4523,141 @@ export const getAutoRecap = (game: RecapGame): string => {
 			? undefined
 			: secondHalfNote(shape, rng),
 		combined,
-		blownLeadNote(game, shape, rng, written1),
 		runNote(game, shape, rng),
-		plusMinusNote(shape, star, rng, namedInPara2),
-	]);
-	const seasonTier = shuffle(rng, [
+		blownLeadNote(game, shape, rng, written1),
+	].filter((x): x is string => !!x);
+	for (const e of howItHappened) {
+		if (para1.length >= 5) {
+			break;
+		}
+		para1.push(e);
+	}
+	// Where the series stands is part of what happened, and closes the lede
+	// unless the headline said it.
+	if (postSentences[0] && para1.length < 6) {
+		para1.push(postSentences[0]);
+	}
+	const spentThrees = () =>
+		spentTopics.has("threes") || spentFacts.has("loserThrees");
+
+	// --- 2. Who did it: the winners. The man in the lede first - what his
+	// night was against his own season - then the men around him. ---
+	const winners: string[] = [];
+	let writtenSoFar = [headline.text, ...para1].join(" ");
+	const addWinner = (beat: () => string | undefined, cap = 5) => {
+		if (winners.length >= cap) {
+			return;
+		}
+		const text = beat();
+		if (text) {
+			winners.push(text);
+			writtenSoFar = `${writtenSoFar} ${text}`;
+		}
+	};
+	// The career arc first: it is the rarest note and the one a season
+	// high or an against-his-average line would otherwise crowd out.
+	const starColour = [
+		() => careerArcNote(star, game.playoffs, rng),
+		() =>
+			vsAverageNote(
+				shape,
+				star,
+				game.playoffs,
+				rng,
+				/averaging|average/.test(writtenSoFar),
+				writtenSoFar.includes(`${star.fg}-of-${star.fga}`),
+			),
+		() => playerStreakBeat(star, rng),
+		() => playerHighBeat(star, rng, writtenSoFar),
+		() => vsOpponentBeat(star, nick(shape.loser), rng),
+	];
+	// Two notes on the star at most; the paragraph is about the team.
+	for (const beat of starColour) {
+		addWinner(beat, 2);
+	}
+	addWinner(() => supportSentence(shape, star, rng, heroTold));
+	addWinner(() =>
+		plusMinusNote(shape, star, rng, namesIn(writtenSoFar, shape)),
+	);
+	addWinner(() =>
+		balanceNote(shape, rng, {
+			dblFig: /in double figures|double figures/.test(writtenSoFar),
+			assists: /assists?\b/.test(writtenSoFar),
+		}),
+	);
+
+	// --- 3. The losers: their best man and why it was not enough, then the
+	// rest of what they got, then the individual notes. ---
+	const losers: string[] = [];
+	const addLoser = (beat: () => string | undefined, cap = 5) => {
+		if (losers.length >= cap) {
+			return;
+		}
+		const text = beat();
+		if (text) {
+			losers.push(text);
+			writtenSoFar = `${writtenSoFar} ${text}`;
+		}
+	};
+	addLoser(() =>
+		loserSentence(shape, rng, spentFacts, headline.spentLoserStar),
+	);
+	// The two sides' shooting, told as the reason the losers lost: the
+	// three-point line and the free-throw line sit with the side they
+	// explain rather than three paragraphs from it.
+	for (const beat of shuffle(rng, [
+		() => threeNote(shape, rng, spentThrees()),
+		() => freeThrowNote(shape, rng, spentTopics.has("freeThrows")),
+	])) {
+		addLoser(beat, 3);
+	}
+	const said = namesIn(writtenSoFar, shape);
+	said.add(star.name);
+	addLoser(() => loserSupportNote(shape, rng, said));
+	const loserBest = bestOf(shape.loser.players);
+	// The losing side's best man had a season high of his own - only once
+	// the piece has introduced him, so the sentence has a line to refer to.
+	addLoser(() =>
+		loserBest && loserBest !== star && said.has(loserBest.name)
+			? playerHighBeat(loserBest, rng, writtenSoFar)
+			: undefined,
+	);
+	// The defensive note can be either side's man, so it waits until the
+	// losers' best has had his sentence - named first for his steals, he
+	// came back a sentence later as "His 18 points...".
+	for (const beat of shuffle(rng, [
+		() => defensiveNote(shape, rng, said),
+		() => foulOutNote(shape, said, rng),
+		() => minutesNote(shape, said),
+	])) {
+		addLoser(beat);
+	}
+
+	// --- 4. What it means: the series, the season, who was missing, and
+	// what is next. ---
+	const context: string[] = [];
+	const beatCtx: BeatContext = {
+		game,
+		winner: shape.winner,
+		loser: shape.loser,
+		margin: shape.margin,
+		said,
+		written: writtenSoFar,
+	};
+	const addContext = (beat: () => string | undefined, cap = 5) => {
+		if (context.length >= cap) {
+			return;
+		}
+		const text = beat();
+		if (text) {
+			context.push(text);
+			beatCtx.written = `${beatCtx.written} ${text}`;
+		}
+	};
+	for (const text of postSentences.slice(1)) {
+		addContext(() => text);
+	}
+	addContext(() =>
 		stakesSentence(
 			game,
 			shape,
@@ -4540,136 +4665,11 @@ export const getAutoRecap = (game: RecapGame): string => {
 			/underdog|-point dogs|the wrong side of the line/.test(headline.text),
 			/in a row|straight|skid|losing streak/.test(written1),
 		),
-	]);
-	const extras = [postSentences[1], ...gameTier, ...seasonTier].filter(
-		(s): s is string => !!s,
 	);
-	// Last, and never dropped: who was missing is a fact a reader checks the
-	// recap for, so the paragraph keeps a slot for it however much else the
-	// game gave.
-	const injury = injurySentence(shape, !!game.playoffs, rng);
-	for (const e of extras) {
-		if (para2.length >= (injury ? 5 : 6)) {
-			break;
-		}
-		para2.push(e);
-	}
-	if (injury) {
-		para2.push(injury);
-	}
-
-	// Paragraph 3: the detail a beat writer fills a column with once the result
-	// has been told - what the star's night was against his own season, how the
-	// two sides shot it, who got to the line, how either club has been playing.
-	// All optional, so a forgettable game still gets a short recap and only a
-	// game with things to say runs long.
-	//
-	// Everyone already named, so this paragraph introduces new faces instead of
-	// re-describing the same two men a third time.
-	// The HEADLINE counts too. A losing star named up top had his line skipped by
-	// the loser sentence, then the support note printed it again down here.
-	const alreadyWritten = [headline.text, ...para1, ...para2].join(" ");
-	const said = namesIn(alreadyWritten, shape);
-	said.add(star.name);
-	// Same idea for the two team totals paragraph 2 can hand out on its own.
-	const toldAlready = {
-		dblFig: /in double figures|double figures/.test(alreadyWritten),
-		assists: /assists?\b/.test(alreadyWritten),
-	};
-
-	// Ordered, not shuffled: the man who decided the game comes before how the
-	// two sides shot it, which comes before the bookkeeping. Within each tier the
-	// seed still varies which angles appear at all, so no two recaps line up.
-	const loserBest = bestOf(shape.loser.players);
-	// Built one sentence at a time, for the same reason paragraph four is: a
-	// beat has to see what the beats before it said. The season-high sentence
-	// and the against-his-average sentence are the same observation with
-	// different arithmetic, and they were landing back to back.
-	const para3: string[] = [];
-	let para3Written = alreadyWritten;
-	const addColour = (beat: () => string | undefined) => {
-		if (para3.length >= 6) {
-			return;
-		}
-		const text = beat();
-		if (text) {
-			para3.push(text);
-			para3Written = `${para3Written} ${text}`;
-		}
-	};
-	addColour(() =>
-		vsAverageNote(
-			shape,
-			star,
-			game.playoffs,
-			rng,
-			/averaging|average/.test(alreadyWritten),
-			alreadyWritten.includes(`${star.fg}-of-${star.fga}`),
-		),
-	);
-	addColour(() => careerArcNote(star, game.playoffs, rng));
-	// The night against his own season: a season high, the streak he is on,
-	// and what he had done to this opponent before tonight.
-	addColour(() => playerHighBeat(star, rng, para3Written));
-	addColour(() => playerStreakBeat(star, rng));
-	addColour(() => vsOpponentBeat(star, nick(shape.loser), rng));
-	for (const beat of shuffle(rng, [
-		() => threeNote(shape, rng, spentTopics.has("threes")),
-		() => freeThrowNote(shape, rng, spentTopics.has("freeThrows")),
-		() => balanceNote(shape, rng, toldAlready),
-	])) {
-		addColour(beat);
-	}
-	addColour(() => loserSupportNote(shape, rng, said));
-	// The losing side's best man had a season high of his own - only once the
-	// piece has introduced him, so the sentence has a line to refer to.
-	addColour(() =>
-		loserBest && loserBest !== star && said.has(loserBest.name)
-			? playerHighBeat(loserBest, rng, para3Written)
-			: undefined,
-	);
-	for (const beat of shuffle(rng, [
-		() => defensiveNote(shape, rng, said),
-		() => foulOutNote(shape, said, rng),
-		() => minutesNote(shape, said),
-	])) {
-		addColour(beat);
-	}
-	addColour(() => spreadNote(game, shape, rng));
-
-	// Paragraph 4: the season around the game. What the result did in the
-	// standings, the series with this opponent, the venue records, the
-	// schedule, recent form, a round number passed, the man back from injury,
-	// what the bench gave - and, last, who is up next. Every beat reads the
-	// context getDayGamesForRecap derives (recapContext.ts) and says nothing
-	// when there is nothing true to say, so a game with no story around it
-	// ends after paragraph three.
-	const beatCtx: BeatContext = {
-		game,
-		winner: shape.winner,
-		loser: shape.loser,
-		margin: shape.margin,
-		said,
-		written: [headline.text, ...para1, ...para2, ...para3].join(" "),
-	};
-	// Built one sentence at a time, not as a list of calls: a beat has to see
-	// what the beats before it said. Evaluating them all at once meant the
-	// average-against-the-season sentence could not tell that the season-high
-	// sentence two slots earlier had just described the same points.
-	const para4: string[] = [];
-	const addBeat = (beat: () => string | undefined) => {
-		if (para4.length >= 3) {
-			return;
-		}
-		const text = beat();
-		if (text) {
-			para4.push(text);
-			beatCtx.written = `${beatCtx.written} ${text}`;
-		}
-	};
-	addBeat(() => teamHighBeat(beatCtx, rng));
-	addBeat(() => standingsBeat(beatCtx, rng));
-	addBeat(() => formNote(shape, rng, beatCtx.written));
+	addContext(() => spreadNote(game, shape, rng));
+	addContext(() => teamHighBeat(beatCtx, rng));
+	addContext(() => standingsBeat(beatCtx, rng));
+	addContext(() => formNote(shape, rng, beatCtx.written));
 	for (const beat of shuffle(rng, [
 		() => scoringNormBeat(beatCtx, rng),
 		() => seriesShapeBeat(beatCtx, rng),
@@ -4680,42 +4680,51 @@ export const getAutoRecap = (game: RecapGame): string => {
 		() => returnBeat(beatCtx, rng),
 		() => benchBeat(beatCtx, rng),
 	])) {
-		addBeat(beat);
+		addContext(beat);
+	}
+	// Never dropped: who was missing is a fact a reader checks the recap
+	// for, so it gets its slot however much else the game gave.
+	const injury = injurySentence(shape, !!game.playoffs, rng);
+	if (injury) {
+		context.push(injury);
 	}
 	const closer = nextGameBeat(beatCtx, rng);
 	if (closer) {
-		para4.push(closer);
+		context.push(closer);
 	}
 
-	// A lone extra sentence isn't a paragraph - it reads as an orphan under two
-	// full ones. Fold it into the second and let the subject dedupe treat it as
-	// part of that paragraph, so a repeated name collapses to a pronoun.
-	//
-	// Only while there's room. Paragraph two runs to six sentences of its own,
-	// and folding a seventh on the end builds a wall - which is exactly what
-	// started happening once the duplicate-topic guard began emptying paragraph
-	// three. A one-line closing note is ordinary in a real recap; a seven-line
-	// middle paragraph is not.
+	// Paragraphing. The two people paragraphs are one when together they are
+	// short; a lone sentence is never a paragraph of its own.
+	let para2: string[];
+	let para3: string[];
+	if (winners.length + losers.length <= 4) {
+		para2 = [...winners, ...losers];
+		para3 = context;
+	} else {
+		para2 = winners;
+		para3 = losers;
+	}
+	let para4: string[] = para3 === context ? [] : context;
 	if (para4.length === 1 && para3.length > 0 && para3.length <= 4) {
 		para3.push(para4.pop()!);
 	}
 	if (para3.length === 1 && para2.length > 0 && para2.length <= 4) {
-		para2.push(para3.pop()!);
+		para2.push(para3.shift()!);
+		para3 = para4;
+		para4 = [];
 	}
-	// Same at the top. A lede of one bare result sentence happens when the
-	// headline already spent the star's line and the game had no comeback or
-	// decisive run to describe; pull the next beat up rather than leave the
-	// opening paragraph a single clause.
+	// A lede of one bare result sentence happens when the headline already
+	// spent the star's line and the game had no comeback or decisive run to
+	// describe; pull the next beat up rather than leave the opening paragraph
+	// a single clause.
 	if (para1.length === 1 && para2.length > 1) {
 		para1.push(para2.shift()!);
 	}
-	// A middle paragraph of one supporting-cast sentence is an orphan too. It
-	// belongs with the lead - the winner's second man is part of how the game
-	// was won - and the paragraphs below move up.
-	if (para2.length === 1 && para1.length <= 3 && para3.length > 0) {
+	if (para2.length === 1 && para1.length <= 3) {
 		para1.push(para2.shift()!);
-		para2.push(...para3.splice(0));
-		para3.push(...para4.splice(0));
+		para2 = para3;
+		para3 = para4;
+		para4 = [];
 	}
 
 	const otherNick = nick(shape.loser);
