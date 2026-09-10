@@ -156,6 +156,7 @@ const wrappedBaseballDecision = (p: DecisionPlayer, hideRecord: boolean) => {
 };
 
 const PlayerGameLog = ({
+	amateurUniform,
 	appearanceTeams,
 	bestPos,
 	customMenu,
@@ -377,6 +378,7 @@ const PlayerGameLog = ({
 	return (
 		<>
 			<TopStuff
+				amateurUniform={amateurUniform}
 				appearanceTeams={appearanceTeams}
 				bestPos={bestPos}
 				currentSeason={currentSeason}

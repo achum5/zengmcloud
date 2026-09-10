@@ -284,6 +284,7 @@ const ComparePlayerButton = ({
 };
 
 const TopStuff = ({
+	amateurUniform,
 	appearanceTeams,
 	bestPos,
 	currentSeason,
@@ -306,6 +307,7 @@ const TopStuff = ({
 	willingToSign,
 }: Pick<
 	View<"player">,
+	| "amateurUniform"
 	| "appearanceTeams"
 	| "bestPos"
 	| "jerseyNumberInfos"
@@ -574,6 +576,7 @@ const TopStuff = ({
 								seasons={careerSeasons}
 								player={player}
 								teams={appearanceTeams}
+								amateurUniform={amateurUniform}
 								highlightSeason={season}
 								onRevert={(revertSeason) => {
 									// The view reloads on playerMovement, so the gallery

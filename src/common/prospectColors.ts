@@ -505,19 +505,33 @@ export const collegeColors = (college: string | undefined) =>
 export const countryColors = (bornLoc: string | undefined) =>
 	COUNTRY_COLORS[helpers.getCountry(bornLoc)];
 
-// What a draft prospect wears: his college's colors, or his country's when he
-// did not go to college (or the college is one we have no colors for).
+// What a player wore before he was drafted: his college's colors, or his
+// country's when he did not go to college (or the college is one we have no
+// colors for). Says nothing about where he is now - his pre-draft seasons are
+// still college seasons after he has been drafted, which is what the career
+// gallery's first stint is showing.
+export const amateurUniform = (p: {
+	college?: string;
+	born?: { loc?: string };
+}): { colors: Colors; jersey: string; label?: string } => {
+	// Where he came from, in his own words: the college field holds whatever
+	// he is listed with, a high school included. Failing that, his country.
+	const country = helpers.getCountry(p.born?.loc);
+	return {
+		colors:
+			collegeColors(p.college) ??
+			countryColors(p.born?.loc) ??
+			DEFAULT_TEAM_COLORS,
+		jersey: DEFAULT_JERSEY,
+		label: p.college || (country === "None" ? undefined : country),
+	};
+};
+
+// The uniform to draw a player in RIGHT NOW when he has no team: only a draft
+// prospect has one, since everyone else is drawn in his team's colors.
 export const prospectUniform = (p: {
 	tid: number;
 	college?: string;
 	born?: { loc?: string };
-}): { colors: Colors; jersey: string } | undefined => {
-	if (!isDraftProspect(p)) {
-		return undefined;
-	}
-	const colors =
-		collegeColors(p.college) ??
-		countryColors(p.born?.loc) ??
-		DEFAULT_TEAM_COLORS;
-	return { colors, jersey: DEFAULT_JERSEY };
-};
+}): { colors: Colors; jersey: string } | undefined =>
+	isDraftProspect(p) ? amateurUniform(p) : undefined;

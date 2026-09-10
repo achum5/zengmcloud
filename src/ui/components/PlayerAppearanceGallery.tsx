@@ -71,11 +71,36 @@ export const groupSeasonsByUniform = (
 // A teamless stretch at the very start is the years before he was drafted -
 // the scouting pool, not a gap in a career. Later on, teamless means what it
 // says: he was out of the league that year.
-export const stintLabel = (stint: UniformStint, index: number): string => {
+export const stintLabel = (
+	stint: UniformStint,
+	index: number,
+	// Where he was playing instead - his college (or high school, whichever he
+	// is listed with), else his country.
+	amateurLabel?: string,
+): string => {
 	if (stint.team) {
 		return `${stint.team.region} ${stint.team.name}`;
 	}
-	return index === 0 ? "Draft prospect" : "No team";
+	if (index !== 0) {
+		return "No team";
+	}
+	return amateurLabel ? `Draft prospect (${amateurLabel})` : "Draft prospect";
+};
+
+// What a stint is drawn in. A team stint wears the team; the teamless stretch
+// at the very START of a career is the pre-draft years (see stintLabel), so it
+// wears his college's or country's colors. A teamless stretch later on is a
+// year out of the league, and stays neutral - he was not at college that year.
+export const stintUniform = (
+	stint: UniformStint,
+	index: number,
+	amateurUniform?: { colors: [string, string, string]; jersey?: string },
+): { colors: [string, string, string]; jersey: string } => {
+	const amateur = !stint.team && index === 0 ? amateurUniform : undefined;
+	return {
+		colors: stint.team?.colors ?? amateur?.colors ?? DEFAULT_TEAM_COLORS,
+		jersey: stint.team?.jersey ?? amateur?.jersey ?? DEFAULT_JERSEY,
+	};
 };
 
 // The stint heading's mark, logo or dot. One size for both so every team name
@@ -105,6 +130,7 @@ export const PlayerAppearanceGallery = ({
 	seasons,
 	player,
 	teams,
+	amateurUniform,
 	highlightSeason,
 	onHide,
 	onRevert,
@@ -122,6 +148,14 @@ export const PlayerAppearanceGallery = ({
 	// the neutral default rather than being papered over with whatever team he
 	// happens to be on today.
 	teams?: Record<number, AppearanceTeam | undefined>;
+	// His college's (or country's) colors, for the teamless stretch at the very
+	// start - the scouting-pool years, which he spent in a college uniform
+	// rather than in nobody's.
+	amateurUniform?: {
+		colors: [string, string, string];
+		jersey?: string;
+		label?: string;
+	};
 	highlightSeason?: number;
 	onHide: () => void;
 	// Put one season's look back to the season before it. Omitted where there
@@ -162,8 +196,11 @@ export const PlayerAppearanceGallery = ({
 			<Modal.Body>
 				{stints.map((stint, i) => {
 					const team = stint.team;
-					const stintColors = team?.colors ?? DEFAULT_TEAM_COLORS;
-					const stintJersey = team?.jersey ?? DEFAULT_JERSEY;
+					const { colors: stintColors, jersey: stintJersey } = stintUniform(
+						stint,
+						i,
+						amateurUniform,
+					);
 
 					const logo = team?.imgURLSmall ?? team?.imgURL;
 
@@ -191,7 +228,7 @@ export const PlayerAppearanceGallery = ({
 									</span>
 								)}
 								<span className="fw-bold text-truncate">
-									{stintLabel(stint, i)}
+									{stintLabel(stint, i, amateurUniform?.label)}
 								</span>
 								{team?.jerseyNumber ? (
 									<span className="text-body-secondary">

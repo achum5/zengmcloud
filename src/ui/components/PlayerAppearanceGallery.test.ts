@@ -3,6 +3,7 @@ import {
 	formatSeasonRange,
 	groupSeasonsByUniform,
 	stintLabel,
+	stintUniform,
 	type AppearanceTeam,
 } from "./PlayerAppearanceGallery.tsx";
 
@@ -129,6 +130,48 @@ describe("stintLabel", () => {
 	// Mid-career, teamless means exactly what it says.
 	test("a teamless stretch later on is a year out of the league", () => {
 		assert.strictEqual(stintLabel({ seasons: [2013] }, 2), "No team");
+	});
+
+	test("the scouting pool names where he was playing", () => {
+		assert.strictEqual(
+			stintLabel({ seasons: [2013] }, 0, "Arizona"),
+			"Draft prospect (Arizona)",
+		);
+		assert.strictEqual(
+			stintLabel({ seasons: [2013] }, 0, "Slovenia"),
+			"Draft prospect (Slovenia)",
+		);
+		// Not on a stretch out of the league - he was not at college that year.
+		assert.strictEqual(
+			stintLabel({ seasons: [2018] }, 3, "Arizona"),
+			"No team",
+		);
+	});
+});
+
+describe("stintUniform", () => {
+	const ARIZONA: [string, string, string] = ["#cc0033", "#003366", "#ffffff"];
+	const amateur = { colors: ARIZONA, jersey: "jersey3" };
+
+	test("a team stint wears the team", () => {
+		const uniform = stintUniform({ team: BOS, seasons: [2009] }, 0, amateur);
+		assert.deepStrictEqual(uniform.colors, BOS.colors);
+	});
+
+	test("the scouting-pool years wear his college", () => {
+		const uniform = stintUniform({ seasons: [2013, 2014] }, 0, amateur);
+		assert.deepStrictEqual(uniform.colors, ARIZONA);
+		assert.strictEqual(uniform.jersey, "jersey3");
+	});
+
+	test("a year out of the league is not a college year", () => {
+		const uniform = stintUniform({ seasons: [2018] }, 2, amateur);
+		assert.notDeepEqual(uniform.colors, ARIZONA);
+	});
+
+	test("no college and no country falls back to neutral", () => {
+		const uniform = stintUniform({ seasons: [2013] }, 0, undefined);
+		assert.strictEqual(uniform.colors.length, 3);
 	});
 });
 

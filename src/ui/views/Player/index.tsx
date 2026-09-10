@@ -27,6 +27,7 @@ import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
 import Impact from "./Impact.tsx";
 
 const Player2 = ({
+	amateurUniform,
 	appearanceTeams,
 	bestPos,
 	contractValues,
@@ -145,6 +146,7 @@ const Player2 = ({
 	return (
 		<>
 			<TopStuff
+				amateurUniform={amateurUniform}
 				appearanceTeams={appearanceTeams}
 				bestPos={bestPos}
 				currentSeason={currentSeason}

@@ -1,4 +1,7 @@
-import { prospectUniform } from "../../common/prospectColors.ts";
+import {
+	amateurUniform,
+	prospectUniform,
+} from "../../common/prospectColors.ts";
 import {
 	PLAYER,
 	PLAYER_STATS_TABLES,
@@ -696,6 +699,7 @@ export const getCommon = async (
 		bestPos,
 		customMenu,
 		tradingCards,
+		amateurUniform: amateurUniform(p),
 		appearanceTeams,
 		jerseyNumberInfos,
 		noteTeammates,
