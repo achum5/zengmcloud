@@ -391,18 +391,27 @@ export const scoredVerb = (rng: () => number): string =>
 
 // "34 points, 12 rebounds and 9 assists" - points first, then up to two more
 // categories worth mentioning (double-double stats always make the cut).
-export const statPhrase = (p: RecapPlayer, maxExtras = 2): string => {
+export const statPhrase = (
+	p: RecapPlayer,
+	maxExtras = 2,
+	// Lower bars for the extras, for a story pick whose all-round line is the
+	// reason he is the story.
+	loose = false,
+): string => {
 	const dd = new Set(doubleCategories(p));
+	const min = loose
+		? { reb: 6, ast: 5, stl: 3, blk: 3 }
+		: { reb: 8, ast: 6, stl: 4, blk: 4 };
 	// [sortWeight, order, text]. Steals and blocks are rarer and more telling,
 	// so they're weighted up - a 6-block night should out-rank a 7-assist one
 	// when trimming. The weight decides what makes the cut; the ORDER is the
 	// one every box score uses, because "36 points, 5 steals, and 8 assists"
 	// reads like nobody has seen a stat line.
 	const extras: [number, number, string][] = [];
-	if (p.reb >= 8 || dd.has("rebounds")) {
+	if (p.reb >= min.reb || dd.has("rebounds")) {
 		extras.push([p.reb, 0, plural(p.reb, "rebound")]);
 	}
-	if (p.ast >= 6 || dd.has("assists")) {
+	if (p.ast >= min.ast || dd.has("assists")) {
 		extras.push([p.ast, 1, plural(p.ast, "assist")]);
 	}
 	// Five stocks split 3-and-2 is why the story pick landed on a 19-point
@@ -410,10 +419,10 @@ export const statPhrase = (p: RecapPlayer, maxExtras = 2): string => {
 	// like a mistake. A 29-point night needs no such help, and "29 points, 2
 	// steals, and 3 blocks" is a box score, not a sentence.
 	const stocks = p.stl + p.blk >= 5 && p.pts < 22;
-	if (p.stl >= 4 || dd.has("steals") || (stocks && p.stl >= 2)) {
+	if (p.stl >= min.stl || dd.has("steals") || (stocks && p.stl >= 2)) {
 		extras.push([p.stl * 1.7, 2, plural(p.stl, "steal")]);
 	}
-	if (p.blk >= 4 || dd.has("blocks") || (stocks && p.blk >= 2)) {
+	if (p.blk >= min.blk || dd.has("blocks") || (stocks && p.blk >= 2)) {
 		extras.push([p.blk * 1.7, 3, plural(p.blk, "block")]);
 	}
 	extras.sort((a, b) => b[0] - a[0]);

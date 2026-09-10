@@ -1821,10 +1821,16 @@ const buildHeadlineText = (
 	const starHasDouble = ddCount >= 2;
 	const outscoredByLoser =
 		!starHasDouble && loserStar !== undefined && loserStar.pts >= star.pts + 6;
+	// Same on his own side: "Pelicans take down the Pacers behind Miles
+	// Ingram's 19" on a night a teammate had 28 is the wrong man in lights.
+	const outscoredByTeammate =
+		!starHasDouble &&
+		shape.winner.players.some((p) => p !== star && p.pts >= star.pts + 6);
 	const useResult =
 		(!starHasDouble && star.pts < 17) ||
 		(!starHasDouble && star.pts < 20 && shape.margin >= 15) ||
 		outscoredByLoser ||
+		outscoredByTeammate ||
 		(shape.margin >= 18 && rng() < 0.5) ||
 		(snappedSkid(shape) !== undefined && rng() < 0.7);
 	const text = pick(
@@ -1976,7 +1982,17 @@ const leadSentence = (
 		subject = `${star.name}, who came in averaging ${line.pts} points a game,`;
 	}
 
-	const statText = statPhrase(star);
+	// The story pick is made on the whole line, so a 19-point night with 7
+	// rebounds, 5 assists and 3 steals can be the story over a 28-point one.
+	// Printed as "19 points" alone it looks like the wrong man; when he is not
+	// the top scorer and his line would come out points-only, let the
+	// all-round numbers in at a lower bar.
+	const topPts = Math.max(...shape.winner.players.map((p) => p.pts));
+	const plain = statPhrase(star);
+	const statText =
+		plain === plural(star.pts, "point") && star.pts < topPts
+			? statPhrase(star, 2, true)
+			: plain;
 	const flourishText = flourish ? ` ${flourish}` : "";
 	// A triple-double (or bigger) deserves a strong verb even when the point total
 	// is modest - "chipped in 18, 12 and 12" undersells it.
@@ -5198,7 +5214,12 @@ const dayHeadline = (
 		if (ss && ss.wAfter === ss.need - 1 && ss.lBefore === ss.need - 1) {
 			const bestOf = marquee.series!.bestOf!;
 			const decider = bestOf === 7 ? "a Game 7" : `a decisive Game ${bestOf}`;
-			return hl(`${w} force ${decider} with ${l}`);
+			// A 50-point night that forced it belongs in the headline too.
+			return hl(
+				mStar && mStar.pts >= 35
+					? `${mStar.name} scores ${mStar.pts} as ${tw} force ${decider} with ${l}`
+					: `${w} force ${decider} with ${l}`,
+			);
 		}
 		if (/staved off elimination/.test(joined)) {
 			return hl(
