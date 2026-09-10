@@ -3306,12 +3306,21 @@ const vsAverageNote = (
 	// A big night ONLY counts as a departure if it's both a large absolute jump
 	// and a large relative one - 28 from a 24-point scorer is Tuesday.
 	if (star.pts >= 20 && over >= 11 && star.pts >= avg.pts * 1.5) {
+		// Each shape closes the comparison itself. "He had been averaging 15.6
+		// to this point." on its own left the reader to work out what tonight
+		// had to do with it.
+		const beat =
+			star.pts >= avg.pts * 2.5
+				? "more than doubled it"
+				: star.pts >= avg.pts * 2
+					? "doubled it"
+					: "went a long way past it";
 		return pick(
 			rng,
 			[
-				`${star.name} came into the night averaging ${avg.pts.toFixed(1)} points a game.`,
+				`${star.name} came into the night averaging ${avg.pts.toFixed(1)} points a game and ${beat}.`,
 				`That is ${Math.round(over)} more than the ${avg.pts.toFixed(1)} a game ${star.name} had been averaging.`,
-				`${star.name} had been averaging ${avg.pts.toFixed(1)} points a game to this point.`,
+				`${star.name} had been averaging ${avg.pts.toFixed(1)} points a game, and he ${beat}.`,
 				`It was a long way past the ${avg.pts.toFixed(1)} a night ${star.name} had been putting up.`,
 			],
 			"vsAvgHigh",
@@ -4906,6 +4915,10 @@ const gameBlurb = (
 const conferencePictureSentence = (
 	standings: RecapDayStandings | undefined,
 	rng: () => number,
+	// Teams this sentence names, so the movers beat after it does not say
+	// "the Grizzlies climbed to first" right under "the Grizzlies are 1 game
+	// clear at the top".
+	said?: Set<number>,
 ): string | undefined => {
 	if (!standings || standings.confs.length === 0) {
 		return undefined;
@@ -4921,6 +4934,9 @@ const conferencePictureSentence = (
 		// something once a real sample exists.
 		if (leader.won + leader.lost < 5) {
 			continue;
+		}
+		if (leader.tid !== undefined) {
+			said?.add(leader.tid);
 		}
 		// Nicknames, like every other team reference in the piece. "Cleveland
 		// Cavaliers (47-4) lead the Eastern Conference" in a paragraph that has
@@ -5990,10 +6006,16 @@ const dayDeck = (
 // verb chosen to fit the margin (a blowout "routs", a nail-biter "edges"). `seq`
 // rotates the verb DETERMINISTICALLY through the bucket, so a long roundup reads
 // "beat ... downed ... got past ..." instead of "beat ... beat ... beat".
-const roundupClause = (shape: Shape, seq: number): string => {
+const roundupClause = (game: RecapGame, shape: Shape, seq: number): string => {
 	const w = theNick(shape.winner);
 	const l = theNick(shape.loser);
 	let pool: string[];
+	// A game won at the wire that the deck has already flagged still lands
+	// here for its score; "edged" undersells what the deck just said.
+	const shot = clutchShot(game);
+	if (shot && !shot.tying) {
+		return `${w} beat ${l} at the wire, ${scoreTag(shape)}`;
+	}
 	// "The Nets blew out the Bulls" is not how a game they trailed by 17
 	// reads, whatever the final margin.
 	if (comebackSize(shape) >= 15) {
@@ -6604,9 +6626,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			continue;
 		}
 		if (roundupClauses.length < ROUNDUP_CAP) {
-			roundupClauses.push(
-				roundupClause(analyzeShape(g), roundupClauses.length),
-			);
+			roundupClauses.push(roundupClause(g, gShape, roundupClauses.length));
 		} else {
 			roundupExtra += 1;
 		}
@@ -6745,7 +6765,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		if (streak) {
 			para3.push(streak);
 		}
-		const picture = conferencePictureSentence(standings, rng);
+		const picture = conferencePictureSentence(standings, rng, dayCtx.saidTids);
 		if (picture) {
 			para3.push(picture);
 		}
