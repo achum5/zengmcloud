@@ -30,6 +30,8 @@ export type GameFlow = {
 		period: number;
 		clock: number;
 		pts: [number, number];
+		// Points in the play that took it: 1 is a free throw.
+		by?: number;
 	};
 	// The last time it was level.
 	lastTie?: { period: number; clock: number; pts: number };
@@ -132,6 +134,7 @@ export class FlowLog {
 						period: e.period,
 						clock: e.clock,
 						pts: [score[0], score[1]],
+						by: e.pts,
 					};
 				}
 				leader = now;

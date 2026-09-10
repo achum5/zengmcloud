@@ -508,6 +508,30 @@ const clutchShot = (
 			};
 		}
 	}
+	// The sim only calls the LAST score of the game a game-winner, so a
+	// go-ahead basket with a second left, answered by one free throw, went
+	// unrecorded and the recap opened on the box score. The score log has it.
+	const last = game.flow?.lastLead;
+	if (last && last.clock <= 5 && game.teams.length === 2) {
+		const winnerSide = game.teams[0].tid === game.winnerTid ? 0 : 1;
+		const regPeriods =
+			(game.teams[0].ptsQtrs?.length ?? 0) - (game.overtimes ?? 0);
+		const name = nameOfPid(game, last.pid);
+		if (
+			last.side === winnerSide &&
+			regPeriods > 0 &&
+			last.period >= regPeriods &&
+			name
+		) {
+			return {
+				name,
+				shot: last.by === 1 ? "free throw" : "game-winner",
+				tying: false,
+				buzzer: false,
+				seconds: Math.round(last.clock * 10) / 10,
+			};
+		}
+	}
 	return undefined;
 };
 
