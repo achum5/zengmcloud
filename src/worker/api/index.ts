@@ -1,4 +1,5 @@
 import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
+import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
 import type { FaceConfig } from "facesjs";
 import {
@@ -2260,6 +2261,14 @@ const getPlayerFaces = async (
 				}
 			} catch {
 				// Fall back to default colors/jersey (drawn by MyFace).
+			}
+		}
+		// A draft prospect wears his college's colors, or his country's.
+		if (colors === undefined) {
+			const uniform = prospectUniform(p);
+			if (uniform) {
+				colors = uniform.colors;
+				jersey = uniform.jersey;
 			}
 		}
 

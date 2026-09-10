@@ -1,3 +1,4 @@
+import { prospectUniform } from "../../common/prospectColors.ts";
 import {
 	PLAYER,
 	PLAYER_STATS_TABLES,
@@ -472,6 +473,12 @@ export const getCommon = async (
 		}
 	} else {
 		bestPos = p.ratings.at(-1)!.pos;
+	}
+	// A draft prospect wears his college's colors, or his country's.
+	const uniform = prospectUniform(p);
+	if (uniform) {
+		teamColors = uniform.colors;
+		teamJersey = uniform.jersey;
 	}
 	if (teamColors === undefined) {
 		teamColors = await getTeamColors(p.tid);
