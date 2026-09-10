@@ -238,6 +238,43 @@ export const dedupePlayerSubjects = (
 	return out;
 };
 
+// Two short sentences on the same subject become one. "The Bucks never
+// trailed. They got double figures out of 7 men." is a reporter's "The Bucks
+// never trailed and got double figures out of 7 men." Only plain pairs: a
+// first sentence already carrying an "and", a participial tail ("..., led
+// by") or a second subject is left as it is, and a pair joins once - the
+// third sentence starts fresh.
+export const joinShortPairs = (sentences: string[]): string[] => {
+	const out: string[] = [];
+	const plain = (t: string) =>
+		!/ and |;| - |, (?:led|winning|breaking|leading|outscoring|making|thanks)\b/.test(
+			t,
+		);
+	for (let i = 0; i < sentences.length; i++) {
+		const a = sentences[i]!;
+		const b = sentences[i + 1];
+		const pronoun = b && /^(?:They|He) /.exec(b)?.[0];
+		if (
+			b &&
+			pronoun &&
+			a.length <= 75 &&
+			b.length <= 60 &&
+			a.endsWith(".") &&
+			plain(a) &&
+			plain(b)
+		) {
+			// After an appositive ("controlled the boards, 54-38") the join
+			// takes a comma of its own.
+			const glue = a.includes(",") ? ", and " : " and ";
+			out.push(`${a.slice(0, -1)}${glue}${b.slice(pronoun.length)}`);
+			i += 1;
+		} else {
+			out.push(a);
+		}
+	}
+	return out;
+};
+
 // --- Player performance --------------------------------------------------------
 
 // "47%" over "47.0%": a percentage is printed to one decimal only when the
@@ -4773,9 +4810,8 @@ export const getAutoRecap = (game: RecapGame): string => {
 		.map((p) => p.name)
 		.sort((a, b) => b.length - a.length);
 	const tidy = (para: string[]) =>
-		dedupePlayerSubjects(
-			dedupeSubjects(para, otherNick, nicks),
-			playerNames,
+		joinShortPairs(
+			dedupePlayerSubjects(dedupeSubjects(para, otherNick, nicks), playerNames),
 		).join(" ");
 	const paragraphs = [tidy(para1)];
 	if (para2.length > 0) {
