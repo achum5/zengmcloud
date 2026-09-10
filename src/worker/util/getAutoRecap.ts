@@ -3940,16 +3940,16 @@ const runNote = (
 			? close
 				? [
 						`${T} ran off ${run.pts} straight points in ${when}, and needed every one of them.`,
-						`A ${run.pts}-0 run in ${when} built the lead ${theNick(shape.winner)} spent the rest of the night protecting.`,
+						`${cap(aNum(run.pts))}-0 run in ${when} built the lead ${theNick(shape.winner)} spent the rest of the night protecting.`,
 					]
 				: [
 						`${T} ran off ${run.pts} straight points in ${when}.`,
-						`A ${run.pts}-0 run in ${when} put ${theNick(shape.winner)} in charge.`,
-						`${T} put together a ${run.pts}-0 run in ${when}.`,
+						`${cap(aNum(run.pts))}-0 run in ${when} put ${theNick(shape.winner)} in charge.`,
+						`${T} put together ${aNum(run.pts)}-0 run in ${when}.`,
 					]
 			: [
-					`${T} had a ${run.pts}-0 run in ${when}, and it still was not enough.`,
-					`Even a ${run.pts}-0 run in ${when} could not turn it for ${theNick(shape.loser)}.`,
+					`${T} had ${aNum(run.pts)}-0 run in ${when}, and it still was not enough.`,
+					`Even ${aNum(run.pts)}-0 run in ${when} could not turn it for ${theNick(shape.loser)}.`,
 				],
 		isWinner ? "runWinner" : "runLoser",
 	);
@@ -5961,13 +5961,17 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	): string => {
 		const team = theNick(perf.team);
 		const opp = theNick(perf.opp);
+		// With the score. A performer sentence was the only place three games
+		// in seven got mentioned, and "in the Warriors' win over the Thunder"
+		// left the reader without a final for it.
+		const score = scoreTag(analyzeShape(perf.game));
 		if (!perf.won) {
 			return pick(
 				rng,
 				[
-					`${perf.p.name} ${verb} ${line} in ${poss(team)} loss to ${opp}.`,
-					`${perf.p.name} ${verb} ${line}, but ${team} lost to ${opp}.`,
-					`${perf.p.name} ${verb} ${line} in a losing cause against ${opp}.`,
+					`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} loss to ${opp}.`,
+					`${perf.p.name} ${verb} ${line}, but ${team} lost to ${opp} ${score}.`,
+					`${perf.p.name} ${verb} ${line} in a ${score} loss to ${opp}.`,
 				],
 				"dayPerfLoss",
 			);
@@ -5975,10 +5979,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		return pick(
 			rng,
 			[
-				`${perf.p.name} ${verb} ${line} in ${poss(team)} win over ${opp}.`,
-				`${perf.p.name} ${verb} ${line} as ${team} beat ${opp}.`,
-				`${cap(team)} got ${line} from ${perf.p.name} in a win over ${opp}.`,
-				`${perf.p.name} ${verb} ${line} against ${opp}.`,
+				`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} win over ${opp}.`,
+				`${perf.p.name} ${verb} ${line} as ${team} beat ${opp} ${score}.`,
+				`${cap(team)} got ${line} from ${perf.p.name} in a ${score} win over ${opp}.`,
 			],
 			"dayPerfWin",
 		);
@@ -6023,14 +6026,15 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	if (topScorer && topScorer.p.pts >= 30 && !named.has(topScorer.p)) {
 		const flourish = shootingFlourish(topScorer.p);
 		const line = `${statPhrase(topScorer.p)}${flourish ? ` ${flourish}` : ""}`;
+		const topScore = scoreTag(analyzeShape(topScorer.game));
 		para1.push(
 			topScorer.won
 				? `${topScorer.p.name} led all scorers with ${line} in ${poss(
 						theNick(topScorer.team),
-					)} win over ${theNick(topScorer.opp)}.`
+					)} ${topScore} win over ${theNick(topScorer.opp)}.`
 				: `${topScorer.p.name} led all scorers with ${line} despite ${poss(
 						theNick(topScorer.team),
-					)} loss to ${theNick(topScorer.opp)}.`,
+					)} ${topScore} loss to ${theNick(topScorer.opp)}.`,
 		);
 		named.add(topScorer.p);
 		coveredGames.add(topScorer.game);
@@ -6132,7 +6136,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 					? `${poss(lossPerf.p.name)} ${statPhrase(lossPerf.p)} came in a losing effort.`
 					: `${poss(lossPerf.p.name)} ${statPhrase(
 							lossPerf.p,
-						)} came in a losing effort against ${theNick(lossPerf.opp)}.`,
+						)} came in a ${scoreTag(analyzeShape(lossPerf.game))} loss to ${theNick(lossPerf.opp)}.`,
 			);
 			coveredGames.add(lossPerf.game);
 		}
@@ -6169,27 +6173,27 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 					? bigUpsetVerbs
 					: smallUpsetVerbs;
 			const verb = verbs[upsetIdx % verbs.length]!;
+			// Every blurb carries its score: these are the only place many of
+			// the night's games get told, and the reader wants the final.
 			blurb =
 				upsetIdx === 0 && spreadPts !== undefined && spreadPts >= 5
 					? `${theNick(shape.winner)} ${verb} ${theNick(
 							shape.loser,
-						)} as ${spreadPts}-point underdogs`
-					: `${theNick(shape.winner)} ${verb} ${theNick(shape.loser)}`;
+						)} ${scoreTag(shape)} as ${spreadPts}-point underdogs`
+					: `${theNick(shape.winner)} ${verb} ${theNick(shape.loser)} ${scoreTag(shape)}`;
 			upsetIdx += 1;
 		} else if (shape.comebackFrom >= 15) {
 			blurb = `${theNick(shape.winner)} erased ${aNum(
 				shape.comebackFrom,
-			)}-point deficit to beat ${theNick(shape.loser)}`;
+			)}-point deficit to beat ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shot2 && !shot2.tying) {
-			blurb = `${shot2.name} beat ${theNick(shape.loser)} at the wire`;
+			blurb = `${shot2.name} beat ${theNick(shape.loser)} at the wire, ${scoreTag(shape)}`;
 		} else if (shape.ot > 0) {
 			blurb = `${theNick(shape.winner)} outlasted ${theNick(
 				shape.loser,
-			)} in overtime`;
+			)} ${scoreTag(shape)} in overtime`;
 		} else if (shape.margin >= 25) {
-			blurb = `${theNick(shape.winner)} routed ${theNick(shape.loser)} by ${
-				shape.margin
-			}`;
+			blurb = `${theNick(shape.winner)} routed ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shape.margin <= 3) {
 			blurb = `${theNick(shape.winner)} edged ${theNick(shape.loser)} ${scoreTag(
 				shape,
@@ -6240,8 +6244,17 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	const ROUNDUP_CAP = 5;
 	const roundupClauses: string[] = [];
 	let roundupExtra = 0;
+	// A game counts as told when its FINAL is on the page, not when it has
+	// been alluded to. The deck's "Spurs drop the Rockets to 0-8" is a tease,
+	// not a result, and three games in seven were reaching the reader with no
+	// score at all.
+	const soFar = [headline.text, deck ?? "", ...para1, ...para2].join(" ");
 	for (const g of ranked) {
-		if (g.allStar || coveredGames.has(g)) {
+		if (g.allStar) {
+			continue;
+		}
+		const gShape = analyzeShape(g);
+		if (coveredGames.has(g) && soFar.includes(scoreTag(gShape))) {
 			continue;
 		}
 		if (roundupClauses.length < ROUNDUP_CAP) {
