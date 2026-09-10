@@ -1687,6 +1687,144 @@ describe("getAutoDayRecap", () => {
 	});
 });
 
+describe("who was out", () => {
+	const gameWith = (gid: number, injuries: RecapTeam["injuries"]) =>
+		game({
+			gid,
+			teams: [
+				realisticTeam(
+					{
+						tid: 1,
+						region: "Indiana",
+						name: "Pacers",
+						abbrev: "IND",
+						pts: 106,
+						record: { won: 20, lost: 10 },
+						injuries,
+					},
+					player({
+						name: "Kirk Hinrich",
+						pts: 28,
+						reb: 3,
+						ast: 7,
+						fg: 11,
+						fga: 18,
+					}),
+				),
+				realisticTeam(
+					{
+						tid: 2,
+						region: "Atlanta",
+						name: "Hawks",
+						abbrev: "ATL",
+						pts: 99,
+						record: { won: 12, lost: 18 },
+					},
+					player({ name: "Rashard Lewis", pts: 17, reb: 5, ast: 2 }),
+				),
+			],
+			winnerTid: 1,
+		});
+
+	test("the 14th man's absence is not news when a starter is also out", () => {
+		for (let seed = 0; seed < 30; seed++) {
+			const recap = getAutoRecap(
+				gameWith(seed, [
+					{
+						name: "Deep Bench",
+						type: "Sore knee",
+						gamesRemaining: 3,
+						mpg: 6,
+						missed: 0,
+					},
+					{
+						name: "Star Guard",
+						type: "Sprained ankle",
+						gamesRemaining: 3,
+						mpg: 34,
+						missed: 0,
+					},
+				]),
+			);
+			assert.ok(!recap.includes("Deep Bench"), recap);
+			assert.ok(recap.includes("Star Guard"), recap);
+		}
+	});
+
+	test("a fresh absence is always noted, a long one only now and then", () => {
+		let fresh = 0;
+		let stale = 0;
+		for (let seed = 0; seed < 40; seed++) {
+			if (
+				getAutoRecap(
+					gameWith(seed, [
+						{
+							name: "Star Guard",
+							type: "Fractured foot",
+							gamesRemaining: 20,
+							mpg: 34,
+							missed: 0,
+						},
+					]),
+				).includes("Star Guard")
+			) {
+				fresh += 1;
+			}
+			if (
+				getAutoRecap(
+					gameWith(seed, [
+						{
+							name: "Star Guard",
+							type: "Fractured foot",
+							gamesRemaining: 10,
+							mpg: 34,
+							missed: 10,
+						},
+					]),
+				).includes("Star Guard")
+			) {
+				stale += 1;
+			}
+		}
+		assert.strictEqual(fresh, 40);
+		assert.ok(stale > 3 && stale < 30, String(stale));
+	});
+
+	test("a long absence reads as still out, not as news", () => {
+		let seen = 0;
+		for (let seed = 0; seed < 40; seed++) {
+			const recap = getAutoRecap(
+				gameWith(seed, [
+					{
+						name: "Star Guard",
+						type: "Fractured foot",
+						gamesRemaining: 10,
+						mpg: 34,
+						missed: 10,
+					},
+				]),
+			);
+			if (recap.includes("Star Guard")) {
+				seen += 1;
+				assert.ok(
+					/again without Star Guard|eleventh straight game|eleventh game without Star Guard/.test(
+						recap,
+					),
+					recap,
+				);
+			}
+		}
+		assert.ok(seen > 0);
+	});
+
+	test("without usage data every listed absence still counts", () => {
+		const recap = getAutoRecap(
+			gameWith(7, [{ name: "Some Guy", type: "Sore knee", gamesRemaining: 3 }]),
+		);
+		assert.ok(recap.includes("Some Guy"), recap);
+	});
+});
+
 describe("regressions from real games", () => {
 	const finley = player({
 		name: "Michael Finley",

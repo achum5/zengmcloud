@@ -3,6 +3,7 @@ import type {
 	RecapAverages,
 	RecapDayStandings,
 	RecapGame,
+	RecapInjuryOut,
 	RecapPlayer,
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
@@ -2972,9 +2973,41 @@ const stakesSentence = (
 	return pick(rng, options);
 };
 
+// The absences on a team worth a sentence, biggest role first. Without usage
+// data (older box scores, fixtures) the list is taken as given.
+const notableAbsences = (t: RecapTeam): RecapInjuryOut[] => {
+	const outs = t.injuries ?? [];
+	if (!outs.some((o) => o.mpg !== undefined || o.missed !== undefined)) {
+		return outs;
+	}
+	return outs
+		.filter((o) => (o.mpg ?? 0) >= 18)
+		.sort((a, b) => (b.mpg ?? 0) - (a.mpg ?? 0));
+};
+
+// Whether to mention an absence tonight. Always in the first couple of games
+// he has missed; after that, a starter's absence comes up now and then and a
+// rotation player's rarely. In a playoff series a starter stays news - but
+// as "still out", not as if he had just gone down.
+const absenceWorthNoting = (
+	out: RecapInjuryOut,
+	playoffs: boolean,
+	rng: () => number,
+): boolean => {
+	if (out.missed === undefined || out.missed <= 1) {
+		return true;
+	}
+	const star = (out.mpg ?? 0) >= 30;
+	if (playoffs) {
+		return star || rng() < 0.4;
+	}
+	return rng() < (star ? 0.35 : 0.15);
+};
+
 // Injury color: returns, playing through, new injuries, and notable inactives.
 const injurySentence = (
 	shape: Shape,
+	playoffs: boolean,
 	rng: () => number,
 ): string | undefined => {
 	const bits: string[] = [];
@@ -3008,9 +3041,36 @@ const injurySentence = (
 			}
 		}
 	}
-	// A key player held out entirely.
+	// A key player held out entirely. The box score lists everyone who sat,
+	// and the 14th man's sore knee is not news - so when the loader knows what
+	// each man had been playing, keep it to rotation players, biggest role
+	// first. And an absence is news the first night or two; a man three weeks
+	// into a broken foot does not get re-reported every game.
 	for (const t of [shape.winner, shape.loser]) {
-		for (const out of t.injuries ?? []) {
+		const outs = notableAbsences(t);
+		for (const out of outs) {
+			if (!absenceWorthNoting(out, playoffs, rng)) {
+				continue;
+			}
+			// He has been out a while: say so, rather than reporting the
+			// absence as new for the fifth game running.
+			if ((out.missed ?? 0) >= 2) {
+				const nth = ordinal(out.missed! + 1);
+				const aNth = /^[aeiou]/.test(nth) ? `an ${nth}` : `a ${nth}`;
+				bits.push(
+					pick(
+						rng,
+						[
+							`${theNick(t)} were again without ${out.name} (${lowerInjury(out.type)})`,
+							`${out.name} missed ${aNth} straight game for ${theNick(t)} with ${injuryPhrase(out.type)}`,
+							`it was ${aNth} straight game out for ${out.name} (${lowerInjury(out.type)})`,
+							`${theNick(t)} played their ${nth} game without ${out.name}, still out with ${injuryPhrase(out.type)}`,
+						],
+						"injuryStillOut",
+					),
+				);
+				break;
+			}
 			bits.push(
 				pick(
 					rng,
@@ -4273,7 +4333,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// Last, and never dropped: who was missing is a fact a reader checks the
 	// recap for, so the paragraph keeps a slot for it however much else the
 	// game gave.
-	const injury = injurySentence(shape, rng);
+	const injury = injurySentence(shape, !!game.playoffs, rng);
 	for (const e of extras) {
 		if (para2.length >= (injury ? 5 : 6)) {
 			break;

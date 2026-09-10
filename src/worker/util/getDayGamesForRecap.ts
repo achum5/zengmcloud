@@ -122,6 +122,12 @@ export type RecapInjuryOut = {
 	name: string;
 	type: string;
 	gamesRemaining: number;
+	// What he had been playing this season entering the game, so the recap can
+	// tell a rotation player's absence from the 14th man's - and how many
+	// straight games he had already missed, so a long absence is not
+	// re-reported every night.
+	mpg?: number;
+	missed?: number;
 };
 
 export type RecapLast10Game = {
@@ -501,6 +507,70 @@ export const enteringAverages = (
 	return tot.gp > 0 ? toAverages(tot) : undefined;
 };
 
+// Season usage for a player held out of a game: regular-season minutes per
+// game entering it (none if he has not played this season), and how many of
+// his team's games in a row he has now sat out, counted from his last box
+// line - so it keeps counting through the playoffs.
+const injuredUsage = (
+	linesByPid: Map<number, PlayerGameLine[]>,
+	teamGames: { day: number; gid: number }[],
+	pid: unknown,
+	beforeGid: number,
+	beforeDay: number,
+): { mpg?: number; missed?: number } => {
+	if (typeof pid !== "number") {
+		return {};
+	}
+	const lines = linesByPid.get(pid) ?? [];
+	const before = (day: number, gid: number) =>
+		day < beforeDay || (day === beforeDay && gid < beforeGid);
+	const avg = enteringAverages(lines, beforeGid, beforeDay, false);
+	let last: { day: number; gid: number } | undefined;
+	for (const l of lines) {
+		if (
+			before(l.day, l.gid) &&
+			(!last || l.day > last.day || (l.day === last.day && l.gid > last.gid))
+		) {
+			last = { day: l.day, gid: l.gid };
+		}
+	}
+	let missed = 0;
+	for (const g of teamGames) {
+		if (
+			before(g.day, g.gid) &&
+			(!last || g.day > last.day || (g.day === last.day && g.gid > last.gid))
+		) {
+			missed += 1;
+		}
+	}
+	return { ...(avg ? { mpg: avg.min } : {}), missed };
+};
+
+// Each team's completed games this season, for counting the games a man has
+// sat out in a row.
+const gamesByTeam = (
+	allGames: {
+		gid: number;
+		day?: number;
+		won?: any;
+		lost?: any;
+		teams: { tid: number }[];
+	}[],
+): Map<number, { day: number; gid: number }[]> => {
+	const out = new Map<number, { day: number; gid: number }[]>();
+	for (const game of allGames) {
+		if (!game.won || !game.lost) {
+			continue;
+		}
+		for (const t of game.teams) {
+			const arr = out.get(t.tid) ?? [];
+			arr.push({ day: game.day ?? 0, gid: game.gid });
+			out.set(t.tid, arr);
+		}
+	}
+	return out;
+};
+
 // The game/day budgets for one recap run come from Global Settings
 // (recapMaxGames / recapMaxDays), falling back to these defaults:
 //
@@ -681,6 +751,7 @@ export const getDayGamesForRecap = async ({
 			}
 		}
 	}
+	const teamGames = gamesByTeam(allGames);
 
 	// Team info memo so we resolve each team's name/abbrev at most once.
 	const teamInfoCache = new Map<
@@ -905,6 +976,13 @@ export const getDayGamesForRecap = async ({
 					name: cleanName(p?.name),
 					type: String(p.injury.type ?? "injury"),
 					gamesRemaining: p.injury.gamesRemaining ?? 0,
+					...injuredUsage(
+						linesByPid,
+						teamGames.get(t.tid) ?? [],
+						p?.pid,
+						game.gid,
+						game.day ?? day,
+					),
 				}));
 
 			// Rank players by scoring so we only pull full career context for the
@@ -1251,6 +1329,7 @@ const createAutoRecapContext = async (season: number) => {
 			}
 		}
 	}
+	const teamGames = gamesByTeam(allGames);
 
 	const teamInfoCache = new Map<
 		number,
@@ -1492,6 +1571,13 @@ const createAutoRecapContext = async (season: number) => {
 					name: String(p?.name ?? "Unknown"),
 					type: String(p.injury.type ?? "injury"),
 					gamesRemaining: p.injury.gamesRemaining ?? 0,
+					...injuredUsage(
+						linesByPid,
+						teamGames.get(t.tid) ?? [],
+						p?.pid,
+						game.gid,
+						game.day ?? effectiveDay,
+					),
 				}));
 
 			const played = allPlayers.filter((p: any) => (p?.min ?? 0) > 0);
