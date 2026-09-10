@@ -235,6 +235,16 @@ const impact = (p: RecapPlayer): number =>
 const storyScore = (p: RecapPlayer): number =>
 	0.5 * p.pts + 0.5 * p.reb + 0.5 * p.ast + 1.7 * p.blk + 1.7 * p.stl;
 
+// A line with nothing in it worth a sentence: under 18 points, no
+// double-double, and none of the other columns even at the loose bar.
+const quietLine = (p: RecapPlayer): boolean =>
+	p.pts < 18 &&
+	doubleCategories(p).length < 2 &&
+	p.reb < 6 &&
+	p.ast < 5 &&
+	p.stl < 3 &&
+	p.blk < 3;
+
 const bestOf = (players: RecapPlayer[]): RecapPlayer | undefined => {
 	let best: RecapPlayer | undefined;
 	let bestScore = -Infinity;
@@ -4101,6 +4111,21 @@ export const getAutoRecap = (game: RecapGame): string => {
 			star = alt;
 		}
 	}
+	// The same by a hair: a 16-point, 4-rebound, 2-block line edging a
+	// 16-and-10 on the impact score gave the lead to the man with nothing to
+	// say about him. When the pick's line is quiet all the way down, a teammate
+	// with a double-double or clearly more points carries the lead instead.
+	if (star && shape.winner.players.includes(star) && quietLine(star)) {
+		const quiet = star;
+		const alt = supportingCast(shape.winner.players, star).find(
+			(p) =>
+				(p.pts >= 12 && doubleCategories(p).length >= 2) ||
+				p.pts >= quiet.pts + 4,
+		);
+		if (alt) {
+			star = alt;
+		}
+	}
 
 	if (!star) {
 		const verb = pastTense(pick(rng, verbPool(game, shape)));
@@ -4676,6 +4701,21 @@ const gameBlurb = (
 	if (star && star.pts < 12 && shape.winner.players.includes(star)) {
 		const alt = supportingCast(shape.winner.players, star).find(
 			(p) => p.pts >= 15 || (p.pts >= 12 && doubleCategories(p).length >= 2),
+		);
+		if (alt) {
+			star = alt;
+		}
+	}
+	// The same by a hair: a 16-point, 4-rebound, 2-block line edging a
+	// 16-and-10 on the impact score gave the lead to the man with nothing to
+	// say about him. When the pick's line is quiet all the way down, a teammate
+	// with a double-double or clearly more points carries the lead instead.
+	if (star && shape.winner.players.includes(star) && quietLine(star)) {
+		const quiet = star;
+		const alt = supportingCast(shape.winner.players, star).find(
+			(p) =>
+				(p.pts >= 12 && doubleCategories(p).length >= 2) ||
+				p.pts >= quiet.pts + 4,
 		);
 		if (alt) {
 			star = alt;
