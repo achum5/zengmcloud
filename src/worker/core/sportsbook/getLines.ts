@@ -539,6 +539,7 @@ export const getLines = async () => {
 
 		games.push({
 			gid: matchup.gid,
+			day: matchup.day,
 			home: {
 				tid: home.tid,
 				abbrev: home.abbrev,

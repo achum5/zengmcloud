@@ -2215,10 +2215,24 @@ export type SportsbookBetLeg = {
 };
 
 // The market a bet belongs to, carrying just enough to settle it later.
+// The matchup and day a game market was placed on. The playoff schedule is
+// rebuilt every day and a row can come back under a new gid, so the gid alone
+// is not a safe key for grading; home, away and day are stable.
+export type SportsbookGameRef = {
+	gid: number;
+	homeTid?: number;
+	awayTid?: number;
+	day?: number;
+};
+
 export type SportsbookMarket =
-	| { type: "gameMoneyline"; gid: number; pickTid: number }
-	| { type: "gameSpread"; gid: number; pickTid: number; line: number }
-	| { type: "gameTotal"; gid: number; side: "over" | "under"; line: number }
+	| ({ type: "gameMoneyline"; pickTid: number } & SportsbookGameRef)
+	| ({ type: "gameSpread"; pickTid: number; line: number } & SportsbookGameRef)
+	| ({
+			type: "gameTotal";
+			side: "over" | "under";
+			line: number;
+	  } & SportsbookGameRef)
 	| { type: "champion"; pickTid: number; season: number }
 	| { type: "conf"; pickTid: number; cid: number; season: number }
 	| { type: "div"; pickTid: number; did: number; season: number }

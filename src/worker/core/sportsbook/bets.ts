@@ -17,6 +17,7 @@ import type {
 	Conditions,
 	SportsbookBet,
 	SportsbookBetLeg,
+	SportsbookGameRef,
 	SportsbookMarket,
 } from "../../../common/types.ts";
 
@@ -189,6 +190,11 @@ const validateAgainstBoard = async (
 		if (!game) {
 			throw new Error(LINE_GONE); // already played, or not on the board
 		}
+		// Remember the matchup and day, so the bet can still be graded if the
+		// schedule row is reissued under another gid (see findGameForMarket).
+		market.homeTid = game.home.tid;
+		market.awayTid = game.away.tid;
+		market.day = game.day;
 		if (market.type === "gameMoneyline") {
 			const boardOdds =
 				market.pickTid === game.home.tid
@@ -502,30 +508,112 @@ const playoffsDone = (season: number) =>
 
 // Resolve a single bet against current league state. Returns the outcome, or
 // undefined if it can't be settled yet (game not played, season not over, …).
+// The played game a market is about, or whether it is still to be played.
+//
+// By gid first. When that misses, by matchup: the playoff schedule is rebuilt
+// every day (setSchedule clears and re-adds), and a row can come back under a
+// new gid - a bet keyed to the old one would otherwise sit open, or be voided,
+// for a game that was played and is sitting in the box scores. The matchup
+// and day were recorded when the bet was placed; a bet from before that
+// carries the matchup in its label ("BAL +3.5 — BAL @ ATL"), and among
+// repeat matchups (a playoff series) the first game at or after the bet's
+// own gid is the one it was placed on.
+const findGameForMarket = async (
+	m: SportsbookGameRef,
+	season: number,
+	label?: string,
+): Promise<{ game?: any; stillScheduled: boolean }> => {
+	const byGid = await idb.getCopy.games({ gid: m.gid }, "noCopyCache");
+	if (byGid?.won && byGid.lost) {
+		return { game: byGid, stillScheduled: false };
+	}
+	let homeTid = m.homeTid;
+	let awayTid = m.awayTid;
+	if (homeTid === undefined || awayTid === undefined) {
+		const parsed = /— (\S+) @ (\S+)$/.exec(label ?? "");
+		if (parsed) {
+			const teams = await idb.cache.teams.getAll();
+			awayTid = teams.find((t) => t.abbrev === parsed[1])?.tid;
+			homeTid = teams.find((t) => t.abbrev === parsed[2])?.tid;
+		}
+	}
+	if (homeTid !== undefined && awayTid !== undefined) {
+		// The cache carries the season's games; the disk scan is only for a
+		// box score that has already been evicted from it.
+		let games = (await idb.cache.games.getAll()).filter(
+			(gm) => gm.season === season,
+		);
+		if (games.length === 0) {
+			try {
+				games = await idb.getCopies.games({ season }, "noCopyCache");
+			} catch {
+				games = [];
+			}
+		}
+		const played = games
+			.filter(
+				(gm) =>
+					gm.won &&
+					gm.lost &&
+					gm.teams[0]?.tid === homeTid &&
+					gm.teams[1]?.tid === awayTid,
+			)
+			.sort((a, b) => a.gid - b.gid);
+		const match =
+			(m.day !== undefined
+				? played.find((gm) => gm.day === m.day)
+				: undefined) ?? played.find((gm) => gm.gid >= m.gid);
+		if (match) {
+			return { game: match, stillScheduled: false };
+		}
+		if (byGid) {
+			// The row is there but has no result yet.
+			return { game: undefined, stillScheduled: true };
+		}
+		const scheduled = (await idb.cache.schedule.getAll()).some(
+			(row) =>
+				row.gid === m.gid ||
+				(row.homeTid === homeTid && row.awayTid === awayTid),
+		);
+		return { game: undefined, stillScheduled: scheduled };
+	}
+	const stillScheduled = await idb.cache.schedule.get(m.gid);
+	return { game: undefined, stillScheduled: !!stillScheduled };
+};
+
 // "void" means the market can no longer be resolved at all (its data is
 // gone, or ambiguous) - the stake is refunded, same as a push, but it's kept
 // as a distinct result so bet history is honest about why.
 const resolveMarket = async (
 	m: SportsbookMarket,
+	// The bet's own season and label, for grading a game market whose gid no
+	// longer finds its game.
+	context: { season: number; label?: string; localOnly?: boolean },
 ): Promise<"won" | "lost" | "push" | "void" | undefined> => {
 	if (
 		m.type === "gameMoneyline" ||
 		m.type === "gameSpread" ||
 		m.type === "gameTotal"
 	) {
-		const game = await idb.getCopy.games({ gid: m.gid }, "noCopyCache");
-		if (!game || !game.won || !game.lost) {
+		const { game, stillScheduled } = await findGameForMarket(
+			m,
+			context.season,
+			context.label,
+		);
+		if (!game) {
 			// Distinguish "hasn't been played yet" from "was played, but its box
 			// score is gone" (deleteOldBoxScores at season rollover, or a
 			// user-triggered Delete Old Data can prune the `games` store before
 			// settlement runs). A bet whose game record vanished can never resolve
 			// a true outcome from data alone - void it (refund) rather than hang
 			// forever with the stake frozen, or guess at a result.
-			const stillScheduled = await idb.cache.schedule.get(m.gid);
 			if (stillScheduled) {
 				return undefined; // genuinely hasn't been played yet
 			}
-			return "void";
+			// A device that is not in charge of simming only grades from box
+			// scores it has; whether the game is gone for good is the simmer's
+			// call.
+			return context.localOnly ? undefined : "void";
 		}
 		const home = game.teams[0];
 		const away = game.teams[1];
@@ -547,6 +635,12 @@ const resolveMarket = async (
 			return "push";
 		}
 		return adj > 0 ? "won" : "lost";
+	}
+
+	// Everything below reads season state that a device not in charge of
+	// simming may hold stale; those markets wait for the simmer.
+	if (context.localOnly) {
+		return undefined;
 	}
 
 	if (m.type === "winTotal") {
@@ -686,12 +780,11 @@ const resolveMarket = async (
 		m.type === "teamGameProp" ||
 		m.type === "gameProp"
 	) {
-		const game = await idb.getCopy.games({ gid: m.gid }, "noCopyCache");
-		if (!game || !game.won || !game.lost) {
+		const { game, stillScheduled } = await findGameForMarket(m, context.season);
+		if (!game) {
 			// Same "genuinely not played yet" vs "data is gone" distinction as the
 			// top-level game markets above.
-			const stillScheduled = await idb.cache.schedule.get(m.gid);
-			return stillScheduled ? undefined : "void";
+			return stillScheduled || context.localOnly ? undefined : "void";
 		}
 
 		if (m.type === "gameProp") {
@@ -769,14 +862,20 @@ type BetResolution = {
 // ANY leg lost; otherwise pushed/voided legs drop out and the payout compounds
 // only the surviving winners (standard parlay "reduction"). If every leg
 // pushed/voided, the whole ticket is refunded.
-const resolveBet = async (bet: SportsbookBet): Promise<BetResolution> => {
+const resolveBet = async (
+	bet: SportsbookBet,
+	localOnly = false,
+): Promise<BetResolution> => {
+	const context = { season: bet.season, label: bet.label, localOnly };
 	if (!bet.legs || bet.legs.length === 0) {
-		return { result: await resolveMarket(bet.market) };
+		return { result: await resolveMarket(bet.market, context) };
 	}
 
 	const legResults = [];
 	for (const leg of bet.legs) {
-		legResults.push(await resolveMarket(leg.market));
+		legResults.push(
+			await resolveMarket(leg.market, { ...context, label: leg.label }),
+		);
 	}
 	if (legResults.some((r) => r === undefined)) {
 		return { result: undefined };
@@ -803,7 +902,14 @@ const resolveBet = async (bet: SportsbookBet): Promise<BetResolution> => {
 // each day's games and on every phase change; unresolved bets are left open.
 // Runs on whoever is simming; wallet changes sync to the room via the team
 // record. Returns true if anything settled.
-export const settleBets = async (conditions?: Conditions) =>
+export const settleBets = async (
+	conditions?: Conditions,
+	// localOnly: this device is not in charge of simming. It settles only its
+	// own teams' game bets, from box scores it already has, and leaves the
+	// futures to the simmer. Without this a bet placed here sat open for as
+	// long as the simmer never learned of it.
+	{ localOnly = false }: { localOnly?: boolean } = {},
+) =>
 	withSportsbookLock(async () => {
 		const teams = await idb.cache.teams.getAll();
 		const userTids = new Set(g.get("userTids"));
@@ -814,6 +920,9 @@ export const settleBets = async (conditions?: Conditions) =>
 			if (!sb?.bets || sb.bets.length === 0) {
 				continue;
 			}
+			if (localOnly && !userTids.has(t.tid)) {
+				continue;
+			}
 
 			const stillOpen: SportsbookBet[] = [];
 			const settled: SportsbookBet[] = [];
@@ -822,7 +931,17 @@ export const settleBets = async (conditions?: Conditions) =>
 			let netWinnings = 0;
 
 			for (const bet of sb.bets) {
-				const { result, payoutDecimal, legs } = await resolveBet(bet);
+				// One bet that cannot be graded must not freeze the whole wallet -
+				// it stays open, and the rest settle.
+				let resolution: BetResolution;
+				try {
+					resolution = await resolveBet(bet, localOnly);
+				} catch (error) {
+					console.error(`Sportsbook: could not grade bet ${bet.betID}`, error);
+					stillOpen.push(bet);
+					continue;
+				}
+				const { result, payoutDecimal, legs } = resolution;
 				if (result === undefined) {
 					stillOpen.push(bet);
 					continue;
@@ -916,7 +1035,10 @@ export const settleBets = async (conditions?: Conditions) =>
 export const settleBetsIfAuthority = async (conditions?: Conditions) => {
 	const engine = getSyncEngine();
 	if (engine !== undefined && !engine.isAuthority()) {
-		return false;
+		// Not in charge of simming: settle only what the box scores here
+		// already decide (this device's own game bets). The simmer keeps the
+		// futures, and a wallet it also settles lands on the same numbers.
+		return settleBets(conditions, { localOnly: true });
 	}
 	return settleBets(conditions);
 };

@@ -146,6 +146,137 @@ describe("sportsbook bets", () => {
 		});
 	});
 
+	describe("a game whose schedule row was reissued", () => {
+		const playedGame = (gid: number, day: number) =>
+			({
+				gid,
+				season: 2026,
+				day,
+				playoffs: true,
+				teams: [
+					{ tid: 0, pts: 101 },
+					{ tid: 1, pts: 115 },
+				],
+				won: { tid: 1, pts: 115 },
+				lost: { tid: 0, pts: 101 },
+			}) as any;
+
+		test("grades by matchup and day when the bet's gid finds no game", async () => {
+			// The playoff schedule is rebuilt every day; the row the bet was on
+			// (gid 999) came back as gid 1000 and was played under that gid.
+			await idb.cache.games.add(playedGame(1000, 40));
+			await setWallet(0, 1000, [
+				moneylineBet({
+					stake: 400,
+					market: {
+						type: "gameMoneyline",
+						gid: 999,
+						pickTid: 1,
+						homeTid: 0,
+						awayTid: 1,
+						day: 40,
+					},
+				}),
+			]);
+			assert.strictEqual(await settleBets(), true);
+			const wallet = await getWallet(0);
+			assert.strictEqual(wallet.bets.length, 0);
+			assert.strictEqual(wallet.history[0]!.result, "won");
+			assert.strictEqual(wallet.balance, 1000 + 800);
+		});
+
+		test("a bet from before the matchup was recorded is graded from its label", async () => {
+			await idb.cache.games.add(playedGame(1000, 40));
+			await setWallet(0, 1000, [
+				moneylineBet({
+					stake: 400,
+					label: "BOS ML — BOS @ LAL",
+					market: { type: "gameMoneyline", gid: 999, pickTid: 1 },
+				}),
+			]);
+			assert.strictEqual(await settleBets(), true);
+			assert.strictEqual((await getWallet(0)).history[0]!.result, "won");
+		});
+
+		test("stays open while the matchup is still on the schedule", async () => {
+			await idb.cache.schedule.add({
+				gid: 1000,
+				homeTid: 0,
+				awayTid: 1,
+				day: 40,
+			} as any);
+			await setWallet(0, 1000, [
+				moneylineBet({
+					stake: 400,
+					market: {
+						type: "gameMoneyline",
+						gid: 999,
+						pickTid: 1,
+						homeTid: 0,
+						awayTid: 1,
+						day: 40,
+					},
+				}),
+			]);
+			assert.strictEqual(await settleBets(), false);
+			assert.strictEqual((await getWallet(0)).bets.length, 1);
+		});
+	});
+
+	describe("a device that is not in charge of simming", () => {
+		test("settles its own game bets from the box scores it has, and leaves the futures", async () => {
+			await idb.cache.games.add({
+				gid: 999,
+				season: 2026,
+				day: 40,
+				teams: [
+					{ tid: 0, pts: 101 },
+					{ tid: 1, pts: 115 },
+				],
+				won: { tid: 1, pts: 115 },
+				lost: { tid: 0, pts: 101 },
+			} as any);
+			await setWallet(0, 1000, [
+				moneylineBet({
+					betID: 1,
+					stake: 400,
+					market: { type: "gameMoneyline", gid: 999, pickTid: 1 },
+				}),
+				moneylineBet({
+					betID: 2,
+					stake: 100,
+					market: { type: "champion", pickTid: 1, season: 2026 },
+				}),
+				// A game with no box score here: the simmer's to void, not ours.
+				moneylineBet({
+					betID: 3,
+					stake: 50,
+					market: { type: "gameMoneyline", gid: 998, pickTid: 1 },
+				}),
+			]);
+			// Another team's wallet is the simmer's business.
+			await setWallet(1, 1000, [
+				moneylineBet({
+					betID: 1,
+					stake: 400,
+					market: { type: "gameMoneyline", gid: 999, pickTid: 1 },
+				}),
+			]);
+
+			assert.strictEqual(
+				await settleBets(undefined, { localOnly: true }),
+				true,
+			);
+			const mine = await getWallet(0);
+			assert.deepStrictEqual(
+				mine.bets.map((b) => b.betID),
+				[2, 3],
+			);
+			assert.strictEqual(mine.history[0]!.result, "won");
+			assert.strictEqual((await getWallet(1)).bets.length, 1);
+		});
+	});
+
 	describe("resolveBet / void handling", () => {
 		test("voids (refunds) a bet whose game is gone from BOTH games and schedule, instead of hanging forever", async () => {
 			// No `games` row and no `schedule` row for gid 999 - simulates a box
