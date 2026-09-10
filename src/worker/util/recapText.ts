@@ -405,10 +405,14 @@ export const statPhrase = (p: RecapPlayer, maxExtras = 2): string => {
 	if (p.ast >= 6 || dd.has("assists")) {
 		extras.push([p.ast, 1, plural(p.ast, "assist")]);
 	}
-	if (p.stl >= 4 || dd.has("steals")) {
+	// Five stocks split 3-and-2 is why the story pick landed on a 19-point
+	// night over a 23-point one; leaving both off the line made the pick look
+	// like a mistake.
+	const stocks = p.stl + p.blk >= 5;
+	if (p.stl >= 4 || dd.has("steals") || (stocks && p.stl >= 2)) {
 		extras.push([p.stl * 1.7, 2, plural(p.stl, "steal")]);
 	}
-	if (p.blk >= 4 || dd.has("blocks")) {
+	if (p.blk >= 4 || dd.has("blocks") || (stocks && p.blk >= 2)) {
 		extras.push([p.blk * 1.7, 3, plural(p.blk, "block")]);
 	}
 	extras.sort((a, b) => b[0] - a[0]);

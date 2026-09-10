@@ -1344,7 +1344,7 @@ export const dayMilestones = (
 	ctx: DayBeatContext,
 	rng: Rng,
 ): string | undefined => {
-	type Hit = { text: string; name: string; weight: number };
+	type Hit = { text: string; tail: string; name: string; weight: number };
 	const hits: Hit[] = [];
 	for (const game of realGames(ctx.games)) {
 		for (const t of game.teams) {
@@ -1354,13 +1354,15 @@ export const dayMilestones = (
 					continue;
 				}
 				const word = STAT_WORD[m.stat];
+				const tail =
+					m.scope === "career"
+						? `${fmtNum(m.mark)} career ${word}`
+						: `${fmtNum(m.mark)} ${word} for the season`;
 				hits.push({
 					name: p.name,
+					tail,
 					weight: (m.scope === "career" ? 100 : 0) + m.mark / 100,
-					text:
-						m.scope === "career"
-							? `${p.name} went past ${fmtNum(m.mark)} career ${word}`
-							: `${p.name} went past ${fmtNum(m.mark)} ${word} for the season`,
+					text: `${p.name} went past ${tail}`,
 				});
 			}
 		}
@@ -1373,7 +1375,12 @@ export const dayMilestones = (
 	for (const h of top) {
 		ctx.saidPlayers.add(h.name);
 	}
-	const list = naturalList(top.map((h) => h.text));
+	// Two men past the same mark share the clause: "X and Y both went past
+	// 500 points for the season", not the same sentence twice.
+	const list =
+		top.length === 2 && top[0]!.tail === top[1]!.tail
+			? `${top[0]!.name} and ${top[1]!.name} both went past ${top[0]!.tail}`
+			: naturalList(top.map((h) => h.text));
 	return pick(
 		rng,
 		[

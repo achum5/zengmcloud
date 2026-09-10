@@ -5430,7 +5430,9 @@ describe("no branch has only one phrasing", () => {
 	const BRANCHES: [string, RegExp][] = [
 		[
 			"loser turnovers",
-			/undone by \d+ turnovers|gave the ball away \d+ times|turnovers were what beat|could not hold on to it - \d+ giveaways/,
+			// The quiet-leader shapes come first now: the team-only ones fire
+			// only when nobody on the losing side reached 12.
+			/led the \w+ with \d+ points, but|Nobody had more than .* for the \w+, but|from anyone, .* leading the way, but|undone by \d+ turnovers|gave the ball away \d+ times|turnovers were what beat|could not hold on to it - \d+ giveaways/,
 		],
 		[
 			"free-throw edge",

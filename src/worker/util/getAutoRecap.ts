@@ -2645,7 +2645,26 @@ const loserSentence = (
 		// dropping out of his own story. Each rung adds something the headline
 		// did not print, so his line is never simply restated.
 		if (best.fga >= 12) {
-			return `${best.name} shot ${best.fg}-of-${best.fga} from the floor${why}.`;
+			const forTeam = why === "" ? ` for ${theNick(shape.loser)}` : "";
+			const fgp = best.fga > 0 ? (100 * best.fg) / best.fga : 0;
+			return pick(
+				rng,
+				[
+					`${best.name} got his ${best.pts} on ${best.fg}-of-${best.fga} shooting${forTeam}${why}.`,
+					`${best.name} shot ${best.fg}-of-${best.fga} on the way to his ${best.pts}${forTeam}${why}.`,
+					...(fgp <= 40
+						? [
+								`${best.name} needed ${best.fga} shots for his ${best.pts}${forTeam}${why}.`,
+							]
+						: []),
+					...(fgp >= 55
+						? [
+								`${best.name} was efficient about his ${best.pts}, ${best.fg}-of-${best.fga}${forTeam}${why}.`,
+							]
+						: []),
+				],
+				"loserHeadlinedShooting",
+			);
 		}
 		const second = supportingCast(shape.loser.players, best)[0];
 		if (second && (second.pts >= 14 || doubleCategories(second).length >= 2)) {
@@ -2748,7 +2767,22 @@ const loserSentence = (
 			"loserShape",
 		);
 	}
-	// No standout to hang it on - name the team directly.
+	// No standout to hang it on. The leading scorer still gets his name in -
+	// a recap that never says who led the losers reads as if nobody did -
+	// unless the top line is so quiet it would embarrass him.
+	if (!skipLeader && topScorer && topScorer.pts >= 12) {
+		const them = theNick(shape.loser);
+		return pickSentence(
+			rng,
+			[
+				`${topScorer.name} led ${them} with ${plural(topScorer.pts, "point")}${reason}.`,
+				`Nobody had more than ${poss(topScorer.name)} ${topScorer.pts} for ${them}${reason}.`,
+				`${cap(them)} got no more than ${topScorer.pts} from anyone, ${topScorer.name} leading the way${reason}.`,
+			],
+			"loserQuietLeader",
+		);
+	}
+	// Name the team directly.
 	if (stats.tov >= 18 && !spent.has("loserTov")) {
 		return pick(
 			rng,
@@ -5245,7 +5279,8 @@ const dayHeadline = (
 			} else {
 				stateBits.push(
 					`${w} get one back against ${l}`,
-					`${w} cut into ${poss(l)} lead`,
+					`${w} cut ${poss(l)} lead to ${ss.lBefore}-${ss.wAfter}`,
+					...(ss.wAfter === 1 ? [`${w} get on the board against ${l}`] : []),
 				);
 			}
 		}
