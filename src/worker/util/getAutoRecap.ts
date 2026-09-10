@@ -4720,7 +4720,10 @@ export const getAutoRecap = (game: RecapGame): string => {
 		said,
 		written: writtenSoFar,
 	};
-	const addContext = (beat: () => string | undefined, cap = 5) => {
+	// Four notes of context, then who was out and what is next. Six was a
+	// wall of bookkeeping - streak, margin, standings, home record, season
+	// series - and a reporter picks the three or four that matter.
+	const addContext = (beat: () => string | undefined, cap = 4) => {
 		if (context.length >= cap) {
 			return;
 		}
