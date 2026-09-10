@@ -6,6 +6,12 @@ import { addPowerRankingsStuffToTeams } from "./powerRankings.ts";
 import { getEstPicks } from "../core/team/ValueChangeCalculator.ts";
 import { PLAYER } from "../../common/constants.ts";
 import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
+import { hideTeamOvr } from "../../common/teamRatings.ts";
+import {
+	performanceScore,
+	projectPicks,
+	type PerformanceScore,
+} from "./draftPickProjection.ts";
 
 const adjustProjectedPick = ({
 	projectedPick,
@@ -74,29 +80,90 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 	// that state - see powerRankingIsJustTeamOvr.
 	const noGamesYet = teamsWithRankings.every((t) => t.stats.gp === 0);
 
-	let estPicksCache;
+	// With team ratings hidden, the projection cannot come from the ratings:
+	// before a game is played, a pick projected off the rating rank IS the
+	// rating rank. It comes from performance instead - see
+	// draftPickProjection.ts - and getEstPicks blends that ordering with the
+	// season's record the same way it blends the rating rank.
+	const ratingsHidden = hideTeamOvr({
+		challengeNoRatings: g.get("challengeNoRatings"),
+		hideTeamRatings: g.get("hideTeamRatings"),
+	});
+	let performance: PerformanceScore[] | undefined;
+	if (ratingsHidden) {
+		const lastSeason = await idb.getCopies.teamSeasons(
+			{ season: g.get("season") - 1 },
+			"noCopyCache",
+		);
+		const byTid = new Map(lastSeason.map((ts) => [ts.tid, ts]));
+		performance = teamsWithRankings.map((t) => {
+			const ts = byTid.get(t.tid);
+			return performanceScore({
+				tid: t.tid,
+				lastSeason: ts
+					? { won: ts.won, lost: ts.lost, tied: ts.tied, otl: ts.otl }
+					: undefined,
+				ovrNow: t.powerRankings.ovr,
+				ovrThen: ts?.ovrEnd ?? ts?.ovrStart,
+				avgAge: t.powerRankings.avgAge,
+			});
+		});
+	}
+
+	let estPicksCache: Record<number, number> | undefined;
+	// Performance mode projects each season on its own (this season's record
+	// counts for less each year out, and the roster's age counts for more).
+	const performancePicks = new Map<number, Record<number, number>>();
+	const records = new Map(
+		teamsWithRankings.map((t) => [
+			t.tid,
+			{
+				won: t.seasonAttrs.won,
+				lost: t.seasonAttrs.lost,
+				tied: t.seasonAttrs.tied,
+				otl: t.seasonAttrs.otl,
+			},
+		]),
+	);
 
 	for (const dp of draftPicksRaw) {
 		const t = teams[dp.originalTid];
 
 		let projectedPick;
 		if (dp.pick === 0 && typeof dp.season === "number") {
-			if (!estPicksCache) {
-				const teamOvrsSorted = teamsWithRankings
-					.map((t) => {
-						return {
-							ovr: t.powerRankings.ovr,
-							tid: t.tid,
-						};
-					})
-					.sort((a, b) => b.ovr - a.ovr);
-				const { estPicks } = await getEstPicks(teamOvrsSorted);
-				estPicksCache = estPicks;
+			const numSeasons = dp.season - g.get("season");
+			let basePick: number;
+			if (performance) {
+				let picks = performancePicks.get(numSeasons);
+				if (!picks) {
+					picks = projectPicks(
+						performance,
+						records,
+						g.get("numGames"),
+						numSeasons,
+					);
+					performancePicks.set(numSeasons, picks);
+				}
+				basePick = picks[dp.originalTid] ?? teamsWithRankings.length / 2;
+			} else {
+				if (!estPicksCache) {
+					const teamOvrsSorted = teamsWithRankings
+						.map((t) => {
+							return {
+								ovr: t.powerRankings.ovr,
+								tid: t.tid,
+							};
+						})
+						.sort((a, b) => b.ovr - a.ovr);
+					const { estPicks } = await getEstPicks(teamOvrsSorted);
+					estPicksCache = estPicks;
+				}
+				basePick = estPicksCache[dp.originalTid]!;
 			}
 
 			projectedPick = adjustProjectedPick({
-				projectedPick: estPicksCache[dp.originalTid]!,
-				numSeasons: dp.season - g.get("season"),
+				projectedPick: basePick,
+				numSeasons,
 				numTeams: teamsWithRankings.length,
 			});
 		}
