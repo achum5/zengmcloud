@@ -2620,7 +2620,11 @@ const supportSentence = (
 					[
 						`${second.name} added a ${ddw} with ${statPhrase(second)}`,
 						`${second.name} had a ${ddw} of his own, ${statPhrase(second)}`,
-						`${second.name} went for ${statPhrase(second)}`,
+						// A triple-double is always called one; "went for 15 points,
+						// 10 rebounds, and 10 assists" buried it.
+						...(doubleCategories(second).length >= 3
+							? []
+							: [`${second.name} went for ${statPhrase(second)}`]),
 						`${second.name} ${claimVerb("chipped in")} a ${ddw}, ${statPhrase(second)}`,
 					],
 					"supportDouble",
@@ -2629,10 +2633,15 @@ const supportSentence = (
 
 	const third = cast[1];
 	if (third && (third.pts >= 14 || doubleCategories(third).length >= 2)) {
+		const thirdDdw = doubleWord(doubleCategories(third).length);
 		const thirdText = outscoredStar(third)
 			? // Mid-sentence after ", and": "No one scored more" loses its capital.
 				topScorerText(third).replace(/^No one/, "no one")
-			: `${third.name} ${scoredVerb(rng)} ${statPhrase(third, 1)}`;
+			: thirdDdw
+				? // The full line, and named: trimmed to one extra, a 15-10-10
+					// came out as "15 points and 10 rebounds".
+					`${third.name} ${scoredVerb(rng)} a ${thirdDdw}, ${statPhrase(third)}`
+				: `${third.name} ${scoredVerb(rng)} ${statPhrase(third, 1)}`;
 		return `${secondText}, and ${thirdText}.`;
 	}
 	return `${secondText}.`;
