@@ -34,6 +34,7 @@
 // simmer doing it by hand.
 
 import { PHASE } from "../../../common/constants.ts";
+import { helpers } from "../../../common/helpers.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, local, lock, toUI } from "../../util/index.ts";
@@ -438,6 +439,9 @@ let lastClaimRefusedKey: string | undefined;
 // fires ONCE per stuck-state instead of every 2s evaluate tick.
 let lastHoldoutNotifKey: string | undefined;
 
+// Same, for the "you're on the clock" push: one per pick, not one per tick.
+let lastOnClockNotifKey: string | undefined;
+
 // Decide whether THIS device should push a "you're the last one not readied
 // up" notification, and to which team. Returns the sole holdout's tid to
 // notify, or undefined when: there's no lone holdout, a human is on the clock
@@ -495,6 +499,67 @@ export const lastHoldoutToNotify = ({
 		return undefined;
 	}
 	return holdoutTid;
+};
+
+// Which device publishes the "you're on the clock" push, and to which team.
+//
+// The room genuinely stops on a human pick - the evaluator refuses to advance
+// past one (see the advance guard below) - so the person on the clock is the
+// only one who can move it, and they are the one most likely to have the app
+// closed. Returns the on-clock tid when THIS device is the designated
+// publisher, else undefined.
+//
+// Single-publisher rule, same shape as the holdout nudge: the smallest client
+// id among devices that are NOT the team on the clock. Their own devices are
+// excluded so the author is never the recipient (the Cloud Function skips the
+// author anyway, which would silently drop the push). Readiness is not
+// required - a device that has not readied up for this pick is still a device
+// that can publish - but current-stage entries are preferred, so an entry left
+// behind by a device that has since gone offline cannot win the election while
+// live devices are present. Pure and exported for tests.
+export const onClockTeamToNotify = ({
+	latestReady: ready,
+	userTids,
+	onClockTid,
+	stageKey,
+	clientId,
+}: {
+	latestReady: Record<string, DraftReadyEntry | null> | undefined;
+	userTids: number[];
+	onClockTid: number | undefined;
+	stageKey: string;
+	clientId: string;
+}): number | undefined => {
+	if (
+		onClockTid === undefined ||
+		!userTids.includes(onClockTid) ||
+		userTids.length < 2
+	) {
+		return undefined;
+	}
+
+	// Two passes: this stage's devices first, then any device the room has
+	// seen, so the very first pick of a draft - before anyone has readied up
+	// for it - still gets announced.
+	for (const thisStage of [true, false]) {
+		let minUid: string | undefined;
+		for (const [uid, entry] of Object.entries(ready ?? {})) {
+			if (
+				entry &&
+				(!thisStage || entry.draftKey === stageKey) &&
+				typeof entry.tid === "number" &&
+				userTids.includes(entry.tid) &&
+				entry.tid !== onClockTid &&
+				(minUid === undefined || uid < minUid)
+			) {
+				minUid = uid;
+			}
+		}
+		if (minUid !== undefined) {
+			return minUid === clientId ? onClockTid : undefined;
+		}
+	}
+	return undefined;
 };
 
 // The page a holdout notification deep-links to for the current gated phase.
@@ -582,6 +647,65 @@ const maybeNotifyLastHoldout = async (
 		// A failed push is harmless - clear the key so a later tick can retry.
 		lastHoldoutNotifKey = undefined;
 		syncDebugLog("phaseReady:holdout-notify-failed", { error });
+	}
+};
+
+// Tell the team on the clock that the draft is waiting on them. One push per
+// pick, from one device - see onClockTeamToNotify. Fire-and-forget on the
+// notifications channel, like the holdout nudge.
+const maybeNotifyOnTheClock = async (
+	engine: NonNullable<ReturnType<typeof getSyncEngine>>,
+	stage: StageInfo,
+	stageKey: string,
+	userTids: number[],
+) => {
+	if (!stage.onClockUser || !engine.isCaughtUp()) {
+		return;
+	}
+	const tid = onClockTeamToNotify({
+		latestReady,
+		userTids,
+		onClockTid: stage.onClockTid,
+		stageKey,
+		clientId: engine.clientId,
+	});
+	if (tid === undefined) {
+		return;
+	}
+
+	// The pick itself is the state that makes this news, so it is the key.
+	const key = `${stageKey}:${stage.nextStep}:${tid}`;
+	if (key === lastOnClockNotifKey) {
+		return;
+	}
+	lastOnClockNotifKey = key;
+
+	let teamName = "Your team";
+	try {
+		const team = await idb.cache.teams.get(tid);
+		if (team) {
+			teamName = `The ${team.region} ${team.name}`;
+		}
+	} catch {
+		// The name is a nicety; the body still delivers the nudge.
+	}
+
+	try {
+		await engine.publishNotification({
+			title: "You're on the clock",
+			body: `${teamName} are up with the ${helpers.ordinal(stage.nextStep)} pick of the ${g.get("season")} draft.`,
+			targetTids: [tid],
+			path: "draft",
+		});
+		syncDebugLog("phaseReady:on-clock-notified", {
+			stageKey,
+			step: stage.nextStep,
+			tid,
+		});
+	} catch (error) {
+		// A failed push is harmless - clear the key so a later tick can retry.
+		lastOnClockNotifKey = undefined;
+		syncDebugLog("phaseReady:on-clock-notify-failed", { error });
 	}
 };
 
@@ -687,6 +811,9 @@ const evaluate = async () => {
 	// a queued-upload backpressure return can't skip it). Safe + spam-proof: see
 	// maybeNotifyLastHoldout.
 	void maybeNotifyLastHoldout(engine, stage, stageKey, userTids, readyTids);
+	// And the other half of "the room is waiting on you": a human pick on the
+	// clock, which no amount of readying up by anyone else can move.
+	void maybeNotifyOnTheClock(engine, stage, stageKey, userTids);
 
 	// ---- Advance? ----
 	if (
@@ -897,6 +1024,7 @@ export const setupDraftReady = (transport: SyncTransport) => {
 	);
 	latestReady = undefined;
 	lastHoldoutNotifKey = undefined;
+	lastOnClockNotifKey = undefined;
 	lastClaimRefusedKey = undefined;
 	unsubscribe = transport.subscribeDraftReady?.((ready) => {
 		latestReady = ready;
@@ -918,6 +1046,7 @@ export const teardownDraftReady = () => {
 	currentTransport = undefined;
 	latestReady = undefined;
 	lastHoldoutNotifKey = undefined;
+	lastOnClockNotifKey = undefined;
 	lastClaimRefusedKey = undefined;
 	pushToUI(undefined);
 };

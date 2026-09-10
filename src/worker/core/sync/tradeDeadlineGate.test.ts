@@ -255,8 +255,23 @@ describe("notifyTradeDeadlineArrived", () => {
 		assert.strictEqual(notifications.length, 1);
 		assert.strictEqual(notifications[0].targetTids, null);
 		assert.strictEqual(notifications[0].path, "trade");
-		assert.ok(notifications[0].title.includes("Trade deadline"));
-		assert.ok(notifications[0].body.includes("ready up"));
+		assert.strictEqual(notifications[0].title, "Advanced to Trade deadline");
+		assert.strictEqual(
+			notifications[0].body,
+			"You'll need to ready up to advance.",
+		);
+	});
+
+	test("a day stop reads the same way", async () => {
+		const { engine, notifications } = makeEngine();
+		setSyncEngine(engine as any);
+
+		await notifySimStopArrived("Day 15");
+		assert.strictEqual(notifications[0].title, "Advanced to Day 15");
+		assert.strictEqual(
+			notifications[0].body,
+			"You'll need to ready up to advance.",
+		);
 	});
 
 	// The sim can be retried any number of times while the room is stuck at the

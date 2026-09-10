@@ -180,8 +180,8 @@ export const notifySimStopArrived = async (what: string) => {
 
 	try {
 		await engine.publishNotification({
-			title: what,
-			body: `${what} — the league is paused. Make your moves, then ready up; it sims on once everyone has.`,
+			title: `Advanced to ${what}`,
+			body: "You'll need to ready up to advance.",
 			targetTids: null,
 			path: "trade",
 		});

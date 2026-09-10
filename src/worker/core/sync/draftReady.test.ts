@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	advanceTookEffect,
 	lastHoldoutToNotify,
+	onClockTeamToNotify,
 	overallPickNumber,
 	readyTeamTids,
 	stopStep,
@@ -276,5 +277,99 @@ describe("advanceTookEffect", () => {
 			}),
 			false,
 		);
+	});
+	describe("the team on the clock is told", () => {
+		const key = "2026-7";
+		const base = {
+			latestReady: {
+				// Team 9 is on the clock; the other two readied for this pick.
+				uidHoldout9: { untilPick: 12, draftKey: key, tid: 9 },
+				uidB: { untilPick: 20, draftKey: key, tid: 5 },
+				uidC: { untilPick: 20, draftKey: key, tid: 0 },
+			},
+			userTids: [0, 5, 9],
+			onClockTid: 9,
+			stageKey: key,
+		};
+
+		test("the smallest client id that is not the on-clock team publishes", () => {
+			assert.strictEqual(onClockTeamToNotify({ ...base, clientId: "uidB" }), 9);
+		});
+
+		test("every other device stays silent, so there is one push", () => {
+			assert.strictEqual(
+				onClockTeamToNotify({ ...base, clientId: "uidC" }),
+				undefined,
+			);
+		});
+
+		test("the team on the clock never publishes to itself", () => {
+			// The author is skipped when the push fans out, so a self-published
+			// notification would be silently dropped.
+			assert.strictEqual(
+				onClockTeamToNotify({ ...base, clientId: "uidHoldout9" }),
+				undefined,
+			);
+		});
+
+		test("an AI team on the clock is nobody's notification", () => {
+			assert.strictEqual(
+				onClockTeamToNotify({ ...base, onClockTid: 22, clientId: "uidB" }),
+				undefined,
+			);
+			assert.strictEqual(
+				onClockTeamToNotify({
+					...base,
+					onClockTid: undefined,
+					clientId: "uidB",
+				}),
+				undefined,
+			);
+		});
+
+		test("a solo league never pushes", () => {
+			assert.strictEqual(
+				onClockTeamToNotify({
+					...base,
+					userTids: [9],
+					clientId: "uidHoldout9",
+				}),
+				undefined,
+			);
+		});
+
+		test("the first pick of a draft falls back to devices from the stage before", () => {
+			// Nobody has readied up for the draft yet - their entries are still
+			// the lottery's. The pick is still announced.
+			const stale = {
+				uidHoldout9: { untilPick: 1, draftKey: "2026-6", tid: 9 },
+				uidB: { untilPick: 1, draftKey: "2026-6", tid: 5 },
+			};
+			assert.strictEqual(
+				onClockTeamToNotify({
+					...base,
+					latestReady: stale,
+					clientId: "uidB",
+				}),
+				9,
+			);
+		});
+
+		test("a live device this stage outranks a stale one from before it", () => {
+			// uidA is an entry left behind by a device that has since gone
+			// offline; uidB is here now. The live device publishes.
+			const mixed = {
+				uidA: { untilPick: 1, draftKey: "2026-6", tid: 5 },
+				uidB: { untilPick: 20, draftKey: key, tid: 0 },
+			};
+			assert.strictEqual(
+				onClockTeamToNotify({ ...base, latestReady: mixed, clientId: "uidB" }),
+				9,
+			);
+			assert.strictEqual(
+				onClockTeamToNotify({ ...base, latestReady: mixed, clientId: "uidA" }),
+				undefined,
+			);
+		});
 	});
 });

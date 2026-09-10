@@ -1011,7 +1011,7 @@ const play = async (
 			if (stopHere) {
 				// Say why, or a press of Sim Day looks like it did nothing.
 				const what =
-					stop.kind === "deadline" ? "Trade deadline" : `Day ${stop.day}`;
+					stop.kind === "deadline" ? "Trade Deadline" : `Day ${stop.day}`;
 				if (isTradeDeadlineGateActive()) {
 					void notifySimStopArrived(what);
 					logEvent(
