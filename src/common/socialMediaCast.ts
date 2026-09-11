@@ -164,6 +164,21 @@ const BEAT_OUTLETS = [
 	"{region} basketball",
 ];
 
+// The third fan in every city: not a homer, not a doomer, just somebody who
+// watches. Handles a person would actually have.
+const CASUAL_BRANDS = [
+	"{abbrev} Guy",
+	"just a {name} fan",
+	"{region} Sports Fan",
+	"{name} Season Ticket Holder",
+	"{abbrev} From The Nosebleeds",
+	"{name} Group Chat",
+	"{region} Hooper",
+	"Section 112 ({abbrev})",
+	"{name} Watch Party",
+	"Casual {name} Enjoyer",
+];
+
 const FILM_BRANDS = [
 	"{name} Film Room",
 	"{abbrev} Clips",
@@ -177,12 +192,19 @@ const fill = (pattern: string, t: ImplicitTeam) =>
 		.replaceAll("{name}", t.name)
 		.replaceAll("{abbrev}", t.abbrev);
 
-// The league-wide voices. One of each: a second national insider would just
-// break the same news twice.
+// The league-wide voices. Two insiders, because a real feed has two - the
+// race to break a trade is half the drama of deadline day, and one voice
+// reporting every move alone reads as a press office. The day's sentence
+// check keeps them from posting the same line.
 const NATIONAL_CAST: readonly Omit<CastAccount, "id">[] = [
 	{
 		name: "Marcus Boone",
 		bio: "Reporting on the league. Everything here is confirmed before it is posted.",
+		archetypeId: "insider",
+	},
+	{
+		name: "Elena Marsh",
+		bio: "Breaking news on trades, signings and the draft. Sources are sources.",
 		archetypeId: "insider",
 	},
 	{
@@ -306,6 +328,13 @@ export const mediaCastAccounts = (
 				name: fill(pick("doomer", DOOMER_BRANDS), t),
 				bio: `${t.name} fan. It is never going to work.`,
 				archetypeId: "doomerFan",
+				tid: t.tid,
+			},
+			{
+				id: `m:cast:casual:${t.tid}`,
+				name: fill(pick("casual", CASUAL_BRANDS), t),
+				bio: `${t.name} fan. Mostly here for the games.`,
+				archetypeId: "casualFan",
 				tid: t.tid,
 			},
 			// One analytics voice per team, because "the numbers say" reads

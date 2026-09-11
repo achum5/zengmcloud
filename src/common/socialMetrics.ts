@@ -49,6 +49,7 @@ const BASE_REACH: Record<string, number> = {
 	troll: 47_000,
 	homerFan: 22_000,
 	doomerFan: 18_000,
+	casualFan: 9_000,
 	player: 400_000,
 };
 
@@ -89,7 +90,7 @@ export const formatReach = (n: number): string => {
 // A checkmark goes to the accounts an institution would verify: the media
 // outlets, the franchises, and the players. Not the fan accounts, which is
 // exactly the distinction that makes the badge mean anything.
-const UNVERIFIED = new Set(["homerFan", "doomerFan", "troll"]);
+const UNVERIFIED = new Set(["homerFan", "doomerFan", "casualFan", "troll"]);
 export const isVerified = (account: ResolvedSocialAccount): boolean =>
 	!UNVERIFIED.has(account.archetypeId);
 
@@ -104,6 +105,9 @@ export type Engagement = {
 	likes: number;
 	reposts: number;
 	replies: number;
+	// Impressions. Every real client shows them now, and they are the one
+	// number that is never zero on a post anyone saw.
+	views: number;
 };
 
 export const engagementFor = ({
@@ -147,16 +151,27 @@ export const engagementFor = ({
 		0.04 +
 		account.personality.replyiness * 0.16 +
 		(1 - account.personality.accuracy) * 0.1;
+	const reposts = Math.round(likes * (0.03 + rng() * 0.07));
+	// An answer in a thread does not itself collect a thread.
+	const replies = Math.round(
+		likes * argumentative * (0.3 + rng()) * (isReply ? 0.3 : 1),
+	);
+	// Views run a couple of orders of magnitude above likes - about one like
+	// per forty to eighty impressions is what a real timeline shows - with a
+	// floor from the account's own reach, so a post nobody liked still shows
+	// that somebody scrolled past it.
+	const views = Math.round(
+		likes * (40 + rng() * 45) +
+			reach * 0.0015 * (0.5 + rng()) * (isReply ? 0.2 : 1),
+	);
 	return {
 		likes,
 		// Reposts are the rarest of the three: people like far more than they
 		// pass along, and the first numbers had a franchise reposted nine
 		// times for every reply it drew.
-		reposts: Math.round(likes * (0.03 + rng() * 0.07)),
-		// An answer in a thread does not itself collect a thread.
-		replies: Math.round(
-			likes * argumentative * (0.3 + rng()) * (isReply ? 0.3 : 1),
-		),
+		reposts,
+		replies,
+		views: Math.max(views, likes + reposts + replies),
 	};
 };
 

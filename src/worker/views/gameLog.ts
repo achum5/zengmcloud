@@ -1,4 +1,5 @@
 import { idb } from "../db/index.ts";
+import { feedAbout } from "../util/socialFeed.ts";
 import { g, helpers } from "../util/index.ts";
 import type {
 	UpdateEvents,
@@ -417,15 +418,55 @@ const updateGamesList = async (
 	}
 };
 
+// What the feed said about this game that night, when the league has the
+// feed on. Keyed on the game, so paging through box scores refreshes it.
+const updateReactions = async (
+	{ gid }: ViewInput<"gameLog">,
+	updateEvents: UpdateEvents,
+	state: any,
+) => {
+	if (
+		updateEvents.includes("firstRun") ||
+		updateEvents.includes("gameSim") ||
+		updateEvents.includes("gameAttributes") ||
+		gid !== state.reactionsGid
+	) {
+		if (!g.get("socialFeed") || gid < 0) {
+			return { reactions: undefined, reactionsGid: gid };
+		}
+		try {
+			const game = await idb.getCopy.games({ gid });
+			if (!game || game.season !== g.get("season")) {
+				return { reactions: undefined, reactionsGid: gid };
+			}
+			const reactions = await feedAbout({
+				season: game.season,
+				gid,
+				day: game.day,
+				limit: 8,
+			});
+			return { reactions, reactionsGid: gid };
+		} catch (error) {
+			console.error("gameLog: feed failed", error);
+			return { reactions: undefined, reactionsGid: gid };
+		}
+	}
+};
+
 export default async (
 	inputs: ViewInput<"gameLog">,
 	updateEvents: UpdateEvents,
 	state: any,
 ) => {
+	// Three sources at most per call, or Object.assign's typed overloads run
+	// out and the view becomes any.
 	return Object.assign(
-		{},
-		await updateBoxScore(inputs, updateEvents, state),
-		await updateGamesList(inputs, updateEvents, state),
-		await updateTeamSeason(inputs),
+		Object.assign(
+			{},
+			await updateBoxScore(inputs, updateEvents, state),
+			await updateGamesList(inputs, updateEvents, state),
+			await updateTeamSeason(inputs),
+		),
+		await updateReactions(inputs, updateEvents, state),
 	);
 };

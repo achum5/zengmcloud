@@ -4,8 +4,10 @@ import {
 	buildFeedDay,
 	getFeedSnapshot,
 	picturesFor,
+	suggestedAccounts,
 	type FeedDay,
 } from "../util/socialFeed.ts";
+import { isVerified } from "../../common/socialMetrics.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
 
 // How many days of the timeline to build at once. A feed is scrolled, not
@@ -60,10 +62,25 @@ const updateSocialFeed = async (
 				}
 			}
 		}
+		const suggestedRaw = suggestedAccounts(snapshot, g.get("userTid"));
+		for (const a of suggestedRaw) {
+			onPage.add(a.id);
+		}
 		const pictures = await picturesFor(
 			snapshot,
 			snapshot.accounts.filter((a) => onPage.has(a.id)),
 		);
+		const suggested = suggestedRaw.map((a) => ({
+			accountId: a.id,
+			handle: a.handle,
+			name: a.name,
+			kind: a.kind,
+			archetypeId: a.archetypeId,
+			tid: a.tid,
+			pid: a.pid,
+			avatarUrl: a.avatarUrl,
+			verified: isVerified(a),
+		}));
 
 		const teams = (await idb.cache.teams.getAll()).map((t) => ({
 			tid: t.tid,
@@ -82,6 +99,7 @@ const updateSocialFeed = async (
 			hasMore: newestFirst.length > wanted.length,
 			accountCount: snapshot.accounts.length,
 			pictures,
+			suggested,
 			teams,
 			userTid: g.get("userTid"),
 		};

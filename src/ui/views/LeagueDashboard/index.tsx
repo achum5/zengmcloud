@@ -8,6 +8,7 @@ import TeamStats from "./TeamStats.tsx";
 import type { View } from "../../../common/types.ts";
 import Headlines from "./Headlines.tsx";
 import { useLocal } from "../../util/local.ts";
+import { SocialEmbed } from "../../components/SocialEmbed.tsx";
 
 const LeagueDashboard = ({
 	att,
@@ -35,6 +36,7 @@ const LeagueDashboard = ({
 	series,
 	seriesTitle,
 	showPlayoffSeries,
+	social,
 	starters,
 	startersStats,
 	teamLeaders,
@@ -191,6 +193,18 @@ const LeagueDashboard = ({
 					/>
 				</div>
 				<div className="col-xl-5 col-lg-4 mb-3">
+					{social ? (
+						<div className="mt-3">
+							<SocialEmbed
+								moreHref={helpers.leagueUrl(["social"])}
+								pictures={social.pictures}
+								posts={social.posts}
+								teams={social.teams}
+								title={`${name} on the feed`}
+								emptyText="Quiet so far. Sim a day."
+							/>
+						</div>
+					) : null}
 					<Headlines
 						events={events}
 						season={season}

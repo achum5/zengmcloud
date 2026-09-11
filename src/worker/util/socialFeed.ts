@@ -60,6 +60,7 @@ import {
 	trimDayEvents,
 	type GameForEvents,
 	type SocialEvent,
+	type SocialEventType,
 } from "../../common/socialEvents.ts";
 import {
 	castDay,
@@ -89,10 +90,19 @@ export type FeedPost = {
 	handle: string;
 	name: string;
 	kind: "player" | "team" | "media";
+	// Which voice this is (beat writer, homer fan, insider...), so a page can
+	// style by role and the timeline can be measured by who is on it.
+	archetypeId: string;
 	tid?: number;
 	pid?: number;
 	text: string;
 	eventId: string;
+	// WHAT THE POST IS ABOUT, so a player page can find the posts about him
+	// and a box score the posts about that game without reading the text.
+	eventType: SocialEventType;
+	tids: number[];
+	pids: number[];
+	gid?: number;
 	verified: boolean;
 	// Clock time and engagement, derived rather than stored - see socialMetrics.
 	time: string;
@@ -105,6 +115,7 @@ export type FeedPost = {
 		handle: string;
 		name: string;
 		kind: "player" | "team" | "media";
+		archetypeId: string;
 		tid?: number;
 		pid?: number;
 		text: string;
@@ -133,6 +144,12 @@ const EVENTS_PER_DAY = 26;
 // How much of a day is about the league rather than about tonight. Small on
 // purpose: an account that posts the standings every night is a bot.
 const SEASON_EVENTS_PER_DAY = 5;
+// League news - a trade, an injury, a signing - gets its own reserved slots.
+// Trimmed in one pool with fifteen box scores it lost every cut: a sprained
+// ankle scores below a forty-point night, quite correctly, and so the
+// insiders and the wire never had anything to break. Four game days of a
+// real league produced two hundred and sixty posts and not one from either.
+const NEWS_EVENTS_PER_DAY = 6;
 // The offseason is one undated stretch holding a whole summer of news, so it
 // gets a bigger window than a game night.
 const OFFSEASON_EVENTS = 60;
@@ -539,6 +556,124 @@ export const picturesFor = async (
 };
 
 // The days worth showing, newest first.
+// THE FEED ABOUT ONE THING - a player, a team or a game - for the pages that
+// embed it. Walks the timeline newest-first and keeps the posts whose subject
+// matches, up to a limit, so a player page shows what was said about him
+// this week and a box score shows the reactions to that night.
+export const feedAbout = async ({
+	season,
+	tid,
+	pid,
+	gid,
+	day,
+	limit = 6,
+	daysBack = 6,
+}: {
+	season: number;
+	tid?: number;
+	pid?: number;
+	gid?: number;
+	// Restrict to one day of the timeline (a game's night).
+	day?: number;
+	limit?: number;
+	daysBack?: number;
+}): Promise<{
+	posts: (FeedPost & { day: number })[];
+	pictures: Record<string, AccountPicture>;
+	teams: {
+		tid: number;
+		abbrev: string;
+		region: string;
+		name: string;
+		imgURL?: string;
+		colors?: [string, string, string];
+	}[];
+	handle?: string;
+}> => {
+	const snapshot = await getFeedSnapshot(season);
+	const matches = (post: FeedPost) =>
+		(pid !== undefined && (post.pid === pid || post.pids.includes(pid))) ||
+		(tid !== undefined && (post.tid === tid || post.tids.includes(tid))) ||
+		(gid !== undefined && post.gid === gid);
+
+	const posts: (FeedPost & { day: number })[] = [];
+	const start = snapshot.days.length - 1;
+	const stop = day === undefined ? Math.max(0, start - daysBack + 1) : 0;
+	for (
+		let dayIndex = start;
+		dayIndex >= stop && posts.length < limit;
+		dayIndex--
+	) {
+		const d = snapshot.days[dayIndex]!;
+		if (day !== undefined && d !== day) {
+			continue;
+		}
+		const feedDay = await buildFeedDay({ snapshot, dayIndex });
+		for (const post of feedDay.posts) {
+			if (posts.length >= limit) {
+				break;
+			}
+			if (matches(post)) {
+				posts.push({ ...post, day: feedDay.day });
+			}
+		}
+		if (day !== undefined) {
+			break;
+		}
+	}
+
+	const onPage = new Set<string>();
+	for (const post of posts) {
+		onPage.add(post.accountId);
+		for (const reply of post.replies) {
+			onPage.add(reply.accountId);
+		}
+	}
+	const pictures = await picturesFor(
+		snapshot,
+		snapshot.accounts.filter((a) => onPage.has(a.id)),
+	);
+	const teams = (await idb.cache.teams.getAll()).map((t) => ({
+		tid: t.tid,
+		abbrev: t.abbrev,
+		region: t.region,
+		name: t.name,
+		imgURL: t.imgURL,
+		colors: t.colors,
+	}));
+	// The subject's own handle, when the subject is a player, so a page can
+	// link to his profile rather than to the whole timeline.
+	const handle =
+		pid === undefined
+			? undefined
+			: snapshot.accounts.find((a) => a.pid === pid)?.handle;
+	return { posts, pictures, teams, handle };
+};
+
+// WHO TO FOLLOW: the national insider, and the user's own beat writer and
+// loudest fan - the three accounts a person opening this feed for the first
+// time would actually want, and the ones that make the sidebar read as
+// theirs rather than as a random sample of seven hundred.
+export const suggestedAccounts = (
+	snapshot: FeedSnapshot,
+	userTid: number,
+): ResolvedSocialAccount[] => {
+	const ids = [
+		"m:cast:nat0",
+		`m:cast:beat:${userTid}`,
+		`m:cast:homer:${userTid}`,
+		`m:cast:casual:${userTid}`,
+	];
+	const out: ResolvedSocialAccount[] = [];
+	for (const id of ids) {
+		const account = snapshot.accountById.get(id);
+		if (account) {
+			out.push(account);
+		}
+	}
+	return out.slice(0, 3);
+};
+
 export const feedDaysForSeason = async (season: number): Promise<number[]> =>
 	[...(await getFeedSnapshot(season)).days].reverse();
 
@@ -674,7 +809,8 @@ const eventsForDay = async (
 		// a few slots is the honest fix: a day always carries some of the
 		// league's state, and it never carries much.
 		events = [
-			...trimDayEvents([...gameEvents, ...news], { limit: EVENTS_PER_DAY }),
+			...trimDayEvents(gameEvents, { limit: EVENTS_PER_DAY }),
+			...trimDayEvents(news, { limit: NEWS_EVENTS_PER_DAY }),
 			...trimDayEvents(season, { limit: SEASON_EVENTS_PER_DAY }),
 		].sort((a, b) => a.order - b.order);
 	}
@@ -696,6 +832,16 @@ type AccountDayPost = {
 	eventCount: number;
 	isGame: boolean;
 	salience: number;
+	eventType: SocialEventType;
+	tids: number[];
+	pids: number[];
+	gid?: number;
+};
+
+// The game an event belongs to, read off the id the event builder wrote.
+const gidOf = (event: SocialEvent): number | undefined => {
+	const m = /^(?:g|perf):(\d+)/.exec(event.id);
+	return m ? Number(m[1]) : undefined;
 };
 
 const seedFor = (snapshot: FeedSnapshot, day: number) =>
@@ -766,6 +912,10 @@ const writeAccountDay = ({
 			eventCount: events.length,
 			isGame: event.type === "gameResult" || event.type === "performance",
 			salience: event.salience,
+			eventType: event.type,
+			tids: event.tids,
+			pids: event.pids,
+			gid: gidOf(event),
 		});
 	}
 	pool.endBatch();
@@ -793,10 +943,15 @@ const toFeedPost = (
 		handle: account.handle,
 		name: account.name,
 		kind: account.kind,
+		archetypeId: account.archetypeId,
 		tid: account.tid,
 		pid: account.pid,
 		text: post.text,
 		eventId: post.eventId,
+		eventType: post.eventType,
+		tids: post.tids,
+		pids: post.pids,
+		gid: post.gid,
 		verified: isVerified(account),
 		time: time.label,
 		minutes: time.minutes,
@@ -935,6 +1090,75 @@ const memoryOf = (
 	return { lines, shapes };
 };
 
+// ---------------------------------------------------------------- LANES
+//
+// WHO THE TIMELINE IS MADE OF. Left to interest alone, a day was a quarter
+// local radio, a quarter homer fans and a seventh official team accounts,
+// with players at one post in twenty - the loudest and the most corporate
+// voices, because both post every night about everything. A real timeline
+// is mostly fans and the beat, the news breakers when there is news, and
+// the players themselves now and then. So each day is filled by lane, in
+// score order within the lane, and a lane that runs out hands its slots to
+// the others - except the franchise and radio lanes, which are capped for
+// good: nobody wants more press releases.
+
+export type FeedLane =
+	| "fan"
+	| "beat"
+	| "radio"
+	| "national"
+	| "player"
+	| "team";
+
+export const LANE_SHARE: Record<FeedLane, number> = {
+	fan: 0.36,
+	beat: 0.2,
+	radio: 0.07,
+	national: 0.12,
+	player: 0.17,
+	team: 0.08,
+};
+
+const FAN_ARCHETYPES = new Set(["homerFan", "doomerFan", "casualFan", "troll"]);
+
+export const laneOf = (account: {
+	kind: "player" | "team" | "media";
+	archetypeId: string;
+	tid?: number;
+}): FeedLane => {
+	if (account.kind === "player") {
+		return "player";
+	}
+	if (account.kind === "team") {
+		return "team";
+	}
+	if (FAN_ARCHETYPES.has(account.archetypeId)) {
+		return "fan";
+	}
+	if (account.archetypeId === "localRadio") {
+		return "radio";
+	}
+	// The beat is everyone covering ONE team for a living: the writer and
+	// the local film-room account. The national lane is the accounts with
+	// no team at all - the insiders, the wire, the columnists - which the
+	// thirty film rooms were crowding out of it.
+	if (account.tid !== undefined) {
+		return "beat";
+	}
+	return "national";
+};
+
+// Lanes that may take the slots another lane could not fill.
+const OVERFLOW_LANES = new Set<FeedLane>(["fan", "beat", "national", "player"]);
+
+export const laneCaps = (total: number): Record<FeedLane, number> => {
+	const out = {} as Record<FeedLane, number>;
+	for (const lane of Object.keys(LANE_SHARE) as FeedLane[]) {
+		out[lane] = Math.max(1, Math.ceil(total * LANE_SHARE[lane]));
+	}
+	return out;
+};
+
 // ---------------------------------------------------------------- THE DAY
 
 export const buildFeedDay = async ({
@@ -977,36 +1201,60 @@ export const buildFeedDay = async ({
 	const said = new Set<string>();
 	const slots: SocialCasting[] = [];
 	const out: FeedPost[] = [];
-	for (const candidate of everyone) {
-		if (out.length >= POSTS_PER_DAY) {
-			break;
+	const caps = laneCaps(POSTS_PER_DAY);
+	const perLane = new Map<FeedLane, number>();
+	const taken = new Set<string>();
+
+	// Two passes: first every lane up to its share, then the lanes allowed to
+	// overflow take whatever is left, still in score order.
+	for (const pass of ["lanes", "overflow"] as const) {
+		for (const candidate of everyone) {
+			if (out.length >= POSTS_PER_DAY) {
+				break;
+			}
+			const key = `${candidate.accountId}|${candidate.eventId}`;
+			if (taken.has(key)) {
+				continue;
+			}
+			if ((perEvent.get(candidate.eventId) ?? 0) >= 4) {
+				continue;
+			}
+			const account = accountById.get(candidate.accountId);
+			if (!account) {
+				continue;
+			}
+			const lane = laneOf(account);
+			const inLane = perLane.get(lane) ?? 0;
+			if (pass === "lanes" ? inLane >= caps[lane] : !OVERFLOW_LANES.has(lane)) {
+				continue;
+			}
+			const own = await buildAccountDay({ snapshot, account, dayIndex });
+			const post = own.find((p) => p.eventId === candidate.eventId);
+			if (!post) {
+				taken.add(key);
+				continue;
+			}
+			// Two accounts landing on the same sentence about the same game is
+			// the one repeat memory cannot see, because memory is per account.
+			const line = normalise(post.text);
+			const core = coreByPostId.get(post.id);
+			if (said.has(line) || (core !== undefined && said.has(core))) {
+				taken.add(key);
+				continue;
+			}
+			said.add(line);
+			if (core !== undefined) {
+				said.add(core);
+			}
+			taken.add(key);
+			perEvent.set(
+				candidate.eventId,
+				(perEvent.get(candidate.eventId) ?? 0) + 1,
+			);
+			perLane.set(lane, inLane + 1);
+			slots.push(candidate);
+			out.push({ ...post, replies: [] });
 		}
-		if ((perEvent.get(candidate.eventId) ?? 0) >= 4) {
-			continue;
-		}
-		const account = accountById.get(candidate.accountId);
-		if (!account) {
-			continue;
-		}
-		const own = await buildAccountDay({ snapshot, account, dayIndex });
-		const post = own.find((p) => p.eventId === candidate.eventId);
-		if (!post) {
-			continue;
-		}
-		// Two accounts landing on the same sentence about the same game is
-		// the one repeat memory cannot see, because memory is per account.
-		const line = normalise(post.text);
-		const core = coreByPostId.get(post.id);
-		if (said.has(line) || (core !== undefined && said.has(core))) {
-			continue;
-		}
-		said.add(line);
-		if (core !== undefined) {
-			said.add(core);
-		}
-		perEvent.set(candidate.eventId, (perEvent.get(candidate.eventId) ?? 0) + 1);
-		slots.push(candidate);
-		out.push({ ...post, replies: [] });
 	}
 
 	// ---- Replies. Feuds are derived, so the pair rule is memoized here -
@@ -1118,6 +1366,7 @@ export const buildFeedDay = async ({
 			handle: replier.handle,
 			name: replier.name,
 			kind: replier.kind,
+			archetypeId: replier.archetypeId,
 			tid: replier.tid,
 			pid: replier.pid,
 			text: written.text,
@@ -1190,6 +1439,7 @@ export const buildFeedDay = async ({
 			handle: poster.handle,
 			name: poster.name,
 			kind: poster.kind,
+			archetypeId: poster.archetypeId,
 			tid: poster.tid,
 			pid: poster.pid,
 			text: back.text,

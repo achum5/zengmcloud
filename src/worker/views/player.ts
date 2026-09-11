@@ -11,6 +11,7 @@ import {
 } from "../../common/constants.ts";
 import { player } from "../core/index.ts";
 import { idb } from "../db/index.ts";
+import { feedAbout } from "../util/socialFeed.ts";
 import {
 	coarsenRating,
 	exemptFromCoarseRatings,
@@ -818,6 +819,22 @@ const updatePlayer = async (
 			}
 		}
 
+		// The feed about him, when the league has it on: what he said and what
+		// was said about him this week.
+		let social;
+		if (g.get("socialFeed")) {
+			try {
+				social = await feedAbout({
+					season: g.get("season"),
+					pid: p.pid,
+					limit: 6,
+					daysBack: 10,
+				});
+			} catch (error) {
+				console.error("player: feed failed", error);
+			}
+		}
+
 		return {
 			...topStuff,
 			events,
@@ -825,6 +842,7 @@ const updatePlayer = async (
 			impact,
 			leaders,
 			ratings: RATINGS,
+			social,
 		};
 	}
 };

@@ -1,6 +1,7 @@
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import { season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
+import { feedAbout } from "../util/socialFeed.ts";
 import { g, helpers } from "../util/index.ts";
 import type { Player, UpdateEvents } from "../../common/types.ts";
 import { processEvents } from "./news.ts";
@@ -639,6 +640,35 @@ const updateNewsFeed = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
+// The league feed, when the league has it on: the latest posts about the
+// user's team, so the dashboard reads like the morning after rather than a
+// spreadsheet. Best-effort - a feed that cannot be built is left off the page.
+const updateSocial = async (inputs: unknown, updateEvents: UpdateEvents) => {
+	if (
+		updateEvents.includes("firstRun") ||
+		updateEvents.includes("gameSim") ||
+		updateEvents.includes("playerMovement") ||
+		updateEvents.includes("newPhase") ||
+		updateEvents.includes("gameAttributes")
+	) {
+		if (!g.get("socialFeed")) {
+			return { social: undefined };
+		}
+		try {
+			const social = await feedAbout({
+				season: g.get("season"),
+				tid: g.get("userTid"),
+				limit: 5,
+				daysBack: 3,
+			});
+			return { social };
+		} catch (error) {
+			console.error("leagueDashboard: feed failed", error);
+			return { social: undefined };
+		}
+	}
+};
+
 export default async (inputs: unknown, updateEvents: UpdateEvents) => {
 	// Woo TypeScript, gotta break this up into 3 parts or it just says fuck it and calls it any
 	const part1 = Object.assign(
@@ -658,6 +688,9 @@ export default async (inputs: unknown, updateEvents: UpdateEvents) => {
 		await updatePlayoffs(inputs, updateEvents),
 		await updateStandings(inputs, updateEvents),
 	);
+	// A fourth source is where Object.assign's typed overloads run out and
+	// the whole view becomes any, which is why it is its own part.
+	const part4 = Object.assign({}, await updateSocial(inputs, updateEvents));
 
-	return Object.assign({}, part1, part2, part3);
+	return Object.assign({}, Object.assign({}, part1, part2, part3), part4);
 };

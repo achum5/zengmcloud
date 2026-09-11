@@ -1,5 +1,6 @@
 import { DataTable } from "../../components/DataTable/index.tsx";
 import Injuries from "./Injuries.tsx";
+import { SocialEmbed } from "../../components/SocialEmbed.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { getCols } from "../../../common/getCols.ts";
@@ -30,6 +31,7 @@ const Player2 = ({
 	amateurUniform,
 	appearanceTeams,
 	bestPos,
+	social,
 	contractValues,
 	customMenu,
 	events,
@@ -410,6 +412,27 @@ const Player2 = ({
 					</HideableSection>
 				</div>
 			</div>
+
+			{social && social.posts.length > 0 ? (
+				<div className="row">
+					<div className="col-lg-8 col-xl-6">
+						<HideableSection title="Feed">
+							<SocialEmbed
+								moreHref={
+									social.handle === undefined
+										? helpers.leagueUrl(["social"])
+										: helpers.leagueUrl(["social", social.handle])
+								}
+								moreText={social.handle === undefined ? "See more" : "Profile"}
+								pictures={social.pictures}
+								posts={social.posts}
+								teams={social.teams}
+								title={`${player.name} on the feed`}
+							/>
+						</HideableSection>
+					</div>
+				</div>
+			) : null}
 
 			<div className="row" style={{ marginBottom: "-1rem" }}>
 				<div className="col">

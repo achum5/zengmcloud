@@ -48,6 +48,18 @@ export type SocialCasting = {
 // should beat a mild topic preference and lose to a large one, which is what
 // keeps a homer from covering a game his team was not in while still letting
 // the insider break a trade anywhere in the league.
+const NEWS_DESK = new Set(["insider", "aggregator"]);
+const NEWS_TYPES = new Set<SocialEvent["type"]>([
+	"trade",
+	"signing",
+	"release",
+	"injury",
+	"draft",
+	"award",
+	"retirement",
+	"milestone",
+]);
+
 export const relevance = (
 	account: ResolvedSocialAccount,
 	event: SocialEvent,
@@ -57,6 +69,15 @@ export const relevance = (
 	// accounts worth having: each one is silent except about his own nights.
 	if (account.pid !== undefined && event.pids.includes(account.pid)) {
 		return 6;
+	}
+
+	// THE NEWS IS THE NEWS DESK'S OWN TEAM. An insider has no team, and a
+	// sprained ankle scores well below a forty-point night, so on the same
+	// scale the accounts that exist to break news never had enough interest
+	// in any of it to post. Four game days of a real league: two hundred and
+	// sixty posts, not one from an insider or the wire.
+	if (NEWS_DESK.has(account.archetypeId) && NEWS_TYPES.has(event.type)) {
+		return 3;
 	}
 
 	const loyalty = account.personality.loyaltyTid ?? account.tid;

@@ -128,6 +128,7 @@ $flag-icon-css-path: "/img/flags";
 @import "glyphicons";
 @import "sidebar";
 @import "rotation";
+@import "social";
 
 @each $color, $value in $table-variants {
 	.table-#{$color} {

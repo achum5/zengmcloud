@@ -8,6 +8,7 @@ import { bySport, isSport } from "../../common/sportFunctions.ts";
 import getWinner from "../../common/getWinner.ts";
 import formatScoreWithShootout from "../../common/formatScoreWithShootout.ts";
 import { BoxScoreWrapper } from "../components/BoxScoreWrapper.tsx";
+import { SocialEmbed } from "../components/SocialEmbed.tsx";
 import { BoxScoreRow } from "../components/BoxScoreRow.tsx";
 import { useLocal } from "../util/local.ts";
 
@@ -162,6 +163,7 @@ const GameLog = ({
 	abbrev,
 	boxScore,
 	gamesList,
+	reactions,
 	season,
 	tid,
 }: View<"gameLog">) => {
@@ -233,6 +235,17 @@ const GameLog = ({
 							) : (
 								<p>Select a game from the menu to view a box score.</p>
 							)}
+							{boxScore.gid >= 0 && reactions && reactions.posts.length > 0 ? (
+								<div className="mt-3">
+									<SocialEmbed
+										pictures={reactions.pictures}
+										posts={reactions.posts}
+										showDay={false}
+										teams={reactions.teams}
+										title="Reactions"
+									/>
+								</div>
+							) : null}
 						</div>
 
 						<div className="col-md-2 mt-3 mt-md-0">

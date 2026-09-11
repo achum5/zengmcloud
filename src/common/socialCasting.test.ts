@@ -110,6 +110,27 @@ describe("relevance", () => {
 	});
 });
 
+describe("the news desk", () => {
+	// An insider has no team, and an injury scores well below a big night, so
+	// on the shared scale the accounts that exist to break news never had the
+	// interest to post about any of it. Four game days of a real league: two
+	// hundred and sixty posts, none from an insider or the wire.
+	test("news is the insider's own team", () => {
+		const insider = account("m:cast:nat0", "insider");
+		const injury = ev("e:1", { type: "injury", topic: "injury", pids: [7] });
+		const game = ev("g:1", { tids: [3, 4] });
+		assert.strictEqual(relevance(insider, injury), 3);
+		// An ordinary game is still nobody's business in particular.
+		assert.strictEqual(relevance(insider, game), 1);
+	});
+
+	test("a fan with no stake does not get the same lift", () => {
+		const fan = account("m:cast:homer:0", "homerFan", { tid: 0 });
+		const injury = ev("e:1", { type: "injury", topic: "injury", tids: [5] });
+		assert.isBelow(relevance(fan, injury), 1);
+	});
+});
+
 describe("topicPull", () => {
 	test("weights are relative to the account's own largest", () => {
 		// Otherwise an account whose preset happens to be written with small
