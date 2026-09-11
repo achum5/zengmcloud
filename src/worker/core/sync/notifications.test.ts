@@ -251,10 +251,12 @@ describe("buildNotifications", () => {
 			},
 			opts,
 		);
-		assert.strictEqual(notifs[0]!.title, "Bye day for the Lakers");
+		// The headline takes the title - a phone renders it bold and never
+		// truncates it - and the story's first line goes under it.
+		assert.strictEqual(notifs[0]!.title, "Celtics stun the Bulls at the wire");
 		assert.strictEqual(
 			notifs[0]!.body,
-			"Celtics stun the Bulls at the wire\nThe Celtics beat the Bulls 120-114 on a buzzer-beater.",
+			"The Celtics beat the Bulls 120-114 on a buzzer-beater.",
 		);
 		// The column of final scores it replaced, and the deck, are both gone.
 		assert.ok(!notifs[0]!.body.includes("BOS 120-114"), notifs[0]!.body);
