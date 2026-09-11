@@ -200,6 +200,11 @@ export const contenderDowngradesBestOvr = ({
 // (star for picks+prospects hauls) land at exactly six, so they all still fit.
 export const MAX_ASSETS_PER_SIDE = 6;
 
+// A star hunt runs bigger: the hunter sends the salary the cap rule demands
+// on top of the picks and young players that are the actual price, and the
+// real ones do too (four players and four firsts is a recent blockbuster).
+export const MAX_ASSETS_PER_SIDE_HUNT = 8;
+
 // --- Re-trade cooldown ---------------------------------------------------------
 // AI teams don't flip a player they just traded for — no same-season ping-pong
 // (a player bouncing across three rosters in one year reads as chaos, not

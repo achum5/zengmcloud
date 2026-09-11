@@ -1,5 +1,6 @@
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
+import { rememberedTier } from "../trade/tradePosture.ts";
 
 /**
  * Given a list of players sorted by ability, find the starters.
@@ -56,9 +57,26 @@ export const findStarters = (positions: string[]): number[] => {
 	return starters;
 };
 
+// A TANKING TEAM PLAYS ITS YOUTH. A team tearing down is not trying to win
+// this season - it has shopped its veterans and is collecting picks, and the
+// one thing a real front office does with the games left is find out what
+// the young players are. So an AI team in a teardown orders its rotation by
+// value WITH potential rather than by who is best today: the twenty-year-old
+// with the ceiling starts over the thirty-year-old holding the fort. It costs
+// wins, which is the point, and it is the other half of the tank the trade
+// side already commits to. Only for AI teams with the smart front office on,
+// and only while the team's last-read posture is a teardown - a team that
+// climbs out of it goes back to playing to win the moment its posture says
+// so.
+export const playsYouth = (tid: number): boolean =>
+	g.get("smartAiFrontOffice") &&
+	!g.get("userTids").includes(tid) &&
+	rememberedTier(tid) === "teardown";
+
 export const getRosterOrderByPid = (
 	players: {
 		pid: number;
+		value?: number;
 		valueNoPot: number;
 		valueNoPotFuzz: number;
 		ratings: {
@@ -67,10 +85,18 @@ export const getRosterOrderByPid = (
 	}[],
 	tid: number,
 	fuzzUser: boolean,
+	// See playsYouth.
+	youth = false,
 ) => {
 	// Fuzz only for user's team
 	if (fuzzUser && tid === g.get("userTid")) {
 		players.sort((a, b) => b.valueNoPotFuzz - a.valueNoPotFuzz);
+	} else if (youth) {
+		players.sort(
+			(a, b) =>
+				(b.value ?? b.valueNoPot) - (a.value ?? a.valueNoPot) ||
+				b.valueNoPot - a.valueNoPot,
+		);
 	} else {
 		players.sort((a, b) => b.valueNoPot - a.valueNoPot);
 	}
@@ -114,14 +140,14 @@ const rosterAutoSort = async (tid: number, onlyNewPlayers?: boolean) => {
 		tid,
 	);
 	const players = await idb.getCopies.playersPlus(playersFromCache, {
-		attrs: ["pid", "valueNoPot", "valueNoPotFuzz"],
+		attrs: ["pid", "value", "valueNoPot", "valueNoPotFuzz"],
 		ratings: ["pos"],
 		season: g.get("season"),
 		showNoStats: true,
 		showRookies: true,
 	});
 
-	const rosterOrders = getRosterOrderByPid(players, tid, true);
+	const rosterOrders = getRosterOrderByPid(players, tid, true, playsYouth(tid));
 
 	// Update rosterOrder
 	for (const p of playersFromCache) {

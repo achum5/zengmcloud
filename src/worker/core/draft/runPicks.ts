@@ -225,6 +225,7 @@ const runPicks = async (
 							postureFor,
 							valueChangeCalculator: draftValueChangeCalculator,
 							starOvr: leagueContext.starOvr,
+							starValue: leagueContext.starValue,
 							draftedByTid,
 						}));
 					if (traded) {

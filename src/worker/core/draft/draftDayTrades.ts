@@ -70,6 +70,7 @@ const maybeTradeUp = async ({
 	postureFor,
 	valueChangeCalculator,
 	starOvr,
+	starValue,
 	draftedByTid,
 	rand = Math.random,
 }: {
@@ -84,6 +85,7 @@ const maybeTradeUp = async ({
 	postureFor: (tid: number) => Promise<TradePosture | undefined>;
 	valueChangeCalculator: ValueChangeCalculator;
 	starOvr: number;
+	starValue: number;
 	draftedByTid: Map<number, Map<PosBucket, number>>;
 	rand?: () => number;
 }): Promise<boolean> => {
@@ -174,6 +176,7 @@ const maybeTradeUp = async ({
 			aiTids: [],
 			season,
 			starOvr,
+			starValue,
 		};
 		const offer = await buildOfferFromPartner({
 			initiator: buyer.tid,

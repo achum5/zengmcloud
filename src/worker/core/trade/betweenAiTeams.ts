@@ -23,6 +23,7 @@ import {
 	isSelling,
 	isStarAcquisition,
 	MAX_ASSETS_PER_SIDE,
+	MAX_ASSETS_PER_SIDE_HUNT,
 	MOTIVATED_DUMP_DV,
 	NORMAL_DV_TOLERANCE,
 	NORMAL_MAX_ASSETS,
@@ -36,6 +37,15 @@ import {
 import { last } from "../../../common/utils.ts";
 import moodInfo from "../player/moodInfo.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
+import getPayroll from "../team/getPayroll.ts";
+import {
+	ballastNeeded,
+	HUNT_CHANCE,
+	HUNT_CHANCE_STAR_GAP,
+	incomingCeiling,
+	noteHunt,
+	pickBallast,
+} from "./starHunt.ts";
 
 const getAITids = async () => {
 	const teams = await idb.cache.teams.getAll();
@@ -69,6 +79,9 @@ export type AttemptContext = {
 	// A genuine star's OVR bar (from the league context), so an acquisition can be
 	// recognized as a blockbuster.
 	starOvr: number;
+	// And the value bar, which is what decides whose own star stays home in a
+	// hunt.
+	starValue: number;
 };
 
 // The best current OVR among a set of players (what a side is receiving), used to
@@ -217,12 +230,20 @@ const talentAndAge = async (
 const anyPureDowngrade = async (
 	teams: TradeTeams,
 	season: number,
+	// A star hunt is a consolidation by design - three rotation players for
+	// one star SUMS to less talent, and that is the whole point of the deal.
+	// The hunter's side is judged by the contender guards instead (it must
+	// come out with a better best player); only the seller's is checked here.
+	consolidating = false,
 ): Promise<boolean> => {
 	const sides = [
 		{ given: teams[0].pids, recv: teams[1].pids, recvDpids: teams[1].dpids },
 		{ given: teams[1].pids, recv: teams[0].pids, recvDpids: teams[0].dpids },
 	];
-	for (const side of sides) {
+	for (const [i, side] of sides.entries()) {
+		if (consolidating && i === 0) {
+			continue;
+		}
 		const given = await talentAndAge(side.given, season);
 		const recv = await talentAndAge(side.recv, season);
 		if (
@@ -427,18 +448,25 @@ export const offerPassesGuards = async (
 	teams: TradeTeams,
 	postures: Map<number, TradePosture>,
 	season: number,
+	why: (reason: string) => void = () => {},
+	// See anyPureDowngrade: the initiator is consolidating for a star.
+	consolidating = false,
 ): Promise<boolean> => {
 	const tradeSummary = await summary(teams);
 	if (tradeSummary.warning) {
+		why("salary");
 		return false;
 	}
 	if (await hasBadRental(teams, postures, season)) {
+		why("rental");
 		return false;
 	}
-	if (await anyPureDowngrade(teams, season)) {
+	if (await anyPureDowngrade(teams, season, consolidating)) {
+		why("downgrade");
 		return false;
 	}
 	if (await violatesTimeline(teams, postures, season)) {
+		why("timeline");
 		return false;
 	}
 	return true;
@@ -467,6 +495,11 @@ export const buildOfferFromPartner = async (args: {
 	// Same, for the partner's draft picks - how a team calls about a PICK, the
 	// draft-night trade-up.
 	partnerSeedDpids?: number[];
+	// A star hunt: the deal is only worth making if a genuine star comes back
+	// (the hunter has put players on the table it would never move for less).
+	requireStar?: boolean;
+	// Told why an offer died, for diagnostics.
+	why?: (reason: string) => void;
 	ctx: AttemptContext;
 }): Promise<{ teams: TradeTeams; dv2: number; landsStar: boolean } | null> => {
 	const {
@@ -477,6 +510,8 @@ export const buildOfferFromPartner = async (args: {
 		partner,
 		partnerSeedPids = [],
 		partnerSeedDpids = [],
+		requireStar = false,
+		why = () => {},
 		ctx,
 	} = args;
 	const { postures, valueChangeCalculator, season, starOvr } = ctx;
@@ -494,6 +529,10 @@ export const buildOfferFromPartner = async (args: {
 			.map((p) => p.pid),
 	];
 
+	// In a hunt the partner gives the star and nothing else: the hunter named
+	// him and pays, and a seller padding the return with its own bodies is
+	// what turned most of these into salary-rule refusals.
+	const partnerGivesOnlySeed = requireStar;
 	const teams0: TradeTeams = [
 		{
 			tid: initiator,
@@ -505,11 +544,17 @@ export const buildOfferFromPartner = async (args: {
 		{
 			tid: partner,
 			pids: partnerSeedPids,
-			pidsExcluded: partnerExcluded.filter(
-				(pid) => !partnerSeedPids.includes(pid),
-			),
+			pidsExcluded: partnerGivesOnlySeed
+				? partnerPlayers
+						.map((p) => p.pid)
+						.filter((pid) => !partnerSeedPids.includes(pid))
+				: partnerExcluded.filter((pid) => !partnerSeedPids.includes(pid)),
 			dpids: partnerSeedDpids,
-			dpidsExcluded: [],
+			dpidsExcluded: partnerGivesOnlySeed
+				? (await idb.cache.draftPicks.indexGetAll("draftPicksByTid", partner))
+						.map((dp) => dp.dpid)
+						.filter((dpid) => !partnerSeedDpids.includes(dpid))
+				: [],
 		},
 	];
 
@@ -529,26 +574,33 @@ export const buildOfferFromPartner = async (args: {
 		valueChangeCalculator,
 	});
 	if (!teams) {
+		why("makeItWork");
 		return null;
 	}
 
 	// Don't do trades of just picks, or where the partner gives nothing.
 	if (teams[0].pids.length === 0 && teams[1].pids.length === 0) {
+		why("picksOnly");
 		return null;
 	}
 	if (teams[1].pids.length === 0 && teams[1].dpids.length === 0) {
+		why("partnerGivesNothing");
 		return null;
 	}
 
 	// Realism cap on package size (sub-average players are ~free under the curve).
+	const maxPerSide = requireStar
+		? MAX_ASSETS_PER_SIDE_HUNT
+		: MAX_ASSETS_PER_SIDE;
 	if (
-		teams[0].pids.length + teams[0].dpids.length > MAX_ASSETS_PER_SIDE ||
-		teams[1].pids.length + teams[1].dpids.length > MAX_ASSETS_PER_SIDE
+		teams[0].pids.length + teams[0].dpids.length > maxPerSide ||
+		teams[1].pids.length + teams[1].dpids.length > maxPerSide
 	) {
+		why("tooManyAssets");
 		return null;
 	}
 
-	if (!(await offerPassesGuards(teams, postures, season))) {
+	if (!(await offerPassesGuards(teams, postures, season, why, requireStar))) {
 		return null;
 	}
 
@@ -566,6 +618,10 @@ export const buildOfferFromPartner = async (args: {
 		acquirerTier: initPosture.tier,
 		starOvr,
 	});
+	if (requireStar && !landsStar) {
+		why("noStarLanded");
+		return null;
+	}
 	let lowerBound = -NORMAL_DV_TOLERANCE;
 	if (seed.motivatedDump) {
 		lowerBound = Math.min(lowerBound, MOTIVATED_DUMP_DV);
@@ -577,6 +633,9 @@ export const buildOfferFromPartner = async (args: {
 		lowerBound = Math.min(lowerBound, STAR_PREMIUM_DV);
 	}
 	if (dv2 > NORMAL_DV_TOLERANCE || dv2 < lowerBound) {
+		why(
+			dv2 > NORMAL_DV_TOLERANCE ? "tooGoodForInitiator" : "tooBadForInitiator",
+		);
 		return null;
 	}
 
@@ -694,6 +753,160 @@ const legacyAttempt = async (
 	return true;
 };
 
+// THE STAR HUNT. A contender in striking distance calls a partner about its
+// shoppable star, names him, and pays: with the young players and picks it
+// would otherwise sit on (only a star of its own stays off the table), and
+// with whatever salary the cap rule makes it send back. See starHunt.ts for
+// why both halves are needed before a single blockbuster can come together.
+// Returns the best offer across the shortlist, or null.
+export const huntStar = async ({
+	initiator,
+	initPosture,
+	players,
+	candidates,
+	ctx,
+}: {
+	initiator: number;
+	initPosture: TradePosture;
+	// The initiator's tradable, not-just-traded players.
+	players: Player[];
+	candidates: number[];
+	ctx: AttemptContext;
+}): Promise<{ teams: TradeTeams; dv2: number; landsStar: boolean } | null> => {
+	const { postures, season, starOvr, starValue } = ctx;
+
+	// Only a star of its own is untouchable in a hunt; core players are the
+	// price. Just-traded players stay out, as everywhere.
+	const stars = new Set(
+		players.filter((p) => p.value >= starValue).map((p) => p.pid),
+	);
+	const initiatorExcluded = [
+		...initPosture.buildingBlockPids.filter((pid) => stars.has(pid)),
+		...players
+			.filter((p) => wasTradedThisSeason(p.transactions, season))
+			.map((p) => p.pid),
+	];
+
+	// Every real star trade carries a first: the furthest-out one the hunter
+	// owns goes on the table with the money, and the value machinery adds
+	// what else it takes. (It also keeps the seller's timeline guard happy -
+	// a rebuilder takes back a veteran only when it is being paid in picks.)
+	const firsts = (
+		await idb.cache.draftPicks.indexGetAll("draftPicksByTid", initiator)
+	)
+		.filter((dp) => dp.round === 1)
+		.sort((a, b) => {
+			const sa = typeof a.season === "number" ? a.season : 0;
+			const sb = typeof b.season === "number" ? b.season : 0;
+			return sb - sa || a.dpid - b.dpid;
+		});
+	const seedDpids = firsts.length > 0 ? [firsts[0]!.dpid] : [];
+
+	const payroll = await getPayroll(initiator);
+	const salaryCap = g.get("salaryCap");
+	const salaryCapType = g.get("salaryCapType");
+	const softCapTradeSalaryMatch = g.get("softCapTradeSalaryMatch");
+
+	let best: { teams: TradeTeams; dv2: number; landsStar: boolean } | null =
+		null;
+	for (const partner of candidates) {
+		const partnerPosture = postures.get(partner);
+		if (!partnerPosture?.shoppableStar) {
+			noteHunt("noShoppableStar");
+			continue;
+		}
+		const blocks = new Set(partnerPosture.buildingBlockPids);
+		const target = (
+			await idb.cache.players.indexGetAll("playersByTid", partner)
+		)
+			.filter(
+				(p) =>
+					!blocks.has(p.pid) &&
+					last(p.ratings).ovr >= starOvr &&
+					!isUntradable(p).untradable &&
+					!wasTradedThisSeason(p.transactions, season),
+			)
+			.sort((a, b) => last(b.ratings).ovr - last(a.ratings).ovr)[0];
+		if (!target) {
+			noteHunt("noTarget");
+			continue;
+		}
+
+		// The money first, so the value machinery below builds on a package
+		// the cap rule will let through - on both ends. The hunter must send
+		// enough to take the star on; the seller may take back only so much.
+		const needed = ballastNeeded({
+			incoming: target.contract.amount,
+			payroll,
+			salaryCap,
+			salaryCapType,
+			softCapTradeSalaryMatch,
+		});
+		const ceiling = incomingCeiling({
+			outgoing: target.contract.amount,
+			payroll: await getPayroll(partner),
+			salaryCap,
+			salaryCapType,
+			softCapTradeSalaryMatch,
+		});
+		const ballast = pickBallast(
+			players
+				.filter((p) => !initiatorExcluded.includes(p.pid))
+				.map((p) => ({
+					pid: p.pid,
+					value: p.value,
+					amount: p.contract.amount,
+					yearsLeft: Math.max(0, p.contract.exp - season),
+				})),
+			needed,
+			undefined,
+			ceiling,
+		);
+		if (!ballast) {
+			noteHunt("noBallast");
+			continue;
+		}
+		// Whatever room is left under the seller's ceiling is what the rest of
+		// the package may cost in salary: anyone paid more than that stays
+		// home, so the price is paid in picks and cheap young players.
+		let ballastSalary = 0;
+		for (const pid of ballast) {
+			ballastSalary += players.find((p) => p.pid === pid)?.contract.amount ?? 0;
+		}
+		const room = ceiling - ballastSalary;
+		const excludedForSalary = players
+			.filter((p) => !ballast.includes(p.pid) && p.contract.amount > room)
+			.map((p) => p.pid);
+
+		const offer = await buildOfferFromPartner({
+			initiator,
+			initPosture,
+			seed: {
+				pids: ballast,
+				dpids: seedDpids,
+				motivatedDump: false,
+				starSale: false,
+			},
+			initiatorExcluded: [...initiatorExcluded, ...excludedForSalary],
+			partner,
+			partnerSeedPids: [target.pid],
+			requireStar: true,
+			why: noteHunt,
+			ctx,
+		});
+		if (offer) {
+			noteHunt("offer");
+			if (best === null || offer.dv2 > best.dv2) {
+				best = offer;
+			}
+		}
+	}
+	if (candidates.length === 0) {
+		noteHunt("noCandidates");
+	}
+	return best;
+};
+
 const attempt = async (
 	ctx: AttemptContext,
 ): Promise<[number, number] | false> => {
@@ -740,6 +953,54 @@ const attempt = async (
 		return false;
 	}
 
+	const others = aiTids.filter((t) => t !== initiator);
+	if (others.length === 0) {
+		return false;
+	}
+
+	// A contender in striking distance opens with a hunt some of the time:
+	// name the star, then pay. Falls through to ordinary shopping when no
+	// partner has one to sell or no package clears.
+	if (
+		initPosture.strikingDistance &&
+		Math.random() < (initPosture.starGap ? HUNT_CHANCE_STAR_GAP : HUNT_CHANCE)
+	) {
+		const sellers = shortlistPartners(
+			others.filter((t) => postures.get(t)?.shoppableStar),
+			initPosture,
+			postures,
+			MARKET_CANDIDATES,
+		);
+		const hunt = await huntStar({
+			initiator,
+			initPosture,
+			players,
+			candidates: sellers,
+			ctx,
+		});
+		if (hunt) {
+			const finalTids: [number, number] = [
+				hunt.teams[0].tid,
+				hunt.teams[1].tid,
+			];
+			await processTrade(
+				finalTids,
+				[hunt.teams[0].pids, hunt.teams[1].pids],
+				[hunt.teams[0].dpids, hunt.teams[1].dpids],
+				{
+					initiatorTid: initiator,
+					tiers: [
+						postures.get(hunt.teams[0].tid)?.tier ?? "?",
+						postures.get(hunt.teams[1].tid)?.tier ?? "?",
+					],
+					dv: Math.round(hunt.dv2 * 10) / 10,
+					motivation: "star-hunt",
+				},
+			);
+			return finalTids;
+		}
+	}
+
 	// What the initiator brings to market (a shopped vet/star, a walk-year dump,
 	// or a buyer's pick/spare depth chasing talent) - the SAME offer is floated to
 	// every candidate below.
@@ -763,11 +1024,6 @@ const attempt = async (
 			.filter((p) => wasTradedThisSeason(p.transactions, season))
 			.map((p) => p.pid),
 	].filter((pid) => !seed.pids.includes(pid));
-
-	const others = aiTids.filter((t) => t !== initiator);
-	if (others.length === 0) {
-		return false;
-	}
 
 	// Feel out the market: float the seed to a shortlist of fitting teams, collect
 	// each one's best offer, and take the one that helps US most (highest dv2
@@ -906,9 +1162,11 @@ const betweenAiTeams = async () => {
 	// If this fails for any reason, skip trading this tick rather than deal blind.
 	let postures: Map<number, TradePosture>;
 	let starOvr: number;
+	let starValue: number;
 	try {
 		const context = await getLeagueTradeContext();
 		starOvr = context.starOvr;
+		starValue = context.starValue;
 		postures = new Map();
 		for (const tid of aiTids) {
 			postures.set(tid, await getTradePosture(tid, context));
@@ -929,6 +1187,7 @@ const betweenAiTeams = async () => {
 			aiTids,
 			season,
 			starOvr,
+			starValue,
 		});
 		if (tradeTids) {
 			// Don't need to recompute draft pick value.

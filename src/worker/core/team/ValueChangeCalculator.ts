@@ -1,9 +1,14 @@
-import { COLA_NUM_LOTTERY_PICKS, PHASE } from "../../../common/constants.ts";
+import {
+	COLA_NUM_LOTTERY_PICKS,
+	DEFAULT_PLAY_THROUGH_INJURIES,
+	PHASE,
+} from "../../../common/constants.ts";
 import { draft, player, team, trade } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local } from "../../util/index.ts";
 import type {
 	TradePickValues,
+	Player,
 	PlayerContract,
 	PlayerInjury,
 	DraftPick,
@@ -21,6 +26,7 @@ import {
 	tierForLegacyStrategy,
 } from "./tierValuation.ts";
 import { colaAdjustedSlot, projectedSlot } from "../trade/futurePickOutlook.ts";
+import { presentHelpPremium } from "./presentHelp.ts";
 
 type Asset =
 	| {
@@ -41,6 +47,31 @@ type Asset =
 			draftPick: number;
 			draftYear: number;
 	  };
+
+// A player as team.ovr reads him, so what a trade does to a roster ON THE
+// FLOOR can be measured alongside what it does to its ledger.
+type OvrInput = {
+	pid: number;
+	injury: PlayerInjury;
+	value: number;
+	ratings: {
+		ovr: number;
+		ovrs: Record<string, number> | undefined;
+		pos: string;
+	};
+};
+
+const toOvrInput = (
+	p: Pick<Player, "pid" | "injury" | "value" | "ratings">,
+): OvrInput => {
+	const r = last(p.ratings);
+	return {
+		pid: p.pid,
+		injury: p.injury,
+		value: p.value,
+		ratings: { ovr: r.ovr, ovrs: r.ovrs, pos: r.pos },
+	};
+};
 
 const zscore = (value: number) =>
 	(value - local.playerOvrMean) / local.playerOvrStd;
@@ -102,6 +133,7 @@ const getPlayers = async ({
 	pidsRemove,
 	tid,
 	tradingPartnerTid,
+	floor,
 }: {
 	add: Asset[];
 	remove: Asset[];
@@ -110,6 +142,8 @@ const getPlayers = async ({
 	pidsRemove: number[];
 	tid: number;
 	tradingPartnerTid?: number;
+	// The same three groups, as team.ovr reads them - see presentHelp.
+	floor: { kept: OvrInput[]; removed: OvrInput[]; added: OvrInput[] };
 }) => {
 	const season = g.get("season");
 	const phase = g.get("phase");
@@ -131,6 +165,7 @@ const getPlayers = async ({
 	for (const p of players) {
 		const value = zscore(p.value);
 		if (!pidsRemove.includes(p.pid)) {
+			floor.kept.push(toOvrInput(p));
 			roster.push({
 				type: "player",
 				value,
@@ -140,6 +175,8 @@ const getPlayers = async ({
 				justDrafted: helpers.justDrafted(p, phase, season),
 			});
 		} else {
+			floor.removed.push(toOvrInput(p));
+
 			// Only apply fudge factor to positive assets
 			let fudgedValue = value;
 			if (fudgedValue > 0) {
@@ -162,6 +199,7 @@ const getPlayers = async ({
 		const p = await idb.cache.players.get(pid);
 		if (p) {
 			const value = zscore(p.value);
+			floor.added.push(toOvrInput(p));
 
 			add.push({
 				type: "player",
@@ -903,6 +941,11 @@ export class ValueChangeCalculator {
 			? (this.cache?.tiers.get(tid)?.tier ?? tierForLegacyStrategy(t.strategy))
 			: tierForLegacyStrategy(t.strategy);
 
+		const floor = {
+			kept: [] as OvrInput[],
+			removed: [] as OvrInput[],
+			added: [] as OvrInput[],
+		};
 		await getPlayers({
 			add,
 			remove,
@@ -911,6 +954,7 @@ export class ValueChangeCalculator {
 			pidsRemove,
 			tid,
 			tradingPartnerTid,
+			floor,
 		});
 		await getPicks({
 			cache: this.cache,
@@ -933,7 +977,52 @@ export class ValueChangeCalculator {
 		const valuesRemove = sumValues(remove, tier, tid, false, smartInjuries);
 		// console.log("Total", valuesRemove);
 
-		return valuesAdd - valuesRemove;
+		let dv = valuesAdd - valuesRemove;
+
+		// WHAT THE DEAL DOES ON THE FLOOR THIS SEASON, for a team that is trying
+		// to win this season. Only ever a charge on what the team gives up - so
+		// a like-for-like swap, a consolidation, or spare depth going out costs
+		// nothing extra, and a selling team is charged nothing at all. See
+		// team/presentHelp.ts.
+		if (
+			g.get("smartAiFrontOffice") &&
+			floor.removed.length > 0 &&
+			valuesRemove > 0
+		) {
+			const premium = presentHelpPremium({
+				tier,
+				...this.floorStrength(t, floor),
+			});
+			if (premium > 0) {
+				dv -= premium * valuesRemove;
+			}
+		}
+
+		return dv;
+	}
+
+	// Team ovr with and without the deal, counting only the men who can play
+	// now: a starter out for the season is not helping the team win this
+	// season, so shipping him takes nothing off the floor.
+	private floorStrength(
+		t: { playThroughInjuries?: [number, number] },
+		floor: { kept: OvrInput[]; removed: OvrInput[]; added: OvrInput[] },
+	): { ovrBefore: number; ovrAfter: number } {
+		const accountForInjuredPlayers = {
+			numDaysInFuture: 0,
+			playThroughInjuries:
+				t.playThroughInjuries ?? DEFAULT_PLAY_THROUGH_INJURIES,
+		};
+		const playoffs = g.get("phase") === PHASE.PLAYOFFS;
+		const ovrBefore = team.ovr([...floor.kept, ...floor.removed], {
+			accountForInjuredPlayers,
+			playoffs,
+		});
+		const ovrAfter = team.ovr([...floor.kept, ...floor.added], {
+			accountForInjuredPlayers,
+			playoffs,
+		});
+		return { ovrBefore, ovrAfter };
 	}
 }
 

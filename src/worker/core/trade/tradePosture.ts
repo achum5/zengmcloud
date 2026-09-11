@@ -98,6 +98,8 @@ export type TradePosture = {
 	youngCoreCount: number;
 	// A would-be contender with no true star — the "we need our guy" flag.
 	starGap: boolean;
+	// Close enough to the title to go and get it - see inStrikingDistance.
+	strikingDistance: boolean;
 	needs: PositionNeed[];
 	surpluses: PositionSurplus[];
 	// The slot a buyer/contender should upgrade (needs first, else weakest slot).
@@ -166,6 +168,27 @@ export const ELITE_OVR_GAP = 5;
 
 export const isEliteByOvr = (teamOvr: number, topTeamOvr: number): boolean =>
 	teamOvr >= topTeamOvr - ELITE_OVR_GAP;
+
+// IN STRIKING DISTANCE OF A TITLE, which is the one situation where a front
+// office stops being careful. A team going all-in is there by definition; a
+// buyer is there when its roster is one of the very best in the league or
+// its record says it already belongs near the top. A buyer this close does
+// what an all-in team does on the market - it calls about the star and pays
+// with the young players it would otherwise protect - while still refusing
+// to part with a star of its own. See starHunt.ts and betweenAiTeams.
+export const STRIKING_CONTENTION = 0.58;
+
+export const inStrikingDistance = ({
+	tier,
+	elite,
+	contention,
+}: {
+	tier: TradeTier;
+	elite: boolean;
+	contention: number;
+}): boolean =>
+	tier === "allIn" ||
+	(tier === "buyer" && (elite || contention >= STRIKING_CONTENTION));
 
 export const classifyTier = ({
 	winp,
@@ -608,6 +631,38 @@ const atRankDesc = (sortedDesc: number[], rank: number, fallback: number) => {
 // pick-value code uses), for blending in before enough games are played.
 const ovrRankToWinp = (rankPct: number) => 0.75 - 0.5 * rankPct;
 
+// ---- What each team was last read as -----------------------------------------
+//
+// For code that runs every game day and cannot afford a league scan to ask
+// what a team is doing - the roster sort, which wants to know whether a team
+// is tearing down. Every posture read writes here; the trade market reads
+// every AI team's posture every day of the regular season, so the answer is
+// never more than a day old while it matters. Stamped with the league and
+// season so a stale read from another league or last year is never trusted.
+const rememberedTiers = new Map<
+	number,
+	{ tier: TradeTier; lid: number | undefined; season: number }
+>();
+
+export const rememberTier = (tid: number, tier: TradeTier) => {
+	rememberedTiers.set(tid, {
+		tier,
+		lid: g.get("lid"),
+		season: g.get("season"),
+	});
+};
+
+export const rememberedTier = (tid: number): TradeTier | undefined => {
+	const r = rememberedTiers.get(tid);
+	return r && r.lid === g.get("lid") && r.season === g.get("season")
+		? r.tier
+		: undefined;
+};
+
+export const forgetTiers = () => {
+	rememberedTiers.clear();
+};
+
 // ---- Orchestrators (DB) -----------------------------------------------------
 
 export type LeagueTradeContext = {
@@ -843,6 +898,8 @@ export const getTradePosture = async (
 		(p) => !blockSet.has(p.pid) && p.ovr >= context.starOvr,
 	);
 
+	rememberTier(tid, tier);
+
 	const payroll = await getPayroll(tid);
 	const cap = capPosture({
 		payroll,
@@ -866,6 +923,11 @@ export const getTradePosture = async (
 		avgAge,
 		youngCoreCount,
 		starGap,
+		strikingDistance: inStrikingDistance({
+			tier,
+			elite,
+			contention: contentionScore({ winp, ovrRankPct }),
+		}),
 		needs,
 		surpluses,
 		targetPos,

@@ -125,9 +125,11 @@ const proposeToUser = async ({
 
 	let postures: Map<number, TradePosture>;
 	let starOvr: number;
+	let starValue: number;
 	try {
 		const context = await getLeagueTradeContext();
 		starOvr = context.starOvr;
+		starValue = context.starValue;
 		postures = new Map();
 		for (const t of await idb.cache.teams.getAll()) {
 			if (t.disabled || t.tid === userTid) {
@@ -223,6 +225,7 @@ const proposeToUser = async ({
 		aiTids: [...postures.keys()],
 		season,
 		starOvr,
+		starValue,
 	};
 
 	const offers: TradeTeams[] = [];

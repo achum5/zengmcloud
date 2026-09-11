@@ -37,6 +37,7 @@ import {
 	getLeagueTradeContext,
 	getTradePosture,
 } from "../trade/tradePosture.ts";
+import { huntDiagnostics } from "../trade/starHunt.ts";
 
 // ---------------------------------------------------------------------------
 // DECADES OF OFFSEASONS, END TO END
@@ -527,16 +528,30 @@ const simRealSeason = async (rng: () => number) => {
 	};
 
 	for (let day = 0; day < NUM_GAME_DAYS; day++) {
-		// Everyone injured sits this one out and gets a game closer to healthy.
+		// Everyone injured sits this one out and gets a game closer to healthy,
+		// and everyone recently signed gets a game closer to tradable - the
+		// same countdown play.ts runs. This was missing, and with sign() putting
+		// a fourteen-game freeze on EVERY signing, re-signings included, every
+		// player who ever signed a contract in a run stayed untradable for the
+		// rest of it: the market the harness measured was starved of exactly
+		// the players real trades are made of.
 		for (const p of await idb.cache.players.indexGetAll("playersByTid", [
 			0,
 			Infinity,
 		])) {
+			let changed = false;
 			if (p.injury.gamesRemaining > 0) {
 				p.injury.gamesRemaining -= 1;
 				if (p.injury.gamesRemaining <= 0) {
 					p.injury = { type: "Healthy", gamesRemaining: 0 };
 				}
+				changed = true;
+			}
+			if (p.gamesUntilTradable > 0) {
+				p.gamesUntilTradable -= 1;
+				changed = true;
+			}
+			if (changed) {
 				await idb.cache.players.put(p);
 			}
 		}
@@ -870,6 +885,10 @@ describe("a league runs for a decade without falling apart", () => {
 			// is heavier, the same roster wins fewer games - so the honest question
 			// about a rebuild is whether the TALENT recovered.
 			rot: number;
+			// Close enough to the title to go get it (see inStrikingDistance), and
+			// whether it went: star hunts this team initiated this season.
+			striking: boolean;
+			hunts: number;
 		}[][] = [];
 		// Every pick made, so what the AI ASSUMED it was buying can be checked
 		// against what the player was actually worth once he had grown into it.
@@ -1065,6 +1084,18 @@ describe("a league runs for a decade without falling apart", () => {
 				// not the frenzy.)
 				g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
 				if (nodeEnv.NO_TRADES !== "1" && nodeEnv.REAL_GAMES !== "1") {
+					// No games are played on this path, so the trade freeze that
+					// follows a signing would never lift; treat the market as
+					// opening once it has (see simRealSeason for the real count).
+					for (const p of await idb.cache.players.indexGetAll("playersByTid", [
+						0,
+						Infinity,
+					])) {
+						if (p.gamesUntilTradable > 0) {
+							p.gamesUntilTradable = 0;
+							await idb.cache.players.put(p);
+						}
+					}
 					for (let tick = 0; tick < 7; tick++) {
 						await trade.betweenAiTeams();
 					}
@@ -1640,6 +1671,12 @@ describe("a league runs for a decade without falling apart", () => {
 					yearRow.push({
 						tid,
 						tier: posture.tier,
+						striking: posture.strikingDistance,
+						hunts: seasonTrades.filter(
+							(e: any) =>
+								e.aiTrade?.motivation === "star-hunt" &&
+								e.aiTrade?.initiatorTid === tid,
+						).length,
 						winp: ts ? ts.won / Math.max(1, ts.won + ts.lost) : 0.5,
 						ownFirsts: allPicks.filter(
 							(dp) =>
@@ -1867,6 +1904,61 @@ describe("a league runs for a decade without falling apart", () => {
 			rows.push(
 				`BALANCE year-over-year winp correlation=${(cov / (sx * sy)).toFixed(3)}`,
 			);
+
+			// DOES A TEAM IN STRIKING DISTANCE GO AND GET THE GUY, and does a
+			// team at the top stay there? Three seeds of thirty teams before the
+			// star hunt existed: zero hunts in every striking-distance team-season
+			// and a title spread across nine to twelve different teams in twelve
+			// years - parity no real league shows.
+			{
+				let striking = 0;
+				let hunted = 0;
+				let hunts = 0;
+				for (const yearRow of history) {
+					for (const row of yearRow) {
+						if (row.striking) {
+							striking += 1;
+							if (row.hunts > 0) {
+								hunted += 1;
+							}
+						}
+						hunts += row.hunts;
+					}
+				}
+				const next: number[][] = [[], [], []];
+				let top3 = 0;
+				let stillTop8 = 0;
+				for (let y = 0; y + 1 < history.length; y++) {
+					const ranked = [...history[y]!].sort((a, b) => b.winp - a.winp);
+					for (const row of ranked.slice(0, 3)) {
+						top3 += 1;
+						for (let k = 1; k <= 3; k++) {
+							const later = history[y + k]?.[row.tid];
+							if (later) {
+								next[k - 1]!.push(later.winp);
+							}
+						}
+						const later2 = history[y + 2];
+						if (later2) {
+							const rank = [...later2]
+								.sort((a, b) => b.winp - a.winp)
+								.findIndex((r) => r.tid === row.tid);
+							if (rank >= 0 && rank < 8) {
+								stillTop8 += 1;
+							}
+						}
+					}
+				}
+				rows.push(
+					`STRIKING teamSeasons=${striking} hunted=${hunted} hunts=${hunts} died[${[
+						...huntDiagnostics,
+					]
+						.sort((a, b) => b[1] - a[1])
+						.map(([k, v]) => `${k}=${v}`)
+						.join(" ")}]`,
+					`SUSTAIN top3 n=${top3} winp+1=${avg(next[0]!).toFixed(3)} winp+2=${avg(next[1]!).toFixed(3)} winp+3=${avg(next[2]!).toFixed(3)} stillTop8@2=${stillTop8}`,
+				);
+			}
 
 			// Who owns the top and the bottom - a fleeced team pins the floor.
 			const tops = new Map<number, number>();
