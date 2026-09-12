@@ -257,7 +257,6 @@ export const makeSon = async (p: Player) => {
 				pid: p.pid,
 				name: `${p.firstName} ${p.lastName}`,
 			});
-			await idb.cache.players.put(existingSon);
 
 			// Add existing brothers to new son
 			addRelative(p, {
@@ -266,6 +265,7 @@ export const makeSon = async (p: Player) => {
 				name: `${existingSon.firstName} ${existingSon.lastName}`,
 			});
 		}
+		await idb.cache.players.putAll(existingSons);
 	}
 
 	const relFather: Relative = {
@@ -364,7 +364,6 @@ export const makeBrother = async (p: Player) => {
 					pid: brother2.pid,
 					name: `${brother2.firstName} ${brother2.lastName}`,
 				});
-				await idb.cache.players.put(otherBrother);
 
 				// Add other brother to brother
 				addRelative(brother2, {
@@ -373,6 +372,7 @@ export const makeBrother = async (p: Player) => {
 					name: `${otherBrother.firstName} ${otherBrother.lastName}`,
 				});
 			}
+			await idb.cache.players.putAll(brothers);
 		}
 
 		// Handle case where one brother already has a father

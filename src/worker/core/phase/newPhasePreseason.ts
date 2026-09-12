@@ -597,9 +597,7 @@ const newPhasePreseason = async (
 		}
 	}
 
-	for (const p of players) {
-		await idb.cache.players.put(p);
-	}
+	await idb.cache.players.putAll(players);
 
 	await realRosters.checkDisableForceHistoricalRosters(
 		newSeason,

@@ -476,9 +476,9 @@ const normalizeContractDemands = async ({
 		if (labelAsRookieContract) {
 			p.contract.rookie = true;
 		}
-
-		await idb.cache.players.put(p);
 	}
+
+	await idb.cache.players.putAll(playerInfosToUpdate.map((info) => info.p));
 
 	return undefined;
 };

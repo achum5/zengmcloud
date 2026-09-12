@@ -344,6 +344,7 @@ const play = async (
 				Infinity,
 			]);
 
+			const playersToSave = [];
 			for (const p of players) {
 				let changed = false;
 
@@ -412,9 +413,10 @@ const play = async (
 				}
 
 				if (changed) {
-					await idb.cache.players.put(p);
+					playersToSave.push(p);
 				}
 			}
+			await idb.cache.players.putAll(playersToSave);
 
 			if (healedTexts.length > 0) {
 				logEvent(

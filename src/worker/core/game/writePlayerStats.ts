@@ -240,6 +240,8 @@ const writePlayerStats = async (
 
 	const playoffs = g.get("phase") === PHASE.PLAYOFFS;
 
+	const playersToSave = new Set<Player>();
+
 	for (const result of results) {
 		const allStarGame = result.team[0].id === -1 && result.team[1].id === -2;
 
@@ -352,7 +354,7 @@ const writePlayerStats = async (
 				});
 				if (!updatePlayer) {
 					if (addNewStatsRow) {
-						await idb.cache.players.put(p2);
+						playersToSave.add(p2);
 					}
 					continue;
 				}
@@ -528,10 +530,12 @@ const writePlayerStats = async (
 					await player.updateValues(p2);
 				}
 
-				await idb.cache.players.put(p2);
+				playersToSave.add(p2);
 			}
 		}
 	}
+
+	await idb.cache.players.putAll(playersToSave);
 
 	return {
 		injuryTexts,
