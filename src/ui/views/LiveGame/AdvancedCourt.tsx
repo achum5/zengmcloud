@@ -1,8 +1,8 @@
-import { useEffect, useRef, useCallback } from "react";
-import type { CourtScene, CourtTeam } from "./LiveCourt.tsx";
-import { usePlayerFace, type PlayerFace } from "../../util/playerFaces.ts";
+import { useEffect, useRef } from "react";
+import { BodyOnCourt, type CourtScene, type CourtTeam } from "./LiveCourt.tsx";
 import { useLocal } from "../../util/local.ts";
 import {
+	actorTeam,
 	createAdvancedPlan,
 	sampleAdvancedPlan,
 	type AdvancedFrame,
@@ -10,28 +10,8 @@ import {
 } from "./advancedCourtMotion.ts";
 import { drawAdvancedCourt } from "./advancedCourtDrawing.ts";
 
-const PlayerAppearance = ({
-	pid,
-	season,
-	lid,
-	onLoad,
-}: {
-	pid: number;
-	season: number | undefined;
-	lid: number | undefined;
-	onLoad: (pid: number, face: PlayerFace) => void;
-}) => {
-	const face = usePlayerFace(pid, season, lid);
-	useEffect(() => {
-		if (face) {
-			onLoad(pid, face);
-		}
-	}, [pid, face, onLoad]);
-	return null;
-};
-
-// One canvas for all moving objects; the existing branded SVG floor stays on
-// its own static layer. React updates at event boundaries, never per frame.
+// Basic player markers share the continuous timeline with the canvas ball.
+// Update their transforms directly so faces do not rerender every frame.
 const AdvancedCourt = ({
 	scene,
 	teams,
@@ -47,17 +27,13 @@ const AdvancedCourt = ({
 }) => {
 	const { lid } = useLocal(["lid"]);
 	const canvas = useRef<HTMLCanvasElement>(null);
-	const appearances = useRef(new Map<number, PlayerFace>());
+	const markers = useRef(new Map<number, HTMLDivElement>());
 	const runtime = useRef<{
 		plan?: AdvancedPlan;
 		frame?: AdvancedFrame;
 		progress: number;
 		draw?: () => void;
 	}>({ progress: 0 });
-	const onLoad = useCallback((pid: number, face: PlayerFace) => {
-		appearances.current.set(pid, face);
-		runtime.current.draw?.();
-	}, []);
 
 	useEffect(() => {
 		const element = canvas.current;
@@ -101,17 +77,31 @@ const AdvancedCourt = ({
 			state.frame = sampleAdvancedPlan(
 				plan,
 				media.matches ? 1 : state.progress,
-				// Keep full bodies readable on a phone without changing court positions.
+				// Ball offsets stay readable at phone widths.
 				Math.max(1, Math.min(1.6, 5.5 / (width / 104))),
 			);
+			for (const player of state.frame.players) {
+				const marker = markers.current.get(player.pid);
+				if (marker) {
+					marker.style.transform = `translate3d(${((player.x + 5) / 104) * width}px, ${((player.y + 2.5) / 104) * width}px, 0)`;
+				}
+			}
 			drawAdvancedCourt(
 				ctx,
 				state.frame,
-				teams,
-				appearances.current,
 				width,
 				height,
 				dpr,
+				media.matches
+					? []
+					: [0.12, 0.09, 0.06, 0.03].map(
+							(offset) =>
+								sampleAdvancedPlan(
+									plan,
+									Math.max(0, state.progress - offset),
+									Math.max(1, Math.min(1.6, 5.5 / (width / 104))),
+								).ball,
+						),
 			);
 		};
 		state.draw = draw;
@@ -168,17 +158,60 @@ const AdvancedCourt = ({
 					width: "100%",
 					aspectRatio: "104 / 55",
 					pointerEvents: "none",
+					zIndex: 6,
 				}}
 			/>
-			{scene?.actors.map((actor) => (
-				<PlayerAppearance
-					key={actor.pid}
-					pid={actor.pid}
-					season={season}
-					lid={lid}
-					onLoad={onLoad}
-				/>
-			))}
+			{scene?.actors
+				.filter(
+					(actor, index, actors) =>
+						actors.findIndex((a) => a.pid === actor.pid) === index,
+				)
+				.map((actor) => {
+					const t = actorTeam(actor, scene);
+					return (
+						<div
+							key={actor.pid}
+							data-court-player={actor.pid}
+							ref={(element) => {
+								if (element) {
+									markers.current.set(actor.pid, element);
+								} else {
+									markers.current.delete(actor.pid);
+								}
+							}}
+							style={{
+								position: "absolute",
+								left: 0,
+								top: 0,
+								zIndex: actor.role === "onCourt" ? 2 : 4,
+								pointerEvents: "none",
+							}}
+						>
+							<BodyOnCourt
+								actor={actor}
+								tracked
+								season={season}
+								lid={lid}
+								color={
+									teams[t]?.colors?.[0] ?? (t === 0 ? "#fd7e14" : "#0d6efd")
+								}
+								background={actor.role === "onCourt"}
+								nameAbove={
+									scene.actors.some(
+										(other) =>
+											other.pid !== actor.pid &&
+											other.role !== "onCourt" &&
+											Math.abs(other.x - actor.x) < 9,
+									)
+										? actor.role !== "main"
+										: actor.y > 41
+								}
+								size={undefined}
+								sceneMs={0}
+							/>
+						</div>
+					);
+				})}
 		</>
 	);
 };

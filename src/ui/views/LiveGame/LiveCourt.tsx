@@ -702,8 +702,9 @@ const useGlideStyle = (
 // regenerating the facesjs SVG every play. The one-shot shake/swipe recoil
 // retriggers via `animKey`: only the inner animated wrapper remounts on a fresh
 // foul/steal, so the face keeps gliding on its persistent outer element.
-const BodyOnCourt = ({
+export const BodyOnCourt = ({
 	actor,
+	tracked = false,
 	season,
 	lid,
 	color,
@@ -715,6 +716,7 @@ const BodyOnCourt = ({
 	sceneMs,
 }: {
 	actor: CourtActor;
+	tracked?: boolean;
 	season: number | undefined;
 	lid: number | undefined;
 	color: string;
@@ -732,7 +734,10 @@ const BodyOnCourt = ({
 	sceneMs: number | undefined;
 }) => {
 	const faceData = usePlayerFace(actor.pid, season, lid);
-	const glide = useGlideStyle(actor, size, background, sceneMs);
+	const baseGlide = useGlideStyle(actor, size, background, sceneMs);
+	const glide = tracked
+		? { left: 0, top: 0, transform: "none", transition: "none" }
+		: baseGlide;
 	// Size this body by the player's real build (once his measurements load).
 	const { size: sizeScale, girth } = bodyScale(faceData?.hgt, faceData?.weight);
 
