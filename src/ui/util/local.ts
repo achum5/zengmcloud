@@ -12,7 +12,6 @@ type LocalActions = {
 	deleteGames: (gids: number[]) => void;
 	mergeGames: (games: LocalStateUI["games"]) => void;
 	resetLeague: () => void;
-	setLiveCourtMode: (mode: LocalStateUI["liveCourtMode"]) => void;
 	setLeagueTickerEnabled: (leagueTickerEnabled: boolean) => void;
 	setShowLeagueTopBar: (showLeagueTopBar: boolean) => void;
 	setSidebarOpen: (sidebarOpen: boolean) => void;
@@ -78,10 +77,6 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		tickerItems: [],
 		leagueTickerVisible: false,
 		leagueTickerEnabled: initialLeagueTickerEnabled,
-		liveCourtMode:
-			safeLocalStorage.getItem("bbgmLiveCourtMode") === "advanced"
-				? "advanced"
-				: "basic",
 		gameOver: false,
 		gameSimInProgress: false,
 		games: [],
@@ -239,12 +234,6 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 					userTid: 0,
 					userTids: [],
 				});
-			},
-
-			setLiveCourtMode(mode: LocalStateUI["liveCourtMode"]) {
-				const liveCourtMode = mode === "advanced" ? "advanced" : "basic";
-				safeLocalStorage.setItem("bbgmLiveCourtMode", liveCourtMode);
-				set({ liveCourtMode });
 			},
 
 			setLeagueTickerEnabled(leagueTickerEnabled: boolean) {

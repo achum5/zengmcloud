@@ -1,4 +1,3 @@
-import AdvancedCourt from "./AdvancedCourt.tsx";
 import {
 	useEffect,
 	useId,
@@ -702,9 +701,8 @@ const useGlideStyle = (
 // regenerating the facesjs SVG every play. The one-shot shake/swipe recoil
 // retriggers via `animKey`: only the inner animated wrapper remounts on a fresh
 // foul/steal, so the face keeps gliding on its persistent outer element.
-export const BodyOnCourt = ({
+const BodyOnCourt = ({
 	actor,
-	tracked = false,
 	season,
 	lid,
 	color,
@@ -716,7 +714,6 @@ export const BodyOnCourt = ({
 	sceneMs,
 }: {
 	actor: CourtActor;
-	tracked?: boolean;
 	season: number | undefined;
 	lid: number | undefined;
 	color: string;
@@ -734,10 +731,7 @@ export const BodyOnCourt = ({
 	sceneMs: number | undefined;
 }) => {
 	const faceData = usePlayerFace(actor.pid, season, lid);
-	const baseGlide = useGlideStyle(actor, size, background, sceneMs);
-	const glide = tracked
-		? { left: 0, top: 0, transform: "none", transition: "none" }
-		: baseGlide;
+	const glide = useGlideStyle(actor, size, background, sceneMs);
 	// Size this body by the player's real build (once his measurements load).
 	const { size: sizeScale, girth } = bodyScale(faceData?.hgt, faceData?.weight);
 
@@ -923,14 +917,8 @@ const LiveCourt = ({
 	finals,
 	season,
 	sceneMs,
-	mode = "basic",
-	paused = false,
-	playbackEpoch = 0,
 }: {
 	scene: CourtScene | undefined;
-	mode?: "basic" | "advanced";
-	paused?: boolean;
-	playbackEpoch?: number;
 	// Display order: [away (left rim), home (right rim)].
 	teams: [CourtTeam | undefined, CourtTeam | undefined];
 	finals: boolean;
@@ -997,7 +985,7 @@ const LiveCourt = ({
 	// Ball + effect animation, driven imperatively on the SVG nodes (no React
 	// re-render per frame).
 	useEffect(() => {
-		if (!scene || mode === "advanced") {
+		if (!scene) {
 			return;
 		}
 		const ball = ballRef.current;
@@ -1725,7 +1713,7 @@ const LiveCourt = ({
 				cancelAnimationFrame(rafRef.current);
 			}
 		};
-	}, [scene?.key, mode]);
+	}, [scene?.key]);
 
 	// Court styling comes from the home team's custom court (Manage Teams →
 	// Court), falling back to a neutral hardwood + the team's colors.
@@ -2528,153 +2516,135 @@ const LiveCourt = ({
 				{courtBackground}
 			</svg>
 
-			{mode === "basic" ? (
-				<>
-					{/* Pulse ring (swish / turnover / foul) + the ball, on their own
+			{/* Pulse ring (swish / turnover / foul) + the ball, on their own
 			    compositor layer (willChange) so per-frame mutation stays cheap. */}
-					<svg
-						viewBox={VIEW}
-						style={{
-							position: "absolute",
-							inset: 0,
-							width: "100%",
-							height: "100%",
-							pointerEvents: "none",
-							willChange: "transform",
-						}}
-					>
-						<circle
-							ref={ringRef}
-							cx={0}
-							cy={0}
-							r={1}
-							fill="none"
-							stroke={sceneColor}
-							strokeWidth={0.4}
-							style={{ opacity: 0, pointerEvents: "none" }}
-						/>
-						{/* Impact burst: short lines radiating from a point (a steal poke, a
+			<svg
+				viewBox={VIEW}
+				style={{
+					position: "absolute",
+					inset: 0,
+					width: "100%",
+					height: "100%",
+					pointerEvents: "none",
+					willChange: "transform",
+				}}
+			>
+				<circle
+					ref={ringRef}
+					cx={0}
+					cy={0}
+					r={1}
+					fill="none"
+					stroke={sceneColor}
+					strokeWidth={0.4}
+					style={{ opacity: 0, pointerEvents: "none" }}
+				/>
+				{/* Impact burst: short lines radiating from a point (a steal poke, a
 				    foul collision), driven per-frame via its transform attribute so it
 				    expands and fades. Lines use currentColor so the effect is recolored
 				    per scene by setting the group's `color`. */}
-						{/* THE RIMS' REACTION, one per basket: rings that flare and settle on
+				{/* THE RIMS' REACTION, one per basket: rings that flare and settle on
 				    a make, and rattle sideways on a miss. Idle at zero opacity, so an
 				    untouched rim costs nothing. In the overlay layer rather than the
 				    memoized floor, because this is the only part of the basket that
 				    ever moves. */}
-						{([0, 1] as const).map((t) => (
-							<g
-								key={`rim${t}`}
-								ref={(node) => {
-									rimRefs.current[t] = node;
-								}}
-								transform={`translate(${rimXFor(t)} 25)`}
-								style={{ opacity: 0, pointerEvents: "none" }}
-							>
-								<circle
-									r={0.95}
-									fill="none"
-									stroke="#fff"
-									strokeWidth={0.3}
-									opacity={0.95}
-								/>
-								<circle
-									r={1.5}
-									fill="none"
-									stroke="#fff"
-									strokeWidth={0.16}
-									opacity={0.5}
-								/>
-							</g>
-						))}
-						<g ref={burstRef} style={{ opacity: 0, pointerEvents: "none" }}>
-							{Array.from({ length: 8 }, (_, i) => {
-								const a = (i / 8) * 2 * Math.PI;
-								return (
-									<line
-										key={i}
-										x1={Math.cos(a) * 0.6}
-										y1={Math.sin(a) * 0.6}
-										x2={Math.cos(a) * 2.4}
-										y2={Math.sin(a) * 2.4}
-										stroke="currentColor"
-										strokeWidth={0.4}
-										strokeLinecap="round"
-									/>
-								);
-							})}
-						</g>
-						{/* The ball's motion trail: ghosts of the last few positions, oldest
-				    faintest. Drawn BEFORE the shadow and ball so both paint over it. */}
-						{Array.from({ length: 5 }, (_, i) => (
-							<circle
-								key={`trail${i}`}
-								ref={(node) => {
-									trailRef.current[i] = node;
-								}}
-								cx={0}
-								cy={0}
-								r={0.5}
-								fill="#e8772e"
-								style={{ opacity: 0, pointerEvents: "none" }}
+				{([0, 1] as const).map((t) => (
+					<g
+						key={`rim${t}`}
+						ref={(node) => {
+							rimRefs.current[t] = node;
+						}}
+						transform={`translate(${rimXFor(t)} 25)`}
+						style={{ opacity: 0, pointerEvents: "none" }}
+					>
+						<circle
+							r={0.95}
+							fill="none"
+							stroke="#fff"
+							strokeWidth={0.3}
+							opacity={0.95}
+						/>
+						<circle
+							r={1.5}
+							fill="none"
+							stroke="#fff"
+							strokeWidth={0.16}
+							opacity={0.5}
+						/>
+					</g>
+				))}
+				<g ref={burstRef} style={{ opacity: 0, pointerEvents: "none" }}>
+					{Array.from({ length: 8 }, (_, i) => {
+						const a = (i / 8) * 2 * Math.PI;
+						return (
+							<line
+								key={i}
+								x1={Math.cos(a) * 0.6}
+								y1={Math.sin(a) * 0.6}
+								x2={Math.cos(a) * 2.4}
+								y2={Math.sin(a) * 2.4}
+								stroke="currentColor"
+								strokeWidth={0.4}
+								strokeLinecap="round"
 							/>
-						))}
-						{/* The ball's floor shadow. It stays pinned to the ball's GROUND
+						);
+					})}
+				</g>
+				{/* The ball's motion trail: ghosts of the last few positions, oldest
+				    faintest. Drawn BEFORE the shadow and ball so both paint over it. */}
+				{Array.from({ length: 5 }, (_, i) => (
+					<circle
+						key={`trail${i}`}
+						ref={(node) => {
+							trailRef.current[i] = node;
+						}}
+						cx={0}
+						cy={0}
+						r={0.5}
+						fill="#e8772e"
+						style={{ opacity: 0, pointerEvents: "none" }}
+					/>
+				))}
+				{/* The ball's floor shadow. It stays pinned to the ball's GROUND
 				    position while the ball itself is drawn raised above it (see
 				    placeBall) - the gap between the two is what reads as height, so a
 				    shot/pass/lob shows a real arc off the hardwood instead of a flat
 				    dot. Drawn before the ball so the ball paints on top. */}
-						<ellipse
-							ref={ballShadowRef}
-							cx={0}
-							cy={0}
-							rx={0.8}
-							ry={0.4}
-							fill="rgba(0,0,0,0.35)"
-							style={{ opacity: 0, pointerEvents: "none" }}
-						/>
-						{/* THE BALL, drawn at the origin and placed by a transform - which is
+				<ellipse
+					ref={ballShadowRef}
+					cx={0}
+					cy={0}
+					rx={0.8}
+					ry={0.4}
+					fill="rgba(0,0,0,0.35)"
+					style={{ opacity: 0, pointerEvents: "none" }}
+				/>
+				{/* THE BALL, drawn at the origin and placed by a transform - which is
 				    what lets it rotate. Seams are the giveaway that it is spinning:
 				    a plain disc could turn all day and look identical. */}
-						<g
-							ref={ballRef}
-							style={{ opacity: 0, pointerEvents: "none" }}
-							transform="translate(0 0)"
-						>
-							<circle
-								r={0.85}
-								fill="#e8772e"
-								stroke="#7a3a12"
-								strokeWidth={0.14}
-							/>
-							{/* The two straight seams, and the two curved ones that wrap the
+				<g
+					ref={ballRef}
+					style={{ opacity: 0, pointerEvents: "none" }}
+					transform="translate(0 0)"
+				>
+					<circle r={0.85} fill="#e8772e" stroke="#7a3a12" strokeWidth={0.14} />
+					{/* The two straight seams, and the two curved ones that wrap the
 					    sides - the classic eight-panel pattern, flattened to a disc. */}
-							<g fill="none" stroke="#7a3a12" strokeWidth={0.12}>
-								<line x1={-0.85} y1={0} x2={0.85} y2={0} />
-								<line x1={0} y1={-0.85} x2={0} y2={0.85} />
-								<path d="M -0.62 -0.58 A 0.85 0.85 0 0 0 -0.62 0.58" />
-								<path d="M 0.62 -0.58 A 0.85 0.85 0 0 1 0.62 0.58" />
-							</g>
-							{/* A soft highlight, so it reads as a sphere rather than a sticker. */}
-							<circle
-								cx={-0.26}
-								cy={-0.28}
-								r={0.26}
-								fill="rgba(255,255,255,0.28)"
-							/>
-						</g>
-					</svg>
-				</>
-			) : (
-				<AdvancedCourt
-					key={playbackEpoch}
-					scene={scene}
-					teams={teams}
-					season={season}
-					sceneMs={sceneMs}
-					paused={paused}
-				/>
-			)}
+					<g fill="none" stroke="#7a3a12" strokeWidth={0.12}>
+						<line x1={-0.85} y1={0} x2={0.85} y2={0} />
+						<line x1={0} y1={-0.85} x2={0} y2={0.85} />
+						<path d="M -0.62 -0.58 A 0.85 0.85 0 0 0 -0.62 0.58" />
+						<path d="M 0.62 -0.58 A 0.85 0.85 0 0 1 0.62 0.58" />
+					</g>
+					{/* A soft highlight, so it reads as a sphere rather than a sticker. */}
+					<circle
+						cx={-0.26}
+						cy={-0.28}
+						r={0.26}
+						fill="rgba(255,255,255,0.28)"
+					/>
+				</g>
+			</svg>
 
 			{/* Everyone on the floor, centered on their spot and ALWAYS keyed by
 			    PLAYER (never by scene or role). A background teammate renders as a
@@ -2686,7 +2656,7 @@ const LiveCourt = ({
 			    glitch: a foul/steal actor keeps his element instead of unmounting
 			    under a scene-specific key and popping up elsewhere. The recoil
 			    animation retriggers via animKey inside BodyOnCourt. */}
-			{scene && mode === "basic"
+			{scene
 				? scene.actors.map((actor) => {
 						const background = actor.role === "onCourt";
 						// Background teammates are colored by their OWN team; the play's
@@ -2722,7 +2692,7 @@ const LiveCourt = ({
 			    player cluster so it never covers a face. Skipped entirely on a
 			    textless beat that develops a possession (kinds "advance" and
 			    "swing"), which shows movement only. */}
-			{scene && scene.text && mode === "basic" ? (
+			{scene && scene.text ? (
 				<div
 					className="position-absolute"
 					style={{
@@ -2749,33 +2719,6 @@ const LiveCourt = ({
 						<div style={{ marginTop: 2, textAlign: "center" }}>
 							{scene.score}
 						</div>
-					) : null}
-				</div>
-			) : null}
-			{mode === "advanced" ? (
-				<div
-					style={{
-						minHeight: "2.8em",
-						padding: "8px 12px",
-						background: "#152031",
-						color: "#fff",
-						borderTop: `2px solid ${sceneColor}`,
-						borderRadius: "0 0 5px 5px",
-						fontSize: "clamp(12px, 1.6cqw, 15px)",
-						display: "flex",
-						alignItems: "center",
-						justifyContent: "space-between",
-						gap: 12,
-					}}
-				>
-					<div>
-						{scene?.text ||
-							(scene?.kind === "advance" || scene?.kind === "swing"
-								? `${teams[scene.t]?.abbrev ?? ""} possession`
-								: "")}
-					</div>
-					{scene?.score ? (
-						<div style={{ flexShrink: 0 }}>{scene.score}</div>
 					) : null}
 				</div>
 			) : null}
