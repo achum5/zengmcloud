@@ -263,6 +263,7 @@ import {
 import { cardTitle } from "../../common/tradingCards.ts";
 import type { SocialAccount } from "../../common/socialAccounts.ts";
 import { clearSocialFeedCache } from "../util/socialFeed.ts";
+import { confsDivsTeamsProblem } from "../../common/confs.ts";
 import {
 	achievementPromptOverride,
 	CHAMPION_CARD_PLAYERS,
@@ -6025,21 +6026,11 @@ const updateConfsDivs = async ({
 		cid: number;
 	})[];
 }) => {
-	// First some sanity checks to make sure they're consistent
-	for (const div of divs) {
-		const conf = confs.find((c) => c.cid === div.cid);
-		if (!conf) {
-			throw new Error("div has invalid cid");
-		}
-	}
-	for (const t of teams) {
-		const div = divs.find((d) => d.did === t.did);
-		if (!div) {
-			throw new Error("team has invalid did");
-		}
-		if (div.cid !== t.cid) {
-			throw new Error("team has invalid cid");
-		}
+	// The same consistency rules the editor checks before saving, so cid stays
+	// the single source of truth however the data got here. See common/confs.ts.
+	const problem = confsDivsTeamsProblem(confs, divs, teams);
+	if (problem) {
+		throw new Error(problem);
 	}
 
 	const currentTeams = await idb.cache.teams.getAll();

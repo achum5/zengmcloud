@@ -1,3 +1,4 @@
+import { confByCid } from "../../common/confs.ts";
 import { PHASE, POSITIONS } from "../../common/constants.ts";
 import { finances, season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
@@ -134,6 +135,7 @@ const updateRoster = async (
 			!g.get("spectator");
 
 		const seasonAttrs: TeamSeasonAttr[] = [
+			"cid",
 			"profit",
 			"won",
 			"lost",
@@ -323,6 +325,11 @@ const updateRoster = async (
 
 		const { gb, playoffsByConf, rank, usePts } = await getStandingsInfo(inputs);
 
+		// The conference this team played the season in, looked up by cid in
+		// that season's conference list - which is the one place its name and
+		// logo live. See common/confs.ts.
+		const conf = confByCid(g.get("confs", inputs.season), t.seasonAttrs.cid);
+
 		// "Team Ratings Delay": which season's rating this page may show, and that
 		// season's rating for this team if it isn't the one being viewed.
 		const { display: teamOvr, ovrs: delayedOvrs } = await getTeamOvrOverride(
@@ -360,6 +367,7 @@ const updateRoster = async (
 
 		return {
 			abbrev: inputs.abbrev,
+			conf,
 			editable,
 			maxRosterSize: g.get("maxRosterSize"),
 			numPlayersOnCourt: g.get("numPlayersOnCourt"),

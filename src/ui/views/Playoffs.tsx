@@ -1,3 +1,4 @@
+import { ConfLogoAndName } from "../components/ConfLogoAndName.tsx";
 import { ResponsiveTableWrapper } from "../components/ResponsiveTableWrapper.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
@@ -13,6 +14,7 @@ type TeamToEdit = View<"playoffs">["teamsToEdit"][number];
 
 const Playoffs = ({
 	canEdit,
+	confIdentities,
 	confNames,
 	finalMatchups,
 	matchups,
@@ -183,8 +185,13 @@ const Playoffs = ({
 
 			{(playoffsByConf === 2 || playoffsByConf === 4) && numRounds > 1 ? (
 				<h2 className="d-none d-sm-block mb-2">
-					{confNames[playoffsByConf === 2 ? 1 : 2]}{" "}
-					<span className="float-end">{confNames[0]}</span>
+					<ConfLogoAndName
+						conf={confIdentities[playoffsByConf === 2 ? 1 : 2]}
+						size={28}
+					/>{" "}
+					<span className="float-end">
+						<ConfLogoAndName conf={confIdentities[0]} size={28} />
+					</span>
 				</h2>
 			) : null}
 
@@ -249,7 +256,10 @@ const Playoffs = ({
 
 			{playoffsByConf === 4 ? (
 				<h2 className="d-none d-sm-block mb-3">
-					{confNames[3]} <span className="float-end">{confNames[1]}</span>
+					<ConfLogoAndName conf={confIdentities[3]} size={28} />{" "}
+					<span className="float-end">
+						<ConfLogoAndName conf={confIdentities[1]} size={28} />
+					</span>
 				</h2>
 			) : (
 				<div className="mb-3" />

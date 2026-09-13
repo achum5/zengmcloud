@@ -1,3 +1,5 @@
+import { ConfLogoAndName } from "../components/ConfLogoAndName.tsx";
+import type { ConfIdentity } from "../../common/confs.ts";
 import clsx from "clsx";
 import { type CSSProperties, Fragment } from "react";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
@@ -463,6 +465,8 @@ const Standings = ({
 
 	let groups: {
 		name?: string;
+		// Set for a conference heading, so it draws with its logo.
+		conf?: ConfIdentity;
 		subgroups: {
 			name?: string;
 			separatorIndexes: number[];
@@ -497,6 +501,7 @@ const Standings = ({
 		}
 		groups = confs.map((conf, i) => ({
 			name: conf.name,
+			conf,
 			subgroups: [
 				{
 					separatorIndexes,
@@ -514,6 +519,7 @@ const Standings = ({
 		}
 		groups = confs.map((conf) => ({
 			name: conf.name,
+			conf,
 			subgroups: divs
 				.filter((div) => div.cid === conf.cid)
 				.map((div) => {
@@ -565,9 +571,15 @@ const Standings = ({
 		</>
 	);
 
-	const groupStandings = groups.map(({ name, subgroups }, i) => (
+	const groupStandings = groups.map(({ name, conf, subgroups }, i) => (
 		<Fragment key={i}>
-			{name ? <h2>{name}</h2> : null}
+			{conf ? (
+				<h2>
+					<ConfLogoAndName conf={conf} size={28} />
+				</h2>
+			) : name ? (
+				<h2>{name}</h2>
+			) : null}
 			{subgroups.map((subgroup, j) => (
 				<GroupStandings
 					key={j}

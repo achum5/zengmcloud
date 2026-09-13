@@ -1,3 +1,4 @@
+import { normalizeConfImgURL } from "../../../common/confs.ts";
 import { useEffect, useId, useReducer, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { NewLeagueTeamWithoutRank } from "./types.ts";
@@ -150,6 +151,16 @@ type Action =
 			name: string;
 	  }
 	| {
+			// Everything a conference is: its name, its abbreviation, its logo.
+			// Rooted in cid, so the edit lands on exactly one conference and
+			// every team that references it picks it up.
+			type: "editConf";
+			cid: number;
+			name: string;
+			abbrev?: string;
+			imgURL?: string;
+	  }
+	| {
 			type: "renameDiv";
 			did: number;
 			name: string;
@@ -265,6 +276,27 @@ export const makeReducer = (
 							...conf,
 							name: action.name,
 						};
+					}),
+				};
+
+			case "editConf":
+				return {
+					...state,
+					confs: state.confs.map((conf) => {
+						if (action.cid !== conf.cid) {
+							return conf;
+						}
+
+						const next: Conf = { cid: conf.cid, name: action.name };
+						const abbrev = action.abbrev?.trim();
+						if (abbrev) {
+							next.abbrev = abbrev;
+						}
+						const imgURL = normalizeConfImgURL(action.imgURL);
+						if (imgURL) {
+							next.imgURL = imgURL;
+						}
+						return next;
 					}),
 				};
 
@@ -572,6 +604,7 @@ const CardHeader = ({
 	disableDelete,
 	disableMoveUp,
 	disableMoveDown,
+	identity,
 }: {
 	alignButtonsRight?: boolean;
 	name: string;
@@ -582,9 +615,23 @@ const CardHeader = ({
 	disableDelete: boolean;
 	disableMoveUp: boolean;
 	disableMoveDown: boolean;
+	// A conference has more to edit than a name: its abbreviation and its
+	// logo. When this is given the edit form carries all three and the
+	// header shows the logo beside the name. Divisions leave it out.
+	identity?: {
+		abbrev: string | undefined;
+		imgURL: string | undefined;
+		onEdit: (fields: { name: string; abbrev: string; imgURL: string }) => void;
+	};
 }) => {
 	const [renaming, setRenaming] = useState(false);
 	const [controlledName, setControlledName] = useState(name);
+	const [controlledAbbrev, setControlledAbbrev] = useState(
+		identity?.abbrev ?? "",
+	);
+	const [controlledImgURL, setControlledImgURL] = useState(
+		identity?.imgURL ?? "",
+	);
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	useEffect(() => {
@@ -597,39 +644,90 @@ const CardHeader = ({
 		<div className={clsx("card-header", renaming ? "p-1" : "px-2")}>
 			{renaming ? (
 				<form
-					className="d-flex"
+					className="d-flex flex-wrap align-items-center gap-2"
 					onSubmit={(event) => {
 						event.preventDefault();
-						onRename(controlledName);
+						if (identity) {
+							identity.onEdit({
+								name: controlledName,
+								abbrev: controlledAbbrev,
+								imgURL: controlledImgURL,
+							});
+						} else {
+							onRename(controlledName);
+						}
 						setRenaming(false);
 					}}
-					style={{ maxWidth: 300 }}
+					style={{ maxWidth: identity ? 640 : 300 }}
 				>
 					<input
 						ref={inputRef}
 						type="text"
-						className="form-control me-2"
+						className="form-control"
+						placeholder="Name"
 						value={controlledName}
+						style={{ flex: "1 1 160px" }}
 						onChange={(event) => {
 							setControlledName(event.target.value);
 						}}
 					/>
+					{identity ? (
+						<>
+							<input
+								type="text"
+								className="form-control"
+								placeholder="Abbrev"
+								title="Abbrev"
+								value={controlledAbbrev}
+								style={{ flex: "0 1 90px" }}
+								onChange={(event) => {
+									setControlledAbbrev(event.target.value);
+								}}
+							/>
+							<input
+								type="text"
+								className="form-control"
+								placeholder="Logo URL"
+								title="Logo URL"
+								value={controlledImgURL}
+								style={{ flex: "2 1 200px" }}
+								onChange={(event) => {
+									setControlledImgURL(event.target.value);
+								}}
+							/>
+						</>
+					) : null}
 					<button type="submit" className="btn btn-primary">
 						Save
 					</button>
 				</form>
 			) : (
-				<div className="d-flex">
+				<div className="d-flex align-items-center">
 					<div
 						className={clsx(
-							"btn btn-link p-0 border-0 text-reset text-decoration-none",
+							"btn btn-link p-0 border-0 text-reset text-decoration-none d-inline-flex align-items-center gap-2",
 							alignButtonsRight ? "me-auto" : "me-2",
 						)}
 						onClick={() => {
 							setRenaming(true);
 						}}
 					>
+						{identity?.imgURL ? (
+							<img
+								alt=""
+								src={identity.imgURL}
+								style={{ width: 24, height: 24, objectFit: "contain" }}
+								onError={(event) => {
+									event.currentTarget.style.display = "none";
+								}}
+							/>
+						) : null}
 						{name}
+						{identity?.abbrev ? (
+							<span className="text-body-secondary small">
+								{identity.abbrev}
+							</span>
+						) : null}
 					</div>
 					<button
 						className="ms-2 btn btn-link p-0 border-0 text-reset"
@@ -863,6 +961,13 @@ const Conference = ({
 				disableMoveDown={disableMoveDown}
 				onRename={(name: string) => {
 					dispatch({ type: "renameConf", cid: conf.cid, name });
+				}}
+				identity={{
+					abbrev: conf.abbrev,
+					imgURL: conf.imgURL,
+					onEdit: ({ name, abbrev, imgURL }) => {
+						dispatch({ type: "editConf", cid: conf.cid, name, abbrev, imgURL });
+					},
 				}}
 			/>
 

@@ -1,3 +1,4 @@
+import { confByCid } from "../../common/confs.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import { season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
@@ -59,6 +60,8 @@ const updateTeam = async (inputs: unknown, updateEvents: UpdateEvents) => {
 		return {
 			region: t?.region ?? "",
 			name: t?.name ?? "",
+			// The conference the team is in this season, by cid.
+			conf: confByCid(g.get("confs"), latestSeason?.cid ?? t?.cid),
 			won: latestSeason?.won ?? 0,
 			lost: latestSeason?.lost ?? 0,
 			tied: latestSeason?.tied ?? 0,

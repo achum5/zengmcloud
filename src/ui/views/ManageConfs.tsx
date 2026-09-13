@@ -25,6 +25,7 @@ import {
 	PHASES_WHERE_TEAMS_CAN_BE_DISABLED,
 } from "./ManageTeams/index.tsx";
 import { useBlocker } from "../hooks/useBlocker.ts";
+import { confsDivsTeamsProblem } from "../../common/confs.ts";
 
 const EditTeamModal = ({
 	t,
@@ -254,6 +255,12 @@ const ManageConfs = ({
 									", ",
 								)}`,
 							});
+							return;
+						}
+
+						const problem = confsDivsTeamsProblem(confs, divs, teams);
+						if (problem) {
+							showNotification({ type: "error", text: problem });
 							return;
 						}
 

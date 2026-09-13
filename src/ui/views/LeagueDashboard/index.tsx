@@ -9,10 +9,12 @@ import type { View } from "../../../common/types.ts";
 import Headlines from "./Headlines.tsx";
 import { useLocal } from "../../util/local.ts";
 import { SocialEmbed } from "../../components/SocialEmbed.tsx";
+import { ConfLogoAndName } from "../../components/ConfLogoAndName.tsx";
 
 const LeagueDashboard = ({
 	att,
 	cash,
+	conf,
 	confOrAllTeams,
 	events,
 	leagueLeaders,
@@ -100,7 +102,15 @@ const LeagueDashboard = ({
 									{playoffRoundsWon < 0 ? (
 										<span>
 											{helpers.ordinal(rank)} in{" "}
-											{playoffsByConf !== false ? "conference" : "league"}
+											{playoffsByConf !== false ? (
+												conf ? (
+													<ConfLogoAndName conf={conf} size={22} />
+												) : (
+													"conference"
+												)
+											) : (
+												"league"
+											)}
 										</span>
 									) : (
 										<span className="d-none d-sm-inline">{roundsWonText}</span>

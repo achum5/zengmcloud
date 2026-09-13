@@ -699,7 +699,17 @@ export type NamesLegacy = {
 	};
 };
 
-export type Conf = { cid: number; name: string; abbrev?: string };
+// A conference. Identified by cid everywhere - teams, team seasons and
+// divisions all reference one by cid and never copy its name or logo - so
+// this list is the single source of truth for what a conference is called
+// and what it looks like. See common/confs.ts.
+export type Conf = {
+	cid: number;
+	name: string;
+	abbrev?: string;
+	// Logo URL, shown beside the name wherever a team's conference is drawn.
+	imgURL?: string;
+};
 export type Div = { cid: number; did: number; name: string; abbrev?: string };
 
 export type InjuriesSetting = {

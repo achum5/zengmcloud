@@ -1,3 +1,4 @@
+import { confByCid, type ConfIdentity } from "../../common/confs.ts";
 import { season } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
@@ -61,6 +62,8 @@ const updatePlayoffs = async (
 	| {
 			canEdit: boolean;
 			confNames: string[];
+			// The same conferences with their logos, for the bracket headings.
+			confIdentities: ConfIdentity[];
 			finalMatchups: boolean;
 			matchups: {
 				matchup: [number, number];
@@ -152,6 +155,10 @@ const updatePlayoffs = async (
 		}
 
 		const confNames = g.get("confs", inputs.season).map((conf) => conf.name); // Display the current or archived playoffs
+		// The same conferences with their logos, for the bracket headings.
+		const confIdentities = g
+			.get("confs", inputs.season)
+			.map((conf) => confByCid([conf], conf.cid)!);
 
 		const numGamesPlayoffSeries = g.get("numGamesPlayoffSeries", inputs.season);
 
@@ -252,6 +259,7 @@ const updatePlayoffs = async (
 		return {
 			canEdit,
 			confNames,
+			confIdentities,
 			finalMatchups,
 			matchups,
 			numGamesPlayoffSeries,

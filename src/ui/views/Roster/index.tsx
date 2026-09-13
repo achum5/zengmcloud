@@ -93,6 +93,7 @@ const handleRelease = async (
 };
 
 const Roster = ({
+	conf,
 	abbrev,
 	editable,
 	luxuryTaxAmount,
@@ -479,6 +480,7 @@ const Roster = ({
 
 			<TopStuff
 				abbrev={abbrev}
+				conf={conf}
 				currentSeason={currentSeason}
 				editable={editable}
 				luxuryTaxAmount={luxuryTaxAmount}

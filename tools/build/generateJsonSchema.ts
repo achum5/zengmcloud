@@ -523,6 +523,9 @@ export const generateJsonSchema = (sport: Sport | "test") => {
 					cid: {
 						type: "integer",
 					},
+					imgURL: {
+						type: "string",
+					},
 					name: {
 						type: "string",
 					},

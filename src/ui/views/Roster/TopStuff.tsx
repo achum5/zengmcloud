@@ -1,3 +1,4 @@
+import { ConfLogoAndName } from "../../components/ConfLogoAndName.tsx";
 import { useState, type CSSProperties } from "react";
 import { OverlayTrigger, Popover } from "react-bootstrap";
 import { RecordAndPlayoffs } from "../../components/RecordAndPlayoffs.tsx";
@@ -148,6 +149,7 @@ const PayrollAndPenalties = ({
 
 const TopStuff = ({
 	abbrev,
+	conf,
 	currentSeason,
 	editable,
 	luxuryTaxAmount,
@@ -167,6 +169,7 @@ const TopStuff = ({
 }: Pick<
 	View<"roster">,
 	| "abbrev"
+	| "conf"
 	| "editable"
 	| "luxuryTaxAmount"
 	| "minPayrollAmount"
@@ -285,7 +288,15 @@ const TopStuff = ({
 							{t.rank !== undefined ? (
 								<div>
 									{helpers.ordinal(t.rank)} in{" "}
-									{playoffsByConf ? "conference" : "league"}
+									{playoffsByConf ? (
+										conf ? (
+											<ConfLogoAndName conf={conf} size={18} />
+										) : (
+											"conference"
+										)
+									) : (
+										"league"
+									)}
 									{t.gb > 0 ? (
 										<>
 											, {t.gb}{" "}
