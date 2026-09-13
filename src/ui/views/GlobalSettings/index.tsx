@@ -43,6 +43,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 
 		return {
 			fullNames,
+			liveCourtMode: local.getState().liveCourtMode,
 			leagueTicker: local.getState().leagueTickerEnabled
 				? "show"
 				: ("hide" as const),
@@ -94,6 +95,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		// rather than sent to the worker with the options below.
 		localActions.setLeagueTickerEnabled(state.leagueTicker === "show");
 		localActions.setShowLeagueTopBar(state.scoresBar === "show");
+		localActions.setLiveCourtMode(state.liveCourtMode);
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -204,6 +206,23 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							<option value="hide">Hide</option>
 						</select>
 					</div>
+					{isSport("basketball") ? (
+						<div className="col-sm-3 col-6 mb-3">
+							<label className="form-label" htmlFor="options-liveCourtMode">
+								Live Sim Court
+							</label>
+							<select
+								id="options-liveCourtMode"
+								className="form-select"
+								title="This device only"
+								onChange={handleChange("liveCourtMode")}
+								value={state.liveCourtMode}
+							>
+								<option value="basic">Basic 2D</option>
+								<option value="advanced">Advanced 2D</option>
+							</select>
+						</div>
+					) : null}
 					<div className="col-sm-3 col-6 mb-3">
 						<label className="form-label" htmlFor="options-units">
 							Units

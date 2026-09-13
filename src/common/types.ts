@@ -1421,6 +1421,7 @@ export type LocalStateUI = {
 	// caret button does. Saved to localStorage, so it does not follow the account
 	// to another device.
 	leagueTickerEnabled: boolean;
+	liveCourtMode: "basic" | "advanced";
 	gold?: boolean;
 	keyboardShortcuts: KeyboardShortcutsLocal;
 	leagueCreation?: {

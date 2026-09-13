@@ -348,6 +348,7 @@ const getNavigateWarning = (
 };
 
 export const LiveGame = (props: View<"liveGame">) => {
+	const { liveCourtMode } = useLocal(["liveCourtMode"]);
 	const [paused, setPaused] = useState(false);
 	const pausedRef = useRef(paused);
 	const [speed, setSpeed] = useLocalStorageState("live-game-speed", {
@@ -392,6 +393,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// teleport between the two).
 	const courtScene = useRef<CourtScene | undefined>(undefined);
 	const courtSceneCount = useRef(0);
+	const courtPlaybackEpoch = useRef(0);
 	// Seed for the play currently being turned into scenes.
 	const currentSceneSeed = useRef("");
 	// Where every player last stood on the floor, so the ball can come up WITH
@@ -966,6 +968,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				pushScene(
 					{
 						kind: "attempt",
+						zone: action.zone,
 						t: displayT,
 						actors: [
 							{
@@ -1962,6 +1965,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// for every step we re-sim, and neutralizes any already-pending tick.
 			pausedRef.current = true;
 			setPaused(true);
+			courtPlaybackEpoch.current += 1;
 
 			const target = Math.max(
 				0,
@@ -2640,6 +2644,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 								<div>
 									<LiveCourt
 										scene={courtScene.current}
+										mode={liveCourtMode}
+										paused={isFollower ? !!mpLiveBroadcast?.paused : paused}
+										playbackEpoch={courtPlaybackEpoch.current}
 										teams={[
 											boxScore.current.teams?.[0],
 											boxScore.current.teams?.[1],
