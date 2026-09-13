@@ -111,9 +111,33 @@ export type Synergy = {
 // player just under the cutoff still contributes most of a skill, and a lineup
 // of four such players is not skill-less. The cutoffs match player/skills.ts,
 // which is why both files carry the same warning.
+export type SynergySkills = Record<
+	"3" | "A" | "B" | "Di" | "Dp" | "Po" | "Ps" | "R",
+	number
+>;
+
+// One player's eight fractional skills. Split out from the sum below because
+// the sim asks for the same player's skills again on every substitution, and
+// eight sigmoids per player per possession is real work - see the cache
+// argument on synergySkillCounts.
+const playerSynergySkills = (c: SynergyCompositeRating): SynergySkills => ({
+	"3": helpers.sigmoid(c.shootingThreePointer, 15, 0.59),
+	A: helpers.sigmoid(c.athleticism, 15, 0.63),
+	B: helpers.sigmoid(c.dribbling, 15, 0.68),
+	Di: helpers.sigmoid(c.defenseInterior, 15, 0.57),
+	Dp: helpers.sigmoid(c.defensePerimeter, 15, 0.61),
+	Po: helpers.sigmoid(c.shootingLowPost, 15, 0.61),
+	Ps: helpers.sigmoid(c.passing, 15, 0.63),
+	R: helpers.sigmoid(c.rebounding, 15, 0.61),
+});
+
 export const synergySkillCounts = (
 	players: readonly { compositeRating: SynergyCompositeRating }[],
-) => {
+	// Memo of the per-player skills, keyed by the player object. Only safe for a
+	// caller whose players keep the same composite ratings throughout - which is
+	// true inside a single game.
+	cache?: WeakMap<object, SynergySkills>,
+): SynergySkills => {
 	const counts = {
 		"3": 0,
 		A: 0,
@@ -126,15 +150,20 @@ export const synergySkillCounts = (
 	};
 
 	for (const p of players) {
-		const c = p.compositeRating;
-		counts["3"] += helpers.sigmoid(c.shootingThreePointer, 15, 0.59);
-		counts.A += helpers.sigmoid(c.athleticism, 15, 0.63);
-		counts.B += helpers.sigmoid(c.dribbling, 15, 0.68);
-		counts.Di += helpers.sigmoid(c.defenseInterior, 15, 0.57);
-		counts.Dp += helpers.sigmoid(c.defensePerimeter, 15, 0.61);
-		counts.Po += helpers.sigmoid(c.shootingLowPost, 15, 0.61);
-		counts.Ps += helpers.sigmoid(c.passing, 15, 0.63);
-		counts.R += helpers.sigmoid(c.rebounding, 15, 0.61);
+		let skills = cache?.get(p);
+		if (!skills) {
+			skills = playerSynergySkills(p.compositeRating);
+			cache?.set(p, skills);
+		}
+
+		counts["3"] += skills["3"];
+		counts.A += skills.A;
+		counts.B += skills.B;
+		counts.Di += skills.Di;
+		counts.Dp += skills.Dp;
+		counts.Po += skills.Po;
+		counts.Ps += skills.Ps;
+		counts.R += skills.R;
 	}
 
 	return counts;
@@ -142,9 +171,7 @@ export const synergySkillCounts = (
 
 // The three synergy numbers for a lineup. Each lands in 0..1 and is multiplied
 // by the sim's synergyFactor before being added to the team's composites.
-export const synergyFromSkillCounts = (
-	skillsCount: ReturnType<typeof synergySkillCounts>,
-): Synergy => {
+export const synergyFromSkillCounts = (skillsCount: SynergySkills): Synergy => {
 	// Base offensive synergy
 	let off = 0;
 	off += 5 * helpers.sigmoid(skillsCount["3"], 3, 2); // 5 / (1 + e^-(3 * (x - 2))) from 0 to 5
@@ -200,7 +227,8 @@ export const synergyFromSkillCounts = (
 
 export const synergyForLineup = (
 	players: readonly { compositeRating: SynergyCompositeRating }[],
-): Synergy => synergyFromSkillCounts(synergySkillCounts(players));
+	cache?: WeakMap<object, SynergySkills>,
+): Synergy => synergyFromSkillCounts(synergySkillCounts(players, cache));
 
 // The composites synergy reads, straight off a ratings row.
 //
