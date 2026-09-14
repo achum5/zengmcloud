@@ -1,0 +1,117 @@
+import { assert, describe, test } from "vitest";
+import {
+	ballAngle,
+	ballHeight,
+	ballLift,
+	fieldGlideSeconds,
+	impactReaction,
+	nextTumble,
+} from "./fieldAnimation.ts";
+
+describe("ballHeight", () => {
+	test("a ball is on the ground when it leaves and when it arrives", () => {
+		assert.strictEqual(ballHeight("pass", 20, 0), 0);
+		assert.strictEqual(ballHeight("pass", 20, 1), 0);
+		assert.ok(ballHeight("pass", 20, 0.5) > 0);
+	});
+
+	test("a punt hangs far higher than a throw that travels the same distance", () => {
+		const dist = 40;
+		assert.ok(ballHeight("punt", dist, 0.5) > 2 * ballHeight("pass", dist, 0.5));
+	});
+
+	test("a carried ball never leaves the ground - that is what carrying is", () => {
+		for (const p of [0.1, 0.3, 0.5, 0.9]) {
+			assert.strictEqual(ballHeight("carry", 30, p), 0);
+		}
+	});
+
+	test("a longer throw is a higher throw, up to a ceiling", () => {
+		assert.ok(ballHeight("pass", 40, 0.5) > ballHeight("pass", 8, 0.5));
+		// The ceiling holds, so a 70-yard heave doesn't fill the screen.
+		assert.ok(ballHeight("pass", 70, 0.5) <= 7);
+	});
+});
+
+describe("ballLift", () => {
+	test("height reads as a bigger ball and a smaller, fainter shadow", () => {
+		const low = ballLift(1);
+		const high = ballLift(12);
+		assert.ok(high.scale > low.scale);
+		assert.ok(high.shadowScale < low.shadowScale);
+		assert.ok(high.shadowOpacity < low.shadowOpacity);
+	});
+
+	test("the shadow never disappears entirely, so the ball keeps a position", () => {
+		const absurd = ballLift(500);
+		assert.ok(absurd.shadowScale > 0);
+		assert.ok(absurd.shadowOpacity > 0);
+	});
+});
+
+describe("ballAngle", () => {
+	test("a spiral points where it is going; a kick tumbles independently", () => {
+		assert.strictEqual(ballAngle("pass", 33, 200), 33);
+		assert.strictEqual(ballAngle("snap", 33, 200), 33);
+		assert.strictEqual(ballAngle("carry", 33, 200), 33);
+		assert.strictEqual(ballAngle("punt", 33, 200), 200);
+		assert.strictEqual(ballAngle("kick", 33, 200), 200);
+		assert.strictEqual(ballAngle("loose", 33, 200), 200);
+	});
+});
+
+describe("nextTumble", () => {
+	test("rotation accumulates with distance travelled", () => {
+		const a = nextTumble(0, { x: 0, y: 0 }, { x: 1, y: 0 }, "punt");
+		const b = nextTumble(0, { x: 0, y: 0 }, { x: 2, y: 0 }, "punt");
+		assert.ok(b > a);
+	});
+
+	test("a loose ball tumbles faster than a kicked one - that is the panic", () => {
+		const kicked = nextTumble(0, { x: 0, y: 0 }, { x: 3, y: 0 }, "kick");
+		const loose = nextTumble(0, { x: 0, y: 0 }, { x: 3, y: 0 }, "loose");
+		assert.ok(loose > kicked);
+	});
+});
+
+describe("impactReaction", () => {
+	test("a score always flares OUTWARD and a tackle never does", () => {
+		for (let p = 0.02; p < 1; p += 0.02) {
+			const score = impactReaction("score", p);
+			const tackle = impactReaction("tackle", p);
+			assert.ok(score.scale > 1, `score at ${p} did not flare`);
+			assert.ok(tackle.scale <= 1.6, `tackle at ${p} flared like a score`);
+		}
+	});
+
+	test("a score is always the brighter of the two, so they can never be confused", () => {
+		for (let p = 0.02; p < 0.9; p += 0.02) {
+			assert.ok(
+				impactReaction("score", p).opacity >
+					impactReaction("tackle", p).opacity,
+				`tackle was as bright as a score at ${p}`,
+			);
+		}
+	});
+
+	test("both are over when the beat is over", () => {
+		for (const kind of ["score", "tackle"] as const) {
+			assert.strictEqual(impactReaction(kind, 1).opacity, 0);
+			assert.strictEqual(impactReaction(kind, 1.4).opacity, 0);
+		}
+	});
+});
+
+describe("fieldGlideSeconds", () => {
+	test("a longer run takes longer, but never longer than the play is shown", () => {
+		const sceneMs = 700;
+		const short = fieldGlideSeconds(3, sceneMs);
+		const long = fieldGlideSeconds(80, sceneMs);
+		assert.ok(long > short);
+		assert.ok(long <= (sceneMs / 1000) * 0.84 + 1e-9);
+	});
+
+	test("even at top speed a body still moves rather than teleporting", () => {
+		assert.ok(fieldGlideSeconds(50, 120) > 0);
+	});
+});

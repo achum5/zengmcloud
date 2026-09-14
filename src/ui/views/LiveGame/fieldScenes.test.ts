@@ -1,0 +1,306 @@
+import { assert, beforeEach, describe, test } from "vitest";
+import { clearCourtRng, seedCourtRng } from "./courtRng.ts";
+import { buildFieldScene, newFieldSceneCtx } from "./fieldScenes.ts";
+import { dirFor, ENDZONE, FIELD_LEN, fieldX } from "./fieldSpots.ts";
+
+beforeEach(() => {
+	seedCourtRng("scene-test");
+	return () => {
+		clearCourtRng();
+	};
+});
+
+// Twenty-two players with the positions a football roster has, which is all the
+// scene builder needs from a box score.
+const roster = (base: number) =>
+	[
+		"QB",
+		"QB",
+		"RB",
+		"RB",
+		"WR",
+		"WR",
+		"WR",
+		"WR",
+		"TE",
+		"TE",
+		"OL",
+		"OL",
+		"OL",
+		"OL",
+		"OL",
+		"DL",
+		"DL",
+		"DL",
+		"DL",
+		"LB",
+		"LB",
+		"LB",
+		"CB",
+		"CB",
+		"S",
+		"S",
+		"K",
+		"P",
+	].map((pos, i) => ({
+		pid: base + i,
+		name: `${pos}${base + i}`,
+		pos,
+	}));
+
+const players: [ReturnType<typeof roster>, ReturnType<typeof roster>] = [
+	roster(100),
+	roster(200),
+];
+
+const resolvePid = (t: 0 | 1, name: string | undefined) =>
+	name === undefined
+		? undefined
+		: players[t].find((p) => p.name === name)?.pid;
+
+const sportState = (over: Partial<any> = {}): any => ({
+	t: 0,
+	scrimmage: 25,
+	toGo: 10,
+	awaitingKickoff: false,
+	awaitingAfterTouchdown: false,
+	plays: [
+		{
+			down: 1,
+			toGo: 10,
+			scrimmage: 25,
+			yards: 0,
+			t: 0,
+			countsTowardsNumPlays: true,
+			countsTowardsYards: true,
+		},
+	],
+	...over,
+});
+
+const build = (event: any, displayT: 0 | 1, state = sportState(), ctx?: any) =>
+	buildFieldScene({
+		event,
+		displayT,
+		text: "text",
+		score: undefined,
+		sportState: state,
+		players,
+		resolvePid,
+		ctx: ctx ?? newFieldSceneCtx(),
+	});
+
+describe("buildFieldScene", () => {
+	test("a run starts at the line and ends where the yards say", () => {
+		const scene = build({ type: "run", names: ["RB102"], yds: 8 }, 0)!;
+		assert.strictEqual(scene.kind, "run");
+		assert.strictEqual(scene.t, 0);
+		const los = fieldX(25, dirFor(0));
+		assert.strictEqual(scene.losX, los);
+		// Eight yards toward the end zone the away team attacks (+x).
+		assert.ok(scene.ball!.to.x - los > 7 && scene.ball!.to.x - los < 9);
+	});
+
+	test("every scene puts eleven men on each side and nobody twice", () => {
+		for (const [event, t] of [
+			[{ type: "run", names: ["RB102"], yds: 3 }, 0],
+			[{ type: "passComplete", names: ["QB100", "WR104"], yds: 12 }, 0],
+			[{ type: "punt", names: ["P127"], yds: 44 }, 0],
+			[{ type: "kickoff", names: ["K126"], yds: 20 }, 1],
+			[{ type: "sack", names: ["QB100", "DL215"], yds: -7 }, 0],
+		] as const) {
+			const scene = build(event as any, t as 0 | 1)!;
+			const pids = scene.actors.map((a) => a.pid);
+			assert.strictEqual(
+				new Set(pids).size,
+				pids.length,
+				`${event.type} drew somebody twice`,
+			);
+			for (const team of [0, 1] as const) {
+				const n = scene.actors.filter((a) => a.t === team).length;
+				assert.strictEqual(n, 11, `${event.type} had ${n} men on team ${team}`);
+			}
+		}
+	});
+
+	test("a pass shows the thrower where it left his hand and the target where it lands", () => {
+		const scene = build(
+			{ type: "passComplete", names: ["QB100", "WR104"], yds: 16 },
+			0,
+		)!;
+		const main = scene.actors.find((a) => a.role === "main")!;
+		const passer = scene.actors.find((a) => a.role === "passer")!;
+		assert.strictEqual(main.name, "WR104");
+		assert.strictEqual(passer.name, "QB100");
+		// The quarterback is behind the line, the receiver well past it.
+		assert.ok(passer.x < scene.losX);
+		assert.ok(main.x > scene.losX + 14);
+	});
+
+	test("a kicker stays where he kicked from", () => {
+		const scene = build({ type: "punt", names: ["P127"], yds: 45 }, 0)!;
+		const punter = scene.actors.find((a) => a.role === "main")!;
+		// Fourteen yards behind the line, not forty-five yards downfield behind
+		// his own punt.
+		assert.ok(scene.losX - punter.x > 12 && scene.losX - punter.x < 16);
+		assert.ok(scene.ball!.to.x > scene.losX + 30);
+	});
+
+	// THE REGRESSION THAT MATTERED MOST. The sim counts a return's yard lines
+	// from the goal line of the team that just LOST the ball, so reading them in
+	// the returner's frame put the whole play on the wrong end of the field -
+	// which stacked twenty-two men into a corner.
+	test("a return is placed from the frame the sim actually counts it in", () => {
+		const state = sportState({
+			// The kicking team still holds the frame: their own 35 was the tee, and
+			// the ball was caught at what they call the 88.
+			t: 0,
+			scrimmage: 35,
+			plays: [
+				{
+					down: 1,
+					toGo: 10,
+					scrimmage: 88,
+					yards: 0,
+					t: 1,
+					countsTowardsNumPlays: false,
+					countsTowardsYards: false,
+				},
+			],
+		});
+		const scene = build(
+			{ type: "kickoffReturn", names: ["RB202"], yds: 26 },
+			1,
+			state,
+		)!;
+		// The catch is at the RECEIVING team's 12, near the left end zone, because
+		// the away team (who kicked) counts up from the left.
+		assert.ok(
+			Math.abs(scene.losX - (ENDZONE + 88)) < 1,
+			`catch spot was ${scene.losX}`,
+		);
+		// And the return runs the other way - back toward the left end zone.
+		assert.ok(
+			scene.ball!.to.x < scene.losX,
+			`return went the wrong way: ${scene.ball!.to.x} vs ${scene.losX}`,
+		);
+		// Nobody ends up crammed against the back of an end zone.
+		const maxX = Math.max(...scene.actors.map((a) => a.x));
+		assert.ok(maxX < FIELD_LEN - 1, `someone was stacked at ${maxX}`);
+	});
+
+	test("a kickoff flies to the yard line it was kicked to, not `yds` yards", () => {
+		const state = sportState({ t: 0, scrimmage: 35, plays: [
+			{ down: 1, toGo: 10, scrimmage: 35, yards: 0, t: 0 },
+		] });
+		// yds is the line it reached in the RECEIVING team's numbers: a 2 means
+		// it came down on their 2, which is a 63-yard kick from the 35.
+		const scene = build({ type: "kickoff", names: ["K126"], yds: 2 }, 0, state)!;
+		const flown = scene.ball!.to.x - scene.losX;
+		assert.ok(flown > 55, `kickoff only travelled ${flown} yards`);
+	});
+
+	test("a stoppage never turns the field around", () => {
+		const state = sportState({ t: 0 });
+		// The injured man is a defender, so the event's team is the other side.
+		const scene = build({ type: "injury", names: ["S224"] }, 1, state)!;
+		assert.strictEqual(scene.t, 0);
+		assert.strictEqual(scene.dir, dirFor(0));
+	});
+
+	test("an interception keeps the throwing team's field and features the thief", () => {
+		const state = sportState({ t: 0 });
+		const scene = build(
+			{ type: "interception", names: ["CB222"], yds: 9 },
+			1,
+			state,
+		)!;
+		assert.strictEqual(scene.t, 0);
+		const thief = scene.actors.find((a) => a.role === "defender")!;
+		assert.strictEqual(thief.name, "CB222");
+		assert.strictEqual(thief.t, 1);
+	});
+
+	test("down and distance reads the way a scoreboard says it", () => {
+		const normal = build({ type: "run", names: ["RB102"], yds: 2 }, 0)!;
+		assert.strictEqual(normal.down, "1st & 10");
+		const goal = build(
+			{ type: "run", names: ["RB102"], yds: 2 },
+			0,
+			sportState({
+				plays: [{ down: 3, toGo: 6, scrimmage: 96, yards: 0, t: 0 }],
+			}),
+		)!;
+		assert.strictEqual(goal.down, "3rd & goal");
+		// And there is no first down line to draw when the line to gain is the
+		// goal line.
+		assert.strictEqual(goal.firstDownX, undefined);
+	});
+
+	test("the first down line sits ahead of the ball, whichever way play is going", () => {
+		for (const t of [0, 1] as const) {
+			const scene = build(
+				{ type: "run", names: [`RB${t === 0 ? 102 : 202}`], yds: 1 },
+				t,
+				sportState({
+					t,
+					plays: [{ down: 1, toGo: 10, scrimmage: 30, yards: 0, t }],
+				}),
+			)!;
+			assert.ok(scene.firstDownX !== undefined);
+			assert.ok(
+				(scene.firstDownX! - scene.losX) * dirFor(t) > 0,
+				`first down line was behind the ball for team ${t}`,
+			);
+		}
+	});
+
+	test("the drive summary counts the plays the drive actually ran", () => {
+		const scene = build(
+			{ type: "run", names: ["RB102"], yds: 4 },
+			0,
+			sportState({
+				plays: [
+					{
+						down: 1,
+						toGo: 10,
+						scrimmage: 20,
+						yards: 6,
+						t: 0,
+						countsTowardsNumPlays: true,
+						countsTowardsYards: true,
+					},
+					{
+						down: 2,
+						toGo: 4,
+						scrimmage: 26,
+						yards: 4,
+						t: 0,
+						countsTowardsNumPlays: true,
+						countsTowardsYards: true,
+					},
+				],
+			}),
+		)!;
+		assert.strictEqual(scene.drive, "Drive: 2 plays, 10 yards");
+	});
+
+	test("an extra point carries no down and distance", () => {
+		// The touchdown's own "1st & goal" is still sitting in the play list when
+		// the kick goes up, and showing it on an extra point is simply wrong.
+		const scene = build(
+			{ type: "extraPointAttempt", names: ["K126"], yds: 33 },
+			0,
+			sportState({
+				awaitingAfterTouchdown: true,
+				plays: [{ down: 1, toGo: 10, scrimmage: 97, yards: 0, t: 0 }],
+			}),
+		)!;
+		assert.strictEqual(scene.down, undefined);
+	});
+
+	test("an event the field has nothing to say about produces no scene", () => {
+		assert.strictEqual(build({ type: "clock" }, 0), undefined);
+		assert.strictEqual(build({ type: "penaltyCount" }, 0), undefined);
+	});
+});

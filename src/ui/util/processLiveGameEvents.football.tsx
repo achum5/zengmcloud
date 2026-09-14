@@ -555,6 +555,10 @@ const processLiveGameEvents = ({
 		}
 	}
 	let stop = false;
+	// The event the shown line describes, handed back so the live field can
+	// stage it. The loop exits on the event that produces the text, so the last
+	// one it looked at is that event.
+	let displayEvent: PlayByPlayEventOutput | undefined;
 	let text;
 	let t: 0 | 1 | undefined;
 	let textOnly = false;
@@ -567,6 +571,7 @@ const processLiveGameEvents = ({
 		}
 
 		const eAny = e as any;
+		displayEvent = e as PlayByPlayEventOutput;
 
 		// Swap teams order, so home team is at bottom in box score
 		const actualT = eAny.t === 0 ? 1 : eAny.t === 1 ? 0 : undefined;
@@ -1077,6 +1082,7 @@ const processLiveGameEvents = ({
 	}
 
 	return {
+		event: displayEvent,
 		overtimes,
 		possessionChange,
 		quarters,

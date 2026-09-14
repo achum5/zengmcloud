@@ -53,6 +53,12 @@ import LiveCourt, {
 	type CourtScene,
 	type CourtZone,
 } from "./LiveCourt.tsx";
+import LiveField, { type FieldScene } from "./LiveField.tsx";
+import {
+	buildFieldScene,
+	newFieldSceneCtx,
+	type FieldSceneCtx,
+} from "./fieldScenes.ts";
 import {
 	benchHuddle,
 	HEAVE_MAX_SECONDS,
@@ -392,6 +398,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// teleport between the two).
 	const courtScene = useRef<CourtScene | undefined>(undefined);
 	const courtSceneCount = useRef(0);
+	// Live field graphic (football): the same idea, one sport over. The context
+	// carries what has to survive between the several events one play emits -
+	// which hash the ball is on, and the drive's shape so far.
+	const fieldScene = useRef<FieldScene | undefined>(undefined);
+	const fieldSceneCount = useRef(0);
+	const fieldCtx = useRef<FieldSceneCtx>(newFieldSceneCtx());
 	// Seed for the play currently being turned into scenes.
 	const currentSceneSeed = useRef("");
 	// Where every player last stood on the floor, so the ball can come up WITH
@@ -767,6 +779,62 @@ export const LiveGame = (props: View<"liveGame">) => {
 			};
 		}
 		return undefined;
+	};
+
+	// Turn the play-by-play event behind the current line into a FIELD scene:
+	// who has the ball, where the twenty-two are standing, what the ball does,
+	// and the play text right there on the grass. Unlike the court, the sim
+	// hands over the line of scrimmage and the yards gained, so where a play
+	// starts and ends is real - only the alignment and the carrier's path are
+	// invented, from the same seeded stream so every device draws them alike.
+	const handleFieldEvent = (
+		event: any,
+		text: ReactNode,
+		score: ReactNode | undefined,
+		nextSportState: any,
+	) => {
+		if (!event || typeof event.type !== "string") {
+			return;
+		}
+		const playIdx = initialEventCount.current - (events.current?.length ?? 0);
+		seedCourtRng(`${props.initialBoxScore?.gid ?? 0}|${playIdx}`);
+
+		const teams = boxScore.current.teams ?? [];
+		const players: any = [teams[0]?.players ?? [], teams[1]?.players ?? []];
+		const resolvePid = (t: 0 | 1, name: string | undefined) => {
+			if (!name) {
+				return undefined;
+			}
+			// The sim names players, not pids. Every name on the field is a name in
+			// that team's box score, so the lookup is exact - and scoped to the team
+			// so two players sharing a name can't be confused for each other.
+			const match = players[t].find((p: any) => p.name === name);
+			return match?.pid as number | undefined;
+		};
+
+		// Football's box score display order is the reverse of the sim's team
+		// numbering (the processor swaps it so the home team sits at the bottom),
+		// and every other number the field reads - sportState.t, the play list,
+		// boxScore.teams - is already in display order. Swap once, here.
+		const displayT: 0 | 1 | undefined =
+			event.t === 0 ? 1 : event.t === 1 ? 0 : undefined;
+
+		const built = buildFieldScene({
+			event,
+			displayT,
+			text,
+			score,
+			sportState: nextSportState,
+			players,
+			resolvePid,
+			ctx: fieldCtx.current,
+		});
+		clearCourtRng();
+		if (!built) {
+			return;
+		}
+		fieldSceneCount.current += 1;
+		fieldScene.current = { ...built, key: fieldSceneCount.current };
 	};
 
 	// Turn the play-by-play event behind the current line into a court scene:
@@ -1654,6 +1722,19 @@ export const LiveGame = (props: View<"liveGame">) => {
 					}
 				}
 
+				if (isSport("football")) {
+					// Built here rather than beside the court's call because a football
+					// scene wants the state AFTER the play (the new line of scrimmage,
+					// the down, the drive) and the running score line, and both are
+					// only settled at this point.
+					handleFieldEvent(
+						(output as any).event,
+						text,
+						score,
+						output.sportState,
+					);
+				}
+
 				let time;
 				// Baseball has no time, football it's displayed with down/distance before play. In both cases, skip showing time for individual entries.
 				if (
@@ -1983,6 +2064,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 				playHistory.current = [];
 				courtScene.current = undefined;
 				courtSceneCount.current = 0;
+				fieldScene.current = undefined;
+				fieldSceneCount.current = 0;
+				fieldCtx.current = newFieldSceneCtx();
 				lastActorPos.current = new Map();
 				lastFga.current = undefined;
 				breakContext.current = undefined;
@@ -2636,6 +2720,20 @@ export const LiveGame = (props: View<"liveGame">) => {
 					) : null}
 					{boxScore.current.gid >= 0 ? (
 						<>
+							{isSport("football") ? (
+								<div>
+									<LiveField
+										scene={fieldScene.current}
+										teams={[
+											boxScore.current.teams?.[0],
+											boxScore.current.teams?.[1],
+										]}
+										season={boxScore.current.season}
+										sceneMs={speedToMs(speedRef.current)}
+										neutralSite={boxScore.current.neutralSite}
+									/>
+								</div>
+							) : null}
 							{isSport("basketball") ? (
 								<div>
 									<LiveCourt
