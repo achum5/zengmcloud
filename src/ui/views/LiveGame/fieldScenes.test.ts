@@ -357,3 +357,40 @@ describe("buildFieldScene", () => {
 		assert.strictEqual(build({ type: "penaltyCount" }, 0), undefined);
 	});
 });
+
+describe("the details a viewer reads first", () => {
+	test("a penalty puts a flag on the grass, and nothing else does", () => {
+		const flagged = build({ type: "penalty", names: ["OL110"] }, 0)!;
+		assert.ok(flagged.flag, "a penalty with no flag");
+		assert.ok(flagged.flag!.x > 0 && flagged.flag!.y > 0);
+		const run = build({ type: "run", names: ["RB102"], yds: 5 }, 0)!;
+		assert.strictEqual(run.flag, undefined);
+	});
+
+	// He was appearing a stride from the tackle with no way of having got there.
+	test("the man who made the tackle runs to it", () => {
+		const scene = build(
+			{ type: "sack", names: ["QB100", "DL215"], yds: -8 },
+			0,
+		)!;
+		const tackler = scene.actors.find((a) => a.role === "defender")!;
+		assert.ok(tackler.path && tackler.path.length >= 2, "he teleported");
+		const start = tackler.path![0]!;
+		const finish = tackler.path!.at(-1)!;
+		assert.ok(
+			Math.hypot(finish.x - tackler.x, finish.y - tackler.y) < 0.01,
+			"his path does not end where he is",
+		);
+		assert.ok(
+			Math.hypot(start.x - finish.x, start.y - finish.y) > 1,
+			"he did not actually go anywhere",
+		);
+	});
+
+	test("the ball a man is carrying travels the path he runs", () => {
+		const scene = build({ type: "run", names: ["RB102"], yds: 14 }, 0)!;
+		const carrier = scene.actors.find((a) => a.role === "main")!;
+		assert.ok(scene.ball!.path, "a carried ball with a curve of its own");
+		assert.deepStrictEqual(scene.ball!.path, carrier.path);
+	});
+});

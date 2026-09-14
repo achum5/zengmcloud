@@ -224,6 +224,9 @@ export type FieldActor = {
 	// Which formation slot he filled, so a concept can give the tight end the
 	// tight end's route.
 	slotIndex?: number;
+	// What he was actually asked to do. Set by the assignment functions and read
+	// by anything that needs to pair men up - the line engaging, most of all.
+	job?: "block" | "pull" | "release" | "route" | "rush" | "man" | "zone" | "spy";
 	// "main" is the man with the ball, "passer" whoever threw or kicked it,
 	// "defender" whoever did something about it, "onField" everybody else.
 	role: "main" | "defender" | "passer" | "onField";
@@ -277,8 +280,15 @@ export type FieldScene = {
 		to: FieldPoint;
 		// A carrier's weave, as a cubic's two control points.
 		curve?: [FieldPoint, FieldPoint];
+		// A ball being CARRIED travels the carrier's own path, not a curve of
+		// its own - otherwise the two drift apart over a long run and the ball
+		// ends up alongside the man supposedly holding it.
+		path?: FieldPoint[];
 	};
 	impact?: { kind: "tackle" | "score"; at: FieldPoint };
+	// Where a flag landed. A penalty that says so only in the text is the one
+	// thing on a football field everybody spots before they hear about it.
+	flag?: FieldPoint;
 	// Where the drive's earlier plays ended, drawn as faint marks on the field so
 	// the drive's shape is visible without a separate chart.
 	driveMarks?: number[];

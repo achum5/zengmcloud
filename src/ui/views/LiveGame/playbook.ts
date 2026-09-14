@@ -556,6 +556,7 @@ export const assignRoutes = ({
 	geom,
 	protectDepth,
 	empty,
+	motion,
 }: {
 	actors: FieldActor[];
 	slots: Slot[];
@@ -566,6 +567,10 @@ export const assignRoutes = ({
 	protectDepth: number;
 	// Nobody stayed in to protect, so an assignment to block is not one.
 	empty?: boolean;
+	// Somebody goes in motion before the snap. It is the most recognisable
+	// thing an offense does before the ball moves, and a formation that never
+	// moves before the snap reads as a diagram rather than a play.
+	motion?: boolean;
 }): FieldActor[] => {
 	const mirror = dirAcross(geom.dir);
 	// Which side the screen is going, so the wall is built on that side.
@@ -599,6 +604,7 @@ export const assignRoutes = ({
 					...actor,
 					x: lead.x,
 					y: lead.y,
+					job: "release",
 					path: [
 						from,
 						{ x: geom.losX, y: clampY((from.y + lead.y) / 2) },
@@ -618,6 +624,7 @@ export const assignRoutes = ({
 				...actor,
 				x: set.x,
 				y: set.y,
+				job: "block",
 				path: [from, set],
 				delay: 0.02,
 			};
@@ -676,12 +683,28 @@ export const assignRoutes = ({
 		if (path.length === 0) {
 			return actor;
 		}
-		const end = path.at(-1)!;
+		// THE MAN IN MOTION starts the play somewhere else and arrives at his
+		// spot as the ball is snapped, so his path simply begins further across
+		// the formation.
+		const full =
+			motion && i === SLOT_WR_SLOT
+				? [
+						toField(
+							geom.losX,
+							geom.dir,
+							slot.depth,
+							geom.ballAcross + (slot.across + 13) * mirror,
+						),
+						...path,
+					]
+				: path;
+		const end = full.at(-1)!;
 		return {
 			...actor,
 			x: end.x,
 			y: end.y,
-			path,
+			job: "route",
+			path: full,
 			delay: concept.hold ?? 0,
 		};
 	});
@@ -752,6 +775,7 @@ export const assignRunBlocking = ({
 				...actor,
 				x: through.x,
 				y: through.y,
+				job: "pull",
 				path: [from, behind, across, through],
 			};
 		}
@@ -768,6 +792,7 @@ export const assignRunBlocking = ({
 			...actor,
 			x: drive.x,
 			y: drive.y,
+			job: "block",
 			path: [from, drive],
 			delay: 0.02,
 		};
@@ -815,3 +840,81 @@ export const assignRunPursuit = ({
 			delay: 0.05 + (i > 6 ? 0.08 : 0),
 		};
 	});
+
+// THE TRENCHES.
+//
+// Blockers and rushers were being sent to spots worked out independently of
+// each other, so they slid through one another like two teams playing on
+// different fields. Football's line play is PAIRS: a blocker finds the man
+// across from him and the two of them fight over one piece of ground.
+//
+// So after both sides have their jobs, each blocker is paired with the nearest
+// unclaimed rusher and the two are brought to a point BETWEEN them - the
+// blocker giving a little ground, the rusher winning a little, which is what a
+// pass rush looks like from above. A rusher nobody picks up is free, and gets
+// to the quarterback: that is how a sack should read.
+export const engageLine = ({
+	blockers,
+	rushers,
+	// How far the rusher wins: 0 is a standstill, 1 is right through him.
+	push = 0.42,
+}: {
+	blockers: FieldActor[];
+	rushers: FieldActor[];
+	push?: number;
+}): { blockers: FieldActor[]; rushers: FieldActor[] } => {
+	const claimed = new Map<number, number>();
+	const meeting = new Map<number, FieldPoint>();
+
+	// Nearest first, so the men actually across from each other pair up rather
+	// than the first blocker in the list grabbing somebody on the other side of
+	// the formation.
+	const pairs: { b: number; r: number; d: number }[] = [];
+	for (const [bi, b] of blockers.entries()) {
+		for (const [ri, r] of rushers.entries()) {
+			pairs.push({ b: bi, r: ri, d: Math.hypot(b.x - r.x, b.y - r.y) });
+		}
+	}
+	pairs.sort((a, b) => a.d - b.d);
+	const usedB = new Set<number>();
+	const usedR = new Set<number>();
+	for (const pair of pairs) {
+		if (usedB.has(pair.b) || usedR.has(pair.r) || pair.d > 9) {
+			continue;
+		}
+		usedB.add(pair.b);
+		usedR.add(pair.r);
+		claimed.set(pair.b, pair.r);
+		const b = blockers[pair.b]!;
+		const r = rushers[pair.r]!;
+		meeting.set(pair.b, {
+			x: b.x + (r.x - b.x) * push,
+			y: b.y + (r.y - b.y) * push,
+		});
+	}
+
+	return {
+		blockers: blockers.map((actor, i) => {
+			const at = meeting.get(i);
+			if (!at) {
+				return actor;
+			}
+			const from = actor.path?.[0] ?? { x: actor.x, y: actor.y };
+			return { ...actor, x: at.x, y: at.y, path: [from, at] };
+		}),
+		rushers: rushers.map((actor, i) => {
+			// A rusher nobody blocked keeps the path he was given, and that path
+			// goes to the quarterback.
+			if (!usedR.has(i)) {
+				return actor;
+			}
+			const blocker = [...claimed.entries()].find(([, r]) => r === i)?.[0];
+			const at = blocker === undefined ? undefined : meeting.get(blocker);
+			if (!at) {
+				return actor;
+			}
+			const from = actor.path?.[0] ?? { x: actor.x, y: actor.y };
+			return { ...actor, x: at.x, y: at.y, path: [from, at] };
+		}),
+	};
+};

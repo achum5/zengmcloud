@@ -12,6 +12,7 @@ import {
 	routePath,
 	RUN_SCHEMES,
 	runPath,
+	engageLine,
 	SLOT_C,
 	SLOT_QB,
 	SLOT_RT,
@@ -416,5 +417,71 @@ describe("handing out the jobs", () => {
 		}
 		// A safety is still closing when the front seven have arrived.
 		assert.ok(closed(after, 9) > closed(after, 0));
+	});
+});
+
+describe("the trenches", () => {
+	const geom = geomFor(0);
+
+	test("each blocker pairs with a rusher and they meet in between", () => {
+		const blockers = [
+			{ pid: 1, name: "B1", x: geom.losX - 1, y: MID_Y - 3, role: "onField" as const, t: 0 as const },
+			{ pid: 2, name: "B2", x: geom.losX - 1, y: MID_Y + 3, role: "onField" as const, t: 0 as const },
+		];
+		const rushers = [
+			{ pid: 11, name: "R1", x: geom.losX + 2, y: MID_Y - 3.4, role: "onField" as const, t: 1 as const },
+			{ pid: 12, name: "R2", x: geom.losX + 2, y: MID_Y + 3.4, role: "onField" as const, t: 1 as const },
+		];
+		const after = engageLine({ blockers, rushers });
+		for (const [i, b] of after.blockers.entries()) {
+			const r = after.rushers[i]!;
+			// The pair ended up on the same piece of ground, which is what
+			// blocking somebody means.
+			assert.ok(
+				Math.hypot(b.x - r.x, b.y - r.y) < 0.01,
+				`pair ${i} never met (${Math.hypot(b.x - r.x, b.y - r.y)})`,
+			);
+			// And they met between where they started, not on top of either one.
+			assert.ok(b.x > geom.losX - 1 && b.x < geom.losX + 2);
+		}
+	});
+
+	test("a rusher nobody blocks keeps going", () => {
+		const free = {
+			pid: 99,
+			name: "Free",
+			x: geom.losX + 1,
+			y: MID_Y + 22,
+			role: "onField" as const,
+			t: 1 as const,
+			path: [
+				{ x: geom.losX + 1, y: MID_Y + 22 },
+				{ x: geom.losX - 5, y: MID_Y },
+			],
+		};
+		const after = engageLine({
+			blockers: [
+				{ pid: 1, name: "B1", x: geom.losX - 1, y: MID_Y, role: "onField" as const, t: 0 as const },
+			],
+			rushers: [
+				{ pid: 11, name: "R1", x: geom.losX + 1, y: MID_Y, role: "onField" as const, t: 1 as const },
+				free,
+			],
+		});
+		const stillFree = after.rushers.find((a) => a.pid === 99)!;
+		assert.deepStrictEqual(stillFree.path, free.path);
+	});
+
+	test("nobody is paired with a man on the other side of the formation", () => {
+		const after = engageLine({
+			blockers: [
+				{ pid: 1, name: "B1", x: geom.losX - 1, y: MID_Y - 20, role: "onField" as const, t: 0 as const },
+			],
+			rushers: [
+				{ pid: 11, name: "R1", x: geom.losX + 1, y: MID_Y + 20, role: "onField" as const, t: 1 as const },
+			],
+		});
+		// Forty yards apart is not a block.
+		assert.strictEqual(after.blockers[0]!.path, undefined);
 	});
 });

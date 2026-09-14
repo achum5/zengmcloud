@@ -463,6 +463,9 @@ const animForRole = (
 			return "score";
 		}
 		switch (scene.kind) {
+			case "injury":
+				// He does not get up, which is the whole news of the play.
+				return "tackled";
 			case "kick":
 			case "punt":
 			case "kickoff":
@@ -629,7 +632,7 @@ const LiveField = ({
 			return;
 		}
 
-		const { flight, from, to, curve } = flightInfo;
+		const { flight, from, to, curve, path } = flightInfo;
 		const dist = Math.hypot(to.x - from.x, to.y - from.y);
 		const dur = flightMs(flight, sceneMs);
 		const impactDur = 420;
@@ -648,7 +651,12 @@ const LiveField = ({
 		const step = (now: number) => {
 			const elapsed = now - start;
 			const p = Math.min(1, elapsed / dur);
-			const at = bezierAt(from, p1, p2, to, p);
+			// A carried ball walks the carrier's own path; everything else flies a
+			// curve of its own.
+			const at =
+				path && path.length > 1
+					? pointAlongPath(path, p)
+					: bezierAt(from, p1, p2, to, p);
 			const height = ballHeight(flight, dist, p);
 			const lift = ballLift(height);
 
@@ -1011,6 +1019,23 @@ const LiveField = ({
 							</g>
 						);
 					})}
+
+					{/* A FLAG. Yellow, on the grass, where it happened - which is how
+					    anybody watching finds out there was a penalty. */}
+					{scene?.flag ? (
+						<g
+							transform={`translate(${scene.flag.x} ${scene.flag.y}) rotate(24)`}
+						>
+							<ellipse rx={1.5} ry={0.75} fill="#ffd21f" opacity={0.95} />
+							<ellipse
+								rx={1.5}
+								ry={0.75}
+								fill="none"
+								stroke="#8a6d00"
+								strokeWidth={0.18}
+							/>
+						</g>
+					) : null}
 
 					{/* The drive so far: where each earlier play died. */}
 					{scene?.driveMarks?.map((x, i) => (

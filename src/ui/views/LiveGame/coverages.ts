@@ -500,6 +500,7 @@ export const assignCoverage = ({
 				...actor,
 				x: end.x,
 				y: end.y,
+				job: "rush",
 				path: [
 					start,
 					{
@@ -517,7 +518,14 @@ export const assignCoverage = ({
 				x: start.x + (target.x - start.x) * 0.45,
 				y: clampY(start.y + (target.y - start.y) * 0.5),
 			};
-			return { ...actor, x: end.x, y: end.y, path: [start, end], delay: 0.15 };
+			return {
+				...actor,
+				x: end.x,
+				y: end.y,
+				job: "spy",
+				path: [start, end],
+				delay: 0.15,
+			};
 		}
 
 		if (job.kind === "man") {
@@ -535,6 +543,7 @@ export const assignCoverage = ({
 				...actor,
 				x: end.x,
 				y: end.y,
+				job: "man",
 				path: [start, ...trail],
 				delay: 0.04,
 			};
@@ -562,7 +571,7 @@ export const assignCoverage = ({
 			});
 		}
 		const end = path.at(-1)!;
-		return { ...actor, x: end.x, y: end.y, path };
+		return { ...actor, x: end.x, y: end.y, job: "zone", path };
 	});
 };
 

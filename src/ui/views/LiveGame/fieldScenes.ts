@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { courtRandom } from "./courtRng.ts";
 import {
+	clampX,
 	clampY,
 	type Dir,
 	dirFor,
@@ -40,6 +41,7 @@ import {
 } from "./coverages.ts";
 import {
 	assignRoutes,
+	engageLine,
 	assignRunBlocking,
 	assignRunPursuit,
 	callPass,
@@ -86,6 +88,9 @@ export type FieldSceneCtx = {
 	callIsRun?: boolean;
 	// What the defense is playing, held for the play the same way.
 	coverage?: Coverage;
+	// Whether this play has a man in motion, decided once so he does not start
+	// motioning again halfway through it.
+	motion?: boolean;
 	// The set the offense is in and the front the defense answered with, held
 	// for the play so it does not change between the snap and the throw.
 	formation?: OffenseFormation;
@@ -523,6 +528,7 @@ export const buildFieldScene = ({
 		ctx.formation = undefined;
 		ctx.front = undefined;
 		ctx.coverage = undefined;
+		ctx.motion = courtRandom() < 0.3;
 		if (sportState.plays.length <= 1) {
 			ctx.driveMarks = [];
 		}
@@ -675,6 +681,7 @@ export const buildFieldScene = ({
 				geom,
 				protectDepth,
 				empty: offFormation?.empty,
+				motion: ctx.motion,
 			});
 			if (!ctx.coverage) {
 				ctx.coverage = chooseCoverage({
@@ -785,6 +792,38 @@ export const buildFieldScene = ({
 		}
 	}
 
+	// THE LINE MEETS THE RUSH. Both sides were sent to spots worked out without
+	// reference to each other, so blockers and rushers slid straight through one
+	// another. Pairing them up and bringing each pair together is what makes the
+	// middle of the field look like football rather than like two teams playing
+	// on separate fields. The man who actually made the sack is left out of it:
+	// he is the one who got through.
+	if (SCRIMMAGE_KINDS.has(beat.kind) && beat.kind !== "set") {
+		const blockers = offense.filter(
+			(a) => a.job === "block" || a.job === "pull",
+		);
+		const rushers = defense.filter(
+			(a) => a.job === "rush" && a.pid !== defenderPid,
+		);
+		if (blockers.length > 0 && rushers.length > 0) {
+			const engaged = engageLine({
+				blockers,
+				rushers,
+				// A sack means the pocket lost, so the rush wins more ground.
+				push: beat.kind === "sack" ? 0.68 : 0.42,
+			});
+			const byPid = new Map(
+				[...engaged.blockers, ...engaged.rushers].map((a) => [a.pid, a]),
+			);
+			offense = offense.map((a) => byPid.get(a.pid) ?? a);
+			defense = defense.map((a) => byPid.get(a.pid) ?? a);
+		}
+	}
+
+	// The path the man with the ball is running, so the ball can travel it with
+	// him rather than flying a curve of its own beside him.
+	const carriedPath = offense.find((a) => a.pid === mainPid)?.path;
+
 	const actors: FieldActor[] = [...offense, ...defense];
 	const featured = new Set<number>();
 
@@ -851,6 +890,32 @@ export const buildFieldScene = ({
 		solo ? end : { x: end.x - dir * 1.4, y: clampY(end.y + 1.6) },
 		defenseT,
 	);
+	// THE MAN WHO MADE THE PLAY runs to it. He was being placed a stride from
+	// where the play ended with no way of having got there, which reads as a
+	// defender teleporting onto the tackle.
+	if (defenderPid !== undefined && TACKLE_KINDS.has(beat.kind)) {
+		const at = mainPid === undefined
+			? end
+			: { x: end.x - dir * 1.4, y: clampY(end.y + 1.6) };
+		const i = actors.findIndex((a) => a.pid === defenderPid);
+		if (i >= 0) {
+			const from = actors[i]!.path?.[0] ?? { x: actors[i]!.x, y: actors[i]!.y };
+			actors[i] = {
+				...actors[i]!,
+				x: at.x,
+				y: at.y,
+				path: [
+					from,
+					{
+						x: from.x + (at.x - from.x) * 0.55,
+						y: clampY(from.y + (at.y - from.y) * 0.65),
+					},
+					at,
+				],
+			};
+		}
+	}
+
 	// Whoever threw or kicked it, at the spot it left his hands.
 	promote(
 		launcherPid,
@@ -897,6 +962,8 @@ export const buildFieldScene = ({
 			from: start,
 			to: ballTo,
 			curve: beat.carried ? runControlPoints(start, ballTo) : undefined,
+			// If the man carrying it was given a path, the ball travels it too.
+			path: beat.carried ? carriedPath : undefined,
 		},
 		impact: beat.scored
 			? { kind: "score", at: ballTo }
@@ -905,6 +972,14 @@ export const buildFieldScene = ({
 					beat.kind === "sack" ||
 					beat.kind === "return"
 				? { kind: "tackle", at: ballTo }
+				: undefined,
+		// A flag lands near where it happened, a few yards off the ball.
+		flag:
+			beat.kind === "penalty"
+				? {
+						x: clampX(losX + dir * rand(-4, 7)),
+						y: clampY(across + rand(-9, 9)),
+					}
 				: undefined,
 		driveMarks: [...ctx.driveMarks],
 		drive: driveSummary(sportState),
@@ -948,6 +1023,16 @@ const driveSummary = (sportState: SportStateLike): string | undefined => {
 		Math.abs(yards) === 1 ? "yard" : "yards"
 	}`;
 };
+
+// The plays that end with somebody being brought down, and so with a man who
+// had to get there to do it.
+const TACKLE_KINDS = new Set<FieldSceneKind>([
+	"run",
+	"pass",
+	"sack",
+	"return",
+	"fumble",
+]);
 
 const clampScrimmage = (scrimmage: number): number =>
 	Math.min(99.5, Math.max(0.5, scrimmage));
