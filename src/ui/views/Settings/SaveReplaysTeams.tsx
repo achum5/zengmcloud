@@ -97,7 +97,7 @@ const SaveReplaysTeams = ({
 						onChange={() => toggle(ALL_PLAYOFFS)}
 					/>
 					<label className="form-check-label" htmlFor="saveReplays-allplayoffs">
-						🏆 All playoff games
+						All playoff games
 					</label>
 				</div>
 				<div className="form-check mb-0">
@@ -110,7 +110,7 @@ const SaveReplaysTeams = ({
 						onChange={() => toggle(ALL_STAR)}
 					/>
 					<label className="form-check-label" htmlFor="saveReplays-allstar">
-						⭐ All-Star Game
+						All-Star Game
 					</label>
 				</div>
 				<div className="form-check mb-0">
@@ -127,7 +127,7 @@ const SaveReplaysTeams = ({
 						htmlFor="saveReplays-dramatic"
 						title="Any game with a statistical feat or a game winner/tyer. Slower sims: every game generates play-by-play to find out."
 					>
-						⚡ Feats &amp; game winners
+						Feats &amp; game winners
 					</label>
 				</div>
 				<hr className="my-1" />
