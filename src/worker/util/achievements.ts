@@ -838,7 +838,7 @@ const achievements: Achievement[] = [
 		desc: "Play 100 seasons in a single league.",
 		category: "Multiple Seasons",
 
-		async check() {
+		check() {
 			return g.get("season") === g.get("startingSeason") + 99;
 		},
 
@@ -850,7 +850,7 @@ const achievements: Achievement[] = [
 		desc: "Play 1,000 seasons in a single league.",
 		category: "Multiple Seasons",
 
-		async check() {
+		check() {
 			return g.get("season") === g.get("startingSeason") + 999;
 		},
 
@@ -862,7 +862,7 @@ const achievements: Achievement[] = [
 		desc: "Play 10,000 seasons in a single league.",
 		category: "Multiple Seasons",
 
-		async check() {
+		check() {
 			return g.get("season") === g.get("startingSeason") + 9999;
 		},
 

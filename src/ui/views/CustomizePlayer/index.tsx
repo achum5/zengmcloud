@@ -622,7 +622,7 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 
 	const r = p.ratings.length - 1;
 
-	const adjustRatings = (amount: number) => async (event: MouseEvent) => {
+	const adjustRatings = (amount: number) => (event: MouseEvent) => {
 		event.preventDefault();
 		setState((prevState) => {
 			const p = prevState.p;
@@ -1087,7 +1087,7 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 										<button
 											className="btn btn-secondary"
 											type="button"
-											onClick={async (event) => {
+											onClick={(event) => {
 												event.preventDefault();
 
 												setState((prevState) => {

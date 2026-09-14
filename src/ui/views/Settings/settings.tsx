@@ -648,7 +648,7 @@ export const settings: Setting[] = (
 					</p>
 				</>
 			),
-			validator: async (value) => {
+			validator: (value) => {
 				if (!Array.isArray(value)) {
 					throw new Error("Must be an array");
 				}

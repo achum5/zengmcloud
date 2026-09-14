@@ -279,7 +279,7 @@ const boxScore = async (gid: number) => {
 	return game2;
 };
 
-const updateTeamSeason = async (inputs: ViewInput<"gameLog">) => {
+const updateTeamSeason = (inputs: ViewInput<"gameLog">) => {
 	return {
 		// Needed for dropdown
 		abbrev: inputs.abbrev,
