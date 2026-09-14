@@ -5,6 +5,7 @@ import {
 	assignRoutes,
 	assignRunBlocking,
 	assignRunPursuit,
+	assignRunSupport,
 	callPass,
 	callRun,
 	ELIGIBLE,
@@ -16,6 +17,7 @@ import {
 	engageLine,
 	SLOT_C,
 	SLOT_QB,
+	SLOT_RB,
 	SLOT_RT,
 	SLOT_WR_L,
 	SLOT_WR_R,
@@ -94,7 +96,12 @@ describe("the route tree", () => {
 		const wr = slots[SLOT_WR_R]!;
 		const at = (route: Parameters<typeof routePath>[0]["route"]) =>
 			routePath({ slot: wr, route, ...geom }).at(-1)!;
-		const start = placeFormation([wr], geom.losX, geom.dir, geom.ballAcross)[0]!;
+		const start = placeFormation(
+			[wr],
+			geom.losX,
+			geom.dir,
+			geom.ballAcross,
+		)[0]!;
 
 		const go = at("go");
 		assert.ok((go.x - geom.losX) * geom.dir > 30, "a go should get deep");
@@ -118,7 +125,11 @@ describe("the route tree", () => {
 	test("a route is mirrored for the other side of the formation", () => {
 		const slots = offenseSlots("pass");
 		const geom = geomFor(0);
-		const left = routePath({ slot: slots[SLOT_WR_L]!, route: "slant", ...geom });
+		const left = routePath({
+			slot: slots[SLOT_WR_L]!,
+			route: "slant",
+			...geom,
+		});
 		const right = routePath({
 			slot: slots[SLOT_WR_R]!,
 			route: "slant",
@@ -382,8 +393,6 @@ describe("handing out the jobs", () => {
 		assert.strictEqual(te.y, teBefore.y);
 	});
 
-
-
 	test("on a run the line fires forward instead of setting back", () => {
 		const geom = geomFor(0);
 		const after = assignRunBlocking({
@@ -398,6 +407,90 @@ describe("handing out the jobs", () => {
 				(lineman.x - geom.losX) * geom.dir > 0,
 				"a run blocker who went backwards",
 			);
+		}
+	});
+
+	test("on a run nobody on offence just stands there", () => {
+		const geom = geomFor(0);
+		const slots = offenseSlots("run");
+		const before = lineUp(0, "run");
+		const carrier = before.find((a) => a.slotIndex === SLOT_RB)!;
+		const blocked = assignRunBlocking({
+			actors: before,
+			slots,
+			scheme: RUN_SCHEMES[0]!,
+			geom,
+		});
+		const after = assignRunSupport({
+			actors: blocked,
+			slots,
+			scheme: RUN_SCHEMES[0]!,
+			geom,
+			carrierPid: carrier.pid,
+		});
+
+		for (const actor of after) {
+			if (actor.pid === carrier.pid) {
+				continue;
+			}
+			const from = before.find((a) => a.pid === actor.pid)!;
+			assert.ok(
+				Math.hypot(actor.x - from.x, actor.y - from.y) > 0.5,
+				`${actor.slotIndex} never moved`,
+			);
+			assert.ok(actor.job !== undefined, `${actor.slotIndex} has no job`);
+		}
+
+		// The man with the ball is left entirely alone - a carrier labelled a
+		// blocker would be dragged into the line pairing.
+		const stillCarrier = after.find((a) => a.pid === carrier.pid)!;
+		assert.strictEqual(stillCarrier.job, undefined);
+	});
+
+	test("the quarterback's fake goes away from the run", () => {
+		const geom = geomFor(0);
+		const slots = offenseSlots("run");
+		// A scheme aimed to one side; the fake has to break the other way.
+		const scheme = RUN_SCHEMES.find((s) => Math.abs(s.aim) > 2)!;
+		const before = lineUp(0, "run");
+		const after = assignRunSupport({
+			actors: before,
+			slots,
+			scheme,
+			geom,
+			carrierPid: before.find((a) => a.slotIndex === SLOT_RB)!.pid,
+		});
+		const qb = after.find((a) => a.slotIndex === SLOT_QB)!;
+		const qbBefore = before.find((a) => a.slotIndex === SLOT_QB)!;
+		assert.strictEqual(qb.job, "fake");
+		const wentToward = (qb.y - qbBefore.y) * Math.sign(scheme.aim);
+		// Across is mirrored for the direction of play, so compare in the same
+		// terms the scheme is written in.
+		assert.ok(
+			wentToward * (geom.dir === 1 ? 1 : -1) < 0,
+			"the fake followed the run instead of holding the backside",
+		);
+	});
+
+	test("a receiver's run block is not mistaken for a man in the trenches", () => {
+		const geom = geomFor(0);
+		const slots = offenseSlots("run");
+		const after = assignRunSupport({
+			actors: lineUp(0, "run"),
+			slots,
+			scheme: RUN_SCHEMES[0]!,
+			geom,
+			carrierPid: undefined,
+		});
+		for (const actor of after) {
+			const slot = slots[actor.slotIndex!]!;
+			if (slot.pos === "WR") {
+				assert.strictEqual(
+					actor.job,
+					"stalk",
+					"a receiver was given a lineman's job",
+				);
+			}
 		}
 	});
 
@@ -418,30 +511,97 @@ describe("handing out the jobs", () => {
 		}
 		// A safety is still closing when the front seven have arrived.
 		assert.ok(closed(after, 9) > closed(after, 0));
+
+		// And they do not form a picket fence. The old model nudged each man
+		// sideways by his slot number, which left eleven defenders evenly
+		// spaced on one vertical line however they had started.
+		const xs = after.map((a) => a.x);
+		const spread = Math.max(...xs) - Math.min(...xs);
+		assert.ok(spread > 2, `pursuit ended on one line (spread ${spread})`);
+	});
+
+	test("nobody covers more ground than the play was long", () => {
+		const geom = geomFor(0);
+		// A two-yard gain: the corner on the far numbers cannot be in on it.
+		const ballEnd = { x: geom.losX + geom.dir * 2, y: MID_Y };
+		const before = lineUpDefense(1);
+		const after = assignRunPursuit({ defenders: before, ballEnd, geom });
+		for (const actor of after) {
+			const from = before.find((a) => a.pid === actor.pid)!;
+			const travelled = Math.hypot(actor.x - from.x, actor.y - from.y);
+			assert.ok(
+				travelled < 10,
+				`defender ${actor.slotIndex} ran ${travelled.toFixed(1)} yards on a two-yard run`,
+			);
+		}
+	});
+
+	test("a long run is chased down by everybody", () => {
+		const geom = geomFor(0);
+		const ballEnd = { x: geom.losX + geom.dir * 34, y: MID_Y + 9 };
+		const before = lineUpDefense(1);
+		const after = assignRunPursuit({ defenders: before, ballEnd, geom });
+		for (const actor of after) {
+			const from = before.find((a) => a.pid === actor.pid)!;
+			assert.ok(
+				Math.hypot(actor.x - ballEnd.x, actor.y - ballEnd.y) <
+					Math.hypot(from.x - ballEnd.x, from.y - ballEnd.y),
+				`defender ${actor.slotIndex} gave up on a long run`,
+			);
+		}
 	});
 });
 
 describe("the trenches", () => {
 	const geom = geomFor(0);
 
-	test("each blocker pairs with a rusher and they meet in between", () => {
+	test("each blocker pairs with a rusher and they lock up in between", () => {
 		const blockers = [
-			{ pid: 1, name: "B1", x: geom.losX - 1, y: MID_Y - 3, role: "onField" as const, t: 0 as const },
-			{ pid: 2, name: "B2", x: geom.losX - 1, y: MID_Y + 3, role: "onField" as const, t: 0 as const },
+			{
+				pid: 1,
+				name: "B1",
+				x: geom.losX - 1,
+				y: MID_Y - 3,
+				role: "onField" as const,
+				t: 0 as const,
+			},
+			{
+				pid: 2,
+				name: "B2",
+				x: geom.losX - 1,
+				y: MID_Y + 3,
+				role: "onField" as const,
+				t: 0 as const,
+			},
 		];
 		const rushers = [
-			{ pid: 11, name: "R1", x: geom.losX + 2, y: MID_Y - 3.4, role: "onField" as const, t: 1 as const },
-			{ pid: 12, name: "R2", x: geom.losX + 2, y: MID_Y + 3.4, role: "onField" as const, t: 1 as const },
+			{
+				pid: 11,
+				name: "R1",
+				x: geom.losX + 2,
+				y: MID_Y - 3.4,
+				role: "onField" as const,
+				t: 1 as const,
+			},
+			{
+				pid: 12,
+				name: "R2",
+				x: geom.losX + 2,
+				y: MID_Y + 3.4,
+				role: "onField" as const,
+				t: 1 as const,
+			},
 		];
 		const after = engageLine({ blockers, rushers });
 		for (const [i, b] of after.blockers.entries()) {
 			const r = after.rushers[i]!;
-			// The pair ended up on the same piece of ground, which is what
-			// blocking somebody means.
-			assert.ok(
-				Math.hypot(b.x - r.x, b.y - r.y) < 0.01,
-				`pair ${i} never met (${Math.hypot(b.x - r.x, b.y - r.y)})`,
-			);
+			const apart = Math.hypot(b.x - r.x, b.y - r.y);
+			// They are fighting over one piece of ground - but they are two men,
+			// and drawing them at the same point made a one-on-one look like a
+			// lone player. Close enough to read as engaged, far enough apart to
+			// read as two.
+			assert.ok(apart < 1.6, `pair ${i} never met (${apart})`);
+			assert.ok(apart > 0.4, `pair ${i} drawn on top of each other`);
 			// And they met between where they started, not on top of either one.
 			assert.ok(b.x > geom.losX - 1 && b.x < geom.losX + 2);
 		}
@@ -462,10 +622,24 @@ describe("the trenches", () => {
 		};
 		const after = engageLine({
 			blockers: [
-				{ pid: 1, name: "B1", x: geom.losX - 1, y: MID_Y, role: "onField" as const, t: 0 as const },
+				{
+					pid: 1,
+					name: "B1",
+					x: geom.losX - 1,
+					y: MID_Y,
+					role: "onField" as const,
+					t: 0 as const,
+				},
 			],
 			rushers: [
-				{ pid: 11, name: "R1", x: geom.losX + 1, y: MID_Y, role: "onField" as const, t: 1 as const },
+				{
+					pid: 11,
+					name: "R1",
+					x: geom.losX + 1,
+					y: MID_Y,
+					role: "onField" as const,
+					t: 1 as const,
+				},
 				free,
 			],
 		});
@@ -476,10 +650,24 @@ describe("the trenches", () => {
 	test("nobody is paired with a man on the other side of the formation", () => {
 		const after = engageLine({
 			blockers: [
-				{ pid: 1, name: "B1", x: geom.losX - 1, y: MID_Y - 20, role: "onField" as const, t: 0 as const },
+				{
+					pid: 1,
+					name: "B1",
+					x: geom.losX - 1,
+					y: MID_Y - 20,
+					role: "onField" as const,
+					t: 0 as const,
+				},
 			],
 			rushers: [
-				{ pid: 11, name: "R1", x: geom.losX + 1, y: MID_Y + 20, role: "onField" as const, t: 1 as const },
+				{
+					pid: 11,
+					name: "R1",
+					x: geom.losX + 1,
+					y: MID_Y + 20,
+					role: "onField" as const,
+					t: 1 as const,
+				},
 			],
 		});
 		// Forty yards apart is not a block.

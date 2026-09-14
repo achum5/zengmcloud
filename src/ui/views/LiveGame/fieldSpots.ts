@@ -129,8 +129,7 @@ export const synthEndPoint = (
 	yards: number,
 	ballAcross: number,
 	spread: number,
-): FieldPoint =>
-	toField(losX, dir, -yards, ballAcross + rand(-spread, spread));
+): FieldPoint => toField(losX, dir, -yards, ballAcross + rand(-spread, spread));
 
 // THE PATH BETWEEN THOSE TWO FACTS. A carrier does not travel in a straight
 // line - he presses one way and cuts back - and a graphic that moves him along
@@ -226,7 +225,20 @@ export type FieldActor = {
 	slotIndex?: number;
 	// What he was actually asked to do. Set by the assignment functions and read
 	// by anything that needs to pair men up - the line engaging, most of all.
-	job?: "block" | "pull" | "release" | "route" | "rush" | "man" | "zone" | "spy";
+	job?:
+		| "block"
+		| "pull"
+		| "release"
+		| "route"
+		| "rush"
+		| "man"
+		| "zone"
+		| "spy"
+		// A receiver's run block, out in space rather than in the trenches - so
+		// the line pairing never mistakes him for a man in it.
+		| "stalk"
+		// Carrying out a fake with nothing in his hands.
+		| "fake";
 	// The position he plays, which is where his speed comes from.
 	pos?: string;
 	// "main" is the man with the ball, "passer" whoever threw or kicked it,

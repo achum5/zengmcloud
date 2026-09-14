@@ -46,6 +46,7 @@ import {
 	engageLine,
 	assignRunBlocking,
 	assignRunPursuit,
+	assignRunSupport,
 	callPass,
 	callRun,
 	type PassConcept,
@@ -713,10 +714,7 @@ export const buildFieldScene = ({
 						? end
 						: undefined,
 			});
-			defenseName = defenseLabel(
-				ctx.front?.name ?? "Base",
-				ctx.coverage.name,
-			);
+			defenseName = defenseLabel(ctx.front?.name ?? "Base", ctx.coverage.name);
 		} else if (call.scheme?.dropback) {
 			// A SCRAMBLE started as a pass and stopped being one. The line is
 			// protecting, the receivers are running routes, and the defense is in
@@ -752,10 +750,7 @@ export const buildFieldScene = ({
 				reachTarget: false,
 				ballTo: undefined,
 			});
-			defenseName = defenseLabel(
-				ctx.front?.name ?? "Base",
-				ctx.coverage.name,
-			);
+			defenseName = defenseLabel(ctx.front?.name ?? "Base", ctx.coverage.name);
 		} else if (call.scheme) {
 			defenseName = ctx.front?.name;
 			offense = assignRunBlocking({
@@ -764,7 +759,26 @@ export const buildFieldScene = ({
 				scheme: call.scheme,
 				geom,
 			});
+			// The six who are not on the line and not carrying it: without this
+			// the quarterback, the second back, the tight end and both receivers
+			// stood still for the whole play.
+			offense = assignRunSupport({
+				actors: offense,
+				slots: offSlots,
+				scheme: call.scheme,
+				geom,
+				carrierPid: mainPid,
+			});
 			defense = assignRunPursuit({ defenders: defense, ballEnd: end, geom });
+			// The front is not chasing the ball, it is fighting the line. Giving
+			// the down men a rep puts them into the pairing below, so a run has
+			// trench play in it too - and it is the LINEBACKERS arriving clean
+			// that then reads as a linebacker making the tackle.
+			defense = defense.map((a) =>
+				a.slotIndex !== undefined && defSlots[a.slotIndex]?.pos === "DL"
+					? { ...a, job: "rush" }
+					: a,
+			);
 		}
 		// The man the play happened to runs the play, not his route: a carrier
 		// follows the scheme to where he was actually brought down, and a target
@@ -809,8 +823,7 @@ export const buildFieldScene = ({
 							? "return"
 							: undefined;
 		if (stKind) {
-			const carrier =
-				stKind === "return" ? carrierPath(start, end) : undefined;
+			const carrier = stKind === "return" ? carrierPath(start, end) : undefined;
 			const staged = assignSpecialTeams({
 				kind: stKind,
 				kicking: offense,
@@ -827,9 +840,7 @@ export const buildFieldScene = ({
 			// The returner runs the same weave his ball does.
 			if (carrier && mainPid !== undefined) {
 				offense = offense.map((a) =>
-					a.pid === mainPid
-						? { ...a, x: end.x, y: end.y, path: carrier }
-						: a,
+					a.pid === mainPid ? { ...a, x: end.x, y: end.y, path: carrier } : a,
 				);
 			}
 			defenseName = stKind === "kick" ? "Kick Block" : undefined;
@@ -853,8 +864,11 @@ export const buildFieldScene = ({
 			const engaged = engageLine({
 				blockers,
 				rushers,
-				// A sack means the pocket lost, so the rush wins more ground.
-				push: beat.kind === "sack" ? 0.68 : 0.42,
+				// A sack means the pocket lost, so the rush wins more ground. A
+				// RUN is the other way round: the line is firing off downhill
+				// rather than setting, so the front gets moved instead.
+				push:
+					beat.kind === "sack" ? 0.68 : ctx.callIsRun === true ? 0.26 : 0.42,
 			});
 			const byPid = new Map(
 				[...engaged.blockers, ...engaged.rushers].map((a) => [a.pid, a]),
@@ -1008,9 +1022,10 @@ export const buildFieldScene = ({
 	// where the play ended with no way of having got there, which reads as a
 	// defender teleporting onto the tackle.
 	if (defenderPid !== undefined && TACKLE_KINDS.has(beat.kind)) {
-		const at = mainPid === undefined
-			? end
-			: { x: end.x - dir * 1.4, y: clampY(end.y + 1.6) };
+		const at =
+			mainPid === undefined
+				? end
+				: { x: end.x - dir * 1.4, y: clampY(end.y + 1.6) };
 		const i = actors.findIndex((a) => a.pid === defenderPid);
 		if (i >= 0) {
 			const from = actors[i]!.path?.[0] ?? { x: actors[i]!.x, y: actors[i]!.y };
@@ -1040,13 +1055,7 @@ export const buildFieldScene = ({
 	}
 
 	// Whoever threw or kicked it, at the spot it left his hands.
-	promote(
-		launcherPid,
-		beat.launcherName,
-		"passer",
-		start,
-		offenseT,
-	);
+	promote(launcherPid, beat.launcherName, "passer", start, offenseT);
 
 	// A place kick travels to the posts, not to a yard line - and a miss goes
 	// past one of them, so nobody has to read the text to know.
@@ -1091,9 +1100,9 @@ export const buildFieldScene = ({
 		impact: beat.scored
 			? { kind: "score", at: ballTo }
 			: beat.kind === "run" ||
-					beat.kind === "pass" ||
-					beat.kind === "sack" ||
-					beat.kind === "return"
+				  beat.kind === "pass" ||
+				  beat.kind === "sack" ||
+				  beat.kind === "return"
 				? { kind: "tackle", at: ballTo }
 				: undefined,
 		// A flag lands near where it happened, a few yards off the ball.

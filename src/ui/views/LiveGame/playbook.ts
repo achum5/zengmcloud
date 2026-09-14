@@ -229,13 +229,7 @@ export const SLOT_WR_L = 9;
 export const SLOT_WR_R = 10;
 
 // The five men who can catch it, which is what a concept assigns.
-export const ELIGIBLE = [
-	SLOT_TE,
-	SLOT_RB,
-	SLOT_WR_SLOT,
-	SLOT_WR_L,
-	SLOT_WR_R,
-];
+export const ELIGIBLE = [SLOT_TE, SLOT_RB, SLOT_WR_SLOT, SLOT_WR_L, SLOT_WR_R];
 
 export type PassConcept = {
 	name: string;
@@ -730,8 +724,7 @@ export const assignRoutes = ({
 		const called: RouteName | undefined =
 			assigned === "block" && empty ? "flat" : assigned;
 		// And then he reads the coverage and changes it.
-		const route =
-			called === undefined ? undefined : adjustRoute(called, shell);
+		const route = called === undefined ? undefined : adjustRoute(called, shell);
 
 		// THE BACK ON PLAY ACTION: he takes the fake INTO the line and comes back
 		// out, which is the half of the fake the defense actually reacts to.
@@ -838,7 +831,7 @@ export const assignRunBlocking = ({
 				geom.losX,
 				geom.dir,
 				slot.depth + 2,
-				geom.ballAcross + (scheme.aim * 0.6) * mirror,
+				geom.ballAcross + scheme.aim * 0.6 * mirror,
 			);
 			const through = toField(
 				geom.losX,
@@ -874,9 +867,174 @@ export const assignRunBlocking = ({
 	});
 };
 
-// A RUN, FROM THE OTHER SIDE. Everyone flows to the ball: the front seven get
-// there, the secondary closes from depth. The lag is what makes it read as
-// pursuit rather than as a magnet.
+// THE OTHER SIX. A running play is eleven men working, and only five of them
+// are linemen - but the field was drawing a run as five linemen firing out
+// while the quarterback, the second back, the tight end and both receivers
+// stood perfectly still for the whole play. Five statues out of eleven is the
+// single most lifeless thing a football graphic can do, and it is also a lie
+// about the play: on a real run the receivers are the reason a six-yard gain
+// becomes a twenty, and the quarterback's fake is the reason the backside
+// defenders are late.
+//
+// So everybody who is not carrying the ball and not on the line gets the job he
+// would really have:
+//
+//   the tight end   seals the edge on his side, or works back across on the
+//                   backside, which is the block the hole actually depends on
+//   the quarterback carries out the fake AWAY from the run, which is what
+//                   holds the backside
+//   the second back leads through the hole ahead of the carrier
+//   the receivers   stalk - release at the man covering them, then square up
+//                   and wall him off downfield; the backside one takes a flat
+//                   cut-off angle instead, because he is never getting there
+//                   straight
+//
+// The receivers' job is "stalk" rather than "block" on purpose: the trenches
+// pair blockers with rushers by job, and a receiver twenty yards outside has no
+// business being paired with a defensive end.
+//
+// WHICH JOB A MAN GETS COMES FROM HIS SLOT'S POSITION, NOT ITS NUMBER. The slot
+// ORDER is fixed across formations, but what stands in a slot is not: slot 8 is
+// a third receiver in shotgun, the FULLBACK in an I-formation and a second
+// TIGHT END in a heavy set. Keying off the number sent an I-formation fullback
+// on a twelve-yard stalk block down the seam instead of through the hole.
+export const assignRunSupport = ({
+	actors,
+	slots,
+	scheme,
+	geom,
+	carrierPid,
+}: {
+	actors: FieldActor[];
+	slots: Slot[];
+	scheme: RunScheme;
+	geom: Geom;
+	// The man with the ball. He runs the play, not a job, so he is left alone -
+	// and must be, because a carrier labelled a blocker would be dragged into
+	// the line pairing.
+	carrierPid: number | undefined;
+}): FieldActor[] => {
+	const mirror = dirAcross(geom.dir);
+	const playSide = scheme.aim >= 0 ? 1 : -1;
+
+	const spot = (depth: number, across: number) =>
+		toField(geom.losX, geom.dir, depth, geom.ballAcross + across * mirror);
+
+	return actors.map((actor) => {
+		const i = actor.slotIndex;
+		if (
+			i === undefined ||
+			i <= SLOT_RT ||
+			actor.role === "main" ||
+			(carrierPid !== undefined && actor.pid === carrierPid)
+		) {
+			return actor;
+		}
+		const slot = slots[i]!;
+		const from = { x: actor.x, y: actor.y };
+		// Whether he is lined up on the side the ball is going. A man at the
+		// midline counts as play side - he has the shorter trip either way.
+		const onPlaySide = slot.across * playSide >= -1;
+
+		// What he PLAYS, not which slot number he happens to occupy.
+		const pos = slot.pos;
+		// A man split out is a receiver for this play whatever his position
+		// says - he is in no position to lead through anything. A tight end
+		// lines up ATTACHED, just outside the tackle, so he is only "split" once
+		// he is flexed well beyond that; a back out there is split at once.
+		const wide = Math.abs(slot.across) > (pos === "TE" ? 14 : 8);
+
+		if (pos === "TE" && !wide) {
+			// Play side he seals the edge, a yard or two past the line and further
+			// outside; backside he hinges and works back across the formation,
+			// which is a block made at the line rather than beyond it.
+			const to = onPlaySide
+				? spot(-2, slot.across + 2.4 * playSide)
+				: spot(-0.4, slot.across + 2.6 * playSide);
+			return {
+				...actor,
+				x: to.x,
+				y: to.y,
+				job: "block",
+				path: [from, to],
+				delay: 0.02,
+			};
+		}
+
+		if (pos === "QB") {
+			// The fake: open away from the run, hide the empty hands, and keep
+			// going for a few yards. Three points so it reads as a turn rather
+			// than a slide.
+			const open = spot(slot.depth + 1.4, slot.across - 2.2 * playSide);
+			const boot = spot(slot.depth + 2.6, slot.across - 7 * playSide);
+			return {
+				...actor,
+				x: boot.x,
+				y: boot.y,
+				job: "fake",
+				path: [from, open, boot],
+			};
+		}
+
+		if (pos === "RB" && !wide) {
+			// A second back in the game is a lead blocker: through the hole ahead
+			// of the carrier and a shade to the play side of it.
+			const through = spot(-1.6, scheme.aim + 1 * playSide);
+			return {
+				...actor,
+				x: through.x,
+				y: through.y,
+				job: "block",
+				path: [from, through],
+				delay: 0.03,
+			};
+		}
+
+		// Receivers. Play side: release, then square up seven or eight yards
+		// downfield with a little inside leverage, which is where the man
+		// covering him has to be. Backside: a flat angle across, cutting off the
+		// pursuit rather than chasing it.
+		const stalkDepth = -7.4 - courtRandom() * 1.6;
+		const release = onPlaySide
+			? spot(-3, slot.across + 0.6 * playSide)
+			: spot(-2, slot.across + 3.5 * playSide);
+		const to = onPlaySide
+			? spot(stalkDepth, slot.across + 1.8 * playSide)
+			: spot(-3.6, slot.across + 9 * playSide);
+		return {
+			...actor,
+			x: to.x,
+			y: to.y,
+			job: "stalk",
+			path: [from, release, to],
+			delay: 0.02,
+		};
+	});
+};
+
+// A RUN, FROM THE OTHER SIDE.
+//
+// Pursuit used to be a magnet with a fudge factor: every defender ran a
+// straight line at the ball and was then nudged sideways by his slot number
+// ("spread = ((i % 5) - 2) * 1.3"). Because the nudge came from the slot and
+// not from the field, eleven men who started all over the place finished evenly
+// spaced on one vertical line - a picket fence, which is the one shape a pile
+// of tacklers never makes.
+//
+// What actually spreads a pursuit is that everybody arrives from somewhere
+// different. So nobody is sent to the ball: each man is sent to a point a
+// STANDOFF short of it ALONG HIS OWN LINE OF APPROACH. Converging from eleven
+// directions and stopping short by different amounts puts a ring round the
+// carrier for free, and the ring is his - the man who came from the sideline
+// finishes outside him, the man who came from the middle finishes inside him.
+//
+// Three things then decide how close each man gets:
+//
+//   how deep he started   a lineman is on top of it, a safety is still closing
+//   whether he was beaten  the ball getting past him downfield means he is
+//                         chasing, and chasers finish behind the play
+//   how wide he was       a corner keeps his leverage rather than running
+//                         through the tackle
 export const assignRunPursuit = ({
 	defenders,
 	ballEnd,
@@ -887,19 +1045,60 @@ export const assignRunPursuit = ({
 	geom: Geom;
 }): FieldActor[] =>
 	defenders.map((actor) => {
-		const i = actor.slotIndex;
-		if (i === undefined) {
+		if (actor.slotIndex === undefined) {
 			return actor;
 		}
 		const start = { x: actor.x, y: actor.y };
-		// How much of the way he actually gets: the front seven arrive, the deep
-		// men are still closing when the whistle goes.
-		const closes = i <= 3 ? 0.88 : i <= 6 ? 0.82 : i <= 8 ? 0.7 : 0.55;
-		const spread = ((i % 5) - 2) * 1.3;
+		const toBallX = ballEnd.x - start.x;
+		const toBallY = ballEnd.y - start.y;
+		const dist = Math.hypot(toBallX, toBallY);
+		if (dist < 0.4) {
+			return actor;
+		}
+		const ux = toBallX / dist;
+		const uy = toBallY / dist;
+
+		// How far off the line he lined up, in yards - which is the honest
+		// version of "front seven or secondary", and keeps working when the
+		// front is a dime or a goal-line set.
+		const depth = (start.x - geom.losX) * geom.dir;
+		// The ball finished downfield of where he started: it went past him, and
+		// he spends the play running it down from behind.
+		const beaten = toBallX * geom.dir > 1.5;
+		// How wide of the ball he started. A man from the sideline is taking an
+		// angle, not a straight line.
+		const width = Math.abs(start.y - ballEnd.y);
+
+		// The gap he ends up leaving. A yard is contact; five yards is a man who
+		// never got there.
+		let standoff = 0.9 + depth * 0.1 + width * 0.06;
+		if (beaten) {
+			standoff += 1.6 + depth * 0.12;
+		}
+		standoff = Math.min(standoff, dist * 0.75);
+		// Nobody arrives in a perfect circle.
+		standoff = Math.max(0.6, standoff + (courtRandom() - 0.5) * 0.9);
+
+		// AND HOW LONG THE PLAY LASTED. Sending every man to his standoff makes
+		// a two-yard gain look like a forty: a corner on the far numbers would
+		// cover twenty yards to arrive at a stuff in the backfield, because
+		// nothing in the geometry knows the whistle went. A run's duration is
+		// roughly its length, and everybody is running for that same duration -
+		// so nobody travels further than the play was long, plus the few yards
+		// of it that pass before the back is through the line.
+		const gain = (ballEnd.x - geom.losX) * geom.dir;
+		const reach = 6 + Math.max(0, gain) * 1.25;
+		const travel = Math.min(Math.max(0, dist - standoff), reach);
+
 		const end = {
-			x: start.x + (ballEnd.x - start.x) * closes - geom.dir * 0.8,
-			y: clampY(start.y + (ballEnd.y - start.y) * closes + spread),
+			x: start.x + ux * travel,
+			y: clampY(start.y + uy * travel),
 		};
+
+		// The middle of the run is where the angle shows. A defender does not
+		// aim at the tackle, he aims at where he thinks it will be, so his path
+		// bows toward his own side of the field before it closes.
+		const bow = (start.y - ballEnd.y) * 0.18;
 		return {
 			...actor,
 			x: end.x,
@@ -908,11 +1107,13 @@ export const assignRunPursuit = ({
 				start,
 				{
 					x: start.x + (end.x - start.x) * 0.45,
-					y: clampY(start.y + (end.y - start.y) * 0.55),
+					y: clampY(start.y + (end.y - start.y) * 0.5 + bow),
 				},
 				end,
 			],
-			delay: 0.05 + (i > 6 ? 0.08 : 0),
+			// Depth is a head start for the offense: the deeper he was, the later
+			// he is, and a man being run away from is later still.
+			delay: 0.04 + Math.min(0.12, depth * 0.011) + (beaten ? 0.05 : 0),
 		};
 	});
 
@@ -940,8 +1141,8 @@ export const engageLine = ({
 	rushers: FieldActor[];
 	push?: number;
 }): { blockers: FieldActor[]; rushers: FieldActor[] } => {
-	const claimed = new Map<number, number>();
 	const meeting = new Map<number, FieldPoint>();
+	const rusherMeeting = new Map<number, FieldPoint>();
 
 	// Nearest first, so the men actually across from each other pair up rather
 	// than the first blocker in the list grabbing somebody on the other side of
@@ -961,15 +1162,26 @@ export const engageLine = ({
 		}
 		usedB.add(pair.b);
 		usedR.add(pair.r);
-		claimed.set(pair.b, pair.r);
 		const b = blockers[pair.b]!;
 		const r = rushers[pair.r]!;
 		// Some of them hold and some of them get driven backwards.
-		const won = Math.max(0.05, Math.min(0.95, push + (courtRandom() - 0.5) * 0.5));
-		meeting.set(pair.b, {
+		const won = Math.max(
+			0.05,
+			Math.min(0.95, push + (courtRandom() - 0.5) * 0.5),
+		);
+		const at = {
 			x: b.x + (r.x - b.x) * won,
 			y: b.y + (r.y - b.y) * won,
-		});
+		};
+		// THEY ARE NOT THE SAME MAN. Both of them were being sent to the meeting
+		// point itself, so the two chips drew exactly on top of each other and
+		// five one-on-one fights read as five lone players. Back each of them off
+		// it by half a body along the axis they are fighting on: still locked up,
+		// still visibly two men.
+		const len = Math.hypot(r.x - b.x, r.y - b.y) || 1;
+		const sep = { x: ((r.x - b.x) / len) * 0.5, y: ((r.y - b.y) / len) * 0.5 };
+		meeting.set(pair.b, { x: at.x - sep.x, y: at.y - sep.y });
+		rusherMeeting.set(pair.r, { x: at.x + sep.x, y: at.y + sep.y });
 	}
 
 	return {
@@ -984,11 +1196,7 @@ export const engageLine = ({
 		rushers: rushers.map((actor, i) => {
 			// A rusher nobody blocked keeps the path he was given, and that path
 			// goes to the quarterback.
-			if (!usedR.has(i)) {
-				return actor;
-			}
-			const blocker = [...claimed.entries()].find(([, r]) => r === i)?.[0];
-			const at = blocker === undefined ? undefined : meeting.get(blocker);
+			const at = rusherMeeting.get(i);
 			if (!at) {
 				return actor;
 			}
