@@ -391,6 +391,12 @@ class GameSim extends GameSimBase {
 				}
 			}
 		}
+
+		// The opening lineup's synergy was computed before this rescaling, so
+		// the memo holds every starter's skills at the wrong ratings. Drop it;
+		// the next updateSynergy refills it from the ratings the game is
+		// actually played at.
+		this.synergySkillsCache = new WeakMap();
 	}
 
 	/**
