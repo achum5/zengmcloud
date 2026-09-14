@@ -95,6 +95,7 @@ const PlayerStats = ({
 	const { userTid } = useLocal(["userTid"]);
 
 	const cols = getCols([
+		"#",
 		"Name",
 		"Pos",
 		"Age",
@@ -200,6 +201,7 @@ const PlayerStats = ({
 				playoffs,
 			},
 			data: [
+				null,
 				wrappedPlayerNameLabels({
 					pid: p.pid,
 					injury: p.injury,
@@ -265,8 +267,9 @@ const PlayerStats = ({
 			<DataTable
 				cols={cols}
 				defaultSort={[sortCol, "desc"]}
-				defaultStickyCols={window.mobile ? 0 : 1}
+				defaultStickyCols={window.mobile ? 0 : 2}
 				name={`PlayerStats${statType}`}
+				rankCol={0}
 				rows={rows}
 				superCols={superCols}
 				pagination
