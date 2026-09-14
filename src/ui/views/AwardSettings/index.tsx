@@ -230,7 +230,6 @@ const AwardSettings = ({
 									)}
 									style={{
 										marginTop: MARGIN,
-										scrollMarginTop: showEditSettings ? 60 : undefined,
 									}}
 								>
 									{showEditSettings ? (

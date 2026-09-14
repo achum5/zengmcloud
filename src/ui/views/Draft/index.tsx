@@ -23,6 +23,8 @@ import { confirm } from "../../util/confirm.tsx";
 import { getCol } from "../../../common/getCol.ts";
 import { PHASE } from "../../../common/constants.ts";
 
+const DRAFT_BAR_HEIGHT = 82;
+
 const Draft = ({
 	challengeNoDraftPicks,
 	drafted,
@@ -265,7 +267,7 @@ const Draft = ({
 		colsDrafted.splice(2, 0, getCol("From"));
 	}
 
-	const rowsDrafted: DataTableRow[] = draftedSorted.map((p, i) => {
+	const rowsDrafted: DataTableRow[] = draftedSorted.map((p) => {
 		const data = [
 			`${p.draft.round}-${p.draft.pick}`,
 			wrappedDraftAbbrev(
@@ -537,7 +539,13 @@ const Draft = ({
 			) : null}
 
 			<div className={wrapperClasses}>
-				<div className={undraftedColClasses} id="table-undrafted">
+				<div
+					className={undraftedColClasses}
+					id="table-undrafted"
+					style={{
+						scrollMarginTop: DRAFT_BAR_HEIGHT,
+					}}
+				>
 					<h2>
 						Undrafted Players
 						<span className="float-end">
@@ -548,9 +556,6 @@ const Draft = ({
 									const target = document.getElementById("table-draft-results");
 									if (target) {
 										target.scrollIntoView(true);
-
-										// Fixed navbar
-										window.scrollBy(0, -142);
 									}
 								}}
 							>
@@ -568,7 +573,13 @@ const Draft = ({
 						rows={rowsUndrafted}
 					/>
 				</div>
-				<div className={draftedColClasses} id="table-draft-results">
+				<div
+					className={draftedColClasses}
+					id="table-draft-results"
+					style={{
+						scrollMarginTop: DRAFT_BAR_HEIGHT,
+					}}
+				>
 					<h2>
 						Draft Results
 						<span className="float-end">
@@ -579,9 +590,6 @@ const Draft = ({
 									const target = document.getElementById("table-undrafted");
 									if (target) {
 										target.scrollIntoView(true);
-
-										// Fixed navbar
-										window.scrollBy(0, -142);
 									}
 								}}
 							>
