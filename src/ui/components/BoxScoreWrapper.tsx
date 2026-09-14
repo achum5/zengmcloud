@@ -1260,12 +1260,20 @@ export const BoxScoreWrapper = ({
 		);
 	}
 
-	// Only completed, real basketball games can have a saved replay. Rendered
-	// once and placed either under the Next button or, when there isn't one,
-	// centered below the score.
+	// Any completed, real game can have a saved replay - EVERY sport, not just
+	// basketball. The button used to be gated to basketball, left over from
+	// where the feature was first built, while everything behind it (the save
+	// in play.ts, hasLiveGameReplay, getLiveGamePlayByPlay, and the live-game
+	// view's replay route) was already sport-agnostic. So the setting saved
+	// football replays perfectly well and there was simply no way to watch one.
+	//
+	// Not to be confused with the per-player HIGHLIGHTS reel, which stays
+	// basketball-only on purpose: that one filters basketball play types.
+	//
+	// Rendered once and placed either under the Next button or, when there
+	// isn't one, centered below the score.
 	const replayButton =
 		!live &&
-		isSport("basketball") &&
 		!boxScore.exhibition &&
 		typeof boxScore.gid === "number" &&
 		boxScore.gid >= 0 ? (
