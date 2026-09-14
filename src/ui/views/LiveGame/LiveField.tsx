@@ -864,6 +864,49 @@ const LiveField = ({
 		}
 	}
 
+	// WHERE EACH NAME TAG GOES. A tag sits above or below its man, and the rule
+	// was only about the sidelines: near the bottom of the field it goes above,
+	// so it does not fall off. That is not enough when a play ends with two men
+	// in the same place, which is most of them - a sack puts the quarterback and
+	// the man who got him a stride apart, a completion puts the passer and the
+	// receiver on one line - and both tags landed on the same strip of grass,
+	// one printed over the other.
+	//
+	// So a colliding pair is PUSHED APART rather than merely flipped: the man
+	// higher up the screen takes the space above, the man below takes the space
+	// below. Flipping alone made it worse for the commonest case of all, two men
+	// stacked a few yards apart - it sent both tags into the gap between them.
+	// The sidelines have the last word, because a tag off the field is worse
+	// than a tag on another tag.
+	const nameAbove = new Map<number, boolean>();
+	if (scene) {
+		const featured = scene.actors.filter((a) => a.role !== "onField");
+		for (const a of featured) {
+			nameAbove.set(a.pid, a.y > FIELD_W * 0.72);
+		}
+		// A tag is a wide, short box - a name runs a dozen yards at this scale and
+		// stands barely two - so a pair collides over a generous spread ACROSS the
+		// field and a narrow one along it.
+		for (const [i, a] of featured.entries()) {
+			for (const b of featured.slice(i + 1)) {
+				if (Math.abs(a.x - b.x) > 13 || Math.abs(a.y - b.y) > 7) {
+					continue;
+				}
+				const upper = a.y <= b.y ? a : b;
+				const lower = a.y <= b.y ? b : a;
+				nameAbove.set(upper.pid, true);
+				nameAbove.set(lower.pid, false);
+			}
+		}
+		for (const a of featured) {
+			if (a.y > FIELD_W - 6) {
+				nameAbove.set(a.pid, true);
+			} else if (a.y < 6) {
+				nameAbove.set(a.pid, false);
+			}
+		}
+	}
+
 	const bodies: ReactNode[] = [];
 	if (scene) {
 		for (const actor of scene.actors) {
@@ -881,9 +924,9 @@ const LiveField = ({
 					background={background}
 					anim={background ? undefined : animForRole(scene, actor)}
 					animKey={scene.key}
-					// A name tag below the face would fall off the bottom of a field
-					// that is only 53 yards tall; near the far sideline it goes above.
-					nameAbove={actor.y > FIELD_W * 0.72}
+					// Above or below, chosen so it clears the sideline and does not
+					// land on another man's tag. Only the featured men carry one.
+					nameAbove={nameAbove.get(actor.pid) ?? false}
 					size={size}
 					sceneMs={sceneMs}
 					registerNode={registerNode}
