@@ -508,3 +508,55 @@ export const assignSpecialTeams = ({
 		}
 	}
 };
+
+// A LOOSE BALL ON THE GROUND.
+//
+// A fumble was a ball squirting away from twenty-two men who carried on with
+// whatever they had been doing. It is the one moment in football where every
+// assignment on the field is cancelled at once and everybody near it does the
+// same thing.
+export const assignScramble = ({
+	actors,
+	ball,
+	// How many of the nearest men actually get there. Everybody converging turns
+	// a fumble into a magnet.
+	count = 6,
+}: {
+	actors: FieldActor[];
+	ball: FieldPoint;
+	count?: number;
+}): FieldActor[] => {
+	const near = actors
+		.map((a, i) => ({ i, d: Math.hypot(a.x - ball.x, a.y - ball.y) }))
+		.sort((a, b) => a.d - b.d)
+		.slice(0, count);
+	const chosen = new Map(near.map(({ i, d }) => [i, d]));
+	return actors.map((actor, i) => {
+		const d = chosen.get(i);
+		if (d === undefined) {
+			return actor;
+		}
+		const from = actor.path?.[0] ?? { x: actor.x, y: actor.y };
+		// The nearest man gets on it; the rest pile in around him.
+		const ring = 0.4 + (i % 5) * 0.5;
+		const angle = (i % 8) * (Math.PI / 4);
+		const at = {
+			x: ball.x + Math.cos(angle) * ring,
+			y: clampY(ball.y + Math.sin(angle) * ring),
+		};
+		return {
+			...actor,
+			x: at.x,
+			y: at.y,
+			path: [
+				from,
+				{
+					x: from.x + (at.x - from.x) * 0.5,
+					y: clampY(from.y + (at.y - from.y) * 0.55),
+				},
+				at,
+			],
+			delay: 0.08 + Math.min(0.25, d * 0.012),
+		};
+	});
+};

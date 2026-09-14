@@ -19,6 +19,7 @@ import {
 } from "./fieldSpots.ts";
 import type { BallFlight } from "./fieldAnimation.ts";
 import {
+	assignScramble,
 	assignSpecialTeams,
 	carrierPath,
 	type SpecialTeamsKind,
@@ -674,15 +675,8 @@ export const buildFieldScene = ({
 		playName = call.name;
 		if (call.concept) {
 			const protectDepth = beat.launchDepth ?? 5.5;
-			offense = assignRoutes({
-				actors: offense,
-				slots: offSlots,
-				concept: call.concept,
-				geom,
-				protectDepth,
-				empty: offFormation?.empty,
-				motion: ctx.motion,
-			});
+			// The defense declares first, because the receivers have to be able to
+			// read it - which is the entire craft of playing the position.
 			if (!ctx.coverage) {
 				ctx.coverage = chooseCoverage({
 					down,
@@ -691,6 +685,16 @@ export const buildFieldScene = ({
 					sacked: beat.kind === "sack",
 				});
 			}
+			offense = assignRoutes({
+				actors: offense,
+				slots: offSlots,
+				concept: call.concept,
+				geom,
+				protectDepth,
+				empty: offFormation?.empty,
+				motion: ctx.motion,
+				shell: ctx.coverage.shell,
+			});
 			defense = assignCoverage({
 				defenders: defense,
 				defSlots,
@@ -818,6 +822,13 @@ export const buildFieldScene = ({
 			offense = offense.map((a) => byPid.get(a.pid) ?? a);
 			defense = defense.map((a) => byPid.get(a.pid) ?? a);
 		}
+	}
+
+	// A FUMBLE cancels every assignment on the field at once: the men near it
+	// stop doing whatever they were doing and go after it.
+	if (beat.kind === "fumble" && beat.loose) {
+		offense = assignScramble({ actors: offense, ball: end, count: 4 });
+		defense = assignScramble({ actors: defense, ball: end, count: 4 });
 	}
 
 	// The path the man with the ball is running, so the ball can travel it with

@@ -1,4 +1,5 @@
 import { courtRandom } from "./courtRng.ts";
+import type { CoverageShell } from "./coverages.ts";
 import {
 	clampY,
 	dirAcross,
@@ -148,6 +149,68 @@ export const ROUTES: Record<RouteName, RoutePoint[]> = {
 	],
 	// He isn't going anywhere: he has somebody to block.
 	block: [],
+};
+
+// READING IT. A route is a plan, and the whole craft of playing receiver is
+// changing the plan once you see what the defense is doing. Until now the
+// offense ran its concept into whatever the defense happened to be playing and
+// the two never touched each other.
+//
+// These are the conversions every receiver in football is taught:
+//
+//   Two men deep      you cannot run past both of them, so the deep routes
+//                     come back to the ball and the intermediate stuff stays.
+//   One man deep      the middle of the field is closed and the outside is
+//                     one-on-one, so routes break AWAY from the free safety
+//                     and a comeback turns into a go.
+//   Man coverage      break away from the man trailing you: a curl becomes a
+//                     comeback, because he has no help to pass you off to.
+//   Nobody deep       because everybody is coming. There is no time for any of
+//                     it, so every route gets HOT and the ball comes out now.
+const VS_TWO_HIGH: Partial<Record<RouteName, RouteName>> = {
+	go: "comeback",
+	wheel: "out",
+	corner: "out",
+};
+
+const VS_SINGLE_HIGH: Partial<Record<RouteName, RouteName>> = {
+	post: "corner",
+	seam: "corner",
+	comeback: "go",
+};
+
+const VS_MAN: Partial<Record<RouteName, RouteName>> = {
+	curl: "comeback",
+	seam: "go",
+};
+
+const VS_BLITZ: Partial<Record<RouteName, RouteName>> = {
+	go: "slant",
+	seam: "slant",
+	post: "slant",
+	corner: "out",
+	dig: "drag",
+	comeback: "out",
+	curl: "out",
+	wheel: "flat",
+};
+
+export const adjustRoute = (
+	route: RouteName,
+	shell: CoverageShell | undefined,
+): RouteName => {
+	if (route === "block" || route === "screen" || shell === undefined) {
+		return route;
+	}
+	const table =
+		shell === "twoHigh"
+			? VS_TWO_HIGH
+			: shell === "singleHigh"
+				? VS_SINGLE_HIGH
+				: shell === "man"
+					? VS_MAN
+					: VS_BLITZ;
+	return table[route] ?? route;
 };
 
 // THE SLOTS A CONCEPT TALKS ABOUT. The offensive formations are written in one
@@ -557,6 +620,7 @@ export const assignRoutes = ({
 	protectDepth,
 	empty,
 	motion,
+	shell,
 }: {
 	actors: FieldActor[];
 	slots: Slot[];
@@ -571,6 +635,8 @@ export const assignRoutes = ({
 	// thing an offense does before the ball moves, and a formation that never
 	// moves before the snap reads as a diagram rather than a play.
 	motion?: boolean;
+	// What the defense is showing, so the receivers can read it.
+	shell?: CoverageShell;
 }): FieldActor[] => {
 	const mirror = dirAcross(geom.dir);
 	// Which side the screen is going, so the wall is built on that side.
@@ -655,8 +721,11 @@ export const assignRoutes = ({
 		// In empty there is nobody to protect with, so an assignment to block is
 		// not an assignment at all - the man is split out and has to run
 		// something.
-		const route: RouteName | undefined =
+		const called: RouteName | undefined =
 			assigned === "block" && empty ? "flat" : assigned;
+		// And then he reads the coverage and changes it.
+		const route =
+			called === undefined ? undefined : adjustRoute(called, shell);
 
 		// THE BACK ON PLAY ACTION: he takes the fake INTO the line and comes back
 		// out, which is the half of the fake the defense actually reacts to.

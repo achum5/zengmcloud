@@ -34,8 +34,14 @@ export type CoverageJob =
 	| { kind: "man"; slot: number }
 	| { kind: "zone"; depth: number; across: number; label: string };
 
+// What the receivers SEE, which is the only thing about a coverage an offense
+// can react to: how many men are over the top, or whether there is anybody back
+// there at all.
+export type CoverageShell = "man" | "blitz" | "singleHigh" | "twoHigh";
+
 export type Coverage = {
 	name: string;
+	shell: CoverageShell;
 	// How many men come after the quarterback. Anything past the front four is
 	// a blitz and takes a body out of the coverage behind it.
 	rushers: number;
@@ -130,6 +136,7 @@ const rushAll = (indices: number[], defSlots?: Slot[]): Map<number, CoverageJob>
 // The extra defender either spies the quarterback or comes.
 const COVER_1: Coverage = {
 	name: "Cover 1",
+	shell: "man",
 	rushers: 4,
 	man: true,
 	build: (groups) => {
@@ -158,6 +165,7 @@ const COVER_1: Coverage = {
 // coming. The most dangerous thing a defense can do in both directions.
 const COVER_0: Coverage = {
 	name: "Cover 0 Blitz",
+	shell: "blitz",
 	rushers: 6,
 	man: true,
 	build: (groups) => {
@@ -182,6 +190,7 @@ const COVER_0: Coverage = {
 // them into the flats, and the linebackers have the middle.
 const COVER_2: Coverage = {
 	name: "Cover 2",
+	shell: "twoHigh",
 	rushers: 4,
 	man: false,
 	build: (groups) => {
@@ -218,6 +227,7 @@ const COVER_2: Coverage = {
 // pipe to take away the seam that Cover 2 leaves open.
 const TAMPA_2: Coverage = {
 	name: "Tampa 2",
+	shell: "twoHigh",
 	rushers: 4,
 	man: false,
 	build: (groups, offSlots) => {
@@ -239,6 +249,7 @@ const TAMPA_2: Coverage = {
 // why it is the coverage a defense plays when it wants to stop the run too.
 const COVER_3: Coverage = {
 	name: "Cover 3",
+	shell: "singleHigh",
 	rushers: 4,
 	man: false,
 	build: (groups) => {
@@ -295,6 +306,7 @@ const COVER_3: Coverage = {
 // defense takes away everything down the field and dares you to run.
 const COVER_4: Coverage = {
 	name: "Quarters",
+	shell: "twoHigh",
 	rushers: 4,
 	man: false,
 	build: (groups) => {
@@ -352,6 +364,7 @@ const COVER_4: Coverage = {
 // defense in football has some version of it.
 const FIRE_ZONE: Coverage = {
 	name: "Fire Zone",
+	shell: "singleHigh",
 	rushers: 5,
 	man: false,
 	build: (groups, offSlots) => {
@@ -416,6 +429,35 @@ export const chooseCoverage = ({
 
 type Geom = { losX: number; dir: Dir; ballAcross: number };
 
+// THE SHOW BEFORE THE SNAP.
+//
+// A defense that lines up in what it is about to play has told the quarterback
+// everything. Real ones show the OPPOSITE and rotate as the ball moves: a
+// two-deep look that spins to a single-high, or one safety down in the box who
+// bails to a half at the snap.
+//
+// Only the safeties do it - they are the men whose position declares the
+// coverage - and it costs nothing but the first waypoint of their path.
+const disguiseSpot = (
+	shell: CoverageShell,
+	n: number,
+	geom: Geom,
+): FieldPoint => {
+	const mirror = dirAcross(geom.dir);
+	// Two men deep is disguised as one deep and one down; one deep is disguised
+	// as two.
+	const [depth, across] =
+		shell === "twoHigh"
+			? n === 0
+				? [13, 0]
+				: [7, -12]
+			: n === 0
+				? [12, -11]
+				: [12, 11];
+	return toField(geom.losX, geom.dir, -depth, geom.ballAcross + across * mirror);
+};
+
+
 // PUTTING THE COVERAGE ON THE GRASS.
 //
 // A rusher goes at the quarterback. A man defender goes where his receiver
@@ -477,13 +519,23 @@ export const assignCoverage = ({
 		}
 	}
 
+	// Which safety is which, so the two of them can show one thing and rotate to
+	// another.
+	const safetyOrder = new Map(groups.s.map((slot, n) => [slot, n]));
+
 	return defenders.map((actor) => {
 		const i = actor.slotIndex;
 		if (i === undefined) {
 			return actor;
 		}
 		const job = jobs.get(i);
-		const start = { x: actor.x, y: actor.y };
+		const lined = { x: actor.x, y: actor.y };
+		// A safety begins the play where the defense wanted the quarterback to
+		// think he was.
+		const show = safetyOrder.has(i)
+			? disguiseSpot(coverage.shell, safetyOrder.get(i)!, geom)
+			: undefined;
+		const start = show ?? lined;
 		if (!job) {
 			return actor;
 		}

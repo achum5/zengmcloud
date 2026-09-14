@@ -227,6 +227,8 @@ export type FieldActor = {
 	// What he was actually asked to do. Set by the assignment functions and read
 	// by anything that needs to pair men up - the line engaging, most of all.
 	job?: "block" | "pull" | "release" | "route" | "rush" | "man" | "zone" | "spy";
+	// The position he plays, which is where his speed comes from.
+	pos?: string;
 	// "main" is the man with the ball, "passer" whoever threw or kicked it,
 	// "defender" whoever did something about it, "onField" everybody else.
 	role: "main" | "defender" | "passer" | "onField";
@@ -383,6 +385,7 @@ export const buildFormationActors = ({
 			y: point.y,
 			role: "onField",
 			slotIndex: i,
+			pos: p.pos,
 			t,
 		});
 	}
@@ -409,7 +412,7 @@ export const buildFormationActors = ({
 				return slot !== undefined && slot.pos === group;
 			}) ?? -1;
 		const i = at >= 0 ? at : actors.length - 1;
-		actors[i] = { ...actors[i]!, pid: p.pid, name: p.name };
+		actors[i] = { ...actors[i]!, pid: p.pid, name: p.name, pos: p.pos };
 		placed.add(pid);
 	}
 	return actors;

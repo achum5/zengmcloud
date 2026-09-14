@@ -195,3 +195,50 @@ export const pathProgress = (playT: number, delay: number | undefined): number =
 	}
 	return Math.min(1, (playT - d) / (1 - d));
 };
+
+// HOW FAST HE IS.
+//
+// Everybody covered his path in exactly the same time, which meant a guard and
+// a flanker looked equally quick and nobody ever separated from anybody. A
+// football graphic without a difference in speed has no big plays in it - a
+// forty-yard run and a two-yard plunge are the same gesture at different
+// scales.
+//
+// Speed is a multiplier on progress, and it is only ever 1 or MORE. A fast man
+// finishes his job early and waits; nobody is ever left short of where the play
+// says he finished, which would be a worse lie than everyone running the same
+// speed. The numbers are the shape of a real roster: receivers and corners
+// fastest, then backs and safeties, then linebackers and tight ends, with the
+// line and the specialists bringing up the rear.
+const SPEED: Record<string, number> = {
+	WR: 1.34,
+	CB: 1.32,
+	KR: 1.34,
+	PR: 1.34,
+	RB: 1.24,
+	FB: 1.1,
+	S: 1.22,
+	LB: 1.12,
+	TE: 1.12,
+	QB: 1.06,
+	OL: 1,
+	C: 1,
+	G: 1,
+	T: 1,
+	DL: 1.02,
+	DE: 1.06,
+	DT: 1,
+	K: 1,
+	P: 1,
+};
+
+export const speedFor = (pos: string | undefined): number =>
+	SPEED[pos ?? ""] ?? 1.1;
+
+// Progress along a man's own job, given how far into the play we are, the delay
+// he was given, and how fast he is.
+export const jobProgress = (
+	playT: number,
+	delay: number | undefined,
+	pos: string | undefined,
+): number => Math.min(1, pathProgress(playT, delay) * speedFor(pos));

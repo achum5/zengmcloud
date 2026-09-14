@@ -6,8 +6,10 @@ import {
 	fieldGlideSeconds,
 	impactReaction,
 	nextTumble,
+	jobProgress,
 	pathProgress,
 	pointAlongPath,
+	speedFor,
 } from "./fieldAnimation.ts";
 
 describe("ballHeight", () => {
@@ -171,5 +173,41 @@ describe("pathProgress", () => {
 
 	test("however late he is, he still finishes", () => {
 		assert.strictEqual(pathProgress(1, 5), 1);
+	});
+});
+
+describe("speed", () => {
+	test("a receiver is faster than a lineman and nobody is slower than average", () => {
+		assert.ok(speedFor("WR") > speedFor("LB"));
+		assert.ok(speedFor("LB") > speedFor("OL"));
+		assert.ok(speedFor("CB") > speedFor("DL"));
+		for (const pos of ["WR", "CB", "RB", "S", "LB", "TE", "QB", "OL", "DL", "K"]) {
+			assert.ok(speedFor(pos) >= 1, `${pos} was slower than walking pace`);
+		}
+		// An unknown position still runs: a roster with an odd label is not a
+		// reason to leave somebody standing on the ball.
+		assert.ok(speedFor(undefined) >= 1);
+		assert.ok(speedFor("WEIRD") >= 1);
+	});
+
+	// The point of speed is separation: given the same job and the same moment
+	// in the play, a fast man is further along it.
+	test("given the same job, the fast man is further along it", () => {
+		const at = (pos: string) => jobProgress(0.5, 0, pos);
+		assert.ok(at("WR") > at("TE"));
+		assert.ok(at("TE") > at("OL"));
+	});
+
+	// And nobody is ever left short of where the play says he finished, which
+	// would be a worse lie than everybody running the same speed.
+	test("everybody still finishes", () => {
+		for (const pos of ["WR", "OL", "K", undefined]) {
+			assert.strictEqual(jobProgress(1, 0, pos), 1);
+			assert.strictEqual(jobProgress(1, 0.4, pos), 1);
+		}
+	});
+
+	test("a delayed man still has not moved during his delay", () => {
+		assert.strictEqual(jobProgress(0.2, 0.35, "WR"), 0);
 	});
 });

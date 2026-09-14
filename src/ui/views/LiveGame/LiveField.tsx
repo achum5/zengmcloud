@@ -28,8 +28,8 @@ import {
 	ballLift,
 	fieldGlideSeconds,
 	impactReaction,
+	jobProgress,
 	nextTumble,
-	pathProgress,
 	pointAlongPath,
 	type BallFlight,
 } from "./fieldAnimation.ts";
@@ -586,7 +586,10 @@ const LiveField = ({
 			for (const actor of pathed) {
 				place(
 					actor,
-					pointAlongPath(actor.path!, pathProgress(playT, actor.delay)),
+					pointAlongPath(
+						actor.path!,
+						jobProgress(playT, actor.delay, actor.pos),
+					),
 				);
 			}
 			if (playT < 1) {
@@ -1019,6 +1022,63 @@ const LiveField = ({
 							</g>
 						);
 					})}
+
+					{/* THE CHAIN GANG, on the sideline where they stand. The orange
+					    down marker sits on the line of scrimmage and the chains at the
+					    line to gain, which is how anybody watching a football game
+					    knows where those two lines are without being told. */}
+					{scene && scene.kind !== "kickoff" ? (
+						<g opacity={0.95}>
+							<rect
+								x={scene.losX - 0.55}
+								y={-2.35}
+								width={1.1}
+								height={2.1}
+								rx={0.25}
+								fill="#ff7300"
+								stroke="#20160a"
+								strokeWidth={0.14}
+							/>
+							{scene.down ? (
+								<text
+									x={scene.losX}
+									y={-1.3}
+									fill="#fff"
+									fontSize={1.5}
+									fontWeight={700}
+									textAnchor="middle"
+									dominantBaseline="central"
+								>
+									{scene.down.slice(0, 1)}
+								</text>
+							) : null}
+						</g>
+					) : null}
+					{scene?.firstDownX !== undefined ? (
+						<g opacity={0.95}>
+							<line
+								x1={scene.losX}
+								y1={-1.55}
+								x2={scene.firstDownX}
+								y2={-1.55}
+								stroke="#ffd21f"
+								strokeWidth={0.22}
+							/>
+							{[scene.losX, scene.firstDownX].map((x, i) => (
+								<rect
+									key={i}
+									x={x - 0.28}
+									y={-2.75}
+									width={0.56}
+									height={2.5}
+									rx={0.2}
+									fill="#ffd21f"
+									stroke="#3a2f05"
+									strokeWidth={0.12}
+								/>
+							))}
+						</g>
+					) : null}
 
 					{/* A FLAG. Yellow, on the grass, where it happened - which is how
 					    anybody watching finds out there was a penalty. */}

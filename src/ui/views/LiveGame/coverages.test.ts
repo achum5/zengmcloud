@@ -322,3 +322,42 @@ describe("defenseLabel", () => {
 		assert.strictEqual(defenseLabel("Goal Line", "Goal Line"), "Goal Line");
 	});
 });
+
+describe("disguise", () => {
+	// A defense that lines up in what it is about to play has told the
+	// quarterback everything.
+	test("the safeties start somewhere other than where they end up", () => {
+		for (const coverage of [COVERAGES.cover3, COVERAGES.cover2, COVERAGES.cover1]) {
+			const after = play({ coverage });
+			const safeties = after.filter(
+				(a) => defenseSlots("pass")[a.slotIndex!]!.pos === "S",
+			);
+			assert.strictEqual(safeties.length, 2, coverage.name);
+			for (const s of safeties) {
+				assert.ok(s.path && s.path.length >= 2, `${coverage.name} safety idle`);
+				const from = s.path![0]!;
+				const to = s.path!.at(-1)!;
+				assert.ok(
+					Math.hypot(to.x - from.x, to.y - from.y) > 2,
+					`${coverage.name} safety never rotated`,
+				);
+			}
+		}
+	});
+
+	test("a two-deep coverage shows one deep, and a one-deep coverage shows two", () => {
+		const shownDepths = (coverage: (typeof COVERAGES)[keyof typeof COVERAGES]) =>
+			play({ coverage })
+				.filter((a) => defenseSlots("pass")[a.slotIndex!]!.pos === "S")
+				.map((a) => Math.round((a.path![0]!.x - geom.losX) * geom.dir));
+		// Cover 2 is two deep, so it shows one man deep and one down.
+		const two = shownDepths(COVERAGES.cover2).sort((a, b) => a - b);
+		assert.ok(two[0]! < 10 && two[1]! > 10, `Cover 2 showed ${two}`);
+		// Cover 3 is one deep, so it shows two at a matching depth.
+		const three = shownDepths(COVERAGES.cover3);
+		assert.ok(
+			Math.abs(three[0]! - three[1]!) <= 1,
+			`Cover 3 showed ${three}`,
+		);
+	});
+});

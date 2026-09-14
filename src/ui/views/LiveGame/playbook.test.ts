@@ -1,6 +1,7 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import { clearCourtRng, seedCourtRng } from "./courtRng.ts";
 import {
+	adjustRoute,
 	assignRoutes,
 	assignRunBlocking,
 	assignRunPursuit,
@@ -483,5 +484,75 @@ describe("the trenches", () => {
 		});
 		// Forty yards apart is not a block.
 		assert.strictEqual(after.blockers[0]!.path, undefined);
+	});
+});
+
+describe("reading the coverage", () => {
+	test("you cannot run past two deep safeties, so a go comes back", () => {
+		assert.strictEqual(adjustRoute("go", "twoHigh"), "comeback");
+		assert.strictEqual(adjustRoute("wheel", "twoHigh"), "out");
+		// The intermediate stuff is what two-high gives you, so it is untouched.
+		assert.strictEqual(adjustRoute("dig", "twoHigh"), "dig");
+		assert.strictEqual(adjustRoute("slant", "twoHigh"), "slant");
+	});
+
+	test("against one deep man the routes break away from him", () => {
+		assert.strictEqual(adjustRoute("post", "singleHigh"), "corner");
+		assert.strictEqual(adjustRoute("seam", "singleHigh"), "corner");
+		// And with nobody over the top outside, a comeback is a waste of a go.
+		assert.strictEqual(adjustRoute("comeback", "singleHigh"), "go");
+	});
+
+	test("against man you break away from the man trailing you", () => {
+		assert.strictEqual(adjustRoute("curl", "man"), "comeback");
+		assert.strictEqual(adjustRoute("go", "man"), "go");
+	});
+
+	// The hot adjustment: everybody is coming, so there is no time for any of it.
+	test("against an all-out blitz everything gets hot", () => {
+		for (const deep of ["go", "seam", "post"] as const) {
+			assert.strictEqual(adjustRoute(deep, "blitz"), "slant");
+		}
+		assert.strictEqual(adjustRoute("dig", "blitz"), "drag");
+		assert.strictEqual(adjustRoute("corner", "blitz"), "out");
+		// A route that is already hot stays as it is.
+		assert.strictEqual(adjustRoute("slant", "blitz"), "slant");
+		assert.strictEqual(adjustRoute("flat", "blitz"), "flat");
+	});
+
+	test("a blocker never becomes a receiver and a screen is still a screen", () => {
+		for (const shell of ["man", "blitz", "singleHigh", "twoHigh"] as const) {
+			assert.strictEqual(adjustRoute("block", shell), "block");
+			assert.strictEqual(adjustRoute("screen", shell), "screen");
+		}
+	});
+
+	test("with nothing known about the defense, the call is the call", () => {
+		for (const route of Object.keys(ROUTES) as (keyof typeof ROUTES)[]) {
+			assert.strictEqual(adjustRoute(route, undefined), route);
+		}
+	});
+
+	// The point of all of it: the same concept against different coverages is a
+	// different set of routes.
+	test("one concept against two shells is two different plays", () => {
+		const geom = geomFor(0);
+		const endsFor = (shell: "twoHigh" | "blitz") =>
+			assignRoutes({
+				actors: lineUp(0),
+				slots: offenseSlots("pass"),
+				concept: PASS_CONCEPTS.find((c) => c.name === "Four Verticals")!,
+				geom,
+				protectDepth: 5.5,
+				shell,
+			})
+				.filter((a) => a.job === "route")
+				.map((a) => Math.round((a.x - geom.losX) * geom.dir));
+		const deepAgainstTwo = endsFor("twoHigh");
+		const hotAgainstBlitz = endsFor("blitz");
+		assert.ok(
+			Math.max(...hotAgainstBlitz) < Math.max(...deepAgainstTwo),
+			`blitz ${hotAgainstBlitz} vs two-high ${deepAgainstTwo}`,
+		);
 	});
 });
