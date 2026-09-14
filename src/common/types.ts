@@ -1786,6 +1786,12 @@ export type PlayersPlusOptions = {
 	// a player's whole ratings history (a peak-ovr column, say) would otherwise
 	// mix a 0-100 prospect row with 0-10 rows and always report the prospect one.
 	prospectSeasonsExact?: boolean;
+	// Show a RETIRED player's ratings at full resolution. Off by default and
+	// opted into only by a single player's own page, where his closed career is
+	// a record rather than a scouting report. A list must never set it: mixing
+	// his exact 53 with an active player's 6 puts two scales in one column, and
+	// the 53 then reads - and sorts - as the higher rating.
+	retiredRatingsExact?: boolean;
 	oldStats?: boolean;
 	numGamesRemaining?: number;
 	statType?: PlayerStatType;

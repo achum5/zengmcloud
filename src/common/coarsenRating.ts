@@ -24,21 +24,24 @@ const RETIRED_TID = -3;
 // that one is about the scouting report you were shown before the draft, and it
 // ends the moment he lands on a roster.
 //
-// And anyone RETIRED, unconditionally. Hiding the ones digit exists to keep you
-// from reading a roster like a spreadsheet - to leave real doubt about which of
-// two 6s is better while you still have to decide something about them. Nothing
-// is left to decide about a retired player: his career is closed, he cannot be
-// signed or traded or played, and his page is a record rather than a scouting
-// report. So the record reads at full resolution.
+// And a RETIRED player, but only where `retiredExempt` says one career is what's
+// on screen. The reason a closed career reads at full resolution is that his
+// page is a record rather than a scouting report - nothing is left to decide
+// about him, so there is nothing to hide. That argument is about the PAGE, and
+// it stops holding the moment he is one row in a list: a column that shows 53
+// for a retired player and 6 for an active one is carrying two scales at once,
+// so 53 sits above 6 when the 6 means 60-69. Lists coarsen everybody (the
+// default); a player's own page opts in.
 export const exemptFromCoarseRatings = (
 	tid: number | undefined,
 	exceptProspects: boolean,
+	retiredExempt = false,
 ): boolean => {
 	if (tid === undefined) {
 		return false;
 	}
 	if (tid === RETIRED_TID) {
-		return true;
+		return retiredExempt;
 	}
 	return exceptProspects && UNDRAFTED_TIDS.has(tid);
 };
@@ -176,8 +179,10 @@ export const coarsenPlayerForDisplay = <T extends Record<string, any>>(
 	ratings: string[],
 	// The "prospects exempt" option. Requires `tid` to have been requested.
 	exceptProspects = false,
+	// Whether a retired player reads exact here - only on his own page.
+	retiredExempt = false,
 ): T => {
-	if (exemptFromCoarseRatings(p.tid, exceptProspects)) {
+	if (exemptFromCoarseRatings(p.tid, exceptProspects, retiredExempt)) {
 		return p;
 	}
 	const out: Record<string, any> = { ...p };

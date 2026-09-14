@@ -114,7 +114,9 @@ const RatingsForm = ({
 	const coarse =
 		!godMode &&
 		hideRatingsOnesDigit &&
-		!exemptFromCoarseRatings(tid, hideRatingsOnesDigitExceptProspects);
+		// One player on his own, same as his player page - a retired career reads
+		// exact here because there is no other player's column to disagree with.
+		!exemptFromCoarseRatings(tid, hideRatingsOnesDigitExceptProspects, true);
 
 	const fuzzRating = (
 		ratingsRow: any,

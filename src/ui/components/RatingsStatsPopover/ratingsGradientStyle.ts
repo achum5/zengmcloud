@@ -22,12 +22,20 @@ export const ratingsAreCoarse = (
 	// per-player answer.
 	season?: number,
 	draftYear?: number,
+	// Whether a retired player's numbers came back exact, which is true only
+	// where a single career is on screen. Anywhere he shares a column with an
+	// active player he is coarsened like everybody else, so this stays false.
+	retiredExempt = false,
 ): boolean => {
 	const { hideRatingsOnesDigit, hideRatingsOnesDigitExceptProspects } =
 		local.getState();
 	return (
 		hideRatingsOnesDigit &&
-		!exemptFromCoarseRatings(tid, hideRatingsOnesDigitExceptProspects) &&
+		!exemptFromCoarseRatings(
+			tid,
+			hideRatingsOnesDigitExceptProspects,
+			retiredExempt,
+		) &&
 		!prospectRatingsSeason(
 			draftYear,
 			season,
