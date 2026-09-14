@@ -68,8 +68,6 @@ const VIEW = `${-SIDELINE} ${-SIDELINE} ${FIELD_LEN + 2 * SIDELINE} ${
 	FIELD_W + 2 * SIDELINE
 }`;
 
-
-
 const teamColor = (team: FieldTeam | undefined, i: number, fallback: string) =>
 	team?.colors?.[i] ?? fallback;
 
@@ -468,7 +466,6 @@ const BodyOnField = ({
 	);
 };
 
-
 // Which one-shot animation a featured player gets, from the scene and his role
 // in it. The ball carrier on a touchdown celebrates; a tackled runner goes
 // down; the man who made the hit delivers it.
@@ -628,7 +625,7 @@ const LiveField = ({
 					actor,
 					pointAlongPath(
 						actor.path!,
-						jobProgress(playT, actor.delay, actor.pos),
+						jobProgress(playT, actor.delay, actor.pos, actor.skills),
 					),
 				);
 			}
@@ -975,7 +972,12 @@ const LiveField = ({
 						}
 						return (
 							<g key={i} stroke="#fff" strokeWidth={0.16} opacity={0.62}>
-								<line x1={x} y1={HASH_NEAR - 0.45} x2={x} y2={HASH_NEAR + 0.45} />
+								<line
+									x1={x}
+									y1={HASH_NEAR - 0.45}
+									x2={x}
+									y2={HASH_NEAR + 0.45}
+								/>
 								<line x1={x} y1={HASH_FAR - 0.45} x2={x} y2={HASH_FAR + 0.45} />
 								<line x1={x} y1={0} x2={x} y2={0.7} />
 								<line x1={x} y1={FIELD_W - 0.7} x2={x} y2={FIELD_W} />
@@ -1184,7 +1186,6 @@ const LiveField = ({
 							opacity={0.95}
 						/>
 					) : null}
-
 				</svg>
 
 				{/* Bodies live in HTML above the SVG so they can carry facesjs

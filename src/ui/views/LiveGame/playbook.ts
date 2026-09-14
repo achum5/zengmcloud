@@ -520,12 +520,16 @@ export const routePath = ({
 	dir,
 	ballAcross,
 	route,
+	// Yards to run the whole route deeper than it is written. Used for the one
+	// thing that needs it: two men crossing each other (see assignRoutes).
+	deeper = 0,
 }: {
 	slot: Slot;
 	losX: number;
 	dir: Dir;
 	ballAcross: number;
 	route: RouteName;
+	deeper?: number;
 }): FieldPoint[] => {
 	const points = ROUTES[route];
 	if (points.length === 0) {
@@ -535,11 +539,11 @@ export const routePath = ({
 	// the quarterback) has no side of his own, so he works to the right.
 	const side = slot.across < -0.5 ? -1 : 1;
 	const mirror = dirAcross(dir);
-	return [{ d: 0, a: 0 }, ...points].map(({ d, a }) =>
+	return [{ d: 0, a: 0 }, ...points].map(({ d, a }, i) =>
 		toField(
 			losX,
 			dir,
-			slot.depth - d,
+			slot.depth - d - (i === 0 ? 0 : deeper),
 			ballAcross + (slot.across + a * side) * mirror,
 		),
 	);
@@ -641,6 +645,36 @@ export const assignRoutes = ({
 	const mirror = dirAcross(geom.dir);
 	// Which side the screen is going, so the wall is built on that side.
 	const screenSide = concept.screen ? 1 : 0;
+
+	// THE MESH POINT. Two men running the same crossing route at each other from
+	// opposite sides meet in the middle of the field at exactly the same depth,
+	// which drew them one on top of the other and is also the one thing the
+	// route is coached NOT to do: on a mesh they pass one OVER and one UNDER,
+	// close enough to rub off the men covering them and not close enough to run
+	// into each other. So the second man to be given a crossing route runs it a
+	// yard and a half deeper.
+	const CROSSING = new Set<RouteName>(["drag", "slant"]);
+	const crossers: { slot: number; depth: number }[] = [];
+	for (const actor of actors) {
+		const i = actor.slotIndex;
+		if (i === undefined || i <= SLOT_RT) {
+			continue;
+		}
+		const route = concept.routes[i];
+		const slot = slots[i];
+		if (route && slot && CROSSING.has(route)) {
+			// How far downfield the route finishes for THIS man: the route's own
+			// depth less how far behind the line he lines up.
+			const last = ROUTES[route].at(-1);
+			crossers.push({ slot: i, depth: (last?.d ?? 0) - slot.depth });
+		}
+	}
+	// Only when there really are two of them. The man already running the
+	// deeper of the two goes deeper still, so the gap always OPENS - pushing
+	// the shallower one down instead would slide him past the other and put
+	// both of them back on the same blade of grass.
+	crossers.sort((a, b) => b.depth - a.depth);
+	const goesOver = crossers.length >= 2 ? crossers[0]!.slot : undefined;
 
 	return actors.map((actor) => {
 		const i = actor.slotIndex;
@@ -747,7 +781,12 @@ export const assignRoutes = ({
 		if (!route || route === "block") {
 			return actor;
 		}
-		const path = routePath({ slot, route, ...geom });
+		const path = routePath({
+			slot,
+			route,
+			...geom,
+			deeper: i === goesOver ? 1.5 : 0,
+		});
 		if (path.length === 0) {
 			return actor;
 		}

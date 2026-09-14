@@ -19,7 +19,9 @@ import {
 	SLOT_QB,
 	SLOT_RB,
 	SLOT_RT,
+	SLOT_TE,
 	SLOT_WR_L,
+	SLOT_WR_SLOT,
 	SLOT_WR_R,
 } from "./playbook.ts";
 import {
@@ -214,6 +216,64 @@ describe("the concepts", () => {
 				);
 			}
 		}
+	});
+});
+
+describe("the mesh point", () => {
+	test("two men crossing pass one over and one under", () => {
+		const geom = geomFor(0);
+		const slots = offenseSlots("pass");
+		const mesh = PASS_CONCEPTS.find((c) => c.name === "Mesh")!;
+		const after = assignRoutes({
+			actors: lineUp(0, "pass"),
+			slots,
+			concept: mesh,
+			geom,
+			protectDepth: 5.5,
+		});
+		const crossers = after.filter((a) => {
+			const i = a.slotIndex;
+			return i !== undefined && mesh.routes[i] === "drag";
+		});
+		assert.strictEqual(crossers.length, 2, "the mesh needs two crossers");
+
+		// They still cross - the whole point is that they rub off each other -
+		// but they are never at the same place at the same time.
+		const depth = (a: FieldActor) => (a.x - geom.losX) * geom.dir;
+		assert.ok(
+			Math.abs(depth(crossers[0]!) - depth(crossers[1]!)) > 0.8,
+			"the two crossers ran at the same depth",
+		);
+		// And the one giving way is the one running UNDER, not off the field.
+		for (const a of crossers) {
+			assert.ok(depth(a) > 0, "a crosser ended behind the line");
+		}
+	});
+
+	test("a lone crosser runs his route as written", () => {
+		const geom = geomFor(0);
+		const slots = offenseSlots("pass");
+		// One drag and nothing else crossing: nobody has to give way.
+		const single = {
+			name: "One Drag",
+			depth: "short" as const,
+			routes: {
+				[SLOT_TE]: "drag" as const,
+				[SLOT_WR_L]: "go" as const,
+				[SLOT_WR_R]: "out" as const,
+				[SLOT_WR_SLOT]: "curl" as const,
+				[SLOT_RB]: "checkdown" as const,
+			},
+		};
+		const withOne = assignRoutes({
+			actors: lineUp(0, "pass"),
+			slots,
+			concept: single,
+			geom,
+			protectDepth: 5.5,
+		}).find((a) => a.slotIndex === SLOT_TE)!;
+		const plain = routePath({ slot: slots[SLOT_TE]!, route: "drag", ...geom });
+		assert.ok(Math.abs(withOne.x - plain.at(-1)!.x) < 0.001);
 	});
 });
 

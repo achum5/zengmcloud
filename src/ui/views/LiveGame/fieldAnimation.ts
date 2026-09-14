@@ -162,7 +162,10 @@ export const pointAlongPath = (
 	const legs: number[] = [];
 	let total = 0;
 	for (let i = 1; i < path.length; i += 1) {
-		const d = Math.hypot(path[i]!.x - path[i - 1]!.x, path[i]!.y - path[i - 1]!.y);
+		const d = Math.hypot(
+			path[i]!.x - path[i - 1]!.x,
+			path[i]!.y - path[i - 1]!.y,
+		);
 		legs.push(d);
 		total += d;
 	}
@@ -188,7 +191,10 @@ export const pointAlongPath = (
 // still and then goes. Once his delay is past he has the rest of the play to
 // cover his path, so a late release is a faster one - which is exactly how a
 // screen or a play-action shot looks.
-export const pathProgress = (playT: number, delay: number | undefined): number => {
+export const pathProgress = (
+	playT: number,
+	delay: number | undefined,
+): number => {
 	const d = Math.min(0.9, Math.max(0, delay ?? 0));
 	if (playT <= d) {
 		return 0;
@@ -232,8 +238,36 @@ const SPEED: Record<string, number> = {
 	P: 1,
 };
 
-export const speedFor = (pos: string | undefined): number =>
-	SPEED[pos ?? ""] ?? 1.1;
+// AND WHO HE IS, not only what he plays. A position table alone makes every
+// receiver on the field equally fast, so the one man on the roster who is
+// genuinely a problem looks exactly like the fourth receiver - and "he ran away
+// from everybody" is most of what a long play IS.
+//
+// The live box score does not carry ratings, but it does carry each player's
+// SKILL BADGES, which are cut from the ratings and are the same badges shown
+// next to his name everywhere else in the game. In football, "A" is athleticism
+// (strength, SPEED and height) and "X" is the elusive runner (strength, SPEED,
+// elusiveness); roughly thirty players league-wide hold each, so a badge on the
+// field means a genuinely rare athlete rather than a good one. That is a coarse
+// signal and it is treated as one: a small bump, not a transformation.
+const ATHLETIC_SKILLS = new Set(["A", "X"]);
+
+export const speedFor = (
+	pos: string | undefined,
+	skills?: readonly string[],
+): number => {
+	const base = SPEED[pos ?? ""] ?? 1.1;
+	if (!skills) {
+		return base;
+	}
+	let bonus = 0;
+	for (const skill of skills) {
+		if (ATHLETIC_SKILLS.has(skill)) {
+			bonus += 0.07;
+		}
+	}
+	return base + Math.min(0.12, bonus);
+};
 
 // Progress along a man's own job, given how far into the play we are, the delay
 // he was given, and how fast he is.
@@ -241,4 +275,5 @@ export const jobProgress = (
 	playT: number,
 	delay: number | undefined,
 	pos: string | undefined,
-): number => Math.min(1, pathProgress(playT, delay) * speedFor(pos));
+	skills?: readonly string[],
+): number => Math.min(1, pathProgress(playT, delay) * speedFor(pos, skills));

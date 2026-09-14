@@ -21,7 +21,9 @@ describe("ballHeight", () => {
 
 	test("a punt hangs far higher than a throw that travels the same distance", () => {
 		const dist = 40;
-		assert.ok(ballHeight("punt", dist, 0.5) > 2 * ballHeight("pass", dist, 0.5));
+		assert.ok(
+			ballHeight("punt", dist, 0.5) > 2 * ballHeight("pass", dist, 0.5),
+		);
 	});
 
 	test("a carried ball never leaves the ground - that is what carrying is", () => {
@@ -181,12 +183,36 @@ describe("speed", () => {
 		assert.ok(speedFor("WR") > speedFor("LB"));
 		assert.ok(speedFor("LB") > speedFor("OL"));
 		assert.ok(speedFor("CB") > speedFor("DL"));
-		for (const pos of ["WR", "CB", "RB", "S", "LB", "TE", "QB", "OL", "DL", "K"]) {
+		for (const pos of [
+			"WR",
+			"CB",
+			"RB",
+			"S",
+			"LB",
+			"TE",
+			"QB",
+			"OL",
+			"DL",
+			"K",
+		]) {
 			assert.ok(speedFor(pos) >= 1, `${pos} was slower than walking pace`);
 		}
 		// An unknown position still runs: a roster with an odd label is not a
 		// reason to leave somebody standing on the ball.
 		assert.ok(speedFor(undefined) >= 1);
+	});
+
+	test("a rare athlete is quicker than his position alone would make him", () => {
+		// The badges are cut from ratings that include speed, and only about
+		// thirty players in a league hold each - so one on the field means a
+		// genuinely rare athlete.
+		assert.ok(speedFor("WR", ["A"]) > speedFor("WR", []));
+		assert.ok(speedFor("RB", ["X"]) > speedFor("RB"));
+		// A badge that has nothing to do with running does nothing.
+		assert.ok(speedFor("WR", ["Pa", "H"]) === speedFor("WR"));
+		// And it stays a bump rather than a transformation: a lineman with every
+		// badge going is still slower than a plain receiver.
+		assert.ok(speedFor("OL", ["A", "X"]) < speedFor("WR"));
 		assert.ok(speedFor("WEIRD") >= 1);
 	});
 

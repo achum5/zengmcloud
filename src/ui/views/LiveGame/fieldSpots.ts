@@ -239,8 +239,11 @@ export type FieldActor = {
 		| "stalk"
 		// Carrying out a fake with nothing in his hands.
 		| "fake";
-	// The position he plays, which is where his speed comes from.
+	// The position he plays, which is most of where his speed comes from.
 	pos?: string;
+	// And his skill badges, which are the rest of it - the one genuinely rare
+	// athlete on the field should pull away from the men covering him.
+	skills?: string[];
 	// "main" is the man with the ball, "passer" whoever threw or kicked it,
 	// "defender" whoever did something about it, "onField" everybody else.
 	role: "main" | "defender" | "passer" | "onField";
@@ -331,6 +334,9 @@ export type FieldPlayer = {
 	pid: number;
 	name: string;
 	pos?: string;
+	// His skill badges, straight off the box score. The field reads them for
+	// one thing only: how fast he moves (see speedFor).
+	skills?: string[];
 };
 
 // THE TWENTY-TWO WHO AREN'T IN THE PLAY. The play's actors are placed by the
@@ -398,6 +404,7 @@ export const buildFormationActors = ({
 			role: "onField",
 			slotIndex: i,
 			pos: p.pos,
+			skills: p.skills,
 			t,
 		});
 	}
@@ -424,7 +431,13 @@ export const buildFormationActors = ({
 				return slot !== undefined && slot.pos === group;
 			}) ?? -1;
 		const i = at >= 0 ? at : actors.length - 1;
-		actors[i] = { ...actors[i]!, pid: p.pid, name: p.name, pos: p.pos };
+		actors[i] = {
+			...actors[i]!,
+			pid: p.pid,
+			name: p.name,
+			pos: p.pos,
+			skills: p.skills,
+		};
 		placed.add(pid);
 	}
 	return actors;

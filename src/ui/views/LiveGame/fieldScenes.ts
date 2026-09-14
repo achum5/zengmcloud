@@ -402,9 +402,14 @@ const beatFor = (
 // formations are written in - so a "G" fills a lineman's slot and a "DE" fills
 // a defensive lineman's.
 const rosterFor = (
-	players: { pid: number; name: string; pos?: string }[],
+	players: { pid: number; name: string; pos?: string; skills?: string[] }[],
 ): FieldPlayer[] =>
-	players.map((p) => ({ pid: p.pid, name: p.name, pos: p.pos }));
+	players.map((p) => ({
+		pid: p.pid,
+		name: p.name,
+		pos: p.pos,
+		skills: p.skills,
+	}));
 
 // The plays that happen from scrimmage, which are the ones with a call behind
 // them. A punt, a kickoff and a return have their own alignments and no
