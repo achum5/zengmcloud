@@ -1177,6 +1177,27 @@ const LiveField = ({
 					</div>
 				) : null}
 
+				{/* And what the defense answered with, top right. */}
+				{scene?.defenseName ? (
+					<div
+						className="position-absolute"
+						style={{
+							right: "1.2%",
+							top: "3%",
+							background: "rgba(0,0,0,0.55)",
+							color: "#fff",
+							borderRadius: 4,
+							padding: "1px 7px",
+							fontSize: "clamp(8px, 1.25cqw, 14px)",
+							fontWeight: 600,
+							letterSpacing: 0.2,
+							pointerEvents: "none",
+						}}
+					>
+						{scene.defenseName}
+					</div>
+				) : null}
+
 				{/* The drive so far, bottom right. */}
 				{scene?.drive ? (
 					<div

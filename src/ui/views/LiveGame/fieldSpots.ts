@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { courtRandom } from "./courtRng.ts";
+import type { FormationKind } from "./formations.ts";
 import type { BallFlight } from "./fieldAnimation.ts";
 
 // Field geometry and the twenty-two positions a play is staged from, kept apart
@@ -97,227 +98,6 @@ export type Slot = {
 	depth: number;
 	across: number;
 	pos: string;
-};
-
-// ELEVEN ON OFFENSE, out of shotgun: five linemen on the ball, a tight end at
-// the end of the line, two receivers split to the numbers, a slot inside, the
-// quarterback five back and a back beside him. `across` values are relative to
-// the middle of the field and shifted to wherever the ball was spotted.
-const OFFENSE_SHOTGUN: Slot[] = [
-	{ depth: 0, across: 0, pos: "OL" },
-	{ depth: 0, across: -3, pos: "OL" },
-	{ depth: 0, across: 3, pos: "OL" },
-	{ depth: 0.3, across: -6.1, pos: "OL" },
-	{ depth: 0.3, across: 6.1, pos: "OL" },
-	{ depth: 0.6, across: 9.4, pos: "TE" },
-	{ depth: 6, across: 0.4, pos: "QB" },
-	{ depth: 6.8, across: -4.2, pos: "RB" },
-	{ depth: 1.6, across: -11.5, pos: "WR" },
-	{ depth: 0.6, across: -21.5, pos: "WR" },
-	{ depth: 0.6, across: 21.5, pos: "WR" },
-];
-
-// The same eleven under center with a back seven yards deep: what a running
-// play looks like from above, and different enough from the shotgun set that a
-// viewer can tell run from pass before the ball is snapped.
-const OFFENSE_UNDER_CENTER: Slot[] = [
-	{ depth: 0, across: 0, pos: "OL" },
-	{ depth: 0, across: -3, pos: "OL" },
-	{ depth: 0, across: 3, pos: "OL" },
-	{ depth: 0.3, across: -6.1, pos: "OL" },
-	{ depth: 0.3, across: 6.1, pos: "OL" },
-	{ depth: 0.6, across: 9.4, pos: "TE" },
-	{ depth: 2, across: 0, pos: "QB" },
-	{ depth: 7.4, across: -0.6, pos: "RB" },
-	{ depth: 3.2, across: -9.5, pos: "WR" },
-	{ depth: 0.6, across: -20.5, pos: "WR" },
-	{ depth: 0.6, across: 21, pos: "WR" },
-];
-
-// BASE DEFENSE: four down, three off the ball, corners over the receivers and
-// two safeties deep. Negative depth is the defense's side of the line.
-const DEFENSE_BASE: Slot[] = [
-	{ depth: -1.9, across: -7.8, pos: "DL" },
-	{ depth: -1.9, across: -2.9, pos: "DL" },
-	{ depth: -1.9, across: 2.9, pos: "DL" },
-	{ depth: -1.9, across: 8.2, pos: "DL" },
-	{ depth: -6, across: -9.5, pos: "LB" },
-	{ depth: -6.6, across: 0.6, pos: "LB" },
-	{ depth: -6, across: 10.5, pos: "LB" },
-	{ depth: -7.5, across: -21, pos: "CB" },
-	{ depth: -7.5, across: 21.5, pos: "CB" },
-	{ depth: -15, across: -11, pos: "S" },
-	{ depth: -16.5, across: 12, pos: "S" },
-];
-
-// A PUNT: the punter fourteen yards deep behind a packed line, two gunners
-// alone on the boundary, and the returner standing where the ball is going.
-const OFFENSE_PUNT: Slot[] = [
-	{ depth: 0, across: 0, pos: "OL" },
-	{ depth: 0, across: -2.3, pos: "OL" },
-	{ depth: 0, across: 2.3, pos: "OL" },
-	{ depth: 0, across: -4.6, pos: "OL" },
-	{ depth: 0, across: 4.6, pos: "OL" },
-	{ depth: 0, across: -7, pos: "TE" },
-	{ depth: 0, across: 7, pos: "TE" },
-	{ depth: 0.3, across: -23, pos: "WR" },
-	{ depth: 0.3, across: 23.5, pos: "WR" },
-	{ depth: 5.5, across: -4.5, pos: "RB" },
-	{ depth: 14, across: 0, pos: "P" },
-];
-
-const DEFENSE_PUNT_RETURN: Slot[] = [
-	{ depth: -1.6, across: -5.2, pos: "DL" },
-	{ depth: -1.6, across: -1.4, pos: "DL" },
-	{ depth: -1.6, across: 3, pos: "DL" },
-	{ depth: -2.2, across: 7.4, pos: "DL" },
-	{ depth: -5.5, across: -10.5, pos: "LB" },
-	{ depth: -5.5, across: 11, pos: "LB" },
-	{ depth: -9, across: -2.5, pos: "LB" },
-	{ depth: -2.5, across: -22.5, pos: "CB" },
-	{ depth: -2.5, across: 23, pos: "CB" },
-	{ depth: -20, across: -9, pos: "S" },
-	{ depth: -42, across: 0, pos: "S" },
-];
-
-// A PLACE KICK: everybody on the line, a holder seven and a half back, the
-// kicker a couple of steps behind and to his side.
-const OFFENSE_KICK: Slot[] = [
-	{ depth: 0, across: 0, pos: "OL" },
-	{ depth: 0, across: -2.2, pos: "OL" },
-	{ depth: 0, across: 2.2, pos: "OL" },
-	{ depth: 0, across: -4.4, pos: "OL" },
-	{ depth: 0, across: 4.4, pos: "OL" },
-	{ depth: 0, across: -6.6, pos: "TE" },
-	{ depth: 0, across: 6.6, pos: "TE" },
-	{ depth: 0, across: -9.2, pos: "WR" },
-	{ depth: 0, across: 9.2, pos: "WR" },
-	{ depth: 7.5, across: 0, pos: "RB" },
-	{ depth: 10, across: -3.2, pos: "K" },
-];
-
-const DEFENSE_KICK_BLOCK: Slot[] = [
-	{ depth: -1.6, across: -6.6, pos: "DL" },
-	{ depth: -1.6, across: -2.2, pos: "DL" },
-	{ depth: -1.6, across: 2.2, pos: "DL" },
-	{ depth: -1.6, across: 6.6, pos: "DL" },
-	{ depth: -2.2, across: -10.6, pos: "DL" },
-	{ depth: -2.2, across: 10.6, pos: "DL" },
-	{ depth: -5, across: -15, pos: "LB" },
-	{ depth: -5, across: 15, pos: "LB" },
-	{ depth: -8, across: 0, pos: "LB" },
-	{ depth: -12, across: -13, pos: "S" },
-	{ depth: -12, across: 13, pos: "S" },
-];
-
-// A KICKOFF is the one play that isn't run off a line of scrimmage: ten cover
-// men strung right across the width with the kicker behind them, and the
-// receiving team spread back down the field with a returner at the goal line.
-const KICK_COVER_ACROSS = [-24, -19, -13.5, -8, -3, 3, 8, 13.5, 19, 24];
-
-export const kickoffCoverSlots = (): Slot[] => [
-	...KICK_COVER_ACROSS.map((across) => ({
-		depth: 0,
-		across,
-		pos: "LB",
-	})),
-	{ depth: 7, across: 0, pos: "K" },
-];
-
-// COVERING A RETURN. Once the ball is caught, the kicking team is not a line
-// any more - it is eleven men strung out down the field between the returner
-// and where the kick came from, which is the shape that makes a return read as
-// a return rather than as two teams standing on the same yard line.
-export const kickChaseSlots = (): Slot[] =>
-	[
-		{ depth: -6, across: -13 },
-		{ depth: -8, across: 4 },
-		{ depth: -11, across: -3 },
-		{ depth: -13, across: 15 },
-		{ depth: -16, across: -19 },
-		{ depth: -18, across: 8 },
-		{ depth: -22, across: -8 },
-		{ depth: -25, across: 20 },
-		{ depth: -28, across: -22 },
-		{ depth: -32, across: 2 },
-		{ depth: -36, across: 12 },
-	].map((slot) => ({ ...slot, pos: "LB" }));
-
-// BLOCKING FOR A RETURN. The returner himself is placed by the play, so his ten
-// teammates are the wedge ahead of him - offset from the chasers above so the
-// two teams interleave rather than standing on each other.
-export const returnBlockSlots = (): Slot[] =>
-	[
-		{ depth: -4, across: 9 },
-		{ depth: -7, across: -8 },
-		{ depth: -10, across: 17 },
-		{ depth: -12, across: -16 },
-		{ depth: -15, across: 3 },
-		{ depth: -19, across: -12 },
-		{ depth: -21, across: 13 },
-		{ depth: -24, across: -2 },
-		{ depth: -27, across: 22 },
-		{ depth: -31, across: -20 },
-		{ depth: -34, across: 7 },
-	].map((slot) => ({ ...slot, pos: "RB" }));
-
-export const kickoffReturnSlots = (returnerDepth: number): Slot[] => [
-	{ depth: -9, across: -22 },
-	{ depth: -9, across: -11 },
-	{ depth: -9, across: 0 },
-	{ depth: -9, across: 11 },
-	{ depth: -9, across: 22 },
-	{ depth: -20, across: -16 },
-	{ depth: -20, across: -5.5 },
-	{ depth: -20, across: 5.5 },
-	{ depth: -20, across: 16 },
-	{ depth: -(returnerDepth - 6), across: -7 },
-	{ depth: -returnerDepth, across: 0.5 },
-].map((s) => ({ ...s, pos: "RB" }));
-
-// What kind of set the twenty-two line up in. The sim never says "shotgun", but
-// it does say what the play WAS, and a viewer reads the difference immediately:
-// a run comes from under center, a punt has a man fourteen yards deep.
-export type FormationKind =
-	| "pass"
-	| "run"
-	| "punt"
-	| "kick"
-	| "kickoff"
-	| "kickoffReturn";
-
-export const offenseSlots = (kind: FormationKind): Slot[] => {
-	switch (kind) {
-		case "run":
-			return OFFENSE_UNDER_CENTER;
-		case "punt":
-			return OFFENSE_PUNT;
-		case "kick":
-			return OFFENSE_KICK;
-		case "kickoff":
-			return kickoffCoverSlots();
-		case "kickoffReturn":
-			return returnBlockSlots();
-		default:
-			return OFFENSE_SHOTGUN;
-	}
-};
-
-export const defenseSlots = (kind: FormationKind): Slot[] => {
-	switch (kind) {
-		case "punt":
-			return DEFENSE_PUNT_RETURN;
-		case "kick":
-			return DEFENSE_KICK_BLOCK;
-		case "kickoff":
-			return kickoffReturnSlots(60);
-		case "kickoffReturn":
-			// The ball is already caught, so the kicking team is chasing, not
-			// lining up.
-			return kickChaseSlots();
-		default:
-			return DEFENSE_BASE;
-	}
 };
 
 // Mirroring across as well as along keeps a formation's handedness: the tight
@@ -504,9 +284,11 @@ export type FieldScene = {
 	driveMarks?: number[];
 	// "Drive: 4 plays, 31 yards", shown in the corner opposite the down.
 	drive?: string;
-	// The play that was called - "Four Verticals", "Inside Zone" - so a viewer
-	// can see WHAT he is watching and not only what happened.
+	// The play that was called - "Shotgun · Four Verticals" - so a viewer can
+	// see WHAT he is watching and not only what happened.
 	playName?: string;
+	// And what the defense answered with: "Nickel · Cover 3".
+	defenseName?: string;
 };
 
 export type FieldTeam = {

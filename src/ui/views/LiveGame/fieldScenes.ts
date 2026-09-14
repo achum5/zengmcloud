@@ -2,13 +2,11 @@ import type { ReactNode } from "react";
 import { courtRandom } from "./courtRng.ts";
 import {
 	clampY,
-	defenseSlots,
 	type Dir,
 	dirFor,
 	FIELD_LEN,
 	fieldX,
 	MID_Y,
-	offenseSlots,
 	rand,
 	runControlPoints,
 	snapAcross,
@@ -20,7 +18,27 @@ import {
 } from "./fieldSpots.ts";
 import type { BallFlight } from "./fieldAnimation.ts";
 import {
-	assignPassDefense,
+	assignSpecialTeams,
+	carrierPath,
+	type SpecialTeamsKind,
+} from "./specialTeams.ts";
+import {
+	chooseDefenseFront,
+	chooseOffenseFormation,
+	defenseSlots,
+	offenseSlots,
+	specialTeamsDefense,
+	specialTeamsOffense,
+	type DefenseFront,
+	type OffenseFormation,
+} from "./formations.ts";
+import {
+	assignCoverage,
+	chooseCoverage,
+	type Coverage,
+	defenseLabel,
+} from "./coverages.ts";
+import {
 	assignRoutes,
 	assignRunBlocking,
 	assignRunPursuit,
@@ -66,6 +84,12 @@ export type FieldSceneCtx = {
 	// the throw are the same call.
 	call?: { name: string; concept?: PassConcept; scheme?: RunScheme };
 	callIsRun?: boolean;
+	// What the defense is playing, held for the play the same way.
+	coverage?: Coverage;
+	// The set the offense is in and the front the defense answered with, held
+	// for the play so it does not change between the snap and the throw.
+	formation?: OffenseFormation;
+	front?: DefenseFront;
 	// The name of whoever took the last snap, so a quarterback keeper can be
 	// told from a handoff without the sim saying so.
 	quarterback?: string;
@@ -496,6 +520,9 @@ export const buildFieldScene = ({
 		// exactly one play and no longer.
 		ctx.call = undefined;
 		ctx.callIsRun = undefined;
+		ctx.formation = undefined;
+		ctx.front = undefined;
+		ctx.coverage = undefined;
 		if (sportState.plays.length <= 1) {
 			ctx.driveMarks = [];
 		}
@@ -540,7 +567,7 @@ export const buildFieldScene = ({
 			? undefined
 			: fieldX(scrimmage + toGo, frameDir);
 
-	const formation = formationFor(beat.kind);
+	const unitKind = formationFor(beat.kind);
 	const across = ctx.ballAcross;
 
 	// The featured players, and where the play puts them.
@@ -576,8 +603,33 @@ export const buildFieldScene = ({
 	// be staged rather than merely placed: the receiver the sim named has to be
 	// the man running the route his slot was given, and he can only be that if
 	// he is IN the formation instead of bolted on beside it.
-	const offSlots = offenseSlots(formation);
-	const defSlots = defenseSlots(formation);
+	//
+	// A play from scrimmage gets a FORMATION and a FRONT, chosen from the
+	// situation and then held for the whole play so a dropback and the throw
+	// after it are the same snap. Special teams are their own units and have no
+	// situation to read.
+	const stOffense = specialTeamsOffense(unitKind);
+	const stDefense = specialTeamsDefense(unitKind);
+	const down = play?.down ?? 1;
+	if (!stOffense && !ctx.formation) {
+		ctx.formation = chooseOffenseFormation({
+			running: beat.kind === "run" || beat.kind === "fumble",
+			down,
+			toGo,
+			scrimmage,
+		});
+		ctx.front = chooseDefenseFront({
+			offense: ctx.formation,
+			down,
+			toGo,
+			scrimmage,
+		});
+	}
+	const offFormation: OffenseFormation | undefined = stOffense
+		? undefined
+		: ctx.formation;
+	const offSlots = stOffense ?? offFormation?.slots ?? offenseSlots(unitKind);
+	const defSlots = stDefense ?? ctx.front?.slots ?? defenseSlots(unitKind);
 	const noSkip = new Set<number>();
 	const namedOffense = new Set(
 		[mainPid, launcherPid].filter((p): p is number => p !== undefined),
@@ -610,8 +662,8 @@ export const buildFieldScene = ({
 	// gets a job; the special teams keep the alignments they already had.
 	const geom = { losX, dir, ballAcross: across };
 	let playName: string | undefined;
+	let defenseName: string | undefined;
 	if (SCRIMMAGE_KINDS.has(beat.kind)) {
-		const down = play?.down ?? 1;
 		const call = playCallFor({ beat, down, toGo, ctx });
 		playName = call.name;
 		if (call.concept) {
@@ -622,16 +674,39 @@ export const buildFieldScene = ({
 				concept: call.concept,
 				geom,
 				protectDepth,
+				empty: offFormation?.empty,
 			});
-			defense = assignPassDefense({
+			if (!ctx.coverage) {
+				ctx.coverage = chooseCoverage({
+					down,
+					toGo,
+					scrimmage,
+					sacked: beat.kind === "sack",
+				});
+			}
+			defense = assignCoverage({
 				defenders: defense,
 				defSlots,
 				receivers: offense,
+				coverage: ctx.coverage,
 				target: start,
 				geom,
 				reachTarget: beat.kind === "sack",
+				// Before the throw there is no ball to break on; after it, the
+				// nearest zone defender closes.
+				ballTo:
+					beat.kind === "pass" ||
+					beat.kind === "incomplete" ||
+					beat.kind === "interception"
+						? end
+						: undefined,
 			});
+			defenseName = defenseLabel(
+				ctx.front?.name ?? "Base",
+				ctx.coverage.name,
+			);
 		} else if (call.scheme) {
+			defenseName = ctx.front?.name;
 			offense = assignRunBlocking({
 				actors: offense,
 				slots: offSlots,
@@ -668,6 +743,48 @@ export const buildFieldScene = ({
 		}
 	}
 
+	// SPECIAL TEAMS get their own staging: coverage lanes, gunners, a wedge, a
+	// kick rush. They have no concept and no coverage, but they are the plays
+	// with the most movement in football and they were the ones standing still.
+	if (stOffense && stDefense) {
+		const stKind: SpecialTeamsKind | undefined =
+			beat.kind === "punt"
+				? "punt"
+				: beat.kind === "kick"
+					? "kick"
+					: beat.kind === "kickoff"
+						? "kickoff"
+						: beat.kind === "return"
+							? "return"
+							: undefined;
+		if (stKind) {
+			const carrier =
+				stKind === "return" ? carrierPath(start, end) : undefined;
+			const staged = assignSpecialTeams({
+				kind: stKind,
+				kicking: offense,
+				kickingSlots: offSlots,
+				receiving: defense,
+				receivingSlots: defSlots,
+				geom,
+				launch: start,
+				landing: end,
+				carrier,
+			});
+			offense = staged.kicking;
+			defense = staged.receiving;
+			// The returner runs the same weave his ball does.
+			if (carrier && mainPid !== undefined) {
+				offense = offense.map((a) =>
+					a.pid === mainPid
+						? { ...a, x: end.x, y: end.y, path: carrier }
+						: a,
+				);
+			}
+			defenseName = stKind === "kick" ? "Kick Block" : undefined;
+		}
+	}
+
 	const actors: FieldActor[] = [...offense, ...defense];
 	const featured = new Set<number>();
 
@@ -680,6 +797,12 @@ export const buildFieldScene = ({
 		role: FieldActor["role"],
 		at: FieldPoint,
 		t: 0 | 1,
+		// PIN him there whatever job the unit gave him. A kicker who does not win
+		// the kicker's slot in his own unit picks up a coverage lane instead and
+		// sprints forty yards downfield behind his own kick - so the man the play
+		// says kicked it is placed where he kicked it, and the slot he happened to
+		// fill does not get a vote.
+		pin = false,
 	) => {
 		if (pid === undefined || name === undefined || featured.has(pid)) {
 			return;
@@ -697,10 +820,12 @@ export const buildFieldScene = ({
 			...existing,
 			role,
 			// A man who was given a path keeps it: the path is how he GOT here, and
-			// it already ends where the play left him.
-			...(existing.path && existing.path.length > 1
-				? {}
-				: { x: at.x, y: at.y }),
+			// it already ends where the play left him. A pinned man keeps neither.
+			...(pin
+				? { x: at.x, y: at.y, path: undefined, delay: undefined }
+				: existing.path && existing.path.length > 1
+					? {}
+					: { x: at.x, y: at.y }),
 		};
 	};
 
@@ -714,6 +839,7 @@ export const buildFieldScene = ({
 		"main",
 		beat.mainAtLaunch ? start : end,
 		offenseT,
+		beat.mainAtLaunch,
 	);
 	// The man who made the play arrives a stride away from where it ended -
 	// unless he IS the play (an interception), in which case he is at the ball.
@@ -782,7 +908,16 @@ export const buildFieldScene = ({
 				: undefined,
 		driveMarks: [...ctx.driveMarks],
 		drive: driveSummary(sportState),
-		playName,
+		// The formation is known for every scrimmage scene, but a flag or an
+		// injury has no CALL - and "Trips · undefined" is worse than showing
+		// nothing at all.
+		playName:
+			playName === undefined
+				? offFormation?.name
+				: offFormation
+					? `${offFormation.name} · ${playName}`
+					: playName,
+		defenseName,
 	};
 
 	// Bank where this play ended, so the drive's shape shows on the field.

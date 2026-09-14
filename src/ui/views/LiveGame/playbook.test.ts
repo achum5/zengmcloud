@@ -1,7 +1,6 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import { clearCourtRng, seedCourtRng } from "./courtRng.ts";
 import {
-	assignPassDefense,
 	assignRoutes,
 	assignRunBlocking,
 	assignRunPursuit,
@@ -20,16 +19,15 @@ import {
 	SLOT_WR_R,
 } from "./playbook.ts";
 import {
-	defenseSlots,
 	dirFor,
 	FIELD_LEN,
 	FIELD_W,
 	fieldX,
 	MID_Y,
-	offenseSlots,
 	placeFormation,
 	type FieldActor,
 } from "./fieldSpots.ts";
+import { defenseSlots, offenseSlots } from "./formations.ts";
 
 beforeEach(() => {
 	seedCourtRng("playbook-test");
@@ -382,57 +380,7 @@ describe("handing out the jobs", () => {
 		assert.strictEqual(te.y, teBefore.y);
 	});
 
-	test("four men rush, and only a sack gets one of them home", () => {
-		const geom = geomFor(0);
-		const target = { x: geom.losX - geom.dir * 5.5, y: MID_Y };
-		const offense = assignRoutes({
-			actors: lineUp(0),
-			slots: offenseSlots("pass"),
-			concept: PASS_CONCEPTS[0]!,
-			geom,
-			protectDepth: 5.5,
-		});
-		const near = (reachTarget: boolean) => {
-			const d = assignPassDefense({
-				defenders: lineUpDefense(1),
-				defSlots: defenseSlots("pass"),
-				receivers: offense,
-				target,
-				geom,
-				reachTarget,
-			});
-			return Math.min(
-				...d
-					.filter((a) => (a.slotIndex ?? 99) <= 3)
-					.map((a) => Math.hypot(a.x - target.x, a.y - target.y)),
-			);
-		};
-		assert.ok(near(false) > 1.5, "the rush got home without a sack");
-		assert.ok(near(true) < 1.5, "the sack never reached the quarterback");
-	});
 
-	test("a cover man goes where his receiver goes", () => {
-		const geom = geomFor(0);
-		const offense = assignRoutes({
-			actors: lineUp(0),
-			slots: offenseSlots("pass"),
-			concept: PASS_CONCEPTS.find((c) => c.name === "Four Verticals")!,
-			geom,
-			protectDepth: 5.5,
-		});
-		const defense = assignPassDefense({
-			defenders: lineUpDefense(1),
-			defSlots: defenseSlots("pass"),
-			receivers: offense,
-			target: { x: geom.losX - geom.dir * 5.5, y: MID_Y },
-			geom,
-			reachTarget: false,
-		});
-		// The corner over the split end followed him down the field.
-		const cb = defense.find((a) => a.slotIndex === 7)!;
-		const wr = offense.find((a) => a.slotIndex === SLOT_WR_L)!;
-		assert.ok(Math.hypot(cb.x - wr.x, cb.y - wr.y) < 4);
-	});
 
 	test("on a run the line fires forward instead of setting back", () => {
 		const geom = geomFor(0);

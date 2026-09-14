@@ -4,7 +4,6 @@ import {
 	bezierAt,
 	clampX,
 	clampY,
-	defenseSlots,
 	dirFor,
 	ENDZONE,
 	FIELD_LEN,
@@ -13,7 +12,6 @@ import {
 	HASH_FAR,
 	HASH_NEAR,
 	MID_Y,
-	offenseSlots,
 	placeFormation,
 	runControlPoints,
 	snapAcross,
@@ -21,6 +19,7 @@ import {
 	synthLooseBall,
 	toField,
 } from "./fieldSpots.ts";
+import { defenseSlots, offenseSlots } from "./formations.ts";
 
 beforeEach(() => {
 	// Every spot on the field is invented, so pin the stream or these assert

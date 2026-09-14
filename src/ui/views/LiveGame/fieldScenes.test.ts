@@ -147,12 +147,34 @@ describe("buildFieldScene", () => {
 		assert.ok(main.x > scene.losX + 14);
 	});
 
+	// A kicker who fails to win the kicker's slot in his own unit used to pick
+	// up a coverage lane and sprint downfield behind his own kick.
+	test("a kicker is pinned where he kicked from, whatever slot he filled", () => {
+		for (const event of [
+			{ type: "punt", names: ["OL110"], yds: 45 },
+			{ type: "kickoff", names: ["WR104"], yds: 4 },
+			{ type: "fieldGoalAttempt", names: ["S124"], yds: 38 },
+		] as const) {
+			const scene = build(event as any, 0)!;
+			const kicker = scene.actors.find((a) => a.role === "main")!;
+			assert.ok(kicker.path === undefined, `${event.type} kicker was sent off`);
+			assert.ok(
+				(scene.losX - kicker.x) * scene.dir > 0,
+				`${event.type} kicker ended up downfield`,
+			);
+		}
+	});
+
 	test("a kicker stays where he kicked from", () => {
 		const scene = build({ type: "punt", names: ["P127"], yds: 45 }, 0)!;
 		const punter = scene.actors.find((a) => a.role === "main")!;
-		// Fourteen yards behind the line, not forty-five yards downfield behind
-		// his own punt.
-		assert.ok(scene.losX - punter.x > 12 && scene.losX - punter.x < 16);
+		// He lines up fourteen yards deep and steps INTO the kick, so he finishes
+		// a couple of yards nearer the line - and nowhere near forty-five yards
+		// downfield behind his own punt, which is what he used to do.
+		assert.ok(
+			scene.losX - punter.x > 10 && scene.losX - punter.x < 16,
+			`punter finished ${scene.losX - punter.x} yards behind the line`,
+		);
 		assert.ok(scene.ball!.to.x > scene.losX + 30);
 	});
 
@@ -307,6 +329,27 @@ describe("buildFieldScene", () => {
 			}),
 		)!;
 		assert.strictEqual(scene.down, undefined);
+	});
+
+	// A flag or an injury happens inside a formation but is not a CALL, and the
+	// label used to read "Trips · undefined".
+	test("a scene with no call shows the formation alone, never an undefined", () => {
+		for (const type of ["penalty", "injury", "timeout"] as const) {
+			const scene = build({ type, names: ["OL110"] }, 0);
+			if (!scene?.playName) {
+				continue;
+			}
+			assert.ok(
+				!scene.playName.includes("undefined"),
+				`${type} showed "${scene.playName}"`,
+			);
+		}
+		// And an ordinary play still reads as formation and concept together.
+		const pass = build(
+			{ type: "passComplete", names: ["QB100", "WR104"], yds: 11 },
+			0,
+		)!;
+		assert.ok(pass.playName!.includes(" · "), pass.playName);
 	});
 
 	test("an event the field has nothing to say about produces no scene", () => {

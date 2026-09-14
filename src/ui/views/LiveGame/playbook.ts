@@ -183,6 +183,11 @@ export type PassConcept = {
 	depth: "short" | "medium" | "deep";
 	// The quarterback holds it - play action, or a screen setting up.
 	hold?: number;
+	// The line releases downfield to build a wall in front of the catch.
+	screen?: boolean;
+	// There is a fake in it: the back and the quarterback both sell the run
+	// before anybody looks downfield.
+	playAction?: boolean;
 };
 
 // Concepts every level of football runs, from the quick game out to the shots.
@@ -224,6 +229,7 @@ export const PASS_CONCEPTS: PassConcept[] = [
 		name: "Running Back Screen",
 		depth: "short",
 		hold: 0.34,
+		screen: true,
 		routes: {
 			[SLOT_RB]: "screen",
 			[SLOT_WR_L]: "go",
@@ -302,6 +308,7 @@ export const PASS_CONCEPTS: PassConcept[] = [
 		name: "Play Action Shot",
 		depth: "deep",
 		hold: 0.28,
+		playAction: true,
 		routes: {
 			[SLOT_WR_R]: "post",
 			[SLOT_WR_L]: "go",
@@ -314,6 +321,10 @@ export const PASS_CONCEPTS: PassConcept[] = [
 
 export type RunScheme = {
 	name: string;
+	// Somebody leaves the line and leads the play: a guard on power, a guard
+	// and a tackle on counter, the play-side guard out in front on a sweep.
+	// It is the single clearest tell of what a running play IS.
+	pull?: "backsideGuard" | "guardAndTackle" | "playsideGuard";
 	// Where the back is aiming as he crosses the line, in yards off the ball.
 	// Negative is to one side, positive the other; a toss is way outside, a
 	// sneak is straight ahead.
@@ -329,12 +340,12 @@ export type RunScheme = {
 export const RUN_SCHEMES: RunScheme[] = [
 	{ name: "Inside Zone", aim: 1.5, hold: 0.16, press: 3 },
 	{ name: "Outside Zone", aim: 7, hold: 0.14, press: 9 },
-	{ name: "Power", aim: 3.5, hold: 0.18 },
-	{ name: "Counter", aim: -3, hold: 0.22, press: -5 },
-	{ name: "Toss", aim: 12, hold: 0.1, press: 14 },
+	{ name: "Power", aim: 3.5, hold: 0.18, pull: "backsideGuard" },
+	{ name: "Counter", aim: -3, hold: 0.22, press: -5, pull: "guardAndTackle" },
+	{ name: "Toss", aim: 12, hold: 0.1, press: 14, pull: "playsideGuard" },
 	{ name: "Draw", aim: 0.5, hold: 0.34 },
-	{ name: "Trap", aim: -1.5, hold: 0.16 },
-	{ name: "Sweep", aim: 9, hold: 0.16, press: 11 },
+	{ name: "Trap", aim: -1.5, hold: 0.16, pull: "backsideGuard" },
+	{ name: "Sweep", aim: 9, hold: 0.16, press: 11, pull: "playsideGuard" },
 ];
 
 export const QB_SNEAK: RunScheme = { name: "QB Sneak", aim: 0, hold: 0.08 };
@@ -544,6 +555,7 @@ export const assignRoutes = ({
 	concept,
 	geom,
 	protectDepth,
+	empty,
 }: {
 	actors: FieldActor[];
 	slots: Slot[];
@@ -552,8 +564,14 @@ export const assignRoutes = ({
 	// How deep the quarterback set up, so the line can form a pocket in front
 	// of him rather than standing on the ball.
 	protectDepth: number;
-}): FieldActor[] =>
-	actors.map((actor) => {
+	// Nobody stayed in to protect, so an assignment to block is not one.
+	empty?: boolean;
+}): FieldActor[] => {
+	const mirror = dirAcross(geom.dir);
+	// Which side the screen is going, so the wall is built on that side.
+	const screenSide = concept.screen ? 1 : 0;
+
+	return actors.map((actor) => {
 		const i = actor.slotIndex;
 		if (i === undefined) {
 			return actor;
@@ -562,45 +580,95 @@ export const assignRoutes = ({
 		if (!slot) {
 			return actor;
 		}
+		const from = { x: actor.x, y: actor.y };
 
-		// The line: a short set back into the pocket, opening as it goes. Guards
-		// and tackles give more ground than the centre, which is what a pocket
-		// looks like from above.
+		// THE LINE.
 		if (i <= SLOT_RT) {
+			// A SCREEN is the one pass where the line does not stay: the interior
+			// three sell the rush for a beat and then get out in front of the
+			// catch. That wall forming downfield is the whole play, and without it
+			// a screen is just a short throw.
+			if (concept.screen && i <= SLOT_RG) {
+				const lead = toField(
+					geom.losX,
+					geom.dir,
+					-(3 + i * 2.5),
+					geom.ballAcross + (8 + i * 3) * screenSide * mirror,
+				);
+				return {
+					...actor,
+					x: lead.x,
+					y: lead.y,
+					path: [
+						from,
+						{ x: geom.losX, y: clampY((from.y + lead.y) / 2) },
+						lead,
+					],
+					delay: 0.16,
+				};
+			}
 			const spread = 1 + Math.abs(slot.across) * 0.14;
 			const set = toField(
 				geom.losX,
 				geom.dir,
 				slot.depth + Math.min(protectDepth - 1.5, 1.6 + spread * 0.5),
-				geom.ballAcross + slot.across * dirAcross(geom.dir) * 1.12,
+				geom.ballAcross + slot.across * mirror * 1.12,
 			);
 			return {
 				...actor,
 				x: set.x,
 				y: set.y,
-				path: [{ x: actor.x, y: actor.y }, set],
+				path: [from, set],
 				delay: 0.02,
 			};
 		}
 
-		// The quarterback: back to his launch point and then still, which is what
-		// makes the routes in front of him read as routes.
+		// THE QUARTERBACK. On play action he rides the fake first, which is what
+		// puts him deeper and later than an ordinary drop.
 		if (i === SLOT_QB) {
 			const drop = toField(
 				geom.losX,
 				geom.dir,
-				protectDepth,
-				geom.ballAcross + slot.across * dirAcross(geom.dir),
+				protectDepth + (concept.playAction ? 1.5 : 0),
+				geom.ballAcross + slot.across * mirror,
 			);
-			return {
-				...actor,
-				x: drop.x,
-				y: drop.y,
-				path: [{ x: actor.x, y: actor.y }, drop],
-			};
+			if (concept.playAction) {
+				const ride = toField(
+					geom.losX,
+					geom.dir,
+					protectDepth - 2.5,
+					geom.ballAcross - 2 * mirror,
+				);
+				return { ...actor, x: drop.x, y: drop.y, path: [from, ride, drop] };
+			}
+			return { ...actor, x: drop.x, y: drop.y, path: [from, drop] };
 		}
 
-		const route = concept.routes[i];
+		const assigned = concept.routes[i];
+		// In empty there is nobody to protect with, so an assignment to block is
+		// not an assignment at all - the man is split out and has to run
+		// something.
+		const route: RouteName | undefined =
+			assigned === "block" && empty ? "flat" : assigned;
+
+		// THE BACK ON PLAY ACTION: he takes the fake INTO the line and comes back
+		// out, which is the half of the fake the defense actually reacts to.
+		if (i === SLOT_RB && concept.playAction) {
+			const mesh = toField(
+				geom.losX,
+				geom.dir,
+				2,
+				geom.ballAcross + 1.5 * mirror,
+			);
+			const out = toField(
+				geom.losX,
+				geom.dir,
+				protectDepth - 0.5,
+				geom.ballAcross - 5 * mirror,
+			);
+			return { ...actor, x: out.x, y: out.y, path: [from, mesh, out] };
+		}
+
 		if (!route || route === "block") {
 			return actor;
 		}
@@ -617,6 +685,7 @@ export const assignRoutes = ({
 			delay: concept.hold ?? 0,
 		};
 	});
+};
 
 // THE HANDOFF AND EVERYTHING BEHIND IT. On a running play the line fires off
 // low into the front instead of setting, which is the difference a viewer reads
@@ -631,132 +700,79 @@ export const assignRunBlocking = ({
 	slots: Slot[];
 	scheme: RunScheme;
 	geom: Geom;
-}): FieldActor[] =>
-	actors.map((actor) => {
+}): FieldActor[] => {
+	const mirror = dirAcross(geom.dir);
+	const playSide = scheme.aim >= 0 ? 1 : -1;
+	// WHO PULLS. Power sends the backside guard across the formation; counter
+	// sends him and a tackle behind him; a sweep or a toss puts the play-side
+	// guard out in front. Which man leaves the line is the clearest tell of what
+	// a running play is, and a line where nobody ever leaves reads as one play
+	// run over and over.
+	const pullers = new Set<number>();
+	if (scheme.pull === "backsideGuard" || scheme.pull === "guardAndTackle") {
+		pullers.add(playSide > 0 ? SLOT_LG : SLOT_RG);
+	}
+	if (scheme.pull === "guardAndTackle") {
+		pullers.add(playSide > 0 ? SLOT_LT : SLOT_RT);
+	}
+	if (scheme.pull === "playsideGuard") {
+		pullers.add(playSide > 0 ? SLOT_RG : SLOT_LG);
+	}
+
+	return actors.map((actor) => {
 		const i = actor.slotIndex;
 		if (i === undefined || i > SLOT_RT) {
 			return actor;
 		}
 		const slot = slots[i]!;
-		// Everybody steps toward the play - the whole line moving as one in the
-		// direction of the aiming point is what zone blocking looks like.
+		const from = { x: actor.x, y: actor.y };
+
+		if (pullers.has(i)) {
+			// Out of his stance, back off the line, across the formation behind
+			// everybody, and up through the hole.
+			const behind = toField(
+				geom.losX,
+				geom.dir,
+				slot.depth + 2.2,
+				geom.ballAcross + slot.across * mirror,
+			);
+			const across = toField(
+				geom.losX,
+				geom.dir,
+				slot.depth + 2,
+				geom.ballAcross + (scheme.aim * 0.6) * mirror,
+			);
+			const through = toField(
+				geom.losX,
+				geom.dir,
+				-2.5,
+				geom.ballAcross + (scheme.aim + 1.5 * playSide) * mirror,
+			);
+			return {
+				...actor,
+				x: through.x,
+				y: through.y,
+				path: [from, behind, across, through],
+			};
+		}
+
+		// Everybody else steps toward the play - the whole line moving as one in
+		// the direction of the aiming point is what zone blocking looks like.
 		const drive = toField(
 			geom.losX,
 			geom.dir,
 			slot.depth - 1.4,
-			geom.ballAcross +
-				(slot.across + scheme.aim * 0.22) * dirAcross(geom.dir),
+			geom.ballAcross + (slot.across + scheme.aim * 0.22) * mirror,
 		);
 		return {
 			...actor,
 			x: drive.x,
 			y: drive.y,
-			path: [{ x: actor.x, y: actor.y }, drive],
+			path: [from, drive],
 			delay: 0.02,
 		};
 	});
-
-// THE DEFENSE, IN A BASE FRONT. Four rush, the linebackers and corners take the
-// men in front of them, and the safeties get depth. It is not a coverage
-// install - it is the shape of one, which is all a graphic needs to stop
-// looking like eleven statues.
-const COVER_ASSIGNMENTS: Record<number, number> = {
-	4: SLOT_WR_SLOT,
-	5: SLOT_RB,
-	6: SLOT_TE,
-	7: SLOT_WR_L,
-	8: SLOT_WR_R,
 };
-
-export const assignPassDefense = ({
-	defenders,
-	defSlots,
-	receivers,
-	target,
-	geom,
-	reachTarget,
-}: {
-	defenders: FieldActor[];
-	defSlots: Slot[];
-	// The offense's actors, so a cover man can follow the route his man is
-	// actually running.
-	receivers: FieldActor[];
-	// Where the quarterback set up.
-	target: FieldPoint;
-	geom: Geom;
-	// True on a sack: the rush gets home instead of stopping short.
-	reachTarget: boolean;
-}): FieldActor[] =>
-	defenders.map((actor) => {
-		const i = actor.slotIndex;
-		if (i === undefined) {
-			return actor;
-		}
-		const start = { x: actor.x, y: actor.y };
-
-		// The front four, coming off the edge and up the middle.
-		if (i <= 3) {
-			const stop = reachTarget ? 0.4 : 2.2 + courtRandom() * 1.6;
-			const dx = target.x - start.x;
-			const dy = target.y - start.y;
-			const dist = Math.max(0.1, Math.hypot(dx, dy));
-			const f = Math.max(0, (dist - stop) / dist);
-			// An edge rusher loops; an interior man goes straight through.
-			const arc = Math.abs(defSlots[i]?.across ?? 0) > 4 ? 2.6 : 0.6;
-			const end = { x: start.x + dx * f, y: clampY(start.y + dy * f) };
-			return {
-				...actor,
-				x: end.x,
-				y: end.y,
-				path: [
-					start,
-					{
-						x: start.x + dx * f * 0.5,
-						y: clampY(start.y + dy * f * 0.5 + arc * (dy >= 0 ? -1 : 1)),
-					},
-					end,
-				],
-			};
-		}
-
-		// The two safeties, getting to their depth.
-		if (i >= 9) {
-			const slot = defSlots[i]!;
-			const deep = toField(
-				geom.losX,
-				geom.dir,
-				slot.depth - 9,
-				geom.ballAcross + slot.across * 1.25 * dirAcross(geom.dir),
-			);
-			return {
-				...actor,
-				x: deep.x,
-				y: deep.y,
-				path: [start, deep],
-			};
-		}
-
-		// Everybody else has a man. He trails him - a step behind and a step to
-		// the inside, which is where a defender in coverage actually is.
-		const mySlot = COVER_ASSIGNMENTS[i];
-		const man = receivers.find((r) => r.slotIndex === mySlot);
-		if (!man?.path || man.path.length < 2) {
-			return actor;
-		}
-		const inside = geom.ballAcross > man.y ? 1.4 : -1.4;
-		const trail = man.path.slice(1).map((p) => ({
-			x: p.x - geom.dir * 1.6,
-			y: clampY(p.y + inside),
-		}));
-		const end = trail.at(-1)!;
-		return {
-			...actor,
-			x: end.x,
-			y: end.y,
-			path: [start, ...trail],
-			delay: 0.04,
-		};
-	});
 
 // A RUN, FROM THE OTHER SIDE. Everyone flows to the ball: the front seven get
 // there, the secondary closes from depth. The lag is what makes it read as
