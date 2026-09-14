@@ -712,13 +712,15 @@ const TradingBlock = ({
 	);
 
 	const rows = userRoster.map((p) => {
+		const checked = state.pids.includes(p.pid);
+
 		return {
 			key: p.pid,
 			data: [
 				<input
 					className="form-check-input"
 					type="checkbox"
-					checked={state.pids.includes(p.pid)}
+					checked={checked}
 					disabled={p.untradable}
 					onChange={() => handleChangeAsset("pids", p.pid)}
 					title={p.untradableMsg}
@@ -741,6 +743,9 @@ const TradingBlock = ({
 				wrappedContractExp(p),
 				...stats.map((stat) => helpers.roundStat(p.stats[stat], stat)),
 			],
+			classNames: {
+				"table-danger": p.untradable && !checked,
+			},
 		};
 	});
 
