@@ -126,21 +126,30 @@ describe("the route tree", () => {
 
 	test("a route is mirrored for the other side of the formation", () => {
 		const slots = offenseSlots("pass");
-		const geom = geomFor(0);
-		const left = routePath({
-			slot: slots[SLOT_WR_L]!,
-			route: "slant",
-			...geom,
-		});
-		const right = routePath({
-			slot: slots[SLOT_WR_R]!,
-			route: "slant",
-			...geom,
-		});
-		// Both break toward the middle - from opposite sides, so in opposite
-		// directions across the field.
-		assert.ok(left.at(-1)!.y > left[0]!.y);
-		assert.ok(right.at(-1)!.y < right[0]!.y);
+		// Both directions of play, because "toward the middle" is the claim and
+		// it must hold whichever way the offense is going.
+		for (const t of [0, 1] as const) {
+			const geom = geomFor(t);
+			const one = routePath({
+				slot: slots[SLOT_WR_L]!,
+				route: "slant",
+				...geom,
+			});
+			const two = routePath({
+				slot: slots[SLOT_WR_R]!,
+				route: "slant",
+				...geom,
+			});
+			// They start on opposite sides of the ball...
+			assert.ok((one[0]!.y - MID_Y) * (two[0]!.y - MID_Y) < 0);
+			// ...and a slant takes each of them in toward it.
+			for (const path of [one, two]) {
+				assert.ok(
+					Math.abs(path.at(-1)!.y - MID_Y) < Math.abs(path[0]!.y - MID_Y),
+					"a slant that broke away from the middle",
+				);
+			}
+		}
 	});
 
 	test("a route is mirrored for the other direction of play too", () => {

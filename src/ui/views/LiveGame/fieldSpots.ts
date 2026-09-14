@@ -42,14 +42,18 @@ export const NUMBER_Y_FAR = FIELD_W - NUMBER_Y_NEAR;
 
 export type FieldPoint = { x: number; y: number };
 
-// Which way the offense is moving: +1 is left-to-right. The away team (display
-// team 0) always attacks right, the home team left - fixed for readability,
-// the same convention the box score's field has always used, and the same
-// trade the basketball court makes (real teams change ends; a graphic that
-// changes ends every quarter is unreadable).
+// Which way the offense is moving: +1 is left-to-right. THE HOME TEAM (display
+// team 1) ALWAYS ATTACKS RIGHT and the away team left - fixed for readability,
+// and the same trade the basketball court makes (real teams change ends; a
+// graphic that changes ends every quarter is unreadable).
+//
+// Home going left to right is the way a broadcast frames its own team, and it
+// is what makes the rest of the picture make sense: the field is the home
+// team's ground, so both end zones carry the home team's colours and name, and
+// "driving right" is the home team driving.
 export type Dir = 1 | -1;
 
-export const dirFor = (t: 0 | 1): Dir => (t === 0 ? 1 : -1);
+export const dirFor = (t: 0 | 1): Dir => (t === 1 ? 1 : -1);
 
 export const rand = (lo: number, hi: number) => lo + courtRandom() * (hi - lo);
 
@@ -247,7 +251,7 @@ export type FieldActor = {
 	// "main" is the man with the ball, "passer" whoever threw or kicked it,
 	// "defender" whoever did something about it, "onField" everybody else.
 	role: "main" | "defender" | "passer" | "onField";
-	// Display team (0 = away/attacks right, 1 = home/attacks left). Set on
+	// Display team (0 = away/attacks left, 1 = home/attacks right). Set on
 	// background players so they're colored by their own team.
 	t?: 0 | 1;
 };

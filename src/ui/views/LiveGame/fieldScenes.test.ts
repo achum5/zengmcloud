@@ -1,7 +1,7 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import { clearCourtRng, seedCourtRng } from "./courtRng.ts";
 import { buildFieldScene, newFieldSceneCtx } from "./fieldScenes.ts";
-import { dirFor, ENDZONE, FIELD_LEN, fieldX } from "./fieldSpots.ts";
+import { dirFor, FIELD_LEN, fieldX } from "./fieldSpots.ts";
 
 beforeEach(() => {
 	seedCourtRng("scene-test");
@@ -54,9 +54,7 @@ const players: [ReturnType<typeof roster>, ReturnType<typeof roster>] = [
 ];
 
 const resolvePid = (t: 0 | 1, name: string | undefined) =>
-	name === undefined
-		? undefined
-		: players[t].find((p) => p.name === name)?.pid;
+	name === undefined ? undefined : players[t].find((p) => p.name === name)?.pid;
 
 const sportState = (over: Partial<any> = {}): any => ({
 	t: 0,
@@ -97,8 +95,11 @@ describe("buildFieldScene", () => {
 		assert.strictEqual(scene.t, 0);
 		const los = fieldX(25, dirFor(0));
 		assert.strictEqual(scene.losX, los);
-		// Eight yards toward the end zone the away team attacks (+x).
-		assert.ok(scene.ball!.to.x - los > 7 && scene.ball!.to.x - los < 9);
+		// Eight yards toward the end zone this offense is attacking - measured
+		// along its own direction, so the assertion is about the play and not
+		// about which team happens to go which way.
+		const gained = (scene.ball!.to.x - los) * scene.dir;
+		assert.ok(gained > 7 && gained < 9, `gained ${gained}`);
 	});
 
 	// The men the play names have to win their own slots in the formation, or
@@ -143,8 +144,8 @@ describe("buildFieldScene", () => {
 		assert.strictEqual(main.name, "WR104");
 		assert.strictEqual(passer.name, "QB100");
 		// The quarterback is behind the line, the receiver well past it.
-		assert.ok(passer.x < scene.losX);
-		assert.ok(main.x > scene.losX + 14);
+		assert.ok((passer.x - scene.losX) * scene.dir < 0);
+		assert.ok((main.x - scene.losX) * scene.dir > 14);
 	});
 
 	// A kicker who fails to win the kicker's slot in his own unit used to pick
@@ -171,11 +172,9 @@ describe("buildFieldScene", () => {
 		// He lines up fourteen yards deep and steps INTO the kick, so he finishes
 		// a couple of yards nearer the line - and nowhere near forty-five yards
 		// downfield behind his own punt, which is what he used to do.
-		assert.ok(
-			scene.losX - punter.x > 10 && scene.losX - punter.x < 16,
-			`punter finished ${scene.losX - punter.x} yards behind the line`,
-		);
-		assert.ok(scene.ball!.to.x > scene.losX + 30);
+		const deep = (scene.losX - punter.x) * scene.dir;
+		assert.ok(deep > 10 && deep < 16, `punter finished ${deep} yards behind`);
+		assert.ok((scene.ball!.to.x - scene.losX) * scene.dir > 30);
 	});
 
 	// THE REGRESSION THAT MATTERED MOST. The sim counts a return's yard lines
@@ -205,15 +204,16 @@ describe("buildFieldScene", () => {
 			1,
 			state,
 		)!;
-		// The catch is at the RECEIVING team's 12, near the left end zone, because
-		// the away team (who kicked) counts up from the left.
+		// The catch spot is counted in the KICKING team's numbers - their 88 -
+		// even though the return belongs to the other side.
+		const kickingDir = dirFor(0);
 		assert.ok(
-			Math.abs(scene.losX - (ENDZONE + 88)) < 1,
+			Math.abs(scene.losX - fieldX(88, kickingDir)) < 1,
 			`catch spot was ${scene.losX}`,
 		);
-		// And the return runs the other way - back toward the left end zone.
+		// And the return runs the other way: back toward the kicking team's end.
 		assert.ok(
-			scene.ball!.to.x < scene.losX,
+			(scene.ball!.to.x - scene.losX) * kickingDir < 0,
 			`return went the wrong way: ${scene.ball!.to.x} vs ${scene.losX}`,
 		);
 		// Nobody ends up crammed against the back of an end zone.
@@ -222,13 +222,19 @@ describe("buildFieldScene", () => {
 	});
 
 	test("a kickoff flies to the yard line it was kicked to, not `yds` yards", () => {
-		const state = sportState({ t: 0, scrimmage: 35, plays: [
-			{ down: 1, toGo: 10, scrimmage: 35, yards: 0, t: 0 },
-		] });
+		const state = sportState({
+			t: 0,
+			scrimmage: 35,
+			plays: [{ down: 1, toGo: 10, scrimmage: 35, yards: 0, t: 0 }],
+		});
 		// yds is the line it reached in the RECEIVING team's numbers: a 2 means
 		// it came down on their 2, which is a 63-yard kick from the 35.
-		const scene = build({ type: "kickoff", names: ["K126"], yds: 2 }, 0, state)!;
-		const flown = scene.ball!.to.x - scene.losX;
+		const scene = build(
+			{ type: "kickoff", names: ["K126"], yds: 2 },
+			0,
+			state,
+		)!;
+		const flown = (scene.ball!.to.x - scene.losX) * scene.dir;
 		assert.ok(flown > 55, `kickoff only travelled ${flown} yards`);
 	});
 

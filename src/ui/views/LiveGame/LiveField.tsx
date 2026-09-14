@@ -61,8 +61,10 @@ import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 // twenty-two lined up, the path the carrier ran - and that comes from the same
 // seeded stream the court uses, so every device draws the same play.
 //
-// The away team (display team 0) always attacks RIGHT and the home team LEFT,
-// fixed for readability the way broadcast graphics do it.
+// THE HOME TEAM ALWAYS ATTACKS RIGHT and the away team left, fixed for
+// readability the way broadcast graphics do it - and because the field is the
+// home team's ground, both end zones carry his colour and his name. A neutral
+// site is the one exception: with no home ground, the two teams split the ends.
 
 const VIEW = `${-SIDELINE} ${-SIDELINE} ${FIELD_LEN + 2 * SIDELINE} ${
 	FIELD_W + 2 * SIDELINE
@@ -525,7 +527,7 @@ const LiveField = ({
 	neutralSite,
 }: {
 	scene: FieldScene | undefined;
-	// Display order: [away (attacks right), home (attacks left)].
+	// Display order: [away (attacks left), home (attacks right)].
 	teams: [FieldTeam | undefined, FieldTeam | undefined];
 	season: number | undefined;
 	sceneMs: number | undefined;
@@ -788,24 +790,34 @@ const LiveField = ({
 		};
 	}, [scene, sceneMs]);
 
-	// End zones are painted in each team's own color: the left one belongs to the
-	// away team, the right to the home team, which is the convention the box
-	// score's field has always used and the one that makes "attacking right"
-	// mean "attacking the home team's end zone".
-	const leftEndzone = awayColor;
-	const rightEndzone = homeColor;
+	// IT IS THE HOME TEAM'S FIELD. A team's ground has its own paint at both
+	// ends - nobody plays a road game in a stadium with their own name in one
+	// end zone - so both end zones carry the home team's colour and name.
+	//
+	// A NEUTRAL SITE is the exception, because there is no home ground: the two
+	// teams split the ends, each taking the one he defends.
+	// The home team attacks right, so the end zone he DEFENDS is the left one -
+	// which is his at a neutral site and his anyway at home.
+	const leftEndzone = homeColor;
+	const leftEndzoneName = home?.name;
+	const rightEndzone = neutralSite ? awayColor : homeColor;
+	const rightEndzoneName = neutralSite ? away?.name : home?.name;
 	const midfieldLogo = neutralSite ? undefined : (home?.imgURL ?? undefined);
 
-	// The trails, one per man who actually goes somewhere. A lineman who shuffles
-	// half a yard gets none - twenty-two stubs would be noise, and what the eye
-	// is looking for is the five men running routes and the men chasing them.
+	// ONE LINE, NOT TWENTY-TWO. Drawing every man's path was truthful and
+	// unreadable: eleven routes crossing eleven pursuit angles on a field this
+	// size is a plate of spaghetti, and the one thing you actually want to know
+	// - where the ball went - was lost in it.
+	//
+	// So only the man with the ball gets a trail. It is the line the eye is
+	// following anyway, and with everything else gone it is unmistakable.
 	const trails: ReactNode[] = [];
 	if (scene) {
-		for (const actor of scene.actors) {
-			const path = actor.path;
-			if (!path || path.length < 2) {
-				continue;
-			}
+		const carrier = scene.actors.find(
+			(a) => a.role === "main" && a.path && a.path.length > 1,
+		);
+		const path = carrier?.path;
+		if (carrier && path) {
 			let len = 0;
 			for (let i = 1; i < path.length; i += 1) {
 				len += Math.hypot(
@@ -813,54 +825,46 @@ const LiveField = ({
 					path[i]!.y - path[i - 1]!.y,
 				);
 			}
-			if (len < 1.2) {
-				continue;
+			if (len >= 1.2) {
+				const displayT = carrier.t ?? scene.t;
+				const d = `M${path.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join("L")}`;
+				// A casing under it, because a thin team-coloured line over mowed
+				// grass is invisible for a good part of the league. The dash lives
+				// on the GROUP - stroke-dasharray and stroke-dashoffset are
+				// inherited - so one write in the animation loop reveals casing and
+				// colour together and they can never come apart.
+				trails.push(
+					<g
+						key={carrier.pid}
+						ref={(el) => {
+							if (el) {
+								trailNodes.current.set(carrier.pid, el);
+							} else {
+								trailNodes.current.delete(carrier.pid);
+							}
+						}}
+						fill="none"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+						style={{ strokeDasharray: "1", strokeDashoffset: "1" }}
+					>
+						<path
+							d={d}
+							pathLength={1}
+							stroke="#0b1f10"
+							strokeWidth={1.05}
+							opacity={0.5}
+						/>
+						<path
+							d={d}
+							pathLength={1}
+							stroke={displayT === 0 ? awayTrail : homeTrail}
+							strokeWidth={0.68}
+							opacity={0.95}
+						/>
+					</g>,
+				);
 			}
-			const displayT = actor.t ?? scene.t;
-			// The man with the ball is the line you are meant to follow, so his is
-			// brighter and heavier than everybody else's.
-			const lead = actor.role === "main";
-			const d = `M${path.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join("L")}`;
-			// A CASING under every trail. A two-pixel team-coloured line over mowed
-			// grass is invisible for half the league - a dark teal trail on a dark
-			// green field is no line at all - so each one is drawn twice, a wider
-			// dark stroke first and the team's colour on top. It is what a map does
-			// with a road label, and for the same reason.
-			//
-			// The dash lives on the GROUP: stroke-dasharray and stroke-dashoffset
-			// are inherited, so one write in the animation loop reveals the casing
-			// and the colour together and they can never come apart.
-			trails.push(
-				<g
-					key={actor.pid}
-					ref={(el) => {
-						if (el) {
-							trailNodes.current.set(actor.pid, el);
-						} else {
-							trailNodes.current.delete(actor.pid);
-						}
-					}}
-					fill="none"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					style={{ strokeDasharray: "1", strokeDashoffset: "1" }}
-				>
-					<path
-						d={d}
-						pathLength={1}
-						stroke="#0b1f10"
-						strokeWidth={lead ? 1.05 : 0.62}
-						opacity={lead ? 0.55 : 0.34}
-					/>
-					<path
-						d={d}
-						pathLength={1}
-						stroke={displayT === 0 ? awayTrail : homeTrail}
-						strokeWidth={lead ? 0.7 : 0.34}
-						opacity={lead ? 1 : 0.72}
-					/>
-				</g>,
-			);
 		}
 	}
 
@@ -1046,7 +1050,7 @@ const LiveField = ({
 						opacity={0.92}
 						transform={`rotate(-90 ${ENDZONE / 2} ${MID_Y})`}
 					>
-						{(away?.name ?? "").toUpperCase()}
+						{(leftEndzoneName ?? "").toUpperCase()}
 					</text>
 					<text
 						x={FIELD_LEN - ENDZONE / 2}
@@ -1060,7 +1064,7 @@ const LiveField = ({
 						opacity={0.92}
 						transform={`rotate(90 ${FIELD_LEN - ENDZONE / 2} ${MID_Y})`}
 					>
-						{(home?.name ?? "").toUpperCase()}
+						{(rightEndzoneName ?? "").toUpperCase()}
 					</text>
 
 					{/* Midfield logo, faint enough to be turf paint rather than a sticker. */}

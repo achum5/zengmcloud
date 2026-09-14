@@ -39,11 +39,17 @@ const lineUp = (slots: Slot[], t: 0 | 1, base: number): FieldActor[] =>
 		t,
 	}));
 
-const stage = (kind: SpecialTeamsKind, unit: "punt" | "kick" | "kickoff" | "kickoffReturn") => {
+const stage = (
+	kind: SpecialTeamsKind,
+	unit: "punt" | "kick" | "kickoff" | "kickoffReturn",
+) => {
 	const kickingSlots = specialTeamsOffense(unit)!;
 	const receivingSlots = specialTeamsDefense(unit)!;
-	const launch = { x: geom.losX - 14, y: MID_Y };
-	const landing = { x: geom.losX + 42, y: MID_Y + 4 };
+	// Behind the line and downfield of it, IN THE DIRECTION THIS OFFENSE IS
+	// GOING - raw offsets here quietly assumed team 0 attacks right, so the ball
+	// landed backwards the moment that convention changed.
+	const launch = { x: geom.losX - 14 * geom.dir, y: MID_Y };
+	const landing = { x: geom.losX + 42 * geom.dir, y: MID_Y + 4 };
 	return assignSpecialTeams({
 		kind,
 		kicking: lineUp(kickingSlots, 0, 100),
@@ -119,7 +125,9 @@ describe("the punt", () => {
 	test("the gunners are gone before anybody else", () => {
 		const slots = specialTeamsOffense("punt")!;
 		const after = staged().kicking;
-		const gunners = after.filter((a) => Math.abs(slots[a.slotIndex!]!.across) > 20);
+		const gunners = after.filter(
+			(a) => Math.abs(slots[a.slotIndex!]!.across) > 20,
+		);
 		assert.strictEqual(gunners.length, 2);
 		for (const g of gunners) {
 			assert.ok(
@@ -134,14 +142,15 @@ describe("the punt", () => {
 	});
 
 	test("the return team gets a man under the ball and a wall in front of him", () => {
-		const landing = { x: geom.losX + 42, y: MID_Y + 4 };
+		const landing = { x: geom.losX + 42 * geom.dir, y: MID_Y + 4 };
 		const after = staged().receiving;
 		const catcher = after.filter(
 			(a) => Math.hypot(a.x - landing.x, a.y - landing.y) < 2,
 		);
 		assert.strictEqual(catcher.length, 1, "nobody, or everybody, caught it");
 		const wall = after.filter(
-			(a) => (a.x - landing.x) * geom.dir > 2 && (a.x - landing.x) * geom.dir < 20,
+			(a) =>
+				(a.x - landing.x) * geom.dir > 2 && (a.x - landing.x) * geom.dir < 20,
 		);
 		assert.ok(wall.length >= 3, `only ${wall.length} men set up`);
 	});
@@ -151,10 +160,14 @@ describe("the kickoff", () => {
 	test("the cover team goes down in a wave, keeping its lanes", () => {
 		const after = stage("kickoff", "kickoff").kicking;
 		const delays = after.map((a) => a.delay ?? 0);
-		assert.ok(Math.max(...delays) > Math.min(...delays), "everybody left at once");
+		assert.ok(
+			Math.max(...delays) > Math.min(...delays),
+			"everybody left at once",
+		);
 		// They stay spread across the field rather than converging into a lump.
 		const cover = after.filter((a) => (a.x - geom.losX) * geom.dir > 20);
-		const spread = Math.max(...cover.map((a) => a.y)) - Math.min(...cover.map((a) => a.y));
+		const spread =
+			Math.max(...cover.map((a) => a.y)) - Math.min(...cover.map((a) => a.y));
 		assert.ok(spread > 15, `the cover team bunched into ${spread} yards`);
 	});
 
@@ -180,7 +193,7 @@ describe("the place kick", () => {
 			);
 		}
 		// And the men on the edge are the ones who actually get somewhere.
-		const launch = { x: geom.losX - 14, y: MID_Y };
+		const launch = { x: geom.losX - 14 * geom.dir, y: MID_Y };
 		const edge = staged.receiving.filter(
 			(a) => Math.abs(slots[a.slotIndex!]!.across) > 9,
 		);
@@ -195,7 +208,7 @@ describe("the place kick", () => {
 
 describe("the return", () => {
 	test("blockers get in front of the ball and chasers close from behind", () => {
-		const landing = { x: geom.losX + 42, y: MID_Y + 4 };
+		const landing = { x: geom.losX + 42 * geom.dir, y: MID_Y + 4 };
 		const staged = stage("return", "kickoffReturn");
 		const ahead = staged.kicking.filter(
 			(a) => (a.x - landing.x) * geom.dir > 0,
@@ -263,7 +276,10 @@ describe("a loose ball", () => {
 			(a) => a.path,
 		);
 		for (const a of after) {
-			assert.ok(Math.hypot(a.x - ball.x, a.y - ball.y) < 3.5, "missed the ball");
+			assert.ok(
+				Math.hypot(a.x - ball.x, a.y - ball.y) < 3.5,
+				"missed the ball",
+			);
 		}
 		for (const [i, a] of after.entries()) {
 			for (const b of after.slice(i + 1)) {
@@ -281,7 +297,10 @@ describe("a loose ball", () => {
 			(a) => a.path,
 		);
 		const delays = after.map((a) => a.delay ?? 0);
-		assert.ok(Math.max(...delays) > Math.min(...delays), "everybody arrived together");
+		assert.ok(
+			Math.max(...delays) > Math.min(...delays),
+			"everybody arrived together",
+		);
 	});
 });
 

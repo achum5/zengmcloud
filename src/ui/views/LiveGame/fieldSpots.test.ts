@@ -31,38 +31,47 @@ beforeEach(() => {
 });
 
 describe("fieldX", () => {
+	// Written in terms of the DIRECTION rather than the team, so it is a test of
+	// the geometry and not of which team happens to attack which way.
 	test("a team's own goal line is its 0 and the other end zone is its 100", () => {
-		// Away (display team 0) attacks right: its own goal line is the left one.
-		assert.strictEqual(fieldX(0, dirFor(0)), ENDZONE);
-		assert.strictEqual(fieldX(100, dirFor(0)), FIELD_LEN - ENDZONE);
-		// Home attacks left, so the same numbers land at the opposite ends.
-		assert.strictEqual(fieldX(0, dirFor(1)), FIELD_LEN - ENDZONE);
-		assert.strictEqual(fieldX(100, dirFor(1)), ENDZONE);
+		// Going left to right: your own goal line is the left one.
+		assert.strictEqual(fieldX(0, 1), ENDZONE);
+		assert.strictEqual(fieldX(100, 1), FIELD_LEN - ENDZONE);
+		// Going the other way, the same numbers land at the opposite ends.
+		assert.strictEqual(fieldX(0, -1), FIELD_LEN - ENDZONE);
+		assert.strictEqual(fieldX(100, -1), ENDZONE);
 	});
 
 	test("midfield is midfield whichever way you're going", () => {
-		assert.strictEqual(fieldX(50, dirFor(0)), FIELD_LEN / 2);
-		assert.strictEqual(fieldX(50, dirFor(1)), FIELD_LEN / 2);
+		assert.strictEqual(fieldX(50, 1), FIELD_LEN / 2);
+		assert.strictEqual(fieldX(50, -1), FIELD_LEN / 2);
+	});
+
+	// The convention itself, in one place. It is the home team's field - both
+	// end zones carry his name - so he is the one driving left to right.
+	test("the home team attacks right and the away team left", () => {
+		assert.strictEqual(dirFor(1), 1);
+		assert.strictEqual(dirFor(0), -1);
 	});
 });
 
 describe("toField", () => {
 	test("depth is measured BEHIND the line, into the offense's own territory", () => {
-		const los = fieldX(50, dirFor(0));
+		const los = fieldX(50, 1);
 		// A quarterback five yards deep is five yards back toward his own goal.
-		assert.strictEqual(toField(los, dirFor(0), 5, MID_Y).x, los - 5);
+		assert.strictEqual(toField(los, 1, 5, MID_Y).x, los - 5);
 		// The same five yards for a team going the other way is the other side.
-		assert.strictEqual(toField(los, dirFor(1), 5, MID_Y).x, los + 5);
+		assert.strictEqual(toField(los, -1, 5, MID_Y).x, los + 5);
 	});
 
 	test("negative depth crosses the line, which is where a defense stands", () => {
-		const los = fieldX(50, dirFor(0));
-		assert.ok(toField(los, dirFor(0), -6, MID_Y).x > los);
+		const los = fieldX(50, 1);
+		assert.ok(toField(los, 1, -6, MID_Y).x > los);
 	});
 
 	test("nothing is ever placed off the field", () => {
-		const los = fieldX(98, dirFor(0));
-		const deep = toField(los, dirFor(0), -40, 400);
+		const los = fieldX(98, 1);
+		const deep = toField(los, 1, -40, 400);
 		assert.ok(deep.x <= FIELD_LEN);
 		assert.ok(deep.y <= FIELD_W);
 		assert.strictEqual(clampX(-50), 0.6);
@@ -104,18 +113,19 @@ describe("placeFormation", () => {
 	});
 
 	test("the offense is behind the ball and the defense in front of it", () => {
-		const dir = dirFor(0);
-		const los = fieldX(40, dir);
-		const off = placeFormation(offenseSlots("pass"), los, dir, MID_Y);
-		const def = placeFormation(defenseSlots("pass"), los, dir, MID_Y);
-		// Nobody on offense is downfield of the line before the snap.
-		assert.ok(Math.max(...off.map((p) => p.x)) <= los + 0.001);
-		// Every defender is on the other side of it.
-		assert.ok(Math.min(...def.map((p) => p.x)) >= los - 0.001);
+		for (const dir of [1, -1] as const) {
+			const los = fieldX(40, dir);
+			const off = placeFormation(offenseSlots("pass"), los, dir, MID_Y);
+			const def = placeFormation(defenseSlots("pass"), los, dir, MID_Y);
+			// Nobody on offense is downfield of the line before the snap.
+			assert.ok(Math.max(...off.map((p) => (p.x - los) * dir)) <= 0.001);
+			// Every defender is on the other side of it.
+			assert.ok(Math.min(...def.map((p) => (p.x - los) * dir)) >= -0.001);
+		}
 	});
 
 	test("a formation slides across to wherever the ball was spotted", () => {
-		const dir = dirFor(0);
+		const dir = 1;
 		const los = fieldX(40, dir);
 		const middle = placeFormation(offenseSlots("pass"), los, dir, MID_Y);
 		const hash = placeFormation(offenseSlots("pass"), los, dir, HASH_NEAR);
