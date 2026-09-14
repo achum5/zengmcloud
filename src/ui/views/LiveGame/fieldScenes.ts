@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { courtRandom } from "./courtRng.ts";
 import {
+	clampY,
 	defenseSlots,
+	type Dir,
 	dirFor,
 	FIELD_LEN,
 	fieldX,
@@ -14,8 +16,20 @@ import {
 	synthLooseBall,
 	toField,
 	UPRIGHT_HALF_W,
+	type FieldPoint,
 } from "./fieldSpots.ts";
 import type { BallFlight } from "./fieldAnimation.ts";
+import {
+	assignPassDefense,
+	assignRoutes,
+	assignRunBlocking,
+	assignRunPursuit,
+	callPass,
+	callRun,
+	type PassConcept,
+	type RunScheme,
+	runPath,
+} from "./playbook.ts";
 import {
 	buildFormationActors,
 	formationFor,
@@ -48,6 +62,13 @@ export type FieldSceneCtx = {
 	playCount: number;
 	// Where the drive's earlier plays ended, in field coordinates.
 	driveMarks: number[];
+	// The play being run, kept for as long as the play lasts so the dropback and
+	// the throw are the same call.
+	call?: { name: string; concept?: PassConcept; scheme?: RunScheme };
+	callIsRun?: boolean;
+	// The name of whoever took the last snap, so a quarterback keeper can be
+	// told from a handoff without the sim saying so.
+	quarterback?: string;
 };
 
 export const newFieldSceneCtx = (): FieldSceneCtx => ({
@@ -118,6 +139,9 @@ type Beat = {
 	// same weaving path.
 	carried?: boolean;
 	scored?: boolean;
+	// A quarterback taking a knee, which is a scheme of its own and must not be
+	// mistaken for a run that happened to lose a yard.
+	kneel?: boolean;
 	// A place kick that did not go through. The court makes a make and a miss
 	// impossible to confuse; a field goal has to do the same, so a miss visibly
 	// sails outside the upright rather than ending up in the same place.
@@ -166,6 +190,7 @@ const beatFor = (
 				offenseT: t,
 				mainName: names[0],
 				carried: true,
+				kneel: event.type === "kneel",
 				scored,
 			};
 		case "passComplete":
@@ -349,6 +374,89 @@ const rosterFor = (
 ): FieldPlayer[] =>
 	players.map((p) => ({ pid: p.pid, name: p.name, pos: p.pos }));
 
+// The plays that happen from scrimmage, which are the ones with a call behind
+// them. A punt, a kickoff and a return have their own alignments and no
+// concept to run.
+const SCRIMMAGE_KINDS = new Set<FieldSceneKind>([
+	"set",
+	"run",
+	"pass",
+	"incomplete",
+	"sack",
+	"interception",
+	"fumble",
+]);
+
+// THE CALL IS MADE ONCE PER PLAY, not once per event. A dropback and the throw
+// that follows it are the same play, so they get the same concept - otherwise
+// the five receivers change what they are running halfway through it.
+//
+// And the call is made from what a coach would know when he made it: the down
+// and the distance. Not from how far the ball ended up travelling, which is
+// decided by the defence, and which is why the man who actually caught it runs
+// his route only as far as the catch (see trimRouteTo).
+const playCallFor = ({
+	beat,
+	down,
+	toGo,
+	ctx,
+}: {
+	beat: Beat;
+	down: number;
+	toGo: number;
+	ctx: FieldSceneCtx;
+}): { name: string; concept?: PassConcept; scheme?: RunScheme } => {
+	const running = beat.kind === "run" || beat.kind === "fumble";
+	if (ctx.call && ctx.callIsRun === running) {
+		return ctx.call;
+	}
+	const call = running
+		? (() => {
+				const scheme = callRun({
+					yards: beat.yards,
+					down,
+					toGo,
+					byQuarterback: beat.mainName === ctx.quarterback,
+					kneel: beat.kneel === true,
+				});
+				return { name: scheme.name, scheme };
+			})()
+		: (() => {
+				// Only a resolved throw knows how far the ball went; a dropback's
+				// "yards" is how far the quarterback retreated.
+				const thrown =
+					beat.kind === "pass" ||
+					beat.kind === "incomplete" ||
+					beat.kind === "interception";
+				const concept = callPass({
+					airYards: thrown ? beat.yards : undefined,
+					toGo,
+					sacked: beat.kind === "sack",
+				});
+				return { name: concept.name, concept };
+			})();
+	ctx.call = call;
+	ctx.callIsRun = running;
+	return call;
+};
+
+// A route the ball came down on before it ran out. Keeps the shape the receiver
+// was actually running - the stem, the break - and finishes it at the catch, so
+// a dig caught at eleven yards is a dig, not a dig plus another twenty yards of
+// nobody throwing it.
+const trimRouteTo = (
+	path: FieldPoint[],
+	end: FieldPoint,
+	losX: number,
+	dir: Dir,
+): FieldPoint[] => {
+	const target = (end.x - losX) * dir;
+	const kept = path.filter(
+		(p, i) => i === 0 || (p.x - losX) * dir < target - 0.5,
+	);
+	return [...kept, end];
+};
+
 export const buildFieldScene = ({
 	event,
 	displayT,
@@ -384,9 +492,19 @@ export const buildFieldScene = ({
 	if (sportState.plays.length !== ctx.playCount) {
 		ctx.playCount = sportState.plays.length;
 		ctx.ballAcross = snapAcross();
+		// A new play is a new call. Clearing it here is what makes the call last
+		// exactly one play and no longer.
+		ctx.call = undefined;
+		ctx.callIsRun = undefined;
 		if (sportState.plays.length <= 1) {
 			ctx.driveMarks = [];
 		}
+	}
+	// Who took the snap. A handoff names the quarterback first, a dropback names
+	// only him - either way it is the one piece the run schemes need in order to
+	// tell a keeper from a give.
+	if (event.type === "dropback" || event.type === "handoff") {
+		ctx.quarterback = event.names?.[0];
 	}
 
 	const offenseT = beat.offenseT;
@@ -431,6 +549,9 @@ export const buildFieldScene = ({
 	// fumble, where the sim names the man who forced it, and on an
 	// interception return, where everyone named is on the returning side.
 	const defenderPid = resolvePid(defenseT, beat.defenderName);
+	const launcherPid = beat.mainAtLaunch
+		? undefined
+		: resolvePid(offenseT, beat.launcherName);
 
 	const start = beat.launchDepth
 		? toField(losX, dir, beat.launchDepth, across)
@@ -451,77 +572,166 @@ export const buildFieldScene = ({
 				Math.min(14, 2 + Math.abs(beat.yards) * 0.32),
 			);
 
-	const actors: FieldActor[] = [];
-	const featured = new Set<number>();
-
-	if (mainPid !== undefined) {
-		featured.add(mainPid);
-		// A thrown ball's target is where it lands and a carried ball's man ends
-		// where the run ended - but a kicker stays where he kicked from. Dragging
-		// a punter forty yards downfield behind his own punt was the first thing
-		// that looked wrong.
-		const at = beat.mainAtLaunch ? start : end;
-		actors.push({
-			pid: mainPid,
-			name: beat.mainName!,
-			x: at.x,
-			y: at.y,
-			role: "main",
-			t: offenseT,
-		});
-	}
-	if (defenderPid !== undefined && defenderPid !== mainPid) {
-		featured.add(defenderPid);
-		// The man who made the play arrives a stride away from where it ended -
-		// unless he IS the play (an interception), in which case he is at the ball.
-		const solo = mainPid === undefined;
-		actors.push({
-			pid: defenderPid,
-			name: beat.defenderName!,
-			x: solo ? end.x : end.x - dir * 1.4,
-			y: solo ? end.y : end.y + 1.6,
-			role: "defender",
-			t: defenseT,
-		});
-	}
-	// Whoever threw or kicked it, at the spot it left his hands.
-	const launcherPid = beat.mainAtLaunch
-		? undefined
-		: resolvePid(offenseT, beat.launcherName);
-	if (launcherPid !== undefined && !featured.has(launcherPid)) {
-		featured.add(launcherPid);
-		actors.push({
-			pid: launcherPid,
-			name: beat.launcherName!,
-			x: start.x,
-			y: start.y,
-			role: "passer",
-			t: offenseT,
-		});
-	}
-
-	// Everybody else fills the formation around them.
+	// EVERY MAN GETS A SLOT FIRST, featured or not. That is what lets the play
+	// be staged rather than merely placed: the receiver the sim named has to be
+	// the man running the route his slot was given, and he can only be that if
+	// he is IN the formation instead of bolted on beside it.
 	const offSlots = offenseSlots(formation);
 	const defSlots = defenseSlots(formation);
-	actors.push(
-		...buildFormationActors({
-			players: rosterFor(players[offenseT]),
-			slots: offSlots,
-			losX,
-			dir,
-			ballAcross: across,
-			t: offenseT,
-			skipPids: featured,
-		}),
-		...buildFormationActors({
-			players: rosterFor(players[defenseT]),
-			slots: defSlots,
-			losX,
-			dir,
-			ballAcross: across,
-			t: defenseT,
-			skipPids: featured,
-		}),
+	const noSkip = new Set<number>();
+	const namedOffense = new Set(
+		[mainPid, launcherPid].filter((p): p is number => p !== undefined),
+	);
+	const namedDefense = new Set(
+		[defenderPid].filter((p): p is number => p !== undefined),
+	);
+	let offense = buildFormationActors({
+		players: rosterFor(players[offenseT]),
+		slots: offSlots,
+		losX,
+		dir,
+		ballAcross: across,
+		t: offenseT,
+		skipPids: noSkip,
+		preferPids: namedOffense,
+	});
+	let defense = buildFormationActors({
+		players: rosterFor(players[defenseT]),
+		slots: defSlots,
+		losX,
+		dir,
+		ballAcross: across,
+		t: defenseT,
+		skipPids: noSkip,
+		preferPids: namedDefense,
+	});
+
+	// THE CALL. A play from scrimmage gets a concept or a scheme and everybody
+	// gets a job; the special teams keep the alignments they already had.
+	const geom = { losX, dir, ballAcross: across };
+	let playName: string | undefined;
+	if (SCRIMMAGE_KINDS.has(beat.kind)) {
+		const down = play?.down ?? 1;
+		const call = playCallFor({ beat, down, toGo, ctx });
+		playName = call.name;
+		if (call.concept) {
+			const protectDepth = beat.launchDepth ?? 5.5;
+			offense = assignRoutes({
+				actors: offense,
+				slots: offSlots,
+				concept: call.concept,
+				geom,
+				protectDepth,
+			});
+			defense = assignPassDefense({
+				defenders: defense,
+				defSlots,
+				receivers: offense,
+				target: start,
+				geom,
+				reachTarget: beat.kind === "sack",
+			});
+		} else if (call.scheme) {
+			offense = assignRunBlocking({
+				actors: offense,
+				slots: offSlots,
+				scheme: call.scheme,
+				geom,
+			});
+			defense = assignRunPursuit({ defenders: defense, ballEnd: end, geom });
+		}
+		// The man the play happened to runs the play, not his route: a carrier
+		// follows the scheme to where he was actually brought down, and a target
+		// runs his route only as far as the catch.
+		if (mainPid !== undefined) {
+			offense = offense.map((a) => {
+				if (a.pid !== mainPid) {
+					return a;
+				}
+				if (call.scheme) {
+					const path = runPath({
+						start: { x: a.x, y: a.y },
+						end,
+						scheme: call.scheme,
+						losX,
+						dir,
+					});
+					return { ...a, x: end.x, y: end.y, path, delay: call.scheme.hold };
+				}
+				const route = a.path;
+				const path =
+					route && route.length > 1
+						? trimRouteTo(route, end, losX, dir)
+						: [{ x: a.x, y: a.y }, end];
+				return { ...a, x: end.x, y: end.y, path };
+			});
+		}
+	}
+
+	const actors: FieldActor[] = [...offense, ...defense];
+	const featured = new Set<number>();
+
+	// THE MEN THE SIM NAMED. Each is already somewhere in the twenty-two, so he
+	// is PROMOTED - given his face, his name tag and the spot the play left him
+	// - rather than added a second time.
+	const promote = (
+		pid: number | undefined,
+		name: string | undefined,
+		role: FieldActor["role"],
+		at: FieldPoint,
+		t: 0 | 1,
+	) => {
+		if (pid === undefined || name === undefined || featured.has(pid)) {
+			return;
+		}
+		featured.add(pid);
+		const i = actors.findIndex((a) => a.pid === pid);
+		if (i === -1) {
+			// Not one of the twenty-two on the field for this play - a returner, a
+			// kicker, a man the sim used off the depth chart. He still gets shown.
+			actors.push({ pid, name, x: at.x, y: at.y, role, t });
+			return;
+		}
+		const existing = actors[i]!;
+		actors[i] = {
+			...existing,
+			role,
+			// A man who was given a path keeps it: the path is how he GOT here, and
+			// it already ends where the play left him.
+			...(existing.path && existing.path.length > 1
+				? {}
+				: { x: at.x, y: at.y }),
+		};
+	};
+
+	// A thrown ball's target is where it lands and a carried ball's man ends
+	// where the run ended - but a kicker stays where he kicked from. Dragging a
+	// punter forty yards downfield behind his own punt was the first thing that
+	// looked wrong.
+	promote(
+		mainPid,
+		beat.mainName,
+		"main",
+		beat.mainAtLaunch ? start : end,
+		offenseT,
+	);
+	// The man who made the play arrives a stride away from where it ended -
+	// unless he IS the play (an interception), in which case he is at the ball.
+	const solo = mainPid === undefined;
+	promote(
+		defenderPid,
+		beat.defenderName,
+		"defender",
+		solo ? end : { x: end.x - dir * 1.4, y: clampY(end.y + 1.6) },
+		defenseT,
+	);
+	// Whoever threw or kicked it, at the spot it left his hands.
+	promote(
+		launcherPid,
+		beat.launcherName,
+		"passer",
+		start,
+		offenseT,
 	);
 
 	// A place kick travels to the posts, not to a yard line - and a miss goes
@@ -572,6 +782,7 @@ export const buildFieldScene = ({
 				: undefined,
 		driveMarks: [...ctx.driveMarks],
 		drive: driveSummary(sportState),
+		playName,
 	};
 
 	// Bank where this play ended, so the drive's shape shows on the field.

@@ -105,11 +105,11 @@ export type Slot = {
 // the middle of the field and shifted to wherever the ball was spotted.
 const OFFENSE_SHOTGUN: Slot[] = [
 	{ depth: 0, across: 0, pos: "OL" },
-	{ depth: 0, across: -2.4, pos: "OL" },
-	{ depth: 0, across: 2.4, pos: "OL" },
-	{ depth: 0.3, across: -4.9, pos: "OL" },
-	{ depth: 0.3, across: 4.9, pos: "OL" },
-	{ depth: 0.6, across: 7.6, pos: "TE" },
+	{ depth: 0, across: -3, pos: "OL" },
+	{ depth: 0, across: 3, pos: "OL" },
+	{ depth: 0.3, across: -6.1, pos: "OL" },
+	{ depth: 0.3, across: 6.1, pos: "OL" },
+	{ depth: 0.6, across: 9.4, pos: "TE" },
 	{ depth: 6, across: 0.4, pos: "QB" },
 	{ depth: 6.8, across: -4.2, pos: "RB" },
 	{ depth: 1.6, across: -11.5, pos: "WR" },
@@ -122,11 +122,11 @@ const OFFENSE_SHOTGUN: Slot[] = [
 // viewer can tell run from pass before the ball is snapped.
 const OFFENSE_UNDER_CENTER: Slot[] = [
 	{ depth: 0, across: 0, pos: "OL" },
-	{ depth: 0, across: -2.4, pos: "OL" },
-	{ depth: 0, across: 2.4, pos: "OL" },
-	{ depth: 0.3, across: -4.9, pos: "OL" },
-	{ depth: 0.3, across: 4.9, pos: "OL" },
-	{ depth: 0.6, across: 7.6, pos: "TE" },
+	{ depth: 0, across: -3, pos: "OL" },
+	{ depth: 0, across: 3, pos: "OL" },
+	{ depth: 0.3, across: -6.1, pos: "OL" },
+	{ depth: 0.3, across: 6.1, pos: "OL" },
+	{ depth: 0.6, across: 9.4, pos: "TE" },
 	{ depth: 2, across: 0, pos: "QB" },
 	{ depth: 7.4, across: -0.6, pos: "RB" },
 	{ depth: 3.2, across: -9.5, pos: "WR" },
@@ -137,10 +137,10 @@ const OFFENSE_UNDER_CENTER: Slot[] = [
 // BASE DEFENSE: four down, three off the ball, corners over the receivers and
 // two safeties deep. Negative depth is the defense's side of the line.
 const DEFENSE_BASE: Slot[] = [
-	{ depth: -1.8, across: -6.4, pos: "DL" },
-	{ depth: -1.8, across: -2.3, pos: "DL" },
-	{ depth: -1.8, across: 2.3, pos: "DL" },
-	{ depth: -1.8, across: 6.8, pos: "DL" },
+	{ depth: -1.9, across: -7.8, pos: "DL" },
+	{ depth: -1.9, across: -2.9, pos: "DL" },
+	{ depth: -1.9, across: 2.9, pos: "DL" },
+	{ depth: -1.9, across: 8.2, pos: "DL" },
 	{ depth: -6, across: -9.5, pos: "LB" },
 	{ depth: -6.6, across: 0.6, pos: "LB" },
 	{ depth: -6, across: 10.5, pos: "LB" },
@@ -324,7 +324,7 @@ export const defenseSlots = (kind: FormationKind): Slot[] => {
 // end lines up on the same physical side of the field whichever way the offense
 // is moving, so the two teams' sets are reflections of each other rather than
 // copies.
-const dirAcross = (dir: Dir): number => (dir === 1 ? 1 : -1);
+export const dirAcross = (dir: Dir): number => (dir === 1 ? 1 : -1);
 
 // Place a formation on the field: slots are written around a ball spotted in
 // the middle, so they slide across to wherever it actually is, and any receiver
@@ -431,8 +431,19 @@ export const goalpostX = (dir: Dir): number =>
 export type FieldActor = {
 	pid: number;
 	name: string;
+	// Where he ENDS the play. A pathed actor walks his path to get here; an
+	// unpathed one simply glides.
 	x: number;
 	y: number;
+	// The job he was given, so the play can be watched rather than inferred:
+	// waypoints in field coordinates, starting where he lined up. `delay` is how
+	// much of the play passes before he moves (a ride, a draw's pause, a
+	// blocker's first step), as a fraction of the scene.
+	path?: FieldPoint[];
+	delay?: number;
+	// Which formation slot he filled, so a concept can give the tight end the
+	// tight end's route.
+	slotIndex?: number;
 	// "main" is the man with the ball, "passer" whoever threw or kicked it,
 	// "defender" whoever did something about it, "onField" everybody else.
 	role: "main" | "defender" | "passer" | "onField";
@@ -493,6 +504,9 @@ export type FieldScene = {
 	driveMarks?: number[];
 	// "Drive: 4 plays, 31 yards", shown in the corner opposite the down.
 	drive?: string;
+	// The play that was called - "Four Verticals", "Inside Zone" - so a viewer
+	// can see WHAT he is watching and not only what happened.
+	playName?: string;
 };
 
 export type FieldTeam = {
@@ -528,6 +542,7 @@ export const buildFormationActors = ({
 	ballAcross,
 	t,
 	skipPids,
+	preferPids,
 }: {
 	players: FieldPlayer[];
 	slots: Slot[];
@@ -536,16 +551,18 @@ export const buildFormationActors = ({
 	ballAcross: number;
 	t: 0 | 1;
 	skipPids: Set<number>;
+	// The men the play named. They go to the FRONT of the pool so each wins the
+	// slot his position plays - which is what lets the scene find him in the
+	// formation afterwards and give him his face, his route and his end point.
+	// Without it a featured receiver loses the receiver slots to his backups and
+	// has to be bolted on beside the eleven, which is how a team ends up with
+	// twelve men on the field.
+	preferPids?: Set<number>;
 }): FieldActor[] => {
 	const points = placeFormation(slots, losX, dir, ballAcross);
-	// The play's own actors go to the FRONT of the pool, so each of them wins
-	// the slot his position plays and is then skipped (the scene has already
-	// placed him where the play actually put him). Without that a featured
-	// receiver could lose the receiver slots to his backups, never be skipped,
-	// and be drawn twice - once in the play and once standing in formation,
-	// which is how a team ends up with twelve men on the field.
+	const first = preferPids ?? skipPids;
 	const pool = [...players].sort(
-		(a, b) => (skipPids.has(b.pid) ? 1 : 0) - (skipPids.has(a.pid) ? 1 : 0),
+		(a, b) => (first.has(b.pid) ? 1 : 0) - (first.has(a.pid) ? 1 : 0),
 	);
 	const actors: FieldActor[] = [];
 	for (const [i, slot] of slots.entries()) {
@@ -573,8 +590,35 @@ export const buildFormationActors = ({
 			x: point.x,
 			y: point.y,
 			role: "onField",
+			slotIndex: i,
 			t,
 		});
+	}
+
+	// A named man can still miss out: a wide receiver returning a kick has no
+	// slot to win in a formation written entirely of backs, so the position
+	// match above hands every one of them to a real back. He TAKES a slot
+	// instead of being added beside the eleven - which is the difference
+	// between a man being shown where the play put him and a team having
+	// twelve men on the field.
+	const placed = new Set(actors.map((a) => a.pid));
+	for (const pid of preferPids ?? []) {
+		if (placed.has(pid) || actors.length === 0) {
+			continue;
+		}
+		const p = players.find((x) => x.pid === pid);
+		if (!p) {
+			continue;
+		}
+		const group = POS_GROUP[p.pos ?? ""] ?? p.pos;
+		const at =
+			actors.findLastIndex((a) => {
+				const slot = slots[a.slotIndex ?? -1];
+				return slot !== undefined && slot.pos === group;
+			}) ?? -1;
+		const i = at >= 0 ? at : actors.length - 1;
+		actors[i] = { ...actors[i]!, pid: p.pid, name: p.name };
+		placed.add(pid);
 	}
 	return actors;
 };

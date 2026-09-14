@@ -137,3 +137,61 @@ export const fieldGlideSeconds = (
 	const cap = Math.min(0.95, ((sceneMs ?? 1100) / 1000) * 0.84);
 	return Math.min(cap, 0.28 + dist * 0.011);
 };
+
+// WALKING A PATH. A route is a polyline, and a man runs it at a steady speed -
+// so progress through the play is progress along its LENGTH, not along its
+// waypoints. Getting that wrong makes a receiver crawl through a long stem and
+// then snap through his break, which is the opposite of what a route looks
+// like.
+//
+// `t` is 0 at the snap and 1 at the whistle. Out-of-range clamps to the ends,
+// so a delayed man simply stands still until his delay has passed.
+export const pointAlongPath = (
+	path: { x: number; y: number }[],
+	t: number,
+): { x: number; y: number } => {
+	if (path.length === 0) {
+		return { x: 0, y: 0 };
+	}
+	if (path.length === 1 || !(t > 0)) {
+		return path[0]!;
+	}
+	if (t >= 1) {
+		return path.at(-1)!;
+	}
+	const legs: number[] = [];
+	let total = 0;
+	for (let i = 1; i < path.length; i += 1) {
+		const d = Math.hypot(path[i]!.x - path[i - 1]!.x, path[i]!.y - path[i - 1]!.y);
+		legs.push(d);
+		total += d;
+	}
+	if (total === 0) {
+		return path[0]!;
+	}
+	let want = total * t;
+	for (let i = 0; i < legs.length; i += 1) {
+		const leg = legs[i]!;
+		if (want <= leg || i === legs.length - 1) {
+			const f = leg === 0 ? 0 : Math.min(1, want / leg);
+			const a = path[i]!;
+			const b = path[i + 1]!;
+			return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+		}
+		want -= leg;
+	}
+	return path.at(-1)!;
+};
+
+// How far into his own job a man is, given how far into the PLAY we are and
+// the delay he was given. A blocker fires at once; a back on a draw stands
+// still and then goes. Once his delay is past he has the rest of the play to
+// cover his path, so a late release is a faster one - which is exactly how a
+// screen or a play-action shot looks.
+export const pathProgress = (playT: number, delay: number | undefined): number => {
+	const d = Math.min(0.9, Math.max(0, delay ?? 0));
+	if (playT <= d) {
+		return 0;
+	}
+	return Math.min(1, (playT - d) / (1 - d));
+};

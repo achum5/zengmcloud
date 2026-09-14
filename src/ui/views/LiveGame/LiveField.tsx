@@ -29,6 +29,8 @@ import {
 	fieldGlideSeconds,
 	impactReaction,
 	nextTumble,
+	pathProgress,
+	pointAlongPath,
 	type BallFlight,
 } from "./fieldAnimation.ts";
 export type {
@@ -112,7 +114,7 @@ const readableOn = (bg: string): string =>
 const FACE_W = "clamp(14px, 2.5cqw, 34px)";
 const FACE_H = "clamp(21px, 3.75cqw, 51px)";
 const NAME_FONT = "clamp(7px, 1.05cqw, 11px)";
-const CHIP_SIZE = "clamp(9px, 1.55cqw, 20px)";
+const CHIP_SIZE = "clamp(9px, 1.42cqw, 19px)";
 const CHIP_FONT = "clamp(6px, 1cqw, 11px)";
 
 const GROUND_SHADOW =
@@ -218,18 +220,35 @@ const useFieldGlide = (
 	const glideDelay = background
 		? (((actor.pid * 2654435761) >>> 0) % 5) * 0.025
 		: 0;
-	return size
-		? {
-				left: 0,
-				top: 0,
-				transform: `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`,
-				transition: `transform ${glideDur}s ease ${glideDelay}s, opacity 0.3s ease`,
-				willChange: "transform",
-			}
-		: {
-				left: `${fx * 100}%`,
-				top: `${fy * 100}%`,
-			};
+	if (!size) {
+		return {
+			left: `${fx * 100}%`,
+			top: `${fy * 100}%`,
+		};
+	}
+	// A man with a JOB is driven frame by frame along it (see the play loop in
+	// LiveField), so he must not also be gliding: a CSS transition fighting a
+	// per-frame transform is what turns a crisp break into a smear. He still
+	// gets a starting transform for the first paint.
+	if (actor.path && actor.path.length > 1) {
+		const start = actor.path[0]!;
+		const sx = (start.x + SIDELINE) / (FIELD_LEN + 2 * SIDELINE);
+		const sy = (start.y + SIDELINE) / (FIELD_W + 2 * SIDELINE);
+		return {
+			left: 0,
+			top: 0,
+			transform: `translate3d(${sx * size.w}px, ${sy * size.h}px, 0)`,
+			transition: "opacity 0.3s ease",
+			willChange: "transform",
+		};
+	}
+	return {
+		left: 0,
+		top: 0,
+		transform: `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`,
+		transition: `transform ${glideDur}s ease ${glideDelay}s, opacity 0.3s ease`,
+		willChange: "transform",
+	};
 };
 
 export type BodyAnim = "tackled" | "hit" | "leap" | "kick" | "score";
@@ -245,23 +264,31 @@ const BodyOnField = ({
 	season,
 	lid,
 	color,
+	ring,
 	background,
 	anim,
 	animKey,
 	nameAbove,
 	size,
 	sceneMs,
+	registerNode,
 }: {
 	actor: FieldActor;
 	season: number | undefined;
 	lid: number | undefined;
 	color: string;
+	// The team's secondary colour, used for a chip's ring. Two teams whose
+	// primaries are both blue are otherwise a single mass of chips.
+	ring: string;
 	background: boolean;
 	anim?: BodyAnim;
 	animKey?: number;
 	nameAbove?: boolean;
 	size: { w: number; h: number } | undefined;
 	sceneMs: number | undefined;
+	// Hands this body's element to the play loop, which moves anybody carrying
+	// a path frame by frame.
+	registerNode: (pid: number, el: HTMLDivElement | null) => void;
 }) => {
 	const faceData = usePlayerFace(actor.pid, season, lid);
 	const glide = useFieldGlide(actor, size, background, sceneMs);
@@ -270,6 +297,9 @@ const BodyOnField = ({
 		return (
 			<div
 				className="position-absolute"
+				ref={(el) => {
+					registerNode(actor.pid, el);
+				}}
 				data-field-body={actor.pid}
 				data-field-role={actor.role}
 				data-field-team={actor.t}
@@ -301,7 +331,8 @@ const BodyOnField = ({
 							height: "100%",
 							borderRadius: "50%",
 							background: color,
-							border: "1px solid rgba(255,255,255,0.75)",
+							border: `1.5px solid ${ring}`,
+							outline: "0.5px solid rgba(0,0,0,0.35)",
 							boxShadow: "0 1px 3px rgba(0,0,0,0.45)",
 							color: "#fff",
 							display: "flex",
@@ -338,6 +369,9 @@ const BodyOnField = ({
 	return (
 		<div
 			className="position-absolute"
+			ref={(el) => {
+				registerNode(actor.pid, el);
+			}}
 			data-field-body={actor.pid}
 			data-field-role={actor.role}
 			data-field-team={actor.t}
@@ -467,6 +501,18 @@ const LiveField = ({
 	const rafRef = useRef<number | undefined>(undefined);
 	const spinRef = useRef({ deg: 0, x: 0, y: 0, has: false });
 
+	// Every body's element, by pid, so the play loop can move the ones carrying
+	// a job without a React render per frame.
+	const bodyNodes = useRef(new Map<number, HTMLDivElement>());
+	const playRafRef = useRef<number | undefined>(undefined);
+	const registerNode = (pid: number, el: HTMLDivElement | null) => {
+		if (el) {
+			bodyNodes.current.set(pid, el);
+		} else {
+			bodyNodes.current.delete(pid);
+		}
+	};
+
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const [size, setSize] = useState<{ w: number; h: number } | undefined>(
 		undefined,
@@ -497,6 +543,60 @@ const LiveField = ({
 	const home = teams[1];
 	const awayColor = teamColor(away, 0, "#fd7e14");
 	const homeColor = teamColor(home, 0, "#0d6efd");
+	const awayRing = teamColor(away, 1, "#fff");
+	const homeRing = teamColor(home, 1, "#fff");
+
+	// THE PLAY. Twenty-two men with twenty-two jobs, walked along their paths in
+	// one loop - the routes running, the line setting, the rush coming, the
+	// coverage carrying its man. Positions are written straight onto the
+	// elements, so a full eleven-on-eleven play costs no React render per frame.
+	//
+	// A man with no path is not in here at all: he keeps the CSS glide, which is
+	// the right behaviour for the special-teams scenes and for anybody the scene
+	// simply placed.
+	useEffect(() => {
+		if (!scene || !size) {
+			return;
+		}
+		const pathed = scene.actors.filter((a) => a.path && a.path.length > 1);
+		if (pathed.length === 0) {
+			return;
+		}
+		if (playRafRef.current !== undefined) {
+			cancelAnimationFrame(playRafRef.current);
+		}
+		// The play fills the scene, minus a beat at the end so the last frame is
+		// held rather than cut off by the next play arriving.
+		const dur = Math.max(320, (sceneMs ?? 1100) * 0.88);
+		const start = performance.now();
+		const place = (actor: FieldActor, at: { x: number; y: number }) => {
+			const node = bodyNodes.current.get(actor.pid);
+			if (!node) {
+				return;
+			}
+			const fx = (at.x + SIDELINE) / (FIELD_LEN + 2 * SIDELINE);
+			const fy = (at.y + SIDELINE) / (FIELD_W + 2 * SIDELINE);
+			node.style.transform = `translate3d(${fx * size.w}px, ${fy * size.h}px, 0)`;
+		};
+		const step = (now: number) => {
+			const playT = Math.min(1, (now - start) / dur);
+			for (const actor of pathed) {
+				place(
+					actor,
+					pointAlongPath(actor.path!, pathProgress(playT, actor.delay)),
+				);
+			}
+			if (playT < 1) {
+				playRafRef.current = requestAnimationFrame(step);
+			}
+		};
+		playRafRef.current = requestAnimationFrame(step);
+		return () => {
+			if (playRafRef.current !== undefined) {
+				cancelAnimationFrame(playRafRef.current);
+			}
+		};
+	}, [scene, size, sceneMs]);
 
 	// THE BALL. Driven imperatively on the SVG nodes so a flight costs no React
 	// render per frame, exactly like the court's.
@@ -634,6 +734,7 @@ const LiveField = ({
 					season={season}
 					lid={lid}
 					color={color}
+					ring={displayT === 0 ? awayRing : homeRing}
 					background={background}
 					anim={background ? undefined : animForRole(scene, actor)}
 					animKey={scene.key}
@@ -642,6 +743,7 @@ const LiveField = ({
 					nameAbove={actor.y > FIELD_W * 0.72}
 					size={size}
 					sceneMs={sceneMs}
+					registerNode={registerNode}
 				/>,
 			);
 		}
@@ -1051,6 +1153,27 @@ const LiveField = ({
 						}}
 					>
 						{scene.down}
+					</div>
+				) : null}
+
+				{/* The call, top left: what the offense is actually running. */}
+				{scene?.playName ? (
+					<div
+						className="position-absolute"
+						style={{
+							left: "1.2%",
+							top: "3%",
+							background: "rgba(0,0,0,0.55)",
+							color: "#fff",
+							borderRadius: 4,
+							padding: "1px 7px",
+							fontSize: "clamp(8px, 1.25cqw, 14px)",
+							fontWeight: 600,
+							letterSpacing: 0.2,
+							pointerEvents: "none",
+						}}
+					>
+						{scene.playName}
 					</div>
 				) : null}
 

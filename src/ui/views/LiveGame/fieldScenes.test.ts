@@ -101,13 +101,23 @@ describe("buildFieldScene", () => {
 		assert.ok(scene.ball!.to.x - los > 7 && scene.ball!.to.x - los < 9);
 	});
 
+	// The men the play names have to win their own slots in the formation, or
+	// they get bolted on beside it - which is a team with twelve men on the
+	// field. The names below are deliberately NOT the first at their position:
+	// WR107 is the fourth receiver, QB101 the backup, DL218 the third lineman.
 	test("every scene puts eleven men on each side and nobody twice", () => {
 		for (const [event, t] of [
-			[{ type: "run", names: ["RB102"], yds: 3 }, 0],
-			[{ type: "passComplete", names: ["QB100", "WR104"], yds: 12 }, 0],
+			[{ type: "run", names: ["RB103"], yds: 3 }, 0],
+			[{ type: "passComplete", names: ["QB101", "WR107"], yds: 12 }, 0],
 			[{ type: "punt", names: ["P127"], yds: 44 }, 0],
 			[{ type: "kickoff", names: ["K126"], yds: 20 }, 1],
-			[{ type: "sack", names: ["QB100", "DL215"], yds: -7 }, 0],
+			[{ type: "sack", names: ["QB101", "DL218"], yds: -7 }, 0],
+			[{ type: "passIncomplete", names: ["QB101", "WR106"], yds: 9 }, 0],
+			[{ type: "handoff", names: ["QB101", "RB103"] }, 0],
+			// A receiver returning a kick: the return formation is written
+			// entirely of backs, so he has no slot of his own to win.
+			[{ type: "kickoffReturn", names: ["WR107"], yds: 22 }, 1],
+			[{ type: "puntReturn", names: ["CB222"], yds: 8 }, 1],
 		] as const) {
 			const scene = build(event as any, t as 0 | 1)!;
 			const pids = scene.actors.map((a) => a.pid);

@@ -6,6 +6,8 @@ import {
 	fieldGlideSeconds,
 	impactReaction,
 	nextTumble,
+	pathProgress,
+	pointAlongPath,
 } from "./fieldAnimation.ts";
 
 describe("ballHeight", () => {
@@ -113,5 +115,61 @@ describe("fieldGlideSeconds", () => {
 
 	test("even at top speed a body still moves rather than teleporting", () => {
 		assert.ok(fieldGlideSeconds(50, 120) > 0);
+	});
+});
+
+describe("pointAlongPath", () => {
+	const path = [
+		{ x: 0, y: 0 },
+		{ x: 10, y: 0 },
+		{ x: 10, y: 10 },
+	];
+
+	test("the ends are the ends", () => {
+		assert.deepStrictEqual(pointAlongPath(path, 0), path[0]);
+		assert.deepStrictEqual(pointAlongPath(path, -1), path[0]);
+		assert.deepStrictEqual(pointAlongPath(path, 1), path[2]);
+		assert.deepStrictEqual(pointAlongPath(path, 2), path[2]);
+	});
+
+	// A route is run at a steady speed, so halfway through the PLAY is halfway
+	// along the route's LENGTH - not halfway through its waypoints. Get that
+	// wrong and a receiver crawls through a long stem and snaps through his
+	// break, which is the opposite of what a route looks like.
+	test("progress is along the length, not the waypoints", () => {
+		const half = pointAlongPath(path, 0.5);
+		assert.ok(Math.abs(half.x - 10) < 1e-9);
+		assert.ok(Math.abs(half.y - 0) < 1e-9);
+		const quarter = pointAlongPath(path, 0.25);
+		assert.ok(Math.abs(quarter.x - 5) < 1e-9);
+	});
+
+	test("a path that goes nowhere is not a division by zero", () => {
+		const still = [
+			{ x: 4, y: 4 },
+			{ x: 4, y: 4 },
+		];
+		assert.deepStrictEqual(pointAlongPath(still, 0.5), still[0]);
+		assert.deepStrictEqual(pointAlongPath([], 0.5), { x: 0, y: 0 });
+	});
+});
+
+describe("pathProgress", () => {
+	test("a man with no delay is moving from the snap", () => {
+		assert.strictEqual(pathProgress(0, undefined), 0);
+		assert.strictEqual(pathProgress(0.5, 0), 0.5);
+		assert.strictEqual(pathProgress(1, 0), 1);
+	});
+
+	test("a delayed man stands still and then has the rest of the play", () => {
+		assert.strictEqual(pathProgress(0.2, 0.3), 0);
+		assert.strictEqual(pathProgress(0.3, 0.3), 0);
+		// Half of what is left of the play after his delay.
+		assert.ok(Math.abs(pathProgress(0.65, 0.3) - 0.5) < 1e-9);
+		assert.strictEqual(pathProgress(1, 0.3), 1);
+	});
+
+	test("however late he is, he still finishes", () => {
+		assert.strictEqual(pathProgress(1, 5), 1);
 	});
 });
