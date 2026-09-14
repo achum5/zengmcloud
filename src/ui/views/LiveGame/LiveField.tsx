@@ -159,6 +159,23 @@ const FIELD_ANIM_CSS = `
 	58% { transform: ${REST} translateX(4px) rotate(18deg) scale(1.06); }
 	100% { transform: ${REST} rotate(0deg) scale(1); }
 }
+/* A THROW: a step, a wind-up, and a hard turn through the release. The
+   passer had no motion at all, so every pass appeared to leave nobody. */
+@keyframes liveFieldThrow {
+	0% { transform: ${REST} rotate(0deg) scale(1); }
+	30% { transform: ${REST} translateX(-3px) rotate(-14deg) scale(1.02); }
+	52% { transform: ${REST} translateX(3px) rotate(16deg) scale(1.07); }
+	72% { transform: ${REST} translateX(1px) rotate(6deg) scale(1.02); }
+	100% { transform: ${REST} rotate(0deg) scale(1); }
+}
+/* A SWAT: a hand through the catch point. Somebody broke that pass up, and
+   until now an incompletion was a ball that simply landed. */
+@keyframes liveFieldSwat {
+	0% { transform: ${REST} rotate(0deg) scale(1); }
+	28% { transform: ${REST} translateY(-34%) rotate(-20deg) scale(1.12); }
+	52% { transform: ${REST} translateY(-18%) rotate(22deg) scale(1.08); }
+	100% { transform: ${REST} translateY(0) rotate(0deg) scale(1); }
+}
 /* Reaching the end zone: both arms up. A short, unmistakable celebration. */
 /* On a phone the field is barely 200px tall and the play text wraps onto two
    lines; the drive line then collides with it, so below that width the drive
@@ -251,7 +268,14 @@ const useFieldGlide = (
 	};
 };
 
-export type BodyAnim = "tackled" | "hit" | "leap" | "kick" | "score";
+export type BodyAnim =
+	| "tackled"
+	| "hit"
+	| "leap"
+	| "kick"
+	| "score"
+	| "throw"
+	| "swat";
 
 // One body on the grass, centered on its field point. Two looks, ONE component
 // (and one element), always keyed by pid at the call site: a background player
@@ -362,9 +386,15 @@ const BodyOnField = ({
 						? "liveFieldKick 0.6s ease"
 						: anim === "score"
 							? "liveFieldScore 0.8s ease"
-							: undefined;
+							: anim === "throw"
+								? "liveFieldThrow 0.6s ease"
+								: anim === "swat"
+									? "liveFieldSwat 0.6s ease"
+									: undefined;
 	const shadowAnim =
-		anim === "leap" ? "liveFieldLeapShadow 0.7s ease" : undefined;
+		anim === "leap" || anim === "swat"
+			? "liveFieldLeapShadow 0.7s ease"
+			: undefined;
 
 	return (
 		<div
@@ -447,6 +477,10 @@ const animForRole = (
 	actor: FieldActor,
 ): BodyAnim | undefined => {
 	if (actor.role === "defender") {
+		// An incompletion is a ball somebody knocked down.
+		if (scene.kind === "incomplete" || scene.kind === "interception") {
+			return "swat";
+		}
 		return scene.kind === "sack" ||
 			scene.kind === "fumble" ||
 			scene.kind === "run" ||
@@ -455,8 +489,12 @@ const animForRole = (
 			: undefined;
 	}
 	if (actor.role === "passer") {
-		// He has just let go of it; the ball is the thing to watch now.
-		return undefined;
+		// He is the man it left, so he is the man who threw it.
+		return scene.kind === "pass" ||
+			scene.kind === "incomplete" ||
+			scene.kind === "interception"
+			? "throw"
+			: undefined;
 	}
 	if (actor.role === "main") {
 		if (scene.impact?.kind === "score") {
@@ -501,6 +539,8 @@ const LiveField = ({
 	const ballRef = useRef<SVGGElement | null>(null);
 	const ballShadowRef = useRef<SVGEllipseElement | null>(null);
 	const impactRef = useRef<SVGCircleElement | null>(null);
+	// The end zone a score happened in, lit by the same curve as the flare.
+	const endZoneRef = useRef<SVGRectElement | null>(null);
 	const rafRef = useRef<number | undefined>(undefined);
 	const spinRef = useRef({ deg: 0, x: 0, y: 0, has: false });
 
@@ -622,6 +662,9 @@ const LiveField = ({
 		if (impact) {
 			impact.style.opacity = "0";
 		}
+		if (endZoneRef.current) {
+			endZoneRef.current.style.opacity = "0";
+		}
 		// A new scene puts the ball somewhere else entirely: the tumble must not
 		// lurch by the jump distance.
 		spinRef.current.has = false;
@@ -706,6 +749,11 @@ const LiveField = ({
 					const r = impactReaction(scene.impact!.kind, q);
 					impact.style.opacity = String(r.opacity);
 					impact.setAttribute("r", String(1.6 * r.scale));
+					// A touchdown lights up the end zone it was scored in, which is
+					// the one thing everybody in the stadium reacts to at once.
+					if (endZoneRef.current && scene.impact!.kind === "score") {
+						endZoneRef.current.style.opacity = String(r.opacity * 0.55);
+					}
 					if (q < 1) {
 						rafRef.current = requestAnimationFrame(bang);
 					}
@@ -1164,6 +1212,16 @@ const LiveField = ({
 						pointerEvents: "none",
 					}}
 				>
+					{/* The end zone being attacked, dark until somebody reaches it. */}
+					<rect
+						ref={endZoneRef}
+						x={scene ? (scene.dir === 1 ? FIELD_LEN - ENDZONE : 0) : 0}
+						y={0}
+						width={ENDZONE}
+						height={FIELD_W}
+						fill="#fff"
+						opacity={0}
+					/>
 					<circle
 						ref={impactRef}
 						cx={0}

@@ -871,11 +871,67 @@ export const buildFieldScene = ({
 		defense = assignHuddle({ actors: defense, geom, depth: -11, across: 13 });
 	}
 
+	// A BROKEN TACKLE. A run of any length has somebody in it who had a shot and
+	// did not get him - that is what makes it a long run rather than a fast one
+	// - so on a big gain the nearest pursuer is pulled onto the carrier's path
+	// and LEFT there, a few yards short of where the play ended.
+	if (
+		(beat.kind === "run" || beat.kind === "return") &&
+		beat.yards >= 14 &&
+		carriedPathOf(offense, mainPid)
+	) {
+		const path = carriedPathOf(offense, mainPid)!;
+		const brushPast = path[Math.max(1, Math.floor(path.length * 0.55))]!;
+		let nearest: number | undefined;
+		let best = 24;
+		for (const a of defense) {
+			// Measured from where he LINED UP, not from where the pursuit has
+			// already taken him: by the end of a long run the whole defense is
+			// standing on the tackle, so measuring from there finds nobody who was
+			// ever near enough to miss him.
+			const was = a.path?.[0] ?? { x: a.x, y: a.y };
+			const d = Math.hypot(was.x - brushPast.x, was.y - brushPast.y);
+			if (d < best) {
+				best = d;
+				nearest = a.pid;
+			}
+		}
+		if (nearest !== undefined) {
+			defense = defense.map((a) => {
+				if (a.pid !== nearest) {
+					return a;
+				}
+				const from = a.path?.[0] ?? { x: a.x, y: a.y };
+				const missed = {
+					x: brushPast.x - dir * 1.2,
+					y: clampY(brushPast.y + 1.8),
+				};
+				return { ...a, x: missed.x, y: missed.y, path: [from, missed] };
+			});
+		}
+	}
+
 	// A FUMBLE cancels every assignment on the field at once: the men near it
 	// stop doing whatever they were doing and go after it.
 	if (beat.kind === "fumble" && beat.loose) {
 		offense = assignScramble({ actors: offense, ball: end, count: 4 });
 		defense = assignScramble({ actors: defense, ball: end, count: 4 });
+	}
+
+	// AN INCOMPLETION IS A BALL SOMEBODY KNOCKED DOWN. The sim does not name
+	// him - there is no stat for it - but the nearest defender to where it came
+	// down is the man who got there, and a pass that simply lands with nobody
+	// near it is the one thing that never happens.
+	let breakupPid: number | undefined;
+	if (beat.kind === "incomplete") {
+		let best = 9;
+		for (const a of defense) {
+			const d = Math.hypot(a.x - end.x, a.y - end.y);
+			if (d < best) {
+				best = d;
+				breakupPid = a.pid;
+			}
+		}
 	}
 
 	// The path the man with the ball is running, so the ball can travel it with
@@ -974,6 +1030,15 @@ export const buildFieldScene = ({
 		}
 	}
 
+	// The man who broke it up, if the sim did not name one itself.
+	if (defenderPid === undefined && breakupPid !== undefined) {
+		const i = actors.findIndex((a) => a.pid === breakupPid);
+		if (i >= 0) {
+			actors[i] = { ...actors[i]!, role: "defender" };
+			featured.add(breakupPid);
+		}
+	}
+
 	// Whoever threw or kicked it, at the spot it left his hands.
 	promote(
 		launcherPid,
@@ -1032,12 +1097,22 @@ export const buildFieldScene = ({
 				? { kind: "tackle", at: ballTo }
 				: undefined,
 		// A flag lands near where it happened, a few yards off the ball.
+		// It lands near the man it was thrown at, when the sim named one - which
+		// is the whole point of watching where a flag comes down.
 		flag:
 			beat.kind === "penalty"
-				? {
-						x: clampX(losX + dir * rand(-4, 7)),
-						y: clampY(across + rand(-9, 9)),
-					}
+				? (() => {
+						const at = actors.find((a) => a.pid === mainPid);
+						return at
+							? {
+									x: clampX(at.x + rand(-2.5, 2.5)),
+									y: clampY(at.y + rand(-2.5, 2.5)),
+								}
+							: {
+									x: clampX(losX + dir * rand(-4, 7)),
+									y: clampY(across + rand(-9, 9)),
+								};
+					})()
 				: undefined,
 		driveMarks: [...ctx.driveMarks],
 		drive: driveSummary(sportState),
@@ -1091,6 +1166,15 @@ const TACKLE_KINDS = new Set<FieldSceneKind>([
 	"return",
 	"fumble",
 ]);
+
+// The path of whoever is carrying it, when he has one.
+const carriedPathOf = (
+	actors: FieldActor[],
+	pid: number | undefined,
+): FieldPoint[] | undefined =>
+	pid === undefined
+		? undefined
+		: actors.find((a) => a.pid === pid && (a.path?.length ?? 0) > 1)?.path;
 
 const clampScrimmage = (scrimmage: number): number =>
 	Math.min(99.5, Math.max(0.5, scrimmage));

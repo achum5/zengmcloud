@@ -458,3 +458,53 @@ describe("a scramble", () => {
 		assert.ok(scene.playName!.includes("Sneak"), scene.playName);
 	});
 });
+
+describe("nobody stands and watches", () => {
+	// A pass that simply lands with nobody near it is the one thing that never
+	// happens, and the sim has no stat for who knocked it down.
+	test("an incompletion has somebody breaking it up", () => {
+		const scene = build(
+			{ type: "passIncomplete", names: ["QB100", "WR104"], yds: 12 },
+			0,
+		)!;
+		const breakup = scene.actors.find((a) => a.role === "defender")!;
+		assert.ok(breakup, "an incompletion nobody defended");
+		assert.strictEqual(breakup.t, 1, "the breakup came from the offense");
+		assert.ok(
+			Math.hypot(breakup.x - scene.ball!.to.x, breakup.y - scene.ball!.to.y) <
+				12,
+			"the man who broke it up was miles away",
+		);
+	});
+
+	// What makes a run long rather than fast is somebody missing him on the way.
+	test("a long run has a missed tackle in it, a short one does not", () => {
+		const long = build(
+			{ type: "run", names: ["RB102"], yds: 28 },
+			0,
+			sportState({
+				plays: [{ down: 1, toGo: 10, scrimmage: 30, yards: 28, t: 0 }],
+			}),
+		)!;
+		const carrier = long.actors.find((a) => a.role === "main")!;
+		// Somebody on defence finished well short of the tackle, on his path.
+		const strandedOnHisPath = long.actors.filter(
+			(a) =>
+				a.t === 1 &&
+				(carrier.path ?? []).some(
+					(p) => Math.hypot(p.x - a.x, p.y - a.y) < 3.5,
+				) &&
+				Math.hypot(a.x - carrier.x, a.y - carrier.y) > 6,
+		);
+		assert.ok(strandedOnHisPath.length >= 1, "nobody missed him");
+	});
+
+	test("a flag lands on the man it was thrown at", () => {
+		const scene = build({ type: "penalty", names: ["OL110"] }, 0)!;
+		const culprit = scene.actors.find((a) => a.role === "main")!;
+		assert.ok(
+			Math.hypot(scene.flag!.x - culprit.x, scene.flag!.y - culprit.y) < 4,
+			"the flag landed nowhere near him",
+		);
+	});
+});
