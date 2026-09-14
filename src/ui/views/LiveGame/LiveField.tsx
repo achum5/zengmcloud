@@ -552,6 +552,9 @@ const LiveField = ({
 			bodyNodes.current.delete(pid);
 		}
 	};
+	// Each man's trail, by pid, so the same loop that walks him along his path
+	// can draw the path in behind him.
+	const trailNodes = useRef(new Map<number, SVGGElement>());
 
 	const containerRef = useRef<HTMLDivElement | null>(null);
 	const [size, setSize] = useState<{ w: number; h: number } | undefined>(
@@ -583,6 +586,15 @@ const LiveField = ({
 	const home = teams[1];
 	const awayColor = teamColor(away, 0, "#fd7e14");
 	const homeColor = teamColor(home, 0, "#0d6efd");
+	// A trail is a two-pixel line over mowed grass, and a good third of the
+	// league wears something dark and green - on those teams the team colour is
+	// the field colour and the trail is nothing at all. Dark colours are lifted
+	// toward white for the trails only; the chips, which have a ring and a solid
+	// fill to separate them, keep the real colour.
+	const trailColor = (hex: string) =>
+		luminance(hex) < 0.45 ? shade(hex, 0.3) : hex;
+	const awayTrail = trailColor(awayColor);
+	const homeTrail = trailColor(homeColor);
 	const awayRing = teamColor(away, 1, "#fff");
 	const homeRing = teamColor(home, 1, "#fff");
 
@@ -605,6 +617,12 @@ const LiveField = ({
 		if (playRafRef.current !== undefined) {
 			cancelAnimationFrame(playRafRef.current);
 		}
+		// A trail that survived from the last play would start this one fully
+		// drawn: React reuses a path element for a man who is still on the field
+		// and has no idea the loop below has been writing to its style.
+		for (const trail of trailNodes.current.values()) {
+			trail.style.strokeDashoffset = "1";
+		}
 		// The play fills the scene, minus a beat at the end so the last frame is
 		// held rather than cut off by the next play arriving.
 		const dur = Math.max(320, (sceneMs ?? 1100) * 0.88);
@@ -621,13 +639,14 @@ const LiveField = ({
 		const step = (now: number) => {
 			const playT = Math.min(1, (now - start) / dur);
 			for (const actor of pathed) {
-				place(
-					actor,
-					pointAlongPath(
-						actor.path!,
-						jobProgress(playT, actor.delay, actor.pos, actor.skills),
-					),
-				);
+				const p = jobProgress(playT, actor.delay, actor.pos, actor.skills);
+				place(actor, pointAlongPath(actor.path!, p));
+				// His trail is drawn in behind him. Every trail is one user unit
+				// long (pathLength), so the offset IS the fraction still to run.
+				const trail = trailNodes.current.get(actor.pid);
+				if (trail) {
+					trail.style.strokeDashoffset = String(1 - p);
+				}
 			}
 			if (playT < 1) {
 				playRafRef.current = requestAnimationFrame(step);
@@ -776,6 +795,74 @@ const LiveField = ({
 	const leftEndzone = awayColor;
 	const rightEndzone = homeColor;
 	const midfieldLogo = neutralSite ? undefined : (home?.imgURL ?? undefined);
+
+	// The trails, one per man who actually goes somewhere. A lineman who shuffles
+	// half a yard gets none - twenty-two stubs would be noise, and what the eye
+	// is looking for is the five men running routes and the men chasing them.
+	const trails: ReactNode[] = [];
+	if (scene) {
+		for (const actor of scene.actors) {
+			const path = actor.path;
+			if (!path || path.length < 2) {
+				continue;
+			}
+			let len = 0;
+			for (let i = 1; i < path.length; i += 1) {
+				len += Math.hypot(
+					path[i]!.x - path[i - 1]!.x,
+					path[i]!.y - path[i - 1]!.y,
+				);
+			}
+			if (len < 1.2) {
+				continue;
+			}
+			const displayT = actor.t ?? scene.t;
+			// The man with the ball is the line you are meant to follow, so his is
+			// brighter and heavier than everybody else's.
+			const lead = actor.role === "main";
+			const d = `M${path.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join("L")}`;
+			// A CASING under every trail. A two-pixel team-coloured line over mowed
+			// grass is invisible for half the league - a dark teal trail on a dark
+			// green field is no line at all - so each one is drawn twice, a wider
+			// dark stroke first and the team's colour on top. It is what a map does
+			// with a road label, and for the same reason.
+			//
+			// The dash lives on the GROUP: stroke-dasharray and stroke-dashoffset
+			// are inherited, so one write in the animation loop reveals the casing
+			// and the colour together and they can never come apart.
+			trails.push(
+				<g
+					key={actor.pid}
+					ref={(el) => {
+						if (el) {
+							trailNodes.current.set(actor.pid, el);
+						} else {
+							trailNodes.current.delete(actor.pid);
+						}
+					}}
+					fill="none"
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					style={{ strokeDasharray: "1", strokeDashoffset: "1" }}
+				>
+					<path
+						d={d}
+						pathLength={1}
+						stroke="#0b1f10"
+						strokeWidth={lead ? 1.05 : 0.62}
+						opacity={lead ? 0.55 : 0.34}
+					/>
+					<path
+						d={d}
+						pathLength={1}
+						stroke={displayT === 0 ? awayTrail : homeTrail}
+						strokeWidth={lead ? 0.7 : 0.34}
+						opacity={lead ? 1 : 0.72}
+					/>
+				</g>,
+			);
+		}
+	}
 
 	const bodies: ReactNode[] = [];
 	if (scene) {
@@ -1186,6 +1273,29 @@ const LiveField = ({
 							opacity={0.95}
 						/>
 					) : null}
+				</svg>
+
+				{/* THE PLAY, DRAWN. Every man already carried his whole path - the
+				    route, the pursuit angle, the guard pulling across - and none of
+				    it was on the screen, so a play read as chips sliding about
+				    rather than as a play. This is the way football is actually
+				    studied: All-22 with the paths drawn in.
+				    Each trail is revealed BEHIND its man as he runs it (one user
+				    unit long, so the dash offset is simply how much he has left),
+				    which means the shape of the play builds up in front of you and
+				    is all there to look at when the whistle goes. */}
+				<svg
+					viewBox={VIEW}
+					preserveAspectRatio="none"
+					style={{
+						position: "absolute",
+						inset: 0,
+						width: "100%",
+						height: "100%",
+						pointerEvents: "none",
+					}}
+				>
+					{trails}
 				</svg>
 
 				{/* Bodies live in HTML above the SVG so they can carry facesjs
