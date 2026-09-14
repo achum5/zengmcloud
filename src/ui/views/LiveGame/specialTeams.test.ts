@@ -1,6 +1,7 @@
 import { assert, beforeEach, describe, test } from "vitest";
 import { clearCourtRng, seedCourtRng } from "./courtRng.ts";
 import {
+	assignHuddle,
 	assignScramble,
 	assignSpecialTeams,
 	carrierPath,
@@ -281,5 +282,67 @@ describe("a loose ball", () => {
 		);
 		const delays = after.map((a) => a.delay ?? 0);
 		assert.ok(Math.max(...delays) > Math.min(...delays), "everybody arrived together");
+	});
+});
+
+describe("a stoppage", () => {
+	const eleven = (): FieldActor[] =>
+		Array.from({ length: 11 }, (_, i) => ({
+			pid: 400 + i,
+			name: `H${i}`,
+			x: geom.losX + (i - 5) * 1.5,
+			y: MID_Y + ((i % 5) - 2) * 5,
+			role: "onField" as const,
+			slotIndex: i,
+			t: 0 as const,
+		}));
+
+	test("everybody goes to the huddle and nobody stands where the whistle caught him", () => {
+		const before = eleven();
+		const after = assignHuddle({ actors: before, geom, depth: 9, across: -13 });
+		assert.strictEqual(after.length, 11);
+		for (const [i, a] of after.entries()) {
+			assert.ok(a.path && a.path.length === 2, "a man who did not move");
+			assert.deepStrictEqual(a.path![0], {
+				x: before[i]!.x,
+				y: before[i]!.y,
+			});
+		}
+	});
+
+	test("the huddle is a ring, not a pile", () => {
+		const after = assignHuddle({
+			actors: eleven(),
+			geom,
+			depth: 9,
+			across: -13,
+		});
+		for (const [i, a] of after.entries()) {
+			for (const b of after.slice(i + 1)) {
+				assert.ok(
+					Math.hypot(a.x - b.x, a.y - b.y) > 0.5,
+					"two men in the same spot",
+				);
+			}
+		}
+		// And it is behind the ball on the side it was told to form.
+		const centreX = after.reduce((sum, a) => sum + a.x, 0) / after.length;
+		assert.ok((geom.losX - centreX) * geom.dir > 5);
+	});
+
+	test("the huddle stays on the field", () => {
+		for (const across of [-25, 0, 25]) {
+			for (const ballAcross of [4, MID_Y, FIELD_W - 4]) {
+				const after = assignHuddle({
+					actors: eleven(),
+					geom: { ...geom, ballAcross },
+					depth: 9,
+					across,
+				});
+				for (const a of after) {
+					assert.ok(a.y >= 0 && a.y <= FIELD_W, `huddle off the field: ${a.y}`);
+				}
+			}
+		}
 	});
 });

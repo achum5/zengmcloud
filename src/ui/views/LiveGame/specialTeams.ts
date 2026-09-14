@@ -560,3 +560,43 @@ export const assignScramble = ({
 		};
 	});
 };
+
+// PLAY IS STOPPED. A timeout, the end of a quarter, the final whistle - and
+// twenty-two men left standing in the formation they happened to be in, which
+// is the one thing on a football field that never happens. They break into
+// their own huddles, which is both what really occurs and a clear visual full
+// stop between one play and the next.
+export const assignHuddle = ({
+	actors,
+	geom,
+	// How far behind the ball the huddle forms, and which side of the field.
+	depth,
+	across,
+}: {
+	actors: FieldActor[];
+	geom: Geom;
+	depth: number;
+	across: number;
+}): FieldActor[] => {
+	const centre = toField(
+		geom.losX,
+		geom.dir,
+		depth,
+		geom.ballAcross + across * dirAcross(geom.dir),
+	);
+	const n = Math.max(1, actors.length);
+	return actors.map((actor, i) => {
+		const angle = (i / n) * Math.PI * 2;
+		const at = {
+			x: centre.x + Math.cos(angle) * 3.2,
+			y: clampY(centre.y + Math.sin(angle) * 2.6),
+		};
+		return {
+			...actor,
+			x: at.x,
+			y: at.y,
+			path: [{ x: actor.x, y: actor.y }, at],
+			delay: 0.02 + (i % 4) * 0.03,
+		};
+	});
+};

@@ -19,6 +19,7 @@ import {
 } from "./fieldSpots.ts";
 import type { BallFlight } from "./fieldAnimation.ts";
 import {
+	assignHuddle,
 	assignScramble,
 	assignSpecialTeams,
 	carrierPath,
@@ -716,6 +717,45 @@ export const buildFieldScene = ({
 				ctx.front?.name ?? "Base",
 				ctx.coverage.name,
 			);
+		} else if (call.scheme?.dropback) {
+			// A SCRAMBLE started as a pass and stopped being one. The line is
+			// protecting, the receivers are running routes, and the defense is in
+			// its coverage - the quarterback is simply the man who ended up with
+			// the ball, which is the whole difference between a scramble and a
+			// designed quarterback run.
+			if (!ctx.coverage) {
+				ctx.coverage = chooseCoverage({
+					down,
+					toGo,
+					scrimmage,
+					sacked: false,
+				});
+			}
+			const concept = callPass({ airYards: undefined, toGo, sacked: false });
+			offense = assignRoutes({
+				actors: offense,
+				slots: offSlots,
+				concept,
+				geom,
+				protectDepth: 5.5,
+				empty: offFormation?.empty,
+				motion: ctx.motion,
+				shell: ctx.coverage.shell,
+			});
+			defense = assignCoverage({
+				defenders: defense,
+				defSlots,
+				receivers: offense,
+				coverage: ctx.coverage,
+				target: toField(losX, dir, 5.5, across),
+				geom,
+				reachTarget: false,
+				ballTo: undefined,
+			});
+			defenseName = defenseLabel(
+				ctx.front?.name ?? "Base",
+				ctx.coverage.name,
+			);
 		} else if (call.scheme) {
 			defenseName = ctx.front?.name;
 			offense = assignRunBlocking({
@@ -822,6 +862,13 @@ export const buildFieldScene = ({
 			offense = offense.map((a) => byPid.get(a.pid) ?? a);
 			defense = defense.map((a) => byPid.get(a.pid) ?? a);
 		}
+	}
+
+	// PLAY IS STOPPED and the two teams go to their own huddles rather than
+	// standing where the whistle caught them.
+	if (beat.kind === "dead") {
+		offense = assignHuddle({ actors: offense, geom, depth: 9, across: -13 });
+		defense = assignHuddle({ actors: defense, geom, depth: -11, across: 13 });
 	}
 
 	// A FUMBLE cancels every assignment on the field at once: the men near it

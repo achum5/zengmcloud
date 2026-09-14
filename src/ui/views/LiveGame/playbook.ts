@@ -398,6 +398,11 @@ export type RunScheme = {
 	// The back presses one way and cuts back the other: this is how far the
 	// press goes before the cut.
 	press?: number;
+	// It began as a pass. The line is protecting, the receivers are running
+	// routes, and the man carrying it is the quarterback leaving a pocket that
+	// did not hold - which looks nothing like a designed run, and used to be
+	// drawn as one.
+	dropback?: boolean;
 };
 
 export const RUN_SCHEMES: RunScheme[] = [
@@ -417,6 +422,7 @@ export const QB_SCRAMBLE: RunScheme = {
 	aim: 6,
 	hold: 0.42,
 	press: -4,
+	dropback: true,
 };
 export const KNEEL_DOWN: RunScheme = { name: "Victory", aim: 0, hold: 0.2 };
 
@@ -925,7 +931,9 @@ export const assignRunPursuit = ({
 export const engageLine = ({
 	blockers,
 	rushers,
-	// How far the rusher wins: 0 is a standstill, 1 is right through him.
+	// How far the rusher wins ON AVERAGE: 0 is a standstill, 1 is right through
+	// him. Every pair is rolled around it, because a line where all five men
+	// give exactly the same ground is a line nobody is fighting on.
 	push = 0.42,
 }: {
 	blockers: FieldActor[];
@@ -956,9 +964,11 @@ export const engageLine = ({
 		claimed.set(pair.b, pair.r);
 		const b = blockers[pair.b]!;
 		const r = rushers[pair.r]!;
+		// Some of them hold and some of them get driven backwards.
+		const won = Math.max(0.05, Math.min(0.95, push + (courtRandom() - 0.5) * 0.5));
 		meeting.set(pair.b, {
-			x: b.x + (r.x - b.x) * push,
-			y: b.y + (r.y - b.y) * push,
+			x: b.x + (r.x - b.x) * won,
+			y: b.y + (r.y - b.y) * won,
 		});
 	}
 

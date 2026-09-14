@@ -394,3 +394,67 @@ describe("the details a viewer reads first", () => {
 		assert.deepStrictEqual(scene.ball!.path, carrier.path);
 	});
 });
+
+describe("a scramble", () => {
+	// It started as a pass and stopped being one, which looks nothing like a
+	// designed quarterback run - and used to be drawn as exactly that.
+	const scramble = () =>
+		build(
+			{ type: "run", names: ["QB100"], yds: 13 },
+			0,
+			sportState({
+				plays: [{ down: 2, toGo: 9, scrimmage: 40, yards: 13, t: 0 }],
+			}),
+			(() => {
+				const c = newFieldSceneCtx();
+				// The handoff/dropback that opened the play named the quarterback.
+				c.quarterback = "QB100";
+				return c;
+			})(),
+		)!;
+
+	test("is called a scramble and the defense is in a coverage, not run defense", () => {
+		const scene = scramble();
+		assert.ok(scene.playName!.includes("Scramble"), scene.playName);
+		assert.ok(
+			scene.defenseName?.includes("Cover") ||
+				scene.defenseName?.includes("Quarters") ||
+				scene.defenseName?.includes("Tampa") ||
+				scene.defenseName?.includes("Fire"),
+			`defense was "${scene.defenseName}"`,
+		);
+	});
+
+	test("the line is protecting and the receivers are running routes", () => {
+		const scene = scramble();
+		const linemen = scene.actors.filter((a) => a.job === "block");
+		assert.ok(linemen.length >= 4, "nobody was protecting");
+		// A protecting lineman gives ground; a run blocker fires forward.
+		for (const lineman of linemen) {
+			assert.ok(
+				(scene.losX - lineman.x) * scene.dir > 0,
+				"a lineman who fired off downhill on a scramble",
+			);
+		}
+		assert.ok(
+			scene.actors.some((a) => a.job === "route"),
+			"nobody ran a route",
+		);
+	});
+
+	test("a short-yardage keeper is still a sneak, not a scramble", () => {
+		const scene = build(
+			{ type: "run", names: ["QB100"], yds: 1 },
+			0,
+			sportState({
+				plays: [{ down: 4, toGo: 1, scrimmage: 40, yards: 1, t: 0 }],
+			}),
+			(() => {
+				const c = newFieldSceneCtx();
+				c.quarterback = "QB100";
+				return c;
+			})(),
+		)!;
+		assert.ok(scene.playName!.includes("Sneak"), scene.playName);
+	});
+});
