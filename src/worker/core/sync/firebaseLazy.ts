@@ -8,11 +8,4 @@
 // the split. The test that guards it lives in loadSyncBackend.test.ts.
 export { FirebaseTransport } from "./FirebaseTransport.ts";
 export { ensureAnonymousAuth } from "./auth.ts";
-export {
-	listSyncRooms,
-	deleteSyncRoom,
-	deleteAllSyncRooms,
-	pruneSyncRoomChanges,
-	pruneAllSyncRoomChanges,
-} from "./adminRooms.ts";
-export type { SyncRoom } from "./adminRooms.ts";
+export { deleteSyncRoom } from "./deleteRoom.ts";

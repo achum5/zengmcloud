@@ -1,5 +1,3 @@
-import type { SyncRoom } from "./adminRooms.ts";
-
 // The Firebase SDK is 428 KB of a 2,517 KB worker bundle - firestore, auth and
 // the webchannel wrapper - and a league that is never shared downloads and
 // parses every byte of it for nothing. This one dynamic import is what stops
@@ -11,21 +9,7 @@ import type { SyncRoom } from "./adminRooms.ts";
 // registry memoizes it, so later calls are free.
 export const loadSyncBackend = () => import("./firebaseLazy.ts");
 
-// Room administration. Thin wrappers rather than re-exports, so a caller can
-// reach these without the eager bundle naming the Firebase side at all.
-export const listSyncRooms = async (): Promise<SyncRoom[]> =>
-	(await loadSyncBackend()).listSyncRooms();
-
+// Clearing a league's cloud data. A thin wrapper rather than a re-export, so a
+// caller can reach it without the eager bundle naming the Firebase side at all.
 export const deleteSyncRoom = async (code: string) =>
 	(await loadSyncBackend()).deleteSyncRoom(code);
-
-export const deleteAllSyncRooms = async () =>
-	(await loadSyncBackend()).deleteAllSyncRooms();
-
-export const pruneSyncRoomChanges = async (
-	code: string,
-	olderThanDays: number,
-) => (await loadSyncBackend()).pruneSyncRoomChanges(code, olderThanDays);
-
-export const pruneAllSyncRoomChanges = async (olderThanDays: number) =>
-	(await loadSyncBackend()).pruneAllSyncRoomChanges(olderThanDays);

@@ -33,7 +33,7 @@ const BEHIND_THE_BOUNDARY = new Set([
 	"firebaseApp.ts",
 	"auth.ts",
 	"FirebaseTransport.ts",
-	"adminRooms.ts",
+	"deleteRoom.ts",
 	"firebaseLazy.ts",
 ]);
 

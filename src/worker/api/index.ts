@@ -101,10 +101,7 @@ import {
 	claimSyncAuthority,
 	checkSyncReady,
 	connectSharedLeague,
-	deleteAllSyncRooms,
 	deleteSyncRoom,
-	pruneAllSyncRoomChanges,
-	pruneSyncRoomChanges,
 	endLiveBroadcast,
 	disconnectSharedLeague,
 	getConnectedLid,
@@ -119,7 +116,6 @@ import {
 	resolveSyncLocalName,
 	beginLotteryReveal,
 	flushDeferredRefreshAfterLive,
-	listSyncRooms,
 	leaveLiveBroadcast,
 	markFollowedBroadcastOver,
 	markSyncRequired,
@@ -2709,26 +2705,6 @@ const trivia82Options = async ({
 
 const trivia82Simulate = async (picks: { pid: number; season: number }[]) => {
 	return simulateEightyTwoZeroSeason(picks);
-};
-
-// toWorker hands each api function exactly one argument, so the two-parameter
-// prune helpers get object-shaped wrappers.
-const pruneSyncRoomChangesApi = async ({
-	code,
-	olderThanDays,
-}: {
-	code: string;
-	olderThanDays: number;
-}) => {
-	return pruneSyncRoomChanges(code, olderThanDays);
-};
-
-const pruneAllSyncRoomChangesApi = async ({
-	olderThanDays,
-}: {
-	olderThanDays: number;
-}) => {
-	return pruneAllSyncRoomChanges(olderThanDays);
 };
 
 const triviaGridCatalog = async () => {
@@ -7513,11 +7489,7 @@ export default {
 		getSyncTeams,
 		getSyncDeviceName,
 		setSyncDeviceName,
-		listSyncRooms,
 		deleteSyncRoom,
-		deleteAllSyncRooms,
-		pruneSyncRoomChangesApi,
-		pruneAllSyncRoomChangesApi,
 		lotteryRevealUpdate,
 		publishAutoPlayState,
 		resyncSharedLeague,

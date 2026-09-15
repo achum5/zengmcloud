@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-// In `common` (not with the sync code) precisely so the UI can read it: the
-// build blacklists worker imports from UI, and duplicating the number here
-// would let the admin default drift from the window actually being stamped.
-import { RETENTION_DAYS } from "../../common/syncRetention.ts";
 import { generateRoomCode, roomCodeWarning } from "../../common/roomCode.ts";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { useLocal } from "../util/local.ts";
+import { confirm } from "../util/confirm.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { buildSyncLogCapture } from "../util/syncDebugStore.ts";
 import {
@@ -35,10 +32,6 @@ import {
 	looksLikeSyncInvite,
 } from "../../common/syncInvite.ts";
 import type { FirebaseConfig } from "../../common/firebaseConfig.ts";
-import type { SyncRoom } from "../../worker/core/sync/adminRooms.ts";
-
-// Cosmetic gate for the room-admin panel (real security is the Firestore rules).
-const ADMIN_PASSWORD = "abc123";
 
 type Status = "disconnected" | "connecting" | "connected";
 type PushPermission = "default" | "denied" | "granted";
@@ -180,16 +173,9 @@ const MultiplayerSync = () => {
 	const [dayBusy, setDayBusy] = useState(false);
 	const [dayResult, setDayResult] = useState<string | undefined>();
 
-	// Room admin (clear Firestore codes), gated by a cosmetic password.
-	const [adminInput, setAdminInput] = useState("");
-	const [adminUnlocked, setAdminUnlocked] = useState(false);
-
 	const [syncDebug, setSyncDebug] = useState(syncDebugEnabled());
-	const [rooms, setRooms] = useState<SyncRoom[]>([]);
-	const [pruneDays, setPruneDays] = useState(RETENTION_DAYS);
 	const [adminBusy, setAdminBusy] = useState(false);
 	const [adminMsg, setAdminMsg] = useState<string | undefined>();
-	const [deleteCode, setDeleteCode] = useState("");
 
 	// On mount, reflect whatever the worker's sync engine is currently doing
 	// (it may already be connected from an auto-reconnect after refresh), and
@@ -407,70 +393,29 @@ const MultiplayerSync = () => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [status, mpSyncIsHost, mpSyncHostName]);
 
-	const refreshRooms = async () => {
-		setAdminBusy(true);
-		setAdminMsg(undefined);
-		try {
-			setRooms(await toWorker("main", "listSyncRooms", undefined));
-		} catch (err) {
-			setAdminMsg((err as Error).message ?? String(err));
-		} finally {
-			setAdminBusy(false);
-		}
-	};
-
-	const unlockAdmin = async () => {
-		if (adminInput !== ADMIN_PASSWORD) {
-			setAdminMsg("Wrong password.");
+	// Clear this league's cloud data: every document the room accumulated, then
+	// the room itself. Scoped to the room this device is actually in - there is
+	// no way to reach anyone else's, and no listing of them to reach into (see
+	// the note at the top of firestore.rules).
+	const deleteCloudData = async (room: string) => {
+		const proceed = await confirm(
+			`Delete all cloud data for "${room}"? Everyone keeps their own local copy of the league, but the shared room is gone for good.`,
+			{ okText: "Delete cloud data" },
+		);
+		if (!proceed) {
 			return;
 		}
-		setAdminUnlocked(true);
-		setAdminInput("");
-		await refreshRooms();
-	};
-
-	const removeRoom = async (code: string) => {
 		setAdminBusy(true);
 		setAdminMsg(undefined);
 		try {
-			await toWorker("main", "deleteSyncRoom", code);
-			setAdminMsg(`Deleted "${code}".`);
-			await refreshRooms();
-		} catch (err) {
-			setAdminMsg((err as Error).message ?? String(err));
-		} finally {
-			setAdminBusy(false);
-		}
-	};
-
-	const removeAllRooms = async () => {
-		setAdminBusy(true);
-		setAdminMsg(undefined);
-		try {
-			const n = await toWorker("main", "deleteAllSyncRooms", undefined);
-			setAdminMsg(`Deleted ${n} room${n === 1 ? "" : "s"}.`);
-			await refreshRooms();
-		} catch (err) {
-			setAdminMsg((err as Error).message ?? String(err));
-		} finally {
-			setAdminBusy(false);
-		}
-	};
-
-	// Trim old changesets out of every room. This is what actually reclaims the
-	// storage a long-running league has piled up: the TTL policy only reaches
-	// entries written since `ttlAt` existed, so everything older needs a sweep.
-	const pruneRooms = async () => {
-		setAdminBusy(true);
-		setAdminMsg(undefined);
-		try {
-			const n = await toWorker("main", "pruneAllSyncRoomChangesApi", {
-				olderThanDays: pruneDays,
-			});
-			setAdminMsg(
-				`Deleted ${n.toLocaleString()} change${n === 1 ? "" : "s"} older than ${pruneDays} days.`,
-			);
-			await refreshRooms();
+			await toWorker("main", "disconnectSharedLeague", undefined);
+			if (typeof lid === "number") {
+				clearStoredSync(lid);
+			}
+			setInvite(undefined);
+			setStatus("disconnected");
+			await toWorker("main", "deleteSyncRoom", room);
+			setAdminMsg(`Deleted the cloud data for "${room}".`);
 		} catch (error) {
 			setAdminMsg((error as Error).message ?? String(error));
 		} finally {
@@ -1154,130 +1099,23 @@ const MultiplayerSync = () => {
 				</div>
 			) : null}
 
-			<div className="card mt-3" style={{ maxWidth: 500 }}>
-				<div className="card-body">
-					<h3 className="card-title h5">Manage rooms</h3>
-
-					{!adminUnlocked ? (
-						<form
-							className="d-flex gap-2"
-							onSubmit={(event) => {
-								event.preventDefault();
-								void unlockAdmin();
-							}}
+			{connected && code.trim() !== "" ? (
+				<div className="card mt-3" style={{ maxWidth: 500 }}>
+					<div className="card-body">
+						<h3 className="card-title h5">Cloud data</h3>
+						<button
+							className="btn btn-danger"
+							disabled={adminBusy}
+							onClick={() => void deleteCloudData(code.trim())}
 						>
-							<input
-								type="password"
-								className="form-control"
-								placeholder="Password"
-								value={adminInput}
-								onChange={(event) => setAdminInput(event.target.value)}
-							/>
-							<button className="btn btn-secondary" type="submit">
-								Unlock
-							</button>
-						</form>
-					) : (
-						<>
-							<div className="d-flex gap-2 mb-3">
-								<input
-									type="text"
-									className="form-control"
-									placeholder="Delete a code…"
-									value={deleteCode}
-									onChange={(event) => setDeleteCode(event.target.value)}
-								/>
-								<button
-									className="btn btn-danger"
-									disabled={adminBusy || deleteCode.trim() === ""}
-									onClick={() => {
-										const code = deleteCode.trim();
-										setDeleteCode("");
-										void removeRoom(code);
-									}}
-								>
-									Delete
-								</button>
-							</div>
-
-							<div className="d-flex align-items-center gap-2 mb-3">
-								<input
-									type="number"
-									className="form-control"
-									style={{ maxWidth: 90 }}
-									min={1}
-									value={pruneDays}
-									title="Keep this many days of change history"
-									onChange={(event) =>
-										setPruneDays(
-											Math.max(1, Number.parseInt(event.target.value) || 1),
-										)
-									}
-								/>
-								<button
-									className="btn btn-warning flex-grow-1"
-									disabled={adminBusy}
-									onClick={() => void pruneRooms()}
-								>
-									Trim history in all rooms
-								</button>
-							</div>
-
-							<div className="d-flex align-items-center gap-2 mb-2">
-								<button
-									className="btn btn-sm btn-light-bordered"
-									disabled={adminBusy}
-									onClick={() => void refreshRooms()}
-								>
-									{adminBusy ? "Working…" : "Refresh"}
-								</button>
-								{rooms.length > 0 ? (
-									<button
-										className="btn btn-sm btn-danger"
-										disabled={adminBusy}
-										onClick={() => void removeAllRooms()}
-									>
-										Delete all ({rooms.length})
-									</button>
-								) : null}
-							</div>
-
-							{rooms.length === 0 ? (
-								<p className="text-body-secondary mb-0">No rooms listed.</p>
-							) : (
-								<ul className="list-group list-group-flush">
-									{rooms.map((room) => (
-										<li
-											key={room.code}
-											className="list-group-item px-0 d-flex align-items-center gap-2"
-										>
-											<span className="flex-grow-1">
-												<b>{room.code}</b>
-												{room.updatedAt ? (
-													<span className="text-body-secondary d-block small">
-														{relativeTime(room.updatedAt)}
-													</span>
-												) : null}
-											</span>
-											<button
-												className="btn btn-sm btn-outline-danger"
-												disabled={adminBusy}
-												onClick={() => void removeRoom(room.code)}
-											>
-												Delete
-											</button>
-										</li>
-									))}
-								</ul>
-							)}
-						</>
-					)}
-
-					{adminMsg ? (
-						<div className="alert alert-info py-2 mt-3 mb-0">{adminMsg}</div>
-					) : null}
+							{adminBusy ? "Deleting…" : "Delete this league's cloud data"}
+						</button>
+						{adminMsg ? (
+							<div className="alert alert-info py-2 mt-3 mb-0">{adminMsg}</div>
+						) : null}
+					</div>
 				</div>
-			</div>
+			) : null}
 		</>
 	);
 };
