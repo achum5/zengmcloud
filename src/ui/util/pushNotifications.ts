@@ -1,5 +1,4 @@
-import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
-import { getMessaging, getToken, isSupported } from "firebase/messaging";
+import type { FirebaseApp } from "firebase/app";
 import { firebaseConfig, vapidKey } from "../../common/firebaseConfig.ts";
 import { safeLocalStorage } from "./safeLocalStorage.ts";
 import { toWorker } from "./toWorker.ts";
@@ -11,9 +10,12 @@ import { PUSH_ENABLED_KEY, PUSH_NAME_KEY } from "./pushNotificationsShared.ts";
 // SharedWorker. The token is then handed to the worker, which stores it in the
 // league room for the Cloud Function to deliver to.
 //
-// This module is imported only by the Multiplayer Sync page, so firebase/messaging
-// (a large dependency) is not pulled into the bundle for anyone who never opens
-// that page.
+// The SDK is loaded on demand rather than imported at the top, because a device
+// that never turns push on must never pay for it - the same rule the worker's
+// sync backend follows (see loadSyncBackend.ts), and the same reason: these are
+// bytes almost nobody needs. Every call below reaches the SDK through a dynamic
+// import, and the cheap native checks run FIRST so an unsupported browser (or a
+// device with push off) never fetches it at all.
 
 // FCM registers its own service worker at this dedicated scope, so it never
 // clobbers the app's main Workbox service worker (which controls "/").
@@ -25,18 +27,27 @@ const FCM_SW_SCOPE = "/firebase-cloud-messaging-push-scope";
 const ENABLED_KEY = PUSH_ENABLED_KEY;
 const NAME_KEY = PUSH_NAME_KEY;
 
-const getApp = (): FirebaseApp =>
-	getApps().length > 0 ? getApps()[0]! : initializeApp(firebaseConfig);
+const getApp = async (): Promise<FirebaseApp> => {
+	const { initializeApp, getApps } = await import("firebase/app");
+	return getApps().length > 0 ? getApps()[0]! : initializeApp(firebaseConfig);
+};
 
 // Whether this browser can do web push at all. On iPhone this is only true once
 // the site has been added to the Home Screen (installed as a PWA).
+//
+// The two native checks come first deliberately: they rule out most browsers
+// without loading anything, so only a browser that might actually support push
+// pays for the SDK to answer the question properly.
 export const pushSupported = async (): Promise<boolean> => {
 	try {
-		return (
-			typeof Notification !== "undefined" &&
-			"serviceWorker" in navigator &&
-			(await isSupported())
-		);
+		if (
+			typeof Notification === "undefined" ||
+			!("serviceWorker" in navigator)
+		) {
+			return false;
+		}
+		const { isSupported } = await import("firebase/messaging");
+		return await isSupported();
 	} catch {
 		return false;
 	}
@@ -54,7 +65,8 @@ const registerToken = async (name: string): Promise<string> => {
 	const registration = await navigator.serviceWorker.register(FCM_SW_URL, {
 		scope: FCM_SW_SCOPE,
 	});
-	const messaging = getMessaging(getApp());
+	const { getMessaging, getToken } = await import("firebase/messaging");
+	const messaging = getMessaging(await getApp());
 	const token = await getToken(messaging, {
 		vapidKey,
 		serviceWorkerRegistration: registration,

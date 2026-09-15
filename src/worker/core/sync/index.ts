@@ -14,8 +14,8 @@ export {
 	deleteAllSyncRooms,
 	pruneSyncRoomChanges,
 	pruneAllSyncRoomChanges,
-	type SyncRoom,
-} from "./adminRooms.ts";
+} from "./loadSyncBackend.ts";
+export type { SyncRoom } from "./adminRooms.ts";
 export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 export { setDraftReady } from "./draftReady.ts";
 export { sendLiveChatMessage } from "./liveChat.ts";
@@ -55,5 +55,4 @@ export {
 	type SyncActivityItem,
 } from "./connect.ts";
 export { beginLotteryReveal } from "./notifications.ts";
-export { FirebaseTransport } from "./FirebaseTransport.ts";
 export type { Authority, ChangesetEntry, SyncTransport } from "./types.ts";

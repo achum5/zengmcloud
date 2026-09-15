@@ -7,10 +7,10 @@ import {
 	formatPhaseForensics,
 	getPhaseForensics,
 } from "../phase/phaseForensics.ts";
-import { FirebaseTransport } from "./FirebaseTransport.ts";
+import type { FirebaseTransport } from "./FirebaseTransport.ts";
 import { outbox } from "./outbox.ts";
-import { ensureAnonymousAuth } from "./auth.ts";
-import { setActiveFirebaseConfig } from "./firebaseApp.ts";
+import { loadSyncBackend } from "./loadSyncBackend.ts";
+import { setActiveFirebaseConfig } from "./firebaseAppState.ts";
 import type { FirebaseConfig } from "./firebaseConfig.ts";
 import { setApplyGuard } from "./applyGuard.ts";
 import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
@@ -1842,8 +1842,13 @@ const doConnectSharedLeague = async ({
 	// the default project, so an ordinary room is unaffected.
 	setActiveFirebaseConfig(firebaseConfig);
 
+	// First touch of the Firebase SDK in this session, and the point its chunk is
+	// fetched. Everything above here runs in a league that never connects, which
+	// is why the import is deferred to exactly this line.
+	const backend = await loadSyncBackend();
+
 	// Authenticate - the uid is our stable, rule-enforceable sync identity.
-	const clientId = await ensureAnonymousAuth();
+	const clientId = await backend.ensureAnonymousAuth();
 
 	const lid = g.get("lid");
 	const lidNumber = typeof lid === "number" ? lid : undefined;
@@ -1860,7 +1865,7 @@ const doConnectSharedLeague = async ({
 		explicit,
 	});
 
-	const transport = new FirebaseTransport(trimmed, clientId, {
+	const transport = new backend.FirebaseTransport(trimmed, clientId, {
 		sinceTs: watermark,
 	});
 

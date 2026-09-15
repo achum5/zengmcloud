@@ -1,9 +1,9 @@
 import { assert, test } from "vitest";
+import { getFirebaseApp } from "./firebaseApp.ts";
 import {
 	getActiveFirebaseConfig,
-	getFirebaseApp,
 	setActiveFirebaseConfig,
-} from "./firebaseApp.ts";
+} from "./firebaseAppState.ts";
 import { firebaseConfig } from "./firebaseConfig.ts";
 
 test("with no custom config, uses the built-in project's default app", () => {
