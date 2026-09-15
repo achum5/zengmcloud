@@ -1,6 +1,6 @@
 import { rewriteStaleLid } from "./rewriteStaleLid.ts";
 
-export interface Params {
+interface Params {
 	[key: string]: string | undefined;
 }
 
