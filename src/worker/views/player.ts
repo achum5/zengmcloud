@@ -43,6 +43,7 @@ import {
 import type { ContractValueBreakdown } from "../../common/contractValue.ts";
 import { getGroupPrefix } from "../core/awards/prefixes.ts";
 import { getPlayerImpact } from "../util/getPlayerImpact.ts";
+import type { LeagueUrlParts } from "../../ui/router/types.ts";
 
 export const getPlayerProfileStats = () => {
 	const stats = [];
@@ -557,10 +558,10 @@ export const getCommon = async (
 				description += `, ${show(ratings.ovr)}/${show(ratings.pot)}`;
 			}
 
-			const path = [view, p2.pid];
-			if (season !== undefined) {
-				path.push(season);
-			}
+			const path: LeagueUrlParts =
+				view === "player_game_log"
+					? ["player_game_log", p2.pid, season]
+					: ["player", p2.pid];
 
 			return {
 				type: "link",

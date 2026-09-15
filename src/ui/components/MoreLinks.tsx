@@ -7,6 +7,7 @@ import type { DraftType, PlayerStatType } from "../../common/types.ts";
 import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
+import type { LeagueUrlParts } from "../router/types.ts";
 
 export const MoreLinks = (
 	props: (
@@ -78,7 +79,7 @@ export const MoreLinks = (
 	} = useLocal(["godMode", "rotationPlans", "season"]);
 
 	let links: {
-		url: (string | number | undefined)[] | string;
+		url: string | Readonly<LeagueUrlParts>;
 		name: string;
 		className?: string;
 	}[];
@@ -87,10 +88,7 @@ export const MoreLinks = (
 
 		links = [
 			{
-				url:
-					season !== undefined
-						? ["roster", `${abbrev}_${tid}`, season]
-						: ["roster", `${abbrev}_${tid}`],
+				url: ["roster", `${abbrev}_${tid}`, season],
 				name: "Roster",
 			},
 			{
@@ -98,10 +96,7 @@ export const MoreLinks = (
 				name: "Finances",
 			},
 			{
-				url:
-					season !== undefined
-						? ["game_log", `${abbrev}_${tid}`, season]
-						: ["game_log", `${abbrev}_${tid}`],
+				url: ["game_log", `${abbrev}_${tid}`, season],
 				name: "Game Log",
 			},
 			{ url: ["draft_picks", `${abbrev}_${tid}`], name: "Draft Picks" },
@@ -121,17 +116,11 @@ export const MoreLinks = (
 				name: "Schedule",
 			},
 			{
-				url:
-					season !== undefined
-						? ["transactions", `${abbrev}_${tid}`, season]
-						: ["transactions", `${abbrev}_${tid}`],
+				url: ["transactions", `${abbrev}_${tid}`, season],
 				name: "Transactions",
 			},
 			{
-				url:
-					season !== undefined
-						? ["news", `${abbrev}_${tid}`, season]
-						: ["news", `${abbrev}_${tid}`],
+				url: ["news", `${abbrev}_${tid}`, season],
 				name: "News Feed",
 			},
 			{
@@ -228,15 +217,13 @@ export const MoreLinks = (
 				name: "Draft Picks",
 			},
 			{
-				url:
-					season !== undefined ? ["draft_lottery", season] : ["draft_lottery"],
+				url: ["draft_lottery", season],
 				name: NO_LOTTERY_DRAFT_TYPES.has(draftType as any)
 					? "Draft Order"
 					: "Draft Lottery",
 			},
 			{
-				url:
-					season !== undefined ? ["draft_history", season] : ["draft_history"],
+				url: ["draft_history", season],
 				name:
 					draftType === "freeAgents" ? "Prospects History" : "Draft History",
 			},
@@ -257,7 +244,7 @@ export const MoreLinks = (
 
 		links = [
 			{
-				url: season === undefined ? ["award_races"] : ["award_races", season],
+				url: ["award_races", season],
 				name: "Award Races",
 			},
 			{
@@ -268,10 +255,7 @@ export const MoreLinks = (
 
 		if (godMode) {
 			links.push({
-				url:
-					season === undefined
-						? ["edit_award_winners"]
-						: ["edit_award_winners", season],
+				url: ["edit_award_winners", season],
 				name: "Edit Award Winners",
 				className: "god-mode",
 			});
@@ -293,17 +277,14 @@ export const MoreLinks = (
 		const { season, statType } = props;
 		links = [
 			{
-				url:
-					season !== undefined
-						? ["player_stat_dists", season]
-						: ["player_stat_dists"],
+				url: ["player_stat_dists", season],
 				name: "Stat Distributions",
 			},
 		];
 
 		if (season === undefined || page !== "player_stats") {
 			links.unshift({
-				url: season !== undefined ? ["player_stats", season] : ["player_stats"],
+				url: ["player_stats", season],
 				name: page === "player_stats" ? "Per Game" : "Main Stats",
 			});
 		} else {
@@ -360,7 +341,12 @@ export const MoreLinks = (
 		links = [
 			{ url: ["import_players"], name: "Import Players" },
 			...(REAL_PLAYERS_INFO
-				? [{ url: ["import_players_real"], name: "Import Real Players" }]
+				? [
+						{
+							url: ["import_players_real"] as const,
+							name: "Import Real Players",
+						},
+					]
 				: []),
 			{ url: ["export_players"], name: "Export Players" },
 			{ url: ["export_league"], name: "Export League" },

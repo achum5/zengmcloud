@@ -1235,7 +1235,7 @@ export type MenuItemLink = {
 	commandPalette?: true;
 	commandPaletteOnly?: true;
 	onClick?: () => undefined | void | false | Promise<undefined | void | false>; // Return false to leave sidebar open
-	path?: string | (number | string)[];
+	path?: string | LeagueUrlParts;
 	prefix?: ReactNode;
 	text:
 		| Exclude<ReactNode, null | undefined | number | boolean>
@@ -2444,6 +2444,8 @@ import type {
 	KeyboardShortcutsLocal,
 } from "../ui/util/keyboardShortcuts.ts";
 import type { gameAttributesSyncedToUi } from "./gameAttributesSyncedToUi.ts";
+import type { LeagueUrlParts } from "../ui/router/types.ts";
+
 type TeamStatsPlus = Record<TeamStatAttrBaseball, number> &
 	Record<TeamStatAttrByPosBaseball, number[]> &
 	Record<TeamStatAttrBasketball, number> &

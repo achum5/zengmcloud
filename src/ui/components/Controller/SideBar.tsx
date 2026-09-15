@@ -96,7 +96,7 @@ export const makeAnchorProps = (
 		if (menuItem.path.startsWith("http")) {
 			target = "_blank";
 		}
-	} else if (Array.isArray(menuItem.path)) {
+	} else if (menuItem.path !== undefined) {
 		href = helpers.leagueUrl(menuItem.path);
 	}
 

@@ -26,6 +26,7 @@ import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
 import Impact from "./Impact.tsx";
+import type { LeagueUrlParts } from "../../router/types.ts";
 
 const Player2 = ({
 	amateurUniform,
@@ -121,7 +122,7 @@ const Player2 = ({
 				gameLogSeason = currentSeason;
 			}
 
-			const parts =
+			const parts: LeagueUrlParts =
 				fields.playerProfile === "gameLog"
 					? ["player_game_log", player.pid, gameLogSeason]
 					: ["player", player.pid];

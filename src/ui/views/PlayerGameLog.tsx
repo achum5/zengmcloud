@@ -19,6 +19,7 @@ import {
 	gameLogAveragesRow,
 	useGameLogSelection,
 } from "../util/gameLogAverages.tsx";
+import type { LeagueUrlParts } from "../router/types.ts";
 
 type DecisionPlayer = {
 	w: number;
@@ -194,7 +195,7 @@ const PlayerGameLog = ({
 			})),
 		},
 		dropdownCustomURL: (fields) => {
-			const parts =
+			const parts: LeagueUrlParts =
 				fields.playerProfile === "gameLog"
 					? ["player_game_log", player.pid, fields.seasons]
 					: ["player", player.pid];
