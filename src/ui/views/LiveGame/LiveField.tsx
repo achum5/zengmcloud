@@ -43,6 +43,7 @@ export type {
 import { range } from "../../../common/utils.ts";
 import { useLocal } from "../../util/local.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
+import { bodyRenderOrder } from "./bodyOrder.ts";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 
 // A full-field live-game graphic, built to the same brief as the basketball
@@ -913,7 +914,9 @@ const LiveField = ({
 
 	const bodies: ReactNode[] = [];
 	if (scene) {
-		for (const actor of scene.actors) {
+		// A fixed order, not the scene's, so no body is ever re-inserted and every
+		// one of them keeps its glide. See bodyRenderOrder.
+		for (const actor of bodyRenderOrder(scene.actors)) {
 			const background = actor.role === "onField";
 			const displayT = actor.t ?? scene.t;
 			const color = displayT === 0 ? awayColor : homeColor;

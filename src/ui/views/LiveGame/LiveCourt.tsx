@@ -24,6 +24,7 @@ import {
 import { useLocal } from "../../util/local.ts";
 import type { CourtImageSlot } from "../../../common/types.ts";
 import { nextSpinDeg, rimReaction } from "./courtAnimation.ts";
+import { bodyRenderOrder } from "./bodyOrder.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
 import { PlayerPicture } from "../../components/PlayerPicture.tsx";
 
@@ -740,6 +741,9 @@ const BodyOnCourt = ({
 		return (
 			<div
 				className="position-absolute"
+				data-court-body={actor.pid}
+				data-court-role={actor.role}
+				data-court-team={actor.t}
 				style={{ ...glide, pointerEvents: "none", zIndex: 2 }}
 			>
 				<div
@@ -853,6 +857,9 @@ const BodyOnCourt = ({
 	return (
 		<div
 			className="position-absolute"
+			data-court-body={actor.pid}
+			data-court-role={actor.role}
+			data-court-team={actor.t}
 			style={{
 				...glide,
 				pointerEvents: "none",
@@ -2494,6 +2501,8 @@ const LiveCourt = ({
 		<div
 			ref={containerRef}
 			className="mb-3 position-relative"
+			data-court-scene={scene?.kind ?? "none"}
+			data-court-key={scene?.key ?? 0}
 			style={{
 				userSelect: "none",
 				containerType: "inline-size",
@@ -2657,7 +2666,9 @@ const LiveCourt = ({
 			    under a scene-specific key and popping up elsewhere. The recoil
 			    animation retriggers via animKey inside BodyOnCourt. */}
 			{scene
-				? scene.actors.map((actor) => {
+				? // ...AND ALWAYS IN THE SAME DOM ORDER, which is what keeps the glide
+					// alive across a scene change. See bodyRenderOrder.
+					bodyRenderOrder(scene.actors).map((actor) => {
 						const background = actor.role === "onCourt";
 						// Background teammates are colored by their OWN team; the play's
 						// actors by the scene team (or the opposing team for a
