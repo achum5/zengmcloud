@@ -17,7 +17,7 @@ const rules = (
 			options: { query: string; import: string; eager: true },
 		) => Record<string, string>;
 	}
-).glob("../../firestore.rules", {
+).glob("../../public/firestore.rules", {
 	query: "?raw",
 	import: "default",
 	eager: true,
@@ -46,7 +46,7 @@ const source = raw === undefined ? undefined : stripComments(raw);
 // first one after the path: a rules path is full of braces ("/leagues/{code}")
 // and starting from those reads one path segment as the whole block.
 const ownGrantsOf = (matchPath: string): string => {
-	assert.ok(source, "firestore.rules was not found");
+	assert.ok(source, "public/firestore.rules was not found");
 	const header = `match ${matchPath} {`;
 	const start = source!.indexOf(header);
 	assert.notStrictEqual(start, -1, `no match block for ${matchPath}`);

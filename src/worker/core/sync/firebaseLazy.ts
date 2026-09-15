@@ -9,3 +9,4 @@
 export { FirebaseTransport } from "./FirebaseTransport.ts";
 export { ensureAnonymousAuth } from "./auth.ts";
 export { deleteSyncRoom } from "./deleteRoom.ts";
+export { preflightFirebaseConfig } from "./runPreflight.ts";

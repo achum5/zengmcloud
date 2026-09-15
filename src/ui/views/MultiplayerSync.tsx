@@ -22,15 +22,18 @@ import {
 	syncDebugEnabled,
 } from "../util/syncDebugStore.ts";
 import {
-	byoFirestoreEnabled,
-	setByoFirestoreEnabled,
-} from "../util/byoFirestore.ts";
-import {
 	decodeSyncInvite,
 	encodeSyncInvite,
-	isValidFirebaseConfig,
 	looksLikeSyncInvite,
 } from "../../common/syncInvite.ts";
+import {
+	consoleUrls,
+	parseFirebaseConfig,
+} from "../../common/parseFirebaseConfig.ts";
+import {
+	PREFLIGHT_STEP_LABELS,
+	type PreflightResult,
+} from "../../common/preflight.ts";
 import type { FirebaseConfig } from "../../common/firebaseConfig.ts";
 
 type Status = "disconnected" | "connecting" | "connected";
@@ -128,11 +131,15 @@ const MultiplayerSync = () => {
 	const [error, setError] = useState<string | undefined>();
 	const [claimingSimAuthority, setClaimingSimAuthority] = useState(false);
 
-	// Bring-your-own-Firestore (opt-in). `byoConfigText` is where a host pastes
-	// their Firebase config JSON; `invite` is the shareable token shown after a
-	// custom-project connect.
-	const [byoEnabled, setByoEnabled] = useState(byoFirestoreEnabled());
+	// Bring-your-own-Firestore. `byoConfigText` is whatever the host pasted out
+	// of the Firebase console; `byoCheck` is the last preflight result, which is
+	// what the setup checklist draws. `invite` is the one string a league-mate
+	// needs - room code and project together - shown once connected.
 	const [byoConfigText, setByoConfigText] = useState("");
+	const [byoCheck, setByoCheck] = useState<PreflightResult | undefined>();
+	const [byoChecking, setByoChecking] = useState(false);
+	const [byoError, setByoError] = useState<string | undefined>();
+	const [copiedRules, setCopiedRules] = useState(false);
 	const [invite, setInvite] = useState<string | undefined>();
 
 	// What the rest of the room sees next to this device's sims, notes and cards.
@@ -393,6 +400,46 @@ const MultiplayerSync = () => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [status, mpSyncIsHost, mpSyncHostName]);
 
+	// Check the pasted project before a league is trusted to it. The steps and
+	// their fixes come back from the worker (which owns the Firebase side); this
+	// only draws them.
+	const checkByoProject = async () => {
+		const parsed = parseFirebaseConfig(byoConfigText);
+		if (!parsed.ok) {
+			setByoCheck(undefined);
+			setByoError(parsed.error);
+			return;
+		}
+		setByoError(undefined);
+		setByoChecking(true);
+		try {
+			setByoCheck(
+				await toWorker("main", "preflightFirebaseConfig", parsed.config),
+			);
+		} catch (error) {
+			setByoCheck(undefined);
+			setByoError((error as Error).message ?? String(error));
+		} finally {
+			setByoChecking(false);
+		}
+	};
+
+	// The rules ship with the app (public/firestore.rules), so the button hands
+	// over the exact file `firebase deploy` would publish - there is no second
+	// copy to fall behind it.
+	const copyRules = async () => {
+		try {
+			const response = await fetch("/firestore.rules");
+			await navigator.clipboard?.writeText(await response.text());
+			setCopiedRules(true);
+			setTimeout(() => setCopiedRules(false), 2000);
+		} catch {
+			setByoError(
+				"Couldn't copy the rules. Open public/firestore.rules instead.",
+			);
+		}
+	};
+
 	// Clear this league's cloud data: every document the room accumulated, then
 	// the room itself. Scoped to the room this device is actually in - there is
 	// no way to reach anyone else's, and no listing of them to reach into (see
@@ -446,27 +493,19 @@ const MultiplayerSync = () => {
 			let innerCode = code.trim();
 			let config: FirebaseConfig | undefined;
 
-			if (byoEnabled) {
-				if (looksLikeSyncInvite(code)) {
-					// Joining via an invite: it carries the room code + project config.
-					const decoded = decodeSyncInvite(code);
-					innerCode = decoded.code;
-					config = decoded.config;
-				} else if (byoConfigText.trim() !== "") {
-					// Hosting on your own project: parse the pasted config.
-					let parsed: unknown;
-					try {
-						parsed = JSON.parse(byoConfigText);
-					} catch {
-						throw new Error("Firebase config must be valid JSON.");
-					}
-					if (!isValidFirebaseConfig(parsed)) {
-						throw new Error(
-							"Firebase config is missing required fields (apiKey, projectId, …).",
-						);
-					}
-					config = parsed;
+			if (looksLikeSyncInvite(code)) {
+				// Joining via an invite: one string carrying the room code AND the
+				// project it lives in, so a league-mate needs no console of their own.
+				const decoded = decodeSyncInvite(code);
+				innerCode = decoded.code;
+				config = decoded.config;
+			} else if (byoConfigText.trim() !== "") {
+				// Hosting on your own project.
+				const parsed = parseFirebaseConfig(byoConfigText);
+				if (!parsed.ok) {
+					throw new Error(parsed.error);
 				}
+				config = parsed.config;
 			}
 
 			await toWorker("main", "connectSharedLeague", {
@@ -518,6 +557,12 @@ const MultiplayerSync = () => {
 	// device is really connected (and the header dot is green). `status` is kept
 	// only for the transient "connecting…" while a manual Connect is in flight.
 	const connected = mpSyncActive || status === "connected";
+
+	// The project the pasted config names, so a failing step can link straight
+	// into THAT project's console. Read from the text rather than the checked
+	// config, because the link matters most when the check just failed.
+	const byoParsed = parseFirebaseConfig(byoConfigText);
+	const byoProjectId = byoParsed.ok ? byoParsed.config.projectId : undefined;
 
 	// Only worth saying while picking a NEW code; a code someone hands you is
 	// not yours to second-guess.
@@ -670,71 +715,123 @@ const MultiplayerSync = () => {
 				</div>
 			)}
 
-			<div className="mb-3" style={{ maxWidth: 500 }}>
-				<div className="form-check">
-					<input
-						id="sync-byo"
-						type="checkbox"
-						className="form-check-input"
-						checked={byoEnabled}
-						disabled={connected || status === "connecting"}
-						onChange={(event) => {
-							setByoFirestoreEnabled(event.target.checked);
-							setByoEnabled(event.target.checked);
-						}}
-					/>
-					<label
-						className="form-check-label"
-						htmlFor="sync-byo"
-						title="Host the room on your own Firebase project instead of the built-in one"
-					>
-						Use your own Firestore
-					</label>
-				</div>
+			{!connected && !looksLikeSyncInvite(code) ? (
+				<div className="card mb-3" style={{ maxWidth: 500 }}>
+					<div className="card-body">
+						<h3 className="card-title h5">Your Firebase project</h3>
 
-				{byoEnabled && !connected ? (
-					<div className="mt-2">
 						<label className="form-label" htmlFor="sync-byo-config">
-							Firebase config (JSON)
+							Config from Project settings → General → Your apps
 						</label>
 						<textarea
 							id="sync-byo-config"
 							className="form-control"
 							rows={5}
+							spellCheck={false}
 							placeholder={
-								'{"apiKey":"…","authDomain":"…","projectId":"…","storageBucket":"…","messagingSenderId":"…","appId":"…"}'
+								'const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "…",\n  …\n};'
 							}
 							value={byoConfigText}
-							onChange={(event) => setByoConfigText(event.target.value)}
-						/>
-					</div>
-				) : null}
-
-				{byoEnabled && connected && invite ? (
-					<div className="mt-2">
-						<label className="form-label" htmlFor="sync-invite">
-							Invite code
-						</label>
-						<textarea
-							id="sync-invite"
-							className="form-control"
-							rows={3}
-							readOnly
-							value={invite}
-							onFocus={(event) => event.target.select()}
-						/>
-						<button
-							type="button"
-							className="btn btn-light btn-sm mt-2"
-							onClick={() => {
-								void navigator.clipboard?.writeText(invite);
+							onChange={(event) => {
+								setByoConfigText(event.target.value);
+								setByoCheck(undefined);
+								setByoError(undefined);
 							}}
-						>
-							Copy invite
-						</button>
+						/>
+
+						<div className="d-flex align-items-center gap-2 mt-2">
+							<button
+								type="button"
+								className="btn btn-secondary"
+								disabled={byoChecking || byoConfigText.trim() === ""}
+								onClick={() => void checkByoProject()}
+							>
+								{byoChecking ? "Checking…" : "Check project"}
+							</button>
+							{byoCheck?.ok ? (
+								<span className="text-success">Ready to host.</span>
+							) : null}
+						</div>
+
+						{byoError ? (
+							<div className="alert alert-danger py-2 mt-3 mb-0">
+								{byoError}
+							</div>
+						) : null}
+
+						{byoCheck ? (
+							<ul className="list-unstyled mt-3 mb-0">
+								{byoCheck.steps.map(({ step, ok }) => (
+									<li
+										key={step}
+										className={ok ? "text-success" : "text-danger"}
+									>
+										{ok ? "✓" : "✗"} {PREFLIGHT_STEP_LABELS[step]}
+									</li>
+								))}
+							</ul>
+						) : null}
+
+						{byoCheck?.problem ? (
+							<div className="alert alert-warning py-2 mt-3 mb-0">
+								<b>{byoCheck.problem.title}</b>
+								<div>{byoCheck.problem.fix}</div>
+								<div className="d-flex flex-wrap gap-2 mt-2">
+									{byoCheck.link ? (
+										<a
+											className="btn btn-sm btn-light-bordered"
+											href={consoleUrls(byoProjectId ?? "_")[byoCheck.link.url]}
+											target="_blank"
+											rel="noopener noreferrer"
+										>
+											{byoCheck.link.label}
+										</a>
+									) : null}
+									{byoCheck.link?.rules ? (
+										<button
+											type="button"
+											className="btn btn-sm btn-light-bordered"
+											onClick={() => void copyRules()}
+										>
+											{copiedRules ? "Copied" : "Copy rules"}
+										</button>
+									) : null}
+								</div>
+								{byoCheck.detail ? (
+									<div className="small text-body-secondary mt-2">
+										{byoCheck.detail}
+									</div>
+								) : null}
+							</div>
+						) : null}
 					</div>
-				) : null}
-			</div>
+				</div>
+			) : null}
+
+			{connected && invite ? (
+				<div className="mb-3" style={{ maxWidth: 500 }}>
+					<label className="form-label" htmlFor="sync-invite">
+						Invite
+					</label>
+					<textarea
+						id="sync-invite"
+						className="form-control"
+						rows={3}
+						readOnly
+						value={invite}
+						onFocus={(event) => event.target.select()}
+					/>
+					<button
+						type="button"
+						className="btn btn-light btn-sm mt-2"
+						onClick={() => {
+							void navigator.clipboard?.writeText(invite);
+						}}
+					>
+						Copy invite
+					</button>
+				</div>
+			) : null}
 
 			<div className="d-flex gap-2 mb-3">
 				{connected ? (

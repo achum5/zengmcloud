@@ -8,7 +8,7 @@ export {
 export { changeTracker } from "../../db/changeTracker.ts";
 export { SyncEngineV2 } from "./v2/engine.ts";
 export { afterAction } from "./afterAction.ts";
-export { deleteSyncRoom } from "./loadSyncBackend.ts";
+export { deleteSyncRoom, preflightFirebaseConfig } from "./loadSyncBackend.ts";
 export { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
 export { setDraftReady } from "./draftReady.ts";
 export { sendLiveChatMessage } from "./liveChat.ts";

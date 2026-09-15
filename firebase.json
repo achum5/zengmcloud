@@ -1,6 +1,6 @@
 {
 	"firestore": {
-		"rules": "firestore.rules"
+		"rules": "public/firestore.rules"
 	},
 	"functions": {
 		"source": "functions",

@@ -1,3 +1,5 @@
+import type { FirebaseConfig } from "./firebaseConfig.ts";
+
 // The Firebase SDK is 428 KB of a 2,517 KB worker bundle - firestore, auth and
 // the webchannel wrapper - and a league that is never shared downloads and
 // parses every byte of it for nothing. This one dynamic import is what stops
@@ -13,3 +15,8 @@ export const loadSyncBackend = () => import("./firebaseLazy.ts");
 // caller can reach it without the eager bundle naming the Firebase side at all.
 export const deleteSyncRoom = async (code: string) =>
 	(await loadSyncBackend()).deleteSyncRoom(code);
+
+// Checking a bring-your-own project before a league is trusted to it. Same
+// deferral: someone who never opens the setup form never loads the SDK.
+export const preflightFirebaseConfig = async (config: FirebaseConfig) =>
+	(await loadSyncBackend()).preflightFirebaseConfig(config);

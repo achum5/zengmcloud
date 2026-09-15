@@ -34,6 +34,7 @@ const BEHIND_THE_BOUNDARY = new Set([
 	"auth.ts",
 	"FirebaseTransport.ts",
 	"deleteRoom.ts",
+	"runPreflight.ts",
 	"firebaseLazy.ts",
 ]);
 
@@ -96,7 +97,10 @@ describe("the Firebase SDK stays out of the eager bundles", () => {
 				continue;
 			}
 			for (const spec of staticImportsOf(code)) {
-				if (BEHIND_THE_BOUNDARY.has(fileName(spec))) {
+				// Directory as well as name: common/ has its own preflight.ts (the
+				// shared types), and matching on the basename alone reported every
+				// importer of it as reaching into the Firebase side.
+				if (inSyncDir(spec) && BEHIND_THE_BOUNDARY.has(fileName(spec))) {
 					offenders.push(`${file} -> ${spec}`);
 				}
 			}

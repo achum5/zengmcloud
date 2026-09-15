@@ -2,11 +2,14 @@ rules_version = '2';
 
 // Firestore security rules for ZenGM cloud multiplayer.
 //
-// HOW TO PUBLISH (do this once, before your ~30-day test-mode rules expire):
-//   1. Firebase console -> your project
-//   2. Build -> Firestore Database -> Rules tab
-//   3. Replace everything with the contents of this file
-//   4. Click "Publish"
+// HOW TO PUBLISH: the Multiplayer Sync page has a "Copy rules" button that
+// copies this exact file, and a link straight to the Rules tab of your own
+// project. Paste, publish, done. (By hand: Firebase console -> your project ->
+// Build -> Firestore Database -> Rules, replace everything, Publish.)
+//
+// This file lives under public/ so it is served with the app - one copy, which
+// is both what `firebase deploy` publishes and what that button hands you.
+// There is no second copy to drift out of sync with it.
 //
 // These rules do NOT expire.
 //
