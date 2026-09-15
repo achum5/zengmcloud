@@ -96,17 +96,35 @@ document deletes, which is comfortably inside the free tier at this volume
 Every entry written before this build has no `ttlAt`, so the TTL policy will
 never touch it — and that backlog *is* the bill.
 
-Multiplayer Sync page → *Manage rooms* → unlock → set the day count →
-**Trim history in all rooms**. It sweeps every room, deleting change docs older
-than the cutoff, in adaptively-sized batches (change docs are big enough to hit
-Firestore's ~10 MiB commit ceiling long before its 500-write one).
+There is no longer an in-app sweep for this. The hidden admin panel that used
+to do it was removed along with the rule that let any signed-in visitor list
+and delete every room in the project (see the note at the top of
+`public/firestore.rules`) - the listing was the only thing that panel was built
+on, and it was not worth the hole.
 
-Run it once now. After that the TTL policy keeps up on its own.
+The backlog is frozen rather than growing: `changes` is the v1 collection, and
+v1 is gone, so nothing writes to it any more. Every room now publishes into
+`control` as `v2delta_*` docs, which carry `ttlAt` and are handled by the policy
+in §3. So this is a one-time cleanup of dead data, not maintenance.
+
+Clear it from the console (Firestore Database → `changes` → delete the
+collection), or with the CLI:
+
+```
+gcloud firestore bulk-delete \
+  --collection-ids=changes \
+  --project=YOUR_PROJECT
+```
 
 ⚠️ Anyone who has not synced since the cutoff will be locked out by the check in
 §2 and will need a fresh export. That is the intended trade and the reason the
 check exists — the alternative is not "they're fine", it's "they diverge
 silently".
+
+To clear ONE room entirely - all of its history and the room itself - the
+Multiplayer Sync page has *Delete this league's cloud data* while connected to
+it. That is a delete, not a trim: the room stops existing and everyone keeps
+only their local copy.
 
 ---
 
@@ -126,6 +144,5 @@ Nothing queries either field, so there is no query to break.
 ## Changing the window
 
 `RETENTION_DAYS` in `src/common/syncRetention.ts` is the single source of
-truth: it stamps `ttlAt`, defaults the admin trim box, and appears in the
-too-far-behind message. Changing it only affects entries published afterward —
+truth: it stamps `ttlAt` and appears in the too-far-behind message. Changing it only affects entries published afterward —
 the TTL policy uses the stamp already written on each document.

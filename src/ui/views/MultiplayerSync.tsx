@@ -174,11 +174,6 @@ const MultiplayerSync = () => {
 
 	// The same repair with the day named by hand, for a room that never recorded
 	// a position of its own and so cannot be compared against.
-	const [daySeason, setDaySeason] = useState("");
-	const [dayNumber, setDayNumber] = useState("");
-	const [dayReport, setDayReport] = useState<any>();
-	const [dayBusy, setDayBusy] = useState(false);
-	const [dayResult, setDayResult] = useState<string | undefined>();
 
 	const [syncDebug, setSyncDebug] = useState(syncDebugEnabled());
 	const [adminBusy, setAdminBusy] = useState(false);
@@ -318,49 +313,6 @@ const MultiplayerSync = () => {
 
 	// Naming the day by hand, for a room that never stamped a position of its own
 	// and so cannot be compared against.
-	const checkDay = async () => {
-		setDayBusy(true);
-		setDayResult(undefined);
-		setDayReport(undefined);
-		try {
-			setDayReport(
-				await toWorker("main", "reportDayPush", {
-					season: Number(daySeason),
-					day: Number(dayNumber),
-				}),
-			);
-		} catch (error) {
-			setDayResult((error as Error).message ?? String(error));
-		} finally {
-			setDayBusy(false);
-		}
-	};
-
-	const doPushDay = async () => {
-		setDayBusy(true);
-		setDayResult(undefined);
-		try {
-			const out: any = await toWorker("main", "pushDay", {
-				season: Number(daySeason),
-				day: Number(dayNumber),
-			});
-			if (out?.published) {
-				setDayResult(
-					out.outcome === "confirmed"
-						? `Sent. Day ${out.report.day} of ${out.report.season} is now in the room.`
-						: "Queued. The room will have it as soon as the connection allows.",
-				);
-				setDayReport(undefined);
-			} else {
-				setDayResult(out?.report?.reason ?? "Nothing to send.");
-			}
-		} catch (error) {
-			setDayResult((error as Error).message ?? String(error));
-		} finally {
-			setDayBusy(false);
-		}
-	};
-
 	const forceResync = async () => {
 		setResyncResult(undefined);
 		setResyncing(true);
@@ -990,31 +942,6 @@ const MultiplayerSync = () => {
 				</div>
 			</div>
 
-			<div className="card mt-3" style={{ maxWidth: 500 }}>
-				<div className="card-body">
-					<h3 className="card-title h5">Debug logs</h3>
-					<div className="form-check">
-						<input
-							type="checkbox"
-							className="form-check-input"
-							id="sync-debug-toggle"
-							checked={syncDebug}
-							onChange={(e) => {
-								setSyncDebugEnabled(e.target.checked);
-								setSyncDebug(e.target.checked);
-							}}
-						/>
-						<label className="form-check-label" htmlFor="sync-debug-toggle">
-							Show sync debug logs on screen
-						</label>
-					</div>
-					<p className="text-body-secondary small mb-0 mt-1">
-						A panel appears at the bottom with live sync logs (catch-up,
-						uploads, etc). Use its Copy button to share them.
-					</p>
-				</div>
-			</div>
-
 			{connected ? (
 				<div className="card mt-3" style={{ maxWidth: 500 }}>
 					<div className="card-body">
@@ -1068,59 +995,6 @@ const MultiplayerSync = () => {
 						) : null}
 						{unsyncedResult ? <p className="small">{unsyncedResult}</p> : null}
 
-						<div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
-							<input
-								type="number"
-								className="form-control form-control-sm"
-								style={{ width: 100 }}
-								placeholder="Season"
-								value={daySeason}
-								onChange={(event) => setDaySeason(event.target.value)}
-							/>
-							<input
-								type="number"
-								className="form-control form-control-sm"
-								style={{ width: 80 }}
-								placeholder="Day"
-								value={dayNumber}
-								onChange={(event) => setDayNumber(event.target.value)}
-							/>
-							<button
-								className="btn btn-light-bordered btn-sm"
-								disabled={dayBusy || daySeason === "" || dayNumber === ""}
-								onClick={() => void checkDay()}
-							>
-								{dayBusy ? "Checking…" : "Check this day"}
-							</button>
-						</div>
-
-						{dayReport?.kind === "found" ? (
-							<div className="alert alert-warning py-2">
-								<div>
-									Day {dayReport.day} of {dayReport.season}: {dayReport.games}{" "}
-									game
-									{dayReport.games === 1 ? "" : "s"} ({dayReport.records}{" "}
-									records).
-								</div>
-								<ul className="mb-2 mt-1 ps-3 small">
-									{dayReport.lines.map((line: string, i: number) => (
-										<li key={i}>{line}</li>
-									))}
-								</ul>
-								<button
-									className="btn btn-warning btn-sm"
-									disabled={dayBusy}
-									onClick={() => void doPushDay()}
-								>
-									{dayBusy ? "Sending…" : "Send this day to the room"}
-								</button>
-							</div>
-						) : null}
-						{dayReport?.kind === "none" ? (
-							<p className="text-body-secondary small">{dayReport.reason}</p>
-						) : null}
-						{dayResult ? <p className="small">{dayResult}</p> : null}
-
 						<button
 							className="btn btn-light-bordered btn-sm mb-3 ms-2"
 							onClick={async () => {
@@ -1172,21 +1046,8 @@ const MultiplayerSync = () => {
 												</span>
 											) : null}
 											<span className="text-body-secondary d-block small">
-												{item.records} record{item.records === 1 ? "" : "s"} ·{" "}
 												{relativeTime(item.ts)}
 											</span>
-											{item.attrs.length > 0 ? (
-												<span className="d-block small">
-													{item.attrs.map((attr) => (
-														<span
-															key={attr}
-															className={`badge me-1 ${attr === "phase" ? "text-bg-warning" : "text-bg-light"}`}
-														>
-															{attr}
-														</span>
-													))}
-												</span>
-											) : null}
 										</span>
 									</li>
 								))}
@@ -1213,6 +1074,28 @@ const MultiplayerSync = () => {
 					</div>
 				</div>
 			) : null}
+			{/* Outside the connected-only card on purpose: a connect that FAILS is
+			    exactly when someone needs the logs, and that is the one moment that
+			    card is not on screen. */}
+			<div className="form-check mt-3" style={{ maxWidth: 500 }}>
+				<input
+					type="checkbox"
+					className="form-check-input"
+					id="sync-debug-toggle"
+					checked={syncDebug}
+					onChange={(event) => {
+						setSyncDebugEnabled(event.target.checked);
+						setSyncDebug(event.target.checked);
+					}}
+				/>
+				<label
+					className="form-check-label"
+					htmlFor="sync-debug-toggle"
+					title="Show a live log panel at the bottom of the screen"
+				>
+					Show debug logs on screen
+				</label>
+			</div>
 		</>
 	);
 };

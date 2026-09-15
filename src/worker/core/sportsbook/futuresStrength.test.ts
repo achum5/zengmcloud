@@ -74,10 +74,7 @@ describe("futuresStrengthFromPlayers", () => {
 	test("a star out for the whole horizon prices like he's gone", () => {
 		const { raws, plus } = roster(82);
 		const s = futuresStrengthFromPlayers(plus, raws, 82);
-		const withoutStar = teamOvr(
-			plus.filter((p) => p.pid !== 1) as any,
-			{},
-		);
+		const withoutStar = teamOvr(plus.filter((p) => p.pid !== 1) as any, {});
 		assert.ok(Math.abs(s.expectedOvr - withoutStar) < 1e-9);
 		assert.ok(s.expectedOvr < s.ovr);
 	});
