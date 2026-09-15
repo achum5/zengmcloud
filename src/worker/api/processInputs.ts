@@ -13,47 +13,7 @@ import type { AdvancedPlayerSearchFilter } from "../../ui/views/AdvancedPlayerSe
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
 import { actualPhase } from "../util/actualPhase.ts";
 import { bySport, isSport } from "../../common/sportFunctions.ts";
-import type { routeInfos } from "../../ui/util/routeInfos.ts";
-
-type SegmentParams<S extends string> = S extends `:${infer Name}`
-	? { [K in Name]: string }
-	: Record<never, never>;
-
-type PathParams<P extends string> = P extends `${infer Head}/${infer Tail}`
-	? SegmentParams<Head> & PathParams<Tail>
-	: SegmentParams<P>;
-
-type PathsForView<
-	R extends Record<string, string>,
-	V extends R[keyof R],
-> = Extract<
-	{
-		[P in keyof R]: R[P] extends V ? P : never;
-	}[keyof R],
-	string
->;
-
-type ParamsForPaths<P extends string> = P extends unknown
-	? PathParams<P>
-	: never;
-
-type AllKeys<T> = T extends unknown ? keyof T : never;
-
-type ParamsForView<R extends Record<string, string>, V extends R[keyof R]> =
-	ParamsForPaths<PathsForView<R, V>> extends infer P
-		? {
-				[K in keyof P]: P[K];
-			} & {
-				[K in Exclude<AllKeys<P>, keyof P>]?: string;
-			}
-		: never;
-
-type RouteInfo = typeof routeInfos;
-
-export type Params<V extends RouteInfo[keyof RouteInfo]> = ParamsForView<
-	RouteInfo,
-	V
->;
+import type { RouteParams } from "../../ui/router/types.ts";
 
 /**
  * Validate that a given abbreviation corresponds to a team.
@@ -136,20 +96,20 @@ const validateSeasonType = (
 	}
 };
 
-const account = (params: Params<"account">, ctxBBGM: any) => {
+const account = (params: RouteParams<"account">, ctxBBGM: any) => {
 	return {
 		goldMessage: ctxBBGM.goldResult ? ctxBBGM.goldResult.message : undefined,
 		goldSuccess: ctxBBGM.goldResult ? !!ctxBBGM.goldResult.success : undefined,
 	};
 };
 
-const awardsRecords = (params: Params<"awardsRecords">) => {
+const awardsRecords = (params: RouteParams<"awardsRecords">) => {
 	return {
 		awardType: params.awardType ?? "champion",
 	};
 };
 
-const customizePlayer = (params: Params<"customizePlayer">) => {
+const customizePlayer = (params: RouteParams<"customizePlayer">) => {
 	let pid: number | null = null;
 	if (params.pid !== undefined) {
 		pid = Number.parseInt(params.pid);
@@ -169,7 +129,7 @@ const customizePlayer = (params: Params<"customizePlayer">) => {
 	};
 };
 
-const editTeamCourt = (params: Params<"editTeamCourt">) => {
+const editTeamCourt = (params: RouteParams<"editTeamCourt">) => {
 	const tid =
 		typeof params.tid === "string" ? Number.parseInt(params.tid) : Number.NaN;
 	if (Number.isNaN(tid) || tid < 0) {
@@ -180,7 +140,7 @@ const editTeamCourt = (params: Params<"editTeamCourt">) => {
 	return { tid };
 };
 
-const editTeamUniform = (params: Params<"editTeamUniform">) => {
+const editTeamUniform = (params: RouteParams<"editTeamUniform">) => {
 	const tid =
 		typeof params.tid === "string" ? Number.parseInt(params.tid) : Number.NaN;
 	if (Number.isNaN(tid) || tid < 0) {
@@ -191,7 +151,7 @@ const editTeamUniform = (params: Params<"editTeamUniform">) => {
 	return { tid };
 };
 
-const depth = (params: Params<"depth">) => {
+const depth = (params: RouteParams<"depth">) => {
 	// Fix broken links
 	if (params.abbrev === "FA" || params.abbrev === "FA_-1") {
 		// https://stackoverflow.com/a/59923262/786644
@@ -248,14 +208,14 @@ const draft = () => {
 	}
 };
 
-const draftLottery = (params: Params<"draftLottery">) => {
+const draftLottery = (params: RouteParams<"draftLottery">) => {
 	const season = validateSeason(params.season);
 	return {
 		season,
 	};
 };
 
-const draftHistory = (params: Params<"draftHistory">) => {
+const draftHistory = (params: RouteParams<"draftHistory">) => {
 	let season: number;
 
 	const draftAlreadyHappened = g.get("phase") >= PHASE.DRAFT;
@@ -286,7 +246,7 @@ const draftHistory = (params: Params<"draftHistory">) => {
 	};
 };
 
-const draftPicks = (params: Params<"draftPicks">) => {
+const draftPicks = (params: RouteParams<"draftPicks">) => {
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
 
 	return {
@@ -295,7 +255,7 @@ const draftPicks = (params: Params<"draftPicks">) => {
 	};
 };
 
-const draftTeamHistory = (params: Params<"draftTeamHistory">) => {
+const draftTeamHistory = (params: RouteParams<"draftTeamHistory">) => {
 	let [tid, abbrev] = validateAbbrev(params.abbrev);
 
 	if (params.abbrev === "your_teams") {
@@ -317,7 +277,7 @@ const fantasyDraft = () => {
 	}
 };
 
-const freeAgents = (params: Params<"freeAgents">) => {
+const freeAgents = (params: RouteParams<"freeAgents">) => {
 	if (g.get("phase") === PHASE.RESIGN_PLAYERS) {
 		return {
 			redirectUrl: helpers.leagueUrl(["negotiation"]),
@@ -349,7 +309,7 @@ const freeAgents = (params: Params<"freeAgents">) => {
 	};
 };
 
-const frivolitiesTrades = (params: Params<"frivolitiesTrades">) => {
+const frivolitiesTrades = (params: RouteParams<"frivolitiesTrades">) => {
 	let abbrev: string = "all";
 	let tid: number = -1;
 	if (params.abbrev && params.abbrev !== "all") {
@@ -368,7 +328,7 @@ const frivolitiesTrades = (params: Params<"frivolitiesTrades">) => {
 	};
 };
 
-const gameLog = (params: Params<"gameLog">) => {
+const gameLog = (params: RouteParams<"gameLog">) => {
 	const [tid, abbrev] =
 		params.abbrev === "special"
 			? [-1, "special"]
@@ -382,7 +342,7 @@ const gameLog = (params: Params<"gameLog">) => {
 	};
 };
 
-const headToHeadAll = (params: Params<"headToHeadAll">) => {
+const headToHeadAll = (params: RouteParams<"headToHeadAll">) => {
 	let season: number | "all";
 
 	if (params.season && params.season !== "all") {
@@ -397,7 +357,7 @@ const headToHeadAll = (params: Params<"headToHeadAll">) => {
 	};
 };
 
-const headToHead = (params: Params<"headToHead">) => {
+const headToHead = (params: RouteParams<"headToHead">) => {
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
 
 	return {
@@ -407,7 +367,7 @@ const headToHead = (params: Params<"headToHead">) => {
 	};
 };
 
-const history = (params: Params<"history">) => {
+const history = (params: RouteParams<"history">) => {
 	let season = validateSeason(params.season);
 
 	// If playoffs aren't over, season awards haven't been set
@@ -423,7 +383,7 @@ const history = (params: Params<"history">) => {
 	};
 };
 
-const injuries = (params: Params<"injuries">) => {
+const injuries = (params: RouteParams<"injuries">) => {
 	let season: number | "current";
 
 	if (params.season && params.season !== "current") {
@@ -475,7 +435,7 @@ const validateStatType = (statType: string | undefined): PlayerStatType => {
 	}
 };
 
-const leaders = (params: Params<"leaders">) => {
+const leaders = (params: RouteParams<"leaders">) => {
 	let season: "career" | "all" | number;
 	if (params.season === "career" || params.season === "all") {
 		season = params.season;
@@ -491,7 +451,7 @@ const leaders = (params: Params<"leaders">) => {
 };
 
 const leadersYears = (
-	params: Params<"leadersProgressive"> | Params<"leadersYears">,
+	params: RouteParams<"leadersProgressive"> | RouteParams<"leadersYears">,
 ) => {
 	const defaultStat = bySport({
 		baseball: "ba",
@@ -507,7 +467,7 @@ const leadersYears = (
 	};
 };
 
-const dailySchedule = (params: Params<"dailySchedule">) => {
+const dailySchedule = (params: RouteParams<"dailySchedule">) => {
 	let cid;
 	if (params.cid !== undefined && params.cid !== "all") {
 		cid = Number.parseInt(params.cid);
@@ -550,7 +510,10 @@ const dailySchedule = (params: Params<"dailySchedule">) => {
 	};
 };
 
-const exhibitionGame = (params: Params<"exhibitionGame">, ctxBBGM: any) => {
+const exhibitionGame = (
+	params: RouteParams<"exhibitionGame">,
+	ctxBBGM: any,
+) => {
 	return {
 		liveSim: ctxBBGM.liveSim as
 			| Awaited<ReturnType<typeof boxScoreToLiveSim>>
@@ -558,7 +521,7 @@ const exhibitionGame = (params: Params<"exhibitionGame">, ctxBBGM: any) => {
 	};
 };
 
-const liveGame = (params: Params<"liveGame">, ctxBBGM: any) => {
+const liveGame = (params: RouteParams<"liveGame">, ctxBBGM: any) => {
 	const obj: {
 		fromAction: boolean;
 		gid?: number;
@@ -586,26 +549,28 @@ const liveGame = (params: Params<"liveGame">, ctxBBGM: any) => {
 	return obj;
 };
 
-const message = (params: Params<"message">) => {
+const message = (params: RouteParams<"message">) => {
 	return {
 		mid: params.mid ? Number.parseInt(params.mid) : undefined,
 	};
 };
 
-const frivolitiesTeamSeasons = (params: Params<"frivolitiesTeamSeasons">) => {
+const frivolitiesTeamSeasons = (
+	params: RouteParams<"frivolitiesTeamSeasons">,
+) => {
 	return {
 		type: params.type,
 	};
 };
 
-const most = (params: Params<"most">) => {
+const most = (params: RouteParams<"most">) => {
 	return {
 		arg: params.arg,
 		type: params.type,
 	};
 };
 
-const newLeague = (params: Params<"newLeague">) => {
+const newLeague = (params: RouteParams<"newLeague">) => {
 	let type: "custom" | "random" | "real" | "legends" | "crossEra" = "custom";
 	let lid;
 	if (params.x === "random") {
@@ -630,7 +595,7 @@ const newLeague = (params: Params<"newLeague">) => {
 	};
 };
 
-const news = (params: Params<"news">) => {
+const news = (params: RouteParams<"news">) => {
 	const season = validateSeason(params.season);
 	let level: "all" | "normal" | "big";
 	if (params.level === "all") {
@@ -667,7 +632,7 @@ const news = (params: Params<"news">) => {
 	};
 };
 
-const notes = (params: Params<"notes">) => {
+const notes = (params: RouteParams<"notes">) => {
 	const type: NoteInfo["type"] =
 		params.type === "draftPick" ||
 		params.type === "game" ||
@@ -680,13 +645,13 @@ const notes = (params: Params<"notes">) => {
 	};
 };
 
-const player = (params: Params<"player">) => {
+const player = (params: RouteParams<"player">) => {
 	return {
 		pid: params.pid !== undefined ? Number.parseInt(params.pid) : undefined,
 	};
 };
 
-const playerFeats = (params: Params<"playerFeats">) => {
+const playerFeats = (params: RouteParams<"playerFeats">) => {
 	let abbrev;
 
 	if (
@@ -712,7 +677,7 @@ const playerFeats = (params: Params<"playerFeats">) => {
 	};
 };
 
-const playerGameLog = (params: Params<"playerGameLog">) => {
+const playerGameLog = (params: RouteParams<"playerGameLog">) => {
 	return {
 		pid: params.pid !== undefined ? Number.parseInt(params.pid) : undefined,
 		season: validateSeason(params.season),
@@ -720,7 +685,7 @@ const playerGameLog = (params: Params<"playerGameLog">) => {
 };
 
 const playerRatings = (
-	params: Params<"playerBios"> | Params<"playerRatings">,
+	params: RouteParams<"playerBios"> | RouteParams<"playerRatings">,
 ) => {
 	let abbrev;
 	let tid: number | undefined;
@@ -756,7 +721,7 @@ const playerRatings = (
 	};
 };
 
-const playerStats = (params: Params<"playerStats">) => {
+const playerStats = (params: RouteParams<"playerStats">) => {
 	let abbrev;
 
 	const [, validatedAbbrev] = validateAbbrev(params.abbrev, true);
@@ -803,7 +768,7 @@ const playerStats = (params: Params<"playerStats">) => {
 	};
 };
 
-const playerGraphs = (params: Params<"playerGraphs">) => {
+const playerGraphs = (params: RouteParams<"playerGraphs">) => {
 	const playoffsX = validateSeasonType(params.playoffsX);
 	const playoffsY = validateSeasonType(params.playoffsY);
 
@@ -832,7 +797,7 @@ const playerGraphs = (params: Params<"playerGraphs">) => {
 	};
 };
 
-const teamGraphs = (params: Params<"teamGraphs">) => {
+const teamGraphs = (params: RouteParams<"teamGraphs">) => {
 	const playoffsX =
 		params.playoffsX === "playoffs" ? "playoffs" : "regularSeason";
 	const playoffsY =
@@ -855,7 +820,7 @@ const teamGraphs = (params: Params<"teamGraphs">) => {
 	};
 };
 
-const playerStatDists = (params: Params<"playerStatDists">) => {
+const playerStatDists = (params: RouteParams<"playerStatDists">) => {
 	const defaultStatType = bySport({
 		baseball: "batting",
 		basketball: "perGame",
@@ -868,13 +833,13 @@ const playerStatDists = (params: Params<"playerStatDists">) => {
 	};
 };
 
-const resetPassword = (params: Params<"resetPassword">) => {
+const resetPassword = (params: RouteParams<"resetPassword">) => {
 	return {
 		token: params.token,
 	};
 };
 
-const roster = (params: Params<"roster">) => {
+const roster = (params: RouteParams<"roster">) => {
 	// Fix broken links
 	if (params.abbrev === "FA" || params.abbrev === "FA_-1") {
 		// https://stackoverflow.com/a/59923262/786644
@@ -909,12 +874,15 @@ const roster = (params: Params<"roster">) => {
 	return { abbrev, playoffs: validateSeasonType(params.playoffs), season, tid };
 };
 
-const intrasquad = (params: Params<"intrasquad">) => {
+const intrasquad = (params: RouteParams<"intrasquad">) => {
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
 	return { tid, abbrev };
 };
 
-const intrasquadGame = (params: Params<"intrasquadGame">, ctxBBGM: any) => {
+const intrasquadGame = (
+	params: RouteParams<"intrasquadGame">,
+	ctxBBGM: any,
+) => {
 	return {
 		liveSim: ctxBBGM.liveSim as
 			| Awaited<ReturnType<typeof boxScoreToLiveSim>>
@@ -923,28 +891,28 @@ const intrasquadGame = (params: Params<"intrasquadGame">, ctxBBGM: any) => {
 	};
 };
 
-const schedule = (params: Params<"schedule">) => {
+const schedule = (params: RouteParams<"schedule">) => {
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
 	return { abbrev, tid };
 };
 
-const rotation = (params: Params<"rotation">) => {
+const rotation = (params: RouteParams<"rotation">) => {
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
 	return { abbrev, tid };
 };
 
-const teamFinances = (params: Params<"teamFinances">) => {
+const teamFinances = (params: RouteParams<"teamFinances">) => {
 	const show = params.show ?? "10";
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
 	return { abbrev, show, tid };
 };
 
-const teamHistory = (params: Params<"teamHistory">) => {
+const teamHistory = (params: RouteParams<"teamHistory">) => {
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
 	return { abbrev, tid };
 };
 
-const teamRecords = (params: Params<"teamRecords">) => {
+const teamRecords = (params: RouteParams<"teamRecords">) => {
 	const filter: "all" | "your_teams" =
 		params.filter === "your_teams" ? "your_teams" : "all";
 	return {
@@ -953,7 +921,7 @@ const teamRecords = (params: Params<"teamRecords">) => {
 	};
 };
 
-const teamStats = (params: Params<"teamStats">) => {
+const teamStats = (params: RouteParams<"teamStats">) => {
 	const playoffs =
 		params.playoffs === "playoffs" ? "playoffs" : "regularSeason";
 
@@ -971,7 +939,7 @@ const teamStats = (params: Params<"teamStats">) => {
 	};
 };
 
-const leagueStats = (params: Params<"leagueStats">) => {
+const leagueStats = (params: RouteParams<"leagueStats">) => {
 	let abbrev: string = "all";
 	let tid: number = -1;
 	if (params.abbrev && params.abbrev !== "all") {
@@ -1001,24 +969,24 @@ const leagueStats = (params: Params<"leagueStats">) => {
 	};
 };
 
-const socialFeed = (params: Params<"socialFeed">) => ({
+const socialFeed = (params: RouteParams<"socialFeed">) => ({
 	season: validateSeason(params.season),
 	// How far back the timeline has been scrolled, in days. Carried in the URL
 	// so a reload lands where the reader was rather than at the top.
 	days: params.days === undefined ? undefined : Number.parseInt(params.days),
 });
 
-const socialAccount = (params: Params<"socialAccount">) => ({
+const socialAccount = (params: RouteParams<"socialAccount">) => ({
 	handle: params.handle ?? "",
 });
 
-const socialAccounts = (params: Params<"socialAccounts">) => ({
+const socialAccounts = (params: RouteParams<"socialAccounts">) => ({
 	// Optional: the manage page doubles as the editor, opening straight onto
 	// one account when a link points at it.
 	handle: params.handle,
 });
 
-const standings = (params: Params<"standings">) => {
+const standings = (params: RouteParams<"standings">) => {
 	let type: "conf" | "div" | "league" =
 		g.get("numGamesPlayoffSeries").length === 0
 			? "league"
@@ -1042,20 +1010,20 @@ const standings = (params: Params<"standings">) => {
 	};
 };
 
-const tradeSummary = (params: Params<"tradeSummary">) => {
+const tradeSummary = (params: RouteParams<"tradeSummary">) => {
 	return {
 		eid: params.eid ? Number.parseInt(params.eid) : Number.NaN,
 	};
 };
 
-const tradingBlock = (params: Params<"tradingBlock">, ctxBBGM: any) => {
+const tradingBlock = (params: RouteParams<"tradingBlock">, ctxBBGM: any) => {
 	return {
 		pids: ctxBBGM.pids as number[],
 		dpids: ctxBBGM.dpids as number[],
 	};
 };
 
-const transactions = (params: Params<"transactions">) => {
+const transactions = (params: RouteParams<"transactions">) => {
 	let abbrev: string;
 	let tid: number;
 	if (params.abbrev && params.abbrev !== "all") {
@@ -1086,7 +1054,7 @@ const transactions = (params: Params<"transactions">) => {
 	};
 };
 
-const upcomingFreeAgents = (params: Params<"upcomingFreeAgents">) => {
+const upcomingFreeAgents = (params: RouteParams<"upcomingFreeAgents">) => {
 	let season = validateSeason(params.season);
 
 	const phase = actualPhase();
@@ -1103,7 +1071,7 @@ const upcomingFreeAgents = (params: Params<"upcomingFreeAgents">) => {
 	};
 };
 
-const watchList = (params: Params<"watchList">) => {
+const watchList = (params: RouteParams<"watchList">) => {
 	let statType: PlayerStatType;
 	if (params.statType === "per36") {
 		statType = params.statType;
@@ -1116,7 +1084,7 @@ const watchList = (params: Params<"watchList">) => {
 	return { playoffs: validateSeasonType(params.playoffs), statType };
 };
 
-const powerRankings = (params: Params<"powerRankings">) => {
+const powerRankings = (params: RouteParams<"powerRankings">) => {
 	let playoffs: "playoffs" | "regularSeason" =
 		g.get("phase") === PHASE.PLAYOFFS ? "playoffs" : "regularSeason";
 	if (params.playoffs === "playoffs") {
@@ -1137,7 +1105,7 @@ const validateSeasonOnly = (params: { season?: string }) => {
 	};
 };
 
-const comparePlayers = (params: Params<"comparePlayers">) => {
+const comparePlayers = (params: RouteParams<"comparePlayers">) => {
 	const players: {
 		pid: number;
 		season: number | "career";
@@ -1168,7 +1136,7 @@ const comparePlayers = (params: Params<"comparePlayers">) => {
 	};
 };
 
-const advancedPlayerSearch = (params: Params<"advancedPlayerSearch">) => {
+const advancedPlayerSearch = (params: RouteParams<"advancedPlayerSearch">) => {
 	const singleSeason: "totals" | "singleSeason" =
 		params.singleSeason === "totals" ? "totals" : "singleSeason";
 
@@ -1217,14 +1185,14 @@ export default {
 	awardRaces: validateSeasonOnly,
 	editAwardWinners: validateSeasonOnly,
 	awardsRecords,
-	sportsbook: (params: Params<"sportsbook">) => ({
+	sportsbook: (params: RouteParams<"sportsbook">) => ({
 		// Each tab is its own URL, so the back button and a reload land where you
 		// left off instead of resetting to Games.
 		tab: SPORTSBOOK_TABS.includes(params.tab as any)
 			? (params.tab as SportsbookTab)
 			: "games",
 	}),
-	sportsbookGame: (params: Params<"sportsbookGame">) => ({
+	sportsbookGame: (params: RouteParams<"sportsbookGame">) => ({
 		gid: params.gid !== undefined ? Number.parseInt(params.gid) : -1,
 	}),
 	createCards: () => ({}),
