@@ -18,6 +18,8 @@ const makeProject = (
 ): TestProjectInlineConfiguration => {
 	return {
 		define: {
+			// The fork's source still reads process.env.SPORT / NODE_ENV; upstream
+			// renamed these to __SPORT / __NODE_ENV in a commit not yet ported.
 			"process.env.NODE_ENV": JSON.stringify("test"),
 			"process.env.SPORT": JSON.stringify(sport),
 		},
@@ -38,7 +40,7 @@ const makeProject = (
 
 export default defineConfig({
 	test: {
-		// Would like to fsModuleCache this, but it seems to not work properly even with defineCacheKeyGenerator in my plugin
+		// Would like to fsModuleCache this, but it seems to not work properly even with defineCacheKeyGenerator in my plugin https://github.com/vitest-dev/vitest/issues/11281
 		fsModuleCache: false,
 		isolate: false,
 		maxWorkers: 3,
