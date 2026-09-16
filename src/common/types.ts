@@ -1875,8 +1875,9 @@ export type UndoableAction =
 
 export type Local = {
 	autoPlayUntil?: {
-		season: number;
+		resolve: () => void;
 		phase: number;
+		season: number;
 
 		// Time in milliseconds of the start of auto play
 		start: number;

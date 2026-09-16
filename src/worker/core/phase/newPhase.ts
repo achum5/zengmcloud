@@ -18,10 +18,10 @@ import {
 	logEvent,
 	updatePlayMenu,
 	updateStatus,
-	local,
 } from "../../util/index.ts";
 import { syncDebugLog } from "../sync/debugLog.ts";
 import type { Conditions, Phase } from "../../../common/types.ts";
+import { cleanupAutoPlay } from "../league/autoPlay.ts";
 
 /**
  * Set a new phase of the game.
@@ -76,23 +76,6 @@ const newPhase = async (phase: Phase, conditions: Conditions, extra?: any) => {
 		try {
 			await lock.set("newPhase", true);
 
-			if (
-				local.autoPlayUntil &&
-				(local.autoPlayUntil.season < g.get("season") ||
-					(local.autoPlayUntil.season === g.get("season") &&
-						local.autoPlayUntil.phase <= phase) ||
-					(local.autoPlayUntil.season === g.get("season") + 1 &&
-						local.autoPlayUntil.phase === PHASE.PRESEASON &&
-						phase === PHASE.PRESEASON))
-			) {
-				console.log(
-					`Auto play done in ${
-						(Date.now() - local.autoPlayUntil.start) / 1000
-					} seconds`,
-				);
-				local.autoPlayUntil = undefined;
-			}
-
 			await updateStatus("Processing...");
 			await updatePlayMenu();
 
@@ -104,6 +87,7 @@ const newPhase = async (phase: Phase, conditions: Conditions, extra?: any) => {
 				throw new Error(`Unknown phase number ${phase}`);
 			}
 		} catch (error) {
+			cleanupAutoPlay();
 			await lock.set("newPhase", false);
 			await updatePlayMenu();
 			// The toast only shows error.message; mirror the full stack into the

@@ -15,6 +15,7 @@ import type { Conditions, Phase, PhaseReturn } from "../../../common/types.ts";
 import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { processScheduledEvents } from "./processScheduledEvents.ts";
 import { settleBets } from "../sportsbook/bets.ts";
+import { cleanupAutoPlay } from "../league/autoPlay.ts";
 
 /**
  * Common tasks run after a new phrase is set.
@@ -100,7 +101,23 @@ const finalize = async (
 	local.undoableActions = {};
 
 	if (local.autoPlayUntil) {
-		await league.autoPlay(conditions);
+		if (
+			local.autoPlayUntil.season < g.get("season") ||
+			(local.autoPlayUntil.season === g.get("season") &&
+				local.autoPlayUntil.phase <= phase) ||
+			(local.autoPlayUntil.season === g.get("season") + 1 &&
+				local.autoPlayUntil.phase === PHASE.PRESEASON &&
+				phase === PHASE.PRESEASON)
+		) {
+			console.log(
+				`Auto play done in ${
+					(Date.now() - local.autoPlayUntil.start) / 1000
+				} seconds`,
+			);
+			cleanupAutoPlay();
+		} else {
+			await league.autoPlay(conditions);
+		}
 	}
 };
 
