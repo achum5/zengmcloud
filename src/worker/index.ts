@@ -40,19 +40,19 @@ setAfterActionHook(afterAction);
 setLiveBroadcastStartHook((gid, playByPlay) => {
 	void startLiveBroadcast(gid, playByPlay);
 });
+import { registerGlobal } from "../common/registerGlobal.ts";
 
-self.bbgm = {
-	...self.bbgm,
+registerGlobal({
 	...common,
 	...core,
 	...db,
 	...util,
 	random,
-};
+});
 
 if (process.env.NODE_ENV === "development") {
 	import("./core/debug/index.ts").then(({ default: debug }) => {
-		self.bbgm.debug = debug;
+		registerGlobal({ debug });
 	});
 
 	// Turn on cloud-sync change tracking so we can watch changesets in the
