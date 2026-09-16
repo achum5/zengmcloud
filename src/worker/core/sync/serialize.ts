@@ -120,8 +120,3 @@ export const decompressSerialized = async (
 		.pipeThrough(new DecompressionStream("gzip"));
 	return await new Response(stream).text();
 };
-
-// Is this payload compressed? Used to keep the "does it fit in one doc" sizing
-// decision honest about what actually goes on the wire.
-export const isCompressed = (payload: string): boolean =>
-	payload.startsWith(GZIP_PREFIX);

@@ -74,9 +74,6 @@ export const isAheadOfPosition = (
 	return local.phase > other.phase;
 };
 
-export const describePosition = (position: LeaguePosition): string =>
-	`${position.season} phase ${position.phase} day ${position.day}`;
-
 // Firestore rejects undefined and we never want a half-filled position, so
 // parse defensively - an older client writes no position at all.
 export const parseLeaguePosition = (

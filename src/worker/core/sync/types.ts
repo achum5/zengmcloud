@@ -285,17 +285,6 @@ export interface SyncTransport {
 	// history we missed, then live updates). Returns an unsubscribe function.
 	subscribe(subscriber: SyncSubscriber): () => void;
 
-	// One-shot read of the ENTIRE change log, ordered oldest-first (not a live
-	// subscription). Powers full-resync recovery. Optional so the in-memory test
-	// transport can skip it.
-	fetchAllEntries?(): Promise<ChangesetEntry[]>;
-
-	// Every chunk entry of one bulk batch, fetched DIRECTLY by batchId - no seq
-	// range, no watermark. This is the batch-rescue path: it can recover chunks
-	// that sit below a device's watermark (e.g. after an interrupted upload was
-	// finished much later), which a seq-ordered fetch can never see again.
-	fetchBatchEntries?(batchId: string): Promise<ChangesetEntry[]>;
-
 	// The most recent `n` entries, oldest-first. For the activity panel, so it
 	// never reads the whole log. Optional so the test transport can skip it.
 	fetchRecentEntries?(n: number): Promise<ChangesetEntry[]>;
@@ -316,17 +305,8 @@ export interface SyncTransport {
 	// backlog drain so the subscription's initial snapshot is just the live tail).
 	updateSince?(ts: number): void;
 
-	// Room snapshot (full-state checkpoint) support. publishRoomSnapshot writes
-	// the chunked payload FIRST and the meta doc last, so a reader that sees a
-	// meta doc can always fetch a complete payload; it returns the chunk count.
-	// deleteEntriesBefore prunes log entries older than the given seq (only ever
-	// called with the PREVIOUS snapshot's seq, so the log always covers at least
-	// one full snapshot interval). All optional so the in-memory test transport
-	// can skip them.
-	publishRoomSnapshot?(
-		meta: Omit<RoomSnapshotMeta, "chunkCount">,
-		serialized: string,
-	): Promise<number>;
+	// The room's v1 checkpoint meta doc, still read so a room that has one can
+	// be restored from it. Nothing writes these any more.
 	fetchRoomSnapshotMeta?(): Promise<RoomSnapshotMeta | undefined>;
 
 	// ---- Room <-> league binding --------------------------------------------
@@ -425,10 +405,6 @@ export interface SyncTransport {
 		generation?: string,
 	): Promise<string | undefined>;
 	deleteV2DeltasBefore?(version: number): Promise<number>;
-	fetchRoomSnapshotData?(
-		chunkCount: number,
-		generation?: string,
-	): Promise<string | undefined>;
 	deleteEntriesBefore?(seqMs: number): Promise<number>;
 
 	// Is the connection ACTUALLY live right now (not just "we have a transport

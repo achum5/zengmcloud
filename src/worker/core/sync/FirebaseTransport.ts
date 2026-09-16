@@ -39,7 +39,6 @@ import { syncDebugLog } from "./debugLog.ts";
 // to finish on a phone even when the page is full of bulk-sim chunks; the cap
 // is a runaway guard, not a real limit (200k entries is far past any league).
 const FULL_LOG_PAGE_SIZE = 200;
-const FULL_LOG_MAX_PAGES = 1000;
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
 import type { SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
@@ -97,7 +96,6 @@ const LOTTERY_REVEAL_DOC_ID = "lotteryReveal";
 // Keep each payload chunk well under Firestore's 1 MB/doc limit.
 const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
 const ROOM_SNAPSHOT_DOC_ID = "roomSnapshot";
-const ROOM_SNAPSHOT_DATA_PREFIX = "roomSnapshotData";
 
 // ---- Sync v2 (version chain) doc ids ----------------------------------------
 // All under the existing `control` collection so the current security rules
@@ -1093,91 +1091,6 @@ export class FirebaseTransport implements SyncTransport {
 		};
 	}
 
-	// Reads that catch-up and recovery depend on go straight to the SERVER.
-	//
-	// Plain getDocs() can wait indefinitely when the SDK's connection is wedged -
-	// it is allowed to serve from cache or hold out for the server, and it does not
-	// consider "I cannot reach the server" an error. That is how a device ended up
-	// pinned at "catching up 0%": the aggregate count (which always hits the
-	// server) answered "92 entries to go", and the very next getDocs() for those
-	// entries never came back. getDocsFromServer rejects promptly instead, which is
-	// the failure the retry path is built for. These reads must be authoritative
-	// anyway - serving the backlog from a stale local cache would be wrong.
-	// The whole log, oldest-first, for full-resync recovery.
-	//
-	// PAGED, not one query. As a single unbounded read this is the request that
-	// wedged a phone: the connect-time auto-resync runs it on every connect
-	// while its marker is set, and on a league deep into a season the log is
-	// thousands of documents including every bulk-sim chunk. That request never
-	// came back, so the resync never finished, so the marker never cleared, so
-	// the next connect tried the same thing - with the catch-up drain stuck
-	// behind it showing 0% the whole time.
-	//
-	// Paged with startAfter on the document itself rather than a timestamp
-	// cursor: two entries can share a millisecond, and a "ts >" cursor would
-	// silently skip the second one. A resync that quietly drops entries is worse
-	// than a slow one.
-	async fetchAllEntries(): Promise<ChangesetEntry[]> {
-		const entries: ChangesetEntry[] = [];
-		let after: QueryDocumentSnapshot | undefined;
-
-		for (let page = 0; page < FULL_LOG_MAX_PAGES; page++) {
-			const snapshot = await getDocsFromServer(
-				query(
-					this.changesRef,
-					orderBy("ts"),
-					...(after ? [startAfter(after)] : []),
-					limit(FULL_LOG_PAGE_SIZE),
-				),
-			);
-			this.markContact();
-			for (const docSnap of snapshot.docs) {
-				const entry = this.parseEntry(docSnap);
-				if (entry) {
-					entries.push(entry);
-				}
-			}
-			syncDebugLog("transport:full-log-page", {
-				page,
-				docs: snapshot.size,
-				entriesSoFar: entries.length,
-			});
-			if (snapshot.size < FULL_LOG_PAGE_SIZE) {
-				return entries;
-			}
-			after = snapshot.docs.at(-1);
-			if (!after) {
-				return entries;
-			}
-		}
-
-		// Hit the page cap. Returning a TRUNCATED log would make the resync look
-		// complete while missing the newest entries - exactly the "conclusive"
-		// signal that clears the recovery marker. Refuse instead.
-		throw new Error(
-			`Change log is longer than ${FULL_LOG_MAX_PAGES * FULL_LOG_PAGE_SIZE} entries`,
-		);
-	}
-
-	// Every chunk of one bulk batch, straight from the log by batchId - no seq
-	// range, no watermark, so it finds chunks a device's ordered fetches can no
-	// longer reach (below its watermark). Single-field equality query, so no
-	// composite index is needed; callers sort by chunkIndex themselves.
-	async fetchBatchEntries(batchId: string): Promise<ChangesetEntry[]> {
-		const snapshot = await getDocsFromServer(
-			query(this.changesRef, where("batchId", "==", batchId)),
-		);
-		this.markContact();
-		const entries: ChangesetEntry[] = [];
-		for (const docSnap of snapshot.docs) {
-			const entry = this.parseEntry(docSnap);
-			if (entry) {
-				entries.push(entry);
-			}
-		}
-		return entries;
-	}
-
 	// Read the entries after a given server-timestamp, oldest-first. With
 	// `pageLimit` this returns just ONE bounded page (the oldest that many),
 	// letting the engine drain a huge backlog page by page instead of pulling the
@@ -1215,85 +1128,6 @@ export class FirebaseTransport implements SyncTransport {
 		this.sinceTs = ts;
 	}
 
-	// ---- Room snapshot (full-state checkpoint) -----------------------------
-
-	// Every publish writes its payload to a FRESH generation of chunk docs and
-	// only then repoints the meta. Writing to fixed doc ids (the old behavior)
-	// meant a multi-minute publish overwrote, one doc at a time, the very
-	// payload the live meta still pointed at - so any device restoring during
-	// that window reassembled a mix of two snapshots and got a corrupt league.
-	// Generations make the payload immutable once written: nothing a publisher
-	// does can damage the snapshot readers are currently allowed to see.
-	async publishRoomSnapshot(
-		meta: { seq: number; at: number; byName: string; position?: unknown },
-		serialized: string,
-	): Promise<number> {
-		const generation = `${meta.seq}-${this.clientId}`;
-		const chunks: string[] = [];
-		for (let i = 0; i < serialized.length; i += LIVE_BROADCAST_CHUNK_BYTES) {
-			chunks.push(serialized.slice(i, i + LIVE_BROADCAST_CHUNK_BYTES));
-		}
-		if (chunks.length === 0) {
-			chunks.push("");
-		}
-
-		const previous = await this.fetchRoomSnapshotMeta();
-
-		for (let i = 0; i < chunks.length; i++) {
-			await setDoc(
-				doc(
-					this.db,
-					"leagues",
-					this.code,
-					"control",
-					`${ROOM_SNAPSHOT_DATA_PREFIX}_${generation}_${i}`,
-				),
-				{
-					holderId: this.clientId,
-					index: i,
-					data: chunks[i],
-					updatedAt: serverTimestamp(),
-				},
-			);
-		}
-		await setDoc(
-			doc(this.db, "leagues", this.code, "control", ROOM_SNAPSHOT_DOC_ID),
-			{
-				holderId: this.clientId,
-				seq: meta.seq,
-				at: meta.at,
-				byName: meta.byName,
-				position: meta.position ?? null,
-				chunkCount: chunks.length,
-				generation,
-				updatedAt: serverTimestamp(),
-			},
-		);
-		this.markContact();
-
-		// Only now is the previous generation unreachable. Best effort: a leaked
-		// chunk doc costs storage, a prematurely deleted one costs a league.
-		if (previous?.generation !== undefined) {
-			for (let i = 0; i < previous.chunkCount; i++) {
-				try {
-					await deleteDoc(
-						doc(
-							this.db,
-							"leagues",
-							this.code,
-							"control",
-							`${ROOM_SNAPSHOT_DATA_PREFIX}_${previous.generation}_${i}`,
-						),
-					);
-				} catch {
-					// Housekeeping only.
-				}
-			}
-		}
-
-		return chunks.length;
-	}
-
 	async fetchRoomSnapshotMeta() {
 		const snap = await getDoc(
 			doc(this.db, "leagues", this.code, "control", ROOM_SNAPSHOT_DOC_ID),
@@ -1316,33 +1150,6 @@ export class FirebaseTransport implements SyncTransport {
 			generation:
 				typeof data.generation === "string" ? data.generation : undefined,
 		};
-	}
-
-	async fetchRoomSnapshotData(chunkCount: number, generation?: string) {
-		let out = "";
-		for (let i = 0; i < chunkCount; i++) {
-			const snap = await getDoc(
-				doc(
-					this.db,
-					"leagues",
-					this.code,
-					"control",
-					generation === undefined
-						? `${ROOM_SNAPSHOT_DATA_PREFIX}${i}`
-						: `${ROOM_SNAPSHOT_DATA_PREFIX}_${generation}_${i}`,
-				),
-			);
-			if (!snap.exists()) {
-				return undefined;
-			}
-			const data = snap.data();
-			if (typeof data.data !== "string") {
-				return undefined;
-			}
-			out += data.data;
-		}
-		this.markContact();
-		return out;
 	}
 
 	// ---- Sync v2 (version chain) -------------------------------------------
