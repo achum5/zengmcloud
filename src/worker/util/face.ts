@@ -11,6 +11,7 @@ import {
 	familySeed,
 	inferRaceFromFace,
 } from "./realisticFaces.ts";
+import { registerGlobal } from "../../common/registerGlobal.ts";
 
 export const generateFace = (
 	options:
@@ -191,3 +192,9 @@ export const upgradeFace = async (p: PlayerWithoutKey) => {
 		await idb.cache.players.put(p);
 	}
 };
+
+registerGlobal({
+	face: {
+		generate: generateFace,
+	},
+});

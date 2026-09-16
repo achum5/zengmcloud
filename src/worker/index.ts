@@ -6,7 +6,6 @@ import * as db from "./db/index.ts";
 import * as util from "./util/index.ts";
 import * as random from "../common/random.ts";
 import { promiseWorker } from "./util/promiseWorker.ts";
-import { defaultGameAttributes } from "../common/defaultGameAttributes.ts";
 import { changeTracker } from "./db/changeTracker.ts";
 import { afterAction } from "./core/sync/afterAction.ts";
 import {
@@ -48,8 +47,6 @@ self.bbgm = {
 	...core,
 	...db,
 	...util,
-	api,
-	defaultGameAttributes,
 	random,
 };
 
@@ -223,8 +220,6 @@ const SIM_CONFLICT_GATED = new Set([
 	// The rotation plan is read by the sim exactly as the depth chart is.
 	"updateRotation",
 ]);
-
-export type WorkerAPICategory = keyof typeof api;
 
 // API functions should have at most 2 arguments. First argument is passed here from toWorker. If you need to pass multiple variables, use an object/array. Second argument is Conditions.
 promiseWorker.register(async ([type, name, param], hostID) => {

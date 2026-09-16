@@ -19,6 +19,7 @@ import { confirm } from "../util/confirm.tsx";
 import { safeLocalStorage } from "../util/safeLocalStorage.ts";
 import { pushSyncDebugEntry } from "../util/syncDebugStore.ts";
 import Bugsnag from "@bugsnag/browser";
+import { registerGlobal } from "../../common/registerGlobal.ts";
 
 const initAds = (type: "accountChecked" | "uiRendered") => {
 	ads.setLoadingDone(type);
@@ -179,7 +180,7 @@ const syncDebugLog = (payload: Record<string, unknown>) => {
 	pushSyncDebugEntry(payload);
 };
 
-export default {
+const api = {
 	analyticsEvent,
 	autoPlayDialog,
 	bugsnagNotify,
@@ -202,3 +203,7 @@ export default {
 	updateLocal,
 	updateTeamOvrs,
 };
+
+export default api;
+
+registerGlobal({ api });

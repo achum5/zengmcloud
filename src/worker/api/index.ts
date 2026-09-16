@@ -312,6 +312,7 @@ import {
 	updatePlayerAwards,
 } from "../core/awards/awardsByPlayer.ts";
 import { legacyAwardsWithNames } from "../util/legacyAwards.ts";
+import { registerGlobal } from "../../common/registerGlobal.ts";
 
 const acceptContractNegotiation = async ({
 	pid,
@@ -7506,7 +7507,7 @@ const setSyncDeviceName = async (name: string) => {
 	return { ok: true };
 };
 
-export default {
+const api = {
 	actions,
 	awardSettings,
 	eightyTwoZeroDraft,
@@ -7750,3 +7751,9 @@ export default {
 		validatePlayoffSettings,
 	},
 };
+
+export default api;
+
+export type WorkerAPICategory = keyof typeof api;
+
+registerGlobal({ api });
