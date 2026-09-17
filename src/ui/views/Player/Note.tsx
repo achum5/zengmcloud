@@ -137,7 +137,7 @@ const Note = (
 					</button>
 					<button
 						type="reset"
-						className="btn btn-light-bordered btn-sm"
+						className="btn btn-secondary btn-sm"
 						onClick={() => {
 							setEditing(false);
 						}}
@@ -172,7 +172,7 @@ const Note = (
 		return (
 			<button
 				type="button"
-				className={clsx("btn btn-light-bordered", xs ? "btn-xs" : "btn-sm")}
+				className={clsx("btn btn-secondary", xs ? "btn-xs" : "btn-sm")}
 				onClick={() => {
 					setEditing(true);
 				}}
@@ -238,7 +238,7 @@ const Note = (
 			</div>
 			<button
 				type="button"
-				className="btn btn-light-bordered btn-sm mt-2"
+				className="btn btn-secondary btn-sm mt-2"
 				onClick={() => {
 					setEditing(true);
 				}}
