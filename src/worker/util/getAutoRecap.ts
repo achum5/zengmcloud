@@ -381,13 +381,16 @@ const storyPlayerOf = (
 	shape: Shape,
 ): RecapPlayer | undefined => {
 	let star = bestOf(shape.winner.players) ?? bestOf(shape.loser.players);
-	if (star && star.pts < 15 && shape.winner.players.includes(star)) {
+	if (star && star.pts < 18 && shape.winner.players.includes(star)) {
 		const low = star;
 		const alt = supportingCast(shape.winner.players, star).find(
 			(p) =>
 				(low.pts < 12 && p.pts >= 15) ||
-				p.pts >= low.pts + 7 ||
-				(p.pts >= 12 && doubleCategories(p).length >= 2),
+				(low.pts < 15 && p.pts >= low.pts + 7) ||
+				(low.pts < 15 && p.pts >= 12 && doubleCategories(p).length >= 2) ||
+				// A 16-and-8 against a teammate's 25 and 12.
+				(p.pts >= low.pts + 8 && doubleCategories(p).length >= 2) ||
+				p.pts >= low.pts + 12,
 		);
 		// A 12-and-12 is a line; a teammate's 22 in a game decided by six is
 		// the story. The double-double keeps the lede only when it is a big
@@ -2474,6 +2477,19 @@ const leadSentence = (
 // lede a desk writes about the team - "Anthony Lowry put up 16" over two
 // teammates at 16 and 14 made the piece look as if it had picked a name out
 // of a hat.
+// A teammate with the same number as the star, neither with a double-double:
+// the two are told together ("scored 26 apiece"), never one after the other.
+const twinOf = (shape: Shape, star: RecapPlayer): RecapPlayer | undefined =>
+	doubleCategories(star).length >= 2
+		? undefined
+		: shape.winner.players.find(
+				(p) =>
+					p !== star &&
+					p.pts === star.pts &&
+					p.pts >= 14 &&
+					doubleCategories(p).length < 2,
+			);
+
 const teamLede = (
 	game: RecapGame,
 	shape: Shape,
@@ -2495,14 +2511,8 @@ const teamLede = (
 	const L = theNick(shape.loser);
 	const score = scoreTold ? "" : ` ${scoreTag(shape)}`;
 	const dd = doubleCategories(star).length;
-	const twin = shape.winner.players.find(
-		(p) =>
-			p !== star &&
-			p.pts === star.pts &&
-			p.pts >= 14 &&
-			doubleCategories(p).length < 2,
-	);
-	if (twin && dd < 2) {
+	const twin = twinOf(shape, star);
+	if (twin) {
 		return {
 			text: `${star.name} and ${twin.name} scored ${star.pts} points apiece as ${W} ${verb} ${L}${score}${tail}.`,
 			twin,
@@ -4898,7 +4908,13 @@ export const getAutoRecap = (game: RecapGame): string => {
 		// sentence is the same numbers twice. Keep the sentence whenever it
 		// brings anything new - a shooting split, a second category - and drop it
 		// only when every figure in it was in the headline.
-		const starSentence = leadSentence(game, shape, star, rng, true);
+		const twin = twinOf(shape, star);
+		const starSentence = twin
+			? `${star.name} and ${twin.name} scored ${star.pts} points apiece.`
+			: leadSentence(game, shape, star, rng, true);
+		if (twin) {
+			heroTold = twin.name;
+		}
 		const figures = (t: string) => t.match(/\d+(?:\.\d+)?/g) ?? [];
 		const inHeadline = new Set(figures(headline.text));
 		if (opener.starFolded) {
