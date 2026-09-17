@@ -2919,7 +2919,9 @@ describe("the extra colour paragraph", () => {
 		let sawSnapped = 0;
 		for (let gid = 1; gid <= 60; gid++) {
 			const recap = getAutoRecap(twoTeamGame(w, l, { gid }));
-			if (/snapped the Celtics' \d+-game winning streak/.test(recap)) {
+			if (
+				/snapped the Celtics' (?:\d+|[a-z]+)-game winning streak/.test(recap)
+			) {
 				sawSnapped += 1;
 				assert.ok(
 					!/Celtics came in having won|wins in \d+ games for the Celtics|Celtics entered the night/.test(
@@ -5474,7 +5476,7 @@ describe("no branch has only one phrasing", () => {
 		],
 		[
 			"snapped streak",
-			/snapped .*\d+-game winning streak|had won \d+ in a row until this one|end of a \d+-game run/,
+			/snapped .*(?:\d+|[a-z]+)-game winning streak|had won (?:\d+|[a-z]+) in a row until this one|end of a (?:\d+|[a-z]+)-game run/,
 		],
 		[
 			"first-quarter run",
