@@ -15,6 +15,7 @@ import {
 	type UniformTrim,
 } from "../../common/uniform.ts";
 import { MyFace } from "../components/MyFace.tsx";
+import { FullBodyPlayer } from "../components/FullBodyPlayer.tsx";
 
 // The uniform editor. Everything here edits a UniformSpec; the preview and the
 // save both go through the same serialized jersey string the rest of the app
@@ -140,10 +141,18 @@ const EditTeamUniform = ({
 		customMenu: undefined,
 	});
 
-	const [spec, setSpec] = useState<UniformSpec>(
-		() =>
-			parseUniform(jersey) ?? presetToSpec(jersey ?? DEFAULT_JERSEY, colors),
-	);
+	const [spec, setSpec] = useState<UniformSpec>(() => {
+		const parsed = parseUniform(jersey);
+		if (parsed) {
+			return parsed;
+		}
+		// Starting fresh from a preset: put the team name on the chest as a
+		// starting point. Clearing the field takes it off.
+		return {
+			...presetToSpec(jersey ?? DEFAULT_JERSEY, colors),
+			wordmark: { text: name.toUpperCase().slice(0, 16) },
+		};
+	});
 	const [saving, setSaving] = useState(false);
 	const [face, setFace] = useState<FaceConfig | undefined>();
 	const [faceCount, setFaceCount] = useState(0);
@@ -233,15 +242,21 @@ const EditTeamUniform = ({
 				<div className="col-lg-5 mb-3">
 					<div className="position-sticky" style={{ top: 60 }}>
 						{face ? (
-							<div className="d-flex align-items-end gap-3">
+							<div className="d-flex align-items-start gap-3">
 								<div
-									style={{ width: 170, cursor: "pointer" }}
+									style={{ width: 190, cursor: "pointer" }}
 									title="New face"
 									onClick={() => {
 										setFaceCount((c) => c + 1);
 									}}
 								>
-									<MyFace colors={colors} face={face} jersey={previewJersey} />
+									<FullBodyPlayer
+										colors={colors}
+										face={face}
+										jersey={previewJersey}
+										jerseyNumber="35"
+										hgt={78}
+									/>
 								</div>
 								{/* The jersey up close - it's a sliver of the full face. */}
 								<div
@@ -544,6 +559,100 @@ const EditTeamUniform = ({
 							</div>
 						) : null}
 					</div>
+
+					<div className="mb-3">
+						<label className="form-label mb-1">Wordmark</label>
+						<div className="d-flex align-items-center gap-2">
+							<input
+								type="text"
+								className="form-control"
+								maxLength={16}
+								value={spec.wordmark?.text ?? ""}
+								placeholder={name.toUpperCase()}
+								onChange={(e) => {
+									const text = e.target.value;
+									if (text) {
+										set("wordmark", { ...spec.wordmark, text });
+									} else {
+										set("wordmark", undefined);
+									}
+								}}
+							/>
+							{spec.wordmark?.text ? (
+								<input
+									type="color"
+									className="form-control form-control-color flex-shrink-0"
+									title="Wordmark color"
+									value={spec.wordmark.color ?? colors[1]}
+									onChange={(e) =>
+										set("wordmark", {
+											...spec.wordmark,
+											color: e.target.value,
+										})
+									}
+								/>
+							) : null}
+						</div>
+					</div>
+
+					<ColorField
+						label="Number"
+						value={spec.number?.color}
+						fallback={colors[1]}
+						onChange={(v) => set("number", { ...spec.number, color: v })}
+						onClear={() => set("number", undefined)}
+					/>
+
+					<ColorField
+						label="Shorts"
+						value={spec.shorts?.base}
+						fallback={spec.base ?? colors[0]}
+						onChange={(v) => set("shorts", { ...spec.shorts, base: v })}
+						onClear={() => {
+							const next = { ...spec.shorts };
+							delete next.base;
+							set("shorts", Object.keys(next).length > 0 ? next : undefined);
+						}}
+					/>
+
+					<ColorField
+						label="Waistband"
+						value={spec.shorts?.belt}
+						fallback={spec.shorts?.base ?? spec.base ?? colors[0]}
+						onChange={(v) => set("shorts", { ...spec.shorts, belt: v })}
+						onClear={() => {
+							const next = { ...spec.shorts };
+							delete next.belt;
+							set("shorts", Object.keys(next).length > 0 ? next : undefined);
+						}}
+					/>
+
+					<ColorField
+						label="Shorts side stripe"
+						value={spec.shorts?.side}
+						fallback={colors[1]}
+						offLabel="Off"
+						onChange={(v) => set("shorts", { ...spec.shorts, side: v })}
+						onClear={() => {
+							const next = { ...spec.shorts };
+							delete next.side;
+							set("shorts", Object.keys(next).length > 0 ? next : undefined);
+						}}
+					/>
+
+					<TrimList
+						label="Shorts hem"
+						trims={spec.shorts?.trim}
+						onChange={(trims) => {
+							const next = { ...spec.shorts };
+							if (trims) {
+								next.trim = trims;
+							} else {
+								delete next.trim;
+							}
+							set("shorts", Object.keys(next).length > 0 ? next : undefined);
+						}}
+					/>
 				</div>
 			</div>
 		</>

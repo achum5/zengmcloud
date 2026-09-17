@@ -16,6 +16,7 @@ import { RatingsOverview } from "./RatingsOverview.tsx";
 import Note from "./Note.tsx";
 import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
 import { PlayerAppearanceGallery } from "../../components/PlayerAppearanceGallery.tsx";
+import { FullBodyModal } from "../../components/FullBodyModal.tsx";
 import type { SeasonNoteSection } from "../../../common/seasonNote.ts";
 import type { RecapLink } from "../../util/linkifyRecap.ts";
 import { ButtonGroup, Dropdown, DropdownButton } from "react-bootstrap";
@@ -348,6 +349,7 @@ const TopStuff = ({
 		]);
 
 	const [showGallery, setShowGallery] = useState(false);
+	const [showFullBody, setShowFullBody] = useState(false);
 
 	// Every season the player existed, from his ratings rows - the stored
 	// appearance history only holds the seasons that CHANGED, so a gallery
@@ -548,27 +550,53 @@ const TopStuff = ({
 			<div className="d-sm-flex align-items-start">
 				<div className="player-bio">
 					<div className="d-flex">
-						<div
-							className="player-picture"
-							style={{
-								marginTop: player.imgURL ? 0 : -20,
-								cursor: careerSeasons.length > 0 ? "pointer" : undefined,
-							}}
-							onClick={
-								careerSeasons.length > 0
-									? () => {
-											setShowGallery(true);
-										}
-									: undefined
-							}
-							title={careerSeasons.length > 0 ? "Every season" : undefined}
-						>
-							<PlayerPicture
-								face={player.face}
-								imgURL={player.imgURL}
-								colors={teamColors}
-								jersey={teamJersey}
-							/>
+						<div className="d-flex flex-column">
+							<div
+								className="player-picture"
+								style={{
+									marginTop: player.imgURL ? 0 : -20,
+									cursor: careerSeasons.length > 0 ? "pointer" : undefined,
+								}}
+								onClick={
+									careerSeasons.length > 0
+										? () => {
+												setShowGallery(true);
+											}
+										: undefined
+								}
+								title={careerSeasons.length > 0 ? "Every season" : undefined}
+							>
+								<PlayerPicture
+									face={player.face}
+									imgURL={player.imgURL}
+									colors={teamColors}
+									jersey={teamJersey}
+								/>
+							</div>
+							{isSport("basketball") && player.face && !player.imgURL ? (
+								<button
+									type="button"
+									className="btn btn-light-bordered btn-xs mb-2 align-self-start"
+									onClick={() => {
+										setShowFullBody(true);
+									}}
+								>
+									Full body
+								</button>
+							) : null}
+							{showFullBody && player.face ? (
+								<FullBodyModal
+									colors={teamColors}
+									face={player.face}
+									jersey={teamJersey}
+									jerseyNumber={player.jerseyNumber}
+									hgt={player.hgt}
+									name={player.name}
+									onHide={() => {
+										setShowFullBody(false);
+									}}
+								/>
+							) : null}
 						</div>
 						{showGallery ? (
 							<PlayerAppearanceGallery
