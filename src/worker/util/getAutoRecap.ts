@@ -446,13 +446,31 @@ const shootingFlourish = (p: RecapPlayer): string | undefined => {
 	if (p.fga >= 10 && p.fg / p.fga >= 0.6) {
 		return `on ${p.fg}-of-${p.fga} shooting`;
 	}
+	// A hot night from deep is told as the split when the attempts are
+	// known: "going 5-of-7 from three" says more than "on 5 threes".
+	if (p.tp >= 4 && p.tpa >= p.tp && p.tp / p.tpa >= 0.55) {
+		return `after going ${p.tp}-of-${p.tpa} from three`;
+	}
 	if (p.tp >= 4) {
 		// "on", not "with": every caller introduces the stat line with "with", and
 		// "led all scorers with 33 points with 5 threes" doubled it.
 		return `on ${p.tp} threes`;
 	}
+	// A night lived at the line.
+	if (p.ft >= 12 && p.fta >= p.ft) {
+		return `including ${p.ft}-of-${p.fta} from the line`;
+	}
 	return undefined;
 };
+
+// The line with its flourish: "38 points and 17 rebounds, including 13-of-17
+// from the line", "25 points after going 5-of-9 from three".
+const withFlourish = (line: string, flourish: string | undefined): string =>
+	flourish === undefined
+		? line
+		: flourish.startsWith("including")
+			? `${line}, ${flourish}`
+			: `${line} ${flourish}`;
 
 // The verb that carries the LEAD sentence, scaled to how big the star's night
 // was. Never a weak "added"/"chipped in" - those are for the supporting cast,
@@ -2356,6 +2374,18 @@ const resultLead = (
 	return { text: `${cap(w)} ${verb} ${l}${score}${tail}.` };
 };
 
+// "the visiting 76ers" - the wire tag for the away side in a result
+// sentence, used now and then so the venue is in the lede without a
+// sentence of its own. Only for the LOSER as object: "the visiting Wizards
+// beat" reads fine too, but the road-win shapes already carry that.
+const loserTag = (game: RecapGame, shape: Shape, rng: () => number): string => {
+	const loserAway = game.teams[1].tid === shape.loser.tid;
+	if (loserAway && !game.playoffs && rng() < 0.3) {
+		return `the visiting ${nick(shape.loser)}`;
+	}
+	return theNick(shape.loser);
+};
+
 const leadSentence = (
 	game: RecapGame,
 	shape: Shape,
@@ -2418,7 +2448,6 @@ const leadSentence = (
 		plain === plural(star.pts, "point") && star.pts < topPts
 			? statPhrase(star, 2, true)
 			: plain;
-	const flourishText = flourish ? ` ${flourish}` : "";
 	// A triple-double (or bigger) deserves a strong verb even when the point total
 	// is modest - "chipped in 18, 12 and 12" undersells it.
 	const doubles = doubleCategories(star).length;
@@ -2433,11 +2462,11 @@ const leadSentence = (
 				])
 			: leadVerb(star, hasExtras, rng);
 	if (omitResult) {
-		return `${subject} ${actionVerb} ${statText}${flourishText}.`;
+		return `${subject} ${actionVerb} ${withFlourish(statText, flourish)}.`;
 	}
-	return `${subject} ${actionVerb} ${statText}${flourishText} as ${theNick(
+	return `${subject} ${actionVerb} ${withFlourish(statText, flourish)} as ${theNick(
 		shape.winner,
-	)} ${verb} ${theNick(shape.loser)}${scoreTold ? "" : ` ${scoreTag(shape)}`}${tail}.`;
+	)} ${verb} ${loserTag(game, shape, rng)}${scoreTold ? "" : ` ${scoreTag(shape)}`}${tail}.`;
 };
 
 // A NIGHT THAT BELONGED TO THE TEAM. Two men with the same number ("scored
@@ -5671,6 +5700,28 @@ const gameBlurb = (
 						: "";
 		return `${base} on ${poss(shot.name)} ${shot.shot}${timing}`;
 	}
+	// A game decided in the last two minutes, on the score that decided it -
+	// the sim only calls the very last basket a game-winner.
+	const last = game.flow?.lastLead;
+	if (
+		shape.margin <= 3 &&
+		shape.ot === 0 &&
+		last &&
+		last.side === sideOf(game, shape.winner) &&
+		last.period >= shape.regPeriods &&
+		last.clock <= 120 &&
+		Number.isFinite(last.clock)
+	) {
+		const who = nameOfPid(game, last.pid);
+		const left = clockLeft(last.clock);
+		if (who && left) {
+			const kind =
+				last.by === 1
+					? "free throw"
+					: (winningShotKind(game, game.winnerTid, last.clock) ?? "basket");
+			return `${base} on ${poss(who)} go-ahead ${kind} with ${left} left`;
+		}
+	}
 	if (star) {
 		// Give the marquee star his full line, calling out a triple-double.
 		const ddw = doubleWord(doubleCategories(star).length);
@@ -7211,8 +7262,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 
 	// The day's leading scorer, when it isn't the marquee star already described.
 	if (topScorer && topScorer.p.pts >= 30 && !named.has(topScorer.p)) {
-		const flourish = shootingFlourish(topScorer.p);
-		const line = `${statPhrase(topScorer.p)}${flourish ? ` ${flourish}` : ""}`;
+		const line = withFlourish(
+			statPhrase(topScorer.p),
+			shootingFlourish(topScorer.p),
+		);
 		const topScore = scoreTag(analyzeShape(topScorer.game));
 		// The sentence before this one has just given the matchup and score
 		// when his game is the marquee, so "in the Nets' 124-114 loss to the

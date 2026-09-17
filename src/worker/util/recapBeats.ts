@@ -846,12 +846,37 @@ export const benchBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 
 // ---------------------------------------------------------------- UP NEXT
 
+// "Game 5 is in two days in Milwaukee." The series' next game, when the
+// series is not over: the game number from the wins entering this one, the
+// venue from whose floor it is on.
+const nextPlayoffGame = (ctx: BeatContext): string | undefined => {
+	const ser = ctx.game.series;
+	const next = ctx.winner.nextGame;
+	if (!ser || !next || next.oppTid !== ctx.loser.tid || next.daysAway < 1) {
+		return undefined;
+	}
+	const winnerHome = ctx.winner.abbrev === ser.homeAbbrev;
+	const wWins = (winnerHome ? ser.homeWon : ser.awayWon) + 1;
+	const need = ser.bestOf !== undefined ? Math.ceil(ser.bestOf / 2) : undefined;
+	if (need !== undefined && wWins >= need) {
+		return undefined;
+	}
+	const gameNo = ser.homeWon + ser.awayWon + 2;
+	const host = next.home ? ctx.winner : ctx.loser;
+	const where = host.region
+		? ` in ${host.region}`
+		: ` at ${poss(theNick(host))} place`;
+	const when =
+		next.daysAway === 1 ? "tomorrow" : `in ${numWord(next.daysAway)} days`;
+	return `Game ${gameNo} is ${when}${where}.`;
+};
+
 export const nextGameBeat = (
 	ctx: BeatContext,
 	rng: Rng,
 ): string | undefined => {
 	if (ctx.game.playoffs) {
-		return undefined;
+		return nextPlayoffGame(ctx);
 	}
 	// Most recaps close on it, not all - a page where every piece ends the
 	// same way reads as a form.
