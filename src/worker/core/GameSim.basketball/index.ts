@@ -1,4 +1,4 @@
-import { FlowLog } from "../../../common/gameFlow.ts";
+import { FlowLog, type FinishKind } from "../../../common/gameFlow.ts";
 import { g, helpers } from "../../util/index.ts";
 import { PHASE, STARTING_NUM_TIMEOUTS } from "../../../common/constants.ts";
 import jumpBallWinnerStartsThisPeriodWithPossession from "./jumpBallWinnerStartsThisPeriodWithPossession.ts";
@@ -212,6 +212,11 @@ class GameSim extends GameSimBase {
 	// over. See common/gameFlow.ts.
 	flow: FlowLog;
 
+	// What the points being recorded right now came from. Set by doFg and
+	// doFt before they record points, because recordStat is the one funnel
+	// every point goes through and it does not otherwise know the shot.
+	flowKind: FinishKind | undefined;
+
 	o: TeamNum;
 
 	d: TeamNum;
@@ -336,6 +341,7 @@ class GameSim extends GameSimBase {
 		this.lastScoringPlay = [];
 		this.clutchPlays = [];
 		this.flow = new FlowLog();
+		this.flowKind = undefined;
 		this.elam = this.allStarGame ? g.get("elamASG") : g.get("elam");
 		this.elamActive = false;
 		this.elamDone = false;
@@ -2306,6 +2312,14 @@ class GameSim extends GameSimBase {
 		const pid = p.id;
 		this.recordStat(this.o, p, "fga");
 		this.recordStat(this.o, p, "fg");
+		this.flowKind =
+			type === "threePointer"
+				? "tp"
+				: type === "lowPost"
+					? "post"
+					: type === "midRange"
+						? "mid"
+						: "rim";
 		this.recordStat(this.o, p, "pts", 2); // 2 points for 2's
 
 		let fouler;
@@ -2657,6 +2671,7 @@ class GameSim extends GameSimBase {
 			if (Math.random() < ftp) {
 				// Between 60% and 90%
 				this.recordStat(this.o, p, "ft");
+				this.flowKind = "ft";
 				this.recordStat(this.o, p, "pts");
 				this.playByPlay.logEvent({
 					type: "ft",
@@ -2936,6 +2951,7 @@ class GameSim extends GameSimBase {
 						this.team[t].stat.ptsQtrs.length,
 						this.t,
 						p?.id,
+						this.flowKind,
 					);
 
 					for (const i of [0, 1] as const) {

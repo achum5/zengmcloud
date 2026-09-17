@@ -15,6 +15,24 @@
 
 export type GameFlowSide = 0 | 1;
 
+// What a score was: at the rim, in the post, a mid-range jumper, a three, or
+// free throws. Kept only for the finish, where a recap names the shot.
+export type FinishKind = "rim" | "post" | "mid" | "tp" | "ft";
+
+// One score in the closing stretch, with the score it left. A basket and
+// the free throw that followed it are one event with `andOne` set, and a
+// trip to the line is one event carrying however many went in.
+export type FinishEvent = {
+	side: GameFlowSide;
+	pid?: number;
+	pts: number;
+	kind: FinishKind;
+	andOne?: true;
+	period: number;
+	clock: number;
+	score: [number, number];
+};
+
 export type GameFlow = {
 	// Times the lead changed hands. A tie in between is not a change.
 	leadChanges: number;
@@ -39,6 +57,11 @@ export type GameFlow = {
 	run?: { side: GameFlowSide; pts: number; period: number; clock: number };
 	// The score with five minutes and with two minutes left in regulation.
 	late?: { clock: number; pts: [number, number] }[];
+	// Every score inside the last two minutes of regulation and all of
+	// overtime, in order, for a game that finished close - the sequence a
+	// recap of a tight game is written from. Absent for a game decided
+	// early, where nothing in the last two minutes was the story.
+	finish?: FinishEvent[];
 };
 
 type Event = {
@@ -47,7 +70,19 @@ type Event = {
 	period: number;
 	clock: number;
 	pts: number;
+	kind?: FinishKind;
+	andOne?: true;
 };
+
+// Seconds left in the final period from which the finish is kept.
+export const FINISH_WINDOW = 120;
+
+// The biggest final margin for which the closing scores are kept at all.
+const FINISH_MAX_MARGIN = 10;
+
+// The most closing scores kept. A double-overtime game can have more than
+// this, and the earliest of them are the ones a recap can do without.
+const FINISH_MAX_EVENTS = 24;
 
 // Clock marks, in seconds left in the final period, that the late score is
 // taken at.
@@ -67,6 +102,7 @@ export class FlowLog {
 		period: number,
 		clock: number,
 		pid?: number,
+		kind?: FinishKind,
 	) {
 		const p = this.pending;
 		if (
@@ -77,10 +113,15 @@ export class FlowLog {
 			p.clock === clock
 		) {
 			p.pts += pts;
+			// A free throw on the heels of a basket at the same instant is the
+			// and-one. Free throws after free throws are the rest of the trip.
+			if (kind === "ft" && p.kind !== undefined && p.kind !== "ft") {
+				p.andOne = true;
+			}
 			return;
 		}
 		this.flush();
-		this.pending = { side, pid, period, clock, pts };
+		this.pending = { side, pid, period, clock, pts, kind };
 	}
 
 	private flush() {
@@ -102,9 +143,29 @@ export class FlowLog {
 		let bestRun = 0;
 
 		const late = new Map<number, [number, number]>();
+		const finish: FinishEvent[] = [];
 
 		for (const e of this.events) {
 			score[e.side] += e.pts;
+
+			if (
+				e.kind !== undefined &&
+				(e.period > numPeriods ||
+					(e.period === numPeriods &&
+						Number.isFinite(e.clock) &&
+						e.clock <= FINISH_WINDOW))
+			) {
+				finish.push({
+					side: e.side,
+					pid: e.pid,
+					pts: e.pts,
+					kind: e.kind,
+					...(e.andOne ? { andOne: true as const } : {}),
+					period: e.period,
+					clock: e.clock,
+					score: [score[0], score[1]],
+				});
+			}
 
 			if (runSide === e.side) {
 				runPts += e.pts;
@@ -165,6 +226,14 @@ export class FlowLog {
 				clock: mark,
 				pts: late.get(mark)!,
 			}));
+		}
+
+		const wentToOvertime = this.events.some((e) => e.period > numPeriods);
+		if (
+			finish.length > 0 &&
+			(wentToOvertime || Math.abs(score[0] - score[1]) <= FINISH_MAX_MARGIN)
+		) {
+			out.finish = finish.slice(-FINISH_MAX_EVENTS);
 		}
 		return out;
 	}

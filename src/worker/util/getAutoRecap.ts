@@ -64,6 +64,7 @@ import {
 	type BeatContext,
 	type DayBeatContext,
 } from "./recapBeats.ts";
+import { finishStory, winningShotKind } from "./recapFinish.ts";
 
 // A procedural, no-AI recap engine. getAutoRecap turns one RecapGame into a
 // bold headline plus a couple of tight paragraphs; getAutoDayRecap turns a whole
@@ -566,13 +567,21 @@ const clutchShot = (
 				: undefined;
 			const rawShot = m[3]!.trim();
 			const tying = m[2] === "game-tying";
+			// The sim's note says "basket"; the finish log knows whether it
+			// was a layup or a jumper, which is what a desk would print.
+			const known =
+				rawShot === "basket" && !tying && seconds !== undefined
+					? winningShotKind(game, game.winnerTid, seconds)
+					: undefined;
 			const shot =
 				rawShot === "basket"
 					? buzzer && !tying
-						? "buzzer-beater"
+						? known && known !== "layup"
+							? `buzzer-beating ${known}`
+							: "buzzer-beater"
 						: tying
 							? "game-tying basket"
-							: "game-winner"
+							: (known ?? "game-winner")
 					: rawShot;
 			return {
 				name: m[1]!.trim(),
@@ -600,7 +609,11 @@ const clutchShot = (
 		) {
 			return {
 				name,
-				shot: last.by === 1 ? "free throw" : "game-winner",
+				shot:
+					last.by === 1
+						? "free throw"
+						: (winningShotKind(game, game.winnerTid, last.clock) ??
+							"game-winner"),
 				tying: false,
 				buzzer: false,
 				seconds: Math.round(last.clock * 10) / 10,
@@ -4101,6 +4114,9 @@ const finishNote = (
 	// "Zeke Foster put up 29... Zeke Foster's basket with 4:43 to go" reads
 	// "his basket" instead.
 	justNamed?: string,
+	// The closing sequence has been written from the finish log, which
+	// already told the go-ahead score and the last tie.
+	sequenceTold = false,
 ): string[] => {
 	const flow = game.flow;
 	const close = shape.margin <= 6 || shape.ot > 0;
@@ -4111,6 +4127,10 @@ const finishNote = (
 		return [];
 	}
 	const out: string[] = [];
+	if (sequenceTold) {
+		// Only the character of the whole game is left to say.
+		return leadChangesNote(flow, shape, rng);
+	}
 	const W = cap(theNick(shape.winner));
 	const wSide = sideOf(game, shape.winner);
 	const inFinal = (period: number) => period >= shape.regPeriods;
@@ -4169,13 +4189,23 @@ const finishNote = (
 		}
 	}
 
-	// A game nobody got away in: either the lead kept changing hands, or
-	// neither side ever built one. One sentence, not both - and only when the
-	// number says something, since "8 lead changes" is an ordinary night.
-	const biggest = Math.max(flow.maxLead[0], flow.maxLead[1]);
 	if (!close) {
 		return out;
 	}
+	out.push(...leadChangesNote(flow, shape, rng));
+	return out;
+};
+
+// A game nobody got away in: either the lead kept changing hands, or
+// neither side ever built one. One sentence, not both - and only when the
+// number says something, since "8 lead changes" is an ordinary night.
+const leadChangesNote = (
+	flow: NonNullable<RecapGame["flow"]>,
+	shape: Shape,
+	rng: () => number,
+): string[] => {
+	const out: string[] = [];
+	const biggest = Math.max(flow.maxLead[0], flow.maxLead[1]);
 	if (flow.leadChanges >= 10) {
 		out.push(
 			flow.ties > 0
@@ -4247,7 +4277,7 @@ const blownLeadNote = (
 		);
 	}
 	const two = flow.late?.find((m) => m.clock === 120);
-	if (two) {
+	if (two && !/two minutes/.test(written)) {
 		const l = two.pts[lSide];
 		const w = two.pts[1 - lSide];
 		if (l !== undefined && w !== undefined && l > w) {
@@ -4513,15 +4543,29 @@ export const getAutoRecap = (game: RecapGame): string => {
 			flowCovered = flow.covers;
 		}
 	}
-	// How it finished, for a game that was still a game at the end.
-	para1.push(
-		...finishNote(
+	// How it finished, for a game that was still a game at the end: the
+	// closing scores in order when the sim kept them, the go-ahead basket
+	// and the last tie when it did not.
+	const shotTold = shot !== undefined && !shot.tying;
+	const lastNamed = para1.at(-1)?.includes(star.name)
+		? star.name
+		: heroTold && para1.at(-1)?.includes(heroTold)
+			? heroTold
+			: undefined;
+	const sequence = finishStory(
+		{
 			game,
-			shape,
-			rng,
-			shot !== undefined && !shot.tying,
-			para1.at(-1)?.includes(star.name) ? star.name : undefined,
-		),
+			winner: shape.winner,
+			loser: shape.loser,
+			regPeriods: shape.regPeriods,
+			shotTold,
+			justNamed: lastNamed,
+		},
+		rng,
+	);
+	para1.push(...sequence);
+	para1.push(
+		...finishNote(game, shape, rng, shotTold, lastNamed, sequence.length > 0),
 	);
 	const spentFacts = new Set<StatFact>();
 	const spentTopics = new Set<StatTopic>();

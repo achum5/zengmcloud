@@ -3,6 +3,7 @@ import type {
 	RecapPlayer,
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
+import { finishScores } from "./recapFinish.ts";
 
 // DOES THE RECAP SAY ANYTHING THAT ISN'T TRUE?
 //
@@ -63,7 +64,7 @@ const COUNTING: [keyof RecapPlayer, string][] = [
 // period, a run, a rebounding edge or a season record. Those all share the
 // shape and none of them is wrong.
 const NOT_A_FINAL =
-	/quarter|after one|at the break|halftime|half|first|second|third|fourth|\brun\b|stretch|outscor|closed|opened|took over|settled it|broke it open|spurt|glass|boards|rebound|free throw|from the line|threes|from deep|assists|pushed|improved|moved|fell to|dropped to|climbed|meeting|season series|this season|at home|on the road|away from home|own building|bench|reserves|to go\b|\bleft\b|to play|lead change|tied at|as many as|straight points|two minutes|for good|ahead for the last time|went in front/i;
+	/quarter|after one|at the break|halftime|half|first|second|third|fourth|\brun\b|stretch|outscor|closed|opened|took over|settled it|broke it open|spurt|glass|boards|rebound|free throw|from the line|threes|from deep|assists|pushed|improved|moved|fell to|dropped to|climbed|meeting|season series|this season|at home|on the road|away from home|own building|bench|reserves|to go\b|\bleft\b|to play|lead change|tied at|as many as|straight points|two minutes|for good|ahead for the last time|went in front|ahead \d|up \d+-\d+|within|cut it|back to|as close as|made it \d|buzzer|no time|remaining/i;
 
 // A count in one of these sentences is a season or career total, a season
 // high being quoted, or a bench total - not a line from tonight's box score.
@@ -298,6 +299,45 @@ export const verifyRecap = (
 			(n) => n === flow.lastTie?.pts,
 			"last tie",
 		);
+		// --- the closing sequence, against the scores the log passed through -
+		//
+		// A sentence about the finish carries a clock ("with 47.7 seconds
+		// left", "at the buzzer"), and every score in it has to be one the
+		// closing stretch actually reached - either order, since the sentence
+		// puts whichever side it is about first.
+		const { pairs, ties } = finishScores(game);
+		const CLOCK =
+			/seconds? (?:left|to go|to play)|\d:\d\d (?:left|to go|to play)|at the buzzer|no time left|two minutes/;
+		for (const sentence of splitSentences(recap)) {
+			if (!CLOCK.test(sentence)) {
+				continue;
+			}
+			for (const m of sentence.matchAll(/\b(\d{1,3})-(\d{1,3})\b/g)) {
+				const a = Number(m[1]);
+				const b = Number(m[2]);
+				const isFinal = finalPts.has(a) && finalPts.has(b) && a !== b;
+				if (!pairs.has(`${a}-${b}`) && !isFinal) {
+					add("finish score", `said ${a}-${b}`, sentence);
+				}
+			}
+			for (const m of sentence.matchAll(/tied it at (\d+)/g)) {
+				const n = Number(m[1]);
+				if (!ties.has(n)) {
+					add("finish tie", `said tied at ${n}`, sentence);
+				}
+			}
+			for (const m of sentence.matchAll(/within (\d+)\b/g)) {
+				const n = Number(m[1]);
+				const ok = [...pairs].some((p) => {
+					const [x, y] = p.split("-").map(Number);
+					return Math.abs(x! - y!) === n;
+				});
+				if (!ok) {
+					add("finish margin", `said within ${n}`, sentence);
+				}
+			}
+		}
+
 		const two = flow.late?.find((m) => m.clock === 120);
 		for (const m of text.matchAll(
 			/(?:were up|led) (\d+)-(\d+) with two minutes/g,
