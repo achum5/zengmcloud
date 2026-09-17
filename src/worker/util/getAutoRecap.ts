@@ -3042,6 +3042,10 @@ const secondHalfNote = (
 			"halfComeback",
 		);
 	}
+	// "Never looked back" and "never troubled again" are claims about the
+	// end of the game, and a 22-point halftime lead that was caught and taken
+	// to overtime is neither.
+	const stayedAway = shape.ot === 0 && !closeLate(shape.game);
 	if (secondMargin >= 12) {
 		return pick(
 			rng,
@@ -3050,12 +3054,16 @@ const secondHalfNote = (
 				`The game got away from ${theNick(
 					shape.loser,
 				)} after the break - ${wSecond}-${lSecond} over the last two quarters.`,
-				`${cap(theNick(shape.winner))} won the second half ${wSecond}-${lSecond} and were never troubled again.`,
+				...(stayedAway
+					? [
+							`${cap(theNick(shape.winner))} won the second half ${wSecond}-${lSecond} and were never troubled again.`,
+						]
+					: []),
 			],
 			"secondHalfPull",
 		);
 	}
-	if (halfMargin >= 15) {
+	if (halfMargin >= 15 && stayedAway) {
 		return pick(
 			rng,
 			[
