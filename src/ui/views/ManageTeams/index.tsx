@@ -314,6 +314,12 @@ const ManageTeams = (props: View<"manageTeams">) => {
 									>
 										Customize court
 									</a>
+									<a
+										className="btn btn-sm btn-light-bordered ms-2"
+										href={helpers.leagueUrl(["edit_team_uniform", t.tid])}
+									>
+										Customize jersey
+									</a>
 								</div>
 							) : null}
 							<div className="col-12 d-lg-none" style={{ marginTop: -12 }}>

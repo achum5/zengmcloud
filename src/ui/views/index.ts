@@ -34,6 +34,7 @@ export { default as Dropbox } from "./Dropbox.tsx";
 export { default as EditAwardWinners } from "./EditAwardWinners.tsx";
 export { default as EightyTwoZeroDraft } from "./EightyTwoZeroDraft.tsx";
 export { default as EditTeamCourt } from "./EditTeamCourt.tsx";
+export { default as EditTeamUniform } from "./EditTeamUniform.tsx";
 export { default as Exhibition } from "./Exhibition.tsx";
 export { default as ExhibitionGame } from "./ExhibitionGame.tsx";
 export { default as Intrasquad } from "./Intrasquad/index.tsx";

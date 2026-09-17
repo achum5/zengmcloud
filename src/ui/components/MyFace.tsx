@@ -3,6 +3,8 @@ import type { FaceConfig } from "facesjs";
 import { Face } from "facesjs/react";
 import { DEFAULT_JERSEY, DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
 import { isSport } from "../../common/sportFunctions.ts";
+import { parseUniform } from "../../common/uniform.ts";
+import { registerUniformJersey } from "../util/uniformJersey.ts";
 
 const isChristmas = () => {
 	const now = new Date();
@@ -36,9 +38,13 @@ export const MyFace = ({
 				accessories: { id: accessoryId! } as { id: string },
 			};
 		} else {
+			// A custom uniform travels inside the jersey string. Build its SVG,
+			// register it into the faces.js table, and point the override at it -
+			// from here on it is a preset like any other.
+			const spec = parseUniform(jersey);
 			o = {
 				teamColors: colors,
-				jersey: { id: jersey },
+				jersey: { id: spec ? registerUniformJersey(spec, colors) : jersey },
 			} as {
 				teamColors: [string, string, string];
 				jersey: { id: string };

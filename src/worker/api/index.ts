@@ -270,6 +270,7 @@ import {
 	type DraftCardScene,
 } from "../../common/achievementCards.ts";
 import { actualPhase } from "../util/actualPhase.ts";
+import isValidJersey from "../core/team/isValidJersey.ts";
 import { getGlobalSettings } from "../util/getGlobalSettings.ts";
 import { getCol } from "../../common/getCol.ts";
 import { getCols } from "../../common/getCols.ts";
@@ -5978,6 +5979,40 @@ const updateTeamCourt = async ({
 	return { ok: true };
 };
 
+// Save a team's uniform. The spec travels inside the same jersey string the
+// Manage Teams dropdown writes, so it flows through season snapshots, sync and
+// export like any preset - this just validates it and updates the current
+// season's snapshot so the change shows immediately.
+const updateTeamUniform = async ({
+	tid,
+	jersey,
+}: {
+	tid: number;
+	jersey: string;
+}) => {
+	if (!isValidJersey(jersey)) {
+		throw new Error("Invalid jersey");
+	}
+	const t = await idb.cache.teams.get(tid);
+	if (!t) {
+		throw new Error(`Team not found for tid ${tid}`);
+	}
+	t.jersey = jersey;
+	await idb.cache.teams.put(t);
+
+	if (actualPhase() < PHASE.PLAYOFFS && !t.disabled) {
+		const teamSeason = await idb.cache.teamSeasons.indexGet(
+			"teamSeasonsByTidSeason",
+			[tid, g.get("season")],
+		);
+		if (teamSeason) {
+			teamSeason.jersey = jersey;
+			await idb.cache.teamSeasons.put(teamSeason);
+		}
+	}
+	return { ok: true };
+};
+
 const updateConfsDivs = async ({
 	confs,
 	divs,
@@ -7590,6 +7625,7 @@ export default {
 		updatePlayoffTeams,
 		updateScheduledEvent,
 		updateTeamCourt,
+		updateTeamUniform,
 		updateTeamInfo,
 		updateTrade,
 		upgrade65,

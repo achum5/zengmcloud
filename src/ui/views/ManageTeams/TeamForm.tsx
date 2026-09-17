@@ -1,6 +1,7 @@
 import type { FaceConfig } from "facesjs";
 import { useState } from "react";
 import { JERSEYS } from "../../../common/constants.ts";
+import { isUniformJersey } from "../../../common/uniform.ts";
 import type { View, ExpansionDraftSetupTeam } from "../../../common/types.ts";
 import { JerseyNumber } from "../../components/JerseyNumber.tsx";
 import { toWorker } from "../../util/toWorker.ts";
@@ -262,6 +263,12 @@ const TeamForm = ({
 								zIndex: 1,
 							}}
 						>
+							{/* A custom uniform (from the jersey editor) is stored in this
+							    same field - show it as its own entry so the select isn't
+							    blank. Picking a preset replaces it. */}
+							{isUniformJersey(t.jersey) ? (
+								<option value={t.jersey}>Custom</option>
+							) : null}
 							{helpers.keys(JERSEYS).map((jersey) => (
 								<option key={jersey} value={jersey}>
 									{JERSEYS[jersey]}
