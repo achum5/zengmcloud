@@ -1,4 +1,5 @@
 import type { GameFlow } from "../../common/gameFlow.ts";
+import { isSport } from "../../common/sportFunctions.ts";
 import { idb } from "../db/index.ts";
 import {
 	addTotals,
@@ -243,6 +244,10 @@ export type RecapGame = {
 	// (points 0 = pick'em). Undefined when it can't be computed (legacy games with
 	// no stored OVRs). Lets the recap frame upsets/blowouts against expectations.
 	spread?: { favTid: number; points: number };
+	// A game level after the last overtime a league allows, settled in a
+	// shootout: the shootout points, winner first. The teams' `pts` are then
+	// equal, and the recap says how it was decided.
+	shootout?: { won: number; lost: number };
 	// Narrative highlights ZenGM already generated (game-winners, milestones, ...).
 	clutchPlays: string[];
 	// How the game unfolded, when the sim recorded it. See common/gameFlow.ts.
@@ -290,8 +295,8 @@ type RecapGameRow = {
 	day?: number;
 	playoffs?: boolean;
 	teams: { tid: number }[];
-	won?: { tid: number };
-	lost?: { tid: number };
+	won?: { tid: number; pts?: number; sPts?: number };
+	lost?: { tid: number; pts?: number; sPts?: number };
 };
 
 // The series wins each team had ENTERING a given game (before it was played).
@@ -374,6 +379,15 @@ export const regularSeasonRecordAsOf = (
 			continue;
 		}
 		if (g.teams[0]?.tid !== tid && g.teams[1]?.tid !== tid) {
+			continue;
+		}
+		// A tie (equal points, no shootout) is neither. A league that allows
+		// them keeps its own count; the recap's "(10-3)" is wins and losses.
+		if (
+			g.won.pts !== undefined &&
+			g.won.pts === g.lost.pts &&
+			g.won.sPts === undefined
+		) {
 			continue;
 		}
 		if (g.won.tid === tid) {
@@ -1130,6 +1144,11 @@ export const getDayGamesForRecap = async ({
 			day: game.day ?? day,
 			overtimes: game.overtimes ?? 0,
 			winnerTid: game.won.tid,
+			...(typeof game.won.sPts === "number" &&
+			typeof game.lost.sPts === "number" &&
+			game.won.pts === game.lost.pts
+				? { shootout: { won: game.won.sPts, lost: game.lost.sPts } }
+				: {}),
 			playoffs,
 			teams,
 			series: playoffs && !playIn ? await seriesForGame(game) : undefined,
@@ -1776,6 +1795,11 @@ const createAutoRecapContext = async (season: number) => {
 			day: game.day ?? effectiveDay,
 			overtimes: game.overtimes ?? 0,
 			winnerTid: game.won.tid,
+			...(typeof game.won.sPts === "number" &&
+			typeof game.lost.sPts === "number" &&
+			game.won.pts === game.lost.pts
+				? { shootout: { won: game.won.sPts, lost: game.lost.sPts } }
+				: {}),
 			playoffs,
 			teams,
 			series: playoffs && !playIn ? await seriesForGame(game) : undefined,
@@ -1883,6 +1907,13 @@ export const getAutoRecapsForDay = async ({
 	season: number;
 	day: number;
 }): Promise<{ notes: Record<number, string>; dayRecap: string }> => {
+	// The engine reads a basketball box score - points, rebounds, assists,
+	// the shooting splits, a score log kept by the basketball sim. In any
+	// other sport every one of those is zero, and the recap it produced said
+	// so with complete confidence. No recap beats a wrong one.
+	if (!isSport("basketball")) {
+		return { notes: {}, dayRecap: "" };
+	}
 	const games = await recapGamesForDay({ season, day });
 	if (games.length === 0) {
 		return { notes: {}, dayRecap: "" };
@@ -1922,6 +1953,9 @@ export const getAutoRecapForGid = async ({
 	season: number;
 	gid: number;
 }): Promise<string | undefined> => {
+	if (!isSport("basketball")) {
+		return undefined;
+	}
 	const ctx = await createAutoRecapContext(season);
 	const game = ctx.allGames.find((g2) => g2.gid === gid && g2.won && g2.lost);
 	if (!game) {

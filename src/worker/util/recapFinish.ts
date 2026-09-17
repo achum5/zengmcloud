@@ -118,6 +118,7 @@ const aShot = (e: FinishEvent): string => {
 // "X made a three-pointer with 4.2 seconds remaining to force overtime".
 const regulationTie = (
 	game: RecapGame,
+	regPeriods: number,
 ):
 	| { name: string; shot: string; clock?: string; buzzer: boolean }
 	| undefined => {
@@ -128,11 +129,23 @@ const regulationTie = (
 				text,
 			);
 		if (m) {
-			const shot = m[2]!.replace(/^a /, "");
+			let shot = m[2]!.replace(/^a /, "");
 			const secs = m[3] ? Number.parseFloat(m[3].replace(":", ".")) : undefined;
+			// The sim's note says "basket"; the log knows what it was.
+			if (shot === "basket" && secs !== undefined) {
+				const e = (game.flow?.finish ?? []).find(
+					(x) =>
+						x.period === regPeriods &&
+						x.kind !== "ft" &&
+						Math.abs(x.clock - secs) < 0.15,
+				);
+				if (e) {
+					shot = shotName(e);
+				}
+			}
 			return {
 				name: m[1]!.trim(),
-				shot: shot === "basket" ? "basket" : shot,
+				shot,
 				clock:
 					secs !== undefined && Number.isFinite(secs)
 						? clockLeft(secs)
@@ -216,7 +229,7 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 	};
 
 	if (ot) {
-		const tie = regulationTie(game);
+		const tie = regulationTie(game, regPeriods);
 		if (tie) {
 			const clock = tie.buzzer
 				? tie.shot.includes("free throw")
@@ -404,11 +417,13 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 				: undefined;
 		if (cutText && sealText) {
 			say(`${cap(cutText)}, but ${sealText}.`, seal!.name);
-		} else if (cut && cut.e.clock < 0.5) {
-			// A basket at the horn changes the final and nothing else.
+		} else if (cut && cut.e.clock < 3) {
+			// A basket at the horn, or with a second or two left, changes the
+			// final and nothing else - "and the Pacers got no closer" after a
+			// three with 1.1 seconds left is a sentence about nothing.
 			const [w, l] = shown(cut.e, wSide);
 			say(
-				`${cap(shotBy(cut.name!, cut.e, justNamed))} at the buzzer made the final ${w}-${l}.`,
+				`${cap(shotBy(cut.name!, cut.e, justNamed))} ${when(cut.e, rng)} made the final ${w}-${l}.`,
 				cut.name,
 			);
 		} else if (cutText) {

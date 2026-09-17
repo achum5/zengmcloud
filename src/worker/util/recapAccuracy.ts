@@ -145,7 +145,8 @@ export const verifyRecap = (
 			}
 			const a = Number(m[1]);
 			const b = Number(m[2]);
-			if (!finalPts.has(a) || !finalPts.has(b) || a === b) {
+			const tie = winner.pts === loser.pts;
+			if (!finalPts.has(a) || !finalPts.has(b) || (a === b && !tie)) {
 				add(
 					"final score",
 					`said ${a}-${b}, real ${winner.pts}-${loser.pts}`,
@@ -307,6 +308,11 @@ export const verifyRecap = (
 		);
 		claim(/(\d+) ties?\b/g, (n) => n === flow.ties, "ties");
 		claim(/as many as (\d+)/g, (n) => flow.maxLead.includes(n), "biggest lead");
+		claim(
+			/lead reached (\d+)|up by (\d+) at their biggest/g,
+			(n) => flow.maxLead.includes(n),
+			"biggest lead",
+		);
 		claim(
 			/up by (\d+) at one stage/g,
 			(n) => flow.maxLead.includes(n),
