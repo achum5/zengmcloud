@@ -6,6 +6,7 @@ import {
 	coarsenRatingsRow,
 	coarsenRatingValue,
 	exemptFromCoarseRatings,
+	comparisonEntryExact,
 	onShownScale,
 	prospectRatingsSeason,
 } from "./coarsenRating.ts";
@@ -275,6 +276,49 @@ describe("coarsenRatingValue", () => {
 // in a draft class. That report doesn't stop having been true the day he's
 // drafted, so opening his draft year still shows exact ratings while every
 // season after it is coarsened.
+// Dominic's hierarchy for Compare Players: the page carries ONE scale, and it
+// is exact only when every column reads exact on its own. This predicate is
+// the per-column half of that.
+describe("comparisonEntryExact", () => {
+	const RETIRED = -3;
+	const UNDRAFTED = -2;
+	const ACTIVE = 5;
+
+	test("a retired player reads exact at any season, career included", () => {
+		assert.strictEqual(comparisonEntryExact(RETIRED, 2002, 2002, true), true);
+		assert.strictEqual(comparisonEntryExact(RETIRED, 2002, 2010, true), true);
+		assert.strictEqual(
+			comparisonEntryExact(RETIRED, 2002, "career", true),
+			true,
+		);
+		// And with the prospects option off - his career is a record either way.
+		assert.strictEqual(comparisonEntryExact(RETIRED, 2002, 2010, false), true);
+	});
+
+	test("an undrafted prospect reads exact only with the option on", () => {
+		assert.strictEqual(comparisonEntryExact(UNDRAFTED, 2015, 2015, true), true);
+		assert.strictEqual(
+			comparisonEntryExact(UNDRAFTED, 2015, 2015, false),
+			false,
+		);
+	});
+
+	test("a drafted player's own scouting row reads exact", () => {
+		assert.strictEqual(comparisonEntryExact(ACTIVE, 2015, 2015, true), true);
+		assert.strictEqual(comparisonEntryExact(ACTIVE, 2015, 2014, true), true);
+		assert.strictEqual(comparisonEntryExact(ACTIVE, 2015, 2015, false), false);
+	});
+
+	test("an active player's pro season or career never does", () => {
+		assert.strictEqual(comparisonEntryExact(ACTIVE, 2015, 2016, true), false);
+		assert.strictEqual(comparisonEntryExact(ACTIVE, 2015, 2020, true), false);
+		assert.strictEqual(
+			comparisonEntryExact(ACTIVE, 2015, "career", true),
+			false,
+		);
+	});
+});
+
 describe("prospectRatingsSeason", () => {
 	test("the draft year itself is a prospect season", () => {
 		assert.strictEqual(prospectRatingsSeason(2020, 2020, true), true);

@@ -65,6 +65,29 @@ export const prospectRatingsSeason = (
 	season !== undefined &&
 	season <= draftYear;
 
+// One column of a side-by-side comparison: would it read EXACT on its own?
+//
+// A comparison page shows several players at once, so it has to carry ONE
+// scale - 53 next to 6 is two scales in one table, and the 6 means 60-69. The
+// page stays exact only when every column qualifies on its own; the moment
+// one doesn't, every column is coarsened to match it.
+//
+// Exact-on-its-own means the number is a settled record rather than a live
+// question: a RETIRED player's career (nothing left to decide about him), an
+// undrafted prospect (the scouting report), or a drafted player shown at a
+// prospect season (that same report, after the fact). An active player's pro
+// season - or his career, which contains pro seasons - is exactly what the
+// coarse mode exists to hide.
+export const comparisonEntryExact = (
+	tid: number | undefined,
+	draftYear: number | undefined,
+	season: number | "career",
+	exceptProspects: boolean,
+): boolean =>
+	exemptFromCoarseRatings(tid, exceptProspects, true) ||
+	(season !== "career" &&
+		prospectRatingsSeason(draftYear, season, exceptProspects));
+
 // The change to show alongside a coarsened rating. It has to be the difference
 // of the two DISPLAYED values, or a 56 -> 58 bump reads as "5 (+2)".
 export const coarsenRatingChange = (current: number, change: number): number =>

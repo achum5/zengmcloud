@@ -12,6 +12,11 @@ import { getPlayerProfileStats } from "./player.ts";
 import type { SeasonType } from "../api/processInputs.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
+import {
+	coarsenRating,
+	coarsenRatingsRow,
+	comparisonEntryExact,
+} from "../../common/coarsenRating.ts";
 
 const hasPlayerInfoChanged = (
 	inputPlayers: ViewInput<"comparePlayers">["players"],
@@ -361,6 +366,10 @@ const updateComparePlayers = async (
 
 		const allStats = getPlayerProfileStats();
 
+		// Whether each shown entry could carry exact ratings on its own - the
+		// whole comparison goes coarse unless every one of them can.
+		const exactEligible: boolean[] = [];
+
 		const players = [];
 		for (const { pid, season, playoffs } of playersToShow) {
 			const pRaw = await idb.getCopy.players({ pid }, "noCopyCache");
@@ -392,6 +401,9 @@ const updateComparePlayers = async (
 					showNoStats: true,
 					showRookies: true,
 					fuzz: true,
+					// Exact ratings here; whether this comparison displays coarse is
+					// decided below, for all its players at once.
+					coarsenRatings: false,
 					mergeStats: "totOnly",
 				});
 
@@ -423,6 +435,14 @@ const updateComparePlayers = async (
 						p.jersey = teamInfo.jersey;
 					}
 
+					exactEligible.push(
+						comparisonEntryExact(
+							pRaw.tid,
+							pRaw.draft.year,
+							season,
+							g.get("hideRatingsOnesDigitExceptProspects"),
+						),
+					);
 					players.push({
 						p,
 						season,
@@ -430,6 +450,26 @@ const updateComparePlayers = async (
 						lastSeason: last(pRaw.ratings).season,
 						playoffs,
 					});
+				}
+			}
+		}
+
+		// ONE SCALE FOR THE WHOLE COMPARISON. With "hide ratings ones digit" on,
+		// a row's scale depends on whose it is - a scouting row or a retired
+		// career reads exact, an active player's pro season reads coarse. Side by
+		// side that put 46 next to 5, so the page picks a single scale: exact
+		// only when every column reads exact on its own, coarse for everybody the
+		// moment an active player's pro season (or career) is in the mix.
+		if (g.get("hideRatingsOnesDigit") && !exactEligible.every(Boolean)) {
+			const ratingsList = ["season", "pos", "ovr", "pot", ...RATINGS];
+			for (const { p } of players) {
+				p.ratings = coarsenRatingsRow(p.ratings, ratingsList);
+				if (p.draft) {
+					for (const attr of ["ovr", "pot"]) {
+						if (typeof p.draft[attr] === "number") {
+							p.draft[attr] = coarsenRating(p.draft[attr]);
+						}
+					}
 				}
 			}
 		}
