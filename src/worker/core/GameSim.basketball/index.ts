@@ -217,6 +217,9 @@ class GameSim extends GameSimBase {
 	// every point goes through and it does not otherwise know the shot.
 	flowKind: FinishKind | undefined;
 
+	// And who set it up, for a made field goal.
+	flowAst: number | undefined;
+
 	o: TeamNum;
 
 	d: TeamNum;
@@ -342,6 +345,7 @@ class GameSim extends GameSimBase {
 		this.clutchPlays = [];
 		this.flow = new FlowLog();
 		this.flowKind = undefined;
+		this.flowAst = undefined;
 		this.elam = this.allStarGame ? g.get("elamASG") : g.get("elam");
 		this.elamActive = false;
 		this.elamDone = false;
@@ -2320,6 +2324,7 @@ class GameSim extends GameSimBase {
 					: type === "midRange"
 						? "mid"
 						: "rim";
+		this.flowAst = passer?.id;
 		this.recordStat(this.o, p, "pts", 2); // 2 points for 2's
 
 		let fouler;
@@ -2672,6 +2677,7 @@ class GameSim extends GameSimBase {
 				// Between 60% and 90%
 				this.recordStat(this.o, p, "ft");
 				this.flowKind = "ft";
+				this.flowAst = undefined;
 				this.recordStat(this.o, p, "pts");
 				this.playByPlay.logEvent({
 					type: "ft",
@@ -2952,6 +2958,7 @@ class GameSim extends GameSimBase {
 						this.t,
 						p?.id,
 						this.flowKind,
+						this.flowAst,
 					);
 
 					for (const i of [0, 1] as const) {

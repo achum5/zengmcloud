@@ -463,6 +463,9 @@ export type PlayerEntering = {
 	totals: CountingTotals;
 	// Consecutive games, ending with the previous one, at each bar.
 	streaks: { twenty: number; thirty: number; doubleDouble: number };
+	// How many games before this one reached each bar, this phase - "his
+	// 12th 30-point game of the season".
+	counts?: { twenty: number; thirty: number; forty: number };
 };
 
 const lineTotals = (row: Record<string, number>): CountingTotals => ({
@@ -525,6 +528,19 @@ export const playerEntering = (
 			high[key] = Math.max(high[key], t[key]);
 		}
 	}
+	const counts = { twenty: 0, thirty: 0, forty: 0 };
+	for (const l of prior) {
+		const pts = lineTotals(l.row).pts;
+		if (pts >= 20) {
+			counts.twenty += 1;
+		}
+		if (pts >= 30) {
+			counts.thirty += 1;
+		}
+		if (pts >= 40) {
+			counts.forty += 1;
+		}
+	}
 	const streaks = { twenty: 0, thirty: 0, doubleDouble: 0 };
 	let twentyOpen = true;
 	let thirtyOpen = true;
@@ -550,7 +566,7 @@ export const playerEntering = (
 			break;
 		}
 	}
-	return { gp: prior.length, high, totals, streaks };
+	return { gp: prior.length, high, totals, streaks, counts };
 };
 
 // The line the box score gives a player, as counting totals.

@@ -194,3 +194,19 @@ describe("clockLeft", () => {
 		assert.isUndefined(clockLeft(Infinity));
 	});
 });
+
+describe("the assist on a closing score", () => {
+	test("is kept with the basket, and never on a free throw", () => {
+		const log = new FlowLog();
+		log.addPoints(0, 2, 1, 700, 1, "rim");
+		log.addPoints(1, 2, 4, 90, 7, "mid", 8);
+		log.addPoints(0, 2, 4, 30, 3, "tp", 4);
+		log.addPoints(0, 1, 4, 30, 3, "tp", 4);
+		log.addPoints(0, 2, 4, 5, 3, "ft");
+		const f = log.summary(4);
+		assert.strictEqual(f.finish?.[0]?.ast, 8);
+		assert.strictEqual(f.finish?.[1]?.ast, 4);
+		assert.strictEqual(f.finish?.[1]?.pts, 3);
+		assert.isUndefined(f.finish?.[2]?.ast);
+	});
+});

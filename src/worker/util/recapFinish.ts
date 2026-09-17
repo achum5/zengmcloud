@@ -376,6 +376,33 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 				goAhead.name,
 			);
 		}
+		// The pass that set up the decisive basket, when the log has it and
+		// the basket was the one that decided it.
+		const setUp = nameOf(game, goAhead.e.ast);
+		if (
+			setUp &&
+			setUp !== goAhead.name &&
+			goAhead.e.kind !== "ft" &&
+			(goAhead.e.clock <= 60 || goAheadIdx === moments.length - 1)
+		) {
+			say(
+				shotTold
+					? pick(
+							rng,
+							[
+								`${setUp} set up the winner.`,
+								`The assist on the winner was ${poss(setUp)}.`,
+							],
+							"finishAssistTold",
+						)
+					: pick(
+							rng,
+							[`${setUp} had the assist.`, `${setUp} set it up.`],
+							"finishAssist",
+						),
+				setUp,
+			);
+		}
 
 		// What followed: the losers getting close, and the winner closing it.
 		const after = moments.slice(goAheadIdx + 1);

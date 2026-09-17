@@ -25,6 +25,8 @@ export type FinishKind = "rim" | "post" | "mid" | "tp" | "ft";
 export type FinishEvent = {
 	side: GameFlowSide;
 	pid?: number;
+	// The man who set the basket up, when it was assisted.
+	ast?: number;
 	pts: number;
 	kind: FinishKind;
 	andOne?: true;
@@ -67,6 +69,7 @@ export type GameFlow = {
 type Event = {
 	side: GameFlowSide;
 	pid?: number;
+	ast?: number;
 	period: number;
 	clock: number;
 	pts: number;
@@ -103,6 +106,7 @@ export class FlowLog {
 		clock: number,
 		pid?: number,
 		kind?: FinishKind,
+		ast?: number,
 	) {
 		const p = this.pending;
 		if (
@@ -121,7 +125,15 @@ export class FlowLog {
 			return;
 		}
 		this.flush();
-		this.pending = { side, pid, period, clock, pts, kind };
+		this.pending = {
+			side,
+			pid,
+			period,
+			clock,
+			pts,
+			kind,
+			...(ast !== undefined ? { ast } : {}),
+		};
 	}
 
 	private flush() {
@@ -158,6 +170,7 @@ export class FlowLog {
 				finish.push({
 					side: e.side,
 					pid: e.pid,
+					...(e.ast !== undefined ? { ast: e.ast } : {}),
 					pts: e.pts,
 					kind: e.kind,
 					...(e.andOne ? { andOne: true as const } : {}),

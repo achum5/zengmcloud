@@ -51,6 +51,7 @@ import {
 	homeRoadBeat,
 	milestoneBeat,
 	nextGameBeat,
+	playerCountBeat,
 	playerHighBeat,
 	playerStreakBeat,
 	restBeat,
@@ -2438,6 +2439,12 @@ const leadSentence = (
 	// Occasionally frame the star against the average he came in with.
 	if (line && star.pts >= line.pts + 12 && star.pts >= 24 && rng() < 0.6) {
 		subject = `${star.name}, who came in averaging ${line.pts} points a game,`;
+	} else if (star.rookie && star.pts >= 18) {
+		// "Rookie Jalen Green scored 24" - the one word a desk never leaves
+		// off a first-year man's big night.
+		subject = `Rookie ${star.name}`;
+	} else if (star.age !== undefined && star.age >= 34 && star.pts >= 20) {
+		subject = `${star.name}, ${star.age},`;
 	}
 
 	// The story pick is made on the whole line, so a 19-point night with 7
@@ -5256,6 +5263,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 				writtenSoFar.includes(`${star.fg}-of-${star.fga}`),
 			),
 		() => playerStreakBeat(star, rng),
+		() => playerCountBeat(star, rng, writtenSoFar),
 		() => playerHighBeat(star, rng, writtenSoFar),
 		() => vsOpponentBeat(star, nick(shape.loser), rng),
 	];

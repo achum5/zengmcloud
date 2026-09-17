@@ -531,6 +531,54 @@ export const teamHighBeat = (
 	return undefined;
 };
 
+// "It was his 12th 30-point game of the season." A count a beat writer
+// keeps and the box score does not show. Only once the count means
+// something: a fourth 30-point game, a second 40-point one.
+export const playerCountBeat = (
+	p: RecapPlayer,
+	rng: Rng,
+	written = "",
+): string | undefined => {
+	const c = p.entering?.counts;
+	if (!c) {
+		return undefined;
+	}
+	// The streak beat has already put his run of big games on the page.
+	if (
+		written
+			.split(/(?<=[!.?])\s+/)
+			.some(
+				(s) => s.includes(p.name) && /-plus|or more|straight|in a row/.test(s),
+			)
+	) {
+		return undefined;
+	}
+	if (p.pts >= 40 && c.forty + 1 >= 2) {
+		const n = c.forty + 1;
+		return pick(
+			rng,
+			[
+				`It was ${poss(p.name)} ${ordinal(n)} 40-point game of the season.`,
+				`That is ${numWord(n)} 40-point games this season for ${p.name}.`,
+			],
+			"count40",
+		);
+	}
+	if (p.pts >= 30 && c.thirty + 1 >= 4) {
+		const n = c.thirty + 1;
+		return pick(
+			rng,
+			[
+				`It was ${poss(p.name)} ${ordinal(n)} 30-point game of the season.`,
+				`${p.name} now has ${numWord(n)} 30-point games this season.`,
+				`That made it ${numWord(n)} games of 30 or more this season for ${p.name}.`,
+			],
+			"count30",
+		);
+	}
+	return undefined;
+};
+
 export const playerHighBeat = (
 	p: RecapPlayer,
 	rng: Rng,

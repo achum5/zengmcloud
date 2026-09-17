@@ -109,6 +109,10 @@ export type RecapPlayer = {
 	playoffAvg?: RecapAverages;
 	// Past seasons only (the current season is the seasonAvg above).
 	career?: RecapCareerSeason[];
+	// Known for the men the loader looks up in full (the top handful by
+	// scoring): his age this season, and whether it is his first.
+	age?: number;
+	rookie?: boolean;
 	// Set when a player who PLAYED was hurt this game or played through an injury.
 	injury?: {
 		type: string;
@@ -1063,6 +1067,14 @@ export const getDayGamesForRecap = async ({
 						? await idb.cache.players.get(p.pid)
 						: undefined;
 				if (full) {
+					if (typeof full.born?.year === "number") {
+						base.age = season - full.born.year;
+					}
+					// Drafted (or undrafted) in the previous offseason: his first
+					// season is this one.
+					if (full.draft?.year === season - 1) {
+						base.rookie = true;
+					}
 					const careerRaw = playerCareer(full, season);
 					if (careerRaw) {
 						const career: RecapCareerSeason[] = [];

@@ -507,4 +507,90 @@ describe("edge cases", () => {
 		assert.ok(bigLead >= 8, `bigLead ${bigLead}`);
 		assert.ok(skid >= 8, `skid ${skid}`);
 	});
+	test("a rookie is called one, and a veteran's age rides on his name", () => {
+		const rookie = squad(
+			{ tid: 1, name: "Hawks" },
+			{
+				name: "Ace Hawk",
+				pid: 11,
+				pts: 26,
+				reb: 6,
+				fg: 10,
+				fga: 18,
+				rookie: true,
+			},
+			104,
+		);
+		const away = squad(
+			{ tid: 2, name: "Bulls" },
+			{ name: "Bo Bull", pid: 21, pts: 22 },
+			96,
+		);
+		let called = 0;
+		for (let gid = 1; gid <= 10; gid++) {
+			const recap = getAutoRecap(game([rookie, away], { gid }));
+			clean(recap);
+			if (/Rookie Ace Hawk/.test(recap)) {
+				called += 1;
+			}
+			assert.deepEqual(verifyRecap(recap, game([rookie, away], { gid })), []);
+		}
+		assert.ok(called >= 3, `${called}`);
+
+		const vet = squad(
+			{ tid: 1, name: "Hawks" },
+			{ name: "Ace Hawk", pid: 11, pts: 26, reb: 6, fg: 10, fga: 18, age: 36 },
+			104,
+		);
+		let aged = 0;
+		for (let gid = 1; gid <= 10; gid++) {
+			const recap = getAutoRecap(game([vet, away], { gid }));
+			clean(recap);
+			if (/Ace Hawk, 36,/.test(recap)) {
+				aged += 1;
+			}
+		}
+		assert.ok(aged >= 3, `${aged}`);
+	});
+
+	test("the Nth 30-point game of the season, once the count means something", () => {
+		const home = squad(
+			{ tid: 1, name: "Hawks" },
+			{
+				name: "Ace Hawk",
+				pid: 11,
+				pts: 33,
+				reb: 6,
+				fg: 12,
+				fga: 22,
+				entering: {
+					gp: 20,
+					high: { pts: 38, reb: 12, ast: 8, tp: 6, stl: 3, blk: 2 },
+					totals: { pts: 500, reb: 120, ast: 80, tp: 40, stl: 20, blk: 10 },
+					streaks: { twenty: 2, thirty: 0, doubleDouble: 0 },
+					counts: { twenty: 12, thirty: 5, forty: 0 },
+				},
+			},
+			110,
+		);
+		const away = squad(
+			{ tid: 2, name: "Bulls" },
+			{ name: "Bo Bull", pid: 21, pts: 22 },
+			98,
+		);
+		let counted = 0;
+		for (let gid = 1; gid <= 10; gid++) {
+			const recap = getAutoRecap(game([home, away], { gid }));
+			clean(recap);
+			if (
+				/sixth 30-point game|six 30-point games|six games of 30 or more/.test(
+					recap,
+				)
+			) {
+				counted += 1;
+			}
+			assert.deepEqual(verifyRecap(recap, game([home, away], { gid })), []);
+		}
+		assert.ok(counted >= 5, `${counted}`);
+	});
 });
