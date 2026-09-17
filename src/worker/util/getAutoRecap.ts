@@ -3550,9 +3550,9 @@ const stakesSentence = (
 			pick(
 				rng,
 				[
-					`It snapped ${poss(theNick(shape.loser))} ${run}-game winning streak.`,
-					`${cap(theNick(shape.loser))} had won ${run} in a row until this one.`,
-					`That is the end of a ${run}-game run for ${theNick(shape.loser)}.`,
+					`It snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
+					`${cap(theNick(shape.loser))} had won ${numWord(run)} in a row until this one.`,
+					`That is the end of a ${numWord(run)}-game run for ${theNick(shape.loser)}.`,
 				],
 				"snappedStreak",
 			),
@@ -3571,9 +3571,9 @@ const stakesSentence = (
 				pick(
 					rng,
 					[
-						`It snapped ${poss(theNick(shape.loser))} ${run}-game winning streak.`,
-						`${cap(theNick(shape.loser))} had won ${run} in a row until this one.`,
-						`That is the end of a ${run}-game run for ${theNick(shape.loser)}.`,
+						`It snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
+						`${cap(theNick(shape.loser))} had won ${numWord(run)} in a row until this one.`,
+						`That is the end of a ${numWord(run)}-game run for ${theNick(shape.loser)}.`,
 					],
 					"snappedStreak",
 				),
@@ -5669,6 +5669,31 @@ const gameBlurb = (
 	const base = `${cap(theNick(shape.winner))} ${verb} ${theNick(
 		shape.loser,
 	)} ${scoreTag(shape)}`;
+	// A game decided in the last two minutes, on the score that decided it -
+	// the sim only calls the very last basket a game-winner. Like the winning
+	// shot, it outranks the star-first form: it is new even under a headline
+	// that gave the result.
+	const last = game.flow?.lastLead;
+	if (
+		shape.margin <= 3 &&
+		shape.ot === 0 &&
+		!(shot && !shot.tying) &&
+		last &&
+		last.side === sideOf(game, shape.winner) &&
+		last.period >= shape.regPeriods &&
+		last.clock <= 120 &&
+		Number.isFinite(last.clock)
+	) {
+		const who = nameOfPid(game, last.pid);
+		const left = clockLeft(last.clock);
+		if (who && left) {
+			const kind =
+				last.by === 1
+					? "free throw"
+					: (winningShotKind(game, game.winnerTid, last.clock) ?? "basket");
+			return `${base} on ${poss(who)} go-ahead ${kind} with ${left} left`;
+		}
+	}
 	// A game-winning shot outranks this: it is the story, and it already opens
 	// on something the headline's bare result did not have.
 	if (starFirst && star && !(shot && !shot.tying)) {
@@ -5699,28 +5724,6 @@ const gameBlurb = (
 						? ` with ${plural(shot.seconds, "second")} left`
 						: "";
 		return `${base} on ${poss(shot.name)} ${shot.shot}${timing}`;
-	}
-	// A game decided in the last two minutes, on the score that decided it -
-	// the sim only calls the very last basket a game-winner.
-	const last = game.flow?.lastLead;
-	if (
-		shape.margin <= 3 &&
-		shape.ot === 0 &&
-		last &&
-		last.side === sideOf(game, shape.winner) &&
-		last.period >= shape.regPeriods &&
-		last.clock <= 120 &&
-		Number.isFinite(last.clock)
-	) {
-		const who = nameOfPid(game, last.pid);
-		const left = clockLeft(last.clock);
-		if (who && left) {
-			const kind =
-				last.by === 1
-					? "free throw"
-					: (winningShotKind(game, game.winnerTid, last.clock) ?? "basket");
-			return `${base} on ${poss(who)} go-ahead ${kind} with ${left} left`;
-		}
 	}
 	if (star) {
 		// Give the marquee star his full line, calling out a triple-double.
