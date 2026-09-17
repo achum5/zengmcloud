@@ -170,6 +170,35 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 	const total = s.won + s.lost + 1;
 	const options: string[] = [];
 
+	// The last meeting of the season decides the series, and that is the
+	// line: a sweep completed, or a series taken.
+	if (s.left === 0 && total >= 2) {
+		if (s.lost === 0) {
+			return pick(
+				rng,
+				[
+					`${W} completed a season sweep of ${ln}, ${total}-0.`,
+					`That finished a ${total}-0 season sweep of ${ln} for ${wn}.`,
+					`${W} took all ${numWord(total)} meetings with ${ln} this season.`,
+				],
+				"seriesSweepDone",
+			);
+		}
+		if (wonNow > s.lost) {
+			return pick(
+				rng,
+				[
+					`${W} took the season series with ${ln}, ${wonNow}-${s.lost}.`,
+					`That gave ${wn} the season series over ${ln}, ${wonNow}-${s.lost}.`,
+				],
+				"seriesTaken",
+			);
+		}
+		if (wonNow === s.lost) {
+			return `${W} and ${ln} finished their season series level at ${wonNow}-${wonNow}.`;
+		}
+	}
+
 	if (s.lost === 0 && total === 2 && rng() < 0.5) {
 		return undefined;
 	}
@@ -312,7 +341,7 @@ export const homeRoadBeat = (
 				rng,
 				[
 					`${W} improved to ${wa.won}-${wa.lost} on the road.`,
-					`That is ${wa.won} road wins in ${games(wa)} tries for ${wn}.`,
+					`That is ${numWord(wa.won)} road wins in ${numWord(games(wa))} tries for ${wn}.`,
 					`${W} are ${wa.won}-${wa.lost} away from home.`,
 				],
 				"roadRecord",
@@ -331,7 +360,7 @@ export const homeRoadBeat = (
 				rng,
 				[
 					`${W} improved to ${wh.won}-${wh.lost} at home.`,
-					`${W} have now won ${wh.won} of ${games(wh)} at home.`,
+					`${W} have now won ${numWord(wh.won)} of ${numWord(games(wh))} at home.`,
 					`Home has been kind to ${wn}: ${wh.won}-${wh.lost} there this season.`,
 				],
 				"homeRecord",
@@ -344,7 +373,7 @@ export const homeRoadBeat = (
 				rng,
 				[
 					`${L} fell to ${lh.won}-${lh.lost} at home.`,
-					`That is ${lh.lost} home losses in ${games(lh)} for ${ln}.`,
+					`That is ${numWord(lh.lost)} home losses in ${numWord(games(lh))} for ${ln}.`,
 					`${L} are ${lh.won}-${lh.lost} in their own building.`,
 				],
 				"homeStruggles",
@@ -363,7 +392,7 @@ export const homeRoadBeat = (
 				rng,
 				[
 					`${L} dropped to ${la.won}-${la.lost} on the road.`,
-					`${L} have won just ${la.won} of ${games(la)} away from home.`,
+					`${L} have won just ${numWord(la.won)} of ${numWord(games(la))} away from home.`,
 					`It is ${la.won}-${la.lost} on the road now for ${ln}.`,
 				],
 				"roadStruggles",

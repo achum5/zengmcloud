@@ -1691,7 +1691,7 @@ describe("getAutoDayRecap", () => {
 			recap,
 		);
 		assert.ok(
-			/Vince Carter \(sprained ankle, out ~5 games\)/.test(recap),
+			/Vince Carter \(sprained ankle, out about five games\)/.test(recap),
 			recap,
 		);
 	});
@@ -5135,11 +5135,11 @@ describe("recent form and the standings line", () => {
 		let sawForm = 0;
 		for (let gid = 1; gid <= 60; gid += 1) {
 			const recap = getAutoRecap(gameWithForm(gid, Array(9).fill(false)));
-			if (/last 9|previous 9/.test(recap)) {
+			if (/last (?:9|nine)|previous (?:9|nine)/.test(recap)) {
 				sawForm += 1;
 			}
 			assert.ok(
-				!/\b9 of (?:their last|)\s*9\b/.test(recap),
+				!/\b(?:9|nine) of (?:their last|)\s*(?:9|nine)\b/.test(recap),
 				`a clean sweep counted out longhand: ${recap}`,
 			);
 		}
@@ -5162,7 +5162,11 @@ describe("recent form and the standings line", () => {
 					true,
 				]),
 			);
-			if (/8 of their last 9|8 of 9|1-8 in their previous 9/.test(recap)) {
+			if (
+				/(?:8|eight) of their last (?:9|nine)|(?:8|eight) of (?:9|nine)|1-8 in their previous (?:9|nine)/.test(
+					recap,
+				)
+			) {
 				sawCount += 1;
 			}
 		}

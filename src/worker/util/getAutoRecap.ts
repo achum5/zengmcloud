@@ -2765,10 +2765,10 @@ const statNote = (
 			pick(
 				rng,
 				[
-					`${cap(theNick(shape.winner))} had ${w.dblFig} players score in double figures.`,
-					`${cap(theNick(shape.winner))} got double figures out of ${w.dblFig} men.`,
+					`${cap(theNick(shape.winner))} had ${numWord(w.dblFig)} players score in double figures.`,
+					`${cap(theNick(shape.winner))} got double figures out of ${numWord(w.dblFig)} men.`,
 					`${cap(numWord(w.dblFig))} ${nick(shape.winner)} reached double figures.`,
-					`It came from everywhere for ${theNick(shape.winner)} - ${w.dblFig} in double figures.`,
+					`It came from everywhere for ${theNick(shape.winner)} - ${numWord(w.dblFig)} in double figures.`,
 				],
 				"statDblFig",
 			),
@@ -3495,9 +3495,9 @@ const stakesSentence = (
 				rng,
 				[
 					`The win was ${poss(theNick(shape.winner))} ${ordinal(streak.count)} in a row.`,
-					`${cap(theNick(shape.winner))} have now won ${plural(streak.count, "straight game")}.`,
-					`That is ${plural(streak.count, "win")} in a row for ${theNick(shape.winner)}.`,
-					`${cap(theNick(shape.winner))} ran their streak to ${streak.count}.`,
+					`${cap(theNick(shape.winner))} have now won ${numWord(streak.count)} straight games.`,
+					`That is ${numWord(streak.count)} wins in a row for ${theNick(shape.winner)}.`,
+					`${cap(theNick(shape.winner))} ran their streak to ${numWord(streak.count)}.`,
 				],
 				"streak",
 			),
@@ -3654,6 +3654,11 @@ const absenceWorthNoting = (
 	return rng() < (star ? 0.35 : 0.15);
 };
 
+// "five games", "a game", "14 games" - a count of games the way copy prints
+// it, small numbers spelled out.
+const gamesWord = (n: number): string =>
+	n === 1 ? "a game" : `${numWord(n)} games`;
+
 // Injury color: returns, playing through, new injuries, and notable inactives.
 const injurySentence = (
 	shape: Shape,
@@ -3672,18 +3677,9 @@ const injurySentence = (
 					pick(
 						rng,
 						[
-							`${p.name} left with ${injuryPhrase(p.injury.type)} (out ~${plural(
-								p.injury.gamesRemaining,
-								"game",
-							)})`,
-							`${p.name} went down with ${injuryPhrase(p.injury.type)} and is out around ${plural(
-								p.injury.gamesRemaining,
-								"game",
-							)}`,
-							`${p.name} picked up ${injuryPhrase(p.injury.type)} that will cost him about ${plural(
-								p.injury.gamesRemaining,
-								"game",
-							)}`,
+							`${p.name} left with ${injuryPhrase(p.injury.type)} and is expected to miss about ${gamesWord(p.injury.gamesRemaining)}`,
+							`${p.name} went down with ${injuryPhrase(p.injury.type)} and is out around ${gamesWord(p.injury.gamesRemaining)}`,
+							`${p.name} picked up ${injuryPhrase(p.injury.type)} that will cost him about ${gamesWord(p.injury.gamesRemaining)}`,
 						],
 						"injuryNew",
 					),
@@ -4126,13 +4122,13 @@ const formNote = (
 		// them losing. It is wrong for the winner too, just less visibly - they
 		// are 10-0 including tonight, not the 9-0 the sentence "now" asserts.
 		if (won >= prior.length - 1 && prior.length >= 6) {
-			const of = won === prior.length ? "every one of" : `${won} of`;
+			const of = won === prior.length ? "every one of" : `${numWord(won)} of`;
 			return pick(
 				rng,
 				[
-					`${theNick(t)} came in having won ${of} their last ${prior.length}`,
-					`that was ${won} wins in ${prior.length} games for ${theNick(t)} coming in`,
-					`${theNick(t)} entered the night ${won}-${prior.length - won} over their previous ${prior.length}`,
+					`${theNick(t)} came in having won ${of} their last ${numWord(prior.length)}`,
+					`that was ${numWord(won)} wins in ${numWord(prior.length)} games for ${theNick(t)} coming in`,
+					`${theNick(t)} entered the night ${won}-${prior.length - won} over their previous ${numWord(prior.length)}`,
 				],
 				"formHot",
 			);
@@ -4142,13 +4138,13 @@ const formNote = (
 			// nobody checks for the clean sweep; the hot branch above has always
 			// said "every one of".
 			const lost = prior.length - won;
-			const allOf = won === 0 ? "every one of" : `${lost} of`;
+			const allOf = won === 0 ? "every one of" : `${numWord(lost)} of`;
 			return pick(
 				rng,
 				[
-					`${theNick(t)} had lost ${allOf} their last ${prior.length} coming in`,
-					`${theNick(t)} arrived having dropped ${allOf} their last ${prior.length}`,
-					`it had been a rough stretch for ${theNick(t)}, ${won}-${lost} in their previous ${prior.length}`,
+					`${theNick(t)} had lost ${allOf} their last ${numWord(prior.length)} coming in`,
+					`${theNick(t)} arrived having dropped ${allOf} their last ${numWord(prior.length)}`,
+					`it had been a rough stretch for ${theNick(t)}, ${won}-${lost} in their previous ${numWord(prior.length)}`,
 				],
 				"formCold",
 			);
@@ -4265,10 +4261,10 @@ const balanceNote = (
 		return pick(
 			rng,
 			[
-				`${cap(theNick(shape.winner))} got double figures out of ${w.dblFig} players to ${l.dblFig} for ${theNick(
+				`${cap(theNick(shape.winner))} got double figures out of ${numWord(w.dblFig)} players to ${numWord(l.dblFig)} for ${theNick(
 					shape.loser,
 				)}.`,
-				`The scoring was spread around - ${w.dblFig} ${nick(shape.winner)} in double figures.`,
+				`The scoring was spread around - ${numWord(w.dblFig)} ${nick(shape.winner)} in double figures.`,
 			],
 			"balance",
 		);
@@ -5248,6 +5244,11 @@ export const getAutoRecap = (game: RecapGame): string => {
 			? playerHighBeat(loserBest, rng, writtenSoFar)
 			: undefined,
 	);
+	// Their second man right after their first - the two men together, then
+	// the team's shooting. Interleaved, the paragraph read "Trey Hayes had 19
+	// for the Bucks... The Suns got to the line more often... Obi Hayes
+	// tacked on 16 in defeat", the losers' men separated by a whistle count.
+	addLoser(() => loserSupportNote(shape, rng, namesIn(writtenSoFar, shape)));
 	// The two sides' shooting, told as the reason the losers lost: the
 	// three-point line and the free-throw line sit with the side they
 	// explain rather than three paragraphs from it.
@@ -5257,7 +5258,6 @@ export const getAutoRecap = (game: RecapGame): string => {
 	])) {
 		addLoser(beat, 4);
 	}
-	addLoser(() => loserSupportNote(shape, rng, namesIn(writtenSoFar, shape)));
 	// The defensive note can be either side's man, so it waits until the
 	// losers' best has had his sentence - named first for his steals, he
 	// came back a sentence later as "His 18 points...".
@@ -5773,10 +5773,7 @@ const injuryRoundup = (
 			for (const p of t.players) {
 				if (p.injury?.newThisGame && (p.injury.gamesRemaining ?? 0) >= 2) {
 					bits.push({
-						text: `${p.name} (${lowerInjury(p.injury.type)}, out ~${plural(
-							p.injury.gamesRemaining,
-							"game",
-						)})`,
+						text: `${p.name} (${lowerInjury(p.injury.type)}, out about ${gamesWord(p.injury.gamesRemaining)})`,
 						severity: p.injury.gamesRemaining,
 					});
 				}
@@ -5837,10 +5834,10 @@ const teamStreakSentence = (
 	return pick(
 		rng,
 		[
-			`${cap(theNick(best.team))} ran their win streak to ${best.count} games.`,
-			`${cap(theNick(best.team))} have now won ${best.count} straight.`,
+			`${cap(theNick(best.team))} ran their win streak to ${numWord(best.count)} games.`,
+			`${cap(theNick(best.team))} have now won ${numWord(best.count)} straight.`,
 			`Make it ${numWord(best.count)} in a row for ${theNick(best.team)}.`,
-			`${cap(theNick(best.team))} stretched their run to ${best.count} wins.`,
+			`${cap(theNick(best.team))} stretched their run to ${numWord(best.count)} wins.`,
 		],
 		"dayStreak",
 	);
@@ -6917,30 +6914,8 @@ const leagueNotes = (
 		});
 	}
 
-	// Home teams' night, when it is lopsided enough to be worth saying.
-	let homeWins = 0;
-	let counted = 0;
-	for (const g of real) {
-		const home = g.teams[0];
-		if (home) {
-			counted += 1;
-			if (g.winnerTid === home.tid) {
-				homeWins += 1;
-			}
-		}
-	}
-	if (
-		counted >= 8 &&
-		(homeWins <= counted * 0.3 || homeWins >= counted * 0.8)
-	) {
-		cands.push({
-			sort: 4,
-			text:
-				homeWins >= counted * 0.8
-					? `Home teams went ${homeWins}-${counted - homeWins}.`
-					: `It was a night for the road: visitors won ${counted - homeWins} of ${counted}.`,
-		});
-	}
+	// (The home teams' night is nightThemeSentence's, which opens the
+	// paragraph these notes fill.)
 
 	const chosen: Cand[] = [];
 	const usedTids = new Set<number>();
@@ -6960,6 +6935,75 @@ const leagueNotes = (
 };
 
 // How many of the day's games were decided by 5 or fewer.
+// WHAT KIND OF NIGHT IT WAS, in one line: the home teams swept, the road
+// teams won five of six, every favorite held serve, four favorites fell.
+// The notes a wrap writer reaches for first, and the engine had none of
+// them - it listed results and let the reader do the counting.
+const nightThemeSentence = (
+	games: RecapGame[],
+	rng: () => number,
+): string | undefined => {
+	const real = games.filter((g) => !g.allStar && !g.playoffs);
+	if (real.length < 5) {
+		return undefined;
+	}
+	let homeWins = 0;
+	let favWins = 0;
+	let lined = 0;
+	let upsets = 0;
+	for (const g of real) {
+		if (g.winnerTid === g.teams[0].tid) {
+			homeWins += 1;
+		}
+		if (g.spread && g.spread.points > 0) {
+			lined += 1;
+			if (g.spread.favTid === g.winnerTid) {
+				favWins += 1;
+			} else {
+				upsets += 1;
+			}
+		}
+	}
+	const n = real.length;
+	const roadWins = n - homeWins;
+	const options: string[] = [];
+	if (homeWins === n) {
+		options.push(
+			`The home teams went ${n}-0.`,
+			`Every home team won - ${numWord(n)} for ${numWord(n)}.`,
+		);
+	} else if (roadWins === n) {
+		options.push(
+			`The road teams went ${n}-0.`,
+			`Not one home team won: ${numWord(n)} road wins in ${numWord(n)} games.`,
+		);
+	} else if (roadWins >= 0.75 * n) {
+		options.push(
+			`Road teams went ${roadWins}-${homeWins} on the night.`,
+			`It was a night for the visitors, who went ${roadWins}-${homeWins}.`,
+		);
+	} else if (homeWins >= 0.85 * n) {
+		options.push(`Home teams went ${homeWins}-${roadWins} on the night.`);
+	}
+	if (lined >= 5 && upsets === 0) {
+		options.push(
+			`Chalk held everywhere: all ${numWord(lined)} favorites won.`,
+			`The favorites went ${lined}-0.`,
+		);
+	} else if (lined >= 5 && upsets >= 3 && upsets >= 0.4 * lined) {
+		options.push(
+			`${cap(numWord(upsets))} of the ${numWord(lined)} favorites lost.`,
+			...(favWins >= upsets
+				? [`The favorites went just ${favWins}-${upsets}.`]
+				: [`Only ${numWord(favWins)} of the ${numWord(lined)} favorites won.`]),
+		);
+	}
+	if (options.length === 0) {
+		return undefined;
+	}
+	return pick(rng, options, "nightTheme");
+};
+
 const closeGamesSentence = (games: RecapGame[]): string | undefined => {
 	const nonExhibition = games.filter((g) => !g.allStar);
 	if (nonExhibition.length < 4) {
@@ -7432,6 +7476,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// either the playoff series state or the streak/standings context.
 	const para3: string[] = [];
 
+	const theme = nightThemeSentence(games, rng);
+	if (theme) {
+		para3.push(theme);
+	}
 	const close = closeGamesSentence(games);
 	if (close) {
 		para3.push(close);
