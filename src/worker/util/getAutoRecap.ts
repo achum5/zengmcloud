@@ -156,11 +156,18 @@ export const dedupeSubjects = (
 				// more than Keegan Lowry... They got 20 from Zeke Dunn" read as
 				// Lowry's team, and meant the other one.
 				const between = out[i - 1]!;
+				// A "They ..." sentence between is the same subject carrying
+				// on, and the other club's name as its object does not move
+				// the reader's eye: "The Bucks stayed top... They took the
+				// series with the Nets. The Bucks improved to 8-0 at home"
+				// was three "The Bucks" in a row.
 				if (
 					ambiguous(between) ||
 					subjectOf(between) ||
 					loserTail.test(between) ||
-					(!!otherNick && between.includes(otherNick)) ||
+					(!!otherNick &&
+						between.includes(otherNick) &&
+						!/^They\b/.test(between)) ||
 					!/^(?:It|That|There|They)\b/.test(between)
 				) {
 					break;
@@ -2294,7 +2301,7 @@ const resultLead = (
 					: [
 							`${cap(w)} led wire to wire and ${verb} ${l}${score}${tail}.`,
 							`${cap(w)} were in front from the opening tip and ${verb} ${l}${score}${tail}.`,
-							`${cap(w)} never trailed, and ${verb} ${l}${score}${tail}.`,
+							`${cap(w)} never trailed and ${verb} ${l}${score}${tail}.`,
 						],
 				"wireLead",
 			),
@@ -4631,14 +4638,26 @@ const bigLeadNote = (
 	rng: () => number,
 ): string | undefined => {
 	const flow = game.flow;
-	if (!flow || shape.margin < 12) {
+	if (!flow) {
 		return undefined;
 	}
 	const lead = flow.maxLead[sideOf(game, shape.winner)];
-	if (lead < 20 || lead < shape.margin + 6) {
+	const W = cap(theNick(shape.winner));
+	// The lead that nearly got away: up 19 at the half, home by six.
+	if (shape.margin <= 8 && lead >= 15 && lead >= shape.margin + 9) {
+		return pick(
+			rng,
+			[
+				`${W} led by as many as ${lead} and had to hold on.`,
+				`${W} had led by ${lead}, and very nearly let it go.`,
+				`A lead that reached ${lead} was down to ${shape.margin} at the end.`,
+			],
+			"nearlyBlown",
+		);
+	}
+	if (shape.margin < 12 || lead < 20 || lead < shape.margin + 6) {
 		return undefined;
 	}
-	const W = cap(theNick(shape.winner));
 	return pick(
 		rng,
 		[
@@ -5138,7 +5157,17 @@ export const getAutoRecap = (game: RecapGame): string => {
 				),
 		);
 		if (half) {
-			para1.push(half);
+			// Before the lead that nearly got away, not after it: "had led by
+			// 29 and very nearly let it go. They went into the break ahead
+			// 69-45" runs the clock backwards.
+			const scare = para1.findIndex((t) =>
+				/had to hold on\.|let it go\.|was down to \d+ at the end/.test(t),
+			);
+			if (scare >= 0) {
+				para1.splice(scare, 0, half);
+			} else {
+				para1.push(half);
+			}
 		}
 	}
 	// Where the series stands is part of what happened, and closes the lede.

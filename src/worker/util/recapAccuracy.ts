@@ -294,7 +294,7 @@ export const verifyRecap = (
 	if (flow) {
 		const claim = (re: RegExp, ok: (n: number) => boolean, kind: string) => {
 			for (const m of text.matchAll(re)) {
-				const n = Number(m[1] ?? m[2]);
+				const n = Number(m.slice(1).find((g) => g !== undefined));
 				if (!ok(n)) {
 					add(kind, `said ${n}`, m[0]);
 				}
@@ -309,7 +309,7 @@ export const verifyRecap = (
 		claim(/(\d+) ties?\b/g, (n) => n === flow.ties, "ties");
 		claim(/as many as (\d+)/g, (n) => flow.maxLead.includes(n), "biggest lead");
 		claim(
-			/lead reached (\d+)|up by (\d+) at their biggest/g,
+			/lead reached (\d+)|up by (\d+) at their biggest|had led by (\d+)|lead that reached (\d+)/g,
 			(n) => flow.maxLead.includes(n),
 			"biggest lead",
 		);
