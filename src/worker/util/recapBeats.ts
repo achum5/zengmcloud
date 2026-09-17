@@ -717,6 +717,19 @@ export const returnBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 		);
 	}
 	ctx.said.add(p.name);
+	// A quiet line is not the news; that he was back is. "In his first game
+	// since a strained groin cost him four games, Franz Brooks chipped in 3
+	// points" made the return sound like a letdown.
+	if (p.pts < 8 && doubleCategories(p).length === 0) {
+		return pick(
+			rng,
+			[
+				`${p.name} was back after missing ${numWord(r.games)} games with ${injuryPhrase(r.type)}.`,
+				`${p.name} returned from ${aWord(`${numWord(r.games)}-game`)} absence (${lowerInjury(r.type)}).`,
+			],
+			"returnFromInjuryQuiet",
+		);
+	}
 	return pick(
 		rng,
 		[
@@ -1170,6 +1183,11 @@ const sidesOf = (game: RecapGame) => {
 // Enough of a sample for a rank to mean anything.
 const MIN_GAMES_FOR_RACE = 15;
 
+// The cut line - who is in the playoff picture and who is out of it - is a
+// story from the middle of the season on. "Moved into a playoff spot" after
+// eighteen games is a line nobody writes.
+const MIN_GAMES_FOR_CUT_LINE = 30;
+
 // Who moved in the playoff picture tonight. Only inside it: a climb to
 // thirteenth is not news, and neither is a slide between two lottery places.
 // "the East" for "Eastern Conference", where a wrap names it four times in
@@ -1185,7 +1203,7 @@ export const dayStandingsMovers = (
 	ctx: DayBeatContext,
 	rng: Rng,
 ): string | undefined => {
-	type Move = { text: string; tid: number; size: number };
+	type Move = { text: string; tid: number; size: number; conf: string };
 	const moves: Move[] = [];
 	for (const game of realGames(ctx.games)) {
 		if (game.playoffs) {
@@ -1204,27 +1222,33 @@ export const dayStandingsMovers = (
 			}
 			const spots = ctx.standings?.playoffSpots ?? Math.ceil(st.teams / 2);
 			const up = st.rank < st.rankBefore;
-			const intoThePicture = up && st.rank <= spots && st.rankBefore > spots;
-			const outOfIt = !up && st.rank > spots && st.rankBefore <= spots;
+			const deep = st.won + st.lost >= MIN_GAMES_FOR_CUT_LINE;
+			const intoThePicture =
+				deep && up && st.rank <= spots && st.rankBefore > spots;
+			const outOfIt = deep && !up && st.rank > spots && st.rankBefore <= spots;
 			// No commas inside a clause: these are joined into one list, and a
 			// clause carrying its own comma runs the list together.
+			const conf = confShort(st.conf);
 			if (intoThePicture) {
 				moves.push({
 					tid: t.tid,
 					size: 3,
-					text: `${theNick(t)} moved into a playoff spot in ${confShort(st.conf)} at ${ordinal(st.rank)}`,
+					conf,
+					text: `${theNick(t)} moved into a playoff spot in ${conf} at ${ordinal(st.rank)}`,
 				});
 			} else if (outOfIt) {
 				moves.push({
 					tid: t.tid,
 					size: 3,
-					text: `${theNick(t)} slid out of the playoff spots in ${confShort(st.conf)} to ${ordinal(st.rank)}`,
+					conf,
+					text: `${theNick(t)} slid out of the playoff spots in ${conf} to ${ordinal(st.rank)}`,
 				});
 			} else if (st.rank <= spots && up) {
 				moves.push({
 					tid: t.tid,
 					size: st.rank <= 3 ? 2 : 1,
-					text: `${theNick(t)} climbed to ${ordinal(st.rank)} in ${confShort(st.conf)}`,
+					conf,
+					text: `${theNick(t)} climbed to ${ordinal(st.rank)} in ${conf}`,
 				});
 			}
 		}
@@ -1237,7 +1261,23 @@ export const dayStandingsMovers = (
 	for (const m of top) {
 		ctx.saidTids.add(m.tid);
 	}
-	const list = naturalList(top.map((m) => m.text));
+	// Three climbs in one conference say the conference once: "in the West,
+	// the Magic climbed to third, the Kings to second, and the Hornets to
+	// fourth" - not "in the West" three times down the sentence.
+	const oneConf = top.length >= 2 && top.every((m) => m.conf === top[0]!.conf);
+	const allClimbs = top.every((m) => m.text.includes(" climbed to "));
+	const list =
+		oneConf && allClimbs
+			? `in ${top[0]!.conf}, ${naturalList(
+					top.map((m, i) =>
+						i === 0
+							? m.text.replace(` in ${m.conf}`, "")
+							: m.text
+									.replace(" climbed to ", " to ")
+									.replace(` in ${m.conf}`, ""),
+					),
+				)}`
+			: naturalList(top.map((m) => m.text));
 	// Not "In the standings": the conference-picture sentence in the paragraph
 	// above owns that opener, and the wrap was running two paragraphs in a row
 	// that both began with it.
@@ -1267,7 +1307,7 @@ export const dayRaceSentence = (
 	for (const conf of standings.confs) {
 		const last = conf.teams.find((t) => t.rank === spots);
 		const first = conf.teams.find((t) => t.rank === spots + 1);
-		if (!last || !first || last.won + last.lost < MIN_GAMES_FOR_RACE) {
+		if (!last || !first || last.won + last.lost < MIN_GAMES_FOR_CUT_LINE) {
 			continue;
 		}
 		const gap = Math.round((first.gb - last.gb) * 2) / 2;
@@ -1485,18 +1525,23 @@ export const dayTomorrow = (
 	const best = fixtures[0]!;
 	const rest = fixtures.length - 1;
 	const matchup = `the ${best.awayName} at ${theNick(best.home)}`;
-	const restWord = `${numWord(rest)} ${rest === 1 ? "other" : "others"}`;
+	const restWord = `${numWord(rest)} others`;
+	// A second game is named, not counted: "and one other game" told the
+	// reader there was something and not what.
+	const second = fixtures[1];
 	const tail =
-		rest > 0
-			? pick(
-					rng,
-					[
-						` and ${numWord(rest)} ${rest === 1 ? "other game" : "other games"}`,
-						`, with ${restWord} on the slate`,
-					],
-					"dayTomorrowTail",
-				)
-			: "";
+		rest === 1 && second
+			? ` and the ${second.awayName} at ${theNick(second.home)}`
+			: rest > 0
+				? pick(
+						rng,
+						[
+							` and ${numWord(rest)} other games`,
+							`, with ${restWord} on the slate`,
+						],
+						"dayTomorrowTail",
+					)
+				: "";
 	return pick(
 		rng,
 		[

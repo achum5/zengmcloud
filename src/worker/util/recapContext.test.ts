@@ -264,17 +264,25 @@ describe("milestones", () => {
 	});
 
 	test("a season mark and a career mark, points before everything", () => {
-		const before = { pts: 490, reb: 495, ast: 100, tp: 99, stl: 0, blk: 0 };
-		const after = { pts: 515, reb: 505, ast: 104, tp: 102, stl: 0, blk: 0 };
+		const before = { pts: 990, reb: 495, ast: 100, tp: 199, stl: 0, blk: 0 };
+		const after = { pts: 1015, reb: 505, ast: 104, tp: 202, stl: 0, blk: 0 };
 		assert.deepStrictEqual(seasonMilestone(before, after), {
 			scope: "season",
 			stat: "pts",
-			mark: 500,
-			total: 515,
+			mark: 1000,
+			total: 1015,
 		});
 		assert.deepStrictEqual(
 			seasonMilestone({ ...before, pts: 600 }, { ...after, pts: 620 }),
 			{ scope: "season", stat: "reb", mark: 500, total: 505 },
+		);
+		// 500 points is a line in a spreadsheet, not a milestone.
+		assert.strictEqual(
+			seasonMilestone(
+				{ pts: 490, reb: 0, ast: 0, tp: 0, stl: 0, blk: 0 },
+				{ pts: 515, reb: 0, ast: 0, tp: 0, stl: 0, blk: 0 },
+			),
+			undefined,
 		);
 		assert.deepStrictEqual(
 			careerMilestone(

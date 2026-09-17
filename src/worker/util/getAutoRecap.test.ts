@@ -606,10 +606,20 @@ describe("recap quality (from real Day 1 output)", () => {
 				],
 			}),
 		);
-		// The winning shot merges into the lead sentence...
-		assert.ok(/, winning it on a free throw/.test(recap), recap);
+		// The shot leads, his line follows in the same sentence...
+		assert.ok(
+			/\n\nRichard Hamilton made a free throw with 0\.5 seconds left and finished with 20 points/.test(
+				recap,
+			),
+			recap,
+		);
 		// ...instead of a second sentence restarting with the same name.
 		assert.ok(!/\. Richard Hamilton won it/.test(recap), recap);
+		// And the losing side's bigger night rides on the lede.
+		assert.ok(
+			/despite 28 points and 11 rebounds from Tim Duncan/.test(recap),
+			recap,
+		);
 	});
 
 	test("a clutch hero with a big night gets his line folded into the shot", () => {
@@ -5422,6 +5432,12 @@ describe("no branch has only one phrasing", () => {
 			p.pm = j === win.players.length - 1 ? 24 : 3;
 			p.ft = 5;
 			p.fta = 6;
+			// A hot-shooting winner every other night, so the lede's team-stat
+			// note has something besides the free-throw edge to say and the
+			// losers' whistle line is not always pre-empted by it.
+			if (i % 2 === 0) {
+				p.fg = Math.round(p.fga * 0.6);
+			}
 		});
 		return game({
 			gid,
@@ -6635,5 +6651,235 @@ describe("house style", () => {
 				`"an" before a number that takes "a":\n${recap}`,
 			);
 		}
+	});
+});
+
+// THE LEDE OF A WIRE STORY. The streak, the skid, the losing side's big
+// night ride on the result sentence; each team's record sits in parentheses
+// after its first mention; the halftime score is in the body; and in a game
+// decided at the end, the man who decided it is the man the lede is about.
+describe("the wire lede", () => {
+	const tid = 300;
+	const build = (
+		over: {
+			winner?: Partial<RecapTeam>;
+			loser?: Partial<RecapTeam>;
+			loserStar?: RecapPlayer;
+			flow?: RecapGame["flow"];
+			playoffs?: boolean;
+		} = {},
+		gid = 1,
+	): RecapGame => {
+		const win = realisticTeam(
+			{
+				tid,
+				region: "Washington",
+				name: "Wizards",
+				abbrev: "WAS",
+				pts: 104,
+				ptsQtrs: [28, 24, 26, 26],
+				record: { won: 10, lost: 3 },
+				...over.winner,
+			},
+			player({
+				name: "Marcus Nowell",
+				pid: 11,
+				pts: 24,
+				reb: 6,
+				ast: 7,
+				fg: 9,
+				fga: 17,
+			}),
+		);
+		const lose = realisticTeam(
+			{
+				tid: tid + 1,
+				region: "Philadelphia",
+				name: "76ers",
+				abbrev: "PHI",
+				pts: 98,
+				ptsQtrs: [22, 26, 24, 26],
+				record: { won: 5, lost: 8 },
+				...over.loser,
+			},
+			over.loserStar ??
+				player({ name: "Cade King", pid: 21, pts: 20, reb: 8, fg: 8, fga: 18 }),
+		);
+		return game({
+			gid,
+			teams: [win, lose],
+			winnerTid: tid,
+			playoffs: over.playoffs ?? false,
+			flow: over.flow,
+		});
+	};
+
+	test("each team's record follows its first mention in the body, once, never in a possessive", () => {
+		const recap = getAutoRecap(build());
+		const body = recap.split("\n\n").slice(1).join("\n\n");
+		assert.strictEqual((body.match(/\(10-3\)/g) ?? []).length, 1, recap);
+		assert.strictEqual((body.match(/\(5-8\)/g) ?? []).length, 1, recap);
+		assert.doesNotMatch(body, /' \(\d+-\d+\)/);
+		// Never in the headline.
+		assert.doesNotMatch(recap.split("\n")[0]!, /\(\d+-\d+\)/);
+		// And never in the playoffs, whose games the record does not count.
+		assert.doesNotMatch(getAutoRecap(build({ playoffs: true })), /\(\d+-\d+\)/);
+	});
+
+	test("the streak rides on the result sentence and is not repeated below", () => {
+		let told = 0;
+		for (let gid = 1; gid <= 12; gid++) {
+			const recap = getAutoRecap(
+				build({ winner: { streak: { won: true, count: 6 } } }, gid),
+			);
+			const lede = recap.split("\n\n")[1]!;
+			if (
+				/for their sixth (?:straight win|win in a row|consecutive win)/.test(
+					lede,
+				)
+			) {
+				told += 1;
+				assert.strictEqual(
+					(recap.match(/sixth|6 straight|6 wins|streak to 6/g) ?? []).length,
+					1,
+					recap,
+				);
+			}
+		}
+		assert.ok(told >= 8, `${told}`);
+	});
+
+	test("the losing side's bigger night rides on the lede as 'despite'", () => {
+		const recap = getAutoRecap(
+			build({
+				loserStar: player({
+					name: "Cade King",
+					pid: 21,
+					pts: 36,
+					reb: 12,
+					fg: 14,
+					fga: 26,
+				}),
+			}),
+		);
+		// Either the headline or the lede carries it, never both.
+		assert.strictEqual(
+			(
+				recap.match(
+					/despite (?:36 points and 12 rebounds from Cade King|Cade King's 36 points and 12 rebounds)/g,
+				) ?? []
+			).length,
+			1,
+			recap,
+		);
+		// His line is then not simply restated; the body adds how he shot.
+		const body = recap.split("\n\n").slice(1).join(" ");
+		assert.doesNotMatch(body, /36 points and 12 rebounds/);
+		assert.match(body, /14-of-26/);
+		assert.deepEqual(
+			verifyRecap(
+				recap,
+				build({
+					loserStar: player({
+						name: "Cade King",
+						pid: 21,
+						pts: 36,
+						reb: 12,
+						fg: 14,
+						fga: 26,
+					}),
+				}),
+			),
+			[],
+		);
+	});
+
+	test("the halftime score is in the body", () => {
+		let had = 0;
+		for (let gid = 1; gid <= 12; gid++) {
+			const recap = getAutoRecap(build({}, gid));
+			if (/52-48/.test(recap)) {
+				had += 1;
+			}
+			assert.deepEqual(verifyRecap(recap, build({}, gid)), []);
+		}
+		assert.ok(had >= 10, `${had}`);
+	});
+
+	test("in a game decided at the end, the man who decided it leads when his scoring stands up", () => {
+		const closeWin = build({
+			winner: { pts: 101, ptsQtrs: [28, 24, 26, 23] },
+			loser: { pts: 99, ptsQtrs: [22, 26, 24, 27] },
+			flow: {
+				leadChanges: 9,
+				ties: 6,
+				maxLead: [8, 5],
+				lastLead: {
+					side: 0,
+					pid: 12,
+					period: 4,
+					clock: 41.3,
+					pts: [99, 97],
+					by: 2,
+				},
+				late: [
+					{ clock: 300, pts: [90, 88] },
+					{ clock: 120, pts: [95, 97] },
+				],
+				finish: [
+					{
+						side: 0,
+						pid: 12,
+						pts: 2,
+						kind: "mid",
+						period: 4,
+						clock: 41.3,
+						score: [99, 97],
+					},
+					{
+						side: 0,
+						pid: 12,
+						pts: 2,
+						kind: "ft",
+						period: 4,
+						clock: 3.1,
+						score: [101, 97],
+					},
+					{
+						side: 1,
+						pid: 21,
+						pts: 2,
+						kind: "rim",
+						period: 4,
+						clock: 0.4,
+						score: [101, 99],
+					},
+				],
+			},
+		});
+		// Role One is pid 0 in the fixture; give the go-ahead man an id and 27.
+		closeWin.teams[0].players[1] = player({
+			name: "Tyrese Nowell",
+			pid: 12,
+			pts: 27,
+			reb: 5,
+			ast: 2,
+			fg: 10,
+			fga: 19,
+		});
+		const recap = getAutoRecap(closeWin);
+		const [headline, lede] = recap.split("\n\n");
+		// He is the story: in the headline, or opening the lede.
+		assert.ok(
+			/Tyrese Nowell/.test(headline!) || /^Tyrese Nowell/.test(lede!),
+			recap,
+		);
+		assert.match(
+			recap,
+			/Tyrese Nowell's jumper with 41\.3 seconds (?:left|to go|to play)/,
+		);
+		// A basket at the horn is not followed by "got no closer".
+		assert.match(recap, /at the buzzer made the final 101-99/);
+		assert.deepEqual(verifyRecap(recap, closeWin), []);
 	});
 });

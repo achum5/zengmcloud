@@ -597,11 +597,13 @@ export const crossedMark = (
 	return mark >= min && mark > before ? mark : undefined;
 };
 
+// A season mark has to be one a beat writer would note: 1,000 points is,
+// 500 is a line in a spreadsheet.
 const SEASON_STEPS: Record<MilestoneStat, { step: number; min: number }> = {
-	pts: { step: 500, min: 500 },
+	pts: { step: 500, min: 1000 },
 	reb: { step: 500, min: 500 },
 	ast: { step: 500, min: 500 },
-	tp: { step: 100, min: 100 },
+	tp: { step: 100, min: 200 },
 };
 
 const CAREER_STEPS: Record<MilestoneStat, { step: number; min: number }> = {

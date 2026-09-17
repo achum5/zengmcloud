@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { describe, test } from "vitest";
+import { assert, describe, test } from "vitest";
 import type { FinishEvent } from "../../common/gameFlow.ts";
 import type {
 	RecapGame,
@@ -131,7 +130,7 @@ describe("finishStory", () => {
 			text,
 			/Cade King's layup .*had (tied it at 101|made it 101-101)|It was 101-101 after Cade King's layup/,
 		);
-		assert.doesNotMatch(text, /Marcus Nowell/);
+		assert.notMatch(text, /Marcus Nowell/);
 	});
 
 	test("a winner that led throughout the window: how close the losers came, and who shut the door", () => {

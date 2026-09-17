@@ -102,6 +102,18 @@ const nameOf = (game: RecapGame, pid: number | undefined) => {
 const scoreOf = (e: FinishEvent, wSide: GameFlowSide): [number, number] =>
 	wSide === 0 ? [e.score[0], e.score[1]] : [e.score[1], e.score[0]];
 
+// The same, leader first - "cut it to 121-117", never "made it 117-121".
+const shown = (e: FinishEvent, wSide: GameFlowSide): [number, number] => {
+	const [w, l] = scoreOf(e, wSide);
+	return w >= l ? [w, l] : [l, w];
+};
+
+// "a layup", "two free throws", "a free throw".
+const aShot = (e: FinishEvent): string => {
+	const name = shotName(e);
+	return /free throws$/.test(name) ? name : `a ${name}`;
+};
+
 // The game-tying shot that forced overtime, from the sim's own note of it:
 // "X made a three-pointer with 4.2 seconds remaining to force overtime".
 const regulationTie = (
@@ -132,7 +144,18 @@ const regulationTie = (
 	return undefined;
 };
 
-type Role = "tie" | "loserLead" | "goAhead" | "cut" | "extend";
+// tie: level. goAhead: the winner took the lead. extend: the winner added to
+// a lead. cut: the losers closed on a winner's lead. loserLead: the losers
+// took the lead. loserExtend: the losers added to theirs. winnerCut: the
+// winner closed on a losers' lead.
+type Role =
+	| "tie"
+	| "loserLead"
+	| "loserExtend"
+	| "goAhead"
+	| "cut"
+	| "extend"
+	| "winnerCut";
 
 type Moment = { e: FinishEvent; role: Role; name?: string; margin: number };
 
@@ -155,9 +178,9 @@ const classify = (
 		if (after === 0) {
 			role = "tie";
 		} else if (e.side === wSide) {
-			role = before <= 0 ? "goAhead" : "extend";
+			role = after < 0 ? "winnerCut" : before <= 0 ? "goAhead" : "extend";
 		} else {
-			role = after < 0 ? "loserLead" : "cut";
+			role = after > 0 ? "cut" : before >= 0 ? "loserLead" : "loserExtend";
 		}
 		out.push({ e, role, name: nameOf(game, e.pid), margin: after });
 	}
@@ -225,7 +248,12 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 	let goAheadIdx = -1;
 	for (let i = moments.length - 1; i >= 0; i--) {
 		const m = moments[i]!;
-		if (m.role === "tie" || m.role === "loserLead") {
+		if (
+			m.role === "tie" ||
+			m.role === "loserLead" ||
+			m.role === "loserExtend" ||
+			m.role === "winnerCut"
+		) {
 			break;
 		}
 		if (m.role === "goAhead") {
@@ -306,9 +334,10 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			const [w, l] = scoreOf(goAhead.e, wSide);
 			const shot = shotBy(goAhead.name, goAhead.e, justNamed);
 			const isLast = goAheadIdx === moments.length - 1;
-			// "Answered" and "then" only after a sentence there is something
-			// to answer.
-			const answered = out.length > 0;
+			// "Answered" only when the losers had just scored; when the same
+			// side tied it and then went ahead, the second basket followed.
+			const answered = before !== undefined && before.e.side !== wSide;
+			const followed = before !== undefined && before.e.side === wSide;
 			say(
 				pick(
 					rng,
@@ -318,11 +347,16 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 						...(answered
 							? [
 									`Then ${shot} ${when(goAhead.e, rng)} made it ${w}-${l}.`,
-									`${goAhead.name} answered with a ${shotName(goAhead.e)} ${when(goAhead.e, rng)} that put ${W} up ${w}-${l}.`,
+									`${goAhead.name} answered with ${aShot(goAhead.e)} ${when(goAhead.e, rng)} that put ${W} up ${w}-${l}.`,
 								]
-							: [
-									`${cap(shot)} ${when(goAhead.e, rng)} made it ${w}-${l}, and ${W} never trailed again.`,
-								]),
+							: followed
+								? [
+										`${cap(shot)} ${when(goAhead.e, rng)} then made it ${w}-${l}.`,
+										`${cap(W)} took the lead on ${shot} ${when(goAhead.e, rng)}, ${w}-${l}.`,
+									]
+								: [
+										`${cap(shot)} ${when(goAhead.e, rng)} made it ${w}-${l}, and ${W} never trailed again.`,
+									]),
 					],
 					"finishGoAhead",
 				),
@@ -340,13 +374,13 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			.at(-1);
 		const cutText = cut
 			? (() => {
-					const [w, l] = scoreOf(cut.e, wSide);
+					const [w, l] = shown(cut.e, wSide);
 					return pick(
 						rng,
 						[
 							`${shotBy(cut.name!, cut.e, justNamed)} ${when(cut.e, rng)} cut it to ${w}-${l}`,
 							`${shotBy(cut.name!, cut.e, justNamed)} pulled ${L} within ${cut.margin} ${when(cut.e, rng)}`,
-							`${cut.name} got ${L} back to ${w}-${l} with a ${shotName(cut.e)} ${when(cut.e, rng)}`,
+							`${cut.name} got ${L} back to ${w}-${l} with ${aShot(cut.e)} ${when(cut.e, rng)}`,
 						],
 						"finishCut",
 					);
@@ -355,19 +389,14 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 		const sealText =
 			seal && (!cut || seal.e.clock < cut.e.clock)
 				? (() => {
-						const n = seal.e.pts;
-						const fts =
-							n === 1
-								? "a free throw"
-								: n === 2
-									? "two free throws"
-									: `${n} free throws`;
+						const fts = aShot(seal.e);
+						const bare = shotName(seal.e);
 						return pick(
 							rng,
 							[
 								`${seal.name} sealed it with ${fts} ${when(seal.e, rng)}`,
 								`${seal.name} made ${fts} ${when(seal.e, rng)} to close it out`,
-								`${poss(seal.name!)} ${fts} ${when(seal.e, rng)} finished it`,
+								`${poss(seal.name!)} ${bare} ${when(seal.e, rng)} finished it`,
 							],
 							"finishSeal",
 						);
@@ -375,6 +404,13 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 				: undefined;
 		if (cutText && sealText) {
 			say(`${cap(cutText)}, but ${sealText}.`, seal!.name);
+		} else if (cut && cut.e.clock < 0.5) {
+			// A basket at the horn changes the final and nothing else.
+			const [w, l] = shown(cut.e, wSide);
+			say(
+				`${cap(shotBy(cut.name!, cut.e, justNamed))} at the buzzer made the final ${w}-${l}.`,
+				cut.name,
+			);
 		} else if (cutText) {
 			say(`${cap(cutText)}, and ${L} got no closer.`, cut!.name);
 		} else if (sealText) {
@@ -391,7 +427,7 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 	if (!closest || closest.margin > 3) {
 		return out;
 	}
-	const [w, l] = scoreOf(closest.e, wSide);
+	const [w, l] = shown(closest.e, wSide);
 	const later = moments.filter((m) => m.e.clock < closest.e.clock);
 	const seal = later
 		.filter((m) => m.e.side === wSide && m.name && m.e.kind === "ft")
@@ -406,13 +442,7 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 		"finishClosest",
 	);
 	if (seal) {
-		const n = seal.e.pts;
-		const fts =
-			n === 1
-				? "a free throw"
-				: n === 2
-					? "two free throws"
-					: `${n} free throws`;
+		const fts = aShot(seal.e);
 		say(
 			`${cap(cutText)}, but ${pick(
 				rng,

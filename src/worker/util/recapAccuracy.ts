@@ -29,9 +29,13 @@ export type RecapViolation = {
 	sentence: string;
 };
 
+// The headline has no full stop, so a paragraph break has to count as one:
+// otherwise the headline and the lede read as one sentence and a name in
+// the headline is credited with the lede's numbers.
 const splitSentences = (text: string): string[] =>
 	text
 		.replaceAll("**", "")
+		.replaceAll(/([^!.?])\n\n/g, "$1. ")
 		.replaceAll("\n", " ")
 		.split(/(?<=[!.?])\s+/)
 		.map((s) => s.trim())
@@ -125,6 +129,10 @@ export const verifyRecap = (
 		chainOwner = lastNameIn(sentence) ?? (pronounLed ? chainOwner : undefined);
 		// --- the final score -------------------------------------------------
 		for (const m of sentence.matchAll(/\b(\d{2,3})-(\d{2,3})\b/g)) {
+			// "(10-3)" is a record, not a score.
+			if (sentence[m.index - 1] === "(") {
+				continue;
+			}
 			const around = sentence.slice(
 				Math.max(0, m.index - 60),
 				m.index + m[0].length + 40,
@@ -172,8 +180,17 @@ export const verifyRecap = (
 				}
 				// "22 points from Evan Hayes" - the owner follows the number, so
 				// the nearest PRECEDING name is the wrong man.
+				// ...but only a "from" inside THIS clause: "21 points and 4
+				// steals as the Celtics beat the Pacers despite 29 points from
+				// Trey Foster" credits the 21 to the man before it, not to
+				// Foster. A stat list ("33 points and 8 assists from X") is one
+				// clause; "as", "despite", "but" and their like start another.
 				const after = sentence.slice(m.index + m[0].length);
-				const fromMatch = /\b(?:for|from)\s+/.exec(after);
+				const clauseEnd = after.search(
+					/\b(?:as|despite|but|while|though|although|when|after|before)\b|[,;] (?:and |but )?the\b/,
+				);
+				const reach = clauseEnd === -1 ? after : after.slice(0, clauseEnd);
+				const fromMatch = /\b(?:for|from)\s+/.exec(reach);
 				let owner: string | undefined;
 				if (fromMatch) {
 					const tail = after.slice(fromMatch.index + fromMatch[0].length);
@@ -240,20 +257,30 @@ export const verifyRecap = (
 		}
 
 		// --- a named quarter's score -----------------------------------------
+		//
+		// The pair right before the quarter word ("a 36-22 first quarter") or
+		// the nearest one after it, but never across a clause: "jumped out to
+		// a 36-22 first quarter and put together a 12-0 run in the second"
+		// was read as a 12-0 first quarter.
 		for (const m of sentence.matchAll(
-			/(first|second|third|fourth) quarter[^.]{0,40}?(\d+)-(\d+)/g,
+			/(?:(\d+)-(\d+) )?(first|second|third|fourth) quarter(?:[^,.;]{0,25}?(\d+)-(\d+))?/g,
 		)) {
+			const said1 = m[1] ?? m[4];
+			const said2 = m[2] ?? m[5];
+			if (said1 === undefined || said2 === undefined) {
+				continue;
+			}
 			const idx = { first: 0, second: 1, third: 2, fourth: 3 }[
-				m[1] as "first" | "second" | "third" | "fourth"
+				m[3] as "first" | "second" | "third" | "fourth"
 			];
 			const hq = home.ptsQtrs ?? [];
 			const aq = away.ptsQtrs ?? [];
 			if (idx < hq.length && idx < aq.length) {
-				const said = new Set([Number(m[2]), Number(m[3])]);
+				const said = new Set([Number(said1), Number(said2)]);
 				if (!said.has(hq[idx]!) || !said.has(aq[idx]!)) {
 					add(
 						"quarter score",
-						`${m[1]} said ${m[2]}-${m[3]}, real ${hq[idx]}-${aq[idx]}`,
+						`${m[3]} said ${said1}-${said2}, real ${hq[idx]}-${aq[idx]}`,
 						sentence,
 					);
 				}
@@ -313,6 +340,17 @@ export const verifyRecap = (
 				continue;
 			}
 			for (const m of sentence.matchAll(/\b(\d{1,3})-(\d{1,3})\b/g)) {
+				if (sentence[m.index - 1] === "(") {
+					continue;
+				}
+				// A rebounding edge or a run sharing the sentence is its own
+				// number.
+				const lead = sentence.slice(Math.max(0, m.index - 30), m.index);
+				if (
+					/glass|boards|rebound|run\b|assist|three|line|turnover/i.test(lead)
+				) {
+					continue;
+				}
 				const a = Number(m[1]);
 				const b = Number(m[2]);
 				const isFinal = finalPts.has(a) && finalPts.has(b) && a !== b;
@@ -349,6 +387,66 @@ export const verifyRecap = (
 		}
 	}
 
+	// --- the record in parentheses, and the score at the break ---------------
+	for (const t of game.teams) {
+		const rec = t.record;
+		for (const m of text.matchAll(
+			new RegExp(String.raw`\b[Tt]he ${t.name} \((\d+)-(\d+)\)`, "g"),
+		)) {
+			if (!rec || Number(m[1]) !== rec.won || Number(m[2]) !== rec.lost) {
+				add(
+					"record",
+					`said ${m[1]}-${m[2]}, real ${rec ? `${rec.won}-${rec.lost}` : "unknown"}`,
+					m[0],
+				);
+			}
+		}
+	}
+	{
+		const hq = home.ptsQtrs ?? [];
+		const aq = away.ptsQtrs ?? [];
+		const reg = hq.length - (game.overtimes ?? 0);
+		if (reg >= 2 && reg % 2 === 0 && aq.length >= reg) {
+			const halfN = reg / 2;
+			const sum = (q: number[], from: number, to: number) =>
+				q.slice(from, to).reduce((acc, x) => acc + x, 0);
+			const ok = new Set<string>();
+			for (const [x, y] of [
+				[sum(hq, 0, halfN), sum(aq, 0, halfN)],
+				[sum(hq, halfN, reg), sum(aq, halfN, reg)],
+			]) {
+				ok.add(`${x}-${y}`);
+				ok.add(`${y}-${x}`);
+			}
+			for (const sentence of splitSentences(recap)) {
+				if (!/halftime|at the break|the half\b|second half/.test(sentence)) {
+					continue;
+				}
+				for (const m of sentence.matchAll(/\b(\d{1,3})-(\d{1,3})\b/g)) {
+					if (sentence[m.index - 1] === "(") {
+						continue;
+					}
+					// A rebounding edge, a run or a quarter in the same sentence
+					// is its own number.
+					const lead = sentence.slice(Math.max(0, m.index - 30), m.index);
+					if (
+						/glass|boards|rebound|run\b|assist|three|line|turnover|quarter|first|third|fourth/i.test(
+							lead,
+						)
+					) {
+						continue;
+					}
+					const said = `${m[1]}-${m[2]}`;
+					const isFinal =
+						finalPts.has(Number(m[1])) && finalPts.has(Number(m[2]));
+					if (!ok.has(said) && !isFinal) {
+						add("halftime score", `said ${said}`, sentence);
+					}
+				}
+			}
+		}
+	}
+
 	// --- claims about the whole game -----------------------------------------
 	const saidOt = /\bovertime\b|\(OT\)|\dOT|extra period/.test(text);
 	if (saidOt !== game.overtimes > 0) {
@@ -359,7 +457,8 @@ export const verifyRecap = (
 		);
 	}
 	if (
-		/never trailed|wire to wire|led from|in front from the opening tip|start to finish/i.test(
+		// "never trailed AGAIN" is the finish of a comeback, not wire to wire.
+		/never trailed(?! again)|wire to wire|led from|in front from the opening tip|start to finish/i.test(
 			text,
 		) &&
 		/comeback|erased|rallied|stormed back|came from \d|deficit|down \d+ (?:at|after)/i.test(
