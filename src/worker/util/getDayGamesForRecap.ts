@@ -1580,6 +1580,21 @@ const createAutoRecapContext = async (season: number) => {
 		}
 		return careerTotalsCache.get(pid);
 	};
+	// The full player row, for the handful of men a recap says more about
+	// than their line: his age, his first season, his past seasons.
+	const fullPlayerCache = new Map<number, any>();
+	const fullPlayerFor = async (pid: number) => {
+		if (!fullPlayerCache.has(pid)) {
+			let full: any;
+			try {
+				full = await idb.cache.players.get(pid);
+			} catch {
+				full = undefined;
+			}
+			fullPlayerCache.set(pid, full);
+		}
+		return fullPlayerCache.get(pid);
+	};
 
 	const buildRecapGame = async (
 		game: any,
@@ -1612,6 +1627,13 @@ const createAutoRecapContext = async (season: number) => {
 				}));
 
 			const played = allPlayers.filter((p: any) => (p?.min ?? 0) > 0);
+			// The men worth the fuller look: the top handful by scoring.
+			const topByPts = new Set(
+				[...played]
+					.sort((a: any, b: any) => (b?.pts ?? 0) - (a?.pts ?? 0))
+					.slice(0, 6)
+					.map((p: any) => p.pid),
+			);
 			const players: RecapPlayer[] = [];
 			for (const p of played) {
 				const base: RecapPlayer = {
@@ -1650,6 +1672,28 @@ const createAutoRecapContext = async (season: number) => {
 						game.day ?? effectiveDay,
 						false,
 					);
+					// This is the path every recap the app shows comes through,
+					// and it never looked the man up in full: his career arc, his
+					// age and his rookie season were written for a builder the
+					// day recap does not use.
+					const full = topByPts.has(p.pid)
+						? await fullPlayerFor(p.pid)
+						: undefined;
+					if (full) {
+						if (typeof full.born?.year === "number") {
+							base.age = season - full.born.year;
+						}
+						if (full.draft?.year === season - 1) {
+							base.rookie = true;
+						}
+						const careerRaw = playerCareer(full, season);
+						if (careerRaw) {
+							base.career = careerRaw.map(({ tids, ...rest }) => {
+								void tids;
+								return rest;
+							});
+						}
+					}
 					if (playoffs) {
 						base.playoffAvg = enteringAverages(
 							lines,

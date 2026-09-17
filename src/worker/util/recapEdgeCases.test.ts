@@ -527,7 +527,7 @@ describe("edge cases", () => {
 			96,
 		);
 		let called = 0;
-		for (let gid = 1; gid <= 10; gid++) {
+		for (let gid = 1; gid <= 20; gid++) {
 			const recap = getAutoRecap(game([rookie, away], { gid }));
 			clean(recap);
 			if (/Rookie Ace Hawk/.test(recap)) {
@@ -535,7 +535,7 @@ describe("edge cases", () => {
 			}
 			assert.deepEqual(verifyRecap(recap, game([rookie, away], { gid })), []);
 		}
-		assert.ok(called >= 3, `${called}`);
+		assert.ok(called >= 3 && called <= 17, `${called}`);
 
 		const vet = squad(
 			{ tid: 1, name: "Hawks" },
@@ -543,14 +543,14 @@ describe("edge cases", () => {
 			104,
 		);
 		let aged = 0;
-		for (let gid = 1; gid <= 10; gid++) {
+		for (let gid = 1; gid <= 20; gid++) {
 			const recap = getAutoRecap(game([vet, away], { gid }));
 			clean(recap);
 			if (/Ace Hawk, 36,/.test(recap)) {
 				aged += 1;
 			}
 		}
-		assert.ok(aged >= 3, `${aged}`);
+		assert.ok(aged >= 2 && aged <= 14, `${aged}`);
 	});
 
 	test("the Nth 30-point game of the season, once the count means something", () => {
@@ -592,5 +592,42 @@ describe("edge cases", () => {
 			assert.deepEqual(verifyRecap(recap, game([home, away], { gid })), []);
 		}
 		assert.ok(counted >= 5, `${counted}`);
+	});
+	test("the reader holds a streak, a count and a high against what he carried in", () => {
+		const home = squad(
+			{ tid: 1, name: "Hawks" },
+			{
+				name: "Ace Hawk",
+				pid: 11,
+				pts: 33,
+				entering: {
+					gp: 20,
+					high: { pts: 31, reb: 12, ast: 8, tp: 6, stl: 3, blk: 2 },
+					totals: { pts: 500, reb: 120, ast: 80, tp: 40, stl: 20, blk: 10 },
+					streaks: { twenty: 4, thirty: 1, doubleDouble: 0 },
+					counts: { twenty: 12, thirty: 5, forty: 0 },
+				},
+			},
+			110,
+		);
+		const away = squad(
+			{ tid: 2, name: "Bulls" },
+			{ name: "Bo Bull", pid: 21, pts: 22 },
+			98,
+		);
+		const g = game([home, away]);
+		const wrong = [
+			"Ace Hawk has not been held under 20 in seven games.",
+			"It was Ace Hawk's fifth 30-point game of the season.",
+			"Ace Hawk had not scored more than 30 in a game this season.",
+		].join(" ");
+		const found = verifyRecap(`**x**\n\n${wrong}`, g).map((v) => v.kind);
+		assert.deepEqual(found, ["streak of 20", "count of 30", "season high"]);
+		const right = [
+			"Ace Hawk has not been held under 20 in five games.",
+			"It was his sixth 30-point game of the season.",
+			"He had not scored more than 31 in a game this season.",
+		].join(" ");
+		assert.deepEqual(verifyRecap(`**x**\n\n${right}`, g), []);
 	});
 });

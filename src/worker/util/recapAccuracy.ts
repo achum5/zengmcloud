@@ -32,6 +32,49 @@ export type RecapViolation = {
 // The headline has no full stop, so a paragraph break has to count as one:
 // otherwise the headline and the lede read as one sentence and a name in
 // the headline is credited with the lede's numbers.
+// "six", "sixth", "6", "6th" - the number a claim carries, spelled out or
+// not, cardinal or ordinal.
+const NUMBER_WORDS: Record<string, number> = {
+	one: 1,
+	first: 1,
+	two: 2,
+	second: 2,
+	three: 3,
+	third: 3,
+	four: 4,
+	fourth: 4,
+	five: 5,
+	fifth: 5,
+	six: 6,
+	sixth: 6,
+	seven: 7,
+	seventh: 7,
+	eight: 8,
+	eighth: 8,
+	nine: 9,
+	ninth: 9,
+	ten: 10,
+	tenth: 10,
+	eleven: 11,
+	eleventh: 11,
+	twelve: 12,
+	twelfth: 12,
+	thirteen: 13,
+	thirteenth: 13,
+	fourteen: 14,
+	fourteenth: 14,
+	fifteen: 15,
+	fifteenth: 15,
+};
+const wordToNumber = (t: string): number | undefined => {
+	const lower = t.toLowerCase();
+	if (NUMBER_WORDS[lower] !== undefined) {
+		return NUMBER_WORDS[lower];
+	}
+	const m = /^(\d+)(?:st|nd|rd|th)?$/.exec(lower);
+	return m ? Number(m[1]) : undefined;
+};
+
 const splitSentences = (text: string): string[] =>
 	text
 		.replaceAll("**", "")
@@ -448,6 +491,95 @@ export const verifyRecap = (
 					if (!ok.has(said) && !isFinal) {
 						add("halftime score", `said ${said}`, sentence);
 					}
+				}
+			}
+		}
+	}
+
+	// --- what a man carried in: streaks, counts, highs ------------------------
+	//
+	// "Has not been held under 20 in eight games", "his sixth 30-point game
+	// of the season", "had not scored more than 31 in a game this season" -
+	// all read off the entering context, and all held against it here.
+	{
+		let owner: string | undefined;
+		for (const sentence of splitSentences(recap)) {
+			const pronounLed = /^(?:He|His|It was his|That is|Make it)\b/.test(
+				sentence,
+			);
+			const named = lastNameIn(sentence);
+			owner = named ?? (pronounLed ? owner : undefined);
+			const p = owner ? byName.get(owner) : undefined;
+			const e = p?.entering;
+			if (!e) {
+				continue;
+			}
+			const num = (t: string) => wordToNumber(t);
+			let m: RegExpExecArray | null;
+			// Twenty-point streaks.
+			m =
+				/not been held under 20 in (\w+) games|(\w+) straight games of 20 or more|the (\w+) game in a row [^.]* has reached 20|Make it (\w+) in a row over 20/.exec(
+					sentence,
+				);
+			if (m) {
+				const n = num(m[1] ?? m[2] ?? m[3] ?? m[4] ?? "");
+				if (n !== undefined && n !== e.streaks.twenty + 1) {
+					add(
+						"streak of 20",
+						`said ${n}, real ${e.streaks.twenty + 1}`,
+						sentence,
+					);
+				}
+			}
+			m = /(\w+) straight games? of 30|30-plus in (\w+) straight/.exec(
+				sentence,
+			);
+			if (m) {
+				const n = num(m[1] ?? m[2] ?? "");
+				if (n !== undefined && n !== e.streaks.thirty + 1) {
+					add(
+						"streak of 30",
+						`said ${n}, real ${e.streaks.thirty + 1}`,
+						sentence,
+					);
+				}
+			}
+			m =
+				/double-double in (\w+) straight games|(\w+) double-doubles in a row|(\w+) straight double-double/.exec(
+					sentence,
+				);
+			if (m) {
+				const n = num(m[1] ?? m[2] ?? m[3] ?? "");
+				if (n !== undefined && n !== e.streaks.doubleDouble + 1) {
+					add(
+						"double-double streak",
+						`said ${n}, real ${e.streaks.doubleDouble + 1}`,
+						sentence,
+					);
+				}
+			}
+			// Counts of big games.
+			m =
+				/(\w+) (30|40)-point games? (?:of the season|this season)|(\w+) games of (30|40) or more/.exec(
+					sentence,
+				);
+			if (m && e.counts) {
+				const n = num(m[1] ?? m[3] ?? "");
+				const bar = m[2] ?? m[4];
+				const real = (bar === "40" ? e.counts.forty : e.counts.thirty) + 1;
+				if (n !== undefined && n !== real) {
+					add(`count of ${bar}`, `said ${n}, real ${real}`, sentence);
+				}
+			}
+			// The previous scoring high.
+			m =
+				/had not scored more than (\d+)|season high of (\d+)|previous best was (\d+)|had never gone past (\d+)/.exec(
+					sentence,
+				);
+			if (m) {
+				const n = Number(m[1] ?? m[2] ?? m[3] ?? m[4]);
+				if (n !== e.high.pts) {
+					add("season high", `said ${n}, real ${e.high.pts}`, sentence);
 				}
 			}
 		}

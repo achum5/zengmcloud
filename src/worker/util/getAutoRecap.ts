@@ -213,15 +213,27 @@ export const dedupePlayerSubjects = (
 		const framed = itWas(out[i]!);
 		if (framed) {
 			const prev = sentences[i - 1]!;
-			if (itWas(prev) === framed) {
+			const othersIn = names.some(
+				(other) => other !== framed && prev.includes(other),
+			);
+			if (itWas(prev) === framed && !othersIn) {
 				out[i] = `It was also his ${afterPossessive(out[i]!.slice(7), framed)}`;
-			} else if (opensOn(prev) === framed) {
+			} else if (opensOn(prev) === framed && !othersIn) {
 				out[i] = `It was his ${afterPossessive(out[i]!.slice(7), framed)}`;
 			}
 			continue;
 		}
 		const name = opensOn(out[i]!);
-		if (!name || opensOn(sentences[i - 1]!) !== name) {
+		// A sentence that opens on him but ends on somebody else ("Evan
+		// Jackson's 27 points fronted the Thunder, and Franz Jackson added
+		// 18") leaves "He" pointing at the wrong man. The name stays.
+		const another = (sentence: string, who: string) =>
+			names.some((other) => other !== who && sentence.includes(other));
+		if (
+			!name ||
+			opensOn(sentences[i - 1]!) !== name ||
+			another(sentences[i - 1]!, name)
+		) {
 			// "...four in a row for Obi King. The 14 rebounds were a season high
 			// for Obi King." - the name closing two sentences running. When the
 			// sentence before names him and this one names nobody else, the
@@ -2439,11 +2451,17 @@ const leadSentence = (
 	// Occasionally frame the star against the average he came in with.
 	if (line && star.pts >= line.pts + 12 && star.pts >= 24 && rng() < 0.6) {
 		subject = `${star.name}, who came in averaging ${line.pts} points a game,`;
-	} else if (star.rookie && star.pts >= 18) {
-		// "Rookie Jalen Green scored 24" - the one word a desk never leaves
-		// off a first-year man's big night.
+	} else if (star.rookie && star.pts >= 20 && rng() < 0.5) {
+		// "Rookie Jalen Green scored 24" - the word a desk puts on a
+		// first-year man's big night. Not every night: a page where he is
+		// "Rookie" in all twelve of his recaps reads as a label.
 		subject = `Rookie ${star.name}`;
-	} else if (star.age !== undefined && star.age >= 34 && star.pts >= 20) {
+	} else if (
+		star.age !== undefined &&
+		star.age >= 34 &&
+		star.pts >= 24 &&
+		rng() < 0.35
+	) {
 		subject = `${star.name}, ${star.age},`;
 	}
 
