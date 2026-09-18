@@ -1110,3 +1110,100 @@ export const trimDayEvents = (
 			.sort((a, b) => a.order - b.order)
 	);
 };
+
+// ---------------------------------------------------------------- RECEIPTS
+//
+// A team whose story flipped TODAY. The feed's characters spend the whole
+// season making promises about memory - "screenshotting this for April",
+// "revisiting this in a month" - and a flip is the moment one of those
+// promises comes due: the team that was left for dead runs off four straight,
+// or the team everyone crowned drops four straight. The receipt itself is
+// assembled by the feed (it has to re-derive what somebody actually said
+// during the other run); this only detects the moment, purely, from scores.
+export type StreakFlip = {
+	tid: number;
+	// risen: a winning streak just hit four with a recent losing streak of
+	// four-plus behind it. fallen: the mirror.
+	kind: "risen" | "fallen";
+	// Today's run.
+	streak: number;
+	// The days of the opposite run, most recent first - when the words worth
+	// quoting back were said.
+	regretDays: number[];
+};
+
+export const streakFlipsForDay = (
+	games: {
+		day: number;
+		playoffs: boolean;
+		teams: { tid: number; pts: number }[];
+	}[],
+	day: number,
+): StreakFlip[] => {
+	// Each team's regular-season results through today, in day order.
+	const results = new Map<number, { day: number; won: boolean }[]>();
+	const sorted = [...games]
+		.filter((game) => !game.playoffs && game.day <= day)
+		.sort((a, b) => a.day - b.day);
+	for (const game of sorted) {
+		const [a, b] = game.teams;
+		if (!a || !b) {
+			continue;
+		}
+		const aWon = a.pts > b.pts;
+		for (const [t, won] of [
+			[a.tid, aWon],
+			[b.tid, !aWon],
+		] as const) {
+			let list = results.get(t);
+			if (!list) {
+				list = [];
+				results.set(t, list);
+			}
+			list.push({ day: game.day, won });
+		}
+	}
+
+	const out: StreakFlip[] = [];
+	for (const [tid, list] of results) {
+		const today = list.at(-1);
+		if (!today || today.day !== day) {
+			continue;
+		}
+		// The current run, from the end.
+		let i = list.length - 1;
+		while (i >= 0 && list[i]!.won === today.won) {
+			i--;
+		}
+		const streak = list.length - 1 - i;
+		// Fires exactly once, on the game that makes it four.
+		if (streak !== 4) {
+			continue;
+		}
+		// The run before it, the other way. Three is enough: measured over two
+		// 37-day corpus leagues, demanding four produced two receipts in one
+		// and none at all in the other, and a feature nobody meets is not a
+		// feature. Three-and-four gives one every week or two in a streaky
+		// league and one a month in a steady one.
+		const prevEnd = i;
+		while (i >= 0 && list[i]!.won === !today.won) {
+			i--;
+		}
+		const prev = prevEnd - i;
+		if (prev < 3) {
+			continue;
+		}
+		const regretDays = list
+			.slice(i + 1, prevEnd + 1)
+			.map((r) => r.day)
+			.reverse();
+		out.push({
+			tid,
+			kind: today.won ? "risen" : "fallen",
+			streak,
+			regretDays,
+		});
+	}
+	// Deterministic order, however the map iterated.
+	return out.sort((a, b) => a.tid - b.tid);
+};

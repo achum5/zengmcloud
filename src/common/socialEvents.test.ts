@@ -14,6 +14,7 @@ import {
 	type SocialEvent,
 	placeLeagueEvents,
 	OFFSEASON_DAY,
+	streakFlipsForDay,
 } from "./socialEvents.ts";
 
 const line = (
@@ -701,5 +702,84 @@ describe("placeLeagueEvents", () => {
 		assert.strictEqual(after.get(1), 99);
 		assert.strictEqual(after.get(2), OFFSEASON_DAY);
 		assert.strictEqual(after.get(3), OFFSEASON_DAY);
+	});
+});
+
+describe("streakFlipsForDay", () => {
+	const game = (day: number, winner: number, loser: number) => ({
+		day,
+		playoffs: false,
+		teams: [
+			{ tid: winner, pts: 100 },
+			{ tid: loser, pts: 90 },
+		],
+	});
+
+	test("fires on the day a four-game streak follows a four-game skid", () => {
+		const games = [
+			// Team 0 loses four to team 9, then wins four against team 9.
+			game(1, 9, 0),
+			game(2, 9, 0),
+			game(3, 9, 0),
+			game(4, 9, 0),
+			game(5, 0, 9),
+			game(6, 0, 9),
+			game(7, 0, 9),
+			game(8, 0, 9),
+		];
+		assert.deepEqual(streakFlipsForDay(games, 7), []);
+		const flips = streakFlipsForDay(games, 8);
+		const risen = flips.find((f) => f.tid === 0);
+		assert.deepEqual(risen, {
+			tid: 0,
+			kind: "risen",
+			streak: 4,
+			regretDays: [4, 3, 2, 1],
+		});
+		// Team 9's mirror: it fell.
+		const fallen = flips.find((f) => f.tid === 9);
+		assert.equal(fallen?.kind, "fallen");
+		// And only on the day it happens - not the day after.
+		assert.deepEqual(streakFlipsForDay(games, 9), []);
+	});
+
+	test("no flip without the skid behind it", () => {
+		const games = [game(1, 0, 9), game(2, 0, 8), game(3, 0, 7), game(4, 0, 6)];
+		assert.deepEqual(streakFlipsForDay(games, 4), []);
+	});
+
+	test("a three-game skid behind the streak is enough; two is not", () => {
+		const three = [
+			game(1, 9, 0),
+			game(2, 8, 0),
+			game(3, 7, 0),
+			game(4, 0, 9),
+			game(5, 0, 8),
+			game(6, 0, 7),
+			game(7, 0, 6),
+		];
+		assert.equal(
+			streakFlipsForDay(three, 7).find((f) => f.tid === 0)?.kind,
+			"risen",
+		);
+		const two = three.slice(1);
+		assert.equal(
+			streakFlipsForDay(two, 7).find((f) => f.tid === 0),
+			undefined,
+		);
+	});
+
+	test("playoff games do not count", () => {
+		const games = [
+			game(1, 9, 0),
+			game(2, 9, 0),
+			game(3, 9, 0),
+			game(4, 9, 0),
+			game(5, 0, 9),
+			game(6, 0, 9),
+			game(7, 0, 9),
+			{ ...game(8, 0, 9), playoffs: true },
+		];
+		assert.deepEqual(streakFlipsForDay(games, 8), []);
 	});
 });

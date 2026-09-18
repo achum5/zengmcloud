@@ -339,6 +339,37 @@ const Actions = ({ engagement }: { engagement?: Engagement }) => {
 	);
 };
 
+// AN OLD POST, QUOTED. The receipt embed: a bordered card with the original
+// author, the league day it was said, and the words exactly as they were
+// posted - because they can be checked; the profile still shows them.
+export const QuotedPost = ({
+	quoted,
+}: {
+	quoted: {
+		handle: string;
+		name: string;
+		verified?: boolean;
+		text: string;
+		day: number;
+	};
+}) => (
+	<div className="social-quoted border rounded p-2 mt-1 mb-1">
+		<div className="social-post-head">
+			<a
+				className="social-name"
+				href={helpers.leagueUrl(["social", quoted.handle])}
+			>
+				{quoted.name}
+			</a>
+			{quoted.verified ? <VerifiedBadge size={14} /> : null}
+			<span className="social-handle">@{quoted.handle}</span>
+			<span className="social-dot">·</span>
+			<span className="social-time">Day {quoted.day}</span>
+		</div>
+		<PostText text={quoted.text} />
+	</div>
+);
+
 export const SocialPost = ({
 	account,
 	text,
@@ -348,6 +379,7 @@ export const SocialPost = ({
 	time,
 	engagement,
 	quote,
+	quoted,
 	compact,
 	replyTo,
 	// Part of a thread: a line drops from this avatar to the next post
@@ -364,6 +396,13 @@ export const SocialPost = ({
 	time?: string;
 	engagement?: Engagement;
 	quote?: boolean;
+	quoted?: {
+		handle: string;
+		name: string;
+		verified?: boolean;
+		text: string;
+		day: number;
+	};
 	compact?: boolean;
 	replyTo?: string;
 	threadBelow?: boolean;
@@ -427,6 +466,7 @@ export const SocialPost = ({
 					</div>
 				) : null}
 				<PostText text={text} />
+				{quoted ? <QuotedPost quoted={quoted} /> : null}
 				{children}
 				<Actions engagement={engagement} />
 			</div>
@@ -454,6 +494,13 @@ export const SocialThread = ({
 		time?: string;
 		verified?: boolean;
 		engagement?: Engagement;
+		quoted?: {
+			handle: string;
+			name: string;
+			verified?: boolean;
+			text: string;
+			day: number;
+		};
 		replies?: {
 			id: string;
 			accountId: string;
@@ -483,6 +530,7 @@ export const SocialThread = ({
 				compact={compact}
 				engagement={post.engagement}
 				picture={pictures[post.accountId]}
+				quoted={post.quoted}
 				team={post.tid === undefined ? undefined : teamByTid.get(post.tid)}
 				text={post.text}
 				threadBelow={replies.length > 0}

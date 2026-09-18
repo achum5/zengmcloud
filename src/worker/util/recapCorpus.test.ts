@@ -15,6 +15,11 @@ import {
 } from "./getDayGamesForRecap.ts";
 import type { Game } from "../../common/types.ts";
 import { verifyRecap } from "./recapAccuracy.ts";
+import {
+	buildFeedDay,
+	clearSocialFeedCache,
+	getFeedSnapshot,
+} from "./socialFeed.ts";
 
 // A CORPUS OF REAL RECAPS.
 //
@@ -547,6 +552,43 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 	}
 	writeFileSync(LOG, out.join("\n"));
 	writeFileSync(`${LOG}.jsonl`, pairs.map((x) => JSON.stringify(x)).join("\n"));
+
+	// THE FEED, same league, same nights. RECAP_FEED=1 builds every day's
+	// timeline through the real feed path and dumps it beside the recaps, so
+	// both systems can be read describing the same games - and so the feed can
+	// be read at all without clicking through a browser.
+	if (nodeEnv.RECAP_FEED === "1") {
+		clearSocialFeedCache();
+		const snapshot = await getFeedSnapshot(season);
+		const feedOut: string[] = [];
+		const feedRows: string[] = [];
+		for (let i = 0; i < snapshot.days.length; i++) {
+			const feedDay = await buildFeedDay({ snapshot, dayIndex: i });
+			feedOut.push(
+				`\n${"=".repeat(78)}\nFEED DAY ${feedDay.day} (${feedDay.posts.length} posts)\n${"=".repeat(78)}\n`,
+			);
+			for (const post of feedDay.posts) {
+				feedOut.push(
+					`@${post.handle} [${post.kind}/${post.archetypeId}]${post.verified ? " *" : ""} ${post.time} | ${post.eventType} | ${post.engagement.likes} likes`,
+					post.text,
+				);
+				if (post.quoted) {
+					feedOut.push(
+						`    [quoting @${post.quoted.handle}, day ${post.quoted.day}]: ${post.quoted.text}`,
+					);
+				}
+				for (const reply of post.replies) {
+					feedOut.push(
+						`    > @${reply.handle} [${reply.kind}/${reply.archetypeId}]${reply.quote ? " (quote)" : ""}: ${reply.text}`,
+					);
+				}
+				feedOut.push("");
+				feedRows.push(JSON.stringify(post));
+			}
+		}
+		writeFileSync(`${LOG}.feed.txt`, feedOut.join("\n"));
+		writeFileSync(`${LOG}.feed.jsonl`, feedRows.join("\n"));
+	}
 
 	// ACCURACY. Every number in the finished prose, held against the box score
 	// it was written from. A corpus run is the only place this can be asked at

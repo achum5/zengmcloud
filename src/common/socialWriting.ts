@@ -765,17 +765,22 @@ const GAME_TEMPLATES: Template<GameFrame>[] = [
 	},
 ];
 
-// "14 pts, 15 reb" rather than "14 pts, 15 reb, 0 ast": a graphic never
-// prints the zero, and neither does anyone typing a line out.
+// "29 pts, 20 reb" rather than "29 pts, 20 reb, 2 ast": nobody typing a line
+// out includes the categories that don't matter, and the zero is worse - a
+// graphic never prints it. Points always; anything else only when it is worth
+// mentioning on its own.
 const statLine = (f: PerformanceFrame, sep: string, gap: string): string =>
 	(
 		[
-			[f.pts, "pts"],
-			[f.reb, "reb"],
-			[f.ast, "ast"],
+			[f.pts, "pts", 0],
+			[f.reb, "reb", 6],
+			[f.ast, "ast", 5],
+			[f.stl, "stl", 4],
+			[f.blk, "blk", 4],
 		] as const
 	)
-		.filter(([value]) => value > 0)
+		.filter(([value, , min]) => value >= min && (min > 0 || value > 0))
+		.slice(0, 3)
 		.map(([value, label]) => `${value}${gap}${label}`)
 		.join(sep);
 
@@ -783,8 +788,7 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "perf.line",
 		tones: ["wire", "beat", "wonk"],
-		text: (f) =>
-			`${f.name}: ${f.pts} points, ${f.reb} rebounds, ${f.ast} assists vs ${f.opponent}.`,
+		text: (f) => `${f.name}: ${statLine(f, ", ", " ")} vs ${f.opponent}.`,
 	},
 	{
 		id: "perf.scoring",
@@ -830,7 +834,16 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 		id: "perf.defense",
 		tones: ["beat", "wonk", "hype"],
 		when: (f) => f.stl >= 5 || f.blk >= 5,
-		text: (f) => `${f.name}: ${f.stl} steals, ${f.blk} blocks.`,
+		// Never the zero column: "0 steals, 5 blocks" reads like a bug, and
+		// quoting a zero as praise is worse than a bug.
+		text: (f) =>
+			`${f.name}: ${
+				f.stl >= 2 && f.blk >= 2
+					? `${f.stl} steals, ${f.blk} blocks`
+					: f.blk > f.stl
+						? `${f.blk} blocks`
+						: `${f.stl} steals`
+			}.`,
 	},
 	{
 		id: "perf.wasted",
@@ -904,7 +917,24 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "perf.beat.vs",
 		tones: ["wire", "beat"],
+		// Not on a monster night: "55 pts, 15 reb." with wire-desk calm was the
+		// flattest sentence on the feed on the night that least deserved it.
+		when: (f) => !f.huge,
 		text: (f) => `${f.name} vs ${f.opponent}: ${f.pts} pts, ${f.reb} reb.`,
+	},
+	{
+		id: "perf.beat.monster",
+		tones: ["wire", "beat", "wonk"],
+		when: (f) => f.pts >= 45,
+		text: (f) =>
+			`${f.name} finished with ${f.pts}${f.won ? "" : ", in a loss"}. Not a typo.`,
+	},
+	{
+		id: "perf.beat.monster2",
+		tones: ["wire", "beat"],
+		when: (f) => f.pts >= 45,
+		text: (f) =>
+			`${f.pts} points for ${f.name}. You will not see many of those.`,
 	},
 	{
 		id: "perf.doom.only",
@@ -987,6 +1017,7 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "perf.wire.vs",
 		tones: ["wire", "beat"],
+		when: (f) => !f.huge,
 		text: (f) => `${f.name} vs ${f.opponent}: ${f.pts} points.`,
 	},
 	{
@@ -1007,7 +1038,7 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 		tones: ["wonk", "beat"],
 		when: (f) => f.reb >= 8 && f.ast >= 6,
 		text: (f) =>
-			`${f.reb} boards and ${f.ast} assists alongside the ${f.pts}. Complete night.`,
+			`${f.reb} boards and ${f.ast} assists alongside the ${f.pts} for ${f.name}. Complete night.`,
 	},
 	{
 		id: "perf.hype.loud",
@@ -3374,3 +3405,87 @@ export const verifyPostNumbers = (
 	}
 	return violations;
 };
+
+// ---------------------------------------------------------------- RECEIPTS
+//
+// The feed's characters spend all season promising memory - "screenshotting
+// this for April" - and a receipt is the day a promise comes due: the moment
+// a team's story flips, somebody digs up what the other side said during the
+// old run and quotes it. The finding is done by the feed (it re-derives what
+// was actually posted); these are only the words on top of the quote.
+//
+// Two registers. The cross-quote is a fan dunking on the rival mood account
+// of his own fanbase; the self-quote is the rarer, better joke - the account
+// quoting its own bad take.
+
+const RECEIPT_RISEN = [
+	"this you?",
+	"found this in my saved folder. four straight, by the way",
+	"aged like milk 😭",
+	"the receipts never expire",
+	"and what do we say to the class now",
+	"pinning this to the top of the win streak",
+];
+
+const RECEIPT_FALLEN = [
+	"we tried to tell you",
+	"this aged well",
+	"revisiting this, as promised",
+	"four straight losses later. reading it again",
+	"kept this one warm all month",
+	"no caption needed",
+];
+
+const RECEIPT_SELF_RISEN = [
+	"fine. i was wrong. once",
+	"i regret nothing. we are still doomed, just later",
+	"leaving this up so you know i suffer honestly",
+];
+
+const RECEIPT_SELF_FALLEN = [
+	"in my defense, i believed it",
+	"leaving this up. accountability",
+	"do not screenshot this. it is already too late",
+];
+
+export const receiptText = (opts: {
+	kind: "risen" | "fallen";
+	self: boolean;
+	rng: () => number;
+	pick: <T>(rng: () => number, arr: T[], poolId?: string) => T;
+}): string => {
+	const pool = opts.self
+		? opts.kind === "risen"
+			? RECEIPT_SELF_RISEN
+			: RECEIPT_SELF_FALLEN
+		: opts.kind === "risen"
+			? RECEIPT_RISEN
+			: RECEIPT_FALLEN;
+	return opts.pick(opts.rng, pool, `receipt:${opts.kind}:${opts.self}`);
+};
+
+// What the quoted account says back. He never concedes gracefully.
+const RECEIPT_REPLY_RISEN = [
+	"i stand by it",
+	"check back in a month",
+	"four games. wake me in june",
+	"blocked and reported",
+];
+
+const RECEIPT_REPLY_FALLEN = [
+	"delete this",
+	"we will be back",
+	"i said what i said",
+	"unfollowing",
+];
+
+export const receiptReplyText = (opts: {
+	kind: "risen" | "fallen";
+	rng: () => number;
+	pick: <T>(rng: () => number, arr: T[], poolId?: string) => T;
+}): string =>
+	opts.pick(
+		opts.rng,
+		opts.kind === "risen" ? RECEIPT_REPLY_RISEN : RECEIPT_REPLY_FALLEN,
+		`receiptReply:${opts.kind}`,
+	);

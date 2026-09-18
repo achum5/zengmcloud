@@ -61,6 +61,7 @@ import {
 	type GameForEvents,
 	type SocialEvent,
 	type SocialEventType,
+	streakFlipsForDay,
 } from "../../common/socialEvents.ts";
 import {
 	castDay,
@@ -77,6 +78,8 @@ import {
 	type Engagement,
 } from "../../common/socialMetrics.ts";
 import {
+	receiptReplyText,
+	receiptText,
 	writePostDetailed,
 	writeReplyDetailed,
 	type AvoidFn,
@@ -104,6 +107,18 @@ export type FeedPost = {
 	pids: number[];
 	gid?: number;
 	verified: boolean;
+	// A RECEIPT: this post quotes something another account (or this one)
+	// said on an earlier day, re-derived rather than stored. The day is the
+	// league day it was said, for the stamp on the embed.
+	quoted?: {
+		accountId: string;
+		handle: string;
+		name: string;
+		kind: "player" | "team" | "media";
+		verified: boolean;
+		text: string;
+		day: number;
+	};
 	// Clock time and engagement, derived rather than stored - see socialMetrics.
 	time: string;
 	minutes: number;
@@ -689,6 +704,7 @@ const lineCache = new Map<string, Set<string>>();
 // finished text - "honest answer: could go either way" showed up twice in one
 // day, once with an opener in front of it.
 const coreByPostId = new Map<string, string>();
+const templateByPostId = new Map<string, string>();
 // Which TEMPLATES each cached day used. Refusing a repeated sentence is not
 // enough on its own: two different sentences off the same template say the
 // same thing in the same shape, and a reader notices the shape.
@@ -709,6 +725,8 @@ export const clearSocialFeedCache = () => {
 	accountDayCache.clear();
 	lineCache.clear();
 	coreByPostId.clear();
+	templateByPostId.clear();
+	flipsCache.clear();
 	shapeCache.clear();
 	feedCache.clear();
 };
@@ -1044,8 +1062,11 @@ export const buildAccountDay = async ({
 			);
 			for (const [n, post] of written.entries()) {
 				coreByPostId.set(posts[n]!.id, normalise(post.core));
+				templateByPostId.set(posts[n]!.id, post.templateId);
 			}
 			bounded(accountDayCache, 200_000);
+			bounded(coreByPostId, 400_000);
+			bounded(templateByPostId, 400_000);
 			accountDayCache.set(key, posts);
 			lineCache.set(
 				key,
@@ -1062,7 +1083,15 @@ export const buildAccountDay = async ({
 		shapes.push(shapeCache.get(key) ?? new Set());
 	}
 
-	return accountDayCache.get(wanted) ?? [];
+	const own = accountDayCache.get(wanted) ?? [];
+	// The author's profile carries his receipt too - a post that only existed
+	// on the timeline would break the rule that a profile is everything the
+	// account said.
+	const receipt = await receiptPostFor(snapshot, dayIndex);
+	if (receipt && receipt.accountId === account.id) {
+		return [...own, { ...receipt, replies: [] }];
+	}
+	return own;
 };
 
 // What one account has said in the days it can still remember. Reads the
@@ -1088,6 +1117,180 @@ const memoryOf = (
 		}
 	}
 	return { lines, shapes };
+};
+
+// ---------------------------------------------------------------- RECEIPTS
+//
+// THE PROMISE OF MEMORY, KEPT. The cast spends whole weeks saying
+// "screenshotting this for April" and "revisiting this in a month", and for
+// as long as none of it ever came back, the feed was gesturing at a memory it
+// did not have. A receipt is the payoff: on the day a team's story flips -
+// four straight wins where there was a four-game skid, or the reverse - the
+// rival mood account digs up what the other one actually said during the old
+// run and quotes it, word for word, with the day it was said.
+//
+// Nothing is stored to make this work. The old post is re-derived exactly the
+// way the profile page would derive it, which is what guarantees the receipt
+// quotes something the reader can go and find.
+
+const flipsCache = new Map<number, ReturnType<typeof streakFlipsForDay>>();
+
+const flipsForDay = (snapshot: FeedSnapshot, day: number) => {
+	let flips = flipsCache.get(day);
+	if (!flips) {
+		flips = streakFlipsForDay(snapshot.standingsInput, day);
+		flipsCache.set(day, flips);
+		bounded(flipsCache as any, 2000);
+	}
+	return flips;
+};
+
+const fanOf = (
+	accounts: ResolvedSocialAccount[],
+	tid: number,
+	archetypeId: string,
+): ResolvedSocialAccount | undefined =>
+	accounts.find(
+		(a) =>
+			a.archetypeId === archetypeId &&
+			(a.personality.loyaltyTid ?? a.tid) === tid,
+	);
+
+export const receiptPostFor = async (
+	snapshot: FeedSnapshot,
+	dayIndex: number,
+): Promise<FeedPost | undefined> => {
+	const day = snapshot.days[dayIndex];
+	if (day === undefined) {
+		return undefined;
+	}
+	for (const flip of flipsForDay(snapshot, day)) {
+		// risen: the homer quotes the doomer, who spent the skid selling the
+		// team. fallen: the doomer quotes the homer, who spent the streak
+		// crowning it. When only the quoted account exists, it quotes itself,
+		// which is the rarer and better joke.
+		const targetArch = flip.kind === "risen" ? "doomerFan" : "homerFan";
+		const authorArch = flip.kind === "risen" ? "homerFan" : "doomerFan";
+		const target = fanOf(snapshot.accounts, flip.tid, targetArch);
+		if (!target) {
+			continue;
+		}
+		const author = fanOf(snapshot.accounts, flip.tid, authorArch) ?? target;
+		const self = author.id === target.id;
+
+		// What he actually said, most recent regret first. Only plain posts
+		// about the team qualify - a receipt of a receipt is a hall of mirrors.
+		let old: FeedPost | undefined;
+		let oldDay: number | undefined;
+		for (const rd of flip.regretDays.slice(0, 4)) {
+			const di = snapshot.days.indexOf(rd);
+			if (di < 0) {
+				continue;
+			}
+			const targetDay = await buildAccountDay({
+				snapshot,
+				account: target,
+				dayIndex: di,
+			});
+			old = targetDay.find(
+				(post) =>
+					post.quoted === undefined &&
+					(post.eventType === "gameResult" || post.eventType === "standings") &&
+					post.tids.includes(flip.tid),
+			);
+			if (old) {
+				oldDay = rd;
+				break;
+			}
+		}
+		if (!old || oldDay === undefined) {
+			continue;
+		}
+
+		const seed = seedFor(snapshot, day);
+		const rng = rngFromSeed(hashSeed(`${seed}|receipt|${flip.tid}`));
+		const pool = createPhrasePool();
+		const text = receiptText({
+			kind: flip.kind,
+			self,
+			rng,
+			pick: pool.pick,
+		});
+		const reach = reachOf(author, 0.5);
+		// Late morning, when yesterday has sunk in - before tonight's games,
+		// after the box scores.
+		const minutes = 10 * 60 + Math.floor(rng() * 150);
+		const h = Math.floor(minutes / 60);
+		const m = minutes % 60;
+		const label = `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+		const post: FeedPost = {
+			id: `receipt|${flip.tid}|${day}`,
+			accountId: author.id,
+			handle: author.handle,
+			name: author.name,
+			kind: author.kind,
+			archetypeId: author.archetypeId,
+			tid: author.tid,
+			pid: author.pid,
+			text,
+			eventId: `receipt|${flip.tid}|${day}`,
+			eventType: "standings",
+			tids: [flip.tid],
+			pids: [],
+			verified: isVerified(author),
+			quoted: {
+				accountId: target.id,
+				handle: target.handle,
+				name: target.name,
+				kind: target.kind,
+				verified: isVerified(target),
+				text: old.text,
+				day: oldDay,
+			},
+			time: label,
+			minutes,
+			// A receipt travels: it is the kind of post a whole fanbase passes
+			// around, so it earns big-moment engagement whatever the author's
+			// usual reach is.
+			engagement: engagementFor({
+				account: author,
+				reach,
+				salience: 0.9,
+				seed: `${seed}|receipt|${flip.tid}`,
+			}),
+			replies: [],
+		};
+		if (!self) {
+			// He never concedes gracefully.
+			const replyMinutes = Math.min(24 * 60 - 1, minutes + 9);
+			const rh = Math.floor(replyMinutes / 60);
+			const rm = replyMinutes % 60;
+			post.replies.push({
+				id: `${target.id}|receipt|${post.id}`,
+				accountId: target.id,
+				handle: target.handle,
+				name: target.name,
+				kind: target.kind,
+				archetypeId: target.archetypeId,
+				tid: target.tid,
+				pid: target.pid,
+				text: receiptReplyText({ kind: flip.kind, rng, pick: pool.pick }),
+				quote: false,
+				verified: isVerified(target),
+				time: `${rh % 12 === 0 ? 12 : rh % 12}:${String(rm).padStart(2, "0")} ${rh >= 12 ? "PM" : "AM"}`,
+				engagement: engagementFor({
+					account: target,
+					reach: reachOf(target, 0.5),
+					salience: 0.9,
+					seed: `${seed}|receiptreply|${flip.tid}`,
+					isReply: true,
+					parentLikes: post.engagement.likes,
+				}),
+			});
+		}
+		return post;
+	}
+	return undefined;
 };
 
 // ---------------------------------------------------------------- LANES
@@ -1204,6 +1407,7 @@ export const buildFeedDay = async ({
 	const caps = laneCaps(POSTS_PER_DAY);
 	const perLane = new Map<FeedLane, number>();
 	const taken = new Set<string>();
+	const dayTemplates = new Set<string>();
 
 	// Two passes: first every lane up to its share, then the lanes allowed to
 	// overflow take whatever is left, still in score order.
@@ -1242,9 +1446,27 @@ export const buildFeedDay = async ({
 				taken.add(key);
 				continue;
 			}
+			// ONE RUN OF A JOKE PER NIGHT. Exact-line dedupe cannot see "another
+			// one. 116-88" and "another one. 124-94" as the same post, but a
+			// reader can, and one sample night carried it three times from three
+			// fanbases. Flavor lanes get one use of a template per day across
+			// every account; the wire lanes are exempt, because eight team
+			// accounts posting eight finals in the same shape IS the texture.
+			const templateId = templateByPostId.get(post.id);
+			if (
+				templateId !== undefined &&
+				(lane === "fan" || lane === "radio") &&
+				dayTemplates.has(templateId)
+			) {
+				taken.add(key);
+				continue;
+			}
 			said.add(line);
 			if (core !== undefined) {
 				said.add(core);
+			}
+			if (templateId !== undefined && (lane === "fan" || lane === "radio")) {
+				dayTemplates.add(templateId);
 			}
 			taken.add(key);
 			perEvent.set(
@@ -1463,6 +1685,13 @@ export const buildFeedDay = async ({
 		});
 	}
 	pool.endBatch();
+
+	// The day's receipt, when its moment has come. Outside the forty-five on
+	// purpose: it is rare, and it is the best post of the day when it exists.
+	const receipt = await receiptPostFor(snapshot, dayIndex);
+	if (receipt) {
+		out.push(receipt);
+	}
 
 	// A timeline is newest-first, and the clock is what says which is newest.
 	out.sort((a, b) => b.minutes - a.minutes || a.id.localeCompare(b.id));
