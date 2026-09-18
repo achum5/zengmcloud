@@ -105,7 +105,7 @@ const GOATFormula = ({
 						These variables are based on your current{" "}
 						<a href={helpers.leagueUrl(["award_settings"])}>award settings</a>.
 						If you had some other awards in past seasons, you can use those too
-						in the same format, <code>award.ABBREV</code>.
+						in the same format, <code>awards.ABBREV</code>.
 					</p>
 					<ul
 						className="list-unstyled"
@@ -124,7 +124,7 @@ const GOATFormula = ({
 					<p>
 						These were the original award variables, and they still work, but
 						with the new customizable awards feature you are better off using
-						the above "award.X" variables instead because they support any
+						the above "awards.X" variables instead because they support any
 						customizations.
 					</p>
 					<ul
