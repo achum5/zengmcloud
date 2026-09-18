@@ -180,7 +180,12 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 				[
 					`${W} completed a season sweep of ${ln}, ${total}-0.`,
 					`That finished a ${total}-0 season sweep of ${ln} for ${wn}.`,
-					`${W} took all ${numWord(total)} meetings with ${ln} this season.`,
+					// "all two meetings" is not English. Two of anything is
+					// "both" - the ongoing-series branch below already knew
+					// that, and this one did not.
+					total === 2
+						? `${W} took both meetings with ${ln} this season.`
+						: `${W} took all ${numWord(total)} meetings with ${ln} this season.`,
 				],
 				"seriesSweepDone",
 			);

@@ -4240,8 +4240,14 @@ const formNote = (
 	// followed by "The Monuments came in having won 8 of their last 9."
 	alreadyWritten = "",
 ): string | undefined => {
+	// "straight", not "straight game": the skid note says "the Suns' eighth
+	// straight LOSS" and the streak note says "fourth straight WIN", and
+	// neither matched, so "It was the Suns' eighth straight loss." was still
+	// followed by "The Suns had lost every one of their last seven coming
+	// in." - the same fact twice, with two numbers that look like they
+	// disagree. Every other use of the word in the engine is a streak too.
 	const STREAK =
-		/in a row|straight game|ran their streak|winning streak|losing streak|streak to \d|skid|first win in/;
+		/in a row|straight|ran their streak|winning streak|losing streak|streak to \d|skid|first win in/;
 	const sentences = alreadyWritten.split(/(?<=[!.?])\s+/);
 	const formTold = (t: RecapTeam): boolean => {
 		const nickname = nick(t);

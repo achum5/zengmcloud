@@ -817,3 +817,73 @@ describe("pickByDay", () => {
 		endRecapBatch();
 	});
 });
+
+describe("facts told once, in English", () => {
+	const l10 = (results: boolean[]) =>
+		results.map((won, i) => ({
+			opp: "BUL",
+			home: i % 2 === 0,
+			won,
+			pts: won ? 105 : 95,
+			oppPts: won ? 95 : 105,
+		}));
+
+	test("a skid is not restated as recent form", () => {
+		// "It was the Suns' eighth straight loss." followed by "The Suns had
+		// lost every one of their last seven coming in." is one fact twice,
+		// with two numbers that look like they disagree.
+		const home = squad(
+			{ tid: 1, name: "Hawks" },
+			{ name: "Ace Hawk", pid: 11, pts: 27, fg: 10, fga: 18 },
+			105,
+		);
+		const away = squad(
+			{
+				tid: 2,
+				name: "Suns",
+				streak: { won: false, count: 8 },
+				streakBefore: { won: false, count: 7 },
+				last10: l10([false, false, false, false, false, false, false, false]),
+			},
+			{ name: "Bo Sun", pid: 21, pts: 22, fg: 8, fga: 20 },
+			98,
+		);
+		const g = game([home, away]);
+		const recap = getAutoRecap(g);
+		clean(recap);
+		// The streak is worth saying once; the form note must then stay quiet.
+		const streakSaid =
+			/straight loss|lost eight in a row|eighth in a row|straight losses/.test(
+				recap,
+			);
+		const formSaid =
+			/had lost (?:every one of|\w+ of) their last|arrived having dropped|rough stretch for/.test(
+				recap,
+			);
+		assert.ok(streakSaid, recap);
+		assert.ok(!formSaid, `skid restated as form:\n${recap}`);
+		assert.deepEqual(verifyRecap(recap, g), []);
+	});
+
+	test("two meetings are 'both', never 'all two'", () => {
+		const home = squad(
+			{
+				tid: 1,
+				name: "Hawks",
+				seasonSeries: { won: 1, lost: 0, left: 0 },
+			},
+			{ name: "Ace Hawk", pid: 11, pts: 27, fg: 10, fga: 18 },
+			110,
+		);
+		const away = squad(
+			{ tid: 2, name: "Bulls", seasonSeries: { won: 0, lost: 1, left: 0 } },
+			{ name: "Bo Bull", pid: 21, pts: 24, fg: 9, fga: 19 },
+			101,
+		);
+		// Every phrasing in the pool, across many seeds.
+		for (let gid = 1; gid < 40; gid++) {
+			const recap = getAutoRecap(game([home, away], { gid }));
+			assert.notMatch(recap, /all two\b/, recap);
+		}
+	});
+});
