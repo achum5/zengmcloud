@@ -7200,7 +7200,10 @@ const leagueNotes = (
 				rng,
 				[
 					`${cap(theNick(seesaw.shape.winner))} and ${theNick(seesaw.shape.loser)} traded the lead ${seesaw.changes} times.`,
-					`The lead changed hands ${seesaw.changes} times in ${theNick(seesaw.shape.winner)}' game with ${theNick(seesaw.shape.loser)}.`,
+					// poss(), not a hardcoded apostrophe: four nicknames in a
+					// default league do not end in s, and this read "the Magic'
+					// game with the Raptors".
+					`The lead changed hands ${seesaw.changes} times in ${poss(theNick(seesaw.shape.winner))} game with ${theNick(seesaw.shape.loser)}.`,
 				],
 				"daySeesaw",
 			),

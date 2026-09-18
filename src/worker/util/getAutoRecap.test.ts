@@ -6889,3 +6889,41 @@ describe("the wire lede", () => {
 		assert.deepEqual(verifyRecap(recap, closeWin), []);
 	});
 });
+
+describe("possessives on nicknames that do not end in s", () => {
+	test('the day wrap never writes "the Magic\' game"', () => {
+		// Four nicknames in a default league end in something other than s -
+		// Magic, Heat, Jazz, Thunder - and a hardcoded apostrophe after a
+		// nickname is wrong for every one of them. The seesaw note had one.
+		const seesaw = (gid: number, home: string, away: string): RecapGame =>
+			mkGame(
+				gid,
+				home,
+				away,
+				104,
+				101,
+				true,
+				player({ name: `${home} Star`, pid: gid * 10, pts: 24, reb: 6 }),
+				player({ name: `${away} Star`, pid: gid * 10 + 1, pts: 22, reb: 5 }),
+				{ flow: { leadChanges: 24, ties: 14, maxLead: [6, 5] } },
+			);
+		const recap = getAutoDayRecap({
+			season: 2005,
+			day: 90,
+			playoffs: false,
+			games: [
+				seesaw(1, "Magic", "Raptors"),
+				seesaw(2, "Heat", "Bulls"),
+				seesaw(3, "Jazz", "Kings"),
+				seesaw(4, "Thunder", "Suns"),
+				seesaw(5, "Celtics", "Knicks"),
+			],
+		});
+		// A possessive apostrophe only ever follows an s.
+		assert.ok(
+			!/[^s]' /.test(recap),
+			`bare apostrophe after a non-s word:\n${recap}`,
+		);
+		assert.ok(!/Magic' |Heat' |Jazz' |Thunder' /.test(recap), recap);
+	});
+});
