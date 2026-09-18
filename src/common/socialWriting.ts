@@ -2625,6 +2625,30 @@ type Fragment = {
 };
 
 export const OPENERS: Fragment[] = [
+	// WIDENED AGAINST A MEASUREMENT. Twenty-four of forty-five days had two
+	// accounts open with the same word, and the arithmetic is the whole story:
+	// an account writes its day in its own pool, so nothing can stop two of
+	// them reaching for the same throat-clear, and the beat had thirteen of
+	// these against about nine beat posts a night. The wire had ONE. These are
+	// the flat, factual registers, which is exactly where a repeat is most
+	// obvious, because there is nothing else in the sentence to hide it.
+	{ text: "Filing this one.", tones: ["beat"] },
+	{ text: "One for the file.", tones: ["beat"] },
+	{ text: "In case you missed it:", tones: ["beat", "wire"] },
+	{ text: "Before I forget:", tones: ["beat"] },
+	{ text: "Worth a line:", tones: ["beat", "wonk"] },
+	{ text: "Noted here:", tones: ["beat", "wonk"] },
+	{ text: "On the record:", tones: ["beat", "wire"] },
+	{ text: "Adding this.", tones: ["beat"] },
+	{ text: "Confirmed:", tones: ["wire"] },
+	{ text: "Filing:", tones: ["wire"] },
+	{ text: "For the record:", tones: ["wire", "wonk"] },
+	{ text: "As reported:", tones: ["wire"] },
+	{ text: "Told:", tones: ["wire"] },
+	{ text: "Per the box score:", tones: ["wonk", "wire"] },
+	{ text: "The numbers:", tones: ["wonk"] },
+	{ text: "One data point:", tones: ["wonk"] },
+
 	// Beat.
 	{ text: "Quick one.", tones: ["beat"] },
 	{ text: "For the notebook:", tones: ["beat"] },
@@ -3021,6 +3045,22 @@ export const applyVoice = ({
 	// account rarely does; a rambling one usually does one or the other.
 	const chatty = quiet ? 0 : Math.min(0.5, 0.1 + 0.35 * personality.verbosity);
 
+	// A NOTE ON WHY THESE REPEAT ACROSS ACCOUNTS, since the obvious fix does
+	// not work. Measured over forty-five days, twenty-four of them had a beat
+	// writer open with a word another beat writer had already used that night -
+	// "Housekeeping." three times on one page.
+	//
+	// The pool's cross-pool ledger (takeUnclaimed) looks like the answer and is
+	// not: an account writes its whole day in its OWN pool and its own batch,
+	// deliberately, because that is what makes a post read identically on the
+	// timeline and on the author's profile. A claim shared between accounts
+	// would make what an account says depend on who else posted, and the two
+	// views would drift apart. Swapping it in changes nothing, which is how
+	// this was established.
+	//
+	// So the only honest lever is the size of the bank: eight beat openers
+	// against nine beat posts a night collide by arithmetic, whatever the seed.
+	// See OPENERS.
 	if (rng() < chatty * quirks.openerRate && canOpen(out)) {
 		const options = fragmentsFor(OPENERS, tone, positive);
 		if (options.length > 0) {
@@ -3091,12 +3131,21 @@ export const applyVoice = ({
 	// can still make an emoji person on purpose.
 	const emojiChance = quiet ? 0 : personality.emoji + quirks.emojiBoost;
 	if (rng() < emojiChance) {
+		// A FRANCHISE DOES NOT MOCK ITS OWN PLAYER. The corporate-loss bank
+		// already keeps a club from celebrating its own defeat, but that only
+		// covers GAME posts - and a club posting one of its own men's lines
+		// from a night the club lost is a negative frame, so it drew from the
+		// mocking bank: "24 PTS · 16 REB · 3 AST for Jalen Mathis. 💀", and a
+		// clown on somebody's triple-double. No club account has ever done
+		// that. The neutral bank is the worst a franchise gets.
 		const bank =
 			positive === undefined
 				? NEUTRAL_EMOJI
 				: positive
 					? POSITIVE_EMOJI
-					: NEGATIVE_EMOJI;
+					: tone === "corporate"
+						? NEUTRAL_EMOJI
+						: NEGATIVE_EMOJI;
 		out = `${out} ${pool.pick(rng, bank, "voice:emoji")}`;
 	}
 
@@ -3436,6 +3485,75 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		text: (f) =>
 			`${f.abbrev} and the ${f.rivalNick} fighting over a first-round exit.`,
 	},
+
+	// THE COLUMNIST HAD ONE LINE. Measured over forty-five days the national
+	// pundits were the least varied voice in the league - forty-four posts off
+	// eighteen shapes - and the reason was here: a snark account looking at
+	// somebody else's winning streak was eligible for exactly one template, so
+	// it said "Cool. Great. Love it." sixteen times.
+	//
+	// These are the same frames every other voice already had covered, written
+	// for the one that ranks everybody and declares eras over.
+	{
+		id: "st.hot.pundit",
+		tones: ["snark"],
+		when: (f) => f.hot && !f.mine,
+		text: (f) =>
+			`${f.streak} in a row for the ${f.nick}. I will start believing at ${f.streak + 3}.`,
+	},
+	{
+		id: "st.hot.pundit.two",
+		tones: ["snark"],
+		when: (f) => f.hot && !f.mine,
+		text: (f) =>
+			`We are all supposed to act normal about the ${f.nick} winning ${f.streak} straight.`,
+	},
+	{
+		id: "st.hot.pundit.three",
+		tones: ["snark", "doom"],
+		when: (f) => f.hot && !f.mine && f.won > f.lost,
+		text: (f) => `${f.won}-${f.lost} and the schedule has not started yet.`,
+	},
+	{
+		id: "st.cold.pundit",
+		tones: ["snark"],
+		when: (f) => f.cold && !f.mine && f.streak >= 4,
+		text: (f) =>
+			`The ${f.nick} have lost ${f.streak}. At some point that is just who they are.`,
+	},
+	{
+		id: "st.cold.pundit.two",
+		tones: ["snark"],
+		when: (f) => f.cold && !f.mine,
+		text: (f) => `Whatever the ${f.nick} are, it is not a slow start any more.`,
+	},
+	{
+		id: "st.first.pundit",
+		tones: ["snark"],
+		when: (f) => f.first && !f.mine,
+		text: (f) => `${f.nick} in first. Enjoy the regular season, everybody.`,
+	},
+	{
+		id: "st.worst.pundit",
+		tones: ["snark"],
+		when: (f) => f.worst && !f.mine,
+		text: (f) =>
+			`${f.won}-${f.lost}. Somebody has to be last and they are committed to it.`,
+	},
+	{
+		id: "st.rank.pundit",
+		tones: ["snark"],
+		when: (f) => !f.mine && f.rank > 0 && !f.first && !f.worst,
+		text: (f) =>
+			`${f.nick} are ${f.rank}th and every one of you will tell me that is wrong.`,
+	},
+	{
+		id: "st.gb.pundit",
+		tones: ["snark"],
+		when: (f) => !f.mine && f.gamesBack > 0 && f.gamesBack <= 3,
+		text: (f) =>
+			`${plural(f.gamesBack, "game")} back. Close enough to matter, far enough to hurt.`,
+	},
 ];
 
 // A FRANCHISE ON A NIGHT IT LOST. This used to be an empty bank, which meant
@@ -3477,6 +3595,144 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 		quiet: true,
 		when: (f) => !f.blowout,
 		text: () => `We will look at it and we will be back out there.`,
+	},
+
+	// SIX LINES DOES NOT COVER HALF A SEASON. A club loses about as often as it
+	// wins, and measured over forty-five days three of these carried
+	// forty-seven posts between them - "We will look at it and we will be back
+	// out there" nineteen times. It is the loudest repetition left in the feed
+	// and the easiest to hear, because a franchise posts in the same flat
+	// register every time.
+	//
+	// So the bank is wider, and most of it is gated on what the game actually
+	// was. A club that lost by thirty does not post the same four words as one
+	// that lost at the buzzer, and a club on a six-game skid has stopped
+	// pretending it is fine. Still flat, still no emoji: that is what the
+	// quiet flag and this separate bank are for.
+	{
+		id: "corp.loss.score",
+		quiet: true,
+		text: (f) =>
+			`${f.loserAbbrev} ${f.loserPts}, ${f.winnerAbbrev} ${f.winnerPts}. Final.`,
+	},
+	{
+		id: "corp.loss.credit",
+		quiet: true,
+		text: (f) => `Credit to the ${f.winnerNick}. We will regroup.`,
+	},
+	{
+		id: "corp.loss.away",
+		quiet: true,
+		when: (f) => f.blowout,
+		text: () => `That one got away from us. We will own it.`,
+	},
+	{
+		id: "corp.loss.ot",
+		quiet: true,
+		when: (f) => f.ot > 0,
+		text: () => `Overtime did not go our way. Thank you to everyone who stayed.`,
+	},
+	{
+		id: "corp.loss.possession",
+		quiet: true,
+		when: (f) => f.nailbiter && f.ot === 0,
+		text: (f) => `${plural(f.margin, "point")}. We will take the lessons.`,
+	},
+	{
+		id: "corp.loss.working",
+		quiet: true,
+		when: (f) => f.skid !== undefined && f.skid >= 3,
+		text: () => `We know. We are working.`,
+	},
+	{
+		id: "corp.loss.hearyou",
+		quiet: true,
+		when: (f) => f.skid !== undefined && f.skid >= 5,
+		text: () => `Not good enough. We hear you.`,
+	},
+	{
+		id: "corp.loss.skid",
+		quiet: true,
+		when: (f) => f.skid !== undefined && f.skid >= 4,
+		text: (f) => `${f.skid} in a row. We are not hiding from it.`,
+	},
+	{
+		id: "corp.loss.film",
+		quiet: true,
+		text: () => `On to the film. Thank you for being with us.`,
+	},
+	{
+		id: "corp.loss.done",
+		quiet: true,
+		text: () => `We did not get it done tonight.`,
+	},
+	{
+		id: "corp.loss.next",
+		quiet: true,
+		text: () => `Final. We turn it around for the next one.`,
+	},
+	{
+		id: "corp.loss.playoffs",
+		quiet: true,
+		when: (f) => f.playoffs,
+		text: () => `We will be ready for the next one. Thank you for being loud.`,
+	},
+	{
+		id: "corp.loss.halves",
+		quiet: true,
+		when: (f) => !f.blowout && !f.nailbiter,
+		text: () => `Not the result we wanted. We keep going.`,
+	},
+	{
+		id: "corp.loss.support",
+		quiet: true,
+		text: () => `Appreciate everyone who showed up tonight.`,
+	},
+	{
+		id: "corp.loss.tomorrow",
+		quiet: true,
+		when: (f) => !f.playoffs,
+		text: () => `We are back at it tomorrow.`,
+	},
+
+	// AND MOST OF IT SHOULD CARRY THE GAME. Widening this bank with flat
+	// platitudes alone made it measurably WORSE: a line with no variable in it
+	// is one sentence forever, and ten of those crowded out the ones that
+	// named the score. A club account that tells you what happened is both
+	// more real and more varied than one that says it keeps going.
+	{
+		id: "corp.loss.by",
+		quiet: true,
+		when: (f) => f.margin > 0,
+		text: (f) => `${f.winnerNick} by ${f.margin}. We will be better than that.`,
+	},
+	{
+		id: "corp.loss.held",
+		quiet: true,
+		when: (f) => f.loserPts < 95,
+		text: (f) => `${f.loserPts} points will not win many games. We know it.`,
+	},
+	{
+		id: "corp.loss.tonight",
+		quiet: true,
+		// No venue: which side was at home is not in the frame, and
+		// "Tonight in IND" reads as the winner's building whether or not it
+		// was.
+		text: (f) =>
+			`Tonight: ${f.winnerAbbrev} ${f.winnerPts}, ${f.loserAbbrev} ${f.loserPts}. On to the next.`,
+	},
+	{
+		id: "corp.loss.wantback",
+		quiet: true,
+		when: (f) => f.margin > 0 && f.margin <= 10,
+		text: (f) => `${plural(f.margin, "point")}. We would like that one back.`,
+	},
+	{
+		id: "corp.loss.record",
+		quiet: true,
+		when: (f) => f.skid !== undefined && f.skid >= 2,
+		text: (f) =>
+			`${f.winnerNick} ${f.winnerPts}, ${f.loserNick} ${f.loserPts}. ${f.skid} straight now.`,
 	},
 ];
 

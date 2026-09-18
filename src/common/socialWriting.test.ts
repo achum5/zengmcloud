@@ -535,6 +535,41 @@ describe("verifyPostNumbers", () => {
 const CORRECTION =
 	/not what the box score says|worth mentioning both|^it was \d+-\d+\./i;
 
+describe("a franchise's register", () => {
+	test("never mocks, even on a night it lost", () => {
+		// The corporate-loss bank keeps a club from celebrating its own defeat,
+		// but that only covers GAME posts. A club posting one of its own men's
+		// lines from a night it lost is a negative frame, and it drew from the
+		// mocking emoji: a skull on a 24-point night, a clown on a triple
+		// double. No club account has ever done that.
+		const MOCKING = ["💀", "😭", "🤡", "🥴"];
+		const club = account("teamOfficial", { tid: 0 });
+		let checked = 0;
+		for (let seed = 0; seed < 200; seed++) {
+			for (const event of [
+				perfEvent({ won: false, pts: 24, reb: 16, ast: 3 }),
+				perfEvent({ won: false, tripleDouble: true }),
+				game({ winnerTid: 1 }),
+			]) {
+				const text = writePost({
+					account: club,
+					event,
+					pool: createPhrasePool(),
+					rng: rngFromSeed(seed),
+				});
+				if (text === undefined) {
+					continue;
+				}
+				checked += 1;
+				for (const e of MOCKING) {
+					assert.notInclude(text, e, `club posted "${text}"`);
+				}
+			}
+		}
+		assert.isAbove(checked, 100, "not enough club posts produced to judge");
+	});
+});
+
 describe("writeReply", () => {
 	const reply = (
 		replier: ResolvedSocialAccount,
