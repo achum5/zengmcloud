@@ -8,6 +8,7 @@ import { augmentOffers } from "../api/index.ts";
 import { shuffle, uniformSeed, choice } from "../../common/random.ts";
 import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
 import proposeToUser from "../core/trade/proposeToUser.ts";
+import { orderBy } from "../../common/utils.ts";
 
 const getOffers = async (seed: number) => {
 	const NUM_OFFERS = 5;
@@ -29,9 +30,12 @@ const getOffers = async (seed: number) => {
 	);
 	shuffle(teams, seed);
 
-	const players = (
-		await idb.cache.players.indexGetAll("playersByTid", userTid)
-	).filter((p) => !isUntradable(p).untradable);
+	const players = orderBy(
+		(await idb.cache.players.indexGetAll("playersByTid", userTid)).filter(
+			(p) => !isUntradable(p).untradable,
+		),
+		"pid",
+	);
 	const draftPicks = await idb.cache.draftPicks.indexGetAll(
 		"draftPicksByTid",
 		userTid,
