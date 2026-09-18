@@ -681,4 +681,72 @@ describe("edge cases", () => {
 			"series next game",
 		]);
 	});
+
+	test("the title clinch knows the franchise's history", () => {
+		const mk = (titleHistory?: RecapTeam["titleHistory"]) => {
+			const home = squad(
+				{ tid: 1, name: "Hawks", titleHistory },
+				{ name: "Ace Hawk", pid: 11, pts: 32, fg: 12, fga: 22 },
+				112,
+			);
+			const away = squad(
+				{ tid: 2, name: "Kings" },
+				{ name: "Rex King", pid: 21, pts: 28, fg: 11, fga: 21 },
+				101,
+			);
+			return game([home, away], {
+				playoffs: true,
+				series: {
+					round: 4,
+					numRounds: 4,
+					bestOf: 7,
+					homeAbbrev: home.abbrev,
+					awayAbbrev: away.abbrev,
+					homeWon: 3,
+					awayWon: 1,
+				},
+			});
+		};
+
+		// A franchise with a past: third title, first since 2015.
+		const g1 = mk({ titles: [2008, 2015], seasons: 30, season: 2025 });
+		const r1 = getAutoRecap(g1);
+		clean(r1);
+		assert.match(
+			r1,
+			/third championship in franchise history, and the first since 2015/,
+		);
+		assert.deepEqual(verifyRecap(r1, g1), []);
+
+		// Back-to-back.
+		const g2 = mk({ titles: [2024], seasons: 10, season: 2025 });
+		const r2 = getAutoRecap(g2);
+		assert.match(r2, /back-to-back championships/);
+		assert.deepEqual(verifyRecap(r2, g2), []);
+
+		// A first for an established franchise.
+		const g3 = mk({ titles: [], seasons: 30, season: 2025 });
+		const r3 = getAutoRecap(g3);
+		assert.match(r3, /first championship in franchise history/);
+		assert.deepEqual(verifyRecap(r3, g3), []);
+
+		// A brand-new expansion team keeps quiet about "franchise history".
+		const g4 = mk({ titles: [], seasons: 1, season: 2025 });
+		assert.notMatch(getAutoRecap(g4), /franchise history/);
+
+		// And the reader catches lies about the record.
+		const lies = [
+			"The Hawks beat the Kings 112-101 to win the title.",
+			"It is the first championship in franchise history.",
+			"That makes it back-to-back championships.",
+			"It is the fifth championship in franchise history, and the first since 2008.",
+		].join(" ");
+		const kinds = verifyRecap(`**x**\n\n${lies}`, g1).map((v) => v.kind);
+		assert.includeMembers(kinds, [
+			"franchise first title",
+			"back-to-back claim",
+			"franchise title count",
+			"franchise last title year",
+		]);
+	});
 });

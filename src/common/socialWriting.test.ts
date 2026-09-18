@@ -1097,3 +1097,45 @@ describe("shape memory", () => {
 		}
 	});
 });
+
+describe("cold nights", () => {
+	const coldEvent = () => ({
+		...perfEvent({
+			pts: 11,
+			fga: 20,
+			fta: 2,
+			reb: 3,
+			ast: 2,
+			stl: 0,
+			blk: 0,
+			cold: true,
+			tsp: 26.3,
+			won: false,
+		}),
+		id: "perf:1:5:cold",
+	});
+
+	test("a cold night only ever comes out as a cold line", () => {
+		for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+			for (const arch of ["troll", "doomerFan", "analytics"]) {
+				const out = write(account(arch, { tid: 0 }), coldEvent(), seed);
+				if (out) {
+					assert.notMatch(out, /POINTS\.|made that look|Triple-double/);
+					// Every cold line names the player or his numbers straight.
+					assert.match(out, /Paul Pierce|11|20/);
+				}
+			}
+		}
+	});
+
+	test("nobody narrates their own brick, and no hype account touches it", () => {
+		assert.strictEqual(
+			write(account("player", { tid: 0, pid: 5 }), coldEvent()),
+			undefined,
+		);
+		assert.strictEqual(
+			write(account("teamOfficial", { tid: 0 }), coldEvent()),
+			undefined,
+		);
+	});
+});

@@ -143,6 +143,43 @@ export type RecapLast10Game = {
 	oppPts: number;
 };
 
+// Which past seasons ended in a championship, for the Finals payload. A title
+// is a season whose playoffRoundsWon matches that season's own bracket depth.
+const titleHistoryMemo = new Map<
+	string,
+	{ titles: number[]; seasons: number; season: number }
+>();
+const titleHistoryFor = async (
+	tid: number,
+	season: number,
+): Promise<{ titles: number[]; seasons: number; season: number }> => {
+	const key = `${season}|${tid}`;
+	const hit = titleHistoryMemo.get(key);
+	if (hit) {
+		return hit;
+	}
+	const rows = await idb.getCopies.teamSeasons({ tid }, "noCopyCache");
+	const titles: number[] = [];
+	let seasons = 0;
+	for (const ts of rows) {
+		if (ts.season >= season) {
+			continue;
+		}
+		seasons += 1;
+		const numPlayoffRounds = g.get("numGamesPlayoffSeries", ts.season).length;
+		if (ts.playoffRoundsWon === numPlayoffRounds) {
+			titles.push(ts.season);
+		}
+	}
+	titles.sort((a, b) => a - b);
+	const out = { titles, seasons, season };
+	if (titleHistoryMemo.size > 400) {
+		titleHistoryMemo.clear();
+	}
+	titleHistoryMemo.set(key, out);
+	return out;
+};
+
 export type RecapTeam = {
 	tid: number;
 	region: string;
@@ -162,6 +199,11 @@ export type RecapTeam = {
 	streakBefore?: { won: boolean; count: number };
 	// Players held out of this game due to injury.
 	injuries?: RecapInjuryOut[];
+	// Championship seasons BEFORE this one, with how many seasons of history
+	// stand behind them and which season this is - loaded only for a Finals
+	// game, so a clinch can say "first title in franchise history" without
+	// claiming it over a two-season league.
+	titleHistory?: { titles: number[]; seasons: number; season: number };
 	seed?: number;
 	// Regular-season home and road records through this game.
 	homeRecord?: { won: number; lost: number };
@@ -1151,6 +1193,13 @@ export const getDayGamesForRecap = async ({
 					: { favTid: game.teams[1].tid, points: -points };
 		}
 
+		const series = playoffs && !playIn ? await seriesForGame(game) : undefined;
+		if (series && series.round === series.numRounds) {
+			// The Finals carry the franchises' championship pasts.
+			for (const t of teams) {
+				t.titleHistory = await titleHistoryFor(t.tid, season);
+			}
+		}
 		result.push({
 			gid: game.gid,
 			day: game.day ?? day,
@@ -1163,7 +1212,7 @@ export const getDayGamesForRecap = async ({
 				: {}),
 			playoffs,
 			teams,
-			series: playoffs && !playIn ? await seriesForGame(game) : undefined,
+			series,
 			playIn,
 			// No betting line for an exhibition; the All-Star payload replaces it.
 			spread: allStar ? undefined : spread,
@@ -1846,6 +1895,12 @@ const createAutoRecapContext = async (season: number) => {
 					: { favTid: game.teams[1].tid, points: -points };
 		}
 
+		const series = playoffs && !playIn ? await seriesForGame(game) : undefined;
+		if (series && series.round === series.numRounds) {
+			for (const t of teams) {
+				t.titleHistory = await titleHistoryFor(t.tid, season);
+			}
+		}
 		return {
 			gid: game.gid,
 			day: game.day ?? effectiveDay,
@@ -1858,7 +1913,7 @@ const createAutoRecapContext = async (season: number) => {
 				: {}),
 			playoffs,
 			teams,
-			series: playoffs && !playIn ? await seriesForGame(game) : undefined,
+			series,
 			playIn,
 			spread: allStar ? undefined : spread,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],

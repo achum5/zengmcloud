@@ -783,3 +783,63 @@ describe("streakFlipsForDay", () => {
 		assert.deepEqual(streakFlipsForDay(games, 8), []);
 	});
 });
+
+describe("cold nights", () => {
+	// 17+ shots at 42 or worse true shooting is a stinker; fewer shots or
+	// merely mediocre efficiency is just a night.
+	test("a heavy-volume brickfest produces a cold event", () => {
+		const events = eventsFromGame(
+			gameFor({
+				teams: [
+					teamFor(0, "Boston", "Celtics", 110, [
+						line(1, "Brick Layer", { pts: 12, fga: 20, fta: 2 }),
+					]),
+					teamFor(1, "Sacramento", "Kings", 100, [line(2, "Quiet Man")]),
+				],
+			}),
+		);
+		const cold = events.find((e) => e.id.endsWith(":cold"))!;
+		assert.ok(cold);
+		assert.strictEqual(cold.type, "performance");
+		assert.strictEqual(cold.facts.name, "Brick Layer");
+		assert.strictEqual(cold.facts.cold, true);
+		assert.deepStrictEqual(cold.pids, [1]);
+	});
+
+	test("normal volume or normal efficiency stays quiet", () => {
+		const modest = eventsFromGame(
+			gameFor({
+				teams: [
+					teamFor(0, "Boston", "Celtics", 110, [
+						line(1, "Low Volume", { pts: 8, fga: 14, fta: 0 }),
+					]),
+					teamFor(1, "Sacramento", "Kings", 100, [
+						line(2, "Fine Night", { pts: 20, fga: 19, fta: 4 }),
+					]),
+				],
+			}),
+		);
+		assert.strictEqual(
+			modest.some((e) => e.id.endsWith(":cold")),
+			false,
+		);
+	});
+
+	test("one per game: the worst line wins the honor", () => {
+		const events = eventsFromGame(
+			gameFor({
+				teams: [
+					teamFor(0, "Boston", "Celtics", 110, [
+						line(1, "Bad Night", { pts: 14, fga: 20, fta: 2 }),
+					]),
+					teamFor(1, "Sacramento", "Kings", 100, [
+						line(2, "Worse Night", { pts: 10, fga: 20, fta: 2 }),
+					]),
+				],
+			}),
+		);
+		const colds = events.filter((e) => e.id.endsWith(":cold"));
+		assert.strictEqual(colds.length, 1);
+		assert.strictEqual(colds[0]!.facts.name, "Worse Night");
+	});
+});

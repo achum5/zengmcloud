@@ -78,6 +78,8 @@ import {
 	type Engagement,
 } from "../../common/socialMetrics.ts";
 import {
+	playerReceiptReplyText,
+	playerReceiptText,
 	receiptReplyText,
 	receiptText,
 	writePostDetailed,
@@ -1193,14 +1195,19 @@ export const buildAccountDay = async ({
 	}
 
 	const own = accountDayCache.get(wanted) ?? [];
-	// The author's profile carries his receipt too - a post that only existed
+	// The author's profile carries his receipts too - a post that only existed
 	// on the timeline would break the rule that a profile is everything the
 	// account said.
+	const extras: FeedPost[] = [];
 	const receipt = await receiptPostFor(snapshot, dayIndex);
 	if (receipt && receipt.accountId === account.id) {
-		return [...own, { ...receipt, replies: [] }];
+		extras.push({ ...receipt, replies: [] });
 	}
-	return own;
+	const playerReceipt = await playerReceiptPostFor(snapshot, dayIndex);
+	if (playerReceipt && playerReceipt.accountId === account.id) {
+		extras.push({ ...playerReceipt, replies: [] });
+	}
+	return extras.length > 0 ? [...own, ...extras] : own;
 };
 
 // What one account has said in the days it can still remember. Reads the
@@ -1397,6 +1404,199 @@ export const receiptPostFor = async (
 				}),
 			});
 		}
+		return post;
+	}
+	return undefined;
+};
+
+// THE PLAYER'S RECEIPT, same promise in the singular. The cold-night events
+// give the snark accounts a record of writing a player off; on the night he
+// answers with forty, the feed digs that post back up. The player quotes it
+// himself when the cast gave him an account - the internet's favorite genre
+// - and his team's homer does the honors otherwise.
+//
+// Cached per day: buildAccountDay re-derives earlier days through here, so
+// without the cache every profile walk would re-run the search.
+const playerReceiptCache = new Map<string, FeedPost | undefined>();
+
+export const playerReceiptPostFor = async (
+	snapshot: FeedSnapshot,
+	dayIndex: number,
+): Promise<FeedPost | undefined> => {
+	const day = snapshot.days[dayIndex];
+	if (day === undefined) {
+		return undefined;
+	}
+	const cacheKey = snapshot.dayKey(day);
+	if (playerReceiptCache.has(cacheKey)) {
+		return playerReceiptCache.get(cacheKey);
+	}
+	// Set the key BEFORE the search: the search walks earlier days, and if one
+	// of those walks somehow re-entered this day it would recurse forever.
+	playerReceiptCache.set(cacheKey, undefined);
+	bounded(playerReceiptCache as any, 2000);
+
+	const events = await eventsForDay(snapshot, day);
+	const monsters = events
+		.filter(
+			(event) =>
+				event.type === "performance" &&
+				!event.id.endsWith(":cold") &&
+				typeof event.facts.pts === "number" &&
+				event.facts.pts >= 40,
+		)
+		.sort((a, b) => b.salience - a.salience);
+	for (const event of monsters) {
+		const pid = event.pids[0];
+		const tid = event.tids[0];
+		if (pid === undefined || tid === undefined) {
+			continue;
+		}
+		// Only somebody who would actually have written him off: the league
+		// troll, his own team's doomer, an analytics account that watches his
+		// team (or the national one).
+		const doubters = snapshot.accounts.filter(
+			(a) =>
+				a.archetypeId === "troll" ||
+				(a.archetypeId === "analytics" &&
+					(a.tid === undefined ||
+						(a.personality.loyaltyTid ?? a.tid) === tid)) ||
+				(a.archetypeId === "doomerFan" &&
+					(a.personality.loyaltyTid ?? a.tid) === tid),
+		);
+		let old: FeedPost | undefined;
+		let oldDay: number | undefined;
+		let target: ResolvedSocialAccount | undefined;
+		outer: for (
+			let di = dayIndex - 1;
+			di >= Math.max(0, dayIndex - MEMORY_DAYS);
+			di--
+		) {
+			// A cold post older than the player's LAST forty is already
+			// answered. Without this stop, two monster nights a week apart
+			// both dug up the same day-one quote, word for word.
+			const priorEvents = await eventsForDay(snapshot, snapshot.days[di]!);
+			if (
+				priorEvents.some(
+					(e) =>
+						e.type === "performance" &&
+						!e.id.endsWith(":cold") &&
+						e.pids.includes(pid) &&
+						typeof e.facts.pts === "number" &&
+						e.facts.pts >= 40,
+				)
+			) {
+				break outer;
+			}
+			for (const account of doubters) {
+				const posts = await buildAccountDay({
+					snapshot,
+					account,
+					dayIndex: di,
+				});
+				const hit = posts.find(
+					(post) =>
+						post.quoted === undefined &&
+						/^perf:\d+:\d+:cold$/.test(post.eventId) &&
+						post.pids.includes(pid),
+				);
+				if (hit) {
+					old = hit;
+					oldDay = snapshot.days[di];
+					target = account;
+					break outer;
+				}
+			}
+		}
+		if (!old || oldDay === undefined || !target) {
+			continue;
+		}
+
+		const author =
+			snapshot.accounts.find((a) => a.pid === pid) ??
+			fanOf(snapshot.accounts, tid, "homerFan");
+		if (!author) {
+			continue;
+		}
+
+		const seed = seedFor(snapshot, day);
+		const rng = rngFromSeed(hashSeed(`${seed}|preceipt|${pid}`));
+		const pool = createPhrasePool();
+		const text = playerReceiptText({
+			self: author.pid === pid,
+			pts: event.facts.pts as number,
+			rng,
+			pick: pool.pick,
+		});
+		const reach = reachOf(
+			author,
+			author.pid === undefined ? 0.5 : (notabilityByPid.get(author.pid) ?? 0.4),
+		);
+		// Late night, once the box score is real and the quote is unbearable.
+		const minutes = 22 * 60 + 30 + Math.floor(rng() * 85);
+		const h = Math.floor(minutes / 60);
+		const m = minutes % 60;
+		const post: FeedPost = {
+			id: `preceipt|${pid}|${day}`,
+			accountId: author.id,
+			handle: author.handle,
+			name: author.name,
+			kind: author.kind,
+			archetypeId: author.archetypeId,
+			tid: author.tid,
+			pid: author.pid,
+			text,
+			eventId: `preceipt|${pid}|${day}`,
+			eventType: "performance",
+			tids: [tid],
+			pids: [pid],
+			verified: isVerified(author),
+			quoted: {
+				accountId: target.id,
+				handle: target.handle,
+				name: target.name,
+				kind: target.kind,
+				verified: isVerified(target),
+				text: old.text,
+				day: oldDay,
+			},
+			time: `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`,
+			minutes,
+			engagement: engagementFor({
+				account: author,
+				reach,
+				salience: 0.9,
+				seed: `${seed}|preceipt|${pid}`,
+			}),
+			replies: [],
+		};
+		// The doubter never concedes.
+		const replyMinutes = Math.min(24 * 60 - 1, minutes + 11);
+		const rh = Math.floor(replyMinutes / 60);
+		const rm = replyMinutes % 60;
+		post.replies.push({
+			id: `${target.id}|preceipt|${post.id}`,
+			accountId: target.id,
+			handle: target.handle,
+			name: target.name,
+			kind: target.kind,
+			archetypeId: target.archetypeId,
+			tid: target.tid,
+			pid: target.pid,
+			text: playerReceiptReplyText({ rng, pick: pool.pick }),
+			quote: false,
+			verified: isVerified(target),
+			time: `${rh % 12 === 0 ? 12 : rh % 12}:${String(rm).padStart(2, "0")} ${rh >= 12 ? "PM" : "AM"}`,
+			engagement: engagementFor({
+				account: target,
+				reach: reachOf(target, 0.5),
+				salience: 0.9,
+				seed: `${seed}|preceiptreply|${pid}`,
+				isReply: true,
+				parentLikes: post.engagement.likes,
+			}),
+		});
+		playerReceiptCache.set(cacheKey, post);
 		return post;
 	}
 	return undefined;
@@ -1795,11 +1995,15 @@ export const buildFeedDay = async ({
 	}
 	pool.endBatch();
 
-	// The day's receipt, when its moment has come. Outside the forty-five on
-	// purpose: it is rare, and it is the best post of the day when it exists.
+	// The day's receipts, when their moment has come. Outside the forty-five
+	// on purpose: they are rare, and the best posts of the day when they exist.
 	const receipt = await receiptPostFor(snapshot, dayIndex);
 	if (receipt) {
 		out.push(receipt);
+	}
+	const playerReceipt = await playerReceiptPostFor(snapshot, dayIndex);
+	if (playerReceipt) {
+		out.push(playerReceipt);
 	}
 
 	// A timeline is newest-first, and the clock is what says which is newest.

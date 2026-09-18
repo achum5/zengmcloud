@@ -365,6 +365,62 @@ export const eventsFromGame = (game: GameForEvents): SocialEvent[] => {
 		});
 	}
 
+	// THE COLD NIGHT. The feed only ever talked about players at their best,
+	// which is half a timeline: the volume shooter who went ice cold is what
+	// the snark accounts live for, and - when he answers with 40 a week later
+	// - what the receipt machine needs to have on file. One per game, the
+	// worst qualifying line, and only a real stinker: heavy volume, dreadful
+	// efficiency.
+	const rankedPids = new Set(ranked.map((row) => row.p.pid));
+	const dud = game.teams
+		.flatMap((t) =>
+			t.players
+				.filter((p) => p.min > 0 && p.fga >= 17 && !rankedPids.has(p.pid))
+				.map((p) => ({
+					p,
+					tid: t.tid,
+					won: t.tid === game.winnerTid,
+					tsp: trueShooting(p),
+				})),
+		)
+		.filter((row) => row.tsp !== undefined && row.tsp <= 42)
+		.sort((a, b) => a.tsp! - b.tsp! || a.p.pid - b.p.pid)[0];
+	if (dud) {
+		out.push({
+			id: `perf:${game.gid}:${dud.p.pid}:cold`,
+			type: "performance",
+			topic: "playerPerformance",
+			season: game.season,
+			day: game.day,
+			order: game.gid * 100 + 90,
+			salience: 0.5,
+			tids: [dud.tid],
+			pids: [dud.p.pid],
+			facts: {
+				name: dud.p.name,
+				tid: dud.tid,
+				won: dud.won,
+				min: dud.p.min,
+				pts: dud.p.pts,
+				reb: dud.p.reb,
+				ast: dud.p.ast,
+				stl: dud.p.stl,
+				blk: dud.p.blk,
+				tov: dud.p.tov,
+				fga: dud.p.fga,
+				fta: dud.p.fta,
+				doubles: 0,
+				tripleDouble: false,
+				cold: true,
+				...(dud.tsp !== undefined ? { tsp: dud.tsp } : {}),
+				opponentAbbrev:
+					dud.tid === game.teams[0].tid
+						? game.teams[1].abbrev
+						: game.teams[0].abbrev,
+			},
+		});
+	}
+
 	return out;
 };
 

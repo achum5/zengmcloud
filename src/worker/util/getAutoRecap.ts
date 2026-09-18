@@ -1078,6 +1078,33 @@ const postseasonContext = (
 									),
 					]),
 		);
+		// Franchise history, on the one night it matters. "First championship in
+		// franchise history" vs "first since 2019" vs "back-to-back" is the line
+		// every real title story carries, and the data was already in teamSeasons.
+		if (s.round === s.numRounds) {
+			const th = shape.winner.titleHistory;
+			if (th) {
+				if (th.titles.length === 0) {
+					// Only worth saying for a franchise with a real past - a
+					// three-season expansion team's "first in franchise history"
+					// reads like a joke.
+					if (th.seasons >= 3) {
+						out.sentences.push(
+							"It is the first championship in franchise history.",
+						);
+					}
+				} else {
+					const last = th.titles.at(-1)!;
+					if (last === th.season - 1) {
+						out.sentences.push("That makes it back-to-back championships.");
+					} else {
+						out.sentences.push(
+							`It is the ${ordinal(th.titles.length + 1)} championship in franchise history, and the first since ${last}.`,
+						);
+					}
+				}
+			}
+		}
 		return out;
 	}
 

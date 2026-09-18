@@ -700,6 +700,56 @@ export const verifyRecap = (
 				);
 			}
 		}
+
+		// FRANCHISE TITLE HISTORY. The clinch line reaches into the past -
+		// "first in franchise history", "first since 2019", "back-to-back" -
+		// and the payload it was written from rides along, so hold it to it.
+		const th = winner.titleHistory;
+		if (th) {
+			if (
+				/first championship in franchise history/i.test(text) &&
+				th.titles.length > 0
+			) {
+				add(
+					"franchise first title",
+					`text claims a first title, franchise won in ${th.titles.join(", ")}`,
+					"first championship in franchise history",
+				);
+			}
+			for (const m of text.matchAll(
+				/first (?:championship|title|one)?\s?since (\d{4})/g,
+			)) {
+				if (th.titles.at(-1) !== Number(m[1])) {
+					add(
+						"franchise last title year",
+						`text says first since ${m[1]}, last title was ${th.titles.at(-1) ?? "never"}`,
+						m[0]!,
+					);
+				}
+			}
+			if (
+				/back-to-back championships/i.test(text) &&
+				th.titles.at(-1) !== th.season - 1
+			) {
+				add(
+					"back-to-back claim",
+					`text claims back-to-back, last title was ${th.titles.at(-1) ?? "never"} and this is ${th.season}`,
+					"back-to-back championships",
+				);
+			}
+			for (const m of text.matchAll(
+				/the (\w+) championship in franchise history/g,
+			)) {
+				const said = wordToNumber(m[1]!);
+				if (said !== undefined && said !== th.titles.length + 1) {
+					add(
+						"franchise title count",
+						`text says title #${said}, this is #${th.titles.length + 1}`,
+						m[0]!,
+					);
+				}
+			}
+		}
 	}
 
 	if (

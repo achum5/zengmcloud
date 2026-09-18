@@ -256,6 +256,19 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 	for (let tid = 0; tid < NUM_TEAMS; tid++) {
 		const t = (await idb.cache.teams.get(tid))!;
 		await idb.cache.teamSeasons.add(team.genSeasonRow(t) as any);
+
+		// Synthetic franchise history, so a title clinch has a past to talk
+		// about: a third of the league has never won, a third won last year
+		// (back-to-back if they repeat), a third won twice, years ago.
+		const numRounds = g.get("numGamesPlayoffSeries").length;
+		const currentSeason = g.get("season");
+		const titleBacks = tid % 3 === 0 ? [] : tid % 3 === 1 ? [1] : [6, 3];
+		for (let back = 1; back <= 6; back++) {
+			const row = team.genSeasonRow(t) as any;
+			row.season = currentSeason - back;
+			row.playoffRoundsWon = titleBacks.includes(back) ? numRounds : 0;
+			await idb.cache.teamSeasons.add(row);
+		}
 	}
 
 	// valueNoPot drives GameSim's rotation; freshly generated players have none,

@@ -139,6 +139,9 @@ export type PerformanceFrame = {
 	won: boolean;
 	opponent: string;
 	huge: boolean;
+	// A stinker, not a star turn: heavy volume, dreadful efficiency. Gets its
+	// own bank, because every existing performance template is a compliment.
+	cold: boolean;
 	stance: Stance;
 };
 
@@ -292,7 +295,8 @@ export const frameFor = (
 			doubles: num(f, "doubles"),
 			won: f.won === true,
 			opponent: str(f, "opponentAbbrev"),
-			huge: pts >= 40 || f.tripleDouble === true,
+			huge: (pts >= 40 || f.tripleDouble === true) && f.cold !== true,
+			cold: f.cold === true,
 			stance,
 		};
 	}
@@ -1056,6 +1060,78 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 		id: "perf.corp.line",
 		tones: ["corporate", "hype"],
 		text: (f) => `${statLine(f, " · ", " ").toUpperCase()} — ${f.name}.`,
+	},
+];
+
+// THE COLD NIGHT, which is the other half of a timeline the feed never had:
+// every performance template above is a compliment, and the volume shooter
+// who went ice cold is what the snark accounts live for. A separate bank so
+// no hype line ever lands under a 4-of-19; only the numbers the event
+// carries (pts, fga, tov, tsp) ever appear.
+const COLD_PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
+	{
+		id: "perf.cold.volume",
+		tones: ["snark", "doom", "wonk"],
+		text: (f) => `${f.name} took ${f.fga} shots to get ${f.pts} points.`,
+	},
+	{
+		id: "perf.cold.line",
+		tones: ["wire", "beat", "wonk"],
+		text: (f) =>
+			`Rough night for ${f.name}: ${f.pts} points on ${f.fga} shots.`,
+	},
+	{
+		id: "perf.cold.ts",
+		tones: ["wonk", "snark"],
+		when: (f) => f.tsp !== undefined && f.tsp >= 0 && f.tsp <= 100,
+		text: (f) =>
+			`${f.name} tonight: ${f.tsp}% true shooting on ${f.fga} attempts. Brutal.`,
+	},
+	{
+		id: "perf.cold.shotout",
+		tones: ["snark", "doom"],
+		when: (f) => !f.won,
+		text: (f) =>
+			`${f.name} shot them right out of that one. ${f.pts} on ${f.fga} attempts.`,
+	},
+	{
+		id: "perf.cold.stop",
+		tones: ["snark", "unhinged"],
+		text: (f) =>
+			`Somebody had to tell ${f.name} it was not falling. ${f.fga} shots.`,
+	},
+	{
+		id: "perf.cold.archive",
+		tones: ["doom", "snark"],
+		text: (f) =>
+			`Writing it down for the record: ${f.name}, ${f.pts} points on ${f.fga} shots.`,
+	},
+	{
+		id: "perf.cold.rim",
+		tones: ["unhinged", "snark"],
+		when: (f) => f.pts <= 15,
+		text: (f) => `${f.name} was allergic to the rim tonight. ${f.pts} points.`,
+	},
+	{
+		id: "perf.cold.despite",
+		tones: ["snark", "wonk"],
+		when: (f) => f.won,
+		text: (f) => `They won IN SPITE of ${f.name}. ${f.pts} on ${f.fga} shots.`,
+	},
+	{
+		id: "perf.cold.tov",
+		tones: ["snark", "doom"],
+		when: (f) => f.tov >= 5,
+		text: (f) => `${f.pts} points, ${f.tov} turnovers. ${f.name}. Discuss.`,
+	},
+	{
+		id: "perf.cold.doom",
+		tones: ["doom"],
+		// "we" is a fan of the team talking, not a neutral. No "of course"
+		// tail: half the doomers open with one, and it stacked.
+		when: (f) => !f.won && f.stance !== "neutral",
+		text: (f) =>
+			`${f.name} putting up ${f.pts} points on ${f.fga} shots in a game we needed.`,
 	},
 ];
 
@@ -3149,6 +3225,11 @@ const bankFor = (frame: Frame): Template<any>[] => {
 		return frame.insider ? INSIDER_GAME_TEMPLATES : GAME_TEMPLATES;
 	}
 	if (frame.kind === "performance") {
+		if (frame.cold) {
+			// Nobody narrates their own brick, and a teammate does not pile on
+			// in public: a cold night belongs to the outside voices only.
+			return frame.viewer === "other" ? COLD_PERFORMANCE_TEMPLATES : [];
+		}
 		if (frame.viewer === "self") {
 			return SELF_TEMPLATES;
 		}
@@ -3497,3 +3578,60 @@ export const receiptReplyText = (opts: {
 		opts.kind === "risen" ? RECEIPT_REPLY_RISEN : RECEIPT_REPLY_FALLEN,
 		`receiptReply:${opts.kind}`,
 	);
+
+// THE PLAYER'S RECEIPT. Same promise, personal edition: an account wrote a
+// player off after a brick-laying night, the player just dropped forty, and
+// somebody digs the post back up. Best case the player quotes it himself,
+// which is the internet's favorite genre; otherwise his team's homer does
+// the honors. The only numeral allowed is tonight's points, which the
+// caller reads straight off the box score event.
+
+const PLAYER_RECEIPT_SELF = [
+	"that you?",
+	"kept this one in my drafts",
+	"read it back slowly",
+	"saw this after the game. anyway",
+	"no notes. just leaving this here",
+	"appreciate the motivation",
+	"had this saved since the day you posted it",
+	"say it again but louder",
+];
+
+const PLAYER_RECEIPT_FAN = [
+	"never forget they posted this",
+	"the disrespect was archived, don't worry",
+	"exhibit A, from earlier this season",
+	"they always know, right up until he reminds them",
+	"this stays pinned all week",
+	"quote tweeting from the mountaintop",
+	"he saw this. i promise you he saw this",
+];
+
+export const playerReceiptText = (opts: {
+	self: boolean;
+	pts: number;
+	rng: () => number;
+	pick: <T>(rng: () => number, arr: T[], poolId?: string) => T;
+}): string => {
+	const base = opts.pick(
+		opts.rng,
+		opts.self ? PLAYER_RECEIPT_SELF : PLAYER_RECEIPT_FAN,
+		`preceipt:${opts.self}`,
+	);
+	// About half the time the night's number does the talking.
+	return opts.rng() < 0.5 ? `${opts.pts} tonight. ${base}` : base;
+};
+
+// The doubter never concedes either.
+const PLAYER_RECEIPT_REPLY = [
+	"one game",
+	"still not efficient",
+	"i said what i said",
+	"do it in the playoffs",
+	"even a broken clock",
+];
+
+export const playerReceiptReplyText = (opts: {
+	rng: () => number;
+	pick: <T>(rng: () => number, arr: T[], poolId?: string) => T;
+}): string => opts.pick(opts.rng, PLAYER_RECEIPT_REPLY, "preceiptReply");
