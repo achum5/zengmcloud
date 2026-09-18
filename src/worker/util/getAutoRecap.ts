@@ -992,7 +992,11 @@ const postseasonContext = (
 	const seedUpset =
 		typeof wSeed === "number" &&
 		typeof lSeed === "number" &&
-		wSeed - lSeed >= 3;
+		wSeed - lSeed >= 3 &&
+		// Not in the Finals: the two sides' seeds are from different
+		// conferences, and "#7 Magic cut #4 Rockets' lead" compares numbers
+		// that never met.
+		s.round < s.numRounds;
 
 	// The clinching case: series won.
 	if (need !== undefined && wAfter >= need) {
@@ -3282,6 +3286,24 @@ const supportSentence = (
 					// came out as "15 points and 10 rebounds".
 					`${third.name} ${scoredVerb(rng)} a ${thirdDdw}, ${statPhrase(third)}`
 				: `${third.name} ${scoredVerb(rng)} ${statPhrase(third, 1)}`;
+		// Not always "A verbed X, and B verbed Y": nine straight recaps of one
+		// team used that same two-verb frame, and a beat reader notices the
+		// skeleton before the words. When both are plain scoring lines, the
+		// wire's elided form takes a turn - one verb, the second man's number
+		// riding on it.
+		const plainSecond = statPhrase(second, 1) === plural(second.pts, "point");
+		const plainThird = statPhrase(third, 1) === plural(third.pts, "point");
+		if (
+			!outscoredStar(second) &&
+			!outscoredStar(third) &&
+			!ddw &&
+			!thirdDdw &&
+			plainSecond &&
+			plainThird &&
+			rng() < 0.45
+		) {
+			return `${second.name} ${scoredVerb(rng)} ${second.pts} points and ${third.name} ${third.pts}.`;
+		}
 		return `${secondText}, and ${thirdText}.`;
 	}
 	return `${secondText}.`;
@@ -3480,6 +3502,8 @@ const loserSentence = (
 				// Not "22 points from X was..." - a sentence does not open with a
 				// numeral, and every one of these lines starts with one.
 				`The best ${them} could offer was ${line} from ${leader.name}`,
+				`For ${them}, it was ${leader.name} with ${line}`,
+				`${cap(them)} leaned on ${leader.name} for ${line}`,
 			],
 			"loserShape",
 		);
@@ -4870,6 +4894,13 @@ const runNote = (
 						`${T} ran off ${run.pts} straight points in ${when}.`,
 						`${cap(aNum(run.pts))}-0 run in ${when} put ${theNick(shape.winner)} in charge.`,
 						`${T} put together ${aNum(run.pts)}-0 run in ${when}.`,
+						// Enough shapes that a beat reader following one team does
+						// not meet "put the Hawks in charge" three times in a week:
+						// per-day rotation cannot see across days, so only pool
+						// size spreads a team's own recaps out.
+						`${T} scored ${run.pts} unanswered in ${when}.`,
+						`${cap(aNum(run.pts))}-0 burst in ${when} settled it.`,
+						`The game got away in ${when}, ${run.pts} straight points for ${theNick(shape.winner)}.`,
 					]
 			: [
 					`${T} had ${aNum(run.pts)}-0 run in ${when}, and it still was not enough.`,
@@ -5732,9 +5763,11 @@ const notability = (game: RecapGame): number => {
 				wSeed !== undefined &&
 				lSeed !== undefined &&
 				wSeed - lSeed >= 3 &&
-				wAfter > lWins
+				wAfter > lWins &&
+				series.round < series.numRounds
 			) {
-				// A low seed leading a high one.
+				// A low seed leading a high one. Not in the Finals, where the
+				// seeds are from different conferences.
 				n += 15 * (wSeed - lSeed);
 			}
 			n += 20 * (series.round - 1);
@@ -6377,6 +6410,7 @@ const dayHeadline = (
 				gameNo: wBefore + lBefore + 1,
 				wSeed: winnerIsHome ? s.homeSeed : s.awaySeed,
 				lSeed: winnerIsHome ? s.awaySeed : s.homeSeed,
+				finals: s.round === s.numRounds,
 			};
 		})();
 
@@ -6468,7 +6502,9 @@ const dayHeadline = (
 				if (
 					ss.wSeed !== undefined &&
 					ss.lSeed !== undefined &&
-					ss.wSeed - ss.lSeed >= 3
+					ss.wSeed - ss.lSeed >= 3 &&
+					// Finals seeds are from different conferences - not comparable.
+					!ss.finals
 				) {
 					stateBits.push(
 						`#${ss.wSeed} ${w} have the #${ss.lSeed} seed in trouble`,

@@ -1172,9 +1172,11 @@ export const seriesShapeBeat = (
 						rng,
 						[
 							`It was ${poss(wn)} first win on ${poss(ln)} floor in the series.`,
-							roadLosses > 0
-								? `${W} finally won one on the road, after ${numWord(roadLosses)} ${roadLosses === 1 ? "loss" : "losses"} there.`
-								: `${W} took the first road game of the series.`,
+							// "Finally" needs a wait behind it - after ONE road loss it
+							// read like relief nobody had earned.
+							roadLosses >= 2
+								? `${W} finally won one on the road, after ${numWord(roadLosses)} losses there.`
+								: `${W} took ${roadLosses > 0 ? "a" : "the first"} road game of the series.`,
 						],
 						"seriesFirstRoadWin",
 					)

@@ -630,4 +630,55 @@ describe("edge cases", () => {
 		].join(" ");
 		assert.deepEqual(verifyRecap(`**x**\n\n${right}`, g), []);
 	});
+
+	test("the reader holds series claims against the bracket", () => {
+		const home = squad(
+			{ tid: 1, name: "Hawks", ptsQtrs: [28, 26, 27, 29] },
+			{ name: "Ace Hawk", pid: 11, pts: 30, fg: 12, fga: 22 },
+			110,
+		);
+		const away = squad(
+			{ tid: 2, name: "Kings", ptsQtrs: [24, 25, 26, 27] },
+			{ name: "Rex King", pid: 21, pts: 28, fg: 11, fga: 21 },
+			102,
+		);
+		// Hawks win Game 4 to lead the series 3-1: entering 2-1, best of 7.
+		const g = game([home, away], {
+			playoffs: true,
+			series: {
+				round: 1,
+				numRounds: 4,
+				bestOf: 7,
+				homeAbbrev: home.abbrev,
+				awayAbbrev: away.abbrev,
+				homeSeed: 2,
+				awaySeed: 7,
+				homeWon: 2,
+				awayWon: 1,
+			},
+		});
+
+		const right = [
+			"The Hawks beat the Kings 110-102 in Game 4 of the First Round.",
+			"They take a 3-1 series lead.",
+			"The #2 seed is one win from putting out the #7 seed.",
+			"Game 5 is tomorrow in Atlanta.",
+		].join(" ");
+		assert.deepEqual(verifyRecap(`**x**\n\n${right}`, g), []);
+
+		const wrong = [
+			"The Hawks beat the Kings 110-102 in Game 5 of the First Round.",
+			"They take a 3-2 series lead.",
+			"The #3 seed is two wins from putting out the #7 seed.",
+			"Game 6 is tomorrow in Atlanta.",
+		].join(" ");
+		const kinds = verifyRecap(`**x**\n\n${wrong}`, g).map((v) => v.kind);
+		assert.includeMembers(kinds, [
+			"series game number",
+			"series score",
+			"series seed",
+			"series wins remaining",
+			"series next game",
+		]);
+	});
 });

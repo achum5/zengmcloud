@@ -594,6 +594,114 @@ export const verifyRecap = (
 			"(whole recap)",
 		);
 	}
+	// SERIES CLAIMS. A playoff recap states the bracket constantly - "Game 3
+	// of the Finals", "take a 2-1 series lead", "closing out the Magic in
+	// five", "#8 seed", "two wins from the title" - and every one of those is
+	// checkable against the series payload the recap was written from: wins
+	// entering, the winner, the length of the series, the seeds.
+	const series = game.series;
+	if (series && typeof series.bestOf === "number" && series.bestOf > 1) {
+		const winnerIsHome = winner.abbrev === series.homeAbbrev;
+		const wAfter = (winnerIsHome ? series.homeWon : series.awayWon) + 1;
+		const lAfter = winnerIsHome ? series.awayWon : series.homeWon;
+		const gameNo = series.homeWon + series.awayWon + 1;
+		const need = Math.floor(series.bestOf / 2) + 1;
+
+		// "Game N of the <round>" is this game; "Game N is tomorrow" the next.
+		for (const m of text.matchAll(/Game (\d+) of the/g)) {
+			if (Number(m[1]) !== gameNo) {
+				add(
+					"series game number",
+					`text says Game ${m[1]}, series is at Game ${gameNo}`,
+					m[0]!,
+				);
+			}
+		}
+		for (const m of text.matchAll(/Game (\d+) is (?:tomorrow|in )/g)) {
+			if (Number(m[1]) !== gameNo + 1) {
+				add(
+					"series next game",
+					`text says Game ${m[1]} next, next is Game ${gameNo + 1}`,
+					m[0]!,
+				);
+			}
+		}
+
+		// Any small A-B pair said in series context must be the series count
+		// after this game, in some order. Quarter and game scores are two
+		// digits, so single digits capped at the series length keep them out.
+		const seriesPairs = [
+			// Context before the pair: "cut the series deficit to 2-1".
+			/(?:series (?:lead|deficit|edge)?[^.]{0,20}?|lead[^.]{0,15} series |the series |pulled? even[^.]{0,20} at |squared it[^.]{0,10} at |to the brink, |go(?:es)? up |grabbed a )(\d)-(\d)/g,
+			// Pair before the keyword: "take a 3-1 series lead".
+			/(\d)-(\d) (?:series lead|series deficit|edge (?:over|on)|lead (?:on|over) the)/g,
+		];
+		for (const m of seriesPairs.flatMap((re) => [...text.matchAll(re)])) {
+			const a = Number(m[1]);
+			const b = Number(m[2]);
+			if (a > need || b > need) {
+				continue;
+			}
+			const said = [a, b].sort().join("-");
+			const real = [wAfter, lAfter].sort().join("-");
+			if (said !== real) {
+				add(
+					"series score",
+					`text says ${a}-${b}, series is ${wAfter}-${lAfter}`,
+					m[0]!,
+				);
+			}
+		}
+
+		// A clinch "in five" is the games played.
+		for (const m of text.matchAll(
+			/(?:clos(?:e|ed|ing) out|finish(?:ed|es)? off|puts? out|sees? off)[^.]{0,40}? in (four|five|six|seven)\b/g,
+		)) {
+			const said = wordToNumber(m[1]!);
+			if (wAfter >= need && said !== undefined && said !== gameNo) {
+				add(
+					"series length",
+					`text says in ${m[1]}, series went ${gameNo}`,
+					m[0]!,
+				);
+			}
+		}
+
+		// A seed is one of the two teams' seeds.
+		const seeds = new Set(
+			[series.homeSeed, series.awaySeed].filter(
+				(seed) => typeof seed === "number",
+			),
+		);
+		if (seeds.size > 0) {
+			for (const m of text.matchAll(/#(\d+)(?! seed of)/g)) {
+				if (!seeds.has(Number(m[1]))) {
+					add(
+						"series seed",
+						`text says #${m[1]}, series seeds are ${[...seeds].join(", ")}`,
+						m[0]!,
+					);
+				}
+			}
+		}
+
+		// "N wins from the title" belongs to one of the two sides' remaining
+		// counts after tonight.
+		for (const m of text.matchAll(
+			/(one|two|three|four|\d) (?:more )?wins? from (?:the title|the next round|going out|putting out)/g,
+		)) {
+			const said = wordToNumber(m[1]!);
+			const remaining = new Set([need - wAfter, need - lAfter]);
+			if (said !== undefined && !remaining.has(said)) {
+				add(
+					"series wins remaining",
+					`text says ${said}, remaining counts are ${[...remaining].join(", ")}`,
+					m[0]!,
+				);
+			}
+		}
+	}
+
 	if (
 		// "never trailed AGAIN" is the finish of a comeback, not wire to wire.
 		/never trailed(?! again)|wire to wire|led from|in front from the opening tip|start to finish/i.test(

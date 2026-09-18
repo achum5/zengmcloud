@@ -463,64 +463,107 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 				});
 			}
 		}
-		// Four rounds' worth of structure even though only the first is played:
-		// roundName reads the number of rounds off this array, so a one-entry
-		// bracket makes every first-round series "the Finals".
+		// The whole bracket, played through the Finals, so the deep-playoff
+		// recaps - conference finals, the Finals, the title clinch - are
+		// measured like everything else instead of shipping untested.
+		const allSeries: any[][] = [matchups, [], [], []];
 		await idb.cache.playoffSeries.add({
 			season,
 			currentRound: 0,
-			series: [matchups, [], [], []],
+			series: allSeries,
 		} as any);
 
 		// Game n of a best-of-seven is at the higher seed for 1, 2, 5, 7.
 		const homeIsHigher = [true, true, false, false, true, false, true];
-		for (let gameNo = 1; gameNo <= 7; gameNo++) {
-			const day = DAYS + gameNo;
-			lastDay = day;
-			let played = false;
-			for (const matchup of matchups) {
-				if (matchup.home.won === 4 || matchup.away.won === 4) {
-					continue;
-				}
-				const higherHome = homeIsHigher[gameNo - 1]!;
-				const homeTid = higherHome ? matchup.home.tid : matchup.away.tid;
-				const awayTid = higherHome ? matchup.away.tid : matchup.home.tid;
-				const home = await loadSide(homeTid);
-				const away = await loadSide(awayTid);
-				if (!home || !away) {
-					continue;
-				}
-				played = true;
-				const result: any = new GameSim({
-					gid,
-					day,
-					teams: helpers.deepCopy([home, away]) as any,
-					doPlayByPlay: false,
-					homeCourtFactor: 1,
-					neutralSite: false,
-					allStarGame: false,
-					baseInjuryRate: g.get("injuryRate"),
-				} as any).run();
-				const w = result.team[0].stat.pts > result.team[1].stat.pts ? 0 : 1;
-				const row = buildGameRow(result, gid, day, w, true);
-				await idb.cache.games.add(row as Game);
-				matchup.gids.push(gid);
-				const winnerTid = result.team[w].id;
-				if (matchup.home.tid === winnerTid) {
-					matchup.home.won += 1;
-				} else {
-					matchup.away.won += 1;
-				}
-				gid += 1;
-			}
-			if (!played) {
+		const wonBy = new Map(standings.map((t) => [t.tid, t.won]));
+		// The better regular-season record hosts the next series.
+		const mk = (a: any, b: any) => {
+			const [home, away] =
+				(wonBy.get(a.tid) ?? 0) >= (wonBy.get(b.tid) ?? 0) ? [a, b] : [b, a];
+			return {
+				home: { ...home, won: 0 },
+				away: { ...away, won: 0 },
+				gids: [] as number[],
+			};
+		};
+		let day = DAYS;
+		for (let round = 0; round < 4; round++) {
+			const roundMatchups = allSeries[round]!;
+			if (roundMatchups.length === 0) {
 				break;
 			}
-			const series = await idb.cache.playoffSeries.get(season);
-			if (series) {
-				(series as any).series = [matchups, [], [], []];
-				await idb.cache.playoffSeries.put(series);
+			for (let gameNo = 1; gameNo <= 7; gameNo++) {
+				day += 1;
+				let played = false;
+				for (const matchup of roundMatchups) {
+					if (matchup.home.won === 4 || matchup.away.won === 4) {
+						continue;
+					}
+					const higherHome = homeIsHigher[gameNo - 1]!;
+					const homeTid = higherHome ? matchup.home.tid : matchup.away.tid;
+					const awayTid = higherHome ? matchup.away.tid : matchup.home.tid;
+					const home = await loadSide(homeTid);
+					const away = await loadSide(awayTid);
+					if (!home || !away) {
+						continue;
+					}
+					played = true;
+					const result: any = new GameSim({
+						gid,
+						day,
+						teams: helpers.deepCopy([home, away]) as any,
+						doPlayByPlay: false,
+						homeCourtFactor: 1,
+						neutralSite: false,
+						allStarGame: false,
+						baseInjuryRate: g.get("injuryRate"),
+					} as any).run();
+					const w = result.team[0].stat.pts > result.team[1].stat.pts ? 0 : 1;
+					const row = buildGameRow(result, gid, day, w, true);
+					await idb.cache.games.add(row as Game);
+					matchup.gids.push(gid);
+					const winnerTid = result.team[w].id;
+					if (matchup.home.tid === winnerTid) {
+						matchup.home.won += 1;
+					} else {
+						matchup.away.won += 1;
+					}
+					gid += 1;
+				}
+				if (!played) {
+					day -= 1;
+					break;
+				}
+				lastDay = day;
+				const series = await idb.cache.playoffSeries.get(season);
+				if (series) {
+					(series as any).series = allSeries;
+					(series as any).currentRound = round;
+					await idb.cache.playoffSeries.put(series);
+				}
 			}
+			// Winners advance: 1v8 meets 4v5 and 2v7 meets 3v6 within each
+			// conference, conference finals within, the Finals across.
+			const winners = roundMatchups.map((m) =>
+				m.home.won === 4 ? m.home : m.away,
+			);
+			if (round === 0) {
+				for (const base of [0, 4]) {
+					allSeries[1]!.push(
+						mk(winners[base + 0], winners[base + 3]),
+						mk(winners[base + 1], winners[base + 2]),
+					);
+				}
+			} else if (round === 1) {
+				allSeries[2]!.push(
+					mk(winners[0], winners[1]),
+					mk(winners[2], winners[3]),
+				);
+			} else if (round === 2) {
+				allSeries[3]!.push(mk(winners[0], winners[1]));
+			}
+			// A travel day between rounds.
+			day += 1;
 		}
 		g.setWithoutSavingToDB("phase", PHASE.PLAYOFFS);
 	}
