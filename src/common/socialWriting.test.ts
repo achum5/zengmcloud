@@ -590,6 +590,86 @@ describe("the lead of a news item", () => {
 	});
 });
 
+describe("the night a season ends", () => {
+	// An elimination game already made an event LOUDER but never reached the
+	// facts, so nothing could say so: a club that had just lost the Finals
+	// posted "Tonight: PHI 114, SAC 100. On to the next."
+	const elimination = () =>
+		eventsFromGame({
+			gid: 1,
+			day: 70,
+			season: 2013,
+			overtimes: 0,
+			winnerTid: 0,
+			playoffs: true,
+			elimination: true,
+			teams: [
+				{ tid: 0, region: "Boston", name: "Celtics", abbrev: "BOS", pts: 114, players: [] },
+				{ tid: 1, region: "Sacramento", name: "Kings", abbrev: "SAC", pts: 100, players: [] },
+			],
+		})[0]!;
+
+	test("the club that went out does not look forward to tomorrow", () => {
+		const FORWARD = [
+			"tomorrow",
+			"on to the next",
+			"next one",
+			"we keep going",
+			"turn it around",
+		];
+		let checked = 0;
+		for (let seed = 0; seed < 150; seed++) {
+			const text = writePost({
+				account: account("teamOfficial", { tid: 1, kind: "team" }),
+				event: elimination(),
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+			});
+			if (text === undefined) {
+				continue;
+			}
+			checked += 1;
+			for (const phrase of FORWARD) {
+				assert.notInclude(
+					text.toLowerCase(),
+					phrase,
+					`knocked out and said: "${text}"`,
+				);
+			}
+		}
+		assert.isAbove(checked, 50, "not enough club posts produced to judge");
+	});
+
+	test("and an ordinary loss still can", () => {
+		// The guard must not mute a club on a night that was just a defeat.
+		const ordinary = eventsFromGame({
+			gid: 2,
+			day: 12,
+			season: 2013,
+			overtimes: 0,
+			winnerTid: 0,
+			playoffs: false,
+			teams: [
+				{ tid: 0, region: "Boston", name: "Celtics", abbrev: "BOS", pts: 114, players: [] },
+				{ tid: 1, region: "Sacramento", name: "Kings", abbrev: "SAC", pts: 100, players: [] },
+			],
+		})[0]!;
+		let forward = 0;
+		for (let seed = 0; seed < 150; seed++) {
+			const text = writePost({
+				account: account("teamOfficial", { tid: 1, kind: "team" }),
+				event: ordinary,
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+			});
+			if (text !== undefined && /tomorrow|next one|keep going/i.test(text)) {
+				forward += 1;
+			}
+		}
+		assert.isAbove(forward, 0, "a club never looks ahead after a normal loss");
+	});
+});
+
 describe("news nobody cheers", () => {
 	// `bad` was read off the event TOPIC, and a topic is too blunt: "milestone"
 	// carries both a fifty-point night and a man's retirement, so a club

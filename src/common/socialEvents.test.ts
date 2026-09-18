@@ -15,7 +15,7 @@ import {
 	placeLeagueEvents,
 	OFFSEASON_DAY,
 	streakFlipsForDay,
-} from "./socialEvents.ts";
+	seriesEndingGids,} from "./socialEvents.ts";
 
 const line = (
 	pid: number,
@@ -841,5 +841,85 @@ describe("cold nights", () => {
 		const colds = events.filter((e) => e.id.endsWith(":cold"));
 		assert.strictEqual(colds.length, 1);
 		assert.strictEqual(colds[0]!.facts.name, "Worse Night");
+	});
+});
+
+describe("seriesEndingGids", () => {
+	// `elimination` had been on the event input since the beginning, and fed
+	// salience, but nothing ever set it - so no post could know a season had
+	// just ended and a knocked-out club answered with "On to the next."
+	const g = (
+		gid: number,
+		day: number,
+		a: number,
+		b: number,
+		aWon: boolean,
+		playoffs = true,
+	) => ({
+		gid,
+		day,
+		playoffs,
+		teams: [
+			{ tid: a, pts: aWon ? 100 : 90 },
+			{ tid: b, pts: aWon ? 90 : 100 },
+		],
+	});
+
+	test("the game that takes a side to four ends it", () => {
+		const games = [
+			g(1, 1, 0, 1, true),
+			g(2, 3, 0, 1, true),
+			g(3, 5, 0, 1, false),
+			g(4, 7, 0, 1, true),
+			g(5, 9, 0, 1, true), // 4-1
+		];
+		assert.deepStrictEqual([...seriesEndingGids(games)], [5]);
+	});
+
+	test("a sweep ends on the fourth game", () => {
+		const games = [1, 2, 3, 4].map((i) => g(i, i, 2, 3, true));
+		assert.deepStrictEqual([...seriesEndingGids(games)], [4]);
+	});
+
+	test("an unfinished series ends nothing", () => {
+		const games = [g(1, 1, 0, 1, true), g(2, 2, 0, 1, true)];
+		assert.lengthOf([...seriesEndingGids(games)], 0);
+	});
+
+	test("home and away are the same series", () => {
+		// The pair is keyed on the tids sorted, so the order they appear in a
+		// box score cannot split one series into two.
+		const games = [
+			g(1, 1, 0, 1, true),
+			{ ...g(2, 2, 1, 0, false) },
+			g(3, 3, 0, 1, true),
+			{ ...g(4, 4, 1, 0, false) },
+		];
+		assert.deepStrictEqual([...seriesEndingGids(games)], [4]);
+	});
+
+	test("two series at once are counted apart", () => {
+		const games = [
+			...[1, 2, 3, 4].map((i) => g(i, i, 0, 1, true)),
+			...[5, 6, 7, 8].map((i) => g(i, i, 2, 3, true)),
+		];
+		assert.deepStrictEqual([...seriesEndingGids(games)].toSorted((a, b) => a - b), [4, 8]);
+	});
+
+	test("regular season games are not a series", () => {
+		const games = [1, 2, 3, 4, 5].map((i) => g(i, i, 0, 1, true, false));
+		assert.lengthOf([...seriesEndingGids(games)], 0);
+	});
+
+	test("order is taken from the schedule, not the array", () => {
+		// Games arrive in whatever order the store hands them over.
+		const games = [
+			g(5, 9, 0, 1, true),
+			g(1, 1, 0, 1, true),
+			g(4, 7, 0, 1, true),
+			g(2, 3, 0, 1, true),
+			g(3, 5, 0, 1, false),
+		];
+		assert.deepStrictEqual([...seriesEndingGids(games)], [5]);
 	});
 });

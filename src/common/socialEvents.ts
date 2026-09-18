@@ -276,6 +276,11 @@ export const eventsFromGame = (game: GameForEvents): SocialEvent[] => {
 			combined: winner.pts + loser.pts,
 			overtimes: game.overtimes,
 			playoffs: game.playoffs,
+			// THE GAME THAT ENDED A SERIES. This already fed salience - an
+			// elimination game is louder - but it never reached the facts, so
+			// no post could say so. A club that had just been knocked out was
+			// answering with "On to the next."
+			elimination: game.elimination === true,
 			upset,
 			...(winner.streak?.won ? { winnerStreak: winner.streak.count } : {}),
 			...(loser.streak && !loser.streak.won
@@ -858,10 +863,50 @@ export const playoffSeriesEvents = ({
 		const trailer = aWins >= bWins ? b! : a!;
 		const lead = Math.max(aWins, bWins);
 		const behind = Math.min(aWins, bWins);
-		// A finished series is not a series any more. The league log already
-		// announces who won it, and without this the feed said "one loss from
-		// the end of their season" about a team that had already been swept.
+		// A SERIES THAT JUST ENDED IS THE STORY, NOT A GAP.
+		//
+		// This used to `continue`, which was right about one thing and wrong
+		// about the rest: a finished series must stop producing "one loss from
+		// the end of their season" about a team already swept. But dropping it
+		// entirely meant the night a series ENDED produced no series event at
+		// all - and the game event does not know either - so the last night of
+		// a season read like a Tuesday. A club that had just lost the Finals
+		// posted "On to the next", and nobody mentioned the series.
+		//
+		// It fires exactly once: the loop only sees series that played tonight,
+		// and a decided series plays no more games.
 		if (lead >= 4) {
+			out.push({
+				id: `pd:${day}:${key}`,
+				type: "playoffs",
+				topic: "standings",
+				season,
+				day,
+				order: 900_000 + out.length,
+				// The loudest thing that can happen short of the league log's
+				// own title announcement.
+				salience: 0.95,
+				tids: [leader.tid, trailer.tid],
+				pids: [],
+				facts: {
+					leagueWide: true,
+					tid: leader.tid,
+					teamName: `${leader.region} ${leader.name}`,
+					teamNick: leader.name,
+					abbrev: leader.abbrev,
+					rivalTid: trailer.tid,
+					rivalName: `${trailer.region} ${trailer.name}`,
+					rivalNick: trailer.name,
+					rivalAbbrev: trailer.abbrev,
+					lead,
+					behind,
+					series: true,
+					decided: true,
+					sweep: behind === 0,
+					clinching: false,
+					tied: false,
+				},
+			});
 			continue;
 		}
 		// Four is the standard series length; a team one loss from it is the
@@ -896,6 +941,58 @@ export const playoffSeriesEvents = ({
 				tied,
 			},
 		});
+	}
+	return out;
+};
+
+// WHICH GAME ENDED A SERIES.
+//
+// `elimination` has been on GameForEvents from the start and fed salience - an
+// elimination game is louder - but NOTHING EVER SET IT, in the feed or
+// anywhere else, so the flag was dead and no post could know a season had just
+// ended. A club knocked out of the playoffs answered with "On to the next."
+//
+// There is no stored series record to read, and none is needed: the games are
+// the record. Walk the playoff games in order, tally wins per matchup, and the
+// game that takes a side to four is the one that ended it. Four is the series
+// length the rest of this module already assumes (see playoffSeriesEvents).
+//
+// Pairs are keyed on the two tids sorted, so home and away are the same series.
+const SERIES_WINS = 4;
+
+export const seriesEndingGids = (
+	games: readonly {
+		gid: number;
+		day: number;
+		playoffs: boolean;
+		teams: { tid: number; pts: number }[];
+	}[],
+): Set<number> => {
+	const out = new Set<number>();
+	const wins = new Map<string, Map<number, number>>();
+	const ordered = games
+		.filter((g) => g.playoffs && g.teams.length === 2)
+		.toSorted((a, b) => a.day - b.day || a.gid - b.gid);
+
+	for (const game of ordered) {
+		const [x, y] = game.teams as [{ tid: number; pts: number }, { tid: number; pts: number }];
+		const key = [x.tid, y.tid].toSorted((a, b) => a - b).join("|");
+		let tally = wins.get(key);
+		if (!tally) {
+			tally = new Map();
+			wins.set(key, tally);
+		}
+		// A series already decided plays no more games; guard anyway so a
+		// malformed schedule cannot mark two enders for one matchup.
+		if (Math.max(...tally.values(), 0) >= SERIES_WINS) {
+			continue;
+		}
+		const winner = x.pts > y.pts ? x.tid : y.tid;
+		const next = (tally.get(winner) ?? 0) + 1;
+		tally.set(winner, next);
+		if (next >= SERIES_WINS) {
+			out.add(game.gid);
+		}
 	}
 	return out;
 };

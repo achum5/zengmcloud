@@ -56,6 +56,7 @@ import {
 	placeLeagueEvents,
 	playoffSeriesEvents,
 	seasonStateEvents,
+	seriesEndingGids,
 	standingsThrough,
 	trimDayEvents,
 	type GameForEvents,
@@ -284,6 +285,9 @@ export type FeedSnapshot = {
 	};
 	// Every game's teams and score, so any day can rebuild the table as it
 	// stood that night without re-reading the database.
+	// The gids of games that ENDED a playoff series, worked out once from the
+	// games themselves - see seriesEndingGids.
+	seriesEnders: Set<number>;
 	standingsInput: {
 		day: number;
 		gid: number;
@@ -500,6 +504,7 @@ export const getFeedSnapshot = async (
 		accountById,
 		leagueEventsByDay,
 		rivalry,
+		seriesEnders: seriesEndingGids(standingsInput),
 		standingsInput,
 		playedByDay,
 		dayKey,
@@ -1022,6 +1027,7 @@ const gameForEvents = (
 		teams: any[];
 		spread?: { favTid: number; points: number };
 	},
+	seriesEnders: ReadonlySet<number>,
 ): GameForEvents => ({
 	gid: game.gid,
 	day: game.day,
@@ -1029,6 +1035,7 @@ const gameForEvents = (
 	overtimes: game.overtimes,
 	winnerTid: game.winnerTid,
 	playoffs: game.playoffs,
+	elimination: seriesEnders.has(game.gid),
 	spread: game.spread,
 	teams: [0, 1].map((i) => {
 		const t = game.teams[i];
@@ -1076,7 +1083,9 @@ const eventsForDay = async (
 	} else {
 		const recapGames = await recapGamesForDay({ season: snapshot.season, day });
 		const gameEvents = recapGames.flatMap((game) =>
-			eventsFromGame(gameForEvents(snapshot.season, game as any)),
+			eventsFromGame(
+				gameForEvents(snapshot.season, game as any, snapshot.seriesEnders),
+			),
 		);
 		// The state of the league as of tonight, which is what people actually
 		// argue about between box scores - and what stops a two-game playoff
@@ -1206,7 +1215,16 @@ const writeAccountDay = ({
 			templateId: written.templateId,
 			eventIndex: eventIndexById.get(event.id) ?? 0,
 			eventCount: events.length,
-			isGame: event.type === "gameResult" || event.type === "performance",
+			// AFTER THE GAMES, NOT BEFORE THEM. `isGame` decides whether a post
+			// gets an evening slot or the working day, and a series event was
+			// getting the afternoon - so on the night a series ended, "76ers
+			// through, 4-2" posted at 5:22 PM and the game that decided it
+			// posted at 8:34. A series event is COMPUTED from the night's
+			// games; it cannot precede them.
+			isGame:
+				event.type === "gameResult" ||
+				event.type === "performance" ||
+				(event.type === "playoffs" && event.facts.series === true),
 			salience: event.salience,
 			eventType: event.type,
 			tids: event.tids,

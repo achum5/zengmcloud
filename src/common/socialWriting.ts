@@ -161,6 +161,8 @@ export type GameFrame = {
 	combined: number;
 	ot: number;
 	playoffs: boolean;
+	// The game ended a series. For the loser it is the last game of a season.
+	elimination: boolean;
 	upset: boolean;
 	blowout: boolean;
 	nailbiter: boolean;
@@ -255,6 +257,9 @@ export type StandingsFrame = {
 	race: boolean;
 	// A playoff series, counted up to tonight.
 	series: boolean;
+	// This series ended tonight, and `lead` is the winner's game count.
+	decided: boolean;
+	sweep: boolean;
 	lead: number;
 	behind: number;
 	clinching: boolean;
@@ -318,6 +323,9 @@ export const frameFor = (
 			combined: num(f, "combined"),
 			ot: num(f, "overtimes"),
 			playoffs: f.playoffs === true,
+			// This game ended a playoff series, so for the losing side there is
+			// no next one.
+			elimination: f.elimination === true,
 			upset: f.upset === true,
 			blowout: margin >= 20,
 			nailbiter: margin <= 3 || num(f, "overtimes") > 0,
@@ -383,6 +391,9 @@ export const frameFor = (
 			worst: f.worst === true,
 			race: f.race === true,
 			series: f.series === true,
+			// The series is OVER, and this is the night it ended.
+			decided: f.decided === true,
+			sweep: f.sweep === true,
 			lead: num(f, "lead"),
 			behind: num(f, "behind"),
 			clinching: f.clinching === true,
@@ -3291,6 +3302,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.wire",
 		tones: ["wire", "beat", "wonk"],
 		when: (f) => f.hot,
+
 		text: (f) =>
 			`${f.team} have won ${f.streak} in a row. They are ${f.won}-${f.lost}.`,
 	},
@@ -3298,6 +3310,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.short",
 		tones: ["wire", "beat"],
 		when: (f) => f.hot,
+
 		text: (f) =>
 			`${f.streak} straight for ${f.abbrev}, now ${f.won}-${f.lost}.`,
 	},
@@ -3305,6 +3318,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.mine",
 		tones: ["hype", "unhinged", "corporate"],
 		when: (f) => f.hot && f.mine,
+
 		mood: "up",
 		text: (f) => `${f.streak} in a row. Nobody wants to see us right now.`,
 	},
@@ -3312,6 +3326,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.mine.two",
 		tones: ["hype", "unhinged"],
 		when: (f) => f.hot && f.mine,
+
 		mood: "up",
 		text: (f) =>
 			`${f.won}-${f.lost}. Say the ${f.nick} are not for real again.`,
@@ -3320,6 +3335,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.doom",
 		tones: ["doom", "snark"],
 		when: (f) => f.hot && f.mine,
+
 		text: (f) =>
 			`${f.streak} straight and I am still waiting for the other shoe.`,
 	},
@@ -3327,6 +3343,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.other",
 		tones: ["snark", "doom", "wonk"],
 		when: (f) => f.hot && !f.mine,
+
 		text: (f) =>
 			`${f.nick} have won ${f.streak} in a row. Cool. Great. Love it.`,
 	},
@@ -3334,6 +3351,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.respect",
 		tones: ["beat", "wonk", "wire"],
 		when: (f) => f.hot && !f.mine,
+
 		text: (f) =>
 			`Whatever the ${f.nick} are doing, ${f.streak} in a row says it is working.`,
 	},
@@ -3343,6 +3361,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.cold.wire",
 		tones: ["wire", "beat", "wonk"],
 		when: (f) => f.cold,
+
 		text: (f) =>
 			`${f.team} have lost ${f.streak} straight. They fall to ${f.won}-${f.lost}.`,
 	},
@@ -3350,6 +3369,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.cold.short",
 		tones: ["wire", "beat"],
 		when: (f) => f.cold,
+
 		text: (f) =>
 			`${f.abbrev} drop their ${f.streak}th in a row. ${f.won}-${f.lost}.`,
 	},
@@ -3357,6 +3377,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.cold.mine",
 		tones: ["doom", "snark", "unhinged"],
 		when: (f) => f.cold && f.mine,
+
 		mood: "down",
 		text: (f) => `${f.streak} in a row. ${f.won}-${f.lost}. I am not okay.`,
 	},
@@ -3364,6 +3385,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.cold.mine.two",
 		tones: ["doom", "snark"],
 		when: (f) => f.cold && f.mine,
+
 		mood: "down",
 		text: (f) => `Losing ${f.streak} straight takes real commitment.`,
 	},
@@ -3371,6 +3393,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.cold.hope",
 		tones: ["hype", "corporate"],
 		when: (f) => f.cold && f.mine,
+
 		mood: "up",
 		text: (f) => `${f.won}-${f.lost} and I am not going anywhere. It turns.`,
 	},
@@ -3378,12 +3401,14 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.cold.other",
 		tones: ["snark", "unhinged"],
 		when: (f) => f.cold && !f.mine,
+
 		text: (f) => `Somebody check on the ${f.nick}. ${f.streak} in a row.`,
 	},
 	{
 		id: "st.cold.wonk",
 		tones: ["wonk", "beat"],
 		when: (f) => f.cold,
+
 		text: (f) =>
 			`${f.streak} straight losses is not variance any more. ${f.won}-${f.lost}.`,
 	},
@@ -3393,12 +3418,14 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.first.wire",
 		tones: ["wire", "beat", "wonk"],
 		when: (f) => f.first,
+
 		text: (f) => `Best record in the league: ${f.team}, ${f.won}-${f.lost}.`,
 	},
 	{
 		id: "st.first.mine",
 		tones: ["hype", "corporate", "unhinged"],
 		when: (f) => f.first && f.mine,
+
 		mood: "up",
 		text: (f) => `${f.won}-${f.lost}. Best in the league. That is the post.`,
 	},
@@ -3406,12 +3433,14 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.first.doom",
 		tones: ["doom", "snark"],
 		when: (f) => f.first && f.mine,
+
 		text: () => `First place in February means nothing and you all know it.`,
 	},
 	{
 		id: "st.first.other",
 		tones: ["snark", "doom", "wonk"],
 		when: (f) => f.first && !f.mine,
+
 		text: (f) =>
 			`${f.nick} at ${f.won}-${f.lost} and everyone has decided it is over.`,
 	},
@@ -3421,6 +3450,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.worst.wire",
 		tones: ["wire", "beat", "wonk"],
 		when: (f) => f.worst,
+
 		text: (f) =>
 			`${f.team} own the league's worst record at ${f.won}-${f.lost}.`,
 	},
@@ -3428,6 +3458,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.worst.mine",
 		tones: ["doom", "snark", "unhinged"],
 		when: (f) => f.worst && f.mine,
+
 		mood: "down",
 		text: (f) =>
 			`${f.won}-${f.lost}. Worst in the league. At least the pick will be good.`,
@@ -3436,6 +3467,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.worst.hype",
 		tones: ["hype", "corporate"],
 		when: (f) => f.worst && f.mine,
+
 		text: (f) => `${f.won}-${f.lost} is not who we are. Long way to go.`,
 	},
 
@@ -3444,47 +3476,47 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 	{
 		id: "st.series.wire",
 		tones: ["wire", "beat", "wonk"],
-		when: (f) => f.series && !f.tied,
+		when: (f) => !f.decided && f.series && !f.tied,
 		text: (f) => `${f.team} lead the ${f.rivalNick} ${f.lead}-${f.behind}.`,
 	},
 	{
 		id: "st.series.tied",
 		tones: ["wire", "beat", "wonk", "corporate"],
-		when: (f) => f.series && f.tied,
+		when: (f) => !f.decided && f.series && f.tied,
 		text: (f) =>
 			`${f.team} and the ${f.rivalNick} are level at ${f.lead}-${f.behind}.`,
 	},
 	{
 		id: "st.series.clinch",
 		tones: ["wire", "beat", "hype", "corporate"],
-		when: (f) => f.series && f.clinching,
+		when: (f) => !f.decided && f.series && f.clinching,
 		text: (f) =>
 			`${f.rival} are one loss from the end of their season. ${f.lead}-${f.behind}.`,
 	},
 	{
 		id: "st.series.mine.up",
 		tones: ["hype", "unhinged", "corporate"],
-		when: (f) => f.series && f.mine && !f.tied,
+		when: (f) => !f.decided && f.series && f.mine && !f.tied,
 		mood: "up",
 		text: (f) => `${f.lead}-${f.behind}. Close it out.`,
 	},
 	{
 		id: "st.series.mine.doom",
 		tones: ["doom", "snark"],
-		when: (f) => f.series && f.mine && !f.tied,
+		when: (f) => !f.decided && f.series && f.mine && !f.tied,
 		text: (f) => `${f.lead}-${f.behind} means nothing. We have blown worse.`,
 	},
 	{
 		id: "st.series.against",
 		tones: ["doom", "snark", "unhinged"],
-		when: (f) => f.series && f.trailing,
+		when: (f) => !f.decided && f.series && f.trailing,
 		mood: "down",
 		text: (f) => `Down ${f.behind}-${f.lead} to the ${f.nick}. Wonderful.`,
 	},
 	{
 		id: "st.series.against.doom2",
 		tones: ["doom", "snark"],
-		when: (f) => f.series && f.trailing,
+		when: (f) => !f.decided && f.series && f.trailing,
 		mood: "down",
 		text: (f) =>
 			`${f.behind}-${f.lead}. We are not beating the ${f.nick} four times.`,
@@ -3492,48 +3524,48 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 	{
 		id: "st.series.against.doom3",
 		tones: ["doom", "unhinged"],
-		when: (f) => f.series && f.trailing && f.clinching,
+		when: (f) => !f.decided && f.series && f.trailing && f.clinching,
 		mood: "down",
 		text: () => `One more and the season is over. I am going to be sick.`,
 	},
 	{
 		id: "st.series.against.quiet",
 		tones: ["wire", "beat", "wonk", "corporate"],
-		when: (f) => f.series && f.trailing,
+		when: (f) => !f.decided && f.series && f.trailing,
 		text: (f) => `Facing a ${f.lead}-${f.behind} hole against the ${f.nick}.`,
 	},
 	{
 		id: "st.series.against.wonk",
 		tones: ["wonk", "beat"],
-		when: (f) => f.series && f.trailing,
+		when: (f) => !f.decided && f.series && f.trailing,
 		text: (f) =>
 			`Nobody has to tell me what ${f.behind}-${f.lead} means. I can read.`,
 	},
 	{
 		id: "st.series.against.tied",
 		tones: ["hype", "corporate", "beat"],
-		when: (f) => f.series && f.trailing && f.tied,
+		when: (f) => !f.decided && f.series && f.trailing && f.tied,
 		mood: "up",
 		text: (f) => `${f.behind}-${f.lead}. Best of three now. We are fine.`,
 	},
 	{
 		id: "st.series.against.home",
 		tones: ["hype", "unhinged", "corporate"],
-		when: (f) => f.series && f.trailing && !f.clinching,
+		when: (f) => !f.decided && f.series && f.trailing && !f.clinching,
 		mood: "up",
 		text: (f) => `${f.behind}-${f.lead} and I have seen worse turned around.`,
 	},
 	{
 		id: "st.series.against.snark",
 		tones: ["snark", "unhinged"],
-		when: (f) => f.series && f.trailing,
+		when: (f) => !f.decided && f.series && f.trailing,
 		text: (f) =>
 			`Down ${f.behind}-${f.lead}. At least the flights home are short.`,
 	},
 	{
 		id: "st.series.against.fight",
 		tones: ["hype", "unhinged", "corporate"],
-		when: (f) => f.series && f.trailing,
+		when: (f) => !f.decided && f.series && f.trailing,
 		mood: "up",
 		text: (f) =>
 			`${f.behind}-${f.lead}. Series is not over until somebody wins four.`,
@@ -3541,35 +3573,35 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 	{
 		id: "st.series.neutral",
 		tones: ["snark", "wonk", "beat"],
-		when: (f) => f.series && f.stance === "neutral" && f.lead - f.behind <= 1,
+		when: (f) => !f.decided && f.series && f.stance === "neutral" && f.lead - f.behind <= 1,
 		text: (f) =>
 			`${f.abbrev} up ${f.lead}-${f.behind} and this series has been better than anyone expected.`,
 	},
 	{
 		id: "st.series.onesided",
 		tones: ["snark", "wonk", "beat", "wire"],
-		when: (f) => f.series && f.lead - f.behind >= 2,
+		when: (f) => !f.decided && f.series && f.lead - f.behind >= 2,
 		text: (f) =>
 			`${f.lead}-${f.behind}. The ${f.rivalNick} have not been competitive in this series.`,
 	},
 	{
 		id: "st.series.neutral.two",
 		tones: ["wonk", "beat", "wire"],
-		when: (f) => f.series && f.stance === "neutral",
+		when: (f) => !f.decided && f.series && f.stance === "neutral",
 		text: (f) =>
 			`${f.abbrev} ${f.lead}, ${f.rivalAbbrev} ${f.behind} in the series.`,
 	},
 	{
 		id: "st.series.neutral.three",
 		tones: ["snark", "unhinged", "hype"],
-		when: (f) => f.series && f.stance === "neutral",
+		when: (f) => !f.decided && f.series && f.stance === "neutral",
 		text: (f) =>
 			`Whatever you think of the ${f.nick}, ${f.lead}-${f.behind} is ${f.lead}-${f.behind}.`,
 	},
 	{
 		id: "st.series.watch",
 		tones: ["wonk", "beat", "wire"],
-		when: (f) => f.series && f.clinching,
+		when: (f) => !f.decided && f.series && f.clinching,
 		text: (f) => `Elimination game next for the ${f.rivalNick}.`,
 	},
 
@@ -3578,6 +3610,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.race.wire",
 		tones: ["wire", "beat", "wonk"],
 		when: (f) => f.race,
+
 		text: (f) =>
 			`${f.team} at ${f.won}-${f.lost}, ${f.rival} at ${f.rivalWon}-${f.rivalLost}. That is the cut line.`,
 	},
@@ -3585,6 +3618,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.race.wonk",
 		tones: ["wonk", "beat"],
 		when: (f) => f.race,
+
 		text: (f) =>
 			`${f.gamesBack} games separate ${f.abbrev} and the ${f.rivalNick}. Every night counts now.`,
 	},
@@ -3592,6 +3626,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.race.mine",
 		tones: ["hype", "unhinged", "corporate"],
 		when: (f) => f.race && f.mine,
+
 		mood: "up",
 		text: (f) =>
 			`${f.won}-${f.lost}. We control this. Nobody is catching us from here.`,
@@ -3600,14 +3635,98 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.race.doom",
 		tones: ["doom", "snark"],
 		when: (f) => f.race,
+
 		text: (f) => `We have watched the ${f.nick} lose this exact race before.`,
 	},
 	{
 		id: "st.race.watch",
 		tones: ["snark", "unhinged", "hype"],
 		when: (f) => f.race && !f.mine,
+
 		text: (f) =>
 			`${f.abbrev} and the ${f.rivalNick} fighting over a first-round exit.`,
+	},
+
+	// A SERIES THAT ENDED TONIGHT.
+	//
+	// There was nothing here at all: a decided series was dropped from the
+	// event stream entirely, so the last night of a season read like a
+	// Tuesday - a club that had just lost the Finals posting "On to the next",
+	// a fan calling an elimination "another one", and not one account
+	// mentioning the series. See playoffSeriesEvents.
+	//
+	// `lead` is the winner's game count and `behind` the loser's, so the score
+	// is stated rather than implied, and a sweep gets its own word.
+	{
+		id: "st.done.wire",
+		tones: ["wire", "beat", "wonk"],
+		when: (f) => f.decided && !f.sweep,
+		text: (f) => `${f.team} win the series ${f.lead}-${f.behind}.`,
+	},
+	{
+		id: "st.done.sweep",
+		tones: ["wire", "beat", "wonk"],
+		when: (f) => f.decided && f.sweep,
+		text: (f) => `${f.team} sweep it, ${f.lead}-0.`,
+	},
+	{
+		id: "st.done.short",
+		when: (f) => f.decided,
+		text: (f) => `${f.nick} through. ${f.lead}-${f.behind}.`,
+	},
+	{
+		id: "st.done.mine",
+		tones: ["hype", "unhinged", "corporate"],
+		when: (f) => f.decided && f.mine,
+		mood: "up",
+		text: (f) => `That is the series. ${f.lead}-${f.behind}. On we go.`,
+	},
+	{
+		id: "st.done.mine.two",
+		tones: ["hype", "unhinged"],
+		when: (f) => f.decided && f.mine,
+		mood: "up",
+		text: (f) => `WE ARE THROUGH. ${f.nick} in ${f.lead + f.behind}.`,
+	},
+	{
+		id: "st.done.mine.sweep",
+		tones: ["hype", "unhinged", "corporate"],
+		when: (f) => f.decided && f.mine && f.sweep,
+		mood: "up",
+		text: () => `Four straight. Nobody even got a game.`,
+	},
+	{
+		id: "st.done.out",
+		when: (f) => f.decided && f.trailing,
+		mood: "down",
+		text: (f) => `Season over. ${f.lead}-${f.behind} to the ${f.nick}.`,
+	},
+	{
+		id: "st.done.out.doom",
+		tones: ["doom", "snark"],
+		when: (f) => f.decided && f.trailing,
+		mood: "down",
+		text: () => `That is the season. See everybody in October.`,
+	},
+	{
+		id: "st.done.out.quiet",
+		tones: ["beat", "wire", "corporate"],
+		when: (f) => f.decided && f.trailing,
+		mood: "down",
+		text: (f) => `${f.rivalNick} are out, ${f.behind}-${f.lead}.`,
+	},
+	{
+		id: "st.done.neutral",
+		tones: ["snark", "wonk", "beat"],
+		when: (f) => f.decided && f.stance === "neutral",
+		text: (f) =>
+			`${f.nick} advance. ${f.rivalNick} go home ${f.behind}-${f.lead}.`,
+	},
+	{
+		id: "st.done.length",
+		tones: ["beat", "wonk", "wire"],
+		when: (f) => f.decided && f.behind >= 2,
+		text: (f) => `${f.lead + f.behind} games. The ${f.nick} take it.`,
 	},
 
 	// THE COLUMNIST HAD ONE LINE. Measured over forty-five days the national
@@ -3622,6 +3741,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.pundit",
 		tones: ["snark"],
 		when: (f) => f.hot && !f.mine,
+
 		text: (f) =>
 			`${f.streak} in a row for the ${f.nick}. I will start believing at ${f.streak + 3}.`,
 	},
@@ -3629,6 +3749,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.pundit.two",
 		tones: ["snark"],
 		when: (f) => f.hot && !f.mine,
+
 		text: (f) =>
 			`We are all supposed to act normal about the ${f.nick} winning ${f.streak} straight.`,
 	},
@@ -3636,12 +3757,14 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.hot.pundit.three",
 		tones: ["snark", "doom"],
 		when: (f) => f.hot && !f.mine && f.won > f.lost,
+
 		text: (f) => `${f.won}-${f.lost} and the schedule has not started yet.`,
 	},
 	{
 		id: "st.cold.pundit",
 		tones: ["snark"],
 		when: (f) => f.cold && !f.mine && f.streak >= 4,
+
 		text: (f) =>
 			`The ${f.nick} have lost ${f.streak}. At some point that is just who they are.`,
 	},
@@ -3649,18 +3772,21 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.cold.pundit.two",
 		tones: ["snark"],
 		when: (f) => f.cold && !f.mine,
+
 		text: (f) => `Whatever the ${f.nick} are, it is not a slow start any more.`,
 	},
 	{
 		id: "st.first.pundit",
 		tones: ["snark"],
 		when: (f) => f.first && !f.mine,
+
 		text: (f) => `${f.nick} in first. Enjoy the regular season, everybody.`,
 	},
 	{
 		id: "st.worst.pundit",
 		tones: ["snark"],
 		when: (f) => f.worst && !f.mine,
+
 		text: (f) =>
 			`${f.won}-${f.lost}. Somebody has to be last and they are committed to it.`,
 	},
@@ -3668,6 +3794,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.rank.pundit",
 		tones: ["snark"],
 		when: (f) => !f.mine && f.rank > 0 && !f.first && !f.worst,
+
 		text: (f) =>
 			`${f.nick} are ${f.rank}th and every one of you will tell me that is wrong.`,
 	},
@@ -3675,6 +3802,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		id: "st.gb.pundit",
 		tones: ["snark"],
 		when: (f) => !f.mine && f.gamesBack > 0 && f.gamesBack <= 3,
+
 		text: (f) =>
 			`${plural(f.gamesBack, "game")} back. Close enough to matter, far enough to hurt.`,
 	},
@@ -3717,7 +3845,7 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "corp.loss.back",
 		quiet: true,
-		when: (f) => !f.blowout,
+		when: (f) => (!f.blowout),
 		text: () => `We will look at it and we will be back out there.`,
 	},
 
@@ -3798,13 +3926,13 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "corp.loss.playoffs",
 		quiet: true,
-		when: (f) => f.playoffs,
+		when: (f) => (f.playoffs),
 		text: () => `We will be ready for the next one. Thank you for being loud.`,
 	},
 	{
 		id: "corp.loss.halves",
 		quiet: true,
-		when: (f) => !f.blowout && !f.nailbiter,
+		when: (f) => (!f.blowout && !f.nailbiter),
 		text: () => `Not the result we wanted. We keep going.`,
 	},
 	{
@@ -3815,7 +3943,7 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "corp.loss.tomorrow",
 		quiet: true,
-		when: (f) => !f.playoffs,
+		when: (f) => (!f.playoffs),
 		text: () => `We are back at it tomorrow.`,
 	},
 
@@ -3827,7 +3955,7 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "corp.loss.by",
 		quiet: true,
-		when: (f) => f.margin > 0,
+		when: (f) => (f.margin > 0),
 		text: (f) => `${f.winnerNick} by ${f.margin}. We will be better than that.`,
 	},
 	{
@@ -3860,6 +3988,56 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 	},
 ];
 
+// THE LAST NIGHT OF A SEASON, which is not a loss like the others.
+//
+// Every line in the bank above looks forward, because almost every defeat has
+// a next game - and on the night a club is knocked out there is no next game
+// to look to. It was answering its own elimination with "We are back at it
+// tomorrow" and "On to the next."
+//
+// A SEPARATE BANK rather than a guard on each line, for the same reason the
+// loss bank is separate from the win bank: twenty lines cannot be audited by
+// eye, the first attempt at exactly that missed "Not our night. Back at it
+// tomorrow", and a line added later would miss it again.
+const CORPORATE_ELIMINATED_TEMPLATES: Template<GameFrame>[] = [
+	{
+		id: "corp.out.season",
+		quiet: true,
+		text: () => `That is our season. Thank you for all of it.`,
+	},
+	{
+		id: "corp.out.proud",
+		quiet: true,
+		text: () => `Proud of this group. Thank you to everyone who followed it.`,
+	},
+	{
+		id: "corp.out.score",
+		quiet: true,
+		text: (f) =>
+			`${f.winnerAbbrev} ${f.winnerPts}, ${f.loserAbbrev} ${f.loserPts}. Our season ends here.`,
+	},
+	{
+		id: "corp.out.credit",
+		quiet: true,
+		text: (f) => `Congratulations to the ${f.winnerNick}.`,
+	},
+	{
+		id: "corp.out.thanks",
+		quiet: true,
+		text: () => `To everyone who was with us all year: thank you.`,
+	},
+	{
+		id: "corp.out.short",
+		quiet: true,
+		text: () => `We came up short. That one is on us.`,
+	},
+	{
+		id: "corp.out.swept",
+		quiet: true,
+		text: (f) => `${f.winnerNick} were the better team. Nothing else to say.`,
+	},
+];
+
 const bankFor = (frame: Frame): Template<any>[] => {
 	if (frame.kind === "game") {
 		// A franchise's own account does not announce its own defeat the way
@@ -3867,7 +4045,11 @@ const bankFor = (frame: Frame): Template<any>[] => {
 		// own 130-99 loss with a crying emoji, which no club account has ever
 		// done; it gets a flat, emoji-free bank of its own instead.
 		if (frame.stance === "against" && frame.corporate) {
-			return CORPORATE_LOSS_TEMPLATES;
+			// A club knocked out of the playoffs has no next game, and every
+			// line in the ordinary loss bank assumes one.
+			return frame.elimination
+				? CORPORATE_ELIMINATED_TEMPLATES
+				: CORPORATE_LOSS_TEMPLATES;
 		}
 		// REPLACES rather than extends. Concatenating let a player draw a beat
 		// writer's line about a game he had just played in, which reads as
