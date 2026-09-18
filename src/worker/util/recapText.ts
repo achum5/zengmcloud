@@ -107,6 +107,46 @@ export const pick = <T>(rng: () => number, arr: T[], poolId?: string): T => {
 	return arr[chosenIdx]!;
 };
 
+// The day wrap says the same KINDS of things every night - the standings
+// frame, the skid line, tomorrow's schedule - and pick()'s memory resets
+// nightly, so consecutive evenings kept drawing the same variant ("cling to
+// the top of the West" three days running, at 50/50 odds per night for a
+// two-option pool). These pools anchor their rotation to the CALENDAR
+// instead: day n starts one variant past day n-1's, and the in-night memory
+// still applies when a pool renders twice in one wrap (a two-conference
+// standings line). No stored state - regenerating the same day gives the
+// same text.
+export const pickByDay = <T>(
+	day: number | undefined,
+	rng: () => number,
+	arr: T[],
+	poolId: string,
+): T => {
+	if (arr.length <= 1) {
+		return arr[0]!;
+	}
+	if (day === undefined) {
+		return pick(rng, arr, poolId);
+	}
+	const key = `byday|${poolId}`;
+	let used = phraseMemory.get(key);
+	if (!used) {
+		used = new Set<string>();
+		phraseMemory.set(key, used);
+	}
+	for (let k = 0; k < arr.length; k++) {
+		const idx = (day + k) % arr.length;
+		if (!used.has(String(idx))) {
+			used.add(String(idx));
+			return arr[idx]!;
+		}
+	}
+	used.clear();
+	const idx = day % arr.length;
+	used.add(String(idx));
+	return arr[idx]!;
+};
+
 // Fisher-Yates using the seeded rng, so ordering is deterministic per game.
 export const shuffle = <T>(rng: () => number, arr: T[]): T[] => {
 	const out = [...arr];

@@ -1,6 +1,12 @@
 import { assert, describe, test } from "vitest";
 import type { FinishEvent, GameFlow } from "../../common/gameFlow.ts";
-import { getAutoDayRecap, getAutoRecap } from "./getAutoRecap.ts";
+import {
+	beginRecapBatch,
+	endRecapBatch,
+	getAutoDayRecap,
+	getAutoRecap,
+} from "./getAutoRecap.ts";
+import { pickByDay } from "./recapText.ts";
 import type {
 	RecapGame,
 	RecapPlayer,
@@ -680,6 +686,36 @@ describe("edge cases", () => {
 			"series wins remaining",
 			"series next game",
 		]);
+
+		// The next-game check is on the NUMBER, not the phrasing: a new way of
+		// pointing at the next game cannot smuggle a wrong one past the desk.
+		for (const phrasing of [
+			"The series resumes in Atlanta tomorrow with Game 7.",
+			"They meet again tomorrow in Atlanta for Game 7.",
+			"Back at it tomorrow in Atlanta for Game 7.",
+			"Game 7 in Atlanta is tomorrow.",
+		]) {
+			const kinds2 = verifyRecap(
+				`**x**\n\nThe Hawks beat the Kings 110-102. ${phrasing}`,
+				g,
+			).map((v) => v.kind);
+			assert.include(kinds2, "series next game", phrasing);
+		}
+		// ...and the right number passes in every one of those shapes.
+		for (const phrasing of [
+			"Game 5 is tomorrow in Atlanta.",
+			"The series resumes in Atlanta tomorrow with Game 5.",
+			"They meet again tomorrow in Atlanta for Game 5.",
+			"Next is Game 5, tomorrow in Atlanta.",
+			"Game 5 in Atlanta is tomorrow.",
+			"Back at it tomorrow in Atlanta for Game 5.",
+		]) {
+			const kinds3 = verifyRecap(
+				`**x**\n\nThe Hawks beat the Kings 110-102 in Game 4 of the First Round. ${phrasing}`,
+				g,
+			).map((v) => v.kind);
+			assert.notInclude(kinds3, "series next game", phrasing);
+		}
 	});
 
 	test("the title clinch knows the franchise's history", () => {
@@ -748,5 +784,36 @@ describe("edge cases", () => {
 			"franchise title count",
 			"franchise last title year",
 		]);
+	});
+});
+
+describe("pickByDay", () => {
+	test("consecutive days rotate instead of gambling", () => {
+		const pool = ["A", "B", "C"];
+		const rng = () => 0.5;
+		const byDay: string[] = [];
+		for (let day = 1; day <= 6; day++) {
+			beginRecapBatch();
+			byDay.push(pickByDay(day, rng, pool, "t"));
+			endRecapBatch();
+		}
+		// Never the same variant two days running, and the whole pool gets used.
+		for (let i = 1; i < byDay.length; i++) {
+			assert.notEqual(byDay[i], byDay[i - 1]);
+		}
+		assert.deepEqual([...new Set(byDay)].sort(), pool);
+	});
+
+	test("two uses in one night differ, and the same day reproduces itself", () => {
+		const pool = ["east", "west"];
+		const rng = () => 0.5;
+		beginRecapBatch();
+		const first = pickByDay(9, rng, pool, "conf");
+		const second = pickByDay(9, rng, pool, "conf");
+		endRecapBatch();
+		assert.notEqual(first, second);
+		beginRecapBatch();
+		assert.equal(pickByDay(9, rng, pool, "conf"), first);
+		endRecapBatch();
 	});
 });

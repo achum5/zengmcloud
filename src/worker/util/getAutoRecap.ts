@@ -25,6 +25,7 @@ import {
 	numWord,
 	ordinal,
 	pick,
+	pickByDay,
 	pickSentence,
 	plural,
 	poss,
@@ -5922,6 +5923,10 @@ const conferencePictureSentence = (
 	// "the Grizzlies climbed to first" right under "the Grizzlies are 1 game
 	// clear at the top".
 	said?: Set<number>,
+	// The schedule day, which anchors the phrasing rotation: this sentence
+	// runs every night, and without the anchor "cling to the top of the
+	// West" showed up three evenings running.
+	day?: number,
 ): string | undefined => {
 	if (!standings || standings.confs.length === 0) {
 		return undefined;
@@ -5953,7 +5958,8 @@ const conferencePictureSentence = (
 		// An unbeaten leader is the story itself, not a "narrow lead".
 		if (leader.lost === 0) {
 			bits.push(
-				pick(
+				pickByDay(
+					day,
 					rng,
 					[
 						`the ${leader.name} are still perfect at ${leader.won}-0 atop the ${conf.name}`,
@@ -5967,7 +5973,8 @@ const conferencePictureSentence = (
 			);
 		} else if (second && second.gb >= 1) {
 			bits.push(
-				pick(
+				pickByDay(
+					day,
 					rng,
 					[
 						`${who} lead the ${conf.name} by ${gbText(second.gb)}`,
@@ -5979,7 +5986,8 @@ const conferencePictureSentence = (
 			);
 		} else if (second) {
 			bits.push(
-				pick(
+				pickByDay(
+					day,
 					rng,
 					[
 						`${who} hold a narrow lead in the ${conf.name}`,
@@ -6008,7 +6016,8 @@ const conferencePictureSentence = (
 		bits.length === 2 && bits.some((b) => b.includes(","))
 			? bits.join(", and ")
 			: naturalList(bits);
-	return pick(
+	return pickByDay(
+		day,
 		rng,
 		[
 			`In the standings, ${list}.`,
@@ -6093,7 +6102,8 @@ const teamStreakSentence = (
 	if (!best) {
 		return undefined;
 	}
-	return pick(
+	return pickByDay(
+		games[0]?.day,
 		rng,
 		[
 			`${cap(theNick(best.team))} ran their win streak to ${numWord(best.count)} games.`,
@@ -7150,11 +7160,16 @@ const leagueNotes = (
 			)} ${biggest.margin}-point win over ${theNick(biggest.shape.loser)}.`,
 		});
 	}
+	// These notes run most nights, so their shapes rotate by the calendar like
+	// the standings furniture: "combined for 245 points, the most of any game
+	// on the slate" two evenings running is the tell of a template.
+	const day = games[0]?.day;
 	if (seesaw) {
 		cands.push({
 			sort: 0.5,
 			tid: seesaw.shape.winner.tid,
-			text: pick(
+			text: pickByDay(
+				day,
 				rng,
 				[
 					`${cap(theNick(seesaw.shape.winner))} and ${theNick(seesaw.shape.loser)} traded the lead ${seesaw.changes} times.`,
@@ -7176,9 +7191,17 @@ const leagueNotes = (
 						)} put up the slate's biggest total, ${highest.total} points in ${
 							ot === 1 ? "an overtime game" : `a game that went ${ot} overtimes`
 						}.`
-					: `${cap(theNick(highest.shape.winner))} and ${theNick(
-							highest.shape.loser,
-						)} combined for ${highest.total} points, the most of any game on the slate.`,
+					: pickByDay(
+							day,
+							rng,
+							[
+								`${cap(theNick(highest.shape.winner))} and ${theNick(
+									highest.shape.loser,
+								)} combined for ${highest.total} points, the most of any game on the slate.`,
+								`Nothing on the slate outscored ${poss(theNick(highest.shape.winner))} shootout with ${theNick(highest.shape.loser)}, ${highest.total} points in all.`,
+							],
+							"dayHighTotal",
+						),
 		});
 	}
 	// 53% is a good night; it is not "best of anyone" news two nights in three.
@@ -7186,14 +7209,30 @@ const leagueNotes = (
 		cands.push({
 			sort: 2,
 			tid: hottest.shape.winner.tid,
-			text: `${cap(theNick(hottest.shape.winner))} shot the ball best of anyone, ${hottest.fgp}% from the field.`,
+			text: pickByDay(
+				day,
+				rng,
+				[
+					`${cap(theNick(hottest.shape.winner))} shot the ball best of anyone, ${hottest.fgp}% from the field.`,
+					`Nobody shot it better than ${theNick(hottest.shape.winner)}, ${hottest.fgp}% from the field.`,
+				],
+				"dayHotShooting",
+			),
 		});
 	}
 	if (bombs && bombs.tp >= 17) {
 		cands.push({
 			sort: 3,
 			tid: bombs.shape.winner.tid,
-			text: `${cap(theNick(bombs.shape.winner))} made the most threes on the slate, ${bombs.tp}.`,
+			text: pickByDay(
+				day,
+				rng,
+				[
+					`${cap(theNick(bombs.shape.winner))} made the most threes on the slate, ${bombs.tp}.`,
+					`No team hit more threes than ${poss(theNick(bombs.shape.winner))} ${bombs.tp}.`,
+				],
+				"dayThrees",
+			),
 		});
 	}
 
@@ -7863,7 +7902,12 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		if (streak) {
 			para3.push(streak);
 		}
-		const picture = conferencePictureSentence(standings, rng, dayCtx.saidTids);
+		const picture = conferencePictureSentence(
+			standings,
+			rng,
+			dayCtx.saidTids,
+			games[0]?.day,
+		);
 		if (picture) {
 			para3.push(picture);
 		}

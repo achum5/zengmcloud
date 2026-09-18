@@ -617,11 +617,18 @@ export const verifyRecap = (
 				);
 			}
 		}
-		for (const m of text.matchAll(/Game (\d+) is (?:tomorrow|in )/g)) {
-			if (Number(m[1]) !== gameNo + 1) {
+		// Every OTHER game number in the piece is the next one: a recap looks
+		// forward ("Game 5 is tomorrow", "a win in Game 5 ends it", "Game 7
+		// decides it") and never further than that. Checked by the number
+		// rather than by the phrasing, so a new way of saying it cannot slip
+		// past the desk - which an earlier version, pinned to "Game N is
+		// tomorrow", would have let through.
+		for (const m of text.matchAll(/Game (\d+)(?! of the)/g)) {
+			const said = Number(m[1]);
+			if (said !== gameNo && said !== gameNo + 1) {
 				add(
 					"series next game",
-					`text says Game ${m[1]} next, next is Game ${gameNo + 1}`,
+					`text says Game ${said}, this is Game ${gameNo} and next is Game ${gameNo + 1}`,
 					m[0]!,
 				);
 			}

@@ -34,6 +34,7 @@ import {
 	numWord,
 	ordinal,
 	pick,
+	pickByDay,
 	plural,
 	poss,
 	scoredVerb,
@@ -897,7 +898,12 @@ export const benchBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 // "Game 5 is in two days in Milwaukee." The series' next game, when the
 // series is not over: the game number from the wins entering this one, the
 // venue from whose floor it is on.
-const nextPlayoffGame = (ctx: BeatContext): string | undefined => {
+//
+// This closes nearly every playoff recap that did not clinch, and for a long
+// time it had exactly ONE phrasing - which made it the most repeated sentence
+// in the whole corpus by a distance (69 of 315 pieces, one shape). The facts
+// are fixed; the frame around them is not.
+const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 	const ser = ctx.game.series;
 	const next = ctx.winner.nextGame;
 	if (!ser || !next || next.oppTid !== ctx.loser.tid || next.daysAway < 1) {
@@ -916,7 +922,18 @@ const nextPlayoffGame = (ctx: BeatContext): string | undefined => {
 		: ` at ${poss(theNick(host))} place`;
 	const when =
 		next.daysAway === 1 ? "tomorrow" : `in ${numWord(next.daysAway)} days`;
-	return `Game ${gameNo} is ${when}${where}.`;
+	return pick(
+		rng,
+		[
+			`Game ${gameNo} is ${when}${where}.`,
+			`The series resumes${where} ${when} with Game ${gameNo}.`,
+			`They meet again ${when}${where} for Game ${gameNo}.`,
+			`Next is Game ${gameNo}, ${when}${where}.`,
+			`Game ${gameNo}${where} is ${when}.`,
+			`Back at it ${when}${where} for Game ${gameNo}.`,
+		],
+		"nextPlayoffGame",
+	);
 };
 
 export const nextGameBeat = (
@@ -924,7 +941,7 @@ export const nextGameBeat = (
 	rng: Rng,
 ): string | undefined => {
 	if (ctx.game.playoffs) {
-		return nextPlayoffGame(ctx);
+		return nextPlayoffGame(ctx, rng);
 	}
 	// Most recaps close on it, not all - a page where every piece ends the
 	// same way reads as a form.
@@ -1471,7 +1488,8 @@ export const dayColdStreak = (
 	ctx.saidTids.add(worst.team.tid);
 	const t = theNick(worst.team);
 	const T = cap(t);
-	return pick(
+	return pickByDay(
+		ctx.games[0]?.day,
 		rng,
 		[
 			`${T} have now lost ${worst.count} straight.`,
@@ -1637,7 +1655,8 @@ export const dayTomorrow = (
 		rest === 1 && second
 			? ` and the ${second.awayName} at ${theNick(second.home)}`
 			: rest > 0
-				? pick(
+				? pickByDay(
+						ctx.games[0]?.day,
 						rng,
 						[
 							` and ${numWord(rest)} other games`,
@@ -1646,7 +1665,8 @@ export const dayTomorrow = (
 						"dayTomorrowTail",
 					)
 				: "";
-	return pick(
+	return pickByDay(
+		ctx.games[0]?.day,
 		rng,
 		[
 			`Tomorrow brings ${matchup}${tail}.`,
