@@ -10,6 +10,7 @@ import type { DataTableRow } from "../../components/DataTable/index.tsx";
 import { wrappedCurrency } from "../../components/wrappedCurrency.ts";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 import { useLocal } from "../../util/local.ts";
+import { GoatBreakdown, formatGoatValue } from "./GoatBreakdown.tsx";
 
 export const getValue = (
 	obj: any,
@@ -110,15 +111,18 @@ const Most = ({
 						return helpers.plusMinus(value, 0);
 					}
 					if (x.colName === "GOAT") {
-						if (value < 1_000_000) {
-							const numDigits = Number.parseInt(
-								Math.abs(value).toString(),
-							).toString().length;
-							// Show 3 decimal places if it's 1 digit integer part, and decrease by 1 as the integer length increases
-							const maximumFractionDigits = Math.max(4 - numDigits, 0);
-							return helpers.numberWithCommas(value, maximumFractionDigits);
-						}
-						return value.toPrecision(3);
+						return {
+							value: (
+								<GoatBreakdown
+									name={`${p.firstName} ${p.lastName}`}
+									pid={p.pid}
+									season={p.most?.extra?.bestSeasonOverride}
+									value={value}
+								/>
+							),
+							sortValue: value,
+							searchValue: formatGoatValue(value),
+						};
 					}
 					if (x.colName.startsWith("stat:")) {
 						const stat = x.colName.replace("stat:", "");

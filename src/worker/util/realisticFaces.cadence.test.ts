@@ -163,6 +163,11 @@ describe("aging is paced, not staged", () => {
 			base.nose.size = 0.8;
 			base.eye.angle = 4;
 
+			// generate() draws ear size from the global Math.random, so it can
+			// start at EAR_SIZE_MAX, where growth is clamped and the drift
+			// assertion below has nothing to see. Start it with room to grow.
+			base.ear.size = 1;
+
 			const aged: any = structuredClone(base);
 			applyRealisticFace(aged, {
 				age: FROM,

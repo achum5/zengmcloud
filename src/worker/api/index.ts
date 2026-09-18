@@ -155,7 +155,11 @@ import {
 	getAutoTicketPriceByTid,
 	getBaseAttendance,
 } from "../core/game/attendance.ts";
-import goatFormula from "../util/goatFormula.ts";
+import goatFormula, {
+	defaultFormulaFor,
+	type GoatInfo,
+} from "../util/goatFormula.ts";
+import { buildGoatTerms, variablesUsed } from "../../common/goatTerms.ts";
 import getRandomTeams from "./getRandomTeams.ts";
 import { withState } from "../core/player/name.ts";
 import { initDefaults, loadNames } from "../util/loadNames.ts";
@@ -2382,6 +2386,86 @@ const getLeagueInfo = async (
 	options: Parameters<typeof realRosters.getLeagueInfo>[0],
 ) => {
 	return realRosters.getLeagueInfo(options);
+};
+
+// Where one player's GOAT score came from: the formula's own additive terms,
+// each evaluated on its own, plus the raw value of every variable it reads.
+const getGoatBreakdown = async ({
+	pid,
+	season,
+}: {
+	pid: number;
+	season?: number;
+}) => {
+	const p = await idb.getCopy.players({ pid }, "noCopyCache");
+	if (!p) {
+		return;
+	}
+
+	const info: GoatInfo =
+		season === undefined ? { type: "career" } : { type: "season", season };
+
+	const variables = goatFormula.getVariables(p, info);
+	if (variables === undefined) {
+		return;
+	}
+
+	const formula = defaultFormulaFor(info);
+
+	const evaluate = (text: string) => {
+		try {
+			return goatFormula.evaluateVariables(variables, text);
+		} catch {
+			return undefined;
+		}
+	};
+
+	const rows: {
+		text: string;
+		value: number | undefined;
+		depth: number;
+	}[] = [];
+
+	const walk = (
+		terms: ReturnType<typeof buildGoatTerms>,
+		depth: number,
+		parentSign: number,
+	) => {
+		for (const term of terms) {
+			const sign = term.negated ? -parentSign : parentSign;
+			const value = evaluate(term.text);
+
+			rows.push({
+				text: term.text,
+				value: value === undefined ? undefined : sign * value,
+				depth,
+			});
+
+			walk(term.children, depth + 1, sign);
+		}
+	};
+	walk(buildGoatTerms(formula), 0, 1);
+
+	const awards = variables.awards as unknown as Record<string, number>;
+
+	const variableValues = variablesUsed(formula).flatMap((name) => {
+		const value = name.startsWith("awards.")
+			? (awards?.[name.slice("awards.".length)] ?? 0)
+			: variables[name];
+
+		if (typeof value !== "number") {
+			return [];
+		}
+
+		return [{ name, value }];
+	});
+
+	return {
+		formula,
+		total: evaluate(formula) ?? 0,
+		rows,
+		variables: variableValues,
+	};
 };
 
 const getLeagueName = () => {
@@ -7476,6 +7560,7 @@ export default {
 		getLiveGamePlayByPlay,
 		hasLiveGameReplay,
 		liveSimBlocksDaySim,
+		getGoatBreakdown,
 		getNegotiationProps,
 		getNumPlayoffTeams,
 		getPlayerGraphStat,

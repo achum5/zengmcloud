@@ -135,18 +135,24 @@ const SIMPLE_AWARD_VARIABLES: Record<string, string> = {
 
 const formulaCache: Record<string, FormulaEvaluator<string[], string[]>> = {};
 
-const evaluate = (
-	p: Player,
-	formula: string | undefined,
-	info:
-		| {
-				type: "career";
-		  }
-		| {
-				type: "season";
-				season: number;
-		  },
-) => {
+export type GoatInfo =
+	| {
+			type: "career";
+	  }
+	| {
+			type: "season";
+			season: number;
+	  };
+
+export const defaultFormulaFor = (info: GoatInfo) =>
+	info.type === "career"
+		? (g.get("goatFormula") ?? DEFAULT_FORMULA)
+		: (g.get("goatSeasonFormula") ?? DEFAULT_FORMULA_SEASON);
+
+// Everything a formula can refer to, for one player. Split out from evaluate so
+// a breakdown can evaluate many sub-formulas against one player without redoing
+// the stat aggregation for each one.
+const getVariables = (p: Player, info: GoatInfo) => {
 	const MIN_GP_SEASON = bySport({
 		baseball: 5,
 		basketball: 10,
@@ -154,12 +160,6 @@ const evaluate = (
 		hockey: 10,
 	});
 	const MIN_GP_TOTAL = MIN_GP_SEASON * 3;
-
-	const goatFormula =
-		formula ??
-		(info.type === "career"
-			? (g.get("goatFormula") ?? DEFAULT_FORMULA)
-			: (g.get("goatSeasonFormula") ?? DEFAULT_FORMULA_SEASON));
 
 	const object: Record<string, number> = {};
 
@@ -178,7 +178,7 @@ const evaluate = (
 
 	// Ignore players with no valid stats, so there isn't weirdness like -ewaPeak being shown as Infinity
 	if (statsRows.length === 0) {
-		return -Infinity;
+		return undefined;
 	}
 
 	for (const stat of STAT_VARIABLES) {
@@ -373,6 +373,13 @@ const evaluate = (
 		}
 	}
 
+	return object;
+};
+
+const evaluateVariables = (
+	object: Record<string, number>,
+	goatFormula: string,
+) => {
 	if (!formulaCache[goatFormula]) {
 		formulaCache[goatFormula] = new FormulaEvaluator(
 			goatFormula,
@@ -390,8 +397,19 @@ const evaluate = (
 	return value;
 };
 
+const evaluate = (p: Player, formula: string | undefined, info: GoatInfo) => {
+	const object = getVariables(p, info);
+	if (object === undefined) {
+		return -Infinity;
+	}
+
+	return evaluateVariables(object, formula ?? defaultFormulaFor(info));
+};
+
 export default {
 	DEFAULT_FORMULA,
+	getVariables,
+	evaluateVariables,
 	DEFAULT_FORMULA_SEASON,
 	OLD_AWARD_VARIABLES,
 	SIMPLE_AWARD_VARIABLES,
