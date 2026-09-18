@@ -54,4 +54,32 @@ describe("announcing a high-upside signing", () => {
 		assert.strictEqual(highUpsideSigningPot({ pot: 75, fuzz: 0 }), undefined);
 		assert.strictEqual(highUpsideSigningPot({ pot: 99, fuzz: 0 }), undefined);
 	});
+
+	// THE REPORT: a league reading its roster in tens signed a free agent and
+	// the toast quoted his exact potential. Every other user-facing rating in
+	// that mode shows its tens digit, and this one was the hole.
+	test("the quoted potential is coarsened when the league hides the ones digit", () => {
+		g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+		assert.strictEqual(highUpsideSigningPot({ pot: 67, fuzz: 0 }), 6);
+		assert.strictEqual(highUpsideSigningPot({ pot: 90, fuzz: 0 }), 9);
+		// Coarsened AFTER the fuzz, so the band shown is the one that qualified
+		// him rather than the band his true rating sits in.
+		assert.strictEqual(highUpsideSigningPot({ pot: 58, fuzz: 4 }), 6);
+	});
+
+	test("who gets announced does not change with the display mode", () => {
+		// The threshold keeps reading the full-resolution scouted number, so
+		// coarsening cannot quietly widen or narrow who is worth a word.
+		for (const pot of [58, 59, 60, 61, 75, 99]) {
+			g.setWithoutSavingToDB("hideRatingsOnesDigit", false);
+			const exact = highUpsideSigningPot({ pot, fuzz: 0 });
+			g.setWithoutSavingToDB("hideRatingsOnesDigit", true);
+			const coarse = highUpsideSigningPot({ pot, fuzz: 0 });
+			assert.strictEqual(
+				exact === undefined,
+				coarse === undefined,
+				`pot ${pot} announced differently`,
+			);
+		}
+	});
 });

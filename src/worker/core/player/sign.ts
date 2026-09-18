@@ -6,6 +6,7 @@ import fuzzRating from "./fuzzRating.ts";
 import genJerseyNumber from "./genJerseyNumber.ts";
 import setJerseyNumber from "./setJerseyNumber.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
+import { coarsenRating } from "../../../common/coarsenRating.ts";
 
 // HOW HIGH A POTENTIAL IS WORTH ANNOUNCING, and the number to quote when one
 // is. Undefined means say nothing.
@@ -24,6 +25,19 @@ export const HIGH_UPSIDE_POT = 60;
 // have every promising free agent announced as one, which gives away more than
 // the number did. Same reason the Most Progs leaderboard drops its rows
 // outright under that setting instead of blanking a column.
+//
+// AND IT ANSWERS TO "HIDE RATINGS ONES DIGIT" TOO, which it did not: a league
+// reading its roster in tens got a toast quoting an exact potential the moment
+// it signed anyone, which is the one place the setting leaked a full-resolution
+// rating. The THRESHOLD still reads the true-resolution scouted number, so who
+// gets announced does not change; only the number printed is coarsened, and it
+// lands in the same band that qualified him - a quoted 6 means the 60-69 that
+// cleared the bar.
+//
+// No prospect exemption here. That one is about the scouting report on a player
+// who has not been drafted, and this fires only when somebody joins a roster
+// from free agency - by the time it runs he is on a team, so the exemption
+// could never apply.
 export const highUpsideSigningPot = (
 	ratings: { pot: number; fuzz: number } | undefined,
 ): number | undefined => {
@@ -31,7 +45,10 @@ export const highUpsideSigningPot = (
 		return undefined;
 	}
 	const pot = fuzzRating(ratings.pot, ratings.fuzz);
-	return pot >= HIGH_UPSIDE_POT ? pot : undefined;
+	if (pot < HIGH_UPSIDE_POT) {
+		return undefined;
+	}
+	return g.get("hideRatingsOnesDigit") ? coarsenRating(pot) : pot;
 };
 
 const sign = async (
