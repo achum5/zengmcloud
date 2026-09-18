@@ -7,6 +7,14 @@ import {
 	type AccountPicture,
 	type Engagement,
 } from "../../common/socialMetrics.ts";
+import {
+	contextLink,
+	inlineLinks,
+	teamForHashtag,
+	type InlineLink,
+	type LinkablePost,
+	type SocialLinkTarget,
+} from "../../common/socialLinks.ts";
 
 // ONE POST, and everything visual about an account lives here so the feed,
 // an account page and every embed cannot drift apart.
@@ -32,6 +40,11 @@ export type PostAccount = {
 export type TeamLike = {
 	tid: number;
 	abbrev: string;
+	// Carried by the feed's own views, which is what lets a post link the club
+	// by the name the sentence actually used. Optional because some callers
+	// only need enough of a team to tint an avatar.
+	region?: string;
+	name?: string;
 	imgURL?: string;
 	colors?: [string, string, string];
 };
@@ -275,37 +288,151 @@ export const Icon = ({ name }: { name: string }) => {
 
 // ---------------------------------------------------------------- TEXT
 //
-// Hashtags and handles are the two things a post links, and the blue is what
-// makes a line of text read as a post rather than a sentence.
+// EVERYTHING A POST NAMES IS A LINK. A handle goes to that account, a hashtag
+// to the club it is written from, and the player and the team the post is
+// ABOUT go to their pages - so a line like "16 rebounds. jalen mathis owned
+// the glass" gets you to Jalen Mathis without going back to the roster.
+//
+// Which names are linkable comes from the post's own pids and tids rather than
+// from reading the sentence (see socialLinks); the matching here is only ever
+// asked to find strings it was handed.
 const TOKEN = /(#\w+|@\w+)/g;
 
-export const PostText = ({ text }: { text: string }) => {
-	const parts = text.split(TOKEN);
-	return (
-		<div className="social-text">
-			{parts.map((part, i) => {
-				if (i % 2 === 0) {
-					return <Fragment key={i}>{part}</Fragment>;
-				}
-				if (part.startsWith("@")) {
-					return (
-						<a
-							key={i}
-							className="social-link"
-							href={helpers.leagueUrl(["social", part.slice(1)])}
-						>
-							{part}
-						</a>
-					);
-				}
-				return (
-					<span key={i} className="social-link">
+// Matching a name inside prose. Word boundaries will not do: a name can carry
+// a dot or an apostrophe ("A.J. Green", "O'Neal") and \b behaves oddly next to
+// both, so the edges are asserted as "not a letter or digit" instead.
+const escapeRe = (s: string) => s.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const nameMatcher = (labels: readonly string[]): RegExp | undefined => {
+	if (labels.length === 0) {
+		return undefined;
+	}
+	return new RegExp(
+		`(?<![\\p{L}\\p{N}])(${labels.map(escapeRe).join("|")})(?![\\p{L}\\p{N}])`,
+		"giu",
+	);
+};
+
+// The league's own URL shape for a team is ABBREV_tid - validateAbbrev reads
+// either, but every other link in the app is written this way and a URL
+// somebody copies out of the feed should look like the rest.
+const teamSlug = (tid: number, teams: readonly TeamLike[] | undefined) => {
+	const abbrev = teams?.find((t) => t.tid === tid)?.abbrev;
+	return abbrev === undefined ? `${tid}` : `${abbrev}_${tid}`;
+};
+
+export const linkHref = (
+	target: SocialLinkTarget,
+	{ season, teams }: { season?: number; teams?: readonly TeamLike[] } = {},
+): string => {
+	switch (target.kind) {
+		case "player":
+			return helpers.leagueUrl(["player", target.pid]);
+		case "team":
+			return helpers.leagueUrl(["roster", teamSlug(target.tid, teams)]);
+		case "game":
+			// The box score lives under a team's game log, and the season is
+			// part of the path - without it the link lands on the wrong year.
+			return season === undefined
+				? helpers.leagueUrl(["game_log"])
+				: helpers.leagueUrl([
+						"game_log",
+						teamSlug(target.tid, teams),
+						season,
+						target.gid,
+					]);
+		case "transactions":
+			return season === undefined
+				? helpers.leagueUrl(["transactions"])
+				: helpers.leagueUrl([
+						"transactions",
+						teamSlug(target.tid, teams),
+						season,
+					]);
+		case "standings":
+			return helpers.leagueUrl(["standings"]);
+		case "playoffs":
+			return helpers.leagueUrl(["playoffs"]);
+	}
+};
+
+export const PostText = ({
+	text,
+	links,
+	teams,
+	season,
+}: {
+	text: string;
+	// The names this post is allowed to link, longest first.
+	links?: readonly InlineLink[];
+	teams?: readonly TeamLike[];
+	season?: number;
+}) => {
+	// Two passes, because the two kinds of token cannot be found by one
+	// expression without the names swallowing the handles: split on handles and
+	// hashtags first, then look for names only in what is left over.
+	const byToken = text.split(TOKEN);
+	const matcher = nameMatcher((links ?? []).map((l) => l.label));
+	const targetFor = (label: string) =>
+		links?.find((l) => l.label.toLowerCase() === label.toLowerCase())?.target;
+
+	const out: ReactNode[] = [];
+	for (const [i, part] of byToken.entries()) {
+		if (i % 2 === 1) {
+			if (part.startsWith("@")) {
+				out.push(
+					<a
+						key={`t${i}`}
+						className="social-link"
+						href={helpers.leagueUrl(["social", part.slice(1)])}
+					>
+						{part}
+					</a>,
+				);
+				continue;
+			}
+			const tid =
+				teams === undefined ? undefined : teamForHashtag(part, teams);
+			out.push(
+				tid === undefined ? (
+					<span key={`t${i}`} className="social-link">
 						{part}
 					</span>
-				);
-			})}
-		</div>
-	);
+				) : (
+					<a
+						key={`t${i}`}
+						className="social-link"
+						href={linkHref({ kind: "team", tid }, { season, teams })}
+					>
+						{part}
+					</a>
+				),
+			);
+			continue;
+		}
+		if (matcher === undefined || part === "") {
+			out.push(<Fragment key={`p${i}`}>{part}</Fragment>);
+			continue;
+		}
+		for (const [j, piece] of part.split(matcher).entries()) {
+			const target = j % 2 === 1 ? targetFor(piece) : undefined;
+			out.push(
+				target === undefined ? (
+					<Fragment key={`p${i}-${j}`}>{piece}</Fragment>
+				) : (
+					<a
+						key={`p${i}-${j}`}
+						className="social-link"
+						href={linkHref(target, { season, teams })}
+					>
+						{piece}
+					</a>
+				),
+			);
+		}
+	}
+
+	return <div className="social-text">{out}</div>;
 };
 
 const Count = ({ value }: { value: number }) => (
@@ -398,6 +525,10 @@ export const SocialPost = ({
 	threadBelow,
 	threadAbove,
 	children,
+	subject,
+	playerNames,
+	teams,
+	season,
 }: {
 	account: PostAccount;
 	text: string;
@@ -419,7 +550,20 @@ export const SocialPost = ({
 	threadBelow?: boolean;
 	threadAbove?: boolean;
 	children?: ReactNode;
+	// What this post is about, by id. Everything linkable is derived from it -
+	// see socialLinks. Absent on the few posts that have no event behind them,
+	// and then the text simply renders as text.
+	subject?: LinkablePost;
+	playerNames?: Record<number, string>;
+	teams?: readonly TeamLike[];
+	season?: number;
 }) => {
+	const links =
+		subject === undefined
+			? undefined
+			: inlineLinks(subject, playerNames ?? {}, teams ?? []);
+	const context =
+		subject === undefined ? undefined : contextLink(subject, teams ?? []);
 	const profile = helpers.leagueUrl(["social", account.handle]);
 	return (
 		<article
@@ -476,7 +620,20 @@ export const SocialPost = ({
 						<Icon name="quote" /> Quoted
 					</div>
 				) : null}
-				<PostText text={text} />
+				<PostText
+					links={links}
+					season={season}
+					teams={teams}
+					text={text}
+				/>
+				{context ? (
+					<a
+						className="social-context-link"
+						href={linkHref(context.target, { season, teams })}
+					>
+						{context.label}
+					</a>
+				) : null}
 				{quoted ? <QuotedPost quoted={quoted} /> : null}
 				{children}
 				<Actions engagement={engagement} />
@@ -492,6 +649,8 @@ export const SocialThread = ({
 	teamByTid,
 	compact,
 	meta,
+	playerNames,
+	season,
 }: {
 	post: {
 		id: string;
@@ -500,6 +659,12 @@ export const SocialThread = ({
 		name: string;
 		kind: "player" | "team" | "media";
 		archetypeId?: string;
+		// What the post is about. Optional because a few fixtures and older
+		// callers hand over bare posts; without it nothing in the text links.
+		pids?: number[];
+		tids?: number[];
+		gid?: number;
+		eventType?: string;
 		tid?: number;
 		pid?: number;
 		text: string;
@@ -536,8 +701,25 @@ export const SocialThread = ({
 	// A stamp for the head of the thread, where a thread is being shown off
 	// the timeline and so has lost the day heading it sat under.
 	meta?: string;
+	playerNames?: Record<number, string>;
+	season?: number;
 }) => {
 	const replies = post.replies ?? [];
+	const teams = [...teamByTid.values()];
+	// The whole thread is about the same event, so the replies link the same
+	// names the post does - which is what makes "the 17 boards" under a post
+	// about Herb Ingram get you to Herb Ingram.
+	const subject: LinkablePost | undefined =
+		post.eventType === undefined
+			? undefined
+			: {
+					pids: post.pids ?? [],
+					tids: post.tids ?? [],
+					pid: post.pid,
+					tid: post.tid,
+					gid: post.gid,
+					eventType: post.eventType,
+				};
 	return (
 		<>
 			<SocialPost
@@ -546,8 +728,12 @@ export const SocialThread = ({
 				engagement={post.engagement}
 				meta={meta}
 				picture={pictures[post.accountId]}
+				playerNames={playerNames}
 				quoted={post.quoted}
+				season={season}
+				subject={subject}
 				team={post.tid === undefined ? undefined : teamByTid.get(post.tid)}
+				teams={teams}
 				text={post.text}
 				threadBelow={replies.length > 0}
 				time={post.time}
@@ -559,9 +745,19 @@ export const SocialThread = ({
 					compact={compact}
 					engagement={reply.engagement}
 					picture={pictures[reply.accountId]}
+					playerNames={playerNames}
 					quote={reply.quote}
 					replyTo={reply.replyTo ?? post.handle}
+					season={season}
+					// The names, but not a second box-score link: one per thread
+					// is a link, five is a footer.
+					subject={
+						subject === undefined
+							? undefined
+							: { ...subject, gid: undefined, eventType: "" }
+					}
 					team={reply.tid === undefined ? undefined : teamByTid.get(reply.tid)}
+					teams={teams}
 					text={reply.text}
 					threadAbove
 					threadBelow={i < replies.length - 1}

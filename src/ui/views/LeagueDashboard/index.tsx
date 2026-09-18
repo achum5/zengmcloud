@@ -208,7 +208,9 @@ const LeagueDashboard = ({
 							<SocialEmbed
 								moreHref={helpers.leagueUrl(["social"])}
 								pictures={social.pictures}
+								playerNames={social.playerNames}
 								posts={social.posts}
+								season={social.season}
 								teams={social.teams}
 								title={`${name} on the feed`}
 								emptyText="Quiet so far. Sim a day."

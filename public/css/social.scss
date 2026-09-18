@@ -285,6 +285,31 @@ a.social-handle:hover {
 	}
 }
 
+// The one link that belongs under a post rather than inside it: the box score
+// of the game it is reacting to, the transactions page for a trade.
+//
+// MUTED ON PURPOSE. Most of a timeline is about games, so this sits under
+// almost every post - in blue it read as a row of buttons down the page and
+// pulled the eye off the writing. It is a way out of the post rather than part
+// of what was said, so it waits in grey until it is wanted.
+.social-context-link {
+	display: inline-block;
+	margin-top: 0.25rem;
+	font-size: 0.75rem;
+	color: var(--bs-secondary-color);
+	text-decoration: none;
+
+	&::before {
+		content: "\2197\00a0";
+		opacity: 0.6;
+	}
+
+	&:hover {
+		text-decoration: underline;
+		color: $social-blue;
+	}
+}
+
 .social-quote-label {
 	display: inline-flex;
 	align-items: center;

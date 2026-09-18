@@ -239,7 +239,9 @@ const GameLog = ({
 								<div className="mt-3">
 									<SocialEmbed
 										pictures={reactions.pictures}
+										playerNames={reactions.playerNames}
 										posts={reactions.posts}
+										season={reactions.season}
 										showDay={false}
 										teams={reactions.teams}
 										title="Reactions"

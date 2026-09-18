@@ -4,6 +4,7 @@ import {
 	buildFeedDay,
 	getFeedSnapshot,
 	picturesFor,
+	playerNamesFor,
 	suggestedAccounts,
 	type FeedDay,
 } from "../util/socialFeed.ts";
@@ -94,6 +95,10 @@ const updateSocialFeed = async (
 
 		return {
 			feed,
+			playerNames: playerNamesFor(
+				snapshot,
+				feed.flatMap((day: any) => day.posts),
+			),
 			season,
 			days: inputs.days ?? DAYS_PER_PAGE,
 			hasMore: newestFirst.length > wanted.length,

@@ -425,7 +425,9 @@ const Player2 = ({
 								}
 								moreText={social.handle === undefined ? "See more" : "Profile"}
 								pictures={social.pictures}
+								playerNames={social.playerNames}
 								posts={social.posts}
+								season={social.season}
 								teams={social.teams}
 								title={`${player.name} on the feed`}
 							/>

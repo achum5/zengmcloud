@@ -582,6 +582,40 @@ export const picturesFor = async (
 	return out;
 };
 
+// WHO AND WHAT A POST IS ABOUT, by name, so the page can link it.
+//
+// A post already carries pids, tids and a gid - that is how a player page
+// finds the posts about him. What it does not carry is the NAMES, and the page
+// cannot turn "jalen mathis owned the glass" into a link to Jalen Mathis
+// without them.
+//
+// Deliberately not done by scanning the prose for anything that looks like a
+// name: a league has a Mr. Green and a team called the Kings, and a matcher
+// loose enough to find them is loose enough to link the wrong one. The ids are
+// already exact, so only the names of the people a post is genuinely about are
+// sent, and the page links those and nothing else.
+export const playerNamesFor = (
+	snapshot: FeedSnapshot,
+	posts: readonly { pids: number[]; pid?: number }[],
+): Record<number, string> => {
+	const wanted = new Set<number>();
+	for (const post of posts) {
+		for (const pid of post.pids) {
+			wanted.add(pid);
+		}
+		if (post.pid !== undefined) {
+			wanted.add(post.pid);
+		}
+	}
+	const out: Record<number, string> = {};
+	for (const account of snapshot.accounts) {
+		if (account.pid !== undefined && wanted.has(account.pid)) {
+			out[account.pid] = account.name;
+		}
+	}
+	return out;
+};
+
 // WHAT WAS SAID ABOUT THIS ACCOUNT, which is the other half of a profile.
 //
 // The posts tab is what an account SAID and the replies tab is what it said
@@ -725,6 +759,12 @@ export const feedAbout = async ({
 		colors?: [string, string, string];
 	}[];
 	handle?: string;
+	// The names behind the pids on these posts, so an embed can link them -
+	// see playerNamesFor.
+	playerNames: Record<number, string>;
+	// The season the posts came from, so a link can be built into the right
+	// year without the page working it out from its own data.
+	season: number;
 }> => {
 	const snapshot = await getFeedSnapshot(season);
 	const matches = (post: FeedPost) =>
@@ -777,6 +817,8 @@ export const feedAbout = async ({
 		imgURL: t.imgURL,
 		colors: t.colors,
 	}));
+	const playerNames = playerNamesFor(snapshot, posts);
+
 	// The subject's own handle, so a page can link to ITS profile rather than
 	// to the whole timeline. A team has an account exactly as a player does,
 	// and a team page had been sending people to the league timeline instead.
@@ -787,7 +829,9 @@ export const feedAbout = async ({
 				? snapshot.accounts.find((a) => a.kind === "team" && a.tid === tid)
 						?.handle
 				: undefined;
-	return { posts, pictures, teams, handle };
+	// The season these posts came from, so a page can build a link into the
+	// right year without having to work it out from its own data.
+	return { posts, pictures, teams, handle, playerNames, season };
 };
 
 // WHO TO FOLLOW: the national insider, and the user's own beat writer and

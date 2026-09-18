@@ -643,7 +643,9 @@ const Roster = ({
 							}
 							moreText={social.handle === undefined ? "See more" : "Profile"}
 							pictures={social.pictures}
+							playerNames={social.playerNames}
 							posts={social.posts}
+							season={social.season}
 							teams={social.teams}
 							title={`${t.region} ${t.name} on the feed`}
 						/>

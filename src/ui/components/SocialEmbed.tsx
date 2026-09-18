@@ -17,6 +17,8 @@ export const SocialEmbed = ({
 	moreText = "See more",
 	emptyText,
 	showDay = true,
+	playerNames,
+	season,
 }: {
 	title: string;
 	posts: any[];
@@ -26,6 +28,8 @@ export const SocialEmbed = ({
 	moreText?: string;
 	emptyText?: string;
 	showDay?: boolean;
+	playerNames?: Record<number, string>;
+	season?: number;
 }) => {
 	const teamByTid = useMemo(
 		() => new Map<number, TeamLike>(teams.map((t) => [t.tid, t])),
@@ -50,6 +54,8 @@ export const SocialEmbed = ({
 						key={post.id}
 						compact
 						pictures={pictures}
+						playerNames={playerNames}
+						season={season}
 						post={{
 							...post,
 							time:

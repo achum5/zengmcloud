@@ -6,6 +6,7 @@ import {
 	getFeedSnapshot,
 	mentionsOf,
 	picturesFor,
+	playerNamesFor,
 	suggestedAccounts,
 	type FeedPost,
 } from "../util/socialFeed.ts";
@@ -229,6 +230,11 @@ const updateSocialAccount = async (
 			posts,
 			replies,
 			mentions,
+			playerNames: playerNamesFor(snapshot, [
+				...posts,
+				...mentions,
+				...replies.map((r) => r.parent),
+			]),
 			pictures,
 			season,
 			suggested,

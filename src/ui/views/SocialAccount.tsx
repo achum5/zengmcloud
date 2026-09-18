@@ -45,6 +45,7 @@ const SocialAccount = ({
 	errorMessage,
 	mentions,
 	pictures,
+	playerNames,
 	posts,
 	replies,
 	season,
@@ -216,7 +217,9 @@ const SocialAccount = ({
 								key={post.id}
 								meta={post.day === 0 ? "Offseason" : `Day ${post.day}`}
 								pictures={pictures ?? {}}
+								playerNames={playerNames}
 								post={post}
+								season={season}
 								teamByTid={teamByTid}
 							/>
 						))
@@ -235,7 +238,11 @@ const SocialAccount = ({
 								engagement={post.engagement}
 								meta={post.day === 0 ? "Offseason" : `Day ${post.day}`}
 								picture={pictures?.[account.id]}
+								playerNames={playerNames}
+								season={season}
+								subject={post}
 								team={teamLike}
+								teams={teams}
 								text={post.text}
 								time={post.time}
 							/>

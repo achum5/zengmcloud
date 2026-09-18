@@ -32,6 +32,7 @@ const SocialFeed = ({
 	feed,
 	hasMore,
 	pictures,
+	playerNames,
 	season,
 	suggested,
 	teams,
@@ -161,7 +162,9 @@ const SocialFeed = ({
 								<SocialThread
 									key={post.id}
 									pictures={pictures}
+									playerNames={playerNames}
 									post={post}
+									season={season}
 									teamByTid={teamByTid}
 								/>
 							))}
