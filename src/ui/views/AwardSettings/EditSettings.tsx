@@ -35,6 +35,7 @@ export const awardToEditingState = (award: InputAward) => {
 		group,
 		bench: !!award.bench,
 		mip: !!award.mip,
+		bounceBack: !!award.bounceBack,
 		rookie: !!award.rookie,
 	} as const;
 
@@ -82,7 +83,7 @@ export const editingStateToAward = (state: EditingState, index: number) => {
 		showStats: state.showStats,
 	};
 
-	const flags = ["bench", "mip", "rookie"] as const;
+	const flags = ["bench", "mip", "bounceBack", "rookie"] as const;
 	for (const flag of flags) {
 		if (state[flag]) {
 			common[flag] = true;
@@ -276,7 +277,7 @@ export const EditSettings = ({
 	}
 
 	const flags: {
-		key: "bench" | "mip" | "rookie";
+		key: "bench" | "mip" | "bounceBack" | "rookie";
 		text: string;
 		help: ReactNode;
 		id: string;
@@ -316,6 +317,32 @@ export const EditSettings = ({
 						This option also requires 1st round picks to be in their 3rd+ season
 						after being drafted, since it's expected that top prospects will
 						improve after their first year.
+					</p>
+				</>
+			),
+			id: useId(),
+		},
+		{
+			key: "bounceBack",
+			text: "Bounce Back",
+			help: (
+				<>
+					<p>
+						If we call this award's formula <code>f(season)</code>, then
+						enabling this option makes the score{" "}
+						<code>
+							min(f(this season), f(best previous season)) - f(last season)
+						</code>
+						.
+					</p>
+					<p>
+						That rewards a player who was already this good once, fell off, and
+						has climbed back - unlike Most Improved Player, a new career best
+						earns nothing extra.
+					</p>
+					<p>
+						This option also requires at least 3 previous seasons played, since
+						there has to be an earlier peak to return to.
 					</p>
 				</>
 			),

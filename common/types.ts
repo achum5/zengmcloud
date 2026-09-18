@@ -69,6 +69,7 @@ const awardInfoCommonSchema = z.object({
 	// Filters
 	bench: z.literal(true).optional(),
 	mip: z.literal(true).optional(),
+	bounceBack: z.literal(true).optional(),
 	rookie: z.literal(true).optional(),
 });
 
@@ -169,8 +170,22 @@ export const awardSettingsSchema = z
 			if (award.mip && typeof award.statRange === "number") {
 				addIssue("Playoff series awards cannot be Most Improved Player awards");
 			}
+			if (award.bounceBack && typeof award.statRange === "number") {
+				addIssue("Playoff series awards cannot be Bounce Back awards");
+			}
+			if (award.mip && award.bounceBack) {
+				addIssue(
+					"Most Improved Player and Bounce Back cannot both be enabled - they score the same seasons in opposite directions",
+				);
+			}
 			if (award.numTeams === undefined && award.opoyFormula !== undefined) {
-				const banWith = ["actAs", "rookie", "bench", "mip"] as const;
+				const banWith = [
+					"actAs",
+					"rookie",
+					"bench",
+					"mip",
+					"bounceBack",
+				] as const;
 				for (const key of banWith) {
 					if (award[key]) {
 						addIssue(`opoyFormula and ${key} cannot both be defined`);

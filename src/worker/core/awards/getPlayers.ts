@@ -56,6 +56,7 @@ const AWARD_STATS = [
 	}),
 ];
 const AWARD_STATS_SPECIAL = [
+	"age",
 	"seasonFraction",
 	"teamGp",
 	"winp",
@@ -114,6 +115,7 @@ type StatsRow = StatsRowDefined & {
 export type CurrentStats = {
 	numWon?: Record<string, number>;
 	numWonConsecutive?: Record<string, number>;
+	age: number;
 	seasonFraction: number;
 	teamGp: number;
 	winp: number;
@@ -511,6 +513,10 @@ export const getPlayers = async (
 		// Make some teamInfo and other things available in formulas
 		for (const currentStats of Object.values(p.currentStats)) {
 			if (currentStats) {
+				// Age during this season, so an award can be restricted to old or
+				// young players without a dedicated filter
+				currentStats.age = p.age;
+
 				// These are regular season values but get applied to every statRange!
 				currentStats.seasonFraction = teamInfo?.seasonFraction ?? 1;
 				currentStats.teamGp = teamInfo?.gp ?? 0;

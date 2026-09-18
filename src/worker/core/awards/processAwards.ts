@@ -46,6 +46,20 @@ const GP_FRACTION_NEEDED_FOR_MIP = 0.5; // Only used if ROUGH_MPG_NEEDED_FOR_MIP
 const getMipFactor = (season: number) =>
 	g.get("numGames", season) * helpers.quarterLengthFactor();
 
+// Enough prior seasons that "he used to be this guy" means something
+const MIN_SEASONS_FOR_BOUNCE_BACK = 3;
+
+// MIP rewards beating your own career best. A bounce back is the opposite
+// shape: the player was already this good once, fell off, and has climbed back.
+// Capping the credit at his old peak is what separates the two - a career year
+// scores nothing extra here, and a player who never had a peak to return to
+// can't win it at all.
+export const mipScore = (current: number, prev: number, max: number) =>
+	2 * current - prev - max;
+
+export const bounceBackScore = (current: number, prev: number, max: number) =>
+	Math.min(current, max) - prev;
+
 const filterPlayersForAward = (
 	players: Awaited<ReturnType<typeof getPlayers>>["players"],
 	award: GameAttributesLeague["awards"][number],
@@ -134,13 +148,26 @@ const filterPlayersForAward = (
 		}
 	}
 
-	if (award.mip) {
+	if (award.mip || award.bounceBack) {
 		const statRange = award.statRange ?? "regularSeason";
 
 		filteredPlayers = filteredPlayers.filter((p) => {
 			// Too many second year players get picked, when it's expected for them to improve (undrafted and second round picks can still win)
-			if (p.draft.year + 2 >= season && p.draft.round === 1) {
+			if (award.mip && p.draft.year + 2 >= season && p.draft.round === 1) {
 				return false;
+			}
+
+			// A bounce back needs an earlier peak to bounce back to, so require a
+			// few seasons of history rather than MIP's draft position rule
+			if (award.bounceBack) {
+				const priorSeasons = new Set(
+					p.stats
+						.filter((ps) => ps.season < season && ps.gp > 0)
+						.map((ps) => ps.season),
+				);
+				if (priorSeasons.size < MIN_SEASONS_FOR_BOUNCE_BACK) {
+					return false;
+				}
 			}
 
 			// Must have stats last year!
@@ -418,11 +445,13 @@ export const processAwards = async ({
 			if (currentStats) {
 				const currentScore = evaluate(currentStats);
 
-				// For MIP, compare score to last season and max of all previous seasons
-				if (award.mip) {
+				// For MIP and bounce back, compare score to last season and max of all previous seasons
+				if (award.mip || award.bounceBack) {
 					const statRange = award.statRange ?? "regularSeason";
 					if (typeof statRange === "number") {
-						throw new Error("mip not supported for playoff series award");
+						throw new Error(
+							`${award.mip ? "mip" : "bounceBack"} not supported for playoff series award`,
+						);
 					}
 
 					// Use minCutoff only for regularSeason or combined, otherwise there's just going to be very few stats regardless
@@ -474,7 +503,9 @@ export const processAwards = async ({
 					const maxScore = Math.max(...oldSeasonScores);
 
 					// Could be slightly more efficient by also reading/storing currentScore from p.scores for MIP, but in practice it'd probably be quite rare for that to matter.
-					p.scores[award.shortName] = 2 * currentScore - prevScore - maxScore;
+					p.scores[award.shortName] = (
+						award.bounceBack ? bounceBackScore : mipScore
+					)(currentScore, prevScore, maxScore);
 				} else {
 					p.scores[award.shortName] = currentScore;
 				}
