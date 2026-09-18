@@ -609,6 +609,74 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 	writeFileSync(LOG, out.join("\n"));
 	writeFileSync(`${LOG}.jsonl`, pairs.map((x) => JSON.stringify(x)).join("\n"));
 
+	// THE LEAGUE'S NEWS, which this harness never had. It plays games straight
+	// through GameSim, so nothing ever writes to the events store - and the
+	// feed reads that store for everything that is not a game. Reading a
+	// corpus therefore showed a timeline made of results, performances and
+	// standings and NOTHING ELSE, which says nothing about whether the other
+	// half works: a league with no injuries, trades or signings in its log
+	// cannot produce posts about them.
+	//
+	// RECAP_NEWS=1 writes a representative spread of the log's own event types
+	// so that half can be read at all. These are synthetic, in the same shape
+	// the league writes (see eventFromLeagueEvent: eid, type, season, text,
+	// score, tids, pids), and they are only ever added by this harness.
+	if (nodeEnv.RECAP_NEWS === "1") {
+		const playing = Array.from({ length: NUM_TEAMS }, (_, i) => i);
+		const somePlayers = await idb.cache.players.indexGetAll("playersByTid", [
+			0,
+			Infinity,
+		]);
+		const pick = <T>(arr: readonly T[], i: number): T =>
+			arr[i % arr.length] as T;
+		const NEWS: {
+			type: string;
+			score: number;
+			text: (a: string, b: string, p: string) => string;
+			teams: number;
+		}[] = [
+			{ type: "injured", score: 12, teams: 1, text: (a, _b, p) => `${p} of the ${a} was injured. (Sprained ankle, out 3 weeks)` },
+			{ type: "trade", score: 18, teams: 2, text: (a, b, p) => `The ${a} traded ${p} to the ${b}.` },
+			{ type: "freeAgent", score: 14, teams: 1, text: (a, _b, p) => `The ${a} signed ${p} for 4 years, $92M.` },
+			{ type: "reSigned", score: 11, teams: 1, text: (a, _b, p) => `The ${a} re-signed ${p} for 3 years, $54M.` },
+			{ type: "release", score: 8, teams: 1, text: (a, _b, p) => `The ${a} released ${p}.` },
+			{ type: "playerFeat", score: 16, teams: 1, text: (a, _b, p) => `${p} of the ${a} had 52 points and 18 rebounds.` },
+			{ type: "award", score: 20, teams: 1, text: (_a, _b, p) => `${p} won Most Valuable Player.` },
+			{ type: "retired", score: 15, teams: 1, text: (a, _b, p) => `${p} of the ${a} retired.` },
+			{ type: "madePlayoffs", score: 13, teams: 1, text: (a) => `The ${a} made the playoffs.` },
+		];
+
+		let eid = 1;
+		const rows: any[] = [];
+		for (let i = 0; i < NEWS.length * 4; i++) {
+			const spec = pick(NEWS, i);
+			const tidA = pick(playing, i * 3 + 1);
+			const tidB = pick(
+				playing.filter((t) => t !== tidA),
+				i * 5 + 2,
+			);
+			const teamA = (await idb.cache.teams.get(tidA))!;
+			const teamB = (await idb.cache.teams.get(tidB))!;
+			const player = pick(somePlayers, i * 7 + 3);
+			rows.push({
+				eid: eid++,
+				type: spec.type,
+				season,
+				score: spec.score,
+				text: spec.text(
+					`${teamA.region} ${teamA.name}`,
+					`${teamB.region} ${teamB.name}`,
+					`${player.firstName} ${player.lastName}`,
+				),
+				tids: spec.teams === 2 ? [tidA, tidB] : [tidA],
+				pids: [player.pid],
+			});
+		}
+		for (const row of rows) {
+			await idb.cache.events.add(row);
+		}
+	}
+
 	// THE FEED, same league, same nights. RECAP_FEED=1 builds every day's
 	// timeline through the real feed path and dumps it beside the recaps, so
 	// both systems can be read describing the same games - and so the feed can

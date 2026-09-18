@@ -13,6 +13,7 @@ import {
 	frameFor,
 	stanceOf,
 	verifyPostNumbers,
+	leadOf,
 	writePost,
 	writeReply,
 	writePostDetailed,
@@ -26,10 +27,15 @@ const account = (
 		tid?: number;
 		pid?: number;
 		override?: SocialPersonalityOverride;
+		// A PLAYER IS NOT A MEDIA ACCOUNT, and this used to be hardcoded, so
+		// account("player") built a pundit with a player's personality and
+		// never reached the bank a player actually posts from. A test that
+		// asked what players say was answering about media.
+		kind?: ResolvedSocialAccount["kind"];
 	} = {},
 ): ResolvedSocialAccount => ({
 	id: `m:${archetypeId}:${extra.tid ?? "x"}`,
-	kind: "media",
+	kind: extra.kind ?? "media",
 	handle: archetypeId,
 	name: archetypeId,
 	bio: "",
@@ -534,6 +540,123 @@ describe("verifyPostNumbers", () => {
 // something. Only an account with a higher accuracy bar may reach these.
 const CORRECTION =
 	/not what the box score says|worth mentioning both|^it was \d+-\d+\./i;
+
+describe("the lead of a news item", () => {
+	// A league event arrives as one line of log prose, and the templates that
+	// do not quote it whole quote a LEAD out of it - capped, so an injury's
+	// parenthetical does not ride along. The cap used to cut mid-phrase and
+	// those fragments went out on the timeline exactly as written.
+	test("never ends on a word still waiting for another one", () => {
+		assert.strictEqual(
+			leadOf("The Chicago Bulls traded Herb Brooks to the Detroit Pistons."),
+			"The Chicago Bulls traded Herb Brooks to the Detroit Pistons",
+		);
+		// The comma cut already ends these cleanly; the point is that the
+		// eight-word cap no longer chops "for 4 years" down to "for 4".
+		assert.strictEqual(
+			leadOf("The Denver Nuggets signed Obi Brooks for 4 years, $92M."),
+			"The Denver Nuggets signed Obi Brooks for 4 years",
+		);
+		assert.strictEqual(
+			leadOf("The Houston Rockets re-signed Vince Brooks for 3 years, $54M."),
+			"The Houston Rockets re-signed Vince Brooks for 3 years",
+		);
+	});
+
+	test("the parenthetical the cap exists for is still trimmed", () => {
+		assert.strictEqual(
+			leadOf(
+				"PF Zach Ackerman of the Boston Celtics was injured (Sprained Knee, out for 10 games)",
+			),
+			"PF Zach Ackerman of the Boston Celtics was injured",
+		);
+	});
+
+	test("a short line is left alone", () => {
+		assert.strictEqual(
+			leadOf("The Los Angeles Lakers released Corey Brooks."),
+			"The Los Angeles Lakers released Corey Brooks",
+		);
+	});
+
+	test("a lead never ends on a bare number", () => {
+		// "signed X for 4" was the contract cut at the year count.
+		for (const summary of [
+			"The Nets signed Joe Green for 4 years, $92M.",
+			"The Nets extended Joe Green through 2031, $40M.",
+		]) {
+			assert.notMatch(leadOf(summary), /\s\d+$/, summary);
+		}
+	});
+});
+
+describe("news nobody cheers", () => {
+	// `bad` was read off the event TOPIC, and a topic is too blunt: "milestone"
+	// carries both a fifty-point night and a man's retirement, so a club
+	// account answered "Reggie Carter of the 76ers retired" with "Let's go."
+	const newsEvent = (leagueType: string, topic: any): SocialEvent => ({
+		id: `e:${leagueType}`,
+		type: "milestone",
+		topic,
+		season: 2013,
+		day: 1,
+		order: 1,
+		salience: 0.6,
+		tids: [0],
+		pids: [5],
+		facts: {
+			summary: "Reggie Carter of the Boston Celtics retired.",
+			leagueType,
+		},
+	});
+
+	test("a retirement or a release is not celebrated", () => {
+		const CHEERS = [
+			"Let's go",
+			"LETS GO",
+			"Run it back",
+			"Love to see it",
+		];
+		// And the lines about a body healing, which is a different kind of
+		// wrong: they were on the same flag, so marking a retirement sombre
+		// answered a man's career with "Speedy recovery."
+		const HOSPITAL = ["speedy recovery", "rehab", "he'll be back", "from the bench"];
+		let checked = 0;
+		for (const [leagueType, topic] of [
+			["retired", "milestone"],
+			["release", "trade"],
+			["refuseToSign", "freeAgency"],
+		] as const) {
+			for (const who of [
+				["teamOfficial", "team"],
+				["homerFan", "media"],
+				["casualFan", "media"],
+				["player", "player"],
+			] as const) {
+				for (let seed = 0; seed < 40; seed++) {
+					const text = writePost({
+						account: account(who[0], { tid: 0, kind: who[1] }),
+						event: newsEvent(leagueType, topic),
+						pool: createPhrasePool(),
+						rng: rngFromSeed(seed),
+					});
+					if (text === undefined) {
+						continue;
+					}
+					checked += 1;
+					for (const phrase of [...CHEERS, ...HOSPITAL]) {
+						assert.notInclude(
+							text.toLowerCase(),
+							phrase.toLowerCase(),
+							`${who[0]} on a ${leagueType}: "${text}"`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAbove(checked, 100, "not enough posts produced to judge");
+	});
+});
 
 describe("a franchise's register", () => {
 	test("never mocks, even on a night it lost", () => {

@@ -40,20 +40,71 @@ export type Stance = "for" | "against" | "neutral";
 // "in game/the", and never more than eight words. "PF Zach Ackerman was
 // injured" out of "PF Zach Ackerman was injured (Sprained Knee, out for 10
 // games)"; "The Crabs defeated the Gangsters" out of the series update.
-const leadOf = (summary: string): string => {
-	const cut = summary.search(/,| \(| in (?=game |the |a )/);
-	let lead = cut === -1 ? summary : summary.slice(0, cut);
-	const words = lead.split(" ");
-	if (words.length > 8) {
-		lead = words.slice(0, 8).join(" ");
+// A LEAD MUST BE A CLAUSE, NOT THE FIRST EIGHT WORDS. The cap above is there
+// for the injury log's parenthetical, and on a transaction it cut mid-phrase:
+// "The Chicago Bulls traded Herb Brooks to the", "The Denver Nuggets signed Obi
+// Brooks for 4". Both went out on the timeline exactly like that.
+//
+// So a lead may not end on a word that is plainly waiting for another one, and
+// a cap that lands on one is abandoned rather than patched - the clause the
+// comma cut already found is a better sentence than eight words and a shrug.
+const DANGLING = new Set([
+	"a", "an", "the", "to", "for", "of", "in", "on", "at", "by", "with",
+	"from", "and", "or", "but", "as", "into", "over", "after", "before",
+	"his", "her", "their", "its", "this", "that", "than", "who", "was",
+	"were", "is", "are", "has", "have", "had",
+]);
+
+const endsDangling = (text: string): boolean => {
+	const last = text.split(" ").at(-1)?.toLowerCase().replace(/[^a-z0-9$]/g, "");
+	return last === undefined || last === "" || DANGLING.has(last) || /^\d+$/.test(last);
+};
+
+const trimDangling = (text: string): string => {
+	let out = text;
+	while (out.includes(" ") && endsDangling(out)) {
+		out = out.slice(0, out.lastIndexOf(" "));
 	}
-	return lead.replace(/[!.]+$/, "");
+	return out;
+};
+
+export const leadOf = (summary: string): string => {
+	const cut = summary.search(/,| \(| in (?=game |the |a )/);
+	const clause = (cut === -1 ? summary : summary.slice(0, cut)).replace(
+		/[!.]+$/,
+		"",
+	);
+	const words = clause.split(" ");
+	if (words.length > 8) {
+		const capped = words.slice(0, 8).join(" ");
+		// Take the cap only when it leaves something that can end a sentence.
+		if (!endsDangling(capped)) {
+			return capped;
+		}
+	}
+	return trimDangling(clause);
 };
 
 // Topics that are bad news for everybody involved, whatever the account's
 // loyalty. Kept as a set rather than a flag on the event because it is a
 // property of the SUBJECT, not of how it was reported.
 const BAD_NEWS_TOPICS = new Set(["injury"]);
+
+// NOT EVERY NON-INJURY IS A CELEBRATION. `bad` was read off the topic, and a
+// topic is too blunt: "milestone" covers a fifty-point night and a man's
+// retirement, so a club account answered "Reggie Carter of the 76ers retired"
+// with "Let's go." The league's own event type is exact where the topic is
+// not, so the handful that nobody cheers are named here.
+//
+// A release is on the list for the same reason: whichever side of it you are
+// on, no account posts an exclamation about a player being cut.
+const SOMBRE_LEAGUE_EVENTS = new Set([
+	"retired",
+	"release",
+	"refuseToSign",
+	"tragedy",
+	"injured",
+]);
 
 export const stanceOf = (
 	account: ResolvedSocialAccount,
@@ -160,6 +211,15 @@ export type SummaryFrame = {
 	// and a doomer still gets to be a doomer about it, but "Let's go." under
 	// somebody's torn ankle is the worst line this feed can print.
 	bad: boolean;
+	// THIS MAN IS HURT, which is a narrower question than "do not cheer this"
+	// and used to be the same flag. Widening `bad` to cover a retirement then
+	// answered somebody's career with "Speedy recovery." and "Rehab starts
+	// now." Only the lines about a body go through here.
+	injury: boolean;
+	// The league's own event name ("retired", "release", "trade"), which is
+	// exact where the topic is blunt - "milestone" carries both a fifty-point
+	// night and a man's last game.
+	leagueType: string;
 	// What KIND of news. A trade, an award and a playoff berth all arrive here
 	// as one line of the league's prose, and treating them identically is what
 	// made every account sound like the same wire service reading the same
@@ -358,7 +418,15 @@ export const frameFor = (
 		summary,
 		aboutMe: account.pid !== undefined && event.pids.includes(account.pid),
 		player: account.kind === "player",
-		bad: BAD_NEWS_TOPICS.has(event.topic),
+		// NOT THE SAME QUESTION. `bad` is "do not cheer this"; `injury` is "this
+		// man is hurt". They were one flag, so widening `bad` to cover a
+		// retirement answered a man's career with "Speedy recovery." and
+		// "Rehab starts now."
+		bad:
+			BAD_NEWS_TOPICS.has(event.topic) ||
+			SOMBRE_LEAGUE_EVENTS.has(str(f, "leagueType")),
+		injury: event.topic === "injury" || str(f, "leagueType") === "injured",
+		leagueType: str(f, "leagueType"),
 		topic: event.topic,
 		lead: leadOf(summary),
 		stance,
@@ -1498,12 +1566,30 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		when: (f) => !f.bad,
 		text: (f) => `${f.lead}. Let's go.`,
 	},
+	// The outside voices on a career ending, and on a man being let go. Same
+	// gap as the self bank above: sombre, but not a hospital.
+	{
+		id: "sum.retired",
+		when: (f) => f.leagueType === "retired",
+		text: (f) => `${f.lead}. That is a career.`,
+	},
+	{
+		id: "sum.retired.two",
+		tones: ["beat", "wire", "wonk"],
+		when: (f) => f.leagueType === "retired",
+		text: (f) => `${f.lead}. One of the good ones to watch.`,
+	},
+	{
+		id: "sum.released",
+		when: (f) => f.leagueType === "release",
+		text: (f) => `${f.lead}. Somebody will take a look at that.`,
+	},
 	{
 		// The same voices still have to say SOMETHING when the news is bad.
 		id: "sum.hype.bad",
 		mood: "down",
 		tones: ["hype", "corporate"],
-		when: (f) => f.bad,
+		when: (f) => f.injury,
 		text: (f) => `${f.lead}. Speedy recovery.`,
 	},
 	{
@@ -1715,12 +1801,12 @@ const SELF_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	{
 		id: "selfsum.setback",
 		mood: "up",
-		when: (f) => f.bad,
+		when: (f) => f.injury,
 		text: () => `Setback, not the end. See you soon.`,
 	},
 	{
 		id: "selfsum.rehab",
-		when: (f) => f.bad,
+		when: (f) => f.injury,
 		text: () => `Appreciate the messages. Rehab starts now.`,
 	},
 	{
@@ -1759,13 +1845,37 @@ const SELF_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	{
 		id: "selfsum.patient",
 		mood: "up",
-		when: (f) => f.bad,
+		when: (f) => f.injury,
 		text: () => `Been through worse. I will be fine.`,
+	},
+	// A CAREER AND A CUT. Marking these sombre correctly kept the celebrations
+	// off them and left them with nothing of their own, because the only other
+	// bank gated that way is about a body healing. These are the lines for the
+	// two that are neither.
+	{
+		id: "selfsum.career",
+		when: (f) => f.leagueType === "retired",
+		text: () => `That is the whole thing. Thank you for every bit of it.`,
+	},
+	{
+		id: "selfsum.career.two",
+		when: (f) => f.leagueType === "retired",
+		text: () => `Gave it everything I had. No regrets at all.`,
+	},
+	{
+		id: "selfsum.cut",
+		when: (f) => f.leagueType === "release" || f.leagueType === "refuseToSign",
+		text: () => `That is the business. Grateful for the time.`,
+	},
+	{
+		id: "selfsum.cut.two",
+		when: (f) => f.leagueType === "release",
+		text: () => `On to whatever is next. I am not finished.`,
 	},
 	{
 		id: "selfsum.support",
 		mood: "up",
-		when: (f) => f.bad,
+		when: (f) => f.injury,
 		text: () => `Still with my guys every night. Just from the bench.`,
 	},
 ];
@@ -1802,20 +1912,35 @@ const PLAYER_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	{ id: "psum.prayers", when: (f) => f.bad, text: () => `Prayers up. 🙏` },
 	{
 		id: "psum.speedy",
-		when: (f) => f.bad,
+		when: (f) => f.injury,
 		text: () => `Speedy recovery brother.`,
 	},
 	{
 		id: "psum.backsoon",
-		when: (f) => f.bad,
+		when: (f) => f.injury,
 		mood: "up",
 		text: () => `He'll be back.`,
 	},
 	{
 		id: "psum.tough",
 		mood: "up",
-		when: (f) => f.bad,
+		when: (f) => f.injury,
 		text: () => `Toughest guy I know. He will be back sooner than they say.`,
+	},
+	{
+		id: "psum.salute",
+		when: (f) => f.leagueType === "retired",
+		text: () => `Salute. Nothing but respect.`,
+	},
+	{
+		id: "psum.watched",
+		when: (f) => f.leagueType === "retired",
+		text: () => `Watched him put that work in for years. Enjoy it.`,
+	},
+	{
+		id: "psum.business",
+		when: (f) => f.leagueType === "release",
+		text: () => `Business is cold. He will land somewhere.`,
 	},
 	{
 		id: "psum.hate",
@@ -2645,7 +2770,6 @@ export const OPENERS: Fragment[] = [
 	{ text: "For the record:", tones: ["wire", "wonk"] },
 	{ text: "As reported:", tones: ["wire"] },
 	{ text: "Told:", tones: ["wire"] },
-	{ text: "Per the box score:", tones: ["wonk", "wire"] },
 	{ text: "The numbers:", tones: ["wonk"] },
 	{ text: "One data point:", tones: ["wonk"] },
 
