@@ -599,7 +599,9 @@ export const verifyRecap = (
 		/never trailed(?! again)|wire to wire|led from|in front from the opening tip|start to finish/i.test(
 			text,
 		) &&
-		/comeback|erased|rallied|stormed back|came from \d|deficit|down \d+ (?:at|after)/i.test(
+		// "series deficit" is the bracket, not the scoreboard: a team can cut
+		// its series deficit in a game it led wire to wire, and one did.
+		/comeback|erased|rallied|stormed back|came from \d|(?<!series )deficit|down \d+ (?:at|after)/i.test(
 			text,
 		)
 	) {

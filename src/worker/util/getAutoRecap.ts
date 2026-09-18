@@ -347,7 +347,9 @@ const storyScore = (p: RecapPlayer): number => {
 	// a nudge, enough to beat a same-size line that is only points.
 	const cats = doubleCategories(p).length;
 	const bonus = cats >= 3 ? 10 : cats === 2 ? 2.5 : 0;
-	return 0.5 * p.pts + 0.5 * p.reb + 0.5 * p.ast + 1.7 * p.blk + 1.7 * p.stl + bonus;
+	return (
+		0.5 * p.pts + 0.5 * p.reb + 0.5 * p.ast + 1.7 * p.blk + 1.7 * p.stl + bonus
+	);
 };
 
 // A line with nothing in it worth a sentence: under 18 points, no
@@ -5705,6 +5707,38 @@ const notability = (game: RecapGame): number => {
 		if (post.clinch) {
 			n += post.clinch.title ? 120 : 80;
 		}
+		// THE SERIES STAKES. A night full of playoff games was ranked almost
+		// entirely on box scores, so a routine 2-1 with a big star line
+		// out-scored the game that put a team on the brink and the eighth seed
+		// taking a series lead from the first - the two stories any bracket
+		// reader looks for first.
+		const series = game.series;
+		if (series?.bestOf && series.bestOf > 1) {
+			const winnerIsHome = shape.winner.abbrev === series.homeAbbrev;
+			const wAfter = (winnerIsHome ? series.homeWon : series.awayWon) + 1;
+			const lWins = winnerIsHome ? series.awayWon : series.homeWon;
+			const need = Math.floor(series.bestOf / 2) + 1;
+			if (wAfter === need - 1 && wAfter - lWins >= 2) {
+				// Pushed the opponent to the brink.
+				n += 45;
+			}
+			if (lWins === need - 1) {
+				// Survived an elimination game.
+				n += 55;
+			}
+			const wSeed = winnerIsHome ? series.homeSeed : series.awaySeed;
+			const lSeed = winnerIsHome ? series.awaySeed : series.homeSeed;
+			if (
+				wSeed !== undefined &&
+				lSeed !== undefined &&
+				wSeed - lSeed >= 3 &&
+				wAfter > lWins
+			) {
+				// A low seed leading a high one.
+				n += 15 * (wSeed - lSeed);
+			}
+			n += 20 * (series.round - 1);
+		}
 	}
 	if (isUpset(game, shape)) {
 		n += 35 + (game.spread?.points ?? 0);
@@ -6341,6 +6375,8 @@ const dayHeadline = (
 				wAfter: wBefore + 1,
 				lBefore,
 				gameNo: wBefore + lBefore + 1,
+				wSeed: winnerIsHome ? s.homeSeed : s.awaySeed,
+				lSeed: winnerIsHome ? s.awaySeed : s.homeSeed,
 			};
 		})();
 
@@ -6427,6 +6463,18 @@ const dayHeadline = (
 					`${w} push ${l} to the brink`,
 				);
 			} else if (ss.wAfter > ss.lBefore) {
+				// The bracket's story when a low seed leads a high one: say the
+				// seeds, not just the count.
+				if (
+					ss.wSeed !== undefined &&
+					ss.lSeed !== undefined &&
+					ss.wSeed - ss.lSeed >= 3
+				) {
+					stateBits.push(
+						`#${ss.wSeed} ${w} have the #${ss.lSeed} seed in trouble`,
+						`${w}, seeded #${ss.wSeed}, lead ${poss(l)} series ${ss.wAfter}-${ss.lBefore}`,
+					);
+				}
 				stateBits.push(
 					`${w} take a ${ss.wAfter}-${ss.lBefore} lead on ${l}`,
 					`${w} edge ahead of ${l}`,
@@ -6445,13 +6493,17 @@ const dayHeadline = (
 			// take a 2-1 lead on the Pacers", not one or the other.
 			const starState =
 				mStar.pts >= 30 && stateBits.length > 0
-					? // Every state bit opens with the bare nickname `w`; swap in the
-						// articled form rather than stripping a word, which mangled a
-						// multi-word nickname and once produced "as the take a 2-1 lead".
-						stateBits.map(
-							(bit) =>
-								`${mStar.name} scores ${mStar.pts} as ${tw}${bit.slice(w.length)}`,
-						)
+					? // Only the bits that open with the bare nickname `w` can take the
+						// star prefix; swap in the articled form rather than stripping a
+						// word, which mangled a multi-word nickname and once produced "as
+						// the take a 2-1 lead". (The seed-first upset bits don't open on
+						// the nickname, and slicing them mid-word made hash.)
+						stateBits
+							.filter((bit) => bit.startsWith(w))
+							.map(
+								(bit) =>
+									`${mStar.name} scores ${mStar.pts} as ${tw}${bit.slice(w.length)}`,
+							)
 					: [];
 			return hl(
 				pick(
