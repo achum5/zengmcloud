@@ -3,6 +3,8 @@ import { assert, describe, test } from "vitest";
 import {
 	ageFace,
 	applyRealisticFace,
+	EYE_ANGLE_AGED_MIN,
+	eyeDroopByAge,
 	HAIR_BALD,
 	HAIR_VOLUMINOUS,
 	shavesHead,
@@ -22,6 +24,8 @@ import {
 // at 23, 27 and 31 and almost nobody in between. And drift only touched two
 // dials, neither of which moved before age 22, so early seasons were frozen
 // solid. Both are asserted against here.
+
+const roundTo3 = (v: number): number => Math.round(v * 1000) / 1000;
 
 const seeded = (seed: number) => {
 	let a = seed >>> 0;
@@ -152,10 +156,12 @@ describe("aging is paced, not staged", () => {
 			// how far into that stream the draw lands depends on which
 			// age-dependent branches ran above it - so the two paths would
 			// disagree on a random nose rather than on the drift, which is what
-			// is under test here. Nothing replays generation at two ages in the
+			// is under test here (the eye angle has the same re-draw). Nothing
+			// replays generation at two ages in the
 			// game (a face is built once and then aged), so that re-draw is a
 			// different player's nose, not a contradiction. Start in band.
 			base.nose.size = 0.8;
+			base.eye.angle = 4;
 
 			const aged: any = structuredClone(base);
 			applyRealisticFace(aged, {
@@ -180,6 +186,7 @@ describe("aging is paced, not staged", () => {
 				["folds", aged.smileLine.size, built.smileLine.size],
 				["ears", aged.ear.size, built.ear.size],
 				["nose", aged.nose.size, built.nose.size],
+				["eye angle", aged.eye.angle, built.eye.angle],
 			] as [string, number, number][]) {
 				assert.strictEqual(
 					a,
@@ -191,8 +198,10 @@ describe("aging is paced, not staged", () => {
 			// And the drift has to have actually happened, or the check above
 			// passes on two faces that both stood still.
 			assert.ok(
-				aged.ear.size > base.ear.size && aged.nose.size > base.nose.size,
-				`pid ${pid}: ears ${base.ear.size}->${aged.ear.size}, nose ${base.nose.size}->${aged.nose.size} over ${TO - FROM} seasons`,
+				aged.ear.size > base.ear.size &&
+					aged.nose.size > base.nose.size &&
+					aged.eye.angle < base.eye.angle,
+				`pid ${pid}: ears ${base.ear.size}->${aged.ear.size}, nose ${base.nose.size}->${aged.nose.size}, eyes ${base.eye.angle}->${aged.eye.angle} over ${TO - FROM} seasons`,
 			);
 		}
 	});
@@ -232,6 +241,66 @@ describe("aging is paced, not staged", () => {
 			}
 		}
 		assert.isAbove(checked, 0, "no head-shavers found to check");
+	});
+
+	test("the eyes keep coming down when the steps have stopped", () => {
+		// The late thirties were the thinnest part of a career: the wrinkle
+		// ceiling has been reached and the hairline has resolved, so the STEP
+		// rate peaks around 31 and tapers from there - a man changed less at 40
+		// than he did at 31, which is backwards. The droop does not care that
+		// the steps have stopped, so it has to still be moving out there.
+		for (const pid of [2, 13, 29, 51, 77]) {
+			const face: any = generate(
+				{ jersey: { id: "jersey" } },
+				{ gender: "male", race: "white" },
+			);
+			face.eye.angle = 4;
+			applyRealisticFace(face, {
+				age: 19,
+				race: "white",
+				pid,
+				rand: seeded(pid),
+			});
+
+			let previous = face.eye.angle;
+			let movedAfter35 = 0;
+			for (let age = 20; age <= 42; age++) {
+				ageFace(face, age, pid, seeded(pid + age));
+				// One way only, like everything else here: no roll can tilt an
+				// eye back up, so a face can never un-age.
+				assert.isAtMost(
+					face.eye.angle,
+					previous,
+					`pid ${pid}: eye went back up at ${age}`,
+				);
+				if (age > 35 && face.eye.angle < previous) {
+					movedAfter35 += 1;
+				}
+				previous = face.eye.angle;
+			}
+			assert.isAbove(
+				movedAfter35,
+				0,
+				`pid ${pid}: nothing moved in the eyes after 35`,
+			);
+			// And never past the floor, however long the career runs.
+			assert.isAtLeast(face.eye.angle, EYE_ANGLE_AGED_MIN);
+		}
+	});
+
+	test("some men hold their eyes up longer than others", () => {
+		// Nobody ages on one schedule. weathersLess already decides whose lines
+		// come in slowly; the same men keep their eyes level longer, so a league
+		// does not droop in lockstep.
+		const droops = new Set<number>();
+		for (let pid = 1; pid <= 60; pid++) {
+			droops.add(roundTo3(eyeDroopByAge(38, pid)));
+		}
+		assert.isAbove(droops.size, 1, "every player drooped at the same rate");
+		// Both rates are real drift, not one of them being nothing.
+		for (const d of droops) {
+			assert.isAbove(d, 0.5, "a rate too small to see across a career");
+		}
 	});
 
 	test("spreading the steps did not remove them", () => {

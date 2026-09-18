@@ -1161,6 +1161,42 @@ export const noseGrowthByAge = (age: number): number =>
 export const fatnessGainByAge = (age: number): number =>
 	Math.max(0, Math.floor(age) - FATNESS_START_AGE) * FATNESS_PER_YEAR;
 
+// THE EYES COME DOWN AT THE OUTSIDE. The outer corner of the eye sits on a
+// tendon that slackens over a lifetime, so it descends while the inner corner
+// stays put - the eye that read as level at twenty reads as slightly downturned
+// at forty. It is a real and well-measured change, and it is the one facesjs
+// dial that maps onto it: `angle` rotates each eye about its own centre,
+// mirrored left to right, so a negative value drops the outer corner. Rendering
+// the range settles the sign, the same way the line features were settled.
+//
+// The BROW angle was looked at for the same treatment and left alone. It reads
+// as expression, not as age - negative is worried, positive is stern - so
+// drifting it would age nobody and would slowly turn the league angry.
+//
+// This is also what the late thirties were missing. Measured over a career the
+// steps peak around 31 and then TAPER, because the wrinkle ceiling has been
+// reached and the hairline has resolved - so a man changed less at 40 than he
+// did at 31, which is backwards. This runs to the end of a career and does not
+// care that the steps have stopped.
+const EYE_DROOP_PER_YEAR = 0.12;
+
+// Below the generation band on purpose: a career's worth of droop has to be
+// able to take a man past the most downturned eye a rookie is drawn with, or
+// the players who start low simply stop aging. Rendering the range shows
+// there is plenty of room before it reads as a caricature.
+export const EYE_ANGLE_AGED_MIN = -10;
+
+// The same men whose lines come in slowly hold their eyes up longer. Nobody
+// ages on one schedule, and this is free variety - weathersLess is already
+// fixed per player, so both paths to an age still agree.
+const EYE_DROOP_WEATHERS_LESS = 0.6;
+
+export const eyeDroopPerYear = (pid: number | undefined): number =>
+	EYE_DROOP_PER_YEAR * (weathersLess(pid) ? EYE_DROOP_WEATHERS_LESS : 1);
+
+export const eyeDroopByAge = (age: number, pid: number | undefined): number =>
+	growthYears(age) * eyeDroopPerYear(pid);
+
 // WRINKLES, WHICH ARE THE OTHER HALF OF LOOKING OLDER.
 //
 // THE LINE FEATURES ARE VARIANTS, NOT DEGREES, and getting that wrong is what
@@ -1665,6 +1701,11 @@ export const applyRealisticFace = (
 			Math.min(NOSE_SIZE_MAX, face.nose.size + noseGrowthByAge(age)),
 		);
 	}
+	if (typeof face.eye?.angle === "number") {
+		face.eye.angle = roundGrowth(
+			Math.max(EYE_ANGLE_AGED_MIN, face.eye.angle - eyeDroopByAge(age, pid)),
+		);
+	}
 };
 
 // One year older, at one of the threshold ages: grow into the look rather than
@@ -1833,6 +1874,11 @@ export const ageFace = (
 		if (typeof face.nose?.size === "number") {
 			face.nose.size = roundGrowth(
 				Math.min(NOSE_SIZE_MAX, face.nose.size + NOSE_GROWTH_PER_YEAR),
+			);
+		}
+		if (typeof face.eye?.angle === "number") {
+			face.eye.angle = roundGrowth(
+				Math.max(EYE_ANGLE_AGED_MIN, face.eye.angle - eyeDroopPerYear(pid)),
 			);
 		}
 	}

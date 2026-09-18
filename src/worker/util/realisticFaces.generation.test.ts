@@ -187,6 +187,7 @@ describe("the cut", () => {
 import { svgsIndex } from "facesjs";
 import {
 	EYE_ANGLE,
+	EYE_ANGLE_AGED_MIN,
 	EYEBROW_ANGLE,
 	EYES_CARTOON,
 	EYES_NATURAL,
@@ -228,7 +229,11 @@ describe("the cartoon lists", () => {
 			if (EYES_CARTOON.includes(f.eye.id)) {
 				cartoon += 1;
 			}
-			assert.isAtLeast(f.eye.angle, EYE_ANGLE[0]);
+			// The floor is the AGED one, not the rookie band: these are built at
+			// 25, and six years of droop can already carry a man who was drawn
+			// at the bottom of the band below it. The ceiling is still the band -
+			// nothing ever tilts an eye back up.
+			assert.isAtLeast(f.eye.angle, EYE_ANGLE_AGED_MIN);
 			assert.isAtMost(f.eye.angle, EYE_ANGLE[1]);
 			assert.isAtLeast(f.eyebrow.angle, EYEBROW_ANGLE[0]);
 			assert.isAtMost(f.eyebrow.angle, EYEBROW_ANGLE[1]);
