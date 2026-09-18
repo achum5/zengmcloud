@@ -1117,20 +1117,30 @@ const FATNESS_START_AGE = 27;
 const FATNESS_PER_YEAR = 0.012;
 const FATNESS_MAX = 1;
 
-// THE PARTS THAT NEVER STOP GROWING. Ears and noses are the one bit of a head
-// that really does keep growing for life, which is why an old man's look
-// caricatures as both. They are worth having here for the same reason the
-// folds are: a career needs things that move EVERY season and not just on the
-// handful where a style changes, or the years in between are pixel-identical
-// and the whole progression lands as three or four events.
+// THE PARTS THAT KEEP LENGTHENING. Ears and noses really do get bigger with
+// age, but not because anything grows: skin and cartilage lose their
+// elasticity and gravity does the rest, so the lobe stretches and the tip of
+// the nose drops. The measured rate is about a fifth of a millimetre of ear
+// length a year, so a nineteen-year career is worth a few millimetres on a
+// sixty-millimetre ear - call it seven percent. The rates below are set to
+// land there rather than at something you would notice as a change of face.
 //
-// Per season this is nothing - a few thousandths of the size - and over
-// nineteen it is the difference between a rookie's head and a veteran's.
+// They are also the thing that keeps a career from being pixel-identical
+// between style changes, which is why they are wanted here at all: something
+// has to move EVERY season or the whole progression reads as three or four
+// events.
+//
+// These two round to three decimals, not two. At two a rate this small would
+// round back to the same number every season, so ageFace would freeze while
+// applyRealisticFace kept accumulating and the two paths would disagree. Both
+// rates are exact multiples of a thousandth so the stepwise and the
+// all-at-once sums come out equal.
+//
 // One-way and never recorded on its own, exactly like fatness.
 const GROWTH_START_AGE = 19;
-const EAR_GROWTH_PER_YEAR = 0.008;
+const EAR_GROWTH_PER_YEAR = 0.004;
 const EAR_SIZE_MAX = 1.5;
-const NOSE_GROWTH_PER_YEAR = 0.005;
+const NOSE_GROWTH_PER_YEAR = 0.003;
 // Bounded by the module's own plausible range, not facesjs's wider one: a
 // generated nose is drawn inside NOSE_SIZE and an aged one has to stay there
 // too, or a veteran ends up with a nose no draft class could produce. The
@@ -1139,6 +1149,8 @@ const NOSE_SIZE_MAX = NOSE_SIZE[1];
 
 const growthYears = (age: number): number =>
 	Math.max(0, Math.floor(age) - GROWTH_START_AGE);
+
+const roundGrowth = (v: number): number => Math.round(v * 1000) / 1000;
 
 export const earGrowthByAge = (age: number): number =>
 	growthYears(age) * EAR_GROWTH_PER_YEAR;
@@ -1644,16 +1656,14 @@ export const applyRealisticFace = (
 	// above can overwrite it: a face built at 34 wears the ears and nose one
 	// aged to 34 would. Same contract the fatness gain keeps.
 	if (typeof face.ear?.size === "number") {
-		face.ear.size =
-			Math.round(
-				Math.min(EAR_SIZE_MAX, face.ear.size + earGrowthByAge(age)) * 100,
-			) / 100;
+		face.ear.size = roundGrowth(
+			Math.min(EAR_SIZE_MAX, face.ear.size + earGrowthByAge(age)),
+		);
 	}
 	if (typeof face.nose?.size === "number") {
-		face.nose.size =
-			Math.round(
-				Math.min(NOSE_SIZE_MAX, face.nose.size + noseGrowthByAge(age)) * 100,
-			) / 100;
+		face.nose.size = roundGrowth(
+			Math.min(NOSE_SIZE_MAX, face.nose.size + noseGrowthByAge(age)),
+		);
 	}
 };
 
@@ -1816,16 +1826,14 @@ export const ageFace = (
 	// And the two that never stop - see the note above them.
 	if (age > GROWTH_START_AGE) {
 		if (typeof face.ear?.size === "number") {
-			face.ear.size =
-				Math.round(
-					Math.min(EAR_SIZE_MAX, face.ear.size + EAR_GROWTH_PER_YEAR) * 100,
-				) / 100;
+			face.ear.size = roundGrowth(
+				Math.min(EAR_SIZE_MAX, face.ear.size + EAR_GROWTH_PER_YEAR),
+			);
 		}
 		if (typeof face.nose?.size === "number") {
-			face.nose.size =
-				Math.round(
-					Math.min(NOSE_SIZE_MAX, face.nose.size + NOSE_GROWTH_PER_YEAR) * 100,
-				) / 100;
+			face.nose.size = roundGrowth(
+				Math.min(NOSE_SIZE_MAX, face.nose.size + NOSE_GROWTH_PER_YEAR),
+			);
 		}
 	}
 

@@ -130,18 +130,34 @@ describe("aging is paced, not staged", () => {
 		);
 	});
 
-	test("a face aged to an age has the same folds as one built at it", () => {
+	test("a face aged to an age matches one built at it, drift for drift", () => {
 		// The contract the module is built on: generation and aging are two
 		// paths to the same age and they have to agree. The fold DEPTH broke it
 		// - the per-season creep was slower than the curve it was chasing, so an
 		// aged 38-year-old carried 1.4 where a generated one carried the full 2,
 		// and every veteran the league played into was smoother than the ones it
 		// started with.
+		//
+		// Ears and nose ADD to whatever was generated rather than overwriting
+		// it, so the two faces have to start from the same head or there is
+		// nothing to compare. They are the drift most at risk here: the per-year
+		// step is small enough that a rounding step coarser than the step size
+		// silently freezes the aged path while the built one keeps accumulating.
 		for (const pid of [1, 7, 23, 44, 61]) {
-			const aged: any = generate(
+			const base: any = generate(
 				{ jersey: { id: "jersey" } },
 				{ gender: "male", race: "white" },
 			);
+			// A nose outside the module's band gets re-drawn from `rand`, and
+			// how far into that stream the draw lands depends on which
+			// age-dependent branches ran above it - so the two paths would
+			// disagree on a random nose rather than on the drift, which is what
+			// is under test here. Nothing replays generation at two ages in the
+			// game (a face is built once and then aged), so that re-draw is a
+			// different player's nose, not a contradiction. Start in band.
+			base.nose.size = 0.8;
+
+			const aged: any = structuredClone(base);
 			applyRealisticFace(aged, {
 				age: FROM,
 				race: "white",
@@ -152,10 +168,7 @@ describe("aging is paced, not staged", () => {
 				ageFace(aged, age, pid, seeded(pid + age));
 			}
 
-			const built: any = generate(
-				{ jersey: { id: "jersey" } },
-				{ gender: "male", race: "white" },
-			);
+			const built: any = structuredClone(base);
 			applyRealisticFace(built, {
 				age: TO,
 				race: "white",
@@ -163,10 +176,23 @@ describe("aging is paced, not staged", () => {
 				rand: seeded(pid),
 			});
 
-			assert.strictEqual(
-				aged.smileLine.size,
-				built.smileLine.size,
-				`pid ${pid}: aged to ${TO} has folds ${aged.smileLine.size}, built at ${TO} has ${built.smileLine.size}`,
+			for (const [what, a, b] of [
+				["folds", aged.smileLine.size, built.smileLine.size],
+				["ears", aged.ear.size, built.ear.size],
+				["nose", aged.nose.size, built.nose.size],
+			] as [string, number, number][]) {
+				assert.strictEqual(
+					a,
+					b,
+					`pid ${pid}: aged to ${TO} has ${what} ${a}, built at ${TO} has ${b}`,
+				);
+			}
+
+			// And the drift has to have actually happened, or the check above
+			// passes on two faces that both stood still.
+			assert.ok(
+				aged.ear.size > base.ear.size && aged.nose.size > base.nose.size,
+				`pid ${pid}: ears ${base.ear.size}->${aged.ear.size}, nose ${base.nose.size}->${aged.nose.size} over ${TO - FROM} seasons`,
 			);
 		}
 	});
