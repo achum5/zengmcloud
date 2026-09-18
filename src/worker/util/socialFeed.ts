@@ -582,6 +582,115 @@ export const picturesFor = async (
 	return out;
 };
 
+// WHAT WAS SAID ABOUT THIS ACCOUNT, which is the other half of a profile.
+//
+// The posts tab is what an account SAID and the replies tab is what it said
+// under other people. Neither answers the question a profile is usually opened
+// to ask - who is talking about him - and for a player that is most of the
+// reason to be on the page at all.
+//
+// A mention is anything somebody ELSE published that points here, and there
+// are four ways to point:
+//
+//   SUBJECT   the post is about this player or this team. Posts already carry
+//             pids and tids for exactly this, so it costs no text search.
+//   QUOTED    somebody pulled up something this account said on an earlier
+//             day - the receipts.
+//   BY NAME   the handle appears in the text. Replies carry the handle of what
+//             they answer, so a reply under this account's post is an @mention
+//             of it and lands here without a special case.
+//   ANSWERED  somebody replied under this account's own post. The post is this
+//             account's, so it is not itself a mention, but the conversation
+//             under it is - and the thread is the only unit that reads
+//             properly, so the post comes along to carry its replies.
+//
+// The unit is the POST, not the sentence, because a reply without the thing it
+// answers is a one-liner with no context - the same reason the replies tab
+// carries its parent.
+export type MentionTarget = {
+	id: string;
+	handle: string;
+	kind: "player" | "team" | "media";
+	pid?: number;
+	tid?: number;
+};
+
+// Word-bounded, so @ram does not match @rambis, and escaped because handles
+// are cut from real names and a name can carry a dot.
+const handleMention = (handle: string) =>
+	new RegExp(`@${handle.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+
+// The predicate on its own, so it can be tested against hand-written posts
+// without a league behind it. The walk below is just "apply this to the last
+// fortnight".
+export const isMentionOf = (
+	post: Pick<
+		FeedPost,
+		"accountId" | "text" | "pid" | "pids" | "tid" | "tids" | "quoted" | "replies"
+	>,
+	account: MentionTarget,
+): boolean => {
+	const handle = handleMention(account.handle);
+	if (post.accountId === account.id) {
+		// Not a mention of itself. It earns a place only when somebody else
+		// turned up underneath it, and then the post is here to carry them.
+		return post.replies.some((r) => r.accountId !== account.id);
+	}
+	// BEING THE SUBJECT, which only a player's or a franchise's account can be.
+	// A media or fan account carries a tid too - it is the club they cover or
+	// support - and matching on that made a fan's mentions tab an exact copy of
+	// their team's feed, every post about the Cheesesteaks filed as somebody
+	// talking about @CasualCheeseste. Supporting a team is not being one.
+	const aboutThem =
+		(account.kind === "player" &&
+			account.pid !== undefined &&
+			(post.pid === account.pid || post.pids.includes(account.pid))) ||
+		(account.kind === "team" &&
+			account.tid !== undefined &&
+			account.tid >= 0 &&
+			(post.tid === account.tid || post.tids.includes(account.tid)));
+	return (
+		aboutThem ||
+		post.quoted?.accountId === account.id ||
+		handle.test(post.text) ||
+		post.replies.some(
+			(r) => r.accountId !== account.id && handle.test(r.text),
+		)
+	);
+};
+
+export const mentionsOf = async ({
+	snapshot,
+	account,
+	daysBack = 14,
+	limit = 40,
+}: {
+	snapshot: FeedSnapshot;
+	account: MentionTarget;
+	daysBack?: number;
+	limit?: number;
+}): Promise<(FeedPost & { day: number })[]> => {
+	const out: (FeedPost & { day: number })[] = [];
+	const start = snapshot.days.length - 1;
+	const stop = Math.max(0, start - daysBack + 1);
+	for (
+		let dayIndex = start;
+		dayIndex >= stop && out.length < limit;
+		dayIndex--
+	) {
+		const feedDay = await buildFeedDay({ snapshot, dayIndex });
+		for (const post of feedDay.posts) {
+			if (out.length >= limit) {
+				break;
+			}
+			if (isMentionOf(post, account)) {
+				out.push({ ...post, day: feedDay.day });
+			}
+		}
+	}
+	return out;
+};
+
 // The days worth showing, newest first.
 // THE FEED ABOUT ONE THING - a player, a team or a game - for the pages that
 // embed it. Walks the timeline newest-first and keeps the posts whose subject
@@ -668,12 +777,16 @@ export const feedAbout = async ({
 		imgURL: t.imgURL,
 		colors: t.colors,
 	}));
-	// The subject's own handle, when the subject is a player, so a page can
-	// link to his profile rather than to the whole timeline.
+	// The subject's own handle, so a page can link to ITS profile rather than
+	// to the whole timeline. A team has an account exactly as a player does,
+	// and a team page had been sending people to the league timeline instead.
 	const handle =
-		pid === undefined
-			? undefined
-			: snapshot.accounts.find((a) => a.pid === pid)?.handle;
+		pid !== undefined
+			? snapshot.accounts.find((a) => a.pid === pid)?.handle
+			: tid !== undefined && tid >= 0
+				? snapshot.accounts.find((a) => a.kind === "team" && a.tid === tid)
+						?.handle
+				: undefined;
 	return { posts, pictures, teams, handle };
 };
 

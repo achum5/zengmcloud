@@ -16,6 +16,7 @@ import { bySport, isSport } from "../../common/sportFunctions.ts";
 import { orderTeams } from "../util/orderTeams.ts";
 import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
 import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
+import { feedAbout } from "../util/socialFeed.ts";
 
 const sortByPos = (p: {
 	ratings: {
@@ -365,6 +366,25 @@ const updateRoster = async (
 			);
 		}
 
+		// The feed about this club, when the league has it on and we are looking
+		// at the present - a roster page from 2027 should not be captioned with
+		// what people are saying tonight. Failures are swallowed for the same
+		// reason they are on a player page: the feed is a garnish, and a page
+		// that will not load because of one is worse than a page without it.
+		let social;
+		if (g.get("socialFeed") && inputs.season === g.get("season")) {
+			try {
+				social = await feedAbout({
+					season: g.get("season"),
+					tid: inputs.tid,
+					limit: 6,
+					daysBack: 10,
+				});
+			} catch (error) {
+				console.error("roster: feed failed", error);
+			}
+		}
+
 		return {
 			abbrev: inputs.abbrev,
 			conf,
@@ -393,6 +413,7 @@ const updateRoster = async (
 				inputs.tid === g.get("userTid") &&
 				g.get("spectator"),
 			showRelease,
+			social,
 			showTradeFor:
 				inputs.season === g.get("season") &&
 				inputs.tid !== g.get("userTid") &&

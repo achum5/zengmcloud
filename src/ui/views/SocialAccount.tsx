@@ -7,13 +7,16 @@ import {
 	Avatar,
 	Icon,
 	SocialPost,
+	SocialThread,
 	VerifiedBadge,
 	type TeamLike,
 } from "./SocialPost.tsx";
 
 // ONE ACCOUNT'S PAGE. Cover photo, profile picture, name, handle, bio, where
 // they are and who they follow, and everything they have said lately - posts
-// on one tab, the replies they left under other people's on the other.
+// on one tab, the replies they left under other people's on another, and on
+// the third what everyone ELSE has been saying about them, which is the
+// question a profile is usually opened to ask.
 //
 // The cover falls back to the team's colours rather than to a grey box,
 // because a fan account with no picture should still look like it belongs to
@@ -40,6 +43,7 @@ const ROLE_LABEL: Record<string, string> = {
 const SocialAccount = ({
 	account,
 	errorMessage,
+	mentions,
 	pictures,
 	posts,
 	replies,
@@ -52,7 +56,7 @@ const SocialAccount = ({
 		title: account ? `${account.name} (@${account.handle})` : "Account",
 	});
 
-	const [tab, setTab] = useState<"posts" | "replies">("posts");
+	const [tab, setTab] = useState<"posts" | "replies" | "mentions">("posts");
 	const [following, setFollowing] = useState(false);
 
 	const teamByTid = useMemo(
@@ -190,9 +194,34 @@ const SocialAccount = ({
 					>
 						Replies
 					</button>
+					<button
+						className={clsx("social-tab", tab === "mentions" && "active")}
+						onClick={() => setTab("mentions")}
+						type="button"
+					>
+						Mentions
+					</button>
 				</div>
 
-				{tab === "posts" ? (
+				{tab === "mentions" ? (
+					(mentions ?? []).length === 0 ? (
+						<div className="social-empty">
+							<div className="social-empty-title">Nobody&rsquo;s talking</div>
+							No one has mentioned this account in the last two weeks of{" "}
+							{season}.
+						</div>
+					) : (
+						(mentions as any[]).map((post) => (
+							<SocialThread
+								key={post.id}
+								meta={post.day === 0 ? "Offseason" : `Day ${post.day}`}
+								pictures={pictures ?? {}}
+								post={post}
+								teamByTid={teamByTid}
+							/>
+						))
+					)
+				) : tab === "posts" ? (
 					posts.length === 0 ? (
 						<div className="social-empty">
 							<div className="social-empty-title">Quiet lately</div>

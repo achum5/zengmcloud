@@ -4,6 +4,7 @@ import {
 	buildAccountDay,
 	buildFeedDay,
 	getFeedSnapshot,
+	mentionsOf,
 	picturesFor,
 	suggestedAccounts,
 	type FeedPost,
@@ -123,6 +124,12 @@ const updateSocialAccount = async (
 			}
 		}
 
+		// WHAT OTHER PEOPLE SAID ABOUT THIS ONE. The two tabs above are both
+		// things the account itself published; this is the question a profile
+		// is usually opened to ask, and for a player it is most of the reason
+		// to be on the page.
+		const mentions = await mentionsOf({ snapshot, account });
+
 		const team =
 			account.tid !== undefined && account.tid >= 0
 				? await idb.cache.teams.get(account.tid)
@@ -130,11 +137,24 @@ const updateSocialAccount = async (
 		const suggestedRaw = suggestedAccounts(snapshot, g.get("userTid")).filter(
 			(a) => a.id !== account.id,
 		);
-		const parentIds = new Set(replies.map((r) => r.parent.accountId));
+		// Everyone whose avatar appears anywhere on the page: the account, the
+		// suggestions, whoever it replied to, and now everyone who mentioned it
+		// - including down in the replies, which is where most of a mention
+		// thread actually is.
+		const onPage = new Set(replies.map((r) => r.parent.accountId));
+		for (const post of mentions) {
+			onPage.add(post.accountId);
+			for (const reply of post.replies) {
+				onPage.add(reply.accountId);
+			}
+			if (post.quoted) {
+				onPage.add(post.quoted.accountId);
+			}
+		}
 		const pictures = await picturesFor(snapshot, [
 			account,
 			...suggestedRaw,
-			...snapshot.accounts.filter((a) => parentIds.has(a.id)),
+			...snapshot.accounts.filter((a) => onPage.has(a.id)),
 		]);
 		const suggested = suggestedRaw.map((a) => ({
 			accountId: a.id,
@@ -208,6 +228,7 @@ const updateSocialAccount = async (
 				: undefined,
 			posts,
 			replies,
+			mentions,
 			pictures,
 			season,
 			suggested,

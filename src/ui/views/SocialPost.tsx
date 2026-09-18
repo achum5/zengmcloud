@@ -491,6 +491,7 @@ export const SocialThread = ({
 	pictures,
 	teamByTid,
 	compact,
+	meta,
 }: {
 	post: {
 		id: string;
@@ -532,6 +533,9 @@ export const SocialThread = ({
 	pictures: Record<string, AccountPicture | undefined>;
 	teamByTid: Map<number, TeamLike>;
 	compact?: boolean;
+	// A stamp for the head of the thread, where a thread is being shown off
+	// the timeline and so has lost the day heading it sat under.
+	meta?: string;
 }) => {
 	const replies = post.replies ?? [];
 	return (
@@ -540,6 +544,7 @@ export const SocialThread = ({
 				account={post}
 				compact={compact}
 				engagement={post.engagement}
+				meta={meta}
 				picture={pictures[post.accountId]}
 				quoted={post.quoted}
 				team={post.tid === undefined ? undefined : teamByTid.get(post.tid)}

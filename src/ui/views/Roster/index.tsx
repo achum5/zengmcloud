@@ -4,6 +4,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { PLAYER, WEBSITE_ROOT } from "../../../common/constants.ts";
 import { DataTable } from "../../components/DataTable/index.tsx";
 import { MoreLinks } from "../../components/MoreLinks.tsx";
+import { SocialEmbed } from "../../components/SocialEmbed.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { showNotification } from "../../util/showNotification.ts";
@@ -105,6 +106,7 @@ const Roster = ({
 	playoffs,
 	playoffsByConf,
 	season,
+	social,
 	showSpectatorWarning,
 	showRelease,
 	showTradeFor,
@@ -629,6 +631,25 @@ const Roster = ({
 						: undefined
 				}
 			/>
+
+			{social && social.posts.length > 0 ? (
+				<div className="row mt-3">
+					<div className="col-lg-8 col-xl-6">
+						<SocialEmbed
+							moreHref={
+								social.handle === undefined
+									? helpers.leagueUrl(["social"])
+									: helpers.leagueUrl(["social", social.handle])
+							}
+							moreText={social.handle === undefined ? "See more" : "Profile"}
+							pictures={social.pictures}
+							posts={social.posts}
+							teams={social.teams}
+							title={`${t.region} ${t.name} on the feed`}
+						/>
+					</div>
+				</div>
+			) : null}
 		</>
 	);
 };
