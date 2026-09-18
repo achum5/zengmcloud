@@ -1991,6 +1991,7 @@ export const buildFeedDay = async ({
 				hashSeed(`${seed}|re|${reply.accountId}|${reply.parentAccountId}`),
 			),
 			staleTemplates: recentShapes,
+			parentText: parent.text,
 			avoid: (core, text) =>
 				said.has(normalise(text)) ||
 				said.has(normalise(core)) ||
@@ -2061,6 +2062,11 @@ export const buildFeedDay = async ({
 			// The POSTER's memory, not the replier's. Getting this wrong put
 			// self-repeats back into a feed that had none.
 			staleTemplates: own.shapes,
+			// It is answering the REPLY, so that is what it must not read back -
+			// and its OWN post as well, or a club that opened with "118-109,
+			// that is how you do it" comes back two lines later with "118-109,
+			// I will take it". Both, therefore. See the parrot rule.
+			parentText: `${written.text} ${parent.text}`,
 			avoid: (core, text) =>
 				said.has(normalise(text)) ||
 				said.has(normalise(core)) ||

@@ -554,6 +554,107 @@ describe("writeReply", () => {
 		});
 	};
 
+	// A reply that quotes the post's own number back at it is not a
+	// conversation. Measured on a corpus: preferring lines that carry a number
+	// made replies engage with the post AND made 127 of 955 of them read it
+	// back - "118-109. that is how you do it" answered with "118-109. I will
+	// take it."
+	test("a reply does not read the post's numbers back at it", () => {
+		const wonk = account("analytics");
+		const fan = account("homerFan", { tid: 0 });
+		const events = [
+			game(),
+			game({ overtimes: 1 }),
+			perfEvent(),
+			perfEvent({ reb: 17, pts: 12 }),
+			perfEvent({ tov: 8 }),
+		];
+		let checked = 0;
+		for (const event of events) {
+			for (let seed = 0; seed < 60; seed++) {
+				// The post already stated every number this event has.
+				const parentText = Object.values(event.facts)
+					.filter((v) => typeof v === "number")
+					.join(" ");
+				const text = writeReply({
+					account: wonk,
+					parent: fan,
+					event,
+					heat: 0,
+					pool: createPhrasePool(),
+					rng: rngFromSeed(seed),
+					parentText,
+				});
+				if (text === undefined) {
+					continue;
+				}
+				checked += 1;
+				const mine = text.match(/\d+/g);
+				if (mine === null) {
+					continue;
+				}
+				const said = new Set(parentText.match(/\d+/g) ?? []);
+				assert.isFalse(
+					mine.every((n) => said.has(n)),
+					`echoed the post: "${text}" against "${parentText}"`,
+				);
+			}
+		}
+		assert.isAbove(checked, 50, "not enough replies produced to judge");
+	});
+
+	test("but it may still add a number the post did not give", () => {
+		// The rule is about echoing, not about numbers. A reply that brings up
+		// the turnovers under a post about the points is the whole point of
+		// the bank, so it must survive a parent that mentioned the points.
+		const wonk = account("analytics");
+		const fan = account("homerFan", { tid: 0 });
+		let withNumbers = 0;
+		for (let seed = 0; seed < 120; seed++) {
+			const text = writeReply({
+				account: wonk,
+				parent: fan,
+				event: perfEvent({ pts: 34, tov: 8, reb: 17 }),
+				heat: 0,
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+				parentText: "34 points tonight",
+			});
+			if (text !== undefined && /\d/.test(text)) {
+				withNumbers += 1;
+			}
+		}
+		assert.isAbove(withNumbers, 0, "no reply ever cited a fresh number");
+	});
+
+	test("nobody wins by 1 points", () => {
+		// A margin of one is common and "1 points" is the kind of thing that
+		// makes a whole feed look generated.
+		for (let seed = 0; seed < 60; seed++) {
+			for (const ev of [
+				game({
+					teams: [
+						{ tid: 0, region: "Boston", name: "Celtics", abbrev: "BOS", pts: 100, players: [] },
+						{ tid: 1, region: "Sacramento", name: "Kings", abbrev: "SAC", pts: 99, players: [] },
+					],
+				}),
+				perfEvent({ pts: 1, reb: 1, ast: 1, tov: 1, blk: 1, stl: 1 }),
+			]) {
+				const text = writeReply({
+					account: account("analytics"),
+					parent: account("homerFan", { tid: 0 }),
+					event: ev,
+					heat: 0,
+					pool: createPhrasePool(),
+					rng: rngFromSeed(seed),
+				});
+				if (text !== undefined) {
+					assert.notMatch(text, /\b1 (points|boards|assists|turnovers|blocks|steals)\b/);
+				}
+			}
+		}
+	});
+
 	test("an answer is always produced, so no thread dangles", () => {
 		const text = reply(account("beatWriter"), account("homerFan", { tid: 0 }));
 		assert.notStrictEqual(text, undefined);

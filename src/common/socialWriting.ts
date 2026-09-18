@@ -367,6 +367,42 @@ export const frameFor = (
 
 // ---------------------------------------------------------------- TEMPLATES
 
+// "1 points" is the kind of thing that makes a whole feed look generated, and
+// a margin of one is common. Every count that can legitimately be 1 goes
+// through this.
+const plural = (n: number, one: string, many = `${one}s`): string =>
+	`${n} ${n === 1 ? one : many}`;
+
+// AND THE SAME THING CENTRALLY, because a bank of three hundred templates
+// cannot be audited by hand and the next one written will have the same bug.
+// A corpus turned up "1 points to the Thunder" and "1 points on 1 turnovers"
+// in templates whose guards made a value of one perfectly reachable.
+//
+// The \b before the 1 is what keeps this off "21 points": there is no word
+// boundary between the 2 and the 1, so only a standalone 1 matches.
+const SINGULARS: Record<string, string> = {
+	points: "point",
+	rebounds: "rebound",
+	boards: "board",
+	assists: "assist",
+	turnovers: "turnover",
+	blocks: "block",
+	steals: "steal",
+	shots: "shot",
+	attempts: "attempt",
+	trips: "trip",
+	"free throws": "free throw",
+	games: "game",
+	nights: "night",
+	wins: "win",
+	losses: "loss",
+	minutes: "minute",
+	seasons: "season",
+};
+const ONE_OF = new RegExp(`\\b1 (${Object.keys(SINGULARS).join("|")})\\b`, "g");
+const fixOnes = (text: string): string =>
+	text.replace(ONE_OF, (_m, word: string) => `1 ${SINGULARS[word]!}`);
+
 type Template<F extends Frame> = {
 	// Stable across builds: the phrase ledger claims these so one line cannot
 	// be used twice in a night, and an index would shift as banks grow.
@@ -385,6 +421,10 @@ type Template<F extends Frame> = {
 	// what picking the emoji off the result alone did - reads as sarcasm
 	// nobody wrote.
 	mood?: "up" | "down";
+	// THIS LINE SAYS SOMETHING. A template that quotes a number off the frame -
+	// the margin, the rebounds, the turnovers - rather than one that would fit
+	// under any post on any night. Replies prefer these; see writeFirstAcceptable.
+	specific?: boolean;
 	text: (frame: F) => string;
 };
 
@@ -649,7 +689,7 @@ const GAME_TEMPLATES: Template<GameFrame>[] = [
 		tones: ["hype", "unhinged"],
 		when: (f) => f.stance === "against" && f.nailbiter,
 		text: (f) =>
-			`${f.margin} points to the ${f.winner}. That is nothing. We get them next time.`,
+			`${plural(f.margin, "point")} to the ${f.winner}. That is nothing. We get them next time.`,
 	},
 	{
 		id: "game.hype.loss.blowout",
@@ -2201,6 +2241,209 @@ const REPLY_TEMPLATES: Template<any>[] = [
 		text: () => `Watching this one closely.`,
 	},
 
+	// ANSWERING THE POST, not the weather.
+	//
+	// Measured over a corpus: only nine of the forty-eight reply templates
+	// touched the subject at all, so most threads read as a stranger nodding.
+	// Under "16 rebounds. jalen mathis owned the glass" the answers came back
+	// "MAYBE", "we will find out", "talk to me in a month" - three people who
+	// could have been replying to anything.
+	//
+	// These take a number off the same frame the post was written from, so a
+	// reply is about the thing above it. Every one is gated on the fact being
+	// worth mentioning, because a reply that says "4 turnovers, though" is
+	// worse than a shrug: a shrug is at least not pretending the detail
+	// matters. Nothing here states anything the box score does not.
+
+	{
+		specific: true,
+		id: "re.perf.volume",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			!f.sameSide &&
+			(f.subject as PerformanceFrame).fga >= 20 &&
+			(f.subject as PerformanceFrame).pts <
+				(f.subject as PerformanceFrame).fga * 1.3,
+		text: (f: ReplyFrame) => {
+			const p = f.subject as PerformanceFrame;
+			return `${p.pts} on ${p.fga} shots. That is a lot of the ball.`;
+		},
+	},
+	{
+		specific: true,
+		id: "re.perf.glass",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			(f.subject as PerformanceFrame).reb >= 15,
+		text: (f: ReplyFrame) =>
+			`The ${(f.subject as PerformanceFrame).reb} boards are the story, not the points.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.tov",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			!f.sameSide &&
+			(f.subject as PerformanceFrame).tov >= 6,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).tov} turnovers, though.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.dimes",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			(f.subject as PerformanceFrame).ast >= 10,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).ast} assists and nobody is going to mention it.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.wasted",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			!(f.subject as PerformanceFrame).won &&
+			(f.subject as PerformanceFrame).pts >= 30,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).pts} in a loss. Do what you like with that.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.tripdub",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			(f.subject as PerformanceFrame).tripleDouble,
+		text: () => `A triple double is a triple double.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.cold",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			f.sameSide &&
+			(f.subject as PerformanceFrame).cold,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).name} will shoot better than that.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.ts",
+		tones: ["wonk", "beat", "wire"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			(f.subject as PerformanceFrame).tsp !== undefined &&
+			(f.subject as PerformanceFrame).tsp! >= 62 &&
+			(f.subject as PerformanceFrame).tsp! <= 100,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).tsp}% true shooting is the part worth keeping.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.stripe",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			(f.subject as PerformanceFrame).fta >= 12,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).fta} trips to the line will do that.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.rim",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			(f.subject as PerformanceFrame).blk >= 5,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).blk} blocks. The box score buries that.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.hands",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			(f.subject as PerformanceFrame).stl >= 5,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).stl} steals is not luck.`,
+	},
+
+	{
+		specific: true,
+		id: "re.game.blowout",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" && (f.subject as GameFrame).margin >= 20,
+		text: (f: ReplyFrame) =>
+			`${plural((f.subject as GameFrame).margin, "point")}. There is no caveat for that.`,
+	},
+	{
+		specific: true,
+		id: "re.game.ot",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" && (f.subject as GameFrame).ot > 0,
+		text: () => `It took an extra five minutes. It still counts.`,
+	},
+	{
+		specific: true,
+		id: "re.game.thin",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			(f.subject as GameFrame).ot === 0 &&
+			(f.subject as GameFrame).margin > 0 &&
+			(f.subject as GameFrame).margin <= 3,
+		text: (f: ReplyFrame) =>
+			`${plural((f.subject as GameFrame).margin, "point")}. That goes the other way half the time.`,
+	},
+	{
+		specific: true,
+		id: "re.game.track",
+		tones: ["wonk", "beat", "wire"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" && (f.subject as GameFrame).combined >= 240,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as GameFrame).combined} points between them. Nobody guarded anybody.`,
+	},
+	{
+		specific: true,
+		id: "re.game.streak",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			(f.subject as GameFrame).streak !== undefined &&
+			(f.subject as GameFrame).streak! >= 5,
+		text: (f: ReplyFrame) => {
+			const n = (f.subject as GameFrame).streak!;
+			return `${n} in a row is ${n} in a row.`;
+		},
+	},
+	{
+		specific: true,
+		id: "re.game.skid",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			!f.sameSide &&
+			(f.subject as GameFrame).skid !== undefined &&
+			(f.subject as GameFrame).skid! >= 5,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as GameFrame).skid} straight. It stopped being noise a while ago.`,
+	},
+	{
+		specific: true,
+		id: "re.game.upset",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" && (f.subject as GameFrame).upset,
+		text: () => `Nobody had that one.`,
+	},
+	{
+		specific: true,
+		id: "re.game.take",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			f.subject.stance === "for" &&
+			(f.subject as GameFrame).margin > 0 &&
+			(f.subject as GameFrame).margin <= 8,
+		text: (f: ReplyFrame) => {
+			const g = f.subject as GameFrame;
+			return `${g.winnerPts}-${g.loserPts}. I will take it.`;
+		},
+	},
+
 	// THE TAIL. On a busy night the day's duplicate check takes the good
 	// lines first, and whoever comes last falls through to whatever is left -
 	// so if what is left is one catch-all, every thread on every busy night
@@ -2275,6 +2518,7 @@ export const writeReplyDetailed = ({
 	rng,
 	avoid,
 	staleTemplates,
+	parentText,
 }: {
 	account: ResolvedSocialAccount;
 	parent: ResolvedSocialAccount;
@@ -2286,6 +2530,8 @@ export const writeReplyDetailed = ({
 	avoid?: AvoidFn;
 	// Template ids this account used recently.
 	staleTemplates?: ReadonlySet<string>;
+	// The post being answered, as it was written. See the parrot rule below.
+	parentText?: string;
 }): WrittenPost | undefined => {
 	const subject = frameFor(account, event);
 	if (!subject) {
@@ -2313,6 +2559,28 @@ export const writeReplyDetailed = ({
 	if (eligible.length === 0) {
 		return undefined;
 	}
+	// THE PARROT RULE. Preferring lines that carry a number made replies
+	// engage with the post - and then made a third of them read the post's own
+	// number back at it: "118-109. that is how you do it" answered with
+	// "118-109. I will take it." Ninety-four of them in a forty-five day
+	// corpus. Nobody talks like that; quoting a figure back is what you do
+	// when you have not read past it.
+	//
+	// So a reply may not be built ENTIRELY out of numbers the post already
+	// gave. It can add one (the six turnovers under a post about the points),
+	// and it can say something without numbers at all, but it cannot echo.
+	// Refusing it here rather than in each template's `when` means the next
+	// candidate is tried, which is what the loop is already for.
+	const parentNumbers = new Set(parentText?.match(/\d+/g) ?? []);
+	const echoes = (core: string): boolean => {
+		const mine = core.match(/\d+/g);
+		return (
+			mine !== null &&
+			mine.length > 0 &&
+			mine.every((n) => parentNumbers.has(n))
+		);
+	};
+
 	return writeFirstAcceptable({
 		eligible,
 		frame,
@@ -2320,8 +2588,10 @@ export const writeReplyDetailed = ({
 		pool,
 		rng,
 		ledgerKey: frame.quote ? "tmpl:quote" : "tmpl:reply",
-		avoid,
+		avoid: (core, text) =>
+			echoes(core) || (avoid !== undefined && avoid(core, text)),
 		staleTemplates,
+		preferSpecific: true,
 	});
 };
 
@@ -3303,6 +3573,7 @@ const writeFirstAcceptable = ({
 	ledgerKey,
 	avoid,
 	staleTemplates,
+	preferSpecific,
 }: {
 	eligible: Template<any>[];
 	frame: Frame | ReplyFrame;
@@ -3312,6 +3583,8 @@ const writeFirstAcceptable = ({
 	ledgerKey: string;
 	avoid: AvoidFn | undefined;
 	staleTemplates: ReadonlySet<string> | undefined;
+	// Replies only. See the note in the loop.
+	preferSpecific?: boolean;
 }): WrittenPost | undefined => {
 	// SHAPE MEMORY. Refusing a repeated sentence is not enough on its own: an
 	// account that answered every series with "Down 1-3 to the Curses.
@@ -3341,8 +3614,24 @@ const writeFirstAcceptable = ({
 		// Draw from the templates this account has NOT reached for lately
 		// while any are left, and fall back to the rest only once they run
 		// out, so a thin bank can still speak.
-		const unused = remaining.filter((template) => freshIds.has(template.id));
-		const candidates = unused.length > 0 ? unused : remaining;
+		// SOMETHING TO SAY BEATS SOMETHING TO FILL. A reply that quotes the
+		// rebounds is better than one that would fit under any post ever
+		// written, so while any of those are left they are the only candidates.
+		// The day's duplicate check does the rest: once the first account has
+		// used the good line about the margin, the second is refused it and
+		// falls through here again - so a thread reads concrete at the top and
+		// conversational underneath, which is the shape a real one has.
+		//
+		// Posts are not filtered this way. Their banks are already written off
+		// the frame, and preferring within them would narrow voices that are
+		// meant to differ.
+		const pool0 = preferSpecific
+			? (remaining.some((t) => t.specific)
+					? remaining.filter((t) => t.specific)
+					: remaining)
+			: remaining;
+		const unused = pool0.filter((template) => freshIds.has(template.id));
+		const candidates = unused.length > 0 ? unused : pool0;
 		const ids = candidates.map((template) => template.id);
 		const chosenId = pool.takeUnclaimed(rng, ids, ledgerKey);
 		const chosen =
@@ -3353,7 +3642,7 @@ const writeFirstAcceptable = ({
 		// memory and the day's duplicate check compare on: "14 straight for
 		// the Cleveland Curses" and "14 straight for the Curses" are the same
 		// post, and letting the nickname pass judged them as different.
-		const core = chosen.text(frame as any);
+		const core = fixOnes(chosen.text(frame as any));
 		let spoken = core;
 		if (
 			"kind" in frame &&
