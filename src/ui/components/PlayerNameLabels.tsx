@@ -10,8 +10,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useLocal } from "../util/local.ts";
 import { usePlayerFace } from "../util/playerFaces.ts";
 import { PlayerPicture } from "./PlayerPicture.tsx";
-import { FullBodyModal } from "./FullBodyModal.tsx";
-import { isSport } from "../../common/sportFunctions.ts";
 
 type Props = {
 	awards?: Player["awards"];
@@ -165,11 +163,6 @@ export const PlayerNameLabels = (props: Props) => {
 		props.season,
 		localState.lid,
 	);
-	// Clicking the little face opens the whole player, head to toe, in his
-	// uniform. Basketball only - that's the sport the body is drawn for.
-	const [showFullBody, setShowFullBody] = useState(false);
-	const expandable =
-		!!faceData?.face && !faceData.imgURL && isSport("basketball");
 	const faceEl =
 		faceData && (faceData.face || faceData.imgURL) ? (
 			<span
@@ -179,16 +172,7 @@ export const PlayerNameLabels = (props: Props) => {
 					width: "1.33em",
 					marginRight: 5,
 					verticalAlign: "middle",
-					cursor: expandable ? "zoom-in" : undefined,
 				}}
-				title={expandable ? "Full body" : undefined}
-				onClick={
-					expandable
-						? () => {
-								setShowFullBody(true);
-							}
-						: undefined
-				}
 			>
 				<PlayerPicture
 					face={faceData.face}
@@ -276,19 +260,6 @@ export const PlayerNameLabels = (props: Props) => {
 	const nameLabelsBlock = (
 		<span style={style}>
 			{faceEl}
-			{showFullBody && faceData?.face ? (
-				<FullBodyModal
-					colors={faceData.colors}
-					face={faceData.face}
-					jersey={faceData.jersey}
-					jerseyNumber={faceData.jerseyNumber}
-					hgt={faceData.hgt}
-					name={`${firstName} ${lastName}`}
-					onHide={() => {
-						setShowFullBody(false);
-					}}
-				/>
-			) : null}
 			{Object.hasOwn(props, "jerseyNumber") ? (
 				<span
 					className={`text-body-secondary jersey-number-name text-start${

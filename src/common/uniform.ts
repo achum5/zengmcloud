@@ -338,7 +338,7 @@ export const presetToSpec = (
 	}
 };
 
-// ----- Geometry, shared with the full-body render -----
+// ----- Geometry -----
 //
 // The faces.js jersey lives at the bottom of its 400x600 canvas. The
 // silhouette's top edge dips along the neckline, so clipping to it notches the

@@ -15,7 +15,6 @@ import {
 	type UniformTrim,
 } from "../../common/uniform.ts";
 import { MyFace } from "../components/MyFace.tsx";
-import { FullBodyPlayer } from "../components/FullBodyPlayer.tsx";
 
 // The uniform editor. Everything here edits a UniformSpec; the preview and the
 // save both go through the same serialized jersey string the rest of the app
@@ -242,21 +241,15 @@ const EditTeamUniform = ({
 				<div className="col-lg-5 mb-3">
 					<div className="position-sticky" style={{ top: 60 }}>
 						{face ? (
-							<div className="d-flex align-items-start gap-3">
+							<div className="d-flex align-items-end gap-3">
 								<div
-									style={{ width: 190, cursor: "pointer" }}
+									style={{ width: 170, cursor: "pointer" }}
 									title="New face"
 									onClick={() => {
 										setFaceCount((c) => c + 1);
 									}}
 								>
-									<FullBodyPlayer
-										colors={colors}
-										face={face}
-										jersey={previewJersey}
-										jerseyNumber="35"
-										hgt={78}
-									/>
+									<MyFace colors={colors} face={face} jersey={previewJersey} />
 								</div>
 								{/* The jersey up close - it's a sliver of the full face. */}
 								<div
