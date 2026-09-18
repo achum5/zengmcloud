@@ -1360,7 +1360,21 @@ export const wrinkleLevelAgedTo = (
 };
 
 // How much the folds deepen each season on their own, between those.
-const SMILE_CREEP_PER_YEAR = 0.05;
+//
+// It MUST keep up with the ramp smileSizeForAge describes, or the creep - not
+// the curve - becomes what actually decides how deep a fold gets. At 0.05 a
+// season against a curve climbing (2 - 0.6) / (38 - 22) = 0.0875, it never
+// caught up: a face aged from the draft reached 1.4 by 38 where the curve
+// asked for the full 2, and worse, a veteran GENERATED at 38 got 2 while one
+// AGED to 38 got 1.4. The two paths to the same age are supposed to agree -
+// that is the contract the whole module is built on - so this is derived from
+// the curve rather than guessed at, and a test pins the two together.
+const SMILE_CREEP_PER_YEAR =
+	Math.ceil(
+		((SMILE_SIZE_MAX - SMILE_SIZE_MIN) /
+			(SMILE_SIZE_FULL_AGE - SMILE_SIZE_START_AGE)) *
+			1000,
+	) / 1000;
 
 // How much rarer losing it entirely is than starting to lose it, so a man does
 // not go from a full head to bald in two seasons.
@@ -1732,8 +1746,19 @@ export const ageFace = (
 		face.hair.id !== HAIR_BALD &&
 		face.hair.id !== HAIR_THINNING
 	) {
-		face.hair.id = HAIR_BALD;
-		shaveScalp(face);
+		// Through the clippers first. This is the same objection the balding
+		// ladder below answers - "straight from dreads to a horseshoe in a
+		// single preseason is the jump that reads as a glitch" - and it applies
+		// just as much to a man who decides to shave: he takes an afro down to
+		// something short, and the razor comes out the season after. Going from
+		// a full head of hair to a bare scalp between two roster pages was the
+		// largest single jump left in a career.
+		if (VOLUMINOUS_HAIR.has(face.hair.id)) {
+			face.hair.id = pickFrom(SHORT_CUTS, rand);
+		} else {
+			face.hair.id = HAIR_BALD;
+			shaveScalp(face);
+		}
 		changed = true;
 	}
 

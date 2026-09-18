@@ -1,6 +1,13 @@
 import { generate } from "facesjs";
 import { assert, describe, test } from "vitest";
-import { ageFace, applyRealisticFace } from "./realisticFaces.ts";
+import {
+	ageFace,
+	applyRealisticFace,
+	HAIR_BALD,
+	HAIR_VOLUMINOUS,
+	shavesHead,
+	shavesHeadAtAge,
+} from "./realisticFaces.ts";
 
 // HOW AGING IS PACED, measured over replayed careers rather than argued about.
 //
@@ -121,6 +128,84 @@ describe("aging is paced, not staged", () => {
 			0.02,
 			`${(frozenShare * 100).toFixed(1)}% of seasons changed nothing at all`,
 		);
+	});
+
+	test("a face aged to an age has the same folds as one built at it", () => {
+		// The contract the module is built on: generation and aging are two
+		// paths to the same age and they have to agree. The fold DEPTH broke it
+		// - the per-season creep was slower than the curve it was chasing, so an
+		// aged 38-year-old carried 1.4 where a generated one carried the full 2,
+		// and every veteran the league played into was smoother than the ones it
+		// started with.
+		for (const pid of [1, 7, 23, 44, 61]) {
+			const aged: any = generate(
+				{ jersey: { id: "jersey" } },
+				{ gender: "male", race: "white" },
+			);
+			applyRealisticFace(aged, {
+				age: FROM,
+				race: "white",
+				pid,
+				rand: seeded(pid),
+			});
+			for (let age = FROM + 1; age <= TO; age++) {
+				ageFace(aged, age, pid, seeded(pid + age));
+			}
+
+			const built: any = generate(
+				{ jersey: { id: "jersey" } },
+				{ gender: "male", race: "white" },
+			);
+			applyRealisticFace(built, {
+				age: TO,
+				race: "white",
+				pid,
+				rand: seeded(pid),
+			});
+
+			assert.strictEqual(
+				aged.smileLine.size,
+				built.smileLine.size,
+				`pid ${pid}: aged to ${TO} has folds ${aged.smileLine.size}, built at ${TO} has ${built.smileLine.size}`,
+			);
+		}
+	});
+
+	test("a man reaches for the clippers before the razor", () => {
+		// Shaving used to take a head of dreads to a bare scalp between two
+		// roster pages. The balding ladder already refuses that jump - "straight
+		// from dreads to a horseshoe in a single preseason is the jump that
+		// reads as a glitch" - and it applies just as much to a man who decides
+		// to shave, so he goes through something short first.
+		const volume = new Set<string>(HAIR_VOLUMINOUS);
+		let checked = 0;
+		for (let pid = 0; pid < 400; pid++) {
+			if (!shavesHead(pid)) {
+				continue;
+			}
+			const face: any = generate(
+				{ jersey: { id: "jersey" } },
+				{ gender: "male", race: "black" },
+			);
+			// Start him with volume, at an age before he would shave.
+			face.hair.id = HAIR_VOLUMINOUS[pid % HAIR_VOLUMINOUS.length]!;
+			const start = Math.min(FROM, shavesHeadAtAge(pid) - 1);
+			let previous = face.hair.id;
+			for (let age = start + 1; age <= TO; age++) {
+				ageFace(face, age, pid, seeded(pid + age));
+				if (face.hair.id === HAIR_BALD && volume.has(previous)) {
+					assert.fail(
+						`pid ${pid} went from ${previous} straight to a shaved head at ${age}`,
+					);
+				}
+				previous = face.hair.id;
+			}
+			checked += 1;
+			if (checked >= 40) {
+				break;
+			}
+		}
+		assert.isAbove(checked, 0, "no head-shavers found to check");
 	});
 
 	test("spreading the steps did not remove them", () => {
