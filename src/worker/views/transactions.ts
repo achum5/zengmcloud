@@ -1,5 +1,7 @@
 import { idb } from "../db/index.ts";
+import { g } from "../util/index.ts";
 import { formatEventText } from "../util/formatEventText.ts";
+import { feedAboutLeagueEvents } from "../util/socialFeed.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
 
 const updateEventLog = async (
@@ -60,12 +62,29 @@ const updateEventLog = async (
 			});
 		}
 
+		// The reaction under each move, when the feed is on and the season is
+		// one the feed can rebuild.
+		let social;
+		if (g.get("socialFeed") && typeof inputs.season === "number") {
+			social = await feedAboutLeagueEvents({
+				textByEid: new Map(
+					events2.map((event) => [
+						event.eid,
+						event.text.replaceAll(/<[^>]*>/g, ""),
+					]),
+				),
+				season: inputs.season,
+				eids: events2.map((event) => event.eid),
+			});
+		}
+
 		return {
 			abbrev: inputs.abbrev,
 			events: events2,
 			season: inputs.season,
 			eventType: inputs.eventType,
 			tid: inputs.tid,
+			social,
 		};
 	}
 };

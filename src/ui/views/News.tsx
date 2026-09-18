@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import { helpers } from "../util/helpers.ts";
@@ -14,7 +14,12 @@ const News = ({
 	order,
 	season,
 	teams,
+	social,
 }: View<"news">) => {
+	const socialTeamByTid = useMemo(
+		() => (social ? new Map(social.teams.map((t) => [t.tid, t])) : undefined),
+		[social],
+	);
 	const [showCategories, setShowCategories] = useState<
 		Record<keyof typeof categories, boolean>
 	>({
@@ -114,6 +119,7 @@ const News = ({
 						return true;
 					})
 					.map((event) => {
+						const posts = social?.postsByEid[event.eid];
 						return (
 							<div
 								key={event.eid}
@@ -124,6 +130,15 @@ const News = ({
 									season={season}
 									teams={teams}
 									userTid={userTid}
+									social={
+										posts && posts.length > 0 && socialTeamByTid
+											? {
+													posts,
+													pictures: social!.pictures,
+													teamByTid: socialTeamByTid,
+												}
+											: undefined
+									}
 								/>
 							</div>
 						);

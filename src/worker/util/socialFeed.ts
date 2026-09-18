@@ -669,6 +669,115 @@ export const feedAbout = async ({
 // loudest fan - the three accounts a person opening this feed for the first
 // time would actually want, and the ones that make the sidebar read as
 // theirs rather than as a random sample of seven hundred.
+// THE CHATTER UNDER A NEWS STORY. News pages and transaction logs list
+// league events by eid; every feed post written about a league event carries
+// that eid inside its eventId ("e:123"), so the posts about a story can be
+// collected without reading any text. Only days the feed has ALREADY built,
+// plus the most recent stretch, are generated here - a season of history must
+// not cost a season of feed generation the first time the news page opens.
+// Chatter fading off old stories is also just true to life.
+export const feedAboutLeagueEvents = async ({
+	season,
+	eids,
+	limitPerEvent = 2,
+	daysBack = 14,
+	textByEid,
+}: {
+	season: number;
+	eids: number[];
+	limitPerEvent?: number;
+	daysBack?: number;
+	// The story text each eid renders with, so a post that merely restates it
+	// word for word (the wire accounts do) is not hung underneath as if it
+	// were a reaction.
+	textByEid?: Map<number, string>;
+}): Promise<{
+	postsByEid: Record<number, (FeedPost & { day: number })[]>;
+	pictures: Record<string, AccountPicture>;
+	teams: {
+		tid: number;
+		abbrev: string;
+		region: string;
+		name: string;
+		imgURL?: string;
+		colors?: [string, string, string];
+	}[];
+}> => {
+	const snapshot = await getFeedSnapshot(season);
+	const wanted = new Set(eids);
+
+	// Which day each wanted event was placed on.
+	const dayByEid = new Map<number, number>();
+	for (const [day, events] of snapshot.leagueEventsByDay) {
+		for (const event of events) {
+			if (event.id.startsWith("e:")) {
+				const eid = Number(event.id.slice(2));
+				if (wanted.has(eid)) {
+					dayByEid.set(eid, day);
+				}
+			}
+		}
+	}
+
+	const recent = new Set(snapshot.days.slice(-daysBack));
+	const days = new Set<number>();
+	for (const day of dayByEid.values()) {
+		if (recent.has(day) || feedCache.has(snapshot.dayKey(day))) {
+			days.add(day);
+		}
+	}
+
+	const postsByEid: Record<number, (FeedPost & { day: number })[]> = {};
+	const onPage = new Set<string>();
+	for (const day of days) {
+		const dayIndex = snapshot.days.indexOf(day);
+		if (dayIndex < 0) {
+			continue;
+		}
+		const feedDay = await buildFeedDay({ snapshot, dayIndex });
+		for (const post of feedDay.posts) {
+			if (!post.eventId.startsWith("e:")) {
+				continue;
+			}
+			const eid = Number(post.eventId.slice(2));
+			if (!wanted.has(eid)) {
+				continue;
+			}
+			const story = textByEid?.get(eid);
+			if (story !== undefined) {
+				const a = normalise(post.text);
+				const b = normalise(story);
+				if (a.length > 0 && b.length > 0 && (a.includes(b) || b.includes(a))) {
+					continue;
+				}
+			}
+			const list = (postsByEid[eid] ??= []);
+			if (list.length >= limitPerEvent) {
+				continue;
+			}
+			list.push({ ...post, day });
+			onPage.add(post.accountId);
+			for (const reply of post.replies) {
+				onPage.add(reply.accountId);
+			}
+		}
+	}
+
+	const pictures = await picturesFor(
+		snapshot,
+		snapshot.accounts.filter((a) => onPage.has(a.id)),
+	);
+	const teams = (await idb.cache.teams.getAll()).map((t) => ({
+		tid: t.tid,
+		abbrev: t.abbrev,
+		region: t.region,
+		name: t.name,
+		imgURL: t.imgURL,
+		colors: t.colors,
+	}));
+	return { postsByEid, pictures, teams };
+};
+
 export const suggestedAccounts = (
 	snapshot: FeedSnapshot,
 	userTid: number,

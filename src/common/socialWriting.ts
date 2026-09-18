@@ -2708,7 +2708,15 @@ export const applyVoice = ({
 		out = shoutSomething(rng, out);
 	}
 
-	if (!quiet && personality.catchphrases.length > 0 && rng() < 0.25) {
+	if (
+		!quiet &&
+		personality.catchphrases.length > 0 &&
+		rng() < 0.25 &&
+		// Not on top of a line that already opens with its own throat-clear
+		// ("For the record:") - "Sources tell me For the record:" is two
+		// openers glued together, and it showed up under a news card.
+		!/^[^!.?]{0,24}:/.test(out)
+	) {
 		const phrase = pool.pick(
 			rng,
 			personality.catchphrases,

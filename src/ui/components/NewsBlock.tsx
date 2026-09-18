@@ -4,6 +4,8 @@ import clsx from "clsx";
 import { helpers } from "../util/helpers.ts";
 import type { View, LogEventType } from "../../common/types.ts";
 import { categories, types } from "../../common/transactionInfo.ts";
+import { SocialThread, type TeamLike } from "../views/SocialPost.tsx";
+import type { AccountPicture } from "../../common/socialMetrics.ts";
 
 const Badge = ({ type }: { type: LogEventType }) => {
 	let text;
@@ -29,11 +31,19 @@ export const NewsBlock = ({
 	season,
 	userTid,
 	teams,
+	social,
 }: {
 	event: View<"news">["events"][number];
 	season: number;
 	userTid: number;
 	teams: View<"news">["teams"];
+	// The feed's reaction to this story, when the league has the feed on and
+	// the story is fresh enough to have one.
+	social?: {
+		posts: any[];
+		pictures: Record<string, AccountPicture | undefined>;
+		teamByTid: Map<number, TeamLike>;
+	};
 }) => {
 	let teamName = null;
 	let teamInfo;
@@ -131,6 +141,19 @@ export const NewsBlock = ({
 					<SafeHtml dirty={event.text} />
 				</div>
 			</div>
+			{social && social.posts.length > 0 ? (
+				<div className="border-top px-2 pt-2">
+					{social.posts.map((post) => (
+						<SocialThread
+							key={post.id}
+							compact
+							pictures={social.pictures}
+							post={post}
+							teamByTid={social.teamByTid}
+						/>
+					))}
+				</div>
+			) : null}
 		</div>
 	);
 };

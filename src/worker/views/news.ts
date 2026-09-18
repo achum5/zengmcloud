@@ -8,6 +8,7 @@ import type {
 import { idb } from "../db/index.ts";
 import type { FaceConfig } from "facesjs";
 import { formatEventText } from "../util/formatEventText.ts";
+import { feedAboutLeagueEvents } from "../util/socialFeed.ts";
 
 const IGNORE_EVENT_TYPES = ["retiredList", "newTeam"];
 
@@ -184,6 +185,22 @@ const updateNews = async (
 			)
 		).map((t) => t.seasonAttrs);
 
+		// The chatter under each story, when the feed is on: what the league's
+		// accounts said about that trade, that injury, that award.
+		let social;
+		if (g.get("socialFeed")) {
+			social = await feedAboutLeagueEvents({
+				textByEid: new Map(
+					events.map((event) => [
+						event.eid,
+						event.text.replaceAll(/<[^>]*>/g, ""),
+					]),
+				),
+				season,
+				eids: events.map((event) => event.eid),
+			});
+		}
+
 		return {
 			abbrev,
 			events,
@@ -191,6 +208,7 @@ const updateNews = async (
 			order,
 			season,
 			teams,
+			social,
 		};
 	}
 };
