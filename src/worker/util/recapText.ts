@@ -296,6 +296,14 @@ export const SCORED_VERBS = [
 	"put up",
 	"posted",
 	"went for",
+	// Enough options that a full night's slate doesn't lap the pool: the
+	// supporting-cast sentences draw from it fifteen-plus times across a day
+	// page, and with thirteen entries the flavored ones ("pitched in with")
+	// were landing three times a night.
+	"delivered",
+	"turned in",
+	"provided",
+	"threw in",
 ] as const;
 
 // Scoring verbs already spent in the recap being written, BY WORD.

@@ -340,8 +340,15 @@ const impact = (p: RecapPlayer): number =>
 // `impact` below stays as it is for ORDERING the rest of the mentions, where
 // its efficiency and turnover terms genuinely help decide who is worth a
 // sentence next.
-const storyScore = (p: RecapPlayer): number =>
-	0.5 * p.pts + 0.5 * p.reb + 0.5 * p.ast + 1.7 * p.blk + 1.7 * p.stl;
+const storyScore = (p: RecapPlayer): number => {
+	// A triple-double is a story whatever the sums say - a 17-10-14 night was
+	// losing the star slot to a teammate's 16 points and 5 steals, because five
+	// steals weigh like a scoring binge in the raw score. A double-double gets
+	// a nudge, enough to beat a same-size line that is only points.
+	const cats = doubleCategories(p).length;
+	const bonus = cats >= 3 ? 10 : cats === 2 ? 2.5 : 0;
+	return 0.5 * p.pts + 0.5 * p.reb + 0.5 * p.ast + 1.7 * p.blk + 1.7 * p.stl + bonus;
+};
 
 // A line with nothing in it worth a sentence: under 18 points, no
 // double-double, and none of the other columns even at the loose bar.
@@ -4920,7 +4927,35 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// The lede said how many reached double figures.
 	let balanceTold = false;
 
-	if (headline.spentStar) {
+	const monsterLoser = headline.spentLoserStar
+		? bestOf(shape.loser.players)
+		: undefined;
+	if (monsterLoser && monsterLoser.pts >= 40) {
+		// A 50-point night in a loss is the story of the game, and the headline
+		// already said so - the body opening on the winner's 20-and-15 read like
+		// a different story stapled to it. Open on the man himself, then let the
+		// winner's star follow.
+		const verb = pastTense(pick(rng, verbPool(game, shape)));
+		const w = theNick(shape.winner);
+		const l = theNick(shape.loser);
+		para1.push(
+			pick(
+				rng,
+				[
+					`${monsterLoser.name} gave ${l} ${monsterLoser.pts} points, and ${w} beat them anyway, ${scoreTag(shape)}${tail.text}.`,
+					`${monsterLoser.name} scored ${monsterLoser.pts} and it still was not enough - ${w} ${verb} ${l} ${scoreTag(shape)}${tail.text}.`,
+					`On most nights ${poss(monsterLoser.name)} ${monsterLoser.pts} points win the game. On this one ${w} ${verb} ${l} ${scoreTag(shape)}${tail.text}.`,
+				],
+				"lede:monster-loss",
+			),
+			leadSentence(game, shape, star, rng, true),
+		);
+		if (shot && !shot.tying && shot.name !== monsterLoser.name) {
+			const clutch = clutchSentence(shot, shape);
+			para1.push(clutch.text);
+			heroTold = clutch.told;
+		}
+	} else if (headline.spentStar) {
 		// The headline already told the star's story. Open on the RESULT and let
 		// his line follow as its own sentence, rather than writing the headline
 		// again with the verbs swapped.
