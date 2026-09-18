@@ -863,6 +863,16 @@ export const shavesHeadAtAge = (pid: number | undefined): number =>
 // styles - the same rung the balding ladder takes first, for its own reasons.
 export const CUTS_HAIR_SHARE = 0.5;
 export const CUTS_HAIR_FROM_AGE = 29;
+
+// And the same for the haircut: the earliest age anyone cuts it back, plus a
+// few years of his own, so the league does not visit the barber together.
+export const CUTS_HAIR_SPREAD = 5;
+
+export const cutsHairFromAge = (pid: number | undefined): number =>
+	CUTS_HAIR_FROM_AGE +
+	(pid === undefined
+		? 0
+		: Math.floor(hashPid(pid, 12) * (CUTS_HAIR_SPREAD + 1)));
 const CUT_PER_YEAR = 0.12;
 
 export const cutsHair = (pid: number | undefined): boolean =>
@@ -1107,6 +1117,35 @@ const FATNESS_START_AGE = 27;
 const FATNESS_PER_YEAR = 0.012;
 const FATNESS_MAX = 1;
 
+// THE PARTS THAT NEVER STOP GROWING. Ears and noses are the one bit of a head
+// that really does keep growing for life, which is why an old man's look
+// caricatures as both. They are worth having here for the same reason the
+// folds are: a career needs things that move EVERY season and not just on the
+// handful where a style changes, or the years in between are pixel-identical
+// and the whole progression lands as three or four events.
+//
+// Per season this is nothing - a few thousandths of the size - and over
+// nineteen it is the difference between a rookie's head and a veteran's.
+// One-way and never recorded on its own, exactly like fatness.
+const GROWTH_START_AGE = 19;
+const EAR_GROWTH_PER_YEAR = 0.008;
+const EAR_SIZE_MAX = 1.5;
+const NOSE_GROWTH_PER_YEAR = 0.005;
+// Bounded by the module's own plausible range, not facesjs's wider one: a
+// generated nose is drawn inside NOSE_SIZE and an aged one has to stay there
+// too, or a veteran ends up with a nose no draft class could produce. The
+// generation test holds both paths to it.
+const NOSE_SIZE_MAX = NOSE_SIZE[1];
+
+const growthYears = (age: number): number =>
+	Math.max(0, Math.floor(age) - GROWTH_START_AGE);
+
+export const earGrowthByAge = (age: number): number =>
+	growthYears(age) * EAR_GROWTH_PER_YEAR;
+
+export const noseGrowthByAge = (age: number): number =>
+	growthYears(age) * NOSE_GROWTH_PER_YEAR;
+
 export const fatnessGainByAge = (age: number): number =>
 	Math.max(0, Math.floor(age) - FATNESS_START_AGE) * FATNESS_PER_YEAR;
 
@@ -1191,8 +1230,31 @@ export const WEATHERS_LESS_SHARE = 0.25;
 export const weathersLess = (pid: number | undefined): boolean =>
 	pid !== undefined && hashPid(pid, 4) < WEATHERS_LESS_SHARE;
 
+// NOBODY AGES ON THE SAME SCHEDULE. wrinkleLevelForAge is one curve for the
+// whole league, and running every player off it meant every player became
+// eligible for his next set of lines in the same three preseasons - so a
+// measured career had its steps piled at 23, 27 and 31, where roughly a third
+// of the league changed at once. That is what makes aging read as a few big
+// events rather than something always quietly happening: on any other night
+// nothing moved, and on those three the whole roster did.
+//
+// Each player gets his own delay on that curve, so the same progression is
+// spread across a band of ages instead of landing on one. It only ever DELAYS.
+// The league curve is an upper bound on what an age permits - weathersLess
+// already works that way, and the tests hold every player to it - so a
+// personal schedule may run behind it and never ahead.
+export const WRINKLE_DELAY_MAX = 4;
+
+export const wrinkleDelay = (pid: number | undefined): number =>
+	pid === undefined
+		? 0
+		: Math.floor(hashPid(pid, 11) * (WRINKLE_DELAY_MAX + 1));
+
 export const wrinkleCeiling = (age: number, pid: number | undefined): number =>
-	Math.max(0, wrinkleLevelForAge(age) - (weathersLess(pid) ? 1 : 0));
+	Math.max(
+		0,
+		wrinkleLevelForAge(age - wrinkleDelay(pid)) - (weathersLess(pid) ? 1 : 0),
+	);
 
 // Read the level back off a face. Highest feature present wins, so a face that
 // somehow has brow lines but no smile lines reads as 3 - and applying level 3
@@ -1447,7 +1509,7 @@ export const applyRealisticFace = (
 	// The cut he may already have had by this age - see cutsHair. Replayed the
 	// way the lines are, so a face built at 34 wears what one aged to 34 would.
 	if (cutsHair(pid) && VOLUMINOUS_HAIR.has(face.hair.id)) {
-		for (let year = CUTS_HAIR_FROM_AGE; year <= age; year++) {
+		for (let year = cutsHairFromAge(pid); year <= age; year++) {
 			if (rand() < CUT_PER_YEAR) {
 				face.hair.id = pickFrom(SHORT_CUTS, rand);
 				break;
@@ -1563,6 +1625,22 @@ export const applyRealisticFace = (
 			);
 		}
 	}
+
+	// The years of growth this age has already had, added last so nothing
+	// above can overwrite it: a face built at 34 wears the ears and nose one
+	// aged to 34 would. Same contract the fatness gain keeps.
+	if (typeof face.ear?.size === "number") {
+		face.ear.size =
+			Math.round(
+				Math.min(EAR_SIZE_MAX, face.ear.size + earGrowthByAge(age)) * 100,
+			) / 100;
+	}
+	if (typeof face.nose?.size === "number") {
+		face.nose.size =
+			Math.round(
+				Math.min(NOSE_SIZE_MAX, face.nose.size + noseGrowthByAge(age)) * 100,
+			) / 100;
+	}
 };
 
 // One year older, at one of the threshold ages: grow into the look rather than
@@ -1664,7 +1742,7 @@ export const ageFace = (
 	// head the balding ladder below has already started on.
 	if (
 		cutsHair(pid) &&
-		age >= CUTS_HAIR_FROM_AGE &&
+		age >= cutsHairFromAge(pid) &&
 		VOLUMINOUS_HAIR.has(face.hair.id) &&
 		rand() < CUT_PER_YEAR
 	) {
@@ -1708,6 +1786,22 @@ export const ageFace = (
 		face.fatness =
 			Math.round(Math.min(FATNESS_MAX, face.fatness + FATNESS_PER_YEAR) * 100) /
 			100;
+	}
+
+	// And the two that never stop - see the note above them.
+	if (age > GROWTH_START_AGE) {
+		if (typeof face.ear?.size === "number") {
+			face.ear.size =
+				Math.round(
+					Math.min(EAR_SIZE_MAX, face.ear.size + EAR_GROWTH_PER_YEAR) * 100,
+				) / 100;
+		}
+		if (typeof face.nose?.size === "number") {
+			face.nose.size =
+				Math.round(
+					Math.min(NOSE_SIZE_MAX, face.nose.size + NOSE_GROWTH_PER_YEAR) * 100,
+				) / 100;
+		}
 	}
 
 	return changed;
