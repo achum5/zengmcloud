@@ -1,5 +1,6 @@
 import { svgs } from "facesjs";
 import { buildJerseySvg, type UniformSpec } from "../../common/uniform.ts";
+import { CIVILIAN_CLOTHES } from "../../common/civilianClothes.ts";
 
 // faces.js draws jerseys by looking an id up in its svg table, and the table
 // is a plain object - so a custom uniform becomes a real jersey by building
@@ -16,6 +17,15 @@ const hash = (s: string): string => {
 	}
 	return `${(h >>> 0).toString(36)}x${s.length.toString(36)}`;
 };
+
+// The civilian wardrobe goes in once, here, because this module is the one
+// that owns writing into the library's table and it is imported by the only
+// component that draws a face. A suit is not per-league or per-colour the way
+// a uniform is - the colours arrive as teamColors at render time - so there is
+// nothing to key and nothing to build lazily.
+for (const [id, svg] of Object.entries(CIVILIAN_CLOTHES)) {
+	(svgs.jersey as unknown as Record<string, string>)[id] = svg;
+}
 
 const registered = new Map<string, string>();
 

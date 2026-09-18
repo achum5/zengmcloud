@@ -65,6 +65,14 @@ export const SIM_INERT_STORES: ReadonlySet<string> = new Set([
 	"tradingCards",
 	// Uploaded artwork the cards point at.
 	"images",
+	// Edits to the feed's accounts - a renamed beat writer, a hand-made
+	// account, a removed one. The feed is DERIVED from the league rather than
+	// stored (see socialFeed.ts), and this store holds only what somebody typed
+	// over the top of it, so a played day neither reads nor writes it. Without
+	// this, somebody renaming an account on their phone while a league-mate
+	// simmed would cost that league-mate the day - the same way a trading card
+	// used to, which is the incident the list above exists for.
+	"socialAccounts",
 ]);
 
 export type StaleAdvancePlan = {

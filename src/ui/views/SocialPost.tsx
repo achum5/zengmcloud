@@ -55,12 +55,23 @@ const initials = (name: string) =>
 		.join("")
 		.toUpperCase();
 
-// facesjs draws head and shoulders at 2:3, with the eyes about a third of the
-// way down. An avatar wants the head, so the face is rendered oversized inside
-// a circular window showing roughly the top tenth to the top seven-tenths of
-// the drawing - the same crop a profile picture gets when somebody uploads a
-// photo taken from the waist up. The numbers were read off a rendered avatar
-// rather than guessed; the first attempt showed a forehead.
+// THE CROP, measured rather than guessed - the first attempt at this showed a
+// forehead, and the second cut every hat-height hairstyle off at the scalp.
+//
+// facesjs draws on a 400x600 canvas: the head runs from about y 130 to the
+// chin at 400, the neck to 480, and clothing lives at 476-610. The old window
+// showed y 60..420, which is head ONLY - so the shirt, the collar and the tie
+// were all outside the picture and every account looked like a passport photo.
+//
+// This window is x -20..420, y 125..565: a 440-unit square. Rendering the
+// tallest hair in the catalogue against the candidates settled it - an afro or
+// a spike clears the top edge, and enough of the shoulders is in frame that a
+// suit reads as a suit at 40px. The twenty units of margin either side fall
+// outside the canvas and show the container, which is why it is tinted to
+// match.
+const CROP_SIDE = 440;
+const CROP_X = -20;
+const CROP_Y = 125;
 const FaceAvatar = ({
 	picture,
 	size,
@@ -75,10 +86,10 @@ const FaceAvatar = ({
 		<div
 			className="position-absolute"
 			style={{
-				width: size * 1.11,
-				height: size * 1.667,
-				left: size * -0.055,
-				top: size * -0.167,
+				width: (size * 400) / CROP_SIDE,
+				height: (size * 600) / CROP_SIDE,
+				left: (size * -CROP_X) / CROP_SIDE,
+				top: (size * -CROP_Y) / CROP_SIDE,
 			}}
 		>
 			<PlayerPicture

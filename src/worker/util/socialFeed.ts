@@ -69,6 +69,7 @@ import {
 	type SocialCasting,
 } from "../../common/socialCasting.ts";
 import { feudHeat, rivalryFrom } from "../../common/socialFeuds.ts";
+import { socialAccountPicture } from "./socialFaces.ts";
 import {
 	engagementFor,
 	isVerified,
@@ -565,9 +566,18 @@ export const picturesFor = async (
 			};
 			continue;
 		}
-		if (colors) {
-			out[account.id] = { colors };
-		}
+
+		// EVERYONE ELSE IS A PERSON. A franchise is a logo and a player is the
+		// face the league already drew, but the beat writer, the insider and
+		// the fans are people, and a pair of initials on a tinted circle is
+		// what made a timeline read as a roster with captions. The face is
+		// derived from the account id, so it costs nothing to store and every
+		// device computes the same one - the same contract the posts keep.
+		out[account.id] = socialAccountPicture(
+			account.id,
+			account.archetypeId,
+			colors,
+		);
 	}
 	return out;
 };

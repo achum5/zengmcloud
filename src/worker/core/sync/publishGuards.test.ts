@@ -45,6 +45,19 @@ describe("resolveStaleAdvancePlan", () => {
 		assert.strictEqual(plan.plan, "rebase");
 	});
 
+	// Same shape as the trading-card incident: somebody renames a beat writer
+	// on their phone while a league-mate sims. The feed is derived, so nothing
+	// about the day was computed from that edit.
+	test("rebases over an edit to a feed account", () => {
+		const plan = resolveStaleAdvancePlan({
+			applied: 621,
+			roomVersion: 622,
+			hasCheckpoint: true,
+			interveningStores: ["socialAccounts"],
+		});
+		assert.strictEqual(plan.plan, "rebase");
+	});
+
 	test("discards when the winning version touched the league itself", () => {
 		const plan = resolveStaleAdvancePlan({
 			applied: 621,
