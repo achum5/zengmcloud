@@ -284,6 +284,15 @@ export const joinShortPairs = (sentences: string[]): string[] => {
 		!/halftime|the half\b|the break|second half|for good|ahead for the last time|went in front/.test(
 			t,
 		);
+	// The FIRST sentence has to start with its own subject, because the join
+	// hands its subject to the second clause. "Over six games the aggregate
+	// favors the Nets by 37." + "They meet again tomorrow." became "...the
+	// aggregate favors the Nets by 37 and meet again tomorrow" - a plural verb
+	// hanging off a singular subject buried behind an adverbial opener. Only a
+	// sentence that leads with "The Bucks", "Zeke Dunn" or a pronoun can lend
+	// what follows a subject.
+	const leadsWithSubject = (t: string) =>
+		/^(?:The [A-Z]|They\b|He\b|[A-Z][\w'.’-]+ [A-Z])/.test(t);
 	for (let i = 0; i < sentences.length; i++) {
 		const a = sentences[i]!;
 		const b = sentences[i + 1];
@@ -295,6 +304,7 @@ export const joinShortPairs = (sentences: string[]): string[] => {
 			b.length <= 60 &&
 			a.endsWith(".") &&
 			plain(a) &&
+			leadsWithSubject(a) &&
 			plain(b)
 		) {
 			// After an appositive ("controlled the boards, 54-38") the join
@@ -1228,10 +1238,21 @@ const postseasonContext = (
 			);
 		} else if (winnerNeeds === 1) {
 			// Both one win away - the next game decides it either way.
+			//
+			// Pooled like its siblings, and for a sharper reason than most: the
+			// rounds run in lockstep, so the night a series reaches 3-3 is the
+			// night several of them do. One phrasing here meant four recaps on
+			// the same page opening this paragraph with the same sentence.
+			const prize = s.round === s.numRounds ? "the title" : "the next round";
 			out.sentences.push(
-				`Game ${gameNo + 1} decides it, with both sides one win from ${
-					s.round === s.numRounds ? "the title" : "the next round"
-				}.`,
+				choose(
+					[
+						`Game ${gameNo + 1} decides it, with both sides one win from ${prize}.`,
+						`It comes down to Game ${gameNo + 1}, with ${prize} going to the winner.`,
+						`Game ${gameNo + 1} is winner-take-all, with ${prize} on the line.`,
+					],
+					"seriesDecider",
+				),
 			);
 		} else if (loserNeeds === 1) {
 			// The winner survived; the other side can still close it out next time.

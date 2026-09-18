@@ -76,4 +76,26 @@ describe("joinShortPairs", () => {
 		];
 		assert.deepStrictEqual(joinShortPairs(withAnd), withAnd);
 	});
+
+	test("a sentence that buries its subject lends nothing to the next one", () => {
+		// The join hands the FIRST sentence's subject to the second clause, so
+		// a first sentence whose subject sits behind an adverbial opener made
+		// "the aggregate favors the Nets by 37 and meet again tomorrow" - a
+		// plural verb on a singular subject.
+		const buried = [
+			"Over six games the aggregate favors the Nets by 37.",
+			"They meet again tomorrow.",
+		];
+		assert.deepStrictEqual(joinShortPairs(buried), buried);
+		const alsoBuried = [
+			"Across the series the edge belongs to the Hawks.",
+			"They host Game 7.",
+		];
+		assert.deepStrictEqual(joinShortPairs(alsoBuried), alsoBuried);
+		// A sentence that leads with its subject still joins.
+		assert.deepStrictEqual(
+			joinShortPairs(["The Nets won the glass 52-40.", "They meet again."]),
+			["The Nets won the glass 52-40 and meet again."],
+		);
+	});
 });

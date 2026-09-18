@@ -927,7 +927,11 @@ const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 		[
 			`Game ${gameNo} is ${when}${where}.`,
 			`The series resumes${where} ${when} with Game ${gameNo}.`,
-			`They meet again ${when}${where} for Game ${gameNo}.`,
+			// Not "They meet again": the pronoun here means BOTH clubs, which
+			// is not what a "They" at the head of a sentence means anywhere
+			// else in the piece - the deduper and the short-pair joiner both
+			// read it as the winner alone.
+			`The two sides meet again ${when}${where} for Game ${gameNo}.`,
 			`Next is Game ${gameNo}, ${when}${where}.`,
 			`Game ${gameNo}${where} is ${when}.`,
 			`Back at it ${when}${where} for Game ${gameNo}.`,
