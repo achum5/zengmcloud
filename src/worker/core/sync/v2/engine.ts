@@ -245,6 +245,10 @@ export class SyncEngineV2 {
 	// of dead air on a delta the next pass applied in 130ms.
 	private catchupRetryTimer: ReturnType<typeof setTimeout> | undefined;
 	private lastNetworkCycleAt = 0;
+	// When a remote delta last APPLIED. Only a delta counts - the head probe's
+	// pointer read succeeding is exactly the thing a wedge lets through - so this
+	// is the one signal that the channel was genuinely alive at that moment.
+	private lastRemoteApplyAt = 0;
 
 	// Remedies applied to the CURRENT wedge. Reset the moment anything gets
 	// through, so the ladder starts at the cheap rung for the next one.
@@ -601,7 +605,18 @@ export class SyncEngineV2 {
 		// costs 5-30s of dead waiting. A wedge earns a shorter leash; the 10s
 		// floor still bounds the worst-case cycle rate on a genuinely dead
 		// network, where each attempt already costs 8s of timeout + backoff.
-		const minGapMs = this.sameStepFailureCount >= 2 ? 10_000 : 30_000;
+		//
+		// The 30s gap is also measured from the PREVIOUS wedge's remedy. Field
+		// capture: a hard restart at :59, seven deltas applied at :06-:09, a new
+		// wedge at :15 - throttled, because the last cycle was "only" 15s ago,
+		// so it cost a second 8s timeout before the cycle that cured it in 3s.
+		// A delta applying after a remedy is proof that remedy worked and this
+		// wedge is a new one; it gets the same 10s leash, not the previous
+		// wedge's cool-down.
+		const provenSinceLastRemedy =
+			this.lastRemoteApplyAt > this.lastNetworkCycleAt;
+		const minGapMs =
+			this.sameStepFailureCount >= 2 || provenSinceLastRemedy ? 10_000 : 30_000;
 		if (!eligible || Date.now() - this.lastNetworkCycleAt <= minGapMs) {
 			return false;
 		}
@@ -1627,6 +1642,7 @@ export class SyncEngineV2 {
 						// state on the device that could least afford it.
 						this.resetCatchupFailureTracking();
 						this.wedgeRemedyCount = 0;
+						this.lastRemoteApplyAt = Date.now();
 						if (this.catchUpPillShown) {
 							this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
 						}

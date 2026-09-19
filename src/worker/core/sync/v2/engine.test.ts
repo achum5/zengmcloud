@@ -2428,6 +2428,78 @@ describe("SyncEngineV2", () => {
 			engine.stop();
 		});
 
+		// Field capture: hard restart at :59, seven deltas applied :06-:09, a new
+		// wedge at :15. It was throttled against the PREVIOUS wedge's remedy and
+		// cost a second 8s timeout before the cycle that cured it in 3s.
+		test("a wedge after a proven-healthy stretch is not throttled by the last one's remedy", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			transport.fetchRoomV2State = () =>
+				Promise.reject(new Error("Timed out after 8000ms"));
+			let cycles = 0;
+			(transport as any).cycleNetwork = async () => {
+				cycles += 1;
+			};
+			const engine = new SyncEngineV2(transport);
+			(engine as any).lastNetworkCycleAt = Date.now() - 15_000;
+			// A delta landed AFTER that cycle - the connection was alive
+			(engine as any).lastRemoteApplyAt = Date.now() - 8_000;
+
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.strictEqual(
+				cycles,
+				1,
+				"this is a new wedge, and it gets the wedge leash on its first timeout",
+			);
+			engine.stop();
+		});
+
+		test("a delta that applied BEFORE the last remedy proves nothing", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			transport.fetchRoomV2State = () =>
+				Promise.reject(new Error("Timed out after 8000ms"));
+			let cycles = 0;
+			(transport as any).cycleNetwork = async () => {
+				cycles += 1;
+			};
+			const engine = new SyncEngineV2(transport);
+			(engine as any).lastNetworkCycleAt = Date.now() - 15_000;
+			(engine as any).lastRemoteApplyAt = Date.now() - 20_000;
+
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.strictEqual(cycles, 0, "still the same unproven wedge: 30s gap");
+			engine.stop();
+		});
+
+		test("the 10s floor holds even after a proven-healthy stretch", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			transport.fetchRoomV2State = () =>
+				Promise.reject(new Error("Timed out after 8000ms"));
+			let cycles = 0;
+			(transport as any).cycleNetwork = async () => {
+				cycles += 1;
+			};
+			const engine = new SyncEngineV2(transport);
+			(engine as any).lastNetworkCycleAt = Date.now() - 5_000;
+			(engine as any).lastRemoteApplyAt = Date.now() - 1_000;
+
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.strictEqual(
+				cycles,
+				0,
+				"a flapping link still cannot be cycle-stormed",
+			);
+			engine.stop();
+		});
+
 		test("a failed pass retries itself - no external trigger needed", async () => {
 			const room = new Room();
 			initRoom(room);

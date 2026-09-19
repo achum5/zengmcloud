@@ -1255,17 +1255,34 @@ export class FirebaseTransport implements SyncTransport {
 	// client even though that promise will never settle while the queue is
 	// stuck. Its documented "promises awaiting a response from the server will
 	// not be resolved" is the point: the hung read is abandoned, not inherited.
+	//
+	// That only holds if terminate() has actually been CALLED before
+	// getFirestore() runs. This used to defer the call into a microtask, which
+	// meant getFirestore() ran first, found the old instance still registered,
+	// and handed it straight back - and then the microtask terminated it. Field
+	// capture: "v2:hard-restart" followed 48ms later by every read failing with
+	// "The client has already been terminated", for three reads in a row, until
+	// a SECOND restart found the provider empty and finally built a new client.
+	// So the call is synchronous; only the returned promise is left to float.
 	async hardRestart(): Promise<void> {
 		const dead = this.db;
-		void Promise.resolve()
-			.then(() => terminate(dead))
-			.catch(() => {
+		try {
+			void terminate(dead).catch(() => {
 				// Terminating a wedged client is best-effort; we have already
 				// stopped using it either way.
 			});
+		} catch {
+			// Same: a synchronous throw from terminate() changes nothing below.
+		}
 
 		this.db = getFirestore(getFirebaseApp());
 		this.changesRef = collection(this.db, "leagues", this.code, "changes");
+		if (this.db === dead) {
+			// Should be impossible with the SDK's provider semantics; if it ever
+			// happens, the log line is the difference between a diagnosable field
+			// capture and another silent string of "already terminated" reads.
+			syncDebugLog("v2:hard-restart-same-client", {});
+		}
 
 		// Every listener was bound to the dead client. Their unsubscribes are now
 		// no-ops at best and throw at worst, so drop them and re-run the creator
