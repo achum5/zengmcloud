@@ -159,7 +159,8 @@ import goatFormula, {
 	defaultFormulaFor,
 	type GoatInfo,
 } from "../util/goatFormula.ts";
-import { buildGoatTerms, variablesUsed } from "../../common/goatTerms.ts";
+import { goatLeaves, variablesUsed } from "../../common/goatTerms.ts";
+import { isCountVariable, labelForTerm } from "../../common/goatLabels.ts";
 import getRandomTeams from "./getRandomTeams.ts";
 import { withState } from "../core/player/name.ts";
 import { initDefaults, loadNames } from "../util/loadNames.ts";
@@ -278,6 +279,7 @@ import isValidJersey from "../core/team/isValidJersey.ts";
 import { getGlobalSettings } from "../util/getGlobalSettings.ts";
 import { getCol } from "../../common/getCol.ts";
 import { getCols } from "../../common/getCols.ts";
+import { formatPlayerAwardName } from "../../common/awards.ts";
 import { formatScheduleForEditor } from "../views/scheduleEditor.ts";
 import type { KeyboardShortcutsLocal } from "../../ui/util/keyboardShortcuts.ts";
 import { getNumPlayoffTeamsRaw } from "../core/season/getNumPlayoffTeams.ts";
@@ -2390,6 +2392,8 @@ const getLeagueInfo = async (
 
 // Where one player's GOAT score came from: the formula's own additive terms,
 // each evaluated on its own, plus the raw value of every variable it reads.
+// A GOAT score read as a plain list: one row per thing that contributed, named
+// the way the league names it, with how much of the total it was worth.
 const getGoatBreakdown = async ({
 	pid,
 	season,
@@ -2420,51 +2424,77 @@ const getGoatBreakdown = async ({
 		}
 	};
 
-	const rows: {
-		text: string;
-		value: number | undefined;
-		depth: number;
-	}[] = [];
+	// Award abbrevs to the names this league gives them, including the per-team
+	// ones ("NBA1" for whatever First Team All-League is called here)
+	const awardNames: Record<string, string> = {};
+	for (const award of g.get("awards")) {
+		awardNames[award.shortName] = award.name;
 
-	const walk = (
-		terms: ReturnType<typeof buildGoatTerms>,
-		depth: number,
-		parentSign: number,
-	) => {
-		for (const term of terms) {
-			const sign = term.negated ? -parentSign : parentSign;
-			const value = evaluate(term.text);
-
-			rows.push({
-				text: term.text,
-				value: value === undefined ? undefined : sign * value,
-				depth,
-			});
-
-			walk(term.children, depth + 1, sign);
+		if (award.numTeams !== undefined) {
+			for (let rank = 1; rank <= award.numTeams; rank++) {
+				awardNames[`${award.shortName}${rank}`] = formatPlayerAwardName({
+					...award,
+					rank,
+				});
+			}
 		}
-	};
-	walk(buildGoatTerms(formula), 0, 1);
+	}
 
-	const awards = variables.awards as unknown as Record<string, number>;
+	const statNames: Record<string, string> = {};
+	const statShort: Record<string, string> = {};
+	for (const stat of goatFormula.STAT_VARIABLES) {
+		try {
+			const col = getCols([`stat:${stat}`])[0]!;
 
-	const variableValues = variablesUsed(formula).flatMap((name) => {
-		const value = name.startsWith("awards.")
-			? (awards?.[name.slice("awards.".length)] ?? 0)
+			// Several descriptions carry a parenthetical gloss - "Offensive Rating
+			// (points produced/scored per 100 possessions)" - which is help text, not
+			// a name, and swamps the row it sits on
+			statNames[stat] = (col.desc ?? col.title).replace(/\s*\(.*\)$/, "");
+			statShort[stat] = col.title;
+		} catch {
+			// A stat with no column just keeps its raw name
+		}
+	}
+	const labeller = { awards: awardNames, stats: statNames, short: statShort };
+
+	const awardCounts = variables.awards as unknown as Record<string, number>;
+	const valueOf = (name: string) =>
+		name.startsWith("awards.")
+			? (awardCounts?.[name.slice("awards.".length)] ?? 0)
 			: variables[name];
 
-		if (typeof value !== "number") {
+	const items = goatLeaves(formula).flatMap((leaf) => {
+		const raw = evaluate(leaf.text);
+		if (raw === undefined) {
 			return [];
 		}
 
-		return [{ name, value }];
+		const names = variablesUsed(leaf.text);
+		const amounts = names.map(valueOf);
+
+		// Only worth showing an amount when there is one variable to attach it to
+		const amount =
+			names.length === 1 && typeof amounts[0] === "number"
+				? amounts[0]
+				: undefined;
+
+		return [
+			{
+				label: labelForTerm(leaf.text, names, labeller),
+				formula: leaf.text,
+				amount,
+				count: names.length === 1 && isCountVariable(names[0]!),
+				value: leaf.sign * raw,
+			},
+		];
 	});
+
+	items.sort((a, b) => b.value - a.value);
 
 	return {
 		formula,
 		total: evaluate(formula) ?? 0,
-		rows,
-		variables: variableValues,
+		items,
 	};
 };
 

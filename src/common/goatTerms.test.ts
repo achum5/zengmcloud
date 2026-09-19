@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	buildGoatTerms,
+	goatLeaves,
 	splitAdditive,
 	stripOuterParens,
 	variablesUsed,
@@ -118,19 +119,10 @@ describe("a parenthesised sum over a divisor", () => {
 		);
 	});
 
-	test("keeps subtraction inside the sum", () => {
+	test("leaves a difference alone - that is one net quantity", () => {
 		const terms = buildGoatTerms("(a - b) / 10");
 
-		assert.deepStrictEqual(
-			terms[0]!.children.map((child) => ({
-				text: child.text,
-				negated: child.negated,
-			})),
-			[
-				{ text: "(a) / 10", negated: false },
-				{ text: "(b) / 10", negated: true },
-			],
-		);
+		assert.deepStrictEqual(terms[0]!.children, []);
 	});
 
 	test("refuses a product of two sums, which does not distribute this way", () => {
@@ -143,5 +135,70 @@ describe("a parenthesised sum over a divisor", () => {
 		const terms = buildGoatTerms("(a + b) ^ 2");
 
 		assert.deepStrictEqual(terms[0]!.children, []);
+	});
+});
+
+describe("reading a formula as a flat list", () => {
+	test("returns only the leaves", () => {
+		assert.deepStrictEqual(
+			goatLeaves("(a + b) + c").map((leaf) => leaf.text),
+			["a", "b", "c"],
+		);
+	});
+
+	test("carries a negation down through the nesting", () => {
+		assert.deepStrictEqual(goatLeaves("a - (b + c)"), [
+			{ text: "a", sign: 1 },
+			{ text: "b", sign: -1 },
+			{ text: "c", sign: -1 },
+		]);
+	});
+
+	test("a subtracted difference stays one leaf", () => {
+		assert.deepStrictEqual(goatLeaves("a - (b - c)"), [
+			{ text: "a", sign: 1 },
+			{ text: "b - c", sign: -1 },
+		]);
+	});
+
+	test("opens up a scaled sum", () => {
+		assert.deepStrictEqual(
+			goatLeaves("(a + b) / 10").map((leaf) => leaf.text),
+			["(a) / 10", "(b) / 10"],
+		);
+	});
+});
+
+describe("net quantities stay whole", () => {
+	test("does not split a difference inside a term", () => {
+		assert.deepStrictEqual(
+			goatLeaves("x + (ortg - drtg) / 10").map((leaf) => leaf.text),
+			["x", "(ortg - drtg) / 10"],
+		);
+	});
+
+	test("still splits a difference written at the top level", () => {
+		assert.deepStrictEqual(
+			goatLeaves("a - b").map((leaf) => leaf.text),
+			["a", "b"],
+		);
+	});
+
+	test("splits a nested block that only adds", () => {
+		assert.deepStrictEqual(
+			goatLeaves("x + (obpm + dbpm) / 10").map((leaf) => leaf.text),
+			["x", "(obpm) / 10", "(dbpm) / 10"],
+		);
+	});
+
+	test("a penalty block subtracted at the top level still opens up", () => {
+		assert.deepStrictEqual(
+			goatLeaves("a - ((tpa - tp) / 10 + (fga - fg) / 10)"),
+			[
+				{ text: "a", sign: 1 },
+				{ text: "(tpa - tp) / 10", sign: -1 },
+				{ text: "(fga - fg) / 10", sign: -1 },
+			],
+		);
 	});
 });

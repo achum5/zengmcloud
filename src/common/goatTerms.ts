@@ -155,6 +155,19 @@ export const buildGoatTerms = (
 			if (parts.length < 2) {
 				parts = distribute(text)?.parts ?? parts;
 			}
+
+			// A subtraction inside a term means the term is one net quantity - a net
+			// rating, a count of missed shots - not a list of separate things.
+			// Pulling "ortg - drtg" apart replaces a +2.5 contribution with a +12.8
+			// and a -10.3, two numbers that are individually meaningless and that
+			// dominate any ordering by size.
+			//
+			// The formula's own top-level blocks are split before build() is
+			// reached, so a penalty block subtracted there still gets its own line.
+			if (parts.some((part) => part.negated)) {
+				parts = [];
+			}
+
 			if (parts.length > 1) {
 				children = parts.map((part) =>
 					build(part.text, part.negated, depth + 1),
@@ -196,4 +209,29 @@ export const variablesUsed = (formula: string): string[] => {
 	}
 
 	return Array.from(found).sort();
+};
+
+// Only the leaves carry distinct content - a parent is just its children added
+// up - so a flat reading of a formula is its leaves, each with the sign it
+// contributes to the total through however many levels of nesting.
+export const goatLeaves = (
+	formula: string,
+	maxDepth = MAX_TERM_DEPTH,
+): { text: string; sign: number }[] => {
+	const leaves: { text: string; sign: number }[] = [];
+
+	const walk = (terms: GoatTerm[], parentSign: number) => {
+		for (const term of terms) {
+			const sign = term.negated ? -parentSign : parentSign;
+
+			if (term.children.length > 0) {
+				walk(term.children, sign);
+			} else {
+				leaves.push({ text: term.text, sign });
+			}
+		}
+	};
+	walk(buildGoatTerms(formula, maxDepth), 1);
+
+	return leaves;
 };
