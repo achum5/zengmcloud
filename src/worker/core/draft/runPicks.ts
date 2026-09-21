@@ -22,6 +22,7 @@ import {
 	type PosBucket,
 	type TradePosture,
 } from "../trade/tradePosture.ts";
+import { prepareWholeRoster } from "../team/ovr.ts";
 
 export const getTeamOvrDiffs = (
 	teamPlayers: PlayerWithoutKey[],
@@ -45,30 +46,30 @@ export const getTeamOvrDiffs = (
 		};
 	});
 
-	const baseline = team.ovr(teamPlayers2, {
-		wholeRoster: true,
-	});
+	const prepared = prepareWholeRoster?.(teamPlayers2);
+	const baseline =
+		prepared?.baseline ??
+		team.ovr(teamPlayers2, {
+			wholeRoster: true,
+		});
 
 	return players.map((p) => {
 		const ratings = last(p.ratings);
-		const newOvr = team.ovr(
-			[
-				...teamPlayers2,
-				{
-					pid: p.pid,
-					injury: p.injury,
-					value: p.value,
-					ratings: {
-						ovr: player.fuzzRating(ratings.ovr, ratings.fuzz),
-						ovrs: player.fuzzOvrs(ratings.ovrs, ratings.fuzz),
-						pos: ratings.pos,
-					},
-				},
-			],
-			{
-				wholeRoster: true,
+		const p2 = {
+			pid: p.pid,
+			injury: p.injury,
+			value: p.value,
+			ratings: {
+				ovr: player.fuzzRating(ratings.ovr, ratings.fuzz),
+				ovrs: player.fuzzOvrs(ratings.ovrs, ratings.fuzz),
+				pos: ratings.pos,
 			},
-		);
+		};
+		const newOvr =
+			prepared?.withPlayer(p2) ??
+			team.ovr([...teamPlayers2, p2], {
+				wholeRoster: true,
+			});
 
 		return newOvr - baseline;
 	});
