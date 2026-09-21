@@ -117,22 +117,23 @@ const play = async (
 	let liveSimDelivered = false;
 	// This is called when there are no more games to play, either due to the user's request (e.g. 1 week) elapsing or at the end of the regular season
 	const cbNoGames = async (playoffsOver: boolean = false) => {
-		await updateStatus("Saving...");
-		await idb.cache.flush();
-
 		// Settle any sportsbook game bets whose games just finished (no-op if
 		// nothing is bet). Wallet changes ride the sim's sync window to the room.
+		// This used to sit behind a flush; it doesn't need one - getCopy.games
+		// merges the cache with the database, so games just simmed are visible,
+		// and settlement flushes for itself after a wallet change. The flush
+		// upstream kept is below, skipped when a phase change is about to do it.
 		try {
 			await settleBets(conditions);
 		} catch (error) {
 			console.error("Sportsbook settlement failed", error);
 		}
 
-		await updateStatus("Idle");
 		await lock.set("gameSim", false);
 
 		// Check to see if the season is over
 		const schedule = await season.getSchedule();
+		let newPhaseCalled = false;
 		if (g.get("phase") < PHASE.PLAYOFFS) {
 			if (schedule.length === 0) {
 				await phase.newPhase(
@@ -140,6 +141,7 @@ const play = async (
 					conditions,
 					gidOneGame !== undefined,
 				);
+				newPhaseCalled = true;
 			}
 		} else if (playoffsOver) {
 			await phase.newPhase(
@@ -147,7 +149,14 @@ const play = async (
 				conditions,
 				gidOneGame !== undefined,
 			);
+			newPhaseCalled = true;
 		}
+
+		if (!local.autoPlayUntil && !newPhaseCalled) {
+			await updateStatus("Saving...");
+			await idb.cache.flush();
+		}
+		await updateStatus("Idle");
 
 		if (schedule.length > 0 && !playoffsOver) {
 			const allStarNext = await allStar.nextGameIsAllStar(schedule);
