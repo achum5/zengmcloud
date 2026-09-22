@@ -651,7 +651,7 @@ export const buildOfferFromPartner = async (args: {
 // the whole path is stock again.
 const legacyAttempt = async (
 	valueChangeCalculator: ValueChangeCalculator,
-): Promise<boolean> => {
+): Promise<[number, number] | false> => {
 	const aiTids = await getAITids();
 	if (aiTids.length === 0) {
 		return false;
@@ -745,12 +745,10 @@ const legacyAttempt = async (
 		return false;
 	}
 
-	await processTrade(
-		[teams[0].tid, teams[1].tid],
-		[teams[0].pids, teams[1].pids],
-		[teams[0].dpids, teams[1].dpids],
-	);
-	return true;
+	const finalTids: [number, number] = [teams[0].tid, teams[1].tid];
+	await processTrade(teams, undefined);
+
+	return finalTids;
 };
 
 // THE STAR HUNT. A contender in striking distance calls a partner about its
@@ -983,20 +981,15 @@ const attempt = async (
 				hunt.teams[0].tid,
 				hunt.teams[1].tid,
 			];
-			await processTrade(
-				finalTids,
-				[hunt.teams[0].pids, hunt.teams[1].pids],
-				[hunt.teams[0].dpids, hunt.teams[1].dpids],
-				{
-					initiatorTid: initiator,
-					tiers: [
-						postures.get(hunt.teams[0].tid)?.tier ?? "?",
-						postures.get(hunt.teams[1].tid)?.tier ?? "?",
-					],
-					dv: Math.round(hunt.dv2 * 10) / 10,
-					motivation: "star-hunt",
-				},
-			);
+			await processTrade(hunt.teams, undefined, {
+				initiatorTid: initiator,
+				tiers: [
+					postures.get(hunt.teams[0].tid)?.tier ?? "?",
+					postures.get(hunt.teams[1].tid)?.tier ?? "?",
+				],
+				dv: Math.round(hunt.dv2 * 10) / 10,
+				motivation: "star-hunt",
+			});
 			return finalTids;
 		}
 	}
@@ -1069,20 +1062,15 @@ const attempt = async (
 					? "sell"
 					: "buy";
 
-	await processTrade(
-		finalTids,
-		[teams[0].pids, teams[1].pids],
-		[teams[0].dpids, teams[1].dpids],
-		{
-			initiatorTid: initiator,
-			tiers: [
-				postures.get(teams[0].tid)?.tier ?? "?",
-				postures.get(teams[1].tid)?.tier ?? "?",
-			],
-			dv: Math.round(dv2 * 10) / 10,
-			motivation,
-		},
-	);
+	await processTrade(teams, undefined, {
+		initiatorTid: initiator,
+		tiers: [
+			postures.get(teams[0].tid)?.tier ?? "?",
+			postures.get(teams[1].tid)?.tier ?? "?",
+		],
+		dv: Math.round(dv2 * 10) / 10,
+		motivation,
+	});
 	return finalTids;
 };
 
@@ -1125,7 +1113,7 @@ const betweenAiTeams = async () => {
 		for (let i = 0; i < numAttempts; i++) {
 			const tradeHappened = await legacyAttempt(valueChangeCalculator);
 			if (tradeHappened) {
-				valueChangeCalculator.invalidateCache({ teams: "all" });
+				valueChangeCalculator.invalidateCache({ teams: tradeHappened });
 			}
 		}
 		return;

@@ -210,7 +210,7 @@ const AwardSettings = ({
 							);
 						}
 						if (award.numTeams !== undefined && award.numTeams > 1) {
-							titleParts.push(formatTeamNumber(award.rank ?? 1));
+							titleParts.push(formatTeamNumber(award.rank));
 						}
 						const title =
 							titleParts.length > 0 ? <h4>{titleParts.join(", ")}</h4> : "";

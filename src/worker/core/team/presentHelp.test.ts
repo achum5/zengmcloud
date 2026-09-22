@@ -114,7 +114,8 @@ const offer = async (give: number[], get: number[], dpids: number[] = []) => {
 			},
 		],
 	} as any);
-	return trade.propose(false);
+	const { accepted, message } = await trade.propose(false);
+	return [accepted, message] as const;
 };
 
 const REFUSED_ON_VALUE = /Close, but not quite|not a good deal|are you crazy/;

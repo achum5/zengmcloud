@@ -486,61 +486,63 @@ const FreeAgents = ({
 				wrappedContractAmount(p, p.contract.amount),
 				wrappedContractExp(p),
 				p.freeAgentType === "available"
-					? faBoard
-						? {
-								value: board.includes(p.pid) ? (
-									<button
-										type="button"
-										className="btn btn-sm btn-secondary"
-										onClick={() =>
-											updateBoard(board.filter((pid) => pid !== p.pid))
-										}
-									>
-										#{board.indexOf(p.pid) + 1} ✕
-									</button>
-								) : (
-									<button
-										type="button"
-										className="btn btn-sm btn-light-bordered"
-										disabled={
-											board.length >= faBoard.numSlots ||
-											!p.mood.user.willing ||
-											!canAffordBoard(p)
-										}
-										title={
-											!p.mood.user.willing
-												? "Refuses to sign with you"
-												: !canAffordBoard(p)
-													? "Can't afford"
-													: undefined
-										}
-										onClick={() => updateBoard([...board, p.pid])}
-									>
-										Board
-									</button>
-								),
-								searchValue: "Board",
-							}
-						: {
-								value: (
-									<NegotiateButtons
-										canGoOverCap={salaryCapType === "none"}
-										capSpace={capSpace}
-										disabled={gameSimInProgress}
-										minContract={minContract}
-										onNegotiate={async () => {
-											await negotiationModal.negotiate(p.pid);
-										}}
-										spectator={spectator}
-										p={p}
-										willingToNegotiate={p.mood.user.willing}
-									/>
-								),
-								classNames: "d-flex align-items-center gap-2",
-								searchValue: p.mood.user.willing
-									? "Negotiate Sign"
-									: "Refuses!",
-							}
+					? spectator
+						? null
+						: faBoard
+							? {
+									value: board.includes(p.pid) ? (
+										<button
+											type="button"
+											className="btn btn-sm btn-secondary"
+											onClick={() =>
+												updateBoard(board.filter((pid) => pid !== p.pid))
+											}
+										>
+											#{board.indexOf(p.pid) + 1} ✕
+										</button>
+									) : (
+										<button
+											type="button"
+											className="btn btn-sm btn-light-bordered"
+											disabled={
+												board.length >= faBoard.numSlots ||
+												!p.mood.user.willing ||
+												!canAffordBoard(p)
+											}
+											title={
+												!p.mood.user.willing
+													? "Refuses to sign with you"
+													: !canAffordBoard(p)
+														? "Can't afford"
+														: undefined
+											}
+											onClick={() => updateBoard([...board, p.pid])}
+										>
+											Board
+										</button>
+									),
+									searchValue: "Board",
+								}
+							: {
+									value: (
+										<NegotiateButtons
+											canGoOverCap={salaryCapType === "none"}
+											capSpace={capSpace}
+											disabled={gameSimInProgress}
+											minContract={minContract}
+											onNegotiate={async () => {
+												await negotiationModal.negotiate(p.pid);
+											}}
+											spectator={spectator}
+											p={p}
+											willingToNegotiate={p.mood.user.willing}
+										/>
+									),
+									classNames: "d-flex align-items-center gap-2",
+									searchValue: p.mood.user.willing
+										? "Negotiate Sign"
+										: "Refuses!",
+								}
 					: signedFreeAgentWrapped(
 							p.freeAgentTransaction,
 							freeAgencySeason,

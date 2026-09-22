@@ -140,6 +140,8 @@ export const applyRoomSnapshotPayload = async (
 		);
 	}
 
+	local.undoLog.invalidateAll();
+
 	const problems = validateRoomSnapshotPayload(payload);
 	if (problems.length > 0) {
 		throw new Error(

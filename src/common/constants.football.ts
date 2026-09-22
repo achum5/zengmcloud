@@ -118,9 +118,13 @@ export const COMPOSITE_WEIGHTS: CompositeWeights<RatingKey> = {
 		ratings: ["kac"],
 		weights: [1],
 	},
-	punting: {
-		ratings: ["ppw", "pac"],
-		weights: [1, 1],
+	puntingPower: {
+		ratings: ["ppw"],
+		weights: [1],
+	},
+	puntingAccuracy: {
+		ratings: ["pac"],
+		weights: [1],
 	},
 };
 
@@ -440,8 +444,10 @@ export const PLAYER_STATS_TABLES = {
 			"pntYds",
 			"pntYdsPerAtt",
 			"pntLng",
-			"pntIn20",
 			"pntTB",
+			"pntTBPct",
+			"pntIn20",
+			"pntIn20Pct",
 			"pntBlk",
 			"av",
 		],
@@ -618,8 +624,10 @@ export const TEAM_STATS_TABLES = {
 			"pntYds",
 			"pntYdsPerAtt",
 			"pntLng",
-			"pntIn20",
 			"pntTB",
+			"pntTBPct",
+			"pntIn20",
+			"pntIn20Pct",
 			"pntBlk",
 		],
 	},

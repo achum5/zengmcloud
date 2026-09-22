@@ -33,12 +33,6 @@ const getCommonGlobals = (a, b) => {
 };
 const commonGlobals = getCommonGlobals(globals.browser, globals.sharedWorker);
 
-// Build-time constants replaced by rolldown/vitest defines
-const defineGlobals = {
-	__NODE_ENV: false,
-	__SPORT: false,
-};
-
 export default defineConfig(
 	globalIgnores([
 		"analysis/",
@@ -112,8 +106,8 @@ export default defineConfig(
 		languageOptions: {
 			globals: {
 				...globals.browser,
-				...defineGlobals,
-				process: false,
+				__NODE_ENV: "readonly",
+				__SPORT: "readonly",
 
 				// This is needed for no-undef
 				AlgorithmIdentifier: false,
@@ -139,8 +133,8 @@ export default defineConfig(
 		languageOptions: {
 			globals: {
 				...globals.sharedWorker,
-				...defineGlobals,
-				process: false,
+				__NODE_ENV: "readonly",
+				__SPORT: "readonly",
 
 				// This is needed for no-undef
 				IDBValidKey: false,
@@ -157,8 +151,8 @@ export default defineConfig(
 		languageOptions: {
 			globals: {
 				...commonGlobals,
-				...defineGlobals,
-				process: false,
+				__NODE_ENV: "readonly",
+				__SPORT: "readonly",
 
 				// This is needed for no-undef
 				HTMLLinkElement: false,

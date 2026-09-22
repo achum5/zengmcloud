@@ -307,6 +307,7 @@ import type { GenOrderResult } from "../core/draft/genOrder.ts";
 import { allowCrossingNextSimStop } from "../core/sync/tradeDeadlineGate.ts";
 import { parseSimStopDays, stopsOnDay } from "../../common/simStopDays.ts";
 import { revertAppearance } from "../../common/playerAppearance.ts";
+import undoLog from "./undoLog.ts";
 import {
 	getAwardsByPlayer,
 	updatePlayerAwards,
@@ -332,6 +333,7 @@ const acceptContractNegotiation = async ({
 		negotiation,
 		amount,
 		exp,
+		dryRun: false,
 	});
 
 	// string response is an error message
@@ -342,7 +344,11 @@ const acceptContractNegotiation = async ({
 	// Only do this if there was no error, and don't await because it makes the UI slow
 	void contractNegotiation.afterAccept(negotiation.tid);
 
-	local.undoableActions[pid] = response;
+	return local.undoLog.add(response, [
+		"advanceDay",
+		"leagueChange",
+		"newPhase",
+	]);
 };
 
 const addTeam = async () => {
@@ -586,12 +592,21 @@ const beforeView = async (
 const cancelContractNegotiation = async (pid: number) => {
 	await contractNegotiation.cancel(pid);
 
-	local.undoableActions[pid] = {
-		type: "release",
-		tid: g.get("userTid"),
-	};
+	const tid = g.get("userTid");
 
 	await toUI("realtimeUpdate", [["playerMovement"]]);
+
+	return local.undoLog.add(async () => {
+		await idb.cache.negotiations.add({
+			pid,
+			tid,
+			resigning: true,
+		});
+
+		void toUI("realtimeUpdate", [["playerMovement"]]);
+
+		return true;
+	}, ["advanceDay", "leagueChange", "newPhase"]);
 };
 
 const checkAccount2 = (param: unknown, conditions: Conditions) =>
@@ -659,7 +674,7 @@ const clearNotes = async (type: NoteInfo["type"]) => {
 		// Day recaps live on game records (Game.dayNote), not their own store, and
 		// the Notes page never bulk-clears them, so there's nothing to sweep here.
 		// An individual day recap is cleared by re-filing an empty note via setNote.
-		return;
+		return undefined;
 	}
 	const storeName = `${type}s` as const;
 	const rows = await idb.getCopies[storeName](
@@ -668,13 +683,50 @@ const clearNotes = async (type: NoteInfo["type"]) => {
 		},
 		"noCopyCache",
 	);
+
+	const primaryKeyField = (
+		{
+			draftPicks: "dpid",
+			games: "gid",
+			players: "pid",
+			teamSeasons: "rid",
+		} as const
+	)[storeName];
+	const toUndo = new Map<number, string>();
+
 	for (const row of rows) {
+		toUndo.set((row as any)[primaryKeyField], row.note!);
+
 		delete row.note;
 		delete row.noteBool;
 		await idb.cache[storeName].put(row as any);
 	}
 
 	await toUI("realtimeUpdate", [noteUpdateEvents[type]]);
+
+	return local.undoLog.add(async () => {
+		for (const [key, note] of toUndo) {
+			let row;
+			if (storeName === "draftPicks") {
+				row = await idb.cache[storeName].get(key);
+			} else if (storeName === "games") {
+				row = await idb.getCopy.games({ gid: key });
+			} else if (storeName === "players") {
+				row = await idb.getCopy.players({ pid: key });
+			} else {
+				row = await idb.getCopy.teamSeasons({ rid: key });
+			}
+			if (row) {
+				row.note = note;
+				row.noteBool = 1;
+				await idb.cache[storeName].put(row as any);
+			}
+		}
+
+		void toUI("realtimeUpdate", [noteUpdateEvents[type]]);
+
+		return true;
+	}, ["leagueChange"]);
 };
 
 const getUpdateWatch = (players: Player[]) => {
@@ -692,8 +744,12 @@ const clearWatchList = async (type: "all" | number) => {
 		},
 		"noCopyCache",
 	);
+
+	const toUndo = new Map<number, number>();
+
 	for (const p of players) {
 		if (type === "all" || p.watch === type) {
+			toUndo.set(p.pid, p.watch!);
 			delete p.watch;
 			await idb.cache.players.put(p);
 		}
@@ -703,6 +759,30 @@ const clearWatchList = async (type: "all" | number) => {
 		toUI("crossTabEmit", [["updateWatch", getUpdateWatch(players)]]),
 		toUI("realtimeUpdate", [["playerMovement", "watchList"]]),
 	]);
+
+	return local.undoLog.add(async () => {
+		const players = await idb.getCopies.players(
+			{
+				pids: Array.from(toUndo.keys()),
+			},
+			"noCopyCache",
+		);
+
+		for (const p of players) {
+			const watch = toUndo.get(p.pid);
+			if (watch !== undefined) {
+				p.watch = watch;
+				await idb.cache.players.put(p);
+			}
+		}
+
+		void Promise.all([
+			toUI("crossTabEmit", [["updateWatch", getUpdateWatch(players)]]),
+			toUI("realtimeUpdate", [["playerMovement", "watchList"]]),
+		]);
+
+		return true;
+	}, ["leagueChange"]);
 };
 
 const countNegotiations = async () => {
@@ -4909,6 +4989,8 @@ const reSignAll = async (players: any[]) => {
 		(negotiation) => negotiation.tid === userTid,
 	);
 
+	const undoFunctions: (() => Promise<boolean>)[] = [];
+
 	if (negotiations.length > 0) {
 		for (const negotiation of negotiations) {
 			const p = players.find((p) => p.pid === negotiation.pid);
@@ -4918,16 +5000,24 @@ const reSignAll = async (players: any[]) => {
 					negotiation,
 					amount: p.mood.user.contractAmount,
 					exp: p.contract.exp,
+					dryRun: false,
 				});
 
 				if (typeof response === "string") {
 					return response;
+				} else {
+					undoFunctions.push(response);
 				}
 			}
 		}
 
 		await contractNegotiation.afterAccept(userTid);
 	}
+
+	return local.undoLog.add(async () => {
+		const values = await Promise.all(undoFunctions.map((undo) => undo()));
+		return values.every((value) => value === true);
+	}, ["advanceDay", "leagueChange", "newPhase"]);
 };
 
 const updateExpansionDraftSetup = async (changes: {
@@ -6165,77 +6255,6 @@ const updateConfsDivs = async ({
 	await updateTeamInfo({ teams, from: "manageConfs" });
 };
 
-const undoAction = async (
-	info: { type: "sign"; pid: number } | { type: "release"; pid: number },
-) => {
-	if (info.type === "sign") {
-		const pid = info.pid;
-
-		const undoInfo = local.undoableActions[pid];
-		if (!undoInfo || undoInfo.type !== "sign") {
-			return false;
-		}
-
-		const p = await idb.cache.players.get(pid);
-		if (!p) {
-			return false;
-		}
-
-		const phase = actualPhase();
-
-		if (phase !== undoInfo.phase || p.tid !== undoInfo.tid) {
-			return false;
-		}
-
-		p.numDaysFreeAgent = undoInfo.numDaysFreeAgent;
-		p.numPlayersTradedAwayNormalized = undoInfo.numPlayersTradedAwayNormalized;
-		p.jerseyNumber = undoInfo.jerseyNumber;
-		p.contract = undoInfo.contract;
-		p.salaries = undoInfo.salaries;
-		p.transactions = undoInfo.transactions;
-		p.tid = PLAYER.FREE_AGENT;
-
-		if (phase === PHASE.RESIGN_PLAYERS) {
-			await idb.cache.negotiations.add({
-				pid,
-				tid: undoInfo.tid,
-				resigning: true,
-			});
-		}
-
-		await idb.cache.players.put(p);
-
-		if (undoInfo.eid !== undefined) {
-			await idb.cache.events.delete(undoInfo.eid);
-		}
-
-		delete local.undoableActions[pid];
-		void toUI("realtimeUpdate", [["playerMovement"]]);
-
-		return true;
-	} else if (info.type === "release") {
-		const pid = info.pid;
-
-		const undoInfo = local.undoableActions[pid];
-		if (!undoInfo || undoInfo.type !== "release") {
-			return false;
-		}
-
-		await idb.cache.negotiations.add({
-			pid,
-			tid: undoInfo.tid,
-			resigning: true,
-		});
-
-		delete local.undoableActions[pid];
-		void toUI("realtimeUpdate", [["playerMovement"]]);
-
-		return true;
-	}
-
-	return false;
-};
-
 const updateAwards = async (
 	newAwards: Pick<Awards, "awards" | "season">,
 	conditions: Conditions,
@@ -6275,7 +6294,7 @@ const updateAwards = async (
 		logEventInfo: {
 			conditions,
 		},
-		season: g.get("season"),
+		season: newAwards.season,
 	});
 };
 
@@ -6635,50 +6654,23 @@ const createTrade = async (teams: TradeTeams) => {
 };
 
 const proposeTrade = async (forceTrade: boolean, conditions: Conditions) => {
-	const { teams } = await trade.get();
-	const dv = await new ValueChangeCalculator().evaluate({
-		tid: teams[1].tid,
-		pidsAdd: teams[0].pids,
-		pidsRemove: teams[1].pids,
-		dpidsAdd: teams[0].dpids,
-		dpidsRemove: teams[1].dpids,
-		tradingPartnerTid: g.get("userTid"),
-	});
-	const aiWillAcceptTrade = dv > 0;
-	if (
-		aiWillAcceptTrade &&
-		teams[1].pids.length === 0 &&
-		teams[1].dpids.length === 0
-	) {
-		let assetsText;
-		const numAssets = teams[0].pids.length + teams[0].dpids.length;
-		if (teams[0].pids.length === 0) {
-			assetsText = helpers.plural("Pick", numAssets);
-		} else if (teams[0].dpids.length === 0) {
-			assetsText = helpers.plural("Player", numAssets);
-		} else {
-			assetsText = helpers.plural("Asset", numAssets);
-		}
+	const { accepted, message, undo } = await trade.propose(forceTrade);
+	await toUI("realtimeUpdate", []);
 
-		const proceed = await toUI(
-			"confirm",
-			[
-				"Are you sure you want to propose a trade where you receive nothing?",
-				{
-					okText: `Give Away ${assetsText}`,
-				},
-			],
-			conditions,
-		);
-
-		if (!proceed) {
-			return;
-		}
+	let undoKey;
+	if (undo) {
+		undoKey = local.undoLog.add(undo, [
+			"advanceDay",
+			"leagueChange",
+			"newPhase",
+		]);
 	}
 
-	const output = await trade.propose(forceTrade);
-	await toUI("realtimeUpdate", []);
-	return output;
+	return {
+		accepted,
+		message,
+		undoKey,
+	};
 };
 
 const toggleColaOptOut = async () => {
@@ -7517,6 +7509,7 @@ const api = {
 	leagueFileUpload,
 	playMenu,
 	toolsMenu,
+	undoLog,
 	main: {
 		acceptContractNegotiation,
 		addTeam,
@@ -7715,7 +7708,6 @@ const api = {
 		endLiveBroadcast,
 		watchLiveBroadcast,
 		leaveLiveBroadcast,
-		undoAction,
 		updateAwards,
 		updateBudget,
 		updateConfsDivs,

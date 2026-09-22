@@ -12,6 +12,7 @@ import { getDraftPicksColsAndRows } from "./DraftPicks.tsx";
 import { getWatchListColsAndRows } from "./WatchList.tsx";
 import { ActionButton } from "../components/ActionButton.tsx";
 import { useLocal } from "../util/local.ts";
+import { showUndoNotification } from "../components/UndoNotification.tsx";
 
 const Notes = (props: View<"notes">) => {
 	const [clearing, setClearing] = useState(false);
@@ -336,6 +337,15 @@ const Notes = (props: View<"notes">) => {
 		throw new Error("Should never happen");
 	}
 
+	const typeName =
+		props.type === "draftPick"
+			? "draft pick"
+			: props.type === "game"
+				? "game"
+				: props.type === "player"
+					? "player"
+					: "team";
+
 	return (
 		<>
 			{moreLinks}
@@ -348,21 +358,20 @@ const Notes = (props: View<"notes">) => {
 						className="mb-3"
 						onClick={async () => {
 							setClearing(true);
-							await toWorker("main", "clearNotes", props.type);
+							const undoKey = await toWorker("main", "clearNotes", props.type);
 							setClearing(false);
+
+							if (undoKey !== undefined) {
+								showUndoNotification({
+									undoKey,
+									title: `Cleared ${typeName} notes`,
+								});
+							}
 						}}
 						processing={clearing}
 						variant="danger"
 					>
-						Clear{" "}
-						{props.type === "draftPick"
-							? "draft pick"
-							: props.type === "game"
-								? "game"
-								: props.type === "player"
-									? "player"
-									: "team"}{" "}
-						notes
+						Clear {typeName} notes
 					</ActionButton>
 
 					<DataTable

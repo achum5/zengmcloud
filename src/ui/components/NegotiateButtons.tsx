@@ -1,49 +1,18 @@
-import { useState } from "react";
 import { showNotification } from "../util/showNotification.ts";
 import { toWorker } from "../util/toWorker.ts";
+import { showUndoNotification } from "./UndoNotification.tsx";
 
-const SignNotification = ({ name, pid }: { name: string; pid: number }) => {
-	const [status, setStatus] = useState<"init" | "waiting" | "success" | "fail">(
-		"init",
-	);
-
-	if (status === "success") {
-		return "Signing undone";
-	} else if (status === "fail") {
-		return "Failed to undo signing";
-	} else {
-		return (
-			<>
-				<div>You signed {name}</div>
-				<div className="mt-2">
-					<button
-						className="btn btn-sm btn-secondary"
-						disabled={status === "waiting"}
-						onClick={async () => {
-							setStatus("waiting");
-							const result = await toWorker("main", "undoAction", {
-								type: "sign",
-								pid,
-							});
-							if (result) {
-								setStatus("success");
-							} else {
-								setStatus("fail");
-							}
-						}}
-					>
-						Undo
-					</button>
-				</div>
-			</>
-		);
-	}
-};
-
-export const showSignUndo = (p: { name: string; pid: number }) => {
-	showNotification({
-		type: "info",
-		text: <SignNotification name={p.name} pid={p.pid} />,
+export const showSignUndo = ({
+	name,
+	undoKey,
+}: {
+	name: string;
+	undoKey: number;
+}) => {
+	showUndoNotification({
+		actionName: "signing",
+		undoKey,
+		title: `You signed ${name}`,
 	});
 };
 
@@ -96,21 +65,21 @@ export const NegotiateButtons = ({
 				className="btn btn-light-bordered btn-xs"
 				disabled={signDisabled}
 				onClick={async () => {
-					const errorMsg = await toWorker("main", "acceptContractNegotiation", {
+					const response = await toWorker("main", "acceptContractNegotiation", {
 						pid: p.pid,
 						amount: contractAmount,
 						exp: p.contract.exp,
 					});
 
-					if (errorMsg) {
+					if (typeof response === "string") {
 						showNotification({
 							type: "error",
-							text: errorMsg,
+							text: response,
 						});
 					} else {
 						showSignUndo({
 							name: `${p.firstName} ${p.lastName}`,
-							pid: p.pid,
+							undoKey: response,
 						});
 					}
 				}}

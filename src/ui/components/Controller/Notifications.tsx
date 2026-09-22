@@ -8,10 +8,11 @@ import {
 	LEAGUE_TICKER_HEIGHT,
 	MOBILE_AD_BOTTOM_MARGIN,
 } from "../../../common/constants.ts";
+import type { LogEventType } from "../../../common/types.ts";
 
 const MAX_NUM_NOTIFICATIONS = 5;
 
-const NOTIFICATION_TIMEOUT = 8000;
+const NOTIFICATION_TIMEOUT = 8_000;
 
 const Notification = ({
 	extraClass,
@@ -116,6 +117,10 @@ export const Notifications = () => {
 	useEffect(() => {
 		unbind();
 
+		const MAX_TO_SHOW_BY_TYPE: Partial<Record<LogEventType, number>> = {
+			undo: 1,
+		};
+
 		const unbind2 = emitter.on("notification", (notification) => {
 			// Non-persistent notifications, only show if page is visible, for performance
 			if (!notification.persistent && document.hidden) {
@@ -124,6 +129,13 @@ export const Notifications = () => {
 
 			setNotifications((currentNotifications) => {
 				let newNotifications = [...currentNotifications, notification];
+
+				const maxToShowByType = MAX_TO_SHOW_BY_TYPE[notification.type];
+				if (maxToShowByType !== undefined) {
+					newNotifications = newNotifications.filter(
+						(x) => x.type !== notification.type || x === notification,
+					);
+				}
 
 				// Limit displayed notifications to 5 - all the persistent ones, plus the newest transient ones
 				let numToDelete = newNotifications.length - MAX_NUM_NOTIFICATIONS;

@@ -8,10 +8,7 @@ import {
 	updatePlayerAwards,
 } from "./awardsByPlayer.ts";
 import { orderTeams } from "../../util/orderTeams.ts";
-import {
-	leaderAwardCategories,
-	NUM_PLAYERS_PER_INDIVIDUAL_AWARD,
-} from "../../../common/awards.ts";
+import { leaderAwardCategories } from "../../../common/awards.ts";
 
 const teamAwards = async (
 	teamsUnsorted: TeamFiltered<
@@ -76,6 +73,8 @@ const teamAwards = async (
 	};
 };
 
+const NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD = 5;
+
 export const doAwards = async (conditions: Conditions) => {
 	const season = g.get("season");
 
@@ -114,7 +113,7 @@ export const doAwards = async (conditions: Conditions) => {
 
 	const { players, realizedAwards } = await processAwards({
 		awards: g.get("awards"),
-		numPlayersPerIndividualAward: NUM_PLAYERS_PER_INDIVIDUAL_AWARD,
+		numPlayersPerIndividualAward: NUM_PLAYERS_TO_STORE_PER_INDIVIDUAL_AWARD,
 		season,
 		statOverridesByMatchup: undefined,
 

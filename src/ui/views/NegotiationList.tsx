@@ -21,50 +21,19 @@ import {
 } from "../components/NegotiationModal.tsx";
 import { useLocal } from "../util/local.ts";
 import clsx from "clsx";
-import { useState } from "react";
+import { showUndoNotification } from "../components/UndoNotification.tsx";
 
-const ReleaseNotification = ({ name, pid }: { name: string; pid: number }) => {
-	const [status, setStatus] = useState<"init" | "waiting" | "success" | "fail">(
-		"init",
-	);
-
-	if (status === "success") {
-		return "Release undone";
-	} else if (status === "fail") {
-		return "Failed to undo release";
-	} else {
-		return (
-			<>
-				<div>You released {name}</div>
-				<div className="mt-2">
-					<button
-						className="btn btn-sm btn-secondary"
-						disabled={status === "waiting"}
-						onClick={async () => {
-							setStatus("waiting");
-							const result = await toWorker("main", "undoAction", {
-								type: "release",
-								pid,
-							});
-							if (result) {
-								setStatus("success");
-							} else {
-								setStatus("fail");
-							}
-						}}
-					>
-						Undo
-					</button>
-				</div>
-			</>
-		);
-	}
-};
-
-const showReleaseUndo = (p: { name: string; pid: number }) => {
-	showNotification({
-		type: "info",
-		text: <ReleaseNotification name={p.name} pid={p.pid} />,
+const showReleaseUndo = ({
+	name,
+	undoKey,
+}: {
+	name: string;
+	undoKey: number;
+}) => {
+	showUndoNotification({
+		actionName: "release",
+		undoKey,
+		title: `You released ${name}`,
 	});
 };
 
@@ -188,10 +157,14 @@ const NegotiationList = ({
 									p.mood.user.willing ? undefined : "ms-auto",
 								)}
 								onClick={async () => {
-									await toWorker("main", "cancelContractNegotiation", p.pid);
+									const undoKey = await toWorker(
+										"main",
+										"cancelContractNegotiation",
+										p.pid,
+									);
 									showReleaseUndo({
 										name: `${p.firstName} ${p.lastName}`,
-										pid: p.pid,
+										undoKey,
 									});
 								}}
 							>
@@ -270,12 +243,20 @@ const NegotiationList = ({
 							return;
 						}
 
-						const errorMsg = await toWorker("main", "reSignAll", players);
+						const response = await toWorker("main", "reSignAll", players);
 
-						if (errorMsg) {
+						if (typeof response === "string") {
 							showNotification({
 								type: "error",
-								text: errorMsg,
+								text: response,
+							});
+						} else {
+							showUndoNotification({
+								actionName: "signings",
+								undoKey: response,
+								title: `Re-signed all ${
+									players.length
+								} ${helpers.plural("player", players.length)}`,
 							});
 						}
 					}}

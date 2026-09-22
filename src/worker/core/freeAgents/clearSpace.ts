@@ -625,9 +625,23 @@ const clearSpaceForTeam = async ({
 			// made itself worse for nothing, which is the one outcome worse than
 			// never trying.
 			await processTrade(
-				[tid, partner.tid],
-				[dumpPids, partner.backPids],
-				[dpids, []],
+				[
+					{
+						tid,
+						pids: dumpPids,
+						pidsExcluded: [],
+						dpids,
+						dpidsExcluded: [],
+					},
+					{
+						tid: partner.tid,
+						pids: partner.backPids,
+						pidsExcluded: [],
+						dpids: [],
+						dpidsExcluded: [],
+					},
+				],
+				undefined,
 				{
 					initiatorTid: tid,
 					tiers: [posture.tier, partner.posture.tier],

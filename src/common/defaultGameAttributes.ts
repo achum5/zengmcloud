@@ -108,6 +108,7 @@ const gameAttributesKeysSportSpecific = {
 		"realisticFaces",
 		"faceAging",
 		"faceAgingPlayers",
+		"easterEggPlayers",
 	]),
 	football: new Set<GameAttributeKey>([
 		"fantasyPoints",
@@ -529,7 +530,6 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	homeCourtAdvantage: 1,
 	// The tragic death rate is the probability that a player will die a tragic death on a given regular season day. Yes, this only happens in the regular season. With roughly 100 days in a season, the default is about one death every 50 years.
 	tragicDeathRate: 1 / (100 * 50),
-	easterEggPlayers: true,
 	specializedDraftProspects: false,
 	realisticFaces: true,
 	// Aging is its own switch rather than part of realisticFaces: a league can
@@ -538,7 +538,6 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	// load so nothing changes under them (see loadGameAttributes).
 	faceAging: true,
 	faceAgingPlayers: "all",
-	fakeAges: true,
 	// The probability that a new player will be the son or brother of an existing player. In practice, the observed number may be smaller than this because sometimes a valid match will not be found.
 	sonRate: 0.02,
 	brotherRate: 0.02,
@@ -742,6 +741,8 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	currencyFormat: ["$", ".", ""],
 	forceRetireRealPlayers: false,
 	forceHistoricalRosters: false,
+	easterEggPlayers: true,
+	fakeAgeProb: 0.01,
 	awards: [
 		defaultAwards.mvp,
 		defaultAwardsBasketball.dpoy,
@@ -827,18 +828,19 @@ export const footballOverrides: Partial<GameAttributesLeagueWithHistory> =
 export const hockeyOverrides: Partial<GameAttributesLeagueWithHistory> =
 	__NODE_ENV === "test" || isSport("hockey")
 		? {
-				numGamesDiv: 26,
+				numGames: wrapFromStart(84),
+				numGamesDiv: 28,
 				numGamesConf: 24,
 				quarterLength: 20,
 				overtimeLength: 5,
 				overtimeLengthPlayoffs: 20,
 				numPeriods: 3,
 				salaryCapType: "hard",
-				salaryCap: 80000,
+				salaryCap: 105000,
 				minPayroll: 60000,
-				luxuryPayroll: 90000,
-				minContract: 500,
-				maxContract: 13000,
+				luxuryPayroll: 120000,
+				minContract: 700,
+				maxContract: 20000,
 				minRosterSize: 24,
 				maxRosterSize: 26,
 				// Injury rate per player per possession, basically. But it's a little more complicated than that.

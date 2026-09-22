@@ -1265,24 +1265,6 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Events",
-			key: "easterEggPlayers",
-			name: "Easter Egg Players",
-			godModeRequired: "always",
-			type: "bool",
-			description:
-				"Very rarely, a joke player shows up in a draft class. Disable this to keep draft classes entirely normal.",
-		},
-		{
-			category: "Events",
-			key: "fakeAges",
-			name: "Fake Ages",
-			godModeRequired: "always",
-			type: "bool",
-			description:
-				"Occasionally a player turns out to have been lying about his age, and gets older. Disable this to keep every player's age as generated.",
-		},
-		{
-			category: "Events",
 			key: "tragicDeathRate",
 			name: "Tragic Death Rate",
 			godModeRequired: "always",
@@ -1324,6 +1306,31 @@ export const settings: Setting[] = (
 						type="tragicDeaths"
 					/>
 				);
+			},
+		},
+		...(isSport("basketball")
+			? [
+					{
+						category: "Events",
+						key: "easterEggPlayers",
+						name: "Easter Egg Players",
+						type: "bool",
+						description:
+							'When enabled there is a very rare chance for an "Easter egg" player to appear, one of a few select notable historical figures.',
+					},
+				]
+			: []),
+		{
+			category: "Events",
+			key: "fakeAgeProb",
+			name: "Fake Age Probability",
+			type: "float",
+			description:
+				"Probability each offseason there will be one player who is revealed to have faked his age to appear like a better prospect.",
+			validator: (value) => {
+				if (value < 0 || value > 1) {
+					throw new Error("Value must be between 0 and 1");
+				}
 			},
 		},
 		{
@@ -1391,7 +1398,7 @@ export const settings: Setting[] = (
 			),
 		},
 		{
-			category: "Events",
+			category: "Team Movement",
 			key: "autoExpandProb",
 			name: "Auto Expansion Probability",
 			type: "float",
@@ -1404,7 +1411,7 @@ export const settings: Setting[] = (
 			},
 		},
 		{
-			category: "Events",
+			category: "Team Movement",
 			key: "autoExpandGeo",
 			name: "Auto Expansion Regions",
 			type: "string",
@@ -1417,7 +1424,7 @@ export const settings: Setting[] = (
 			],
 		},
 		{
-			category: "Events",
+			category: "Team Movement",
 			key: "autoExpandNumTeams",
 			name: "Auto Expansion # Teams",
 			type: "int",
@@ -1430,7 +1437,7 @@ export const settings: Setting[] = (
 			},
 		},
 		{
-			category: "Events",
+			category: "Team Movement",
 			key: "autoExpandMaxNumTeams",
 			name: "Auto Expansion Max Total # Teams",
 			type: "int",
@@ -1443,7 +1450,7 @@ export const settings: Setting[] = (
 			},
 		},
 		{
-			category: "Events",
+			category: "Team Movement",
 			key: "autoRelocateProb",
 			name: "Auto Relocation Probability",
 			type: "float",
@@ -1456,7 +1463,7 @@ export const settings: Setting[] = (
 			},
 		},
 		{
-			category: "Events",
+			category: "Team Movement",
 			key: "autoRelocateGeo",
 			name: "Auto Relocation Regions",
 			type: "string",
@@ -1469,13 +1476,13 @@ export const settings: Setting[] = (
 				'"North America first" means teams won\'t relocate outside of North America unless another team is already outside of North America or all of the North American teams are already taken.',
 		},
 		{
-			category: "Events",
+			category: "Team Movement",
 			key: "autoRelocateRebrand",
 			name: "Rebrand Teams After Auto Relocation",
 			type: "bool",
 		},
 		{
-			category: "Events",
+			category: "Team Movement",
 			key: "autoRelocateRealign",
 			name: "Realign Divs After Auto Relocation",
 			type: "bool",

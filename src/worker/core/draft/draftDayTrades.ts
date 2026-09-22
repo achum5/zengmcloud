@@ -197,17 +197,12 @@ const maybeTradeUp = async ({
 		}
 
 		const { teams } = offer;
-		await processTrade(
-			[teams[0].tid, teams[1].tid],
-			[teams[0].pids, teams[1].pids],
-			[teams[0].dpids, teams[1].dpids],
-			{
-				initiatorTid: buyer.tid,
-				tiers: [buyerPosture.tier, sellerPosture.tier],
-				dv: Math.round(offer.dv2 * 10) / 10,
-				motivation: "draft-trade-up",
-			},
-		);
+		await processTrade(teams, undefined, {
+			initiatorTid: buyer.tid,
+			tiers: [buyerPosture.tier, sellerPosture.tier],
+			dv: Math.round(offer.dv2 * 10) / 10,
+			motivation: "draft-trade-up",
+		});
 		valueChangeCalculator.invalidateCache({
 			teams: [teams[0].tid, teams[1].tid],
 		});

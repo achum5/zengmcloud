@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { local } from "./local.ts";
 import { notify } from "./notify.ts";
 import { toWorker } from "./toWorker.ts";
+import type { LogEventType } from "../../common/types.ts";
 import { registerGlobal } from "../../common/registerGlobal.ts";
 
 export type ShowNotificationOptions = {
@@ -10,7 +11,7 @@ export type ShowNotificationOptions = {
 	onClose?: () => void;
 	persistent?: boolean;
 	text: ReactNode;
-	type: string;
+	type: LogEventType;
 };
 
 export const showNotification = ({
@@ -61,6 +62,7 @@ export const showNotification = ({
 			extraClass,
 			onClose,
 			persistent,
+			type,
 		});
 
 		// Persistent notifications are very rare and should stop game sim when displayed. Run async for performance

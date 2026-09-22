@@ -80,8 +80,18 @@ describe("normalizeAwardsRow", () => {
 	});
 
 	// A blank year in the history beats a page that will not open.
-	test("a row too damaged to convert becomes a season with no awards", () => {
+	test("a row with nothing but a season becomes a season with no winners", () => {
 		const damaged = { season: 2019 };
+		const row = normalizeAwardsRow(damaged);
+		assert.strictEqual(row.season, 2019);
+		assert.isArray(row.awards);
+		for (const award of row.awards) {
+			assert.deepStrictEqual(award.winner, []);
+		}
+	});
+
+	test("a row too damaged to convert becomes a season with no awards", () => {
+		const damaged = { season: 2019, allLeague: "not a list" };
 		const row = normalizeAwardsRow(damaged);
 		assert.strictEqual(row.season, 2019);
 		assert.deepStrictEqual(row.awards, []);

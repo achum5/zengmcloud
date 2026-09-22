@@ -180,13 +180,11 @@ const checkMoneyball = async (maxPayroll: number) => {
 		"noCopyCache",
 	);
 	return !!(
-		(
-			t &&
-			t.seasonAttrs.playoffRoundsWon ===
-				g.get("numGamesPlayoffSeries", "current").length &&
-			t.seasonAttrs.expenses.salary <= maxPayroll &&
-			t.seasonAttrs.expenses.salary > 0
-		) // To handle leagues started at the beginning of the playoffs
+		t &&
+		t.seasonAttrs.playoffRoundsWon ===
+			g.get("numGamesPlayoffSeries", "current").length &&
+		t.seasonAttrs.expenses.salary <= maxPayroll &&
+		t.seasonAttrs.expenses.salary > 0 // To handle leagues started at the beginning of the playoffs
 	);
 };
 
@@ -504,7 +502,7 @@ const checkMvp = async (limit: number, overallLimit: number) => {
 		}
 
 		// > rather than >=, because we need to know if we just hit the limit (==) or if it was already beyond it (>)
-		if (checkMvpCache!.count > overallLimit) {
+		if (checkMvpCache.count > overallLimit) {
 			break;
 		}
 	}
@@ -1060,10 +1058,11 @@ const achievements: Achievement[] = [
 					}
 				}
 
+				// This gets reached if all the teams are valid for the award (no continue above)
 				return true;
 			}
 
-			return true;
+			return false;
 		},
 
 		when: "afterAwards",
@@ -1899,7 +1898,7 @@ if (isSport("basketball")) {
 		{
 			slug: "brick_wall",
 			name: "Brick Wall",
-			desc: `Have 3+ players make 1st Team ${defaultAwardsBasketball.def}.`,
+			desc: `Have 3+ players make 1st Team ${defaultAwardsBasketball.def.name}.`,
 			category: "Awards",
 
 			check() {
@@ -1911,7 +1910,7 @@ if (isSport("basketball")) {
 		{
 			slug: "brick_wall_2",
 			name: "Brick Wall 2",
-			desc: `Have 5 players make 1st Team ${defaultAwardsBasketball.def}.`,
+			desc: `Have 5 players make 1st Team ${defaultAwardsBasketball.def.name}.`,
 			category: "Awards",
 
 			check() {

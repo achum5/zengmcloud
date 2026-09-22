@@ -16,7 +16,7 @@ describe("rare event settings", () => {
 	test("both default to on, so existing leagues are unchanged", () => {
 		resetG();
 		assert.strictEqual(g.get("easterEggPlayers"), true);
-		assert.strictEqual(g.get("fakeAges"), true);
+		assert.strictEqual(g.get("fakeAgeProb"), 0.01);
 	});
 
 	test("generating a draft class with Easter eggs off works and is full size", async () => {

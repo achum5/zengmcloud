@@ -106,8 +106,6 @@ const finalize = async (
 		}
 	}
 
-	local.undoableActions = {};
-
 	if (local.autoPlayUntil) {
 		if (
 			local.autoPlayUntil.season < g.get("season") ||

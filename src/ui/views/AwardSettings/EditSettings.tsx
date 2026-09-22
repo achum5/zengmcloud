@@ -14,6 +14,7 @@ import type {
 	AwardSettingTeam,
 } from "../../../common/types.ts";
 import { Dropdown, DropdownButton } from "react-bootstrap";
+import { POS_NUMBERS } from "../../../common/constants.baseball.ts";
 
 const SUPPORT_OPOY_STUFF = isSport("football");
 const OPOY_FORMULA_NAME = "OPOY (including QB)";
@@ -235,7 +236,7 @@ export const EditSettings = ({
 			{ key: "overall", text: "Overall" },
 			{ key: "sp", text: "Starting Pitching" },
 			{ key: "rp", text: "Relief Pitching" },
-			{ key: "offense", text: "Overall" },
+			{ key: "offense", text: "Offense" },
 			{ key: "defense", text: "Defense" },
 		],
 		basketball: [
@@ -266,15 +267,12 @@ export const EditSettings = ({
 			key: "roy",
 			text: "ROY",
 		},
+		...(SUPPORT_OPOY_STUFF ? [{ key: "opoy", text: "OPOY" } as const] : []),
 		{
 			key: "none",
 			text: "None",
 		},
 	];
-
-	if (SUPPORT_OPOY_STUFF) {
-		actAss.push({ key: "opoy", text: "OPOY" });
-	}
 
 	const flags: {
 		key: "bench" | "mip" | "bounceBack" | "rookie";
@@ -351,6 +349,7 @@ export const EditSettings = ({
 	];
 
 	const actAsId = useId();
+	const groupId = useId();
 	const opoyId = useId();
 
 	const changeHandler =
@@ -372,6 +371,13 @@ export const EditSettings = ({
 				[key]: value,
 			});
 		};
+
+	const positions = bySport({
+		baseball: Object.keys(POS_NUMBERS),
+		basketball: POSITIONS,
+		football: POSITIONS,
+		hockey: POSITIONS,
+	});
 
 	return (
 		<div>
@@ -431,9 +437,9 @@ export const EditSettings = ({
 						<DropdownButton
 							disabled={disabled}
 							variant="secondary"
-							title="Add position-speicifc formula"
+							title="Add position-specific formula"
 						>
-							{POSITIONS.map((pos) => {
+							{positions.map((pos) => {
 								if (
 									NOT_REAL_POSITIONS_AWARDS.has(pos) ||
 									state.formulaByPos[pos] !== undefined
@@ -474,7 +480,7 @@ export const EditSettings = ({
 							</p>
 						</HelpPopover>
 					</div>
-					{POSITIONS.map((pos) => {
+					{positions.map((pos) => {
 						const formula = state.formulaByPos[pos];
 						if (formula === undefined) {
 							return null;
@@ -522,9 +528,19 @@ export const EditSettings = ({
 				</>
 			) : null}
 			<div className="mt-2 d-flex gap-3">
-				<label>
-					<div className="mb-1">Grouping</div>
+				<div>
+					<label className="mb-1" htmlFor={groupId}>
+						Grouping
+					</label>
+					<HelpPopover title="Grouping" className="ms-1">
+						<p>
+							For playoff round awards, one award will be awarded for each
+							series in that round. So 2 awards for the semifinals, 4 for the
+							quarterfinals, etc.
+						</p>
+					</HelpPopover>
 					<select
+						id={groupId}
 						className="form-select"
 						disabled={disabled}
 						onChange={changeHandler("group")}
@@ -536,7 +552,7 @@ export const EditSettings = ({
 							</option>
 						))}
 					</select>
-				</label>
+				</div>
 				<label>
 					<div className="mb-1">Range</div>
 					<select

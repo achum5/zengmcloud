@@ -504,7 +504,12 @@ const updatePlayers = async (
 			description = "These are the best players who never won an MVP award.";
 
 			filter = (p) =>
-				p.awards.every((award) => award.type !== "Most Valuable Player");
+				p.awards.every(
+					(award) =>
+						award.type !== undefined ||
+						award.numTeams !== undefined ||
+						award.actAs !== "mvp",
+				);
 			getValue = playerValue;
 		} else if (type === "progs") {
 			title = "Best Progs";
@@ -961,11 +966,21 @@ const updatePlayers = async (
 
 			filter = (p) =>
 				p.awards.length > 0 &&
-				p.awards.some((a) => a.type === "Most Valuable Player");
+				p.awards.some(
+					(award) =>
+						award.type === undefined &&
+						award.numTeams === undefined &&
+						award.actAs === "mvp" &&
+						award.rank === 1,
+				);
 
 			getValue = (p) => {
 				const mvpSeasons = p.awards.filter(
-					(award) => award.type === "Most Valuable Player",
+					(award) =>
+						award.type === undefined &&
+						award.numTeams === undefined &&
+						award.actAs === "mvp" &&
+						award.rank === 1,
 				);
 				const entries = [];
 				for (const mvp of mvpSeasons) {

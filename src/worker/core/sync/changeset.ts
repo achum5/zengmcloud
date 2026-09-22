@@ -1172,6 +1172,10 @@ export const applyChangeset = async (
 		);
 	}
 
+	// Anything this device could still undo was done on a league that no
+	// longer exists once someone else's changes land on top of it.
+	local.undoLog.invalidateAll();
+
 	// THE DAY-CONTIGUITY GUARD. A changeset that plays day D of the current
 	// season must not land on a device that still has an EARLIER day unplayed:
 	// applying it forks the league - records, stats and standings that include

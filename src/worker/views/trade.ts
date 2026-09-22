@@ -2,7 +2,11 @@ import { bySport } from "../../common/sportFunctions.ts";
 import { trade } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
-import type { TradeSummary, TradeTeams } from "../../common/types.ts";
+import type {
+	TradeSummary,
+	TradeTeams,
+	UpdateEvents,
+} from "../../common/types.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { orderBy } from "../../common/utils.ts";
 import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
@@ -39,7 +43,7 @@ export const getSummary = async (teams: TradeTeams) => {
 
 // Validate that the stored player IDs correspond with the active team ID
 const validateTeams = async () => {
-	const { teams } = await trade.get();
+	const { teams } = helpers.deepCopy(await trade.get());
 
 	if (teams[0].tid !== g.get("userTid")) {
 		teams[0] = {
@@ -86,7 +90,7 @@ const validateTeams = async () => {
 	return trade.updatePlayers(teams);
 };
 
-const updateTrade = async () => {
+const updateTrade = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	const teams = await validateTeams();
 	const userRosterAll = await idb.cache.players.indexGetAll(
 		"playersByTid",
@@ -258,6 +262,7 @@ const updateTrade = async () => {
 		forceTrade: false,
 		numDraftRounds: g.get("numDraftRounds"),
 		multiTeamMode: g.get("userTids").length > 1,
+		resetMessage: updateEvents.includes("undoTrade"),
 	};
 };
 

@@ -28,12 +28,10 @@ export type Key =
 	| "playersRefuseToNegotiate"
 	| "injuryRate"
 	| "tragicDeathRate"
-	| "easterEggPlayers"
 	| "specializedDraftProspects"
 	| "realisticFaces"
 	| "faceAging"
 	| "faceAgingPlayers"
-	| "fakeAges"
 	| "brotherRate"
 	| "sonRate"
 	| "forceRetireAge"
@@ -188,7 +186,9 @@ export type Key =
 	| "scrimmageTouchbackKickoff"
 	| "twoPointConversions"
 	| "footballOvertime"
-	| "footballOvertimePlayoffs";
+	| "footballOvertimePlayoffs"
+	| "easterEggPlayers"
+	| "fakeAgeProb";
 
 export type Category =
 	| "New League"
@@ -204,6 +204,7 @@ export type Category =
 	| "Contracts"
 	| "Rookie Contracts"
 	| "Events"
+	| "Team Movement"
 	| "Injuries"
 	| "Game Simulation"
 	| "Tendencies"

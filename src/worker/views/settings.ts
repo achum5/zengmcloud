@@ -37,12 +37,10 @@ type Key =
 	| "rookieContractLengths"
 	| "rookiesCanRefuse"
 	| "tragicDeathRate"
-	| "easterEggPlayers"
 	| "specializedDraftProspects"
 	| "realisticFaces"
 	| "faceAging"
 	| "faceAgingPlayers"
-	| "fakeAges"
 	| "brotherRate"
 	| "sonRate"
 	| "forceRetireAge"
@@ -200,7 +198,9 @@ type Key =
 	| "scrimmageTouchbackKickoff"
 	| "twoPointConversions"
 	| "footballOvertime"
-	| "footballOvertimePlayoffs";
+	| "footballOvertimePlayoffs"
+	| "easterEggPlayers"
+	| "fakeAgeProb";
 
 export type Settings = Pick<
 	GameAttributesLeague,
@@ -274,12 +274,10 @@ const updateSettings = (inputs: unknown, updateEvents: UpdateEvents) => {
 			rookieContractLengths: g.get("rookieContractLengths"),
 			rookiesCanRefuse: g.get("rookiesCanRefuse"),
 			tragicDeathRate: g.get("tragicDeathRate"),
-			easterEggPlayers: g.get("easterEggPlayers"),
 			specializedDraftProspects: g.get("specializedDraftProspects"),
 			realisticFaces: g.get("realisticFaces"),
 			faceAging: g.get("faceAging"),
 			faceAgingPlayers: g.get("faceAgingPlayers"),
-			fakeAges: g.get("fakeAges"),
 			brotherRate: g.get("brotherRate"),
 			sonRate: g.get("sonRate"),
 			forceRetireAge: g.get("forceRetireAge"),
@@ -442,6 +440,8 @@ const updateSettings = (inputs: unknown, updateEvents: UpdateEvents) => {
 			twoPointConversions: g.get("twoPointConversions"),
 			footballOvertime: g.get("footballOvertime"),
 			footballOvertimePlayoffs: g.get("footballOvertimePlayoffs"),
+			easterEggPlayers: g.get("easterEggPlayers"),
+			fakeAgeProb: g.get("fakeAgeProb"),
 
 			// Might as well be undefined, because it will never be saved from this form, only the new league form
 			realDraftRatings: g.get("realDraftRatings") ?? "rookie",

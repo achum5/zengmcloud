@@ -12,7 +12,25 @@ import { PLAYER } from "../../../common/constants.ts";
 // for team 1's first player and a future first-round pick.
 const makeTrade = async () => {
 	const [p0, p1] = await idb.cache.players.getAll();
-	await processTrade([0, 1], [[p0!.pid], [p1!.pid]], [[], [1]]);
+	await processTrade(
+		[
+			{
+				tid: 0,
+				pids: [p0!.pid],
+				pidsExcluded: [],
+				dpids: [],
+				dpidsExcluded: [],
+			},
+			{
+				tid: 1,
+				pids: [p1!.pid],
+				pidsExcluded: [],
+				dpids: [1],
+				dpidsExcluded: [],
+			},
+		],
+		undefined,
+	);
 	const events = await idb.cache.events.getAll();
 	const event = events.at(-1)!;
 	return { p0: p0!, p1: p1!, eid: event.eid as number };

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { PlayerAwardBuiltIn, View } from "../../../common/types.ts";
+import type { PlayerAward, View } from "../../../common/types.ts";
 import { helpers } from "../../util/helpers.ts";
 import { getCols } from "../../../common/getCols.ts";
 import { isSport } from "../../../common/sportFunctions.ts";
@@ -59,7 +59,7 @@ export const StatsTable = ({
 	seasonNotes,
 	noteLinksBySeason,
 }: {
-	awardsBySeason: Map<number, PlayerAwardBuiltIn[]>;
+	awardsBySeason: Map<number, PlayerAward[]>;
 	name: string;
 	onlyShowIf?: string[];
 	p: View<"player">["player"];

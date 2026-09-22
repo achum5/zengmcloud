@@ -311,7 +311,7 @@ describe("proposing a trade to a smart front office", () => {
 			],
 		} as any);
 
-		const [accepted, message] = await trade.propose(false);
+		const { accepted, message } = await trade.propose(false);
 		assert.strictEqual(accepted, false);
 		assert.ok(
 			message?.includes("isn't going anywhere"),

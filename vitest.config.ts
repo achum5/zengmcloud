@@ -22,22 +22,55 @@ const makeProject = (
 			__SPORT: JSON.stringify(sport),
 		},
 		plugins: [
-			// @ts-expect-error
-			sportFunctions("production", sport),
+			{
+				...sportFunctions("production", sport),
+
+				configureVitest({ defineCacheKeyGenerator }) {
+					defineCacheKeyGenerator(() => {
+						return sport;
+					});
+				},
+
+				// Need this or Vite runs TypeScript conversion before this plugin runs, resulting in moduleType in the plugin filter being js rather than ts/tsx
+				enforce: "pre",
+			},
 		],
 
 		test: {
 			...projectConfig,
-			setupFiles:
-				environment === "node"
-					? ["./src/test/setup.ts", "./src/worker/index.ts"]
-					: ["./src/test/setup-e2e.ts"],
+			...(environment === "node"
+				? {
+						setupFiles: ["./src/test/setup.ts", "./src/worker/index.ts"],
+					}
+				: {
+						setupFiles: ["./src/test/setup-e2e.ts"],
+						browser: {
+							enabled: true,
+							headless: true,
+							provider: playwright(),
+							instances: [
+								{ browser: "chromium" },
+								// firefox and webkit have been flaky lately...
+								// { browser: "firefox" },
+								// { browser: "webkit" },
+							],
+							screenshotFailures: false,
+						},
+					}),
 		},
 	};
 };
 
+const benchmark = {
+	include: ["**/*.bench.browser.?(c|m)[jt]s?(x)"],
+};
+
 export default defineConfig({
 	test: {
+		// Would like to fsModuleCache this, but it seems to not work properly even with defineCacheKeyGenerator in my plugin https://github.com/vitest-dev/vitest/issues/11281
+		fsModuleCache: false,
+		isolate: false,
+		maxWorkers: 3,
 		projects: [
 			makeProject("basketball", "node", {
 				name: "basketball",
@@ -57,20 +90,24 @@ export default defineConfig({
 				include: baseballTests,
 			}),
 			makeProject("basketball", "browser", {
-				name: "browser",
+				name: "browser-basketball",
 				include: ["**/*.test.browser.ts"],
-				browser: {
-					enabled: true,
-					headless: true,
-					provider: playwright(),
-					instances: [
-						{ browser: "chromium" },
-						// firefox and webkit have been flaky lately...
-						// { browser: "firefox" },
-						// { browser: "webkit" },
-					],
-					screenshotFailures: false,
-				},
+				benchmark,
+			}),
+			makeProject("football", "browser", {
+				name: "browser-football",
+				include: [],
+				benchmark,
+			}),
+			makeProject("baseball", "browser", {
+				name: "browser-baseball",
+				include: [],
+				benchmark,
+			}),
+			makeProject("hockey", "browser", {
+				name: "browser-hockey",
+				include: [],
+				benchmark,
 			}),
 		],
 	},

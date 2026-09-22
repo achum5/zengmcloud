@@ -193,7 +193,11 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 ]);
 
 const isChangesetSuppressedCall = (type: string, name: string): boolean =>
-	type === "leagueFileUpload" || SKIP_CHANGESET_CAPTURE.has(name);
+	type === "leagueFileUpload" ||
+	// Dropping an expired undo entry is in-memory bookkeeping, fired by a
+	// notification timing out, never a league write.
+	(type === "undoLog" && name === "remove") ||
+	SKIP_CHANGESET_CAPTURE.has(name);
 
 const isCloudTrackedCall = (type: string, name: string): boolean =>
 	!isChangesetSuppressedCall(type, name);
@@ -483,7 +487,8 @@ promiseWorker.register(async ([type, name, param]: any, hostID) => {
 	// acting would author a whole-record write on a stale world and clobber the
 	// sim's results (or lose the edit) under last-write-wins. Skipped for the
 	// sim authority itself, which is the one doing the advancing.
-	if (type === "main" && SIM_CONFLICT_GATED.has(name)) {
+	// An undo rewrites the same records its action did, so it is gated the same.
+	if ((type === "main" && SIM_CONFLICT_GATED.has(name)) || type === "undoLog") {
 		const syncEngine = getSyncEngine();
 		if (
 			syncEngine &&

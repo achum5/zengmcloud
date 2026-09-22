@@ -101,6 +101,10 @@ const loadGameAttributes = async () => {
 				// than picking up the new default - a league that had realistic
 				// faces off would otherwise start aging faces on its own.
 				g.setWithoutSavingToDB("faceAging", g.get("realisticFaces"));
+			} else if (key === "fakeAgeProb" && (g as any).fakeAges === false) {
+				// fakeAgeProb replaced the fakeAges on/off switch. A league that had
+				// turned fake ages off keeps them off.
+				g.setWithoutSavingToDB("fakeAgeProb", 0);
 			} else {
 				g.setWithoutSavingToDB(key, defaultGameAttributes[key]);
 			}

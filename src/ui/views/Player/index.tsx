@@ -26,6 +26,7 @@ import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
 import Impact from "./Impact.tsx";
+import { orderBy } from "../../../common/utils.ts";
 import type { LeagueUrlParts } from "../../router/types.ts";
 
 const Player2 = ({
@@ -142,7 +143,12 @@ const Player2 = ({
 	}
 
 	const awardsBySeason = Map.groupBy(
-		player.awards.filter((award) => award.type === undefined),
+		orderBy(
+			player.awards.filter(
+				(award) => award.type === undefined || award.type === "All-Star",
+			),
+			(award) => (award.type === undefined ? 0 : 1),
+		),
 		(award) => award.season,
 	);
 

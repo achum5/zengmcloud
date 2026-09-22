@@ -41,6 +41,15 @@ export type StatOverridesByMatchup = Record<
 	>
 >;
 
+const BOTH_AWARD_STATS_SKIP = new Set(
+	bySport({
+		baseball: ["pos"],
+		basketball: [],
+		football: [],
+		hockey: ["gRec"],
+	}),
+);
+
 const AWARD_STATS = [
 	...(isSport("basketball") ? [] : ["keyStats"]),
 
@@ -66,25 +75,30 @@ const AWARD_STATS_SPECIAL = [
 if (isSport("basketball")) {
 	AWARD_STATS_SPECIAL.push("teamWs");
 }
-export const AWARD_STATS_ALL = [...AWARD_STATS, ...AWARD_STATS_SPECIAL];
+export const AWARD_STATS_ALL = [...AWARD_STATS, ...AWARD_STATS_SPECIAL].filter(
+	(key) => !BOTH_AWARD_STATS_SKIP.has(key),
+);
 
-const SKIP_BY_SPORT = new Set(
+const PLAYOFF_SERIES_AWARD_STATS_SKIP = new Set(
 	bySport({
-		baseball: ["keyStatsShort", "min", "poSo", "pos"],
-		basketball: [],
+		baseball: ["keyStatsShort", "min", "poSo"],
+		basketball: ["ws48", "ws", "bpm"],
 		football: ["min"],
-		hockey: ["gMin", "keyStatsWithGoalieGP", "gW", "gL", "gT", "gOTL"],
+		hockey: ["gMin", "keyStatsWithGoalieGP", "gW", "gL", "gT", "gOTL", "ps"],
 	}),
 );
 
 const PLAYOFF_SERIES_AWARD_STATS_RAW = playerStats.raw.filter(
 	(key) =>
 		!SKIP_PLAYER_STATS.has(key) &&
-		!SKIP_BY_SPORT.has(key) &&
+		!PLAYOFF_SERIES_AWARD_STATS_SKIP.has(key) &&
 		!key.startsWith("opp"),
 );
 const PLAYOFF_SERIES_AWARD_STATS_DERIVED = derivedPlayerStatKeys.filter(
-	(key) => !SKIP_BY_SPORT.has(key) && key !== "age",
+	(key) =>
+		!PLAYOFF_SERIES_AWARD_STATS_SKIP.has(key) &&
+		!BOTH_AWARD_STATS_SKIP.has(key) &&
+		key !== "age",
 );
 const PLAYOFF_SERIES_AWARD_STATS = [
 	...PLAYOFF_SERIES_AWARD_STATS_RAW,
@@ -120,6 +134,18 @@ export type CurrentStats = {
 	teamGp: number;
 	winp: number;
 } & StatsRow;
+
+const fixMaxRow = (stats: Record<string, unknown> | undefined) => {
+	if (!stats) {
+		return;
+	}
+
+	for (const [key, value] of Object.entries(stats)) {
+		if (key.endsWith("Max") && Array.isArray(value)) {
+			stats[key] = value[0];
+		}
+	}
+};
 
 const getProcessedPlayers = async (
 	playersAll: Player[],
@@ -197,6 +223,14 @@ const getProcessedPlayers = async (
 
 	for (const p of players) {
 		delete (p as any).careerStats;
+	}
+
+	if (stats.some((stat) => stat.endsWith("Max"))) {
+		for (const p of players) {
+			for (const row of p.stats) {
+				fixMaxRow(row);
+			}
+		}
 	}
 
 	// Used to filter out some players here with no stats, but even a player with no stats could have some relevant awards (like if there are no awards for regularSeason or playoffs but there are for playoff series, series stats are loaded elsewhere)
@@ -451,13 +485,13 @@ export const getPlayers = async (
 		).pos;
 
 		if (isSport("baseball")) {
+			// Playoff series do not have gpF but everything else should
 			const bestCurrentStats =
 				p.currentStats.regularSeason ??
 				p.currentStats.combined ??
-				p.currentStats.playoffs ??
-				Object.values(p.currentStats)[0];
+				p.currentStats.playoffs;
 			if (bestCurrentStats) {
-				if (bestCurrentStats && !bestCurrentStats.gpF) {
+				if (!bestCurrentStats.gpF) {
 					throw new Error("currentStats missing gpF");
 				}
 				p.pos = getPosByGpF(bestCurrentStats.gpF, p.pos);
@@ -465,6 +499,7 @@ export const getPlayers = async (
 		}
 
 		// Sum up or average any byPos stats - not ideal for team awards of awards with formulas by position, but probably good enough since we're using gpF to assign position so most of their games at least will be at the correct position
+		// Do this after we've already used gpF above, and currentStats contains references to stats array which will be updated by this
 		if (playerStats.byPos) {
 			const byPosStatsSum = [...playerStats.byPos];
 			if (isSport("baseball")) {
@@ -492,12 +527,19 @@ export const getPlayers = async (
 					"inn",
 				);
 			}
-			for (const stat of byPosStatsPos) {
-				for (const currentStats of Object.values(p.currentStats)) {
-					if (currentStats && Array.isArray(currentStats[stat])) {
-						currentStats[stat] =
-							helpers.sum(currentStats[stat]) /
-							currentStats[stat].filter((x) => x !== undefined).length;
+
+			for (const row of p.stats) {
+				for (const stat of byPosStatsSum) {
+					if (Array.isArray(row[stat])) {
+						row[stat] = helpers.sum(row[stat]);
+					}
+				}
+
+				for (const stat of byPosStatsPos) {
+					if (Array.isArray(row[stat])) {
+						row[stat] =
+							helpers.sum(row[stat]) /
+							row[stat].filter((x) => x !== undefined).length;
 					}
 				}
 			}

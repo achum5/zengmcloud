@@ -56,7 +56,8 @@ const offer = async (give: number[], get: number[]) => {
 			},
 		],
 	} as any);
-	return trade.propose(false);
+	const { accepted, message } = await trade.propose(false);
+	return [accepted, message] as const;
 };
 
 const decideFor = async (give: Spec[], get: Spec[] = [TARGET]) => {

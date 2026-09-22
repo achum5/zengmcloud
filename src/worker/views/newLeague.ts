@@ -62,10 +62,6 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"rookiesCanRefuse",
 		),
-		easterEggPlayers: unwrapGameAttribute(
-			defaultGameAttributes,
-			"easterEggPlayers",
-		),
 		specializedDraftProspects: unwrapGameAttribute(
 			defaultGameAttributes,
 			"specializedDraftProspects",
@@ -79,7 +75,6 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"faceAgingPlayers",
 		),
-		fakeAges: unwrapGameAttribute(defaultGameAttributes, "fakeAges"),
 		tragicDeathRate: unwrapGameAttribute(
 			defaultGameAttributes,
 			"tragicDeathRate",
@@ -498,6 +493,11 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"footballOvertimePlayoffs",
 		),
+		easterEggPlayers: unwrapGameAttribute(
+			defaultGameAttributes,
+			"easterEggPlayers",
+		),
+		fakeAgeProb: unwrapGameAttribute(defaultGameAttributes, "fakeAgeProb"),
 
 		// This can be undefined, but if the setting is ever displayed to the user, it should default to "rookie"
 		realDraftRatings:

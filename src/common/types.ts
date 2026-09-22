@@ -972,8 +972,6 @@ export type GameAttributesLeague = {
 	// own. Nothing here reaches the sim.
 	teamFinancesPlan: TeamFinancesPlan;
 	tragicDeathRate: number;
-	easterEggPlayers: boolean;
-	fakeAges: boolean;
 	tragicDeaths?: TragicDeaths;
 	userTid: number;
 	userTids: number[];
@@ -1055,6 +1053,8 @@ export type GameAttributesLeague = {
 	twoPointConversions: boolean;
 	footballOvertime: FootballOvertime;
 	footballOvertimePlayoffs: FootballOvertime;
+	easterEggPlayers: boolean;
+	fakeAgeProb: number;
 };
 
 type AlwaysWrap = (typeof ALWAYS_WRAP)[number];
@@ -1184,16 +1184,13 @@ export type LogEventType =
 	| "upgrade"
 	| "luxuryTax"
 	| "luxuryTaxDist"
-	| "minPayroll";
+	| "minPayroll"
+	| "undo";
 
 // https://stackoverflow.com/a/57103940/786644
 export type DistributiveOmit<T, K extends keyof T> = T extends any
 	? Omit<T, K>
 	: never;
-export type LogEventSaveOptions = DistributiveOmit<
-	EventBBGMWithoutKey,
-	"season"
->;
 
 export type OwnerMood = {
 	money: number;
@@ -1849,26 +1846,6 @@ export type PlayerBioInfoProcessed = {
 	frequencies: [string, number][];
 };
 
-export type UndoableAction =
-	| ({
-			type: "sign";
-			phase: Phase;
-			tid: number;
-			eid: number | undefined;
-	  } & Pick<
-			Player,
-			| "numDaysFreeAgent"
-			| "numPlayersTradedAwayNormalized"
-			| "jerseyNumber"
-			| "contract"
-			| "salaries"
-			| "transactions"
-	  >)
-	| {
-			type: "release";
-			tid: number;
-	  };
-
 export type Local = {
 	autoPlayUntil?: {
 		reject: (error: Error) => void;
@@ -1957,7 +1934,7 @@ export type Local = {
 		| undefined;
 	seasonLeaders: SeasonLeaders | undefined;
 	statusText: string;
-	undoableActions: Record<number, UndoableAction>;
+	undoLog: UndoLog;
 	unviewedSeasonSummary: boolean;
 	username: string | undefined;
 };
@@ -2442,6 +2419,7 @@ import type {
 	KeyboardShortcutsLocal,
 } from "../ui/util/keyboardShortcuts.ts";
 import type { gameAttributesSyncedToUi } from "./gameAttributesSyncedToUi.ts";
+import type { UndoLog } from "../worker/util/UndoLog.ts";
 import type { LeagueUrlParts } from "../ui/router/types.ts";
 
 type TeamStatsPlus = Record<TeamStatAttrBaseball, number> &
@@ -2664,6 +2642,7 @@ export type UpdateEvents = (
 	| "team"
 	| "teamFinances"
 	| "draftLottery"
+	| "undoTrade"
 
 	// A follower asking the liveGame view to serve the cached multiplayer
 	// broadcast payload (recovery when the navigation carrying it was dropped).

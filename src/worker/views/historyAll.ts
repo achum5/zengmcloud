@@ -2,7 +2,7 @@ import { PHASE } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type { UpdateEvents } from "../../common/types.ts";
-import { groupByUnique, last, range } from "../../common/utils.ts";
+import { groupByUnique, last, orderBy, range } from "../../common/utils.ts";
 import { formatAwardNamePrefix } from "../core/awards/prefixes.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { PlayersCache } from "../db/PlayersCache.ts";
@@ -152,7 +152,11 @@ const updateHistory = async (inputs: unknown, updateEvents: UpdateEvents) => {
 				tid: number;
 			}[] = [];
 			if (a) {
-				for (const award of a.awards) {
+				// Move Finals MVP or Playoffs MVP to the front, so it's next to the championship winer
+				const awardsSorted = orderBy(a.awards, (award) =>
+					award.statRange === -1 ? 0 : award.statRange === "playoffs" ? 1 : 2,
+				);
+				for (const award of awardsSorted) {
 					// Only want individual awards
 					if (award.numTeams !== undefined) {
 						continue;
