@@ -364,11 +364,8 @@ const TriviaHigherLower = ({ players }: View<"triviaHigherLower">) => {
 		}
 		setCategory(cat);
 		setBestState(getBest(cat.key));
-		let rest = eligible;
-		let a: HLPlayer;
-		let b: HLPlayer;
-		[a, rest] = draw(rest);
-		[b, rest] = draw(rest);
+		const [a, afterA] = draw(eligible);
+		const [b, rest] = draw(afterA);
 		setLeft(a);
 		setRight(b);
 		setPool(rest);

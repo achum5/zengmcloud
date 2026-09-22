@@ -33,6 +33,12 @@ const getCommonGlobals = (a, b) => {
 };
 const commonGlobals = getCommonGlobals(globals.browser, globals.sharedWorker);
 
+// Build-time constants replaced by rolldown/vitest defines
+const defineGlobals = {
+	__NODE_ENV: false,
+	__SPORT: false,
+};
+
 export default defineConfig(
 	globalIgnores([
 		"analysis/",
@@ -76,7 +82,9 @@ export default defineConfig(
 			"react-hooks/refs": "off",
 			"react-hooks/set-state-in-effect": "off",
 
-			"require-await": "error",
+			// Upstream enables this; the fork has many async handlers without an
+			// await whose callers rely on the promise, so it stays off here.
+			"require-await": "off",
 			"sort-destructure-keys/sort-destructure-keys": "off",
 			"sort-keys-fix/sort-keys-fix": "off",
 			"typescript-sort-keys/interface": "off",
@@ -104,6 +112,7 @@ export default defineConfig(
 		languageOptions: {
 			globals: {
 				...globals.browser,
+				...defineGlobals,
 				process: false,
 
 				// This is needed for no-undef
@@ -130,6 +139,7 @@ export default defineConfig(
 		languageOptions: {
 			globals: {
 				...globals.sharedWorker,
+				...defineGlobals,
 				process: false,
 
 				// This is needed for no-undef
@@ -147,6 +157,7 @@ export default defineConfig(
 		languageOptions: {
 			globals: {
 				...commonGlobals,
+				...defineGlobals,
 				process: false,
 
 				// This is needed for no-undef
