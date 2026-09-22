@@ -415,7 +415,7 @@ describe("sync changeset", () => {
 
 		for (const [phaseStr, components] of Object.entries(expected)) {
 			const phase = Number(phaseStr) as Phase;
-			assert.deepEqual(
+			assert.deepEqual<unknown>(
 				phaseRedirectComponents(phase, DEFAULT_PHASE_CHANGE_REDIRECTS),
 				components,
 				`phase ${phase} should redirect to ${components.join("/")}`,

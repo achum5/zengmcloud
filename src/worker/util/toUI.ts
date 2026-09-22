@@ -12,7 +12,7 @@ const toUI = <Name extends keyof typeof api>(
 		return Promise.resolve();
 	}
 
-	return promiseWorker.postMessage([name, ...args], conditions.hostID);
+	return promiseWorker.postMessage([name, ...args], conditions.hostID) as any;
 };
 
 export default toUI;

@@ -710,7 +710,10 @@ const playerRatings = (
 	// isn't a positive integer means page 1 - the table clamps to the last real
 	// page itself, since how many there are depends on the per-page setting and
 	// any active filter, which the worker doesn't know about.
-	const parsedPage = Number.parseInt(params.page as string);
+	// Only the ratings routes carry a page; this handler also serves playerBios
+	const parsedPage = Number.parseInt(
+		("page" in params ? params.page : undefined) as string,
+	);
 	const page = Number.isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
 
 	return {

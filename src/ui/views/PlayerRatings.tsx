@@ -180,12 +180,9 @@ const PlayerRatings = ({
 				// can be linked, bookmarked and opened in a new tab, and the back
 				// button walks through them.
 				pageUrl={(newPage) =>
-					helpers.leagueUrl([
-						"player_ratings",
-						abbrev,
-						season,
-						...(newPage > 1 ? [newPage] : []),
-					])
+					newPage > 1
+						? helpers.leagueUrl(["player_ratings", abbrev, season, newPage])
+						: helpers.leagueUrl(["player_ratings", abbrev, season])
 				}
 				rows={rows}
 			/>

@@ -1,3 +1,4 @@
+import type { LeagueUrlParts } from "../../../ui/router/types.ts";
 import { idb } from "../../db/index.ts";
 import { noteInjuryApply } from "./injuryForensics.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
@@ -37,7 +38,7 @@ import type { Phase, UpdateEvents } from "../../../common/types.ts";
 //   DRAFT           -> newPhaseDraft          -> draft
 //   RESIGN_PLAYERS  -> newPhaseResignPlayers  -> negotiation
 //   FREE_AGENCY     -> newPhaseFreeAgency     -> free_agents
-const PHASE_REDIRECT_URL: Partial<Record<Phase, string[]>> = {
+const PHASE_REDIRECT_URL: Partial<Record<Phase, LeagueUrlParts>> = {
 	[PHASE.REGULAR_SEASON]: ["season_preview"],
 	[PHASE.PLAYOFFS]: ["playoffs"],
 	[PHASE.DRAFT_LOTTERY]: ["history"],
@@ -54,7 +55,7 @@ const PHASE_REDIRECT_URL: Partial<Record<Phase, string[]>> = {
 export const phaseRedirectComponents = (
 	phase: Phase,
 	phaseChangeRedirects: Phase[],
-): string[] | undefined => {
+): LeagueUrlParts | undefined => {
 	const components = PHASE_REDIRECT_URL[phase];
 	if (!components || !phaseChangeRedirects.includes(phase)) {
 		return undefined;

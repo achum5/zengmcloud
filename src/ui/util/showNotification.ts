@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { local } from "./local.ts";
 import { notify } from "./notify.ts";
 import { toWorker } from "./toWorker.ts";
-import type { LogEventType } from "../../common/types.ts";
 import { registerGlobal } from "../../common/registerGlobal.ts";
 
 export type ShowNotificationOptions = {

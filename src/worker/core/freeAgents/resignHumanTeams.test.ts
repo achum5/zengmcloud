@@ -237,6 +237,8 @@ describe("re-signing leaves human teams alone", () => {
 			season: g.get("season") + 1,
 			phase: PHASE.PRESEASON,
 			start: 0,
+			resolve: () => {},
+			reject: () => {},
 		};
 		try {
 			await newPhaseResignPlayers({} as any);
