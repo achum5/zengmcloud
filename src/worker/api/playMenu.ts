@@ -144,8 +144,6 @@ const playAmount = async (
 			numDays = numDaysRemaining;
 		}
 
-		await updateStatus("Playing..."); // For quick UI updating, before game.play
-
 		await game.play(numDays, conditions);
 	} else if (g.get("phase") === PHASE.FREE_AGENCY) {
 		if (numDays > g.get("daysLeft")) {
@@ -168,7 +166,7 @@ const playStop = async () => {
 
 	if (g.get("phase") !== PHASE.FREE_AGENCY) {
 		// This is needed because we can't be sure if core.game.play will be called again
-		await updateStatus("Idle");
+		await updateStatus();
 	}
 
 	await lock.set("gameSim", false);
@@ -195,28 +193,24 @@ const playMenu = {
 	},
 	untilAllStarGame: async (param: unknown, conditions: Conditions) => {
 		if (g.get("phase") < PHASE.PLAYOFFS) {
-			await updateStatus("Playing...");
 			const numDays = await season.getDaysLeftSchedule("allStarGame");
 			game.play(numDays, conditions);
 		}
 	},
 	untilTradeDeadline: async (param: unknown, conditions: Conditions) => {
 		if (g.get("phase") < PHASE.PLAYOFFS) {
-			await updateStatus("Playing...");
 			const numDays = await season.getDaysLeftSchedule("tradeDeadline");
 			game.play(numDays, conditions);
 		}
 	},
 	untilPlayoffs: async (param: unknown, conditions: Conditions) => {
 		if (g.get("phase") < PHASE.PLAYOFFS) {
-			await updateStatus("Playing...");
 			const numDays = await season.getDaysLeftSchedule();
 			game.play(numDays, conditions);
 		}
 	},
 	untilEndOfRound: async (param: unknown, conditions: Conditions) => {
 		if (g.get("phase") === PHASE.PLAYOFFS) {
-			await updateStatus("Playing...");
 			const playoffSeries = await idb.cache.playoffSeries.get(g.get("season"));
 			if (!playoffSeries) {
 				throw new Error("playoffSeries not found");
@@ -227,8 +221,6 @@ const playMenu = {
 	},
 	untilEndOfPlayIn: async (param: unknown, conditions: Conditions) => {
 		if (g.get("phase") === PHASE.PLAYOFFS) {
-			await updateStatus("Playing...");
-
 			const numDays = await getNumDaysPlayIn();
 
 			// local.playingUntilEndOfPlayIn is not needed because we always know how many games to play
@@ -237,8 +229,6 @@ const playMenu = {
 	},
 	throughPlayoffs: async (param: unknown, conditions: Conditions) => {
 		if (g.get("phase") === PHASE.PLAYOFFS) {
-			await updateStatus("Playing..."); // For quick UI updating, before await
-
 			const numDays = await getNumDaysPlayoffs();
 			game.play(numDays, conditions);
 		}

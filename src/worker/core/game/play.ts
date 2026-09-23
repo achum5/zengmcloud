@@ -156,7 +156,7 @@ const play = async (
 			await updateStatus("Saving...");
 			await idb.cache.flush();
 		}
-		await updateStatus("Idle");
+		await updateStatus();
 
 		if (schedule.length > 0 && !playoffsOver) {
 			const allStarNext = await allStar.nextGameIsAllStar(schedule);
@@ -1121,7 +1121,7 @@ const play = async (
 		} else {
 			await lock.set("gameSim", false); // Counteract auto-start in lock.canStartGames
 			await updatePlayMenu();
-			await updateStatus("Idle");
+			await updateStatus();
 			logEvent(
 				{
 					type: "error",
