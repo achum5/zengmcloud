@@ -27,36 +27,65 @@ import {
 	type CivilianOutfit,
 } from "../../common/civilianClothes.ts";
 import type { AccountPicture } from "../../common/socialMetrics.ts";
-import { applyWrinkles, lineStylesFor } from "./realisticFaces.ts";
+import {
+	applyWrinkles,
+	EYES_NATURAL,
+	HAIR_BALD,
+	HAIR_THINNING,
+	HAIR_TONES,
+	hairPoolForRace,
+	lineStylesFor,
+	MOUTHS_NATURAL,
+	NOSES_NATURAL,
+	skinTone,
+} from "./realisticFaces.ts";
 
 type Gender = "male" | "female";
 
-// facesjs's own palettes, which are not exported from the package root.
-const SKIN: Record<string, readonly string[]> = {
-	white: ["#f2d6cb", "#ddb7a0"],
-	asian: ["#fedac7", "#f0c5a3", "#eab687"],
-	brown: ["#bb876f", "#aa816f", "#a67358"],
-	black: ["#ad6453", "#74453d", "#5c3937"],
-};
-const HAIR: Record<string, readonly string[]> = {
-	white: [
-		"#272421",
-		"#3D2314",
-		"#5A3825",
-		"#CC9966",
-		"#2C1608",
-		"#B55239",
-		"#e9c67b",
-		"#D7BF91",
-	],
-	asian: ["#272421", "#0f0902"],
-	brown: ["#272421", "#1c1008"],
-	black: ["#272421"],
-};
+// SKIN AND HAIR come from the same anchors the players use (realisticFaces),
+// drawn between neighbours rather than from a short fixed list. The library's
+// own palette has two or three exact values per race, so a press room of
+// seven hundred shared about ten skin colours between them.
 const RACES = ["white", "asian", "brown", "black"] as const;
 
 const pick = <T>(rng: () => number, list: readonly T[]): T =>
 	list[Math.floor(rng() * list.length)]!;
+
+// THE CARTOON PARTS, kept out of the room the way they are thinned out of a
+// roster. The women's set has three pairs of round, staring eyes that read as
+// a different art style next to everyone else's, and one ponytail that sends
+// a single stray strand straight up like an antenna. Rendered side by side,
+// that is how these were picked.
+const FEMALE_EYES_CARTOON = new Set(["female3", "female11", "female12"]);
+const FEMALE_HAIR_ODD = new Set(["female8"]);
+// A civilian is allowed the odd character, less often than a player is.
+const CARTOON_KEEP = 0.1;
+
+const pickNatural = (
+	rng: () => number,
+	all: readonly string[],
+	natural: readonly string[],
+): string => {
+	const keepAny = rng() < CARTOON_KEEP;
+	const pool = keepAny ? all : all.filter((id) => natural.includes(id));
+	return pick(rng, pool.length > 0 ? pool : all);
+};
+
+// GREY COMES IN WITH AGE. Players retire before most of them turn; the room
+// does not, and a sixty-year-old historian with jet-black hair was the most
+// obviously wrong face in it.
+const GREYS = ["#8f8c89", "#a8a6a3", "#c2c0bd", "#d9d7d4"];
+const SALT_AND_PEPPER = ["#5f5b57", "#6e6a66"];
+// Women colour theirs far more often, so fewer of them show it.
+const greyChance = (age: number, gender: Gender): number =>
+	(age < 40 ? 0 : age < 46 ? 0.1 : age < 52 ? 0.25 : age < 60 ? 0.45 : 0.7) *
+	(gender === "female" ? 0.5 : 1);
+
+// A MAN'S HAIR, from the same pool the players draw from: textures that fit
+// him, and none of the novelty or period cuts. Balding is left to age rather
+// than to the dice, so it arrives in the fifties and not at twenty-five.
+const balding = (age: number): number =>
+	age < 35 ? 0 : age < 42 ? 0.08 : age < 50 ? 0.18 : age < 58 ? 0.3 : 0.4;
 
 // THE CATALOGUE, BY GENDER, without the table that says which is which.
 //
@@ -149,13 +178,13 @@ const ROLES: Record<string, Role> = {
 	analytics: {
 		age: [26, 44],
 		wardrobe: ["shirt", "polo", "tee2", "hoodie"],
-		glasses: 0.55,
+		glasses: 0.4,
 		women: 0.35,
 	},
 	capNerd: {
 		age: [28, 50],
 		wardrobe: ["shirt", "shirt", "polo", "blazer"],
-		glasses: 0.5,
+		glasses: 0.38,
 		women: 0.3,
 	},
 	draftHead: {
@@ -167,7 +196,7 @@ const ROLES: Record<string, Role> = {
 	historian: {
 		age: [45, 68],
 		wardrobe: ["shirt", "blazer", "tie", "polo"],
-		glasses: 0.6,
+		glasses: 0.5,
 		women: 0.25,
 	},
 	beatWriter: {
@@ -245,8 +274,12 @@ export const socialFace = (
 	const race = pick(rng, RACES);
 	const age = Math.round(role.age[0] + rng() * (role.age[1] - role.age[0]));
 
-	const skinColor = pick(rng, SKIN[race]!);
-	const hairColor = pick(rng, HAIR[race]!);
+	const skinColor = skinTone(race, rng);
+	let hairColor = pick(rng, HAIR_TONES[race]);
+	if (rng() < greyChance(age, gender)) {
+		// Salt and pepper first, full grey later.
+		hairColor = age < 52 ? pick(rng, SALT_AND_PEPPER) : pick(rng, GREYS);
+	}
 
 	const longHair = gender === "female" && rng() < 0.75;
 
@@ -257,7 +290,11 @@ export const socialFace = (
 		body: {
 			id: pick(rng, idsFor("body", gender)),
 			color: skinColor,
-			size: uniform(rng, gender === "female" ? 0.8 : 0.95, gender === "female" ? 0.9 : 1.05),
+			size: uniform(
+				rng,
+				gender === "female" ? 0.8 : 0.95,
+				gender === "female" ? 0.9 : 1.05,
+			),
 		},
 		jersey: { id: "jersey" },
 		ear: {
@@ -273,7 +310,15 @@ export const socialFace = (
 		miscLine: { id: "none" },
 		facialHair: { id: "none" },
 		eye: {
-			id: pick(rng, idsFor("eye", gender)),
+			id:
+				gender === "female"
+					? pick(
+							rng,
+							idsFor("eye", gender).filter(
+								(id) => !FEMALE_EYES_CARTOON.has(id),
+							),
+						)
+					: pickNatural(rng, idsFor("eye", gender), EYES_NATURAL),
 			angle: Math.round(uniform(rng, -6, 10)),
 		},
 		eyebrow: {
@@ -281,21 +326,38 @@ export const socialFace = (
 			angle: Math.round(uniform(rng, -8, 12)),
 		},
 		hair: {
-			id: pick(rng, idsFor("hair", gender)),
+			id:
+				gender === "female"
+					? pick(
+							rng,
+							idsFor("hair", gender).filter((id) => !FEMALE_HAIR_ODD.has(id)),
+						)
+					: rng() < balding(age)
+						? rng() < 0.65
+							? HAIR_THINNING
+							: HAIR_BALD
+						: pick(rng, hairPoolForRace(race)),
 			color: hairColor,
 			flip: rng() < 0.5,
 		},
-		mouth: { id: pick(rng, idsFor("mouth", gender)), flip: rng() < 0.5 },
+		mouth: {
+			id: pickNatural(rng, idsFor("mouth", gender), MOUTHS_NATURAL),
+			flip: rng() < 0.5,
+		},
 		nose: {
-			id: pick(rng, idsFor("nose", gender)),
+			id: pickNatural(rng, idsFor("nose", gender), NOSES_NATURAL),
 			flip: rng() < 0.5,
 			size: uniform(rng, 0.6, gender === "female" ? 1 : 1.15),
 		},
 		glasses: {
-			id: rng() < role.glasses ? pick(rng, ["glasses1-primary", "glasses2-black"]) : "none",
+			id:
+				rng() < role.glasses
+					? pick(rng, ["glasses1-primary", "glasses2-black"])
+					: "none",
 		},
 		accessories: {
-			id: role.caps !== undefined && rng() < role.caps ? pick(rng, CAPS) : "none",
+			id:
+				role.caps !== undefined && rng() < role.caps ? pick(rng, CAPS) : "none",
 		},
 	} as FaceConfig;
 
@@ -352,7 +414,14 @@ export const socialAccountPicture = (
 
 	return {
 		face,
-		jersey: CIVILIAN_CLOTHES[`civ-${outfit}`] !== undefined ? `civ-${outfit}` : "civ-tee",
-		colors: outfitPalette(outfit, rng, role.teamColored ? teamColors : undefined),
+		jersey:
+			CIVILIAN_CLOTHES[`civ-${outfit}`] !== undefined
+				? `civ-${outfit}`
+				: "civ-tee",
+		colors: outfitPalette(
+			outfit,
+			rng,
+			role.teamColored ? teamColors : undefined,
+		),
 	};
 };

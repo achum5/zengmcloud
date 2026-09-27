@@ -11,6 +11,7 @@
 import { faceToSvgString, svgs } from "facesjs";
 import { describe, test } from "vitest";
 import { CIVILIAN_CLOTHES } from "../../common/civilianClothes.ts";
+import { stubbleShave } from "../../common/stubbleShade.ts";
 import { socialAccountPicture, socialFace, roleFor } from "./socialFaces.ts";
 
 const nodeEnv: Record<string, string | undefined> =
@@ -52,10 +53,20 @@ describe.runIf(OUT)("the cast", () => {
 				const id = `m:${archetypeId}-${i}`;
 				const picture = socialAccountPicture(id, archetypeId, TEAM);
 				const { age, gender } = socialFace(id, archetypeId);
-				const svg = faceToSvgString(picture.face as any, {
-					teamColors: picture.colors,
-					jersey: { id: picture.jersey },
-				} as any);
+				// Drawn the way MyFace draws it, stubble tint included.
+				const svg = faceToSvgString(
+					picture.face as any,
+					{
+						teamColors: picture.colors,
+						jersey: { id: picture.jersey },
+						head: {
+							shave: stubbleShave(
+								(picture.face as any).head?.shave,
+								(picture.face as any).hair?.color,
+							),
+						},
+					} as any,
+				);
 				cells += `<div class=c><div class=ring><div class=in>${svg}</div></div><div class=full>${svg}</div><div class=l>${gender[0]}${age} · ${(picture.jersey ?? "").replace("civ-", "")}</div></div>`;
 			}
 			out += `<section><h2>${archetypeId} <span>ages ${role.age[0]}-${role.age[1]}</span></h2><div class=row>${cells}</div></section>`;

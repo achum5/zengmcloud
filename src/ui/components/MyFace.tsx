@@ -4,6 +4,7 @@ import { Face } from "facesjs/react";
 import { DEFAULT_JERSEY, DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
 import { parseUniform } from "../../common/uniform.ts";
 import { registerUniformJersey } from "../util/uniformJersey.ts";
+import { stubbleShave } from "../../common/stubbleShade.ts";
 
 const isChristmas = () => {
 	const now = new Date();
@@ -27,6 +28,10 @@ export const MyFace = ({
 	// visibly during a live sim, where it competes with the on-court ball
 	// animation. Memoize it so the face only re-generates when colors/jersey
 	// actually change.
+	// Stubble tinted to the hair (see stubbleShade). Keyed on the two inputs so
+	// a face facesjs has already merged the tint into does not re-render.
+	const shave = stubbleShave(face?.head?.shave, face?.hair?.color);
+
 	const overrides = useMemo(() => {
 		let o;
 		if (__SPORT === "baseball") {
@@ -54,11 +59,14 @@ export const MyFace = ({
 		if (isChristmas()) {
 			o.accessories = { id: "santa-hat" };
 		}
+		if (shave !== undefined) {
+			(o as any).head = { shave };
+		}
 		return o;
 		// colors is an array; depend on its members so a fresh array with the same
 		// values doesn't needlessly re-generate the face.
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [colors?.[0], colors?.[1], colors?.[2], jersey]);
+	}, [colors?.[0], colors?.[1], colors?.[2], jersey, shave]);
 
 	return (
 		<Face

@@ -29,18 +29,27 @@
 // beat writer had bare arms. These sweep out to the edges of the frame the way
 // the library's own hockey sweater does, so the shoulders are covered.
 //
+// Every body shape reaches x 5..395 at the bottom and bulges to within a few
+// units of the edge on the way up, so the cloth runs to -4..404; anything short
+// of that leaves a wedge of bare shoulder in each bottom corner. Both sides are
+// mirror images about x 200. An earlier version was 8 units narrower on the
+// right, which is why that side's sliver was the bigger one.
+//
 // A crew opening at the base of the neck, for tees and anything pulled on.
 const CREW_BODY =
-	"M152 481c6 24 22 36 48 36s42-12 48-36c40 4 70 13 88 24 22 13 34 40 40 105H16c6-65 18-92 40-105 18-11 48-20 96-24z";
+	"M152 481c6 24 22 36 48 36s42-12 48-36c48 4 78 13 96 24 36 10 56 55 60 105H-4c4-50 24-95 60-105 18-11 48-20 96-24z";
 
 // The same shoulders with a V deep enough for a collar to sit in.
 const OPEN_BODY =
-	"M152 481l48 92 48-92c40 4 70 13 88 24 22 13 34 40 40 105H16c6-65 18-92 40-105 18-11 48-20 96-24z";
+	"M152 481l48 92 48-92c48 4 78 13 96 24 36 10 56 55 60 105H-4c4-50 24-95 60-105 18-11 48-20 96-24z";
+
+// A jacket's shoulders, open to the waist so the shirt shows through the V.
+const JACKET_BODY =
+	"M150 477l50 114 50-114c42 4 76 13 94 24 36 10 56 55 60 105H-4c4-50 24-95 60-105 18-11 52-20 94-24z";
 
 // A collar, as two points folded either side of the opening. Shared so every
 // collared thing folds the same way.
-const COLLAR =
-	"M150 479l50 96 20-38-44-62zM250 479l-50 96-20-38 44-62z";
+const COLLAR = "M150 479l50 96 20-38-44-62zM250 479l-50 96-20-38 44-62z";
 
 export const CIVILIAN_CLOTHES: Record<string, string> = {
 	// A crew tee. The plainest thing in the set and what most of the fans wear,
@@ -67,10 +76,10 @@ export const CIVILIAN_CLOTHES: Record<string, string> = {
 	// The full thing: jacket, shirt, tie. What the national insider wears on
 	// camera. The shirt is laid down first and the jacket painted over it, so
 	// the V is the shirt showing through rather than a shape drawn to match.
-	"civ-suit": `<path fill="$[secondary]" stroke="#000" stroke-width="5" d="M158 476h84v134h-84z"/><path fill="$[primary]" stroke="#000" stroke-width="6" d="M150 477l50 114 50-114c42 4 72 13 90 24 22 13 34 40 40 105H16c6-65 18-92 40-105 18-11 48-20 94-24z"/><path fill="$[primary]" stroke="#000" stroke-width="5" d="M156 481l46 112 6-62-28-52zM244 481l-46 112-6-62 28-52z"/><path fill="$[accent]" stroke="#000" stroke-width="4" d="M200 490l-19 16 9 24h20l9-24z"/><path fill="$[accent]" stroke="#000" stroke-width="4" d="M190 530l-9 61h38l-9-61z"/>`,
+	"civ-suit": `<path fill="$[secondary]" stroke="#000" stroke-width="5" d="M158 476h84v134h-84z"/><path fill="$[primary]" stroke="#000" stroke-width="6" d="${JACKET_BODY}"/><path fill="$[primary]" stroke="#000" stroke-width="5" d="M156 481l46 112 6-62-28-52zM244 481l-46 112-6-62 28-52z"/><path fill="$[accent]" stroke="#000" stroke-width="4" d="M200 490l-19 16 9 24h20l9-24z"/><path fill="$[accent]" stroke="#000" stroke-width="4" d="M190 530l-9 61h38l-9-61z"/>`,
 
 	// A jacket over an open collar - no tie. The columnist who does not own one.
-	"civ-blazer": `<path fill="$[secondary]" stroke="#000" stroke-width="5" d="M160 476h80v134h-80z"/><path fill="$[primary]" stroke="#000" stroke-width="6" d="M150 477l50 114 50-114c42 4 72 13 90 24 22 13 34 40 40 105H16c6-65 18-92 40-105 18-11 48-20 94-24z"/><path fill="$[primary]" stroke="#000" stroke-width="5" d="M156 481l46 112 6-62-28-52zM244 481l-46 112-6-62 28-52z"/><path fill="none" stroke="#000" stroke-width="4" d="M186 500l14 70M214 500l-14 70"/>`,
+	"civ-blazer": `<path fill="$[secondary]" stroke="#000" stroke-width="5" d="M160 476h80v134h-80z"/><path fill="$[primary]" stroke="#000" stroke-width="6" d="${JACKET_BODY}"/><path fill="$[primary]" stroke="#000" stroke-width="5" d="M156 481l46 112 6-62-28-52zM244 481l-46 112-6-62 28-52z"/><path fill="none" stroke="#000" stroke-width="4" d="M186 500l14 70M214 500l-14 70"/>`,
 };
 
 export type CivilianOutfit =
@@ -132,6 +141,24 @@ const CASUAL = [
 const from = <T>(rng: () => number, list: readonly T[]): T =>
 	list[Math.floor(rng() * list.length)]!;
 
+// A CROWD IS NOT A UNIFORM. Every fan in the primary colour made a fan row
+// read as six copies of one person; real fans wear the home shirt, the
+// alternate, or a plain grey or white one with the team on it.
+const FAN_NEUTRALS = ["#f4f4f4", "#c9ccd1"];
+const fanColors = (
+	[primary, secondary, accent]: [string, string, string],
+	rng: () => number,
+): [string, string, string] => {
+	const roll = rng();
+	if (roll < 0.55) {
+		return [primary, secondary, accent];
+	}
+	if (roll < 0.82) {
+		return [secondary, primary, accent];
+	}
+	return [from(rng, FAN_NEUTRALS), primary, primary];
+};
+
 export const outfitPalette = (
 	outfit: CivilianOutfit,
 	rng: () => number,
@@ -153,7 +180,7 @@ export const outfitPalette = (
 		default: {
 			// Tees and hoodies. A fan wears the team; anyone else does not.
 			if (teamColors) {
-				return [teamColors[0], teamColors[1], teamColors[2]];
+				return fanColors(teamColors, rng);
 			}
 			const body = from(rng, CASUAL);
 			return [body, from(rng, SHIRTS), "#2b2b2b"];
