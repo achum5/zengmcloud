@@ -5,7 +5,7 @@ import { g, helpers } from "../../util/index.ts";
 import type { Player } from "../../../common/types.ts";
 import { TOO_MANY_TEAMS_TOO_SLOW } from "../season/getInitialNumGamesConfDivSettings.ts";
 import { countBy, last, orderBy } from "../../../common/utils.ts";
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import { randInt, shuffle, uniform } from "../../../common/random.ts";
 import { getCumulativeWeights } from "./getCumulativeWeights.ts";
 
@@ -232,11 +232,8 @@ const normalizeContractDemands = async ({
 			while (capSpace > minContract && availablePlayers.length > 0) {
 				const weights = getCumulativeWeights(availablePlayers, PARAM);
 				const draw = Math.random() * weights.at(-1)!;
-				let p = availablePlayers[weights.findIndex((weight) => weight >= draw)];
-				if (!p) {
-					// Not sure why this would happen but it's in the error logs
-					p = availablePlayers.at(1)!;
-				}
+				const p =
+					availablePlayers[weights.findIndex((weight) => weight >= draw)]!;
 
 				p.numBids += 1;
 				capSpace -= p.contractAmount;
@@ -311,7 +308,7 @@ const normalizeContractDemands = async ({
 		}
 	}
 	if (
-		isSport("football") &&
+		__SPORT === "football" &&
 		numRounds === 0 &&
 		type === "freeAgentsOnly" &&
 		maxContract !== minContract

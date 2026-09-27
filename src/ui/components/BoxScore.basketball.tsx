@@ -13,6 +13,7 @@ import {
 } from "../util/liveBoxScoreLayout.ts";
 import type { SortBy } from "./DataTable/index.tsx";
 import updateSortBys from "./DataTable/updateSortBys.ts";
+import { teamsInDisplayOrder } from "../util/boxScoreDisplayOrder.ts";
 
 const StatsTable = ({
 	gid,
@@ -253,9 +254,11 @@ const BoxScore = ({
 	const { userTid } = useLocal(["userTid"]);
 	const [hideOther, setHideOther] = useState(getHideOtherBoxScore);
 
+	// Stored home first; shown away first, then hoisted for this device live.
+	const displayOrder = teamsInDisplayOrder(boxScore.teams as [any, any]);
 	const teams = liveGameSim
-		? orderBoxScoreTeams(boxScore.teams, userTid)
-		: boxScore.teams;
+		? orderBoxScoreTeams(displayOrder, userTid)
+		: displayOrder;
 
 	return (
 		<>

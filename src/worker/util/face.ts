@@ -4,7 +4,7 @@ import type { PlayerWithoutKey, Race } from "../../common/types.ts";
 import { DEFAULT_JERSEY } from "../../common/constants.ts";
 import g from "./g.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 import {
 	applyFaceAgingHistory,
 	applyRealisticFace,
@@ -25,7 +25,7 @@ export const generateFace = (
 ) => {
 	let overrides: any;
 
-	if (isSport("baseball")) {
+	if (__SPORT === "baseball") {
 		const [jersey, accessory] = DEFAULT_JERSEY.split(":");
 		overrides = {
 			jersey: {
@@ -43,7 +43,7 @@ export const generateFace = (
 		};
 	}
 
-	if (!isSport("basketball")) {
+	if (__SPORT !== "basketball") {
 		overrides.glasses = {
 			id: "none",
 		};
@@ -89,7 +89,7 @@ export const generateFace = (
 
 	while (
 		// Baseball hat is only for baseball
-		(!isSport("baseball") && face.accessories.id.startsWith("hat")) ||
+		(__SPORT !== "baseball" && face.accessories.id.startsWith("hat")) ||
 		(!allowEyeBlack && face.accessories.id === "eye-black") ||
 		face.accessories.id === "santa-hat"
 	) {
@@ -125,7 +125,7 @@ export const generateFace = (
 		? g.get("realisticFaces")
 		: defaultGameAttributes.realisticFaces;
 
-	if (isSport("basketball") && realisticFaces) {
+	if (__SPORT === "basketball" && realisticFaces) {
 		applyRealisticFace(face, {
 			age: age ?? 25,
 			race,
@@ -159,7 +159,7 @@ export const catchUpFace = (
 	const realisticFaces = Object.hasOwn(g, "realisticFaces")
 		? g.get("realisticFaces")
 		: defaultGameAttributes.realisticFaces;
-	if (!isSport("basketball") || !realisticFaces || !p.face) {
+	if (__SPORT !== "basketball" || !realisticFaces || !p.face) {
 		return;
 	}
 	const currentAge = g.get("season") - p.born.year;

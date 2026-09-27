@@ -43,7 +43,6 @@ import GameSim from "../GameSim.ts";
 import { processTeam } from "./loadTeams.ts";
 import { DEFAULT_PLAY_THROUGH_INJURIES } from "../../../common/constants.ts";
 import { COMPOSITE_WEIGHTS } from "../../../common/constants.basketball.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 
 const nodeEnv: Record<string, string | undefined> =
@@ -80,7 +79,7 @@ const compositeFeature = (available: any[], key: string): number => {
 	);
 };
 
-test.skipIf(!ROSTERS || !isSport("basketball"))(
+test.skipIf(!ROSTERS || __SPORT !== "basketball")(
 	"dump spread features vs engine margins",
 	{ timeout: 3_600_000 },
 	async () => {

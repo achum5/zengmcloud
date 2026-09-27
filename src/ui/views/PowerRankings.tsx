@@ -7,7 +7,7 @@ import type { View } from "../../common/types.ts";
 import { POSITIONS, RATINGS } from "../../common/constants.ts";
 import { wrappedMovOrDiff } from "../components/MovOrDiff.tsx";
 import { wrappedTeamLogoAndName } from "../components/TeamLogoAndName.tsx";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
 import { gradeFromRank } from "../../common/teamRatingGrade.ts";
 import { powerRankingIsJustTeamOvr } from "../../common/teamRatings.ts";
@@ -165,7 +165,7 @@ const PowerRankings = ({
 		...(ties ? ["T"] : []),
 		"L10",
 		"ATS",
-		`stat:${isSport("basketball") ? "mov" : "diff"}`,
+		`stat:${__SPORT === "basketball" ? "mov" : "diff"}`,
 		"AvgAge",
 		...otherKeys.map((key) => `${otherKeysPrefix}:${key}`),
 	];
@@ -183,7 +183,7 @@ const PowerRankings = ({
 		}
 	}
 
-	if (isSport("basketball")) {
+	if (__SPORT === "basketball") {
 		for (const [colName, col] of Iterator.zip([colNames, cols], {
 			mode: "strict",
 		})) {
@@ -236,14 +236,14 @@ const PowerRankings = ({
 				t.seasonAttrs.lastTen,
 				t.ats,
 				wrappedMovOrDiff(
-					isSport("basketball")
+					__SPORT === "basketball"
 						? {
 								pts: t.stats.pts * t.stats.gp,
 								oppPts: t.stats.oppPts * t.stats.gp,
 								gp: t.stats.gp,
 							}
 						: t.stats,
-					isSport("basketball") ? "mov" : "diff",
+					__SPORT === "basketball" ? "mov" : "diff",
 				),
 				t.powerRankings.avgAge?.toFixed(1),
 				...otherKeys.map((key) => {
@@ -295,7 +295,7 @@ const PowerRankings = ({
 					? ` Team ratings are shown as they were in ${delayedSeason}; the rankings themselves still use each team's current roster.`
 					: ""}
 			</p>
-			{playoffs === "playoffs" && isSport("basketball") ? (
+			{playoffs === "playoffs" && __SPORT === "basketball" ? (
 				<p>
 					In the playoffs, rotations get shorter and players play harder, so
 					some teams get higher or lower ratings.

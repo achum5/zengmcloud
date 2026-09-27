@@ -1,7 +1,6 @@
 import type { Game } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import { g } from "./index.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 import { MARGIN_SIGMA } from "../../common/sportsbookOdds.ts";
 
 // THE PART OF A TEAM THE FORMULA CANNOT SEE.
@@ -68,7 +67,7 @@ export const getTeamSpreadBias = async (
 	preloadedGames?: Game[],
 ): Promise<Map<number, SpreadBiasEntry>> => {
 	const out = new Map<number, SpreadBiasEntry>();
-	if (!isSport("basketball")) {
+	if (__SPORT !== "basketball") {
 		// The coefficients, the 1.38 and the whole measurement behind this are
 		// basketball's. Other sports keep the plain formula.
 		return out;

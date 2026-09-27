@@ -30,7 +30,7 @@ import { Weight } from "../../components/Weight.tsx";
 import { confirm } from "../../util/confirm.tsx";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { getCols } from "../../../common/getCols.ts";
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import {
 	NegotiationModal,
 	useNegotiaionModal,
@@ -660,7 +660,7 @@ const TopStuff = ({
 								relatives={player.relatives}
 							/>
 							{draftInfo}
-							{isSport("hockey") && college === "None" ? null : (
+							{__SPORT === "hockey" && college === "None" ? null : (
 								<>
 									College:{" "}
 									<a

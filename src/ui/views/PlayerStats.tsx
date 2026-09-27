@@ -4,7 +4,6 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { getCols } from "../../common/getCols.ts";
 import type { View } from "../../common/types.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 import { wrappedAgeAtDeath } from "../components/AgeAtDeath.tsx";
 import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import { expandFieldingStats } from "../util/expandFieldingStats.baseball.ts";
@@ -18,7 +17,7 @@ export const formatStatGameHigh = (
 	stat: string,
 	statType?: string,
 ) => {
-	if (isSport("baseball")) {
+	if (__SPORT === "baseball") {
 		// Catcher-only fielding stats
 		if (
 			ps.pos !== "C" &&
@@ -57,7 +56,7 @@ export const formatStatGameHigh = (
 	}
 
 	if (
-		isSport("basketball") &&
+		__SPORT === "basketball" &&
 		(stat === "pm100" ||
 			stat === "onOff100" ||
 			stat === "orapm" ||
@@ -122,7 +121,7 @@ const PlayerStats = ({
 	}
 
 	let sortCol = cols.length - 1;
-	if (isSport("football")) {
+	if (__SPORT === "football") {
 		// These absolute indices account for the leading Name/Pos/Age/YOE/Team
 		// columns; adjust here if that leading block changes.
 		if (statType === "passing") {
@@ -154,7 +153,7 @@ const PlayerStats = ({
 		statsProperty = "stats";
 	}
 
-	if (isSport("baseball") && statType === "fielding") {
+	if (__SPORT === "baseball" && statType === "fielding") {
 		players = expandFieldingStats({
 			rows: players,
 			stats,
@@ -182,7 +181,7 @@ const PlayerStats = ({
 		);
 
 		let key;
-		if (isSport("baseball") && statType === "fielding") {
+		if (__SPORT === "baseball" && statType === "fielding") {
 			key = `${p.pid}-${p.stats.season}-${p.stats.pos}`;
 		} else if (season === "all") {
 			key = `${p.pid}-${p.stats.season}`;

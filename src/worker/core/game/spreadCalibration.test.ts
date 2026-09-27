@@ -39,7 +39,6 @@ import {
 	DEFAULT_PLAY_THROUGH_INJURIES,
 	PHASE,
 } from "../../../common/constants.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
 
@@ -54,7 +53,7 @@ const K = Number(nodeEnv.SPREAD_CALIBRATION_SIMS ?? 60);
 // regular-season assertions don't apply to it.
 const PLAYOFFS_MODE = nodeEnv.SPREAD_CALIBRATION_PLAYOFFS === "1";
 
-test.skipIf(!ROSTERS || !isSport("basketball"))(
+test.skipIf(!ROSTERS || __SPORT !== "basketball")(
 	"spread coefficients vs the engine",
 	{ timeout: 3_600_000 },
 	async () => {

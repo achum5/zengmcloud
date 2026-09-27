@@ -35,9 +35,8 @@ const makePlayer = (pid: number) => {
 	return p;
 };
 
-// Ten players per team, pids 0-9 (display team 0, raw t=1) and 100-109 (display
-// team 1, raw t=0). processLiveGameEvents swaps the raw team index so the home
-// team sits at the bottom of the box score, the same as boxScoreToLiveSim does.
+// Ten players per team, pids 0-9 (t=0) and 100-109 (t=1). The box score keeps
+// the sim's team order, so an event's t indexes boxScore.teams directly.
 const makeTeam = (base: number) => {
 	const t: any = {
 		tid: base,
@@ -59,7 +58,7 @@ const makeBoxScore = () => ({
 	teams: [makeTeam(0), makeTeam(100)] as any[],
 });
 
-// A short stretch of a game for display team 0 (raw t = 1): the starters play a
+// A short stretch of a game for team 0: the starters play a
 // possession, the bench comes in and plays two, and one of them scores.
 const sample = () => {
 	const events: any[] = [
@@ -68,29 +67,29 @@ const sample = () => {
 	];
 	for (let pid = 0; pid < 5; pid++) {
 		events.push(
-			{ type: "stat", t: 1, pid, s: "gs", amt: 1 },
-			{ type: "stat", t: 0, pid: 100 + pid, s: "gs", amt: 1 },
+			{ type: "stat", t: 0, pid, s: "gs", amt: 1 },
+			{ type: "stat", t: 1, pid: 100 + pid, s: "gs", amt: 1 },
 		);
 	}
 	for (let pid = 0; pid < 5; pid++) {
-		events.push({ type: "stat", t: 1, pid, s: "min", amt: 1 });
+		events.push({ type: "stat", t: 0, pid, s: "min", amt: 1 });
 	}
 	events.push({
 		type: "sub",
-		t: 1,
+		t: 0,
 		pids: [5, 6, 7, 8, 9],
 		pidsOff: [0, 1, 2, 3, 4],
 		clock: 660,
 	});
 	for (let pid = 5; pid < 10; pid++) {
-		events.push({ type: "stat", t: 1, pid, s: "min", amt: 2 });
+		events.push({ type: "stat", t: 0, pid, s: "min", amt: 2 });
 	}
 	events.push(
-		{ type: "fgaAtRim", t: 1, pid: 5, clock: 640 },
-		{ type: "fgAtRim", t: 1, pid: 5, pidDefense: 100, clock: 639 },
-		{ type: "stat", t: 1, pid: 5, s: "fg", amt: 1 },
-		{ type: "stat", t: 1, pid: 5, s: "fga", amt: 1 },
-		{ type: "stat", t: 1, pid: 5, s: "pts", amt: 2 },
+		{ type: "fgaAtRim", t: 0, pid: 5, clock: 640 },
+		{ type: "fgAtRim", t: 0, pid: 5, pidDefense: 100, clock: 639 },
+		{ type: "stat", t: 0, pid: 5, s: "fg", amt: 1 },
+		{ type: "stat", t: 0, pid: 5, s: "fga", amt: 1 },
+		{ type: "stat", t: 0, pid: 5, s: "pts", amt: 2 },
 		{ type: "gameOver", clock: 0 },
 	);
 	return events;

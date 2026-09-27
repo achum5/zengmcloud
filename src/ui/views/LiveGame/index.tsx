@@ -11,6 +11,7 @@ import {
 	type ReactNode,
 	memo,
 	type MutableRefObject,
+	Fragment,
 } from "react";
 import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
@@ -20,7 +21,7 @@ import { toWorker } from "../../util/toWorker.ts";
 import { useLocal } from "../../util/local.ts";
 import { orderBoxScoreTeams } from "../../util/liveBoxScoreLayout.ts";
 import type { View } from "../../../common/types.ts";
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import useLocalStorageState from "use-local-storage-state";
 import { DEFAULT_SPORT_STATE as DEFAULT_SPORT_STATE_BASEBALL } from "../../util/processLiveGameEvents.baseball.tsx";
 import { DEFAULT_SPORT_STATE as DEFAULT_SPORT_STATE_FOOTBALL } from "../../util/processLiveGameEvents.football.tsx";
@@ -68,6 +69,20 @@ import {
 	synthHeaveSpot,
 	synthOutOfBoundsPath,
 } from "./courtSpots.ts";
+import {
+	TEAM_NUMS_DISPLAY_ORDER,
+	teamsInDisplayOrder,
+} from "../../util/boxScoreDisplayOrder.ts";
+
+// The court, the field and everything that stages them work in DISPLAY order:
+// 0 is the away team (left rim, attacks left), 1 is home. Box score teams are
+// stored home first, so they are flipped once here on the way in.
+const displayTeams = (teams: any): [any, any] =>
+	Array.isArray(teams) && teams.length === 2
+		? teamsInDisplayOrder(teams as [any, any])
+		: [undefined, undefined];
+
+const flipT = <T,>(t: T): T => (t === 0 ? 1 : t === 1 ? 0 : t) as T;
 
 type PlayerRowProps = {
 	exhibition?: boolean;
@@ -188,7 +203,7 @@ const PlayByPlayEntry = memo(
 	({ boxScore, entry }: { boxScore: any; entry: PlayByPlayEntryInfo }) => {
 		let scoreBlock = null;
 		if (entry.score) {
-			if (isSport("basketball")) {
+			if (__SPORT === "basketball") {
 				scoreBlock = entry.score;
 			} else {
 				scoreBlock = (
@@ -196,7 +211,7 @@ const PlayByPlayEntry = memo(
 						<span
 							className={`fw-bold ${
 								entry.scoreDiff >= 0 &&
-								(!isSport("football") || entry.scoreType !== "Safety")
+								(__SPORT !== "football" || entry.scoreType !== "Safety")
 									? "text-success"
 									: "text-danger"
 							}`}
@@ -249,12 +264,12 @@ const PlayByPlayEntry = memo(
 							{entry.time ? (
 								<div className="text-body-secondary me-auto">{entry.time}</div>
 							) : null}
-							{isSport("basketball") ? scoreBlock : null}
+							{__SPORT === "basketball" ? scoreBlock : null}
 						</div>
 					) : null}
-					{isSport("hockey") ? scoreBlock : null}
+					{__SPORT === "hockey" ? scoreBlock : null}
 					{entry.text}
-					{!isSport("basketball") && !isSport("hockey") ? (
+					{__SPORT !== "basketball" && __SPORT !== "hockey" ? (
 						<div>{scoreBlock}</div>
 					) : null}
 					{entry.outs !== undefined ? (
@@ -531,7 +546,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// Midcourt = halfway between the two rims (away's left, home's right).
 			const midX = (rimXFor(0) + rimXFor(1)) / 2;
 			const offenseT: 0 | 1 = anchorX > midX ? 1 : 0;
-			const teams = boxScore.current.teams;
+			const teams = displayTeams(boxScore.current.teams);
 			const playPids = new Set(playActors.map((a) => a.pid));
 			const teamLineups: [any[], any[]] = [
 				teams[0]?.players ?? [],
@@ -701,7 +716,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 		const actors: CourtActor[] = [];
 		if (Array.isArray(boxScore.current.teams)) {
 			for (const team of [0, 1] as const) {
-				const onFloor = (boxScore.current.teams[team]?.players ?? [])
+				const onFloor = (
+					displayTeams(boxScore.current.teams)[team]?.players ?? []
+				)
 					.filter((p: any) => p.inGame)
 					.slice(0, 5);
 				const spots = benchHuddle(team, onFloor.length);
@@ -799,7 +816,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 		const playIdx = initialEventCount.current - (events.current?.length ?? 0);
 		seedCourtRng(`${props.initialBoxScore?.gid ?? 0}|${playIdx}`);
 
-		const teams = boxScore.current.teams ?? [];
+		const teams = displayTeams(boxScore.current.teams);
 		const players: any = [teams[0]?.players ?? [], teams[1]?.players ?? []];
 		const resolvePid = (t: 0 | 1, name: string | undefined) => {
 			if (!name) {
@@ -812,19 +829,25 @@ export const LiveGame = (props: View<"liveGame">) => {
 			return match?.pid as number | undefined;
 		};
 
-		// Football's box score display order is the reverse of the sim's team
-		// numbering (the processor swaps it so the home team sits at the bottom),
-		// and every other number the field reads - sportState.t, the play list,
-		// boxScore.teams - is already in display order. Swap once, here.
+		// The sim, the box score and the drive state all number teams home
+		// first; the field numbers them in display order. Swap once, here.
 		const displayT: 0 | 1 | undefined =
 			event.t === 0 ? 1 : event.t === 1 ? 0 : undefined;
+		const displaySportState = {
+			...nextSportState,
+			t: flipT(nextSportState.t),
+			plays: (nextSportState.plays ?? []).map((play: any) => ({
+				...play,
+				t: flipT(play.t),
+			})),
+		};
 
 		const built = buildFieldScene({
 			event,
 			displayT,
 			text,
 			score,
-			sportState: nextSportState,
+			sportState: displaySportState,
 			players,
 			resolvePid,
 			ctx: fieldCtx.current,
@@ -916,8 +939,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// both team logos: [away] 102 - 99 [home].
 		let scoreNode: ReactNode | undefined;
 		if (scoreDiff > 0 && Array.isArray(boxScore.current.teams)) {
-			const a = boxScore.current.teams[0];
-			const h = boxScore.current.teams[1];
+			const [a, h] = displayTeams(boxScore.current.teams);
 			scoreNode = (
 				<div
 					style={{
@@ -1317,7 +1339,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// formation interleaves opponents around the circle), just outside it.
 			const jumperPids = new Set(actors.map((a) => a.pid));
 			if (Array.isArray(boxScore.current.teams)) {
-				const teams = boxScore.current.teams;
+				const teams = displayTeams(boxScore.current.teams);
 				const ringR = 9;
 				const ringTeams = ([0, 1] as const).map((t) =>
 					(teams[t]?.players ?? [])
@@ -1568,7 +1590,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			// Real-time auto-play ONLY (never fast-forward, rewind, or a multiplayer
 			// follower - `!force` gates that), where an extra display beat is
 			// harmless.
-			if (isSport("basketball") && !force) {
+			if (__SPORT === "basketball" && !force) {
 				const next = events.current[0];
 				const nextAction =
 					next && typeof next.type === "string"
@@ -1651,7 +1673,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				boxScore.current.teams[0][ptsKey] + boxScore.current.teams[1][ptsKey];
 			const scoreDiff = currentPts - prevPts;
 
-			if (isSport("basketball")) {
+			if (__SPORT === "basketball") {
 				handleCourtEvent((output as any).event, text, scoreDiff);
 				// Bank the clock this play happened at: the gap to the next shot is
 				// the possession, and the possession is what the beats above are
@@ -1678,19 +1700,19 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 			if (text !== undefined) {
 				let outs;
-				if (isSport("baseball") && output.sportState.outs > prevOuts) {
+				if (__SPORT === "baseball" && output.sportState.outs > prevOuts) {
 					outs = output.sportState.outs;
 				}
 
 				// For baseball, always show logo of the batting team, since t is not always sent in output (or maybe never sent)
-				const t = isSport("baseball") ? sportState.current.o : output.t;
+				const t = __SPORT === "baseball" ? sportState.current.o : output.t;
 
 				let score;
 				let scoreType;
 				if (scoreDiff !== 0) {
 					// Swap team for safety
 					const scoreT =
-						isSport("football") &&
+						__SPORT === "football" &&
 						sportState.current.plays.at(-1)?.scoreInfo?.type === "SF"
 							? t === 0
 								? 1
@@ -1698,23 +1720,24 @@ export const LiveGame = (props: View<"liveGame">) => {
 							: t;
 
 					score =
-						scoreT === 0 ? (
+						scoreT !== undefined ? (
 							<>
-								<b>{boxScore.current.teams[0][ptsKey]}</b>-
-								<span className="text-body-secondary">
-									{boxScore.current.teams[1][ptsKey]}
-								</span>
-							</>
-						) : scoreT === 1 ? (
-							<>
-								<span className="text-body-secondary">
-									{boxScore.current.teams[0][ptsKey]}
-								</span>
-								-<b>{boxScore.current.teams[1][ptsKey]}</b>
+								{TEAM_NUMS_DISPLAY_ORDER.map((t2, i) => (
+									<Fragment key={t2}>
+										{i > 0 ? "-" : null}
+										{t2 === scoreT ? (
+											<b>{boxScore.current.teams[t2][ptsKey]}</b>
+										) : (
+											<span className="text-body-secondary">
+												{boxScore.current.teams[t2][ptsKey]}
+											</span>
+										)}
+									</Fragment>
+								))}
 							</>
 						) : undefined;
 
-					if (isSport("football")) {
+					if (__SPORT === "football") {
 						// If no score type, then it must be a penalty overturning a score
 						scoreType =
 							sportState.current.plays.at(-1)?.scoreInfo?.long ??
@@ -1722,7 +1745,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 					}
 				}
 
-				if (isSport("football")) {
+				if (__SPORT === "football") {
 					// Built here rather than beside the court's call because a football
 					// scene wants the state AFTER the play (the new line of scrimmage,
 					// the down, the drive) and the running score line, and both are
@@ -1748,7 +1771,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 					if (shootout && t !== undefined) {
 						time = `Attempt ${boxScore.current.teams[t].sAtt}`;
 					} else if (
-						isSport("basketball") &&
+						__SPORT === "basketball" &&
 						boxScore.current.elamTarget !== undefined
 					) {
 						time = `Target: ${boxScore.current.elamTarget}`;
@@ -2256,7 +2279,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 		// elamTarget check is because clock is set to Infinity in Elam ending, so we can't skip ahead minutes
 		let skipMinutes =
-			isSport("baseball") ||
+			__SPORT === "baseball" ||
 			boxScore.current.elamTarget !== undefined ||
 			boxScore.current.shootout
 				? []
@@ -2311,7 +2334,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 						},
 					}) as FastForward,
 			),
-			...(isSport("baseball")
+			...(__SPORT === "baseball"
 				? !boxScore.current.shootout
 					? ([
 							{
@@ -2483,7 +2506,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 		if (
 			!boxScore.current.elam &&
 			!boxScore.current.shootout &&
-			!isSport("baseball")
+			__SPORT !== "baseball"
 		) {
 			menuItems.push({
 				label: "Last 2 minutes",
@@ -2678,27 +2701,28 @@ export const LiveGame = (props: View<"liveGame">) => {
 									>
 										Top
 									</button>
-									{!isSport("football")
+									{__SPORT !== "football"
 										? // Same ordering the box scores below use, so a button
 											// always scrolls to the team named on it. The anchors
 											// are assigned by position, so deriving the labels from
 											// the raw team order would send them to the wrong team
 											// whenever the device's team was hoisted.
-											orderBoxScoreTeams(boxScore.current.teams, userTid).map(
-												(t: any, i: number) => (
-													<button
-														key={t.abbrev}
-														className="btn btn-light-bordered"
-														onClick={() => {
-															document
-																.getElementById(`scroll-team-${i + 1}`)
-																?.scrollIntoView();
-														}}
-													>
-														{t.abbrev}
-													</button>
-												),
-											)
+											orderBoxScoreTeams(
+												displayTeams(boxScore.current.teams),
+												userTid,
+											).map((t: any, i: number) => (
+												<button
+													key={t.abbrev}
+													className="btn btn-light-bordered"
+													onClick={() => {
+														document
+															.getElementById(`scroll-team-${i + 1}`)
+															?.scrollIntoView();
+													}}
+												>
+													{t.abbrev}
+												</button>
+											))
 										: null}
 									<button
 										className="btn btn-light-bordered"
@@ -2714,28 +2738,22 @@ export const LiveGame = (props: View<"liveGame">) => {
 					) : null}
 					{boxScore.current.gid >= 0 ? (
 						<>
-							{isSport("football") ? (
+							{__SPORT === "football" ? (
 								<div>
 									<LiveField
 										scene={fieldScene.current}
-										teams={[
-											boxScore.current.teams?.[0],
-											boxScore.current.teams?.[1],
-										]}
+										teams={displayTeams(boxScore.current.teams)}
 										season={boxScore.current.season}
 										sceneMs={speedToMs(speedRef.current)}
 										neutralSite={boxScore.current.neutralSite}
 									/>
 								</div>
 							) : null}
-							{isSport("basketball") ? (
+							{__SPORT === "basketball" ? (
 								<div>
 									<LiveCourt
 										scene={courtScene.current}
-										teams={[
-											boxScore.current.teams?.[0],
-											boxScore.current.teams?.[1],
-										]}
+										teams={displayTeams(boxScore.current.teams)}
 										finals={!!boxScore.current.finals}
 										season={boxScore.current.season}
 										sceneMs={speedToMs(speedRef.current)}

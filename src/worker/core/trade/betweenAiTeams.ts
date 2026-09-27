@@ -5,7 +5,6 @@ import makeItWork from "./makeItWork.ts";
 import processTrade from "./processTrade.ts";
 import summary from "./summary.ts";
 import type { Player, TradeTeams } from "../../../common/types.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { choice } from "../../../common/random.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import {
@@ -1090,7 +1089,7 @@ const betweenAiTeams = async () => {
 	// If aiTradesFactor is not an integer, use the fractional part as a probability.
 	// Also scale so there are fewer trade attempts if there are fewer teams.
 	let float = g.get("aiTradesFactor");
-	if (isSport("baseball")) {
+	if (__SPORT === "baseball") {
 		float *= 0.25;
 	}
 	if (g.get("numActiveTeams") < DEFAULT_NUM_TEAMS) {

@@ -12,7 +12,7 @@ import type { boxScoreToLiveSim } from "../views/liveGame.ts";
 import type { AdvancedPlayerSearchFilter } from "../../ui/views/AdvancedPlayerSearch.tsx";
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
 import { actualPhase } from "../util/actualPhase.ts";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 
 /**
@@ -310,14 +310,15 @@ const freeAgents = (params: RouteParams<"freeAgents">) => {
 };
 
 const frivolitiesTrades = (params: RouteParams<"frivolitiesTrades">) => {
-	let abbrev: string = "all";
-	let tid: number = -1;
-	if (params.abbrev && params.abbrev !== "all") {
-		[tid, abbrev] = validateAbbrev(params.abbrev);
-	}
-
-	if (tid < 0) {
-		tid = -1;
+	let abbrev;
+	let tid: number | undefined;
+	const [validatedTid, validatedAbbrev] = validateAbbrev(params.abbrev, true);
+	if (params.abbrev !== undefined && validatedAbbrev !== "???") {
+		abbrev = validatedAbbrev;
+		tid = validatedTid;
+	} else if (params.abbrev === "watch") {
+		abbrev = "watch";
+	} else {
 		abbrev = "all";
 	}
 
@@ -612,13 +613,11 @@ const news = (params: RouteParams<"news">) => {
 	let abbrev;
 	let tid: number | undefined;
 	const [validatedTid, validatedAbbrev] = validateAbbrev(params.abbrev, true);
-	if (
-		params.abbrev !== undefined &&
-		params.abbrev !== "all" &&
-		validatedAbbrev !== "???"
-	) {
+	if (params.abbrev !== undefined && validatedAbbrev !== "???") {
 		abbrev = validatedAbbrev;
 		tid = validatedTid;
+	} else if (params.abbrev === "watch") {
+		abbrev = "watch";
 	} else {
 		abbrev = "all";
 	}
@@ -653,12 +652,13 @@ const player = (params: RouteParams<"player">) => {
 
 const playerFeats = (params: RouteParams<"playerFeats">) => {
 	let abbrev;
-
-	if (
-		params.abbrev !== undefined &&
-		g.get("teamInfoCache").some((t) => t.abbrev === params.abbrev)
-	) {
-		abbrev = params.abbrev;
+	let tid: number | undefined;
+	const [validatedTid, validatedAbbrev] = validateAbbrev(params.abbrev, true);
+	if (params.abbrev !== undefined && validatedAbbrev !== "???") {
+		abbrev = validatedAbbrev;
+		tid = validatedTid;
+	} else if (params.abbrev === "watch") {
+		abbrev = "watch";
 	} else {
 		abbrev = "all";
 	}
@@ -674,6 +674,7 @@ const playerFeats = (params: RouteParams<"playerFeats">) => {
 	return {
 		abbrev,
 		season,
+		tid,
 	};
 };
 
@@ -759,7 +760,7 @@ const playerStats = (params: RouteParams<"playerStats">) => {
 	let statType = params.statType ?? defaultStatType;
 
 	// Handle upgrade without breaking URLs
-	if (isSport("football") && statType === "rushing") {
+	if (__SPORT === "football" && statType === "rushing") {
 		statType = "rushingReceiving";
 	}
 
@@ -1027,16 +1028,16 @@ const tradingBlock = (params: RouteParams<"tradingBlock">, ctxBBGM: any) => {
 };
 
 const transactions = (params: RouteParams<"transactions">) => {
-	let abbrev: string;
-	let tid: number;
-	if (params.abbrev && params.abbrev !== "all") {
-		[tid, abbrev] = validateAbbrev(params.abbrev);
-	} else if (params.abbrev === "all") {
-		tid = -1;
-		abbrev = "all";
+	let abbrev;
+	let tid: number | undefined;
+	const [validatedTid, validatedAbbrev] = validateAbbrev(params.abbrev, true);
+	if (params.abbrev !== undefined && validatedAbbrev !== "???") {
+		abbrev = validatedAbbrev;
+		tid = validatedTid;
+	} else if (params.abbrev === "watch") {
+		abbrev = "watch";
 	} else {
-		tid = g.get("userTid");
-		abbrev = g.get("teamInfoCache")[tid]!.abbrev;
+		abbrev = "all";
 	}
 
 	let season: number | "all";

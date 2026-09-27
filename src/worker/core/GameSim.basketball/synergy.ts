@@ -3,7 +3,6 @@ import playThroughInjuriesFactor from "../../../common/playThroughInjuriesFactor
 import compositeRating from "../player/compositeRating.ts";
 import { COMPOSITE_WEIGHTS } from "../../../common/constants.ts";
 import type { MinimalPlayerRatings } from "../../../common/types.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 
 // ---------------------------------------------------------------------------
 // LINEUP SYNERGY, IN ONE PLACE
@@ -257,7 +256,7 @@ export const synergyCompositeRating = (
 	// computing eight meaningless weighted sums off whatever their composites
 	// happen to be called - nothing downstream reads them, because a posture
 	// only carries a lineup in basketball.
-	if (!isSport("basketball")) {
+	if (__SPORT !== "basketball") {
 		for (const key of SYNERGY_COMPOSITES) {
 			out[key] = 0;
 		}
@@ -308,7 +307,7 @@ export const pregameLineupSynergy = (
 		compositeRating: SynergyCompositeRating;
 	}[],
 ): number | undefined => {
-	if (!isSport("basketball")) {
+	if (__SPORT !== "basketball") {
 		return undefined;
 	}
 	const available = players.filter((p) => !p.injured);
@@ -344,7 +343,7 @@ export const pregameLineupSynergyFromPlayers = (
 		playoffs: boolean;
 	},
 ): number | undefined => {
-	if (!isSport("basketball")) {
+	if (__SPORT !== "basketball") {
 		return undefined;
 	}
 	const currentPlayThroughInjuries = playThroughInjuries[playoffs ? 1 : 0]!;

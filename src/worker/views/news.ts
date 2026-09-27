@@ -29,6 +29,16 @@ const getTid = (event: { tids?: number[]; type: LogEventType }) => {
 	return event.tids[0];
 };
 
+export const getWatchPids = async () => {
+	const watchPlayers = await idb.getCopies.players(
+		{
+			watch: true,
+		},
+		"noCopyCache",
+	);
+	return new Set(watchPlayers.map((p) => p.pid));
+};
+
 export const processEvents = async (
 	eventsAll: EventBBGM[],
 	{
@@ -37,23 +47,30 @@ export const processEvents = async (
 		level = "normal",
 		limit = Infinity,
 		tid,
+		watchOnly,
 	}: {
 		level?: "all" | "big" | "normal";
 		limit?: number;
 		tid?: number;
+		watchOnly?: boolean;
 	} = {},
 ) => {
+	const watchPids = watchOnly ? await getWatchPids() : undefined;
+
 	let numKept = 0;
 	const events = eventsAll
 		.filter((event) => {
+			if (tid !== undefined && event.tids && !event.tids.includes(tid)) {
+				return false;
+			}
+
 			if (
-				tid !== undefined &&
-				event.tids &&
-				event.tids.length > 0 &&
-				!event.tids.includes(tid)
+				watchPids &&
+				(!event.pids || !event.pids.some((pid) => watchPids.has(pid)))
 			) {
 				return false;
 			}
+
 			return !IGNORE_EVENT_TYPES.includes(event.type);
 		})
 		.map((event) => {
@@ -165,6 +182,7 @@ const updateNews = async (
 		const events = await processEvents(eventsAll, {
 			level,
 			tid,
+			watchOnly: abbrev === "watch",
 		});
 
 		const teams = (

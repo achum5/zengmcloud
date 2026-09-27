@@ -21,7 +21,7 @@ import {
 	defaultAwardsHockey,
 	defaultGameAttributes,
 } from "../../common/defaultGameAttributes.ts";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 import { formatList } from "../../common/formatList.ts";
 import { normalizeAwardsRow } from "../db/normalizeAwardsRow.ts";
 
@@ -1391,7 +1391,7 @@ const achievements: Achievement[] = [
 		category: "Playoffs",
 
 		async check() {
-			if (!isSport("football")) {
+			if (__SPORT !== "football") {
 				const sevenGameFinals = await checkSevenGameFinals();
 
 				if (!sevenGameFinals) {
@@ -1419,7 +1419,7 @@ const achievements: Achievement[] = [
 		category: "Playoffs",
 
 		async check() {
-			if (!isSport("football")) {
+			if (__SPORT !== "football") {
 				const sevenGameFinals = await checkSevenGameFinals();
 
 				if (!sevenGameFinals) {
@@ -1511,7 +1511,7 @@ const achievements: Achievement[] = [
 	},
 ];
 
-if (isSport("hockey") || isSport("basketball")) {
+if (__SPORT === "hockey" || __SPORT === "basketball") {
 	achievements.push(
 		{
 			slug: "fo_fo_fo",
@@ -1719,7 +1719,7 @@ if (isSport("hockey") || isSport("basketball")) {
 
 				const playersAll = await idb.cache.players.getAll();
 				const countUSA = playersAll.filter((p) => {
-					if (isSport("hockey")) {
+					if (__SPORT === "hockey") {
 						return (
 							helpers.getCountry(p.born.loc) === "Canada" ||
 							helpers.isAmerican(p.born.loc)
@@ -1740,7 +1740,7 @@ if (isSport("hockey") || isSport("basketball")) {
 				);
 
 				for (const p of players) {
-					if (isSport("hockey")) {
+					if (__SPORT === "hockey") {
 						if (
 							helpers.getCountry(p.born.loc) === "Canada" ||
 							helpers.isAmerican(p.born.loc)
@@ -1893,7 +1893,7 @@ if (isSport("hockey") || isSport("basketball")) {
 	);
 }
 
-if (isSport("basketball")) {
+if (__SPORT === "basketball") {
 	achievements.push(
 		{
 			slug: "brick_wall",
@@ -2301,7 +2301,7 @@ if (isSport("basketball")) {
 	}
 }
 
-if (isSport("football")) {
+if (__SPORT === "football") {
 	const footballCheckLivingDangerously = async (
 		pointDifferentialLimit: number,
 	) => {

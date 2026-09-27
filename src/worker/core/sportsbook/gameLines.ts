@@ -9,7 +9,7 @@ import {
 } from "../../../common/getGameSpread.ts";
 import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
 import { PHASE } from "../../../common/constants.ts";
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import {
 	probToAmerican,
 	SPORTSBOOK_MAX_AMERICAN,
@@ -284,7 +284,9 @@ export const buildGameLinePricer = async ({
 			// (measured - see BASKETBALL_PLAYOFF_TOTAL_FACTOR). Without this every
 			// playoff total sat ~14 points high and the under was nearly free.
 			const playoffTotalFactor =
-				playoffs && isSport("basketball") ? BASKETBALL_PLAYOFF_TOTAL_FACTOR : 1;
+				playoffs && __SPORT === "basketball"
+					? BASKETBALL_PLAYOFF_TOTAL_FACTOR
+					: 1;
 			const expectedTotal =
 				playoffTotalFactor *
 				expectedGameTotal({

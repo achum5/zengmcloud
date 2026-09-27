@@ -9,7 +9,6 @@ import type {
 	Game,
 } from "../../common/types.ts";
 import { DEFAULT_TEAM_COLORS, PHASE } from "../../common/constants.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
 import { getAutoRecapForGid } from "../util/getDayGamesForRecap.ts";
 
@@ -253,7 +252,7 @@ const boxScore = async (gid: number) => {
 	// clicked. Mirrors the worker's hasLiveGameReplay: cache first, then the
 	// persisted league store.
 	let hasReplay = false;
-	if (isSport("basketball") && !game.exhibition) {
+	if (__SPORT === "basketball" && !game.exhibition) {
 		if (await idb.cache.liveGamePlayByPlay.get(gid)) {
 			hasReplay = true;
 		} else {
@@ -266,15 +265,6 @@ const boxScore = async (gid: number) => {
 		}
 	}
 	(game2 as any).hasReplay = hasReplay;
-
-	// Swap teams order, so home team is at bottom in box score
-	game2.teams.reverse();
-
-	if (game2.scoringSummary) {
-		for (const event of game2.scoringSummary) {
-			event.t = event.t === 0 ? 1 : 0;
-		}
-	}
 
 	return game2;
 };

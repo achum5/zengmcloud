@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import type { FaceConfig } from "facesjs";
 import { Face } from "facesjs/react";
 import { DEFAULT_JERSEY, DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 import { parseUniform } from "../../common/uniform.ts";
 import { registerUniformJersey } from "../util/uniformJersey.ts";
 
@@ -30,7 +29,7 @@ export const MyFace = ({
 	// actually change.
 	const overrides = useMemo(() => {
 		let o;
-		if (isSport("baseball")) {
+		if (__SPORT === "baseball") {
 			const [jerseyId, accessoryId] = jersey.split(":");
 			o = {
 				teamColors: colors,

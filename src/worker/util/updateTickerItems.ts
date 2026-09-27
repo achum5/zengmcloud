@@ -5,7 +5,7 @@ import { formatEventText } from "./formatEventText.ts";
 import { types } from "../../common/transactionInfo.ts";
 import { formatAmerican } from "../../common/sportsbook.ts";
 import { PHASE } from "../../common/constants.ts";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 import {
 	TICKER_LIMITS,
 	type TickerItem,
@@ -183,7 +183,7 @@ const performanceItems = (games: Game[]): TickerItem[] => {
 				// A quiet night is not news. In basketball the bar is a real one; in
 				// the other sports there is no comparable single number, so anyone
 				// with a key-stats line is a candidate and the cap does the filtering.
-				if (!line || (isSport("basketball") && line.score < 34)) {
+				if (!line || (__SPORT === "basketball" && line.score < 34)) {
 					continue;
 				}
 

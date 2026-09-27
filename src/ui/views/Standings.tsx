@@ -11,7 +11,7 @@ import { TIEBREAKERS } from "../../common/constants.ts";
 import { MovOrDiff } from "../components/MovOrDiff.tsx";
 import { ResponsiveTableWrapper } from "../components/ResponsiveTableWrapper.tsx";
 import { getCol } from "../../common/getCol.ts";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 import { useLocal } from "../util/local.ts";
 
 type StandingsTeam =
@@ -167,7 +167,7 @@ const GroupStandingsRow = ({
 			<td>
 				<MovOrDiff
 					stats={
-						isSport("basketball")
+						__SPORT === "basketball"
 							? {
 									pts: t.stats.pts * t.stats.gp,
 									oppPts: t.stats.oppPts * t.stats.gp,
@@ -175,7 +175,7 @@ const GroupStandingsRow = ({
 								}
 							: t.stats
 					}
-					type={isSport("basketball") ? "mov" : "diff"}
+					type={__SPORT === "basketball" ? "mov" : "diff"}
 				/>
 			</td>
 			<td>{t.seasonAttrs.streak}</td>

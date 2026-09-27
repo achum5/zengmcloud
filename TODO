@@ -1,3 +1,10 @@
+add helpers.entries similar to helpers.keys, if possible
+- use in developSeason.basketball.ts
+
+Cache.indexGetAllByKey
+- similar to getAllByKey
+- use in getUpcoming for playersByTid
+
 seasonFraction maybe doesn't make much sense in basketball awards like MVP. gp/teamGp or gp/82 might be better - the former would max at 1 regardles of numGames, but the latter would give more or less weight to winp based on how long the season is, which would also scale them with EWA+VORP. fracWS should maybe also get multiplied by gp/82.
 - if we edit default, what to do about achievements?
 
@@ -48,8 +55,6 @@ I think if there was a way to show in the team history and gm history beside the
 
 I'd like an option in team History to see when you started being the GM of that team. This would make it easier to tell which championships were under your tenure. https://www.reddit.com/r/BasketballGM/comments/1uk5wew/monthly_suggestions_thread/p67almt/
 
-a News Feed of players on a Watch List https://www.reddit.com/r/BasketballGM/comments/1uk5wew/monthly_suggestions_thread/p4trj7w/
-
 Retired jerseys should display the uniform the player wore during his peak season/most WAR accumulated - for scenarios when teams change their uniforms over the years. https://www.reddit.com/r/BasketballGM/comments/1uk5wew/monthly_suggestions_thread/p0jmqda/
 
 Injury summary at the end of a live game log simulation https://www.reddit.com/r/BasketballGM/comments/1uk5wew/monthly_suggestions_thread/oydrdbi/
@@ -94,9 +99,6 @@ when position matters for a transaction (currently DRAFT_BY_TEAM_OVR, not trades
 - add support for using existing league, rather than real players
 
 for importing draft classes, give easy access to real player classes too https://discord.com/channels/290013534023057409/1514722878938153070/1514725575150010388
-
-baseball - no IBB if this will end the game https://discord.com/channels/290013534023057409/1514064903613186048
-- also should be very rare with the bases loaded in general
 
 baseball - pitcher enters the game after 3rd out has been recorded https://app.fastmail.com/mail/Inbox/AE1AMCuNk4zo.StojfBl-A73g?u=433e4054
 - should wait until beginning of next inning or AB, especially if the game is over
@@ -205,7 +207,6 @@ dev usability stuff
 - use zod in various places, including to replace schema/types difference
 - DRY stuff for adding a new setting
 - typescript for playersPlus
-- get rid of home/away tid swapping in box score and live sim
 - when updating GameAttributesLeagueWithHistory (for instance in setGameAttributes) we should always wrap or always not wrap based on ALWAYS_WRAP, not prior value
 - lint useLocalPartial
   - ensure all requested variables are destructured

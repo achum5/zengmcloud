@@ -12,7 +12,7 @@ import type {
 import { addMood } from "./freeAgents.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { getActualPlayThroughInjuries } from "../core/game/loadTeams.ts";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 import { orderTeams } from "../util/orderTeams.ts";
 import { coarsenPlayerForDisplay } from "../../common/coarsenRating.ts";
 import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
@@ -143,7 +143,7 @@ const updateRoster = async (
 			inputs.season === g.get("season") &&
 			inputs.tid === g.get("userTid") &&
 			!g.get("spectator") &&
-			isSport("basketball");
+			__SPORT === "basketball";
 
 		const showRelease =
 			inputs.season === g.get("season") &&
@@ -261,7 +261,7 @@ const updateRoster = async (
 				numGamesRemaining,
 			});
 
-			if (isSport("basketball")) {
+			if (__SPORT === "basketball") {
 				players.sort((a, b) => a.rosterOrder - b.rosterOrder);
 			} else {
 				players.sort((a, b) => sortByPos(b) - sortByPos(a));
@@ -309,7 +309,7 @@ const updateRoster = async (
 				coarsenRatings: false,
 			});
 
-			if (isSport("basketball")) {
+			if (__SPORT === "basketball") {
 				players.sort(
 					(a, b) => b.stats.gp * b.stats.min - a.stats.gp * a.stats.min,
 				);

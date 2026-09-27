@@ -50,7 +50,7 @@
 // are AUDITED here - counted against the box scores and reported - and not
 // yet written.
 
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
@@ -520,7 +520,7 @@ export const rebuildTeamStatsRow = ({
 		if (typeof value !== "number") {
 			return;
 		}
-		if (isSport("football") && key.endsWith("Lng")) {
+		if (__SPORT === "football" && key.endsWith("Lng")) {
 			out[key] = Math.max(out[key] as number, value);
 		} else {
 			out[key] = (out[key] as number) + value;
@@ -534,7 +534,7 @@ export const rebuildTeamStatsRow = ({
 			const base = oppBase(key);
 			add(key, base === undefined ? us[key] : them[base]);
 		}
-		if (isSport("hockey")) {
+		if (__SPORT === "hockey") {
 			if (keys.includes("so") && them.pts === 0) {
 				out.so = (out.so as number) + 1;
 			}

@@ -50,7 +50,6 @@ import {
 	DEFAULT_PLAY_THROUGH_INJURIES,
 	PHASE,
 } from "../../../common/constants.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { pregameLineupSynergy } from "../GameSim.basketball/synergy.ts";
 import {
 	BASKETBALL_PLAYOFF_HCA_FACTOR,
@@ -84,7 +83,7 @@ const mulberry32 = (a: number) => () => {
 	return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
 };
 
-test.skipIf(!ROSTERS || !isSport("basketball"))(
+test.skipIf(!ROSTERS || __SPORT !== "basketball")(
 	"futures title odds vs the engine's own playoffs",
 	{ timeout: 3_600_000 },
 	async () => {

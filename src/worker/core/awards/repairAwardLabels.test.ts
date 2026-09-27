@@ -1,4 +1,11 @@
-import { assert, beforeEach, describe, test } from "vitest";
+import {
+	afterAll,
+	assert,
+	beforeAll,
+	beforeEach,
+	describe,
+	test,
+} from "vitest";
 import { repairAwardLabels } from "./repairAwardLabels.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
@@ -94,6 +101,16 @@ const playerAward = (season: number, name: string) => ({
 const player = (pid: number, seasons: number[], name: string) => ({
 	pid,
 	awards: seasons.map((season) => playerAward(season, name)),
+});
+
+// Every test here swaps in a fake database. Test files share one worker, so
+// put the real one back when done or the next file reads from the fake.
+let realLeague: typeof idb.league;
+beforeAll(() => {
+	realLeague = idb.league;
+});
+afterAll(() => {
+	idb.league = realLeague;
 });
 
 describe("repairAwardLabels", () => {

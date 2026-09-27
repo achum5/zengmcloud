@@ -15,7 +15,6 @@ import { MoreLinks } from "../../components/MoreLinks.tsx";
 import { useBlocker } from "../../hooks/useBlocker.ts";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { local, localActions } from "../../util/local.ts";
 
 const GlobalSettings = (props: View<"globalSettings">) => {
@@ -433,7 +432,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 					</div>
 				</div>
 
-				{isSport("basketball") ? (
+				{__SPORT === "basketball" ? (
 					<>
 						<h2>Team and Player Data for "Real Players" Leagues</h2>
 						<RealData

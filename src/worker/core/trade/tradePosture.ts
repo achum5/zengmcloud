@@ -1,6 +1,5 @@
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
 import teamOvr from "../team/ovr.ts";
 import getPayroll from "../team/getPayroll.ts";
@@ -829,12 +828,13 @@ export const getTradePosture = async (
 	const elite =
 		rankedOvr !== undefined && rankedOvr >= topTeamOvr - ELITE_OVR_GAP;
 
-	const { needs, surpluses, upgradePos } = isSport("basketball")
-		? analyzePositions(
-				players.map((p) => ({ pos: p.pos, ovr: p.ovr })),
-				context.starterOvr,
-			)
-		: { needs: [], surpluses: [], upgradePos: undefined };
+	const { needs, surpluses, upgradePos } =
+		__SPORT === "basketball"
+			? analyzePositions(
+					players.map((p) => ({ pos: p.pos, ovr: p.ovr })),
+					context.starterOvr,
+				)
+			: { needs: [], surpluses: [], upgradePos: undefined };
 
 	// A buyer's target: an outright hole if it has one, else a soft slot to
 	// upgrade (undefined when it's solid everywhere → best player available).

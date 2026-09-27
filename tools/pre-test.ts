@@ -1,6 +1,5 @@
-import { existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { buildFacePrompt } from "./faceFromPhoto/buildPrompt.ts";
-import { readFile } from "node:fs/promises";
 
 const FILENAME = "build/files/league-schema.json";
 
@@ -10,17 +9,23 @@ const makeFile = async () => {
 	await createJsonSchemaFile("test");
 };
 
-if (!existsSync(FILENAME)) {
-	console.log("[pre-test] No league-schema.json found, creating...");
-	await makeFile();
-} else {
-	const text = await readFile(FILENAME, "utf8");
+try {
+	const text = readFileSync(FILENAME, "utf8");
 	try {
 		JSON.parse(text);
+
+		// Valid JSON, nothing else to do
 	} catch {
 		// Invalid JSON in file somehow
 		console.log("[pre-test] Invalid league-schema.json found, replacing...");
 		await makeFile();
+	}
+} catch (error) {
+	if (error.code === "ENOENT") {
+		console.log("[pre-test] No league-schema.json found, creating...");
+		await makeFile();
+	} else {
+		throw error;
 	}
 }
 

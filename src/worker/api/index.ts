@@ -287,7 +287,7 @@ import type { NewLeagueSettings } from "../views/newLeague.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../core/player/getNumPlayersTradedAwayNormalized.ts";
 import { getAdjustedTicketPrice } from "../../common/getAdjustedTicketPrice.ts";
 import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToObject.ts";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 import { generateContractOptions } from "../core/contractNegotiation/generateContractOptions.ts";
 import getRealTeamPlayerData from "../core/league/create/getRealTeamPlayerData.ts";
 import * as z from "zod";
@@ -1808,7 +1808,7 @@ const exportPlayerAveragesCsv = async (season: number | "all") => {
 						return false;
 					}
 
-					if (isSport("baseball")) {
+					if (__SPORT === "baseball") {
 						if (stat === "pos") {
 							return false;
 						}
@@ -6918,7 +6918,7 @@ const getAutoPlayPreview = async () => {
 	// current, playable phase). The actual sim is still capped at the days left.
 	const amountDays = {
 		day: 1,
-		week: !isSport("football") ? 7 : 1,
+		week: __SPORT !== "football" ? 7 : 1,
 		month: bySport({ football: 4, default: 30 }),
 	};
 

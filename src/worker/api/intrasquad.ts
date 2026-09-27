@@ -12,7 +12,6 @@ import { idb } from "../db/index.ts";
 import { g, toUI } from "../util/index.ts";
 import { boxScoreToLiveSim } from "../views/liveGame.ts";
 import type { TeamSeasonOverride } from "../views/gameLog.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 import { randInt } from "../../common/random.ts";
 
 // An intrasquad scrimmage: one team split into two squads (Primary vs
@@ -100,7 +99,7 @@ export const simIntrasquadGame = async (
 		const teamsProcessed = (await Promise.all(
 			squadPlayers.map(async (players, squadTid) => {
 				let depth: Team["depth"];
-				if (!isSport("basketball")) {
+				if (__SPORT !== "basketball") {
 					depth = await team.genDepth(players);
 				}
 

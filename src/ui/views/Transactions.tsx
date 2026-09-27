@@ -18,7 +18,7 @@ const Transactions = ({
 		title: "Transactions",
 		dropdownView: "transactions",
 		dropdownFields: {
-			teamsAndAll: abbrev,
+			teamsAndAllWatch: abbrev,
 			seasonsAndAll: season,
 			eventType,
 		},
@@ -30,17 +30,18 @@ const Transactions = ({
 	);
 
 	const moreLinks =
-		abbrev !== "all" ? (
+		tid !== undefined ? (
 			<MoreLinks
 				type="team"
-				page="depth"
+				page="transactions"
 				abbrev={abbrev}
 				tid={tid}
 				season={season !== "all" ? season : undefined}
 			/>
 		) : (
 			<p>
-				More: <a href={helpers.leagueUrl(["news", "all", season])}>News Feed</a>
+				More:{" "}
+				<a href={helpers.leagueUrl(["news", abbrev, season])}>News Feed</a>
 			</p>
 		);
 

@@ -25,7 +25,7 @@ import type { GameAttributesLeague } from "../../../common/types.ts";
 import { parseCurrencyFormat } from "../../util/parseCurrencyFormat.ts";
 import { invalidSimStopDayToken } from "../../../common/simStopDays.ts";
 import { getDraftTypeDescription } from "../DraftLottery.tsx";
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import { hardCapAmountProblem } from "../../../common/getHardCap.ts";
 
 export const descriptions = {
@@ -369,7 +369,7 @@ export const settings: Setting[] = (
 					hockey: 12,
 				});
 				if (value < cutoff) {
-					if (isSport("basketball")) {
+					if (__SPORT === "basketball") {
 						throw new Error(`Value cannot be less than # Players On ${COURT}`);
 					} else {
 						throw new Error(`Value must be at least ${cutoff}`);
@@ -1101,7 +1101,7 @@ export const settings: Setting[] = (
 					<p>
 						The injury rate is the probability that a player is injured per
 						possession.
-						{isSport("basketball") ? (
+						{__SPORT === "basketball" ? (
 							<>
 								{" "}
 								Based on{" "}
@@ -1275,7 +1275,7 @@ export const settings: Setting[] = (
 						The tragic death rate is the probability that a player will die a
 						tragic death on a given regular season day. Yes, this only happens
 						in the regular season.
-						{isSport("basketball")
+						{__SPORT === "basketball"
 							? "  With roughly 100 days in a season, the default is about one death every 50 years, or 1/(50*100) = 0.0002."
 							: null}{" "}
 						If you set it too high and run out of players, then you'll have to
@@ -1308,7 +1308,7 @@ export const settings: Setting[] = (
 				);
 			},
 		},
-		...(isSport("basketball")
+		...(__SPORT === "basketball"
 			? [
 					{
 						category: "Events",
@@ -1962,7 +1962,7 @@ export const settings: Setting[] = (
 			name: "# Players Per Team",
 			type: "int",
 			validator: (value, output) => {
-				if (isSport("basketball")) {
+				if (__SPORT === "basketball") {
 					if (
 						value < output.minRosterSize &&
 						value < defaultGameAttributes.minRosterSize
@@ -1984,13 +1984,13 @@ export const settings: Setting[] = (
 			name: "Team Assignment",
 			type: "string",
 			values: [
-				...(isSport("basketball") ? [{ key: "draft", value: "Draft" }] : []),
+				...(__SPORT === "basketball" ? [{ key: "draft", value: "Draft" }] : []),
 				{ key: "byConf", value: "By Conference" },
 				{ key: "top", value: "Mixed" },
 			],
 			descriptionLong: (
 				<>
-					{isSport("basketball") ? (
+					{__SPORT === "basketball" ? (
 						<p>
 							<b>Draft:</b> The top two players are captains and draft their
 							teams from the remaining players.
@@ -2177,9 +2177,10 @@ export const settings: Setting[] = (
 			name: "Steal Tendency Factor",
 			godModeRequired: "always",
 			type: "float",
-			description: isSport("basketball")
-				? "The baseline steal percentage is multiplied by this number."
-				: "The probability of a player attempting a steal is multiplied by this number.",
+			description:
+				__SPORT === "basketball"
+					? "The baseline steal percentage is multiplied by this number."
+					: "The probability of a player attempting a steal is multiplied by this number.",
 		},
 		{
 			category: "Tendencies",
@@ -2202,7 +2203,7 @@ export const settings: Setting[] = (
 		{
 			category: "Tendencies",
 			key: "foulRateFactor",
-			name: `${isSport("basketball") ? "Foul" : "Penalty"} Rate Factor`,
+			name: `${__SPORT === "basketball" ? "Foul" : "Penalty"} Rate Factor`,
 			godModeRequired: "always",
 			type: "float",
 			description: bySport({
@@ -2214,7 +2215,7 @@ export const settings: Setting[] = (
 				hockey: "The baseline rate for penalties is multiplied by this number.",
 			}),
 			validator: (value) => {
-				if (isSport("football") && value > 10) {
+				if (__SPORT === "football" && value > 10) {
 					throw new Error("Value cannot exceed 10");
 				}
 			},
@@ -2438,9 +2439,10 @@ export const settings: Setting[] = (
 			name: "Hit Factor",
 			godModeRequired: "always",
 			type: "float",
-			description: isSport("hockey")
-				? "The probability of a hit happening is multiplied by this number."
-				: "The probability that a ball in play is a hit is multiplied by this number.",
+			description:
+				__SPORT === "hockey"
+					? "The probability of a hit happening is multiplied by this number."
+					: "The probability that a ball in play is a hit is multiplied by this number.",
 		},
 		{
 			category: "Tendencies",
@@ -2627,7 +2629,7 @@ export const settings: Setting[] = (
 		{
 			category: "Game Simulation",
 			key: "numPeriods",
-			name: `Number of ${isSport("baseball") ? "Innings" : "Periods"} Per Game`,
+			name: `Number of ${__SPORT === "baseball" ? "Innings" : "Periods"} Per Game`,
 			godModeRequired: "always",
 			type: "int",
 			validator: (value) => {
@@ -2692,14 +2694,14 @@ export const settings: Setting[] = (
 				category: "Game Simulation",
 				key,
 				name: `Max # ${
-					isSport("baseball") ? "Extra Innings" : "Overtime Periods"
+					__SPORT === "baseball" ? "Extra Innings" : "Overtime Periods"
 				}${playoffs ? " (Playoffs)" : ""}`,
 				type: "intOrNull",
 				descriptionLong: (
 					<>
 						<p>
 							If a{playoffs ? " playoff" : ""} game is still tied after this
-							many {isSport("baseball") ? "extra innings" : "overtimes"}, the
+							many {__SPORT === "baseball" ? "extra innings" : "overtimes"}, the
 							game ends in a{" "}
 							{playoffs
 								? "shootout (Shootout Rounds must be >0, there can be no ties in the playoffs)"
@@ -2708,8 +2710,9 @@ export const settings: Setting[] = (
 						</p>
 						<p>
 							Set to 0 to disable{" "}
-							{isSport("baseball") ? "extra innings" : "overtime"}. Leave blank
-							for infinite {isSport("baseball") ? "extra innings" : "overtimes"}
+							{__SPORT === "baseball" ? "extra innings" : "overtime"}. Leave
+							blank for infinite{" "}
+							{__SPORT === "baseball" ? "extra innings" : "overtimes"}
 							{playoffs ? "" : " and no ties"}.
 						</p>
 					</>
@@ -2762,9 +2765,8 @@ export const settings: Setting[] = (
 		),
 		...(["shootoutRounds", "shootoutRoundsPlayoffs"] as const).map((key) => {
 			const playoffs = key === "shootoutRoundsPlayoffs";
-			const overtimePeriods = isSport("baseball")
-				? "extra innings"
-				: "overtime periods";
+			const overtimePeriods =
+				__SPORT === "baseball" ? "extra innings" : "overtime periods";
 
 			const setting: Setting = {
 				category: "Game Simulation",
@@ -2821,7 +2823,7 @@ export const settings: Setting[] = (
 			description:
 				"Track overtime losses (OTL) separately from regulation losses, as is common in hockey.",
 		},
-		...(isSport("basketball")
+		...(__SPORT === "basketball"
 			? ([
 					{
 						category: "Game Simulation",

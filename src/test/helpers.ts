@@ -1,4 +1,3 @@
-import { isSport } from "../common/sportFunctions.ts";
 import { Cache, idb } from "../worker/db/index.ts";
 import { STORES, type Store } from "../worker/db/Cache.ts";
 import { g, helpers, local } from "../worker/util/index.ts";
@@ -57,13 +56,16 @@ export function numInArrayEqualTo<T>(array: T[], x: T): number {
 }
 
 export const resetCache = async (
-	data?: Partial<Record<Store, Readonly<any[]>>>,
+	data: Partial<Record<Store, Readonly<any[]>>> = {},
+	{ stubFlush = true }: { stubFlush?: boolean } = {},
 ) => {
 	idb.cache = new Cache(); // We want these to do nothing while testing, usually
 
 	idb.cache.fill = async () => {};
 
-	idb.cache.flush = async () => {};
+	if (stubFlush) {
+		idb.cache.flush = async () => {};
+	}
 
 	for (const store of STORES) {
 		// This stuff is all needed because a real Cache.fill is not called.
@@ -136,7 +138,7 @@ export const resetG = () => {
 	const teams = helpers.getTeamsDefault();
 	Object.assign(g, defaultGameAttributes);
 
-	if (isSport("football")) {
+	if (__SPORT === "football") {
 		Object.assign(g, footballOverrides);
 	}
 

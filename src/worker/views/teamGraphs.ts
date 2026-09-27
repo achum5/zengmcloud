@@ -15,7 +15,6 @@ import type {
 import type { TeamStatAttr } from "../../common/types.baseball.ts";
 import { season } from "../core/index.ts";
 import { addPowerRankingsStuffToTeams } from "./powerRankings.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 import { choice } from "../../common/random.ts";
 
 export const statTypes = [
@@ -106,7 +105,7 @@ export const getStats = (statTypePlus: string, seasons: [number, number]) => {
 			stats.push("ovr", "ovrCurrent");
 		}
 
-		if (isSport("basketball")) {
+		if (__SPORT === "basketball") {
 			for (const rating of RATINGS) {
 				stats.push(`rank_${rating}`, `rankCurrent_${rating}`);
 			}
@@ -140,7 +139,7 @@ export const getStats = (statTypePlus: string, seasons: [number, number]) => {
 		}
 
 		// Remove pos for fielding stats
-		if (isSport("baseball")) {
+		if (__SPORT === "baseball") {
 			return statsTable.stats.filter((stat) => stat !== "pos");
 		}
 
@@ -213,7 +212,7 @@ const getTeamStats = async (
 
 	// HACKY! Sum up fielding stats, rather than by position
 	if (
-		isSport("baseball") &&
+		__SPORT === "baseball" &&
 		(statTypePlus === "fielding" || statTypePlus === "oppFielding")
 	) {
 		for (const t of teams) {

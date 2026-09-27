@@ -10,7 +10,6 @@ import {
 	type SimmedTeam,
 	type SimTeamStat,
 } from "./simGameOutcomes.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { probToAmerican } from "../../../common/sportsbook.ts";
 import {
 	eventProb,
@@ -137,7 +136,7 @@ export type GamePropsBoard = Awaited<ReturnType<typeof getGameProps>>;
 // the caller (the UI page, and validateAgainstBoard) treats that as "no props
 // available".
 export const getGameProps = async (gid: number) => {
-	if (!isSport("basketball")) {
+	if (__SPORT !== "basketball") {
 		return undefined;
 	}
 

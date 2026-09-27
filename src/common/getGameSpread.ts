@@ -1,4 +1,4 @@
-import { bySport, isSport } from "./sportFunctions.ts";
+import { bySport } from "./sportFunctions.ts";
 import { defaultGameAttributes } from "./defaultGameAttributes.ts";
 
 // Every spread SHOWN outside the sportsbook lands on a whole or half point.
@@ -106,7 +106,7 @@ export const getGameSpread = ({
 		return undefined;
 	}
 
-	const basketballPlayoffs = playoffs === true && isSport("basketball");
+	const basketballPlayoffs = playoffs === true && __SPORT === "basketball";
 
 	// From @nicidob https://github.com/nicidob/bbgm/blob/master/team_win_testing.ipynb
 	// Default homeCourtAdvantage is 1.

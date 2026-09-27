@@ -3,7 +3,7 @@ import { idb } from "../../db/index.ts";
 import { noteInjuryApply } from "./injuryForensics.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { normalizeAwardsRow } from "../../db/normalizeAwardsRow.ts";
-import type { Store } from "../../db/Cache.ts";
+import { storeInfos, type Store } from "../../db/Cache.ts";
 import loadGameAttributes from "../league/loadGameAttributes.ts";
 import {
 	g,
@@ -1384,7 +1384,7 @@ export const applyChangeset = async (
 						// autoincrement id put it. Check the cache first, then disk (the
 						// scheduledEvents cache only holds the current season's rows). Fall
 						// back to the raw id only when nothing matches (pre-snapshot history).
-						const pkField = (idb.cache as any).storeInfos[change.store].pk;
+						const pkField = storeInfos[change.store].pk;
 						let match = (await api.getAll()).find((row: any) =>
 							rowMatchesSnapshot(row, change.value, pkField),
 						);

@@ -157,6 +157,299 @@ const getIndexKey = (
 	);
 };
 
+type StoreInfo = {
+	pk: string;
+	pkType: "number" | "string";
+	autoIncrement: boolean;
+	getData?: (
+		tx: IDBPTransaction<LeagueDB>,
+		season: number,
+	) => Promise<any[]> | any[];
+	indexes?: {
+		name: Index;
+		filter?: (a: any) => boolean;
+		key: NonEmptyArray<string>;
+		unique?: boolean;
+	}[];
+
+	// Should be true if we want to fetch data from getData on a new season, even with autoSave disabled. This happens if you use season in getData such that there are objects for future seasons left out of the cache.
+	getDataWithAutoSaveDisabled?: boolean;
+};
+
+export const storeInfos: Record<Store, StoreInfo> = {
+	allStars: {
+		pk: "season",
+		pkType: "number",
+		autoIncrement: false,
+		// Current season
+		getData: (tx, season) => tx.objectStore("allStars").getAll(season),
+	},
+	awards: {
+		pk: "season",
+		pkType: "number",
+		autoIncrement: false,
+	},
+	draftLotteryResults: {
+		pk: "season",
+		pkType: "number",
+		autoIncrement: false,
+	},
+	draftPicks: {
+		pk: "dpid",
+		pkType: "number",
+		autoIncrement: true,
+		getData: (tx) => tx.objectStore("draftPicks").getAll(),
+		indexes: [
+			{
+				name: "draftPicksBySeason",
+				key: ["season"],
+			},
+			{
+				name: "draftPicksByTid",
+				key: ["tid"],
+			},
+		],
+	},
+	events: {
+		pk: "eid",
+		pkType: "number",
+		autoIncrement: true,
+	},
+	gameAttributes: {
+		pk: "key",
+		pkType: "string",
+		autoIncrement: false,
+		getData: (tx) => tx.objectStore("gameAttributes").getAll(),
+	},
+	games: {
+		pk: "gid",
+		pkType: "number",
+		autoIncrement: false,
+		// Current season
+		getData: (tx, season) =>
+			getAll(tx.objectStore("games").index("season"), season),
+	},
+	headToHeads: {
+		pk: "season",
+		pkType: "number",
+		autoIncrement: false,
+		// Current season
+		getData: (tx, season) => tx.objectStore("headToHeads").getAll(season),
+	},
+	liveGamePlayByPlay: {
+		pk: "gid",
+		pkType: "number",
+		autoIncrement: false,
+		// No getData on purpose: these can be large and numerous, so they must
+		// never be bulk-loaded into memory. Reads hit disk directly.
+	},
+	faDayResults: {
+		pk: "key",
+		pkType: "string",
+		autoIncrement: false,
+		// No getData on purpose: read on demand (FA page), written rarely.
+	},
+	images: {
+		pk: "id",
+		pkType: "string",
+		autoIncrement: false,
+		// Fully loaded: galleries filter all images by tagged player/team in
+		// memory, and the sync capture path reads written rows back through
+		// the cache, so they must live there.
+		getData: (tx) => tx.objectStore("images").getAll(),
+	},
+	socialAccounts: {
+		pk: "id",
+		pkType: "string",
+		autoIncrement: false,
+		// Fully loaded, and cheaply: this store holds only customized
+		// accounts, so it is a few dozen rows even in a long league. The
+		// feed resolves every account on every render, so it cannot afford
+		// a database read to find out whether an edit exists.
+		getData: (tx) => tx.objectStore("socialAccounts").getAll(),
+	},
+	tradingCards: {
+		pk: "id",
+		pkType: "string",
+		autoIncrement: false,
+		// Fully loaded: every player page filters all cards by pid in memory,
+		// and the sync capture path reads written rows back through the cache.
+		getData: (tx) => tx.objectStore("tradingCards").getAll(),
+	},
+	messages: {
+		pk: "mid",
+		pkType: "number",
+		autoIncrement: true,
+	},
+	negotiations: {
+		pk: "pid",
+		pkType: "number",
+		autoIncrement: false,
+		getData: (tx) => tx.objectStore("negotiations").getAll(),
+	},
+	playerFeats: {
+		pk: "fid",
+		pkType: "number",
+		autoIncrement: true,
+	},
+	players: {
+		pk: "pid",
+		pkType: "number",
+		autoIncrement: true,
+		getData: async (tx) => {
+			// Non-retired players
+			const players1 = await tx
+				.objectStore("players")
+				.index("tid")
+				.getAll(IDBKeyRange.lowerBound(PLAYER.UNDRAFTED));
+			const players2 = await tx
+				.objectStore("players")
+				.index("tid")
+				.getAll(PLAYER.UNDRAFTED_FANTASY_TEMP);
+			return players1.concat(players2);
+		},
+		indexes: [
+			{
+				name: "playersByTid",
+				key: ["tid"],
+			},
+			{
+				name: "playersByDraftYearRetiredYear",
+				key: ["draft.year", "retiredYear"],
+			},
+		],
+	},
+	playoffSeries: {
+		pk: "season",
+		pkType: "number",
+		autoIncrement: false,
+		// Current season
+		getData: (tx, season) => tx.objectStore("playoffSeries").getAll(season),
+	},
+	releasedPlayers: {
+		pk: "rid",
+		pkType: "number",
+		autoIncrement: true,
+		getData: (tx) => tx.objectStore("releasedPlayers").getAll(),
+		indexes: [
+			{
+				name: "releasedPlayersByTid",
+				key: ["tid"],
+			},
+		],
+	},
+	savedTrades: {
+		pk: "hash",
+		pkType: "string",
+		autoIncrement: false,
+		getData: (tx) => tx.objectStore("savedTrades").getAll(),
+	},
+	savedTradingBlock: {
+		pk: "rid",
+		pkType: "number",
+		autoIncrement: false,
+		getData: (tx) => tx.objectStore("savedTradingBlock").getAll(),
+	},
+	schedule: {
+		pk: "gid",
+		pkType: "number",
+		autoIncrement: true,
+		getData: (tx) => tx.objectStore("schedule").getAll(),
+	},
+	scheduledEvents: {
+		pk: "id",
+		pkType: "number",
+		autoIncrement: true,
+		getData: (tx, season) => {
+			return tx.objectStore("scheduledEvents").index("season").getAll(season);
+		},
+		getDataWithAutoSaveDisabled: true,
+	},
+	seasonLeaders: {
+		pk: "season",
+		pkType: "number",
+		autoIncrement: false,
+		// Get enough for any non-retired player
+		getData: (tx, season) => {
+			return tx
+				.objectStore("seasonLeaders")
+				.getAll(IDBKeyRange.bound(season - NUM_SEASON_LEADERS_CACHE, Infinity));
+		},
+	},
+	teamSeasons: {
+		pk: "rid",
+		pkType: "number",
+		autoIncrement: true,
+		// Past 3 seasons
+		getData: (tx, season) => {
+			return tx
+				.objectStore("teamSeasons")
+				.index("season, tid")
+				.getAll(
+					IDBKeyRange.bound(
+						[season - NUM_PRIOR_SEASONS_TEAM_SEASONS],
+						[season, ""],
+					),
+				);
+		},
+		indexes: [
+			{
+				name: "teamSeasonsBySeasonTid",
+				key: ["season", "tid"],
+				unique: true,
+			},
+			{
+				name: "teamSeasonsByTidSeason",
+				key: ["tid", "season"],
+				unique: true,
+			},
+		],
+	},
+	teamStats: {
+		pk: "rid",
+		pkType: "number",
+		autoIncrement: true,
+		// Current season
+		getData: (tx, season) => {
+			return tx
+				.objectStore("teamStats")
+				.index("season, tid")
+				.getAll(IDBKeyRange.bound([season], [season, ""]));
+		},
+		indexes: [
+			{
+				name: "teamStatsByPlayoffsTid",
+				key: ["playoffs", "tid"],
+				unique: true,
+			},
+		],
+	},
+	teams: {
+		pk: "tid",
+		pkType: "number",
+		autoIncrement: false,
+		getData: (tx: IDBPTransaction<LeagueDB>) =>
+			tx.objectStore("teams").getAll(),
+	},
+	trade: {
+		pk: "rid",
+		pkType: "number",
+		autoIncrement: false,
+		getData: (tx: IDBPTransaction<LeagueDB>) =>
+			tx.objectStore("trade").getAll(),
+	},
+};
+
+const index2store = {} as Record<Index, Store>;
+for (const store of helpers.keys(storeInfos)) {
+	const indexes = storeInfos[store].indexes;
+	if (indexes) {
+		for (const index of indexes) {
+			index2store[index.name] = store;
+		}
+	}
+}
+
 class StoreAPI<Input, Output, ID extends string | number> {
 	cache: Cache;
 
@@ -234,8 +527,6 @@ class Cache {
 
 	_dirtyRecords: Record<Store, Set<number | string>>;
 
-	_index2store: Record<Index, Store>;
-
 	_indexes: Record<Index, any>;
 
 	_maxIds: Record<Store, number>;
@@ -258,28 +549,6 @@ class Cache {
 	_season: number | undefined;
 
 	_stopAutoFlush: boolean;
-
-	storeInfos: Record<
-		Store,
-		{
-			pk: string;
-			pkType: "number" | "string";
-			autoIncrement: boolean;
-			getData?: (
-				tx: IDBPTransaction<LeagueDB>,
-				season: number,
-			) => Promise<any[]> | any[];
-			indexes?: {
-				name: Index;
-				filter?: (a: any) => boolean;
-				key: NonEmptyArray<string>;
-				unique?: boolean;
-			}[];
-
-			// Should be true if we want to fetch data from getData on a new season, even with autoSave disabled. This happens if you use season in getData such that there are objects for future seasons left out of the cache.
-			getDataWithAutoSaveDisabled?: boolean;
-		}
-	>;
 
 	allStars: StoreAPI<AllStars, AllStars, number>;
 
@@ -335,302 +604,17 @@ class Cache {
 
 	constructor() {
 		this._status = "empty";
-		// @ts-expect-error
-		this._data = {};
-		// @ts-expect-error
-		this._deletes = {};
+		this._data = {} as Record<Store, any>;
+		this._deletes = {} as Record<Store, Set<number | string>>;
 		this._dirty = false;
 		this._dirtyIndexes = new Set();
-		// @ts-expect-error
-		this._dirtyRecords = {};
-		// @ts-expect-error
-		this._indexes = {};
-		// @ts-expect-error
-		this._maxIds = {};
+		this._dirtyRecords = {} as Record<Store, Set<number | string>>;
+		this._indexes = {} as Record<Index, any>;
+		this._maxIds = {} as Record<Store, number>;
 		this.newLeague = false;
 		this._requestQueue = new Map();
 		this._requestInd = 0;
 		this._stopAutoFlush = false;
-		this.storeInfos = {
-			allStars: {
-				pk: "season",
-				pkType: "number",
-				autoIncrement: false,
-				// Current season
-				getData: (tx, season) => tx.objectStore("allStars").getAll(season),
-			},
-			awards: {
-				pk: "season",
-				pkType: "number",
-				autoIncrement: false,
-			},
-			draftLotteryResults: {
-				pk: "season",
-				pkType: "number",
-				autoIncrement: false,
-			},
-			draftPicks: {
-				pk: "dpid",
-				pkType: "number",
-				autoIncrement: true,
-				getData: (tx) => tx.objectStore("draftPicks").getAll(),
-				indexes: [
-					{
-						name: "draftPicksBySeason",
-						key: ["season"],
-					},
-					{
-						name: "draftPicksByTid",
-						key: ["tid"],
-					},
-				],
-			},
-			events: {
-				pk: "eid",
-				pkType: "number",
-				autoIncrement: true,
-			},
-			gameAttributes: {
-				pk: "key",
-				pkType: "string",
-				autoIncrement: false,
-				getData: (tx) => tx.objectStore("gameAttributes").getAll(),
-			},
-			games: {
-				pk: "gid",
-				pkType: "number",
-				autoIncrement: false,
-				// Current season
-				getData: (tx, season) =>
-					getAll(tx.objectStore("games").index("season"), season),
-			},
-			headToHeads: {
-				pk: "season",
-				pkType: "number",
-				autoIncrement: false,
-				// Current season
-				getData: (tx, season) => tx.objectStore("headToHeads").getAll(season),
-			},
-			liveGamePlayByPlay: {
-				pk: "gid",
-				pkType: "number",
-				autoIncrement: false,
-				// No getData on purpose: these can be large and numerous, so they must
-				// never be bulk-loaded into memory. Reads hit disk directly.
-			},
-			faDayResults: {
-				pk: "key",
-				pkType: "string",
-				autoIncrement: false,
-				// No getData on purpose: read on demand (FA page), written rarely.
-			},
-			images: {
-				pk: "id",
-				pkType: "string",
-				autoIncrement: false,
-				// Fully loaded: galleries filter all images by tagged player/team in
-				// memory, and the sync capture path reads written rows back through
-				// the cache, so they must live there.
-				getData: (tx) => tx.objectStore("images").getAll(),
-			},
-			socialAccounts: {
-				pk: "id",
-				pkType: "string",
-				autoIncrement: false,
-				// Fully loaded, and cheaply: this store holds only customized
-				// accounts, so it is a few dozen rows even in a long league. The
-				// feed resolves every account on every render, so it cannot afford
-				// a database read to find out whether an edit exists.
-				getData: (tx) => tx.objectStore("socialAccounts").getAll(),
-			},
-			tradingCards: {
-				pk: "id",
-				pkType: "string",
-				autoIncrement: false,
-				// Fully loaded: every player page filters all cards by pid in memory,
-				// and the sync capture path reads written rows back through the cache.
-				getData: (tx) => tx.objectStore("tradingCards").getAll(),
-			},
-			messages: {
-				pk: "mid",
-				pkType: "number",
-				autoIncrement: true,
-			},
-			negotiations: {
-				pk: "pid",
-				pkType: "number",
-				autoIncrement: false,
-				getData: (tx) => tx.objectStore("negotiations").getAll(),
-			},
-			playerFeats: {
-				pk: "fid",
-				pkType: "number",
-				autoIncrement: true,
-			},
-			players: {
-				pk: "pid",
-				pkType: "number",
-				autoIncrement: true,
-				getData: async (tx) => {
-					// Non-retired players
-					const players1 = await tx
-						.objectStore("players")
-						.index("tid")
-						.getAll(IDBKeyRange.lowerBound(PLAYER.UNDRAFTED));
-					const players2 = await tx
-						.objectStore("players")
-						.index("tid")
-						.getAll(PLAYER.UNDRAFTED_FANTASY_TEMP);
-					return players1.concat(players2);
-				},
-				indexes: [
-					{
-						name: "playersByTid",
-						key: ["tid"],
-					},
-					{
-						name: "playersByDraftYearRetiredYear",
-						key: ["draft.year", "retiredYear"],
-					},
-				],
-			},
-			playoffSeries: {
-				pk: "season",
-				pkType: "number",
-				autoIncrement: false,
-				// Current season
-				getData: (tx, season) => tx.objectStore("playoffSeries").getAll(season),
-			},
-			releasedPlayers: {
-				pk: "rid",
-				pkType: "number",
-				autoIncrement: true,
-				getData: (tx) => tx.objectStore("releasedPlayers").getAll(),
-				indexes: [
-					{
-						name: "releasedPlayersByTid",
-						key: ["tid"],
-					},
-				],
-			},
-			savedTrades: {
-				pk: "hash",
-				pkType: "string",
-				autoIncrement: false,
-				getData: (tx) => tx.objectStore("savedTrades").getAll(),
-			},
-			savedTradingBlock: {
-				pk: "rid",
-				pkType: "number",
-				autoIncrement: false,
-				getData: (tx) => tx.objectStore("savedTradingBlock").getAll(),
-			},
-			schedule: {
-				pk: "gid",
-				pkType: "number",
-				autoIncrement: true,
-				getData: (tx) => tx.objectStore("schedule").getAll(),
-			},
-			scheduledEvents: {
-				pk: "id",
-				pkType: "number",
-				autoIncrement: true,
-				getData: (tx, season) => {
-					return tx
-						.objectStore("scheduledEvents")
-						.index("season")
-						.getAll(season);
-				},
-				getDataWithAutoSaveDisabled: true,
-			},
-			seasonLeaders: {
-				pk: "season",
-				pkType: "number",
-				autoIncrement: false,
-				// Get enough for any non-retired player
-				getData: (tx, season) => {
-					return tx
-						.objectStore("seasonLeaders")
-						.getAll(
-							IDBKeyRange.bound(season - NUM_SEASON_LEADERS_CACHE, Infinity),
-						);
-				},
-			},
-			teamSeasons: {
-				pk: "rid",
-				pkType: "number",
-				autoIncrement: true,
-				// Past 3 seasons
-				getData: (tx, season) => {
-					return tx
-						.objectStore("teamSeasons")
-						.index("season, tid")
-						.getAll(
-							IDBKeyRange.bound(
-								[season - NUM_PRIOR_SEASONS_TEAM_SEASONS],
-								[season, ""],
-							),
-						);
-				},
-				indexes: [
-					{
-						name: "teamSeasonsBySeasonTid",
-						key: ["season", "tid"],
-						unique: true,
-					},
-					{
-						name: "teamSeasonsByTidSeason",
-						key: ["tid", "season"],
-						unique: true,
-					},
-				],
-			},
-			teamStats: {
-				pk: "rid",
-				pkType: "number",
-				autoIncrement: true,
-				// Current season
-				getData: (tx, season) => {
-					return tx
-						.objectStore("teamStats")
-						.index("season, tid")
-						.getAll(IDBKeyRange.bound([season], [season, ""]));
-				},
-				indexes: [
-					{
-						name: "teamStatsByPlayoffsTid",
-						key: ["playoffs", "tid"],
-						unique: true,
-					},
-				],
-			},
-			teams: {
-				pk: "tid",
-				pkType: "number",
-				autoIncrement: false,
-				getData: (tx: IDBPTransaction<LeagueDB>) =>
-					tx.objectStore("teams").getAll(),
-			},
-			trade: {
-				pk: "rid",
-				pkType: "number",
-				autoIncrement: false,
-				getData: (tx: IDBPTransaction<LeagueDB>) =>
-					tx.objectStore("trade").getAll(),
-			},
-		};
-
-		// @ts-expect-error
-		this._index2store = {};
-
-		for (const store of helpers.keys(this.storeInfos)) {
-			const indexes = this.storeInfos[store].indexes;
-			if (indexes) {
-				for (const index of indexes) {
-					this._index2store[index.name] = store;
-				}
-			}
-		}
 
 		this.allStars = new StoreAPI(this, "allStars");
 		this.awards = new StoreAPI(this, "awards");
@@ -709,7 +693,7 @@ class Cache {
 	}
 
 	_markDirtyIndexes(store: Store, row?: any) {
-		const indexes = this.storeInfos[store].indexes;
+		const indexes = storeInfos[store].indexes;
 		if (!indexes || this._dirtyIndexes.has(store)) {
 			return;
 		}
@@ -739,7 +723,7 @@ class Cache {
 	}
 
 	_refreshIndexes(store: Store) {
-		const storeInfo = this.storeInfos[store];
+		const storeInfo = storeInfos[store];
 
 		if (storeInfo.indexes) {
 			const rows = Object.values(this._data[store]);
@@ -774,7 +758,7 @@ class Cache {
 		season: number,
 		append: boolean,
 	) {
-		const storeInfo = this.storeInfos[store];
+		const storeInfo = storeInfos[store];
 		if (!append) {
 			this._deletes[store] = new Set();
 			this._dirtyRecords[store] = new Set();
@@ -860,8 +844,7 @@ class Cache {
 		}
 
 		if (local.autoSave) {
-			// @ts-expect-error
-			this._data = {};
+			this._data = {} as Record<Store, any>;
 		}
 
 		for (const store of STORES) {
@@ -872,7 +855,7 @@ class Cache {
 					season2,
 					false,
 				);
-			} else if (this.storeInfos[store].getDataWithAutoSaveDisabled) {
+			} else if (storeInfos[store].getDataWithAutoSaveDisabled) {
 				await this._loadStore(
 					store,
 					idb.league.transaction([store]),
@@ -889,6 +872,13 @@ class Cache {
 		this._setStatus("full");
 	}
 
+	_hasPendingWrites() {
+		return STORES.some(
+			(store) =>
+				this._deletes[store].size > 0 || this._dirtyRecords[store].size > 0,
+		);
+	}
+
 	// Take current contents in database and write to disk
 	async flush(storesToCheck = STORES) {
 		if (!local.autoSave) {
@@ -903,42 +893,73 @@ class Cache {
 				this._deletes[store].size > 0 || this._dirtyRecords[store].size > 0,
 		);
 		if (stores.length === 0) {
-			// Not sure if this is needed - prior to this short circuit, if this._dirty was somehow true it would have been set false at the bottom of this function. So put it here just in case.
-			this._dirty = false;
+			// storesToCheck might not include every dirty store
+			this._dirty = this._hasPendingWrites();
 
 			// Skip making any transaction if possible
 			return;
 		}
 
-		const transaction = idb.league.transaction(stores, "readwrite");
+		const updateLastPlayed = this._dirty;
 
-		for (const store of stores) {
-			const objectStore = transaction.objectStore(store);
-			for (const id of this._deletes[store]) {
-				// This is synchronous to prevent any race condition
-				objectStore.delete(id);
-			}
+		// Take the pending writes out of the cache up front, so that writes that happen while waiting for the transaction go into new sets. If the transaction fails, these are merged back in so they will be retried on the next flush.
+		const pending = stores.map((store) => {
+			const deletes = this._deletes[store];
+			const dirtyRecords = this._dirtyRecords[store];
+			this._deletes[store] = new Set();
+			this._dirtyRecords[store] = new Set();
+			return { store, deletes, dirtyRecords };
+		});
 
-			this._deletes[store].clear();
+		let transaction:
+			| IDBPTransaction<LeagueDB, Store[], "readwrite">
+			| undefined;
+		try {
+			transaction = idb.league.transaction(stores, "readwrite");
 
-			for (const id of this._dirtyRecords[store]) {
-				const record = this._data[store][id];
-
-				// If record was deleted after being marked as dirty, it will be undefined here
-				if (record !== undefined) {
+			for (const { store, deletes, dirtyRecords } of pending) {
+				const objectStore = transaction.objectStore(store);
+				for (const id of deletes) {
 					// This is synchronous to prevent any race condition
-					objectStore.put(record);
+					objectStore.delete(id);
+				}
+
+				for (const id of dirtyRecords) {
+					const record = this._data[store][id];
+
+					// If record was deleted after being marked as dirty, it will be undefined here
+					if (record !== undefined) {
+						// This is synchronous to prevent any race condition
+						objectStore.put(record);
+					}
 				}
 			}
 
-			this._dirtyRecords[store].clear();
+			await transaction.done;
+		} catch (error) {
+			// If put or delete threw synchronously, the transaction is still active and would commit a partial write
+			try {
+				transaction?.abort();
+			} catch {}
+
+			// Deletes are applied before puts, and puts use the current value in the cache, so this is correct even if some of these records were updated or deleted while waiting for the transaction
+			for (const { store, deletes, dirtyRecords } of pending) {
+				for (const id of deletes) {
+					this._deletes[store].add(id);
+				}
+				for (const id of dirtyRecords) {
+					this._dirtyRecords[store].add(id);
+				}
+			}
+			this._dirty = true;
+
+			throw error;
 		}
 
-		await transaction.done;
+		// Recompute rather than setting to false, because there may be new writes that happened while waiting for the transaction, or dirty stores not in storesToCheck
+		this._dirty = this._hasPendingWrites();
 
-		if (this._dirty) {
-			this._dirty = false;
-
+		if (updateLastPlayed) {
 			// Update lastPlayed
 			await league.updateMeta({
 				lastPlayed: new Date(),
@@ -954,7 +975,10 @@ class Cache {
 		// Only flush if cache is dirty and nothing is going on
 		if (this._dirty) {
 			const skipFlush =
-				lock.get("gameSim") || lock.get("newPhase") || !!local.autoPlayUntil;
+				this._status !== "full" ||
+				lock.get("gameSim") ||
+				lock.get("newPhase") ||
+				!!local.autoPlayUntil;
 
 			if (!skipFlush) {
 				await this.flush();
@@ -962,14 +986,14 @@ class Cache {
 		}
 
 		setTimeout(() => {
-			this._autoFlush();
+			void this._autoFlush();
 		}, AUTO_FLUSH_INTERVAL);
 	}
 
 	startAutoFlush() {
 		this._stopAutoFlush = false;
 		setTimeout(() => {
-			this._autoFlush();
+			void this._autoFlush();
 		}, AUTO_FLUSH_INTERVAL);
 	}
 
@@ -993,7 +1017,7 @@ class Cache {
 	}
 
 	_checkIndexFreshness(index: Index) {
-		const store = this._index2store[index];
+		const store = index2store[index];
 
 		if (this._dirtyIndexes.has(store)) {
 			this._refreshIndexes(store);
@@ -1052,7 +1076,7 @@ class Cache {
 			if (Array.isArray(min)) {
 				keyParsed = parseInfinity(keyString);
 			} else if (typeof min === "number") {
-				keyParsed = helpers.localeParseFloat(keyString);
+				keyParsed = Number(keyString);
 
 				if (Number.isNaN(keyParsed)) {
 					throw new Error(
@@ -1093,9 +1117,10 @@ class Cache {
 		store: Store,
 		obj: any,
 	): Promise<number | string> {
-		const pk = this.storeInfos[store].pk;
+		const pk = storeInfos[store].pk;
 
 		if (Object.hasOwn(obj, pk)) {
+			// This only checks primary key against the cache. Checking against IndexedDB would be slow. Alternatively, we could just not allow objects including the primary key with add, but I'm worried that could break something in the current code
 			if (type === "add" && this._data[store][obj[pk]]) {
 				throw new Error(
 					`Primary key "${obj[pk]}" already exists in "${store}"`,
@@ -1106,7 +1131,7 @@ class Cache {
 				this._maxIds[store] = obj[pk];
 			}
 		} else {
-			if (!this.storeInfos[store].autoIncrement) {
+			if (!storeInfos[store].autoIncrement) {
 				throw new Error(
 					`Primary key field "${pk}" is required for non-autoincrementing store "${store}"`,
 				);
@@ -1125,7 +1150,7 @@ class Cache {
 
 		// Need to have the correct type here for IndexedDB
 		const idParsed =
-			this.storeInfos[store].pkType === "number"
+			storeInfos[store].pkType === "number"
 				? Number.parseInt(obj[pk])
 				: obj[pk];
 
@@ -1178,7 +1203,7 @@ class Cache {
 
 		// Need to have the correct type here for IndexedDB
 		const idParsed =
-			this.storeInfos[store].pkType === "number" && typeof id === "string"
+			storeInfos[store].pkType === "number" && typeof id === "string"
 				? Number.parseInt(id)
 				: id;
 
@@ -1203,7 +1228,7 @@ class Cache {
 
 			// Need to have the correct type here for IndexedDB
 			const idParsed =
-				this.storeInfos[store].pkType === "number" ? Number.parseInt(id) : id;
+				storeInfos[store].pkType === "number" ? Number.parseInt(id) : id;
 
 			this._deletes[store].add(idParsed);
 

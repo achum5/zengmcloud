@@ -1,5 +1,4 @@
 import type { GameFlow } from "../../common/gameFlow.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 import { idb } from "../db/index.ts";
 import {
 	addTotals,
@@ -2022,7 +2021,7 @@ export const getAutoRecapsForDay = async ({
 	// the shooting splits, a score log kept by the basketball sim. In any
 	// other sport every one of those is zero, and the recap it produced said
 	// so with complete confidence. No recap beats a wrong one.
-	if (!isSport("basketball")) {
+	if (__SPORT !== "basketball") {
 		return { notes: {}, dayRecap: "" };
 	}
 	const games = await recapGamesForDay({ season, day });
@@ -2064,7 +2063,7 @@ export const getAutoRecapForGid = async ({
 	season: number;
 	gid: number;
 }): Promise<string | undefined> => {
-	if (!isSport("basketball")) {
+	if (__SPORT !== "basketball") {
 		return undefined;
 	}
 	const ctx = await createAutoRecapContext(season);

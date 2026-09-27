@@ -28,7 +28,6 @@ import type {
 	ViewInput,
 } from "../../common/types.ts";
 import { orderBy } from "../../common/utils.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 import { formatEventText } from "../util/formatEventText.ts";
 import { upgradeFace } from "../util/face.ts";
 import { choice } from "../../common/random.ts";
@@ -184,7 +183,7 @@ export const getPlayer = async (
 			// The impact section shows where each rating stood in the league it
 			// was earned in, and how many possessions it rests on. Asked for by
 			// name because they belong to no stat table.
-			...(isSport("basketball")
+			...(__SPORT === "basketball"
 				? ["orapmPct", "drapmPct", "rapmPct", "rapmPoss"]
 				: []),
 		],
@@ -583,7 +582,7 @@ export const getCommon = async (
 	const statSummary = Object.values(PLAYER_SUMMARY);
 
 	let statTables;
-	if (isSport("baseball") && (bestPos === "SP" || bestPos === "RP")) {
+	if (__SPORT === "baseball" && (bestPos === "SP" || bestPos === "RP")) {
 		// Primarily a pitcher, so show pitching stats first - keep in sync with playerGameLog.ts
 		statTables = Object.keys(PLAYER_STATS_TABLES).map((type) => {
 			if (type === "pitching") {
@@ -677,7 +676,7 @@ export const getCommon = async (
 	// paid for and played in produce a number; future years of a deal have no
 	// production to price yet, and come back undefined.
 	const contractValues = new Map<number, ContractValueBreakdown>();
-	if (isSport("basketball")) {
+	if (__SPORT === "basketball") {
 		const paidSeasons = (p.salaries ?? []).map((s: any) => s.season);
 		const contexts = await loadContractValueContexts(paidSeasons);
 		for (const salary of p.salaries ?? []) {
@@ -805,7 +804,7 @@ const updatePlayer = async (
 		// reads are this season's and live in the cache - any other season would
 		// mean reading the whole league's games to draw one table.
 		let impact;
-		if (isSport("basketball") && p.tid >= 0) {
+		if (__SPORT === "basketball" && p.tid >= 0) {
 			const raw = await getPlayerImpact(p.pid, p.tid, g.get("season"));
 			if (raw) {
 				const partners = [];

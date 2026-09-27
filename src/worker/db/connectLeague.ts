@@ -57,7 +57,6 @@ import { actualPhase } from "../util/actualPhase.ts";
 import { getNumPlayersTradedAwayNormalized } from "../core/player/getNumPlayersTradedAwayNormalized.ts";
 import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToObject.ts";
 import { unwrapGameAttribute } from "../../common/unwrapGameAttribute.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
 import { migrate78 } from "./migrations/78/migrate.ts";
 
@@ -752,7 +751,7 @@ const migrate = async ({
 		});
 	};
 
-	if (isSport("basketball") || isSport("football")) {
+	if (__SPORT === "basketball" || __SPORT === "football") {
 		if (oldVersion < 16) {
 			throw new Error(`League is too old to upgrade (version ${oldVersion})`);
 		}
@@ -1371,7 +1370,7 @@ const migrate = async ({
 
 	if (oldVersion < 52) {
 		// Non-basketball sports may have had a basketball pace stored in gameAttributes if they were created before gameAttributesKeysSportSpecific
-		if (!isSport("basketball")) {
+		if (__SPORT !== "basketball") {
 			const store = transaction.objectStore("gameAttributes");
 			const pace = await store.get("pace");
 
@@ -1578,7 +1577,7 @@ const migrate = async ({
 	}
 
 	if (oldVersion < 61) {
-		if (isSport("hockey")) {
+		if (__SPORT === "hockey") {
 			for await (const cursor of transaction.objectStore("players")) {
 				const p = cursor.value;
 				for (const row of p.stats) {

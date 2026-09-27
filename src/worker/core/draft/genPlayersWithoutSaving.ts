@@ -4,7 +4,7 @@ import { player } from "../index.ts";
 import { specializeProspect } from "./specializeProspects.ts";
 import { g } from "../../util/index.ts";
 import type { PlayerWithoutKey } from "../../../common/types.ts";
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import { minBy } from "../../../common/utils.ts";
 import { randInt, shuffle } from "../../../common/random.ts";
 import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
@@ -102,7 +102,7 @@ const genPlayersWithoutSaving = async (
 	}
 
 	let baseAge = draftAges[0] - (draftYear - g.get("season"));
-	if (isSport("football")) {
+	if (__SPORT === "football") {
 		// See below comment about FBGM
 		baseAge -= 2;
 	}
@@ -134,7 +134,7 @@ const genPlayersWithoutSaving = async (
 	// FBGM was originally written to assume players were generated at 19 and developed for two seasons before declaring.
 	// If `draftAges` existed when FBGM was written, it would not make sense to do that. Doing something about that now
 	// is difficult, so we want to keep developing prospects for 2 seasons currently.
-	if (isSport("football")) {
+	if (__SPORT === "football") {
 		for (let i = 0; i < 2; i++) {
 			for (const p of remaining) {
 				await developOneSeason(p);
@@ -230,7 +230,7 @@ const genPlayersWithoutSaving = async (
 	// shape that survives - and it only ever touches players generated right
 	// here, so real draft prospects (which arrive as existingPlayers and are
 	// never in this list) keep their real ratings.
-	if (isSport("basketball") && g.get("specializedDraftProspects")) {
+	if (__SPORT === "basketball" && g.get("specializedDraftProspects")) {
 		for (const p of enteringDraft) {
 			specializeProspect(p);
 

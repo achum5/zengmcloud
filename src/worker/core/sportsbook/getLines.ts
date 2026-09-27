@@ -16,7 +16,6 @@ import {
 	formatAtsRecord,
 } from "../../util/getTeamAtsRecords.ts";
 import { PHASE, PLAYER, RATINGS } from "../../../common/constants.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import {
 	BASKETBALL_PLAYOFF_SYNERGY_COEF,
 	BASKETBALL_PLAYOFF_SYNERGY_OVR_SLOPE,
@@ -364,7 +363,7 @@ export const getTeamOvrs = async (
 	season: number,
 ): Promise<Map<number, number>> => {
 	const ratings = ["ovr", "pos", "ovrs"];
-	if (isSport("basketball")) {
+	if (__SPORT === "basketball") {
 		ratings.push(...RATINGS);
 	}
 
@@ -471,7 +470,7 @@ export const getLines = async () => {
 		| Awaited<ReturnType<typeof getFuturesStrengths>>
 		| undefined;
 	let ovrByTid: Map<number, number> | undefined;
-	if (USE_STRENGTH_MODEL_FOR_FUTURES && isSport("basketball")) {
+	if (USE_STRENGTH_MODEL_FOR_FUTURES && __SPORT === "basketball") {
 		// Injury horizon: the games a team still has in front of it - its
 		// remaining regular season, or during the playoffs a rough remaining
 		// bracket length (~6 games a round).
@@ -1041,7 +1040,7 @@ export const getLines = async () => {
 		// stay closed until games decide them. Once the race formulas have data
 		// (games played) these fallbacks don't run and the boards match the Award
 		// Races page exactly.
-		if (isSport("basketball")) {
+		if (__SPORT === "basketball") {
 			const emptyAward = (key: "mvp" | "dpoy" | "roy") =>
 				awards.find((a) => a.award === key)?.candidates.length === 0 ||
 				!awards.some((a) => a.award === key);
@@ -1108,7 +1107,7 @@ export const getLines = async () => {
 		// It blends an overall projection early (earlyWeight) so a fresh season
 		// shows the best players as favorites instead of flat noise, then hands off
 		// to the real award formula as games are played.
-		if (isSport("basketball")) {
+		if (__SPORT === "basketball") {
 			const earlyWeight = 1 - seasonProgress;
 			const AWARD_OVR_COEF = 1 / 40;
 			try {
@@ -1178,7 +1177,7 @@ export const getLines = async () => {
 	let allStar: AwardCandidateRow[] = [];
 	const allStarsDecided =
 		(await idb.getCopy.allStars({ season }, "noCopyCache")) !== undefined;
-	if (!allStarsDecided && isSport("basketball")) {
+	if (!allStarsDecided && __SPORT === "basketball") {
 		try {
 			// Same pool as the real selection (worker/core/allStar/create.ts) -
 			// includes free agents.

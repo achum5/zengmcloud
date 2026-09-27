@@ -10,7 +10,7 @@ import type {
 } from "../../../common/types.ts";
 import type { StatSumsExtra } from "../../../common/processPlayerStats.basketball.ts";
 import { idb } from "../index.ts";
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import { actualPhase } from "../../util/actualPhase.ts";
 import { last } from "../../../common/utils.ts";
 import { relabelAwardsFromSettings } from "../../../common/awards.ts";
@@ -727,7 +727,7 @@ const sumCareerStats = (careerStats: any[], attr: string) => {
 				value: [0, 0]; // Numberator and denominator of tovp formula
 		  };
 
-	if (isSport("basketball") && attr === "tovp") {
+	if (__SPORT === "basketball" && attr === "tovp") {
 		info = {
 			type: "tovpHack",
 			value: [0, 0],
@@ -739,7 +739,7 @@ const sumCareerStats = (careerStats: any[], attr: string) => {
 		};
 	} else if (
 		player.stats.byPos?.includes(attr) ||
-		(isSport("baseball") && attr === "rfld")
+		(__SPORT === "baseball" && attr === "rfld")
 	) {
 		info = {
 			type: "byPos",
@@ -764,7 +764,7 @@ const sumCareerStats = (careerStats: any[], attr: string) => {
 		| undefined;
 
 	for (const cs of careerStats) {
-		if (isSport("basketball") && info.type === "tovpHack") {
+		if (__SPORT === "basketball" && info.type === "tovpHack") {
 			if (cs.tov !== undefined) {
 				info.value[0] += cs.tov;
 				info.value[1] += cs.fga + 0.44 * cs.fta + cs.tov;
@@ -774,7 +774,7 @@ const sumCareerStats = (careerStats: any[], attr: string) => {
 		}
 
 		if (cs[attr] === undefined) {
-			if (isSport("basketball") && !extraForMissingValues) {
+			if (__SPORT === "basketball" && !extraForMissingValues) {
 				extraForMissingValues = {
 					gp: 0,
 					min: 0,
@@ -784,7 +784,7 @@ const sumCareerStats = (careerStats: any[], attr: string) => {
 		}
 
 		// Special case for trb - even if first season has trb, we still want to keep tracking extraForMissingValues because we'll need it later when adding up with drb/orb seasons
-		if (isSport("basketball") && !extraForMissingValues && attr === "trb") {
+		if (__SPORT === "basketball" && !extraForMissingValues && attr === "trb") {
 			extraForMissingValues = {
 				gp: 0,
 				min: 0,
@@ -833,7 +833,7 @@ const sumCareerStats = (careerStats: any[], attr: string) => {
 	}
 
 	let outputValue;
-	if (isSport("basketball") && info.type === "tovpHack") {
+	if (__SPORT === "basketball" && info.type === "tovpHack") {
 		// Finalize tovp formula
 		outputValue = helpers.percentage(info.value[0], info.value[1]) ?? 0;
 	} else {
@@ -1096,7 +1096,7 @@ const getAttrsToSum = (statsRows: any[]) => {
 	const attrs = statsRows.length > 0 ? Object.keys(statsRows.at(-1)) : [];
 
 	// If these are historical stats with TRB rather than ORB and DRB separate
-	if (isSport("basketball")) {
+	if (__SPORT === "basketball") {
 		// Potentially need to check all rows, because before 1951 there were no rebounds at all
 		let hasTrb = false;
 		for (const row of statsRows) {
@@ -1117,7 +1117,7 @@ const getAttrsToSum = (statsRows: any[]) => {
 
 	// If these are historical stats with TOV missing in the first row, then it's possible we need a special calculation of TOV% because we need to use FGA and FTA only from rows with TOV
 	if (
-		isSport("basketball") &&
+		__SPORT === "basketball" &&
 		statsRows.length > 0 &&
 		statsRows[0].tov === undefined &&
 		statsRows.some((row) => row.tov !== undefined)

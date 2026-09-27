@@ -21,7 +21,7 @@ import type {
 } from "../../../common/types.ts";
 import { groupByUnique, maxBy } from "../../../common/utils.ts";
 import { applyRealTeamInfo } from "../../../common/applyRealTeamInfo.ts";
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import { choice, randInt, uniform } from "../../../common/random.ts";
 import { env } from "../../util/env.ts";
 import { ageFace, familySeed } from "../../util/realisticFaces.ts";
@@ -403,10 +403,10 @@ const newPhasePreseason = async (
 
 	// Loop through all non-retired players
 	for (const p of players) {
-		if (isSport("hockey") && p.numConsecutiveGamesG !== undefined) {
+		if (__SPORT === "hockey" && p.numConsecutiveGamesG !== undefined) {
 			p.numConsecutiveGamesG = 0;
 		}
-		if (isSport("baseball") && p.pFatigue !== undefined && p.pFatigue > 0) {
+		if (__SPORT === "baseball" && p.pFatigue !== undefined && p.pFatigue > 0) {
 			p.pFatigue = 0;
 		}
 
@@ -448,7 +448,7 @@ const newPhasePreseason = async (
 			// ever adds - see realisticFaces.ts - so this writes a face on a
 			// handful of players a season rather than all of them.
 			if (
-				isSport("basketball") &&
+				__SPORT === "basketball" &&
 				g.get("faceAging") &&
 				playerInScope(p, g.get("faceAgingPlayers")) &&
 				p.face

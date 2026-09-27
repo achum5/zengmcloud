@@ -3,7 +3,11 @@ import {
 	PLAYER,
 	POSITIONS,
 } from "../../../common/constants.ts";
-import developSeason from "./developSeason.ts";
+import {
+	developSeason,
+	developSeasonSync,
+	getRealPlayerDeterminismInfo,
+} from "./developSeason.ts";
 import ovr from "./ovr.ts";
 import pos from "./pos.ts";
 import skills from "./skills.ts";
@@ -16,7 +20,7 @@ import genWeight from "./genWeight.ts";
 import potEstimator from "./potEstimator.ts";
 import { TOO_MANY_TEAMS_TOO_SLOW } from "../season/getInitialNumGamesConfDivSettings.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
-import { bySport, isSport } from "../../../common/sportFunctions.ts";
+import { bySport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
 
 const NUM_SIMULATIONS = 20; // Higher is more accurate, but slower. Low accuracy is fine, though!
@@ -51,7 +55,7 @@ export const monteCarloPot = async ({
 		let ovr;
 		let pot;
 
-		if (!isSport("basketball")) {
+		if (__SPORT !== "basketball") {
 			if (pos === undefined) {
 				throw new Error("pos is required for potEstimator");
 			}
@@ -72,12 +76,24 @@ export const monteCarloPot = async ({
 
 	const maxOvrs = [];
 
+	// Only do the async part once, rather than in every iteration of the loop
+	const realPlayerDeterminismInfo = await getRealPlayerDeterminismInfo(
+		srID,
+		true,
+	);
+
 	for (let i = 0; i < NUM_SIMULATIONS; i++) {
-		const copiedRatings = helpers.deepCopy(ratings);
+		// Shallow copy is sufficient because developSeason (only basketball gets here) only modifies top level numeric ratings
+		const copiedRatings = { ...ratings };
 		let maxOvr = pos ? ratings.ovrs[pos] : ratings.ovr;
 
 		for (let ageTemp = age + 1; ageTemp < 30; ageTemp++) {
-			await developSeason(copiedRatings, ageTemp, srID, DEFAULT_LEVEL, true);
+			developSeasonSync(
+				copiedRatings,
+				ageTemp,
+				DEFAULT_LEVEL,
+				realPlayerDeterminismInfo,
+			);
 
 			const currentOvr = ovr(copiedRatings, pos);
 
@@ -143,7 +159,7 @@ const develop = async (
 	// years===0 condition is so editing locked player in God Mode will update ovr and pot
 	if (!ratings.locked || years === 0) {
 		// Run these even for players developing 0 seasons
-		if (isSport("basketball")) {
+		if (__SPORT === "basketball") {
 			ratings.ovr = ovr(ratings);
 
 			if (!skipPot) {
@@ -199,7 +215,7 @@ const develop = async (
 
 	if (!ratings.locked && years > 0) {
 		// In the NBA displayed weights seem to never change and seem inaccurate
-		if (isSport("football")) {
+		if (__SPORT === "football") {
 			const newWeight = genWeight(
 				ratings.hgt,
 				(ratings as any).stre,

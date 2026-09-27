@@ -17,7 +17,6 @@ import type makeExportStream from "../util/makeExportStream.ts";
 import { ProgressBarText } from "../components/ProgressBarText.tsx";
 import { ActionButton } from "../components/ActionButton.tsx";
 import { safeLocalStorage } from "../util/safeLocalStorage.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 
 const HAS_FILE_SYSTEM_ACCESS_API = !!window.showSaveFilePicker;
 
@@ -55,16 +54,17 @@ const categories: Category[] = [
 		title: "Players",
 		desc: "All player info, ratings, stats, and awards.",
 		default: true,
-		children: !isSport("football")
-			? [
-					{
-						name: "gameHighs",
-						title: "Include game highs",
-						desc: "Game highs are fun, but they increase export size by 25%.",
-						default: true,
-					},
-				]
-			: undefined,
+		children:
+			__SPORT !== "football"
+				? [
+						{
+							name: "gameHighs",
+							title: "Include game highs",
+							desc: "Game highs are fun, but they increase export size by 25%.",
+							default: true,
+						},
+					]
+				: undefined,
 	},
 	{
 		name: "teamsBasic",
@@ -607,7 +607,7 @@ const ExportLeague = ({ stats }: View<"exportLeague">) => {
 					filename,
 					lid,
 					onAbortDone: () => {
-						// This (and all "aborting/setAborting" code) is needed because there is no good way to abort an upload https://github.com/dropbox/dropbox-sdk-js/issues/159 until the next chunk, which can take a few seconds. So need this intermediate state where it is aborting, but has not aborted yet.
+						// This (and all "aborting/setAborting" code) is needed because there is no good way to abort an upload https://github.com/dropbox/dropbox-sdk-js/issues/223 until the next chunk, which can take a few seconds. So need this intermediate state where it is aborting, but has not aborted yet.
 						cleanupAfterStream();
 					},
 					onComplete: (url) => {

@@ -1,5 +1,4 @@
 import { svgsIndex } from "facesjs";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { isUniformJersey, parseUniform } from "../../../common/uniform.ts";
 
 const isValidJersey = (jersey: unknown) => {
@@ -9,12 +8,12 @@ const isValidJersey = (jersey: unknown) => {
 
 	// A custom uniform spec, encoded in the jersey string. Basketball only for
 	// now - the generated geometry is the basketball tank top.
-	if (isSport("basketball") && isUniformJersey(jersey)) {
+	if (__SPORT === "basketball" && isUniformJersey(jersey)) {
 		return parseUniform(jersey) !== undefined;
 	}
 
 	// Make sure string is a valid jersey, regardless of sport
-	if (isSport("baseball")) {
+	if (__SPORT === "baseball") {
 		const [jerseyId, accessoryId] = jersey.split(":");
 		if (jerseyId === undefined || accessoryId === undefined) {
 			return false;
@@ -34,8 +33,8 @@ const isValidJersey = (jersey: unknown) => {
 
 	// Make sure sport matches
 	return (
-		(isSport("basketball") && jersey.startsWith("jersey")) ||
-		(!isSport("basketball") && jersey.startsWith(__SPORT))
+		(__SPORT === "basketball" && jersey.startsWith("jersey")) ||
+		(__SPORT !== "basketball" && jersey.startsWith(__SPORT))
 	);
 };
 

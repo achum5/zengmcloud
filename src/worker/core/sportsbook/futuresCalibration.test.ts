@@ -33,7 +33,6 @@
 import { assert, test } from "vitest";
 import { resetG } from "../../../test/helpers.ts";
 import { g, helpers } from "../../util/index.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import newScheduleGood from "../season/newScheduleGood.ts";
 import { futuresStrengthFromPlayers } from "./futuresStrength.ts";
 import {
@@ -91,7 +90,7 @@ const CONF_PLAYOFF_TEAMS = 8;
 
 type TruthGame = { home: number; away: number; pHome: number };
 
-test.skipIf(!ROSTERS || !isSport("basketball"))(
+test.skipIf(!ROSTERS || __SPORT !== "basketball")(
 	"no futures row is +EV against the engine",
 	{ timeout: 1_200_000 },
 	async () => {

@@ -5,7 +5,6 @@ import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
 import { last, orderBy } from "../../../common/utils.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { shuffle } from "../../../common/random.ts";
 import {
 	getLeagueTradeContext,
@@ -326,7 +325,7 @@ const autoSign = async () => {
 		const stripped = playersOnRoster.length <= g.get("minRosterSize");
 
 		let probSkip;
-		if (isSport("basketball")) {
+		if (__SPORT === "basketball") {
 			// A team with a plan acts on it. The old flat 75-90% skip is what made
 			// free agency feel like a lottery; now only teams with nothing much to
 			// do sit out often, and a team with a real hole moves quickly.
@@ -419,7 +418,7 @@ const autoSign = async () => {
 		// guaranteed years left, a marginal one if he is expiring or on a
 		// minimum deal.
 		if (
-			isSport("basketball") &&
+			__SPORT === "basketball" &&
 			posture &&
 			playersOnRoster.length >= g.get("maxRosterSize")
 		) {
@@ -540,7 +539,7 @@ const autoSign = async () => {
 		// getBest's refusal to fill a roster with minimum men is load-bearing.
 		// This stays the fallback it is.
 		let bargain: FaPlayer | undefined;
-		if (!p && posture && isSport("basketball")) {
+		if (!p && posture && __SPORT === "basketball") {
 			const minimumFas = candidates
 				.filter((p2) => p2.contract.amount <= minContract)
 				.map((p2) => toFaPlayer(p2, season));

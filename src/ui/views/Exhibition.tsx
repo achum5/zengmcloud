@@ -26,7 +26,6 @@ import { choice, randInt } from "../../common/random.ts";
 import { processPlayerStats } from "../util/processPlayerStats.ts";
 import { ActionButton } from "../components/ActionButton.tsx";
 import { safeLocalStorage } from "../util/safeLocalStorage.ts";
-import { isSport } from "../../common/sportFunctions.ts";
 
 export type ExhibitionTeam = {
 	season: number;
@@ -110,7 +109,7 @@ const PlayerStatsSummary = ({ stats }: { stats: Player["stats"][number] }) => {
 		return <br />;
 	}
 
-	if (isSport("basketball")) {
+	if (__SPORT === "basketball") {
 		return (
 			<>
 				{helpers.roundStat(stats.pts / stats.gp, "pts")} pts /{" "}
@@ -791,7 +790,7 @@ const Exhibition = ({ defaultSettings, realTeamInfo }: View<"exhibition">) => {
 							</label>
 						</div>
 
-						{isSport("basketball") ? (
+						{__SPORT === "basketball" ? (
 							<div className="form-check">
 								<input
 									className="form-check-input"

@@ -1,8 +1,9 @@
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type { UpdateEvents, ViewInput } from "../../common/types.ts";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 import { processPlayerStats } from "../util/processPlayerStats.ts";
+import { getWatchPids } from "./news.ts";
 
 const updatePlayers = async (
 	inputs: ViewInput<"playerFeats">,
@@ -31,10 +32,11 @@ const updatePlayers = async (
 			}
 		}
 
-		if (inputs.abbrev !== "all") {
-			feats = feats.filter(
-				(feat) => g.get("teamInfoCache")[feat.tid]?.abbrev === inputs.abbrev,
-			);
+		if (inputs.tid !== undefined) {
+			feats = feats.filter((feat) => feat.tid === inputs.tid);
+		} else if (inputs.abbrev === "watch") {
+			const watchPids = await getWatchPids();
+			feats = feats.filter((feat) => watchPids.has(feat.pid));
 		}
 
 		if (inputs.season !== "all") {
@@ -42,7 +44,7 @@ const updatePlayers = async (
 		}
 
 		const featsProcessed = feats.map((feat) => {
-			if (isSport("basketball")) {
+			if (__SPORT === "basketball") {
 				feat.stats.trb = feat.stats.orb + feat.stats.drb;
 				feat.stats.fgp =
 					feat.stats.fga > 0 ? (100 * feat.stats.fg) / feat.stats.fga : 0;
@@ -52,13 +54,13 @@ const updatePlayers = async (
 					feat.stats.fta > 0 ? (100 * feat.stats.ft) / feat.stats.fta : 0;
 
 				feat.stats.gmsc = helpers.gameScore(feat.stats);
-			} else if (isSport("hockey")) {
+			} else if (__SPORT === "hockey") {
 				const toAdd = ["g", "a", "pts", "sPct", "foPct"];
 				const processed = processPlayerStats(feat.stats, toAdd);
 				for (const stat of toAdd) {
 					feat.stats[stat] = processed[stat];
 				}
-			} else if (isSport("baseball")) {
+			} else if (__SPORT === "baseball") {
 				const toAdd = ["ip", "gmsc"];
 				const processed = processPlayerStats(feat.stats, toAdd);
 				for (const stat of toAdd) {

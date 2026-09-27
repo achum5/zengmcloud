@@ -17,7 +17,7 @@ import type {
 import { STARTING_NUM_TIMEOUTS } from "../../common/constants.ts";
 import { formatClock } from "../../common/formatClock.ts";
 import { getPeriodName } from "../../common/getPeriodName.ts";
-import { bySport, isSport } from "../../common/sportFunctions.ts";
+import { bySport } from "../../common/sportFunctions.ts";
 
 // IS THIS THE CHAMPIONSHIP? Drives the trophy at center court in the live-game
 // graphic, and the confetti when the series ends.
@@ -105,7 +105,7 @@ export const boxScoreToLiveSim = async ({
 
 	const initialBoxScore: any = boxScore;
 
-	if (isSport("basketball")) {
+	if (__SPORT === "basketball") {
 		resetStatsTeam.push("ba");
 
 		initialBoxScore.elam = allStars ? g.get("elamASG") : g.get("elam");
@@ -125,9 +125,10 @@ export const boxScoreToLiveSim = async ({
 	});
 
 	// Basketball clock is in seconds
-	const clock = isSport("basketball")
-		? g.get("quarterLength") * 60
-		: g.get("quarterLength");
+	const clock =
+		__SPORT === "basketball"
+			? g.get("quarterLength") * 60
+			: g.get("quarterLength");
 	initialBoxScore.time = formatClock(clock);
 	initialBoxScore.gameOver = false;
 	delete initialBoxScore.shootout;
@@ -188,7 +189,7 @@ export const boxScoreToLiveSim = async ({
 		// it settles the court too, INCLUDING saying there is not one: an
 		// exhibition between two historical teams belongs on neutral hardwood,
 		// not on whatever floor tid 0 owns today.
-		if (isSport("basketball")) {
+		if (__SPORT === "basketball") {
 			const override = teamSeasonOverrides?.[i];
 			let teamCourt: CourtStyle | undefined;
 			// Only worth asking when the tid is a real team AND nothing has
@@ -238,9 +239,6 @@ export const boxScoreToLiveSim = async ({
 		}
 	}
 	makeAbbrevsUnique(initialBoxScore.teams);
-
-	// Swap teams order, so home team is at bottom in box score
-	initialBoxScore.teams.reverse();
 
 	// For FBGM, build up scoringSummary from events, to handle deleting a score due to penalty
 	if (

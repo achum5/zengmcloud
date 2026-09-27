@@ -1,7 +1,6 @@
 import { idb } from "../../db/index.ts";
 import teamOvr from "../team/ovr.ts";
 import { RATINGS } from "../../../common/constants.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
 
 // The team strength that drives every basketball futures market, built from the
@@ -90,7 +89,7 @@ export const getFuturesStrengths = async (
 	season: number,
 ): Promise<Map<number, FuturesTeamStrength>> => {
 	const ratings = ["ovr", "pos", "ovrs"];
-	if (isSport("basketball")) {
+	if (__SPORT === "basketball") {
 		ratings.push(...RATINGS);
 	}
 

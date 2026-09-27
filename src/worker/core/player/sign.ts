@@ -5,7 +5,6 @@ import type { Phase, Player, PlayerContract } from "../../../common/types.ts";
 import fuzzRating from "./fuzzRating.ts";
 import genJerseyNumber from "./genJerseyNumber.ts";
 import setJerseyNumber from "./setJerseyNumber.ts";
-import { isSport } from "../../../common/sportFunctions.ts";
 import { coarsenRating } from "../../../common/coarsenRating.ts";
 
 // HOW HIGH A POTENTIAL IS WORTH ANNOUNCING, and the number to quote when one
@@ -73,7 +72,7 @@ const sign = async (
 	}
 
 	let score = p.valueFuzz - 45;
-	if (isSport("football")) {
+	if (__SPORT === "football") {
 		score -= 7;
 	}
 	score = Math.round(helpers.bound(score, 0, Infinity));
